@@ -254,3 +254,33 @@
 | 사용량 유형 | `MEMORY_EMBEDDING`·`MEMORY_EXPLANATION`을 V46 CHECK·이벤트 스키마·core `CallType`·OpenAPI·ai/scoring 발행 허용 목록에 더함 | ai #565는 이 변경이 병합된 뒤에만 발행(그 전 발행은 core 소비자가 거부해 DLQ) |
 
 상세는 [core 보고서 27절](core-gateway.md#27-추억-검색설명-프록시하루-한도-566-2026-11-12).
+
+## 10. core 가구 스킨·추억의 벽 액자 슬롯 구현 (#555, 2026-11-12)
+
+core V47 `V47__room_furniture_skins_and_frame_slots.sql`로 가구 슬롯 CHECK 확장과 `room_frame_slot`을 만들고, `GET`·`PUT /students/me/room/frame-slots`와 `equipped` 가구 슬롯을 구현했다(api-spec 2.10·2.12, ERD 3.5.1). learning 보유 확인은 #559 계약(api-spec 4.1.4)을 쓰며, core 시험은 그 계약대로 응답하는 가짜 HTTP 서버로 확인했다. 9장은 #559·#566이 쓰는 절이라 이 절을 따로 둔다.
+
+### 10.1 확정한 결정 (담당자 확인 2026-11-12)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 가구 기본 스킨 | 기준안대로 행 없음. 착용 행이 없는 가구 슬롯(`equipped`의 null)이 기본 스킨이고 항상 고를 수 있음. 관리자는 추가 스킨만 등록 | 테마 `lake`·기본 벽지와 같은 방식이라 새 해금 경로·시드·가격 0 예외(`price_points > 0` CHECK)가 필요 없음 |
+| 액자 슬롯 수 | 기준안대로 6개(`slot_no` 1~6 CHECK) | 설계 문서 전부가 쓰는 값 |
+| 슬롯 조회의 제목·그림 | core가 learning 앨범 목록으로 채움(api-spec 2.12 계약 그대로) | 그림은 만료되는 presigned URL이라 core에 저장할 수 없음. web(#556) MSW 목과 계약이 바뀌지 않음. 대신 슬롯이 있으면 조회도 learning에 의존 |
+| `equipped` 변경 방식 | 보낸 슬롯만 교체, 보내지 않은 슬롯은 유지(이전: 보내면 네 슬롯 전체 교체) | 기존 꾸미기 화면이 캐릭터 네 슬롯만 보내도 가구 스킨이 벗겨지지 않고 옷장 화면은 가구 슬롯만 보낼 수 있음. 이전 계약이 네 키를 모두 요구했으므로 캐릭터 슬롯 동작은 같음 |
+| 커뮤니티 작성자 `look` | 캐릭터 네 슬롯만 | 가구는 본인 방에서만 보이며 커뮤니티 응답 모양을 바꾸지 않음 |
+
+### 10.2 구현 판단
+
+- 해금·착용: `LookCatalog`에 가구 슬롯 3개를 더했을 뿐 `LookUnlockService`·`StudentLookService`·원장 흐름은 그대로라 가구 스킨도 즉시 차감·`Idempotency-Key` 재전송·원장 UK·잔액 행 잠금으로 한 번만 차감되고, 잠긴 스킨은 409 `LOOK_LOCKED`, 다른 슬롯 아이템은 422다. 검사에 하나라도 걸리면 아무 슬롯도 바꾸지 않는다
+- 액자 슬롯 저장 순서: 요청 검사(422, learning 호출 없음) → learning `frames/ownership`(미보유 404 `THEME_FRAME_NOT_FOUND`) → learning 앨범 목록(제목·그림) → 한 트랜잭션에서 학생 행 `FOR NO KEY UPDATE` 잠금 뒤 전체 삭제·삽입. learning을 기다리는 동안 DB 잠금을 잡지 않고, learning 단계가 실패하면 아무것도 저장하지 않아 화면이 편집 내용을 유지한다(3.1)
+- 학생 행 잠금: 같은 학생의 저장 두 개가 겹쳐도 삭제·삽입이 PK 충돌 없이 차례로 반영되고, 삭제 확정(학생 상태 변경)과도 직렬화된다. 삭제가 먼저 끝났으면 409 `STUDENT_UNAVAILABLE`
+- 서킷: 보유 확인·앨범 목록은 ai를 부르지 않는 learning DB 조회라 일반 `learning-json`을 쓴다. 설계(클래스 3.7)의 `LearningMemoryClient`는 #566의 `learning-memory`(ai 장애 격리용) 전용으로 두고 `room/client/LearningFrameClient`를 따로 만들었다
+- 앨범 조회: `size=100`으로 앞쪽부터 걸린 회차를 모두 찾을 때까지 읽는다. 걸린 액자가 없으면 learning을 부르지 않는다. 앨범에 없는 회차(보통 없음)는 조회 응답에서 빼고 로그를 남긴다
+- `theme_week_start`는 DB CHECK로 월요일만 받는다(learning `theme_week_start`와 같은 값, 요청 단계에서는 422)
+- 삭제: `StudentLookService.clear`(학생 삭제 확정 트랜잭션)에서 포인트·해금·착용 다음에 `room_frame_slot`을 지운다. 가구 스킨 해금·착용은 기존 해금·착용 삭제에 들어 있다(3.6)
+
+### 10.3 한계·병합 메모
+
+- 마이그레이션 번호: #566(PR #572)이 V46으로 먼저 병합돼 이 작업은 V47이다(gitops 로컬 core 리비전 `v47`)
+- 학생이 액자를 많이 가지면(100개 초과) 조회 때 앨범을 여러 쪽 읽는다. 데모 규모에서는 한 쪽이며, 커지면 learning에 회차 키로 제목·그림을 주는 경로를 더한다
+- 리텐션 지표(3.6) "전시까지 걸린 기간"은 `room_frame_slot.saved_at − awarded_at`이다. 전체 교체여도 계속 걸려 있는 액자는 슬롯을 옮겨도 처음 건 시각을 유지하고, 내렸다가 다시 걸면 다시 건 시각이 된다

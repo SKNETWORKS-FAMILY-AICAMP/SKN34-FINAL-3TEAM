@@ -18,7 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.util.UUID
 
 /**
- * 꾸미기 해금·착용 검사(P22). 테마·캐릭터 해금값은 코드 상수([LookCatalog]), 캐릭터 아이템은 `look_item`.
+ * 꾸미기 해금·착용 검사(P22). 테마·캐릭터 해금값은 코드 상수([LookCatalog]), 캐릭터 아이템·가구 스킨(#555)은 `look_item`.
  * 해금은 영구이고 즉시 차감하며 되돌리기·환급·학부모 승인이 없다.
  */
 @Service
@@ -86,36 +86,45 @@ class LookUnlockService(private val mapper: RewardMapper, private val rewards: R
     }
 
     /**
-     * 착용 전체 교체. 슬롯별 아이템 코드 또는 null. 모르는 슬롯·코드, 다른 슬롯 아이템은 422,
-     * 해금하지 않은 아이템은 409 `LOOK_LOCKED`. 판매 중단돼도 이미 해금한 아이템은 착용할 수 있다.
+     * 보낸 슬롯만 교체하고 보내지 않은 슬롯은 그대로 둔다(#555, 가구 슬롯이 늘어 캐릭터 네 슬롯만 보내는 화면이
+     * 가구 스킨을 벗기지 않게). 값은 아이템 코드 또는 null(착용 해제 = 캐릭터 기본·가구 기본 스킨).
+     * 모르는 슬롯·코드, 다른 슬롯 아이템은 422, 해금하지 않은 아이템은 409 `LOOK_LOCKED`.
+     * 판매 중단돼도 이미 해금한 아이템은 착용할 수 있다. 검사를 모두 통과해야 하나라도 바꾼다.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     fun replaceEquipment(studentId: UUID, equipped: Map<String, String?>) {
         if (!LookCatalog.ITEM_SLOTS.containsAll(equipped.keys)) throw invalid()
         val owned = mapper.unlockedKeys(studentId).toSet()
-        val chosen = equipped.filterValues { it != null }.mapValues { (slot, code) ->
-            val item = mapper.itemByCode(code!!) ?: throw invalid()
-            if (item.slot != slot) throw invalid()
-            if (item.code !in owned) throw locked()
-            item
+        val chosen = equipped.mapValues { (slot, code) ->
+            code?.let {
+                val item = mapper.itemByCode(it) ?: throw invalid()
+                if (item.slot != slot) throw invalid()
+                if (item.code !in owned) throw locked()
+                item
+            }
         }
         val now = RewardService.now()
-        mapper.clearEquipment(studentId)
-        chosen.forEach { (slot, item) -> check(mapper.insertEquipment(studentId, slot, item.id, now) == 1) }
+        chosen.forEach { (slot, item) ->
+            mapper.deleteEquipmentSlot(studentId, slot)
+            item?.let { check(mapper.insertEquipment(studentId, slot, it.id, now) == 1) }
+        }
     }
 
-    /** 슬롯별 착용 코드(없으면 null). 응답은 항상 네 슬롯을 모두 담는다. */
+    /** 슬롯별 착용 코드(없으면 null). 응답은 캐릭터 네 슬롯과 가구 세 슬롯을 모두 담는다. */
     fun equipment(studentId: UUID): Map<String, String?> {
         val worn = mapper.equipment(studentId).associate { it["slot"] as String to it["code"] as String }
         return LookCatalog.ITEM_SLOTS.associateWith { worn[it] }
     }
 
-    /** 여러 학생의 슬롯별 착용 코드(커뮤니티 작성자 `look`, #389). 학생마다 네 슬롯을 모두 담는다. */
+    /**
+     * 여러 학생의 슬롯별 착용 코드(커뮤니티 작성자 `look`, #389). 학생마다 캐릭터 네 슬롯만 담는다.
+     * 가구 스킨은 본인 방에서만 보이므로 다른 학생에게 내보내지 않는다(#555).
+     */
     fun equipmentOf(studentIds: Set<UUID>): Map<UUID, Map<String, String?>> {
         if (studentIds.isEmpty()) return emptyMap()
         val worn = mapper.equipmentOf(studentIds).groupBy({ UUID.fromString(it["student_id"] as String) }) {
             it["slot"] as String to it["code"] as String }
-        return studentIds.associateWith { id -> worn[id].orEmpty().toMap().let { slots -> LookCatalog.ITEM_SLOTS.associateWith { slots[it] } } }
+        return studentIds.associateWith { id -> worn[id].orEmpty().toMap().let { slots -> LookCatalog.CHARACTER_SLOTS.associateWith { slots[it] } } }
     }
 
     private fun notFound() = BusinessException(HttpStatus.NOT_FOUND, "LOOK_ITEM_NOT_FOUND", "없는 꾸미기 항목입니다.")

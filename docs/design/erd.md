@@ -849,7 +849,7 @@ erDiagram
 - `idempotency_record`: 공개 API의 `Idempotency-Key` 대상(답변 제출·주문·승인·환불·재처리·신고) 공통. 같은 키·다른 본문은 `request_hash` 불일치로 422 (API 1.4)
 - #38의 response_body는 원문 보존용 JSON 봉투 `{body: base64, headers: {이름: [값]}}`다. response_status가 NULL이면 미확정이며 봉투도 NULL이다. expires_at은 DB 시계 기준 24시간이며 만료 행은 같은 키 접수 시와 주기 청소에서 제거한다. 세션 advisory lock은 테이블을 추가하지 않으며 사용자·키 해시로 잠근다. endpoint에는 메서드와 실제 공개 경로를 저장한다.
 
-### 3.5.1 포인트·꾸미기 (P21·P22, #389)
+### 3.5.1 포인트·꾸미기·생활공간 (P21·P22·P27, #389·#555)
 
 2026-11-06 결정 [기능명세 1.4](functional-spec.md#14-확정-정책) P21·P22의 core `reward` 저장 구조(V35). 결제와 분리하고, 포인트는 참여로만 적립하며(판정 결과 무관) 순위·소멸·회수가 없다. API는 [API 명세 2.10·3.12](api-spec.md#210-포인트꾸미기-fn-ret-0506-p21p22).
 
@@ -862,6 +862,7 @@ erDiagram
   student ||--o{ student_look_equipment : wears
   look_item ||--o{ student_look_equipment : equipped
   user_account ||--o{ look_item : creates
+  student ||--o{ room_frame_slot : hangs
 
   reward_rule {
     varchar(32) event_type PK "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|THEME_ON_TIME|THEME_FINISHED"
@@ -886,7 +887,7 @@ erDiagram
   look_item {
     uuid id PK
     varchar(40) code UK "대문자·숫자·밑줄 3~40자, 학생 itemKey"
-    varchar(16) slot "HAT|OUTFIT|ACCESSORY|BACKGROUND"
+    varchar(16) slot "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE"
     varchar(40) name
     int price_points "1 이상"
     varchar(200) asset_key "그림 키"
@@ -903,9 +904,16 @@ erDiagram
   }
   student_look_equipment {
     uuid student_id PK,FK
-    varchar(16) slot PK "HAT|OUTFIT|ACCESSORY|BACKGROUND"
+    varchar(16) slot PK "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE"
     uuid look_item_id FK
     timestamptz updated_at
+  }
+  room_frame_slot {
+    uuid student_id PK,FK
+    smallint slot_no PK "추억의 벽 슬롯 1~6"
+    uuid theme_id "learning theme_frame 논리 참조(서비스 간 FK 없음), (student_id, theme_id, theme_week_start) 유일"
+    date theme_week_start "회차 주, KST 월요일"
+    timestamptz saved_at "처음 건 시각, 계속 걸려 있으면 슬롯을 옮겨도 유지"
   }
 ```
 
@@ -916,19 +924,21 @@ erDiagram
 - `look_item`: 관리자(CONTENT) 등록 아이템. 삭제 없이 `STOPPED`로 판매 중단, 이미 해금한 학생은 계속 착용. `code`는 바꾸지 않으며 `:`가 없어 테마·캐릭터 키와 겹치지 않는다. 변경은 같은 트랜잭션에서 `audit_log`(`target_type = LOOK_ITEM`)
 - `student_look_unlock`: 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수라 테이블이 없다. `THEME:lake`·`COMPANION:mungchi`는 행 없이 항상 해금. V35가 잠금 전 저장된 `student.look_theme`·`look_companion`(무료 제외)을 `ledger_id` NULL 행으로 옮겼다(포인트 차감 없음). 포인트 해금 행은 그 `UNLOCK` 원장 행을 `ledger_id`로 가리킨다(UK)
 - `student_look_equipment`: 학생·슬롯당 아이템 하나. 해금 여부와 아이템 슬롯 일치는 서비스 검증. 판매 중단 아이템도 해금했으면 착용 가능
-- 학생 삭제 확정(P09): `student.look_*` NULL과 같은 트랜잭션에서 착용 → 해금 → 원장 → 잔액 순서로 삭제(FK 순서)
+- 학생 삭제 확정(P09): `student.look_*` NULL과 같은 트랜잭션에서 착용 → 해금 → 원장 → 잔액 순서로 삭제(FK 순서). #555부터 같은 트랜잭션에서 `room_frame_slot`도 삭제
+- #555(V47 `V47__room_furniture_skins_and_frame_slots.sql`, P22 개정·P27): `look_item.slot`·`student_look_equipment.slot` CHECK에 생활공간 가구 슬롯 `DESK`(책상)·`WALL`(추억의 벽)·`WARDROBE`(옷장)를 더했다(V35는 고치지 않음). 가구 1개 = 착용 슬롯 1개라 PK `(student_id, slot)`로 가구당 스킨 1개. 가구별 기본 스킨은 행 없이 항상 쓸 수 있다: 착용 행이 없는 가구 슬롯이 기본 스킨이다(테마 `lake`·기본 벽지와 같은 방식, 기준안을 2026-11-12 확정). 추가 스킨은 관리자가 `look_item`으로 등록하고 기존 해금(원장 `UNLOCK`·잔액 차감·멱등)·착용 규칙을 그대로 쓴다. 방 벽지는 `BACKGROUND` 착용 아이템이라 테이블 변경 없음
+- `room_frame_slot`(#555 V47): 추억의 벽 슬롯 1~6(기준안 6개 2026-11-12 확정, CHECK). `theme_id`·`theme_week_start`는 learning `theme_frame` 회차의 논리 참조라 서비스 간 FK가 없고, 저장 전에 learning 내부 API(api-spec 4.1.4 `frames/ownership`)로 보유를 확인한다. UK `(student_id, theme_id, theme_week_start)`로 같은 액자를 두 슬롯에 걸지 못하고, `theme_week_start`는 CHECK로 월요일만. 저장은 학생 행 `FOR NO KEY UPDATE`(삭제 확정·다른 저장과 직렬화) 아래에서 학생의 슬롯 전체를 지우고 다시 넣는다. 추가 인덱스 없음(PK 앞 칸 `student_id`로 조회·삭제)
 
-### 3.5.2 생활공간·추억 사용량 (P27, 설계·구현 전)
+### 3.5.2 생활공간·추억 사용량 (P27, 구현 #566·#555)
 
-2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 core 저장 구조. 구현 전이라 Mermaid·6장(실제 DB 대조 대상)에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션에서 Mermaid·6장으로 옮긴다. 마이그레이션 번호는 구현 때 정한다(기존 V35·V45는 고치지 않음). `memory_daily_usage`와 `llm_usage.call_type` 확장은 #566 V46으로 구현해 3.4·3.5 Mermaid와 6장으로 옮겼다.
+2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 core 저장 구조. 구현 전이라 Mermaid·6장(실제 DB 대조 대상)에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션에서 Mermaid·6장으로 옮긴다. 마이그레이션 번호는 구현 때 정한다(기존 V35·V45는 고치지 않음). `memory_daily_usage`와 `llm_usage.call_type` 확장은 #566 V46으로 구현해 3.4·3.5 Mermaid와 6장으로, `room_frame_slot`과 가구 슬롯 CHECK 확장은 #555 V47로 구현해 3.5.1 Mermaid로 옮겼다.
 
 | 테이블 | 컬럼 | 제약·규칙 |
 |---|---|---|
-| `room_frame_slot` (신규) | `student_id` uuid PK,FK, `slot_no` smallint PK, `theme_id` uuid, `theme_week_start` date, `saved_at` timestamptz | 추억의 벽 슬롯 1~6(기준안 CHECK). `theme_id`·`theme_week_start`는 learning `theme_frame` 논리 참조(서비스 간 FK 없음), 저장 시 learning 내부 API로 보유 확인. UK `(student_id, theme_id, theme_week_start)`로 같은 액자 중복 걸기 방지. 저장은 학생의 전체 슬롯을 한 트랜잭션에서 교체 |
-| `look_item`·`student_look_equipment` (변경) | `slot` | CHECK에 가구 슬롯 `DESK`·`WALL`·`WARDROBE` 추가(P22 개정). 가구 1개 = 슬롯 1개라 기존 PK `(student_id, slot)`로 가구당 스킨 1개. 기본 스킨은 행 없이 항상 해금(테마 `lake`와 같은 방식, 기준안) |
+| (없음) | - | 2026-11-12 결정의 core_db 변경은 모두 구현해 위 Mermaid·6장으로 옮겼다(#566 V46, #555 V47) |
 
 - 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`memory_daily_usage`도 삭제
 - 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
+- `room_frame_slot`과 가구 슬롯 CHECK 확장은 #555 V47로 구현해 3.5.1 Mermaid로 옮겼다(추가 인덱스가 없어 6장 행 없음)
 
 ### 3.6 2026-11-06 결정 변경 반영 (core_db)
 
@@ -1771,7 +1781,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V43(V10·V11 결번), learning Flyway V1~V17, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 103개 테이블·902개 컬럼(core 59/514, learning 36/322, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V43·learning V17(#466)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V18, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 106개 테이블·919개 컬럼(core 61/524, learning 37/329, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V18·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
