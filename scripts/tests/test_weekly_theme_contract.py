@@ -108,6 +108,19 @@ class WeeklyThemeContractTest(unittest.TestCase):
             self.assertFalse(params['grade'].get('required', False), path)
             self.assertTrue(params['gradeBand'].get('deprecated'), path)
 
+    def test_learning_theme_paths_declare_sunday_query(self):
+        # #484: core가 시도 시작·조회·열람 3종에 붙이는 sundayTheme을 learning 계약이 모두 선언(정답 고르기도 같은 쿼리)
+        for method, path in (
+            ('post', '/missions/{missionId}/attempts'),
+            ('get', '/students/{studentId}/weekly-theme'),
+            ('post', '/students/{studentId}/weekly-theme/review-views'),
+            ('post', '/students/{studentId}/weekly-theme/story-views'),
+            ('post', '/students/{studentId}/weekly-theme/answer-picks'),
+        ):
+            params = {self.parameter(p).get('name'): self.parameter(p) for p in self.learning['paths'][path][method]['parameters']}
+            self.assertIn('sundayTheme', params, path)
+            self.assertFalse(params['sundayTheme'].get('required', False), path)
+
     def test_learning_theme_grades_match_domain(self):
         # learning OpenAPI ThemeGrade enum = 도메인 ThemeGrade (#438)
         calendar = (THEME / 'domain/ThemeCalendar.kt').read_text(encoding='utf-8')
