@@ -2,6 +2,7 @@ package com.sagomungchi.learning.theme.controller
 
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning.theme.domain.AnswerPickResult
 import com.sagomungchi.learning.theme.domain.ReviewViewResult
 import com.sagomungchi.learning.theme.domain.StoryViewResult
 import com.sagomungchi.learning.theme.domain.ThemeStoryKind
@@ -24,6 +25,9 @@ import java.util.UUID
 
 /** 이야기 열람 본문 (#438): `{kind}`. 다른 칸·값 검사는 core(api-spec 2.11), learning은 kind가 없으면 400 */
 data class StoryViewRequest(val kind: ThemeStoryKind? = null)
+
+/** 정답 고르기 본문 (#484): `{pick}` 후보 글자 하나. 없거나 비면 400, 후보 밖이면 서비스가 400 */
+data class AnswerPickRequest(val pick: String? = null)
 
 /**
  * 학생 주간 테마 내부 API (api-spec 2.11·4.1, #385). core #387이 `/api/v1/students/me/weekly-theme…`를 넘김:
@@ -76,6 +80,22 @@ class WeeklyThemeController(
         val kind = request.kind
             ?: throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "요청 오류", "kind는 INTRO·OUTRO 중 하나")
         return service.recordStoryView(studentId, themeGrade(grade, gradeBand), date, kind, sundayTheme)
+    }
+
+    /** 큰 질문 정답 고르기 (#484). 본문 `{pick}`(후보 하나), 한 주 한 번. 응답 `{correct, ending, answer}` */
+    @PostMapping("/answer-picks")
+    fun answerPicked(
+        @PathVariable studentId: UUID,
+        @RequestParam(required = false) grade: ThemeGrade?,
+        @RequestParam(required = false) gradeBand: String?,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate,
+        @RequestParam(defaultValue = "false") sundayTheme: Boolean,
+        @RequestBody request: AnswerPickRequest,
+    ): AnswerPickResult {
+        requireSelf(studentId)
+        val pick = request.pick?.takeIf { it.isNotBlank() }
+            ?: throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "요청 오류", "pick은 후보 중 하나")
+        return service.pickAnswer(studentId, themeGrade(grade, gradeBand), date, pick, sundayTheme)
     }
 
     /** 주간 리포트 테마 요약 (FN-RPT-17). weekStart는 KST 월요일 */

@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.theme.repository
 
+import com.sagomungchi.learning.theme.domain.ThemeAnswerPick
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeContent
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
@@ -83,8 +84,22 @@ class WeeklyThemeRepository(private val mapper: WeeklyThemeMapper) {
     fun recordStoryView(studentId: UUID, weekStart: LocalDate, kind: String, themeId: UUID, now: Instant): Boolean =
         mapper.insertStoryView(studentId, weekStart, kind, themeId, now) == 1
 
-    /** 학생 삭제: 그 학생의 되돌아보기·이야기 열람 기록(#438). 호출한 쪽 트랜잭션 안에서만 */
-    fun deleteByStudent(studentId: UUID): Int = mapper.deleteReviewViewsByStudent(studentId) + mapper.deleteStoryViewsByStudent(studentId)
+    /** 그 주 큰 질문 정답 고르기(#484), 고르지 않았으면 null */
+    fun findAnswerPick(studentId: UUID, weekStart: LocalDate): ThemeAnswerPick? = mapper.findAnswerPick(studentId, weekStart)
+
+    /** 정답 고르기 문제(#484): 큰 질문·정답이 있는 테마 버전의 금요일 문제 */
+    fun isAnswerPickMission(missionId: UUID): Boolean = mapper.isAnswerPickMission(missionId)
+
+    /** 그 문제를 금요일 문제로 정답 고르기를 한 주들(#484 커뮤니티 열람 조건) */
+    fun findAnswerPickWeeks(studentId: UUID, missionId: UUID): List<LocalDate> = mapper.findAnswerPicks(studentId, missionId)
+
+    /** 정답 고르기 기록(학생·주당 1행). 이번 요청으로 저장했으면 true, 이미 골랐으면 false */
+    fun recordAnswerPick(studentId: UUID, weekStart: LocalDate, themeId: UUID, missionId: UUID, pick: String, correct: Boolean, now: Instant): Boolean =
+        mapper.insertAnswerPick(studentId, weekStart, themeId, missionId, pick, correct, now) == 1
+
+    /** 학생 삭제: 그 학생의 되돌아보기·이야기 열람(#438)·정답 고르기(#484) 기록. 호출한 쪽 트랜잭션 안에서만 */
+    fun deleteByStudent(studentId: UUID): Int =
+        mapper.deleteReviewViewsByStudent(studentId) + mapper.deleteStoryViewsByStudent(studentId) + mapper.deleteAnswerPicksByStudent(studentId)
 
     private fun insertVersion(versionId: UUID, themeId: UUID, version: Int, content: ThemeContent, createdBy: UUID, now: Instant) {
         check(mapper.insertVersion(versionId, themeId, version, content.title, content.intro, content.story, createdBy, now) == 1)
