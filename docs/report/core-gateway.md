@@ -686,6 +686,7 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 3. `MemoryUsageService.reserve`: 학생·종류별 advisory lock → 1행 기록 → KST 오늘 건수 > 한도면 롤백·429
 4. `LearningMemoryClient`로 learning 호출(서킷 `learning-memory`, 검색 30초·설명 45초)
 5. learning 5xx·시간 초과·연결 실패·서킷 차단이면 `release`로 그 행을 지움. 응답·오류는 그대로 전달
+   - 설명의 ai 장애(질의 임베딩 실패, 생성 ai 503·시간 초과·연결 실패·서킷 열림)는 learning이 503 `AI_UNAVAILABLE`로 돌려주므로 이 규칙으로 되돌린다. core 코드 변경 없이 learning 판정을 바꿈(#592, [리텐션 확장 13.1](retention-expansion.md#131-ai-장애-때-설명-한도-미차감-592-2026-11-12))
 
 ### 저장·마이그레이션 (V46)
 
@@ -701,7 +702,7 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 
 ### 테스트
 
-- `MemoryProxyIntegrationTest`: 본문 재구성·경로·헤더·no-store·KST 날짜 기록, 한도 경계(2회 통과 → 3번째 429·learning 미호출, 종류별·날짜별 따로, 한도 0), 동시 6건 중 2건만 통과, learning 422 전달·셈, 503 전달·되돌림, 설명 `FAILED` 셈, 서킷 분리(`learning-memory` OPEN에도 `learning-json` CLOSED·주간 테마 정상, 차단 시 503 `LEARNING_CIRCUIT_OPEN`·사용량 없음), 형식 오류 400 14종, 구독 스냅숏 키 없음 → 무료 값, 무료에도 없음 → 503
+- `MemoryProxyIntegrationTest`: 본문 재구성·경로·헤더·no-store·KST 날짜 기록, 한도 경계(2회 통과 → 3번째 429·learning 미호출, 종류별·날짜별 따로, 한도 0), 동시 6건 중 2건만 통과, learning 422 전달·셈, 503 전달·되돌림(검색·설명, #592), 설명 `FAILED` 셈, 서킷 분리(`learning-memory` OPEN에도 `learning-json` CLOSED·주간 테마 정상, 차단 시 503 `LEARNING_CIRCUIT_OPEN`·사용량 없음), 형식 오류 400 14종, 구독 스냅숏 키 없음 → 무료 값, 무료에도 없음 → 503
 - `LearningClientTest`: 검색·설명이 한 서킷을 공유하고 응답 시간은 따로(검색 시간 초과·설명 성공), 기본 30·45초
 - `AccountManagementTest`: 삭제 확정 때 대상 학생 사용량만 삭제
 - 계약: `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 일치)·`test_admin_operations_contract.py`·`test_core_migration_versions.py`

@@ -186,9 +186,13 @@ class MemoryProxyIntegrationTest : PostgresRepositoryTest() {
         }
         assertEquals(0, used("SEARCH"))
 
+        // 설명의 ai 장애도 learning 503 AI_UNAVAILABLE이라 그대로 전달하고 되돌린다(#592)
+        jdbc.update("UPDATE product SET limits=jsonb_set(limits,'{dailyMemoryExplanations}','5') WHERE id=?", free)
+        call(explanations, explanationBody).andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("AI_UNAVAILABLE"))
+        assertEquals(1, used("EXPLANATION"))
+
         // 설명 생성 실패(FAILED)는 200이라 센다
         stub.respond = { LearningHttpStub.Reply(body = "{\"state\":\"FAILED\",\"text\":null,\"citations\":[]}") }
-        jdbc.update("UPDATE product SET limits=jsonb_set(limits,'{dailyMemoryExplanations}','5') WHERE id=?", free)
         call(explanations, explanationBody).andExpect(status().isOk()).andExpect(jsonPath("$.state").value("FAILED"))
         assertEquals(2, used("EXPLANATION"))
     }

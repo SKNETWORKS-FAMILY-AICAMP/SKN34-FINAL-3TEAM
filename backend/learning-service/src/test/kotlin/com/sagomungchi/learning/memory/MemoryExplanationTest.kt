@@ -2,7 +2,14 @@ package com.sagomungchi.learning.memory
 
 import com.sagomungchi.learning.memory.service.*
 import com.sagomungchi.learning.memory.repository.*
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning._common.exception.BusinessException
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException
+import io.github.resilience4j.circuitbreaker.CircuitBreaker
+import org.springframework.http.HttpStatus
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.ResourceAccessException
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
@@ -65,12 +72,40 @@ class MemoryExplanationTest {
         row=row.copy(model="old-model")
         assertEquals("INSUFFICIENT",service.explain(student,"질문",listOf(attempt)).state)
     }
-    @Test fun `프로필 임베딩 생성 실패는 설명만 FAILED`() {
-        `when`(ai.explain(anyRequest(),anyLong())).thenThrow(IllegalStateException("private"))
-        assertEquals(MemoryExplanationResult("FAILED"),service.explain(student,"질문",listOf(attempt)))
-        `when`(embedding.embed(anyList())).thenThrow(IllegalStateException("private"))
-        assertEquals("FAILED",service.explain(student,"질문",listOf(attempt)).state)
-        `when`(privacy.nickname(student)).thenThrow(IllegalStateException("private"))
+    private fun assertUnavailable() {
+        val error=assertFailsWith<BusinessException> { service.explain(student,"질문",listOf(attempt)) }
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,error.status)
+        assertEquals("AI_UNAVAILABLE",error.code)
+    }
+    @Test fun `생성 전 프로필 임베딩 실패는 503으로 사용량 되돌림 대상`() {
+        doThrow(AiCallException("AI_UNAVAILABLE",true,true)).`when`(embedding).embed(anyList())
+        assertUnavailable()
+        doThrow(IllegalStateException("private")).`when`(embedding).embed(anyList())
+        assertUnavailable()
+        doThrow(IllegalStateException("private")).`when`(privacy).nickname(student)
+        assertUnavailable()
+        verifyNoInteractions(ai)
+    }
+    @Test fun `생성 호출 ai 장애는 503`() {
+        for (outage in listOf(
+            AiCallException("AI_UNAVAILABLE",true,true,HttpServerErrorException(HttpStatus.SERVICE_UNAVAILABLE)),
+            AiCallException("AI_TIMEOUT",true,true,ResourceAccessException("timeout")),
+            AiCallException("AI_UNAVAILABLE",true,true,ResourceAccessException("refused")),
+            CallNotPermittedException.createCallNotPermittedException(CircuitBreaker.ofDefaults("test")))) {
+            doThrow(outage).`when`(ai).explain(anyRequest(),anyLong())
+            assertUnavailable()
+        }
+    }
+    @Test fun `생성이 일어난 실패는 설명만 FAILED`() {
+        for (failure in listOf(
+            AiCallException("AI_UNAVAILABLE",true,true,HttpServerErrorException(HttpStatus.BAD_GATEWAY)),
+            AiCallException("AI_BAD_RESPONSE",false,false,HttpClientErrorException(HttpStatus.UNPROCESSABLE_ENTITY)),
+            AiCallException("AI_BAD_RESPONSE",false,false),
+            IllegalStateException("private"))) {
+            doThrow(failure).`when`(ai).explain(anyRequest(),anyLong())
+            assertEquals(MemoryExplanationResult("FAILED"),service.explain(student,"질문",listOf(attempt)))
+        }
+        doReturn(response("좋아요[1]. 좋아요[1]. 근거 없는 꼬리")).`when`(ai).explain(anyRequest(),anyLong())
         assertEquals("FAILED",service.explain(student,"질문",listOf(attempt)).state)
     }
     @Test fun `외부 호출 중 삭제되면 설명을 반환하지 않음`() {
