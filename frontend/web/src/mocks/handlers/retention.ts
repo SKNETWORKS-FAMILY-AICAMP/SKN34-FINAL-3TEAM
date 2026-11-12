@@ -10,6 +10,7 @@ import {
   earn,
   isUnlocked,
   lookCatalog,
+  MOCK_STORY,
   mockWeekday,
   persistRetention,
   pointsOf,
@@ -20,6 +21,7 @@ import {
   setCommunityEnabled,
   setConsent,
   unlockedOf,
+  weekRules,
   weekStart,
   weeklyThemeFor,
 } from '../fixtures/retention.ts'
@@ -120,21 +122,62 @@ export const retentionHandlers = [
     respond(async () => {
       guard(request)
       const me = mockStudent()
-      return weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade)
+      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade, me.plan)
+      // core가 조회 응답으로 하는 테마 적립 보충을 흉내 낸다(#485): 당일 풀이·개근·주간 완주.
+      const key = `${me.id}:${weekStart()}`
+      week.days.forEach((d) => d.completedOnDay && earn(me.id, 'THEME_ON_TIME', `${key}:${d.day}`))
+      if (week.completed) earn(me.id, 'THEME_COMPLETED', key)
+      if (week.finished) earn(me.id, 'THEME_FINISHED', key)
+      return saved(week)
     }),
   ),
   http.post('/api/v1/students/me/weekly-theme/review-views', ({ request }) =>
     respond(async () => {
       guard(request)
       const me = mockStudent()
-      if (mockWeekday() < 5) fail(409, 'THEME_REVIEW_NOT_ALLOWED', '되돌아보기는 토·일에 열려요.')
+      // 토요일(프리미엄은 일요일도)만. 평일·무료 일요일은 409(#484).
+      if (!weekRules(mockWeekday(), me.plan).weekend) fail(409, 'THEME_REVIEW_NOT_ALLOWED', '되돌아보기는 토요일에 열려요.')
       const key = `${me.id}:${weekStart()}`
       const first = !retentionState.reviewViews.includes(key)
       if (first) retentionState.reviewViews.push(key)
       earn(me.id, 'REVIEW_VIEWED', key)
-      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade)
+      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade, me.plan)
       if (week.completed) earn(me.id, 'THEME_COMPLETED', key)
       return saved({ firstViewThisWeek: first, completed: week.completed })
+    }),
+  ),
+  // 시작·종료 이야기 열람(learning #438·#484 판정 흉내): INTRO는 무료 일요일만 거부, OUTRO는 엔딩 뒤에만.
+  http.post('/api/v1/students/me/weekly-theme/story-views', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const { kind } = ((await request.json().catch(() => ({}))) ?? {}) as { kind?: unknown }
+      if (kind !== 'INTRO' && kind !== 'OUTRO') fail(400, 'VALIDATION_FAILED', '이야기 종류를 확인해 주세요.')
+      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade, me.plan)
+      if (weekRules(mockWeekday(), me.plan).closed || (kind === 'OUTRO' && week.ending !== 'ENDED'))
+        fail(409, 'THEME_STORY_NOT_ALLOWED', '지금은 이 이야기를 기록할 수 없어요.')
+      const key = `${me.id}:${weekStart()}:${kind}`
+      const first = !retentionState.storyViews.includes(key)
+      if (first) retentionState.storyViews.push(key)
+      return saved({ kind, firstViewThisWeek: first })
+    }),
+  ),
+  // 큰 질문 정답 고르기(learning #484 판정 흉내): 금요일 문제 마무리 뒤 한 주 한 번, 후보 밖은 400.
+  http.post('/api/v1/students/me/weekly-theme/answer-picks', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const { pick } = ((await request.json().catch(() => ({}))) ?? {}) as { pick?: unknown }
+      if (typeof pick !== 'string' || !pick.trim()) fail(400, 'VALIDATION_FAILED', '고를 후보를 확인해 주세요.')
+      const missions = (await mockStudentHome(me)).missions
+      const week = weeklyThemeFor(me.id, missions, me.grade, me.plan)
+      const key = `${me.id}:${weekStart()}`
+      if (!week.candidates?.includes(pick as string)) fail(400, 'VALIDATION_FAILED', '후보 중에서 골라 주세요.')
+      if (weekRules(mockWeekday(), me.plan).closed || week.days[4]?.attemptStatus !== 'COMPLETED' || retentionState.picks[key])
+        fail(409, 'THEME_PICK_NOT_ALLOWED', '지금은 정답을 고를 수 없어요.')
+      retentionState.picks[key] = { pick: pick as string, correct: pick === MOCK_STORY.answer, at: new Date().toISOString() }
+      const after = weeklyThemeFor(me.id, missions, me.grade, me.plan)
+      return saved({ correct: pick === MOCK_STORY.answer, ending: after.ending, answer: after.answer })
     }),
   ),
 

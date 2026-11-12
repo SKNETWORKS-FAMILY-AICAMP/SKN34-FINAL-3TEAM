@@ -26,7 +26,7 @@ import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook
 import type { StudentLook } from '../../domain/studentLook.ts'
 import { companionKey, ITEM_SLOTS, themeKey } from '../../domain/retention.ts'
 import type { AttemptContext } from '../../domain/retention.ts'
-import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, weeklyThemeFor } from '../fixtures/retention.ts'
+import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, weeklyThemeFor, weekRules } from '../fixtures/retention.ts'
 import { difficultyCodes } from '../../domain/learning.ts'
 
 let child: Child | undefined = store.snapshot().session?.child,
@@ -143,11 +143,12 @@ async function checkContext(request: Request, missionId: string) {
   const home = await store.home(child)
   const existing = home.missions.find((m) => m.id === missionId)?.status === 'IN_PROGRESS'
   if (existing) return // 이어하기(200)는 요일 검사를 하지 않는다
-  const week = weeklyThemeFor(child.id, home.missions, child.grade)
-  if (context === 'THEME_DAY' && !week.days.some((d) => d.missionId === missionId && d.state === 'OPEN'))
-    throw new ApiError({ status: 409, code: 'THEME_DAY_CLOSED', title: '오늘 요일 문제가 아니에요.' })
-  if (context === 'THEME_REVIEW' && !(mockWeekday() >= 5 && week.review.missions.some((r) => r.missionId === missionId && r.completed)))
-    throw new ApiError({ status: 409, code: 'THEME_REVIEW_NOT_ALLOWED', title: '토·일에 이번 주 마무리한 문제만 다시 풀 수 있어요.' })
+  const week = weeklyThemeFor(child.id, home.missions, child.grade, child.plan)
+  // 2026-11-10 개정(#484): 공개된(OPEN) 문제는 토요일(프리미엄 일요일)까지 새로 시작, 이미 마무리한 문제는 다시 풀기로.
+  if (context === 'THEME_DAY' && !week.days.some((d) => d.missionId === missionId && d.state === 'OPEN' && d.attemptStatus !== 'COMPLETED'))
+    throw new ApiError({ status: 409, code: 'THEME_DAY_CLOSED', title: '지금 새로 시작할 수 있는 테마 문제가 아니에요.' })
+  if (context === 'THEME_REVIEW' && !(weekRules(mockWeekday(), child.plan).weekend && week.review.missions.some((r) => r.missionId === missionId && r.completed)))
+    throw new ApiError({ status: 409, code: 'THEME_REVIEW_NOT_ALLOWED', title: '토요일에 이번 주 마무리한 문제만 다시 풀 수 있어요.' })
   if (context === 'EXTRA' && child.plan === 'FREE')
     throw new ApiError({ status: 403, code: 'PREMIUM_REQUIRED', title: '생각 유형별 추가 문제는 프리미엄에서 풀 수 있어요.' })
 }

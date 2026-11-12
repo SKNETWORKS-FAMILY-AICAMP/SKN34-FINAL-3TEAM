@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { retentionApi } from './api.ts'
-import type { LookItem, Points, Reaction } from '../../domain/retention.ts'
+import type { LookItem, Points, Reaction, StoryKind } from '../../domain/retention.ts'
 
 /** 참여 기능 조회는 학습 화면을 막지 않는다: 실패해도 재시도 없이 오류만 보인다. */
 const quiet = { retry: false } as const
@@ -52,6 +52,27 @@ export function useRecordReviewView(childId: string | undefined) {
       void cache.invalidateQueries({ queryKey: ['weekly-theme', childId] })
       void cache.invalidateQueries({ queryKey: ['points', childId] })
     },
+  })
+}
+
+/** 이야기 열람 기록. 실패해도 화면은 닫히고(다시 띄우지 않음) 다음 조회의 `introSeen`·`outroSeen`을 따른다. */
+export function useRecordStoryView(childId: string | undefined) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: (kind: StoryKind) => retentionApi.recordStoryView(kind),
+    onSettled: () => void cache.invalidateQueries({ queryKey: ['weekly-theme', childId] }),
+  })
+}
+
+/** 큰 질문 정답 고르기. 엔딩이 되면 종료 이야기·정답과 잠겼던 커뮤니티가 열리므로 함께 다시 받는다. */
+export function useAnswerPick(childId: string | undefined) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: (pick: string) => retentionApi.pickAnswer(pick),
+    onSettled: () => Promise.all([
+      cache.invalidateQueries({ queryKey: ['weekly-theme', childId] }),
+      cache.invalidateQueries({ queryKey: ['community', 'mission', childId] }),
+    ]),
   })
 }
 

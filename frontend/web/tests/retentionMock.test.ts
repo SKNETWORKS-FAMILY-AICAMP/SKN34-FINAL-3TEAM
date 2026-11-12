@@ -7,7 +7,7 @@ import { parentHandlers } from '../src/mocks/handlers/parent.ts'
 import { adminHandlers } from '../src/mocks/handlers/admin.ts'
 import { studentHandlers } from '../src/mocks/handlers/student.ts'
 import { setWorkspaceScenario } from '../src/mocks/fixtures/accounts.ts'
-import { balanceOf, MOCK_WEEKDAY_KEY, resetRetention, retentionState, themeMissions, weekStart } from '../src/mocks/fixtures/retention.ts'
+import { balanceOf, MOCK_STORY, MOCK_WEEKDAY_KEY, resetRetention, retentionState, themeMissions, weekStart, weeklyThemeFor } from '../src/mocks/fixtures/retention.ts'
 import type { Mission } from '../src/domain/classroom.ts'
 import { THEME_DAYS } from '../src/domain/retention.ts'
 import { THINKING_ORDER } from '../src/domain/studentLook.ts'
@@ -117,26 +117,92 @@ test('커뮤니티: 보호자 COMMUNITY 동의 전에는 켤 수 없고, 철회�
   assert.deepEqual({ enabled: after.enabled, consentGranted: after.consentGranted }, { enabled: false, consentGranted: false })
 })
 
-test('주간 테마: 요일 상태·당일 문제만 시작, 주말 되돌아보기는 주 1회 적립', async () => {
+test('주간 테마(#484 규칙): 공개된 문제는 쌓여 열리고, 토요일 되돌아보기는 주 1회 적립', async () => {
   weekday(1) // 화요일
   const childId = await parent()
   await student(childId)
   const week = (await call('/students/me/weekly-theme')).data
-  assert.deepEqual(week.days.map((d: { state: string }) => d.state), ['CLOSED', 'OPEN', 'LOCKED', 'LOCKED', 'LOCKED'])
-  assert.equal(week.intro, null, '도입 이야기는 월요일에만')
+  assert.deepEqual(week.days.map((d: { state: string }) => d.state), ['OPEN', 'OPEN', 'LOCKED', 'LOCKED', 'LOCKED'], '월요일 문제도 계속 열림')
+  assert.ok(week.intro, '시작 이야기는 그 주 첫 진입 때 보이도록 매일 채움')
+  assert.equal(week.introSeen, false)
+  assert.equal(week.ending, 'NOT_ENDED')
+  assert.equal(week.outro, null, '엔딩 전에는 종료 이야기·정답을 비움')
+  assert.equal(week.answer, null)
+  assert.equal(week.candidates.length, 4)
   assert.equal(week.review.open, false)
 
-  const closed = week.days.find((d: { state: string; attemptStatus: string }) => d.state === 'LOCKED' && d.attemptStatus === 'NOT_STARTED')
-  if (closed) assert.equal((await call(`/missions/${closed.missionId}/attempts`, { context: 'THEME_DAY' })).data.code, 'THEME_DAY_CLOSED')
+  const locked = week.days.find((d: { state: string; attemptStatus: string }) => d.state === 'LOCKED' && d.attemptStatus === 'NOT_STARTED')
+  if (locked) assert.equal((await call(`/missions/${locked.missionId}/attempts`, { context: 'THEME_DAY' })).data.code, 'THEME_DAY_CLOSED')
+  const monday = week.days[0]
+  if (monday.attemptStatus === 'NOT_STARTED')
+    assert.equal((await call(`/missions/${monday.missionId}/attempts`, { context: 'THEME_DAY' })).status, 201, '지난 요일 공개 문제도 새로 시작')
   assert.equal((await call('/students/me/weekly-theme/review-views', {})).data.code, 'THEME_REVIEW_NOT_ALLOWED')
 
   weekday(5) // 토요일
   const weekend = (await call('/students/me/weekly-theme')).data
   assert.equal(weekend.review.open, true)
+  assert.ok(weekend.days.every((d: { state: string }) => d.state === 'OPEN'), '토요일엔 안 푼 문제도 새로 풀기')
   const before = balanceOf(childId)
   assert.equal((await call('/students/me/weekly-theme/review-views', {})).data.firstViewThisWeek, true)
   assert.equal((await call('/students/me/weekly-theme/review-views', {})).data.firstViewThisWeek, false)
   assert.equal(balanceOf(childId), before + 10, '되돌아보기 열람 적립은 주 1회')
+})
+
+test('주간 테마 일요일: 무료는 닫힘(풀기·되돌아보기·새 이야기 거부), 프리미엄은 토요일과 같음', async () => {
+  weekday(6)
+  await parent()
+  const children = (await call('/children')).data.items as { childId: string; plan?: string }[]
+  const freeChild = children.find((c) => c.plan === 'FREE')!
+  const premiumChild = children.find((c) => c.plan === 'PREMIUM')!
+  await student(freeChild.childId)
+  const free = (await call('/students/me/weekly-theme')).data
+  assert.ok(free.days.every((d: { state: string }) => d.state === 'CLOSED'))
+  assert.equal(free.review.open, false)
+  assert.equal((await call('/students/me/weekly-theme/review-views', {})).data.code, 'THEME_REVIEW_NOT_ALLOWED')
+  assert.equal((await call('/students/me/weekly-theme/story-views', { kind: 'INTRO' })).data.code, 'THEME_STORY_NOT_ALLOWED')
+
+  await parent()
+  await student(premiumChild.childId)
+  const premium = (await call('/students/me/weekly-theme')).data
+  assert.ok(premium.days.every((d: { state: string }) => d.state === 'OPEN'))
+  assert.equal(premium.review.open, true)
+  assert.equal((await call('/students/me/weekly-theme/story-views', { kind: 'INTRO' })).status, 200)
+})
+
+test('이야기 열람: INTRO는 주 1회 기록, OUTRO는 엔딩 전 409, 형식 밖 400', async () => {
+  weekday(2)
+  const childId = await parent()
+  await student(childId)
+  assert.equal((await call('/students/me/weekly-theme/story-views', { kind: 'INTRO' })).data.firstViewThisWeek, true)
+  assert.equal((await call('/students/me/weekly-theme/story-views', { kind: 'INTRO' })).data.firstViewThisWeek, false)
+  assert.equal((await call('/students/me/weekly-theme')).data.introSeen, true)
+  assert.equal((await call('/students/me/weekly-theme/story-views', { kind: 'OUTRO' })).data.code, 'THEME_STORY_NOT_ALLOWED')
+  assert.equal((await call('/students/me/weekly-theme/story-views', { kind: 'MIDDLE' })).status, 400)
+})
+
+test('정답 고르기: 후보 밖 400, 금요일 문제 마무리 전 409. 맞히면 바로 엔딩, 틀리면 토요일 금요일 다시 풀기 뒤 엔딩', async () => {
+  weekday(4)
+  const childId = await parent()
+  await student(childId)
+  assert.equal((await call('/students/me/weekly-theme/answer-picks', { pick: '아무개' })).status, 400)
+  const fridayOpen = (await call('/students/me/weekly-theme')).data.days[4]
+  if (fridayOpen.attemptStatus !== 'COMPLETED')
+    assert.equal((await call('/students/me/weekly-theme/answer-picks', { pick: MOCK_STORY.candidates[0] })).data.code, 'THEME_PICK_NOT_ALLOWED')
+
+  // 엔딩 판정은 목업 함수에 금요일 문제 마무리 상태를 넣어 확인한다.
+  const done = [...THINKING_ORDER].map((t, i) => ({ id: `m${i}`, title: t, thinkingType: t, status: 'COMPLETED' })) as unknown as Mission[]
+  const week = `s1:${weekStart()}`
+  retentionState.picks[week] = { pick: MOCK_STORY.answer, correct: true, at: '2026-11-13T01:00:00Z' }
+  const right = weeklyThemeFor('s1', done, 4)
+  assert.deepEqual([right.ending, right.answer, right.outro], ['ENDED', MOCK_STORY.answer, MOCK_STORY.outro])
+  assert.ok(right.days.every((d) => d.clue), '마무리한 문제의 단서가 열림')
+
+  retentionState.picks[week] = { pick: MOCK_STORY.candidates[0], correct: false, at: '2026-11-13T01:00:00Z' }
+  assert.equal(weeklyThemeFor('s1', done, 4).ending, 'NOT_ENDED', '틀리면 바로 엔딩 아님')
+  weekday(5)
+  retentionState.completions[`s1:${weekStart()}:m4`] = { weekday: 5, at: '2026-11-14T01:00:00Z' }
+  const after = weeklyThemeFor('s1', done, 4)
+  assert.deepEqual([after.ending, after.answer], ['ENDED', MOCK_STORY.answer], '토요일 금요일 문제 다시 풀기 마무리 뒤 엔딩·정답 공개')
 })
 
 test('학부모 리포트: 일일·주간 구분, 일일 리포트로만 고정 대화를 만든다', async () => {

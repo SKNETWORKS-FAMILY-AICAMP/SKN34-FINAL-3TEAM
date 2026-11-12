@@ -173,6 +173,10 @@ export const THEME_DAYS: ThemeDay[] = ['MON', 'TUE', 'WED', 'THU', 'FRI']
 export const DAY_LABELS: Record<ThemeDay, string> = { MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금' }
 export type DayState = 'LOCKED' | 'OPEN' | 'CLOSED'
 export type AttemptContext = 'THEME_DAY' | 'THEME_REVIEW' | 'EXTRA'
+/** 그 주 엔딩(state-diagram 3.2.2, learning #484). 정답을 맞히면 바로, 틀리면 금요일 문제 다시 풀기 마무리 뒤 ENDED. */
+export type ThemeEnding = 'NOT_ENDED' | 'ENDED'
+/** 시작·종료 이야기(api-spec 2.11 story-views). */
+export type StoryKind = 'INTRO' | 'OUTRO'
 export interface WeeklyThemeDay {
   day: ThemeDay
   missionId: string
@@ -180,21 +184,49 @@ export interface WeeklyThemeDay {
   state: DayState
   attemptStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED'
   title?: string
+  /** 그날 단서. 그 문제를 그 주에 학습 완료한 뒤에만 채워진다(#484). */
+  clue: string | null
+  /** 그날 단서로 빠지는 후보(빈 배열 가능). clue와 같은 조건. */
+  rulesOut: string[] | null
+  /** 그 요일 문제를 그 요일(KST) 안에 학습 완료(당일 풀이, #484). */
+  completedOnDay: boolean
 }
 export interface WeeklyTheme {
   themeId: string
   weekStart: string
   title: string
+  /** 시작 이야기. 그 주 첫 진입 때 보이도록 요일과 무관하게 채워진다(#484). */
   intro: string | null
   reused: boolean
   days: WeeklyThemeDay[]
   review: { open: boolean; missions: { missionId: string; completed: boolean; missed: boolean; title?: string }[] }
+  /** 개근: 월~금 다섯 문제를 각 요일 안에 학습 완료(개정 전 이름 "완주"). */
   completed: boolean
+  /** 주간 완주: 다섯 문제를 토요일 23:59:59(KST)까지 학습 완료(일요일 완료 제외, #484). */
+  finished: boolean
+  ending: ThemeEnding
+  /** 한 주 큰 질문과 후보(#438). 사람이 쓴 테마는 비어 있을 수 있다. */
+  bigQuestion: string | null
+  candidates: string[]
+  introImageUrl: string | null
+  introVideoUrl: string | null
+  introMotion: ThemeMotion | null
+  introSeen: boolean
+  outroSeen: boolean
+  /** 종료 이야기·그림·영상·정답·결정적 단서는 엔딩(ENDED) 뒤에만 채워진다. */
+  outro: string | null
+  outroImageUrl: string | null
+  outroVideoUrl: string | null
+  outroMotion: ThemeMotion | null
+  answer: string | null
+  answerClue: string | null
 }
 const isDay = (v: unknown): v is ThemeDay => typeof v === 'string' && (THEME_DAYS as string[]).includes(v)
 const isType = (v: unknown): v is ThinkingType => typeof v === 'string' && (THINKING_ORDER as string[]).includes(v)
 const pick = <T extends string>(v: unknown, values: readonly T[], fallback: T): T =>
   typeof v === 'string' && (values as readonly string[]).includes(v) ? (v as T) : fallback
+const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v : null)
+const texts = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()) : null)
 
 /** 이번 주 테마. 테마가 없으면(404·빈 응답) null을 돌려 기존 홈만 보이게 한다. */
 export function readWeeklyTheme(raw: unknown): WeeklyTheme | null {
@@ -205,7 +237,7 @@ export function readWeeklyTheme(raw: unknown): WeeklyTheme | null {
     themeId: v.themeId,
     weekStart: typeof v.weekStart === 'string' ? v.weekStart : '',
     title: typeof v.title === 'string' ? v.title : '이번 주 테마',
-    intro: typeof v.intro === 'string' && v.intro ? v.intro : null,
+    intro: text(v.intro),
     reused: v.reused === true,
     days: v.days.flatMap((x) => {
       const d = (x ?? {}) as Record<string, unknown>
@@ -218,6 +250,9 @@ export function readWeeklyTheme(raw: unknown): WeeklyTheme | null {
           state: pick(d.state, ['LOCKED', 'OPEN', 'CLOSED'] as const, 'LOCKED'),
           attemptStatus: pick(d.attemptStatus, ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'] as const, 'NOT_STARTED'),
           ...(typeof d.title === 'string' ? { title: d.title } : {}),
+          clue: text(d.clue),
+          rulesOut: texts(d.rulesOut),
+          completedOnDay: d.completedOnDay === true,
         },
       ]
     }),
@@ -231,7 +266,108 @@ export function readWeeklyTheme(raw: unknown): WeeklyTheme | null {
       }),
     },
     completed: v.completed === true,
+    finished: v.finished === true,
+    ending: pick(v.ending, ['NOT_ENDED', 'ENDED'] as const, 'NOT_ENDED'),
+    bigQuestion: text(v.bigQuestion),
+    candidates: texts(v.candidates) ?? [],
+    introImageUrl: text(v.introImageUrl),
+    introVideoUrl: text(v.introVideoUrl),
+    introMotion: readThemeMotion(v.introMotion),
+    introSeen: v.introSeen === true,
+    outroSeen: v.outroSeen === true,
+    outro: text(v.outro),
+    outroImageUrl: text(v.outroImageUrl),
+    outroVideoUrl: text(v.outroVideoUrl),
+    outroMotion: readThemeMotion(v.outroMotion),
+    answer: text(v.answer),
+    answerClue: text(v.answerClue),
   }
+}
+
+/** 테마가 닫힌 날(무료 일요일): 공개된 문제도 되돌아보기도 없다. 날짜는 서버가 정하므로 응답으로만 판단한다. */
+export const themeClosed = (theme: WeeklyTheme) => !theme.review.open && theme.days.every((d) => d.state !== 'OPEN')
+
+/**
+ * 홈에 들어왔을 때 먼저 띄울 이야기(에픽 #436 결정 요약, #483 개정).
+ * 시작은 그 주 첫 진입(아직 안 봄), 종료는 엔딩 뒤 아직 안 봄. 무료 일요일은 새로 띄우지 않는다(다시 보기만).
+ */
+export function storyToShow(theme: WeeklyTheme): StoryKind | null {
+  if (themeClosed(theme)) return null
+  if (!theme.introSeen && theme.intro) return 'INTRO'
+  if (theme.ending === 'ENDED' && !theme.outroSeen && theme.outro) return 'OUTRO'
+  return null
+}
+
+// ---------- 장면 움직임 형식 v1 (ai OpenAPI ThemeMotion, #437 기준안) ----------
+export interface MotionPoint { x: number; y: number; zoom: number }
+export type MotionShape = 'circle' | 'leaf' | 'petal' | 'drop' | 'star' | 'snow' | 'bubble' | 'confetti'
+export interface ThemeMotion {
+  version: 1
+  transition: { kind: 'none' | 'fade' | 'slide-left' | 'slide-right' | 'zoom'; seconds: number }
+  camera: { from: MotionPoint; to: MotionPoint; seconds: number } | null
+  speakers: Record<string, MotionPoint>
+  effects: { shape: MotionShape; color: string; count: number; size: number; direction: number; speed: number; opacity: number }[]
+  /** 시작·종료 영상 위에 웹이 띄우는 컷 문구(초). */
+  captions: { start: number; end: number; text: string }[]
+  /** 요일 장면 살펴보기(선택 칸). 시작·종료는 빈 배열. */
+  spots: { x: number; y: number; label: string; line: string; evidence: boolean }[]
+}
+const MOTION_SHAPES: MotionShape[] = ['circle', 'leaf', 'petal', 'drop', 'star', 'snow', 'bubble', 'confetti']
+const inRange = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max
+const isPoint = (v: unknown): v is MotionPoint => {
+  const p = (v ?? {}) as Record<string, unknown>
+  return inRange(p.x, 0, 100) && inRange(p.y, 0, 100) && inRange(p.zoom, 1, 1.4)
+}
+const point = (p: MotionPoint): MotionPoint => ({ x: p.x, y: p.y, zoom: p.zoom })
+
+/**
+ * 움직임 JSON은 learning이 칸 검사 없이 저장한 그대로라, 형식 v1 범위를 하나라도 벗어나면 null(그림만 보임, #440).
+ * 모르는 칸은 버리고 아는 칸만 돌려준다.
+ */
+export function readThemeMotion(raw: unknown): ThemeMotion | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const v = raw as Record<string, unknown>
+  const transition = (v.transition ?? {}) as Record<string, unknown>
+  const camera = v.camera as Record<string, unknown> | null | undefined
+  const speakers = v.speakers
+  if (v.version !== 1) return null
+  if (!(['none', 'fade', 'slide-left', 'slide-right', 'zoom'] as unknown[]).includes(transition.kind) || !inRange(transition.seconds, 0.3, 1.2)) return null
+  if (camera !== null && (typeof camera !== 'object' || !isPoint(camera.from) || !isPoint(camera.to) || !inRange(camera.seconds, 8, 20))) return null
+  if (!speakers || typeof speakers !== 'object' || Array.isArray(speakers) || !Object.values(speakers).every(isPoint)) return null
+  if (!Array.isArray(v.effects) || v.effects.length > 2 || !Array.isArray(v.captions) || v.captions.length > 8) return null
+  const spots = v.spots === undefined ? [] : v.spots
+  if (!Array.isArray(spots) || spots.length > 3) return null
+  const effects = v.effects.map((x) => (x ?? {}) as Record<string, unknown>)
+  if (!effects.every((e) => MOTION_SHAPES.includes(e.shape as MotionShape) && typeof e.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(e.color) &&
+      Number.isInteger(e.count) && inRange(e.count, 1, 20) && inRange(e.size, 1, 6) && Number.isInteger(e.direction) && inRange(e.direction, 0, 359) &&
+      inRange(e.speed, 2, 20) && inRange(e.opacity, 0.2, 0.8))) return null
+  const captions = v.captions.map((x) => (x ?? {}) as Record<string, unknown>)
+  if (!captions.every((c) => inRange(c.start, 0, Infinity) && inRange(c.end, 0, Infinity) && (c.end as number) >= (c.start as number) &&
+      typeof c.text === 'string' && c.text.length <= 30)) return null
+  const marks = spots.map((x) => (x ?? {}) as Record<string, unknown>)
+  if (!marks.every((s) => inRange(s.x, 0, 100) && inRange(s.y, 0, 100) && typeof s.label === 'string' && s.label.length >= 1 && s.label.length <= 10 &&
+      typeof s.line === 'string' && s.line.length >= 1 && s.line.length <= 30 && typeof s.evidence === 'boolean')) return null
+  return {
+    version: 1,
+    transition: { kind: transition.kind as ThemeMotion['transition']['kind'], seconds: transition.seconds as number },
+    camera: camera ? { from: point(camera.from as MotionPoint), to: point(camera.to as MotionPoint), seconds: camera.seconds as number } : null,
+    speakers: Object.fromEntries(Object.entries(speakers as Record<string, MotionPoint>).map(([k, p]) => [k, point(p)])),
+    effects: effects.map((e) => ({
+      shape: e.shape as MotionShape, color: e.color as string, count: e.count as number, size: e.size as number,
+      direction: e.direction as number, speed: e.speed as number, opacity: e.opacity as number,
+    })),
+    captions: captions.map((c) => ({ start: c.start as number, end: c.end as number, text: c.text as string })),
+    spots: marks.map((s) => ({ x: s.x as number, y: s.y as number, label: s.label as string, line: s.line as string, evidence: s.evidence as boolean })),
+  }
+}
+
+// ---------- 큰 질문 정답 고르기 (api-spec 2.11 answer-picks, #484·#550) ----------
+export interface AnswerPickResult { correct: boolean; ending: ThemeEnding; answer: string | null }
+export function readAnswerPick(raw: unknown): AnswerPickResult {
+  const v = (raw ?? {}) as Record<string, unknown>
+  if (typeof v.correct !== 'boolean' || (v.ending !== 'NOT_ENDED' && v.ending !== 'ENDED'))
+    throw new Error('정답 확인 결과를 받지 못했어요. 다시 확인해 주세요.')
+  return { correct: v.correct, ending: v.ending, answer: v.ending === 'ENDED' ? text(v.answer) : null }
 }
 /** KST 기준 요일(월=0 … 일=6). */
 export function kstWeekday(now = new Date()) {

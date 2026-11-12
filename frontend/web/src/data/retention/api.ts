@@ -1,6 +1,7 @@
 import { apiFetch } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import {
+  readAnswerPick,
   readCommunityPosts,
   readCommunitySettings,
   readLookItems,
@@ -10,12 +11,14 @@ import {
   readWeeklyTheme,
 } from '../../domain/retention.ts'
 import type {
+  AnswerPickResult,
   CommunityPost,
   CommunitySettings,
   LookItem,
   MyCommunityPost,
   Points,
   Reaction,
+  StoryKind,
   WeeklyTheme,
 } from '../../domain/retention.ts'
 
@@ -48,6 +51,13 @@ export const retentionApi = {
   recordReviewView: async (): Promise<void> => {
     await apiFetch<unknown>('/students/me/weekly-theme/review-views', { method: 'POST' })
   },
+  /** 시작·종료 이야기 열람 기록(주 1회 멱등, 허용 요일·엔딩 조건은 learning 판정). */
+  recordStoryView: async (kind: StoryKind): Promise<void> => {
+    await apiFetch<unknown>('/students/me/weekly-theme/story-views', { ...json({ kind }), cache: 'no-store' })
+  },
+  /** 큰 질문 정답 고르기(한 주 한 번, 고를 수 없으면 409 THEME_PICK_NOT_ALLOWED). */
+  pickAnswer: async (pick: string): Promise<AnswerPickResult> =>
+    readAnswerPick(await apiFetch<unknown>('/students/me/weekly-theme/answer-picks', { ...json({ pick }), cache: 'no-store' })),
 
   // 커뮤니티 (2.9)
   communitySettings: async (signal?: AbortSignal): Promise<CommunitySettings> =>

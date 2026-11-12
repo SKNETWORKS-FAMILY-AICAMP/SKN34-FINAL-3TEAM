@@ -75,6 +75,12 @@ interface State {
   reviewViews: string[]
   items: MockLookItem[]
   themes: MockWeeklyTheme[]
+  /** `학생:주:INTRO|OUTRO` 이야기 열람 기록(주 1회). */
+  storyViews: string[]
+  /** `학생:주` → 큰 질문 정답 고르기(한 주 한 번). */
+  picks: Record<string, { pick: string; correct: boolean; at: string }>
+  /** `학생:주:미션` → 마지막 학습 완료 요일(0=월 … 6=일)·시각. 당일 풀이·틀린 뒤 다시 풀기 판정에 쓴다. */
+  completions: Record<string, { weekday: number; at: string }>
 }
 
 const now = () => new Date().toISOString()
@@ -97,6 +103,9 @@ const empty = (): State => ({
   reviewViews: [],
   items: seedItems(),
   themes: [],
+  storyViews: [],
+  picks: {},
+  completions: {},
 })
 export const retentionState: State = (() => {
   if (typeof sessionStorage === 'undefined') return empty()
@@ -222,36 +231,103 @@ export function themeMissions(missions: Mission[], grade: number) {
     days: picked.slice(0, 5).map((mission, i) => ({ day: THEME_DAYS[i], mission })),
   }
 }
-export function weeklyThemeFor(studentId: string, missions: Mission[], grade: number) {
+/**
+ * 가상 테마의 큰 질문·후보·요일 단서(#438 모양). 단서는 rulesOut이 빈 날(힌트)도 섞고,
+ * 마지막 틀린 후보는 목요일에 빠진다(기준안 "금요일 전에 답이 드러나지 않게").
+ */
+export const MOCK_STORY = {
+  bigQuestion: '마을 시계탑의 종을 밤마다 몰래 울린 건 누구일까?',
+  candidates: ['다람쥐 우체부', '고양이 빵집 주인', '부엉이 선생님', '토끼 정원사'],
+  answer: '부엉이 선생님',
+  clues: [
+    { clue: '종 아래에 도토리 껍질이 하나도 없었어요.', rulesOut: ['다람쥐 우체부'] },
+    { clue: '그날 밤 빵집은 일찍 불이 꺼져 있었어요.', rulesOut: ['고양이 빵집 주인'] },
+    { clue: '종은 늘 밤 열두 시에만 울렸어요.', rulesOut: [] },
+    { clue: '정원사는 그 시각 연못가에서 물을 주고 있었어요.', rulesOut: ['토끼 정원사'] },
+    { clue: '종 옆 난간에 커다란 깃털 하나가 걸려 있었어요.', rulesOut: [] },
+  ],
+  outro: '부엉이 선생님은 밤에 잠들지 못하는 아기 새들을 위해 종을 울려 자장가 시간을 알려 주고 있었어요. 마을 사람들은 이제 열두 시 종소리를 들으면 미소를 지어요.',
+}
+const FRIDAY = 4
+const isPremium = (plan?: 'FREE' | 'PREMIUM') => plan === 'PREMIUM'
+/** 날짜 판정은 learning 몫: 목업은 요일(sessionStorage로 바꿔 보기)과 요금제로만 흉내 낸다. */
+export function weekRules(weekday: number, plan?: 'FREE' | 'PREMIUM') {
+  const sunday = weekday === 6
+  const sundayTheme = sunday && isPremium(plan)
+  return {
+    sundayTheme,
+    /** 무료 일요일: 테마 닫힘(풀기·다시 풀기·새 이야기·정답 고르기 불가). */
+    closed: sunday && !sundayTheme,
+    /** 토요일·프리미엄 일요일: 안 푼 문제 새로 풀기·다시 풀기·되돌아보기. */
+    weekend: weekday === 5 || sundayTheme,
+  }
+}
+const completionKey = (studentId: string, missionId: string) => `${studentId}:${weekStart()}:${missionId}`
+/** 학습 완료 시각을 남긴다(core가 아닌 learning 판정 흉내: 당일 풀이·틀린 뒤 금요일 다시 풀기). */
+export function recordCompletion(studentId: string, missionId: string) {
+  retentionState.completions[completionKey(studentId, missionId)] = { weekday: mockWeekday(), at: now() }
+}
+export function weeklyThemeFor(studentId: string, missions: Mission[], grade: number, plan?: 'FREE' | 'PREMIUM') {
   const weekday = mockWeekday()
+  const rules = weekRules(weekday, plan)
   const theme = themeMissions(missions, grade)
-  const weekend = weekday >= 5
-  const days = theme.days.map(({ day, mission }, i) => ({
-    day,
-    missionId: mission.id,
-    thinkingType: mission.thinkingType,
-    title: mission.title,
-    state: weekend || i < weekday ? 'CLOSED' : i === weekday ? 'OPEN' : 'LOCKED',
-    attemptStatus: mission.status ?? 'NOT_STARTED',
-  }))
-  const viewed = retentionState.reviewViews.includes(`${studentId}:${weekStart()}`)
+  const week = `${studentId}:${weekStart()}`
+  const days = theme.days.map(({ day, mission }, i) => {
+    const attemptStatus = mission.status ?? 'NOT_STARTED'
+    const done = attemptStatus === 'COMPLETED'
+    const completion = retentionState.completions[completionKey(studentId, mission.id)]
+    return {
+      day,
+      missionId: mission.id,
+      thinkingType: mission.thinkingType,
+      title: mission.title,
+      // 공개된 문제는 토요일(프리미엄 일요일)까지 쌓여 열려 있다. 무료 일요일은 모두 닫힘(#484).
+      state: rules.closed ? 'CLOSED' : rules.weekend || i <= weekday ? 'OPEN' : 'LOCKED',
+      attemptStatus,
+      clue: done ? MOCK_STORY.clues[i].clue : null,
+      rulesOut: done ? MOCK_STORY.clues[i].rulesOut : null,
+      completedOnDay: done && completion?.weekday === i,
+    }
+  })
+  const picked = retentionState.picks[week]
+  const fridayMission = days[FRIDAY]?.missionId
+  const fridayRedo = fridayMission ? retentionState.completions[completionKey(studentId, fridayMission)] : undefined
+  // 틀렸으면 고른 뒤 토요일(프리미엄 일요일) 금요일 문제 다시 풀기를 마무리해야 엔딩(맞든 틀리든 정답 공개).
+  const ended = !!picked && (picked.correct || (!!fridayRedo && fridayRedo.weekday >= 5 && fridayRedo.at > picked.at))
+  const hasStory = days.length === 5
   return {
     themeId: theme.themeId,
     weekStart: weekStart(),
     title: theme.title,
-    intro: weekday === 0 ? theme.intro : null,
+    intro: theme.intro,
     reused: theme.reused,
     days,
     review: {
-      open: weekend,
+      open: rules.weekend,
       missions: days.map((d) => ({
         missionId: d.missionId,
         title: d.title,
         completed: d.attemptStatus === 'COMPLETED',
-        missed: d.attemptStatus !== 'COMPLETED',
+        missed: d.state !== 'LOCKED' && d.attemptStatus !== 'COMPLETED',
       })),
     },
-    completed: viewed && days.length === 5 && days.every((d) => d.attemptStatus === 'COMPLETED'),
+    completed: days.length === 5 && days.every((d) => d.completedOnDay),
+    // 목업은 일요일 완료를 따로 세지 않는다(실제 판정은 learning #484).
+    finished: days.length === 5 && days.every((d) => d.attemptStatus === 'COMPLETED'),
+    ending: ended ? 'ENDED' : 'NOT_ENDED',
+    bigQuestion: hasStory ? MOCK_STORY.bigQuestion : null,
+    candidates: hasStory ? MOCK_STORY.candidates : null,
+    introImageUrl: null,
+    introVideoUrl: null,
+    introMotion: null,
+    introSeen: retentionState.storyViews.includes(`${week}:INTRO`),
+    outroSeen: retentionState.storyViews.includes(`${week}:OUTRO`),
+    outro: ended ? MOCK_STORY.outro : null,
+    outroImageUrl: null,
+    outroVideoUrl: null,
+    outroMotion: null,
+    answer: ended ? MOCK_STORY.answer : null,
+    answerClue: ended ? MOCK_STORY.clues[3].clue : null,
   }
 }
 
@@ -293,6 +369,7 @@ export function setCommunityEnabled(studentId: string, enabled: boolean) {
 }
 /** 마무리(학습 완료) 후 core가 하는 일: 미션당 최초 적립, 공개가 켜져 있으면 미션당 1개 공유. */
 export function onMissionCompleted(student: Child, mission: Pick<Mission, 'id' | 'title'>, answer: string, companion: CompanionId) {
+  recordCompletion(student.id, mission.id)
   earn(student.id, 'MISSION_COMPLETED', mission.id)
   if (!communityOf(student.id).enabled || !answer.trim()) return
   if (retentionState.posts.some((p) => p.studentId === student.id && p.missionId === mission.id)) return
