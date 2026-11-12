@@ -1021,6 +1021,7 @@ SKN34-FINAL-3TEAM/
 - `definitions.json`은 Helm `.Files` 접근 범위인 `platform-data` chart 안에 두고, compose도 같은 파일 마운트
 - 공통 코드: 공통 라이브러리 없이 서비스별 보유(이벤트 봉투·Outbox·AMQP 연결), `contracts/events` 스키마로 계약 테스트. 중복이 문제 될 때 `libs/` 검토
 - Docker 빌드 컨텍스트는 서비스 폴더, `contracts/` 계약 테스트는 CI에서만 실행
+- report PDF 실행 환경 설치(#539): report 전용 설치 스크립트를 CI와 이미지 빌드에서 재사용한다. OS 의존성·한글 글꼴·Chromium 다운로드를 분리해 실패한 단계만 최대 3회 실행하며, APT 파일 재시도 3회·HTTP/HTTPS 대기 30초를 적용한다. 계속 실패하면 CI/빌드를 실패로 종료하고 다른 Python 서비스 단계는 유지한다.
 - 모델 학습 코드(M2·M1·sLLM)는 `ml/`에서 관리, scoring·설명 sLLM 서버는 승인된 가중치(S3)만 로딩
 - 참고 레포 대비 추가: `contracts/`, `ml/`, `infrastructure/aws/` / 제외: `mobile/`, `ops-service`(LLMOps는 Langfuse + `evaluation/`로 시작, 필요 시 추가)
 

@@ -9,10 +9,8 @@ ENV UV_COMPILE_BYTECODE=1 \
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
-RUN .venv/bin/python -m playwright install --with-deps chromium \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends fonts-noto-cjk \
-    && apt-get clean
+COPY scripts/install_pdf_runtime.sh scripts/install_pdf_runtime.sh
+RUN sh scripts/install_pdf_runtime.sh .venv/bin/python -m playwright
 COPY app app
 COPY alembic.ini ./
 COPY migrations migrations
