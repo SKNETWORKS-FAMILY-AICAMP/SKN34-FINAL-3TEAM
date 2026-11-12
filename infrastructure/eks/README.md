@@ -116,8 +116,16 @@ NAT는 정지 버튼이 있는 자원이 아니다. 시간 요금을 없애려�
 
 2026-11-06 실행 기록: Karpenter 단계가 스크립트에 들어가기 전이라 NodePool `limits` 0·컨트롤러 0개를 kubectl로 먼저 적용한 뒤 `pause --execute`를 실행했다. RabbitMQ 미처리 메시지 0, RDS snapshot `sagomungchi-demo-db-pause-20261106-100937`과 EBS snapshot 4개 완료, 노드그룹 2개 0대, RDS stopped, 계정 내 실행 중 EC2 0대를 확인했다. `application` 노드 2대는 CoreDNS·EBS CSI·metrics-server PDB(허용 0) 때문에 약 15분 뒤 종료됐다. state 파일은 작업자 PC(저장소 밖)에 있다.
 
+2026-11-12 정지 중 고정비 추가 축소: 정지 상태 하루 약 7천 원(추정, 계정 SCP가 Cost Explorer 조회를 막아 청구 내역 미확인) 중 EKS 컨트롤 플레인 다음으로 큰 NAT·ALB를 지웠다. EKS 클러스터·노드그룹·PVC·RDS·S3·ECR·Secret은 그대로 둔다.
+- ALB `sagomungchi-demo-core`(Ingress `app/core-demo-edge`가 만든 것)와 대상 그룹 `k8s-app-coreserv-…` 삭제. ALB 공인 IP 2개도 함께 해제됨. LB Controller가 만든 보안 그룹 2개(`k8s-app-coredemo-…`·`k8s-traffic-…`)는 비용이 없어 남김
+- NAT `sagomungchi-demo-nat-2a`(`nat-0e2085c827c381d79`) 삭제, EIP 반납. private route table 두 개의 `0.0.0.0/0` 경로는 blackhole 상태로 남음(노드 0대라 영향 없음)
+- 삭제 전 ALB·리스너·규칙·대상 그룹·NAT·EIP·route table 설정은 작업자 PC(저장소 밖)에 JSON으로 보관. ALB 규칙에는 origin 헤더 값이 있어 저장소에 넣지 않는다
+- 예상 절감: 하루 약 3천 원(NAT 시간·EIP, ALB 시간·공인 IP). 남는 고정비는 EKS 컨트롤 플레인·EBS·스냅숏·RDS 저장소·S3·ECR·Secrets Manager·로그
+- RDS는 2026-11-06 01:19 UTC에 정지해 7일 뒤(2026-11-13 10:19 KST 무렵) 자동으로 켜진다. 켜지면 다시 정지한다(정지는 다시 최대 7일)
+
 ### 재개 순서와 완료 기준
 
+0. (2026-11-12 축소 이후) NAT를 다시 만든다. `demo_stack.py apply`는 NAT·EIP만 새로 만들고 **기존 private route table의 blackhole 경로는 바꾸지 않으므로**, 두 route table에 `aws ec2 replace-route --destination-cidr-block 0.0.0.0/0 --nat-gateway-id <새 NAT>`를 실행하고 `plan`이 차이 없음을 확인한다. ALB는 3단계에서 LB Controller가 Ingress로 다시 만들며 **DNS 이름이 바뀌므로** CloudFront `/api/*` origin을 새 ALB DNS로 바꾸고 origin 헤더·prefix list 제한이 유지되는지 확인한다.
 1. NAT·라우팅·Secret·ECR·S3가 유지되는지 확인하고 RDS를 시작해 available, endpoint·TLS·백업 설정을 확인한다.
 2. 두 노드그룹의 min/desired/max를 pause 때 저장한 값으로 복구한다. 노드 Ready와 VPC CNI·CoreDNS·EBS CSI·Pod Identity Agent를 확인한다. **노드 수만으로 AZ 배치가 보장되는 것은 아니다.** 2a/2b 양쪽 PVC를 연결할 수 있는 노드가 있는지 확인한다. 없으면 볼륨 affinity를 지우지 말고 해당 AZ 용량 문제를 해결한다.
 2.5. Karpenter 컨트롤러를 pause 전 replica로 되돌려 Ready를 확인하고, NodePool `limits`를 pause 전 값으로 되돌린다. 2026-11-06 state 파일처럼 Karpenter 값이 없으면 `demo-stack.json`의 `karpenter.defaults`(컨트롤러 1, CPU 4·메모리 16Gi)를 쓴다.

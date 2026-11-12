@@ -326,6 +326,31 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 - 시험 데이터(시도 약 2,800건, 대화 106건 등)는 2차 시험 뒤 보호자 화면의 자녀 삭제 절차로 정리. SQL로 직접 지우지 않음. 시험용 기기 해제·k6 비밀 파일 삭제도 그때
 - ECR `sagomungchi/llm-stub` 이미지는 2차 시험용으로 보존. 그 외 변경(스텁 배포, ai `OPENAI_BASE_URL`, core `JAVA_TOOL_OPTIONS`, PREMIUM 상품, 시험 구독)은 원복 완료
 
+## 9.5 정지 중 고정비 축소 (#573, 2026-11-12)
+
+데모는 2026-11-06부터 정지 상태(노드그룹 0대, RDS stopped)인데도 하루 약 7천 원이 나가 지원 예산을 넘을 우려가 있었다(#573). 계정 SCP가 Cost Explorer(`ce:GetCostAndUsage`)를 막아 서비스별 청구는 조회하지 못했고, 아래 금액은 서울 리전 공시 단가로 계산한 추정이다.
+
+| 항목 | 하루 추정 | 결정 |
+|---|---|---|
+| EKS 컨트롤 플레인 | 약 3,300원 | **유지.** 지우면 eksctl 재생성·RDS bootstrap·Secret 복구·초기 데이터가 필요한데 재생성 절차가 검증되지 않았고, 12/8 최종 시연 전에 다시 켜야 함 |
+| NAT 게이트웨이 + EIP | 약 2,100원 | **삭제.** 노드 0대라 외부 호출이 없음. 재개 때 다시 만듦 |
+| ALB + 공인 IP 2개 | 약 1,000원 | **삭제.** 재개 때 LB Controller가 Ingress로 다시 만듦 |
+| EBS(PVC 4개)·스냅숏·RDS 저장소·S3·ECR·Secrets Manager·로그 | 약 500~800원 | 유지(데이터 보존) |
+| RDS 인스턴스 | 정지 중 0 | 정지 최대 7일 뒤 자동 재시작(첫 재시작 2026-11-13 10:19 KST 무렵) → 그때마다 다시 정지 |
+
+실행(동섭 승인, 2026-11-12)
+- ALB `sagomungchi-demo-core`와 대상 그룹을 지웠다. ALB 공인 IP 2개가 함께 해제됐다. LB Controller가 만든 보안 그룹 2개는 비용이 없어 남겼다
+- NAT `sagomungchi-demo-nat-2a`를 지우고 EIP를 반납했다. 계정에 남은 EIP는 0개다. private route table 두 개의 `0.0.0.0/0`은 blackhole로 남는다(노드 0대라 영향 없음)
+- 지우기 전 ALB 리스너·규칙·대상 그룹, NAT·EIP·route table 설정을 작업자 PC(저장소 밖)에 JSON으로 보관했다. ALB 규칙에는 CloudFront origin 헤더 값이 있어 저장소에 넣지 않는다
+
+결과: 하루 약 7천 원 → 약 4천 원(추정, 약 43% 감소). 실제 금액은 결제 콘솔에서 며칠 치 청구로 확인한다.
+
+재개 때 추가 단계(→ [EKS 재개 순서 0단계](../../infrastructure/eks/README.md#재개-순서와-완료-기준))
+1. `demo_stack.py apply`로 NAT·EIP를 다시 만든다. 이 스크립트는 기존 route table의 경로를 고치지 않으므로 private route table 두 개에 `replace-route`로 새 NAT를 연결하고 `plan`이 차이 없음을 확인한다
+2. ALB는 LB Controller가 다시 만들며 DNS 이름이 바뀐다. CloudFront `/api/*` origin을 새 ALB DNS로 바꾸고 origin 헤더·prefix list 제한을 확인한다
+
+남은 고정비를 더 줄이려면 EKS 클러스터 삭제가 유일한 큰 항목이다. 재생성 절차 검증(#380 resume 검증과 함께) 전에는 하지 않는다.
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
