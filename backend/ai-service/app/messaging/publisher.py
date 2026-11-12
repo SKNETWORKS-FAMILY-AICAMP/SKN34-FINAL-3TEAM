@@ -32,6 +32,8 @@ CallType = Literal[
     "REPORT_EXPLANATION",
     "KNOWLEDGE_EMBEDDING",
     "THEME_VIDEO",
+    "MEMORY_EMBEDDING",
+    "MEMORY_EXPLANATION",
     "M2",
     "M1",
 ]

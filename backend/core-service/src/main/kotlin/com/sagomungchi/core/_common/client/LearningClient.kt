@@ -20,20 +20,13 @@ import java.net.SocketTimeoutException
 import java.time.Duration
 
 @Component
-class LearningClient private constructor(factory: InternalRestClientFactory, properties: LearningHttpProperties,
-                                       circuitName: String, failedResponse: (HttpExchangeResult) -> Boolean) {
+class LearningClient private constructor(factory: InternalRestClientFactory, readTimeout: Duration,
+                                       internal val circuit: CircuitBreaker) {
     @Autowired
     constructor(factory: InternalRestClientFactory, properties: LearningHttpProperties) :
-        this(factory, properties, "learning-json", { it.status >= 500 })
+        this(factory, properties.readTimeout, circuit("learning-json") { it.status >= 500 })
 
-    private val client = factory.create("learning", properties.readTimeout)
-    internal val circuit = CircuitBreaker.of(circuitName, CircuitBreakerConfig.custom()
-        .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
-        .slidingWindowSize(20).minimumNumberOfCalls(20).failureRateThreshold(50f)
-        .waitDurationInOpenState(Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1)
-        .recordExceptions(ResourceAccessException::class.java)
-        .recordResult { it is HttpExchangeResult && failedResponse(it) }
-        .build())
+    private val client = factory.create("learning", readTimeout)
 
     fun exchange(method: String, path: String, query: String? = null, body: ByteArray? = null,
                  ifMatch: String? = null, key: String? = null): HttpExchangeResult = try {
@@ -63,11 +56,30 @@ class LearningClient private constructor(factory: InternalRestClientFactory, pro
     companion object {
         private val RESPONSE_HEADERS = setOf("content-type", "etag", "retry-after", "location")
 
+        /** #167 공통 기준: 최근/최소 20건·실패율 50%·30초 차단·half-open 1건. 전송 오류와 [failedResponse] 응답을 실패로 센다 */
+        private fun circuit(name: String, failedResponse: (HttpExchangeResult) -> Boolean) = CircuitBreaker.of(name,
+            CircuitBreakerConfig.custom()
+                .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+                .slidingWindowSize(20).minimumNumberOfCalls(20).failureRateThreshold(50f)
+                .waitDurationInOpenState(Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1)
+                .recordExceptions(ResourceAccessException::class.java)
+                .recordResult { it is HttpExchangeResult && failedResponse(it) }
+                .build())
+
+        /**
+         * #566 추억 검색·설명(P27): 두 경로가 서킷 `learning-memory` 하나를 함께 쓰고 응답 시간만 다르다(architecture 1.3).
+         * learning의 ai 장애(5xx)가 일반 `learning-json`을 열지 않게 따로 둔다. 5xx는 실패로 센다
+         */
+        internal fun forMemory(factory: InternalRestClientFactory, search: Duration, explanation: Duration): Pair<LearningClient, LearningClient> {
+            val shared = circuit("learning-memory") { it.status >= 500 }
+            return LearningClient(factory, search, shared) to LearningClient(factory, explanation, shared)
+        }
+
         /** Application/AI failures remain error responses, but must not prevent FAILED reexecution. */
         internal fun forFeedback(factory: InternalRestClientFactory, properties: LearningHttpProperties,
-                                 json: ObjectMapper) = LearningClient(factory, properties, "learning-feedback") { response ->
+                                 json: ObjectMapper) = LearningClient(factory, properties.readTimeout, circuit("learning-feedback") { response ->
             response.status >= 500 && !learningProblem(response, json)
-        }
+        })
 
         private fun learningProblem(response: HttpExchangeResult, json: ObjectMapper): Boolean {
             val contentType = response.headers.entries.firstOrNull { it.key.equals("Content-Type", true) }
