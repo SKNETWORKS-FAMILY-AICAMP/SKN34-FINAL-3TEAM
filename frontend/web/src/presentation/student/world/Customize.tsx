@@ -6,8 +6,10 @@ import { ApiError } from '../../../data/apiClient.ts'
 import type { Child } from '../../../domain/classroom.ts'
 import { companionLabel, COMPANIONS, THEMES } from '../../../domain/studentLook.ts'
 import type { CompanionId, ThemeId } from '../../../domain/studentLook.ts'
+import { furnitureSkinName } from './roomAssets.ts'
 import {
   companionKey,
+  FURNITURE_SLOTS,
   isLookUnlocked,
   ITEM_SLOTS,
   NO_EQUIPPED,
@@ -35,10 +37,10 @@ const unlockMessage = (e: unknown) => {
  * 호수·뭉치는 처음부터 열려 있고, 나머지는 포인트로 한 번 해금하면 계속 쓸 수 있다(되돌리기·환급 없음).
  * #389의 해금 확정 응답과 소유 목록을 기준으로 선택·착용한다.
  */
-export function Customize({ child, onDone }: { child: Child; onDone: () => void }) {
-  return <StudentCustomize key={child.id} child={child} onDone={onDone} />
+export function Customize({ child, onDone, section }: { child: Child; onDone: () => void; section?: 'furniture' }) {
+  return <StudentCustomize key={child.id} child={child} onDone={onDone} section={section} />
 }
-function StudentCustomize({ child, onDone }: { child: Child; onDone: () => void }) {
+function StudentCustomize({ child, onDone, section }: { child: Child; onDone: () => void; section?: 'furniture' }) {
   const { t, companion } = useLook()
   const save = useSaveLook(child.id)
   const settings = useStudentLook(child.id)
@@ -82,6 +84,12 @@ function StudentCustomize({ child, onDone }: { child: Child; onDone: () => void 
   }
   const slotItems = (slot: ItemSlot): LookItem[] => (catalog ?? []).filter((i) => i.slot === slot)
   const hasItems = ITEM_SLOTS.some((s) => slotItems(s).length > 0)
+  // 내 방 가구 스킨(P27): 기본 스킨은 착용 칸이 빈 상태라 목록에 아이템이 없어도 고를 수 있다
+  const hasFurniture = FURNITURE_SLOTS.some((s) => slotItems(s).length > 0)
+  const furnitureRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (section === 'furniture' && hasFurniture) furnitureRef.current?.scrollIntoView({ block: 'start' })
+  }, [section, hasFurniture])
 
   const lockBadge = (itemKey: string) =>
     locked(itemKey) ? (
@@ -208,6 +216,42 @@ function StudentCustomize({ child, onDone }: { child: Child; onDone: () => void 
               </fieldset>
             ) : null,
           )}
+        </section>
+      )}
+      {hasFurniture && (
+        <section ref={furnitureRef} aria-labelledby="pick-furniture">
+          <h3 id="pick-furniture">내 방 가구를 바꿔 볼까?</h3>
+          {FURNITURE_SLOTS.map((slot) => (
+            <fieldset key={slot} className="st-slot" disabled={choosingBlocked}>
+              <legend>{SLOT_LABELS[slot]}</legend>
+              <label>
+                <input
+                  type="radio"
+                  name={`slot-${slot}`}
+                  checked={!equipped[slot]}
+                  onChange={() => choose({ equipped: { ...equipped, [slot]: null } })}
+                />
+                {furnitureSkinName(slot, null)} (기본)
+              </label>
+              {slotItems(slot).map((item) => (
+                <span key={item.itemKey} className="st-slot-item">
+                  <label>
+                    <input
+                      type="radio"
+                      name={`slot-${slot}`}
+                      disabled={!item.unlocked}
+                      checked={equipped[slot] === item.itemKey}
+                      onChange={() => choose({ equipped: { ...equipped, [slot]: item.itemKey } })}
+                    />
+                    {item.name}
+                    {!item.unlocked && ` · ${item.pricePoints}포인트`}
+                    {item.unlocked && !item.onSale && ' · 보유 중'}
+                  </label>
+                  {!item.unlocked && item.onSale && unlockButton(item.itemKey, item.name)}
+                </span>
+              ))}
+            </fieldset>
+          ))}
         </section>
       )}
       <p className="st-meta" role="status">

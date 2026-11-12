@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
-import { BookOpen, Coins, Lightbulb, LogOut, Map as MapIcon, Shapes, Settings, Users } from 'lucide-react'
+import { BookOpen, DoorOpen, Lightbulb, Map as MapIcon, Shapes, Settings, Users } from 'lucide-react'
 import { useStudentLook } from '../../../data/studentLook/queries.ts'
 import { DEFAULT_LOOK, THEMES } from '../../../domain/studentLook.ts'
 import type { Theme } from '../../../domain/studentLook.ts'
@@ -10,7 +10,7 @@ import { ThemeBackdrop } from './ThemeArt.tsx'
 import { LookContext, themeVars } from './lookContext.ts'
 import './student-world.css'
 
-export type StudentPage = 'home' | 'missions' | 'journal' | 'activities' | 'community' | 'points' | 'settings'
+export type StudentPage = 'home' | 'room' | 'album' | 'missions' | 'journal' | 'activities' | 'community' | 'points' | 'settings'
 
 /** 테마 바탕만 그리는 틀 (로그인 전 PIN 화면처럼 학생 설정을 아직 모를 때 기본 테마). */
 export function ThemeFrame({ t = THEMES.lake, children }: { t?: Theme; children: ReactNode }) {
@@ -31,14 +31,12 @@ export function StudentWorld({
   page,
   focus = false,
   onNavigate,
-  onLeave,
   children,
 }: {
   child: Child
   page: StudentPage | null
   focus?: boolean
   onNavigate: (page: StudentPage) => void
-  onLeave: () => void
   children: ReactNode
 }) {
   const query = useStudentLook(child.id)
@@ -46,12 +44,13 @@ export function StudentWorld({
   const t = THEMES[look.theme]
   const nav: { id: StudentPage; label: string; icon: typeof MapIcon }[] = [
     { id: 'home', label: '생각 지도', icon: MapIcon },
+    { id: 'room', label: '내 방', icon: DoorOpen },
     { id: 'missions', label: '미션 고르기', icon: Shapes },
     { id: 'journal', label: '내 공책', icon: BookOpen },
     { id: 'activities', label: '생각 활동', icon: Lightbulb },
     { id: 'community', label: '친구 생각', icon: Users },
-    { id: 'points', label: '내 포인트', icon: Coins },
-    { id: 'settings', label: '공개 설정', icon: Settings },
+    // 공개 설정·내 포인트·로그아웃은 설정 한 곳에서(#583). 학생 화면에 '학부모 로그인' 문구를 두지 않는다
+    { id: 'settings', label: '설정', icon: Settings },
   ]
   return (
     <LookContext.Provider value={{ t, companion: look.companion }}>
@@ -70,7 +69,7 @@ export function StudentWorld({
                 <button
                   type="button"
                   key={n.id}
-                  aria-current={page === n.id ? 'page' : undefined}
+                  aria-current={page === n.id || (n.id === 'room' && page === 'album') || (n.id === 'settings' && page === 'points') ? 'page' : undefined}
                   onClick={() => onNavigate(n.id)}
                 >
                   <span className="st-tile">
@@ -79,12 +78,6 @@ export function StudentWorld({
                   {n.label}
                 </button>
               ))}
-              <button type="button" className="st-leave" aria-label="학부모 로그인으로" onClick={onLeave}>
-                <span className="st-tile">
-                  <LogOut aria-hidden="true" />
-                </span>
-                학부모 로그인
-              </button>
             </nav>
           </header>
         )}

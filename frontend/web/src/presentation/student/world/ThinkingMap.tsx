@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Palette } from 'lucide-react'
+import { DoorOpen, Palette } from 'lucide-react'
 import { useStudentHome } from '../../../data/classroom/useClassroom.ts'
 import type { Child, Mission, ThinkingType } from '../../../domain/classroom.ts'
 import { thinkingLabels } from '../../../domain/classroom.ts'
@@ -34,6 +34,7 @@ export function ThinkingMap({
   onStartTheme,
   onType,
   onJournal,
+  onRoom,
 }: {
   child: Child
   onResume: (attemptId: string) => void
@@ -42,6 +43,8 @@ export function ThinkingMap({
   onStartTheme?: (mission: Mission, context: AttemptContext) => void
   onType: (type: ThinkingType) => void
   onJournal: () => void
+  /** 내 방 바로가기(P27, #556). 메뉴와 같은 곳 */
+  onRoom?: () => void
 }) {
   const { t, companion } = useLook()
   const [decorating, setDecorating] = useState(false)
@@ -171,6 +174,12 @@ export function ThinkingMap({
               <Palette aria-hidden="true" />
               꾸미기
             </button>
+            {onRoom && (
+              <button type="button" className="st-button st-decorate st-room-shortcut" onClick={onRoom}>
+                <DoorOpen aria-hidden="true" />
+                내 방 가기
+              </button>
+            )}
           </section>
         </div>
       )}

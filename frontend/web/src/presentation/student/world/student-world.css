@@ -561,6 +561,10 @@
   bottom: 0;
   background: var(--st-paper);
 }
+/* 내 방 바로가기(#556): 꾸미기 바로 왼쪽. 같은 자리에 겹쳐 꾸미기를 가리지 않게 */
+#class-journal .st-decorate.st-room-shortcut {
+  right: 170px;
+}
 #class-journal .st-decorate svg {
   width: 22px;
   height: 22px;
