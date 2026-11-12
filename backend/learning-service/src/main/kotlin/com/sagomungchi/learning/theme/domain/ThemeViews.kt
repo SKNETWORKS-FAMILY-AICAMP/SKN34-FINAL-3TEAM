@@ -40,7 +40,14 @@ data class WeeklyThemeView(
     val answerClue: String? = null,
     val finished: Boolean = false,
     val ending: ThemeEndingState = ThemeEndingState.NOT_ENDED,
+    val answerPick: AnswerPickView? = null,
 )
+
+/**
+ * 그 주 학생이 고른 큰 질문 정답 (#590, `theme_answer_pick`). 고르지 않았으면 응답 칸이 null.
+ * 엔딩 전에도 채운다: 알 수 있는 건 고른 후보가 맞았는지뿐이고 고를 때 응답으로 이미 받은 값(정답은 엔딩 뒤 answer로만)
+ */
+data class AnswerPickView(val pick: String, val correct: Boolean)
 
 /**
  * 요일 문제. attemptStatus는 이번 주 그 요일 문제(THEME_DAY) 최근 시도의 상태(`NOT_STARTED`·`IN_PROGRESS`·`COMPLETED`).
