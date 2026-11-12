@@ -3,11 +3,12 @@
 - C5: learning 지식 내부 API(`/internal/knowledge/...`) 요청·응답.
   learning이 구현(#469)하고 ai가 부름(#470)
 - C6: ai 임베딩 API(`/internal/embeddings`) 요청·응답.
-  오프라인 관계 후보 생성 등에서 사용하며 C5 조회는 호출하지 않음
+  오프라인 관계 후보 생성 등에서 사용하며 C5 조회는 호출하지 않음.
+  P27 추억 검색(learning)도 같은 API를 `purpose=MEMORY`로 부른다(#565, 사용량만 구분)
 - C7: 미션 초안 요청의 근거 칸(`knowledge` = C5 standards 응답 그대로)과 응답 `sources`
 - 검색 클라이언트 인터페이스(`KnowledgeRetriever`)는 #470 `retriever.py`가 구현한다
 
-JSON 필드는 camelCase(ApiModel). 학생 정보는 어떤 모델에도 없다.
+JSON 필드는 camelCase(ApiModel). 학생 이름·ID는 어떤 모델에도 없다.
 C5는 #470 합의에 따라 코드 조회만 제공한다. C6 임베딩 계약은 별도로 유지한다.
 """
 
@@ -25,6 +26,8 @@ EMBEDDING_MODEL = "text-embedding-3-small"  # 기준안
 EMBEDDING_DIMENSIONS = 1536  # 기준안
 EMBEDDING_MAX_TEXTS = 64  # 기준안: 한 요청 본문 개수 상한
 EMBEDDING_MAX_CHARS = 8000  # 기준안: 본문 하나 글자 수 상한
+# 사용 목적(P27 #565): 사용량 callType만 가름. 생략은 KNOWLEDGE(하위 호환)
+EmbeddingPurpose = Literal["KNOWLEDGE", "MEMORY"]
 
 # ---- C5 지식 API 상한·기본값 (기준안)
 STANDARDS_MAX_CODES = 10
@@ -166,6 +169,7 @@ class EmbeddingRequest(ApiModel):
     texts: list[Annotated[str, Field(min_length=1, max_length=EMBEDDING_MAX_CHARS)]] = Field(
         min_length=1, max_length=EMBEDDING_MAX_TEXTS
     )
+    purpose: EmbeddingPurpose = "KNOWLEDGE"
 
     @field_validator("texts")
     @classmethod

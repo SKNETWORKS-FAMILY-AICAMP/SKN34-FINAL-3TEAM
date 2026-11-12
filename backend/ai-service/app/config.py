@@ -158,6 +158,11 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
 
+    # 추억 설명 (P27 #565, api-spec 4.2.6). 기본 LLM(llm_provider) 설정·P12 시간(15초·재시도 1회)을
+    # 그대로 씀. fake는 개발용 가짜 문장(외부 호출·사용량 없음). 출력 상한은 기준안(2~3문장)
+    memory_explanation_provider: Literal["llm", "fake"] = "llm"
+    memory_explanation_max_tokens: int = 512
+
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0
 

@@ -2288,7 +2288,7 @@ classDiagram
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`(`m2_scores(body, timeout)`·`m1_check(body, timeout)`, 요청 본문은 `cross_check.m2_body`·`m1_body`가 만들고 `timeout`은 `SCORING_TIMEOUT`과 남은 판정 시간 중 작은 값, 비활성 응답이면 `None`), 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`(글 하나 검사는 `find_text_leaks()`, 미션 초안 검사와 공유). 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 여덟 이름(#280 `reportTemplate`, #354 `missionDraft` 5.4, #477 `reportExplanation`, #437 `themeDraft` 5.5 포함)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
+| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 아홉 이름(#280 `reportTemplate`, #354 `missionDraft` 5.4, #477 `reportExplanation`, #437 `themeDraft` 5.5, #565 `memoryExplanation` 5.6 포함)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -2551,6 +2551,14 @@ classDiagram
 - 지식 검색(#470): `plan_theme` 앞 `retrieve` 노드와 `check_theme` 범위 확인 자리만 두고 기능 스위치(기본 꺼짐)로 막는다
 - 프롬프트: `prompts.py` 내장 `theme-draft@1`(생성·검토 묶음), #68 레지스트리 이름 `themeDraft`·scope `ai/theme-draft`. 입력에 학생 정보 없음
 - 사용량: 글 생성·검토 `THEME_DRAFT`, 이미지 `THEME_IMAGE`, 영상 `THEME_VIDEO`. `THEME_VIDEO`는 사용량 이벤트 스키마와 core enum·DB 제약에 먼저 들어간 뒤에만 보냄(core 담당이 마이그레이션 준비)
+
+### 5.6 추억 설명 (memory_explanation, #565)
+
+| 클래스 | 위치 | 책임 |
+|---|---|---|
+| `MemoryExplanationService` | `memory_explanation/service.py` | `memoryExplanation` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(사용량 `MEMORY_EXPLANATION`), `MEMORY_EXPLANATION_PROVIDER=fake`면 `fake.fake_generated`. LLM 실패 503, 형식 502, 검사 실패 422 |
+| `checks` | `memory_explanation/checks.py` | 모듈 함수 `check()`(문장 2~3개·빈 문장 → 형식, 근거 번호 없음·범위 밖·근거에 없는 인용 → 거부)와 `compose()`(문장 끝에 `[n]` 붙이고 `citations` 모음). 원문 없이 사유 코드만 로그 |
+| `EmbeddingService`·`EmbeddingClient` | `embedding/service.py`, `llm/embeddings.py` | 요청 `purpose`(`KNOWLEDGE`·`MEMORY`)로 사용량 `KNOWLEDGE_EMBEDDING`·`MEMORY_EMBEDDING`을 가름(#565). 벡터·재시도는 같음 |
 
 ---
 

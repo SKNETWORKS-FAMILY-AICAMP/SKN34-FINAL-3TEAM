@@ -44,6 +44,7 @@ FAKE_EMBEDDING_MODEL = "fake-bigram-v1"
 DIMENSIONS = 1536  # 기준안(C6)
 MAX_TEXTS = 64  # 기준안(C6)
 MAX_CHARS = 8000  # 기준안(C6)
+PURPOSES = ("KNOWLEDGE", "MEMORY")  # 생략은 KNOWLEDGE (#565)
 MAX_CODES = 10  # 기준안(C5)
 THINKING_TYPES = ("ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT")
 KINDS = ("STANDARD", "DOMAIN", "CONTENT", "SUBJECT_GUIDE", "THINKING_TYPE")
@@ -117,8 +118,10 @@ class FakeEmbedder:
         return self.embed_sync(texts)
 
     def handle(self, body: Any) -> dict[str, Any]:
-        if not isinstance(body, dict) or set(body) != {"texts"}:
-            raise _bad("본문은 {texts}")
+        if not isinstance(body, dict) or not {"texts"} <= set(body) <= {"texts", "purpose"}:
+            raise _bad("본문은 {texts, purpose?}")
+        if body.get("purpose", "KNOWLEDGE") not in PURPOSES:
+            raise _bad(f"purpose는 {'·'.join(PURPOSES)}")
         return self.embed_sync(body["texts"])
 
     def as_embedder(self) -> Any:

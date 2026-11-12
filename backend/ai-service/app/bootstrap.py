@@ -20,6 +20,7 @@ from app.judgment.router import router as judgment_router
 from app.llm.embeddings import create_embedder
 from app.llm.media import create_media_clients
 from app.llm.providers import create_explanation_llm, create_llm, create_theme_llms
+from app.memory_explanation.router import router as memory_explanation_router
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
@@ -74,7 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 테마 그림·영상·S3 (#437). 버킷이 비면 None이라 그림·영상·움직임을 건너뛰고 경고만
     app.state.theme_image, app.state.theme_video = create_media_clients(settings, usage_recorder)
     app.state.theme_storage = create_storage(settings)
-    # 지식 임베딩 (#467). 사용량 callType KNOWLEDGE_EMBEDDING
+    # 임베딩 (#467). 사용량 callType은 purpose로 KNOWLEDGE_EMBEDDING·MEMORY_EMBEDDING(#565)
     app.state.embedder = create_embedder(settings, recorder=usage_recorder)
 
     async def rabbitmq_ready() -> bool:
@@ -115,5 +116,6 @@ def create_app() -> FastAPI:
     app.include_router(report_narrative_router)
     app.include_router(report_explanation_router)
     app.include_router(embedding_router)
+    app.include_router(memory_explanation_router)
     app.include_router(versions_router)
     return app

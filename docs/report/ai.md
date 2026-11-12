@@ -325,7 +325,7 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 
 ## 7. AI 활성 프롬프트 버전 수신 (#68)
 
-core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1` data는 같은 `id·kind·name·version·refId·artifactUri·scopes·revision·activatedAt` 필드를 사용한다. 이벤트에만 `previousVersionId`가 추가된다. 이미 있는 스키마를 재작성하지 않는다. core는 kind·name별 revision을 증가시키므로 ai는 정해진 `PROMPT` 이름(#437 이후 아래 표 일곱 개)만 골라 높은 revision을 적용하고 각 기능의 승인 scope를 정확히 검사한다. 형식 오류 이벤트는 원문·URI 없이 경고하고 ACK하여 재시도하지 않는다.
+core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1` data는 같은 `id·kind·name·version·refId·artifactUri·scopes·revision·activatedAt` 필드를 사용한다. 이벤트에만 `previousVersionId`가 추가된다. 이미 있는 스키마를 재작성하지 않는다. core는 kind·name별 revision을 증가시키므로 ai는 정해진 `PROMPT` 이름(아래 표와 `reportExplanation`(#477, 14장))만 골라 높은 revision을 적용하고 각 기능의 승인 scope를 정확히 검사한다. 형식 오류 이벤트는 원문·URI 없이 경고하고 ACK하여 재시도하지 않는다.
 
 | name | 승인 scope | ai 이미지에 포함된 기본 본문·버전 |
 |---|---|---|
@@ -336,6 +336,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | `reportTemplate` | `ai/report-template` | `analysis_agent/template_prompts.py`, `analysis-template@1` (#280) |
 | `missionDraft` | `ai/mission-draft` | `mission_draft/prompts.py`, `mission-draft@1` (#354) |
 | `themeDraft` | `ai/theme-draft` | `theme_draft/prompts.py`, `theme-draft@1`(생성·검토 프롬프트 한 묶음, #437) |
+| `memoryExplanation` | `ai/memory-explanation` | `memory_explanation/prompts.py`, `memory-explanation@1` (#565) |
 
 각 버전은 실제 system 문구와 user 본문 구성 함수를 이미지 코드에 함께 넣은 뒤에만 활성화할 수 있다. 현재 이미지는 위 기본 버전의 본문만 보유한다. core snapshot에 해당 활성 항목이 없으면 기본 버전을 사용한다. 보유하지 않은 활성 버전은 다른 본문에 새 버전명만 붙이지 않고 해당 기능 요청과 `/internal/versions`를 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 거부한다. 구독·core snapshot·이벤트 조정 또는 본문 준비가 되지 않으면 `/health/ready`의 `versions`는 DOWN이다. 요청 시작 때 본문·버전 참조를 잡아 분석의 분류/답변 두 LLM 호출과 되묻기 재생성까지 같은 버전을 사용한다.
 
@@ -566,7 +567,7 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 
 15장 계약 C6 구현. learning 지식 적재·관계 후보 스크립트·ai 검색 클라이언트가 이 API를 부른다.
 
-- `POST /internal/embeddings` `{texts[]}` → `200 {model, dimensions, vectors[]}`(순서·개수 보존). `400`(0개·65개 이상, 빈 글, 8,000자 초과), `502 AI_BAD_RESPONSE`·`503 AI_UNAVAILABLE`
+- `POST /internal/embeddings` `{texts[], purpose?}` → `200 {model, dimensions, vectors[]}`(순서·개수 보존). `400`(0개·65개 이상, 빈 글, 8,000자 초과), `502 AI_BAD_RESPONSE`·`503 AI_UNAVAILABLE`
 - 설정: `EMBEDDING_PROVIDER`(openai\|fake)·`EMBEDDING_MODEL`(text-embedding-3-small)·`EMBEDDING_DIMENSIONS`(1536)
 
 | 항목 | 결정 | 근거 |
@@ -656,3 +657,13 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 - 로컬 확인(2026-11-12): ADC로 갱신 성공, 없는 Veo 작업 조회가 404(인증 통과). 실제 영상 생성은 비용 때문에 하지 않음
 - 인프라 확인(담당자와): 인증 방식 확정, GCP 권한·Veo 동시 요청 할당량, ai-service 서비스 계정 생성(지금 `create: false`)과 S3 쓰기 IRSA, 영상 env(`THEME_VIDEO_ENABLED`·`VIDEO_PROJECT`·`VIDEO_LOCATION`·`VIDEO_MODEL`·`ASSET_S3_BUCKET`·`GOOGLE_APPLICATION_CREDENTIALS`), 자원 한도(메모리 512Mi·CPU 500m, 컷 다시 인코딩에 모자랄 수 있음, 측정 안 함)
 - 자격 증명을 못 찾으면 google-auth가 GCE 메타데이터 서버를 확인하는데 네트워크 정책이 `169.254.0.0/16`을 막아 기동이 몇 초 늦어질 수 있음(영상 켜짐 + `VIDEO_PROJECT`일 때만)
+
+## 18. 추억 임베딩 구분·추억 설명 API (#565, 2026-11-12)
+
+P27 추억 검색(에픽 #562)의 ai 몫. 계약은 [api-spec 4.2.4·4.2.6](../design/api-spec.md#426-추억-설명-p27-구현-565), 결정은 [리텐션 확장 9.2](retention-expansion.md#92-ai-추억-임베딩-구분추억-설명-api-565-2026-11-12)에 있다.
+
+- 임베딩: 요청 `purpose`(`KNOWLEDGE` 기본·`MEMORY`)로 사용량 `KNOWLEDGE_EMBEDDING`·`MEMORY_EMBEDDING`만 가른다. 생략한 기존 호출은 그대로 `KNOWLEDGE_EMBEDDING`. 가짜 `FakeEmbedder.handle`도 `purpose`를 받는다
+- 설명: `POST /internal/memory-explanations`, 모듈 `app/memory_explanation/`(router·service·models·checks·prompts·fake). 기본 LLM 1회, 사용량 `MEMORY_EXPLANATION`, 프롬프트 `memoryExplanation`(`memory-explanation@1`)
+- 설정: `MEMORY_EXPLANATION_PROVIDER`(`llm` 기본·`fake`), `MEMORY_EXPLANATION_MAX_TOKENS`(512, 기준안)
+- 시험: `tests/memory_explanation/`(정상·400·422·502·503·401, 가짜 규칙이 검사를 늘 통과, 로그에 원문 없음, OpenAPI 대조), `tests/embedding/`(purpose별 사용량·400), `scripts/tests/test_ai_openapi.py`(경로 11개·`/versions` 9개 키·응답 코드·purpose 값)
+- 확인 필요: 실제 LLM(기본 `OPENAI_MODEL`)으로 문장 수·근거 번호·인용 규칙 준수율과 응답 시간 실측(비용 때문에 #565에서는 하지 않음). learning #564 연동 뒤 kind에서 한 번 확인
