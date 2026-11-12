@@ -838,7 +838,7 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 | 정답 고르기 거부 | 후보 밖·빈 값 400 `VALIDATION_FAILED`, 큰 질문 없는 테마·금요일 문제 마무리 전·이미 고름·무료 일요일 409 `THEME_PICK_NOT_ALLOWED`(새 코드) | 기존 코드는 뜻이 달라 새로 둠 |
 | 요일 단서 공개 | `clue`·`rulesOut`은 그 문제를 그 주에 학습 완료(그 주 테마 시도 아무거나)한 뒤 | ai.md 17장 사용자 결정 2026-11-11 "미션을 마쳐야 단서", 기준은 학습 완료(사용자 결정 2026-11-12). #438은 `LOCKED`가 아닐 때였음 |
 | 당일 풀이 `completedOnDay` | 기존 계산 그대로(그 요일 문제 `THEME_DAY` 시도를 그 요일 KST 안에 학습 완료) | core #485 칸 이름 그대로 |
-| 주간 완주 `finished` | 다섯 문제 각각 그 주 테마 시도(`THEME_DAY`·`THEME_REVIEW`)로 일요일 00:00 KST 전에 학습 완료 | P21 "토요일 23:59:59까지, 일요일 제외". 요일 시도는 마무리만 하고 토요일 다시 풀기에서 학습 완료한 경우도 셈(새로 정한 값) |
+| 주간 완주 `finished` | 다섯 문제 각각 그 주 테마 시도(`THEME_DAY`·`THEME_REVIEW`)로 일요일 00:00 KST 전에 학습 완료 | P21 "토요일 23:59:59까지, 일요일 제외". "학습 완료"는 report #486의 `completedInWeek`(그 주 테마 시도 안에 학습 완료)와 같은 기준이라 report 검증(완주면 다섯 요일 모두 `completedInWeek`)과 맞음 |
 | 요약 `completedInWeek` | 그 주 테마 시도 안에 학습 완료(일요일 포함) | report #486 칸 이름 그대로. `days[].completed`는 이름·뜻 유지(#507) |
 | `review.missions[].missed` | 공개됐지만(`LOCKED` 아님) 아직 마무리하지 않음(진행 중 포함) | api-spec 2.11, 칸 이름은 core·report 호환으로 유지 |
 | `perfectAttendance` | 만들지 않음. 개근은 기존 `completed` | core #506 결정 |
@@ -859,8 +859,9 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 ### 같이 고친 파일
 
 - 설계: state-diagram 3.2.1·3.2.2(#506이 지우라고 한 "#484 구현 전까지 허용" 문구 포함), sequence-diagram 3.4·3.6.1·3.7, api-spec 오류 코드·상태값·2.9·2.11·4.1(공개 경로 `answer-picks` 줄은 core 확인 중 기준안), functional-spec 개정 요약·FN-RET-05, class-diagram 4.4, ERD 4.2.1(`theme_answer_pick`)·길이 대조 목록·attempt.context·학생 삭제, usecase·user-flow, README·docs/README 상태 문구
+- web: 학생 포인트 안내의 당일 풀이·주간 완주 "준비 중" 표시 제거(`domain/retention.ts` `POINT_RULES.preparing`, `StudentPoints.tsx`, `tests/retention.test.ts`). #525가 "#484가 칸을 내보내면 지운다"로 넘긴 일이고 #506 완료 조건(화면 안내 = 실제 적립)
 - 계약·검사: learning OpenAPI, `scripts/verify_db_schema.py`(음성 검사 3건), `test_weekly_theme_contract.py`(테마 5경로 `sundayTheme` 선언), `test_record_exists_openapi.py`(learning 경로 73 → 74), gitops local learning migration `revision` v17 → v18
-- learning 쪽에서 고치지 않은 다른 담당 몫: core `contracts/openapi/core-service.yaml`(4246·6514행 "#484 전까지" 설명)·`core-gateway.md` 18절 기준안 표시, core 공개 경로 `answer-picks`·`CommunityClient.PUBLIC_ERRORS`(core 담당에게 확인 중), web `domain/retention.ts`의 `preparing` 표시(web #487), report.md "#484 병합 뒤 실제 응답 대조"(report #486 남은 일)
+- learning 쪽에서 고치지 않은 다른 담당 몫: core `contracts/openapi/core-service.yaml`(4246·6514행 "#484 전까지" 설명)·`core-gateway.md` 18절 기준안 표시, core 공개 경로 `answer-picks`·`CommunityClient.PUBLIC_ERRORS`(core 담당에게 확인 중), report.md "#484 병합 뒤 실제 응답 대조"(report #486 남은 일)
 
 ### 한계
 
