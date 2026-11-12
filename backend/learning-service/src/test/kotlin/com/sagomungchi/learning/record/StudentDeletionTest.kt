@@ -174,6 +174,12 @@ class StudentDeletionTest {
         val theme = rows.publishedTheme(listOf(mission.id), week)
         jdbc.update("INSERT INTO theme_review_view (student_id, week_start, theme_id, viewed_at) VALUES (?, ?, ?, now())", student, week, theme)
         jdbc.update("INSERT INTO theme_story_view (student_id, week_start, kind, theme_id, viewed_at) VALUES (?, ?, 'INTRO', ?, now())", student, week, theme)
+        // 기념 액자(#559): 학생 삭제 때 같은 트랜잭션에서 물리 삭제(CASCADE 없음)
+        jdbc.update(
+            """INSERT INTO theme_frame (id, student_id, theme_id, theme_week_start, theme_version_id, awarded_at, seen_at, created_at)
+               SELECT ?, ?, id, week_start, published_version_id, now(), NULL, now() FROM weekly_theme WHERE id = ?""",
+            UUID.randomUUID(), student, theme,
+        )
         assertEquals(TABLES, counts(student).filterValues { it > 0 }.keys.toList(), "모든 표에 행이 있어야 삭제를 확인할 수 있음")
         return student
     }
@@ -233,6 +239,8 @@ class StudentDeletionTest {
             // 되돌아보기 열람 기록 (#385, ERD 4.4)
             "theme_review_view" to "x.student_id = ?",
             "theme_story_view" to "x.student_id = ?",
+            // 기념 액자 (#559, ERD 4.2.1·4.3)
+            "theme_frame" to "x.student_id = ?",
         )
         private val TABLES = OWNER.keys.toList()
 

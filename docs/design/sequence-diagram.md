@@ -873,6 +873,7 @@ sequenceDiagram
 - 임베딩은 이 트랜잭션에서 부르지 않는다(완료 응답 지연 없음, 3.10이 처리)
 - 프리미엄 일요일·자정 넘긴 이어하기 완료도 같은 경로라 액자 조건에 포함. 같은 회차 다시 풀기 완료는 UK로 새 액자 없음
 - 도입 전 기록은 배포 때 1회 소급 명령이 같은 조건으로 `theme_frame`(`seen_at` 채움)·`memory_search_doc`(`PENDING`)을 만든다
+- #559 구현(learning V19): `theme_frame` 지급은 회차 잠금(`pg_advisory_xact_lock`) 뒤 판정해 같은 회차 두 문제가 동시에 완료돼도 한쪽이 지급한다. 소급은 learning 기동 때마다 같은 SQL로 실행(`seen_at = awarded_at`, 멱등). `memory_search_doc` 등록은 아직 없음([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 
 ### 3.9 추억 검색·설명 (P27, 설계·구현 전)
 
