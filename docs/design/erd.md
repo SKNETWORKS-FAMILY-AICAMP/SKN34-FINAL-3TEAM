@@ -907,6 +907,20 @@ erDiagram
 - `student_look_equipment`: 학생·슬롯당 아이템 하나. 해금 여부와 아이템 슬롯 일치는 서비스 검증. 판매 중단 아이템도 해금했으면 착용 가능
 - 학생 삭제 확정(P09): `student.look_*` NULL과 같은 트랜잭션에서 착용 → 해금 → 원장 → 잔액 순서로 삭제(FK 순서)
 
+### 3.5.2 생활공간·추억 사용량 (P27, 설계·구현 전)
+
+2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 core 저장 구조. 구현 전이라 Mermaid·6장(실제 DB 대조 대상)에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션에서 Mermaid·6장으로 옮긴다. 마이그레이션 번호는 구현 때 정한다(기존 V35·V45는 고치지 않음).
+
+| 테이블 | 컬럼 | 제약·규칙 |
+|---|---|---|
+| `room_frame_slot` (신규) | `student_id` uuid PK,FK, `slot_no` smallint PK, `theme_id` uuid, `theme_week_start` date, `saved_at` timestamptz | 추억의 벽 슬롯 1~6(기준안 CHECK). `theme_id`·`theme_week_start`는 learning `theme_frame` 논리 참조(서비스 간 FK 없음), 저장 시 learning 내부 API로 보유 확인. UK `(student_id, theme_id, theme_week_start)`로 같은 액자 중복 걸기 방지. 저장은 학생의 전체 슬롯을 한 트랜잭션에서 교체 |
+| `memory_daily_usage` (신규) | `id` uuid PK, `student_id` uuid FK, `kind` varchar `SEARCH`·`EXPLANATION`, `usage_date` date(KST), `created_at` timestamptz | 추억 검색·설명 요청 1건당 1행, 한도 확인은 `(student_id, kind, usage_date)` 건수(`mission_daily_usage`와 같은 방식). 한도 값은 `product.limits`의 `dailyMemorySearches`·`dailyMemoryExplanations`(기준안 20·10). 인덱스 `(student_id, kind, usage_date)` |
+| `look_item`·`student_look_equipment` (변경) | `slot` | CHECK에 가구 슬롯 `DESK`·`WALL`·`WARDROBE` 추가(P22 개정). 가구 1개 = 슬롯 1개라 기존 PK `(student_id, slot)`로 가구당 스킨 1개. 기본 스킨은 행 없이 항상 해금(테마 `lake`와 같은 방식, 기준안) |
+| `llm_usage` (변경) | `call_type` | CHECK에 `MEMORY_EMBEDDING`·`MEMORY_EXPLANATION` 추가(3.5 확장 규칙대로 `llm.usage.recorded` 스키마·core `CallType`·OpenAPI·ai 발행 목록에 함께) |
+
+- 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`memory_daily_usage`도 삭제
+- 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
+
 ### 3.6 2026-11-06 결정 변경 반영 (core_db)
 
 2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 커뮤니티 공개 설정·`COMMUNITY` 동의·신고 대상(#388)은 V31·V32로 구현해 3.1·3.3 Mermaid로, 일일 리포트 고정 대화(#392)의 `conversation.report_id`·`report_revision`은 V33으로 구현해 3.2 Mermaid로 옮겼다. 나머지도 아래 목록처럼 구현해 Mermaid·6장 인덱스 표(실제 DB 계약, `scripts/verify_db_schema.py`가 대조)로 옮겼다. 이후 변경도 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장).
@@ -1363,7 +1377,7 @@ erDiagram
 ```
 
 - `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core 내부 API `POST /internal/deletion-requests/{id}/completions`로 알림
-  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제하고 `theme_review_view`(#385)·`theme_story_view`(#438)·`theme_answer_pick`(#484)도 같은 트랜잭션에서 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
+  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제하고 `theme_review_view`(#385)·`theme_story_view`(#438)·`theme_answer_pick`(#484)도 같은 트랜잭션에서 삭제. 4.6(설계) 구현 시 `memory_search_doc`은 `attempt`보다 먼저, `theme_frame`도 같은 트랜잭션에서 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
   - `deleted_student`는 학생당 한 행: 다시 받으면 `event_id`·`deleted_at`을 갱신하고 `scope`는 이미 `PROFILE`이면 유지(report 삭제 장벽과 같은 규칙)
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
 - #208 `processed_event`는 90일 뒤 삭제(V8 `processed_at` 인덱스). 재처리 방지 표식 `deleted_student`는 유지되므로 90일 이후 재전달도 삭제를 반복할 뿐 기록을 되살리지 않음
@@ -1418,7 +1432,7 @@ erDiagram
 
 ### 4.5 교육과정 지식 RAG (#463, 계약 #464, 구현 #466)
 
-**계약 C2·C3·C9, learning V14·V17(#466)**. 팀 결정(에픽 #463, 2026-11-11)으로 미션·테마 생성에 벡터 검색·임베딩을 쓰지 않아, 지식 표는 성취기준·생각 유형 **코드 조회용 관계형 표**다. V14가 만든 임베딩 칸(`knowledge_chunk.embedding vector(1536)`)·HNSW 인덱스·`knowledge_dataset.embedding_model`·`embedding_dimensions`는 V17이 지웠다. 아래 Mermaid를 `scripts/verify_db_schema.py`가 실제 DB와 대조하고, 표는 칸 설명이다. 테이블 칸은 #466 이슈 표를 따르고, 그 표에 없던 칸은 "기준안 추가"로 표시했다. 추출 레코드(C1)는 `scripts/knowledge/schema/curriculum-record.schema.json`, 관계 확인 파일(C4)은 `relation-review.schema.json`, 조회 API(C5)는 [api-spec 4.1.2](api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), 판 관리 API는 [api-spec 4.1.3](api-spec.md#413-교육과정-지식-판-관리-466).
+**계약 C2·C3·C9, learning V14·V17(#466)**. 팀 결정(에픽 #463, 2026-11-11)으로 미션·테마 생성에 벡터 검색·임베딩을 쓰지 않아, 지식 표는 성취기준·생각 유형 **코드 조회용 관계형 표**다. V14가 만든 임베딩 칸(`knowledge_chunk.embedding vector(1536)`)·HNSW 인덱스·`knowledge_dataset.embedding_model`·`embedding_dimensions`는 V17이 지웠다. 이 결정은 생성 용도에 한정하며, 학생 기록 회상용 추억 검색은 별도 테이블에서 pgvector를 쓴다(4.6, P27, 2026-11-12). 아래 Mermaid를 `scripts/verify_db_schema.py`가 실제 DB와 대조하고, 표는 칸 설명이다. 테이블 칸은 #466 이슈 표를 따르고, 그 표에 없던 칸은 "기준안 추가"로 표시했다. 추출 레코드(C1)는 `scripts/knowledge/schema/curriculum-record.schema.json`, 관계 확인 파일(C4)은 `relation-review.schema.json`, 조회 API(C5)는 [api-spec 4.1.2](api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), 판 관리 API는 [api-spec 4.1.3](api-spec.md#413-교육과정-지식-판-관리-466).
 
 ```mermaid
 erDiagram
@@ -1551,6 +1565,19 @@ erDiagram
 - 사람 확인 관계 옮기기: 이전 활성 판의 fits·prerequisite·covers 중 양 끝 ID가 새 판에도 있으면 `reviewed_by`·`reviewed_at`·`reason` 그대로 옮긴다. 끝이 없어진 관계는 옮기지 않고 다시 확인할 목록(C4 행 모양, decision 빈 칸)으로 출력한다. 끝은 있지만 본문(`content_hash`)이 바뀐 관계는 옮기되 다시 확인 권장 목록에도 넣는다(기준안)
 - 제거: `RETIRED` 판만 관리 명령으로 지운다. 한 트랜잭션에서 관계 → 조각 → 판 행 순서. `ACTIVE`·`LOADING`은 지우지 않는다
 - 조회는 `ACTIVE` 판만 읽는다(C5 코드 조회, #469). 벡터 검색 경로는 쓰지 않는다(팀 결정 2026-11-11)
+
+### 4.6 기념 액자·추억 검색 (P27, 설계·구현 전)
+
+2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 learning 저장 구조. 구현 전이라 Mermaid·6장에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션(V18 이후)에서 Mermaid·6장으로 옮긴다. `vector` 확장은 이미 bootstrap이 learning_db에 만든다(4.5).
+
+| 테이블 | 컬럼 | 제약·규칙 |
+|---|---|---|
+| `theme_frame` (신규) | `id` uuid PK, `student_id` uuid(core 논리 참조), `theme_id` uuid FK, `theme_week_start` date(KST 월요일), `theme_version_id` uuid FK, `awarded_at` timestamptz, `seen_at` timestamptz NULL 허용, `created_at` timestamptz | UK `(student_id, theme_id, theme_week_start)` = 회차당 1개. 회차의 테마 5문제가 모두 `attempt.completed_at`을 가지면 마지막 완료 트랜잭션에서 `INSERT … ON CONFLICT DO NOTHING`. `awarded_at` = 5문제 중 가장 늦은 `completed_at`(일요일·자정 넘긴 이어하기 포함), `EXTRA` 제외. 도입 전 기록은 같은 조건으로 1회 소급(`seen_at` 채움). 인덱스 `(student_id, theme_week_start)` |
+| `memory_search_doc` (신규) | `id` uuid PK, `attempt_id` uuid FK UK, `student_id` uuid, `theme_id` uuid FK, `theme_week_start` date, `content_text` text, `embedding` vector(1536) NULL 허용, `embedding_model` varchar NULL 허용, `status` varchar `PENDING`·`PROCESSING`·`READY`·`FAILED`, `retry_count` int, `lease_until` timestamptz NULL 허용, `created_at` timestamptz, `embedded_at` timestamptz NULL 허용 | 테마 문제 완료 시도 1건 = 1행(`EXTRA` 제외), 시도 완료 트랜잭션에서 `PENDING`으로 생성. `content_text` = 테마 제목 + 미션 장면·질문 + 최종 답변(`answer` 최신 버전 `plain_text`). `READY`일 때만 `embedding`·`embedding_model`·`embedded_at` NOT NULL(CHECK). 상태 전이는 [상태 3.7](state-diagram.md). 검색은 `status = READY`·본인 `student_id`·보유 `theme_frame` 회차·`theme_week_start < 이번 주` 필터 후 코사인 거리 정렬. 인덱스 `(status, lease_until)`(주기 작업), `(student_id, theme_week_start)`. 학생당 대상이 수백 행 이내라 HNSW는 두지 않음(기준안) |
+
+- FK는 NO ACTION(1장). `student.deleted` 소비 때 4.3 순서에서 `memory_search_doc`을 `attempt`보다 먼저, `theme_frame`과 함께 삭제
+- 학생 답변은 수정되지 않으므로(FN-LRN-08/09) 검색 문서 갱신 없음. 판정 정정은 검색 문서에 영향 없음
+- 질문·설명은 저장하지 않으므로 테이블 없음(P27)
 
 ---
 

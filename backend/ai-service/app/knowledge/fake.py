@@ -45,15 +45,10 @@ DIMENSIONS = 1536  # 기준안(C6)
 MAX_TEXTS = 64  # 기준안(C6)
 MAX_CHARS = 8000  # 기준안(C6)
 MAX_CODES = 10  # 기준안(C5)
-MAX_K = 20
-MAX_THEME_K = 10
-MAX_CONCEPTS = 20
-DEFAULT_MIN_SIMILARITY = 0.7
 THINKING_TYPES = ("ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT")
 KINDS = ("STANDARD", "DOMAIN", "CONTENT", "SUBJECT_GUIDE", "THINKING_TYPE")
 SUBJECTS = ("국어", "도덕", "사회", "수학", "과학")
 CATEGORY_NAME = {"K": "지식⋅이해", "P": "과정⋅기능", "V": "가치⋅태도"}
-SEMESTER = re.compile(r"^[3-6]-[12]$")
 
 
 class FakeError(Exception):
@@ -98,7 +93,7 @@ def fake_vector(text: str, dimensions: int = DIMENSIONS) -> list[float]:
 
 
 def cosine(a: list[float], b: list[float]) -> float:
-    """길이 1인 벡터끼리 코사인 유사도(0~1로 자름)."""
+    """정규화 벡터의 유사도. 오프라인 관계 후보 생성(#468)에서도 사용하는 C6 보조 함수."""
     return max(0.0, min(1.0, sum(x * y for x, y in zip(a, b, strict=True))))
 
 
@@ -200,7 +195,7 @@ def _semester_key(semester: str) -> tuple[int, int]:
 
 # ---- C5 가짜 learning 지식 API
 class FakeKnowledgeApi:
-    """샘플을 활성 판 하나로 올린 learning 지식 API의 가짜. 다섯 경로 모두 계약대로 답한다.
+    """샘플을 활성 판 하나로 올린 learning 지식 API의 가짜. 두 코드 조회 경로를 계약대로 제공한다.
 
     active=False면 활성 판이 없는 learning(모든 응답 reason NO_ACTIVE_DATASET)을 흉내 낸다.
     """
@@ -216,7 +211,6 @@ class FakeKnowledgeApi:
         self.active = active
         dataset = json.loads((directory / "dataset.sample.json").read_text(encoding="utf-8"))
         self.version: str = dataset["version"]
-        self.embedding_model: str = self.embedder.model
         records = [
             json.loads(line)
             for line in (directory / "curriculum.sample.jsonl")
@@ -331,7 +325,6 @@ class FakeKnowledgeApi:
             "text": text,
             "contentHash": content_hash(text),
             "record": record,
-            "embedding": fake_vector(text, self.embedder.dimensions),
         }
 
     # -- 보기 모양(api-spec 4.1.2 응답 칸)
@@ -403,11 +396,11 @@ class FakeKnowledgeApi:
             "ref": self.ref("THINKING_TYPE", type_code),
         }
 
-    # -- 다섯 경로
+    # -- C5 코드 조회 두 경로
     def standards_sync(
         self, codes: list[str], grade: int | None = None, thinking_type: str | None = None
     ) -> dict[str, Any]:
-        if not 1 <= len(codes) <= MAX_CODES:
+        if not 1 <= len(codes) <= MAX_CODES or any(not code.strip() for code in codes):
             raise _bad(f"codes는 1~{MAX_CODES}개")
         if grade is not None and not 3 <= grade <= 6:
             raise _bad("grade는 3~6")
@@ -458,227 +451,10 @@ class FakeKnowledgeApi:
             raise _bad("type 값 밖")
         if not self.active:
             return {"datasetVersion": None, "guide": None, "reason": "NO_ACTIVE_DATASET"}
+        if type_code not in self.types:
+            return {"datasetVersion": self.version, "guide": None, "reason": "CODE_NOT_FOUND"}
         return {"datasetVersion": self.version, "guide": self._type_view(type_code), "reason": None}
 
-    def _check_vector(self, body: dict[str, Any]) -> list[float]:
-        vector, model = body.get("vector"), body.get("embeddingModel")
-        if not isinstance(vector, list) or not vector or not isinstance(model, str) or not model:
-            raise _bad("vector·embeddingModel 필수")
-        if model != self.embedding_model or len(vector) != self.embedder.dimensions:
-            raise FakeError(
-                409,
-                "KNOWLEDGE_EMBEDDING_MISMATCH",
-                f"활성 판 임베딩은 {self.embedding_model}·{self.embedder.dimensions}차원",
-            )
-        return vector
-
-    @staticmethod
-    def _min_similarity(body: dict[str, Any]) -> float:
-        value = body.get("minSimilarity", DEFAULT_MIN_SIMILARITY)
-        if not isinstance(value, int | float) or not 0 <= value <= 1:
-            raise _bad("minSimilarity는 0~1")
-        return float(value)
-
-    @staticmethod
-    def _grade_semester(body: dict[str, Any]) -> tuple[int, str]:
-        grade, semester = body.get("grade"), body.get("semester")
-        if not isinstance(grade, int) or not 3 <= grade <= 6:
-            raise _bad("grade는 3~6")
-        if (
-            not isinstance(semester, str)
-            or not SEMESTER.match(semester)
-            or not semester.startswith(f"{grade}-")
-        ):
-            raise _bad("semester는 그 학년의 학기(예: 3-1)")
-        return grade, semester
-
-    def search_sync(self, body: dict[str, Any]) -> dict[str, Any]:
-        k = body.get("k", 5)
-        if not isinstance(k, int) or not 1 <= k <= MAX_K:
-            raise _bad(f"k는 1~{MAX_K}")
-        minimum = self._min_similarity(body)
-        filters = body.get("filters") or {}
-        if not self.active:
-            return {"datasetVersion": None, "items": [], "reason": "NO_ACTIVE_DATASET"}
-        vector = self._check_vector(body)
-        hits = []
-        for chunk in self.chunks.values():
-            if not self._passes(chunk, filters):
-                continue
-            similarity = cosine(vector, chunk["embedding"])
-            if similarity >= minimum:
-                hits.append((similarity, chunk))
-        hits.sort(key=lambda pair: (-pair[0], pair[1]["kind"], pair[1]["id"]))
-        items = [
-            {
-                "ref": self.ref(c["kind"], c["id"]),
-                "kind": c["kind"],
-                "subject": c["subject"],
-                "area": c["area"],
-                "standardCode": c["standardCode"],
-                "domainId": c["domainId"],
-                "thinkingType": c["thinkingType"],
-                "grades": c["grades"],
-                "semesters": c["semesters"],
-                "text": c["text"],
-                "similarity": round(s, 6),
-            }
-            for s, c in hits[:k]
-        ]
-        return {
-            "datasetVersion": self.version,
-            "items": items,
-            "reason": None if items else "BELOW_THRESHOLD",
-        }
-
-    @staticmethod
-    def _passes(chunk: dict[str, Any], filters: dict[str, Any]) -> bool:
-        if filters.get("kinds") and chunk["kind"] not in filters["kinds"]:
-            return False
-        if filters.get("subjects") and chunk["subject"] not in filters["subjects"]:
-            return False
-        if filters.get("thinkingTypes") and chunk["thinkingType"] not in filters["thinkingTypes"]:
-            return False
-        if chunk["kind"] in ("SUBJECT_GUIDE", "THINKING_TYPE"):
-            return True  # 학년·학기와 무관한 조각은 학년·학기 거르기를 받지 않음(api-spec 4.1.2)
-        if filters.get("grades") and not set(filters["grades"]) & set(chunk["grades"]):
-            return False
-        return not (
-            filters.get("semesters") and not set(filters["semesters"]) & set(chunk["semesters"])
-        )
-
-    def theme_candidates_sync(self, body: dict[str, Any]) -> dict[str, Any]:
-        grade, semester = self._grade_semester(body)
-        k = body.get("k", 3)
-        if not isinstance(k, int) or not 1 <= k <= MAX_THEME_K:
-            raise _bad(f"k는 1~{MAX_THEME_K}")
-        minimum = self._min_similarity(body)
-        if not self.active:
-            return {
-                "datasetVersion": None,
-                "grade": grade,
-                "semester": semester,
-                "types": [],
-                "reason": "NO_ACTIVE_DATASET",
-            }
-        vector = self._check_vector(body)
-        scored: dict[str, tuple[float, dict[str, str]]] = {}
-        for code, record in self.standards.items():
-            if semester not in record["semesters"]:
-                continue
-            options = [
-                (
-                    cosine(vector, self.chunks[("STANDARD", code)]["embedding"]),
-                    self.ref("STANDARD", code),
-                )
-            ]
-            options += [
-                (cosine(vector, self.chunks[("CONTENT", c)]["embedding"]), self.ref("CONTENT", c))
-                for c in self.covers.get(code, [])
-            ]
-            best = max(options, key=lambda pair: pair[0])
-            if best[0] >= minimum:
-                scored[code] = best
-        types = []
-        for type_code in THINKING_TYPES:
-            candidates = []
-            for code, (similarity, matched) in scored.items():
-                for fit_type, reason in self.fits.get(code, []):
-                    if fit_type == type_code:
-                        record = self.standards[code]
-                        candidates.append(
-                            {
-                                "code": code,
-                                "statement": record["statement"],
-                                "subject": record["subject"],
-                                "area": record["area"],
-                                "similarity": round(similarity, 6),
-                                "matchedBy": matched,
-                                "fitReason": reason,
-                                "ref": self.ref("STANDARD", code),
-                            }
-                        )
-            candidates.sort(key=lambda c: (-c["similarity"], c["code"]))
-            types.append(
-                {
-                    "thinkingType": type_code,
-                    "candidates": candidates[:k],
-                    "reason": None if candidates else "NO_CANDIDATE",
-                }
-            )
-        return {
-            "datasetVersion": self.version,
-            "grade": grade,
-            "semester": semester,
-            "types": types,
-            "reason": None if scored else "BELOW_THRESHOLD",
-        }
-
-    def learned_sync(self, body: dict[str, Any]) -> dict[str, Any]:
-        grade, semester = self._grade_semester(body)
-        concepts = body.get("concepts")
-        if not isinstance(concepts, list) or not 1 <= len(concepts) <= MAX_CONCEPTS:
-            raise _bad(f"concepts는 1~{MAX_CONCEPTS}개")
-        minimum = self._min_similarity(body)
-        if not self.active:
-            return {
-                "datasetVersion": None,
-                "grade": grade,
-                "semester": semester,
-                "items": [],
-                "reason": "NO_ACTIVE_DATASET",
-            }
-        items = []
-        for concept in concepts:
-            if not isinstance(concept, dict) or not concept.get("text"):
-                raise _bad("concepts 항목은 {text, vector}")
-            vector = self._check_vector({**body, "vector": concept.get("vector")})
-            best = max(
-                (
-                    (cosine(vector, self.chunks[("CONTENT", cid)]["embedding"]), cid)
-                    for cid in self.contents
-                ),
-                default=(0.0, None),
-            )
-            item: dict[str, Any] = {
-                "text": concept["text"],
-                "verdict": "HOLD",
-                "matched": None,
-                "learnedIn": [],
-                "reason": "BELOW_THRESHOLD",
-            }
-            if best[1] is not None and best[0] >= minimum:
-                content_id = best[1]
-                item["matched"] = {
-                    "contentId": content_id,
-                    "text": self.contents[content_id]["text"],
-                    "similarity": round(best[0], 6),
-                    "ref": self.ref("CONTENT", content_id),
-                }
-                learned_in = [
-                    {"standardCode": code, "semester": m}
-                    for code in self.covered_by.get(content_id, [])
-                    for m in self.standards[code]["semesters"]
-                ]
-                item["learnedIn"] = learned_in
-                if not learned_in:
-                    item["reason"] = "NO_REVIEWED_RELATION"
-                elif any(
-                    _semester_key(x["semester"]) <= _semester_key(semester) for x in learned_in
-                ):
-                    item.update(verdict="LEARNED", reason=None)
-                else:
-                    item.update(verdict="NOT_YET", reason=None)
-            items.append(item)
-        return {
-            "datasetVersion": self.version,
-            "grade": grade,
-            "semester": semester,
-            "items": items,
-            "reason": None,
-        }
-
-    # -- HTTP 모양
     def handle(
         self, method: str, path: str, query: dict[str, str], body: Any, headers: dict[str, str]
     ) -> tuple[int, dict[str, Any]]:
@@ -690,7 +466,7 @@ class FakeKnowledgeApi:
             if lowered.get("x-user-role") != "SYSTEM":
                 raise FakeError(403, "FORBIDDEN", "SYSTEM 역할만")
             if method == "GET" and path == "/internal/knowledge/standards":
-                codes = [c for c in query.get("codes", "").split(",") if c]
+                codes = query.get("codes", "").split(",")
                 grade = query.get("grade")
                 if grade is not None and not grade.isdigit():
                     raise _bad("grade는 정수")
@@ -700,15 +476,6 @@ class FakeKnowledgeApi:
             match = re.match(r"^/internal/knowledge/thinking-types/([A-Z]+)$", path)
             if method == "GET" and match:
                 return 200, self.thinking_type_sync(match[1])
-            routes = {
-                "/internal/knowledge/search": self.search_sync,
-                "/internal/knowledge/theme-candidates": self.theme_candidates_sync,
-                "/internal/knowledge/learned": self.learned_sync,
-            }
-            if method == "POST" and path in routes:
-                if not isinstance(body, dict):
-                    raise _bad("JSON 객체 본문 필요")
-                return 200, routes[path](body)
             raise FakeError(404, "NOT_FOUND", "없는 경로")
         except FakeError as error:
             return error.status, error.problem(path)
@@ -729,20 +496,6 @@ class FakeKnowledgeApi:
 
             async def thinking_type(self, thinking_type: str) -> Any:
                 return c.ThinkingTypeResponse.model_validate(fake.thinking_type_sync(thinking_type))
-
-            async def search(self, request: Any) -> Any:
-                return c.SearchResponse.model_validate(
-                    fake.search_sync(request.model_dump(by_alias=True))
-                )
-
-            async def theme_candidates(self, request: Any) -> Any:
-                body = request.model_dump(by_alias=True)
-                return c.ThemeCandidatesResponse.model_validate(fake.theme_candidates_sync(body))
-
-            async def learned(self, request: Any) -> Any:
-                return c.LearnedResponse.model_validate(
-                    fake.learned_sync(request.model_dump(by_alias=True))
-                )
 
         return _Api()
 

@@ -98,6 +98,8 @@ class CommunityClient(private val http: LearningClient, private val json: Object
     companion object {
         private val PUBLIC_ERRORS = mapOf(
             (403 to "COMMUNITY_LOCKED") to "이 미션을 마무리하면 친구들 생각을 볼 수 있어요.",
+            // #550: 큰 질문 정답 고르기 문제는 그 주 엔딩을 본 학생만 열람(learning #484)
+            (403 to "COMMUNITY_LOCKED_UNTIL_ENDING") to "이번 주 테마 엔딩을 보면 친구들 생각을 볼 수 있어요.",
             (404 to "COMMUNITY_POST_NOT_FOUND") to "볼 수 없는 공유물입니다.",
             (404 to "NOT_FOUND") to "미션 또는 공유물을 찾을 수 없습니다.",
             (409 to "COMMUNITY_OWN_POST") to "내 공유물에는 반응할 수 없어요.",

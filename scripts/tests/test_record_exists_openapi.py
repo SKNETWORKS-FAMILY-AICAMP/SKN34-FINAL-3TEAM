@@ -16,9 +16,9 @@ class RecordExistsContractTest(unittest.TestCase):
             prefix=re.search(r'^@RequestMapping\("([^"]*)"\)',text,re.M)
             for method,path in re.findall(r'@(Get|Post|Put|Patch|Delete)Mapping(?:\("([^"]*)"\))?',text):
                 actual.add((method.lower(),((prefix[1] if prefix else '')+path).removeprefix('/internal')))
-        # #464: x-implementation-status가 붙은 경로는 계약만 먼저 정한 구현 전 항목(#469 지식 내부 API)
+        # 구현 전 계약 경로는 제외한다. #469 지식 API 2개는 구현되어 실제 컨트롤러와 대조한다.
         documented={(method,path) for path,methods in self.spec['paths'].items() for method,operation in methods.items() if not operation.get('x-implementation-status')}
-        self.assertEqual(len(actual),74)  # #438 테마 초안 6개·#466 지식 판 관리 5개·#484 정답 고르기 1개 포함
+        self.assertEqual(len(actual),76)  # develop 73개 + #469 지식 조회 2개 + #484 정답 고르기 1개
         self.assertEqual(actual,documented)
     def test_producer_and_consumer_use_the_same_path(self):
         path='/records/students/{studentId}/exists'

@@ -716,7 +716,7 @@ sequenceDiagram
 - 공개(`OPEN`)된 문제는 월~토(프리미엄 일요일) 언제든 `THEME_DAY` 신규 시도. 금요일에는 다섯 문제 모두 공개, 토요일에는 안 푼 문제 새로 풀기와 `THEME_REVIEW` 다시 풀기를 함께 허용
 - `EXTRA`는 무료 상품(`features.extraMissions = false`)이면 core가 403 `PREMIUM_REQUIRED`, 프리미엄이면 `payment_premium_usage(EXTRA_MISSION)` 기록. `THEME_REVIEW`는 한도 집계 없이 learning이 토요일(프리미엄 일요일)·마무리한 문제인지 검사(아니면 409 `THEME_REVIEW_NOT_ALLOWED`)
 - 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후·일요일 포함). 당일 풀이는 학습 완료 시각이 그 요일 KST 안일 때만. 재사용 테마의 이미 푼 문제도 그 주 공개된 문제면 `THEME_DAY` 신규 시도(그 주에 마무리한 문제만 거부, 다시 풀기는 `THEME_REVIEW`)
-- 큰 질문 정답 고르기(#484): 금요일 문제를 마무리한 뒤 web이 `POST /students/me/weekly-theme/answer-picks {pick}`(core 공개 경로 기준안, core 확인 중)을 보내고 core가 `POST /internal/students/{id}/weekly-theme/answer-picks?grade&date&sundayTheme`으로 넘긴다. learning은 `theme_answer_pick`에 학생·주당 1행 저장하고 `{correct, ending, answer}`를 돌려준다(맞히면 `ENDED`·정답, 틀리면 `NOT_ENDED`). 틀린 학생은 토요일(프리미엄 일요일) 금요일 문제 `THEME_REVIEW`를 마무리하면 주간 테마 조회의 `ending`이 `ENDED`가 된다(state-diagram 3.2.2)
+- 큰 질문 정답 고르기(#484): 금요일 문제를 마무리한 뒤 web이 `POST /students/me/weekly-theme/answer-picks {pick}`(core #550)을 보내고 core가 `POST /internal/students/{id}/weekly-theme/answer-picks?grade&date&sundayTheme`으로 넘긴다. learning은 `theme_answer_pick`에 학생·주당 1행 저장하고 `{correct, ending, answer}`를 돌려준다(맞히면 `ENDED`·정답, 틀리면 `NOT_ENDED`). 틀린 학생은 토요일(프리미엄 일요일) 금요일 문제 `THEME_REVIEW`를 마무리하면 주간 테마 조회의 `ending`이 `ENDED`가 된다(state-diagram 3.2.2)
 - 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다. 당일 풀이·개근(learning 칸 `completed`)·주간 완주도 같은 방식으로 보충(core #485, 개근 칸 이름은 #506에서 `completed`로 맞춤). 주간 완주는 learning이 토요일 23:59:59 KST까지의 완료만 세므로 프리미엄 일요일 완료로는 적립되지 않는다
 - 학습 완료 직후(3.5)에는 웹이 홈으로 돌아와 주간 테마를 다시 조회할 때 당일 풀이가 적립된다(core #485는 주간 테마 조회 보충으로 정했다, [core 보고서 18절](../report/core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10))
 - 학년별 테마(#438): core는 학생 학년 그대로 `grade=G3`~`G6`(중학생 `G6`)을 넘긴다. core 반영 전(병합 순서 #438 → core)에는 core가 `gradeBand`를 보내므로 learning은 `grade`가 없으면 `gradeBand`의 `G3_4`를 `G3`, `G5_6`을 `G5`로 읽는다(V15가 학년군 테마를 학년마다 같은 내용으로 복사하므로 이 기간 내용은 같음). core 반영 뒤 이 호환을 지운다
@@ -824,7 +824,7 @@ sequenceDiagram
   W->>C: GET /missions/{missionId}/community-posts?seed
   C->>L: GET /internal/community/missions/{missionId}/posts?viewerStudentId&seed
   alt viewer가 이 미션을 학습 완료하지 않음, 또는 큰 질문 정답 고르기 문제인데 viewer의 그 주 엔딩 전(2026-11-10 개정 #483, learning #484)
-    L-->>C: 403 COMMUNITY_LOCKED (엔딩 전은 COMMUNITY_LOCKED_UNTIL_ENDING, core 허용 목록 추가 확인 중)
+    L-->>C: 403 COMMUNITY_LOCKED (엔딩 전은 COMMUNITY_LOCKED_UNTIL_ENDING, core 공개 문구 #550)
     C-->>W: 403
   else 마무리함
     L-->>C: VISIBLE 공유물 무작위 목록 (studentId 포함, 반응 수 없음)
@@ -844,6 +844,106 @@ sequenceDiagram
   A->>C: 신고 처리 결과 (다시 공개 또는 계속 숨김)
   C->>L: moderation {VISIBLE 또는 REMOVED}
 ```
+
+### 3.8 테마 문제 학습 완료 → 기념 액자·검색 문서 등록 (P27, 설계·구현 전)
+
+2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md)). 3.5 돌아보기 저장(학습 완료) 안에서 처리한다. 포인트 적립(3.5)과 별개다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as core
+  participant L as learning
+  participant LDB as learning_db
+
+  C->>L: 돌아보기 저장 (3.3·3.5와 같음)
+  rect rgba(128,128,128,0.12)
+    L->>LDB: reflection 저장, attempt COMPLETED
+    opt context = THEME_DAY·THEME_REVIEW (EXTRA 제외)
+      L->>LDB: memory_search_doc (attempt_id, content_text, PENDING) ON CONFLICT DO NOTHING
+      L->>LDB: 같은 회차(student, theme_id, theme_week_start) 5문제 completed_at 확인
+      opt 5문제 모두 완료
+        L->>LDB: theme_frame (awarded_at = 마지막 completed_at) ON CONFLICT DO NOTHING
+      end
+    end
+  end
+  L-->>C: 200 {attemptId, status: COMPLETED, reflection}
+```
+
+- 임베딩은 이 트랜잭션에서 부르지 않는다(완료 응답 지연 없음, 3.10이 처리)
+- 프리미엄 일요일·자정 넘긴 이어하기 완료도 같은 경로라 액자 조건에 포함. 같은 회차 다시 풀기 완료는 UK로 새 액자 없음
+- 도입 전 기록은 배포 때 1회 소급 명령이 같은 조건으로 `theme_frame`(`seen_at` 채움)·`memory_search_doc`(`PENDING`)을 만든다
+
+### 3.9 추억 검색·설명 (P27, 설계·구현 전)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학생)
+  participant C as core
+  participant CDB as core_db
+  participant L as learning
+  participant LDB as learning_db
+  participant A as ai
+  participant LLM as LLM
+
+  W->>C: POST /students/me/memories/search {query}
+  rect rgba(128,128,128,0.12)
+    C->>CDB: memory_daily_usage (SEARCH) 기록, 오늘 건수 > 한도면 롤백 후 429 USAGE_LIMIT_REACHED
+  end
+  C->>L: POST /internal/students/{id}/memories/search {query}
+  L->>A: POST /internal/embeddings {texts:[query]}
+  A->>LLM: 임베딩 (callType MEMORY_EMBEDDING)
+  A-->>L: {vectors}
+  L->>LDB: READY 문서 중 본인·보유 액자 회차·진행 주 제외 필터 + 코사인 거리 정렬
+  L-->>C: {state: RESULTS|NO_RESULTS|NO_RECORDS, cards[≤3]}
+  C-->>W: 200 (learning 응답 그대로)
+
+  opt 학생이 "설명 보기"
+    W->>C: POST /students/me/memories/explanations {query, attemptIds}
+    C->>CDB: memory_daily_usage (EXPLANATION) — 한도 초과 429
+    C->>L: POST /internal/students/{id}/memories/explanations (회로 learning-memory)
+    L->>LDB: attemptIds가 본인 READY 문서인지 확인, 근거 [1]~[3] 구성
+    alt 근거 부족
+      L-->>C: {state: INSUFFICIENT}
+    else
+      L->>A: POST /internal/memory-explanations {query, evidence[번호·테마·미션·답변 일부]}
+      A->>LLM: 설명 생성 (callType MEMORY_EXPLANATION)
+      A-->>L: {text, citations}
+      L->>L: 번호 범위·인용 원문 대조, 번호 → 회차·시도
+      L-->>C: {state: GENERATED|FAILED, text, citations}
+    end
+    C-->>W: 200
+  end
+```
+
+- 임베딩 장애는 `503 AI_UNAVAILABLE`로 검색 실패. 설명 생성·검사 실패는 `200 {state: FAILED}`로 돌려 화면이 검색 결과를 유지
+- ai 요청에 학생·시도·답변 ID·이름을 넣지 않고 닉네임은 마스킹(NFR-SEC-03). 질문·설명은 저장하지 않음
+
+### 3.10 검색 문서 임베딩 주기 작업 (P27, 설계·구현 전)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as learning 주기 작업
+  participant LDB as learning_db
+  participant A as ai
+
+  loop 기준안 1분
+    rect rgba(128,128,128,0.12)
+      S->>LDB: 리스 만료 PROCESSING → PENDING
+      S->>LDB: PENDING·재시도 가능 FAILED 최대 64행 → PROCESSING (조건부 UPDATE, lease_until)
+    end
+    S->>A: POST /internal/embeddings {texts[content_text]}
+    alt 성공
+      S->>LDB: 리스 일치 행만 READY + embedding·embedding_model·embedded_at
+    else 실패
+      S->>LDB: 리스 일치 행만 FAILED, retry_count + 1
+    end
+  end
+```
+
+- 상태 전이·조건은 [상태 3.7](state-diagram.md). 여러 레플리카가 같은 주기에 돌아도 선점한 행만 처리
 
 ---
 
@@ -1501,6 +1601,8 @@ sequenceDiagram
   Note over C: learning·report 보고가 모두 오면 deletion_request COMPLETED (P09)
   Note over C: PROFILE은 프로필 제거, RECORDS는 프로필·DELETION_REQUESTED 유지 (학습 재개는 후속 계약)
 ```
+
+- P27(설계·구현 전): core는 삭제 확정 트랜잭션에서 `room_frame_slot`·`memory_daily_usage`도 지우고, learning은 같은 삭제 트랜잭션에서 `memory_search_doc`(시도보다 먼저)·`theme_frame`을 지운다([ERD 3.5.2·4.6](erd.md))
 
 ### 10.2 `llm.usage.recorded`
 
