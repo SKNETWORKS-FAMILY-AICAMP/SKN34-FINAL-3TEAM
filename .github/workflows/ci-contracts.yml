@@ -110,7 +110,8 @@ jobs:
             --tests 'com.sagomungchi.core.conversation.ConversationIntegrationTest' \
             --tests 'com.sagomungchi.core.admin.AdminOperationsIntegrationTest' \
             --tests 'com.sagomungchi.core.community.CommunityIntegrationTest' \
-            --tests 'com.sagomungchi.core.reward.RewardIntegrationTest' \n            --tests 'com.sagomungchi.core.room.RoomFrameSlotIntegrationTest'
+            --tests 'com.sagomungchi.core.reward.RewardIntegrationTest' \
+            --tests 'com.sagomungchi.core.room.RoomFrameSlotIntegrationTest'
       - name: 실제 리포트 이벤트·응답 계약 검사
         run: .venv-contracts/bin/python scripts/validate_report_contracts.py
       - name: 실제 알림 응답 계약 검사
