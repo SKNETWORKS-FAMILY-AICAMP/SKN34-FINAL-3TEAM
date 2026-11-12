@@ -161,9 +161,9 @@ class KnowledgeConcurrencyIntegrationTest : KnowledgePostgresTest() {
     }
 
     private fun copyLoadingDataset(version: String) {
-        jdbc.update("INSERT INTO knowledge_dataset SELECT ?, 'LOADING', source, embedding_model, embedding_dimensions, chunk_count, relation_count, created_at, NULL FROM knowledge_dataset WHERE version=?", version, VERSION)
+        jdbc.update("INSERT INTO knowledge_dataset SELECT ?, 'LOADING', source, chunk_count, relation_count, created_at, NULL FROM knowledge_dataset WHERE version=?", version, VERSION)
         jdbc.update("""INSERT INTO knowledge_chunk SELECT ?,id,kind,subject,area,standard_code,domain_id,thinking_type,grades,semesters,notice_grade_band,
-            text,record,embedding,content_hash,source FROM knowledge_chunk WHERE dataset_version=?""", version, VERSION)
+            text,record,content_hash,source FROM knowledge_chunk WHERE dataset_version=?""", version, VERSION)
         jdbc.update("INSERT INTO knowledge_standard_semester SELECT ?,standard_code,semester,grade FROM knowledge_standard_semester WHERE dataset_version=?", version, VERSION)
         jdbc.update("INSERT INTO knowledge_fits SELECT ?,standard_code,thinking_type,reason,reviewed_by,reviewed_at FROM knowledge_fits WHERE dataset_version=?", version, VERSION)
         jdbc.update("INSERT INTO knowledge_covers SELECT ?,standard_code,content_id,reviewed_by,reviewed_at FROM knowledge_covers WHERE dataset_version=?", version, VERSION)

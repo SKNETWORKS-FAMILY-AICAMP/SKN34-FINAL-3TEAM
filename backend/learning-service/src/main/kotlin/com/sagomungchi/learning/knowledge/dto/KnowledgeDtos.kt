@@ -1,7 +1,5 @@
 package com.sagomungchi.learning.knowledge.dto
 
-import com.fasterxml.jackson.annotation.JsonSetter
-import com.fasterxml.jackson.annotation.Nulls
 
 /** C5 JSON names match the ai-service Pydantic contracts; null response fields are intentional. */
 data class KnowledgeRef(val kind: String, val id: String, val datasetVersion: String)
@@ -30,46 +28,3 @@ data class KnowledgeBundle(
     val subjectGuides: List<SubjectGuideView>, val thinkingType: ThinkingTypeGuide?, val reason: String?,
 )
 data class ThinkingTypeResponse(val datasetVersion: String?, val guide: ThinkingTypeGuide?, val reason: String?)
-
-data class SearchFilters(
-    @param:JsonSetter(nulls = Nulls.FAIL, contentNulls = Nulls.FAIL) val kinds: List<String> = emptyList(),
-    @param:JsonSetter(nulls = Nulls.FAIL, contentNulls = Nulls.FAIL) val subjects: List<String> = emptyList(),
-    @param:JsonSetter(nulls = Nulls.FAIL, contentNulls = Nulls.FAIL) val grades: List<Int> = emptyList(),
-    @param:JsonSetter(nulls = Nulls.FAIL, contentNulls = Nulls.FAIL) val semesters: List<String> = emptyList(),
-    @param:JsonSetter(nulls = Nulls.FAIL, contentNulls = Nulls.FAIL) val thinkingTypes: List<String> = emptyList(),
-)
-data class SearchRequest(
-    @param:JsonSetter(contentNulls = Nulls.FAIL) val vector: List<Double>,
-    val embeddingModel: String,
-    @param:JsonSetter(nulls = Nulls.FAIL) val k: Int? = null,
-    @param:JsonSetter(nulls = Nulls.FAIL) val minSimilarity: Double? = null,
-    @param:JsonSetter(nulls = Nulls.FAIL) val filters: SearchFilters = SearchFilters(),
-)
-data class SearchHit(
-    val ref: KnowledgeRef, val kind: String, val subject: String?, val area: String?, val standardCode: String?,
-    val domainId: String?, val thinkingType: String?, val grades: List<Int>, val semesters: List<String>,
-    val text: String, val similarity: Double,
-)
-data class SearchResponse(val datasetVersion: String?, val items: List<SearchHit>, val reason: String?)
-data class ThemeCandidatesRequest(
-    @param:JsonSetter(contentNulls = Nulls.FAIL) val vector: List<Double>,
-    val embeddingModel: String, val grade: Int, val semester: String,
-    @param:JsonSetter(nulls = Nulls.FAIL) val k: Int? = null,
-    @param:JsonSetter(nulls = Nulls.FAIL) val minSimilarity: Double? = null,
-)
-data class ThemeCandidate(
-    val code: String, val statement: String, val subject: String, val area: String, val similarity: Double,
-    val matchedBy: KnowledgeRef, val fitReason: String, val ref: KnowledgeRef,
-)
-data class ThemeTypeCandidates(val thinkingType: String, val candidates: List<ThemeCandidate>, val reason: String?)
-data class ThemeCandidatesResponse(val datasetVersion: String?, val grade: Int, val semester: String, val types: List<ThemeTypeCandidates>, val reason: String?)
-data class LearnedConcept(val text: String, @param:JsonSetter(contentNulls = Nulls.FAIL) val vector: List<Double>)
-data class LearnedRequest(
-    @param:JsonSetter(contentNulls = Nulls.FAIL) val concepts: List<LearnedConcept>,
-    val embeddingModel: String, val grade: Int, val semester: String,
-    @param:JsonSetter(nulls = Nulls.FAIL) val minSimilarity: Double? = null,
-)
-data class LearnedMatch(val contentId: String, val text: String, val similarity: Double, val ref: KnowledgeRef)
-data class LearnedIn(val standardCode: String, val semester: String)
-data class LearnedItem(val text: String, val verdict: String, val matched: LearnedMatch?, val learnedIn: List<LearnedIn>, val reason: String?)
-data class LearnedResponse(val datasetVersion: String?, val grade: Int, val semester: String, val items: List<LearnedItem>, val reason: String?)

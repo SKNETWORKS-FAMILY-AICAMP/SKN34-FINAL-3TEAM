@@ -19,15 +19,13 @@ import org.testcontainers.containers.PostgreSQLContainer
 import java.io.File
 import java.sql.DriverManager
 
-/** Isolated pgvector DB using the real Flyway migrations, including #466 V14. */
+/** Isolated pgvector DB using the real Flyway migrations, including #466 V17. */
 @SpringBootTest(properties = [
     "app.internal.token=knowledge-test-token",
     "spring.rabbitmq.username=test", "spring.rabbitmq.password=test",
     "spring.rabbitmq.listener.simple.auto-startup=false",
     "app.mission-draft.enabled=false",
     "app.judgment.stuck-detection-enabled=false",
-    // Public curriculum samples and deterministic test vectors, never production embedding calls.
-    "app.knowledge.embedding=fake",
 ])
 @AutoConfigureMockMvc
 abstract class KnowledgePostgresTest {

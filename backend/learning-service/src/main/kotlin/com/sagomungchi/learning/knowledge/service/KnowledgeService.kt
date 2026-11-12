@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.knowledge.dto.*
 import com.sagomungchi.learning.knowledge.repository.KnowledgeChunkRow
-import com.sagomungchi.learning.knowledge.repository.KnowledgeDatasetRow
 import com.sagomungchi.learning.knowledge.repository.KnowledgeQueryMapper
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import org.slf4j.LoggerFactory
@@ -18,26 +17,19 @@ import org.springframework.transaction.TransactionException
 import org.springframework.transaction.support.TransactionTemplate
 import java.sql.SQLException
 import java.util.concurrent.TimeUnit
-import kotlin.math.abs
 import kotlin.math.ceil
-import kotlin.math.sqrt
 
-/** Read-only C5 queries. Tables/vector bootstrap are deployed by #466, never by this service. */
+/** C5 코드 조회. HTTP와 learning 미션 초안(#470)이 같은 DTO·검증·읽기 트랜잭션을 사용한다. */
 @Service
 class KnowledgeService(
     private val mapper: KnowledgeQueryMapper,
     private val transactionManager: PlatformTransactionManager,
     @param:Value("\${app.knowledge.query-timeout-ms:2000}") private val queryTimeoutMs: Long,
-    @param:Value("\${app.knowledge.search-default-k:5}") private val searchDefaultK: Int,
-    @param:Value("\${app.knowledge.theme-default-k:3}") private val themeDefaultK: Int,
-    @param:Value("\${app.knowledge.min-similarity:0.7}") private val defaultMinimum: Double,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     init {
         require(queryTimeoutMs in 1..2000) { "knowledge query timeout must be between 1 and 2000 ms" }
-        require(searchDefaultK in 1..20 && themeDefaultK in 1..10)
-        require(defaultMinimum.isFinite() && defaultMinimum in 0.0..1.0)
     }
 
     fun standards(codes: List<String>, grade: Int?, thinkingType: String?): KnowledgeBundle {
@@ -85,82 +77,6 @@ class KnowledgeService(
         }
     }
 
-    fun search(request: SearchRequest): SearchResponse {
-        validVector(request.vector)
-        validModel(request.embeddingModel)
-        val k = request.k ?: searchDefaultK
-        valid(k in 1..20, "k는 1~20입니다.")
-        val minimum = minimum(request.minSimilarity)
-        validFilters(request.filters)
-        return query("search") { budget ->
-            val dataset = budget.sql { mapper.findActiveDataset() }
-                ?: return@query SearchResponse(null, emptyList(), "NO_ACTIVE_DATASET")
-            checkEmbedding(dataset, request.embeddingModel, request.vector)
-            val rows = budget.sql { mapper.search(dataset.version, vectorSql(request.vector), k, minimum, request.filters) }
-            SearchResponse(dataset.version, rows.map { row ->
-                SearchHit(ref(row, dataset.version), row.kind, row.subject, row.area, row.standardCode,
-                    row.domainId, row.thinkingType, row.grades.map(JsonNode::asInt), row.semesters.map(JsonNode::asText),
-                    row.text, requireNotNull(row.similarity))
-            }, if (rows.isEmpty()) "BELOW_THRESHOLD" else null)
-        }
-    }
-
-    fun themeCandidates(request: ThemeCandidatesRequest): ThemeCandidatesResponse {
-        validVector(request.vector)
-        validModel(request.embeddingModel)
-        validSemester(request.grade, request.semester)
-        val k = request.k ?: themeDefaultK
-        valid(k in 1..10, "k는 1~10입니다.")
-        val minimum = minimum(request.minSimilarity)
-        return query("theme_candidates") { budget ->
-            val dataset = budget.sql { mapper.findActiveDataset() }
-                ?: return@query ThemeCandidatesResponse(null, request.grade, request.semester, emptyList(), "NO_ACTIVE_DATASET")
-            checkEmbedding(dataset, request.embeddingModel, request.vector)
-            val rows = budget.sql { mapper.themeCandidates(dataset.version, vectorSql(request.vector), request.grade, request.semester, k, minimum) }
-            val types = THINKING_TYPES.map { type ->
-                val candidates = rows.filter { it.thinkingType == type }.map {
-                    ThemeCandidate(it.code, it.statement, it.subject, it.area, it.similarity,
-                        KnowledgeRef(it.matchedKind, it.matchedId, dataset.version), requireNotNull(it.fitReason),
-                        KnowledgeRef("STANDARD", it.code, dataset.version))
-                }
-                ThemeTypeCandidates(type, candidates, if (candidates.isEmpty()) "NO_CANDIDATE" else null)
-            }
-            ThemeCandidatesResponse(dataset.version, request.grade, request.semester, types, if (rows.isEmpty()) "BELOW_THRESHOLD" else null)
-        }
-    }
-
-    fun learned(request: LearnedRequest): LearnedResponse {
-        valid(request.concepts.size in 1..20, "concepts는 1~20개입니다.")
-        request.concepts.forEach {
-            valid(it.text.isNotBlank(), "개념 text는 비어 있을 수 없습니다.")
-            validVector(it.vector)
-        }
-        validModel(request.embeddingModel)
-        validSemester(request.grade, request.semester)
-        val minimum = minimum(request.minSimilarity)
-        return query("learned") { budget ->
-            val dataset = budget.sql { mapper.findActiveDataset() }
-                ?: return@query LearnedResponse(null, request.grade, request.semester, emptyList(), "NO_ACTIVE_DATASET")
-            // Validate every concept before running any similarity query (no partial success).
-            request.concepts.forEach { checkEmbedding(dataset, request.embeddingModel, it.vector) }
-            val items = request.concepts.map { concept ->
-                val row = budget.sql { mapper.nearestContent(dataset.version, vectorSql(concept.vector), minimum) }
-                if (row == null) {
-                    LearnedItem(concept.text, "HOLD", null, emptyList(), "BELOW_THRESHOLD")
-                } else {
-                    val learnedIn = budget.sql { mapper.learnedIn(dataset.version, row.id) }
-                    val match = LearnedMatch(row.id, row.record.requiredText("text"), requireNotNull(row.similarity), ref(row, dataset.version))
-                    when {
-                        learnedIn.isEmpty() -> LearnedItem(concept.text, "HOLD", match, learnedIn, "NO_REVIEWED_RELATION")
-                        learnedIn.any { it.semester <= request.semester } -> LearnedItem(concept.text, "LEARNED", match, learnedIn, null)
-                        else -> LearnedItem(concept.text, "NOT_YET", match, learnedIn, null)
-                    }
-                }
-            }
-            LearnedResponse(dataset.version, request.grade, request.semester, items, null)
-        }
-    }
-
     private fun standard(row: KnowledgeChunkRow, version: String) = StandardView(
         requireNotNull(row.standardCode), requireNotNull(row.subject), row.grades.map(JsonNode::asInt),
         row.semesters.map(JsonNode::asText), requireNotNull(row.noticeGradeBand), requireNotNull(row.area),
@@ -194,36 +110,8 @@ class KnowledgeService(
     private fun JsonNode.strings(field: String): List<String> = path(field).map(JsonNode::asText)
     private fun JsonNode.contentItems(field: String) = path(field).map { ContentItem(it.nullableText("group"), it.requiredText("text")) }
 
-    private fun validVector(vector: List<Double>) {
-        valid(vector.isNotEmpty() && vector.all(Double::isFinite) && vector.any { it != 0.0 }, "vector는 유한한 수로 된 0이 아닌 벡터입니다.")
-    }
-    private fun validModel(model: String) = valid(model.isNotBlank(), "embeddingModel은 비어 있을 수 없습니다.")
     private fun validGrade(grade: Int) = valid(grade in 3..6, "grade는 3~6입니다.")
     private fun validType(type: String) = valid(type in THINKING_TYPES, "알 수 없는 생각 유형입니다.")
-    private fun validSemester(grade: Int, semester: String) {
-        validGrade(grade)
-        valid(SEMESTER.matches(semester) && semester.startsWith("$grade-"), "semester는 요청 학년의 학기입니다.")
-    }
-    private fun minimum(value: Double?): Double = (value ?: defaultMinimum).also {
-        valid(it.isFinite() && it in 0.0..1.0, "minSimilarity는 0~1입니다.")
-    }
-    private fun validFilters(filters: SearchFilters) {
-        valid(filters.kinds.all { it in KINDS } && filters.subjects.all { it in SUBJECTS } &&
-            filters.thinkingTypes.all { it in THINKING_TYPES } && filters.grades.all { it in 3..6 } &&
-            filters.semesters.all(SEMESTER::matches), "검색 filters 값을 확인해 주세요.")
-    }
-    private fun checkEmbedding(dataset: KnowledgeDatasetRow, model: String, vector: List<Double>) {
-        if (dataset.embeddingModel != model || dataset.embeddingDimensions != vector.size) {
-            throw BusinessException(HttpStatus.CONFLICT, "KNOWLEDGE_EMBEDDING_MISMATCH", "활성 판의 임베딩 모델·차원과 요청이 다릅니다.")
-        }
-    }
-    /** Scale safely before float conversion. Cosine is invariant to positive scalar multiplication. */
-    private fun vectorSql(vector: List<Double>): String {
-        val scale = vector.maxOf { abs(it) }
-        val scaled = vector.map { it / scale }
-        val norm = sqrt(scaled.sumOf { it * it })
-        return scaled.joinToString(prefix = "[", postfix = "]", separator = ",") { (it / norm).toFloat().toString() }
-    }
     private fun valid(condition: Boolean, detail: String) {
         if (!condition) throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", detail)
     }
@@ -259,7 +147,7 @@ class KnowledgeService(
             outcome = "rejected"
             throw ex
         } catch (_: RuntimeException) {
-            // Malformed stored records/mapping failures never expose record/vector content in logs.
+            // Malformed stored records/mapping failures never expose record content in logs.
             outcome = "failed"
             throw internalFailure()
         } finally {
@@ -289,8 +177,5 @@ class KnowledgeService(
 
     companion object {
         private val THINKING_TYPES = ThinkingType.entries.map { it.name }
-        private val KINDS = setOf("STANDARD", "DOMAIN", "CONTENT", "SUBJECT_GUIDE", "THINKING_TYPE")
-        private val SUBJECTS = setOf("국어", "도덕", "사회", "수학", "과학")
-        private val SEMESTER = Regex("^[3-6]-[12]$")
     }
 }

@@ -941,26 +941,23 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.1.2 교육과정 지식 내부 API (#463, 계약 #464 C5, 구현 #469)
 
-**C5 조회 구현(#469)**. 저장 구조는 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-466), 요청·응답 칸은 learning OpenAPI(구현된 다섯 경로), ai 쪽 모델은 `backend/ai-service/app/knowledge/contracts.py`, 가짜 구현은 `app/knowledge/fake.py`(샘플 `scripts/knowledge/samples/`). 계약을 바꾸면 이 절·OpenAPI·`contracts.py`·`scripts/tests/test_knowledge_contracts.py`를 같이 고치고 #465~#471 담당에게 알린다(변경 절차 기준안, #464 확인 필요).
+**C5 코드 조회(#469)**. 2026-11-12 #466·#470 합의와 PR #547에 따라 성취기준·생각 유형 코드 조회만 제공한다. 벡터 검색 API 3개와 전용 요청·응답·오류·사유는 제외한다. 저장 구조는 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-466), 요청·응답은 learning OpenAPI, ai 모델은 `app/knowledge/contracts.py`, 시험 대역은 `app/knowledge/fake.py`를 따른다. 변경 시 이 절·양쪽 OpenAPI·ai 계약·대역·계약 시험을 함께 갱신한다.
 
 | Method | Path | 호출자 | 요청 → 응답 |
 |---|---|---|---|
 | GET | `/internal/knowledge/standards?codes&grade&thinkingType` | learning 미션 초안 작업(같은 서비스 안), ai 테마 미션 생성 | 코드(쉼표, 1~10개) → `KnowledgeBundle {datasetVersion, items:[{standard{code, subject, grades, semesters, noticeGradeBand, area, statement, explanation, ref}, domain(고려 사항을 가진 영역, 없으면 null), covers:[내용 요소], fits:[{thinkingType, reason}], gradeMatch}], missingCodes, subjectGuides:[교과 지침], thinkingType(그 유형 출제 지침 또는 null), reason}`. 유사도 검색 없음. `grade`를 주면 `gradeMatch`(그 학년에 배우는 성취기준인지), 안 주면 null |
 | GET | `/internal/knowledge/thinking-types/{type}` | ai | → `{datasetVersion, guide:{type, name, basis[{framework, attribution}], elements[{code, label, description}], questionMust[], questionMustNot[], ref}, reason}`. 팀이 우리 말로 쓴 지침과 출처 표기만(블룸·VALUE 원문 없음) |
-| POST | `/internal/knowledge/search` | ai | `{vector, embeddingModel, k(1~20, 기본 5), minSimilarity(기본 0.7), filters{kinds, subjects, grades, semesters, thinkingTypes}}` → `{datasetVersion, items:[{ref, kind, subject, area, standardCode, domainId, thinkingType, grades, semesters, text, similarity}], reason}`(유사도 높은 순) |
-| POST | `/internal/knowledge/theme-candidates` | ai 테마 `retrieve` 노드 | `{vector, embeddingModel, grade, semester, k(유형당 1~10, 기본 3), minSimilarity}` → `{datasetVersion, grade, semester, types:[{thinkingType, candidates:[{code, statement, subject, area, similarity, matchedBy, fitReason, ref}], reason}], reason}`. 다섯 유형 모두, 후보 없는 유형은 빈 목록과 `NO_CANDIDATE` |
-| POST | `/internal/knowledge/learned` | ai 테마 `check_theme` | `{concepts:[{text, vector}](1~20개), embeddingModel, grade, semester, minSimilarity}` → `{datasetVersion, grade, semester, items:[{text, verdict, matched{contentId, text, similarity, ref}, learnedIn:[{standardCode, semester}], reason}], reason}` |
 
-- 인증: `X-Internal-Token` + `X-User-Role: SYSTEM`(사용자 요청 없는 호출과 같음, 4장 공통). `X-Student-Scope`·학생 정보는 받지 않는다. 토큰 오류 `401 UNAUTHENTICATED`, SYSTEM 외 역할 `403 FORBIDDEN`
-- 활성 판만 읽는다(`knowledge_dataset.status = ACTIVE`, C9). 응답 조각마다 근거 표시 `ref = {kind, id, datasetVersion}`(C7 `sources` 항목과 같은 모양)
-- 대체 사유(`reason`): 근거가 없어도 오류가 아니라 `200`에 사유를 담는다. `NO_ACTIVE_DATASET`(활성 판 없음, `datasetVersion: null`)·`BELOW_THRESHOLD`(최소 유사도 넘는 조각 없음)·`NO_CANDIDATE`(그 유형 후보 없음)·`CODE_NOT_FOUND`(요청 코드가 하나도 없음, 일부만 없으면 `missingCodes`만)·`NO_REVIEWED_RELATION`(비슷한 내용 요소는 있으나 확인된 covers 없음). 생성 쪽은 사유가 있으면 근거 없이 기존 방식으로 생성하고 결과에 표시한다(#470)
-- 오류: 형식·상한 밖·학기가 그 학년 것이 아님(`grade: 3`에 `semester: "4-1"`) `400 VALIDATION_FAILED`, 요청 `embeddingModel`·벡터 길이가 활성 판과 다름 `409 KNOWLEDGE_EMBEDDING_MISMATCH`(learning이 ai를 되부르지 않으므로 벡터는 부르는 쪽이 C6로 만든다), 조회 실패·질의 시간 예산 초과 `500 INTERNAL_ERROR`(응답·로그에 질의 본문이나 벡터를 남기지 않음)
-- 내용: 성취기준 묶음의 `domain`은 성취기준이 속한 영역(국어·수학·도덕은 내용 체계와 고려 사항이 같은 영역, 사회·과학은 단원 = 고려 사항·탐구 활동만이고 내용 체계 항목은 `covers`로 이어짐, ERD 4.5). 고려 사항은 영역 단위라 같은 영역 성취기준끼리 같은 글. 교과 지침은 요청 성취기준의 교과마다 한 번(`subjectGuides`)
-- 검색 거르기: 빈 배열·생략은 거르지 않음, 칸 안은 OR·칸끼리는 AND, `grades`·`semesters`는 조각 값과 겹치면 통과. 교과 지침·생각 유형 조각은 학년·학기와 무관해 학년·학기 거르기를 받지 않는다. 유사도 = 1 − 코사인 거리(0~1)
-- 테마 후보: 그 학기(`knowledge_standard_semester`) 성취기준마다 성취기준 조각과 확인된 covers 내용 요소 조각 중 가장 비슷한 것을 점수·`matchedBy`로 쓰고, 최소 유사도 이상만 확인된 `knowledge_fits` 유형별로 점수 순 k개
-- 배움 확인: 개념마다 가장 비슷한 내용 요소(최소 유사도 이상)를 찾고 확인된 covers → 성취기준 학기(`learnedIn`)가 요청 학기와 같거나 앞이면 `LEARNED`, 모두 뒤면 `NOT_YET`. 비슷한 내용 요소가 없으면 `HOLD`+`BELOW_THRESHOLD`, 확인된 covers가 없으면 `HOLD`+`NO_REVIEWED_RELATION`(확인 전 관계는 학기 판단에 쓰지 않음). 학기 순서는 `3-1 < 3-2 < 4-1 …`. #469는 확인된 선수 관계를 `WITH RECURSIVE`로 추적하되, 같은 내용 요소를 다룬다는 확인된 covers와 학기가 있는 성취기준만 `learnedIn` 근거로 쓴다. 다른 개념의 선수 과목을 배웠다는 이유만으로 현재 개념을 배웠다고 추정하지 않는다. 순환은 중복 제거로 끝내고 학기 정보가 없는 관계는 학기를 만들어 채우지 않는다
-- 기준안 값: 코드 1~10개, k 기본 5·최대 20, 테마 유형당 기본 3·최대 10, 개념 1~20개, 최소 유사도 0.7(에픽, 결과서 양식 예시 값), learning 질의 예산 2초(#469, 각 SQL에 남은 시간 적용). 공유 연결 풀 대기 강제 취소와 응답 정리까지의 절대 2초 상한은 보장하지 않으며 [learning 보고서 33장](../report/learning.md#33-지식-검색-내부-api-469-2026-11-11)에 측정·한계를 기록한다. ai→learning 대기 시간은 #470에서 정하며 실제 적재본 실측 후 조정
-- #469는 위 경로·칸·사유 코드·`SYSTEM` 인증과 요청 상한을 구현한다. 검색 기준값의 실제 적재본 보정과 미션 초안 작업의 직접 서비스 호출 여부는 #470·#471 통합에서 확인한다. #466의 vector 확장·C2/C3 마이그레이션이 배포 선행이며 테스트에서는 같은 설계의 격리 테이블과 샘플을 사용한다.
+- 인증: HTTP는 내부 토큰·`SYSTEM` 역할 필수. 학생 정보·학생 범위 헤더를 받지 않는다.
+- 직접 호출: learning 미션 초안은 `KnowledgeService.standards(codes, grade, thinkingType)`를 직접 호출한다. 컨트롤러와 같은 `KnowledgeBundle`을 반환하며 입력 검사·읽기 트랜잭션·질의 예산을 공유한다. `thinkingType(type)`도 같은 서비스에서 제공한다. ai 테마는 HTTP로 호출한다(#470).
+- 조회 판: `knowledge_dataset.status = ACTIVE` 한 판의 `version`으로 조각·관계를 조회한다. `LOADING`·`RETIRED`는 제외하며 요청 전체가 같은 읽기 스냅샷을 사용해 판 교체 중 근거가 섞이지 않는다.
+- 대체 사유(`reason`): `NO_ACTIVE_DATASET`(활성 판 없음)·`CODE_NOT_FOUND`(요청 코드가 하나도 없거나 유효한 유형의 지침이 없음). 정상적인 근거 없음은 HTTP 200, 일부 코드만 없으면 `missingCodes`에 기록하고 `reason`은 null이다.
+- 오류: 형식·상한 밖·알 수 없는 생각 유형은 `400 VALIDATION_FAILED`, 조회 실패·질의 시간 예산 초과는 `500 INTERNAL_ERROR`. 오류를 근거 없음으로 숨기지 않는다. 임베딩 비교·409 오류는 없다.
+- 내용: 성취기준 묶음의 `domain`은 성취기준이 속한 영역(국어·수학·도덕은 내용 체계와 고려 사항이 같은 영역, 사회·과학은 단원 = 고려 사항·탐구 활동)이다. 고려 사항은 영역 단위라 같은 영역끼리 같은 글이다. 교과 지침은 요청 교과마다 한 번(`subjectGuides`) 반환한다. 각 근거에 `{kind, id, datasetVersion}`을 붙인다.
+- 관계: 사람이 확인한 같은 판의 `fits`·`covers`만 반환한다. 확인된 관계가 없으면 빈 배열이며 성취기준·해설·영역·교과·유형 지침 조회는 계속된다. 관계를 추정해 채우지 않는다.
+- 학년: 선택 `grade`는 초3~6이며 각 성취기준의 `gradeMatch`를 채운다. 불일치여도 해당 코드를 숨기지 않는다. 학년 미지정은 null, `thinkingType` 미지정은 유형 지침 null이다.
+- 상한: 코드 1~10개. learning 질의 예산은 기본 2초(각 SQL에 남은 시간 적용)이며 작업 이름·결과·지연만 기록한다. 연결 풀 대기 강제 취소와 응답 전송까지의 절대 2초 보장은 아니며 실측·한계는 [learning 보고서 33장](../report/learning.md#33-지식-코드-조회-내부-api-469-2026-11-12)에 기록한다. ai→learning 대기 시간은 #470에서 정한다.
+- 배포: #466 V17까지 적용된 DB를 사용한다. #469는 테이블·마이그레이션을 중복 생성하지 않는다. 미션 생성 프롬프트·C7 연결은 #470 범위이며 C6 임베딩 API는 별도 기능으로 유지한다.
 
 #### 4.1.3 교육과정 지식 판 관리 (#466)
 
