@@ -32,9 +32,7 @@ REVIEW_COLUMNS = ["relationType", "standardCode", "standardStatement", "target",
                   "similarity", "candidateSource", "decision", "modifiedTarget", "reason", "reviewer",
                   "reviewedAt", "datasetVersion"]
 DATASET_VERSION = re.compile(r"^kn-\d{8}-\d{2}$")
-KNOWLEDGE_PATHS = {("get", "/knowledge/standards"), ("get", "/knowledge/thinking-types/{type}"),
-                   ("post", "/knowledge/search"), ("post", "/knowledge/theme-candidates"),
-                   ("post", "/knowledge/learned")}
+KNOWLEDGE_PATHS = {("get", "/knowledge/standards"), ("get", "/knowledge/thinking-types/{type}")}
 AI_KNOWLEDGE_SCHEMAS = ["KnowledgeThinkingType", "KnowledgeKind", "KnowledgeSubject", "KnowledgeFallbackReason",
                         "KnowledgeRef", "KnowledgeContentItem", "KnowledgeStandard", "KnowledgeDomain",
                         "KnowledgeContent", "KnowledgeFit", "KnowledgeStandardBundle", "KnowledgeSubjectGuide",
@@ -219,7 +217,10 @@ class OpenApiSpecTests(unittest.TestCase):
                 if isinstance(operation, dict) and operation.get("x-implementation-status")}
 
     def test_learning_knowledge_paths_match_api_spec(self):
-        self.assertEqual(self.planned(self.learning), {key: "planned-issue-469" for key in KNOWLEDGE_PATHS})
+        self.assertEqual(self.planned(self.learning), {})
+        actual = {(method, path) for path, methods in self.learning["paths"].items()
+                  if path.startswith("/knowledge/") for method in methods}
+        self.assertEqual(actual, KNOWLEDGE_PATHS)
         rows = set()
         for method, path in re.findall(r"^\| (GET|POST) \| `(/internal/knowledge/[^`?]+)", self.spec_412, re.M):
             rows.add((method.lower(), path.removeprefix("/internal")))
@@ -240,9 +241,11 @@ class OpenApiSpecTests(unittest.TestCase):
         documented = [code for code in re.findall(r"`([A-Z_]+)`", line)]
         self.assertEqual(learning, ai)
         self.assertEqual(documented, learning)
-        fake = load_fake()
-        self.assertTrue(set(learning) >= {"NO_ACTIVE_DATASET", "BELOW_THRESHOLD", "NO_CANDIDATE"})
-        self.assertEqual(fake.DEFAULT_MIN_SIMILARITY, 0.7)
+        self.assertEqual(learning, ["NO_ACTIVE_DATASET", "CODE_NOT_FOUND"])
+        for spec in (self.learning, self.ai):
+            description = spec["components"]["schemas"]["KnowledgeFallbackReason"]["description"]
+            for removed in ("BELOW_THRESHOLD", "NO_CANDIDATE", "NO_REVIEWED_RELATION"):
+                self.assertNotIn(removed, description)
 
     def test_ai_knowledge_schemas_are_copies_of_learning(self):
         for name in AI_KNOWLEDGE_SCHEMAS:
@@ -356,66 +359,22 @@ class FakeFollowsContractTests(unittest.TestCase):
         for method, path, query, body_, schema in [
             ("GET", "/internal/knowledge/standards", {"codes": "4수01-06"}, None, "KnowledgeBundle"),
             ("GET", "/internal/knowledge/thinking-types/SOLVE", {}, None, "KnowledgeThinkingTypeResponse"),
-            ("POST", "/internal/knowledge/search", {}, {"vector": [1.0], "embeddingModel": "x"},
-             "KnowledgeSearchResponse"),
         ]:
             status, payload = inactive.handle(method, path, query, body_, self.headers)
             self.assertEqual(status, 200)
             self.assert_schema(self.learning, schema, payload)
             self.assertEqual((payload["reason"], payload["datasetVersion"]), ("NO_ACTIVE_DATASET", None))
 
-    def test_search_filters_and_threshold(self):
-        body = {"vector": self.vector("자연수의 곱셈과 나눗셈"), "embeddingModel": "fake-bigram-v1", "k": 3,
-                "minSimilarity": 0.2, "filters": {"kinds": ["CONTENT"], "subjects": ["수학"], "semesters": ["3-1"]}}
-        status, response = self.call("POST", "/internal/knowledge/search", body)
-        self.assertEqual(status, 200)
-        self.assert_schema(self.learning, "KnowledgeSearchResponse", response)
-        self.assertTrue(response["items"])
-        self.assertEqual(response["items"][0]["ref"]["id"].split(":")[0], "수학")
-        self.assertTrue(all(i["kind"] == "CONTENT" and "3-1" in i["semesters"] for i in response["items"]))
-        similarities = [i["similarity"] for i in response["items"]]
-        self.assertEqual(similarities, sorted(similarities, reverse=True))
-        status, empty = self.call("POST", "/internal/knowledge/search", {**body, "minSimilarity": 1.0})
-        self.assertEqual((status, empty["items"], empty["reason"]), (200, [], "BELOW_THRESHOLD"))
-
-    def test_theme_candidates_lists_every_type(self):
-        body = {"vector": self.vector("주변 여러 장소에서의 경험과 느낌을 표현"), "embeddingModel": "fake-bigram-v1",
-                "grade": 3, "semester": "3-1", "minSimilarity": 0.1}
-        status, response = self.call("POST", "/internal/knowledge/theme-candidates", body)
-        self.assertEqual(status, 200)
-        self.assert_schema(self.learning, "KnowledgeThemeCandidatesResponse", response)
-        types = {t["thinkingType"]: t for t in response["types"]}
-        self.assertEqual(set(types), {"ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT"})
-        self.assertIn("4사01-01", [c["code"] for c in types["CREATE"]["candidates"]])
-        for entry in types.values():
-            self.assertEqual(entry["reason"] is None, bool(entry["candidates"]))
-        status, problem = self.call("POST", "/internal/knowledge/theme-candidates", {**body, "semester": "4-1"})
-        self.assertEqual((status, problem["code"]), (400, "VALIDATION_FAILED"))
-        self.assert_schema(self.learning, "Problem", problem)
-
-    def test_learned_verdicts(self):
-        concepts = [{"text": text, "vector": self.vector(text)}
-                    for text in ("자연수의 곱셈과 나눗셈", "원인과 결과 파악하기", "블랙홀")]
-        body = {"concepts": concepts, "embeddingModel": "fake-bigram-v1", "grade": 3, "semester": "3-1",
-                "minSimilarity": 0.45}
-        status, response = self.call("POST", "/internal/knowledge/learned", body)
-        self.assertEqual(status, 200)
-        self.assert_schema(self.learning, "KnowledgeLearnedResponse", response)
-        learned, unreviewed, unknown = response["items"]
-        self.assertEqual(learned["verdict"], "LEARNED")
-        self.assertEqual({x["standardCode"] for x in learned["learnedIn"]}, {"4수01-05", "4수01-06"})
-        self.assertEqual((unreviewed["verdict"], unreviewed["reason"]), ("HOLD", "NO_REVIEWED_RELATION"))
-        self.assertEqual((unknown["verdict"], unknown["reason"], unknown["matched"]), ("HOLD", "BELOW_THRESHOLD", None))
-
-    def test_auth_and_embedding_mismatch_return_problem(self):
+    def test_auth_and_removed_vector_routes_return_problem(self):
         cases = [({}, 401, "UNAUTHENTICATED"), ({"X-Internal-Token": "t", "X-User-Role": "PARENT"}, 403, "FORBIDDEN")]
         for headers, status_code, code in cases:
             status, problem = self.call("GET", "/internal/knowledge/thinking-types/SOLVE", headers=headers)
             self.assertEqual((status, problem["code"]), (status_code, code))
             self.assert_schema(self.learning, "Problem", problem)
-        status, problem = self.call("POST", "/internal/knowledge/search",
-                                    {"vector": [0.0] * 3, "embeddingModel": "text-embedding-3-small"})
-        self.assertEqual((status, problem["code"]), (409, "KNOWLEDGE_EMBEDDING_MISMATCH"))
+        for endpoint in ("search", "theme-candidates", "learned"):
+            status, problem = self.call("POST", f"/internal/knowledge/{endpoint}", {})
+            self.assertEqual((status, problem["code"]), (404, "NOT_FOUND"))
+
 
     def test_chunk_text_follows_erd_rule(self):
         chunk = self.api.chunks[("STANDARD", "4수01-06")]

@@ -2445,10 +2445,11 @@ components:
       enum: [국어, 도덕, 사회, 수학, 과학]
     KnowledgeFallbackReason:
       description: >-
-        근거 없음 사유(200 응답, #464 C5). NO_ACTIVE_DATASET 활성 판 없음, BELOW_THRESHOLD 최소 유사도 넘는 조각 없음,
-        NO_CANDIDATE 그 유형 후보 없음, CODE_NOT_FOUND 요청 코드가 하나도 없음, NO_REVIEWED_RELATION 비슷한 내용 요소는 있으나 확인된 covers 없음
+        코드 조회의 근거 없음 사유(200 응답, #464 C5).
+        NO_ACTIVE_DATASET 활성 판 없음, CODE_NOT_FOUND 요청한 성취기준 코드가 하나도 없거나 생각 유형 지침이 없음.
+        확인된 관계가 없으면 fits와 covers는 빈 배열이며 별도 오류 사유를 만들지 않는다.
       type: string
-      enum: [NO_ACTIVE_DATASET, BELOW_THRESHOLD, NO_CANDIDATE, CODE_NOT_FOUND, NO_REVIEWED_RELATION]
+      enum: [NO_ACTIVE_DATASET, CODE_NOT_FOUND]
     KnowledgeRef:
       description: 근거 조각 표시. C5 응답 조각마다 붙고 C7 미션 초안 응답 sources 항목이 된다
       type: object

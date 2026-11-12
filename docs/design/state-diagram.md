@@ -415,6 +415,37 @@ stateDiagram-v2
 - 공개 설정을 다시 켜면 `HIDDEN_SETTING`만 `VISIBLE`로 복원(이관 수락 후 새 보호자 동의 때도 같음)
 - 학생 삭제 시 상태와 관계없이 물리 삭제(P09)
 
+### 3.7 `memory_search_doc.status` (P27, 설계·구현 전)
+
+추억 검색 문서 임베딩([ERD 4.6](erd.md), [결정 기록](../report/retention-expansion.md)). learning은 ShedLock을 쓰지 않으므로 3.3 고착 탐지처럼 조건부 UPDATE로 레플리카 중복 처리를 막는다.
+
+```mermaid
+stateDiagram-v2
+  [*] --> PENDING: 테마 문제 학습 완료와 같은 트랜잭션 (또는 1회 소급)
+  PENDING --> PROCESSING: 주기 작업 선점 (리스 획득)
+  FAILED --> PROCESSING: 주기 작업 재시도 (retry_count 한도 안)
+  PROCESSING --> READY: 임베딩 저장
+  PROCESSING --> FAILED: ai 임베딩 실패·타임아웃
+  PROCESSING --> PENDING: 리스 만료 복구 (처리 Pod 종료)
+  READY --> [*]
+  note right of READY
+    검색 대상은 READY만
+    학생 답변은 수정되지 않아 READY 이후 전이 없음
+  end note
+```
+
+| 전이 | 트리거 | 담당 | 조건부 UPDATE |
+|---|---|---|---|
+| → `PENDING` | 테마 문제 학습 완료(`EXTRA` 제외) | learning 학습 완료 처리 | `attempt_id` UK, `ON CONFLICT DO NOTHING` |
+| `PENDING·FAILED → PROCESSING` | 주기 작업(기준안 1분, 최대 64행) | `MemoryEmbeddingScheduler` → `MemorySearchService` | `SET status='PROCESSING', lease_until=:until WHERE id IN (:ids) AND (status='PENDING' OR (status='FAILED' AND retry_count < :max))`. 영향받은 행만 처리 |
+| `PROCESSING → READY` | 임베딩 응답 | 같은 서비스 | `WHERE id=:id AND status='PROCESSING' AND lease_until=:until`, `embedding`·`embedding_model`·`embedded_at` 저장 |
+| `PROCESSING → FAILED` | 예외·타임아웃 | 같은 서비스 | 위와 같은 리스 조건, `retry_count + 1` |
+| 만료 `PROCESSING → PENDING` | 같은 주기 작업 | 같은 서비스 | `WHERE status='PROCESSING' AND lease_until < now`. 늦게 끝난 이전 처리는 리스 조건 때문에 0행 |
+
+- `retry_count`가 한도(기준안 5)에 닿은 `FAILED`는 자동 재시도하지 않고 운영 확인 대상. 반영 대기·실패 문서는 검색에서 빠지고 앨범 열람에는 영향 없음
+- 리스 시간은 learning→ai 임베딩 호출 타임아웃보다 길게 설정(짧으면 같은 문서를 중복 임베딩)
+- 학생 삭제 시 상태와 관계없이 물리 삭제(P09)
+
 ---
 
 ## 4. 작업 (대화·리포트·알림)

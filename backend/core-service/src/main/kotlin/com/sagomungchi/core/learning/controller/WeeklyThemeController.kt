@@ -25,6 +25,10 @@ class WeeklyThemeController(private val service: LearningProxyService) {
     /** 월요일 시작(INTRO)·토요일 종료(OUTRO) 이야기 열람 기록 (#439, 에픽 #436). 요일 검사·주 1회 멱등은 learning(#438) */
     @PostMapping("/api/v1/students/me/weekly-theme/story-views")
     fun storyViewed(@RequestBody body: ByteArray) = service.storyViewed(body).themeHttp()
+
+    /** 큰 질문 정답 고르기 (#550, 규칙 #483). 고를 수 있는 때·정답 판정·엔딩 상태는 learning(#484), 포인트 적립 없음 */
+    @PostMapping("/api/v1/students/me/weekly-theme/answer-picks")
+    fun answerPicked(@RequestBody body: ByteArray) = service.answerPicked(body).themeHttp()
 }
 
 private fun HttpExchangeResult.themeHttp() = ResponseEntity(body, HttpHeaders().also { target ->

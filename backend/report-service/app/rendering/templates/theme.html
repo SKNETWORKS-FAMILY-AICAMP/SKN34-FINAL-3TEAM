@@ -1,7 +1,7 @@
 {% if report.get('themeSummary') %}{% set theme = report.themeSummary %}
 <h2>이번 주 테마</h2>
 {% if theme.state == 'NO_RECORD' %}<p>참여 기록 없음</p>{% else %}
-<h3>{{ theme.title }}</h3><p>완주: {{ '완료' if theme.completed else '미완료' }}</p>
-<ul>{% for day in theme.days %}<li>{{ day.day }} · {{ day.title or '테마 문제' }}: {{ '완료' if day.completed else '미완료' }}</li>{% endfor %}</ul>
+<h3>{{ theme.title }}</h3>{% for line in theme_status_lines(theme) %}<p>{{ line }}</p>{% endfor %}
+<ul>{% for day in theme.days %}<li>{{ day.day }} · {{ day.title or '테마 문제' }}: {{ theme_day_label(day) }}</li>{% endfor %}</ul>
 <h3>되돌아보기 다시 풀기</h3><ul>{% for retry in theme.reviewRetries %}<li>{{ retry.title or '다시 푼 문제' }}{% if retry.get('comparison') %}{% if retry.comparison.state == 'COMPARABLE' %}<ul>{% for e in retry.comparison.elements %}<li>{{ e.label }}: {{ '확인' if e.previousSatisfied else '미확인' }} → {{ '확인' if e.currentSatisfied else '미확인' }}</li>{% endfor %}</ul>{% elif retry.comparison.state == 'CRITERIA_CHANGED' %} · 기준이 달라 비교하지 않음{% else %} · 이전 기록 없음{% endif %}{% endif %}</li>{% else %}<li>기록 없음</li>{% endfor %}</ul>
 {% endif %}{% endif %}

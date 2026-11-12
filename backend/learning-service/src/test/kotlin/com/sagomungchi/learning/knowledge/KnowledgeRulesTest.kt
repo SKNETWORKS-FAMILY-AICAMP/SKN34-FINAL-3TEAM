@@ -1,6 +1,5 @@
 package com.sagomungchi.learning.knowledge
 
-import com.sagomungchi.learning.knowledge.client.FakeKnowledgeEmbedder
 import com.sagomungchi.learning.knowledge.domain.ChunkKind
 import com.sagomungchi.learning.knowledge.domain.KnowledgeChunks
 import com.sagomungchi.learning.knowledge.domain.KnowledgeInputException
@@ -10,12 +9,11 @@ import com.sagomungchi.learning.knowledge.domain.RelationReview
 import com.sagomungchi.learning.knowledge.domain.RelationType
 import org.junit.jupiter.api.Test
 import java.time.Instant
-import kotlin.math.abs
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-/** 조각 규칙·가짜 임베딩이 ai 가짜 구현(fake.py)과 같은지, C4 → C3 규칙 (#466, erd 4.5) */
+/** 조각 규칙이 ai 가짜 구현(fake.py)과 같은지, C4 → C3 규칙 (#466, erd 4.5) */
 class KnowledgeRulesTest {
     private val chunks = KnowledgeChunks.fromRecords(KnowledgeSamples.records)
 
@@ -26,18 +24,6 @@ class KnowledgeRulesTest {
         assertEquals(mapOf(ChunkKind.STANDARD to 15, ChunkKind.DOMAIN to 14, ChunkKind.CONTENT to 176,
             ChunkKind.SUBJECT_GUIDE to 5, ChunkKind.THINKING_TYPE to 5), chunks.groupingBy { it.kind }.eachCount())
         chunks.forEach { assertEquals(expected[it.id].asText(), it.contentHash, it.id) }
-    }
-
-    @Test
-    fun `가짜 임베딩이 fake_vector와 같음(빈 글·한 글자 포함)`() {
-        val embedder = FakeKnowledgeEmbedder()
-        KnowledgeSamples.parity["vectors"].forEach { case ->
-            val vector = embedder.vector(case["text"].asText())
-            val nonzero = case["nonzero"].associate { it[0].asInt() to it[1].asDouble() }
-            vector.forEachIndexed { index, value ->
-                assertTrue(abs(value - (nonzero[index] ?: 0.0)) < 1e-6, "${case["text"]}[$index]")
-            }
-        }
     }
 
     @Test

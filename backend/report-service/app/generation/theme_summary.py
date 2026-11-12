@@ -18,7 +18,9 @@ class ThemeDay(ThemeModel):
     day: Literal["MON", "TUE", "WED", "THU", "FRI"]
     mission_id: UUID
     title: str | None = None
+    # completed: 그 요일 KST 안에 학습 완료(당일 풀이). completedInWeek: 그 주 안에 학습 완료(#486)
     completed: StrictBool
+    completed_in_week: StrictBool | None = None
 
 
 class ComparedElement(ThemeModel):
@@ -43,8 +45,11 @@ class ThemeSummary(ThemeModel):
     theme_id: UUID | None
     title: str | None
     days: list[ThemeDay]
+    # completed: 개근(월~금 모두 당일 풀이). finished·ending은 #486 선택 칸, 없으면 이전처럼 표시
     completed: StrictBool
     review_retries: list[ReviewRetry]
+    finished: StrictBool | None = None
+    ending: Literal["NOT_ENDED", "ENDED"] | None = None
 
 
 class ThemeSummaryInput(ThemeSummary):
@@ -71,12 +76,20 @@ class ThemeSummaryBuilder:
                 or value.review_retries
                 or value.theme_id is not None
                 or value.title is not None
+                or value.finished
+                or value.ending == "ENDED"
             ):
                 raise RecordContractError("Nonparticipation must not contain theme observations")
         elif value.theme_id is None or not value.title:
             raise RecordContractError("Participated theme requires identity")
         if value.completed and (len(days) != 5 or not all(day.completed for day in value.days)):
             raise RecordContractError("Theme completion requires all five completed days")
+        if any(day.completed and day.completed_in_week is False for day in value.days):
+            raise RecordContractError("On-day completion must be completed in week")
+        if value.finished and (
+            len(days) != 5 or any(day.completed_in_week is False for day in value.days)
+        ):
+            raise RecordContractError("Weekly finish requires all five days completed in week")
         for retry in value.review_retries:
             if retry.comparison and retry.comparison.state != "COMPARABLE":
                 if retry.comparison.elements:

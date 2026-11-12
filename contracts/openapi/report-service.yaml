@@ -2125,6 +2125,17 @@
           "completed": {
             "type": "boolean",
             "title": "Completed"
+          },
+          "completedInWeek": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedinweek"
           }
         },
         "type": "object",
@@ -2185,6 +2196,32 @@
             },
             "type": "array",
             "title": "Reviewretries"
+          },
+          "finished": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished"
+          },
+          "ending": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "NOT_ENDED",
+                  "ENDED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ending"
           }
         },
         "type": "object",

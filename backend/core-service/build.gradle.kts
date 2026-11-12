@@ -59,6 +59,8 @@ tasks.jar {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // Each fork starts its own containers (IntegrationTestSupport), so forks do not share DB state.
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
     testLogging {
         events("failed")
         exceptionFormat = TestExceptionFormat.FULL

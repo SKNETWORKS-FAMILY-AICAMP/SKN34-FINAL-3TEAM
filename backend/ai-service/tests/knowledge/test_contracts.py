@@ -34,18 +34,6 @@ PAIRS = {
     "KnowledgeThinkingTypeGuide": c.ThinkingTypeGuide,
     "KnowledgeBundle": c.KnowledgeBundle,
     "KnowledgeThinkingTypeResponse": c.ThinkingTypeResponse,
-    "KnowledgeSearchFilters": c.SearchFilters,
-    "KnowledgeSearchRequest": c.SearchRequest,
-    "KnowledgeSearchHit": c.SearchHit,
-    "KnowledgeSearchResponse": c.SearchResponse,
-    "KnowledgeThemeCandidatesRequest": c.ThemeCandidatesRequest,
-    "KnowledgeThemeCandidate": c.ThemeCandidate,
-    "KnowledgeThemeTypeCandidates": c.ThemeTypeCandidates,
-    "KnowledgeThemeCandidatesResponse": c.ThemeCandidatesResponse,
-    "KnowledgeLearnedConcept": c.LearnedConcept,
-    "KnowledgeLearnedRequest": c.LearnedRequest,
-    "KnowledgeLearnedItem": c.LearnedItem,
-    "KnowledgeLearnedResponse": c.LearnedResponse,
 }
 HEADERS = {"X-Internal-Token": "t", "X-User-Role": "SYSTEM"}
 
@@ -95,15 +83,6 @@ def test_literals_match_openapi_enums() -> None:
         == list(fake.SUBJECTS)
     )
     assert set(typing.get_args(c.FallbackReason)) < set(typing.get_args(c.RetrievalFallback))
-    request = schemas["KnowledgeSearchRequest"]["properties"]
-    assert request["k"]["maximum"] == c.SEARCH_MAX_K == fake.MAX_K
-    assert (
-        request["minSimilarity"]["default"]
-        == c.DEFAULT_MIN_SIMILARITY
-        == fake.DEFAULT_MIN_SIMILARITY
-    )
-    learned = schemas["KnowledgeLearnedRequest"]["properties"]["concepts"]
-    assert learned["maxItems"] == c.LEARNED_MAX_CONCEPTS == fake.MAX_CONCEPTS
 
 
 def test_fake_answers_through_protocols() -> None:
@@ -123,30 +102,6 @@ def test_fake_answers_through_protocols() -> None:
         )
         assert len({(r.kind, r.id) for r in refs}) == len(refs)
         assert refs[-1].kind == "THINKING_TYPE"
-        search = await api.search(
-            c.SearchRequest(
-                vector=embedded.vectors[0], embedding_model=embedded.model, min_similarity=0.2
-            )
-        )
-        assert search.items and search.reason is None
-        theme = await api.theme_candidates(
-            c.ThemeCandidatesRequest(
-                vector=embedded.vectors[0], embedding_model=embedded.model, grade=3, semester="3-1"
-            )
-        )
-        assert [t.thinking_type for t in theme.types] == list(fake.THINKING_TYPES)
-        learned = await api.learned(
-            c.LearnedRequest(
-                concepts=[
-                    c.LearnedConcept(text="자연수의 곱셈과 나눗셈", vector=embedded.vectors[0])
-                ],
-                embedding_model=embedded.model,
-                grade=3,
-                semester="3-1",
-                min_similarity=0.5,
-            )
-        )
-        assert learned.items[0].verdict == "LEARNED"
         guide = await api.thinking_type("REFLECT")
         assert guide.guide is not None and guide.guide.type == "REFLECT"
 
@@ -170,14 +125,12 @@ def test_mock_transport_and_server_speak_http() -> None:
                 "/internal/embeddings", json={"texts": ["나눗셈"]}, headers=HEADERS
             )
             assert embedded.status_code == 200
-            vector = c.EmbeddingResponse.model_validate(embedded.json()).vectors[0]
-            response = await client.post(
-                "/internal/knowledge/search",
-                json={"vector": vector, "embeddingModel": "fake-bigram-v1", "minSimilarity": 0.1},
-                headers=HEADERS,
-            )
-            assert response.status_code == 200
-            c.SearchResponse.model_validate(response.json())
+            c.EmbeddingResponse.model_validate(embedded.json())
+            for endpoint in ("search", "theme-candidates", "learned"):
+                removed = await client.post(
+                    f"/internal/knowledge/{endpoint}", json={}, headers=HEADERS
+                )
+                assert removed.status_code == 404
             standards = await client.get(
                 "/internal/knowledge/standards", params={"codes": "4과02-01"}, headers=HEADERS
             )
@@ -205,3 +158,15 @@ def test_retrieval_result_carries_fallback() -> None:
         value=None, fallback="KNOWLEDGE_TIMEOUT"
     )
     assert empty.value is None and empty.fallback == "KNOWLEDGE_TIMEOUT"
+
+
+def test_fake_code_validation_and_missing_type_match_learning() -> None:
+    api = fake.FakeKnowledgeApi()
+    for codes in ("", "4국02-04,", " "):
+        status, payload = api.handle(
+            "GET", "/internal/knowledge/standards", {"codes": codes}, None, HEADERS
+        )
+        assert status == 400 and payload["code"] == "VALIDATION_FAILED"
+    del api.types["ANALYZE"]
+    result = c.ThinkingTypeResponse.model_validate(api.thinking_type_sync("ANALYZE"))
+    assert result.guide is None and result.reason == "CODE_NOT_FOUND"

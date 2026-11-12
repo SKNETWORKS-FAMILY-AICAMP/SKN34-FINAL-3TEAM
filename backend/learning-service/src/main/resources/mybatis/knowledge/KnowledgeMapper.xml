@@ -1,14 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 교육과정 지식 저장소 (#466, erd 4.5). vector·배열·jsonb는 글로 받아 형변환(::vector 방식, pgvector 드라이버 없음) -->
+<!-- 교육과정 지식 저장소 (#466, erd 4.5). 배열·jsonb는 글로 받아 형변환. 임베딩 칸 없음(V17) -->
 <mapper namespace="com.sagomungchi.learning.knowledge.repository.KnowledgeMapper">
     <resultMap id="dataset" type="com.sagomungchi.learning.knowledge.repository.DatasetRow">
         <constructor>
             <idArg column="version" javaType="java.lang.String"/>
             <arg column="status" javaType="com.sagomungchi.learning.knowledge.domain.DatasetStatus"/>
             <arg column="source" javaType="java.lang.String"/>
-            <arg column="embedding_model" javaType="java.lang.String"/>
-            <arg column="embedding_dimensions" javaType="_int"/>
             <arg column="chunk_count" javaType="_int"/>
             <arg column="relation_count" javaType="_int"/>
             <arg column="created_at" javaType="java.time.Instant"/>
@@ -21,13 +19,6 @@
             <arg column="id" javaType="java.lang.String"/>
             <arg column="kind" javaType="java.lang.String"/>
             <arg column="content_hash" javaType="java.lang.String"/>
-        </constructor>
-    </resultMap>
-
-    <resultMap id="hashEmbedding" type="com.sagomungchi.learning.knowledge.repository.HashEmbeddingRow">
-        <constructor>
-            <arg column="content_hash" javaType="java.lang.String"/>
-            <arg column="embedding" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
 
@@ -57,7 +48,7 @@
     </resultMap>
 
     <sql id="datasetColumns">
-        version, status, source::text AS source, embedding_model, embedding_dimensions, chunk_count, relation_count,
+        version, status, source::text AS source, chunk_count, relation_count,
         created_at, activated_at
     </sql>
 
@@ -81,10 +72,8 @@
 
     <insert id="insertDataset">
         INSERT INTO knowledge_dataset
-            (version, status, source, embedding_model, embedding_dimensions, chunk_count, relation_count, created_at,
-             activated_at)
-        VALUES (#{row.version}, #{row.status}, #{row.source}::jsonb, #{row.embeddingModel}, #{row.embeddingDimensions},
-                #{row.chunkCount}, #{row.relationCount}, #{row.createdAt}, #{row.activatedAt})
+            (version, status, source, chunk_count, relation_count, created_at, activated_at)
+        VALUES (#{row.version}, #{row.status}, #{row.source}::jsonb, #{row.chunkCount}, #{row.relationCount}, #{row.createdAt}, #{row.activatedAt})
     </insert>
 
     <update id="updateCounts">
@@ -101,26 +90,15 @@
     <insert id="insertChunk">
         INSERT INTO knowledge_chunk
             (dataset_version, id, kind, subject, area, standard_code, domain_id, thinking_type, grades, semesters,
-             notice_grade_band, text, record, embedding, content_hash, source)
+             notice_grade_band, text, record, content_hash, source)
         VALUES (#{row.datasetVersion}, #{row.id}, #{row.kind}, #{row.subject}, #{row.area}, #{row.standardCode},
                 #{row.domainId}, #{row.thinkingType}, #{row.grades}::smallint[], #{row.semesters}::varchar[],
-                #{row.noticeGradeBand}, #{row.text}, #{row.record}::jsonb, #{row.embedding}::vector,
+                #{row.noticeGradeBand}, #{row.text}, #{row.record}::jsonb,
                 #{row.contentHash}, #{row.source}::jsonb)
     </insert>
 
     <select id="findChunkHashes" resultMap="chunkHash">
         SELECT id, kind, content_hash FROM knowledge_chunk WHERE dataset_version = #{version}
-    </select>
-
-    <!-- 같은 본문이면 같은 벡터: 해시마다 하나만 -->
-    <select id="findEmbeddingsByHash" resultMap="hashEmbedding">
-        SELECT DISTINCT ON (content_hash) content_hash, embedding::text AS embedding
-        FROM knowledge_chunk WHERE dataset_version = #{version} AND embedding IS NOT NULL
-        ORDER BY content_hash, id
-    </select>
-
-    <select id="countMissingEmbeddings" resultType="_int">
-        SELECT count(*) FROM knowledge_chunk WHERE dataset_version = #{version} AND embedding IS NULL
     </select>
 
     <select id="countChunksByKind" resultMap="kindCount">

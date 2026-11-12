@@ -651,29 +651,48 @@ local kind에서 core·learning·ai·report를 실제로 붙여 확인. 데모 �
 - 고시 개정 확인(2026-11-11): 제2026-1호 일부개정과 제2022-33호의 초3~6 대상 교과 성취기준 331개 문장이 같음
 - 시험: `scripts/tests/test_knowledge_contracts.py`
 
-## 29. 교육과정 지식 저장소 (#466, 에픽 #463, 2026-11-11)
+## 29. 교육과정 지식 저장소 (#466, 에픽 #463, 2026-11-11·12)
 
-#464 계약(C2·C3·C9)대로 `learning_db`에 지식 판·조각·관계 테이블과 판 적재·활성화·제거를 만들었다.
+#464 계약(C2·C3·C9)대로 `learning_db`에 지식 판·조각·관계 테이블과 판 적재·활성화·제거를 만들었다. 2026-11-11 팀 결정(에픽 #463)으로 미션·테마 생성에 벡터 검색·임베딩을 쓰지 않게 되어, 지식 표는 성취기준·생각 유형 **코드 조회용 관계형 표**로 정리했다(V17).
 
-- 테이블: learning V14 `knowledge_dataset`·`knowledge_chunk`·`knowledge_standard_semester`·`knowledge_fits`·`knowledge_prerequisite`·`knowledge_covers`
+- 테이블: learning V14 `knowledge_dataset`·`knowledge_chunk`·`knowledge_standard_semester`·`knowledge_fits`·`knowledge_prerequisite`·`knowledge_covers`. V17이 임베딩 칸(`knowledge_chunk.embedding vector(1536)`)·HNSW 인덱스·`knowledge_dataset.embedding_model`·`embedding_dimensions`를 지움
 - 판 관리 API: `/internal/admin/knowledge/datasets…`([api-spec 4.1.3](../design/api-spec.md#413-교육과정-지식-판-관리-466)), 운영 스크립트 `scripts/knowledge/manage_datasets.py`
-- `vector` 확장은 관리자 bootstrap([DB 개발 가이드 8.7](db-dev-guide.md#87-learning_db-vector-확장-466))
+- 조회 API: #469 코드 조회(`standards?codes`, `thinking-types/{type}`)가 `ACTIVE` 판 하나만 읽음
+- `vector` 확장은 관리자 bootstrap([DB 개발 가이드 8.7](db-dev-guide.md#87-learning_db-vector-확장-466)). 지금 쓰는 칸은 없지만 V14를 처음부터 적용할 때 필요
 
 | 항목 | 결정 (동섭 2026-11-11) | 근거 |
 |---|---|---|
 | 관리 API 접근 | learning 내부 관리 경로 + 운영 스크립트, `SYSTEM` 역할. core 프록시·관리자 화면 없음 | 판 적재는 개발자·운영자 작업 |
-| 벡터 매퍼 | 문자열 + `::vector` 형변환 | 새 의존성 없음. 조각 수천 개 규모 |
-| 임베딩 | `app.knowledge.embedding` = `ai`(기본) \| `fake` | `fake-bigram-v1`을 Kotlin으로 옮겨 ai 가짜와 같은 벡터(시험이 대조) |
 | 적재 실행 | 동기 요청(스크립트가 10분까지 대기) | 실패하면 판이 `LOADING`으로 남는 C9 규칙으로 충분 |
+| 임베딩 | 만들지 않음(V17, 2026-11-12 정리) | 생성은 학기 대응표·성취기준 코드 규칙으로 고름(에픽 #463 결정). 처음 구현(V14)의 `app.knowledge.embedding`·임베딩 재사용·활성화 전 임베딩 검사는 지움 |
 
 - 활성화는 적재와 분리. 적재 때 활성 판을 `source.previousVersion`에 두고, 활성화 때 활성 판이 바뀌었으면 409
 - 같은 관계 여러 행은 `reviewedAt`이 늦은 행. 이전 판에서 옮긴 관계보다 늦은 `REJECT`는 그 관계를 뺌
+- `content_hash`는 판을 바꿀 때 옮긴 관계의 끝 본문이 바뀌었는지 판정하는 데만 씀(바뀌면 다시 확인할 목록)
 - 실패한 `LOADING` 판은 지우지 않음(하루 99개 상한)
 - 샘플 확인 파일(reviewer `SAMPLE`)은 적재가 거부. kind 샘플 적재는 확인 파일 없이
-- 같은 입력 재적재는 임베딩 0회(본문 해시로 재사용)
 - 정렬 주의: Debian glibc는 `초1~2`가 `중1~3`보다 앞. 시험의 학년군 정렬은 `COLLATE "C"`로 고정
 - learning 마이그레이션을 적용하는 검증 스크립트는 pgvector 이미지 사용(V14가 `vector` 타입)
-- 시험: `KnowledgeRulesTest`, `KnowledgeDatasetServiceTest`, `scripts/tests/test_knowledge_manage_datasets.py`
+- 시험: `KnowledgeRulesTest`(조각 해시·covers 학년·학기가 ai `fake.py`와 같음, 관계 규칙), `KnowledgeDatasetServiceTest`(적재·재적재 멱등·교체·제거·관계 옮기기), `scripts/tests/test_knowledge_manage_datasets.py`
+
+### 실제 추출본 적재 (kind, 2026-11-12)
+
+#465 `curriculum-v1`(교육부 고시 제2022-33호 별책 5~9, 1,341건)을 공유 kind에 적재·활성화했다. 사람 확인 관계(#468 확인 파일)는 아직 없어 학기 관계만 들어갔다.
+
+| 항목 | 값 |
+|---|---|
+| 판 | `kn-20261112-01` `ACTIVE`(이전 샘플 판 `kn-20261111-01`은 `RETIRED`) |
+| 원문 문서 | 5(국어·도덕·사회·수학·과학 교과 별책) |
+| 조각 | 1,341 = 성취기준 331·영역 114·내용 요소 886·교과 지침 5·생각 유형 5 |
+| 성취기준(교과) | 과학 102·수학 92·국어 64·사회 49·도덕 24 |
+| 학기 관계 | 425 = 3-1 56·3-2 56·4-1 58·4-2 54·5-1 47·5-2 50·6-1 53·6-2 51 |
+| 사람 확인 관계 | fits 0·prerequisite 0·covers 0(#468 확인 전). 내용 요소 학년·학기는 covers가 들어오면 채워짐 |
+| 소요 시간 | 적재·활성화 5초(운영 스크립트 기준) |
+| 표 크기 | `knowledge_chunk` 25 MB(V14 임베딩 칸 포함 시점. V17 적용 뒤 줄어듦) |
+
+- 확인: 성취기준 문장 331개가 `achievement_standard`와 같아 적재가 멈추지 않음. 코드 조회 `4수01-06`·`6국01-02` 본문, 3-1 수학 성취기준 18개
+- 이 적재는 V17 전 배포본(가짜 임베딩 `fake-bigram-v1` 설정)으로 했다. V17이 임베딩 칸을 지워도 조각·관계 행은 그대로 남는다
+- 원래 계획한 실제 OpenAI 임베딩(토큰 약 187,000개·요청 21회·약 0.004달러)은 팀 결정에 따라 부르지 않았다. 국어 교과 지침 조각 하나(11,445자)가 임베딩 상한(8,000자)을 넘는 문제도 임베딩을 쓰지 않아 없어졌다
 
 ## 30. 지식 관계 후보 생성과 사람 확인 (#468, 에픽 #463, 2026-11-11)
 
@@ -798,3 +817,89 @@ python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --d
 ### #391 후속 반영
 
 기록 목록·상세·daily-attempts에 실제 `attempt.context`를 추가했다. 주간 요약은 `WeeklyThemeReportService`가 #207 비교 로직을 재사용해 `reviewRetries[].comparison`에 상태와 요소 변화만 담는다. 학생 범위를 검사하고, 미마무리 시도는 null이며 원문·인용은 전달하지 않는다. 위 #385 이력의 기록 context 후속은 이 변경으로 완료했고 학생 시도 상세 context는 이번 범위 밖이다.
+
+## 33. 지식 코드 조회 내부 API (#469, 2026-11-12)
+
+### 확정 범위와 선행 변경
+
+[#463 팀 결정](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/463#issuecomment-6797018586), [#469 범위 조정](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/469#issuecomment-6797026238), #466·#470 담당자의 11/12 확인에 따라 C5는 코드 조회 두 경로만 제공한다. #547이 병합된 develop `7643cedd`를 반영했다. 이전 다섯 API와 벡터 검색 실험 기록을 현재 완료 기준으로 사용하지 않는다.
+
+| 유지·완료할 작업 | 범위에서 제외한 작업 |
+|---|---|
+| 성취기준 코드 조회, 생각 유형 지침 조회 | `search`, `theme-candidates`, `learned` |
+| ACTIVE 판 조회, 근거 참조, 학년 일치 여부, 확인된 관계 | 질의 벡터, 임베딩 모델 대조, 유사도 기준·k, 재귀 선수 판정 |
+| 질의 2초 예산과 지연 기록 | `HOLD` 처리 협의, 주제 벡터·배움 판정 예시 |
+
+learning V17은 #466에서 이미 적용한 마이그레이션이다. 조회 매퍼·시험 데이터에서 삭제된 임베딩 컬럼 참조를 없앴으며 이 PR에 새 마이그레이션은 없다. V14→V17 실행 이력에 필요한 pgvector 확장은 유지한다. ai의 C6 임베딩 API와 #468 오프라인 관계 후보 생성은 별도 기능으로 유지하고 회귀 검사했다.
+
+### 제공 계약과 #470 호출 방법
+
+| 호출 | 반환·용도 |
+|---|---|
+| `GET /internal/knowledge/standards?codes&grade&thinkingType` | 코드별 성취기준 문장·해설, 영역 내용 체계·고려 사항, 교과 지침, `fits`·`covers`, 선택한 생각 유형 지침 |
+| `GET /internal/knowledge/thinking-types/{type}` | 생각 유형의 팀 작성 지침과 출처 표기 |
+| `KnowledgeService.standards(codes: List<String>, grade: Int?, thinkingType: String?)` | HTTP 컨트롤러와 동일한 `KnowledgeBundle`. learning 미션 초안은 이 메서드를 직접 호출 |
+| `KnowledgeService.thinkingType(type: String)` | HTTP와 동일한 `ThinkingTypeResponse` |
+
+ai 테마 생성은 HTTP 경로를 사용한다. ai 호출 대기 시간과 C7 생성 연동은 #470 범위다. HTTP는 기존 내부 토큰과 SYSTEM 역할을 요구하며 학생 정보는 입력받지 않는다. 직접 호출도 같은 입력 검사·조회 서비스·읽기 트랜잭션을 거친다.
+
+- C5 응답은 [api-spec 4.1.2](../design/api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), 두 서비스 OpenAPI, ai `contracts.py`·`fake.py`·계약 시험을 함께 맞췄다.
+- `codes`는 1~10개, `grade`는 선택값 초3~6, `thinkingType`은 선택값 5유형이다. `gradeMatch=false`여도 요청한 코드는 반환한다. 학년으로 조회 결과를 삭제하는 필터가 아니다.
+- ACTIVE 판 하나의 `version`을 모든 조각·관계의 `dataset_version`에 사용한다. REPEATABLE READ 읽기 트랜잭션으로 조회 중 판과 본문이 함께 변경돼도 하나의 스냅숏만 반환한다. LOADING·RETIRED 판은 읽지 않는다.
+- 각 근거 조각에는 `{kind, id, datasetVersion}`을 붙인다. 사람이 확인하지 않은 관계는 제외하며 `fits=[]`, `covers=[]`는 정상 응답이다. 관계를 추정해 채우지 않는다.
+- 남는 200 응답 사유는 `NO_ACTIVE_DATASET`, `CODE_NOT_FOUND`다. 일부 코드만 없으면 정상 항목과 `missingCodes`를 함께 반환하고, 모든 요청 코드가 없을 때 `CODE_NOT_FOUND`다.
+- 벡터 전용 409와 세 사유 `BELOW_THRESHOLD`·`NO_CANDIDATE`·`NO_REVIEWED_RELATION`은 계약에서 제거했다. 제거된 POST 세 경로는 404이며 이전 클라이언트는 이 경로를 더 호출하면 안 된다.
+
+### 시간 예산과 운영 한계
+
+`app.knowledge.query-timeout-ms`는 기본 2000ms, 허용 범위 1~2000ms다. 각 SQL에 남은 `statement_timeout`을 적용하고 DTO 구성·트랜잭션 종료 뒤에도 예산을 확인한다. 로그에는 작업 이름·성공/실패/시간 초과·소요 시간만 남기며 지식 본문과 토큰은 남기지 않는다.
+
+실제 PostgreSQL에서 테이블 잠금을 유지했을 때 요청이 취소되어 500 `INTERNAL_ERROR`로 끝났고, 잠금 해제 후 다음 요청은 200으로 복구했다. 이번 실행의 시간 초과 로그는 2,007ms다. 2초는 질의 취소 예산이며 취소 전달·정리·HTTP 전송을 포함한 절대 응답 상한이 아니다. 공유 연결 풀 획득 대기를 여기서 강제로 중단하지는 못한다. ai 대기 시간은 #470에서 이 한계를 고려해 정한다.
+
+### 실제 적재본 검증
+
+일회용 PostgreSQL에 V17까지 마이그레이션·시드를 적용하고 #466 관리 API로 `curriculum-v1.jsonl` 1,341건을 적재·활성화했다. 구성은 성취기준 331·영역 114·내용 요소 886·교과 지침 5·생각 유형 지침 5다. 사람 확인 관계는 0건 그대로이며 확인된 것으로 바꾸지 않았다.
+
+| 질의 사례 | 횟수 | 확인한 결과 | 지연 최소~최대 |
+|---|---:|---|---:|
+| `4국02-04`, `4수01-06`, `4과01-01`, `4사01-01`, `4도01-01` | 5 | 원문 문장·해설 일치, 영역·교과·유형 지침, `gradeMatch=true`, 빈 관계 | 15.992~28.198ms |
+| 위 다섯 코드에 학년 6 요청 | 5 | 코드를 유지하면서 `gradeMatch=false` | 16.535~21.390ms |
+| ANALYZE·EVALUATE·CREATE·SOLVE·REFLECT | 5 | 각 유형 출제 지침, 동일 ACTIVE 판의 근거 | 9.750~11.304ms |
+
+값은 로컬 Spring MockMvc→실제 서비스→MyBatis→PostgreSQL 호출 15건의 경과 시간이다. 실제 네트워크 지연·AWS 부하 성능·생성 품질을 측정한 값은 아니다. 실행마다 소폭 달라지며 15건 모두 2초 미만을 검사한다. 코드 조회의 HTTP JSON과 서비스 직접 호출 DTO도 일치했다. 전체 응답·지연은 테스트가 `backend/learning-service/build/contracts/knowledge-actual-observations.json`에 재생성한다.
+
+실행 중인 learning의 읽기 전용 관측 도구도 코드 두 경로로 바꿨다. 내부 토큰을 환경 변수 `INTERNAL_TOKEN`으로 제공한다.
+
+```sh
+python scripts/knowledge/query_examples.py --learning-url http://127.0.0.1:8081 --cases scripts/knowledge/samples/query-examples.sample.json --output knowledge-observations.json
+```
+
+도구는 활성 판 확인 1회와 코드 5개·유형 5개를 조회한다. 판 교체·하위 근거 판 불일치·HTTP 실패 때 완료로 표시하지 않고 부분 결과를 보존한다. 분류 표시는 검토 인증이 아니며 `qualityAssessment=not_evaluated`를 유지한다.
+
+### 조정된 해야 할 일
+
+- [x] 성취기준 코드 조회와 생각 유형 지침 조회 구현
+- [x] learning 직접 호출용 공개 서비스 메서드와 HTTP의 동일 DTO 제공
+- [x] ACTIVE 판·같은 판의 조각/관계·근거 참조·빈 관계 처리
+- [x] 사유를 `NO_ACTIVE_DATASET`·`CODE_NOT_FOUND`로 정리
+- [x] 벡터 API·전용 오류/사유/설정/DTO 제거 및 api-spec·OpenAPI·ai 계약/가짜 구현/시험 동기화
+- [x] 기본 2초 질의 예산·지연 로그·잠금 취소·복구 검사
+- [x] 샘플과 실제 적재본의 조회·학년 일치·유형·내부 인증·판 교체 검사
+
+### 조정된 완료 조건
+
+- [x] 유지하는 두 API의 정상·근거 없음·오류·인증 시험 통과
+- [x] #466 V17 적재/활성화와 연결하고 삭제된 임베딩 컬럼을 참조하지 않음
+- [x] 실제 추출본의 코드 5개·학년 불일치 5개·생각 유형 5개 결과와 지연 기록
+- [x] HTTP와 직접 서비스 호출의 `KnowledgeBundle` 일치
+- [x] API 명세·OpenAPI·ai 모델/가짜 구현의 계약 검사 통과
+- [x] learning 전체 테스트·빌드, ai 회귀 검사, 저장소 스크립트 검사 통과
+
+### 검증 결과
+
+- learning `test bootJar`: 476개 통과, 실패·오류·건너뜀 0개, 실행 JAR 빌드 성공. 실제 PostgreSQL 기반 적재/조회·동시성 시험을 포함한다.
+- 지식 정상/근거 없음/400·401·403 HTTP JSON 10개가 OpenAPI 검사에 통과했다. 실제 추출본 질의 15개의 전체 응답도 OpenAPI와 ai Pydantic 모델 양쪽에 일치했다. 기존 커뮤니티·테마 요약 응답 계약 검사도 통과했다.
+- ai 전체 pytest 719개 통과. 최종 공유 함수·가짜 응답 변경 후 지식·임베딩 묶음 44개를 재실행해 모두 통과했다. Ruff check·format도 통과했다.
+- 저장소 스크립트 최종 304개 중 303개 통과·기존 조건부 1개 제외. 관측 도구 회귀 시험 5개를 포함한다. 제외 항목은 원본 HWP 경로(`KNOWLEDGE_SOURCE_DIR`)가 필요한 재추출 동일성 시험이며, 커밋된 실제 JSONL 적재·조회는 위에서 검증했다.
+
+위 결과는 로컬 검증이다. #470의 생성 연동 완료·생성 품질 승인·운영 배포·원격 PR CI 완료를 의미하지 않는다. 이슈 원문의 벡터 조회 세 경로와 관련 완료 조건은 합의로 제외된 것이며 구현 완료로 체크하지 않는다.

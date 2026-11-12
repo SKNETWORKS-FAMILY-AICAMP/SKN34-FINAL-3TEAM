@@ -642,3 +642,27 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 - 이번 주 테마 응답은 core가 바꾸지 않고 전달하고 OpenAPI·api-spec 설명만 맞춤. core가 읽는 값은 포인트 적립용 `weekStart`·`completed`·`finished`·`days[].missionId`·`attemptStatus`·`day`·`completedOnDay`뿐(#389·#485). 정답·종료 이야기는 learning이 엔딩 전에 비움
 - ai `app/llm/media.py`는 아직 `THEME_VIDEO`를 발행하지 않고 로그만 남긴다. 이 PR 머지 뒤 ai 발행을 켜고 관리자 사용량 집계를 확인
 - 테스트: `ModelVersionHttpTest`(V45 CHECK 저장·조회·미산정), `WeeklyThemeProxyIntegrationTest`(`grade=G5&date=…&sundayTheme=…`), `scripts/tests/test_admin_mission_drafts_contract.py`·`test_admin_operations_contract.py`·`test_core_migration_versions.py`·`test_weekly_theme_contract.py`
+
+## 26. 큰 질문 정답 고르기 프록시·엔딩 전 커뮤니티 잠김 문구 (#550, 2026-11-12)
+
+주간 테마 규칙 개정(#483)에서 큰 질문 정답을 맞히면 바로 엔딩, 틀리면 토요일 다시 풀기 뒤 엔딩이 된다. learning #484가 정답 고르기와 엔딩 전 커뮤니티 잠김을 만들고, 학생 화면은 core를 거치므로 core에 경로와 공개 문구를 더했다. 계약은 api-spec 2.9·2.11·4.1.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `POST /students/me/weekly-theme/answer-picks` (신규) | 학생 본인 세션, body `{pick}` → learning `POST /internal/students/{studentId}/weekly-theme/answer-picks?grade&date&sundayTheme`. 응답 `{correct, ending(NOT_ENDED\|ENDED), answer(엔딩일 때만)}`·오류 그대로, `Cache-Control: no-store` |
+| 커뮤니티 목록·반응 | learning 새 코드 `403 COMMUNITY_LOCKED_UNTIL_ENDING`을 공개 오류로 전달("이번 주 테마 엔딩을 보면 친구들 생각을 볼 수 있어요.") |
+
+새 오류 코드: `409 THEME_PICK_NOT_ALLOWED`(learning 판정, 금요일 문제 마무리 전·이미 고름 등)·`403 COMMUNITY_LOCKED_UNTIL_ENDING`.
+
+### 결정과 근거
+
+- **질의는 `themeQuery` 재사용**: 이야기·되돌아보기 열람과 같은 `grade=G{학년}`·KST `date`·`sundayTheme`. 고를 수 있는 날(토요일·프리미엄 일요일 판단 포함)을 learning이 같은 기준으로 판정하게 하려는 것. 일요일 상품 확인 실패는 다른 열람 기록처럼 `false`(닫힘)로 넘긴다
+- **본문은 core가 모양만 확인**: `{pick}` 하나, 비어 있지 않은 문자열이 아니거나 다른 필드가 있으면 learning을 부르지 않고 `400 VALIDATION_FAILED`. `{pick}`만 다시 만들어 넘겨 클라이언트가 `correct`·날짜 같은 값을 끼워 넣지 못하게 한다(`story-views`와 같은 방식). 후보 안의 값인지·길이는 후보 목록을 가진 learning이 판정
+- **응답·오류는 그대로 전달**: 정답 판정·엔딩 상태·정답 공개 시점은 learning 소유라 core가 응답을 읽거나 바꾸지 않는다. `409 THEME_PICK_NOT_ALLOWED`는 기존 `THEME_STORY_NOT_ALLOWED`처럼 learning Problem을 그대로 보여 준다
+- **포인트 적립 없음**: #483 포인트 규칙에 정답 고르기 사건이 없다
+- **잠김 코드를 따로 둠**: 기존 `COMMUNITY_LOCKED`는 "이 미션을 마무리하면…" 문구라 금요일 문제를 마무리했지만 정답을 틀린 학생에게 맞지 않는다. 문구는 이슈 기준안
+- **머지 순서**: learning 경로가 생기기 전(#484 머지 전)에는 이 경로만 learning 404를 그대로 전달한다. 커뮤니티 새 코드는 learning이 보내기 전까지 쓰이지 않는다. 그래서 #484보다 먼저 머지해도 된다
+
+테스트: `WeeklyThemeProxyIntegrationTest`(질의 `grade=G5&date=2026-11-09&sundayTheme=false`·본문 `{pick}`만 전달·200 두 모양·409 전달·적립 없음·400 7종), `CommunityIntegrationTest`(두 잠김 코드 문구). learning 계약 대조는 #484가 `learning-service.yaml`에 경로를 올린 뒤 추가할 수 있다. 남은 확인: #484 머지 뒤 kind에서 맞힘 → 즉시 엔딩, 틀림 → 토요일 다시 풀기 뒤 엔딩, 엔딩 전 커뮤니티 문구(#485 kind 확인과 함께).

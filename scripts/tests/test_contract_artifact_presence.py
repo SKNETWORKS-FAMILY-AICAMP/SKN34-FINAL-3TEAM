@@ -16,7 +16,7 @@ class ContractArtifactPresenceTest(unittest.TestCase):
             (root / "scripts").mkdir()
             shutil.copytree(ROOT / "contracts", root / "contracts")
             for name in ("report", "notification", "support", "payment",
-                         "admin_report_retry", "analysis", "admin_operations", "reward"):
+                         "admin_report_retry", "analysis", "admin_operations", "reward", "knowledge"):
                 with self.subTest(validator=name):
                     script = root / "scripts" / f"validate_{name}_contracts.py"
                     shutil.copyfile(ROOT / "scripts" / script.name, script)
