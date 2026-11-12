@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.memory.repository.ThemeFrameMapper">
+    <resultMap id="frame" type="com.sagomungchi.learning.memory.domain.ThemeFrame">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="theme_id" javaType="java.util.UUID"/>
+            <arg column="theme_week_start" javaType="java.time.LocalDate"/>
+            <arg column="theme_version_id" javaType="java.util.UUID"/>
+            <arg column="awarded_at" javaType="java.time.Instant"/>
+            <arg column="seen_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="key" type="com.sagomungchi.learning.memory.domain.RoundKey">
+        <constructor>
+            <arg column="theme_id" javaType="java.util.UUID"/>
+            <arg column="theme_week_start" javaType="java.time.LocalDate"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="album" type="com.sagomungchi.learning.memory.domain.AlbumRow">
+        <constructor>
+            <arg column="theme_id" javaType="java.util.UUID"/>
+            <arg column="theme_week_start" javaType="java.time.LocalDate"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="intro_image_uri" javaType="java.lang.String"/>
+            <arg column="awarded_at" javaType="java.time.Instant"/>
+            <arg column="seen_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 회차 잠금(트랜잭션 끝까지): 같은 회차의 다른 문제 완료를 차례로 판정. 다른 회차와 해시가 겹치면 잠깐 기다릴 뿐 -->
+    <select id="lockRound" resultType="int">
+        SELECT 1 FROM pg_advisory_xact_lock(
+            hashtextextended('theme_frame:' || #{round.studentId}::text || ':' || #{round.themeId}::text || ':' || #{round.weekStart}::text, 0))
+    </select>
+
+    <!--
+      테마 5문제를 모두 학습 완료한 회차 (P27, ERD 4.2.1). THEME_DAY·THEME_REVIEW 완료 시도를 회차·문제별로 묶어 처음 완료 시각을 구하고,
+      테마의 게시본(없으면 현재본) 요일 문제 5개와 모두 맞으면 회차 완료. 획득 시각 = 문제별 처음 완료 시각 중 가장 늦은 값
+      (다섯째 문제를 마친 순간, 일요일·자정 넘긴 이어하기 포함). EXTRA는 회차가 없어 빠짐.
+      버전은 지급 때의 게시본으로 고정해 이후 재게시와 무관하게 제목·그림을 유지
+    -->
+    <sql id="completedRounds">
+        SELECT c.student_id, c.theme_id, c.theme_week_start, d.theme_version_id, max(c.completed_at) AS awarded_at
+        FROM (
+            SELECT a.student_id, a.theme_id, a.theme_week_start, a.mission_id, min(a.completed_at) AS completed_at
+            FROM attempt a
+            WHERE a.context IN ('THEME_DAY', 'THEME_REVIEW') AND a.completed_at IS NOT NULL
+            <if test="round != null">
+                AND a.student_id = #{round.studentId} AND a.theme_id = #{round.themeId} AND a.theme_week_start = #{round.weekStart}
+            </if>
+            GROUP BY a.student_id, a.theme_id, a.theme_week_start, a.mission_id
+        ) c
+        JOIN weekly_theme t ON t.id = c.theme_id
+        JOIN weekly_theme_day d ON d.theme_version_id = COALESCE(t.published_version_id, t.current_version_id)
+                               AND d.mission_id = c.mission_id
+        GROUP BY c.student_id, c.theme_id, c.theme_week_start, d.theme_version_id
+        HAVING count(*) = 5
+    </sql>
+
+    <!-- 회차당 1개(UK). 지급은 확인 전(seen_at NULL), 소급은 확인 시각 = 획득 시각이라 다시 돌려도 같은 값 -->
+    <insert id="insertCompletedRounds">
+        INSERT INTO theme_frame (id, student_id, theme_id, theme_week_start, theme_version_id, awarded_at, seen_at, created_at)
+        SELECT gen_random_uuid(), r.student_id, r.theme_id, r.theme_week_start, r.theme_version_id, r.awarded_at,
+               <choose>
+                   <when test="backfill">r.awarded_at</when>
+                   <otherwise>CAST(NULL AS timestamptz)</otherwise>
+               </choose>,
+               #{now}
+        FROM (<include refid="completedRounds"/>) r
+        ON CONFLICT (student_id, theme_id, theme_week_start) DO NOTHING
+    </insert>
+
+    <select id="find" resultMap="frame">
+        SELECT id, student_id, theme_id, theme_week_start, theme_version_id, awarded_at, seen_at
+        FROM theme_frame
+        WHERE student_id = #{studentId} AND theme_id = #{key.themeId} AND theme_week_start = #{key.weekStart}
+          AND theme_week_start &lt; #{before}
+    </select>
+
+    <select id="findOwned" resultMap="key">
+        SELECT theme_id, theme_week_start
+        FROM theme_frame
+        WHERE student_id = #{studentId} AND theme_week_start &lt; #{before}
+          AND (theme_id, theme_week_start) IN
+          <foreach collection="keys" item="k" open="(" separator="," close=")">(#{k.themeId}::uuid, #{k.weekStart}::date)</foreach>
+        ORDER BY theme_week_start DESC, theme_id
+    </select>
+
+    <!-- 최근 회차순. 같은 주 두 회차(주 중간 학년 변경)는 획득 순 -->
+    <select id="findAlbum" resultMap="album">
+        SELECT f.theme_id, f.theme_week_start, v.title, v.intro_image_uri, f.awarded_at, f.seen_at
+        FROM theme_frame f
+        JOIN weekly_theme_version v ON v.id = f.theme_version_id
+        WHERE f.student_id = #{studentId} AND f.theme_week_start &lt; #{before}
+        ORDER BY f.theme_week_start DESC, f.awarded_at DESC, f.id
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countAlbum" resultType="long">
+        SELECT count(*) FROM theme_frame WHERE student_id = #{studentId} AND theme_week_start &lt; #{before}
+    </select>
+
+    <update id="markSeen">
+        UPDATE theme_frame SET seen_at = #{now} WHERE id = #{id} AND seen_at IS NULL
+    </update>
+
+    <delete id="deleteByStudent">
+        DELETE FROM theme_frame WHERE student_id = #{studentId}
+    </delete>
+</mapper>

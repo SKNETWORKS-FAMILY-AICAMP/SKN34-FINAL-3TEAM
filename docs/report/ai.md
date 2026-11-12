@@ -617,7 +617,7 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 | 콘티 동작 | 뭉치는 제자리 작은 동작·표정만(손짓·건네기·뛰기는 사람만), 누구도 화면 쪽으로 다가오거나 나가지 않음(`CUT_ACTION`) | 영상 모델이 뭉치에게 팔을 만들거나 인물이 사라짐 |
 | 움직임 | 장면마다 JSON 형식 v1(`transition`·`camera`·`speakers`·`effects`·`captions`·`spots`). 상한 밖 숫자는 코드가 맞추고 경고. 영상 속 글자 없이 문구는 `captions`로 웹이 표시 | 관리자가 이야기 글을 고치면 영상 글자와 달라짐 |
 | 살펴보기 `spots` | 요일 그림 속 누를 물건 2~3개(증거 물건 1개). 한마디가 단서 결론·후보·정답을 말하면 그 물건을 뺌 | 미션 전이라 증거 발견 줄과 같은 기준 |
-| 사용량 | `THEME_DRAFT`·`THEME_IMAGE`·`THEME_VIDEO`. `THEME_VIDEO`는 core enum·DB 제약에 들어간 뒤에만 이벤트 발행(그 전에는 로그만) | 먼저 보내면 DLQ(`MISSION_DRAFT` 선례) |
+| 사용량 | `THEME_DRAFT`·`THEME_IMAGE`·`THEME_VIDEO`. `THEME_VIDEO`는 core #543(V45)에 들어간 뒤 #546부터 발행(17.5) | core enum보다 먼저 보내면 DLQ(`MISSION_DRAFT` 선례) |
 | 지식 검색 | `retrieve` 노드 자리만 두고 기능 스위치(기본 꺼짐) | 연결은 #470 |
 
 ### 17.2 실측 (2026-11-11)
@@ -633,7 +633,6 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 - 요일↔유형 배치, 후보 수, "마지막 틀린 후보는 목요일 이후" 기준안(P23 개정 필요)
 - 영상 운영 인증(17.4, #538 인프라 확인)·예산
 - 정답 고르기·엔딩 판정과 단서 공개 조건(그날 미션 완료)은 learning #484, 단서 카드·수첩·후보 지우기는 웹 #440
-- core `THEME_VIDEO` 반영 시점
 - 운영 환경 변수에 테마 모델 두 값을 넣을지(배포 담당)
 - 관리자 화면에 단서 근거(특징 표)를 보여 주려면 계약 추가 필요. learning은 `rulesOut` 수준까지만 다시 검사
 - 기본 뭉치 그림은 기준안(앱 원본 그림이 저장되면 교체)
@@ -658,9 +657,25 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 - 인프라 확인(담당자와): 인증 방식 확정, GCP 권한·Veo 동시 요청 할당량, ai-service 서비스 계정 생성(지금 `create: false`)과 S3 쓰기 IRSA, 영상 env(`THEME_VIDEO_ENABLED`·`VIDEO_PROJECT`·`VIDEO_LOCATION`·`VIDEO_MODEL`·`ASSET_S3_BUCKET`·`GOOGLE_APPLICATION_CREDENTIALS`), 자원 한도(메모리 512Mi·CPU 500m, 컷 다시 인코딩에 모자랄 수 있음, 측정 안 함)
 - 자격 증명을 못 찾으면 google-auth가 GCE 메타데이터 서버를 확인하는데 네트워크 정책이 `169.254.0.0/16`을 막아 기동이 몇 초 늦어질 수 있음(영상 켜짐 + `VIDEO_PROJECT`일 때만)
 
+### 17.5 영상 사용량 `THEME_VIDEO` (#546, 2026-11-12)
+
+core가 #543(V45)부터 `THEME_VIDEO`를 받게 되어(이벤트 스키마·`CallType`·`ck_llm_usage_call_type`·관리자 필터) ai도 영상 사용량을 보낸다.
+
+| 항목 | 내용 | 근거 |
+|---|---|---|
+| 단위 | `VeoVideoClient.generate` 1번(컷 1개, 시작 요청부터 결과·실패까지) = `llm.usage.recorded` 1건. 다시 만든 컷은 새 1건. 시작 전에 마감이 지나 요청을 보내지 않으면 기록 없음 | 그림(`OpenAIImageClient.edit` 1번 = 1건)과 같은 기준. 대기 요청(`fetchPredictOperation`)은 과금 단위가 아님 |
+| 실패 | 상태 코드·연결·결과 없음·대기 초과도 `success: false`와 `errorCode`(`LLM_RATE_LIMITED`·`LLM_INVALID_OUTPUT`·`LLM_TIMEOUT` 등)로 1건 | 실패도 할당량·비용 확인 대상 |
+| 토큰 | `inputTokens`·`outputTokens` 모두 null. core `costUsd` null → `unpricedCalls`로 셈 | Veo는 초 단위 과금이라 토큰이 없음. 0으로 보내면 나중에 `app.llm-pricing`에 Veo 모델이 들어갈 때 0달러로 잘못 계산됨. 이슈 본문은 "토큰 0"이었으나 null로 정함(사용자 결정 2026-11-12) |
+| 프롬프트 버전 | `VideoClient.generate`에 `prompt_version` 인자 추가, 그래프가 테마 프롬프트 버전을 넘김 | 그림 `edit`와 같은 모양 |
+| 가짜 구현 | `FakeVideoClient`는 기록하지 않음 | 가짜 그림·임베딩과 같은 규칙(외부 호출 없음) |
+
+- 시험: 가짜 Veo 응답(`httpx.MockTransport`)으로 성공 1건(토큰 null), 429·결과 없음·대기 초과 각 실패 1건, 마감 전 실패는 기록 없음, `create_media_clients`가 기록기를 넘기는지
+- kind 종단 확인 준비(2026-11-12): Veo 프로젝트에 영상 전용 서비스 계정 `theme-veo`(`roles/aiplatform.user`만)를 만들고 키를 발급함. 조직 기본 정책 `iam.disableServiceAccountKeyCreation` 때문에 이 프로젝트만 잠깐 예외를 두고 발급한 뒤 예외를 지움(이미 만든 키는 동작). 키는 저장소 밖에 두고 kind를 맡은 팀원에게 개인 경로(DM)로 전달, 확인 뒤 삭제 예정. kind 값(MinIO 버킷·주소, ai·learning 설정, ai→MinIO 네트워크 정책, 키 Secret 마운트)은 kind를 운영하는 팀원 PR #574(`Refs #546`)로 develop에 들어감(저장소 값은 `THEME_VIDEO_ENABLED=false`·`THEME_VIDEO_MAX_REGEN=0`, 키 파일과 `VIDEO_PROJECT`는 Secret `ai-theme-video`에 수동으로 넣음). 이 PR은 ai 코드와 문서만
+- kind 확인 때 비용 상한: `THEME_VIDEO_MAX_REGEN=0`(테마 1회 Veo 8번). 예산 알림은 메일만 보내고 호출을 막지 않음
+
 ## 18. 추억 임베딩 구분·추억 설명 API (#565, 2026-11-12)
 
-P27 추억 검색(에픽 #562)의 ai 몫. 계약은 [api-spec 4.2.4·4.2.6](../design/api-spec.md#426-추억-설명-p27-구현-565), 결정은 [리텐션 확장 9.2](retention-expansion.md#92-ai-추억-임베딩-구분추억-설명-api-565-2026-11-12)에 있다.
+P27 추억 검색(에픽 #562)의 ai 몫. 계약은 [api-spec 4.2.4·4.2.6](../design/api-spec.md#426-추억-설명-p27-구현-565), 결정은 [리텐션 확장 9.3](retention-expansion.md#93-ai-추억-임베딩-구분추억-설명-api-565-2026-11-12)에 있다.
 
 - 임베딩: 요청 `purpose`(`KNOWLEDGE` 기본·`MEMORY`)로 사용량 `KNOWLEDGE_EMBEDDING`·`MEMORY_EMBEDDING`만 가른다. 생략한 기존 호출은 그대로 `KNOWLEDGE_EMBEDDING`. 가짜 `FakeEmbedder.handle`도 `purpose`를 받는다
 - 설명: `POST /internal/memory-explanations`, 모듈 `app/memory_explanation/`(router·service·models·checks·prompts·fake). 기본 LLM 1회, 사용량 `MEMORY_EXPLANATION`, 프롬프트 `memoryExplanation`(`memory-explanation@1`)

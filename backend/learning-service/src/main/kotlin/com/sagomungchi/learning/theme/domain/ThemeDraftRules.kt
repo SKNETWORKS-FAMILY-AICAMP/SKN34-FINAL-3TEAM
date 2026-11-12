@@ -64,22 +64,55 @@ object ThemeDraftRules {
     }
 
     /**
-     * 유형 5개 미션 입력 (기준안, 사용자 결정 2026-11-10): 관리자가 고른 유형은 그대로, 나머지는 그 학년군 표(`tables`, 교과별)에서
-     * 같은 학년 최근 초안 코드(`recentCodes`)와 이 초안에서 이미 고른 코드를 빼고 무작위 1개, 입력 방식은 기본값, 성취수준 없음.
-     * 최근 코드를 빼면 남는 게 없으면 최근 코드도 후보로 되돌림. 표가 비어 고를 수 없으면 null
+     * 교과 하나의 자동 성취기준 후보 (#536): 학기 단계(`tiers`, ① 이번 학기 ② 같은 학년군에서 이번 학기까지 배운 학기)와
+     * 학년군 표(`table`). 학년군 표에는 위 학년 성취기준이 있어, 학기 단계에 고를 코드가 하나도 없을 때(대응표에 그 교과가 없거나
+     * 관리자가 다 지정함)만 쓴다. 학기 단계가 최근 코드뿐이라는 이유로는 쓰지 않는다
+     */
+    data class StandardCandidates(val tiers: List<List<AchievementStandard>>, val table: List<AchievementStandard>)
+
+    /**
+     * 자동 성취기준 후보 (#536, class-diagram 4.4, RAG 안 씀 팀 결정 2026-11-11). 교과마다 학년군 표(`tables`)를 학기 대응표로 나눈
+     * 학기 단계: ① 이번 학기(`current`, 예: `4-2`) ② 같은 학년군에서 이번 학기까지 배운 학기(`soFar`, 예: 3-1~4-2).
+     * 빈 단계와 앞 단계와 같은 단계는 뺀다. 아래 학년군은 넣지 않는다(미션 학년이 성취기준 학년군 안이어야 하는 게시 규칙 #353)
+     */
+    fun candidatePools(
+        tables: Map<String, List<AchievementStandard>>,
+        semesters: StandardSemesters,
+        current: String,
+        soFar: List<String>,
+    ): Map<String, StandardCandidates> =
+        tables.mapValues { (_, table) ->
+            val tiers = listOf(
+                table.filter { semesters.covers(it.code, current) },
+                table.filter { standard -> soFar.any { semesters.covers(standard.code, it) } },
+            ).filter { it.isNotEmpty() }.distinct()
+            StandardCandidates(tiers, table)
+        }
+
+    /**
+     * 유형 5개 미션 입력 (기준안, 사용자 결정 2026-11-10·#536 2026-11-12): 관리자가 고른 유형은 그대로, 나머지는 학기 단계(`pools`,
+     * 교과별 `candidatePools`)를 앞에서부터 보며 같은 학년 최근 초안 코드(`recentCodes`, 오래된 것부터)와 이 초안에서 이미 고른 코드를
+     * 빼고 남는 첫 단계에서 무작위 1개. 모든 단계가 최근 코드뿐이면 처음 단계에서 가장 오래전에 쓴 코드(주제 씨앗과 같은 방식).
+     * 학기 단계에 고를 코드가 하나도 없을 때만 학년군 표에서 같은 방식으로. 입력 방식은 기본값, 성취수준 없음. 고를 코드가 없으면 null
      */
     fun autoStandards(
         grade: ThemeGrade,
         requested: List<ThemeMissionInput>,
-        recentCodes: Set<String>,
-        tables: Map<String, List<AchievementStandard>>,
+        recentCodes: List<String>,
+        pools: Map<String, StandardCandidates>,
         random: Random,
     ): List<ThemeMissionInput>? {
         val chosen = requested.flatMap { it.standardCodes }.toMutableSet()
+        val recent = recentCodes.toSet()
+        val lastUse = recentCodes.withIndex().associate { (index, code) -> code to index } // 같은 코드면 나중 값(최근)이 남음
+        fun open(standards: List<AchievementStandard>) = standards.map { it.code }.filterNot { it in chosen }
         return DAY_TYPES.values.map { type ->
             requested.firstOrNull { it.thinkingType == type } ?: run {
-                val pool = tables[autoSubject(type)].orEmpty().map { it.code }.filterNot { it in chosen }
-                val code = (pool.filterNot { it in recentCodes }.ifEmpty { pool }).randomOrNull(random) ?: return null
+                val pool = pools[autoSubject(type)]
+                val tiers = pool?.tiers.orEmpty().map(::open).filter { it.isNotEmpty() }
+                    .ifEmpty { listOfNotNull(pool?.table?.let(::open)?.ifEmpty { null }) }
+                val fresh = tiers.firstNotNullOfOrNull { tier -> tier.filterNot { it in recent }.ifEmpty { null } }
+                val code = fresh?.random(random) ?: tiers.firstOrNull()?.minByOrNull { lastUse[it] ?: -1 } ?: return null
                 chosen += code
                 ThemeMissionInput(type, defaultInputType(type, grade), listOf(code))
             }

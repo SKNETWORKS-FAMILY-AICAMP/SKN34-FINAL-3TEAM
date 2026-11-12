@@ -334,6 +334,23 @@ VALUES ('00000000-0000-4000-8000-000000000002','SCHEMA_HAT','00000000-0000-4000-
 INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at)
 VALUES ('00000000-0000-4000-8000-000000000002','HAT','00000000-0000-4000-8000-000000003896',now());
 SELECT pg_temp.expect_sqlstate($$UPDATE student_look_equipment SET slot = 'THEME'$$, '23514');
+-- #555 V47: furniture skins are look items in the DESK/WALL/WARDROBE slots; the wall holds frames in slots 1..6.
+INSERT INTO look_item(id,code,slot,name,price_points,asset_key,status,created_by,created_at,updated_at)
+VALUES ('00000000-0000-4000-8000-000000005551','SCHEMA_DESK','DESK','schema-test',10,'',
+        'ON_SALE','00000000-0000-4000-8000-000000000001',now(),now());
+INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at)
+VALUES ('00000000-0000-4000-8000-000000000002','DESK','00000000-0000-4000-8000-000000005551',now());
+SELECT pg_temp.expect_sqlstate($$UPDATE look_item SET slot = 'ROOM' WHERE code = 'SCHEMA_DESK'$$, '23514');
+INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-000000000002',1,'00000000-0000-4000-8000-000000005552','2026-11-02',now());
+SELECT pg_temp.expect_sqlstate($$INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-000000000002',2,'00000000-0000-4000-8000-000000005552','2026-11-02',now())$$, '23505');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-000000000002',7,'00000000-0000-4000-8000-000000005553','2026-11-02',now())$$, '23514');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-000000000002',3,'00000000-0000-4000-8000-000000005553','2026-11-03',now())$$, '23514');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-999999999999',1,'00000000-0000-4000-8000-000000005553','2026-11-02',now())$$, '23503');
 """
 
 LEARNING_CASES = """
@@ -563,6 +580,24 @@ SELECT pg_temp.expect_sqlstate($$
     VALUES ('00000000-0000-4000-8000-000000000003', '2026-11-09', 'REVIEW',
             '00000000-0000-4000-8000-000000000120', now())
 $$, '23514');
+-- #559 기념 액자: 회차(학생·테마·주)당 1개, 주는 월요일, 테마·버전 FK
+INSERT INTO theme_frame (id, student_id, theme_id, theme_week_start, theme_version_id, awarded_at, seen_at, created_at)
+VALUES ('00000000-0000-4000-8000-000005590001', '00000000-0000-4000-8000-000000000002',
+        '00000000-0000-4000-8000-000000000120', '2026-11-09', '00000000-0000-4000-8000-000000000121', now(), NULL, now());
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_frame (id, student_id, theme_id, theme_week_start, theme_version_id, awarded_at, seen_at, created_at)
+    VALUES ('00000000-0000-4000-8000-000005590002', '00000000-0000-4000-8000-000000000002',
+            '00000000-0000-4000-8000-000000000120', '2026-11-09', '00000000-0000-4000-8000-000000000121', now(), now(), now())
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_frame SET theme_week_start = '2026-11-10' WHERE id = '00000000-0000-4000-8000-000005590001'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_frame SET theme_version_id = '00000000-0000-4000-8000-999999999999' WHERE id = '00000000-0000-4000-8000-000005590001'
+$$, '23503');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_frame SET theme_id = '00000000-0000-4000-8000-999999999999' WHERE id = '00000000-0000-4000-8000-000005590001'
+$$, '23503');
 -- #484 큰 질문 정답 고르기: 학생·주(월요일)당 1행, 고를 때 금요일 문제는 있는 미션
 INSERT INTO theme_answer_pick (student_id, week_start, theme_id, mission_id, pick, correct, picked_at)
 VALUES ('00000000-0000-4000-8000-000000000002', '2026-11-09', '00000000-0000-4000-8000-000000000120',

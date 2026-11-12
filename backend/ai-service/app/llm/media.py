@@ -3,10 +3,11 @@
 #437, class-diagram 5.5 ImageClient·VideoClient.
 
 - 그림: OpenAI images edits(참조 그림 여러 장). 사용량은 THEME_IMAGE로 기록(토큰은 응답 usage).
-- 영상: Google Cloud Veo(첫 그림만 고정, 무음). THEME_VIDEO는 core enum에 들어가기 전이라
-  사용량 이벤트를 보내지 않고 로그만 남긴다(ai.md 17.1 사용량). 인증은 Google 표준 자격 증명
-  (`google.auth.default()`, #538): 운영은 GOOGLE_APPLICATION_CREDENTIALS가 가리키는 파일(서비스
-  계정 키 또는 WIF 설정), 로컬은 `gcloud auth application-default login`. 토큰은 만료 전에 갱신.
+- 영상: Google Cloud Veo(첫 그림만 고정, 무음). 사용량은 컷 호출마다 THEME_VIDEO로 기록(#546).
+  Veo는 토큰이 아니라 초 단위 과금이라 토큰은 null(core costUsd null, 미산정). 인증은 Google 표준
+  자격 증명(`google.auth.default()`, #538): 운영은 GOOGLE_APPLICATION_CREDENTIALS가 가리키는
+  파일(서비스 계정 키 또는 WIF 설정), 로컬은 `gcloud auth application-default login`. 토큰은 만료
+  전에 갱신.
 - 컷 이어 붙이기(0.5초 녹아드는 전환)·장면 뽑기는 imageio-ffmpeg에 들어 있는 ffmpeg 실행 파일로
   한다(Docker 수정 없음).
 - 시험은 가짜 구현(FakeImageClient·FakeVideoClient)을 쓴다.
@@ -39,6 +40,7 @@ from app.llm.providers import image_mime
 
 logger = logging.getLogger(__name__)
 IMAGE_CALL_TYPE = "THEME_IMAGE"
+VIDEO_CALL_TYPE = "THEME_VIDEO"
 VEO_SIZE = (1280, 720)  # 요청 resolution 720p·16:9의 결과 크기(24fps, 실측)
 STILL_ZOOM = 1.06  # 움직이는 그림 컷: 첫 그림을 컷 길이 동안 이 배율까지 천천히 확대
 
@@ -64,6 +66,7 @@ class VideoClient(Protocol):
         last: bytes | None = None,
         *,
         seconds: int,
+        prompt_version: str,
         deadline: float,
         negative: str | None = None,
     ) -> bytes:
@@ -215,6 +218,7 @@ class VeoVideoClient:
     첫 그림만 고정한다(사용자 결정 2026-11-11). 끝 그림까지 고정하면 비슷한 두 그림 사이를
     억지로 이어 움직임이 흐물거리고 배경이 같아짐(실측). last를 주면 lastFrame도 보낸다.
     토큰은 요청마다 tokens에서 받는다(대기 중에 만료돼도 갱신됨).
+    사용량은 컷 1개(시작부터 결과 또는 실패까지)마다 THEME_VIDEO 1건(그림과 같은 방식).
     """
 
     def __init__(
@@ -225,6 +229,7 @@ class VeoVideoClient:
         model: str,
         tokens: TokenSource,
         timeout: float,
+        recorder: UsageRecorder,
         client: httpx.AsyncClient | None = None,
         poll_seconds: float = 8.0,
     ) -> None:
@@ -235,6 +240,7 @@ class VeoVideoClient:
             f"{location}/publishers/google/models/{model}"
         )
         self._tokens, self._timeout, self._poll = tokens, timeout, poll_seconds
+        self._recorder = recorder
         self._client = client or httpx.AsyncClient(timeout=120)
 
     async def _post(self, url: str, body: dict) -> dict:
@@ -257,11 +263,44 @@ class VeoVideoClient:
         last: bytes | None = None,
         *,
         seconds: int,
+        prompt_version: str,
         deadline: float,
         negative: str | None = None,
     ) -> bytes:
         began = time.monotonic()
         limit = began + _remaining(deadline, self._timeout)
+        try:
+            clip = await self._generate(prompt, first, last, seconds, limit, negative)
+        except LlmUnavailable as exc:
+            self._record(prompt_version, began, exc.code)
+            raise
+        self._record(prompt_version, began, None)
+        return clip
+
+    def _record(self, version: str, started: float, error: str | None) -> None:
+        self._recorder(
+            LlmUsage(
+                call_type=VIDEO_CALL_TYPE,
+                model=self.model,
+                prompt_version=version,
+                input_tokens=None,  # 초 단위 과금이라 토큰 없음(core 미산정)
+                output_tokens=None,
+                latency_ms=int((time.monotonic() - started) * 1000),
+                success=error is None,
+                error_code=error,
+            )
+        )
+
+    async def _generate(
+        self,
+        prompt: str,
+        first: bytes,
+        last: bytes | None,
+        seconds: int,
+        limit: float,
+        negative: str | None,
+    ) -> bytes:
+        began = time.monotonic()
 
         def frame(data: bytes) -> dict:
             return {
@@ -351,6 +390,7 @@ class FakeVideoClient:
         last: bytes | None = None,
         *,
         seconds: int,
+        prompt_version: str,
         deadline: float,
         negative: str | None = None,
     ) -> bytes:
@@ -651,5 +691,6 @@ def create_media_clients(
                     model=settings.video_model,
                     tokens=tokens,
                     timeout=settings.theme_video_timeout,
+                    recorder=recorder,
                 )
     return image, video

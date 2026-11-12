@@ -61,7 +61,14 @@ def test_fake_image_client_records_and_respects_deadline() -> None:
 def test_fake_video_client_makes_clip_of_requested_length() -> None:
     client = FakeVideoClient()
     clip = asyncio.run(
-        client.generate("동작", b"first", seconds=4, deadline=time.monotonic() + 30, negative="n")
+        client.generate(
+            "동작",
+            b"first",
+            seconds=4,
+            prompt_version="v",
+            deadline=time.monotonic() + 30,
+            negative="n",
+        )
     )
     assert client.calls == [("동작", b"first", None, 4)] and client.negatives == ["n"]
     assert seconds_of(clip) == pytest.approx(4, abs=0.1)
@@ -141,17 +148,24 @@ class StaticTokens:
         return self._token
 
 
-def veo_client(seen: list[dict], auth: list[str] | None = None) -> VeoVideoClient:
+def veo_client(
+    seen: list[dict],
+    auth: list[str] | None = None,
+    usages: list[LlmUsage] | None = None,
+    start_status: int = 200,
+    done: dict | None = None,
+) -> VeoVideoClient:
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         seen.append(body)
         if auth is not None:
             auth.append(request.headers["Authorization"])
         if request.url.path.endswith(":predictLongRunning"):
-            return httpx.Response(200, json={"name": "op-1"})
+            return httpx.Response(start_status, json={"name": "op-1"})
         video = base64.b64encode(b"mp4-bytes").decode()
         return httpx.Response(
-            200, json={"done": True, "response": {"videos": [{"bytesBase64Encoded": video}]}}
+            200,
+            json=done or {"done": True, "response": {"videos": [{"bytesBase64Encoded": video}]}},
         )
 
     return VeoVideoClient(
@@ -160,6 +174,7 @@ def veo_client(seen: list[dict], auth: list[str] | None = None) -> VeoVideoClien
         model="veo-fast",
         tokens=StaticTokens(),
         timeout=30,
+        recorder=(usages if usages is not None else []).append,
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         poll_seconds=0.01,
     )
@@ -170,7 +185,12 @@ def test_veo_fixes_first_frame_only_with_negative_prompt() -> None:
     auth: list[str] = []
     clip = asyncio.run(
         veo_client(seen, auth).generate(
-            "동작", tiny_png(1), seconds=8, deadline=time.monotonic() + 30, negative="big eyes"
+            "동작",
+            tiny_png(1),
+            seconds=8,
+            prompt_version="v",
+            deadline=time.monotonic() + 30,
+            negative="big eyes",
         )
     )
     assert clip == b"mp4-bytes"
@@ -185,11 +205,66 @@ def test_veo_sends_last_frame_only_when_given() -> None:
     seen: list[dict] = []
     asyncio.run(
         veo_client(seen).generate(
-            "동작", tiny_png(1), tiny_png(2), seconds=6, deadline=time.monotonic() + 30
+            "동작",
+            tiny_png(1),
+            tiny_png(2),
+            seconds=6,
+            prompt_version="v",
+            deadline=time.monotonic() + 30,
         )
     )
     assert "lastFrame" in seen[0]["instances"][0]
     assert "negativePrompt" not in seen[0]["parameters"]
+
+
+def test_veo_records_theme_video_usage_per_cut_without_tokens() -> None:
+    usages: list[LlmUsage] = []
+    asyncio.run(
+        veo_client([], usages=usages).generate(
+            "동작", tiny_png(1), seconds=4, prompt_version="theme@3", deadline=time.monotonic() + 30
+        )
+    )
+    # 시작·대기 요청 2번이어도 컷 1개에 1건. 초 단위 과금이라 토큰은 null(core 미산정)
+    assert usages == [
+        LlmUsage("THEME_VIDEO", "veo-fast", "theme@3", None, None, usages[0].latency_ms, True, None)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("start_status", "done", "timeout", "code"),
+    [
+        (429, None, 30, "LLM_RATE_LIMITED"),
+        (200, {"done": True, "error": {"code": 3}}, 30, "LLM_INVALID_OUTPUT"),
+        (200, {"done": False}, 0.05, "LLM_TIMEOUT"),  # 끝나지 않는 작업만 금방 시간 초과
+    ],
+)
+def test_veo_records_failed_cut(
+    start_status: int, done: dict | None, timeout: float, code: str
+) -> None:
+    usages: list[LlmUsage] = []
+    client = veo_client([], usages=usages, start_status=start_status, done=done)
+    client._timeout = timeout
+    with pytest.raises(LlmUnavailable) as caught:
+        asyncio.run(
+            client.generate(
+                "동작", tiny_png(1), seconds=4, prompt_version="v", deadline=time.monotonic() + 30
+            )
+        )
+    assert caught.value.code == code
+    assert [(u.call_type, u.success, u.error_code) for u in usages] == [
+        ("THEME_VIDEO", False, code)
+    ]
+
+
+def test_veo_deadline_passed_before_call_records_nothing() -> None:
+    usages: list[LlmUsage] = []
+    with pytest.raises(LlmUnavailable):
+        asyncio.run(
+            veo_client([], usages=usages).generate(
+                "동작", tiny_png(1), seconds=4, prompt_version="v", deadline=time.monotonic() - 1
+            )
+        )
+    assert usages == []  # 요청을 보내지 않았으니 사용량도 없음(그림과 같음)
 
 
 class FakeCredentials:
@@ -270,6 +345,7 @@ def test_create_media_clients_veo_needs_google_credentials(
     monkeypatch.setattr(media.google.auth, "default", default)
     image, video = create_media_clients(settings, print)
     assert isinstance(image, FakeImageClient) and isinstance(video, VeoVideoClient)
+    assert video._recorder is print  # 사용량 기록기를 영상 클라이언트에도 넘김
     assert found["scopes"] == ("https://www.googleapis.com/auth/cloud-platform",)
     no_project = settings.model_copy(update={"video_project": None})
     assert create_media_clients(no_project, print)[1] is None
