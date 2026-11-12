@@ -122,14 +122,15 @@ test('PIN 자녀는 알약으로 한 명만 고르고 Google 없이 선택한 �
   await capture(page, 'pin')
 })
 
-test('상단 가장 오른쪽 알림 종에서 수신 설정을 저장한다', async ({ page, context }) => {
+test('상단 오른쪽 알림과 로그아웃 순서를 유지하고 수신 설정을 저장한다', async ({ page, context }) => {
   const state = await parentServer(context)
   await page.goto(`/parent/settings?childId=${childId}`)
   const bell = page.getByRole('button', { name: '알림 열기', exact: true })
   for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 900 })
     const box = await bell.boundingBox()
-    expect(box!.x + box!.width).toBeGreaterThan(width - 40)
+    const logout = await page.locator('.ws-header .ws-logout').boundingBox()
+    expect(box!.x + box!.width).toBeLessThanOrEqual(logout!.x)
   }
   await bell.click()
   const dialog = page.getByRole('dialog', { name: '알림', exact: true })
@@ -187,7 +188,7 @@ for (const periodType of ['DAILY', 'WEEKLY'] as const) test(`${periodType} 답�
   await expect(marked.filter({ hasText: '답변 제출 시도 수' })).toHaveCount(1)
   await expect(marked.filter({ hasText: '나무가 그늘을 만들어 줍니다.' })).toHaveCount(1)
   await expect(marked.filter({ hasText: '다른 활동' })).toHaveCount(0)
-  await expect(marked.first()).toHaveCSS('outline-color', 'rgb(47, 122, 79)')
+  await expect(marked.first()).toHaveCSS('outline-color', 'rgb(39, 112, 68)')
   expect(state.calls.some(call => call.path.endsWith('/message-1/evidence'))).toBe(true)
   if (periodType === 'DAILY') await capture(page, 'report-highlight')
   await page.getByRole('button', { name: '새 대화', exact: true }).click()

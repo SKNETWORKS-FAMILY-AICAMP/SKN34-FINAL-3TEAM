@@ -31,8 +31,9 @@ export function ConsentSettings({ child }: { child?: Child }) {
     <h2>동의 이력·철회</h2>
     <p>필수 동의 철회 시 계정 또는 해당 자녀의 이용이 제한됩니다. 삭제·탈퇴는 별도 요청이며 이 화면에서 실행하지 않습니다.</p>
     <QueryFeedback query={history} />
-    {history.data?.items.filter(entry => !entry.studentId || entry.studentId === child?.id).map((entry) => <article key={entry.consentId}>
+    {history.data?.items.filter(entry => !entry.studentId || entry.studentId === child?.id).map((entry) => <article className="parent-consent-entry" key={entry.consentId}>
       <p>{entry.document.title} · v{entry.document.version} · {entry.studentId ? `자녀 ${entry.studentId === child?.id ? child.nickname : entry.studentId}` : '계정'} · {entry.status === 'WITHDRAWN' ? '철회/거부' : '동의'}</p>
+      <details className="parent-consent-document"><summary>{entry.document.title} 본문 보기 · v{entry.document.version}</summary>{entry.document.content?.trim() ? <div className="parent-document-body">{entry.document.content}</div> : <p role="note">이 버전의 동의 문서 본문을 불러오지 못했습니다. 문의를 통해 확인해 주세요.</p>}</details>
       <p>기록 시점 {entry.agreedAt}{entry.withdrawnAt && ` · 철회 ${entry.withdrawnAt}`}</p>
       {entry.agreed && entry.status === 'AGREED' && <button className="cj-secondary" disabled={withdraw.isPending} onClick={() => {
         void withdraw.mutateAsync(entry.consentId).then(refreshState).catch(() => {})

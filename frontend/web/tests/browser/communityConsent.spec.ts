@@ -1,3 +1,4 @@
+import { enterStudentFixture } from './studentFixture.ts'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
@@ -47,7 +48,7 @@ test('동의 후 공개 켜기: 대시보드 링크로 동의하고 자녀 화�
   await consent.getByRole('button', { name: '커뮤니티 이용에 동의' }).click()
   await expect(consent.getByRole('status')).toContainText('동의함')
 
-  await page.getByRole('button', { name: '이 자녀로 학습 시작', exact: true }).click()
+  await enterStudentFixture(page)
   await expect(page).toHaveURL(/\/student\/home/)
   await page.getByRole('button', { name: '공개 설정', exact: true }).click()
   const section = page.getByRole('region', { name: '친구들에게 내 답 보여 주기' })

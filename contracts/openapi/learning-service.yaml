@@ -127,7 +127,8 @@ paths:
         - $ref: '#/components/parameters/ThemeSunday'
       description: >-
         본문 {context}(#385, api-spec 2.11): 생략·{}·null은 EXTRA, 정해진 값 밖은 400. 진행 중 시도가 있으면 검사 없이 원래 context 그대로 200.
-        신규 시도만 테마 검사: THEME_DAY는 이번 주 테마의 오늘(KST) 요일 문제만, THEME_REVIEW는 토·일에 이번 주 마무리한 테마 문제만.
+        신규 시도만 테마 검사(누적 공개 #484, state-diagram 3.2.1): THEME_DAY는 이번 주 테마의 공개된(OPEN, 그 요일 00:00부터 토요일까지) 문제이고
+        그 주에 그 문제를 아직 마무리하지 않았을 때만, THEME_REVIEW는 토요일에 이번 주 마무리한 테마 문제만. 일요일은 sundayTheme=true(프리미엄)일 때만 토요일과 같다.
         테마 학년은 grade로 정하고(7~9는 G6, #438) 그 주 테마·주 시작일을 시도에 저장한다.
       requestBody:
         required: false
@@ -156,7 +157,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: MISSION_NOT_AVAILABLE, THEME_DAY_CLOSED(오늘 요일 테마 문제가 아님), THEME_REVIEW_NOT_ALLOWED(토·일 외·이번 주 마무리하지 않은 테마 문제)
+          description: MISSION_NOT_AVAILABLE, THEME_DAY_CLOSED(공개 전 문제·무료 일요일·그 주 이미 마무리한 문제 #506), THEME_REVIEW_NOT_ALLOWED(토요일·프리미엄 일요일 외·이번 주 마무리하지 않은 테마 문제)
           content:
             application/problem+json:
               schema:
@@ -925,7 +926,8 @@ paths:
         core #387이 학생 본인 세션으로 넘김(api-spec 2.11). grade·date는 core가 학생 학년·KST 오늘로 정한 값
         (grade가 없으면 전환 기간의 gradeBand를 낮은 학년으로 읽음, #438).
         이번 주(date가 속한 KST 월요일) 게시 테마, 없으면 그 주 이전 최근 게시 테마를 다시 쓴다(reused). 학생에게는 게시본만 보인다.
-        요일 state는 날짜로 계산(오늘 OPEN, 지난 요일 CLOSED, 안 온 요일 LOCKED, 토·일은 모두 CLOSED, state-diagram 3.2.1).
+        요일 state는 날짜로 계산(누적 공개 #484: 그 요일 00:00 전 LOCKED, 공개 뒤 토요일까지 OPEN, 일요일 CLOSED, sundayTheme=true면 일요일도 OPEN, state-diagram 3.2.1).
+        ending은 큰 질문 정답 고르기로 정하고(state-diagram 3.2.2), 엔딩 전에는 종료 이야기·정답을 비운다.
         그 학년에 게시 테마가 하나도 없으면 404.
       parameters:
         - $ref: '#/components/parameters/StudentId'
@@ -949,11 +951,11 @@ paths:
   /students/{studentId}/weekly-theme/review-views:
     post:
       operationId: recordWeeklyThemeReviewView
-      summary: 토·일 되돌아보기 열람 기록 (주 1회 멱등, #385)
+      summary: 되돌아보기 열람 기록 (토요일·프리미엄 일요일, 주 1회 멱등, #385·#484)
       description: >-
         본문 없음. 학생·주당 1행(theme_review_view)이라 다시 보내도 200이고 firstViewThisWeek만 false.
         completed는 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(돌아보기 저장)했는지(개근, 2026-11-10 개정 전 이름 완주. core 개근 THEME_COMPLETED 근거).
-        date가 토·일이 아니면 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404.
+        date가 토요일이 아니면(일요일은 sundayTheme=true일 때만 허용, #484) 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404.
       parameters:
         - $ref: '#/components/parameters/StudentId'
         - $ref: '#/components/parameters/StudentRole'
@@ -974,7 +976,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: THEME_REVIEW_NOT_ALLOWED(토·일이 아님)
+          description: THEME_REVIEW_NOT_ALLOWED(토요일·프리미엄 일요일이 아님)
           content:
             application/problem+json:
               schema:
@@ -985,8 +987,8 @@ paths:
       summary: 시작·종료 이야기 열람 기록 (주 1회 멱등, #438)
       description: >-
         core #439가 학생 본인 세션으로 넘김(api-spec 2.11). 학생·주·종류당 1행(theme_story_view)이라 다시 보내도 200이고
-        firstViewThisWeek만 false. INTRO는 월~토(그 주 첫 진입에 한 번, 일요일 제외), OUTRO는 엔딩 상태이고 일요일이 아닐 때
-        (엔딩 조건은 #483·#484, 그 전까지 토요일). 그 밖은 409 THEME_STORY_NOT_ALLOWED, 게시 테마가 없으면 404.
+        firstViewThisWeek만 false. INTRO는 월~토·프리미엄 일요일(그 주 첫 진입에 한 번), OUTRO는 엔딩 상태(ending = ENDED, state-diagram 3.2.2)이고
+        무료 일요일이 아닐 때(요일 무관, #484). 그 밖은 409 THEME_STORY_NOT_ALLOWED, 게시 테마가 없으면 404.
       parameters:
         - $ref: '#/components/parameters/StudentId'
         - $ref: '#/components/parameters/StudentRole'
@@ -994,6 +996,7 @@ paths:
         - $ref: '#/components/parameters/ThemeGradeQuery'
         - $ref: '#/components/parameters/GradeBandQuery'
         - $ref: '#/components/parameters/ThemeDate'
+        - $ref: '#/components/parameters/ThemeSunday'
       requestBody:
         required: true
         content:
@@ -1012,7 +1015,52 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: THEME_STORY_NOT_ALLOWED(INTRO 일요일, OUTRO 엔딩 전·일요일)
+          description: THEME_STORY_NOT_ALLOWED(INTRO 무료 일요일, OUTRO 엔딩 전·무료 일요일)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /students/{studentId}/weekly-theme/answer-picks:
+    post:
+      operationId: pickWeeklyThemeAnswer
+      summary: 큰 질문 정답 고르기 (한 주 한 번, #484)
+      description: >-
+        core #550이 학생 본인 세션으로 넘김(api-spec 2.11, 공개 경로 /api/v1/students/me/weekly-theme/answer-picks). 그 주 금요일 문제(THEME_DAY)를
+        마무리한 뒤 후보 중 하나를 고른다. 학생·주당 1행(theme_answer_pick). 맞히면 바로 ending ENDED, 틀리면 NOT_ENDED이고
+        토요일(프리미엄 일요일)에 금요일 문제 다시 풀기(THEME_REVIEW)를 마무리하면 ENDED(다시 고르지 않음, state-diagram 3.2.2).
+        answer는 ENDED일 때만. 게시 테마가 없으면 404.
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+        - $ref: '#/components/parameters/ThemeGradeQuery'
+        - $ref: '#/components/parameters/GradeBandQuery'
+        - $ref: '#/components/parameters/ThemeDate'
+        - $ref: '#/components/parameters/ThemeSunday'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerPickRequest'
+      responses:
+        '200':
+          description: 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerPickResult'
+        '400':
+          description: VALIDATION_FAILED(pick 없음·빈 값·후보 밖)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: THEME_PICK_NOT_ALLOWED(큰 질문 없는 테마·금요일 문제 마무리 전·이번 주 이미 고름·무료 일요일)
           content:
             application/problem+json:
               schema:
@@ -1923,7 +1971,8 @@ paths:
       operationId: listMissionCommunityPosts
       summary: 같은 미션 공유물 무작위 목록 (FN-RET-02)
       description: >-
-        열람자가 그 미션을 학습 완료하지 않았으면 403 COMMUNITY_LOCKED. VISIBLE만, 열람자 본인 공유물 제외, 반응 수 없음.
+        열람자가 그 미션을 학습 완료하지 않았으면 403 COMMUNITY_LOCKED, 정답 고르기 문제(큰 질문 테마의 금요일 문제)를 그 문제로 고른 주에 엔딩을 보지 않았으면
+        403 COMMUNITY_LOCKED_UNTIL_ENDING(#484). VISIBLE만, 열람자 본인 공유물 제외, 반응 수 없음.
         같은 seed면 같은 순서(쪽 나누기도 그 순서를 이어 감). studentId는 core가 별명으로 바꾼 뒤 지운다.
       parameters:
         - $ref: '#/components/parameters/StudentRole'
@@ -1953,7 +2002,7 @@ paths:
         '400': {$ref: '#/components/responses/Problem'}
         '401': {$ref: '#/components/responses/Problem'}
         '403':
-          description: COMMUNITY_LOCKED(미션 미완료) 또는 FORBIDDEN
+          description: COMMUNITY_LOCKED(미션 미완료), COMMUNITY_LOCKED_UNTIL_ENDING(정답 고르기 문제 엔딩 전, #484) 또는 FORBIDDEN
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -2007,7 +2056,7 @@ paths:
         '400': {$ref: '#/components/responses/Problem'}
         '401': {$ref: '#/components/responses/Problem'}
         '403':
-          description: COMMUNITY_LOCKED(미션 미완료) 또는 FORBIDDEN
+          description: COMMUNITY_LOCKED(미션 미완료), COMMUNITY_LOCKED_UNTIL_ENDING(정답 고르기 문제 엔딩 전, #484) 또는 FORBIDDEN
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -2405,7 +2454,7 @@ components:
       required: false
       description: >-
         core #485가 항상 붙이는 일요일 허용 값(api-spec 2.11·core-gateway 18절). KST 일요일이고 상품이 일요일 테마를 허용할 때만 true.
-        learning #484가 true일 때만 일요일 신규 시작·다시 풀기·되돌아보기를 연다. #484 구현 전 learning은 이 값을 읽지 않는다.
+        learning은 true일 때만 일요일을 토요일과 같이 연다(신규 시작·다시 풀기·되돌아보기·이야기 열람·정답 고르기, #484). 없으면 false.
       schema: {type: boolean}
     AdminUserId:
       name: X-User-Id
@@ -3615,7 +3664,8 @@ components:
     WeeklyTheme:
       type: object
       required: [themeId, weekStart, title, intro, reused, days, review, completed, bigQuestion, candidates, introImageUrl,
-                 introVideoUrl, introMotion, introSeen, outroSeen, outro, outroImageUrl, outroVideoUrl, outroMotion, answer, answerClue]
+                 introVideoUrl, introMotion, introSeen, outroSeen, outro, outroImageUrl, outroVideoUrl, outroMotion, answer, answerClue,
+                 finished, ending]
       properties:
         themeId: {type: string, format: uuid}
         weekStart: {type: string, format: date, description: 이번 주 KST 월요일(재사용 테마도 이번 주)}
@@ -3628,7 +3678,7 @@ components:
         introMotion: {$ref: '#/components/schemas/ThemeMotion'}
         introSeen: {type: boolean, description: 이번 주 시작 이야기를 봄}
         outroSeen: {type: boolean, description: 이번 주 종료 이야기를 봄}
-        outro: {type: [string, 'null'], description: '종료 이야기. 엔딩 상태일 때만(조건 #483·#484, 그 전까지 토·일)'}
+        outro: {type: [string, 'null'], description: '종료 이야기. 엔딩 상태(ending = ENDED)일 때만(#484)'}
         outroImageUrl: {type: [string, 'null'], description: 종료 장면 그림. 엔딩 상태일 때만}
         outroVideoUrl: {type: [string, 'null'], description: 종료 장면 영상. 엔딩 상태일 때만}
         outroMotion: {$ref: '#/components/schemas/ThemeMotion'}
@@ -3639,15 +3689,16 @@ components:
           type: array
           items:
             type: object
-            required: [day, missionId, title, thinkingType, state, attemptStatus, clue, rulesOut]
+            required: [day, missionId, title, thinkingType, state, attemptStatus, clue, rulesOut, completedOnDay]
             properties:
               day: {$ref: '#/components/schemas/ThemeDay'}
               missionId: {type: string, format: uuid}
               title: {type: string}
               thinkingType: {$ref: '#/components/schemas/ThinkingType'}
               state: {type: string, enum: [LOCKED, OPEN, CLOSED]}
-              clue: {type: [string, 'null'], description: 그날 단서(#438). LOCKED면 null}
-              rulesOut: {type: [array, 'null'], items: {type: string}, description: 그날 단서로 빠지는 후보(빈 배열 가능). LOCKED면 null}
+              clue: {type: [string, 'null'], description: '그날 단서(#438). 그 문제를 그 주에 학습 완료한 뒤에만, 아니면 null(#484)'}
+              rulesOut: {type: [array, 'null'], items: {type: string}, description: '그날 단서로 빠지는 후보(빈 배열 가능). clue와 같은 조건'}
+              completedOnDay: {type: boolean, description: '그 요일 문제를 그 요일 KST 안에 학습 완료(당일 풀이, core THEME_ON_TIME 근거, #484)'}
               attemptStatus:
                 type: string
                 description: 이번 주 그 요일 문제(THEME_DAY) 최근 시도 상태
@@ -3656,7 +3707,7 @@ components:
           type: object
           required: [open, missions]
           properties:
-            open: {type: boolean, description: 토·일에만 true}
+            open: {type: boolean, description: '토요일·프리미엄 일요일에만 true(#484)'}
             missions:
               type: array
               items:
@@ -3666,8 +3717,26 @@ components:
                   missionId: {type: string, format: uuid}
                   title: {type: string}
                   completed: {type: boolean, description: 이번 주 그 문제 요일 시도를 마무리함(다시 풀기 가능)}
-                  missed: {type: boolean, description: 지난 요일인데 마무리하지 않음(풀 수 없음)}
+                  missed: {type: boolean, description: '공개됐지만 아직 마무리하지 않음(#484, 칸 이름 유지)'}
         completed: {type: boolean, description: '월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(개근, 개정 전 이름 완주). core가 개근 THEME_COMPLETED로 적립(#485·#506)'}
+        finished: {type: boolean, description: '다섯 문제를 그 주 토요일 23:59:59(KST)까지 학습 완료(주간 완주, 일요일 완료 제외). core THEME_FINISHED 근거(#484)'}
+        ending: {$ref: '#/components/schemas/ThemeEnding'}
+    ThemeEnding:
+      type: string
+      enum: [NOT_ENDED, ENDED]
+      description: 그 주 엔딩 상태(state-diagram 3.2.2, #484). 정답을 맞히면 바로 ENDED, 틀리면 금요일 문제 다시 풀기 마무리 뒤 ENDED
+    AnswerPickRequest:
+      type: object
+      required: [pick]
+      properties:
+        pick: {type: string, minLength: 1, maxLength: 100, description: 고른 후보(주간 테마 조회의 candidates 중 하나)}
+    AnswerPickResult:
+      type: object
+      required: [correct, ending, answer]
+      properties:
+        correct: {type: boolean}
+        ending: {$ref: '#/components/schemas/ThemeEnding'}
+        answer: {type: [string, 'null'], description: 정답. ENDED일 때만}
     ThemeMotion:
       type: [object, 'null']
       additionalProperties: true
@@ -3708,7 +3777,7 @@ components:
         completed: {type: boolean}
     WeeklyThemeSummary:
       type: object
-      required: [studentId, weekStart, state, themeId, title, days, completed, reviewRetries]
+      required: [studentId, weekStart, state, themeId, title, days, completed, reviewRetries, finished, ending]
       properties:
         studentId: {type: string, format: uuid}
         weekStart: {type: string, format: date}
@@ -3719,16 +3788,19 @@ components:
           type: array
           items:
             type: object
-            required: [day, missionId, title, completed]
+            required: [day, missionId, title, completed, completedInWeek]
             properties:
               day: {$ref: '#/components/schemas/ThemeDay'}
               missionId: {type: string, format: uuid}
               title: {type: string}
-              completed: {type: boolean, description: 그 요일(KST) 안에 학습 완료}
-        completed: {type: boolean}
+              completed: {type: boolean, description: '그 요일(KST) 안에 학습 완료(= 주간 테마 조회 completedOnDay, 요약은 이름 유지 #507)'}
+              completedInWeek: {type: boolean, description: '그 주 테마 시도 안에 학습 완료, 일요일 포함(report #486, #484)'}
+        completed: {type: boolean, description: 개근}
+        finished: {type: boolean, description: '주간 완주(토요일 23:59:59 KST까지 다섯 문제 학습 완료, 일요일 제외, #484)'}
+        ending: {$ref: '#/components/schemas/ThemeEnding'}
         reviewRetries:
           type: array
-          description: 토·일 되돌아보기 다시 풀기(THEME_REVIEW) 시도
+          description: 토요일(프리미엄 일요일) 되돌아보기 다시 풀기(THEME_REVIEW) 시도
           items:
             type: object
             required: [missionId, title, attemptId]

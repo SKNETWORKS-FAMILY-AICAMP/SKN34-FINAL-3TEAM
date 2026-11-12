@@ -10,15 +10,26 @@ test('유료 이용권 주문 → 결제 승인(toss-stub) → 이용권 적용'
   await page.getByRole('link', { name: '이용권·결제' }).click()
   await expect(page.getByRole('heading', { name: '이용권·결제' })).toBeVisible()
   await page.getByRole('radio', { name: /E2E 프리미엄/ }).check()
+  const popup = page.waitForEvent('popup')
   await page.getByRole('button', { name: '결제수단 선택' }).click()
-  const pending = await page.waitForFunction(() => sessionStorage.getItem('sagomungchi:checkout:v1'))
+  const checkout = await popup
+  await expect(checkout.getByRole('heading', { name: '결제수단 선택', exact: true })).toBeVisible()
+  // #548: only the checkout tab owns the order and its callback sessionStorage.
+  const pending = await checkout.waitForFunction(() => sessionStorage.getItem('sagomungchi:checkout:v1'), undefined, { timeout: 30_000 })
   const order = JSON.parse((await pending.jsonValue()) as string) as { orderId: string; amount: number }
   expect(order.amount).toBe(14900)
-  await page.goto('/payment/success?' + new URLSearchParams({
+  expect(await page.evaluate(() => sessionStorage.getItem('sagomungchi:checkout:v1'))).toBeNull()
+  expect(await checkout.evaluate(() => window.opener)).toBeNull()
+  await checkout.goto('/payment/success?' + new URLSearchParams({
     paymentKey: `e2e-pk-${order.orderId}`, orderId: order.orderId, amount: String(order.amount),
   }))
-  await expect(page.getByRole('heading', { name: '결제가 완료되었습니다' })).toBeVisible()
-  await expect(page.getByText('주문번호 ' + order.orderId)).not.toBeVisible()
-  await page.getByText('거래 자세히 보기', { exact: true }).click()
-  await expect(page.getByText('주문번호 ' + order.orderId)).toBeVisible()
+  await expect(checkout.getByRole('heading', { name: '결제가 완료되었습니다' })).toBeVisible()
+  await expect(checkout.getByText('주문번호 ' + order.orderId)).not.toBeVisible()
+  await checkout.getByText('거래 자세히 보기', { exact: true }).click()
+  await expect(checkout.getByText('주문번호 ' + order.orderId)).toBeVisible()
+  await checkout.close()
+  await page.bringToFront()
+  // Headless CI has no OS tab focus; invoke the same focus listener explicitly.
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(page.getByRole('heading', { name: /E2E 프리미엄.*이용 중/ })).toBeVisible()
 })

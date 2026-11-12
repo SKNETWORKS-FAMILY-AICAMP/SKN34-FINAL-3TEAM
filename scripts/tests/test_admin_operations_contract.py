@@ -140,6 +140,8 @@ class AdminOperationsContracts(unittest.TestCase):
                     reviewed['enum'].remove('KNOWLEDGE_EMBEDDING')
                     # #436 adds only the weekly theme video usage type.
                     reviewed['enum'].remove('THEME_VIDEO')
+                    # #566 adds only the memory search embedding/explanation usage types.
+                    reviewed['enum'].remove('MEMORY_EMBEDDING'); reviewed['enum'].remove('MEMORY_EXPLANATION')
                 # #390 (P24 daily report) adds only the periodType filter/field, daily detail fields and two
                 # daily notification types. Remove exactly those additions; every other field stays fingerprinted.
                 if section=='paths' and name=='/children/{childId}/reports':

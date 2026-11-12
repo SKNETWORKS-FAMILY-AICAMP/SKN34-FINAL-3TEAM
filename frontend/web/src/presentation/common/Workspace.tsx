@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 function ServiceLinks({ role }: { role?: string }) {
+  const location = useLocation()
   if (!role) return null
   const root = '/' + role.toLowerCase()
   return <nav aria-label="이용 지원" className="ws-actions" style={{ marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
-    <Link to={root + '/help'}>도움말</Link><Link to={root + '/support'}>문의·오류 신고</Link><Link to={root + '/notices'}>공지</Link>
+    {[['help', '도움말'], ['support', '문의·오류 신고'], ['notices', '공지']].map(([path, label]) => <Link key={path} to={root + '/' + path + location.search} aria-current={location.pathname === root + '/' + path ? 'page' : undefined}>{label}</Link>)}
     {isDemo && <Link to="/review">개발 점검표</Link>}
   </nav>
 }
@@ -45,6 +46,16 @@ export function Workspace({
     cache = useQueryClient()
   const [scenario, setScenario] = useState('normal')
   const [menuOpen, setMenuOpen] = useState(false)
+  const topbar = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const element = topbar.current
+    if (variant !== 'parent' || !element) return
+    const update = () => element.parentElement?.style.setProperty('--parent-topbar-height', `${element.getBoundingClientRect().height}px`)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [variant])
   async function leave() {
     try {
       await auth.logout.mutateAsync()
@@ -57,7 +68,7 @@ export function Workspace({
   }
   const logout = session && (
     <button
-      className="cj-secondary"
+      className="cj-secondary ws-logout"
       onClick={() => {
         void leave().catch(() => {})
       }}
@@ -151,26 +162,25 @@ export function Workspace({
     return (
       <div id="class-journal">
         <div className="ws-shell ws-parent">
-          <aside className="ws-side">
-            <div className="ws-side-brand">
-              <Brand />
-              <span>{title}</span>
+          <a className="parent-skip" href="#parent-main">본문으로 건너뛰기</a>
+          <div className="ws-parent-topbar" ref={topbar}>
+            <div className="ws-topbar-card">
+            <header className="ws-header">
+              <div className="ws-top-brand"><Brand /></div>
+              <div className="ws-header-actions">{actions}</div>
+              <NotificationBell />
+              {logout}
+              <button className="cj-secondary ws-menu-toggle" aria-label="학부모 메뉴 열기" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>메뉴</button>
+            </header>
             </div>
+          </div>
+          <aside className="ws-side">
             {menu}
-            <details className="ws-support"><summary>도움말·문의</summary><ServiceLinks role={session?.role} /></details>
+            <section className="ws-support"><h2>이용 지원</h2><ServiceLinks role={session?.role} /></section>
             {aside}
           </aside>
           <div className="ws-body">
-            {demo}
-            <header className="ws-header">
-              <div className="ws-mobile-brand"><Brand /><button className="cj-secondary" aria-label="학부모 메뉴 열기" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>메뉴</button></div>
-              <div className="ws-header-actions">
-                {actions}
-                {logout}
-              </div>
-              <NotificationBell />
-            </header>
-            <main className="ws-main">{children}</main>
+            <main className="ws-main" id="parent-main" tabIndex={-1}>{children}</main>
             {footer}
           </div>
           {expiredModal}

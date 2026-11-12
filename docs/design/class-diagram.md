@@ -1466,8 +1466,8 @@ classDiagram
   MemoryProxyService --> LearningMemoryClient
 ```
 
-- `MemoryUsageService.reserve`는 `memory_daily_usage`에 1행을 기록하고 KST 하루 건수가 `product.limits`(`dailyMemorySearches`·`dailyMemoryExplanations`)를 넘으면 `429 USAGE_LIMIT_REACHED`(`MissionUsageService`와 같은 방식)
-- `LearningMemoryClient`는 `_common/client/LearningClient` 전송을 쓰되 설명 경로는 별도 회로 `learning-memory`(아키텍처 1.3)
+- `MemoryUsageService.reserve`는 `memory_daily_usage`에 1행을 기록하고 KST 하루 건수가 `product.limits`(`dailyMemorySearches`·`dailyMemoryExplanations`)를 넘으면 `429 USAGE_LIMIT_REACHED`(`MissionUsageService`와 같은 방식). learning 5xx·전송 실패면 `release`로 되돌림(#566)
+- `LearningMemoryClient`는 `_common/client/LearningClient` 전송을 쓰되 검색·설명 경로가 별도 회로 `learning-memory` 하나를 함께 쓴다(검색 30초·설명 45초, 아키텍처 1.3, #566)
 - 학생 삭제 확정의 `clear`가 `FrameSlotService.deleteStudent`·`MemoryUsageService.deleteStudent`도 부름(P09)
 
 ---
@@ -1972,10 +1972,13 @@ classDiagram
   }
   class WeeklyThemeService {
     <<service>>
-    +current(studentId, grade, date) WeeklyThemeView
-    +checkStart(studentId, missionId, grade, context) ThemeAttempt
-    +recordReviewView(studentId, grade, date) ReviewViewResult
-    +recordStoryView(studentId, grade, date, kind) StoryViewResult
+    +current(studentId, grade, date, sundayTheme) WeeklyThemeView
+    +checkStart(studentId, missionId, grade, context, sundayTheme) ThemeAttempt
+    +recordReviewView(studentId, grade, date, sundayTheme) ReviewViewResult
+    +recordStoryView(studentId, grade, date, kind, sundayTheme) StoryViewResult
+    +pickAnswer(studentId, grade, date, pick, sundayTheme) AnswerPickResult
+    +ending(studentId, weekStart) ThemeEndingState
+    +lockedUntilEnding(studentId, missionId) Boolean
     +scene(attemptId) ThemeScene
     +summary(studentId, weekStart) WeeklyThemeSummary
     +deleteByStudent(studentId) int
@@ -2008,7 +2011,7 @@ classDiagram
   }
   class ThemeEnding {
     <<domain>>
-    +ended(studentId, week, date) Boolean
+    +of(pick, reviewFinishedAt) ThemeEndingState
   }
   class AdminThemeDraftController {
     <<controller>>
@@ -2118,7 +2121,7 @@ classDiagram
 #438 추가(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
 - 학년: `GradeBand`(`G3_4`·`G5_6`)를 `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`)로 바꾼다. `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
 - 이야기·정답 구조: 버전·요일 새 칸은 테마 새 버전 때 함께 복사. `ThemeAnswerRules`가 관리자 저장 때 정답 논리(정답·후보·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어느 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐)와 `hintSpots`(0~100, 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음)를 검사(400). 결정적 단서 `decisiveClue`는 마지막 틀린 후보를 빼는 날의 단서
-- 학생 응답: 요일 단서는 `LOCKED`면 뺌, 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 `ThemeEnding.ended`일 때만. 엔딩 조건은 #483·#484가 정하고 그 전까지 `ThemeEnding`은 토·일을 엔딩으로 본다. INTRO는 월~토 그 주 첫 진입, `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
+- 학생 응답: 요일 단서는 그 문제를 그 주에 학습 완료한 뒤에만(#484), 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 엔딩(`ThemeEnding.of`가 `ENDED`)일 때만. 엔딩은 저장하지 않고 정답 고르기(`theme_answer_pick`)와 고른 뒤 금요일 문제 `THEME_REVIEW` 마무리 시각으로 계산한다(state-diagram 3.2.2, #484). 요일 상태는 `ThemeWeek.stateOf(day, today, sundayTheme)`(누적 공개, 일요일은 core 허용 값). 커뮤니티 `CommunityService`는 `lockedUntilEnding`으로 정답 고르기 문제를 엔딩 전에 잠근다(`COMMUNITY_LOCKED_UNTIL_ENDING`). INTRO는 월~토 그 주 첫 진입, `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
 - `AssetUrls`(`_common/storage`): ai 키(`theme-drafts/…`)만 단기 presigned URL(기준안 1시간)로 바꾸고 그 밖의 값은 그대로. 학생 미션·테마 응답과 관리자 테마 미리보기 칸에서 쓰고, 관리자 미션 응답은 저장 값 그대로
 - `themeScene`: 시도 시작·이어하기 응답에서 `context`가 `THEME_DAY`·`THEME_REVIEW`면 그 시도 `theme_id` 테마 게시본의 그 미션 요일 `{dialogue, hintSpots, videoUrl}`, `EXTRA`는 null. ai는 요일 문제 전 영상을 만들지 않아(#437 2026-11-11) 테마 초안 채택 테마의 `videoUrl`은 null이고, 요일 `video_uri`는 관리자가 직접 넣을 때만 쓰는 칸으로 남김
 - 테마 초안: 미션 초안(4.1.1)과 같은 구조. `ThemeDraftScheduler`는 주기(기준안 10초)마다 `generateNext`, 주간 크론(기준안 수요일 03:00 KST)에 `createWeekly`(다음 주 `G3`~`G6`, 부분 UK + `ON CONFLICT DO NOTHING`). `generateNext`는 리스(기준안 18분) 점유 → 트랜잭션 밖 ai 1회(`ThemeDraftAiClient`, 서킷 `ai-theme-draft`, 대기 기준안 16분) → `ThemeDraftRules.learningFailures`(요일·유형 배치, 미션 5개는 `DraftRules.learningFailures` 재사용, 정답 논리) → 점유 리스 대조 저장. `previousFailures`는 시간순, ai 단계 실패 그대로·learning 실패는 `THEME`/`MISSION`(사유 `<요일> <코드> <자세히>`)·AI 호출 실패 제외(#437 합의)

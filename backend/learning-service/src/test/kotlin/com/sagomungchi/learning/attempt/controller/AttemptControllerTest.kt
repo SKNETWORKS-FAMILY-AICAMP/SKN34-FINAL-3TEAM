@@ -131,6 +131,17 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
+    fun `일요일 허용 값 sundayTheme 쿼리를 시작에 넘기고 없으면 false (#484)`() {
+        given(service.start(student, mission.id, 3, false, AttemptContext.THEME_DAY, true)).willReturn(AttemptStart(attempt, created = true))
+        given(service.get(attempt.id)).willReturn(detail())
+
+        mockMvc.post("/internal/missions/${mission.id}/attempts?grade=3&demo=false&sundayTheme=true") {
+            asStudent(); contentType = MediaType.APPLICATION_JSON; content = """{"context":"THEME_DAY"}"""
+        }.andExpect { status { isCreated() } }
+        verify(service).start(student, mission.id, 3, false, AttemptContext.THEME_DAY, true)
+    }
+
+    @Test
     fun `시도 상세는 ETag와 저장된 초안, 제출 답변과 판정 처리 상태`() {
         val saved = AttemptDraft.empty(attempt.id, now).update(DraftContent(mapOf("text" to "답"), "메모"), now)
         val answer = TimelineAnswer(

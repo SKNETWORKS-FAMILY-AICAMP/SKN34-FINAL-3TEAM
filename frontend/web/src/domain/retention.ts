@@ -29,17 +29,16 @@ export const POINT_EVENT_LABELS: Record<PointEventType, string> = {
 }
 /**
  * 적립값(P21, #485 2026-11-10 개정). 실제 값은 서버 `reward_rule` 데이터라 화면은 안내에만 쓴다.
- * `preparing`: core는 적립을 구현했지만 판정 칸(learning 주간 테마 `days[].completedOnDay`·`finished`, #484)이 아직 없어
- * 지금은 쌓이지 않는 항목(#506). learning #484가 칸을 내보내면 지운다.
+ * 당일 풀이·주간 완주는 learning #484가 판정 칸(`days[].completedOnDay`·`finished`)을 내보내 적립된다(#506 "준비 중" 표시 제거)
  */
-export const POINT_RULES: { type: Exclude<PointEventType, 'UNLOCK'>; amount: number; note: string; preparing?: true }[] = [
+export const POINT_RULES: { type: Exclude<PointEventType, 'UNLOCK'>; amount: number; note: string }[] = [
   { type: 'MISSION_COMPLETED', amount: 10, note: '미션마다 처음 한 번' },
   { type: 'REVIEW_VIEWED', amount: 10, note: '토·일 되돌아보기, 한 주에 한 번' },
   { type: 'COMMUNITY_POSTED', amount: 5, note: '마무리한 풀이가 공유될 때' },
   { type: 'REACTION_GIVEN', amount: 1, note: '하루 5번까지' },
-  { type: 'THEME_ON_TIME', amount: 5, note: '테마 문제를 공개된 그날 끝내면', preparing: true },
+  { type: 'THEME_ON_TIME', amount: 5, note: '테마 문제를 공개된 그날 끝내면' },
   { type: 'THEME_COMPLETED', amount: 30, note: '월~금 문제를 모두 그날 끝내면' },
-  { type: 'THEME_FINISHED', amount: 10, note: '토요일까지 테마 문제 5개를 끝내면', preparing: true },
+  { type: 'THEME_FINISHED', amount: 10, note: '토요일까지 테마 문제 5개를 끝내면' },
 ]
 export interface PointEvent {
   eventType: PointEventType

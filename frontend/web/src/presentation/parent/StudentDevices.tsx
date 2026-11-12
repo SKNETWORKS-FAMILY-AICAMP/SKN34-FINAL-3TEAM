@@ -39,7 +39,7 @@ function useNow(active: boolean) {
  */
 export function StudentDevices({ items }: { items: Child[] }) {
   return (
-    <section className="parent-devices"><header className="parent-page-head"><h1>기기·PIN</h1><p>자녀의 PIN을 정하고 학습할 기기를 연결하세요.</p></header><div className="ws-grid">
+    <section className="parent-devices"><header className="parent-page-head"><h1>기기·PIN</h1><p>자녀의 PIN을 정하고 학습할 기기를 연결하세요.</p></header><div className="parent-device-grid">
       <PinSettings items={items} />
       <GuardianPasswordSettings />
       <PairingIssue items={items} />
