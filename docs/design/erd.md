@@ -22,7 +22,7 @@
 | 개인정보 | 학생은 가명 닉네임만 저장, 실명 컬럼 없음. 결제수단 민감 정보 미저장 (NFR-SEC-06) |
 | JSONB | 구조가 응답 스키마와 같고 조회 조건에 쓰지 않는 값만 (Metric[], verification, versions 등) |
 | NULL·기본값 | `NULL 허용` 표시 컬럼 외에는 NOT NULL. UUID·시각·상태·카운터의 SQL DEFAULT는 두지 않고 앱에서 전달. 정책 값(기능명세서 1.4)을 SQL 기본값으로 고정하지 않고 앱 설정·`product` 데이터로 전달 |
-| 문자열·금액 | varchar는 기본적으로 길이 제한 없는 PostgreSQL varchar. 길이 제한 컬럼은 Mermaid에 `varchar(N)`로 적고 `scripts/verify_db_schema.py`가 길이까지 대조(ShedLock name 64·locked_by 255, `student.look_theme`·`look_companion` 16, 3.5.1 포인트·꾸미기 표, `model_loading_report.pod_id` 253, report `report_job_guard.failure_reason` 100·`outbox_event.last_error_code` 64). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
+| 문자열·금액 | varchar는 기본적으로 길이 제한 없는 PostgreSQL varchar. 길이 제한 컬럼은 Mermaid에 `varchar(N)`로 적고 `scripts/verify_db_schema.py`가 길이까지 대조(ShedLock name 64·locked_by 255, `student.look_theme`·`look_companion` 16, 3.5.1 포인트·꾸미기 표, `model_loading_report.pod_id` 253, report `report_job_guard.failure_reason` 100·`outbox_event.last_error_code` 64, learning `theme_answer_pick.pick` 100 #484). 원화는 int, cost_usd는 반올림 정책 없는 numeric |
 | FK 삭제·순환 참조 | 기본 ON DELETE/UPDATE NO ACTION. mission.current_*·published_*, weekly_theme.current_·published_·review_version_id(#385)와 answer.followup_id만 DEFERRABLE INITIALLY IMMEDIATE. 삭제는 P09에 따라 `student.deleted` 이벤트로 서비스별 물리 삭제. learning 하위 기록은 CASCADE 없이 서비스가 한 트랜잭션에서 순서대로 삭제(4.3, #128) |
 
 - 테이블 없이 Redis에 두는 값: SSE 알림 중계 (아키텍처 1.6). 분석 대화 일일 사용량은 `payment_premium_usage` KST 일자 집계(#225), 무료 플랜 미션 일일 한도(P13)는 `mission_daily_usage` KST 일자 집계(#387, 3.4. 2026-11-10 개정 #485 뒤 무료 상품에서 다시 켠 무료 `EXTRA`만 집계)
@@ -581,6 +581,8 @@ erDiagram
 
 #387(V34, P13·P14 개정): `mission_daily_usage`는 무료 자녀의 신규 시도(learning `201`)만 시도 ID PK로 기록하고 `(student_id, usage_date)` 건수를 `product.limits.dailyMissions`와 비교한다(#210 PostgreSQL 결정, core는 learning 시도를 직접 볼 수 없음). `mission_id`는 한도 도달 뒤 같은 미션의 진행 중 시도 이어하기(`200`)를 막지 않도록 마지막 기록 시도를 찾는 데 쓴다(3.6 설계에 더한 컬럼). 학생 삭제 확정 때 같은 트랜잭션에서 지운다. `EXTRA` 허용은 상품 `features.extraMissions`로 정하며(값이 없으면 무료 거부·구독 중 허용 #506), 무료 상품에서 `false`일 때 프리미엄 `EXTRA` 신규 시도를 `payment_premium_usage.kind = EXTRA_MISSION`(`source_id` = 시도 ID, `USED`)으로 남겨 환불 판정의 프리미엄 사용에 넣는다. 집계 대상은 2026-11-08 결정 때 무료 `THEME_DAY`·`EXTRA` 합산 하루 1개였고, 2026-11-10 개정(#483, core #485 V43)부터는 무료 테마 문제(`THEME_DAY`·`THEME_REVIEW`)를 세지 않으며 V43이 무료 상품 `extraMissions`를 `false`로 바꿔 무료 `EXTRA`도 403이다. 그래서 이 테이블은 무료 상품에서 `EXTRA`를 다시 켤 때(`true`)의 무료 `EXTRA` 하루 한도로만 쓰이고 평소에는 새 행이 없다(테이블·`limits.dailyMissions`는 되돌릴 수 있게 유지). V34 파일 주석의 "THEME_DAY 신규 시도만"은 실제 집계와 다르며 적용된 마이그레이션이라 고치지 않는다. 상세는 [core 보고서](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387).
 
+#566(V46, P27): `memory_daily_usage`는 추억 검색(`SEARCH`)·설명(`EXPLANATION`) 요청 1건당 1행을 기록하고 `(student_id, kind, usage_date)` 건수를 `product.limits`의 `dailyMemorySearches`·`dailyMemoryExplanations`(2026-11-12 확정 20·10, 무료·프리미엄 같음)와 비교한다. 학생·종류별 트랜잭션 advisory lock 안에서 기록한 뒤 건수가 한도를 넘으면 롤백하고 429를 돌려 learning을 부르지 않는다. learning 5xx·시간 초과·연결 실패·서킷 차단이면 그 행을 지워 장애가 한도를 깎지 않게 한다. V46이 기존 상품 행에 두 키를 넣고, 키가 없는 기존 구독 스냅숏은 무료 상품 값을 쓴다. 학생 삭제 확정 때 같은 트랜잭션에서 지운다. 상세는 [core 보고서](../report/core-gateway.md#27-추억-검색설명-프록시하루-한도-566-2026-11-12).
+
 ```mermaid
 erDiagram
   product ||--o{ payment_order : ordered
@@ -593,6 +595,7 @@ erDiagram
   payment_order ||--o| payment : "승인"
   payment ||--o{ refund_request : refunds
   student ||--o{ mission_daily_usage : "무료 추가 문제 하루 한도"
+  student ||--o{ memory_daily_usage : "추억 검색·설명 하루 한도"
 
   payment_charge_attempt {
     uuid id PK
@@ -623,6 +626,13 @@ erDiagram
     date usage_date "KST"
     timestamptz created_at
   }
+  memory_daily_usage {
+    uuid id PK
+    uuid student_id FK
+    varchar kind "SEARCH|EXPLANATION"
+    date usage_date "KST"
+    timestamptz created_at
+  }
   product {
     uuid id PK
     varchar code UK "상품 행별 고유 코드, 초기 FREE, PREMIUM 등 (P13); 고정 enum 아님"
@@ -631,7 +641,7 @@ erDiagram
     varchar billing_cycle "MONTHLY|YEARLY"
     int child_limit
     jsonb features
-    jsonb limits "dailyMissions(무료 EXTRA 재활성 때 하루 한도), dailyFeedback, dailyConversations, reportNarrative (P13)"
+    jsonb limits "dailyMissions(무료 EXTRA 재활성 때 하루 한도), dailyFeedback, dailyConversations, reportNarrative (P13), dailyMemorySearches, dailyMemoryExplanations (P27)"
     boolean active
     timestamptz created_at
   }
@@ -767,7 +777,7 @@ erDiagram
     uuid id PK
     uuid event_id UK "llm.usage.recorded id"
     varchar service "ai|scoring"
-    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|THEME_DRAFT|THEME_IMAGE|REPORT_EXPLANATION|KNOWLEDGE_EMBEDDING|THEME_VIDEO|M2|M1"
+    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|THEME_DRAFT|THEME_IMAGE|REPORT_EXPLANATION|KNOWLEDGE_EMBEDDING|THEME_VIDEO|MEMORY_EMBEDDING|MEMORY_EXPLANATION|M2|M1"
     varchar model
     varchar prompt_version "NULL 허용"
     int input_tokens "NULL 허용"
@@ -830,6 +840,7 @@ erDiagram
 - #480(에픽 #473): 리포트 설명(FN-RPT-09)의 ai 호출 종류 `REPORT_EXPLANATION`(설명 항목 1개당 클러스터 안 sLLM 1회, ai #477)을 V42에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V28·V40과 같은 방식, 허용 목록만 넓힘). 토큰은 기록하지만 sLLM 단가를 설정하지 않아 `cost_usd`는 null(미산정 호출로 셈, #439 이미지와 같음)
 - #467(에픽 #463): 지식 임베딩 API(api-spec 4.2.4 C6)의 ai 호출 종류 `KNOWLEDGE_EMBEDDING`(임베딩 요청 1회당 1건, 본문 최대 64개를 한 번에 보냄)을 V44에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V42와 같은 방식, 허용 목록만 넓힘). 입력 토큰만 있고 출력 토큰은 0으로 기록한다. 단가(`app.llm-pricing`)는 다른 모델처럼 비어 있어 `cost_usd`는 null(미산정 호출로 셈)
 - 에픽 #436(ai #437): 주간 테마 시작·종료 장면 영상 호출 `THEME_VIDEO`를 V45에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V44와 같은 방식, 허용 목록만 넓힘). 토큰이 없어 `cost_usd`가 null(미산정 호출로 셈)
+- #566(에픽 #562): 추억 검색 임베딩 `MEMORY_EMBEDDING`(ai 임베딩 `purpose=MEMORY`)·추억 설명 `MEMORY_EXPLANATION`을 V46에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 허용 목록에 함께 더함(V45와 같은 방식, 허용 목록만 넓힘). ai는 이 확장이 병합된 뒤에만 두 값을 발행한다(#565)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
 - #243 `outbox_event` 실패·격리: 릴레이는 subject별 선두만 발행. 발행 실패는 `failure_count`·`last_error_code`·`last_failed_at`을 기록하고 1·5·15분 뒤 재시도, 4번째 실패에 `quarantined_at` 기록(report #131과 같은 컬럼·기준). 격리 선두와 같은 subject 뒤 행은 운영 재처리까지 대기, 다른 subject는 계속 발행 ([보고서](../report/core-gateway.md#11-core-outbox-실패-격리-243))
 - #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208))
@@ -898,7 +909,7 @@ erDiagram
   }
 ```
 
-- 2026-11-10 개정(#483, core #485 V43 `V43__theme_free_limit_and_daily_points.sql`): 사건 종류에 당일 풀이(`THEME_ON_TIME`, 5)·주간 완주(`THEME_FINISHED`, 10)를 더했다. `reward_rule`·`reward_point_ledger`의 `event_type` CHECK를 V43으로 넓히고(V35는 고치지 않음) `reward_rule` 2행을 추가했다. `THEME_COMPLETED`(30)는 개근(월~금 각 당일 학습 완료)으로 그대로 쓴다. 사건 키는 당일 풀이 `weekStart:day`(예 `2026-11-09:MON`, 요일당 1회), 주간 완주 `weekStart`. 위 Mermaid의 CHECK 목록은 V43 기준이다. 적립 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`이며, learning #484 구현 전에는 당일 풀이·주간 완주 칸이 없어 쌓이지 않는다
+- 2026-11-10 개정(#483, core #485 V43 `V43__theme_free_limit_and_daily_points.sql`): 사건 종류에 당일 풀이(`THEME_ON_TIME`, 5)·주간 완주(`THEME_FINISHED`, 10)를 더했다. `reward_rule`·`reward_point_ledger`의 `event_type` CHECK를 V43으로 넓히고(V35는 고치지 않음) `reward_rule` 2행을 추가했다. `THEME_COMPLETED`(30)는 개근(월~금 각 당일 학습 완료)으로 그대로 쓴다. 사건 키는 당일 풀이 `weekStart:day`(예 `2026-11-09:MON`, 요일당 1회), 주간 완주 `weekStart`. 위 Mermaid의 CHECK 목록은 V43 기준이다. 적립 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`(learning #484)
 - `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30(`THEME_COMPLETED`, 2026-11-10 개정으로 개근: 월~금 각 당일 학습 완료). V43이 당일 풀이 5·주간 완주 10(토요일까지 5문제 학습 완료)을 더했다. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
 - `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·개근·주간 완주 `weekStart`(ISO date, 주 1회), 당일 풀이 `weekStart:day`(요일당 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
 - 적립·해금은 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → `reward_point_balance` 행 `FOR UPDATE` 순서로 잠가 학생별로 직렬화한다. 같은 사건 동시 적립, 다른 키로 같은 항목 동시 해금도 한 번만 반영. 잔액 CHECK `>= 0`
@@ -909,14 +920,12 @@ erDiagram
 
 ### 3.5.2 생활공간·추억 사용량 (P27, 설계·구현 전)
 
-2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 core 저장 구조. 구현 전이라 Mermaid·6장(실제 DB 대조 대상)에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션에서 Mermaid·6장으로 옮긴다. 마이그레이션 번호는 구현 때 정한다(기존 V35·V45는 고치지 않음).
+2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 core 저장 구조. 구현 전이라 Mermaid·6장(실제 DB 대조 대상)에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션에서 Mermaid·6장으로 옮긴다. 마이그레이션 번호는 구현 때 정한다(기존 V35·V45는 고치지 않음). `memory_daily_usage`와 `llm_usage.call_type` 확장은 #566 V46으로 구현해 3.4·3.5 Mermaid와 6장으로 옮겼다.
 
 | 테이블 | 컬럼 | 제약·규칙 |
 |---|---|---|
 | `room_frame_slot` (신규) | `student_id` uuid PK,FK, `slot_no` smallint PK, `theme_id` uuid, `theme_week_start` date, `saved_at` timestamptz | 추억의 벽 슬롯 1~6(기준안 CHECK). `theme_id`·`theme_week_start`는 learning `theme_frame` 논리 참조(서비스 간 FK 없음), 저장 시 learning 내부 API로 보유 확인. UK `(student_id, theme_id, theme_week_start)`로 같은 액자 중복 걸기 방지. 저장은 학생의 전체 슬롯을 한 트랜잭션에서 교체 |
-| `memory_daily_usage` (신규) | `id` uuid PK, `student_id` uuid FK, `kind` varchar `SEARCH`·`EXPLANATION`, `usage_date` date(KST), `created_at` timestamptz | 추억 검색·설명 요청 1건당 1행, 한도 확인은 `(student_id, kind, usage_date)` 건수(`mission_daily_usage`와 같은 방식). 한도 값은 `product.limits`의 `dailyMemorySearches`·`dailyMemoryExplanations`(기준안 20·10). 인덱스 `(student_id, kind, usage_date)` |
 | `look_item`·`student_look_equipment` (변경) | `slot` | CHECK에 가구 슬롯 `DESK`·`WALL`·`WARDROBE` 추가(P22 개정). 가구 1개 = 슬롯 1개라 기존 PK `(student_id, slot)`로 가구당 스킨 1개. 기본 스킨은 행 없이 항상 해금(테마 `lake`와 같은 방식, 기준안) |
-| `llm_usage` (변경) | `call_type` | CHECK에 `MEMORY_EMBEDDING`·`MEMORY_EXPLANATION` 추가(3.5 확장 규칙대로 `llm.usage.recorded` 스키마·core `CallType`·OpenAPI·ai 발행 목록에 함께) |
 
 - 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`memory_daily_usage`도 삭제
 - 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
@@ -1244,7 +1253,7 @@ erDiagram
   - `previous`·`corrected`는 `{"result": "PARTIAL"}` 모양. `previous`는 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과), 최신 정정은 `created_at` 가장 늦은 행 (#80)
 - `self_assessment` UK `(attempt_id, rubric_element_id)`. AI 판정·원본 답변과 별도 저장 (FN-LRN-13)
 - 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
-- `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 2026-11-10 개정(#483) 뒤 뜻: `THEME_DAY`는 공개된 테마 문제 신규 시도(월~토, 프리미엄 일요일), `THEME_REVIEW`는 토요일(프리미엄 일요일) 다시 풀기. 값·CHECK는 그대로이며, 당일 풀이는 `completed_at`과 문제 요일로 계산하고 큰 질문 정답 고르기 결과 저장 위치는 learning #484에서 정한다. 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
+- `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 2026-11-10 개정(#483) 뒤 뜻: `THEME_DAY`는 공개된 테마 문제 신규 시도(월~토, 프리미엄 일요일), `THEME_REVIEW`는 토요일(프리미엄 일요일) 다시 풀기. 값·CHECK는 그대로이며, 당일 풀이는 `completed_at`과 문제 요일로 계산하고 큰 질문 정답 고르기 결과는 `theme_answer_pick`(4.2.1, #484)에 둔다. 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
 
 ### 4.2.1 주간 테마 (P23, #385 V11·V12)
 
@@ -1257,6 +1266,8 @@ erDiagram
   mission ||--o{ weekly_theme_day : "요일 문제"
   weekly_theme ||--o{ theme_review_view : "되돌아보기 열람"
   weekly_theme ||--o{ theme_story_view : "시작·종료 이야기 열람"
+  weekly_theme ||--o{ theme_answer_pick : "큰 질문 정답 고르기"
+  mission ||--o{ theme_answer_pick : "고를 때 금요일 문제"
   weekly_theme ||--o| theme_draft : adopted
 
   weekly_theme {
@@ -1315,6 +1326,15 @@ erDiagram
     uuid theme_id FK "열람 당시 테마"
     timestamptz viewed_at
   }
+  theme_answer_pick {
+    uuid student_id PK "core 논리 참조"
+    date week_start PK "KST 월요일 (CHECK)"
+    uuid theme_id FK "고를 때 테마"
+    uuid mission_id FK "고를 때 금요일 문제"
+    varchar(100) pick "고른 후보"
+    boolean correct "고를 때 정답과 같았는지"
+    timestamptz picked_at
+  }
   theme_draft {
     uuid id PK
     varchar grade "G3|G4|G5|G6"
@@ -1344,7 +1364,7 @@ erDiagram
 - 학년별 테마(#438, 담당자 결정 2026-11-10): `grade_band`(`G3_4`·`G5_6`)를 `grade`(`G3`~`G6`)로 바꾼다. V15가 `grade`를 nullable로 더하고 기존 행을 옮긴 뒤 V16이 NOT NULL·CHECK, 학년 기준 부분 UK·인덱스로 바꾸고 `grade_band`를 지운다(8장). 기존 학년군 테마는 학년마다 같은 내용으로 복사한다(기준안): `G3_4` 행은 `G3`로 바꾸고 같은 내용의 `G4` 테마(새 ID, 버전·요일 복사, 상태·게시본 같음)를 만든다. `G5_6`은 `G5`·`G6`. 기존 시도·열람 기록의 `theme_id`는 원래 행(`G3`·`G5`)을 가리킨 채 두며, 요일 상태·완주는 미션 ID로 맞추므로 결과가 같다. 중학생은 `G6` 테마를 받는다(P26)
 - 이야기·이미지·영상·정답 구조(#438, 기준안): 버전 칸이라 테마 새 버전을 만들 때 요일 칸(`clue`·`rules_out`·`dialogue`·`hint_spots`·`video_uri`)과 함께 복사한다. 모두 NULL 허용이라 사람이 쓴 테마는 비워도 된다. `*_uri`는 ai가 올린 S3 키(`theme-drafts/{실행 ID}/{장면}`)이고 학생·관리자 응답의 URL은 learning이 단기 presigned URL로 만든다. `candidates`는 후보 이름 배열, `rules_out`은 그날 단서로 빠지는 후보 이름 배열(빈 배열 허용)이며, 저장 때 정답 논리(정답은 후보 안이고 어떤 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐, `rules_out`은 후보 안)를 앱이 검사한다(DB 제약 아님). `hint_spots` 각 항목은 그날 미션 기준표의 생각 열기 순번 `seq`와 그림 기준 0~100% 좌표 `x`·`y`
 - `theme_story_view`는 학생·주·종류(`INTRO`·`OUTRO`)당 1행(`ON CONFLICT DO NOTHING`) 열람 멱등. 학생 삭제 때 함께 물리 삭제(4.3)
-- 큰 질문 정답 고르기 저장·판정과 엔딩 상태(정답·종료 이야기 공개 조건)는 주간 테마 규칙 개정 #483·learning #484 몫이다(#438은 공개할 칸만 둔다)
+- 큰 질문 정답 고르기(#484, V18, 사용자 결정 2026-11-12): `theme_answer_pick`은 학생·주당 1행(`ON CONFLICT DO NOTHING`, 한 주 한 번). 금요일 문제를 마무리한 뒤 후보 중 하나를 고르며 `mission_id`는 고를 때의 금요일 문제, `correct`는 고를 때 정답과 같았는지. 엔딩 상태(state-diagram 3.2.2)는 저장하지 않고 이 행과 그 문제 `THEME_REVIEW` 시도 마무리 시각(고른 뒤)으로 계산한다. `pick` 길이는 후보 상한 100자. 학생 삭제 때 함께 물리 삭제(4.3)
 - `answer_clue`(결정적 단서): ai 응답 계약(api-spec 4.2)에 칸이 없어, 채택 때 learning이 요일 단서에서 마지막 틀린 후보를 빼는 날(`rules_out`이 비지 않은 마지막 요일)의 `clue`로 채우고 관리자가 고칠 수 있다(엔딩 화면의 정답 근거)
 - `theme_draft`(#438, 미션 초안 `mission_draft`와 같은 구조): 검사에 실패한 초안은 테마를 만들지 않아 `weekly_theme`과 따로 둔다. 채택 1회에 테마 1개(`theme_id` UK). 부분 UK `(grade, week_start) WHERE source = 'AUTO'`로 레플리카가 주간 자동 생성을 동시에 돌려도 학년·주당 자동 초안 1개(`ON CONFLICT DO NOTHING`). `input`은 `{topic, missions:[{thinkingType, inputType, standardCodes}]}`(관리자가 고르지 않은 유형은 learning이 채운 값), `check_results`는 시도마다 `{attempt, failures:[{stage, reasons[]}]}`, `output`은 ai 응답(api-spec 4.2 `/internal/theme-drafts`) 그대로. `lease_until`은 `mission_draft.lease_until`과 같은 점유 방식. 학생 ID·학생 답은 없다
 
@@ -1366,7 +1386,7 @@ erDiagram
 ```
 
 - `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core 내부 API `POST /internal/deletion-requests/{id}/completions`로 알림
-  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제하고 `theme_review_view`(#385)·`theme_story_view`(#438)도 같은 트랜잭션에서 삭제. 4.6(설계) 구현 시 `memory_search_doc`은 `attempt`보다 먼저, `theme_frame`도 같은 트랜잭션에서 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
+  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제하고 `theme_review_view`(#385)·`theme_story_view`(#438)·`theme_answer_pick`(#484)도 같은 트랜잭션에서 삭제. 4.6(설계) 구현 시 `memory_search_doc`은 `attempt`보다 먼저, `theme_frame`도 같은 트랜잭션에서 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
   - `deleted_student`는 학생당 한 행: 다시 받으면 `event_id`·`deleted_at`을 갱신하고 `scope`는 이미 `PROFILE`이면 유지(report 삭제 장벽과 같은 규칙)
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
 - #208 `processed_event`는 90일 뒤 삭제(V8 `processed_at` 인덱스). 재처리 방지 표식 `deleted_student`는 유지되므로 90일 이후 재전달도 삭제를 반복할 뿐 기록을 되살리지 않음
@@ -1717,6 +1737,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
 | core | `mission_daily_usage` | `(student_id, usage_date)`, `(student_id, mission_id, created_at)` | 무료 추가 문제(`EXTRA` 재활성 때) 하루 건수, 한도 뒤 같은 미션 이어하기 확인 (#387 V34, #485 뒤 무료 `EXTRA`만) |
+| core | `memory_daily_usage` | `(student_id, kind, usage_date)` | 추억 검색·설명 종류별 KST 하루 건수 (#566 V46, P27) |
 | core | `auth_session` | `(user_id)` | 사용자별 세션 폐기 |
 | core | `auth_session` | `(parent_session_id) WHERE parent_session_id IS NOT NULL` | 잠금 해제·재로그인 시 동석 학생 세션 폐기 (V24) |
 | core | `refresh_token` | `(session_id)` | 세션별 토큰 폐기·재사용 탐지 |

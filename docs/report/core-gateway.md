@@ -666,3 +666,48 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 - **머지 순서**: learning 경로가 생기기 전(#484 머지 전)에는 이 경로만 learning 404를 그대로 전달한다. 커뮤니티 새 코드는 learning이 보내기 전까지 쓰이지 않는다. 그래서 #484보다 먼저 머지해도 된다
 
 테스트: `WeeklyThemeProxyIntegrationTest`(질의 `grade=G5&date=2026-11-09&sundayTheme=false`·본문 `{pick}`만 전달·200 두 모양·409 전달·적립 없음·400 7종), `CommunityIntegrationTest`(두 잠김 코드 문구). learning 계약 대조는 #484가 `learning-service.yaml`에 경로를 올린 뒤 추가할 수 있다. 남은 확인: #484 머지 뒤 kind에서 맞힘 → 즉시 엔딩, 틀림 → 토요일 다시 풀기 뒤 엔딩, 엔딩 전 커뮤니티 문구(#485 kind 확인과 함께).
+
+## 27. 추억 검색·설명 프록시·하루 한도 (#566, 2026-11-12)
+
+리텐션 확장 P27(에픽 #562)의 core 몫. 학생 추억 검색·설명을 learning(#563·#564)으로 넘기면서 하루 한도를 확인하고, 새 LLM 사용량 유형을 받는다. 결정 기록은 [리텐션 확장 9.1](retention-expansion.md#91-core-추억-검색설명-프록시하루-한도-566-2026-11-12), 계약은 api-spec 1.3·2.12, 저장은 ERD 3.4·3.5.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `POST /students/me/memories/search` (신규) | 학생 본인 세션, body `{query}`(1~200자) → learning `POST /internal/students/{studentId}/memories/search`. 응답·오류 그대로, `Cache-Control: no-store` |
+| `POST /students/me/memories/explanations` (신규) | body `{query, attemptIds}`(시도 1~3개, 중복 없음) → learning `POST /internal/students/{studentId}/memories/explanations` |
+| `GET /admin/ai-usage?callType` | `MEMORY_EMBEDDING`·`MEMORY_EXPLANATION` 필터·집계(core `CallType` enum이라 별도 변경 없음) |
+
+### 처리 순서
+
+1. 세션의 학생 1명 확인, 본문 모양 확인 후 다시 만듦(다른 필드·형식 오류는 400, 사용량 미기록·learning 미호출)
+2. 한도 값: 이용 중 상품 `limits`(없으면 무료 상품 값)
+3. `MemoryUsageService.reserve`: 학생·종류별 advisory lock → 1행 기록 → KST 오늘 건수 > 한도면 롤백·429
+4. `LearningMemoryClient`로 learning 호출(서킷 `learning-memory`, 검색 30초·설명 45초)
+5. learning 5xx·시간 초과·연결 실패·서킷 차단이면 `release`로 그 행을 지움. 응답·오류는 그대로 전달
+
+### 저장·마이그레이션 (V46)
+
+- `llm_usage.call_type` CHECK에 `MEMORY_EMBEDDING`·`MEMORY_EXPLANATION`(V45와 같은 방식, 허용 목록만 넓힘). 이벤트 스키마·core `CallType`·OpenAPI·ERD 주석·ai/scoring 발행 허용 목록을 함께 바꿈. ai가 실제로 보내는 것은 #565
+- `memory_daily_usage(id, student_id FK, kind SEARCH|EXPLANATION, usage_date KST, created_at)`, 인덱스 `(student_id, kind, usage_date)`
+- 기존 상품 행 `limits`에 두 키가 없으면 20·10을 넣음(이미 있으면 그대로). gitops 로컬 core 리비전 v46
+- 학생 삭제 확정 트랜잭션(`ChildManagementService`)에서 `memory_daily_usage`도 지움
+
+### 서킷
+
+- `LearningClient.forMemory`가 서킷 `learning-memory` 하나를 검색·설명 두 전송에 나눠 줌. 기준은 `learning-json`과 같음(최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·5xx 실패)
+- 설계는 검색을 `learning-json`에 두었으나, learning의 임베딩 장애 503이 일반 회로를 열어 주간 테마·시도까지 막을 수 있어 검색도 이 회로로 옮김(architecture 1.3 갱신)
+
+### 테스트
+
+- `MemoryProxyIntegrationTest`: 본문 재구성·경로·헤더·no-store·KST 날짜 기록, 한도 경계(2회 통과 → 3번째 429·learning 미호출, 종류별·날짜별 따로, 한도 0), 동시 6건 중 2건만 통과, learning 422 전달·셈, 503 전달·되돌림, 설명 `FAILED` 셈, 서킷 분리(`learning-memory` OPEN에도 `learning-json` CLOSED·주간 테마 정상, 차단 시 503 `LEARNING_CIRCUIT_OPEN`·사용량 없음), 형식 오류 400 14종, 구독 스냅숏 키 없음 → 무료 값, 무료에도 없음 → 503
+- `LearningClientTest`: 검색·설명이 한 서킷을 공유하고 응답 시간은 따로(검색 시간 초과·설명 성공), 기본 30·45초
+- `AccountManagementTest`: 삭제 확정 때 대상 학생 사용량만 삭제
+- 계약: `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 일치)·`test_admin_operations_contract.py`·`test_core_migration_versions.py`
+
+### 남은 일
+
+- learning #563·#564가 내부 경로를 만들기 전에는 learning 404를 그대로 전달한다. 머지 뒤 실제 연동 확인
+- ai #565는 이 변경이 병합된 뒤에 새 `callType`을 발행
+- web 관리자 사용량 화면의 호출 종류 이름표(`adminFormatting.ts`)·목 필터(`mocks/handlers/admin.ts`)에는 새 값이 없다(기존 `THEME_*`도 없음). web #567 범위

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type BrowserContext } from '@playwright/test'
 import { newParent, useGoogleIdentity, type GoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { queueWeeklyReport } from './support/db.ts'
@@ -6,17 +6,34 @@ import { queueWeeklyReport } from './support/db.ts'
 const mission = '쉬는 시간을 늘린다면?' // backend/learning-service/db/seed/demo_missions.sql 2번 (초3·NARRATIVE)
 
 test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () => {
-  let parent: GoogleIdentity, nickname: string
+  let parent: GoogleIdentity, nickname: string, studentContext: BrowserContext | undefined
+  test.afterEach(async () => { await studentContext?.close(); studentContext = undefined })
   test.beforeAll(() => {
     parent = newParent('journey')
     nickname = `학생${Date.now().toString(36)}`
   })
 
   // 학생 토큰은 메모리에만 있으므로 학생 단계에서는 page.goto·새로고침 없이 화면 안에서만 이동한다.
-  test('학생 미션 제출 → 피드백 → 돌아보기 완료 → 답 공개',async ({ context, page }) => {
+  test('학생 미션 제출 → 피드백 → 돌아보기 완료 → 답 공개',async ({ context, page: parentPage, browser }) => {
     await useGoogleIdentity(context, parent)
-    await onboardParent(page, nickname)
-    await page.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
+    await onboardParent(parentPage, nickname)
+    // #548: students enter through a registered device and PIN, not a parent-page button.
+    await parentPage.getByRole('link', { name: '기기·PIN', exact: true }).click()
+    const pin = parentPage.getByRole('form', { name: `${nickname} PIN`, exact: true })
+    await pin.getByLabel(`${nickname} 새 PIN`, { exact: true }).fill('4831')
+    await pin.getByLabel(`${nickname} 새 PIN 확인`, { exact: true }).fill('4831')
+    await pin.getByRole('button', { name: 'PIN 정하기', exact: true }).click()
+    await expect(pin.getByRole('status')).toContainText('PIN을 저장했습니다.')
+    const pairing = parentPage.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/student-devices/pairings'))
+    await parentPage.getByRole('button', { name: '등록 코드 만들기', exact: true }).click()
+    const { pairingCode } = await (await pairing).json()
+    studentContext = await browser.newContext({ baseURL: new URL(parentPage.url()).origin })
+    const page = await studentContext.newPage()
+    await page.goto('/student/login?code=' + encodeURIComponent(pairingCode))
+    await page.getByLabel('기기 이름', { exact: true }).fill('학습 여정 E2E')
+    await page.getByRole('button', { name: '이 기기 등록하기', exact: true }).click()
+    for (const digit of ['4','8','3','1']) await page.getByRole('button', { name: digit, exact: true }).click()
+    await page.getByRole('button', { name: /확인|들어가기/ }).click()
     await page.waitForURL('**/student/home**')
 
     // 미션 고르기는 추가 문제(EXTRA)라 무료는 프리미엄 전용이지만, E2E 무료 상품은 시드에서 명시적으로 켰다(seed/core.sql, #506)
@@ -48,7 +65,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await expect(page.getByRole('status').filter({ hasText: '지금은 공개예요.' })).toBeVisible()
   })
 
-  // 학생 모드 진입 시 학부모 세션이 잠기므로(보호자 비밀번호 미설정) 새 컨텍스트에서 다시 로그인한다.
+  // 학생 기기와 별개인 새 보호자 컨텍스트에서 로그인해 공개한 기록을 확인한다.
   test('학부모 대시보드 → 주간 리포트', async ({ context, page }) => {
     await useGoogleIdentity(context, parent)
     await page.goto('/login')

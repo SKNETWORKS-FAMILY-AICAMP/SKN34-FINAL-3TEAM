@@ -303,8 +303,10 @@ function ReportDetail({
                 </>
               )}
               {!compact && <p>{r.parentSharingEnabled === false ? '원문 비공개 중에는 기존 파일을 제공하지 않습니다. 위 학습 수치는 계속 확인할 수 있습니다.' : '다운로드는 서버가 제공하는 최신판 파일입니다.'}</p>}
-              {!compact && <div className="ws-actions">
-                <button
+
+            </>
+          )}
+          {!compact && <div className="parent-report-regenerate"><div className="parent-report-toolbar">{ready && <>                <button
                   className="cj-secondary"
                   disabled={download.isPending || r.parentSharingEnabled === false}
                   onClick={() => {
@@ -322,10 +324,7 @@ function ReportDetail({
                 >
                   Markdown 다운로드
                 </button>
-              </div>}
-            </>
-          )}
-          {!compact && <><button
+              </>}<button
             className="cj-secondary"
             disabled={regenerate.isPending || r.status === 'RUNNING' || r.status === 'QUEUED'}
             onClick={() => {
@@ -339,8 +338,8 @@ function ReportDetail({
             }}
           >
             새 판으로 재생성
-          </button>
-          <p>학부모 재생성은 리포트당 한 번입니다. 이전 판은 유지됩니다.</p></>}
+          </button></div>
+          <p>학부모 재생성은 리포트당 한 번입니다. 이전 판은 유지됩니다.</p></div>}
         </>
       )}
       {r && ready && r.parentSharingEnabled === false && <p role="note">원문 비공개 중에는 원문 근거·AI 질문·파일 다운로드를 이용할 수 없습니다. 위 학습 수치는 계속 확인할 수 있습니다.</p>}

@@ -165,7 +165,7 @@
 
 무료/유료
 - 생활공간·액자·앨범·스킨 해금: 무료/유료 동일(P13)
-- 검색·설명: 하루 이용 한도만 적용(기준안 검색 20·설명 10, `product.limits`). core에 요청마다 1행 기록해 KST 하루 건수를 셈(`mission_daily_usage`와 같은 방식), 초과 시 `429 USAGE_LIMIT_REACHED`
+- 검색·설명: 하루 이용 한도만 적용(검색 20·설명 10, 무료·프리미엄 같음, `product.limits`, 2026-11-12 확정 9.1). core에 요청마다 1행 기록해 KST 하루 건수를 셈(`mission_daily_usage`와 같은 방식), 초과 시 `429 USAGE_LIMIT_REACHED`
 
 리텐션 지표(DB 집계만)
 
@@ -186,7 +186,7 @@
 - 새 서비스·Pod·네트워크 정책 없음. learning→ai, ai→LLM API는 이미 허용됨
 - 벡터 저장은 기존 RDS learning_db. `vector` 확장은 이미 bootstrap으로 설치됨
 - 통신 경로 2개 추가: 추억 검색(Web→core→learning→ai 임베딩), 추억 설명(Web→core→learning→ai LLM), 둘 다 동기 HTTP
-- 타임아웃: ai LLM 호출(15초·재시도 1회) 때문에 learning→ai 설명은 35초가 필요해 core→learning 일반 프록시(30초)를 넘음 → 설명 경로는 별도 회로 `learning-memory`(기준안 core→learning 45초). 검색은 임베딩 1회라 일반 프록시 30초 안
+- 타임아웃: ai LLM 호출(15초·재시도 1회) 때문에 learning→ai 설명은 35초가 필요해 core→learning 일반 프록시(30초)를 넘음 → 설명 경로는 별도 회로 `learning-memory`(core→learning 45초, 2026-11-12 확정). 검색은 임베딩 1회라 30초 안이며, ai 장애가 일반 프록시 회로로 번지지 않게 같은 `learning-memory` 회로를 씀(9.1)
 - 비동기 임베딩은 RabbitMQ 이벤트 없이 learning 주기 작업으로 처리 → "learning은 발행 없음" 원칙 유지
 - LLM 사용량 유형 추가: `MEMORY_EMBEDDING`, `MEMORY_EXPLANATION`(core `llm_usage.call_type` 마이그레이션 1개)
 - 개인정보 범위: 추억 검색 임베딩·설명은 판정처럼 외부 LLM 사용. "학생 글이 클러스터 밖으로 나가지 않음"은 리포트 설명 sLLM 한정
@@ -209,7 +209,6 @@
 | 항목 | 내용 |
 |---|---|
 | 기존 홈 착용 아이템 렌더링 | 공간용 컴포넌트 재사용 여부 |
-| 검색·설명 하루 한도 | 기준안 검색 20회, 설명 10회. 무료/유료 구분 여부 |
 | 평가셋 | 질의 수, 합성 학생 수, 비교 지표(Recall@3 등), 통과 기준 |
 | 결과서 마감일 | 12/7 데모와 같은지 |
 
@@ -241,6 +240,20 @@
 | [아키텍처](../design/architecture.md) | 서비스 책임, 통신 경로·타임아웃, 주기 작업, 삭제 범위, 개인정보 범위, pgvector 용도 |
 
 ## 9. 구현 결정
+
+### 9.1 core 추억 검색·설명 프록시·하루 한도 (#566, 2026-11-12)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 하루 한도 | 검색 20회·설명 10회, 무료·프리미엄 같음(`product.limits.dailyMemorySearches`·`dailyMemoryExplanations`) | 기준안 그대로. P13 "리텐션 기능 무료/유료 동일"과 맞고, 비용은 LLM을 쓰는 설명 10회로 묶임 |
+| 키 없는 상품 | 구독 상품 스냅숏에 키가 없으면 무료 상품 값, 무료 상품에도 없으면 503 `PAYMENT_PRODUCT_UNAVAILABLE` | V46이 상품 행에 키를 넣지만 결제 당시 스냅숏은 바뀌지 않음. 같은 값 정책이라 기존 구독자도 바로 이용 |
+| 장애 때 사용량 | learning 5xx·시간 초과·연결 실패·서킷 차단이면 기록을 되돌림. 4xx와 설명 `FAILED`·`INSUFFICIENT`(200)는 셈 | 장애로 학생 한도가 깎이지 않게 함. 생성 시도가 실제로 일어난 결과는 셈 |
+| 초기화 시점 표기 | 429 `detail`에 "하루 N회 … 내일 0시(KST)에 초기화" 문구, 새 응답 칸 없음 | 무료 `EXTRA` 429(#387)와 같은 방식 |
+| 서킷 | 검색·설명 모두 `learning-memory` 하나(검색 응답 30초, 설명 45초) | 설계는 검색을 `learning-json`에 두었으나, 임베딩 장애 때 learning 503이 `learning-json` 실패로 쌓여 주간 테마·시도 같은 일반 경로까지 막을 수 있어 바꿈 |
+| 동시 요청 | 학생·종류별 트랜잭션 advisory lock 안에서 기록 → 건수 확인 | 기록 후 세기만으로는 동시 요청이 서로의 미확정 행을 못 봐 한도를 넘길 수 있음 |
+| 사용량 유형 | `MEMORY_EMBEDDING`·`MEMORY_EXPLANATION`을 V46 CHECK·이벤트 스키마·core `CallType`·OpenAPI·ai/scoring 발행 허용 목록에 더함 | ai #565는 이 변경이 병합된 뒤에만 발행(그 전 발행은 core 소비자가 거부해 DLQ) |
+
+상세는 [core 보고서 27절](core-gateway.md#27-추억-검색설명-프록시하루-한도-566-2026-11-12).
 
 ### 9.2 ai 추억 임베딩 구분·추억 설명 API (#565, 2026-11-12)
 

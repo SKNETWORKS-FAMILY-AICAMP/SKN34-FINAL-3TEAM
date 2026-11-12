@@ -7,6 +7,7 @@ import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.domain.ExpressionPolicy
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.service.AttemptService
+import com.sagomungchi.learning.theme.service.WeeklyThemeService
 import com.sagomungchi.learning.community.domain.CommunityPost
 import com.sagomungchi.learning.community.domain.CommunityPostStatus
 import com.sagomungchi.learning.community.domain.CommunityReaction
@@ -51,6 +52,7 @@ data class VisibilityResult(val studentId: UUID, val visible: Boolean, val chang
 class CommunityService(
     private val repository: CommunityRepository,
     private val attemptService: AttemptService,
+    private val weeklyThemeService: WeeklyThemeService,
     private val expressionPolicy: ExpressionPolicy,
     private val objectMapper: ObjectMapper,
 ) {
@@ -85,7 +87,7 @@ class CommunityService(
     }
 
     /**
-     * 미션 공유물 무작위 목록 (FN-RET-02). 열람자가 그 미션을 학습 완료하지 않았으면 403 COMMUNITY_LOCKED.
+     * 미션 공유물 무작위 목록 (FN-RET-02). 열람자가 그 미션을 학습 완료하지 않았으면 403 COMMUNITY_LOCKED, 정답 고르기 문제를 엔딩 전이면 403 COMMUNITY_LOCKED_UNTIL_ENDING(#484).
      * VISIBLE만, 본인 공유물 제외, 반응 수 없음(작성자·학부모만), 같은 seed면 같은 순서
      */
     @Transactional(readOnly = true)
@@ -165,9 +167,17 @@ class CommunityService(
     @Transactional(propagation = Propagation.MANDATORY)
     fun deleteByStudent(studentId: UUID): Int = repository.deleteByStudent(studentId)
 
+    /**
+     * 열람·반응 조건: 그 미션을 학습 완료(아니면 403 COMMUNITY_LOCKED). 정답 고르기 문제(큰 질문이 있는 테마의 금요일 문제)는
+     * 그 주 엔딩도 봐야 함(아니면 403 COMMUNITY_LOCKED_UNTIL_ENDING, #484·P20, 사용자 결정 2026-11-12 새 코드)
+     */
     private fun requireCompleted(studentId: UUID, missionId: UUID) {
         if (!attemptService.hasCompleted(studentId, missionId)) {
             throw BusinessException(HttpStatus.FORBIDDEN, "COMMUNITY_LOCKED", "커뮤니티 잠김", "이 미션을 마무리하면 친구들 생각을 볼 수 있어요.")
+        }
+        if (weeklyThemeService.lockedUntilEnding(studentId, missionId)) {
+            throw BusinessException(HttpStatus.FORBIDDEN, "COMMUNITY_LOCKED_UNTIL_ENDING", "커뮤니티 잠김",
+                "이번 주 테마 엔딩을 보면 친구들 생각을 볼 수 있어요.")
         }
     }
 

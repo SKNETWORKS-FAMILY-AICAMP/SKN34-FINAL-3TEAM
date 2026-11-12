@@ -45,8 +45,8 @@ enum class ThemeDay(val number: Int) {
 }
 
 /**
- * 요일 문제 열림 (파생, DB 미저장, state-diagram 3.2.1). 오늘 요일만 OPEN(신규 시도 가능), 지난 요일은 CLOSED(놓친 문제는 풀 수 없음),
- * 아직 안 온 요일은 LOCKED. 토·일에는 다섯 요일 모두 CLOSED이고 되돌아보기가 열림
+ * 요일 문제 열림 (파생, DB 미저장, state-diagram 3.2.1, 누적 공개 #483·#484). 그 요일 KST 00:00 전은 LOCKED(공개 전),
+ * 공개 뒤 그 주 토요일 끝까지 OPEN(쌓여서 언제든 신규 시도), 일요일은 CLOSED. 프리미엄 일요일(core `sundayTheme=true`)은 토요일과 같이 OPEN
  */
 enum class DayState { LOCKED, OPEN, CLOSED }
 
@@ -56,12 +56,21 @@ object ThemeWeek {
 
     fun isWeekend(date: LocalDate): Boolean = ThemeDay.of(date) == null
 
-    fun stateOf(day: ThemeDay, today: LocalDate): DayState {
-        val date = day.dateIn(startOf(today))
-        return when {
-            date.isBefore(today) -> DayState.CLOSED
-            date == today -> DayState.OPEN
-            else -> DayState.LOCKED
-        }
+    fun isSunday(date: LocalDate): Boolean = date.dayOfWeek == DayOfWeek.SUNDAY
+
+    /**
+     * 그날 테마를 토요일처럼 쓸 수 있는지 (#484): 일요일이 아니거나, 일요일이고 core가 허용 값(`sundayTheme=true`, 상품 `features.sundayTheme`)을 보냄.
+     * core는 일요일이고 상품이 허용할 때만 true를 보내므로 평일·토요일에는 값과 무관하게 열림
+     */
+    fun usable(date: LocalDate, sundayTheme: Boolean): Boolean = !isSunday(date) || sundayTheme
+
+    /** 되돌아보기(마무리한 문제 다시 풀기·목록 열람)가 열리는 날: 토요일, 프리미엄 일요일 (FN-RET-08) */
+    fun reviewOpen(date: LocalDate, sundayTheme: Boolean): Boolean =
+        date.dayOfWeek == DayOfWeek.SATURDAY || (isSunday(date) && sundayTheme)
+
+    fun stateOf(day: ThemeDay, today: LocalDate, sundayTheme: Boolean = false): DayState = when {
+        day.dateIn(startOf(today)).isAfter(today) -> DayState.LOCKED
+        !usable(today, sundayTheme) -> DayState.CLOSED
+        else -> DayState.OPEN
     }
 }

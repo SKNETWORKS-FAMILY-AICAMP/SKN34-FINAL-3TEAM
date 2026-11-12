@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.theme.domain
 
-import java.time.LocalDate
+import java.time.Instant
+import java.util.UUID
 
 /**
  * 정답 구조·생각 열기 위치 검사와 결정적 단서 (#438, class-diagram 4.4 ThemeAnswerRules, FN-ADM-22).
@@ -118,9 +119,22 @@ object ThemeCarryOver {
 }
 
 /**
- * 테마 엔딩 판단 (#438 자리, 조건은 #483·#484, state-diagram 3.2.1·3.2.2). 종료 이야기·정답·결정적 단서·종료 장면 공개와
- * OUTRO 열람 기록을 이 한 곳에서 정한다. #484 전까지는 지금 규칙대로 토·일을 엔딩으로 본다(#484가 정답 고르기 결과로 바꿈)
+ * 큰 질문 정답 고르기 기록 (#484, `theme_answer_pick`): 학생·주당 1행(한 주 한 번). missionId는 고를 때의 금요일 문제,
+ * correct는 고를 때 정답과 같았는지
+ */
+data class ThemeAnswerPick(val missionId: UUID, val pick: String, val correct: Boolean, val pickedAt: Instant)
+
+/**
+ * 테마 엔딩 판단 (#438 자리, 조건은 #483·#484, state-diagram 3.2.2). 종료 이야기·정답·결정적 단서·종료 장면 공개와
+ * OUTRO 열람 기록, 정답 고르기 문제 커뮤니티 열람을 이 한 곳에서 정한다. 저장하지 않고 고른 값과 다시 풀기 기록으로 계산:
+ * 고르지 않았으면 NOT_ENDED, 맞혔으면 ENDED, 틀렸으면 고른 뒤 그 문제(금요일 문제) THEME_REVIEW 시도를 마무리했을 때 ENDED(맞든 틀리든)
  */
 object ThemeEnding {
-    fun ended(date: LocalDate): Boolean = ThemeWeek.isWeekend(date)
+    /** reviewFinishedAt: 그 주 고른 문제의 THEME_REVIEW 시도 마무리 시각들 */
+    fun of(pick: ThemeAnswerPick?, reviewFinishedAt: List<Instant>): ThemeEndingState = when {
+        pick == null -> ThemeEndingState.NOT_ENDED
+        pick.correct -> ThemeEndingState.ENDED
+        reviewFinishedAt.any { it.isAfter(pick.pickedAt) } -> ThemeEndingState.ENDED
+        else -> ThemeEndingState.NOT_ENDED
+    }
 }
