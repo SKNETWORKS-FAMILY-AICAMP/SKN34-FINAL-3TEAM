@@ -3921,7 +3921,7 @@ components:
       type: object
       required: [themeId, weekStart, title, intro, reused, days, review, completed, bigQuestion, candidates, introImageUrl,
                  introVideoUrl, introMotion, introSeen, outroSeen, outro, outroImageUrl, outroVideoUrl, outroMotion, answer, answerClue,
-                 finished, ending]
+                 finished, ending, answerPick]
       properties:
         themeId: {type: string, format: uuid}
         weekStart: {type: string, format: date, description: 이번 주 KST 월요일(재사용 테마도 이번 주)}
@@ -3977,6 +3977,18 @@ components:
         completed: {type: boolean, description: '월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(개근, 개정 전 이름 완주). core가 개근 THEME_COMPLETED로 적립(#485·#506)'}
         finished: {type: boolean, description: '다섯 문제를 그 주 토요일 23:59:59(KST)까지 학습 완료(주간 완주, 일요일 완료 제외). core THEME_FINISHED 근거(#484)'}
         ending: {$ref: '#/components/schemas/ThemeEnding'}
+        answerPick:
+          description: >-
+            그 주 학생이 고른 큰 질문 정답(#590, theme_answer_pick). 고르지 않았으면 null. 엔딩 전에도 채움(고른 후보가 맞았는지만,
+            정답은 엔딩 뒤 answer로만). 틀린 뒤 다시 들어와도 고르기 화면 대신 토요일 다시 풀기 안내, 엔딩 뒤 종료 화면의 정답 공개 구분에 씀
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [pick, correct]
+              properties:
+                pick: {type: string, description: 고른 후보(answer-picks 본문 pick)}
+                correct: {type: boolean, description: 고를 때 정답과 같았는지(고른 뒤 관리자가 정답을 고쳐도 바뀌지 않음)}
+            - type: 'null'
     ThemeEnding:
       type: string
       enum: [NOT_ENDED, ENDED]
