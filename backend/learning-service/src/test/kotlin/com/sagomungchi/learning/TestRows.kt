@@ -163,19 +163,19 @@ class TestRows(private val jdbc: JdbcTemplate) {
      * 게시된 주간 테마(버전 1) SQL 직접 삽입. missions는 월요일부터 차례로.
      * 테마 ↔ 버전 순환 FK를 한 문장(CTE)으로 넣어 트랜잭션 없는 테스트에서도 문장 끝 검사로 통과
      */
-    fun publishedTheme(missions: List<UUID>, weekStart: java.time.LocalDate, gradeBand: String = "G3_4", title: String = "테마", intro: String = "소개"): UUID {
+    fun publishedTheme(missions: List<UUID>, weekStart: java.time.LocalDate, grade: String = "G3", title: String = "테마", intro: String = "소개"): UUID {
         val themeId = UUID.randomUUID()
         val versionId = UUID.randomUUID()
         val days = missions.mapIndexed { index, mission -> "('$versionId'::uuid, ${index + 1}, '$mission'::uuid)" }.joinToString(", ")
         jdbc.update(
             """WITH theme AS (
-                   INSERT INTO weekly_theme (id, grade_band, week_start, status, current_version_id, published_version_id, review_version_id,
+                   INSERT INTO weekly_theme (id, grade, week_start, status, current_version_id, published_version_id, review_version_id,
                        created_by, published_at, created_at, updated_at) VALUES (?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?)
                ), version AS (
                    INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at) VALUES (?, ?, 1, ?, ?, ?, ?)
                )
                INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id) VALUES $days""",
-            themeId, gradeBand, weekStart, versionId, versionId, versionId, author, now, now, now,
+            themeId, grade, weekStart, versionId, versionId, versionId, author, now, now, now,
             versionId, themeId, title, intro, author, now,
         )
         return themeId

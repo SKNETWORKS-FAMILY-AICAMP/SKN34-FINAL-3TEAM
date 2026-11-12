@@ -24,6 +24,7 @@ internal fun MissionResponse.Companion.from(mission: MissionView) = MissionRespo
     inputTemplate = mission.inputTemplate,
     categories = mission.categories.map { OptionResponse(it.id, it.label) },
     answerUnit = mission.answerUnit,
+    sceneMotion = mission.sceneMotion,
 )
 
 internal fun MissionListItemResponse.Companion.from(item: MissionListItem) =

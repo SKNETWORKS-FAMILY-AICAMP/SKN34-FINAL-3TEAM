@@ -1901,13 +1901,14 @@ classDiagram
   direction TB
   class WeeklyThemeController {
     <<controller>>
-    +current(studentId, gradeBand, date) WeeklyThemeView
-    +reviewViewed(studentId, gradeBand, date) ReviewViewResult
+    +current(studentId, grade, date) WeeklyThemeView
+    +reviewViewed(studentId, grade, date) ReviewViewResult
+    +storyViewed(studentId, grade, date, kind) StoryViewResult
     +summary(studentId, weekStart) WeeklyThemeSummary
   }
   class AdminWeeklyThemeController {
     <<controller>>
-    +list(gradeBand, weekStart, status, page, size) AdminWeeklyThemePage
+    +list(grade, weekStart, status, page, size) AdminWeeklyThemePage
     +create(request) AdminWeeklyTheme
     +update(themeId, request) AdminWeeklyTheme
     +requestReview(themeId) AdminWeeklyTheme
@@ -1916,9 +1917,11 @@ classDiagram
   }
   class WeeklyThemeService {
     <<service>>
-    +current(studentId, gradeBand, date) WeeklyThemeView
+    +current(studentId, grade, date) WeeklyThemeView
     +checkStart(studentId, missionId, grade, context) ThemeAttempt
-    +recordReviewView(studentId, gradeBand, date) ReviewViewResult
+    +recordReviewView(studentId, grade, date) ReviewViewResult
+    +recordStoryView(studentId, grade, date, kind) StoryViewResult
+    +scene(attemptId) ThemeScene
     +summary(studentId, weekStart) WeeklyThemeSummary
     +deleteByStudent(studentId) int
   }
@@ -1932,7 +1935,7 @@ classDiagram
   }
   class WeeklyTheme {
     <<entity>>
-    +requireEditable(gradeBand, weekStart)
+    +requireEditable(grade, weekStart)
     +edited()
     +requestReview()
     +publish(errors)
@@ -1940,7 +1943,63 @@ classDiagram
   }
   class ThemePublishCheck {
     <<domain>>
-    +errors(gradeBand, days, missions, otherPublished) List
+    +errors(grade, days, missions, otherPublished) List
+  }
+  class ThemeAnswerRules {
+    <<domain>>
+    +errors(candidates, answer, days) List
+    +hintSpotErrors(spots, hintSeqs) List
+    +decisiveClue(candidates, answer, days) String
+  }
+  class ThemeEnding {
+    <<domain>>
+    +ended(studentId, week, date) Boolean
+  }
+  class AdminThemeDraftController {
+    <<controller>>
+    +request(body) ThemeDraftView
+    +list(status, source, page, size) Page
+    +detail(draftId) ThemeDraftView
+    +adopt(draftId) AdminWeeklyTheme
+    +discard(draftId) ThemeDraftView
+    +regenerate(draftId) ThemeDraftView
+  }
+  class ThemeDraftService {
+    <<service>>
+    +request(command, author) ThemeDraftView
+    +createWeekly(weekStart)
+    +regenerate(draftId, author) ThemeDraftView
+    +adopt(draftId, author) AdminWeeklyTheme
+    +discard(draftId) ThemeDraftView
+    +generateNext(now)
+  }
+  class ThemeDraft {
+    <<entity>>
+    +recordAttempt(result, maxAttempts, now)
+    +adopt(themeId)
+    +discard()
+    +previousFailures() List
+  }
+  class ThemeDraftRules {
+    <<domain>>
+    +learningFailures(output, input, grade, standards) List
+    +missionInput(mission, grade) DraftInput
+    +autoStandards(grade, requested, recentCodes, tables, random) List
+    +adoptedMissions(output, input, grade, standards, author) List
+    +themeContent(output, grade, weekStart, missionIds) ThemeContent
+  }
+  class ThemeDraftScheduler { <<scheduler>> }
+  class ThemeDraftAiClient { <<client>> }
+  class ThemeDraftRepository {
+    <<repository>>
+    +insertAutoIfAbsent(draft) Boolean
+    +findInputs(grade, from, until) List
+    +claimNext(now, leaseUntil) ThemeDraft
+    +saveAttempt(draft, claimedLease)
+  }
+  class AssetUrls {
+    <<common>>
+    +url(stored) String
   }
   class AttemptService {
     <<service>>
@@ -1978,8 +2037,19 @@ classDiagram
   AdminWeeklyThemeController --> WeeklyThemeAdminService
   WeeklyThemeAdminService ..> WeeklyTheme
   WeeklyThemeAdminService ..> ThemePublishCheck
+  WeeklyThemeAdminService ..> ThemeAnswerRules : 저장 때 정답 논리·생각 열기 위치
   WeeklyThemeAdminService --> MissionService : 게시본 미션
-  AttemptService --> WeeklyThemeService : context 검사
+  WeeklyThemeService ..> ThemeEnding : 종료 공개·OUTRO
+  WeeklyThemeService --> AssetUrls : 그림·영상 URL
+  AttemptService --> WeeklyThemeService : context 검사·themeScene
+  AdminThemeDraftController --> ThemeDraftService
+  ThemeDraftScheduler --> ThemeDraftService : 생성 주기·주간 자동
+  ThemeDraftService --> ThemeDraftRepository
+  ThemeDraftService --> ThemeDraftAiClient : 생성 1회
+  ThemeDraftService ..> ThemeDraft
+  ThemeDraftService ..> ThemeDraftRules
+  ThemeDraftService --> MissionService : createFromDraft(LLM_THEME)·성취기준 조회
+  ThemeDraftService --> WeeklyThemeAdminService : 테마 DRAFT 생성·게시 여부
   CommunityController --> CommunityService
   CommunityService ..> CommunityRules
   CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
@@ -1989,6 +2059,20 @@ classDiagram
 - `CommunityService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환. 처음 학습 완료한 시도가 아니면(다시 풀기) 공유하지 않고, 공유 때 `ExpressionPolicy`(#205)를 다시 확인
 - 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
 - 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
+
+#438 추가(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
+- 학년: `GradeBand`(`G3_4`·`G5_6`)를 `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`)로 바꾼다. `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
+- 이야기·정답 구조: 버전·요일 새 칸은 테마 새 버전 때 함께 복사. `ThemeAnswerRules`가 관리자 저장 때 정답 논리(정답·후보·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어느 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐)와 `hintSpots`(0~100, 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음)를 검사(400). 결정적 단서 `decisiveClue`는 마지막 틀린 후보를 빼는 날의 단서
+- 학생 응답: 요일 단서는 `LOCKED`면 뺌, 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 `ThemeEnding.ended`일 때만. 엔딩 조건은 #483·#484가 정하고 그 전까지 `ThemeEnding`은 토·일을 엔딩으로 본다. INTRO는 월~토 그 주 첫 진입, `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
+- `AssetUrls`(`_common/storage`): ai 키(`theme-drafts/…`)만 단기 presigned URL(기준안 1시간)로 바꾸고 그 밖의 값은 그대로. 학생 미션·테마 응답과 관리자 테마 미리보기 칸에서 쓰고, 관리자 미션 응답은 저장 값 그대로
+- `themeScene`: 시도 시작·이어하기 응답에서 `context`가 `THEME_DAY`·`THEME_REVIEW`면 그 시도 `theme_id` 테마 게시본의 그 미션 요일 `{dialogue, hintSpots, videoUrl}`, `EXTRA`는 null. ai는 요일 문제 전 영상을 만들지 않아(#437 2026-11-11) 테마 초안 채택 테마의 `videoUrl`은 null이고, 요일 `video_uri`는 관리자가 직접 넣을 때만 쓰는 칸으로 남김
+- 테마 초안: 미션 초안(4.1.1)과 같은 구조. `ThemeDraftScheduler`는 주기(기준안 10초)마다 `generateNext`, 주간 크론(기준안 수요일 03:00 KST)에 `createWeekly`(다음 주 `G3`~`G6`, 부분 UK + `ON CONFLICT DO NOTHING`). `generateNext`는 리스(기준안 18분) 점유 → 트랜잭션 밖 ai 1회(`ThemeDraftAiClient`, 서킷 `ai-theme-draft`, 대기 기준안 16분) → `ThemeDraftRules.learningFailures`(요일·유형 배치, 미션 5개는 `DraftRules.learningFailures` 재사용, 정답 논리) → 점유 리스 대조 저장. `previousFailures`는 시간순, ai 단계 실패 그대로·learning 실패는 `THEME`/`MISSION`(사유 `<요일> <코드> <자세히>`)·AI 호출 실패 제외(#437 합의)
+- 채택: 초안 잠금 → 미션 5개 `MissionService.createFromDraft(command, rubric, LLM_THEME)`(장면 키·`sceneMotion` = ai 움직임 형식 v1을 칸 검사 없이 그대로, 요일 살펴보기 `spots` 포함) → `WeeklyThemeAdminService`로 테마 `DRAFT`(`hint_spots` NULL, `answer_clue` = 결정적 단서) → `ADOPTED` + `theme_id`, 한 트랜잭션. 다시 생성은 같은 입력의 새 초안(`ADMIN`)
+- `MissionService.createFromDraft`에 출처 인자(기본 `LLM_DRAFT`). `MissionCommand`에 `sceneMotion`, 관리자 미션 수정 본문에 없으면 `sceneUri`가 같을 때 이전 버전 값을 이어받음
+- 다른 기능은 service로만 부른다(architecture 계층 규칙): 성취기준은 `MissionService.standards(codes)`·`standardsOf(교과, 학년군)`, 주간 자동이 건너뛸 학년(그 학년·주 게시 테마 있음)은 `WeeklyThemeAdminService.publishedExists`. 자동 성취기준이 피할 최근 코드는 `ThemeDraftRepository.findInputs`(같은 학년, 적용 주 앞 4주)
+- 주제 씨앗(`ThemeTopicSeeds`, 기준안 24개, #437 B안 2026-11-11): 주간 자동과 주제 없이 온 관리자 요청에 `ThemeTopicSeeds.choose`가 `뭉치 역할: … / 장소: … / 찾는 대상: …` 하나를 골라 `input.topic`에 넣는다. 그 주 계절(`Season`, 적용 주 월요일의 달)에 맞는 씨앗 중 같은 학년 최근 씨앗(`findInputs`, 목록 개수만큼의 주, 초안 상태 무관)과 같은 주 다른 초안 씨앗(`findWeekInputs`)을 빼고 무작위, 남는 게 없으면 가장 오래전에 쓴 것. 관리자가 쓴 주제와 다시 생성의 저장된 주제는 그대로
+- 자동 성취기준 후보 풀(기준안, 지식 RAG 연결 전 설계): 지금은 학년군 표(`standardsOf`)라 초3 테마에 4학년 내용이 뽑힐 수 있다. #466·#469 뒤에는 learning이 계속 고르되 후보 풀만 같은 서비스의 지식 서비스(`knowledge_standard_semester` 그 학년·학기, `knowledge_fits` 그 유형)로 바꾸고, 지식 판이 없거나 후보가 없거나 장애면 학년·학기 → 학년군 표 순으로 대체한다. ai 요청 `missions[].standards` 계약은 그대로, ai `retrieve`(#470)는 받은 코드의 근거 묶음만 가져온다
+- `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
 
 ---
 
@@ -2074,7 +2158,7 @@ classDiagram
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`(`m2_scores(body, timeout)`·`m1_check(body, timeout)`, 요청 본문은 `cross_check.m2_body`·`m1_body`가 만들고 `timeout`은 `SCORING_TIMEOUT`과 남은 판정 시간 중 작은 값, 비활성 응답이면 `None`), 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`(글 하나 검사는 `find_text_leaks()`, 미션 초안 검사와 공유). 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 일곱 이름(#280 `reportTemplate`, #354 `missionDraft`, #477 `reportExplanation` 포함, 5.4)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
+| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 여덟 이름(#280 `reportTemplate`, #354 `missionDraft` 5.4, #477 `reportExplanation`, #437 `themeDraft` 5.5 포함)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -2243,6 +2327,100 @@ classDiagram
 - `DraftChecks`(`checks.py` 모듈 함수 `check`): `REQUIRED`(제목·질문·요소·생각 열기 질문, 입력 방식별 선택지·분류 칸·정답 키·예시 답), `QUESTION_LENGTH`(`gradeMin` 학년 상한, 설정 `mission_draft_question_max_chars` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 각각에 `followup/leak_guard.find_text_leaks`, 학생 답 없이 정답 키·금지어·예시 답만. 예시 답은 안내·생각 열기 질문만, 질문에 있는 글을 빼고 비교. 숫자뿐인 최종 답은 숫자 경계로 비교). 성취기준 실재·요소 code 규칙은 표와 규칙을 가진 learning이 검사
 - 프롬프트: `prompts.py` 내장 `mission-draft@1`, #68 레지스트리 이름 `missionDraft`·scope `ai/mission-draft`(`ActiveVersions`·`/internal/versions`에 추가). 입력은 성취기준 문장·(있으면) 성취수준 문장·생각 유형·그 유형 표준 요소 공통 설명·학년·입력 방식뿐이고 학생 정보는 없음
 - 사용량: `LlmClient` 콜백 → `UsagePublisher`, `callType = MISSION_DRAFT`(이벤트 스키마·core enum·core CHECK와 같이 추가, ERD 3.5)
+
+### 5.5 주간 테마 초안 (theme_draft, #437)
+
+에픽 #436, FN-ADM-22, api-spec 4.2 `POST /internal/theme-drafts`. 새 모듈 `app/theme_draft/`는 분석 에이전트(5.2)처럼 LangGraph 그래프를 서비스가 실행하고, 미션 생성은 미션 초안(5.4)의 생성·검사를 재사용한다.
+
+```mermaid
+classDiagram
+  direction LR
+  class theme_draft_router {
+    <<router>>
+    +create(ThemeDraftRequest) ThemeDraftResponse
+  }
+  class ThemeDraftService {
+    <<service>>
+    +generate(request) ThemeDraftResponse
+  }
+  class ThemeDraftGraphRunner {
+    <<service>>
+    +run(request, deadline) ThemeDraftResponse
+  }
+  class NotReadyRunner {
+    <<service>>
+    +run() 503
+  }
+  class ThemeDraftGraph {
+    <<graph>>
+    +retrieve()
+    +plan_theme()
+    +check_theme()
+    +fix_theme(칸 하나만 고치면 되는 사유뿐이면 그 칸만 고쳐 쓰기)
+    +generate_mission(유형 5개 병렬, 요일마다 review_missions 포함)
+    +missions_done()
+    +generate_dialogue(요일 5개 병렬)
+    +review_story()
+    +generate_images(테마 옷 뭉치 → 시작 1컷 → 미션 5 + 컷 7, 그림마다 review_images)
+    +generate_videos(시작·종료 각 4컷 병렬, 컷마다 review_videos, 녹아드는 전환)
+    +generate_motion(그림이 있는 장면)
+  }
+  class ThemeChecks {
+    <<domain>>
+    +check_theme(theme, grade, codes) list~str~
+    +check_logic(theme, candidates, answer, days) list~str~
+    +check_mission(theme, request, draft, grade) list~str~
+    +check_dialogue(theme, day, dialogue, draft, grade) list~str~
+    +check_review(review, ids) fails·warns·shape
+    +motion(generated, speakers, captions, spots) ThemeMotion·warnings
+    +spots(generated, theme, day) 살펴보기·warnings
+  }
+  class MissionDraftService { <<service>> }
+  class DraftChecks { <<domain>> }
+  class LeakGuard { <<domain>> }
+  class LlmClient { <<client>> }
+  class ReviewLlmClient { <<client>> }
+  class ImageClient { <<client>> }
+  class VideoClient { <<client>> }
+  class ThemeStorage { <<client>> }
+  class ActiveVersions { <<registry>> }
+
+  theme_draft_router --> ThemeDraftService
+  theme_draft_router --> NotReadyRunner : 테마 모델 설정이 틀리면
+  ThemeDraftService --> ThemeDraftGraphRunner : 마감 전달
+  ThemeDraftGraphRunner --> ThemeDraftGraph : 마감 안에서 1회 실행
+  ThemeDraftGraphRunner --> ActiveVersions : themeDraft 프롬프트
+  ThemeDraftGraph --> LlmClient : 줄거리·대화·움직임
+  ThemeDraftGraph --> MissionDraftService : 유형별 미션 생성 재사용
+  ThemeDraftGraph --> ReviewLlmClient : 미션별·글·그림·영상 검토(생성과 다른 모델, 설정)
+  ThemeDraftGraph --> ImageClient
+  ThemeDraftGraph --> VideoClient : 컷 첫 그림만 고정
+  ThemeDraftGraph --> ThemeStorage : S3 theme-drafts/
+  ThemeDraftGraph --> ThemeChecks
+  MissionDraftService --> DraftChecks
+  ThemeChecks --> LeakGuard : 정답·대화 유출 검사
+```
+
+- 구조(구현 #437 글 단계): `router.py`가 실행기(`ThemeDraftRunner`)를 고르고 `service.py`의 `ThemeDraftGraphRunner`가 그래프 실행·응답 조립, `graph.py`가 LangGraph `StateGraph`(요일별 노드는 `Send` 병렬), `nodes/`가 노드, `models.py`가 요청·응답과 LLM 구조화 출력, `checks.py`·`prompts.py`. `review_story`가 `PASS`면 `generate_images → generate_videos → generate_motion`(`nodes/images.py`·`video.py`·`motion.py`). 그림 클라이언트나 저장소가 없으면 세 단계를 건너뛰고 `warnings(IMAGE, ALL, 그림 설정 없음)`만 남김
+- 모델 설정: 테마 전용 `theme_generation_model`(기본 `gpt-6-luna`)·`theme_review_model`(기본 `gpt-6.1-terra`), 같은 OpenAI 키. 기본 `OPENAI_MODEL`과 따로 둔다(로컬·운영 `OPENAI_MODEL`이 검토 모델과 같은 `gpt-6.1-terra`라 그대로 쓰면 생성·검토가 같은 모델이 됨). 두 값이 같거나 키가 없으면 기동은 막지 않고 테마 경로만 `503 AI_UNAVAILABLE`(`retryable: false`, `NotReadyRunner`). 다른 경로는 그대로 동작
+- 시간·상한 기준안: LLM 호출 타임아웃 300초(2026-11-11 180초에서 변경, 줄거리 1회 실측 130~170초)·재시도 0(재시도 대신 실패 사유 넣은 다시 생성), 단계마다 다시 생성 상한 2(첫 생성 포함 최대 3회), 줄거리 검사 사유가 모두 칸 하나만 고치면 되는 것(글자 수·증거 발견 줄 단서 값·후보·정답 이름, 글 칸만)이면 `fix_theme`이 그 칸만 고쳐 쓰고 다시 검사(상한 2, 넘으면 줄거리 다시 생성), 글 검토 재검토 상한 2, 마감까지 180초 미만 남으면 다음 다시 생성을 시작하지 않음(`DEADLINE` 사유를 붙여 실패), 최대 출력 토큰 줄거리·검토 32000·대화 8000
+- `ThemeDraftService.generate`: 요청 1번에 그래프를 한 번 끝까지 실행한다. 그래프 안에서 실패한 부분만 실패 사유를 넣어 상한(기준안 단계마다 2회)까지 다시 만들고(미션은 실패한 유형만, 대화는 실패한 요일만, 영상은 실패한 컷만), 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않는다. 그래도 실패하면 `failure{stage, reasons}`를 담아 200으로 돌려준다(`THEME`·`MISSION`·`REVIEW`·`IMAGE`). 대화·영상·움직임은 끝내 실패하면 그 항목만 빼고 `warnings`에 남긴다. learning은 `failure`가 있으면 `CHECK_FAILED`로 두고 다음 시도에 `previousFailures`로 넘긴다. 마감은 기준안 15분(learning→ai 16분 안)
+- 요일 배치: 줄거리 단계에서 기준안(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 에픽 확인 필요)대로 정하고 응답 `day`로 돌려준다. learning이 다시 검사
+- 줄거리 구조화 출력의 내부 칸(응답 `theme`에서는 뺌, 계약 그대로): 후보 특징 표 `features`(특징 이름·고른 성취기준 코드 `standardCode`(장면에서 골랐으면 비움)·후보별 값, 그날 성취기준 내용에서 고르는 것을 기본으로 하고 안 되면 장면에서), 요일별 단서 조건 `condition`(`RULE`·`HINT`, 특징, 허용 값), 단서 증거 `evidence`(`TRACE`·`SIGHTING`·`RECORD`와 그때), 요일별 증거 발견 줄 `discovery`(미션 전 대화 마지막 줄, 40자)와 수사 연결 문장 `missionHook`(증거 발견 줄 다음 대화 맨 끝 줄, 뭉치, 40자), 찾는 대상 `target`, 시작·종료 콘티(`introCuts`·`outroCuts`, 컷마다 장면·동작·문구·뭉치 표정 `mungchiMood`). 후보 기준안 모든 학년 4개. 뭉치는 테마 역할로 사건을 해결하러 가는 주인공이고 찾는 대상의 주인은 등장인물 중 한 명(사용자 결정 2026-11-11)
+- `ThemeChecks`(`checks.py` 모듈 함수): 정답 논리는 특징 표로 판정한다. 요일별 `rulesOut`은 LLM이 쓰지 않고 코드가 표와 조건으로 채운다(`fill_rules_out`, `RULE`은 허용 값 밖의 후보 전부(이미 빠진 후보 포함), `HINT`는 빈 배열). `RULE`은 빠지는 후보가 비어 있지 않음, `HINT`는 그때 남은 후보가 모두 허용 값 안(남은 후보를 빼면 `RULE`이어야 함), `RULE`은 그때 남은 후보를 적어도 하나 새로 뺌(learning 결정적 단서 계산과 맞춤, #438), 틀린 후보는 모두 `RULE`로 빠짐, 수요일까지 후보 2개 이상 남음(마지막 틀린 후보는 목요일 이후), 정답은 어떤 단서로도 빠지지 않음, 요일별 단서 5개(기준안 40자), 단서 문장에 허용 값 낱말이 모두 있고 허용 밖 값 낱말이 없음(활용형·숫자 표기 차이 허용), `standardCode`는 이번 주 성취기준만, `evidence` 종류·때 필수, 찾는 대상은 대화 화자가 아님. 단서 규칙 중 코드로 볼 수 있는 것(정답 이름은 종료 이야기에만, 후보 이름의 색 낱말, 단서 종류 중복), 대화 형식·줄 수·길이·유출, 움직임 개수·속도·크기 상한. 단서는 학생이 그날 미션을 마친 뒤 보여 주므로 증거 발견 줄·대화 LLM 줄이 그날 허용 값을 말하면 `CLUE_EARLY`(정확히 일치하거나 명사형 끝을 뗀 2자 이상 줄기 일치, `mentions_value` 하나로 비교, 수사 연결 문장은 배울 개념을 말하는 자리라 보지 않음), 증거 발견 줄·수사 연결 문장에 후보·정답 이름이면 `ANSWER_LEAK`, 시작 콘티 1·2컷(뭉치 없음) 표정이 `none`이 아니거나 3·4컷(뭉치 출동·도착)이 `none`이면 `CUT_MOOD`, 단서 문장의 증거(사진·영상·녹음·기록 등)와 evidence 종류가 다르면 `CLUE_EVIDENCE`, 종료 콘티에 뭉치가 안 나오는 컷(`none`)이 있으면 `CUT_MOOD`. 살펴보기 한마디·이름이 미션 답·금지어·예시 답을 말하면 `checks.spot_leaks`로 그 물건을 뺀다. 검토 LLM은 단서 문장이 조건을 그대로 말하는지, 표 값이 자연스러운지, 없음에만 기대지 않는지, `HINT`가 일찍 답을 정하지 않는지를 본다
+- 미션: 유형마다 `MissionDraftService`의 생성·`DraftChecks`를 그대로 쓰고, 테마 이야기 조각과 학년별 생각 열기 질문 개수(기준안 초3 3개·초4 2개·초5 1개·초6 1개)를 더 넣는다. 찾는 대상 이름(아직 못 찾음, 정답은 주지 않음)과 RAG 근거 빈 칸(`knowledge`, 지금은 비움)도 넣는다. 그날 장면과 그날 찾은 증거(장소·인물·물건·목격·기록)는 문제 소재로 쓸 수 있고, 정답 쓰기·정답 추리 문제·새 사건 사실·미션 답이 단서가 되는 것은 막는다. 미션 입력에는 그날 단서도 앞 요일 단서 목록도 넣지 않고(학생이 아직 못 얻었을 수 있음) 그날 `discovery`·`missionHook`을 넣되 둘 다 대화로 이미 나가므로 질문에 다시 쓰지 않게 한다(증거 자체를 살피게 하지 않고 어느 후보가 답인지 묻지 않음). 비교·점검할 글이 필요한 문제(예: 금요일 돌아보기)는 그 글을 문제 글에 직접 넣는다(그날 글만 읽고 풀 수 있게). 재사용은 `MissionDraftService.generate`에 선택 인자 `extra_user`(이야기 조각·테마 실패 사유를 미션 프롬프트 뒤에 덧붙임)·`call_type`(`THEME_DRAFT`)·`deadline`·`timeout`(테마 값)만 더한 최소 확장이고, 주지 않으면 기존 `/internal/mission-drafts` 동작과 같다(재시도·최대 토큰은 미션 초안 설정 그대로). 검사 분담(learning.md 21절): ai 미션 검사는 `DraftChecks`(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`)에 테마 몫(학년별 생각 열기 개수 `HINT_COUNT`, 테마 정답 유출 `THEME_ANSWER_LEAK`, 한국어 밖 글자 `LANGUAGE`)만 더하고, 요소 code·`standardCode`·입력 방식 모양은 learning이 본다. 기존 검사 사유(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`·learning이 돌려준 `STANDARD_CODE`·`ELEMENT_CODE`·`SHAPE`)는 미션 초안 `previousFailures`로, 테마 사유는 `extra_user`로 넣는다. 금요일도 큰 질문·후보·단서 목록을 넣지 않고 안내(`guide`)는 LLM이 만든 그대로 둔다(최종 후보 고르기는 웹·learning 화면, 사용자 결정 2026-11-11)
+- `review_missions`(`generate_mission`과 코드 검사·실패 유형 재생성 다음, `generate_dialogue` 앞): 검토 모델이 미션마다 따로 병렬로 본다. 예시 답(또는 정답 키)이 문제가 요구한 것을 모두 채우는지, 성취기준 핵심 행동·생각 유형과 맞는지(혼자 글로 답하는 미션이라 협력·발표는 보지 않음), 그날 글만 읽고 풀 수 있는지(그림에만 있는 정보·비교할 글이 빠진 문제 금지). `FAIL`은 그 미션만 사유를 넣어 다시 만들고(상한 기준안 2회) 끝내 실패하면 `failure.stage = MISSION`, `WARN`은 `warnings`. 최종 `review_story`는 지금처럼 전체를 본다. 구현은 별도 노드가 아니라 요일별 `generate_mission` 노드 안에서 코드 검사 통과 뒤에 돈다(생성 → 검사 → 미션 검토 → 다시 생성 루프가 요일마다 독립이라 다른 요일을 기다리지 않음). 모든 요일이 끝나면 `missions_done`이 실패 요일을 모아 `failure.stage = MISSION`으로 끝낸다. 근거: 텍스트 시험(2026-11-10, lab3-reporter-2·lab3-inventor-2)에서 검토 1·2회차가 단서 논리로 줄거리를 통째로 다시 만들며 미션도 새로 생겨, 예시 답 문제는 검토 상한(3회) 마지막에야 드러나 고칠 기회가 없었음. 비용 기준안 미션당 약 $0.003
+- 대화: 그날 증거 발견 줄(`discovery`)과 수사 연결 문장(`missionHook`, 뭉치)을 코드가 대화 끝 두 줄로 그대로 넣고(증거 발견 줄 말하는 사람 `discoverySpeaker`는 LLM이 고르고 기본 뭉치) LLM은 나머지 줄만 만든다. 단서는 학생이 그날 미션을 마친 뒤 learning이 보여 주므로(#484) 대화에 넣지 않고 화~금 앞 요일 요약 줄도 없다(사용자 결정 2026-11-11). 학년별 줄 수(기준안 초3·초4 3~4줄, 초5·초6 2~3줄)는 끝 두 줄 포함. 실패한 요일만 사유를 넣어 다시(상한 2), 끝내 실패하면 그 요일 대화만 빼고 `warnings(DIALOGUE)`
+- `review_story`: 검토 모델이 `CLUE_LOGIC`·`ANSWER_HINT`·`GRADE_VOCAB`·`STANDARD_FIT`·`SAFETY` 다섯 항목을 본다. `CLUE_LOGIC`·`ANSWER_HINT`·`SAFETY` `FAIL`은 사유를 넣어 줄거리부터(미션·대화 다섯 요일 모두 새로), `STANDARD_FIT`·`GRADE_VOCAB` `FAIL`은 그 요일(요일이 없으면 다섯 요일) 미션·대화만 다시 만들고 다시 검토한다. 항목 형식이 틀리면 검토만 다시. 재검토 상한(2)을 넘거나 마감이 가까우면 `failure.stage = REVIEW`, 마지막 검토의 `WARN`은 `warnings(REVIEW)`
+- `previousFailures` 반영: `THEME`·`REVIEW` 사유는 첫 줄거리 생성부터, `MISSION` 사유(`"<요일> <검사 코드> <자세히>"`)는 그 요일 미션 생성마다(요일이 없으면 다섯 요일) 넣는다. `IMAGE` 사유는 아직 넣지 않는다(넣는 방식 미정)
+- 그림: `gpt-image-2.6-sunburst`, 1536×864, medium. 테마 옷 뭉치 → 시작 1컷 첫 그림(인물 기준 그림) → 미션 그림 5장(`MON`~`FRI`)과 나머지 컷 첫 그림 7장을 [테마 옷 뭉치, 인물 기준 그림] 참조로 동시에 만든다(시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음). 응답 `INTRO`·`OUTRO` 그림은 4번째 컷 첫 그림. 프롬프트는 고정 스타일 + 뭉치(테마 옷) + 등장인물 모습 + 장면이고, 미션 그림은 그날 장면 메모·증거 발견 줄·미션 질문·생각 열기 질문(한국어 그대로, 가리키는 물건이 보이게)을 넣는다. 찾는 대상은 시작 1컷·종료 3·4컷에서만, 생각 풍선 없음. 그림마다 검토(`MUNGCHI`·`ANSWER_HINT`·`TEXT`·`SAFETY`·`SCENE_FIT`, 미션 그림은 `MISSION_FIT`). 영상: `veo-3.1-fast-generate-001`, 720p·무음, 컷 4·6·8·6초, 컷 첫 그림만 고정(아래 그림체·영상 범위)
+- `ThemeStorage`(`storage.py`): 실행마다 ID를 만들어 `theme-drafts/{실행 ID}/{장면}.png`·`.mp4`로 올리고 키만 돌려준다(report-service `clients/storage.py` 패턴, boto3). 영상은 `INTRO`·`OUTRO`만
+- 그림체·뭉치·영상 범위(사용자 결정 2026-11-11): 2D 만화풍, 앱 솜뭉치 모양의 기본 뭉치 그림(`assets/`, 기준안)을 고쳐 테마 옷만 입힌 뒤(손에 소품 없음) 모든 그림의 첫 참조로 쓴다. 영상은 시작·종료만이고 장면마다 컷 4개(4·6·8·6초, 컷마다 장소·각도 다름)를 컷 첫 그림만 고정해 동시에 만든 뒤 0.5초 녹아드는 전환으로 이어 붙인다(`imageio-ffmpeg`, 22.5초). 둘 다 고정하면 비슷한 두 그림 사이를 억지로 이어 움직임이 흐물거리고 배경이 같아져(실측 2026-11-11) 첫 그림만 고정한다. 콘티(컷마다 장면·동작·문구)는 `plan_theme`이 내부 칸으로 함께 만든다. 실패한 컷만 다시 만들고, 설정이 꺼져 있거나 마감이 가까우면 영상을 건너뛰고 `warnings(VIDEO)`
+- `ImageClient`·`VideoClient`(`app/llm/media.py`, 이슈 작업 위치 `app/llm/`): 그림 생성(참조 그림 여러 장, OpenAI images edits)과 영상 생성(Veo 첫 그림 고정, 끝 그림은 선택, `negativePrompt`, 토큰은 Google 표준 자격 증명에서 만료 전 갱신 `GoogleTokenSource`, #538), 녹아드는 전환 이어 붙이기(`join_xfade`)·문구 시각(`xfade_caption_times`)·장면 뽑기(ffmpeg), 영상 크기(`size`, Veo 1280×720)와 끝내 실패한 컷을 대신하는 움직이는 그림 컷(`still_clip`, 첫 그림을 천천히 확대). 참조 그림이 없으면 `images.generate`. 시험은 가짜 구현
+- 움직임(형식 v1, `models.ThemeMotion`): `transition`·`camera`·`speakers{이름: {x, y, zoom}}`·`effects[]`(최대 2층)·`captions[{start, end, text}]`·`spots[{x, y, label, line, evidence}]`(요일 장면 살펴보기 2~3개, 증거 물건 1개, `checks.spots`가 맞춤, 2026-11-11 추가 선택 칸)(시작·종료 영상 문구). 좌표는 그림 %. 화자 위치는 생성 모델이 그림을 보고 정하고, 상한 밖 숫자는 `ThemeChecks.motion`이 맞추고 경고. 그림 입력은 `LlmClient.generate`의 선택 인자 `images`
+- 지식 검색(#470): `plan_theme` 앞 `retrieve` 노드와 `check_theme` 범위 확인 자리만 두고 기능 스위치(기본 꺼짐)로 막는다
+- 프롬프트: `prompts.py` 내장 `theme-draft@1`(생성·검토 묶음), #68 레지스트리 이름 `themeDraft`·scope `ai/theme-draft`. 입력에 학생 정보 없음
+- 사용량: 글 생성·검토 `THEME_DRAFT`, 이미지 `THEME_IMAGE`, 영상 `THEME_VIDEO`. `THEME_VIDEO`는 사용량 이벤트 스키마와 core enum·DB 제약에 먼저 들어간 뒤에만 보냄(core 담당이 마이그레이션 준비)
 
 ---
 

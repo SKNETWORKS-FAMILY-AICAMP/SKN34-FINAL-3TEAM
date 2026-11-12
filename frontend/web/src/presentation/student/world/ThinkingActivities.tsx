@@ -78,7 +78,6 @@ export function ThinkingActivitiesPage({ child }: { child: Child }) {
       <div className="st-sheet-head">
         <div>
           <h1>내 생각 활동</h1>
-          <p>해 본 미션과 내가 쓴 돌아보기를 생각 유형별로 모았어요.</p>
         </div>
         <label className="st-select">
           기간

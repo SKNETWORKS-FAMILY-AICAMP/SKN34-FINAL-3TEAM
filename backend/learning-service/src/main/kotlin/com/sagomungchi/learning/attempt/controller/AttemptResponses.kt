@@ -54,6 +54,8 @@ data class AttemptResponse(
     val revealKind: RevealKind?,
     val checklist: List<ElementView>?,
     val reflection: ReflectionView?,
+    /** 테마 시도의 문제 전 대화·그림 위 생각 열기 위치·문제 전 영상 URL (#438). EXTRA는 null */
+    val themeScene: com.sagomungchi.learning.theme.domain.ThemeScene? = null,
 ) {
     companion object {
         fun from(detail: AttemptDetail) = AttemptResponse(
@@ -70,6 +72,7 @@ data class AttemptResponse(
             revealKind = detail.revealed?.revealKind,
             checklist = detail.revealed?.checklist,
             reflection = detail.reflection?.let(ReflectionView::from),
+            themeScene = detail.themeScene,
         )
     }
 }
@@ -142,6 +145,7 @@ internal fun MissionResponse.Companion.from(mission: MissionView) = MissionRespo
     inputTemplate = mission.inputTemplate,
     categories = mission.categories.map { OptionResponse(it.id, it.label) },
     answerUnit = mission.answerUnit,
+    sceneMotion = mission.sceneMotion,
 )
 
 internal fun AnswerItem.Companion.from(answer: TimelineAnswer, feedback: FeedbackResult) = AnswerItem(

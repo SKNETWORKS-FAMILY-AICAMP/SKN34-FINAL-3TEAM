@@ -13,11 +13,32 @@
   --st-accent: #b8551c;
   --st-display: 'Do Hyeon', 'Gothic A1', 'Malgun Gothic', sans-serif;
   --st-hand: 'Gaegu', 'Malgun Gothic', cursive;
+  /* 글자 크기 토큰(#431): 화면 폭에 따라 커지고 상한에서 멈춤. 본문(base)은 이슈 설계대로 16~18px 안(17~18px),
+     제목·버튼 단계(md 이상)는 화면 폭에 맞춰 더 커짐.
+     학생 화면 밖(학부모 기기 관리 등)에서는 각 선언의 대체 px 값을 쓴다 */
+  --st-fs-xs: clamp(14px, 0.78rem + 0.12vw, 16px);
+  --st-fs-sm: clamp(15px, 0.85rem + 0.15vw, 17px);
+  --st-fs-base: clamp(17px, 0.8rem + 0.25vw, 18px);
+  --st-fs-md: clamp(19px, 1rem + 0.3vw, 23px);
+  --st-fs-lg: clamp(24px, 1.2rem + 0.5vw, 30px);
+  --st-fs-xl: clamp(30px, 1.4rem + 0.9vw, 42px);
+  --st-fs-2xl: clamp(40px, 2rem + 1.2vw, 60px);
+  /* 간격 토큰(#431): 주요 영역의 여백·사이 간격을 화면 폭에 맞춰 키움 */
+  --st-space-sm: clamp(10px, 0.45rem + 0.3vw, 16px);
+  --st-space-md: clamp(20px, 0.9rem + 0.55vw, 32px);
+  --st-space-lg: clamp(28px, 1.3rem + 0.9vw, 52px);
   border: 0;
   background: transparent;
   overflow: visible;
   font-family: 'Gothic A1', 'Malgun Gothic', sans-serif;
+  /* 한글을 낱말 단위로 줄 바꿈(#431). .st-world에만 있어 그 밖에 그려지는 대화상자에서 '주세/요.'처럼 낱말이 쪼개졌음 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
+/* 학생 화면의 <small> 기본 크기(#431). classroom.css의 태그 규칙 `#class-journal small { 11px }`이 학생 화면에도
+   걸려 작은 글이 11px로 남았음. 우선순위(1,1,1)로 그 규칙을 이기고, 이 파일 뒤쪽의 개별 small 규칙(같은 우선순위)은
+   나중에 오므로 그대로 이긴다 */
+#class-journal .cj-app-student small { font-size: var(--st-fs-xs); }
 #class-journal .cj-app-student .cj-modal {
   background: var(--st-paper);
   color: var(--st-ink);
@@ -26,7 +47,7 @@
 #class-journal .cj-app-student .cj-modal-head h2 {
   font-family: var(--st-display);
   font-weight: 400;
-  font-size: 24px;
+  font-size: var(--st-fs-lg, 24px);
 }
 #class-journal .cj-app-student .cj-primary {
   min-height: 48px;
@@ -34,7 +55,7 @@
   border-radius: 12px;
   font-family: var(--st-display);
   font-weight: 400;
-  font-size: 18px;
+  font-size: var(--st-fs-base, 18px);
 }
 #class-journal .cj-app-student .cj-secondary {
   min-height: 44px;
@@ -42,13 +63,13 @@
   border-radius: 999px;
   color: var(--st-ink);
   font-family: var(--st-display);
-  font-size: 16px;
+  font-size: var(--st-fs-sm, 16px);
 }
 
 #class-journal .st-world {
   position: relative;
   isolation: isolate;
-  min-height: min(834px, calc(100vh - 80px));
+  min-height: calc(100vh - 80px);
   border-radius: 24px;
   overflow: clip;
   background: var(--st-bg);
@@ -110,13 +131,13 @@
 #class-journal .st-wordmark {
   font-family: 'Gaegu', cursive;
   font-weight: 700;
-  font-size: 52px;
+  font-size: var(--st-fs-2xl, 52px);
   line-height: 1;
   color: #fffdf7;
 }
 #class-journal .st-sub {
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 18px;
+  font-size: var(--st-fs-base, 18px);
   color: var(--st-light2);
 }
 #class-journal .st-nav {
@@ -135,7 +156,7 @@
   background: none;
   color: #fffdf7;
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 15px;
+  font-size: var(--st-fs-sm, 15px);
 }
 #class-journal .st-tile {
   width: 64px;
@@ -178,10 +199,10 @@
 #class-journal .st-sheet {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: var(--st-space-md, 22px);
   max-width: 1120px;
   margin: 0 auto;
-  padding: 32px 40px 40px;
+  padding: var(--st-space-lg, 32px 40px 40px);
 }
 #class-journal .st-sheet-head {
   display: flex;
@@ -191,21 +212,21 @@
   flex-wrap: wrap;
 }
 #class-journal .st-sheet h1 {
-  font-size: 36px;
+  font-size: var(--st-fs-xl, 36px);
 }
 #class-journal .st-sheet h2 {
-  font-size: 22px;
+  font-size: var(--st-fs-md, 22px);
 }
 #class-journal .st-sheet-head p,
 #class-journal .st-meta {
   margin: 4px 0 0;
-  font-size: 15px;
+  font-size: var(--st-fs-sm, 15px);
   color: #4a4a45;
 }
 #class-journal .st-kicker {
   margin: 0;
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 15px;
+  font-size: var(--st-fs-sm, 15px);
   color: #3f6400;
 }
 #class-journal .st-button {
@@ -220,7 +241,7 @@
   background: #fffdf7;
   color: var(--st-ink);
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 19px;
+  font-size: var(--st-fs-md, 19px);
 }
 #class-journal .st-button.st-primary {
   border-color: var(--st-accent);
@@ -244,7 +265,7 @@
   align-items: center;
   gap: 8px;
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 17px;
+  font-size: var(--st-fs-base, 17px);
 }
 #class-journal .st-select select {
   min-height: 44px;
@@ -252,7 +273,7 @@
   border: 2px solid var(--st-ink);
   border-radius: 12px;
   background: #fffdf7;
-  font-size: 16px;
+  font-size: var(--st-fs-sm, 16px);
 }
 #class-journal .st-notice {
   max-width: 640px;
@@ -268,14 +289,14 @@
   padding: 24px;
   border: 2px dashed rgb(31 36 33 / 0.3);
   border-radius: 14px;
-  font-size: 16px;
+  font-size: var(--st-fs-sm, 16px);
 }
 
 /* ── 생각 지도 (홈) ── */
 #class-journal .st-home-grid {
   display: grid;
   grid-template-columns: minmax(300px, 430px) minmax(0, 1fr);
-  gap: 32px;
+  gap: var(--st-space-lg, 32px);
   align-items: start;
 }
 #class-journal .st-today {
@@ -298,12 +319,12 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 28px 30px 30px;
+  gap: var(--st-space-sm, 12px);
+  padding: var(--st-space-md, 28px 30px 30px);
   transform: rotate(-1deg);
 }
 #class-journal .st-today-card h2 {
-  font-size: 30px;
+  font-size: var(--st-fs-xl, 30px);
   line-height: 1.15;
 }
 #class-journal .st-today-card .st-meta {
@@ -393,10 +414,10 @@
 #class-journal .st-island-name strong {
   font-family: 'Do Hyeon', sans-serif;
   font-weight: 400;
-  font-size: 20px;
+  font-size: var(--st-fs-md, 20px);
 }
 #class-journal .st-island-name small {
-  font-size: 13px;
+  font-size: var(--st-fs-xs, 13px);
   color: #4a4a45;
 }
 #class-journal .st-today-flag {
@@ -407,7 +428,7 @@
   background: var(--st-accent);
   color: #fff;
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 16px;
+  font-size: var(--st-fs-sm, 16px);
   clip-path: polygon(2% 10%, 30% 2%, 70% 6%, 98% 0%, 100% 88%, 72% 100%, 35% 94%, 0% 100%);
 }
 #class-journal .st-buddy {
@@ -444,7 +465,7 @@
   background: #fffdf7;
   color: var(--st-ink);
   font-family: 'Gaegu', cursive;
-  font-size: 21px;
+  font-size: var(--st-fs-md, 21px);
   line-height: 1.3;
   box-shadow: 0 3px 0 rgb(0 0 0 / 0.15);
 }
@@ -466,7 +487,7 @@
   background: #fffdf7;
   color: var(--st-ink);
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 17px;
+  font-size: var(--st-fs-base, 17px);
 }
 #class-journal .st-chips button[aria-pressed='true'] {
   background: var(--st-ink);
@@ -481,7 +502,7 @@
 #class-journal .st-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 22px;
+  gap: var(--st-space-md, 22px);
 }
 #class-journal .st-card {
   display: flex;
@@ -496,12 +517,12 @@
   margin: 4px 4px 8px;
 }
 #class-journal .st-card h2 {
-  font-size: 24px;
+  font-size: var(--st-fs-lg, 24px);
   line-height: 1.2;
 }
 #class-journal .st-question {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--st-fs-sm, 15px);
   line-height: 1.5;
   color: #3a3a36;
   display: -webkit-box;
@@ -522,7 +543,7 @@
   border-radius: 999px;
   border: 1.5px solid rgb(31 36 33 / 0.4);
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 15px;
+  font-size: var(--st-fs-sm, 15px);
 }
 #class-journal .st-card[data-status='COMPLETED'] .st-status {
   border-color: #3f6400;
@@ -555,7 +576,7 @@
 #class-journal .st-custom h3 {
   font-family: 'Do Hyeon', sans-serif;
   font-weight: 400;
-  font-size: 20px;
+  font-size: var(--st-fs-md, 20px);
   margin: 0;
 }
 #class-journal .st-custom .st-pick-grid {
@@ -594,10 +615,10 @@
 #class-journal .st-pick strong {
   font-family: 'Do Hyeon', sans-serif;
   font-weight: 400;
-  font-size: 20px;
+  font-size: var(--st-fs-md, 20px);
 }
 #class-journal .st-pick small {
-  font-size: 13px;
+  font-size: var(--st-fs-xs, 13px);
   color: #4a4a45;
 }
 #class-journal .st-swatch {
@@ -613,7 +634,7 @@
   padding: 0;
 }
 #class-journal .st-sheet .cj-feedbar h1 {
-  font-size: 36px;
+  font-size: var(--st-fs-xl, 36px);
 }
 #class-journal .st-sheet .cj-feed {
   padding: 0;
@@ -647,7 +668,7 @@
   background: none;
   color: #fffdf7;
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 18px;
+  font-size: var(--st-fs-base, 18px);
 }
 #class-journal .st-back svg {
   width: 26px;
@@ -669,7 +690,7 @@
   background: var(--st-shade);
   color: #f4ecdc;
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 16px;
+  font-size: var(--st-fs-sm, 16px);
   clip-path: polygon(2% 10%, 30% 2%, 70% 6%, 98% 0%, 100% 88%, 72% 100%, 35% 94%, 0% 100%);
 }
 #class-journal .st-steps li[data-done] {
@@ -706,7 +727,7 @@
   margin-bottom: 8px;
 }
 #class-journal .st-work .ux-paper-question h1 {
-  font-size: 34px;
+  font-size: var(--st-fs-xl, 34px);
   line-height: 1.15;
 }
 #class-journal .st-ask {
@@ -723,21 +744,21 @@
   border-radius: 4px 18px 18px 18px;
   background: #fff;
   box-shadow: 0 2px 0 rgb(0 0 0 / 0.08);
-  font-size: 16px;
+  font-size: var(--st-fs-sm, 16px);
   line-height: 1.55;
 }
 #class-journal .st-work .st-say h2 {
   margin: 0;
   font-family: 'Gothic A1', sans-serif;
   font-weight: 600;
-  font-size: 19px;
+  font-size: var(--st-fs-md, 19px);
   line-height: 1.6;
   max-width: none;
 }
 #class-journal .st-say strong {
   font-family: 'Do Hyeon', sans-serif;
   font-weight: 400;
-  font-size: 16px;
+  font-size: var(--st-fs-sm, 16px);
   color: #9a4416;
 }
 #class-journal .st-say p {
@@ -751,7 +772,7 @@
   border-radius: 999px;
   color: #9a4416;
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 13px;
+  font-size: var(--st-fs-xs, 13px);
 }
 #class-journal .st-work .ux-scene {
   margin: 0;
@@ -762,7 +783,7 @@
   transform: rotate(-0.8deg);
 }
 #class-journal .st-work .ux-scene figcaption {
-  font-size: 13px;
+  font-size: var(--st-fs-xs, 13px);
   color: #4a4a45;
 }
 #class-journal .st-tools {
@@ -781,7 +802,7 @@
   background: #fffdf7;
   color: var(--st-ink);
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 16px;
+  font-size: var(--st-fs-sm, 16px);
 }
 #class-journal .st-tools button svg {
   width: 20px;
@@ -800,7 +821,7 @@
 }
 #class-journal .st-work .cj-field {
   font-family: 'Do Hyeon', sans-serif;
-  font-size: 18px;
+  font-size: var(--st-fs-base, 18px);
   color: var(--st-ink);
 }
 #class-journal .st-work .cj-field input,
@@ -809,7 +830,7 @@
   border-radius: 14px;
   background: #fffdf7;
   font-family: 'Gaegu', 'Malgun Gothic', cursive;
-  font-size: 22px;
+  font-size: var(--st-fs-md, 22px);
   line-height: 1.5;
 }
 #class-journal .st-work .ux-feedback {
@@ -845,7 +866,7 @@
 #class-journal .st-actions .ux-save-line {
   margin: 0;
   flex: 1 1 260px;
-  font-size: 13px;
+  font-size: var(--st-fs-xs, 13px);
   color: #4a4a45;
 }
 #class-journal .st-actions .st-button {
@@ -856,7 +877,7 @@
     padding: 22px 16px 8px;
   }
   #class-journal .st-work .ux-paper-question h1 {
-    font-size: 26px;
+    font-size: var(--st-fs-lg, 26px);
   }
   #class-journal .st-actions {
     padding: 10px 16px 12px;
@@ -868,7 +889,7 @@
 
 /* ── 자녀 기기 로그인 (기본 테마 위 종이 카드) ── */
 #class-journal .st-world .device-login {
-  min-height: min(834px, calc(100vh - 40px));
+  min-height: calc(100vh - 40px);
 }
 #class-journal .st-world .device-card {
   background: var(--st-paper);
@@ -878,7 +899,7 @@
   box-shadow: 0 10px 24px rgb(0 0 0 / 0.28);
 }
 #class-journal .st-world .device-card h1 {
-  font-size: 30px;
+  font-size: var(--st-fs-xl, 30px);
 }
 #class-journal .st-world .pin-keys button {
   border: 2px solid var(--st-ink);
@@ -941,14 +962,14 @@
     padding: 20px 16px 4px;
   }
   #class-journal .st-wordmark {
-    font-size: 40px;
+    font-size: var(--st-fs-2xl, 40px);
   }
   #class-journal .st-nav {
     gap: 6px;
   }
   #class-journal .st-nav button {
     min-width: 56px;
-    font-size: 13px;
+    font-size: var(--st-fs-xs, 13px);
   }
   #class-journal .st-tile {
     width: 48px;
@@ -965,7 +986,7 @@
     padding: 22px 16px 28px;
   }
   #class-journal .st-sheet h1 {
-    font-size: 28px;
+    font-size: var(--st-fs-lg, 28px);
   }
   #class-journal .st-today-card {
     padding: 22px 20px 24px;
@@ -984,7 +1005,7 @@
     bottom: 28px;
   }
   #class-journal .st-bubble {
-    font-size: 18px;
+    font-size: var(--st-fs-base, 18px);
     margin-bottom: 70px;
   }
 }
@@ -1035,27 +1056,27 @@
 
 /* 화면 전체 폭을 쓰고, 메뉴·요일 문제를 기기 폭에 맞춰 다시 배치한다. */
 #class-journal:has(.cj-app-student) { max-width: none; padding: 0; }
-#class-journal .cj-app-student { border: 0; border-radius: 0; min-height: 100dvh; font-size: 18px; }
+#class-journal .cj-app-student { border: 0; border-radius: 0; min-height: 100dvh; font-size: var(--st-fs-base, 18px); }
 #class-journal .cj-app-student .st-world { min-height: 100dvh; border-radius: 0; }
 #class-journal .cj-app-student .st-top { max-width: 1760px; margin: 0 auto; padding: 28px clamp(20px, 3vw, 48px) 20px; align-items: center; gap: 24px; }
 #class-journal .cj-app-student .st-brand { flex: 1 1 360px; min-width: 0; position: relative; }
 #class-journal .cj-app-student .st-wordmark { font-size: clamp(34px, 3.5vw, 56px); line-height: 1.15; }
 #class-journal .cj-app-student .st-nav { display: grid; grid-template-columns: repeat(8, minmax(64px, 1fr)); gap: 12px; flex: 1 1 680px; }
-#class-journal .cj-app-student .st-nav button { min-width: 0; min-height: 86px; font-size: 15px; gap: 8px; }
+#class-journal .cj-app-student .st-nav button { min-width: 0; min-height: 86px; font-size: var(--st-fs-sm, 15px); gap: 8px; }
 #class-journal .cj-app-student .st-tile { width: 58px; height: 58px; }
 #class-journal .cj-app-student .st-stage { max-width: 1760px; margin: 0 auto; padding: 16px clamp(20px, 3vw, 48px) 48px; }
 #class-journal .cj-app-student .st-sheet { max-width: 1440px; width: 100%; padding: 36px 40px; gap: 24px; }
-#class-journal .cj-app-student .st-sheet p { font-size: 18px; }
-#class-journal .cj-app-student .st-meta { font-size: 15px; line-height: 1.6; }
+#class-journal .cj-app-student .st-sheet p { font-size: var(--st-fs-base, 18px); }
+#class-journal .cj-app-student .st-meta { font-size: var(--st-fs-sm, 15px); line-height: 1.6; }
 #class-journal .cj-app-student .st-home-grid { grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.5fr); gap: 36px; }
 #class-journal .cj-app-student .st-today { max-width: none; }
-#class-journal .cj-app-student .st-support-menu { font-size: 15px; color: #fff; }
+#class-journal .cj-app-student .st-support-menu { font-size: var(--st-fs-sm, 15px); color: #fff; }
 #class-journal .cj-app-student .st-support-menu summary { cursor: pointer; min-height: 32px; }
 #class-journal .cj-app-student .st-support-menu[open] { border-radius: 8px; background: var(--st-paper); color: var(--st-ink); padding: 12px; }
 #class-journal .cj-app-student .st-support-menu a { display: inline-block; padding: 10px; color: var(--st-ink); }
 #class-journal .cj-app-student .st-sharing { max-width: 1200px; }
 #class-journal .cj-app-student .st-sharing fieldset { margin: 12px 0; padding: 20px; border-radius: 12px; }
-#class-journal .cj-app-student .st-sharing fieldset label { border: 2px solid transparent; border-radius: 10px; padding: 14px; min-height: 60px; font-size: 18px; cursor: pointer; gap: 14px; }
+#class-journal .cj-app-student .st-sharing fieldset label { border: 2px solid transparent; border-radius: 10px; padding: 14px; min-height: 60px; font-size: var(--st-fs-base, 18px); cursor: pointer; gap: 14px; }
 #class-journal .cj-app-student .st-sharing label:has(input:checked) { border-color: var(--st-accent); background: #fffdf7; }
 #class-journal .cj-app-student .st-sharing label:has(input:disabled) { cursor: not-allowed; color: #5c5a54; }
 #class-journal .cj-app-student .st-sharing input { width: 24px; height: 24px; flex: 0 0 auto; accent-color: var(--st-accent); }
@@ -1068,15 +1089,15 @@
 @media (max-width: 640px) {
   #class-journal .cj-app-student .st-top { padding: 20px 16px 12px; gap: 20px; }
   #class-journal .cj-app-student .st-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-  #class-journal .cj-app-student .st-nav button { font-size: 14px; min-height: 72px; }
+  #class-journal .cj-app-student .st-nav button { font-size: var(--st-fs-xs, 14px); min-height: 72px; }
   #class-journal .cj-app-student .st-tile { width: 48px; height: 48px; }
   #class-journal .cj-app-student .st-stage { padding: 12px 16px 32px; }
   #class-journal .cj-app-student .st-sheet { padding: 24px 18px; }
-  #class-journal .cj-app-student .st-sheet h1 { font-size: 28px; }
+  #class-journal .cj-app-student .st-sheet h1 { font-size: var(--st-fs-lg, 28px); }
   #class-journal .cj-app-student .st-islands { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
   #class-journal .cj-app-student .st-islands li:last-child { grid-column: 1 / -1; justify-self: center; width: min(100%, 220px); }
   #class-journal .cj-app-student .st-today-card { transform: none; padding: 24px; }
-  #class-journal .cj-app-student .st-today-card h2 { font-size: 28px; line-height: 1.4; }
+  #class-journal .cj-app-student .st-today-card h2 { font-size: var(--st-fs-lg, 28px); line-height: 1.4; }
   #class-journal .cj-app-student .st-sharing fieldset { padding: 12px; }
   #class-journal .cj-app-student .st-sharing-actions > button { width: 100%; }
 }
@@ -1092,4 +1113,98 @@
 @media (min-width: 641px) and (max-width: 1100px) {
   #class-journal .cj-app-student .st-islands { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
   #class-journal .cj-app-student .st-islands li:last-child { grid-column: 1 / -1; justify-self: center; width: 240px; }
+}
+
+/* ── 학생 화면 안의 공용 규칙(classroom.css)을 글자 크기 토큰으로(#431) ──
+   classroom.css 원본은 학부모 화면과 같이 쓰므로 고치지 않고, 그 파일에서 px 글자 크기를 가진 최상위 규칙(클래스가 있는 것)을
+   학생 화면 범위에서만 덮어쓴다. 학생 CSS가 같은 요소의 크기를 이미 정한 선택자와 태그만 쓴 선택자(h1·h2 등)는 건너뜀.
+   원래 크기 → 토큰 단계는 학생 CSS와 같은 기준 */
+#class-journal .cj-app-student .cj-activity p,
+#class-journal .cj-app-student .cj-add,
+#class-journal .cj-app-student .cj-announcement,
+#class-journal .cj-app-student .cj-app-foot,
+#class-journal .cj-app-student .cj-art-caption,
+#class-journal .cj-app-student .cj-author,
+#class-journal .cj-app-student .cj-author small,
+#class-journal .cj-app-student .cj-avatar,
+#class-journal .cj-app-student .cj-back,
+#class-journal .cj-app-student .cj-badge,
+#class-journal .cj-app-student .cj-board-note,
+#class-journal .cj-app-student .cj-caption,
+#class-journal .cj-app-student .cj-comment,
+#class-journal .cj-app-student .cj-comment .cj-avatar,
+#class-journal .cj-app-student .cj-comment small,
+#class-journal .cj-app-student .cj-difficulties button,
+#class-journal .cj-app-student .cj-editor-footer,
+#class-journal .cj-app-student .cj-editor-save,
+#class-journal .cj-app-student .cj-editor-top small,
+#class-journal .cj-app-student .cj-empty,
+#class-journal .cj-app-student .cj-error,
+#class-journal .cj-app-student .cj-feedbar,
+#class-journal .cj-app-student .cj-filters select,
+#class-journal .cj-app-student .cj-method,
+#class-journal .cj-app-student .cj-method span,
+#class-journal .cj-app-student .cj-metric-line,
+#class-journal .cj-app-student .cj-modal-desc,
+#class-journal .cj-app-student .cj-pen,
+#class-journal .cj-app-student .cj-plain,
+#class-journal .cj-app-student .cj-post-context,
+#class-journal .cj-app-student .cj-post-context button,
+#class-journal .cj-app-student .cj-post-tags,
+#class-journal .cj-app-student .cj-preview,
+#class-journal .cj-app-student .cj-preview select,
+#class-journal .cj-app-student .cj-quote,
+#class-journal .cj-app-student .cj-rail-label,
+#class-journal .cj-app-student .cj-rail-nav button,
+#class-journal .cj-app-student .cj-rail-note,
+#class-journal .cj-app-student .cj-rail-title p,
+#class-journal .cj-app-student .cj-reply,
+#class-journal .cj-app-student .cj-sheet p,
+#class-journal .cj-app-student .cj-subject,
+#class-journal .cj-app-student .cj-subject i,
+#class-journal .cj-app-student .cj-tag,
+#class-journal .cj-app-student .cj-tool-label,
+#class-journal .cj-app-student .cj-top-context,
+#class-journal .cj-app-student .cj-version p,
+#class-journal .cj-app-student .ux-backup,
+#class-journal .cj-app-student .ux-child-select,
+#class-journal .cj-app-student .ux-context,
+#class-journal .cj-app-student .ux-error,
+#class-journal .cj-app-student .ux-evidence,
+#class-journal .cj-app-student .ux-feedback,
+#class-journal .cj-app-student .ux-guardian,
+#class-journal .cj-app-student .ux-help,
+#class-journal .cj-app-student .ux-login-demo-note,
+#class-journal .cj-app-student .ux-metric,
+#class-journal .cj-app-student .ux-metric p,
+#class-journal .cj-app-student .ux-parent-entry,
+#class-journal .cj-app-student .ux-preview,
+#class-journal .cj-app-student .ux-preview select,
+#class-journal .cj-app-student .ux-private,
+#class-journal .cj-app-student .ux-timeline-question { font-size: var(--st-fs-xs); }
+#class-journal .cj-app-student .cj-editor-top h1 { font-size: var(--st-fs-sm); }
+#class-journal .cj-app-student .cj-activity h2,
+#class-journal .cj-app-student .ux-answer-fields .cj-field textarea,
+#class-journal .cj-app-student .ux-choices button { font-size: var(--st-fs-base); }
+#class-journal .cj-app-student .cj-rail-title h2,
+#class-journal .cj-app-student .ux-metric summary strong,
+#class-journal .cj-app-student .ux-paper-question h2 { font-size: var(--st-fs-md); }
+#class-journal .cj-app-student .cj-note-editor { font-size: var(--st-fs-lg); }
+#class-journal .cj-app-student .cj-rail-avatar,
+#class-journal .cj-app-student .ux-login-intro h1 { font-size: var(--st-fs-xl); }
+#class-journal .cj-app-student .cj-modal-head { padding: var(--st-space-sm) var(--st-space-md); }
+#class-journal .cj-app-student .cj-modal-body { padding: var(--st-space-md); }
+/* 답 쓰기 화면 밖(대화상자)의 입력칸. 답 쓰기 화면은 위 .st-work .cj-field 규칙이 따로 정함.
+   이 파일은 classroom.css보다 먼저 불러오므로(ClassroomApp import 순서) 학생 범위 클래스로 우선순위를 높여 덮어쓴다 */
+#class-journal .cj-app-student .cj-modal .cj-field { font-size: var(--st-fs-xs); }
+#class-journal .cj-app-student .cj-modal .cj-field input,
+#class-journal .cj-app-student .cj-modal .cj-field textarea { font-size: var(--st-fs-base); }
+
+/* ── 큰 화면(1440px 이상)에서 본문·대화상자 폭을 넓힌다(#431 이슈 설계 "min-width 규칙").
+   그보다 좁으면 위의 기본 폭(본문 1120px·상단과 무대 1760px·대화상자 610px) ── */
+@media (min-width: 1440px) {
+  #class-journal .cj-app-student .st-top,
+  #class-journal .cj-app-student .st-stage { max-width: max(1760px, min(92vw, 2240px)); }
+  #class-journal .st-sheet { max-width: max(1120px, min(78vw, 1600px)); }
+  #class-journal .cj-app-student .cj-modal { max-width: max(610px, min(46vw, 880px)); }
 }

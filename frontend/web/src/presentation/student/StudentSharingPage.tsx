@@ -20,18 +20,16 @@ export function StudentSharingPage({ child }: { child: Child }) {
   const value = query.error ? undefined : query.data
   return <main className="st-paper st-sheet st-sharing">
     <h1>내 답 공개 설정</h1>
-    <p>내가 쓴 답과 돌아보기를 학부모님께 보여 드릴지 정해 주세요.</p>
-    <p>처음에는 비공개입니다. 공개해도 나중에 다시 바꿀 수 있어요.</p>
     {query.isPending && <p role="status">공개 설정을 읽고 있어요.</p>}
     <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     {value && <fieldset disabled={save.isPending}>
-      <legend>학부모님께 답변 원문 보여 드리기</legend>
+      <legend>학부모님께 내 답 보여 드리기</legend>
       <label><input type="radio" name="sharing" checked={!(save.isPending ? save.variables : value.parentSharingEnabled)} onChange={() => save.mutate(false)} />비공개로 둘게요</label>
       <label><input type="radio" name="sharing" checked={save.isPending ? save.variables : value.parentSharingEnabled} onChange={() => save.mutate(true)} />학부모님께 공개할게요</label>
     </fieldset>}
     <ErrorNotice error={save.error} />
-    <p role="status">{save.isPending ? '설정을 저장하고 있어요.' : value ? `현재 ${value.parentSharingEnabled ? '공개' : '비공개'} 상태입니다.` : ''}</p>
-    <p>비공개여도 학습 횟수와 활동 유형은 학부모님께 보입니다. 이미 받으신 파일은 회수되지 않아요.</p>
+    <p role="status">{save.isPending ? '설정을 저장하고 있어요.' : value ? `지금은 ${value.parentSharingEnabled ? '공개' : '비공개'}예요.` : ''}</p>
+    <p>비공개여도 몇 번 했는지는 학부모님이 볼 수 있어요.</p>
     <CommunitySharing child={child} />
   </main>
 }
@@ -49,7 +47,7 @@ function CommunitySharing({ child }: { child: Child }) {
   const needsConsent = save.error instanceof ApiError && save.error.problem.code === 'COMMUNITY_CONSENT_REQUIRED'
   return <section aria-labelledby="community-h">
     <h2 id="community-h">친구들에게 내 답 보여 주기</h2>
-    <p>켜 두면 내가 마무리한 미션의 답이 같은 미션을 마무리한 친구들에게 별명으로 보여요. 처음에는 꺼져 있어요.</p>
+    <p>켜면 같은 미션을 끝낸 친구들에게 내 답이 별명으로 보여요.</p>
     {query.isPending && <p role="status">친구 공개 설정을 읽고 있어요.</p>}
     <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     {value && <fieldset disabled={save.isPending}>
@@ -63,9 +61,7 @@ function CommunitySharing({ child }: { child: Child }) {
       </label>
     </fieldset>}
     {value && !value.consentGranted && <div className="st-consent-note" id="community-consent-note" role="note">
-      <p><strong>아직 켤 수 없어요. 학부모님 동의가 먼저 필요해요.</strong></p>
       <p>학부모님이 계정·자녀 설정 › 공개·동의 › 풀이 공유 커뮤니티에서 동의해 주시면 켤 수 있어요.</p>
-      <p className="st-meta">동의를 받은 뒤 이 화면으로 돌아오면 자동으로 다시 확인해요.</p>
     </div>}
     {needsConsent ? <p role="alert">학부모님 동의가 아직 없어서 켜지 못했어요.</p> : <ErrorNotice error={save.error} />}
     {value && <p role="status">{save.isPending ? '친구 공개 설정을 저장하고 있어요.' : `친구 공개 ${value.enabled && value.consentGranted ? '켜짐' : '꺼짐'}`}</p>}

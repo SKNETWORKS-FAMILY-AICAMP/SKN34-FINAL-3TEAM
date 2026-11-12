@@ -352,7 +352,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 aria-label="질문 읽기"
                 onClick={() => {
                   if (!window.speechSynthesis) {
-                    setNotice('이 브라우저에서는 읽어주기를 지원하지 않습니다.')
+                    setNotice('이 화면에서는 읽어 주기를 쓸 수 없어요.')
                     return
                   }
                   window.speechSynthesis.cancel()
@@ -387,7 +387,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
             {memo && draft ? (
               <>
                 <div className="ux-private">
-                  학생 본인만 보는 메모입니다. 제출·판정·학부모 기록에 포함되지 않아요.
+                  나만 보는 메모예요.
                 </div>
                 <MemoCanvas />
                 <label className="cj-field">
@@ -408,7 +408,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 </label>
                 {targets.length ? (
                   <>
-                    <p>옮긴 글은 답변의 일부로 제출됩니다. 원래 메모는 지우지 않습니다.</p>
+                    <p>옮긴 글은 답에 들어가요. 메모는 그대로 남아요.</p>
                     <label className="cj-field">
                       옮길 답변 칸
                       <select
@@ -423,7 +423,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                       </select>
                     </label>
                     {!writing && (
-                      <p>답변을 쓰는 중에만 옮길 수 있습니다. 추가 답변 작성을 시작한 뒤 옮겨 주세요.</p>
+                      <p>답을 쓰는 중에만 옮길 수 있어요.</p>
                     )}
                     <button
                       type="button"
@@ -433,10 +433,10 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                         try {
                           change(appendMemo(draft.answer, draft.memo, selectedMemoTarget))
                           setMemoError('')
-                          setNotice('선택한 답변 칸에 글 메모를 덧붙였습니다. 제출 전에 확인해 주세요.')
+                          setNotice('메모를 답에 붙였어요. 내기 전에 한 번 읽어 보세요.')
                           setMemo(false)
                         } catch (e) {
-                          setMemoError(e instanceof Error ? e.message : '메모를 옮기지 못했습니다.')
+                          setMemoError(e instanceof Error ? e.message : '메모를 옮기지 못했어요. 다시 해 볼까요?')
                         }
                       }}
                     >
@@ -445,7 +445,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                     {memoError && <p role="alert">{memoError}</p>}
                   </>
                 ) : (
-                  <p>고르기·순서·분류 문제에서는 답변 화면에서 직접 골라 주세요. 글 메모를 선택 답으로 자동 변환하지 않습니다.</p>
+                  <p>이 문제는 답 칸에서 직접 골라 주세요.</p>
                 )}
               </>
             ) : writing && draft ? (
@@ -481,21 +481,20 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                     <strong>
                       {f.status === 'DONE'
                         ? f.judgment?.result === 'HELD'
-                          ? '판정 보류 · 답변은 기록했어요.'
+                          ? '답을 잘 받았어요.'
                           : f.judgment?.result === 'CORRECT'
                             ? '정답을 확인했어요.'
                             : '한 번 더 살펴볼까요?'
                         : f.status === 'FAILED'
-                          ? '답변 저장 완료 · 피드백 처리 실패'
-                          : '답변 저장 완료 · 피드백 처리 중'}
+                          ? '답은 저장했어요. 피드백은 잠시 뒤에 다시 볼 수 있어요.'
+                          : '답을 저장했어요. 피드백을 준비하고 있어요.'}
                     </strong>
                     {f.judgment?.trial && (
                       <small>AI 채점(시범){isDemo ? ' · 실제 모델 호출 없음' : ''}</small>
                     )}
                     {f.judgment?.result === 'HELD' && (
                       <p>
-                        지금은 답을 판단하기 어려워요. 작성한 답은 저장했으니 질문을 읽고 생각을 더
-                        남겨 보세요.
+                        질문을 다시 읽고 생각을 조금 더 써 볼까요? 쓴 답은 저장했어요.
                       </p>
                     )}
                     {f.followup && !a.finishedAt && (
@@ -542,7 +541,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                       })}
                     </ul>
                     {!a.checklist?.length && (
-                      <p>근거로 확인한 항목이 아직 없습니다. 낮은 결과를 뜻하지는 않아요.</p>
+                      <p>아직 확인된 것이 없어요. 다음에 하나씩 넣어 봐요.</p>
                     )}
                     <AttemptComparisonPanel attempt={a} />
                     <SelfAssessmentPanel key={a.attemptId} attempt={a} onBusyChange={setSelfAssessmentPending} />
@@ -557,7 +556,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                         onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
                           .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
                         이 미션 다시 풀기
-                      </button><p>이번 답은 공책에 남고, 새 답으로 시작합니다.</p>
+                      </button><p>이번 답은 공책에 남아요. 새로 시작해요.</p>
                       <ErrorNotice error={actions.start.error} /></div>
                     ) : (
                       <button
@@ -576,7 +575,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 ) : (
                   <div className="cj-modal-actions">
                     {f?.status === 'FAILED' && feedbackFinal && (
-                      <p role="status">지금은 피드백을 다시 받을 수 없어요. 답변은 저장했으니 나중에 다시 확인해 주세요.</p>
+                      <p role="status">지금은 피드백을 받을 수 없어요. 답은 저장했어요.</p>
                     )}
                     {f?.status === 'FAILED' && !feedbackFinal && (
                       <button
@@ -587,7 +586,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                           void feedback()
                         }}
                       >
-                        피드백만 다시 요청
+                        피드백 다시 받기
                       </button>
                     )}
                     {f?.status === 'RUNNING' && !pending && (
@@ -598,7 +597,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                           void feedback()
                         }}
                       >
-                        처리 결과 다시 확인
+                        다시 확인하기
                       </button>
                     )}
                     {canAddAnswer(a) && a.answers.length > 0 && (
@@ -644,11 +643,11 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 <span>
                   {
                     {
-                      SAVED: isDemo ? '초안 저장 완료(모의)' : '초안 저장 완료',
-                      DIRTY: '변경 내용 저장 대기',
-                      SAVING: '초안 저장 중',
-                      FAILED: '초안 저장 실패 · 입력은 유지됩니다.',
-                      CONFLICT: '초안 충돌 · 선택 전에는 덮어쓰지 않아요.',
+                      SAVED: isDemo ? '저장했어요(모의)' : '저장했어요',
+                      DIRTY: '아직 저장 전이에요',
+                      SAVING: '저장하고 있어요',
+                      FAILED: '저장하지 못했어요. 쓴 글은 그대로 있어요.',
+                      CONFLICT: '다른 곳에서 쓴 글이 있어요. 어느 쪽을 쓸지 골라 주세요.',
                     }[saveState]
                   }
                 </span>
@@ -661,8 +660,8 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
               )}
               <small>
                 {a.finishedAt
-                  ? '마무리한 활동은 답변을 더 제출할 수 없어요.'
-                  : '다 쓰기 전에는 정답·예시 답을 보여 주지 않아요.'}
+                  ? '다 끝낸 활동이에요.'
+                  : '다 쓰면 예시 답을 볼 수 있어요.'}
               </small>
             </div>
             {writing && !memo && (
@@ -693,8 +692,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
       {(leaveOpen || blocker.state === 'blocked') && draft && (
         <Modal title="아직 저장하지 못한 입력이 있어요." onClose={stay}>
           <p>
-            저장 후 나가거나, 이 화면에서 계속 작성할 수 있습니다. 저장하지 않고 나가면 현재 입력은
-            사라집니다.
+            저장하고 나갈까요? 저장하지 않으면 쓴 글이 사라져요.
           </p>
           <ErrorNotice error={saveError} />
           <div className="cj-modal-actions">
@@ -711,7 +709,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 })
               }}
             >
-              초안 저장 후 나가기
+              저장하고 나가기
             </button>
             <button
               type="button"
@@ -732,7 +730,6 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
           <h3>서버의 최신 초안</h3>
           <p className="cj-quote">{answerText(conflict.answer)}</p>
           <p>글 메모: {conflict.memo || '없음'}</p>
-          <p>선택하기 전에는 어느 쪽도 덮어쓰지 않습니다.</p>
           <div className="cj-modal-actions">
             <button
               type="button"
@@ -746,7 +743,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 setSaveError(null)
               }}
             >
-              내 입력을 보관하고 최신 초안 사용
+              다른 곳에서 쓴 글 쓰기
             </button>
             <button
               type="button"
@@ -760,7 +757,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 setDirty(true)
               }}
             >
-              현재 입력으로 저장
+              지금 쓴 글로 저장
             </button>
           </div>
         </Modal>
@@ -773,7 +770,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
             if (saveError instanceof DraftConflictError) setConflict(saveError.latest)
           }}
         >
-          초안 다시 비교
+          다시 비교하기
         </button>
       )}
       {backup && (
@@ -855,7 +852,7 @@ export function AnswerFields({
                 maxLength={120} onChange={(e) => onChange({ ...v, finalAnswer: e.target.value })} />
               {mission.answerUnit && <span aria-label="답 단위">{mission.answerUnit}</span>}
             </span>
-            {mission.answerUnit && <small>단위는 옆에 표시되어 있어요. 수만 입력해 주세요.</small>}
+            {mission.answerUnit && <small>숫자만 써 주세요.</small>}
           </label>
           {Array.from({ length: Math.max(v.steps.length, mission.inputTemplate?.length ?? 0) }, (_, i) => v.steps[i] ?? '').map((step, i) => (
             <div key={i}>

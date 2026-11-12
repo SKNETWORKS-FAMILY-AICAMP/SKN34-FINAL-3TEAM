@@ -95,12 +95,21 @@ class WeeklyThemeContractTest(unittest.TestCase):
         self.assertEqual(len(documented), 7)
         self.assertEqual(routes, documented)
         params = {p.get('name') for p in self.learning['paths']['/admin/weekly-themes']['get']['parameters'] if 'name' in p}
-        self.assertEqual(params, {'gradeBand', 'weekStart', 'status', 'page', 'size'})
+        self.assertEqual(params, {'grade', 'weekStart', 'status', 'page', 'size'})
 
     def test_core_student_internal_paths_are_in_learning_contract(self):
+        # #438 학년별 테마: learning은 grade를 받고, core 반영 전까지 core가 보내는 gradeBand도 받는다(사용 중단 예정)
         for method, path in (('get', '/students/{studentId}/weekly-theme'), ('post', '/students/{studentId}/weekly-theme/review-views')):
-            names = {self.parameter(p).get('name') for p in self.learning['paths'][path][method]['parameters']}
-            self.assertTrue({'gradeBand', 'date'} <= names, path)
+            params = {self.parameter(p).get('name'): self.parameter(p) for p in self.learning['paths'][path][method]['parameters']}
+            self.assertTrue({'grade', 'gradeBand', 'date'} <= set(params), path)
+            self.assertFalse(params['grade'].get('required', False), path)
+            self.assertTrue(params['gradeBand'].get('deprecated'), path)
+
+    def test_learning_theme_grades_match_domain(self):
+        # learning OpenAPI ThemeGrade enum = 도메인 ThemeGrade (#438)
+        calendar = (THEME / 'domain/ThemeCalendar.kt').read_text(encoding='utf-8')
+        domain = re.search(r'enum class ThemeGrade\(val grade: Int\) \{\s*([^;]+);', calendar).group(1)
+        self.assertEqual(re.findall(r'(G\d)\(\d\)', domain), self.learning['components']['schemas']['ThemeGrade']['enum'])
 
     def test_learning_start_context_and_publish_codes(self):
         learning = self.learning['components']['schemas']['AttemptStartRequest']['properties']['context']['enum']

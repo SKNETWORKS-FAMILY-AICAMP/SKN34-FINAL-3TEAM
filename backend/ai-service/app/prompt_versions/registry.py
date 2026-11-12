@@ -13,6 +13,7 @@ from app.mission_draft import prompts as mission_draft_prompts
 from app.prompt_versions.models import PROMPT_SCOPES, ActiveVersionItem, PromptChoice, tracked
 from app.report_explanation import prompts as report_explanation_prompts
 from app.report_narrative import prompts as report_narrative_prompts
+from app.theme_draft import prompts as theme_draft_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ BUILTIN_PROMPTS: dict[str, ModuleType] = {
     "reportTemplate": template_prompts,
     "missionDraft": mission_draft_prompts,
     "reportExplanation": report_explanation_prompts,
+    "themeDraft": theme_draft_prompts,
 }
 
 

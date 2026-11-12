@@ -64,7 +64,7 @@ kubectl --kubeconfig $kubeconfig get deployments -n app
 kubectl --kubeconfig $kubeconfig get pods,pvc -n platform
 ```
 
-NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책 변경은 별도 검토 후 `platform-network.json`, `core-alb-network.json`을 적용한다. 현재 app namespace 전체 default-deny 여부와 서비스별 egress 허용 범위는 [누락 점검](../../../../docs/report/aws-deploy.md)을 따른다.
+NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책 변경은 별도 검토 후 `platform-network.json`, `core-alb-network.json`을 적용한다. 현재 app namespace 전체 default-deny 여부와 서비스별 egress 허용 범위는 [누락 점검](../../../../docs/report/infra.md#4-aws-데모-구성-185)을 따른다.
 
 ## main 기준 core·웹 재배포 (2026-11-04, #185)
 
