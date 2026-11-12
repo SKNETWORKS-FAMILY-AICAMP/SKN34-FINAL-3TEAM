@@ -14,6 +14,7 @@ import {
 } from '../../domain/admin/retention.ts'
 import type { AdminLookItem, AdminWeeklyTheme, ThemeGrade } from '../../domain/admin/retention.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
+import { ThemeMotionPlayer } from '../common/ThemeMotionPlayer.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { Badge, Empty, Panel } from './AdminUi.tsx'
 import { date } from './adminFormatting.ts'
@@ -152,6 +153,20 @@ function ThemeEditor({
         </div>
         <label>제목<input aria-label="테마 제목" required maxLength={100} value={title} onChange={(e) => setTitle(e.target.value)} /></label>
         <label>월요일 도입 이야기<textarea aria-label="도입 이야기" required maxLength={2000} value={intro} onChange={(e) => setIntro(e.target.value)} /></label>
+        {theme && (theme.outro || theme.introImageUrl || theme.outroImageUrl || theme.introVideoUrl || theme.outroVideoUrl) && (
+          // #441: 테마 초안 채택으로 들어온 이야기 그림·종료 이야기. 저장 본문에 넣지 않아 서버가 이전 값을 이어받는다
+          <section className="ad-story" aria-label="시작·종료 이야기 미리보기">
+            {(['intro', 'outro'] as const).map((k) => (
+              <div key={k}>
+                <h3>{k === 'intro' ? '시작 이야기 그림' : '종료 이야기'}</h3>
+                <ThemeMotionPlayer imageUrl={theme[`${k}ImageUrl`] ?? null} videoUrl={theme[`${k}VideoUrl`] ?? null}
+                  motion={theme[`${k}Motion`]} label={k === 'intro' ? '시작 이야기' : '종료 이야기'} />
+                {k === 'outro' && <p className="ad-story-text">{theme.outro || '종료 이야기 없음'}</p>}
+              </div>
+            ))}
+            <p className="ad-muted">종료 이야기·그림은 테마 초안에서 만든 값을 보여 줍니다. 이 화면에서 저장해도 그대로 유지됩니다.</p>
+          </section>
+        )}
         <fieldset>
           <legend>요일별 문제 (게시된 미션, 다섯 생각 유형 하나씩)</legend>
           <QueryFeedback query={missions} />

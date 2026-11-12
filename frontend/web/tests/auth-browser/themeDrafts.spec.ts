@@ -32,7 +32,7 @@ async function confirmedResponses(context: BrowserContext, content = true, reque
   return calls
 }
 
-test('테마 요청·최소 상태 확인·필터 연결: 상세와 채택 동작을 임의로 만들지 않는다', async ({ page, context }) => {
+test('테마 요청·생성 중 상태·필터 연결: 생성 중에는 채택·버리기·다시 생성을 보이지 않는다', async ({ page, context }) => {
   const calls = await confirmedResponses(context)
   await page.goto('/admin/theme-drafts')
   await expect(page.getByRole('heading', { name: '테마 초안 요청·상태', exact: true })).toBeVisible()
@@ -42,7 +42,7 @@ test('테마 요청·최소 상태 확인·필터 연결: 상세와 채택 동�
   await page.getByRole('button', { name: '테마 초안 생성 요청', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '생성 요청을 접수했습니다.' })).toBeVisible()
   expect(calls.filter(c => c.method === 'POST' && c.path === '/admin/theme-drafts')).toEqual([expect.objectContaining({ path: '/admin/theme-drafts', body: { grade: 'G6', weekStart: '2026-11-16', topic: '도서관' } })])
-  await expect(page.getByText('초안 내용을 확인할 수 없어', { exact: false })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: '생성 중입니다' })).toBeVisible()
   await expect(page.getByRole('button', { name: /채택|버리기|다시 생성/ })).toHaveCount(0)
   await page.getByLabel('테마 초안 출처').selectOption('AUTO')
   await expect.poll(() => calls.some(c => c.path === '/admin/theme-drafts' && c.search.includes('source=AUTO'))).toBe(true)
@@ -71,6 +71,34 @@ test('테마 요청·최소 상태 확인·필터 연결: 상세와 채택 동�
     await writeFile(`${out}/request-${width}.html`, html)
     await page.screenshot({ path: `${out}/request-${width}.png`, fullPage: true })
   }
+})
+
+test('완료 초안 상세: 이야기·요일 문제·실패를 보이고 채택하면 core 채택 경로를 한 번 불러 만든 테마 편집으로 간다', async ({ page, context }) => {
+  const calls = await confirmedResponses(context)
+  const ready = {
+    draftId: id, status: 'READY', source: 'ADMIN', grade: 'G3', weekStart: '2026-11-16', attempts: 2, maxAttempts: 3,
+    input: { topic: '도서관', missions: [{ thinkingType: 'ANALYZE', inputType: 'NARRATIVE', standardCodes: ['4과03-01'] }] },
+    checkResults: [{ attempt: 1, failures: [{ stage: 'LEARNING', reasons: ['WED QUESTION_LENGTH 합성 사유'] }] }],
+    draft: { theme: { title: '합성 테마', world: '', characters: [], styleNote: '', outfit: '', intro: '합성 시작 이야기', outro: '합성 종료 이야기',
+      bigQuestion: '합성 큰 질문', candidates: ['가', '나'], answer: '가', days: [{ day: 'MON', thinkingType: 'ANALYZE', place: '', sceneNote: '', clue: '합성 단서', rulesOut: ['나'] }] },
+    missions: [{ day: 'MON', thinkingType: 'ANALYZE', draft: { title: '합성 월요일 문제', question: '합성 질문', guide: null } }],
+    dialogues: [], warnings: [] },
+    scenes: [], failureCode: null, versions: { prompt: 'p', model: 'm' }, themeId: null, requestedBy: null, createdAt: '2026-11-12T00:00:00Z', updatedAt: '2026-11-12T00:00:00Z',
+  }
+  await context.route('**/api/v1/admin/theme-drafts/' + id, route => route.fulfill({ json: ready }))
+  await context.route('**/api/v1/admin/theme-drafts/' + id + '/adopt', route => {
+    calls.push({ path: '/admin/theme-drafts/' + id + '/adopt', method: route.request().method(), body: route.request().postDataJSON(), search: '' })
+    return route.fulfill({ status: 201, json: { themeId, grade: 'G3', weekStart: '2026-11-16', title: '합성 테마', intro: '', days: [], status: 'DRAFT', updatedAt: '2026-11-12T00:00:00Z' } })
+  })
+  await page.goto('/admin/theme-drafts?draftId=' + id)
+  await expect(page.getByRole('heading', { name: '초안 상세 · 합성 테마' })).toBeVisible()
+  await expect(page.getByText('합성 종료 이야기')).toBeVisible()
+  await expect(page.getByText('WED QUESTION_LENGTH 합성 사유', { exact: false })).toBeVisible()
+  await expect(page.getByRole('region', { name: '월요일 문제' }).getByText('합성 월요일 문제')).toBeVisible()
+  await page.getByRole('button', { name: '채택해서 테마 만들기', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: '채택', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp('/admin/themes\\?themeId=' + themeId))
+  expect(calls.filter(c => c.path.endsWith('/adopt'))).toEqual([expect.objectContaining({ method: 'POST', body: {} })])
 })
 
 test('유형별 선택은 기존 성취기준 표를 사용하고 요청에 지정한 필드만 보낸다', async ({ page, context }) => {

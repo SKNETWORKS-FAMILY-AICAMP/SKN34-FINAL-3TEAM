@@ -18,9 +18,10 @@ const query = (values: Record<string, string | undefined>) =>
 /** 관리자 주간 테마·초안·꾸미기 아이템 (API 명세 2.8, CONTENT 권한). 변경은 서버가 감사 이력에 남긴다. */
 export const adminRetentionApi = {
   themeDrafts: async (filters: Record<string, string>, signal?: AbortSignal) => {
-    const raw = await apiFetch<{ items: unknown[] }>(`/admin/theme-drafts?${query(filters)}`, { signal })
+    const raw = await apiFetch<{ items: unknown[]; totalElements?: unknown }>(`/admin/theme-drafts?${query(filters)}`, { signal })
     if (!Array.isArray(raw?.items)) throw new Error('테마 초안 목록 응답을 확인하지 못했습니다.')
-    return { items: raw.items.map(themeDraftOf) }
+    // learning ThemeDraftPage {items, page, size, totalElements}. 합계가 없으면 받은 개수로 다음 쪽 여부를 판단
+    return { items: raw.items.map(themeDraftOf), totalElements: Number.isInteger(raw.totalElements) ? Number(raw.totalElements) : null }
   },
   themeDraft: async (id: string, signal?: AbortSignal) => themeDraftOf(await apiFetch(`/admin/theme-drafts/${p(id)}`, { signal })),
   requestThemeDraft: async (body: ThemeDraftRequest) => themeDraftOf(await apiFetch('/admin/theme-drafts', json(body))),

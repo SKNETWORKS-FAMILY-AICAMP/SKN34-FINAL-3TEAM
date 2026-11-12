@@ -10,8 +10,15 @@ const draftId = '00000000-0000-4000-8000-000000000441'
 const themeId = '00000000-0000-4000-8000-000000000395'
 const input: ThemeDraftRequest = { grade: 'G3', weekStart: '2026-11-16' }
 
-test('#441: core가 보장한 식별자·상태만 소비하고 미확정 상세 필드를 해석하지 않는다', () => {
-  assert.deepEqual(themeDraftOf({ draftId, status: 'GENERATING', draft: { invented: true }, source: 'UNKNOWN', createdAt: 0 }), { draftId, status: 'GENERATING' })
+test('#441: 식별자·상태는 필수, 계약 밖 값(모르는 출처·잘못된 시각·모르는 초안 칸)은 비운 값으로 둔다', () => {
+  // learning #438 상세 계약 확정(2026-11-12) 뒤: 상세 칸을 읽되 계약 밖 값은 해석하지 않는다
+  const d = themeDraftOf({ draftId, status: 'GENERATING', draft: { invented: true }, source: 'UNKNOWN', createdAt: 0 })
+  assert.equal(d.draftId, draftId)
+  assert.equal(d.status, 'GENERATING')
+  assert.equal(d.source, null)
+  assert.equal(d.createdAt, null)
+  assert.deepEqual(d.draft, { theme: null, missions: [], dialogues: [], warnings: [] })
+  assert.deepEqual(d.scenes, [])
   for (const value of [null, [], {}, { draftId, status: 'SUCCESS' }, { draftId: '', status: 'READY' }]) assert.throws(() => themeDraftOf(value), /응답을 확인/)
 })
 
@@ -65,7 +72,9 @@ test('#441: 공개 중계 경로·필터·본문·AbortSignal을 전달한다', 
     return Response.json(url.endsWith('/adopt') ? { themeId } : method === 'GET' && url.includes('?') ? { items: [{ draftId, status: 'GENERATING' }] } : { draftId, status: 'GENERATING' })
   })
   const controller = new AbortController()
-  assert.deepEqual(await api.themeDrafts({ source: 'AUTO', status: 'GENERATING', page: '0', size: '20' }, controller.signal), { items: [{ draftId, status: 'GENERATING' }] })
+  const listed = await api.themeDrafts({ source: 'AUTO', status: 'GENERATING', page: '0', size: '20' }, controller.signal)
+  assert.deepEqual(listed.items.map(d => [d.draftId, d.status]), [[draftId, 'GENERATING']])
+  assert.equal(listed.totalElements, null) // 합계가 없으면 받은 개수로 다음 쪽 판단
   assert.equal(new URL(calls[0].url, 'http://localhost').searchParams.get('source'), 'AUTO')
   assert.equal(calls[0].init.signal, controller.signal)
   await api.themeDraft(draftId, controller.signal)

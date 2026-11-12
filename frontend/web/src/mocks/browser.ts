@@ -8,6 +8,7 @@ import type { DemoScenario } from '../domain/classroom.ts'
 import { parentHandlers } from './handlers/parent.ts'
 import { retentionHandlers } from './handlers/retention.ts'
 import { adminHandlers } from './handlers/admin.ts'
+import { adminThemeDraftHandlers } from './handlers/adminThemeDrafts.ts'
 import { setWorkspaceScenario } from './fixtures/accounts.ts'
 import { setMockChildPlan } from './fixtures/childPlan.ts'
 import { studentDeviceHandlers } from './handlers/studentDevice.ts'
@@ -25,6 +26,7 @@ export const mockHandlers = [
   ...serviceHandlers,
   ...studentDeviceHandlers,
   ...parentHandlers,
+  ...adminThemeDraftHandlers,
   ...adminHandlers,
   ...studentHandlers,
 ]

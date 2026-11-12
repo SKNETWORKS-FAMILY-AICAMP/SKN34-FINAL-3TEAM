@@ -127,7 +127,7 @@ export interface AdminMission {
   missionId: string
   code?: string
   /** 처음 만들어진 방식 (#353): 사람 작성 또는 LLM 초안 채택 */
-  source?: 'MANUAL' | 'LLM_DRAFT'
+  source?: 'MANUAL' | 'LLM_DRAFT' | 'LLM_THEME'
   status: MissionStatus
   demoOnly: boolean
   currentVersion: number
