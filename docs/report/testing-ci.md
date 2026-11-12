@@ -308,3 +308,29 @@ develop 종합 검증 회차별 결함 원장. 회차별 실행 결과 표와 �
 | readiness(4.4) | core·learning `readinessState,db,rabbit`, ai RabbitMQ, scoring RabbitMQ·모델, report DB. 하위 서비스 호출 없음 |
 | 스케줄 중복 방지(1.5) | 정기·복구 스케줄러는 ShedLock 또는 레플리카 안전 조건부 UPDATE·DELETE |
 | 프론트엔드(3장) | access token 메모리 보관, 서버 상태는 TanStack Query만, `domain`이 `data`·`presentation`을 참조하지 않음, presentation의 `apiFetch`·mocks 참조 0건 |
+
+
+## 7. report PDF 실행 환경 설치 재시도 (#539)
+
+report CI의 `Prepare report PDF runtime`에서 Ubuntu 패키지 미러 DNS 일시 장애가 나면 테스트 실행 전 설치가 실패했다. report 전용 `backend/report-service/scripts/install_pdf_runtime.sh`를 CI와 Docker 이미지 빌드에서 함께 사용한다. 다른 Python 서비스의 단계와 제품 API는 변경하지 않는다.
+
+- OS 의존성(`playwright install-deps chromium`) → 한글 글꼴(`fonts-noto-cjk`) → Chromium(`playwright install chromium`) 순서로 분리한다. 실패한 단계만 최대 3회 실행하고 사이에 5초·10초 대기한다. 마지막 종료 코드를 그대로 반환해 지속 장애를 성공으로 숨기지 않는다.
+- Playwright가 내부에서 실행하는 apt에도 적용되도록 `/etc/apt/apt.conf.d/80report-pdf-runtime`에 파일 다운로드 재시도 3회, HTTP·HTTPS 대기 30초, update 일부 실패도 오류로 처리하는 설정을 둔다. 단계 재시도와 APT 자체 파일 재시도는 서로 다른 계층이다.
+- Chromium 다운로드 연결 대기는 45초, CI 설치 단계 전체 상한은 5분이다. 상한 초과나 최종 실패면 해당 테스트 작업은 실패한다. develop의 CI 병렬화에 따라 이미지 빌드는 별도 작업으로 실행되며, 이미지 안에서도 같은 설치 스크립트가 실패하면 빌드가 실패한다.
+- CI의 일반 사용자에서는 필요한 apt 작업만 sudo, Docker 빌드에서는 root로 실행한다. Chromium 경로와 최종 이미지 사용자(uid 10001)는 유지한다.
+- 같은 설치 실패가 이미지 빌드에서도 발생할 수 있으므로 Dockerfile도 적용했다. 새 액션·Python 패키지·외부 미러·기본 이미지 교체는 없다.
+
+근거: [Playwright 브라우저·의존성 분리 설치](https://playwright.dev/python/docs/browsers), [APT 재시도 설정](https://manpages.debian.org/trixie/apt/apt.conf.5.en.html).
+
+검증: `scripts/tests/test_report_pdf_runtime.py`는 실제 POSIX 스크립트에 격리된 명령을 연결해 정상 설치, 각 단계 일시·지속 실패, 후속 단계 차단, 종료 코드, sudo 경로를 확인한다. 테스트에서는 호스트 패키지를 설치하지 않는다. report 원격 CI 통과는 PR 생성 후 해당 커밋의 실행 결과로 별도 확인한다.
+
+2026-11-12 로컬 검증(develop `0565ef3e` 기준):
+
+- report 전체 pytest 426개 통과, Ruff check·format 통과. 기존 Starlette/httpx 사용 중단 예정 경고 1개가 있다.
+- 설치 장애 회귀 테스트 8개: Windows Git Bash와 Linux POSIX 셸에서 통과.
+- 실제 Docker 이미지 빌드 및 uid 10001·네트워크 차단 상태에서 합성 리포트 PDF·HTML·Markdown 생성 통과. Noto Sans CJK KR 글꼴 검색 확인. 별도 `fc-match` 실행에서는 쓰기 가능한 글꼴 캐시 디렉터리가 없다는 경고가 있었으나 글꼴 조회와 PDF 생성은 성공했다.
+- 재사용 워크플로에서 report 전용 설치 단계를 제외한 구성이 기존과 동일함을 비교 확인.
+- GitHub report CI는 PR 생성 후 검증할 항목이며, 위 로컬 결과로 원격 통과를 대신하지 않는다.
+
+develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 이미지 캐시, 작업별 15분 제한과 report 설치 단계 5분 제한을 유지했다. report 설치 명령만 재시도 스크립트 호출로 대체한다.
+병합 후 Linux 설치 장애 테스트 8개와 report 렌더링 테스트 11개가 통과했다. YAML 구조 비교로 최신 develop 대비 report 설치 명령 외 변경이 없음을 확인했다.
