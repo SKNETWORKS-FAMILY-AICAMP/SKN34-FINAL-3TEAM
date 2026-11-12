@@ -1,4 +1,4 @@
-# 테스트·CI (#143·#237·#246·#136·#238)
+# 테스트·CI·점검 원장
 
 ## 1. 계약 검사 CI (#143·#237)
 
@@ -111,7 +111,7 @@ $COMPOSE down -v
 
 ## 3. core 계정 HTTP 경로 테스트 (#136)
 
-[점검 기록](audit.md)의 "통합 테스트 없음" 공백 중 core 계정·기기·Google 시작 경로 7묶음에 `account/AccountHttpTest.kt`(MockMvc로 실제 `PublicAuthFilter`·컨트롤러·서비스·DB 경유) 추가.
+[점검 원장](#5-develop-종합-점검-원장-16회차)의 "통합 테스트 없음" 공백 중 core 계정·기기·Google 시작 경로 7묶음에 `account/AccountHttpTest.kt`(MockMvc로 실제 `PublicAuthFilter`·컨트롤러·서비스·DB 경유) 추가.
 
 - 기반은 `PostgresRepositoryTest` 상속(메시징 없는 테스트, [db-dev-guide](db-dev-guide.md) 5장). 처음 `IntegrationTestSupport`로 만들었을 때 그 DB 연결이 100/100에 닿아 다른 통합 테스트가 `too many clients`로 실패
 - 학생 403은 `PublicAuthFilter`(역할별 경로)와 서비스 `AccountManagementService.lock` 두 겹이고 둘 다 403 `FORBIDDEN`이라, 응답만으로는 필터 규칙 누락을 알 수 없음 → MockMvc `handler` 없음(컨트롤러 미도달)까지 확인
@@ -186,3 +186,125 @@ migration 이미지는 `docker build -f infrastructure/gitops/migrations/core.Do
 - values 오타는 렌더되는 경로에서만 드러남. 스키마가 있는 `app-service`만 values 단계에서 차단
 
 검증(2026-11-02): local 환경 파일 8개 lint·template 통과, 15개 파일 76개 리소스 Valid 76·Skipped 0. 타입 오류(`replicaCount: "one"`)는 helm lint, 스키마 없는 chart 필드 오타는 kubeconform이 실패 처리, 카탈로그에 없는 CRD는 건너뜀 목록으로 출력됨을 확인.
+
+## 5. develop 종합 점검 원장 (1~6회차)
+
+develop 종합 검증 회차별 결함 원장. 회차별 실행 결과 표와 재판정 표는 git 이력(삭제된 `docs/report/audit.md`) 참고. 번호는 결함 B, 코드↔문서 C, 문서 간 D, 아키텍처 A, 테스트 공백 T.
+
+| 회차 | 기준 | 범위 | 번호 |
+|---|---|---|---|
+| 1 | develop `c608f52` | 코드 통합·코드↔문서·테스트·CI | B1~B17, C1~C15, D1~D14 |
+| 2 | develop `40a2501` (PR #92) | 설계 문서 정합성 | D1~D11(결정 항목), #93~#97 |
+| 3 | develop `640e0a2` | PR 16개 병합 후 + 아키텍처 원칙 | B18~B21, C16~C21, D15~D16, A1~A7 |
+| 4 | develop `2db122c` | PR 73커밋 병합 후 | B22~B27, C22~C34, D17~D21, A8~A15 |
+| 5 | develop `92d522b` | PR 28개 병합 후 | B28~B35, C35~C44, D22~D25, A16~A19 |
+| 6 | develop `b97cc67` | PR 22개 병합 후 | B36~B43, C45~C59, D26~D29, A20~A21, T1 |
+
+### 5.1 코드 결함·설정 (B)
+
+| # | 내용 | 처리 |
+|---|---|---|
+| B1·B2 | 역할·내부 토큰 판정을 디코딩하지 않은 `requestURI` 접두사로 해 `;매개변수`·`%xx` 경로가 우회 | 해결(1회차, `MatchedPath` 정규화) |
+| B3 | learning `student.deleted` 소비자 없음 → 삭제 COMPLETED 불가 | 해결(#128) |
+| B4 | `ReportEntitlementService` 항상 503, 스케줄러가 자녀별 실패 미격리 | 해결(#48·#129) |
+| B5 | report-worker 기본 생성기 미연결 | 해결(#56·#64) |
+| B6·B7 | 리포트 목록 `status=QUEUED` 전달, `ReportClient`가 409·503 구분 없이 503 | 해결(1회차) |
+| B8 | report Outbox 영구 실패 이벤트가 뒤 이벤트를 막음 | 해결(#131) |
+| B9 | 종료 이벤트 없이 core 작업이 QUEUED/RUNNING에 남는 경로 | 해결(#132) |
+| B10 | 기기 등록 rate limit 키가 `remoteAddr`(프록시 뒤 한 버킷) | 해결(#133) |
+| B11·B13 | 웹이 `/children`의 `plan`·재생성 코드·목록 봉투를 잘못 가정 | 해결(#134) |
+| B12 | 웹 관리자 모델 요청 모양·`/auth/login` 잔존 호출 | 해결(#93·#97) |
+| B14 | `saveDraft`가 잠금 없이 저장해 닫힌 시도에 초안 저장 가능 | 해결(1회차, `lockOwned`) |
+| B15 | readiness가 쓰지 않는 RabbitMQ에 의존 | 해결(1회차) |
+| B16 | 처리한 삭제 이벤트 재전달 시 DLQ | 해결(1회차) |
+| B17 | 미사용 설정 주입·요청별 클라이언트 생성 | 해결(#135) |
+| B18·B19 | core가 learning 404·403을 503으로 변환 | 해결(#163) |
+| B20·B21 | 정책 마이그레이션 검사 버전 고정, `verify_feedback_learning.py`의 `CORE_URL` 누락 | 해결(#164) |
+| B22 | 웹 `answerInquiry`가 core에 없는 경로 호출 | 해결(4회차, 도달 불가 화면 제거) |
+| B23 | `AdminOperations.tsx` oxlint immutability 경고 | 해결(#306) |
+| B24 | compose core에 RabbitMQ 관리 API 환경 변수 없음 | 해결(4회차) |
+| B25·B26 | `ConversationRetryWorker` stale 예외, ai 소비자 ACK 범위 | 결함 아님 |
+| B27 | core 통합 테스트 `too many clients` | 재현 안 됨(#218 이후) |
+| B28 | 웹 support·help·notices 경로가 실제 API 미사용 | 해결(5회차) |
+| B29·B30 | GitOps local migration revision·RabbitMQ 관리 API 값 낡음 | 해결(5회차, `test_core_migration_versions.py`) |
+| B31 | `ReportTemplateService.forStudent` 오류 코드 | 해결(5회차, `STUDENT_UNAVAILABLE`) |
+| B32 | #275 다중 보호자 전제가 P02와 불일치 | 해결(#289) |
+| B33 | 리포트 설정 제안의 사용량 차감 | 결함 아님(api-spec에 명시) |
+| B34·B35 | learning이 core 409를 모두 `REFUND_IN_PROGRESS`로 변환, 공지 목록 입력 검사가 권한 검사보다 먼저 | 해결(#276·#277) |
+| B36 (A20) | scoring 장애·400을 ai가 모두 503으로 바꿔 learning의 `ai` 서킷이 LLM 단독 판정·되묻기까지 차단. 플래그가 꺼져도 scoring 호출 | 해결(#305): 플래그가 꺼지면 M2 미호출, scoring 실패는 LLM 판정만 200 + `modelScores.skipped`([ai 4.3.1](ai.md#431-scoring-실패-격리-305-2026-11-04)) |
+| B37 | 웹 관리자 기준표 저장이 `keywords`·`essayType`을 보내지 않아 M2 교차 확인이 조용히 중단 | 해결(#306): 편집 UI 없이 불러온 값을 그대로 보존해 전송 |
+| B38 | 동의가 빠진 학부모가 이관 취소(403 `CONSENT_REQUIRED`)와 탈퇴(409 `TRANSFER_PENDING`) 사이에서 막힘 | 해결(#307): 본인 목록·거절·취소만 동의 회복 경로로 허용 |
+| B39 | 이관 플래그를 끄면 남은 PENDING이 탈퇴·삭제를 막고 취소 API는 404 | 해결(#307): 관리 경로는 항상 등록, 신규 요청·수락만 플래그로 제한 |
+| B40 | `PUT /me/guardian-password`가 규칙 검사(422)를 역할 확인(403)보다 먼저 | 해결(#310) |
+| B41 | #69 교차 확인 설정·이관·content_3 플래그가 compose·GitOps에 전달되지 않음 | 해결(#312, [infra 3.3](infra.md#33-교차-확인이관content_3-설정-전달-312)) |
+| B42 | 평가 러너 `evaluatedScopes`가 M2 모델 scope라 PROMPT 활성화 시 `evidence.covers` 실패 | 해결(#313): `["ai/judgment"]` |
+| B43 | `requirements-browser.mjs`가 목업과 같은 별명을 입력해 저장 성공 문구를 못 받음 | 해결(#318) |
+
+### 5.2 코드↔문서 (C)
+
+| # | 내용 | 처리 |
+|---|---|---|
+| C1~C15 | report·ai OpenAPI 누락, 오류 코드, ERD 수치·결번, `SPEECH` CHECK, 미구현 표기, 환경 변수 | 해결(1회차) |
+| C16~C21 | class-diagram 구현 이름·상태, #132·#47 구현 상태 | 해결(3회차) |
+| C22~C34 | ai OpenAPI, 재처리 응답 선언, 오류 코드, 누락 경로, SSE 수명, ERD 수치, architecture 트리 | 해결(4회차) |
+| C35~C44 | api-spec 1.3 누락 오류 코드·경로, 옛 목업, ERD 수치, class-diagram 파일 위치, user-flow 누락 흐름 | 해결(5회차) |
+| C45~C48 | #289 이관 오류 코드 6종·경로 7개·재인증 purpose 2종이 api-spec에 없음, MSW 이관 핸들러 없음 | 해결(#308) |
+| C49 | #289·V24가 state·class·sequence·usecase·user-flow에 없음 | 해결(#309) |
+| C50 | OpenAPI "학생 전환은 refresh 쿠키 만료"(V24 이후 유지), `PARENT_SESSION_LOCKED` 미기재 | 해결(#310) |
+| C51~C53 | ai OpenAPI `heldReason` enum 4종(코드 6종), class-diagram `ScoringClient` 시그니처, ERD 수치 | 해결(#311) |
+| C54~C57 | architecture 2.6·4.3·5장 트리와 내부 호출 서술, class-diagram `AnalysisService` 모순 | 해결(#315) |
+| C58 | README 동의 문서 503·Deployment 서술, 환경 변수 표 | 해결(#316) |
+| C59 | `STUDENT_RECORDS_PRIVATE`(403)가 core OpenAPI에 없음 | 해결(#317): 학부모 경로 13개 연산에 기재 |
+
+### 5.3 문서 간 (D)
+
+| # | 내용 | 처리 |
+|---|---|---|
+| D1~D14 | (1회차) 미구현 잔존 문장, 알림 상태·채널, SSE 연결 시간, 재인증 흐름, 클래스 이름 | 해결 |
+| D1~D11 | (2회차 결정) Google 계정 복구 위임, 삭제 1단계 + `X-Reauth-Token`, `pinLocked` 통일, 용도별 SSE 시간, Problem `traceId` 필수, 내부 API OpenAPI 추가, 이벤트 스키마 선행 | 반영 |
+| D15·D17·D22·D28 | `docs/README.md` 보고서 색인 누락 | 해결(문서 정리로 색인 재작성) |
+| D16·D26 | 이슈별 절이 번호 체계 밖 | 해결(#165·#245·#308) |
+| D18·D21 | 종료된 임시 통합 규칙, 루트 병합 메모 | 삭제(4회차) |
+| D19·D20 | 알림 `RUNNING`·`conversation_job_retry.status` 상태 표 누락 | 해결(4회차) |
+| D23~D25 | ml/m2 앵커, 낡은 상태, Redis 사용처 표 기준 | 해결(5회차) |
+| D27 | FN-ACC-11 "다른 연결 계정 권한 영향"이 P02(보호자 1명)와 모순 | 해결(#309) |
+
+### 5.4 아키텍처 (A)·테스트 공백 (T)
+
+| # | 내용 | 처리 |
+|---|---|---|
+| A1 | `OutboxRelay.relay`가 트랜잭션 안에서 AMQP 발행 | 해결(#166) |
+| A2 | 서킷 브레이커가 core→learning에만 | 해결(#167·#192) |
+| A3·A4·A8·A16 | domain의 `HttpStatus`·Jackson·`BusinessException(ErrorKind)` 의존, 레이어 역참조 | 해결(#168·#169·#249) |
+| A5·A14 | 웹 컴포넌트의 API 직접 호출 | 해결(#170·#255) |
+| A6 | ai→scoring 교차 확인 호출자 없음 | 해결(#69) |
+| A7 | 앱 배포 chart·NetworkPolicy·관측 미구현 | 해결(#171·#204) |
+| A9~A12·A15 | 알림 Redis 발행자의 Application 호출, 기능 간 controller·config 참조, report 기능 간 DB 접근, ai router 계층 건너뜀, learning 삭제 소비 위치 | 해결(#250~#253·#256) |
+| A13 | ai·scoring 소비자에 revision 조정 로직 | **일부 유지**: ai는 #254로 해결, scoring 소비자의 `ModelStartup` 생성·revision 조정은 남음 |
+| A17~A19 | 이벤트 기록 위치, 기능 간 client·repository 직접 참조, ai 리포트 설정 제안 프롬프트 등록 | 해결(#278~#280) |
+| A21 | `IdempotencyCleanup`의 `@Scheduled`가 scheduler 패키지 밖 | 해결(#314) |
+| T1 | core HTTP 테스트 없음: 비교 프록시, sharing-preferences | 해결(#317). 남은 차이: api-spec 3절은 비교를 "학생·학부모"로 적지만 코드·OpenAPI는 학생 전용(결정 필요) |
+
+### 5.5 남은 공백
+
+- CI: `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동. `e2e.yml` 야간 실행 결과 미확인
+- 요구사항 차이: FN-AGT-12 수학 점검 예시 질문(api-spec 2.4에 현재 동작 기재)
+- 아키텍처: A13
+- 로컬 실행 주의: core·learning이 Gradle 캐시 볼륨 하나를 함께 쓰면 잠금 충돌로 빌드가 시작 전 실패
+
+## 6. 아키텍처 원칙 점검 기준
+
+[아키텍처](../design/architecture.md) 1.1~1.6·2.1~2.4·3장·4장 원칙을 HEAD 코드와 대조한다. core·learning은 패키지 import를 레이어(`controller`·`consumer`·`scheduler` / `service`·`facade` / `domain` / `repository`·`client`·`messaging`)로 분류해 전수 검사하고, 나머지는 클라이언트·트랜잭션·설정을 grep으로 확인한다. 다른 구현은 A 번호로 원장에 기록한다.
+
+| 원칙 | 확인 방법·현재 결과 |
+|---|---|
+| 서비스 DB 직접 접근 금지(1.1) | 각 서비스 DB URL은 자기 DB만. 다른 서비스 데이터는 내부 API·이벤트로만 |
+| core만 공개 API·JWT 검증(1.1·2.3) | 웹 `apiClient`는 core `/api/v1`만. 내부 호출은 내부 토큰 + 컨텍스트 헤더 |
+| 컨텍스트 전파(2.3) | ai `clients/base.py`가 `X-User-*`·`X-Student-Scope`를 learning 호출에 부착. report 소비자는 `SYSTEM` + 이벤트 학생 범위 |
+| 레이어 단방향·기능 간 service 경유(2.2) | controller→repository 0건, 다른 기능 repository 참조 0건, Presentation의 `@Transactional` 0건. 예외는 기존 결정(`_common/messaging` #278, support의 learning client #46) |
+| 트랜잭션 안 외부 호출 금지(2.2) | 리포트 복구 `NOT_SUPPORTED`, 알림 Redis 발행 `AFTER_COMMIT`, learning 피드백은 `FeedbackFacade` 트랜잭션 밖 AI 호출, report Outbox는 advisory lock·짧은 트랜잭션 |
+| 재시도 계층(1.3) | 재시도는 ai LLM 호출(1회, 1초)과 되묻기 유출 재생성(1회)만. 서비스 간 호출은 재시도 없음. 모든 클라이언트에 타임아웃 |
+| Outbox·멱등 소비(1.6) | Outbox는 core·report만, learning은 발행 없음, ai·scoring은 best-effort. 리스너는 수동 ACK·`RetryingConsumer` |
+| readiness(4.4) | core·learning `readinessState,db,rabbit`, ai RabbitMQ, scoring RabbitMQ·모델, report DB. 하위 서비스 호출 없음 |
+| 스케줄 중복 방지(1.5) | 정기·복구 스케줄러는 ShedLock 또는 레플리카 안전 조건부 UPDATE·DELETE |
+| 프론트엔드(3장) | access token 메모리 보관, 서버 상태는 TanStack Query만, `domain`이 `data`·`presentation`을 참조하지 않음, presentation의 `apiFetch`·mocks 참조 0건 |

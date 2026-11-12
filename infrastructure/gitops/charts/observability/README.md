@@ -12,7 +12,7 @@ prod 예약량은 CPU 250m·메모리 544Mi, limit 합계 CPU 1250m·메모리 1
 
 Grafana contact point·notification policy·경보 3개를 파일로 provision한다. target down(3분), RabbitMQ ready messages >100(10분), memory watermark >80%(5분)은 초기 기준이다. no-data/error는 별도 상태로 보고하며 정상으로 숨기지 않는다. 실측 부하 기반 임계값 확정이나 서비스 SLA 검증은 아니다. 등록한 경보와 datasource는 파일에서 수정한다.
 
-2026-11-03 revision 1은 웹훅 권한 대기로 경보가 비활성이었으나, 웹훅 제공 후 revision 2에서 alerting을 활성화했다. Discord URL은 admin Secret과 분리된 discord-alert-webhook의 DISCORD_WEBHOOK_URL 키로 저장한다. 실제 웹훅의 서버·채널 ID를 확인하고 URL을 출력하지 않았다. 경보 3개는 Grafana에서 health=ok·inactive로 평가됐다. 통지·복구 검증 결과는 [#185 보고서](../../../../docs/report/aws-deploy.md)를 따른다.
+2026-11-03 revision 1은 웹훅 권한 대기로 경보가 비활성이었으나, 웹훅 제공 후 revision 2에서 alerting을 활성화했다. Discord URL은 admin Secret과 분리된 discord-alert-webhook의 DISCORD_WEBHOOK_URL 키로 저장한다. 실제 웹훅의 서버·채널 ID를 확인하고 URL을 출력하지 않았다. 경보 3개는 Grafana에서 health=ok·inactive로 평가됐다. 통지·복구 검증 결과는 [#185 보고서](../../../../docs/report/infra.md#4-aws-데모-구성-185)를 따른다.
 
 현재 AWS 앱의 Java agent는 비활성이며 이 최소 배포에서는 앱을 재시작하지 않는다. Collector scrape 성공만으로 실제 JVM·HTTP 지표 수집을 주장하지 않는다. core·learning agent의 기존 JAVA_TOOL_OPTIONS 병합과 rolling update 여유 자원은 후속으로 다룬다. ALB/RDS CloudWatch datasource·조회 IAM, 전체 앱 계측, 노드 exporter·metrics-server·Langfuse는 이번 chart에 추가하지 않는다.
 
@@ -47,7 +47,7 @@ Tempo 3.x는 설정 형식 차이를 확인하지 않아 쓰지 않았다.
 
 이 chart는 검증 전용 kind 클러스터의 `observability` namespace에 OTel Collector, Prometheus, Grafana를 배치한다. Collector의 OTLP 수신(4317/4318)과 Prometheus exporter(8889), RabbitMQ 기존 metrics(15692) 수집, Grafana Prometheus datasource만 포함한다. Grafana는 `observability-credentials` Secret의 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`를 참조한다. UI는 외부 Ingress 없이 필요한 동안만 port-forward로 조회한다.
 
-Grafana 13.3.0의 저메모리 첫 기동은 60초를 넘어 startup probe를 300초로 두고, local `emptyDir` 데이터 특성에 맞춰 `Recreate` 전략을 사용한다. 실제 전용 kind에서는 세 Pod가 Ready였고 Collector→Prometheus 합성 gauge 값 7과 Grafana datasource 등록을 확인했다. [검증 범위와 실패 수정 기록](../../../../docs/report/local-platform.md#9-관측-171)을 따른다.
+Grafana 13.3.0의 저메모리 첫 기동은 60초를 넘어 startup probe를 300초로 두고, local `emptyDir` 데이터 특성에 맞춰 `Recreate` 전략을 사용한다. 실제 전용 kind에서는 세 Pod가 Ready였고 Collector→Prometheus 합성 gauge 값 7과 Grafana datasource 등록을 확인했다. [검증 범위와 실패 수정 기록](../../../../docs/report/infra.md#23-관측)을 따른다.
 
 로컬 Prometheus와 Grafana 데이터는 각각 `emptyDir`이어서 Pod 재생성 시 사라진다. 운영 장기 보관·EKS 자원과 Langfuse 자체 호스팅은 #185 환경에 맞춰 별도로 구성한다. Langfuse 공식 chart의 최소 자원 요구는 현재 Docker 메모리 한도보다 크므로 이 로컬 chart에 숨겨서 추가하지 않는다.
 
