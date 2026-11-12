@@ -43,17 +43,18 @@ class AttemptController(
 ) {
     /**
      * 새 시도면 201, 진행 중 시도를 돌려주면 200 (sequence-diagram 3.1). 본문 `{context}`(api-spec 2.11, #385):
-     * 본문 없음·`{}`·`null`은 EXTRA, 정해진 값 밖은 400
+     * 본문 없음·`{}`·`null`은 EXTRA, 정해진 값 밖은 400. 쿼리 `sundayTheme`은 core가 일요일 테마 허용 여부로 넘김(core #485, #484)
      */
     @PostMapping("/missions/{missionId}/attempts")
     fun start(
         @PathVariable missionId: UUID,
         @RequestParam @Min(MIN_GRADE) @Max(MAX_GRADE) grade: Int,
         @RequestParam(defaultValue = "false") demo: Boolean,
+        @RequestParam(defaultValue = "false") sundayTheme: Boolean,
         @RequestBody(required = false) request: AttemptStartRequest?,
     ): ResponseEntity<AttemptResponse> {
         val studentId = UserContextHolder.current().requireSelfStudent()
-        val started = attemptService.start(studentId, missionId, grade, demo, request?.context ?: AttemptContext.EXTRA)
+        val started = attemptService.start(studentId, missionId, grade, demo, request?.context ?: AttemptContext.EXTRA, sundayTheme)
         return withDraftETag(
             ResponseEntity.status(if (started.created) HttpStatus.CREATED else HttpStatus.OK),
             AttemptResponse.from(attemptService.get(started.attempt.id)),

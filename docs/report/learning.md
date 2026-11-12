@@ -543,7 +543,7 @@ learning의 `spring.threads.virtual.enabled`를 false로 바꿔 기존 Tomcat의
 
 ## 24. 주간 테마·요일 문제·되돌아보기 (#385)
 
-P23의 learning 몫. 2026-11-10 개정(#483: 누적 공개·토요일까지 풀기·일요일 닫힘·즉시 엔딩·당일 풀이/개근/주간 완주)은 learning #484에서 다루며, 아래 요일 열림 규칙은 #385 구현 당시 기준이다. core 몫은 [core 18절](core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10).
+P23의 learning 몫. 2026-11-10 개정(#483: 누적 공개·토요일까지 풀기·일요일 닫힘·즉시 엔딩·당일 풀이/개근/주간 완주)은 learning #484가 구현했다(34장). 아래 표에서 #484로 바뀐 행은 그렇게 적었다. core 몫은 [core 18절](core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10).
 
 구성: V11·V12(`weekly_theme`·`weekly_theme_version`·`weekly_theme_day`·`theme_review_view`, `attempt.context`·`theme_id`·`theme_week_start`), `theme/` 패키지, 학생 `/internal/students/{id}/weekly-theme…` 3경로, 관리자 `/internal/admin/weekly-themes…` 7경로. 요일 판정용 `Clock.system(Asia/Seoul)` 빈.
 
@@ -558,9 +558,9 @@ P23의 learning 몫. 2026-11-10 개정(#483: 누적 공개·토요일까지 풀�
 | 오류 코드 | 전이 불가 409 `CONFLICT`, 게시 검사 422 `WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]`(6종: `DAYS_INCOMPLETE`·`MISSION_NOT_PUBLISHED`·`MISSION_DEMO_ONLY`·`GRADE_BAND_MISMATCH`·`THINKING_TYPES`·`WEEK_ALREADY_PUBLISHED`) | 웹이 `errors[].message`를 그대로 표시 |
 | 이번 주 테마 | 그 주 게시본, 없으면 이전 최근 게시본(`reused`). 학년군에 게시 테마가 없으면 404 | P23 |
 | 시작 순서 | 진행 중 시도 반환(검사 없음) → 미션 공개·범위 → 테마 검사 | 자정이 지나도 이어하기 |
-| `THEME_DAY` | 이번 주 테마의 오늘(KST) 요일 문제만. 아니면 409 `THEME_DAY_CLOSED` | #484에서 누적 공개로 바뀜 |
-| `THEME_REVIEW` | 그 주 그 문제 `THEME_DAY` 시도를 마무리했을 때만. 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | |
-| 개근(칸 `completed`) | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료 | 금요일 문제를 토요일 01시에 끝내면 개근 아님. 주간 완주(`finished`)는 #484 |
+| `THEME_DAY` | ~~이번 주 테마의 오늘(KST) 요일 문제만~~ → #484: 공개된(`OPEN`) 문제를 토요일까지, 그 주 이미 마무리한 문제는 거부. 아니면 409 `THEME_DAY_CLOSED` | 누적 공개(34장) |
+| `THEME_REVIEW` | 그 주 그 문제 `THEME_DAY` 시도를 마무리했을 때만, ~~토·일~~ → #484: 토요일·프리미엄 일요일. 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | |
+| 개근(칸 `completed`) | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료 | 금요일 문제를 토요일 01시에 끝내면 개근 아님. 주간 완주(`finished`)는 34장 |
 | 열람 기록 | `theme_review_view` 학생·주당 1행, 다시 보내도 200(`firstViewThisWeek`만 false) | 포인트 멱등 근거 |
 | 주간 요약 | `GET …/weekly-theme/summary?weekStart`. 테마는 그 주 학생 테마 시도에서 정하고 없으면 `NO_RECORD` | report는 학년군을 모름 |
 | 날짜 기준 | 조회·열람은 core가 넘긴 `date`, 시작 검사는 learning `Clock` | 둘 다 KST 오늘 |
@@ -752,7 +752,7 @@ python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --d
 | presign 대상 | ai 키(`theme-drafts/`로 시작)만. 그 밖의 값은 저장 값 그대로. 버킷 설정이 없으면 ai 키는 null | 관리자가 장면 칸을 자유 글로 넣어 형식을 알 수 없음 |
 | 변환 위치 | `MissionService` 학생용 조회 한 곳. 관리자 미션 응답 `sceneUri`는 저장된 키 그대로(테마 편집 응답에는 미리보기 URL 칸을 따로) | 웹이 관리자 응답을 그대로 다시 저장하므로 URL로 바꾸면 만료되는 URL이 저장됨 |
 | 문제 전 영상 위치 | 테마 요일 칸(`weekly_theme_day.video_uri`), 응답은 시도의 `themeScene.videoUrl`. ai는 `INTRO`·`OUTRO` 영상만 만들어 채택 테마에서는 null, 관리자가 넣을 때만 사용 | 같은 미션이 학년별 테마 여럿에 들어갈 수 있어 미션 응답에 넣으면 어느 테마 영상인지 정할 수 없음 |
-| 정답 구조 공개 | 요일 단서는 그 요일이 `OPEN`·`CLOSED`일 때. 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만. 엔딩 판단은 `ThemeEnding` 한 곳(#484 전까지 토·일) | 엔딩 규칙(#483)은 #484 몫. 판단 자리만 두면 #484는 판단만 바꾸면 됨 |
+| 정답 구조 공개 | 요일 단서는 그 요일이 `OPEN`·`CLOSED`일 때(→ #484: 그 문제를 학습 완료한 뒤). 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만. 엔딩 판단은 `ThemeEnding` 한 곳(#484 전까지 토·일, #484가 정답 고르기 기준으로 바꿈 34장) | 엔딩 규칙(#483)은 #484 몫. 판단 자리만 두면 #484는 판단만 바꾸면 됨 |
 | 시작 이야기 | 그 주 처음 들어왔을 때 한 번(월~토). `intro`는 매일 채움 | 월요일에 안 온 학생도 이야기를 처음부터 봄 |
 | 이야기 열람 | `POST …/weekly-theme/story-views {kind}` → `{kind, firstViewThisWeek}`. INTRO는 일요일, OUTRO는 엔딩 상태가 아니면 409 `THEME_STORY_NOT_ALLOWED` | |
 | `answer_clue` | 채택 때 `rulesOut`이 비지 않은 마지막 요일의 `clue`로 채움 | ai 응답에 칸이 없어 단서 구조에서 계산 |
@@ -801,7 +801,7 @@ python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --d
 
 ### 남은 확인
 
-- 정답 고르기 위치·저장·엔딩 판정은 #484. core는 `sundayTheme`을 보내지만 #438은 읽지 않음(일요일 열림 판단도 #484)
+- 정답 고르기 위치·저장·엔딩 판정은 #484(34장에서 구현). `sundayTheme`도 #484부터 읽음
 - 인프라: learning에 S3 역할이 없음. `theme-drafts/*` 읽기 역할(presign 서명용)과 버킷 이름(ai 쓰기 버킷과 같아야 함), 로컬은 브라우저가 닿는 MinIO 주소
 - presigned URL 한계: 응답마다 주소가 바뀌어 브라우저 캐시가 맞지 않음. 임시 자격 증명으로 서명하면 1시간보다 일찍 만료될 수 있음. 만료 403은 웹이 이번 주 테마를 다시 받아 처리(#440)
 - 주간 자동 시각에 learning이 모두 내려가 있으면 그 주 자동 초안이 생기지 않음(관리자 요청으로 대신)
@@ -903,3 +903,57 @@ python scripts/knowledge/query_examples.py --learning-url http://127.0.0.1:8081 
 - 저장소 스크립트 최종 304개 중 303개 통과·기존 조건부 1개 제외. 관측 도구 회귀 시험 5개를 포함한다. 제외 항목은 원본 HWP 경로(`KNOWLEDGE_SOURCE_DIR`)가 필요한 재추출 동일성 시험이며, 커밋된 실제 JSONL 적재·조회는 위에서 검증했다.
 
 위 결과는 로컬 검증이다. #470의 생성 연동 완료·생성 품질 승인·운영 배포·원격 PR CI 완료를 의미하지 않는다. 이슈 원문의 벡터 조회 세 경로와 관련 완료 조건은 합의로 제외된 것이며 구현 완료로 체크하지 않는다.
+
+## 34. 주간 테마 누적 공개·정답 고르기·엔딩·당일 풀이 (#484)
+
+P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포인트 사건)·report #486(요약 표시)이 기준안 칸 이름으로 먼저 구현해 둔 것을 그대로 맞췄다(#484 코멘트: core #485·#506, report #486 PR #534). 33장은 #469가 먼저 썼다. #536도 장을 더하므로 병합 순서에 따라 번호를 다시 맞춘다.
+
+구성: V18 `theme_answer_pick`, 학생 내부 경로 1개 추가(`POST /internal/students/{id}/weekly-theme/answer-picks`), `ThemeWeek.stateOf`·`WeeklyThemeService`·`ThemeEnding`·`CommunityService.requireCompleted` 수정. 시도 시작·주간 테마 조회·되돌아보기·이야기 열람이 `sundayTheme` 쿼리를 읽는다.
+
+### 결정
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 요일 상태 | 그 요일 KST 00:00 전 `LOCKED`, 공개 뒤 토요일까지 `OPEN`, 일요일 `CLOSED`. `sundayTheme=true`면 일요일도 `OPEN` | state-diagram 3.2.1. core는 일요일이고 상품이 허용할 때만 true를 보내므로 평일·토요일은 값과 무관 |
+| 마무리한 문제 신규 시작 | 그 주에 같은 문제 `THEME_DAY` 시도를 마무리했으면 409 `THEME_DAY_CLOSED`. 진행 중 시도 이어하기는 지금처럼 검사 없음 | core #506 부탁. 재시작마다 AI 피드백 호출이 생기고 토요일 다시 풀기를 우회할 수 있음 |
+| 일요일 거부 코드 | 새로 만들지 않음. 신규 시작 `THEME_DAY_CLOSED`, 다시 풀기·되돌아보기 `THEME_REVIEW_NOT_ALLOWED`, 이야기 `THEME_STORY_NOT_ALLOWED` | 설계 기준안 그대로. core는 받은 코드를 그대로 넘기고 web 목업에도 있음 |
+| 정답 고르기 방식 | 별도 경로 `answer-picks {pick}` + 새 표 `theme_answer_pick`(학생·주당 1행). 시도 계약은 그대로 | 사용자 결정 2026-11-12. 시도(attempt)에 칸을 더하면 모든 미션 흐름·시도 계약이 바뀜 |
+| 고를 수 있는 때·횟수 | 그 주 금요일 문제 `THEME_DAY` 시도를 마무리(`finished_at`)한 뒤, 한 주 한 번. 다시 고르지 않음 | 사용자 결정 2026-11-12. 설계 "금요일 문제 끝" |
+| 엔딩 판정 | 저장하지 않고 계산: 고르지 않음 `NOT_ENDED`, 맞힘 `ENDED`, 틀림이면 **고른 뒤** 금요일 문제 `THEME_REVIEW` 시도를 마무리했을 때 `ENDED` | state-diagram 3.2.2. 고르기 전 다시 풀기는 "오답 → 다시 풀기"가 아니므로 세지 않음(새로 정한 값) |
+| 고를 때 저장하는 값 | `mission_id`(고를 때 금요일 문제)·`pick`·`correct`(고를 때 정답과 같았는지)·`picked_at` | 고른 뒤 관리자가 정답·요일 문제를 고쳐도 판정이 흔들리지 않게 |
+| 정답 고르기 거부 | 후보 밖·빈 값 400 `VALIDATION_FAILED`, 큰 질문 없는 테마·금요일 문제 마무리 전·이미 고름·무료 일요일 409 `THEME_PICK_NOT_ALLOWED`(새 코드) | 기존 코드는 뜻이 달라 새로 둠 |
+| 요일 단서 공개 | `clue`·`rulesOut`은 그 문제를 그 주에 학습 완료(그 주 테마 시도 아무거나)한 뒤 | ai.md 17장 사용자 결정 2026-11-11 "미션을 마쳐야 단서", 기준은 학습 완료(사용자 결정 2026-11-12). #438은 `LOCKED`가 아닐 때였음 |
+| 당일 풀이 `completedOnDay` | 기존 계산 그대로(그 요일 문제 `THEME_DAY` 시도를 그 요일 KST 안에 학습 완료) | core #485 칸 이름 그대로 |
+| 주간 완주 `finished` | 다섯 문제 각각 그 주 테마 시도(`THEME_DAY`·`THEME_REVIEW`)로 일요일 00:00 KST 전에 학습 완료 | P21 "토요일 23:59:59까지, 일요일 제외". "학습 완료"는 report #486의 `completedInWeek`(그 주 테마 시도 안에 학습 완료)와 같은 기준이라 report 검증(완주면 다섯 요일 모두 `completedInWeek`)과 맞음 |
+| 요약 `completedInWeek` | 그 주 테마 시도 안에 학습 완료(일요일 포함) | report #486 칸 이름 그대로. `days[].completed`는 이름·뜻 유지(#507) |
+| `review.missions[].missed` | 공개됐지만(`LOCKED` 아님) 아직 마무리하지 않음(진행 중 포함) | api-spec 2.11, 칸 이름은 core·report 호환으로 유지 |
+| `perfectAttendance` | 만들지 않음. 개근은 기존 `completed` | core #506 결정 |
+| 커뮤니티 엔딩 전 잠김 | 정답 고르기 문제 = 큰 질문·정답이 있는 테마 버전의 금요일 문제. 학습 완료했어도 그 문제로 고른 주 중 `ENDED`인 주가 없으면 403 `COMMUNITY_LOCKED_UNTIL_ENDING`(고르지 않았으면 잠김) | P20. 새 코드는 사용자 결정 2026-11-12(core가 `COMMUNITY_LOCKED` 문구를 "이 미션을 마무리하면…"으로 고정해 덮어씀) |
+
+### API 변경
+
+| 경로 | 바뀐 것 |
+|---|---|
+| `POST /internal/missions/{id}/attempts` | 쿼리 `sundayTheme` 읽음. 409 `THEME_DAY_CLOSED` 뜻 넓힘(공개 전·무료 일요일·이미 마무리) |
+| `GET …/weekly-theme` | `days[].completedOnDay`·`finished`·`ending` 추가, `days[].clue`·`rulesOut` 공개 조건, `state`·`review.open`·`missed` 뜻, 쿼리 `sundayTheme` |
+| `POST …/weekly-theme/review-views` | 토요일·프리미엄 일요일만, 쿼리 `sundayTheme` |
+| `POST …/weekly-theme/story-views` | 쿼리 `sundayTheme`(계약에 빠져 있던 파라미터 추가), OUTRO는 엔딩 기준 |
+| `POST …/weekly-theme/answer-picks` | 새 경로 `{pick}` → `{correct, ending, answer}` |
+| `GET …/weekly-theme/summary` | `days[].completedInWeek`·`finished`·`ending` 추가 |
+| `GET /internal/community/missions/{id}/posts`, 반응 | 403 `COMMUNITY_LOCKED_UNTIL_ENDING` 추가 |
+
+### 같이 고친 파일
+
+- 설계: state-diagram 3.2.1·3.2.2(#506이 지우라고 한 "#484 구현 전까지 허용" 문구 포함), sequence-diagram 3.4·3.6.1·3.7, api-spec 오류 코드·상태값·2.9·2.11·4.1(공개 경로 `answer-picks` 줄·커뮤니티 잠김 문구는 core #550이 먼저 씀), functional-spec 개정 요약·FN-RET-05, class-diagram 4.4, ERD 4.2.1(`theme_answer_pick`)·길이 대조 목록·attempt.context·학생 삭제, usecase·user-flow, README·docs/README 상태 문구
+- web: 학생 포인트 안내의 당일 풀이·주간 완주 "준비 중" 표시 제거(`domain/retention.ts` `POINT_RULES.preparing`, `StudentPoints.tsx`, `tests/retention.test.ts`). #525가 "#484가 칸을 내보내면 지운다"로 넘긴 일이고 #506 완료 조건(화면 안내 = 실제 적립)
+- 계약·검사: learning OpenAPI, `scripts/verify_db_schema.py`(음성 검사 3건), `test_weekly_theme_contract.py`(테마 5경로 `sundayTheme` 선언), `test_record_exists_openapi.py`(learning 경로 수 +1, develop #469 반영 뒤 76), gitops local learning migration `revision` v17 → v18
+- learning 쪽에서 고치지 않은 다른 담당 몫: core `contracts/openapi/core-service.yaml`(4246·6514행 "#484 전까지" 설명)·`core-gateway.md` 18절 기준안 표시, report.md "#484 병합 뒤 실제 응답 대조"(report #486 남은 일)
+
+### 한계
+
+- 정답을 고르지 않고 주가 끝나면 엔딩이 없다(설계 3.2.2 그대로). 화면에서 금요일 문제 뒤 고르기를 놓치지 않게 하는 것은 web(#440·#487)
+- 고른 뒤 관리자가 후보·정답을 고치면 `correct`는 고를 때 값을 쓴다
+- `AttemptService`의 시각은 주입한 시계가 아니라 `Instant.now()`라 완료 시각 테스트는 행을 직접 넣는다(#385 그대로). 같은 트랜잭션 MyBatis 세션 캐시도 24장 그대로라 시험에서 학생을 나눠 확인
+- core는 #550(PR #551)으로 공개 경로 `POST /api/v1/students/me/weekly-theme/answer-picks`와 `COMMUNITY_LOCKED_UNTIL_ENDING` 공개 문구를 먼저 병합했다. 경로·쿼리(`grade`·`date`·`sundayTheme`)·본문·응답·코드가 learning과 같고, `test_weekly_theme_contract.py`의 learning 계약 대조가 이 PR부터 켜진다
+
+테스트: `WeeklyThemeServiceTest`(누적 공개·일요일·마무리한 문제 409·정답 고르기·엔딩·단서 공개·당일 풀이/주간 완주·요약·커뮤니티 잠김), `WeeklyThemeControllerTest`(`sundayTheme`·`answer-picks`), `AttemptThemeStartTest`, `AttemptControllerTest`, `ThemeAnswerRulesTest`(엔딩 판정). learning 471개, scripts 303개, `check_db_migrations.py`(learning 37표·329칼럼, 음성 검사 63), 요약·커뮤니티 실제 응답 계약 검사 통과.
