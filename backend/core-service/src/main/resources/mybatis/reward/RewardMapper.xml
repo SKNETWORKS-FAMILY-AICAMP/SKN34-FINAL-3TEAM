@@ -64,7 +64,7 @@
         FROM student_look_equipment e JOIN look_item i ON i.id=e.look_item_id
         WHERE e.student_id IN <foreach collection="ids" item="id" open="(" close=")" separator=",">#{id}</foreach>
     </select>
-    <delete id="clearEquipment">DELETE FROM student_look_equipment WHERE student_id=#{studentId}</delete>
+    <delete id="deleteEquipmentSlot">DELETE FROM student_look_equipment WHERE student_id=#{studentId} AND slot=#{slot}</delete>
     <insert id="insertEquipment">
         INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at) VALUES(#{studentId},#{slot},#{itemId},#{now})
     </insert>

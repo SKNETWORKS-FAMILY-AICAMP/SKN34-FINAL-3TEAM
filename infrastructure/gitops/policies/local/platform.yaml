@@ -85,7 +85,7 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: app}
           podSelector:
             matchExpressions:
-              - {key: app.kubernetes.io/name, operator: In, values: [scoring-service, report-api, report-worker, sllm-server]}
+              - {key: app.kubernetes.io/name, operator: In, values: [scoring-service, report-api, report-worker, sllm-server, ai-service]}
         - podSelector:
             matchLabels: {app.kubernetes.io/name: minio-init}
       ports: [{protocol: TCP, port: 9000}]

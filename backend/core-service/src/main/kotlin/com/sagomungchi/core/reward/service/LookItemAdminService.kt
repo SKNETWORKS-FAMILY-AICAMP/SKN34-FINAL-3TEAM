@@ -11,7 +11,8 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 /**
- * 관리자 캐릭터 아이템(ADM-23, CONTENT). 신규 아이템만 다루고 테마·캐릭터 해금값은 코드 상수다.
+ * 관리자 캐릭터 아이템·가구 스킨(ADM-23, CONTENT, 가구 슬롯 #555). 신규 아이템만 다루고 테마·캐릭터 해금값은 코드 상수다.
+ * 가구 기본 스킨은 행 없이 항상 쓸 수 있으므로 여기서는 추가 스킨만 등록한다(가격 1 이상 그대로).
  * 삭제 없이 판매 중단(`STOPPED`)만 하며, 이미 해금한 학생은 계속 착용한다. 변경은 같은 트랜잭션에서 `audit_log`.
  */
 @Service

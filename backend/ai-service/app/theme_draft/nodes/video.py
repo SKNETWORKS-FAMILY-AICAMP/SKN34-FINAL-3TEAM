@@ -10,7 +10,7 @@
   않으려고). 첫 그림이 없는 장면(컷 그림 실패)만 영상을 뺀다
 - 0.5초 겹쳐 녹아드는 전환(ffmpeg xfade)으로 이어 S3 .mp4
 - 영상 클라이언트가 없거나(THEME_VIDEO_ENABLED=false) 마감까지 theme_video_min_seconds(기준안
-  300초)가 안 남으면 건너뛰고 경고. THEME_VIDEO 사용량은 core enum 전이라 이벤트 없이 로그만
+  300초)가 안 남으면 건너뛰고 경고. 사용량은 영상 클라이언트가 컷 호출마다 THEME_VIDEO로 기록(#546)
 """
 
 import asyncio
@@ -88,6 +88,7 @@ async def film(
                 body.video_prompt(theme, scene, index, cut, feedback),
                 first,
                 seconds=seconds,
+                prompt_version=ctx.prompt.version,
                 deadline=ctx.deadline,
                 negative=body.VIDEO_NEGATIVE,
             )
