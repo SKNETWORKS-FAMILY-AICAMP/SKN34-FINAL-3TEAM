@@ -220,6 +220,7 @@ with transaction(factory) as session:
 
 ### 8.7 learning_db `vector` 확장 (#466)
 
+- 2026-11-11 팀 결정(에픽 #463)으로 생성에 벡터 검색·임베딩을 쓰지 않아 learning V17이 `knowledge_chunk.embedding`·HNSW 인덱스·`knowledge_dataset.embedding_model`·`embedding_dimensions`를 지웠다. 지금 `vector` 타입을 쓰는 칸은 없지만 V14가 처음부터 다시 적용될 때(새 볼륨, Testcontainers, CI) `vector` 타입이 필요하므로 아래 bootstrap·이미지는 그대로 둔다
 - 결정: 지식 저장소(#463)용 `vector`(pgvector 0.8.7)는 `rds-bootstrap.sql`의 learning_db 단계에서 관리자 계정이 `CREATE EXTENSION IF NOT EXISTS vector`로 만든다. pgvector는 trusted 확장이 아니어서 `learning_migrate`의 Flyway로는 만들 수 없다(`permission denied ... Must be superuser`). 확장은 schema public에 생기고 migrate·app 계정은 `vector` 타입·연산자·HNSW 인덱스를 그대로 쓴다
 - 이미지: 로컬 compose·kind·DB 스키마 CI·learning Testcontainers 모두 `pgvector/pgvector:0.8.7-pg17-trixie`(PG 17.11 Debian). alpine(musl)에서 초기화한 볼륨은 text 정렬이 달라 이미지 교체 뒤 DB마다 `REINDEX DATABASE` 1회 필요
 - 기존 볼륨 1회 적용: bootstrap은 빈 데이터 디렉터리에서만 돌므로 이미 있는 볼륨은 관리자 계정으로 한 번 실행한다(멱등, 재시작 없음). **learning V14 마이그레이션 전에** 해야 한다(없으면 migrate 계정의 V14가 superuser 권한 오류로 멈춤)

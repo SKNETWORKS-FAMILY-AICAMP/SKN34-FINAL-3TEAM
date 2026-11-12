@@ -10,15 +10,13 @@ data class DatasetRow(
     val version: String,
     val status: DatasetStatus,
     val source: String,
-    val embeddingModel: String,
-    val embeddingDimensions: Int,
     val chunkCount: Int,
     val relationCount: Int,
     val createdAt: Instant,
     val activatedAt: Instant?,
 )
 
-/** 넣을 조각. 배열·벡터·jsonb는 PostgreSQL 글 표기(`{3,4}`, `[0.1,…]`, JSON)로 넘겨 SQL에서 형변환 */
+/** 넣을 조각. 배열·jsonb는 PostgreSQL 글 표기(`{3,4}`, JSON)로 넘겨 SQL에서 형변환 */
 data class ChunkInsert(
     val datasetVersion: String,
     val id: String,
@@ -33,14 +31,11 @@ data class ChunkInsert(
     val noticeGradeBand: String?,
     val text: String,
     val record: String,
-    val embedding: String,
     val contentHash: String,
     val source: String,
 )
 
 data class ChunkHashRow(val id: String, val kind: String, val contentHash: String)
-
-data class HashEmbeddingRow(val contentHash: String, val embedding: String)
 
 data class RelationRow(
     val type: String,
@@ -73,8 +68,6 @@ interface KnowledgeMapper {
 
     fun insertChunk(@Param("row") row: ChunkInsert): Int
     fun findChunkHashes(@Param("version") version: String): List<ChunkHashRow>
-    fun findEmbeddingsByHash(@Param("version") version: String): List<HashEmbeddingRow>
-    fun countMissingEmbeddings(@Param("version") version: String): Int
     fun countChunksByKind(@Param("version") version: String): List<KindCount>
 
     fun insertSemester(@Param("version") version: String, @Param("row") row: SemesterRow): Int

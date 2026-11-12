@@ -967,22 +967,21 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 판 적재·상태 조회·활성화·제거(계약 #464 C9, 저장 구조 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-466)). learning OpenAPI `/admin/knowledge/datasets…`.
 
 - 부르는 쪽: 운영 스크립트 `scripts/knowledge/manage_datasets.py`가 learning에 직접(kind는 `kubectl -n app port-forward svc/learning-service 18081:8081`) 내부 토큰 + `X-User-Role: SYSTEM`. core 프록시·관리자 화면·감사 기록 없음(동섭 결정 2026-11-11, 이슈 기준안). 다른 역할은 `403`
-- 적재는 동기(동섭 결정 2026-11-11): 실제 추출본도 임베딩 호출 수십 번(1~2분)이라 스크립트가 10분까지 기다린다. 실패하면 판은 `LOADING`으로 남는다(C9)
-- 임베딩: `app.knowledge.embedding` = `ai`(기본, 4.2.4 `POST /internal/embeddings`, #467) | `fake`(`fake-bigram-v1`, 4.2.4 가짜 규칙을 Kotlin으로 옮김). #467 전까지 compose·kind는 `fake`(동섭 결정 2026-11-11). 판의 `embedding_model`은 `fake`면 `fake-bigram-v1`, `ai`면 `app.knowledge.embedding-model`(기본 `text-embedding-3-small`)이고 응답 `model`·`dimensions`·개수가 다르면 `502 AI_BAD_RESPONSE`
+- 적재는 동기(동섭 결정 2026-11-11). 실제 추출본(#465 `curriculum-v1`, 1,341건)이 kind에서 5초. 스크립트는 10분까지 기다린다. 실패하면 판은 `LOADING`으로 남는다(C9)
+- 임베딩 없음: 미션·테마 생성에 벡터 검색을 쓰지 않는 팀 결정(에픽 #463, 2026-11-11)에 따라 적재는 ai 임베딩(4.2.4)을 부르지 않고 활성화도 임베딩을 요구하지 않는다. 지식 표는 성취기준·생각 유형 코드 조회(4.1.2 `standards`·`thinking-types`, #469)용이다. learning V17이 임베딩 칸을 지웠다
 
 | 메서드 | 경로 | 내용 |
 |---|---|---|
-| GET | `/internal/admin/knowledge/datasets` | `{items:[KnowledgeDatasetView]}` 최근 판부터. `KnowledgeDatasetView = {version, status, source, embeddingModel, embeddingDimensions, chunkCount, relationCount, chunks:{종류: 수}, relations:{SEMESTER·FITS·PREREQUISITE·COVERS: 수}, createdAt, activatedAt}` |
-| POST | `/internal/admin/knowledge/datasets` | 본문 `{source, records:[C1], reviews:[C4 행]}`(reviews 선택) → `201 KnowledgeLoadResult {dataset, documents, embeddedTexts, embeddingRequests, reusedEmbeddings, previousVersion, carriedRelations, recheck:[C4 행]}`. 새 판 `kn-YYYYMMDD-NN`(KST) `LOADING`, `source.previousVersion`에 적재 때 활성 판 |
+| GET | `/internal/admin/knowledge/datasets` | `{items:[KnowledgeDatasetView]}` 최근 판부터. `KnowledgeDatasetView = {version, status, source, chunkCount, relationCount, chunks:{종류: 수}, relations:{SEMESTER·FITS·PREREQUISITE·COVERS: 수}, createdAt, activatedAt}` |
+| POST | `/internal/admin/knowledge/datasets` | 본문 `{source, records:[C1], reviews:[C4 행]}`(reviews 선택) → `201 KnowledgeLoadResult {dataset, documents, previousVersion, carriedRelations, recheck:[C4 행]}`. 새 판 `kn-YYYYMMDD-NN`(KST) `LOADING`, `source.previousVersion`에 적재 때 활성 판 |
 | GET | `/internal/admin/knowledge/datasets/{version}` | `KnowledgeDatasetView`, 없으면 `404 KNOWLEDGE_DATASET_NOT_FOUND` |
 | POST | `/internal/admin/knowledge/datasets/{version}/activate` | 본문 `{}` 또는 없음 → 한 트랜잭션에서 이전 `ACTIVE` → `RETIRED`, 이 판 → `ACTIVE` |
 | DELETE | `/internal/admin/knowledge/datasets/{version}` | `RETIRED`만 `204`(관계 → 조각 → 판) |
 
-- 적재 순서(C9 ①~⑦): 입력 검사(레코드 형식, 같은 판 안 조각 ID 겹침, 학기가 그 학년 것, 성취기준 문장 = `achievement_standard`, 확인 행 `reviewer = SAMPLE` 거부, 관계 끝: 성취기준·생각 유형·내용 요소 조각, 선수 코드는 `achievement_standard`) → 실패하면 판을 만들기 전에 `400 VALIDATION_FAILED` → ① 판 행 → ③ 활성 판과 모델·차원이 같으면 같은 `content_hash` 벡터 복사, 나머지만 64개씩 임베딩 → ②④⑤⑥⑦ 한 트랜잭션: 조각, 학기 관계, 이전 활성 판 관계 옮기기 + 새 확인 행(늦은 `reviewedAt` 우선, 늦은 `REJECT`는 옮긴 관계를 뺌), 확인된 covers로 내용 요소·영역 학년·학기, 빈 임베딩 없음 검사, `chunk_count`·`relation_count`(학기·fits·prerequisite·covers 행 합)
+- 적재 순서(C9 ①~⑦): 입력 검사(레코드 형식, 같은 판 안 조각 ID 겹침, 학기가 그 학년 것, 성취기준 문장 = `achievement_standard`, 확인 행 `reviewer = SAMPLE` 거부, 관계 끝: 성취기준·생각 유형·내용 요소 조각, 선수 코드는 `achievement_standard`) → 실패하면 판을 만들기 전에 `400 VALIDATION_FAILED` → ① 판 행 → ②④⑤⑥⑦ 한 트랜잭션: 조각, 학기 관계, 이전 활성 판 관계 옮기기 + 새 확인 행(늦은 `reviewedAt` 우선, 늦은 `REJECT`는 옮긴 관계를 뺌), 확인된 covers로 내용 요소·영역 학년·학기, `chunk_count`·`relation_count`(학기·fits·prerequisite·covers 행 합)
 - `recheck`: 옮기지 못한 관계(끝이 새 판에 없음)와 옮겼지만 끝 본문이 바뀐 관계를 C4 행 모양(`decision` 빈 칸, `evidence`에 사유, `datasetVersion` = 이전 판)으로. 스크립트 `--recheck-out`이 CSV로 저장해 #468 확인 파일에 다시 넣는다
-- 활성화 `409 KNOWLEDGE_DATASET_STATE_CONFLICT`: `LOADING`이 아님, 빈 임베딩, 적재 뒤 활성 판이 바뀜(`source.previousVersion` ≠ 현재 활성 판, 다시 적재). 제거 `409`: `ACTIVE`·`LOADING`
-- 같은 입력을 다시 적재하면 같은 조각·관계 수(멱등). 활성 판이 같은 모델이면 임베딩 호출 0번
-- 임베딩 사용량(비용)은 ai가 `llm.usage.recorded`(`callType` `KNOWLEDGE_EMBEDDING`, #467)로 기록한다. learning은 호출 수(`embeddingRequests`)와 본문 수(`embeddedTexts`)만 돌려준다
+- 활성화 `409 KNOWLEDGE_DATASET_STATE_CONFLICT`: `LOADING`이 아님, 적재 뒤 활성 판이 바뀜(`source.previousVersion` ≠ 현재 활성 판, 다시 적재). 제거 `409`: `ACTIVE`·`LOADING`
+- 같은 입력을 다시 적재하면 같은 조각·관계 수(멱등)
 
 ### 4.2 ai-service (호출: learning, core, report)
 

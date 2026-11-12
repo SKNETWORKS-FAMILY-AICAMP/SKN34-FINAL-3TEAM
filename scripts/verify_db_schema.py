@@ -657,29 +657,25 @@ VALUES ('00000000-0000-4000-8000-000000000002', false, 'CONSENT', now());
 SELECT pg_temp.expect_sqlstate($$
     UPDATE community_visibility SET reason = 'OTHER'
 $$, '23514');
--- #466 knowledge store (erd 4.5)
-INSERT INTO knowledge_dataset
-    (version, status, source, embedding_model, embedding_dimensions, chunk_count, relation_count, created_at)
-VALUES ('kn-20261111-01', 'LOADING', '{}', 'schema-test', 1536, 0, 0, now());
+-- #466 knowledge store (erd 4.5, no embedding since V17)
+INSERT INTO knowledge_dataset (version, status, source, chunk_count, relation_count, created_at)
+VALUES ('kn-20261111-01', 'LOADING', '{}', 0, 0, now());
 SELECT pg_temp.expect_sqlstate($$
-    INSERT INTO knowledge_dataset
-        (version, status, source, embedding_model, embedding_dimensions, chunk_count, relation_count, created_at)
-    VALUES ('v1', 'LOADING', '{}', 'schema-test', 1536, 0, 0, now())
+    INSERT INTO knowledge_dataset (version, status, source, chunk_count, relation_count, created_at)
+    VALUES ('v1', 'LOADING', '{}', 0, 0, now())
 $$, '23514');
 SELECT pg_temp.expect_sqlstate($$
     UPDATE knowledge_dataset SET status = 'ACTIVE'
 $$, '23514');
 UPDATE knowledge_dataset SET status = 'ACTIVE', activated_at = now();
 SELECT pg_temp.expect_sqlstate($$
-    INSERT INTO knowledge_dataset
-        (version, status, source, embedding_model, embedding_dimensions, chunk_count, relation_count, created_at,
-         activated_at)
-    VALUES ('kn-20261111-02', 'ACTIVE', '{}', 'schema-test', 1536, 0, 0, now(), now())
+    INSERT INTO knowledge_dataset (version, status, source, chunk_count, relation_count, created_at, activated_at)
+    VALUES ('kn-20261111-02', 'ACTIVE', '{}', 0, 0, now(), now())
 $$, '23505');
 INSERT INTO knowledge_chunk
-    (dataset_version, id, kind, standard_code, grades, semesters, text, record, content_hash, source, embedding)
+    (dataset_version, id, kind, standard_code, grades, semesters, text, record, content_hash, source)
 VALUES ('kn-20261111-01', '4수01-01', 'STANDARD', '4수01-01', '{3}', '{3-1}', 'schema-test', '{}',
-        repeat('a', 64), '{}', array_fill(0.1, ARRAY[1536])::vector);
+        repeat('a', 64), '{}');
 INSERT INTO knowledge_chunk (dataset_version, id, kind, thinking_type, grades, semesters, text, record, content_hash, source)
 VALUES ('kn-20261111-01', 'SOLVE', 'THINKING_TYPE', 'SOLVE', '{}', '{}', 'schema-test', '{}', repeat('b', 64), '{}');
 SELECT pg_temp.expect_sqlstate($$
@@ -689,8 +685,8 @@ SELECT pg_temp.expect_sqlstate($$
     UPDATE knowledge_chunk SET content_hash = repeat('G', 64) WHERE id = '4수01-01'
 $$, '23514');
 SELECT pg_temp.expect_sqlstate($$
-    UPDATE knowledge_chunk SET embedding = array_fill(0.1, ARRAY[3])::vector WHERE id = '4수01-01'
-$$, '22000');
+    UPDATE knowledge_chunk SET kind = 'VECTOR' WHERE id = '4수01-01'
+$$, '23514');
 INSERT INTO knowledge_standard_semester (dataset_version, standard_code, semester, grade)
 VALUES ('kn-20261111-01', '4수01-01', '3-1', 3);
 SELECT pg_temp.expect_sqlstate($$
