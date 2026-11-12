@@ -677,7 +677,7 @@ sequenceDiagram
 
 2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 #389 적립 연결로 구현. 1장 공통 규칙을 따른다.
 
-2026-11-10 개정(#483): 아래 그림은 바뀐 규칙(누적 공개·무료 테마 하루 한도 없음·프리미엄 일요일·당일 풀이/개근/주간 완주 보충)이다. core 몫은 #485(PR #498, V43)로 구현했다(무료 테마 문제 한도 집계 없음·`sundayTheme` 전달·적립 사건). learning #484 구현 전에는 learning이 오늘 요일 문제만 허용하고 `sundayTheme`을 무시하며, `days[].completedOnDay`·`finished`·`ending` 칸이 없어 당일 풀이·주간 완주는 적립되지 않는다. learning 응답 칸 이름(`completedOnDay`·`finished`·`ending`)은 기준안이다.
+2026-11-10 개정(#483): 아래 그림은 바뀐 규칙(누적 공개·무료 테마 하루 한도 없음·프리미엄 일요일·당일 풀이/개근/주간 완주 보충)이다. core 몫은 #485(PR #498, V43)로 구현했다(무료 테마 문제 한도 집계 없음·`sundayTheme` 전달·적립 사건). learning 몫(누적 공개·`sundayTheme` 읽기·마무리한 문제 409·`days[].completedOnDay`·`finished`·`ending`)은 #484로 구현했다.
 
 ```mermaid
 sequenceDiagram
@@ -705,7 +705,7 @@ sequenceDiagram
   C->>L: POST /internal/missions/{id}/attempts?grade&demo&sundayTheme {context}
   L->>L: 진행 중 시도면 그대로 반환, 아니면 미션 공개·범위 → 테마 학년(grade, 중학생 G6)·KST 오늘로 그 주 테마 확인
   alt 신규 시도인데 공개 전(LOCKED) 문제이거나 일요일(허용 값 없음)이거나 이번 주 이미 마무리한 문제
-    L-->>C: 409 THEME_DAY_CLOSED (마무리한 문제 거부와 코드는 #484 기준안)
+    L-->>C: 409 THEME_DAY_CLOSED (마무리한 문제 거부 #506·#484)
     C-->>W: 409
   else 신규 201 / 진행 중 200
     L-->>C: 시도
@@ -715,7 +715,8 @@ sequenceDiagram
 
 - 공개(`OPEN`)된 문제는 월~토(프리미엄 일요일) 언제든 `THEME_DAY` 신규 시도. 금요일에는 다섯 문제 모두 공개, 토요일에는 안 푼 문제 새로 풀기와 `THEME_REVIEW` 다시 풀기를 함께 허용
 - `EXTRA`는 무료 상품(`features.extraMissions = false`)이면 core가 403 `PREMIUM_REQUIRED`, 프리미엄이면 `payment_premium_usage(EXTRA_MISSION)` 기록. `THEME_REVIEW`는 한도 집계 없이 learning이 토요일(프리미엄 일요일)·마무리한 문제인지 검사(아니면 409 `THEME_REVIEW_NOT_ALLOWED`)
-- 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후·일요일 포함). 당일 풀이는 학습 완료 시각이 그 요일 KST 안일 때만. 재사용 테마의 이미 푼 문제도 그 주 공개된 문제면 `THEME_DAY` 신규 시도(그 주에 마무리한 문제만 거부, 다시 풀기는 `THEME_REVIEW`). learning #484 구현 전에는 마무리한 오늘 문제의 새 `THEME_DAY` 시도가 열려 있다(#506)
+- 진행 중 시도 반환(`200`)은 요일 검사 없이 이어하기(자정 후·일요일 포함). 당일 풀이는 학습 완료 시각이 그 요일 KST 안일 때만. 재사용 테마의 이미 푼 문제도 그 주 공개된 문제면 `THEME_DAY` 신규 시도(그 주에 마무리한 문제만 거부, 다시 풀기는 `THEME_REVIEW`)
+- 큰 질문 정답 고르기(#484): 금요일 문제를 마무리한 뒤 web이 `POST /students/me/weekly-theme/answer-picks {pick}`(core 공개 경로 기준안, core 확인 중)을 보내고 core가 `POST /internal/students/{id}/weekly-theme/answer-picks?grade&date&sundayTheme`으로 넘긴다. learning은 `theme_answer_pick`에 학생·주당 1행 저장하고 `{correct, ending, answer}`를 돌려준다(맞히면 `ENDED`·정답, 틀리면 `NOT_ENDED`). 틀린 학생은 토요일(프리미엄 일요일) 금요일 문제 `THEME_REVIEW`를 마무리하면 주간 테마 조회의 `ending`이 `ENDED`가 된다(state-diagram 3.2.2)
 - 주간 테마 조회 때 core는 응답에서 이번 주 학습 완료한 요일 문제(`attemptStatus = COMPLETED`)마다 `MISSION_COMPLETED`를 다시 부르고, 원장 사건 키 UK로 이미 있는 것은 건너뛰어 누락분만 보충한다(#389). 추가 문제(EXTRA)는 응답에 없어 보충 대상이 아니다. 당일 풀이·개근(learning 칸 `completed`)·주간 완주도 같은 방식으로 보충(core #485, 개근 칸 이름은 #506에서 `completed`로 맞춤). 주간 완주는 learning이 토요일 23:59:59 KST까지의 완료만 세므로 프리미엄 일요일 완료로는 적립되지 않는다
 - 학습 완료 직후(3.5)에는 웹이 홈으로 돌아와 주간 테마를 다시 조회할 때 당일 풀이가 적립된다(core #485는 주간 테마 조회 보충으로 정했다, [core 보고서 18절](../report/core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10))
 - 학년별 테마(#438): core는 학생 학년 그대로 `grade=G3`~`G6`(중학생 `G6`)을 넘긴다. core 반영 전(병합 순서 #438 → core)에는 core가 `gradeBand`를 보내므로 learning은 `grade`가 없으면 `gradeBand`의 `G3_4`를 `G3`, `G5_6`을 `G5`로 읽는다(V15가 학년군 테마를 학년마다 같은 내용으로 복사하므로 이 기간 내용은 같음). core 반영 뒤 이 호환을 지운다
@@ -796,8 +797,8 @@ sequenceDiagram
 
   Note over W: 월~토 그 주 첫 진입(introSeen=false) → 시작 화면, 엔딩 상태에서 outroSeen=false → 종료 화면
   W->>C: POST /students/me/weekly-theme/story-views {kind}
-  C->>L: POST /internal/students/{id}/weekly-theme/story-views?grade&date {kind}
-  L->>L: INTRO는 월~토·OUTRO는 엔딩 상태인지 (아니면 409 THEME_STORY_NOT_ALLOWED), 게시 테마 확인(없으면 404)
+  C->>L: POST /internal/students/{id}/weekly-theme/story-views?grade&date&sundayTheme {kind}
+  L->>L: INTRO는 월~토·프리미엄 일요일, OUTRO는 엔딩 상태이고 무료 일요일이 아닌지 (아니면 409 THEME_STORY_NOT_ALLOWED), 게시 테마 확인(없으면 404)
   L->>L: theme_story_view (학생·주·kind) ON CONFLICT DO NOTHING
   L-->>C: {kind, firstViewThisWeek}
   C-->>W: 200 (learning 응답 그대로, 포인트 적립 없음)
@@ -805,7 +806,7 @@ sequenceDiagram
 
 - 시작 이야기는 온보딩 영상처럼 그 주에 처음 들어왔을 때 한 번 보여 준다(요일 무관, 일요일 제외, 2026-11-10 사용자 결정). 그래서 이번 주 테마 응답의 `intro`(글)는 #385의 '월요일만'에서 매일 채움으로 바꾼다
 - 날짜·학년은 core가 정한다(되돌아보기 열람과 같음). 기존 되돌아보기 열람(`review-views`, 포인트·완주)은 그대로이고 이야기 열람과 따로 기록한다
-- 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만 이번 주 테마 응답에 들어간다. 엔딩 조건(큰 질문 정답 맞힘 즉시, 틀리면 토요일 다시 풀기 뒤)과 정답 고르기는 #483·#484, 그 전까지 #438은 토·일을 엔딩으로 본다(state-diagram 3.2.1)
+- 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만 이번 주 테마 응답에 들어간다. 엔딩 조건(큰 질문 정답 맞힘 즉시, 틀리면 고른 뒤 토요일 금요일 문제 다시 풀기 마무리)과 정답 고르기는 learning #484(state-diagram 3.2.2)
 
 ### 3.7 커뮤니티 열람·반응·신고 (P20, core #388·learning #386 구현)
 
@@ -823,7 +824,7 @@ sequenceDiagram
   W->>C: GET /missions/{missionId}/community-posts?seed
   C->>L: GET /internal/community/missions/{missionId}/posts?viewerStudentId&seed
   alt viewer가 이 미션을 학습 완료하지 않음, 또는 큰 질문 정답 고르기 문제인데 viewer의 그 주 엔딩 전(2026-11-10 개정 #483, learning #484)
-    L-->>C: 403 COMMUNITY_LOCKED
+    L-->>C: 403 COMMUNITY_LOCKED (엔딩 전은 COMMUNITY_LOCKED_UNTIL_ENDING, core 허용 목록 추가 확인 중)
     C-->>W: 403
   else 마무리함
     L-->>C: VISIBLE 공유물 무작위 목록 (studentId 포함, 반응 수 없음)
