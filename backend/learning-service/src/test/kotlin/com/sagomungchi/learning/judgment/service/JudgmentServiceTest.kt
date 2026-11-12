@@ -40,6 +40,23 @@ class JudgmentServiceTest : PostgresRepositoryTest() {
     fun clear() = UserContextHolder.clear()
 
     @Test
+    fun `M2 점수 없는 안내를 DB에서 재구성하고 공개 응답에는 점수를 내보내지 않는다`() {
+        val (answer, _) = submitted()
+        val acquired = assertIs<AcquireResult.Acquired>(service.acquire(answer.id, Instant.now())).judgment
+        val observation = """{"m2":null,"m2Preparation":{"notices":["EMPTY_AFTER_CLEANING","rawScores"]}}"""
+        val judged = Judged(JudgmentResult.CORRECT, null, emptyList(),
+            JudgedBy(JudgmentMethod.LLM, trial = true, model = "m", prompt = "p", modelScores = observation))
+        assertTrue(service.saveResult(acquired, judged, null))
+        val result = service.result(answer.id)
+        assertEquals(JudgmentResult.CORRECT, result.judgment!!.result)
+        assertEquals(listOf("정리 후 남은 답변이 없어요"), result.judgment!!.m2Notices)
+        assertEquals(null, result.judgment!!.modelScores)
+        val json = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writeValueAsString(result)
+        assertFalse(json.contains("modelScores"))
+        assertFalse(json.contains("rawScores"))
+    }
+
+    @Test
     fun `리스가 끝나 다른 요청이 다시 가져가면 늦게 끝난 처리는 저장도 실패 기록도 못 함 (state-diagram 3·3)`() {
         val (answer, element) = submitted()
         val judged = Judged(

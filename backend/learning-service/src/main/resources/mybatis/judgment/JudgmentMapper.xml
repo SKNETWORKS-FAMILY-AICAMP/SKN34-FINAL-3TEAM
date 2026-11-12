@@ -49,6 +49,7 @@
             <arg column="mission_label" javaType="java.lang.String"/>
             <arg column="rubric_label" javaType="java.lang.String"/>
             <arg column="corrected" javaType="_boolean"/>
+            <arg column="m2_notices" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
     <resultMap id="supportTarget" type="com.sagomungchi.learning.judgment.domain.SupportTarget">
@@ -173,7 +174,8 @@
         SELECT a.id AS answer_id, j.id AS judgment_id, a.attempt_id, (t.status = 'IN_PROGRESS' AND t.finished_at IS NULL) AS attempt_open,
                j.process_status, COALESCE(c.result, j.result) AS result, j.trial,
                CASE WHEN c.result IS NULL THEN j.held_reason END AS held_reason, j.model_version, j.prompt_version,
-               m.code || '@' || v.version AS mission_label, m.code || '@' || rv.version AS rubric_label, (c.result IS NOT NULL) AS corrected
+               m.code || '@' || v.version AS mission_label, m.code || '@' || rv.version AS rubric_label, (c.result IS NOT NULL) AS corrected,
+               CAST(j.model_scores -> 'm2Preparation' -> 'notices' AS text) AS m2_notices
         FROM answer a
         JOIN judgment j ON j.answer_id = a.id
         LEFT JOIN LATERAL (

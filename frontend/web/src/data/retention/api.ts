@@ -1,9 +1,12 @@
 import { apiFetch } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import {
+  readAlbum,
   readAnswerPick,
   readCommunityPosts,
   readCommunitySettings,
+  readEpisode,
+  readFrameSlots,
   readLookItems,
   readMyPosts,
   readPoints,
@@ -11,8 +14,11 @@ import {
   readWeeklyTheme,
 } from '../../domain/retention.ts'
 import type {
+  Album,
   AnswerPickResult,
   CommunityPost,
+  Episode,
+  FrameSlot,
   CommunitySettings,
   LookItem,
   MyCommunityPost,
@@ -58,6 +64,21 @@ export const retentionApi = {
   /** 큰 질문 정답 고르기(한 주 한 번, 고를 수 없으면 409 THEME_PICK_NOT_ALLOWED). */
   pickAnswer: async (pick: string): Promise<AnswerPickResult> =>
     readAnswerPick(await apiFetch<unknown>('/students/me/weekly-theme/answer-picks', { ...json({ pick }), cache: 'no-store' })),
+
+  // 내 방 추억의 벽·추억 앨범 (2.12, P27). 학생 본인만, 회차 키는 themeId·weekStart
+  frameSlots: async (signal?: AbortSignal): Promise<FrameSlot[]> =>
+    readFrameSlots(await apiFetch<unknown>('/students/me/room/frame-slots', { signal, cache: 'no-store' })),
+  /** 전체 교체. 빈 슬롯은 보내지 않는다 */
+  saveFrameSlots: async (slots: { slotNo: number; themeId: string; weekStart: string }[]): Promise<FrameSlot[]> =>
+    readFrameSlots(await apiFetch<unknown>('/students/me/room/frame-slots', json({ slots }, 'PUT'))),
+  album: async (signal?: AbortSignal, page = 0, size = 12): Promise<Album> =>
+    readAlbum(await apiFetch<unknown>(`/students/me/album?${pageQuery(page, size)}`, { signal, cache: 'no-store' })),
+  episode: async (themeId: string, weekStart: string, signal?: AbortSignal): Promise<Episode> =>
+    readEpisode(await apiFetch<unknown>(`/students/me/album/${e(themeId)}/${e(weekStart)}`, { signal, cache: 'no-store' })),
+  /** 새 액자 확인(멱등) */
+  markFrameSeen: async (themeId: string, weekStart: string): Promise<void> => {
+    await apiFetch<unknown>(`/students/me/album/${e(themeId)}/${e(weekStart)}/seen`, { method: 'POST' })
+  },
 
   // 커뮤니티 (2.9)
   communitySettings: async (signal?: AbortSignal): Promise<CommunitySettings> =>

@@ -77,9 +77,16 @@ export function readPoints(raw: unknown): Points {
 }
 
 // ---------- 꾸미기 해금·아이템 (API 명세 2.10·3.12) ----------
-export type ItemSlot = 'HAT' | 'OUTFIT' | 'ACCESSORY' | 'BACKGROUND'
+/** 캐릭터·배경 4칸(P22). 배경은 내 방 벽지로도 쓴다(P27). */
+export type CharacterSlot = 'HAT' | 'OUTFIT' | 'ACCESSORY' | 'BACKGROUND'
+/** 내 방 가구 스킨 칸(P27, API 명세 2.10 2026-11-12). 가구 1개 = 착용 칸 1개 */
+export type FurnitureSlot = 'DESK' | 'WALL' | 'WARDROBE'
+export type ItemSlot = CharacterSlot | FurnitureSlot
 export type LookSlot = 'THEME' | 'COMPANION' | ItemSlot
-export const ITEM_SLOTS: ItemSlot[] = ['HAT', 'OUTFIT', 'ACCESSORY', 'BACKGROUND']
+export const ITEM_SLOTS: CharacterSlot[] = ['HAT', 'OUTFIT', 'ACCESSORY', 'BACKGROUND']
+export const FURNITURE_SLOTS: FurnitureSlot[] = ['DESK', 'WALL', 'WARDROBE']
+/** 관리자 아이템 등록에서 고르는 칸 전체 */
+export const ALL_ITEM_SLOTS: ItemSlot[] = [...ITEM_SLOTS, ...FURNITURE_SLOTS]
 export const SLOT_LABELS: Record<LookSlot, string> = {
   THEME: '테마',
   COMPANION: '캐릭터',
@@ -87,8 +94,15 @@ export const SLOT_LABELS: Record<LookSlot, string> = {
   OUTFIT: '옷',
   ACCESSORY: '소품',
   BACKGROUND: '배경',
+  DESK: '학습 책상',
+  WALL: '추억의 벽',
+  WARDROBE: '옷장',
 }
-export type Equipped = Record<ItemSlot, string | null>
+/**
+ * 착용 칸. 가구 칸은 서버가 알려 준 때만 둔다: 가구 칸을 모르는 서버(core #555 전)에 보내면
+ * 422라 기존 꾸미기 저장이 깨지지 않게 한다. 가구 칸이 비면(null·없음) 기본 스킨.
+ */
+export type Equipped = Record<CharacterSlot, string | null> & Partial<Record<FurnitureSlot, string | null>>
 export const NO_EQUIPPED: Equipped = { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null }
 export const FREE_THEME: ThemeId = 'lake'
 export const FREE_COMPANION: CompanionId = 'mungchi'
@@ -136,9 +150,11 @@ export function readUnlockResult(raw: unknown, itemKey: string): UnlockResult {
 }
 export function readEquipped(raw: unknown): Equipped {
   const v = (raw ?? {}) as Partial<Record<ItemSlot, unknown>>
-  return Object.fromEntries(
-    ITEM_SLOTS.map((s) => [s, typeof v[s] === 'string' ? (v[s] as string) : null]),
-  ) as Equipped
+  const value = (s: ItemSlot) => (typeof v[s] === 'string' && v[s] ? (v[s] as string) : null)
+  return Object.fromEntries([
+    ...ITEM_SLOTS.map((s) => [s, value(s)]),
+    ...FURNITURE_SLOTS.filter((s) => s in v).map((s) => [s, value(s)]),
+  ]) as Equipped
 }
 /** 테마·캐릭터는 목록에 없을 때도 무료 항목은 열려 있다고 본다(목록 실패가 기본 모습을 막지 않게). */
 export function isLookUnlocked(items: LookItem[] | undefined, itemKey: string) {
@@ -225,7 +241,7 @@ const isDay = (v: unknown): v is ThemeDay => typeof v === 'string' && (THEME_DAY
 const isType = (v: unknown): v is ThinkingType => typeof v === 'string' && (THINKING_ORDER as string[]).includes(v)
 const pick = <T extends string>(v: unknown, values: readonly T[], fallback: T): T =>
   typeof v === 'string' && (values as readonly string[]).includes(v) ? (v as T) : fallback
-const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v : null)
+const optText = (v: unknown) => (typeof v === 'string' && v.trim() ? v : null)
 const texts = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()) : null)
 
 /** 이번 주 테마. 테마가 없으면(404·빈 응답) null을 돌려 기존 홈만 보이게 한다. */
@@ -237,7 +253,7 @@ export function readWeeklyTheme(raw: unknown): WeeklyTheme | null {
     themeId: v.themeId,
     weekStart: typeof v.weekStart === 'string' ? v.weekStart : '',
     title: typeof v.title === 'string' ? v.title : '이번 주 테마',
-    intro: text(v.intro),
+    intro: optText(v.intro),
     reused: v.reused === true,
     days: v.days.flatMap((x) => {
       const d = (x ?? {}) as Record<string, unknown>
@@ -250,7 +266,7 @@ export function readWeeklyTheme(raw: unknown): WeeklyTheme | null {
           state: pick(d.state, ['LOCKED', 'OPEN', 'CLOSED'] as const, 'LOCKED'),
           attemptStatus: pick(d.attemptStatus, ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'] as const, 'NOT_STARTED'),
           ...(typeof d.title === 'string' ? { title: d.title } : {}),
-          clue: text(d.clue),
+          clue: optText(d.clue),
           rulesOut: texts(d.rulesOut),
           completedOnDay: d.completedOnDay === true,
         },
@@ -268,19 +284,19 @@ export function readWeeklyTheme(raw: unknown): WeeklyTheme | null {
     completed: v.completed === true,
     finished: v.finished === true,
     ending: pick(v.ending, ['NOT_ENDED', 'ENDED'] as const, 'NOT_ENDED'),
-    bigQuestion: text(v.bigQuestion),
+    bigQuestion: optText(v.bigQuestion),
     candidates: texts(v.candidates) ?? [],
-    introImageUrl: text(v.introImageUrl),
-    introVideoUrl: text(v.introVideoUrl),
+    introImageUrl: optText(v.introImageUrl),
+    introVideoUrl: optText(v.introVideoUrl),
     introMotion: readThemeMotion(v.introMotion),
     introSeen: v.introSeen === true,
     outroSeen: v.outroSeen === true,
-    outro: text(v.outro),
-    outroImageUrl: text(v.outroImageUrl),
-    outroVideoUrl: text(v.outroVideoUrl),
+    outro: optText(v.outro),
+    outroImageUrl: optText(v.outroImageUrl),
+    outroVideoUrl: optText(v.outroVideoUrl),
     outroMotion: readThemeMotion(v.outroMotion),
-    answer: text(v.answer),
-    answerClue: text(v.answerClue),
+    answer: optText(v.answer),
+    answerClue: optText(v.answerClue),
   }
 }
 
@@ -367,7 +383,7 @@ export function readAnswerPick(raw: unknown): AnswerPickResult {
   const v = (raw ?? {}) as Record<string, unknown>
   if (typeof v.correct !== 'boolean' || (v.ending !== 'NOT_ENDED' && v.ending !== 'ENDED'))
     throw new Error('정답 확인 결과를 받지 못했어요. 다시 확인해 주세요.')
-  return { correct: v.correct, ending: v.ending, answer: v.ending === 'ENDED' ? text(v.answer) : null }
+  return { correct: v.correct, ending: v.ending, answer: v.ending === 'ENDED' ? optText(v.answer) : null }
 }
 /** KST 기준 요일(월=0 … 일=6). */
 export function kstWeekday(now = new Date()) {
@@ -471,4 +487,107 @@ export function readMyPosts(raw: unknown): MyCommunityPost[] {
       },
     ]
   })
+}
+
+// ---------- 내 방 추억의 벽·추억 앨범 (API 명세 2.12, P27, FN-RET-09~11) ----------
+/** 추억의 벽 슬롯 수(기준안 6, 확장안 3.1) */
+export const FRAME_SLOT_COUNT = 6
+const isoDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+const text = (v: unknown) => (typeof v === 'string' ? v : '')
+function memoryContractError(): never {
+  throw new Error('추억 정보를 확인하지 못했어요. 다시 확인해 주세요.')
+}
+/** 회차 키(학생은 세션). 같은 테마도 주가 다르면 다른 회차 */
+export const episodeKey = (e: { themeId: string; weekStart: string }) => `${e.themeId}@${e.weekStart}`
+
+export interface FrameSlot {
+  slotNo: number
+  themeId: string
+  weekStart: string
+  title: string
+  imageUrl: string | null
+}
+export function readFrameSlots(raw: unknown): FrameSlot[] {
+  const slots = (raw as { slots?: unknown })?.slots
+  if (!Array.isArray(slots)) return memoryContractError()
+  const seen = new Set<number>()
+  return slots.flatMap((x) => {
+    const v = (x ?? {}) as Record<string, unknown>
+    if (!Number.isInteger(v.slotNo) || Number(v.slotNo) < 1 || Number(v.slotNo) > FRAME_SLOT_COUNT ||
+        typeof v.themeId !== 'string' || !v.themeId || !isoDate(v.weekStart)) return memoryContractError()
+    if (seen.has(Number(v.slotNo))) return memoryContractError()
+    seen.add(Number(v.slotNo))
+    return [{ slotNo: Number(v.slotNo), themeId: v.themeId, weekStart: v.weekStart, title: text(v.title),
+      imageUrl: typeof v.imageUrl === 'string' && v.imageUrl ? v.imageUrl : null }]
+  }).sort((a, b) => a.slotNo - b.slotNo)
+}
+
+export interface AlbumItem {
+  themeId: string
+  weekStart: string
+  title: string
+  imageUrl: string | null
+  awardedAt: string
+  seen: boolean
+  displayed: boolean
+}
+export interface Album { items: AlbumItem[]; page: number; size: number; totalElements: number }
+export function readAlbum(raw: unknown): Album {
+  const v = (raw ?? {}) as Record<string, unknown>
+  if (!Array.isArray(v.items) || !nonNegativeInteger(v.page) || !nonNegativeInteger(v.size) || v.size < 1 ||
+      !nonNegativeInteger(v.totalElements) || v.items.length > v.size) return memoryContractError()
+  return {
+    page: v.page, size: v.size, totalElements: v.totalElements,
+    items: v.items.map((x) => {
+      const i = (x ?? {}) as Record<string, unknown>
+      if (typeof i.themeId !== 'string' || !i.themeId || !isoDate(i.weekStart) || typeof i.awardedAt !== 'string' ||
+          !Number.isFinite(Date.parse(i.awardedAt)) || typeof i.seen !== 'boolean' || typeof i.displayed !== 'boolean')
+        return memoryContractError()
+      return { themeId: i.themeId, weekStart: i.weekStart, title: text(i.title),
+        imageUrl: typeof i.imageUrl === 'string' && i.imageUrl ? i.imageUrl : null,
+        awardedAt: i.awardedAt, seen: i.seen, displayed: i.displayed }
+    }),
+  }
+}
+
+export interface EpisodeMission {
+  day: ThemeDay
+  missionId: string
+  title: string
+  thinkingType: ThinkingType | null
+  /** 기존 시도 상세(StudentWorkPage)로 여는 시도. 없으면 기록 없음 */
+  attemptId: string | null
+}
+export interface Episode {
+  themeId: string
+  weekStart: string
+  title: string
+  awardedAt: string
+  missions: EpisodeMission[]
+  /** 엔딩을 보지 않았으면 outro·answer null(P23) */
+  ending: { seen: boolean; outro: string | null; answer: string | null }
+}
+export function readEpisode(raw: unknown): Episode {
+  const v = (raw ?? {}) as Record<string, unknown>
+  const ending = (v.ending ?? {}) as Record<string, unknown>
+  if (typeof v.themeId !== 'string' || !v.themeId || !isoDate(v.weekStart) || typeof v.awardedAt !== 'string' ||
+      !Array.isArray(v.missions) || typeof ending.seen !== 'boolean') return memoryContractError()
+  const seen = ending.seen
+  return {
+    themeId: v.themeId, weekStart: v.weekStart, title: text(v.title), awardedAt: v.awardedAt,
+    missions: v.missions.flatMap((x) => {
+      const m = (x ?? {}) as Record<string, unknown>
+      if (!isDay(m.day) || typeof m.missionId !== 'string' || !m.missionId) return memoryContractError()
+      return [{ day: m.day, missionId: m.missionId, title: text(m.title), thinkingType: isType(m.thinkingType) ? m.thinkingType : null,
+        attemptId: typeof m.attemptId === 'string' && m.attemptId ? m.attemptId : null }]
+    }).sort((a, b) => THEME_DAYS.indexOf(a.day) - THEME_DAYS.indexOf(b.day)),
+    // 엔딩 전 값이 와도 보이지 않게 한 번 더 막는다(P23)
+    ending: { seen, outro: seen && typeof ending.outro === 'string' ? ending.outro : null,
+      answer: seen && typeof ending.answer === 'string' ? ending.answer : null },
+  }
+}
+/** "11월 2주" 같은 회차 주 표시(KST 월요일 날짜 기준) */
+export function weekLabel(weekStart: string) {
+  const [, m, d] = weekStart.split('-').map(Number)
+  return `${m}월 ${Math.floor((d - 1) / 7) + 1}주`
 }

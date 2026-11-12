@@ -601,7 +601,7 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 - `EXTRA`: 생각 유형별 미션 고르기(2.2 `/missions`). 프리미엄 전용(2026-11-10 개정 #483, core #485 V43): 무료 403 `PREMIUM_REQUIRED`, 프리미엄 신규 시도는 `EXTRA_MISSION` 사용 기록. 상품 `features.extraMissions`로 정하며 값이 없으면 무료 거부·구독 중 허용(#506). 무료 상품에서 `true`로 다시 켜면 무료 `EXTRA`만 하루 `limits.dailyMissions`개(2.2). 2026-11-08 결정(무료도 허용·하루 1개 합산)은 개정으로 대체. 전환 방법은 [core 보고서 13절](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387)·18절
 - 무료 `EXTRA`를 다시 켰을 때의 하루 한도는 #210 결정대로 core `mission_daily_usage` 집계(2.2). 테마 학년(`G3`~`G6`, 중학생은 `G6` P26 #432, 학년별 테마 에픽 #436)과 KST 날짜는 core가 정해 learning에 넘긴다(클라이언트 값 미사용). 응답은 `Cache-Control: no-store`
 - 진행 중인 시도의 이어하기(`200`)는 요일 검사를 하지 않는다. 재사용 테마의 이미 푼 문제도 그 주 `OPEN` 요일에는 `THEME_DAY` 신규 시도 가능(그 주에 마무리한 시도만 기준, core 한도 집계 없음)
-- 에픽 #436(learning #438) 주간 테마 응답 추가 칸: 큰 질문 `bigQuestion`·후보 `candidates`·요일 `days[].clue`·`rulesOut`, 시작·종료 장면 영상 `introVideoUrl`·`outroVideoUrl`과 움직임 `introMotion`·`outroMotion`, 엔딩 뒤 정답 `answer`·`answerClue`. 요일 장면 영상은 없다(ai 채택 테마의 미션 `themeScene.videoUrl`은 null). core는 응답을 그대로 전달하고 포인트 적립에 `weekStart`·`completed`·`finished`·`days[].missionId`·`attemptStatus`·`day`·`completedOnDay`만 읽는다. 정답·종료 이야기는 learning이 엔딩 전에 비운다
+- 에픽 #436(learning #438) 주간 테마 응답 추가 칸: 큰 질문 `bigQuestion`·후보 `candidates`·요일 `days[].clue`·`rulesOut`, 시작·종료 장면 영상 `introVideoUrl`·`outroVideoUrl`과 움직임 `introMotion`·`outroMotion`, 엔딩 뒤 정답 `answer`·`answerClue`, 학생이 고른 큰 질문 정답 `answerPick: {pick, correct} | null`(#590, 고르지 않았으면 null, 엔딩 전에도 채움: 고른 후보가 맞았는지만 알 수 있고 정답은 엔딩 뒤 `answer`로만. 틀린 뒤 토요일 다시 풀기 안내와 종료 화면의 정답 공개 구분에 씀). 요일 장면 영상은 없다(ai 채택 테마의 미션 `themeScene.videoUrl`은 null). core는 응답을 그대로 전달하고 포인트 적립에 `weekStart`·`completed`·`finished`·`days[].missionId`·`attemptStatus`·`day`·`completedOnDay`만 읽는다. 정답·종료 이야기는 learning이 엔딩 전에 비운다
 
 ### 2.12 생활공간·추억 (FN-RET-09~13, P27)
 
@@ -615,10 +615,10 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 | GET | `/students/me/album/{themeId}/{weekStart}` | 학생 | 회차 상세 `{themeId, weekStart, title, imageUrl, awardedAt, missions:[{day, missionId, title, thinkingType, attemptId}], ending:{seen, outro, answer}}`. 엔딩을 보지 않았으면 `outro`·`answer` null(P23). 문제별 기록은 기존 시도 상세(2.3·`/attempts/{id}/comparison`)로 연다. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-11 | 핵심(#559·#560) |
 | POST | `/students/me/album/{themeId}/{weekStart}/seen` | 학생 | 새 액자 확인(멱등) → 204. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-10 | 핵심(#559·#560) |
 | POST | `/students/me/memories/search` | 학생 | body `{query}`(1~200자) → `{state, cards:[{themeId, weekStart, title, imageUrl, missions:[{missionId, title, attemptId, answerExcerpt}], score}]}`. `state`는 `RESULTS`·`NO_RESULTS`(관련도 기준 미달)·`NO_RECORDS`(보유 액자 없음), 카드 최대 3개(기준안). 하루 한도 429 `USAGE_LIMIT_REACHED`, 임베딩 장애 503 `AI_UNAVAILABLE`, 형식 오류 400 `VALIDATION_FAILED`(사용량 미기록) | RET-12 | core 구현 #566(learning #563 대기) |
-| POST | `/students/me/memories/explanations` | 학생 | body `{query, attemptIds}`(검색 결과 카드의 시도, 1~3개) → 200 `{state, text, citations:[{no, themeId, weekStart, attemptId}]}`. `state`는 `GENERATED`·`INSUFFICIENT`(근거 부족, 생성 안 함)·`FAILED`(생성·검사 실패, `text` null). 본인 검색 문서가 아닌 `attemptId`는 422 `VALIDATION_FAILED`, 하루 한도 429 `USAGE_LIMIT_REACHED`. 빈 배열·4개 이상·중복·UUID 아님은 core 400 `VALIDATION_FAILED`(사용량 미기록) | RET-13 | core 구현 #566(learning #564 대기) |
+| POST | `/students/me/memories/explanations` | 학생 | body `{query, attemptIds}`(검색 결과 카드의 시도, 1~3개) → 200 `{state, text, citations:[{no, themeId, weekStart, attemptId}]}`. `state`는 `GENERATED`·`INSUFFICIENT`(근거 부족, 생성 안 함)·`FAILED`(생성·검사 실패, `text` null). 본인 검색 문서가 아닌 `attemptId`는 422 `VALIDATION_FAILED`, 하루 한도 429 `USAGE_LIMIT_REACHED`, ai 장애로 설명을 만들지 못하면 503 `AI_UNAVAILABLE`(사용량 미기록, #592). 빈 배열·4개 이상·중복·UUID 아님은 core 400 `VALIDATION_FAILED`(사용량 미기록) | RET-13 | core #566·learning #564 구현 |
 
 - core는 검색·설명 요청마다 `memory_daily_usage`에 기록하고 KST 하루 건수가 상품 한도를 넘으면 롤백한 뒤 learning을 부르지 않고 429(ERD 3.4, #566). 무료·프리미엄 같은 값 20·10(2026-11-12 확정, P13). 키가 없는 기존 구독 스냅숏은 무료 상품 값을 쓴다
-- learning 5xx·시간 초과·연결 실패·서킷 차단이면 기록을 되돌린다(장애가 한도를 깎지 않음). 4xx와 설명 `FAILED`·`INSUFFICIENT`(200)는 센다
+- learning 5xx·시간 초과·연결 실패·서킷 차단이면 기록을 되돌린다(장애가 한도를 깎지 않음). 4xx와 설명 `FAILED`·`INSUFFICIENT`(200)는 센다. 설명의 ai 장애는 learning이 200 `FAILED`가 아니라 503 `AI_UNAVAILABLE`로 돌려주므로 되돌림 대상이다(4.1.4, #592)
 - core → learning은 4.1.4 경로를 프록시하고 본문은 core가 모양을 확인해 다시 만든 뒤 넘기며 응답·오류를 그대로 전달(`Cache-Control: no-store`). 검색·설명 모두 별도 회로 `learning-memory`(검색 응답 30초·설명 45초, 아키텍처 1.3). ai 장애로 생긴 learning 5xx가 일반 `learning-json`을 열지 않게 하려고 검색도 이 회로를 쓴다(2026-11-12 결정)
 - 검색 반영은 학습 완료 뒤 비동기라 방금 완료한 문제는 잠시 결과에 없을 수 있다(앨범에는 바로 보임). 질문·설명은 저장하지 않는다
 - 학생 이외 역할 경로 없음(학부모 화면 미제공)
@@ -1027,10 +1027,12 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/students/{studentId}/album/{themeId}/{weekStart}/seen` | `seen_at` 기록(멱등, 처음 시각 유지) → 204, 미보유 404 `THEME_FRAME_NOT_FOUND` |
 | POST | `/internal/students/{studentId}/frames/ownership` | `{frames:[{themeId, weekStart}]}`(최대 100개) → `{owned:[{themeId, weekStart}]}`(보유한 것만, 중복은 한 번. core 액자 슬롯 저장 전 확인) |
 | POST | `/internal/students/{studentId}/memories/search` | `{query}` → 2.12 검색 응답. 질문 임베딩은 ai 4.2.4, 실패 503 `AI_UNAVAILABLE` |
-| POST | `/internal/students/{studentId}/memories/explanations` | `{query, attemptIds}` → 2.12 설명 응답. 생성은 ai 4.2.6 |
+| POST | `/internal/students/{studentId}/memories/explanations` | `{query, attemptIds}` → 2.12 설명 응답. 생성은 ai 4.2.6. ai 장애 503 `AI_UNAVAILABLE`(아래 설명 규칙) |
 
 - 검색 범위: `memory_search_doc.status = READY` + 본인 + 보유 `theme_frame` 회차 + `theme_week_start < 이번 주(KST)`. 코사인 거리 정렬 뒤 회차 단위로 묶어 상위 3개, 관련도 기준값(기준안, 평가셋으로 조정) 미달은 `NO_RESULTS`
-- 설명: `attemptIds`가 위 범위의 문서인지 다시 확인(아니면 422 `VALIDATION_FAILED`) → 근거 부족 규칙(최고 관련도 기준 미달·답변 너무 짧음)이면 ai를 부르지 않고 `INSUFFICIENT` → ai 응답의 `citations`가 보낸 번호 안이고 따옴표 인용이 근거 원문의 부분 문자열일 때만 `GENERATED`, 아니면 ai 실패와 같이 `FAILED`(200)
+- 설명 기준(#564): 답변은 공백 제외 20자 이상인 것만 근거로 사용한다. 유효 근거가 없거나 유효 근거의 최고 관련도가 0.35 미만이면 `INSUFFICIENT`다. 길이는 설명할 최소 서술을 확보하기 위한 초기값이며 점수·학습 수준 판정이 아니다. 두 값은 설정 가능하고 관련도 최종 평가는 #568에서 수행한다. 길이 미달은 외부 호출 없음, 관련도 미달은 질의 임베딩으로 재확인 후 설명 LLM 호출을 생략한다. 선택 ID의 범위를 AI 호출 전에 확인하고, 질의 임베딩 및 생성 이후에도 범위·근거 변경을 재확인한다. 질문·설명은 저장하지 않는다. 설명 처리 시작부터 35초 예산에서 프로필·질의 임베딩 시간을 빼고 남은 시간을 AI 생성 read timeout으로 전달한다. DB 조회·네트워크 취소 정리를 포함한 엄격한 전체 응답 상한은 아니다.
+- 설명: `attemptIds`가 위 범위의 문서인지 다시 확인(아니면 422 `VALIDATION_FAILED`) → 근거 부족 규칙(최고 관련도 기준 미달·답변 너무 짧음)이면 ai를 부르지 않고 `INSUFFICIENT` → ai 응답의 `citations`가 보낸 번호 안이고 따옴표 인용이 근거 원문의 부분 문자열일 때만 `GENERATED`, 아니면 `FAILED`(200)
+- 설명 실패 구분(#592, 2026-11-12 결정): 생성이 실제로 일어난 실패(ai 422 인용 거부·502 형식 밖 응답·계약 밖 본문, learning 인용 검사 실패, ai 응답 뒤 처리 예산 초과, 호출 중 근거 삭제·변경)는 200 `FAILED`로 core 하루 사용량에 들어간다. 생성 전 실패(프로필·질의 임베딩 실패, 생성 호출 전 35초 예산 소진)와 생성 호출의 ai 장애(503·502 밖 5xx·시간 초과·연결 실패·서킷 열림)는 503 `AI_UNAVAILABLE`이라 core가 사용량을 되돌린다(검색 임베딩 장애와 같음)
 - 학습 완료(돌아보기 저장) 트랜잭션의 액자·검색 문서 등록과 임베딩 주기 작업은 내부 API가 아니다([시퀀스 3.8·3.10](sequence-diagram.md), [상태 3.7](state-diagram.md))
 - **#559 구현(learning V19, 2026-11-12)**: 앨범 목록·회차 상세·확인·보유 확인 4개 경로는 구현(learning OpenAPI). 검색·설명 2개는 설계(구현 전) 그대로. 결정은 [결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12)
   - 보유 = `theme_frame` 행 + `theme_week_start < 이번 주(KST 월요일)`. 4개 경로 모두 같은 기준이라 진행 중인 주 회차는 목록에 없고 상세·확인 404, 보유 확인에서 빠짐(추억의 벽에 앨범에 없는 액자가 걸리지 않음)
@@ -1136,6 +1138,18 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 
 ### 4.3 scoring-service (호출: ai)
+
+#### #549 채점 전 글 정리 (11/12 확정)
+
+- 논술 3.1·서술 3.0에 c판 규칙을 적용한다. 논술은 칸 이름→지시문 복사→반복 제거, 서술은 복사→반복 제거 순서다. 원문은 변경하지 않는다.
+- `essayLabels?: string[]`는 learning 미션 inputTemplate의 네 칸 이름이다. AI는 그대로 scoring에 전달하며, 생략 시 기본 칸 이름을 사용한다.
+- 공백 제외 정리 후 서술 10자 미만, 논술 100자 미만은 `active:true, scored:false, reason:"TEXT_TOO_SHORT"`와 모델·preparation만 반환한다. scores/rawScores는 없다. 기존 `active:false` 및 503과 구분한다.
+- preparation: `{ruleVersion:"1112c",copied,repeated,chars,labelsRemoved,short,truncated,notices}`. notices는 `COPIED_REMOVED`, `REPEATED_REMOVED`, `SHORT_ANSWER`, `EMPTY_AFTER_CLEANING`, `ESSAY_TOO_SHORT`, `ESSAY_ORIGINALLY_SHORT` 코드다. 서술 10~99자는 채점+SHORT_ANSWER, 100자 이상은 정상 채점이다.
+- 512토큰 초과 시 앞+끝을 읽고 짧은 입력은 기존 토큰화를 유지한다. 정수 변환은 b판 score_cuts이며 서술 content3 선택 보정은 정리한 글을 사용한다.
+- AI 저장값 `modelScores.m2Preparation`에 안내를 보존한다. 길이 미달이면 m2는 null이므로 평균·불일치 판단과 report 설명 후보에서 제외한다. 기존 생각 판정을 바꾸지 않는다.
+- 공개 피드백 `judgment.m2Notices?: string[]`는 허용된 한국어 안내만 제공한다. modelScores/숫자는 학생에게 노출하지 않는다.
+- 8:2 혼합은 미채택이다. 가중치·학년 승인·활성화 설정은 유지한다.
+
 
 #### 4.3.1 #228 M2 확정 계약 (2026-11-02 담당자 답변 반영)
 
@@ -1564,4 +1578,4 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 
 배치 주기는 1분, 선점은 최대 64행, AI 요청은 최대 8글씩 순차 처리한다(계약 상한 64글 이내). AI 읽기 20초, core 프로필 읽기 4초, 리스 600초, 재시도는 첫 시도 포함 5회다. 리스는 연결 시간까지 포함한 최대 64회 프로필·8회 AI 대기보다 길다. 벡터 저장·코사인 정렬은 MyBatis 문자열→vector 형변환으로 구현해 드라이버를 추가하지 않는다. 등록·선점은 JdbcTemplate을 사용하고 같은 Spring 트랜잭션에 참여한다.
 
-`MEMORY_EMBEDDING_ENABLED` 기본 false. #565 실제 연동 확인 전 자동 가동하지 않는다. 이미 등록된 문서는 보존하며 활성화 후 주기 작업이 멱등 소급 등록·만료 리스 회수·선점을 한다. 학생 닉네임 조회 실패 시 AI에 보내지 않으며 알려진 닉네임·UUID를 마스킹한다. 운영 로그에 질문·원문을 기록하지 않는다. 원문은 내부 DB에 저장하고 AI 전송용 문자열만 최대 8,000자로 제한한다.
+`MEMORY_EMBEDDING_ENABLED` 앱 기본 false. #565 연동 확인 뒤 GitOps local·prod learning 값에서 true로 켠다(#591). Compose는 `.env`로 넘겨받고 기본 false다(키 없이 켜면 문서가 5회 실패 뒤 `FAILED`). 이미 등록된 문서는 보존하며 활성화 후 주기 작업이 멱등 소급 등록·만료 리스 회수·선점을 한다. 학생 닉네임 조회 실패 시 AI에 보내지 않으며 알려진 닉네임·UUID를 마스킹한다. 운영 로그에 질문·원문을 기록하지 않는다. 원문은 내부 DB에 저장하고 AI 전송용 문자열만 최대 8,000자로 제한한다.

@@ -20,6 +20,8 @@ data class AiJudgeRequest(
     val question: String? = null,
     val keywords: List<String> = emptyList(),
     val essayType: String? = null,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+    val essayLabels: List<String> = emptyList(),
 )
 
 data class AiRubric(val elements: List<AiRubricElement>)

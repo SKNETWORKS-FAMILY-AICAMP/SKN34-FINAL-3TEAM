@@ -100,7 +100,7 @@ test('해금 확인→잔액 갱신→테마·아이템 저장과 판매 중단 
   expect(state.equipped.HAT).toBe('HAT_ACORN')
   await expect(dialog.getByRole('radio', { name: '종이 왕관 · 보유 중', exact: true })).toBeEnabled()
   await dialog.getByRole('button', { name: '다 골랐어요' }).click()
-  await page.getByRole('button', { name: '내 포인트', exact: true }).click()
+  await page.getByRole('button', { name: '설정', exact: true }).click() // 내 포인트는 설정 안(#583)
   await expect(page.getByText('지금 160포인트', { exact: false })).toBeVisible()
   await page.getByRole('button', { name: '다음 내역', exact: true }).click()
   await expect(page.getByText('2 / 2쪽', { exact: true })).toBeVisible()

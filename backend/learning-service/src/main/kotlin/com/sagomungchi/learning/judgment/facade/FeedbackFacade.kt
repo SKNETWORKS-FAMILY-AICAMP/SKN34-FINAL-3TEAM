@@ -75,7 +75,7 @@ class FeedbackFacade(
         try {
             val mission = missionService.getVersion(attempt.missionVersionId)
             val rubric = missionService.rubric(attempt.missionVersionId, attempt.rubricVersionId)
-            val judged = judge(target, attempt, rubric)
+            val judged = judge(target, attempt, rubric, mission)
             val followup = if (needsFollowup(target, attempt, judged)) {
                 followup(target, attempt, timeline.answers, mission, rubric, judged)
             } else {
@@ -118,10 +118,10 @@ class FeedbackFacade(
      * 규칙(RuleJudge, 고르기·수학 최종 답)과 ai(서술·논술·풀이 단계) 판정 (class-diagram 4.2 처리 순서 2).
      * 풀이 단계는 둘 다 해당해 합침
      */
-    private fun judge(target: FeedbackTarget, attempt: Attempt, rubric: Rubric): Judged {
+    private fun judge(target: FeedbackTarget, attempt: Attempt, rubric: Rubric, mission: MissionView): Judged {
         val rule = ruleJudges.firstOrNull { it.supports(target.inputType) }
             ?.judge(target.content, requireNotNull(rubric.answerKey) { "정답 키 없음" })
-        val ai = if (target.inputType in AI_INPUT_TYPES) byAi(target, attempt, rubric) else null
+        val ai = if (target.inputType in AI_INPUT_TYPES) byAi(target, attempt, rubric, mission) else null
         return when {
             ai == null -> withAnswerKey(checkNotNull(rule) { "판정 방법 없는 입력 방식 ${target.inputType}" }, target, rubric)
             rule == null -> ai
@@ -164,7 +164,7 @@ class FeedbackFacade(
     }
 
     /** 서술·논술·풀이: ai 근거 추출·원문 대조 (FN-JDG-03). 학생 식별정보 없이 원문·학년·기준표만 */
-    private fun byAi(target: FeedbackTarget, attempt: Attempt, rubric: Rubric): Judged {
+    private fun byAi(target: FeedbackTarget, attempt: Attempt, rubric: Rubric, mission: MissionView): Judged {
         val response = aiClient.judge(
             AiJudgeRequest(
                 answerText = target.plainText,
@@ -179,6 +179,7 @@ class FeedbackFacade(
                 question = rubric.question,
                 keywords = rubric.keywords,
                 essayType = rubric.essayType,
+                essayLabels = if (target.inputType == InputType.ESSAY) mission.inputTemplate.takeIf { it.size == 4 }.orEmpty() else emptyList(),
             ),
         )
         return fromAi(response, rubric)

@@ -84,6 +84,10 @@
     {
       "name": "CORE_URL",
       "value": "http://core-service.app.svc.cluster.local:8080"
+    },
+    {
+      "name": "MEMORY_EMBEDDING_ENABLED",
+      "value": "true"
     }
   ],
   "extraVolumeMounts": [

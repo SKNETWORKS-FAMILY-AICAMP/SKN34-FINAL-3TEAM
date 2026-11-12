@@ -11,15 +11,17 @@ const when = (iso: string) =>
   new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'short' })
 
 /** 내 포인트 (P21, API 명세 2.10). 잔액은 나와 학부모님만 보고, 순위·소멸은 없다. */
-export function StudentPoints({ child }: { child: Child }) {
+export function StudentPoints({ child, embedded = false }: { child: Child; embedded?: boolean }) {
   const [page, setPage] = useState(0)
   const points = useMyPoints(child.id, page)
   const [decorating, setDecorating] = useState(false)
+  // embedded: 학생 설정(#583) 안의 한 부분(제목 h2, 바깥 main 없음)
+  const Wrapper = embedded ? 'section' : 'main', Title = embedded ? 'h2' : 'h1'
   return (
-    <main className="st-paper st-sheet st-points-page">
-      <h1>
+    <Wrapper className={embedded ? 'st-points-page st-settings-part' : 'st-paper st-sheet st-points-page'} aria-labelledby="points-h">
+      <Title id="points-h" tabIndex={embedded ? -1 : undefined}>
         <Coins aria-hidden="true" /> 내 포인트
-      </h1>
+      </Title>
       {points.isPending && <p role="status">포인트를 확인하고 있어요.</p>}
       <ErrorNotice error={points.error} retry={() => void points.refetch()} />
       {points.data && !points.error && (
@@ -67,6 +69,6 @@ export function StudentPoints({ child }: { child: Child }) {
           <Customize child={child} onDone={() => setDecorating(false)} />
         </Modal>
       )}
-    </main>
+    </Wrapper>
   )
 }

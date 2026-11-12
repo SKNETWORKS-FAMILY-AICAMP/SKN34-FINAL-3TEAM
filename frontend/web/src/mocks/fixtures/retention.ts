@@ -81,6 +81,21 @@ interface State {
   picks: Record<string, { pick: string; correct: boolean; at: string }>
   /** `학생:주:미션` → 마지막 학습 완료 요일(0=월 … 6=일)·시각. 당일 풀이·틀린 뒤 다시 풀기 판정에 쓴다. */
   completions: Record<string, { weekday: number; at: string }>
+  /** 기념 액자(P27): studentId → 보유 회차. 지난 주 회차만 */
+  frames: Record<string, MockFrame[]>
+  /** 추억의 벽: studentId → 슬롯 */
+  frameSlots: Record<string, { slotNo: number; themeId: string; weekStart: string }[]>
+}
+export interface MockFrame {
+  themeId: string
+  weekStart: string
+  title: string
+  awardedAt: string
+  seenAt: string | null
+  missions: { day: ThemeDay; missionId: string; title: string; thinkingType: string }[]
+  endingSeen: boolean
+  outro: string
+  answer: string
 }
 
 const now = () => new Date().toISOString()
@@ -90,6 +105,13 @@ const seedItems = (): MockLookItem[] => [
   { itemId: 'look-acc-1', code: 'ACC_LENS', slot: 'ACCESSORY', name: '돋보기', pricePoints: 30, assetKey: 'looks/acc-lens.svg', status: 'ON_SALE', updatedAt: '2026-11-06T00:00:00Z' },
   { itemId: 'look-bg-1', code: 'BG_STARS', slot: 'BACKGROUND', name: '별빛 배경', pricePoints: 50, assetKey: 'looks/bg-stars.svg', status: 'ON_SALE', updatedAt: '2026-11-06T00:00:00Z' },
   { itemId: 'look-hat-2', code: 'HAT_CROWN', slot: 'HAT', name: '종이 왕관', pricePoints: 80, assetKey: 'looks/hat-crown.svg', status: 'STOPPED', updatedAt: '2026-11-06T00:00:00Z' },
+  // 내 방 가구 추가 스킨(P27, #557 기준안). 기본 스킨은 착용 칸이 비었을 때 그려서 아이템으로 두지 않는다
+  { itemId: 'look-desk-1', code: 'DESK_MINT', slot: 'DESK', name: '민트 책상', pricePoints: 60, assetKey: 'room/desk-mint.svg', status: 'ON_SALE', updatedAt: '2026-11-12T00:00:00Z' },
+  { itemId: 'look-desk-2', code: 'DESK_NIGHT', slot: 'DESK', name: '밤하늘 책상', pricePoints: 120, assetKey: 'room/desk-night.svg', status: 'ON_SALE', updatedAt: '2026-11-12T00:00:00Z' },
+  { itemId: 'look-wall-1', code: 'WALL_WOOD', slot: 'WALL', name: '나무 벽', pricePoints: 60, assetKey: 'room/wall-wood.svg', status: 'ON_SALE', updatedAt: '2026-11-12T00:00:00Z' },
+  { itemId: 'look-wall-2', code: 'WALL_PASTEL', slot: 'WALL', name: '구름 벽', pricePoints: 120, assetKey: 'room/wall-pastel.svg', status: 'ON_SALE', updatedAt: '2026-11-12T00:00:00Z' },
+  { itemId: 'look-wardrobe-1', code: 'WARDROBE_SKY', slot: 'WARDROBE', name: '하늘 옷장', pricePoints: 60, assetKey: 'room/wardrobe-sky.svg', status: 'ON_SALE', updatedAt: '2026-11-12T00:00:00Z' },
+  { itemId: 'look-wardrobe-2', code: 'WARDROBE_BERRY', slot: 'WARDROBE', name: '딸기 옷장', pricePoints: 120, assetKey: 'room/wardrobe-berry.svg', status: 'ON_SALE', updatedAt: '2026-11-12T00:00:00Z' },
 ]
 const empty = (): State => ({
   ledger: {},
@@ -106,12 +128,19 @@ const empty = (): State => ({
   storyViews: [],
   picks: {},
   completions: {},
+  frames: {},
+  frameSlots: {},
 })
 export const retentionState: State = (() => {
   if (typeof sessionStorage === 'undefined') return empty()
   try {
     const raw = sessionStorage.getItem(storageKey)
-    return raw ? { ...empty(), ...(JSON.parse(raw) as Partial<State>) } : empty()
+    if (!raw) return empty()
+    const loaded = { ...empty(), ...(JSON.parse(raw) as Partial<State>) }
+    // 전에 저장한 개발 상태에도 새로 넣은 목업 아이템(가구 스킨 등)이 보이게 코드 기준으로 채운다
+    const codes = new Set(loaded.items.map((i) => i.code))
+    loaded.items = [...loaded.items, ...seedItems().filter((i) => !codes.has(i.code))]
+    return loaded
   } catch {
     return empty()
   }
@@ -404,3 +433,47 @@ export function seededShuffle<T>(items: T[], seed: string) {
   }
   return out
 }
+
+// ---------- 기념 액자·추억 앨범·추억의 벽 (P27, API 명세 2.12 기준안) ----------
+/** 빈 앨범을 보려면 개발 도구에서 sessionStorage에 이 키로 '1'을 넣는다. */
+export const MOCK_ALBUM_EMPTY_KEY = 'sagomungchi:msw-album-empty'
+const PAST_THEMES = [
+  { title: '잃어버린 지도 조각', outro: '다섯 조각을 모두 맞추자 지도가 호수 한가운데 섬을 가리켰어요.', answer: '등대 아래 바위' },
+  { title: '별빛 우체국', outro: '마지막 편지는 우체국장 할아버지가 어릴 때 쓴 편지였어요.', answer: '우체국장 할아버지' },
+  { title: '숲속 발명 대회', outro: '다람쥐의 도토리 굴리개가 숲 친구들의 표를 가장 많이 받았어요.', answer: '도토리 굴리개' },
+]
+const addDays = (iso: string, days: number) => {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+/** 처음 보는 학생은 지난 3주 회차를 가상으로 둔다: 1주 전은 새 액자, 2주 전은 엔딩을 못 봄, 3주 전은 벽에 걸림 */
+export function framesOf(studentId: string, missions: Mission[]): MockFrame[] {
+  const empty = typeof sessionStorage !== 'undefined' && sessionStorage.getItem(MOCK_ALBUM_EMPTY_KEY) === '1'
+  if (empty) return []
+  if (!retentionState.frames[studentId] && missions.length) {
+    const thisWeek = weekStart()
+    retentionState.frames[studentId] = PAST_THEMES.map((t, i) => {
+      const k = i + 1
+      const start = addDays(thisWeek, -7 * k)
+      return {
+        themeId: `mock-theme-${k}`,
+        weekStart: start,
+        title: t.title,
+        awardedAt: `${addDays(start, 4)}T10:30:00Z`,
+        seenAt: k === 1 ? null : `${addDays(start, 5)}T01:00:00Z`,
+        missions: THEME_DAYS.map((day, d) => {
+          const m = missions[(i * 5 + d) % missions.length]
+          return { day, missionId: m.id, title: m.title, thinkingType: m.thinkingType }
+        }),
+        endingSeen: k !== 2,
+        outro: t.outro,
+        answer: t.answer,
+      }
+    })
+    retentionState.frameSlots[studentId] ??= [{ slotNo: 1, themeId: 'mock-theme-3', weekStart: addDays(thisWeek, -21) }]
+    persistRetention()
+  }
+  return retentionState.frames[studentId] ?? []
+}
+export const frameSlotsOf = (studentId: string) => (retentionState.frameSlots[studentId] ??= [])

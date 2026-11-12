@@ -8,6 +8,8 @@ import {
   communityOf,
   consentOf,
   earn,
+  frameSlotsOf,
+  framesOf,
   isUnlocked,
   lookCatalog,
   MOCK_STORY,
@@ -25,10 +27,10 @@ import {
   weekStart,
   weeklyThemeFor,
 } from '../fixtures/retention.ts'
-import { guard, mockStudent, mockStudentHome, respond } from './student.ts'
+import { guard, mockLatestAttempt, mockStudent, mockStudentHome, respond } from './student.ts'
 import { consentRows, docs, fixtureConsent, parentChild } from './parent.ts'
 import { allow } from './admin.ts'
-import { THEME_DAYS } from '../../domain/retention.ts'
+import { ALL_ITEM_SLOTS, THEME_DAYS } from '../../domain/retention.ts'
 import type { ItemSlot, ThemeDay } from '../../domain/retention.ts'
 import type { MockLookItem, MockWeeklyTheme } from '../fixtures/retention.ts'
 import { THINKING_ORDER } from '../../domain/studentLook.ts'
@@ -179,6 +181,77 @@ export const retentionHandlers = [
       const after = weeklyThemeFor(me.id, missions, me.grade, me.plan)
       return saved({ correct: pick === MOCK_STORY.answer, ending: after.ending, answer: after.answer })
     }),
+  ),
+
+  // ---------- 내 방 추억의 벽·추억 앨범 (2.12 기준안, P27) ----------
+  http.get('/api/v1/students/me/room/frame-slots', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const frames = framesOf(me.id, (await mockStudentHome(me)).missions)
+      return { slots: frameSlotsOf(me.id).flatMap((s) => {
+        const f = frames.find((x) => x.themeId === s.themeId && x.weekStart === s.weekStart)
+        return f ? [{ ...s, title: f.title, imageUrl: null }] : []
+      }) }
+    }),
+  ),
+  http.put('/api/v1/students/me/room/frame-slots', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const frames = framesOf(me.id, (await mockStudentHome(me)).missions)
+      const body = (await request.json()) as { slots?: unknown }
+      if (!Array.isArray(body.slots)) fail(422, 'VALIDATION_FAILED', '슬롯 목록을 확인해 주세요.')
+      const slots = (body.slots as Record<string, unknown>[]).map((s) => ({ slotNo: Number(s?.slotNo), themeId: String(s?.themeId ?? ''), weekStart: String(s?.weekStart ?? '') }))
+      const keys = new Set(slots.map((s) => `${s.themeId}@${s.weekStart}`))
+      if (slots.some((s) => !Number.isInteger(s.slotNo) || s.slotNo < 1 || s.slotNo > 6) ||
+          new Set(slots.map((s) => s.slotNo)).size !== slots.length || keys.size !== slots.length)
+        fail(422, 'VALIDATION_FAILED', '슬롯 번호나 액자가 겹쳐요.')
+      if (slots.some((s) => !frames.some((f) => f.themeId === s.themeId && f.weekStart === s.weekStart)))
+        fail(404, 'THEME_FRAME_NOT_FOUND', '가지고 있지 않은 액자예요.')
+      retentionState.frameSlots[me.id] = slots
+      return saved({ slots: slots.map((s) => ({ ...s, title: frames.find((f) => f.themeId === s.themeId && f.weekStart === s.weekStart)!.title, imageUrl: null })) })
+    }),
+  ),
+  http.get('/api/v1/students/me/album', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const { page: p, size } = page(request)
+      const frames = [...framesOf(me.id, (await mockStudentHome(me)).missions)].sort((a, b) => b.weekStart.localeCompare(a.weekStart))
+      const shown = new Set(frameSlotsOf(me.id).map((s) => `${s.themeId}@${s.weekStart}`))
+      return {
+        items: frames.slice(p * size, p * size + size).map((f) => ({ themeId: f.themeId, weekStart: f.weekStart, title: f.title, imageUrl: null,
+          awardedAt: f.awardedAt, seen: !!f.seenAt, displayed: shown.has(`${f.themeId}@${f.weekStart}`) })),
+        page: p, size, totalElements: frames.length,
+      }
+    }),
+  ),
+  http.get('/api/v1/students/me/album/:themeId/:weekStart', ({ request, params }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const f = framesOf(me.id, (await mockStudentHome(me)).missions)
+        .find((x) => x.themeId === String(params.themeId) && x.weekStart === String(params.weekStart))
+      if (!f) return fail(404, 'THEME_FRAME_NOT_FOUND', '가지고 있지 않은 액자예요.')
+      return {
+        themeId: f.themeId, weekStart: f.weekStart, title: f.title, awardedAt: f.awardedAt,
+        missions: f.missions.map((m) => ({ ...m, attemptId: mockLatestAttempt(me.id, m.missionId) })),
+        ending: { seen: f.endingSeen, outro: f.endingSeen ? f.outro : null, answer: f.endingSeen ? f.answer : null },
+      }
+    }),
+  ),
+  http.post('/api/v1/students/me/album/:themeId/:weekStart/seen', ({ request, params }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const f = framesOf(me.id, (await mockStudentHome(me)).missions)
+        .find((x) => x.themeId === String(params.themeId) && x.weekStart === String(params.weekStart))
+      if (!f) return fail(404, 'THEME_FRAME_NOT_FOUND', '가지고 있지 않은 액자예요.')
+      f.seenAt ??= new Date().toISOString()
+      persistRetention()
+      return undefined // 204 본문 없음
+    }, 204),
   ),
 
   // ---------- 커뮤니티 (2.9) ----------
@@ -389,7 +462,7 @@ export const retentionHandlers = [
       const b = (await request.json()) as Partial<MockLookItem>
       if (typeof b.code !== 'string' || !/^[A-Z0-9_]{3,40}$/.test(b.code)) fail(422, 'VALIDATION_FAILED', '코드를 확인해 주세요.')
       if (retentionState.items.some((i) => i.code === b.code)) fail(409, 'LOOK_ITEM_CODE_DUPLICATE', '이미 있는 코드입니다.')
-      if (!['HAT', 'OUTFIT', 'ACCESSORY', 'BACKGROUND'].includes(String(b.slot))) fail(422, 'VALIDATION_FAILED', '칸을 확인해 주세요.')
+      if (!(ALL_ITEM_SLOTS as string[]).includes(String(b.slot))) fail(422, 'VALIDATION_FAILED', '칸을 확인해 주세요.')
       const item: MockLookItem = {
         itemId: `look-${crypto.randomUUID().slice(0, 8)}`,
         code: b.code!,

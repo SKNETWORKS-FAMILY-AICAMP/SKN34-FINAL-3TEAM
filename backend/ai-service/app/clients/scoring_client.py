@@ -10,7 +10,7 @@ from typing import Any, Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.judgment.models import ModelIdentity
+from app.judgment.models import M2Preparation, ModelIdentity
 
 NARRATIVE_ITEMS = frozenset(
     (
@@ -39,12 +39,26 @@ class M2Scores(BaseModel):
 
     active: Literal[True]
     inputType: Literal["NARRATIVE", "ESSAY"]
-    scores: dict[str, int]
-    rawScores: dict[str, float]
+    scores: dict[str, int] | None = None
+    rawScores: dict[str, float] | None = None
+    scored: bool = True
+    reason: Literal["TEXT_TOO_SHORT"] | None = None
+    preparation: M2Preparation | None = None
     model: ModelIdentity
 
     @model_validator(mode="after")
     def known_items(self):
+        if not self.scored:
+            if (
+                self.reason != "TEXT_TOO_SHORT"
+                or self.preparation is None
+                or self.scores is not None
+                or self.rawScores is not None
+            ):
+                raise ValueError("invalid scoreless response")
+            return self
+        if self.scores is None or self.rawScores is None or self.reason is not None:
+            raise ValueError("scored response requires scores")
         items = NARRATIVE_ITEMS if self.inputType == "NARRATIVE" else ESSAY_ITEMS
         if set(self.scores) != items or set(self.rawScores) != items:
             raise ValueError("scores keys do not match inputType")

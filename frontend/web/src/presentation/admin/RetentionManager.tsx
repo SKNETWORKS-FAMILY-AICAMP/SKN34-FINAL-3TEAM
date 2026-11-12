@@ -5,7 +5,7 @@ import { adminRetentionApi as api } from '../../data/admin/retentionApi.ts'
 import { useAdminMutation, useAdminQuery } from '../../data/admin/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { thinkingLabels } from '../../domain/classroom.ts'
-import { DAY_LABELS, ITEM_SLOTS, SLOT_LABELS, THEME_DAYS } from '../../domain/retention.ts'
+import { ALL_ITEM_SLOTS, DAY_LABELS, SLOT_LABELS, THEME_DAYS } from '../../domain/retention.ts'
 import type { ItemSlot, ThemeDay } from '../../domain/retention.ts'
 import {
   THEME_GRADE_LABELS,
@@ -256,7 +256,7 @@ function ItemEditor({ item, onClose }: { item?: AdminLookItem; onClose: () => vo
         <label>코드<input aria-label="아이템 코드" required pattern="[A-Z0-9_]{3,40}" disabled={!!item} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} /></label>
         <label>칸
           <select aria-label="아이템 칸" disabled={!!item} value={slot} onChange={(e) => setSlot(e.target.value as ItemSlot)}>
-            {ITEM_SLOTS.map((s) => <option key={s} value={s}>{SLOT_LABELS[s]}</option>)}
+            {ALL_ITEM_SLOTS.map((s) => <option key={s} value={s}>{SLOT_LABELS[s]}</option>)}
           </select>
         </label>
         <label>이름<input aria-label="아이템 이름" required maxLength={40} value={name} onChange={(e) => setName(e.target.value)} /></label>

@@ -83,6 +83,7 @@ export interface Feedback {
     judgmentId: string
     result: JudgmentResult
     trial: boolean
+    m2Notices?: string[]
     heldReason?: string | null
     elements?: FeedbackElement[]
     /** 정정 여부. 리포트 집계용이라 화면에서는 쓰지 않음 (#244) */

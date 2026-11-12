@@ -27,7 +27,7 @@ async function studentLogin(page: Page) {
 
 test('학생 공개 설정 @responsive', async ({ page }, testInfo) => {
   await studentLogin(page)
-  await page.getByRole('button', { name: '공개 설정', exact: true }).click()
+  await page.getByRole('button', { name: '설정', exact: true }).click()
   await expect(page.getByRole('heading', { name: '내 답 공개 설정', exact: true })).toBeVisible()
   await expect(page.getByRole('radio', { name: '비공개로 둘게요' })).toBeChecked()
   await page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
@@ -37,6 +37,31 @@ test('학생 공개 설정 @responsive', async ({ page }, testInfo) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
   await page.screenshot({ path: testInfo.outputPath('student-sharing.png'), fullPage: true })
   await writeFile(testInfo.outputPath('sharing-rendered.html'), (await page.content()).replace(/<script\b[\s\S]*?<\/script>/gi, ''))
+})
+
+test('학생 설정 한 곳에서 공개 설정·내 포인트·로그아웃, 학부모 로그인 문구 없음 (#583) @responsive', async ({ page }) => {
+  await studentLogin(page)
+  const menu = page.getByRole('navigation', { name: '학생 메뉴' })
+  await expect(menu.getByRole('button', { name: '설정', exact: true })).toBeVisible()
+  await expect(menu.getByRole('button', { name: /공개 설정|내 포인트|학부모 로그인/ })).toHaveCount(0)
+  await expect(page.getByText('학부모 로그인')).toHaveCount(0)
+  await menu.getByRole('button', { name: '설정', exact: true }).click()
+  await expect(page).toHaveURL(/\/student\/settings/)
+  await expect(page.getByRole('heading', { name: '설정', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '내 답 공개 설정', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '내 포인트', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '내 포인트 보기', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '내 포인트', exact: true })).toBeFocused()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  await page.getByRole('button', { name: '로그아웃', exact: true }).click()
+  await expect(page).toHaveURL(/\/login/)
+})
+
+test('옛 내 포인트 주소는 설정의 포인트 부분을 연다 (#583)', async ({ page }) => {
+  await studentLogin(page)
+  await page.evaluate(() => { history.pushState({}, '', '/student/points'); dispatchEvent(new PopStateEvent('popstate')) })
+  await expect(page.getByRole('heading', { name: '내 포인트', exact: true })).toBeFocused()
+  await expect(page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '설정', exact: true })).toHaveAttribute('aria-current', 'page')
 })
 
 test('학생 결과의 이전·현재 공책 비교 @responsive', async ({ page }, testInfo) => {
@@ -249,7 +274,9 @@ test('동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부
   await page.getByRole('link', { name: '사고뭉치 홈', exact: true }).filter({ visible: true }).click()
   await enterStudentFixture(page)
   await expect(page).toHaveURL(/\/student\/home/)
-  await page.getByRole('button', { name: '학부모 로그인으로', exact: true }).click()
+  // 학생 로그아웃은 설정 안에서(#583)
+  await page.getByRole('button', { name: '설정', exact: true }).click()
+  await page.getByRole('button', { name: '로그아웃', exact: true }).click()
   await expect(page).toHaveURL(/\/login/)
   const unlock = page.getByRole('form', { name: '학부모 화면으로 돌아가기' })
   await unlock.getByLabel('보호자 비밀번호').fill('1111')
