@@ -43,7 +43,7 @@ python infrastructure/aws/demo_stack.py --profile sagomungchi-provided plan
 
 - RDS `sagomungchi-demo-db`: PostgreSQL 17.11, db.t4g.small, Single-AZ, 비공개, 암호화, 백업 7일. 삭제 보호 false. PITR 복원 시각은 JSON에 기록했지만 실제 복원 시간·RPO/RTO 달성은 미검증이다.
 - `sagomungchi-demo-347161580747-{web,missions,reports,models}`: 버전 관리·Public Access Block 상태는 JSON 참고. 웹만 CloudFront OAC로 제공하며 reports/models는 앱 IAM 및 서비스 권한 검사를 통한다.
-- VPC의 available NAT GW는 1개이며 JSON에 ID·subnet을 기록했다. AZ 장애 시 외부 호출 복구 검증은 하지 않았다.
+- VPC의 available NAT GW는 1개이며 JSON에 ID·subnet을 기록했다. AZ 장애 시 외부 호출 복구 검증은 하지 않았다. 2026-11-12 데모 정지 중 비용 축소로 NAT와 EIP, core ALB를 지웠다. 재개 때 NAT 재생성 뒤 private 경로 교체와 CloudFront origin 변경이 필요하다([재개 순서](../eks/README.md#재개-순서와-완료-기준)).
 - RDS·S3·IAM 생성은 위 `demo_stack.py apply`로 정의했다. 웹 버킷 policy(CloudFront 배포 ID 필요)와 lifecycle은 정의하지 않았다. 관측 파일을 재생성 완료 근거로 사용하지 않는다.
 
 ## 배포·복구 유의 사항
