@@ -24,7 +24,9 @@ import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeFailure
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.Season
+import com.sagomungchi.learning.theme.domain.StandardSemesters
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
+import com.sagomungchi.learning.theme.domain.ThemeSemester
 import com.sagomungchi.learning.theme.domain.ThemeTopicSeeds
 import com.sagomungchi.learning.theme.domain.ThemeWeek
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
@@ -59,6 +61,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var properties: AppProperties
     @Autowired lateinit var clock: Clock
     @Autowired lateinit var jdbc: JdbcTemplate
+    @Autowired lateinit var semesters: StandardSemesters
     @MockitoBean lateinit var ai: ThemeDraftAiClient
 
     private val admin = UUID.randomUUID()
@@ -89,6 +92,8 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         assertTrue(missions[3].standardCodes.single() in math)
         assertEquals(listOf(InputType.NARRATIVE, InputType.NARRATIVE, InputType.SOLUTION_STEPS, InputType.NARRATIVE), auto.map { it.inputType })
         assertEquals(4, auto.map { it.standardCodes.single() }.toSet().size)
+        val semester = ThemeSemester.of(ThemeGrade.G5, nextWeek) // #536: 주제가 있는 관리자 요청도 그 학년·학기 후보 풀
+        assertTrue(auto.all { semesters.covers(it.standardCodes.single(), semester) }, "$semester $auto")
 
         fun rejects(changed: ThemeDraftCommand) = assertCode(400, "VALIDATION_FAILED") { service.request(changed) }
         rejects(command(weekStart = nextWeek.plusDays(1))) // 월요일 아님
@@ -113,8 +118,9 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
 
     @Test
     fun `자동 성취기준은 같은 학년 최근 4주 초안 코드를 피함 (그 전 주·다른 학년 코드는 상관없음)`() {
-        val korean = missions.standardsOf("국어", "초3~4").map { it.code }
-        val math = missions.standardsOf("수학", "초3~4").map { it.code }
+        val semester = ThemeSemester.of(ThemeGrade.G3, nextWeek) // #536: 후보 풀은 그 학년·학기 성취기준
+        val korean = missions.standardsOf("국어", "초3~4").map { it.code }.filter { semesters.covers(it, semester) }
+        val math = missions.standardsOf("수학", "초3~4").map { it.code }.filter { semesters.covers(it, semester) }
         val (recent, rest) = korean.take(korean.size - 4) to korean.takeLast(4)
         recent.chunked(recent.size / 4 + 1).forEachIndexed { index, codes ->
             seedDraft(ThemeGrade.G3, nextWeek.minusWeeks(index + 1L), codes, math.drop(1))
@@ -127,6 +133,26 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         val codes = draft.input.missions.filter { it.thinkingType != ThinkingType.SOLVE }.map { it.standardCodes.single() }
         assertEquals(rest.toSet(), codes.toSet())
         assertEquals(math.first(), draft.input.missions[3].standardCodes.single())
+    }
+
+    @Test
+    fun `배운 학기 성취기준을 최근 4주에 모두 썼어도 위 학년 성취기준은 고르지 않고 이번 학기에서 다시 씀 (#536)`() {
+        val semester = ThemeSemester.of(ThemeGrade.G3, nextWeek)
+        val soFar = ThemeSemester.soFar(ThemeGrade.G3, nextWeek)
+        fun learned(subject: String) = missions.standardsOf(subject, "초3~4").map { it.code }.filter { code -> soFar.any { semesters.covers(code, it) } }
+        val korean = learned("국어")
+        val math = learned("수학")
+        val upper = missions.standardsOf("국어", "초3~4").map { it.code } - korean.toSet()
+        assertTrue(upper.isNotEmpty()) // 학년군 표에는 아직 배우지 않은 4학년 성취기준이 있음
+        korean.chunked(korean.size / 4 + 1).zip(math.chunked(math.size / 4 + 1)).forEachIndexed { index, (k, m) ->
+            seedDraft(ThemeGrade.G3, nextWeek.minusWeeks(4L - index), k, m) // 4주에 걸쳐 배운 코드 전부
+        }
+
+        val draft = service.request(command(grade = ThemeGrade.G3, missions = emptyList()))
+
+        val codes = draft.input.missions.flatMap { it.standardCodes }
+        assertTrue(codes.all { semesters.covers(it, semester) }, "$semester $codes") // 이번 학기에서 가장 오래전에 쓴 것
+        assertTrue(codes.none { it in upper }, codes.toString())
     }
 
     @Test
@@ -143,7 +169,10 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
             assertEquals(listOf(DraftStatus.GENERATING, null, 5), listOf(it.status, it.requestedBy, it.input.missions.size))
             assertTrue(it.input.topic in ThemeTopicSeeds.ALL.map { seed -> seed.topic }, it.input.topic)
             val band = ThemeDraftRules.gradeBand(it.grade).take(2)
-            assertTrue(it.input.missions.flatMap { m -> m.standardCodes }.all { code -> code.startsWith(if (band == "초3") "4" else "6") }, it.input.toString())
+            val codes = it.input.missions.flatMap { m -> m.standardCodes }
+            assertTrue(codes.all { code -> code.startsWith(if (band == "초3") "4" else "6") }, it.input.toString())
+            val semester = ThemeSemester.of(it.grade, nextWeek) // #536: 그 학년·학기 성취기준만(시드·대응표 실제 값)
+            assertTrue(codes.all { code -> semesters.covers(code, semester) }, "$semester $codes")
         }
         assertEquals(3, auto.mapNotNull { it.input.topic }.toSet().size) // 같은 주 다른 학년과 겹치지 않음
         verifyNoInteractions(ai)
@@ -298,7 +327,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         val all = service.list(null, null, 0, 20).items
         assertEquals(all.sortedByDescending { it.createdAt }.map { it.draftId }, all.map { it.draftId })
 
-        val view = ThemeDraftService(drafts, ai, missions, themes, properties, clock, TestAssets.urls).view(drafts.findById(ready.id)!!)
+        val view = ThemeDraftService(drafts, ai, missions, themes, properties, clock, TestAssets.urls, semesters).view(drafts.findById(ready.id)!!)
         assertEquals(ThemeDraftRules.SCENES, view.scenes.map { it.scene })
         view.scenes.forEach {
             assertTrue(it.imageUrl!!.startsWith(TestAssets.BASE + ThemeDraftFixtures.key(it.scene) + "?"), it.imageUrl)

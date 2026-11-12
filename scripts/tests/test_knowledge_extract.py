@@ -227,8 +227,11 @@ class ExtractedDataTests(unittest.TestCase):
         """학기는 semester_map.csv(코드↔학기만)와 같고, 학년은 학기에서 정한다. 학기 없는 성취기준 목록을 낸다."""
         with SEMESTER_MAP.open(encoding="utf-8", newline="") as file:
             reader = csv.DictReader(file)
-            header, rows = reader.fieldnames, {row["code"]: row for row in reader}
+            header, all_rows = reader.fieldnames, {row["code"]: row for row in reader}
         self.assertEqual(header, extract.SEMESTER_COLUMNS)
+        # 대응표는 초1·초2도 담고(#536, test_semester_map_lower_grades), 고시 원문 추출은 초3~6 행만 쓴다
+        self.assertEqual(set(all_rows), set(extract.map_target_seed(extract.load_seed(SEED))))
+        rows = {code: row for code, row in all_rows.items() if row["noticeGradeBand"] in BANDS}
         self.assertEqual(set(rows), set(self.seed))
         semester = re.compile(r"^([3-6]-[12](;[3-6]-[12])*)?$")
         no_semester = []
@@ -253,6 +256,30 @@ class ExtractedDataTests(unittest.TestCase):
             self.assertTrue(any(note.startswith("학기 대응:") for note in self.standards[code]["notes"]), code)
         moral = [r for r in self.standards.values() if r["subject"] == "도덕" and r["noticeGradeBand"] == "초5~6"]
         self.assertTrue(all(any("서울 5~6학년" in n for n in r["notes"]) for r in moral))  # 초5·초6 도덕 학기 출처 표시
+
+    def test_semester_map_lower_grades(self):
+        """초1·초2 행(#536 미리 준비): 성취기준 표 초1~2 코드 전부, 학기는 1-1~2-2, 서울 1~4학년 도움자료만."""
+        with SEMESTER_MAP.open(encoding="utf-8", newline="") as file:
+            rows = [row for row in csv.DictReader(file) if row["noticeGradeBand"] == "초1~2"]
+        seed = extract.load_seed(SEED)
+        lower = {code for code, row in seed.items() if row["band"] == "초1~2"}
+        self.assertEqual({row["code"] for row in rows}, lower)
+        self.assertEqual(Counter(row["subject"] for row in rows),
+                         Counter({"국어": 23, "수학": 29, "바른 생활": 16, "슬기로운 생활": 16, "즐거운 생활": 16}))
+        semester = re.compile(r"^[12]-[12](;[12]-[12])*$")
+        for row in rows:
+            self.assertRegex(row["semesters"], semester, row["code"])  # 학기가 빈 행 없음
+            self.assertEqual(row["semesters"], row["seoul"], row["code"])
+            self.assertEqual(row["gyeonggi"], "", row["code"])
+            self.assertTrue(set(row["seoulFocus"].split(";")) <= set(row["semesters"].split(";")), row["code"])
+            self.assertEqual(row["basis"], extract.BASIS_LOWER, row["code"])
+            self.assertNotIn(row["code"], self.standards)  # 고시 원문 추출본에는 없음
+
+    def test_learning_copy_equals_semester_map(self):
+        """learning이 읽는 사본(#536, Docker 빌드가 learning 폴더만 보므로 사본을 둠)은 원본과 같다. 원본을 바꾸면 사본도 바꾼다."""
+        copy = ROOT / "backend/learning-service/src/main/resources/knowledge/semester_map.csv"
+        normalize = lambda path: path.read_bytes().replace(b"\r\n", b"\n")  # noqa: E731  (작업 트리 줄바꿈 차이만 무시)
+        self.assertEqual(normalize(copy), normalize(SEMESTER_MAP))
 
     def test_summary_matches_records(self):
         self.assertEqual(self.summary["dataset"], "curriculum-v1")
@@ -488,6 +515,9 @@ class ParsingHelperTests(unittest.TestCase):
         """서울 1~4학년 연결표 머리글은 엑셀이 날짜로 바꾼 값(45717=3월 1일 → '3-1')."""
         self.assertEqual([extract.excel_header_semester(v) for v in ("45717", "45718", "45719", "45720")],
                          ["3-1", "3-2", "3-3", "3-4"])  # 3-3·3-4는 머리글 오타(실제 4-1·4-2), 교과별 시트로 바로잡음
+        # 1-2 시트(#536)는 45658·45659·45689·45690 = 1월 1·2일, 2월 1·2일 → 바르게 1-1·1-2·2-1·2-2
+        self.assertEqual([extract.excel_header_semester(v) for v in ("45658", "45659", "45689", "45690")],
+                         ["1-1", "1-2", "2-1", "2-2"])
         self.assertEqual(extract.excel_header_semester("5-2"), "5-2")
 
 
