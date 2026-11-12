@@ -316,7 +316,7 @@ report CI의 `Prepare report PDF runtime`에서 Ubuntu 패키지 미러 DNS 일�
 
 - OS 의존성(`playwright install-deps chromium`) → 한글 글꼴(`fonts-noto-cjk`) → Chromium(`playwright install chromium`) 순서로 분리한다. 실패한 단계만 최대 3회 실행하고 사이에 5초·10초 대기한다. 마지막 종료 코드를 그대로 반환해 지속 장애를 성공으로 숨기지 않는다.
 - Playwright가 내부에서 실행하는 apt에도 적용되도록 `/etc/apt/apt.conf.d/80report-pdf-runtime`에 파일 다운로드 재시도 3회, HTTP·HTTPS 대기 30초, update 일부 실패도 오류로 처리하는 설정을 둔다. 단계 재시도와 APT 자체 파일 재시도는 서로 다른 계층이다.
-- Chromium 다운로드 연결 대기는 45초, CI 설치 단계 전체 상한은 15분이다. 상한 초과나 최종 실패면 테스트·이미지 빌드로 넘어가지 않는다.
+- Chromium 다운로드 연결 대기는 45초, CI 설치 단계 전체 상한은 5분이다. 상한 초과나 최종 실패면 해당 테스트 작업은 실패한다. develop의 CI 병렬화에 따라 이미지 빌드는 별도 작업으로 실행되며, 이미지 안에서도 같은 설치 스크립트가 실패하면 빌드가 실패한다.
 - CI의 일반 사용자에서는 필요한 apt 작업만 sudo, Docker 빌드에서는 root로 실행한다. Chromium 경로와 최종 이미지 사용자(uid 10001)는 유지한다.
 - 같은 설치 실패가 이미지 빌드에서도 발생할 수 있으므로 Dockerfile도 적용했다. 새 액션·Python 패키지·외부 미러·기본 이미지 교체는 없다.
 
@@ -331,3 +331,6 @@ report CI의 `Prepare report PDF runtime`에서 Ubuntu 패키지 미러 DNS 일�
 - 실제 Docker 이미지 빌드 및 uid 10001·네트워크 차단 상태에서 합성 리포트 PDF·HTML·Markdown 생성 통과. Noto Sans CJK KR 글꼴 검색 확인. 별도 `fc-match` 실행에서는 쓰기 가능한 글꼴 캐시 디렉터리가 없다는 경고가 있었으나 글꼴 조회와 PDF 생성은 성공했다.
 - 재사용 워크플로에서 report 전용 설치 단계를 제외한 구성이 기존과 동일함을 비교 확인.
 - GitHub report CI는 PR 생성 후 검증할 항목이며, 위 로컬 결과로 원격 통과를 대신하지 않는다.
+
+develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 이미지 캐시, 작업별 15분 제한과 report 설치 단계 5분 제한을 유지했다. report 설치 명령만 재시도 스크립트 호출로 대체한다.
+병합 후 Linux 설치 장애 테스트 8개와 report 렌더링 테스트 11개가 통과했다. YAML 구조 비교로 최신 develop 대비 report 설치 명령 외 변경이 없음을 확인했다.
