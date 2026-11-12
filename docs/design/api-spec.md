@@ -92,7 +92,7 @@
 | `CHILD_LIMIT_REACHED` | 409 | 학부모당 자녀 3명 초과 등록 (FN-ACC-06, P02) |
 | `REPORT_REGENERATION_LIMIT` / `REPORT_GENERATION_IN_PROGRESS` | 409 / 409 | 학부모의 같은 자녀·주 리포트 재생성 1회 초과 (FN-RPT-12, P06) / 같은 주 생성 작업 진행 중 (5.5) |
 | `WITHDRAWAL_BLOCKED` | 409 | 진행 중 구독·미처리 환불이 있어 탈퇴 불가, 정리 대상 포함 (FN-ACC-12, P09) |
-| `USAGE_LIMIT_REACHED` | 429 | 요금제 사용 한도 도달(무료: 분석 대화 없음, 무료 상품에서 추가 문제를 다시 켠 경우의 무료 `EXTRA` 하루 `limits.dailyMissions`개. 2026-11-10 개정 #483·core #485 뒤 무료 테마 문제는 하루 한도 없이 주 5개(learning 공개 규칙), 무료 추가 문제는 403 `PREMIUM_REQUIRED`. 프리미엄: 하루 피드백 50회·분석 대화 30회). 추억 검색·설명 하루 한도(`limits.dailyMemorySearches`·`dailyMemoryExplanations`, 기준안 20·10, 2.12 설계)도 같은 코드, 가능 범위·사유·초기화 시점 포함 (FN-ADM-19, P13, P27) |
+| `USAGE_LIMIT_REACHED` | 429 | 요금제 사용 한도 도달(무료: 분석 대화 없음, 무료 상품에서 추가 문제를 다시 켠 경우의 무료 `EXTRA` 하루 `limits.dailyMissions`개. 2026-11-10 개정 #483·core #485 뒤 무료 테마 문제는 하루 한도 없이 주 5개(learning 공개 규칙), 무료 추가 문제는 403 `PREMIUM_REQUIRED`. 프리미엄: 하루 피드백 50회·분석 대화 30회). 추억 검색·설명 하루 한도(`limits.dailyMemorySearches`·`dailyMemoryExplanations`, 2026-11-12 확정 20·10, 2.12, core #566)도 같은 코드이며 `detail`에 하루 횟수와 "내일 0시(KST)에 초기화"를 넣는다(새 칸 없음). 가능 범위·사유·초기화 시점 포함 (FN-ADM-19, P13, P27) |
 | `AI_UNAVAILABLE` | 503 / 502 | AI 처리 실패, `retryable` 포함 (처리 실패 상태, 보류와 구분). ai·learning 피드백은 503, core 분석 대화의 ai 연결 실패·서킷 차단·스트림 중단은 502 (#167) |
 | `SESSION_CHANGED` | 401 | 다른 탭에서 역할·세션이 바뀌어 access의 세션 version 불일치 (5.1) |
 | `REFRESH_REUSED` | 401 | 이미 사용된 refresh 재사용 → 해당 세션 전체 폐기 (5.1) |
@@ -611,11 +611,12 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 | GET | `/students/me/album?page&size` | 학생 | 보유 액자 회차(진행 중인 주·`EXTRA` 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, awardedAt, seen, displayed}], page, size, totalElements}` | RET-10, RET-11 | 설계 |
 | GET | `/students/me/album/{themeId}/{weekStart}` | 학생 | 회차 상세 `{themeId, weekStart, title, awardedAt, missions:[{day, missionId, title, thinkingType, attemptId}], ending:{seen, outro, answer}}`. 엔딩을 보지 않았으면 `outro`·`answer` null(P23). 문제별 기록은 기존 시도 상세(2.3·`/attempts/{id}/comparison`)로 연다. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-11 | 설계 |
 | POST | `/students/me/album/{themeId}/{weekStart}/seen` | 학생 | 새 액자 확인(멱등) → 204. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-10 | 설계 |
-| POST | `/students/me/memories/search` | 학생 | body `{query}`(1~200자) → `{state, cards:[{themeId, weekStart, title, imageUrl, missions:[{missionId, title, attemptId, answerExcerpt}], score}]}`. `state`는 `RESULTS`·`NO_RESULTS`(관련도 기준 미달)·`NO_RECORDS`(보유 액자 없음), 카드 최대 3개(기준안). 하루 한도 429 `USAGE_LIMIT_REACHED`, 임베딩 장애 503 `AI_UNAVAILABLE` | RET-12 | 설계 |
-| POST | `/students/me/memories/explanations` | 학생 | body `{query, attemptIds}`(검색 결과 카드의 시도, 1~3개) → 200 `{state, text, citations:[{no, themeId, weekStart, attemptId}]}`. `state`는 `GENERATED`·`INSUFFICIENT`(근거 부족, 생성 안 함)·`FAILED`(생성·검사 실패, `text` null). 본인 검색 문서가 아닌 `attemptId`는 422 `VALIDATION_FAILED`, 하루 한도 429 `USAGE_LIMIT_REACHED` | RET-13 | 설계 |
+| POST | `/students/me/memories/search` | 학생 | body `{query}`(1~200자) → `{state, cards:[{themeId, weekStart, title, imageUrl, missions:[{missionId, title, attemptId, answerExcerpt}], score}]}`. `state`는 `RESULTS`·`NO_RESULTS`(관련도 기준 미달)·`NO_RECORDS`(보유 액자 없음), 카드 최대 3개(기준안). 하루 한도 429 `USAGE_LIMIT_REACHED`, 임베딩 장애 503 `AI_UNAVAILABLE`, 형식 오류 400 `VALIDATION_FAILED`(사용량 미기록) | RET-12 | core 구현 #566(learning #563 대기) |
+| POST | `/students/me/memories/explanations` | 학생 | body `{query, attemptIds}`(검색 결과 카드의 시도, 1~3개) → 200 `{state, text, citations:[{no, themeId, weekStart, attemptId}]}`. `state`는 `GENERATED`·`INSUFFICIENT`(근거 부족, 생성 안 함)·`FAILED`(생성·검사 실패, `text` null). 본인 검색 문서가 아닌 `attemptId`는 422 `VALIDATION_FAILED`, 하루 한도 429 `USAGE_LIMIT_REACHED`. 빈 배열·4개 이상·중복·UUID 아님은 core 400 `VALIDATION_FAILED`(사용량 미기록) | RET-13 | core 구현 #566(learning #564 대기) |
 
-- core는 검색·설명 요청마다 `memory_daily_usage`에 기록하고 KST 하루 건수가 상품 한도를 넘으면 learning을 부르지 않고 429(ERD 3.5.2). 무료·프리미엄 같은 값(기준안, P13)
-- core → learning은 4.1.4 경로를 프록시하고 응답을 그대로 전달. 설명 경로는 별도 회로 `learning-memory`(아키텍처 1.3)
+- core는 검색·설명 요청마다 `memory_daily_usage`에 기록하고 KST 하루 건수가 상품 한도를 넘으면 롤백한 뒤 learning을 부르지 않고 429(ERD 3.4, #566). 무료·프리미엄 같은 값 20·10(2026-11-12 확정, P13). 키가 없는 기존 구독 스냅숏은 무료 상품 값을 쓴다
+- learning 5xx·시간 초과·연결 실패·서킷 차단이면 기록을 되돌린다(장애가 한도를 깎지 않음). 4xx와 설명 `FAILED`·`INSUFFICIENT`(200)는 센다
+- core → learning은 4.1.4 경로를 프록시하고 본문은 core가 모양을 확인해 다시 만든 뒤 넘기며 응답·오류를 그대로 전달(`Cache-Control: no-store`). 검색·설명 모두 별도 회로 `learning-memory`(검색 응답 30초·설명 45초, 아키텍처 1.3). ai 장애로 생긴 learning 5xx가 일반 `learning-json`을 열지 않게 하려고 검색도 이 회로를 쓴다(2026-11-12 결정)
 - 검색 반영은 학습 완료 뒤 비동기라 방금 완료한 문제는 잠시 결과에 없을 수 있다(앨범에는 바로 보임). 질문·설명은 저장하지 않는다
 - 학생 이외 역할 경로 없음(학부모 화면 미제공)
 
