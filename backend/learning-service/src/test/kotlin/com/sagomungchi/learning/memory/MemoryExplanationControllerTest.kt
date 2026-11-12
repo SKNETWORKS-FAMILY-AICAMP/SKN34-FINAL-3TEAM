@@ -57,4 +57,8 @@ class MemoryExplanationControllerTest(@Autowired private val mvc: MockMvc) {
         given(service.explain(student,"질문",listOf(attempt))).willThrow(BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,"VALIDATION_FAILED","범위 오류"))
         mvc.post(url) { auth();content=valid }.andExpect { status { isUnprocessableEntity() } }
     }
+    @Test fun `ai 장애는 503 AI_UNAVAILABLE`() {
+        given(service.explain(student,"질문",listOf(attempt))).willThrow(BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"AI_UNAVAILABLE","추억 설명을 잠시 사용할 수 없어요"))
+        mvc.post(url) { auth();content=valid }.andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("AI_UNAVAILABLE") } }
+    }
 }
