@@ -15,6 +15,8 @@
 - 고시 원문 단위: 성취기준(해설은 원문에 있는 것만), 영역(내용 체계·적용 시 고려 사항), 내용 요소,
   교과 지침(교수⋅학습 및 평가 한 장), 생각 유형(`thinking_types.md`)
 - 학기 대응 자료(교육청)는 성취기준 코드↔학년·학기만 옮긴다. 평가 요소·성취수준·수업 방법 문장은 읽지 않는다
+- 학기 대응표(`semester-map`)는 초1·초2도 담는다(국어·수학·바른 생활·슬기로운 생활·즐거운 생활, #536 미리
+  준비). 고시 원문 추출(`extract`)은 초3~6 그대로라 초1·초2 행은 읽지 않는다
 - 표준 라이브러리만 쓴다
 """
 
@@ -50,7 +52,12 @@ SUBJECT_ORDER = ["국어", "도덕", "사회", "수학", "과학"]
 BANDS = {"3~4": "초3~4", "5~6": "초5~6"}
 BAND_GRADES = {"초3~4": [3, 4], "초5~6": [5, 6]}
 SEMESTERS = ["3-1", "3-2", "4-1", "4-2", "5-1", "5-2", "6-1", "6-2"]
-CODE = r"\d[가-힣]+\d{2}\s*[-–—‐]\s*\d{2}"
+# 학기 대응표 대상(#536): 고시 원문 추출 대상(위)에 초1·초2를 더함. 초1·초2 통합교과는 학기 대응표에만
+INTEGRATED = ["바른 생활", "슬기로운 생활", "즐거운 생활"]
+MAP_SUBJECT_ORDER = [*SUBJECT_ORDER, *INTEGRATED]
+MAP_BAND_GRADES = {"초1~2": [1, 2], **BAND_GRADES}
+MAP_SEMESTERS = ["1-1", "1-2", "2-1", "2-2", *SEMESTERS]
+CODE =r"\d[가-힣]+\d{2}\s*[-–—‐]\s*\d{2}"
 CODE_RE = re.compile(CODE)
 CODE_LINE = re.compile(rf"^\[({CODE})\]\s*(.*)$", re.S)
 CODE_RANGE = rf"\[{CODE}(?:\s*[~∼]\s*\d{{2}})?\]"
@@ -115,6 +122,12 @@ def load_seed(path: Path = SEED) -> dict[str, dict]:
 def target_seed(seed: dict[str, dict]) -> dict[str, dict]:
     return {code: row for code, row in seed.items()
             if row["subject"] in SUBJECTS.values() and row["band"] in BAND_GRADES}
+
+
+def map_target_seed(seed: dict[str, dict]) -> dict[str, dict]:
+    """학기 대응표 대상: 고시 원문 추출 대상 + 초1·초2(국어·수학·통합교과)."""
+    return {code: row for code, row in seed.items()
+            if row["subject"] in MAP_SUBJECT_ORDER and row["band"] in MAP_BAND_GRADES}
 
 
 # --- 학기 대응(xlsx) ------------------------------------------------------------------------------
@@ -191,28 +204,41 @@ class SemesterSource:
     from_sheet: set[str] = field(default_factory=set)  # 연결표에 없어 교과별 시트에서 옮긴 코드
 
 
+SEOUL_14_SHEETS = {"1-2": "2", "3-4": "4"}  # 연결표 시트 이름 앞 → 그 학년군 성취기준 코드 첫 글자
+
+
 def read_seoul_14(path: Path) -> SemesterSource:
-    """서울 1~4학년 도움자료: `3-4성취기준 단원 연결표` 시트(E~H 칸)에서 학기, 교과별 시트로 머리글 확인."""
+    """서울 1~4학년 도움자료: `1-2`·`3-4성취기준 단원 연결표` 시트(E~H 칸)에서 학기, 교과별 시트로 머리글 확인.
+
+    `1-2` 시트(초1·초2)는 #536에서 더함. 두 시트는 같은 모양(E~H 학기, ● 중점·○ 지속)이다.
+    """
     sheets = read_xlsx(path)
-    name = next(n for n in sheets if n.startswith("3-4") and "연결표" in n)
-    rows = sheets[name]
+    names = {prefix: next(n for n in sheets if n.startswith(prefix) and "연결표" in n) for prefix in SEOUL_14_SHEETS}
+    source = SemesterSource(f"{SEOUL_14} " + "·".join(f"「{n}」" for n in names.values()) + " 시트")
+    # 교과별 시트(국어·수학·통합·도덕·사회·과학)의 `학년-학기` 칸으로 머리글을 맞춘다(평가 문장은 읽지 않음)
+    evaluated: dict[str, set[str]] = {}
+    for sheet_name in ("국어", "수학", "통합", "도덕", "사회", "과학"):
+        for cells in sheets.get(sheet_name, []):
+            semester = cells.get("A", "").strip()
+            code = _row_code(cells, "BC")
+            if code and re.fullmatch(r"[1-4]-[12]", semester):
+                evaluated.setdefault(code, set()).add(semester)
+    for prefix, name in names.items():
+        _read_seoul_link_sheet(sheets[name], evaluated, SEOUL_14_SHEETS[prefix], source)
+    return source
+
+
+def _read_seoul_link_sheet(rows: list[dict[str, str]], evaluated: dict[str, set[str]], code_head: str,
+                           source: SemesterSource) -> None:
+    """연결표 시트 하나: 머리글(엑셀 날짜로 바뀐 칸 포함)을 교과별 시트 학년-학기와 중점 표시로 맞춰 학기를 읽는다."""
     header_row = next(r for r in rows if sum(excel_header_semester(v) is not None for v in r.values()) >= 4)
     header = {column: excel_header_semester(value) for column, value in header_row.items()}
-    source = SemesterSource(f"{SEOUL_14} 「{name}」 시트")
     columns = [c for c in "EFGH" if c in header]
     raw: dict[str, dict[str, str]] = {}
     for cells in rows:
         code = _row_code(cells, "C")
         if code:
             raw[code] = {column: cells.get(column, "") for column in columns}
-    # 교과별 시트(국어·수학·도덕·사회·과학)의 `학년-학기` 칸으로 머리글을 맞춘다(평가 문장은 읽지 않음)
-    evaluated: dict[str, set[str]] = {}
-    for sheet_name in ("국어", "수학", "도덕", "사회", "과학"):
-        for cells in sheets.get(sheet_name, []):
-            semester = cells.get("A", "").strip()
-            code = _row_code(cells, "BC")
-            if code and re.fullmatch(r"[34]-[12]", semester):
-                evaluated.setdefault(code, set()).add(semester)
     mapping = {}
     for column in columns:
         votes = Counter()
@@ -228,12 +254,11 @@ def read_seoul_14(path: Path) -> SemesterSource:
         source.semesters[code] = [mapping[c] for c in columns if marks[c].strip()]
         source.focus[code] = [mapping[c] for c in columns if "●" in marks[c]]
     for code in sorted(set(evaluated) - set(raw)):
-        if code.startswith("4"):
+        if code.startswith(code_head):
             source.semesters[code] = sorted(evaluated[code])
             source.from_sheet.add(code)
             semesters = ", ".join(sorted(evaluated[code]))
             source.notes.append(f"{code}: 연결표에 행이 없어 교과별 시트의 학년-학기({semesters})로 채움")
-    return source
 
 
 def read_seoul_56(path: Path) -> SemesterSource:
@@ -275,6 +300,7 @@ BASIS_DIFF = "경기·서울 다름(경기 기준안, 사람 확인)"
 BASIS_SEOUL = "서울(경기 자료는 PDF라 표준 라이브러리로 읽지 않음)"
 BASIS_MORAL = "서울(경기 자료에 도덕 없음)"
 BASIS_SHEET = "서울 교과별 시트(연결표에 행이 없음)"
+BASIS_LOWER = "서울(경기 자료는 초3~6만)"
 
 
 def build_semester_map(seed: dict[str, dict], seoul: list[SemesterSource], gyeonggi: SemesterSource | None):
@@ -282,14 +308,16 @@ def build_semester_map(seed: dict[str, dict], seoul: list[SemesterSource], gyeon
 
     출처.md 기준안: 국어·수학은 경기 자료(팀 정리본으로 읽음), 사회·과학·도덕은 서울 자료. 학기는 단원이 있는
     학기 모두(서울 표시로는 중점●·지속○ 모두). 두 자료가 다르면 `basis`에 적고 사람이 정한다.
+    초1·초2(#536)는 경기 자료가 초3~6만이라 모두 서울 1~4학년 도움자료.
     """
     rows, differences = [], []
-    for code, info in sorted(target_seed(seed).items(), key=lambda item: standard_key(item[0], item[1]["subject"])):
+    targets = map_target_seed(seed)
+    for code, info in sorted(targets.items(), key=lambda item: standard_key(item[0], item[1]["subject"])):
         seoul_source = next((s for s in seoul if code in s.semesters), None)
         seoul_semesters = seoul_source.semesters[code] if seoul_source else None
         focus = seoul_source.focus.get(code, []) if seoul_source else []
         gyeonggi_semesters = gyeonggi.semesters.get(code) if gyeonggi else None
-        band_semesters = [s for s in SEMESTERS if int(s[0]) in BAND_GRADES[info["band"]]]
+        band_semesters = [s for s in MAP_SEMESTERS if int(s[0]) in MAP_BAND_GRADES[info["band"]]]
         if info["subject"] in ("국어", "수학") and gyeonggi_semesters is not None:
             chosen = gyeonggi_semesters
             basis = BASIS_SAME if seoul_semesters in (None, gyeonggi_semesters) else BASIS_DIFF
@@ -297,8 +325,12 @@ def build_semester_map(seed: dict[str, dict], seoul: list[SemesterSource], gyeon
                 differences.append({"code": code, "gyeonggi": gyeonggi_semesters, "seoul": seoul_semesters})
         elif seoul_semesters is not None:
             chosen = seoul_semesters
-            basis = BASIS_SHEET if code in seoul_source.from_sheet else (
-                BASIS_MORAL if info["subject"] == "도덕" else BASIS_SEOUL)
+            if code in seoul_source.from_sheet:
+                basis = BASIS_SHEET
+            elif info["band"] not in BAND_GRADES:
+                basis = BASIS_LOWER
+            else:
+                basis = BASIS_MORAL if info["subject"] == "도덕" else BASIS_SEOUL
         else:
             chosen, basis = [], "자료 없음"
         chosen = [s for s in chosen if s in band_semesters]
@@ -309,8 +341,8 @@ def build_semester_map(seed: dict[str, dict], seoul: list[SemesterSource], gyeon
 
 
 def standard_key(code: str, subject: str):
-    """교과 순서(국어·도덕·사회·수학·과학) → 코드 순."""
-    return SUBJECT_ORDER.index(subject), code
+    """교과 순서(국어·도덕·사회·수학·과학, 그 뒤 초1·초2 통합교과) → 코드 순."""
+    return MAP_SUBJECT_ORDER.index(subject), code
 
 
 def write_semester_map(path: Path, rows: list[dict]) -> None:
