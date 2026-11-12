@@ -24,6 +24,32 @@ SOURCE_LABELS = {
 }
 
 
+def theme_day_label(day: dict) -> str:
+    """#486: 그날·나중에·못 풀었어요. completedInWeek가 없는 이전 입력은 완료/미완료 그대로."""
+    if day.get("completedInWeek") is None:
+        return "완료" if day["completed"] else "미완료"
+    if day["completed"]:
+        return "그날 풀었어요"
+    return "나중에 풀었어요" if day["completedInWeek"] else "못 풀었어요"
+
+
+def theme_status_lines(theme: dict) -> list[str]:
+    """#486 새 칸이 하나라도 있으면 개근·주간 완주·엔딩, 없으면 이전 완주 줄."""
+    finished, ending = theme.get("finished"), theme.get("ending")
+    if (
+        finished is None
+        and ending is None
+        and all(day.get("completedInWeek") is None for day in theme["days"])
+    ):
+        return ["완주: " + ("완료" if theme["completed"] else "미완료")]
+    lines = ["개근: " + ("했어요" if theme["completed"] else "못 했어요")]
+    if finished is not None:
+        lines.append("주간 완주: " + ("완료" if finished else "미완료"))
+    if ending is not None:
+        lines.append("엔딩: " + ("봤어요" if ending == "ENDED" else "아직 못 봤어요"))
+    return lines
+
+
 class ReportRenderer:
     def __init__(self) -> None:
         self._templates = Environment(
@@ -38,6 +64,8 @@ class ReportRenderer:
             state_labels=STATE_LABELS,
             source_labels=SOURCE_LABELS,
             difficulty_labels=DIFFICULTY_LABELS,
+            theme_day_label=theme_day_label,
+            theme_status_lines=theme_status_lines,
         )
 
     def render(self, report: dict, display_name: str) -> dict[str, bytes]:
@@ -225,10 +253,9 @@ class ReportRenderer:
         if theme:
             ordered.extend(["", "## 이번 주 테마", safe(theme["title"] or "참여 기록 없음")])
             if theme["state"] != "NO_RECORD":
-                ordered.append("완주: " + ("완료" if theme["completed"] else "미완료"))
+                ordered.extend(theme_status_lines(theme))
                 ordered.extend(
-                    safe(day["day"]) + ": " + ("완료" if day["completed"] else "미완료")
-                    for day in theme["days"]
+                    safe(day["day"]) + ": " + theme_day_label(day) for day in theme["days"]
                 )
                 ordered.extend(
                     "다시 풀기: " + safe(retry.get("title") or retry["missionId"])
