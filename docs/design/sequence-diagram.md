@@ -905,13 +905,17 @@ sequenceDiagram
     C->>CDB: memory_daily_usage (EXPLANATION) — 한도 초과 429
     C->>L: POST /internal/students/{id}/memories/explanations (회로 learning-memory)
     L->>LDB: attemptIds가 본인 READY 문서인지 확인, 근거 [1]~[3] 구성
+    L->>A: 질의 임베딩 (길이 충족 근거가 있을 때만)
+    L->>LDB: 선택 근거 범위·내용 재확인 및 최고 관련도 계산
     alt 근거 부족
       L-->>C: {state: INSUFFICIENT}
     else
       L->>A: POST /internal/memory-explanations {query, evidence[번호·테마·미션·답변 일부]}
       A->>LLM: 설명 생성 (callType MEMORY_EXPLANATION)
       A-->>L: {text, citations}
-      L->>L: 번호 범위·인용 원문 대조, 번호 → 회차·시도
+      L->>L: 문장별 번호·인용 원문 대조
+      L->>LDB: 삭제·범위·근거 내용 변경 재확인
+      L->>L: 번호 → 회차·시도
       L-->>C: {state: GENERATED|FAILED, text, citations}
     end
     C-->>W: 200

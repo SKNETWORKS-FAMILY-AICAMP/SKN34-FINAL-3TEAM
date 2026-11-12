@@ -227,4 +227,54 @@ class MemorySearchTest {
             jdbc.update("DELETE FROM attempt WHERE id=?",id)
         }
     }
+
+    @Autowired lateinit var evidenceRepository: com.sagomungchi.learning.memory.repository.MemoryEvidenceRepository
+    @Test fun `설명 근거 조회도 본인 준비 지난 회차와 실제 코사인 점수만 사용`() {
+        val id=attempt(text="책을 빌리러 멀리 가야 해서 우리 동네에 도서관이 필요하다고 생각했어요.")
+        val other=attempt(owner=UUID.randomUUID());frame();repository.register();ready()
+        val evidence=evidenceRepository.find(student,week.plusWeeks(1),listOf(id,other),vector)
+        assertEquals(listOf(id),evidence.map { it.attemptId });assertEquals(1.0,evidence.single().score,0.0001)
+        assertTrue(evidenceRepository.find(student,week,listOf(id)).isEmpty())
+        jdbc.update("UPDATE memory_search_doc SET status='PENDING' WHERE attempt_id=?",id)
+        assertTrue(evidenceRepository.find(student,week.plusWeeks(1),listOf(id)).isEmpty())
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named="MEMORY_REAL_EXPLANATION",matches="true")
+    fun `564 실제 외부 임베딩과 LLM 설명을 저장 근거에 재대조`() {
+        val text="우리 동네에는 도서관이 필요해요. 책을 빌리려면 버스를 타고 삼십 분이나 가야 해서 불편해요. 가까운 도서관이 생기면 친구와 책을 읽고 숙제도 할 수 있어요."
+        val id=attempt(text=text);frame()
+        jdbc.update("UPDATE mission_version SET question=?,title=? WHERE id=?","우리 동네에 도서관이 필요한 까닭은 무엇인가요?","동네 도서관",missions.first().versionId)
+        org.springframework.test.context.transaction.TestTransaction.flagForCommit()
+        org.springframework.test.context.transaction.TestTransaction.end()
+        val props=com.sagomungchi.learning._common.config.AppProperties(
+            com.sagomungchi.learning._common.config.AppProperties.Internal("memory563-local-test",java.time.Duration.ofSeconds(2),java.time.Duration.ofSeconds(35)),
+            services=mapOf("ai" to System.getenv("MEMORY_AI_URL")))
+        val mapper=com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        val factory=com.sagomungchi.learning._common.config.InternalRestClientFactory(props,
+            org.springframework.web.client.RestClient.builder().messageConverters { it.add(0,org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(mapper)) })
+        val embedding=com.sagomungchi.learning.memory.service.MemoryEmbeddingClient(factory,mapper)
+        val privacy=org.mockito.Mockito.mock(com.sagomungchi.learning.memory.service.MemoryTextPrivacy::class.java)
+        org.mockito.Mockito.`when`(privacy.nickname(student)).thenReturn("합성학생")
+        org.mockito.Mockito.`when`(privacy.mask(org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())).thenAnswer { it.arguments[0] }
+        val ai=com.sagomungchi.learning.memory.service.MemoryExplanationAiClient(factory,mapper)
+        val service=com.sagomungchi.learning.memory.service.MemoryExplanationService(evidenceRepository,embedding,privacy,ai,
+            com.sagomungchi.learning.memory.service.MemoryEvidenceRules(),java.time.Clock.fixed(now,java.time.ZoneOffset.UTC),0.35,20)
+        try {
+            val worker=com.sagomungchi.learning.memory.service.MemoryEmbeddingWorker(repository,embedding,privacy,
+                org.springframework.transaction.support.TransactionTemplate(transactionManager),java.time.Clock.fixed(now,java.time.ZoneOffset.UTC))
+            assertEquals(1,worker.runBatch())
+            val start=System.nanoTime()
+            val result=service.explain(student,"도서관이 필요하다고 생각한 까닭을 알려줘",listOf(id))
+            assertEquals("GENERATED",result.state)
+            assertEquals(listOf(id),result.citations.map { it.attemptId })
+            println("MEMORY_REAL_EXPLANATION state=${result.state} citations=${result.citations.size} elapsed_ms=${(System.nanoTime()-start)/1_000_000}")
+            System.getenv("MEMORY_REAL_RESULT")?.let { java.io.File(it).writeText(mapper.findAndRegisterModules().disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS).writeValueAsString(result)) }
+        } finally {
+            repository.deleteByStudent(student)
+            jdbc.update("DELETE FROM theme_frame WHERE student_id=?",student)
+            jdbc.update("DELETE FROM answer WHERE attempt_id=?",id)
+            jdbc.update("DELETE FROM attempt WHERE id=?",id)
+        }
+    }
 }
