@@ -6732,6 +6732,109 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/album:
+    get:
+      operationId: getMemoryAlbum
+      tags: [Memory]
+      summary: 추억 앨범 목록 (#560, FN-RET-10·11)
+      description: >-
+        STUDENT 전용(P27, api-spec 2.12). 학생은 세션 값이고 쿼리는 page·size만 다시 만들어 learning GET /internal/students/{studentId}/album으로
+        넘긴다(일반 learning-json 서킷, 응답 30초). 범위(page 0부터, size 1~100, 기본 20)는 learning이 검사해 400을 그대로 전달한다.
+        learning 200의 각 항목에 core가 displayed(지금 추억의 벽 room_frame_slot에 걸린 회차인지, #555)를 더하고 다른 칸은 바꾸지 않는다.
+        진행 중인 주·EXTRA는 learning이 빼고 최근 회차순으로 준다. 사용량을 세지 않는다. Cache-Control no-store.
+      parameters:
+      - {name: page, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      - {name: size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 보유 액자 회차 한 쪽
+          headers:
+            Cache-Control: {schema: {type: string}, description: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MemoryAlbumPage'}
+        '400':
+          description: page·size가 정수가 아님(core) 또는 범위 밖(learning) VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '403':
+          description: 학생 세션이 아님 FORBIDDEN(learning 미호출)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '502':
+          description: learning 200 본문이 앨범 모양이 아님 LEARNING_CONTRACT_INVALID
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/album/{themeId}/{weekStart}:
+    parameters:
+    - {name: themeId, in: path, required: true, schema: {type: string, format: uuid}}
+    - {name: weekStart, in: path, required: true, schema: {type: string, format: date}, description: 회차 주(KST 월요일, 월요일 검사는 learning)}
+    get:
+      operationId: getMemoryAlbumRound
+      tags: [Memory]
+      summary: 추억 앨범 회차 상세 (#560, FN-RET-11)
+      description: >-
+        STUDENT 전용(P27, api-spec 2.12). learning GET /internal/students/{studentId}/album/{themeId}/{weekStart}로 넘겨 응답·오류를 그대로 전달한다
+        (일반 learning-json 서킷). 엔딩을 보지 않았으면 ending.outro·answer null(P23). 미보유(진행 중인 주 포함) 404 THEME_FRAME_NOT_FOUND,
+        월요일이 아닌 weekStart 400(learning 판정). Cache-Control no-store.
+      responses:
+        '200':
+          description: 회차 상세(learning 소유 모양)
+          headers:
+            Cache-Control: {schema: {type: string}, description: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MemoryAlbumRound'}
+        '400':
+          description: themeId가 UUID가 아니거나 weekStart가 날짜가 아님(core), 월요일 아님(learning) VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '403':
+          description: 학생 세션이 아님 FORBIDDEN(learning 미호출)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404':
+          description: 보유하지 않은 회차 THEME_FRAME_NOT_FOUND(learning 판정, 그대로 전달)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/album/{themeId}/{weekStart}/seen:
+    parameters:
+    - {name: themeId, in: path, required: true, schema: {type: string, format: uuid}}
+    - {name: weekStart, in: path, required: true, schema: {type: string, format: date}}
+    post:
+      operationId: markMemoryAlbumSeen
+      tags: [Memory]
+      summary: 새 액자 확인 (#560, FN-RET-10)
+      description: >-
+        STUDENT 전용(P27, api-spec 2.12). learning POST /internal/students/{studentId}/album/{themeId}/{weekStart}/seen으로 넘겨 응답·오류를 그대로 전달한다
+        (일반 learning-json 서킷). 멱등이며 처음 확인 시각을 유지한다(learning). 미보유 404 THEME_FRAME_NOT_FOUND.
+      responses:
+        '204':
+          description: 확인 기록(이미 확인했어도 204)
+        '400':
+          description: themeId·weekStart 형식 오류(core) 또는 월요일 아님(learning) VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '403':
+          description: 학생 세션이 아님 FORBIDDEN(learning 미호출)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404':
+          description: 보유하지 않은 회차 THEME_FRAME_NOT_FOUND(learning 판정, 그대로 전달)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/attempts:
     get:
       operationId: dashboardStudentAttempts
@@ -10038,6 +10141,62 @@ components:
               themeId: {type: string, format: uuid}
               weekStart: {type: string, format: date}
               attemptId: {type: string, format: uuid}
+    MemoryAlbumItem:
+      type: object
+      additionalProperties: true
+      required: [themeId, weekStart, title, imageUrl, awardedAt, seen, displayed]
+      description: 'learning 앨범 항목(api-spec 4.1.4, learning #559)에 core가 displayed를 더한 것 (#560)'
+      properties:
+        themeId: {type: string, format: uuid}
+        weekStart: {type: string, format: date, description: 회차 주(KST 월요일)}
+        title: {type: string, description: 액자를 받은 때 테마 버전의 제목}
+        imageUrl: {type: [string, 'null'], description: 시작 이야기 그림 presigned URL, 없으면 null(화면이 ThemeArt로 그림)}
+        awardedAt: {type: string, format: date-time, description: 5문제 중 마지막 학습 완료 시각}
+        seen: {type: boolean, description: false면 새 액자}
+        displayed: {type: boolean, description: '지금 추억의 벽(room_frame_slot, #555)에 걸려 있는지. core가 채움'}
+    MemoryAlbumPage:
+      type: object
+      additionalProperties: true
+      required: [items, page, size, totalElements]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/MemoryAlbumItem'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+    MemoryAlbumRound:
+      type: object
+      additionalProperties: true
+      required: [themeId, weekStart, title, imageUrl, awardedAt, missions, ending]
+      description: 'learning 소유 앨범 회차 상세(api-spec 2.12·4.1.4, learning #559). core는 바꾸지 않고 전달한다 (#560).'
+      properties:
+        themeId: {type: string, format: uuid}
+        weekStart: {type: string, format: date}
+        title: {type: string}
+        imageUrl: {type: [string, 'null']}
+        awardedAt: {type: string, format: date-time}
+        missions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [day, missionId, title, thinkingType, attemptId]
+            properties:
+              day: {type: string, description: learning ThemeDay}
+              missionId: {type: string, format: uuid}
+              title: {type: string}
+              thinkingType: {type: string, description: learning ThinkingType}
+              attemptId: {type: [string, 'null'], format: uuid, description: '그 회차에서 그 문제를 마지막으로 학습 완료한 시도. 기존 시도 상세(2.3)로 연다. 문제가 바뀌었으면 null'}
+        ending:
+          type: object
+          additionalProperties: true
+          required: [seen, outro, answer]
+          description: 그 주 종료 이야기(OUTRO)를 본 학생만 outro·answer를 받음(P23)
+          properties:
+            seen: {type: boolean}
+            outro: {type: [string, 'null']}
+            answer: {type: [string, 'null']}
     AttemptStartRequest:
       type: object
       additionalProperties: false

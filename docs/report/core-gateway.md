@@ -711,3 +711,29 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 - learning #563·#564가 내부 경로를 만들기 전에는 learning 404를 그대로 전달한다. 머지 뒤 실제 연동 확인
 - ai #565는 이 변경이 병합된 뒤에 새 `callType`을 발행
 - web 관리자 사용량 화면의 호출 종류 이름표(`adminFormatting.ts`)·목 필터(`mocks/handlers/admin.ts`)에는 새 값이 없다(기존 `THEME_*`도 없음). web #567 범위
+
+## 28. 추억 앨범 공개 프록시 (#560, 2026-11-12)
+
+리텐션 확장 P27(에픽 #558)의 core 몫. 학생 추억 앨범을 learning(#559)으로 넘기고 목록 `displayed`를 추억의 벽 슬롯(#555)으로 채운다. 결정 기록은 [리텐션 확장 11장](retention-expansion.md#11-core-추억-앨범-공개-프록시-560-2026-11-12), 계약은 api-spec 2.12·4.1.4.
+
+### API 변경
+
+| 경로 | 변경 |
+|---|---|
+| `GET /students/me/album?page&size` (신규) | 학생 본인 세션 → learning `GET /internal/students/{studentId}/album`. 200이면 항목마다 `displayed` 추가, 그 밖 응답·오류 그대로, `Cache-Control: no-store` |
+| `GET /students/me/album/{themeId}/{weekStart}` (신규) | → learning `GET /internal/students/{studentId}/album/{themeId}/{weekStart}`. 응답·오류(404 `THEME_FRAME_NOT_FOUND`) 그대로 |
+| `POST /students/me/album/{themeId}/{weekStart}/seen` (신규) | → learning `POST …/seen`. 204·오류 그대로 |
+
+### 처리
+
+1. 세션의 학생 1명 확인(학생 이외 403, learning 미호출). 경로·쿼리 형식 오류는 Spring 400 `VALIDATION_FAILED`
+2. `LearningMemoryClient`의 앨범 메서드가 일반 `LearningClient`(서킷 `learning-json`, 30초)로 호출
+3. 목록 200: `items`가 배열이 아니거나 항목의 `themeId`·`weekStart`를 읽을 수 없으면 502 `LEARNING_CONTRACT_INVALID`. 빈 목록은 그대로, 아니면 `RoomFrameSlotService.displayedFrames`로 `displayed`를 더해 다시 직렬화
+
+### 테스트
+
+- `AlbumProxyIntegrationTest`: 걸린 회차만 `displayed:true`·나머지 칸 유지·`page`·`size`만 전달·학생 범위 헤더·쿼리 생략, learning 400·500 전달, 깨진 200 본문 4종 502, `learning-json` 서킷 사용, 상세 바이트 그대로·seen 204·404 `THEME_FRAME_NOT_FOUND` 전달, 학부모 403·형식 오류 400(learning 미호출)
+
+### 남은 일
+
+- learning #559(PR #571)는 병합됨. 배포 환경에서 실제 연동 확인. web #561이 이 경로를 쓴다
