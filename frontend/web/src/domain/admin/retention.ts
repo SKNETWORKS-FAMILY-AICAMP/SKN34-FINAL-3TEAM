@@ -19,6 +19,17 @@ export interface AdminWeeklyTheme {
   days: { day: ThemeDay; missionId: string }[]
   status: ThemeStatus
   updatedAt: string
+  /**
+   * #438 이야기 칸(선택). 응답에만 쓰고 저장 본문에는 보내지 않는다: 수정 때 없으면 서버가 이전 값을 이어받음.
+   * `…Url`은 미리보기 presigned URL
+   */
+  outro?: string | null
+  introImageUrl?: string | null
+  outroImageUrl?: string | null
+  introVideoUrl?: string | null
+  outroVideoUrl?: string | null
+  introMotion?: unknown
+  outroMotion?: unknown
 }
 export type WeeklyThemeInput = Pick<AdminWeeklyTheme, 'grade' | 'weekStart' | 'title' | 'intro' | 'days'>
 

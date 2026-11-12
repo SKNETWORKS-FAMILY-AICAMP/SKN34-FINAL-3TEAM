@@ -388,7 +388,7 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
       {m && (
         <>
           <p>
-            {m.source === 'LLM_DRAFT' ? 'LLM 초안 채택' : '사람 작성'} · {missionLabels[m.status]} · 편집본 v{m.currentVersion} · 기준표 v
+            {m.source === 'LLM_DRAFT' ? 'LLM 초안 채택' : m.source === 'LLM_THEME' ? '테마 초안 채택' : '사람 작성'} · {missionLabels[m.status]} · 편집본 v{m.currentVersion} · 기준표 v
             {m.currentRubricVersion ?? '미등록'} · 학생 공개본 {m.publishedVersion ? `v${m.publishedVersion} / 기준표 v${m.publishedRubricVersion ?? '미등록'}` : '없음'}
           </p>
           {m.status === 'PUBLISHED' && <p role="note">

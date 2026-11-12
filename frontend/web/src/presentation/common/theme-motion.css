@@ -1,0 +1,68 @@
+/* 장면 움직임 재생기 (형식 v1, ThemeMotionPlayer) */
+.tm-player { margin: 0; }
+.tm-stage {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: #1f2421;
+  animation: tm-fade 0.5s ease-out both;
+}
+.tm-player[data-motion='static'] .tm-stage { animation: none; }
+.tm-stage > img, .tm-stage > video {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  transform-origin: center;
+}
+.tm-empty {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  border: 1px dashed #b9b4a8;
+  border-radius: 8px;
+  color: #6b6a65;
+}
+.tm-caption {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 7%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(31, 36, 33, 0.72);
+  color: #fffdf7;
+  text-align: center;
+  font-size: 0.95rem;
+}
+.tm-spot {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 2px solid #1f2421;
+  border-radius: 50%;
+  background: #fffdf7;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.tm-spot[data-evidence] { background: #f2c14e; }
+.tm-spot-list { margin: 6px 0 0; padding-left: 1.4em; font-size: 0.9rem; }
+.tm-replay { margin-top: 6px; }
+.tm-effect { position: absolute; inset: 0; pointer-events: none; }
+.tm-effect i {
+  position: absolute;
+  top: -5%;
+  animation: tm-fall linear infinite;
+}
+.tm-effect[data-direction='up'] i { top: auto; bottom: -5%; animation-name: tm-rise; }
+@keyframes tm-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tm-fall { to { transform: translateY(110cqh); } }
+@keyframes tm-rise { to { transform: translateY(-110cqh); } }
+.tm-stage { container-type: size; }
+@media (prefers-reduced-motion: reduce) {
+  .tm-stage, .tm-effect i { animation: none !important; }
+}

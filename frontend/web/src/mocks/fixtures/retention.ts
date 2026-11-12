@@ -61,6 +61,14 @@ export interface MockWeeklyTheme {
   days: { day: ThemeDay; missionId: string }[]
   status: 'DRAFT' | 'REVIEW_REQUIRED' | 'PUBLISHED' | 'UNPUBLISHED'
   updatedAt: string
+  /** 테마 초안 채택(#441 목업)에서 온 이야기 칸. 수정 본문에 없으면 이어받음 */
+  outro?: string | null
+  introImageUrl?: string | null
+  outroImageUrl?: string | null
+  introVideoUrl?: string | null
+  outroVideoUrl?: string | null
+  introMotion?: unknown
+  outroMotion?: unknown
 }
 interface State {
   ledger: Record<string, (PointEvent & { sourceKey: string })[]>
