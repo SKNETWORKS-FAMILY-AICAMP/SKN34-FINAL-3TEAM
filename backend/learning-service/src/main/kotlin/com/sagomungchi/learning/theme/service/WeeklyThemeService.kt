@@ -289,15 +289,15 @@ class WeeklyThemeService(
     /**
      * 지난 회차 기록 (P27 앨범 상세, #559, class-diagram 4.5). versionId는 액자가 고정한 테마 버전.
      * 문제별 시도는 그 회차(테마·주)에서 마지막으로 학습 완료한 시도(토·일 다시 풀기 포함, 기존 비교 화면이 이전 시도를 함께 보여 줌).
-     * 엔딩: 그 주 종료 이야기(OUTRO) 열람 기록이 있을 때만 종료 이야기·정답을 담음(P23). 엔딩 판정 규칙 개정(#484) 뒤에도
-     * 엔딩을 보면 OUTRO 열람이 기록되므로 같은 기준
+     * 엔딩: 그 주 엔딩 상태(#484 ThemeEnding, 정답 고르기·금요일 문제 다시 풀기 마무리)가 ENDED일 때만 종료 이야기·정답을 담음(P23).
+     * 이번 주 화면(current)·종료 이야기 열람(recordStoryView)과 같은 판정
      */
     @Transactional(readOnly = true)
     fun pastRound(studentId: UUID, themeId: UUID, weekStart: LocalDate, versionId: UUID): ThemeRoundRecord {
         val version = repository.findVersion(versionId)
-        val completed = repository.findStudentAttempts(studentId, weekStart)
-            .filter { it.themeId == themeId && it.context != AttemptContext.EXTRA && it.completedAt != null }
-        val endingSeen = ThemeStoryKind.OUTRO.name in repository.findStoryViews(studentId, weekStart)
+        val attempts = repository.findStudentAttempts(studentId, weekStart)
+        val completed = attempts.filter { it.themeId == themeId && it.context != AttemptContext.EXTRA && it.completedAt != null }
+        val endingSeen = ending(studentId, weekStart, attempts) == ThemeEndingState.ENDED
         return ThemeRoundRecord(
             title = version.title,
             introImageUrl = assetUrls.url(version.story.introImageUri),
@@ -312,7 +312,7 @@ class WeeklyThemeService(
         )
     }
 
-    /** 학생 삭제(P09): 되돌아보기·이야기 열람 기록(#438). 시도 삭제·삭제 표식과 같은 트랜잭션 안에서만 */
+    /** 학생 삭제(P09): 되돌아보기·이야기 열람(#438)·정답 고르기(#484) 기록. 시도 삭제·삭제 표식과 같은 트랜잭션 안에서만 */
     @Transactional(propagation = Propagation.MANDATORY)
     fun deleteByStudent(studentId: UUID): Int = repository.deleteByStudent(studentId)
 

@@ -67,7 +67,7 @@ class StudentLookIntegrationTest: IntegrationTestSupport() {
         // 형제 학생은 같은 보호자 계정을 공유해도 자기 설정만 본다.
         assertTrue(call("GET", siblingToken)["updatedAt"].isNull)
         assertEquals(setOf("theme", "companion", "updatedAt", "equipped"), saved.fieldNames().asSequence().toSet())
-        assertEquals(setOf("HAT", "OUTFIT", "ACCESSORY", "BACKGROUND"), saved["equipped"].fieldNames().asSequence().toSet())
+        assertEquals(setOf("HAT", "OUTFIT", "ACCESSORY", "BACKGROUND", "DESK", "WALL", "WARDROBE"), saved["equipped"].fieldNames().asSequence().toSet())
     }
 
     @Test fun `values outside the list are 422 and keep the previous setting`() {

@@ -6,6 +6,7 @@ import com.sagomungchi.core.guardianship.domain.StudentLook
 import com.sagomungchi.core.guardianship.repository.StudentLearningContextRepository
 import com.sagomungchi.core.reward.service.LookUnlockService
 import com.sagomungchi.core.reward.service.RewardService
+import com.sagomungchi.core.room.service.RoomFrameSlotService
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -17,7 +18,8 @@ import java.util.UUID
 /** 학생 본인 꾸미기 설정. 학부모·관리자에게는 열지 않으며 학습 기록·리포트에 쓰지 않는다. */
 @Service
 class StudentLookService(private val repository: StudentLearningContextRepository, private val context: StudentLearningContextService,
-                         private val unlocks: LookUnlockService, private val rewards: RewardService) {
+                         private val unlocks: LookUnlockService, private val rewards: RewardService,
+                         private val frames: RoomFrameSlotService) {
     @Transactional
     fun own(): StudentLook {
         val studentId = currentStudent()
@@ -25,7 +27,7 @@ class StudentLookService(private val repository: StudentLearningContextRepositor
     }
 
     /**
-     * 테마·캐릭터는 전체 교체, `equipped`는 보냈을 때만 전체 교체(생략·null이면 그대로).
+     * 테마·캐릭터는 전체 교체, `equipped`는 보낸 슬롯만 교체(생략·null이면 착용 그대로, 보내지 않은 슬롯도 그대로, #555).
      * 목록에 없는 값은 422, 해금하지 않은 테마·캐릭터·아이템은 409 `LOOK_LOCKED`(P22).
      */
     @Transactional
@@ -41,10 +43,14 @@ class StudentLookService(private val repository: StudentLearningContextRepositor
         return saved.copy(equipped = unlocks.equipment(studentId))
     }
 
-    /** 학생 삭제 확정 시 기본값으로 되돌리고 포인트·해금·착용도 지운다(학생 행은 차단 상태로 남는다, P09). */
+    /**
+     * 학생 삭제 확정 시 기본값으로 되돌리고 포인트·해금·착용과 생활공간 액자 슬롯(#555)도 지운다
+     * (학생 행은 차단 상태로 남는다, P09). 호출자 트랜잭션 안에서 부른다.
+     */
     fun clear(studentId: UUID) {
         repository.clearLook(studentId)
         rewards.deleteStudent(studentId)
+        frames.deleteStudent(studentId)
     }
 
     private fun currentStudent(): UUID {

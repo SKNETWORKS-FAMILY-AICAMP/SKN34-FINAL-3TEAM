@@ -1119,7 +1119,7 @@ paths:
       description: >-
         액자를 받은 때의 테마 버전으로 5문제와 그 회차에서 문제별 마지막으로 학습 완료한 시도(토·일 다시 풀기 포함)를 준다.
         문제별 기록은 기존 시도 상세·비교(`/attempts/{attemptId}`·`/comparison`)로 연다.
-        엔딩은 그 주 종료 이야기(OUTRO) 열람 기록이 있을 때만 outro·answer를 채우고 아니면 null(P23).
+        엔딩은 그 주 엔딩 상태(ending = ENDED, #484 정답 고르기, state-diagram 3.2.2)일 때만 outro·answer를 채우고 아니면 null(P23).
         미보유·진행 중인 주 회차 404 THEME_FRAME_NOT_FOUND, weekStart가 월요일이 아니면 400.
       parameters:
         - $ref: '#/components/parameters/StudentId'
@@ -4015,7 +4015,7 @@ components:
         ending:
           type: object
           required: [seen, outro, answer]
-          description: 그 주 종료 이야기(OUTRO)를 본 학생만 outro·answer를 받음(P23)
+          description: 그 주 엔딩 상태(ending = ENDED, #484)일 때만 seen = true이고 outro·answer를 받음(P23)
           properties:
             seen: {type: boolean}
             outro: {type: [string, 'null']}

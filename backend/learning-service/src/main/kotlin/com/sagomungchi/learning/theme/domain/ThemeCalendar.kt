@@ -50,6 +50,29 @@ enum class ThemeDay(val number: Int) {
  */
 enum class DayState { LOCKED, OPEN, CLOSED }
 
+/**
+ * 테마 학기 (#536 확정 2026-11-12, learning.md 35장): 적용 주 월요일이 3월 1일~8월 15일이면 1학기, 그 밖은 2학기
+ * (2월은 학년 끝이라 2학기). 학기 대응표 값과 같은 `학년-학기`(예: `3-1`)로 씀
+ */
+object ThemeSemester {
+    fun termOf(weekStart: LocalDate): Int {
+        val first = LocalDate.of(weekStart.year, 3, 1)
+        val last = LocalDate.of(weekStart.year, 8, 15)
+        return if (weekStart.isBefore(first) || weekStart.isAfter(last)) 2 else 1
+    }
+
+    fun of(grade: ThemeGrade, weekStart: LocalDate): String = "${grade.grade}-${termOf(weekStart)}"
+
+    /** 같은 학년군에서 이번 학기까지 배운 학기, 오래된 것부터 (예: 초4 2학기 → 3-1·3-2·4-1·4-2, 초5 1학기 → 5-1) */
+    fun soFar(grade: ThemeGrade, weekStart: LocalDate): List<String> {
+        val first = if (grade.grade <= 4) 3 else 5
+        val term = termOf(weekStart)
+        return (first..grade.grade).flatMap { year -> (1..2).map { year to it } }
+            .filter { (year, t) -> year < grade.grade || t <= term }
+            .map { (year, t) -> "$year-$t" }
+    }
+}
+
 /** KST 날짜 기준 주 계산. 주는 월요일에 시작 */
 object ThemeWeek {
     fun startOf(date: LocalDate): LocalDate = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))

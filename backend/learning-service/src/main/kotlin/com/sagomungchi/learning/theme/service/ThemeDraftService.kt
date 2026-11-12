@@ -28,7 +28,9 @@ import com.sagomungchi.learning.theme.domain.ThemeDraftView
 import com.sagomungchi.learning.theme.domain.ThemeDraftViewPage
 import com.sagomungchi.learning.theme.domain.ThemeFailure
 import com.sagomungchi.learning.theme.domain.ThemeGrade
+import com.sagomungchi.learning.theme.domain.StandardSemesters
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
+import com.sagomungchi.learning.theme.domain.ThemeSemester
 import com.sagomungchi.learning.theme.domain.ThemeTopicSeeds
 import com.sagomungchi.learning.theme.domain.ThemeWeek
 import com.sagomungchi.learning.theme.repository.ThemeDraftRepository
@@ -67,6 +69,7 @@ class ThemeDraftService(
     private val properties: AppProperties,
     private val clock: Clock,
     private val assetUrls: AssetUrls,
+    private val semesters: StandardSemesters,
 ) {
     val maxAttempts: Int get() = properties.themeDraft.maxAttempts
 
@@ -251,25 +254,32 @@ class ThemeDraftService(
     )
 
     /**
-     * 유형 5개 입력: 고른 유형은 그대로, 비운 유형은 자동 규칙(그 학년 최근 4주 초안 코드는 피함). 고를 수 없으면 null.
-     * 주제가 없으면(주간 자동·주제 없이 온 관리자 요청) 주제 씨앗을 골라 넣는다(ThemeTopicSeeds, 관리자가 쓴 주제는 그대로)
+     * 유형 5개 입력: 고른 유형은 그대로, 비운 유형은 자동 규칙(그 학년·학기 후보 풀, 그 학년 최근 4주 초안 코드는 피함). 고를 수 없으면 null.
+     * 주제가 있는 관리자 요청도 같은 규칙(#536). 주제가 없으면(주간 자동·주제 없이 온 관리자 요청) 주제 씨앗을 골라 넣는다
+     * (ThemeTopicSeeds, 관리자가 쓴 주제는 그대로)
      */
     private fun autoInput(grade: ThemeGrade, weekStart: LocalDate, topic: String?, requested: List<ThemeMissionInput>): ThemeDraftInput? {
         val chosenTopic = topic ?: seedTopic(grade, weekStart)
         val missing = ThemeDraftRules.DAY_TYPES.values.any { type -> requested.none { it.thinkingType == type } }
-        val tables = if (missing) {
+        val pools = if (missing) {
             val band = ThemeDraftRules.gradeBand(grade)
-            ThemeDraftRules.AUTO_SUBJECTS.associateWith { missionService.standardsOf(it, band) }
+            val semester = ThemeSemester.of(grade, weekStart)
+            val byBand = ThemeDraftRules.AUTO_SUBJECTS.associateWith { missionService.standardsOf(it, band) }
+            byBand.filter { (_, table) -> table.isNotEmpty() && table.none { semesters.covers(it.code, semester) } }.keys.forEach {
+                log.warn("theme auto standards: no {} standard for {}, using earlier semesters, or grade band {} if none", it, semester, band)
+            }
+            ThemeDraftRules.candidatePools(byBand, semesters, semester, ThemeSemester.soFar(grade, weekStart))
         } else {
             emptyMap()
         }
+        // 오래된 것부터(조회가 created_at 순): 모든 후보가 최근 코드면 가장 오래전에 쓴 것을 고름
         val recent = if (missing) {
             repository.findInputs(grade, weekStart.minusWeeks(ThemeDraftRules.RECENT_WEEKS), weekStart)
-                .flatMap { it.missions }.flatMap { it.standardCodes }.toSet()
+                .flatMap { it.missions }.flatMap { it.standardCodes }
         } else {
-            emptySet()
+            emptyList()
         }
-        return ThemeDraftRules.autoStandards(grade, requested, recent, tables, Random.Default)?.let { ThemeDraftInput(chosenTopic, it) }
+        return ThemeDraftRules.autoStandards(grade, requested, recent, pools, Random.Default)?.let { ThemeDraftInput(chosenTopic, it) }
     }
 
     /** 같은 학년 최근(씨앗 개수만큼의 주, 초안 상태 무관) 씨앗과 같은 주 다른 초안 씨앗을 빼고 고름 */

@@ -185,7 +185,7 @@ class ThemeFrameTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `회차 상세는 문제별 마지막 완료 시도를 주고, 엔딩(OUTRO 열람) 전에는 종료 이야기·정답이 null`() {
+    fun `회차 상세는 문제별 마지막 완료 시도를 주고, 엔딩(#484 ENDED) 전에는 종료 이야기·정답이 null`() {
         jdbc.update(
             "UPDATE weekly_theme_version SET outro = '물은 다시 하늘로', answer = '구름', intro_image_uri = 'theme-drafts/run/intro.png' WHERE id = ?",
             publishedVersion(),
@@ -206,14 +206,22 @@ class ThemeFrameTest : PostgresRepositoryTest() {
         assertFalse(hidden.ending.seen)
         assertNull(hidden.ending.outro)
         assertNull(hidden.ending.answer)
-        // 시작 이야기만 본 경우도 엔딩 전
+        // 이야기 열람 기록만으로는 엔딩이 아님(엔딩은 정답 고르기로 판정)
         storyView("INTRO")
+        storyView("OUTRO")
         assertNull(album.round(student, key).ending.answer)
 
-        storyView("OUTRO")
-        val shown = album.round(student, key).ending
-        assertTrue(shown.seen)
-        assertEquals("물은 다시 하늘로" to "구름", shown.outro to shown.answer)
+        // 금요일에 틀리게 고르면 금요일 문제 다시 풀기를 마무리하기 전까지 엔딩 전
+        val pickedAt = at(WEEK.plusDays(4), 18).toInstant()
+        themeRepository.recordAnswerPick(student, WEEK, themeId, missions[4].id, "비", false, pickedAt)
+        assertFalse(album.round(student, key).ending.seen)
+
+        val fridayRetry = attempt(missions[4], "THEME_REVIEW", completedAt = at(WEEK.plusDays(5), 11))
+        clearMyBatisCache()
+        val shown = album.round(student, key)
+        assertTrue(shown.ending.seen)
+        assertEquals("물은 다시 하늘로" to "구름", shown.ending.outro to shown.ending.answer)
+        assertEquals(fridayRetry, shown.missions.last().attemptId)
     }
 
     @Test
@@ -237,6 +245,9 @@ class ThemeFrameTest : PostgresRepositoryTest() {
 
     /** MyBatis로 넣어야 같은 트랜잭션의 MyBatis 조회 캐시가 비워짐(실제 요청은 요청마다 트랜잭션) */
     private fun storyView(kind: String) = themeRepository.recordStoryView(student, WEEK, kind, themeId, Instant.now())
+
+    /** JdbcTemplate으로 넣은 행을 같은 트랜잭션의 MyBatis 조회가 보게 함(MyBatis 쓰기는 세션 캐시를 비움) */
+    private fun clearMyBatisCache() = themeRepository.recordReviewView(student, WEEK, themeId, Instant.now())
 
     private fun publishedVersion(): UUID =
         jdbc.queryForObject("SELECT published_version_id FROM weekly_theme WHERE id = ?", UUID::class.java, themeId)!!

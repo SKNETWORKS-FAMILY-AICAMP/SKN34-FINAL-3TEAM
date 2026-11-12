@@ -55,7 +55,15 @@ object LookCatalog {
     const val FREE_COMPANION = "mungchi"
     const val THEME_PRICE = 100
     const val COMPANION_PRICE = 150
-    val ITEM_SLOTS = listOf("HAT", "OUTFIT", "ACCESSORY", "BACKGROUND")
+    /** 동행 캐릭터에 입히는 슬롯. 커뮤니티 작성자 `look`은 이 네 슬롯만 보인다 */
+    val CHARACTER_SLOTS = listOf("HAT", "OUTFIT", "ACCESSORY", "BACKGROUND")
+    /**
+     * 생활공간 고정 가구 슬롯(#555, P22 개정·P27). 가구 1개 = 슬롯 1개. 기본 스킨은 행이 없고
+     * 착용하지 않은 슬롯(null)이 기본 스킨이라 항상 쓸 수 있다(테마 `lake`와 같은 방식)
+     */
+    val FURNITURE_SLOTS = listOf("DESK", "WALL", "WARDROBE")
+    /** 관리자가 아이템을 등록하고 학생이 착용하는 모든 슬롯(V47 CHECK와 같음) */
+    val ITEM_SLOTS = CHARACTER_SLOTS + FURNITURE_SLOTS
     val THEMES = linkedMapOf("lake" to "호수", "forest" to "숲", "factory" to "공장", "space" to "소행성", "sea" to "바닷속")
     val COMPANIONS = linkedMapOf("mungchi" to "뭉치", "tori" to "토리", "mongdol" to "몽돌", "kongi" to "콩이", "monggeul" to "몽글")
 
