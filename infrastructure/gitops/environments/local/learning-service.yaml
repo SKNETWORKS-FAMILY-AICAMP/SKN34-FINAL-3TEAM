@@ -25,6 +25,8 @@ env:
   - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
   - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
+  # #591: 추억 검색 문서 임베딩 주기 작업(1분·64행 선점·8글 묶음). 앱 기본값 false라 배포 값에서 켠다.
+  - {name: MEMORY_EMBEDDING_ENABLED, value: "true"}
   # #546: 테마 그림·영상 presigned URL. 서명만 하므로 MinIO로 나가는 정책은 없다.
   # 브라우저에서 열 때는 platform/minio를 호스트 19000으로 port-forward한다(report-api와 같은 주소).
   - {name: ASSET_S3_BUCKET, value: sagomungchi-local-missions}
