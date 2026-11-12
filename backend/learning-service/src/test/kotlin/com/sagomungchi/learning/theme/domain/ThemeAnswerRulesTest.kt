@@ -110,11 +110,14 @@ class ThemeAnswerRulesTest {
     }
 
     @Test
-    fun `엔딩은 #484 전까지 토·일`() {
-        val monday = LocalDate.of(2026, 11, 9)
-        assertFalse(ThemeEnding.ended(monday.plusDays(4)))
-        assertTrue(ThemeEnding.ended(monday.plusDays(5)))
-        assertTrue(ThemeEnding.ended(monday.plusDays(6)))
+    fun `엔딩은 정답이면 바로, 오답이면 고른 뒤 그 문제 다시 풀기를 마무리했을 때, 고르지 않았으면 아님 (#484)`() {
+        val picked = java.time.Instant.parse("2026-11-13T03:00:00Z")
+        val wrong = ThemeAnswerPick(UUID.randomUUID(), "고양이", correct = false, pickedAt = picked)
+        assertEquals(ThemeEndingState.NOT_ENDED, ThemeEnding.of(null, listOf(picked.plusSeconds(60))))
+        assertEquals(ThemeEndingState.ENDED, ThemeEnding.of(wrong.copy(correct = true), emptyList()))
+        assertEquals(ThemeEndingState.NOT_ENDED, ThemeEnding.of(wrong, emptyList()))
+        assertEquals(ThemeEndingState.NOT_ENDED, ThemeEnding.of(wrong, listOf(picked.minusSeconds(60))))
+        assertEquals(ThemeEndingState.ENDED, ThemeEnding.of(wrong, listOf(picked.minusSeconds(60), picked.plusSeconds(60))))
     }
 
     private fun content(story: ThemeStory, days: List<ThemeDayMission>) =

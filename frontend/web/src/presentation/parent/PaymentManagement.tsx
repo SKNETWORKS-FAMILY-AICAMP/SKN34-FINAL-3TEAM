@@ -35,7 +35,7 @@ export function SubscriptionCard({ value: s, refundPending = false }: { value: P
     {active && <><label className="payment-agreement"><input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} />결제수단을 등록하면 표시된 금액으로 매월 자동 갱신되는 데 동의합니다.</label>
       <button disabled={refundPending || !agree || register.isPending || !billingAvailable} onClick={() => void register.mutateAsync(undefined).catch(() => {})}>{s.billingRegistered ? '결제수단 변경' : '자동결제 수단 등록'}</button>
       {!billingAvailable && <p role="note">지금 자동결제를 이용할 수 없어요. <Link to="/parent/support">결제 문의하기</Link></p>}
-      <div className="payment-actions">{s.autoRenew ? <button disabled={renewal.isPending} onClick={() => setChange(false)}>자동 갱신 해지</button> : s.status === 'ACTIVE' && s.billingRegistered && !refundPending && <button disabled={renewal.isPending} onClick={() => setChange(true)}>자동 갱신 해지 철회</button>}</div>
+      <div className="payment-actions">{s.autoRenew ? <button disabled={renewal.isPending} onClick={() => setChange(false)}>무료 플랜으로 전환</button> : s.status === 'ACTIVE' && s.billingRegistered && !refundPending && <button disabled={renewal.isPending} onClick={() => setChange(true)}>자동 갱신 해지 철회</button>}</div>
       {!s.autoRenew && <p>새로운 자동 청구는 하지 않습니다. 이미 결제한 이용 기간은 유지됩니다.</p>}</>}
     {refundPending && <p>환불 검토 중에는 결제수단 등록·변경과 자동 갱신 해지 철회가 제한됩니다.</p>}
     <ErrorNotice error={register.error ?? renewal.error} />
@@ -60,7 +60,7 @@ export function PaymentManagement({ child }: { child?: Child }) {
   const own = subscriptions.data?.items.filter(s => !child || s.childId === child.id) ?? []
   const rows = history.data?.items.filter(p => !child || p.childId === child.id) ?? []
   return <div className="payment-management">
-    <section aria-label="현재 구독"><h2>현재 구독</h2><QueryFeedback query={subscriptions} />{subscriptions.data && !own.length && <p>이 자녀의 구독이 없습니다. 무료 이용 조건은 위의 상품 정보를 확인해 주세요.</p>}{own.map(s => <SubscriptionCard key={s.subscriptionId} value={s} refundPending={history.data?.items.some(p => p.childId === s.childId && p.refundRequests.some(r => ['REQUESTED','APPROVED'].includes(r.status)))} />)}</section>
+    <section id="current-subscriptions" aria-label="현재 구독"><h2>현재 구독</h2><QueryFeedback query={subscriptions} />{subscriptions.data && !own.length && <p>이 자녀의 구독이 없습니다. 무료 이용 조건은 위의 상품 정보를 확인해 주세요.</p>}{own.map(s => <SubscriptionCard key={s.subscriptionId} value={s} refundPending={history.data?.items.some(p => p.childId === s.childId && p.refundRequests.some(r => ['REQUESTED','APPROVED'].includes(r.status)))} />)}</section>
     <section aria-label="결제 및 환불 내역"><h2>결제·취소·환불 내역</h2><p>현재 선택한 자녀의 거래입니다. 다른 자녀의 내역은 상단 자녀 선택을 바꿔 확인해 주세요.</p><QueryFeedback query={history} /><ErrorNotice error={checkError} />
       {history.data && !rows.length && <p>이 페이지에 해당 자녀의 결제 내역이 없습니다.</p>}
       <div className="payment-history">{rows.map(p => <article key={p.orderId} className="payment-panel"><div className="payment-history-heading"><h3>{p.subscription?.product?.name ?? '이용권 결제'}</h3><strong>{won(p.amount)}</strong></div><p>{paymentStateLabel(p)}</p><small>대상 자녀 {childName(p.childId)} · 승인일 {date(p.approvedAt)}</small><details><summary>거래 자세히 보기</summary><p>주문번호 {p.orderId}</p></details>

@@ -61,9 +61,9 @@ export const router = createBrowserRouter([
         path: `/${role.toLowerCase()}`,
         element: <RoleLayout role={role} />,
         children: [
-          ...(['help', 'notices', 'notifications'] as const).map(page => ({ path: page, element: <ServiceCenter page={page} /> })),
-          ...(role === 'ADMIN' ? [] : [{ path: 'support', element: <SupportEntry /> }]),
-          ...(role !== 'ADMIN' ? [{ path: 'support/results', element: <SupportResults /> }] : []),
+          ...(['help', 'notices', 'notifications'] as const).map(page => ({ path: page, element: role === 'PARENT' ? <ParentWorkspace /> : <ServiceCenter page={page} /> })),
+          ...(role === 'ADMIN' ? [] : [{ path: 'support', element: role === 'PARENT' ? <ParentWorkspace /> : <SupportEntry /> }]),
+          ...(role !== 'ADMIN' ? [{ path: 'support/results', element: role === 'PARENT' ? <ParentWorkspace /> : <SupportResults /> }] : []),
           ...(role === 'PARENT' ? [
             { path: 'account', element: <AccountPage /> },
             { path: 'transfers', element: <GuardianTransfers /> },

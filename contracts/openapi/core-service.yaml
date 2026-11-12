@@ -6646,6 +6646,92 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/memories/search:
+    post:
+      operationId: searchMemories
+      tags: [Memory]
+      summary: 추억 검색 (#566, FN-RET-12)
+      description: >-
+        STUDENT 전용(P27, api-spec 2.12). 본문 {query}(1~200자, 공백만은 거부)가 아니면 core가 400 VALIDATION_FAILED로 막고 사용량을 남기지 않는다.
+        맞으면 memory_daily_usage에 SEARCH 1행을 기록하고 KST 하루 건수가 product.limits.dailyMemorySearches(2026-11-12 확정 20, 무료·프리미엄 같음)를 넘으면
+        롤백한 뒤 learning을 부르지 않고 429 USAGE_LIMIT_REACHED. 통과하면 {query}만 다시 만들어 learning POST /internal/students/{studentId}/memories/search로
+        넘기고 응답·오류를 그대로 전달한다(서킷 learning-memory, 응답 30초). learning 5xx·시간 초과·연결 실패·서킷 차단이면 기록을 되돌린다.
+        질문은 저장하지 않는다. Cache-Control no-store. learning 경로가 생기기 전(#563 머지 전)에는 learning 404를 그대로 전달한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MemorySearchRequest'}
+      responses:
+        '200':
+          description: 검색 결과(learning 소유 모양)
+          headers:
+            Cache-Control: {schema: {type: string}, description: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MemorySearchResult'}
+        '400':
+          description: query 누락·빈 값·200자 초과·문자열 아님·다른 필드 VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429':
+          description: 오늘 추억 검색 한도 도달 USAGE_LIMIT_REACHED(detail에 하루 횟수와 내일 0시(KST) 초기화 안내). learning 미호출
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: 질문 임베딩 장애 AI_UNAVAILABLE(learning 판정, 그대로 전달), LEARNING_UNAVAILABLE·LEARNING_CIRCUIT_OPEN(learning-memory 차단, Retry-After 30), 상품 한도 값 오류 PAYMENT_PRODUCT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/memories/explanations:
+    post:
+      operationId: explainMemories
+      tags: [Memory]
+      summary: 추억 설명 (#566, FN-RET-13)
+      description: >-
+        STUDENT 전용(P27, api-spec 2.12). 본문 {query, attemptIds}(질문 1~200자, 검색 결과 카드의 시도 ID 1~3개·중복 없음)가 아니면 400 VALIDATION_FAILED.
+        memory_daily_usage에 EXPLANATION 1행을 기록하고 KST 하루 건수가 product.limits.dailyMemoryExplanations(2026-11-12 확정 10, 무료·프리미엄 같음)를 넘으면
+        learning을 부르지 않고 429 USAGE_LIMIT_REACHED. 통과하면 다시 만든 본문을 learning POST /internal/students/{studentId}/memories/explanations로 넘긴다
+        (서킷 learning-memory, 응답 45초 > learning→ai 35초). 본인 검색 문서가 아닌 attemptId는 learning 422 VALIDATION_FAILED를 그대로 전달한다.
+        생성 실패·근거 부족은 200 state FAILED·INSUFFICIENT라 사용량에 들어가고, learning 5xx·시간 초과·연결 실패·서킷 차단이면 기록을 되돌린다.
+        질문·설명은 저장하지 않는다. Cache-Control no-store. learning 경로가 생기기 전(#564 머지 전)에는 learning 404를 그대로 전달한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MemoryExplanationRequest'}
+      responses:
+        '200':
+          description: 설명 결과(learning 소유 모양)
+          headers:
+            Cache-Control: {schema: {type: string}, description: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MemoryExplanationResult'}
+        '400':
+          description: query·attemptIds 형식 오류 VALIDATION_FAILED(빈 배열, 4개 이상, 중복, UUID 아님, 다른 필드)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '422':
+          description: 본인 검색 문서가 아닌 attemptId VALIDATION_FAILED(learning 판정, 그대로 전달)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429':
+          description: 오늘 추억 설명 한도 도달 USAGE_LIMIT_REACHED(detail에 하루 횟수와 내일 0시(KST) 초기화 안내). learning 미호출
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: LEARNING_UNAVAILABLE·LEARNING_CIRCUIT_OPEN(learning-memory 차단, Retry-After 30), 상품 한도 값 오류 PAYMENT_PRODUCT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/attempts:
     get:
       operationId: dashboardStudentAttempts
@@ -9886,6 +9972,72 @@ components:
         correct: {type: boolean, description: 고른 값이 정답인지}
         ending: {type: string, enum: [NOT_ENDED, ENDED], description: 그 주 엔딩 상태}
         answer: {type: [string, 'null'], description: 정답. ending이 ENDED일 때만 채움}
+    MemorySearchRequest:
+      type: object
+      additionalProperties: false
+      required: [query]
+      properties:
+        query: {type: string, minLength: 1, maxLength: 200, description: '자연어 질문. 공백만은 거부, 저장하지 않음 (#566)'}
+    MemorySearchResult:
+      type: object
+      additionalProperties: true
+      required: [state, cards]
+      description: 'learning 소유 추억 검색 결과(api-spec 2.12·4.1.4, learning #563). core는 바꾸지 않고 전달한다.'
+      properties:
+        state: {type: string, enum: [RESULTS, NO_RESULTS, NO_RECORDS], description: 'NO_RESULTS 관련도 기준 미달, NO_RECORDS 보유 액자 없음'}
+        cards:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              themeId: {type: string, format: uuid}
+              weekStart: {type: string, format: date}
+              title: {type: string}
+              imageUrl: {type: [string, 'null']}
+              missions:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                  properties:
+                    missionId: {type: string, format: uuid}
+                    title: {type: string}
+                    attemptId: {type: string, format: uuid}
+                    answerExcerpt: {type: string}
+              score: {type: number}
+    MemoryExplanationRequest:
+      type: object
+      additionalProperties: false
+      required: [query, attemptIds]
+      properties:
+        query: {type: string, minLength: 1, maxLength: 200}
+        attemptIds:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: {type: string, format: uuid}
+          description: 검색 결과 카드의 시도 ID
+    MemoryExplanationResult:
+      type: object
+      additionalProperties: true
+      required: [state]
+      description: 'learning 소유 추억 설명 결과(api-spec 2.12·4.1.4, learning #564). core는 바꾸지 않고 전달한다.'
+      properties:
+        state: {type: string, enum: [GENERATED, INSUFFICIENT, FAILED], description: 'INSUFFICIENT 근거 부족(생성 안 함), FAILED 생성·검사 실패'}
+        text: {type: [string, 'null']}
+        citations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              no: {type: integer, minimum: 1, maximum: 3}
+              themeId: {type: string, format: uuid}
+              weekStart: {type: string, format: date}
+              attemptId: {type: string, format: uuid}
     AttemptStartRequest:
       type: object
       additionalProperties: false
@@ -11227,7 +11379,7 @@ components:
             $ref: '#/components/schemas/ActiveModelVersion'
     CallType:
       type: string
-      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, THEME_DRAFT, THEME_IMAGE, REPORT_EXPLANATION, KNOWLEDGE_EMBEDDING, THEME_VIDEO, M2, M1]
+      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, THEME_DRAFT, THEME_IMAGE, REPORT_EXPLANATION, KNOWLEDGE_EMBEDDING, THEME_VIDEO, MEMORY_EMBEDDING, MEMORY_EXPLANATION, M2, M1]
     AiUsageResponse:
       type: object
       additionalProperties: false

@@ -68,6 +68,15 @@
         </constructor>
     </resultMap>
 
+    <resultMap id="answerPick" type="com.sagomungchi.learning.theme.domain.ThemeAnswerPick">
+        <constructor>
+            <arg column="mission_id" javaType="java.util.UUID"/>
+            <arg column="pick" javaType="string"/>
+            <arg column="correct" javaType="_boolean"/>
+            <arg column="picked_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
     <sql id="headerColumns">
         SELECT t.id, t.grade, t.week_start, t.status,
                t.current_version_id, cv.version AS current_version,
@@ -234,5 +243,32 @@
 
     <delete id="deleteStoryViewsByStudent">
         DELETE FROM theme_story_view WHERE student_id = #{studentId}
+    </delete>
+    <select id="findAnswerPick" resultMap="answerPick">
+        SELECT mission_id, pick, correct, picked_at FROM theme_answer_pick WHERE student_id = #{studentId} AND week_start = #{weekStart}
+    </select>
+
+    <!-- 정답 고르기 문제(#484): 큰 질문·정답이 있는 테마 버전의 금요일 문제 -->
+    <select id="isAnswerPickMission" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM weekly_theme_day d JOIN weekly_theme_version v ON v.id = d.theme_version_id
+            WHERE d.mission_id = #{missionId} AND d.day_of_week = 5 AND v.big_question IS NOT NULL AND v.answer IS NOT NULL
+        )
+    </select>
+
+    <!-- 학생이 정답 고르기를 한 주들 (#484 커뮤니티 열람 조건) -->
+    <select id="findAnswerPicks" resultType="java.time.LocalDate">
+        SELECT week_start FROM theme_answer_pick WHERE student_id = #{studentId} AND mission_id = #{missionId}
+    </select>
+
+    <!-- 정답 고르기는 학생·주당 1행(#484): 이미 골랐으면 0행 -->
+    <insert id="insertAnswerPick">
+        INSERT INTO theme_answer_pick (student_id, week_start, theme_id, mission_id, pick, correct, picked_at)
+        VALUES (#{studentId}, #{weekStart}, #{themeId}, #{missionId}, #{pick}, #{correct}, #{now})
+        ON CONFLICT (student_id, week_start) DO NOTHING
+    </insert>
+
+    <delete id="deleteAnswerPicksByStudent">
+        DELETE FROM theme_answer_pick WHERE student_id = #{studentId}
     </delete>
 </mapper>

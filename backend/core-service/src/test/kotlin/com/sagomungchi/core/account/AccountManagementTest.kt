@@ -112,6 +112,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
    jdbc.update("DELETE FROM message_evidence WHERE message_id IN (SELECT m.id FROM conversation_message m JOIN conversation c ON c.id=m.conversation_id WHERE c.student_id=?)",id)
    jdbc.update("DELETE FROM conversation_message WHERE conversation_id IN (SELECT id FROM conversation WHERE student_id=?)",id)
    jdbc.update("DELETE FROM conversation WHERE student_id=?",id)
+   jdbc.update("DELETE FROM memory_daily_usage WHERE student_id=?",id)
   }
   users.forEach { id ->
    jdbc.update("DELETE FROM refund_request WHERE payment_id IN (SELECT p.id FROM payment p JOIN payment_order o ON o.id=p.order_id WHERE o.parent_user_id=?)",id)
@@ -370,6 +371,16 @@ class AccountManagementTest : PostgresRepositoryTest() {
   assertEquals(0,count("SELECT count(*) FROM conversation WHERE student_id=?",c))
   assertEquals(1,count("SELECT count(*) FROM conversation WHERE student_id=?",other))
   assertEquals(1,count("SELECT count(*) FROM message_evidence e JOIN conversation_message m ON m.id=e.message_id JOIN conversation c ON c.id=m.conversation_id WHERE c.student_id=?",other))
+ }
+
+ @Test fun `memory daily usage is removed with deletion confirmation for target only`() {
+  // #566: 추억 검색·설명 사용량은 삭제 확정 트랜잭션에서 대상 학생 것만 지운다(ERD 3.4)
+  val p=parent();val c=child(p.identity.account.id);val other=child(p.identity.account.id)
+  listOf(c,other).forEach { child -> listOf("SEARCH","EXPLANATION").forEach { kind ->
+   jdbc.update("INSERT INTO memory_daily_usage(id,student_id,kind,usage_date,created_at) VALUES(?,?,?,CURRENT_DATE,now())",UUID.randomUUID(),child,kind) } }
+  children.delete(p.identity,c,DeletionScope.RECORDS,grant(p.identity,ReauthPurpose.CHILD_DELETE,c,"RECORDS"))
+  assertEquals(0,count("SELECT count(*) FROM memory_daily_usage WHERE student_id=?",c))
+  assertEquals(2,count("SELECT count(*) FROM memory_daily_usage WHERE student_id=?",other))
  }
 
  @Test fun `merged issue38 proxy cannot reach learning after unlink or deletion confirmation`() {
