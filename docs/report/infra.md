@@ -332,7 +332,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 
 | 항목 | 하루 추정 | 결정 |
 |---|---|---|
-| EKS 컨트롤 플레인 | 약 3,300원 | **유지.** 지우면 eksctl 재생성·RDS bootstrap·Secret 복구·초기 데이터가 필요한데 재생성 절차가 검증되지 않았고, 12/8 최종 시연 전에 다시 켜야 함 |
+| EKS 컨트롤 플레인 + 노드그룹 정의 | 약 3,300원 | **삭제(2차).** 처음엔 재생성 절차 미검증으로 유지했으나, RDS·S3·ECR·Secrets Manager는 남아 DB 초기화·seed가 필요 없고 클러스터에만 있던 Secret을 백업한 뒤 지움. 12/8 시연 1주 전 재생성 |
 | NAT 게이트웨이 + EIP | 약 2,100원 | **삭제.** 노드 0대라 외부 호출이 없음. 재개 때 다시 만듦 |
 | ALB + 공인 IP 2개 | 약 1,000원 | **삭제.** 재개 때 LB Controller가 Ingress로 다시 만듦 |
 | EBS(PVC 4개)·스냅숏·RDS 저장소·S3·ECR·Secrets Manager·로그 | 약 500~800원 | 유지(데이터 보존) |
@@ -343,13 +343,14 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 - NAT `sagomungchi-demo-nat-2a`를 지우고 EIP를 반납했다. 계정에 남은 EIP는 0개다. private route table 두 개의 `0.0.0.0/0`은 blackhole로 남는다(노드 0대라 영향 없음)
 - 지우기 전 ALB 리스너·규칙·대상 그룹, NAT·EIP·route table 설정을 작업자 PC(저장소 밖)에 JSON으로 보관했다. ALB 규칙에는 CloudFront origin 헤더 값이 있어 저장소에 넣지 않는다
 
-결과: 하루 약 7천 원 → 약 4천 원(추정, 약 43% 감소). 실제 금액은 결제 콘솔에서 며칠 치 청구로 확인한다.
+2차 실행: EKS 삭제(동섭 승인, 2026-11-12)
+- 삭제 전 백업: ESO 동기화 대상이 아닌 Secret은 관측 2개뿐이라 Secrets Manager `sagomungchi/demo/observability/grafana-admin`·`…/discord-webhook`에 복사하고 원본과 해시로 일치를 확인했다(값 미출력). 클러스터·노드그룹·add-on·access entry·Pod Identity 8개·Helm release 11개 values·Karpenter·Ingress·PVC·replica 수는 작업자 PC(저장소 밖)에 JSON으로 보관했다
+- 노드그룹 `application`·`platform-observability`(모두 0대)를 지운 뒤 클러스터 `sagomungchi-demo-eks`를 지웠다. Pod Identity 연결은 함께 사라졌고, 클러스터 SG는 RDS SG 규칙이 참조해 남았다(비용 없음, 재생성 뒤 정리)
+- 남긴 것: RDS·S3·ECR·Secrets Manager·IAM 역할·VPC·스냅숏, PVC였던 EBS 4개(합계 10GiB, 월 약 1천 원, 재연결 선택지로 보존)
 
-재개 때 추가 단계(→ [EKS 재개 순서 0단계](../../infrastructure/eks/README.md#재개-순서와-완료-기준))
-1. `demo_stack.py apply`로 NAT·EIP를 다시 만든다. 이 스크립트는 기존 route table의 경로를 고치지 않으므로 private route table 두 개에 `replace-route`로 새 NAT를 연결하고 `plan`이 차이 없음을 확인한다
-2. ALB는 LB Controller가 다시 만들며 DNS 이름이 바뀐다. CloudFront `/api/*` origin을 새 ALB DNS로 바꾸고 origin 헤더·prefix list 제한을 확인한다
+결과: 하루 약 7천 원 → NAT·ALB 삭제 후 약 4천 원 → EKS 삭제 후 약 700원(모두 추정). 실제 금액은 결제 콘솔에서 며칠 치 청구로 확인한다.
 
-남은 고정비를 더 줄이려면 EKS 클러스터 삭제가 유일한 큰 항목이다. 재생성 절차 검증(#380 resume 검증과 함께) 전에는 하지 않는다.
+재개는 이제 재생성이다(→ [EKS 재생성 순서](../../infrastructure/eks/README.md#재생성-순서-2026-11-12-eks-삭제-이후)). 처음 실행하는 절차라 12/8 시연 1주 이상 전에 시작한다.
 
 ## 10. 근거 링크
 
