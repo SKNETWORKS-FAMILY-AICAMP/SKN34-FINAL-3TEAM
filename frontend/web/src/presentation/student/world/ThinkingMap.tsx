@@ -175,7 +175,7 @@ export function ThinkingMap({
               꾸미기
             </button>
             {onRoom && (
-              <button type="button" className="st-button st-decorate" onClick={onRoom}>
+              <button type="button" className="st-button st-decorate st-room-shortcut" onClick={onRoom}>
                 <DoorOpen aria-hidden="true" />
                 내 방 가기
               </button>
