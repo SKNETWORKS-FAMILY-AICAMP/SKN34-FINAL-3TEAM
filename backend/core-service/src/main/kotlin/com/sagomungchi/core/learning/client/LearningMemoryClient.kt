@@ -5,15 +5,18 @@ import com.sagomungchi.core._common.client.LearningHttpProperties
 import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.web.HttpExchangeResult
 import org.springframework.stereotype.Component
+import java.time.LocalDate
 import java.util.UUID
 
 /**
  * #566 추억 검색·설명 learning 내부 API(api-spec 4.1.4) 전송. `_common/client/LearningClient` 전송을 쓰되 서킷은
  * `learning-memory` 하나를 두 경로가 함께 쓴다(검색 응답 30초, 설명 45초 > learning→ai 35초, architecture 1.3).
  * ai 장애로 learning이 5xx를 돌려도 일반 `learning-json` 경로(주간 테마·시도)는 막히지 않는다.
+ * #560 앨범 3경로는 ai를 부르지 않는 learning DB 조회라 일반 `learning-json`([general], 응답 30초)을 쓴다.
  */
 @Component
-class LearningMemoryClient(factory: InternalRestClientFactory, properties: LearningHttpProperties) {
+class LearningMemoryClient(factory: InternalRestClientFactory, properties: LearningHttpProperties,
+                           private val general: LearningClient) {
     private val clients = LearningClient.forMemory(factory, properties.memorySearchTimeout, properties.memoryExplanationTimeout)
     internal val circuit get() = clients.first.circuit
 
@@ -22,4 +25,13 @@ class LearningMemoryClient(factory: InternalRestClientFactory, properties: Learn
 
     fun explanation(student: UUID, body: ByteArray): HttpExchangeResult =
         clients.second.exchange("POST", "/students/$student/memories/explanations", body = body)
+
+    fun album(student: UUID, query: String?): HttpExchangeResult =
+        general.exchange("GET", "/students/$student/album", query)
+
+    fun albumDetail(student: UUID, themeId: UUID, weekStart: LocalDate): HttpExchangeResult =
+        general.exchange("GET", "/students/$student/album/$themeId/$weekStart")
+
+    fun albumSeen(student: UUID, themeId: UUID, weekStart: LocalDate): HttpExchangeResult =
+        general.exchange("POST", "/students/$student/album/$themeId/$weekStart/seen")
 }

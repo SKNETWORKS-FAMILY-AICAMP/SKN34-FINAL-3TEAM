@@ -611,9 +611,9 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 |---|---|---|---|---|---|
 | GET | `/students/me/room/frame-slots` | 학생 | 추억의 벽 슬롯 `{slots:[{slotNo, themeId, weekStart, title, imageUrl}]}`(빈 슬롯 제외, 번호순). 방 벽지·가구 스킨·캐릭터 착용은 기존 2.10·3.12 응답 사용 | RET-09 | 핵심(#555) |
 | PUT | `/students/me/room/frame-slots` | 학생 | 전체 교체 `{slots:[{slotNo, themeId, weekStart}]}` → 저장된 목록(GET과 같은 모양). `slotNo` 1~6 밖·중복 슬롯·같은 액자 중복·월요일이 아닌 `weekStart`·7개 이상·빈 칸 422 `VALIDATION_FAILED`, 미보유 회차 404 `THEME_FRAME_NOT_FOUND`, 빈 목록은 모두 내림 | RET-09 | 핵심(#555) |
-| GET | `/students/me/album?page&size` | 학생 | 보유 액자 회차(진행 중인 주·`EXTRA` 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, awardedAt, seen, displayed}], page, size, totalElements}` | RET-10, RET-11 | 설계 |
-| GET | `/students/me/album/{themeId}/{weekStart}` | 학생 | 회차 상세 `{themeId, weekStart, title, imageUrl, awardedAt, missions:[{day, missionId, title, thinkingType, attemptId}], ending:{seen, outro, answer}}`. 엔딩을 보지 않았으면 `outro`·`answer` null(P23). 문제별 기록은 기존 시도 상세(2.3·`/attempts/{id}/comparison`)로 연다. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-11 | 설계 |
-| POST | `/students/me/album/{themeId}/{weekStart}/seen` | 학생 | 새 액자 확인(멱등) → 204. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-10 | 설계 |
+| GET | `/students/me/album?page&size` | 학생 | 보유 액자 회차(진행 중인 주·`EXTRA` 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, awardedAt, seen, displayed}], page, size, totalElements}`. `displayed`는 지금 추억의 벽에 걸린 회차인지(core가 채움). `page` 0부터·`size` 1~100(기본 20), 범위 밖 400 | RET-10, RET-11 | core 구현 #560(learning #559 대기) |
+| GET | `/students/me/album/{themeId}/{weekStart}` | 학생 | 회차 상세 `{themeId, weekStart, title, imageUrl, awardedAt, missions:[{day, missionId, title, thinkingType, attemptId}], ending:{seen, outro, answer}}`. 엔딩을 보지 않았으면 `outro`·`answer` null(P23). 문제별 기록은 기존 시도 상세(2.3·`/attempts/{id}/comparison`)로 연다. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-11 | core 구현 #560(learning #559 대기) |
+| POST | `/students/me/album/{themeId}/{weekStart}/seen` | 학생 | 새 액자 확인(멱등) → 204. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-10 | core 구현 #560(learning #559 대기) |
 | POST | `/students/me/memories/search` | 학생 | body `{query}`(1~200자) → `{state, cards:[{themeId, weekStart, title, imageUrl, missions:[{missionId, title, attemptId, answerExcerpt}], score}]}`. `state`는 `RESULTS`·`NO_RESULTS`(관련도 기준 미달)·`NO_RECORDS`(보유 액자 없음), 카드 최대 3개(기준안). 하루 한도 429 `USAGE_LIMIT_REACHED`, 임베딩 장애 503 `AI_UNAVAILABLE`, 형식 오류 400 `VALIDATION_FAILED`(사용량 미기록) | RET-12 | core 구현 #566(learning #563 대기) |
 | POST | `/students/me/memories/explanations` | 학생 | body `{query, attemptIds}`(검색 결과 카드의 시도, 1~3개) → 200 `{state, text, citations:[{no, themeId, weekStart, attemptId}]}`. `state`는 `GENERATED`·`INSUFFICIENT`(근거 부족, 생성 안 함)·`FAILED`(생성·검사 실패, `text` null). 본인 검색 문서가 아닌 `attemptId`는 422 `VALIDATION_FAILED`, 하루 한도 429 `USAGE_LIMIT_REACHED`. 빈 배열·4개 이상·중복·UUID 아님은 core 400 `VALIDATION_FAILED`(사용량 미기록) | RET-13 | core 구현 #566(learning #564 대기) |
 
@@ -626,6 +626,10 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
   - 조회의 `title`·`imageUrl`은 core에 저장하지 않고 learning 앨범 목록(4.1.4, `size=100`으로 걸린 회차를 모두 찾을 때까지 앞쪽부터)에서 매번 채운다(그림은 만료되는 presigned URL, 2026-11-12 결정). 걸린 액자가 없으면 learning을 부르지 않는다. 앨범에 없는 회차는 응답에서 빠진다(액자는 지워지지 않으므로 보통 없음)
   - 보유 확인·앨범 조회는 ai를 부르지 않는 learning DB 조회라 일반 `learning-json` 서킷을 쓴다(추억 검색·설명의 `learning-memory`와 따로)
   - 학생 삭제 확정 때 꾸미기 정리와 같은 트랜잭션에서 `room_frame_slot`을 지운다(P09)
+- **추억 앨범 #560 구현(core, 2026-11-12)**: 세 경로 모두 학생 본인 STUDENT 세션만(그 밖 403 `FORBIDDEN`, learning 미호출) learning 4.1.4 앨범 경로로 넘기고 응답·오류(400·404 `THEME_FRAME_NOT_FOUND`·5xx)를 그대로 전달한다(`Cache-Control: no-store`, 사용량 없음)
+  - 서킷: ai를 부르지 않는 learning DB 조회라 일반 `learning-json`(응답 30초)을 쓴다(검색·설명의 `learning-memory`와 따로)
+  - 목록 쿼리는 `page`·`size`만 다시 만들어 넘기고 범위 검사는 learning이 한다. 정수가 아니거나 `themeId`·`weekStart` 형식이 틀리면 core 400 `VALIDATION_FAILED`, 월요일 검사는 learning
+  - 목록 `displayed`: learning 200 각 항목의 `(themeId, weekStart)`가 core `room_frame_slot`(#555)에 있으면 true. 다른 칸은 바꾸지 않는다. 빈 목록이면 슬롯을 읽지 않는다. learning 200 본문이 앨범 모양이 아니면 502 `LEARNING_CONTRACT_INVALID`
 
 ---
 
