@@ -115,18 +115,18 @@ class LearningProxyService(private val client: LearningClient, private val idemp
         linked(context).let { student -> listOf("grade=${student.learningGrade}", "demo=${student.demo}").joinToString("&") }
 
     /**
-     * 학년군은 core 학년에서 정한다(초3~4 `G3_4`, 초5~6과 중학생 `G5_6`, #432). 날짜는 KST 오늘이라 무료 한도와 같은 날을 쓴다.
+     * 테마 학년은 core 학년 그대로(`G3`~`G6`, 중학생은 `G6` #432, 학년별 테마 #436). 날짜는 KST 오늘이라 무료 한도와 같은 날을 쓴다.
      * `sundayTheme`은 그날이 일요일이고 상품이 일요일 테마 이용을 허용하는지(#485, learning #484가 일요일 열림 판단에 씀).
      * 조회·열람 기록은 상품 확인 실패(결제 확정 중·상품 오류 503)로 막지 않고 닫힌 일요일(false)로 넘긴다. 시도 시작은 [startAttempt]에서 그대로 실패한다
      */
     private fun themeQuery(context: UserContext, date: LocalDate = entitlements.today()): String {
-        val band = if (linked(context).learningGrade <= 4) "G3_4" else "G5_6"
+        val grade = "G${linked(context).learningGrade}"
         val student = UUID.fromString(context.studentScope.single())
         val sunday = try { entitlements.sundayTheme(student, date) } catch (error: BusinessException) {
             log.warn("sunday theme entitlement unavailable; sent as closed: student={}, code={}", student, error.code)
             false
         }
-        return "gradeBand=$band&date=$date&sundayTheme=$sunday"
+        return "grade=$grade&date=$date&sundayTheme=$sunday"
     }
 
     /** 학습 완료 확인: 시도 상세가 `COMPLETED`면 그 미션 ID. 조회 실패·다른 상태는 null(적립하지 않음) */

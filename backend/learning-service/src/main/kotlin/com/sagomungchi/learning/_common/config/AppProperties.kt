@@ -11,7 +11,6 @@ data class AppProperties(
     val judgment: Judgment = Judgment(),
     val missionDraft: MissionDraft = MissionDraft(),
     val themeDraft: ThemeDraft = ThemeDraft(),
-    val knowledge: Knowledge = Knowledge(),
 ) {
     data class Internal(
         val token: String,
@@ -66,13 +65,4 @@ data class AppProperties(
             require(lease > aiReadTimeout) { "app.theme-draft.lease는 ai-read-timeout보다 길어야 함: $lease ≤ $aiReadTimeout" }
         }
     }
-
-    /**
-     * 교육과정 지식 적재 임베딩(#466, 계약 C6). embedding = ai(기본, ai `/internal/embeddings` #467) | fake(`fake-bigram-v1`,
-     * #467 전 개발·kind). embeddingModel은 ai일 때 판에 기록하는 모델 이름(응답 model과 다르면 적재 중단)
-     */
-    data class Knowledge(
-        val embedding: String = "ai",
-        val embeddingModel: String = "text-embedding-3-small",
-    )
 }

@@ -334,7 +334,8 @@ P21·P22의 core `reward` 도메인. 계약은 [API 명세](../design/api-spec.m
 
 - **관리자 경로**: `/admin/theme-drafts`(요청·목록·상세·adopt·discard·regenerate, CONTENT)를 미션 초안(#355)과 같은 방식으로 learning에 전달. 본문 값 검사와 상태 전이는 learning 소유. `status`·`source`·페이지 밖 값은 learning 호출 전 400
 - **감사**: 요청 감사 → learning 1회 → 결과 감사(`THEME_DRAFT_*`). 채택은 만든 테마 `themeId`(`WEEKLY_THEME`, `detail.draftId`)가 대상이라 이후 `WEEKLY_THEME_*` 감사와 이어짐. 응답에 대상 ID가 없으면 `UNKNOWN` + `503 LEARNING_INVALID_RESPONSE`, 다시 부르지 않음
-- **이야기 열람** `POST /students/me/weekly-theme/story-views`: 학년군·KST 날짜는 core가 정하고 본문은 `{kind: INTRO|OUTRO}`만 다시 만들어 전달. 요일·주 1회 멱등 판정은 learning. 포인트 적립 없음
+- **이야기 열람** `POST /students/me/weekly-theme/story-views`: 학년·KST 날짜는 core가 정하고 본문은 `{kind: INTRO|OUTRO}`만 다시 만들어 전달. 요일·주 1회 멱등 판정은 learning. 포인트 적립 없음
+- **학년별 테마(에픽 #436, #438 뒤 머지)**: core가 학생 학년 그대로 `grade=G{학년}`(`G3`~`G6`, 중학생은 #432대로 `G6`)을 넘긴다. 이번 주 테마·되돌아보기 열람·이야기 열람 세 경로가 같은 `themeQuery`(#485 `sundayTheme` 포함)를 쓴다. 관리자 주간 테마 목록 필터도 `grade`(`G3`·`G4`·`G5`·`G6`), 테마 초안 요청 본문 `grade`는 learning이 검사(core는 JSON object만 확인). learning은 전환 기간에 `gradeBand`도 받아 `G3_4`→`G3`, `G5_6`→`G5`로 읽는다(core 머지 뒤 제거 요청)
 - **이미지 URL**: learning이 준 값을 core가 바꾸지 않고 전달
 - **사용량**: `THEME_DRAFT`·`THEME_IMAGE`를 이벤트 스키마·core `CallType`·OpenAPI·ERD·ai/scoring 발행 목록에 같은 순서로 추가(V40). 이미지 호출은 토큰이 없어 `cost_usd` null, `unpricedCalls`로 집계
 - 테스트: `AdminOperationsIntegrationTest`, `WeeklyThemeProxyIntegrationTest`, `scripts/tests/test_theme_drafts_contract.py`(learning OpenAPI에 경로가 올라오면 3자 대조가 켜짐)
@@ -404,7 +405,7 @@ learning이 위 칸을 주지 않으면 core는 그 적립만 건너뜀(boolean 
 
 - `GET /admin/ai-usage?callType`과 `llm.usage.recorded` 이벤트에 `KNOWLEDGE_EMBEDDING` 추가(V44). 지식 적재·관계 후보·검색 질의 임베딩을 한 종류로 셈(요청 1회 = 본문 최대 64개 = 1건)
 - 임베딩은 입력 토큰만 있어 ai가 `outputTokens = 0`으로 보냄. 단가(`app.llm-pricing.text-embedding-3-small.input`)를 넣기 전에는 `cost_usd` null
-- 미병합 #439 영상 브랜치(`THEME_VIDEO`)도 같은 CHECK를 넓히므로 나중에 머지하는 쪽이 번호를 바꾸고 두 값을 모두 넣음
+- 같은 CHECK를 넓히는 #439 후속 `THEME_VIDEO`는 이 V44 다음 번호인 V45로 옮겼다(25절)
 
 ## 20. 리포트 설명에 필요한 프로필·열람 경계 (#479, 2026-11-10)
 
@@ -630,3 +631,14 @@ core 통합 테스트(실제 JWT/MVC/PostgreSQL·Redis·RabbitMQ)로 권한·기
 
 - 검증 중 함께 찾은 차이: 대기 중인 `REQUESTED` 환불도 웹훅으로 PG 취소가 확인되면 바로 `COMPLETED`가 된다(`applyVerified`). 상태 다이어그램 6.3에 같이 적었다
 - 코드·계약 변경이 없으므로 core 테스트·OpenAPI는 그대로다
+
+## 25. 주간 테마 영상 사용량 THEME_VIDEO·응답 칸 추가 (에픽 #436, 2026-11-12)
+
+learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서와 시작·종료 장면 영상·움직임, 엔딩 뒤 정답을 더하고, ai #437이 시작·종료 장면 영상을 만든다. 학년 전달(15절)과 같은 PR이다.
+
+- `GET /admin/ai-usage?callType`과 `llm.usage.recorded` 이벤트에 `THEME_VIDEO` 추가(V45). 이벤트 스키마·core `CallType`·OpenAPI·ERD·ai/scoring 발행 목록에 `KNOWLEDGE_EMBEDDING` 다음, `M2` 앞. 처음 V42였으나 #480(V42)·#485(V43)·#467(V44)이 먼저 머지되어 "먼저 머지되는 쪽이 다음 번호" 규칙으로 V45. gitops 로컬 core 리비전 v45
+- 영상 호출은 토큰이 없어 이미지처럼 `cost_usd` null, `unpricedCalls`로 집계
+- 요일 장면 영상은 없다(시작·종료만, learning `ThemeScene.videoUrl`은 ai 채택 테마에서 null). 사용량은 테마 하나에 최대 2건
+- 이번 주 테마 응답은 core가 바꾸지 않고 전달하고 OpenAPI·api-spec 설명만 맞춤. core가 읽는 값은 포인트 적립용 `weekStart`·`completed`·`finished`·`days[].missionId`·`attemptStatus`·`day`·`completedOnDay`뿐(#389·#485). 정답·종료 이야기는 learning이 엔딩 전에 비움
+- ai `app/llm/media.py`는 아직 `THEME_VIDEO`를 발행하지 않고 로그만 남긴다. 이 PR 머지 뒤 ai 발행을 켜고 관리자 사용량 집계를 확인
+- 테스트: `ModelVersionHttpTest`(V45 CHECK 저장·조회·미산정), `WeeklyThemeProxyIntegrationTest`(`grade=G5&date=…&sundayTheme=…`), `scripts/tests/test_admin_mission_drafts_contract.py`·`test_admin_operations_contract.py`·`test_core_migration_versions.py`·`test_weekly_theme_contract.py`

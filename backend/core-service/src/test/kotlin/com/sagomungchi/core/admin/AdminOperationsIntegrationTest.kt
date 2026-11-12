@@ -429,14 +429,14 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
     @Test fun `weekly theme proxy forwards every route with CONTENT and audits changes by theme`() {
         val (admin,access)=token("CONTENT");val theme=UUID.randomUUID()
         val routes=listOf(
-            Triple("GET","/weekly-themes?gradeBand=G3_4&weekStart=2026-11-09&status=DRAFT","/internal/admin/weekly-themes"),
+            Triple("GET","/weekly-themes?grade=G3&weekStart=2026-11-09&status=DRAFT","/internal/admin/weekly-themes"),
             Triple("POST","/weekly-themes","/internal/admin/weekly-themes"),
             Triple("GET","/weekly-themes/$theme","/internal/admin/weekly-themes/$theme"),
             Triple("PUT","/weekly-themes/$theme","/internal/admin/weekly-themes/$theme"),
             Triple("POST","/weekly-themes/$theme/review-request","/internal/admin/weekly-themes/$theme/review-request"),
             Triple("POST","/weekly-themes/$theme/publish","/internal/admin/weekly-themes/$theme/publish"),
             Triple("POST","/weekly-themes/$theme/unpublish","/internal/admin/weekly-themes/$theme/unpublish"))
-        val payload="""{"gradeBand":"G3_4","weekStart":"2026-11-09","title":"합성 테마","intro":"도입","days":[]}"""
+        val payload="""{"grade":"G3","weekStart":"2026-11-09","title":"합성 테마","intro":"도입","days":[]}"""
         for((method,path,internal) in routes) {
             missionStatus=if(method=="POST" && path=="/weekly-themes") 201 else 200
             missionBody="""{"themeId":"$theme","status":"DRAFT","items":[]}"""
@@ -452,7 +452,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
             assertEquals(listOf(theme,"SUCCESS"),rows.single { it["action"]=="WEEKLY_THEME_${action}_SUCCEEDED" }.let { listOf(it["target_id"],it["result"]) },action)
         val (_,ops)=token("SERVICE_OPS");requests.clear()
         for((method,path,_) in routes) assertEquals(403,draftCall(method,path,ops,if(method=="GET") null else "{}").status,path)
-        for(path in listOf("/weekly-themes?gradeBand=G1_2","/weekly-themes?weekStart=2026-11-10","/weekly-themes?status=PRIVATE","/weekly-themes?size=101"))
+        for(path in listOf("/weekly-themes?grade=G3_4","/weekly-themes?weekStart=2026-11-10","/weekly-themes?status=PRIVATE","/weekly-themes?size=101"))
             assertEquals(400,draftCall("GET",path,access).status,path)
         assertEquals(400,draftCall("POST","/weekly-themes",access,"[]").status)
         assertTrue(requests.isEmpty())
@@ -480,7 +480,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
             Triple("POST","/theme-drafts/$draft/adopt","/internal/admin/theme-drafts/$draft/adopt"),
             Triple("POST","/theme-drafts/$draft/discard","/internal/admin/theme-drafts/$draft/discard"),
             Triple("POST","/theme-drafts/$draft/regenerate","/internal/admin/theme-drafts/$draft/regenerate"))
-        val payload="""{"gradeBand":"G3_4","weekStart":"2026-11-16","topic":"합성 주제"}"""
+        val payload="""{"grade":"G4","weekStart":"2026-11-16","topic":"합성 주제"}"""
         for((method,path,internal) in routes) {
             missionStatus=when { path.endsWith("/adopt") -> 201; method=="POST" && (path=="/theme-drafts" || path.endsWith("/regenerate")) -> 202; else -> 200 }
             missionBody=if(path.endsWith("/adopt")) """{"themeId":"$theme","status":"DRAFT"}""" else """{"draftId":"$draft","status":"GENERATING","items":[]}"""
@@ -501,7 +501,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
     @Test fun `theme draft request regenerate adopt discard audit the draft and adopted theme`() {
         val (admin,access)=token("CONTENT");val draft=UUID.randomUUID();val renewed=UUID.randomUUID();val theme=UUID.randomUUID()
         missionStatus=202;missionBody="""{"draftId":"$draft","status":"GENERATING","request":{"note":"private secret"}}"""
-        val requested=draftCall("POST","/theme-drafts",access,"""{"gradeBand":"G5_6"}""")
+        val requested=draftCall("POST","/theme-drafts",access,"""{"grade":"G5"}""")
         assertEquals(202,requested.status);assertTrue(requested.contentAsString.contains("GENERATING"))
         // 다시 생성은 learning이 새 초안을 만들어도 응답 draftId를 대상으로 남긴다
         missionBody="""{"draftId":"$renewed","status":"GENERATING"}"""

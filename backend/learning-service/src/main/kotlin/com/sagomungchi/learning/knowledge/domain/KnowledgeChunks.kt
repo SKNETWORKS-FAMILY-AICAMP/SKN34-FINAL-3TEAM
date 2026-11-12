@@ -10,7 +10,7 @@ enum class ChunkKind { STANDARD, DOMAIN, CONTENT, SUBJECT_GUIDE, THINKING_TYPE }
 
 enum class DatasetStatus { LOADING, ACTIVE, RETIRED }
 
-/** 지식 조각(erd 4.5 `knowledge_chunk`). embedding은 길이 1536 */
+/** 지식 조각(erd 4.5 `knowledge_chunk`). 코드 조회용, 임베딩 없음 */
 data class KnowledgeChunk(
     val id: String,
     val kind: ChunkKind,
@@ -118,7 +118,7 @@ object KnowledgeChunks {
         }
     }
 
-    /** 조각 본문 규칙(erd 4.5). fake.chunk_text와 글자 하나까지 같아야 같은 해시·같은 가짜 벡터가 나온다 */
+    /** 조각 본문 규칙(erd 4.5). fake.chunk_text와 글자 하나까지 같아야 같은 해시가 나온다(본문 바뀜 판정) */
     fun chunkText(record: JsonNode): String = when (val kind = record.text("kind")) {
         "standard" -> buildString {
             append("[${record.text("code")}] ${record.text("statement")}")

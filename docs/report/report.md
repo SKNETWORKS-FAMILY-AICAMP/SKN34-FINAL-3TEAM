@@ -336,3 +336,16 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - 후보 선정: 생각 유형마다 최신 답변부터 시도. ai 호출 전 제외(정정·빈 답변·학년·입력 유형·점수 형식·원문 대조 실패)는 같은 유형의 다음 답변으로. ai를 한 번 부른 유형은 결과와 관계없이 다시 부르지 않음(유형당 1회, 최대 3유형)
 - web 설명 본문 `white-space: pre-line`
 - 미실측: 실제 sLLM·클러스터에서의 월요일 배치 시간(#475·#476). 4시간은 계산값
+
+## 28. 주간 테마 요약 당일 풀이·엔딩 표시 (#486, 2026-11-11)
+
+주간 테마 개정(#483)의 report 몫(FN-RPT-17). 계약은 api-spec 4.1 내부 API 표(`weekly-theme/summary`)·5.17 #391 소비 계약.
+
+- 결정(사용자 승인): 요약의 `days[].completed`(그 요일 KST 안에 학습 완료 = 주간 테마 조회의 `completedOnDay`)는 이름·뜻 그대로, `days[].completedInWeek`(그 주 테마 시도 안에 학습 완료, 프리미엄 일요일 포함)를 추가. 요약에는 `completedOnDay`를 두지 않음(#507). 기존 칸 뜻이 그대로라 저장된 리포트 해석 불변
+- 범위: report만 먼저. learning 값 계산은 #484(칸 이름은 #484에 제안). LLM 서술은 테마 요약을 쓰지 않아 프롬프트 불변, core는 `themeSummary`를 그대로 전달, 웹 표시는 #487
+- **API 변경**: `ThemeSummary`·`ThemeDay`에 선택 칸 `days[].completedInWeek: boolean|null`, `finished: boolean|null`(주간 완주), `ending: NOT_ENDED|ENDED|null`. learning이 주지 않으면 `null`로 저장·응답. 최상위 `completed`는 개근. 경로·오류 코드 불변
+- 소비 검증(`ThemeSummaryBuilder`, 위반 시 작업 실패): 당일 풀이인데 `completedInWeek=false`, `finished=true`인데 다섯 요일이 아니거나 안 푼 요일 있음, `NO_RECORD`에 `finished=true`·`ending=ENDED`
+- 표시(Markdown·PDF 공통, `renderer.py` `theme_day_label`·`theme_status_lines`): 요일 "그날 풀었어요/나중에 풀었어요/못 풀었어요", 새 칸이 있으면 "개근"·"주간 완주"·"엔딩" 줄. 새 칸이 없거나 키가 없는 옛 저장본은 지금처럼 "완주"·요일별 "완료/미완료"
+- 기간: 일일은 완료 시각 기준(22절)이라 몰아 푼 날 그날 마무리한 테마 문제가 모두 잡힘. 주간 생성 시각(월 00:00) 불변, learning 요약은 `theme_week_start`로 모아 일요일 풀이도 포함. 한계: 일요일 시작·월 00:00 뒤 마무리한 시도는 재생성 때만 반영
+- 검증: report pytest 전체 통과(새 10개: 매일·몰아 푼 학생·엔딩 못 본 학생 표시, 이전 입력·옛 저장본 동일 표시, 검증 오류 5종, 일일 몰아 푼 문제), Ruff·OpenAPI 일치 통과. learning `AttemptComparisonIntegrationTest`의 실제 요약을 `validate_theme_summary_contracts.py`로 learning·report OpenAPI와 대조해 PASS
+- 남은 일: #484 병합 뒤 새 칸을 채운 실제 응답 대조와 kind 한 주 흐름 확인

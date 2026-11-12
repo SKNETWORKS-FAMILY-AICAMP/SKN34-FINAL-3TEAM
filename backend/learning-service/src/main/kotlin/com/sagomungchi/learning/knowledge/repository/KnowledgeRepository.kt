@@ -29,7 +29,7 @@ class KnowledgeRepository(
     fun updateStatus(version: String, status: DatasetStatus, activatedAt: Instant? = null) =
         check(mapper.updateStatus(version, status, activatedAt) == 1)
 
-    fun insertChunk(version: String, chunk: KnowledgeChunk, embedding: FloatArray) {
+    fun insertChunk(version: String, chunk: KnowledgeChunk) {
         val row = ChunkInsert(
             datasetVersion = version,
             id = chunk.id,
@@ -44,7 +44,6 @@ class KnowledgeRepository(
             noticeGradeBand = chunk.noticeGradeBand,
             text = chunk.text,
             record = objectMapper.writeValueAsString(chunk.record),
-            embedding = vectorText(embedding),
             contentHash = chunk.contentHash,
             source = objectMapper.writeValueAsString(chunk.source),
         )
@@ -53,12 +52,6 @@ class KnowledgeRepository(
 
     /** 조각 ID → (종류, 본문 해시) */
     fun findChunkHashes(version: String): Map<String, ChunkHashRow> = mapper.findChunkHashes(version).associateBy { it.id }
-
-    /** 본문 해시 → 벡터(같은 본문 임베딩 재사용) */
-    fun findEmbeddingsByHash(version: String): Map<String, FloatArray> =
-        mapper.findEmbeddingsByHash(version).associate { it.contentHash to parseVector(it.embedding) }
-
-    fun countMissingEmbeddings(version: String): Int = mapper.countMissingEmbeddings(version)
 
     fun countChunksByKind(version: String): Map<String, Int> = mapper.countChunksByKind(version).associate { it.kind to it.count }
 
@@ -97,11 +90,5 @@ class KnowledgeRepository(
             "knowledge_chunk" to "dataset_version",
             "knowledge_dataset" to "version",
         )
-
-        /** pgvector 글 표기 `[0.1,0.2,…]` (Float.toString은 지수 표기도 pgvector가 읽음) */
-        fun vectorText(values: FloatArray): String = values.joinToString(",", "[", "]")
-
-        fun parseVector(text: String): FloatArray =
-            text.trim().removePrefix("[").removeSuffix("]").split(',').map { it.trim().toFloat() }.toFloatArray()
     }
 }

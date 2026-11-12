@@ -1483,14 +1483,14 @@ paths:
       operationId: adminWeeklyThemesList
       tags:
       - Admin
-      description: 'CONTENT 권한 (#387). learning GET /internal/admin/weekly-themes로 넘김. 필터 gradeBand·weekStart(KST 월요일)·status, 필드는 api-spec 2.8·4.1.'
+      description: 'CONTENT 권한 (#387). learning GET /internal/admin/weekly-themes로 넘김. 필터 grade(학년별 테마, 에픽 #436)·weekStart(KST 월요일)·status, 필드는 api-spec 2.8·4.1.'
       parameters:
-      - name: gradeBand
+      - name: grade
         in: query
         required: false
         schema:
           type: string
-          enum: [G3_4, G5_6]
+          enum: [G3, G4, G5, G6]
       - name: weekStart
         in: query
         required: false
@@ -6504,10 +6504,10 @@ paths:
     get:
       operationId: getWeeklyTheme
       tags: [WeeklyTheme]
-      summary: 이번 주 학년군 테마 (#387)
+      summary: 이번 주 학년 테마 (#387·#436)
       description: >-
-        STUDENT 전용(FN-RET-07·08, api-spec 2.11). core가 본인 학생 학년으로 학년군(초3~4 G3_4, 초5~6 G5_6)과 KST 오늘 날짜를 정해
-        learning GET /internal/students/{studentId}/weekly-theme?gradeBand&date&sundayTheme로 넘기고 결과를 그대로 전달한다. 클라이언트 query는 쓰지 않는다. Cache-Control no-store.
+        STUDENT 전용(FN-RET-07·08, api-spec 2.11). core가 본인 학생 학년으로 테마 학년(G3~G6, 중학생은 G6, 에픽 #436)과 KST 오늘 날짜를 정해
+        learning GET /internal/students/{studentId}/weekly-theme?grade&date&sundayTheme로 넘기고 결과를 그대로 전달한다. 클라이언트 query는 쓰지 않는다. Cache-Control no-store.
         sundayTheme(#485)은 KST 일요일이고 상품이 일요일 테마를 허용할 때만 true(상품 확인 실패는 false로 넘김).
         200 응답의 days[].attemptStatus COMPLETED(학습 완료)·days[].completedOnDay(당일 풀이 THEME_ON_TIME, 사건 키 weekStart:day)·
         completed(개근 THEME_COMPLETED, 사건 키 weekStart, learning 기존 칸 이름 #506)·finished(주간 완주 THEME_FINISHED, 사건 키 weekStart)가 true면 포인트를 적립·보충한다(#389·#485).
@@ -6527,7 +6527,7 @@ paths:
       tags: [WeeklyTheme]
       summary: 토·일 되돌아보기 열람 기록 (#387)
       description: >-
-        STUDENT 전용(FN-RET-08). learning POST /internal/students/{studentId}/weekly-theme/review-views?gradeBand&date&sundayTheme로 넘김(멱등·주 1회는 learning).
+        STUDENT 전용(FN-RET-08). learning POST /internal/students/{studentId}/weekly-theme/review-views?grade&date&sundayTheme로 넘김(멱등·주 1회는 learning).
         응답 {firstViewThisWeek, completed}는 되돌아보기·개근(completed, THEME_COMPLETED) 포인트 근거(#389·#485). Cache-Control no-store.
       responses:
         '200':
@@ -6543,7 +6543,7 @@ paths:
       summary: 시작·종료 이야기 열람 기록 (#439)
       description: >-
         STUDENT 전용(FN-RET-07·08, 에픽 #436). 본문 {kind}가 INTRO·OUTRO가 아니면 core가 400 VALIDATION_FAILED로 막고, 맞으면 {kind}만 다시 만들어
-        learning POST /internal/students/{studentId}/weekly-theme/story-views?gradeBand&date&sundayTheme로 넘긴다. INTRO는 월요일·OUTRO는 토요일만 허용하고
+        learning POST /internal/students/{studentId}/weekly-theme/story-views?grade&date&sundayTheme로 넘긴다. INTRO는 월요일·OUTRO는 토요일만 허용하고
         주 1회 멱등은 learning(#438) 판정이며 응답·오류 코드를 그대로 전달한다. Cache-Control no-store.
       requestBody:
         required: true
@@ -9713,11 +9713,11 @@ components:
     AdminWeeklyThemeDocument:
       type: object
       additionalProperties: true
-      description: 'learning 소유 주간 테마 JSON object (#387, #385). 작성·수정 {gradeBand, weekStart, title, intro, days:[{day, missionId}]}, 응답에 themeId·status. core는 성공 응답을 그대로 전달한다.'
+      description: 'learning 소유 주간 테마 JSON object (#387, #385). 작성·수정 {grade(G3~G6, 에픽 #436), weekStart, title, intro, days:[{day, missionId}]}, 응답에 themeId·status. core는 성공 응답을 그대로 전달한다.'
     WeeklyThemeDocument:
       type: object
       additionalProperties: true
-      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed}(#439부터 outro·introImageUrl·outroImageUrl·introSeen·outroSeen 추가, core는 바꾸지 않고 전달) 또는 되돌아보기 열람 결과 {firstViewThisWeek, completed}·이야기 열람 결과(learning #438 소유).'
+      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed}(#439부터 outro·introImageUrl·outroImageUrl·introSeen·outroSeen 추가, 에픽 #436 bigQuestion·candidates·days[].clue·rulesOut·introVideoUrl·outroVideoUrl·introMotion·outroMotion·answer·answerClue 추가(learning #438 소유, 요일 영상은 없음). core는 바꾸지 않고 전달하며 포인트 적립에 weekStart·completed·finished·days[].missionId·attemptStatus·day·completedOnDay만 읽는다. 정답·종료 이야기는 learning이 엔딩 전에 비운다) 또는 되돌아보기 열람 결과 {firstViewThisWeek, completed}·이야기 열람 결과(learning #438 소유).'
     WeeklyThemeStoryViewRequest:
       type: object
       additionalProperties: false
@@ -9742,7 +9742,7 @@ components:
     AdminThemeDraftDocument:
       type: object
       additionalProperties: true
-      description: 'learning 소유 테마 초안 JSON object (#439, learning #438). 필드는 api-spec 4.1 `/internal/admin/theme-drafts…`, core는 성공 응답을 그대로 전달한다. 요청·버리기·다시 생성 응답에 draftId·status가 있어야 결과 감사를 남긴다.'
+      description: 'learning 소유 테마 초안 JSON object (#439, learning #438). 필드는 api-spec 4.1 `/internal/admin/theme-drafts…`, 요청 본문 grade(G3~G6, 에픽 #436)를 포함한 값 검사는 learning, core는 JSON object인지만 보고 성공 응답을 그대로 전달한다. 요청·버리기·다시 생성 응답에 draftId·status가 있어야 결과 감사를 남긴다.'
     AdminMissionDocument:
       type: object
       additionalProperties: true
@@ -11068,7 +11068,7 @@ components:
             $ref: '#/components/schemas/ActiveModelVersion'
     CallType:
       type: string
-      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, THEME_DRAFT, THEME_IMAGE, REPORT_EXPLANATION, KNOWLEDGE_EMBEDDING, M2, M1]
+      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, THEME_DRAFT, THEME_IMAGE, REPORT_EXPLANATION, KNOWLEDGE_EMBEDDING, THEME_VIDEO, M2, M1]
     AiUsageResponse:
       type: object
       additionalProperties: false

@@ -25,8 +25,6 @@ env:
   - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
   - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
-  # #466: ai 임베딩 API(#467) 전까지 지식 적재는 가짜 임베딩(fake-bigram-v1)
-  - {name: APP_KNOWLEDGE_EMBEDDING, value: fake}
 hpa:
   enabled: false
 pdb:
@@ -50,7 +48,7 @@ networkPolicy:
       ports: [{protocol: TCP, port: 5432}]
 migration:
   enabled: true
-  revision: v16
+  revision: v17
   image:
     repository: sagomungchi/learning-migrate
     tag: local
