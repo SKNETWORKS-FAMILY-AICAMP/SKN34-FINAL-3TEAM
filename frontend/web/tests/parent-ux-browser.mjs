@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 const base = process.env.DEMO_URL ?? 'http://127.0.0.1:5185'
 const out = '.taste-skill/parent-ux-548'
 await mkdir(out, { recursive: true })
-const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe' })
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined) })
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 await context.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, r => r.abort())
 const page = await context.newPage(), errors = [], checks = []
