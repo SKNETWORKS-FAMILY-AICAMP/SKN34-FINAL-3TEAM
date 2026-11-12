@@ -563,6 +563,24 @@ SELECT pg_temp.expect_sqlstate($$
     VALUES ('00000000-0000-4000-8000-000000000003', '2026-11-09', 'REVIEW',
             '00000000-0000-4000-8000-000000000120', now())
 $$, '23514');
+-- #559 기념 액자: 회차(학생·테마·주)당 1개, 주는 월요일, 테마·버전 FK
+INSERT INTO theme_frame (id, student_id, theme_id, theme_week_start, theme_version_id, awarded_at, seen_at, created_at)
+VALUES ('00000000-0000-4000-8000-000005590001', '00000000-0000-4000-8000-000000000002',
+        '00000000-0000-4000-8000-000000000120', '2026-11-09', '00000000-0000-4000-8000-000000000121', now(), NULL, now());
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_frame (id, student_id, theme_id, theme_week_start, theme_version_id, awarded_at, seen_at, created_at)
+    VALUES ('00000000-0000-4000-8000-000005590002', '00000000-0000-4000-8000-000000000002',
+            '00000000-0000-4000-8000-000000000120', '2026-11-09', '00000000-0000-4000-8000-000000000121', now(), now(), now())
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_frame SET theme_week_start = '2026-11-10' WHERE id = '00000000-0000-4000-8000-000005590001'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_frame SET theme_version_id = '00000000-0000-4000-8000-999999999999' WHERE id = '00000000-0000-4000-8000-000005590001'
+$$, '23503');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_frame SET theme_id = '00000000-0000-4000-8000-999999999999' WHERE id = '00000000-0000-4000-8000-000005590001'
+$$, '23503');
 -- #438 테마 초안: 학년·주(월요일)·출처·상태 CHECK, 자동 초안은 학년·주당 1개, 채택 테마 1개
 INSERT INTO theme_draft (id, grade, week_start, source, status, input, attempts, created_at, updated_at)
 VALUES ('00000000-0000-4000-8000-000000000127', 'G3', '2026-11-16', 'AUTO', 'GENERATING',

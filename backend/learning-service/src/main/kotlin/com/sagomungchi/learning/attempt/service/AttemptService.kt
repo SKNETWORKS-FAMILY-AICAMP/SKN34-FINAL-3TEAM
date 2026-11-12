@@ -22,6 +22,7 @@ import com.sagomungchi.learning.attempt.repository.AttemptRepository
 import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
 import com.sagomungchi.learning.judgment.service.JudgmentService
+import com.sagomungchi.learning.memory.service.ThemeFrameService
 import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.theme.service.WeeklyThemeService
@@ -78,6 +79,7 @@ class AttemptService(
     private val missionService: MissionService,
     private val judgmentService: JudgmentService,
     private val weeklyThemeService: WeeklyThemeService,
+    private val themeFrameService: ThemeFrameService,
 ) {
     /**
      * 시도 시작 (state-diagram 3.2, sequence-diagram 3.1). 진행 중 시도가 있으면 미션 공개·범위와 무관하게 그 시도를 돌려줌
@@ -160,12 +162,16 @@ class AttemptService(
         return revealed(attempt, finishedAt, missionService.getVersion(attempt.missionVersionId), answers, judgmentService.results(attempt.id))
     }
 
-    /** 돌아보기 저장 + 학습 완료 (sequence-diagram 3.3, FN-LRN-12·14): 같은 트랜잭션. 마무리 전이면 409 REVEAL_CONDITION_UNMET, 완료 뒤면 409 ATTEMPT_CLOSED */
+    /**
+     * 돌아보기 저장 + 학습 완료 (sequence-diagram 3.3, FN-LRN-12·14): 같은 트랜잭션. 마무리 전이면 409 REVEAL_CONDITION_UNMET, 완료 뒤면 409 ATTEMPT_CLOSED.
+     * 테마 시도면 같은 트랜잭션에서 회차 5문제 완료 시 기념 액자 (P27, sequence-diagram 3.8, #559)
+     */
     @Transactional
     fun saveReflection(attemptId: UUID, command: Reflection) {
         val completed = lockOwned(attemptId).complete(now())
         attemptRepository.insertReflection(completed.id, command, checkNotNull(completed.completedAt))
         attemptRepository.complete(completed)
+        themeFrameService.awardIfComplete(completed)
     }
 
     /**

@@ -11,7 +11,11 @@ data class AppProperties(
     val judgment: Judgment = Judgment(),
     val missionDraft: MissionDraft = MissionDraft(),
     val themeDraft: ThemeDraft = ThemeDraft(),
+    val themeFrame: ThemeFrame = ThemeFrame(),
 ) {
+    /** 기념 액자 (P27, #559). backfillOnStartup: 기동 때 도입 전·누락 회차 소급(ThemeFrameBackfillRunner, 멱등) */
+    data class ThemeFrame(val backfillOnStartup: Boolean = true)
+
     data class Internal(
         val token: String,
         val connectTimeout: Duration,
