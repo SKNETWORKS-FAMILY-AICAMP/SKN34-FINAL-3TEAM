@@ -278,3 +278,8 @@ api-spec 3.4의 `explanations: {state, items[]}`를 소비(report #479가 응답
 
 
 PR 통합 검증: origin/develop c4c5b6b6를 충돌 없이 로컬 병합했다. web 단위 293건, test:browser 46건, test:auth 49건, test:rewards 9건, test:models 15건 및 별도 학부모 검사 31건 통과. lint·test:types·build·운영 목업 제외 검사·git diff --check 통과. 병렬 Playwright 검사 산출물은 각기 다른 경로로 분리했다. 기존 알림 위치·강조색 기대값은 최종 사용자 결정으로 갱신했다. 실서버 learning-journey E2E는 삭제된 학부모 버튼 대신 자녀 PIN 설정·기기 등록·별도 학생 컨텍스트의 PIN 로그인으로 전환했으나, 로컬 전체 스택 E2E는 실행하지 않았다(타입 검사만 수행).
+
+
+### PR #570 결제 E2E 후속 수정
+
+실패한 Actions 실행 43150312698에서는 결제를 새 탭으로 분리한 뒤에도 payment.spec.ts가 원래 학부모 탭의 checkout sessionStorage를 기다려 180초 시간 초과했다(나머지 4개 E2E 통과). 결제 탭 popup을 클릭 전에 기다리고, 주문/승인 콜백/거래 확인을 그 탭에서 수행하도록 수정했다. 원래 탭에 주문 자료가 없고 opener가 분리되는 것도 확인하며, 결제 후 원래 탭의 focus 재조회로 이용권 반영을 검사한다. 주문 대기는 30초로 제한한다. 타입 검사·git diff --check 통과. 로컬 Docker 엔진 미기동으로 전체 스택은 CI에서 재검증한다.
