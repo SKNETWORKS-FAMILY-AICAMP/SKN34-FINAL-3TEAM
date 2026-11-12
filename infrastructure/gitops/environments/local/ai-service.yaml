@@ -10,9 +10,11 @@ probes:
   startup: {enabled: true, path: /health/live, periodSeconds: 10, failureThreshold: 30}
   liveness: {enabled: true, path: /health/live, periodSeconds: 10, timeoutSeconds: 5}
   readiness: {enabled: true, path: /health/ready, periodSeconds: 10, timeoutSeconds: 5}
+# #586: 영상 이어 붙이기(ffmpeg libx264)가 컨테이너 최대 약 850MiB(16코어 kind 실측)라 상한 1Gi.
+# 평소 사용은 약 180MiB라 요청은 그대로 둔다. 영상을 끄고 켜도 같은 값이다.
 resources:
   requests: {cpu: 100m, memory: 256Mi}
-  limits: {cpu: 500m, memory: 512Mi}
+  limits: {cpu: 500m, memory: 1Gi}
 env:
   - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
   - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_URL}}}
