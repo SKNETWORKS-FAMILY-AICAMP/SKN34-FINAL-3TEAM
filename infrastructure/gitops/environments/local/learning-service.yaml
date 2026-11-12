@@ -25,6 +25,13 @@ env:
   - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
   - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
+  # #546: 테마 그림·영상 presigned URL. 서명만 하므로 MinIO로 나가는 정책은 없다.
+  # 브라우저에서 열 때는 platform/minio를 호스트 19000으로 port-forward한다(report-api와 같은 주소).
+  - {name: ASSET_S3_BUCKET, value: sagomungchi-local-missions}
+  - {name: S3_PUBLIC_ENDPOINT_URL, value: "http://127.0.0.1:19000"}
+  - {name: S3_REGION, value: ap-northeast-2}
+  - {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_USER}}}
+  - {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_PASSWORD}}}
 hpa:
   enabled: false
 pdb:
