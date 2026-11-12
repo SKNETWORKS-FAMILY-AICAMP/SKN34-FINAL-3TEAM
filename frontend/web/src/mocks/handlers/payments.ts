@@ -12,22 +12,38 @@ const free: PaymentProduct = { ...premium, id: '74000000-0000-4000-8000-00000000
 type Account = { subscriptions: PaymentSubscription[]; payments: PaymentRecord[]; orders: Map<string, PaymentOrder>; keys: Map<string, { body: string; result: unknown }> }
 const accounts = new Map<string, Account>()
 const storageKey = 'sagomungchi:payment-fixture:v1'
+// Only virtual development fixtures cross tabs; production uses the server as source of truth.
+const fixtureChannel = typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(storageKey) : null
+import.meta.hot?.dispose(() => fixtureChannel?.close())
 function persist() {
-  if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(storageKey, JSON.stringify([...accounts].map(([owner, a]) => [owner, { subscriptions: a.subscriptions, payments: a.payments, orders: [...a.orders] }])))
+  if (typeof sessionStorage === 'undefined') return
+  const value = JSON.stringify([...accounts].map(([owner, a]) => [owner, { subscriptions: a.subscriptions, payments: a.payments, orders: [...a.orders] }]))
+  if (sessionStorage.getItem(storageKey) === value) return
+  sessionStorage.setItem(storageKey, value)
+  fixtureChannel?.postMessage(value)
 }
 async function respond(action: () => Promise<unknown>, status = 200) {
   return respondBase(async () => { try { return await action() } finally { persist() } }, status)
 }
-if (typeof sessionStorage !== 'undefined') {
+function restoreFixture(value: string) {
   try {
-    const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? '[]')
+    const saved = JSON.parse(value)
     for (const [owner, data] of saved) {
       if (typeof owner !== 'string' || !owner.endsWith('@example.test') || !Array.isArray(data.subscriptions) || !Array.isArray(data.payments) || !Array.isArray(data.orders)) continue
-      const a: Account = { ...data, orders: new Map(data.orders), keys: new Map() }
+      const a: Account = { ...data, orders: new Map(data.orders), keys: accounts.get(owner)?.keys ?? new Map() }
       for (const p of a.payments) if (p.subscription) p.subscription = a.subscriptions.find(s => s.subscriptionId === p.subscription?.subscriptionId) ?? p.subscription
       accounts.set(owner, a)
     }
   } catch { /* Development fixture only. */ }
+}
+if (typeof sessionStorage !== 'undefined') restoreFixture(sessionStorage.getItem(storageKey) ?? '[]')
+if (fixtureChannel) fixtureChannel.onmessage = event => {
+  if (typeof event.data !== 'string' || sessionStorage.getItem(storageKey) === event.data) return
+  restoreFixture(event.data)
+  sessionStorage.setItem(storageKey, event.data)
+  const current = accounts.get(mockIdentity.email)
+  for (const sub of current?.subscriptions ?? []) if (sub.status === 'ACTIVE') setMockChildPlan({ childId: sub.childId, plan: 'PREMIUM' })
+  window.dispatchEvent(new Event('sagomungchi:payment-fixture-updated'))
 }
 const day = (offset: number) => new Date(Date.now() + offset * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
 function parentRead(request: Request) { guard(request); if (fixtureStore.snapshot().session?.role !== 'PARENT') return fail('FORBIDDEN', '학부모 본인의 결제만 확인할 수 있습니다.', 403) }
