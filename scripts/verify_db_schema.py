@@ -334,6 +334,23 @@ VALUES ('00000000-0000-4000-8000-000000000002','SCHEMA_HAT','00000000-0000-4000-
 INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at)
 VALUES ('00000000-0000-4000-8000-000000000002','HAT','00000000-0000-4000-8000-000000003896',now());
 SELECT pg_temp.expect_sqlstate($$UPDATE student_look_equipment SET slot = 'THEME'$$, '23514');
+-- #555 V47: furniture skins are look items in the DESK/WALL/WARDROBE slots; the wall holds frames in slots 1..6.
+INSERT INTO look_item(id,code,slot,name,price_points,asset_key,status,created_by,created_at,updated_at)
+VALUES ('00000000-0000-4000-8000-000000005551','SCHEMA_DESK','DESK','schema-test',10,'',
+        'ON_SALE','00000000-0000-4000-8000-000000000001',now(),now());
+INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at)
+VALUES ('00000000-0000-4000-8000-000000000002','DESK','00000000-0000-4000-8000-000000005551',now());
+SELECT pg_temp.expect_sqlstate($$UPDATE look_item SET slot = 'ROOM' WHERE code = 'SCHEMA_DESK'$$, '23514');
+INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-000000000002',1,'00000000-0000-4000-8000-000000005552','2026-11-02',now());
+SELECT pg_temp.expect_sqlstate($$INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-000000000002',2,'00000000-0000-4000-8000-000000005552','2026-11-02',now())$$, '23505');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-000000000002',7,'00000000-0000-4000-8000-000000005553','2026-11-02',now())$$, '23514');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-000000000002',3,'00000000-0000-4000-8000-000000005553','2026-11-03',now())$$, '23514');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+VALUES ('00000000-0000-4000-8000-999999999999',1,'00000000-0000-4000-8000-000000005553','2026-11-02',now())$$, '23503');
 """
 
 LEARNING_CASES = """

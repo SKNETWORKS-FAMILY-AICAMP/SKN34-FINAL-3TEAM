@@ -565,13 +565,16 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 | GET | `/children/{childId}/points?page&size` | 학부모 | 연결 자녀 잔액·내역(같은 모양). 학생 공개 설정(#206)과 무관, 연결 아닌 자녀 403 | RET-05 | 핵심(#389) |
 | GET | `/students/me/look-items` | 학생 | 테마·캐릭터·아이템 목록 `{items:[{itemKey, slot, name, pricePoints, unlocked, onSale, assetKey}]}`(테마·캐릭터 `assetKey` null). 판매 중단 아이템은 해금한 학생에게만 `onSale:false`로 보임 | RET-06 | 핵심(#389) |
 | POST | `/students/me/look-items/{itemKey}/unlock` | 학생 | 포인트 해금 → 200 `{itemKey, unlocked:true, balance}`. `Idempotency-Key`(UUID) 필수(없으면 400), 같은 키 재전송은 처음 응답, 같은 키·다른 항목 422 `IDEMPOTENCY_KEY_REUSED`. 잔액 부족 409 `INSUFFICIENT_POINTS`, 판매 중단 409 `LOOK_ITEM_NOT_ON_SALE`, 없는 항목 404 `LOOK_ITEM_NOT_FOUND`, 이미 해금(무료 포함) 200(차감 없음). 잔액 행 잠금으로 다른 키 동시 요청도 1회만 차감 | RET-06 | 핵심(#389) |
-| PUT | `/students/me/preferences` | 학생 | 3.12 확장: `{theme, companion, equipped?:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(슬롯별 아이템 `itemKey` 또는 null, 생략하면 착용 유지). 잠긴 항목 409 `LOOK_LOCKED`, 모르는 슬롯·코드·다른 슬롯 아이템 422 | RET-06 | 핵심(#389) |
+| PUT | `/students/me/preferences` | 학생 | 3.12 확장: `{theme, companion, equipped?:{HAT, OUTFIT, ACCESSORY, BACKGROUND, DESK, WALL, WARDROBE}}`(슬롯별 아이템 `itemKey` 또는 null, `equipped` 생략하면 착용 유지). #555부터 보낸 슬롯만 바꾸고 보내지 않은 슬롯은 유지, 응답은 일곱 슬롯 모두. 잠긴 항목 409 `LOOK_LOCKED`, 모르는 슬롯·코드·다른 슬롯 아이템 422(하나라도 걸리면 아무 슬롯도 바꾸지 않음) | RET-06 | 핵심(#389·#555) |
 
 - `eventType`: `MISSION_COMPLETED`·`REVIEW_VIEWED`·`COMMUNITY_POSTED`·`REACTION_GIVEN`·`THEME_COMPLETED`(개근)·`THEME_ON_TIME`(당일 풀이)·`THEME_FINISHED`(주간 완주)(적립), `UNLOCK`(사용, 음수)
 - 2026-11-10 개정(#483, core #485 구현·V43): 적립 사건에 당일 풀이(`THEME_ON_TIME`, 5, 사건 키 `weekStart:day` 예 `2026-11-09:MON`)·주간 완주(`THEME_FINISHED`, 10, 사건 키 `weekStart`)를 더했다. `THEME_COMPLETED`(30)는 이름·키 그대로 개근(월~금 각 당일 학습 완료)으로 표시한다. 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`(2.11). 개근은 주간 테마 조회 보충과 되돌아보기 열람 응답 `completed`로, 당일 풀이·주간 완주는 주간 테마 조회 보충으로만 적립하며 사건 키로 1회(3.4·3.6 시퀀스, #506). learning #484가 `completedOnDay`·`finished`를 내보내기 전에는 당일 풀이·주간 완주가 쌓이지 않는다(학생 포인트 화면은 "준비 중" 표시). 학생·학부모 포인트 내역 화면은 세 사건 이름(당일 풀이·개근·주간 완주)을 보여 준다(web #487)
 - 적립은 별도 API가 없다. core `RewardService.earn(studentId, event, sourceKey)` 한 곳에서 처리하고(#389 구현, 자체 트랜잭션·예외 없이 결과 반환), core가 learning 응답을 프록시하는 경로에서 부른다(#389 구현): 돌아보기 저장 성공(학습 완료·미션당 최초 1회, 미션은 core가 learning 시도 상세로 확인), 공유 생성 성공(이미 있는 공유물 200 포함), 반응 남기기 성공(하루 상한, 취소는 적립 없음), 되돌아보기 열람(주 1회), 열람 응답 `completed`면 개근, 주간 테마 조회 응답의 개근·당일 풀이·주간 완주 칸(#485). 사건 키는 학습 완료 `missionId`, 공유 `postId`, 반응 `postId:reaction`, 되돌아보기·개근·주간 완주 그 주 월요일(KST), 당일 풀이 `weekStart:day`. 값·상한은 `reward_rule` 데이터(P21 초기값). 원장 사건 키 `source_key`로 멱등, 학습 응답 후 적립 저장이 실패하면 응답은 그대로 두고 같은 사건 재요청(돌아보기 재요청 `409 ATTEMPT_CLOSED` 포함, 같은 반응·열람 재요청)·`/students/me/weekly-theme` 조회(이번 주 학습 완료한 요일 문제) 때 보충. 적립 결과는 응답에 넣지 않고 `/students/me/points`로 조회
 - `itemKey`: 테마·캐릭터는 `THEME:forest`·`COMPANION:tori` 형식(해금값은 코드 상수), 아이템은 관리자가 등록한 `look_item.code`. `THEME:lake`·`COMPANION:mungchi`는 항상 해금, 나머지 테마 100·캐릭터 150 포인트(코드 상수). 잠금 적용 전 저장된 `look_theme`·`look_companion`은 마이그레이션에서 해금 행으로 옮긴다
-- 2026-11-12 결정(P22 개정·P27, 설계·구현 전): 생활공간 가구 스킨은 슬롯 `DESK`·`WALL`·`WARDROBE`의 `look_item`으로 등록하고 위 목록·해금 API와 `PUT /students/me/preferences`의 `equipped`(슬롯 키 추가)를 그대로 쓴다. 가구별 기본 스킨은 항상 해금(기준안). 새 경로 없음
+- 2026-11-12 결정(P22 개정·P27, #555 구현 core V47): 생활공간 가구 스킨은 슬롯 `DESK`(책상)·`WALL`(추억의 벽)·`WARDROBE`(옷장)의 `look_item`으로 등록하고(관리자 `POST /admin/look-items`의 `slot`, 목록 `slot` 거르기도 같음) 위 목록·해금 API와 `PUT /students/me/preferences`의 `equipped`(슬롯 키 추가)를 그대로 쓴다. 해금은 같은 원장 `UNLOCK`·잔액 차감·`Idempotency-Key`·잔액 행 잠금이라 차감·멱등·잠금 규칙이 캐릭터 아이템과 같다. 새 경로 없음
+  - 가구별 기본 스킨은 아이템·해금 행이 없다: `equipped`의 가구 슬롯 null이 기본 스킨이고 항상 고를 수 있다(테마 `lake`·기본 벽지와 같은 방식, 기준안 2026-11-12 확정). 관리자는 추가 스킨만 등록한다(가격 1 이상 그대로)
+  - `equipped`는 보낸 슬롯만 바꾼다(2026-11-12 결정): 기존 꾸미기 화면처럼 캐릭터 네 슬롯만 보내면 가구 스킨이 그대로 남고, 옷장 화면은 가구 슬롯만 보낼 수 있다. 기존 계약이 네 슬롯을 모두 요구했으므로 캐릭터 슬롯 동작은 바뀌지 않는다(OpenAPI 요청 `LookEquippedUpdate`, 응답 `LookEquipped` 일곱 슬롯)
+  - 커뮤니티 작성자 `look.equipped`(2.9)는 캐릭터 네 슬롯만 담는다(가구는 본인 방에서만, OpenAPI `CharacterLookEquipped`)
 - 다른 학생 잔액·순위 API는 없다(1.3)
 
 ### 2.11 주간 테마·되돌아보기 (FN-RET-07·08, P23)
@@ -606,8 +609,8 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/students/me/room/frame-slots` | 학생 | 추억의 벽 슬롯 `{slots:[{slotNo, themeId, weekStart, title, imageUrl}]}`(빈 슬롯 제외). 방 벽지·가구 스킨·캐릭터 착용은 기존 2.10·3.12 응답 사용 | RET-09 | 설계 |
-| PUT | `/students/me/room/frame-slots` | 학생 | 전체 교체 `{slots:[{slotNo, themeId, weekStart}]}` → 저장된 목록. `slotNo` 1~6·중복 슬롯·같은 액자 중복 422 `VALIDATION_FAILED`, 미보유 회차 404 `THEME_FRAME_NOT_FOUND` | RET-09 | 설계 |
+| GET | `/students/me/room/frame-slots` | 학생 | 추억의 벽 슬롯 `{slots:[{slotNo, themeId, weekStart, title, imageUrl}]}`(빈 슬롯 제외, 번호순). 방 벽지·가구 스킨·캐릭터 착용은 기존 2.10·3.12 응답 사용 | RET-09 | 핵심(#555) |
+| PUT | `/students/me/room/frame-slots` | 학생 | 전체 교체 `{slots:[{slotNo, themeId, weekStart}]}` → 저장된 목록(GET과 같은 모양). `slotNo` 1~6 밖·중복 슬롯·같은 액자 중복·월요일이 아닌 `weekStart`·7개 이상·빈 칸 422 `VALIDATION_FAILED`, 미보유 회차 404 `THEME_FRAME_NOT_FOUND`, 빈 목록은 모두 내림 | RET-09 | 핵심(#555) |
 | GET | `/students/me/album?page&size` | 학생 | 보유 액자 회차(진행 중인 주·`EXTRA` 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, awardedAt, seen, displayed}], page, size, totalElements}` | RET-10, RET-11 | 설계 |
 | GET | `/students/me/album/{themeId}/{weekStart}` | 학생 | 회차 상세 `{themeId, weekStart, title, awardedAt, missions:[{day, missionId, title, thinkingType, attemptId}], ending:{seen, outro, answer}}`. 엔딩을 보지 않았으면 `outro`·`answer` null(P23). 문제별 기록은 기존 시도 상세(2.3·`/attempts/{id}/comparison`)로 연다. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-11 | 설계 |
 | POST | `/students/me/album/{themeId}/{weekStart}/seen` | 학생 | 새 액자 확인(멱등) → 204. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-10 | 설계 |
@@ -618,6 +621,10 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 - core → learning은 4.1.4 경로를 프록시하고 응답을 그대로 전달. 설명 경로는 별도 회로 `learning-memory`(아키텍처 1.3)
 - 검색 반영은 학습 완료 뒤 비동기라 방금 완료한 문제는 잠시 결과에 없을 수 있다(앨범에는 바로 보임). 질문·설명은 저장하지 않는다
 - 학생 이외 역할 경로 없음(학부모 화면 미제공)
+- **추억의 벽 #555 구현(core V47, 2026-11-12)**: 슬롯 수 6개(기준안 확정). 저장은 ① 요청 검사(learning 호출 전 422) ② learning `frames/ownership`(4.1.4)으로 보유 확인(보유로 돌아오지 않은 회차가 하나라도 있으면 404, 진행 중인 주 회차도 learning이 빼므로 404) ③ learning 앨범 목록에서 제목·그림 조회 ④ 한 트랜잭션에서 학생 행 잠금(`FOR NO KEY UPDATE`, 삭제 확정 학생 409 `STUDENT_UNAVAILABLE`) 뒤 슬롯 전체 삭제·삽입 순서다. ②·③이 실패하면 아무것도 저장하지 않아 화면이 편집 내용을 유지하고 다시 시도한다(P27). learning 응답 실패는 502 `LEARNING_UNAVAILABLE`·`LEARNING_CONTRACT_INVALID`, 연결 장애는 1.4 공통(503·504)
+  - 조회의 `title`·`imageUrl`은 core에 저장하지 않고 learning 앨범 목록(4.1.4, `size=100`으로 걸린 회차를 모두 찾을 때까지 앞쪽부터)에서 매번 채운다(그림은 만료되는 presigned URL, 2026-11-12 결정). 걸린 액자가 없으면 learning을 부르지 않는다. 앨범에 없는 회차는 응답에서 빠진다(액자는 지워지지 않으므로 보통 없음)
+  - 보유 확인·앨범 조회는 ai를 부르지 않는 learning DB 조회라 일반 `learning-json` 서킷을 쓴다(추억 검색·설명의 `learning-memory`와 따로)
+  - 학생 삭제 확정 때 꾸미기 정리와 같은 트랜잭션에서 `room_frame_slot`을 지운다(P09)
 
 ---
 
@@ -859,7 +866,7 @@ If-Match: "7"
 | Method | Path | 역할 | 설명 |
 |---|---|---|---|
 | GET | `/students/me/preferences` | 학생 | 현재 설정. 저장한 적 없으면 기본값과 `updatedAt:null` |
-| PUT | `/students/me/preferences` | 학생 | 설정 전체 교체 `{theme, companion, equipped?}`(#389, 아래) |
+| PUT | `/students/me/preferences` | 학생 | 테마·캐릭터 교체 `{theme, companion, equipped?}`(#389, `equipped`는 보낸 슬롯만 교체 #555, 2.10) |
 
 ```jsonc
 // GET 200 / PUT 200
@@ -870,7 +877,7 @@ If-Match: "7"
 - 목록에 없는 값·누락·null은 `422 VALIDATION_FAILED`(이전 설정 유지). 학생 토큰 전용, 학부모·관리자 토큰은 `403 FORBIDDEN`. 응답 `Cache-Control: no-store`
 - P22(#389): `lake`·`mungchi` 외 테마·캐릭터는 포인트로 해금한 것만 저장(잠긴 값 `409 LOOK_LOCKED`, 이전 설정 유지), 잠금 적용 전 저장된 값은 V35가 해금된 것으로 이관했다. 숫자 레벨·순위와 무관한 참여 보상이라 기능 명세 1.3 원칙과 충돌하지 않음
 - 저장: core `student.look_theme`·`look_companion`·`look_updated_at`(V23, 세 열 함께 NULL 또는 함께 값). 값 목록은 코드 상수와 DB CHECK로 고정한다. 학생 삭제 확정 시 기본값(NULL)으로 되돌린다. OpenAPI `StudentLook`
-- P22(#389): PUT `{theme, companion, equipped?:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(슬롯별 아이템 `itemKey` 또는 null, 해금한 아이템만, 생략·null이면 착용 유지). GET·PUT 응답은 항상 네 슬롯의 `equipped`를 담는다. 판매 중단 아이템도 해금했으면 착용 가능. 학생 삭제 확정 때 해금·착용·포인트도 지운다. 해금은 2.10
+- P22(#389): PUT `{theme, companion, equipped?:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(슬롯별 아이템 `itemKey` 또는 null, 해금한 아이템만, 생략·null이면 착용 유지). GET·PUT 응답은 항상 네 슬롯의 `equipped`를 담는다. #555(P22 개정·P27)부터 가구 슬롯 `DESK`·`WALL`·`WARDROBE`를 더해 응답은 일곱 슬롯을 담고, PUT `equipped`는 보낸 슬롯만 바꾼다(가구 null = 기본 스킨, 2.10). 판매 중단 아이템도 해금했으면 착용 가능. 학생 삭제 확정 때 해금·착용·포인트도 지운다. 해금은 2.10
 
 ### 3.13 지원·알림·계정 화면 연결
 
