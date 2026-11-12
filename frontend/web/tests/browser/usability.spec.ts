@@ -1,3 +1,4 @@
+import { enterStudentFixture } from './studentFixture.ts'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
@@ -66,7 +67,7 @@ test('보호자 커뮤니티 동의 후 자녀가 공개를 직접 켠다 @respo
   expect(body.childId).toBeTruthy()
   expect(body.consents).toEqual([expect.objectContaining({ agreed: true })])
   await expect(page.getByRole('button', { name: '커뮤니티 동의 철회', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '이 자녀로 학습 시작', exact: true }).filter({ visible: true }).click()
+  await enterStudentFixture(page)
   await expect(page).toHaveURL(/\/student\/home/)
   await page.getByRole('button', { name: '공개 설정', exact: true }).click()
   const sharing = page.getByRole('radio', { name: '친구들에게 보여 줄게요', exact: true })
