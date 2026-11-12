@@ -844,6 +844,106 @@ sequenceDiagram
   C->>L: moderation {VISIBLE 또는 REMOVED}
 ```
 
+### 3.8 테마 문제 학습 완료 → 기념 액자·검색 문서 등록 (P27, 설계·구현 전)
+
+2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md)). 3.5 돌아보기 저장(학습 완료) 안에서 처리한다. 포인트 적립(3.5)과 별개다.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as core
+  participant L as learning
+  participant LDB as learning_db
+
+  C->>L: 돌아보기 저장 (3.3·3.5와 같음)
+  rect rgba(128,128,128,0.12)
+    L->>LDB: reflection 저장, attempt COMPLETED
+    opt context = THEME_DAY·THEME_REVIEW (EXTRA 제외)
+      L->>LDB: memory_search_doc (attempt_id, content_text, PENDING) ON CONFLICT DO NOTHING
+      L->>LDB: 같은 회차(student, theme_id, theme_week_start) 5문제 completed_at 확인
+      opt 5문제 모두 완료
+        L->>LDB: theme_frame (awarded_at = 마지막 completed_at) ON CONFLICT DO NOTHING
+      end
+    end
+  end
+  L-->>C: 200 {attemptId, status: COMPLETED, reflection}
+```
+
+- 임베딩은 이 트랜잭션에서 부르지 않는다(완료 응답 지연 없음, 3.10이 처리)
+- 프리미엄 일요일·자정 넘긴 이어하기 완료도 같은 경로라 액자 조건에 포함. 같은 회차 다시 풀기 완료는 UK로 새 액자 없음
+- 도입 전 기록은 배포 때 1회 소급 명령이 같은 조건으로 `theme_frame`(`seen_at` 채움)·`memory_search_doc`(`PENDING`)을 만든다
+
+### 3.9 추억 검색·설명 (P27, 설계·구현 전)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web(학생)
+  participant C as core
+  participant CDB as core_db
+  participant L as learning
+  participant LDB as learning_db
+  participant A as ai
+  participant LLM as LLM
+
+  W->>C: POST /students/me/memories/search {query}
+  rect rgba(128,128,128,0.12)
+    C->>CDB: memory_daily_usage (SEARCH) 기록, 오늘 건수 > 한도면 롤백 후 429 USAGE_LIMIT_REACHED
+  end
+  C->>L: POST /internal/students/{id}/memories/search {query}
+  L->>A: POST /internal/embeddings {texts:[query]}
+  A->>LLM: 임베딩 (callType MEMORY_EMBEDDING)
+  A-->>L: {vectors}
+  L->>LDB: READY 문서 중 본인·보유 액자 회차·진행 주 제외 필터 + 코사인 거리 정렬
+  L-->>C: {state: RESULTS|NO_RESULTS|NO_RECORDS, cards[≤3]}
+  C-->>W: 200 (learning 응답 그대로)
+
+  opt 학생이 "설명 보기"
+    W->>C: POST /students/me/memories/explanations {query, attemptIds}
+    C->>CDB: memory_daily_usage (EXPLANATION) — 한도 초과 429
+    C->>L: POST /internal/students/{id}/memories/explanations (회로 learning-memory)
+    L->>LDB: attemptIds가 본인 READY 문서인지 확인, 근거 [1]~[3] 구성
+    alt 근거 부족
+      L-->>C: {state: INSUFFICIENT}
+    else
+      L->>A: POST /internal/memory-explanations {query, evidence[번호·테마·미션·답변 일부]}
+      A->>LLM: 설명 생성 (callType MEMORY_EXPLANATION)
+      A-->>L: {text, citations}
+      L->>L: 번호 범위·인용 원문 대조, 번호 → 회차·시도
+      L-->>C: {state: GENERATED|FAILED, text, citations}
+    end
+    C-->>W: 200
+  end
+```
+
+- 임베딩 장애는 `503 AI_UNAVAILABLE`로 검색 실패. 설명 생성·검사 실패는 `200 {state: FAILED}`로 돌려 화면이 검색 결과를 유지
+- ai 요청에 학생·시도·답변 ID·이름을 넣지 않고 닉네임은 마스킹(NFR-SEC-03). 질문·설명은 저장하지 않음
+
+### 3.10 검색 문서 임베딩 주기 작업 (P27, 설계·구현 전)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as learning 주기 작업
+  participant LDB as learning_db
+  participant A as ai
+
+  loop 기준안 1분
+    rect rgba(128,128,128,0.12)
+      S->>LDB: 리스 만료 PROCESSING → PENDING
+      S->>LDB: PENDING·재시도 가능 FAILED 최대 64행 → PROCESSING (조건부 UPDATE, lease_until)
+    end
+    S->>A: POST /internal/embeddings {texts[content_text]}
+    alt 성공
+      S->>LDB: 리스 일치 행만 READY + embedding·embedding_model·embedded_at
+    else 실패
+      S->>LDB: 리스 일치 행만 FAILED, retry_count + 1
+    end
+  end
+```
+
+- 상태 전이·조건은 [상태 3.7](state-diagram.md). 여러 레플리카가 같은 주기에 돌아도 선점한 행만 처리
+
 ---
 
 ## 4. 대시보드 조회
@@ -1500,6 +1600,8 @@ sequenceDiagram
   Note over C: learning·report 보고가 모두 오면 deletion_request COMPLETED (P09)
   Note over C: PROFILE은 프로필 제거, RECORDS는 프로필·DELETION_REQUESTED 유지 (학습 재개는 후속 계약)
 ```
+
+- P27(설계·구현 전): core는 삭제 확정 트랜잭션에서 `room_frame_slot`·`memory_daily_usage`도 지우고, learning은 같은 삭제 트랜잭션에서 `memory_search_doc`(시도보다 먼저)·`theme_frame`을 지운다([ERD 3.5.2·4.6](erd.md))
 
 ### 10.2 `llm.usage.recorded`
 

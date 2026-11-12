@@ -1415,6 +1415,61 @@ classDiagram
 - 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. #387 때는 무료 `THEME_DAY`·`EXTRA`를 셌고, 2026-11-10 개정(core #485)부터 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다
 - 2026-11-10 개정(#483, core #485 구현): `ProductEntitlementService.missionStart`는 `THEME_DAY`·`THEME_REVIEW`를 상품 조회 없이 통과시키고, `EXTRA`는 상품 `features.extraMissions`(값이 없으면 무료 거부·구독 중 허용, #506)로 판정한다. `ProductEntitlementService.sundayTheme(student, date)`가 KST 일요일에만 상품 `features.sundayTheme`을 읽어 learning 쿼리 `sundayTheme`을 정한다(`LearningProxyService`가 시도 시작·주간 테마 조회·열람 기록 2종에 붙임). `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 응답의 `days[].completedOnDay`(당일 풀이 `THEME_ON_TIME`)·`completed`(개근 `THEME_COMPLETED`, #506)·`finished`(주간 완주 `THEME_FINISHED`)로 적립을 보충한다. 사건 종류는 `RewardEvent` 8개(`UNLOCK` 포함)
 
+### 3.7 생활공간·추억 프록시 (P27, 설계·구현 전)
+
+2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md))의 core 클래스. 클래스 이름은 설계 단위이며 구현 때 정한다. 가구 스킨은 기존 `LookUnlockService`·`StudentLookService`를 그대로 쓰고 슬롯 값만 늘린다(P22).
+
+```mermaid
+classDiagram
+  direction TB
+  class RoomController {
+    <<controller>>
+    +frameSlots() List
+    +saveFrameSlots(slots) List
+  }
+  class MemoryController {
+    <<controller>>
+    +album(page) Page
+    +round(themeId, weekStart) AlbumRound
+    +markSeen(themeId, weekStart)
+    +search(query) MemorySearchResult
+    +explain(query, attemptIds) MemoryExplanation
+  }
+  class FrameSlotService {
+    <<service>>
+    +slots(studentId) List
+    +replace(studentId, slots) List
+    +deleteStudent(studentId)
+  }
+  class MemoryUsageService {
+    <<service>>
+    +reserve(studentId, kind)
+    +deleteStudent(studentId)
+  }
+  class MemoryProxyService {
+    <<service>>
+    +album(studentId, page) Page
+    +search(studentId, query) MemorySearchResult
+    +explain(studentId, query, attemptIds) MemoryExplanation
+  }
+  class LearningMemoryClient {
+    <<client>>
+    +ownsFrames(studentId, keys) boolean
+    +search(studentId, query) MemorySearchResult
+    +explain(studentId, query, attemptIds) MemoryExplanation
+  }
+
+  RoomController --> FrameSlotService
+  MemoryController --> MemoryProxyService
+  FrameSlotService --> LearningMemoryClient : 보유 액자 확인
+  MemoryProxyService --> MemoryUsageService : 검색·설명 하루 한도
+  MemoryProxyService --> LearningMemoryClient
+```
+
+- `MemoryUsageService.reserve`는 `memory_daily_usage`에 1행을 기록하고 KST 하루 건수가 `product.limits`(`dailyMemorySearches`·`dailyMemoryExplanations`)를 넘으면 `429 USAGE_LIMIT_REACHED`(`MissionUsageService`와 같은 방식)
+- `LearningMemoryClient`는 `_common/client/LearningClient` 전송을 쓰되 설명 경로는 별도 회로 `learning-memory`(아키텍처 1.3)
+- 학생 삭제 확정의 `clear`가 `FrameSlotService.deleteStudent`·`MemoryUsageService.deleteStudent`도 부름(P09)
+
 ---
 
 ## 4. learning-service
@@ -2073,6 +2128,81 @@ classDiagram
 - 주제 씨앗(`ThemeTopicSeeds`, 기준안 24개, #437 B안 2026-11-11): 주간 자동과 주제 없이 온 관리자 요청에 `ThemeTopicSeeds.choose`가 `뭉치 역할: … / 장소: … / 찾는 대상: …` 하나를 골라 `input.topic`에 넣는다. 그 주 계절(`Season`, 적용 주 월요일의 달)에 맞는 씨앗 중 같은 학년 최근 씨앗(`findInputs`, 목록 개수만큼의 주, 초안 상태 무관)과 같은 주 다른 초안 씨앗(`findWeekInputs`)을 빼고 무작위, 남는 게 없으면 가장 오래전에 쓴 것. 관리자가 쓴 주제와 다시 생성의 저장된 주제는 그대로
 - 자동 성취기준 후보 풀(기준안, 지식 RAG 연결 전 설계): 지금은 학년군 표(`standardsOf`)라 초3 테마에 4학년 내용이 뽑힐 수 있다. #466·#469 뒤에는 learning이 계속 고르되 후보 풀만 같은 서비스의 지식 서비스(`knowledge_standard_semester` 그 학년·학기, `knowledge_fits` 그 유형)로 바꾸고, 지식 판이 없거나 후보가 없거나 장애면 학년·학기 → 학년군 표 순으로 대체한다. ai 요청 `missions[].standards` 계약은 그대로, ai `retrieve`(#470)는 받은 코드의 근거 묶음만 가져온다
 - `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
+
+### 4.5 기념 액자·추억 검색 (P27, 설계·구현 전)
+
+2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md))의 learning `memory` 기능 패키지. 클래스 이름은 설계 단위이며 구현 때 정한다. 저장 구조는 [ERD 4.6](erd.md), 상태는 [상태 3.7](state-diagram.md).
+
+```mermaid
+classDiagram
+  direction TB
+  class MemoryController {
+    <<controller>>
+    +album(studentId, page) Page
+    +round(studentId, themeId, weekStart) AlbumRound
+    +markSeen(studentId, themeId, weekStart)
+    +ownsFrames(studentId, keys) boolean
+    +search(studentId, query) MemorySearchResult
+    +explain(studentId, query, attemptIds) MemoryExplanation
+  }
+  class ThemeFrameService {
+    <<service>>
+    +awardIfComplete(attempt)
+    +backfill()
+    +owned(studentId, keys) boolean
+    +deleteByStudent(studentId)
+  }
+  class AlbumService {
+    <<service>>
+    +album(studentId, page) Page
+    +round(studentId, themeId, weekStart) AlbumRound
+  }
+  class MemorySearchService {
+    <<service>>
+    +enqueue(attempt)
+    +embedPending(now)
+    +search(studentId, query) MemorySearchResult
+    +deleteByStudent(studentId)
+  }
+  class MemoryExplanationService {
+    <<service>>
+    +explain(studentId, query, attemptIds) MemoryExplanation
+  }
+  class MemoryEmbeddingScheduler {
+    <<scheduler>>
+    +run()
+  }
+  class EmbeddingClient {
+    <<client>>
+    +embed(texts) Vectors
+  }
+  class MemoryExplanationAiClient {
+    <<client>>
+    +explain(query, evidence) ExplanationDraft
+  }
+  class MemoryEvidenceRules {
+    <<domain>>
+    +sufficient(cards) boolean
+    +verify(draft, evidence) boolean
+  }
+
+  MemoryController --> AlbumService
+  MemoryController --> ThemeFrameService
+  MemoryController --> MemorySearchService
+  MemoryController --> MemoryExplanationService
+  MemoryEmbeddingScheduler --> MemorySearchService
+  MemorySearchService --> EmbeddingClient : 질문·문서 임베딩
+  MemoryExplanationService --> MemorySearchService : 근거 카드 재확인
+  MemoryExplanationService --> MemoryExplanationAiClient
+  MemoryExplanationService ..> MemoryEvidenceRules
+  AlbumService --> ThemeFrameService
+```
+
+- 학습 완료 처리(기존 `AttemptService`의 돌아보기 저장 = 학습 완료)가 같은 트랜잭션에서 `ThemeFrameService.awardIfComplete`(회차 5문제 완료 시 액자)와 `MemorySearchService.enqueue`(`PENDING` 문서)를 부름. `EXTRA` 시도는 둘 다 건너뜀
+- `MemoryEmbeddingScheduler`는 `StuckJudgmentScheduler`처럼 조건부 UPDATE 선점이라 잠금 없음(상태 3.7). `EmbeddingClient`는 ai `POST /internal/embeddings`(기존 계약, 64개 배치), 이전 `KnowledgeEmbedder`는 V17 정리로 없으므로 신규
+- `MemoryExplanationService`는 받은 `attemptIds`가 본인 `READY` 문서인지 다시 확인한 뒤 근거를 `[1]~[3]` 번호로만 보내고(학생·시도·답변 ID 미전송, 닉네임 마스킹), `MemoryEvidenceRules.verify`(번호 범위·인용 원문 포함)를 통과한 설명만 번호를 실제 회차·시도로 바꿔 반환
+- 앨범 회차 상세의 문제별 기록은 기존 `record` 기능의 시도 상세를 service로 불러 조합. 엔딩 표시 여부는 `WeeklyThemeService`의 OUTRO 열람 기록으로 판단
+- 학생 삭제 소비의 `StudentDeletionService`가 시도 삭제 전에 `MemorySearchService.deleteByStudent`, 같은 트랜잭션에서 `ThemeFrameService.deleteByStudent`를 호출
 
 ---
 
