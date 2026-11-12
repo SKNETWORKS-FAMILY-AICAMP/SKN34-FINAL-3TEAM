@@ -38,7 +38,10 @@ class WeeklyThemeContractTest(unittest.TestCase):
         self.assertEqual(len(routes), 7)
         self.assertEqual(routes, self.documented('/admin/weekly-themes'))
         query = {p['name'] for p in self.spec['paths']['/admin/weekly-themes']['get']['parameters']}
-        self.assertEqual(query, {'gradeBand', 'weekStart', 'status', 'page', 'size'})
+        self.assertEqual(query, {'grade', 'weekStart', 'status', 'page', 'size'})
+        grades = re.search(r'GRADES=setOf\(([^)]*)\)', self.admin).group(1)
+        enum = next(p for p in self.spec['paths']['/admin/weekly-themes']['get']['parameters'] if p['name'] == 'grade')['schema']['enum']
+        self.assertEqual([g.strip().strip('"') for g in grades.split(',')], enum)
         self.assertIn('path.startsWith("/admin/weekly-themes") -> "CONTENT"', FILTER.read_text(encoding='utf-8'))
         service = ADMIN_SERVICE.read_text(encoding='utf-8')
         for action in ('CREATE', 'UPDATE'):
@@ -57,7 +60,7 @@ class WeeklyThemeContractTest(unittest.TestCase):
         # 날짜는 클라이언트 값이 아니라 core KST 오늘(열람 적립 #389은 같은 날짜로 주 시작일을 정함)
         self.assertIn('date: LocalDate = entitlements.today()', proxy)
         # #485: 일요일 허용 값(상품 판단)을 learning에 함께 넘긴다
-        self.assertIn('"gradeBand=$band&date=$date&sundayTheme=$sunday"', proxy)
+        self.assertIn('"grade=$grade&date=$date&sundayTheme=$sunday"', proxy)
         self.assertIn('&sundayTheme=${permit.sundayTheme}', proxy)
 
     def test_free_mission_limit_lives_in_usage_and_policy_in_entitlement(self):

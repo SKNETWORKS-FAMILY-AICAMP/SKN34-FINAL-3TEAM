@@ -99,26 +99,26 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
     private fun start(mission: UUID, context: String?) =
         call("POST", "/api/v1/missions/$mission/attempts", context?.let { "{\"context\":\"$it\"}" })
 
-    @Test fun `weekly theme and review views use the core grade band and KST date and are not stored`() {
+    @Test fun `weekly theme and review views use the core grade and KST date and are not stored`() {
         val theme = "{\"themeId\":\"${UUID.randomUUID()}\",\"days\":[]}"
         stub.respond = { LearningHttpStub.Reply(body = theme) }
-        call("GET", "/api/v1/students/me/weekly-theme?gradeBand=G3_4&date=2020-01-01").andExpect(status().isOk())
+        call("GET", "/api/v1/students/me/weekly-theme?grade=G3&date=2020-01-01").andExpect(status().isOk())
             .andExpect(header().string("Cache-Control", "no-store")).andExpect(content().string(theme))
         call("POST", "/api/v1/students/me/weekly-theme/review-views").andExpect(status().isOk())
         val (read, view) = stub.requests
-        assertEquals("GET" to "/internal/students/$child/weekly-theme?gradeBand=G5_6&date=2026-11-09&sundayTheme=false", read.method to read.target)
-        assertEquals("POST" to "/internal/students/$child/weekly-theme/review-views?gradeBand=G5_6&date=2026-11-09&sundayTheme=false", view.method to view.target)
+        assertEquals("GET" to "/internal/students/$child/weekly-theme?grade=G5&date=2026-11-09&sundayTheme=false", read.method to read.target)
+        assertEquals("POST" to "/internal/students/$child/weekly-theme/review-views?grade=G5&date=2026-11-09&sundayTheme=false", view.method to view.target)
         listOf(read, view).forEach { assertEquals(child.toString(), it.header("X-Student-Scope")); assertEquals("STUDENT", it.header("X-User-Role")) }
         jdbc.update("UPDATE student SET grade=4 WHERE id=?", child)
         call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
-        assertTrue(stub.requests.last().target.contains("gradeBand=G3_4"))
-        // #432: 중학생은 중학교 과정 확장 전까지 초5~6 테마를 받는다.
+        assertTrue(stub.requests.last().target.contains("grade=G4&"))
+        // #432: 중학생은 중학교 과정 확장 전까지 초6 테마를 받는다.
         jdbc.update("UPDATE student SET grade=9 WHERE id=?", child)
         call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
-        assertTrue(stub.requests.last().target.contains("gradeBand=G5_6"))
+        assertTrue(stub.requests.last().target.contains("grade=G6&"))
     }
 
-    @Test fun `theme story fields pass through and story views send only the kind with the core band and date`() {
+    @Test fun `theme story fields pass through and story views send only the kind with the core grade and date`() {
         // #439: learning(#438) 새 필드는 core가 바꾸지 않는다. 이미지 URL도 미션 장면처럼 learning 값 그대로
         val theme = "{\"themeId\":\"${UUID.randomUUID()}\",\"intro\":\"시작\",\"outro\":null,\"introImageUrl\":\"https://cdn.example.test/t/intro.png\"," +
             "\"outroImageUrl\":null,\"introSeen\":false,\"outroSeen\":false,\"days\":[]}"
@@ -127,7 +127,7 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         call("POST", "/api/v1/students/me/weekly-theme/story-views", "{\"kind\":\"INTRO\"}").andExpect(status().isOk())
             .andExpect(header().string("Cache-Control", "no-store")).andExpect(jsonPath("$.firstViewThisWeek").value(true))
         val view = stub.requests.last()
-        assertEquals("POST" to "/internal/students/$child/weekly-theme/story-views?gradeBand=G5_6&date=2026-11-09&sundayTheme=false", view.method to view.target)
+        assertEquals("POST" to "/internal/students/$child/weekly-theme/story-views?grade=G5&date=2026-11-09&sundayTheme=false", view.method to view.target)
         assertEquals("{\"kind\":\"INTRO\"}", view.body)
         assertEquals(child.toString(), view.header("X-Student-Scope")); assertEquals("STUDENT", view.header("X-User-Role"))
 
@@ -198,7 +198,7 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         call("GET", "/api/v1/students/me/weekly-theme").andExpect(status().isOk())
         val mission = UUID.randomUUID()
         start(mission, "THEME_DAY").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("THEME_DAY_CLOSED"))
-        assertEquals(listOf("/internal/students/$child/weekly-theme?gradeBand=G5_6&date=2026-11-15&sundayTheme=false",
+        assertEquals(listOf("/internal/students/$child/weekly-theme?grade=G5&date=2026-11-15&sundayTheme=false",
             "/internal/missions/$mission/attempts?grade=5&demo=false&sundayTheme=false"), stub.requests.map { it.target })
         // 상품이 일요일을 허용하면(프리미엄 기준안 features.sundayTheme) true를 넘긴다
         jdbc.update("UPDATE product SET features='{\"sundayTheme\":true}'::jsonb WHERE id=?", free)
