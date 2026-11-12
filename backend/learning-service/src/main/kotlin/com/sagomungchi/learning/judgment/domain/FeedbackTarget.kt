@@ -32,6 +32,7 @@ data class StoredJudgment(
     val missionLabel: String,
     val rubricLabel: String,
     val corrected: Boolean = false,
+    val m2NoticesJson: String? = null,
 )
 
 data class StoredElement(

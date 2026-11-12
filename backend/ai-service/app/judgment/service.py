@@ -129,8 +129,11 @@ class JudgmentService:
                 m2 = await self._scoring.m2_scores(m2_body, timeout)
                 if m2 is None:
                     return None
+                if not m2.scored:
+                    return ModelScores(m2_preparation=m2.preparation)
                 average = cross_check.mean(m2.scores)
                 return ModelScores(
+                    m2_preparation=m2.preparation,
                     m2=M2Observation(
                         input_type=m2.inputType,
                         scores=m2.scores,
@@ -140,7 +143,7 @@ class JudgmentService:
                         disagreement=cross_check.disagrees(
                             result, m2.inputType, average, self._settings
                         ),
-                    )
+                    ),
                 )
             m1 = await self._scoring.m1_check(m1_body or {}, timeout)
         except ScoringUnavailable as exc:

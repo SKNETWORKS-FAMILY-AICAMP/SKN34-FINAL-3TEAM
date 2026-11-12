@@ -153,6 +153,18 @@ test('처리 중 결과의 judgment·followup·versions null도 받음', async (
   assert.equal(f.status, 'RUNNING')
   assert.equal(f.judgment, null)
 })
+
+test('글 정리 안내를 SSE 피드백에서 보존하고 숫자 안내는 거부한다', async (t) => {
+  let notices: unknown[] = ['정리 후 남은 답변이 없어요']
+  t.mock.method(globalThis, 'fetch', async () => sse(`event: result\ndata: ${JSON.stringify({
+    status: 'DONE', judgment: { judgmentId: 'j-1', result: 'CORRECT', trial: true,
+      elements: [], heldReason: null, m2Notices: notices }, followup: null, nextActions: ['FINISH'], versions: null,
+  })}\n\n`))
+  const result = await createApiGateway().feedback('a-1', 'ans-1', () => {})
+  assert.deepEqual(result.judgment?.m2Notices, notices)
+  notices = [3]
+  await assert.rejects(createApiGateway().feedback('a-1', 'ans-1', () => {}))
+})
 test('판정에 judgmentId가 없거나 sourceType이 계약 밖이면 계약 오류', async (t) => {
   for (const judgment of [
     '{"result":"CORRECT","trial":false,"elements":[],"heldReason":null}',

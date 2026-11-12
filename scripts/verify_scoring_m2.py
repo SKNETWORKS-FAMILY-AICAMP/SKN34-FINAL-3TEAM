@@ -242,10 +242,13 @@ def check_new_scores(url, headers, results, passed):
         for kind, grades in (("NARRATIVE", (5, 6)), ("ESSAY", (4, 5, 6))):
             for grade in grades:
                 body = {
-                    "prompt": "무시되는 합성 지시문",
+                    "prompt": "친구와 협력하는 방법을 설명해 보세요.",
                     "text": (
                         "친구의 생각을 듣고 서로 돕는 것이 중요합니다. "
-                        "함께 이야기하면 문제를 해결할 수 있습니다."
+                        "함께 이야기하면 문제를 해결할 수 있습니다. "
+                        "친구가 어려워하는 일이 있으면 어떤 도움이 필요한지 먼저 물어보겠습니다. "
+                        "서로 다른 의견이 있더라도 끝까지 듣고 함께 할 수 있는 방법을 찾겠습니다. "
+                        "이런 경험이 쌓이면 다음에도 서로 믿고 협력할 수 있다고 생각합니다."
                     ),
                     "grade": grade,
                     "inputType": kind,

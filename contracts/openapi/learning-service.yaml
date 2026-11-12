@@ -3407,6 +3407,10 @@ components:
       required: [judgmentId, result, trial, elements, heldReason, corrected]
       properties:
         judgmentId: {type: string, format: uuid, description: 신고(targetType JUDGMENT)·정정 대상 ID (#146)}
+        m2Notices:
+          type: array
+          items: {type: string}
+          description: M2 글 정리 안내. 점수·원문 없이 허용된 문구만 전달하며 없으면 생략한다.
         corrected: {type: boolean, description: 정정이 있으면 true. elements는 원판정 그대로라 report 요소 지표에서 제외 (FN-RPT-05)}
         modelScores:
           description: >-

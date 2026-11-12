@@ -1137,6 +1137,18 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 ### 4.3 scoring-service (호출: ai)
 
+#### #549 채점 전 글 정리 (11/12 확정)
+
+- 논술 3.1·서술 3.0에 c판 규칙을 적용한다. 논술은 칸 이름→지시문 복사→반복 제거, 서술은 복사→반복 제거 순서다. 원문은 변경하지 않는다.
+- `essayLabels?: string[]`는 learning 미션 inputTemplate의 네 칸 이름이다. AI는 그대로 scoring에 전달하며, 생략 시 기본 칸 이름을 사용한다.
+- 공백 제외 정리 후 서술 10자 미만, 논술 100자 미만은 `active:true, scored:false, reason:"TEXT_TOO_SHORT"`와 모델·preparation만 반환한다. scores/rawScores는 없다. 기존 `active:false` 및 503과 구분한다.
+- preparation: `{ruleVersion:"1112c",copied,repeated,chars,labelsRemoved,short,truncated,notices}`. notices는 `COPIED_REMOVED`, `REPEATED_REMOVED`, `SHORT_ANSWER`, `EMPTY_AFTER_CLEANING`, `ESSAY_TOO_SHORT`, `ESSAY_ORIGINALLY_SHORT` 코드다. 서술 10~99자는 채점+SHORT_ANSWER, 100자 이상은 정상 채점이다.
+- 512토큰 초과 시 앞+끝을 읽고 짧은 입력은 기존 토큰화를 유지한다. 정수 변환은 b판 score_cuts이며 서술 content3 선택 보정은 정리한 글을 사용한다.
+- AI 저장값 `modelScores.m2Preparation`에 안내를 보존한다. 길이 미달이면 m2는 null이므로 평균·불일치 판단과 report 설명 후보에서 제외한다. 기존 생각 판정을 바꾸지 않는다.
+- 공개 피드백 `judgment.m2Notices?: string[]`는 허용된 한국어 안내만 제공한다. modelScores/숫자는 학생에게 노출하지 않는다.
+- 8:2 혼합은 미채택이다. 가중치·학년 승인·활성화 설정은 유지한다.
+
+
 #### 4.3.1 #228 M2 확정 계약 (2026-11-02 담당자 답변 반영)
 
 - `POST /internal/m2/scores`: `{prompt:string, text:string, grade:integer(3~6), inputType:"NARRATIVE"|"ESSAY", keywords:string[], essayType?:string}`. keywords 생략은 빈 배열. ESSAY에는 essayType(설명글·글짓기·주장·찬성반대·대안제시)이 필수다. prompt는 기존 요청 호환을 위해 유지하지만 새 모델 입력에는 넣지 않는다. prompt 10,000자, text 50,000자, keywords 100개·각 200자이며 공백만 있는 문자열은 거부한다.

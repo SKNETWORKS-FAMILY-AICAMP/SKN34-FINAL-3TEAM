@@ -34,6 +34,7 @@ data class JudgmentView(
     val heldReason: String?,
     val corrected: Boolean = false,
     @get:JsonRawValue @get:JsonInclude(JsonInclude.Include.NON_NULL) val modelScores: String? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_EMPTY) val m2Notices: List<String> = emptyList(),
 )
 
 /**
