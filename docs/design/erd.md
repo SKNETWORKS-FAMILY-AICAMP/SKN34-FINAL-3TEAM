@@ -1409,7 +1409,7 @@ erDiagram
 ```
 
 - `student.deleted` 소비: 해당 학생 `attempt` 이하 기록 삭제 + `deleted_student` 저장 → 근거 조회 시 `available: false` (물리 삭제 + 표식, P09). 처리 완료는 core 내부 API `POST /internal/deletion-requests/{id}/completions`로 알림
-  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제하고 `theme_review_view`(#385)·`theme_story_view`(#438)·`theme_answer_pick`(#484)·`theme_frame`(#559, 시도를 참조하지 않아 순서 무관)도 같은 트랜잭션에서 삭제. 4.6(설계) 구현 시 `memory_search_doc`은 `attempt`보다 먼저 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
+  - 삭제 방식(#128): FK는 NO ACTION 그대로 두고 서비스가 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 삭제하고 `theme_review_view`(#385)·`theme_story_view`(#438)·`theme_answer_pick`(#484)·`theme_frame`(#559, 시도를 참조하지 않아 순서 무관)도 같은 트랜잭션에서 삭제. 4.6에 따라 `memory_search_doc`은 `attempt`보다 먼저 삭제. `processed_event`에 이벤트 `id`를 같은 트랜잭션에 기록해 재전달 때 다시 지우지 않음
   - `deleted_student`는 학생당 한 행: 다시 받으면 `event_id`·`deleted_at`을 갱신하고 `scope`는 이미 `PROFILE`이면 유지(report 삭제 장벽과 같은 규칙)
 - learning은 이벤트를 발행하지 않으므로 `outbox_event` 없음 (아키텍처 1.6)
 - #208 `processed_event`는 90일 뒤 삭제(V8 `processed_at` 인덱스). 재처리 방지 표식 `deleted_student`는 유지되므로 90일 이후 재전달도 삭제를 반복할 뿐 기록을 되살리지 않음
@@ -1598,19 +1598,32 @@ erDiagram
 - 제거: `RETIRED` 판만 관리 명령으로 지운다. 한 트랜잭션에서 관계 → 조각 → 판 행 순서. `ACTIVE`·`LOADING`은 지우지 않는다
 - 조회는 `ACTIVE` 판만 읽는다(C5 코드 조회, #469). 벡터 검색 경로는 쓰지 않는다(팀 결정 2026-11-11)
 
-### 4.6 기념 액자·추억 검색 (P27, 설계·구현 전)
+### 4.6 추억 검색 (#563)
 
-2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 learning 저장 구조. 구현 전이라 Mermaid·6장에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션(V20 이후)에서 Mermaid·6장으로 옮긴다. `theme_frame`은 #559 V19로 구현해 4.2.1 Mermaid·6장으로 옮겼다. `vector` 확장은 이미 bootstrap이 learning_db에 만든다(4.5).
+learning V20. `vector` 확장은 기존 bootstrap을 사용한다. NO ACTION FK이며 학생 삭제 시 `attempt`보다 먼저 삭제한다.
 
-| 테이블 | 컬럼 | 제약·규칙 |
-|---|---|---|
-| `memory_search_doc` (신규) | `id` uuid PK, `attempt_id` uuid FK UK, `student_id` uuid, `theme_id` uuid FK, `theme_week_start` date, `content_text` text, `embedding` vector(1536) NULL 허용, `embedding_model` varchar NULL 허용, `status` varchar `PENDING`·`PROCESSING`·`READY`·`FAILED`, `retry_count` int, `lease_until` timestamptz NULL 허용, `created_at` timestamptz, `embedded_at` timestamptz NULL 허용 | 테마 문제 완료 시도 1건 = 1행(`EXTRA` 제외), 시도 완료 트랜잭션에서 `PENDING`으로 생성. `content_text` = 테마 제목 + 미션 장면·질문 + 최종 답변(`answer` 최신 버전 `plain_text`). `READY`일 때만 `embedding`·`embedding_model`·`embedded_at` NOT NULL(CHECK). 상태 전이는 [상태 3.7](state-diagram.md). 검색은 `status = READY`·본인 `student_id`·보유 `theme_frame` 회차·`theme_week_start < 이번 주` 필터 후 코사인 거리 정렬. 인덱스 `(status, lease_until)`(주기 작업), `(student_id, theme_week_start)`. 학생당 대상이 수백 행 이내라 HNSW는 두지 않음(기준안) |
+```mermaid
+erDiagram
+  memory_search_doc {
+    uuid id PK
+    uuid attempt_id FK,UK
+    uuid student_id
+    uuid theme_id FK
+    date theme_week_start
+    text content_text
+    vector(1536) embedding "NULL 허용"
+    varchar embedding_model "NULL 허용"
+    varchar status "PENDING|PROCESSING|READY|FAILED"
+    int retry_count
+    timestamptz lease_until "NULL 허용"
+    timestamptz created_at
+    timestamptz embedded_at "NULL 허용"
+  }
+  attempt ||--o| memory_search_doc : indexes
+  weekly_theme ||--o{ memory_search_doc : belongs
+```
 
-- FK는 NO ACTION(1장). `student.deleted` 소비 때 4.3 순서에서 `memory_search_doc`을 `attempt`보다 먼저 삭제
-- 학생 답변은 수정되지 않으므로(FN-LRN-08/09) 검색 문서 갱신 없음. 판정 정정은 검색 문서에 영향 없음
-- 질문·설명은 저장하지 않으므로 테이블 없음(P27)
-
----
+학습 완료 트랜잭션에서 EXTRA를 제외하고 시도당 한 행을 등록한다. 테마 제목·장면 대화·질문·최종 답변을 보존하며 정답 키는 포함하지 않는다. READY는 벡터·모델·생성 시각이 모두 있어야 한다. 재시도 횟수는 0 이상, PROCESSING은 리스가 필수다. 검색은 READY·본인·보유 액자·지난 주 조건과 모델 일치를 먼저 적용한다. 소규모 학생별 정확 검색이므로 HNSW는 추가하지 않는다. 벡터 저장·검색은 MyBatis에서 문자열을 vector로 형변환하며 드라이버 의존성을 추가하지 않는다.
 
 ## 5. report_db
 
@@ -1777,6 +1790,8 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `judgment` | `(process_status, lease_until)` | 고착 `RUNNING` 탐지 |
 | learning | `mission_draft` | `(status, created_at)` | 초안 목록(상태 필터·최근 요청 순)·생성 작업 점유 (#353) |
 | learning | `community_post` | `(mission_id, status)` | 미션별 공개 공유물 목록 (#386, V13) |
+| learning | `memory_search_doc` | `(status, lease_until)` | 선점·리스 복구 (#563) |
+| learning | `memory_search_doc` | `(student_id, theme_week_start)` | 학생별 회차 검색 (#563) |
 | learning | `theme_frame` | `(student_id, theme_week_start)` | 앨범 목록(최근 회차순)·보유 확인 (#559, V19). 회차당 1개는 UK `(student_id, theme_id, theme_week_start)` |
 | learning | `community_reaction` | `(student_id, created_at)` | 학생 삭제 때 남긴 반응 정리 (#386, V13) |
 | learning | `processed_event` | `(processed_at)` | 보존 기간 정리 |
@@ -1794,7 +1809,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V18, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 106개 테이블·919개 컬럼(core 61/524, learning 37/329, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V18·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V20, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 108개 테이블·940개 컬럼(core 61/524, learning 39/350, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V20·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

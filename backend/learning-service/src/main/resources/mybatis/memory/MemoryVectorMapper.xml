@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.memory.repository.MemoryVectorMapper">
+  <resultMap id="hit" type="com.sagomungchi.learning.memory.repository.MemoryHit">
+    <constructor>
+      <arg column="theme_id" javaType="java.util.UUID"/>
+      <arg column="theme_week_start" javaType="java.time.LocalDate"/>
+      <arg column="title" javaType="java.lang.String"/>
+      <arg column="intro_image_uri" javaType="java.lang.String"/>
+      <arg column="mission_id" javaType="java.util.UUID"/>
+      <arg column="mission_title" javaType="java.lang.String"/>
+      <arg column="attempt_id" javaType="java.util.UUID"/>
+      <arg column="answer_excerpt" javaType="java.lang.String"/>
+      <arg column="score" javaType="_double"/>
+    </constructor>
+  </resultMap>
+  <update id="ready"><![CDATA[
+UPDATE memory_search_doc SET status='READY',embedding=#{vector}::vector,embedding_model=#{model},embedded_at=#{now},lease_until=NULL
+        WHERE id=#{lease.id} AND status='PROCESSING' AND lease_until=#{lease.until} AND lease_until>#{now}
+  ]]></update>
+  <select id="hits" resultMap="hit">
+WITH hits AS (
+              SELECT d.theme_id,d.theme_week_start,tv.title,tv.intro_image_uri,a.mission_id,mv.title mission_title,
+                     d.attempt_id,left(coalesce(ans.plain_text,''),500) answer_excerpt,<choose><when test="keyword != null">1.0</when><otherwise>1-(d.embedding &lt;=> CAST(#{vector} AS vector))</otherwise></choose> score
+              FROM memory_search_doc d JOIN attempt a ON a.id=d.attempt_id
+              JOIN theme_frame f ON f.student_id=d.student_id AND f.theme_id=d.theme_id AND f.theme_week_start=d.theme_week_start
+              JOIN weekly_theme_version tv ON tv.id=f.theme_version_id
+              JOIN mission_version mv ON mv.id=a.mission_version_id
+              JOIN LATERAL (SELECT plain_text FROM answer WHERE attempt_id=a.id ORDER BY version DESC LIMIT 1) ans ON true
+              WHERE d.student_id=#{studentId} AND a.student_id=d.student_id AND d.theme_week_start&lt;#{before} AND d.status='READY'
+                AND a.context IN ('THEME_DAY','THEME_REVIEW') AND a.completed_at IS NOT NULL AND <choose><when test="keyword != null">ans.plain_text ILIKE #{keyword} ESCAPE '!'</when><otherwise>d.embedding_model=#{model}</otherwise></choose>
+            ), rounds AS (
+              SELECT theme_id,theme_week_start,max(score) score FROM hits WHERE score>=#{minimum}
+              GROUP BY theme_id,theme_week_start ORDER BY score DESC,theme_week_start DESC,theme_id LIMIT 3
+            ) SELECT h.* FROM hits h JOIN rounds r USING(theme_id,theme_week_start)
+              WHERE h.score>=#{minimum} ORDER BY r.score DESC,h.theme_week_start DESC,h.theme_id,h.score DESC,h.attempt_id
+  </select>
+</mapper>

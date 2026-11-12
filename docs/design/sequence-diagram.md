@@ -872,10 +872,10 @@ sequenceDiagram
 
 - 임베딩은 이 트랜잭션에서 부르지 않는다(완료 응답 지연 없음, 3.10이 처리)
 - 프리미엄 일요일·자정 넘긴 이어하기 완료도 같은 경로라 액자 조건에 포함. 같은 회차 다시 풀기 완료는 UK로 새 액자 없음
-- 도입 전 기록은 배포 때 1회 소급 명령이 같은 조건으로 `theme_frame`(`seen_at` 채움)·`memory_search_doc`(`PENDING`)을 만든다
-- #559 구현(learning V19): `theme_frame` 지급은 회차 잠금(`pg_advisory_xact_lock`) 뒤 판정해 같은 회차 두 문제가 동시에 완료돼도 한쪽이 지급한다. 소급은 learning 기동 때마다 같은 SQL로 실행(`seen_at = awarded_at`, 멱등). `memory_search_doc` 등록은 아직 없음([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
+- 도입 전 기록은 기동·주기 작업의 멱등 소급이 같은 조건으로 `theme_frame`(`seen_at` 채움)·`memory_search_doc`(`PENDING`)을 만든다
+- #559 구현(learning V19): `theme_frame` 지급은 회차 잠금(`pg_advisory_xact_lock`) 뒤 판정해 같은 회차 두 문제가 동시에 완료돼도 한쪽이 지급한다. 소급은 learning 기동 때마다 같은 SQL로 실행(`seen_at = awarded_at`, 멱등). `memory_search_doc`은 #563 V20에서 같은 완료 트랜잭션에 등록([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 
-### 3.9 추억 검색·설명 (P27, 설계·구현 전)
+### 3.9 추억 검색·설명 (P27, 검색 #563 구현·설명 #564 설계)
 
 ```mermaid
 sequenceDiagram
@@ -921,7 +921,7 @@ sequenceDiagram
 - 임베딩 장애는 `503 AI_UNAVAILABLE`로 검색 실패. 설명 생성·검사 실패는 `200 {state: FAILED}`로 돌려 화면이 검색 결과를 유지
 - ai 요청에 학생·시도·답변 ID·이름을 넣지 않고 닉네임은 마스킹(NFR-SEC-03). 질문·설명은 저장하지 않음
 
-### 3.10 검색 문서 임베딩 주기 작업 (P27, 설계·구현 전)
+### 3.10 검색 문서 임베딩 주기 작업 (P27, #563 구현)
 
 ```mermaid
 sequenceDiagram
@@ -932,14 +932,14 @@ sequenceDiagram
 
   loop 기준안 1분
     rect rgba(128,128,128,0.12)
-      S->>LDB: 리스 만료 PROCESSING → PENDING
+      S->>LDB: 리스 만료 PROCESSING → PENDING 또는 한도 도달 FAILED
       S->>LDB: PENDING·재시도 가능 FAILED 최대 64행 → PROCESSING (조건부 UPDATE, lease_until)
     end
-    S->>A: POST /internal/embeddings {texts[content_text]}
+    S->>A: POST /internal/embeddings {texts[마스킹한 content_text], purpose: MEMORY}
     alt 성공
       S->>LDB: 리스 일치 행만 READY + embedding·embedding_model·embedded_at
     else 실패
-      S->>LDB: 리스 일치 행만 FAILED, retry_count + 1
+      S->>LDB: 리스 일치 행만 FAILED (횟수는 선점 때 증가)
     end
   end
 ```
