@@ -104,6 +104,20 @@ class LearningProxyService(private val client: LearningClient, private val idemp
             json.writeValueAsBytes(mapOf("kind" to kind)))
     }
 
+    /**
+     * 큰 질문 정답 고르기 (#550, api-spec 2.11). 본문 `{pick}`(비어 있지 않은 글자 하나)만 core가 확인해 다시 만들어 넘긴다.
+     * 후보 안의 값인지·고를 수 있는 때인지(`409 THEME_PICK_NOT_ALLOWED`)·정답 판정과 엔딩 상태는 learning #484 소유라
+     * 응답 `{correct, ending, answer}`와 오류를 그대로 전달한다. 포인트 적립 없음
+     */
+    fun answerPicked(body: ByteArray): HttpExchangeResult {
+        val context = verifiedStudent()
+        val node = try { json.readTree(body) } catch (_: Exception) { null }
+        val pick = node?.takeIf { it.isObject && it.size() == 1 }?.path("pick")?.takeIf { it.isTextual }?.asText()
+        if (pick.isNullOrBlank()) throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "pick은 고른 후보 하나여야 합니다.")
+        return client.exchange("POST", "/students/${context.studentScope.single()}/weekly-theme/answer-picks", themeQuery(context),
+            json.writeValueAsBytes(mapOf("pick" to pick)))
+    }
+
     private fun verifiedStudent() = UserContextHolder.currentOrNull()?.takeIf {
         it.role == "STUDENT" && it.userId != null && it.studentScope.size == 1
     } ?: throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "검증된 학생 세션이 필요합니다.")
