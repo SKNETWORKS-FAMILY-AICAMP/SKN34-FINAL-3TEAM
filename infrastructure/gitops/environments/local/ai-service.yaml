@@ -42,6 +42,27 @@ env:
   # #476: 설명 sLLM 서버(평소 0대, KEDA cron). 모델이 활성일 때만 호출한다(#477).
   - {name: EXPLANATION_BASE_URL, value: "http://sllm-server.app.svc.cluster.local:8080/v1"}
   - {name: EXPLANATION_MODEL, value: report-explanation}
+  # #546·#538: 주간 테마 그림·영상. 버킷은 learning과 같고, 영상은 저장소 값에서 꺼 둔다.
+  # 영상 자격 증명은 kind에만 수동으로 넣는 Secret ai-theme-video(credentials.json·VIDEO_PROJECT).
+  # Secret이 없으면 파일이 없어 영상만 건너뛴다(optional).
+  - {name: ASSET_S3_BUCKET, value: sagomungchi-local-missions}
+  - {name: S3_ENDPOINT_URL, value: "http://minio.platform.svc.cluster.local:9000"}
+  - {name: S3_REGION, value: ap-northeast-2}
+  - {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_USER}}}
+  - {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_PASSWORD}}}
+  - {name: THEME_VIDEO_ENABLED, value: "false"}
+  - {name: THEME_VIDEO_MAX_REGEN, value: "0"}
+  - {name: GOOGLE_APPLICATION_CREDENTIALS, value: /etc/theme-video/credentials.json}
+  - {name: VIDEO_PROJECT, valueFrom: {secretKeyRef: {name: ai-theme-video, key: VIDEO_PROJECT, optional: true}}}
+extraVolumes:
+  - name: theme-video
+    secret:
+      secretName: ai-theme-video
+      optional: true
+      items:
+        - {key: credentials.json, path: credentials.json}
+extraVolumeMounts:
+  - {name: theme-video, mountPath: /etc/theme-video, readOnly: true}
 hpa:
   enabled: false
 pdb:
@@ -56,7 +77,8 @@ networkPolicy:
     - {name: sllm-server, port: 8080}
   egressToPlatform:
     - {name: rabbitmq, port: 5672}
-  # #236: LLM API over HTTPS. Calico OSS has no FQDN rules, so allow public 443 only.
+    - {name: minio, port: 9000}
+  # #236: LLM API over HTTPS(#538 Veo·Google 토큰 발급도 같은 443). Calico OSS has no FQDN rules, so allow public 443 only.
   egress:
     - to:
         - ipBlock:
