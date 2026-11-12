@@ -142,6 +142,33 @@ class WeeklyThemeProxyIntegrationTest : PostgresRepositoryTest() {
         assertTrue(stub.requests.isEmpty())
     }
 
+    @Test fun `answer picks send only the pick with the core grade and date and pass the result and refusal through`() {
+        // #550: 정답 판정·엔딩 상태·고를 수 있는 때는 learning(#484) 몫. core는 응답과 오류를 그대로 전달하고 적립하지 않는다
+        val result = "{\"correct\":true,\"ending\":\"ENDED\",\"answer\":\"고양이\"}"
+        stub.respond = { LearningHttpStub.Reply(body = result) }
+        call("POST", "/api/v1/students/me/weekly-theme/answer-picks", "{\"pick\":\"고양이\"}").andExpect(status().isOk())
+            .andExpect(header().string("Cache-Control", "no-store")).andExpect(content().string(result))
+        val pick = stub.requests.single()
+        assertEquals("POST" to "/internal/students/$child/weekly-theme/answer-picks?grade=G5&date=2026-11-09&sundayTheme=false", pick.method to pick.target)
+        assertEquals("{\"pick\":\"고양이\"}", pick.body)
+        assertEquals(child.toString(), pick.header("X-Student-Scope")); assertEquals("STUDENT", pick.header("X-User-Role"))
+
+        val wrong = "{\"correct\":false,\"ending\":\"NOT_ENDED\",\"answer\":null}"
+        stub.respond = { LearningHttpStub.Reply(body = wrong) }
+        call("POST", "/api/v1/students/me/weekly-theme/answer-picks", "{\"pick\":\"강아지\"}").andExpect(status().isOk())
+            .andExpect(content().string(wrong))
+
+        stub.respond = { LearningHttpStub.Reply(409, "{\"status\":409,\"code\":\"THEME_PICK_NOT_ALLOWED\"}", mapOf("Content-Type" to "application/problem+json")) }
+        call("POST", "/api/v1/students/me/weekly-theme/answer-picks", "{\"pick\":\"고양이\"}").andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("THEME_PICK_NOT_ALLOWED"))
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM reward_point_ledger WHERE student_id=?", Int::class.java, child))
+
+        stub.requests.clear()
+        listOf("{}", "{\"pick\":\"\"}", "{\"pick\":\"  \"}", "{\"pick\":1}", "{\"pick\":null}", "{\"pick\":\"고양이\",\"correct\":true}", "[\"고양이\"]")
+            .forEach { call("POST", "/api/v1/students/me/weekly-theme/answer-picks", it).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED")) }
+        assertTrue(stub.requests.isEmpty())
+    }
+
     @Test fun `free child starts several theme day missions on one day without counting them`() {
         // #485: 공개된 테마 문제는 하루 상한 없이 시작한다(주 5개는 learning 공개 규칙). core는 세지 않는다
         val missions = List(3) { UUID.randomUUID() }

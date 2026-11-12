@@ -301,7 +301,7 @@ paths:
     get:
       tags: [Community]
       operationId: listMissionCommunityPosts
-      summary: 같은 미션을 마무리한 학생만 무작위 목록 열람(같은 seed면 같은 순서). 미마무리 403 COMMUNITY_LOCKED
+      summary: 같은 미션을 마무리한 학생만 무작위 목록 열람(같은 seed면 같은 순서). 미마무리 403 COMMUNITY_LOCKED, 큰 질문 정답 고르기 문제는 그 주 엔딩 전 403 COMMUNITY_LOCKED_UNTIL_ENDING(#550)
       description: 작성자는 별명·꾸미기로 바꾸고 학생 ID·반응 수를 내보내지 않는다. 지금 공개할 수 없는 작성자(설정 끔·현재 보호자 동의 없음)와 신고 처리 중·계속 숨김 공유물은 core가 다시 거른다
       parameters:
       - {name: missionId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -348,7 +348,7 @@ paths:
     put:
       tags: [Community]
       operationId: addCommunityReaction
-      summary: 반응 남기기(멱등). 본인 글 409 COMMUNITY_OWN_POST, 열람 권한 없음 403 COMMUNITY_LOCKED, 숨김·없는 글 404 COMMUNITY_POST_NOT_FOUND, 4종 외 400
+      summary: 반응 남기기(멱등). 본인 글 409 COMMUNITY_OWN_POST, 열람 권한 없음 403 COMMUNITY_LOCKED·COMMUNITY_LOCKED_UNTIL_ENDING, 숨김·없는 글 404 COMMUNITY_POST_NOT_FOUND, 4종 외 400
       responses:
         '204': {description: 반응 저장}
         default: {$ref: '#/components/responses/LearningProblem'}
@@ -6564,6 +6564,41 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/weekly-theme/answer-picks:
+    post:
+      operationId: pickWeeklyThemeAnswer
+      tags: [WeeklyTheme]
+      summary: 큰 질문 정답 고르기 (#550)
+      description: >-
+        STUDENT 전용(FN-RET-07·08, 규칙 #483). 본문 {pick}이 비어 있지 않은 문자열 하나가 아니면 core가 400 VALIDATION_FAILED로 막고, 맞으면 {pick}만 다시 만들어
+        learning POST /internal/students/{studentId}/weekly-theme/answer-picks?grade&date&sundayTheme로 넘긴다(story-views·review-views와 같은 학년·KST 날짜·일요일 허용 값).
+        후보 안의 값인지, 고를 수 있는 때인지, 정답 판정과 엔딩 상태는 learning #484 판정이며 응답·오류 코드를 그대로 전달한다.
+        고를 수 없을 때(금요일 문제 마무리 전, 이미 고름 등) 409 THEME_PICK_NOT_ALLOWED. 포인트 적립 없음. Cache-Control no-store.
+        learning 경로가 생기기 전(#484 머지 전)에는 learning 404를 그대로 전달한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WeeklyThemeAnswerPickRequest'}
+      responses:
+        '200':
+          description: 정답 판정 결과(learning 소유 모양)
+          headers:
+            Cache-Control: {schema: {type: string}, description: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WeeklyThemeAnswerPickResult'}
+        '400':
+          description: pick 누락·빈 값·문자열 아님·다른 필드 VALIDATION_FAILED
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409':
+          description: 지금 고를 수 없음 THEME_PICK_NOT_ALLOWED(learning #484 판정, core는 그대로 전달)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/attempts:
     get:
       operationId: dashboardStudentAttempts
@@ -9727,6 +9762,24 @@ components:
           type: string
           enum: [INTRO, OUTRO]
           description: INTRO 월요일 시작 이야기, OUTRO 토요일 종료 이야기 (#439)
+    WeeklyThemeAnswerPickRequest:
+      type: object
+      additionalProperties: false
+      required: [pick]
+      properties:
+        pick:
+          type: string
+          minLength: 1
+          description: 고른 후보 하나(이번 주 테마 candidates[] 값). 후보 안의 값인지는 learning #484가 판정 (#550)
+    WeeklyThemeAnswerPickResult:
+      type: object
+      additionalProperties: true
+      required: [correct, ending]
+      description: 'learning 소유 정답 고르기 결과 (#550, learning #484). 맞히면 바로 ENDED와 정답, 틀리면 NOT_ENDED(토요일 다시 풀기 마무리 뒤 엔딩). core는 바꾸지 않고 전달한다.'
+      properties:
+        correct: {type: boolean, description: 고른 값이 정답인지}
+        ending: {type: string, enum: [NOT_ENDED, ENDED], description: 그 주 엔딩 상태}
+        answer: {type: [string, 'null'], description: 정답. ending이 ENDED일 때만 채움}
     AttemptStartRequest:
       type: object
       additionalProperties: false

@@ -63,6 +63,7 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
     /** 가짜 learning의 공유물 상태(공개 전환·검토 호출로 바뀜). */
     private val statuses = ConcurrentHashMap<UUID, String>()
     @Volatile private var failShare = false
+    @Volatile private var lockCode = "COMMUNITY_LOCKED"
 
     companion object {
         val stub = LearningHttpStub()
@@ -71,7 +72,7 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
     }
 
     @BeforeEach fun prepare() {
-        stub.reset(); client.circuit.reset(); statuses.clear(); failShare = false
+        stub.reset(); client.circuit.reset(); statuses.clear(); failShare = false; lockCode = "COMMUNITY_LOCKED"
         parentUser = parent(jdbc); student = child(jdbc, parentUser)
         friendParent = parent(jdbc); friend = child(jdbc, friendParent); quiet = child(jdbc, friendParent)
         parentToken = tokens.access(session(jdbc, parentUser, "PARENT"))
@@ -99,7 +100,7 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
             req.method == "POST" && path == "/internal/community/posts" ->
                 if (failShare) LearningHttpStub.Reply(500, "{}") else LearningHttpStub.Reply(201, json.writeValueAsString(mapOf("postId" to ownPost)))
             path == "/internal/community/missions/$mission/posts" ->
-                if (req.header("X-Student-Scope") != student.toString()) problem(403, "COMMUNITY_LOCKED")
+                if (req.header("X-Student-Scope") != student.toString()) problem(403, lockCode)
                 else ok(mapOf("items" to author.filterValues { true }.filter { statuses[it.key] == "VISIBLE" }.map { (post, who) ->
                     mapOf("postId" to post, "studentId" to who, "answer" to mapOf("text" to "내 생각은 이래"), "myReactions" to listOf("NEW_IDEA", "BOGUS"),
                         "reactionCounts" to mapOf("NEW_IDEA" to 9), "createdAt" to "2026-11-08T01:00:00Z")
@@ -195,7 +196,14 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
         val forwarded = requests("/internal/community/missions/$mission/posts").single()
         assertTrue(forwarded.target.contains("viewerStudentId=$student")); assertTrue(forwarded.target.contains("seed=abc"))
         assertEquals("STUDENT", forwarded.header("X-User-Role"))
-        assertEquals("COMMUNITY_LOCKED", call("GET", "/missions/$mission/community-posts", friendToken, expected = 403)["code"].asText())
+        val locked = call("GET", "/missions/$mission/community-posts", friendToken, expected = 403)
+        assertEquals("COMMUNITY_LOCKED", locked["code"].asText())
+        assertEquals("이 미션을 마무리하면 친구들 생각을 볼 수 있어요.", locked["title"].asText())
+        // #550: 정답 고르기 문제는 엔딩 전 잠김 코드(learning #484)를 따로 보여 준다
+        lockCode = "COMMUNITY_LOCKED_UNTIL_ENDING"
+        val ending = call("GET", "/missions/$mission/community-posts", friendToken, expected = 403)
+        assertEquals("COMMUNITY_LOCKED_UNTIL_ENDING", ending["code"].asText())
+        assertEquals("이번 주 테마 엔딩을 보면 친구들 생각을 볼 수 있어요.", ending["title"].asText())
         call("GET", "/missions/$mission/community-posts", parentToken, expected = 403)
         call("GET", "/missions/$mission/community-posts?size=0", studentToken, expected = 400)
     }

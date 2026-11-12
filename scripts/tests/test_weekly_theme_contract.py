@@ -121,6 +121,32 @@ class WeeklyThemeContractTest(unittest.TestCase):
         domain = (THEME / 'domain/WeeklyTheme.kt').read_text(encoding='utf-8') + (THEME / 'service/WeeklyThemeAdminService.kt').read_text(encoding='utf-8')
         self.assertEqual(set(codes), set(re.findall(r'ThemePublishError\("([A-Z_]+)"', domain)))
 
+    def test_answer_pick_route_body_and_internal_path(self):
+        # #550: core는 {pick}만 확인해 learning answer-picks에 다른 열람 기록과 같은 학년·날짜·sundayTheme 질의로 넘긴다
+        self.assertIn('@PostMapping("/api/v1/students/me/weekly-theme/answer-picks")', self.student)
+        operation = self.spec['paths']['/students/me/weekly-theme/answer-picks']['post']
+        self.assertTrue({'200', '400', '409'}.issubset(operation['responses']))
+        self.assertIn('THEME_PICK_NOT_ALLOWED', operation['responses']['409']['description'])
+        request = self.spec['components']['schemas']['WeeklyThemeAnswerPickRequest']
+        self.assertEqual((request['required'], request['additionalProperties']), (['pick'], False))
+        result = self.spec['components']['schemas']['WeeklyThemeAnswerPickResult']
+        self.assertEqual(result['properties']['ending']['enum'], ['NOT_ENDED', 'ENDED'])
+        proxy = PROXY.read_text(encoding='utf-8')
+        self.assertIn('"/students/${context.studentScope.single()}/weekly-theme/answer-picks", themeQuery(context)', proxy)
+        self.assertIn('mapOf("pick" to pick)', proxy)
+        community = (CORE / 'community/client/CommunityClient.kt').read_text(encoding='utf-8')
+        self.assertIn('(403 to "COMMUNITY_LOCKED_UNTIL_ENDING")', community)
+
+    def test_answer_pick_learning_contract_when_published(self):
+        """learning #484가 OpenAPI에 answer-picks를 올리면 core가 넘기는 경로·query·코드와 같아야 한다"""
+        path = '/students/{studentId}/weekly-theme/answer-picks'
+        if path not in self.learning['paths']:
+            self.skipTest('learning #484 정답 고르기 계약 미반영')
+        operation = self.learning['paths'][path]['post']
+        names = {self.parameter(p).get('name') for p in operation.get('parameters', [])}
+        self.assertTrue({'grade', 'date', 'sundayTheme'} <= names, names)
+        self.assertIn('THEME_PICK_NOT_ALLOWED', yaml.safe_dump(operation, allow_unicode=True))
+
     def parameter(self, item):
         if '$ref' not in item:
             return item
