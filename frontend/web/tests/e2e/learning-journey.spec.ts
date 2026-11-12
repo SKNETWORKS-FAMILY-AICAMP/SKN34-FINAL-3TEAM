@@ -60,7 +60,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     await expect(record.getByText('완료', { exact: false })).toBeVisible()
 
     // 답변 원문은 기본 비공개라 학부모 공책에 보이도록 학생이 공개로 바꾼다.
-    await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '공개 설정', exact: true }).click()
+    await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '설정', exact: true }).click()
     await page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
     await expect(page.getByRole('status').filter({ hasText: '지금은 공개예요.' })).toBeVisible()
   })

@@ -27,7 +27,7 @@ const friendsOption = (page: Page) => page.getByRole('radio', { name: /친구들
 
 test('동의 없음: 친구 공개 선택지 옆에 보호자 동의가 필요하다고 보인다 @responsive', async ({ page }) => {
   await studentLogin(page)
-  await page.getByRole('button', { name: '공개 설정', exact: true }).click()
+  await page.getByRole('button', { name: '설정', exact: true }).click()
   const section = page.getByRole('region', { name: '친구들에게 내 답 보여 주기' })
   await expect(friendsOption(page)).toBeDisabled()
   await expect(section.getByText('· 보호자 동의가 필요해요')).toBeVisible()
@@ -50,7 +50,7 @@ test('동의 후 공개 켜기: 대시보드 링크로 동의하고 자녀 화�
 
   await enterStudentFixture(page)
   await expect(page).toHaveURL(/\/student\/home/)
-  await page.getByRole('button', { name: '공개 설정', exact: true }).click()
+  await page.getByRole('button', { name: '설정', exact: true }).click()
   const section = page.getByRole('region', { name: '친구들에게 내 답 보여 주기' })
   await expect(friendsOption(page)).toBeEnabled()
   await expect(section.getByText('보호자 동의가 필요해요')).toHaveCount(0)

@@ -40,11 +40,10 @@ import { inputLabels, shortRange, thinkingLabels } from '../domain/classroom.ts'
 import type { Child, DemoScenario, Period, PublicAttempt } from '../domain/classroom.ts'
 import { ActivityPaper, Brand, ErrorNotice, Modal } from './shared/ClassroomParts.tsx'
 import { StudentCommunity } from './student/world/StudentCommunity.tsx'
-import { StudentPoints } from './student/world/StudentPoints.tsx'
+import { StudentSettings } from './student/world/StudentSettings.tsx'
 import { StudentRoom } from './student/world/StudentRoom.tsx'
 import { StudentAlbum, StudentEpisode } from './student/world/StudentAlbum.tsx'
 import type { AttemptContext } from '../domain/retention.ts'
-import { StudentSharingPage } from './student/StudentSharingPage.tsx'
 import { StudentWorkPage } from './student/StudentWorkPage.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
@@ -352,9 +351,6 @@ export function ClassroomApp() {
               setPage(p)
               setDetail(null)
             }}
-            onLeave={() => {
-              void leave()
-            }}
           >
             <ErrorNotice error={auth.logout.error} />
             {work ? (
@@ -366,11 +362,19 @@ export function ClassroomApp() {
                   setPage('journal')
                 }}
               />
-            ) : studentPage === 'settings' ? (<StudentSharingPage key={child.id} child={child} />
+            ) : studentPage === 'settings' || studentPage === 'points' ? (
+              // 공개 설정·내 포인트·로그아웃은 설정 한 곳(#583). 옛 /student/points는 포인트 부분을 바로 보여 준다
+              <StudentSettings
+                key={child.id}
+                child={child}
+                focus={studentPage === 'points' ? 'points' : undefined}
+                leaving={auth.logout.isPending}
+                onLogout={() => {
+                  void leave()
+                }}
+              />
             ) : studentPage === 'community' ? (
               <StudentCommunity key={child.id} child={child} onSettings={() => setPage('settings')} />
-            ) : studentPage === 'points' ? (
-              <StudentPoints key={child.id} child={child} />
             ) : studentPage === 'room' ? (
               <StudentRoom key={child.id} child={child} onTheme={() => setPage('home')} onAlbum={() => setPage('album')} />
             ) : studentPage === 'album' && episode ? (
@@ -523,7 +527,7 @@ export function ClassroomApp() {
                 <button
                   type="button"
                   className="cj-plain"
-                  aria-label={session.role === 'STUDENT' ? '학부모 로그인으로' : '로그아웃'}
+                  aria-label="로그아웃"
                   onClick={() => {
                     void leave()
                   }}

@@ -247,3 +247,22 @@
     grid-column: 1 / -1;
   }
 }
+
+/* 학생 설정 (#583): 공개 설정·내 포인트·로그아웃 한 화면 */
+#class-journal .st-settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+#class-journal .st-settings-block {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 2px dashed #d9d5ca;
+  scroll-margin-top: 12px;
+}
+#class-journal .st-settings-part h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

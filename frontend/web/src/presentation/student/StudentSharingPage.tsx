@@ -7,7 +7,8 @@ import type { Child } from '../../domain/classroom.ts'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import './learning-settings.css'
 
-export function StudentSharingPage({ child }: { child: Child }) {
+/** embedded면 학생 설정(#583) 안의 한 부분으로 그린다(제목 h2, 바깥 main 없음). */
+export function StudentSharingPage({ child, embedded = false }: { child: Child; embedded?: boolean }) {
   const cache = useQueryClient()
   const key = ['sharing-preferences', 'STUDENT', child.id]
   const query = useQuery({ queryKey: key, queryFn: ({ signal }) => sharingApi.get(child.id, 'STUDENT', signal), retry: false })
@@ -18,8 +19,9 @@ export function StudentSharingPage({ child }: { child: Child }) {
       cache.removeQueries({ predicate: q => ['parent', 'records', 'report', 'public-record'].includes(String(q.queryKey[0])) })
     } })
   const value = query.error ? undefined : query.data
-  return <main className="st-paper st-sheet st-sharing">
-    <h1>내 답 공개 설정</h1>
+  const Wrapper = embedded ? 'section' : 'main', Title = embedded ? 'h2' : 'h1'
+  return <Wrapper className={embedded ? 'st-sharing st-settings-part' : 'st-paper st-sheet st-sharing'} aria-labelledby="sharing-h">
+    <Title id="sharing-h" tabIndex={embedded ? -1 : undefined}>내 답 공개 설정</Title>
     {query.isPending && <p role="status">공개 설정을 읽고 있어요.</p>}
     <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     {value && <fieldset disabled={save.isPending}>
@@ -31,7 +33,7 @@ export function StudentSharingPage({ child }: { child: Child }) {
     <p role="status">{save.isPending ? '설정을 저장하고 있어요.' : value ? `지금은 ${value.parentSharingEnabled ? '공개' : '비공개'}예요.` : ''}</p>
     <p>비공개여도 몇 번 했는지는 학부모님이 볼 수 있어요.</p>
     <CommunitySharing child={child} />
-  </main>
+  </Wrapper>
 }
 
 /**
