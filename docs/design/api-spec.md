@@ -92,7 +92,7 @@
 | `CHILD_LIMIT_REACHED` | 409 | 학부모당 자녀 3명 초과 등록 (FN-ACC-06, P02) |
 | `REPORT_REGENERATION_LIMIT` / `REPORT_GENERATION_IN_PROGRESS` | 409 / 409 | 학부모의 같은 자녀·주 리포트 재생성 1회 초과 (FN-RPT-12, P06) / 같은 주 생성 작업 진행 중 (5.5) |
 | `WITHDRAWAL_BLOCKED` | 409 | 진행 중 구독·미처리 환불이 있어 탈퇴 불가, 정리 대상 포함 (FN-ACC-12, P09) |
-| `USAGE_LIMIT_REACHED` | 429 | 요금제 사용 한도 도달(무료: 분석 대화 없음, 무료 상품에서 추가 문제를 다시 켠 경우의 무료 `EXTRA` 하루 `limits.dailyMissions`개. 2026-11-10 개정 #483·core #485 뒤 무료 테마 문제는 하루 한도 없이 주 5개(learning 공개 규칙), 무료 추가 문제는 403 `PREMIUM_REQUIRED`. 프리미엄: 하루 피드백 50회·분석 대화 30회), 가능 범위·사유·초기화 시점 포함 (FN-ADM-19, P13) |
+| `USAGE_LIMIT_REACHED` | 429 | 요금제 사용 한도 도달(무료: 분석 대화 없음, 무료 상품에서 추가 문제를 다시 켠 경우의 무료 `EXTRA` 하루 `limits.dailyMissions`개. 2026-11-10 개정 #483·core #485 뒤 무료 테마 문제는 하루 한도 없이 주 5개(learning 공개 규칙), 무료 추가 문제는 403 `PREMIUM_REQUIRED`. 프리미엄: 하루 피드백 50회·분석 대화 30회). 추억 검색·설명 하루 한도(`limits.dailyMemorySearches`·`dailyMemoryExplanations`, 기준안 20·10, 2.12 설계)도 같은 코드, 가능 범위·사유·초기화 시점 포함 (FN-ADM-19, P13, P27) |
 | `AI_UNAVAILABLE` | 503 / 502 | AI 처리 실패, `retryable` 포함 (처리 실패 상태, 보류와 구분). ai·learning 피드백은 503, core 분석 대화의 ai 연결 실패·서킷 차단·스트림 중단은 502 (#167) |
 | `SESSION_CHANGED` | 401 | 다른 탭에서 역할·세션이 바뀌어 access의 세션 version 불일치 (5.1) |
 | `REFRESH_REUSED` | 401 | 이미 사용된 refresh 재사용 → 해당 세션 전체 폐기 (5.1) |
@@ -148,6 +148,7 @@
 | `REFUND_NOT_READY` / `REFUND_STATE_CHANGED` / `REFUND_PREMIUM_USAGE_PRESENT` | 409 | 사용 이력 확인 전 또는 REQUESTED가 아닌 환불 승인 / 처리 중 환불 상태 변경 / 프리미엄 기능 사용 이력 있음 (P14) |
 | `PAYMENT_PG_UNAVAILABLE` / `PAYMENT_PG_MISMATCH` / `PAYMENT_PG_KEY_UNAVAILABLE` / `PAYMENT_KEY_UNAVAILABLE` / `PAYMENT_CUSTOMER_UNAVAILABLE` | 503 | 토스 설정·연결 실패 / 토스 응답과 주문·금액·MID·상태 불일치 / 토스 키 미설정 / 빌링키 암호화 키 미설정 / 구독의 고객 키 없음 (2.6) |
 | `PAYMENT_STORAGE_UNAVAILABLE` / `PAYMENT_WEBHOOK_UNAVAILABLE` / `PAYMENT_WEBHOOK_LOOKUP_UNAVAILABLE` / `PAYMENT_RECONCILIATION_UNAVAILABLE` / `PAYMENT_RENEWAL_DATA_UNAVAILABLE` / `REFUND_USAGE_UNAVAILABLE` | 503 | 결제 저장소 장애 / 웹훅 처리 실패 / 웹훅 결제 조회 실패 / 대사 조회 실패 / 갱신 데이터 확인 실패 / 환불 전 사용 이력 확인 실패 (2.6) |
+| `THEME_FRAME_NOT_FOUND` | 404 | 보유하지 않은 기념 액자 회차의 앨범 상세·확인 처리·추억의 벽 걸기 (2.12 설계, P27) |
 | `METHOD_NOT_ALLOWED` / `UNSUPPORTED_MEDIA_TYPE` / `REQUEST_FAILED` | 405 / 415 / 그 밖의 4xx·5xx | 허용되지 않는 메서드 / 지원하지 않는 Content-Type / 위 표에 없는 프레임워크 기본 오류 |
 | `INTERNAL_ERROR` | 500 | 예상하지 못한 서버 오류 (SSE `error` 이벤트는 `retryable: true`) |
 
@@ -570,6 +571,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 - 2026-11-10 개정(#483, core #485 구현·V43): 적립 사건에 당일 풀이(`THEME_ON_TIME`, 5, 사건 키 `weekStart:day` 예 `2026-11-09:MON`)·주간 완주(`THEME_FINISHED`, 10, 사건 키 `weekStart`)를 더했다. `THEME_COMPLETED`(30)는 이름·키 그대로 개근(월~금 각 당일 학습 완료)으로 표시한다. 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`(2.11). 개근은 주간 테마 조회 보충과 되돌아보기 열람 응답 `completed`로, 당일 풀이·주간 완주는 주간 테마 조회 보충으로만 적립하며 사건 키로 1회(3.4·3.6 시퀀스, #506). learning #484가 `completedOnDay`·`finished`를 내보내기 전에는 당일 풀이·주간 완주가 쌓이지 않는다(학생 포인트 화면은 "준비 중" 표시). 학생·학부모 포인트 내역 화면은 세 사건 이름(당일 풀이·개근·주간 완주)을 보여 준다(web #487)
 - 적립은 별도 API가 없다. core `RewardService.earn(studentId, event, sourceKey)` 한 곳에서 처리하고(#389 구현, 자체 트랜잭션·예외 없이 결과 반환), core가 learning 응답을 프록시하는 경로에서 부른다(#389 구현): 돌아보기 저장 성공(학습 완료·미션당 최초 1회, 미션은 core가 learning 시도 상세로 확인), 공유 생성 성공(이미 있는 공유물 200 포함), 반응 남기기 성공(하루 상한, 취소는 적립 없음), 되돌아보기 열람(주 1회), 열람 응답 `completed`면 개근, 주간 테마 조회 응답의 개근·당일 풀이·주간 완주 칸(#485). 사건 키는 학습 완료 `missionId`, 공유 `postId`, 반응 `postId:reaction`, 되돌아보기·개근·주간 완주 그 주 월요일(KST), 당일 풀이 `weekStart:day`. 값·상한은 `reward_rule` 데이터(P21 초기값). 원장 사건 키 `source_key`로 멱등, 학습 응답 후 적립 저장이 실패하면 응답은 그대로 두고 같은 사건 재요청(돌아보기 재요청 `409 ATTEMPT_CLOSED` 포함, 같은 반응·열람 재요청)·`/students/me/weekly-theme` 조회(이번 주 학습 완료한 요일 문제) 때 보충. 적립 결과는 응답에 넣지 않고 `/students/me/points`로 조회
 - `itemKey`: 테마·캐릭터는 `THEME:forest`·`COMPANION:tori` 형식(해금값은 코드 상수), 아이템은 관리자가 등록한 `look_item.code`. `THEME:lake`·`COMPANION:mungchi`는 항상 해금, 나머지 테마 100·캐릭터 150 포인트(코드 상수). 잠금 적용 전 저장된 `look_theme`·`look_companion`은 마이그레이션에서 해금 행으로 옮긴다
+- 2026-11-12 결정(P22 개정·P27, 설계·구현 전): 생활공간 가구 스킨은 슬롯 `DESK`·`WALL`·`WARDROBE`의 `look_item`으로 등록하고 위 목록·해금 API와 `PUT /students/me/preferences`의 `equipped`(슬롯 키 추가)를 그대로 쓴다. 가구별 기본 스킨은 항상 해금(기준안). 새 경로 없음
 - 다른 학생 잔액·순위 API는 없다(1.3)
 
 ### 2.11 주간 테마·되돌아보기 (FN-RET-07·08, P23)
@@ -597,6 +599,25 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 - 무료 `EXTRA`를 다시 켰을 때의 하루 한도는 #210 결정대로 core `mission_daily_usage` 집계(2.2). 테마 학년(`G3`~`G6`, 중학생은 `G6` P26 #432, 학년별 테마 에픽 #436)과 KST 날짜는 core가 정해 learning에 넘긴다(클라이언트 값 미사용). 응답은 `Cache-Control: no-store`
 - 진행 중인 시도의 이어하기(`200`)는 요일 검사를 하지 않는다. 재사용 테마의 이미 푼 문제도 그 주 `OPEN` 요일에는 `THEME_DAY` 신규 시도 가능(그 주에 마무리한 시도만 기준, core 한도 집계 없음)
 - 에픽 #436(learning #438) 주간 테마 응답 추가 칸: 큰 질문 `bigQuestion`·후보 `candidates`·요일 `days[].clue`·`rulesOut`, 시작·종료 장면 영상 `introVideoUrl`·`outroVideoUrl`과 움직임 `introMotion`·`outroMotion`, 엔딩 뒤 정답 `answer`·`answerClue`. 요일 장면 영상은 없다(ai 채택 테마의 미션 `themeScene.videoUrl`은 null). core는 응답을 그대로 전달하고 포인트 적립에 `weekStart`·`completed`·`finished`·`days[].missionId`·`attemptStatus`·`day`·`completedOnDay`만 읽는다. 정답·종료 이야기는 learning이 엔딩 전에 비운다
+
+### 2.12 생활공간·추억 (FN-RET-09~13, P27)
+
+**구현 전 계약(기준안)**. 2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md)). 경로·칸 이름은 구현 이슈에서 OpenAPI와 함께 확정한다. 저장은 [ERD 3.5.2·4.6](erd.md). 회차 키는 `themeId`·`weekStart`(KST 월요일), 학생은 세션으로 정한다.
+
+| Method | Path | 역할 | 설명 | FN | 우선순위 |
+|---|---|---|---|---|---|
+| GET | `/students/me/room/frame-slots` | 학생 | 추억의 벽 슬롯 `{slots:[{slotNo, themeId, weekStart, title, imageUrl}]}`(빈 슬롯 제외). 방 벽지·가구 스킨·캐릭터 착용은 기존 2.10·3.12 응답 사용 | RET-09 | 설계 |
+| PUT | `/students/me/room/frame-slots` | 학생 | 전체 교체 `{slots:[{slotNo, themeId, weekStart}]}` → 저장된 목록. `slotNo` 1~6·중복 슬롯·같은 액자 중복 422 `VALIDATION_FAILED`, 미보유 회차 404 `THEME_FRAME_NOT_FOUND` | RET-09 | 설계 |
+| GET | `/students/me/album?page&size` | 학생 | 보유 액자 회차(진행 중인 주·`EXTRA` 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, awardedAt, seen, displayed}], page, size, totalElements}` | RET-10, RET-11 | 설계 |
+| GET | `/students/me/album/{themeId}/{weekStart}` | 학생 | 회차 상세 `{themeId, weekStart, title, awardedAt, missions:[{day, missionId, title, thinkingType, attemptId}], ending:{seen, outro, answer}}`. 엔딩을 보지 않았으면 `outro`·`answer` null(P23). 문제별 기록은 기존 시도 상세(2.3·`/attempts/{id}/comparison`)로 연다. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-11 | 설계 |
+| POST | `/students/me/album/{themeId}/{weekStart}/seen` | 학생 | 새 액자 확인(멱등) → 204. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-10 | 설계 |
+| POST | `/students/me/memories/search` | 학생 | body `{query}`(1~200자) → `{state, cards:[{themeId, weekStart, title, imageUrl, missions:[{missionId, title, attemptId, answerExcerpt}], score}]}`. `state`는 `RESULTS`·`NO_RESULTS`(관련도 기준 미달)·`NO_RECORDS`(보유 액자 없음), 카드 최대 3개(기준안). 하루 한도 429 `USAGE_LIMIT_REACHED`, 임베딩 장애 503 `AI_UNAVAILABLE` | RET-12 | 설계 |
+| POST | `/students/me/memories/explanations` | 학생 | body `{query, attemptIds}`(검색 결과 카드의 시도, 1~3개) → 200 `{state, text, citations:[{no, themeId, weekStart, attemptId}]}`. `state`는 `GENERATED`·`INSUFFICIENT`(근거 부족, 생성 안 함)·`FAILED`(생성·검사 실패, `text` null). 본인 검색 문서가 아닌 `attemptId`는 422 `VALIDATION_FAILED`, 하루 한도 429 `USAGE_LIMIT_REACHED` | RET-13 | 설계 |
+
+- core는 검색·설명 요청마다 `memory_daily_usage`에 기록하고 KST 하루 건수가 상품 한도를 넘으면 learning을 부르지 않고 429(ERD 3.5.2). 무료·프리미엄 같은 값(기준안, P13)
+- core → learning은 4.1.4 경로를 프록시하고 응답을 그대로 전달. 설명 경로는 별도 회로 `learning-memory`(아키텍처 1.3)
+- 검색 반영은 학습 완료 뒤 비동기라 방금 완료한 문제는 잠시 결과에 없을 수 있다(앨범에는 바로 보임). 질문·설명은 저장하지 않는다
+- 학생 이외 역할 경로 없음(학부모 화면 미제공)
 
 ---
 
@@ -986,6 +1007,23 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 활성화 `409 KNOWLEDGE_DATASET_STATE_CONFLICT`: `LOADING`이 아님, 적재 뒤 활성 판이 바뀜(`source.previousVersion` ≠ 현재 활성 판, 다시 적재). 제거 `409`: `ACTIVE`·`LOADING`
 - 같은 입력을 다시 적재하면 같은 조각·관계 수(멱등)
 
+#### 4.1.4 기념 액자·추억 내부 API (P27, 설계·구현 전)
+
+**구현 전 계약(기준안)**. 2.12의 core 프록시 대상. 호출자는 core, `X-Student-Scope`에 `studentId`가 없으면 403(1.3). 저장은 [ERD 4.6](erd.md).
+
+| 메서드 | 경로 | 내용 |
+|---|---|---|
+| GET | `/internal/students/{studentId}/album?page&size` | 2.12 앨범 목록과 같은 모양(`displayed`는 core가 슬롯으로 채움) |
+| GET | `/internal/students/{studentId}/album/{themeId}/{weekStart}` | 2.12 회차 상세, 미보유 404 `THEME_FRAME_NOT_FOUND` |
+| POST | `/internal/students/{studentId}/album/{themeId}/{weekStart}/seen` | `seen_at` 기록(멱등) → 204 |
+| POST | `/internal/students/{studentId}/frames/ownership` | `{frames:[{themeId, weekStart}]}` → `{owned:[{themeId, weekStart}]}`(core 액자 슬롯 저장 전 확인) |
+| POST | `/internal/students/{studentId}/memories/search` | `{query}` → 2.12 검색 응답. 질문 임베딩은 ai 4.2.4, 실패 503 `AI_UNAVAILABLE` |
+| POST | `/internal/students/{studentId}/memories/explanations` | `{query, attemptIds}` → 2.12 설명 응답. 생성은 ai 4.2.6 |
+
+- 검색 범위: `memory_search_doc.status = READY` + 본인 + 보유 `theme_frame` 회차 + `theme_week_start < 이번 주(KST)`. 코사인 거리 정렬 뒤 회차 단위로 묶어 상위 3개, 관련도 기준값(기준안, 평가셋으로 조정) 미달은 `NO_RESULTS`
+- 설명: `attemptIds`가 위 범위의 문서인지 다시 확인(아니면 422 `VALIDATION_FAILED`) → 근거 부족 규칙(최고 관련도 기준 미달·답변 너무 짧음)이면 ai를 부르지 않고 `INSUFFICIENT` → ai 응답의 `citations`가 보낸 번호 안이고 따옴표 인용이 근거 원문의 부분 문자열일 때만 `GENERATED`, 아니면 ai 실패와 같이 `FAILED`(200)
+- 학습 완료(돌아보기 저장) 트랜잭션의 액자·검색 문서 등록과 임베딩 주기 작업은 내부 API가 아니다([시퀀스 3.8·3.10](sequence-diagram.md), [상태 3.7](state-diagram.md))
+
 ### 4.2 ai-service (호출: learning, core, report)
 
 구현된 경로의 요청·응답 계약: [contracts/openapi/ai-service.yaml](../../contracts/openapi/ai-service.yaml) (`scripts/tests/test_ai_openapi.py`가 라우터 경로와 대조)
@@ -1001,9 +1039,10 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/analysis/report-template` | core | `{question, current}` → `{settings}` 또는 `{clarification}` 중 하나 (#209, 2.4). 미보유 활성 본문은 503 `AI_PROMPT_VERSION_UNAVAILABLE`(#280). core 호출은 별도 서킷 `ai-report-template`(아키텍처 1.3) |
 | POST | `/internal/mission-drafts` | learning | 미션 초안 1회 생성·검사 (#354, FN-ADM-20). `{standards:[{code, statement, level?:{grade, text}}], thinkingType, elementCodes:[{code, label, description}], gradeMin, gradeMax, inputType, previousFailures:[{check, reason}]}` → `{draft:{title, question, guide, sceneNote, choices?, categories?, answerKey?, exampleAnswer?, forbiddenTerms[], hints[], elements:[{code, label, description, goodThought, standardCode}]}, checks:{passed, failures:[{check, reason}]}, versions:{prompt, model}}`. `level`은 성취수준 문장이 있을 때만, `elementCodes`는 learning이 FN 1.5 표에서 그 유형 코드와 입력 방식에 맞는 정답 코드를 채움(코드 목록은 learning 소유). ai 검사 `check`: `REQUIRED`(필수 항목·입력 방식별 선택지·정답 키·예시 답), `QUESTION_LENGTH`(`TOO_LONG`, `gradeMin` 학년의 상한, 설정 `MISSION_DRAFT_QUESTION_MAX_CHARS` 기본 전 학년 200자, P19 확정 전 기준안), `LEAK`(질문·안내·생각 열기 질문 속 정답 키·금지어 노출과, 안내·생각 열기 질문 속 예시 답 노출(질문에 이미 있는 글은 빼고 비교, 질문은 예시 답과 비교하지 않음), `reason`은 되묻기 노출 검사 코드 `ANSWER_KEY`·`FORBIDDEN_TERM`·`EXAMPLE_ANSWER` 그대로. 정답 키 글은 고르기면 정답 선택지 이름, 풀이면 최종 답이고 숫자뿐인 답은 숫자 경계로 비교, 순서·분류는 비교하지 않음). 검사 실패도 `200`(`checks.passed=false`), 형식에 맞는 초안을 못 만들면 `502 AI_BAD_RESPONSE`, 그 밖 LLM 실패는 `503 AI_UNAVAILABLE`(둘 다 `retryable`). 호출 1번에 생성 1회이고 재생성 반복은 learning이 함. 시간은 P12 예외(#353): LLM 60초 1회(재시도 없음)·마감 63초, learning→ai 대기 70초. 주기 작업이라 기다리는 사람이 없고, 기본 모델 `gpt-6-luna`가 실제 성취기준으로 15~31.7초 걸림(ai.md 9.2). LLM 입력에 학생 정보 없음. 사용량 `callType = MISSION_DRAFT`(core #355가 받음. 그 전에 발행된 메시지는 core 소비자가 거부해 DLQ에 남아 있음). 근거 칸 `knowledge`·응답 `sources`는 4.2.5(#464 C7, 구현 전) |
 | POST | `/internal/theme-drafts` | learning | 주간 테마 초안 1회 생성 (#437, 에픽 #436, FN-ADM-22). `{gradeMin, gradeMax, weekStart, topic?, missions:[{thinkingType, inputType, standards:[{code, statement, level?:{grade, text}}], elementCodes:[{code, label, description}]}], previousFailures:[{stage, reasons[]}]}` → `{theme:{title, world, characters, styleNote, outfit, intro, outro, bigQuestion, candidates[], answer, days:[{day, thinkingType, place, sceneNote, clue, rulesOut[]}]}, missions:[{day, thinkingType, draft}], dialogues:[{day, lines:[{speaker, text}]}], images:{장면: key}, videos:{INTRO|OUTRO: key}, motions:{장면: motion}, warnings:[{stage, item, reason}], failure:{stage, reasons[]} 또는 null, versions:{prompt, model}}`. `missions`는 유형 5개에 1개씩이고 성취기준·요소 code·입력 방식은 learning이 채움(코드 목록은 learning 소유). 학년별 테마(`G3`~`G6`, #438)라 `gradeMin = gradeMax`. 응답 `draft`는 위 `/internal/mission-drafts`의 `draft`와 같은 모양이고 같은 검사(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`)를 거침. 단서 `days[].clue`는 학생이 그날 미션을 마친 뒤 보여 줄 글(learning #484)이라 미션·대화에는 그날 단서 결론을 쓰지 않음: `dialogues[].lines`의 끝 두 줄은 단서가 아니라 그날 증거 발견 줄과 뭉치의 수사 연결 문장(미션 질문에는 다시 쓰지 않음, 앞 요일 요약 줄 없음), 금요일 `draft.guide`에 단서 목록을 넣지 않음(최종 후보 고르기는 화면, 사용자 결정 2026-11-11, 응답 모양은 그대로). 장면은 `INTRO`·`OUTRO`·`MON`~`FRI` 7개. 요일 배치는 ai가 기준안(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 에픽 확인 필요)대로 정해 `day`로 돌려주고 learning이 다시 검사. 큰 질문·정답: 후보 기준안 모든 학년 4개(사용자 결정 2026-11-10, 3개면 월~수에 1개만 뺄 수 있어 단서가 밋밋해짐), 정답은 후보 중 하나이고 요일별 단서 5개마다 빠지는 후보 `rulesOut`. `rulesOut`은 빈 배열일 수 있음(그때 남은 후보를 하나도 빼지 않는 힌트 단서. 남은 후보를 빼는 내용이면 빈 배열이 아니라 그 후보를 적음). `rulesOut`이 비지 않은 단서는 그때 남은 후보를 적어도 하나 새로 뺌(이미 빠진 후보만 다시 빼는 단서는 빈 배열), 그래서 `rulesOut`이 비지 않은 마지막 요일이 마지막 틀린 후보가 빠지는 날(learning 결정적 단서 계산, #438). 정답은 어떤 단서로도 빠지지 않고, 틀린 후보는 각각 적어도 한 단서에서 빠지며, 마지막 틀린 후보는 목요일 이후 단서에서 빠짐(기준안, 금요일 전에 답이 드러나지 않게). ai 코드 검사. 정답은 종료 이야기에만 쓰고 문제·대화·생각 열기 질문·예시 답에 나오면 유출. 그래프 안에서 실패한 부분만 다시 만들고(상한), 끝내 실패하면 `200`에 `failure.stage`(`THEME`·`MISSION`·`REVIEW`·`IMAGE`)와 사유를 담음(learning `CHECK_FAILED`). 실패해도 그때까지 만든 테마·미션·대화를 함께 돌려줌(줄거리 단계에서 끝내 실패하면 `theme`은 `null`), learning은 받은 결과를 `output`에 그대로 저장해 관리자 상세에서 보여 줌(미션 초안이 검사 실패에도 초안을 돌려주는 것과 같은 방식, 사용자 결정 2026-11-10). 대화·영상·움직임은 끝내 실패해도 그 항목만 빼고 성공으로 돌려주고 `warnings`에 남김(영상은 컷 하나가 끝내 검토를 통과하지 못하면 그 컷만 첫 그림을 천천히 확대하는 움직이는 그림 컷으로 대신하고 장면 영상은 남김, 2026-11-11). 검토 LLM(생성과 다른 모델, 기준안 생성 `gpt-6-luna`·검토 `gpt-6.1-terra`. 검토 제공자·모델은 설정이라 팀 키가 생기면 다른 제공자로 바꿀 수 있음)의 애매한 항목도 `warnings`. 형식 밖 LLM 응답은 `502 AI_BAD_RESPONSE`, 그 밖 실패·마감 초과는 `503 AI_UNAVAILABLE`(둘 다 `retryable`, learning `FAILED`). 다시 부를 때 learning이 이전 시도들의 `failure`를 그대로 `previousFailures`에 넣음. `previousFailures[].stage`는 `THEME`·`MISSION`·`REVIEW`·`IMAGE`만(그 밖 `422`). learning 검사 실패는 요일·유형 배치·정답 논리면 `THEME`, 미션 게시 규칙이면 `MISSION`으로 바꿔 넣고 AI 호출 실패는 넣지 않음. `MISSION` 사유는 `"<요일> <검사 코드> <자세히>"`(요일 `MON`~`FRI`)로 시작(사용자 결정 2026-11-10, #438과 맞춤). `IMAGE` 사유는 ai가 돌려준 그대로이며 그림 이름(`MON`~`FRI`·`INTRO1`~`INTRO4`·`OUTRO1`~`OUTRO4`)으로 시작하면 그 그림에만, 아니면 모든 그림에 넣음(2026-11-11). 이미지·영상은 ai가 S3에 올리고 키만 돌려줌(경로 `theme-drafts/{ai가 만든 실행 ID}/{장면}.png`·`.mp4`, 버킷·쓰기 권한은 인프라 확인). 그림은 장면 7장(`MON`~`FRI`는 그날 미션 그림, `INTRO`·`OUTRO`는 영상 4번째 컷 첫 그림, 2D 만화풍, 앱 솜뭉치 모양 기본 뭉치를 고정 참조). 영상은 시작·종료(`INTRO`·`OUTRO`)만이고 장면마다 컷 4개(4·6·8·6초, 컷 첫 그림만 고정, 컷마다 장소·각도 다름)를 0.5초 녹아드는 전환으로 이은 22.5초(요일 문제 전 영상 없음, 사용자 결정 2026-11-11). 그림 설정(버킷·키)이 없으면 그림·영상·움직임을 건너뛰고 `warnings`에 `IMAGE`(`item` `ALL`) 하나, 영상 설정이 꺼져 있으면 `VIDEO`(`item` `ALL`) 하나. 움직임은 장면마다 JSON 형식 v1 `{version, transition:{kind, seconds}, camera:{from:{x, y, zoom}, to, seconds} 또는 null, speakers:{이름: {x, y, zoom}}, effects:[{shape, color, count, size, direction, speed, opacity}], captions:[{start, end, text}], spots:[{x, y, label, line, evidence}]}`(좌표는 그림 너비·높이 %, `spots`는 요일 장면 살펴보기로 문제 전에 누르는 그림 속 물건 2~3개(증거 물건 1개, 이름 10자·한마디 30자 기준안, 단서 결론·후보·정답 이름 금지, 시작·종료는 빈 배열, 2026-11-11 추가 선택 칸이라 version 1 유지), `captions`는 시작·종료 영상 위에 웹이 띄우는 컷 문구로 컷 경계는 겹치는 구간 한가운데, 영상 속 글자 없음). learning은 받은 그대로 저장·전달. 시간: ai 마감 15분, learning→ai 대기 16분(기준안, 에픽 9분·10분에서 변경, 실측 후 조정). 주기 작업이라 기다리는 사람이 없음. LLM 입력에 학생 정보 없음. 사용량 `callType` `THEME_DRAFT`(글 생성·검토)·`THEME_IMAGE`·`THEME_VIDEO`. `THEME_VIDEO`는 사용량 이벤트 스키마와 core enum·DB 제약에 먼저 들어간 뒤에만 보냄(그 전에 보내면 core 소비자가 거부해 DLQ에 남음, `MISSION_DRAFT` 선례. core 마이그레이션은 core 담당이 준비) |
-| POST | `/internal/embeddings` | learning(지식 적재), 스크립트(관계 후보), ai 내부(검색 질의) | 교육과정 지식 본문·질의 임베딩(#463, 계약 #464 C6, 구현 #467). `{texts[]}` → `{model, dimensions, vectors[]}`, 4.2.4 |
+| POST | `/internal/embeddings` | learning(추억 검색, P27 설계), 스크립트(관계 후보), ai 내부(검색 질의) | 교육과정 지식 본문·질의, 추억 검색 문서·질문 임베딩(#463, 계약 #464 C6, 구현 #467). `{texts[]}` → `{model, dimensions, vectors[]}`, 4.2.4 |
+| POST | `/internal/memory-explanations` | learning | 추억 설명 1회 생성(P27, 설계·구현 전). `{query, evidence:[{no, themeTitle, missionQuestion, answerExcerpt, weekLabel}]}` → `{text, citations:[no], versions}`, 4.2.6 |
 
-- #68 프롬프트 레지스트리의 `PROMPT name`은 위 응답의 여덟 키와 같다. 승인 scope는 차례대로 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`(#354 `missionDraft`)·`ai/report-explanation`(#477 `reportExplanation`)·`ai/theme-draft`(#437 `themeDraft`)이며 요청 범위 밖 이벤트는 적용하지 않는다. core에 해당 활성 항목이 없으면 ai 이미지에 포함된 기존 본문·버전을 사용한다. 활성화된 버전의 실제 본문이 이미지에 없으면 해당 기능의 새 요청과 `/internal/versions`는 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 실패하고 `/health/ready`의 `versions`는 DOWN이다. 기존 본문을 새 버전명으로 보고하지 않는다. 진행 중인 요청은 시작 때 선택한 본문·버전으로 완료한다.
+- #68 프롬프트 레지스트리의 `PROMPT name`은 위 응답의 여덟 키와 같다. 승인 scope는 차례대로 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`(#354 `missionDraft`)·`ai/report-explanation`(#477 `reportExplanation`)·`ai/theme-draft`(#437 `themeDraft`)이며 요청 범위 밖 이벤트는 적용하지 않는다. core에 해당 활성 항목이 없으면 ai 이미지에 포함된 기존 본문·버전을 사용한다. 활성화된 버전의 실제 본문이 이미지에 없으면 해당 기능의 새 요청과 `/internal/versions`는 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 실패하고 `/health/ready`의 `versions`는 DOWN이다. 기존 본문을 새 버전명으로 보고하지 않는다. 진행 중인 요청은 시작 때 선택한 본문·버전으로 완료한다. 추억 설명(4.2.6) 구현 때 키 `memoryExplanation`·scope `ai/memory-explanation`을 더한다(P27, 설계).
 
 #### 4.2.2 판정 모델 교차 확인 (#69, 2026-11-03)
 
@@ -1049,6 +1088,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - `POST /internal/embeddings` `{texts:[string]}` → `200 {model, dimensions, vectors:[[number]]}`. `vectors`는 `texts`와 같은 순서·같은 개수. 내부 토큰만 확인한다(4.2 다른 경로와 같음)
 - 입력은 교육과정 지식 본문(C2 조각 본문)과 검색 질의 문장만. 학생 정보·학생 답은 받지 않는다(FN-ADM-20 원칙)
+  - 2026-11-12 P27(설계·구현 전): learning 추억 검색이 검색 문서(테마·미션 + 학생 최종 답변)와 학생 질문도 보낸다. 판정과 같은 기준으로 학생 이름·학생·시도·답변 ID를 넣지 않고 알려진 닉네임은 가린다(NFR-SEC-03). 사용량을 구분하려고 요청에 `purpose`(`KNOWLEDGE`·`MEMORY`, 생략 시 `KNOWLEDGE`, 기준안)를 더하고 `MEMORY`는 `callType = MEMORY_EMBEDDING`으로 기록한다(core 허용 목록 확장 뒤에만 보냄)
 - 상한(기준안, #467): 한 요청 `texts` 1~64개, 본문당 1~8,000자. 넘거나 빈 글·공백만이거나 `texts` 밖 칸이 있으면 `400 VALIDATION_FAILED`. 64개를 넘는 적재는 부르는 쪽이 나눠 보낸다
 - 모델·차원(기준안, 에픽 #463): OpenAI `text-embedding-3-small`, 1536차원. 설정값(`EMBEDDING_MODEL`·`EMBEDDING_DIMENSIONS`, OpenAI 요청에 `dimensions`로 보냄)이며 응답에 함께 돌려줘 learning이 판(`knowledge_dataset.embedding_model`·`embedding_dimensions`, C2)과 다른 벡터를 넣지 않게 한다
 - 오류: 제공자 응답의 벡터 개수·차원이 맞지 않음 `502 AI_BAD_RESPONSE`, 제공자 미설정·호출 실패·시간 초과 `503 AI_UNAVAILABLE`(둘 다 `retryable`, 기존 `AI_*` 실패 코드와 같은 방식)
@@ -1065,6 +1105,17 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - learning은 `sources`를 초안과 함께 저장하고 관리자 초안 상세(P19)에 보여 준다. 저장 칸·관리자 화면·core 프록시 모양은 #470에서 팀 확인 후 정한다
 - 테마 초안(#437) 미션 생성도 같은 근거 묶음·`sources` 모양을 쓴다(그래프 쪽 반영은 #470)
 - 프롬프트 문구가 바뀌면 프롬프트 버전을 올린다(`mission-draft@2` 등, #470)
+
+#### 4.2.6 추억 설명 (P27, 설계·구현 전)
+
+**구현 전 계약(기준안)**. 2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md)). 호출자 learning(4.1.4 설명).
+
+- `POST /internal/memory-explanations` `{query, evidence:[{no(1~3), themeTitle, missionQuestion, answerExcerpt, weekLabel}]}` → `200 {text, citations:[no], versions:{prompt, model}}`
+- 입력: 학생 질문과 근거 1~3개. 근거는 요청 안 번호로만 지칭하고 학생 이름·학생·시도·답변 ID를 넣지 않는다. 알려진 닉네임은 learning이 보내기 전에 가린다(NFR-SEC-03, 4.2.1과 같은 방식)
+- 생성: ai 기본 LLM 설정으로 1회(P12 15초·재시도 1회). 2~3문장, 문장마다 근거 번호, 근거에 없는 활동·감정·의도·능력 변화 추정 금지, 원문 인용은 따옴표로 근거 문장 그대로
+- 검사: `citations`가 비었거나 보낸 번호 밖이면 `422 AI_EXPLANATION_REJECTED`(`retryable:false`). 인용 원문 대조는 learning이 다시 한다
+- 오류: LLM 실패·시간 초과 `503 AI_UNAVAILABLE`(+`retryable`), 형식 밖 응답 `502 AI_BAD_RESPONSE`. learning은 422·5xx를 모두 설명 `FAILED`로 돌려 검색 결과는 유지한다
+- 사용량 `callType = MEMORY_EXPLANATION`(core 허용 목록 확장 뒤에만 보냄), 프롬프트 이름 `memoryExplanation`. 요청·응답 원문은 저장·로그하지 않는다(NFR-SEC-05)
 
 
 ### 4.3 scoring-service (호출: ai)
