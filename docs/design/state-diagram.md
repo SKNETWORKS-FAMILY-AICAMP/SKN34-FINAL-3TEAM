@@ -291,7 +291,7 @@ stateDiagram-v2
 | → `PENDING` | `POST /attempts/{id}/answers` | `JudgmentService.createPending` | `answer_id` UK |
 | `PENDING·FAILED → RUNNING`, 만료 `RUNNING → RUNNING` | `POST /answers/{id}/feedback` | `Judgment.acquire(now, lease)` | `SET process_status='RUNNING', lease_until=:until WHERE answer_id=:id AND (process_status IN ('PENDING','FAILED') OR (process_status='RUNNING' AND (lease_until IS NULL OR lease_until < now())))`. 리스 없는 `RUNNING`도 만료로 봄(엔티티 판단과 같게) |
 | `RUNNING → DONE` | 처리 완료 | `Judgment.done(...)`·`hold(reason)` | `WHERE id=:id AND process_status='RUNNING' AND lease_until=:until` (획득한 리스 값으로 늦게 끝난 이전 처리의 덮어쓰기 방지) |
-| `RUNNING → FAILED` | 예외·타임아웃 | `Judgment.fail(code)` | 위와 같은 리스 조건, `retry_count + 1` |
+| `RUNNING → FAILED` | 예외·타임아웃 | `Judgment.fail(code)` | 위와 같은 리스 조건, `retry_count`는 선점 시 증가(첫 시도 포함 5회) |
 | 만료 `RUNNING → FAILED` | 1분 주기 고착 탐지 (#241) | `StuckJudgmentScheduler` → `JudgmentService.failStuck(now)` | `SET process_status='FAILED', failure_code='LEASE_EXPIRED', retry_count=retry_count+1 WHERE process_status='RUNNING' AND (lease_until IS NULL OR lease_until < now)`. 만료 조건은 재획득과 같음(리스 없는 `RUNNING` 포함) |
 
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
@@ -416,7 +416,7 @@ stateDiagram-v2
 - 공개 설정을 다시 켜면 `HIDDEN_SETTING`만 `VISIBLE`로 복원(이관 수락 후 새 보호자 동의 때도 같음)
 - 학생 삭제 시 상태와 관계없이 물리 삭제(P09)
 
-### 3.7 `memory_search_doc.status` (P27, 설계·구현 전)
+### 3.7 `memory_search_doc.status` (P27, #563 구현)
 
 추억 검색 문서 임베딩([ERD 4.6](erd.md), [결정 기록](../report/retention-expansion.md)). learning은 ShedLock을 쓰지 않으므로 3.3 고착 탐지처럼 조건부 UPDATE로 레플리카 중복 처리를 막는다.
 
@@ -427,7 +427,8 @@ stateDiagram-v2
   FAILED --> PROCESSING: 주기 작업 재시도 (retry_count 한도 안)
   PROCESSING --> READY: 임베딩 저장
   PROCESSING --> FAILED: ai 임베딩 실패·타임아웃
-  PROCESSING --> PENDING: 리스 만료 복구 (처리 Pod 종료)
+  PROCESSING --> PENDING: 리스 만료 복구 (5회 미만)
+  PROCESSING --> FAILED: 리스 만료 (5회 도달)
   READY --> [*]
   note right of READY
     검색 대상은 READY만
@@ -440,8 +441,8 @@ stateDiagram-v2
 | → `PENDING` | 테마 문제 학습 완료(`EXTRA` 제외) | learning 학습 완료 처리 | `attempt_id` UK, `ON CONFLICT DO NOTHING` |
 | `PENDING·FAILED → PROCESSING` | 주기 작업(기준안 1분, 최대 64행) | `MemoryEmbeddingScheduler` → `MemorySearchService` | `SET status='PROCESSING', lease_until=:until WHERE id IN (:ids) AND (status='PENDING' OR (status='FAILED' AND retry_count < :max))`. 영향받은 행만 처리 |
 | `PROCESSING → READY` | 임베딩 응답 | 같은 서비스 | `WHERE id=:id AND status='PROCESSING' AND lease_until=:until`, `embedding`·`embedding_model`·`embedded_at` 저장 |
-| `PROCESSING → FAILED` | 예외·타임아웃 | 같은 서비스 | 위와 같은 리스 조건, `retry_count + 1` |
-| 만료 `PROCESSING → PENDING` | 같은 주기 작업 | 같은 서비스 | `WHERE status='PROCESSING' AND lease_until < now`. 늦게 끝난 이전 처리는 리스 조건 때문에 0행 |
+| `PROCESSING → FAILED` | 예외·타임아웃 | 같은 서비스 | 위와 같은 리스 조건, `retry_count`는 선점 시 증가(첫 시도 포함 5회) |
+| 만료 `PROCESSING → PENDING·FAILED` | 같은 주기 작업 | 같은 서비스 | `WHERE status='PROCESSING' AND lease_until <= now`, 5회에 닿으면 FAILED. 늦게 끝난 이전 처리는 리스 조건 때문에 0행 |
 
 - `retry_count`가 한도(기준안 5)에 닿은 `FAILED`는 자동 재시도하지 않고 운영 확인 대상. 반영 대기·실패 문서는 검색에서 빠지고 앨범 열람에는 영향 없음
 - 리스 시간은 learning→ai 임베딩 호출 타임아웃보다 길게 설정(짧으면 같은 문서를 중복 임베딩)
@@ -537,7 +538,7 @@ stateDiagram-v2
 | `QUEUED → RUNNING` | ai 호출 직전 | `ConversationMessage.start()` | `WHERE status='QUEUED'` + `job_execution(RUNNING)` |
 | `RUNNING → COMPLETED` | `result`·`clarification` 이벤트 | `complete(...)`·`clarify(...)` | `WHERE status='RUNNING'`, 확정 답변·`message_evidence` 같은 트랜잭션 |
 | `RUNNING → FAILED` | `error` 이벤트·예외·단절 | `fail(code)` | `failure_code` (`AI_UNAVAILABLE`·`STREAM_INTERRUPTED` 등). 대조 실패·LLM 장애는 규칙 응답으로 `COMPLETED` (P16) |
-| `FAILED → RUNNING` | `/messages/{id}/retry` | `retry()` | `WHERE status='FAILED'`, `retry_count + 1` |
+| `FAILED → RUNNING` | `/messages/{id}/retry` | `retry()` | `WHERE status='FAILED'`, `retry_count`는 선점 시 증가(첫 시도 포함 5회) |
 | `FAILED → RUNNING` (관리자, #47) | `/admin/jobs/{id}/retry` | `ConversationService.prepareAdminRetry` | 접수 트랜잭션에서 새 세대(`retry_count + 1`)로 선점하고 `conversation_job_retry`에 `QUEUED` 요청 저장. 실행은 `ConversationRetryWorker`가 같은 세대만 이어받고, 늦은 세대 결과는 현재 실행을 덮어쓰지 않음 |
 
 #### `conversation_job_retry.status` (관리자 대화 재처리 요청, V19)

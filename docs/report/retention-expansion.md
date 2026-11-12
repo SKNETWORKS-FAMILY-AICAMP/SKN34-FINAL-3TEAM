@@ -354,3 +354,13 @@ core V47 `V47__room_furniture_skins_and_frame_slots.sql`로 가구 슬롯 CHECK 
 
 - core 시험은 병합된 learning 4.1.4 계약(`MemoryController`·learning OpenAPI `AlbumPage`·`AlbumRound`)대로 응답하는 가짜 HTTP 서버로 확인했다. 실제 learning과의 연동은 배포 환경에서 확인한다
 - 목록은 learning 응답을 한 번 파싱해 다시 직렬화하므로 learning이 칸을 더하면 그대로 전달되지만 숫자·문자열 표기(예 소수 자릿수)는 Jackson 기본 직렬화를 따른다
+
+
+## #563 추억 검색 구현 결정 (2026-11-12)
+
+- 초기 관련도 0.35는 설정 가능하며 #568 평가셋으로 추후 조정한다. 임계값 품질 확정은 이번 구현 검증과 구분한다.
+- 1분 주기·64행 선점·8글 요청·5회 한도·600초 리스로 구현한다. 네트워크 동안 DB 트랜잭션을 유지하지 않는다.
+- MyBatis에서 vector 형변환을 사용한다. 별도 pgvector 드라이버·HNSW는 추가하지 않는다. 등록·리스 원자 갱신은 JdbcTemplate과 동일 DataSource 트랜잭션을 사용한다.
+- #559 액자 V19와 #484 정답 선택 V18을 보존하고 검색 문서는 V20으로 추가한다. 원격 #571의 최종 번호가 바뀌면 병합 전에 다시 맞춘다.
+- #565는 PR #580으로 병합됐다. 실제 ai 라우터·서비스와 fake 임베딩 제공자를 연결해 로컬 검증하며, 실제 외부 임베딩 제공자 품질·속도 검증은 구분한다.
+- 검증 기록은 [#563 구현 보고서](issue-563-memory-search.md)에 남긴다.

@@ -760,6 +760,22 @@ SELECT pg_temp.expect_sqlstate($$
     INSERT INTO knowledge_covers (dataset_version, standard_code, content_id, reviewed_by, reviewed_at)
     VALUES ('kn-20261111-01', '4수01-01', 'missing', 'schema-test', now())
 $$, '23503');
+-- #563: memory search document constraints and valid READY counterpart.
+INSERT INTO memory_search_doc(id,attempt_id,student_id,theme_id,theme_week_start,content_text,status,retry_count,created_at)
+VALUES ('00000000-0000-4000-8000-000005630001','00000000-0000-4000-8000-000000000107',
+'00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000120','2026-11-09','synthetic','PENDING',0,now());
+SELECT pg_temp.expect_sqlstate($$UPDATE memory_search_doc SET status='OTHER'$$,'23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE memory_search_doc SET status='READY'$$,'23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE memory_search_doc SET status='PROCESSING'$$,'23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE memory_search_doc SET retry_count=-1$$,'23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE memory_search_doc SET attempt_id='00000000-0000-4000-8000-999999999999'$$,'23503');
+SELECT pg_temp.expect_sqlstate($$UPDATE memory_search_doc SET theme_id='00000000-0000-4000-8000-999999999999'$$,'23503');
+SELECT pg_temp.expect_sqlstate($$INSERT INTO memory_search_doc SELECT '00000000-0000-4000-8000-000005630002',attempt_id,student_id,theme_id,theme_week_start,content_text,embedding,embedding_model,status,retry_count,lease_until,created_at,embedded_at FROM memory_search_doc$$,'23505');
+UPDATE memory_search_doc SET status='READY',embedding=('[1,' || repeat('0,',1534) || '0]')::vector,embedding_model='schema-test',embedded_at=now();
+SELECT pg_temp.expect_sqlstate($$UPDATE memory_search_doc SET embedding_model=NULL$$,'23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE memory_search_doc SET embedded_at=NULL$$,'23514');
+DELETE FROM memory_search_doc;
+
 """
 
 REPORT_CASES = """

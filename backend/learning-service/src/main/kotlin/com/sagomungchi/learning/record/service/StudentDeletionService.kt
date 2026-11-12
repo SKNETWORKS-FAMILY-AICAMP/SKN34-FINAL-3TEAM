@@ -27,6 +27,7 @@ class StudentDeletionService(
     private val communityService: CommunityService,
     private val weeklyThemeService: WeeklyThemeService,
     private val themeFrameService: ThemeFrameService,
+    private val memorySearchRepository: com.sagomungchi.learning.memory.repository.MemorySearchRepository,
     private val coreClient: CoreClient,
     private val transactionTemplate: TransactionTemplate,
 ) {
@@ -36,6 +37,7 @@ class StudentDeletionService(
             if (processedEventRepository.markProcessed(eventId, EVENT_TYPE, now)) {
                 // 공유물(달린 반응 포함)·남긴 반응이 시도·답변을 참조하므로 먼저 (#386, P09)
                 communityService.deleteByStudent(studentId)
+                memorySearchRepository.deleteByStudent(studentId)
                 attemptService.deleteByStudent(studentId)
                 // 되돌아보기 열람 기록(#385, ERD 4.4)도 같은 트랜잭션에서 물리 삭제
                 weeklyThemeService.deleteByStudent(studentId)
