@@ -15,6 +15,7 @@ from app.model_loader import LoadedModel
 from app.model_registry import ModelRegistry
 from tests.test_m2 import Usage, modern_model
 from tests.test_m2 import body as old_body
+from tests.test_model_registry import version
 
 
 def body(**changes):

@@ -4,9 +4,11 @@ scoring venv Python으로 실행: --artifacts <model/version 폴더의 상위> -
 """
 
 import argparse
+import asyncio
 import gc
 import hashlib
 import json
+import os
 import shutil
 import sys
 import time
@@ -22,6 +24,7 @@ from app.m2.m2_long_input import encode_head_tail
 from app.m2.models import M2Request, M2Skipped
 from app.m2.service import infer
 from app.model_loader import ModelLoader
+from app.model_registry import ModelRegistry
 from app.model_versions import ActiveModelVersion
 
 
@@ -39,7 +42,11 @@ def main():
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    os.environ["INTERNAL_TOKEN"] = "local-model-verification"
     import torch
+    from app.bootstrap import create_app
+    from app.m2.service import M2Service
+    from fastapi.testclient import TestClient
 
     torch.set_num_threads(2)
     report = {"torchThreads": 2, "data": "synthetic only", "models": []}
@@ -144,6 +151,36 @@ def main():
         assert isinstance(short, M2Skipped)
         boundary = infer(loaded, M2Request(**body, text="가" * threshold))
         assert not isinstance(boundary, M2Skipped)
+        # 실제 HTTP 라우터의 직렬화·길이 미달·승인 학년 분기를 같은 실제 모델로 검증한다.
+        registry = ModelRegistry(lambda _, model=loaded: model)
+        asyncio.run(registry.load(meta))
+
+        class Usage:
+            def submit(self, *args, **kwargs):
+                pass
+
+        app = create_app()
+        app.state.m2_service = M2Service(registry, Usage())
+        client = TestClient(app)
+        headers = {"X-Internal-Token": "local-model-verification"}
+        for grade in (4, 5, 6) if kind == "essay" else (5, 6):
+            response = client.post(
+                "/internal/m2/scores",
+                json=dict(body, grade=grade, text=text),
+                headers=headers,
+            )
+            assert response.status_code == 200 and "scores" in response.json()
+        response = client.post(
+            "/internal/m2/scores", json=dict(body, text="몰라요"), headers=headers
+        )
+        assert response.status_code == 200 and response.json()["scored"] is False
+        assert "scores" not in response.json()
+        response = client.post(
+            "/internal/m2/scores", json=dict(body, grade=3, text=text), headers=headers
+        )
+        assert response.json() == {"active": False}
+        client.close()
+        del app, registry, client
         # 기존 가중치를 다시 읽어 b 경계 재로딩, 이전 경계 복구까지 수행한다.
         before_raw = result.rawScores
         del loaded
@@ -184,6 +221,7 @@ def main():
                     "short-boundary",
                     "reload",
                     "rollback",
+                    "http-active-grades-and-scoreless",
                 ],
             }
         )

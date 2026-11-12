@@ -83,7 +83,6 @@ def test_narrative_copy_and_repeat():
     body = "물이 끓으면 수증기가 생긴다. 수증기가 차가운 뚜껑에 닿는다. 그러면 다시 물방울로 바뀐다. 이것을 응결이라고 한다. 그래서 뚜껑 안쪽에 물방울이 맺힌다."
     g = prepare_narrative(q + " " + body, q)
     assert g.copied == 1 and g.text == body
-    body.split(" ")
     rep = body + " " + "물이 끓으면 수증기가 생긴다. 수증기가 차가운 뚜껑에 닿는다. " * 2
     g2 = prepare_narrative(rep, q)
     assert g2.repeated and g2.text.count("수증기가 생긴다") == 1

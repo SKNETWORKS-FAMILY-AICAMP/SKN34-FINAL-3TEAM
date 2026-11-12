@@ -144,3 +144,14 @@ def test_original_short_and_removed_short_have_distinct_notices():
     cleaned = infer(loaded, M2Request(**body(inputType="ESSAY", prompt=prompt, text=prompt)))
     assert original.preparation.notices == ["ESSAY_ORIGINALLY_SHORT"]
     assert "ESSAY_TOO_SHORT" in cleaned.preparation.notices
+
+
+def test_copy_precedes_repeat_and_short_fragments_follow_supplier_rule():
+    from app.m2.m2_text_guard import prepare_essay
+
+    prompt = "동네에 필요한 시설을 정하고 그 이유를 자세히 설명해 주세요."
+    body_text = "나는 가까운 도서관에서 책을 읽고 친구들과 함께 공부하고 싶다."
+    result = prepare_essay((prompt + "\n") * 6 + "칸\n" + body_text, prompt)
+    assert result.copied == 6
+    assert not result.repeated
+    assert result.text == body_text
