@@ -39,10 +39,10 @@ class ThemeDraftRulesTest {
         val korean = (1..8).map { standard("6국0$it-01", "국어") }
         val math = listOf(standard("6수01-01", "수학"), standard("6수01-02", "수학"))
         val chosen = ThemeMissionInput(ThinkingType.EVALUATE, InputType.ESSAY, listOf("6국01-01"))
-        val recent = setOf("6국02-01", "6국03-01", "6국04-01", "6수01-01")
+        val recent = listOf("6국02-01", "6국03-01", "6국04-01", "6수01-01")
 
         repeat(20) { seed ->
-            val missions = ThemeDraftRules.autoStandards(grade, listOf(chosen), recent, mapOf("국어" to korean, "수학" to math), Random(seed))!!
+            val missions = ThemeDraftRules.autoStandards(grade, listOf(chosen), recent, pools(korean, math), Random(seed))!!
             assertEquals(ThemeDraftRules.DAY_TYPES.values.toList(), missions.map { it.thinkingType })
             assertEquals(chosen, missions[1])
             val auto = missions - chosen
@@ -55,18 +55,88 @@ class ThemeDraftRulesTest {
     }
 
     @Test
+    fun `학기 단계는 이번 학기, 학년군에서 이번 학기까지 배운 학기 순이고 빈 단계·같은 단계는 빼며 학년군 표는 따로 둔다`() {
+        val semesters = StandardSemesters(
+            mapOf("4국01-01" to setOf("3-1", "3-2"), "4국01-02" to setOf("4-1"), "4국01-03" to setOf("4-2"),
+                "4수01-14" to setOf("3-1", "4-2"), "4수01-15" to setOf("4-2")),
+        )
+        val tables = mapOf(
+            "국어" to listOf(standard("4국01-01", "국어"), standard("4국01-02", "국어"), standard("4국01-03", "국어")),
+            "수학" to listOf(standard("4수01-14", "수학"), standard("4수01-15", "수학")),
+        )
+        fun tiers(current: String, soFar: List<String>) =
+            ThemeDraftRules.candidatePools(tables, semesters, current, soFar).mapValues { (_, pool) -> pool.tiers.map { tier -> tier.map { it.code } } }
+
+        // 초3 1학기: 4학년에만 나오는 4국01-02·4국01-03·4수01-15는 학기 단계에 없음(이번 학기 = 배운 학기라 한 단계)
+        assertEquals(mapOf("국어" to listOf(listOf("4국01-01")), "수학" to listOf(listOf("4수01-14"))), tiers("3-1", listOf("3-1")))
+        // 초4 2학기: 이번 학기 → 3-1~4-2에 배운 것
+        assertEquals(mapOf("국어" to listOf(listOf("4국01-03"), listOf("4국01-01", "4국01-02", "4국01-03")),
+            "수학" to listOf(listOf("4수01-14", "4수01-15"))), tiers("4-2", listOf("3-1", "3-2", "4-1", "4-2")))
+        // 초3 2학기 수학: 이번 학기 성취기준이 없어 3-1까지 배운 것만
+        assertEquals(listOf(listOf("4수01-14")), tiers("3-2", listOf("3-1", "3-2")).getValue("수학"))
+        // 학년군 표는 단계와 따로 그대로
+        assertEquals(tables, ThemeDraftRules.candidatePools(tables, semesters, "3-1", listOf("3-1")).mapValues { it.value.table })
+        assertEquals(emptyMap(), ThemeDraftRules.candidatePools(emptyMap(), semesters, "3-1", listOf("3-1")))
+    }
+
+    @Test
+    fun `이번 학기 후보가 최근 코드뿐이면 지난 학기 후보에서, 모든 단계가 최근 코드뿐이면 이번 학기에서 가장 오래전에 쓴 코드`() {
+        val now = (1..4).map { standard("4국0$it-02", "국어") } // 이번 학기
+        val earlier = now + (1..2).map { standard("4국0$it-01", "국어") } // 지난 학기까지
+        val math = listOf(standard("4수01-01", "수학"), standard("4수01-02", "수학"))
+        val pools = mapOf("국어" to candidates(now, earlier), "수학" to candidates(math))
+
+        // 이번 학기 국어 4개가 모두 최근 → 지난 학기 2개를 먼저, 나머지 두 유형은 이번 학기에서 가장 오래전에 쓴 것부터
+        val recent = listOf("4국03-02", "4수01-02", "4국01-02", "4국04-02", "4국02-02", "4국01-02") // 오래된 것부터, 4국01-02는 최근에 또 씀
+        repeat(10) { seed ->
+            val missions = ThemeDraftRules.autoStandards(ThemeGrade.G4, emptyList(), recent, pools, Random(seed))!!
+            val korean = missions.filter { it.thinkingType != ThinkingType.SOLVE }.map { it.standardCodes.single() }
+            assertEquals(setOf("4국01-01", "4국02-01"), korean.take(2).toSet(), korean.toString()) // 분석하기·따져 보기: 최근이 아닌 지난 학기
+            assertEquals(listOf("4국03-02", "4국04-02"), korean.drop(2)) // 새로 만들기·돌아보기: 가장 오래전에 쓴 순(4국01-02는 마지막에 다시 써서 뒤)
+            assertEquals("4수01-01", missions[3].standardCodes.single()) // 최근이 아닌 것
+        }
+        // 수학이 모두 최근이면 가장 오래전에 쓴 것
+        val allMath = ThemeDraftRules.autoStandards(ThemeGrade.G4, emptyList(), listOf("4수01-02", "4수01-01"), pools, Random(1))!!
+        assertEquals("4수01-02", allMath[3].standardCodes.single())
+    }
+
+    @Test
+    fun `학기 단계가 최근 코드뿐이어도 학년군 표(위 학년 성취기준)로 넘어가지 않고, 학기 단계에 고를 코드가 없을 때만 학년군 표`() {
+        val now = (1..5).map { standard("4국0$it-01", "국어") } // 초3 1학기 = 배운 학기 전부
+        val upper = (1..5).map { standard("4국0$it-09", "국어") } // 4학년에만 나오는 성취기준(학년군 표에만)
+        val math = listOf(standard("4수01-01", "수학"), standard("4수01-09", "수학"))
+        val pools = mapOf("국어" to candidates(now, table = now + upper), "수학" to candidates(math.take(1), table = math))
+        val recent = listOf("4국05-01", "4국04-01", "4국03-01", "4국02-01", "4국01-01", "4수01-01") // 오래된 것부터
+
+        repeat(10) { seed ->
+            val missions = ThemeDraftRules.autoStandards(ThemeGrade.G3, emptyList(), recent, pools, Random(seed))!!
+            val korean = missions.filter { it.thinkingType != ThinkingType.SOLVE }.map { it.standardCodes.single() }
+            assertEquals(listOf("4국05-01", "4국04-01", "4국03-01", "4국02-01"), korean) // 위 학년 코드 대신 가장 오래전에 쓴 것부터
+            assertEquals("4수01-01", missions[3].standardCodes.single())
+        }
+        // 관리자가 학기 단계 국어를 다 지정했으면 그때만 학년군 표에서(최근이 아닌 것)
+        val requested = listOf(ThemeMissionInput(ThinkingType.ANALYZE, InputType.NARRATIVE, now.map { it.code }))
+        val filled = ThemeDraftRules.autoStandards(ThemeGrade.G3, requested, recent, pools, Random(1))!!
+        val others = filled.filter { it.thinkingType in setOf(ThinkingType.EVALUATE, ThinkingType.CREATE, ThinkingType.REFLECT) }
+        assertTrue(others.all { it.standardCodes.single() in upper.map { s -> s.code } }, filled.toString())
+        // 대응표에 그 교과가 없으면(학기 단계 없음) 학년군 표에서
+        val noMap = ThemeDraftRules.autoStandards(
+            ThemeGrade.G3, emptyList(), emptyList(), mapOf("국어" to candidates(table = upper), "수학" to candidates(math)), Random(1),
+        )!!
+        assertTrue(noMap.filter { it.thinkingType != ThinkingType.SOLVE }.all { it.standardCodes.single() in upper.map { s -> s.code } })
+    }
+
+    @Test
     fun `최근 코드를 빼면 남는 게 없으면 최근 코드도 후보, 표가 비면 null`() {
         val korean = (1..4).map { standard("6국0$it-01", "국어") }
         val math = listOf(standard("6수01-01", "수학"))
-        val missions = ThemeDraftRules.autoStandards(
-            grade, emptyList(), korean.map { it.code }.toSet() + "6수01-01", mapOf("국어" to korean, "수학" to math), Random(1),
-        )!!
+        val missions = ThemeDraftRules.autoStandards(grade, emptyList(), korean.map { it.code } + "6수01-01", pools(korean, math), Random(1))!!
         assertEquals("6수01-01", missions[3].standardCodes.single())
         assertEquals(korean.map { it.code }.toSet(), missions.filter { it.thinkingType != ThinkingType.SOLVE }.map { it.standardCodes.single() }.toSet())
 
         // 국어 3개로 국어 4유형을 겹치지 않게 못 채움
-        assertNull(ThemeDraftRules.autoStandards(grade, emptyList(), emptySet(), mapOf("국어" to korean.take(3), "수학" to math), Random(1)))
-        assertNull(ThemeDraftRules.autoStandards(grade, emptyList(), emptySet(), emptyMap(), Random(1)))
+        assertNull(ThemeDraftRules.autoStandards(grade, emptyList(), emptyList(), pools(korean.take(3), math), Random(1)))
+        assertNull(ThemeDraftRules.autoStandards(grade, emptyList(), emptyList(), emptyMap(), Random(1)))
     }
 
     @Test
@@ -173,4 +243,12 @@ class ThemeDraftRulesTest {
 
     private fun standard(code: String, subject: String) =
         AchievementStandard(code, subject, "초5~6", "영역", "$code 문장", 3, null, "2022", "seed", null)
+
+    /** 학기 단계(앞에서부터)와 학년군 표(기본: 단계를 합친 것) */
+    private fun candidates(vararg tiers: List<AchievementStandard>, table: List<AchievementStandard> = tiers.flatMap { it }.distinct()) =
+        ThemeDraftRules.StandardCandidates(tiers.toList(), table)
+
+    /** 국어·수학 학기 단계 하나씩 */
+    private fun pools(korean: List<AchievementStandard>, math: List<AchievementStandard>) =
+        mapOf("국어" to candidates(korean), "수학" to candidates(math))
 }
