@@ -66,7 +66,7 @@
 
 학생이 직접 작성하도록 설계했으며, 사고력 진단이나 성적 향상 효과를 검증한 서비스는 아닙니다. 숫자 레벨·등급은 품질 검증 전까지 학생·학부모에게 공개하지 않습니다.
 
-[기능 명세](docs/design/functional-spec.md) · [기획 결정·모델 평가 해석](docs/report/planning-decisions.md)
+[기능 명세](docs/design/functional-spec.md) · [기획 결정·모델 평가 해석](docs/report/planning.md)
 
 ### 1.3 2026-11-06 결정 기능
 
@@ -78,7 +78,7 @@
 - **일일 리포트:** 매일 자정(다음 날 00:00) 그날 기록을 템플릿으로 정리(LLM 미호출, 무료 포함), 주간 리포트는 유지하고 테마 요약 추가. 일일 리포트 대화는 프리미엄
 - **무료 범위:** 주간 테마 문제 주 5개(공개된 만큼, 하루 상한 없음, 2026-11-10 개정), 생각 유형별 미션 고르기(추가 문제)와 일요일 테마는 프리미엄
 
-[결정 기록](docs/report/service-direction.md) · [기능 명세 1.4 정책](docs/design/functional-spec.md#14-확정-정책)
+[결정 기록](docs/report/planning.md#3-서비스-기획-방향-리텐션일일-리포트-2026-11-06-p20p25) · [기능 명세 1.4 정책](docs/design/functional-spec.md#14-확정-정책)
 
 <a id="experience"></a>
 ## 2. 사고뭉치 사용해 보기
@@ -238,7 +238,7 @@ flowchart TB
 | [클래스 다이어그램](docs/design/class-diagram.md) | 서비스별 주요 클래스, 계층별 책임과 의존 관계 |
 | [시퀀스 다이어그램](docs/design/sequence-diagram.md) | 기능별 API·이벤트 호출 순서와 실패 처리 흐름 |
 | [상태 다이어그램](docs/design/state-diagram.md) | 계정·학습·이관·결제·리포트의 상태와 전이 조건 |
-| [운영 경보 설계](docs/design/operational-alerts.md) | 지표 수집, 오류·지연·DLQ·LLM 비용 경보, 추적과 적용 경계 |
+| [운영 경보 설계](docs/design/architecture.md#47-운영-경보-구성-경계-187) | 지표 수집, 오류·지연·DLQ·LLM 비용 경보, 추적과 적용 경계 |
 
 <a id="pipelines"></a>
 ## 5. 핵심 기능의 구현 과정
@@ -312,7 +312,7 @@ flowchart LR
 
 성취기준 표는 2022 개정 현행 **765개**를 사용합니다. 기존 데모 미션은 초3–6의 다섯 생각 유형에 대응하는 **20개 시드**이며, 데이터에 있는 시드 수와 환경별 공개 미션 수는 다를 수 있습니다.
 
-[미션 초안·성취기준](docs/report/learning.md) · [모델 레지스트리](docs/report/ai.md) · [관리자·신고·정정](docs/report/support-admin.md)
+[미션 초안·성취기준](docs/report/learning.md) · [모델 레지스트리](docs/report/ai.md) · [관리자·신고·정정](docs/report/core-gateway.md#21-신고문의공지도움말-46)
 
 ### 5.5 계정·결제·이용 권한
 
@@ -324,7 +324,7 @@ flowchart LR
 | 알림 | 업무 변경과 영속 알림 저장 → Redis 중계 → SSE → 사용자 확인 |
 | 이관·계정 종료 | 이관 대상 확인·요청 → 상대방 수락·연결 교체, 또는 삭제·탈퇴 절차. 상세 보호 규칙은 [7장](#trust) 참고 |
 
-결제·구독·환불은 **토스페이먼츠 테스트 환경**입니다. 무료 플랜은 주간 테마 문제(주 5개, 공개된 만큼)를 풀 수 있고 생각 유형별 미션 고르기(추가 문제)는 프리미엄입니다. [결제·권한 공급](docs/report/payment.md) · [계정·기기](docs/report/auth-account.md)
+결제·구독·환불은 **토스페이먼츠 테스트 환경**입니다. 무료 플랜은 주간 테마 문제(주 5개, 공개된 만큼)를 풀 수 있고 생각 유형별 미션 고르기(추가 문제)는 프리미엄입니다. [결제·권한 공급](docs/report/core-gateway.md#24-결제구독과-상품-권한-48184419) · [계정·기기](docs/report/auth-account.md)
 
 <a id="models"></a>
 ## 6. 데이터와 AI 모델 검증
@@ -365,7 +365,7 @@ flowchart LR
 | 학습한 주제의 새로운 글 | 0.685: VL 4,000편 | 0.700: VL 5,883편 |
 | 사람끼리 상관, 참고 | 1대1 0.694 | 처음 보는 주제 1대1 0.560, 학습한 주제 1대1 0.718 |
 
-처음 보는 주제에서 성능이 낮아지며, 사람끼리 수치와 모델 수치는 비교 대상의 평균 방식도 다릅니다. 과거 모델의 QWK와 위 Pearson 값을 개선 전후 수치로 연결하지 않습니다. [과거 평가 조건·변경 이력](docs/report/planning-decisions.md)
+처음 보는 주제에서 성능이 낮아지며, 사람끼리 수치와 모델 수치는 비교 대상의 평균 방식도 다릅니다. 과거 모델의 QWK와 위 Pearson 값을 개선 전후 수치로 연결하지 않습니다. [과거 평가 조건·변경 이력](docs/report/planning.md)
 
 11월 4일 추가 지식증류 학습을 중단하고 논술 서비스 모델 3.1을 유지하기로 결정했습니다. 별도 LLM 판정 평가 자료는 100건·평가자 2명으로 준비됐으며, **사람끼리 QWK 0.809는 AI 성능값이 아닙니다.** 모델 품질 승인과 자체 미션 검증은 별도로 진행합니다.
 
@@ -526,7 +526,7 @@ feature 브랜치 → develop 통합·CI → main 배포 기준
 
 AWS 데모 배포는 **승인된 Helm 적용**입니다. 실패 시 자동 롤백했다고 간주하지 않으며, 배포 이력과 준비된 복귀 절차를 따릅니다.
 
-[로컬 kind](infrastructure/kind/README.md) · [AWS 구축·운영](docs/report/aws-deploy.md) · [배포 승인·복귀](docs/report/cd-release.md) · [릴리스 워크플로](.github/workflows/cd-release.yml)
+[로컬 kind](infrastructure/kind/README.md) · [AWS 구축·운영](docs/report/infra.md#4-aws-데모-구성-185) · [배포 승인·복귀](docs/report/infra.md#7-cd-배포-승인이력롤백-186) · [릴리스 워크플로](.github/workflows/cd-release.yml)
 
 <a id="results"></a>
 ## 9. 개발 성과와 개선 과제
@@ -563,7 +563,7 @@ E2E에서 학생 PIN·재인증 팝업, 실제 결제 위젯·정기결제·환�
 | core 처리량 | 6.4 req/s | 59.3 req/s | 197.4 req/s |
 | RDS CPU 최대 | 7% | 24% | 68% |
 
-중간 25 VU 단계에서는 API 오류 1/2,864건이 있었습니다. API 지표는 스트리밍 지연과 다르며, 예상된 학습 경합 응답은 오류율에서 제외했습니다. 계정 1개의 학습 슬롯이 15개로 제한되어 **실제 사용자 300명의 동시 AI 처리 성능을 증명한 시험은 아닙니다.** 전체 단계·시나리오·병목 해석은 [부하 시험 보고서](docs/report/load-test.md)에 있습니다.
+중간 25 VU 단계에서는 API 오류 1/2,864건이 있었습니다. API 지표는 스트리밍 지연과 다르며, 예상된 학습 경합 응답은 오류율에서 제외했습니다. 계정 1개의 학습 슬롯이 15개로 제한되어 **실제 사용자 300명의 동시 AI 처리 성능을 증명한 시험은 아닙니다.** 전체 단계·시나리오·병목 해석은 [부하 시험 보고서](docs/report/infra.md#9-aws-데모-부하-시험-1차-361)에 있습니다.
 
 ### 9.4 남은 과제
 
@@ -602,7 +602,7 @@ E2E에서 학생 PIN·재인증 팝업, 실제 결제 위젯·정기결제·환�
 | 시스템·데이터 구조 | [아키텍처](docs/design/architecture.md) · [ERD](docs/design/erd.md) · [클래스](docs/design/class-diagram.md) |
 | API·이벤트·상태 | [API 명세](docs/design/api-spec.md) · [OpenAPI](contracts/openapi) · [이벤트](contracts/events) · [시퀀스](docs/design/sequence-diagram.md) · [상태](docs/design/state-diagram.md) |
 | AI·모델 | [AI 구현·검증](docs/report/ai.md) · [scoring](docs/report/scoring.md) · [M2 학습](ml/m2/README.md) · [평가 도구·자료](evaluation) |
-| 실행·운영·검증 | [로컬 실행](#getting-started) · [DB 개발](docs/report/db-dev-guide.md) · [테스트·CI](docs/report/testing-ci.md) · [AWS](docs/report/aws-deploy.md) |
-| 기획·제출 이력 | [기획 결정과 변경 근거](docs/report/planning-decisions.md) · [서비스 기획 방향(2026-11-06)](docs/report/service-direction.md) · [저장소에 보관된 제출 산출물](docs/outputs) |
+| 실행·운영·검증 | [로컬 실행](#getting-started) · [DB 개발](docs/report/db-dev-guide.md) · [테스트·CI](docs/report/testing-ci.md) · [AWS](docs/report/infra.md#4-aws-데모-구성-185) |
+| 기획·제출 이력 | [기획 결정과 변경 근거](docs/report/planning.md) · [서비스 기획 방향(2026-11-06)](docs/report/planning.md#3-서비스-기획-방향-리텐션일일-리포트-2026-11-06-p20p25) · [저장소에 보관된 제출 산출물](docs/outputs) |
 
 제출 산출물에는 이전 제출 시점의 문서도 포함됩니다. 현재 구현 계약은 기능·API·ERD와 주제별 구현 보고서를 함께 확인합니다. 개발은 `feature/* → develop → main` 흐름으로 진행합니다.

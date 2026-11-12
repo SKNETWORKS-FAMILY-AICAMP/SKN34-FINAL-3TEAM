@@ -678,7 +678,7 @@ backend/report-service/
 
 - PostgreSQL은 learning_db 지식 저장소(#463·#466)를 위해 pgvector 포함 이미지(PG 17.11 Debian)를 쓴다. `vector`는 trusted 확장이 아니어서 서비스 migrate 계정의 Flyway가 만들 수 없고, 관리자 계정 bootstrap(`rds-bootstrap.sql`)이 learning_db에 만든다. 기존 볼륨 1회 적용은 [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466). alpine(musl)에서 초기화한 기존 데이터 디렉터리는 glibc와 text 정렬이 달라 이미지 교체 뒤 DB마다 `REINDEX DATABASE`를 한 번 실행하거나 볼륨을 새로 만든다
 
-- 로컬 kind 클러스터(`sagomungchi-local`)·Calico·ingress-nginx·MinIO의 버전·CIDR·버킷·자원 예산·초기화는 [로컬 플랫폼](../report/local-platform.md) 1~6장, 설치 절차는 [kind](../../infrastructure/kind/README.md)·[platform-data](../../infrastructure/gitops/charts/platform-data/README.md). API·HTTP·HTTPS는 loopback에서만 노출
+- 로컬 kind 클러스터(`sagomungchi-local`)·Calico·ingress-nginx·MinIO의 버전·CIDR·버킷·자원 예산·초기화는 [로컬 플랫폼](../report/infra.md) 1~6장, 설치 절차는 [kind](../../infrastructure/kind/README.md)·[platform-data](../../infrastructure/gitops/charts/platform-data/README.md). API·HTTP·HTTPS는 loopback에서만 노출
 
 ### 4.2 운영 클러스터: EKS
 - 선정 근거 (자체 구축 K8s(kubeadm·k3s) 대비)
@@ -686,11 +686,11 @@ backend/report-service/
   - control plane HA·etcd 백업·업그레이드를 AWS가 관리 → 12/7 일정 내 운영 부담 제거
   - 자체 구축도 control plane EC2 필요 → 비용 차이 작음 (EKS 수수료 $0.10/시간)
 - 목표 구성: eksctl, 관리형 노드그룹 2개(4.3), EKS add-on(VPC CNI·CoreDNS·kube-proxy·EBS CSI·Pod Identity Agent), LB Controller·Karpenter의 Argo CD prod 관리.
-- AWS 데모: EKS 1.35, 노드그룹 2개(4.3, 전부 On-Demand), Pod Identity, EBS CSI·LB Controller·ESO, RDS·S3·CloudFront·ALB를 구성했다. 앱 6개는 수동 Helm으로 배포했으며 prod Argo CD는 미구성이다. 2026-11-05 metrics-server add-on, core·learning·ai HPA(1~3, CPU 70%), Karpenter 1.15.1(NodePool `application-burst`)을 구성했다(#211·#372, 4.4). 이후 같은 노드에 최소 Collector·Prometheus·Grafana와 관측 PVC를 배포하고 RabbitMQ 수집을 확인했다. Grafana→Discord 경보를 연결했으며 전체 운영 관측 완료를 뜻하지 않는다. [현재 설정과 설계 차이](../report/aws-deploy.md), [EKS 인벤토리](../../infrastructure/eks/README.md)를 따른다. 생성 정의는 `infrastructure/eks/cluster.json`(eksctl)과 `infrastructure/aws/demo_stack.py`(AWS CLI)이며 기존 자원은 대조만 한다.
+- AWS 데모: EKS 1.35, 노드그룹 2개(4.3, 전부 On-Demand), Pod Identity, EBS CSI·LB Controller·ESO, RDS·S3·CloudFront·ALB를 구성했다. 앱 6개는 수동 Helm으로 배포했으며 prod Argo CD는 미구성이다. 2026-11-05 metrics-server add-on, core·learning·ai HPA(1~3, CPU 70%), Karpenter 1.15.1(NodePool `application-burst`)을 구성했다(#211·#372, 4.4). 이후 같은 노드에 최소 Collector·Prometheus·Grafana와 관측 PVC를 배포하고 RabbitMQ 수집을 확인했다. Grafana→Discord 경보를 연결했으며 전체 운영 관측 완료를 뜻하지 않는다. [현재 설정과 설계 차이](../report/infra.md#4-aws-데모-구성-185), [EKS 인벤토리](../../infrastructure/eks/README.md)를 따른다. 생성 정의는 `infrastructure/eks/cluster.json`(eksctl)과 `infrastructure/aws/demo_stack.py`(AWS CLI)이며 기존 자원은 대조만 한다.
 - 비용 절감
   - 데모 외 기간: 워크로드 정상 종료 후 노드그룹 0대 + RDS 정지(2026-11-03 결정, `demo_stack.py pause`/`resume`). 클러스터 삭제 후 재생성은 채택하지 않음
   - Spot은 무상태 앱 노드에만, 서비스별 replica 2개 이상·PDB를 갖춘 뒤 Karpenter 앱 NodePool에서 On-Demand와 혼합 적용(2026-11-05 #211은 On-Demand만, 앱이 replica 1·PDB 없음). `platform-observability`는 On-Demand 고정(2026-11-04 결정: 상태 저장 서비스가 replica 1개이고 EBS가 AZ에 묶여 Spot 회수 시 다른 AZ로 옮길 수 없음)
-  - NAT GW 단일 AZ 1개(2a). 2026-11-04 #212 점검에서 연결·포트·드롭·대역폭 병목이 없어 데모 기간은 유지한다. AZ별 NAT(월 약 +$47)는 가용성 개선안으로 결정 대기([점검 근거](../report/aws-deploy.md#s3-gateway-엔드포인트와-nat-병목-점검-212-2026-11-04))
+  - NAT GW 단일 AZ 1개(2a). 2026-11-04 #212 점검에서 연결·포트·드롭·대역폭 병목이 없어 데모 기간은 유지한다. AZ별 NAT(월 약 +$47)는 가용성 개선안으로 결정 대기([점검 근거](../report/infra.md#5-s3-gateway-엔드포인트와-nat-점검-212))
 
 ### 4.3 운영 네트워크·배치
 - VPC: Public Subnet(ALB, NAT GW) / Private Subnet(EKS 노드, RDS)
@@ -708,7 +708,7 @@ backend/report-service/
   - Karpenter NodePool `explanation-cpu`(#476): 설명 sLLM 전용. 평소 0대이고 KEDA cron이 sLLM Pod를 1대로 올릴 때만 연산형 On-Demand(기준안 c7i·c6i.xlarge, 4 vCPU·8GiB)를 만든다. label·taint `workload=explanation-sllm:NoSchedule`로 앱 Pod와 섞이지 않고, sLLM Pod는 t3 노드(`application`·`application-burst`)에 놓이지 않는다. 비면 5분 뒤 정리(`WhenEmpty`), 상한 CPU 4·메모리 8Gi(1대). EC2NodeClass는 `application`을 같이 쓴다
   - `platform-observability`: t3.medium 2대(2a·2b 1대씩, EBS PVC가 AZ별로 있음), label·taint `workload=platform:NoSchedule`. `platform-data`·`observability` chart의 `scheduling` 값으로 RabbitMQ·Redis·Prometheus·Grafana·Collector만 배치
 - Pod AWS 권한: EKS Pod Identity(서비스별 IAM 역할, trust는 클러스터·namespace·ServiceAccount 조건). IRSA(OIDC provider·SA annotation)는 쓰지 않음
-- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의는 #171, 검증 범위는 [로컬 플랫폼](../report/local-platform.md#10-171-검증-결과와-교훈) 10장
+- NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의는 #171, 검증 범위는 [로컬 플랫폼](../report/infra.md#24-검증에서-얻은-교훈) 10장
 
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
@@ -745,9 +745,9 @@ backend/report-service/
   - metrics-server(EKS add-on, replica 1). HPA는 core·learning·ai만 `minReplicas 1`·`maxReplicas 3`·CPU 70%. scoring(모델 로딩·메모리 1Gi)·report-api는 replica 1 고정, report-worker KEDA는 KEDA 미설치로 후속. 앱 PDB 없음
   - 축소 시 끊김 방지(D안): replica 1에서는 노드 정리가 Pod를 먼저 지운 뒤 새로 만들어 공백이 생긴다. core·learning·ai에 `eks.amazonaws.com/nodegroup=application` preferred nodeAffinity를 두어 기본 Pod를 관리형 노드에 놓고, HPA 축소 때 ReplicaSet이 최근 Pod부터 지우는 기본 순서로 Karpenter 노드가 먼저 비게 한다. 부하 중 재배포·관리형 노드 장애로 순서가 바뀌면 축소 때 한 번 끊길 수 있다(A안: 최소 2 + PDB는 상시 노드 1대 비용으로 보류)
   - NodePool `application-burst`: t3.medium·t3.large On-Demand, 2a·2b, 상한 CPU 4·메모리 16Gi(최대 약 2대), `WhenEmptyOrUnderutilized`·`consolidateAfter 5m`·한 번에 1노드, `expireAfter 720h`. EC2NodeClass `application`은 기존 노드 역할·AMI(`al2023@v20261031`)·private subnet·cluster SG를 ID로 지정
-  - 부하 시 노드 확장·축소 실측은 이번에 하지 않았다([근거와 한계](../report/aws-deploy.md#eks-노드-자동-확장-karpenter와-앱-hpa-211372-2026-11-05))
+  - 부하 시 노드 확장·축소 실측은 이번에 하지 않았다([근거와 한계](../report/infra.md#6-karpenter와-앱-hpa-211372))
 - 일일 리포트 부하(P24, #390)
-  - 월요일 00:00에 주간·일일 리포트 작업이 함께 생긴다(자녀당 2건). 일일은 LLM을 부르지 않아 비용 경보(P13 80%)에는 영향이 없고, report-worker(KEDA) 적체·DLQ 경보는 기존 기준으로 함께 본다([운영 경보](operational-alerts.md))
+  - 월요일 00:00에 주간·일일 리포트 작업이 함께 생긴다(자녀당 2건). 일일은 LLM을 부르지 않아 비용 경보(P13 80%)에는 영향이 없고, report-worker(KEDA) 적체·DLQ 경보는 기존 기준으로 함께 본다([운영 경보](#47-운영-경보-구성-경계-187))
   - 자녀 수만큼 매일 작업이 생겨 report_db·S3 파일이 주간 대비 약 7배로 늘어난다. 보관 기간은 기존(P09 이용 중 보관)과 같음
 - 설명 sLLM 서버(FN-RPT-09·NFR-PRF-03, #476)
   - 공통 앱 chart(`app-service`)의 release `sllm-server`(Service `sllm-server:8080`, OpenAI 호환 `/v1/chat/completions`, 모델 이름 `report-explanation`). ai는 `EXPLANATION_BASE_URL=http://sllm-server.app.svc.cluster.local:8080/v1`로 부른다(#477)
@@ -761,7 +761,7 @@ backend/report-service/
   - 첫 설치는 `redeploy-app.ps1`이 기존 release만 다루므로 수동 `helm upgrade --install`로 한다. 그 뒤 값 변경은 `redeploy-app.ps1 -Service sllm-server`로 재배포한다(이미지 digest가 고정돼야 통과). 저장소에서 빌드하는 이미지가 아니라 `cd-release` 대상이 아니다
   - 생성 시간은 건당 20~30초 가정(30명 × 3건 약 40분), #475 실측 후 시간대·대기 상한·인스턴스 유형 조정. report의 설명 단계 상한(리포트당 400초)으로는 최악 30명 × 400초 = 200분이라 창(약 2시간)을 넘을 수 있으며, 창 밖 호출은 설명만 빠지고 리포트는 완료된다(P16, #508)
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
-  - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. local chart 시작값은 preStop 15초·grace 180초([로컬 플랫폼](../report/local-platform.md) 8장). SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
+  - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. local chart 시작값은 preStop 15초·grace 180초([로컬 플랫폼](../report/infra.md) 8장). SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
 - probe: readiness는 자기 연결과 백그라운드 초기화 상태만 확인, 요청마다 하위 서비스 호출 금지. ai는 RabbitMQ 구독·core 활성 버전 snapshot 조정·사용 가능한 프롬프트 본문을 완료해야 Ready이며 core 조회 실패·재연결 조정·미보유 활성 본문은 NotReady다(#68).
 - 공통 보안: 리소스 limit, non-root, readOnlyRootFilesystem
 
@@ -769,7 +769,7 @@ backend/report-service/
 - GitHub Actions: 경로 필터로 변경 서비스만 테스트·빌드 → GHCR/ECR 푸시(OIDC로 AWS 인증). 현재는 테스트·빌드까지, 푸시·태그 갱신은 예정
 - `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
 - #171로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의. 이미지 게시·승인 흐름은 #186 범위다
-- #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/cd-release.md)
+- #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/infra.md#7-cd-배포-승인이력롤백-186)
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04). DB는 서비스별 app·migrate 계정 Secret만 앱·migration-job에 주입하고 관리자 계정은 넣지 않음(#230)
 
 ### 4.6 관측
@@ -782,6 +782,75 @@ backend/report-service/
 - `traceparent`를 HTTP 헤더와 이벤트 봉투 양쪽에 전파 → 동기·비동기 구간 단일 trace. core outbox는 저장 시점 span을 봉투에 담고 relay가 그 context 아래에서 발행해 AMQP 헤더로 잇는다. report-worker는 봉투 값을 부모로 소비 span을 열고 결과 이벤트에 AMQP 헤더를 붙인다 (#187, kind 검증)
 
 ---
+
+### 4.7 운영 경보 구성 경계 (#187)
+
+기준: architecture 1.6·4.6, functional-spec NFR-OPS-04/05·FN-ADM-19·P10/P13.
+기존 Grafana Alerting → Discord 경로를 사용한다. 새 운영 서비스·의존성·공개 API는 추가하지 않는다.
+사용자 공지 FN-SUP-07과 별개이며 앱 알림을 변경하지 않는다.
+
+#### 기준 구조
+
+경보 provisioning은 #185(PR #333 병합, develop `de8e225`)의 observability chart를 기준으로 한다.
+`grafana.alerting.enabled`일 때 `grafana-alerting` ConfigMap이 contact point `discord-aws-alerts`, 조직 notification policy,
+values `rules`의 규칙을 Grafana에 provision하고, Discord webhook은 기존 Secret의 `DISCORD_WEBHOOK_URL` 키로 환경변수에 넣는다.
+datasource UID는 chart가 `prometheus`로 고정한다. prod는 이 구조로 규칙 3개와 실제 Discord 수신을 확인했다(#185 보고서).
+
+#187에서 따로 만들었던 생성기(`render.py`, `ops187-*` ConfigMap·contact point, 규칙별 직접 라우팅, datasource UID 필수 입력)는
+같은 values 키와 provisioning 경로를 #185와 겹쳐 쓰므로 병합 시 제거했다. 같은 org에 두 provisioning 체계를 두지 않는다.
+그 대신 #185 템플릿에 평가·알림 간격 values를 더했다. 기본값은 #185 운영값과 같아 기존 렌더 결과가 바뀌지 않는다.
+
+#### DLQ 적재
+
+DLQ 적재는 별도 opt-in scrape job `rabbitmq-dlq`로 본다. 같은 RabbitMQ 15692 포트의 `/metrics/detailed`에서
+`queue_coarse_metrics` family만 요청하고, metric relabel로 `rabbitmq_detailed_queue_messages` 중 `<큐>.dlq`(architecture 1.6 명명)만 남긴다.
+기본 `rabbitmq` job과 전체 per-object 지표는 바꾸지 않는다. 시계열은 정의된 DLQ 수(현재 7개, #370 `core.model.loading.reported.dlq` 포함)만큼이다.
+규칙은 `max by (vhost, queue)`로 큐마다 경보 인스턴스를 만든다. 큐 이름은 시계열 라벨로 알림에 실린다.
+메시지 수는 ready+unacked 합계이며 메시지 나이·재처리 지연은 의미하지 않는다. scrape 실패나 지표 부재는 0이 아니라 NoData로 남는다.
+업무 ID·메시지 내용은 label에 넣지 않는다. prod values는 수집(`prometheus.rabbitmqDlqMetrics.enabled`)을 켜고 `rabbitmq-dlq-depth`(> 0, 5m)를 초기 기준으로 넣었다. 운영 임계값·지속시간은 실측 뒤 조정한다.
+일일 리포트(P24, #390·#391)는 같은 `report.generate` 큐를 써 DLQ 수(현재 7개)는 늘지 않는다. 월요일 00:00에는 주간·일일 작업이 함께 쌓이므로 임계값·지속시간을 정할 때 이 시각의 적체를 실측해 반영한다([아키텍처 4.4](#44-확장)).
+
+#### 월 LLM 비용
+
+core `LlmCostMetrics`가 OTel API gauge 두 개(`llm.usage.month_to_date.priced_cost`, `...unpriced_calls`)를 낸다.
+OTel Java agent가 켜진 경우에만 export되고 없으면 no-op이다. export 주기마다 `llm_usage`에서 KST 달력 월 1일 00:00부터 현재까지를 한 번 조회한다.
+단가가 있는 호출만 합산하고 미산정 호출 수는 따로 낸다(0으로 치환하지 않음). 조회 실패 주기에는 값을 내지 않아 경보는 NoData가 된다.
+예산 300 USD와 80%(240 USD) 판정은 Grafana 규칙 임계값이다. 새 exporter·주기 실행 계층·DB 계정은 추가하지 않았다.
+이벤트 발행 유실(best-effort)은 반영되지 않으므로 실제 비용보다 작을 수 있다.
+일일 리포트는 템플릿만 써 `llm_usage`가 늘지 않고, 일일 리포트 대화는 기존 분석 대화 호출 종류로 집계되어 예산 규칙에 포함된다.
+리포트 설명(FN-RPT-09, #473)은 클러스터 안 sLLM이라 토큰 단가가 없어 미산정 호출로 집계되고 예산 합산에는 들어가지 않는다. 비용은 sLLM 서버 노드 시간(EC2)으로 나타난다.
+
+#### 업무별 오류율·지연
+
+core·learning Java agent의 `http_server_request_duration_seconds`(`http_route`·`http_response_status_code`)를 쓴다.
+core 공개 API 경로로 인증·학생 학습·AI 처리·리포트·결제를 나누고 5xx 비율과 p95 지연을 본다(AI 처리는 SSE 스트림이 섞여 p95 지연 규칙 없이 5xx 비율만). 요청이 없으면 `noDataState: OK`로 정상 처리하고,
+지표 수집 자체가 사라지면 `app-metrics-missing`이 알린다. 4xx는 사용자 입력 오류로 보고 제외한다. Python 서비스(ai·report)의 자체 HTTP 지표는 아직 없다.
+prod는 core·learning의 Java agent와 Collector egress를 켜야 이 규칙들이 값을 갖는다. app-service chart는 env의 `JAVA_TOOL_OPTIONS`를 agent 옵션 뒤에 합친다.
+커뮤니티·포인트·꾸미기·주간 테마는 core 공개 API 경로라 새 지표 없이 경로 분류(학생 학습 묶음)만 추가한다.
+학생 학습 묶음(`http-learning-*`)의 경로는 `/api/v1/(attempts/.+|missions/.+/(attempts|community-posts)|students/me/.+|community-posts/.+)`이다.
+풀이 저장과 학생 본인 경로(`/students/me/*`: 홈·풀이 목록·커뮤니티 공유·포인트·꾸미기·주간 테마), 커뮤니티 반응·미션별 공유물 조회를 함께 본다(#504).
+미션 목록·상세(`/missions`, `/missions/{missionId}`)와 보호자 자녀 경로(`/children/*`)는 이 묶음에 넣지 않는다.
+
+#### 실패 요청 trace
+
+저장소는 Tempo(observability chart 선택 구성)다. 아키텍처의 "HTTP 헤더와 이벤트 봉투 양쪽 전파"를 다음처럼 잇는다.
+
+- core: `OutboxWriter`가 저장 시점 활성 span(없으면 요청 헤더 값)을 봉투 `traceparent`에 넣는다. `OutboxRelay`는 스케줄러 스레드에서
+  그 값을 부모 context로 열고 발행해, Java agent가 PRODUCER span과 AMQP `traceparent` 헤더를 만든다.
+- core·learning 소비자와 HTTP 서버/클라이언트는 Java agent가 AMQP·HTTP 헤더로 잇는다.
+- report-worker: 봉투 `traceparent`를 부모로 CONSUMER span을 열고, 하위 HTTP 호출(UserContext 헤더)과 결과 이벤트 봉투에 이 span을 넘긴다.
+  결과 이벤트 발행 시 AMQP `traceparent` 헤더도 붙인다. 실패는 `messaging.outcome`(retry/dlq)·`error.type`만 남기고 예외 메시지는 저장하지 않는다.
+- 업무 ID·학생 ID·메시지 내용(커뮤니티 공유물 내용 포함)은 span attribute에 넣지 않는다(메시지 ID와 큐 이름만). 다만 Java agent의 HTTP span에는 경로 템플릿만 남는다.
+- OTel exporter가 꺼져 있으면 core는 요청 헤더 값만 전달하고 report-worker는 받은 값을 그대로 넘긴다(기존 동작).
+
+#### 남은 경계
+
+- #185 규칙의 target 감시는 `min(up{job=~...})`라 scrape job 자체가 사라지면 발생이 아니라 NoData로 보고된다.
+- 조직 notification policy를 chart가 소유한다. 서비스별 담당이 정해지면 policy 하위 route로 나눈다.
+- ai·scoring·report-api는 자체 span이 없다. ai 호출 구간은 호출한 쪽 span으로만 보인다.
+- local values는 Tempo·trace를 켜지 않는다. 검증 시 opt-in으로 켠다.
+- 임계값은 초기 기준이다. 실측 부하 기반 조정과 서비스별 담당 라우팅은 후속이다.
+- 리포트 설명(#476·#479): 배치 시간대 설명 sLLM 서버 기동 실패와 설명 `NOT_INCLUDED` 비율 경보는 아직 없다. 설명이 빠져도 리포트는 `COMPLETED`로 끝나 기존 DLQ·오류율 규칙에 잡히지 않는다. 지표는 report DB `weekly_report.verification` JSONB의 `explanationState`(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`, #479)로 정한다(#508): 월요일 배치 주간 리포트 중 `NO_TARGET`을 뺀 대상에서 `NOT_INCLUDED` 비율과, sLLM 가동 창 안에서 `INCLUDED`가 0건인지를 본다. 상태가 없는 이전 리포트는 집계에서 뺀다. report-worker는 아직 지표를 내보내지 않으므로 지금은 report DB 조회로 확인하고, 지표 내보내기·Grafana 규칙·임계값은 #475 실측 뒤 정한다.
 
 ## 5. 디렉토리 구조
 
@@ -984,4 +1053,4 @@ SKN34-FINAL-3TEAM/
 
 ### 7.1 구현 결정 요약
 
-클래스 수준 결정(인증·주간 리포트·삭제·결제·신고 연결 경계)은 [클래스 다이어그램](class-diagram.md) 3장과 보고서([auth-account](../report/auth-account.md)·[report](../report/report.md)·[payment](../report/payment.md)·[support-admin](../report/support-admin.md))를 따른다. Redis 사용 범위는 6장 저장소 행과 [core-gateway #210](../report/core-gateway.md#6-redis-사용-필요성과-postgresql-대체-비교-210). 무료 플랜 미션 일일 한도(P13, 하루 1개 → 2026-11-10 개정 #485 뒤 무료 추가 문제 재활성 때만)는 #210 결정에 따라 core `usage`의 `mission_daily_usage`(PostgreSQL)로 구현(#387, [core-gateway 13절](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387))
+클래스 수준 결정(인증·주간 리포트·삭제·결제·신고 연결 경계)은 [클래스 다이어그램](class-diagram.md) 3장과 보고서([auth-account](../report/auth-account.md)·[report](../report/report.md)·[payment](../report/core-gateway.md#24-결제구독과-상품-권한-48184419)·[support-admin](../report/core-gateway.md#21-신고문의공지도움말-46))를 따른다. Redis 사용 범위는 6장 저장소 행과 [core-gateway #210](../report/core-gateway.md#6-redis-사용-필요성과-postgresql-대체-비교-210). 무료 플랜 미션 일일 한도(P13, 하루 1개 → 2026-11-10 개정 #485 뒤 무료 추가 문제 재활성 때만)는 #210 결정에 따라 core `usage`의 `mission_daily_usage`(PostgreSQL)로 구현(#387, [core-gateway 13절](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387))

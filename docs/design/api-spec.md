@@ -734,7 +734,7 @@ data: {}
 
 learning 최소 연동(#48): `GET /internal/payment-usage/students/{studentId}?since=<date-time>`는 SYSTEM+정확한 학생 scope에서 `{studentId,since,used}`를 반환한다. DONE 피드백의 completed_at 또는 진행 중 피드백을 확인하며 원문을 반환하지 않는다. learning 공개 피드백 경로는 실행 전에 core `POST /internal/payment-usage/reservations {studentId,sourceId}`를 호출하고 DONE 저장 후 `POST /internal/payment-usage/completions {studentId,reservationId,used:true}`를 호출한다. 두 core 경로는 내부 토큰과 STUDENT+본인 scope가 필요하다. 예약 응답은 `{reservationId:uuid|null,premium:boolean}`이며 미완료 예약은 환불 증빙 불명확으로 남긴다. core 409는 Problem Details `code`로 구분해 learning이 같은 코드로 전달한다(1.3, #276). 새 외부 서비스나 dependency 없이 기존 내부 HTTP를 사용한다.
 
-#48 세부 DTO·복구·내부 권한 계약은 core OpenAPI와 [결제 구현 보고서](../report/payment.md)를 따른다. 무료 상품은 명시적 PAYMENT_FREE_PRODUCT_ID로 선택하고, 승인 응답·웹훅은 PG 주문/금액/MID/상태를 대조한다. 환불 승인과 조회 권한은 각각 PAYMENT_REFUND/PAYMENT_VIEW이며 `/admin/refund-requests` GET도 PAYMENT_VIEW다. 모든 결제 쓰기는 parent 계정 잠금에 참여하되 외부 PG/learning 호출은 트랜잭션 밖이다. 불명확한 승인·취소를 실패로 바꾸지 않고 조회 복구한다. 최초 결제 후 빌링키가 등록되기 전에는 autoRenew=false, nextBillingDate=null이다.
+#48 세부 DTO·복구·내부 권한 계약은 core OpenAPI와 [결제 구현 보고서](../report/core-gateway.md#24-결제구독과-상품-권한-48184419)를 따른다. 무료 상품은 명시적 PAYMENT_FREE_PRODUCT_ID로 선택하고, 승인 응답·웹훅은 PG 주문/금액/MID/상태를 대조한다. 환불 승인과 조회 권한은 각각 PAYMENT_REFUND/PAYMENT_VIEW이며 `/admin/refund-requests` GET도 PAYMENT_VIEW다. 모든 결제 쓰기는 parent 계정 잠금에 참여하되 외부 PG/learning 호출은 트랜잭션 밖이다. 불명확한 승인·취소를 실패로 바꾸지 않고 조회 복구한다. 최초 결제 후 빌링키가 등록되기 전에는 autoRenew=false, nextBillingDate=null이다.
 
 대조 조회는 from/to(KST 날짜)를 모두 요구한다. 로컬 주문 상태 조회와 두 테스트 상점의 PG 거래 조회 페이지를 대조해 MISSING_LOCAL·MISSING_PG·DUPLICATE·MISMATCH·UNKNOWN·MATCH·NO_PG_ATTEMPT를 구분한다. PG 거래 목록이 불명확하면 빈 목록으로 대체하지 않고 503이다. 토스 거래 조회는 공식 최소 60초 timeout을 사용하며 결과는 page/size로 반환한다. paymentKey·transactionKey·customerKey는 응답에 포함하지 않는다.
 
