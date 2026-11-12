@@ -9,6 +9,7 @@ import com.sagomungchi.learning.theme.domain.DayState
 import com.sagomungchi.learning.theme.domain.ThemeEndingState
 import com.sagomungchi.learning.theme.domain.ThemeAnswerPick
 import com.sagomungchi.learning.theme.domain.AnswerPickResult
+import com.sagomungchi.learning.theme.domain.AnswerPickView
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ReviewViewResult
 import com.sagomungchi.learning.theme.domain.StoryViewResult
@@ -64,7 +65,8 @@ class WeeklyThemeService(
         val story = version.story
         val days = repository.findDays(version.id)
         val attempts = repository.findStudentAttempts(studentId, week)
-        val ending = ending(studentId, week, attempts)
+        val pick = repository.findAnswerPick(studentId, week)
+        val ending = ending(pick, attempts)
         val ended = ending == ThemeEndingState.ENDED
         val seen = repository.findStoryViews(studentId, week)
         return WeeklyThemeView(
@@ -112,6 +114,7 @@ class WeeklyThemeService(
             answerClue = story.answerClue.takeIf { ended },
             finished = finishedWeek(days, attempts, week),
             ending = ending,
+            answerPick = pick?.let { AnswerPickView(it.pick, it.correct) },
         )
     }
 
@@ -185,8 +188,11 @@ class WeeklyThemeService(
         repository.isAnswerPickMission(missionId) &&
             repository.findAnswerPickWeeks(studentId, missionId).none { ending(studentId, it) == ThemeEndingState.ENDED }
 
-    private fun ending(studentId: UUID, weekStart: LocalDate, attempts: List<ThemeAttemptRow>): ThemeEndingState {
-        val pick = repository.findAnswerPick(studentId, weekStart)
+    private fun ending(studentId: UUID, weekStart: LocalDate, attempts: List<ThemeAttemptRow>): ThemeEndingState =
+        ending(repository.findAnswerPick(studentId, weekStart), attempts)
+
+    /** 주간 테마 조회는 고른 기록을 응답(answerPick, #590)에도 쓰므로 한 번 읽은 값을 넘긴다 */
+    private fun ending(pick: ThemeAnswerPick?, attempts: List<ThemeAttemptRow>): ThemeEndingState {
         val reviews = attempts.filter { it.context == AttemptContext.THEME_REVIEW && it.missionId == pick?.missionId }
             .mapNotNull { it.finishedAt }
         return ThemeEnding.of(pick, reviews)

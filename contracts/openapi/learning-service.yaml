@@ -25,7 +25,7 @@ paths:
     post:
       operationId: explainMemories
       summary: 본인 지난 회차 근거로 추억 설명 생성
-      description: '근거 답변 공백 제외 20자 이상, 최고 관련도 0.35 이상. 생성·검사 실패는 200 FAILED. 질문·설명 미저장.'
+      description: '근거 답변 공백 제외 20자 이상, 최고 관련도 0.35 이상. 생성이 일어난 실패(ai 422·502, 인용 검사, 호출 뒤 시간 초과, 근거 변경)는 200 FAILED, 생성 전 실패와 ai 장애(503·시간 초과·연결 실패·서킷 열림)는 503 AI_UNAVAILABLE(#592). 질문·설명 미저장.'
       parameters:
         - name: studentId
           in: path
@@ -46,6 +46,8 @@ paths:
         '401': {description: 내부 인증 실패}
         '403': {description: 학생 범위 불일치}
         '422': {description: 선택한 시도가 본인 READY 검색 범위 밖}
+        '503':
+          description: 'AI_UNAVAILABLE 프로필·질의 임베딩 실패, 생성 전 처리 예산 소진, 설명 생성 ai 503·5xx(502 제외)·시간 초과·연결 실패·서킷 열림. core가 하루 사용량을 되돌림'
   /students/{studentId}/memories/search:
     post:
       operationId: searchMemories
@@ -3921,7 +3923,7 @@ components:
       type: object
       required: [themeId, weekStart, title, intro, reused, days, review, completed, bigQuestion, candidates, introImageUrl,
                  introVideoUrl, introMotion, introSeen, outroSeen, outro, outroImageUrl, outroVideoUrl, outroMotion, answer, answerClue,
-                 finished, ending]
+                 finished, ending, answerPick]
       properties:
         themeId: {type: string, format: uuid}
         weekStart: {type: string, format: date, description: 이번 주 KST 월요일(재사용 테마도 이번 주)}
@@ -3977,6 +3979,18 @@ components:
         completed: {type: boolean, description: '월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(개근, 개정 전 이름 완주). core가 개근 THEME_COMPLETED로 적립(#485·#506)'}
         finished: {type: boolean, description: '다섯 문제를 그 주 토요일 23:59:59(KST)까지 학습 완료(주간 완주, 일요일 완료 제외). core THEME_FINISHED 근거(#484)'}
         ending: {$ref: '#/components/schemas/ThemeEnding'}
+        answerPick:
+          description: >-
+            그 주 학생이 고른 큰 질문 정답(#590, theme_answer_pick). 고르지 않았으면 null. 엔딩 전에도 채움(고른 후보가 맞았는지만,
+            정답은 엔딩 뒤 answer로만). 틀린 뒤 다시 들어와도 고르기 화면 대신 토요일 다시 풀기 안내, 엔딩 뒤 종료 화면의 정답 공개 구분에 씀
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [pick, correct]
+              properties:
+                pick: {type: string, description: 고른 후보(answer-picks 본문 pick)}
+                correct: {type: boolean, description: 고를 때 정답과 같았는지(고른 뒤 관리자가 정답을 고쳐도 바뀌지 않음)}
+            - type: 'null'
     ThemeEnding:
       type: string
       enum: [NOT_ENDED, ENDED]

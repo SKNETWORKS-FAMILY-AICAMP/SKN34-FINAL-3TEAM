@@ -6697,6 +6697,7 @@ paths:
         learning을 부르지 않고 429 USAGE_LIMIT_REACHED. 통과하면 다시 만든 본문을 learning POST /internal/students/{studentId}/memories/explanations로 넘긴다
         (서킷 learning-memory, 응답 45초 > learning→ai 35초). 본인 검색 문서가 아닌 attemptId는 learning 422 VALIDATION_FAILED를 그대로 전달한다.
         생성 실패·근거 부족은 200 state FAILED·INSUFFICIENT라 사용량에 들어가고, learning 5xx·시간 초과·연결 실패·서킷 차단이면 기록을 되돌린다.
+        ai 장애로 설명을 만들지 못하면 learning이 503 AI_UNAVAILABLE을 돌려주므로 사용량에 들어가지 않는다(#592).
         질문·설명은 저장하지 않는다. Cache-Control no-store. learning 경로가 생기기 전(#564 머지 전)에는 learning 404를 그대로 전달한다.
       requestBody:
         required: true
@@ -6727,7 +6728,7 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         '503':
-          description: LEARNING_UNAVAILABLE·LEARNING_CIRCUIT_OPEN(learning-memory 차단, Retry-After 30), 상품 한도 값 오류 PAYMENT_PRODUCT_UNAVAILABLE
+          description: ai 장애로 설명 생성 불가 AI_UNAVAILABLE(learning 판정, 그대로 전달·사용량 미기록), LEARNING_UNAVAILABLE·LEARNING_CIRCUIT_OPEN(learning-memory 차단, Retry-After 30), 상품 한도 값 오류 PAYMENT_PRODUCT_UNAVAILABLE
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -10047,7 +10048,7 @@ components:
     WeeklyThemeDocument:
       type: object
       additionalProperties: true
-      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed}(#439부터 outro·introImageUrl·outroImageUrl·introSeen·outroSeen 추가, 에픽 #436 bigQuestion·candidates·days[].clue·rulesOut·introVideoUrl·outroVideoUrl·introMotion·outroMotion·answer·answerClue 추가(learning #438 소유, 요일 영상은 없음). core는 바꾸지 않고 전달하며 포인트 적립에 weekStart·completed·finished·days[].missionId·attemptStatus·day·completedOnDay만 읽는다. 정답·종료 이야기는 learning이 엔딩 전에 비운다) 또는 되돌아보기 열람 결과 {firstViewThisWeek, completed}·이야기 열람 결과(learning #438 소유).'
+      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed}(#439부터 outro·introImageUrl·outroImageUrl·introSeen·outroSeen 추가, 에픽 #436 bigQuestion·candidates·days[].clue·rulesOut·introVideoUrl·outroVideoUrl·introMotion·outroMotion·answer·answerClue 추가(learning #438 소유, 요일 영상은 없음), #590 고른 큰 질문 정답 answerPick({pick, correct} 또는 null) 추가. core는 바꾸지 않고 전달하며 포인트 적립에 weekStart·completed·finished·days[].missionId·attemptStatus·day·completedOnDay만 읽는다. 정답·종료 이야기는 learning이 엔딩 전에 비운다) 또는 되돌아보기 열람 결과 {firstViewThisWeek, completed}·이야기 열람 결과(learning #438 소유).'
     WeeklyThemeStoryViewRequest:
       type: object
       additionalProperties: false

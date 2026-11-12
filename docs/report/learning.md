@@ -1018,3 +1018,19 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 시험: `StandardSemestersTest`(리소스 코드 = 성취기준 표 초1~6 431개·학기 빈 성취기준 없음, 4학년만인 `4수01-15`·`4수03-11`과 두 학기 `4수01-14`, 머리글 이름·큰따옴표·`7-1` 같은 학년도 읽음, 형식 오류 8가지 시작 실패, 학기 경계 2/23·3/1·8/15·8/16 등, 학년군에서 이번 학기까지 배운 학기), `ThemeDraftRulesTest`(학기 단계 나누기·학년군 표 따로, 이번 학기가 최근 코드뿐이면 지난 학기, 모두 최근이면 가장 오래전에 쓴 코드, 학기 단계가 최근 코드뿐이어도 위 학년 코드로 넘어가지 않고 학기 단계에 고를 코드가 없을 때만 학년군 표), `ThemeDraftServiceTest`(주간 자동·주제가 있는 관리자 요청의 자동 코드가 그 학년·학기 것, 최근 4주 제외 시험은 학기 풀 기준으로 바꿈, 배운 학기 코드를 최근 4주에 모두 써도 위 학년 코드를 고르지 않음). 위 학년 시험 두 개는 처음 구현(학년군 표를 ③ 단계로)으로 돌리면 실패함을 확인, `scripts/tests/test_knowledge_extract.py`(초1·초2 행, 사본 = 원본).
 
 설계와 다른 점·기존 파일 수정: class-diagram 4.4 후보 풀 문장(RAG 단계 뺌, 지난 학기 단계·가장 오래전 코드 더함)과 `ThemeDraftRules` 메서드 목록(`candidatePools`, `autoStandards` 인자. 이슈 지침은 '`autoStandards` 입출력 그대로'였고 학기 거르기 커밋까지는 그대로였으나, 지난 학기 단계·가장 오래전 코드(사용자 결정 2026-11-12)에 단계 구분과 사용 순서가 필요해 입력만 바뀜, 출력·ai 계약은 그대로), `ThemeDraftRulesTest` 기존 자동 성취기준 시험 두 개(인자 모양만 바꿈), 31장 "자동 생성 성취기준" 행과 "자동 성취기준의 한계와 다음 설계" 절(해결·변경 표시, 확인 필요 닫음), `ThemeDraftServiceTest` 최근 4주 제외 시험의 후보 목록(학년군 표 → 그 학년·학기 풀). api-spec의 `theme-candidates` 경로는 #469에서 계약과 함께 제거됐다(33장).
+
+## 36. 주간 테마 조회에 고른 큰 질문 정답 (#590, 2026-11-12)
+
+34장(#484)에서 정답 고르기 기록(`theme_answer_pick`)을 저장하고 엔딩 계산에 읽지만 주간 테마 조회 응답에는 내보내지 않았다. 화면(web #487·#440)이 학생이 이미 골랐는지·맞았는지 알 수 없어, 틀린 뒤 다시 들어오면 고르기 화면이 다시 나와 `409 THEME_PICK_NOT_ALLOWED`가 나고, 엔딩 뒤에는 맞힌 학생과 틀린 학생 모두 `ENDED`라 종료 화면의 정답 공개("정답은 ○○였어요", 에픽 #436·#440 코멘트)를 구분할 수 없었다.
+
+| 항목 | 내용 | 근거 |
+|---|---|---|
+| 칸 | `answerPick: {pick, correct} \| null`(`AnswerPickView`). 그 주에 고르지 않았으면 null | 저장 칸(`pick`·`correct`)과 정답 고르기 경로(`answer-picks {pick}`) 이름과 맞춤 |
+| 공개 시점 | 엔딩 전에도 채움 | 알 수 있는 건 고른 후보가 맞았는지뿐이고 고를 때 응답(`correct`)으로 이미 받는 값. 정답·결말·결정적 단서는 34장대로 엔딩 뒤에만 |
+| `correct` | 고를 때 저장한 값 그대로. 고른 뒤 관리자가 정답을 고쳐도 바뀌지 않음 | 34장 "고를 때 저장하는 값"과 같은 이유 |
+| 조회 | `current()`가 고른 기록을 한 번 읽어 엔딩 계산과 새 칸에 같이 씀(조회 수 그대로) | |
+| 다른 서비스 | core는 `WeeklyThemeDocument`(`additionalProperties: true`)로 그대로 전달해 코드 변경 없음(OpenAPI 설명만 갱신). report 테마 요약 경로는 그대로 | api-spec 2.11 |
+
+변경: `ThemeViews.kt`(`WeeklyThemeView.answerPick`·`AnswerPickView`), `WeeklyThemeService.current`, learning OpenAPI `WeeklyTheme.answerPick`, core OpenAPI `WeeklyThemeDocument` 설명, api-spec 2.11.
+
+테스트: `WeeklyThemeServiceTest`(안 고름 null, 맞힘 `{pick, true}`·엔딩, 틀림 `{pick, false}`·엔딩 전 정답·결말 없음, 토요일 다시 풀기 뒤 엔딩에도 `correct: false` 유지), `WeeklyThemeControllerTest`(JSON `answerPick` null과 `{pick, correct}`).

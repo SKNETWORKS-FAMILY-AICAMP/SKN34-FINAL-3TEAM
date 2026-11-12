@@ -11,7 +11,7 @@ class MemoryExplanationContractsTest(unittest.TestCase):
         for name in ("MemoryExplanationRequest", "MemoryExplanationResult"):
             self.assertEqual(core["components"]["schemas"][name], learning["components"]["schemas"][name])
         operation = learning["paths"]["/students/{studentId}/memories/explanations"]["post"]
-        self.assertEqual(set(operation["responses"]), {"200", "400", "401", "403", "422"})
+        self.assertEqual(set(operation["responses"]), {"200", "400", "401", "403", "422", "503"})
         ids = [op["operationId"] for path in learning["paths"].values() for op in path.values() if isinstance(op, dict) and "operationId" in op]
         self.assertEqual(len(ids), len(set(ids)))
 

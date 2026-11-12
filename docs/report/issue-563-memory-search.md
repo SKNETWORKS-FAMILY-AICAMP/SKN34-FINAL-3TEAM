@@ -28,7 +28,7 @@
 
 ## 설정·재현
 
-기본 MEMORY_EMBEDDING_ENABLED=false다. true로 켜면 1분 뒤 등록·복구·선점 작업이 시작한다. false로 되돌리면 주기 실행만 중지하고 이미 저장된 문서를 지우지 않는다. 자동 소급은 멱등이며 실패 5회에 닿은 문서는 자동으로 되살리지 않는다.
+앱 기본 MEMORY_EMBEDDING_ENABLED=false다. GitOps local·prod learning 값에서 true로 켜고, Compose는 `.env`로 넘겨받으며 기본 false다(#591). true로 켜면 1분 뒤 등록·복구·선점 작업이 시작한다. false로 되돌리면 주기 실행만 중지하고 이미 저장된 문서를 지우지 않는다. 자동 소급은 멱등이며 실패 5회에 닿은 문서는 자동으로 되살리지 않는다.
 
 - learning: JDK 21에서 `bash gradlew test bootJar -Pkotlin.incremental=false`
 - 계약: `python -O -m unittest discover -s scripts/tests`
