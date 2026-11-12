@@ -26,6 +26,8 @@ def m2_body(request: JudgmentRequest) -> dict[str, Any] | None:
         return body | {"keywords": keywords}
     if request.essay_type is None:
         return None
+    if request.essay_labels:
+        body["essayLabels"] = request.essay_labels
     return body | {"essayType": request.essay_type}
 
 

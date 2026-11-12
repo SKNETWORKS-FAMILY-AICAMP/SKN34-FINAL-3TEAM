@@ -492,6 +492,9 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                     {f.judgment?.trial && (
                       <small>AI 채점(시범){isDemo ? ' · 실제 모델 호출 없음' : ''}</small>
                     )}
+                    {f.judgment?.m2Notices?.map((notice) => (
+                      <p key={notice}>{notice}</p>
+                    ))}
                     {f.judgment?.result === 'HELD' && (
                       <p>
                         질문을 다시 읽고 생각을 조금 더 써 볼까요? 쓴 답은 저장했어요.

@@ -90,6 +90,8 @@ function feedbackDto(raw: unknown): Feedback {
   // 근거 구절이 없는 ai 요소는 sourceType null
   if (f.judgment != null) {
     const j = object(f.judgment)
+    if (j.m2Notices != null && (!Array.isArray(j.m2Notices) || j.m2Notices.some((n) => typeof n !== 'string')))
+      return contractError('글 정리 안내가 유효하지 않습니다.')
     if (typeof j.judgmentId !== 'string' || !['CORRECT', 'PARTIAL', 'RETHINK', 'HELD'].includes(String(j.result)))
       return contractError('피드백 판정의 judgmentId·result가 유효하지 않습니다.')
     if (j.elements != null && (!Array.isArray(j.elements) ||

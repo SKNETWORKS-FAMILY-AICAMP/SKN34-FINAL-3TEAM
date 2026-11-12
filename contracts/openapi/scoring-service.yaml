@@ -76,6 +76,7 @@ paths:
                 anyOf:
                 - $ref: '#/components/schemas/M2Active'
                 - $ref: '#/components/schemas/M2Inactive'
+                - $ref: '#/components/schemas/M2Skipped'
                 title: Response Score Internal M2 Scores Post
         '400': &id001
           description: 요청 형식·입력 길이 오류
@@ -311,19 +312,25 @@ components:
           - ESSAY
           title: Inputtype
         scores:
-          description: 기본은 score_cuts 경계 변환. M2_CONTENT3_RULE_ENABLED=true인 서술 3.0 초5·6의 content_3만 결합 점수를 1~5로 자른 뒤 floor(mixed+0.5) 적용.
           anyOf:
           - $ref: '#/components/schemas/Scores'
           - $ref: '#/components/schemas/EssayScores'
           title: Scores
+          description: 기본은 score_cuts 경계 변환. M2_CONTENT3_RULE_ENABLED=true인 서술 3.0 초5·6의 content_3만 결합 점수를
+            1~5로 자른 뒤 floor(mixed+0.5) 적용.
         rawScores:
-          description: 기본은 유한 모델 원점수 그대로. 선택 보정 적용 시 서술 content_3만 결합 점수를 1~5로 자르고 소수 4자리로 반올림. 정수는 이 반올림 전 값으로 계산.
           anyOf:
           - $ref: '#/components/schemas/RawScores'
           - $ref: '#/components/schemas/EssayRawScores'
           title: Rawscores
+          description: 기본은 유한 모델 원점수 그대로. 선택 보정 적용 시 서술 content_3만 결합 점수를 1~5로 자르고 소수 4자리로 반올림. 정수는 이 반올림
+            전 값으로 계산.
         model:
           $ref: '#/components/schemas/ModelIdentity'
+        preparation:
+          anyOf:
+          - $ref: '#/components/schemas/Preparation'
+          - type: 'null'
       type: object
       required:
       - inputType
@@ -396,6 +403,14 @@ components:
             - 대안제시
           - type: 'null'
           title: Essaytype
+        essayLabels:
+          items:
+            type: string
+            maxLength: 200
+            minLength: 1
+          type: array
+          maxItems: 4
+          title: Essaylabels
       additionalProperties: false
       type: object
       required:
@@ -610,3 +625,86 @@ components:
       - cont
       - exp
       title: EssayScores
+
+    M2Skipped:
+      properties:
+        active:
+          type: boolean
+          const: true
+          title: Active
+          default: true
+        scored:
+          type: boolean
+          const: false
+          title: Scored
+          default: false
+        reason:
+          type: string
+          const: TEXT_TOO_SHORT
+          title: Reason
+          default: TEXT_TOO_SHORT
+        inputType:
+          type: string
+          enum:
+          - NARRATIVE
+          - ESSAY
+          title: Inputtype
+        model:
+          $ref: '#/components/schemas/ModelIdentity'
+        preparation:
+          $ref: '#/components/schemas/Preparation'
+      type: object
+      required:
+      - inputType
+      - model
+      - preparation
+      title: M2Skipped
+    Preparation:
+      properties:
+        ruleVersion:
+          type: string
+          const: 1112c
+          title: Ruleversion
+          default: 1112c
+        copied:
+          type: integer
+          minimum: 0.0
+          title: Copied
+        repeated:
+          type: boolean
+          title: Repeated
+        chars:
+          type: integer
+          minimum: 0.0
+          title: Chars
+        labelsRemoved:
+          type: integer
+          minimum: 0.0
+          title: Labelsremoved
+        short:
+          type: boolean
+          title: Short
+        truncated:
+          type: boolean
+          title: Truncated
+          default: false
+        notices:
+          items:
+            type: string
+            enum:
+            - COPIED_REMOVED
+            - REPEATED_REMOVED
+            - SHORT_ANSWER
+            - EMPTY_AFTER_CLEANING
+            - ESSAY_TOO_SHORT
+            - ESSAY_ORIGINALLY_SHORT
+          type: array
+          title: Notices
+      type: object
+      required:
+      - copied
+      - repeated
+      - chars
+      - labelsRemoved
+      - short
+      title: Preparation

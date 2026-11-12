@@ -1492,59 +1492,71 @@ components:
     JudgmentRequest:
       properties:
         answerText:
+          title: Answertext
           type: string
         inputType:
-          type: string
           enum:
           - NARRATIVE
           - ESSAY
           - SOLUTION_STEPS
+          title: Inputtype
+          type: string
         grade:
+          maximum: 6
+          minimum: 3
+          title: Grade
           type: integer
-          maximum: 6.0
-          minimum: 3.0
         rubric:
           $ref: '#/components/schemas/Rubric'
         versions:
           $ref: '#/components/schemas/Versions'
         question:
-          description: '#69 M2 prompt·M1 problem (mission_version.question). 없으면 교차 확인 안 함'
           anyOf:
           - type: string
           - type: 'null'
+          default: null
+          title: Question
         keywords:
-          description: '#69 서술 M2 핵심어 묶음. 비어 있으면 서술 M2 호출 안 함'
-          type: array
           items:
             type: string
-          default: []
+          title: Keywords
+          type: array
         essayType:
-          description: '#69 논술 M2 글 종류. 없으면 논술 M2 호출 안 함'
           anyOf:
-          - type: string
-            enum:
+          - enum:
             - 설명글
             - 글짓기
             - 주장
             - 찬성반대
             - 대안제시
+            type: string
           - type: 'null'
+          default: null
+          title: Essaytype
+        essayLabels:
+          items:
+            type: string
+          maxItems: 4
+          title: Essaylabels
+          type: array
         answerKey:
-          description: '#69 M1 정답 (M1_CHECK_ENABLED일 때만 사용)'
           anyOf:
           - type: string
           - type: 'null'
+          default: null
+          title: Answerkey
         solution:
-          description: '#69 M1 학생 풀이 (M1_CHECK_ENABLED일 때만 사용)'
           anyOf:
           - $ref: '#/components/schemas/Solution'
           - type: 'null'
-      type: object
+          default: null
       required:
       - answerText
       - inputType
       - grade
       - rubric
+      title: JudgmentRequest
+      type: object
     Solution:
       properties:
         steps:
@@ -1612,24 +1624,33 @@ components:
       - confidence
       - model
     ModelScores:
-      description: '#69 judgment.model_scores에 저장하는 AI 관찰 (api-spec 4.2.2)'
+      description: judgment.model_scores에 그대로 저장하는 AI 관찰. 학생 화면에 보이지 않음.
       properties:
         m2:
           anyOf:
           - $ref: '#/components/schemas/M2Observation'
           - type: 'null'
+          default: null
+        m2Preparation:
+          anyOf:
+          - $ref: '#/components/schemas/M2Preparation'
+          - type: 'null'
+          default: null
         m1:
           anyOf:
           - $ref: '#/components/schemas/M1Observation'
           - type: 'null'
+          default: null
         skipped:
-          description: '#305 scoring 실패로 교차 확인을 생략하고 LLM 판정만 쓴 사유. SCORING_UNAVAILABLE은 장애·5xx·시간 초과·남은 시간 부족, SCORING_REJECTED는 4xx(입력 한도 초과 등)·계약 밖 응답. 정상이면 null'
           anyOf:
-          - type: string
-            enum:
+          - enum:
             - SCORING_UNAVAILABLE
             - SCORING_REJECTED
+            type: string
           - type: 'null'
+          default: null
+          title: Skipped
+      title: ModelScores
       type: object
     JudgmentResponse:
       properties:
@@ -2706,3 +2727,53 @@ components:
           anyOf:
             - $ref: '#/components/schemas/KnowledgeFallbackReason'
             - type: 'null'
+
+    M2Preparation:
+      properties:
+        ruleVersion:
+          const: 1112c
+          default: 1112c
+          title: Ruleversion
+          type: string
+        copied:
+          minimum: 0
+          title: Copied
+          type: integer
+        repeated:
+          title: Repeated
+          type: boolean
+        chars:
+          minimum: 0
+          title: Chars
+          type: integer
+        labelsRemoved:
+          minimum: 0
+          title: Labelsremoved
+          type: integer
+        short:
+          title: Short
+          type: boolean
+        truncated:
+          default: false
+          title: Truncated
+          type: boolean
+        notices:
+          items:
+            enum:
+            - COPIED_REMOVED
+            - REPEATED_REMOVED
+            - SHORT_ANSWER
+            - EMPTY_AFTER_CLEANING
+            - ESSAY_TOO_SHORT
+            - ESSAY_ORIGINALLY_SHORT
+            type: string
+          title: Notices
+          type: array
+      required:
+      - copied
+      - repeated
+      - chars
+      - labelsRemoved
+      - short
+      title: M2Preparation
+      type: object

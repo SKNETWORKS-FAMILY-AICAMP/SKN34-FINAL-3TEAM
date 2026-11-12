@@ -116,6 +116,28 @@ def setup_case(attempts=None, ai=None):
     return command, report, base, learning, ai, generator
 
 
+def test_scoreless_m2_preparation_is_not_an_explanation_candidate():
+    student = fixed_result()[0].student_id
+    attempt = scored(student)
+    answer = replace(
+        attempt.answers[0],
+        judgment=JudgmentRecord(
+            "CORRECT",
+            False,
+            (),
+            model_scores={
+                "m2": None,
+                "m2Preparation": {"chars": 3, "notices": ["EMPTY_AFTER_CLEANING"]},
+            },
+        ),
+    )
+    command, report, base, _, ai, generator = setup_case([replace(attempt, answers=(answer,))])
+    result = asyncio.run(generator.generate(command, report))
+    assert not ai.calls
+    assert result.items == base.items
+    assert result.state == base.state
+
+
 def test_latest_answer_per_type_max_three_and_existing_report_unchanged():
     student = fixed_result()[0].student_id
     rows = [
