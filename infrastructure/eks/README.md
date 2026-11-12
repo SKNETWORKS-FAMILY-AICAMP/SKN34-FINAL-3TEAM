@@ -17,7 +17,7 @@
 
 VPC·subnet·route·NAT·SG·IAM·RDS·S3·ECR은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185), 클러스터는 `cluster.json`이 정의한다. 2026-11-03 `plan`에서 55개 항목이 현재 자원과 일치했다. 같은 계정에서 `apply`는 이미 있는 자원을 건너뛰며, 현재 객체를 다른 IaC가 소유하도록 import하지 않는다. 새 계정 재생성은 실행하지 않았으므로 성공을 주장하지 않는다. eksctl은 작업자 IAM 사용자의 access entry를 자동으로 만들며, 콘솔에서 만든 현재 클러스터의 `student` access entry와 같은 권한인지는 생성 후 확인한다.
 
-노드 자동 확장은 Karpenter 1.15.1(NodePool `application-burst`, 평소 0대)과 core·learning·ai HPA로 한다(2026-11-05, [#211·#372](../../docs/report/aws-deploy.md#eks-노드-자동-확장-karpenter와-앱-hpa-211372-2026-11-05)). 관리형 노드그룹 2개는 크기를 자동으로 바꾸지 않는다. `demo_stack.py pause`는 워크로드를 0으로 줄인 뒤 NodePool `limits`를 0으로 바꾸고, 남은 NodeClaim을 지운 다음 Karpenter 컨트롤러를 0개로 줄인다. 노드그룹 축소 중 Pending이 된 kube-system Pod 때문에 Karpenter 노드가 생기지 않게 하기 위해서다. `resume`은 노드 Ready 뒤 컨트롤러 replica와 NodePool `limits`를 state 파일 값(없으면 `demo-stack.json`의 `karpenter.defaults`)으로 되돌린 다음 워크로드를 복구한다. 노드를 0으로 줄여도 EKS control plane·NAT·RDS·EBS 비용은 남는다. RDS 복원 테스트와 데이터 백업을 확인하기 전 클러스터/PVC를 삭제하지 않는다.
+노드 자동 확장은 Karpenter 1.15.1(NodePool `application-burst`, 평소 0대)과 core·learning·ai HPA로 한다(2026-11-05, [#211·#372](../../docs/report/infra.md#6-karpenter와-앱-hpa-211372)). 관리형 노드그룹 2개는 크기를 자동으로 바꾸지 않는다. `demo_stack.py pause`는 워크로드를 0으로 줄인 뒤 NodePool `limits`를 0으로 바꾸고, 남은 NodeClaim을 지운 다음 Karpenter 컨트롤러를 0개로 줄인다. 노드그룹 축소 중 Pending이 된 kube-system Pod 때문에 Karpenter 노드가 생기지 않게 하기 위해서다. `resume`은 노드 Ready 뒤 컨트롤러 replica와 NodePool `limits`를 state 파일 값(없으면 `demo-stack.json`의 `karpenter.defaults`)으로 되돌린 다음 워크로드를 복구한다. 노드를 0으로 줄여도 EKS control plane·NAT·RDS·EBS 비용은 남는다. RDS 복원 테스트와 데이터 백업을 확인하기 전 클러스터/PVC를 삭제하지 않는다.
 
 ### IAM 추가 확인 (2026-11-03)
 

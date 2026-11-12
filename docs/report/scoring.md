@@ -1,4 +1,4 @@
-# scoring 모델 서비스·M1 학습 코드 (#85~#88·#140·#228·#263)
+# scoring 모델 서비스·M1 학습 코드·모델 업로드
 
 계약은 [API 명세 4.3](../design/api-spec.md#43-scoring-service-호출-ai)과 [scoring OpenAPI](../../contracts/openapi/scoring-service.yaml). 서술 3.0·논술 3.1 모델 호환과 content_3 보정은 [ai](ai.md) 4장.
 
@@ -11,6 +11,7 @@
 | #140 | 브로커 연결 복구·readiness·종료, 이벤트 봉투 스키마, 내부 헤더·학생 scope·trace 전파, 설정 로딩 테스트 보강 |
 | #228 | 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3개) 호환, 논술 4~6학년([ai 4.1](ai.md#41-서술-30논술-31-서비스-호환-228)) |
 | #263 | M1 학습·평가 코드를 `ml/m1`로 이관 |
+| #493 | 모델 산출물 전체 SHA-256 업로드 절차, 기존 12개 객체 보완 |
 
 ## 1. 모델 레지스트리·S3 로딩 (#85)
 
@@ -111,7 +112,7 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 
 ## 5. M1 학습·평가 코드 `ml/m1` (#263)
 
-저장소 밖 로컬 MVP 폴더에만 있던 M1 학습·평가 코드를 architecture 5장("모델 학습 코드는 `ml/`")과 NFR-AIQ-04("실험 실행 기록")에 맞춰 `ml/m1`로 이관. 목적은 코드 보존·재현이며 M1 본 학습은 범위 밖(국어(M2) 우선, [planning-decisions](planning-decisions.md)).
+저장소 밖 로컬 MVP 폴더에만 있던 M1 학습·평가 코드를 architecture 5장("모델 학습 코드는 `ml/`")과 NFR-AIQ-04("실험 실행 기록")에 맞춰 `ml/m1`로 이관. 목적은 코드 보존·재현이며 M1 본 학습은 범위 밖(국어(M2) 우선, [planning 2절](planning.md#2-국어m2-우선과-생각-유형-매핑-213)).
 
 | 항목 | 결정 | 근거 |
 |---|---|---|
@@ -132,3 +133,122 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 - scoring에서 M1을 구현하면 `build_model`·`model_input` 구조가 두 곳에 생김. `meta.json`의 `input_format`(`mathtext.model_input-v1`)으로 맞춤
 - `results/eda_71716.md`는 수동 정리본이라 EDA 재실행 시 자동 갱신되지 않음
 - 학습 데이터는 손글씨 OCR 텍스트, 앱 입력은 직접 입력이라 분포가 다름
+
+## 6. 모델 산출물 SHA-256 업로드 절차 (#493)
+
+사전 검사([ai 12절](ai.md#12-모델-사전-검사-368))는 S3 전체 파일 SHA-256이 없으면 실패한다. 그 값을 남기는 업로드 방식을 2026-11-10에 정했다.
+
+### 6.1 결정
+
+| 항목 | 결정 |
+| --- | --- |
+| 업로드 | 파일마다 `aws s3api put-object` 한 번. 전체 원본 SHA-256을 `--checksum-sha256`으로 명시 |
+| 체크섬 표현 | manifest는 소문자 16진수 64자리, S3 요청은 **32바이트 해시의 Base64**(16진수 문자열을 Base64로 바꾸지 않음) |
+| 자동 multipart 금지 | `aws s3 cp/sync`, SDK 고수준 `upload_file`을 쓰지 않음. multipart SHA-256은 COMPOSITE라 검사 계약을 만족하지 못함 |
+| 인정하지 않는 근거 | ETag·사용자 metadata·CRC 계열·COMPOSITE. `ChecksumType=FULL_OBJECT`만 있고 `ChecksumSHA256`이 없어도 불충분. 가중치 다운로드로 우회하지 않음 |
+| 크기 한도 | 단일 PUT 5GB. 준비 도구는 5,000,000,000바이트까지만 허용, 넘으면 중단하고 별도 결정(현재 가중치 약 443MB) |
+| 권한 | 업로드는 업로드 담당 자격 증명, scoring은 읽기 전용 유지. 사전 검사 PASS가 품질 승인·활성화를 뜻하지 않음 |
+
+근거: [S3 체크섬 유형](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity-upload.html), [업로드 크기 제한](https://docs.aws.amazon.com/AmazonS3/latest/userguide/upload-objects.html), [PutObject CLI](https://docs.aws.amazon.com/cli/latest/reference/s3api/put-object.html).
+
+### 6.2 로컬 준비 (AWS 접속 없음)
+
+모델별로 [ModelPreflightRequest](../../contracts/openapi/scoring-service.yaml) 형식 JSON(`name`·`version`·`artifactUri`·manifest의 6개 `{file, bytes, sha256}`)을 준비한다. 해시를 현재 파일에서 새로 만들어 manifest를 덮어쓰면 원본 대조가 아니므로 하지 않는다. 필수 파일은 `config.json`, `tokenizer.json`, `tokenizer_config.json`, `train_info.json`, `score_cuts.json`, `model.safetensors`.
+
+```powershell
+$modelDir = (Resolve-Path '<모델 원본 폴더>').Path
+$requestFile = (Resolve-Path '<사전 검사 요청 JSON>').Path
+$modelBucket = 'sagomungchi-demo-347161580747-models'
+$planFile = Join-Path $env:TEMP ('model-upload-' + [guid]::NewGuid() + '.json')
+
+python scripts/prepare_model_upload.py --request $requestFile --model-dir $modelDir --expected-bucket $modelBucket --output $planFile
+if ($LASTEXITCODE -ne 0) { throw '원본 대조 실패. 업로드하지 않음.' }
+$uploadPlan = Get-Content -LiteralPath $planFile -Raw -Encoding UTF8 | ConvertFrom-Json
+```
+
+도구는 파일명 중복·누락, 대상 버킷·경로, 크기, 원본 SHA-256을 확인한 뒤 계획 JSON을 만든다. 네트워크 기능이 없고 기존 출력 파일을 덮어쓰지 않는다. 계획 파일에는 로컬 경로가 있어 커밋하지 않는다.
+
+### 6.3 신규 키 업로드
+
+`--if-none-match '*'`를 지원하는 AWS CLI v2 필요. **존재하지 않는 신규 키에만** 쓴다(기존 키에는 412로 중단되는 것이 정상). `--body`는 일반 파일 경로이며 `fileb://`를 붙이지 않는다.
+
+```powershell
+$uploadProfile = '<업로드 담당 AWS 프로필>'
+$modelRegion = 'ap-northeast-2'
+$bucketOwner = '347161580747'
+$receiptDir = Join-Path $env:TEMP ('model-upload-receipts-' + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $receiptDir | Out-Null
+
+foreach ($artifact in $uploadPlan.files) {
+    $contentType = if ($artifact.file.EndsWith('.json')) { 'application/json' } else { 'application/octet-stream' }
+    $putArgs = @(
+        's3api', 'put-object', '--bucket', $uploadPlan.bucket,
+        '--key', $artifact.key, '--body', $artifact.path,
+        '--checksum-algorithm', 'SHA256', '--checksum-sha256', $artifact.checksumSHA256,
+        '--if-none-match', '*', '--content-type', $contentType,
+        '--expected-bucket-owner', $bucketOwner, '--region', $modelRegion,
+        '--profile', $uploadProfile, '--output', 'json', '--no-cli-pager'
+    )
+    $putJson = & aws @putArgs
+    if ($LASTEXITCODE -ne 0) { throw "PUT 실패: $($artifact.file). 후속 파일 중단." }
+    $put = ($putJson -join "`n") | ConvertFrom-Json
+
+    $headJson = & aws s3api head-object --bucket $uploadPlan.bucket --key $artifact.key --checksum-mode ENABLED --expected-bucket-owner $bucketOwner --region $modelRegion --profile $uploadProfile --output json --no-cli-pager
+    if ($LASTEXITCODE -ne 0) { throw "HEAD 실패: $($artifact.file). 성공 처리하지 않음." }
+    $head = ($headJson -join "`n") | ConvertFrom-Json
+    $receipt = @{ file = $artifact.file; key = $artifact.key; put = $put; head = $head }
+    $receipt | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $receiptDir ($artifact.file + '.receipt.json')) -Encoding UTF8
+    if ($head.ContentLength -ne $artifact.bytes -or
+        $head.ChecksumType -cne 'FULL_OBJECT' -or
+        $head.ChecksumSHA256 -cne $artifact.checksumSHA256 -or
+        $put.ChecksumSHA256 -cne $artifact.checksumSHA256) {
+        throw "전체 SHA-256 확인 실패: $($artifact.file). 등록·활성화하지 않음."
+    }
+}
+```
+
+6개 파일은 하나의 트랜잭션이 아니다. 중간 실패 시 올라간 객체와 영수증을 보존하고 등록하지 않는다. 재실행의 412를 없애려고 객체를 지우거나 조건을 제거하지 않는다.
+
+### 6.4 기존 키 보완
+
+이미 올바른 전체 SHA-256이 있으면 재업로드하지 않는다. 기존 키를 읽는 서비스에 영향을 줄 수 있어 업로드 담당자와 키·시점·복구 책임을 먼저 맞춘다.
+
+1. 현재 HEAD(`VersionId`·`ETag`·`ContentLength`·`ChecksumType`·Content-Type·Metadata)와 태그, 버킷 Versioning·암호화·객체 잠금·ACL 정책을 확인·보관
+2. 승인된 manifest와 같은 로컬 원본을 6.2 도구로 확인. 크기·해시가 다르면 중단. 가중치·score_cuts 교체를 체크섬 보완에 섞지 않음
+3. 파일별 `repair-put.json`으로 PUT. 신규 키의 `IfNoneMatch` 대신 **기존 HEAD의 `ETag`를 `IfMatch`**에(동시 변경 방지용이며 SHA-256의 대안 아님). Content-Type·Metadata 등 기존 속성 보존. HEAD 응답 전체를 PUT 입력으로 복사하지 않음(`LastModified`·`VersionId` 등은 PUT 인자가 아님)
+4. 6.3과 같은 HEAD 대조 후 새 VersionId 기록. 같은 원본이면 모델 버전·등록·승인 scope를 바꾸거나 다시 활성화하지 않음
+5. 문제가 생기면 보관한 이전 버전과 속성으로 복구
+
+```powershell
+$repairInput = (Resolve-Path '<검토한 repair-put.json>').Path
+$artifactPath = (Resolve-Path '<해당 원본 파일>').Path
+$repairJson = & aws s3api put-object --cli-input-json ("file://" + $repairInput) --body $artifactPath --region $modelRegion --profile $uploadProfile --output json --no-cli-pager
+if ($LASTEXITCODE -ne 0) { throw '기존 객체 보완 실패. 후속 작업 중단.' }
+```
+
+### 6.5 실행 결과와 남은 검증 (2026-11-10)
+
+- 서술 `m2-klue-narrative@3.0`·논술 `m2-klue-essay@3.1`의 12개 객체를 동일 원본으로 보완. 모두 `FULL_OBJECT` SHA-256과 manifest 일치, 기존 속성·이전 버전 보존. 키별 이전/새 VersionId는 [실행 증빙 JSON](evidence/issue493-s3-sha256-20261110.json)
+- 버킷 상태: Versioning Enabled, BucketOwnerEnforced, AES256, 객체 잠금 없음
+- CloudShell 운영자 자격 증명으로 `PreflightService.check`를 직접 실행해 두 모델 모두 `PASS / FILES_AND_METADATA_VERIFIED`(모델별 HEAD 6회·작은 JSON GET 3회). 배포 이미지·Pod 실행 결과가 아님
+- EKS·RDS 재가동, IAM·버킷 정책 변경, 모델 등록·활성화는 하지 않음
+- **남은 검증**(AWS 재가동 후): 실제 `app/scoring-service` Pod Identity로 읽기, 관리자 → core → scoring 경로의 사전 검사 PASS와 감사 기록
+
+### 6.6 로컬 검증 방법
+
+```powershell
+python -m unittest discover -s scripts/tests -p test_prepare_model_upload.py -v
+```
+
+MinIO 통합 검증은 `127.0.0.1:58193`의 일회용 MinIO와 `MODEL_UPLOAD_LOCAL=true`가 있을 때만 실행된다(없으면 건너뜀).
+
+```powershell
+docker run --detach --rm --name issue493-upload-local --publish 127.0.0.1:58193:9000 --env MINIO_ROOT_USER=model-upload-local --env MINIO_ROOT_PASSWORD=model-upload-test-only quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+$env:MODEL_UPLOAD_LOCAL = 'true'
+# backend/scoring-service 가상환경에서
+python -m pytest tests/test_preflight.py tests/test_model_upload_local.py -q
+Remove-Item Env:MODEL_UPLOAD_LOCAL
+docker stop issue493-upload-local
+```
+
+MinIO의 체크섬 오류 코드는 `XAmzContentChecksumMismatch`로 AWS의 `BadDigest`와 이름이 다르다. 잘못된 SHA-256 PUT은 400·객체 미생성, 신규 키 중복 PUT과 오래된 `IfMatch`는 412.
