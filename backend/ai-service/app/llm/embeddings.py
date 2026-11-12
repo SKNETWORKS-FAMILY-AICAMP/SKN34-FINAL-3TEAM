@@ -7,7 +7,8 @@
   4. 제공자 선택    create_embedder·get_embedder
 
 타임아웃·재시도·대기는 LLM 공통 설정(P12)을 그대로 쓴다. 요청 1회 = 사용량 1건
-(callType KNOWLEDGE_EMBEDDING). 임베딩은 출력 토큰이 없어 outputTokens는 0으로 남긴다.
+(callType은 요청 purpose로 정함: KNOWLEDGE → KNOWLEDGE_EMBEDDING, MEMORY → MEMORY_EMBEDDING #565).
+임베딩은 출력 토큰이 없어 outputTokens는 0으로 남긴다.
 OPENAI_BASE_URL은 sLLM 대화용이라 쓰지 않고 항상 OpenAI 기본 주소로 보낸다.
 """
 
@@ -20,11 +21,15 @@ import openai
 from fastapi import Request
 
 from app.config import Settings
+from app.knowledge.contracts import EmbeddingPurpose
 from app.knowledge.fake import FAKE_EMBEDDING_MODEL, fake_vector
 from app.llm.base import LlmError, LlmUnavailable, LlmUsage, UsageRecorder, status_error
 from app.llm.providers import OPENAI_DEFAULT_BASE_URL
 
-CALL_TYPE = "KNOWLEDGE_EMBEDDING"
+CALL_TYPES: dict[EmbeddingPurpose, str] = {
+    "KNOWLEDGE": "KNOWLEDGE_EMBEDDING",
+    "MEMORY": "MEMORY_EMBEDDING",
+}
 
 
 @dataclass(frozen=True)
@@ -76,8 +81,9 @@ class EmbeddingClient(ABC):
     def dimensions(self) -> int:
         return self._dimensions
 
-    async def embed(self, texts: list[str]) -> Embeddings:
+    async def embed(self, texts: list[str], purpose: EmbeddingPurpose = "KNOWLEDGE") -> Embeddings:
         """재시도까지 실패하면 LlmUnavailable. 개수·차원이 다르면 LLM_INVALID_OUTPUT."""
+        call_type = CALL_TYPES[purpose]
         for attempt in range(self._max_retries + 1):
             started = time.monotonic()
             try:
@@ -93,11 +99,11 @@ class EmbeddingClient(ABC):
                     )
             except LlmError as exc:
                 if exc.sent:
-                    self._record(started, exc.model, exc.input_tokens, exc.code)
+                    self._record(call_type, started, exc.model, exc.input_tokens, exc.code)
                 if not exc.retryable or attempt == self._max_retries:
                     raise LlmUnavailable(exc.code, exc.retryable) from exc
             else:
-                self._record(started, response.model, response.input_tokens, None)
+                self._record(call_type, started, response.model, response.input_tokens, None)
                 return Embeddings(response.model, self._dimensions, response.vectors)
             await asyncio.sleep(self._backoff_seconds * 2**attempt)
         raise AssertionError("unreachable")
@@ -107,13 +113,18 @@ class EmbeddingClient(ABC):
         """요청 1회. 실패는 LlmError로 변환해 던짐."""
 
     def _record(
-        self, started: float, model: str | None, input_tokens: int | None, error: str | None
+        self,
+        call_type: str,
+        started: float,
+        model: str | None,
+        input_tokens: int | None,
+        error: str | None,
     ) -> None:
         if self._recorder is None:
             return
         self._recorder(
             LlmUsage(
-                call_type=CALL_TYPE,
+                call_type=call_type,
                 model=model or self._model,
                 prompt_version=None,
                 input_tokens=input_tokens,

@@ -286,6 +286,21 @@ learning V19 `theme_frame`과 내부 API 4개(api-spec 4.1.4 앨범 목록·회�
 - 도입 전 회차라도 그 뒤 테마가 다른 문제로 재게시됐으면 현재 게시본 요일 문제와 맞지 않아 소급되지 않는다(시도에 테마 버전이 없음)
 - 검색 문서(`memory_search_doc`) 등록은 이 이슈 범위가 아니다(3.4 별도 이슈)
 
+### 9.3 ai 추억 임베딩 구분·추억 설명 API (#565, 2026-11-12)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 임베딩 `purpose` | `KNOWLEDGE`(생략 시 기본)·`MEMORY`, 사용량 `callType`만 가름. 값 밖은 400 | 기준안 그대로. 기존 호출(지식 적재·검색 클라이언트)을 바꾸지 않음 |
+| LLM 출력 모양 | 문장 목록 `sentences:[{text, evidence:[no]}]`로 받고 ai가 문장 끝에 `[n]`을 붙여 `text`를 만듦 | "문장마다 근거 번호"를 규칙으로 보장. LLM이 본문에 번호를 쓰면 위치·형식이 흔들림 |
+| 형식 502 | 구조화 출력 실패, 문장 수 2~3 밖, 빈 문장 | api-spec 4.2.6 "형식 밖 응답" |
+| 거부 422 | 근거 번호 없는 문장(빈 `citations` 포함), 보낸 번호 밖, 그 문장 근거 글에 없는 큰따옴표 인용 | 인용은 learning이 다시 대조하지만 ai에서 먼저 걸러 잘못된 설명이 나가지 않게 함 |
+| 입력 상한 | 질문 200자(공개 검색 질문과 같음), 테마 제목 200자, 미션 질문·답 일부 2,000자, 회차 표시 50자, 정의 밖 칸 400 | learning #564 근거 길이가 정해지기 전이라 넉넉히. 정의 밖 칸 거부로 ID가 LLM에 가는 것을 막음 |
+| 모델·시간 | ai 기본 LLM 설정·P12(15초·재시도 1회), 출력 512토큰 | 3.5-10 "별도 모델 설정 없음". 최악 31초 < learning→ai 35초 |
+| 가짜 구현 | `MEMORY_EXPLANATION_PROVIDER=fake`: 근거마다 정해진 한 문장(답 첫 구절 인용), 사용량 없음 | learning #564가 실제 LLM 없이 설명·인용 대조를 개발 |
+| 발행 시점 | `MEMORY_EMBEDDING`·`MEMORY_EXPLANATION`은 core #566(PR #572) 병합 뒤 배포 | 그 전 발행은 core 소비자가 거부해 DLQ(`MISSION_DRAFT` 선례) |
+
+확인 필요: 실제 LLM으로 규칙 준수율·응답 시간 실측(비용 때문에 미실시). 상세는 [ai 보고서 18장](ai.md#18-추억-임베딩-구분추억-설명-api-565-2026-11-12).
+
 ## 10. core 가구 스킨·추억의 벽 액자 슬롯 구현 (#555, 2026-11-12)
 
 core V47 `V47__room_furniture_skins_and_frame_slots.sql`로 가구 슬롯 CHECK 확장과 `room_frame_slot`을 만들고, `GET`·`PUT /students/me/room/frame-slots`와 `equipped` 가구 슬롯을 구현했다(api-spec 2.10·2.12, ERD 3.5.1). learning 보유 확인은 #559 계약(api-spec 4.1.4)을 쓰며, core 시험은 그 계약대로 응답하는 가짜 HTTP 서버로 확인했다. 9장은 #559·#566이 쓰는 절이라 이 절을 따로 둔다.
@@ -315,3 +330,27 @@ core V47 `V47__room_furniture_skins_and_frame_slots.sql`로 가구 슬롯 CHECK 
 - 마이그레이션 번호: #566(PR #572)이 V46으로 먼저 병합돼 이 작업은 V47이다(gitops 로컬 core 리비전 `v47`)
 - 학생이 액자를 많이 가지면(100개 초과) 조회 때 앨범을 여러 쪽 읽는다. 데모 규모에서는 한 쪽이며, 커지면 learning에 회차 키로 제목·그림을 주는 경로를 더한다
 - 리텐션 지표(3.6) "전시까지 걸린 기간"은 `room_frame_slot.saved_at − awarded_at`이다. 전체 교체여도 계속 걸려 있는 액자는 슬롯을 옮겨도 처음 건 시각을 유지하고, 내렸다가 다시 걸면 다시 건 시각이 된다
+
+## 11. core 추억 앨범 공개 프록시 (#560, 2026-11-12)
+
+학생 공개 앨범 3경로(api-spec 2.12)를 learning 4.1.4 앨범 경로(#559)로 넘기고, 목록 `displayed`를 추억의 벽 슬롯(`room_frame_slot`, #555)으로 채운다. #555(PR #575)·#559(PR #571) 병합 뒤 develop 기준이다. 9장(#559·#566)·10장(#555)과 겹치지 않게 절을 따로 둔다.
+
+### 11.1 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| `displayed` 처리 순서 | #555 슬롯 테이블을 바로 읽어 채움(테이블이 없을 때의 "항상 false" 단계 없음) | #555 구현이 먼저 있어 임시 값을 두면 web(#561)이 잘못된 전시 표시를 받는 기간만 생김 |
+| `displayed` 기준 | 지금 `room_frame_slot`에 같은 `(theme_id, theme_week_start)` 행이 있으면 true | 슬롯 저장 때 learning 보유를 확인했으므로 core 행만으로 판정 가능, learning 추가 호출 없음 |
+| 서킷 | 일반 `learning-json`(응답 30초) | 이슈 지침. ai를 부르지 않는 DB 조회라 `learning-memory`로 격리할 이유 없음(#555 `LearningFrameClient`와 같음). 5장 표의 `learning-memory` 회로는 검색·설명에만 해당 |
+| 쿼리 | `page`·`size`만 다시 만들어 넘기고 범위 검사는 learning | 다른 쿼리(예 `studentId`)를 learning에 흘리지 않음. 범위 기준을 한 곳(learning 4.1.4)에 둠 |
+| 오류 | learning 400·404 `THEME_FRAME_NOT_FOUND`·5xx를 그대로 전달. learning 200 본문이 앨범 모양이 아니면 502 `LEARNING_CONTRACT_INVALID` | 이슈 지침(오류 코드 그대로). 깨진 본문에 `displayed`를 붙일 수 없으므로 #555와 같은 계약 오류 코드 사용 |
+| 클라이언트 위치 | 기존 `LearningMemoryClient`에 앨범 메서드를 두고 일반 `LearningClient`를 주입 | 클래스 3.7 설계(앨범은 `MemoryProxyService`→`LearningMemoryClient`)를 따르면서 서킷만 `learning-json` |
+
+### 11.2 기준안 값
+
+새 기준안 값 없음. 페이지 기본 20·최대 100은 learning 4.1.4 값을 그대로 쓰고 core는 다시 정하지 않는다.
+
+### 11.3 한계·병합 메모
+
+- core 시험은 병합된 learning 4.1.4 계약(`MemoryController`·learning OpenAPI `AlbumPage`·`AlbumRound`)대로 응답하는 가짜 HTTP 서버로 확인했다. 실제 learning과의 연동은 배포 환경에서 확인한다
+- 목록은 learning 응답을 한 번 파싱해 다시 직렬화하므로 learning이 칸을 더하면 그대로 전달되지만 숫자·문자열 표기(예 소수 자릿수)는 Jackson 기본 직렬화를 따른다

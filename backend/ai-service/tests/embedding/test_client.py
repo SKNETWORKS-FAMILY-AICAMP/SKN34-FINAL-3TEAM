@@ -89,6 +89,17 @@ def test_keeps_request_order_and_records_usage() -> None:
     assert usage.success and usage.error_code is None
 
 
+def test_memory_purpose_records_memory_embedding() -> None:
+    client, _, usages = make(response([vec(0)]), status_error(500))
+    asyncio.run(client.embed(["추억 문서"], "MEMORY"))
+    with pytest.raises(LlmUnavailable):
+        asyncio.run(client.embed(["추억 문서"], "MEMORY"))
+    assert [(u.call_type, u.success) for u in usages] == [
+        ("MEMORY_EMBEDDING", True),
+        ("MEMORY_EMBEDDING", False),
+    ]
+
+
 @pytest.mark.parametrize(
     "bad",
     [response([vec(0)]), response([vec(0), [0.0] * (DIMS + 1)])],

@@ -49,6 +49,9 @@ class RoomFrameSlotService(private val mapper: RoomFrameSlotMapper, private val 
         })
     }
 
+    /** 지금 추억의 벽에 걸린 회차(앨범 `displayed`, #560). learning을 부르지 않는다 */
+    fun displayedFrames(studentId: UUID): Set<FrameKey> = mapper.slots(studentId).map { it.key }.toSet()
+
     /**
      * 전체 교체. 목록 누락·7개 이상·`slotNo` 1~6 밖·중복 슬롯·같은 액자 두 번·월요일이 아닌 `weekStart`·빈 칸은
      * 422 `VALIDATION_FAILED`, learning이 보유로 돌려주지 않은 회차(진행 중인 주 포함)는 404 `THEME_FRAME_NOT_FOUND`.
