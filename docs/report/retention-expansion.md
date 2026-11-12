@@ -318,7 +318,7 @@ core V47 `V47__room_furniture_skins_and_frame_slots.sql`로 가구 슬롯 CHECK 
 
 ## 11. core 추억 앨범 공개 프록시 (#560, 2026-11-12)
 
-학생 공개 앨범 3경로(api-spec 2.12)를 learning 4.1.4 앨범 경로(#559)로 넘기고, 목록 `displayed`를 추억의 벽 슬롯(`room_frame_slot`, #555)으로 채운다. #555 구현 위에서 작업했다(#555 병합 뒤 develop 기준으로 정리). 9장(#559·#566)·10장(#555)과 겹치지 않게 절을 따로 둔다.
+학생 공개 앨범 3경로(api-spec 2.12)를 learning 4.1.4 앨범 경로(#559)로 넘기고, 목록 `displayed`를 추억의 벽 슬롯(`room_frame_slot`, #555)으로 채운다. #555(PR #575)·#559(PR #571) 병합 뒤 develop 기준이다. 9장(#559·#566)·10장(#555)과 겹치지 않게 절을 따로 둔다.
 
 ### 11.1 결정
 
@@ -326,7 +326,7 @@ core V47 `V47__room_furniture_skins_and_frame_slots.sql`로 가구 슬롯 CHECK 
 |---|---|---|
 | `displayed` 처리 순서 | #555 슬롯 테이블을 바로 읽어 채움(테이블이 없을 때의 "항상 false" 단계 없음) | #555 구현이 먼저 있어 임시 값을 두면 web(#561)이 잘못된 전시 표시를 받는 기간만 생김 |
 | `displayed` 기준 | 지금 `room_frame_slot`에 같은 `(theme_id, theme_week_start)` 행이 있으면 true | 슬롯 저장 때 learning 보유를 확인했으므로 core 행만으로 판정 가능, learning 추가 호출 없음 |
-| 서킷 | 일반 `learning-json`(응답 30초) | 이슈 지침. ai를 부르지 않는 DB 조회라 `learning-memory`로 격리할 이유 없음(#555 `LearningFrameClient`와 같음) |
+| 서킷 | 일반 `learning-json`(응답 30초) | 이슈 지침. ai를 부르지 않는 DB 조회라 `learning-memory`로 격리할 이유 없음(#555 `LearningFrameClient`와 같음). 5장 표의 `learning-memory` 회로는 검색·설명에만 해당 |
 | 쿼리 | `page`·`size`만 다시 만들어 넘기고 범위 검사는 learning | 다른 쿼리(예 `studentId`)를 learning에 흘리지 않음. 범위 기준을 한 곳(learning 4.1.4)에 둠 |
 | 오류 | learning 400·404 `THEME_FRAME_NOT_FOUND`·5xx를 그대로 전달. learning 200 본문이 앨범 모양이 아니면 502 `LEARNING_CONTRACT_INVALID` | 이슈 지침(오류 코드 그대로). 깨진 본문에 `displayed`를 붙일 수 없으므로 #555와 같은 계약 오류 코드 사용 |
 | 클라이언트 위치 | 기존 `LearningMemoryClient`에 앨범 메서드를 두고 일반 `LearningClient`를 주입 | 클래스 3.7 설계(앨범은 `MemoryProxyService`→`LearningMemoryClient`)를 따르면서 서킷만 `learning-json` |
@@ -337,5 +337,5 @@ core V47 `V47__room_furniture_skins_and_frame_slots.sql`로 가구 슬롯 CHECK 
 
 ### 11.3 한계·병합 메모
 
-- learning #559(PR #571) 병합 전에는 learning 404를 그대로 전달한다. core 시험은 4.1.4 계약대로 응답하는 가짜 HTTP 서버로 확인했다
-- 이 브랜치는 #555 커밋 위에 있다. #555가 먼저 병합된 뒤 develop으로 다시 맞춰 PR을 연다
+- core 시험은 병합된 learning 4.1.4 계약(`MemoryController`·learning OpenAPI `AlbumPage`·`AlbumRound`)대로 응답하는 가짜 HTTP 서버로 확인했다. 실제 learning과의 연동은 배포 환경에서 확인한다
+- 목록은 learning 응답을 한 번 파싱해 다시 직렬화하므로 learning이 칸을 더하면 그대로 전달되지만 숫자·문자열 표기(예 소수 자릿수)는 Jackson 기본 직렬화를 따른다
