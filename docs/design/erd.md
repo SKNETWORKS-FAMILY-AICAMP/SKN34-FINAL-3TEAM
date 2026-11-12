@@ -1407,7 +1407,7 @@ erDiagram
 
 ### 4.5 교육과정 지식 RAG (#463, 계약 #464, 구현 #466)
 
-**계약 C2·C3·C9, learning V14(#466)**. 아래 Mermaid를 `scripts/verify_db_schema.py`가 실제 DB와 대조하고, 표는 칸 설명이다. 테이블 칸은 #466 이슈 표를 따르고, 그 표에 없던 칸은 "기준안 추가"로 표시했다. 추출 레코드(C1)는 `scripts/knowledge/schema/curriculum-record.schema.json`, 관계 확인 파일(C4)은 `relation-review.schema.json`, 조회 API(C5)는 [api-spec 4.1.2](api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), 판 관리 API는 [api-spec 4.1.3](api-spec.md#413-교육과정-지식-판-관리-466).
+**계약 C2·C3·C9, learning V14·V17(#466)**. 팀 결정(에픽 #463, 2026-11-11)으로 미션·테마 생성에 벡터 검색·임베딩을 쓰지 않아, 지식 표는 성취기준·생각 유형 **코드 조회용 관계형 표**다. V14가 만든 임베딩 칸(`knowledge_chunk.embedding vector(1536)`)·HNSW 인덱스·`knowledge_dataset.embedding_model`·`embedding_dimensions`는 V17이 지웠다. 아래 Mermaid를 `scripts/verify_db_schema.py`가 실제 DB와 대조하고, 표는 칸 설명이다. 테이블 칸은 #466 이슈 표를 따르고, 그 표에 없던 칸은 "기준안 추가"로 표시했다. 추출 레코드(C1)는 `scripts/knowledge/schema/curriculum-record.schema.json`, 관계 확인 파일(C4)은 `relation-review.schema.json`, 조회 API(C5)는 [api-spec 4.1.2](api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), 판 관리 API는 [api-spec 4.1.3](api-spec.md#413-교육과정-지식-판-관리-466).
 
 ```mermaid
 erDiagram
@@ -1415,8 +1415,6 @@ erDiagram
     varchar(32) version PK "kn-YYYYMMDD-NN (CHECK)"
     varchar status "CHECK[LOADING|ACTIVE|RETIRED], 부분 UK (status) WHERE ACTIVE"
     jsonb source "원문 고시·추출 판·확인 파일·학기 대응 자료·이전 활성 판"
-    varchar embedding_model "C6 응답 model"
-    int embedding_dimensions "1536 (CHECK)"
     int chunk_count
     int relation_count
     timestamptz created_at
@@ -1436,7 +1434,6 @@ erDiagram
     varchar notice_grade_band "NULL 허용"
     text text
     jsonb record "C1 원본"
-    vector(1536) embedding "NULL 허용, 활성화 전 모두 채움"
     char(64) content_hash "SHA-256 16진수"
     jsonb source
   }
@@ -1471,10 +1468,10 @@ erDiagram
   }
 ```
 
-- 비 btree 인덱스(6장 대조 대상 아님): `knowledge_chunk.embedding` HNSW(`vector_cosine_ops`), `grades`·`semesters` GIN
+- 비 btree 인덱스(6장 대조 대상 아님): `grades`·`semesters` GIN
 - 관계 FK는 `(dataset_version, …)` → `knowledge_chunk(dataset_version, id)`, 자동 삭제 없음. 판 제거는 서비스가 관계 → 조각 → 판 순서로 지운다
 
-- 저장소: `learning_db` 안(새 DB 없음, 에픽 결정). `vector` 확장은 migrate 계정이 만들 수 없어 관리자 계정 bootstrap이 만든다(#466)
+- 저장소: `learning_db` 안(새 DB 없음, 에픽 결정). `vector` 확장은 지금 쓰는 칸이 없지만 V14가 처음부터 다시 적용될 때 필요해 관리자 계정 bootstrap이 계속 만든다(migrate 계정은 만들 수 없음, #466)
 - 학년은 초3·초4·초5·초6(`grades`), 고시 원문 학년군(`초3~4`·`초5~6`)은 `notice_grade_band`에만 둔다
 - 학생 정보·학생 답은 어느 칸에도 없다. 평가원 성취수준·교육청(서울특별시·경기도) 수업-평가 자료 문장·블룸 원서·VALUE 루브릭 문장도 넣지 않는다(교육청 자료는 코드↔학년·학기 대응만)
 
@@ -1485,8 +1482,6 @@ erDiagram
 | `version` | varchar(32) PK | | 판 이름(C9 이름 규칙) |
 | `status` | varchar | | CHECK `LOADING`·`ACTIVE`·`RETIRED`. 부분 UNIQUE `(status) WHERE status = 'ACTIVE'`로 활성 판은 하나 |
 | `source` | jsonb | | 원문 고시 번호·추출 판(`curriculum-v1` 등)·관계 확인 파일·학기 대응 자료 이름 |
-| `embedding_model` | varchar | | 기준안 추가: 조각 임베딩 모델(C6 응답 `model`). 검색 요청 `embeddingModel`과 다르면 409 |
-| `embedding_dimensions` | int | | 기준안 추가: 벡터 길이(C6 응답 `dimensions`, 기준안 1536) |
 | `chunk_count`, `relation_count` | int | | 결과서 5절 숫자(활성화 때 채움) |
 | `created_at` | timestamptz | | |
 | `activated_at` | timestamptz | 허용 | `ACTIVE`가 된 때 |
@@ -1506,10 +1501,9 @@ erDiagram
 | `grades` | smallint[] | | 학년(3~6). 빈 배열 허용 |
 | `semesters` | varchar[] | | 학기(`3-1` …). 빈 배열 허용 |
 | `notice_grade_band` | varchar | 허용 | 고시 원문 학년군 표기(출처·검사용) |
-| `text` | text | | 임베딩하는 본문(아래 본문 규칙) |
+| `text` | text | | 조각 본문(아래 본문 규칙) |
 | `record` | jsonb | | 기준안 추가: C1 레코드 원본. C5 응답이 문장·해설·고려 사항·내용 체계를 따로 돌려줘야 해서 본문을 다시 쪼개지 않으려고 둠 |
-| `embedding` | vector(1536) | 허용 | 적재 중(`LOADING`)에는 비어 있을 수 있고 활성화 전 모두 채워야 함(앱 검사) |
-| `content_hash` | char(64) | | `text`(NFC)의 SHA-256 16진수. 이전 판과 같으면 임베딩 재사용 |
+| `content_hash` | char(64) | | `text`(NFC)의 SHA-256 16진수. 판을 바꿀 때 옮긴 관계의 끝 본문이 바뀌었는지 판정 |
 | `source` | jsonb | | C1 `source`(문서·절·쪽) |
 
 조각 ID·본문·학년·학기 규칙(C1 레코드 → 조각, 가짜 구현 `fake.chunk_text`와 같음)
@@ -1524,7 +1518,7 @@ erDiagram
 
 - 영역 레코드 `scope`(C1): 국어·수학·도덕은 내용 체계 영역과 성취기준 영역이 같아 한 레코드(`BOTH`). 사회·과학은 내용 체계 영역(예: 과학 `운동과 에너지`, `CONTENT_SYSTEM`)과 성취기준 단원(예: `힘과 우리 생활`, `STANDARD_GROUP`: 고려 사항·탐구 활동)이 달라 레코드를 나눈다. 성취기준의 `domain_id`는 고려 사항을 가진 레코드이고 내용 체계 항목은 covers로 잇는다(원문 대조 결과, 에픽 "고려 사항은 영역마다"를 사회·과학에서는 단원으로 읽음)
 - 도덕은 성취기준·고려 사항이 원문에서 `[초등학교]` 한 묶음(3~4·5~6학년군 함께)이고 내용 체계만 학년군 칸이 나뉜다. 기준안: 영역 레코드는 내용 체계 학년군(`도덕:초3~4:…`)으로 두고 고려 사항은 같은 글을 넣는다(#465 확인)
-- 인덱스: `embedding` HNSW(`vector_cosine_ops`, 기준안), `(dataset_version, kind, subject)`, `grades`·`semesters` GIN
+- 인덱스: `(dataset_version, kind, subject)`, `grades`·`semesters` GIN
 
 관계 테이블(모두 `dataset_version` 포함, FK `(dataset_version, …)` → `knowledge_chunk(dataset_version, id)`, 자동 삭제 없음)
 
@@ -1542,10 +1536,10 @@ erDiagram
 판 규칙(C9, 기준안)
 
 - 이름: `kn-YYYYMMDD-NN`(KST 적재 시작일과 그날 순번 2자리, 예 `kn-20261111-01`). 추출 판(`curriculum-v1`)·고시 번호·관계 확인 파일 이름은 `knowledge_dataset.source`에 둔다
-- 적재·교체 순서: ① 새 판 `LOADING` 행 → ② C1 레코드를 조각으로(같은 판 안에서 `id` 중복이면 멈춤) → ③ 현재 `ACTIVE` 판과 모델·차원이 같고 `content_hash`가 같은 조각은 임베딩을 복사, 나머지는 C6에 64개 이하로 나눠 요청 → ④ 학기 관계(C1 `semesters`) → ⑤ 사람 확인 관계 옮기기(아래) → ⑥ 새 확인 파일(C4) 적재(늦은 `reviewedAt` 우선) → ⑦ 검사(임베딩 모두 채움, 성취기준 문장 대조, 관계 양 끝 존재, 수 기록) → ⑧ 한 트랜잭션에서 이전 `ACTIVE` → `RETIRED`, 새 판 → `ACTIVE`(`activated_at`). 실패하면 새 판은 `LOADING`으로 남고 활성 판은 그대로다. 같은 입력으로 다시 돌리면 같은 조각·관계 수(멱등)
+- 적재·교체 순서: ① 새 판 `LOADING` 행 → ② C1 레코드를 조각으로(같은 판 안에서 `id` 중복이면 멈춤) → ③ (임베딩 없음, V17) → ④ 학기 관계(C1 `semesters`) → ⑤ 사람 확인 관계 옮기기(아래) → ⑥ 새 확인 파일(C4) 적재(늦은 `reviewedAt` 우선) → ⑦ 검사(성취기준 문장 대조, 관계 양 끝 존재, 수 기록) → ⑧ 한 트랜잭션에서 이전 `ACTIVE` → `RETIRED`, 새 판 → `ACTIVE`(`activated_at`). 실패하면 새 판은 `LOADING`으로 남고 활성 판은 그대로다. 같은 입력으로 다시 돌리면 같은 조각·관계 수(멱등)
 - 사람 확인 관계 옮기기: 이전 활성 판의 fits·prerequisite·covers 중 양 끝 ID가 새 판에도 있으면 `reviewed_by`·`reviewed_at`·`reason` 그대로 옮긴다. 끝이 없어진 관계는 옮기지 않고 다시 확인할 목록(C4 행 모양, decision 빈 칸)으로 출력한다. 끝은 있지만 본문(`content_hash`)이 바뀐 관계는 옮기되 다시 확인 권장 목록에도 넣는다(기준안)
 - 제거: `RETIRED` 판만 관리 명령으로 지운다. 한 트랜잭션에서 관계 → 조각 → 판 행 순서. `ACTIVE`·`LOADING`은 지우지 않는다
-- 검색·조회는 `ACTIVE` 판만 읽는다(C5)
+- 조회는 `ACTIVE` 판만 읽는다(C5 코드 조회, #469). 벡터 검색 경로는 쓰지 않는다(팀 결정 2026-11-11)
 
 ---
 
@@ -1716,7 +1710,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `community_reaction` | `(student_id, created_at)` | 학생 삭제 때 남긴 반응 정리 (#386, V13) |
 | learning | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | learning | `knowledge_dataset` | `(status) WHERE status = 'ACTIVE'` | 활성 판 하나(UNIQUE, #466 V14) |
-| learning | `knowledge_chunk` | `(dataset_version, kind, subject)` | 판·종류·교과 거르기(검색 #469·성취기준 조회). HNSW·GIN은 4.5 |
+| learning | `knowledge_chunk` | `(dataset_version, kind, subject)` | 판·종류·교과 거르기(성취기준·생각 유형 코드 조회 #469). GIN은 4.5 |
 | report | `weekly_report` | `(student_id, period_type, status, period_from)` | 자녀별 리포트 목록 |
 | report | `report_job_guard` | `(student_id)` | 학생 삭제 때 차단 기록 정리 (#132, `20261029_03`) |
 | report | `outbox_event` | `(created_at) WHERE published_at IS NULL`, `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | 학생별 선두·발행 순서 및 재시도 대상, 보존 기간 정리 |
@@ -1729,7 +1723,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V43(V10·V11 결번), learning Flyway V1~V16, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 103개 테이블·905개 컬럼(core 59/514, learning 36/325, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V43·learning V16(#438)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V43(V10·V11 결번), learning Flyway V1~V17, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 103개 테이블·902개 컬럼(core 59/514, learning 36/322, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V43·learning V17(#466)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

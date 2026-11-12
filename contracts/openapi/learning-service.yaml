@@ -2153,10 +2153,9 @@ paths:
       summary: '새 판 적재 (#466, C9 ①~⑦, 동기)'
       description: >-
         C1 레코드·C4 확인 행으로 새 판(kn-YYYYMMDD-NN)을 LOADING으로 만들고 조각·학기·관계를 넣는다.
-        활성 판과 모델·차원이 같으면 같은 본문 임베딩을 재사용하고 나머지는 ai 임베딩(C6)에 64개 이하로 나눠 요청한다.
+        임베딩은 만들지 않는다(생성에 벡터 검색을 쓰지 않는 팀 결정, 에픽 #463 2026-11-11, learning V17).
         이전 활성 판의 사람 확인 관계는 양 끝이 있으면 옮기고, 없거나 본문이 바뀌면 recheck(C4 모양, decision 빈 칸)로 돌려준다.
         입력 오류(형식, 조각 ID 겹침, reviewer SAMPLE, 성취기준 문장 불일치, 관계 끝 없음)는 판을 만들기 전에 400.
-        임베딩 실패는 판을 LOADING으로 남기고 503(AI_UNAVAILABLE·AI_TIMEOUT·AI_CIRCUIT_OPEN) 또는 502(AI_BAD_RESPONSE).
         같은 입력은 같은 조각·관계 수(멱등). 활성화는 따로.
       parameters:
         - $ref: '#/components/parameters/SystemRole'
@@ -2175,8 +2174,6 @@ paths:
         '401': {$ref: '#/components/responses/Problem'}
         '403': {$ref: '#/components/responses/Problem'}
         '409': {$ref: '#/components/responses/Problem'}
-        '502': {$ref: '#/components/responses/Problem'}
-        '503': {$ref: '#/components/responses/Problem'}
   /admin/knowledge/datasets/{version}:
     get:
       operationId: getKnowledgeDataset
@@ -2211,7 +2208,7 @@ paths:
       operationId: activateKnowledgeDataset
       summary: 'LOADING 판 활성화 (#466, C9 ⑧)'
       description: >-
-        한 트랜잭션에서 이전 ACTIVE → RETIRED, 이 판 → ACTIVE(activated_at). LOADING이 아니거나 임베딩이 빈 조각이 있거나
+        한 트랜잭션에서 이전 ACTIVE → RETIRED, 이 판 → ACTIVE(activated_at). LOADING이 아니거나
         적재 뒤 활성 판이 바뀌었으면(source.previousVersion과 다름) 409 KNOWLEDGE_DATASET_STATE_CONFLICT. 본문은 {} 또는 없음.
       parameters:
         - $ref: '#/components/parameters/SystemRole'
@@ -4171,13 +4168,11 @@ components:
         datasetVersion: {type: string}
     KnowledgeDatasetView:
       type: object
-      required: [version, status, source, embeddingModel, embeddingDimensions, chunkCount, relationCount, chunks, relations, createdAt]
+      required: [version, status, source, chunkCount, relationCount, chunks, relations, createdAt]
       properties:
         version: {type: string}
         status: {type: string, enum: [LOADING, ACTIVE, RETIRED]}
         source: {type: object}
-        embeddingModel: {type: string}
-        embeddingDimensions: {type: integer}
         chunkCount: {type: integer}
         relationCount: {type: integer, description: 학기·fits·prerequisite·covers 행 합}
         chunks:
@@ -4199,13 +4194,10 @@ components:
           items: {$ref: '#/components/schemas/KnowledgeDatasetView'}
     KnowledgeLoadResult:
       type: object
-      required: [dataset, documents, embeddedTexts, embeddingRequests, reusedEmbeddings, carriedRelations, recheck]
+      required: [dataset, documents, carriedRelations, recheck]
       properties:
         dataset: {$ref: '#/components/schemas/KnowledgeDatasetView'}
         documents: {type: integer, description: 원문 고시 문서 수(생각 유형 제외)}
-        embeddedTexts: {type: integer, description: 새로 임베딩한 본문 수(같은 본문은 한 번)}
-        embeddingRequests: {type: integer, description: C6 호출 수(64개 이하 묶음)}
-        reusedEmbeddings: {type: integer, description: 활성 판 벡터를 그대로 쓴 조각 수}
         previousVersion: {type: [string, 'null']}
         carriedRelations: {type: integer, description: 이전 활성 판에서 옮긴 사람 확인 관계 수}
         recheck:

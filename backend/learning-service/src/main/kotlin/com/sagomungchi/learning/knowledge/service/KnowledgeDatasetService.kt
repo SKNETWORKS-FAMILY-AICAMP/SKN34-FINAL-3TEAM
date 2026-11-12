@@ -3,9 +3,7 @@ package com.sagomungchi.learning.knowledge.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
-import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning._common.exception.BusinessException
-import com.sagomungchi.learning.knowledge.client.KnowledgeEmbedder
 import com.sagomungchi.learning.knowledge.domain.ChunkKind
 import com.sagomungchi.learning.knowledge.domain.DatasetStatus
 import com.sagomungchi.learning.knowledge.domain.KnowledgeChunk
@@ -34,8 +32,6 @@ data class KnowledgeDatasetView(
     val version: String,
     val status: DatasetStatus,
     val source: JsonNode,
-    val embeddingModel: String,
-    val embeddingDimensions: Int,
     val chunkCount: Int,
     val relationCount: Int,
     val chunks: Map<String, Int>,
@@ -44,13 +40,10 @@ data class KnowledgeDatasetView(
     val activatedAt: Instant?,
 )
 
-/** 적재 결과: 판 + 원문 문서 수(고시 원문만)·임베딩 호출·재사용·옮긴 관계·다시 확인할 목록 */
+/** 적재 결과: 판 + 원문 문서 수(고시 원문만)·옮긴 관계·다시 확인할 목록 */
 data class KnowledgeLoadResult(
     val dataset: KnowledgeDatasetView,
     val documents: Int,
-    val embeddedTexts: Int,
-    val embeddingRequests: Int,
-    val reusedEmbeddings: Int,
     val previousVersion: String?,
     val carriedRelations: Int,
     val recheck: List<RelationReview>,
@@ -58,13 +51,13 @@ data class KnowledgeLoadResult(
 
 /**
  * 교육과정 지식 판 적재·활성화·제거 (#466, 계약 C9, erd 4.5). 관리 API(운영 스크립트)만 부른다.
- * 적재는 동기: ① LOADING 판 행 → ②~⑥ 조각·학기·관계(이전 활성 판 관계 옮기기 + 새 확인 파일) → ⑦ 검사·수 기록.
- * ⑧ 활성화는 [activate]가 한 트랜잭션으로. 임베딩 실패 등 ① 뒤 실패는 판을 LOADING으로 남긴다
+ * 적재는 동기: ① LOADING 판 행 → ②~⑥ 조각·학기·관계(이전 활성 판 관계 옮기기 + 새 확인 파일) → ⑦ 수 기록.
+ * ⑧ 활성화는 [activate]가 한 트랜잭션으로. ① 뒤 실패는 판을 LOADING으로 남긴다.
+ * 임베딩(C9 ③)은 만들지 않는다: 생성에 벡터 검색을 쓰지 않기로 한 팀 결정(에픽 #463, 2026-11-11). 지식 표는 코드 조회용
  */
 @Service
 class KnowledgeDatasetService(
     private val repository: KnowledgeRepository,
-    private val embedder: KnowledgeEmbedder,
     private val transactions: TransactionTemplate,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
@@ -95,38 +88,19 @@ class KnowledgeDatasetService(
         val now = clock.instant()
         val version = createDataset(command.source, previous?.version, now)
 
-        // ③ 임베딩: 활성 판과 모델·차원이 같으면 같은 본문 벡터 재사용, 나머지는 64개 이하로 나눠 요청
-        val reused = if (previous != null && previous.embeddingModel == embedder.model && previous.embeddingDimensions == KnowledgeEmbedder.DIMENSIONS) {
-            repository.findEmbeddingsByHash(previous.version)
-        } else {
-            emptyMap()
-        }
-        val vectors = HashMap(reused.filterKeys { hash -> chunks.any { it.contentHash == hash } })
-        val missing = chunks.filter { it.contentHash !in vectors }.distinctBy { it.contentHash }
-        var requests = 0
-        missing.chunked(KnowledgeEmbedder.MAX_TEXTS).forEach { batch ->
-            val result = embed(version, batch.map { it.text })
-            requests++
-            batch.zip(result).forEach { (chunk, vector) -> vectors[chunk.contentHash] = vector }
-        }
-
-        // ②④⑦ 한 트랜잭션: 조각·학기·관계, 검사, 수 기록
+        // ②④⑦ 한 트랜잭션: 조각·학기·관계, 수 기록
         transactions.executeWithoutResult {
-            chunks.forEach { repository.insertChunk(version, it, vectors.getValue(it.contentHash)) }
+            chunks.forEach { repository.insertChunk(version, it) }
             standards.forEach { standard ->
                 standard.semesters.forEach { repository.insertSemester(version, standard.id, it, KnowledgeChunks.gradeOfSemester(it)) }
             }
             relations.forEach { repository.insertRelation(version, it) }
-            check(repository.countMissingEmbeddings(version) == 0) { "임베딩이 빈 조각이 있음" }
             repository.updateCounts(version, chunks.size, repository.countRelations(version).values.sum())
         }
         return KnowledgeLoadResult(
             dataset = get(version),
             // 원문 문서 수: 고시 원문 문서만(생각 유형은 팀이 쓴 출제 지침이라 제외)
             documents = chunks.filter { it.kind != ChunkKind.THINKING_TYPE }.mapNotNull { it.source.get("doc")?.asText() }.toSet().size,
-            embeddedTexts = missing.size,
-            embeddingRequests = requests,
-            reusedEmbeddings = missing.map { it.contentHash }.toSet().let { hashes -> chunks.count { it.contentHash !in hashes } },
             previousVersion = previous?.version,
             carriedRelations = carried.size,
             recheck = recheck,
@@ -137,7 +111,6 @@ class KnowledgeDatasetService(
     fun activate(version: String): KnowledgeDatasetView = transactions.execute {
         val dataset = repository.findDataset(version, lock = true) ?: notFound(version)
         if (dataset.status != DatasetStatus.LOADING) conflict("LOADING 판만 활성화할 수 있음: ${dataset.status}")
-        if (repository.countMissingEmbeddings(version) > 0) conflict("임베딩이 빈 조각이 있음")
         val active = repository.findActive(lock = true)
         val basedOn = objectMapper.readTree(dataset.source).get(PREVIOUS_VERSION)?.takeUnless { it.isNull }?.asText()
         if (active?.version != basedOn) conflict("적재 뒤 활성 판이 바뀜(적재 기준 $basedOn, 현재 ${active?.version}). 다시 적재")
@@ -214,8 +187,7 @@ class KnowledgeDatasetService(
         val version = prefix + "%02d".format(next)
         val stored = (source.deepCopy<JsonNode>() as ObjectNode).put(PREVIOUS_VERSION, previous)
         val row = DatasetRow(
-            version, DatasetStatus.LOADING, objectMapper.writeValueAsString(stored), embedder.model,
-            KnowledgeEmbedder.DIMENSIONS, 0, 0, now, null,
+            version, DatasetStatus.LOADING, objectMapper.writeValueAsString(stored), 0, 0, now, null,
         )
         try {
             transactions.executeWithoutResult { repository.insertDataset(row) }
@@ -225,30 +197,8 @@ class KnowledgeDatasetService(
         return version
     }
 
-    /** C6 응답 검사: 모델·차원·개수가 판과 같아야 함. 실패하면 판은 LOADING으로 남는다 */
-    private fun embed(version: String, texts: List<String>): List<FloatArray> {
-        val result = try {
-            embedder.embed(texts)
-        } catch (error: AiCallException) {
-            throw BusinessException(
-                HttpStatus.SERVICE_UNAVAILABLE, error.failureCode, "임베딩 호출 실패",
-                "판 $version 은 LOADING으로 남음. 원인을 고친 뒤 다시 적재",
-            )
-        }
-        val valid = result.model == embedder.model && result.dimensions == KnowledgeEmbedder.DIMENSIONS &&
-            result.vectors.size == texts.size && result.vectors.all { it.size == KnowledgeEmbedder.DIMENSIONS }
-        if (!valid) {
-            throw BusinessException(
-                HttpStatus.BAD_GATEWAY, "AI_BAD_RESPONSE", "임베딩 응답이 판과 다름",
-                "판 $version(${embedder.model}, ${KnowledgeEmbedder.DIMENSIONS}) ≠ 응답(${result.model}, ${result.dimensions}, ${result.vectors.size}개)",
-            )
-        }
-        return result.vectors
-    }
-
     private fun view(row: DatasetRow) = KnowledgeDatasetView(
-        row.version, row.status, objectMapper.readTree(row.source), row.embeddingModel, row.embeddingDimensions,
-        row.chunkCount, row.relationCount, repository.countChunksByKind(row.version), repository.countRelations(row.version),
+        row.version, row.status, objectMapper.readTree(row.source), row.chunkCount, row.relationCount, repository.countChunksByKind(row.version), repository.countRelations(row.version),
         row.createdAt, row.activatedAt,
     )
 

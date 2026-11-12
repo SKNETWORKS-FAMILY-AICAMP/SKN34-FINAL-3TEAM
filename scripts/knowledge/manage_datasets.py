@@ -29,7 +29,7 @@ REVIEW_COLUMNS = (
     "relationType", "standardCode", "standardStatement", "target", "targetText", "evidence", "similarity",
     "candidateSource", "decision", "modifiedTarget", "reason", "reviewer", "reviewedAt", "datasetVersion",
 )
-# 실제 추출본 적재는 임베딩 호출 수십 번(1~2분)이라 동기 요청을 넉넉히 기다린다(동섭 결정 2026-11-11)
+# 적재는 동기 요청(동섭 결정 2026-11-11). 임베딩이 없어 실제 추출본도 수 초지만 넉넉히 기다린다
 TIMEOUT_SECONDS = 600
 
 
@@ -90,15 +90,11 @@ def summary(result):
     return {
         "version": dataset["version"],
         "status": dataset["status"],
-        "embeddingModel": dataset["embeddingModel"],
         "documents": result["documents"],
         "chunkCount": dataset["chunkCount"],
         "chunks": dataset["chunks"],
         "relationCount": dataset["relationCount"],
         "relations": dataset["relations"],
-        "embeddedTexts": result["embeddedTexts"],
-        "embeddingRequests": result["embeddingRequests"],
-        "reusedEmbeddings": result["reusedEmbeddings"],
         "previousVersion": result.get("previousVersion"),
         "carriedRelations": result["carriedRelations"],
         "recheck": len(result["recheck"]),

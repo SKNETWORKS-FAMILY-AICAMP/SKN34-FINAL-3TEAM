@@ -651,29 +651,48 @@ local kind에서 core·learning·ai·report를 실제로 붙여 확인. 데모 �
 - 고시 개정 확인(2026-11-11): 제2026-1호 일부개정과 제2022-33호의 초3~6 대상 교과 성취기준 331개 문장이 같음
 - 시험: `scripts/tests/test_knowledge_contracts.py`
 
-## 29. 교육과정 지식 저장소 (#466, 에픽 #463, 2026-11-11)
+## 29. 교육과정 지식 저장소 (#466, 에픽 #463, 2026-11-11·12)
 
-#464 계약(C2·C3·C9)대로 `learning_db`에 지식 판·조각·관계 테이블과 판 적재·활성화·제거를 만들었다.
+#464 계약(C2·C3·C9)대로 `learning_db`에 지식 판·조각·관계 테이블과 판 적재·활성화·제거를 만들었다. 2026-11-11 팀 결정(에픽 #463)으로 미션·테마 생성에 벡터 검색·임베딩을 쓰지 않게 되어, 지식 표는 성취기준·생각 유형 **코드 조회용 관계형 표**로 정리했다(V17).
 
-- 테이블: learning V14 `knowledge_dataset`·`knowledge_chunk`·`knowledge_standard_semester`·`knowledge_fits`·`knowledge_prerequisite`·`knowledge_covers`
+- 테이블: learning V14 `knowledge_dataset`·`knowledge_chunk`·`knowledge_standard_semester`·`knowledge_fits`·`knowledge_prerequisite`·`knowledge_covers`. V17이 임베딩 칸(`knowledge_chunk.embedding vector(1536)`)·HNSW 인덱스·`knowledge_dataset.embedding_model`·`embedding_dimensions`를 지움
 - 판 관리 API: `/internal/admin/knowledge/datasets…`([api-spec 4.1.3](../design/api-spec.md#413-교육과정-지식-판-관리-466)), 운영 스크립트 `scripts/knowledge/manage_datasets.py`
-- `vector` 확장은 관리자 bootstrap([DB 개발 가이드 8.7](db-dev-guide.md#87-learning_db-vector-확장-466))
+- 조회 API: #469 코드 조회(`standards?codes`, `thinking-types/{type}`)가 `ACTIVE` 판 하나만 읽음
+- `vector` 확장은 관리자 bootstrap([DB 개발 가이드 8.7](db-dev-guide.md#87-learning_db-vector-확장-466)). 지금 쓰는 칸은 없지만 V14를 처음부터 적용할 때 필요
 
 | 항목 | 결정 (동섭 2026-11-11) | 근거 |
 |---|---|---|
 | 관리 API 접근 | learning 내부 관리 경로 + 운영 스크립트, `SYSTEM` 역할. core 프록시·관리자 화면 없음 | 판 적재는 개발자·운영자 작업 |
-| 벡터 매퍼 | 문자열 + `::vector` 형변환 | 새 의존성 없음. 조각 수천 개 규모 |
-| 임베딩 | `app.knowledge.embedding` = `ai`(기본) \| `fake` | `fake-bigram-v1`을 Kotlin으로 옮겨 ai 가짜와 같은 벡터(시험이 대조) |
 | 적재 실행 | 동기 요청(스크립트가 10분까지 대기) | 실패하면 판이 `LOADING`으로 남는 C9 규칙으로 충분 |
+| 임베딩 | 만들지 않음(V17, 2026-11-12 정리) | 생성은 학기 대응표·성취기준 코드 규칙으로 고름(에픽 #463 결정). 처음 구현(V14)의 `app.knowledge.embedding`·임베딩 재사용·활성화 전 임베딩 검사는 지움 |
 
 - 활성화는 적재와 분리. 적재 때 활성 판을 `source.previousVersion`에 두고, 활성화 때 활성 판이 바뀌었으면 409
 - 같은 관계 여러 행은 `reviewedAt`이 늦은 행. 이전 판에서 옮긴 관계보다 늦은 `REJECT`는 그 관계를 뺌
+- `content_hash`는 판을 바꿀 때 옮긴 관계의 끝 본문이 바뀌었는지 판정하는 데만 씀(바뀌면 다시 확인할 목록)
 - 실패한 `LOADING` 판은 지우지 않음(하루 99개 상한)
 - 샘플 확인 파일(reviewer `SAMPLE`)은 적재가 거부. kind 샘플 적재는 확인 파일 없이
-- 같은 입력 재적재는 임베딩 0회(본문 해시로 재사용)
 - 정렬 주의: Debian glibc는 `초1~2`가 `중1~3`보다 앞. 시험의 학년군 정렬은 `COLLATE "C"`로 고정
 - learning 마이그레이션을 적용하는 검증 스크립트는 pgvector 이미지 사용(V14가 `vector` 타입)
-- 시험: `KnowledgeRulesTest`, `KnowledgeDatasetServiceTest`, `scripts/tests/test_knowledge_manage_datasets.py`
+- 시험: `KnowledgeRulesTest`(조각 해시·covers 학년·학기가 ai `fake.py`와 같음, 관계 규칙), `KnowledgeDatasetServiceTest`(적재·재적재 멱등·교체·제거·관계 옮기기), `scripts/tests/test_knowledge_manage_datasets.py`
+
+### 실제 추출본 적재 (kind, 2026-11-12)
+
+#465 `curriculum-v1`(교육부 고시 제2022-33호 별책 5~9, 1,341건)을 공유 kind에 적재·활성화했다. 사람 확인 관계(#468 확인 파일)는 아직 없어 학기 관계만 들어갔다.
+
+| 항목 | 값 |
+|---|---|
+| 판 | `kn-20261112-01` `ACTIVE`(이전 샘플 판 `kn-20261111-01`은 `RETIRED`) |
+| 원문 문서 | 5(국어·도덕·사회·수학·과학 교과 별책) |
+| 조각 | 1,341 = 성취기준 331·영역 114·내용 요소 886·교과 지침 5·생각 유형 5 |
+| 성취기준(교과) | 과학 102·수학 92·국어 64·사회 49·도덕 24 |
+| 학기 관계 | 425 = 3-1 56·3-2 56·4-1 58·4-2 54·5-1 47·5-2 50·6-1 53·6-2 51 |
+| 사람 확인 관계 | fits 0·prerequisite 0·covers 0(#468 확인 전). 내용 요소 학년·학기는 covers가 들어오면 채워짐 |
+| 소요 시간 | 적재·활성화 5초(운영 스크립트 기준) |
+| 표 크기 | `knowledge_chunk` 25 MB(V14 임베딩 칸 포함 시점. V17 적용 뒤 줄어듦) |
+
+- 확인: 성취기준 문장 331개가 `achievement_standard`와 같아 적재가 멈추지 않음. 코드 조회 `4수01-06`·`6국01-02` 본문, 3-1 수학 성취기준 18개
+- 이 적재는 V17 전 배포본(가짜 임베딩 `fake-bigram-v1` 설정)으로 했다. V17이 임베딩 칸을 지워도 조각·관계 행은 그대로 남는다
+- 원래 계획한 실제 OpenAI 임베딩(토큰 약 187,000개·요청 21회·약 0.004달러)은 팀 결정에 따라 부르지 않았다. 국어 교과 지침 조각 하나(11,445자)가 임베딩 상한(8,000자)을 넘는 문제도 임베딩을 쓰지 않아 없어졌다
 
 ## 30. 지식 관계 후보 생성과 사람 확인 (#468, 에픽 #463, 2026-11-11)
 

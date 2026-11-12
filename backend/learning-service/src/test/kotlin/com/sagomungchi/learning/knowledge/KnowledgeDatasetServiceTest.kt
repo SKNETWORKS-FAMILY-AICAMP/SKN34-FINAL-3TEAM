@@ -3,7 +3,6 @@ package com.sagomungchi.learning.knowledge
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
-import com.sagomungchi.learning.knowledge.client.FakeKnowledgeEmbedder
 import com.sagomungchi.learning.knowledge.domain.DatasetStatus
 import com.sagomungchi.learning.knowledge.domain.KnowledgeInputException
 import com.sagomungchi.learning.knowledge.domain.RelationType
@@ -16,21 +15,18 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import kotlin.math.ceil
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** 지식 판 적재·재적재(멱등)·교체·제거·관계 옮기기 (#466, C9). 실제 PostgreSQL(pgvector)·가짜 임베딩 */
+/** 지식 판 적재·재적재(멱등)·교체·제거·관계 옮기기 (#466, C9). 실제 PostgreSQL, 임베딩 없음(V17) */
 @AutoConfigureMockMvc
-@TestPropertySource(properties = ["app.knowledge.embedding=fake"])
 class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var service: KnowledgeDatasetService
     @Autowired lateinit var repository: KnowledgeRepository
@@ -45,41 +41,27 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
     private val semesterCount = records.filter { it["kind"].asText() == "standard" }.sumOf { it["semesters"].size() }
 
     @Test
-    fun `샘플 적재는 LOADING 판에 215개 조각·학기 관계를 넣고 모든 임베딩을 채움`() {
+    fun `샘플 적재는 LOADING 판에 215개 조각·학기 관계를 넣음`() {
         val result = service.load(KnowledgeLoadCommand(source, records, emptyList()))
         val dataset = result.dataset
         assertTrue(Regex("^kn-\\d{8}-01$").matches(dataset.version))
         assertEquals(DatasetStatus.LOADING, dataset.status)
-        assertEquals(FakeKnowledgeEmbedder.MODEL, dataset.embeddingModel)
         assertEquals(215, dataset.chunkCount)
         assertEquals(mapOf("CONTENT" to 176, "DOMAIN" to 14, "STANDARD" to 15, "SUBJECT_GUIDE" to 5, "THINKING_TYPE" to 5), dataset.chunks)
         assertEquals(mapOf("SEMESTER" to semesterCount, "FITS" to 0, "PREREQUISITE" to 0, "COVERS" to 0), dataset.relations)
         assertEquals(semesterCount, dataset.relationCount)
         assertEquals(1, result.documents)
-        assertEquals(ceil(result.embeddedTexts / 64.0).toInt(), result.embeddingRequests)
-        assertEquals(0, repository.countMissingEmbeddings(dataset.version))
         assertNull(dataset.source["previousVersion"]?.takeUnless { it.isNull })
-        // 저장한 벡터가 가짜 규칙 그대로(코사인 거리 0)
-        val text = jdbc.queryForObject(
-            "SELECT text FROM knowledge_chunk WHERE dataset_version = ? AND id = '4수01-06'", String::class.java, dataset.version,
-        )!!
-        val distance = jdbc.queryForObject(
-            "SELECT embedding <=> ?::vector FROM knowledge_chunk WHERE dataset_version = ? AND id = '4수01-06'",
-            Double::class.java, KnowledgeRepository.vectorText(FakeKnowledgeEmbedder().vector(text)), dataset.version,
-        )!!
-        assertTrue(distance < 1e-6, "distance=$distance")
     }
 
     @Test
-    fun `같은 입력을 다시 적재하면 같은 조각·관계 수, 활성 판 임베딩을 재사용하고 교체 뒤 이전 판을 제거`() {
+    fun `같은 입력을 다시 적재하면 같은 조각·관계 수, 교체 뒤 이전 판을 제거`() {
         val first = service.load(KnowledgeLoadCommand(source, records, reviews))
         service.activate(first.dataset.version)
         val second = service.load(KnowledgeLoadCommand(source, records, reviews))
         assertEquals(first.dataset.chunks, second.dataset.chunks)
         assertEquals(first.dataset.relations, second.dataset.relations)
         assertEquals(first.dataset.relationCount, second.dataset.relationCount)
-        assertEquals(0, second.embeddingRequests)
-        assertEquals(215, second.reusedEmbeddings)
         assertEquals(first.dataset.version, second.previousVersion)
         assertTrue(second.recheck.isEmpty())
 
@@ -131,7 +113,6 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
         assertEquals(first.dataset.relations.getValue("COVERS") - coversOfDropped, second.dataset.relations["COVERS"])
         assertEquals(first.dataset.relations["FITS"], second.dataset.relations["FITS"])
         assertEquals(214, second.dataset.chunkCount)
-        assertEquals(1, second.embeddingRequests) // 고친 생각 유형 하나만 새로 임베딩
         assertTrue(second.recheck.any { it.relationType == RelationType.COVERS && it.target == dropped && it.decision.isEmpty() })
         assertTrue(second.recheck.any { it.relationType == RelationType.FITS && it.target == fits.target })
     }

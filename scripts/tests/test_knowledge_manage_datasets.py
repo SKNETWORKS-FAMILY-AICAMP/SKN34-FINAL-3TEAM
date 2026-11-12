@@ -41,11 +41,11 @@ class FakeLearning(BaseHTTPRequestHandler):
         if self.path.endswith("/activate"):
             self._reply(200, {"status": "ACTIVE"})
             return
-        dataset = {"version": "kn-20261111-01", "status": "LOADING", "embeddingModel": "fake-bigram-v1",
+        dataset = {"version": "kn-20261111-01", "status": "LOADING",
                    "chunkCount": len(body["records"]), "chunks": {}, "relationCount": 0, "relations": {}}
         recheck = [{"relationType": "COVERS", "standardCode": "4수01-06", "target": "x", "evidence": "끝이 새 판에 없어 옮기지 않음"}]
-        self._reply(201, {"dataset": dataset, "documents": 1, "embeddedTexts": 3, "embeddingRequests": 1,
-                          "reusedEmbeddings": 0, "previousVersion": None, "carriedRelations": 0, "recheck": recheck})
+        self._reply(201, {"dataset": dataset, "documents": 1,
+                          "previousVersion": None, "carriedRelations": 0, "recheck": recheck})
 
     def do_DELETE(self):
         FakeLearning.calls.append((self.command, self.path, dict(self.headers), None))
