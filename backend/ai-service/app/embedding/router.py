@@ -20,4 +20,4 @@ async def create_embeddings(
     body: EmbeddingRequest,
     service: Annotated[EmbeddingService, Depends(get_embedding_service)],
 ) -> EmbeddingResponse:
-    return await service.embed(body.texts)
+    return await service.embed(body.texts, body.purpose)

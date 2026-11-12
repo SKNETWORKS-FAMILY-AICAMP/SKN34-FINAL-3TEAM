@@ -65,6 +65,30 @@ def test_returns_model_dimensions_and_vectors_in_order() -> None:
     assert body["vectors"] == [fake_vector("첫째 글", 8), fake_vector("둘째 글", 8)]
 
 
+@pytest.mark.parametrize(
+    ("body", "call_type"),
+    [
+        ({"texts": ["a"]}, "KNOWLEDGE_EMBEDDING"),  # 생략은 KNOWLEDGE (하위 호환)
+        ({"texts": ["a"], "purpose": "KNOWLEDGE"}, "KNOWLEDGE_EMBEDDING"),
+        ({"texts": ["a"], "purpose": "MEMORY"}, "MEMORY_EMBEDDING"),
+    ],
+)
+def test_purpose_sets_usage_call_type(body: dict, call_type: str) -> None:
+    usages: list = []
+    client = ScriptedClient(ProviderEmbeddings("m", [[0.1, 0.2, 0.3]], 3))
+    client._recorder = usages.append
+    response = post(client, body)
+    assert response.status_code == 200
+    assert [usage.call_type for usage in usages] == [call_type]
+
+
+def test_unknown_purpose_is_400() -> None:
+    for purpose in ("OTHER", None, "memory"):
+        response = post(FakeEmbeddingClient(8), {"texts": ["a"], "purpose": purpose})
+        assert response.status_code == 400, purpose
+        assert response.json()["code"] == "VALIDATION_FAILED"
+
+
 def test_missing_internal_token_is_401() -> None:
     assert post(FakeEmbeddingClient(8), {"texts": ["a"]}, headers={}).status_code == 401
 
