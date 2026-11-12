@@ -1,6 +1,38 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { retentionApi } from './api.ts'
-import type { LookItem, Points, Reaction } from '../../domain/retention.ts'
+import type { FrameSlot, LookItem, Points, Reaction } from '../../domain/retention.ts'
+
+// ---------- 내 방 추억의 벽·추억 앨범 (2.12, P27) ----------
+export const useFrameSlots = (childId: string | undefined) =>
+  useQuery({ queryKey: ['frame-slots', childId], queryFn: ({ signal }) => retentionApi.frameSlots(signal), enabled: !!childId, retry: false })
+/** 저장이 끝나면 서버가 돌려준 목록으로 바꾸고, 앨범의 전시 여부도 다시 받는다 */
+export function useSaveFrameSlots(childId: string | undefined) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: (slots: { slotNo: number; themeId: string; weekStart: string }[]) => retentionApi.saveFrameSlots(slots),
+    onSuccess: (saved) => {
+      cache.setQueryData<FrameSlot[]>(['frame-slots', childId], saved)
+      void cache.invalidateQueries({ queryKey: ['album', childId] })
+    },
+  })
+}
+export const useAlbum = (childId: string | undefined, page = 0, size = 12) =>
+  useQuery({ queryKey: ['album', childId, page, size], queryFn: ({ signal }) => retentionApi.album(signal, page, size), enabled: !!childId, retry: false })
+export const useEpisode = (childId: string | undefined, themeId: string, weekStart: string) =>
+  useQuery({
+    queryKey: ['album', childId, 'episode', themeId, weekStart],
+    queryFn: ({ signal }) => retentionApi.episode(themeId, weekStart, signal),
+    enabled: !!childId && !!themeId && !!weekStart,
+    retry: false,
+  })
+export function useMarkFramesSeen(childId: string | undefined) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: (frames: { themeId: string; weekStart: string }[]) =>
+      Promise.all(frames.map((f) => retentionApi.markFrameSeen(f.themeId, f.weekStart))),
+    onSettled: () => cache.invalidateQueries({ queryKey: ['album', childId] }),
+  })
+}
 
 /** 참여 기능 조회는 학습 화면을 막지 않는다: 실패해도 재시도 없이 오류만 보인다. */
 const quiet = { retry: false } as const

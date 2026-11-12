@@ -41,6 +41,8 @@ import type { Child, DemoScenario, Period, PublicAttempt } from '../domain/class
 import { ActivityPaper, Brand, ErrorNotice, Modal } from './shared/ClassroomParts.tsx'
 import { StudentCommunity } from './student/world/StudentCommunity.tsx'
 import { StudentPoints } from './student/world/StudentPoints.tsx'
+import { StudentRoom } from './student/world/StudentRoom.tsx'
+import { StudentAlbum, StudentEpisode } from './student/world/StudentAlbum.tsx'
 import type { AttemptContext } from '../domain/retention.ts'
 import { StudentSharingPage } from './student/StudentSharingPage.tsx'
 import { StudentWorkPage } from './student/StudentWorkPage.tsx'
@@ -50,7 +52,7 @@ import { ParentUnlock } from './auth/ParentUnlock.tsx'
 import { ParentIdLogin } from './auth/ParentPasswordForms.tsx'
 
 const { recentPeriod, previousWeek } = displayPeriods
-type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'community' | 'points' | 'settings'
+type Page = 'home' | 'room' | 'album' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'community' | 'points' | 'settings'
 export function ClassroomApp() {
   const auth = useAuthentication(),
     { session, setSession, selected, setSelected, expired, setExpired, scenario, setScenario } =
@@ -62,7 +64,10 @@ export function ClassroomApp() {
   const work = location.pathname.startsWith('/student/attempts/')
     ? location.pathname.split('/')[3]
     : null
-  const studentPage: StudentPage = (['home', 'missions', 'activities', 'community', 'points', 'settings'] as const).find((p) => p === page) ?? 'journal'
+  const studentPage: StudentPage = (['home', 'room', 'album', 'missions', 'activities', 'community', 'points', 'settings'] as const).find((p) => p === page) ?? 'journal'
+  // 추억 앨범 회차 상세 /student/album/:themeId/:weekStart (P27, #561)
+  const [, , , episodeTheme, episodeWeek] = location.pathname.split('/').map((s) => { try { return decodeURIComponent(s) } catch { return s } })
+  const episode = studentPage === 'album' && episodeTheme && episodeWeek ? { themeId: episodeTheme, weekStart: episodeWeek } : null
   const typeFilter = new URLSearchParams(location.search).get('type')
   const setPage = (page: Page) => navigate(`/${session?.role.toLowerCase() ?? 'parent'}/${page}`)
   const setWork = (id: string | null) =>
@@ -366,6 +371,24 @@ export function ClassroomApp() {
               <StudentCommunity key={child.id} child={child} onSettings={() => setPage('settings')} />
             ) : studentPage === 'points' ? (
               <StudentPoints key={child.id} child={child} />
+            ) : studentPage === 'room' ? (
+              <StudentRoom key={child.id} child={child} onTheme={() => setPage('home')} onAlbum={() => setPage('album')} />
+            ) : studentPage === 'album' && episode ? (
+              <StudentEpisode
+                key={`${child.id}:${episode.themeId}:${episode.weekStart}`}
+                child={child}
+                themeId={episode.themeId}
+                weekStart={episode.weekStart}
+                onBack={() => setPage('album')}
+                onAttempt={setWork}
+              />
+            ) : studentPage === 'album' ? (
+              <StudentAlbum
+                key={child.id}
+                child={child}
+                onRoom={() => setPage('room')}
+                onOpen={(e) => navigate(`/student/album/${encodeURIComponent(e.themeId)}/${encodeURIComponent(e.weekStart)}`)}
+              />
             ) : studentPage === 'activities' ? (
               <ThinkingActivitiesPage key={child.id} child={child} />
             ) : studentPage === 'home' ? (
@@ -376,6 +399,7 @@ export function ClassroomApp() {
                 onStartTheme={(m, context) => openMission(m, context)}
                 onType={(t) => navigate(`/student/missions?type=${t}`)}
                 onJournal={() => setPage('journal')}
+                onRoom={() => setPage('room')}
               />
             ) : studentPage === 'missions' ? (
               <StudentMissions

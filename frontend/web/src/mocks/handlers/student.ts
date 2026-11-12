@@ -24,7 +24,7 @@ import { mockLooks, persistLooks } from '../fixtures/studentLook.ts'
 import { attemptGuardianPassword, lockParentSession, parentSessionLocked } from '../fixtures/guardianPassword.ts'
 import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook.ts'
 import type { StudentLook } from '../../domain/studentLook.ts'
-import { companionKey, ITEM_SLOTS, themeKey } from '../../domain/retention.ts'
+import { companionKey, FURNITURE_SLOTS, ITEM_SLOTS, themeKey } from '../../domain/retention.ts'
 import type { AttemptContext } from '../../domain/retention.ts'
 import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, weeklyThemeFor } from '../fixtures/retention.ts'
 import { difficultyCodes } from '../../domain/learning.ts'
@@ -135,6 +135,10 @@ export function mockStudent() {
   return studentOnly()
 }
 export const mockStudentHome = (c: Child) => store.home(c)
+/** 추억 앨범 목업(P27)이 회차 문제를 기존 시도 상세로 잇는 데 쓰는 그 학생의 최근 시도 */
+export const mockLatestAttempt = (studentId: string, missionId: string) =>
+  store.snapshot().attempts.filter((a) => a.studentId === studentId && a.mission.id === missionId)
+    .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0]?.attemptId ?? null
 /** 2.11 시작 맥락 검사(목업). 맥락 없이 부르는 기존 화면은 검사하지 않는다. */
 async function checkContext(request: Request, missionId: string) {
   const text = await request.clone().text()
@@ -342,10 +346,13 @@ export const studentHandlers = [
         throw new ApiError({ status: 409, code: 'LOOK_LOCKED', title: '아직 해금하지 않은 꾸미기예요.' })
       let equipped: StudentLook['equipped']
       if (body.equipped !== undefined) {
-        equipped = { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null }
-        for (const slot of ITEM_SLOTS) {
+        // 가구 칸(P27, core #555 기준안): 생략하면 착용 유지, null이면 기본 스킨
+        equipped = { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null,
+          DESK: before?.equipped?.DESK ?? null, WALL: before?.equipped?.WALL ?? null, WARDROBE: before?.equipped?.WARDROBE ?? null }
+        for (const slot of [...ITEM_SLOTS, ...FURNITURE_SLOTS]) {
+          if (!(slot in body.equipped)) continue
           const key = body.equipped?.[slot]
-          if (key === null || key === undefined) continue
+          if (key === null || key === undefined) { equipped[slot] = null; continue }
           if (typeof key !== 'string' || !isUnlocked(me.id, key))
             throw new ApiError({ status: 409, code: 'LOOK_LOCKED', title: '아직 해금하지 않은 아이템이에요.' })
           equipped[slot] = key
