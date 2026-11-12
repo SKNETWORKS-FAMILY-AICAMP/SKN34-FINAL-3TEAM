@@ -123,6 +123,29 @@ NAT는 정지 버튼이 있는 자원이 아니다. 시간 요금을 없애려�
 - 예상 절감: 하루 약 3천 원(NAT 시간·EIP, ALB 시간·공인 IP). 남는 고정비는 EKS 컨트롤 플레인·EBS·스냅숏·RDS 저장소·S3·ECR·Secrets Manager·로그
 - RDS는 2026-11-06 01:19 UTC에 정지해 7일 뒤(2026-11-13 10:19 KST 무렵) 자동으로 켜진다. 켜지면 다시 정지한다(정지는 다시 최대 7일)
 
+2026-11-12 EKS 클러스터 삭제(동섭 승인): NAT·ALB 삭제 뒤 남은 가장 큰 고정비(컨트롤 플레인 하루 약 3,300원 추정)를 없앴다.
+- 삭제 전 백업: ESO 대상이 아닌 관측 Secret 2개(`observability-credentials`, `discord-alert-webhook`)를 Secrets Manager `sagomungchi/demo/observability/grafana-admin`·`sagomungchi/demo/observability/discord-webhook`에 복사(원본과 해시 일치 확인, 값 미출력). 웹훅 TLS·LB TLS Secret은 chart가 다시 만든다
+- 작업자 PC(저장소 밖)에 보관: `describe-cluster`·노드그룹 2개·add-on 7개·access entry 3개와 정책, Pod Identity 8개, Helm release 11개 목록과 values, Karpenter NodePool·EC2NodeClass, Ingress, PVC, Deployment·StatefulSet replica 수. values·Ingress에는 비밀 참조가 있을 수 있어 저장소에 넣지 않는다
+- 노드그룹 `application`·`platform-observability`(0대) 삭제 → 클러스터 `sagomungchi-demo-eks` 삭제. Pod Identity 연결은 함께 사라졌다. 클러스터 SG `sg-086c7c83b3638da59`는 RDS SG의 5432 규칙이 참조하고 있어 남았다(비용 없음)
+- 남긴 것: RDS·S3·ECR·Secrets Manager·IAM 역할 10개·VPC·스냅숏·CloudWatch 로그, PVC였던 EBS 4개(위 표, 상태 available). 볼륨은 재연결 선택지로 둔다
+- Secret 백업을 위해 작업자 IP를 공개 접근 CIDR에 잠시 추가했고, 백업 뒤 원래 4개로 되돌린 것을 확인한 다음 클러스터를 지웠다
+
+### 재생성 순서 (2026-11-12 EKS 삭제 이후)
+
+아래 "재개 순서"는 클러스터가 있을 때의 절차다. 클러스터를 지웠으므로 다시 켤 때는 이 순서를 먼저 따른다. **처음 실행하는 절차**이므로 12/8 시연 1주 이상 전에 시작하고, 막힌 단계와 걸린 시간을 기록한다. 명령은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185)를 따른다.
+
+1. `demo_stack.py plan`으로 남은 자원을 확인하고 `apply --confirm-account 347161580747`로 NAT·EIP를 다시 만든다. private route table 두 개의 blackhole `0.0.0.0/0`을 `aws ec2 replace-route ... --nat-gateway-id <새 NAT>`로 고친다(`apply`는 기존 경로를 바꾸지 않음).
+2. RDS를 시작해 available을 확인한다.
+3. `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` → `eksctl create cluster -f <파일>`로 클러스터·노드그룹·add-on·Pod Identity를 만든다. 만든 뒤 access entry가 기존 `student` 권한과 같은지, Pod Identity 8개가 이 문서의 `cluster.json`과 같은지 확인한다.
+4. `apply --after-eksctl`로 새 클러스터 SG에서 RDS 5432를 허용한다. 앱이 RDS에 붙는 것을 확인한 뒤, 옛 클러스터 SG `sg-086c7c83b3638da59`를 가리키는 규칙과 그 SG를 정리한다.
+5. [prod 초기 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185) 2단계(gp3·namespace·ESO 2.14.0·LB Controller 1.14.1·`rds-ca`·platform-data)를 따른다. Karpenter 1.15.1과 NodePool·EC2NodeClass는 보관한 JSON과 이 문서 맨 위 Karpenter 설명(#211)을 대조해 설치한다.
+6. **DB는 그대로이므로 RDS bootstrap·migration·운영 데이터 seed는 다시 실행하지 않는다.** 앱 6개를 보관한 Helm values(같은 이미지 digest)로 설치하고 readiness를 확인한다.
+7. 관측 Secret 2개를 Secrets Manager 백업에서 만들고(값 미출력) observability chart를 설치한다. Grafana는 새 PVC면 대시보드·경보를 chart에서 다시 읽는지 확인한다.
+8. ALB Ingress를 origin 헤더를 Git 밖에서 주입해 적용하고, 새 ALB DNS로 CloudFront `/api/*` origin을 바꾼다. prefix list 제한을 확인한다.
+9. 로그인→학습 제출→리포트 조회를 확인하고 걸린 시간·실패 항목을 이 문서와 #573에 기록한다.
+
+RabbitMQ·Redis·Prometheus·Grafana는 새 PVC로 시작한다(큐는 정지 때 비어 있었음). 옛 EBS 4개를 다시 쓰려면 같은 AZ에 정적 PV로 연결해야 하며, 필요 없다고 확인되면 그때 지운다.
+
 ### 재개 순서와 완료 기준
 
 0. (2026-11-12 축소 이후) NAT를 다시 만든다. `demo_stack.py apply`는 NAT·EIP만 새로 만들고 **기존 private route table의 blackhole 경로는 바꾸지 않으므로**, 두 route table에 `aws ec2 replace-route --destination-cidr-block 0.0.0.0/0 --nat-gateway-id <새 NAT>`를 실행하고 `plan`이 차이 없음을 확인한다. ALB는 3단계에서 LB Controller가 Ingress로 다시 만들며 **DNS 이름이 바뀌므로** CloudFront `/api/*` origin을 새 ALB DNS로 바꾸고 origin 헤더·prefix list 제한이 유지되는지 확인한다.
@@ -134,4 +157,4 @@ NAT는 정지 버튼이 있는 자원이 아니다. 시간 요금을 없애려�
 5. 외부 유입 차단을 해제하기 전에 로그인→학습 제출→리포트 조회를 확인한다. 검증 계정·횟수를 미리 정해 사용 한도와 실제 데이터 영향을 기록한다. 경보 silence를 종료하고 잔여 작업·DLQ·오류를 점검한다.
 6. 실제 중단/재개 시간과 실패 항목을 기록한다. 재개는 아직 실행하지 않았으므로 RTO 달성을 주장하지 않는다. 노드/PVC/DB 복귀 실패 시 공개 재개를 보류하고 원인 해결 또는 검증된 백업 복구로 전환한다.
 
-장기 철거는 별도 단계다. 현재 eksctl 전체 생성 설정·RDS bootstrap·Secret 복구·초기 데이터·새 환경 복원 검증이 미완료이므로 **클러스터 삭제 후 재생성 안은 지금 실행 가능한 축소안으로 취급하지 않는다.** 초기 순서는 [prod 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185)를 따른다.
+장기 철거는 별도 단계다. 2026-11-12에 EKS 클러스터만 지웠고(위 기록) RDS·S3·ECR·Secret은 남겼다. 새 계정·빈 DB에서의 전체 재현(RDS bootstrap·초기 데이터 포함)은 여전히 검증되지 않았다. 초기 순서는 [prod 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185)를 따른다.
