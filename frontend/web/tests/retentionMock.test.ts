@@ -180,7 +180,7 @@ test('이야기 열람: INTRO는 주 1회 기록, OUTRO는 엔딩 전 409, 형�
   assert.equal((await call('/students/me/weekly-theme/story-views', { kind: 'MIDDLE' })).status, 400)
 })
 
-test('정답 고르기: 후보 밖 400, 금요일 문제 마무리 전 409. 맞히면 바로 엔딩, 틀리면 토요일 금요일 다시 풀기 뒤 엔딩', async () => {
+test('정답 고르기: 후보 밖 400, 금요일 문제 학습 완료 전 409. 맞히면 바로 엔딩, 틀리면 토요일 금요일 다시 풀기 뒤 엔딩', async () => {
   weekday(4)
   const childId = await parent()
   await student(childId)
@@ -189,7 +189,7 @@ test('정답 고르기: 후보 밖 400, 금요일 문제 마무리 전 409. 맞�
   if (fridayOpen.attemptStatus !== 'COMPLETED')
     assert.equal((await call('/students/me/weekly-theme/answer-picks', { pick: MOCK_STORY.candidates[0] })).data.code, 'THEME_PICK_NOT_ALLOWED')
 
-  // 엔딩 판정은 목업 함수에 금요일 문제 마무리 상태를 넣어 확인한다.
+  // 엔딩 판정은 목업 함수에 금요일 문제 학습 완료 상태를 넣어 확인한다.
   const done = [...THINKING_ORDER].map((t, i) => ({ id: `m${i}`, title: t, thinkingType: t, status: 'COMPLETED' })) as unknown as Mission[]
   const week = `s1:${weekStart()}`
   retentionState.picks[week] = { pick: MOCK_STORY.answer, correct: true, at: '2026-11-13T01:00:00Z' }
@@ -197,8 +197,10 @@ test('정답 고르기: 후보 밖 400, 금요일 문제 마무리 전 409. 맞�
   assert.deepEqual([right.ending, right.answer, right.outro], ['ENDED', MOCK_STORY.answer, MOCK_STORY.outro])
   assert.ok(right.days.every((d) => d.clue), '마무리한 문제의 단서가 열림')
 
+  assert.deepEqual(right.answerPick, { pick: MOCK_STORY.answer, correct: true }, '#590 고른 정답을 조회에 담음')
   retentionState.picks[week] = { pick: MOCK_STORY.candidates[0], correct: false, at: '2026-11-13T01:00:00Z' }
-  assert.equal(weeklyThemeFor('s1', done, 4).ending, 'NOT_ENDED', '틀리면 바로 엔딩 아님')
+  const wrong = weeklyThemeFor('s1', done, 4)
+  assert.deepEqual([wrong.ending, wrong.answer, wrong.answerPick], ['NOT_ENDED', null, { pick: MOCK_STORY.candidates[0], correct: false }], '틀리면 바로 엔딩 아님, 정답은 숨김')
   weekday(5)
   retentionState.completions[`s1:${weekStart()}:m4`] = { weekday: 5, at: '2026-11-14T01:00:00Z' }
   const after = weeklyThemeFor('s1', done, 4)

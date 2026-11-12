@@ -164,7 +164,7 @@ export const retentionHandlers = [
       return saved({ kind, firstViewThisWeek: first })
     }),
   ),
-  // 큰 질문 정답 고르기(learning #484 판정 흉내): 금요일 문제 마무리 뒤 한 주 한 번, 후보 밖은 400.
+  // 큰 질문 정답 고르기(learning #484 판정 흉내): 금요일 문제 학습 완료 뒤 한 주 한 번, 후보 밖은 400.
   http.post('/api/v1/students/me/weekly-theme/answer-picks', ({ request }) =>
     respond(async () => {
       guard(request)

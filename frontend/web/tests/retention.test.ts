@@ -1,11 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  clueCount,
+  dayAction,
+  dayContext,
   isLookUnlocked,
+  onTimeCount,
+  remainingCandidates,
   readCommunityPosts,
   readLookItems,
   readMyPosts,
   readAnswerPick,
+  pickStage,
   readPoints,
   readThemeMotion,
   readWeeklyTheme,
@@ -135,10 +141,67 @@ test('먼저 띄울 이야기: 시작은 그 주 첫 진입, 종료는 엔딩 �
   assert.equal(storyToShow({ ...sunday, review: { open: true, missions: [] } }), 'OUTRO', '프리미엄 일요일은 토요일과 같음')
 })
 
+test('요일별 할 수 있는 일(#484): 공개된 안 푼 문제 시작, 이어하기는 요일 무관, 다시 풀기는 토요일·프리미엄 일요일만', () => {
+  const day = (d: string, state: string, attemptStatus: string, extra: Record<string, unknown> = {}) =>
+    ({ day: d, missionId: `m-${d}`, thinkingType: 'ANALYZE', state, attemptStatus, ...extra })
+  const week = (open: boolean, days: ReturnType<typeof day>[]) =>
+    readWeeklyTheme({ themeId: 't', weekStart: '2026-11-09', title: '테마', days, review: { open, missions: [] }, candidates: ['가', '나', '다', '라'] })!
+  const wed = week(false, [
+    day('MON', 'OPEN', 'COMPLETED', { clue: '단서1', rulesOut: ['가'], completedOnDay: true }),
+    day('TUE', 'OPEN', 'NOT_STARTED'),
+    day('WED', 'OPEN', 'IN_PROGRESS'),
+    day('THU', 'LOCKED', 'NOT_STARTED'),
+    day('FRI', 'LOCKED', 'NOT_STARTED'),
+  ])
+  assert.deepEqual(wed.days.map((d) => dayAction(wed, d)), ['DONE', 'START', 'RESUME', 'LOCKED', 'LOCKED'])
+  assert.deepEqual(wed.days.map((d) => dayContext(dayAction(wed, d))), [null, 'THEME_DAY', null, null, null])
+  assert.equal(todayThemeDay(wed)?.day, 'WED', '쌓여 열린 문제 중 마지막이 오늘')
+  assert.deepEqual([remainingCandidates(wed), clueCount(wed), onTimeCount(wed)], [['나', '다', '라'], 1, 1])
+
+  const sat = week(true, [
+    day('MON', 'OPEN', 'COMPLETED', { clue: '단서1', rulesOut: ['가'] }),
+    day('TUE', 'OPEN', 'NOT_STARTED'),
+    day('WED', 'OPEN', 'COMPLETED', { clue: '힌트', rulesOut: [] }),
+    day('THU', 'OPEN', 'COMPLETED', { clue: '단서4', rulesOut: ['나', '다'] }),
+    day('FRI', 'OPEN', 'IN_PROGRESS'),
+  ])
+  assert.deepEqual(sat.days.map((d) => dayAction(sat, d)), ['REDO', 'START', 'REDO', 'REDO', 'RESUME'])
+  assert.equal(dayContext('REDO'), 'THEME_REVIEW')
+  assert.equal(todayThemeDay(sat), null, '토요일엔 오늘 문제(당일 풀이)가 없음')
+  assert.deepEqual([remainingCandidates(sat), clueCount(sat)], [['라'], 3], '빈 rulesOut(힌트) 단서도 단서 수에 셈')
+
+  const freeSunday = week(false, [day('MON', 'CLOSED', 'COMPLETED'), day('TUE', 'CLOSED', 'NOT_STARTED'), day('WED', 'CLOSED', 'IN_PROGRESS')])
+  assert.deepEqual(freeSunday.days.map((d) => dayAction(freeSunday, d)), ['DONE', 'CLOSED', 'RESUME'], '무료 일요일도 진행 중 시도는 이어하기')
+  assert.equal(todayThemeDay(freeSunday), null)
+})
+
 test('정답 고르기 결과: 엔딩 전에는 정답을 버리고, 모양이 틀리면 실패로 본다', () => {
   assert.deepEqual(readAnswerPick({ correct: false, ending: 'NOT_ENDED', answer: '새어 나온 정답' }), { correct: false, ending: 'NOT_ENDED', answer: null })
   assert.deepEqual(readAnswerPick({ correct: true, ending: 'ENDED', answer: '부엉이' }), { correct: true, ending: 'ENDED', answer: '부엉이' })
   assert.throws(() => readAnswerPick({ correct: 'yes', ending: 'ENDED' }), /정답 확인/)
+})
+
+test('정답 고르기 단계(#484·#590): 금요일 학습 완료 뒤 한 번, 틀리면 다시 고르지 않고 다시 풀기 대기, 엔딩 뒤 맞았는지 구분', () => {
+  const day = (d: string, state: string, attemptStatus: string) => ({ day: d, missionId: `m-${d}`, thinkingType: 'ANALYZE', state, attemptStatus })
+  const days = (fri: string, state = 'OPEN') =>
+    ['MON', 'TUE', 'WED', 'THU'].map((d) => day(d, state, 'COMPLETED')).concat(day('FRI', state, fri))
+  const theme = (extra: Record<string, unknown>) =>
+    readWeeklyTheme({ themeId: 't', weekStart: '2026-11-09', title: '테마', days: days('COMPLETED'), review: { open: false, missions: [] },
+      bigQuestion: '누구일까?', candidates: ['가', '나', '다', '라'], ...extra })!
+  assert.equal(theme({}).answerPick, null, '고르지 않으면 null')
+  assert.equal(pickStage(theme({})), 'READY')
+  assert.equal(pickStage(theme({ days: days('IN_PROGRESS') })), 'LOCKED', '금요일 문제 학습 완료 전')
+  assert.equal(pickStage(theme({ days: days('COMPLETED', 'CLOSED') })), 'CLOSED', '무료 일요일')
+  assert.equal(pickStage(theme({ candidates: [] })), 'NONE', '후보 없는 테마')
+
+  const wrong = theme({ answerPick: { pick: '가', correct: false } })
+  assert.deepEqual(wrong.answerPick, { pick: '가', correct: false })
+  assert.equal(pickStage(wrong), 'RETRY', '틀리면 다시 고르지 않음')
+  assert.equal(pickStage(theme({ answerPick: { pick: '가', correct: false }, review: { open: true, missions: [] } })), 'RETRY', '토요일도 다시 풀기 마무리 전까지')
+  const endedWrong = theme({ answerPick: { pick: '가', correct: false }, ending: 'ENDED', answer: '라' })
+  const endedRight = theme({ answerPick: { pick: '라', correct: true }, ending: 'ENDED', answer: '라' })
+  assert.deepEqual([pickStage(endedWrong), endedWrong.answerPick?.correct, pickStage(endedRight), endedRight.answerPick?.correct], ['ENDED', false, 'ENDED', true])
+  assert.equal(theme({ answerPick: { pick: '가' } }).answerPick, null, '모양이 틀리면 고르지 않은 것으로 읽음')
 })
 
 test('커뮤니티 응답은 반응 수·학생 ID 없이 읽고, 내 글만 반응 수를 센다', () => {

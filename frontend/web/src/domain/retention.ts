@@ -236,8 +236,10 @@ export interface WeeklyTheme {
   outroMotion: ThemeMotion | null
   answer: string | null
   answerClue: string | null
+  /** 그 주 고른 큰 질문 정답(learning #590). 고르지 않았으면 null. 엔딩 전에는 맞았는지만 알고 정답은 엔딩 뒤 answer로. */
+  answerPick: { pick: string; correct: boolean } | null
 }
-const isDay = (v: unknown): v is ThemeDay => typeof v === 'string' && (THEME_DAYS as string[]).includes(v)
+const isDay =(v: unknown): v is ThemeDay => typeof v === 'string' && (THEME_DAYS as string[]).includes(v)
 const isType = (v: unknown): v is ThinkingType => typeof v === 'string' && (THINKING_ORDER as string[]).includes(v)
 const pick = <T extends string>(v: unknown, values: readonly T[], fallback: T): T =>
   typeof v === 'string' && (values as readonly string[]).includes(v) ? (v as T) : fallback
@@ -297,7 +299,12 @@ export function readWeeklyTheme(raw: unknown): WeeklyTheme | null {
     outroMotion: readThemeMotion(v.outroMotion),
     answer: optText(v.answer),
     answerClue: optText(v.answerClue),
+    answerPick: readPicked(v.answerPick),
   }
+}
+const readPicked = (raw: unknown) => {
+  const p = (raw ?? {}) as Record<string, unknown>
+  return typeof p.pick === 'string' && typeof p.correct === 'boolean' ? { pick: p.pick, correct: p.correct } : null
 }
 
 /** 테마가 닫힌 날(무료 일요일): 공개된 문제도 되돌아보기도 없다. 날짜는 서버가 정하므로 응답으로만 판단한다. */
@@ -385,12 +392,65 @@ export function readAnswerPick(raw: unknown): AnswerPickResult {
     throw new Error('정답 확인 결과를 받지 못했어요. 다시 확인해 주세요.')
   return { correct: v.correct, ending: v.ending, answer: v.ending === 'ENDED' ? optText(v.answer) : null }
 }
+/**
+ * 큰 질문 정답 고르기 단계(#484 규칙·learning 판정, #590 answerPick). 화면 모양과 무관한 판정만 둔다.
+ * - ENDED: 엔딩(정답 공개, 맞았는지는 answerPick.correct)
+ * - NONE: 후보가 없는 테마(사람이 쓴 테마)
+ * - RETRY: 고른 뒤 아직 엔딩 전(틀림). 토요일·프리미엄 일요일에 금요일 문제를 다시 풀어 마무리하면 엔딩, 다시 고르지 않는다
+ * - CLOSED: 무료 일요일(새로 고를 수 없음)
+ * - LOCKED: 금요일 문제를 아직 학습 완료하지 않음
+ * - READY: 지금 고를 수 있음(한 주 한 번)
+ * learning은 금요일 문제 마무리(finished_at)부터 고르게 하지만 웹은 학습 완료(COMPLETED, 돌아보기 저장 뒤 금요일 단서가 열린 뒤)부터
+ * 고르기를 보인다(사용자 결정 2026-11-12: 다섯 단서를 다 보고 고르게. 맞히면 그 자리에서 바로 엔딩, docs/report/frontend.md #487)
+ */
+export type PickStage = 'ENDED' | 'NONE' | 'RETRY' | 'CLOSED' | 'LOCKED' | 'READY'
+export function pickStage(theme: WeeklyTheme): PickStage {
+  if (theme.ending === 'ENDED') return 'ENDED'
+  if (!theme.candidates.length) return 'NONE'
+  if (theme.answerPick) return 'RETRY'
+  if (themeClosed(theme)) return 'CLOSED'
+  return theme.days.find((d) => d.day === 'FRI')?.attemptStatus === 'COMPLETED' ? 'READY' : 'LOCKED'
+}
 /** KST 기준 요일(월=0 … 일=6). */
 export function kstWeekday(now = new Date()) {
   const day = new Date(now.getTime() + 9 * 3600_000).getUTCDay()
   return (day + 6) % 7
 }
-export const todayThemeDay = (theme: WeeklyTheme) => theme.days.find((d) => d.state === 'OPEN') ?? null
+/**
+ * 오늘 공개된 문제(당일 풀이 +5 대상). 월~금은 공개된 문제가 쌓이므로 마지막으로 열린 요일이 오늘이다(#484).
+ * 토요일·프리미엄 일요일(되돌아보기 열림)과 무료 일요일에는 오늘 문제가 없다.
+ */
+export function todayThemeDay(theme: WeeklyTheme) {
+  if (theme.review.open) return null
+  return theme.days.filter((d) => d.state === 'OPEN').at(-1) ?? null
+}
+
+/**
+ * 요일 문제로 지금 할 수 있는 일(#484 규칙, api-spec 2.11). 화면 모양과 무관한 판정만 둔다.
+ * - START: 공개된 안 푼 문제 새로 시작(`THEME_DAY`, 토요일·프리미엄 일요일도)
+ * - RESUME: 진행 중인 시도 이어하기(요일과 무관, 일요일 포함)
+ * - REDO: 마무리한 문제 다시 풀기(`THEME_REVIEW`, 토요일·프리미엄 일요일만)
+ * - DONE: 마무리함(평일·무료 일요일은 다시 풀기 없음)
+ * - LOCKED: 아직 공개 전, CLOSED: 무료 일요일처럼 닫혀 새로 시작할 수 없음
+ */
+export type DayAction = 'START' | 'RESUME' | 'REDO' | 'DONE' | 'LOCKED' | 'CLOSED'
+export function dayAction(theme: WeeklyTheme, day: WeeklyThemeDay): DayAction {
+  if (day.attemptStatus === 'IN_PROGRESS') return 'RESUME'
+  if (day.attemptStatus === 'COMPLETED') return theme.review.open ? 'REDO' : 'DONE'
+  if (day.state === 'OPEN') return 'START'
+  return day.state === 'LOCKED' ? 'LOCKED' : 'CLOSED'
+}
+/** 새로 시작할 때 보내는 시도 맥락. 이어하기는 기존 시도를 열므로 맥락이 없다. */
+export const dayContext = (action: DayAction): AttemptContext | null =>
+  action === 'START' ? 'THEME_DAY' : action === 'REDO' ? 'THEME_REVIEW' : null
+
+/** 아직 빠지지 않은 후보(단서는 학습 완료한 요일만 내려오므로 학생이 본 단서 기준). */
+export const remainingCandidates = (theme: WeeklyTheme) =>
+  theme.candidates.filter((c) => !theme.days.some((d) => d.rulesOut?.includes(c)))
+/** 지금까지 받은 단서 수. */
+export const clueCount = (theme: WeeklyTheme) => theme.days.filter((d) => d.clue).length
+/** 개근 진행: 그 요일 안에 끝낸 날 수(당일 풀이). 개근은 다섯 날 모두. */
+export const onTimeCount = (theme: WeeklyTheme) => theme.days.filter((d) => d.completedOnDay).length
 export function dayStatusText(d: WeeklyThemeDay) {
   if (d.attemptStatus === 'COMPLETED') return '끝냈어요'
   if (d.state === 'OPEN') return d.attemptStatus === 'IN_PROGRESS' ? '이어서 하기' : '오늘 문제'

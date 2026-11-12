@@ -357,6 +357,7 @@ export function weeklyThemeFor(studentId: string, missions: Mission[], grade: nu
     outroMotion: null,
     answer: ended ? MOCK_STORY.answer : null,
     answerClue: ended ? MOCK_STORY.clues[3].clue : null,
+    answerPick: picked ? { pick: picked.pick, correct: picked.correct } : null,
   }
 }
 
