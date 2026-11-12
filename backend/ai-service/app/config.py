@@ -3,7 +3,6 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -113,14 +112,14 @@ class Settings(BaseSettings):
     image_size: str = "1536x864"  # 16:9 바로 생성(공식 크기 조건 안)
     image_quality: str = "medium"
     theme_image_timeout: float = 280.0  # 그림 1장 상한(기준안, 실측 약 30초)
-    # 영상은 시작·종료만(컷 4개). 운영 Google 인증(기준안 WIF)이 정해질 때까지 기본 꺼짐.
-    # 로컬은 gcloud로 받은 접근 토큰을 VIDEO_ACCESS_TOKEN에 넣어 시험(출력·커밋 금지)
+    # 영상은 시작·종료만(컷 4개), 기본 꺼짐. 인증은 Google 표준 자격 증명(#538): 운영은
+    # GOOGLE_APPLICATION_CREDENTIALS(서비스 계정 키 또는 WIF 설정 파일, Secret으로 마운트),
+    # 로컬은 `gcloud auth application-default login`. 자격 증명이 없으면 영상만 건너뜀
     theme_video_enabled: bool = False
     video_provider: Literal["veo", "fake"] = "veo"
     video_model: str = "veo-3.1-fast-generate-001"
-    video_project: str | None = None
+    video_project: str | None = None  # Veo를 호출·청구할 GCP 프로젝트
     video_location: str = "us-central1"
-    video_access_token: SecretStr | None = None
     theme_video_timeout: float = 400.0  # 컷 1개 생성·대기 상한(기준안, 실측 약 115초)
     # 영상 컷 다시 만들기 상한(기준안, 첫 생성 포함 최대 2회). 뭉치 컷은 다시 만들어도 팔이 생겨
     # 거의 실패해(실측 2026-11-11) 비용만 들어서 그림·글(theme_max_regen 2)보다 적게, 끝내 실패하면

@@ -109,14 +109,13 @@ function StudentCustomize({ child, onDone }: { child: Child; onDone: () => void 
         <div><p className="st-meta">{t.title} · {companionLabel(companion)}</p>
           <p className="st-points" role="status">{balance !== undefined ? `내 포인트 ${balance.toLocaleString('ko-KR')}`
             : points.isPending ? '포인트를 확인하고 있어요.' : '포인트를 확인하지 못했어요.'}</p>
-          <p className="st-meta">열린 꾸미기는 누르면 바로 저장돼요.</p>
         </div>
       </div>
       <ErrorNotice error={points.error} retry={() => void points.refetch()} />
       <ErrorNotice error={items.error} retry={() => void items.refetch()} />
       <ErrorNotice error={settings.error} retry={() => void settings.refetch()} />
       {items.isPending && <p role="status">열린 꾸미기를 확인하고 있어요.</p>}
-      {items.isError && <p className="st-meta">열린 꾸미기를 확인한 뒤 해금할 수 있어요. 기본 모습과 지금 쓰는 모습은 유지돼요.</p>}
+      {items.isError && <p className="st-meta">잠시 뒤에 다시 해 볼까요?</p>}
       {confirming && <section ref={confirmation} tabIndex={-1} className="st-unlock-confirm" aria-label="꾸미기 해금 확인">
         <h3>{pendingItem?.name ?? '꾸미기'} 해금할까요?</h3>
         {pendingItem && balance !== undefined && <p>{pendingItem.pricePoints.toLocaleString('ko-KR')}포인트를 써요.
@@ -219,14 +218,13 @@ function StudentCustomize({ child, onDone }: { child: Child; onDone: () => void 
             : save.isPending
               ? '저장하는 중이에요.'
               : save.isSuccess
-                ? '골랐어요. 다른 기기에서도 그대로 보여요.'
+                ? '골랐어요!'
                 : save.isError
                   ? '저장하지 못해서 전에 고른 모습으로 돌아갔어요. 잠시 뒤에 다시 골라 주세요.'
                   : ''}
       </p>
       {unlock.isError && (unlockMessage(unlock.error) ? <p role="alert">{unlockMessage(unlock.error)}</p> : <ErrorNotice error={unlock.error} />)}
       {unlockMessage(save.error) ? <p role="alert">{unlockMessage(save.error)}</p> : <ErrorNotice error={save.error} />}
-      <p className="st-meta">해금한 꾸미기는 계속 쓸 수 있어요. 한 번 쓴 포인트는 돌려받을 수 없어요.</p>
       <div className="cj-modal-actions">
         <button type="button" className="cj-primary" disabled={busy} onClick={onDone}>
           다 골랐어요

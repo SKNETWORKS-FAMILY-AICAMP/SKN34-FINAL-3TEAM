@@ -630,7 +630,7 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 ### 17.3 남은 확인
 
 - 요일↔유형 배치, 후보 수, "마지막 틀린 후보는 목요일 이후" 기준안(P23 개정 필요)
-- 영상 운영 인증(Workload Identity Federation 기준안, 안 되면 Secrets Manager의 서비스 계정 키)·예산
+- 영상 운영 인증(17.4, #538 인프라 확인)·예산
 - 정답 고르기·엔딩 판정과 단서 공개 조건(그날 미션 완료)은 learning #484, 단서 카드·수첩·후보 지우기는 웹 #440
 - core `THEME_VIDEO` 반영 시점
 - 운영 환경 변수에 테마 모델 두 값을 넣을지(배포 담당)
@@ -638,3 +638,21 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 - 기본 뭉치 그림은 기준안(앱 원본 그림이 저장되면 교체)
 - 관리자 부분 다시 생성, 학년에 맞는 성취기준 고르기는 후속
 - 발견: `followup/leak_guard`의 금지어 비교가 숫자 경계 없이 부분 문자열이라 금지어 '6장'이 질문의 '26장'에서 잡힘(미션 초안 경로에도 같은 오탐 가능)
+
+### 17.4 영상 운영 인증 (#538, 2026-11-12)
+
+고정 `VIDEO_ACCESS_TOKEN`(약 1시간 만료, 갱신 경로 없음)을 Google 표준 자격 증명으로 바꿈. 인증 방식(서비스 계정 키·WIF)은 코드가 아니라 `GOOGLE_APPLICATION_CREDENTIALS`가 가리키는 파일로 정해짐.
+
+| 항목 | 내용 | 근거 |
+|---|---|---|
+| 토큰 공급 | `TokenSource`(`async token()`). `GoogleTokenSource`가 `google.auth.default(scopes=cloud-platform)` 자격 증명을 `valid`가 거짓일 때만 갱신(`asyncio.to_thread`, 잠금으로 동시 갱신 1번) | 이벤트 루프를 막지 않고 컷 4개 동시 생성 때 갱신이 겹치지 않게 |
+| 요청 | `VeoVideoClient`가 시작·대기 요청마다 토큰을 받음 | 컷 하나가 최대 400초 대기라 대기 중 만료돼도 갱신되게 |
+| 갱신 실패 | `RefreshError` → `LLM_AUTH_FAILED`(재시도 안 함), `TransportError` → `LLM_CONNECTION`(재시도 가능) | 기존 Veo 상태 코드 분류와 같은 기준 |
+| 자격 증명 없음 | 영상 켜짐 + `VIDEO_PROJECT`일 때만 찾고, 못 찾으면 경고 로그 뒤 영상만 건너뜀 | 지금과 같은 동작 |
+| 설정 | `VIDEO_ACCESS_TOKEN` 삭제(사용자 결정). 로컬은 `gcloud auth application-default login`의 ADC를 그대로 읽음 | 경로를 하나로 |
+| 의존성 | `google-auth[requests]>=2.40`(lock 2.62.2) | 공식 자격 증명 라이브러리 |
+| 운영(기준안) | Veo를 실측한 개인 GCP 프로젝트의 Veo 전용 서비스 계정(`roles/aiplatform.user`) 키 → Secrets Manager → ExternalSecret 파일 마운트 → `GOOGLE_APPLICATION_CREDENTIALS`. WIF(EKS OIDC)는 대안. PC의 ADC는 운영에 쓰지 않음 | 사용자 결정 2026-11-12, PM·인프라 확인 전. 비용은 개인 결제 계정으로 청구 |
+
+- 로컬 확인(2026-11-12): ADC로 갱신 성공, 없는 Veo 작업 조회가 404(인증 통과). 실제 영상 생성은 비용 때문에 하지 않음
+- 인프라 확인(담당자와): 인증 방식 확정, GCP 권한·Veo 동시 요청 할당량, ai-service 서비스 계정 생성(지금 `create: false`)과 S3 쓰기 IRSA, 영상 env(`THEME_VIDEO_ENABLED`·`VIDEO_PROJECT`·`VIDEO_LOCATION`·`VIDEO_MODEL`·`ASSET_S3_BUCKET`·`GOOGLE_APPLICATION_CREDENTIALS`), 자원 한도(메모리 512Mi·CPU 500m, 컷 다시 인코딩에 모자랄 수 있음, 측정 안 함)
+- 자격 증명을 못 찾으면 google-auth가 GCE 메타데이터 서버를 확인하는데 네트워크 정책이 `169.254.0.0/16`을 막아 기동이 몇 초 늦어질 수 있음(영상 켜짐 + `VIDEO_PROJECT`일 때만)

@@ -430,7 +430,7 @@ export function ClassroomApp() {
                   />
                   {records.isSuccess && rows.length === 0 && (
                     <QueryStateNotice state="NO_RECORD">
-                      이 기간·과목에 제출한 답변이 없습니다.
+                      이 기간에 쓴 답이 없어요.
                       <button type="button" className="cj-primary" onClick={() => setPage('missions')}>
                         첫 미션 고르기
                       </button>
@@ -828,7 +828,7 @@ function MissionInstructions({
     m = query.data
   return (
     <Modal title={m?.title ?? '미션 안내'} onClose={onClose}>
-      {query.isPending && <p role="status">질문과 입력 틀을 확인하는 중입니다.</p>}
+      {query.isPending && <p role="status">미션을 불러오고 있어요.</p>}
       <ErrorNotice
         error={query.error}
         retry={() => {
@@ -842,9 +842,6 @@ function MissionInstructions({
           </span>
           <ActivityPaper mission={m} />
           <p>{m.question}</p>
-          <p className="ux-help">
-            미션에서 정한 답변 틀을 사용해 주세요. 메모는 제출 답변과 별도입니다.
-          </p>
           <ErrorNotice error={error} />
           <div className="cj-modal-actions">
             <button
@@ -855,7 +852,7 @@ function MissionInstructions({
                 void onStart(m)
               }}
             >
-              작성하기 · 진행 중이면 이어서
+              미션 시작하기
             </button>
           </div>
         </>

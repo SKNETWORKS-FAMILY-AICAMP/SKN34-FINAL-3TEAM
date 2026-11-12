@@ -10,15 +10,18 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import google.auth.exceptions
 import httpx
 import imageio_ffmpeg
 import pytest
 
 from app.config import get_settings
+from app.llm import media
 from app.llm.base import LlmUnavailable, LlmUsage
 from app.llm.media import (
     FakeImageClient,
     FakeVideoClient,
+    GoogleTokenSource,
     OpenAIImageClient,
     VeoVideoClient,
     color_clip,
@@ -130,10 +133,20 @@ def test_openai_image_client_edits_with_refs_and_generates_without() -> None:
     )
 
 
-def veo_client(seen: list[dict]) -> VeoVideoClient:
+class StaticTokens:
+    def __init__(self, token: str = "t") -> None:
+        self._token = token
+
+    async def token(self) -> str:
+        return self._token
+
+
+def veo_client(seen: list[dict], auth: list[str] | None = None) -> VeoVideoClient:
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         seen.append(body)
+        if auth is not None:
+            auth.append(request.headers["Authorization"])
         if request.url.path.endswith(":predictLongRunning"):
             return httpx.Response(200, json={"name": "op-1"})
         video = base64.b64encode(b"mp4-bytes").decode()
@@ -145,7 +158,7 @@ def veo_client(seen: list[dict]) -> VeoVideoClient:
         project="p",
         location="us-central1",
         model="veo-fast",
-        token="t",
+        tokens=StaticTokens(),
         timeout=30,
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         poll_seconds=0.01,
@@ -154,8 +167,9 @@ def veo_client(seen: list[dict]) -> VeoVideoClient:
 
 def test_veo_fixes_first_frame_only_with_negative_prompt() -> None:
     seen: list[dict] = []
+    auth: list[str] = []
     clip = asyncio.run(
-        veo_client(seen).generate(
+        veo_client(seen, auth).generate(
             "동작", tiny_png(1), seconds=8, deadline=time.monotonic() + 30, negative="big eyes"
         )
     )
@@ -164,6 +178,7 @@ def test_veo_fixes_first_frame_only_with_negative_prompt() -> None:
     assert set(instance) == {"prompt", "image"}  # lastFrame 없음
     assert parameters["negativePrompt"] == "big eyes" and parameters["durationSeconds"] == 8
     assert seen[1] == {"operationName": "op-1"}
+    assert auth == ["Bearer t", "Bearer t"]  # 시작·대기 요청마다 토큰 공급자에서 받음
 
 
 def test_veo_sends_last_frame_only_when_given() -> None:
@@ -175,6 +190,89 @@ def test_veo_sends_last_frame_only_when_given() -> None:
     )
     assert "lastFrame" in seen[0]["instances"][0]
     assert "negativePrompt" not in seen[0]["parameters"]
+
+
+class FakeCredentials:
+    """google-auth 자격 증명 흉내(valid·token·refresh). 갱신 횟수를 센다."""
+
+    def __init__(self, *, valid: bool, error: Exception | None = None) -> None:
+        self.valid = valid
+        self.token: str | None = "old" if valid else None
+        self.refreshes = 0
+        self._error = error
+
+    def refresh(self, request: object) -> None:
+        time.sleep(0.01)  # 동시 요청이 갱신 중에 겹치게
+        self.refreshes += 1
+        if self._error is not None:
+            raise self._error
+        self.token, self.valid = f"new-{self.refreshes}", True
+
+
+def test_google_tokens_refresh_only_when_invalid() -> None:
+    fresh = FakeCredentials(valid=True)
+    assert asyncio.run(GoogleTokenSource(fresh).token()) == "old"  # type: ignore[arg-type]
+    assert fresh.refreshes == 0
+    stale = FakeCredentials(valid=False)
+    assert asyncio.run(GoogleTokenSource(stale).token()) == "new-1"  # type: ignore[arg-type]
+
+
+def test_google_tokens_refresh_once_for_concurrent_cuts() -> None:
+    stale = FakeCredentials(valid=False)
+    source = GoogleTokenSource(stale)  # type: ignore[arg-type]
+
+    async def four_cuts() -> list[str]:
+        return await asyncio.gather(*(source.token() for _ in range(4)))
+
+    assert asyncio.run(four_cuts()) == ["new-1"] * 4
+    assert stale.refreshes == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "retryable"),
+    [
+        (google.auth.exceptions.RefreshError("revoked"), "LLM_AUTH_FAILED", False),
+        (google.auth.exceptions.TransportError("down"), "LLM_CONNECTION", True),
+    ],
+)
+def test_google_tokens_refresh_failure(error: Exception, code: str, retryable: bool) -> None:
+    source = GoogleTokenSource(FakeCredentials(valid=False, error=error))  # type: ignore[arg-type]
+    with pytest.raises(LlmUnavailable) as caught:
+        asyncio.run(source.token())
+    assert (caught.value.code, caught.value.retryable) == (code, retryable)
+
+
+def test_create_media_clients_veo_needs_google_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings().model_copy(
+        update={
+            "asset_s3_bucket": "b",
+            "image_provider": "fake",
+            "theme_video_enabled": True,
+            "video_provider": "veo",
+            "video_project": "p",
+        }
+    )
+
+    def missing(**_: object) -> tuple[object, str]:
+        raise google.auth.exceptions.DefaultCredentialsError("none")
+
+    monkeypatch.setattr(media.google.auth, "default", missing)
+    assert create_media_clients(settings, print)[1] is None  # 자격 증명 없으면 영상만 건너뜀
+
+    found: dict[str, object] = {}
+
+    def default(**kwargs: object) -> tuple[object, str]:
+        found.update(kwargs)
+        return FakeCredentials(valid=True), "p"
+
+    monkeypatch.setattr(media.google.auth, "default", default)
+    image, video = create_media_clients(settings, print)
+    assert isinstance(image, FakeImageClient) and isinstance(video, VeoVideoClient)
+    assert found["scopes"] == ("https://www.googleapis.com/auth/cloud-platform",)
+    no_project = settings.model_copy(update={"video_project": None})
+    assert create_media_clients(no_project, print)[1] is None
 
 
 def test_create_media_clients_needs_bucket_and_video_switch() -> None:
