@@ -19,20 +19,11 @@ export function RoleLayout({ role }: { role: Role }) {
     return <Navigate to={session.startPath ?? '/parent/onboarding'} replace />
   if (session.role !== role) return <Navigate to={roleStart(session.role)} replace />
   return (
-    <section
-      data-role-layout={role.toLowerCase()}
-      aria-label={
-        role === 'STUDENT'
-          ? '학생 학습 공간'
-          : role === 'PARENT'
-            ? '학부모 기록 공간'
-            : '관리자 운영 공간'
-      }
-    >
+    <div data-role-layout={role.toLowerCase()}>
       <Suspense fallback={<PageLoading />}>
         <Outlet />
       </Suspense>
-    </section>
+    </div>
   )
 }
 /** 지연 로딩하는 화면 코드를 받는 동안 표시한다. */
