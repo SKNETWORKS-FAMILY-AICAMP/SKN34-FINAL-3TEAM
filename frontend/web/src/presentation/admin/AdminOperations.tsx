@@ -48,16 +48,25 @@ function Overview({ period, permissions }: { period: Period; permissions: Permis
           {hasPermission(permissions, 'SERVICE_OPS') && (
             <>
               <h3>처리 현황</h3>
-              <div className="ws-metrics">
-                {q.data.jobCounts.map((c) => (
-                  <Link
-                    className={`ws-card${c.status === 'COMPLETED' ? ' ad-completed-card' : ''}`}
-                    key={c.type + c.status}
-                    to={`/admin/jobs?${new URLSearchParams({ ...period, type: c.type, status: c.status })}`}
-                  >
-                    {jobTypeLabels[c.type]} · {jobLabels[c.status]} <strong>{c.count}건</strong>
-                  </Link>
-                ))}
+              <div className="ad-job-summary">
+                {Object.entries(jobTypeLabels).map(([type, label]) => {
+                  const counts = q.data.jobCounts.filter(c => c.type === type)
+                  if (!counts.length) return null
+                  return <section className="ad-job-group" aria-labelledby={`ad-job-${type}`} key={type}>
+                    <h4 id={`ad-job-${type}`}>{label}</h4>
+                    <div className="ws-metrics ad-job-row">
+                      {counts.map(c => (
+                        <Link
+                          className={`ws-card${c.status === 'COMPLETED' ? ' ad-completed-card' : c.status === 'FAILED' ? ' ad-failed-card' : ''}`}
+                          key={c.status}
+                          to={`/admin/jobs?${new URLSearchParams({ ...period, type: c.type, status: c.status })}`}
+                        >
+                          {jobTypeLabels[c.type]} · {jobLabels[c.status]} <strong>{c.count}건</strong>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                })}
               </div>
             </>
           )}

@@ -226,6 +226,13 @@ body:has(.admin-shell){background:#f3f7f4}
 #class-journal .ad-support-panels .ad-pagination{margin-top:auto;padding-top:16px}
 
 /* Outlined status badges stay distinct from filled action buttons. */
+#class-journal .admin-shell .ad-job-summary{display:grid;gap:16px;margin:16px 0}
+#class-journal .admin-shell .ad-job-row{grid-template-columns:repeat(4,minmax(0,1fr));margin:0}
+#class-journal .admin-shell .ad-job-group>h4{margin:0 0 10px;font-size:15px;font-weight:650}
+#class-journal .admin-shell .ws-card.ad-failed-card{background:#fff;border-color:#b3342d;color:#a12d27}
+#class-journal .admin-shell .ad-failed-card strong{color:inherit}
+#class-journal .admin-shell a.ad-failed-card:hover{border-color:#902820;color:#902820}
+@media(max-width:760px){#class-journal .admin-shell .ad-job-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
 #class-journal .admin-shell .ad-badge,
 #class-journal .admin-shell .ad-badge:is(.is-active,.is-success){background:#fff;border-color:var(--cj-accent);color:var(--cj-accent-dark)}
 #class-journal .admin-shell .ad-badge.is-danger{background:#fff;border-color:#b3342d;color:#a12d27}
