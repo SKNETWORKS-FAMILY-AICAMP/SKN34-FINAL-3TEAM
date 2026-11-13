@@ -191,6 +191,14 @@ class AdminOperationsContracts(unittest.TestCase):
                 # #244 adds the corrected flag and extends the impact description; retain the original fingerprints.
                 if section=='schemas' and name=='DashboardJudgment':
                     self.assertEqual(reviewed['properties'].pop('corrected')['type'],'boolean')
+                    # #614 documents the judgmentId core already forwards from learning Judgment.
+                    self.assertEqual(reviewed['properties'].pop('judgmentId')['format'],'uuid')
+                    reviewed['required'].remove('judgmentId')
+                # #614 documents the parentSharingEnabled flag core already adds to the report detail.
+                if section=='schemas' and name=='ReportDetail':
+                    detail=reviewed['allOf'][1]
+                    self.assertEqual(detail['properties'].pop('parentSharingEnabled')['type'],'boolean')
+                    detail['required'].remove('parentSharingEnabled')
                 if section=='schemas' and name=='SupportCorrection':
                     original,added=reviewed['properties']['impact']['description'].split(' conversation·report는 AFFECTED')
                     self.assertIn('신고자 응답은 null',added)

@@ -2725,7 +2725,7 @@ components:
             type: object
             additionalProperties: true
             properties:
-              no: {type: integer, minimum: 1, maximum: 3}
+              'no': {type: integer, minimum: 1, maximum: 3}
               themeId: {type: string, format: uuid}
               weekStart: {type: string, format: date}
               attemptId: {type: string, format: uuid}
