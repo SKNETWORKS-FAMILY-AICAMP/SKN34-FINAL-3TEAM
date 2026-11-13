@@ -2,9 +2,6 @@
 
 from uuid import UUID
 
-import httpx
-from pydantic import ValidationError
-
 from app.clients.storage import report_key
 from app.concurrency import run_blocking
 from app.database import run_db
@@ -146,7 +143,7 @@ class QueryService:
         student_id, links = await run_db(query)
         try:
             evidence = await self._learning.evidence(student_id, links)
-        except (httpx.HTTPError, RecordContractError, ValidationError):
+        except RecordContractError:
             raise ApiError(503, "DATA_UNAVAILABLE", "근거 원문 조회에 실패했습니다") from None
         return {
             "items": [
