@@ -199,7 +199,7 @@ function ThemeEditor({
             <button type="button" disabled={action.isPending} onClick={() => run('publish', '게시했습니다.')}>게시</button>
           )}
           {theme && theme.status === 'PUBLISHED' && (
-            <button type="button" disabled={action.isPending} onClick={() => run('unpublish', '게시를 중단했습니다.')}>게시 중단</button>
+            <button className="ad-danger" type="button" disabled={action.isPending} onClick={() => run('unpublish', '게시를 중단했습니다.')}>게시 중단</button>
           )}
         </div>
         {problems.length > 0 && (
@@ -234,7 +234,7 @@ export function LookItemManager() {
                   <td>{i.name}<small>{i.code}</small></td>
                   <td>{SLOT_LABELS[i.slot]}</td>
                   <td>{i.pricePoints}</td>
-                  <td><Badge active={i.status === 'ON_SALE'}>{i.status === 'ON_SALE' ? '판매 중' : '판매 중단'}</Badge></td>
+                  <td><Badge tone={i.status === 'ON_SALE' ? 'success' : 'danger'}>{i.status === 'ON_SALE' ? '판매 중' : '판매 중단'}</Badge></td>
                   <td><button onClick={() => setEditing(i)} aria-label={`${i.name} 아이템 수정`}>수정</button></td>
                 </tr>
               ))}
@@ -281,7 +281,7 @@ function ItemEditor({ item, onClose }: { item?: AdminLookItem; onClose: () => vo
         <div className="ws-actions">
           <button className="cj-primary" disabled={save.isPending || !validPrice}>저장</button>
           {item && (
-            <button type="button" disabled={toggle.isPending} onClick={() => void toggle.mutateAsync(undefined).then(onClose).catch(() => {})}>
+            <button className={item.status === 'ON_SALE' ? 'ad-danger' : undefined} type="button" disabled={toggle.isPending} onClick={() => void toggle.mutateAsync(undefined).then(onClose).catch(() => {})}>
               {item.status === 'ON_SALE' ? '판매 중단' : '판매 다시 시작'}
             </button>
           )}
