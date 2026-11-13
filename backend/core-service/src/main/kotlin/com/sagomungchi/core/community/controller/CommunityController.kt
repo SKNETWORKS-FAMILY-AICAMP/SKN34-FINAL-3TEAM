@@ -19,8 +19,9 @@ class CommunityController(private val service: CommunityService) {
     @PutMapping("/api/v1/students/me/community-settings")
     fun updateSettings(@Valid @RequestBody body: SettingsUpdate) = ok(service.updateSettings(body.enabled!!))
 
+    /** `seed`는 같은 값이면 같은 순서를 보장하는 계약이라 클라이언트가 정해 보낸다(필수, 1~100자, #622). */
     @GetMapping("/api/v1/missions/{missionId}/community-posts")
-    fun missionPosts(@PathVariable missionId: UUID, @RequestParam(defaultValue = "") seed: String,
+    fun missionPosts(@PathVariable missionId: UUID, @RequestParam seed: String,
                      @RequestParam(defaultValue = "0") page: Int, @RequestParam(defaultValue = "20") size: Int) =
         ok(service.missionPosts(missionId, seed, page, size))
 

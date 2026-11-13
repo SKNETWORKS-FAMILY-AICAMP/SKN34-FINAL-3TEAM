@@ -196,16 +196,25 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
         val forwarded = requests("/internal/community/missions/$mission/posts").single()
         assertTrue(forwarded.target.contains("viewerStudentId=$student")); assertTrue(forwarded.target.contains("seed=abc"))
         assertEquals("STUDENT", forwarded.header("X-User-Role"))
-        val locked = call("GET", "/missions/$mission/community-posts", friendToken, expected = 403)
+        val locked = call("GET", "/missions/$mission/community-posts?seed=abc", friendToken, expected = 403)
         assertEquals("COMMUNITY_LOCKED", locked["code"].asText())
         assertEquals("이 미션을 마무리하면 친구들 생각을 볼 수 있어요.", locked["title"].asText())
         // #550: 정답 고르기 문제는 엔딩 전 잠김 코드(learning #484)를 따로 보여 준다
         lockCode = "COMMUNITY_LOCKED_UNTIL_ENDING"
-        val ending = call("GET", "/missions/$mission/community-posts", friendToken, expected = 403)
+        val ending = call("GET", "/missions/$mission/community-posts?seed=abc", friendToken, expected = 403)
         assertEquals("COMMUNITY_LOCKED_UNTIL_ENDING", ending["code"].asText())
         assertEquals("이번 주 테마 엔딩을 보면 친구들 생각을 볼 수 있어요.", ending["title"].asText())
-        call("GET", "/missions/$mission/community-posts", parentToken, expected = 403)
-        call("GET", "/missions/$mission/community-posts?size=0", studentToken, expected = 400)
+        call("GET", "/missions/$mission/community-posts?seed=abc", parentToken, expected = 403)
+        call("GET", "/missions/$mission/community-posts?seed=abc&size=0", studentToken, expected = 400)
+    }
+
+    @Test fun `mission posts require a seed of 1 to 100 chars before calling learning`() {
+        listOf("", "?seed=", "?seed=${"a".repeat(101)}", "?page=0&size=20").forEach { query ->
+            assertEquals("VALIDATION_FAILED", call("GET", "/missions/$mission/community-posts$query", studentToken, expected = 400)["code"].asText(), query)
+        }
+        assertTrue(requests("/internal/community/missions/$mission/posts").isEmpty())
+        call("GET", "/missions/$mission/community-posts?seed=${"a".repeat(100)}", studentToken)
+        assertTrue(requests("/internal/community/missions/$mission/posts").single().target.contains("seed=${"a".repeat(100)}"))
     }
 
     @Test fun `reactions pass through with own post and validation errors`() {
@@ -226,7 +235,7 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
         assertEquals("HIDDEN_REPORT", statuses[friendPost])
         // learning 반영이 늦어도 core 목록·반응에서 바로 빠진다.
         statuses[friendPost] = "VISIBLE"
-        assertEquals(0, call("GET", "/missions/$mission/community-posts", studentToken)["items"].size())
+        assertEquals(0, call("GET", "/missions/$mission/community-posts?seed=abc", studentToken)["items"].size())
         assertEquals("COMMUNITY_POST_NOT_FOUND", call("PUT", "/community-posts/$friendPost/reactions/NEW_IDEA", studentToken, expected = 404)["code"].asText())
         // 같은 키 재전송은 같은 신고, 학습 상태는 다시 맞춘다.
         call("POST", "/error-reports", studentToken, mapOf("targetType" to "COMMUNITY_POST", "targetId" to friendPost,
@@ -246,7 +255,7 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
         call("PATCH", "/admin/error-reports/$id", adminToken, mapOf("status" to "RESOLVED", "reviewReason" to "문제 없음", "reviewResult" to "SHOW"), 400)
         call("PATCH", "/admin/error-reports/$id", adminToken, mapOf("status" to "RESOLVED", "reviewReason" to "문제 없음", "reviewResult" to "VISIBLE"))
         assertEquals("VISIBLE", statuses[friendPost])
-        assertEquals(1, call("GET", "/missions/$mission/community-posts", studentToken)["items"].size())
+        assertEquals(1, call("GET", "/missions/$mission/community-posts?seed=abc", studentToken)["items"].size())
 
         // 두 번째 신고를 계속 숨김으로 처리(결과 생략도 계속 숨김)
         val second = UUID.fromString(call("POST", "/error-reports", studentToken, mapOf("targetType" to "COMMUNITY_POST", "targetId" to friendPost,
@@ -256,7 +265,7 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
         assertEquals("REMOVED", statuses[friendPost])
         assertEquals("REMOVED", jdbc.queryForObject("SELECT review_result FROM error_report WHERE id=?", String::class.java, second))
         statuses[friendPost] = "VISIBLE"
-        assertEquals(0, call("GET", "/missions/$mission/community-posts", studentToken)["items"].size())
+        assertEquals(0, call("GET", "/missions/$mission/community-posts?seed=abc", studentToken)["items"].size())
     }
 
     @Test fun `own and child posts show core known privacy and counts while other parents are refused`() {
