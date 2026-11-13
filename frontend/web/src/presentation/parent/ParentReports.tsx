@@ -8,6 +8,7 @@ import type { ReportContext, ReportHighlight } from '../../domain/reportHighligh
 import { emptyReportTargets, reportTargets } from '../../domain/reportHighlight.ts'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
+import { knownEntitlement, useChildEntitlement } from '../../data/payment/queries.ts'
 import { thinkingLabels } from '../../domain/classroom.ts'
 import { QueryFeedback, MetricCards } from '../common/Workspace.tsx'
 import { QueryStateNotice } from '../common/QueryStateNotice.tsx'
@@ -133,6 +134,9 @@ function ReportDetail({
       true,
     ),
     regenerate = useParentMutation(() => parentApi.regenerate(id)),
+    // 이용권은 entitlement로만 판단한다(#602). 조회 전·실패면 서버가 내려준 리포트 내용을 그대로 쓴다.
+    entitlement = knownEntitlement(useChildEntitlement(child.id)),
+    conversationOff = entitlement?.conversationEnabled === false,
     download = useParentMutation((format: 'pdf' | 'md') => parentApi.download(id, format)),
     [proof, setProof] = useState<string | null>(null),
     [notice, setNotice] = useState('')
@@ -174,8 +178,8 @@ function ReportDetail({
       <QueryFeedback query={q} />
       {!compact && r && ready && r.parentSharingEnabled !== false && (
         <div className="parent-report-question"><h3>이 리포트에서 이어서 질문하기</h3>
-          <p>{child.plan === 'FREE' ? 'AI 질문은 프리미엄 기능입니다. 리포트의 수치는 계속 확인할 수 있습니다.' : '리포트의 자녀와 기간을 AI 챗봇에 연결합니다.'}</p>
-          <button className="cj-primary" disabled={child.plan === 'FREE'} onClick={() => onAskReport({ reportId: r.reportId, revision: r.revision, period: r.period, periodType: daily ? 'DAILY' : 'WEEKLY' })}>이 리포트로 질문하기</button>
+          <p>{conversationOff ? 'AI 질문은 프리미엄 기능입니다. 리포트의 수치는 계속 확인할 수 있습니다.' : '리포트의 자녀와 기간을 AI 챗봇에 연결합니다.'}</p>
+          <button className="cj-primary" disabled={conversationOff} onClick={() => onAskReport({ reportId: r.reportId, revision: r.revision, period: r.period, periodType: daily ? 'DAILY' : 'WEEKLY' })}>이 리포트로 질문하기</button>
         </div>
       )}
       {highlight && r && <><p>선택한 질문 · {highlight.question}</p><p role="status" className="report-highlight-summary">{matched
@@ -227,7 +231,7 @@ function ReportDetail({
                 <p>{r.parentSharingEnabled === false ? '아이의 답변 원문이 비공개여서 서술과 인용을 표시하지 않습니다. 학습 수치는 아래에서 확인할 수 있습니다.' : '수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.'}</p>
               )}
               <MetricCards metrics={r.metrics} highlighted={targets.metrics} />
-              <ReportExplanations report={r} plan={child.plan} />
+              <ReportExplanations report={r} narrativeEnabled={entitlement?.narrativeEnabled} />
               <div className="ws-actions">
                 {r.metrics.map((m, i) => (
                   <button
@@ -241,7 +245,7 @@ function ReportDetail({
                 ))}
               </div>
               {!daily && r.themeSummary && <ThemeSummaryView summary={r.themeSummary} />}
-              {!daily && child.plan !== 'FREE' && r.parentSharingEnabled !== false && (
+              {!daily && entitlement?.narrativeEnabled !== false && r.parentSharingEnabled !== false && (
                 <>
                   <h3>생각 유형별 활동</h3>
                   {r.thinkingTypes.map((t, i) => (

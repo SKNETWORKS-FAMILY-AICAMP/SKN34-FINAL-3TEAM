@@ -40,8 +40,7 @@ function childrenFrom(value: unknown): Child[] {
         !Number.isInteger(c.grade) || c.grade < 3 || c.grade > 6)
       fail(422, 'VALIDATION_FAILED', '가상 자녀 정보를 확인해 주세요.')
     seen.add(c.id)
-    return { id: c.id, nickname: c.nickname, grade: c.grade, birthYear: Number(c.birthYear) || 0,
-      plan: c.plan === 'PREMIUM' ? 'PREMIUM' : 'FREE' }
+    return { id: c.id, nickname: c.nickname, grade: c.grade, birthYear: Number(c.birthYear) || 0 }
   })
 }
 

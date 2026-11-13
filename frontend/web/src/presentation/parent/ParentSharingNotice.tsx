@@ -1,10 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
-import { sharingApi } from '../../data/classroom/sharingApi.ts'
+import { useParentSharingNotice } from '../../data/parent/queries.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 export function ParentSharingNotice({ studentId }: { studentId: string }) {
-  const query = useQuery({ queryKey: ['parent', 'sharing-preferences', studentId],
-    queryFn: ({ signal }) => sharingApi.get(studentId, 'PARENT', signal), retry: false,
-    staleTime: 0, refetchOnWindowFocus: 'always' })
+  const query = useParentSharingNotice(studentId)
   return <aside className="ws-card parent-sharing-notice" aria-label="학생 답변 공개 상태">
     <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     {query.isPending ? <p>학생 답변 공개 상태를 확인 중입니다.</p> : !query.error && <details><summary>{query.data?.parentSharingEnabled ? '답변 원문 공개 중' : '답변 원문 비공개 · 학습 수치는 확인 가능'}</summary><p>{query.data?.parentSharingEnabled

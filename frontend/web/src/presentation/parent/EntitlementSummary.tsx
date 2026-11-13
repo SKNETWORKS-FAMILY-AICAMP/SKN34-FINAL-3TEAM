@@ -1,11 +1,10 @@
-import { paymentApi } from '../../data/payment/api.ts'
-import { useParentQuery } from '../../data/parent/queries.ts'
+import { knownEntitlement, useChildEntitlement } from '../../data/payment/queries.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 
 /** Resolve capabilities on the server; an absent subscription does not imply a free product. */
 export function EntitlementSummary({ childId, report = false }: { childId: string; report?: boolean }) {
-  const query = useParentQuery(['entitlement', childId], signal => paymentApi.entitlement(childId, signal))
-  const entitlement = !query.error ? query.data : undefined
+  const query = useChildEntitlement(childId)
+  const entitlement = knownEntitlement(query)
   return <>
     <QueryFeedback query={query} />
     {entitlement && (report ? <p>{entitlement.narrativeEnabled
@@ -21,4 +20,10 @@ export function EntitlementSummary({ childId, report = false }: { childId: strin
         })}
       </>)}
   </>
+}
+
+/** 짧은 이용권 이름(학습 시작 카드). 조회 전·실패는 무료로 가정하지 않는다. */
+export function EntitlementName({ childId }: { childId: string }) {
+  const query = useChildEntitlement(childId), entitlement = knownEntitlement(query)
+  return <>{entitlement ? entitlement.product.name : query.isPending ? '이용권 확인 중' : '이용권 확인 필요'}</>
 }

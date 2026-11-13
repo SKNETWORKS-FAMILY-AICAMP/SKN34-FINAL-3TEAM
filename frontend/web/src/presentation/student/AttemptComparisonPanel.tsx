@@ -1,14 +1,12 @@
-import { useQuery } from '@tanstack/react-query'
 import type { Attempt } from '../../domain/classroom.ts'
 import { comparisonAnswerText, comparisonLabels } from '../../domain/learning.ts'
-import { getAttemptComparison } from '../../data/classroom/learningApi.ts'
+import { useAttemptComparison } from '../../data/classroom/useClassroom.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import './learning-settings.css'
 
 const judgmentLabels = { CORRECT: '확인했어요', PARTIAL: '생각을 더 보탰어요', RETHINK: '다시 살펴봐요', HELD: '판정 보류' }
 export function AttemptComparisonPanel({ attempt }: { attempt: Attempt }) {
-  const query = useQuery({ queryKey: ['attempt-comparison', attempt.attemptId], enabled: !!attempt.finishedAt,
-    retry: false, queryFn: ({ signal }) => getAttemptComparison(attempt.attemptId, signal) })
+  const query = useAttemptComparison(attempt)
   if (!attempt.finishedAt) return null
   const value = query.error ? undefined : query.data
   return <section className="st-comparison" aria-label="이전 답과 이번 답 비교">

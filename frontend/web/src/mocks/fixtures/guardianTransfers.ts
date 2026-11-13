@@ -31,5 +31,5 @@ export function requireNoPendingTransfer(childId?: string) {
 for (const email of ['receiver@example.test', 'full@example.test', 'spare@example.test']) {
   mockAccounts.add(email)
   if (!mockAccountChildren.has(email)) mockAccountChildren.set(email, email === 'full@example.test'
-    ? Array.from({ length: 3 }, (_, i) => ({ id: crypto.randomUUID(), nickname: `한도 자녀 ${i + 1}`, grade: 5, birthYear: 2015, plan: 'FREE' as const })) : [])
+    ? Array.from({ length: 3 }, (_, i) => ({ id: crypto.randomUUID(), nickname: `한도 자녀 ${i + 1}`, grade: 5, birthYear: 2015 })) : [])
 }
