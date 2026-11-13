@@ -2682,7 +2682,7 @@ classDiagram
 - 활성 범위 밖 학년·문항이면 `{active: false}` 반환. #88 현재 M1은 미학습으로 항상 비활성이며 추론·사용량 발행을 하지 않는다. 향후 M1 확신도 0.8 미만이면 scoring은 실수 위치를 제외하고 ai가 보류를 결정한다(P15).
 - 가중치는 S3 `artifact_uri`에서 로딩, 승인된 버전만 (아키텍처 5장)
 - #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. #87은 m2 라우터·M2Service·사용량 발행, #88은 M1 미학습 비활성 계약을 제공한다.
-- #368 `preflight.py`: core만 부르는 `POST /internal/models/preflight`(router·`PreflightService`). 설정 버킷의 `models/` 경로 파일 존재·크기·SHA-256과 메타데이터를 검사하고 모델을 로딩하지 않는다 (api-spec 5.2.1). S3 요청·체크섬 해석·저장소 오류 변환(`ArtifactError`)은 `clients/model_artifacts.py`의 `reader`가 맡고, `PreflightService`는 크기·해시·모델 구조 판정만 한다
+- #368 `preflight.py`: core만 부르는 `POST /internal/models/preflight`(router·`PreflightService`). 설정 버킷의 `models/` 경로 파일 존재·크기·SHA-256과 메타데이터를 검사하고 모델을 로딩하지 않는다 (api-spec 5.2.1). S3 요청·체크섬 해석·저장소 오류 변환(`ArtifactError`)은 `clients/model_artifacts.py`의 `reader`가 맡고, `PreflightService`는 크기·해시·모델 구조 판정만 한다. router·service·요청/응답 모델을 한 파일에 두는 구성은 유지하기로 했다(아키텍처 2.4, #608)
 - #370 `model_loading_reporter.py`: `ModelLoadingReporter`가 `ModelRegistry` 상태를 기동·변화 즉시와 30초 주기로 `model.loading.reported`에 담아 별도 `EventPublisher` 인스턴스(`messaging/publisher.py`, 그림은 `UsagePublisher`로 묶음)로 발행한다. 발행 실패는 로딩과 분리된다 (core 소비는 3.5)
 
 ---
