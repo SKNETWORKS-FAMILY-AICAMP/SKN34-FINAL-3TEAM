@@ -15,6 +15,7 @@ import {
   NO_EQUIPPED,
   SLOT_LABELS,
   themeKey,
+  wornAssets,
 } from '../../../domain/retention.ts'
 import type { Equipped, ItemSlot, LookItem } from '../../../domain/retention.ts'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
@@ -54,6 +55,8 @@ function StudentCustomize({ child, onDone, section }: { child: Child; onDone: ()
   useEffect(() => { if (confirming) confirmation.current?.focus() }, [confirming])
   const catalog = items.error ? undefined : items.data
   const equipped: Equipped = look?.equipped ?? NO_EQUIPPED
+  // 미리보기는 지금 고른 착용 그대로(#455). 그림 파일이 없으면 기본 모습
+  const worn = wornAssets(equipped, catalog)
   const balance = !points.error ? points.data?.balance : undefined
   const busy = save.isPending || unlock.isPending
   const choosingBlocked = busy || settings.isPending || settings.isError || confirming !== null
@@ -113,7 +116,7 @@ function StudentCustomize({ child, onDone, section }: { child: Child; onDone: ()
   return (
     <div className="st-custom" aria-busy={busy}>
       <div className="st-custom-summary">
-        <Companion kind={companion} size={88} decorative />
+        <Companion kind={companion} size={88} decorative worn={worn} />
         <div><p className="st-meta">{t.title} · {companionLabel(companion)}</p>
           <p className="st-points" role="status">{balance !== undefined ? `내 포인트 ${balance.toLocaleString('ko-KR')}`
             : points.isPending ? '포인트를 확인하고 있어요.' : '포인트를 확인하지 못했어요.'}</p>
@@ -170,7 +173,7 @@ function StudentCustomize({ child, onDone, section }: { child: Child; onDone: ()
                 disabled={choosingBlocked || locked(companionKey(c.id))}
                 onClick={() => (locked(companionKey(c.id)) ? undefined : choose({ companion: c.id }))}
               >
-                <Companion kind={c.id} size={72} decorative />
+                <Companion kind={c.id} size={72} decorative worn={worn} />
                 <strong>{c.label}</strong>
                 <small>{c.desc}</small>
                 {lockBadge(companionKey(c.id))}

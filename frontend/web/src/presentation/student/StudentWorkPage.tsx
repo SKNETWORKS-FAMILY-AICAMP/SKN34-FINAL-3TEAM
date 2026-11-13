@@ -265,7 +265,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
       setError(e)
     }
   }
-  const { companion } = useLook()
+  const { companion, worn } = useLook()
   const stage = missionStage(a)
   // 판정 신고는 판정 ID로, 판정 전이면 신고하지 않음 (learning #146)
   const reportJudgmentId = latestFeedback(a)?.judgment?.judgmentId
@@ -313,7 +313,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
             </p>
             <h1>{a.mission.title}</h1>
             <div className="st-ask">
-              <Companion kind={companion} size={64} decorative />
+              <Companion kind={companion} size={64} decorative worn={worn} />
               <div className="st-say">
                 <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>
                 <h2>{a.mission.question}</h2>
@@ -367,7 +367,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
             </div>
             {hint && (
               <div className="st-ask st-hint">
-                <Companion kind={companion} size={48} decorative />
+                <Companion kind={companion} size={48} decorative worn={worn} />
                 <div className="st-say">
                   <strong>생각 열기</strong>
                   <p>{hint}</p>
@@ -376,7 +376,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
             )}
             {more && f?.followup && (
               <div className="st-ask">
-                <Companion kind={companion} size={48} decorative />
+                <Companion kind={companion} size={48} decorative worn={worn} />
                 <div className="st-say">
                   <strong>한 걸음 더</strong>
                   <p>{f.followup.question}</p>
@@ -502,7 +502,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                     )}
                     {f.followup && !a.finishedAt && (
                       <div className="st-ask">
-                        <Companion kind={companion} size={56} decorative />
+                        <Companion kind={companion} size={56} decorative worn={worn} />
                         <div className="st-say">
                           <p>{f.followup.question}</p>
                           <small>
