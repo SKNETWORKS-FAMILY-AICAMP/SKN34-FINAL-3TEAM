@@ -3,9 +3,10 @@ package com.sagomungchi.learning.memory
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.github.tomakehurst.wiremock.client.WireMock.*
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.config.InternalRestClientFactory
-import com.sagomungchi.learning.memory.service.*
+import com.sagomungchi.learning.memory.client.*
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -39,6 +40,24 @@ class MemoryExplanationAiClientTest {
         }
         server.stubFor(post(urlEqualTo("/internal/memory-explanations")).willReturn(okJson("{}")))
         assertFails { client.explain(request) }
+    }
+    @Test fun `장애와 생성이 일어난 실패를 구분`() {
+        fun stub(status: Int) = server.stubFor(post(urlEqualTo("/internal/memory-explanations")).willReturn(aResponse().withStatus(status)))
+        for(status in listOf(500,503)) { stub(status); assertFailsWith<MemoryAiOutageException> { client.explain(request) } }
+        for(status in listOf(422,502)) { stub(status); assertFailsWith<AiCallException> { client.explain(request) } }
+        server.stubFor(post(urlEqualTo("/internal/memory-explanations")).willReturn(okJson("{}")))
+        assertFailsWith<AiCallException> { client.explain(request) }
+        server.stubFor(post(urlEqualTo("/internal/memory-explanations")).willReturn(okJson("{}").withFixedDelay(1000)))
+        assertFailsWith<MemoryAiOutageException> { client.explain(request,50) }
+        server.stop()
+        assertFailsWith<MemoryAiOutageException> { client.explain(request) }
+    }
+    @Test fun `서킷이 열리면 장애`() {
+        server.stubFor(post(urlEqualTo("/internal/memory-explanations")).willReturn(aResponse().withStatus(503)))
+        repeat(20) { assertFailsWith<MemoryAiOutageException> { client.explain(request) } }
+        server.resetRequests()
+        assertFailsWith<MemoryAiOutageException> { client.explain(request) }
+        assertEquals(0,server.allServeEvents.size)
     }
     @Test fun `남은 시간만 기다리고 시간 초과하며 잘못된 예산 거부`() {
         server.stubFor(post(urlEqualTo("/internal/memory-explanations")).willReturn(okJson("{}").withFixedDelay(1000)))

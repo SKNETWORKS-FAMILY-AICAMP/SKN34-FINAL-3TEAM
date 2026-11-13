@@ -13,7 +13,8 @@ import type {
 } from '../../domain/classroom.ts'
 import { apiFetch, notifyAuthChange, setAccessToken, unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
-import { getThinkingActivities, saveReflection } from './learningApi.ts'
+import { getAttemptComparison, getThinkingActivities, saveReflection, saveSelfAssessment } from './learningApi.ts'
+import { sharingApi } from './sharingApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
 import { pollFeedback } from './feedbackPolling.ts'
@@ -300,4 +301,30 @@ export function useParentActions() {
       gateway.analyze(child, period, question),
   })
   return { regenerate, analyze }
+}
+
+/** 마무리한 시도의 이전·이번 답 비교(학생). 마무리 전에는 묻지 않는다. */
+export function useAttemptComparison(attempt: Attempt) {
+  return useQuery({ queryKey: ['attempt-comparison', attempt.attemptId], enabled: !!attempt.finishedAt,
+    retry: false, queryFn: ({ signal }) => getAttemptComparison(attempt.attemptId, signal) })
+}
+/** 학생 자기 점검 저장. 저장 뒤 서버 값으로 화면을 맞추는 일은 onSaved가 한다. */
+export function useSaveSelfAssessment(attemptId: string, onSaved: (rows: Awaited<ReturnType<typeof saveSelfAssessment>>) => void) {
+  return useMutation({
+    mutationFn: (checks: { elementId: string; checked: boolean }[]) => saveSelfAssessment(attemptId, checks),
+    onSuccess: onSaved,
+  })
+}
+/** 학생 본인의 답 공개 설정 조회·저장. 바꾸면 공유 브라우저에 남은 학부모 원문 캐시를 지운다. */
+export function useStudentSharing(childId: string) {
+  const cache = useQueryClient()
+  const key = ['sharing-preferences', 'STUDENT', childId]
+  const query = useQuery({ queryKey: key, queryFn: ({ signal }) => sharingApi.get(childId, 'STUDENT', signal), retry: false })
+  const save = useMutation({ mutationFn: (enabled: boolean) => sharingApi.save(childId, enabled),
+    onSuccess: value => {
+      cache.setQueryData(key, value)
+      // Shared-browser caches must not retain parent originals after a change.
+      cache.removeQueries({ predicate: q => ['parent', 'records', 'report', 'public-record'].includes(String(q.queryKey[0])) })
+    } })
+  return { query, save }
 }

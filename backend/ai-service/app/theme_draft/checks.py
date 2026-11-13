@@ -634,7 +634,7 @@ def check_dialogue(
         for x in lines
     ):
         bad.append("SELF_NAME 말하는 사람이 자기 이름을 3인칭으로 부름")
-    answers, numeric = mission_checks._answer_texts(draft)
+    answers, numeric = mission_checks.answer_texts(draft)
     key = compact(theme["answer"])
     # 유출 검사는 LLM이 만든 줄만. 끝 두 줄은 줄거리 검사가 이미 봤고 대화를 다시 만들어도 바뀌지
     # 않음(점검 C10: 미션 금지어가 그 줄 낱말과 겹치면 모든 시도가 같은 이유로 실패)
@@ -650,7 +650,7 @@ def check_dialogue(
             [draft.question, discovery, hook],
         ):
             bad.append(f"LEAK {reason}")
-        if numeric and any(mission_checks._has_number(text, n) for n in numeric):
+        if numeric and any(mission_checks.has_number(text, n) for n in numeric):
             bad.append("LEAK ANSWER_KEY")
         if key and key in compact(text):
             bad.append(f"THEME_ANSWER_LEAK 대화에 테마 정답 낱말 '{theme['answer']}'")
@@ -727,12 +727,12 @@ SPOT_MIN_GAP = 8.0  # 살펴보기 위치끼리 최소 거리(그림 %, 기준�
 
 def spot_leaks(draft: Draft, text: str, overlap: int) -> bool:
     """살펴보기 글이 미션 답·금지어·예시 답을 말하는지(대화와 같은 검사, 점검 C20)."""
-    answers, numeric = mission_checks._answer_texts(draft)
+    answers, numeric = mission_checks.answer_texts(draft)
     if find_text_leaks(
         text, answers, draft.forbidden_terms, draft.example_answer, overlap, [draft.question]
     ):
         return True
-    return bool(numeric and any(mission_checks._has_number(text, n) for n in numeric))
+    return bool(numeric and any(mission_checks.has_number(text, n) for n in numeric))
 
 
 def spots(

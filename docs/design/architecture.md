@@ -228,6 +228,14 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 - 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
   - `_common`은 기능 패키지를 참조하지 않는다. 기능에 의존하는 공통 처리는 그 기능에 둔다(예: `PublicAuthFilter` → account, #251)
   - 여러 기능 client가 같은 하위 서비스 연결을 쓰면 전송은 `_common/client`에 둔다(core `LearningClient`: learning 내부 API, 서킷·타임아웃 공유). 기능별 요청·응답 해석은 각 기능 `client`(learning `LearningRecordClient`, community `CommunityClient`, support `LearningSupportClient`)가 맡고, 다른 기능의 client를 참조하지 않는다(#422)
+  - 프록시 service 응답 해석 예외(#608, 2026-11-13 결정): 아래 core service는 learning 응답 본문을 service에서 `ObjectMapper.readTree`로 직접 읽는다. 발표 전 위험을 줄이려 코드를 옮기지 않고 예외로 둔다
+    - 허용 이유: 공용 `LearningClient.exchange`가 돌려준 `HttpExchangeResult`를 controller까지 거의 그대로 넘기는 프록시라, 해석을 client로 옮기면 원문 응답 전달과 몇 칸 추출을 함께 돌려주는 client를 새로 만들어야 한다. service가 읽는 칸은 뒤따르는 업무 처리(사용량·포인트 적립·감사·액자 표시)를 정하는 데 필요한 것뿐이고, 읽기에 실패하면 응답을 바꾸지 않고 그 처리만 건너뛰거나(로그) 계약 오류로 막는다
+    - 응답을 그대로 넘기며 후속 처리용 칸만 읽음: `LearningProxyService`(`startAttempt` 201의 `attemptId` → 사용량 기록, `reflection`의 409 `code`(`ATTEMPT_CLOSED`), `completedMission`·`inProgress`의 시도 `status`·`mission.id`), `ParticipationRewardService`(`reviewViewed`·`weeklyThemeViewed`가 받은 응답의 완료 칸으로 포인트 적립, 실패해도 응답 불변), `MemoryProxyService.album`(200 항목에 `displayed`만 더함, 모양이 다르면 502 `LEARNING_CONTRACT_INVALID`)
+    - 관리자 응답 허용 목록·감사: `AdminLearningService`(`stats`·`missionCounts`는 허용한 칸만 골라 반환, `sanitize`는 오류 응답을 허용 `code`만 남긴 problem으로 다시 만듦, `audited`는 성공 응답에서 감사 대상 ID·버전을 읽음). 해석 범위가 이 묶음에서 가장 크지만 요청 감사 → learning 호출 → 결과 감사 순서와 묶여 있어 결과를 모르면 `UNKNOWN`으로 남기는 흐름을 한 service에 둔다
+    - 응답 값을 업무 상태와 대조: `ConversationService`(`requirePeriodAttempts`·`reflection`). 응답은 `LearningRecordService` → `LearningRecordClient`로 받고, service는 그 값이 이번 분석 요청의 자녀·기간·페이지·근거 시도와 맞는지 확인한다. 업무 판단이라 Application 책임에 맞는다
+    - 요청 본문 다시 만들기(하위 서비스 응답 아님): `LearningProxyService.storyViewed`·`answerPicked`, `MemoryProxyService.search`·`explanation`(`objectWith`)은 프록시가 원문 바이트로 받은 학생 요청 본문에서 허용 칸만 꺼내 새 본문을 만든다
+    - 적용 범위: 위 service의 위 메서드에서 `LearningClient`·`LearningRecordService`·`LearningMemoryClient` 응답이나 요청 본문을 읽는 경우만. DB JSON 칸 읽기(`SupportService`)·결제 웹훅 본문(`PaymentWebhookService`)은 이 예외와 관계없다
+    - 새 프록시나 새 하위 서비스 호출을 만들 때는 원칙대로 응답 해석을 기능 `client`에 둔다(선례: `LearningMemoryClient`, `LearningRecordClient`). 위 service에 새 해석 칸을 더해야 하면 먼저 client로 옮길 수 있는지 본다
   - 여러 기능 controller가 쓰는 기능 타입 없는 요청 검사는 `_common/web`(예: 관리자 목록 페이지 범위 `operationPage`, #422)
   - 응답 DTO(Spring): 여러 기능 응답이 같은 OpenAPI component를 공유하면 `_common/web`(예: learning `MissionResponse`·`MissionListItemResponse`·`AnswerItem`), 스키마가 다르면 기능별 controller DTO. `_common/web` DTO는 기능 타입 없이 열거값은 이름 문자열, 값 객체는 같은 모양의 DTO, 기능 타입이 필요한 칸은 타입 인자로 두고, domain → DTO 변환은 쓰는 기능의 controller에 둔다(데이터 표현이라 매핑 중복 허용, 업무 로직은 service 재사용) (#251)
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
@@ -259,6 +267,8 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 | report | 4개 전부 | 작업 상태 전이·Outbox 보유 |
 | ai | Presentation · Application · Infrastructure | DB 없음. LangGraph 그래프·노드, 판정 대조 로직이 Application, LLM·서비스 클라이언트가 Infrastructure |
 | scoring | Presentation · Application · Infrastructure | 상태 없음. 모델 로딩·추론이 Infrastructure |
+
+- scoring 모델 사전 검사 파일 구성(#608, 2026-11-13 결정): `app/preflight.py`는 router(`preflight`)·service(`PreflightService`)·요청/응답 모델(`PreflightRequest`·`PreflightResult` 등)을 한 파일에 두는 현 구성을 유지한다. core 중계 전용 내부 엔드포인트 1개이고, 계층은 이미 함수·클래스로 나뉘어 router는 `PreflightService.check`만 부르며 S3 접근은 `S3ModelArtifacts`(clients)가 맡는다. 모델은 이 엔드포인트에서만 쓰여 나눠도 얻는 것이 적고 `bootstrap.py`·테스트의 import 경로만 바뀐다(`versions.py`도 같은 한 파일 구성). 엔드포인트가 늘거나 다른 모듈이 모델을 쓰게 되면 `m2/`처럼 `router.py`·`service.py`·`models.py`로 나눈다
 
 ### 2.5 요청 처리 예시 (learning 답변 제출)
 ```
@@ -442,7 +452,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ controller/
 │  ├─ service/
 │  ├─ scheduler/                 # MemoryEmbeddingScheduler: 검색 문서 임베딩 선점·재시도·리스 복구
-│  ├─ client/                    # EmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient
+│  ├─ client/                    # MemoryEmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient, StudentProfileClient(core 닉네임)
 │  ├─ domain/
 │  └─ repository/
 └─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
@@ -585,7 +595,7 @@ backend/scoring-service/
 │  ├─ clients/
 │  │  ├─ base.py
 │  │  ├─ core_client.py          # 기동 시 활성 버전 조회
-│  │  └─ model_artifacts.py      # S3 가중치 임시 경로 다운로드
+│  │  └─ model_artifacts.py      # S3 가중치 임시 경로 다운로드, 사전 검사용 파일 정보 읽기
 │  ├─ messaging/
 │  │  ├─ envelope.py
 │  │  ├─ connection.py
@@ -761,7 +771,7 @@ backend/report-service/
     | report-worker | `app/clients/core_client.py` | 학생 별명 `GET /internal/students/{id}/profile`(#119)·리포트 표시 설정 `GET /internal/students/{id}/report-template`(#209) 조회, 삭제 완료 보고 |
     | ai·scoring | `app/clients/core_client.py` | 기동·재연결 시 활성 버전 snapshot `GET /internal/model-versions/active` (ai #68, scoring #85) |
 
-  - P27(설계·구현 전) learning→ai 추가 호출: `memory/client/EmbeddingClient`(`POST /internal/embeddings`, 기존 경로)·`MemoryExplanationAiClient`(`POST /internal/memory-explanations`). learning→ai egress는 이미 허용돼 네트워크 정책 변경 없음
+  - P27(설계·구현 전) learning→ai 추가 호출: `memory/client/MemoryEmbeddingClient`(`POST /internal/embeddings`, 기존 경로)·`MemoryExplanationAiClient`(`POST /internal/memory-explanations`). learning→ai egress는 이미 허용돼 네트워크 정책 변경 없음
   - migration-job: RDS egress / local: LLM API·토스 stub Service는 compose E2E 전용이며 kind에는 없음(4.1, 설명 sLLM 대역 `sllm-server`는 4.4)
 
 ### 4.4 확장

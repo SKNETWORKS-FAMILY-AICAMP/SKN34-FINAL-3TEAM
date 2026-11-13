@@ -31,7 +31,8 @@ export function Workspace({
   aside,
 }: {
   title: string
-  nav: { path: string; label: string }[]
+  /** short·icon이 있으면 학부모 폰 크기에서 하단 바에 표시 */
+  nav: { path: string; label: string; short?: string; icon?: ReactNode }[]
   children: ReactNode
   actions?: ReactNode
   /** parent: 왼쪽 메뉴 + 본문 배치(학부모 대시보드 시안). 관리자는 기존 위쪽 메뉴 배치. */
@@ -183,6 +184,13 @@ export function Workspace({
             <main className="ws-main" id="parent-main" tabIndex={-1}>{children}</main>
             {footer}
           </div>
+          {nav.some(n => n.short) && <nav className="ws-bottom-nav" aria-label="학부모 하단 메뉴">
+            {nav.filter(n => n.short).map(n => (
+              <Link key={n.path} to={n.path + location.search} aria-label={n.label} aria-current={location.pathname === n.path ? 'page' : undefined}>
+                {n.icon}<span>{n.short}</span>
+              </Link>
+            ))}
+          </nav>}
           {expiredModal}
           {menuOpen && <Modal title="학부모 메뉴" onClose={() => setMenuOpen(false)}><div className="ws-parent-menu">{menu}<div className="ws-menu-actions" onClick={event => { if ((event.target as Element).closest('button')) setMenuOpen(false) }}>{actions}{logout}</div><ServiceLinks role={session?.role} /></div></Modal>}
         </div>

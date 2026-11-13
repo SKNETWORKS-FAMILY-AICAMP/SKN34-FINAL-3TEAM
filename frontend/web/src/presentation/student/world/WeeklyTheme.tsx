@@ -73,9 +73,6 @@ export function WeeklyThemeCard({
       {!today && !theme.review.open && (
         <p className="st-meta">오늘은 열린 문제가 없어요. 다음 요일에 새 문제가 열려요.</p>
       )}
-      {child.plan === 'FREE' && (
-        <p className="st-meta">무료로는 하루에 오늘 문제 한 개를 풀 수 있어요. 지난 요일 문제는 새로 시작할 수 없어요.</p>
-      )}
       {theme.review.open && <WeekendReview child={child} theme={theme} byId={byId} onOpen={open} />}
       {theme.completed && <p className="st-week-done">이번 주 테마를 끝까지 해냈어요!</p>}
     </section>

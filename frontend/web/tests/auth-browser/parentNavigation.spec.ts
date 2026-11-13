@@ -7,7 +7,9 @@ const childId = '00000000-0000-4000-8000-000000000001'
 const otherId = '00000000-0000-4000-8000-000000000002'
 
 async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEKLY' = 'DAILY', withHighlights = false) {
-  const children = [childId, otherId].map((id, index) => ({ id, nickname: index ? '달빛' : '별빛', grade: 3, birthYear: 2017, plan: 'PREMIUM', pinSet: false, pinLocked: false }))
+  const children = [childId, otherId].map((id, index) => ({ id, nickname: index ? '달빛' : '별빛', grade: 3, birthYear: 2017, pinSet: false, pinLocked: false }))
+  // 이용권은 /children이 아니라 entitlement로만 내려온다(#602).
+  const entitlement = { product: { id: 'premium', code: 'PREMIUM', name: '프리미엄', price: 14900, billingCycle: 'MONTHLY', childLimit: 1, active: true, features: {}, limits: { dailyMissions: 5 } }, status: 'ACTIVE', autoRenew: false, refundPending: false, conversationEnabled: true, narrativeEnabled: true }
   const period = { from: '2026-11-09', to: periodType === 'DAILY' ? '2026-11-09' : '2026-11-15' }
   const report: WeeklyReport = { reportId: 'report-1', childId, period, periodType, revision: 1, status: 'COMPLETED', state: 'OK', parentSharingEnabled: true,
     revisions: [{ revision: 1 }], inclusionRule: '합성 리포트 검증 자료', metrics: [], thinkingTypes: [], changes: [], reflections: [], quotes: [], problems: [], narrative: null, verification: { numbersMatched: true, quotesMatched: true } }
@@ -33,7 +35,7 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
     if (path === '/me') return json({ role: 'PARENT', authMethod: 'GOOGLE', name: '합성 보호자', email: 'parent@example.test', nextAction: 'READY', startPath: '/parent/journal' })
     if (path === '/children') return json({ items: children })
     if (path.endsWith('/sharing-preferences')) return json({ studentId: path.split('/')[2], parentSharingEnabled: true })
-    if (path.endsWith('/entitlement')) return json({ childId: path.split('/')[2], product: { id: 'premium', code: 'PREMIUM', name: '프리미엄', price: 14900, billingCycle: 'MONTHLY', childLimit: 1, active: true, features: {}, limits: { dailyMissions: 5 } }, status: 'ACTIVE', autoRenew: false, refundPending: false, conversationEnabled: true, narrativeEnabled: true })
+    if (path.endsWith('/entitlement')) return json({ ...entitlement, childId: path.split('/')[2] })
     if (path === '/notifications') return json({ items: [{ id: 'notification-1', childId, type: 'REPORT_COMPLETED', title: '리포트가 준비됐어요', link: `/parent/report?childId=${childId}`, readAt: null, createdAt: '2026-11-10T00:00:00Z' }], page: 0, size: 20, hasNext: false })
     if (path === '/notifications/stream') return route.abort('failed')
     if (path === '/notification-settings') {
@@ -70,7 +72,7 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
     if (path.endsWith('/attempts')) return json({ childId, items: [], page: 0, size: 20, totalElements: 0 })
     return json({ status: 404, code: 'NOT_FOUND', title: '합성 검사에 없는 요청입니다.' }, 404)
   })
-  return { calls, period, controls, report, children }
+  return { calls, period, controls, report, children, entitlement }
 }
 
 async function capture(page: Page, name: string) {
@@ -302,9 +304,13 @@ for (const [state, notice] of [
 })
 
 for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481: ${kind} 응답에서는 설명 원문을 표시하지 않는다`, async ({ page, context }) => {
-  const { report, children } = await parentServer(context, kind === 'DAILY' ? 'DAILY' : 'WEEKLY')
+  const { report, entitlement } = await parentServer(context, kind === 'DAILY' ? 'DAILY' : 'WEEKLY')
   report.explanations = { state: 'INCLUDED', items: [explanation] }
-  if (kind === 'FREE') children[0].plan = 'FREE'
+  // 무료: 서버는 설명을 null로 보내고(api-spec 766행) entitlement로 프리미엄 안내를 고른다.
+  if (kind === 'FREE') {
+    Object.assign(entitlement, { status: 'FREE', conversationEnabled: false, narrativeEnabled: false })
+    report.explanations = null as never
+  }
   if (kind === 'PRIVATE') report.parentSharingEnabled = false
   if (kind === 'INVALID') report.explanations.items = []
   await page.goto(`/parent/report?childId=${childId}`)

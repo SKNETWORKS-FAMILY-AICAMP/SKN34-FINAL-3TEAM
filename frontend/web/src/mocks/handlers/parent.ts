@@ -31,6 +31,7 @@ import {
 } from '../fixtures/parent.ts'
 import { guard, respond, problem } from './student.ts'
 import { guardianPasswordState, setGuardianPassword } from '../fixtures/guardianPassword.ts'
+import { mockPremium } from '../fixtures/payments.ts'
 import { pinProblem } from '../../domain/studentDevice.ts'
 export const page = <T>(items: T[]) => ({ items, page: 0, size: 20, totalElements: items.length })
 export const fail = (code: string, title: string, status = 400, retryable = false): never => {
@@ -125,7 +126,7 @@ async function conversationGuard(request: Request, id: string) {
   if (conversationOwners.has(id) && conversationOwners.get(id) !== mockIdentity.email) fail('NOT_FOUND', '본인의 대화를 찾을 수 없습니다.', 404)
   const child = await parentChild(request, c.childId)
   requireShared(c.childId)
-  if (request.method === 'POST' && child.plan !== 'PREMIUM')
+  if (request.method === 'POST' && !mockPremium(child.id))
     fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
   return c
 }
@@ -366,7 +367,6 @@ export const parentHandlers = [
         nickname: d.nickname,
         grade: d.grade,
         birthYear: d.birthYear,
-        plan: 'FREE',
       }
       rows.unshift(fixtureConsent(docs.find((doc) => doc.kind === 'GUARDIAN')!, c.id))
       store.replaceChildren([...children, c])
@@ -542,7 +542,7 @@ export const parentHandlers = [
       const body = (await request.json()) as Scope & { reportId?: string },
         c = await parentChild(request, body.childId)
       requireShared(c.id)
-      if (c.plan !== 'PREMIUM')
+      if (!mockPremium(c.id))
         fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
       // 일일 리포트 고정 대화(FN-RPT-16, P25): 그 리포트의 자녀·대상일·최신 판으로 고정
       const fixed = body.reportId ? reports.get(body.reportId)?.at(-1) : undefined
@@ -658,7 +658,7 @@ export const parentHandlers = [
           : r!
       const result = {
         ...recomputed,
-        explanations: c.plan === 'FREE' || recomputed.periodType === 'DAILY' ? null : mode === 'explanation-missing' ? { state: 'NOT_INCLUDED', items: [] } : recomputed.explanations,
+        explanations: !mockPremium(c.id) || recomputed.periodType === 'DAILY' ? null : mode === 'explanation-missing' ? { state: 'NOT_INCLUDED', items: [] } : recomputed.explanations,
         revisions: versions.map((v) => ({ revision: v.revision, generatedAt: v.generatedAt })),
         status:
           mode === 'report-running' ? 'RUNNING' : mode === 'report-failed' ? 'FAILED' : r!.status,

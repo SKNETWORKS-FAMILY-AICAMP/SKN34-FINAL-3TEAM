@@ -1,77 +1,29 @@
-import { nextBillingMonth } from '../../domain/payment.ts'
 import { http } from 'msw/http'
 import { guard, respond as respondBase } from './student.ts'
 import { parentGuard, parentChild, fail } from './parent.ts'
 import { fixtureStore } from '../fixtures/student.ts'
 import { mockIdentity, mockAccountChildren, workspaceScenario } from '../fixtures/accounts.ts'
-import { setMockChildPlan } from '../fixtures/childPlan.ts'
-import type { PaymentProduct, PaymentRecord, PaymentRefund, PaymentSubscription, PaymentOrder } from '../../domain/payment.ts'
+import { addMockSubscription, existingPaymentAccount, freeProduct as free, mockDay as day, mockEntitlement, paymentAccount, persistPaymentFixture as persist, premiumProduct as premium } from '../fixtures/payments.ts'
+import type { PaymentAccount as Account } from '../fixtures/payments.ts'
+import type { PaymentRecord, PaymentRefund } from '../../domain/payment.ts'
 
-const premium: PaymentProduct = { id: '74000000-0000-4000-8000-000000000001', code: 'PREMIUM', name: '프리미엄', price: 14900, billingCycle: 'MONTHLY', childLimit: 1, active: true, features: { feedback: true, conversations: true, fullReport: true }, limits: { dailyFeedback: 50, dailyConversations: 30, reportNarrative: true } }
-const free: PaymentProduct = { ...premium, id: '74000000-0000-4000-8000-000000000000', code: 'FREE', name: '무료', price: 0, billingCycle: 'NONE', features: { feedback: true, conversations: false, fullReport: false }, limits: { dailyMissions: 3, dailyConversations: 0, reportNarrative: false } }
-type Account = { subscriptions: PaymentSubscription[]; payments: PaymentRecord[]; orders: Map<string, PaymentOrder>; keys: Map<string, { body: string; result: unknown }> }
-const accounts = new Map<string, Account>()
-const storageKey = 'sagomungchi:payment-fixture:v1'
-// Only virtual development fixtures cross tabs; production uses the server as source of truth.
-const fixtureChannel = typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(storageKey) : null
-import.meta.hot?.dispose(() => fixtureChannel?.close())
-function persist() {
-  if (typeof sessionStorage === 'undefined') return
-  const value = JSON.stringify([...accounts].map(([owner, a]) => [owner, { subscriptions: a.subscriptions, payments: a.payments, orders: [...a.orders] }]))
-  if (sessionStorage.getItem(storageKey) === value) return
-  sessionStorage.setItem(storageKey, value)
-  fixtureChannel?.postMessage(value)
-}
 async function respond(action: () => Promise<unknown>, status = 200) {
   return respondBase(async () => { try { return await action() } finally { persist() } }, status)
 }
-function restoreFixture(value: string) {
-  try {
-    const saved = JSON.parse(value)
-    for (const [owner, data] of saved) {
-      if (typeof owner !== 'string' || !owner.endsWith('@example.test') || !Array.isArray(data.subscriptions) || !Array.isArray(data.payments) || !Array.isArray(data.orders)) continue
-      const a: Account = { ...data, orders: new Map(data.orders), keys: accounts.get(owner)?.keys ?? new Map() }
-      for (const p of a.payments) if (p.subscription) p.subscription = a.subscriptions.find(s => s.subscriptionId === p.subscription?.subscriptionId) ?? p.subscription
-      accounts.set(owner, a)
-    }
-  } catch { /* Development fixture only. */ }
-}
-if (typeof sessionStorage !== 'undefined') restoreFixture(sessionStorage.getItem(storageKey) ?? '[]')
-if (fixtureChannel) fixtureChannel.onmessage = event => {
-  if (typeof event.data !== 'string' || sessionStorage.getItem(storageKey) === event.data) return
-  restoreFixture(event.data)
-  sessionStorage.setItem(storageKey, event.data)
-  const current = accounts.get(mockIdentity.email)
-  for (const sub of current?.subscriptions ?? []) if (sub.status === 'ACTIVE') setMockChildPlan({ childId: sub.childId, plan: 'PREMIUM' })
-  window.dispatchEvent(new Event('sagomungchi:payment-fixture-updated'))
-}
-const day = (offset: number) => new Date(Date.now() + offset * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
 function parentRead(request: Request) { guard(request); if (fixtureStore.snapshot().session?.role !== 'PARENT') return fail('FORBIDDEN', '학부모 본인의 결제만 확인할 수 있습니다.', 403) }
 function account(request: Request): Account {
   parentRead(request)
   if (workspaceScenario === 'query-fail') return fail('PAYMENT_STORAGE_UNAVAILABLE', '거래 정보를 불러오지 못했습니다.', 503)
-  let a = accounts.get(mockIdentity.email)
-  if (!a) {
-    a = { subscriptions: [], payments: [], orders: new Map(), keys: new Map() }
-    for (const c of fixtureStore.snapshot().children ?? []) if (c.plan === 'PREMIUM') {
-      const s: PaymentSubscription = { subscriptionId: crypto.randomUUID(), childId: c.id, product: structuredClone(premium), status: 'ACTIVE', periodStart: day(-2), periodEnd: nextBillingMonth(day(-2)), nextBillingDate: nextBillingMonth(day(-2)), autoRenew: true, graceUntil: null, renewalRetryCount: 0, billingRegistered: true }
-      a.subscriptions.push(s)
-      a.payments.push({ paymentId: crypto.randomUUID(), orderId: 'mock-' + crypto.randomUUID(), childId: c.id, amount: premium.price, status: 'APPROVED', entitlementStatus: 'APPLIED', approvedAt: new Date(Date.now() - 2 * 86400000).toISOString(), failureCode: null, subscription: s, refundRequests: [] })
-    }
-    accounts.set(mockIdentity.email, a)
-  }
-  return a
+  return paymentAccount()
 }
 // 이관 목업도 기존 결제 fixture를 읽는다. 결제 명의·구독 상태를 이전하거나 바꾸지 않는다.
 export function requireMockTransferPaymentReady(sender: string, childId: string) {
   if (workspaceScenario === 'query-fail') fail('PAYMENT_STORAGE_UNAVAILABLE', '거래 정보를 불러오지 못했습니다.', 503)
-  const data = accounts.get(sender)
-  const children = sender === mockIdentity.email ? fixtureStore.snapshot().children ?? [] : mockAccountChildren.get(sender) ?? []
+  const data = existingPaymentAccount(sender) ?? (sender === mockIdentity.email || mockAccountChildren.has(sender) ? paymentAccount(sender) : undefined)
   const subscriptions = data?.subscriptions ?? []
   const payments = data?.payments ?? []
   const unresolved = (p: PaymentRecord) => p.refundRequests.some(r => ['REQUESTED', 'APPROVED', 'FAILED'].includes(r.status))
-  if ((!data && children.some(c => c.plan === 'PREMIUM')) ||
-    subscriptions.some(s => s.status === 'RENEWAL_FAILED' || (s.status === 'ACTIVE' && (s.autoRenew || s.periodEnd > day(0))) || (s.status === 'CANCELED' && s.periodEnd > day(0))) || payments.some(unresolved))
+  if (subscriptions.some(s => s.status === 'RENEWAL_FAILED' || (s.status === 'ACTIVE' && (s.autoRenew || s.periodEnd > day(0))) || (s.status === 'CANCELED' && s.periodEnd > day(0))) || payments.some(unresolved))
     fail('WITHDRAWAL_BLOCKED', '발신자의 구독·환불을 먼저 정리해 주세요.', 409)
   if (subscriptions.some(s => s.childId === childId && ['ACTIVE', 'RENEWAL_FAILED'].includes(s.status)) ||
     payments.some(p => p.childId === childId && (p.status === 'CONFIRMING' || unresolved(p))))
@@ -86,23 +38,15 @@ async function keyed<T>(request: Request, action: (body: Record<string, unknown>
 }
 function approve(a: Account, p: PaymentRecord) {
   if (p.status === 'APPROVED') return p
-  const s: PaymentSubscription = { subscriptionId: crypto.randomUUID(), childId: p.childId, product: structuredClone(premium), status: 'ACTIVE', periodStart: day(0), periodEnd: nextBillingMonth(day(0)), nextBillingDate: null, autoRenew: false, graceUntil: null, renewalRetryCount: 0, billingRegistered: false }
-  a.subscriptions.push(s); p.status = 'APPROVED'; p.entitlementStatus = 'APPLIED'; p.approvedAt = new Date().toISOString(); p.subscription = s
-  setMockChildPlan({ childId: p.childId, plan: 'PREMIUM' }); return p
+  const s = addMockSubscription(a, p.childId)
+  p.status = 'APPROVED'; p.entitlementStatus = 'APPLIED'; p.approvedAt = new Date().toISOString(); p.subscription = s; return p
 }
 export const paymentHandlers = [
   http.get('/api/v1/children/:childId/entitlement', ({ request, params }) => respond(async () => {
     const childId = String(params.childId)
     await parentChild(request, childId)
-    const a = account(request)
-    const sub = a.subscriptions.find(s => s.childId === childId &&
-      ((s.status === 'ACTIVE' && s.periodEnd > day(0)) || (s.status === 'RENEWAL_FAILED' && (s.graceUntil ?? '') > day(0))))
-    const product = sub?.product ?? free
-    const refundPending = a.payments.some(p => p.childId === childId && p.status === 'REFUND_REVIEW')
-    return { childId, product, subscriptionId: sub?.subscriptionId ?? null, status: sub?.status ?? 'FREE',
-      autoRenew: sub?.autoRenew ?? false, periodEnd: sub?.periodEnd ?? null, graceUntil: sub?.graceUntil ?? null,
-      refundPending, conversationEnabled: !refundPending && Number(product.limits.dailyConversations) > 0,
-      narrativeEnabled: !refundPending && product.limits.reportNarrative === true }
+    account(request)
+    return mockEntitlement(childId)
   })),
   http.get('/api/v1/products', () => respond(async () => ({ items: [free, premium] }))),
   http.get('/api/v1/subscriptions', ({ request }) => respond(async () => ({ items: account(request).subscriptions.map(s => workspaceScenario === 'payment-renewal-failed' && s.status === 'ACTIVE' ? { ...s, status: 'RENEWAL_FAILED', renewalRetryCount: 1, graceUntil: new Date(Date.now() + 2 * 86400000).toISOString(), nextBillingDate: s.autoRenew ? day(1) : null } : s) }))),

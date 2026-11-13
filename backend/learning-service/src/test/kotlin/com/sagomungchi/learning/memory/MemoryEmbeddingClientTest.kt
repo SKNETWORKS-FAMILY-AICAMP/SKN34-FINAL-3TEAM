@@ -5,6 +5,7 @@ import com.github.tomakehurst.wiremock.client.WireMock.*
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.config.InternalRestClientFactory
+import com.sagomungchi.learning.memory.client.*
 import com.sagomungchi.learning.memory.service.*
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -26,7 +27,7 @@ class MemoryEmbeddingClientTest {
         val props=AppProperties(AppProperties.Internal("test",Duration.ofSeconds(1),Duration.ofSeconds(2)),
             services=mapOf("ai" to server.baseUrl(),"core" to server.baseUrl()))
         val factory=InternalRestClientFactory(props,RestClient.builder().messageConverters { it.add(0,MappingJackson2HttpMessageConverter(mapper)) })
-        client=MemoryEmbeddingClient(factory,mapper);privacy=MemoryTextPrivacy(factory)
+        client=MemoryEmbeddingClient(factory,mapper);privacy=MemoryTextPrivacy(StudentProfileClient(factory))
     }
     @AfterEach fun stop() { server.stop() }
     private fun response(vector: List<Double> = List(1536) { if(it==0) 1.0 else 0.0 }) =

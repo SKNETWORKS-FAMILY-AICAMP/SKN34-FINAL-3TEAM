@@ -22,6 +22,7 @@ import com.sagomungchi.learning.attempt.repository.AttemptRepository
 import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.TimelineAnswer
 import com.sagomungchi.learning.judgment.service.JudgmentService
+import com.sagomungchi.learning.memory.service.MemorySearchService
 import com.sagomungchi.learning.memory.service.ThemeFrameService
 import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.service.MissionService
@@ -80,7 +81,7 @@ class AttemptService(
     private val judgmentService: JudgmentService,
     private val weeklyThemeService: WeeklyThemeService,
     private val themeFrameService: ThemeFrameService,
-    private val memorySearchRepository: com.sagomungchi.learning.memory.repository.MemorySearchRepository,
+    private val memorySearchService: MemorySearchService,
 ) {
     /**
      * 시도 시작 (state-diagram 3.2, sequence-diagram 3.1). 진행 중 시도가 있으면 미션 공개·범위와 무관하게 그 시도를 돌려줌
@@ -179,7 +180,7 @@ class AttemptService(
         val completed = lockOwned(attemptId).complete(now())
         attemptRepository.insertReflection(completed.id, command, checkNotNull(completed.completedAt))
         attemptRepository.complete(completed)
-        memorySearchRepository.register(completed.id)
+        memorySearchService.register(completed.id)
         themeFrameService.awardIfComplete(completed)
     }
 

@@ -124,6 +124,15 @@ class ReportEvent:
     failure_reason: str | None = None
 
 
+@dataclass(frozen=True)
+class StudentDisplayName:
+    student_id: UUID
+    nickname: str
+    parent_sharing_enabled: bool = False
+    template_snapshot: dict | None = None
+    grade: int | None = None
+
+
 class JobConflict(ValueError):
     """A job ID was reused for a different student or period."""
 
