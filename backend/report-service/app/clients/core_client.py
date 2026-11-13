@@ -4,7 +4,7 @@ from uuid import UUID
 
 import httpx
 
-from app.generation.pipeline import StudentDisplayName
+from app.generation.models import StudentDisplayName
 from app.generation.records import RecordContractError
 from app.generation.template_settings import validate_snapshot
 

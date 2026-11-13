@@ -2,6 +2,7 @@ package com.sagomungchi.learning.memory.service
 
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.storage.AssetUrls
+import com.sagomungchi.learning.memory.client.MemoryEmbeddingClient
 import com.sagomungchi.learning.memory.repository.MemorySearchRepository
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -22,6 +23,10 @@ class MemorySearchService(private val repository: MemorySearchRepository,private
     private val privacy: MemoryTextPrivacy,private val assets: AssetUrls,private val clock: Clock,
     @Value("\${app.memory.minimum-similarity:0.35}") private val minimum: Double) {
     init { require(minimum.isFinite() && minimum in -1.0..1.0) }
+    /** 학습 완료한 시도를 검색 문서 대기 상태로 등록. 호출한 쪽(학습 완료) 트랜잭션에 참여 */
+    fun register(attemptId: UUID) { repository.register(attemptId) }
+    /** 학생 삭제. 검색 문서가 시도를 참조하므로 시도 삭제 전에 호출, 호출한 쪽 트랜잭션에 참여 */
+    fun deleteByStudent(studentId: UUID) { repository.deleteByStudent(studentId) }
     fun search(studentId: UUID,query: String): MemorySearchResult {
         val date=LocalDate.now(clock.withZone(ZoneId.of("Asia/Seoul")))
         val before=date.minusDays((date.dayOfWeek.value-1).toLong())

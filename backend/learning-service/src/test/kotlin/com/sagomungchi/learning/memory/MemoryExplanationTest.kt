@@ -1,15 +1,13 @@
 package com.sagomungchi.learning.memory
 
+import com.sagomungchi.learning.memory.client.*
 import com.sagomungchi.learning.memory.service.*
 import com.sagomungchi.learning.memory.repository.*
 import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning._common.exception.BusinessException
-import io.github.resilience4j.circuitbreaker.CallNotPermittedException
-import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpServerErrorException
-import org.springframework.web.client.ResourceAccessException
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
@@ -87,14 +85,9 @@ class MemoryExplanationTest {
         verifyNoInteractions(ai)
     }
     @Test fun `생성 호출 ai 장애는 503`() {
-        for (outage in listOf(
-            AiCallException("AI_UNAVAILABLE",true,true,HttpServerErrorException(HttpStatus.SERVICE_UNAVAILABLE)),
-            AiCallException("AI_TIMEOUT",true,true,ResourceAccessException("timeout")),
-            AiCallException("AI_UNAVAILABLE",true,true,ResourceAccessException("refused")),
-            CallNotPermittedException.createCallNotPermittedException(CircuitBreaker.ofDefaults("test")))) {
-            doThrow(outage).`when`(ai).explain(anyRequest(),anyLong())
-            assertUnavailable()
-        }
+        // 장애 판정(서킷 열림·전송 실패·502 밖 5xx)은 MemoryExplanationAiClientTest
+        doThrow(MemoryAiOutageException()).`when`(ai).explain(anyRequest(),anyLong())
+        assertUnavailable()
     }
     @Test fun `생성이 일어난 실패는 설명만 FAILED`() {
         for (failure in listOf(

@@ -5,7 +5,15 @@ from typing import Literal
 from uuid import UUID
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, StrictInt
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    ValidationError,
+)
 from pydantic.alias_generators import to_camel
 
 from app.clients.base import internal_client
@@ -285,12 +293,16 @@ class LearningClient:
         keys = list(expected)
         for start in range(0, len(keys), 50):
             batch = keys[start : start + 50]
-            response = await self._client.get(
-                "/internal/records/evidence",
-                params={"answerIds": ",".join(str(key) for key in batch)},
-            )
-            response.raise_for_status()
-            parsed = EvidenceResponse.model_validate(response.json())
+            try:
+                response = await self._client.get(
+                    "/internal/records/evidence",
+                    params={"answerIds": ",".join(str(key) for key in batch)},
+                )
+                response.raise_for_status()
+                parsed = EvidenceResponse.model_validate(response.json())
+            except (httpx.HTTPError, ValidationError) as exc:
+                # 전송·응답 형식 오류는 여기서 바꿔 service가 httpx를 모르게 한다
+                raise RecordContractError("Evidence lookup failed") from exc
             seen = set()
             for item in parsed.items:
                 if item.answer_id not in batch or item.answer_id in seen:
