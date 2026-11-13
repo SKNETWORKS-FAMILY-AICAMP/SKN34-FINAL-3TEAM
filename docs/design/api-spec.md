@@ -120,7 +120,7 @@
 | `JOB_RETRY_UNAVAILABLE` / `JOB_RETRY_OUTCOME_UNKNOWN` | 503 | 재처리를 지원하지 않는 작업 종류 / 알림 재처리 후 결과 상태 미확정 (2.8) |
 | `RATE_LIMITED` / `STUDENT_AUTH_UNAVAILABLE` | 429 / 503 | 기기 등록·페어링 발급 10분 한도 초과 / 기기·페어링 저장소(Redis) 장애 (3.11) |
 | `REAUTH_PENDING` | 409 | Google 재인증 callback 전에 재인증 토큰 수령 시도 (5.6) |
-| `STUDENT_RECORDS_PRIVATE` / `STUDENT_UNAVAILABLE` / `STUDENT_DELETED` | 403 / 409 / 409 | 학생이 학부모 공개를 끈 기록·비교 조회(#206) / 학생 삭제 진행·비활성(꾸미기·공개 설정·리포트 설정 내부 조회) / 삭제 차단된 학생의 리포트 생성(관리자 재처리) |
+| `STUDENT_RECORDS_PRIVATE` / `STUDENT_UNAVAILABLE` / `STUDENT_DELETED` | 403 / 409 / 409 | 학생이 학부모 공개를 끈 기록 조회(#206. 시도 비교는 학생 전용이라 해당 없음) / 학생 삭제 진행·비활성(꾸미기·공개 설정·리포트 설정 내부 조회) / 삭제 차단된 학생의 리포트 생성(관리자 재처리) |
 | `INVALID_TEMPLATE_SETTINGS` / `TEMPLATE_PROPOSAL_EXPIRED` | 400 / 409 | 리포트 표시 설정 값 오류 / 다른 대화·만료·덮어쓴 변경안 확정, 설정 revision 변경 (#209) |
 | `ANALYSIS_IN_PROGRESS` / `EVIDENCE_UNAVAILABLE` / `AI_INVALID_RESPONSE` | 409 / 410 / 502 | 같은 대화에서 분석 생성 중 / 삭제된 분석 근거 / ai 응답 형식 오류 (2.4) |
 | `ANALYSIS_FIRST_RESPONSE_TIMEOUT` / `ANALYSIS_TIMEOUT` / `ANALYSIS_FAILED` | 504 / 504 / 502 | 분석 대화 SSE `error` 이벤트 전용: ai 첫 이벤트 20초 안에 없음 / 전체 120초 초과 / 원인 코드가 없는 처리 실패(원래 오류 상태가 있으면 그 상태). `retryable: true`, 메시지는 FAILED로 저장 (3.3) |

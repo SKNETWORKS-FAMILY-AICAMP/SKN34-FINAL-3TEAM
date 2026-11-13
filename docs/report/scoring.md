@@ -25,6 +25,7 @@
 | `app/model_registry.py` | 정확한 scope 검사, 낮은 revision 무시, 로딩 완료 후 교체, 실패 시 이전 모델 유지. 보고 revision은 실제 로딩 모델 기준 |
 | `app/clients/model_artifacts.py`, `app/model_loader.py` | 설정된 모델 버킷의 S3 디렉터리만 읽고 경로 이탈 차단. `save_pretrained` 모델·토크나이저와 `train_info.json` 로딩, 누락 가중치로 임의 초기화된 모델 거부 |
 | `app/model_startup.py`, `app/bootstrap.py` | 기동 조회·로딩의 백그라운드 재시도, models readiness, 종료 시 태스크 정리. health 요청이 core/S3를 직접 호출하지 않음 |
+| `app/model_sync.py` | 구독 세션마다 `ModelStartup`을 새로 만들고 scoring 대상 이벤트만 전달(#632, 소비자에서 분리) |
 
 - 설정: `S3_ENDPOINT_URL`(생략 시 AWS SDK 기본 endpoint·자격 증명 체인), `S3_BUCKET`, `S3_REGION`, `MODEL_CACHE_DIR`, `MODEL_RETRY_INTERVAL`. MinIO overlay가 endpoint·로컬 자격 증명 주입
 - `MODEL_CACHE_DIR`은 일시 다운로드 경로이며 롤백 캐시가 아님. 로컬 `local_data/scoring-models`(gitignore), 컨테이너 `/tmp/scoring-models`. readOnlyRootFilesystem 배포 시 쓰기 가능한 임시 볼륨 필요
@@ -46,7 +47,7 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 | 요구사항 | 구현 |
 |---|---|
 | Pod별 브로드캐스트 | `ModelVersionConsumer`가 서버 생성 이름의 exclusive·auto-delete 큐를 `events.topic`의 `model.version.*`에 바인딩 |
-| 큐 연결 후 초기 조회 | consume 등록까지 마친 다음 `ModelStartup` 시작. 조회 중 수신 메시지는 메모리에 보존 |
+| 큐 연결 후 초기 조회 | consume 등록 전 `ModelSync.reset`으로 새 `ModelStartup`을 만들고, consume 등록까지 마친 다음 시작. 조회 중 수신 메시지는 메모리에 보존 |
 | 순서 역전·중복 | 이름별 최신 이벤트 보존, `ModelRegistry`에서 revision 비교 |
 | scoring 모델만 적용 | kind MODEL이며 `m2-`·`m1-` 이름인 항목만 전달 |
 | 로딩 실패 | 기존 모델 유지·재시도. scope는 기존 모델과 최신 승인 범위의 교집합. 한 모델 실패가 다른 이름의 업데이트를 막지 않음 |
@@ -54,6 +55,10 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 | 재연결 | 이전 session 정리 → 새 큐 바인딩 → snapshot 재조회 |
 | readiness | 최초 준비·재연결 조정 전 false. 빈 활성 목록은 준비 완료. 정상 기동 이후 교체 실패는 기존 모델 제공 유지 |
 | 로그 | 모델명·revision·큐명·예외 유형만. 메시지 본문·artifact URI·자격 증명 미기록 |
+
+### 소비자 계층 분리 (#632)
+
+ai #254(`PromptSync`)와 같은 구조로, 소비자에 있던 세션별 `ModelStartup` 생성과 `scoring_versions` 필터·`offer` 전달을 `app/model_sync.py`의 `ModelSync`로 옮겼다. `messaging/consumer.py`는 구독·재연결, 봉투 검증, `ModelSync.offer`, ACK만 맡는다. 세션 순서(소비 등록 전 `reset` → 바인딩·소비 등록 → `start` → 종료 시 `stop`)와 readiness·이벤트 계약·로그는 그대로다. snapshot 조회·revision 조정 본체는 기존 `ModelStartup`에 남는다.
 
 검증: `scripts/verify_scoring_events.py`가 격리된 core·RabbitMQ·MinIO·scoring 2개로 두 exclusive 큐·활성화·롤백 재다운로드·파일 누락 시 기존 버전 유지·브로커 중단 중 활성화 후 재연결 복구·임시 파일 정리를 확인(`2.1-check`는 같은 2.0 artifact를 가리키는 교체 검증용 메타데이터).
 

@@ -23,6 +23,7 @@ from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.model_loader import ModelLoader
 from app.model_loading_reporter import ModelLoadingReporter
 from app.model_registry import ModelRegistry
+from app.model_sync import ModelSync
 from app.preflight import router as preflight_router
 from app.security import InternalAuthMiddleware
 from app.versions import router as versions_router
@@ -42,9 +43,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     async with internal_client(settings.core_url) as http:
         registry = ModelRegistry(ModelLoader(S3ModelArtifacts(settings)))
-        consumer = ModelVersionConsumer(
-            amqp, CoreClient(http), registry, settings.model_retry_interval
-        )
+        sync = ModelSync(CoreClient(http), registry, settings.model_retry_interval)
+        consumer = ModelVersionConsumer(amqp, sync, settings.model_retry_interval)
         app.state.model_registry = registry
         usage = UsagePublisher(EventPublisher(amqp), "scoring", "scoring-service")
         app.state.m2_service = M2Service(
