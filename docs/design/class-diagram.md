@@ -2184,6 +2184,8 @@ classDiagram
   class MemorySearchService {
     <<service>>
     +search(studentId, query) MemorySearchResult
+    +register(attemptId)
+    +deleteByStudent(studentId)
   }
   class MemoryExplanationService {
     <<service>>
@@ -2202,7 +2204,7 @@ classDiagram
     +explain(query, evidence) ExplanationDraft
   }
   class MemoryEvidenceRules {
-    <<domain>>
+    <<service>>
     +valid(draft, evidence) boolean
   }
 
@@ -2224,11 +2226,11 @@ classDiagram
 ```
 
 - #559 구현(learning V19): `ThemeFrameService`(지급·소급·보유·확인·삭제)·`AlbumService`·`MemoryController`의 앨범·확인·보유 확인과 기동 소급 `ThemeFrameBackfillRunner`. 회차 상세의 문제·시도·엔딩은 `WeeklyThemeService.pastRound`가 조합. 검색은 #563 구현, 설명은 #564 구현([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
-- 학습 완료 처리(기존 `AttemptService`의 돌아보기 저장 = 학습 완료)가 같은 트랜잭션에서 `ThemeFrameService.awardIfComplete`(회차 5문제 완료 시 액자)와 `MemorySearchRepository.register`(`PENDING` 문서)를 부름. `EXTRA` 시도는 둘 다 건너뜀
-- `MemoryEmbeddingScheduler`는 `StuckJudgmentScheduler`처럼 조건부 UPDATE 선점이라 잠금 없음(상태 3.7). `MemoryEmbeddingClient`는 ai `POST /internal/embeddings`(기존 계약, 요청당 8글, 최대 64글 계약 이내), 이전 `KnowledgeEmbedder`는 V17 정리로 없으므로 신규
+- 학습 완료 처리(기존 `AttemptService`의 돌아보기 저장 = 학습 완료)가 같은 트랜잭션에서 `ThemeFrameService.awardIfComplete`(회차 5문제 완료 시 액자)와 `MemorySearchService.register`(`PENDING` 문서, 내부에서 `MemorySearchRepository.register`)를 부름. 다른 기능은 memory repository를 직접 부르지 않음(architecture 2.2). `EXTRA` 시도는 둘 다 건너뜀
+- `MemoryEmbeddingScheduler`는 `StuckJudgmentScheduler`처럼 조건부 UPDATE 선점이라 잠금 없음(상태 3.7). `MemoryEmbeddingClient`는 ai `POST /internal/embeddings`(기존 계약, 요청당 8글, 최대 64글 계약 이내), 이전 `KnowledgeEmbedder`는 V17 정리로 없으므로 신규. HTTP 전송·외부 DTO는 `memory/client`(`MemoryEmbeddingClient`·`MemoryExplanationAiClient`·core 닉네임 조회 `StudentProfileClient`), 마스킹 정책(`MemoryTextPrivacy`)·업무 흐름은 `memory/service`. 생성 호출의 장애 판정(서킷 열림·전송 실패·502 밖 5xx → `MemoryAiOutageException`)은 `MemoryExplanationAiClient`가 맡음
 - `MemoryExplanationService`는 받은 `attemptIds`가 본인 `READY` 문서인지 다시 확인한 뒤 근거를 `[1]~[3]` 번호로만 보내고(학생·시도·답변 ID 미전송, 닉네임 마스킹), `MemoryEvidenceRules.valid`(번호 범위·인용 원문 포함)를 통과한 설명만 번호를 실제 회차·시도로 바꿔 반환
 - 앨범 회차 상세의 문제별 기록은 기존 `record` 기능의 시도 상세를 service로 불러 조합. 엔딩 표시 여부는 `WeeklyThemeService`의 엔딩 상태(#484 `ENDED`)로 판단
-- 학생 삭제 소비의 `StudentDeletionService`가 시도 삭제 전에 `MemorySearchRepository.deleteByStudent`, 같은 트랜잭션에서 `ThemeFrameService.deleteByStudent`를 호출
+- 학생 삭제 소비의 `StudentDeletionService`가 시도 삭제 전에 `MemorySearchService.deleteByStudent`, 같은 트랜잭션에서 `ThemeFrameService.deleteByStudent`를 호출
 
 ---
 

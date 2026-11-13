@@ -1,5 +1,7 @@
 package com.sagomungchi.learning.memory.service
 
+import com.sagomungchi.learning.memory.client.MemoryEvidence
+import com.sagomungchi.learning.memory.client.MemoryExplanationAiResponse
 import org.springframework.stereotype.Component
 
 /** 565가 조립한 본문의 문장별 번호와 인용을 learning에서도 재검사한다. */

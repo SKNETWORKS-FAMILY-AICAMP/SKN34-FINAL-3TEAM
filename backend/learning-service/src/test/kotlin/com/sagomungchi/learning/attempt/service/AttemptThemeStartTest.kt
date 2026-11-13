@@ -40,7 +40,7 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
     @Autowired lateinit var judgmentService: JudgmentService
     @Autowired lateinit var themeRepository: WeeklyThemeRepository
     @Autowired lateinit var themeFrameService: com.sagomungchi.learning.memory.service.ThemeFrameService
-    @Autowired lateinit var memorySearchRepository: com.sagomungchi.learning.memory.repository.MemorySearchRepository
+    @Autowired lateinit var memorySearchService: com.sagomungchi.learning.memory.service.MemorySearchService
     @Autowired lateinit var jdbc: JdbcTemplate
 
     private lateinit var missions: List<TestRows.SeededMission>
@@ -62,7 +62,7 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
     private fun on(date: LocalDate) = AttemptService(
         attemptRepository, draftRepository, missionService, judgmentService,
         WeeklyThemeService(themeRepository, Clock.fixed(date.atTime(12, 0).atZone(KST).toInstant(), KST), com.sagomungchi.learning.TestAssets.urls),
-        themeFrameService, memorySearchRepository,
+        themeFrameService, memorySearchService,
     )
 
     private fun assertError(status: HttpStatus, code: String, block: () -> Unit) {
