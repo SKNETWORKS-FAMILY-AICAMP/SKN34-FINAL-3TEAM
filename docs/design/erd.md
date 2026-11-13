@@ -782,7 +782,7 @@ erDiagram
     uuid id PK
     uuid event_id UK "llm.usage.recorded id"
     varchar service "ai|scoring"
-    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|THEME_DRAFT|THEME_IMAGE|REPORT_EXPLANATION|KNOWLEDGE_EMBEDDING|THEME_VIDEO|MEMORY_EMBEDDING|MEMORY_EXPLANATION|MEMORY_QUERY|M2|M1"
+    varchar call_type "JUDGMENT|FOLLOWUP|ANALYSIS|REPORT_NARRATIVE|MISSION_DRAFT|THEME_DRAFT|THEME_IMAGE|REPORT_EXPLANATION|KNOWLEDGE_EMBEDDING|THEME_VIDEO|MEMORY_EMBEDDING|MEMORY_EXPLANATION|MEMORY_QUERY|WORD_HELP|M2|M1"
     varchar model
     varchar prompt_version "NULL 허용"
     int input_tokens "NULL 허용"
@@ -850,6 +850,7 @@ erDiagram
 - 에픽 #436(ai #437): 주간 테마 시작·종료 장면 영상 호출 `THEME_VIDEO`를 V45에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V44와 같은 방식, 허용 목록만 넓힘). 토큰이 없어 `cost_usd`가 null(미산정 호출로 셈)
 - #566(에픽 #562): 추억 검색 임베딩 `MEMORY_EMBEDDING`(ai 임베딩 `purpose=MEMORY`)·추억 설명 `MEMORY_EXPLANATION`을 V46에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 허용 목록에 함께 더함(V45와 같은 방식, 허용 목록만 넓힘). ai는 이 확장이 병합된 뒤에만 두 값을 발행한다(#565)
 - #680(에픽 #562, 설계 #679 2026-11-16): 추억 검색 질의 변환(ai 4.2.7) `MEMORY_QUERY`를 V48(`V48__memory_query_call_type.sql`)에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 허용 목록에 함께 더함(V46과 같은 방식, 허용 목록만 넓힘). ai 기본 모델 `gpt-6-luna` 단가(#651)로 `cost_usd`를 계산한다. ai는 이 확장이 병합된 뒤에만 발행한다(#681)
+- #599: 낱말 물어보기(FN-LRN-21, api-spec 4.2.8)의 ai 호출 종류 `WORD_HELP`를 V56에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V46과 같은 방식, 허용 목록만 넓힘)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
 - #243 `outbox_event` 실패·격리: 릴레이는 subject별 선두만 발행. 발행 실패는 `failure_count`·`last_error_code`·`last_failed_at`을 기록하고 1·5·15분 뒤 재시도, 4번째 실패에 `quarantined_at` 기록(report #131과 같은 컬럼·기준). 격리 선두와 같은 subject 뒤 행은 운영 재처리까지 대기, 다른 subject는 계속 발행 ([보고서](../report/core-gateway.md#11-core-outbox-실패-격리-243))
 - #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208))

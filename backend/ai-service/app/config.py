@@ -190,6 +190,18 @@ class Settings(BaseSettings):
     memory_query_provider: Literal["llm", "fake"] = "llm"
     memory_query_max_tokens: int = 512
     memory_query_llm_timeout: float = 7.0
+    # 낱말 물어보기 (FN-LRN-21, api-spec 4.2.7, #599). 기본 LLM 설정을 쓰고 두 번 호출을 전체
+    # 마감 안에서만
+    # (learning→ai 35초보다 짧게). 사전 키·주소는 국립국어원 표준국어대사전·온용어 Open
+    # API(.env에서만, 로그 금지).
+    # fake는 개발용 규칙 설명(사전은 실제 호출, 사용량 없음)
+    word_help_provider: Literal["llm", "fake"] = "llm"
+    word_help_max_tokens: int = 400
+    word_help_deadline: float = 20.0
+    dict_korean_api: str = ""
+    dict_korean_api_key: str = ""
+    kli_korean_api: str = ""
+    kli_korean_api_key: str = ""
 
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0

@@ -35,6 +35,7 @@ CallType = Literal[
     "MEMORY_EMBEDDING",
     "MEMORY_EXPLANATION",
     "MEMORY_QUERY",
+    "WORD_HELP",
     "M2",
     "M1",
 ]

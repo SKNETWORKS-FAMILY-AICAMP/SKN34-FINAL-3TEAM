@@ -486,6 +486,10 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ client/                    # MemoryEmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient, MemoryQueryAiClient(ai /internal/memory-queries, #682 구현), StudentProfileClient(core 닉네임)
 │  ├─ domain/
 │  └─ repository/
+├─ wordhelp/                     # (#599) 낱말 물어보기: 본인 시도 확인·미션 글·유출 검사 값을 붙여 ai 호출(저장 없음)
+│  ├─ controller/
+│  ├─ service/
+│  └─ client/                    # WordHelpAiClient(ai /internal/word-helps, 25초)
 └─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
    ├─ controller/                # 기록 조회·존재 확인·결제 사용 증빙
    ├─ consumer/                  # StudentDeletedConsumer
@@ -582,6 +586,13 @@ backend/ai-service/
 │  │  ├─ checks.py               # 키워드·기간·검색용 문장 칸 규칙 검사
 │  │  ├─ fake.py                 # MEMORY_QUERY_PROVIDER=fake 공백 분리 키워드
 │  │  └─ prompts.py              # memoryQuery 프롬프트 본문·버전
+│  ├─ word_help/                 # 낱말 물어보기: 국립국어원 사전 뜻 → 학생용 쉬운 말 (FN-LRN-21, #599)
+│  │  ├─ router.py               # POST /internal/word-helps
+│  │  ├─ service.py              # 표제어·유출 검사·뜻 고르기·대체 응답(사전 원문)
+│  │  ├─ dictionary.py           # 표준국어대사전·온용어 조회, 표제어 단위 캐시
+│  │  ├─ models.py
+│  │  ├─ fake.py                 # WORD_HELP_PROVIDER=fake 개발용 설명
+│  │  └─ prompts.py              # wordHelp 프롬프트 본문·버전
 │  ├─ prompt_versions/           # 활성 프롬프트 버전 (#68, #254 분리)
 │  │  ├─ router.py               # GET /internal/versions
 │  │  ├─ service.py              # PromptSync: core snapshot·대기 이벤트 조정

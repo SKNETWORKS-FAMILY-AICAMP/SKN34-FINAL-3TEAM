@@ -32,6 +32,7 @@ def test_versions_returns_active_prompt_versions() -> None:
             "themeDraft": "theme-draft@3",
             "memoryExplanation": "memory-explanation@1",
             "memoryQuery": "memory-query@1",
+            "wordHelp": "word-help@1",
         }
     }
 

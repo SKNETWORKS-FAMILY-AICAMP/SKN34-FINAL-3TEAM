@@ -1,7 +1,8 @@
 import { apiFetch, ApiError } from '../apiClient.ts'
 import type { Child, Period, Reflection } from '../../domain/classroom.ts'
 import { difficultyCodes } from '../../domain/learning.ts'
-import type { SelfAssessment, ThinkingActivities } from '../../domain/learning.ts'
+import type { SelfAssessment, ThinkingActivities, WordHelp } from '../../domain/learning.ts'
+import { WORD_QUESTION_MAX, wordSources } from '../../domain/learning.ts'
 import { recordContractError, recordReflection } from '../recordDto.ts'
 import type { AttemptComparison, ComparisonSnapshot } from '../../domain/learning.ts'
 
@@ -56,4 +57,21 @@ export async function saveSelfAssessment(id: string, checks: { elementId: string
       new Set(raw.map((e) => e.elementId)).size !== raw.length)
     throw new ApiError({ status: 502, code: 'CONTRACT_NOT_READY', title: '자기 평가 응답을 확인하지 못했습니다.' })
   return raw as SelfAssessment[]
+}
+
+const wordStates = ['EXPLAINED', 'DICTIONARY_ONLY', 'NOT_FOUND', 'DEFERRED', 'OUT_OF_SCOPE']
+/** 낱말 물어보기 (api-spec 2.2.1, #599). 계약 밖 응답은 보여 주지 않는다(사전 원문이 아닐 수 있음). */
+export async function askWord(id: string, question: string): Promise<WordHelp> {
+  const text = question.trim()
+  if (!text || text.length > WORD_QUESTION_MAX) throw new Error(`물어볼 낱말을 ${WORD_QUESTION_MAX}자 안으로 적어 줘.`)
+  const raw = await apiFetch<WordHelp>(`/attempts/${encodeURIComponent(id)}/word-help`, {
+    method: 'POST', body: JSON.stringify({ question: text }), cache: 'no-store',
+  })
+  const valid = !!raw && wordStates.includes(raw.state) && typeof raw.text === 'string' && !!raw.text.trim() &&
+    (raw.headword === null || typeof raw.headword === 'string') && (raw.example === null || typeof raw.example === 'string') &&
+    Array.isArray(raw.senses) && raw.senses.length <= 3 &&
+    raw.senses.every(s => !!s && typeof s.definition === 'string' && !!s.definition.trim() && wordSources.includes(s.source)) &&
+    (raw.state === 'EXPLAINED' ? raw.senses.length === 1 : raw.state === 'DICTIONARY_ONLY' ? raw.senses.length > 0 : raw.senses.length === 0)
+  if (!valid) throw new ApiError({ status: 502, code: 'CONTRACT_NOT_READY', title: '낱말 설명 응답을 확인하지 못했어요.' })
+  return raw
 }

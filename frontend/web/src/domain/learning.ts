@@ -57,3 +57,15 @@ export function comparisonAnswerText(answer: ComparisonSnapshot['answers'][numbe
   if (essay && typeof essay === 'object') return [text(essay.claim), ...(Array.isArray(essay.reasons) ? essay.reasons.map(text) : []), text(essay.rebuttal)].filter(Boolean).join('\n')
   return text(content.text) || '작성한 내용이 없습니다.'
 }
+
+/** 낱말 물어보기 (FN-LRN-21, api-spec 2.2.1, #599). 뜻은 국립국어원 사전에서만 오고, 저장하지 않는다. */
+export type WordHelpState = 'EXPLAINED' | 'DICTIONARY_ONLY' | 'NOT_FOUND' | 'DEFERRED' | 'OUT_OF_SCOPE'
+export const wordSources = ['표준국어대사전', '온용어'] as const
+export interface WordHelp {
+  state: WordHelpState
+  headword: string | null
+  text: string
+  example: string | null
+  senses: { definition: string; source: (typeof wordSources)[number] }[]
+}
+export const WORD_QUESTION_MAX = 100

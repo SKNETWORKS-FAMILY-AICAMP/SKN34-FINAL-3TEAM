@@ -47,6 +47,11 @@ class LearningController(private val service: LearningProxyService, private val 
     fun answer(@PathVariable attemptId: UUID, @RequestHeader("Idempotency-Key") key: UUID, @RequestBody body: ByteArray) =
         service.exchange("POST", "/attempts/$attemptId/answers", body = objectBody(body), key = key).http()
 
+    /** 낱말 물어보기 (#599, api-spec 2.2.1). 학생 질문·응답은 저장하지 않는다 */
+    @PostMapping("/api/v1/attempts/{attemptId}/word-help")
+    fun wordHelp(@PathVariable attemptId: UUID, @RequestBody body: ByteArray) =
+        service.exchange("POST", "/attempts/$attemptId/word-help", body = objectBody(body)).http(noStore = true)
+
     @PostMapping("/api/v1/attempts/{attemptId}/finish")
     fun finish(@PathVariable attemptId: UUID) = service.exchange("POST", "/attempts/$attemptId/finish").http()
 

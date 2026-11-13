@@ -36,6 +36,8 @@ from app.report_narrative.router import router as report_narrative_router
 from app.security import InternalAuthMiddleware
 from app.theme_draft.router import router as theme_draft_router
 from app.theme_draft.storage import create_storage
+from app.word_help.dictionary import Dictionary
+from app.word_help.router import router as word_help_router
 
 
 @asynccontextmanager
@@ -81,6 +83,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.theme_storage = create_storage(settings)
     # 임베딩 (#467). 사용량 callType은 purpose로 KNOWLEDGE_EMBEDDING·MEMORY_EMBEDDING(#565)
     app.state.embedder = create_embedder(settings, recorder=usage_recorder)
+    # 낱말 물어보기 사전 (#599). 키가 없으면 그 요청만 503 DICTIONARY_UNAVAILABLE
+    app.state.dictionary = Dictionary(
+        settings.dict_korean_api,
+        settings.dict_korean_api_key,
+        settings.kli_korean_api,
+        settings.kli_korean_api_key,
+    )
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
@@ -122,5 +131,6 @@ def create_app() -> FastAPI:
     app.include_router(embedding_router)
     app.include_router(memory_explanation_router)
     app.include_router(memory_query_router)
+    app.include_router(word_help_router)
     app.include_router(versions_router)
     return app

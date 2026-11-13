@@ -312,6 +312,7 @@ paths:
                     - themeDraft
                     - memoryExplanation
                     - memoryQuery
+                    - wordHelp
                     properties:
                       judgment:
                         type: string
@@ -332,6 +333,8 @@ paths:
                       memoryExplanation:
                         type: string
                       memoryQuery:
+                        type: string
+                      wordHelp:
                         type: string
         '401':
           description: UNAUTHENTICATED (내부 토큰 불일치)
@@ -514,6 +517,56 @@ paths:
                 - type: object
                   required:
                   - retryable
+                  properties:
+                    retryable:
+                      type: boolean
+  /word-helps:
+    post:
+      summary: >-
+        낱말 물어보기 (api-spec 2.2.1·4.2.7, FN-LRN-21, #599). 국립국어원 표준국어대사전·온용어 뜻 후보 중 미션 문장에 맞는 뜻을
+        ai 기본 LLM이 골라 학년 말투로 쉽게 바꾼다(LLM 두 번, 전체 20초 마감). 사용량 callType WORD_HELP, 프롬프트 이름 wordHelp.
+        WORD_HELP_PROVIDER=fake면 개발용 규칙 설명(fake-word-help-v1, 사전은 실제 호출, 사용량 없음)
+      description: >-
+        학생 이름·답·ID는 받지 않고(정의 밖 칸은 400) 질문·응답 원문은 저장·로그하지 않는다(NFR-SEC-03·05). leak이 있으면(마무리 전 시도)
+        질문·표제어·설명·사전 원문이 정답 키·금지어를 포함하거나 예시 답과 연속 12자 겹칠 때 DEFERRED. 설명 LLM 실패·형식 밖은
+        표준국어대사전 원문 최대 3개로 DICTIONARY_ONLY(P16). 사전 키·주소는 로그·응답에 남기지 않는다
+      operationId: create_word_help
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WordHelpRequest'
+        required: true
+      responses:
+        '200':
+          description: 성공(state로 결과 구분)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WordHelpResponse'
+        '400':
+          description: VALIDATION_FAILED (빈 글·공백만, 글자 수 초과, 학년 3~6 밖, 정의 밖 칸)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED (내부 토큰 불일치)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: >-
+            DICTIONARY_UNAVAILABLE (사전 호출 실패·미설정, retryable true) 또는 AI_UNAVAILABLE (사전 결과가 있는데 표제어 LLM 실패로
+            표제어를 정하지 못함). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required: [retryable]
                   properties:
                     retryable:
                       type: boolean
@@ -2803,6 +2856,58 @@ components:
         searchText: {type: string, minLength: 1, maxLength: 200, description: 요청·기간 표현을 뺀 검색용 문장(learning이 임베딩)}
         versions:
           $ref: '#/components/schemas/LlmVersions'
+    WordHelpLeak:
+      type: object
+      additionalProperties: false
+      description: 유출 검사 값(마무리 전 시도만 learning이 채움). answerKey는 학생에게 보이는 정답 글자
+      properties:
+        answerKey: {type: array, maxItems: 50, items: {type: string, minLength: 1}, default: []}
+        forbiddenTerms: {type: array, maxItems: 100, items: {type: string, minLength: 1}, default: []}
+        exampleAnswer: {type: [string, 'null'], minLength: 1, maxLength: 4000}
+    WordHelpRequest:
+      type: object
+      additionalProperties: false
+      required: [question, missionText, grade, subject]
+      properties:
+        question: {type: string, minLength: 1, maxLength: 100, description: 학생이 적은 낱말이나 짧은 질문(공백만이면 400)}
+        missionText: {type: string, minLength: 1, maxLength: 4000, description: 미션 질문·안내 글}
+        grade: {type: integer, minimum: 3, maximum: 6}
+        subject: {type: string, minLength: 1, maxLength: 20}
+        leak:
+          oneOf:
+          - $ref: '#/components/schemas/WordHelpLeak'
+          - type: 'null'
+    WordSense:
+      type: object
+      additionalProperties: false
+      required: [definition, source]
+      properties:
+        definition: {type: string, description: 사전 뜻풀이 원문(HTML 조각 제거)}
+        source: {type: string, enum: [표준국어대사전, 온용어]}
+    WordHelpResponse:
+      type: object
+      additionalProperties: false
+      required: [state, headword, text, example, senses, versions]
+      properties:
+        state:
+          type: string
+          enum: [EXPLAINED, DICTIONARY_ONLY, NOT_FOUND, DEFERRED, OUT_OF_SCOPE]
+        headword: {type: [string, 'null'], description: 사전에서 찾은 표제어}
+        text: {type: string, description: 'EXPLAINED는 쉬운 말 한두 문장(공공누리 4유형은 원문), 나머지는 정해진 안내 문구'}
+        example: {type: [string, 'null'], description: EXPLAINED일 때 예문 하나}
+        senses:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/WordSense'
+          description: EXPLAINED는 고른 뜻 1개, DICTIONARY_ONLY는 최대 3개, 그 밖은 빈 배열
+        versions:
+          type: object
+          additionalProperties: false
+          required: [prompt, model]
+          properties:
+            prompt: {type: string}
+            model: {type: [string, 'null'], description: LLM을 부르지 않았으면 null}
     KnowledgeThinkingType:
       type: string
       enum: [ANALYZE, EVALUATE, CREATE, SOLVE, REFLECT]
