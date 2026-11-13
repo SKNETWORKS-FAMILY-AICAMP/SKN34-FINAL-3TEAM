@@ -226,7 +226,7 @@ class JudgmentService(
                 val followup = followups[stored.answerId]
                 FeedbackResult(
                     status = ProcessStatus.DONE,
-                    judgment = JudgmentView(stored.judgmentId, result, stored.trial ?: false, elements[stored.answerId].orEmpty(), stored.heldReason, stored.corrected, m2Notices = com.sagomungchi.learning.judgment.domain.M2Notices.read(stored.m2NoticesJson)),
+                    judgment = JudgmentView(stored.judgmentId, result, stored.trial ?: false, elements[stored.answerId].orEmpty(), stored.heldReason, stored.corrected, m2Notices = com.sagomungchi.learning.judgment.domain.M2Notices.read(stored.m2NoticeCodes)),
                     followup = followup,
                     nextActions = nextActions(stored.attemptOpen, followup?.followupId, openFollowupId),
                     versions = Versions(stored.missionLabel, stored.rubricLabel, stored.modelVersion, stored.promptVersion),

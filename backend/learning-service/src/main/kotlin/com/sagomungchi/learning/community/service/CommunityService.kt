@@ -1,6 +1,5 @@
 package com.sagomungchi.learning.community.service
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.answer.domain.AnswerContent
@@ -28,7 +27,7 @@ import java.util.UUID
 data class SharedPost(val postId: UUID, val created: Boolean, val status: CommunityPostStatus)
 
 /** 공유물에 보이는 답변: 입력 틀 칸 이름을 붙인 원문(text)과 입력 방식별 내용(content) */
-data class SharedAnswer(val inputType: String, val text: String, val content: JsonNode)
+data class SharedAnswer(val inputType: String, val text: String, val content: Map<String, Any?>)
 
 data class MissionPostView(val postId: UUID, val studentId: UUID, val answer: SharedAnswer,
     val myReactions: List<CommunityReaction>, val createdAt: Instant)
@@ -182,8 +181,7 @@ class CommunityService(
     }
 
     private fun answer(row: SharedAnswerRow): SharedAnswer {
-        val content = objectMapper.readTree(row.contentJson)
-        return SharedAnswer(row.inputType.name, row.plainText ?: content.path("text").asText(""), content)
+        return SharedAnswer(row.inputType.name, row.plainText.orEmpty(), row.content)
     }
 
     private fun notShareable(detail: String): Nothing =

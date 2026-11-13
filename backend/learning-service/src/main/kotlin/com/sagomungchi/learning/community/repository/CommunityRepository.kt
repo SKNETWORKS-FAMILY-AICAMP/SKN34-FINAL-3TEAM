@@ -6,11 +6,25 @@ import com.sagomungchi.learning.community.domain.CommunityReaction
 import com.sagomungchi.learning.community.domain.ReactionRow
 import com.sagomungchi.learning.community.domain.SharedAnswerRow
 import com.sagomungchi.learning.community.domain.VisibilityReason
+import com.sagomungchi.learning.mission.domain.InputType
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 import org.springframework.stereotype.Repository
 import java.time.Instant
 import java.util.UUID
+
+data class SharedAnswerRecord(
+    val postId: UUID,
+    val studentId: UUID,
+    val missionId: UUID,
+    val missionTitle: String?,
+    val status: CommunityPostStatus,
+    val inputType: InputType,
+    val plainText: String?,
+    val contentJson: String,
+    val createdAt: Instant,
+)
 
 @Mapper
 interface CommunityMapper {
@@ -26,9 +40,9 @@ interface CommunityMapper {
                          @Param("reason") reason: VisibilityReason, @Param("now") now: Instant): Int
     fun findVisibility(@Param("studentId") studentId: UUID): Boolean?
     fun missionPosts(@Param("missionId") missionId: UUID, @Param("viewer") viewer: UUID, @Param("seed") seed: String,
-                     @Param("limit") limit: Int, @Param("offset") offset: Int): List<SharedAnswerRow>
-    fun studentPosts(@Param("studentId") studentId: UUID): List<SharedAnswerRow>
-    fun sharedAnswer(@Param("postId") postId: UUID): SharedAnswerRow?
+                     @Param("limit") limit: Int, @Param("offset") offset: Int): List<SharedAnswerRecord>
+    fun studentPosts(@Param("studentId") studentId: UUID): List<SharedAnswerRecord>
+    fun sharedAnswer(@Param("postId") postId: UUID): SharedAnswerRecord?
     fun reactionsOf(@Param("postIds") postIds: Collection<UUID>, @Param("studentId") studentId: UUID): List<ReactionRow>
     fun reactionCounts(@Param("postIds") postIds: Collection<UUID>): List<ReactionRow>
     fun insertReaction(@Param("id") id: UUID, @Param("postId") postId: UUID, @Param("studentId") studentId: UUID,
@@ -43,7 +57,14 @@ interface CommunityMapper {
 
 /** 커뮤니티 공유물·반응·공개 여부 (ERD 4.4). 트랜잭션은 시작하지 않음 */
 @Repository
-class CommunityRepository(private val mapper: CommunityMapper) {
+class CommunityRepository(private val mapper: CommunityMapper, private val objectMapper: ObjectMapper) {
+    private fun decode(row: SharedAnswerRecord): SharedAnswerRow {
+        val node = objectMapper.readTree(row.contentJson)
+        val content: Map<String, Any?> = objectMapper.convertValue(node, objectMapper.typeFactory.constructMapType(Map::class.java, String::class.java, Any::class.java))
+        return SharedAnswerRow(row.postId, row.studentId, row.missionId, row.missionTitle, row.status,
+            row.inputType, row.plainText ?: node.path("text").asText(""), content, row.createdAt)
+    }
+
     fun findPost(id: UUID, lock: Boolean = false): CommunityPost? = mapper.findPost(id, lock)
 
     fun findByStudentMission(studentId: UUID, missionId: UUID): CommunityPost? = mapper.findByStudentMission(studentId, missionId)
@@ -69,11 +90,11 @@ class CommunityRepository(private val mapper: CommunityMapper) {
     fun findVisibility(studentId: UUID): Boolean? = mapper.findVisibility(studentId)
 
     fun missionPosts(missionId: UUID, viewer: UUID, seed: String, page: Int, size: Int): List<SharedAnswerRow> =
-        mapper.missionPosts(missionId, viewer, seed, size, page * size)
+        mapper.missionPosts(missionId, viewer, seed, size, page * size).map(::decode)
 
-    fun studentPosts(studentId: UUID): List<SharedAnswerRow> = mapper.studentPosts(studentId)
+    fun studentPosts(studentId: UUID): List<SharedAnswerRow> = mapper.studentPosts(studentId).map(::decode)
 
-    fun sharedAnswer(postId: UUID): SharedAnswerRow? = mapper.sharedAnswer(postId)
+    fun sharedAnswer(postId: UUID): SharedAnswerRow? = mapper.sharedAnswer(postId)?.let(::decode)
 
     /** 학생이 각 공유물에 남긴 반응 */
     fun reactionsOf(postIds: Collection<UUID>, studentId: UUID): Map<UUID, List<CommunityReaction>> =

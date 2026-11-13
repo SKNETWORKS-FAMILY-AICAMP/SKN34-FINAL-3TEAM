@@ -38,7 +38,7 @@ data class SharedAnswerRow(
     val status: CommunityPostStatus,
     val inputType: InputType,
     val plainText: String?,
-    val contentJson: String,
+    val content: Map<String, Any?>,
     val createdAt: Instant,
 )
 

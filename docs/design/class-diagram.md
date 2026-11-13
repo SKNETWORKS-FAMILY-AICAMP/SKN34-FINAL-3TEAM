@@ -1749,7 +1749,7 @@ classDiagram
   direction TB
   class FeedbackController {
     <<controller>>
-    +feedback(answerId) FeedbackResult
+    +feedback(answerId) FeedbackResponse
   }
   class CorrectionController {
     <<controller>>

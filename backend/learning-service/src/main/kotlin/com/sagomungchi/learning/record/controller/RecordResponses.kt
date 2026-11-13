@@ -1,5 +1,11 @@
 package com.sagomungchi.learning.record.controller
 
+import com.sagomungchi.learning._common.web.FeedbackResponse
+import com.sagomungchi.learning._common.web.JudgmentResponse
+import com.sagomungchi.learning._common.web.ElementResponse
+import com.sagomungchi.learning._common.web.FollowupResponse
+import com.sagomungchi.learning._common.web.FeedbackVersions
+
 import com.fasterxml.jackson.annotation.JsonUnwrapped
 import com.sagomungchi.learning._common.web.AnswerItem
 import com.sagomungchi.learning._common.web.MissionListItemResponse
@@ -81,7 +87,7 @@ data class RecordAttemptResponse(
     val mission: MissionResponse,
     val status: AttemptStatus,
     val finishedAt: Instant?,
-    val answers: List<AnswerItem<FeedbackResult>>,
+    val answers: List<AnswerItem<FeedbackResponse>>,
     val helped: Boolean,
     val nextActions: List<NextAction>,
     val reveal: String?,
@@ -230,5 +236,18 @@ internal fun AnswerItem.Companion.from(answer: TimelineAnswer, feedback: Feedbac
     text = answer.text.orEmpty(),
     followupId = answer.followupId,
     content = answer.content,
-    feedback = feedback,
+    feedback = feedback.toResponse(),
+)
+
+internal fun FeedbackResult.toResponse() = FeedbackResponse(
+    status.name,
+    judgment?.let { j -> JudgmentResponse(
+        j.judgmentId, j.result.name, j.trial,
+        j.elements.map { e -> ElementResponse(
+            e.elementId, e.label, e.code, e.goodThought, e.satisfied, e.quote, e.sourceType?.name,
+        ) }, j.heldReason, j.corrected, j.modelScores, j.m2Notices,
+    ) },
+    followup?.let { FollowupResponse(it.followupId, it.type.name, it.question, it.source.name) },
+    nextActions.map { it.name },
+    versions?.let { FeedbackVersions(it.mission, it.rubric, it.model, it.prompt) },
 )

@@ -1,7 +1,5 @@
 package com.sagomungchi.learning.judgment.domain
 
-import com.fasterxml.jackson.annotation.JsonInclude
-import com.fasterxml.jackson.annotation.JsonRawValue
 import java.util.UUID
 
 /**
@@ -33,8 +31,8 @@ data class JudgmentView(
     val elements: List<ElementView>,
     val heldReason: String?,
     val corrected: Boolean = false,
-    @get:JsonRawValue @get:JsonInclude(JsonInclude.Include.NON_NULL) val modelScores: String? = null,
-    @get:JsonInclude(JsonInclude.Include.NON_EMPTY) val m2Notices: List<String> = emptyList(),
+    val modelScores: String? = null,
+    val m2Notices: List<String> = emptyList(),
 )
 
 /**
