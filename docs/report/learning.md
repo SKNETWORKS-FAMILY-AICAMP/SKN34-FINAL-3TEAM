@@ -1065,9 +1065,9 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 
 ### 검증
 
-- develop `df02597a`에서 분기해 로컬 검증했다. 원격 CI 결과와 구분한다.
-- JDK 21·Testcontainers PostgreSQL에서 전체 `test bootJar` 성공: 563개 실행, 실패 0, 조건부 제외 2. 제외는 기존 #565 실제 AI 라우터와 #564 외부 임베딩·LLM 연동 테스트이며 이번 JSON 책임 분리 검증과 별개다.
+- develop `df02597a`에서 분기하고 최신 `632c84e7`을 충돌 없이 통합한 뒤 로컬 검증했다. 원격 CI 결과와 구분한다.
+- 통합 후 JDK 21·Testcontainers PostgreSQL에서 전체 `test bootJar` 성공: 566개 실행, 실패 0, 조건부 제외 2. 제외는 기존 #565 실제 AI 라우터와 #564 외부 임베딩·LLM 연동 테스트이며 이번 JSON 책임 분리 검증과 별개다.
 - 저장소 ci-contracts 검사: 312개 실행, 실패 0, 조건부 제외 1(원문 HWP 폴더가 있어야 실행하는 재추출 대조).
 - 실제 PostgreSQL 테스트가 생성한 커뮤니티·테마 요약·지식 조회 HTTP JSON의 OpenAPI 및 소비자 계약 검사 통과.
 - learning domain Jackson import 0, `git diff --check` 통과. 기존 215건과 실제 1,341건 지식 본문 해시 및 record/source 값 보존 확인.
-- 마지막 오류 문구 보존·import 정리 후 관련 회귀 테스트 12개 재실행(제외·실패 0)과 `bootJar` 통과.
+- 오류 문구 보존·import 정리 후 관련 회귀 테스트 12개 재실행(제외·실패 0)과 `bootJar` 통과. 이후 최신 develop 통합 후 전체 테스트에도 포함했다.
