@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.judgment.service
 
+import com.sagomungchi.learning.judgment.controller.toResponse
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
@@ -51,7 +52,7 @@ class JudgmentServiceTest : PostgresRepositoryTest() {
         assertEquals(JudgmentResult.CORRECT, result.judgment!!.result)
         assertEquals(listOf("정리 후 남은 답변이 없어요"), result.judgment!!.m2Notices)
         assertEquals(null, result.judgment!!.modelScores)
-        val json = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writeValueAsString(result)
+        val json = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writeValueAsString(result.toResponse())
         assertFalse(json.contains("modelScores"))
         assertFalse(json.contains("rawScores"))
     }

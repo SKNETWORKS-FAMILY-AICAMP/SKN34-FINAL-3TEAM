@@ -1034,3 +1034,40 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 변경: `ThemeViews.kt`(`WeeklyThemeView.answerPick`·`AnswerPickView`), `WeeklyThemeService.current`, learning OpenAPI `WeeklyTheme.answerPick`, core OpenAPI `WeeklyThemeDocument` 설명, api-spec 2.11.
 
 테스트: `WeeklyThemeServiceTest`(안 고름 null, 맞힘 `{pick, true}`·엔딩, 틀림 `{pick, false}`·엔딩 전 정답·결말 없음, 토요일 다시 풀기 뒤 엔딩에도 `correct: false` 유지), `WeeklyThemeControllerTest`(JSON `answerPick` null과 `{pick, correct}`).
+
+
+## 37. domain JSON 의존과 응답 표현 분리 (#604, 2026-11-13)
+
+업무 동작·API·DB 스키마를 유지하고 JSON 변환 위치를 정리했다. 별도 계층이나 공통 라이브러리는 추가하지 않는다.
+
+| 대상 | 정리 |
+|---|---|
+| 피드백 | `_common/web/FeedbackResponses.kt`에 공용 응답 DTO. judgment·attempt·record controller가 각각 domain을 변환. `_common/web`는 기능 패키지를 import하지 않음 |
+| M2 안내 | MyBatis의 해당 컬럼에만 `M2NoticeCodesTypeHandler` 적용. JSON에서 문자열만 읽고 domain `M2Notices`는 허용 코드→안내 문구 정책만 담당 |
+| 지식 조각 | controller에서 JSON을 Map·List·문자열·숫자·불리언·null로 변환. domain은 Jackson 없이 조각 본문 생성·학기·관계 규칙 유지 |
+| 공유물 | 원시 행 `SharedAnswerRecord`는 repository에 둠. repository가 JSON을 파싱하고 원문 대체값을 계산해 domain에는 Map 전달 |
+
+### 선택 근거와 확인 항목
+
+- 응답 DTO: [PR #178](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/178)의 Jackson 응답 설정 분리, [PR #459](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/459)의 계층 정리 선례와 architecture 2.2의 공용 응답 규칙을 재사용했다. mixin으로 숨기지 않고 응답 경계를 명시한다.
+- 내부 값: 기존 `ContentMapTypeHandler`와 같은 표준 Kotlin 값 표현을 사용한다. `record`는 Map이며 `source`도 일반 입력에서는 Map이다. 원래 코드가 허용하던 source 값 종류를 새로 제한하지 않도록 `source`는 표준 값 `Any`로 보존한다.
+- 담당자 확인 완료(2026-11-13): 공용 응답 DTO 분리와 Map 등 일반 값 전달 두 방식으로 진행해도 되는지 질문했고, 담당자가 “예”로 승인했다고 작업자가 전달했다. #604의 두 확인 필요 항목에 대한 승인이다.
+- `contentHash`는 JSON 직렬화가 아니라 기존과 같은 NFC 본문 SHA-256이다. [PR #526](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/526)의 샘플 215건 대조를 유지하고 실제 1,341건 본문 해시·record/source 값 왕복 대조를 추가했다.
+- #468의 중단 결정은 그대로 유지한다. 지식 기능 활성화·관계 생성·RAG 재도입은 없다.
+
+### 보존 계약
+
+- 일반 응답의 `modelScores` 키 생략, report 요청의 원시 객체 또는 JSON null 구분.
+- `m2Notices`가 비면 키 생략, 허용 안내만 표시. 잘못된 JSON·숫자·알 수 없는 코드를 안내로 노출하지 않음.
+- 처리 중 피드백의 nullable 필드와 빈 `nextActions`, 세 controller의 같은 응답 모양.
+- 공유물의 중첩 내용·null·배열 및 기존 plainText 우선순위.
+- 지식 본문 생성·NFC 해시·학기·관계 규칙, DB 저장 내용. 마이그레이션 없음.
+
+### 검증
+
+- develop `df02597a`에서 분기해 로컬 검증했다. 원격 CI 결과와 구분한다.
+- JDK 21·Testcontainers PostgreSQL에서 전체 `test bootJar` 성공: 563개 실행, 실패 0, 조건부 제외 2. 제외는 기존 #565 실제 AI 라우터와 #564 외부 임베딩·LLM 연동 테스트이며 이번 JSON 책임 분리 검증과 별개다.
+- 저장소 ci-contracts 검사: 312개 실행, 실패 0, 조건부 제외 1(원문 HWP 폴더가 있어야 실행하는 재추출 대조).
+- 실제 PostgreSQL 테스트가 생성한 커뮤니티·테마 요약·지식 조회 HTTP JSON의 OpenAPI 및 소비자 계약 검사 통과.
+- learning domain Jackson import 0, `git diff --check` 통과. 기존 215건과 실제 1,341건 지식 본문 해시 및 record/source 값 보존 확인.
+- 마지막 오류 문구 보존·import 정리 후 관련 회귀 테스트 12개 재실행(제외·실패 0)과 `bootJar` 통과.

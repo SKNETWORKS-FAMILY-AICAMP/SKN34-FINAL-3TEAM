@@ -2,7 +2,6 @@ package com.sagomungchi.learning.knowledge.service
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.node.ObjectNode
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.knowledge.domain.ChunkKind
 import com.sagomungchi.learning.knowledge.domain.DatasetStatus
@@ -25,7 +24,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /** 적재 입력: C1 레코드, C4 확인 행, 판 출처(원문 고시·추출 판·파일 이름) */
-data class KnowledgeLoadCommand(val source: JsonNode, val records: List<JsonNode>, val reviews: List<RelationReview>)
+data class KnowledgeLoadCommand(val source: Map<String, Any?>, val records: List<Map<String, Any?>>, val reviews: List<RelationReview>)
 
 /** 판 상태와 결과서 2·4·5절 숫자 */
 data class KnowledgeDatasetView(
@@ -67,7 +66,6 @@ class KnowledgeDatasetService(
     fun get(version: String): KnowledgeDatasetView = view(repository.findDataset(version) ?: notFound(version))
 
     fun load(command: KnowledgeLoadCommand): KnowledgeLoadResult {
-        if (!command.source.isObject) throw KnowledgeInputException("source는 객체")
         if (command.records.isEmpty()) throw KnowledgeInputException("records 필요")
         val parsed = KnowledgeChunks.fromRecords(command.records)
         val standards = parsed.filter { it.kind == ChunkKind.STANDARD }
@@ -100,7 +98,7 @@ class KnowledgeDatasetService(
         return KnowledgeLoadResult(
             dataset = get(version),
             // 원문 문서 수: 고시 원문 문서만(생각 유형은 팀이 쓴 출제 지침이라 제외)
-            documents = chunks.filter { it.kind != ChunkKind.THINKING_TYPE }.mapNotNull { it.source.get("doc")?.asText() }.toSet().size,
+            documents = chunks.filter { it.kind != ChunkKind.THINKING_TYPE }.mapNotNull { (it.source as? Map<*, *>)?.get("doc")?.toString() }.toSet().size,
             previousVersion = previous?.version,
             carriedRelations = carried.size,
             recheck = recheck,
@@ -158,7 +156,7 @@ class KnowledgeDatasetService(
     /** 성취기준 문장은 achievement_standard와 같아야 함(다르면 적재 중단, #466) */
     private fun checkStatements(standards: List<KnowledgeChunk>) {
         val seeded = repository.findStatements(standards.map { it.id })
-        val different = standards.filter { seeded[it.id] != it.record.get("statement")?.asText() }.map { it.id }
+        val different = standards.filter { seeded[it.id] != it.record["statement"] }.map { it.id }
         if (different.isNotEmpty()) throw KnowledgeInputException("성취기준 표와 문장이 다르거나 없음: ${different.take(10)}")
     }
 
@@ -180,12 +178,12 @@ class KnowledgeDatasetService(
     }
 
     /** `kn-YYYYMMDD-NN`(KST 적재 시작일과 그날 순번). source에 적재 때 활성 판(previousVersion)을 함께 둔다 */
-    private fun createDataset(source: JsonNode, previous: String?, now: Instant): String {
+    private fun createDataset(source: Map<String, Any?>, previous: String?, now: Instant): String {
         val prefix = "kn-" + DateTimeFormatter.ofPattern("yyyyMMdd").withZone(KST).format(now) + "-"
         val next = (repository.findVersionsWithPrefix(prefix).maxOfOrNull { it.removePrefix(prefix).toInt() } ?: 0) + 1
         if (next > 99) conflict("하루 판은 99개까지")
         val version = prefix + "%02d".format(next)
-        val stored = (source.deepCopy<JsonNode>() as ObjectNode).put(PREVIOUS_VERSION, previous)
+        val stored = source + (PREVIOUS_VERSION to previous)
         val row = DatasetRow(
             version, DatasetStatus.LOADING, objectMapper.writeValueAsString(stored), 0, 0, now, null,
         )

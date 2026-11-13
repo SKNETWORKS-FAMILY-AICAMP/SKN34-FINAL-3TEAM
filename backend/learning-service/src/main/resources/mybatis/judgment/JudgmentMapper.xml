@@ -49,7 +49,7 @@
             <arg column="mission_label" javaType="java.lang.String"/>
             <arg column="rubric_label" javaType="java.lang.String"/>
             <arg column="corrected" javaType="_boolean"/>
-            <arg column="m2_notices" javaType="java.lang.String"/>
+            <arg column="m2_notices" javaType="java.util.List" typeHandler="com.sagomungchi.learning.judgment.repository.M2NoticeCodesTypeHandler"/>
         </constructor>
     </resultMap>
     <resultMap id="supportTarget" type="com.sagomungchi.learning.judgment.domain.SupportTarget">
