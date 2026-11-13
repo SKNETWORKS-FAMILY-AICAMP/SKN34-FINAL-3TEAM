@@ -527,7 +527,7 @@ erDiagram
   correction {
     uuid id PK
     uuid error_report_id FK
-    uuid request_key "NULL 허용 · 기존 이력 보존"
+    uuid request_key UK "NULL 허용 · 기존 이력 보존"
     varchar corrected "NULL 허용 · CORRECT|PARTIAL|RETHINK|HELD"
     varchar previous_result "NULL 허용"
     varchar processing_status "NULL 허용 · PENDING|FAILED|COMPLETED"
@@ -573,6 +573,7 @@ erDiagram
 - #44: V12는 notification·notification_setting의 type CHECK에 REPORT_FAILED를 추가한다. #390: V30이 일일 리포트 완료·실패(`DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`)를 추가해 주간과 독립 수신 설정을 둔다(P24). #432: V41이 학년 자동 진급 안내 `GRADE_PROMOTED`를 추가한다(P26). V9는 #45, V13은 #58의 student_device_auth. 기존 마이그레이션은 수정하지 않는다. 알림 status는 Redis 발행 상태이며 읽음은 read_at으로 별도 관리한다.
 - `notification` UK `(user_id, type, source_event_id)` → 같은 사건 재처리 시 중복 생성 방지 (FN-SUP-08)
 - 판정 정정 원본은 learning `judgment_correction`, core `correction`은 신고 단위 정정 사유·영향 범위 기록 (FN-SUP-03)
+- `correction` UK `uq_correction_request (request_key)`, 부분 UK `uq_correction_report_request (error_report_id) WHERE request_key IS NOT NULL` → 정정 요청 키 중복과 신고당 요청 키 정정 2건 이상 방지. `request_key`가 NULL인 V16 이전 이력은 신고당 여러 건이어도 보존 (V16)
 - 도움말(`/help`)은 정적 콘텐츠로 테이블 없음
 
 ### 3.4 결제·구독 (FN-PAY) — 토스페이먼츠 테스트
@@ -629,7 +630,7 @@ erDiagram
   memory_daily_usage {
     uuid id PK
     uuid student_id FK
-    varchar kind "SEARCH|EXPLANATION"
+    varchar(20) kind "SEARCH|EXPLANATION"
     date usage_date "KST"
     timestamptz created_at
   }
@@ -730,6 +731,8 @@ erDiagram
 - 환불 완료(`payment.status = REFUNDED`) 시 구독 즉시 `CANCELED` + `canceled_at` (P14)
 - 갱신 실패 시 `RENEWAL_FAILED` + `grace_until = 실패일 + 3일`, 매일 1회 재청구마다 `renewal_retry_count + 1`, 3회 실패 시 `CANCELED` (FN-PAY-08, P13)
 - 재청구: 월별 `payment_order`는 재사용하고 확정 실패 후의 일별 재청구마다 `payment_charge_attempt`에 새 PG 주문과 멱등키를 보존. 불명확한 거래는 재청구하지 않고 조회 복구 (#48)
+- `payment_charge_attempt` 부분 UK `uq_charge_live_order (order_id) WHERE status IN ('CONFIRMING','APPROVED')` → 논리 주문당 진행 중·승인 시도 1건 (V15, #48)
+- `refund_request` 부분 UK `uq_refund_unresolved_payment (payment_id) WHERE status IN ('REQUESTED','APPROVED','FAILED')` → 결제당 미해결 환불 요청 1건 (V15, #48)
 - `product.code`는 상품 행별 UK이며 요금제 추가·가격/한도별 새 행을 위한 확장 가능 코드. 새 상품 행은 새 고유 코드, 무료 상품 교체는 `PAYMENT_FREE_PRODUCT_ID`를 명시적으로 변경 (P13, #48)
 - 웹훅은 `transmission_id`로 1회만 반영, 본문 대신 PG 조회 결과로 상태 갱신 (FN-PAY-04)
 - 환불 중복·초과 방지: 승인된 `refund_request.amount` 합계 ≤ `payment.amount` 검사 (FN-ADM-16)
@@ -930,7 +933,7 @@ erDiagram
 
 ### 3.5.2 생활공간·추억 사용량 (P27, 구현 #566·#555)
 
-2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 core 저장 구조. 구현 전이라 Mermaid·6장(실제 DB 대조 대상)에 넣지 않고 아래 표로만 둔다. 구현 마이그레이션에서 Mermaid·6장으로 옮긴다. 마이그레이션 번호는 구현 때 정한다(기존 V35·V45는 고치지 않음). `memory_daily_usage`와 `llm_usage.call_type` 확장은 #566 V46으로 구현해 3.4·3.5 Mermaid와 6장으로, `room_frame_slot`과 가구 슬롯 CHECK 확장은 #555 V47로 구현해 3.5.1 Mermaid로 옮겼다.
+2026-11-12 리텐션 확장 결정([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md))의 core 저장 구조. 설계 때는 구현 전이라 아래 표로만 두었고, 지금은 모두 구현해 Mermaid·6장(실제 DB 대조 대상)으로 옮겼다(기존 V35·V45는 고치지 않음). `memory_daily_usage`와 `llm_usage.call_type` 확장은 #566 V46으로 구현해 3.4·3.5 Mermaid와 6장으로, `room_frame_slot`과 가구 슬롯 CHECK 확장은 #555 V47로 구현해 3.5.1 Mermaid로 옮겼다.
 
 | 테이블 | 컬럼 | 제약·규칙 |
 |---|---|---|
@@ -1769,7 +1772,10 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `conversation_job_retry` | `(status, accepted_at)` | 관리자 대화 대기·중단 작업 조회 |
 | core | `report_view` | `(report_id)`, `(user_id, viewed_at)` | 열람률 집계 |
 | core | `notification` | `(user_id, read_at, created_at)` | 읽지 않은 알림 |
+| core | `correction` | `(error_report_id) WHERE request_key IS NOT NULL` | 신고당 요청 키 정정 1건(UNIQUE `uq_correction_report_request`, V16) |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
+| core | `payment_charge_attempt` | `(status, updated_at)` | 진행 중 시도 조회 복구 (`ix_charge_recovery`, V15). 주문당 진행·승인 시도 1건 부분 UK는 3.4 |
+| core | `payment_premium_usage` | `(student_id, created_at, status)` | 환불 판정 프리미엄 사용 확인·대화 하루 한도 집계 (`ix_payment_usage_refund`, V15·#225) |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
 | core | `mission_daily_usage` | `(student_id, usage_date)`, `(student_id, mission_id, created_at)` | 무료 추가 문제(`EXTRA` 재활성 때) 하루 건수, 한도 뒤 같은 미션 이어하기 확인 (#387 V34, #485 뒤 무료 `EXTRA`만) |
 | core | `memory_daily_usage` | `(student_id, kind, usage_date)` | 추억 검색·설명 종류별 KST 하루 건수 (#566 V46, P27) |
