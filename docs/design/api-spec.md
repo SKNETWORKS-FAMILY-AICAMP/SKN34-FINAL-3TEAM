@@ -347,6 +347,7 @@
 - 학생 home: core 학생 프로필 + learning `records/.../home`. resume는 draft·memo 없이 식별만 하고, core가 학생 전용 `/internal/attempts/{attemptId}`로 본인 초안을 붙임. 두 번째 조회 실패도 홈 조회 실패(부분 성공·빈 이어하기로 대체하지 않음). 집계·미션 선정은 learning 소유
 - 계약 오류: Metric 필수 값·타입, 다섯 생각 유형 누락·중복은 502 `LEARNING_CONTRACT_INVALID`(수치 보충 없음). 공급자 조회 실패는 오류이며 `NO_RECORD`가 아님
 - 표시 필드: `completedAt`·`hintUsages`·`reflection.createdAt` 보존. `finishedAt`은 마무리 공개 시각, `completedAt`은 돌아보기 완료 시각(그 전에는 null), reflection이 있으면 `createdAt` 필수. 학부모 상세는 Attempt에 `state`·`period`를 더하고 draft·memo 제외. `thinking-activities`는 `{studentId,state,period,items:[{attemptId,thinkingType,missionTitle,reflection}]}`. reflection의 `EASY/NORMAL/HARD`·nullable text는 프론트 표시 경계에서 한국어 선택값으로 변환
+- 판정 ID: 시도 목록·상세(학생·학부모, home `resume` 포함)의 `answers[].feedback.judgment`는 learning `Judgment`를 core가 그대로 전달하므로 `judgmentId`가 항상 있음(판정 전이면 `judgment: null`). web 오류 신고(`targetType: JUDGMENT`) 대상 ID로 씀 (#146, #614)
 - `students/me/preferences`는 3.12 (#234 core 구현)
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
@@ -737,6 +738,7 @@ data: {}
   "reportId": "r-44", "childId": "s-1", "status": "COMPLETED", "state": "OK",
   "period": { "from": "2026-11-02", "to": "2026-11-08" },
   "correctionNotice": false, // 이 판에 쓰인 판정 중 일부가 만들어진 뒤 정정됨 (5.7, #244)
+  "parentSharingEnabled": true, // core가 현재 학생 공유 설정으로 채움. false면 원문·근거 링크가 빠진 상태 (#206, #614)
   "revision": 1, "revisions": [{ "revision": 1, "generatedAt": "2026-11-09T00:00:00+09:00" }],
   "inclusionRule": "기간 내 답변 제출이 있는 시도(미완료 포함), 처리 실패만 있는 시도·삭제 기록 제외",
   "metrics": [ /* Metric[] */ ],

@@ -10138,7 +10138,7 @@ components:
             type: object
             additionalProperties: true
             properties:
-              no: {type: integer, minimum: 1, maximum: 3}
+              'no': {type: integer, minimum: 1, maximum: 3}
               themeId: {type: string, format: uuid}
               weekStart: {type: string, format: date}
               attemptId: {type: string, format: uuid}
@@ -10963,7 +10963,11 @@ components:
         - narrative
         - verification
         - versions
+        - parentSharingEnabled
         properties:
+          parentSharingEnabled:
+            type: boolean
+            description: 'core가 조회 시점의 학생 공유 설정으로 채운다. false면 원문·근거 링크를 뺀 응답 (#206, #614)'
           explanations:
             description: '#479 검증된 대표 답변 설명. 일일·무료·현재 원문 비공개이면 null. 과거 리포트는 누락/null 허용.'
             oneOf:
@@ -12437,11 +12441,16 @@ components:
       type: object
       additionalProperties: false
       required:
+      - judgmentId
       - result
       - trial
       - elements
       - heldReason
       properties:
+        judgmentId:
+          type: string
+          format: uuid
+          description: 'learning Judgment.judgmentId를 core가 그대로 전달. 오류 신고(targetType JUDGMENT) 대상 ID (#146, #614)'
         corrected:
           type: boolean
           description: 정정이 있으면 true. elements는 원판정 그대로

@@ -1045,6 +1045,8 @@ components:
       description: 끝내 실패하면 200 + failure(learning CHECK_FAILED). 줄거리 단계에서 끝내 실패하면 theme은 null. 대화·영상·움직임은 끝내 실패해도 그 항목만 빼고 warnings. 정답 논리 검사용 내부 칸(특징 표 등)은 넣지 않음
     Theme:
       properties:
+        title:
+          type: string
         world:
           type: string
         characters:

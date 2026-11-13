@@ -10,6 +10,11 @@ class MemoryExplanationContractsTest(unittest.TestCase):
         learning = yaml.safe_load((ROOT / "contracts/openapi/learning-service.yaml").read_text(encoding="utf-8"))
         for name in ("MemoryExplanationRequest", "MemoryExplanationResult"):
             self.assertEqual(core["components"]["schemas"][name], learning["components"]["schemas"][name])
+        # YAML 1.1 reads a bare `no:` key as boolean False, which hid the citation number checks (#614).
+        for doc in (core, learning):
+            citation = doc["components"]["schemas"]["MemoryExplanationResult"]["properties"]["citations"]["items"]["properties"]
+            self.assertNotIn(False, citation)
+            self.assertEqual(citation["no"], {"type": "integer", "minimum": 1, "maximum": 3})
         operation = learning["paths"]["/students/{studentId}/memories/explanations"]["post"]
         self.assertEqual(set(operation["responses"]), {"200", "400", "401", "403", "422", "503"})
         ids = [op["operationId"] for path in learning["paths"].values() for op in path.values() if isinstance(op, dict) and "operationId" in op]
