@@ -845,7 +845,7 @@ sequenceDiagram
   C->>L: moderation {VISIBLE 또는 REMOVED}
 ```
 
-### 3.8 테마 문제 학습 완료 → 기념 액자·검색 문서 등록 (P27, 설계·구현 전)
+### 3.8 테마 문제 학습 완료 → 기념 액자·검색 문서 등록 (P27, 구현 #559·#563)
 
 2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md)). 3.5 돌아보기 저장(학습 완료) 안에서 처리한다. 포인트 적립(3.5)과 별개다.
 
@@ -875,7 +875,7 @@ sequenceDiagram
 - 도입 전 기록은 기동·주기 작업의 멱등 소급이 같은 조건으로 `theme_frame`(`seen_at` 채움)·`memory_search_doc`(`PENDING`)을 만든다
 - #559 구현(learning V19): `theme_frame` 지급은 회차 잠금(`pg_advisory_xact_lock`) 뒤 판정해 같은 회차 두 문제가 동시에 완료돼도 한쪽이 지급한다. 소급은 learning 기동 때마다 같은 SQL로 실행(`seen_at = awarded_at`, 멱등). `memory_search_doc`은 #563 V20에서 같은 완료 트랜잭션에 등록([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 
-### 3.9 추억 검색·설명 (P27, 검색 #563 구현·설명 #564 설계)
+### 3.9 추억 검색·설명 (P27, 구현 #563·#564·#565·#566, 웹 화면 #567 구현 전)
 
 ```mermaid
 sequenceDiagram
@@ -1607,7 +1607,7 @@ sequenceDiagram
   Note over C: PROFILE은 프로필 제거, RECORDS는 프로필·DELETION_REQUESTED 유지 (학습 재개는 후속 계약)
 ```
 
-- P27(설계·구현 전): core는 삭제 확정 트랜잭션에서 `room_frame_slot`·`memory_daily_usage`도 지우고, learning은 같은 삭제 트랜잭션에서 `memory_search_doc`(시도보다 먼저)·`theme_frame`을 지운다([ERD 3.5.2·4.6](erd.md))
+- P27(core #555·#566, learning #559·#563 구현): core는 삭제 확정 트랜잭션에서 `room_frame_slot`·`memory_daily_usage`도 지우고, learning은 같은 삭제 트랜잭션에서 `memory_search_doc`(시도보다 먼저)·`theme_frame`을 지운다([ERD 3.5.2·4.6](erd.md))
 
 ### 10.2 `llm.usage.recorded`
 
