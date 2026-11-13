@@ -67,7 +67,7 @@ class CommunityService(private val repository: CommunityRepository, private val 
     }
 
     fun missionPosts(missionId: UUID, seed: String, page: Int, size: Int): Map<String, Any?> {
-        if (seed.length > 100 || page < 0 || size !in 1..100) invalid()
+        if (seed.length !in 1..100 || page < 0 || size !in 1..100) invalid()
         val actor = student()
         val items = client.missionPosts(missionId, actor.student, actor.user, seed, page, size).path("items")
         if (!items.isArray) invalidResponse()
