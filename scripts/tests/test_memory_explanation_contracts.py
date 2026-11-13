@@ -19,7 +19,7 @@ class MemoryExplanationContractsTest(unittest.TestCase):
         ai = yaml.safe_load((ROOT / "contracts/openapi/ai-service.yaml").read_text(encoding="utf-8"))
         # The actual request is also checked by the learning HTTP client test.
         self.assertIn("/memory-explanations", ai["paths"])
-        source = (ROOT / "backend/learning-service/src/main/kotlin/com/sagomungchi/learning/memory/service/MemoryExplanationAiClient.kt").read_text(encoding="utf-8")
+        source = (ROOT / "backend/learning-service/src/main/kotlin/com/sagomungchi/learning/memory/client/MemoryExplanationAiClient.kt").read_text(encoding="utf-8")
         fields = source.split("data class MemoryEvidence(")[1].split(")")[0]
         for field in ("studentId", "attemptId", "answerId", "nickname"):
             self.assertNotIn(field, fields)

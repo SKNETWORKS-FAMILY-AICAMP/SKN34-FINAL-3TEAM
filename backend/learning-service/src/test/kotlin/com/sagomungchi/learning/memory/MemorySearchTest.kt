@@ -168,7 +168,7 @@ class MemorySearchTest {
         val id=attempt(text="인영의 동물 집 이야기");frame()
         org.springframework.test.context.transaction.TestTransaction.flagForCommit()
         org.springframework.test.context.transaction.TestTransaction.end()
-        val embedding=org.mockito.Mockito.mock(com.sagomungchi.learning.memory.service.MemoryEmbeddingClient::class.java)
+        val embedding=org.mockito.Mockito.mock(com.sagomungchi.learning.memory.client.MemoryEmbeddingClient::class.java)
         val privacy=org.mockito.Mockito.mock(com.sagomungchi.learning.memory.service.MemoryTextPrivacy::class.java)
         org.mockito.Mockito.`when`(privacy.nickname(student)).thenReturn("인영")
         org.mockito.Mockito.`when`(privacy.mask(org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())).thenAnswer {
@@ -178,7 +178,7 @@ class MemorySearchTest {
             assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
             val sent=it.arguments[0] as List<*>
             assertTrue(sent.all { text->!text.toString().contains("인영") })
-            com.sagomungchi.learning.memory.service.MemoryEmbeddingResult("test-model",1536,List(sent.size){vector})
+            com.sagomungchi.learning.memory.client.MemoryEmbeddingResult("test-model",1536,List(sent.size){vector})
         }
         try {
             val worker=com.sagomungchi.learning.memory.service.MemoryEmbeddingWorker(repository,embedding,privacy,
@@ -207,7 +207,7 @@ class MemorySearchTest {
         val mapper=com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
         val factory=com.sagomungchi.learning._common.config.InternalRestClientFactory(props,
             org.springframework.web.client.RestClient.builder().messageConverters { it.add(0,org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(mapper)) })
-        val embedding=com.sagomungchi.learning.memory.service.MemoryEmbeddingClient(factory,mapper)
+        val embedding=com.sagomungchi.learning.memory.client.MemoryEmbeddingClient(factory,mapper)
         val privacy=org.mockito.Mockito.mock(com.sagomungchi.learning.memory.service.MemoryTextPrivacy::class.java)
         org.mockito.Mockito.`when`(privacy.nickname(student)).thenReturn("가상닉네임")
         org.mockito.Mockito.`when`(privacy.mask(org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())).thenAnswer { it.arguments[0] }
@@ -253,11 +253,11 @@ class MemorySearchTest {
         val mapper=com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
         val factory=com.sagomungchi.learning._common.config.InternalRestClientFactory(props,
             org.springframework.web.client.RestClient.builder().messageConverters { it.add(0,org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(mapper)) })
-        val embedding=com.sagomungchi.learning.memory.service.MemoryEmbeddingClient(factory,mapper)
+        val embedding=com.sagomungchi.learning.memory.client.MemoryEmbeddingClient(factory,mapper)
         val privacy=org.mockito.Mockito.mock(com.sagomungchi.learning.memory.service.MemoryTextPrivacy::class.java)
         org.mockito.Mockito.`when`(privacy.nickname(student)).thenReturn("합성학생")
         org.mockito.Mockito.`when`(privacy.mask(org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())).thenAnswer { it.arguments[0] }
-        val ai=com.sagomungchi.learning.memory.service.MemoryExplanationAiClient(factory,mapper)
+        val ai=com.sagomungchi.learning.memory.client.MemoryExplanationAiClient(factory,mapper)
         val service=com.sagomungchi.learning.memory.service.MemoryExplanationService(evidenceRepository,embedding,privacy,ai,
             com.sagomungchi.learning.memory.service.MemoryEvidenceRules(),java.time.Clock.fixed(now,java.time.ZoneOffset.UTC),0.35,20)
         try {

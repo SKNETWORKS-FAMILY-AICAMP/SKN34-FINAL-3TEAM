@@ -442,7 +442,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ controller/
 │  ├─ service/
 │  ├─ scheduler/                 # MemoryEmbeddingScheduler: 검색 문서 임베딩 선점·재시도·리스 복구
-│  ├─ client/                    # EmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient
+│  ├─ client/                    # MemoryEmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient, StudentProfileClient(core 닉네임)
 │  ├─ domain/
 │  └─ repository/
 └─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
@@ -761,7 +761,7 @@ backend/report-service/
     | report-worker | `app/clients/core_client.py` | 학생 별명 `GET /internal/students/{id}/profile`(#119)·리포트 표시 설정 `GET /internal/students/{id}/report-template`(#209) 조회, 삭제 완료 보고 |
     | ai·scoring | `app/clients/core_client.py` | 기동·재연결 시 활성 버전 snapshot `GET /internal/model-versions/active` (ai #68, scoring #85) |
 
-  - P27(설계·구현 전) learning→ai 추가 호출: `memory/client/EmbeddingClient`(`POST /internal/embeddings`, 기존 경로)·`MemoryExplanationAiClient`(`POST /internal/memory-explanations`). learning→ai egress는 이미 허용돼 네트워크 정책 변경 없음
+  - P27(설계·구현 전) learning→ai 추가 호출: `memory/client/MemoryEmbeddingClient`(`POST /internal/embeddings`, 기존 경로)·`MemoryExplanationAiClient`(`POST /internal/memory-explanations`). learning→ai egress는 이미 허용돼 네트워크 정책 변경 없음
   - migration-job: RDS egress / local: LLM API·토스 stub Service는 compose E2E 전용이며 kind에는 없음(4.1, 설명 sLLM 대역 `sllm-server`는 4.4)
 
 ### 4.4 확장
