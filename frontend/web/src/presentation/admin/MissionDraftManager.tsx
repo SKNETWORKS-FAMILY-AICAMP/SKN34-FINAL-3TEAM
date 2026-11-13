@@ -195,7 +195,7 @@ function DraftDetail({ id }: { id: string }) {
               <button className="cj-secondary" onClick={() => navigate(`/admin/missions?missionId=${encodeURIComponent(d.missionId!)}`)}>채택한 미션 열기</button>
             )}
             {discardableDraft(d.status) && (
-              <button className="cj-secondary" disabled={discard.isPending}
+              <button className="cj-secondary ad-danger" disabled={discard.isPending}
                 onClick={() => void discard.mutateAsync(undefined).then(() => setNotice('초안을 버렸습니다.')).catch(() => {})}>
                 버리기
               </button>

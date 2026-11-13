@@ -1,5 +1,5 @@
-/* 1440 = sidebar 192 + main 1248; main content = 1248 - padding 28×2 = 1192px. */
-body:has(.admin-shell){background:#fff}
+/* 1440 = sidebar 208 + main 1232; content = 1232 - padding 28×2 = 1176px. */
+body:has(.admin-shell){background:#f3f7f4}
 #class-journal .ad-theme-drafts>.ad-split{margin-top:20px}
 #class-journal .ad-theme-drafts .ad-draft-id{white-space:normal;overflow-wrap:anywhere}
 #class-journal .ad-theme-drafts dd{margin:4px 0 12px}
@@ -22,42 +22,44 @@ body:has(.admin-shell){background:#fff}
 #class-journal .ad-inline{display:inline-flex;align-items:center;gap:6px;margin:8px 0}
 @media(max-width:760px){#class-journal .ad-story{grid-template-columns:minmax(0,1fr)}}
 #class-journal:has(>.admin-shell){padding:0;margin:0;background:#fff;min-height:100vh}
-#class-journal .admin-shell{--cj-ink:#171717;--cj-muted:#626262;--cj-line:#e5e5e5;--cj-accent:#202020;--cj-accent-dark:#000;--cj-paper:#fff;--cj-bg:#fff;--cj-mint:#f0f0f0;--cj-warm:#f7f7f7;--cj-warn:#444;--cj-danger:#333;display:grid;grid-template-columns:192px minmax(0,1fr);grid-template-rows:56px 1fr;min-height:100vh;background:#fff;color:#171717;font-family:Arial,'Noto Sans KR',sans-serif;font-size:13px;line-height:1.55}
+#class-journal .admin-shell{--cj-ink:#14291d;--cj-muted:#3f5547;--cj-line:#bdcfc2;--ad-control-line:#7e9285;--cj-accent:#277044;--cj-accent-dark:#1d5734;--cj-paper:#fff;--cj-bg:#f3f7f4;--cj-mint:#e8f2eb;--cj-warm:#f3f7f4;--cj-warn:#444;--cj-danger:#333;display:grid;grid-template-columns:208px minmax(0,1fr);grid-template-rows:64px 1fr;min-height:100vh;background:var(--cj-bg);color:var(--cj-ink);font-family:'Noto Sans KR',Arial,sans-serif;font-size:15px;line-height:1.65}
 #class-journal .admin-shell *{box-sizing:border-box}
+#class-journal .admin-shell label{display:inline-flex;align-items:center;gap:8px;max-width:100%}
+#class-journal .admin-shell .ad-filter{display:flex;flex-wrap:wrap;margin-bottom:16px}
 #class-journal .admin-shell a{color:inherit;text-decoration:none}
-#class-journal .admin-shell :is(button,input,select,textarea){font:inherit;color:#171717}
-#class-journal .admin-shell :is(button,.cj-secondary){min-height:32px;padding:5px 11px;border:1px solid #d4d4d4;border-radius:5px;background:#fff;cursor:pointer;box-shadow:none}
-#class-journal .admin-shell button:hover{background:#f4f4f4}
-#class-journal .admin-shell button:disabled{cursor:not-allowed;color:#707070;background:#f5f5f5;opacity:1}
-#class-journal .admin-shell :is(button.cj-primary,.ad-primary){background:#242424;border-color:#242424;color:#fff}
-#class-journal .admin-shell button.cj-primary:disabled{background:#e5e5e5;border-color:#ddd;color:#666}
-#class-journal .admin-shell :is(input:not([type=checkbox]),select,textarea){min-height:34px;max-width:100%;border:1px solid #d6d6d6;border-radius:5px;background:#fff;padding:6px 9px;box-shadow:none}
-#class-journal .admin-shell input[type=checkbox]{accent-color:#222;width:15px;height:15px}
+#class-journal .admin-shell :is(button,input,select,textarea){font:inherit;color:var(--cj-ink)}
+#class-journal .admin-shell :is(button,.cj-secondary){min-height:40px;padding:7px 13px;border:1px solid var(--ad-control-line);border-radius:5px;background:#fff;cursor:pointer;box-shadow:none}
+#class-journal .admin-shell button:hover{background:var(--cj-mint)}
+#class-journal .admin-shell button:disabled{cursor:not-allowed;color:#707070;background:var(--cj-bg);opacity:1}
+#class-journal .admin-shell :is(button.cj-primary,.ad-primary){background:var(--cj-accent);border-color:var(--cj-accent);color:#fff}
+#class-journal .admin-shell button.cj-primary:disabled{background:var(--cj-line);border-color:#ddd;color:#666}
+#class-journal .admin-shell :is(input:not([type=checkbox]),select,textarea){min-height:40px;max-width:100%;border:1px solid var(--ad-control-line);border-radius:5px;background:#fff;padding:6px 9px;box-shadow:none}
+#class-journal .admin-shell input[type=checkbox]{accent-color:#222;width:18px;height:18px}
 #class-journal .admin-shell textarea{resize:vertical;min-height:88px;width:100%}
 #class-journal .admin-shell :focus-visible{outline:2px solid #333;outline-offset:3px}
-#class-journal .admin-shell h1{font-size:23px;font-weight:650;line-height:1.4;letter-spacing:-.035em;margin:0}
-#class-journal .admin-shell h2{font-size:14px;font-weight:650;margin:0 0 12px}
-#class-journal .admin-shell :is(h3,h4){font-size:13px;font-weight:650;margin:12px 0 8px}
+#class-journal .admin-shell h1{font-size:26px;font-weight:650;line-height:1.4;letter-spacing:-.035em;margin:0}
+#class-journal .admin-shell h2{font-size:18px;font-weight:650;margin:0 0 12px}
+#class-journal .admin-shell :is(h3,h4){font-size:15px;font-weight:650;margin:12px 0 8px}
 #class-journal .admin-shell p{margin:0 0 10px}
-#class-journal .admin-shell small{font-size:12px;color:#626262}
-#class-journal .ad-topbar{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e7e7e7;padding:0 24px;gap:20px;background:#fff}
+#class-journal .admin-shell small{font-size:12px;color:var(--cj-muted)}
+#class-journal .ad-topbar{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--cj-line);padding:0 24px;gap:20px;background:#fff}
 #class-journal .ad-brand{display:flex;gap:12px;align-items:center;font-size:19px;font-weight:700;letter-spacing:-.05em;white-space:nowrap}
-#class-journal .ad-brand .ad-brand-context{font-size:12px;font-weight:400;color:#626262;border-left:1px solid #ddd;padding-left:12px;letter-spacing:0}
-#class-journal .ad-account{display:flex;gap:15px;align-items:center;font-size:11px;color:#626262}
-#class-journal .ad-sidebar{border-right:1px solid #e7e7e7;padding:15px 12px;display:flex;flex-direction:column;justify-content:space-between;min-height:calc(100vh - 56px)}
-#class-journal .ad-sidebar nav a{display:block;padding:8px 12px;margin:2px 0;border-radius:4px;font-size:13px}
+#class-journal .ad-brand .ad-brand-context{font-size:12px;font-weight:400;color:var(--cj-muted);border-left:1px solid #ddd;padding-left:12px;letter-spacing:0}
+#class-journal .ad-account{display:flex;gap:15px;align-items:center;font-size:12px;color:var(--cj-muted)}
+#class-journal .ad-sidebar{border-right:1px solid var(--cj-line);padding:15px 12px;display:flex;flex-direction:column;justify-content:space-between;min-height:calc(100vh - 64px)}
+#class-journal .ad-sidebar nav a{display:block;padding:8px 12px;margin:2px 0;border-radius:4px;font-size:14px}
 #class-journal .ad-sidebar nav a:hover{background:#f6f6f6}
-#class-journal .ad-sidebar nav a[aria-current=page]{background:#303030;color:#fff}
-#class-journal .admin-shell .ad-nav-group{font-size:11px;color:#666;margin:18px 12px 6px}
-#class-journal .ad-sidebar-note{border-top:1px solid #eee;padding:14px 10px 0;font-size:11px;color:#666}
+#class-journal .ad-sidebar nav a[aria-current=page]{background:var(--cj-accent);color:#fff}
+#class-journal .admin-shell .ad-nav-group{font-size:12px;color:#666;margin:18px 12px 6px}
+#class-journal .ad-sidebar-note{border-top:1px solid #eee;padding:14px 10px 0;font-size:12px;color:#666}
 #class-journal .ad-main{min-width:0;padding:22px 28px 16px}
 #class-journal .ad-page-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin:18px 0 20px}
-#class-journal .admin-shell .ad-breadcrumb{font-size:11px;color:#626262;margin-bottom:6px}
-#class-journal .ad-period{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;font-size:11px}
-#class-journal .admin-shell .ad-period input{max-width:132px;min-height:30px;padding:4px 5px}
-#class-journal .ad-demo{display:flex;align-items:center;justify-content:space-between;color:#626262;font-size:11px;gap:10px;border-bottom:1px solid #efefef;padding-bottom:10px}
-#class-journal .ad-demo select{min-height:26px;font-size:11px;padding:2px 5px;margin-left:5px}
-#class-journal :is(.ad-panel,.admin-shell .ws-card){border:1px solid #e6e6e6;border-radius:6px;padding:18px;background:#fff;box-shadow:none;min-width:0}
+#class-journal .admin-shell .ad-breadcrumb{font-size:12px;color:var(--cj-muted);margin-bottom:6px}
+#class-journal .ad-period{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;font-size:12px}
+#class-journal .admin-shell .ad-period input{max-width:152px;min-height:40px;padding:6px 9px}
+#class-journal .ad-demo{display:flex;align-items:center;justify-content:space-between;color:var(--cj-muted);font-size:12px;gap:10px;border-bottom:1px solid #efefef;padding-bottom:10px}
+#class-journal .ad-demo select{min-height:36px;font-size:13px;padding:5px 9px}
+#class-journal :is(.ad-panel,.admin-shell .ws-card){border:1px solid var(--cj-line);border-radius:6px;padding:18px;background:#fff;box-shadow:none;min-width:0}
 #class-journal .ad-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 #class-journal .ad-panel-heading h2{margin:0}
 #class-journal .ad-panel-heading a{font-size:12px;text-decoration:underline;text-underline-offset:3px}
@@ -67,51 +69,53 @@ body:has(.admin-shell){background:#fff}
 #class-journal .ad-overview-panels>.ad-panel{display:flex;flex-direction:column}
 #class-journal .ad-overview-panels>.ad-panel>.ad-note{margin-top:auto}
 #class-journal .ad-stack{display:grid;gap:20px}
-#class-journal .ad-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid #e5e5e5;border-radius:6px;margin-bottom:20px;overflow:hidden}
+#class-journal .ad-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--cj-line);border-radius:6px;margin-bottom:20px;overflow:hidden}
 #class-journal .ad-stat{display:flex;flex-direction:column;padding:16px 18px;gap:5px;border-right:1px solid #e9e9e9;min-height:104px;min-width:0}
 #class-journal .ad-stat:last-child{border-right:0}
-#class-journal .ad-stat span{font-size:13px;color:#626262}
+#class-journal .ad-stat span{font-size:14px;color:var(--cj-muted)}
 #class-journal .ad-stat strong{font-size:27px;font-weight:500;line-height:1.25;font-variant-numeric:tabular-nums}
-#class-journal .ad-stat small{font-size:11px}
-#class-journal a.ad-stat:hover{background:#fafafa}
+#class-journal .ad-stat small{font-size:12px}
+#class-journal a.ad-stat:hover{background:var(--cj-bg)}
 #class-journal .ad-table-wrap{overflow:auto;width:100%}
-#class-journal .ad-table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:13px}
-#class-journal .ad-table th{text-align:left;font-weight:400;font-size:13px;color:#626262;padding:8px 10px;border-bottom:1px solid #e5e5e5}
-#class-journal .ad-table td{padding:11px 10px;border-bottom:1px solid #efefef;vertical-align:middle;max-width:340px;overflow:hidden;text-overflow:ellipsis}
+#class-journal .ad-table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:14px}
+#class-journal .ad-table th{text-align:left;font-weight:600;font-size:14px;color:var(--cj-ink);padding:8px 10px;border-bottom:1px solid var(--cj-line)}
+#class-journal .ad-table td{padding:11px 10px;border-bottom:1px solid var(--cj-line);vertical-align:middle;max-width:340px;overflow:hidden;text-overflow:ellipsis}
 #class-journal .ad-table tr:last-child td{border-bottom:0}
 #class-journal .ad-table .num{text-align:right;font-variant-numeric:tabular-nums}
-#class-journal .ad-table tr.is-selected{background:#f2f2f2}
-#class-journal .ad-table td small{display:block;font-size:11px;margin-top:3px}
-#class-journal .ad-table button{min-height:27px;font-size:11px;padding:3px 8px}
-#class-journal .ad-table caption{text-align:left;font-size:12px;color:#626262;padding:0 0 12px}
-#class-journal .ad-badge{display:inline-block;white-space:nowrap;border:1px solid #d6d6d6;border-radius:4px;padding:1px 6px;font-size:13px;line-height:20px;color:#444;background:#f7f7f7}
+#class-journal .ad-table tr.is-selected{background:var(--cj-mint)}
+#class-journal .ad-table td small{display:block;font-size:12px;margin-top:3px}
+#class-journal .ad-table button{min-height:36px;font-size:13px;padding:5px 10px}
+#class-journal .ad-table caption{text-align:left;font-size:12px;color:var(--cj-muted);padding:0 0 12px}
+#class-journal .ad-badge{display:inline-block;white-space:nowrap;border:1px solid var(--cj-line);border-radius:4px;padding:1px 6px;font-size:14px;line-height:20px;color:#444;background:#f7f7f7}
 #class-journal .ad-badge.is-active{background:#e8e8e8;border-color:#bbb;color:#111}
-#class-journal .admin-shell .ad-empty{color:#626262;padding:24px 8px;margin:0;font-size:12px}
+#class-journal .admin-shell .ad-badge.is-success{background:var(--cj-accent);border-color:var(--cj-accent);color:#fff;font-weight:600}
+#class-journal .admin-shell .ad-badge.is-danger{background:#b3342d;border-color:#b3342d;color:#fff;font-weight:600}
+#class-journal .admin-shell .ad-empty{color:var(--cj-muted);padding:24px 8px;margin:0;font-size:12px}
 #class-journal :is(.ad-toolbar,.admin-shell .ws-toolbar){display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px}
-#class-journal :is(.ad-toolbar,.admin-shell .ws-toolbar) label{display:grid;gap:5px;font-size:11px;color:#626262}
+#class-journal :is(.ad-toolbar,.admin-shell .ws-toolbar) label{display:grid;gap:8px;font-size:14px;color:var(--cj-ink);font-weight:600}
 #class-journal .ad-tabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:16px}
-#class-journal .admin-shell .ad-tabs button{min-height:28px;font-size:12px;padding:3px 12px;border-radius:5px}
-#class-journal .admin-shell .ad-tabs button[aria-pressed=true]{background:#303030;color:#fff;border-color:#303030}
-#class-journal .ad-facts{margin:0;display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;font-size:13px}
-#class-journal .ad-facts dt{color:#626262}
+#class-journal .admin-shell .ad-tabs button{min-height:40px;font-size:14px;padding:7px 14px;border-radius:5px}
+#class-journal .admin-shell .ad-tabs button[aria-pressed=true]{background:var(--cj-accent);color:#fff;border-color:var(--cj-accent)}
+#class-journal .ad-facts{margin:0;display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;font-size:14px}
+#class-journal .ad-facts dt{color:var(--cj-muted)}
 #class-journal .ad-facts dd{margin:0;overflow-wrap:anywhere}
 #class-journal .ad-detail-heading{border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px}
-#class-journal .admin-shell .ad-note{padding:10px 12px;background:#f5f5f5;border-radius:4px;font-size:11px;color:#626262;margin:14px 0 0}
+#class-journal .admin-shell .ad-note{padding:10px 12px;background:var(--cj-bg);border-radius:4px;font-size:12px;color:var(--cj-muted);margin:14px 0 0}
 #class-journal .ad-links{display:grid;gap:0}
 #class-journal .ad-links a{display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid #eee}
 #class-journal .ad-links a:last-child{border-bottom:0}
 #class-journal .ad-links strong{font-weight:500}
-#class-journal .ad-footer{font-size:11px;color:#666;border-top:1px solid #eee;margin-top:26px;padding-top:12px}
+#class-journal .ad-footer{font-size:12px;color:#666;border-top:1px solid #eee;margin-top:26px;padding-top:12px}
 #class-journal .admin-shell .ws-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
 #class-journal .admin-shell .ws-form{display:grid;gap:13px;max-width:none}
-#class-journal .admin-shell .ws-form label{display:grid;gap:6px;font-size:12px}
+#class-journal .admin-shell .ws-form label{display:grid;gap:8px;font-size:14px;font-weight:600}
 #class-journal .admin-shell .ws-form label:has(input[type=checkbox]){display:flex;align-items:center}
 #class-journal .admin-shell .ws-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
-#class-journal .admin-shell .ux-error{background:#f5f5f5;border:1px solid #bbb;color:#222;border-radius:5px;padding:12px;margin:12px 0}
+#class-journal .admin-shell .ux-error{background:var(--cj-bg);border:1px solid #bbb;color:#222;border-radius:5px;padding:12px;margin:12px 0}
 #class-journal .admin-shell .ux-error :is(p,small){color:#444}
-#class-journal .admin-shell blockquote{margin:10px 0;padding:10px 14px;border-left:2px solid #bbb;background:#fafafa}
+#class-journal .admin-shell blockquote{margin:10px 0;padding:10px 14px;border-left:2px solid #bbb;background:var(--cj-bg)}
 #class-journal .admin-shell .cj-modal-layer{background:rgb(0 0 0 / .3)}
-#class-journal .admin-shell .cj-modal{background:#fff;color:#171717;border-radius:8px;border:1px solid #ccc;max-width:800px;box-shadow:0 12px 35px rgb(0 0 0 / .12)}
+#class-journal .admin-shell .cj-modal{background:#fff;color:var(--cj-ink);border-radius:8px;border:1px solid #ccc;max-width:800px;box-shadow:0 12px 35px rgb(0 0 0 / .12)}
 #class-journal .admin-shell .cj-modal-head{background:#fff;border-bottom:1px solid #ddd}
 #class-journal .admin-shell .cj-modal-head h2{margin:0;font-size:18px}
 #class-journal .ad-chart{height:240px;display:flex;flex-direction:column;justify-content:center;gap:20px;padding:12px 4px}
@@ -128,8 +132,8 @@ body:has(.admin-shell){background:#fff}
 #class-journal .ad-mission-tabs{display:flex;gap:20px;border-bottom:1px solid #ddd;margin:16px 0}
 #class-journal .admin-shell .ad-mission-tabs button{border:0;border-radius:0;padding:9px 2px;background:#fff;border-bottom:2px solid transparent}
 #class-journal .admin-shell .ad-mission-tabs button[aria-pressed=true]{border-bottom-color:#222}
-@media(max-width:1100px){#class-journal .admin-shell{grid-template-columns:166px minmax(0,1fr)}#class-journal .ad-main{padding:18px}#class-journal .ad-page-heading{align-items:flex-start;flex-direction:column;gap:12px}#class-journal .ad-split{grid-template-columns:minmax(0,1.3fr) minmax(240px,1fr)}#class-journal .ad-account>span{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
-@media(max-width:760px){#class-journal .admin-shell{display:block}#class-journal .ad-topbar{height:56px;padding:0 16px}#class-journal .ad-account>span{display:none}#class-journal .admin-shell .ad-menu-toggle{display:inline-block}#class-journal .ad-sidebar{display:none;min-height:0;border-right:0;border-bottom:1px solid #ddd}#class-journal .ad-sidebar.is-open{display:block}#class-journal .ad-sidebar-note{display:none}#class-journal .ad-main{padding:16px}#class-journal .ad-stats{grid-template-columns:repeat(2,minmax(0,1fr))}#class-journal .ad-stat{border-bottom:1px solid #eee}#class-journal :is(.ad-split,.ad-two,.admin-shell .ws-grid){grid-template-columns:minmax(0,1fr)}#class-journal .ad-period{justify-content:flex-start}#class-journal .ad-demo{align-items:flex-start}#class-journal .admin-shell h1{font-size:21px}#class-journal .ad-mission-tabs{gap:10px;flex-wrap:wrap}#class-journal .admin-shell button{min-height:36px}}
+@media(max-width:1100px){#class-journal .admin-shell{grid-template-columns:184px minmax(0,1fr)}#class-journal .ad-main{padding:18px}#class-journal .ad-page-heading{align-items:flex-start;flex-direction:column;gap:12px}#class-journal .ad-split{grid-template-columns:minmax(0,1.3fr) minmax(240px,1fr)}#class-journal .ad-account>span{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+@media(max-width:760px){#class-journal .admin-shell{display:block}#class-journal .ad-topbar{height:56px;padding:0 16px}#class-journal .ad-account>span{display:none}#class-journal .admin-shell .ad-menu-toggle{display:inline-block}#class-journal .ad-sidebar{display:none;min-height:0;border-right:0;border-bottom:1px solid #ddd}#class-journal .ad-sidebar.is-open{display:block}#class-journal .ad-sidebar-note{display:none}#class-journal .ad-main{padding:16px}#class-journal .ad-stats{grid-template-columns:repeat(2,minmax(0,1fr))}#class-journal .ad-stat{border-bottom:1px solid #eee}#class-journal :is(.ad-split,.ad-two,.admin-shell .ws-grid){grid-template-columns:minmax(0,1fr)}#class-journal .ad-period{justify-content:flex-start}#class-journal .ad-demo{align-items:flex-start}#class-journal .admin-shell h1{font-size:24px}#class-journal .ad-mission-tabs{gap:10px;flex-wrap:wrap}#class-journal .admin-shell button{min-height:36px}}
 
 #class-journal .ad-brand > .app-brand { --brand-width: 136px; }
 #class-journal .admin-shell .svc-page{max-width:none;margin:0}
@@ -151,3 +155,77 @@ body:has(.admin-shell){background:#fff}
   #class-journal .ad-account{gap:6px;flex:0 0 auto;margin-left:auto}
   #class-journal .admin-shell .ad-account>button{white-space:nowrap;flex-shrink:0;min-height:44px}
 }
+
+/* Same palette as the parent dashboard; keep the administration layout and states. */
+#class-journal .ad-topbar{background:var(--cj-bg)}
+#class-journal .ad-sidebar{background:var(--cj-accent);border-right:0;color:#fff}
+#class-journal .ad-sidebar nav a:hover{background:#1d5734}
+#class-journal .ad-sidebar nav a[aria-current=page]{background:#fff;color:var(--cj-accent-dark);font-weight:600}
+#class-journal .admin-shell .ad-nav-group,#class-journal .ad-sidebar-note{color:#e0eee4}
+#class-journal .ad-sidebar-note{border-top-color:#689f7b}
+#class-journal .ad-stats{background:var(--cj-paper)}
+#class-journal .admin-shell input[type=checkbox]{accent-color:var(--cj-accent)}
+#class-journal .admin-shell :focus-visible{outline-color:var(--cj-accent)}
+#class-journal .ad-sidebar :focus-visible{outline-color:#fff}
+#class-journal .admin-shell :is(button.cj-primary,.ad-primary):hover:not(:disabled){background:var(--cj-accent-dark);border-color:var(--cj-accent-dark)}
+#class-journal .ad-chart-track{background:var(--cj-mint)}
+#class-journal .ad-chart-track span{background:var(--cj-accent)}
+#class-journal .admin-shell .ad-mission-tabs button[aria-pressed=true]{border-bottom-color:var(--cj-accent);color:var(--cj-accent-dark)}
+
+/* Match parent dropdown arrow spacing, rounded popup and selected option. */
+#class-journal .admin-shell select:not([multiple]) { appearance: none; -webkit-appearance: none; padding-right: 42px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2346594d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-position: right 14px center; background-repeat: no-repeat; background-size: 16px; }
+@media(forced-colors:active) { #class-journal .admin-shell select:not([multiple]) { appearance: auto; -webkit-appearance: auto; background-image: none; padding-right: 12px; } }
+/* Customizable native select: retain keyboard/form behaviour while styling its popup. */
+@supports (appearance: base-select) {
+ @media (forced-colors: none) {
+  #class-journal .admin-shell select:not([multiple]),
+  #class-journal .admin-shell select:not([multiple])::picker(select) { appearance: base-select; }
+  #class-journal .admin-shell select:not([multiple])::picker-icon { display: none; }
+  #class-journal .admin-shell select:not([multiple])::picker(select) { border: 1px solid #cfdcd2; border-radius: 14px; padding: 6px; margin-block: 8px; background: #fff; color: #192b21; box-shadow: 0 6px 20px rgba(12,42,25,.14); }
+  #class-journal .admin-shell select:not([multiple]) option { min-height: 40px; padding: 10px 12px; border-radius: 8px; font: inherit; line-height: 1.5; color: #192b21; background: #fff; cursor: pointer; }
+  #class-journal .admin-shell select:not([multiple]) option::checkmark { display: none; }
+  #class-journal .admin-shell select:not([multiple]) option:is(:hover,:focus-visible) { background: #e8f2eb; outline: none; }
+  #class-journal .admin-shell select:not([multiple]) option:checked { background: #277044; color: #fff; font-weight: 600; }
+  #class-journal .admin-shell select:not([multiple]) option:disabled { color: #69786e; cursor: default; }
+ }
+}
+
+/* Readability: clear text hierarchy and visible controls on the pale canvas. */
+#class-journal .admin-shell .ws-card.ad-completed-card{background:var(--cj-accent);border-color:var(--cj-accent);color:#fff}
+#class-journal .admin-shell .ad-completed-card :is(h3,strong,small){color:inherit}
+#class-journal .admin-shell a.ad-completed-card:hover{background:var(--cj-accent-dark);border-color:var(--cj-accent-dark)}
+#class-journal .admin-shell :is(button,input,select,textarea){font-size:14px;font-weight:400}
+#class-journal .admin-shell button{font-weight:600}
+#class-journal .ad-sidebar nav a{font-size:15px;font-weight:500}
+#class-journal .ad-sidebar nav a[aria-current=page]{font-weight:700}
+#class-journal .admin-shell .ad-note{font-size:13px;color:var(--cj-muted);border-left:3px solid #7e9285}
+#class-journal .admin-shell .ad-empty{font-size:14px}
+#class-journal .admin-shell .ux-error{background:#fff3f2;border-color:#ad3731;color:#852620}
+#class-journal .admin-shell .ux-error :is(p,small){color:#852620}
+#class-journal .admin-shell button:disabled{background:#e8ece9;border-color:#bdc7c0;color:#647168}
+#class-journal .admin-shell .ad-mission-tabs button[aria-pressed=true]{font-weight:700;border-bottom-width:3px}
+#class-journal .ad-main a:not(.ad-stat):not(.ws-card):hover{text-decoration:underline;text-underline-offset:3px}
+
+/* Admin action language: green actions and statuses, red destructive actions. */
+#class-journal .admin-shell .ad-main button{background:var(--cj-accent);border-color:var(--cj-accent);color:#fff}
+#class-journal .admin-shell .ad-main button:hover:not(:disabled){background:var(--cj-accent-dark);border-color:var(--cj-accent-dark)}
+#class-journal .admin-shell .ad-badge{background:var(--cj-accent);border-color:var(--cj-accent);color:#fff;font-weight:600}
+#class-journal .admin-shell .ad-badge.is-danger,
+#class-journal .admin-shell .ad-main button.ad-danger{background:#b3342d;border-color:#b3342d;color:#fff}
+#class-journal .admin-shell .ad-main button.ad-danger:hover:not(:disabled){background:#902820;border-color:#902820}
+#class-journal .admin-shell .ad-main button:disabled{background:#e8ece9;border-color:#bdc7c0;color:#647168}
+#class-journal .admin-shell .ad-main :is(.ad-tabs,.ad-mission-tabs) button[aria-pressed=false]{background:#fff;border-color:var(--ad-control-line);color:var(--cj-ink)}
+#class-journal .admin-shell :is(.ad-row-actions,.ad-pagination){display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#class-journal .admin-shell .ad-row-actions button{white-space:nowrap}
+#class-journal .admin-shell .ad-pagination{margin:16px 0 0;min-height:40px}
+#class-journal .admin-shell .ad-pagination>span{display:flex;align-items:center;min-height:40px;font-variant-numeric:tabular-nums}
+#class-journal .admin-shell :is(.ad-toolbar,.ws-toolbar):has(>span){align-items:center}
+#class-journal .ad-support-panels{align-items:stretch}
+#class-journal .ad-support-panels>.ad-panel,
+#class-journal .ad-support-panels>.ad-stack>.ad-panel{display:flex;flex-direction:column}
+#class-journal .ad-support-panels .ad-pagination{margin-top:auto;padding-top:16px}
+
+/* Outlined status badges stay distinct from filled action buttons. */
+#class-journal .admin-shell .ad-badge,
+#class-journal .admin-shell .ad-badge:is(.is-active,.is-success){background:#fff;border-color:var(--cj-accent);color:var(--cj-accent-dark)}
+#class-journal .admin-shell .ad-badge.is-danger{background:#fff;border-color:#b3342d;color:#a12d27}
