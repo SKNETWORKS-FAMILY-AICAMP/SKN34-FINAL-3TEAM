@@ -116,7 +116,7 @@ test('학부모 로그인 → 자녀별 기록 → 이용권·결제 화면', as
   await login(page)
   await expect(page.getByLabel('자녀 선택')).toBeVisible()
   const menu = page.getByRole('button', { name: '학부모 메뉴 열기' })
-  if (await menu.isVisible()) await menu.click()
+  if (!(await page.getByRole('navigation', { name: '학부모 하단 메뉴' }).isVisible()) && await menu.isVisible()) await menu.click()
   await page.getByRole('link', { name: '이용권·결제', exact: true }).filter({ visible: true }).click()
   await expect(page).toHaveURL(/\/parent\/billing/)
   await expect(page.getByRole('heading', { name: '이용권·결제', exact: true })).toBeVisible()
@@ -257,7 +257,7 @@ test('학부모 도움말·공지·문의 접수는 core 계약 모양을 쓴다
 test('동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부모 화면에 돌아온다 @responsive', async ({ page }, testInfo) => {
   await login(page)
   const menuButton = page.getByRole('button', { name: '학부모 메뉴 열기' })
-  if (await menuButton.isVisible()) await menuButton.click()
+  if (!(await page.getByRole('navigation', { name: '학부모 하단 메뉴' }).isVisible()) && await menuButton.isVisible()) await menuButton.click()
   await page.getByRole('link', { name: '기기·PIN', exact: true }).filter({ visible: true }).click()
   const card = page.getByRole('region', { name: '보호자 비밀번호' })
   await expect(card.getByText('아직 없음')).toBeVisible()

@@ -61,7 +61,7 @@ test('동의 후 공개 켜기: 대시보드 링크로 동의하고 자녀 화�
 test('재동의 대상: 커뮤니티 동의 영역을 숨기지 않고 법정대리인 동의를 먼저 안내한다', async ({ page }) => {
   await parentLogin(page)
   const menu = page.getByRole('button', { name: '학부모 메뉴 열기' })
-  if (await menu.isVisible()) await menu.click()
+  if (!(await page.getByRole('navigation', { name: '학부모 하단 메뉴' }).isVisible()) && await menu.isVisible()) await menu.click()
   await page.getByRole('link', { name: '계정·자녀 설정', exact: true }).filter({ visible: true }).click()
   await page.getByRole('tab', { name: '공개·동의', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/settings/)

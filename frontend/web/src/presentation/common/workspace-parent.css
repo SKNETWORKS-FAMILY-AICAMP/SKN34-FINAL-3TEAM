@@ -744,6 +744,58 @@
 #class-journal .ws-parent select:not([multiple]) { appearance: none; -webkit-appearance: none; padding-right: 42px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2346594d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-position: right 14px center; background-repeat: no-repeat; background-size: 16px; }
 @media(forced-colors:active) { #class-journal .ws-parent select:not([multiple]) { appearance: auto; -webkit-appearance: auto; background-image: none; padding-right: 12px; } }
 
+/* 메뉴 창은 흰 바탕이라 초록 사이드바의 흰 글자를 쓰지 않는다. */
+#class-journal .ws-parent .ws-parent-menu .ws-nav a { color: #192b21; background: #fff; border: 1px solid #cfdcd2; font-weight: 500; }
+#class-journal .ws-parent .ws-parent-menu .ws-nav a[aria-current=page] { background: #e8f2eb; color: #1d5734; border-color: #9fc2aa; font-weight: 700; }
+#class-journal .ws-parent .ws-parent-menu .ws-nav a:hover { outline: 1px solid #9fc2aa; outline-offset: -1px; }
+
+/* 폰: 초록 틀·떠 있는 머리글·이중 여백을 걷어 내고 본문을 화면 폭대로 쓴다. */
+@media (max-width:640px) {
+ #class-journal:has(.ws-parent),
+ #class-journal .ws-parent,
+ #class-journal .ws-parent .ws-body { background: #f3f7f4; }
+ #class-journal .ws-parent .ws-parent-topbar { position: static; padding: 0; }
+ #class-journal .ws-parent .ws-topbar-card,
+ #class-journal .ws-parent .ws-topbar-card .ws-header,
+ #class-journal .ws-parent .ws-topbar-card .ws-demo { border-radius: 0; box-shadow: none; }
+ #class-journal .ws-parent .ws-topbar-card { background: #fff; border-bottom: 1px solid #d4dfd6; }
+ #class-journal .ws-parent .ws-topbar-card .ws-header { background: #fff; padding: 8px 12px 10px; column-gap: 6px; row-gap: 8px; }
+ #class-journal .ws-parent .ws-header .ws-logout,
+ #class-journal .ws-parent .ws-header .ws-menu-toggle { min-height: 40px; padding: 8px 10px; font-size: 13px; }
+ #class-journal .ws-parent .ws-header .notification-trigger { width: 40px; min-width: 40px; min-height: 40px; padding: 8px; }
+ #class-journal .ws-parent .ws-header-actions { margin-left: 0; justify-self: stretch; }
+ #class-journal .ws-parent .ws-header-actions > label { width: 100%; margin: 0; gap: 10px; font-size: 13px; white-space: nowrap; }
+ #class-journal .ws-parent .ws-header-actions select { flex: 1; min-width: 0; min-height: 40px; padding-block: 6px; font-size: 14px; }
+ #class-journal .ws-parent .ws-main { width: 100%; margin: 0; padding: 16px 12px 24px; border-radius: 0; background: transparent; }
+ #class-journal .ws-parent .ws-footer { color: #46594d; padding: 0 12px 24px; }
+ #class-journal .ws-parent :is(.ws-card,.pd-card,.payment-panel) { padding: 16px; border-radius: 12px; }
+ #class-journal .ws-parent .parent-private-records { padding: 14px; }
+ #class-journal .ws-parent .parent-scope { margin-bottom: 8px; }
+ #class-journal .ws-parent .parent-sharing-notice { padding: 10px 14px; }
+ #class-journal .ws-parent h1, #class-journal .ws-parent .pd-head h1 { font-size: 22px; }
+ #class-journal .ws-parent .pd-card h2 { font-size: 16px; }
+ #class-journal .ws-parent .pd-type { flex-basis: auto; }
+}
+
+/* 폰 하단 바: 주요 메뉴 5개. 도움말·로그아웃은 머리글 메뉴 창에 둔다. */
+#class-journal .ws-parent .ws-bottom-nav { display: none; }
+@media (max-width:640px) {
+ #class-journal .ws-parent .ws-body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+ #class-journal .ws-parent .ws-bottom-nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: grid; grid-template-columns: repeat(5, minmax(0,1fr));
+  padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid #d4dfd6; box-shadow: 0 -4px 14px rgba(12,42,25,.08);
+ }
+ #class-journal .ws-parent .ws-bottom-nav a {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; padding: 4px 2px;
+  border-radius: 10px; color: #46594d; font-size: 12px; font-weight: 500; line-height: 1.2; text-decoration: none;
+ }
+ #class-journal .ws-parent .ws-bottom-nav a[aria-current=page] { color: #1d5734; font-weight: 700; background: #e8f2eb; }
+ #class-journal .ws-parent .ws-bottom-nav a:focus-visible { outline: 3px solid #277044; outline-offset: -3px; }
+ /* 주요 메뉴는 하단 바에만: 메뉴 창에는 자녀 선택·로그아웃·이용 지원만 */
+ #class-journal .ws-parent .ws-parent-menu > .ws-nav { display: none; }
+ #class-journal .ws-parent .ws-parent-menu .ws-menu-actions { margin-top: 0; }
+}
+
 /* Customizable native select: retain keyboard/form behaviour while styling its popup. */
 @supports (appearance: base-select) {
  @media (forced-colors: none) {

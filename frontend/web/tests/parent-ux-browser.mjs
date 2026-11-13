@@ -28,6 +28,16 @@ try {
    await page.getByRole('heading', { name: heading, exact: true }).waitFor()
    await page.locator('.ws-parent').waitFor()
    const floating = await page.locator('.ws-topbar-card').boundingBox()
+   const phone = width <= 640
+   if (phone) {
+    // 폰: 틀 없이 화면 폭 머리글·본문, 주요 메뉴는 하단 바
+    assert.equal(floating.x,0,'phone top bar spans the screen')
+    const main = await page.locator('.ws-main').boundingBox()
+    assert.ok(Math.abs(main.width-width) < 2, 'phone canvas spans the screen')
+    const bar = page.getByRole('navigation', { name: '학부모 하단 메뉴' })
+    assert.equal(await bar.getByRole('link').count(),5)
+    const barBox = await bar.boundingBox(); assert.ok(Math.abs(barBox.y+barBox.height-900) < 2, 'bottom bar sits at the bottom')
+   } else {
    assert.ok(floating.x > 0 && floating.x + floating.width < width, 'top bar must have side gutters')
    assert.equal(floating.y,0, 'top bar must touch the top viewport edge')
    assert.equal(await page.locator('.ws-side .ws-plan').count(),0)
@@ -47,6 +57,7 @@ try {
    const logout = await page.locator('.ws-header .ws-logout').boundingBox()
    assert.ok(logout.x > bell.x, 'logout must follow the notification')
    assert.equal(await page.locator('.ws-parent').evaluate(el => getComputedStyle(el).backgroundColor),'rgb(39, 112, 68)')
+   }
    if (path === 'report') {
     await page.getByRole('button', { name:'리포트 상세 보기', exact:true }).first().click()
     const toolbar = page.locator('.parent-report-toolbar')
@@ -90,7 +101,7 @@ try {
     const before = await sidebar.boundingBox(); await page.evaluate(() => scrollTo(0,document.body.scrollHeight))
     const after = await sidebar.boundingBox(); assert.ok(Math.abs(before.y-after.y)<2, path+' sidebar moved')
     await page.evaluate(() => scrollTo(0,0))
-   } else {
+   } else if (!phone) {
     await page.getByRole('button', { name: '학부모 메뉴 열기', exact: true }).click()
     await page.getByRole('dialog').getByRole('link', { name: '기기·PIN', exact: true }).waitFor()
     await page.keyboard.press('Escape')

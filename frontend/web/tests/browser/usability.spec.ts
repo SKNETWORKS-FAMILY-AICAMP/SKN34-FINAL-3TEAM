@@ -15,7 +15,7 @@ async function parentLogin(page: Page) {
 
 async function navigate(page: Page, name: string) {
   const menu = page.getByRole('button', { name: '학부모 메뉴 열기' })
-  if (await menu.isVisible()) await menu.click()
+  if (!(await page.getByRole('navigation', { name: '학부모 하단 메뉴' }).isVisible()) && await menu.isVisible()) await menu.click()
   await page.getByRole('link', { name, exact: true }).filter({ visible: true }).click()
 }
 
