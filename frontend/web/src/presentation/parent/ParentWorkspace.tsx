@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
+import { BookOpen, CreditCard, FileText, Settings, Smartphone } from 'lucide-react'
 import { Link, Navigate, useSearchParams, useLocation } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
 import { parentApi } from '../../data/parent/api.ts'
@@ -48,9 +49,13 @@ export function ParentWorkspace() {
       setParams(next, { replace: true })
     }
   }, [consentReady, children.data, params, setParams, scope.from, scope.to])
+  const icon = { size: 22, strokeWidth: 1.8, 'aria-hidden': true } as const
   const nav = [
-    { path: '/parent/journal', label: '학습 현황' }, { path: '/parent/report', label: '리포트·AI 챗봇' }, { path: '/parent/settings', label: '계정·자녀 설정' },
-    { path: '/parent/devices', label: '기기·PIN' }, { path: '/parent/billing', label: '이용권·결제' },
+    { path: '/parent/journal', label: '학습 현황', short: '학습', icon: <BookOpen {...icon} /> },
+    { path: '/parent/report', label: '리포트·AI 챗봇', short: '리포트', icon: <FileText {...icon} /> },
+    { path: '/parent/settings', label: '계정·자녀 설정', short: '설정', icon: <Settings {...icon} /> },
+    { path: '/parent/devices', label: '기기·PIN', short: '기기', icon: <Smartphone {...icon} /> },
+    { path: '/parent/billing', label: '이용권·결제', short: '결제', icon: <CreditCard {...icon} /> },
   ]
   if (page === 'analysis') {
     const next = new URLSearchParams(params); next.set('view', 'chat')
