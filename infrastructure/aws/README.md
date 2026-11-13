@@ -90,6 +90,45 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 ## #185 검증 도구
 
 - `verify-viewer-ip.ps1`: 명시한 EKS context에서 Redis 카운터를 읽고 CloudFront 기기 등록 API에 유효하지 않은 코드로 두 번 요청한다. 직접 확인한 접속자 공인 IPv4를 `-ViewerIp`, 전용 kubeconfig를 `-Kubeconfig`로 전달한다. 두 번째 요청에는 위조 XFF를 넣는다. 실제 viewer 카운터 +2, 위조 IP 카운터 불변과 PAIRING_CODE_INVALID 응답을 모두 확인한다. 기기·페어링을 생성하지 않지만 IP별 10분 한도에서 2회를 사용한다. 동시 요청·카운터 TTL 만료·프록시 egress 차이가 있으면 실패로 보고 조사하며 카운터를 임의로 지우지 않는다.
-- `audit-demo-data.sql`: demo의 core_app 계정으로 read-only transaction에서 계정·학생의 demo flag별 건수, 결제 건수와 DB CONNECT 권한만 조회한다. 개인정보를 출력하지 않는다. demo flag가 false라고 실제 사용자라고 단정하거나, 별도 DB라는 이유만으로 모든 데이터가 demo라고 단정하지 않는다. 실제 배포의 외부 키·접속 대상·데이터 생성 절차와 함께 해석한다.
+- `audit-demo-data.sql`: read-only transaction에서 건수만 조회한다. core_db(core_app)는 계정·학생의 demo flag별 건수, 결제 건수, DB CONNECT 권한과 #624 시연 학생 준비 상태(프리미엄·추억의 벽·가구·지난 주 리포트)를 본다. learning_db(learning_app)는 진행 주 이전 액자 수·검색 문서 상태·지난 주 M2 점수 답변을, report_db(report_app)는 지난 주 주간 리포트의 설명 카드·최근 일일 리포트를 본다. 접속한 DB에 맞는 절만 실행되므로 같은 파일을 세 DB에 각각 돌린다(`demo-db-oneoff.k8s.yaml`의 `PGDATABASE`·Secret을 바꿔 실행). 개인정보를 출력하지 않는다. demo flag가 false라고 실제 사용자라고 단정하거나, 별도 DB라는 이유만으로 모든 데이터가 demo라고 단정하지 않는다. 실제 배포의 외부 키·접속 대상·데이터 생성 절차와 함께 해석한다.
 - `mark-confirmed-demo-data.sql`: 사용자가 테스트용이라고 확인한 기존 학부모 1명·학생 2명의 flag를 보정한 일회성 SQL이다. 자동 초기화나 일반 운영 DB에서 실행하지 않는다. 새 가입자의 demo 여부를 자동 설정하는 기능이 아니다.
 - `scan-repository-secrets.py`: Python 표준 라이브러리와 Gitleaks 8.30.1로 이력·현재 파일을 분리 검사한다. 예: `python infrastructure/aws/scan-repository-secrets.py --gitleaks <실행파일> --reports <저장소밖-보고서폴더>`. `.gitleaks.toml`의 예외는 검토한 합성 값과 비밀이 아닌 식별자에 한정한다. Git 무시 파일·원격의 미수신 이력은 검사 범위 밖이다.
+
+## 시연 계정 데이터 준비 (#624)
+
+12/7 시연에서 추억 앨범·추억 검색·추억의 벽·가구 스킨·지난 주 주간 리포트(설명 카드)·일일 리포트가 빈 화면이 되지 않도록, 가상 학생 2명(초3 무료·초5 프리미엄)에게 지난 3회차(11/16·11/23·11/30 주) 완료 기록을 만든다. 기록은 SQL INSERT 없이 실제 공개 API로 만든다. 지난 주(11/30 주)는 실제 시각으로, 그보다 앞선 2회차는 core·learning 시계를 그 주 토요일로 옮겨 만든다(결정·kind 확인: [docs/report/infra.md 9.7](../../docs/report/infra.md#97-시연-계정-데이터-준비-624-2026-11-13)). 가상 학생과 자체 미션만 쓴다(NFR-SEC-07).
+
+| 파일 | 역할 |
+|---|---|
+| `demo_account_data.py` | `children`(가상 자녀 등록·학부모 동의) → `themes`(대상 주 게시 확인) → `solve`(서버 시계 기준 이번 주 5문제·정답 고르기) → `decorate`(앨범 확인·벽·가구) → `verify`(화면 내용 API 확인). 표준 라이브러리만 쓰고 비밀값·답변 원문·presigned URL을 출력하지 않는다 |
+| `prepare-demo-account-students.sql` | 두 자녀와 학부모를 `is_demo`로 표시, 초5에 결제 없는 프리미엄 시험 구독(`product_snapshot.demoAccount = '624'`) |
+| `demo-clock.Dockerfile` | core·learning 이미지에 libfaketime만 더한 시험 시계 이미지. 준비 동안만 쓴다 |
+| `audit-demo-data.sql` | 준비 결과를 세 DB에서 건수로 점검 |
+
+### 사전 조건
+
+1. #601 재가동이 끝나고 12/1(화) 이전이다. 시연 학부모(ID·비밀번호 로그인)와 CONTENT 관리자 계정이 있다.
+2. 11/16·11/23·11/30 주의 G3·G5 테마가 게시돼 있다(`python demo_account_data.py themes --weeks 2026-11-16,2026-11-23,2026-11-30`). 정답 후보가 있는 테마여야 엔딩·정답까지 보인다.
+3. 추억의 벽에 걸 가구 look_item(DESK·WALL 등)이 판매 중이고, 한 회차 포인트(완주 기준 약 65~125)로 살 수 있는 값이다.
+4. 설명 카드(FN-RPT-09)는 다음이 모두 갖춰져야 나온다. 하나라도 빠지면 리포트는 "설명 미포함"으로 발행된다.
+   - 초5 테마의 서술 미션 기준표에 M2 핵심어(`keywords`), 논술은 `essayType`. 저장소 시드(`demo_missions.sql`)의 미션에는 없다
+   - M2 `m2-klue-narrative` 활성(scope `judgment/grade-5/narrative`), 설명 모델 `report-explanation` 활성(scope `explanation/grade-5/narrative`)과 sLLM 서버(#476)
+   - ai `M2_CROSS_CHECK_ENABLED=true`. 저장소 prod 값은 기본 false라 이대로면 M2를 부르지 않는다. 켜면 판정 보류(`HELD`)가 생길 수 있어 켤지는 따로 정한다
+   - 학생 원문 공개(`solve`가 켬)·프리미엄 구독
+
+### 순서
+
+환경 변수는 스크립트 머리말을 따른다(`DEMO_API_BASE`, `DEMO_PARENT_*`, `DEMO_ADMIN_*`). 값은 출력하지 않는다.
+
+1. 자녀 등록: `python demo_account_data.py children --child <초3 닉네임>:3 --child <초5 닉네임>:5`
+2. 시연 표시·프리미엄: `demo-db-oneoff.k8s.yaml`로 `prepare-demo-account-students.sql` 실행(`psql -v g3=<초3> -v g5=<초5> -v product_code=PREMIUM`). Pod의 `command`에 `-v` 세 개를 더한다.
+3. 앞선 2회차(시험 시계):
+   - `docker build -f infrastructure/aws/demo-clock.Dockerfile --build-arg BASE=<배포 중인 core 이미지> -t <같은 ECR 저장소>:<태그>-demo-clock .`(learning도 같게) → ECR push
+   - core·learning Deployment를 그 이미지로 바꾸고 `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1`, `FAKETIME=@2026-11-21 05:00:00`(UTC, 토요일 14:00 KST), `FAKETIME_FORCE_MONOTONIC_FIX=1`, `FAKETIME_DONT_RESET=1`을 넣는다. monotonic을 위조하지 않으면(`FAKETIME_DONT_FAKE_MONOTONIC=1`) JVM 대기 스레드가 CPU 1코어를 계속 쓴다
+   - 롤아웃이 끝나면 `solve --child <초3>`, `solve --child <초5>`. 이어서 `FAKETIME=@2026-11-28 05:00:00`으로 바꿔 두 번 더 `solve`
+   - 앞선 주의 주간 리포트까지 원하면 그 주 일요일 23:56 KST로 옮겨 월요일 00:00 스케줄을 기다린다(sLLM KEDA cron은 실제 시각 기준이라 이때만 1대로 직접 올린다). 시연에 필요한 것은 지난 주 리포트뿐이라 생략할 수 있다
+   - 원래 이미지·환경 변수로 되돌리고(`kubectl set image`·`kubectl set env ...-`), Pod 시각이 실제 시각인지 확인한다. 이 동안 가짜 시각으로 서명한 S3 그림 URL은 403이고, 다른 사용자가 쓰지 않는 시간에만 한다
+4. 지난 주(실제 시각): 12/4(금)~12/5(토)에 `solve` 두 번. 무료도 금·토에는 다섯 요일이 모두 열린다(#483). 12/6 00:00 일일, 12/7 00:00 주간 리포트가 정기 스케줄로 만들어진다
+5. 12/7 00:00 이후: `decorate --child <닉네임> --min-frames 3 --keep-newest-unseen --furniture <DESK 코드>,<WALL 코드>`(가장 최근 회차는 "새 액자"로 남김) → `verify --child <닉네임> --query "<답변 소재 질문>"` → 세 DB에 `audit-demo-data.sql`
+
+되돌리기: 시험 구독은 `prepare-demo-account-students.sql` 머리말의 UPDATE로 해지한다. 학습 기록은 자녀 프로필 삭제(학부모 설정)로 지운다.
