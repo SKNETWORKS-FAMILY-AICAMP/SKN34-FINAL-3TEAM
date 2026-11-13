@@ -455,3 +455,14 @@ export function weekLabel(weekStart: string) {
   const [, m, d] = weekStart.split('-').map(Number)
   return `${m}월 ${Math.floor((d - 1) / 7) + 1}주`
 }
+
+/** 착용 itemKey → 그림 assetKey(캐릭터 칸만). 목록을 못 받았거나 키가 없으면 그 칸은 비움(기본 모습) */
+export function wornAssets(equipped: Equipped | undefined, items: LookItem[] | undefined): Partial<Record<'HAT' | 'OUTFIT' | 'ACCESSORY', string>> {
+  const worn: Partial<Record<'HAT' | 'OUTFIT' | 'ACCESSORY', string>> = {}
+  for (const slot of ['HAT', 'OUTFIT', 'ACCESSORY'] as const) {
+    const key = equipped?.[slot]
+    const asset = key ? items?.find((i) => i.itemKey === key && i.slot === slot)?.assetKey : null
+    if (asset) worn[slot] = asset
+  }
+  return worn
+}

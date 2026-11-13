@@ -46,7 +46,7 @@ export function ThinkingMap({
   /** 내 방 바로가기(P27, #556). 메뉴와 같은 곳 */
   onRoom?: () => void
 }) {
-  const { t, companion } = useLook()
+  const { t, companion, worn } = useLook()
   const [decorating, setDecorating] = useState(false)
   const query = useStudentHome(child),
     home = query.error ? undefined : query.data
@@ -161,7 +161,7 @@ export function ThinkingMap({
             <div className="st-buddy">
               <div className="st-buddy-figure">
                 <Ride id={t.id} />
-                <Companion kind={companion} size={104} />
+                <Companion kind={companion} size={104} worn={worn} />
               </div>
               <p className="st-bubble">
                 나는 {companionLabel(companion)}!{' '}

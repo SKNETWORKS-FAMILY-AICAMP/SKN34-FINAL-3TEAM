@@ -277,7 +277,8 @@ function ItemEditor({ item, onClose }: { item?: AdminLookItem; onClose: () => vo
         <label>이름<input aria-label="아이템 이름" required maxLength={40} value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label>필요 포인트<input aria-label="필요 포인트" inputMode="numeric" required value={price} onChange={(e) => setPrice(e.target.value)} /></label>
         {!validPrice && <p role="alert">필요 포인트는 1~10000 사이 정수로 적어 주세요.</p>}
-        <label>그림 키<input aria-label="그림 키" required maxLength={200} value={assetKey} onChange={(e) => setAssetKey(e.target.value)} /></label>
+        <label>그림 키<input aria-label="그림 키" required maxLength={200} value={assetKey} aria-describedby="item-asset-help" onChange={(e) => setAssetKey(e.target.value)} /></label>
+        <small id="item-asset-help">모자·옷·소품은 web <code>public/student-assets/</code> 안 파일 경로(예 looks/hat-acorn.svg, 영문 소문자·숫자·-·_, svg·png·webp). 벽지·가구는 내 방 그림 표의 키(room/…). 파일이 없으면 기본 모습으로 보입니다.</small>
         <div className="ws-actions">
           <button className="cj-primary" disabled={save.isPending || !validPrice}>저장</button>
           {item && (
