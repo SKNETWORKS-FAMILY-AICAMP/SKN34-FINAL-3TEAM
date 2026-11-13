@@ -585,7 +585,7 @@ backend/scoring-service/
 │  ├─ clients/
 │  │  ├─ base.py
 │  │  ├─ core_client.py          # 기동 시 활성 버전 조회
-│  │  └─ model_artifacts.py      # S3 가중치 임시 경로 다운로드
+│  │  └─ model_artifacts.py      # S3 가중치 임시 경로 다운로드, 사전 검사용 파일 정보 읽기
 │  ├─ messaging/
 │  │  ├─ envelope.py
 │  │  ├─ connection.py

@@ -1,18 +1,15 @@
 """읽기 전용 모델 사전 검사. 가중치/토크나이저 본문은 다운로드하지 않는다."""
 
-import base64
 import hashlib
 import json
 import time
-from contextlib import closing
 from typing import Literal
 from urllib.parse import unquote
 
-from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.clients.model_artifacts import S3ModelArtifacts
+from app.clients.model_artifacts import ArtifactError, S3ModelArtifacts
 from app.config import get_settings
 from app.m2.metadata import validate_metadata
 
@@ -72,7 +69,7 @@ class PreflightService:
     def check(self, request: PreflightRequest) -> PreflightResult:
         # Bucket is configuration-owned. Never follow a supplied URL or arbitrary key prefix.
         try:
-            bucket, prefix = self.artifacts._location(request.artifact_uri)
+            _, prefix = self.artifacts.location(request.artifact_uri)
             if (
                 not prefix.startswith("models/")
                 or any(part in {"", ".", ".."} for part in unquote(prefix).rstrip("/").split("/"))
@@ -85,27 +82,22 @@ class PreflightService:
             return failed("UNSUPPORTED_MODEL")
         deadline = time.monotonic() + 15
         checks, documents = [], {}
-        with closing(self.artifacts._client(connect_timeout=1, read_timeout=1)) as client:
+        with self.artifacts.reader(
+            request.artifact_uri, connect_timeout=1, read_timeout=1
+        ) as reader:
             for entry in request.files:
                 if time.monotonic() >= deadline:
                     return failed("PREFLIGHT_TIMEOUT", checks)
                 try:
-                    head = client.head_object(
-                        Bucket=bucket, Key=prefix + entry.file, ChecksumMode="ENABLED"
-                    )
+                    head = reader.head(entry.file)
                     code = "OK"
-                    if head["ContentLength"] != entry.bytes:
+                    if head.size != entry.bytes:
                         code = "SIZE_MISMATCH"
                     elif entry.file in SMALL:
                         if entry.bytes > MAX_JSON:
                             code = "JSON_TOO_LARGE"
                         else:
-                            options = {"IfMatch": head["ETag"]}
-                            response = client.get_object(
-                                Bucket=bucket, Key=prefix + entry.file, **options
-                            )
-                            with closing(response["Body"]) as body:
-                                raw = body.read(MAX_JSON + 1)
+                            raw = reader.read(entry.file, head, MAX_JSON + 1)
                             if len(raw) != entry.bytes or len(raw) > MAX_JSON:
                                 code = "SIZE_MISMATCH"
                             elif hashlib.sha256(raw).hexdigest() != entry.sha256:
@@ -114,33 +106,12 @@ class PreflightService:
                                 documents[entry.file] = json.loads(raw)
                                 if not isinstance(documents[entry.file], dict):
                                     code = "INVALID_METADATA"
-                    else:
-                        checksum = head.get("ChecksumSHA256", "")
-                        # ETag, user metadata and multipart COMPOSITE are not file SHA-256.
-                        if head.get("ChecksumType") == "COMPOSITE" or not checksum:
-                            code = "CHECKSUM_UNAVAILABLE"
-                        else:
-                            try:
-                                digest = base64.b64decode(checksum, validate=True)
-                                code = (
-                                    "OK"
-                                    if len(digest) == 32 and digest.hex() == entry.sha256
-                                    else "HASH_MISMATCH"
-                                )
-                            except ValueError:
-                                code = "CHECKSUM_UNAVAILABLE"
-                except ClientError as exc:
-                    error = str(exc.response.get("Error", {}).get("Code", ""))
-                    code = {
-                        "404": "FILE_MISSING",
-                        "NoSuchKey": "FILE_MISSING",
-                        "403": "ACCESS_DENIED",
-                        "AccessDenied": "ACCESS_DENIED",
-                        "412": "OBJECT_CHANGED",
-                        "PreconditionFailed": "OBJECT_CHANGED",
-                    }.get(error, "STORAGE_UNAVAILABLE")
-                except (BotoCoreError, OSError):
-                    code = "STORAGE_UNAVAILABLE"
+                    elif head.sha256 is None:
+                        code = "CHECKSUM_UNAVAILABLE"
+                    elif head.sha256 != entry.sha256:
+                        code = "HASH_MISMATCH"
+                except ArtifactError as exc:
+                    code = exc.code
                 except (ValueError, KeyError, TypeError):
                     code = "INVALID_METADATA"
                 checks.append(
