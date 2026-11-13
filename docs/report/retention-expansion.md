@@ -439,3 +439,13 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 | 화면(#567) | 설명 503은 검색 503과 같이 "잠시 뒤 다시" 안내, 남은 횟수 줄지 않음. `FAILED`는 "설명을 만들지 못했어요"(1회 사용) | 화면 구현 전이라 #567에서 반영 |
 
 검증: learning `MemoryExplanationTest`(임베딩·프로필 실패 503, 생성 ai 503·시간 초과·연결 실패·서킷 열림 503, ai 502·422·계약 밖·인용 검사 실패 FAILED), core `MemoryProxyIntegrationTest`(설명 503 전달·되돌림). kind(2026-11-12)에서는 이 브랜치 learning을 Service에 붙지 않는 임시 파드(날짜 11/16, 주기 작업·메시지 소비 끔)와 ai 대역으로 띄워 직접 호출: 임베딩 503·생성 503 → 503 `AI_UNAVAILABLE`, 생성 502·422 → 200 `FAILED`, 정상 → `GENERATED`. 공유 ai·learning 배포와 실제 LLM·임베딩은 쓰지 않았고, core 경유 되돌림은 kind D의 검색 503 확인과 core 시험으로 갈음.
+
+
+## 14. 착용 그림 연결 인계 후 검증 (#455·#556·#557, 2026-11-13)
+
+- 대상 브랜치 `feature/student-asset-slots`, 연결 구현 커밋 `456ba5c7`. 파일 경로·형식과 캐릭터별 기준점은 3.7.1을 따른다.
+- 리소스 제작 후속 이슈 [#635](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/635)를 Overlay1010 담당으로 등록했다. 인계 초안의 파일 규칙·기준점 표·화면 확인 방법을 포함한다. 실제 착용 그림 제작·등록 및 캐릭터별 위치 실측은 이 이슈에 남는다.
+- 전체 단위 시험 `npm test` 307개, `npm run lint`, `npm run test:types`, `npm run build` 통과.
+- `npm run test:browser -- wornItems room album`은 현재 브라우저 시험 목록에서 `wornItems.spec.ts`만 일치하며 1440·1024·390px 3개 모두 통과했다. 합성 모자 파일의 생각 지도·내 방 표시와 없는 옷 파일의 기본 모습 처리를 확인했다. 전체 브라우저/E2E 또는 실제 그림 5종 위치 검증 결과로 확대 해석하지 않는다.
+- 이 브랜치에는 #567 검색 결과 화면이 아직 없다. 기존 회차 상세 진입은 `/student/album/{themeId}/{weekStart}`이며, 검색 결과 카드 연결은 #567 화면 구현과 통합할 때 진행한다. 별도 검색 화면을 중복 구현하지 않았다.
+- 사용자 지시에 따라 나머지 브랜치는 논의 전 로컬 시험 단계에서 유지한다. #583의 화면 구성·메뉴 위치 등 미결정 항목도 임의로 확정하지 않았다. 푸시·PR은 진행하지 않는다.
