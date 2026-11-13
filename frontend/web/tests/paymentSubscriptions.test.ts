@@ -18,7 +18,7 @@ async function call(path: string, body?: unknown, method = body ? 'POST' : 'GET'
 }
 async function login() {
   const email = 'pay-' + crypto.randomUUID() + '@example.test', childId = crypto.randomUUID()
-  mockAccounts.add(email); mockAccountChildren.set(email, [{ id: childId, nickname: '가상 자녀', grade: 3, birthYear: 2017, plan: 'FREE' }])
+  mockAccounts.add(email); mockAccountChildren.set(email, [{ id: childId, nickname: '가상 자녀', grade: 3, birthYear: 2017 }])
   const r = await call('/auth/login', { email, password: 'demo-only' }); assert.equal(r.status, 200); token = r.data.accessToken
   setWorkspaceScenario('normal')
   return { childId, email }

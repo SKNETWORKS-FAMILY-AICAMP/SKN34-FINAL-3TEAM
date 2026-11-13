@@ -113,7 +113,7 @@ try {
     const created = p.waitForResponse((r) => r.url().endsWith('/api/v1/children') && r.request().method() === 'POST')
     await p.getByRole('button', { name: '자녀 등록하기' }).click()
     const child = await (await created).json()
-    assert.equal(child.plan, 'FREE')
+    assert.equal('plan' in child, false) // 이용권은 entitlement로만 확인한다(#602)
     await p.getByRole('heading', { name: '연두의 학습 기록' }).waitFor()
     await p.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
     await p.getByRole('button', { name: '미션 고르기', exact: true }).click()
@@ -199,9 +199,9 @@ try {
       catch (e) { limit = { status: e.problem?.status, code: e.problem?.code } }
       try { await parentApi.summary({ childId: 'other-guardian-child', from: '2026-10-20', to: '2026-10-26' }) }
       catch (e) { foreign = { status: e.problem?.status, code: e.problem?.code } }
-      return { plan: third.plan, count: (await parentApi.children()).items.length, limit, foreign }
+      return { plan: 'plan' in third, count: (await parentApi.children()).items.length, limit, foreign }
     })
-    assert.deepEqual(result, { plan: 'FREE', count: 3,
+    assert.deepEqual(result, { plan: false, count: 3,
       limit: { status: 409, code: 'CHILD_LIMIT_REACHED' },
       foreign: { status: 403, code: 'CHILD_NOT_LINKED' } })
   })

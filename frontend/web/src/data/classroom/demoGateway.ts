@@ -105,7 +105,8 @@ export interface DemoSnapshot {
   keys: [string, string][]
   reports: [string, Report[]][]
 }
-export function createDemoGateway(): ClassroomGateway & {
+/** premium: 목업 이용권 판정(MSW는 결제 목업 구독을 넘긴다). 자녀 정보에는 이용권이 없다(api-spec 3.7). */
+export function createDemoGateway({ premium = (childId: string) => childId === 'demo-seoyun' }: { premium?: (childId: string) => boolean } = {}): ClassroomGateway & {
   login: NonNullable<ClassroomGateway['login']> // 개발 시연 이메일 로그인 (#97)
   snapshot: () => DemoSnapshot
   restoreSnapshot: (snapshot: DemoSnapshot) => void
@@ -113,8 +114,8 @@ export function createDemoGateway(): ClassroomGateway & {
   publishCatalog: (id: string, mission: Mission | null) => void
 } {
   const children: Child[] = [
-    { id: 'demo-seoyun', nickname: '서윤', grade: 3, birthYear: 2017, plan: 'PREMIUM' },
-    { id: 'demo-doyun', nickname: '도윤', grade: 5, birthYear: 2015, plan: 'FREE' },
+    { id: 'demo-seoyun', nickname: '서윤', grade: 3, birthYear: 2017 },
+    { id: 'demo-doyun', nickname: '도윤', grade: 5, birthYear: 2015 },
   ]
   const db = new Map<string, Attempt>(),
     keys = new Map<string, string>(),
@@ -352,7 +353,7 @@ export function createDemoGateway(): ClassroomGateway & {
       metrics,
       records: rows,
       narrative:
-        child.plan === 'PREMIUM'
+        premium(child.id)
           ? '이 화면의 기록에서 계산한 개수와 아이의 원문을 함께 읽어 보세요. 사고력 수준을 진단하는 결과가 아닙니다.'
           : null,
       regenerations: 0,
@@ -475,7 +476,7 @@ export function createDemoGateway(): ClassroomGateway & {
       )
       if (existing) return copy(existing)
       if (
-        child.plan === 'FREE' &&
+        !premium(child.id) &&
         [...db.values()].filter((a) => a.studentId === child.id && a.attemptId.startsWith('new-'))
           .length >= 3
       )
@@ -677,7 +678,7 @@ export function createDemoGateway(): ClassroomGateway & {
     },
     async analyze(child, period, question) {
       requireParent(child)
-      if (child.plan === 'FREE')
+      if (!premium(child.id))
         fail('USAGE_LIMIT_REACHED', '분석 대화는 프리미엄에서 제공됩니다.', 429)
       const rows = eligibleRecords(records(child, period), period)
       const evidence = rows.map((r) => {

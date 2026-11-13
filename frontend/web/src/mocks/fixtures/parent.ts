@@ -9,6 +9,7 @@ import { changeCounts } from '../../domain/parent.ts'
 import type { Child, Period, PublicAttempt } from '../../domain/classroom.ts'
 import type { Conversation, Evidence, WeeklyReport } from '../../domain/parent.ts'
 import { fixtureStore } from './student.ts'
+import { mockPremium } from './payments.ts'
 import { workspaceScenario } from './accounts.ts'
 export const inclusionRule =
   '기간 내 답변 제출이 있는 시도(미완료 포함), 처리 실패만 있는 시도·삭제 기록 제외'
@@ -54,7 +55,7 @@ export function thinking(c: Child, p: Period) {
     missions: rows
       .filter((a) => a.mission.thinkingType === type)
       .map((a) => ({ attemptId: a.attemptId, title: a.mission.title })),
-    summary: c.plan === 'PREMIUM' ? '실제 작성된 기록만 관찰합니다.' : undefined,
+    summary: mockPremium(c.id) ? '실제 작성된 기록만 관찰합니다.' : undefined,
   }))
 }
 export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
@@ -108,7 +109,7 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
         verified: true,
       })),
     narrative:
-      c.plan === 'PREMIUM'
+      mockPremium(c.id)
         ? {
             text: rows.length
               ? '답변 전후를 나란히 읽고, 덧붙인 생각을 확인해 보세요. 능력이나 향상을 진단하는 결과는 아닙니다.'
@@ -118,15 +119,15 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
           }
         : null,
     eveningQuestion:
-      c.plan === 'PREMIUM' && rows.length ? '어떤 생각을 더 적고 싶었나요?' : undefined,
+      mockPremium(c.id) && rows.length ? '어떤 생각을 더 적고 싶었나요?' : undefined,
     verification: { numbersMatched: true, quotesMatched: true },
     versions: { prompt: 'mock-report@1', model: null },
     generatedAt: '2026-10-26T00:00:00+09:00',
     themeSummary: themeSummary(rows),
     // 직접 작성한 화면 검증용 합성 설명이다. M2·설명 모델 실행 결과로 사용하지 않는다.
-    explanations: c.plan === 'FREE' ? null : { state: 'NO_TARGET', items: [] },
+    explanations: !mockPremium(c.id) ? null : { state: 'NO_TARGET', items: [] },
   }
-  if (c.plan === 'PREMIUM') {
+  if (mockPremium(c.id)) {
     const used = new Set<string>()
     const candidates = rows.filter(a => a.answers.length &&
       (c.grade >= 5 && a.mission.inputType === 'NARRATIVE' || c.grade >= 4 && a.mission.inputType === 'ESSAY'))
@@ -138,7 +139,7 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
       text: '답변에 적힌 생각과 그 까닭을 함께 읽어 보세요. 아이에게 어떤 부분을 더 설명하고 싶은지 물어볼 수 있습니다.',
     })) }
   }
-  return c.plan === 'FREE'
+  return !mockPremium(c.id)
     ? { ...report, thinkingTypes: [], changes: [], reflections: [], quotes: [] }
     : report
 }

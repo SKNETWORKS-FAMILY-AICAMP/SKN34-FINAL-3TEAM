@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { sharingApi } from '../../data/classroom/sharingApi.ts'
+import { useStudentSharing } from '../../data/classroom/useClassroom.ts'
 import { useCommunitySettings, useSaveCommunitySettings } from '../../data/retention/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import type { Child } from '../../domain/classroom.ts'
@@ -9,15 +8,7 @@ import './learning-settings.css'
 
 /** embedded면 학생 설정(#583) 안의 한 부분으로 그린다(제목 h2, 바깥 main 없음). */
 export function StudentSharingPage({ child, embedded = false }: { child: Child; embedded?: boolean }) {
-  const cache = useQueryClient()
-  const key = ['sharing-preferences', 'STUDENT', child.id]
-  const query = useQuery({ queryKey: key, queryFn: ({ signal }) => sharingApi.get(child.id, 'STUDENT', signal), retry: false })
-  const save = useMutation({ mutationFn: (enabled: boolean) => sharingApi.save(child.id, enabled),
-    onSuccess: value => {
-      cache.setQueryData(key, value)
-      // Shared-browser caches must not retain parent originals after a change.
-      cache.removeQueries({ predicate: q => ['parent', 'records', 'report', 'public-record'].includes(String(q.queryKey[0])) })
-    } })
+  const { query, save } = useStudentSharing(child.id)
   const value = query.error ? undefined : query.data
   const Wrapper = embedded ? 'section' : 'main', Title = embedded ? 'h2' : 'h1'
   return <Wrapper className={embedded ? 'st-sharing st-settings-part' : 'st-paper st-sheet st-sharing'} aria-labelledby="sharing-h">

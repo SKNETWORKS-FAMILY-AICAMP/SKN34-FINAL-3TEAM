@@ -221,8 +221,7 @@ export function createApiGateway(): ClassroomGateway {
           nickname: text(c.nickname, 'nickname'),
           grade,
           birthYear: Number(c.birthYear),
-          // core /children에는 plan이 없다(api-spec 3.7·5.3). 목업 fixture 값만 넘어오며, 실서버에서는 미확인이다.
-          plan: c.plan === 'PREMIUM' || c.plan === 'FREE' ? c.plan : undefined,
+          // 이용권은 /children 계약이 아니다(api-spec 3.7·5.3). 화면은 /children/{id}/entitlement로 확인한다.
           guardianConsentRequired: c.guardianConsentRequired,
           hasRecords: c.hasRecords,
           recordState: c.recordState,

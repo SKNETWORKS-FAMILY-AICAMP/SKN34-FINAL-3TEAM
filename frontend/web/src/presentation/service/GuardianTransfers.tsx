@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
 import { guardianTransfers, type GuardianTransfer, type TransferRecipient } from '../../data/guardianTransfers.ts'
 import { parentApi } from '../../data/parent/api.ts'
-import { useParentMutation, useParentQuery } from '../../data/parent/queries.ts'
+import { useGuardianTransferList, useParentMutation, useParentQuery } from '../../data/parent/queries.ts'
 import { restoreSession } from '../../data/classroom/useClassroom.ts'
 import { useSession } from '../auth/sessionContext.ts'
 import { ConsentFields } from '../parent/AccountForms.tsx'
@@ -19,7 +18,7 @@ export function GuardianTransfers() {
   const { session, setSession } = useSession()
   const canTransfer = guardianTransferEnabled && session?.nextAction !== 'CONSENT_REQUIRED'
   const children = useParentQuery(['transfer-children'], signal => parentApi.children(signal), canTransfer)
-  const requests = useQuery({ queryKey: ['parent', 'guardian-transfers'], queryFn: ({ signal }) => guardianTransfers.list(signal), refetchInterval: 5000, retry: false })
+  const requests = useGuardianTransferList()
   const documents = useParentQuery(['transfer-consents'], signal => parentApi.documents(signal), canTransfer)
   const [childId, setChildId] = useState(''), [email, setEmail] = useState('')
   const [recipient, setRecipient] = useState<TransferRecipient | null>(null)

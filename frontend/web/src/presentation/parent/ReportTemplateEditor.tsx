@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { parentApi } from '../../data/parent/api.ts'
-import { useParentQuery } from '../../data/parent/queries.ts'
+import { useEffect, useState } from 'react'
+import { useReportTemplateEditing } from '../../data/parent/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { metricLabels, sectionLabels, toneLabels } from '../../domain/reportTemplate.ts'
 import type { ReportTemplateProposal, ReportTemplateSettings } from '../../domain/reportTemplate.ts'
@@ -17,48 +15,38 @@ function Settings({ value }: { value: ReportTemplateSettings }) {
 }
 
 export function ReportTemplateEditor({ conversationId }: { conversationId: string }) {
-  const cache = useQueryClient()
-  const current = useParentQuery(['report-template', conversationId], (signal) => parentApi.reportTemplate(conversationId, signal))
+  // 요청·취소·캐시 갱신은 data 훅이 맡는다(#606). 화면을 떠나면 진행 중 요청을 취소하고 결과를 버린다.
+  const editing = useReportTemplateEditing(conversationId), { current, busy } = editing
   const [question, setQuestion] = useState('')
   const [proposal, setProposal] = useState<ReportTemplateProposal | null>(null)
   const [error, setError] = useState<unknown>(null)
-  const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [expired, setExpired] = useState(false)
-  const request = useRef<AbortController | null>(null)
-  useEffect(() => () => { request.current?.abort() }, [])
   useEffect(() => {
     if (!proposal?.proposalId) return
     const timer = window.setTimeout(() => setExpired(true), Math.max(0, Date.parse(proposal.expiresAt) - Date.now()))
     return () => window.clearTimeout(timer)
   }, [proposal])
   async function submit(confirm: boolean) {
-    if (request.current || (!confirm && !question.trim()) || (confirm && (!proposal?.proposalId || expired))) return
-    const abort = new AbortController()
-    request.current = abort
-    setBusy(true); setError(null); setSaved(false)
+    if (editing.active() || (!confirm && !question.trim()) || (confirm && (!proposal?.proposalId || expired))) return
+    setError(null); setSaved(false)
     try {
       if (confirm && proposal?.proposalId) {
-        const result = await parentApi.confirmReportTemplate(conversationId, proposal.proposalId, abort.signal)
-        if (abort.signal.aborted) return
-        cache.setQueryData(['parent', 'report-template', conversationId], result)
-        void cache.invalidateQueries({ queryKey: ['parent', 'report-template'] })
+        const result = await editing.confirm(proposal.proposalId)
+        if (!result) return
         setProposal(null); setQuestion(''); setSaved(true)
       } else {
         setProposal(null)
-        const result = await parentApi.proposeReportTemplate(conversationId, question.trim(), abort.signal)
-        if (abort.signal.aborted) return
+        const result = await editing.propose(question.trim())
+        if (!result) return
         setExpired(!!result.proposalId && Date.parse(result.expiresAt) <= Date.now())
         setProposal(result)
       }
     } catch (e) {
-      if (abort.signal.aborted) return
       setError(e)
       // A lost response could have committed. Fetch current state, never silently retry a write.
       if (confirm) { setProposal(null); void current.refetch() }
       if (e instanceof ApiError && [401, 403, 404, 429].includes(e.problem.status)) setProposal(null)
-    } finally {
-      if (!abort.signal.aborted) { request.current = null; setBusy(false) }
     }
   }
   return <section className="ws-card ws-stack" aria-label="리포트 표시 설정">

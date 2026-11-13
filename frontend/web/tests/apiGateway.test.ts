@@ -11,7 +11,6 @@ const child: Child = {
   nickname: '가상 학생',
   grade: 3,
   birthYear: 2017,
-  plan: 'PREMIUM',
 }
 const answer = { ...blankAnswer('NARRATIVE'), text: '원문' }
 const attempt = {
