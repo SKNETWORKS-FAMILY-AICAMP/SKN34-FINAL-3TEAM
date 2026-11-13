@@ -280,16 +280,15 @@ develop 종합 검증 회차별 결함 원장. 회차별 실행 결과 표와 �
 | A6 | ai→scoring 교차 확인 호출자 없음 | 해결(#69) |
 | A7 | 앱 배포 chart·NetworkPolicy·관측 미구현 | 해결(#171·#204) |
 | A9~A12·A15 | 알림 Redis 발행자의 Application 호출, 기능 간 controller·config 참조, report 기능 간 DB 접근, ai router 계층 건너뜀, learning 삭제 소비 위치 | 해결(#250~#253·#256) |
-| A13 | ai·scoring 소비자에 revision 조정 로직 | **일부 유지**: ai는 #254로 해결, scoring 소비자의 `ModelStartup` 생성·revision 조정은 남음 |
+| A13 | ai·scoring 소비자에 revision 조정 로직 | 해결(ai #254, scoring #632: 세션별 `ModelStartup` 생성·대상 필터를 `ModelSync`로 이동, [scoring](scoring.md) 2절) |
 | A17~A19 | 이벤트 기록 위치, 기능 간 client·repository 직접 참조, ai 리포트 설정 제안 프롬프트 등록 | 해결(#278~#280) |
 | A21 | `IdempotencyCleanup`의 `@Scheduled`가 scheduler 패키지 밖 | 해결(#314) |
-| T1 | core HTTP 테스트 없음: 비교 프록시, sharing-preferences | 해결(#317). 남은 차이: api-spec 3절은 비교를 "학생·학부모"로 적지만 코드·OpenAPI는 학생 전용(결정 필요) |
+| T1 | core HTTP 테스트 없음: 비교 프록시, sharing-preferences | 해결(#317). 대상 차이는 학생 전용 유지로 결정(#632, 2026-11-13): api-spec 2.3은 11/09에 정정됐고 1절 오류 표의 `STUDENT_RECORDS_PRIVATE` 설명에서 비교를 뺌 |
 
 ### 5.5 남은 공백
 
 - CI: `tests/*-browser.mjs`·JDK 21 `verify_*`는 수동. `e2e.yml` 야간 실행 결과 미확인
-- 요구사항 차이: FN-AGT-12 수학 점검 예시 질문(api-spec 2.4에 현재 동작 기재)
-- 아키텍처: A13
+- 요구사항 차이: FN-AGT-12 수학 점검 예시 질문은 요구사항을 실제 동작(고정 5문항, 기록 유무로 일괄 판단)에 맞추고 M1 활성 후 추가로 정리(#632, 2026-11-13 결정)
 - 로컬 실행 주의: core·learning이 Gradle 캐시 볼륨 하나를 함께 쓰면 잠금 충돌로 빌드가 시작 전 실패
 
 ## 6. 아키텍처 원칙 점검 기준

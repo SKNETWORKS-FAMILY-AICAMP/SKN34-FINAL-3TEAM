@@ -608,6 +608,7 @@ backend/scoring-service/
 │  ├─ model_registry.py          # 모델별 revision·승인 범위·로딩 완료 후 교체
 │  ├─ model_versions.py          # core snapshot·이벤트의 scoring 대상 계약
 │  ├─ model_startup.py           # 기동 시 snapshot 조회·최초 로딩 재시도
+│  ├─ model_sync.py              # 구독 세션별 ModelStartup 생성·이벤트 필터·revision 조정 (#632)
 │  ├─ model_loader.py            # CPU 모델 로딩
 │  ├─ model_loading_reporter.py  # Pod별 로딩 상태 model.loading.reported 발행 (즉시·30초 주기, #370)
 │  ├─ preflight.py               # POST /internal/models/preflight 모델 파일 사전 검사 (core 중계, #368)
