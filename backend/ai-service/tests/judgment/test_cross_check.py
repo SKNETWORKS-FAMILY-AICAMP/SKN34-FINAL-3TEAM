@@ -10,12 +10,20 @@ from app.clients.scoring_client import M1Check, M2Scores, ScoringUnavailable
 from app.config import Settings
 from app.judgment import service as judgment_service
 from app.judgment.extractor import Extraction
-from app.judgment.models import JudgmentRequest
+from app.judgment.models import JudgmentRequest, M2Preparation
 from app.judgment.service import JudgmentService
 from app.llm.base import LlmError
 from tests.fakes import FakeLlm
 
-ANSWER = "나는 찬성해. 왜냐하면 쉬는 시간이 길면 더 잘 놀 수 있기 때문이야."
+SHORT_ANSWER = "나는 찬성해. 왜냐하면 쉬는 시간이 길면 더 잘 놀 수 있기 때문이야."
+# 교차 확인 글자 수 하한(서술 100·논술 140, 공백 제외)을 넘는 답. 공백 뺀 154자
+ANSWER = (
+    SHORT_ANSWER
+    + " 친구들과 운동장에서 줄넘기도 하고 술래잡기도 할 수 있어서 몸이 튼튼해진다고 생각해."
+    " 또 쉬는 시간에 충분히 쉬고 나면 다음 수업 시간에 더 집중할 수 있어."
+    " 반대하는 친구는 공부할 시간이 줄어든다고 말하지만 잘 쉬어야 공부도 잘된다고 생각해."
+    " 그래서 나는 쉬는 시간을 지금보다 조금 더 늘리면 좋겠어."
+)
 NARRATIVE_KEYS = (
     "hol",
     "task_1",
@@ -72,6 +80,14 @@ def essay(score: int) -> M2Scores:
             "model": {"name": "m2-klue-essay", "version": "3.1", "revision": 1},
         }
     )
+
+
+def with_chars(scores: M2Scores, chars: int) -> M2Scores:
+    """scoring이 정리한 글의 공백 뺀 글자 수를 붙인 응답."""
+    preparation = M2Preparation(
+        copied=0, repeated=False, chars=chars, labels_removed=0, short=False
+    )
+    return scores.model_copy(update={"preparation": preparation})
 
 
 def make_request(**overrides: Any) -> JudgmentRequest:
@@ -200,13 +216,60 @@ def test_m2_cross_check_disabled_lets_llm_use_whole_deadline() -> None:
     assert 9.5 < llm.requests[0].timeout <= 10.0
 
 
-def test_rethink_with_high_essay_score_disagrees() -> None:
+def test_rethink_with_high_essay_score_is_kept_by_default() -> None:
+    # 논술 RETHINK 쪽은 기본 꺼짐: AI Hub 기준 못 쓴 글 판정을 너무 많이 보류 (ai.md 4.3)
     request = make_request(inputType="ESSAY", keywords=[], essayType="주장")
     scoring = FakeScoring(m2=essay(3))
     response = judge(scoring, request, llm=found_none(), m2_cross_check_enabled=True)
-    assert response.held_reason == "MODEL_DISAGREEMENT"
+    assert response.result == "RETHINK"
+    assert response.held_reason is None
+    assert response.model_scores.m2.disagreement is False
     assert scoring.calls[0][1]["essayType"] == "주장"
     assert "keywords" not in scoring.calls[0][1]
+
+
+def test_rethink_with_high_essay_score_disagrees_when_enabled() -> None:
+    request = make_request(inputType="ESSAY", keywords=[], essayType="주장")
+    response = judge(
+        FakeScoring(m2=essay(3)), request, llm=found_none(), m2_essay_high_enabled=True
+    )
+    assert response.held_reason == "MODEL_DISAGREEMENT"
+
+
+def test_correct_with_low_essay_score_disagrees() -> None:
+    request = make_request(inputType="ESSAY", keywords=[], essayType="주장")
+    response = judge(FakeScoring(m2=essay(1)), request)
+    assert response.held_reason == "MODEL_DISAGREEMENT"
+
+
+def test_rethink_with_high_narrative_score_disagrees() -> None:
+    response = judge(FakeScoring(m2=narrative(4)), llm=found_none())
+    assert response.held_reason == "MODEL_DISAGREEMENT"
+
+
+@pytest.mark.parametrize(
+    ("input_type", "scores", "chars", "held"),
+    [
+        ("NARRATIVE", narrative(2), 99, False),
+        ("NARRATIVE", narrative(2), 100, True),
+        ("ESSAY", essay(0), 139, False),
+        ("ESSAY", essay(0), 140, True),
+    ],
+)
+def test_short_cleaned_answer_is_not_held(input_type, scores, chars, held) -> None:
+    # 정리 뒤 글자 수가 하한보다 짧으면 경계를 쓸 근거가 없어 점수만 기록
+    overrides = {"inputType": "ESSAY", "essayType": "주장"} if input_type == "ESSAY" else {}
+    response = judge(FakeScoring(m2=with_chars(scores, chars)), make_request(**overrides))
+    assert (response.held_reason == "MODEL_DISAGREEMENT") is held
+    assert response.model_scores.m2.disagreement is held
+    assert response.model_scores.m2_preparation.chars == chars
+
+
+def test_short_answer_without_preparation_uses_answer_length() -> None:
+    response = judge(FakeScoring(m2=narrative(2)), make_request(answerText=SHORT_ANSWER))
+    assert response.result == "CORRECT"
+    assert response.held_reason is None
+    assert response.model_scores.m2.disagreement is False
 
 
 @pytest.mark.parametrize(
