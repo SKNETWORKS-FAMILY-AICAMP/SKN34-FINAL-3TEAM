@@ -49,11 +49,18 @@ class Settings(BaseSettings):
     # M2·M1 입력이 있으면 LLM 추출 마감을 이만큼 앞당겨 scoring 몫으로 남김 (#87 예열 후 최대 1.7초)
     scoring_reserve: float = 3.0
     m2_cross_check_enabled: bool = False  # false면 M2(scoring)를 부르지 않음 (#305)
-    # 불일치 경계(임시, M2 담당 확인 전): scores 평균. 서술 9항목 1~5(hol 1~4), 논술 3영역 0~3
+    # 불일치 경계(11/13 M2 담당 확정, ai.md 4.3): scores 평균
+    # 서술 9항목 1~5(hol 1~4), 논술 3영역 0~3
     m2_narrative_low: float = 2.0
     m2_narrative_high: float = 4.0
     m2_essay_low: float = 1.0
     m2_essay_high: float = 2.0
+    # 논술 RETHINK인데 평균이 높은 경계 이상인 쪽
+    # AI Hub 기준 못 쓴 글 판정을 너무 많이 보류해 꺼 둠
+    m2_essay_high_enabled: bool = False
+    # 정리 뒤 공백 뺀 글자 수가 이보다 적으면 불일치로 보지 않음 (경계를 정한 AI Hub 글보다 짧음)
+    m2_narrative_min_chars: int = 100
+    m2_essay_min_chars: int = 140
     m1_check_enabled: bool = False  # scoring M1 미학습(#88) 동안 꺼 둠
     m1_min_confidence: float = 0.8  # 미만이면 HELD(LOW_CONFIDENCE) (P15)
     followup_leak_max_retries: int = 1  # 유출 검사 실패 시 재생성 1회 (P16)

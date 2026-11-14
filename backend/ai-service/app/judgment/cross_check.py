@@ -1,6 +1,6 @@
 """M2·M1 교차 확인 입력과 불일치 판단 (api-spec 4.2.2, #69).
 
-불일치 경계는 M2 담당 확인 전 임시값이라 설정으로 둠. PARTIAL은 불일치로 보지 않음.
+불일치 경계·글자 수 하한은 설정값(11/13 M2 담당 확정, ai.md 4.3). PARTIAL은 불일치로 보지 않음.
 """
 
 from typing import Any
@@ -53,9 +53,18 @@ def mean(scores: dict[str, int]) -> float:
     return sum(scores.values()) / len(scores)
 
 
-def disagrees(result: JudgmentResult, input_type: str, average: float, settings: Settings) -> bool:
+def disagrees(
+    result: JudgmentResult, input_type: str, average: float, chars: int, settings: Settings
+) -> bool:
+    """chars는 공백 뺀 글자 수. 하한보다 짧으면 경계를 쓸 근거가 없어 불일치로 보지 않음."""
     if input_type == "NARRATIVE":
         low, high = settings.m2_narrative_low, settings.m2_narrative_high
+        min_chars, high_enabled = settings.m2_narrative_min_chars, True
     else:
         low, high = settings.m2_essay_low, settings.m2_essay_high
-    return (result == "CORRECT" and average <= low) or (result == "RETHINK" and average >= high)
+        min_chars, high_enabled = settings.m2_essay_min_chars, settings.m2_essay_high_enabled
+    if chars < min_chars:
+        return False
+    if result == "CORRECT":
+        return average <= low
+    return result == "RETHINK" and high_enabled and average >= high
