@@ -120,7 +120,7 @@
 | `JOB_RETRY_UNAVAILABLE` / `JOB_RETRY_OUTCOME_UNKNOWN` | 503 | 재처리를 지원하지 않는 작업 종류 / 알림 재처리 후 결과 상태 미확정 (2.8) |
 | `RATE_LIMITED` / `STUDENT_AUTH_UNAVAILABLE` | 429 / 503 | 기기 등록·페어링 발급 10분 한도 초과 / 기기·페어링 저장소(Redis) 장애 (3.11) |
 | `REAUTH_PENDING` | 409 | Google 재인증 callback 전에 재인증 토큰 수령 시도 (5.6) |
-| `STUDENT_RECORDS_PRIVATE` / `STUDENT_UNAVAILABLE` / `STUDENT_DELETED` | 403 / 409 / 409 | 학생이 학부모 공개를 끈 기록·비교 조회(#206) / 학생 삭제 진행·비활성(꾸미기·공개 설정·리포트 설정 내부 조회) / 삭제 차단된 학생의 리포트 생성(관리자 재처리) |
+| `STUDENT_RECORDS_PRIVATE` / `STUDENT_UNAVAILABLE` / `STUDENT_DELETED` | 403 / 409 / 409 | 학생이 학부모 공개를 끈 기록 조회(#206. 시도 비교는 학생 전용이라 해당 없음) / 학생 삭제 진행·비활성(꾸미기·공개 설정·리포트 설정 내부 조회) / 삭제 차단된 학생의 리포트 생성(관리자 재처리) |
 | `INVALID_TEMPLATE_SETTINGS` / `TEMPLATE_PROPOSAL_EXPIRED` | 400 / 409 | 리포트 표시 설정 값 오류 / 다른 대화·만료·덮어쓴 변경안 확정, 설정 revision 변경 (#209) |
 | `ANALYSIS_IN_PROGRESS` / `EVIDENCE_UNAVAILABLE` / `AI_INVALID_RESPONSE` | 409 / 410 / 502 | 같은 대화에서 분석 생성 중 / 삭제된 분석 근거 / ai 응답 형식 오류 (2.4) |
 | `ANALYSIS_FIRST_RESPONSE_TIMEOUT` / `ANALYSIS_TIMEOUT` / `ANALYSIS_FAILED` | 504 / 504 / 502 | 분석 대화 SSE `error` 이벤트 전용: ai 첫 이벤트 20초 안에 없음 / 전체 120초 초과 / 원인 코드가 없는 처리 실패(원래 오류 상태가 있으면 그 상태). `retryable: true`, 메시지는 FAILED로 저장 (3.3) |
@@ -347,6 +347,7 @@
 - 학생 home: core 학생 프로필 + learning `records/.../home`. resume는 draft·memo 없이 식별만 하고, core가 학생 전용 `/internal/attempts/{attemptId}`로 본인 초안을 붙임. 두 번째 조회 실패도 홈 조회 실패(부분 성공·빈 이어하기로 대체하지 않음). 집계·미션 선정은 learning 소유
 - 계약 오류: Metric 필수 값·타입, 다섯 생각 유형 누락·중복은 502 `LEARNING_CONTRACT_INVALID`(수치 보충 없음). 공급자 조회 실패는 오류이며 `NO_RECORD`가 아님
 - 표시 필드: `completedAt`·`hintUsages`·`reflection.createdAt` 보존. `finishedAt`은 마무리 공개 시각, `completedAt`은 돌아보기 완료 시각(그 전에는 null), reflection이 있으면 `createdAt` 필수. 학부모 상세는 Attempt에 `state`·`period`를 더하고 draft·memo 제외. `thinking-activities`는 `{studentId,state,period,items:[{attemptId,thinkingType,missionTitle,reflection}]}`. reflection의 `EASY/NORMAL/HARD`·nullable text는 프론트 표시 경계에서 한국어 선택값으로 변환
+- 판정 ID: 시도 목록·상세(학생·학부모, home `resume` 포함)의 `answers[].feedback.judgment`는 learning `Judgment`를 core가 그대로 전달하므로 `judgmentId`가 항상 있음(판정 전이면 `judgment: null`). web 오류 신고(`targetType: JUDGMENT`) 대상 ID로 씀 (#146, #614)
 - `students/me/preferences`는 3.12 (#234 core 구현)
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
@@ -527,7 +528,7 @@
 | POST | `/admin/theme-drafts` | CONTENT | 테마 초안 생성 요청(에픽 #436) `{grade, weekStart, topic?, missions?:[{thinkingType, standardCodes[], inputType}]}`(본문 값 검사는 learning #438) → `202 ThemeDraft`(`status: GENERATING`, 생성은 learning 주기 작업) | ADM-22 | core 프록시 #439 |
 | GET | `/admin/theme-drafts?status&source&page&size` · `/admin/theme-drafts/{draftId}` | CONTENT | 목록(최근 요청 순)·상세. `status`는 `GENERATING`·`READY`·`CHECK_FAILED`·`FAILED`·`ADOPTED`·`DISCARDED`, `source`는 `AUTO`(주간 자동)·`ADMIN`(관리자 요청) | ADM-22 | core 프록시 #439 |
 | POST | `/admin/theme-drafts/{draftId}/adopt` · `/discard` · `/regenerate` | CONTENT | 채택 `{}` → `201 AdminWeeklyTheme`(미션 5개 `DRAFT`·테마 `DRAFT`를 learning 한 트랜잭션으로, 자동 게시 없음), 버리기 `{}` → `ThemeDraft`, 다시 생성 `{}` → `202 ThemeDraft`. 상태상 불가 전이 `409 CONFLICT` | ADM-22 | core 프록시 #439 |
-| GET·POST | `/admin/look-items?status&slot&page&size` | CONTENT | 아이템 목록(최신 등록순 `{items, page, size, totalElements}`)·등록 `{code, slot, name, pricePoints, assetKey?}` → 201 `{itemId, code, slot, name, pricePoints, assetKey, status, createdAt, updatedAt}`. `slot`은 `HAT`·`OUTFIT`·`ACCESSORY`·`BACKGROUND`, `code`는 대문자·숫자·밑줄 3~40자(변경 불가, 중복 409 `LOOK_ITEM_CODE_DUPLICATE`), 이름 1~40자, 포인트 1~10000, 형식 오류 422 | ADM-23 | 핵심(#389) |
+| GET·POST | `/admin/look-items?status&slot&page&size` | CONTENT | 아이템 목록(최신 등록순 `{items, page, size, totalElements}`)·등록 `{code, slot, name, pricePoints, assetKey?}` → 201 `{itemId, code, slot, name, pricePoints, assetKey, status, createdAt, updatedAt}`. `slot`은 캐릭터 `HAT`·`OUTFIT`·`ACCESSORY`·`BACKGROUND`와 생활공간 가구 `DESK`·`WALL`·`WARDROBE`(#555), `code`는 대문자·숫자·밑줄 3~40자(변경 불가, 중복 409 `LOOK_ITEM_CODE_DUPLICATE`), 이름 1~40자, 포인트 1~10000, 형식 오류 422 | ADM-23 | 핵심(#389) |
 | PATCH | `/admin/look-items/{itemId}` | CONTENT | 이름·필요 포인트·그림 수정, `status`(`ON_SALE`·`STOPPED`, 삭제 없음). 판매 중단해도 해금한 학생은 계속 착용, 가격 변경은 해금한 학생과 무관. 없는 아이템 404 | ADM-23 | 핵심(#389) |
 
 - 테마는 core가 learning `/internal/admin/weekly-themes…`로 프록시(#355 미션 초안과 같은 방식, core #387·learning #385 구현), 테마 초안은 `/internal/admin/theme-drafts…`로 같은 방식(core #439·learning #438), 아이템은 core 소유. 변경은 `audit_log`(`WEEKLY_THEME_*`·`THEME_DRAFT_*`·`LOOK_ITEM_*`). 테마 초안 요청·버리기·다시 생성은 응답 초안(`target_type = THEME_DRAFT`), 채택은 만든 테마(`WEEKLY_THEME`, `detail.draftId`)가 결과 감사 대상 아이템은 같은 트랜잭션에서 `LOOK_ITEM_CREATED`·`LOOK_ITEM_UPDATED`·`LOOK_ITEM_STOPPED`·`LOOK_ITEM_RESUMED`(`target_type = LOOK_ITEM`, 수정은 `detail.before`에 이전 값)
@@ -542,7 +543,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 |---|---|---|---|---|---|
 | GET | `/students/me/community-settings` | 학생 | `{enabled, consentGranted, updatedAt}`. `consentGranted`는 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의 | RET-01 | 구현(#388) |
 | PUT | `/students/me/community-settings` | 학생 | `{enabled}`. 켜기는 보호자 선택 동의(`COMMUNITY`) 필요, 없으면 409 `COMMUNITY_CONSENT_REQUIRED`. 끄면 기존 공유물 즉시 비공개. 같은 값이어도 learning 공개 상태를 다시 맞춤 | RET-01 | 구현(#388) |
-| GET | `/missions/{missionId}/community-posts?seed&page&size` | 학생 | 같은 미션 공유물 무작위 목록 `{items:[{postId, author:{nickname, look}, answer, myReactions[], createdAt}]}`. 반응 수·학생 ID 미포함. 같은 `seed`면 같은 순서. 이 미션을 마무리하지 않았으면 403 `COMMUNITY_LOCKED`, 정답 고르기 문제를 엔딩 전이면 403 `COMMUNITY_LOCKED_UNTIL_ENDING`(learning #484, core 공개 문구 #550). `look`은 `{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(저장 전 `lake`·`mungchi`, 착용 없는 슬롯 null, #389) | RET-02 | 구현(#388·#389) |
+| GET | `/missions/{missionId}/community-posts?seed&page&size` | 학생 | 같은 미션 공유물 무작위 목록 `{items:[{postId, author:{nickname, look}, answer, myReactions[], createdAt}]}`. 반응 수·학생 ID 미포함. `seed`는 필수 1~100자(클라이언트가 정함, 없거나 비었거나 100자 초과면 learning 호출 전 400 `VALIDATION_FAILED`, #622), 같은 `seed`면 같은 순서. `page` 0 이상, `size` 1~100(기본 0·20). 이 미션을 마무리하지 않았으면 403 `COMMUNITY_LOCKED`, 정답 고르기 문제를 엔딩 전이면 403 `COMMUNITY_LOCKED_UNTIL_ENDING`(learning #484, core 공개 문구 #550). `look`은 `{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY, BACKGROUND}}`(저장 전 `lake`·`mungchi`, 착용 없는 슬롯 null, #389) | RET-02 | 구현(#388·#389) |
 | GET | `/students/me/community-posts` | 학생 | 내 공유물 `{items:[{postId, missionId, missionTitle, answer, status, reactions:{4종: 수}, createdAt}]}` | RET-02, RET-03 | 구현(#388) |
 | PUT | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 남기기(멱등). `reaction`: `NEW_IDEA`·`CLEAR_REASON`·`DIFFERENT_VIEW`·`WANT_MORE`. 본인 글 409 `COMMUNITY_OWN_POST`, 열람 권한 없으면 403 `COMMUNITY_LOCKED`, 신고 숨김·없는 글 404 `COMMUNITY_POST_NOT_FOUND`, 4종 외 400. 성공 204 | RET-03 | 구현(#388) |
 | DELETE | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 취소(멱등, 적립 포인트 회수 없음). 성공 204 | RET-03 | 구현(#388) |
@@ -605,7 +606,7 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 
 ### 2.12 생활공간·추억 (FN-RET-09~13, P27)
 
-**구현 전 계약(기준안)**. 2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md)). 경로·칸 이름은 구현 이슈에서 OpenAPI와 함께 확정한다. 저장은 [ERD 3.5.2·4.6](erd.md). 회차 키는 `themeId`·`weekStart`(KST 월요일), 학생은 세션으로 정한다.
+**구현 계약**(core #555·#560·#566, core OpenAPI `contracts/openapi/core-service.yaml`). 2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md)). 웹 화면은 내 방·앨범 PR #587(이슈 #556·#561), 검색·설명 화면 #567 구현 전. 저장은 [ERD 3.5.2·4.6](erd.md). 회차 키는 `themeId`·`weekStart`(KST 월요일), 학생은 세션으로 정한다.
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -614,7 +615,7 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 | GET | `/students/me/album?page&size` | 학생 | 보유 액자 회차(진행 중인 주·`EXTRA` 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, awardedAt, seen, displayed}], page, size, totalElements}`. `displayed`는 지금 추억의 벽에 걸린 회차인지(core가 채움). `page` 0부터·`size` 1~100(기본 20), 범위 밖 400 | RET-10, RET-11 | 핵심(#559·#560) |
 | GET | `/students/me/album/{themeId}/{weekStart}` | 학생 | 회차 상세 `{themeId, weekStart, title, imageUrl, awardedAt, missions:[{day, missionId, title, thinkingType, attemptId}], ending:{seen, outro, answer}}`. 엔딩을 보지 않았으면 `outro`·`answer` null(P23). 문제별 기록은 기존 시도 상세(2.3·`/attempts/{id}/comparison`)로 연다. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-11 | 핵심(#559·#560) |
 | POST | `/students/me/album/{themeId}/{weekStart}/seen` | 학생 | 새 액자 확인(멱등) → 204. 미보유 404 `THEME_FRAME_NOT_FOUND` | RET-10 | 핵심(#559·#560) |
-| POST | `/students/me/memories/search` | 학생 | body `{query}`(1~200자) → `{state, cards:[{themeId, weekStart, title, imageUrl, missions:[{missionId, title, attemptId, answerExcerpt}], score}]}`. `state`는 `RESULTS`·`NO_RESULTS`(관련도 기준 미달)·`NO_RECORDS`(보유 액자 없음), 카드 최대 3개(기준안). 하루 한도 429 `USAGE_LIMIT_REACHED`, 임베딩 장애 503 `AI_UNAVAILABLE`, 형식 오류 400 `VALIDATION_FAILED`(사용량 미기록) | RET-12 | core 구현 #566(learning #563 대기) |
+| POST | `/students/me/memories/search` | 학생 | body `{query}`(1~200자) → `{state, cards:[{themeId, weekStart, title, imageUrl, missions:[{missionId, title, attemptId, answerExcerpt}], score}]}`. `state`는 `RESULTS`·`NO_RESULTS`(관련도 기준 미달)·`NO_RECORDS`(보유 액자 없음), 카드 최대 3개(기준안). 하루 한도 429 `USAGE_LIMIT_REACHED`, 임베딩 장애 503 `AI_UNAVAILABLE`, 형식 오류 400 `VALIDATION_FAILED`(사용량 미기록) | RET-12 | core #566·learning #563 구현 |
 | POST | `/students/me/memories/explanations` | 학생 | body `{query, attemptIds}`(검색 결과 카드의 시도, 1~3개) → 200 `{state, text, citations:[{no, themeId, weekStart, attemptId}]}`. `state`는 `GENERATED`·`INSUFFICIENT`(근거 부족, 생성 안 함)·`FAILED`(생성·검사 실패, `text` null). 본인 검색 문서가 아닌 `attemptId`는 422 `VALIDATION_FAILED`, 하루 한도 429 `USAGE_LIMIT_REACHED`, ai 장애로 설명을 만들지 못하면 503 `AI_UNAVAILABLE`(사용량 미기록, #592). 빈 배열·4개 이상·중복·UUID 아님은 core 400 `VALIDATION_FAILED`(사용량 미기록) | RET-13 | core #566·learning #564 구현 |
 
 - core는 검색·설명 요청마다 `memory_daily_usage`에 기록하고 KST 하루 건수가 상품 한도를 넘으면 롤백한 뒤 learning을 부르지 않고 429(ERD 3.4, #566). 무료·프리미엄 같은 값 20·10(2026-11-12 확정, P13). 키가 없는 기존 구독 스냅숏은 무료 상품 값을 쓴다
@@ -737,6 +738,7 @@ data: {}
   "reportId": "r-44", "childId": "s-1", "status": "COMPLETED", "state": "OK",
   "period": { "from": "2026-11-02", "to": "2026-11-08" },
   "correctionNotice": false, // 이 판에 쓰인 판정 중 일부가 만들어진 뒤 정정됨 (5.7, #244)
+  "parentSharingEnabled": true, // core가 현재 학생 공유 설정으로 채움. false면 원문·근거 링크가 빠진 상태 (#206, #614)
   "revision": 1, "revisions": [{ "revision": 1, "generatedAt": "2026-11-09T00:00:00+09:00" }],
   "inclusionRule": "기간 내 답변 제출이 있는 시도(미완료 포함), 처리 실패만 있는 시도·삭제 기록 제외",
   "metrics": [ /* Metric[] */ ],
@@ -1016,9 +1018,9 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 활성화 `409 KNOWLEDGE_DATASET_STATE_CONFLICT`: `LOADING`이 아님, 적재 뒤 활성 판이 바뀜(`source.previousVersion` ≠ 현재 활성 판, 다시 적재). 제거 `409`: `ACTIVE`·`LOADING`
 - 같은 입력을 다시 적재하면 같은 조각·관계 수(멱등)
 
-#### 4.1.4 기념 액자·추억 내부 API (P27, 설계·구현 전)
+#### 4.1.4 기념 액자·추억 내부 API (P27, 구현 #559·#563·#564)
 
-**구현 전 계약(기준안)**. 2.12의 core 프록시 대상. 호출자는 core, `X-Student-Scope`에 `studentId`가 없으면 403(1.3). 저장은 [ERD 4.6](erd.md).
+**구현 계약**(learning OpenAPI `contracts/openapi/learning-service.yaml`). 2.12의 core 프록시 대상. 호출자는 core, `X-Student-Scope`에 `studentId`가 없으면 403(1.3). 저장은 [ERD 4.6](erd.md).
 
 | 메서드 | 경로 | 내용 |
 |---|---|---|
@@ -1034,7 +1036,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 설명: `attemptIds`가 위 범위의 문서인지 다시 확인(아니면 422 `VALIDATION_FAILED`) → 근거 부족 규칙(최고 관련도 기준 미달·답변 너무 짧음)이면 ai를 부르지 않고 `INSUFFICIENT` → ai 응답의 `citations`가 보낸 번호 안이고 따옴표 인용이 근거 원문의 부분 문자열일 때만 `GENERATED`, 아니면 `FAILED`(200)
 - 설명 실패 구분(#592, 2026-11-12 결정): 생성이 실제로 일어난 실패(ai 422 인용 거부·502 형식 밖 응답·계약 밖 본문, learning 인용 검사 실패, ai 응답 뒤 처리 예산 초과, 호출 중 근거 삭제·변경)는 200 `FAILED`로 core 하루 사용량에 들어간다. 생성 전 실패(프로필·질의 임베딩 실패, 생성 호출 전 35초 예산 소진)와 생성 호출의 ai 장애(503·502 밖 5xx·시간 초과·연결 실패·서킷 열림)는 503 `AI_UNAVAILABLE`이라 core가 사용량을 되돌린다(검색 임베딩 장애와 같음)
 - 학습 완료(돌아보기 저장) 트랜잭션의 액자·검색 문서 등록과 임베딩 주기 작업은 내부 API가 아니다([시퀀스 3.8·3.10](sequence-diagram.md), [상태 3.7](state-diagram.md))
-- **#559 구현(learning V19, 2026-11-12)**: 앨범 목록·회차 상세·확인·보유 확인 4개 경로는 구현(learning OpenAPI). 검색·설명 2개는 설계(구현 전) 그대로. 결정은 [결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12)
+- **#559 구현(learning V19, 2026-11-12)**: 앨범 목록·회차 상세·확인·보유 확인 4개 경로는 구현(learning OpenAPI). 검색·설명 2개는 뒤이어 #563·#564에서 구현. 결정은 [결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12)
   - 보유 = `theme_frame` 행 + `theme_week_start < 이번 주(KST 월요일)`. 4개 경로 모두 같은 기준이라 진행 중인 주 회차는 목록에 없고 상세·확인 404, 보유 확인에서 빠짐(추억의 벽에 앨범에 없는 액자가 걸리지 않음)
   - 범위 검사는 `X-Student-Scope`에 경로 학생이 있는지(1.2). core 프록시는 학생 본인 STUDENT 세션
   - 목록 `imageUrl`·상세 `imageUrl`은 액자를 받은 때 테마 버전의 시작 이야기 그림 presigned URL(종료 그림은 엔딩 내용이라 쓰지 않음), 없으면 null(화면이 `ThemeArt`로 그림). 제목도 그 버전 값

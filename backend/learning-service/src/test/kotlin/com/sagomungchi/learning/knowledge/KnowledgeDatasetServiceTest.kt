@@ -1,5 +1,7 @@
 package com.sagomungchi.learning.knowledge
 
+import com.sagomungchi.learning.knowledge.controller.knowledgeObject
+
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
@@ -42,7 +44,7 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
 
     @Test
     fun `샘플 적재는 LOADING 판에 215개 조각·학기 관계를 넣음`() {
-        val result = service.load(KnowledgeLoadCommand(source, records, emptyList()))
+        val result = service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), records.map { knowledgeObject(it, "record") }, emptyList()))
         val dataset = result.dataset
         assertTrue(Regex("^kn-\\d{8}-01$").matches(dataset.version))
         assertEquals(DatasetStatus.LOADING, dataset.status)
@@ -56,9 +58,9 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
 
     @Test
     fun `같은 입력을 다시 적재하면 같은 조각·관계 수, 교체 뒤 이전 판을 제거`() {
-        val first = service.load(KnowledgeLoadCommand(source, records, reviews))
+        val first = service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), records.map { knowledgeObject(it, "record") }, reviews))
         service.activate(first.dataset.version)
-        val second = service.load(KnowledgeLoadCommand(source, records, reviews))
+        val second = service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), records.map { knowledgeObject(it, "record") }, reviews))
         assertEquals(first.dataset.chunks, second.dataset.chunks)
         assertEquals(first.dataset.relations, second.dataset.relations)
         assertEquals(first.dataset.relationCount, second.dataset.relationCount)
@@ -80,7 +82,7 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
 
     @Test
     fun `확인 관계를 적재하고 covers로 내용 요소 학년·학기를 채움`() {
-        val result = service.load(KnowledgeLoadCommand(source, records, reviews))
+        val result = service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), records.map { knowledgeObject(it, "record") }, reviews))
         val byType = accepted.groupingBy { it.relationType!!.name }.eachCount()
         assertEquals(semesterCount, result.dataset.relations["SEMESTER"])
         assertEquals(byType["FITS"] ?: 0, result.dataset.relations["FITS"])
@@ -96,7 +98,7 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
 
     @Test
     fun `끝이 없어진 관계는 옮기지 않고 다시 확인할 목록으로, 본문이 바뀐 끝은 옮기고 목록에도`() {
-        val first = service.load(KnowledgeLoadCommand(source, records, reviews))
+        val first = service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), records.map { knowledgeObject(it, "record") }, reviews))
         service.activate(first.dataset.version)
         val cover = accepted.first { it.relationType == RelationType.COVERS }
         val dropped = if (cover.decision == "MODIFY") cover.modifiedTarget else cover.target
@@ -109,7 +111,7 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
             }
         }
         val coversOfDropped = accepted.count { it.relationType == RelationType.COVERS && (if (it.decision == "MODIFY") it.modifiedTarget else it.target) == dropped }
-        val second = service.load(KnowledgeLoadCommand(source, changed, emptyList()))
+        val second = service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), changed.map { knowledgeObject(it, "record") }, emptyList()))
         assertEquals(first.dataset.relations.getValue("COVERS") - coversOfDropped, second.dataset.relations["COVERS"])
         assertEquals(first.dataset.relations["FITS"], second.dataset.relations["FITS"])
         assertEquals(214, second.dataset.chunkCount)
@@ -119,8 +121,8 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
 
     @Test
     fun `활성 판이 적재 뒤 바뀌면 활성화 거부, LOADING·없는 판도 상태 오류`() {
-        val a = service.load(KnowledgeLoadCommand(source, records, emptyList()))
-        val b = service.load(KnowledgeLoadCommand(source, records, emptyList()))
+        val a = service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), records.map { knowledgeObject(it, "record") }, emptyList()))
+        val b = service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), records.map { knowledgeObject(it, "record") }, emptyList()))
         service.activate(a.dataset.version)
         conflict { service.activate(b.dataset.version) }
         conflict { service.activate(a.dataset.version) }
@@ -131,7 +133,7 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
 
     @Test
     fun `SAMPLE 확인 파일·성취기준 문장 불일치는 판을 만들기 전에 멈춤`() {
-        assertFailsWith<KnowledgeInputException> { service.load(KnowledgeLoadCommand(source, records, KnowledgeSamples.sampleReviews)) }
+        assertFailsWith<KnowledgeInputException> { service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), records.map { knowledgeObject(it, "record") }, KnowledgeSamples.sampleReviews)) }
         val wrong = records.map {
             if (it["kind"].asText() == "standard" && it["code"].asText() == "4수01-06") {
                 it.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().put("statement", "고친 문장")
@@ -139,7 +141,7 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
                 it
             }
         }
-        val error = assertFailsWith<KnowledgeInputException> { service.load(KnowledgeLoadCommand(source, wrong, emptyList())) }
+        val error = assertFailsWith<KnowledgeInputException> { service.load(KnowledgeLoadCommand(knowledgeObject(source, "source"), wrong.map { knowledgeObject(it, "record") }, emptyList())) }
         assertTrue(error.detail!!.contains("4수01-06"))
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM knowledge_dataset", Int::class.java))
     }

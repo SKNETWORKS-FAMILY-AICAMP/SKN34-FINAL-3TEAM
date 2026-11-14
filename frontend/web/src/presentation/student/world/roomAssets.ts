@@ -43,7 +43,7 @@ export const FRAME_SIZE = { w: 64, h: 64 }
 // ---------- 착용 위치 기준점 (#557 표, #455 렌더링에서 사용) ----------
 /**
  * 캐릭터 5종 × 모자·옷·소품 기준점. 각 캐릭터 SVG(`Companion.tsx`)의 viewBox 좌표이며 `scale`은 아이템 그림
- * 기본 크기(가로 60) 대비 배율. 착용 아이템 겹쳐 그리기는 #455에서 이 표를 쓴다(내 방은 #455 전 기본 모습).
+ * 기본 크기(가로 60) 대비 배율. `Companion`의 `worn`이 이 표로 착용 그림을 겹쳐 그린다.
  */
 export const WEAR_ANCHORS: Record<CompanionId, Record<'HAT' | 'OUTFIT' | 'ACCESSORY', { x: number; y: number; scale: number }>> = {
   mungchi: { HAT: { x: 86, y: 26, scale: 0.6 }, OUTFIT: { x: 80, y: 88, scale: 0.7 }, ACCESSORY: { x: 112, y: 80, scale: 0.4 } },
@@ -52,3 +52,20 @@ export const WEAR_ANCHORS: Record<CompanionId, Record<'HAT' | 'OUTFIT' | 'ACCESS
   kongi: { HAT: { x: 104, y: 66, scale: 0.9 }, OUTFIT: { x: 106, y: 152, scale: 1 }, ACCESSORY: { x: 154, y: 120, scale: 0.6 } },
   monggeul: { HAT: { x: 118, y: 72, scale: 1 }, OUTFIT: { x: 104, y: 152, scale: 1.1 }, ACCESSORY: { x: 174, y: 130, scale: 0.6 } },
 }
+
+// ---------- 착용 아이템 그림 파일 (#455·#557) ----------
+/**
+ * 착용 그림은 `frontend/web/public/student-assets/{assetKey}` 파일을 그대로 쓴다.
+ * 관리자 아이템 "그림 키"(`look_item.asset_key`) = 이 폴더 안 경로(예 `looks/hat-acorn.svg`).
+ * 파일이 아직 없으면 그 칸만 그리지 않아(기본 모습) 그림을 넣기만 하면 보인다.
+ * 그림은 가로 60 기준 정사각형 안에 그리고, 기준점(WEAR_ANCHORS)이 그림 한가운데에 온다.
+ */
+export const WEAR_ASSET_BASE = '/student-assets/'
+export const WEAR_ITEM_SIZE = 60
+/** 그리는 순서(뒤에 그린 것이 위): 옷 → 모자 → 소품 */
+export const WEAR_SLOTS = ['OUTFIT', 'HAT', 'ACCESSORY'] as const
+export type WearSlot = (typeof WEAR_SLOTS)[number]
+const SAFE_KEY = /^(?:[a-z0-9][a-z0-9_-]*\/)*[a-z0-9][a-z0-9_-]*\.(?:svg|png|webp)$/
+/** 그림 키 → 파일 주소. 폴더 밖으로 나가거나 형식이 다르면 null(그리지 않음) */
+export const wearAssetUrl = (assetKey: string | null | undefined) =>
+  assetKey && SAFE_KEY.test(assetKey) ? WEAR_ASSET_BASE + assetKey : null

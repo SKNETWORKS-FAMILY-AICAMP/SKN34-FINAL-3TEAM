@@ -62,7 +62,7 @@ test('자녀 목록의 plan 미제공은 미확인으로 두고 무료로 단정
   )
   const [row] = await createApiGateway().children()
   assert.equal(row.id, child.id)
-  assert.equal(row.plan, undefined)
+  assert.equal('plan' in row, false)
   setAccessToken(null)
 })
 
@@ -100,15 +100,15 @@ test('오래된 자녀 plan과 관계없이 core의 현재 리포트 제공 범�
     eveningQuestion: '현재 구독으로 제공된 질문',
     narrative: { text: '현재 구독으로 제공된 요약', source: 'LLM', modelExplanation: null },
   }))
-  const report = await createApiGateway().report({ ...child, plan: 'FREE' }, previousWeek)
+  const report = await createApiGateway().report(child, previousWeek)
   assert.equal(report.narrative, '현재 구독으로 제공된 요약')
   assert.equal(report.eveningQuestion, '현재 구독으로 제공된 질문')
   setAccessToken(null)
 })
 
-test('오래된 PREMIUM 표시가 있어도 core의 무료 응답에 서술을 덧붙이지 않는다', async (t) => {
+test('core의 무료 응답에 서술을 덧붙이지 않는다', async (t) => {
   serve(t, detail({}))
-  const report = await createApiGateway().report({ ...child, plan: 'PREMIUM' }, previousWeek)
+  const report = await createApiGateway().report(child, previousWeek)
   assert.equal(report.narrative, null)
   assert.equal(report.eveningQuestion, undefined)
   setAccessToken(null)
@@ -135,7 +135,7 @@ test('학생 PIN 로그인 응답에 plan이 없으면 미확인', async (t) => 
     json({ role: 'STUDENT', accessToken: 'student-token', child: { childId: child.id, nickname: child.nickname, grade: 3, birthYear: 2017 } }),
   )
   const session = await studentDeviceApi.login(child.id, '1234')
-  assert.equal(session.role === 'STUDENT' && session.child?.plan, undefined)
+  assert.equal(session.role === 'STUDENT' && !!session.child && 'plan' in session.child, false)
   setAccessToken(null)
 })
 

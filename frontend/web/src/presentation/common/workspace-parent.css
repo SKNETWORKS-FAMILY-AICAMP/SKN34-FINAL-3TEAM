@@ -641,7 +641,7 @@
 #class-journal .ws-parent .ws-support, #class-journal .ws-parent .ws-plan { border-color: #74a385; }
 #class-journal .ws-parent .ws-support h2, #class-journal .ws-parent .ws-plan :is(span,small) { color: #e1f0e6; font-size: 13px; }
 #class-journal .ws-parent .ws-support a, #class-journal .ws-parent .ws-plan :is(strong,a) { color: #fff; }
-#class-journal .ws-parent .ws-support a { font-size: 15px; }
+#class-journal .ws-parent .ws-support a { display: inline-flex; align-items: center; min-height: 44px; padding-block: 8px; font-size: 15px; }
 #class-journal .ws-parent .ws-body { background: #277044; }
 #class-journal .ws-parent .ws-main { width: calc(100% - 48px); margin: 24px; padding: 28px; border-radius: 16px; background: #f3f7f4; }
 #class-journal .ws-parent :is(h1,h2,h3) { color: #192b21; letter-spacing: -.02em; }

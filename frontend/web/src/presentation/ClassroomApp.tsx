@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router'
+import { EntitlementName } from './parent/EntitlementSummary.tsx'
 import { useSession } from './auth/sessionContext.ts'
 import './student/pinpad.css'
 import { roleStart } from '../domain/navigation.ts'
@@ -611,7 +612,7 @@ export function ClassroomApp() {
                         <div className="ux-parent-entry">
                           <span>
                             <strong>{child.nickname}</strong> · {gradeLabel(child.grade)} ·{' '}
-                            {child.plan === 'FREE' ? '무료' : child.plan === 'PREMIUM' ? '프리미엄' : '이용권 확인 필요'}
+                            <EntitlementName childId={child.id} />
                           </span>
                           <button
                             type="button"

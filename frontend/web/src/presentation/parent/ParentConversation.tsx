@@ -2,11 +2,11 @@ import { Link } from 'react-router'
 import { analysisResultLabel } from '../../domain/parent.ts'
 import { useEffect, useRef, useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
-import { useQueryClient } from '@tanstack/react-query'
 import type { Child } from '../../domain/classroom.ts'
-import type { Scope, StreamState, ConversationMessage, Conversation, MessageResult, Evidence } from '../../domain/parent.ts'
+import type { Scope, StreamState, ConversationMessage, Conversation, Evidence } from '../../domain/parent.ts'
 import { parentApi } from '../../data/parent/api.ts'
-import { useParentQuery } from '../../data/parent/queries.ts'
+import { useConversationRequests, useParentQuery } from '../../data/parent/queries.ts'
+import { knownEntitlement, useChildEntitlement } from '../../data/payment/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { QueryFeedback, MetricCards, EvidenceItems } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
@@ -32,7 +32,7 @@ export function ParentConversation({
   onAnswer?: (answer: ReportAnswer | null, reveal?: boolean) => void
   selectedMessageId?: string
 }) {
-  const cache = useQueryClient(),
+  const requests = useConversationRequests(),
     list = useParentQuery(['conversations', child.id], (signal) =>
       parentApi.conversations(child.id, signal),
       canReadOriginals && !report,
@@ -47,94 +47,69 @@ export function ParentConversation({
     [state, setState] = useState<StreamState>({ phase: 'IDLE', temporary: '' }),
     [error, setError] = useState<unknown>(null),
     [proof, setProof] = useState<{ conversationId: string; messageId: string } | null>(null),
-    controller = useRef<AbortController | null>(null),
-    active = useRef(true),
     conversationRef = useRef<Conversation | null>(null),
     [lastQuestion, setLastQuestion] = useState(''),
     [startingTemplate, setStartingTemplate] = useState(false),
     [templateOpen, setTemplateOpen] = useState(false)
+  // 이용권은 entitlement로만 판단한다(#602). 조회 전·실패면 막지 않고 서버 응답을 따른다.
+  const entitlement = knownEntitlement(useChildEntitlement(child.id)),
+    conversationOff = entitlement?.conversationEnabled === false
+  // 대화 생성·SSE·취소·캐시 갱신은 data 훅이 맡는다(#606). 화면을 떠나면 진행 중 답변 생성을 취소한다.
   useEffect(() => {
-    active.current = true
-    return () => {
-      active.current = false
-      controller.current?.abort()
-    }
-  }, [])
-  useEffect(() => {
-    if (!canReadOriginals) controller.current?.abort()
-  }, [canReadOriginals])
+    if (!canReadOriginals) requests.abort()
+  }, [canReadOriginals, requests])
   async function ask(selectedScope?: Scope, retry?: ConversationMessage, example?: string) {
     const confirmedScope =
       selectedScope ??
       state.result?.scope ??
       (detail.data ? { ...detail.data.period, childId: child.id } : scope)
     const text = example ?? retry?.question ?? (state.phase === 'CLARIFICATION' && !question.trim() ? lastQuestion : question)
-    if (!text.trim() || child.plan === 'FREE' || !canReadOriginals) return
-    controller.current?.abort()
-    const abort = new AbortController()
-    controller.current = abort
+    if (!text.trim() || conversationOff || !canReadOriginals) return
     setError(null)
     onAnswer?.(null)
     setLastQuestion(text)
     setState({ phase: 'RUNNING', temporary: '' })
     try {
-      let result: MessageResult | undefined
-      let conversationId = id
-      if (!conversationId) {
-        const c = report?.periodType === 'DAILY' ? await parentApi.createForReport(child.id, report.reportId) : await parentApi.create(confirmedScope)
-        if (!active.current || abort.signal.aborted) return
-        conversationId = c.conversationId
-        conversationRef.current = c
-        setId(conversationId)
-      }
-      await parentApi.message(
-        conversationId,
-        text,
-        confirmedScope,
-        (s) => {
-          if (s.phase === 'DONE') result = s.result
-          if (active.current && !abort.signal.aborted) setState(s)
-        },
-        abort.signal,
-        retry?.messageId,
-      )
-      if (!active.current || abort.signal.aborted) return
+      const done = await requests.ask({
+        conversationId: id, target: target(confirmedScope), text, scope: confirmedScope, retryId: retry?.messageId,
+        onCreated: (c) => { conversationRef.current = c; setId(c.conversationId) },
+        onState: setState,
+      })
+      if (!done) return
+      const { conversationId, result } = done
       if (result) {
         const context = detail.data?.conversationId === conversationId ? detail.data : conversationRef.current
         onAnswer?.({ conversationId, message: { ...result, question: text, status: 'COMPLETED' }, reportId: context?.reportId, reportRevision: context?.reportRevision })
       }
       setQuestion('')
-      void cache.invalidateQueries({ queryKey: ['parent', 'conversation'] })
-      void cache.invalidateQueries({ queryKey: ['parent', 'conversations'] })
     } catch (e) {
-      if (!active.current || abort.signal.aborted) return
       setError(e)
       setState((previous) => ({ ...previous, phase: 'FAILED', temporary: '', result: undefined }))
-      void cache.invalidateQueries({ queryKey: ['parent', 'conversation'] })
     }
   }
+  /** 일일 리포트에서 시작한 대화는 그 리포트에 고정한다. */
+  function target(confirmedScope: Scope) {
+    return { childId: child.id, scope: confirmedScope, dailyReportId: report?.periodType === 'DAILY' ? report.reportId : undefined }
+  }
   function open(conversationId: string) {
-    controller.current?.abort()
+    requests.abort()
     onAnswer?.(null); conversationRef.current = null
     setId(conversationId)
     setState({ phase: 'IDLE', temporary: '' })
     setError(null)
   }
   async function startTemplate() {
-    if (startingTemplate || child.plan === 'FREE' || !canReadOriginals) return
-    const abort = new AbortController()
-    controller.current?.abort(); controller.current = abort
+    if (startingTemplate || conversationOff || !canReadOriginals) return
     setStartingTemplate(true); setError(null)
     onAnswer?.(null)
     try {
-      const conversation = report?.periodType === 'DAILY' ? await parentApi.createForReport(child.id, report.reportId) : await parentApi.create(scope)
-      if (!active.current || abort.signal.aborted) return
+      const conversation = await requests.start(target(scope))
+      if (!conversation) return
       setId(conversation.conversationId)
       conversationRef.current = conversation
-      void cache.invalidateQueries({ queryKey: ['parent', 'conversations'] })
     } catch (e) {
-      if (active.current && !abort.signal.aborted) setError(e)
-    } finally { if (active.current) setStartingTemplate(false) }
+      setError(e)
+    } finally { setStartingTemplate(false) }
   }
   const messages = detail.data?.childId === child.id && !detail.error ? detail.data.messages : [],
     pending = state.phase === 'RUNNING'
@@ -169,7 +144,7 @@ export function ParentConversation({
           <button
             className="cj-secondary"
             onClick={() => {
-              controller.current?.abort()
+              requests.abort()
               onAnswer?.(null); conversationRef.current = null
               setId(null)
               setState({ phase: 'IDLE', temporary: '' })
@@ -266,7 +241,7 @@ export function ParentConversation({
                   key={i}
                   onClick={() => {
                     if (option.scope.childId !== child.id || report?.periodType === 'DAILY' && (option.scope.from !== scope.from || option.scope.to !== scope.to)) {
-                      controller.current?.abort()
+                      requests.abort()
                       onScope(option.scope)
                     } else {
                       void ask(option.scope)
@@ -289,13 +264,14 @@ export function ParentConversation({
                 : undefined
             }
           />
-          {child.plan === 'FREE' && (
+          {conversationOff && (
             <p className="ws-card">
-              이 자녀의 무료 플랜에는 분석 대화가 포함되지 않습니다. 대시보드와 수치 리포트는 확인할
-              수 있습니다.
+              {entitlement?.refundPending
+                ? '환불 검토 중에는 분석 대화를 이용할 수 없습니다. 대시보드와 수치 리포트는 확인할 수 있습니다.'
+                : '이 자녀의 무료 플랜에는 분석 대화가 포함되지 않습니다. 대시보드와 수치 리포트는 확인할 수 있습니다.'}
             </p>
           )}
-          {child.plan !== 'FREE' && (
+          {!conversationOff && (
           <form
             className="ws-card ws-form"
             onSubmit={(e) => {
@@ -331,7 +307,7 @@ export function ParentConversation({
             </small>
           </form>
           )}
-          {child.plan !== 'FREE' && <details className="pc-template" onToggle={event => setTemplateOpen(event.currentTarget.open)}>
+          {!conversationOff && <details className="pc-template" onToggle={event => setTemplateOpen(event.currentTarget.open)}>
             <summary>리포트 표시 설정 변경</summary>
             {templateOpen && (id
               ? <ReportTemplateEditor key={id} conversationId={id} />

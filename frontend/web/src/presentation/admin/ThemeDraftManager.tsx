@@ -164,12 +164,12 @@ function ThemeDraftDetail({ draftId, onOpen }: { draftId: string; onOpen: (draft
     {confirm && <div className="ad-note" role="alertdialog" aria-label={`${actionLabels[confirm]} 확인`}>
       <p>{confirm === 'adopt' ? '채택하면 미션 5개와 테마가 작성 중으로 만들어집니다. 게시는 각각 검토한 뒤 따로 합니다. 채택할까요?'
         : confirm === 'discard' ? '이 초안을 버릴까요? 버린 초안은 채택할 수 없습니다.' : '같은 입력으로 새 초안을 요청할까요? 지금 초안은 그대로 남습니다.'}</p>
-      <div className="ws-actions"><button onClick={() => setConfirm(null)}>취소</button><button className="cj-primary" disabled={act.isPending} onClick={() => run(confirm)}>{actionLabels[confirm]}</button></div>
+      <div className="ws-actions"><button onClick={() => setConfirm(null)}>취소</button><button className={confirm === 'discard' ? 'ad-danger' : 'cj-primary'} disabled={act.isPending} onClick={() => run(confirm)}>{actionLabels[confirm]}</button></div>
     </div>}
     <div className="ws-actions">
       {allowed.adopt && <button className="cj-primary" disabled={act.isPending} onClick={() => setConfirm('adopt')}>채택해서 테마 만들기</button>}
       {allowed.regenerate && <button disabled={act.isPending} onClick={() => setConfirm('regenerate')}>다시 생성</button>}
-      {allowed.discard && <button disabled={act.isPending} onClick={() => setConfirm('discard')}>버리기</button>}
+      {allowed.discard && <button className="ad-danger" disabled={act.isPending} onClick={() => setConfirm('discard')}>버리기</button>}
     </div>
     {conflict ? <p role="alert">초안 상태가 바뀌어 처리하지 못했습니다. 다시 확인한 뒤 진행해 주세요.</p> : <ErrorNotice error={act.error} />}
     {uncertain && <p role="note">처리됐을 수 있습니다. 다시 누르기 전에 목록과 상태를 먼저 확인해 주세요.</p>}

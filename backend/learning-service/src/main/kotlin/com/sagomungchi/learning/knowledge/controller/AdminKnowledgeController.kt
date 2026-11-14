@@ -1,6 +1,8 @@
 package com.sagomungchi.learning.knowledge.controller
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.sagomungchi.learning.knowledge.domain.KnowledgeInputException
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.knowledge.domain.RelationReview
@@ -46,8 +48,8 @@ class AdminKnowledgeController(private val service: KnowledgeDatasetService) {
         requireSystem()
         return service.load(
             KnowledgeLoadCommand(
-                source = request.source ?: invalid("source 필요"),
-                records = request.records ?: invalid("records 필요"),
+                source = knowledgeObject(request.source ?: invalid("source 필요"), "source"),
+                records = (request.records ?: invalid("records 필요")).mapIndexed { index, record -> knowledgeObject(record, "records[$index]") },
                 reviews = request.reviews.orEmpty(),
             ),
         )
@@ -84,3 +86,10 @@ class AdminKnowledgeController(private val service: KnowledgeDatasetService) {
         const val SYSTEM_ROLE = "SYSTEM"
     }
 }
+
+/** C1의 JSON은 입력 경계에서 표준 Kotlin 값으로 바꾸고 domain에는 Jackson을 넘기지 않는다. */
+internal fun knowledgeObject(node: JsonNode, field: String): Map<String, Any?> {
+    if (!node.isObject) throw KnowledgeInputException(if (field == "source") "source는 객체" else "$field: kind 필요")
+    return knowledgeInputMapper.convertValue(node, knowledgeInputMapper.typeFactory.constructMapType(Map::class.java, String::class.java, Any::class.java))
+}
+private val knowledgeInputMapper = jacksonObjectMapper()

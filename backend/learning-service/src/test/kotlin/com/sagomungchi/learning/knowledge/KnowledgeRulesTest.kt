@@ -1,5 +1,7 @@
 package com.sagomungchi.learning.knowledge
 
+import com.sagomungchi.learning.knowledge.controller.knowledgeObject
+
 import com.sagomungchi.learning.knowledge.domain.ChunkKind
 import com.sagomungchi.learning.knowledge.domain.KnowledgeChunks
 import com.sagomungchi.learning.knowledge.domain.KnowledgeInputException
@@ -15,7 +17,34 @@ import kotlin.test.assertTrue
 
 /** 조각 규칙이 ai 가짜 구현(fake.py)과 같은지, C4 → C3 규칙 (#466, erd 4.5) */
 class KnowledgeRulesTest {
-    private val chunks = KnowledgeChunks.fromRecords(KnowledgeSamples.records)
+    private val chunks = KnowledgeChunks.fromRecords(KnowledgeSamples.records.map { knowledgeObject(it, "record") })
+
+    @Test
+    fun `객체가 아닌 입력도 기존 오류 내용을 유지한다`() {
+        val scalar = com.fasterxml.jackson.databind.ObjectMapper().readTree("3")
+        assertEquals("source는 객체", assertFailsWith<KnowledgeInputException> {
+            knowledgeObject(scalar, "source")
+        }.detail)
+        assertEquals("records[0]: kind 필요", assertFailsWith<KnowledgeInputException> {
+            knowledgeObject(scalar, "records[0]")
+        }.detail)
+    }
+
+    @Test
+    fun `실제 1341개 레코드의 본문 해시와 JSON 값이 변하지 않는다`() {
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        val nodes = java.io.File("../../scripts/knowledge/data/curriculum-v1.jsonl")
+            .readLines(Charsets.UTF_8).filter { it.isNotBlank() }.map { mapper.readTree(it) }
+        val actual = KnowledgeChunks.fromRecords(nodes.map { knowledgeObject(it, "record") })
+        assertEquals(1341, actual.size)
+        // 기존 ai fake.chunk_text/content_hash로 산출한 순서별 해시 묶음. 구현 결과로 재생성하지 않는다.
+        assertEquals("c451f0aaff2cea7257c77d138e8df2cda5519c629b1b604ea7568090b84ff002",
+            KnowledgeChunks.sha256(actual.joinToString("\n") { it.contentHash }))
+        actual.zip(nodes).forEach { (chunk, original) ->
+            assertEquals(original, mapper.readTree(mapper.writeValueAsString(chunk.record)), chunk.id)
+            assertEquals(original["source"], mapper.readTree(mapper.writeValueAsString(chunk.source)), chunk.id)
+        }
+    }
 
     @Test
     fun `샘플 215개 조각의 본문 해시가 fake·chunk_text와 같음`() {
@@ -43,7 +72,7 @@ class KnowledgeRulesTest {
 
     @Test
     fun `같은 판 안에서 조각 ID가 겹치면 멈춤`() {
-        assertFailsWith<KnowledgeInputException> { KnowledgeChunks.fromRecords(KnowledgeSamples.records + KnowledgeSamples.records.first()) }
+        assertFailsWith<KnowledgeInputException> { KnowledgeChunks.fromRecords((KnowledgeSamples.records + KnowledgeSamples.records.first()).map { knowledgeObject(it, "record") }) }
     }
 
     @Test

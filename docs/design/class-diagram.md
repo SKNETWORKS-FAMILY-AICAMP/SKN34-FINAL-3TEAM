@@ -1415,9 +1415,9 @@ classDiagram
 - 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. #387 때는 무료 `THEME_DAY`·`EXTRA`를 셌고, 2026-11-10 개정(core #485)부터 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다
 - 2026-11-10 개정(#483, core #485 구현): `ProductEntitlementService.missionStart`는 `THEME_DAY`·`THEME_REVIEW`를 상품 조회 없이 통과시키고, `EXTRA`는 상품 `features.extraMissions`(값이 없으면 무료 거부·구독 중 허용, #506)로 판정한다. `ProductEntitlementService.sundayTheme(student, date)`가 KST 일요일에만 상품 `features.sundayTheme`을 읽어 learning 쿼리 `sundayTheme`을 정한다(`LearningProxyService`가 시도 시작·주간 테마 조회·열람 기록 2종에 붙임). `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 응답의 `days[].completedOnDay`(당일 풀이 `THEME_ON_TIME`)·`completed`(개근 `THEME_COMPLETED`, #506)·`finished`(주간 완주 `THEME_FINISHED`)로 적립을 보충한다. 사건 종류는 `RewardEvent` 8개(`UNLOCK` 포함)
 
-### 3.7 생활공간·추억 프록시 (P27, 설계·구현 전)
+### 3.7 생활공간·추억 프록시 (P27, 구현 #555·#560·#566)
 
-2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md))의 core 클래스. 클래스 이름은 설계 단위이며 구현 때 정한다. 가구 스킨은 기존 `LookUnlockService`·`StudentLookService`를 그대로 쓰고 슬롯 값만 늘린다(P22).
+2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md))의 core 클래스. 클래스 이름은 설계 단위이며 실제 이름과 다른 곳은 아래 구현 메모에 적는다. 가구 스킨은 기존 `LookUnlockService`·`StudentLookService`를 그대로 쓰고 슬롯 값만 늘린다(P22).
 
 ```mermaid
 classDiagram
@@ -1749,7 +1749,7 @@ classDiagram
   direction TB
   class FeedbackController {
     <<controller>>
-    +feedback(answerId) FeedbackResult
+    +feedback(answerId) FeedbackResponse
   }
   class CorrectionController {
     <<controller>>
@@ -2141,9 +2141,9 @@ classDiagram
 - 자동 성취기준 후보 풀(#536, RAG 안 씀 팀 결정 2026-11-11): learning이 계속 고르고 후보 풀만 바꾼다. `ThemeDraftService.autoInput`이 교과별 학년군 표(`standardsOf`)를 `ThemeDraftRules.candidatePools`로 학기 단계 ① 그 학년·학기(`ThemeSemester.of(grade, weekStart)`, 3월 1일~8월 15일 1학기, 확정 2026-11-12) ② 같은 학년군에서 이번 학기까지 배운 학기(`ThemeSemester.soFar`)와 학년군 표로 나누고(`StandardCandidates`), `autoStandards`가 최근 4주·이미 고른 코드를 빼고 남는 첫 단계에서 고른다. 모든 단계가 최근 코드뿐이면 ① 단계에서 가장 오래전에 쓴 코드(주제 씨앗과 같은 방식). 학년군 표(위 학년 성취기준 포함)는 학기 단계에 고를 코드가 하나도 없을 때만. 아래 학년군은 넣지 않는다(미션 게시 학년군 규칙 #353). 학기 대응표 `StandardSemesters`(<<value>>, 코드 → 학기)는 `StandardSemestersConfig`가 시작 때 resources/knowledge/semester_map.csv(원본 `scripts/knowledge/semester_map.csv` 사본)에서 읽는다(DB·지식 판에 기대지 않음). 최근 코드는 `findInputs`의 오래된 순 목록. ai 요청 `missions[].standards` 계약은 그대로, ai `retrieve`(#470)는 받은 코드의 근거 묶음만 가져온다
 - `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
 
-### 4.5 기념 액자·추억 검색 (P27, 설계·구현 전)
+### 4.5 기념 액자·추억 검색 (P27, 구현 #559·#563·#564)
 
-2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md))의 learning `memory` 기능 패키지. 클래스 이름은 설계 단위이며 구현 때 정한다. 저장 구조는 [ERD 4.6](erd.md), 상태는 [상태 3.7](state-diagram.md).
+2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md))의 learning `memory` 기능 패키지. 클래스 이름은 설계 단위이며 실제 이름과 다른 곳은 아래 구현 메모에 적는다. 저장 구조는 [ERD 4.6](erd.md), 상태는 [상태 3.7](state-diagram.md).
 
 ```mermaid
 classDiagram
@@ -2627,6 +2627,14 @@ classDiagram
     +score_cuts dict
     +predict(inputs) raw_scores
   }
+  class ModelSync {
+    <<service>>
+    +reset()
+    +start()
+    +offer(event_data)
+    +is_ready() bool
+    +stop()
+  }
   class ModelStartup {
     <<service>>
     +start()
@@ -2641,7 +2649,7 @@ classDiagram
   class ModelVersionConsumer {
     <<consumer>>
     +start()
-    +receive(message, startup)
+    +receive(message)
     +is_ready() bool
     +close()
   }
@@ -2669,7 +2677,8 @@ classDiagram
   ModelRegistry --> ModelLoader : 스레드풀 로딩
   ModelLoader --> S3ModelArtifacts
   versions_router --> ModelRegistry
-  ModelVersionConsumer --> ModelStartup : 큐 바인딩 후 시작·이벤트 전달
+  ModelVersionConsumer --> ModelSync : 소비 전 reset·바인딩 후 start·검증한 이벤트 offer
+  ModelSync --> ModelStartup : 구독 세션마다 새로 생성·scoring 대상만 전달
   M2Service --> UsagePublisher
   M1Service ..> UsagePublisher : 활성 추론 후속 연결
   preflight_router --> PreflightService : core 중계 요청만
@@ -2681,7 +2690,7 @@ classDiagram
 - `LoadedModel.predict`는 CPU 동기 추론 → `run_in_threadpool`로 호출해 이벤트 루프 차단 방지 (아키텍처 2.3)
 - 활성 범위 밖 학년·문항이면 `{active: false}` 반환. #88 현재 M1은 미학습으로 항상 비활성이며 추론·사용량 발행을 하지 않는다. 향후 M1 확신도 0.8 미만이면 scoring은 실수 위치를 제외하고 ai가 보류를 결정한다(P15).
 - 가중치는 S3 `artifact_uri`에서 로딩, 승인된 버전만 (아키텍처 5장)
-- #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. #87은 m2 라우터·M2Service·사용량 발행, #88은 M1 미학습 비활성 계약을 제공한다.
+- #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. #632에서 세션별 `ModelStartup` 생성과 scoring 대상 필터를 `ModelSync`(service)로 옮겨 소비자는 구독·재연결·봉투 검증·`ModelSync.offer`·ACK만 맡는다(ai #254 `PromptSync`와 같은 구조). #87은 m2 라우터·M2Service·사용량 발행, #88은 M1 미학습 비활성 계약을 제공한다.
 - #368 `preflight.py`: core만 부르는 `POST /internal/models/preflight`(router·`PreflightService`). 설정 버킷의 `models/` 경로 파일 존재·크기·SHA-256과 메타데이터를 검사하고 모델을 로딩하지 않는다 (api-spec 5.2.1). S3 요청·체크섬 해석·저장소 오류 변환(`ArtifactError`)은 `clients/model_artifacts.py`의 `reader`가 맡고, `PreflightService`는 크기·해시·모델 구조 판정만 한다. router·service·요청/응답 모델을 한 파일에 두는 구성은 유지하기로 했다(아키텍처 2.4, #608)
 - #370 `model_loading_reporter.py`: `ModelLoadingReporter`가 `ModelRegistry` 상태를 기동·변화 즉시와 30초 주기로 `model.loading.reported`에 담아 별도 `EventPublisher` 인스턴스(`messaging/publisher.py`, 그림은 `UsagePublisher`로 묶음)로 발행한다. 발행 실패는 로딩과 분리된다 (core 소비는 3.5)
 

@@ -4,7 +4,6 @@ export interface Child {
   nickname: string
   grade: number
   birthYear: number
-  plan?: 'FREE' | 'PREMIUM'
   guardianConsentRequired?: boolean
   hasRecords?: boolean | null
   recordState?: 'AVAILABLE' | 'UNAVAILABLE' | 'CONSENT_REQUIRED'

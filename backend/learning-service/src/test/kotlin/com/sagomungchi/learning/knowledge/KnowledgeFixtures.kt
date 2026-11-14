@@ -1,5 +1,7 @@
 package com.sagomungchi.learning.knowledge
 
+import com.sagomungchi.learning.knowledge.controller.knowledgeObject
+
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning.knowledge.domain.ChunkKind
 import com.sagomungchi.learning.knowledge.domain.KnowledgeChunks
@@ -29,7 +31,7 @@ internal class KnowledgeFixtures(private val jdbc: JdbcTemplate, private val jso
         check(metadata["version"].asText() == VERSION && metadata["sample"].asBoolean())
         val relations = KnowledgeRelations.decide(emptyList(), syntheticReviews())
         val chunks = KnowledgeChunks.withCovers(
-            KnowledgeChunks.fromRecords(KnowledgeSamples.records),
+            KnowledgeChunks.fromRecords(KnowledgeSamples.records.map { knowledgeObject(it, "record") }),
             relations.filter { it.type == RelationType.COVERS }.map { it.standardCode to it.target },
         )
         val standards = chunks.filter { it.kind == ChunkKind.STANDARD }

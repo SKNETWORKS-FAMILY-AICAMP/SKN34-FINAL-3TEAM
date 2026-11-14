@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { PaymentManagement } from './PaymentManagement.tsx'
+import { knownEntitlement, useChildEntitlement } from '../../data/payment/queries.ts'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSession } from '../auth/sessionContext.ts'
@@ -23,6 +24,7 @@ export function ParentPayments({ child }: { child?: Child }) {
   const checkoutMode = params.get('checkout') === '1'
   const products = useParentQuery(['products'], signal => paymentApi.products(signal))
   const subscriptions = useParentQuery(['subscriptions'], signal => paymentApi.subscriptions(signal), !paymentTestMode)
+  const entitlement = knownEntitlement(useChildEntitlement(child?.id ?? '', !!child && !paymentTestMode))
   const duplicate = child && duplicateSubscription(subscriptions.data?.items ?? [], child.id)
   const [selection, setSelection] = useState(params.get('productId') ?? '')
   const availableProducts = products.data?.items.filter(p => p.active && p.price > 0 && p.billingCycle === 'MONTHLY') ?? []
@@ -120,7 +122,7 @@ export function ParentPayments({ child }: { child?: Child }) {
     <QueryFeedback query={products} />{!paymentTestMode && <QueryFeedback query={subscriptions} />}<ErrorNotice error={error} />
     {tabNotice && <p role="status" className="parent-payment-notice">{tabNotice}</p>}
     {opening && <button onClick={() => { setOpening(false); setTabNotice('') }}>결제 탭 다시 열기</button>}
-    {!checkoutMode && products.data?.items.filter(p => p.active && p.price === 0).map(p => <section className="payment-panel parent-free-plan" key={p.id}><div><h2>{p.name} 플랜</h2><p>정기 청구 없이 이용할 수 있어요.</p><strong>{won(p.price)}</strong>{duplicate && <p>현재 이용 기간은 유지됩니다. 아래 현재 구독에서 자동 갱신을 해지하면 이용 기간이 끝난 뒤 무료로 이용합니다.</p>}</div>{duplicate ? <a className="cj-secondary" href="#current-subscriptions">무료 플랜 전환 안내</a> : <button disabled>{!child ? '자녀 선택 필요' : subscriptions.isPending ? '이용권 확인 중' : subscriptions.error ? '이용권 확인 필요' : child.plan === 'FREE' ? '현재 무료 플랜' : '이용권 정보 확인'}</button>}</section>)}
+    {!checkoutMode && products.data?.items.filter(p => p.active && p.price === 0).map(p => <section className="payment-panel parent-free-plan" key={p.id}><div><h2>{p.name} 플랜</h2><p>정기 청구 없이 이용할 수 있어요.</p><strong>{won(p.price)}</strong>{duplicate && <p>현재 이용 기간은 유지됩니다. 아래 현재 구독에서 자동 갱신을 해지하면 이용 기간이 끝난 뒤 무료로 이용합니다.</p>}</div>{duplicate ? <a className="cj-secondary" href="#current-subscriptions">무료 플랜 전환 안내</a> : <button disabled>{!child ? '자녀 선택 필요' : subscriptions.isPending ? '이용권 확인 중' : subscriptions.error ? '이용권 확인 필요' : entitlement?.status === 'FREE' ? '현재 무료 플랜' : '이용권 정보 확인'}</button>}</section>)}
     {duplicate && <PaymentManagement key={child?.id ?? 'all'} child={child} />}
     {!duplicate && !order && products.data && !availableProducts.length && <section className="payment-panel"><h2>이용권 안내</h2><p>현재 구매 가능한 이용권이 없습니다. 기존 이용권과 거래 내역은 아래에서 확인할 수 있습니다.</p><Link to="/parent/support">이용권 문의하기</Link></section>}
     {(!duplicate || !!order) && (!!order || availableProducts.length > 0) && <div className="payment-columns">

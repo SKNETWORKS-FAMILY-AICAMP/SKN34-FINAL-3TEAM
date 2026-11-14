@@ -1,6 +1,5 @@
 package com.sagomungchi.learning.knowledge.domain
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.sagomungchi.learning._common.exception.DomainException
 import com.sagomungchi.learning._common.exception.ErrorKind
 import java.security.MessageDigest
@@ -23,9 +22,9 @@ data class KnowledgeChunk(
     val semesters: List<String>,
     val noticeGradeBand: String?,
     val text: String,
-    val record: JsonNode,
+    val record: Map<String, Any?>,
     val contentHash: String,
-    val source: JsonNode,
+    val source: Any,
 )
 
 class KnowledgeInputException(detail: String) :
@@ -40,7 +39,7 @@ object KnowledgeChunks {
     private val CATEGORY_NAME = mapOf("K" to "지식⋅이해", "P" to "과정⋅기능", "V" to "가치⋅태도")
     private val BAND = Regex("^초(\\d)~(\\d)$")
 
-    fun fromRecords(records: List<JsonNode>): List<KnowledgeChunk> {
+    fun fromRecords(records: List<Map<String, Any?>>): List<KnowledgeChunk> {
         val chunks = records.mapIndexed { index, record ->
             runCatching { toChunk(record) }.getOrElse {
                 throw KnowledgeInputException("records[$index]: ${it.message ?: "형식 오류"}")
@@ -51,7 +50,7 @@ object KnowledgeChunks {
         return chunks
     }
 
-    private fun toChunk(record: JsonNode): KnowledgeChunk {
+    private fun toChunk(record: Map<String, Any?>): KnowledgeChunk {
         val kind = record.text("kind")
         val text = chunkText(record)
         fun chunk(
@@ -119,7 +118,7 @@ object KnowledgeChunks {
     }
 
     /** 조각 본문 규칙(erd 4.5). fake.chunk_text와 글자 하나까지 같아야 같은 해시가 나온다(본문 바뀜 판정) */
-    fun chunkText(record: JsonNode): String = when (val kind = record.text("kind")) {
+    fun chunkText(record: Map<String, Any?>): String = when (val kind = record.text("kind")) {
         "standard" -> buildString {
             append("[${record.text("code")}] ${record.text("statement")}")
             record.optText("explanation")?.takeIf { it.isNotEmpty() }?.let { append("\n해설: $it") }
@@ -128,7 +127,7 @@ object KnowledgeChunks {
             add("${record.text("subject")} ${record.text("noticeGradeBand")} ${record.text("area")}")
             record.strings("coreIdeas").takeIf { it.isNotEmpty() }?.let { add("핵심 아이디어: " + it.joinToString(" ")) }
             for ((key, name) in listOf("knowledge" to "지식⋅이해", "process" to "과정⋅기능", "values" to "가치⋅태도")) {
-                val items = record.required(key).map { it.text("text") }
+                val items = record.children(key).map { it.text("text") }
                 if (items.isNotEmpty()) add("$name: " + items.joinToString("; "))
             }
             record.strings("considerations").takeIf { it.isNotEmpty() }?.let { add("적용 시 고려 사항: " + it.joinToString(" ")) }
@@ -144,8 +143,8 @@ object KnowledgeChunks {
             "평가:" + record.strings("assessment")).joinToString("\n")
         "thinking_type" -> listOf(
             "${record.text("name")}(${record.text("type")})",
-            "근거: " + record.required("basis").joinToString(" ") { it.text("attribution") },
-            "요소: " + record.required("elements").joinToString("; ") { "${it.text("label")}: ${it.text("description")}" },
+            "근거: " + record.children("basis").joinToString(" ") { it.text("attribution") },
+            "요소: " + record.children("elements").joinToString("; ") { "${it.text("label")}: ${it.text("description")}" },
             "질문에 꼭: " + record.strings("questionMust").joinToString(" "),
             "피할 것: " + record.strings("questionMustNot").joinToString(" "),
         ).joinToString("\n")
@@ -168,27 +167,35 @@ object KnowledgeChunks {
     private fun sortSemesters(values: List<String>): List<String> =
         values.toSet().sortedWith(compareBy({ gradeOfSemester(it) }, { it.substringAfter('-').toInt() }))
 
-    private fun JsonNode.required(field: String): JsonNode =
-        get(field)?.takeUnless { it.isNull } ?: throw IllegalArgumentException("$field 필요")
+    private fun Map<String, Any?>.required(field: String): Any =
+        get(field) ?: throw IllegalArgumentException("$field 필요")
 
-    private fun JsonNode.text(field: String): String =
-        required(field).takeIf { it.isTextual }?.asText() ?: throw IllegalArgumentException("$field 는 문자열")
+    private fun Any?.text(field: String): String =
+        ((this as? Map<*, *>)?.get(field) ?: throw IllegalArgumentException("$field 필요")) as? String
+            ?: throw IllegalArgumentException("$field 는 문자열")
 
-    private fun JsonNode.optText(field: String): String? = get(field)?.takeIf { it.isTextual }?.asText()
+    private fun Map<String, Any?>.optText(field: String): String? = get(field) as? String
 
-    private fun JsonNode.strings(field: String, optional: Boolean = false): List<String> {
-        val node = get(field)
-        if (node == null || node.isNull) {
+    // JsonNode의 자식 순회와 동일: 배열은 원소, 객체는 값, 스칼라는 자식 없음.
+    private fun Map<String, Any?>.children(field: String): Collection<Any?> = when (val value = required(field)) {
+        is List<*> -> value
+        is Map<*, *> -> value.values
+        else -> emptyList()
+    }
+
+    private fun Map<String, Any?>.strings(field: String, optional: Boolean = false): List<String> {
+        val value = get(field)
+        if (value == null) {
             if (optional) return emptyList()
             throw IllegalArgumentException("$field 필요")
         }
-        require(node.isArray && node.all { it.isTextual }) { "$field 는 문자열 배열" }
-        return node.map { it.asText() }
+        require(value is List<*> && value.all { it is String }) { "$field 는 문자열 배열" }
+        return value.map { it as String }
     }
 
-    private fun JsonNode.ints(field: String): List<Int> {
-        val node = required(field)
-        require(node.isArray && node.all { it.isInt && it.asInt() in 3..6 }) { "$field 는 3~6 정수 배열" }
-        return node.map { it.asInt() }
+    private fun Map<String, Any?>.ints(field: String): List<Int> {
+        val value = required(field)
+        require(value is List<*> && value.all { it is Int && it in 3..6 }) { "$field 는 3~6 정수 배열" }
+        return value.map { it as Int }
     }
 }

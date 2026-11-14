@@ -9,12 +9,10 @@ from uuid import UUID
 from aio_pika.abc import AbstractIncomingMessage
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
-from app.clients.core_client import CoreClient
 from app.messaging.connection import AmqpConnection
 from app.messaging.envelope import EventEnvelope
-from app.model_registry import ModelRegistry
-from app.model_startup import ModelStartup
-from app.model_versions import Scope, scoring_versions
+from app.model_sync import ModelSync
+from app.model_versions import Scope
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +56,10 @@ class ActivationEnvelope(EventEnvelope[ActivationData]):
 
 
 class ModelVersionConsumer:
-    def __init__(
-        self, amqp: AmqpConnection, core: CoreClient, registry: ModelRegistry, retry_interval: float
-    ) -> None:
+    def __init__(self, amqp: AmqpConnection, sync: ModelSync, retry_interval: float) -> None:
         self._amqp = amqp
-        self._core = core
-        self._registry = registry
+        self._sync = sync
         self._retry_interval = retry_interval
-        self._startup: ModelStartup | None = None
         self._task: asyncio.Task[None] | None = None
         self._bound = False
 
@@ -73,12 +67,7 @@ class ModelVersionConsumer:
         self._task = asyncio.create_task(self._run())
 
     async def is_ready(self) -> bool:
-        return (
-            self._bound
-            and self._amqp.is_connected
-            and self._startup is not None
-            and await self._startup.is_ready()
-        )
+        return self._bound and self._amqp.is_connected and await self._sync.is_ready()
 
     async def _run(self) -> None:
         while True:
@@ -99,8 +88,7 @@ class ModelVersionConsumer:
 
         connection.close_callbacks.add(on_close)
         channel = None
-        startup = ModelStartup(self._core, self._registry, self._retry_interval)
-        self._startup = startup
+        self._sync.reset()
         try:
             channel = await connection.channel()
             await channel.set_qos(prefetch_count=100)
@@ -108,31 +96,25 @@ class ModelVersionConsumer:
             # 자동 복구에 맡기지 않고 재연결 시 새 큐 + snapshot 순서를 다시 실행한다.
             queue = await channel.declare_queue("", exclusive=True, auto_delete=True, robust=False)
             await queue.bind(exchange, routing_key="model.version.*", robust=False)
-
-            async def receive(message: AbstractIncomingMessage):
-                await self.receive(message, startup)
-
-            await queue.consume(receive, robust=False)
+            await queue.consume(self.receive, robust=False)
             if disconnected.is_set():
                 return
             self._bound = True
             logger.info("Model subscription bound queue=%s", queue.name)
-            startup.start()
+            self._sync.start()
             await disconnected.wait()
         finally:
             self._bound = False
-            await startup.close()
+            await self._sync.stop()
             connection.close_callbacks.discard(on_close)
             if channel is not None:
                 with contextlib.suppress(Exception):
                     await channel.close()
 
-    @staticmethod
-    async def receive(message: AbstractIncomingMessage, startup: ModelStartup) -> None:
+    async def receive(self, message: AbstractIncomingMessage) -> None:
         try:
             envelope = ActivationEnvelope.model_validate_json(message.body)
-            for version in scoring_versions({"items": [envelope.data.model_dump(mode="json")]}):
-                startup.offer(version)
+            self._sync.offer(envelope.data.model_dump(mode="json"))
         except (ValueError, TypeError):
             # 원문·URI·검증 예외 본문은 로그에 넣지 않는다. 잘못된 메시지는 재시도 없음.
             logger.warning("Invalid model activation event ignored")

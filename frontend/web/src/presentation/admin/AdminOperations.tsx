@@ -40,7 +40,7 @@ function Overview({ period, permissions }: { period: Period; permissions: Permis
               <h3>학습 시도</h3>
               <strong className="ws-number">{q.data.learning.attempts}건</strong>
             </article>
-            <article className="ws-card">
+            <article className="ws-card ad-completed-card">
               <h3>학습 완료</h3>
               <strong className="ws-number">{q.data.learning.completedAttempts}건</strong>
             </article>
@@ -48,16 +48,25 @@ function Overview({ period, permissions }: { period: Period; permissions: Permis
           {hasPermission(permissions, 'SERVICE_OPS') && (
             <>
               <h3>처리 현황</h3>
-              <div className="ws-metrics">
-                {q.data.jobCounts.map((c) => (
-                  <Link
-                    className="ws-card"
-                    key={c.type + c.status}
-                    to={`/admin/jobs?${new URLSearchParams({ ...period, type: c.type, status: c.status })}`}
-                  >
-                    {jobTypeLabels[c.type]} · {jobLabels[c.status]} <strong>{c.count}건</strong>
-                  </Link>
-                ))}
+              <div className="ad-job-summary">
+                {Object.entries(jobTypeLabels).map(([type, label]) => {
+                  const counts = q.data.jobCounts.filter(c => c.type === type)
+                  if (!counts.length) return null
+                  return <section className="ad-job-group" aria-labelledby={`ad-job-${type}`} key={type}>
+                    <h4 id={`ad-job-${type}`}>{label}</h4>
+                    <div className="ws-metrics ad-job-row">
+                      {counts.map(c => (
+                        <Link
+                          className={`ws-card${c.status === 'COMPLETED' ? ' ad-completed-card' : c.status === 'FAILED' ? ' ad-failed-card' : ''}`}
+                          key={c.status}
+                          to={`/admin/jobs?${new URLSearchParams({ ...period, type: c.type, status: c.status })}`}
+                        >
+                          {jobTypeLabels[c.type]} · {jobLabels[c.status]} <strong>{c.count}건</strong>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                })}
               </div>
             </>
           )}
@@ -256,7 +265,7 @@ function AuditLog({ period }: { period: Period }) {
   return (
     <>
       <h2>감사 이력</h2>
-      <label>
+      <label className="ad-filter">
         대상 유형
         <select
           aria-label="감사 대상 유형"
@@ -300,7 +309,7 @@ function Usage({ period }: { period: Period }) {
       <p>
         조회 기간의 호출·평균 지연·토큰 합계를 확인합니다. 확인하지 못한 비용은 0 대신 ‘미측정’으로 표시합니다.
       </p>
-      <label>
+      <label className="ad-filter">
         호출 종류
         <select aria-label="호출 종류" value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">전체</option>

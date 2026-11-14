@@ -138,7 +138,7 @@
 #class-journal .st-sub {
   font-family: 'Do Hyeon', sans-serif;
   font-size: var(--st-fs-base, 18px);
-  color: var(--st-light2);
+  color: #fffdf7;
 }
 #class-journal .st-nav {
   display: flex;
@@ -1075,7 +1075,7 @@
 #class-journal .cj-app-student .st-home-grid { grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.5fr); gap: 36px; }
 #class-journal .cj-app-student .st-today { max-width: none; }
 #class-journal .cj-app-student .st-support-menu { font-size: var(--st-fs-sm, 15px); color: #fff; }
-#class-journal .cj-app-student .st-support-menu summary { cursor: pointer; min-height: 32px; }
+#class-journal .cj-app-student .st-support-menu summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
 #class-journal .cj-app-student .st-support-menu[open] { border-radius: 8px; background: var(--st-paper); color: var(--st-ink); padding: 12px; }
 #class-journal .cj-app-student .st-support-menu a { display: inline-block; padding: 10px; color: var(--st-ink); }
 #class-journal .cj-app-student .st-sharing { max-width: 1200px; }
@@ -1212,3 +1212,8 @@
   #class-journal .st-sheet { max-width: max(1120px, min(78vw, 1600px)); }
   #class-journal .cj-app-student .cj-modal { max-width: max(610px, min(46vw, 880px)); }
 }
+
+/* #640: readable small labels and child-sized controls at every viewport width. */
+#class-journal .cj-app-student .cj-badge { color: #984316; }
+#class-journal .cj-app-student .cj-modal .cj-close { width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; }
+#class-journal .cj-app-student .cj-filters select { min-height: 44px; }

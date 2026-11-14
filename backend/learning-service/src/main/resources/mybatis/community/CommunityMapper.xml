@@ -15,7 +15,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="sharedAnswer" type="com.sagomungchi.learning.community.domain.SharedAnswerRow">
+    <resultMap id="sharedAnswer" type="com.sagomungchi.learning.community.repository.SharedAnswerRecord">
         <constructor>
             <idArg column="post_id" javaType="java.util.UUID"/>
             <arg column="student_id" javaType="java.util.UUID"/>

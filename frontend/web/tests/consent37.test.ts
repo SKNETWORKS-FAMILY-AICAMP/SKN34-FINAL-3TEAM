@@ -31,7 +31,7 @@ test('onboarding consumer sends exact document versions then observes server nex
   const children = await createApiGateway().children()
   assert.equal(children[0].hasRecords, null)
   assert.equal(children[0].recordState, 'UNAVAILABLE')
-  assert.equal(children[0].plan, undefined)
+  assert.equal('plan' in children[0], false)
   setAccessToken(null)
 })
 test('withdrawal and renewal use parent consent APIs and stale version errors propagate', async (t) => {
@@ -73,6 +73,6 @@ test('child adapter preserves optional device metadata and consent access state 
   const [child] = await createApiGateway().children()
   assert.equal(child.pinSet, true); assert.equal(child.pinLocked, false)
   assert.equal(child.guardianConsentRequired, true); assert.equal(child.recordState, 'CONSENT_REQUIRED')
-  assert.equal(child.plan, undefined)
+  assert.equal('plan' in child, false)
   setAccessToken(null)
 })

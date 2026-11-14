@@ -498,7 +498,7 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
             </button>
             {m.status === 'PUBLISHED' && (
               <button
-                className="cj-secondary"
+                className="cj-secondary ad-danger"
                 disabled={action.isPending}
                 onClick={() => run('unpublish')}
               >
@@ -666,7 +666,7 @@ function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () =
           </p>
           <button
             type="button"
-            className="cj-secondary"
+            className="cj-secondary ad-danger"
             onClick={() => setR({ ...r, elements: r.elements.filter((_, j) => j !== i) })}
           >
             이 요소 삭제

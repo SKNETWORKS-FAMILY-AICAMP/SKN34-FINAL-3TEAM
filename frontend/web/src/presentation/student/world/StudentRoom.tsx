@@ -30,10 +30,10 @@ const saveMessage = (e: unknown) => {
 /**
  * 내 방(/student/room, P27·FN-RET-09, #556). 이동·편집 없이 고정 배치이고 가구를 눌러 이동한다.
  * 책상 → 주간 테마(생각 지도), 추억의 벽 → 앨범·액자 걸기, 옷장 → 꾸미기(가구 스킨).
- * 벽지는 착용 배경(BACKGROUND), 없으면 기본 벽지. 캐릭터 착용 아이템은 #455 렌더링 병합 전이라 기본 모습.
+ * 벽지는 착용 배경(BACKGROUND), 없으면 기본 벽지. 캐릭터 착용 아이템은 그림 파일이 있으면 겹쳐 그린다(#455).
  */
 export function StudentRoom({ child, onTheme, onAlbum }: { child: Child; onTheme: () => void; onAlbum: () => void }) {
-  const { companion } = useLook()
+  const { companion, worn } = useLook()
   const look = useStudentLook(child.id)
   const items = useLookItems(child.id)
   const slots = useFrameSlots(child.id)
@@ -71,7 +71,7 @@ export function StudentRoom({ child, onTheme, onAlbum }: { child: Child; onTheme
           <g transform="translate(420 242)"><Desk assetKey={furniture('DESK')} /></g>
           <g transform="translate(640 130)"><Wardrobe assetKey={furniture('WARDROBE')} /></g>
           <ellipse cx="368" cy="366" rx="50" ry="9" fill="rgba(31,36,33,0.18)" />
-          <g transform="translate(313 246)"><Companion kind={companion} size={110} decorative /></g>
+          <g transform="translate(313 246)"><Companion kind={companion} size={110} decorative worn={worn} /></g>
         </svg>
         {/* 가구 위 투명 버튼: 키보드로도 같은 곳에 간다 */}
         <button type="button" className="st-room-spot st-spot-wall" onClick={() => setEditing(true)}>

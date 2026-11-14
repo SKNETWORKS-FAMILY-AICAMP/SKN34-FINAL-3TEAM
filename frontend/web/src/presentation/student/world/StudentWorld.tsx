@@ -1,7 +1,10 @@
+import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import { BookOpen, DoorOpen, Lightbulb, Map as MapIcon, Shapes, Settings, Users } from 'lucide-react'
 import { useStudentLook } from '../../../data/studentLook/queries.ts'
+import { useLookItems } from '../../../data/retention/queries.ts'
+import { wornAssets } from '../../../domain/retention.ts'
 import { DEFAULT_LOOK, THEMES } from '../../../domain/studentLook.ts'
 import type { Theme } from '../../../domain/studentLook.ts'
 import type { Child } from '../../../domain/classroom.ts'
@@ -42,6 +45,9 @@ export function StudentWorld({
   const query = useStudentLook(child.id)
   const look = query.data ?? DEFAULT_LOOK
   const t = THEMES[look.theme]
+  const items = useLookItems(child.id)
+  // 착용 그림 키(#455). 목록 실패·키 없음은 기본 모습
+  const worn = useMemo(() => wornAssets(look.equipped, items.error ? undefined : items.data), [look.equipped, items.data, items.error])
   const nav: { id: StudentPage; label: string; icon: typeof MapIcon }[] = [
     { id: 'home', label: '생각 지도', icon: MapIcon },
     { id: 'room', label: '내 방', icon: DoorOpen },
@@ -53,7 +59,7 @@ export function StudentWorld({
     { id: 'settings', label: '설정', icon: Settings },
   ]
   return (
-    <LookContext.Provider value={{ t, companion: look.companion }}>
+    <LookContext.Provider value={{ t, companion: look.companion, worn }}>
       <ThemeFrame t={t}>
         {!focus && (
           <header className="st-top">

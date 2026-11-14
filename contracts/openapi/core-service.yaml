@@ -305,7 +305,7 @@ paths:
       description: 작성자는 별명·꾸미기로 바꾸고 학생 ID·반응 수를 내보내지 않는다. 지금 공개할 수 없는 작성자(설정 끔·현재 보호자 동의 없음)와 신고 처리 중·계속 숨김 공유물은 core가 다시 거른다
       parameters:
       - {name: missionId, in: path, required: true, schema: {type: string, format: uuid}}
-      - {name: seed, in: query, schema: {type: string, maxLength: 100}}
+      - {name: seed, in: query, required: true, description: '같은 값이면 같은 순서. 없거나 비었거나 100자 초과면 400 VALIDATION_FAILED(#622)', schema: {type: string, minLength: 1, maxLength: 100}}
       - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
       - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
@@ -10138,7 +10138,7 @@ components:
             type: object
             additionalProperties: true
             properties:
-              no: {type: integer, minimum: 1, maximum: 3}
+              'no': {type: integer, minimum: 1, maximum: 3}
               themeId: {type: string, format: uuid}
               weekStart: {type: string, format: date}
               attemptId: {type: string, format: uuid}
@@ -10963,7 +10963,11 @@ components:
         - narrative
         - verification
         - versions
+        - parentSharingEnabled
         properties:
+          parentSharingEnabled:
+            type: boolean
+            description: 'core가 조회 시점의 학생 공유 설정으로 채운다. false면 원문·근거 링크를 뺀 응답 (#206, #614)'
           explanations:
             description: '#479 검증된 대표 답변 설명. 일일·무료·현재 원문 비공개이면 null. 과거 리포트는 누락/null 허용.'
             oneOf:
@@ -12437,11 +12441,16 @@ components:
       type: object
       additionalProperties: false
       required:
+      - judgmentId
       - result
       - trial
       - elements
       - heldReason
       properties:
+        judgmentId:
+          type: string
+          format: uuid
+          description: 'learning Judgment.judgmentId를 core가 그대로 전달. 오류 신고(targetType JUDGMENT) 대상 ID (#146, #614)'
         corrected:
           type: boolean
           description: 정정이 있으면 true. elements는 원판정 그대로

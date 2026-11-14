@@ -1,19 +1,14 @@
 import { useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
 import type { Attempt } from '../../domain/classroom.ts'
-import { saveSelfAssessment } from '../../data/classroom/learningApi.ts'
+import { useSaveSelfAssessment } from '../../data/classroom/useClassroom.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 
 export function SelfAssessmentPanel({ attempt, onBusyChange }: { attempt: Attempt; onBusyChange: (busy: boolean) => void }) {
   const [checks, setChecks] = useState<Record<string, boolean>>({})
   const [dirty, setDirty] = useState(false)
-  const save = useMutation({
-    mutationFn: () => saveSelfAssessment(attempt.attemptId,
-      Object.entries(checks).map(([elementId, checked]) => ({ elementId, checked }))),
-    onSuccess: (rows) => {
-      setChecks(Object.fromEntries(rows.filter((e) => e.selfChecked !== null).map((e) => [e.elementId, e.selfChecked as boolean])))
-      setDirty(false)
-    },
+  const save = useSaveSelfAssessment(attempt.attemptId, (rows) => {
+    setChecks(Object.fromEntries(rows.filter((e) => e.selfChecked !== null).map((e) => [e.elementId, e.selfChecked as boolean])))
+    setDirty(false)
   })
   useEffect(() => { onBusyChange(save.isPending); return () => onBusyChange(false) }, [save.isPending, onBusyChange])
   if (!attempt.finishedAt || attempt.status === 'COMPLETED' || !attempt.checklist?.length) return null
@@ -28,7 +23,7 @@ export function SelfAssessmentPanel({ attempt, onBusyChange }: { attempt: Attemp
       </label>)}
     </div>
     <button className="cj-secondary" disabled={save.isPending || !Object.keys(checks).length || !dirty}
-      onClick={() => save.mutate()}>내 확인 저장</button>
+      onClick={() => save.mutate(Object.entries(checks).map(([elementId, checked]) => ({ elementId, checked })))}>내 확인 저장</button>
     <ErrorNotice error={save.error} />
     {save.data && <><p role="status">{dirty ? '바꾼 항목은 다시 저장해 주세요.' : '내 확인을 저장했어요.'}</p>
       <div className="ux-assessment-comparison" role="region" aria-label="내 확인과 선생님 확인 비교">

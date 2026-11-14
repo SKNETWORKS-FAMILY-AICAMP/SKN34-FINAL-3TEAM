@@ -30,6 +30,9 @@ import { ApiError } from '../../data/apiClient.ts'
 import { appendMemo, memoTargets } from '../../domain/memoTransfer.ts'
 
 export function StudentWorkPage({ attemptId, onBack }: { attemptId: string; onBack: () => void }) {
+  return <main aria-label="미션 풀이"><StudentWorkContent attemptId={attemptId} onBack={onBack} /></main>
+}
+function StudentWorkContent({ attemptId, onBack }: { attemptId: string; onBack: () => void }) {
   const query = useAttempt(attemptId)
   if (query.isPending)
     return (
@@ -77,6 +80,10 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
   const editVersion = useRef(0),
     submission = useRef<{ signature: string; key: string } | null>(null)
   const resumedFeedback = useRef<string | null>(null)
+  const title = useRef<HTMLHeadingElement>(null)
+  const result = useRef<HTMLDivElement>(null)
+  const [focusAnswerId, setFocusAnswerId] = useState<string | null>(null)
+  useEffect(() => { title.current?.focus() }, [])
   const requestFeedback = actions.feedback.mutateAsync
   useEffect(() => {
     const last = a.answers.at(-1)
@@ -210,6 +217,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
         followupId: latestFeedback(a)?.followup?.followupId,
       })
       resumedFeedback.current = saved.answers.at(-1)!.answerId
+      setFocusAnswerId(saved.answers.at(-1)!.answerId)
       setDirty(false)
       setSaveState('SAVED')
       setMore(false)
@@ -265,7 +273,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
       setError(e)
     }
   }
-  const { companion } = useLook()
+  const { companion, worn } = useLook()
   const stage = missionStage(a)
   // 판정 신고는 판정 ID로, 판정 전이면 신고하지 않음 (learning #146)
   const reportJudgmentId = latestFeedback(a)?.judgment?.judgmentId
@@ -273,6 +281,11 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
   const feedbackFinal = error instanceof ApiError && error.problem.retryable === false
   const f = latestFeedback(a),
     writing = !a.finishedAt && (a.answers.length === 0 || more) && canAddAnswer(a)
+  useEffect(() => {
+    if (!focusAnswerId || writing || !result.current) return
+    result.current.focus()
+    setFocusAnswerId(null)
+  }, [focusAnswerId, writing])
   const pending =
     actions.submit.isPending ||
     actions.feedback.isPending ||
@@ -311,9 +324,9 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
               {a.mission.subject} · {thinkingLabels[a.mission.thinkingType]} · 초등 {a.mission.grade}학년
               {isDemo ? ' · 화면 시연' : ''}
             </p>
-            <h1>{a.mission.title}</h1>
+            <h1 ref={title} tabIndex={-1}>{a.mission.title}</h1>
             <div className="st-ask">
-              <Companion kind={companion} size={64} decorative />
+              <Companion kind={companion} size={64} decorative worn={worn} />
               <div className="st-say">
                 <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>
                 <h2>{a.mission.question}</h2>
@@ -367,7 +380,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
             </div>
             {hint && (
               <div className="st-ask st-hint">
-                <Companion kind={companion} size={48} decorative />
+                <Companion kind={companion} size={48} decorative worn={worn} />
                 <div className="st-say">
                   <strong>생각 열기</strong>
                   <p>{hint}</p>
@@ -376,7 +389,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
             )}
             {more && f?.followup && (
               <div className="st-ask">
-                <Companion kind={companion} size={48} decorative />
+                <Companion kind={companion} size={48} decorative worn={worn} />
                 <div className="st-say">
                   <strong>한 걸음 더</strong>
                   <p>{f.followup.question}</p>
@@ -477,7 +490,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                   </section>
                 ))}
                 {f && (
-                  <div className="ux-feedback" role="status">
+                  <div ref={result} tabIndex={-1} className="ux-feedback" role="status">
                     <strong>
                       {f.status === 'DONE'
                         ? f.judgment?.result === 'HELD'
@@ -502,7 +515,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                     )}
                     {f.followup && !a.finishedAt && (
                       <div className="st-ask">
-                        <Companion kind={companion} size={56} decorative />
+                        <Companion kind={companion} size={56} decorative worn={worn} />
                         <div className="st-say">
                           <p>{f.followup.question}</p>
                           <small>

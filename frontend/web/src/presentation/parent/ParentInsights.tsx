@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import type { Child } from '../../domain/classroom.ts'
 import type { Scope } from '../../domain/parent.ts'
 import { samePeriod, verifiedReportAnswer } from '../../domain/reportHighlight.ts'
 import type { ReportContext, ReportAnswer, ReportHighlight } from '../../domain/reportHighlight.ts'
-import { parentApi } from '../../data/parent/api.ts'
+import { useMessageEvidence } from '../../data/parent/queries.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 export type { ReportContext } from '../../domain/reportHighlight.ts'
 import { ParentReports } from './ParentReports.tsx'
@@ -19,14 +19,15 @@ export function ParentInsights({ child, scope, canReadOriginals, onScope, period
   const [report, setReport] = useState<ReportContext | null>(null)
   const [highlight, setHighlight] = useState<ReportHighlight | null>(null)
   const [selectedMessageId, setSelectedMessageId] = useState<string>()
-  const [linking, setLinking] = useState(false), [linkError, setLinkError] = useState<unknown>(null), [linkNotice, setLinkNotice] = useState('')
+  const [linkError, setLinkError] = useState<unknown>(null), [linkNotice, setLinkNotice] = useState('')
   const [revealToken, setRevealToken] = useState(0)
-  const request = useRef<AbortController | null>(null), selection = useRef<ReportAnswer | null>(null)
+  // 근거 조회의 요청·취소는 data 훅이 맡는다(#606). 새로 고르거나 지우면 이전 조회를 버린다.
+  const { busy: linking, load: loadEvidence, abort: abortEvidence } = useMessageEvidence()
+  const selection = useRef<ReportAnswer | null>(null)
   const clearHighlight = useCallback(() => {
-    request.current?.abort(); request.current = null; selection.current = null
-    setHighlight(null); setSelectedMessageId(undefined); setLinking(false); setLinkError(null); setLinkNotice('')
-  }, [])
-  useEffect(() => () => { request.current?.abort() }, [])
+    abortEvidence(); selection.current = null
+    setHighlight(null); setSelectedMessageId(undefined); setLinkError(null); setLinkNotice('')
+  }, [abortEvidence])
   const onAnswer = useCallback((answer: ReportAnswer | null, reveal = false) => {
     clearHighlight()
     if (!answer || !canReadOriginals || !verifiedReportAnswer(answer.message, child.id)) return
@@ -44,17 +45,13 @@ export function ParentInsights({ child, scope, canReadOriginals, onScope, period
       setLinkNotice('이 답변의 자녀·기간과 연결된 리포트를 선택해야 근거 위치를 볼 수 있습니다.'); return
     }
     selection.current = answer; setSelectedMessageId(message.messageId)
-    const controller = new AbortController(); request.current = controller; setLinking(true)
-    const refs = Array.isArray(message.evidence) && message.evidence.length
-      ? parentApi.messageEvidence(answer.conversationId, message.messageId, controller.signal) : Promise.resolve({ items: [] })
-    void refs.then(result => {
-      if (controller.signal.aborted) return
+    void loadEvidence(answer.conversationId, message.messageId, Array.isArray(message.evidence) && message.evidence.length > 0).then(result => {
+      if (!result) return
       if (!Array.isArray(result.items)) throw new Error('답변의 현재 근거를 확인하지 못했습니다.')
       setHighlight({ ...target!, childId: child.id, messageId: message.messageId, question: message.question, metrics: message.metrics!, evidence: result.items })
       if (reveal) setRevealToken(value => value + 1)
-    }).catch(error => { if (!controller.signal.aborted) { setHighlight(null); setLinkError(error) } })
-      .finally(() => { if (!controller.signal.aborted) setLinking(false) })
-  }, [child.id, canReadOriginals, report, clearHighlight])
+    }).catch(error => { setHighlight(null); setLinkError(error) })
+  }, [child.id, canReadOriginals, report, clearHighlight, loadEvidence])
   const view = params.get('view') === 'chat' ? 'chat' : 'reports'
   const setView = (nextView: string) => {
     const next = new URLSearchParams(params); next.set('view', nextView); setParams(next)

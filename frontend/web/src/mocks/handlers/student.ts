@@ -27,6 +27,7 @@ import type { StudentLook } from '../../domain/studentLook.ts'
 import { companionKey, FURNITURE_SLOTS, ITEM_SLOTS, themeKey } from '../../domain/retention.ts'
 import type { AttemptContext } from '../../domain/retention.ts'
 import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, weeklyThemeFor } from '../fixtures/retention.ts'
+import { mockPremium } from '../fixtures/payments.ts'
 import { difficultyCodes } from '../../domain/learning.ts'
 
 let child: Child | undefined = store.snapshot().session?.child,
@@ -152,7 +153,7 @@ async function checkContext(request: Request, missionId: string) {
     throw new ApiError({ status: 409, code: 'THEME_DAY_CLOSED', title: '오늘 요일 문제가 아니에요.' })
   if (context === 'THEME_REVIEW' && !(mockWeekday() >= 5 && week.review.missions.some((r) => r.missionId === missionId && r.completed)))
     throw new ApiError({ status: 409, code: 'THEME_REVIEW_NOT_ALLOWED', title: '토·일에 이번 주 마무리한 문제만 다시 풀 수 있어요.' })
-  if (context === 'EXTRA' && child.plan === 'FREE')
+  if (context === 'EXTRA' && !mockPremium(child.id))
     throw new ApiError({ status: 403, code: 'PREMIUM_REQUIRED', title: '생각 유형별 추가 문제는 프리미엄에서 풀 수 있어요.' })
 }
 function studentOnly() {
