@@ -30,6 +30,9 @@ env:
   - {name: M2_NARRATIVE_HIGH, value: "4.0"}
   - {name: M2_ESSAY_LOW, value: "1.0"}
   - {name: M2_ESSAY_HIGH, value: "2.0"}
+  - {name: M2_ESSAY_HIGH_ENABLED, value: "false"}
+  - {name: M2_NARRATIVE_MIN_CHARS, value: "100"}
+  - {name: M2_ESSAY_MIN_CHARS, value: "140"}
   - {name: M1_CHECK_ENABLED, value: "false"}
   - {name: M1_MIN_CONFIDENCE, value: "0.8"}
   - {name: OPENAI_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: OPENAI_API_KEY, optional: true}}}

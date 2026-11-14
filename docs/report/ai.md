@@ -278,7 +278,7 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 
 | 항목 | 결정 |
 |---|---|
-| 불일치 기준 | M2 `scores` 평균과 LLM 결과 비교. `CORRECT`인데 평균이 낮은 경계 이하, `RETHINK`인데 높은 경계 이상이면 불일치. `PARTIAL`은 불일치 아님. 경계는 설정값(서술 2.0/4.0, 논술 1.0/2.0), M2 담당 확인 전 임시값 |
+| 불일치 기준 | M2 `scores` 평균과 LLM 결과 비교. `CORRECT`인데 평균이 낮은 경계 이하, `RETHINK`인데 높은 경계 이상이면 불일치. `PARTIAL`은 불일치 아님. 경계는 설정값(서술 2.0/4.0, 논술 1.0/2.0), 11/13 M2 담당 확정. 논술 `RETHINK` 쪽은 끔(`M2_ESSAY_HIGH_ENABLED=false`), 낮은 쪽 1.0은 유지. 정리 뒤 공백 뺀 글자 수가 서술 100자·논술 140자 미만이면 불일치로 보지 않음(점수는 기록). 근거(AI Hub 초5·6 전문가 점수, 서술 16,383편): 서술 경계는 잘한 글(상위 50%) 잘못 보류 0.8%, 못 쓴 글(하위 20%) 잡는 비율 14.7%. 논술 `RETHINK` 쪽은 지금 경계면 못 쓴 글 판정의 80.1%를 보류하고, 어떤 값으로도 10% 아래로 못 내림. 길이 하한은 경계를 정한 AI Hub 글의 최소 길이(서술 100자·논술 약 140자). 한계: AI Hub 원문(공백 뺀 글자 수) 기준이며 서비스 실제 답으로는 미검증 |
 | 보류 적용 | `M2_CROSS_CHECK_ENABLED` 기본 false. 켜면 `HELD(MODEL_DISAGREEMENT)`·`HELD(LOW_CONFIDENCE)`. 꺼져 있으면 scoring을 부르지 않음(#305, 4.3.1) |
 | scoring 장애 | LLM 판정만 200(#305, 4.3.1, 이전에는 503), `modelScores.skipped`에 `SCORING_UNAVAILABLE`(5xx·시간 초과·연결 실패) 또는 `SCORING_REJECTED`(4xx·계약 밖 응답). 비활성(`{active:false}`)과 구분 |
 | 입력 출처 | `question`은 mission_version.question, `keywords`·`essayType`은 learning V9 `rubric_version` 새 칸(채점 입력이라 기준표와 함께 바뀌고 검토·게시됨) |
@@ -325,7 +325,7 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 - 교차 확인을 켠 상태에서 scoring이 실패하면, 불일치였다면 `HELD(MODEL_DISAGREEMENT)`로 걸렸을 답도 LLM 결과로 확정된다. 생략된 판정을 나중에 다시 확인하지 않는다.
 - scoring 장애가 판정 실패로 드러나지 않는다. ai 경고 로그와 `judgment.model_scores->>'skipped'` 조회로만 보이며 지표·알림은 없다(scoring 자체의 503은 scoring 쪽에서 그대로 보임).
 - keywords가 M2 토큰 한도를 넘는 미션은 판정마다 `SCORING_REJECTED`로 교차 확인이 생략된다. 관리자 화면에는 알리지 않는다. learning 입력 제한을 scoring 한도에 맞출지는 별도 결정이다.
-- 플래그를 끈 동안 M2 점수·불일치 관찰 기록이 쌓이지 않는다. 불일치 경계(임시값) 보정이나 플래그 활성화 판단에 쓸 자료는 켠 기간이나 별도 평가([판정 품질 평가 도구](#판정-품질-평가-도구-199))로 모아야 한다.
+- 플래그를 끈 동안 M2 점수·불일치 관찰 기록이 쌓이지 않는다. 불일치 경계 보정이나 플래그 활성화 판단에 쓸 자료는 켠 기간이나 별도 평가([판정 품질 평가 도구](#판정-품질-평가-도구-199))로 모아야 한다.
 - 로컬 이관 체험 Compose가 scoring을 함께 띄우도록 바꾼 [로컬 플랫폼](infra.md) 결정은 그대로 둔다(플래그 꺼짐이면 판정이 scoring을 부르지 않으므로 필수 의존은 아님).
 
 #### 검증 (#305)
