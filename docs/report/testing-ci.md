@@ -57,7 +57,7 @@ DB 파일을 바꾸지 않은 API·이벤트 계약 변경도 CI에서 검사하
 | core `app.payment.toss-base-url` (`TOSS_API_BASE_URL`) | `TossClient` 요청 주소를 설정값으로 | 기본 `https://api.tosspayments.com`. `test_sk_`·`test_gsk_` 키 검사 유지 |
 | core `app.auth.google-token-url`·`google-jwk-url` | 코드 변경 없음. 완화 바인딩 환경 변수 `APP_AUTH_GOOGLETOKENURL`·`APP_AUTH_GOOGLEJWKURL`를 E2E 오버레이에서만 지정 | 기본 Google 주소 |
 | ai-service | 코드 변경 없음. 기존 `OPENAI_BASE_URL`로 llm-stub 지정 | E2E 오버레이에서 실제 키 변수를 빈 값으로 고정 |
-| ai-service M2·설명(#625) | 코드 변경 없음. 기존 `SCORING_URL`=scoring-stub, `M2_CROSS_CHECK_ENABLED=true`, `EXPLANATION_BASE_URL`=llm-stub을 E2E 오버레이에서만 지정 | 기본값(교차 확인 꺼짐·설명 주소 없음) 유지 |
+| ai-service M2·설명(#625) | 코드 변경 없음. 기존 `SCORING_URL`=scoring-stub, `M2_CROSS_CHECK_ENABLED=true`, `EXPLANATION_BASE_URL`=llm-stub을 E2E 오버레이에서만 지정 | 기본값(교차 확인 꺼짐·설명 주소 없음) 유지. E2E 오버레이 위에 얹는 보호자 이전 로컬 스택(`compose.transfer-local.yaml`)은 세 값과 기동 의존을 되돌려 실제 scoring-service·기본값을 유지(`scripts/tests/test_runtime_config.py`) |
 
 ### 스텁 (`infrastructure/stubs/<target>-stub/`)
 
