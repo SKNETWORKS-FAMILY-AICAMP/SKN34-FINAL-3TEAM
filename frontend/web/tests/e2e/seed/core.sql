@@ -27,3 +27,9 @@ INSERT INTO admin_permission (user_id, permission, granted_by, granted_at)
 SELECT '00000000-0000-4000-8000-0000000e2ea1', permission, '00000000-0000-4000-8000-0000000e2ea1', now()
 FROM (VALUES ('CONTENT'), ('PAYMENT_VIEW'), ('PAYMENT_REFUND'), ('SERVICE_OPS')) AS p(permission)
 ON CONFLICT DO NOTHING;
+
+-- 꾸미기 해금·착용 E2E(weekly-theme.spec.ts, #625): 미션 학습 완료 1회(10포인트)로 해금할 수 있는 아이템.
+-- 그림 키를 비워 기본 모습으로 그린다(관리자 등록에서 assetKey 생략과 같음)
+INSERT INTO look_item (id, code, slot, name, price_points, asset_key, status, created_by, created_at, updated_at)
+VALUES ('00000000-0000-4000-8000-0000000e2e11', 'E2E_HAT', 'HAT', 'E2E 모자', 10, '', 'ON_SALE', '00000000-0000-4000-8000-0000000e2ea1', now(), now())
+ON CONFLICT DO NOTHING;
