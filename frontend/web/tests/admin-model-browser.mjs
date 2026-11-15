@@ -63,11 +63,11 @@ try {
   await card('judge · mock-1').getByText('PROMPT · ACTIVE · 승인자 mock-reviewer', { exact: true }).waitFor()
   console.log('PASS 승인 범위 안 되돌리기')
 
-  // 5. AI 사용량: 호출 종류 6가지
+  // 5. AI 사용량: 호출 종류 14가지(core CallType 전체, #655)
   await p.goto(base + '/admin/usage')
   const options = await p.getByLabel('호출 종류', { exact: true }).evaluate((e) => [...e.options].map((o) => o.value))
-  for (const t of ['JUDGMENT', 'FOLLOWUP', 'ANALYSIS', 'REPORT_NARRATIVE', 'M2', 'M1']) assert.ok(options.includes(t), t)
-  console.log('PASS AI 사용량 호출 종류 6가지')
+  for (const t of ['JUDGMENT', 'FOLLOWUP', 'ANALYSIS', 'REPORT_NARRATIVE', 'MISSION_DRAFT', 'THEME_DRAFT', 'THEME_IMAGE', 'REPORT_EXPLANATION', 'KNOWLEDGE_EMBEDDING', 'THEME_VIDEO', 'MEMORY_EMBEDDING', 'MEMORY_EXPLANATION', 'M2', 'M1']) assert.ok(options.includes(t), t)
+  console.log('PASS AI 사용량 호출 종류 14가지')
 
   assert.deepEqual(errors, [])
   console.log('관리자 모델 브라우저 회귀 5건 통과')

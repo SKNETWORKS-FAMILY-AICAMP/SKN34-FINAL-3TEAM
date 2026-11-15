@@ -1,4 +1,4 @@
-/** COMMUNITY_POST는 2026-11-06 결정(P20)의 학생 커뮤니티 신고 대상(구현 예정). */
+/** COMMUNITY_POST는 학생 커뮤니티 공유물 신고 대상(P20, 2026-11-06 결정, core V31). */
 export type SupportTarget = 'FOLLOWUP' | 'JUDGMENT' | 'ANALYSIS' | 'REPORT' | 'COMMUNITY_POST'
 export type InquiryCategory = 'ACCOUNT' | 'USAGE' | 'PAYMENT'
 /** 본인 신고·문의 처리 결과 (core OpenAPI `SupportReport`·`SupportInquiry`에서 화면이 쓰는 필드). */
