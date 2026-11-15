@@ -26,6 +26,16 @@ services:
       JAVA_TOOL_OPTIONS: -Xmx384m
   ai-service:
     ports: !override ["127.0.0.1:18098:8000"]
+    # compose.e2e.yaml의 E2E 전용 M2·설명 대역(#625)을 되돌려 기본값대로 실제 scoring-service에 연결한다
+    depends_on: !override
+      rabbitmq-init:
+        condition: service_completed_successfully
+      llm-stub:
+        condition: service_healthy
+    environment:
+      SCORING_URL: http://scoring-service:8001
+      M2_CROSS_CHECK_ENABLED: "false"
+      EXPLANATION_BASE_URL: ""
   scoring-service:
     ports: !override []
     # 격리 환경에도 실행하되 호스트 포트는 열지 않는다. 모델 미등록 시 active:false.

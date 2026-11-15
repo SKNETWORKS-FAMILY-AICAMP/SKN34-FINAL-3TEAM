@@ -1,8 +1,8 @@
 import { expect, type Page } from '@playwright/test'
 import type { ConsentDocument } from '../../../src/domain/parent.ts'
 
-/** 학부모 Google 로그인 → 현재 시행 중인 필수 문서 동의 → 자녀 등록(초3) → 대시보드. */
-export async function onboardParent(page: Page, nickname: string) {
+/** 학부모 Google 로그인 → 현재 시행 중인 필수 문서 동의 → 자녀 등록(기본 초3) → 대시보드. */
+export async function onboardParent(page: Page, nickname: string, { grade = 3 }: { grade?: 3 | 5 } = {}) {
   await page.goto('/login')
   const documentsLoaded = page.waitForResponse('**/api/v1/consent-documents')
   await page.getByRole('link', { name: 'Google 계정으로 계속하기' }).click()
@@ -25,8 +25,8 @@ export async function onboardParent(page: Page, nickname: string) {
   await agree('PRIVACY')
   await page.getByRole('button', { name: '동의 저장하고 계속하기' }).click()
   await page.getByLabel('자녀 별명').fill(nickname)
-  await page.getByLabel('자녀 학년').selectOption('3')
-  await page.getByLabel('출생연도').selectOption('2017')
+  await page.getByLabel('자녀 학년').selectOption(String(grade))
+  await page.getByLabel('출생연도').selectOption(grade === 3 ? '2017' : '2015')
   await agree('GUARDIAN')
   await page.getByRole('button', { name: '자녀 등록하기' }).click()
   await page.waitForURL('**/parent/journal**')

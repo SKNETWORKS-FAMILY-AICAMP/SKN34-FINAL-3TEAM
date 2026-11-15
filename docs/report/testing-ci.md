@@ -44,6 +44,10 @@ DB 파일을 바꾸지 않은 API·이벤트 계약 변경도 CI에서 검사하
   - 로그인 대체: Google 스텁(token·JWKS) + Playwright의 authorize 리다이렉트 재작성. 테스트 전용 로그인 API 미추가
   - CI 실행: 수동·E2E 구성 파일 변경 PR. 매일 03:00 KST schedule(GitHub는 기본 브랜치 main의 워크플로만 예약 실행, `e2e.yml`은 main에 반영됨)
   - 토스: core에 PG 주소 설정 추가, toss-stub, 결제 승인 E2E 1건
+- 시나리오 추가 결정(#625, 2026-11-13)
+  - 요일: 서버 날짜 고정 기능을 넣지 않고 KST 일요일에는 주간 테마 스펙을 건너뜀(무료 일요일 `THEME_DAY_CLOSED`). 월요일 문제는 월~토 열려 있어 나머지 요일은 같은 흐름
+  - 지난 회차가 필요한 추억 앨범 회차 상세·기념 액자는 지난주 기록 준비 방식(#624)에 맞춰 후속으로 추가(#624는 core·learning 시험 시계 이미지 + 공개 API로 확정, [infra 9.7.1](infra.md#971-결정-담당자-확인-2026-11-13)), 추억 검색·설명은 웹 화면(#567) 구현 뒤 추가. 이번에는 내 방 → 빈 앨범까지
+  - 주간 리포트 대표 답변 설명은 실제 카드 표시까지: M2 점수는 scoring-stub(실제 scoring은 S3 모델 아티팩트 필요), 설명 sLLM은 llm-stub
 - 실제 Google·토스·LLM 키와 GitHub secrets 미사용. 모든 값은 `infrastructure/stubs/e2e.env`의 합성 값
 
 ### 설정 변경 (공개 API 계약 변경 없음)
@@ -53,6 +57,7 @@ DB 파일을 바꾸지 않은 API·이벤트 계약 변경도 CI에서 검사하
 | core `app.payment.toss-base-url` (`TOSS_API_BASE_URL`) | `TossClient` 요청 주소를 설정값으로 | 기본 `https://api.tosspayments.com`. `test_sk_`·`test_gsk_` 키 검사 유지 |
 | core `app.auth.google-token-url`·`google-jwk-url` | 코드 변경 없음. 완화 바인딩 환경 변수 `APP_AUTH_GOOGLETOKENURL`·`APP_AUTH_GOOGLEJWKURL`를 E2E 오버레이에서만 지정 | 기본 Google 주소 |
 | ai-service | 코드 변경 없음. 기존 `OPENAI_BASE_URL`로 llm-stub 지정 | E2E 오버레이에서 실제 키 변수를 빈 값으로 고정 |
+| ai-service M2·설명(#625) | 코드 변경 없음. 기존 `SCORING_URL`=scoring-stub, `M2_CROSS_CHECK_ENABLED=true`, `EXPLANATION_BASE_URL`=llm-stub을 E2E 오버레이에서만 지정 | 기본값(교차 확인 꺼짐·설명 주소 없음) 유지. E2E 오버레이 위에 얹는 보호자 이전 로컬 스택(`compose.transfer-local.yaml`)은 세 값과 기동 의존을 되돌려 실제 scoring-service·기본값을 유지(`scripts/tests/test_runtime_config.py`) |
 
 ### 스텁 (`infrastructure/stubs/<target>-stub/`)
 
@@ -61,15 +66,20 @@ Node 22 alpine 표준 라이브러리만 사용(RS256 서명 필요). 각 이미
 | 스텁 | 구현 경로 | 동작 |
 |---|---|---|
 | google-stub | `GET /jwks`, `POST /token` | 기동 시 RSA 키 생성. `code`는 base64url JSON `{sub,email,name,nonce,challenge,redirectUri}`라 상태 없음. client_id·secret·redirect_uri·PKCE(S256) 검증 후 `iss=https://accounts.google.com`, `aud=GOOGLE_CLIENT_ID`, `email_verified=true` id_token 발급 |
-| llm-stub | `POST /v1/chat/completions` | `response_format.json_schema.name`으로 응답 선택. `Extraction`은 프롬프트의 모든 `elementId`를 답변 원문 인용·FOUND로 반환(정답 판정), `GeneratedQuestion`·`GeneratedNarrative`(숫자 없음)·`Classification`·`TemplateProposal` 고정 응답, `stream:true`는 SSE 조각·사용량·`[DONE]`. 그 외 이름은 400 |
+| llm-stub | `POST /v1/chat/completions` | `response_format.json_schema.name`으로 응답 선택. `Extraction`은 프롬프트의 모든 `elementId`를 답변 원문 인용·FOUND로 반환(정답 판정), `GeneratedQuestion`·`GeneratedNarrative`(숫자 없음)·`Classification`·`TemplateProposal` 고정 응답, `stream:true`는 SSE 조각·사용량·`[DONE]`(리포트 설명 sLLM 평문도 이 응답, #625). 그 외 이름은 400 |
+| scoring-stub(#625) | `POST /internal/m2/scores`, `POST /internal/m1/checks` | ai `ScoringClient`의 `M2Scores` 형식 고정 점수. 서술은 `hol` 4·나머지 8항목 5(평균이 `M2_NARRATIVE_HIGH` 이상이라 정답 판정과 불일치 보류 없음), 논술은 3항목 3. M1은 `{active:false}` |
 | toss-stub | confirm, `orders/{orderId}` 조회, billing 발급·청구, cancel, transactions | 메모리 저장. Basic 키는 `test_` 접두사만 허용, 정기결제 키면 `TOSS_TEST_BILLING_MID`, 아니면 `TOSS_TEST_MID`. 조회 실패는 404 `NOT_FOUND_PAYMENT` |
 
 ### 스택·시드
 
-- `compose.e2e.yaml`: `compose.yaml`·`compose.minio.yaml`과 함께 지정하는 오버레이. 스텁 3종, core·ai 환경 변수 재정의, report-api·worker는 버킷 생성 후 기동. scoring-service는 E2E 흐름에서 호출하지 않아 제외
-- `e2e-seed`: 마이그레이션 직후 `frontend/web/tests/e2e/seed/core.sql`(core_db)과 `backend/learning-service/db/seed/demo_missions.sql`(learning_db) 실행
-- `core.sql`(재실행 결과 동일): 필수 동의 문서 3종, 무료(`PAYMENT_FREE_PRODUCT_ID`)·유료(`E2E 프리미엄`, 14,900원) 상품, ADMIN 계정(Google sub `e2e-admin`)과 관리자 권한 4종
-- 주간 리포트: cron이 월요일 00:00·지난주 기간이라 테스트가 `report_job`(QUEUED)과 `report.generate` outbox 이벤트를 이번 주 기간으로 직접 삽입(`tests/e2e/support/db.ts`). 이후 OutboxRelay → RabbitMQ → report-worker → 완료 이벤트는 실제 경로
+- `compose.e2e.yaml`: `compose.yaml`·`compose.minio.yaml`과 함께 지정하는 오버레이. 스텁 4종, core·ai 환경 변수 재정의, report-api·worker는 버킷 생성 후 기동. scoring-service는 S3 모델 아티팩트가 있어야 기동해 제외하고 scoring-stub으로 대체(#625)
+- `e2e-seed`: 마이그레이션 직후 `frontend/web/tests/e2e/seed/core.sql`(core_db), `backend/learning-service/db/seed/demo_missions.sql`·`frontend/web/tests/e2e/seed/learning.sql`(learning_db) 실행
+- `core.sql`(재실행 결과 동일): 필수 동의 문서 3종, 무료(`PAYMENT_FREE_PRODUCT_ID`)·유료(`E2E 프리미엄`, 14,900원) 상품, ADMIN 계정(Google sub `e2e-admin`)과 관리자 권한 4종, 꾸미기 아이템 `E2E_HAT`(모자 10포인트, 미션 학습 완료 1회로 해금, #625)
+- `learning.sql`(#625): 11번 미션(초5 서술) 기준표에 M2 입력 핵심어(`keywords`)만 채움. ai는 핵심어가 있어야 M2를 부르고 데모 시드는 비어 있음(V9 기존 행 NULL). 저장소 데모 시드는 그대로
+- 주간 테마(#625): 시드 없이 테스트가 관리자 경로로 이번 주 초3 테마를 작성 → 검토 요청 → 게시(`tests/e2e/support/theme.ts`, 월=2번 서술·화~금=1·3·4·5번). 같은 학년·주 게시본이 있으면 재사용
+- 설명 모델 활성(#625): ai는 core 모델 레지스트리의 `MODEL` `report-explanation`이 `explanation/grade-5/narrative`에 활성일 때만 설명 sLLM을 부름(아니면 `{active:false}` → "설명 미포함"). 테스트가 관리자 경로로 합성 평가 기록과 함께 등록 → 활성화(`support/admin.ts`, `model.version.activated` 이벤트로 ai 반영). 이미 활성이면 재사용
+- 관리자 API 호출은 시드 관리자로 로그인한 화면이 보내는 요청의 `Authorization` 헤더를 재사용(토큰이 메모리에만 있음, 테스트 전용 로그인 API 미추가 결정 유지)
+- 리포트: cron이 일일 00:00 전날·주간 월요일 00:00 지난주 기간이라 테스트가 `report_job`(QUEUED)과 `report.generate` outbox 이벤트를 오늘(일일)·이번 주(주간) 기간으로 직접 삽입(`tests/e2e/support/db.ts` `queueReport`). `narrativeEnabled`는 `ReportJobService`가 계산할 값(주간 && 이용권 `reportNarrative`)을 테스트가 맞춰 넣음. 이후 OutboxRelay → RabbitMQ → report-worker → 완료 이벤트는 실제 경로
 
 ### 테스트 (`frontend/web/tests/e2e/`, `npm run test:e2e`)
 
@@ -81,9 +91,14 @@ Node 22 alpine 표준 라이브러리만 사용(RS256 서명 필요). 각 이미
 | `learning-journey.spec.ts` 1 | 학부모 로그인·동의·자녀 등록 → 학습 시작 → 미션 작성·제출 → 정답 판정·되묻기 → 돌아보기 저장 → 공책 완료 → 답 공개 설정 |
 | `learning-journey.spec.ts` 2 | 같은 학부모 재로그인 → 대시보드 학습 기록·원문 보기 → 이번 주 리포트 생성 → 상세 기간·수치 |
 | `payment.spec.ts` | 유료 이용권 선택 → 주문 생성 → `/payment/success` → core confirm이 toss-stub 호출 → 결제 완료 |
+| `weekly-theme.spec.ts`(#625) | 관리자 테마 게시 → 학생 홈 "이번 주 테마" 제목·시작 이야기 → 월요일 "오늘 문제 풀기" → 답·정답 판정 → 되묻기 답 → 마무리·돌아보기 → 요일 "끝냈어요" → 포인트 잔액·"미션 학습 완료" 내역 → 꾸미기 아이템 해금(잔액 차감) → 착용. KST 일요일 skip |
+| `community.spec.ts`(#625) | 학부모 커뮤니티 선택 동의 → 학생 친구 공개 켜기 → 같은 미션 마무리(공유) → 동의 없는 다른 학생은 마무리 전 "아직 마무리한 미션이 없어요"·마무리 뒤 "친구 생각"에서 답 열람 → 반응 → 작성자 "내가 나눈 생각"에 받은 반응 수 |
+| `student-room.spec.ts`(#625) | 학생 메뉴 "내 방" → 추억의 벽·학습 책상·옷장 → "추억 앨범 열기" → 빈 앨범 안내(이번 주·미완료 주 숨김) → 내 방으로 |
+| `parent-reports.spec.ts`(#625) | 설명 모델 등록·활성화 → 초5 자녀·프리미엄 결제 → 학생 학부모 공개 → 11번 서술 답·되묻기 → 일일 리포트 상세 "그날 푼 문제" 되묻기·마지막 답·원문 근거 → 주간 리포트 상세 "대표 답변 설명" 카드(미션 제목·AI 관찰) |
 
 - 학생 토큰은 메모리에만 있어 학생 단계는 화면 내 이동만 사용. 학생 모드 진입 시 학부모 refresh 쿠키가 지워져 학부모 단계는 새 컨텍스트에서 재로그인
 - 토스 결제 위젯 JS·Google 폰트 차단, 외부 네트워크 호출 없음
+- 학생 기기 등록·PIN 로그인·서술 미션 풀이·결제는 `support/student.ts`·`support/payment.ts` 공용 도우미(#625에서 기존 스펙의 같은 단계를 옮김)
 - 가입 도우미는 동의 문서 제목을 고정하지 않고 화면이 조회한 `/api/v1/consent-documents` 응답의 TERMS·PRIVACY·GUARDIAN 3종 제목으로 체크박스 선택(V25 실제 문서가 합성 시드보다 최신이라 선택되는 문서가 바뀜, PR #300)
 
 ### 실행
@@ -101,6 +116,8 @@ $COMPOSE down -v
 
 검증(로컬, 2026-11-02·11-03): 4개 시나리오 통과, 실행 후 DB에서 `llm_usage` 모델 `e2e-stub`·되묻기 출처 `LLM`, `payment` `APPROVED`·구독 `ACTIVE`, `report_job` COMPLETED·report_id 연결 확인.
 
+검증(로컬 Docker compose 새 스택 `down -v` 뒤 `up --build`, Windows 11·Docker 29.6, 2026-11-13 금요일 KST, #625): 기존 4개 + 신규 4개 스펙 9개 테스트 통과(2.0분). 실행 후 DB 확인: core `student_look_unlock` `E2E_HAT`(원장 연결)·`reward_point_ledger` `MISSION_COMPLETED` 10·`COMMUNITY_POSTED` 5·`REACTION_GIVEN` 1·`UNLOCK` -10, `model_version` `report-explanation` ACTIVE, learning `weekly_theme` PUBLISHED(주 2026-11-09)·`community_reaction` `CLEAR_REASON`·M2 점수가 저장된 판정 2건(핵심어를 넣은 11번 답·되묻기 답), report `report_item` `EXPLANATION` 1건. 수행 구분(NFR-QA-04): 모의 응답(LLM·M2·설명 sLLM·Google·토스 대역)만 사용, PG 테스트 거래·실제 API·배포 확인은 미수행, 원격 CI(`e2e.yml`)는 아직 미실행. 금요일 실행이라 월요일 문제 당일 풀이(+5)는 확인하지 않음. 같은 브랜치를 develop(#649 M2 경계·#639~641 풀이 화면 접근성 포함)에 맞춘 뒤 2026-11-15 일요일 KST 새 스택에서 다시 실행: 8개 통과·`weekly-theme.spec.ts` 1개는 일요일 skip(사유 표시), report `EXPLANATION` 1건·`community_reaction` `CLEAR_REASON` 재확인. 이 실행에서 커뮤니티 동의 상태 문구와 다른 동의 목록의 "불러오고 있습니다." status가 함께 잡히는 경우가 있어 현재 상태 문구(`현재 …`)만 보도록 선택자를 좁힘
+
 ### 미검증 범위
 
 - 학생 기기 등록·PIN 로그인, Google 재인증 팝업
@@ -108,6 +125,9 @@ $COMPOSE down -v
 - 분석 대화 스트리밍·리포트 템플릿 제안(llm-stub 응답만 구현)
 - 지난주 기간 cron 스케줄링 자체
 - kind `<target>-stub` Service·NetworkPolicy egress
+- (#625) 지난 회차가 있는 추억 앨범·회차 상세·기념 액자·추억의 벽 걸기(#624), 추억 검색·설명(#567)
+- (#625) 무료 일요일 닫힘·토요일 되돌아보기·월~금 개근·주간 완주 포인트, 테마 엔딩·정답 고르기(관리자 작성 본문에 이야기 정답 구조 미포함)
+- (#625) 실제 M2 모델 점수·설명 sLLM 문장 품질(대역 고정 응답), 커뮤니티 신고·숨김
 
 ## 3. core 계정 HTTP 경로 테스트 (#136)
 
