@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
 import type { Permission } from '../../domain/admin/operations.ts'
-import { hasPermission, jobLabels, jobTypeLabels, jobRetryMessage, missionLabels } from '../../domain/admin/operations.ts'
+import { auditTargetLabels, callTypeLabels, hasPermission, jobLabels, jobTypeLabels, jobRetryMessage, labelOf, missionLabels } from '../../domain/admin/operations.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
@@ -273,8 +273,8 @@ function AuditLog({ period }: { period: Period }) {
           onChange={(e) => setTarget(e.target.value)}
         >
           <option value="">전체</option>
-          {['CONVERSATION', 'REPORT', 'NOTIFICATION', 'MISSION', 'MODEL_VERSION', 'ERROR_REPORT', 'ACCOUNT_MANAGEMENT'].map((v) => (
-            <option key={v}>{v}</option>
+          {Object.entries(auditTargetLabels).map(([v, label]) => (
+            <option key={v} value={v}>{label}</option>
           ))}
         </select>
       </label>
@@ -288,7 +288,7 @@ function AuditLog({ period }: { period: Period }) {
                 {a.action} · {a.result === 'SUCCESS' ? '성공' : '실패'}
               </h3>
               <p>
-                {a.actorUserId} · {a.targetType} / {a.targetId} · {a.createdAt}
+                {a.actorUserId} · {labelOf(auditTargetLabels, a.targetType)} / {a.targetId} · {a.createdAt}
               </p>
               {a.targetType === 'MODEL_VERSION' && <details><summary>모델 버전 조치 상세</summary>
                 {a.detail ? <dl>{Object.entries({ name: '모델 이름', version: '버전', scopes: '적용 범위', reason: '변경 사유', reanalysisPlanned: '재분석 계획 (실행 아님)', previousVersionId: '이전 버전 ID' }).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{a.detail![key] == null ? '기록 없음' : typeof a.detail![key] === 'boolean' ? (a.detail![key] ? '있음' : '없음') : Array.isArray(a.detail![key]) ? (a.detail![key] as unknown[]).map(String).join(', ') : String(a.detail![key])}</dd></div>)}</dl> : <p>이 기록에는 조회 가능한 상세 정보가 없습니다.</p>}
@@ -313,8 +313,8 @@ function Usage({ period }: { period: Period }) {
         호출 종류
         <select aria-label="호출 종류" value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">전체</option>
-          {['JUDGMENT', 'FOLLOWUP', 'ANALYSIS', 'REPORT_NARRATIVE', 'M2', 'M1'].map((v) => (
-            <option key={v}>{v}</option>
+          {Object.entries(callTypeLabels).map(([v, label]) => (
+            <option key={v} value={v}>{label}</option>
           ))}
         </select>
       </label>
@@ -328,7 +328,7 @@ function Usage({ period }: { period: Period }) {
           <div className="ws-metrics">
             {q.data.items.map((u) => (
               <article className="ws-card" key={u.callType}>
-                <h3>{u.callType}</h3>
+                <h3>{labelOf(callTypeLabels, u.callType)}</h3>
                 <p>
                   호출 {u.calls} · 실패 {u.failures} · 지연{' '}
                   {u.calls ? `${u.latencyMs}ms` : '미측정'}

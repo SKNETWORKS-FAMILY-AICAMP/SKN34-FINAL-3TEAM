@@ -344,6 +344,13 @@ PR 통합 검증: origin/develop c4c5b6b6를 충돌 없이 로컬 병합했다. 
 - 라벨 간격 후속: 관리자 공통 인라인 라벨에 8px 간격을 적용하고, 감사 대상 유형·AI 호출 종류 필터 아래에 16px 여백을 추가했다. 기존 세로 폼·툴바의 간격은 유지하고 상태 시연의 중복 여백을 정리했다. oxlint 통과, 감사·사용량·작업·미션·문의·테마 화면에서 라벨 간격과 데스크톱/390px 가로 넘침을 확인했다.
 - 시인성 후속: 본문 13→15px, 구역 제목 14→18px, 입력·버튼 14px, 작은 안내 12px 이상으로 조정했다. 진한 본문·보조 글자, 선명한 입력 테두리, 굵은 필터 라벨·표 헤더, 40px 주요 조작 영역으로 읽기·조작 구분을 강화했다. 사이드바 208px·상단 64px로 글자 확대 공간을 확보했고 오류 안내는 붉은 계열로 구분한다. Chrome 로그인·화면 전환 정상, 7개 관리자 화면 1440/390px 가로 넘침 없음, 운영 요약 1440/768/390px 확인. oxlint·운영 빌드 통과.
 
+# 관리자 사용량·감사 기록 필터 목록 (#655, 2026-11-16)
+
+- AI 사용량 "호출 종류"는 core `CallType`·OpenAPI `CallType` 14개 전체와 한글 표시명(`domain/admin/operations.ts` `callTypeLabels`)으로 맞췄다. 결과 카드 제목도 표시명으로
+- 감사 기록 "대상 유형"은 계약이 자유 문자열이라 서버 계약은 바꾸지 않고(이슈 범위 밖), core가 `audit_log`에 실제로 쓰는 14개를 웹에 고정했다(`auditTargetLabels`): 작업 재처리 `CONVERSATION`·`REPORT`·`NOTIFICATION`, `MISSION`·`MISSION_DRAFT`·`WEEKLY_THEME`·`THEME_DRAFT`, `MODEL_VERSION`, `ERROR_REPORT`·`INQUIRY`·`NOTICE`, `ACCOUNT_MANAGEMENT`, `PAYMENT`, `LOOK_ITEM`. 목록 밖 값은 원래 값 그대로 보인다
+- `tests/adminFilterLists.test.ts`가 core enum·OpenAPI와 core 감사 기록 코드(Mapper·서비스)를 읽어 목록이 어긋나면 실패한다
+- 쓰이지 않던 `adminFormatting.ts` `callTypeLabel` 삭제, `domain/service.ts`의 `COMMUNITY_POST` "구현 예정" 주석 정리
+
 # 학생·학부모 주요 화면 접근성 점검 (NFR-UX-02, #630 일부, 2026-11-13)
 
 #630 중 접근성 점검만 진행했다. 실제 LLM 응답 시간 실측·원가 산식은 AWS 재가동(#601) 때 한다. 코드는 고치지 않았고 고칠 항목은 아래 이슈 후보로 분리한다.
