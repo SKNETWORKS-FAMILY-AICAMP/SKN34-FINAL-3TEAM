@@ -3,8 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 
-from app.bootstrap import create_app
 from app import security
+from app.bootstrap import create_app
 from app.security import UserContext, caller_permits, get_user_context
 
 probe = APIRouter()
@@ -81,7 +81,9 @@ def test_caller_tokens_are_separate(monkeypatch) -> None:
     headers = {"X-Internal-Token": "caller-token", "X-Student-Scope": "s1"}
     with make_client() as client:
         ok = client.get("/internal/reports/probe/students/s1", headers=headers)
-        stale = client.get("/internal/reports/probe/students/s1", headers={"X-Internal-Token": "test-token"})
+        stale = client.get(
+            "/internal/reports/probe/students/s1", headers={"X-Internal-Token": "test-token"}
+        )
         empty = client.get("/internal/reports/probe/students/s1", headers={"X-Internal-Token": ""})
     assert ok.status_code == 200
     assert stale.status_code == 401

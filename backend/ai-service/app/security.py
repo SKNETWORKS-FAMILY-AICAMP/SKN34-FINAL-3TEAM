@@ -20,7 +20,8 @@ STUDENT_SCOPE = "X-Student-Scope"
 TRACEPARENT = "traceparent"
 
 # 호출자별 내부 경로 허용 목록 (아키텍처 2.2, api-spec 4장). 정규식 전체 일치.
-# 호출자 토큰은 INTERNAL_TOKEN_<호출자>(설정 internal_token_<호출자>), 빈 값이면 그 호출자를 받지 않음
+# 호출자 토큰은 INTERNAL_TOKEN_<호출자>(설정 internal_token_<호출자>).
+# 빈 값이면 그 호출자를 받지 않음
 CALLER_PATHS: dict[str, tuple[str, ...]] = {
     "core": (r"/internal/analysis(/.*)?",),
     "learning": (

@@ -4,10 +4,9 @@ import pytest
 from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 
-from app import bootstrap
+from app import bootstrap, security
 from app.bootstrap import create_app
 from app.config import Settings
-from app import security
 from app.security import UserContext, caller_permits, get_user_context
 
 probe = APIRouter()
@@ -84,7 +83,9 @@ def test_caller_tokens_are_separate(monkeypatch) -> None:
     headers = {"X-Internal-Token": "caller-token", "X-Student-Scope": "s1"}
     with make_client() as client:
         ok = client.get("/internal/analysis/probe/students/s1", headers=headers)
-        stale = client.get("/internal/analysis/probe/students/s1", headers={"X-Internal-Token": "test-token"})
+        stale = client.get(
+            "/internal/analysis/probe/students/s1", headers={"X-Internal-Token": "test-token"}
+        )
         empty = client.get("/internal/analysis/probe/students/s1", headers={"X-Internal-Token": ""})
         other = client.get("/internal/judgments", headers={"X-Internal-Token": "caller-token"})
     assert other.status_code == 403

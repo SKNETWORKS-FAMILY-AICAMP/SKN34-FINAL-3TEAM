@@ -41,9 +41,10 @@ request --fail --output /tmp/rabbitmq-import.json --request POST \
   "$endpoint/api/definitions"
 echo 'RabbitMQ definitions imported'
 
-# Least-privilege service accounts. Apps never declare topology; ai/scoring only declare their
-# server-named exclusive queues (amq.gen-*). Retries go through each service's own retry exchange,
-# so no account can write to the default exchange. Regexes use [.] for a literal dot so they need no JSON escaping.
+# Least-privilege service accounts. Apps never declare topology except ai/scoring per-pod exclusive
+# queues: aio_pika robust channels name them amq_<uuid hex> (amq.gen-* if the server names them).
+# Retries go through each service's own retry exchange, so no account can write to the default
+# exchange. Regexes use [.] for a literal dot so they need no JSON escaping.
 put_json() {
   request --fail --output /dev/null --request PUT --header 'Content-Type: application/json' \
     --data-binary "$2" "$endpoint/api/$1"
@@ -65,10 +66,10 @@ service_user core "$RABBITMQ_CORE_PASSWORD" monitoring "$none" \
   '^(student[.]deleted|model[.]version[.]activated)$'
 service_user learning "$RABBITMQ_LEARNING_PASSWORD" '' "$none" \
   '^learning[.]retry$' '^learning[.]student[.]deleted$' "$none"
-service_user ai "$RABBITMQ_AI_PASSWORD" '' '^amq[.]gen-.*' \
-  '^(events[.]topic|amq[.]gen-.*)$' '^(events[.]topic|amq[.]gen-.*)$' '^llm[.]usage[.]recorded$'
-service_user scoring "$RABBITMQ_SCORING_PASSWORD" '' '^amq[.]gen-.*' \
-  '^(events[.]topic|amq[.]gen-.*)$' '^(events[.]topic|amq[.]gen-.*)$' \
+service_user ai "$RABBITMQ_AI_PASSWORD" '' '^amq(_[0-9a-f]{32}|[.]gen-.*)$' \
+  '^(events[.]topic|amq_[0-9a-f]{32}|amq[.]gen-.*)$' '^(events[.]topic|amq_[0-9a-f]{32}|amq[.]gen-.*)$' '^llm[.]usage[.]recorded$'
+service_user scoring "$RABBITMQ_SCORING_PASSWORD" '' '^amq(_[0-9a-f]{32}|[.]gen-.*)$' \
+  '^(events[.]topic|amq_[0-9a-f]{32}|amq[.]gen-.*)$' '^(events[.]topic|amq_[0-9a-f]{32}|amq[.]gen-.*)$' \
   '^(llm[.]usage[.]recorded|model[.]loading[.]reported)$'
 service_user report "$RABBITMQ_REPORT_PASSWORD" '' "$none" \
   '^(events[.]topic|report[.]retry)$' '^report[.](report[.]generate|student[.]deleted)$' \

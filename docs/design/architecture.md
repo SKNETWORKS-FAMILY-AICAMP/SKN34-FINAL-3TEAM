@@ -847,7 +847,7 @@ backend/report-service/
 - #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/infra.md#7-cd-배포-승인이력롤백-186)
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04). DB는 서비스별 app·migrate 계정 Secret만 앱·migration-job에 주입하고 관리자 계정은 넣지 않음(#230)
   - RabbitMQ도 서비스별 계정(`core`·`learning`·`ai`·`scoring`·`report`, 이름 고정)만 앱에 주입하고 관리자 계정(`RABBITMQ_USER`)은 init·운영자 전용. 계정·권한은 `rabbitmq-init`(`import-definitions.sh`)이 관리 API로 생성
-  - 권한: 앱은 큐·exchange를 선언하지 않으므로 configure 없음(ai·scoring만 Pod별 `amq.gen-*` 임시 큐). write는 자기 발행 exchange·재시도 exchange, read는 자기 소비 큐, `events.topic` 토픽 권한으로 자기 발행 라우팅 키만 허용. core 계정은 큐 현황 조회용 `monitoring` 태그, KEDA는 report 계정 URL 사용
+  - 권한: 앱은 큐·exchange를 선언하지 않으므로 configure 없음(ai·scoring만 Pod별 임시 큐: aio_pika robust 채널이 붙이는 `amq_<uuid hex>` 또는 서버 생성 `amq.gen-*`). write는 자기 발행 exchange·재시도 exchange, read는 자기 소비 큐, `events.topic` 토픽 권한으로 자기 발행 라우팅 키만 허용. core 계정은 큐 현황 조회용 `monitoring` 태그, KEDA는 report 계정 URL 사용
   - 내부 토큰은 호출 주체별 키(`INTERNAL_TOKEN_<호출자>`)로 보관하고 각 Deployment는 자기 토큰과 허용 호출자 토큰만 `secretKeyRef`로 받음
 
 ### 4.6 관측
