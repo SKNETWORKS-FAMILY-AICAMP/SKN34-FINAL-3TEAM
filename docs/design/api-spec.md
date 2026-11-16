@@ -65,8 +65,8 @@
 | `STUDENT_PIN_NOT_SET` | 409 | PIN 미설정 자녀의 PIN 로그인 → 학부모 동석 진입 안내 (FN-ACC-05) |
 | `PARENT_SESSION_LOCKED` | 401 | 동석 학생 화면 사용 중 잠긴 학부모 세션의 refresh·access → 보호자 비밀번호로 복귀 안내. refresh 토큰은 소비하지 않음 (FN-ACC-05, 5.1) |
 | `GUARDIAN_PASSWORD_INVALID` | 401 | 보호자 비밀번호 불일치, `remainingAttempts` 포함 (FN-ACC-05) |
-| `GUARDIAN_PASSWORD_LOCKED` | 423 | 보호자 비밀번호 연속 5회 실패로 잠금 → Google 로그인, 비밀번호 재설정 시 해제 (FN-ACC-05) |
-| `GUARDIAN_PASSWORD_NOT_SET` | 409 | 보호자 비밀번호 미설정 → Google 로그인 안내 (FN-ACC-05) |
+| `GUARDIAN_PASSWORD_LOCKED` | 423 | 보호자 비밀번호 연속 5회 실패로 잠금 → 학부모 로그인(Google 또는 아이디·비밀번호), 비밀번호 재설정 시 해제 (FN-ACC-05) |
+| `GUARDIAN_PASSWORD_NOT_SET` | 409 | 보호자 비밀번호 미설정 → 학부모 로그인(Google 또는 아이디·비밀번호) 안내 (FN-ACC-05) |
 | `PAIRING_CODE_INVALID` | 400 | 페어링 코드 없음·만료·이미 사용 (FN-ACC-14) |
 | `NOT_FOUND` | 404 | 리소스 없음 |
 | `DATA_UNAVAILABLE` | 410 / 503 | 삭제된 근거 → "이용 불가" 표시(410), report 원문 조회·파일 저장소 장애는 재시도 가능한 503 |
@@ -525,7 +525,7 @@
 | GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·지식 임베딩(#467 `KNOWLEDGE_EMBEDDING`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`·영상 `THEME_VIDEO` #436)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
 | GET·POST | `/admin/weekly-themes?grade&weekStart&status` | CONTENT | 테마 목록·작성 `{grade, weekStart, title, intro, days:[{day, missionId}]}`. `grade`는 `G3`·`G4`·`G5`·`G6`(학년별 테마, 에픽 #436) | ADM-22 | core 프록시 #387 |
 | GET·PUT | `/admin/weekly-themes/{themeId}` | CONTENT | 상세·수정(게시 중 수정은 재검토) | ADM-22 | core 프록시 #387 |
-| POST | `/admin/weekly-themes/{themeId}/review-request` · `/publish` · `/unpublish` | CONTENT | 미션과 같은 작성→검토→게시(본문 `{}`). 별도 검토 경로 없이 검토 요청한 현재본의 게시가 승인, 아니면 `409 CONFLICT`. 게시 검사: 월~금 다섯 요일, 게시 미션만(시연 전용 제외), 다섯 생각 유형 1개씩, 학년군 전체를 덮는 학년 범위(초3~4 논술 불가), 같은 학년군·주 게시 1개 | ADM-22 | core 프록시 #387 |
+| POST | `/admin/weekly-themes/{themeId}/review-request` · `/publish` · `/unpublish` | CONTENT | 미션과 같은 작성→검토→게시(본문 `{}`). 별도 검토 경로 없이 검토 요청한 현재본의 게시가 승인, 아니면 `409 CONFLICT`. 게시 검사: 월~금 다섯 요일, 게시 미션만(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 테마 학년을 포함(초3·초4 논술 불가, #438 학년별 테마), 같은 학년·주 게시 1개 | ADM-22 | core 프록시 #387 |
 | POST | `/admin/theme-drafts` | CONTENT | 테마 초안 생성 요청(에픽 #436) `{grade, weekStart, topic?, missions?:[{thinkingType, standardCodes[], inputType}]}`(본문 값 검사는 learning #438) → `202 ThemeDraft`(`status: GENERATING`, 생성은 learning 주기 작업) | ADM-22 | core 프록시 #439 |
 | GET | `/admin/theme-drafts?status&source&page&size` · `/admin/theme-drafts/{draftId}` | CONTENT | 목록(최근 요청 순)·상세. `status`는 `GENERATING`·`READY`·`CHECK_FAILED`·`FAILED`·`ADOPTED`·`DISCARDED`, `source`는 `AUTO`(주간 자동)·`ADMIN`(관리자 요청) | ADM-22 | core 프록시 #439 |
 | POST | `/admin/theme-drafts/{draftId}/adopt` · `/discard` · `/regenerate` | CONTENT | 채택 `{}` → `201 AdminWeeklyTheme`(미션 5개 `DRAFT`·테마 `DRAFT`를 learning 한 트랜잭션으로, 자동 게시 없음), 버리기 `{}` → `ThemeDraft`, 다시 생성 `{}` → `202 ThemeDraft`. 상태상 불가 전이 `409 CONFLICT` | ADM-22 | core 프록시 #439 |
@@ -559,7 +559,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 
 ### 2.10 포인트·꾸미기 (FN-RET-05·06, P21·P22)
 
-2026-11-06 결정. #389로 조회·해금·착용·관리자 아이템을 구현했다(OpenAPI `RewardPoints`·`LookCatalog`·`LookUnlockResult`·`StudentLook.equipped`). 적립 사건 연결(학습 완료·공유·반응·되돌아보기·완주)도 #387·#388 뒤 구현했다(공개 응답 모양 변화 없음). 꾸미기 설정 확장은 3.12. 저장은 [ERD 3.5.1](erd.md#351-포인트꾸미기-p21p22-389).
+2026-11-06 결정. #389로 조회·해금·착용·관리자 아이템을 구현했다(OpenAPI `RewardPoints`·`LookCatalog`·`LookUnlockResult`·`StudentLook.equipped`). 적립 사건 연결(학습 완료·공유·반응·되돌아보기·완주)도 #387·#388 뒤 구현했다(공개 응답 모양 변화 없음). 꾸미기 설정 확장은 3.12. 저장은 [ERD 3.5.1](erd.md#351-포인트꾸미기생활공간-p21p22p27-389555).
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -1157,7 +1157,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 #### 4.3.1 #228 M2 확정 계약 (2026-11-02 담당자 답변 반영)
 
 - `POST /internal/m2/scores`: `{prompt:string, text:string, grade:integer(3~6), inputType:"NARRATIVE"|"ESSAY", keywords:string[], essayType?:string}`. keywords 생략은 빈 배열. ESSAY에는 essayType(설명글·글짓기·주장·찬성반대·대안제시)이 필수다. prompt는 기존 요청 호환을 위해 유지하지만 새 모델 입력에는 넣지 않는다. prompt 10,000자, text 50,000자, keywords 100개·각 200자이며 공백만 있는 문자열은 거부한다.
-- 서술 `m2-klue-narrative` 3.0은 초5·6, 논술 `m2-klue-essay` 3.1은 초4·5·6을 지원한다. 지원 학년 밖·미활성·승인 scope 밖·핵심어 없는 서술은 200 `{active:false}`. 논술은 핵심어를 사용하지 않는다.
+- 서술 `m2-klue-narrative` 3.0은 초5·6, 논술 `m2-klue-essay` 3.1은 초4·5·6을 지원한다(scoring 검사 범위). 논술 미션은 초5·6만 게시되므로(ERD 4.1 게시 검사) 서비스의 실제 논술 호출은 초5·6이다(FN 1.5). 지원 학년 밖·미활성·승인 scope 밖·핵심어 없는 서술은 200 `{active:false}`. 논술은 핵심어를 사용하지 않는다.
 - 승인 scope는 `judgment/grade-{grade}/{narrative|essay}` 정확 일치. 로컬 검증 승인은 운영 품질 승인으로 간주하지 않는다.
 - 성공 응답은 `{active:true,inputType,scores,rawScores,model:{name,version,revision}}`. 서술의 두 점수 객체는 기존 9개 키(hol·task_1·content_1~3·organization_1~2·expression_1~2), 정수 hol 1~4·나머지 1~5를 유지한다. 논술 3.1은 두 객체 모두 `{org,cont,exp}`(구성·내용·표현)이며 scores는 0~3 정수다. rawScores는 유한 소수 원점수를 반올림하거나 범위로 자르지 않고 그대로 전달한다. 논술 학습 목표 범위는 0~3이나 회귀 예측의 범위 초과도 보존한다. 14출력 중 앞 3개만 반환하고 뒤 11개는 노출하지 않는다.
 - 점수 변환은 score_cuts.json의 경계에 `bisect_right` 적용: 서술은 +1, 논술은 +0. 경계와 같으면 위 점수다. 논술 경계는 담당자가 제공한 임시 기준으로, 업데이트 시 파일 교체와 재검증이 필요하다. 화면에 정수/소수 중 무엇을 표시할지는 소비 측 결정이다.
