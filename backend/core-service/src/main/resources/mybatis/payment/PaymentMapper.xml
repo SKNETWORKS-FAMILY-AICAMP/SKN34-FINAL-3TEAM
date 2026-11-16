@@ -46,6 +46,11 @@
  UPDATE subscription SET status=#{status},period_start=#{periodStart},period_end=#{periodEnd},next_billing_date=#{nextBillingDate},auto_renew=#{autoRenew},customer_key=#{customerKey},billing_key_enc=#{billingKeyEnc},renewal_retry_count=#{renewalRetryCount},grace_until=#{graceUntil},auto_renew_canceled_at=#{autoRenewCanceledAt},canceled_at=#{canceledAt},updated_at=#{updatedAt},last_billing_attempt_date=#{lastBillingAttemptDate},revision=revision+1
  WHERE id=#{id}
  </update>
+ <!-- #653 환불·PG 취소 확인: 상태도 6.2의 허용 전이(ACTIVE·RENEWAL_FAILED → CANCELED)만. CANCELED는 끝 상태라 canceled_at을 덮어쓰지 않는다 (Subscription.CANCELABLE과 같은 목록) -->
+ <update id="cancelSubscription">
+ UPDATE subscription SET status='CANCELED',auto_renew=false,next_billing_date=NULL,canceled_at=#{now},updated_at=#{now},revision=revision+1
+ WHERE id=#{id} AND status IN ('ACTIVE','RENEWAL_FAILED')
+ </update>
  <select id="due" resultType="com.sagomungchi.core.payment.domain.Subscription">
  SELECT <include refid="subscription"/> FROM subscription WHERE status IN ('ACTIVE','RENEWAL_FAILED') AND
  (period_end &lt;= #{today} OR next_billing_date &lt;= #{today}) ORDER BY period_end,id LIMIT 500

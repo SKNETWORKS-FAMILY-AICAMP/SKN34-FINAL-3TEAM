@@ -499,6 +499,51 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
         assertFalse(report.narrativeEnabled(student));assertTrue(withdrawal.check(owner).canWithdraw)
         verify(pg,times(1)).cancel(anyString(),anyInt(),anyBoolean(),anyId())
     }
+    private fun subscriptionRow(id: UUID)=jdbc.queryForMap("SELECT status,auto_renew,next_billing_date,canceled_at,updated_at,revision FROM subscription WHERE id=?",id)
+    private fun refundCompletes(paid: PaymentView,r: RefundRequest) {
+        val order=repository.orderNo(paid.orderId)!!;val attempt=repository.latest(order.id)!!
+        `when`(pg.cancel(anyString(),anyInt(),anyBoolean(),anyId())).thenReturn(found(attempt.pgOrderNo,attempt.paymentKey!!,status="CANCELED"))
+        assertEquals("COMPLETED",refunds.approve(owner,r.id).status)
+        assertEquals("REFUNDED",payments.status(owner,paid.orderId).status)
+    }
+    @Test fun `refund completion leaves an already canceled subscription and its first canceled_at (issue 653)`() {
+        val paid=approved();val r=refunds.request(owner,paid.paymentId!!,"합성 사유")
+        val sub=requireNotNull(repository.orderNo(paid.orderId)!!.subscriptionId)
+        jdbc.update("UPDATE subscription SET status='CANCELED',auto_renew=false,next_billing_date=NULL,canceled_at=? WHERE id=?",
+            OffsetDateTime.parse("2026-10-28T02:00:00Z"),sub)
+        val before=subscriptionRow(sub)
+        at=at.plus(Duration.ofHours(3))
+        refundCompletes(paid,r)
+        assertEquals(before,subscriptionRow(sub))
+    }
+    @Test fun `refund completion cancels a renewal failed subscription at completion time (issue 653)`() {
+        val paid=approved();val r=refunds.request(owner,paid.paymentId!!,"합성 사유")
+        val sub=requireNotNull(repository.orderNo(paid.orderId)!!.subscriptionId)
+        jdbc.update("UPDATE subscription SET status='RENEWAL_FAILED',grace_until=?,renewal_retry_count=1 WHERE id=?",LocalDate.parse("2026-10-31"),sub)
+        at=at.plus(Duration.ofHours(3))
+        refundCompletes(paid,r)
+        val canceled=repository.subscription(sub)!!
+        assertEquals("CANCELED",canceled.status);assertEquals(at,canceled.canceledAt!!.toInstant())
+        assertFalse(canceled.autoRenew);assertNull(canceled.nextBillingDate)
+        assertFalse(report.narrativeEnabled(student))
+    }
+    @Test fun `PG side cancellation leaves an already canceled subscription unchanged (issue 653)`() {
+        val paid=approved();val order=repository.orderNo(paid.orderId)!!;val attempt=repository.latest(order.id)!!
+        val sub=requireNotNull(order.subscriptionId)
+        jdbc.update("UPDATE subscription SET status='CANCELED',auto_renew=false,next_billing_date=NULL,canceled_at=? WHERE id=?",
+            OffsetDateTime.parse("2026-10-28T02:00:00Z"),sub)
+        val before=subscriptionRow(sub)
+        at=at.plus(Duration.ofHours(3))
+        payments.accept(order,attempt,found(attempt.pgOrderNo,attempt.paymentKey!!,status="CANCELED"))
+        assertEquals("REFUNDED",payments.status(owner,paid.orderId).status)
+        assertEquals(before,subscriptionRow(sub))
+    }
+    @Test fun `copy based cancellation accepts only state diagram sources (issue 653)`() {
+        approved()
+        val s=repository.active(student)!!
+        assertEquals("CANCELED",transactions.cancelSubscription(s.copy(status="RENEWAL_FAILED")).status)
+        assertFailsWith<IllegalStateException> { transactions.cancelSubscription(s.copy(status="CANCELED")) }
+    }
     @Test fun `refund outside seven days is refused before cancellation`() {
         val paid=approved();at=at.plus(Duration.ofDays(8))
         error("REFUND_NOT_ALLOWED") { refunds.request(owner,paid.paymentId!!,"기간 경과") }

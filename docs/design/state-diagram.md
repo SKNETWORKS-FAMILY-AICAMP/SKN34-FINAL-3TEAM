@@ -657,7 +657,7 @@ stateDiagram-v2
 | → `RECOVERY_REQUIRED` | 승인 후 구독 반영 실패 | `Payment.requireRecovery()` |
 | `RECOVERY_REQUIRED → APPLIED` | 복구 재시도 (추가 청구 없음) | `SubscriptionService.recoverEntitlement` |
 
-- 부분 환불 없음, 전액 환불만 `REFUNDED` (P14). `REFUNDED` 시 대상 구독 즉시 `CANCELED`
+- 부분 환불 없음, 전액 환불만 `REFUNDED` (P14). `REFUNDED` 시 대상 구독 즉시 `CANCELED`(이미 `CANCELED`면 그대로, 6.2·#653)
 
 ### 6.2 `subscription.status`
 
@@ -670,6 +670,7 @@ stateDiagram-v2
   RENEWAL_FAILED --> CANCELED: 유예 기간 만료
   ACTIVE --> CANCELED: 자동 갱신 해지 후 이용 기간 종료
   ACTIVE --> CANCELED: 환불 완료
+  RENEWAL_FAILED --> CANCELED: 환불 완료
   CANCELED --> [*]
   note right of RENEWAL_FAILED
     유예 3일·매일 1회 최대 3회 재청구 (P13)
@@ -684,10 +685,11 @@ stateDiagram-v2
 | `ACTIVE → RENEWAL_FAILED` | 청구 실패 | `Subscription.renewalFailed(graceUntil)` | `renewal_retry_count + 1`, 알림 `SUBSCRIPTION_CHANGED` |
 | `RENEWAL_FAILED → ACTIVE·CANCELED` | 재청구 성공 / `grace_until` 경과 | `extend` / `cancel()` | 3회 재청구 모두 실패하거나 `grace_until`(실패일 + 3일) 경과 시 `CANCELED` (P13). 같은 기간 재청구는 월별 주문을 유지하고 `payment_charge_attempt`로 시도마다 새 PG 주문 (#48) |
 | `ACTIVE → CANCELED` | `auto_renew = false` + `period_end` 경과 | `BillingScheduler.expireCanceled` → `cancel()` | `auto_renew_canceled_at` 기록 후에만, `canceled_at` = `period_end` 경과 시점 (P14) |
-| `ACTIVE → CANCELED` | 환불 완료·PG 측 취소 확인(`payment REFUNDED·CANCELED`) | `RefundService.applyVerified`·`PaymentService.accept` → `cancelSubscription` | 같은 트랜잭션, `canceled_at` = 환불 완료 시점 (P14) |
+| `ACTIVE·RENEWAL_FAILED → CANCELED` | 환불 완료·PG 측 취소 확인(`payment REFUNDED·CANCELED`) | `RefundService.applyVerified`·`PaymentService.accept` → `PaymentTransactions.cancelRefundedSubscription` | 같은 트랜잭션, `canceled_at` = 환불 완료 시점 (P14). 조건부 UPDATE `WHERE status IN ('ACTIVE','RENEWAL_FAILED')`라 이미 `CANCELED`인 구독은 상태·`canceled_at`(처음 값)을 바꾸지 않는다. 갱신 실패 유예 중 구독도 환불되면 바로 `CANCELED` (#653) |
 
 - 자동 갱신 해지(`DELETE /subscriptions/{id}/auto-renewal`)는 상태 전이 없이 `auto_renew = false`만 변경, `period_end` 전 해지 철회(`PUT`)는 `auto_renew = true` (P14)
 - `CANCELED` 이후 해당 자녀는 무료 플랜 한도 적용 (P13)
+- `CANCELED`는 끝 상태라 어떤 경로도 다시 `CANCELED`로 쓰지 않는다. 상태를 먼저 확인한 경로(만료·유예 종료·3회 실패)의 `PaymentTransactions.cancelSubscription`도 `ACTIVE`·`RENEWAL_FAILED`만 받는다(`Subscription.CANCELABLE`, #653)
 
 ### 6.3 `refund_request.status`
 
