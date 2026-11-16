@@ -238,7 +238,7 @@
 | 항목 | 내용 |
 |---|---|
 | 그림 파일 | `frontend/web/public/student-assets/looks/` 13개 — 모자 5(`hat-acorn`·`hat-crown`·`hat-detective`·`hat-rescue`·`hat-patrol`), 옷 3(`outfit-rain`·`outfit-rescue`·`outfit-patrol`)과 앞모습 장식 3(`*.front.svg`), 소품 2(`acc-lens`·`acc-light`). 목업 아이템 그림 키와 같은 경로라 관리자 등록 때 그대로 쓴다 |
-| 만든 방법(출처) | 설계 캔버스 `Mungchi.dc.html`(팀 디자인)의 착용 모양을 보고 Claude Code(AI 코딩 도구)가 SVG 코드를 직접 썼다. 이미지 생성 모델·외부 그림·폰트 그림은 쓰지 않았다. 선 `#3A2A20`·두께는 친구 그림과 같게 |
+| 만든 방법(출처) | 설계 캔버스 `Mungchi.dc.html`(팀 디자인)의 착용 모양을 보고 AI 코딩 도구로 SVG 코드를 직접 작성했다. 이미지 생성 모델·외부 그림·폰트 그림은 쓰지 않았다. 선 `#3A2A20`·두께는 친구 그림과 같게 |
 | 친구 12종 맞춤 | 기준점은 5종 표(위, #455 때 값) 대신 친구마다 몸 모양에서 계산(`roomAssets.ts` `anchorsFromCanvas`, `friendArt.ts` `frontEdge`). 옷은 몸 폭 띠로 그리고 친구별 몸 윤곽(`friendSilhouette`)으로 잘라 몸 밖으로 삐져나오지 않게, 앞모습 장식은 앞에서만, 모자는 옆모습에서 가로 0.9배, 소품은 쥐는 곳 기준·뒷모습에서 숨김 |
 | 확인 | 친구 12종 × 앞·옆·뒤를 두 조합(탐정 모자·구조대 조끼·손전등 / 도토리 모자·노란 비옷·돋보기)으로 모아 보고 사용자 의견대로 고침(frontend.md "착용을 친구마다 맞게"). 모자를 입으면 홈·내 방에 그리고 벗으면 사라짐(목업, 2026-11-16) |
 | 친구 생각 작성자 | 공유물 응답 `author.look.equipped`(아이템 키)를 읽어 아이템 목록 그림과 맞춰 그림(`StudentCommunity.tsx`). 목록에 없는 아이템(판매 중단 등)은 그 칸만 빠짐. 목업 친구 "하늘별"(도토리 모자)·"초록콩"(노란 비옷·돋보기) |
