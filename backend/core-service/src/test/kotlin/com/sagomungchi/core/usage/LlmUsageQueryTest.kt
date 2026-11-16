@@ -144,6 +144,16 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
         assertEquals(1L, month.unpricedCalls)
     }
 
+    @Test fun `memory query rewrite usage is stored and priced with the default ai model`() {
+        // #680: ai 질의 변환(#681)은 기본 모델 gpt-6-luna(#651 단가 입력 0.10·출력 0.50 USD/100만 토큰)로 MEMORY_QUERY를 발행한다
+        usage.record(event("2026-11-12T01:00:00Z", "MEMORY_QUERY", model = "gpt-6-luna", input = 300, output = 60))
+        val row = usage.summarize(day, day, CallType.MEMORY_QUERY).single()
+        assertEquals("MEMORY_QUERY", row.callType)
+        assertEquals(1L, row.calls)
+        assertEquals(0, BigDecimal("0.00006").compareTo(row.costUsd))
+        assertEquals(0L, row.unpricedCalls)
+    }
+
     @Test fun `reversed periods are rejected`() {
         assertEquals("VALIDATION_FAILED", assertFailsWith<BusinessException> {
             usage.summarize(day.plusDays(1), day, null)
