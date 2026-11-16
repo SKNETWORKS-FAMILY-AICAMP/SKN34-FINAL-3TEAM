@@ -1083,3 +1083,37 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 | 정정 `impact` | 값은 그대로, 두 계약 설명이 서로를 가리키게 함 | 보내는 값의 기준은 `learning-service.yaml` 고정값(`CorrectionController` `CorrectionImpact`). `support-learning-required.yaml`의 enum 3종은 core `LearningSupportClient`가 받아들이는 범위다. 기존 테스트가 "받는 범위 ⊇ 보내는 값"을 검사한다 |
 
 - 검사: `scripts/tests/test_contract_alignment_656.py`가 두 계약의 판정 요소 enum과 web 검사 목록이 같은지 확인한다.
+
+## 39. 단서 근거(후보 특징 표) 저장·학생 공개 (#647, 2026-11-15)
+
+주간 테마 단서로 어느 후보가 빠질지의 근거(ai가 줄거리 단계에서 만드는 후보 특징 표)를 저장하고, 학생에게는 얻은 요일 것만 보여 준다. 기존 칸은 바꾸지 않고 선택 칸만 더했다(웹 표시는 이 이슈의 web 몫, 이번 변경 밖).
+
+### 정한 것
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 저장 | V21: `weekly_theme_version.features jsonb`(후보 특징 표 `[{name, values:[{candidate, value}]}]`), `weekly_theme_day.clue_feature varchar`(그날 단서 특징 이름). 둘 다 NULL 허용, 기존 행 채움 없음, 새 버전 때 복사 | 사람이 쓴 테마·#647 전 채택분은 비어 있음(ERD 4.2.1) |
+| 채택 | ai 응답 `theme.features`·`days[].clueFeature`(선택 칸)를 그대로 옮김. 예전 초안(`theme_draft.output`에 칸 없음)은 null | ai.md 17.7 |
+| 학생 응답(기준안) | `days[].clueFeature`·`clueFacts`(`[{candidate, value}]`, 그 특징의 후보별 값)는 `clue`와 같은 조건(그 문제를 그 주에 학습 완료한 뒤)에서만, `features`(전체 표)는 엔딩(`ending = ENDED`) 뒤만. 특징 표가 없거나 `clueFeature`가 표에 없으면 null | 이슈 지침 "단서를 얻은 요일의 특징만, 엔딩 뒤 전체". 단서 근거는 그날 단서 특징 값뿐이라 다른 요일 단서 결론이 새지 않음 |
+| 정답 논리 검사(기준안) | `ThemeAnswerRules.featureErrors`: 특징 이름은 비지 않고 겹치지 않음, 특징마다 후보 하나에 비지 않은 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지거나 함께 남음. 후보·정답 없이 표·`clueFeature`만 있으면 실패. 테마 초안 learning 검사(`LOGIC <사유>`)와 관리자 저장(`400`)이 같이 씀 | ai `fill_rules_out`은 허용 값 밖의 후보를 모두 빼므로 값이 같은 후보는 같은 쪽. 허용 값(`condition.allowed`)은 ai 내부 칸이라 받지 않아 이 이상은 보지 않음. 빈 `rulesOut`(힌트)은 이미 빠진 후보만 허용 값 밖일 수 있어 보지 않음 |
+| 관리자 본문·응답(기준안) | 본문·응답에 `features`, `days[].clueFeature` 선택 칸. 상한은 특징 10개(`ThemeLimits.FEATURES`, ai는 2~5개), 이름·후보·값 100자, 값 개수는 후보 상한 10 | 기존 칸과 같은 상한 규칙 |
+| 수정 때 이어받기 | 없거나 null이면 이전 버전 값을 이어받되 후보가 바뀌었거나 후보·정답을 비우면 표를 버림, 빈 배열이면 비움. `clueFeature`는 표가 남고 그날 `rulesOut`이 그대로일 때만 이어받음(빈 문자열이면 비움) | 지금 관리자 웹은 새 칸을 보내지 않아 이어받은 표가 새 후보·`rulesOut`과 어긋나 저장이 `400`으로 막히지 않게 |
+| 시연 테마 | 채우지 않음(사용자 결정 2026-11-16: 시연은 배포 환경에서 새로 생성한 테마로 하고, 지금 DB는 개발 환경이라 기존 시연 테마에 특징 표를 넣는 일회성 SQL은 두지 않음). 특징 표가 없는 기존 테마는 지금처럼 단서만 보임 |
+| core | 학생 주간 테마 응답을 learning JSON 그대로 넘겨 코드 변경 없음. `core-service.yaml` 설명 문구에 새 칸만 적음 | 이슈 지침 |
+
+### 계약
+
+- learning OpenAPI: 학생 `WeeklyTheme.features`·`days[].clueFeature`·`clueFacts`, 관리자 `AdminWeeklyThemeRequest.features`·`ThemeDayMission.clueFeature`·`AdminWeeklyTheme.features`·`AdminThemeDay.clueFeature`, 초안 `GeneratedTheme.features`·`days[].clueFeature`, 스키마 `ThemeFeature`·`ThemeFeatureValue`. 응답 칸은 항상 내보내고(null 허용) 본문 칸은 선택
+- `scripts/tests/test_weekly_theme_contract.py`: ai·learning 선택 칸, Kotlin 칸 이름, core 설명 대조
+- 같이 고친 파일: `infrastructure/gitops/environments/local/learning-service.yaml` migration `revision` v20 → v21(`test_core_migration_versions` 대조), `contracts/openapi/core-service.yaml` 학생 주간 테마 설명 문구, `infrastructure/aws/README.md` 시연 SQL 행
+
+### 시험
+
+- `ThemeAnswerRulesTest`: 표가 맞으면 통과·없으면 지금처럼, 형식·이름·값이 갈리는 날 사유, 힌트 날은 보지 않음, 수정 때 이어받기·버리기
+- `WeeklyThemeServiceTest`: 표 없는 테마는 특징 칸 null, 학습 완료한 요일만 `clueFeature`·`clueFacts`(마무리만 한 요일·안 푼 요일은 null), 엔딩 전 `features` null·엔딩 뒤 전체
+- `ThemeDraftRulesTest`(표 없는 응답 통과, 값이 갈리면 `LOGIC FRI …`, 표에 없는 이름 `LOGIC MON …`), `ThemeDraftServiceTest`(채택 때 저장·관리자 상세), `WeeklyThemeAdminServiceTest`(저장·이어받기·400), `AdminWeeklyThemeControllerTest`(본문 읽기·상한 400), `ThemeDraftAiClientTest`(응답 선택 칸 읽기)
+
+### 정하실 것
+
+- 학생 응답 칸 이름·모양: `clueFeature`·`clueFacts`는 이슈 본문 이름을 따랐고, `clueFacts`의 모양(`[{candidate, value}]`)과 엔딩 뒤 전체 표 칸 이름(`features`, ai·관리자와 같게)은 새로 정한 값(웹 #589·#487이 소비)
+- 관리자 수정 때 이어받기 규칙(후보가 바뀌면 표를 버림)과 정답 논리 검사 범위(같은 값 후보가 갈리지 않음까지)

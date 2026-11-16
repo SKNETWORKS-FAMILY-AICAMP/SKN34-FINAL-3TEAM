@@ -691,7 +691,7 @@ sequenceDiagram
   C->>CDB: KST 일요일이면 상품 기능 확인 (features.sundayTheme, 값 없으면 구독 중이면 허용)
   C->>L: GET /internal/students/{id}/weekly-theme?grade&date&sundayTheme (KST)
   L->>L: 그 학년의 그 주 게시 테마, 없으면 최근 게시 테마 재사용. 요일 상태(누적 공개)·당일 풀이·개근·주간 완주·엔딩 계산
-  L-->>C: 테마·요일 상태(days[].completedOnDay)·completed(개근)·finished(주간 완주)·ending·되돌아보기 목록·공개된 단서·이야기 열람 여부·이미지/영상 URL(presigned)
+  L-->>C: 테마·요일 상태(days[].completedOnDay)·completed(개근)·finished(주간 완주)·ending·되돌아보기 목록·공개된 단서와 그날 특징 값(#647)·이야기 열람 여부·이미지/영상 URL(presigned)
   rect rgba(128,128,128,0.12)
     Note over C,CDB: 보충 적립 — 원장 사건 키 UK로 이미 있으면 건너뜀
     C->>CDB: days[].attemptStatus = COMPLETED → MISSION_COMPLETED (source_key = missionId)
