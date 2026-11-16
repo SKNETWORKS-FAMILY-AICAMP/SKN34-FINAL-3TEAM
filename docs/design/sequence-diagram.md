@@ -489,6 +489,7 @@ sequenceDiagram
   participant C as core
   participant L as learning
   participant DB as learning_db
+  participant S as scoring
 
   W->>C: POST /missions/{missionId}/attempts
   C->>L: POST /internal/missions/{missionId}/attempts?grade&demo
@@ -525,11 +526,16 @@ sequenceDiagram
     C-->>W: 422 IDEMPOTENCY_KEY_REUSED
   else 새 요청
     C->>L: POST /internal/attempts/{id}/answers (Idempotency-Key: k1)
+    opt 학생이 쓴 칸이 있음 (#688)
+      L->>S: POST /internal/toxicity/checks {texts} (응답 1.5초, 서킷 scoring-toxicity)
+      S-->>L: {active, flagged} / 실패·시간 초과·비활성이면 검사 안 됨으로 기억
+    end
     rect rgba(128,128,128,0.12)
       L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인
       L->>DB: 같은 시도·키의 answer 조회 (같은 본문이면 201 그 답변, 다른 본문이면 422 IDEMPOTENCY_KEY_REUSED)
       L->>L: 마무리·완료 409 ATTEMPT_CLOSED · 입력 방식 다름 400 · 누락 422 ANSWER_INCOMPLETE
       L->>L: 학생이 쓴 글 표현 검사(ExpressionPolicy) 걸리면 422 ANSWER_INAPPROPRIATE (저장·판정 없음)
+      L->>L: 단어 목록 통과 + 미리 받은 모델 결과 flagged면 422 ANSWER_INAPPROPRIATE (같은 문구, 저장·판정 없음, #688)
       L->>DB: 보완이면 가장 최근 미답 되묻기와 followupId 확인 (아니면 422 ANSWER_INCOMPLETE)
       L->>DB: answer 저장 (version = 이전+1, previous_answer_id·followup_id 연결)
       L->>DB: judgment 저장 (PENDING)
@@ -544,6 +550,7 @@ sequenceDiagram
 - 저장 성공(201)과 이후 피드백 처리 성공을 분리 (FN-LRN-10). 피드백은 3.2의 별도 요청
 - learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
 - 표현 검사(#205)는 learning 안의 단어 목록 대조라 외부 호출이 없음. 막힌 요청은 저장하지 않고, core는 그 422(범주별 안내, 원문 없음)를 같은 키의 응답으로 저장. 웹은 답이 바뀌면 새 키를 만들어 고친 답은 새 요청이 됨. 초안 자동 저장은 검사하지 않음 (learning.md #205)
+- 표현 분류 모델(#688)은 learning이 시도 행 잠금 전에 scoring을 불러 결과만 받아 두고, 트랜잭션 안 단어 목록 다음 자리에서 적용한다. 같은 키 다시 보내기는 저장된 답을 돌려주므로 모델 결과와 상관없다. 모델 장애·시간 초과·비활성은 제출을 막지 않는다(architecture 1.3)
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
 - 2026-11-10 개정(#483, core #485 구현): 무료 플랜은 테마 문제(`THEME_DAY`)를 하루 한도 없이 공개된 만큼(주 5개, learning #484 누적 공개) 시작하고, 추가 문제(`EXTRA`)는 프리미엄 전용(403 `PREMIUM_REQUIRED`, 상품 값이 없으면 무료 거부 #506)
 - 무료 상품에서 `EXTRA`를 다시 켠 경우에만 무료 `EXTRA` 신규 시도를 하루 `limits.dailyMissions`개까지 허용한다. 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, #210 결정에 따라 PostgreSQL `mission_daily_usage`). 이전 규칙(무료 `THEME_DAY`·`EXTRA` 합산 하루 1개, #387)은 개정으로 대체
