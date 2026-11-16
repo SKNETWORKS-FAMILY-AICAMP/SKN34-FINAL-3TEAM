@@ -1071,3 +1071,15 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 - 실제 PostgreSQL 테스트가 생성한 커뮤니티·테마 요약·지식 조회 HTTP JSON의 OpenAPI 및 소비자 계약 검사 통과.
 - learning domain Jackson import 0, `git diff --check` 통과. 기존 215건과 실제 1,341건 지식 본문 해시 및 record/source 값 보존 확인.
 - 오류 문구 보존·import 정리 후 관련 회귀 테스트 12개 재실행(제외·실패 0)과 `bootJar` 통과. 이후 최신 develop 통합 후 전체 테스트에도 포함했다.
+
+## 38. 판정 요소 출처·정정 impact 계약 정리 (#656, 2026-11-16)
+
+응답은 바뀌지 않는다. 계약 표기만 실제 코드에 맞췄다.
+
+| 항목 | 변경 | 근거 |
+|---|---|---|
+| 판정 요소 `sourceType` | learning `Element`·core `DashboardElement`의 enum에서 `RECORD`를 뺌(`RULE`·`ANSWER_KEY`·`AI_OBSERVATION`·null) | 판정 요소를 만드는 `FeedbackFacade`는 `ANSWER_KEY`·`AI_OBSERVATION`·null만 넣는다. `RECORD`는 기록 지표(`Metric`) 출처다. web `apiGateway.ts`도 판정 요소의 `RECORD`를 계약 오류로 거부한다 |
+| 코드 `ElementSource` | 그대로 둠 | `judgment_element.source_type` DB CHECK(V2)와 MyBatis 매핑에 묶여 있어 enum 값을 빼면 마이그레이션이 필요하다. 쓰는 곳이 없어 계약만 좁혀도 응답은 같다 |
+| 정정 `impact` | 값은 그대로, 두 계약 설명이 서로를 가리키게 함 | 보내는 값의 기준은 `learning-service.yaml` 고정값(`CorrectionController` `CorrectionImpact`). `support-learning-required.yaml`의 enum 3종은 core `LearningSupportClient`가 받아들이는 범위다. 기존 테스트가 "받는 범위 ⊇ 보내는 값"을 검사한다 |
+
+- 검사: `scripts/tests/test_contract_alignment_656.py`가 두 계약의 판정 요소 enum과 web 검사 목록이 같은지 확인한다.

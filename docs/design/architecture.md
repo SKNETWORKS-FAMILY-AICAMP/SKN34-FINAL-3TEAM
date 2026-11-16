@@ -90,14 +90,14 @@
 | 주간·일일 리포트 생성 | **명령** → `cmd.direct` 작업 큐 | 일괄 처리, 재시도, 워커 단독 확장 |
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
-- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ(예외: 주간 리포트 설명은 주 1회 배치라 report→ai 호출당 130초·설명 단계 400초, 리포트 작업 복구 후보 4시간, #479·#508). 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
-  - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`·`learning-memory`), learning→ai, core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
+- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353. 주간 테마 초안은 호출 1번에 그래프를 끝까지 돌리는 주기 작업이라 ai LLM 호출당 300초·재시도 없음·전체 마감 900초, learning→ai 읽기 16분·생성 리스 18분, #437·#438. 값은 ai `theme_llm_timeout`·`theme_draft_deadline`, learning `app.theme-draft.ai-read-timeout`·`lease`), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ(예외: 주간 리포트 설명은 주 1회 배치라 report→ai 호출당 130초·설명 단계 400초, 리포트 작업 복구 후보 4시간, #479·#508). 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
+  - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`·`learning-memory`), learning→ai(판정·되묻기 `ai`, 미션 초안 `ai-mission-draft`, 주간 테마 초안 `ai-theme-draft`, 추억 검색 임베딩 `ai-memory-embedding`, 추억 설명 `ai-memory-explanation`. 기준은 아래와 같고, 기능마다 서킷을 나눠 한 기능의 ai 장애가 다른 호출을 막지 않게 한다, #305·#353·#438·#563·#564), core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
 - #305 learning→ai 판정·되묻기는 서킷 `ai` 하나를 함께 쓰므로, 그 뒤 ai→scoring 실패가 이 서킷으로 번지지 않게 ai에서 끊는다. ai→scoring(M2·M1)은 교차 확인 플래그(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`, 기본 꺼짐)가 켜진 경우에만 부르고, scoring 장애·시간 초과·5xx·4xx(입력 한도 초과 등)·계약 밖 응답은 503으로 바꾸지 않는다. ai는 교차 확인을 생략한 LLM 판정을 200으로 돌려주고 `modelScores.skipped`(`SCORING_UNAVAILABLE`·`SCORING_REJECTED`)에 사유를 남긴다(api-spec 4.2.2). 따라서 scoring 장애는 learning `ai` 서킷의 실패로 집계되지 않고 scoring과 무관한 판정·되묻기를 막지 않는다. 대신 교차 확인 없이 확정된 판정은 다시 판정하지 않는다. ai→scoring에는 서킷·재시도를 따로 두지 않는다(요청마다 남은 판정 시간 안의 timeout만).
 - #280 core→ai 리포트 설정 제안(`AiClient.reportTemplate`, 25초)은 분석 스트림과 분리한 작은 서킷 `ai-report-template`(최근/최소 10건·실패율 50%·30초 차단·half-open 1건)을 쓴다. 설정 제안 실패가 분석 대화 스트림을 차단하지 않게 하기 위해서다. HTTP 4xx는 성공으로, 전송 오류·시간 초과·5xx(ai `AI_UNAVAILABLE`·`AI_PROMPT_VERSION_UNAVAILABLE` 포함)·빈 본문은 실패로 센다. OPEN은 기존 502 `AI_UNAVAILABLE`로 실패하며 이미 차감한 분석 사용량은 그대로 둔다. 재시도는 추가하지 않는다.
 - #167 분석 서킷은 헤더/첫 이벤트가 아닌 스트림 종료 결과를 집계한다. 중간 EOF·잘못된 스트림·시간 초과·error 이벤트는 실패, 정상 done/clarification 및 기존 TEMPLATE 결과는 성공이다. 사용자 취소·core 권한/저장/전송 처리 오류는 AI 실패 집계에서 제외하고 half-open 허가를 반환한다. OPEN은 기존 AI_UNAVAILABLE로 실패하며, 이미 접수한 분석 시도의 한도/사용 이력 차감은 보존한다. HTTP/1.1과 기존 body 종료·timer 취소를 유지한다.
 - 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning 피드백 80초 > learning→core 결제 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초. learning→core는 `app.internal.core-read-timeout` 4초로 ai 35초와 따로 둔다, #501). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
 - 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
-- P27 추억 설명은 learning→ai LLM 호출(15초·재시도 1회)을 기다리므로 learning→ai 35초가 필요해 일반 프록시 30초를 넘는다. core→learning 설명 경로는 별도 서킷 `learning-memory`(응답 45초 > learning→ai 35초, 2026-11-12 확정, core #566)를 쓴다. 추억 검색도 같은 `learning-memory` 서킷을 쓰되 응답은 30초다(임베딩 1회). 검색의 임베딩 장애(learning 503 `AI_UNAVAILABLE`)가 일반 `learning-json`의 5xx 실패로 쌓여 주간 테마·시도 같은 일반 경로까지 막지 않게 하려는 것이다(2026-11-12 결정). 서킷 기준(최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·5xx 실패)은 `learning-json`과 같고, 값은 `app.learning.memory-search-timeout`·`memory-explanation-timeout`. 타임아웃 예산: 설명 45초 > learning→ai 설명 35초 + learning 내부 처리, 검색 30초 > learning→ai 임베딩 1회
+- P27 추억 설명은 learning→ai LLM 호출(15초·재시도 1회)을 기다리므로 learning→ai 35초가 필요해 일반 프록시 30초를 넘는다. core→learning 설명 경로는 별도 서킷 `learning-memory`(응답 45초 > learning→ai 35초, 2026-11-12 확정, core #566)를 쓴다. 추억 검색도 같은 `learning-memory` 서킷을 쓰되 응답은 30초다(임베딩 1회). 검색의 임베딩 장애(learning 503 `AI_UNAVAILABLE`)가 일반 `learning-json`의 5xx 실패로 쌓여 주간 테마·시도 같은 일반 경로까지 막지 않게 하려는 것이다(2026-11-12 결정). 서킷 기준(최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·5xx 실패)은 `learning-json`과 같고, 값은 `app.learning.memory-search-timeout`·`memory-explanation-timeout`. 타임아웃 예산: 설명 45초 > learning→ai 설명 35초 + learning 내부 처리, 검색 30초 > learning→ai 임베딩 1회(20초). learning 쪽은 임베딩·설명이 각각 서킷 `ai-memory-embedding`·`ai-memory-explanation`을 쓴다
 - #38 일반 core→learning JSON 프록시는 연결 2초·응답 30초를 사용한다(피드백의 80초 예산은 #39). Resilience4j count window 20·최소 20건·실패율 50%·차단 30초·half-open 1건으로 복구를 확인한다. 전송 오류·5xx를 실패로 집계하고 4xx는 정상 HTTP 결과로 센다.
 - SSE heartbeat: 모든 SSE는 15초마다 주석 줄(`: ping`) 전송. 피드백은 learning 동기 응답 대기 중 전송할 데이터가 없어 필수
 - SSE 연결 종료
@@ -770,18 +770,23 @@ backend/report-service/
 - Pod AWS 권한: EKS Pod Identity(서비스별 IAM 역할, trust는 클러스터·namespace·ServiceAccount 조건). IRSA(OIDC provider·SA annotation)는 쓰지 않음
 - NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의는 #171, 검증 범위는 [로컬 플랫폼](../report/infra.md#24-검증에서-얻은-교훈) 10장
 
+아래 표는 prod 배포 값(`infrastructure/gitops/environments/prod/*.json`, app-service chart `networkPolicy`)과 같다(#658). local 값도 Prometheus·Collector 허용 범위는 같다.
+
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
-| core | ALB(서브넷 ipBlock), ai, scoring, learning, report-worker, Prometheus | learning, ai, scoring(모델 사전 검사 #368), report-api, RabbitMQ(5672·15672), Redis, RDS, 토스(NAT) |
-| learning | core, ai, report-api, report-worker, Prometheus | core, ai, RabbitMQ, RDS |
-| ai | core, learning, report-worker, Prometheus | learning, scoring, core, RabbitMQ, LLM API(NAT), 설명 sLLM 서버(#476), 이미지 생성 API·Google Cloud 영상 API(NAT, #437), S3(테마 초안 이미지·영상 쓰기, #437) |
-| scoring | ai, core(모델 사전 검사 #368), Prometheus | core, RabbitMQ, S3 |
-| report-api | core, Prometheus | learning(근거 조회), RDS, S3 |
-| report-worker | Prometheus | core, learning, ai, RabbitMQ, RDS, S3 |
+| core | ALB(public 서브넷 ipBlock, `core-alb-network.json`), learning, ai, scoring, report-worker, 배포 점검 Pod(`deployment-check: core-learning-health`) | learning, ai, scoring(모델 사전 검사 #368), report-api, RabbitMQ(5672·15672), Redis, RDS, 공인 IPv4 443(NAT: 토스·Google OAuth), Collector |
+| learning | core, ai, report-api, report-worker, 배포 점검 Pod(`core-learning-health`) | core, ai, RabbitMQ(5672), RDS, Pod Identity agent(테마 자산 URL 서명, #652), Collector |
+| ai | core, learning, report-worker | core, learning, scoring, 설명 sLLM 서버(#476), RabbitMQ(5672), 공인 IPv4 443(NAT: LLM API·이미지 생성 API·Google Cloud 영상 API, S3 테마 초안 이미지·영상 쓰기, #437), Pod Identity agent(#652) |
+| scoring | ai, core(모델 사전 검사 #368), 배포 점검 Pod(`deployment-check: scoring-check`) | core, RabbitMQ(5672), S3(443, 리전 S3 IP 대역)·Pod Identity agent |
+| report-api | core | learning(근거 조회), RDS, S3·Pod Identity agent |
+| report-worker | 없음 | core, learning, ai, RabbitMQ(5672), RDS, S3·Pod Identity agent, Collector |
 | 설명 sLLM 서버(#476) | ai, Prometheus | S3(모델 로딩, initContainer)·Pod Identity agent / local: MinIO |
-| RabbitMQ·Redis | `app` 전체, KEDA(RabbitMQ), Prometheus | - |
+| RabbitMQ | `app` namespace 전체(5672), core·`rabbitmq-init`(관리 API 15672), Prometheus(15692) | - |
+| Redis | core(6379, `redis-allow-core`) | - |
 
-  - 전 Pod 공통 egress: kube-dns(53), OTel Collector·Langfuse(`observability`)
+  - 전 Pod 공통 egress는 kube-dns(53)뿐이다. OTel Collector(4317·4318) egress는 `egressToCollector`를 켠 core·learning·report-worker만 있다. 이 셋만 OTLP를 보낸다(core·learning Java agent 지표·trace, report-worker SDK trace, 4.6). ai·scoring·report-api는 prod에서 OTLP를 보내지 않아(자체 span 없음, ai Langfuse `LANGFUSE_ENABLED=false`) Collector egress가 없다. Langfuse egress(`egressToLangfuse`)는 어느 앱에도 켜지 않았다
+  - Prometheus는 앱 지표를 Collector에서 받으므로 앱 Pod ingress에 Prometheus를 허용한 것은 직접 수집하는 설명 sLLM 서버(`--metrics`)뿐이다. platform에서는 RabbitMQ 15692만 허용한다(`observability-platform-network.json`)
+  - 공인 IPv4 443은 사설·CGNAT·link-local·loopback 대역을 뺀 `0.0.0.0/0` ipBlock이다. EKS VPC CNI NetworkPolicy(`enableNetworkPolicy`)는 FQDN으로 좁힐 수 없어 core·ai는 목적지 도메인이 아닌 포트로만 제한된다
   - AWS 권한을 쓰는 Pod(scoring·report·설명 sLLM, 테마 자산 ai·learning #652)는 Pod Identity agent(`169.254.170.23:80`) egress를 둔다. 자기 정책으로 egress가 격리돼 있어 이것이 없으면 자격 증명을 못 받는다
   - 기본 거부는 namespace 단위 정책이다. app은 core release가 만드는 `app-default-deny` 하나(release 둘에 켜면 Helm 소유권 충돌, #657). 앱·migration Job은 chart 정책으로 이미 격리돼 영향이 없고, 자기 정책이 없는 일회성 Pod만 막힌다. 일회성 DB Pod·배포 확인 Pod는 전용 정책을 둔다(prod `app-oneoff-db-network.json`·`app-check-pods-network.json`, [infra 보고서 9.8](../report/infra.md#98-prod-테마-자산-버킷과-네임스페이스-기본-거부-준비-652657-2026-11-16))
   - report-api·report-worker는 라벨이 달라 허용 대상에 각각 명시
@@ -791,6 +796,7 @@ backend/report-service/
     |---|---|---|
     | learning | `record/client/CoreClient.kt` | 삭제 완료 보고 `POST /internal/deletion-requests/{id}/completions` (P09) |
     | learning | `judgment/client/PaymentUsageClient.kt` | 피드백 프리미엄 사용 예약·확정 `POST /internal/payment-usage/reservations`·`/completions` (#48) |
+    | learning | `memory/client/StudentProfileClient.kt` | 추억 검색·설명에서 학생 별명을 가리기 위한 별명 조회 `GET /internal/students/{id}/profile` (SYSTEM·대상 학생 scope, P27 #563·#564) |
     | report-worker | `app/clients/core_client.py` | 학생 별명 `GET /internal/students/{id}/profile`(#119)·리포트 표시 설정 `GET /internal/students/{id}/report-template`(#209) 조회, 삭제 완료 보고 |
     | ai·scoring | `app/clients/core_client.py` | 기동·재연결 시 활성 버전 snapshot `GET /internal/model-versions/active` (ai #68, scoring #85) |
 

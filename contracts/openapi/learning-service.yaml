@@ -3498,7 +3498,11 @@ components:
         quote: {type: [string, 'null'], description: 학생 답 원문 구절 또는 고른 답}
         sourceType:
           type: [string, 'null']
-          enum: [RECORD, RULE, ANSWER_KEY, AI_OBSERVATION, null]
+          description: >-
+            판정 요소 출처. 규칙 판정은 ANSWER_KEY, LLM 근거 구절은 AI_OBSERVATION, 근거 구절이 없는 ai 요소는 null.
+            RECORD는 기록 지표(Metric) 전용이라 판정 요소에는 넣지 않는다(#656). 코드 ElementSource와 DB CHECK에는
+            RECORD가 남아 있으나 판정 요소를 만드는 곳(FeedbackFacade)은 쓰지 않는다
+          enum: [RULE, ANSWER_KEY, AI_OBSERVATION, null]
     FinishResult:
       type: object
       additionalProperties: false
@@ -3896,7 +3900,9 @@ components:
           required: [conversation, aggregation, report]
           description: >-
             파생 결과 반영 확인 상태 (APPLIED·NOT_APPLIED·UNKNOWN). learning 수치 집계는 판정 결과를 쓰지 않아
-            aggregation NOT_APPLIED(변경 대상 없음), 대화·리포트는 learning이 확인할 수 없어 UNKNOWN
+            aggregation NOT_APPLIED(변경 대상 없음), 대화·리포트는 learning이 확인할 수 없어 UNKNOWN.
+            보내는 값의 기준은 이 고정값(CorrectionController CorrectionImpact)이고, core 소비 계약
+            support-learning-required.yaml의 enum 3종은 core가 받아들이는 범위다(#656)
           properties:
             conversation: {type: string, const: UNKNOWN}
             aggregation: {type: string, const: NOT_APPLIED}
