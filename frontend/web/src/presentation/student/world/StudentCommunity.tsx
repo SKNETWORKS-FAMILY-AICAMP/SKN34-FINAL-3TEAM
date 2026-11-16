@@ -6,11 +6,12 @@ import {
   useMissionPosts,
   useMyPosts,
   useReact,
+  useLookItems,
   useReportPost,
 } from '../../../data/retention/queries.ts'
 import type { Child } from '../../../domain/classroom.ts'
 import { studentThinkingLabels } from '../../../domain/classroom.ts'
-import { POST_STATUS_LABELS, REACTION_LABELS, REACTIONS } from '../../../domain/retention.ts'
+import { POST_STATUS_LABELS, REACTION_LABELS, REACTIONS, wornAssets } from '../../../domain/retention.ts'
 import type { CommunityPost } from '../../../domain/retention.ts'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { Companion } from './Companion.tsx'
@@ -132,10 +133,13 @@ function PostCard({ child, post }: { child: Child; post: CommunityPost }) {
   const [reporting, setReporting] = useState(false)
   const [comment, setComment] = useState('')
   const [reportKey] = useState(() => crypto.randomUUID())
+  // 작성자 착용 그림(#635): 응답의 착용 아이템 키를 아이템 목록 그림과 맞춤. 목록에 없는 아이템(판매 중단 등)은 그 칸만 빠짐
+  const items = useLookItems(child.id)
+  const worn = wornAssets(post.author.equipped, items.error ? undefined : items.data)
   return (
     <li className="st-post">
       <p className="st-post-author">
-        <Companion kind={post.author.companion} size={40} decorative />
+        <Companion kind={post.author.companion} size={40} decorative worn={worn} />
         <strong>{post.author.nickname}</strong>
       </p>
       <p className="st-post-answer">{post.answer}</p>

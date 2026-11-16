@@ -465,7 +465,8 @@ export interface CommunitySettings {
 }
 export interface CommunityPost {
   postId: string
-  author: { nickname: string; companion: CompanionId }
+  /** 작성자 모습: 캐릭터와 착용(아이템 키, `look.equipped`). 착용 그림은 화면이 아이템 목록과 맞춰 그린다(#635) */
+  author: { nickname: string; companion: CompanionId; equipped: Equipped }
   answer: string
   myReactions: Reaction[]
   createdAt: string
@@ -503,7 +504,7 @@ export function readCommunityPosts(raw: unknown): CommunityPost[] {
     return [
       {
         postId: v.postId,
-        author: { nickname: typeof author.nickname === 'string' ? author.nickname : '친구', companion },
+        author: { nickname: typeof author.nickname === 'string' ? author.nickname : '친구', companion, equipped: readEquipped(look.equipped) },
         answer: answerText(v.answer),
         myReactions: Array.isArray(v.myReactions) ? v.myReactions.filter(isReaction) : [],
         createdAt: typeof v.createdAt === 'string' ? v.createdAt : '',

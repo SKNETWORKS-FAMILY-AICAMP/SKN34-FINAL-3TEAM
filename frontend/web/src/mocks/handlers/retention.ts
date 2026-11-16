@@ -297,7 +297,7 @@ export const retentionHandlers = [
           .slice(p * size, p * size + size)
           .map((x) => ({
             postId: x.postId,
-            author: { nickname: x.nickname, look: { companion: x.companion } },
+            author: { nickname: x.nickname, look: { theme: 'lake', companion: x.companion, equipped: { HAT: x.equipped?.HAT ?? null, OUTFIT: x.equipped?.OUTFIT ?? null, ACCESSORY: x.equipped?.ACCESSORY ?? null, BACKGROUND: null } } },
             answer: x.answer,
             myReactions: retentionState.reactions[x.postId]?.[me.id] ?? [],
             createdAt: x.createdAt,

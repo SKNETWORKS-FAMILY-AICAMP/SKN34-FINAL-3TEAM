@@ -36,6 +36,8 @@ export interface MockPost {
   studentId: string
   nickname: string
   companion: CompanionId
+  /** 작성자 착용(아이템 키). 친구 생각 응답의 `author.look.equipped`(#635) */
+  equipped?: Partial<Record<'HAT' | 'OUTFIT' | 'ACCESSORY', string>>
   missionId: string
   missionTitle: string
   answer: string
@@ -417,9 +419,9 @@ export function weeklyThemeFor(studentId: string, missions: Mission[], grade: nu
 }
 
 // ---------- 커뮤니티 ----------
-const friends: { nickname: string; companion: CompanionId; answer: (title: string) => string }[] = [
-  { nickname: '하늘별', companion: 'tori', answer: (t) => `${t}에서 나는 먼저 무엇이 달라졌는지 찾았어. 왜냐하면 달라진 곳에 까닭이 숨어 있을 것 같았거든.` },
-  { nickname: '초록콩', companion: 'kongi', answer: () => '나는 다른 방법도 생각해 봤어. 그래서 두 가지를 비교하니까 하나가 더 알맞아 보였어.' },
+const friends: { nickname: string; companion: CompanionId; equipped?: MockPost['equipped']; answer: (title: string) => string }[] = [
+  { nickname: '하늘별', companion: 'tori', equipped: { HAT: 'HAT_ACORN' }, answer: (t) => `${t}에서 나는 먼저 무엇이 달라졌는지 찾았어. 왜냐하면 달라진 곳에 까닭이 숨어 있을 것 같았거든.` },
+  { nickname: '초록콩', companion: 'kongi', equipped: { OUTFIT: 'OUTFIT_RAIN', ACCESSORY: 'ACC_LENS' }, answer: () => '나는 다른 방법도 생각해 봤어. 그래서 두 가지를 비교하니까 하나가 더 알맞아 보였어.' },
   { nickname: '구름빵', companion: 'monggeul', answer: () => '처음엔 잘 모르겠었는데 그림을 다시 보니 순서가 보였어. 그 순서대로 쓰면 이해가 돼.' },
 ]
 export function seedFriendPosts(mission: Pick<Mission, 'id' | 'title'>) {
@@ -430,6 +432,7 @@ export function seedFriendPosts(mission: Pick<Mission, 'id' | 'title'>) {
       studentId: `friend-${i}`,
       nickname: f.nickname,
       companion: f.companion,
+      equipped: f.equipped,
       missionId: mission.id,
       missionTitle: mission.title,
       answer: f.answer(mission.title),

@@ -21,6 +21,7 @@ import {
   endingDue,
   themeClosed,
   todayThemeDay,
+  wornAssets,
 } from '../src/domain/retention.ts'
 import { readLook } from '../src/domain/studentLook.ts'
 // 움직임 읽기는 domain/themeMotion.ts 하나(#440에서 retention.ts 중복 정리)
@@ -251,10 +252,21 @@ test('커뮤니티 응답은 반응 수·학생 ID 없이 읽고, 내 글만 반
   const [post] = readCommunityPosts({
     items: [{ postId: 'p1', studentId: 'secret', author: { nickname: '하늘', look: { companion: 'kongi' } }, answer: { text: '까닭' }, myReactions: ['NEW_IDEA', 'LIKE'], reactionCount: 9 }],
   })
-  assert.deepEqual(post, { postId: 'p1', author: { nickname: '하늘', companion: 'kongi' }, answer: '까닭', myReactions: ['NEW_IDEA'], createdAt: '' })
+  assert.deepEqual(post, { postId: 'p1', author: { nickname: '하늘', companion: 'kongi', equipped: { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null } }, answer: '까닭', myReactions: ['NEW_IDEA'], createdAt: '' })
   const [mine] = readMyPosts({ items: [{ postId: 'p2', missionTitle: '미션', status: 'HIDDEN_REPORT', reactions: { CLEAR_REASON: 2 } }] })
   assert.equal(mine.status, 'HIDDEN_REPORT')
   assert.deepEqual(mine.reactions, { NEW_IDEA: 0, CLEAR_REASON: 2, DIFFERENT_VIEW: 0, WANT_MORE: 0 })
+})
+
+test('#635 친구 생각 작성자 착용은 아이템 키로 읽고, 아이템 목록과 맞춰 그림 주소로 바꾼다(목록에 없는 아이템은 빠짐)', () => {
+  const [post] = readCommunityPosts({
+    items: [{ postId: 'p1', author: { nickname: '초록콩', look: { companion: 'kongi', equipped: { HAT: 'HAT_GONE', OUTFIT: 'OUTFIT_RAIN', ACCESSORY: '', BACKGROUND: null } } }, answer: '답' }],
+  })
+  assert.deepEqual(post.author.equipped, { HAT: 'HAT_GONE', OUTFIT: 'OUTFIT_RAIN', ACCESSORY: null, BACKGROUND: null })
+  const items = readLookItems({ items: [
+    { itemKey: 'OUTFIT_RAIN', slot: 'OUTFIT', name: '노란 비옷', pricePoints: 60, assetKey: 'looks/outfit-rain.svg', unlocked: false, onSale: true },
+  ] })
+  assert.deepEqual(wornAssets(post.author.equipped, items), { OUTFIT: 'looks/outfit-rain.svg' }, '판매 중단 등으로 목록에 없는 모자는 그리지 않음')
 })
 
 test('동의 문서 구분과 리포트 종류 기본값', () => {
