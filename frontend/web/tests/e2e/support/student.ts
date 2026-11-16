@@ -85,11 +85,10 @@ export async function solveNarrative(page: Page, answer: string, { followup }: {
 
 /**
  * 돌아보기를 저장하면 내 공책으로 온다. #648 내 공책은 기록 카드(article "국어 · 제목") 대신 주별 한 줄이고,
- * 줄에 제목·생각 유형·과목과 상태(돌아보기까지 끝나면 '마무리')가 보인다.
+ * 줄에 제목·생각 유형과 상태(돌아보기까지 끝나면 '마무리')가 보인다. 과목은 국어 우선 결정(P15)으로 목록에서 뺐다(2026-11-16).
  */
-export async function expectJournalDone(page: Page, mission: string, subject = '국어') {
+export async function expectJournalDone(page: Page, mission: string) {
   const row = page.getByRole('listitem').filter({ has: page.getByText(mission, { exact: true }) })
   await expect(row).toBeVisible()
-  await expect(row.getByText(new RegExp(` · ${subject}$`))).toBeVisible()
   await expect(row.getByText('마무리', { exact: true })).toBeVisible()
 }
