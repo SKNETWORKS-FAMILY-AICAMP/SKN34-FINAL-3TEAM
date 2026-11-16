@@ -3,7 +3,9 @@ x-report: &report
   image: local/report56-verification
   build: ../../backend/report-service
   environment: &env
+    # 격리 환경이라 모든 호출자에 같은 합성 토큰 사용 (경로 허용 목록은 그대로 적용)
     INTERNAL_TOKEN: report56-test-only
+    INTERNAL_TOKEN_CORE: report56-test-only
     DATABASE_URL: postgresql+psycopg://verify:synthetic-only@postgres:5432/report_db
     RABBITMQ_URL: amqp://verify:synthetic-only@rabbitmq:5672/
     LEARNING_URL: http://learning:8081
@@ -54,6 +56,10 @@ services:
       DB_USERNAME: verify
       DB_PASSWORD: synthetic-only
       INTERNAL_TOKEN: report56-test-only
+      INTERNAL_TOKEN_AI: report56-test-only
+      INTERNAL_TOKEN_SCORING: report56-test-only
+      INTERNAL_TOKEN_LEARNING: report56-test-only
+      INTERNAL_TOKEN_REPORT_WORKER: report56-test-only
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USERNAME: verify
       RABBITMQ_PASSWORD: synthetic-only
@@ -90,6 +96,11 @@ services:
     environment:
       RABBITMQ_USER: verify
       RABBITMQ_PASSWORD: synthetic-only
+      RABBITMQ_CORE_PASSWORD: synthetic-core
+      RABBITMQ_LEARNING_PASSWORD: synthetic-learning
+      RABBITMQ_AI_PASSWORD: synthetic-ai
+      RABBITMQ_SCORING_PASSWORD: synthetic-scoring
+      RABBITMQ_REPORT_PASSWORD: synthetic-report
     volumes:
       - ../../infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json:/definitions/definitions.json:ro
       - ../../infrastructure/gitops/charts/platform-data/files/rabbitmq/import-definitions.sh:/definitions/import-definitions.sh:ro
@@ -118,6 +129,10 @@ services:
       DB_USERNAME: verify
       DB_PASSWORD: synthetic-only
       INTERNAL_TOKEN: report56-test-only
+      INTERNAL_TOKEN_CORE: report56-test-only
+      INTERNAL_TOKEN_AI: report56-test-only
+      INTERNAL_TOKEN_REPORT_API: report56-test-only
+      INTERNAL_TOKEN_REPORT_WORKER: report56-test-only
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USERNAME: verify
       RABBITMQ_PASSWORD: synthetic-only

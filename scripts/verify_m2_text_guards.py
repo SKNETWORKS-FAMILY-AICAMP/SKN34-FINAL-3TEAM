@@ -43,6 +43,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     os.environ["INTERNAL_TOKEN"] = "local-model-verification"
+    os.environ["INTERNAL_TOKEN_AI"] = "local-model-verification"  # /internal/m2 호출자
     import torch
     from app.bootstrap import create_app
     from app.m2.service import M2Service

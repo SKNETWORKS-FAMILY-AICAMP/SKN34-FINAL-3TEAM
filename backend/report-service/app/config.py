@@ -8,7 +8,9 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     service_name: str = "report-service"
-    internal_token: str
+    internal_token: str  # 이 서비스가 내부 호출에 보내는 자기 토큰
+    # 받는 쪽 허용 호출자 토큰 (security.CALLER_PATHS). 빈 값이면 그 호출자 거부
+    internal_token_core: str = ""
     rabbitmq_url: str = "amqp://localhost:5672/"
     # P12: 재시도 3회(1·5·15분). definitions.json의 <큐>.retry.1~3 개수와 일치
     consumer_max_retries: int = 3

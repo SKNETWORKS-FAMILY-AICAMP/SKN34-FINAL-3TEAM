@@ -894,7 +894,19 @@ If-Match: "7"
 - API 모드 실패를 시연 응답으로 대체하지 않으며 점검표 `/review`·가상 계정 진입은 DEV+MSW에서만
 
 ## 4. 내부 API (`/internal`)
-- 인증: `X-Internal-Token` + 사용자 컨텍스트 헤더 `X-User-Id`, `X-User-Role`, `X-Student-Scope`(허용 학생 ID, 콤마 구분), `traceparent`
+- 인증: `X-Internal-Token`(호출 주체별 토큰) + 사용자 컨텍스트 헤더 `X-User-Id`, `X-User-Role`, `X-Student-Scope`(허용 학생 ID, 콤마 구분), `traceparent`
+  - 받는 쪽은 아래 표의 호출자 토큰만 받고(`INTERNAL_TOKEN_<호출자>`), 토큰과 일치하는 호출자가 없으면 `401 UNAUTHENTICATED`, 그 호출자의 허용 경로 밖이면 `403 FORBIDDEN`("내부 호출 허용 범위 밖"). 경로는 `;` 매개변수 제거·퍼센트 디코딩 뒤 판정하고 `.`·`..` 세그먼트는 거부(아키텍처 2.2)
+  - 새 내부 경로·호출 관계를 추가할 때는 이 표와 받는 쪽 허용 목록(Spring `InternalCallerPolicy`, Python `security.CALLER_PATHS`)을 함께 고친다
+
+| 받는 쪽 | 호출자 → 허용 경로 (`*` 한 세그먼트, `**` 하위 전체) |
+|---|---|
+| core | ai·scoring → `/internal/model-versions/active` · learning → `/internal/payment-usage/**`, `/internal/deletion-requests/*/completions`, `/internal/students/*/profile` · report-worker → `/internal/students/*/profile`, `/internal/students/*/report-template`, `/internal/deletion-requests/*/completions` |
+| learning | core → `/internal/**`(프록시) · ai → `/internal/records/students/**` · report-api → `/internal/records/evidence` · report-worker → `/internal/records/**`, `/internal/students/*/weekly-theme/summary` · ops → `/internal/admin/knowledge/**`, `/internal/knowledge/**` |
+| ai | core → `/internal/analysis/**` · learning → `/internal/{judgments,followups,mission-drafts,theme-drafts,embeddings,memory-explanations}` · report-worker → `/internal/report-narratives`, `/internal/report-explanations` · ops → `/internal/embeddings`, `/internal/judgments`, `/internal/versions` |
+| scoring | ai → `/internal/m1/**`, `/internal/m2/**` · core → `/internal/models/preflight` · ops → `/internal/versions` |
+| report-api | core → `/internal/reports/**`, `/internal/report-jobs/**` |
+
+- ops는 운영 스크립트(`scripts/knowledge`·`evaluation`) 전용 토큰이며 비워 두면 받지 않는다. report-worker는 HTTP를 받지 않는다
   - ai는 받은 컨텍스트 헤더를 learning 호출에 그대로 전달
   - 사용자 요청 없는 호출(report-worker): `X-User-Role: SYSTEM`, `X-Student-Scope` = 이벤트 `subject` 학생
 - 외부에 노출하지 않음. NetworkPolicy로 호출 관계만 허용
@@ -1002,7 +1014,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 판 적재·상태 조회·활성화·제거(계약 #464 C9, 저장 구조 [ERD 4.5](erd.md#45-교육과정-지식-rag-463-계약-464-구현-466)). learning OpenAPI `/admin/knowledge/datasets…`.
 
-- 부르는 쪽: 운영 스크립트 `scripts/knowledge/manage_datasets.py`가 learning에 직접(kind는 `kubectl -n app port-forward svc/learning-service 18081:8081`) 내부 토큰 + `X-User-Role: SYSTEM`. core 프록시·관리자 화면·감사 기록 없음(동섭 결정 2026-11-11, 이슈 기준안). 다른 역할은 `403`
+- 부르는 쪽: 운영 스크립트 `scripts/knowledge/manage_datasets.py`가 learning에 직접(kind는 `kubectl -n app port-forward svc/learning-service 18081:8081`) ops 내부 토큰(4장 표) + `X-User-Role: SYSTEM`. core 프록시·관리자 화면·감사 기록 없음(동섭 결정 2026-11-11, 이슈 기준안). 다른 역할은 `403`
 - 적재는 동기(동섭 결정 2026-11-11). 실제 추출본(#465 `curriculum-v1`, 1,341건)이 kind에서 5초. 스크립트는 10분까지 기다린다. 실패하면 판은 `LOADING`으로 남는다(C9)
 - 임베딩 없음: 미션·테마 생성에 벡터 검색을 쓰지 않는 팀 결정(에픽 #463, 2026-11-11)에 따라 적재는 ai 임베딩(4.2.4)을 부르지 않고 활성화도 임베딩을 요구하지 않는다. 지식 표는 성취기준·생각 유형 코드 조회(4.1.2 `standards`·`thinking-types`, #469)용이다. learning V17이 임베딩 칸을 지웠다
 

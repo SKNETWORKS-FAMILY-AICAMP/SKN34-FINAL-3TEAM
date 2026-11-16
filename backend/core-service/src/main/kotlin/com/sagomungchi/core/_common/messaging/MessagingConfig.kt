@@ -19,6 +19,8 @@ class MessagingConfig {
     companion object {
         const val EVENTS_EXCHANGE = "events.topic"
         const val COMMAND_EXCHANGE = "cmd.direct"
+        /** 재시도 재발행 전용. 기본 exchange 쓰기 권한 없이 자기 재시도 큐에만 보냄 (아키텍처 1.6) */
+        const val RETRY_EXCHANGE = "core.retry"
         const val CONFIRM_TIMEOUT_MS = 5_000L
     }
 }

@@ -95,6 +95,7 @@ def verify(args):
         logs.append(log)
         env = {**os.environ, 'DB_URL': f'jdbc:postgresql://{args.db_host}:5432/{databases[name]}',
                'DB_USERNAME': 'issue40', 'DB_PASSWORD': credentials['password'], 'INTERNAL_TOKEN': internal,
+               **{f'INTERNAL_TOKEN_{c}': internal for c in ('CORE', 'AI', 'LEARNING', 'SCORING', 'REPORT_API', 'REPORT_WORKER')},
                'AUTH_JWT_SECRET': secret, 'AUTH_WEB_ORIGIN': core_url, 'AUTH_COOKIE_SECURE': 'false',
                'RABBITMQ_HOST': args.rabbit_host, 'RABBITMQ_USERNAME': 'issue40', 'RABBITMQ_PASSWORD': 'issue40-test',
                'REDIS_HOST': args.redis_host, 'LEARNING_URL': learning_url, 'AI_URL': 'http://127.0.0.1:1'}

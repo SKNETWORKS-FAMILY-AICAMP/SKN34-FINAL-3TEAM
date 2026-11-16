@@ -15,7 +15,7 @@
   uv run python ../../evaluation/runners/judgment_eval.py \
     --cases ../../evaluation/datasets/judgment/cases.jsonl \
     --dataset-id judgment-p11 --dataset-version 1 \
-    --base-url http://localhost:8000 --token "$INTERNAL_TOKEN" \
+    --base-url http://localhost:8000 --token "$INTERNAL_TOKEN_OPS" \
     --human-review "평가자 2명 독립 표시, 검토 기록: <링크>" \
     [--baseline ../../evaluation/results/judgment/<기준선>.json]
 """

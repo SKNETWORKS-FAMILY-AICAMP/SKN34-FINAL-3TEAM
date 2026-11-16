@@ -43,6 +43,11 @@ classDiagram
     <<filter>>
     #doFilterInternal(request, response, chain)
   }
+  class InternalCallerPolicy {
+    <<object>>
+    +allowed Map
+    +permits(caller, path) Boolean
+  }
   class UserContext {
     <<value>>
     +userId String
@@ -130,6 +135,7 @@ classDiagram
   InternalRestClientFactory --> AppProperties
   InternalRestClientFactory --> UserContextHolder : 헤더 전달
   InternalAuthFilter --> AppProperties
+  InternalAuthFilter --> InternalCallerPolicy : 호출자별 경로
   InternalAuthFilter --> UserContextHolder : set·clear
   InternalAuthFilter ..> UserContext
   UserContext ..> BusinessException : 403
@@ -144,8 +150,8 @@ classDiagram
 
 | 클래스 | 위치 | 상태 | 책임 |
 |---|---|---|---|
-| `AppProperties`, `InternalRestClientFactory` | `_common/config` | 구현됨 | 내부 호출 RestClient(내부 토큰·컨텍스트 헤더·타임아웃, 재시도 없음) |
-| `InternalAuthFilter`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 토큰 검사, `X-User-*`·`X-Student-Scope` 컨텍스트 |
+| `AppProperties`, `InternalRestClientFactory` | `_common/config` | 구현됨 | 내부 호출 RestClient(자기 토큰 `app.internal.token`·컨텍스트 헤더·타임아웃, 재시도 없음). 받는 쪽 호출자 토큰은 `app.internal.callers.<호출자>` |
+| `InternalAuthFilter`, `InternalCallerPolicy`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 호출자 토큰 식별(불일치 401)·호출자별 경로 허용 목록(밖 403, 아키텍처 2.2), `X-User-*`·`X-Student-Scope` 컨텍스트 |
 | `BusinessException`, `DomainException`, `ErrorKind`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답. domain은 Spring 타입이 없는 `DomainException(kind, code, …)`만 던지고, `ErrorKind` → HTTP 상태는 `_common/exception`의 `statusOf` 하나가 정함(core 400·404·409, learning 400·409·422, #249). 예외에서 상태·code를 읽는 곳은 `httpStatusOf`·`errorCodeOf`(두 예외 모두 처리). `BusinessException`은 application·presentation 전용 |
 | `EventEnvelope`, `MessagingConfig` | `_common/messaging` | 구현됨 | CloudEvents 봉투, JSON 변환기 |
 | `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이(ShedLock 단일 실행)가 DB 트랜잭션 밖에서 subject별 미발행 선두를 1건씩 발행·publisher confirm 대기 후 짧은 트랜잭션으로 `published_at` 기록(#166). 실패는 짧은 트랜잭션으로 `recordFailure`, 4번째 실패 격리(#243) |
@@ -165,6 +171,7 @@ classDiagram
   class Settings {
     <<config>>
     +internal_token str
+    +internal_token_<caller> str
     +rabbitmq_url str
     +http_read_timeout float
   }
@@ -193,6 +200,9 @@ classDiagram
     +current_user_context() UserContext
     +bind_user_context(context) Token
     +get_user_context(request) UserContext
+    +CALLER_PATHS dict
+    +matching_callers(token) list
+    +caller_permits(caller, path) bool
   }
   class InternalAuthMiddleware {
     <<middleware>>

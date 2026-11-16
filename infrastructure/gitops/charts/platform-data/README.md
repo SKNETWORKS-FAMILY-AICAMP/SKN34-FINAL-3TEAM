@@ -30,7 +30,8 @@ values 키는 `existingSecret`, `memoryHighWatermark`처럼 lowerCamelCase를 �
 |---|---|---|
 | PostgreSQL 관리자 | `POSTGRES_USER` | `POSTGRES_PASSWORD` |
 | PostgreSQL 서비스 계정(#230) | `postgres.serviceRoles` 고정 이름 | `CORE_MIGRATE_PASSWORD`·`CORE_APP_PASSWORD`·`LEARNING_*`·`REPORT_*` 6개 |
-| RabbitMQ | `RABBITMQ_USER` | `RABBITMQ_PASSWORD` |
+| RabbitMQ 관리자(init·운영자 전용) | `RABBITMQ_USER` | `RABBITMQ_PASSWORD` |
+| RabbitMQ 서비스 계정 | `core`·`learning`·`ai`·`scoring`·`report` 고정 이름 | `rabbitmq.servicePasswordKeys`(`RABBITMQ_<SVC>_PASSWORD` 5개). init Job이 계정·최소 권한 생성 |
 | MinIO | `MINIO_ROOT_USER` | `MINIO_ROOT_PASSWORD` |
 
 각 서비스의 `usernameKey`·`passwordKey`는 Secret의 키 이름이며 실제 계정 값이 아니다. 원본 키 이름과 컨테이너가 요구하는 환경 변수 이름은 구분한다. 예를 들어 `RABBITMQ_USER` 키는 RabbitMQ 서버의 `RABBITMQ_DEFAULT_USER` 환경 변수에 연결한다. `.env`와 실제 Secret 내용은 저장소에 포함하지 않는다. 내부 API 토큰·LLM 키는 이 저장소 계정 Secret에 넣지 않는다.

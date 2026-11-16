@@ -76,6 +76,10 @@ def verify(
     jwt_key = base64.b64encode((uuid4().hex + uuid4().hex).encode()).decode()
     scoring_env = {
         "INTERNAL_TOKEN": token,
+        # 일회용 스택: 모든 호출자에 같은 토큰 (경로 허용 목록은 그대로 적용)
+        "INTERNAL_TOKEN_AI": token,
+        "INTERNAL_TOKEN_CORE": token,
+        "INTERNAL_TOKEN_OPS": token,
         "RABBITMQ_URL": f"amqp://verify:{password}@rabbitmq:5672/",
         "CORE_URL": "http://core:8080",
         "S3_ENDPOINT_URL": "http://minio:9000",
@@ -128,6 +132,11 @@ def verify(
                 "environment": {
                     "RABBITMQ_USER": "verify",
                     "RABBITMQ_PASSWORD": password,
+                    "RABBITMQ_CORE_PASSWORD": password,
+                    "RABBITMQ_LEARNING_PASSWORD": password,
+                    "RABBITMQ_AI_PASSWORD": password,
+                    "RABBITMQ_SCORING_PASSWORD": password,
+                    "RABBITMQ_REPORT_PASSWORD": password,
                 },
                 "volumes": [
                     str(core_root / "infrastructure/gitops/charts/platform-data/files/rabbitmq")
@@ -166,6 +175,10 @@ def verify(
                     "DB_USERNAME": "verify",
                     "DB_PASSWORD": password,
                     "INTERNAL_TOKEN": token,
+                    "INTERNAL_TOKEN_AI": token,
+                    "INTERNAL_TOKEN_SCORING": token,
+                    "INTERNAL_TOKEN_LEARNING": token,
+                    "INTERNAL_TOKEN_REPORT_WORKER": token,
                     "RABBITMQ_HOST": "rabbitmq",
                     "RABBITMQ_USERNAME": "verify",
                     "RABBITMQ_PASSWORD": password,

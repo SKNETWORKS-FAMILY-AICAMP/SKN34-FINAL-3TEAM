@@ -42,6 +42,14 @@ rabbitmq:
   image: "rabbitmq:4.3.7-management-alpine"
   usernameKey: "RABBITMQ_USER"
   passwordKey: "RABBITMQ_PASSWORD"
+  # Service account password keys in existingSecret; the init Job gets each as an env var of the same name.
+  # Account names and permissions are fixed in files/rabbitmq/import-definitions.sh. Apps never get the admin account.
+  servicePasswordKeys:
+    - "RABBITMQ_CORE_PASSWORD"
+    - "RABBITMQ_LEARNING_PASSWORD"
+    - "RABBITMQ_AI_PASSWORD"
+    - "RABBITMQ_SCORING_PASSWORD"
+    - "RABBITMQ_REPORT_PASSWORD"
   servicePort: 5672
   managementPort: 15672
   prometheusPort: 15692

@@ -20,9 +20,14 @@ env:
   - {name: DB_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: LEARNING_DB_USERNAME}}}
   - {name: DB_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: LEARNING_DB_PASSWORD}}}
   - {name: RABBITMQ_HOST, value: rabbitmq.platform.svc.cluster.local}
-  - {name: RABBITMQ_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_USERNAME}}}
-  - {name: RABBITMQ_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_PASSWORD}}}
-  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
+  - {name: RABBITMQ_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_LEARNING_USERNAME}}}
+  - {name: RABBITMQ_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_LEARNING_PASSWORD}}}
+  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_LEARNING}}}
+  - {name: INTERNAL_TOKEN_CORE, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_CORE}}}
+  - {name: INTERNAL_TOKEN_AI, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_AI}}}
+  - {name: INTERNAL_TOKEN_REPORT_API, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_REPORT_API}}}
+  - {name: INTERNAL_TOKEN_REPORT_WORKER, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_REPORT_WORKER}}}
+  - {name: INTERNAL_TOKEN_OPS, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_OPS, optional: true}}}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
   - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
   # #591: 추억 검색 문서 임베딩 주기 작업(1분·64행 선점·8글 묶음). 앱 기본값 false라 배포 값에서 켠다.

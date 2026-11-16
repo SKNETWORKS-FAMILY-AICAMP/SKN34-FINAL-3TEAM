@@ -9,6 +9,9 @@ $secretName = 'platform-data-credentials'
 $requiredKeys = @('POSTGRES_USER', 'POSTGRES_PASSWORD', 'RABBITMQ_USER', 'RABBITMQ_PASSWORD', 'MINIO_ROOT_USER', 'MINIO_ROOT_PASSWORD')
 # #230: service role passwords read by rds-bootstrap.sql at first PostgreSQL initialization.
 $requiredKeys += @('CORE', 'LEARNING', 'REPORT' | ForEach-Object { "${_}_MIGRATE_PASSWORD", "${_}_APP_PASSWORD" })
+# RabbitMQ service accounts created by the rabbitmq-init Job (names fixed in import-definitions.sh).
+$mqServices = @('CORE', 'LEARNING', 'AI', 'SCORING', 'REPORT')
+$requiredKeys += @($mqServices | ForEach-Object { "RABBITMQ_${_}_PASSWORD" })
 
 # Use UTF-8 stdin: no credential is put on kubectl's command line or in a temp file.
 function Invoke-LocalKubectl {
@@ -56,6 +59,10 @@ foreach ($line in [System.IO.File]::ReadAllLines((Resolve-Path -LiteralPath $Env
 }
 foreach ($key in $requiredKeys) { if (-not $credentials.ContainsKey($key)) { throw "Missing environment key: $key" } }
 if ($credentials.RABBITMQ_USER.Contains(':')) { throw 'RABBITMQ_USER must not contain a colon.' }
+if ($credentials.RABBITMQ_USER -in @('core', 'learning', 'ai', 'scoring', 'report')) { throw 'RABBITMQ_USER must differ from service account names.' }
+foreach ($service in $mqServices) {
+    if ($credentials["RABBITMQ_${service}_PASSWORD"] -cnotmatch '^[A-Za-z0-9_-]+$') { throw "RABBITMQ_${service}_PASSWORD must use only letters, digits, - and _." }
+}
 if ($credentials.MINIO_ROOT_USER.Length -lt 3 -or $credentials.MINIO_ROOT_PASSWORD.Length -lt 8) { throw 'MinIO requires a username of at least 3 characters and password of at least 8 characters.' }
 
 $existingJson = Invoke-LocalKubectl -KubectlArguments @('-n', $namespaceName, 'get', 'secret', $secretName, '--ignore-not-found', '-o', 'json')
