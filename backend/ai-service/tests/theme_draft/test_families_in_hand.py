@@ -44,12 +44,18 @@ def gift_theme() -> dict[str, Any]:
         feature(name, {c: families.GIFTS.fact(c, name) or "" for c in cands})
         for name in families.GIFTS.features
     ]
-    # 월(흔적) 무게로 목도리·공, 금(기록) 소리로 그림책이 빠짐
+    # 월(흔적) 무게로 목도리·고무공, 금(기록) 소리로 그림책이 빠짐
     for d, clue, kind, feat, allowed in (
         ("MON", "상자를 들어 보니 묵직한 무게였어.", "RULE", "무게", ["묵직한 무게"]),
-        ("TUE", "포장한 사람은 단단한 느낌이라고 했대.", "HINT", "눌러 본 느낌", ["단단한 느낌"]),
-        ("WED", "가게 아저씨는 묵직한 무게의 봉지를 봤대.", "HINT", "무게", ["묵직한 무게"]),
-        ("THU", "상자를 눌러 보니 단단한 느낌이 났어.", "HINT", "눌러 본 느낌", ["단단한 느낌"]),
+        ("TUE", "그릇 가게나 서점에서 나오는 걸 봤대.", "HINT", "산 가게", ["그릇 가게", "서점"]),
+        (
+            "WED",
+            "봉지를 든 사람이 서점이나 그릇 가게 앞에 있었대.",
+            "HINT",
+            "산 가게",
+            ["서점", "그릇 가게"],
+        ),
+        ("THU", "상자를 다시 들어 보니 묵직한 무게였어.", "HINT", "무게", ["묵직한 무게"]),
         (
             "FRI",
             "메모에 달그락 소리가 난다고 적혀 있었어.",
@@ -96,7 +102,10 @@ def test_in_hand_trace_features() -> None:
 # ---------------------------------------------------------------- 코드 검사
 def test_gift_theme_passes_without_incident_and_hides_candidates_and_answer_values() -> None:
     assert checks.check_theme(gift_theme(), 3) == []  # 동물이 아니라 incident·answerLook 필수 아님
-    assert checks.answer_facts(gift_theme()) == ["달그락 소리"]  # 그림책과 겹치는 값은 빼고
+    assert checks.answer_facts(gift_theme()) == [
+        "달그락 소리",
+        "그릇 가게",
+    ]  # 그림책과 겹치는 값은 빼고
     bad = checks.check_theme(
         day_with(gift_theme(), "TUE", sceneNote="서윤이 그림책을 펼친 장면"), 3
     )
