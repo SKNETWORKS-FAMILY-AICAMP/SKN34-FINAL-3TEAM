@@ -15,6 +15,7 @@ import {
   readPoints,
   readWeeklyTheme,
   knownFacts,
+  candidateFacts,
   ruledOutOn,
   POINT_RULES,
   storyToShow,
@@ -138,6 +139,33 @@ test('단서 근거(#647): 얻은 요일 특징만 읽고, 후보마다 알아�
   assert.deepEqual(knownFacts(theme, '부엉이'), [{ day: 'MON', feature: '도토리를 먹나요', value: '안 먹어요' }])
   assert.equal(ruledOutOn(theme, '다람쥐'), 'MON')
   assert.equal(ruledOutOn(theme, '부엉이'), null)
+})
+
+test('#715 후보 카드 특징: 엔딩 전에는 푼 요일 단서만, 엔딩 뒤에는 특징 표 전체(건너뛴 요일은 learned false)', () => {
+  const base = {
+    themeId: 't1', weekStart: '2026-11-09', title: '시계탑', intro: '시작', reused: false,
+    days: [
+      { day: 'MON', missionId: 'm1', thinkingType: 'ANALYZE', state: 'OPEN', attemptStatus: 'COMPLETED', clue: '단서', rulesOut: ['다람쥐'],
+        completedOnDay: true, clueFeature: '도토리를 먹나요', clueFacts: [{ candidate: '다람쥐', value: '먹어요' }, { candidate: '부엉이', value: '안 먹어요' }] },
+      { day: 'TUE', missionId: 'm2', thinkingType: 'EVALUATE', state: 'OPEN', attemptStatus: 'NOT_STARTED', clue: null, rulesOut: null,
+        completedOnDay: false, clueFeature: null, clueFacts: null },
+    ],
+    review: { open: false, missions: [] }, completed: false, finished: false,
+    bigQuestion: '누구일까?', candidates: ['다람쥐', '부엉이'], introSeen: true, outroSeen: false,
+  }
+  const features = [
+    { name: '도토리를 먹나요', values: [{ candidate: '다람쥐', value: '먹어요' }, { candidate: '부엉이', value: '안 먹어요' }] },
+    { name: '밤에 깨어 있나요', values: [{ candidate: '다람쥐', value: '아니요' }, { candidate: '부엉이', value: '네' }] },
+  ]
+  const before = readWeeklyTheme({ ...base, ending: 'NOT_ENDED', features: null })!
+  assert.deepEqual(candidateFacts(before, '부엉이'), [{ feature: '도토리를 먹나요', value: '안 먹어요', learned: true }], '엔딩 전에는 단서만')
+  const after = readWeeklyTheme({ ...base, ending: 'ENDED', answer: '부엉이', features })!
+  assert.deepEqual(candidateFacts(after, '부엉이'), [
+    { feature: '도토리를 먹나요', value: '안 먹어요', learned: true },
+    { feature: '밤에 깨어 있나요', value: '네', learned: false },
+  ], '건너뛴 화요일 특징도 엔딩 뒤에는 보임')
+  const noTable = readWeeklyTheme({ ...base, ending: 'ENDED', answer: '부엉이', features: null })!
+  assert.deepEqual(candidateFacts(noTable, '부엉이'), [{ feature: '도토리를 먹나요', value: '안 먹어요', learned: true }], '표가 없으면 단서만')
 })
 
 test('움직임 v1 범위를 하나라도 벗어나면 null', () => {
