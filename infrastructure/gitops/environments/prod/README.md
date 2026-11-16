@@ -101,6 +101,23 @@ core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다.
 
 2026-11-06 데모 일시 정지: `demo_stack.py pause`로 앱·관측·RabbitMQ·Redis를 0으로 줄이고 RDS·EBS 스냅샷 후 노드그룹 2개 0대, RDS stopped. Karpenter는 컨트롤러 0개·NodePool `limits` 0으로 멈춰 있다(저장소 `karpenter-nodepool.json`의 상한은 재개 후 값). 재개 절차는 [EKS README](../../../eks/README.md#재개-순서와-완료-기준)를 따른다.
 
+## 자녀 이관(FN-ACC-15) prod 꺼 둠 (2026-11-16, #666)
+
+자녀 이관은 시연 범위 밖이라 prod에서 **꺼 둔다**. 서버 `APP_GUARDIAN_TRANSFER_ENABLED`와 웹 빌드 `VITE_GUARDIAN_TRANSFER_ENABLED`를 모두 설정하지 않는다(미설정=false). prod 값 파일·코드는 바꾸지 않는다. 이미 보낸 요청의 조회·취소·거절은 플래그와 관계없이 열려 있다(#307). V26은 2026-11-04 운영 RDS에 적용되어 DB 준비는 끝나 있다.
+
+이유:
+- 이관 대기 요청 만료, 수신 알림, 운영자 복구 절차가 미구현이다([auth-account 6절](../../../../docs/report/auth-account.md)).
+- 받는 학부모는 Google 로그인 계정만 조회된다. 아이디·비밀번호 학부모는 받는 쪽이 될 수 없다(#415).
+- 12/7 시연·12/8 최종 발표 흐름에 이관이 없다.
+
+켤 조건: 위 미구현 항목의 처리 또는 운영 방침 결정, 시연 흐름에 이관이 들어갈 경우 받는 계정을 Google 계정으로 준비.
+
+켜는 방법:
+1. `core-service.json`에 `APP_GUARDIAN_TRANSFER_ENABLED=true` 추가, 웹 빌드 환경에 `VITE_GUARDIAN_TRANSFER_ENABLED=true` 추가.
+2. `redeploy-app.ps1 -Service core-service` dry-run 결과 확인.
+3. 확인 후 `-Apply`로 core 재배포, 웹은 다시 빌드해 S3에 올리고 `index.html`을 마지막에 교체.
+4. 이 절과 auth-account 6절의 "꺼 둠" 기록을 갱신.
+
 ## 보존과 환경 경계
 
 - Secret 실제 값, Google/LLM 키, DB 비밀번호, JWT·내부 토큰은 Git에 넣지 않는다. ESO가 Secrets Manager에서 읽는다.
