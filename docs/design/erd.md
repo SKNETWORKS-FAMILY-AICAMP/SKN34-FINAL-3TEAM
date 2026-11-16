@@ -844,6 +844,7 @@ erDiagram
 - #467(에픽 #463): 지식 임베딩 API(api-spec 4.2.4 C6)의 ai 호출 종류 `KNOWLEDGE_EMBEDDING`(임베딩 요청 1회당 1건, 본문 최대 64개를 한 번에 보냄)을 V44에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V42와 같은 방식, 허용 목록만 넓힘). 입력 토큰만 있고 출력 토큰은 0으로 기록한다. 단가(`app.llm-pricing`)는 다른 모델처럼 비어 있어 `cost_usd`는 null(미산정 호출로 셈)
 - 에픽 #436(ai #437): 주간 테마 시작·종료 장면 영상 호출 `THEME_VIDEO`를 V45에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V44와 같은 방식, 허용 목록만 넓힘). 토큰이 없어 `cost_usd`가 null(미산정 호출로 셈)
 - #566(에픽 #562): 추억 검색 임베딩 `MEMORY_EMBEDDING`(ai 임베딩 `purpose=MEMORY`)·추억 설명 `MEMORY_EXPLANATION`을 V46에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 허용 목록에 함께 더함(V45와 같은 방식, 허용 목록만 넓힘). ai는 이 확장이 병합된 뒤에만 두 값을 발행한다(#565)
+- #680(에픽 #562, 설계 #679 2026-11-16, 구현 전): 추억 검색 질의 변환(ai 4.2.7) `MEMORY_QUERY`를 다음 core 마이그레이션(V48 예정)에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 허용 목록에 함께 더한다(V46과 같은 방식, 허용 목록만 넓힘). Mermaid 주석은 CHECK와 자동 대조하므로 마이그레이션과 같은 PR에서 바꾼다. ai는 이 확장이 병합된 뒤에만 발행한다(#681)
 - `outbox_event`: 상태 변경과 같은 트랜잭션에 저장, 릴레이가 publisher confirm 후 `published_at` 기록 (아키텍처 1.6)
 - #243 `outbox_event` 실패·격리: 릴레이는 subject별 선두만 발행. 발행 실패는 `failure_count`·`last_error_code`·`last_failed_at`을 기록하고 1·5·15분 뒤 재시도, 4번째 실패에 `quarantined_at` 기록(report #131과 같은 컬럼·기준). 격리 선두와 같은 subject 뒤 행은 운영 재처리까지 대기, 다른 subject는 계속 발행 ([보고서](../report/core-gateway.md#11-core-outbox-실패-격리-243))
 - #208 `event_log`: 감사 큐 `core.event.audit`로 받은 모든 업무 메시지(ai·scoring 발행 포함)의 메타데이터. payload·원문은 저장하지 않음. 같은 id 재발행·재전달은 첫 행 유지. `outbox_event`·`processed_event`·`llm_usage`와 `event_id`로 조인해 발행·전달·소비를 추적 ([보고서](../report/core-gateway.md#9-rabbitmq-발행소비-기록-208))
@@ -1626,7 +1627,7 @@ erDiagram
   weekly_theme ||--o{ memory_search_doc : belongs
 ```
 
-학습 완료 트랜잭션에서 EXTRA를 제외하고 시도당 한 행을 등록한다. 테마 제목·장면 대화·질문·최종 답변을 보존하며 정답 키는 포함하지 않는다. READY는 벡터·모델·생성 시각이 모두 있어야 한다. 재시도 횟수는 0 이상, PROCESSING은 리스가 필수다. 검색은 READY·본인·보유 액자·지난 주 조건과 모델 일치를 먼저 적용한다. 소규모 학생별 정확 검색이므로 HNSW는 추가하지 않는다. 벡터 저장·검색은 MyBatis에서 문자열을 vector로 형변환하며 드라이버 의존성을 추가하지 않는다.
+학습 완료 트랜잭션에서 EXTRA를 제외하고 시도당 한 행을 등록한다. 테마 제목·장면 대화·질문·최종 답변을 보존하며 정답 키는 포함하지 않는다. READY는 벡터·모델·생성 시각이 모두 있어야 한다. 재시도 횟수는 0 이상, PROCESSING은 리스가 필수다. 검색은 READY·본인·보유 액자·지난 주 조건과 모델 일치를 먼저 적용한다. 소규모 학생별 정확 검색이므로 HNSW는 추가하지 않는다. 질의 변환·하이브리드 검색(#679 설계, #682 구현 전)은 같은 범위에서 `content_text` ILIKE 키워드 검색과 `theme_week_start` 기간 필터를 더할 뿐이라 테이블·인덱스 변경이 없다(`pg_trgm` 미사용, 학생당 문서가 적어 필터 뒤 정확 탐색). 벡터 저장·검색은 MyBatis에서 문자열을 vector로 형변환하며 드라이버 의존성을 추가하지 않는다.
 
 ## 5. report_db
 

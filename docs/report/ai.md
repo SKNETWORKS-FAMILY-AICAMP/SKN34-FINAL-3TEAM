@@ -721,7 +721,7 @@ P27 추억 검색(에픽 #562)의 ai 몫. 계약은 [api-spec 4.2.4·4.2.6](../d
 
 ## 19. 실제 LLM 조건 응답 시간·원가 산식 (#630, 2026-11-16)
 
-NFR-PRF-01(응답 시간)·NFR-PRF-02(원가 산식)를 실제 OpenAI로 처음 측정했다. 측정 환경·절차·한계는 [infra 9.9](infra.md#99-실제-llm-조건-로컬-응답-시간-실측-630-2026-11-16), 도구는 `evaluation/load/llm_latency.py`·`llm_usage_window.sql`이다. 목표값(응답 시간 상한)은 이 이슈 범위 밖이라 정하지 않았다.
+NFR-PRF-01(응답 시간)·NFR-PRF-02(원가 산식)를 실제 OpenAI로 처음 측정했다. 측정 환경·절차·한계는 [infra 9.10](infra.md#910-실제-llm-조건-로컬-응답-시간-실측-630-2026-11-16), 도구는 `evaluation/load/llm_latency.py`·`llm_usage_window.sql`이다. 목표값(응답 시간 상한)은 이 이슈 범위 밖이라 정하지 않았다.
 
 ### 19.1 응답 시간: 엔드포인트 전체와 LLM 호출 1회
 

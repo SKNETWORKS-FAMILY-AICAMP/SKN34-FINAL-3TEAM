@@ -444,7 +444,7 @@ kind에 남긴 것: 시연 학부모·자녀 2명과 미래 날짜(11/16~12/7) �
 
 ### 9.7.3 발견
 
-1. **설명 카드는 지금 운영 값으로는 나오지 않는다.** ai `M2_CROSS_CHECK_ENABLED` 기본 false(#305)라 M2를 부르지 않고, 저장소 시드 미션 기준표에 M2 핵심어(`keywords`)·논술 글 종류(`essayType`)가 없어 켜더라도 M2 입력이 없다. kind에서는 둘 다 임시로 채워야 설명 카드 3개가 생겼다. 시연에서 설명 카드를 보이려면 플래그를 켤지(판정 보류 `HELD` 발생 가능)와 초5 테마 미션 기준표 보완을 정해야 한다
+1. **설명 카드는 지금 운영 값으로는 나오지 않는다.** ai `M2_CROSS_CHECK_ENABLED` 기본 false(#305)라 M2를 부르지 않고, 저장소 시드 미션 기준표에 M2 핵심어(`keywords`)·논술 글 종류(`essayType`)가 없어 켜더라도 M2 입력이 없다. kind에서는 둘 다 임시로 채워야 설명 카드 3개가 생겼다. 시연에서 설명 카드를 보이려면 플래그를 켤지(판정 보류 `HELD` 발생 가능)와 초5 테마 미션 기준표 보완을 정해야 한다 → 9.7.5(#668)에서 정함
 2. 활성 모델을 끄는 경로가 없다. 첫 버전을 시험으로 활성화하면 DB를 직접 고치지 않고는 되돌릴 수 없다
 3. 새 학부모는 자녀 등록 전에 계정 동의(TERMS·PRIVACY)가 필요하다(`children` 명령이 처리)
 
@@ -454,6 +454,43 @@ kind에 남긴 것: 시연 학부모·자녀 2명과 미래 날짜(11/16~12/7) �
 - 시험 시계 동안 가짜 시각으로 서명한 S3(MinIO) 그림 URL은 "not valid yet"으로 깨진다. kind 화면 확인의 그림 자리는 기본 그림이었다. AWS 지난 주 회차는 실제 시각이라 영향이 없다
 - 앞선 2회차의 주간·일일 리포트는 만들지 않았다(시연에 필요한 것은 지난 주 리포트)
 - 웹 추억 검색 화면(#567)은 구현 전이라 검색은 API로만 확인했다
+
+### 9.7.5 설명 카드용 기준표 M2 입력과 교차 확인 켜기 (#668, 2026-11-16)
+
+#661에서 설명 카드(FN-RPT-09)가 나오는 조건을 ① ai `M2_CROSS_CHECK_ENABLED=true` ② 미션 기준표 M2 입력(서술 `keywords`, 논술 `essayType`) ③ M2 활성 모델로 정리했다. ③은 #601 재가동 절차에 있고, 이번에 ①·②를 정했다.
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 교차 확인 켜기 | 켠다. 앱 기본값(false, #305)은 두고 prod 값 `gitops/environments/prod/ai-service.json`에 `true` | prod 값이 곧 AWS 데모 환경이고 `redeploy-app.ps1`·cd-release가 매번 이 파일로 helm upgrade를 한다. 시연 절차에서 `kubectl set env`로만 켜면 그 뒤 ai 재배포 때 꺼진다. M2는 기준표에 M2 입력이 있는 미션에서만 불리므로(api-spec 4.2.2) 영향은 시연 스크립트로 보강한 초5 테마 미션뿐이고, A 계정 시험도 시연과 같은 조건이 된다 |
+| 판정 보류 | 허용하고 확인 항목으로 둔다 | 켜면 LLM `CORRECT`·M2 평균 낮음(서술 2.0 이하) 또는 `RETHINK`·높음(4.0 이상)일 때 `HELD(MODEL_DISAGREEMENT)`가 생긴다(글자 수 하한 미만 제외). `audit-demo-data.sql`에 `demo668_recent_judgments`(최근 3주 판정 결과·보류 사유별 건수)를 더해 `solve` 뒤 확인한다 |
+| 기준표 M2 입력 위치 | 운영 시드 migration이 아니라 #624 시연 스크립트 `demo_account_data.py m2-rubric`에서만 | 운영 시드를 바꾸면 모든 환경 판정에 M2가 붙는다. 스크립트는 공개 기준표를 복사해 M2 입력만 더한 새 기준표 버전 → 검토 승인 → 재게시(api-spec 2.8 관리자 미션, P07 불변 버전)로 넣고, 이미 있으면 그대로 둔다 |
+| 입력 값 | 시드 G5 미션 4개는 스크립트 상수(`M2_INPUTS`): DEMO-11·13·15 서술 핵심어 3묶음(`핵심어(비슷한 말)`), DEMO-12 논술 `주장`. 관리자 화면·초안으로 만든 테마 미션은 `--m2-input` JSON | DEMO-11·15는 9.7.2 kind 확인 때 쓴 값 그대로. 설명은 생각 유형이 겹치지 않는 M2 점수 답변 최대 3개이고 초5 M2 활성 범위가 서술이라, 주마다 생각 유형이 다른 서술 미션 3개에 핵심어가 있어야 카드 3개가 나온다. 스크립트가 주별 "M2 입력 서술 N유형"을 출력한다 |
+
+kind 확인(실제 2026-11-16 09:57~10:07 KST, 공유 `kind-sagomungchi-local`)
+
+- 대상: develop 배포 그대로(helm ai rev 21·learning rev 18·core rev 13). 9.7.2의 시연 학부모·시연5학년(프리미엄 시험 구독)과 게시된 G5 테마 11/16·11/23·11/30
+- ai `kubectl set env M2_CROSS_CHECK_ENABLED=true` 적용
+- `m2-rubric --dry-run` → 실제 실행 → 재실행
+
+| 항목 | 결과 |
+|---|---|
+| 기준표 보강 | DEMO-12(논술) v1→v2 `essayType`, DEMO-13(서술) v1→v2 핵심어, kind 초안 M-E1708259 v8→v9 핵심어(`--m2-input`) 저장·검토 승인·재게시. DEMO-11·15·M-D0651927은 9.7.2 때 넣은 v2라 그대로. 세 주 모두 "M2 입력 서술 3유형(ANALYZE·CREATE·REFLECT)" |
+| 다시 실행 | 모든 미션 "있음"으로 아무것도 바꾸지 않음 |
+| 입력 없음 | 보강 전 `--m2-input` 없이 `--dry-run`하면 M-E1708259를 이름으로 알려 주고 실패 |
+| 새 답변 M2 점수 | learning만 시험 시계(12/5 토 14:00 KST)로 옮겨 시연5학년이 보강한 DEMO-13·M-E1708259를 추가 문제(`EXTRA`)로 풂(실제 LLM 판정 2건). 두 판정 모두 보강한 기준표 버전(v2·v9)으로 `model_scores.m2` 있음, `versions.model` `m2-klue-narrative@3.0`, 결과 `RETHINK`(보류 아님) |
+| 주간 설명 카드 | sLLM 서버 대역(llm-stub) 임시 설치 뒤 시연5학년 11/30~12/6 주간 리포트를 학부모 재생성 → `OK`, 설명 `INCLUDED` 카드 3개(ANALYZE·CREATE·REFLECT, 검사 통과). 카드는 같은 주 9.7.2 테마 답변(DEMO-11·M-D0651927·DEMO-15)이 뽑혔다. 새 답변 2개도 후보였지만 가짜 시각이 같은 12/5 05:00 UTC에서 시작해 9.7.2 답변이 약 20초 늦게 제출돼 "같은 생각 유형은 최근 답변 우선" 규칙으로 밀렸다 |
+| 점검 SQL | `demo668_recent_judgments`에 `MODEL_DISAGREEMENT` 0건, `demo668_published_m2_rubrics` 서술 G5 5개·논술 G5 1개 |
+
+임시로 바꾼 것(되돌림): learning 시험 시계 이미지·환경 변수(되돌린 뒤 helm 상태와 같은 ReplicaSet·실제 시각 확인), sLLM 서버 대역 설치(helm uninstall). 실제 OpenAI는 답변 2건의 판정·되묻기와 재생성 리포트 서술 1건만 불렀다.
+
+kind에 남긴 것: **ai `M2_CROSS_CHECK_ENABLED=true`**(kind ai는 helm rev 21 값과 다르다. 이어지는 #630 실측을 시연과 같은 조건으로 재기 위해 켜 둠, `helm upgrade`나 local 값 재적용 때 false로 돌아감), 위 기준표 새 버전 3개(게시), 시연5학년 12/5 추가 문제 시도 2건, 11/30 주 재생성 리포트(학부모 재생성 기회 사용).
+
+AWS에서 남은 확인(#601 재가동 뒤 B 계정)
+
+- prod 값 반영 뒤 ai Pod 환경 변수 `M2_CROSS_CHECK_ENABLED=true`
+- 시드·관리자 테마 기준으로 `m2-rubric`이 세 주 모두 "서술 3유형"을 내는지(초안 미션이면 `--m2-input` 준비)
+- 12/4~12/5 실제 시각 `solve` 뒤 `demo668_recent_judgments`의 보류 건수, 12/7 주간 리포트 설명 카드 3개(`verify`). 새 답변으로만 뽑히는 확인은 여기서 된다(지난 주 답변이 모두 보강 뒤에 생기므로)
+- 실제 sLLM 서버(llama.cpp)·`report-explanation` 활성 상태에서의 설명 문구(kind는 대역 문구)
 
 ## 9.8 prod 테마 자산 버킷과 네임스페이스 기본 거부 준비 (#652·#657, 2026-11-16)
 
@@ -492,11 +529,40 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 - `app-default-deny`는 core release만 만든다. 두 release에 켜면 같은 이름 객체로 Helm 소유권 충돌이 난다.
 - 재가동 때 확인할 것: core 재배포 뒤 `kubectl -n app get networkpolicy app-default-deny`, 앱 7개 readiness, migration Job 1회 성공, `demo-db-oneoff`로 `select 1`, 정책 없는 `kubectl run` Pod의 DNS 조회가 실패하는지. 되돌리기는 prod README NetworkPolicy 절.
 
-## 9.9 실제 LLM 조건 로컬 응답 시간 실측 (#630, 2026-11-16)
+## 9.9 서비스별 내부 토큰·브로커 계정 분리 (2026-11-16)
+
+전 서비스가 내부 토큰 1개(`INTERNAL_TOKEN`)와 RabbitMQ 기본 관리자 계정 1개를 공유해 한 Pod 토큰이 새면 모든 서비스의 `/internal/**`를 부르고 모든 큐를 읽기·삭제·발행할 수 있었다(예: report-worker 토큰으로 core 결제 사용 예약). 설계 문서에 분리 요구가 없어 DB 계정 분리(#230)와 같은 기준으로 나눴다. 규칙은 [아키텍처 2.2](../design/architecture.md#22-의존-규칙)·[4.5 Secret](../design/architecture.md#45-cicd), 허용 경로 표는 [API 명세서 4장](../design/api-spec.md#4-내부-api-internal).
+
+### 9.9.1 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 토큰 단위 | 호출 주체 7개(core·learning·ai·scoring·report-api·report-worker·ops)마다 1개. 보내는 쪽 `INTERNAL_TOKEN`은 그대로 자기 토큰 | 클라이언트(`InternalRestClientFactory`·`internal_client`) 코드 변경 없음. 호출 쌍마다 토큰(14개)은 관리 부담 대비 이득이 작음 |
+| 받는 쪽 검사 | 토큰으로 호출자 식별 후 호출자별 경로 허용 목록. 불일치 401, 허용 밖 403 | report-worker는 원래 core 별명 조회를 부르므로 호출자만 확인하면 예시 위험이 남음(사용자 결정: 호출자+경로) |
+| 허용 목록 위치 | 받는 쪽 코드 상수(Spring `InternalCallerPolicy`, Python `CALLER_PATHS`) | 권한은 코드 리뷰 대상. 토큰 값만 환경 변수 |
+| 같은 토큰 여러 호출자 | 허용 범위 합집합 | 테스트·일회용 검증 스택이 토큰 하나로 동작. 운영 값 중복·16자 미만은 `create-app-secrets.ps1`이 거부 |
+| 브로커 계정 | 서비스별 5개(이름 고정), 최소 권한 + `events.topic` 토픽 권한. 관리자는 앱에 미주입 | 큐 삭제·남의 큐 소비·남의 이벤트 키 발행 차단 |
+| 재시도 경로 | 기본 exchange → `core.retry`·`learning.retry`·`report.retry` | 기본 exchange 쓰기 권한은 큐 이름만으로 남의 큐에 넣을 수 있어 제거(사용자 결정) |
+| core 큐 현황 | core 계정에 `monitoring` 태그 | 관리 API 큐 목록 조회용. 메시지 내용 접근 없음 |
+
+### 9.9.2 남는 위험
+
+- 받는 쪽 Pod가 새면 그 Pod가 받는 호출자 토큰도 노출된다(예: learning Pod에는 core 토큰 포함). 해시 저장은 ESO·compose 값 생성이 복잡해져 이번 범위에서 제외
+- kind는 Secret 객체 1개(`app-service-credentials`)에 모든 키가 있고 Pod별로 필요한 키만 `secretKeyRef`로 받는다. Secret 읽기 RBAC가 있으면 전체가 보이는 점은 #230과 같다
+- learning은 core에게 `/internal/**` 전체를 연다(관리자·학습 프록시 대부분). core 토큰 유출은 여전히 learning 내부 API 전체 위험
+
+### 9.9.3 적용 절차
+
+- 로컬 `.env`: `.env.example`의 `INTERNAL_TOKEN_*` 6개(+선택 ops)와 `RABBITMQ_<SVC>_PASSWORD` 5개를 채우고 기존 `INTERNAL_TOKEN`은 지운다. compose는 `rabbitmq-init`이 실행될 때마다 계정·비밀번호·권한을 다시 반영한다
+- kind: 기존 `platform/platform-data-credentials`·`app/app-service-credentials`는 키가 달라 스크립트가 중단한다. 두 Secret을 지우고 `create-platform-secret.ps1`·`create-app-secrets.ps1`을 다시 실행한 뒤 platform-data(새 init Job)와 앱을 동기화한다
+- AWS 데모: Secrets Manager `sagomungchi/demo/app/internal`에 `INTERNAL_TOKEN_<호출자>` 6개, `sagomungchi/demo/platform/rabbitmq`에 `core_password`·`learning_password`·`ai_password`·`scoring_password`·`report_password`를 추가한다(기존 secret 이름이라 ESO IAM 변경 없음). 그 뒤 platform-data → 앱 순서로 재배포한다. 저장소에는 정의만 반영했고 실제 값 생성·재배포는 하지 않았다
+- 운영 스크립트(`scripts/knowledge`, `evaluation/runners/judgment_eval.py`)는 `INTERNAL_TOKEN` 환경 변수에 ops 토큰을 넣어 실행한다. kind에서 쓰려면 `.env`에 `INTERNAL_TOKEN_OPS`를 넣고 app Secret을 다시 만든다
+
+## 9.10 실제 LLM 조건 로컬 응답 시간 실측 (#630, 2026-11-16)
 
 1차 부하 시험(9절)은 LLM 스텁 기준이라 실제 LLM 지연이 빠져 있었다. 실제 OpenAI로 화면과 같은 core 경로의 응답 시간을 처음 쟀다. 결과 수치·호출 종류별 토큰·원가 산식은 [ai 19절](ai.md#19-실제-llm-조건-응답-시간원가-산식-630-2026-11-16).
 
-### 9.9.1 환경
+### 9.10.1 환경
 
 | 항목 | 값 |
 |---|---|
@@ -507,7 +573,7 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 | 시각 | 2026-11-16 10:09~11:28 KST. 판정·분석·리포트 10:09~10:16, 테마 10:18~11:28 |
 | 재시작 | 측정 구간 동안 앱 Pod 재시작·교체 없음(15~20초마다 확인). 테마 초안만 ai에 `IMAGE_PROVIDER=fake`를 넣어 재시작한 뒤 재고 측정 뒤 원래 ReplicaSet으로 되돌림 |
 
-### 9.9.2 절차와 표본
+### 9.10.2 절차와 표본
 
 `evaluation/load/llm_latency.py`가 요청 시작부터 SSE `done`(리포트는 관리자 작업 `COMPLETED`, 테마는 초안이 `GENERATING`을 벗어날 때)까지를 잰다. 같은 시간대 `llm_usage`는 `llm_usage_window.sql`로 묶는다.
 
@@ -522,7 +588,7 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 - 테마 G4는 관리자 access 토큰(15분) 만료로 폴링이 끊겨 learning `theme_draft.created_at → updated_at`(36분 27초)으로 보정했다. 스크립트는 401이면 다시 로그인하도록 고쳤다
 - 비용: 이번 측정 전체 $0.665(테마 글 $0.644)
 
-### 9.9.3 결과 요약
+### 9.10.3 결과 요약
 
 | 흐름 | 건수 | p50 | p95 | 최대 |
 |---|---|---|---|---|
@@ -535,7 +601,7 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 - 1차 부하 시험 판정 SSE p95(스텁 2.5~4초)와 바로 비교하지 않는다. 동시 사용자 수·환경이 달라 개선율·악화율을 내지 않는다
 - 실패 0건(HTTP·SSE `error` 없음). 분석 대화 LLM 호출 33회 중 1회 실패가 있었지만 응답은 정상 종료됐다
 
-### 9.9.4 만든 시험 데이터 (kind에 남김)
+### 9.10.4 만든 시험 데이터 (kind에 남김)
 
 | 대상 | 내용 |
 |---|---|
@@ -549,7 +615,7 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 
 비밀번호·PIN·기기 쿠키는 저장소 밖 파일에만 있다. 정리(관리자 비활성화 `admin_account_sql.py --disable`, 구독 해지, 계정 탈퇴)는 #601 AWS 실측 뒤 함께 정한다.
 
-### 9.9.5 한계와 남은 것
+### 9.10.5 한계와 남은 것
 
 - 로컬 kind·동시 1명이라 NAT·ALB·실제 네트워크 지연과 동시 부하에서의 OpenAI 지연·429는 반영되지 않았다
 - AWS 실측은 #601 A 계정 재가동 때 같은 도구(`LOAD_API_BASE`·`LOAD_API_HOST`만 바꿈)로 한다. 동시 사용자를 늘린 실제 LLM 부하는 #384 범위

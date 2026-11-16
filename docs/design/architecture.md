@@ -91,13 +91,13 @@
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
 - 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353. 주간 테마 초안은 호출 1번에 그래프를 끝까지 돌리는 주기 작업이라 ai LLM 호출당 300초·재시도 없음·전체 마감 900초, learning→ai 읽기 16분·생성 리스 18분, #437·#438. 값은 ai `theme_llm_timeout`·`theme_draft_deadline`, learning `app.theme-draft.ai-read-timeout`·`lease`), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ(예외: 주간 리포트 설명은 주 1회 배치라 report→ai 호출당 130초·설명 단계 400초, 리포트 작업 복구 후보 4시간, #479·#508). 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
-  - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`·`learning-memory`), learning→ai(판정·되묻기 `ai`, 미션 초안 `ai-mission-draft`, 주간 테마 초안 `ai-theme-draft`, 추억 검색 임베딩 `ai-memory-embedding`, 추억 설명 `ai-memory-explanation`. 기준은 아래와 같고, 기능마다 서킷을 나눠 한 기능의 ai 장애가 다른 호출을 막지 않게 한다, #305·#353·#438·#563·#564), core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 결제 환불의 learning 사용 증빙 조회(`payment/client/PremiumUsageClient`)는 `learning-json`을 함께 쓰고 응답 시간만 5초다(`LearningClient.withReadTimeout`, #654). 서킷 차단도 시간 초과·전송 실패와 같이 503 `REFUND_USAGE_UNAVAILABLE`(사용 여부 확인 불가, 환불 요청·승인 진행 안 함)이다. 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
+  - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`·`learning-memory`), learning→ai(판정·되묻기 `ai`, 미션 초안 `ai-mission-draft`, 주간 테마 초안 `ai-theme-draft`, 추억 검색 임베딩 `ai-memory-embedding`, 추억 설명 `ai-memory-explanation`, 추억 검색 질의 변환 `ai-memory-query`(#679 설계, #682 구현 전). 기준은 아래와 같고, 기능마다 서킷을 나눠 한 기능의 ai 장애가 다른 호출을 막지 않게 한다, #305·#353·#438·#563·#564), core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 결제 환불의 learning 사용 증빙 조회(`payment/client/PremiumUsageClient`)는 `learning-json`을 함께 쓰고 응답 시간만 5초다(`LearningClient.withReadTimeout`, #654). 서킷 차단도 시간 초과·전송 실패와 같이 503 `REFUND_USAGE_UNAVAILABLE`(사용 여부 확인 불가, 환불 요청·승인 진행 안 함)이다. 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
 - #305 learning→ai 판정·되묻기는 서킷 `ai` 하나를 함께 쓰므로, 그 뒤 ai→scoring 실패가 이 서킷으로 번지지 않게 ai에서 끊는다. ai→scoring(M2·M1)은 교차 확인 플래그(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`, 기본 꺼짐)가 켜진 경우에만 부르고, scoring 장애·시간 초과·5xx·4xx(입력 한도 초과 등)·계약 밖 응답은 503으로 바꾸지 않는다. ai는 교차 확인을 생략한 LLM 판정을 200으로 돌려주고 `modelScores.skipped`(`SCORING_UNAVAILABLE`·`SCORING_REJECTED`)에 사유를 남긴다(api-spec 4.2.2). 따라서 scoring 장애는 learning `ai` 서킷의 실패로 집계되지 않고 scoring과 무관한 판정·되묻기를 막지 않는다. 대신 교차 확인 없이 확정된 판정은 다시 판정하지 않는다. ai→scoring에는 서킷·재시도를 따로 두지 않는다(요청마다 남은 판정 시간 안의 timeout만).
 - #280 core→ai 리포트 설정 제안(`AiClient.reportTemplate`, 25초)은 분석 스트림과 분리한 작은 서킷 `ai-report-template`(최근/최소 10건·실패율 50%·30초 차단·half-open 1건)을 쓴다. 설정 제안 실패가 분석 대화 스트림을 차단하지 않게 하기 위해서다. HTTP 4xx는 성공으로, 전송 오류·시간 초과·5xx(ai `AI_UNAVAILABLE`·`AI_PROMPT_VERSION_UNAVAILABLE` 포함)·빈 본문은 실패로 센다. OPEN은 기존 502 `AI_UNAVAILABLE`로 실패하며 이미 차감한 분석 사용량은 그대로 둔다. 재시도는 추가하지 않는다.
 - #167 분석 서킷은 헤더/첫 이벤트가 아닌 스트림 종료 결과를 집계한다. 중간 EOF·잘못된 스트림·시간 초과·error 이벤트는 실패, 정상 done/clarification 및 기존 TEMPLATE 결과는 성공이다. 사용자 취소·core 권한/저장/전송 처리 오류는 AI 실패 집계에서 제외하고 half-open 허가를 반환한다. OPEN은 기존 AI_UNAVAILABLE로 실패하며, 이미 접수한 분석 시도의 한도/사용 이력 차감은 보존한다. HTTP/1.1과 기존 body 종료·timer 취소를 유지한다.
 - 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning 피드백 80초 > learning→core 결제 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초. learning→core는 `app.internal.core-read-timeout` 4초로 ai 35초와 따로 둔다, #501). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
 - 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
-- P27 추억 설명은 learning→ai LLM 호출(15초·재시도 1회)을 기다리므로 learning→ai 35초가 필요해 일반 프록시 30초를 넘는다. core→learning 설명 경로는 별도 서킷 `learning-memory`(응답 45초 > learning→ai 35초, 2026-11-12 확정, core #566)를 쓴다. 추억 검색도 같은 `learning-memory` 서킷을 쓰되 응답은 30초다(임베딩 1회). 검색의 임베딩 장애(learning 503 `AI_UNAVAILABLE`)가 일반 `learning-json`의 5xx 실패로 쌓여 주간 테마·시도 같은 일반 경로까지 막지 않게 하려는 것이다(2026-11-12 결정). 서킷 기준(최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·5xx 실패)은 `learning-json`과 같고, 값은 `app.learning.memory-search-timeout`·`memory-explanation-timeout`. 타임아웃 예산: 설명 45초 > learning→ai 설명 35초 + learning 내부 처리, 검색 30초 > learning→ai 임베딩 1회(20초). learning 쪽은 임베딩·설명이 각각 서킷 `ai-memory-embedding`·`ai-memory-explanation`을 쓴다
+- P27 추억 설명은 learning→ai LLM 호출(15초·재시도 1회)을 기다리므로 learning→ai 35초가 필요해 일반 프록시 30초를 넘는다. core→learning 설명 경로는 별도 서킷 `learning-memory`(응답 45초 > learning→ai 35초, 2026-11-12 확정, core #566)를 쓴다. 추억 검색도 같은 `learning-memory` 서킷을 쓰되 응답은 30초다(임베딩 1회). 검색의 임베딩 장애(learning 503 `AI_UNAVAILABLE`)가 일반 `learning-json`의 5xx 실패로 쌓여 주간 테마·시도 같은 일반 경로까지 막지 않게 하려는 것이다(2026-11-12 결정). 서킷 기준(최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·5xx 실패)은 `learning-json`과 같고, 값은 `app.learning.memory-search-timeout`·`memory-explanation-timeout`. 타임아웃 예산: 설명 45초 > learning→ai 설명 35초 + learning 내부 처리, 검색 30초 > learning→ai 임베딩 1회(20초). learning 쪽은 임베딩·설명이 각각 서킷 `ai-memory-embedding`·`ai-memory-explanation`을 쓴다. 질의 변환(#679 설계, 구현 #681·#682 전)을 더하면 검색 30초 > learning→ai 변환 5초(재시도 없음, 서킷 `ai-memory-query`, ai LLM 호출 4초·재시도 없음) + 임베딩 20초다. 변환 실패는 검색 실패가 아니라 원문 질문으로 진행하므로 core `learning-memory` 서킷 실패로 세지 않는다
 - #38 일반 core→learning JSON 프록시는 연결 2초·응답 30초를 사용한다(피드백의 80초 예산은 #39). Resilience4j count window 20·최소 20건·실패율 50%·차단 30초·half-open 1건으로 복구를 확인한다. 전송 오류·5xx를 실패로 집계하고 4xx는 정상 HTTP 결과로 센다.
 - SSE heartbeat: 모든 SSE는 15초마다 주석 줄(`: ping`) 전송. 피드백은 learning 동기 응답 대기 중 전송할 데이터가 없어 필수
 - SSE 연결 종료
@@ -172,7 +172,8 @@
 - **재시도**: 소비 실패 시 지연 재시도 3회(1·5·15분, P12) 후 DLQ 이동. `report.generate` 확정값을 모든 큐에 동일 적용
 - **명시적 관리자 재처리(#152/#47)**: 위 메시지 전송 재시도와 구분한다. core가 새 jobId·ADMIN_RETRY로 기존 명령을 발행하고 원작업 연결을 보관한다. report는 기존 생성·revision·Outbox를 재사용한다. 같은 jobId의 종료 상태 재전달은 ACK 후 종료하며, 새 관리자 HTTP API·큐·스키마를 report에 추가하지 않는다. core 관리자 접수(`POST /admin/jobs/{jobId}/retry`)는 #47에서 구현했다.
   - 큐마다 `<큐>.retry.1`(1분)·`.retry.2`(5분)·`.retry.3`(15분)을 `definitions.json`에 선언 (`x-message-ttl` = 지연, 만료 시 기본 exchange로 원래 큐 복귀)
-  - 처리 실패: 소비자가 `x-retry-count` 헤더 +1 후 `<큐>.retry.<회차>`로 재발행하고 ACK. 3회 초과 시 `reject(requeue=false)` → `dlx` → `<큐>.dlq`
+  - 처리 실패: 소비자가 `x-retry-count` 헤더 +1 후 자기 서비스 재시도 exchange(`core.retry`·`learning.retry`·`report.retry`, direct, 라우팅 키 = `<큐>.retry.<회차>`)로 재발행하고 ACK. 3회 초과 시 `reject(requeue=false)` → `dlx` → `<큐>.dlq`
+  - 재시도 exchange는 서비스 브로커 계정이 기본 exchange 쓰기 권한 없이 자기 재시도 큐에만 보내게 하려고 둔다(기본 exchange 쓰기 = 큐 이름만 알면 남의 큐에 넣을 수 있음). 재시도 큐 만료 후 원래 큐 복귀는 브로커 내부 dead-letter라 계정 권한과 무관
   - 횟수는 자체 헤더로 셈 (클라이언트 재발행 시 `x-death`가 승계되지 않음). 지연은 `definitions.json`, 최대 횟수는 서비스 설정(3)으로 단계 큐 개수와 일치
   - 메시지 변환 실패(형식 오류)는 재시도해도 복구되지 않으므로 재시도 없이 바로 reject → DLQ
   - core는 전역 수동 ACK(`acknowledge-mode: manual`, learning도 동일 설정, #128): 모든 `@RabbitListener`는 `RetryingConsumer.handle`로 처리. ACK 누락 시 메시지가 unacked로 남아 소비 정지
@@ -183,7 +184,7 @@
   - #43 계약: 내부 조회와 이벤트는 같은 kind·name별 revision·적용 scopes를 제공한다. 소비자는 초기 조회 중 이벤트를 보존·조정하고 더 높은 revision만 적용하며 승인 scope 밖에는 적용하지 않는다. core는 Pod 공유 소비 큐를 추가하지 않는다. scoring 소비·readiness는 #86에서 구현하며 ai는 #68 범위다.
   - scoring #86: 큐 바인딩·소비 시작 후 snapshot을 조회한다. 조회·로딩 중 이벤트는 이름별 최신 revision을 보존하고 readiness 전에 조정한다. 재연결 때 새 exclusive 큐를 바인딩하고 snapshot을 다시 조회하여 연결 중단 중 변경도 복구한다.
   - scoring 교체·롤백은 #85와 동일하게 S3/MinIO에서 재다운로드 → 메모리 로딩 → 임시 파일 정리 방식이다. 성공 후 참조를 교체하며 로딩 실패 시 기존 모델과 새 승인 범위의 교집합만 사용한다. 정상 기동 후 교체 실패는 기존 모델을 유지하고 재시도한다. 최초 조회·로딩 실패 또는 재연결 조정 중에는 readiness false다.
-  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`·`reportTemplate`(#280 리포트 설정 제안)·`missionDraft`(#354 미션 초안)·`reportExplanation`(#477 리포트 설명)·`themeDraft`(#437 주간 테마 초안)·`memoryExplanation`(#565 추억 설명) 9개, 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`·`ai/report-explanation`·`ai/theme-draft`·`ai/memory-explanation`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
+  - ai #68: `PROMPT`의 `name`은 `judgment`·`followup`·`analysis`·`reportNarrative`·`reportTemplate`(#280 리포트 설정 제안)·`missionDraft`(#354 미션 초안)·`reportExplanation`(#477 리포트 설명)·`themeDraft`(#437 주간 테마 초안)·`memoryExplanation`(#565 추억 설명)·`memoryQuery`(#679 추억 검색 질의 변환, #681 구현 전) 10개, 각 승인 scope는 `ai/judgment`·`ai/followup`·`ai/analysis`·`ai/report-narrative`·`ai/report-template`·`ai/mission-draft`·`ai/report-explanation`·`ai/theme-draft`·`ai/memory-explanation`·`ai/memory-query`다. 해당 scope가 없는 항목은 적용하지 않는다. 각 버전의 실제 system/user 프롬프트 본문은 ai 이미지의 코드에 함께 보관한다. core에 활성 항목이 없으면 현재 내장 버전을 사용한다. 활성 버전 본문이 이미지에 없으면 다른 본문에 그 버전명을 붙이지 않고 해당 기능의 새 요청을 503으로 거부하며 readiness는 false다. 요청마다 선택한 본문과 버전을 고정해 응답·사용량에 같은 버전을 기록한다.
   - ai도 큐 바인딩·소비 시작 후 snapshot을 조회하고 그사이 이벤트를 revision으로 조정한다. 재연결마다 새 큐를 먼저 바인딩하고 snapshot으로 유실 구간을 복구한다. readiness는 이 백그라운드 상태만 읽으며 probe가 core를 호출하지 않는다.
   - core 조회 실패 시 프로세스 종료 없이 readiness false 유지·재시도 (core 장애가 ai·scoring 기동 실패로 번지지 않게)
 - **이벤트 봉투**: CloudEvents 형식 `id, specversion, type, source, time, subject, dataschema, traceparent, data` → `contracts/events/*.schema.json`
@@ -240,13 +241,16 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
   - 응답 DTO(Spring): 여러 기능 응답이 같은 OpenAPI component를 공유하면 `_common/web`(예: learning `MissionResponse`·`MissionListItemResponse`·`AnswerItem`), 스키마가 다르면 기능별 controller DTO. `_common/web` DTO는 기능 타입 없이 열거값은 이름 문자열, 값 객체는 같은 모양의 DTO, 기능 타입이 필요한 칸은 타입 인자로 두고, domain → DTO 변환은 쓰는 기능의 controller에 둔다(데이터 표현이라 매핑 중복 허용, 업무 로직은 service 재사용) (#251)
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
 - 멱등성: `_common/web/IdempotencyService`가 `idempotency_record`와 PostgreSQL 세션 잠금을 관리. HTTP 동안 auto-commit 연결 1개만 보유하고 트랜잭션·행 잠금은 보유하지 않음 (api-spec 1.4)
-- 서비스 간 내부 호출: 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
+- 서비스 간 내부 호출: 호출자별 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
+  - 호출 주체(core·learning·ai·scoring·report-api·report-worker·운영 스크립트 ops)마다 서로 다른 토큰. 보내는 쪽은 `INTERNAL_TOKEN`(자기 토큰), 받는 쪽은 허용한 호출자 토큰만 `INTERNAL_TOKEN_<호출자>`로 받음(빈 값이면 그 호출자 거부)
+  - 받는 쪽 필터가 토큰으로 호출자를 찾고 코드에 둔 호출자별 경로 허용 목록(Spring `_common/security/InternalCallerPolicy`, Python `security.CALLER_PATHS`)을 검사. 일치하는 호출자 없음 401, 허용 경로 밖 403. 목록은 [API 명세서 4장](api-spec.md#4-내부-api-internal) 표와 같게 유지
+  - 한 서비스 토큰이 새도 그 서비스가 원래 부르던 경로만 열림(예: report-worker 토큰으로 core 결제 내부 API 403). 받는 쪽 Pod가 새면 그 Pod가 받는 호출자 토큰도 노출되는 것은 남는 위험([결정 근거](../report/infra.md#99-서비스별-내부-토큰브로커-계정-분리-2026-11-16))
 
 ### 2.3 공통 규칙
 
 - #119 내부 별명 조회는 `guardianship/controller/InternalStudentProfileController` → `guardianship/service/InternalStudentProfileService` → 기존 `ChildManagementRepository.profile` 순서다. `InternalAuthFilter`가 토큰·요청 컨텍스트를 관리하고 서비스가 SYSTEM·학생 scope를 검사한다. 응답 전용 DTO는 UUID·별명만 제공하며 ACTIVE만 조회한다. #56 기본 report-worker의 `CoreClient.lookup`·`NamedGenerator`가 조회 결과를 렌더링에 전달하고 최종 AI 요청에서 별명을 가린다([#119](../report/core-gateway.md#8-리포트용-학생-별명-내부-조회-119), [#56 검증](../report/report.md#10-기본-worker-연결-56130)).
 - 오류 응답: 전 서비스 공통 형식(RFC 9457 Problem Details), 예외 → 응답 변환은 Presentation(Spring `_common/exception`, FastAPI exception handler)
-- 사용자 컨텍스트 전파: JWT 검증은 core만, 내부 호출은 내부 토큰 + `X-User-Id`·`X-User-Role`·`X-Student-Scope`(허용 학생 ID 목록) 헤더, 이벤트는 봉투 `subject`·`data`에 포함
+- 사용자 컨텍스트 전파: JWT 검증은 core만, 내부 호출은 호출자별 내부 토큰(2.2) + `X-User-Id`·`X-User-Role`·`X-Student-Scope`(허용 학생 ID 목록) 헤더, 이벤트는 봉투 `subject`·`data`에 포함
   - #135 report 조회용 HTTP·S3 연결은 앱 lifespan에서 생성·정리한다. HTTP 연결을 재사용하되 사용자 헤더를 클라이언트 기본값으로 저장하지 않고 요청 훅의 ContextVar에서 읽는다.
   - 중간 서비스(ai)는 받은 컨텍스트 헤더를 하위 호출(learning)에 그대로 전달
   - 사용자 요청 없는 호출(report-worker 등 이벤트 소비): `X-User-Role: SYSTEM`, `X-Student-Scope` = 이벤트 `subject` 학생
@@ -467,7 +471,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ controller/
 │  ├─ service/
 │  ├─ scheduler/                 # MemoryEmbeddingScheduler: 검색 문서 임베딩 선점·재시도·리스 복구, ThemeFrameBackfillRunner: 기동 시 액자 소급
-│  ├─ client/                    # MemoryEmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient, StudentProfileClient(core 닉네임)
+│  ├─ client/                    # MemoryEmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient, MemoryQueryClient(ai /internal/memory-queries, #682 구현 전), StudentProfileClient(core 닉네임)
 │  ├─ domain/
 │  └─ repository/
 └─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
@@ -559,6 +563,12 @@ backend/ai-service/
 │  │  ├─ checks.py               # 문장 수·근거 번호·인용 검사, 번호 붙이기
 │  │  ├─ fake.py                 # MEMORY_EXPLANATION_PROVIDER=fake 개발용 문장
 │  │  └─ prompts.py              # memoryExplanation 프롬프트 본문·버전
+│  ├─ memory_query/              # 추억 검색 질의 변환: 질문 → 키워드·기간·검색용 문장 (P27, #679 설계, #681 구현 전)
+│  │  ├─ router.py               # POST /internal/memory-queries
+│  │  ├─ service.py              # 기본 LLM 1회(또는 가짜)·칸 검사
+│  │  ├─ models.py
+│  │  ├─ fake.py                 # MEMORY_QUERY_PROVIDER=fake 공백 분리 키워드
+│  │  └─ prompts.py              # memoryQuery 프롬프트 본문·버전
 │  ├─ prompt_versions/           # 활성 프롬프트 버전 (#68, #254 분리)
 │  │  ├─ router.py               # GET /internal/versions
 │  │  ├─ service.py              # PromptSync: core snapshot·대기 이벤트 조정
@@ -801,7 +811,7 @@ backend/report-service/
     | report-worker | `app/clients/core_client.py` | 학생 별명 `GET /internal/students/{id}/profile`(#119)·리포트 표시 설정 `GET /internal/students/{id}/report-template`(#209) 조회, 삭제 완료 보고 |
     | ai·scoring | `app/clients/core_client.py` | 기동·재연결 시 활성 버전 snapshot `GET /internal/model-versions/active` (ai #68, scoring #85) |
 
-  - P27(#563·#564 구현) learning→ai 추가 호출: `memory/client/MemoryEmbeddingClient`(`POST /internal/embeddings`, 기존 경로)·`MemoryExplanationAiClient`(`POST /internal/memory-explanations`). learning→ai egress는 이미 허용돼 네트워크 정책 변경 없음
+  - P27(#563·#564 구현) learning→ai 추가 호출: `memory/client/MemoryEmbeddingClient`(`POST /internal/embeddings`, 기존 경로)·`MemoryExplanationAiClient`(`POST /internal/memory-explanations`)·`MemoryQueryClient`(`POST /internal/memory-queries`, #679 설계·#682 구현 전). learning→ai egress는 이미 허용돼 네트워크 정책 변경 없음
   - migration-job: RDS egress / local: LLM API·토스 stub Service는 compose E2E 전용이며 kind에는 없음(4.1, 설명 sLLM 대역 `sllm-server`는 4.4)
 
 ### 4.4 확장
@@ -842,6 +852,9 @@ backend/report-service/
 - #171로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의. 이미지 게시·승인 흐름은 #186 범위다
 - #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/infra.md#7-cd-배포-승인이력롤백-186)
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04). DB는 서비스별 app·migrate 계정 Secret만 앱·migration-job에 주입하고 관리자 계정은 넣지 않음(#230)
+  - RabbitMQ도 서비스별 계정(`core`·`learning`·`ai`·`scoring`·`report`, 이름 고정)만 앱에 주입하고 관리자 계정(`RABBITMQ_USER`)은 init·운영자 전용. 계정·권한은 `rabbitmq-init`(`import-definitions.sh`)이 관리 API로 생성
+  - 권한: 앱은 큐·exchange를 선언하지 않으므로 configure 없음(ai·scoring만 Pod별 임시 큐: aio_pika robust 채널이 붙이는 `amq_<uuid hex>` 또는 서버 생성 `amq.gen-*`). write는 자기 발행 exchange·재시도 exchange, read는 자기 소비 큐, `events.topic` 토픽 권한으로 자기 발행 라우팅 키만 허용. core 계정은 큐 현황 조회용 `monitoring` 태그, KEDA는 report 계정 URL 사용
+  - 내부 토큰은 호출 주체별 키(`INTERNAL_TOKEN_<호출자>`)로 보관하고 각 Deployment는 자기 토큰과 허용 호출자 토큰만 `secretKeyRef`로 받음
 
 ### 4.6 관측
 - #171 local 관측 chart: Collector·Prometheus·Grafana, 공통 앱 chart Java agent로 core·learning JVM/HTTP metrics. AI는 기본 비활성 Langfuse v4 LLM 계측. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없음. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결

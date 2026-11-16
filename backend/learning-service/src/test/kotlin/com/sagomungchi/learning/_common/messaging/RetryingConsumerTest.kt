@@ -47,7 +47,7 @@ class RetryingConsumerTest {
 
         consumer.handle(message, channel, QUEUE) { error("일시 실패") }
 
-        verify(ops).send("", "$QUEUE.retry.2", message)
+        verify(ops).send("learning.retry", "$QUEUE.retry.2", message)
         verify(ops).waitForConfirmsOrDie(MessagingConfig.CONFIRM_TIMEOUT_MS)
         assertEquals(2, message.messageProperties.headers[RetryingConsumer.RETRY_COUNT_HEADER])
         verify(channel).basicAck(TAG, false)

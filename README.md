@@ -483,7 +483,7 @@ npm run dev
 | 설정 | 용도·기본 동작 |
 |---|---|
 | `POSTGRES_*`, 서비스별 `*_MIGRATE_PASSWORD`·`*_APP_PASSWORD` | 초기 DB 관리자, DDL 마이그레이션 계정과 DML 앱 계정 분리 |
-| `RABBITMQ_*`, `INTERNAL_TOKEN`, `AUTH_JWT_SECRET` | 메시징·내부 호출·JWT 서명. 실제 값은 Git에 저장하지 않음 |
+| `RABBITMQ_*`, `INTERNAL_TOKEN_*`, `AUTH_JWT_SECRET` | 메시징(관리자 1개 + 서비스별 계정 5개)·호출 주체별 내부 토큰·JWT 서명. 실제 값은 Git에 저장하지 않음 |
 | `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`, `AUTH_WEB_ORIGIN` | Google 로그인·재인증 콜백과 웹 주소 |
 | `LLM_PROVIDER`, 선택한 제공자의 키·모델 | LLM 호출. 기본 모델값은 `.env.example`과 실행 환경 확인 |
 | `M2_CROSS_CHECK_ENABLED=false` | M2를 호출하지 않음. 켠 경우에도 scoring 장애는 교차 확인 생략 사유를 기록하고 LLM 판정을 이어감 |

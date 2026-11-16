@@ -23,6 +23,9 @@ import java.net.URI
 @TestPropertySource(
     properties = [
         "app.internal.token=test-token",
+        "app.internal.callers.learning=test-token",
+        "app.internal.callers.report-worker=worker-token",
+        "app.internal.callers.ai=",
         "app.internal.connect-timeout=1s",
         "app.internal.read-timeout=1s",
     ],
@@ -30,7 +33,7 @@ import java.net.URI
 class InternalAuthFilterTest(@Autowired private val mockMvc: MockMvc) {
     @RestController
     class ProbeController {
-        @GetMapping("/internal/probe/students/{studentId}")
+        @GetMapping("/internal/students/{studentId}/profile")
         fun probe(@PathVariable studentId: String): Map<String, String?> {
             val context = UserContextHolder.current()
             context.requireStudent(studentId)
@@ -40,7 +43,7 @@ class InternalAuthFilterTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `토큰 없으면 401 Problem Details`() {
-        mockMvc.get("/internal/probe/students/s1").andExpect {
+        mockMvc.get("/internal/students/s1/profile").andExpect {
             status { isUnauthorized() }
             jsonPath("$.code") { value("UNAUTHENTICATED") }
             jsonPath("$.traceId") { exists() }
@@ -49,7 +52,7 @@ class InternalAuthFilterTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `매개변수·퍼센트 인코딩 경로도 토큰 없으면 401`() {
-        listOf("/internal;x/probe/students/s1", "/%69nternal/probe/students/s1").forEach { path ->
+        listOf("/internal;x/students/s1/profile", "/%69nternal/students/s1/profile").forEach { path ->
             mockMvc.perform(MockMvcRequestBuilders.get(URI.create(path)))
                 .andExpect(status().isUnauthorized)
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"))
@@ -58,7 +61,7 @@ class InternalAuthFilterTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `허용 범위 학생이면 컨텍스트 전달`() {
-        mockMvc.get("/internal/probe/students/s1") {
+        mockMvc.get("/internal/students/s1/profile") {
             header("X-Internal-Token", "test-token")
             header("X-User-Id", "p1")
             header("X-Student-Scope", "s1,s2")
@@ -70,7 +73,7 @@ class InternalAuthFilterTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `범위 밖 학생이면 403`() {
-        mockMvc.get("/internal/probe/students/s9") {
+        mockMvc.get("/internal/students/s9/profile") {
             header("X-Internal-Token", "test-token")
             header("X-Student-Scope", "s1")
         }.andExpect {
@@ -81,7 +84,7 @@ class InternalAuthFilterTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test
     fun `없는 경로는 404 Problem Details와 traceparent의 traceId`() {
-        mockMvc.get("/internal/unknown") {
+        mockMvc.get("/internal/payment-usage/unknown") {
             header("X-Internal-Token", "test-token")
             header("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
         }.andExpect {
@@ -89,5 +92,42 @@ class InternalAuthFilterTest(@Autowired private val mockMvc: MockMvc) {
             jsonPath("$.code") { value("NOT_FOUND") }
             jsonPath("$.traceId") { value("4bf92f3577b34da6a3ce929d0e0e4736") }
         }
+    }
+
+    @Test
+    fun `빈 토큰은 빈 호출자 설정과 맞지 않아 401`() {
+        mockMvc.get("/internal/students/s1/profile") {
+            header("X-Internal-Token", "")
+        }.andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.code") { value("UNAUTHENTICATED") }
+        }
+    }
+
+    @Test
+    fun `맞는 호출자라도 허용 경로 밖이면 403`() {
+        mockMvc.get("/internal/payment-usage/reservations") {
+            header("X-Internal-Token", "worker-token")
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("FORBIDDEN") }
+        }
+    }
+
+    @Test
+    fun `허용 패턴에 점 세그먼트를 끼운 경로는 403`() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.get(URI.create("/internal/students/%2E%2E/profile"))
+                .header("X-Internal-Token", "worker-token"),
+        ).andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+    }
+
+    @Test
+    fun `호출자 허용 경로면 통과`() {
+        mockMvc.get("/internal/students/s1/profile") {
+            header("X-Internal-Token", "worker-token")
+            header("X-Student-Scope", "s1")
+        }.andExpect { status { isOk() } }
     }
 }

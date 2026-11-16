@@ -48,6 +48,17 @@ TOPICS = [
 ]
 
 
+# 설명 카드(FN-RPT-09)용 M2 입력(api-spec 4.2.2, #668). 저장소 시드 G5 미션(demo_missions.sql)만 둔다.
+# 서술은 핵심어 묶음(`핵심어(비슷한 말)`), 논술은 글 종류. 운영 시드 migration이 아니라 시연 계정 준비에서만 넣는다.
+# 관리자 화면·초안으로 만든 테마 미션은 --m2-input JSON({"미션 code": {"keywords": [...]} 또는 {"essayType": "..."}})으로 더한다.
+M2_INPUTS = {
+    "DEMO-11-G5-ANALYZE": {"keywords": ["온도(따뜻해짐, 식음)", "열(따뜻한 기운)", "비슷해짐(같아짐)"]},
+    "DEMO-12-G5-EVALUATE": {"essayType": "주장"},
+    "DEMO-13-G5-CREATE": {"keywords": ["새 규칙(약속)", "공평(공정)", "참여(함께)"]},
+    "DEMO-15-G5-REFLECT": {"keywords": ["고쳐 쓰기(수정)", "달라진 점(나아진 점)", "까닭(이유)"]},
+}
+
+
 def topic(week_start, day):
     """주(월요일)·요일마다 정해진 소재. 연속 3주는 서로 겹치지 않는다."""
     weeks = (dt.date.fromisoformat(week_start) - dt.date(2026, 1, 5)).days // 7
@@ -191,6 +202,79 @@ def cmd_themes(api, args):
         raise SystemExit(f"게시되지 않은 테마 {missing}개")
 
 
+def cmd_m2_rubric(api, args):
+    """대상 주 게시 테마의 서술·논술 미션 기준표에 M2 입력을 채운다: 공개 기준표 복사 + keywords/essayType →
+    새 기준표 버전 → 검토 승인 → 재게시(api-spec 2.8, P07). 이미 있으면 그대로 둔다(다시 실행해도 같은 결과).
+    공개 중이 아닌 수정본이 걸려 있는 미션은 남의 편집을 게시하지 않도록 건드리지 않고 실패한다."""
+    inputs = dict(M2_INPUTS)
+    if args.m2_input:
+        with open(args.m2_input, encoding="utf-8") as f:
+            inputs.update(json.load(f))
+    atok = api.admin()
+    themes, seen, missing, blocked = [], {}, [], []
+    for week in args.weeks.split(","):
+        s, p, _ = api.call("GET", f"/admin/weekly-themes?grade={args.grade}&weekStart={week}&status=PUBLISHED", token=atok)
+        for item in api.ok("테마 목록", s, p, (200,))["items"]:
+            s, theme, _ = api.call("GET", f"/admin/weekly-themes/{item['themeId']}", token=atok)
+            themes.append((week, api.ok("테마 상세", s, theme, (200,))))
+    if not themes:
+        raise SystemExit("대상 주에 게시된 테마가 없음")
+    for week, theme in themes:
+        ready = []
+        for d in theme["days"]:
+            mid = d["missionId"]
+            if mid not in seen:
+                seen[mid] = m2_fill(api, atok, mid, inputs, args.dry_run, missing, blocked)
+            if seen[mid]:
+                ready.append(seen[mid])
+        narrative = sorted({t for kind, t in ready if kind == "NARRATIVE"})
+        # 설명은 생각 유형이 겹치지 않는 M2 점수 답변 최대 3개. 초5 M2 활성 범위는 서술이라 서술 3개가 있어야 카드 3개
+        print(f"{week} {args.grade}: M2 입력 서술 {len(narrative)}유형 {narrative}, 논술 {sum(k == 'ESSAY' for k, _ in ready)}개")
+    if missing or blocked:
+        raise SystemExit("M2 입력을 채우지 못함: " + ", ".join(
+            [f"{c}(입력 없음, --m2-input으로 추가)" for c in missing] + [f"{c}(공개 안 된 수정본 있음)" for c in blocked]))
+
+
+def m2_fill(api, atok, mission_id, inputs, dry_run, missing, blocked):
+    """미션 하나의 공개 기준표를 확인·보강한다. 서술·논술이면 (입력 방식, 생각 유형), 아니면 None"""
+    s, m, _ = api.call("GET", f"/admin/missions/{mission_id}", token=atok)
+    m = api.ok("미션 상세", s, m, (200,))
+    version = next(v for v in m["versions"] if v["version"] == m["publishedVersion"])
+    kind = version["inputType"]
+    if kind not in ("NARRATIVE", "ESSAY"):
+        return None
+    rubric = next((r for r in m["rubrics"] if r["version"] == m["publishedRubricVersion"]), None)
+    field = "keywords" if kind == "NARRATIVE" else "essayType"
+    if rubric and rubric.get(field):
+        print(f"  {m['code']} {kind}: 기준표 v{rubric['version']}에 {field} 있음")
+        return kind, version["thinkingType"]
+    want = (inputs.get(m["code"]) or {}).get(field)
+    if not want:
+        missing.append(m["code"])
+        return None
+    if (m["currentVersion"], m["currentRubricVersion"]) != (m["publishedVersion"], m["publishedRubricVersion"]):
+        blocked.append(m["code"])
+        return None
+    if dry_run:
+        print(f"  {m['code']} {kind}: {field} 채울 예정(--dry-run)")
+        return kind, version["thinkingType"]
+    keep = ("code", "label", "description", "points", "commonErrors", "goodThought", "judgeVerified", "standardCode")
+    body = {"elements": [{k: e.get(k) for k in keep} for e in rubric["elements"]],
+            "answerKey": rubric.get("answerKey"), "exampleAnswer": rubric.get("exampleAnswer"),
+            "forbiddenTerms": rubric.get("forbiddenTerms") or [], "hints": rubric.get("hints") or [],
+            "keywords": rubric.get("keywords") or [], "essayType": rubric.get("essayType"), field: want}
+    s, m2, _ = api.call("PUT", f"/admin/missions/{mission_id}/rubric", body, atok)
+    m2 = api.ok(f"{m['code']} 기준표 저장", s, m2, (200, 201))
+    pin = {"missionVersion": m2["currentVersion"], "rubricVersion": m2["currentRubricVersion"]}
+    s, p, _ = api.call("POST", f"/admin/missions/{mission_id}/review", {**pin, "result": "APPROVED",
+                                                                       "comment": "#668 시연 설명 카드용 M2 입력 보강"}, atok)
+    api.ok(f"{m['code']} 검토", s, p, (200,))
+    s, p, _ = api.call("POST", f"/admin/missions/{mission_id}/publish", {}, atok)
+    p = api.ok(f"{m['code']} 재게시", s, p, (200,))
+    print(f"  {m['code']} {kind}: 기준표 v{rubric['version']} → v{p['publishedRubricVersion']} {field} 채움·재게시")
+    return kind, version["thinkingType"]
+
+
 def theme_answer(api, theme_id):
     s, p, _ = api.call("GET", f"/admin/weekly-themes/{theme_id}", token=api.admin())
     return api.ok("테마 상세", s, p, (200,)).get("answer")
@@ -332,6 +416,11 @@ def main():
     p = sub.add_parser("themes", help="대상 주·학년 테마 게시 확인")
     p.add_argument("--weeks", required=True, help="월요일 날짜, 쉼표 구분")
     p.add_argument("--grades", default="G3,G5")
+    p = sub.add_parser("m2-rubric", help="대상 주 테마 서술·논술 미션 기준표에 M2 입력 보강(설명 카드용)")
+    p.add_argument("--weeks", required=True, help="월요일 날짜, 쉼표 구분")
+    p.add_argument("--grade", default="G5")
+    p.add_argument("--m2-input", help="시드 밖 미션의 M2 입력 JSON 파일")
+    p.add_argument("--dry-run", action="store_true", help="채울 미션만 보여 주고 저장하지 않음")
     p = sub.add_parser("solve", help="서버 시계 기준 이번 주 테마 끝내기")
     p.add_argument("--child", required=True)
     p.add_argument("--skip-pick", action="store_true", help="정답 고르기 생략(엔딩 전 상태)")
@@ -345,10 +434,11 @@ def main():
     p.add_argument("--query", help="추억 검색 질문(하루 한도 1회 사용)")
     args = ap.parse_args()
     api = Api()
-    {"children": cmd_children, "themes": cmd_themes, "solve": cmd_solve,
+    {"children": cmd_children, "themes": cmd_themes, "m2-rubric": cmd_m2_rubric, "solve": cmd_solve,
      "decorate": cmd_decorate, "verify": cmd_verify}[args.cmd](api, args)
 
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     main()

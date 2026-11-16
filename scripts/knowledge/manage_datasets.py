@@ -1,6 +1,6 @@
 """교육과정 지식 판 관리 (#466, api-spec 4.1.3). learning 내부 관리 경로를 직접 부르는 운영 스크립트.
 
-core 프록시·관리자 화면은 없다. learning에 닿는 주소(kind는 포트 포워드)와 내부 토큰(환경 변수 INTERNAL_TOKEN)만 쓰고,
+core 프록시·관리자 화면은 없다. learning에 닿는 주소(kind는 포트 포워드)와 ops 내부 토큰(환경 변수 INTERNAL_TOKEN에 INTERNAL_TOKEN_OPS 값)만 쓰고,
 토큰 값은 출력하지 않는다. 표준 라이브러리만 쓴다.
 
   # kind: kubectl -n app port-forward svc/learning-service 18081:8081

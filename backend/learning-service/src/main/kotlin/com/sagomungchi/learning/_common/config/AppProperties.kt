@@ -17,6 +17,7 @@ data class AppProperties(
     data class ThemeFrame(val backfillOnStartup: Boolean = true)
 
     data class Internal(
+        /** 이 서비스가 내부 호출에 보내는 자기 토큰 */
         val token: String,
         val connectTimeout: Duration,
         val readTimeout: Duration,
@@ -25,6 +26,8 @@ data class AppProperties(
          * 사용 예약 + 판정 + 되묻기 + 사용 완료 = 4 + 35 + 35 + 4 = 78초가 core→learning 피드백 80초보다 작게 둠 (architecture 1.3)
          */
         val coreReadTimeout: Duration = Duration.ofSeconds(4),
+        /** 받는 쪽 호출자별 토큰 (InternalCallerPolicy 키). 빈 값이면 그 호출자 거부 */
+        val callers: Map<String, String> = emptyMap(),
     )
 
     /** 소비 실패 재시도 횟수 (아키텍처 1.6, P12). definitions.json의 <큐>.retry.1~N 개수와 같아야 함 */

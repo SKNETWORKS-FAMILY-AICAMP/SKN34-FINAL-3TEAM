@@ -13,7 +13,7 @@
 |---|---|
 | 참여자 | `Web` · `core` · `learning` · `ai` · `scoring` · `report-api` · `report-worker` · `MQ`(RabbitMQ) · `Redis` · `DB`(해당 서비스 DB) · `LLM` · `Toss` · `S3` |
 | 화살표 | `->>` 동기 호출, `-->>` 동기 응답, `-)` 비동기 발행(메시지·이벤트) |
-| 내부 호출 | 모든 서비스 간 HTTP에 `X-Internal-Token`·`X-User-*`·`X-Student-Scope`·`traceparent` 자동 첨부 (`InternalRestClientFactory`·`internal_client`), 다이어그램에서는 생략 |
+| 내부 호출 | 모든 서비스 간 HTTP에 호출 주체별 `X-Internal-Token`·`X-User-*`·`X-Student-Scope`·`traceparent` 자동 첨부 (`InternalRestClientFactory`·`internal_client`), 받는 쪽이 호출자별 경로 허용 목록 검사(아키텍처 2.2). 다이어그램에서는 생략 |
 | 트랜잭션 | `rect` 영역 = DB 트랜잭션 1개. 영역 안에 서비스 간 HTTP·AMQP 호출 없음 (아키텍처 2.2) |
 | 재시도 | LLM 호출만 ai `LlmClient`에서 재시도, 서비스 간 호출은 재시도 없음 (아키텍처 1.3) |
 | SSE | 15초 heartbeat `: ping`은 모든 SSE 공통이라 생략 |
@@ -875,7 +875,7 @@ sequenceDiagram
 - 도입 전 기록은 기동·주기 작업의 멱등 소급이 같은 조건으로 `theme_frame`(`seen_at` 채움)·`memory_search_doc`(`PENDING`)을 만든다
 - #559 구현(learning V19): `theme_frame` 지급은 회차 잠금(`pg_advisory_xact_lock`) 뒤 판정해 같은 회차 두 문제가 동시에 완료돼도 한쪽이 지급한다. 소급은 learning 기동 때마다 같은 SQL로 실행(`seen_at = awarded_at`, 멱등). `memory_search_doc`은 #563 V20에서 같은 완료 트랜잭션에 등록([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 
-### 3.9 추억 검색·설명 (P27, 구현 #563·#564·#565·#566, 웹 화면 #567 구현 전)
+### 3.9 추억 검색·설명 (P27, 구현 #563·#564·#565·#566, 웹 화면 #567 구현 전, 질의 변환·하이브리드 #679 설계·#680~#682 구현 전)
 
 ```mermaid
 sequenceDiagram
@@ -893,10 +893,19 @@ sequenceDiagram
     C->>CDB: memory_daily_usage (SEARCH) 기록, 오늘 건수 > 한도면 롤백 후 429 USAGE_LIMIT_REACHED
   end
   C->>L: POST /internal/students/{id}/memories/search {query}
-  L->>A: POST /internal/embeddings {texts:[query]}
+  L->>A: POST /internal/memory-queries {query(마스킹), today} (5초, 서킷 ai-memory-query)
+  alt 변환 성공
+    A->>LLM: 질의 변환 (callType MEMORY_QUERY)
+    A-->>L: {keywords, period, searchText}
+    L->>L: 기간 보정(to는 이번 주 월요일까지, from이 to보다 앞이 아니면 버림)
+  else 변환 실패(시간 초과·5xx·형식 밖·서킷 열림) 또는 기능 꺼짐(호출 안 함)
+    L->>L: keywords 없음·period 없음·searchText = 원문
+  end
+  L->>A: POST /internal/embeddings {texts:[searchText]}
   A->>LLM: 임베딩 (callType MEMORY_EMBEDDING)
   A-->>L: {vectors}
-  L->>LDB: READY 문서 중 본인·보유 액자 회차·진행 주 제외 필터 + 코사인 거리 정렬
+  L->>LDB: READY 문서 중 본인·보유 액자 회차·진행 주 제외·기간 필터 + 벡터(유사도 0.35 이상)·키워드(content_text ILIKE) 순위
+  L->>L: RRF(k=60) 합치기 → 회차 단위 상위 3
   L-->>C: {state: RESULTS|NO_RESULTS|NO_RECORDS, cards[≤3]}
   C-->>W: 200 (learning 응답 그대로)
 
@@ -922,7 +931,7 @@ sequenceDiagram
   end
 ```
 
-- 임베딩 장애는 `503 AI_UNAVAILABLE`로 검색 실패. 설명 생성·검사 실패는 `200 {state: FAILED}`로 돌려 화면이 검색 결과를 유지
+- 임베딩 장애는 `503 AI_UNAVAILABLE`로 검색 실패. 질의 변환 실패는 검색 실패가 아니며 원문 질문으로 벡터 단독 검색(변경 전 동작, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16)). 설명의 질의 임베딩은 변환 없이 원문 질문을 쓴다. 설명 생성·검사 실패는 `200 {state: FAILED}`로 돌려 화면이 검색 결과를 유지
 - ai 요청에 학생·시도·답변 ID·이름을 넣지 않고 닉네임은 마스킹(NFR-SEC-03). 질문·설명은 저장하지 않음
 
 ### 3.10 검색 문서 임베딩 주기 작업 (P27, #563 구현)

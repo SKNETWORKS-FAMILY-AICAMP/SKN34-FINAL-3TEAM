@@ -8,7 +8,7 @@
 
 | 파일 | namespace / release | chart |
 |---|---|---|
-| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. `ai-service.json`의 설명 sLLM 연결(#476·#477: env `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`, egress `sllm-server:8080`)은 미적용. 테마 자산 버킷(#652: ai·learning의 `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`, Pod Identity agent egress)과 core의 app 기본 거부(#657: `namespaceDefaultDeny=true`, `app-default-deny`)도 미적용 |
+| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. `ai-service.json`의 설명 sLLM 연결(#476·#477: env `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`, egress `sllm-server:8080`)은 미적용. 테마 자산 버킷(#652: ai·learning의 `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`, Pod Identity agent egress)과 core의 app 기본 거부(#657: `namespaceDefaultDeny=true`, `app-default-deny`), ai M2 교차 확인 켜기(#668: env `M2_CROSS_CHECK_ENABLED=true`, 시연 설명 카드용)도 미적용 |
 | `platform-data.json` | platform / platform-data | `../../charts/platform-data` |
 | `external-secrets.json` | external-secrets / external-secrets | external-secrets/external-secrets 2.14.0 |
 | `aws-load-balancer-controller.json` | kube-system / aws-load-balancer-controller | eks/aws-load-balancer-controller 1.14.1 |
@@ -100,6 +100,23 @@ core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다.
 2026-11-05 main 배포: main `c6809dd`(PR #375)의 core V27·V28을 `core-migrate:main-c6809ddb65ee`(`sha256:5a639cd2…87fe`) Job `core-service-migrate-main-c6809ddb65ee`(V26 → V28)로, learning V10을 `learning-migrate:main-c6809ddb65ee`(`sha256:ad66d684…aaea`) Job `learning-service-migrate-main-c6809ddb65ee`(V9 → V10)로 먼저 적용했다. 성취기준 표 시드 765행은 Job `learning-seed-achievement-standards-c6809ddb65ee`로 넣었다. 적용 후 기존 앱 재시작 0. `migrations/`의 core·learning 값은 이 Job 기준이다. 앱은 `cd-release` run 42011445646(6개 release 적용, 배포 후 경로 확인만 422 실패, #376)과 run 42055199615(main `322e797`, PR #378, 같은 코드 재롤아웃, 경로 확인 6단계 통과)로 배포했다. 이 디렉토리의 앱 digest 6개는 run 42055199615 실제값이며 Deployment 이미지와 일치함을 확인했다.
 
 2026-11-06 데모 일시 정지: `demo_stack.py pause`로 앱·관측·RabbitMQ·Redis를 0으로 줄이고 RDS·EBS 스냅샷 후 노드그룹 2개 0대, RDS stopped. Karpenter는 컨트롤러 0개·NodePool `limits` 0으로 멈춰 있다(저장소 `karpenter-nodepool.json`의 상한은 재개 후 값). 재개 절차는 [EKS README](../../../eks/README.md#재개-순서와-완료-기준)를 따른다.
+
+## 자녀 이관(FN-ACC-15) prod 꺼 둠 (2026-11-16, #666)
+
+자녀 이관은 시연 범위 밖이라 prod에서 **꺼 둔다**. 서버 `APP_GUARDIAN_TRANSFER_ENABLED`와 웹 빌드 `VITE_GUARDIAN_TRANSFER_ENABLED`를 모두 설정하지 않는다(미설정=false). prod 값 파일·코드는 바꾸지 않는다. 이미 보낸 요청의 조회·취소·거절은 플래그와 관계없이 열려 있다(#307). V26은 2026-11-04 운영 RDS에 적용되어 DB 준비는 끝나 있다.
+
+이유:
+- 이관 대기 요청 만료, 수신 알림, 운영자 복구 절차가 미구현이다([auth-account 6절](../../../../docs/report/auth-account.md)).
+- 받는 학부모는 Google 로그인 계정만 조회된다. 아이디·비밀번호 학부모는 받는 쪽이 될 수 없다(#415).
+- 12/7 시연·12/8 최종 발표 흐름에 이관이 없다.
+
+켤 조건: 위 미구현 항목의 처리 또는 운영 방침 결정, 시연 흐름에 이관이 들어갈 경우 받는 계정을 Google 계정으로 준비.
+
+켜는 방법:
+1. `core-service.json`에 `APP_GUARDIAN_TRANSFER_ENABLED=true` 추가, 웹 빌드 환경에 `VITE_GUARDIAN_TRANSFER_ENABLED=true` 추가.
+2. `redeploy-app.ps1 -Service core-service` dry-run 결과 확인.
+3. 확인 후 `-Apply`로 core 재배포, 웹은 다시 빌드해 S3에 올리고 `index.html`을 마지막에 교체.
+4. 이 절과 auth-account 6절의 "꺼 둠" 기록을 갱신.
 
 ## 보존과 환경 경계
 
