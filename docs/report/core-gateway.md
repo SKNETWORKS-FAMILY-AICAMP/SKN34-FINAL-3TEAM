@@ -738,3 +738,38 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 ### 남은 일
 
 - learning #559(PR #571)는 병합됨. 배포 환경에서 실제 연동 확인. web #561이 이 경로를 쓴다
+
+## 29. LLM 단가 등록·월 예산 경보 합산 (#651, 2026-11-16)
+
+P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `llm_usage.cost_usd`는 소비 시점 단가로 계산한다(`LlmUsageService.cost`). `app.llm-pricing`이 비어 있어 모든 행이 null이었고 `llm_usage_month_to_date_priced_cost`가 0에 머물러 경보가 울릴 수 없었다.
+
+### 등록한 단가
+
+출처 OpenAI API pricing(`https://developers.openai.com/api/docs/pricing`), 2026-11-16 확인, Standard 등급·입력 272K 이하. 100만 토큰당 USD.
+
+| 모델 | 입력 | 출력 | 쓰는 곳 |
+|---|---|---|---|
+| `gpt-6-luna` | 0.10 | 0.50 | 기본 모델(판정·되묻기·분석·리포트 서술·미션 초안·테마 생성) |
+| `gpt-6.1-terra` | 1.00 | 5.00 | 테마 초안 검토 모델(#437). 뒤에 luna로 통일할 수 있어 둘 다 등록 |
+| `text-embedding-3-small` | 0.02 | 0 | 지식·추억 임베딩(출력 없음) |
+| `gpt-image-2.6-sunburst` | 8.00 | 30.00 | 테마 그림(이미지 토큰 단가) |
+
+### 결정과 근거
+
+- **위치: `application.yml` 기본값**(사용자 결정 2026-11-16). 공개 단가라 비밀값이 아니고 compose·local·prod가 같은 값을 써서 환경별 파일(prod `core-service.json` 등)은 고치지 않았다
+- 모델명에 `.`·`-`가 있어 키를 `"[gpt-6.1-terra]"`처럼 대괄호로 감쌌다. Spring은 환경 변수 이름의 `_`를 `.`으로 읽으므로 이 키를 환경 변수 이름으로는 표현할 수 없다. 환경별로 덮어써야 하면 `SPRING_APPLICATION_JSON`(예: `{"app":{"llm-pricing":{"gpt-6.1-terra":{"input":1.0,"output":5.0}}}}`)을 쓴다. 맵은 모델 키 단위로 합쳐져 적은 모델만 바뀐다
+- 단가는 저장 시점에 계산해 남기므로 단가를 바꿔도 이미 저장된 행은 다시 계산되지 않는다. 등록 전 행(null)도 그대로 미산정으로 남는다
+
+### 한계
+
+- **그림 근사치**: `llm_usage`에 글 입력·이미지 입력·이미지 출력 토큰이 나뉘지 않아 입력 토큰 전체에 이미지 입력 단가(8.00)를 매긴다. 글 입력 토큰 단가가 더 낮으면 실제보다 조금 크게 잡힌다
+- **캐시 입력 단가 미반영**: 사용량 이벤트에 캐시 토큰 칸이 없어 캐시 할인 없이 일반 입력 단가로 계산한다(실제보다 크거나 같음)
+- **영상(Veo `veo-3.1-fast-generate-001`) 미등록**: 초 단위 과금이고 ai가 토큰을 null로 보내므로 `cost_usd` null, `unpricedCalls`로 센다. 예산 합산에 영상 비용이 빠진다. 클러스터 안 sLLM(리포트 설명·채점 M1/M2)도 토큰 단가가 없어 같은 처리
+- 위 미산정 호출이 생기면 `llm-unpriced-calls`(> 0) 경보가 함께 울린다. 설계상 미산정인 호출 종류를 경보에서 뺄지는 따로 정한다
+- 예산 금액(300 USD) 변경과 실제 원가 산식(#630)은 범위 밖
+
+### 검증
+
+- `LlmUsageQueryTest`: 실제 `application.yml` 기본 단가가 `.`·`-` 모델명 키 그대로 읽히는지(luna·terra·임베딩·그림 비용 값), Veo는 null·`unpricedCalls` 1, 월 누계는 단가 있는 호출만 합산
+- local kind(2026-11-16): 이 변경으로 빌드한 core로 교체한 뒤 ai 판정 1건 호출 → `llm_usage` 새 행 `JUDGMENT`·`gpt-6-luna`·입력 449·출력 66·`cost_usd` 0.0000779(계산값과 같음), Prometheus `llm_usage_month_to_date_priced_cost` 0.0000779(> 0). 교체 전 행 639건은 null 그대로
+- AWS 운영 확인은 데모 환경 재가동 때 한다
