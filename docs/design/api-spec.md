@@ -79,7 +79,7 @@
 | `DELETION_IN_PROGRESS` | 409 | report 학생 삭제가 진행 중이므로 리포트 조회를 잠시 차단(core가 같은 코드로 전달), core 자녀 삭제 요청이 이미 진행 중 (5.6) |
 | `VALIDATION_FAILED` | 400 / 422 | 형식 오류 (`errors[]`에 필드별 사유). 형식은 맞지만 업무 규칙에 어긋난 PIN(3.11)·꾸미기 선택값(3.12)은 422 |
 | `ANSWER_INCOMPLETE` | 422 | 필요한 선택·입력 누락 (FN-LRN-04) |
-| `ANSWER_INAPPROPRIATE` | 422 | 학생이 쓴 답변(최초·보완)에 욕설·비속어·성적·혐오·위협 표현이나 연락처(전화번호·이메일) → 저장·판정 요청 없이 차단. `detail`은 범주별 고정 안내 문구, 걸린 단어·원문은 응답에 넣지 않음 (#205) |
+| `ANSWER_INAPPROPRIATE` | 422 | 학생이 쓴 답변(최초·보완)에 욕설·비속어·성적·혐오·위협 표현이나 연락처(전화번호·이메일) → 저장·판정 요청 없이 차단. `detail`은 범주별 고정 안내 문구, 걸린 단어·원문은 응답에 넣지 않음 (#205). 단어 목록을 통과한 글도 표현 분류 모델(4.3.4)이 모욕 표현으로 판단하면 같은 422·같은 표현 문구. 응답 모양·문구는 바뀌지 않고 모델이 막았는지는 응답에 드러나지 않음. 모델 장애·지연·미활성이면 모델 검사 없이 진행 (#688) |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 키에 다른 요청 본문 |
 | `ATTEMPT_DRAFT_CONFLICT` | 409 | 초안 버전 충돌, 응답에 최신 초안 포함 (FN-LRN-17) |
 | `ATTEMPT_CLOSED` | 409 | 완료된 학습 시도에 쓰기, 마무리(`finished_at`) 이후 답변 제출 (P04) |
@@ -931,7 +931,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수. 저장 학년 7~9인 중학생은 중학교 과정 확장 전까지 6으로 맞춤, P26 #432)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출. 미션에 분류 그룹 `categories`·수학 답 단위 `answerUnit` 포함(3.8, #79) |
 | POST | `/internal/missions/{id}/attempts?grade&demo&sundayTheme` | core | 시도 시작·이어하기 (2.2와 1:1). 조회와 동일하게 core가 인증된 학생의 `grade`(필수, 3~6)와 `demo`(`student.is_demo`, 기본값 `false`)를 전달함. 공개 요청의 `grade`·`demo` 값은 사용하지 않음. 진행 중인 시도가 있으면 미션의 공개 여부나 제공 범위와 관계없이 해당 시도를 반환(`200`)하고, 신규 시도는 `201`을 반환함. core는 응답 상태를 그대로 전달하며, 신규 시도의 제공 범위 검사와 기존 시도의 시작 당시 버전 유지는 learning이 담당함. #387: core가 body `{context}`를 그대로 넘기고(요일·되돌아보기 검사는 learning #385), 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA` `201`만 core `mission_daily_usage`에 집계(2.2, core #485). #485: `sundayTheme`(`true`·`false`, core가 항상 붙임)은 KST 일요일이고 상품이 일요일 테마를 허용할 때만 `true`([core 보고서 18절](../report/core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10)), learning은 `true`일 때만 일요일을 토요일과 같이 연다(#484) |
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1). 생각 열기 응답 형식은 `{question, seq, total}`이며, 질문이 없는 미션은 `404`를 반환함. 시도 상세 `answers[]`는 `{answerId, version, submittedAt, inputType, text(입력 틀 칸 이름을 붙인 원문), followupId, content, feedback}`, `feedback`은 아래 피드백 결과와 같은 모양(판정 전이면 `{status, judgment:null, followup:null, nextActions:[], versions:null}`), 시도 `nextActions`는 마지막 답변의 `nextActions`. 시도 상세의 `reveal`·`revealKind`·`checklist`는 마무리 뒤에만, `reflection{difficulty, text}`는 돌아보기 뒤에만(그 전에는 `null`). 마무리 `finish` → `200 {attemptId, finishedAt, reveal(시도 기준표 버전의 예시 답, 닫힌 문제는 정답과 해설), revealKind(고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`), checklist(기준표 요소 전체 3.2 `Element[]`, 이 시도의 처리 완료 판정 중 원문 구절과 함께 충족된 요소만 체크·가장 최근 구절)}`, 판정 `DONE` 1회 미만이면 `409 REVEAL_CONDITION_UNMET`, 다시 요청하면 기록하지 않고 같은 결과. 돌아보기 `reflection` `{difficulty(EASY·NORMAL·HARD, 필수), text(선택, 빈 글은 null)}` → `200 {attemptId, status:"COMPLETED", reflection}`(완료 시점은 시도 상세·기록 조회), 난이도 없음·값 밖 `400`, 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`. 자기 평가 `self-assessment` `{checks:[{elementId, checked}]}` → `200 [{elementId, label, selfChecked(체크 안 한 요소는 null), aiChecked, quote}]`(기준표 요소 전체), 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`, 비었거나 같은 요소 두 번·기준표 밖 요소 `400`, 다시 보내면 `checked`만 바꿈 |
-| POST | `/internal/attempts/{id}/answers` | core | 답변 제출 (3.1·3.8 형식). `Idempotency-Key`(UUID) 필수, 없거나 형식 오류면 `400`. 같은 키·같은 본문은 처음 답변을 `201`로 다시, 다른 본문은 `422 IDEMPOTENCY_KEY_REUSED`. 미션 입력 방식과 다르면 `400`, 누락은 `422 ANSWER_INCOMPLETE`, 서술·풀이·논술 글에 욕설·비속어·성적·혐오·위협 표현이나 연락처(전화번호·이메일)가 있으면 `422 ANSWER_INAPPROPRIATE`(누락 검사 다음·되묻기 연결 검사 전, 저장·판정 없이 차단. `detail`은 범주별 고정 문구로 표현은 "고운 말로 바꿔서 다시 적어 주세요.", 연락처는 "전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요."이고 걸린 단어·원문은 넣지 않음. 혐오 표현과 `새끼`처럼 뜻이 둘인 말은 미션 본문에 나온 말이면 허용, #205), 마무리·완료한 시도는 `409 ATTEMPT_CLOSED`. 보완 답변은 가장 최근 미답 되묻기의 `followupId` 필수(아니면 `422 ANSWER_INCOMPLETE`). 저장하면 같은 트랜잭션에서 초안 `content.answer`를 비우고 `memo`는 유지, 초안 `version` +1 |
+| POST | `/internal/attempts/{id}/answers` | core | 답변 제출 (3.1·3.8 형식). `Idempotency-Key`(UUID) 필수, 없거나 형식 오류면 `400`. 같은 키·같은 본문은 처음 답변을 `201`로 다시, 다른 본문은 `422 IDEMPOTENCY_KEY_REUSED`. 미션 입력 방식과 다르면 `400`, 누락은 `422 ANSWER_INCOMPLETE`, 서술·풀이·논술 글에 욕설·비속어·성적·혐오·위협 표현이나 연락처(전화번호·이메일)가 있으면 `422 ANSWER_INAPPROPRIATE`(누락 검사 다음·되묻기 연결 검사 전, 저장·판정 없이 차단. `detail`은 범주별 고정 문구로 표현은 "고운 말로 바꿔서 다시 적어 주세요.", 연락처는 "전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요."이고 걸린 단어·원문은 넣지 않음. 혐오 표현과 `새끼`처럼 뜻이 둘인 말은 미션 본문에 나온 말이면 허용, #205. 단어 목록 다음 같은 자리에서 표현 분류 모델 결과(4.3.4, 시도 잠금 전에 미리 받아 둠)가 flagged면 같은 422·표현 문구, #688), 마무리·완료한 시도는 `409 ATTEMPT_CLOSED`. 보완 답변은 가장 최근 미답 되묻기의 `followupId` 필수(아니면 `422 ANSWER_INCOMPLETE`). 저장하면 같은 트랜잭션에서 초안 `content.answer`를 비우고 `memo`는 유지, 초안 `version` +1 |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기). `200` 결과는 3.2 `result`와 같은 `{status, judgment{judgmentId, result, trial, elements[{elementId(rubric_element.id), label, satisfied, quote, sourceType}], heldReason}, followup{followupId, type, question, source}, nextActions, versions{mission, rubric, model, prompt}}`, `versions.mission`·`rubric`은 `미션 code@버전`, 규칙 판정이면 `model`·`prompt` 없음. 다른 요청이 처리 중이면(그사이 다른 요청이 실패한 경우도 포함, 다시 요청하면 실행) `200 {status:"RUNNING", judgment:null, followup:null, nextActions:[], versions:null}`. ai·LLM 실패·타임아웃·서킷 차단은 판정 `FAILED` 후 `503 AI_UNAVAILABLE` + `retryable`(ai가 false로 준 오류·ai 4xx·계약 밖 응답은 false), 그 밖의 예상 못 한 오류는 판정 `FAILED` 후 `500`. 허용 안 되는 판정 전이는 `409 JUDGMENT_STATE_CONFLICT`(learning 내부 방어 코드: 처리 중이 아닌 판정을 끝내거나 실패로 기록하려 함, state-diagram 1.3. 획득한 리스로만 저장해 정상 흐름에서는 없어 1.3 공통 오류 표에는 넣지 않음). `nextActions`는 지금 할 수 있는 행동: 이 판정의 되묻기에 아직 답하지 않았으면 `[ANSWER_FOLLOWUP, FINISH]`, 되묻기가 없으면 `[FINISH]`, 마무리·완료한 시도는 `[]` |
 | POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03, #80). `X-User-Role: ADMIN`, `X-Student-Scope`에 판정 학생 정확히 1명, `X-User-Id`(UUID, 정정한 관리자 = `corrected_by`) 필수. 요청 `{reportId(UUID), reason(1자 이상), corrected(CORRECT·PARTIAL·RETHINK·HELD)}` + `Idempotency-Key`(UUID, core가 저장한 정정 ID). 기존 판정·요소·답변은 그대로 두고 `judgment_correction` 행 추가. `200 {correctionId, previousResult(정정 직전에 보이던 결과, 앞선 정정이 있으면 그 결과), corrected, createdAt, impact{conversation, aggregation, report}}`(값은 `APPLIED`·`NOT_APPLIED`·`UNKNOWN`, 5.7.1. `AFFECTED`·`NOT_AFFECTED`는 core가 채우며 learning은 보내지 않음). 같은 키·같은 요청(판정·본문)은 처음 응답 전체를 다시 `200`, 다른 요청이면 `422 IDEMPOTENCY_KEY_REUSED`. 같은 `reportId` 정정이 다른 키로 이미 있으면 `409 CORRECTION_REPORT_CONFLICT`, 판정이 `DONE` 전이면 `409 JUDGMENT_STATE_CONFLICT`, 판정 없음 `404`, 역할·학생 범위 위반 `403`, 헤더·본문 형식 오류 `400`(409·422 코드는 learning 내부용, 공개 오류는 core #46이 바꿔 정함). 이후 피드백 결과·시도 상세·기록(#27)의 `judgment.result`는 최신 정정 결과(정정이 있으면 `heldReason: null`), 판정 요소·되묻기·`nextActions`는 원판정 그대로. `impact.aggregation`은 learning 수치 집계가 판정 결과를 쓰지 않아 `NOT_APPLIED`(변경 대상 없음), `conversation`·`report`는 learning이 확인할 수 없어 `UNKNOWN` (core #46 계약 `support-learning-required.yaml`) |
 | GET | `/internal/support/targets/{targetType}/{targetId}` | core | 신고·문의 대상 확인(#46 접수·정정 전 확인, #146). `targetType` JUDGMENT·FOLLOWUP·ATTEMPT. `X-User-Role` STUDENT·PARENT·ADMIN(ADMIN은 `X-Student-Scope`에 학생 정확히 1명), `X-User-Id`(UUID) 필수. `200 {studentId, attemptId, judgmentId?, previousResult?}`: JUDGMENT는 `judgmentId`·`previousResult`(지금 보이는 결과, 최신 정정 반영, 판정 `DONE` 전이면 없음), FOLLOWUP은 되묻기를 만든 판정의 `judgmentId`, ATTEMPT는 둘 다 없음(없는 칸은 생략). 원문 없음. 대상 없음 `404`, 대상 학생이 범위 밖·역할 위반 `403`, `X-User-Id` 누락·형식 오류 `400` |
@@ -1167,7 +1167,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 가짜 구현(개발용): `MEMORY_QUERY_PROVIDER=fake`면 LLM 없이 질문을 공백으로 나눈 앞 5개(1~20자로 자름, 중복 제거)를 `keywords`로, `period = null`, `searchText` = 원문. 모델 `fake-memory-query-v1`, 사용량 없음
 
 
-### 4.3 scoring-service (호출: ai)
+### 4.3 scoring-service (호출: ai, learning)
 
 #### #549 채점 전 글 정리 (11/12 확정)
 
@@ -1214,16 +1214,29 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 |---|---|---|
 | POST | `/internal/m2/scores` | 위 #228 계약. 서술 9항목·논술 3영역의 정수/소수 점수와 실제 모델 버전 반환 |
 | POST | `/internal/m1/checks` | `{problem, answerKey, solution:{steps,finalAnswer}}` → 현재 미학습이므로 `{active:false}`. 활성 추론·확신도 처리는 후속 범위(P15) |
+| POST | `/internal/toxicity/checks` | 아래 4.3.4. 학생이 쓴 칸별 글 → `{active, flagged, model}`. 호출은 learning만 (#688) |
 | GET | `/internal/versions` | 로딩 완료한 활성 모델 `{items:[{name,version,revision}]}`. name 순 정렬, 없으면 `{items:[]}`. 내부 토큰 필수 |
 
 #### 4.3.3 #85 scoring 모델 조회·로딩 기준 (2026-10-28)
 
-- core의 활성 snapshot에서 `kind=MODEL`, 이름이 `m2-` 또는 `m1-`로 시작하는 항목만 처리한다. `artifactUri`의 S3 디렉터리를 내려받아 로컬 파일로만 로딩하며 외부 모델 저장소로 대체하지 않는다.
+- core의 활성 snapshot에서 `kind=MODEL`, 이름이 `m2-`·`m1-`·`tox-`로 시작하는 항목만 처리한다. `artifactUri`의 S3 디렉터리를 내려받아 로컬 파일로만 로딩하며 외부 모델 저장소로 대체하지 않는다.
 - `/internal/versions`는 core가 요구한 버전이 아니라 **실제로 로딩 완료한 버전**을 반환한다. 초기 조회·로딩 전에는 빈 목록이며 준비 여부는 `/health/ready`의 `models` 항목으로 구분한다. S3 경로·평가 자료·비밀 값은 반환하지 않는다.
 - 사용자 결정: core 조회 성공 + 활성 모델 없음은 `models=UP`. 해당 모델은 비활성이며 #87·#88에서 `{active:false}`로 응답한다. core 조회 실패 또는 첫 가중치 로딩 실패는 `models=DOWN` 상태에서 백그라운드 재시도하고 프로세스를 종료하지 않는다. 다른 readiness 항목도 모두 UP이어야 HTTP 200이다.
 - 교체는 새 가중치 로딩 완료 후 수행한다. 교체 실패 시 기존 로딩 버전을 유지한다. 같은 kind·name의 낮은 revision은 무시하고, 실패한 최신 revision은 재시도할 수 있다. 새 승인 범위가 좁아졌다면 기존 모델 유지 중에도 이전·새 범위의 교집합에서만 사용한다.
 - scope는 #43 계약의 문자열 정확 일치로 검사한다. 학년·입력 유형의 M2 scope는 위 #87 계약의 정확 일치 키를 사용한다. core 승인 범위를 임의로 확장하지 않는다.
 - #85는 기동 snapshot·로더·레지스트리 기반, Pod별 큐 바인딩 후 snapshot 조회·보존 이벤트 조정·재연결은 #86이다.
+
+#### 4.3.4 답변 표현 분류 (#688, 계약 #689, 구현 #691)
+
+- `POST /internal/toxicity/checks`: 호출은 learning만(답변 제출, 4.1). 내부 토큰 필수, 다른 호출자는 401
+- 요청 `{texts: string[]}`: 학생이 쓴 칸마다 1개, 1~20개, 모든 칸 합계 1~1,500자. 공백만 있는 칸·상한 초과·알 수 없는 필드는 400. learning은 공백 칸을 빼고 칸 순서대로 앞 20칸, 합계 앞 1,500자까지만 보낸다(걸친 칸은 앞부분만, 그 뒤는 뺌. 넘을 때 건너뛰면 글을 늘려 검사를 피할 수 있어 잘라서 보냄). 보낼 칸이 없으면 부르지 않는다
+- 응답 `{active:true, flagged:boolean, model:{name,version,revision}}`. 활성 `tox-` 모델이 없거나 `answer-filter` 승인 범위가 없으면 200 `{active:false}`. 칸별 결과·점수·걸린 말은 응답에 없다
+- 판정: 칸마다 토큰 창(`train_info.json`의 `max_length`·`stride`, 기준안 128·32)으로 나눠 2분류하고, 한 창이라도 모욕 확률이 `threshold` 이상이면 그 칸이 걸린다. 한 칸이라도 걸리면 `flagged:true`. 임계값은 모델 파일에만 있고 요청으로 바꾸지 않는다
+- 동시 실행: M2와 따로 tox 전용 게이트 1개(M2 `Semaphore(1)`과 섞지 않음), 1초 안에 차례가 오지 않거나 창 8개 묶음 사이에서 처리 시작부터 1.3초를 넘으면 계산을 멈추고 503. learning이 1.5초에 끊은 뒤에도 scoring이 버려질 계산을 계속해 다음 요청을 막지 않게 하기 위해서다
+- 오류: 토큰 401, 형식·개수·길이 400, 모델 추론 실패·게이트 대기 초과·처리 마감 초과 503 `SCORING_UNAVAILABLE`. 장애를 `active:false`로 바꾸지 않는다
+- 사용량 이벤트는 보내지 않는다(LLM이 아니라 토큰 단가가 없음, core `callType`을 늘리지 않음). 로그·지표에는 원문·점수·학생 ID를 넣지 않고 모델 이름·결과·지연만 남긴다(NFR-SEC-05)
+- 소비 측(learning)은 시간 초과·5xx·4xx·계약 밖 응답·서킷 열림·`active:false`를 모두 "검사 안 됨"으로 보고 제출을 진행한다(architecture 1.3)
+- 모델 이름·범위·파일은 5.2·5.2.1. 값(칸 20개·합계 1,500자·창 128/32·게이트 1초·마감 1.3초)은 11/16 CPU 측정으로 정한 기준안이다(운영 scoring CPU limit 1개 기준 1,500자 약 1.1초, 근거는 learning.md 16장). #691에서 실제 Pod로 다시 잰다
 
 ### 4.4 report-service (호출: core)
 - 호출 대상은 `report-api` Deployment (KEDA로 0까지 줄어드는 `report-worker`와 분리, [아키텍처 4.4](architecture.md#44-확장))
@@ -1302,6 +1315,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - manifest는 `models[]`의 `name/version/scope/files[{file,bytes,sha256}]`를 대조한다. 최상위 `주의`와 일치 모델의 `주의`를 limitations 후보로 쓰되 명시한 `evaluation.limitations`(빈 목록 포함)가 우선한다. JSON·manifest·해시 목록의 확인은 실제 산출물 해시 대조나 로딩·품질 승인을 의미하지 않는다.
 - #366: 감사 목록의 `MODEL_VERSION`에는 선택 `detail` 객체(name·version·scopes·reason·reanalysisPlanned·previousVersionId)를 반환한다. 다른 대상 및 허용 목록 밖 detail 필드는 공개하지 않는다. 웹에서 펼쳐 본다.
 - 범위 키는 소비자가 동일하게 사용하는 소문자 논리 식별자(예: `judgment/grade-3/narrative`, 최대 200자, `[a-z0-9][a-z0-9._:/-]*`)다. core는 문자열의 정확한 집합 포함 관계만 확인하며 와일드카드·계층 확장을 하지 않는다. 원본 평가 문항·학생 원문은 저장하지 않는다. 검토 기록의 사실성·품질 수치의 적합성은 사람이 판단하며 서버는 자료 자체를 실행·검증했다고 주장하지 않는다.
+- scoring 모델 이름은 `(m1|m2|tox)-…`. `tox-`는 답변 표현 분류(4.3.4)이고 승인 범위는 `answer-filter` 하나다(학년 구분 없음, #688). 로더는 2분류 config(`num_labels=2`)와 `train_info.json`의 `threshold`(0 초과 1 미만)·`max_length`·`stride`를 검사하고, 회귀 모델이거나 `threshold`가 없으면 거부한다
 - POST `/{versionId}/activate`: `{approved:true,scopes,reason,reanalysisPlanned}`. REGISTERED만 최초 승인·활성화할 수 있다. 필수 평가 근거 누락·미승인·평가 외 범위는 422, 이미 활성화 이력이 있는 대상은 409다. 승인자는 요청 값이 아닌 #36 인증 계정 ID다. 기존 ACTIVE는 INACTIVE가 되고 승인·평가 이력은 보존한다.
 - POST `/{versionId}/rollback`: `{scopes,reason,reanalysisPlanned}`. 같은 kind·name의 현재 ACTIVE가 있고, 대상이 과거 승인·활성화된 INACTIVE이며 요청 범위가 당시 승인 범위의 부분 집합일 때만 성공한다. 잘못된 상태는 409, 승인 외 범위는 422다. 원 승인자·승인 범위는 보존하고 복귀 수행자는 감사 이력에 별도 기록한다.
 - `reanalysisPlanned`는 재분석 여부 기록일 뿐 작업을 실행하지 않는다. 기존 관찰·질문·분석·리포트 결과는 수정하지 않는다. 등록·성공 교체는 audit_log에 추가하며 교체의 상태·감사·Outbox는 한 트랜잭션이다.
@@ -1326,7 +1340,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 #### 5.2.1 모델 파일 사전 검사 (#368)
 
 - 관리자 `POST /api/v1/admin/models/preflight`: SERVICE_OPS 권한. core가 내부 토큰을 붙여 scoring `POST /internal/models/preflight`로 동기 중계한다. core HTTP 제한 20초, 자동 재시도 없음.
-- 요청: `name`, `version`, `artifactUri`, manifest의 `files[{file,bytes,sha256}]`. config.json·tokenizer.json·tokenizer_config.json·train_info.json·score_cuts.json·model.safetensors를 각각 한 번씩 받는다. 승인 관련 필드·알 수 없는 필드는 거부한다.
+- 요청: `name`, `version`, `artifactUri`, manifest의 `files[{file,bytes,sha256}]`. config.json·tokenizer.json·tokenizer_config.json·train_info.json·score_cuts.json·model.safetensors를 각각 한 번씩 받는다. `tox-` 모델은 `score_cuts.json`이 없어 나머지 5개를 받는다(#688). 메타데이터 검사도 이름 접두어별로 한다. 승인 관련 필드·알 수 없는 필드는 거부한다.
 - 응답: `{status: PASS|FAIL, code, files:[{file,status,code}]}`. 검사 대상 파일이 없거나 불일치해도 검사 결과는 HTTP 200/FAIL이다. 잘못된 요청 400, 권한 401/403, scoring 응답 오류 502, 연결/시간 제한 503은 기존 RFC 9457 형식이다.
 - scoring은 설정된 S3 버킷의 models/ 경로만 검사한다. 각 파일 HEAD로 존재·크기를 확인한다. 세 메타데이터 JSON만 ETag 조건(If-Match)으로 고정하여 최대 1MiB 본문을 읽고 SHA-256을 직접 대조한다. 나머지 파일은 S3가 제공하는 전체 SHA-256을 비교하며 ETag·사용자 메타데이터·COMPOSITE 체크섬을 파일 해시로 사용하지 않는다. 없는 체크섬은 CHECKSUM_UNAVAILABLE이다.
 - `validate_metadata`를 재사용해 학습 입력·점수 경계와 config의 회귀 출력 수를 확인한다. 모델·토크나이저 로딩, 점수 추론, 파일 쓰기는 하지 않는다. scoring은 15초 작업 예산과 개별 S3 연결/읽기 1초·재시도 없음으로 제한한다.
