@@ -2739,9 +2739,9 @@ components:
       type: object
       additionalProperties: true
       required: [state, cards]
-      description: 'learning 소유 추억 검색 결과(api-spec 2.12·4.1.4, learning #563). core는 바꾸지 않고 전달한다.'
+      description: 'learning 소유 추억 검색 결과(#563·#682). 하이브리드 순위로 회차 최대 3개, score는 최고 벡터 유사도. core는 바꾸지 않고 전달한다.'
       properties:
-        state: {type: string, enum: [RESULTS, NO_RESULTS, NO_RECORDS], description: 'NO_RESULTS 관련도 기준 미달, NO_RECORDS 보유 액자 없음'}
+        state: {type: string, enum: [RESULTS, NO_RESULTS, NO_RECORDS], description: 'NO_RESULTS 관련 결과 또는 기간에 맞는 결과 없음, NO_RECORDS 보유 액자 없음'}
         cards:
           type: array
           maxItems: 3

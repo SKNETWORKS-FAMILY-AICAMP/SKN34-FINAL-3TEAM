@@ -2213,7 +2213,7 @@ classDiagram
     <<client>>
     +explain(query, evidence) ExplanationDraft
   }
-  class MemoryQueryClient {
+  class MemoryQueryAiClient {
     <<client>>
     +rewrite(query, today) MemoryQuery
   }
@@ -2232,7 +2232,7 @@ classDiagram
   MemorySearchService --> MemorySearchRepository
   MemorySearchRepository --> MemoryVectorMapper
   MemorySearchService --> MemoryEmbeddingClient : 질문·문서 임베딩
-  MemorySearchService --> MemoryQueryClient : 질의 변환(#679)
+  MemorySearchService --> MemoryQueryAiClient : 질의 변환(#679)
   MemoryExplanationService --> MemoryEvidenceRepository : 본인 READY 근거 재확인
   MemoryExplanationService --> MemoryEmbeddingClient : 질의 관련도 재확인
   MemoryExplanationService --> MemoryExplanationAiClient
@@ -2240,7 +2240,7 @@ classDiagram
   AlbumService --> ThemeFrameService
 ```
 
-- 질의 변환·하이브리드(#679 설계, #682 구현 전): `MemoryQueryClient`는 ai `POST /internal/memory-queries`(읽기 8초, 재시도 없음, 서킷 `ai-memory-query`)를 부르고 모든 실패(시간 초과·5xx·형식 밖·서킷 열림)에서 예외 대신 null을 돌려준다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩 → `MemorySearchRepository`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
+- 질의 변환·하이브리드(#679 설계, #682 구현): `MemoryQueryAiClient`는 ai `POST /internal/memory-queries`(읽기 8초, 재시도 없음, 서킷 `ai-memory-query`)를 부르고 실패(시간 초과·5xx·형식 밖·서킷 열림)를 서비스에 전달한다. 서비스는 해당 예외를 원문 로그 없이 null로 처리한다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩 → `MemorySearchRepository`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
 - #559 구현(learning V19): `ThemeFrameService`(지급·소급·보유·확인·삭제)·`AlbumService`·`MemoryController`의 앨범·확인·보유 확인과 기동 소급 `ThemeFrameBackfillRunner`. 회차 상세의 문제·시도·엔딩은 `WeeklyThemeService.pastRound`가 조합. 검색은 #563 구현, 설명은 #564 구현([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 - 학습 완료 처리(기존 `AttemptService`의 돌아보기 저장 = 학습 완료)가 같은 트랜잭션에서 `ThemeFrameService.awardIfComplete`(회차 5문제 완료 시 액자)와 `MemorySearchService.register`(`PENDING` 문서, 내부에서 `MemorySearchRepository.register`)를 부름. 다른 기능은 memory repository를 직접 부르지 않음(architecture 2.2). `EXTRA` 시도는 둘 다 건너뜀
 - `MemoryEmbeddingScheduler`는 `StuckJudgmentScheduler`처럼 조건부 UPDATE 선점이라 잠금 없음(상태 3.7). `MemoryEmbeddingClient`는 ai `POST /internal/embeddings`(기존 계약, 요청당 8글, 최대 64글 계약 이내), 이전 `KnowledgeEmbedder`는 V17 정리로 없으므로 신규. HTTP 전송·외부 DTO는 `memory/client`(`MemoryEmbeddingClient`·`MemoryExplanationAiClient`·core 닉네임 조회 `StudentProfileClient`), 마스킹 정책(`MemoryTextPrivacy`)·업무 흐름은 `memory/service`. 생성 호출의 장애 판정(서킷 열림·전송 실패·502 밖 5xx → `MemoryAiOutageException`)은 `MemoryExplanationAiClient`가 맡음

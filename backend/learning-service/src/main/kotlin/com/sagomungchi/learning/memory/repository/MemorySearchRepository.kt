@@ -63,16 +63,26 @@ class MemorySearchRepository(private val jdbc: JdbcTemplate, private val mapper:
     fun search(id: UUID, before: LocalDate, vector: List<Double>, model: String, minimum: Double): List<MemoryHit> =
         mapper.hits(id, before, vector.joinToString(",", "[", "]"), model, null, minimum)
 
+    fun hybrid(id: UUID, before: LocalDate, vector: List<Double>, model: String, minimum: Double,
+        keywords: List<String>, from: LocalDate?, to: LocalDate?): List<MemoryHit> =
+        mapper.hybrid(id,before,vector.joinToString(",","[","]"),model,minimum,
+            keywords.map(::keywordPattern),from,to)
+
+    private fun keywordPattern(value: String) = "%" + value.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+
     /** #568 비교용: 같은 접근 범위, 최종 답변에 대한 문자 검색. 외부 API로 노출하지 않음. */
     fun keyword(id: UUID, before: LocalDate, query: String): List<MemoryHit> =
         mapper.hits(id, before, null, null,
-            "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%", 0.0)
+            keywordPattern(query), 0.0)
 
     private fun utc(value: Instant)=value.atOffset(ZoneOffset.UTC)
 }
 
 @Mapper
 interface MemoryVectorMapper {
+    fun hybrid(@Param("studentId") studentId: UUID, @Param("before") before: LocalDate,
+        @Param("vector") vector: String, @Param("model") model: String, @Param("minimum") minimum: Double,
+        @Param("keywords") keywords: List<String>, @Param("from") from: LocalDate?, @Param("to") to: LocalDate?): List<MemoryHit>
     fun ready(@Param("lease") lease: MemoryLease, @Param("vector") vector: String,
         @Param("model") model: String, @Param("now") now: Instant): Int
     fun hits(@Param("studentId") studentId: UUID, @Param("before") before: LocalDate,
