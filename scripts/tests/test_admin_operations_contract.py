@@ -25,6 +25,10 @@ class AdminOperationsContracts(unittest.TestCase):
                 # #479 adds optional explanations; preserve every pre-existing report field.
                 if section=='schemas' and name=='ReportDetail':
                     reviewed['allOf'][1]['properties'].pop('explanations',None)
+                # #700 documents the optional attempt context core already forwards from learning RecordAttempt.
+                if section=='schemas' and name in ('DashboardAttempt','DashboardPublicAttempt','DashboardAttemptDetail'):
+                    self.assertEqual(reviewed['properties'].pop('context')['enum'],['THEME_DAY','THEME_REVIEW','EXTRA'])
+                    self.assertNotIn('context',reviewed['required'])
                 # #367 extends registration only; retain all prior fields in the fingerprint.
                 if section=='schemas' and name=='RegisterModelVersion':
                     reviewed['properties'].pop('registration',None)
