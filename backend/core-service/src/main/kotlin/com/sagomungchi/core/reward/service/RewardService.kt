@@ -64,10 +64,11 @@ class RewardService(private val mapper: RewardMapper) {
             mapper.ledgerCount(studentId))
     }
 
-    /** 학생 삭제 확정(P09): 착용·해금·원장·잔액을 같은 트랜잭션에서 지운다(FK 순서). */
+    /** 학생 삭제 확정(P09): 착용·방 소품 보유(#704)·해금·원장·잔액을 같은 트랜잭션에서 지운다(FK 순서, 보유 행이 원장을 가리킴). */
     @Transactional(propagation = Propagation.MANDATORY)
     fun deleteStudent(studentId: UUID) {
         mapper.deleteEquipment(studentId)
+        mapper.deleteDecor(studentId)
         mapper.deleteUnlocks(studentId)
         mapper.deleteLedger(studentId)
         mapper.deleteBalance(studentId)

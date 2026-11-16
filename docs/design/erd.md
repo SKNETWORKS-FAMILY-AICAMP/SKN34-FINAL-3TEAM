@@ -867,6 +867,11 @@ erDiagram
   look_item ||--o{ student_look_equipment : equipped
   user_account ||--o{ look_item : creates
   student ||--o{ room_frame_slot : hangs
+  student ||--o{ student_room_decor : buys
+  look_item ||--o{ student_room_decor : bought
+  reward_point_ledger ||--o| student_room_decor : pays
+  student ||--o{ room_decor_spot : places
+  look_item ||--o{ room_decor_spot : placed
 
   reward_rule {
     varchar(32) event_type PK "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|THEME_ON_TIME|THEME_FINISHED"
@@ -891,7 +896,7 @@ erDiagram
   look_item {
     uuid id PK
     varchar(40) code UK "대문자·숫자·밑줄 3~40자, 학생 itemKey"
-    varchar(16) slot "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE"
+    varchar(16) slot "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE|FLOOR|DECOR"
     varchar(40) name
     int price_points "1 이상"
     varchar(200) asset_key "그림 키"
@@ -908,7 +913,7 @@ erDiagram
   }
   student_look_equipment {
     uuid student_id PK,FK
-    varchar(16) slot PK "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE"
+    varchar(16) slot PK "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE|FLOOR"
     uuid look_item_id FK
     timestamptz updated_at
   }
@@ -919,17 +924,32 @@ erDiagram
     date theme_week_start "회차 주, KST 월요일"
     timestamptz saved_at "처음 건 시각, 계속 걸려 있으면 슬롯을 옮겨도 유지"
   }
+  student_room_decor {
+    uuid id PK
+    uuid student_id FK
+    uuid look_item_id FK "방 소품(DECOR) 아이템, 슬롯은 서비스 검사"
+    uuid ledger_id FK,UK "그 구매의 UNLOCK 원장 행"
+    timestamptz purchased_at
+  }
+  room_decor_spot {
+    uuid student_id PK,FK
+    smallint spot_no PK "방 소품 자리 1~8"
+    uuid look_item_id FK "가진 방 소품, 보유 개수만큼 여러 자리(서비스 검사)"
+    timestamptz saved_at
+  }
 ```
 
 - 2026-11-10 개정(#483, core #485 V43 `V43__theme_free_limit_and_daily_points.sql`): 사건 종류에 당일 풀이(`THEME_ON_TIME`, 5)·주간 완주(`THEME_FINISHED`, 10)를 더했다. `reward_rule`·`reward_point_ledger`의 `event_type` CHECK를 V43으로 넓히고(V35는 고치지 않음) `reward_rule` 2행을 추가했다. `THEME_COMPLETED`(30)는 개근(월~금 각 당일 학습 완료)으로 그대로 쓴다. 사건 키는 당일 풀이 `weekStart:day`(예 `2026-11-09:MON`, 요일당 1회), 주간 완주 `weekStart`. 위 Mermaid의 CHECK 목록은 V43 기준이다. 적립 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`(learning #484)
 - `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30(`THEME_COMPLETED`, 2026-11-10 개정으로 개근: 월~금 각 당일 학습 완료). V43이 당일 풀이 5·주간 완주 10(토요일까지 5문제 학습 완료)을 더했다. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
-- `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·개근·주간 완주 `weekStart`(ISO date, 주 1회), 당일 풀이 `weekStart:day`(요일당 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
+- `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·개근·주간 완주 `weekStart`(ISO date, 주 1회), 당일 풀이 `weekStart:day`(요일당 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`, 방 소품 사기 `itemKey:Idempotency-Key`(#704, 구매마다 다른 키라 같은 아이템도 여러 번). CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
 - 적립·해금은 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → `reward_point_balance` 행 `FOR UPDATE` 순서로 잠가 학생별로 직렬화한다. 같은 사건 동시 적립, 다른 키로 같은 항목 동시 해금도 한 번만 반영. 잔액 CHECK `>= 0`
 - `look_item`: 관리자(CONTENT) 등록 아이템. 삭제 없이 `STOPPED`로 판매 중단, 이미 해금한 학생은 계속 착용. `code`는 바꾸지 않으며 `:`가 없어 테마·캐릭터 키와 겹치지 않는다. 변경은 같은 트랜잭션에서 `audit_log`(`target_type = LOOK_ITEM`)
 - `student_look_unlock`: 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수라 테이블이 없다. `THEME:lake`·`COMPANION:mungchi`는 행 없이 항상 해금. V35가 잠금 전 저장된 `student.look_theme`·`look_companion`(무료 제외)을 `ledger_id` NULL 행으로 옮겼다(포인트 차감 없음). 포인트 해금 행은 그 `UNLOCK` 원장 행을 `ledger_id`로 가리킨다(UK)
 - `student_look_equipment`: 학생·슬롯당 아이템 하나. 해금 여부와 아이템 슬롯 일치는 서비스 검증. 판매 중단 아이템도 해금했으면 착용 가능
 - 학생 삭제 확정(P09): `student.look_*` NULL과 같은 트랜잭션에서 착용 → 해금 → 원장 → 잔액 순서로 삭제(FK 순서). #555부터 같은 트랜잭션에서 `room_frame_slot`도 삭제
 - #555(V47 `V47__room_furniture_skins_and_frame_slots.sql`, P22 개정·P27): `look_item.slot`·`student_look_equipment.slot` CHECK에 생활공간 가구 슬롯 `DESK`(책상)·`WALL`(추억의 벽)·`WARDROBE`(옷장)를 더했다(V35는 고치지 않음). 가구 1개 = 착용 슬롯 1개라 PK `(student_id, slot)`로 가구당 스킨 1개. 가구별 기본 스킨은 행 없이 항상 쓸 수 있다: 착용 행이 없는 가구 슬롯이 기본 스킨이다(테마 `lake`·기본 벽지와 같은 방식, 기준안을 2026-11-12 확정). 추가 스킨은 관리자가 `look_item`으로 등록하고 기존 해금(원장 `UNLOCK`·잔액 차감·멱등)·착용 규칙을 그대로 쓴다. 방 벽지는 `BACKGROUND` 착용 아이템이라 테이블 변경 없음
+- #704(V50 `V50__room_floor_and_decor.sql`, P22·P27 개정, 사용자 결정 2026-11-16): `look_item.slot`에 내 방 바닥 `FLOOR`·방 소품 `DECOR`, `student_look_equipment.slot`에 `FLOOR`만 더했다(V35·V47은 고치지 않음). 바닥은 가구 스킨과 같은 1회 해금·착용이고 착용 행이 없으면 벽지 세트의 바닥. 방 소품(`ACCESSORY` "소품"과 다른 칸)은 착용 슬롯이 아니라 구매 1번 = `student_room_decor` 1행(그 구매의 `UNLOCK` 원장 행을 `ledger_id` UK로 가리킴, 원장 `event_type` CHECK 변경 없음)이고 보유 개수는 행 수, 아이템당 8개까지(잔액 행 잠금 아래 서비스 검사). 인덱스 `(student_id, look_item_id)`는 보유 개수 집계용
+- `room_decor_spot`(#704 V50): 방 소품 자리 1~8(기준안 8곳 2026-11-16 확정, CHECK, 자리 종류 구분 없음). 같은 방 소품을 보유 개수만큼 여러 자리에 놓고 보유 개수 초과는 서비스가 막는다. 저장은 `room_frame_slot`처럼 학생 행 `FOR NO KEY UPDATE` 아래 전체 삭제·삽입(방 소품 사기의 학생 행 `FOR SHARE`와 직렬화). 판매 중단 아이템도 보유분·놓은 자리 유지. 학생 삭제 확정 때 `room_decor_spot` → `student_room_decor`(원장보다 먼저) 순서로 같은 트랜잭션에서 삭제. 추가 인덱스 없음(PK 앞 칸 `student_id`)
 - `room_frame_slot`(#555 V47): 추억의 벽 슬롯 1~6(기준안 6개 2026-11-12 확정, CHECK). `theme_id`·`theme_week_start`는 learning `theme_frame` 회차의 논리 참조라 서비스 간 FK가 없고, 저장 전에 learning 내부 API(api-spec 4.1.4 `frames/ownership`)로 보유를 확인한다. UK `(student_id, theme_id, theme_week_start)`로 같은 액자를 두 슬롯에 걸지 못하고, `theme_week_start`는 CHECK로 월요일만. 저장은 학생 행 `FOR NO KEY UPDATE`(삭제 확정·다른 저장과 직렬화) 아래에서 학생의 슬롯 전체를 지우고 다시 넣는다. 추가 인덱스 없음(PK 앞 칸 `student_id`로 조회·삭제)
 
 ### 3.5.2 생활공간·추억 사용량 (P27, 구현 #566·#555)
@@ -938,9 +958,9 @@ erDiagram
 
 | 테이블 | 컬럼 | 제약·규칙 |
 |---|---|---|
-| (없음) | - | 2026-11-12 결정의 core_db 변경은 모두 구현해 위 Mermaid·6장으로 옮겼다(#566 V46, #555 V47) |
+| (없음) | - | 2026-11-12 결정의 core_db 변경은 모두 구현해 위 Mermaid·6장으로 옮겼다(#566 V46, #555 V47). 2026-11-16 바닥·방 소품(#704)도 V50으로 구현해 3.5.1 Mermaid·6장으로 옮겼다 |
 
-- 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`memory_daily_usage`도 삭제
+- 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`room_decor_spot`·`student_room_decor`(#704)·`memory_daily_usage`도 삭제
 - 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
 - `room_frame_slot`과 가구 슬롯 CHECK 확장은 #555 V47로 구현해 3.5.1 Mermaid로 옮겼다(추가 인덱스가 없어 6장 행 없음)
 
@@ -1790,6 +1810,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `outbox_event` | `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | subject별 선두·발행 순서 및 재시도 대상(#243), 보존 기간 정리 |
 | core | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | core | `reward_point_ledger` | `(student_id, created_at)` | 포인트 내역·반응 하루 상한 집계 (#389) |
+| core | `student_room_decor` | `(student_id, look_item_id)` | 방 소품 아이템별 보유 개수·8개 상한 확인 (#704 V50) |
 | core | `model_loading_report` | `(pod_id, reported_at)`, `(reported_at)` | Pod별 최근 보고(`reported_at DESC`)·보고 만료 판정 (#370, V37) |
 | core | `event_log` | `(received_at)`, `(event_type, event_time)` | 보존 기간 정리, 유형·기간별 추적 |
 | learning | `mission` | `(status, sort_order)`, `mission_version (thinking_type, grade_min, grade_max)` | 학년·유형별 공개 미션 목록 |
