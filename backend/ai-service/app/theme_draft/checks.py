@@ -54,6 +54,8 @@ LAST_ELIMINATION_MIN = DAYS.index("THU")  # 마지막 틀린 후보는 목요일
 # 증거 발견 줄은 대화 한 줄로 그대로 나가 LINE_MAX와 같음
 TEXT_MAX = {
     "title": 20,
+    "incident": 60,  # #634 ③ 내부 칸(기준안)
+    "answerLook": 60,
     "bigQuestion": 40,
     "intro": 200,
     "outro": 300,
@@ -218,7 +220,7 @@ def theme_day(theme: Theme, day: str) -> dict:
 
 # 칸 하나만 고쳐 쓰면 되는 줄거리 검사 사유(fix_theme). 이야기 틀·정답 논리·표에 닿지 않는 글 칸만
 FIX_PATH = re.compile(
-    r"^(?:title|bigQuestion|intro|outro"
+    r"^(?:title|bigQuestion|intro|outro|incident|answerLook"
     r"|(?:MON|TUE|WED|THU|FRI)\.(?:place|sceneNote|clue|discovery|missionHook)"
     r"|(?:introCuts|outroCuts)[1-4]\.caption)$"
 )
@@ -237,6 +239,9 @@ FIX_REASON = (
     # 되풀이됨)
     re.compile(r"^CLUE_TEXT (MON|TUE|WED|THU|FRI) (clue) "),
     re.compile(r"^OUTRO_RECAP (outro) "),
+    # #634 ③: 사건(incident)·정답 동물 모습(answerLook)이 비면 그 칸만 써 넣음(판정 실측 3건이
+    # 이 사유로 줄거리를 다시 만듦)
+    re.compile(r"^REQUIRED (incident|answerLook)$"),
     # 증거 종류(evidence.kind)는 그대로 두고 단서 문장만 그 종류에 맞게 고쳐 씀(실측 2026-11-11:
     # 단서 글자 수 초과와 섞이면 줄거리 전체를 다시 만들어 상한까지 실패, 글 20건 1건·전체 실측
     # 1건). 배정(evidencePlan)과 종류가 다르면 fix_theme이 종류를 배정대로 바꾸고 그날 단서·증거
@@ -660,7 +665,8 @@ def mungchi_clauses(text: str) -> list[str]:
         ):
             mungchi = True
         elif re.match(r"\S+(?:는|들은|도)\s", part) or any(
-            not w.endswith(NOT_SUBJECT) for w in re.findall(r"(?:^|\s)(\S+(?:이|가))\s", part)
+            not w.endswith(NOT_SUBJECT)
+            for w in re.findall(r"(?:^|(?<=\s))(\S+(?:이|가))(?=\s)", part)
         ):
             mungchi = False
         if mungchi:

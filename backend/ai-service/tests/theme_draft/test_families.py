@@ -64,7 +64,7 @@ def animal_theme(story_type: str = "PRANK") -> dict[str, Any]:
         ("TUE", "지나간 자리에 발톱 자국이 있었대.", "HINT", "발자국의 발톱", ["발톱 자국"]),
         ("WED", "네 발로 걷는 뒷모습을 봤대.", "RULE", "발자국 발 수", ["네 발"]),
         ("THU", "그 동물이 남긴 부드러운 털이 있었어.", "HINT", "몸을 덮은 것", ["부드러운 털"]),
-        ("FRI", "사진에 짧고 굵은 꼬리가 찍혔어.", "RULE", "꼬리 모양", ["짧고 굵은 꼬리"]),
+        ("FRI", "사진에 굵은 꼬리가 찍혔어.", "RULE", "꼬리 모양", ["굵은 꼬리"]),
     ):
         day = checks.theme_day(theme, d)
         day["clue"] = clue
@@ -209,7 +209,7 @@ def test_animal_fact_table_values_are_fixed_by_code() -> None:
         "ANIMAL_TABLE 특징 값이 사실표와 다름 ['꼬리 모양·너구리']"
     ]
     assert checks.apply_animal_facts(theme) == ["꼬리 모양"]
-    assert checks.theme_day(theme, "FRI")["condition"]["allowed"] == ["짧고 굵은 꼬리"]
+    assert checks.theme_day(theme, "FRI")["condition"]["allowed"] == ["굵은 꼬리"]
     assert checks.animal_table_problems(theme) == []
     assert checks.apply_animal_facts(valid_theme()) == []  # 숨은 것 가족은 그대로
     outside = {**animal_theme(), "candidates": ["고양이", "너구리", "까치", "여우"]}
@@ -219,7 +219,7 @@ def test_animal_fact_table_values_are_fixed_by_code() -> None:
 
 def test_animal_rules_carry_fact_table_and_values_do_not_contain_each_other() -> None:
     rules = families.type_rules(families.PRANK)
-    assert "고양이 | 부드러운 털 | 네 발 | 발바닥 자국만 | 길고 가는 꼬리" in rules
+    assert "고양이 | 부드러운 털 | 네 발 | 발바닥 자국 | 가는 꼬리" in rules
     for i, name in enumerate(families.ANIMAL_FEATURES):
         values = {row[i] for row in families.ANIMAL_FACTS.values()}
         assert not [
@@ -375,5 +375,16 @@ def test_note_style_clue_is_field_fixed_but_ratio_is_not() -> None:
     ]
     for ok in ("길이는 2:3이었어.", "3:30에 찍힌 사진이야."):
         assert checks.clue_wording_problems({"clue": ok, "condition": {"kind": "HINT"}}) == []
-    bad = checks.check_theme(day_with(animal_theme(), "FRI", clue="사진: 짧고 굵은 꼬리."), 3)
+    bad = checks.check_theme(day_with(animal_theme(), "FRI", clue="사진: 굵은 꼬리."), 3)
     assert list(checks.fix_targets(bad)) == ["FRI.clue"]
+
+
+def test_empty_incident_is_field_fixed_and_subject_after_place_word_is_found() -> None:
+    """판정 실측 보강: 사건·정답 동물 모습 칸이 비면 그 칸만 써 넣고(줄거리 다시 생성 대신),
+    '강가 안내원이'처럼 장소 낱말 뒤 주어도 잡아 뭉치 동작으로 오판하지 않음."""
+    bad = checks.check_theme({**animal_theme(), "incident": ""}, 3)
+    assert bad == ["REQUIRED incident"] and list(checks.fix_targets(bad)) == ["incident"]
+    assert checks.text_max("incident") == 60
+    assert "이번 주 사건 물건·일 한 줄" in prompts.fix_rules(animal_theme(), "incident")[0]
+    assert not checks.cut_action_problems("강가 안내원이 너구리를 부드럽게 안아 올린다.")
+    assert checks.cut_action_problems("강가에서 뭉치가 너구리를 안아 올린다.")
