@@ -11,7 +11,7 @@ async function parentLogin(page: Page) {
   await page.goto('/login')
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
-  await expect(page.getByLabel('자녀 선택')).not.toHaveValue('')
+  await expect(page.getByRole('group', { name: '자녀 선택' }).locator('button[aria-pressed=true]')).toHaveCount(1)
 }
 
 async function studentLogin(page: Page) {

@@ -162,6 +162,9 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
         val first = login()
         mvc.get("/api/v1/me") { header("Authorization", "Bearer ${first.accessToken}") }.andExpect {
             status { isOk() }; jsonPath("$.nextAction") { value("CONSENT_REQUIRED") }
+            // #683: Google 학부모도 저장된 이메일 login_id를 아이디로 받는다
+            jsonPath("$.authMethod") { value("GOOGLE") }
+            jsonPath("$.loginId") { value("$subject@example.test") }; jsonPath("$.email") { value("$subject@example.test") }
         }
         mvc.get("/api/v1/children") { header("Authorization", "Bearer ${first.accessToken}") }.andExpect {
             status { isForbidden() }; jsonPath("$.code") { value("CONSENT_REQUIRED") }

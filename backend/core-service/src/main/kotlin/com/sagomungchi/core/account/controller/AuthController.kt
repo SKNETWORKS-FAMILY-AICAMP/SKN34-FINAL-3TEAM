@@ -101,11 +101,13 @@ class AuthController(
         if (identity.session.role == "STUDENT") return mapOf("role" to "STUDENT", "child" to child,
             "nextAction" to destination.nextAction, "startPath" to destination.startPath)
         // #415: an account without a Google subject signs in with ID/password; its login_id is an ID, not an email.
+        // #683: a Google parent's login_id is its Google email, so it is also returned as that account's ID.
         val password = identity.account.subject.isNullOrBlank()
-        val passwordParent = password && identity.session.role == "PARENT"
+        val parent = identity.session.role == "PARENT"
+        val passwordParent = password && parent
         return mapOf("userId" to identity.account.id, "name" to identity.account.name,
             "email" to (if (passwordParent) null else identity.account.email),
-            "loginId" to (if (passwordParent) identity.account.email else null),
+            "loginId" to (if (parent) identity.account.email else null),
             "authMethod" to (if (password) "PASSWORD" else "GOOGLE"),
             "role" to identity.session.role, "permissions" to identity.permissions,
             "child" to child, "nextAction" to destination.nextAction, "startPath" to destination.startPath)

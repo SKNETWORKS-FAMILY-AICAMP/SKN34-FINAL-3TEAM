@@ -61,14 +61,12 @@ export function ParentWorkspace() {
     const next = new URLSearchParams(params); next.set('view', 'chat')
     return <Navigate to={'/parent/report?' + next} replace />
   }
-  return <Workspace title="학부모 공간" nav={nav} variant="parent"
-    actions={consentReady && page !== 'devices' && params.get('checkout') !== '1' ? <>
-      <label>자녀 선택<select aria-label="자녀 선택" value={childId} onChange={e => { const c = children.data?.items.find(c => c.id === e.target.value); if (c) select(c) }}>
-        {!child && <option value={childId}>{childId ? '연결 여부 확인 필요' : '자녀를 선택해 주세요'}</option>}
-        {children.data?.items.map(c => <option value={c.id} key={c.id}>{c.nickname} · {gradeLabel(c.grade)}</option>)}
-      </select></label>
-    </> : undefined}>
+  // 자녀 선택은 상단 바가 아니라 자녀별 화면(학습 현황·리포트·계정 설정·이용권) 본문 맨 위 버튼으로 (2026-11-16 사용자 결정)
+  const pickerPages = ['journal', 'report', 'settings', 'billing']
+  const showPicker = consentReady && pickerPages.includes(page) && params.get('checkout') !== '1' && !!children.data?.items.length && !children.error
+  return <Workspace title="학부모 공간" nav={nav} variant="parent">
     {consentReady && <QueryFeedback query={children} />}
+    {showPicker && <ChildPicker items={children.data!.items} selectedId={child?.id} onSelect={c => select(c)} />}
     {child?.guardianConsentRequired && <p role="alert">자녀 이용을 위해 법정대리인 동의가 필요합니다. 계정·자녀 설정의 공개·동의에서 확인해 주세요.</p>}
     {hasPeriod && child && (page !== 'report' || !validPeriod(scope)) && <details className="parent-scope"><summary>조회 기간 · {scope.from} ~ {scope.to}</summary><PeriodFilter key={`${scope.from}:${scope.to}`} period={scope} onApply={({ from, to }) => {
       const next = new URLSearchParams(params); next.set('from', from); next.set('to', to); setParams(next)
@@ -132,4 +130,14 @@ function PeriodFilter({ period, onApply }: { period: Period; onApply: (p: Period
       {error && <p role="alert">{error}</p>}
     </>
   )
+}
+
+/** 자녀 고르기 버튼(지금 자녀는 눌린 상태). 고르면 기간은 그대로 두고 자녀만 바꾼다 */
+function ChildPicker({ items, selectedId, onSelect }: { items: Child[]; selectedId?: string; onSelect: (c: Child) => void }) {
+  return <div className="parent-child-picker" role="group" aria-label="자녀 선택">
+    {items.map(c => <button type="button" key={c.id} aria-pressed={c.id === selectedId}
+      onClick={() => { if (c.id !== selectedId) onSelect(c) }}>
+      <strong>{c.nickname}</strong><small>{gradeLabel(c.grade)}</small>
+    </button>)}
+  </div>
 }

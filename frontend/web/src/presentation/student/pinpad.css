@@ -131,6 +131,19 @@
   border-radius: 14px;
   border: 2px solid var(--cj-line);
 }
+/* 기기 이름: 코드 아래에서도 눈에 띄게 주황 외곽선(필수 칸) */
+#class-journal .device-name {
+  min-height: 52px;
+  padding: 12px 16px;
+  border: 2px solid #e07a3a;
+  border-radius: 14px;
+  background: #fffaf5;
+  font-size: var(--st-fs-base, 18px);
+  color: #1f2421;
+}
+#class-journal .device-name::placeholder { color: #8a6a55; }
+#class-journal .device-name:focus { outline: 3px solid #f2994a; outline-offset: 2px; border-color: #c2581c; }
+#class-journal .device-name[aria-invalid='true'] { border-color: #b3261e; background: #fff4f2; }
 #class-journal .device-notice {
   border-radius: 16px;
   padding: 14px 16px;

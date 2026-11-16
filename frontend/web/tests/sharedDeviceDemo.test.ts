@@ -36,6 +36,10 @@ test('독립 기기 등록 → HttpOnly 기기 쿠키 → PIN 로그인 → 보�
   const { ready, parent, tablet } = setup()
   const code = await ready()
   assert.equal((await tablet.call('/profiles')).status, 401)
+  // 빈 이름은 core와 같이 400이고 코드를 쓰지 않는다
+  const blank = await tablet.call('/register', 'POST', { pairingCode: code, label: '  ' })
+  assert.equal(blank.status, 400)
+  assert.equal(blank.data.code, 'VALIDATION_FAILED')
   const registered = await tablet.call('/register', 'POST', { pairingCode: code, label: '하린의 태블릿' })
   assert.equal(registered.status, 201)
   assert.match(registered.setCookie!, /HttpOnly; SameSite=Strict/)
@@ -52,25 +56,25 @@ test('독립 기기 등록 → HttpOnly 기기 쿠키 → PIN 로그인 → 보�
 test('동시에 같은 QR로 등록하면 한 기기만 성공하고 재사용을 거부', async () => {
   const { ready, tablet, actor } = setup()
   const code = await ready(), other = actor()
-  const results = await Promise.all([tablet, other].map((a) => a.call('/register', 'POST', { pairingCode: code })))
+  const results = await Promise.all([tablet, other].map((a) => a.call('/register', 'POST', { pairingCode: code, label: '시험 태블릿' })))
   assert.deepEqual(results.map((r) => r.status).sort(), [201, 400])
-  assert.equal((await actor().call('/register', 'POST', { pairingCode: code })).data.code, 'PAIRING_CODE_INVALID')
+  assert.equal((await actor().call('/register', 'POST', { pairingCode: code, label: '시험 태블릿' })).data.code, 'PAIRING_CODE_INVALID')
 })
 
 test('QR 10분 만료와 기기 90일 만료', async () => {
   const { ready, parent, tablet, advance } = setup()
   const old = await ready()
   advance(10 * 60_000)
-  assert.equal((await tablet.call('/register', 'POST', { pairingCode: old })).data.code, 'PAIRING_CODE_INVALID')
+  assert.equal((await tablet.call('/register', 'POST', { pairingCode: old, label: '시험 태블릿' })).data.code, 'PAIRING_CODE_INVALID')
   const code = (await parent.call('/pairings', 'POST', { childIds: [child.id] })).data.pairingCode
-  await tablet.call('/register', 'POST', { pairingCode: code })
+  await tablet.call('/register', 'POST', { pairingCode: code, label: '시험 태블릿' })
   advance(90 * 24 * 60 * 60_000)
   assert.equal((await tablet.call('/profiles')).data.code, 'STUDENT_DEVICE_INVALID')
 })
 
 test('PIN 5회 실패는 기기 간 공유되고 보호자의 재설정으로 풀림', async () => {
   const { ready, parent, tablet } = setup()
-  await tablet.call('/register', 'POST', { pairingCode: await ready() })
+  await tablet.call('/register', 'POST', { pairingCode: await ready(), label: '시험 태블릿' })
   for (let i = 1; i < 5; i++) {
     const r = await tablet.call('/login', 'POST', { childId: child.id, pin: '9999' })
     assert.equal(r.status, 401)
@@ -87,7 +91,7 @@ test('PIN 5회 실패는 기기 간 공유되고 보호자의 재설정으로 �
 
 test('다른 보호자의 기기 접근과 deviceId로 쿠키 위조를 거부, 보호자 해제 즉시 반영', async () => {
   const { ready, parent, tablet, actor } = setup()
-  const r = await tablet.call('/register', 'POST', { pairingCode: await ready() })
+  const r = await tablet.call('/register', 'POST', { pairingCode: await ready(), label: '시험 태블릿' })
   const other = actor(), owner = await other.call('/owners', 'POST', { children: [child] })
   other.setToken(owner.data.ownerToken)
   assert.deepEqual((await other.call('/devices')).data.items, [])
@@ -110,7 +114,7 @@ test('Origin·전용 헤더 검사 및 PIN 규칙과 자녀 범위 검사', asyn
 
 test('자녀 연결 해제는 기존 기기 프로필과 PIN 로그인에도 반영', async () => {
   const { ready, parent, tablet } = setup()
-  await tablet.call('/register', 'POST', { pairingCode: await ready() })
+  await tablet.call('/register', 'POST', { pairingCode: await ready(), label: '시험 태블릿' })
   await parent.call('/children', 'PUT', { children: [] })
   assert.deepEqual((await tablet.call('/profiles')).data.items, [])
   assert.equal((await tablet.call('/login', 'POST', { childId: child.id, pin: '4831' })).data.code, 'CHILD_NOT_LINKED')
@@ -119,7 +123,7 @@ test('자녀 연결 해제는 기존 기기 프로필과 PIN 로그인에도 반
 test('가상 학생 시연도 기기 쿠키·PIN 검사를 거치며 일반 QR 기기와 분리된다', async () => {
   const { tablet, actor, ready } = setup()
   const qrCode = await ready(), qrTablet = actor()
-  await qrTablet.call('/register', 'POST', { pairingCode: qrCode })
+  await qrTablet.call('/register', 'POST', { pairingCode: qrCode, label: '시험 태블릿' })
   assert.equal((await tablet.call('/profiles')).status, 401)
   const preview = await tablet.call('/preview', 'POST', {})
   assert.equal(preview.status, 201)

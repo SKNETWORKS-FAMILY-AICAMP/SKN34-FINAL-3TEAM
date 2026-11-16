@@ -69,6 +69,12 @@ test('페어링 코드 1회용 → 기기 등록 → 프로필 → 5회 실패 �
   const { pairingCode, expiresAt } = await pair(['demo-seoyun', 'demo-doyun'])
   assert.match(pairingCode, /^[A-Z0-9]{8}$/)
   assert.ok(Date.parse(expiresAt) - Date.now() <= 10 * 60 * 1000)
+  // core와 같이 빈 이름은 400이고 코드를 쓰지 않는다(그 코드로 다시 등록 가능)
+  for (const label of ['', '   ', '가'.repeat(81)]) {
+    const blank = await call('/auth/student/devices', { method: 'POST', body: JSON.stringify({ pairingCode, label }) })
+    assert.equal(blank.status, 400)
+    assert.equal(blank.body.code, 'VALIDATION_FAILED')
+  }
   const reg = await call('/auth/student/devices', { method: 'POST', body: JSON.stringify({ pairingCode, label: '거실 컴퓨터' }) })
   assert.equal(reg.status, 201)
   assert.equal(reg.body.children.length, 2)

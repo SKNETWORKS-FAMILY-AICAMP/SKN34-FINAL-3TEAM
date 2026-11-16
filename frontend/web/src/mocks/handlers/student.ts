@@ -313,7 +313,7 @@ export const studentHandlers = [
         // #415: ID·비밀번호 계정은 email 대신 loginId, 재확인은 비밀번호로 한다.
         ...(mockPasswordLogin.loginId
           ? { email: null, loginId: mockPasswordLogin.loginId, authMethod: 'PASSWORD' }
-          : { loginId: null, authMethod: 'GOOGLE' }),
+          : { loginId: (mockRole ?? s.role) === 'PARENT' ? mockIdentity.email : null, authMethod: 'GOOGLE' }),
         role: mockRole ?? s.role,
         permissions: s.role === 'ADMIN' ? (s.permissions ?? mockIdentity.permissions) : [],
       }

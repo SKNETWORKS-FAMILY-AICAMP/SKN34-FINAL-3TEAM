@@ -47,7 +47,7 @@ async function parent(p, admin = false) {
 }
 async function student(p, grade5 = false) {
   await parent(p)
-  if (grade5) await p.getByLabel('자녀 선택', { exact: true }).selectOption('demo-doyun')
+  if (grade5) await p.getByRole('group', { name: '자녀 선택', exact: true }).getByRole('button', { name: /도윤/ }).click()
   await p.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
   await p.waitForURL('**/student/home')
   await p.getByRole('heading', { name: /^학습 홈/ }).waitFor()

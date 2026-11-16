@@ -74,6 +74,9 @@ function Registration({ onRegistered }: { onRegistered: () => void }) {
     setParams((p) => { p.delete('code'); return p }, { replace: true, state: location.state })
   })
   const normalized = normalizePairingCode(value)
+  // core는 빈 이름·80자 초과를 VALIDATION_FAILED로 거부한다(StudentAuthService.register). 보내기 전에 막고 이유를 알려 준다
+  const name = label.trim()
+  const [triedEmptyName, setTriedEmptyName] = useState(false)
   return (
     <>
       <h1>이 기기를 학습용으로 등록해요</h1>
@@ -86,7 +89,8 @@ function Registration({ onRegistered }: { onRegistered: () => void }) {
         onSubmit={(e) => {
           e.preventDefault()
           if (!validPairingCode(normalized)) return
-          register.mutate({ code: normalized, label })
+          if (!name) { setTriedEmptyName(true); return }
+          register.mutate({ code: normalized, label: name })
         }}
       >
         <label>
@@ -105,13 +109,18 @@ function Registration({ onRegistered }: { onRegistered: () => void }) {
         <label>
           기기 이름 <small>보호자가 기기 목록에서 알아볼 이름</small>
           <input
+            className="device-name"
             aria-label="기기 이름"
             placeholder="예: 거실 컴퓨터"
             maxLength={30}
+            aria-required="true"
+            aria-invalid={triedEmptyName && !name ? true : undefined}
+            aria-describedby={triedEmptyName && !name ? 'device-name-error' : undefined}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
           />
         </label>
+        {triedEmptyName && !name && <p role="alert" id="device-name-error">기기 이름을 적어 주세요. 보호자가 기기 목록에서 이 이름으로 알아봐요.</p>}
         {value && !validPairingCode(normalized) && (
           <p role="alert">코드는 영어 대문자와 숫자 {PAIRING_CODE_LENGTH}자리예요.</p>
         )}

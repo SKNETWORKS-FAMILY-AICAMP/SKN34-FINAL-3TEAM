@@ -13,7 +13,7 @@ async function login(page: Page, role: 'parent' | 'admin' = 'parent', email?: st
   if (email) await page.getByRole('textbox', { name: role === 'admin' ? '로그인 ID' : '이메일', exact: true }).fill(email)
   await page.getByRole('button', { name: role === 'admin' ? '로그인' : '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(role === 'admin' ? /\/admin\/home/ : /\/parent\/journal/)
-  if (role === 'parent') await expect(page.getByLabel('자녀 선택')).toBeVisible()
+  if (role === 'parent') await expect(page.getByRole('group', { name: '자녀 선택' })).toBeVisible()
 }
 
 async function studentLogin(page: Page) {
@@ -114,7 +114,7 @@ test('학부모 로그인 → 자녀별 기록 → 이용권·결제 화면', as
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await login(page)
-  await expect(page.getByLabel('자녀 선택')).toBeVisible()
+  await expect(page.getByRole('group', { name: '자녀 선택' })).toBeVisible()
   const menu = page.getByRole('button', { name: '학부모 메뉴 열기' })
   if (!(await page.getByRole('navigation', { name: '학부모 하단 메뉴' }).isVisible()) && await menu.isVisible()) await menu.click()
   await page.getByRole('link', { name: '이용권·결제', exact: true }).filter({ visible: true }).click()
@@ -209,8 +209,9 @@ test('학생 생각 활동 메뉴와 섬 화면의 해 본 생각 (#240) @respon
 
 test('학부모 분석 대화 예시 질문은 고른 질문을 현재 자녀·기간으로 보낸다 (#240)', async ({ page }, testInfo) => {
   await login(page)
-  await expect(page.getByLabel('자녀 선택')).not.toHaveValue('')
-  const childId = await page.getByLabel('자녀 선택').inputValue()
+  await expect(page.getByRole('group', { name: '자녀 선택' }).locator('button[aria-pressed=true]')).toHaveCount(1)
+  await expect(page).toHaveURL(/childId=/)
+  const childId = new URL(page.url()).searchParams.get('childId')!
   await page.evaluate(async id => {
     const path = '/src/mocks/fixtures/sharing.ts'
     const { saveSharing } = await import(path)
@@ -287,5 +288,5 @@ test('동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부
   await unlock.getByLabel('보호자 비밀번호').fill('2580')
   await unlock.getByRole('button', { name: '학부모 화면으로', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
-  await expect(page.getByLabel('자녀 선택')).toBeVisible()
+  await expect(page.getByRole('group', { name: '자녀 선택' })).toBeVisible()
 })

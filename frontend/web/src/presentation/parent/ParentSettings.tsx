@@ -7,6 +7,7 @@ import { Withdrawal } from '../service/Withdrawal.tsx'
 import { useState } from 'react'
 import { ChildRegistration } from './AccountForms.tsx'
 import { Modal } from '../shared/ClassroomParts.tsx'
+import { useSession } from '../auth/sessionContext.ts'
 
 const settingsTabs = [['profile', '프로필'], ['sharing', '공개·동의'], ['account', '계정 관리']] as const
 
@@ -35,8 +36,19 @@ export function ParentSettings({ child, childCount, onCreated }: { child?: Child
         <button className="cj-primary" disabled={childCount === undefined || childCount >= 3} onClick={() => setRegistration(true)}>자녀 추가 등록</button>
       </section></>
         : tab === 'sharing' ? <ConsentSettings child={child} />
-        : <><p>연결 해제와 삭제·탈퇴는 다른 작업입니다. 대상과 영향을 확인한 뒤 본인 확인을 진행합니다.</p><Link to="/parent/transfers">자녀 이관 · 받은 요청 확인</Link>{child && <AccountLifecycle key={child.id} child={child} />}<Withdrawal /></>}
+        : <><LoginIdCard /><p>연결 해제와 삭제·탈퇴는 다른 작업입니다. 대상과 영향을 확인한 뒤 본인 확인을 진행합니다.</p><Link to="/parent/transfers">자녀 이관 · 받은 요청 확인</Link>{child && <AccountLifecycle key={child.id} child={child} />}<Withdrawal /></>}
     </div>
     {registration && <Modal title="자녀 프로필 등록" onClose={() => setRegistration(false)}><ChildRegistration onCreated={value => { setRegistration(false); onCreated(value) }} /></Modal>}
+  </section>
+}
+
+/** #683: 로그인 아이디(Google 계정은 Google 이메일). 서버가 주지 않으면 표시하지 않는다 */
+function LoginIdCard() {
+  const session = useSession().session
+  if (!session?.loginId) return null
+  return <section className="ws-card parent-login-id" aria-labelledby="login-id-title">
+    <h2 id="login-id-title">로그인 아이디</h2>
+    <p><strong>{session.loginId}</strong></p>
+    <small>{session.authMethod === 'GOOGLE' ? 'Google 계정으로 로그인합니다. 아이디는 Google 이메일입니다.' : '아이디와 비밀번호로 로그인합니다.'}</small>
   </section>
 }
