@@ -9,6 +9,10 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 | `run-stage.ps1` | 한 단계 실행: k6 → 같은 시간대 서버 지표 수집. 로그·결과를 결과 폴더에 남긴다 |
 | `collect_metrics.py` | Prometheus(core·learning JVM, DB 풀, HTTP, RabbitMQ)·CloudWatch(RDS, ALB, NAT)·Pod 재시작 수집 |
 | `llm-stub.k8s.yaml` | 데모 `app` 네임스페이스용 LLM 스텁 Deployment·Service·NetworkPolicy |
+| `llm_latency.py` | 실제 LLM 조건 응답 시간 실측(#630). 동시 1명으로 판정·되묻기·분석 대화·주간 리포트 재생성·테마 초안을 core 경로로 한 건씩 보내 완료까지 시간을 JSONL에 남기고 `summary`로 p50·p95·최대를 낸다 |
+| `llm_usage_window.sql` | 측정 구간 `core_db.llm_usage`의 호출 종류별 LLM 1회 지연·토큰·비용(대역 제외, 단가 등록 전 행은 #651 단가로 다시 계산) |
+
+실제 LLM 조건 실측(#630) 절차·결과는 [`docs/report/infra.md` 9.10](../../docs/report/infra.md#910-실제-llm-조건-로컬-응답-시간-실측-630-2026-11-16)와 [`docs/report/ai.md` 19절](../../docs/report/ai.md#19-실제-llm-조건-응답-시간원가-산식-630-2026-11-16)에 있다. 비밀 파일은 `prepare_accounts.py` 형식이고 kind는 `--host api.sagomungchi.local --origin http://localhost:5173`을 준다.
 
 1차 결과와 해석은 [`docs/report/infra.md#9-aws-데모-부하-시험-1차-361`](../../docs/report/infra.md#9-aws-데모-부하-시험-1차-361)에 있다.
 
