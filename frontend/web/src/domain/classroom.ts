@@ -133,6 +133,8 @@ export interface Attempt {
   reveal?: string
   revealKind?: 'ANSWER' | 'EXAMPLE'
   checklist?: FeedbackElement[]
+  /** 시도 종류(core 공개 계약 #700, 선택 칸). 없으면 내 공책에서 "테마 문제"로 본다(#710 기준안) */
+  context?: import('./retention.ts').AttemptContext
 }
 export interface StudentHome {
   student: Child
@@ -336,6 +338,7 @@ export function publicAttempt(a: Attempt): PublicAttempt {
     reveal: a.reveal,
     revealKind: a.revealKind,
     checklist: a.checklist,
+    ...(a.context ? { context: a.context } : {}),
   })
 }
 export function inPeriod(iso: string, p: Period): boolean {
