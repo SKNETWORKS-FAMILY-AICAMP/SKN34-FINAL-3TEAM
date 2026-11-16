@@ -156,6 +156,10 @@ def verify(output):
                 "DB_USERNAME": "verify",
                 "DB_PASSWORD": password,
                 "INTERNAL_TOKEN": token,
+                "INTERNAL_TOKEN_CORE": token,
+                "INTERNAL_TOKEN_AI": token,
+                "INTERNAL_TOKEN_REPORT_API": token,
+                "INTERNAL_TOKEN_REPORT_WORKER": token,
                 "RABBITMQ_HOST": rabbit.name,
                 "RABBITMQ_USERNAME": "verify",
                 "RABBITMQ_PASSWORD": password,
@@ -175,6 +179,7 @@ def verify(output):
         os.environ.update(
             {
                 "INTERNAL_TOKEN": token,
+                "INTERNAL_TOKEN_CORE": token,
                 "DATABASE_URL": report_dsn.replace(
                     "postgresql://", "postgresql+psycopg://"
                 ),

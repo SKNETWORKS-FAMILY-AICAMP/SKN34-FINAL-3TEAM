@@ -1,5 +1,6 @@
 """내부 호출 인증과 사용자 컨텍스트 (아키텍처 2.2·2.3)."""
 
+import re
 import secrets
 from collections.abc import Mapping
 from contextvars import ContextVar, Token
@@ -17,6 +18,36 @@ USER_ID = "X-User-Id"
 USER_ROLE = "X-User-Role"
 STUDENT_SCOPE = "X-Student-Scope"
 TRACEPARENT = "traceparent"
+
+# 호출자별 내부 경로 허용 목록 (아키텍처 2.2, api-spec 4장). 정규식 전체 일치.
+# 호출자 토큰은 INTERNAL_TOKEN_<호출자>(설정 internal_token_<호출자>), 빈 값이면 그 호출자를 받지 않음
+CALLER_PATHS: dict[str, tuple[str, ...]] = {
+    "ai": (r"/internal/(m1|m2)/.+",),
+    "core": (r"/internal/models/preflight",),
+    "ops": (r"/internal/versions",),
+}
+_CALLER_PATTERNS = {
+    caller: tuple(re.compile(pattern) for pattern in patterns)
+    for caller, patterns in CALLER_PATHS.items()
+}
+
+
+def matching_callers(token: str) -> list[str]:
+    """헤더 토큰과 일치하는 호출자. 모든 호출자를 상수 시간 비교."""
+    settings = get_settings()
+    callers = []
+    for caller in CALLER_PATHS:
+        expected = getattr(settings, "internal_token_" + caller.replace("-", "_"))
+        if expected and secrets.compare_digest(token.encode(), expected.encode()):
+            callers.append(caller)
+    return callers
+
+
+def caller_permits(caller: str, path: str) -> bool:
+    segments = path.split("/")
+    if "." in segments or ".." in segments:
+        return False
+    return any(pattern.fullmatch(path) for pattern in _CALLER_PATTERNS[caller])
 
 
 @dataclass(frozen=True)
@@ -69,14 +100,19 @@ def get_user_context(request: Request) -> UserContext:
 
 
 class InternalAuthMiddleware(BaseHTTPMiddleware):
-    """/internal 하위 요청의 내부 토큰 검사 후 사용자 컨텍스트 설정."""
+    """/internal 하위 요청의 호출자 토큰·경로 허용 목록 검사 후 사용자 컨텍스트 설정.
+
+    토큰이 어느 호출자와도 맞지 않으면 401, 맞은 호출자의 허용 경로 밖이면 403.
+    """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if not request.url.path.startswith("/internal/"):
             return await call_next(request)
-        token = request.headers.get(INTERNAL_TOKEN_HEADER, "")
-        if not secrets.compare_digest(token.encode(), get_settings().internal_token.encode()):
+        callers = matching_callers(request.headers.get(INTERNAL_TOKEN_HEADER, ""))
+        if not callers:
             return problem(request, 401, "UNAUTHENTICATED", "내부 인증 실패")
+        if not any(caller_permits(caller, request.url.path) for caller in callers):
+            return problem(request, 403, "FORBIDDEN", "내부 호출 허용 범위 밖")
         context = UserContext.from_headers(request.headers)
         request.state.user_context = context
         reset = _current.set(context)

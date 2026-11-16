@@ -83,6 +83,10 @@ def test_deletion_retry_and_duplicate_on_real_broker_and_storage(
                         arguments=definition["arguments"],
                     )
             await queues[DELETION_QUEUE].bind(events, "student.deleted")
+            retry_exchange = await channel.declare_exchange("report.retry", "direct", durable=True)
+            await queues[DELETION_QUEUE + ".retry.1"].bind(
+                retry_exchange, DELETION_QUEUE + ".retry.1"
+            )
             subscription = await EventConsumer(amqp, 3, 1).consume(DELETION_QUEUE, handler)
             await events.publish(
                 aio_pika.Message(json.dumps(body).encode(), content_type="application/json"),

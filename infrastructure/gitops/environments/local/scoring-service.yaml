@@ -14,8 +14,11 @@ resources:
   requests: {cpu: 150m, memory: 512Mi}
   limits: {cpu: "1", memory: 2Gi}
 env:
-  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
-  - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_URL}}}
+  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_SCORING}}}
+  - {name: INTERNAL_TOKEN_AI, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_AI}}}
+  - {name: INTERNAL_TOKEN_CORE, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_CORE}}}
+  - {name: INTERNAL_TOKEN_OPS, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_OPS, optional: true}}}
+  - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_SCORING_URL}}}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
   - {name: S3_ENDPOINT_URL, value: "http://minio.platform.svc.cluster.local:9000"}
   - {name: S3_BUCKET, value: sagomungchi-local-models}

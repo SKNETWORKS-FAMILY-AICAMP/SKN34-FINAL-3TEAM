@@ -26,6 +26,33 @@
       "auto_delete": false,
       "internal": false,
       "arguments": {}
+    },
+    {
+      "name": "core.retry",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "learning.retry",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "report.retry",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
     }
   ],
   "queues": [
@@ -605,6 +632,174 @@
       "destination": "core.event.audit",
       "destination_type": "queue",
       "routing_key": "model.loading.reported",
+      "arguments": {}
+    },
+    {
+      "source": "report.retry",
+      "vhost": "/",
+      "destination": "report.report.generate.retry.1",
+      "destination_type": "queue",
+      "routing_key": "report.report.generate.retry.1",
+      "arguments": {}
+    },
+    {
+      "source": "report.retry",
+      "vhost": "/",
+      "destination": "report.report.generate.retry.2",
+      "destination_type": "queue",
+      "routing_key": "report.report.generate.retry.2",
+      "arguments": {}
+    },
+    {
+      "source": "report.retry",
+      "vhost": "/",
+      "destination": "report.report.generate.retry.3",
+      "destination_type": "queue",
+      "routing_key": "report.report.generate.retry.3",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.report.events.retry.1",
+      "destination_type": "queue",
+      "routing_key": "core.report.events.retry.1",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.report.events.retry.2",
+      "destination_type": "queue",
+      "routing_key": "core.report.events.retry.2",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.report.events.retry.3",
+      "destination_type": "queue",
+      "routing_key": "core.report.events.retry.3",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.llm.usage.recorded.retry.1",
+      "destination_type": "queue",
+      "routing_key": "core.llm.usage.recorded.retry.1",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.llm.usage.recorded.retry.2",
+      "destination_type": "queue",
+      "routing_key": "core.llm.usage.recorded.retry.2",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.llm.usage.recorded.retry.3",
+      "destination_type": "queue",
+      "routing_key": "core.llm.usage.recorded.retry.3",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.event.audit.retry.1",
+      "destination_type": "queue",
+      "routing_key": "core.event.audit.retry.1",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.event.audit.retry.2",
+      "destination_type": "queue",
+      "routing_key": "core.event.audit.retry.2",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.event.audit.retry.3",
+      "destination_type": "queue",
+      "routing_key": "core.event.audit.retry.3",
+      "arguments": {}
+    },
+    {
+      "source": "learning.retry",
+      "vhost": "/",
+      "destination": "learning.student.deleted.retry.1",
+      "destination_type": "queue",
+      "routing_key": "learning.student.deleted.retry.1",
+      "arguments": {}
+    },
+    {
+      "source": "learning.retry",
+      "vhost": "/",
+      "destination": "learning.student.deleted.retry.2",
+      "destination_type": "queue",
+      "routing_key": "learning.student.deleted.retry.2",
+      "arguments": {}
+    },
+    {
+      "source": "learning.retry",
+      "vhost": "/",
+      "destination": "learning.student.deleted.retry.3",
+      "destination_type": "queue",
+      "routing_key": "learning.student.deleted.retry.3",
+      "arguments": {}
+    },
+    {
+      "source": "report.retry",
+      "vhost": "/",
+      "destination": "report.student.deleted.retry.1",
+      "destination_type": "queue",
+      "routing_key": "report.student.deleted.retry.1",
+      "arguments": {}
+    },
+    {
+      "source": "report.retry",
+      "vhost": "/",
+      "destination": "report.student.deleted.retry.2",
+      "destination_type": "queue",
+      "routing_key": "report.student.deleted.retry.2",
+      "arguments": {}
+    },
+    {
+      "source": "report.retry",
+      "vhost": "/",
+      "destination": "report.student.deleted.retry.3",
+      "destination_type": "queue",
+      "routing_key": "report.student.deleted.retry.3",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.model.loading.reported.retry.1",
+      "destination_type": "queue",
+      "routing_key": "core.model.loading.reported.retry.1",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.model.loading.reported.retry.2",
+      "destination_type": "queue",
+      "routing_key": "core.model.loading.reported.retry.2",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.model.loading.reported.retry.3",
+      "destination_type": "queue",
+      "routing_key": "core.model.loading.reported.retry.3",
       "arguments": {}
     }
   ]

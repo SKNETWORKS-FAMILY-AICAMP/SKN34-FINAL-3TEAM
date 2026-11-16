@@ -106,7 +106,9 @@ def verify(args):
         env = os.environ.copy()
         env.update(DB_URL=f"jdbc:postgresql://{external_db or '127.0.0.1'}:{db_port}/{database}",
                    DB_USERNAME="issue39", DB_PASSWORD="issue39-disposable-password",
-                   INTERNAL_TOKEN=internal, RABBITMQ_USERNAME="unused", RABBITMQ_PASSWORD="unused",
+                   INTERNAL_TOKEN=internal,
+                   **{f"INTERNAL_TOKEN_{c}": internal for c in ("CORE", "AI", "LEARNING", "SCORING", "REPORT_API", "REPORT_WORKER")},
+                   RABBITMQ_USERNAME="unused", RABBITMQ_PASSWORD="unused",
                    AUTH_JWT_SECRET=base64.b64encode(b"issue39-only-disposable-jwt-secret-32bytes").decode(),
                    AUTH_WEB_ORIGIN=core_url, AUTH_COOKIE_SECURE="false", AI_URL=ai_url,
                    LEARNING_URL=learning_url, CORE_URL=core_url,

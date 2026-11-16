@@ -10,12 +10,15 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * RetryingConsumer는 기본 exchange로 <큐>.retry.<회차>에 재발행하므로 큐가 없으면 메시지가 조용히 유실됨.
+ * RetryingConsumer는 서비스 재시도 exchange(core.retry 등)로 <큐>.retry.<회차>에 재발행하므로 큐·바인딩이 없으면 메시지가 유실됨.
  * definitions.json이 재시도 단계(1·5·15분, P12)·DLQ를 모든 소비 큐에 갖추는지 확인.
  */
 class RabbitDefinitionsTest {
     private val definitions: JsonNode = ObjectMapper().readTree(DEFINITIONS.toFile())
     private val queues: Map<String, JsonNode> = definitions["queues"].associateBy { it["name"].asText() }
+    private val retryBindings = definitions["bindings"]
+        .map { Triple(it["source"].asText(), it["routing_key"].asText(), it["destination"].asText()) }
+        .filter { it.first.endsWith(".retry") }.toSet()
 
     @Test
     fun `모든 소비 큐에 재시도 단계 큐와 DLQ가 있음`() {
@@ -29,6 +32,9 @@ class RabbitDefinitionsTest {
                 assertEquals(delay, retry["x-message-ttl"].asLong(), "$queue.retry.${index + 1} 지연")
                 assertEquals("", retry["x-dead-letter-exchange"].asText())
                 assertEquals(queue, retry["x-dead-letter-routing-key"].asText())
+                val owner = "${queue.substringBefore('.')}.retry"
+                assertTrue(retryBindings.contains(Triple(owner, "$queue.retry.${index + 1}", "$queue.retry.${index + 1}")),
+                    "$owner → $queue.retry.${index + 1} 바인딩 없음")
             }
         }
     }

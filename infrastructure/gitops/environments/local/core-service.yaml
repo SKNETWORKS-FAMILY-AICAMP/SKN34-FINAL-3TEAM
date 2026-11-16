@@ -26,10 +26,14 @@ env:
   - {name: DB_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: CORE_DB_USERNAME}}}
   - {name: DB_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: CORE_DB_PASSWORD}}}
   - {name: RABBITMQ_HOST, value: rabbitmq.platform.svc.cluster.local}
-  - {name: RABBITMQ_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_USERNAME}}}
-  - {name: RABBITMQ_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_PASSWORD}}}
+  - {name: RABBITMQ_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_CORE_USERNAME}}}
+  - {name: RABBITMQ_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_CORE_PASSWORD}}}
   - {name: REDIS_HOST, value: redis.platform.svc.cluster.local}
-  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
+  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_CORE}}}
+  - {name: INTERNAL_TOKEN_AI, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_AI}}}
+  - {name: INTERNAL_TOKEN_SCORING, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_SCORING}}}
+  - {name: INTERNAL_TOKEN_LEARNING, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_LEARNING}}}
+  - {name: INTERNAL_TOKEN_REPORT_WORKER, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_REPORT_WORKER}}}
   - {name: AUTH_JWT_SECRET, valueFrom: {secretKeyRef: {name: app-service-credentials, key: AUTH_JWT_SECRET}}}
   - {name: AUTH_WEB_ORIGIN, value: "http://localhost:5173"}
   - {name: AUTH_COOKIE_SECURE, value: "false"}
@@ -43,8 +47,8 @@ env:
   - {name: AI_URL, value: "http://ai-service.app.svc.cluster.local:8000"}
   - {name: REPORT_URL, value: "http://report-api.app.svc.cluster.local:8002"}
   - {name: ADMIN_RABBIT_MANAGEMENT_URL, value: "http://rabbitmq.platform.svc.cluster.local:15672"}
-  - {name: ADMIN_RABBIT_MANAGEMENT_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_USERNAME}}}
-  - {name: ADMIN_RABBIT_MANAGEMENT_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_PASSWORD}}}
+  - {name: ADMIN_RABBIT_MANAGEMENT_USERNAME, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_CORE_USERNAME}}}
+  - {name: ADMIN_RABBIT_MANAGEMENT_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_CORE_PASSWORD}}}
   # #236: compose.yaml core-service defaults
   - {name: AUTH_ACCESS_TTL, value: 15m}
   - {name: AUTH_STUDENT_ACCESS_TTL, value: 15m}

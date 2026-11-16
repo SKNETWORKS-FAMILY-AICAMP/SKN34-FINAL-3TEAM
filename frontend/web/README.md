@@ -25,7 +25,7 @@ npm run dev
 
 새로 클론한 저장소에서 확인한 실행 순서(2026-10-27):
 
-1. 백엔드까지 실제로 띄우기: 저장소 루트 `.env`에 `POSTGRES_PASSWORD`·`RABBITMQ_PASSWORD`·`INTERNAL_TOKEN`(필수)과 Google 로그인용 `AUTH_JWT_SECRET`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`을 채우고 Docker Desktop을 켠 뒤 `docker compose up --build -d` → 이 폴더에서 `npm ci && npm run dev` → **http://localhost:5173** 접속. `127.0.0.1`로 열면 `AUTH_WEB_ORIGIN`(기본 `http://localhost:5173`)과 달라 refresh가 403이 됩니다. 학생 기기·PIN API는 #104로 구현되어 PostgreSQL·Redis 및 Google 재인증 설정이 필요합니다.
+1. 백엔드까지 실제로 띄우기: 저장소 루트 `.env`에 `POSTGRES_PASSWORD`·`RABBITMQ_PASSWORD`·`RABBITMQ_<SVC>_PASSWORD`·`INTERNAL_TOKEN_*`(필수, `.env.example` 참고)과 Google 로그인용 `AUTH_JWT_SECRET`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`을 채우고 Docker Desktop을 켠 뒤 `docker compose up --build -d` → 이 폴더에서 `npm ci && npm run dev` → **http://localhost:5173** 접속. `127.0.0.1`로 열면 `AUTH_WEB_ORIGIN`(기본 `http://localhost:5173`)과 달라 refresh가 403이 됩니다. 학생 기기·PIN API는 #104로 구현되어 PostgreSQL·Redis 및 Google 재인증 설정이 필요합니다.
 2. 백엔드 없이 화면만 보기: 아래 MSW 목업 모드(`VITE_API_MOCK=true`). 목업 없이 백엔드도 없으면 "서버(core-service)에 연결하지 못했습니다" 안내만 나옵니다.
 
 기본은 **API 모드**입니다. Vite가 `/api/v1` 요청을 core-service(기본 8080)로 전달합니다. 최신 develop에는 #36 인증, #37 동의·자녀 등록, #58 기기·PIN 및 Google 재인증 연결이 포함됩니다. 실제 연결 범위와 검증 조건은 각 이슈 보고서를 참고하세요. 서버 미구현·실패를 샘플 데이터로 덮지 않습니다.

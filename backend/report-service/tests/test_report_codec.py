@@ -100,7 +100,7 @@ def test_payload_contract_errors_go_directly_to_dlq(field, value):
 
     channel = run(message, handler)
     assert message.rejected and not message.acked
-    assert not channel.default_exchange.published
+    assert not channel.retry_exchange.published
 
 
 @pytest.mark.parametrize(
@@ -116,7 +116,7 @@ def test_missing_generate_fields_go_directly_to_dlq(field):
 
     channel = run(message, handler)
     assert message.rejected and not message.acked
-    assert not channel.default_exchange.published
+    assert not channel.retry_exchange.published
 
 
 @pytest.mark.parametrize("field", ["id", "time", "specversion", "dataschema", "source"])
@@ -129,7 +129,7 @@ def test_missing_wire_fields_are_not_filled_from_defaults(field):
         pytest.fail("Invalid envelope reached handler")
 
     channel = run(message, forbidden)
-    assert message.rejected and not channel.default_exchange.published
+    assert message.rejected and not channel.retry_exchange.published
 
 
 @pytest.mark.parametrize(
@@ -153,7 +153,7 @@ def test_malformed_time_and_unknown_envelope_fields_are_rejected():
         body[field] = value
         message = FakeMessage(json.dumps(body).encode())
         channel = run(message, lambda _: pytest.fail("invalid input"))
-        assert message.rejected and not channel.default_exchange.published
+        assert message.rejected and not channel.retry_exchange.published
 
 
 @pytest.mark.parametrize("configured", [True, False])
@@ -171,7 +171,7 @@ def test_shared_codec_pipeline_is_idempotent_and_unconfigured_is_not_success(
         message = FakeMessage(json.dumps(body).encode())
         channel = run(message, handler)
         assert message.acked and not message.rejected
-        assert not channel.default_exchange.published
+        assert not channel.retry_exchange.published
     reports, events = stored(report_factory, report_student_id)
     assert len(reports) == 1 and len(events) == 2
     assert reports[0]["status"] == ("COMPLETED" if configured else "FAILED")

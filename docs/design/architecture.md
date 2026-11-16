@@ -172,7 +172,8 @@
 - **재시도**: 소비 실패 시 지연 재시도 3회(1·5·15분, P12) 후 DLQ 이동. `report.generate` 확정값을 모든 큐에 동일 적용
 - **명시적 관리자 재처리(#152/#47)**: 위 메시지 전송 재시도와 구분한다. core가 새 jobId·ADMIN_RETRY로 기존 명령을 발행하고 원작업 연결을 보관한다. report는 기존 생성·revision·Outbox를 재사용한다. 같은 jobId의 종료 상태 재전달은 ACK 후 종료하며, 새 관리자 HTTP API·큐·스키마를 report에 추가하지 않는다. core 관리자 접수(`POST /admin/jobs/{jobId}/retry`)는 #47에서 구현했다.
   - 큐마다 `<큐>.retry.1`(1분)·`.retry.2`(5분)·`.retry.3`(15분)을 `definitions.json`에 선언 (`x-message-ttl` = 지연, 만료 시 기본 exchange로 원래 큐 복귀)
-  - 처리 실패: 소비자가 `x-retry-count` 헤더 +1 후 `<큐>.retry.<회차>`로 재발행하고 ACK. 3회 초과 시 `reject(requeue=false)` → `dlx` → `<큐>.dlq`
+  - 처리 실패: 소비자가 `x-retry-count` 헤더 +1 후 자기 서비스 재시도 exchange(`core.retry`·`learning.retry`·`report.retry`, direct, 라우팅 키 = `<큐>.retry.<회차>`)로 재발행하고 ACK. 3회 초과 시 `reject(requeue=false)` → `dlx` → `<큐>.dlq`
+  - 재시도 exchange는 서비스 브로커 계정이 기본 exchange 쓰기 권한 없이 자기 재시도 큐에만 보내게 하려고 둔다(기본 exchange 쓰기 = 큐 이름만 알면 남의 큐에 넣을 수 있음). 재시도 큐 만료 후 원래 큐 복귀는 브로커 내부 dead-letter라 계정 권한과 무관
   - 횟수는 자체 헤더로 셈 (클라이언트 재발행 시 `x-death`가 승계되지 않음). 지연은 `definitions.json`, 최대 횟수는 서비스 설정(3)으로 단계 큐 개수와 일치
   - 메시지 변환 실패(형식 오류)는 재시도해도 복구되지 않으므로 재시도 없이 바로 reject → DLQ
   - core는 전역 수동 ACK(`acknowledge-mode: manual`, learning도 동일 설정, #128): 모든 `@RabbitListener`는 `RetryingConsumer.handle`로 처리. ACK 누락 시 메시지가 unacked로 남아 소비 정지
@@ -240,13 +241,16 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
   - 응답 DTO(Spring): 여러 기능 응답이 같은 OpenAPI component를 공유하면 `_common/web`(예: learning `MissionResponse`·`MissionListItemResponse`·`AnswerItem`), 스키마가 다르면 기능별 controller DTO. `_common/web` DTO는 기능 타입 없이 열거값은 이름 문자열, 값 객체는 같은 모양의 DTO, 기능 타입이 필요한 칸은 타입 인자로 두고, domain → DTO 변환은 쓰는 기능의 controller에 둔다(데이터 표현이라 매핑 중복 허용, 업무 로직은 service 재사용) (#251)
 - DB 트랜잭션은 Application 레이어에서만 시작, 트랜잭션 안에서 외부 HTTP·AMQP 호출 금지
 - 멱등성: `_common/web/IdempotencyService`가 `idempotency_record`와 PostgreSQL 세션 잠금을 관리. HTTP 동안 auto-commit 연결 1개만 보유하고 트랜잭션·행 잠금은 보유하지 않음 (api-spec 1.4)
-- 서비스 간 내부 호출: 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
+- 서비스 간 내부 호출: 호출자별 내부 토큰 헤더 필터(참고 레포 `CatalogInternalAuthFilter` 패턴) + NetworkPolicy
+  - 호출 주체(core·learning·ai·scoring·report-api·report-worker·운영 스크립트 ops)마다 서로 다른 토큰. 보내는 쪽은 `INTERNAL_TOKEN`(자기 토큰), 받는 쪽은 허용한 호출자 토큰만 `INTERNAL_TOKEN_<호출자>`로 받음(빈 값이면 그 호출자 거부)
+  - 받는 쪽 필터가 토큰으로 호출자를 찾고 코드에 둔 호출자별 경로 허용 목록(Spring `_common/security/InternalCallerPolicy`, Python `security.CALLER_PATHS`)을 검사. 일치하는 호출자 없음 401, 허용 경로 밖 403. 목록은 [API 명세서 4장](api-spec.md#4-내부-api-internal) 표와 같게 유지
+  - 한 서비스 토큰이 새도 그 서비스가 원래 부르던 경로만 열림(예: report-worker 토큰으로 core 결제 내부 API 403). 받는 쪽 Pod가 새면 그 Pod가 받는 호출자 토큰도 노출되는 것은 남는 위험([결정 근거](../report/infra.md#99-서비스별-내부-토큰브로커-계정-분리-2026-11-16))
 
 ### 2.3 공통 규칙
 
 - #119 내부 별명 조회는 `guardianship/controller/InternalStudentProfileController` → `guardianship/service/InternalStudentProfileService` → 기존 `ChildManagementRepository.profile` 순서다. `InternalAuthFilter`가 토큰·요청 컨텍스트를 관리하고 서비스가 SYSTEM·학생 scope를 검사한다. 응답 전용 DTO는 UUID·별명만 제공하며 ACTIVE만 조회한다. #56 기본 report-worker의 `CoreClient.lookup`·`NamedGenerator`가 조회 결과를 렌더링에 전달하고 최종 AI 요청에서 별명을 가린다([#119](../report/core-gateway.md#8-리포트용-학생-별명-내부-조회-119), [#56 검증](../report/report.md#10-기본-worker-연결-56130)).
 - 오류 응답: 전 서비스 공통 형식(RFC 9457 Problem Details), 예외 → 응답 변환은 Presentation(Spring `_common/exception`, FastAPI exception handler)
-- 사용자 컨텍스트 전파: JWT 검증은 core만, 내부 호출은 내부 토큰 + `X-User-Id`·`X-User-Role`·`X-Student-Scope`(허용 학생 ID 목록) 헤더, 이벤트는 봉투 `subject`·`data`에 포함
+- 사용자 컨텍스트 전파: JWT 검증은 core만, 내부 호출은 호출자별 내부 토큰(2.2) + `X-User-Id`·`X-User-Role`·`X-Student-Scope`(허용 학생 ID 목록) 헤더, 이벤트는 봉투 `subject`·`data`에 포함
   - #135 report 조회용 HTTP·S3 연결은 앱 lifespan에서 생성·정리한다. HTTP 연결을 재사용하되 사용자 헤더를 클라이언트 기본값으로 저장하지 않고 요청 훅의 ContextVar에서 읽는다.
   - 중간 서비스(ai)는 받은 컨텍스트 헤더를 하위 호출(learning)에 그대로 전달
   - 사용자 요청 없는 호출(report-worker 등 이벤트 소비): `X-User-Role: SYSTEM`, `X-Student-Scope` = 이벤트 `subject` 학생
@@ -842,6 +846,9 @@ backend/report-service/
 - #171로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의. 이미지 게시·승인 흐름은 #186 범위다
 - #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/infra.md#7-cd-배포-승인이력롤백-186)
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04). DB는 서비스별 app·migrate 계정 Secret만 앱·migration-job에 주입하고 관리자 계정은 넣지 않음(#230)
+  - RabbitMQ도 서비스별 계정(`core`·`learning`·`ai`·`scoring`·`report`, 이름 고정)만 앱에 주입하고 관리자 계정(`RABBITMQ_USER`)은 init·운영자 전용. 계정·권한은 `rabbitmq-init`(`import-definitions.sh`)이 관리 API로 생성
+  - 권한: 앱은 큐·exchange를 선언하지 않으므로 configure 없음(ai·scoring만 Pod별 `amq.gen-*` 임시 큐). write는 자기 발행 exchange·재시도 exchange, read는 자기 소비 큐, `events.topic` 토픽 권한으로 자기 발행 라우팅 키만 허용. core 계정은 큐 현황 조회용 `monitoring` 태그, KEDA는 report 계정 URL 사용
+  - 내부 토큰은 호출 주체별 키(`INTERNAL_TOKEN_<호출자>`)로 보관하고 각 Deployment는 자기 토큰과 허용 호출자 토큰만 `secretKeyRef`로 받음
 
 ### 4.6 관측
 - #171 local 관측 chart: Collector·Prometheus·Grafana, 공통 앱 chart Java agent로 core·learning JVM/HTTP metrics. AI는 기본 비활성 Langfuse v4 LLM 계측. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없음. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결
