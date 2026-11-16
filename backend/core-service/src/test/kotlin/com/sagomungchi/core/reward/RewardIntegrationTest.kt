@@ -143,7 +143,13 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         assertTrue(items.getValue("COMPANION:mungchi")["unlocked"].asBoolean())
         assertFalse(items.getValue("THEME:forest")["unlocked"].asBoolean()); assertEquals(100, items.getValue("THEME:forest")["pricePoints"].asInt())
         assertEquals(150, items.getValue("COMPANION:tori")["pricePoints"].asInt())
-        assertEquals(5, items.values.count { it["slot"].asText() == "THEME" }); assertEquals(5, items.values.count { it["slot"].asText() == "COMPANION" })
+        assertEquals(5, items.values.count { it["slot"].asText() == "THEME" }); assertEquals(12, items.values.count { it["slot"].asText() == "COMPANION" })
+        // #697 뭉치 친구들 12종: 기존 5종 뒤 새 7종 순서, 이름은 화면 친구 이름, 솜뭉치만 무료·나머지 150
+        val companions = items.values.filter { it["slot"].asText() == "COMPANION" }
+        assertEquals(listOf("mungchi", "tori", "mongdol", "kongi", "monggeul", "snow", "yarn", "star", "foam", "paper", "petal", "ice"),
+            companions.map { it["itemKey"].asText().removePrefix("COMPANION:") })
+        assertEquals("솜뭉치", items.getValue("COMPANION:mungchi")["name"].asText()); assertEquals("얼음뭉치", items.getValue("COMPANION:ice")["name"].asText())
+        assertTrue(companions.drop(1).all { it["pricePoints"].asInt() == 150 && !it["unlocked"].asBoolean() })
         assertEquals("HAT", items.getValue(onSale)["slot"].asText()); assertTrue(items.getValue(onSale)["onSale"].asBoolean())
         assertFalse(stopped in items)
         // 해금한 뒤 판매가 멈춘 아이템은 계속 보인다.
@@ -177,6 +183,22 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         val ledger = jdbc.queryForList("SELECT event_type,source_key,amount FROM reward_point_ledger WHERE student_id=? AND event_type='UNLOCK'", student)
         assertEquals(listOf(mapOf<String, Any>("event_type" to "UNLOCK", "source_key" to "THEME:forest", "amount" to -100)), ledger)
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM student_look_unlock WHERE student_id=? AND ledger_id IS NOT NULL", Int::class.java, student))
+    }
+
+    @Test fun `new companions unlock for 150 and save while existing companion unlocks keep working`() {
+        val prefs = "/api/v1/students/me/preferences"
+        assertEquals("LOOK_LOCKED", call("PUT", prefs, studentToken, mapOf("theme" to "lake", "companion" to "snow"), expected = 409)["code"].asText())
+        // #697 이전 해금 행(기존 5종)은 그대로 쓰인다
+        jdbc.update("INSERT INTO student_look_unlock(student_id,item_key,ledger_id,unlocked_at) VALUES(?,'COMPANION:tori',NULL,now())", student)
+        assertEquals("tori", call("PUT", prefs, studentToken, mapOf("theme" to "lake", "companion" to "tori"))["companion"].asText())
+        earnMissions(16)
+        assertEquals(10, unlock("COMPANION:snow")["balance"].asInt())
+        assertEquals("snow", call("PUT", prefs, studentToken, mapOf("theme" to "lake", "companion" to "snow"))["companion"].asText())
+        assertEquals("snow", jdbc.queryForObject("SELECT look_companion FROM student WHERE id=?", String::class.java, student))
+        assertEquals("INSUFFICIENT_POINTS", unlock("COMPANION:ice", expected = 409)["code"].asText())
+        assertEquals(listOf(mapOf<String, Any>("source_key" to "COMPANION:snow", "amount" to -150)),
+            jdbc.queryForList("SELECT source_key,amount FROM reward_point_ledger WHERE student_id=? AND event_type='UNLOCK'", student))
+        assertEquals("LOOK_ITEM_NOT_FOUND", unlock("COMPANION:dragon", expected = 404)["code"].asText())
     }
 
     @Test fun `concurrent unlocks with different keys deduct once`() {

@@ -65,7 +65,10 @@ object LookCatalog {
     /** 관리자가 아이템을 등록하고 학생이 착용하는 모든 슬롯(V47 CHECK와 같음) */
     val ITEM_SLOTS = CHARACTER_SLOTS + FURNITURE_SLOTS
     val THEMES = linkedMapOf("lake" to "호수", "forest" to "숲", "factory" to "공장", "space" to "소행성", "sea" to "바닷속")
-    val COMPANIONS = linkedMapOf("mungchi" to "뭉치", "tori" to "토리", "mongdol" to "몽돌", "kongi" to "콩이", "monggeul" to "몽글")
+    /** 뭉치 친구들 12종(#697). 기존 5종 뒤에 새 7종, 이름은 화면 친구 이름. `mungchi`(솜뭉치)만 무료, 나머지 150 */
+    val COMPANIONS = linkedMapOf("mungchi" to "솜뭉치", "tori" to "솔방울뭉치", "mongdol" to "모래뭉치", "kongi" to "이끼뭉치",
+        "monggeul" to "구름뭉치", "snow" to "눈뭉치", "yarn" to "털실뭉치", "star" to "별뭉치", "foam" to "거품뭉치",
+        "paper" to "종이뭉치", "petal" to "꽃잎뭉치", "ice" to "얼음뭉치")
 
     fun themeKey(code: String) = THEME_PREFIX + code
     fun companionKey(code: String) = COMPANION_PREFIX + code

@@ -121,7 +121,7 @@ erDiagram
     boolean community_enabled "NOT NULL DEFAULT false, 커뮤니티 공개 설정 학생 본인만 변경 (P20, #388)"
     timestamptz community_updated_at "NULL 허용, 공개 설정 변경 시각 (#388)"
     varchar(16) look_theme "NULL 허용, CHECK[lake|forest|factory|space|sea], 학생 꾸미기 (#234)"
-    varchar(16) look_companion "NULL 허용, CHECK[mungchi|tori|mongdol|kongi|monggeul], 학생 꾸미기 (#234)"
+    varchar(16) look_companion "NULL 허용, CHECK[mungchi|tori|mongdol|kongi|monggeul|snow|yarn|star|foam|paper|petal|ice], 학생 꾸미기 (#234), 동행 캐릭터 12종 (#697, V49)"
     timestamptz look_updated_at "NULL 허용, 꾸미기 저장 시각 (#234)"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at

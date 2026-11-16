@@ -883,7 +883,7 @@ If-Match: "7"
 { "theme": "lake", "companion": "mungchi", "updatedAt": "2026-10-27T05:00:00Z" }
 ```
 - `theme`: `lake`(호수)·`forest`(숲)·`factory`(공장)·`space`(소행성)·`sea`(바닷속). 기본 `lake`
-- `companion`: `mungchi`(뭉치)·`tori`(토리)·`mongdol`(몽돌)·`kongi`(콩이)·`monggeul`(몽글). 기본 `mungchi`
+- `companion`(뭉치 친구들 12종, #697): `mungchi`(솜뭉치)·`tori`(솔방울뭉치)·`mongdol`(모래뭉치)·`kongi`(이끼뭉치)·`monggeul`(구름뭉치)·`snow`(눈뭉치)·`yarn`(털실뭉치)·`star`(별뭉치)·`foam`(거품뭉치)·`paper`(종이뭉치)·`petal`(꽃잎뭉치)·`ice`(얼음뭉치). 기본 `mungchi`. 앞 5종은 #697 이전 값 그대로(이름만 화면 친구 이름으로), 뒤 7종은 웹 친구 id와 같은 값(V49)
 - 목록에 없는 값·누락·null은 `422 VALIDATION_FAILED`(이전 설정 유지). 학생 토큰 전용, 학부모·관리자 토큰은 `403 FORBIDDEN`. 응답 `Cache-Control: no-store`
 - P22(#389): `lake`·`mungchi` 외 테마·캐릭터는 포인트로 해금한 것만 저장(잠긴 값 `409 LOOK_LOCKED`, 이전 설정 유지), 잠금 적용 전 저장된 값은 V35가 해금된 것으로 이관했다. 숫자 레벨·순위와 무관한 참여 보상이라 기능 명세 1.3 원칙과 충돌하지 않음
 - 저장: core `student.look_theme`·`look_companion`·`look_updated_at`(V23, 세 열 함께 NULL 또는 함께 값). 값 목록은 코드 상수와 DB CHECK로 고정한다. 학생 삭제 확정 시 기본값(NULL)으로 되돌린다. OpenAPI `StudentLook`

@@ -27,7 +27,7 @@ class LookUnlockService(private val mapper: RewardMapper, private val rewards: R
                         private val json: ObjectMapper, manager: PlatformTransactionManager) {
     private val tx = TransactionTemplate(manager)
 
-    /** 테마 5·캐릭터 5와 판매 중이거나 이미 해금한 아이템. 판매 중단 아이템은 해금한 학생에게만 보인다. */
+    /** 테마 5·캐릭터 12(#697)와 판매 중이거나 이미 해금한 아이템. 판매 중단 아이템은 해금한 학생에게만 보인다. */
     @Transactional(readOnly = true)
     fun catalog(): List<LookCatalogItem> {
         val studentId = access.currentStudent()
