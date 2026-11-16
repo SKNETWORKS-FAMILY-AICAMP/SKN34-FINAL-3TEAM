@@ -16,7 +16,7 @@ npm run test:browser # 별도 MSW 서버를 자동 실행, 노트북·태블릿 
 
 화면 테스트는 사용자 결정에 따라 단위 테스트와 분리했습니다. `_web.yml`의 별도 `browser` job이 Chromium을 설치해 실행합니다. 로컬에 설치된 Chrome을 사용할 때는 `CHROME_PATH`를 지정할 수 있습니다. 테스트 서버는 localhost 5271에만 열고 재사용하지 않으며 실제 PG·Google 인증은 호출하지 않습니다. 실패 시 `test-results/`에 스크린샷·trace가 남습니다. 해당 폴더와 `playwright-report/`는 Git에서 제외합니다.
 
-Node.js 24 기준입니다.
+Node.js 22 기준입니다(Web CI `.github/workflows/_web.yml`과 같음).
 
 ```powershell
 npm ci

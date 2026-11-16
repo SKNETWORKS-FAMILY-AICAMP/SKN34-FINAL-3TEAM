@@ -185,6 +185,20 @@
       "inline": {
         "sagomungchi-demo-karpenter-controller": "iam/karpenter-controller-role.inline.karpenter-controller.json"
       }
+    },
+    {
+      "name": "sagomungchi-demo-ai-asset-s3-role",
+      "trust": "iam/ai-asset-s3-role.trust.json",
+      "inline": {
+        "sagomungchi-demo-ai-asset-s3-write": "iam/ai-asset-s3-role.inline.ai-asset-s3-write.json"
+      }
+    },
+    {
+      "name": "sagomungchi-demo-learning-asset-s3-role",
+      "trust": "iam/learning-asset-s3-role.trust.json",
+      "inline": {
+        "sagomungchi-demo-learning-asset-s3-read": "iam/learning-asset-s3-role.inline.learning-asset-s3-read.json"
+      }
     }
   ],
   "eks": {

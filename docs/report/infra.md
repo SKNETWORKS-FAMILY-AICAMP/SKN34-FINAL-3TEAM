@@ -166,8 +166,8 @@ kind values가 `compose.yaml`보다 적어 Google 로그인·토스 결제·LLM 
 | 플랫폼 | RabbitMQ·Redis·관측 단일 replica, AZ 고정 PVC(RabbitMQ·Prometheus·Grafana 2a, Redis 2b) | EBS/PVC 삭제·AZ 장애 복구 미검증 |
 | 진입 | CloudFront→ALB HTTP origin | custom domain·ALB TLS 미구성 |
 | Secret | ESO·Secrets Manager 원격 key 참조 | 키 회전·장애 복구 미검증 |
-| NetworkPolicy | 서비스별 정책 있음, `namespaceDefaultDeny=false`, 일부 외부 연결은 넓은 CIDR | 설계 호출 표 전체·새 Pod 기본 거부 미검증 |
-| S3·IAM 재생성 | 인벤토리·정책 원문 보존 | 새 계정 실제 생성 미실행 |
+| NetworkPolicy | 서비스별 정책 있음, 일부 외부 연결은 넓은 CIDR. 저장소 값은 app 기본 거부를 켬(#657, 9.8), 배포 중이던 환경은 `namespaceDefaultDeny=false` | 설계 호출 표 전체 미검증, 기본 거부는 재가동 때 적용·확인 |
+| S3·IAM 재생성 | 인벤토리·정책 원문 보존. 테마 자산 ai·learning 역할 2개는 저장소에만 정의(#652, 9.8) | 새 계정 실제 생성 미실행 |
 | NAT | 2a 한 곳 | 다중 AZ는 담당자 결정 사항(5절) |
 
 ### 4.2 실제 서비스 검증 (11-03~04)
@@ -454,6 +454,43 @@ kind에 남긴 것: 시연 학부모·자녀 2명과 미래 날짜(11/16~12/7) �
 - 시험 시계 동안 가짜 시각으로 서명한 S3(MinIO) 그림 URL은 "not valid yet"으로 깨진다. kind 화면 확인의 그림 자리는 기본 그림이었다. AWS 지난 주 회차는 실제 시각이라 영향이 없다
 - 앞선 2회차의 주간·일일 리포트는 만들지 않았다(시연에 필요한 것은 지난 주 리포트)
 - 웹 추억 검색 화면(#567)은 구현 전이라 검색은 API로만 확인했다
+
+## 9.8 prod 테마 자산 버킷과 네임스페이스 기본 거부 준비 (#652·#657, 2026-11-16)
+
+AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고쳤다. AWS 호출은 읽기도 하지 않았고, 적용·확인은 A 계정 재가동(#601) 때 한다.
+
+### 9.8.1 테마 자산 버킷 (#652)
+
+- 문제: prod ai·learning 값에 `ASSET_S3_BUCKET`이 없어 ai는 그림·영상 단계를 건너뛰고(`app/theme_draft/storage.py` `create_storage`, `app/llm/media.py` `create_media_clients`), learning은 자산 URL을 null로 준다(`app.assets.bucket`). 오류가 나지 않아 눈에 띄지 않았다.
+- 값: 두 서비스에 `ASSET_S3_BUCKET=sagomungchi-demo-<A 계정>-missions`, `S3_REGION`·`AWS_REGION=ap-northeast-2`. local과 달리 `S3_ENDPOINT_URL`(ai)·`S3_PUBLIC_ENDPOINT_URL`(learning)은 넣지 않는다. 비어 있어야 AWS S3 주소로 올리고 서명한다(local 값은 MinIO 주소).
+- 권한: `infrastructure/aws/iam`에 ai·learning용 역할이 없었다(report·scoring만 있음). 역할 2개(ai `PutObject`, learning `GetObject`, 둘 다 `theme-drafts/*`만)와 trust를 정의하고 `demo-stack.json`(IAM 역할 12개)·`eks/cluster.json`(Pod Identity 10개)에 넣었다. 재가동 절차는 [AWS README 테마 자산 버킷 권한](../../infrastructure/aws/README.md#테마-자산-버킷-권한-652-2026-11-16-정의미적용).
+- 네트워크: 두 앱은 이미 자기 NetworkPolicy로 egress가 격리돼 있어, 역할만 연결하면 Pod Identity agent(`169.254.170.23:80`)에 못 닿아 자격 증명을 못 받는다. 두 앱 egress에 agent를 더했다(report·scoring·sLLM과 같은 규칙).
+- 한계: presigned URL은 Pod Identity 임시 자격 증명으로 서명하므로, 자격 증명 만료가 1시간(`url-ttl`)보다 가까우면 URL이 더 일찍 만료될 수 있다(`AssetUrls` 주석). 화면에서 그림이 중간에 안 보이면 이것부터 본다.
+- B 계정 이전 때 바꿀 항목: 버킷 이름·IAM 원문·`cluster.json`의 계정 번호(AWS README 같은 절).
+
+### 9.8.2 app 네임스페이스 기본 거부 (#657)
+
+결정(권장안): prod 값에 켜고 필요한 허용을 더하며, 실제 확인은 A 계정 재가동 때 한다.
+
+판단 근거(읽기 위주): 공유 local kind는 이날 Docker가 꺼져 있어 조회하지 못했고, 켜 보는 시험도 하지 않았다. 대신 다음으로 판단했다.
+
+- local은 이미 core 값에서 `namespaceDefaultDeny: true`로 app 기본 거부를 켜 둔 상태로 kind 확인 A~D(#436)·#546·#624를 통과했다. 기본 거부 아래에서 앱 7개·migration Job(Argo PreSync 정책 포함)이 동작한 근거다.
+- prod 앱 values 7개와 migration 덮어쓰기 3개를 helm 4.3.1로 렌더링해 모든 Pod 라벨이 어떤 정책에 선택되는지 대조했다. 앱 Deployment 7개는 이미 자기 정책(ingress·egress)으로 격리돼 있어 기본 거부를 더해도 허용 범위가 같다. NetworkPolicy는 합집합이므로 기본 거부는 "자기 정책이 없는 Pod"에만 영향을 준다.
+
+기본 거부를 켜면 막히는 것과 처리:
+
+| 대상 | 현재 prod | 처리 |
+|---|---|---|
+| migration Job(core·learning·report) | `--show-only migration-job.yaml`로 Job만 적용 → 정책 없음 | `migrations/*.json`에 `networkPolicy.migrationEgress`(RDS 5432) 추가, prod README 절차와 ci-gitops 렌더링에 `migration-networkpolicy.yaml`을 같이 넣음 |
+| `rds-bootstrap` Job(`demo_stack.py`), `demo-db-oneoff` Pod | 정책 없음 | `prod/app-oneoff-db-network.json`(DNS·RDS 5432) |
+| 배포 확인 Pod(`deployment-check` 라벨) | core·learning·scoring ingress만 허용, Pod 자체 egress 정책 없음 | `prod/app-check-pods-network.json`(DNS·core·learning·scoring) |
+| `kubectl run` 등 그 밖의 임시 Pod | 정책 없음 | 막히는 것이 의도. 필요하면 위 라벨을 쓰거나 정책을 먼저 만든다 |
+| KEDA(#476 sLLM cron) | prod 미설치 | cron 스케일러는 app Pod와 통신하지 않음. RabbitMQ 스케일러를 쓰면 platform 정책(`platform-network.json`) 문제이고 app 기본 거부와 무관 |
+| 관측(Collector·Prometheus·Langfuse) | 앱별 `egressToCollector`·`ingressFromPrometheus`·`egressToLangfuse` | 앱 Pod가 이미 격리돼 있어 변화 없음. 관측 Pod는 `observability` namespace라 대상 아님 |
+| ALB → core, kubelet probe, `kubectl exec`·`logs` | `core-alb-network.json`, 기존 격리 상태에서 동작 | 변화 없음 |
+
+- `app-default-deny`는 core release만 만든다. 두 release에 켜면 같은 이름 객체로 Helm 소유권 충돌이 난다.
+- 재가동 때 확인할 것: core 재배포 뒤 `kubectl -n app get networkpolicy app-default-deny`, 앱 7개 readiness, migration Job 1회 성공, `demo-db-oneoff`로 `select 1`, 정책 없는 `kubectl run` Pod의 DNS 조회가 실패하는지. 되돌리기는 prod README NetworkPolicy 절.
 
 ## 10. 근거 링크
 

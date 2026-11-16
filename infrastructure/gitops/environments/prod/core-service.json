@@ -407,7 +407,7 @@
       "report-worker",
       "scoring-service"
     ],
-    "namespaceDefaultDeny": false,
+    "namespaceDefaultDeny": true,
     "egressToCollector": true
   },
   "pdb": {

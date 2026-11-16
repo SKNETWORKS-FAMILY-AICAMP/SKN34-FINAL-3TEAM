@@ -107,6 +107,11 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('code','goodThought'):
                         reviewed['required'].remove(field)
                         reviewed['properties'].pop(field)
+                    # #656 drops RECORD from the judgment element sourceType (Metric-only) and adds its description.
+                    source=reviewed['properties']['sourceType']
+                    self.assertIn('#656',source.pop('description'))
+                    self.assertEqual(source['enum'],['RULE','ANSWER_KEY','AI_OBSERVATION',None])
+                    source['enum']=['RECORD',*source['enum']]
                 # #415 parent ID/password login adds loginId·authMethod to /me and makes email nullable for those accounts.
                 if section=='schemas' and name=='ParentMeResponse':
                     for field in ('loginId','authMethod'):

@@ -8,7 +8,7 @@ EKS는 [eksctl 설정](../eks/cluster.json), 나머지는 `demo-stack.json`(원�
 
 | 명령 | 동작 | AWS 변경 |
 |---|---|---|
-| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 7개, Secret 이름 11개, RDS·SG·subnet group, IAM 역할 10개(trust·정책 원문, #211 Karpenter 컨트롤러 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
+| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 7개, Secret 이름 11개, RDS·SG·subnet group, IAM 역할 12개(trust·정책 원문, #211 Karpenter 컨트롤러, #652 테마 자산 ai·learning 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
 | `apply --confirm-account 347161580747` | `plan`에서 MISSING인 자원만 생성. 기존 자원은 변경·삭제하지 않는다. Secret 값과 EKS는 만들지 않는다 | 생성만 |
 | `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` | 현재 subnet ID를 채운 eksctl 설정 출력 → `eksctl create cluster -f <파일>` (2026-11-04 eksctl 0.231.0 `--dry-run` 통과) | 없음 |
 | `apply --after-eksctl ...` | 새 클러스터의 cluster SG에서 RDS 5432 허용 | 생성만 |
@@ -45,6 +45,28 @@ python infrastructure/aws/demo_stack.py --profile sagomungchi-provided plan
 - `sagomungchi-demo-347161580747-{web,missions,reports,models}`: 버전 관리·Public Access Block 상태는 JSON 참고. 웹만 CloudFront OAC로 제공하며 reports/models는 앱 IAM 및 서비스 권한 검사를 통한다.
 - VPC의 available NAT GW는 1개이며 JSON에 ID·subnet을 기록했다. AZ 장애 시 외부 호출 복구 검증은 하지 않았다. 2026-11-12 데모 정지 중 비용 축소로 NAT와 EIP, core ALB를 지웠다. 같은 날 EKS 클러스터도 지웠다(RDS·S3·ECR·Secret·IAM·VPC는 유지). 다시 켤 때는 [EKS 재생성 순서](../eks/README.md#재생성-순서-2026-11-12-eks-삭제-이후)를 따른다.
 - RDS·S3·IAM 생성은 위 `demo_stack.py apply`로 정의했다. 웹 버킷 policy(CloudFront 배포 ID 필요)와 lifecycle은 정의하지 않았다. 관측 파일을 재생성 완료 근거로 사용하지 않는다.
+
+## 테마 자산 버킷 권한 (#652, 2026-11-16 정의·미적용)
+
+ai는 테마 초안 그림·영상을 `missions` 버킷의 `theme-drafts/{실행 ID}/{장면}`에 올리고, learning은 같은 키를 1시간짜리 presigned GET URL로 바꿔 학생 화면에 준다(#437·#438). 지금까지 prod 값에는 두 서비스의 `ASSET_S3_BUCKET`도 S3 권한 역할도 없어서, 그림·영상 단계와 자산 URL이 오류 없이 꺼져 있었다. 저장소에만 아래를 정의했고 AWS에는 만들지 않았다(조회도 하지 않음).
+
+| 역할 | Pod Identity 연결 | 권한(inline) |
+|---|---|---|
+| `sagomungchi-demo-ai-asset-s3-role` | `app/ai-service` | `s3:PutObject` — `missions` 버킷 `theme-drafts/*` |
+| `sagomungchi-demo-learning-asset-s3-role` | `app/learning-service` | `s3:GetObject` — 같은 경로(presigned URL 서명자 권한. 서명 자체는 S3를 부르지 않음) |
+
+- trust는 report·scoring 역할과 같은 형식(`pods.eks.amazonaws.com`, 클러스터 ARN·`app`·ServiceAccount 조건)이다. 두 앱 chart는 `serviceAccount.create` 기본값(true)으로 `ai-service`·`learning-service` ServiceAccount를 만든다.
+- 버킷은 기본 암호화 SSE-S3(AES256)라 KMS 권한은 필요 없다. 그림은 `<img>`·`<video>`가 presigned URL을 직접 열므로 CORS 설정도 필요 없다.
+- 두 앱의 NetworkPolicy egress에 Pod Identity agent `169.254.170.23/32:80`을 더했다(report·scoring·sLLM과 같음). 이것이 없으면 역할을 연결해도 자격 증명을 못 받는다. ai의 S3 업로드는 기존 공인 443 허용(S3 Gateway endpoint 대역 포함)으로 나간다.
+
+재가동 때 순서(A 계정, #601):
+
+1. `demo_stack.py plan` → 두 역할이 `MISSING`인지 확인 → `apply --confirm-account <계정>`이 역할·inline 정책을 만든다(기존 자원은 안 바꿈).
+2. 클러스터를 새로 만들면 `cluster.json`의 Pod Identity 10개에 두 연결이 들어 있다. 클러스터가 이미 있으면 `aws eks create-pod-identity-association --cluster-name sagomungchi-demo-eks --namespace app --service-account ai-service --role-arn <ai 역할 ARN>`(learning도 같게)로 만든다. 연결 뒤 Pod를 다시 띄워야 자격 증명이 주입된다.
+3. prod `ai-service.json`·`learning-service.json`으로 두 앱을 재배포한다(`ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`·agent egress 포함).
+4. 확인: 관리자 화면에서 테마 초안 1건 생성 → ai 로그에 그림 단계 경고(`skipped`)가 없고 `theme-drafts/` 객체가 생겼는지 → 학생 테마 화면 응답의 장면 URL이 null이 아니고 브라우저에서 열리는지. 결과는 [infra 보고서 9.8](../../docs/report/infra.md#98-prod-테마-자산-버킷과-네임스페이스-기본-거부-준비-652657-2026-11-16)에 적는다.
+
+B 계정(시연, 11/30 무렵)으로 옮길 때 바꿀 항목: 버킷 이름의 계정 번호(`prod/ai-service.json`·`learning-service.json`의 `ASSET_S3_BUCKET`), `iam/ai-asset-s3-role.*`·`iam/learning-asset-s3-role.*`의 버킷·클러스터 ARN, `eks/cluster.json`의 두 연결 role ARN. 다른 계정 번호 항목과 함께 바꾼다(#601 11/14 메모).
 
 ## 배포·복구 유의 사항
 
