@@ -1,10 +1,14 @@
-"""주간 테마 초안 프롬프트 (theme-draft@1, #437).
+"""주간 테마 초안 프롬프트 (theme-draft@2, #437·#535·#647).
 
 줄거리·미션 이야기 조각·대화·글 검토·미션 검토 묶음.
 문구를 바꾸면 PROMPT_VERSION을 올림 (NFR-DAT-02). 문구는 텍스트 시험(2026-11-10, 처음 보는
 주제 초3·초4·초5·초6 통과)에서 검증한 것이다. 해결사 뭉치·시작 콘티 순서·증거 발견 줄·수사 연결
 문장·단서 미션 뒤 공개(사용자 결정 2026-11-11)는 배포 전이라 같은 버전에서 고쳤고 실제 LLM
 실측은 아직이다. LLM 입력에 학생 정보·학생 답은 넣지 않는다.
+theme-draft@2(#535·#647): 증거 종류·기록 매체 배정, 미션 소재(STORY_LINK), 영상 검토(뭉치가 사건
+대상을 잡거나 건넴, 차림 소품 쥠은 허용, 영상 생성도 같은 기준), 학생에게 보이는 특징 표
+낱말(#647)로 문구가 바뀌어 버전을 올림(@2 배포 전이라 한 번만).
+@1을 활성으로 지정한 환경은 배포 때 활성 항목을 바꾸거나 지움(ai.md 7장·17.6).
 """
 
 import json
@@ -18,16 +22,20 @@ from app.theme_draft.checks import (
     DAY_KO,
     DAY_TYPE,
     DIALOGUE_LINES,
+    EVIDENCE_KO,
     HINTS,
     Theme,
+    evidence_plan,
     feature_table,
+    plan_slot,
+    target_words,
     text_at,
     text_max,
     theme_day,
 )
 from app.theme_draft.models import ThemeDraftRequest
 
-PROMPT_VERSION = "theme-draft@1"
+PROMPT_VERSION = "theme-draft@2"
 # 글로 대신하는 활동 원칙(사용자 결정 2026-11-11). 미션 생성·미션 검토·글 검토·예시 답 고쳐
 # 쓰기에 같은 글을 넣어 기준이 어긋나지 않게 함
 TEXT_ONLY = (
@@ -36,6 +44,23 @@ TEXT_ONLY = (
     "기록, 사전 뜻풀이, 검색 결과)를 읽고 하는 것으로 대신하고 결과는 글로 쓴다(그림·전개도는 "
     "말로 설명). 이렇게 대신한 것은 성취기준에 맞다고 본다(사용자 결정 2026-11-11). 그 행동의 생각 "
     "부분(요약·정리·분류·비교·판단·표현)은 학생이 답 안에서 직접 한다."
+)
+# 예시 답이 질문 요구를 채우는 법. 미션 생성(story_text)과 예시 답 고쳐 쓰기(EXAMPLE_FIX_SYSTEM)에
+# 같은 글을 넣음. 실측 2026-11-15 닫기 2차 미션 검토 EXAMPLE_COMPLETE 15번 중 같은 뜻 까닭 4·
+# 표정·몸짓 빠짐 2·문장 수 어김 1·설명과 실제 글 어긋남 3(그중 고쳐 써도 같은 사유로 다시 실패 8),
+# 닫기 3차 2번째 실측 11번 중 새 글·요약을 방법·주제만 씀 4·풀이 확인이 계산 되풀이 1
+EXAMPLE_RULES = (
+    "질문이 정한 개수·형식(한 문장, 두 가지 등)을 그대로 지킨다. 까닭을 둘 이상 요구하면 서로 다른 "
+    "쪽에서 찾은 까닭을 쓴다(같은 뜻을 말만 바꾼 것은 서로 다른 까닭이 아님. 예: 읽는 사람에게 "
+    "좋은 점과 쓰는 사람에게 좋은 점). 질문이 말한 조건(표정·몸짓·목소리, 처음과 나중, 누구의 "
+    "생각과 같은지 등)은 하나씩 그 낱말이 드러나게 쓴다. 질문이 둘 이상을 각각 물으면(햇살과 "
+    "나무, 단어와 띄어쓰기 등) 하나씩 따로 답한다. 문장 수를 정하면 인사말까지 세어 그 수로 "
+    "쓴다. 비교·판단하라고 하면 결과와 함께 어떻게 비교했는지도 쓴다. 새 글·안내·요약·발표 "
+    "자료·전할 말을 쓰라고 하면 그 글의 실제 내용을 끝까지 쓴다(제목·주제·만드는 방법만 쓰지 "
+    "않음). 풀이의 확인은 계산을 되풀이하지 않고 거꾸로 계산하기 등 다른 방법으로 맞는지 "
+    "확인한다. 예시 답 안의 "
+    "설명은 예시 답에 실제로 쓴 글·질문에 나온 사실과 맞게 쓰고, 질문에 없는 행동을 지어내 "
+    "까닭으로 쓰지 않는다."
 )
 
 GRADE_CLUE = {  # 학년별 차이는 단서 복잡도(기준안)
@@ -81,16 +106,18 @@ PLAN_SYSTEM = (
     "무엇이 보이는지. 그날 문제의 "
     "성취기준 활동이 자연스럽게 나올 거리(물건·불편한 일·상황)를 넣되, 그날 문제의 답(만들 "
     "물건·계산 결과·고를 답·바뀐 "
-    "생각)은 쓰지 않는다(학생이 생각할 몫). 뭉치가 지나는 길에 탁자 같은 물체를 두지 않고, 소품은 "
+    "생각)은 쓰지 않는다(학생이 생각할 몫). 그날 단서 결론(그날 단서 특징의 값, 예: 증거가 남은 "
+    "바닥이 젖었는지)도 쓰지 않는다(단서는 문제 뒤에 보여 줌). 뭉치가 지나는 길에 탁자 같은 "
+    "물체를 두지 않고, 소품은 "
     "쓰임새대로 쓴다. 그림에는 글자·숫자를 그리지 않으므로 쓰인 내용·정확한 개수처럼 글로만 보이는 "
     "것과 생각·떠올리기처럼 그릴 수 없는 행동은 sceneNote에 "
     "쓰지 않는다(그런 내용은 문제 글이 준다).\n"
     "- intro는 시작 이야기(200자 이내): 주인 인물이 대상을 잃은 사건, 테마 역할의 뭉치가 현장으로 "
-    "출동해 큰 질문을 맡는 데까지. outro는 토요일 종료 이야기(300자 "
-    "이내): 뭉치가 모은 단서로 정답을 밝히고 "
-    "다섯 단서로 어떻게 정답만 남는지 짧게 정리한 뒤, 찾은 대상을 주인에게 돌려준다. 정리는 특징 "
-    "표로 계산한 것과 같게 쓴다: 요일마다 그 단서로 새로 빠지는 후보, 마지막 틀린 후보가 빠지는 "
-    "요일이 표와 같고, 이미 빠진 후보를 나중 단서가 뺐다고 쓰지 않는다.\n"
+    "출동해 큰 질문을 맡는 데까지. outro는 토요일 종료 이야기의 마무리 장면(160자 "
+    "이내): 뭉치가 정답 장소에서 찾는 대상을 찾아 주인에게 돌려주는 장면만 쓴다. "
+    "다섯 단서로 어떻게 정답만 남는지의 정리는 코드가 특징 표로 계산해 앞에 붙이므로 "
+    "쓰지 않는다(요일 이름·빠진 "
+    "후보를 쓰지 않음).\n"
     "- intro·outro·콘티의 때와 상황은 단서 evidence.when이 가리키는 그때와 맞춘다(증거가 '준비를 "
     "마친 때'면 이야기에서도 그때 준비가 끝나 있음). 시작 이야기·콘티에서 대상이 후보가 아닌 곳에 "
     "있었다거나 그곳에서 사라졌다고 쓰지 않는다.\n"
@@ -138,12 +165,15 @@ PLAN_SYSTEM = (
     "쓰지 않는다. answer는 후보 중 하나.\n"
     "- 정답 이름은 outro와 outroCuts에만 쓴다. "
     "title·world·intro·bigQuestion·styleNote·outfit과 days의 "
-    "place·sceneNote·clue·discovery·missionHook, introCuts에 쓰지 않는다.\n"
+    "place·sceneNote·clue·discovery·missionHook, introCuts에 쓰지 않는다. 특히 그날 장소(place)를 "
+    "정답 장소로 두지 않는다(흔적·목격 날에도 장면은 정답 장소가 아닌 곳에서 벌어짐).\n"
     "\n"
     "특징 표(features) — 정답 논리는 이 표로 코드가 확인한다\n"
     "- 후보를 가려낼 특징 2~5개. 특징마다 name과 values(후보마다 값 하나, [{candidate, value}]). "
     "값은 짧은 낱말이고, "
-    "같은 특징 안에서 같은 값은 같은 낱말로 쓴다.\n"
+    "같은 특징 안에서 같은 값은 같은 낱말로 쓴다. 특징 이름과 값은 학생이 그날 단서를 얻은 "
+    "뒤 단서 근거로 그대로 보므로(#647) 그 학년이 읽는 쉬운 우리말로 쓴다(예: 이름 '바닥 재질', "
+    "값 '나무').\n"
     "- 같은 특징의 서로 다른 값은 뜻이 겹치지 않아 값만 보고 바로 가를 수 있어야 한다. 비슷한 "
     "말(환한·밝은), 한쪽이 다른 쪽을 포함하는 말(정사각형은 직사각형이기도 함), 후보 이름과 "
     "어긋나는 값(이름이 '○○ 옆'인데 거리가 '멀리')을 쓰지 않는다.\n"
@@ -156,8 +186,9 @@ PLAN_SYSTEM = (
     "null.\n"
     "\n"
     "단서\n"
-    "- 요일마다 clue 하나(학생이 그날 문제를 마친 뒤 한 줄 글로 그대로 보여 주므로 공백 포함 30자 "
-    "안팎, 40자를 넘으면 안 됨). "
+    "- 요일마다 clue 하나(학생이 그날 문제를 마친 뒤 한 줄 글로 그대로 보여 주므로 공백 포함 32자 "
+    "이내로 짧게, 40자를 넘으면 안 됨. 기록 매체 낱말도 이 안에 넣는다. TRACE 날은 누구의 흔적인지 "
+    "찾는 대상 낱말을 꼭 넣고 38자 안팎, 46자를 넘으면 안 됨). "
     "말한 사람은 붙이지 "
     "않는다. 단서는 그날 장면의 이야기 속 사실이다. 그날 문제 활동의 결과(계산값·학생 답)에서 "
     "만들지 않는다.\n"
@@ -200,31 +231,48 @@ PLAN_SYSTEM = (
     "이나 금요일(FRI) 단서에서 빠진다(수요일까지는 후보가 2개 이상 남음).\n"
     "- target은 찾는 대상(사라진 동물·물건·사람)의 이름이다. 찾는 대상은 종료 이야기 전까지 찾지 "
     "못한 상태다. 어느 "
-    "장면에서도 지금 있는 곳이 보이거나 말을 하지 않는다. 목격은 지나간 일로 쓴다.\n"
-    "- clueType은 주어진 종류 중 하나이고 다섯 단서가 모두 다른 종류다.\n"
+    "장면에서도 지금 있는 곳이 보이거나 말을 하지 않는다. 목격은 지나간 일로 쓴다. 장면에서 대상을 "
+    "보거나 펼치거나 만지지 않는다. 같은 종류의 다른 물건이 나오면 '다른 그림책'처럼 찾는 대상이 "
+    "아님을 밝힌다.\n"
+    "- clueType은 주어진 종류 중 하나이고 다섯 단서가 모두 다른 종류다. '목격'은 SIGHTING 날, "
+    "'기록'은 RECORD 날, '발자국'은 TRACE 날에만 쓴다. 같은 증거 종류가 두 날이면 그중 한 날만 "
+    "'목격'·'기록'·'발자국'을 쓰고 다른 날은 그날 특징에 맞는 다른 종류(소리·시각·색·물기 등)를 "
+    "쓴다.\n"
     "- evidence: 단서의 증거 종류(kind)와 그 증거가 생긴 때(when). kind는 TRACE(대상이 지나가거나 "
     "머문 곳에 남은 흔적), "
-    "SIGHTING(대상을 본 사람의 목격), RECORD(대상을 찍은 사진·적은 기록) 중 하나. when은 큰 질문이 "
+    "SIGHTING(대상을 본 사람의 목격), RECORD(대상을 찍은 사진·적은 기록) 중 하나이고 요일마다 "
+    "주어진 '증거 종류 배정'을 그대로 쓴다(코드가 정함. 그날 특징에 맞는 증거 물건·사람을 골라 "
+    "그 종류로 쓴다). TRACE 날의 단서 특징은 흔적에 남을 수 있는 것(대상이 닿은 바닥·면의 "
+    "재질·물기·무늬, 자리의 모양·크기·무게)으로 고른다. 빛·그늘·소리·냄새·바람·거리·때·주변 색은 "
+    "흔적에 남지 않으므로 TRACE 날 특징으로 쓰지 않는다(맞지 않으면 코드가 배정을 다른 날과 바꿈). "
+    "when은 큰 질문이 "
     "묻는 그때(예: "
     "마지막으로 둔 때)와 맞는 때로 쓰고, 다섯 단서가 모두 "
-    "같은 그때를 가리킨다. clue 문장이 사진·영상·"
-    "녹음·기록·일지·메모를 말하면 kind는 RECORD, 누가 봤다고 하면 SIGHTING, 흔적이면 TRACE로 맞춘다"
-    "(코드 검사 CLUE_EVIDENCE). 사진·기록에 찍힌 "
+    "같은 그때를 가리킨다. clue 문장 안에 그때의 시각(예: 오후 3시)을 자연스럽게 넣는다(다섯 "
+    "단서 앞에 똑같이 붙이지 말고 '3시 메모에는'·'오후 3시쯤 남은'처럼 문장마다 다르게, 빠지면 "
+    "코드가 앞에 붙임). clue·discovery는 배정된 종류에 맞춘다: RECORD 날은 배정된 기록 매체 "
+    "낱말(사진·영상·메모·일지·녹음 중 하나)을 clue와 discovery에 그대로 쓰고, SIGHTING 날은 본 "
+    "사람의 목격, TRACE 날은 남은 흔적으로 쓰며 두 날 clue에는 사진·영상·녹음·기록·일지·메모를 "
+    "쓰지 않는다(코드 검사 CLUE_EVIDENCE). 사진·기록에 찍힌 "
     "그때의 대상 모습은 써도 되지만 지금 있는 곳은 쓰지 "
     "않는다.\n"
     "\n"
     "증거 발견·수사 연결 — 단서는 학생이 그날 문제를 마친 뒤에 보여 준다\n"
     "- discovery: 그날 문제 앞 대화의 끝에서 두 번째 줄로 그대로 나가는 증거 발견 한 줄"
-    "(공백 포함 40자 이내, 뭉치가 말함). 그날 evidence 종류에 맞는 증거"
+    "(공백 포함 32자 안팎, 40자를 넘으면 안 됨, 뭉치가 말함). 그날 evidence 종류에 맞는 증거"
     "(TRACE면 흔적이 남은 물건·자리, SIGHTING이면 "
     "본 사람, RECORD면 사진·기록)를 찾았다는 말만 한다. 단서 결론(allowed 값 낱말)·후보 "
     "이름·정답은 "
     "말하지 않는다. 형식은 찾은 증거를 가리키는 짧은 감탄 한 문장과, 그 증거에 그때가 남았을지 "
     "모른다는 기대 한 문장.\n"
     "- missionHook: 증거 발견 줄 바로 다음, 문제 직전에 뭉치가 말하는 수사 연결 한 줄(공백 포함 "
-    "40자 이내). 찾은 증거를 풀려면 그날 문제에서 배울 것이 필요하다는 이유만 말하고 도움을 "
-    "청한다. 증거 자체를 살피라고 하지 않는다. 후보 이름·정답은 말하지 않는다. "
-    "형식은 '<찾은 증거>를 풀려면 <그날 배울 것>이 필요해. 도와줄래?'처럼 이유와 도움 요청.\n"
+    "32자 안팎, 40자를 넘으면 안 됨). 찾은 증거를 풀려면 그날 문제에서 배울 것이 필요하다는 "
+    "이유만 말하고 도움을 청한다. 증거 자체를 살피라고 하지 않는다. 후보 이름·정답은 말하지 "
+    "않는다. "
+    "형식은 '<찾은 증거>를 풀려면 <그날 배울 것>이 필요해. 도와줄래?'처럼 이유와 도움 요청"
+    "(<그날 배울 것>은 '오늘 배울 내용'처럼 뭉뚱그리지 않고 구체적으로). "
+    "<찾은 증거> 자리에는 찾은 증거(물건·본 사람·기록)를 쓰고, 그날 단서 특징의 값(사건 현장의 "
+    "무게·거리 등)을 풀 대상으로 말하지 않는다(문제는 그 값을 정할 수 없어 소재가 어긋남).\n"
     # 예시를 녹음기로 두었더니 초안 155개 중 55개(35%)에 녹음이 들어감(2026-11-11 집계). 증거
     # 매체 낱말은 예시로 주지 않는다(탐정 모자 예시 13건과 같은 따라 쓰기)
     "- 위 예시들은 특징·문장을 정하는 방향일 뿐이다. 예시 낱말·문장을 그대로 쓰지 말고 이 테마에 "
@@ -279,11 +327,31 @@ NAME_POOL = (
 NAMES_PER_THEME = 6
 
 
+def plan_seed(request: ThemeDraftRequest) -> str:
+    """코드가 고르는 값(이름·증거 배정)의 씨앗: 같은 요청(주·학년)이면 같은 값."""
+    return f"{request.week_start.isoformat()}-{request.grade}"
+
+
 def names_for(request: ThemeDraftRequest) -> list[str]:
     import random
 
-    rng = random.Random(f"{request.week_start.isoformat()}-{request.grade}")
+    rng = random.Random(plan_seed(request))
     return rng.sample(NAME_POOL, NAMES_PER_THEME)
+
+
+def evidence_plan_for(request: ThemeDraftRequest) -> dict[str, dict[str, str | None]]:
+    """요일별 증거 종류·기록 매체 배정(#535). plan_theme이 줄거리에 evidencePlan으로 붙여
+    검사한다(이름 고르기와 같은 씨앗, 다시 생성해도 같은 배정)."""
+    return evidence_plan(plan_seed(request))
+
+
+def evidence_plan_lines(plan: dict[str, dict[str, str | None]]) -> list[str]:
+    lines = ["", "증거 종류 배정(evidence.kind, 코드가 정함. 요일마다 그대로 따른다):"]
+    for day, slot in plan.items():
+        kind = str(slot["kind"])
+        medium = f", 기록 매체: {slot['medium']}" if slot.get("medium") else ""
+        lines.append(f"- {day}({DAY_KO[day]}): {kind}({EVIDENCE_KO[kind]}){medium}")
+    return lines
 
 
 def plan_user(request: ThemeDraftRequest, feedback: list[tuple[str, list[str]]]) -> str:
@@ -309,6 +377,7 @@ def plan_user(request: ThemeDraftRequest, feedback: list[tuple[str, list[str]]])
         mission = request.mission_for(thinking)  # type: ignore[arg-type]
         standards = "; ".join(f"{s.code} {s.statement}" for s in mission.standards)
         lines.append(f"- {day}({DAY_KO[day]}): {THINKING_LABEL[thinking]} / {standards}")
+    lines += evidence_plan_lines(evidence_plan_for(request))
     if feedback:
         lines += ["", "이전 테마가 검사를 통과하지 못했다. 아래를 고쳐서 새로 만든다:"]
         lines += [f"- {stage}: {reason}" for stage, reasons in feedback for reason in reasons]
@@ -341,13 +410,37 @@ FIX_SYSTEM = (
 
 
 # 단서 칸 고쳐 쓰기: 증거 종류(evidence.kind)는 바꾸지 않고 문장을 그 종류에 맞춤
-# (코드 검사 CLUE_EVIDENCE)
+# (코드 검사 CLUE_EVIDENCE). 배정과 종류가 달랐으면 fix_theme이 먼저 종류를 배정대로 바꿈(#535)
 RECORD_LIST = "사진·영상·녹음·기록·일지·메모"
 EVIDENCE_CLUE_RULE = {
     "RECORD": f"증거 종류가 기록이라 {RECORD_LIST} 중 하나를 말한다.",
     "SIGHTING": f"증거 종류가 목격이라 본 것으로 쓰고 {RECORD_LIST}는 말하지 않는다.",
     "TRACE": f"증거 종류가 흔적이라 남은 흔적으로 쓰고 {RECORD_LIST}는 말하지 않는다.",
 }
+# 증거 발견 줄이 그 종류에서 찾았다고 말할 것(PLAN_SYSTEM discovery 규칙과 같음)
+EVIDENCE_FOUND = {
+    "TRACE": "흔적이 남은 물건·자리",
+    "SIGHTING": "그때 대상을 본 사람",
+    "RECORD": "그때를 담은 기록",
+}
+
+
+def evidence_rules(theme: Theme, day: dict, key: str) -> list[str]:
+    """그날 증거 종류·배정 매체에 맞추는 지킬 점(단서·증거 발견 줄·수사 연결 문장)."""
+    kind = str((day.get("evidence") or {}).get("kind") or "")
+    medium = (plan_slot(theme, day["day"]) or {}).get("medium")
+    use_medium = f"기록 매체 '{medium}' 낱말을 그대로 쓴다." if medium and kind == "RECORD" else ""
+    if key == "clue":
+        owner = (
+            f"누구의 흔적인지 찾는 대상 낱말({'·'.join(target_words(theme))} 중 하나)을 꼭 넣는다."
+            if kind == "TRACE"
+            else ""
+        )
+        return [EVIDENCE_CLUE_RULE.get(kind, ""), use_medium, owner]
+    found = f"{EVIDENCE_KO.get(kind, kind)}({kind}) 증거, 곧 {EVIDENCE_FOUND.get(kind, '증거')}"
+    if key == "discovery":
+        return [f"뭉치가 그날 {found}를 찾았다는 말만 한다.", use_medium]
+    return [f"그날 증거 발견 줄이 찾은 {found}를 가리켜 말한다."]
 
 
 def fix_rules(theme: Theme, path: str) -> list[str]:
@@ -355,6 +448,15 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
     cands = theme.get("candidates") or []
     names = f"후보 이름({', '.join(cands)})은 쓰지 않는다."
     head, _, key = path.partition(".")
+    if key == "sceneNote":  # CLUE_EARLY sceneNote(#535): 단서 결론 낱말만 빼고 장면은 그대로
+        cond = theme_day(theme, head).get("condition") or {}
+        return [
+            f"그날 단서 결론 낱말 {cond.get('allowed') or []}과 증거가 남은 자리의 "
+            f"'{cond.get('feature') or ''}'를 쓰지 않는다(단서는 문제 뒤에 보여 줌). 누가 어디서 "
+            "무엇을 하는지는 그대로 둔다.",
+            names,
+            "정답 이름은 쓰지 않는다.",
+        ]
     if key in ("clue", "discovery", "missionHook"):
         day = theme_day(theme, head)
         cond = day.get("condition") or {}
@@ -368,7 +470,7 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
                 "값이 둘 이상이라 'A나 B'처럼 '나'로 잇는다. '모두·전부·둘 다'로 쓰지 않는다."
                 if len(allowed) >= 2
                 else "",
-                EVIDENCE_CLUE_RULE.get((day.get("evidence") or {}).get("kind") or "", ""),
+                *evidence_rules(theme, day, "clue"),
                 f"허용 밖 값 낱말 {others}는 쓰지 않는다." if others else "",
                 "후보를 빼는 단서라 단정해서 쓴다('~수도 있다·~것 같다·~듯' 금지)."
                 if cond.get("kind") == "RULE"
@@ -377,15 +479,20 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
                 names,
             ]
         if key == "discovery":
-            kind = (day.get("evidence") or {}).get("kind")
             return [
-                f"뭉치가 그날 증거({kind})를 찾았다는 말만 한다.",
+                *evidence_rules(theme, day, "discovery"),
                 f"단서 결론 낱말 {allowed}은 쓰지 않는다.",
                 names,
             ]
         return [
             "찾은 증거를 풀려면 그날 배울 것이 필요하다는 이유만 말하고 도움을 청한다.",
+            *evidence_rules(theme, day, "missionHook"),
             "증거 자체를 살피라고 하지 않는다.",
+            # 줄거리 프롬프트 missionHook 규칙과 같음. 칸 고쳐 쓰기에 빠져 있어 '분수 계산으로
+            # 발자국 길이를 알아낸다'처럼 문제 결과가 단서가 되는 문장이 나왔음(글 검토
+            # CLUE_LOGIC, 실측 2026-11-15 닫기 2차)
+            f"그날 단서 특징('{cond.get('feature') or ''}')의 값이나 증거가 뜻하는 것을 그날 "
+            "문제의 계산·답으로 알아낸다고 쓰지 않는다('~로 알아볼까?'·'~하면 알 수 있어' 금지).",
             names,
         ]
     if key in ("scene", "action"):
@@ -404,7 +511,52 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
         if head.startswith("outroCuts"):
             return ["영상 위에 띄우는 짧은 문구. 종료 콘티라 정답 이름을 써도 된다."]
         return ["영상 위에 띄우는 짧은 문구. 정답 이름·정답 장소를 쓰지 않는다."]
-    return ["정답 이름은 종료 이야기(outro)에만 쓴다." if path != "outro" else ""]
+    if path == "outro":  # 마무리 장면만(다섯 단서 정리는 코드가 앞에 붙임, #535 7차)
+        return [
+            "종료 이야기의 마무리 장면만 쓴다: 뭉치가 정답 장소에서 찾는 대상을 찾아 "
+            "주인에게 돌려줌. "
+            "요일 이름·빠진 후보 정리는 쓰지 않는다(코드가 앞에 붙임). 정답 이름은 써도 된다."
+        ]
+    return ["정답 이름은 종료 이야기(outro)에만 쓴다."]
+
+
+def hook_fix_user(theme: Theme, days: dict[str, tuple[str, list[str]]]) -> str:
+    """미션을 만든 뒤 수사 연결 문장을 그날 문제 소재 낱말이 들어가게 고쳐 쓰는 요청.
+
+    days: {요일: (그날 미션 질문, STORY_LINK 사유. 경고가 없으면 빈 목록)}. 요일 노드가 미션이
+    통과한 직후 그 요일 하나로 부른다(fix_hook). 미션은 다시 만들지 않음(#535 닫기).
+    """
+    cands = ", ".join(theme.get("candidates") or [])
+    lines = [
+        f"테마: {theme.get('title')} / 찾는 대상: {theme.get('target')}",
+        "",
+        "고칠 칸(수사 연결 문장만, 대화 마지막 줄로 문제 바로 앞에 나감):",
+    ]
+    for day, (question, reasons) in days.items():
+        d = theme_day(theme, day)
+        lines += [
+            f"- path: {day}.missionHook",
+            f"  지금 글({len(d.get('missionHook') or '')}자): {d.get('missionHook')}",
+            f"  상한: 공백 포함 {text_max(day + '.missionHook')}자",
+            f"  오늘 장소: {d.get('place')}",
+            f"  오늘 찾은 증거(증거 발견 줄): {d.get('discovery')}",
+            f"  오늘 문제(그대로 둠): {question}",
+            f"  검사 사유: {' / '.join(reasons) or '없음(문제 소재 낱말이 들어가게 다듬기)'}",
+            "  지킬 점: 찾은 증거와 오늘 문제가 다루는 소재(물건·자료·상황)를 이어, 그 증거를 "
+            "풀려면 오늘 문제의 활동이 필요하다는 이유만 말하고 도움을 청한다. 오늘 문제에 나온 "
+            "소재(물건·자료·사람) 낱말을 하나 이상 그대로 쓴다(문제에 없는 다른 물건으로 바꾸지 "
+            "않음). 공백 포함 32자 안팎.",
+            "  지킬 점: 지금 글이 '오늘 배울 내용'·'배울 것'처럼 배울 것을 뭉뚱그리거나 오늘 "
+            "문제가 다루는 물건·자료·글 이름을 말하지 않으면 반드시 고쳐 쓴다. 활동 이름(중심 "
+            "문장, 계산 등)만으로는 소재가 아니다. 문제에 나온 물건·자료·글 이름(예: 관찰 글 초고, "
+            "받침 무게)과 그 소재로 할 활동을 함께 쓴다.",
+            *[f"  지킬 점: {r}" for r in fix_rules(theme, day + ".missionHook") if r],
+            f"  지킬 점: 후보 이름({cands})·정답과 그날 단서 결론은 쓰지 않는다.",
+            "  지킬 점: 오늘 문제의 답(고를 자료·방법, 계산 결과, 예시 답 내용)은 쓰지 "
+            "않는다. 문제가 여러 자료·방법 가운데 고르게 하면 고를 것을 가리키지 않고 문제 전체가 "
+            "다루는 소재 낱말만 쓴다.",
+        ]
+    return "\n".join(lines)
 
 
 def fix_user(theme: Theme, targets: dict[str, list[str]]) -> str:
@@ -418,7 +570,7 @@ def fix_user(theme: Theme, targets: dict[str, list[str]]) -> str:
         lines += [
             f"- path: {path}",
             f"  지금 글({len(text)}자): {text}",
-            f"  상한: 공백 포함 {text_max(path)}자",
+            f"  상한: 공백 포함 {text_max(path, theme)}자",
             f"  검사 사유: {' / '.join(reasons)}",
             *[f"  지킬 점: {r}" for r in fix_rules(theme, path) if r],
         ]
@@ -464,11 +616,27 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
         "하지 않는다.",
         "- 사진·녹음·그림·영상·지도·활동지를 보거나 듣게 하려면 그 내용을 question 글에 적는다. "
         "내용을 적지 않은 자료를 살피라고 하지 않는다.",
+        # 실측 2026-11-16 8차 미션 검토 MATERIAL: 문제 소재를 오늘 증거에서 가져오면서 증거의
+        # 모습은 단서라 못 적어 "소개할 자국의 모습이 문제에 없다"가 되풀이됨(두 규칙의 충돌)
+        "- 오늘 찾은 증거(흔적·기록·목격)를 문제 소재로 쓸 때 그 증거의 모습·내용을 소개·설명·"
+        "묘사하게 하지 않는다(모습은 문제를 마친 뒤 보여 주는 단서라 question에 적을 수 없음). "
+        "대신 그 증거를 둘러싼 다른 자료(인물이 한 말, 기록 글의 다른 부분)를 question에 직접 "
+        "적고 그것으로 성취기준 행동을 하게 한다.",
         "- " + TEXT_ONLY,
         "- 성취기준의 행동을 학생이 답 안에서 직접 하게 "
         "한다. '어떻게 쓸지·만들지·정리할지' 방법이나 "
         "계획을 묻지 않고, 글을 완성해 쓰기·분류한 결과 "
         "쓰기·정리한 내용 쓰기처럼 결과물을 쓰게 한다.",
+        # 실측 2026-11-15 닫기 3c 글 검토 STANDARD_FIT 4번: 직접 어림·자기 점검·매체 윤리·비교
+        # 방법 설명이 빠지거나 보고할 결과·발표할 내용 자료가 없음
+        "- 성취기준 문장의 핵심 행동(직접 어림하기, 자기 글 점검하기, 매체 윤리 생각하기, 비교 "
+        "방법 설명하기 등)을 질문이 요구하는 것에 넣고, 이야기 소재에 맞추느라 빼지 않는다. 그 "
+        "행동에 쓸 자료(보고할 절차와 결과, 발표할 내용, 어림할 대상)는 question에 주되 학생이 할 "
+        "몫(어림값·점검 결과)은 미리 주지 않는다.",
+        # 실측 2026-11-15 닫기 3c 글 검토 ANSWER_HINT: 장면·대화의 '녹음 나누기 전 허락 구하기'가
+        # 그대로 예시 답의 핵심 방법이 됨
+        "- 오늘 장면에 이미 나온 행동·방법은 문제의 답(예시 답의 핵심)으로 삼지 않는다(학생이 문제 "
+        "전에 장면과 대화로 봄).",
         "- 다룰 글·작품·대화·메모·자료(감상할 시나 이야기, "
         "요약할 대화, 고칠 문장, 비교할 두 글 등)는 "
         "그 내용을 question 안에 짧게 직접 넣는다. 이름이나 개요만 주지 않는다.",
@@ -480,7 +648,14 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
         "빼고 생각 유형 활동만 묻지 않는다.",
         "- 예시 답은 질문이 요구한 것을 순서대로 하나도 "
         "빠짐없이 답하는 완성된 결과물이다(계획·방법 "
-        "설명이 아님). 까닭을 둘 이상 요구하면 서로 다른 까닭을 쓴다.",
+        "설명이 아님). " + EXAMPLE_RULES + " 대화·면담 대화를 쓰게 하면 "
+        "예시 답에 인사부터 끝까지 두 사람의 말을 모두 완성해 쓴다. 다 쓴 뒤 질문이 요구한 것"
+        "(쓰라는 것·조건·개수)을 하나씩 짚어 예시 답에 모두 들어 있는지 확인하고 빠진 것을 채운다.",
+        # 실측 2026-11-15 닫기 2차: 면담 성취기준 문제가 면담할 말 준비만 시켜 글 검토
+        # STANDARD_FIT 3번(다시 만든 문제는 면담 기록을 넣어 통과)
+        "- 면담·인터뷰를 다루는 성취기준이면 question 안에 상대(등장인물)의 대답이 담긴 짧은 면담 "
+        "기록을 넣고, 학생이 그 기록을 바탕으로 이어 묻기·정리하기 같은 면담 행동을 답 안에서 "
+        "하게 한다(물을 말 준비만 시키지 않음). 대답에는 사건에 관한 새 사실을 넣지 않는다.",
         "- 질문이 어떤 글을 비교·점검·고쳐 쓰게 하면(예: 처음 쓴 글과 고친 글) 그 글 자체를 "
         "question 안에 짧게 넣는다. "
         "학생이 질문 글만 읽고 답할 수 있어야 한다.",
@@ -516,8 +691,18 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
         "을 떠올리게 하지 않는다(미션 그림은 question과 생각 열기 질문으로 그림).",
     ]
     lines += [
-        "- 오늘 장면과 오늘 찾은 증거(장소·인물·물건·목격·기록)는 문제 소재로 쓸 수 있다. "
-        "성취기준의 행동을 하게 하는 것이 먼저다.",
+        # 실측 2026-11-11(초4): 화요일 미션이 사건과 무관한 그림책 소개, 목요일은 수사 연결 문장
+        # '받침대 무게'인데 문제는 '모래 무게'(#535). 소재 일치는 미션 검토 STORY_LINK가 본다
+        "- 문제 소재(문제에서 다루는 물건·자료·상황)는 오늘 장소·찾는 대상·오늘 찾은 증거에서 "
+        "가져온다. 수사 연결 문장이 말한 것(찾은 증거와 그것을 풀 때 다루는 물건·값)을 그대로 문제 "
+        "소재로 삼고 다른 소재로 바꾸지 않는다(예: 수사 연결 문장이 받침대 무게면 문제도 받침대 "
+        "무게). 읽을 글·작품이 필요하면 그 글도 이 장소·증거·등장인물에 관한 글(등장인물이 쓴 메모·"
+        "안내문·시 등)로 쓰고 그 본문을 question 안에 짧게 넣는다(이름·설명만 주지 않음). 사건과 "
+        "무관한 그림책·시·자료를 가져오지 않는다. 그 소재로 성취기준의 "
+        "행동을 하게 한다(미션 검토 STORY_LINK). 이때도 사건 현장의 오늘 단서 특징 값은 정하지 "
+        "않는다(위 규칙). 오늘 장소의 물건과 등장인물이 만든 자료(쓴 글·카드·연습 문제)도 이야기 "
+        "소재다. 질문이 요구하는 학생 자신의 경험·생각(돌아보기의 경험 잇기, 성취기준이 요구한 "
+        "자기 경험)은 이야기 밖 소재가 아니므로 줄이거나 선택으로 두지 말고 그대로 묻는다.",
         "- 어느 후보가 답인지는 쓰거나 묻지 않는다. 문제를 사건 "
         "풀기(누구·어디·무엇 맞히기)로 만들지 않는다.",
         "- 이번 주 단서는 학생이 문제를 마친 뒤 화면이 따로 보여 준다. 증거가 무엇을 뜻하는지(단서 "
@@ -532,6 +717,10 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
         ]
     if day == "FRI":
         lines += [
+            # 실측 2026-11-15 닫기 3c 미션 검토 STANDARD_FIT: '비슷한 경험이 떠오르면 덧붙여도
+            # 좋아'처럼 자기 경험을 선택으로 둠
+            "- 돌아보기에서 자기 경험과 잇기는 꼭 쓰게 한다. '떠오르면 덧붙여도 좋아'·'경험이 "
+            "있다면'처럼 선택으로 쓰지 않는다.",
             "- 돌아보기·쓰기 점검 문제라면 점검하거나 비교할 글(예: 뭉치가 처음 쓴 메모와 고친 "
             "메모)을 question 안에 직접 "
             "넣는다. 예시 답은 질문이 묻는 것(처음 생각·바뀐 생각·까닭 등)을 하나도 빠짐없이 "
@@ -570,7 +759,8 @@ DIALOGUE_SYSTEM = (
     "사람을 고른다. 보통 뭉치이고, 등장인물이 말하는 편이 자연스러울 때만 그 등장인물. "
     "증거 발견 줄이 그 사람 이름을 부르면 다른 사람을 고른다.\n"
     "- lines: 오늘 상황을 짧게 말해 증거 발견 줄로 이어지게 한다. 끝 두 줄 내용을 lines에서 "
-    "미리 말하지 않는다. 증거 발견 줄에 없는 새 사건 사실(흔적·목격·기록)을 "
+    "미리 말하지 않는다. 끝 두 줄(증거 발견 줄·수사 연결)은 lines에 옮겨 쓰지 않는다(코드가 "
+    "붙임). 증거 발견 줄에 없는 새 사건 사실(흔적·목격·기록)을 "
     "더하지 않는다.\n"
     "- 장면 메모를 그대로 옮기지 말고, 인물이 그 자리에서 실제로 할 법한 짧은 말로 쓴다.\n"
     "- 단서는 학생이 오늘 문제를 마친 뒤 화면이 보여 준다. 증거가 무엇을 뜻하는지(단서 결론), "
@@ -684,7 +874,8 @@ REVIEW_SYSTEM = (
     "문제의 답(만들 물건·계산 "
     "결과 등)을 미리 알려 "
     "주지 않는지.\n"
-    "GRADE_VOCAB: 그 학년이 읽고 풀 수 있는 낱말·분량인지, 그 학년에 배우지 않은 개념이 없는지.\n"
+    "GRADE_VOCAB: 그 학년이 읽고 풀 수 있는 낱말·분량인지, 그 학년에 배우지 않은 개념이 없는지. "
+    "특징 표(features)의 이름·값도 학생이 단서 근거로 보므로 함께 본다.\n"
     "STANDARD_FIT: 각 문제가 주어진 성취기준의 행동을 학생이 직접 하게 하고 생각 유형과 맞는지. "
     "학생 혼자 글로 답하는 "
     "미션이므로 협력처럼 혼자 할 수 없는 부분은 보지 않고 핵심 "
@@ -759,10 +950,10 @@ def review_user(
 
 
 MISSION_REVIEW_SYSTEM = (
-    "너는 초등 교육 콘텐츠 검토자다. 미션(문제) 하나를 아래 세 항목으로 검토한다.\n"
+    "너는 초등 교육 콘텐츠 검토자다. 미션(문제) 하나를 아래 네 항목으로 검토한다.\n"
     "항목마다 verdict를 PASS(문제 없음)·WARN(애매해서 사람이 볼 것)·FAIL(분명한 결함, 고쳐야 함) "
     "중 하나로 쓰고 근거 한두 "
-    "문장(reason)을 쓴다. 세 항목을 모두 한 번씩 쓴다. 전체 verdict는 항목 중 가장 나쁜 것.\n"
+    "문장(reason)을 쓴다. 네 항목을 모두 한 번씩 쓴다. 전체 verdict는 항목 중 가장 나쁜 것.\n"
     "분명한 결함만 FAIL로 한다. 더 좋게 고칠 수 있다는 이유만으로 FAIL로 하지 않는다.\n"
     "EXAMPLE_COMPLETE: 예시 답(서술·논술은 exampleAnswer, 고르기·순서·분류·풀이는 answerKey. "
     "풀이(SOLUTION_STEPS)는 미션 초안 형식상 exampleAnswer가 "
@@ -785,7 +976,31 @@ MISSION_REVIEW_SYSTEM = (
     "곁에 있는 것처럼 쓰면 결함(아직 찾지 못한 대상). "
     "사진·영상·기록에 찍힌 지나간 때의 대상 모습은 "
     "허용(지금 있는 곳이 드러나면 결함).\n"
+    # 측정 2026-11-13(#535): 저장된 미션 50개를 사람이 판정한 것과 비교해 코드 검사(수사 연결
+    # 문장 앞 낱말이 질문에 있는지)는 맞힘 5/10·찾음 5/11, 이 항목은 9/11·9/11이라 검토 항목으로
+    # 둠(기준안, ai.md 17.6)
+    "STORY_LINK: story가 주어지면, 문제 소재(문제에서 다루는 물건·자료·상황)가 수사 연결 "
+    "문장(missionHook)이 말한 소재와 같은지, 그리고 오늘 장소(place)·찾는 대상(target)·찾은 "
+    "증거(discovery)에서 왔는지. 수사 연결 문장이 '받침대 무게'를 말했는데 문제는 '모래 무게'를 "
+    "다루거나, 수사 연결 문장이 사진을 말했는데 문제는 사건과 무관한 그림책·시·안내문·표를 소재로 "
+    "삼으면 결함. 증거의 내용(사진에 찍힌 것·흔적의 모양)을 살피게 할 필요는 없다: 증거 물건, 그 "
+    "장소의 물건·사람·상황을 소재로 성취기준 활동을 하면 통과. 같은 소재를 모형·그림·기록으로 "
+    "다루는 것도 통과. 오늘 장소의 물건, 등장인물이 만든 자료(쓴 글·카드·연습 문제)도 이야기 "
+    "소재다. 질문이 학생 자신의 경험·생각을 쓰게 하는 부분(돌아보기의 경험 잇기 등)은 소재 "
+    "판정에서 빼고, 다룰 자료·상황이 이야기에서 왔는지만 본다. 수사 연결 문장이 배울 것만 "
+    "말하고 소재를 말하지 않으면 장소·증거에서 왔는지만 본다. story가 없으면 PASS.\n"
 )
+
+
+def story_brief(theme: Theme, day: str) -> dict[str, str]:
+    """미션 검토 STORY_LINK에 주는 그날 이야기(정답·단서는 넣지 않음)."""
+    d = next(x for x in theme["days"] if x["day"] == day)
+    return {
+        "place": d.get("place") or "",
+        "target": theme.get("target") or "",
+        "discovery": d.get("discovery") or "",
+        "missionHook": d.get("missionHook") or "",
+    }
 
 
 def mission_review_user(
@@ -794,8 +1009,10 @@ def mission_review_user(
     grade: int,
     target: str | None,
     knowledge: list[str] | None = None,
+    story: dict[str, str] | None = None,
 ) -> str:
-    """미션 하나만 본다(테마 정답·단서 논리는 넣지 않음)."""
+    """미션 하나만 본다(테마 정답·단서 논리는 넣지 않음). story는 STORY_LINK용 그날 장소·증거 발견
+    줄·수사 연결 문장."""
     d = draft.model_dump(by_alias=True)
     body: dict = {
         "grade": f"초{grade}",
@@ -808,6 +1025,8 @@ def mission_review_user(
         body["knowledge"] = knowledge
     if target:
         body["target"] = f"{target}(이야기에서 아직 찾지 못한 대상)"
+    if story:
+        body["story"] = story
     return json.dumps(body, ensure_ascii=False)
 
 
@@ -823,9 +1042,12 @@ EXAMPLE_FIX_SYSTEM = (
     "finalAnswer에 최종 답을 단위 없이 값만 쓴다(단위는 "
     "exampleAnswer에). 풀이가 아니면 finalAnswer는 "
     "null.\n"
-    "- 검토 사유를 모두 고친다.\n"
-    "- 예시 답은 계획·방법 설명이 아니라 질문이 요구한 결과물 자체다. 까닭을 둘 이상 요구하면 서로 "
-    "다른 까닭을 쓴다. " + TEXT_ONLY
+    "- 검토 사유를 모두 고친다. reviewReasons에 앞서 고쳐 쓴 뒤에도 나온 사유가 함께 있으면 그것도 "
+    "모두 고친다.\n"
+    "- 예시 답은 계획·방법 설명이 아니라 질문이 요구한 결과물 자체다. "
+    + EXAMPLE_RULES
+    + " "
+    + TEXT_ONLY
 )
 
 
@@ -1053,9 +1275,12 @@ def image_review_user(
     return json.dumps(body, ensure_ascii=False)
 
 
+# 사용자 결정 2026-11-15(생성 쪽도 B안): 첫 그림에 든 차림 소품은 그대로 들어도 되고 새 물건을
+# 집거나 건네는 것만 막음(검토 CONTINUITY와 같은 기준, "들지 말라"면 첫 그림의 돋보기가 사라짐)
 VIDEO_NEGATIVE = (
     "big eyes, eye whites, changing eye shape, body morphing, extra limbs, long arms, wings, "
-    "stretched limbs, Mungchi raising hands, Mungchi holding objects, outfit change, "
+    "stretched limbs, Mungchi raising hands, Mungchi grabbing or handing over objects, "
+    "outfit change, "
     "character leaving the frame, character disappearing, character walking toward the camera, "
     "characters merging, extreme zoom, cropped faces, freeze frame, 3D render, text, "
     "flashing lights, scary, sudden cuts"
@@ -1072,7 +1297,9 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
             "Keep Mungchi's round fluffy shape and small dot eyes unchanged (no eye whites).",
             "Mungchi has only tiny hands at the lower front: no arms, wings or stretched limbs.",
             "Mungchi only bounces gently in place, tilts its head or changes its mouth: it never "
-            "waves, raises its hands, points, holds, hugs or hands over anything. Any hand "
+            "waves, raises its hands or points, and never picks up, lifts, hugs, hands over or "
+            f"receives anything, especially {target}. An outfit item Mungchi already holds in the "
+            "first frame (such as a magnifying glass) stays in its hand as it is. Any hand "
             "gestures are done by the people.",
             "Mungchi's outfit, hat and items around the neck stay exactly as in the first frame.",
             f"Mungchi's expression: {mouth}." if mouth else "",
@@ -1110,10 +1337,17 @@ VIDEO_REVIEW_SYSTEM = (
     "CONTINUITY: 기준 장면의 인물(뭉치 포함)이 끝까지 모두 화면 안에 보이는지(화면 밖으로 나가거나 "
     "사라지거나 둘이 겹쳐 하나가 되거나 얼굴이 크게 "
     "잘리지 않는지), 뭉치의 옷·모자·목에 건 것이 기준 "
-    "장면과 같은지, 뭉치에게 팔·날개가 새로 생기지 않는지.\n"
+    "장면과 같은지, 뭉치에게 팔·날개가 새로 생기지 않는지. "
+    # 실측 2026-11-11(초4 종료 3컷): 뭉치가 주인과 함께 로봇을 잡는 영상이 통과함(#535).
+    # 사용자 결정 2026-11-15(B안): 결함은 사건 대상 잡기와 팔·날개 생김만, 차림 소품 쥠은 결함 아님
+    # (그림 검토 MUNGCHI는 손에 든 물건을 허용해 첫 그림이 통과하는데 영상만 실패하지 않게)
+    "뭉치가 사건 대상(target, 찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나 "
+    "받는지(사람과 함께 잡아도 결함). 뭉치가 차림 소품(목에 걸거나 손에 든 돋보기·모자처럼 기준 "
+    "장면의 테마 차림)을 쥐거나 지니고 있는 것은 결함이 아니다.\n"
     "MORPH: 인물·뭉치의 몸·얼굴·눈 모양이 장면 사이에 녹아내리듯 바뀌거나 팔다리가 늘어나는지, "
     "2D 그림체가 3D로 바뀌는지, 뭉치가 나오지 않아야 하는 컷(mungchi 나오지 않아야 함)에 뭉치가 "
-    "나타나는지. 손에 든 물건·자세·표정은 동작에 따라 달라도 된다.\n"
+    "나타나는지. 사람이 손에 든 물건·자세와 표정, 뭉치가 쥔 차림 소품은 동작에 따라 달라도 된다"
+    "(뭉치가 사건 대상을 잡는 것·팔이나 날개가 생기는 것은 CONTINUITY에서 본다).\n"
     "ANSWER_HINT: 찾는 대상이 나오면 안 되는 컷(targetAllowed false)에 대상이 보이는지, 정답 장소 "
     "공개가 허용되지 않은 컷(answerPlaceAllowed false)에서 대상이 있는 곳을 가리켜 보여 주는지"
     "(장소가 비슷해 보인다는 이유만으로는 결함이 아님).\n"

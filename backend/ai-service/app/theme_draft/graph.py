@@ -4,7 +4,9 @@ START → retrieve(#470 자리) → plan_theme → check_theme
   check_theme: 칸 하나만 고치면 되는 사유뿐 → fix_theme → check_theme
                / 실패·상한 전 → plan_theme / 끝내 실패 → END(failure THEME)
                / 통과 → generate_mission ×5 (Send, 요일마다 생성·검사·미션 검토)
-→ missions_done: 실패 요일 → END(failure MISSION) / 통과 → generate_dialogue ×5 (Send)
+               (요일마다 미션이 통과하면 그 요일 수사 연결 문장을 문제 소재에 맞게 고쳐 씀, #535)
+→ missions_done(고친 수사 연결 문장을 테마에 넣음): 실패 요일 → END(failure MISSION)
+  / 통과 → generate_dialogue ×5 (Send)
 → review_story: 끝내 FAIL → END / 형식 오류 → review_story
                 / 단서 논리만(처음 한 번) → fix_clues(그 요일 단서만 고쳐 씀) → review_story
                   (고친 단서가 코드 검사에 걸리면 plan_theme)
@@ -23,7 +25,7 @@ from langgraph.types import Send
 from app.theme_draft.nodes import ThemeContext, ThemeState
 from app.theme_draft.nodes.dialogue import generate_dialogue
 from app.theme_draft.nodes.images import generate_images
-from app.theme_draft.nodes.mission import generate_mission
+from app.theme_draft.nodes.mission import apply_hooks, generate_mission
 from app.theme_draft.nodes.motion import generate_motion
 from app.theme_draft.nodes.plan import (
     after_fix_clues,
@@ -62,7 +64,12 @@ def after_check(state: ThemeState) -> list[Send] | str:
 async def missions_done(state: ThemeState) -> ThemeState:
     failures = state.get("mission_failures") or {}
     bad = [f"{d} {r}" for d in state["days_todo"] for r in failures.get(d) or []]
-    return {"failure": {"stage": "MISSION", "reasons": bad}} if bad else {}
+    if bad:
+        return {"failure": {"stage": "MISSION", "reasons": bad}}
+    theme = state["theme"]
+    assert theme is not None
+    fixed = apply_hooks(theme, state.get("hook_fixes") or {}, state["days_todo"])
+    return {"theme": fixed} if fixed is not theme else {}
 
 
 def after_missions(state: ThemeState) -> list[Send] | str:
