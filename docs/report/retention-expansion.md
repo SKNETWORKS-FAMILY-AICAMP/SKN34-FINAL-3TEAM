@@ -725,3 +725,9 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 - ai #681 질의 변환 API
 - learning #682 하이브리드 검색
 - 평가 #568 키워드 단독·벡터 단독·하이브리드 비교
+
+### 16.6 core 사용량 유형 구현 (#680, 2026-11-16)
+- core V48(`V48__memory_query_call_type.sql`)이 `llm_usage.call_type` CHECK에 `MEMORY_QUERY`를 더함. V46과 같이 허용 목록만 넓혀 기존 행은 항상 통과
+- 같은 목록을 이벤트 스키마·core `CallType`·core OpenAPI `CallType`·ERD 주석·ai/scoring 발행 허용 목록·웹 관리자 사용량 "호출 종류" 필터(표시명 "추억 검색 질의 변환")에 함께 더함. 관리자 집계 `GET /admin/ai-usage`는 `CallType` enum을 그대로 써서 코드 변경 없음
+- 비용: ai 기본 모델 `gpt-6-luna` 단가(#651, 입력 0.10·출력 0.50 USD/100만 토큰)로 소비 시 `cost_usd` 계산. 예: 입력 300·출력 60토큰 = 0.00006 USD
+- 병합 순서: 이 변경이 ai #681보다 먼저 배포되어야 함. 먼저 발행되면 core CHECK가 거부해 이벤트가 DLQ에 남음(`MISSION_DRAFT`·`THEME_VIDEO` 선례). GitOps local core 마이그레이션 리비전 v48

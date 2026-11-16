@@ -694,7 +694,7 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 |---|---|
 | `POST /students/me/memories/search` (신규) | 학생 본인 세션, body `{query}`(1~200자) → learning `POST /internal/students/{studentId}/memories/search`. 응답·오류 그대로, `Cache-Control: no-store` |
 | `POST /students/me/memories/explanations` (신규) | body `{query, attemptIds}`(시도 1~3개, 중복 없음) → learning `POST /internal/students/{studentId}/memories/explanations` |
-| `GET /admin/ai-usage?callType` | `MEMORY_EMBEDDING`·`MEMORY_EXPLANATION` 필터·집계(core `CallType` enum이라 별도 변경 없음) |
+| `GET /admin/ai-usage?callType` | `MEMORY_EMBEDDING`·`MEMORY_EXPLANATION` 필터·집계(core `CallType` enum이라 별도 변경 없음). 질의 변환 `MEMORY_QUERY`는 30장(#680) |
 
 ### 처리 순서
 
@@ -790,3 +790,21 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 - `LlmUsageQueryTest`: 실제 `application.yml` 기본 단가가 `.`·`-` 모델명 키 그대로 읽히는지(luna·terra·임베딩·그림 비용 값), Veo는 null·`unpricedCalls` 1, 월 누계는 단가 있는 호출만 합산
 - local kind(2026-11-16): 이 변경으로 빌드한 core로 교체한 뒤 ai 판정 1건 호출 → `llm_usage` 새 행 `JUDGMENT`·`gpt-6-luna`·입력 449·출력 66·`cost_usd` 0.0000779(계산값과 같음), Prometheus `llm_usage_month_to_date_priced_cost` 0.0000779(> 0). 교체 전 행 639건은 null 그대로
 - AWS 운영 확인은 데모 환경 재가동 때 한다
+
+## 30. 추억 검색 질의 변환 사용량 유형 (#680, 2026-11-16)
+
+추억 검색 질의 변환(설계 #679, ai #681)의 LLM 호출을 `llm_usage`에 기록할 유형 `MEMORY_QUERY`를 더했다. 공개 API·하루 한도·프록시는 바뀌지 않는다(변환은 검색 1회에 포함, [리텐션 확장 16장](retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16)).
+
+| 위치 | 변경 |
+|---|---|
+| V48 `V48__memory_query_call_type.sql` | `ck_llm_usage_call_type`에 `MEMORY_QUERY`(V46과 같은 방식, 허용 목록만 넓힘) |
+| `usage/domain/UsageSummary.kt` `CallType` | `MEMORY_QUERY` |
+| `contracts/events/llm.usage.recorded.v1.schema.json`, `contracts/openapi/core-service.yaml` `CallType` | 같은 값·순서 |
+| ai·scoring `app/messaging/publisher.py` | 발행 허용 목록(계약 시험이 목록 일치를 요구). 실제 발행은 #681 |
+| 웹 `domain/admin/operations.ts` `callTypeLabels` | 관리자 사용량 "호출 종류" 필터에 "추억 검색 질의 변환"(#655 하드코딩 목록) |
+| GitOps local `core-service.yaml` | 마이그레이션 리비전 v48 |
+
+- 소비자(`LlmUsageConsumer` → `LlmUsageService.record`)와 `GET /admin/ai-usage?callType`은 `CallType` enum과 DB CHECK를 따르므로 코드 변경 없음
+- 비용은 ai 기본 모델 `gpt-6-luna` 단가(29장)로 계산된다
+- **병합 순서**: 이 변경이 ai #681보다 먼저 배포되어야 한다. 먼저 발행되면 CHECK가 행을 거부해 이벤트가 DLQ에 남는다(`MISSION_DRAFT`·`THEME_VIDEO` 선례)
+- 검증: `LlmUsageQueryTest`에 `MEMORY_QUERY` 저장·조회·`gpt-6-luna` 비용(입력 300·출력 60 → 0.00006 USD) 시험을 더했다. 기존 "모든 유형 조회" 시험이 새 enum 값도 저장·필터한다

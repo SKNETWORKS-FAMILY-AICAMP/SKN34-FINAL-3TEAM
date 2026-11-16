@@ -346,7 +346,7 @@ PR 통합 검증: origin/develop c4c5b6b6를 충돌 없이 로컬 병합했다. 
 
 # 관리자 사용량·감사 기록 필터 목록 (#655, 2026-11-16)
 
-- AI 사용량 "호출 종류"는 core `CallType`·OpenAPI `CallType` 14개 전체와 한글 표시명(`domain/admin/operations.ts` `callTypeLabels`)으로 맞췄다. 결과 카드 제목도 표시명으로
+- AI 사용량 "호출 종류"는 core `CallType`·OpenAPI `CallType` 전체(#680 `MEMORY_QUERY` 추가로 15개)와 한글 표시명(`domain/admin/operations.ts` `callTypeLabels`)으로 맞췄다. 결과 카드 제목도 표시명으로
 - 감사 기록 "대상 유형"은 계약이 자유 문자열이라 서버 계약은 바꾸지 않고(이슈 범위 밖), core가 `audit_log`에 실제로 쓰는 14개를 웹에 고정했다(`auditTargetLabels`): 작업 재처리 `CONVERSATION`·`REPORT`·`NOTIFICATION`, `MISSION`·`MISSION_DRAFT`·`WEEKLY_THEME`·`THEME_DRAFT`, `MODEL_VERSION`, `ERROR_REPORT`·`INQUIRY`·`NOTICE`, `ACCOUNT_MANAGEMENT`, `PAYMENT`, `LOOK_ITEM`. 목록 밖 값은 원래 값 그대로 보인다
 - `tests/adminFilterLists.test.ts`가 core enum·OpenAPI와 core 감사 기록 코드(Mapper·서비스)를 읽어 목록이 어긋나면 실패한다
 - 쓰이지 않던 `adminFormatting.ts` `callTypeLabel` 삭제, `domain/service.ts`의 `COMMUNITY_POST` "구현 예정" 주석 정리

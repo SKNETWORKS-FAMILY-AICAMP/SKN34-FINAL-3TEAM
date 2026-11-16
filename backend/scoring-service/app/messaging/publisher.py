@@ -34,6 +34,7 @@ CallType = Literal[
     "THEME_VIDEO",
     "MEMORY_EMBEDDING",
     "MEMORY_EXPLANATION",
+    "MEMORY_QUERY",
     "M2",
     "M1",
 ]
