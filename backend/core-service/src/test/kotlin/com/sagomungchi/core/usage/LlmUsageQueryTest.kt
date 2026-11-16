@@ -123,6 +123,27 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
         provider.close()
     }
 
+    @Test fun `shipped application yml prices dotted model names and leaves Veo unpriced`() {
+        // application.yml 기본 단가(#651)가 '.'·'-' 모델명 키 그대로 읽히는지, 테스트 단가와 합쳐지는지
+        usage.record(event("2026-11-12T01:00:00Z", "JUDGMENT", model = "gpt-6-luna"))
+        usage.record(event("2026-11-12T01:00:00Z", "THEME_DRAFT", model = "gpt-6.1-terra"))
+        usage.record(event("2026-11-12T01:00:00Z", "KNOWLEDGE_EMBEDDING", model = "text-embedding-3-small", output = 0))
+        usage.record(event("2026-11-12T01:00:00Z", "THEME_IMAGE", model = "gpt-image-2.6-sunburst"))
+        usage.record(event("2026-11-12T01:00:00Z", "THEME_VIDEO", model = "veo-3.1-fast-generate-001",
+            input = null, output = null))
+        val byType = usage.summarize(day, day, null).associateBy { it.callType }
+        // 입력 1000·출력 2000 토큰, 100만 토큰당 USD
+        assertEquals(0, BigDecimal("0.0011").compareTo(byType.getValue("JUDGMENT").costUsd))
+        assertEquals(0, BigDecimal("0.011").compareTo(byType.getValue("THEME_DRAFT").costUsd))
+        assertEquals(0, BigDecimal("0.00002").compareTo(byType.getValue("KNOWLEDGE_EMBEDDING").costUsd))
+        assertEquals(0, BigDecimal("0.068").compareTo(byType.getValue("THEME_IMAGE").costUsd))
+        assertNull(byType.getValue("THEME_VIDEO").costUsd)
+        assertEquals(1L, byType.getValue("THEME_VIDEO").unpricedCalls)
+        val month = usage.monthToDate(Instant.parse("2026-11-12T02:00:00Z"))
+        assertEquals(0, BigDecimal("0.08012").compareTo(month.pricedUsd))
+        assertEquals(1L, month.unpricedCalls)
+    }
+
     @Test fun `reversed periods are rejected`() {
         assertEquals("VALIDATION_FAILED", assertFailsWith<BusinessException> {
             usage.summarize(day.plusDays(1), day, null)

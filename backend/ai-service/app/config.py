@@ -86,8 +86,8 @@ class Settings(BaseSettings):
     # 마감 기준안 15분(learning→ai 대기 16분 안). 텍스트 시험에서 글 단계만 6~13분이라
     # 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않음(ai.md 17절)
     theme_draft_deadline: float = 900.0
-    # 테마 생성·검토 모델은 테마 전용 설정(사용자 결정 2026-11-10). 로컬·운영 OPENAI_MODEL이
-    # gpt-6.1-terra라 기존 클라이언트를 쓰면 생성 = 검토가 되고 생성 비용이 약 10배.
+    # 테마 생성·검토 모델은 테마 전용 설정(사용자 결정 2026-11-10). 생성과 검토는 다른 모델로 둔다.
+    # 로컬·운영 OPENAI_MODEL은 #502(2026-11-11)로 gpt-6-luna(생성 모델과 같음)이고, 검토만 terra.
     # 텍스트 시험은 생성 luna·검토 terra로 검증. 같은 OpenAI 키를 쓰고, 둘이 같으면 테마 경로만 503
     theme_generation_model: str = "gpt-6-luna"
     theme_review_model: str = "gpt-6.1-terra"
