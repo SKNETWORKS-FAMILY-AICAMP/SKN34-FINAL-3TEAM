@@ -567,7 +567,6 @@
 #class-journal .cj-app-student .st-custom-page .st-pick-friend strong { font-size: 18px; }
 #class-journal .cj-app-student .st-custom-page .st-pick-friend .st-pick-pill { align-self: center; padding: 2px 10px; background: var(--sk-paper); font-size: var(--st-fs-xs, 14px); }
 #class-journal .cj-app-student .st-custom-page .st-pick-friend .st-pick-pill[data-kind='using'] { background: var(--sk-ink); color: #ffffff; }
-#class-journal .cj-app-student .st-world .st-custom-page .st-pick-soon { cursor: default; }
 /* 옷 입히기·내 방 가구: 칸별 타일(캐릭터에 그 옷만 입힌 작은 그림, 가구는 색 견본) */
 #class-journal .cj-app-student .st-pick-groups { display: flex; flex-direction: column; gap: 16px; }
 /* 칸 고르기(모자·옷·소품 / 벽지·책상·추억의 벽·옷장): 한 번에 한 칸만 보여 페이지가 길어지지 않게(2026-11-16) */
@@ -748,7 +747,6 @@
 }
 #class-journal .cj-app-student .st-friend-card:hover { transform: rotate(0deg) translateY(-4px); }
 #class-journal .cj-app-student .st-friend-card[aria-pressed='true'] { border: 4px solid var(--sk-accent); box-shadow: 8px 8px 0 var(--sk-accent); }
-#class-journal .cj-app-student .st-friend-card[data-kind='soon'] .st-companion { opacity: 0.55; }
 #class-journal .cj-app-student .st-friend-card strong { font-family: var(--st-display); font-weight: 400; font-size: 21px; }
 #class-journal .cj-app-student .st-friend-pill { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 999px; background: var(--sk-paper); font-weight: 700; font-size: 14px; }
 #class-journal .cj-app-student .st-friend-card[data-kind='using'] .st-friend-pill { background: var(--sk-ink); color: #ffffff; }

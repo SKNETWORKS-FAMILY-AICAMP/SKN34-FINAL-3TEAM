@@ -171,28 +171,26 @@ test('해금 응답 유실 뒤 같은 멱등 키 재시도는 두 번 차감하�
   expect(state.balance).toBe(200); expect(state.ledger.filter(e => e.eventType === 'UNLOCK')).toHaveLength(1)
 })
 
-// #648 뭉치 친구들 12종: 서버가 저장하는 5종에 대응하는 친구만 해금·선택, 나머지 7종은 "곧 만나요" 잠금
-test('친구 12종 중 서버 값이 있는 친구만 해금·선택하고 나머지 7종은 곧 만나요로 잠근다', async ({ page }) => {
+// #648·#698 뭉치 친구들 12종: core가 12종을 모두 저장(#697)해 새 7종도 해금·선택한다. 곧 만나요 없음
+test('친구 12종 모두 해금·선택하고, 새 친구는 친구 id가 서버 값으로 저장된다', async ({ page }) => {
   const state = await rewardServer(page)
   const screen = await openCustomize(page)
   await tab(page, '캐릭터')
   const buddies = screen.getByRole('region', { name: '누구랑 같이 다닐까?' })
-  await expect(buddies.getByRole('button', { name: /곧 만나요$/ })).toHaveCount(7)
-  for (const name of ['눈뭉치', '털실뭉치', '별뭉치', '거품뭉치', '종이뭉치', '꽃잎뭉치', '얼음뭉치']) {
-    await expect(buddies.getByRole('button', { name: new RegExp(`^${name} .*곧 만나요$`) })).toBeDisabled()
-    await expect(buddies.getByRole('button', { name: `${name} 해금하기`, exact: true })).toHaveCount(0)
-  }
+  await expect(buddies.getByRole('button', { name: /곧 만나요$/ })).toHaveCount(0)
+  for (const name of ['눈뭉치', '털실뭉치', '별뭉치', '거품뭉치', '종이뭉치', '꽃잎뭉치', '얼음뭉치'])
+    await expect(buddies.getByRole('button', { name: new RegExp(`^${name} `) })).toBeEnabled()
   await expect(buddies.getByRole('button', { name: /^솜뭉치 / })).toHaveAttribute('aria-pressed', 'true')
-  const cone = buddies.getByRole('button', { name: /^솔방울뭉치 / })
-  await cone.click()
-  await expect(cone).toHaveAttribute('aria-pressed', 'true')
+  // 새 친구(눈뭉치): 해금(150) → 함께 다니기 → 서버 값 snow로 저장(#697: 새 7종은 친구 id = 서버 값)
+  const snow = buddies.getByRole('button', { name: /^눈뭉치 / })
+  await snow.click()
+  await expect(snow).toHaveAttribute('aria-pressed', 'true')
   await screen.getByRole('button', { name: '150포인트로 만나기', exact: true }).click()
-  await expect(screen.getByRole('heading', { name: '솔방울뭉치 해금할까요?' })).toBeVisible()
+  await expect(screen.getByRole('heading', { name: '눈뭉치 해금할까요?' })).toBeVisible()
   await screen.getByRole('button', { name: '포인트로 해금하기', exact: true }).click()
   await expect(screen.getByText('내 포인트 150', { exact: true })).toBeVisible()
   await screen.getByRole('button', { name: '함께 다니기', exact: true }).click()
-  await expect(cone).toContainText('함께 다니는 중')
-  expect(state.writes.at(-1)).toMatchObject({ companion: 'tori' })
+  await expect(snow).toContainText('함께 다니는 중')
+  expect(state.writes.at(-1)).toMatchObject({ companion: 'snow' })
   await expect(screen.getByRole('button', { name: '함께 다니는 중', exact: true })).toBeDisabled()
-  expect(state.writes.every(w => ['mungchi', 'tori', 'mongdol', 'kongi', 'monggeul'].includes(String(w.companion)))).toBe(true)
 })

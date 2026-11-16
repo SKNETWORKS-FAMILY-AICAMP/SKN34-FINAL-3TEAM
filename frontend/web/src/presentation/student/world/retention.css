@@ -112,13 +112,10 @@
   opacity: 1;
   cursor: default;
 }
-/* 뭉치 친구들(#648): 친구 색 바탕, 아직 고를 수 없는 친구(곧 만나요)는 그림만 흐리게 */
+/* 뭉치 친구들(#648): 친구 색 바탕 */
 #class-journal .st-pick-friend .st-companion {
   border-radius: 50%;
   background: var(--st-friend-tint, transparent);
-}
-#class-journal .st-pick-soon .st-companion {
-  opacity: 0.55;
 }
 #class-journal .st-lock {
   display: inline-flex;

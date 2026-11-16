@@ -1,7 +1,6 @@
 """#234 student look values stay identical across OpenAPI, core, migration and web.
 
-#697: companions are 12 in OpenAPI/core/V49. Web CompanionId keeps 5 until #698, so web is only
-checked to be a subset; #698 restores the equality check.
+#697: companions are 12 in OpenAPI/core/V49. #698: web CompanionId is 12 too, so the equality check is back.
 """
 
 from pathlib import Path
@@ -38,8 +37,8 @@ class StudentLookContractTest(unittest.TestCase):
         self.assertEqual(quoted(re.search(r"look_theme IN \(([^)]*)\)", migration)[1]), self.themes)
         self.assertEqual(quoted(re.search(r"look_companion IN\s*\(([^)]*)\)", companions_migration)[1]), self.companions)
         self.assertEqual(quoted(re.search(r"type ThemeId = (.*)", web)[1]), self.themes)
-        # #697: subset until web #698 unlocks all 12 friends (then back to assertEqual)
-        self.assertLessEqual(quoted(re.search(r"type CompanionId = (.*)", web)[1]), self.companions)
+        # #698: web unlocked all 12 friends, so web CompanionId equals OpenAPI again
+        self.assertEqual(quoted(re.search(r"type CompanionId = (.*)", web)[1]), self.companions)
         self.assertEqual(len(self.companions), 12)
         self.assertIn("{ theme: 'lake', companion: 'mungchi', updatedAt: null }", web)
         self.assertIn('StudentLook("lake", "mungchi", null)', kotlin)
