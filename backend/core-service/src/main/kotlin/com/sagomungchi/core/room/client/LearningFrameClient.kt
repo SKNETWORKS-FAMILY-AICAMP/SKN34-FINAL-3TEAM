@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.client.LearningClient
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.security.UserContext
+import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core._common.web.HttpExchangeResult
 import com.sagomungchi.core.room.domain.AlbumFrame
 import com.sagomungchi.core.room.domain.FrameKey
@@ -50,6 +52,18 @@ class LearningFrameClient(private val client: LearningClient, private val json: 
             if (items.isEmpty || page.toLong() * ALBUM_PAGE_SIZE >= total.asLong()) break
         }
         return found
+    }
+
+    /**
+     * 다른 학생(친구 방 구경, #708)의 앨범 제목·그림. 요청 사용자(열람자) 범위가 아니라 그 학생 범위로 잠깐 바꿔 부른다
+     * (`X-User-Role: SYSTEM`, `X-Student-Scope` = 그 학생). learning 앨범은 범위만 확인한다.
+     */
+    fun albumFramesOf(studentId: UUID, wanted: Set<FrameKey>): Map<FrameKey, AlbumFrame> {
+        val previous = UserContextHolder.currentOrNull()
+        UserContextHolder.set(UserContext(null, "SYSTEM", setOf(studentId.toString()), previous?.traceparent))
+        return try { albumFrames(studentId, wanted) } finally {
+            if (previous == null) UserContextHolder.clear() else UserContextHolder.set(previous)
+        }
     }
 
     private fun key(node: JsonNode): FrameKey = try {

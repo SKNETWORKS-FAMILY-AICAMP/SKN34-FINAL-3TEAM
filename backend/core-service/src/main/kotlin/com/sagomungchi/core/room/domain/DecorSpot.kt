@@ -7,6 +7,9 @@ data class DecorSpotView(val spotNo: Int, val itemKey: String, val name: String,
 
 data class DecorSpots(val spots: List<DecorSpotView>)
 
+/** 친구 방 구경(#708)에 보이는 방 소품 한 자리. 아이템 코드·이름·보유 개수는 넣지 않고 그림 키만 */
+data class FriendDecorView(val spotNo: Int, val assetKey: String)
+
 /** 학생이 가진 방 소품 하나(아이템별 보유 개수) */
 data class OwnedDecor(val itemId: UUID, val code: String, val name: String, val assetKey: String, val owned: Int)
 

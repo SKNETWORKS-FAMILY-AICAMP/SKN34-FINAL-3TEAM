@@ -1,6 +1,7 @@
 package com.sagomungchi.core.community.controller
 
 import com.sagomungchi.core.community.service.CommunityService
+import com.sagomungchi.core.community.service.FriendRoomService
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotNull
 import org.springframework.http.CacheControl
@@ -10,7 +11,7 @@ import java.util.UUID
 
 /** 커뮤니티 (api-spec 2.9, FN-RET-01~03). 응답은 학생 개인 데이터라 저장하지 않는다. */
 @RestController
-class CommunityController(private val service: CommunityService) {
+class CommunityController(private val service: CommunityService, private val friendRooms: FriendRoomService) {
     data class SettingsUpdate(@field:NotNull val enabled: Boolean?)
 
     @GetMapping("/api/v1/students/me/community-settings")
@@ -42,6 +43,10 @@ class CommunityController(private val service: CommunityService) {
         service.react(postId, reaction, false)
         return ResponseEntity.noContent().build()
     }
+
+    /** 친구 방 구경(#708). 친구 생각 글 번호로만 찾고 학생 ID는 내보내지 않는다. */
+    @GetMapping("/api/v1/community-posts/{postId}/room")
+    fun friendRoom(@PathVariable postId: UUID) = ok(friendRooms.room(postId))
 
     private fun <T> ok(body: T) = ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body)
 }

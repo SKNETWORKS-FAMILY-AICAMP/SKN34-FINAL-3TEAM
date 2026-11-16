@@ -5,6 +5,7 @@ import com.sagomungchi.core.reward.service.RewardAccessService
 import com.sagomungchi.core.reward.service.RewardService
 import com.sagomungchi.core.room.domain.DecorSpotRules
 import com.sagomungchi.core.room.domain.DecorSpots
+import com.sagomungchi.core.room.domain.FriendDecorView
 import com.sagomungchi.core.room.repository.RoomDecorMapper
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -22,6 +23,10 @@ class RoomDecorService(private val mapper: RoomDecorMapper, private val access: 
 
     @Transactional(readOnly = true)
     fun spots(): DecorSpots = DecorSpots(mapper.spots(access.currentStudent()))
+
+    /** 다른 학생(친구 방 구경, #708)이 놓은 방 소품. 자리 번호순, 판매 중단 아이템도 그대로. 보유 개수는 내보내지 않는다 */
+    @Transactional(readOnly = true)
+    fun friendSpots(studentId: UUID): List<FriendDecorView> = mapper.spots(studentId).map { FriendDecorView(it.spotNo, it.assetKey) }
 
     /**
      * 전체 교체(한 트랜잭션, 학생 행 `FOR NO KEY UPDATE`). 목록 누락·9개 이상·자리 번호 1~8 밖·같은 자리 두 번·빈 칸·
