@@ -986,6 +986,7 @@ SKN34-FINAL-3TEAM/
 ├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님)
 │  ├─ m2/
 │  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
+│  ├─ tox/                       # 답변 표현 분류(2분류) 데이터 정리·학습 코드(#690, 본 학습 전)
 │  └─ sllm/                      # (예정) 설명 sLLM 학습·평가·양자화 (#475)
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
@@ -1074,7 +1075,7 @@ SKN34-FINAL-3TEAM/
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
 │     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143·#237); asyncapi 검사는 미구현
 │     ├─ ci-gitops.yml           # chart lint·렌더·스키마 검증(local YAML·prod JSON), migration 이미지 빌드 (#238·#509)
-│     ├─ ci-ml-m1.yml · ci-ml-m2.yml  # ml/m1·ml/m2 ruff·pytest
+│     ├─ ci-ml-m1.yml · ci-ml-m2.yml · ci-ml-tox.yml  # ml/m1·ml/m2·ml/tox ruff·pytest
 │     ├─ cd-candidate.yml        # #186 CD 도구 검사(계획 검증·실행기 테스트, 배포 없음)
 │     ├─ cd-release.yml          # #186 운영 배포(main 수동 실행, 4.5)
 │     └─ e2e.yml                 # 실서버 E2E: 수동·E2E 구성 변경 PR (#246). 야간 schedule은 기본 브랜치(main)에 병합된 뒤부터 동작
