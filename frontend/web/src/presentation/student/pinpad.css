@@ -1,164 +1,481 @@
-/* 학생 기기 로그인·PIN 키패드 (#59). 저학년 터치 기준: 버튼 64px 이상, 글자 24px 이상 */
-#class-journal .pin-pad {
-  display: grid;
-  gap: 14px;
-  justify-items: center;
-}
-#class-journal .pin-dots {
-  display: flex;
-  gap: 14px;
-  min-height: 24px;
-}
-#class-journal .pin-dots span {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid var(--cj-ink);
-  background: var(--cj-white);
-}
-#class-journal .pin-dots span.on {
-  background: var(--cj-ink);
-}
-#class-journal .pin-dots span.optional {
-  border-style: dashed;
-  border-color: var(--cj-muted);
-}
-#class-journal .pin-help {
-  margin: 0;
-  color: var(--cj-muted);
-  font-size: var(--st-fs-sm, 15px);
-}
-#class-journal .pin-keys {
-  display: grid;
-  grid-template-columns: repeat(3, 72px);
-  gap: 12px;
-}
-#class-journal .pin-keys button {
-  height: 72px;
-  border-radius: 18px;
-  border: 2px solid var(--cj-line);
-  background: var(--cj-white);
-  color: var(--cj-ink);
-  font-size: var(--st-fs-lg, 28px);
-  font-weight: 700;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-}
-#class-journal .pin-keys button:hover:not(:disabled) {
-  border-color: var(--cj-green);
-}
-#class-journal .pin-keys button:focus-visible {
-  outline: 3px solid var(--cj-pencil);
-  outline-offset: 2px;
-}
-#class-journal .pin-keys button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-#class-journal .pin-keys .pin-back {
-  font-size: var(--st-fs-xs, 13px);
-  gap: 2px;
-}
-#class-journal .pin-keys .pin-back svg {
-  width: 22px;
-  height: 22px;
-}
-#class-journal .pin-keys .pin-ok {
-  background: var(--cj-green);
-  border-color: var(--cj-green);
-  color: #fff;
-  font-size: var(--st-fs-md, 20px);
-}
+/* 학생 기기 로그인·PIN 키패드 (#59). 저학년 터치 기준: 버튼 56px 이상(PC 68px), 숫자 글자 24px 이상.
+   새 디자인(#648, 설계 캔버스 Login·LoginSingle = SC-02-001~003): 밝은 하늘 틀 + 흰 종이, 크림 카드(#FFF1D6)·남청 선 3px·
+   아래로 떨어지는 옅은 그림자, 주황 주 버튼(위 글자는 진한 색). 제목은 학생 화면 공통 .st-title-mix(굵은 글꼴 + 바탕체 0.8배).
+   화면 안 스크롤 없이 1440×900·768×1024·390×844 한 화면에 들어가게 한다(사용자 의견 2026-11-16).
+   로고·서비스 문구는 두지 않는다(SC-02-001 Check Point). */
 
-/* 자녀 기기 화면 */
+/* ── 틀과 종이 ── */
+/* 로그인 화면은 흰 종이 바깥이 넓어 무늬가 과하므로 틀 색만(사용자 의견 2026-11-15). 틀 여백은 캔버스대로 18px */
+#class-journal .st-world:has(> .device-login) { background: var(--sk-frame); padding: 18px; }
 #class-journal .device-login {
-  min-height: calc(100vh - 40px);
-  display: grid;
-  place-items: center;
-  padding: 24px 16px;
-}
-#class-journal .device-card {
-  width: min(560px, 100%);
-  background: var(--cj-paper);
-  border: 1px solid var(--cj-line);
-  border-radius: 24px;
-  padding: 28px;
-  display: grid;
-  gap: 18px;
-}
-#class-journal .device-card h1 {
-  margin: 0;
-  font-size: var(--st-fs-lg, 28px);
-}
-#class-journal .device-card .lead {
-  margin: 0;
-  color: var(--cj-muted);
-}
-#class-journal .device-profiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  box-sizing: border-box;
+  min-height: calc(100dvh - 36px);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  padding: 22px 28px 28px;
+  border-radius: 30px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
 }
-#class-journal .device-profiles button {
-  min-height: 120px;
-  border-radius: 20px;
-  border: 2px solid var(--cj-line);
-  background: var(--cj-white);
-  font-size: var(--st-fs-md, 22px);
-  font-weight: 700;
-  color: var(--cj-ink);
-  cursor: pointer;
-  display: grid;
-  gap: 6px;
-  place-items: center;
-  padding: 12px;
-}
-#class-journal .device-profiles button small {
-  font-size: var(--st-fs-xs, 14px);
-  font-weight: 500;
-  color: var(--cj-muted);
-}
-#class-journal .device-profiles button:hover {
-  border-color: var(--cj-green);
-}
-#class-journal .device-code {
-  font-size: var(--st-fs-lg, 28px);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  text-align: center;
-  padding: 12px;
-  border-radius: 14px;
-  border: 2px solid var(--cj-line);
-}
-/* 기기 이름: 코드 아래에서도 눈에 띄게 주황 외곽선(필수 칸) */
-#class-journal .device-name {
-  min-height: 52px;
-  padding: 12px 16px;
-  border: 2px solid #e07a3a;
-  border-radius: 14px;
-  background: #fffaf5;
-  font-size: var(--st-fs-base, 18px);
-  color: #1f2421;
-}
-#class-journal .device-name::placeholder { color: #8a6a55; }
-#class-journal .device-name:focus { outline: 3px solid #f2994a; outline-offset: 2px; border-color: #c2581c; }
-#class-journal .device-name[aria-invalid='true'] { border-color: #b3261e; background: #fff4f2; }
-#class-journal .device-notice {
-  border-radius: 16px;
-  padding: 14px 16px;
-  background: var(--cj-light);
-  color: var(--cj-dark);
-}
-#class-journal .device-notice.warn {
-  background: #fff6dc;
-  color: #6d4a05;
-}
-#class-journal .device-links {
+/* 진한 포커스 테두리: 학생 화면 공통 주황 테두리는 주황 버튼 위에서 안 보임 */
+#class-journal .st-world .device-login :focus-visible { outline: 3px solid var(--sk-ink); outline-offset: 3px; }
+#class-journal .sl-top {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+#class-journal .sl-top > .sl-guardian { margin-left: auto; }
+#class-journal .device-login .sl-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: 'Gowun Dodum', 'Malgun Gothic', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+}
+#class-journal .device-login .sl-pill:hover { background: var(--sk-soft); }
+#class-journal .sl-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#class-journal .sl-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 640px;
+  text-align: center;
+}
+#class-journal .device-login .sl-plain-title {
+  margin: 0;
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: clamp(30px, 3.4vw, 44px);
+  line-height: 1.15;
+}
+#class-journal .sl-lead {
+  margin: 0;
+  max-width: 560px;
+  font-size: 18px;
+  line-height: 1.6;
+}
+#class-journal .sl-note {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+/* 등록 완료 안내: 색 말고도 표시(✓)로 */
+#class-journal .sl-done::before { content: '✓ '; font-weight: 700; }
+#class-journal .sl-card {
+  box-sizing: border-box;
+  border: 3px solid var(--sk-line);
+  border-radius: 26px;
+  background: #fff1d6;
+  box-shadow: 0 6px 0 rgb(31 78 107 / 0.18);
+}
+/* 틀린 PIN·잠금·미설정·코드 형식 안내. 글로 상태를 알리고 진한 주황 테두리로 한 번 더 */
+#class-journal .sl-alert {
+  margin: 0;
+  padding: 8px 14px;
+  border: 2px solid #c2410c;
+  border-radius: 12px;
+  background: #ffe3d3;
+  color: var(--sk-ink);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.45;
+}
+/* 주황 주 버튼(이 기기 등록하기) */
+#class-journal .device-login .sl-go {
+  min-height: 60px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-accent);
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: 22px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+#class-journal .device-login .sl-go:hover:not(:disabled) { background: var(--sk-ink); color: var(--sk-yellow); }
+#class-journal .device-login .sl-go:disabled { opacity: 0.5; cursor: default; }
+
+/* ── 개발(MSW) 시연 도구: 위쪽 한 줄, 작게 ── */
+#class-journal .sl-demo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  min-width: 0;
+  padding: 4px 12px;
+  border: 2px dashed var(--sk-line);
+  border-radius: 14px;
+  background: var(--sk-soft);
+  font-size: 14px;
+}
+#class-journal .sl-demo-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+#class-journal .sl-demo-entry p { margin: 0; }
+#class-journal .sl-demo-button,
+#class-journal .sl-demo-state select {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font: inherit;
+  font-weight: 700;
+}
+#class-journal .sl-demo-state { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── SC-02-001 기기 등록 ── */
+#class-journal .sl-register {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  text-align: center;
+}
+#class-journal .cj-app-student .st-world .device-login .st-title-mix { font-size: 60px; line-height: 1.05; }
+#class-journal .sl-register-form {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px;
+  text-align: left;
+}
+#class-journal .sl-register-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 16px;
+}
+#class-journal .sl-register-form label small { font-weight: 400; font-size: 14px; }
+#class-journal .sl-register-form input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 14px;
+  background: #ffffff;
+  color: var(--sk-ink);
+  font-family: 'Gowun Dodum', 'Malgun Gothic', sans-serif;
+  font-size: 18px;
+}
+#class-journal .sl-register-form .device-code {
+  min-height: 56px;
+  font-family: var(--st-display);
+  font-size: 26px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+#class-journal .sl-register-form .device-code::placeholder { letter-spacing: 1px; font-size: 20px; }
+/* 기기 이름(필수, #683): 코드 아래에서도 눈에 띄게 주황 외곽선·연한 바탕, 비우고 보내면 빨간 테두리(develop #683 스타일을 새 디자인 폼에 옮김) */
+#class-journal .sl-register-form .device-name { border-color: #e07a3a; background: #fffaf5; }
+#class-journal .sl-register-form .device-name::placeholder { color: #8a6a55; }
+#class-journal .sl-register-form .device-name[aria-invalid='true'] { border-color: #b3261e; background: #fff4f2; }
+
+/* ── SC-02-002 누가 공부할까요? ── */
+#class-journal .sl-choose {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  width: 100%;
+  text-align: center;
+}
+#class-journal .cj-app-student .st-world .device-login .sl-choose .st-title-mix { font-size: 84px; letter-spacing: -2px; }
+#class-journal .sl-profiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 28px;
+}
+#class-journal .device-login .sl-profile {
+  width: 230px;
+  padding: 26px 18px 20px;
+  border: 3px solid var(--sk-line);
+  border-radius: 28px;
+  background: #fff1d6;
+  box-shadow: 0 6px 0 rgb(31 78 107 / 0.18);
+  color: var(--sk-ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transform: rotate(var(--tilt, -2deg));
+  transition: transform 0.25s ease;
+}
+#class-journal .sl-profiles li:nth-child(2) .sl-profile { --tilt: 1.5deg; background: #cfe6fa; }
+#class-journal .sl-profiles li:nth-child(3) .sl-profile { --tilt: -1deg; }
+#class-journal .sl-profiles li .sl-profile[data-locked] { background: #eef2f5; }
+#class-journal .device-login .sl-profile:hover,
+#class-journal .device-login .sl-profile:focus-visible { transform: translateY(-4px); }
+#class-journal .sl-avatar {
+  width: 96px;
+  height: 96px;
+  flex: none;
+  border: 3px solid var(--sk-line);
+  border-radius: 50%;
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--st-display);
+  font-size: 40px;
+}
+#class-journal .sl-profile strong { font-family: var(--st-display); font-weight: 400; font-size: 28px; }
+#class-journal .device-login .sl-profile small {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* ── SC-02-003 PIN: 왼쪽 인사, 오른쪽 키패드 카드 ── */
+#class-journal .sl-typing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px 64px;
+  width: 100%;
+}
+#class-journal .sl-hello {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  text-align: center;
+}
+#class-journal .cj-app-student .st-world .device-login .sl-hello .st-title-mix { font-size: 56px; }
+#class-journal .sl-buddy {
+  width: 300px;
+  height: 300px;
+  flex: none;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--sk-line);
+  border-radius: 50%;
+  background: #cfe6fa;
+}
+#class-journal .sl-buddy .st-companion {
+  width: 64%;
+  height: 64%;
+  animation: sl-bob 3s ease-in-out infinite;
+}
+@keyframes sl-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+#class-journal .sl-pin {
+  width: 380px;
+  flex: none;
+  padding: 22px 24px;
+  border-radius: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+#class-journal .sl-pin-title {
+  margin: 0;
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: 22px;
+}
+/* 잠금·PIN 미설정: 키패드 없이 가운데 한 줄 */
+#class-journal .sl-blocked { display: flex; justify-content: center; width: 100%; }
+#class-journal .sl-blocked .sl-hello { gap: 18px; max-width: 640px; }
+#class-journal .sl-blocked .sl-buddy { width: 220px; height: 220px; }
+#class-journal .sl-blocked .sl-alert { padding: 14px 22px; border-width: 3px; border-radius: 18px; font-size: 19px; }
+
+/* 키패드 */
+#class-journal .device-login .pin-pad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+#class-journal .device-login .pin-dots {
+  display: flex;
+  gap: 12px;
+  min-height: 22px;
+}
+#class-journal .device-login .pin-dots span {
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid var(--sk-ink, #0f3b36);
+  background: transparent;
+}
+#class-journal .device-login .pin-dots span.on { background: var(--sk-ink, #0f3b36); }
+/* 5·6번째 자리는 넣어도 되고 안 넣어도 됨: 점선(모양으로 구분) */
+#class-journal .device-login .pin-dots span.optional { border-style: dashed; border-color: #6b7f7b; }
+#class-journal .device-login .pin-help {
+  margin: 0;
+  color: var(--sk-sub, #3f5a66);
+  font-size: 15px;
+}
+#class-journal .device-login .pin-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  justify-content: space-between;
+  width: 100%;
+}
+#class-journal .device-login .pin-keys button {
+  min-height: 68px;
+  border: 2px solid var(--sk-line, #1f4e6b);
+  border-radius: 20px;
+  background: #ffffff;
+  color: var(--sk-ink, #0f3b36);
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: 28px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+#class-journal .device-login .pin-keys button:hover:not(:disabled) { background: var(--sk-yellow, #ffd84d); }
+#class-journal .device-login .pin-keys button:disabled { opacity: 0.45; cursor: default; }
+#class-journal .device-login .pin-keys .pin-fn { background: #eef2f5; font-size: 20px; }
+#class-journal .device-login .pin-keys .pin-back { flex-direction: column; gap: 0; font-size: 15px; }
+#class-journal .device-login .pin-keys .pin-back svg { width: 24px; height: 24px; }
+#class-journal .device-login .pin-keys .pin-ok {
+  grid-column: 1 / -1;
+  min-height: 64px;
+  border: 3px solid var(--sk-ink, #0f3b36);
+  border-radius: 999px;
+  background: var(--sk-accent, #ff8a1f);
+  color: var(--sk-ink, #0f3b36); /* 주황 위 글자는 진한 색(대비 5.2:1). 흰 글자는 2.36:1로 미달(#648) */
+  font-size: 26px;
+  transition: background 0.2s, color 0.2s;
+}
+#class-journal .device-login .pin-keys .pin-ok:hover:not(:disabled) { background: var(--sk-ink, #0f3b36); color: var(--sk-yellow, #ffd84d); }
+#class-journal .device-login .pin-pad:focus { outline: none; }
+
+/* ── 창 높이가 낮은 PC(768px 이하): 키·그림을 줄여 한 화면에 ── */
+@media (min-width: 641px) and (max-height: 800px) {
+  #class-journal .sl-buddy { width: 240px; height: 240px; }
+  #class-journal .device-login .pin-keys button { min-height: 58px; }
+  #class-journal .device-login .pin-keys .pin-ok { min-height: 56px; }
+  #class-journal .sl-choose { gap: 24px; }
+}
+
+/* ── 태블릿(900px 이하) ── */
+@media (max-width: 900px) {
+  #class-journal .st-world:has(> .device-login) { padding: 10px; }
+  #class-journal .device-login { min-height: calc(100dvh - 20px); padding: 18px 20px 22px; border-radius: 26px; }
+  #class-journal .sl-typing { gap: 24px 32px; }
+  #class-journal .sl-buddy { width: 220px; height: 220px; }
+  #class-journal .cj-app-student .st-world .device-login .sl-hello .st-title-mix { font-size: 44px; }
+  #class-journal .cj-app-student .st-world .device-login .st-title-mix { font-size: 48px; }
+  #class-journal .cj-app-student .st-world .device-login .sl-choose .st-title-mix { font-size: 64px; }
+  #class-journal .sl-profiles { gap: 20px; }
+  #class-journal .device-login .sl-profile { width: 200px; }
+}
+
+/* ── 휴대폰(640px 이하): 인사는 작은 그림 옆 한 줄, 키패드는 폭 가득 ── */
+@media (max-width: 640px) {
+  #class-journal .device-login { padding: 12px 14px 16px; gap: 10px; border-radius: 22px; }
+  #class-journal .sl-demo { padding: 4px 8px; gap: 4px 10px; font-size: 13px; }
+  #class-journal .sl-demo-button, #class-journal .sl-demo-state select { min-height: 32px; padding: 0 10px; }
+  #class-journal .sl-lead { font-size: 16px; line-height: 1.5; }
+  #class-journal .cj-app-student .st-world .device-login .st-title-mix { font-size: 34px; }
+  #class-journal .sl-register { gap: 12px; }
+  #class-journal .sl-register-form { padding: 16px; gap: 10px; }
+  #class-journal .device-login .sl-go { min-height: 54px; font-size: 20px; }
+
+  #class-journal .sl-choose { gap: 18px; }
+  #class-journal .cj-app-student .st-world .device-login .sl-choose .st-title-mix { font-size: 44px; letter-spacing: -1px; }
+  #class-journal .sl-profiles { flex-direction: column; flex-wrap: nowrap; gap: 12px; width: 100%; }
+  #class-journal .device-login .sl-profile {
+    width: 100%;
+    box-sizing: border-box;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    padding: 12px 16px;
+    border-radius: 22px;
+    text-align: left;
+    --tilt: 0deg;
+  }
+  #class-journal .sl-profiles li:nth-child(n) .sl-profile { --tilt: 0deg; }
+  #class-journal .sl-avatar { width: 56px; height: 56px; font-size: 26px; }
+  #class-journal .sl-profile strong { font-size: 24px; }
+  #class-journal .device-login .sl-profile small { margin-left: auto; }
+
+  #class-journal .sl-typing { flex-direction: column; gap: 12px; }
+  #class-journal .sl-typing .sl-hello {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+    gap: 4px 12px;
+    width: 100%;
+    text-align: left;
+  }
+  #class-journal .sl-typing .sl-buddy { grid-row: span 3; width: 76px; height: 76px; border-width: 2px; }
+  #class-journal .sl-buddy .st-companion { animation: none; }
+  #class-journal .cj-app-student .st-world .device-login .sl-hello .st-title-mix { font-size: 30px; }
+  #class-journal .sl-typing .sl-note { font-size: 14px; }
+  #class-journal .sl-typing .sl-pill { min-height: 40px; padding: 0 14px; font-size: 15px; }
+  #class-journal .sl-pin { width: 100%; padding: 14px 16px; gap: 10px; border-radius: 24px; }
+  #class-journal .sl-pin-title { font-size: 19px; }
+  #class-journal .device-login .pin-pad { gap: 10px; }
+  #class-journal .device-login .pin-keys { gap: 8px; }
+  #class-journal .device-login .pin-keys button { min-height: 56px; border-radius: 16px; }
+  #class-journal .device-login .pin-keys .pin-ok { min-height: 56px; font-size: 24px; }
+  #class-journal .device-login .pin-help { font-size: 14px; }
+  #class-journal .sl-alert { font-size: 15px; padding: 6px 12px; }
+  #class-journal .sl-blocked .sl-buddy { width: 150px; height: 150px; }
+  #class-journal .sl-blocked .sl-alert { font-size: 17px; padding: 12px 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #class-journal .sl-buddy .st-companion { animation: none; }
+  #class-journal .device-login .sl-profile,
+  #class-journal .device-login .sl-go,
+  #class-journal .device-login .pin-keys .pin-ok { transition: none; }
+  #class-journal .device-login .sl-profile:hover,
+  #class-journal .device-login .sl-profile:focus-visible { transform: rotate(var(--tilt, -2deg)); }
 }
 
 /* 학부모 기기·PIN 관리 */
@@ -178,7 +495,4 @@
   border: 1px solid var(--cj-line);
   border-radius: 12px;
   background: #fff;
-}
-#class-journal .pin-pad:focus {
-  outline: none;
 }

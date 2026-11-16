@@ -9,7 +9,7 @@ export interface MemoTarget {
 export function memoTargets(answer: AnswerContent): MemoTarget[] {
   switch (answer.inputType) {
     case 'NARRATIVE':
-      return [{ id: 'text', label: '내 생각과 까닭', limit: 2400 }]
+      return [{ id: 'text', label: '내 생각과 이유', limit: 2400 }]
     case 'SOLUTION_STEPS':
       return [
         { id: 'finalAnswer', label: '최종 답', limit: 120 },
@@ -18,8 +18,8 @@ export function memoTargets(answer: AnswerContent): MemoTarget[] {
     case 'ESSAY':
       return [
         { id: 'claim', label: '내 주장', limit: 2400 },
-        { id: 'reason:0', label: '첫 번째 까닭', limit: 2400 },
-        { id: 'reason:1', label: '두 번째 까닭', limit: 2400 },
+        { id: 'reason:0', label: '첫 번째 이유', limit: 2400 },
+        { id: 'reason:1', label: '두 번째 이유', limit: 2400 },
         { id: 'rebuttal', label: '다른 의견에 답하기', limit: 2400 },
       ]
     default:

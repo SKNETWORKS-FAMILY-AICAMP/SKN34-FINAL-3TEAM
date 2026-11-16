@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="40 -20 120 120" width="60" height="60">
+<!-- 설계 캔버스 Mungchi.dc.html 착용 그림 그대로(좌표도 캔버스 친구 그림 200×220 기준). 기준점이 그림 한가운데(roomAssets.ts FRIEND_WEAR_ANCHORS) -->
+<path d="M58 58 C58 14 142 14 142 58Z" fill="#FF8A1F" stroke="#1F2421" stroke-width="3.5" stroke-linejoin="round"/>
+<path d="M52 58 H148" stroke="#1F2421" stroke-width="8" stroke-linecap="round"/>
+<g fill="#FFFDF7"><ellipse cx="100" cy="43" rx="10" ry="8"/><circle cx="86" cy="33" r="4"/><circle cx="96" cy="27" r="4"/><circle cx="106" cy="27" r="4"/><circle cx="115" cy="33" r="4"/></g>
+</svg>

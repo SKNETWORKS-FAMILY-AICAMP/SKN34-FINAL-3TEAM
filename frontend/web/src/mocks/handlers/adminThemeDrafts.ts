@@ -61,12 +61,14 @@ const sceneSvg = (scene: ThemeSceneName, title: string) => 'data:image/svg+xml;c
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><rect width="640" height="360" fill="#C6EAE1"/>` +
   `<circle cx="520" cy="80" r="40" fill="#F2C14E"/><path d="M0 360 L160 170 L280 260 L420 140 L640 360Z" fill="${HUES[scene]}" stroke="#1F2421" stroke-width="5"/>` +
   `<circle cx="250" cy="250" r="34" fill="#FFFDF7" stroke="#1F2421" stroke-width="5"/><text x="24" y="44" font-size="28" font-family="sans-serif" fill="#1F2421">${scene} · ${title}</text></svg>`)
+/** ai 움직임 형식 v1 그대로(ai-service.yaml ThemeMotion: 카메라 8~20초, 방향 0~359도, 빠르기 2~20, #440에서 계약 범위로 맞춤) */
 const motionOf = (scene: ThemeSceneName) => ({
   version: 1,
   transition: { kind: 'fade', seconds: 0.5 },
-  camera: { from: { x: 50, y: 50, zoom: 1 }, to: { x: 40, y: 60, zoom: 1.3 }, seconds: 6 },
-  speakers: { 뭉치: { x: 39, y: 69, zoom: 1.2 } },
-  effects: scene === 'OUTRO' ? [{ shape: 'circle', color: '#FFF3C4', count: 12, size: 6, direction: 'up', speed: 1, opacity: 0.8 }] : [],
+  camera: { from: { x: 50, y: 50, zoom: 1 }, to: { x: 40, y: 60, zoom: 1.3 }, seconds: 10 },
+  speakers: scene === 'INTRO' || scene === 'OUTRO' ? {} : { 뭉치: { x: 39, y: 69, zoom: 1.2 } },
+  effects: scene === 'OUTRO' ? [{ shape: 'bubble', color: '#FFF3C4', count: 12, size: 6, direction: 180, speed: 4, opacity: 0.8 }]
+    : scene === 'MON' ? [{ shape: 'leaf', color: '#6FA84B', count: 8, size: 3, direction: 20, speed: 5, opacity: 0.6 }] : [],
   captions: scene === 'INTRO' || scene === 'OUTRO'
     ? [{ start: 0, end: 3, text: scene === 'INTRO' ? '뭉치가 마을 광장에 도착했어요.' : '마지막 단서가 맞춰졌어요!' }, { start: 3, end: 6, text: '함께 살펴볼까요?' }]
     : [],

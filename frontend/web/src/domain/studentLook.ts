@@ -47,11 +47,50 @@ export const COMPANIONS: { id: CompanionId; label: string; desc: string }[] = [
 ]
 export const DEFAULT_LOOK: StudentLook = { theme: 'lake', companion: 'mungchi', updatedAt: null }
 
+/**
+ * 뭉치 친구들 12종(#648, 화면 전용). 서버(core)는 동행 캐릭터를 5종(CompanionId)만 저장하므로
+ * 그 5종에 대응하는 친구만 고를 수 있고, 나머지 7종(companion: null)은 "곧 만나요"로 잠가 둔다
+ * (사용자 결정 2026-11-14, docs/report/frontend.md). 이름·설명·색은 설계 캔버스 Customize FRIENDS 값.
+ */
+export type FriendId =
+  | 'cotton' | 'cloud' | 'snow' | 'yarn' | 'moss' | 'sand'
+  | 'star' | 'foam' | 'paper' | 'petal' | 'cone' | 'ice'
+export interface Friend {
+  id: FriendId
+  name: string
+  desc: string
+  /** 카드 바탕 색 */
+  color: string
+  /** 대응하는 서버 값. null이면 서버에 저장할 수 없어 고를 수 없다(곧 만나요) */
+  companion: CompanionId | null
+}
+export const FRIENDS: Friend[] = [
+  { id: 'cotton', name: '솜뭉치', desc: '폭신폭신, 뭐든 포근하게 안아 줘요.', color: '#FFF1D6', companion: 'mungchi' },
+  { id: 'cloud', name: '구름뭉치', desc: '생각이 떠오르면 둥실 올라가요.', color: '#CFE6FA', companion: 'monggeul' },
+  { id: 'snow', name: '눈뭉치', desc: '차근차근 굴리며 생각을 키워요.', color: '#E6F1FA', companion: null },
+  { id: 'yarn', name: '털실뭉치', desc: '엉킨 생각을 한 줄씩 풀어요.', color: '#FBD3DF', companion: null },
+  { id: 'moss', name: '이끼뭉치', desc: '천천히, 그래도 꾸준히 자라요.', color: '#DDF6D2', companion: 'kongi' },
+  { id: 'sand', name: '모래뭉치', desc: '쌓았다 고쳤다 또 만들어요.', color: '#F4E2BE', companion: 'mongdol' },
+  { id: 'star', name: '별뭉치', desc: '번뜩이는 생각을 모아요.', color: '#FFEBA3', companion: null },
+  { id: 'foam', name: '거품뭉치', desc: '궁금한 게 퐁퐁 솟아나요.', color: '#E6DDF8', companion: null },
+  { id: 'paper', name: '종이뭉치', desc: '구겨도 다시 펴서 써 봐요.', color: '#F2F5F8', companion: null },
+  { id: 'petal', name: '꽃잎뭉치', desc: '생각이 활짝 피어나요.', color: '#FCDCE7', companion: null },
+  { id: 'cone', name: '솔방울뭉치', desc: '작아도 씨앗이 가득해요.', color: '#EBD5BC', companion: 'tori' },
+  { id: 'ice', name: '얼음뭉치', desc: '차분하게 하나씩 따져요.', color: '#D5F1F9', companion: null },
+]
+export const isFriendId = (v: unknown): v is FriendId => FRIENDS.some((f) => f.id === v)
+export const friendById = (id: FriendId): Friend => FRIENDS.find((f) => f.id === id) ?? FRIENDS[0]
+/** 서버 값 → 화면 친구. 알 수 없는 값은 기본 친구(솜뭉치) */
+export const companionToFriend = (id: CompanionId): FriendId =>
+  (FRIENDS.find((f) => f.companion === id) ?? FRIENDS[0]).id
+/** 화면 친구 → 서버 값. 서버에 없는 친구는 null(고를 수 없음) */
+export const friendToCompanion = (id: FriendId): CompanionId | null => friendById(id).companion
+
 export const isThemeId = (v: unknown): v is ThemeId => typeof v === 'string' && v in THEMES
 export const isCompanionId = (v: unknown): v is CompanionId =>
   COMPANIONS.some((c) => c.id === v)
-export const companionLabel = (id: CompanionId) =>
-  (COMPANIONS.find((c) => c.id === id) ?? COMPANIONS[0]).label
+/** 화면에서 부르는 이름은 대응하는 친구 이름(솜뭉치·솔방울뭉치…, #648). 서버 아이템 이름은 COMPANIONS label 그대로 */
+export const companionLabel = (id: CompanionId) => friendById(companionToFriend(id)).name
 
 /** 서버 응답을 검사해 알 수 없는 값은 기본값으로 둔다(화면이 깨지지 않게). */
 export function readLook(raw: unknown): StudentLook {

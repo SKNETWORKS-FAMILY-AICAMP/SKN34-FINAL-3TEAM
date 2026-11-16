@@ -23,8 +23,10 @@ export function SupportResults() {
     </section>}
     <h2>내 신고</h2>
     {reports.data?.items.map(r => <p key={r.reportId}><Link to={detailLink('reportId', r.reportId)}>{r.comment || '신고'} · {r.status}</Link></p>)}
+    {reports.data && reports.data.items.length === 0 && <p>아직 접수한 신고가 없습니다.</p>}
     <h2>내 문의</h2>
     {inquiries.data?.items.map(i => <p key={i.inquiryId}><Link to={detailLink('inquiryId', i.inquiryId)}>{i.title} · {i.status}</Link></p>)}
+    {inquiries.data && inquiries.data.items.length === 0 && <p>아직 접수한 문의가 없습니다.</p>}
     <Link to={session?.role === 'STUDENT' ? '/student/home' : '/parent/journal'}>돌아가기</Link>
   </section>
 }

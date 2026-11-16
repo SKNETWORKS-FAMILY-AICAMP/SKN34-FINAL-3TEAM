@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { displayPeriods, useMissions } from '../../../data/classroom/useClassroom.ts'
 import { ThinkingActivityList } from './ThinkingActivities.tsx'
 import type { Child, Mission, ThinkingType } from '../../../domain/classroom.ts'
-import { thinkingLabels } from '../../../domain/classroom.ts'
+import { studentThinkingLabels } from '../../../domain/classroom.ts'
 import { THINKING_ORDER, thinkingHue } from '../../../domain/studentLook.ts'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { SceneArt } from '../MissionScene.tsx'
@@ -11,7 +11,7 @@ import { useLook } from './lookContext.ts'
 const statusLabel = (m: Mission) =>
   m.status === 'COMPLETED' ? '끝냈어요' : m.status === 'IN_PROGRESS' ? '하는 중' : '시작 전'
 
-/** 미션 고르기 (FN-LRN-01). 생각 지도에서 고른 곳(유형)으로 바로 걸러 볼 수 있다. */
+/** 미션 고르기 (FN-LRN-01). 생각 유형 칩으로 걸러 볼 수 있다(홈 "더 풀어 보기"로 들어옴, #648). */
 export function StudentMissions({
   child,
   type,
@@ -31,13 +31,13 @@ export function StudentMissions({
     (m) => (!type || m.thinkingType === type) && (subject === 'all' || m.subject === subject),
   )
   return (
-    <main className="st-paper st-sheet">
+    <main className="st-paper st-sheet st-missions-page">
       <div className="st-sheet-head">
         <div>
-          <h1>미션 고르기</h1>
+          <h1 className="st-title-mix"><span>미션 </span>고르기</h1>
           <p>
             {type
-              ? `‘${thinkingLabels[type]}’ ${t.place}의 미션이에요.`
+              ? `‘${studentThinkingLabels[type]}’ ${t.place}의 미션이에요.`
               : '하고 싶은 미션을 하나 골라요.'}
           </p>
         </div>
@@ -58,7 +58,7 @@ export function StudentMissions({
         {THINKING_ORDER.map((ty) => (
           <button type="button" key={ty} aria-pressed={type === ty} onClick={() => onType(ty)}>
             <i style={{ background: thinkingHue[ty] }} aria-hidden="true" />
-            {thinkingLabels[ty]}
+            {studentThinkingLabels[ty]}
           </button>
         ))}
       </div>
@@ -74,22 +74,27 @@ export function StudentMissions({
         }}
       />
       {missions.isSuccess && rows.length === 0 && (
-        <p className="st-empty">여기에는 아직 고를 수 있는 미션이 없어요. 다른 곳을 골라 볼까요?</p>
+        <p className="st-empty">여기에는 아직 고를 수 있는 미션이 없어요. 다른 생각 유형을 골라 볼까요?</p>
       )}
       <div className="st-cards">
         {rows.map((m) => (
           <article className="st-card" key={m.id} data-status={m.status ?? 'NOT_STARTED'}>
             <figure className="st-photo">
-              <SceneArt mission={m} decorative />
+              {/* 미션 장면 그림이 있으면 그 그림(안내 화면과 같은 그림), 없으면 기본 장면 그림 */}
+              {/^(https?:\/\/|\/[^/])/.test(m.staticSceneUri || m.sceneUri || '') ? (
+                <img src={m.staticSceneUri || m.sceneUri} alt="" />
+              ) : (
+                <SceneArt mission={m} decorative />
+              )}
             </figure>
             <p className="st-kicker">
-              {m.subject} · {thinkingLabels[m.thinkingType]}
+              {m.subject} · {studentThinkingLabels[m.thinkingType]}
             </p>
             <h2>{m.title}</h2>
             <p className="st-question">{m.question}</p>
             <div className="st-card-foot">
               <span className="st-status">{statusLabel(m)}</span>
-              <button type="button" className="st-button st-primary" onClick={() => onOpen(m)}>
+              <button type="button" className="st-button st-primary" data-open-mission={m.id} onClick={() => onOpen(m)}>
                 미션 열기
               </button>
             </div>
