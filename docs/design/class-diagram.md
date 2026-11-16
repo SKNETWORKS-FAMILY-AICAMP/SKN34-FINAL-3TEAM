@@ -2093,6 +2093,7 @@ classDiagram
     <<controller>>
     +share(studentId, attemptId) ShareResponse
     +post(postId) PostDetailView
+    +postAuthor(postId, viewerStudentId) PostAuthorView
     +missionPosts(missionId, viewerStudentId, seed, page, size) MissionPostPage
     +studentPosts(studentId) StudentPostList
     +react(postId, reaction, studentId) ReactionCreated
@@ -2105,6 +2106,7 @@ classDiagram
     +share(studentId, attemptId) SharedPost
     +missionPosts(missionId, viewer, seed, page, size) List
     +studentPosts(studentId) List
+    +postAuthor(postId, viewer) PostAuthorView
     +react(postId, studentId, reaction) ReactionResult
     +setVisibility(studentId, visible, reason) VisibilityResult
     +moderate(postId, status, errorReportId) CommunityPostStatus
@@ -2140,6 +2142,7 @@ classDiagram
 ```
 
 - 기존 `AttemptService.start`(4.1)에 `context` 인자를 추가하고 `THEME_DAY`·`THEME_REVIEW`는 `WeeklyThemeService.checkStart`로 요일·되돌아보기 검사. 진행 중 시도 반환은 검사하지 않음(자정 후 이어하기)
+- `CommunityService.postAuthor`(#707, 친구 방 구경 core #708이 부름)는 새 판정 규칙 없이 `react`와 같은 순서로 막는다: `VISIBLE` 아님·없음 404 → 본인 글 409 → `requireCompleted`(403 `COMMUNITY_LOCKED`·`COMMUNITY_LOCKED_UNTIL_ENDING`). 읽기 전용 트랜잭션·행 잠금 없음, `{postId, studentId}`만 돌려줌
 - `CommunityService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환. 처음 학습 완료한 시도가 아니면(다시 풀기) 공유하지 않고, 공유 때 `ExpressionPolicy`(#205)를 다시 확인
 - 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
 - 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본

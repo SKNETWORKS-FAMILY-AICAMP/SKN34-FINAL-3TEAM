@@ -35,6 +35,9 @@ data class MissionPostView(val postId: UUID, val studentId: UUID, val answer: Sh
 data class StudentPostView(val postId: UUID, val missionId: UUID, val missionTitle: String?, val answer: SharedAnswer,
     val status: CommunityPostStatus, val reactions: Map<CommunityReaction, Int>, val createdAt: Instant)
 
+/** 친구 방 구경용 작성자 확인 결과 (#707). 답변·미션·상태·반응은 넣지 않음(core가 방만 그림) */
+data class PostAuthorView(val postId: UUID, val studentId: UUID)
+
 data class PostDetailView(val postId: UUID, val studentId: UUID, val missionId: UUID, val status: CommunityPostStatus,
     val answer: SharedAnswer, val createdAt: Instant)
 
@@ -114,6 +117,19 @@ class CommunityService(
     fun post(postId: UUID): PostDetailView {
         val row = repository.sharedAnswer(postId) ?: postNotFound()
         return PostDetailView(row.postId, row.studentId, row.missionId, row.status, answer(row), row.createdAt)
+    }
+
+    /**
+     * 친구 방 구경용 작성자 찾기 + 열람 검사 (#707·#708, api-spec 4.1). 새 판정 규칙 없이 반응 남기기와 같은 순서·오류:
+     * 공개(VISIBLE)가 아니거나 없으면 404 COMMUNITY_POST_NOT_FOUND, 본인 글 409 COMMUNITY_OWN_POST, 열람자 잠금 403(requireCompleted).
+     * 읽기만 하므로 행 잠금 없음
+     */
+    @Transactional(readOnly = true)
+    fun postAuthor(postId: UUID, viewer: UUID): PostAuthorView {
+        val post = repository.findPost(postId, lock = false)?.takeIf { it.status == CommunityPostStatus.VISIBLE } ?: postNotFound()
+        if (post.studentId == viewer) throw BusinessException(HttpStatus.CONFLICT, "COMMUNITY_OWN_POST", "내 공유물입니다.")
+        requireCompleted(viewer, post.missionId)
+        return PostAuthorView(post.id, post.studentId)
     }
 
     /**
