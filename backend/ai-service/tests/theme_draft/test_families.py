@@ -13,6 +13,7 @@ from app.theme_draft import checks, families, prompts
 from app.theme_draft.models import GeneratedStoryReview, ThemeDraftRequest
 from tests.theme_draft.fixtures import (
     day_with,
+    feature,
     generated_theme,
     mission_draft,
     theme_with,
@@ -51,14 +52,23 @@ def animal_theme(story_type: str = "PRANK") -> dict[str, Any]:
         "answer": ANIMALS[theme["answer"]],
         "bigQuestion": "떡을 몰래 먹은 건 누구였을까?",
     }
-    for f in theme["features"]:
-        for v in f["values"]:
-            v["candidate"] = ANIMALS[v["candidate"]]
-    for d, clue in (
-        ("MON", "그 동물 발자국이 젖어 있었어."),
-        ("THU", "그 동물 발바닥에 흙이 묻어 있었어."),
+    # 특징은 동물 사실표 그대로(#634: 값은 코드가 표로 맞춤)
+    cands = theme["candidates"]
+    theme["features"] = [
+        feature(name, {c: families.animal_fact(c, name) or "" for c in cands})
+        for name in families.ANIMAL_FEATURES
+    ]
+    # 월(흔적) 발톱으로 고양이, 수(목격) 발 수로 까치, 금(기록) 꼬리로 다람쥐가 빠짐
+    for d, clue, kind, feat, allowed in (
+        ("MON", "그 동물 발자국에 발톱 자국이 있었어.", "RULE", "발자국의 발톱", ["발톱 자국"]),
+        ("TUE", "지나간 자리에 발톱 자국이 있었대.", "HINT", "발자국의 발톱", ["발톱 자국"]),
+        ("WED", "네 발로 걷는 뒷모습을 봤대.", "RULE", "발자국 발 수", ["네 발"]),
+        ("THU", "그 동물이 남긴 부드러운 털이 있었어.", "HINT", "몸을 덮은 것", ["부드러운 털"]),
+        ("FRI", "사진에 짧고 굵은 꼬리가 찍혔어.", "RULE", "꼬리 모양", ["짧고 굵은 꼬리"]),
     ):
-        checks.theme_day(theme, d)["clue"] = clue
+        day = checks.theme_day(theme, d)
+        day["clue"] = clue
+        day["condition"] = {"kind": kind, "feature": feat, "allowed": allowed}
     return theme
 
 
@@ -171,13 +181,53 @@ def test_candidate_words_heads_and_one_letter_boundaries() -> None:
 def test_animal_trace_words_and_features() -> None:
     footprint = {"storyType": "FOOTPRINT", "target": "눈길에 발자국을 남긴 동물"}
     assert checks.target_words(footprint) == ["동물"]  # '남긴'이 대상 낱말로 뽑히던 틈
-    assert checks.target_words({"target": "눈길에 발자국을 남긴 동물"}) == ["동물", "남긴"]
-    assert not checks.traceable("발가락 수") and checks.traceable("발가락 수", animal=True)
-    assert checks.traceable("털 색", animal=True) and not checks.traceable("냄새", animal=True)
-    bad = checks.check_theme(day_with(animal_theme(), "MON", clue="발자국이 젖어 있었어."), 3)
+    # 꾸미는 말(받침 ㄴ·ㄹ)은 대상 낱말에서 뺌(작은 실측: '숨긴'), 모든 종류 공통
+    assert checks.target_words({"target": "눈길에 발자국을 남긴 동물"}) == ["동물"]
+    assert checks.target_words({"target": "할아버지가 숨긴 타임캡슐"}) == ["타임캡슐"]
+    assert checks.target_words({"target": "강아지 보리"}) == ["보리", "강아지"]
+    assert not checks.traceable("발가락 수") and checks.traceable("발자국 발 수", animal=True)
+    assert checks.traceable("몸을 덮은 것", animal=True) and checks.traceable("발자국의 발톱", True)
+    assert not checks.traceable("꼬리 모양", animal=True)  # 꼬리는 목격·기록 날
+    assert not checks.traceable("냄새", animal=True)
+    bad = checks.check_theme(
+        day_with(animal_theme(), "MON", clue="발자국에 발톱 자국이 있었어."), 3
+    )
     assert bad == [
         "CLUE_OWNER MON clue 흔적 단서에 찾는 대상 낱말(동물)이 없음(누구의 흔적인지 밝힘)"
     ]
+
+
+def test_animal_fact_table_values_are_fixed_by_code() -> None:
+    """모델이 지은 동물 특징 값은 사실표 값으로 맞추고, 그 특징을 쓰는 날 허용 값은 허용하던 후보의
+    새 값으로 옮긴다(빼려던 후보가 그대로). 표 밖 동물·특징은 ANIMAL_TABLE로 다시 생성."""
+    theme = animal_theme()
+    tail = next(f for f in theme["features"] if f["name"] == "꼬리 모양")
+    for v in tail["values"]:
+        v["value"] = {"너구리": "고리무늬 꼬리"}.get(v["candidate"], v["value"])
+    checks.theme_day(theme, "FRI")["condition"]["allowed"] = ["고리무늬 꼬리"]
+    assert checks.animal_table_problems(theme) == [
+        "ANIMAL_TABLE 특징 값이 사실표와 다름 ['꼬리 모양·너구리']"
+    ]
+    assert checks.apply_animal_facts(theme) == ["꼬리 모양"]
+    assert checks.theme_day(theme, "FRI")["condition"]["allowed"] == ["짧고 굵은 꼬리"]
+    assert checks.animal_table_problems(theme) == []
+    assert checks.apply_animal_facts(valid_theme()) == []  # 숨은 것 가족은 그대로
+    outside = {**animal_theme(), "candidates": ["고양이", "너구리", "까치", "여우"]}
+    outside["features"] = [*outside["features"], feature("다니는 때", {"고양이": "밤"})]
+    assert codes(checks.animal_table_problems(outside)) == ["ANIMAL_TABLE", "ANIMAL_TABLE"]
+
+
+def test_animal_rules_carry_fact_table_and_values_do_not_contain_each_other() -> None:
+    rules = families.type_rules(families.PRANK)
+    assert "고양이 | 부드러운 털 | 네 발 | 발바닥 자국만 | 길고 가는 꼬리" in rules
+    for i, name in enumerate(families.ANIMAL_FEATURES):
+        values = {row[i] for row in families.ANIMAL_FACTS.values()}
+        assert not [
+            (a, b)
+            for a in values
+            for b in values
+            if a != b and a.replace(" ", "") in b.replace(" ", "")
+        ], name  # 값끼리 포함되면 단서 문장 허용 밖 값 검사가 헷갈림
 
 
 @pytest.mark.parametrize(
@@ -312,3 +362,18 @@ def test_fix_rules_follow_story_type() -> None:
     assert "쪽지를 받아 들고 놀람" in prompts.fix_rules(treasure, "introCuts2.scene")[0]
     assert "보물 속 편지" in prompts.fix_rules(treasure, "outroCuts4.action")[0]
     assert "고양이" in prompts.fix_rules(animal, "TUE.sceneNote")[1]  # 머리 낱말까지 쓰지 말 낱말
+
+
+def test_note_style_clue_is_field_fixed_but_ratio_is_not() -> None:
+    """'오후 3시 목격: 짧은 꼬리.' 같은 쪽지 꼴은 CLUE_WORDING(칸 고쳐 쓰기), 비율·시각은 그대로."""
+    note = {
+        "clue": "오후 3시 목격: 짧고 굵은 꼬리.",
+        "condition": {"kind": "HINT", "allowed": ["a"]},
+    }
+    assert checks.clue_wording_problems(note) == [
+        "단서를 '목격:'처럼 쪽지 꼴로 씀(누가 무엇을 봤는지 한 문장으로)"
+    ]
+    for ok in ("길이는 2:3이었어.", "3:30에 찍힌 사진이야."):
+        assert checks.clue_wording_problems({"clue": ok, "condition": {"kind": "HINT"}}) == []
+    bad = checks.check_theme(day_with(animal_theme(), "FRI", clue="사진: 짧고 굵은 꼬리."), 3)
+    assert list(checks.fix_targets(bad)) == ["FRI.clue"]
