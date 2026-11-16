@@ -88,6 +88,18 @@
     {
       "name": "MEMORY_EMBEDDING_ENABLED",
       "value": "true"
+    },
+    {
+      "name": "ASSET_S3_BUCKET",
+      "value": "sagomungchi-demo-347161580747-missions"
+    },
+    {
+      "name": "S3_REGION",
+      "value": "ap-northeast-2"
+    },
+    {
+      "name": "AWS_REGION",
+      "value": "ap-northeast-2"
     }
   ],
   "extraVolumeMounts": [
@@ -146,6 +158,21 @@
           {
             "ipBlock": {
               "cidr": "10.20.144.0/20"
+            }
+          }
+        ]
+      },
+      {
+        "ports": [
+          {
+            "port": 80,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "169.254.170.23/32"
             }
           }
         ]

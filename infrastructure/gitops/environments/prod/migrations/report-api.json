@@ -49,5 +49,29 @@
         "readOnly": true
       }
     ]
+  },
+  "networkPolicy": {
+    "migrationEgress": [
+      {
+        "ports": [
+          {
+            "port": 5432,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "10.20.128.0/20"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "10.20.144.0/20"
+            }
+          }
+        ]
+      }
+    ]
   }
 }

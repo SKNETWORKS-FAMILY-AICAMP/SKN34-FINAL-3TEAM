@@ -78,6 +78,18 @@
     {
       "name": "EXPLANATION_MODEL",
       "value": "report-explanation"
+    },
+    {
+      "name": "ASSET_S3_BUCKET",
+      "value": "sagomungchi-demo-347161580747-missions"
+    },
+    {
+      "name": "S3_REGION",
+      "value": "ap-northeast-2"
+    },
+    {
+      "name": "AWS_REGION",
+      "value": "ap-northeast-2"
     }
   ],
   "hpa": {
@@ -116,6 +128,21 @@
                 "224.0.0.0/4",
                 "240.0.0.0/4"
               ]
+            }
+          }
+        ]
+      },
+      {
+        "ports": [
+          {
+            "port": 80,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "169.254.170.23/32"
             }
           }
         ]

@@ -45,6 +45,16 @@
         "namespace": "kube-system",
         "serviceAccountName": "karpenter",
         "roleARN": "arn:aws:iam::347161580747:role/sagomungchi-demo-karpenter-controller-role"
+      },
+      {
+        "namespace": "app",
+        "serviceAccountName": "ai-service",
+        "roleARN": "arn:aws:iam::347161580747:role/sagomungchi-demo-ai-asset-s3-role"
+      },
+      {
+        "namespace": "app",
+        "serviceAccountName": "learning-service",
+        "roleARN": "arn:aws:iam::347161580747:role/sagomungchi-demo-learning-asset-s3-role"
       }
     ]
   },

@@ -782,6 +782,8 @@ backend/report-service/
 | RabbitMQ·Redis | `app` 전체, KEDA(RabbitMQ), Prometheus | - |
 
   - 전 Pod 공통 egress: kube-dns(53), OTel Collector·Langfuse(`observability`)
+  - AWS 권한을 쓰는 Pod(scoring·report·설명 sLLM, 테마 자산 ai·learning #652)는 Pod Identity agent(`169.254.170.23:80`) egress를 둔다. 자기 정책으로 egress가 격리돼 있어 이것이 없으면 자격 증명을 못 받는다
+  - 기본 거부는 namespace 단위 정책이다. app은 core release가 만드는 `app-default-deny` 하나(release 둘에 켜면 Helm 소유권 충돌, #657). 앱·migration Job은 chart 정책으로 이미 격리돼 영향이 없고, 자기 정책이 없는 일회성 Pod만 막힌다. 일회성 DB Pod·배포 확인 Pod는 전용 정책을 둔다(prod `app-oneoff-db-network.json`·`app-check-pods-network.json`, [infra 보고서 9.8](../report/infra.md#98-prod-테마-자산-버킷과-네임스페이스-기본-거부-준비-652657-2026-11-16))
   - report-api·report-worker는 라벨이 달라 허용 대상에 각각 명시
   - core 내부 API 호출(위 core ingress 허용의 근거, 경로는 [API 명세서](api-spec.md) 4장)
 
