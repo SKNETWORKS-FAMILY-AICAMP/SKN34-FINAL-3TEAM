@@ -11,7 +11,7 @@ import type { LookShop } from './lookShop.ts'
 
 /**
  * 뭉치 친구들(/student/friends, #648 시안 Friends, URL은 user-flow 7장 기준안). 왼쪽 큰 캐릭터 + 오른쪽 12장 카드.
- * 서버에 저장되는 5종만 고르고 해금하며(꾸미기 캐릭터 칸과 같은 요청·확인 단계), 나머지 7종은 "곧 만나요"로 잠근다.
+ * 12종 모두 고르고 해금한다(꾸미기 캐릭터 칸과 같은 요청·확인 단계, core 12종 저장 #697 뒤 #698).
  */
 export function StudentFriends({ child }: { child: Child }) {
   return <FriendsPage key={child.id} child={child} />
@@ -25,17 +25,16 @@ function FriendsPage({ child }: { child: Child }) {
   const status = (id: FriendId) => friendStatus(shop, id)
   const current = friendById(selected)
   const st = status(selected)
-  const ring = st.kind === 'using' ? '함께 다니는 중 · ' : st.kind === 'owned' ? '가지고 있어요 · ' : st.kind === 'soon' ? '곧 만나요 · ' : '새 친구를 만나 볼까? · '
+  const ring = st.kind === 'using' ? '함께 다니는 중 · ' : st.kind === 'owned' ? '가지고 있어요 · ' : '새 친구를 만나 볼까? · '
   const c = current.companion
   const action = () => {
-    if (!c) return
     if (st.kind === 'owned') shop.choose({ companion: c })
     else if (st.kind === 'locked' && shop.onSale(companionKey(c))) shop.startUnlock(companionKey(c))
   }
-  const label = st.kind === 'using' ? '함께 다니는 중' : st.kind === 'owned' ? '함께 다니기' : st.kind === 'soon' ? '곧 만나요'
-    : c && shop.onSale(companionKey(c)) ? `${shop.price(companionKey(c)).toLocaleString('ko-KR')} 포인트로 만나기` : '지금은 만날 수 없어요'
+  const label = st.kind === 'using' ? '함께 다니는 중' : st.kind === 'owned' ? '함께 다니기'
+    : shop.onSale(companionKey(c)) ? `${shop.price(companionKey(c)).toLocaleString('ko-KR')} 포인트로 만나기` : '지금은 만날 수 없어요'
   const actionable = (st.kind === 'owned' && !shop.choosingBlocked) ||
-    (st.kind === 'locked' && !!c && shop.onSale(companionKey(c)) && !shop.busy && shop.confirming === null && shop.balance !== undefined)
+    (st.kind === 'locked' && shop.onSale(companionKey(c)) && !shop.busy && shop.confirming === null && shop.balance !== undefined)
   return (
     <main className="st-paper st-sheet st-friends-page" aria-busy={shop.busy}>
       <section className="st-friends-left" aria-label="고른 친구">
@@ -81,10 +80,9 @@ function FriendsPage({ child }: { child: Child }) {
   )
 }
 
-/** 친구 하나의 상태: 함께 다니는 중·가지고 있어요·포인트(잠김)·곧 만나요(서버 값 없음) */
-function friendStatus(shop: LookShop, id: FriendId): { kind: 'using' | 'owned' | 'locked' | 'soon'; label: string } {
+/** 친구 하나의 상태: 함께 다니는 중·가지고 있어요·포인트(잠김) */
+function friendStatus(shop: LookShop, id: FriendId): { kind: 'using' | 'owned' | 'locked'; label: string } {
   const c = friendById(id).companion
-  if (!c) return { kind: 'soon', label: '곧 만나요' }
   if (c === shop.companion) return { kind: 'using', label: '함께 다니는 중' }
   if (!shop.locked(companionKey(c))) return { kind: 'owned', label: '가지고 있어요' }
   return { kind: 'locked', label: shop.catalog?.some((i) => i.itemKey === companionKey(c)) ? `${shop.price(companionKey(c)).toLocaleString('ko-KR')} 포인트` : '해금 확인 필요' }

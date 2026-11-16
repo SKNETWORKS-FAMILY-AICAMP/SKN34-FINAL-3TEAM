@@ -422,7 +422,7 @@ export function weeklyThemeFor(studentId: string, missions: Mission[], grade: nu
 const friends: { nickname: string; companion: CompanionId; equipped?: MockPost['equipped']; answer: (title: string) => string }[] = [
   { nickname: '하늘별', companion: 'tori', equipped: { HAT: 'HAT_ACORN' }, answer: (t) => `${t}에서 나는 먼저 무엇이 달라졌는지 찾았어. 왜냐하면 달라진 곳에 까닭이 숨어 있을 것 같았거든.` },
   { nickname: '초록콩', companion: 'kongi', equipped: { OUTFIT: 'OUTFIT_RAIN', ACCESSORY: 'ACC_LENS' }, answer: () => '나는 다른 방법도 생각해 봤어. 그래서 두 가지를 비교하니까 하나가 더 알맞아 보였어.' },
-  { nickname: '구름빵', companion: 'monggeul', answer: () => '처음엔 잘 모르겠었는데 그림을 다시 보니 순서가 보였어. 그 순서대로 쓰면 이해가 돼.' },
+  { nickname: '구름빵', companion: 'snow', answer: () => '처음엔 잘 모르겠었는데 그림을 다시 보니 순서가 보였어. 그 순서대로 쓰면 이해가 돼.' },
 ]
 export function seedFriendPosts(mission: Pick<Mission, 'id' | 'title'>) {
   if (retentionState.posts.some((p) => p.missionId === mission.id && p.studentId.startsWith('friend-'))) return

@@ -120,7 +120,7 @@ const anchorsFromCanvas = (id: FriendId, [x, y, s]: [number, number, number]): W
 export const FRIEND_WEAR_ANCHORS = Object.fromEntries(
   FRIENDS.map((f) => [f.id, anchorsFromCanvas(f.id, CANVAS_HAT[f.id])]),
 ) as Record<FriendId, WearAnchors>
-/** 서버 값(캐릭터 5종) 기준 기준점: 대응하는 친구(솜뭉치·솔방울뭉치·모래뭉치·이끼뭉치·구름뭉치)의 값 */
+/** 서버 값(캐릭터 12종, #697) 기준 기준점: 대응하는 친구의 값(예전 5종은 솜뭉치·솔방울뭉치·모래뭉치·이끼뭉치·구름뭉치, 새 7종은 같은 이름 친구) */
 export const WEAR_ANCHORS = Object.fromEntries(
   COMPANIONS.map((c) => [c.id, FRIEND_WEAR_ANCHORS[companionToFriend(c.id)]]),
 ) as Record<CompanionId, WearAnchors>

@@ -23,7 +23,7 @@ test('착용한 캐릭터 칸만 목록의 그림 키로 바꾸고, 목록이 �
   assert.deepEqual(wornAssets(undefined, items), {})
 })
 
-test('캐릭터 5종 모두 착용 칸마다 기준점이 있다', () => {
+test('캐릭터 12종 모두 착용 칸마다 기준점이 있다', () => {
   for (const c of COMPANIONS) for (const slot of WEAR_SLOTS) {
     const a = WEAR_ANCHORS[c.id][slot]
     assert.ok(Number.isFinite(a.x) && Number.isFinite(a.y) && a.scale > 0, `${c.id} ${slot}`)

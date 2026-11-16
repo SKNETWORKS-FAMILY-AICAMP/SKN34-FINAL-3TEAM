@@ -87,16 +87,18 @@ test('내 공책 기록 상세는 답 버전 카드와 학생 말로 보이고 �
   await expect(page).toHaveURL(/\/student\/attempts\/new-/)
 })
 
-test('홈 내 포인트 카드는 뭉치 친구들로 가고, 서버 값이 없는 7종은 곧 만나요로 잠근다 @responsive', async ({ page }) => {
+test('홈 내 포인트 카드는 뭉치 친구들로 가고, 12종 모두 만날 수 있다(곧 만나요 없음, #698) @responsive', async ({ page }) => {
   await student(page)
   await page.getByRole('button', { name: /내 포인트/ }).first().click()
   await expect(page).toHaveURL(/\/student\/friends/)
   await expect(page.getByRole('heading', { name: '뭉치 친구들', exact: true })).toBeVisible()
   const cards = page.getByRole('region', { name: '친구 목록' }).getByRole('button')
   await expect(cards).toHaveCount(12)
-  await expect(cards.filter({ hasText: '곧 만나요' })).toHaveCount(7)
+  await expect(cards.filter({ hasText: '곧 만나요' })).toHaveCount(0)
   await cards.filter({ hasText: '눈뭉치' }).click()
-  await expect(page.getByRole('button', { name: '곧 만나요', exact: true })).toBeDisabled()
+  // 새 7종도 다른 친구처럼 포인트로 만나기(잠김이면 "N 포인트로 만나기", 해금했으면 "함께 다니기")
+  await expect(page.getByRole('button', { name: /포인트로 만나기$|^함께 다니기$/ })).toBeVisible()
+  await expect(page.getByText('곧 만나요')).toHaveCount(0)
   await expect(cards.filter({ hasText: '솜뭉치' })).toContainText('함께 다니는 중')
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
