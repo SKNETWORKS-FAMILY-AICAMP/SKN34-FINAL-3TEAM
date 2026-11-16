@@ -148,7 +148,7 @@
 5. **자동 리포트**
    - core 스케줄러(ShedLock)가 자녀별 report_job + Outbox → `report.generate`
    - report가 learning 기록 조회 → 코드 계산 → ai 서술·저녁 질문 → 숫자·인용 대조 → 렌더링·S3 저장
-   - 주간 리포트의 프리미엄·원문 공개 자녀는 서술 뒤 M2 점수가 있는 대표 답변 최대 3개를 ai에 설명 요청(ai → 설명 sLLM 서버, 검사 통과분만 `EXPLANATION` 항목). 실패·시간 초과·모델 미활성은 설명 없이 진행 (FN-RPT-09, P16, #479)
+   - 주간 리포트의 프리미엄·원문 공개 자녀는 서술 뒤 M2 점수가 있는 대표 답변 최대 3개를 ai에 설명 요청(ai → 설명 sLLM 서버, 검사 통과분만 `EXPLANATION` 항목). 실패·시간 초과·모델 미활성은 설명 없이 진행 (FN-RPT-09, P16, #479). M2 점수는 ai `M2_CROSS_CHECK_ENABLED=true`(기본 false)와 기준표 M2 입력(`keywords`·`essayType`)이 있을 때만 생기므로, 둘 중 하나라도 없으면 설명 대상이 없음(FN-RPT-09 설명 조건, #661)
    - `report.completed` → core 알림
 
 2026-11-06 결정(6~9 구현):
