@@ -8,13 +8,15 @@
 
 | 파일 | namespace / release | chart |
 |---|---|---|
-| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. `ai-service.json`의 설명 sLLM 연결(#476·#477: env `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`, egress `sllm-server:8080`)은 미적용 |
+| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. `ai-service.json`의 설명 sLLM 연결(#476·#477: env `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`, egress `sllm-server:8080`)은 미적용. 테마 자산 버킷(#652: ai·learning의 `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`, Pod Identity agent egress)과 core의 app 기본 거부(#657: `namespaceDefaultDeny=true`, `app-default-deny`)도 미적용 |
 | `platform-data.json` | platform / platform-data | `../../charts/platform-data` |
 | `external-secrets.json` | external-secrets / external-secrets | external-secrets/external-secrets 2.14.0 |
 | `aws-load-balancer-controller.json` | kube-system / aws-load-balancer-controller | eks/aws-load-balancer-controller 1.14.1 |
 | `external-secret-resources.json` | app·platform | SecretStore 2개, ExternalSecret 12개. 비밀 값 없이 원격 이름·키만 보존 |
 | `platform-network.json` | platform | 기본 ingress 거부, RabbitMQ·Redis 클라이언트 허용 |
 | `core-alb-network.json` | app | ALB public subnet에서 core:8080 허용 |
+| `app-oneoff-db-network.json` | app | 일회성 DB Pod(`rds-bootstrap` Job, `demo-db-oneoff`)의 DNS·RDS 5432 egress. app 기본 거부(#657) 때문에 필요, 미적용 |
+| `app-check-pods-network.json` | app | 배포 확인 Pod(`deployment-check` 라벨)의 core·learning·scoring egress(#657), 미적용 |
 | `karpenter.json` | kube-system / karpenter | oci://public.ecr.aws/karpenter/karpenter 1.15.1 (#211) |
 | `karpenter-nodepool.json` | cluster | EC2NodeClass `application`, NodePool `application-burst`. Karpenter 설치 후 `kubectl apply` (#211) |
 | `sllm-server.json` | app / sllm-server | `../../charts/app-service`. 설명 sLLM(#476). 미적용: KEDA 설치, `sllm-server` ServiceAccount Pod Identity(모델 버킷 읽기), llama.cpp 서버 이미지 ECR 게시·digest, 모델 경로·SHA256(#475) |
@@ -64,7 +66,11 @@ kubectl --kubeconfig $kubeconfig get deployments -n app
 kubectl --kubeconfig $kubeconfig get pods,pvc -n platform
 ```
 
-NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책 변경은 별도 검토 후 `platform-network.json`, `core-alb-network.json`을 적용한다. 현재 app namespace 전체 default-deny 여부와 서비스별 egress 허용 범위는 [누락 점검](../../../../docs/report/infra.md#4-aws-데모-구성-185)을 따른다.
+NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책 변경은 별도 검토 후 `platform-network.json`, `core-alb-network.json`, `app-oneoff-db-network.json`, `app-check-pods-network.json`을 적용한다.
+
+app namespace 기본 거부(#657): `core-service.json`의 `namespaceDefaultDeny=true`가 `app-default-deny`(모든 Pod, 규칙 없음)를 만든다. 같은 이름 객체를 두 release가 가지면 Helm 소유권 충돌이 나므로 **core release에만** 켠다(local과 같음, learning은 false 유지). 앱 Deployment 7개와 migration Job은 이미 자기 정책으로 ingress·egress가 격리돼 있어 동작이 바뀌지 않는다. 새로 막히는 것은 자기 정책이 없는 Pod뿐이다: `kubectl run` 점검 Pod, `rds-bootstrap` Job, `demo-db-oneoff`, 배포 확인 Pod. 앞의 두 manifest를 core 재배포와 함께 적용하고, 그 밖의 일회성 Pod는 이 둘의 라벨을 쓰거나 자기 정책을 먼저 만든다. 판단 근거와 남은 확인은 [infra 보고서 9.8](../../../../docs/report/infra.md#98-prod-테마-자산-버킷과-네임스페이스-기본-거부-준비-652657-2026-11-16).
+
+되돌리기: `core-service.json`의 값을 false로 돌려 core만 재배포하거나, 급하면 `kubectl -n app delete networkpolicy app-default-deny`(다음 core 재배포 때 다시 생김).
 
 ## main 기준 core·웹 재배포 (2026-11-04, #185)
 
@@ -81,7 +87,7 @@ NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책
 
 1. 결제 Secret: Secrets Manager `sagomungchi/demo/app/payment`(공용 문서 테스트 키 `TOSS_TEST_SECRET_KEY`·`TOSS_TEST_MID`와 `PAYMENT_BILLING_ENCRYPTION_KEY`) → ESO 역할 inline 정책 `sagomungchi-demo-external-secrets-payment-read`(작업자 실행) → `external-secret-resources.json`의 `payment-credentials` Ready, 키 3개 동기화.
 2. [V26 사전 점검](../../../aws/check-v26-preconditions.sql): core_app 읽기 전용 Job으로 위반 0건, flyway 25 확인 후 Job 삭제.
-3. migration: `helm template … -f core-service.json -f migrations/core-service.json --show-only templates/migration-job.yaml`을 **`-n app`으로** 적용한다(렌더링 결과에 namespace가 없어 생략하면 kubeconfig 기본 namespace에 생성된다). V25 → V26 성공.
+3. migration: `helm template … -f core-service.json -f migrations/core-service.json --show-only templates/migration-job.yaml`(2026-11-16 이후는 `--show-only templates/migration-networkpolicy.yaml`도 함께, #657)을 **`-n app`으로** 적용한다(렌더링 결과에 namespace가 없어 생략하면 kubeconfig 기본 namespace에 생성된다). V25 → V26 성공.
 4. core: `core-service.json` digest 교체와 결제 키 8개(`payment-credentials`, `optional: true`)·`AUTH_NEW_ACCOUNT_DEMO=true` 추가 → `redeploy-app.ps1` dry-run → `-Apply`. release revision 5, 재시작 0. 보호자 이관(`APP_GUARDIAN_TRANSFER_ENABLED`)은 설정하지 않아 꺼져 있다.
 5. 웹: `npm ci && npm run build` → S3 web 버킷에 assets·정적 파일 먼저, `index.html` 마지막(`no-cache`). 이전 assets는 지우지 않았다.
 
@@ -168,10 +174,10 @@ helm upgrade --install platform-data infrastructure/gitops/charts/platform-data 
 
 core/learning migration 이미지는 [core.Dockerfile](../../migrations/core.Dockerfile)·[learning.Dockerfile](../../migrations/learning.Dockerfile)로 같은 소스 revision에서 빌드한다. 현재 develop의 migration을 과거 배포 digest와 임의 조합하지 않는다. Flyway validate/migrate와 report Alembic upgrade head는 각 DB migration 계정·TLS로 별도 Job에서 실행하고 성공 이력을 확인한 후 앱을 올린다.
 
-prod 앱 values는 `migration.enabled=false`를 유지한다(실제 release와 일치). migration 입력은 [`migrations/`](migrations/)의 덮어쓰기 values이며, 공통 chart의 `migration.extraVolumes`·`extraVolumeMounts`로 `rds-ca`를 마운트하고 migrate Secret·고정 digest를 사용한다. Argo PreSync는 수동 Helm에서 선행을 보장하지 않으므로 Job만 렌더링해 먼저 적용한다.
+prod 앱 values는 `migration.enabled=false`를 유지한다(실제 release와 일치). migration 입력은 [`migrations/`](migrations/)의 덮어쓰기 values이며, 공통 chart의 `migration.extraVolumes`·`extraVolumeMounts`로 `rds-ca`를 마운트하고 migrate Secret·고정 digest를 사용한다. Argo PreSync는 수동 Helm에서 선행을 보장하지 않으므로 Job과 그 NetworkPolicy(`<앱>-migration`, DNS·RDS 5432 egress, `migrations/`의 `networkPolicy.migrationEgress`)만 렌더링해 먼저 적용한다. app 기본 거부(#657) 아래에서는 정책 없이 Job만 적용하면 DNS부터 막힌다.
 
 ```powershell
-helm template core-service infrastructure/gitops/charts/app-service -n app -f "$envDir/core-service.json" -f "$envDir/migrations/core-service.json" --show-only templates/migration-job.yaml | kubectl --kubeconfig $kubeconfig apply -f -
+helm template core-service infrastructure/gitops/charts/app-service -n app -f "$envDir/core-service.json" -f "$envDir/migrations/core-service.json" --show-only templates/migration-job.yaml --show-only templates/migration-networkpolicy.yaml | kubectl --kubeconfig $kubeconfig apply -f -
 kubectl --kubeconfig $kubeconfig -n app wait --for=condition=complete job/core-service-migrate-b67d8a462b6b --timeout=600s
 ```
 

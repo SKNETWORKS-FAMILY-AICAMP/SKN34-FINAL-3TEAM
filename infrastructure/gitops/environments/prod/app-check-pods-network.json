@@ -1,0 +1,106 @@
+{
+  "apiVersion": "networking.k8s.io/v1",
+  "kind": "NetworkPolicy",
+  "metadata": {
+    "name": "app-deployment-checks",
+    "namespace": "app"
+  },
+  "spec": {
+    "podSelector": {
+      "matchExpressions": [
+        {
+          "key": "deployment-check",
+          "operator": "In",
+          "values": [
+            "core-learning-health",
+            "scoring-check"
+          ]
+        }
+      ]
+    },
+    "policyTypes": [
+      "Ingress",
+      "Egress"
+    ],
+    "ingress": [],
+    "egress": [
+      {
+        "to": [
+          {
+            "namespaceSelector": {
+              "matchLabels": {
+                "kubernetes.io/metadata.name": "kube-system"
+              }
+            },
+            "podSelector": {
+              "matchLabels": {
+                "k8s-app": "kube-dns"
+              }
+            }
+          }
+        ],
+        "ports": [
+          {
+            "protocol": "UDP",
+            "port": 53
+          },
+          {
+            "protocol": "TCP",
+            "port": 53
+          }
+        ]
+      },
+      {
+        "to": [
+          {
+            "podSelector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "core-service"
+              }
+            }
+          }
+        ],
+        "ports": [
+          {
+            "protocol": "TCP",
+            "port": 8080
+          }
+        ]
+      },
+      {
+        "to": [
+          {
+            "podSelector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "learning-service"
+              }
+            }
+          }
+        ],
+        "ports": [
+          {
+            "protocol": "TCP",
+            "port": 8081
+          }
+        ]
+      },
+      {
+        "to": [
+          {
+            "podSelector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "scoring-service"
+              }
+            }
+          }
+        ],
+        "ports": [
+          {
+            "protocol": "TCP",
+            "port": 8001
+          }
+        ]
+      }
+    ]
+  }
+}

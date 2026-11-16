@@ -59,7 +59,7 @@ jobs:
       # 그래서 chart lint는 실제 배포 조합(환경 values)으로 하고, 어떤 환경도 쓰지 않는 chart만 기본 values로 한다.
       # Argo CD 정의와 같은 조합: 환경 파일과 이름이 같은 chart(observability·platform-data)는
       # 그 chart로, 나머지는 ApplicationSet처럼 파일 이름을 릴리스로 app-service chart에 넘긴다.
-      # prod(#509)는 JSON이다. 저장소 chart values는 같은 규칙으로 렌더링하고(migrations/ 덮어쓰기는 Job까지),
+      # prod(#509)는 JSON이다. 저장소 chart values는 같은 규칙으로 렌더링하고(migrations/ 덮어쓰기는 Job과 그 NetworkPolicy, #657),
       # kind가 있는 manifest(NodePool·NetworkPolicy·ExternalSecret)는 그대로 kubeconform에 넘긴다.
       # 외부 chart(ESO·LB Controller·Karpenter) values는 chart를 받아야 하므로 검사하지 않는다.
       - name: chart·환경별 helm lint·template 렌더링
@@ -89,7 +89,7 @@ jobs:
             if [ -z "$overlay" ]; then
               helm template "$release" "charts/$chart" --namespace "$namespace"                 --kube-version "$KUBERNETES_VERSION" "$@" > "$out/$env/$release.yaml"
             else
-              helm template "$release" "charts/$chart" --namespace "$namespace"                 --kube-version "$KUBERNETES_VERSION" "$@" --show-only templates/migration-job.yaml                 > "$out/$env/$release.migration.yaml"
+              helm template "$release" "charts/$chart" --namespace "$namespace"                 --kube-version "$KUBERNETES_VERSION" "$@" --show-only templates/migration-job.yaml                 --show-only templates/migration-networkpolicy.yaml > "$out/$env/$release.migration.yaml"
             fi
             echo "::endgroup::"
           }
