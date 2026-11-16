@@ -359,6 +359,26 @@ paths:
       responses:
         '204': {description: 반응 취소}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /community-posts/{postId}/room:
+    get:
+      tags: [Community]
+      operationId: getFriendRoom
+      summary: 친구 방 구경 (#708, FN-RET-14). 친구 생각 글 번호로 작성자의 방을 읽기 전용으로. 학생만, Cache-Control no-store
+      description: >-
+        친구 생각 목록과 같은 조건에서만 보인다. 처리 순서: 학생 세션 확인(학생 외 403 FORBIDDEN, learning 미호출) → core 신고 숨김 404 →
+        learning 작성자 확인(#707, 403 COMMUNITY_LOCKED·COMMUNITY_LOCKED_UNTIL_ENDING, 404 COMMUNITY_POST_NOT_FOUND, 409 COMMUNITY_OWN_POST 그대로 전달,
+        그 밖 503 COMMUNITY_UNAVAILABLE) → 작성자 공개 판정(공개 끔·현재 보호자 동의 없음·비활성이면 404 COMMUNITY_POST_NOT_FOUND, 이유 구분 없음) →
+        착용·바닥 그림 키 → 방 소품 놓은 자리 → 걸린 액자가 있으면 작성자 범위로 learning 앨범(실패 502 LEARNING_UNAVAILABLE·LEARNING_CONTRACT_INVALID).
+        학생 ID·postId·themeId·weekStart·attemptId·포인트·해금 목록은 넣지 않는다(회차 상세를 열 수 없음).
+      parameters:
+      - {name: postId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 친구 방
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FriendRoom'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/points:
     get:
       tags: [Students]
@@ -9035,6 +9055,66 @@ components:
             theme: {$ref: '#/components/schemas/StudentLookTheme'}
             companion: {$ref: '#/components/schemas/StudentLookCompanion'}
             equipped: {$ref: '#/components/schemas/CharacterLookEquipped'}
+    FriendRoom:
+      type: object
+      additionalProperties: false
+      required: [nickname, look, room]
+      description: 친구 방 구경(#708). 착용 값은 그림 키(look_item.asset_key) 또는 null(기본 모습·기본 스킨·기본 벽지), 판매 중단 아이템도 그대로. 학생 ID·회차 키 없음
+      properties:
+        nickname: {type: string}
+        look:
+          type: object
+          additionalProperties: false
+          required: [theme, companion, equipped]
+          properties:
+            theme: {$ref: '#/components/schemas/StudentLookTheme'}
+            companion: {$ref: '#/components/schemas/StudentLookCompanion'}
+            equipped:
+              type: object
+              additionalProperties: false
+              required: [HAT, OUTFIT, ACCESSORY]
+              properties:
+                HAT: {type: ['string', 'null']}
+                OUTFIT: {type: ['string', 'null']}
+                ACCESSORY: {type: ['string', 'null']}
+        room:
+          type: object
+          additionalProperties: false
+          required: [wallpaper, floor, furniture, decor, frames]
+          properties:
+            wallpaper: {type: ['string', 'null'], description: 벽지(BACKGROUND) 그림 키}
+            floor: {type: ['string', 'null'], description: '바닥(FLOOR) 그림 키(#704). null이면 기본 바닥(벽지 세트의 바닥)'}
+            furniture:
+              type: object
+              additionalProperties: false
+              required: [DESK, WALL, WARDROBE]
+              properties:
+                DESK: {type: ['string', 'null']}
+                WALL: {type: ['string', 'null']}
+                WARDROBE: {type: ['string', 'null']}
+            decor:
+              type: array
+              maxItems: 8
+              description: 방 소품 놓은 자리(#704, 자리 번호순, 빈 자리 없음). 아이템 코드·이름·보유 개수 없음
+              items:
+                type: object
+                additionalProperties: false
+                required: [spotNo, assetKey]
+                properties:
+                  spotNo: {type: integer, minimum: 1, maximum: 8}
+                  assetKey: {type: string}
+            frames:
+              type: array
+              maxItems: 6
+              description: 추억의 벽 액자(번호순, 빈 슬롯 없음). 회차 키 없음
+              items:
+                type: object
+                additionalProperties: false
+                required: [slotNo, title, imageUrl]
+                properties:
+                  slotNo: {type: integer, minimum: 1, maximum: 6}
+                  title: {type: string}
+                  imageUrl: {type: ['string', 'null']}
     CommunityPost:
       type: object
       additionalProperties: false

@@ -160,13 +160,22 @@ class LookUnlockService(private val mapper: RewardMapper, private val rewards: R
 
     /**
      * 여러 학생의 슬롯별 착용 코드(커뮤니티 작성자 `look`, #389). 학생마다 캐릭터 네 슬롯만 담는다.
-     * 가구 스킨은 본인 방에서만 보이므로 다른 학생에게 내보내지 않는다(#555).
+     * 커뮤니티 목록에는 캐릭터 네 슬롯만 보내고, 가구 스킨까지 보이는 친구 방 구경은 [equipmentAssets]로 따로 읽는다(#708).
      */
     fun equipmentOf(studentIds: Set<UUID>): Map<UUID, Map<String, String?>> {
         if (studentIds.isEmpty()) return emptyMap()
         val worn = mapper.equipmentOf(studentIds).groupBy({ UUID.fromString(it["student_id"] as String) }) {
             it["slot"] as String to it["code"] as String }
         return studentIds.associateWith { id -> worn[id].orEmpty().toMap().let { slots -> LookCatalog.CHARACTER_SLOTS.associateWith { slots[it] } } }
+    }
+
+    /**
+     * 한 학생의 착용 칸(캐릭터 네 칸·가구 세 칸·바닥, #704) 그림 키(`look_item.asset_key`, 없으면 null). 친구 방 구경(#708)용이다.
+     * 판매 중단 아이템도 그대로 준다: 열람자의 꾸미기 목록에는 남이 해금한 판매 중단 아이템이 없어 코드로는 그림을 찾을 수 없다.
+     */
+    fun equipmentAssets(studentId: UUID): Map<String, String?> {
+        val worn = mapper.equipmentAssets(studentId).associate { it["slot"] as String to it["asset_key"] as String }
+        return LookCatalog.EQUIP_SLOTS.associateWith { worn[it] }
     }
 
     private fun notFound() = BusinessException(HttpStatus.NOT_FOUND, "LOOK_ITEM_NOT_FOUND", "없는 꾸미기 항목입니다.")

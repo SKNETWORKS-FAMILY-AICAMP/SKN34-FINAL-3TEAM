@@ -1340,6 +1340,11 @@ classDiagram
     +react(postId, reaction)
     +unreact(postId, reaction)
     +childPosts(childId) List
+    +friendRoom(postId) FriendRoom
+  }
+  class FriendRoomService {
+    <<service>>
+    +room(postId) FriendRoom
   }
   class CommunityService {
     <<service>>
@@ -1359,6 +1364,7 @@ classDiagram
     +react(postId, studentId, reaction) ReactionResult
     +setVisibility(studentId, visible, reason)
     +moderate(postId, status, errorReportId)
+    +postAuthor(postId, viewerId, viewerUser) UUID
   }
   class RewardController {
     <<controller>>
@@ -1381,6 +1387,7 @@ classDiagram
     +purchase(itemKey, idempotencyKey) DecorPurchaseResult
     +requireUnlocked(studentId, theme, companion)
     +replaceEquipment(studentId, equipped)
+    +equipmentAssets(studentId) Map
   }
   class LookItemAdminService {
     <<service>>
@@ -1409,6 +1416,13 @@ classDiagram
   CommunityController --> RewardService : react 성공 시 적립
   CommunityService --> CommunityClient
   CommunityService --> RewardService : 공유 성공 시 적립
+  CommunityController --> FriendRoomService
+  FriendRoomService --> CommunityRepository : 신고 숨김
+  FriendRoomService --> CommunityClient : 작성자 찾기·열람 검사
+  FriendRoomService --> CommunityAuthorMapper : 작성자 공개 판정·별명
+  FriendRoomService --> LookUnlockService : 착용 그림 키
+  FriendRoomService --> RoomFrameSlotService : 액자 그림·제목
+  FriendRoomService --> RoomDecorService : 방 소품 놓은 자리
   RewardController --> RewardService
   RewardController --> LookUnlockService
   RewardController --> LookItemAdminService
@@ -1421,6 +1435,7 @@ classDiagram
 
 - #389 구현: `RewardService.earn`이 적립 유일 진입점(`REQUIRES_NEW`, 적립하지 않은 이유는 `EarnOutcome`으로 반환, 예외 없음). 저장소는 MyBatis `RewardMapper` 하나이고 위 엔티티·저장소 상자는 설계 단위다. 아래 사건 연결도 #389 후속 PR로 구현했다: `ParticipationRewardService`(사건별 `earn` 호출, 어떤 실패도 던지지 않음)를 `LearningProxyService.reflection·weeklyTheme·reviewViewed`와 `CommunityService.react`가 부른다. 커뮤니티 작성자 `look.equipped`는 `CommunityAuthorMapper`가 `LookUnlockService.equipmentOf`로 채운다
 - 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.earn(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 구현은 `LearningProxyService.reflection`이 learning 저장 뒤 `ParticipationRewardService`(적립)·`CommunityService.shareCompleted`(공유)를 차례로 호출한다. 다른 기능 service 호출이라 의존 규칙(아키텍처 2.2)에 맞고, core의 다른 다기능 흐름과 같이 별도 `facade` 없이 service에서 조합한다(#422). `LearningController`는 `LearningProxyService`만 부른다
+- 친구 방 구경(#708): `FriendRoomService.room`이 학생 세션 확인 → `CommunityRepository.reportHidden`(404) → `CommunityClient.postAuthor`(learning #707, 오류 그대로 전달) → `CommunityAuthorMapper.toAuthors`(없으면 404) → `LookUnlockService.equipmentAssets`(착용 여덟 칸 그림 키, 바닥 포함·판매 중단 포함) → `RoomDecorService.friendSpots`(방 소품 놓은 자리, 그림 키만, #704) → `RoomFrameSlotService.friendFrames`(작성자 범위로 learning 앨범) 순서로 조합한다. 트랜잭션 없이 읽기만 해 learning을 기다리는 동안 DB 잠금이 없다. 응답에 학생 ID·회차 키를 넣지 않는다. 커뮤니티 목록 `look.equipped`(`equipmentOf`, 캐릭터 네 슬롯 아이템 코드)는 그대로다
 - #704 바닥·방 소품: 바닥 `FLOOR`는 `LookCatalog.EQUIP_SLOTS`(착용 슬롯)에 들어가 해금·착용 클래스가 그대로다. 방 소품 `DECOR`는 `ITEM_SLOTS`(관리자 등록)에만 있고 `LookUnlockService.purchase`가 해금과 같은 잠금·원장·멱등으로 여러 번 산다(`unlock`은 방 소품을 422로 거절). 목록 `catalog`가 보유 개수 `ownedCount`·등록일 `createdAt`을 채운다. `RewardService.deleteStudent`가 원장보다 먼저 보유 행을 지운다
 - `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
@@ -1460,6 +1475,7 @@ classDiagram
     <<service>>
     +slots(studentId) List
     +replace(studentId, slots) List
+    +friendFrames(studentId) List
     +deleteStudent(studentId)
   }
   class MemoryUsageService {
@@ -1498,6 +1514,7 @@ classDiagram
 - `LearningMemoryClient`는 `_common/client/LearningClient` 전송을 쓰되 검색·설명 경로가 별도 회로 `learning-memory` 하나를 함께 쓴다(검색 30초·설명 45초, 아키텍처 1.3, #566)
 - 학생 삭제 확정의 `clear`가 `FrameSlotService.deleteStudent`·`MemoryUsageService.deleteStudent`도 부름(P09)
 - #555 구현(core V47): 위 `RoomController`·`FrameSlotService`는 `room` 패키지의 `RoomController`·`RoomFrameSlotService`(MyBatis `RoomFrameSlotMapper`)다. 보유 확인·제목 조회는 설계의 `LearningMemoryClient` 대신 `room/client/LearningFrameClient`가 맡는다: learning `frames/ownership`·앨범 목록은 ai를 부르지 않는 DB 조회라 일반 `learning-json` 서킷의 `LearningClient`를 쓰고, 추억 검색·설명의 `learning-memory` 서킷과 나눈다. 삭제는 `StudentLookService.clear`(학생 삭제 확정 트랜잭션)가 `RoomFrameSlotService.deleteStudent`를 부른다. 가구 스킨은 `LookCatalog.FURNITURE_SLOTS`를 더했을 뿐 해금·착용 클래스는 그대로이고, `LookUnlockService.replaceEquipment`가 보낸 슬롯만 바꾸도록 바뀌었다
+- #708 구현: `RoomFrameSlotService.friendFrames`는 다른 학생(친구)의 슬롯을 `LearningFrameClient.albumFramesOf`로 채운다. 요청 사용자(열람자) 범위가 아니라 친구 범위(`X-Student-Scope` = 친구, `X-User-Role: SYSTEM`)로 잠깐 바꿔 부르고, 결과에는 `slotNo`·제목·그림만 둔다(회차 키 없음). 걸린 액자가 없으면 learning을 부르지 않는다
 - #704 구현(core V50): `RoomDecorService`(MyBatis `RoomDecorMapper`)가 방 소품 놓은 자리를 조회·전체 교체한다. 학생 행 `FOR NO KEY UPDATE` 뒤 보유 개수(`student_room_decor`)를 읽어 넘는 배치를 422로 거절하고, learning을 부르지 않아 트랜잭션 하나로 끝난다. 학생 삭제 확정의 `StudentLookService.clear`가 `RoomDecorService.deleteStudent`도 부른다
 - #560 구현: 앨범 3경로는 `MemoryController`→`MemoryProxyService.album`·`albumDetail`·`albumSeen`→`LearningMemoryClient`. 클라이언트의 앨범 메서드는 검색·설명용 `learning-memory`가 아니라 주입한 일반 `LearningClient`(`learning-json`)로 보낸다. 목록 `displayed`는 `RoomFrameSlotService.displayedFrames`(저장된 슬롯의 회차 키, learning 미호출)로 채운다
 

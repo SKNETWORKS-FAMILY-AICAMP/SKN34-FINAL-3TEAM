@@ -376,7 +376,7 @@ core V47 `V47__room_furniture_skins_and_frame_slots.sql`로 가구 슬롯 CHECK 
 | 액자 슬롯 수 | 기준안대로 6개(`slot_no` 1~6 CHECK) | 설계 문서 전부가 쓰는 값 |
 | 슬롯 조회의 제목·그림 | core가 learning 앨범 목록으로 채움(api-spec 2.12 계약 그대로) | 그림은 만료되는 presigned URL이라 core에 저장할 수 없음. web(#556) MSW 목과 계약이 바뀌지 않음. 대신 슬롯이 있으면 조회도 learning에 의존 |
 | `equipped` 변경 방식 | 보낸 슬롯만 교체, 보내지 않은 슬롯은 유지(이전: 보내면 네 슬롯 전체 교체) | 기존 꾸미기 화면이 캐릭터 네 슬롯만 보내도 가구 스킨이 벗겨지지 않고 옷장 화면은 가구 슬롯만 보낼 수 있음. 이전 계약이 네 키를 모두 요구했으므로 캐릭터 슬롯 동작은 같음 |
-| 커뮤니티 작성자 `look` | 캐릭터 네 슬롯만 | 가구는 본인 방에서만 보이며 커뮤니티 응답 모양을 바꾸지 않음 |
+| 커뮤니티 작성자 `look` | 캐릭터 네 슬롯만 | 가구는 본인 방에서만 보이며 커뮤니티 응답 모양을 바꾸지 않음. 2026-11-16 친구 방 구경(20절, #708)에서는 가구 스킨도 보인다. 커뮤니티 목록 응답 모양은 그대로 |
 
 ### 10.2 구현 판단
 
@@ -934,3 +934,36 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 - #697(V49, PR #712)을 먼저 병합하고 그 develop 위에 올렸다. GitOps local 리비전은 `v50`, 기능명세 P22는 #697 개정 뒤에 이 개정을 이어 적었다
 - 병합하면 학생 웹 #705·관리자 웹 #706에 바뀐 계약(칸 `FLOOR`·`DECOR`, `purchase`·`decor-spots` 경로, `ownedCount`·`createdAt`, 오류 `LOOK_DECOR_LIMIT`)을 코멘트로 알린다
 - 친구 방 구경(#708)이 바닥·방 소품을 보여 줄지는 그 이슈에서 정한다
+
+## 20. 친구 방 구경 (core #708·learning #707, 2026-11-16)
+
+학생이 친구 생각(P20) 글에서 그 작성자의 내 방을 읽기 전용으로 본다(사용자 결정 2026-11-16). 새 동의·새 공개 설정 없이 친구 생각과 같은 조건(보호자 `COMMUNITY` 동의 + 작성자 공개 켬)에서만 보이고, 학생 ID는 공개 요청·응답 어디에도 넣지 않는다. 공개 경로는 api-spec 2.9 `GET /community-posts/{postId}/room`, learning 내부 경로는 4.1 `GET /internal/community/posts/{postId}/author`. DB 변경 없음. 웹은 #709.
+
+### 20.1 확정한 결정 (담당자 확인 2026-11-16)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 서비스 경계 | core가 방을 답하고 learning은 작성자 찾기·열람 검사만(새 내부 경로 `/author`) | 기존 SYSTEM 원문 경로(신고 대상 확인·관리자 열람)에 학생 열람 검사를 섞지 않음. 응답이 `{postId, studentId}`뿐이라 답변·미션이 core로 새지 않음 |
+| 공개 경로·찾는 방법 | 기준안대로 `GET /api/v1/community-posts/{postId}/room`, 글 번호로만 찾음 | 학생 ID를 내보내지 않는 친구 생각 응답과 같은 방식 |
+| 막는 규칙 | 새 판정 없이 기존 것을 다시 씀: core 신고 숨김(`reportHidden`) → learning 반응 남기기와 같은 순서(VISIBLE 아님·없음 404, 본인 글 409, 열람자 잠금 403) → `CommunityAuthorMapper.toAuthors`(공개 끔·현재 보호자 동의 없음·비활성·별명 없음이면 404) | 친구 생각 목록에서 빠지는 글이면 방도 안 보이게. 왜 못 보는지는 구분하지 않음(공개 끔·동의 철회를 다른 학생이 알 수 없게) |
+| 착용 값 | 그림 키(`look_item.asset_key`) 또는 null, 판매 중단 아이템도 그대로 | 열람자의 `GET /students/me/look-items`에는 남이 해금한 판매 중단 아이템이 없어 아이템 코드로는 웹이 그림을 찾지 못함 |
+| 응답 모양 | 기준안 `{nickname, look:{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY}}, room:{wallpaper, floor, furniture:{DESK, WALL, WARDROBE}, decor:[{spotNo, assetKey}], frames:[{slotNo, title, imageUrl}]}}` | 캐릭터·방을 나눠 웹이 내 방 그리기를 그대로 쓸 수 있게. 벽지(`BACKGROUND`)·바닥(`FLOOR`)은 방 칸으로 둠 |
+| 바닥·방 소품(#704) | 넣는다(담당자 확인 2026-11-16, #704 병합 뒤). `floor`는 그림 키 또는 null(벽지 세트의 바닥), `decor`는 놓은 자리만 자리 번호순 `{spotNo, assetKey}` | 처음 결정의 "보이는 것"에 바닥·방 소품 놓은 자리가 들어 있음. 아이템 코드·이름·보유 개수는 내보내지 않음(포인트·해금 목록과 같은 이유) |
+| 내보내지 않는 칸 | 학생 ID, `postId`, `themeId`, `weekStart`, `attemptId`, 포인트·해금 목록 | 회차 키가 없어 액자를 눌러도 회차 상세(문제·답·정답)를 열 수 없음(정답 누출 방지). 회차 상세 경로는 어차피 본인 회차만 줌 |
+| 가구 스킨 공개 범위 | 친구 방 구경에서는 보임(10.1 "본인 방에서만" 개정). 커뮤니티 목록 `look.equipped`는 캐릭터 네 슬롯 그대로 | 사용자 결정. 목록 응답 모양·웹을 바꾸지 않음 |
+| 방문 기록·횟수 제한·방문 알림·지표 | 모두 없음 | 친구 생각 목록에도 횟수 제한이 없음. 기록하려면 새 테이블·알림 유형이 필요해 범위가 커짐. 리텐션 지표(NFR-OPS-06)에도 넣지 않음 |
+| 방 신고 | 없음. 글 신고는 친구 생각 카드에서 그대로 | 방에 보이는 것은 별명·관리자 등록 아이템·시스템이 만든 테마 그림·제목뿐 |
+| 12/7 데모 범위 | 팀 확인 필요(이 작업에서 정하지 않음) | |
+
+### 20.2 구현 판단
+
+- learning(#707): `CommunityService.postAuthor`는 `@Transactional(readOnly = true)`로 공유물을 잠그지 않고 읽는다(`react`는 신고 숨김과 차례로 처리하려고 행을 잠그지만 읽기만 하는 확인은 필요 없음). 호출자는 STUDENT 본인(`viewerStudentId` = scope, 아니면 403 `FORBIDDEN`). 숨긴 글이면 본인 글·잠금 검사보다 404가 먼저다(반응 남기기와 같음)
+- core 처리 순서(`FriendRoomService.room`): 학생 세션 → 신고 숨김(learning 미호출) → learning 작성자 확인 → 작성자 공개 판정 → 착용 그림 키 → 액자. 서비스에 트랜잭션이 없어 learning을 기다리는 동안 DB 잠금이 없다(`RoomFrameSlotService`·`CommunityClient`와 같음)
+- 친구 앨범 호출 범위: `LearningFrameClient`는 요청 사용자 컨텍스트의 `X-Student-Scope`를 붙이므로, 친구 액자는 `albumFramesOf`가 `X-User-Role: SYSTEM`·`X-Student-Scope` = 친구로 잠깐 바꿔 부른다(`CommunityClient.acting`과 같은 방식). learning `MemoryController.requireScope`는 범위만 보므로 learning 변경은 없다
+- 오류: learning 작성자 확인의 공개 오류(403 `COMMUNITY_LOCKED`·`COMMUNITY_LOCKED_UNTIL_ENDING`, 404 `COMMUNITY_POST_NOT_FOUND`, 409 `COMMUNITY_OWN_POST`)는 `CommunityClient.checked`로 그대로 전달하고 그 밖은 503 `COMMUNITY_UNAVAILABLE`. 앨범 실패는 내 방과 같게 502 `LEARNING_UNAVAILABLE`·`LEARNING_CONTRACT_INVALID`
+- 착용 그림 키는 `RewardMapper.equipmentAssets`(착용 행 + `look_item.asset_key`, 판매 상태 조건 없음)로 읽어 착용 여덟 칸(바닥 포함)을 모두 채운다. 방 소품은 `RoomDecorService.friendSpots`가 놓은 자리(`room_decor_spot`)를 그림 키로만 바꾼다(짧은 읽기 트랜잭션, learning 호출 전에 끝남). `LookUnlockService.equipmentOf` 주석을 "커뮤니티 목록에는 캐릭터 네 슬롯만, 친구 방 구경은 따로"로 고쳤다
+
+### 20.3 한계·병합 메모
+
+- 바닥·방 소품(#704, PR #718)이 먼저 병합돼 develop을 합친 뒤 `room`에 `floor`·`decor`를 더했다. 결정 기록 절 번호도 #704(19절)·#568(18절) 뒤라 이 절을 20절로 옮겼다
+- core 시험은 learning을 가짜 서버로 둔다. learning #707(PR #711) 병합 뒤 `scripts/tests/test_friend_room_contract.py`가 가짜 서버가 흉내 내는 경로·질의·응답 칸·오류 코드를 learning OpenAPI·컨트롤러와 대조한다

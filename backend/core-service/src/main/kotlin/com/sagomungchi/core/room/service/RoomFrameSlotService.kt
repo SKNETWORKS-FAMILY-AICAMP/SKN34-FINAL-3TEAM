@@ -9,6 +9,7 @@ import com.sagomungchi.core.room.domain.FrameSlot
 import com.sagomungchi.core.room.domain.FrameSlotRules
 import com.sagomungchi.core.room.domain.FrameSlotView
 import com.sagomungchi.core.room.domain.FrameSlots
+import com.sagomungchi.core.room.domain.FriendFrameView
 import com.sagomungchi.core.room.repository.RoomFrameSlotMapper
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -47,6 +48,19 @@ class RoomFrameSlotService(private val mapper: RoomFrameSlotMapper, private val 
             if (frame == null) { log.warn("room frame slot without album frame: slot={}", slot.slotNo); null }
             else FrameSlotView(slot.slotNo, slot.themeId, slot.weekStart, frame.title, frame.imageUrl)
         })
+    }
+
+    /**
+     * 다른 학생(친구 방 구경, #708)의 추억의 벽. 그 학생 범위로 learning 앨범을 불러 제목·그림을 채우고 회차 키는 뺀다.
+     * 걸린 액자가 없으면 learning을 부르지 않고, 앨범에 없는 회차는 [slots]처럼 그리지 않는다. 트랜잭션·잠금 없음
+     */
+    fun friendFrames(studentId: UUID): List<FriendFrameView> {
+        val saved = mapper.slots(studentId)
+        if (saved.isEmpty()) return emptyList()
+        val titles = learning.albumFramesOf(studentId, saved.map { it.key }.toSet())
+        return saved.sortedBy { it.slotNo }.mapNotNull { slot ->
+            titles[slot.key]?.let { FriendFrameView(slot.slotNo, it.title, it.imageUrl) }
+        }
     }
 
     /** 지금 추억의 벽에 걸린 회차(앨범 `displayed`, #560). learning을 부르지 않는다 */

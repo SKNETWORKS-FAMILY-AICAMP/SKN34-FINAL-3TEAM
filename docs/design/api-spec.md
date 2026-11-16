@@ -550,6 +550,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 | PUT | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 남기기(멱등). `reaction`: `NEW_IDEA`·`CLEAR_REASON`·`DIFFERENT_VIEW`·`WANT_MORE`. 본인 글 409 `COMMUNITY_OWN_POST`, 열람 권한 없으면 403 `COMMUNITY_LOCKED`, 신고 숨김·없는 글 404 `COMMUNITY_POST_NOT_FOUND`, 4종 외 400. 성공 204 | RET-03 | 구현(#388) |
 | DELETE | `/community-posts/{postId}/reactions/{reaction}` | 학생 | 반응 취소(멱등, 적립 포인트 회수 없음). 성공 204 | RET-03 | 구현(#388) |
 | GET | `/children/{childId}/community-posts` | 학부모 | 연결·동의가 유효한 자녀의 공유물·상태·받은 반응 수(내 공유물과 같은 모양). 다른 학생 공유물 조회 경로 없음 | RET-02 | 구현(#388) |
+| GET | `/community-posts/{postId}/room` | 학생 | 친구 방 구경(읽기 전용, #708) `{nickname, look:{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY}}, room:{wallpaper, floor, furniture:{DESK, WALL, WARDROBE}, decor:[{spotNo, assetKey}], frames:[{slotNo, title, imageUrl}]}}`. 착용 값은 그림 키(`look_item.asset_key`) 또는 null(기본 모습·기본 스킨·기본 벽지, `floor` null은 벽지 세트의 바닥 #704), 판매 중단 아이템도 그대로. `decor`는 놓은 방 소품 자리만(자리 번호순, 아이템 코드·이름·보유 개수 없음, #704). 친구 생각 목록과 같은 조건에서만 보인다: 작성자 공개 끔·현재 보호자 동의 없음·비활성·신고 숨김·없는 글 404 `COMMUNITY_POST_NOT_FOUND`(이유 구분 없음), 열람자 잠금 403 `COMMUNITY_LOCKED`·`COMMUNITY_LOCKED_UNTIL_ENDING`, 본인 글 409 `COMMUNITY_OWN_POST`. 학생 외 403 `FORBIDDEN`. `Cache-Control: no-store` | RET-14 | 구현(#708) |
 
 - 공유물 생성 API는 없다. 커뮤니티 공개가 켜진 학생의 돌아보기 저장(`POST /attempts/{id}/reflection`, 학습 완료) 성공 후 core가 learning에 공유를 요청한다. 학생·미션당 1개로 그 미션을 처음 마무리한 시도의 마지막 답변만 공유하고(다시 풀기는 공유하지 않음) 메모·판정·되묻기는 넣지 않는다. `answer`는 learning `{inputType, text(입력 틀 칸 이름을 붙인 원문), content(입력 방식별 제출 내용)}`를 그대로 전달한다(#386)
 - 작성자 표시: learning은 학생 ID를 돌려주고 core가 별명·꾸미기(`look`: 테마·캐릭터·착용 아이템 네 슬롯, #389)로 바꾼 뒤 학생 ID를 지워 응답한다. 반응 수는 learning이 주더라도 목록에서 뺀다
@@ -557,6 +558,8 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 - 신고: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId` 추가(유형 5종 그대로). 접수 즉시 공유물 `HIDDEN_REPORT`, 관리자는 기존 `/admin/error-reports`에서 `RESOLVED` + `reviewResult: VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 처리. 같은 공유물의 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`. 신고 행은 신고한 학생의 것(`student_id` = 신고 학생, 작성자 ID는 learning에만), 관리자 상세 `linkedPost`(원문, 열람마다 `SUPPORT_ORIGINAL_VIEW` 감사)
 - 보호자 동의: 기존 `/me/consents`에 문서 종류 `COMMUNITY`(선택, 자녀 단위 `childId`) 추가. 자녀 동의 요청은 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있고, `COMMUNITY`만 보낼 때는 그 자녀의 현재 법정대리인 동의가 있어야 한다(없으면 400). 거부·철회 시 core가 설정을 끄고 공유물을 비공개로 바꾼다(P09 선택 동의). 이관 전 보호자의 옛 동의 철회는 지금 보호자의 설정을 바꾸지 않는다
 - 공개 설정을 끄면 공유물 `HIDDEN_SETTING`, 다시 켜면 `HIDDEN_SETTING`만 `VISIBLE`로 복원(`HIDDEN_REPORT`·`REMOVED` 유지). #289 이관 수락 시 `HIDDEN_SETTING`, 새 보호자가 `COMMUNITY` 동의하고 설정이 켜져 있으면 다시 공개
+- 친구 방 구경(#708, 사용자 결정 2026-11-16) 처리 순서: ① 학생 세션 확인(열람자 = 세션 학생, 학생 외 403, learning 미호출) ② core 신고 숨김이면 404(learning 미호출) ③ learning `GET /internal/community/posts/{postId}/author`(4.1, #707)로 작성자 찾기 + 열람 검사, 오류 코드는 그대로 전달 ④ `CommunityAuthorMapper.toAuthors`에 없으면(공개 끔·현재 보호자 동의 없음·비활성·별명 없음) 404 ⑤ 작성자 착용 여덟 칸(캐릭터 네 칸·가구 세 칸·바닥) 그림 키와 방 소품 놓은 자리(#704) ⑥ 걸린 액자가 있으면 learning 앨범 목록(4.1.4)을 **작성자 범위**로 불러 제목·그림을 채움(걸린 액자가 없으면 learning 앨범 미호출, 앨범에 없는 회차는 뺌). learning 앨범 실패는 내 방과 같게 502 `LEARNING_UNAVAILABLE`·`LEARNING_CONTRACT_INVALID`, 작성자 확인 단계의 learning 장애는 503 `COMMUNITY_UNAVAILABLE`. learning을 기다리는 동안 DB 트랜잭션·잠금을 잡지 않는다
+- 친구 방 응답에 넣지 않는 칸: 학생 ID, `postId`, `themeId`, `weekStart`, `attemptId`, 포인트·해금 목록, 방 소품 아이템 코드·이름·보유 개수. 회차 키가 없어 액자를 눌러도 회차 상세(2.12 `/students/me/album/{themeId}/{weekStart}`, 본인 회차만)를 열 수 없다. 방문 기록·횟수 제한·방문 알림·방 신고는 없다(DB 변경 없음). 커뮤니티 목록 `look.equipped`(아이템 코드, 캐릭터 네 슬롯)는 그대로다
 
 ### 2.10 포인트·꾸미기 (FN-RET-05·06, P21·P22)
 
@@ -615,7 +618,7 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/students/me/room/frame-slots` | 학생 | 추억의 벽 슬롯 `{slots:[{slotNo, themeId, weekStart, title, imageUrl}]}`(빈 슬롯 제외, 번호순). 방 벽지·가구 스킨·캐릭터 착용은 기존 2.10·3.12 응답 사용 | RET-09 | 핵심(#555) |
+| GET | `/students/me/room/frame-slots` | 학생 | 추억의 벽 슬롯 `{slots:[{slotNo, themeId, weekStart, title, imageUrl}]}`(빈 슬롯 제외, 번호순). 방 벽지·가구 스킨·캐릭터 착용은 기존 2.10·3.12 응답 사용. 친구 방 구경은 2.9 `/community-posts/{postId}/room`(#708) | RET-09 | 핵심(#555) |
 | PUT | `/students/me/room/frame-slots` | 학생 | 전체 교체 `{slots:[{slotNo, themeId, weekStart}]}` → 저장된 목록(GET과 같은 모양). `slotNo` 1~6 밖·중복 슬롯·같은 액자 중복·월요일이 아닌 `weekStart`·7개 이상·빈 칸 422 `VALIDATION_FAILED`, 미보유 회차 404 `THEME_FRAME_NOT_FOUND`, 빈 목록은 모두 내림 | RET-09 | 핵심(#555) |
 | GET | `/students/me/room/decor-spots` | 학생 | 놓은 방 소품 `{spots:[{spotNo, itemKey, name, assetKey}]}`(빈 자리 제외, 번호순). 보유 개수는 2.10 `look-items`의 `ownedCount` | RET-09 | 핵심(#704) |
 | PUT | `/students/me/room/decor-spots` | 학생 | 전체 교체 `{spots:[{spotNo, itemKey}]}` → 저장된 목록(GET과 같은 모양). 자리 1~8(종류 구분 없음), 같은 방 소품은 보유 개수만큼 여러 자리. `spotNo` 1~8 밖·같은 자리 두 번·9개 이상·빈 칸·가지지 않은 방 소품(방 소품이 아닌 아이템 포함)·보유 개수보다 많이 놓기 422 `VALIDATION_FAILED`(아무것도 바꾸지 않음), 빈 목록은 모두 치움. 판매 중단돼도 가진 방 소품은 놓을 수 있음. 한 트랜잭션에서 학생 행 `FOR NO KEY UPDATE` 뒤 전체 삭제·삽입(`room_frame_slot`과 같음), 삭제 확정 학생 409 `STUDENT_UNAVAILABLE` | RET-09 | 핵심(#704) |
