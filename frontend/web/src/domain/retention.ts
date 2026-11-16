@@ -191,6 +191,10 @@ export const THEME_DAYS: ThemeDay[] = ['MON', 'TUE', 'WED', 'THU', 'FRI']
 export const DAY_LABELS: Record<ThemeDay, string> = { MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금' }
 export type DayState = 'LOCKED' | 'OPEN' | 'CLOSED'
 export type AttemptContext = 'THEME_DAY' | 'THEME_REVIEW' | 'EXTRA'
+export const isAttemptContext = (v: unknown): v is AttemptContext => v === 'THEME_DAY' || v === 'THEME_REVIEW' || v === 'EXTRA'
+/** 내 공책 탭(#710): 더 풀어 본 문제(`EXTRA`)만 따로, 테마 문제(`THEME_DAY`·`THEME_REVIEW`)와 칸이 없는 기록은 "테마 문제"(기준안 — 기록이 사라지지 않게) */
+export type JournalTab = 'THEME' | 'EXTRA'
+export const journalTab = (r: { context?: AttemptContext }): JournalTab => (r.context === 'EXTRA' ? 'EXTRA' : 'THEME')
 /** 그 주 엔딩(state-diagram 3.2.2, learning #484). 정답을 맞히면 바로, 틀리면 금요일 문제 다시 풀기 마무리 뒤 ENDED. */
 export type ThemeEnding = 'NOT_ENDED' | 'ENDED'
 /** 시작·종료 이야기(api-spec 2.11 story-views). */

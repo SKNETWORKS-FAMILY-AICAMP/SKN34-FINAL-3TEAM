@@ -22,6 +22,8 @@ import {
   themeClosed,
   todayThemeDay,
   wornAssets,
+  journalTab,
+  isAttemptContext,
 } from '../src/domain/retention.ts'
 import { readLook } from '../src/domain/studentLook.ts'
 // 움직임 읽기는 domain/themeMotion.ts 하나(#440에서 retention.ts 중복 정리)
@@ -267,6 +269,14 @@ test('#635 친구 생각 작성자 착용은 아이템 키로 읽고, 아이템 
     { itemKey: 'OUTFIT_RAIN', slot: 'OUTFIT', name: '노란 비옷', pricePoints: 60, assetKey: 'looks/outfit-rain.svg', unlocked: false, onSale: true },
   ] })
   assert.deepEqual(wornAssets(post.author.equipped, items), { OUTFIT: 'looks/outfit-rain.svg' }, '판매 중단 등으로 목록에 없는 모자는 그리지 않음')
+})
+
+test('#710 내 공책 탭: EXTRA만 더 풀어 본 문제, 테마 문제·칸 없음·모르는 값은 테마 문제', () => {
+  assert.equal(journalTab({ context: 'EXTRA' }), 'EXTRA')
+  assert.equal(journalTab({ context: 'THEME_DAY' }), 'THEME')
+  assert.equal(journalTab({ context: 'THEME_REVIEW' }), 'THEME', '주말 되돌아보기 다시 풀기도 테마 문제')
+  assert.equal(journalTab({}), 'THEME', '칸이 없는 기록은 사라지지 않게 테마 문제(기준안)')
+  assert.deepEqual(['THEME_DAY', 'THEME_REVIEW', 'EXTRA', 'DAILY', '', null].map(isAttemptContext), [true, true, true, false, false, false])
 })
 
 test('동의 문서 구분과 리포트 종류 기본값', () => {

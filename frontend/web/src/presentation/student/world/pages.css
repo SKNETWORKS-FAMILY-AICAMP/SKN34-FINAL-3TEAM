@@ -797,6 +797,22 @@
 #class-journal .cj-app-student .st-journal-status[data-done] { background: #ddf6d2; }
 #class-journal .cj-app-student .st-journal-row .st-pill-link { flex: none; align-self: center; }
 #class-journal .cj-app-student .st-journal-page .cj-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 공책 탭(#710): 꾸미기 탭과 같은 알약 모양, 개수는 옅게 */
+#class-journal .cj-app-student .st-journal-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+#class-journal .cj-app-student .st-world .st-journal-tabs button {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-size: 17px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-journal-tabs button[aria-selected='true'] { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-journal-tabs button:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: 3px; }
+#class-journal .cj-app-student .st-journal-count { font-family: 'Gowun Dodum', 'Malgun Gothic', sans-serif; font-weight: 700; opacity: 0.75; }
 #class-journal .cj-app-student .st-journal-page .cj-filters select { min-height: 48px; padding: 0 14px; border: 2px solid var(--sk-line); border-radius: 14px; background: var(--sk-paper); font-family: inherit; font-size: 16px; }
 @media (prefers-reduced-motion: reduce) { #class-journal .cj-app-student .st-journal-open { transition: none; } }
 
