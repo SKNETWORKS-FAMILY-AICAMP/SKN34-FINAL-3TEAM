@@ -6,6 +6,7 @@ import com.sagomungchi.core.guardianship.domain.StudentLook
 import com.sagomungchi.core.guardianship.repository.StudentLearningContextRepository
 import com.sagomungchi.core.reward.service.LookUnlockService
 import com.sagomungchi.core.reward.service.RewardService
+import com.sagomungchi.core.room.service.RoomDecorService
 import com.sagomungchi.core.room.service.RoomFrameSlotService
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -19,7 +20,7 @@ import java.util.UUID
 @Service
 class StudentLookService(private val repository: StudentLearningContextRepository, private val context: StudentLearningContextService,
                          private val unlocks: LookUnlockService, private val rewards: RewardService,
-                         private val frames: RoomFrameSlotService) {
+                         private val frames: RoomFrameSlotService, private val decor: RoomDecorService) {
     @Transactional
     fun own(): StudentLook {
         val studentId = currentStudent()
@@ -44,11 +45,12 @@ class StudentLookService(private val repository: StudentLearningContextRepositor
     }
 
     /**
-     * 학생 삭제 확정 시 기본값으로 되돌리고 포인트·해금·착용과 생활공간 액자 슬롯(#555)도 지운다
+     * 학생 삭제 확정 시 기본값으로 되돌리고 포인트·해금·착용, 생활공간 액자 슬롯(#555)·방 소품 보유·놓은 자리(#704)도 지운다
      * (학생 행은 차단 상태로 남는다, P09). 호출자 트랜잭션 안에서 부른다.
      */
     fun clear(studentId: UUID) {
         repository.clearLook(studentId)
+        decor.deleteStudent(studentId)
         rewards.deleteStudent(studentId)
         frames.deleteStudent(studentId)
     }

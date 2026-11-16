@@ -54,6 +54,17 @@
         INSERT INTO student_look_unlock(student_id,item_key,ledger_id,unlocked_at) VALUES(#{studentId},#{itemKey},#{ledgerId},#{now})
     </insert>
 
+    <!-- #704 방 소품 보유: 구매 1번 = 행 1개 -->
+    <select id="decorCounts" resultType="map" flushCache="true" useCache="false">
+        SELECT i.code AS code,count(*)::int AS owned FROM student_room_decor d JOIN look_item i ON i.id=d.look_item_id
+        WHERE d.student_id=#{studentId} GROUP BY i.code
+    </select>
+    <select id="decorCount" resultType="int" flushCache="true" useCache="false">
+        SELECT count(*)::int FROM student_room_decor WHERE student_id=#{studentId} AND look_item_id=#{itemId}
+    </select>
+    <insert id="insertDecor">
+        INSERT INTO student_room_decor(id,student_id,look_item_id,ledger_id,purchased_at) VALUES(#{id},#{studentId},#{itemId},#{ledgerId},#{now})
+    </insert>
     <select id="equipment" resultType="map" flushCache="true" useCache="false">
         SELECT e.slot AS slot,i.code AS code FROM student_look_equipment e JOIN look_item i ON i.id=e.look_item_id
         WHERE e.student_id=#{studentId}
@@ -111,6 +122,7 @@
     </insert>
 
     <delete id="deleteEquipment">DELETE FROM student_look_equipment WHERE student_id=#{studentId}</delete>
+    <delete id="deleteDecor">DELETE FROM student_room_decor WHERE student_id=#{studentId}</delete>
     <delete id="deleteUnlocks">DELETE FROM student_look_unlock WHERE student_id=#{studentId}</delete>
     <delete id="deleteLedger">DELETE FROM reward_point_ledger WHERE student_id=#{studentId}</delete>
     <delete id="deleteBalance">DELETE FROM reward_point_balance WHERE student_id=#{studentId}</delete>

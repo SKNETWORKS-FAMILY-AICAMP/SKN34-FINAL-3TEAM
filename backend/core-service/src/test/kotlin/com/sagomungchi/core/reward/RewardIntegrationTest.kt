@@ -74,6 +74,15 @@ class RewardIntegrationTest : IntegrationTestSupport() {
     private fun earnMissions(count: Int) = repeat(count) { assertEquals(EarnOutcome.EARNED, rewards.earn(student, RewardEvent.MISSION_COMPLETED, UUID.randomUUID().toString()).outcome) }
     private fun unlock(itemKey: String, key: String = UUID.randomUUID().toString(), expected: Int = 200) =
         call("POST", "/api/v1/students/me/look-items/$itemKey/unlock", studentToken, key = key, expected = expected)
+    private fun purchase(itemKey: String, key: String = UUID.randomUUID().toString(), expected: Int = 200, snapshot: String? = null) =
+        call("POST", "/api/v1/students/me/look-items/$itemKey/purchase", studentToken, key = key, expected = expected, snapshot = snapshot)
+    private fun spots(vararg spots: Pair<Int, String>, expected: Int = 200, snapshot: String? = null) =
+        call("PUT", "/api/v1/students/me/room/decor-spots", studentToken,
+            mapOf("spots" to spots.map { mapOf("spotNo" to it.first, "itemKey" to it.second) }), expected = expected, snapshot = snapshot)
+    private fun stop(code: String) {
+        val id = jdbc.queryForObject("SELECT id FROM look_item WHERE code=?", UUID::class.java, code)
+        call("PATCH", "/api/v1/admin/look-items/$id", contentAdmin().second, mapOf("status" to "STOPPED"))
+    }
     private fun contentAdmin(): Pair<UUID, String> = account(jdbc, "ADMIN", "CONTENT").let { it to tokens.access(session(jdbc, it, "ADMIN")) }
     private fun item(slot: String = "HAT", price: Int = 20): String {
         val code = "TEST_" + UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
@@ -222,7 +231,7 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         assertEquals("LOOK_LOCKED", call("PUT", prefs, studentToken, mapOf("theme" to "sea", "companion" to "mungchi"), expected = 409)["code"].asText())
         assertEquals("LOOK_LOCKED", call("PUT", prefs, studentToken, mapOf("theme" to "lake", "companion" to "kongi"), expected = 409)["code"].asText())
         val saved = call("PUT", prefs, studentToken, mapOf("theme" to "lake", "companion" to "mungchi"))
-        assertEquals(mapOf("HAT" to null, "OUTFIT" to null, "ACCESSORY" to null, "BACKGROUND" to null, "DESK" to null, "WALL" to null, "WARDROBE" to null),
+        assertEquals(mapOf("HAT" to null, "OUTFIT" to null, "ACCESSORY" to null, "BACKGROUND" to null, "DESK" to null, "WALL" to null, "WARDROBE" to null, "FLOOR" to null),
             json.convertValue(saved["equipped"], Map::class.java))
         earnMissions(15)
         unlock("THEME:sea")
@@ -282,6 +291,111 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         assertTrue(desks.any { it["code"].asText() == desk }); assertTrue(desks.all { it["slot"].asText() == "DESK" })
     }
 
+    @Test fun `floor uses the same unlock and equip rules and stays null by default`() {
+        val prefs = "/api/v1/students/me/preferences"
+        val base = mapOf("theme" to "lake", "companion" to "mungchi")
+        assertTrue(call("PUT", prefs, studentToken, base)["equipped"]["FLOOR"].isNull)
+        val floor = item("FLOOR", 30); val hat = item("HAT", 10)
+        assertEquals("LOOK_LOCKED", call("PUT", prefs, studentToken, base + ("equipped" to mapOf("FLOOR" to floor)), expected = 409)["code"].asText())
+        earnMissions(3)
+        val key = UUID.randomUUID().toString()
+        assertEquals(0, unlock(floor, key)["balance"].asInt()); assertEquals(0, unlock(floor, key)["balance"].asInt()); assertEquals(0, unlock(floor)["balance"].asInt())
+        val worn = call("PUT", prefs, studentToken, base + ("equipped" to mapOf("FLOOR" to floor)))
+        assertEquals(floor, worn["equipped"]["FLOOR"].asText())
+        // 다른 칸 아이템을 바닥에 입히기는 422, 캐릭터 슬롯만 보내면 바닥은 그대로
+        call("PUT", prefs, studentToken, base + ("equipped" to mapOf("FLOOR" to hat)), expected = 422)
+        assertEquals(floor, call("PUT", prefs, studentToken, base + ("equipped" to mapOf("HAT" to null)))["equipped"]["FLOOR"].asText())
+        assertTrue(call("PUT", prefs, studentToken, base + ("equipped" to mapOf("FLOOR" to null)))["equipped"]["FLOOR"].isNull)
+    }
+
+    @Test fun `room decor can be bought many times, replays once per key and stops at eight`() {
+        val decor = item("DECOR", 10); val hat = item("HAT", 10)
+        earnMissions(10)
+        val key = UUID.randomUUID().toString()
+        val first = purchase(decor, key, snapshot = "decor-purchase")
+        assertEquals(mapOf("itemKey" to decor, "ownedCount" to 1, "balance" to 90), json.convertValue(first, Map::class.java))
+        assertEquals(first, purchase(decor, key))
+        assertEquals(2, purchase(decor)["ownedCount"].asInt())
+        assertEquals("IDEMPOTENCY_KEY_REUSED", purchase(item("DECOR", 10), key, expected = 422)["code"].asText())
+        // 방 소품은 해금 대신 사기, 방 소품이 아닌 항목은 사기 422
+        assertEquals("VALIDATION_FAILED", unlock(decor, expected = 422)["code"].asText())
+        for (other in listOf(hat, "THEME:forest", "COMPANION:tori"))
+            assertEquals("VALIDATION_FAILED", purchase(other, expected = 422)["code"].asText())
+        assertEquals("LOOK_ITEM_NOT_FOUND", purchase("NO_SUCH_DECOR", expected = 404)["code"].asText())
+        assertEquals("VALIDATION_FAILED", call("POST", "/api/v1/students/me/look-items/$decor/purchase", studentToken, expected = 400)["code"].asText())
+        repeat(6) { purchase(decor) }
+        assertEquals("LOOK_DECOR_LIMIT", purchase(decor, expected = 409)["code"].asText())
+        assertEquals(20, balance())
+        val ledger = jdbc.queryForList("SELECT source_key FROM reward_point_ledger WHERE student_id=? AND event_type='UNLOCK' AND amount=-10", String::class.java, student)
+        assertEquals(8, ledger.size); assertTrue(ledger.all { it.startsWith("$decor:") }); assertTrue("$decor:$key" in ledger)
+        assertEquals(8, jdbc.queryForObject("SELECT count(*) FROM student_room_decor WHERE student_id=?", Int::class.java, student))
+        val expensive = item("DECOR", 30)
+        assertEquals("INSUFFICIENT_POINTS", purchase(expensive, expected = 409)["code"].asText())
+        val stopped = item("DECOR", 5); stop(stopped)
+        assertEquals("LOOK_ITEM_NOT_ON_SALE", purchase(stopped, expected = 409)["code"].asText())
+        assertEquals(20, balance())
+        // 목록: 보유 개수·등록일, 다른 칸은 ownedCount null, 판매 중단 뒤에도 가진 방 소품은 보임
+        stop(decor)
+        val items = call("GET", "/api/v1/students/me/look-items", studentToken, snapshot = "look-items")["items"].associateBy { it["itemKey"].asText() }
+        val owned = items.getValue(decor)
+        assertEquals(8, owned["ownedCount"].asInt()); assertTrue(owned["unlocked"].asBoolean()); assertFalse(owned["onSale"].asBoolean())
+        assertFalse(owned["createdAt"].isNull)
+        assertEquals(0, items.getValue(expensive)["ownedCount"].asInt()); assertFalse(items.getValue(expensive)["unlocked"].asBoolean())
+        assertTrue(items.getValue(hat)["ownedCount"].isNull); assertFalse(items.getValue(hat)["createdAt"].isNull)
+        assertTrue(items.getValue("THEME:lake")["ownedCount"].isNull); assertTrue(items.getValue("THEME:lake")["createdAt"].isNull)
+        assertFalse(stopped in items)
+    }
+
+    @Test fun `concurrent room decor purchases with different keys each deduct once`() {
+        val decor = item("DECOR", 10)
+        earnMissions(3)
+        val pool = Executors.newFixedThreadPool(4); val start = CountDownLatch(1)
+        val results = (1..4).map { pool.submit<Int> {
+            start.await()
+            val req = request(HttpMethod.POST, "/api/v1/students/me/look-items/$decor/purchase")
+                .header("Authorization", "Bearer $studentToken").header("Idempotency-Key", UUID.randomUUID().toString())
+            mvc.perform(req).andReturn().response.status
+        } }
+        start.countDown()
+        assertEquals(listOf(200, 200, 200, 409), results.map { it.get(30, TimeUnit.SECONDS) }.sorted())
+        pool.shutdown()
+        assertEquals(0, balance())
+        assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM student_room_decor WHERE student_id=?", Int::class.java, student))
+    }
+
+    @Test fun `decor spots hold owned room decor only and replace the whole room`() {
+        val path = "/api/v1/students/me/room/decor-spots"
+        assertEquals(0, call("GET", path, studentToken)["spots"].size())
+        val pot = item("DECOR", 10); val lamp = item("DECOR", 10); val hat = item("HAT", 10)
+        earnMissions(5)
+        repeat(2) { purchase(pot) }; purchase(lamp); unlock(hat)
+        val saved = spots(3 to pot, 1 to lamp, 8 to pot, snapshot = "decor-spots")
+        assertEquals(listOf(1, 3, 8), saved["spots"].map { it["spotNo"].asInt() })
+        assertEquals(listOf(lamp, pot, pot), saved["spots"].map { it["itemKey"].asText() })
+        assertEquals("검증 모자", saved["spots"][0]["name"].asText()); assertEquals("look/$lamp.png", saved["spots"][0]["assetKey"].asText())
+        assertEquals(saved, call("GET", path, studentToken))
+        // 보유보다 많이·없는 자리·같은 자리·방 소품 아님·모르는 코드·9개·빈 칸은 422이고 이전 자리 유지
+        val bad = listOf(
+            mapOf("spots" to listOf(1, 2, 3).map { mapOf("spotNo" to it, "itemKey" to pot) }),
+            mapOf("spots" to listOf(mapOf("spotNo" to 9, "itemKey" to lamp))),
+            mapOf("spots" to listOf(mapOf("spotNo" to 0, "itemKey" to lamp))),
+            mapOf("spots" to listOf(mapOf("spotNo" to 2, "itemKey" to lamp), mapOf("spotNo" to 2, "itemKey" to pot))),
+            mapOf("spots" to listOf(mapOf("spotNo" to 2, "itemKey" to hat))),
+            mapOf("spots" to listOf(mapOf("spotNo" to 2, "itemKey" to "NO_SUCH"))),
+            mapOf("spots" to (1..9).map { mapOf("spotNo" to it, "itemKey" to lamp) }),
+            mapOf("spots" to listOf(mapOf("spotNo" to 2))),
+            mapOf("other" to 1))
+        for (body in bad)
+            assertEquals("VALIDATION_FAILED", call("PUT", path, studentToken, body, expected = 422)["code"].asText(), body.toString())
+        assertEquals(saved, call("GET", path, studentToken))
+        // 판매 중단돼도 가진 방 소품은 놓을 수 있고, 빈 목록은 모두 치운다
+        stop(pot)
+        assertEquals(listOf(2), spots(2 to pot)["spots"].map { it["spotNo"].asInt() })
+        assertEquals(0, spots()["spots"].size())
+        call("GET", path, parentToken, expected = 403)
+        call("PUT", path, parentToken, mapOf("spots" to emptyList<Any>()), expected = 403)
+    }
+
     @Test fun `admin items need CONTENT, validate input, keep codes unique and audit every change`() {
         val (admin, token) = contentAdmin()
         val ops = tokens.access(session(jdbc, account(jdbc, "ADMIN", "SERVICE_OPS"), "ADMIN"))
@@ -302,6 +416,11 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         call("PATCH", "/api/v1/admin/look-items/$id", token, mapOf("status" to "ON_SALE"))
         call("PATCH", "/api/v1/admin/look-items/$id", token, mapOf("status" to "DELETED"), expected = 422)
         call("PATCH", "/api/v1/admin/look-items/${UUID.randomUUID()}", token, mapOf("name" to "x"), expected = 404)
+        // #704 바닥·방 소품 칸 등록과 거르기
+        for (slot in listOf("FLOOR", "DECOR")) {
+            val room = call("POST", "/api/v1/admin/look-items", token, body + ("code" to "${slot}_" + UUID.randomUUID().toString().take(8).uppercase()) + ("slot" to slot), expected = 201)
+            assertTrue(call("GET", "/api/v1/admin/look-items?slot=$slot&size=100", token)["items"].any { it["itemId"] == room["itemId"] })
+        }
         val page = call("GET", "/api/v1/admin/look-items?slot=HAT&status=ON_SALE&size=100", token)
         assertTrue(page["items"].any { it["itemId"].asText() == id }); assertTrue(page["totalElements"].asLong() >= 1)
         call("GET", "/api/v1/admin/look-items?status=GONE", token, expected = 400)
@@ -311,11 +430,13 @@ class RewardIntegrationTest : IntegrationTestSupport() {
     }
 
     @Test fun `student deletion removes ledger, balance, unlocks, equipment and frame slots`() {
-        earnMissions(3); val hat = item("HAT", 10); unlock(hat); val desk = item("DESK", 10); unlock(desk)
+        earnMissions(4); val hat = item("HAT", 10); unlock(hat); val desk = item("DESK", 10); unlock(desk)
+        val decor = item("DECOR", 10); purchase(decor); spots(1 to decor)
         call("PUT", "/api/v1/students/me/preferences", studentToken, mapOf("theme" to "lake", "companion" to "mungchi", "equipped" to mapOf("HAT" to hat, "DESK" to desk)))
         jdbc.update("INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at) VALUES(?,1,?,DATE '2026-11-02',now())", student, UUID.randomUUID())
         TransactionTemplate(manager).executeWithoutResult { looks.clear(student) }
-        for (table in listOf("reward_point_ledger", "reward_point_balance", "student_look_unlock", "student_look_equipment", "room_frame_slot"))
+        for (table in listOf("reward_point_ledger", "reward_point_balance", "student_look_unlock", "student_look_equipment", "room_frame_slot",
+            "student_room_decor", "room_decor_spot"))
             assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM $table WHERE student_id=?", Int::class.java, student), table)
     }
 
@@ -333,5 +454,13 @@ class RewardIntegrationTest : IntegrationTestSupport() {
                 UUID.randomUUID(), "DB_${slot}_" + UUID.randomUUID().toString().take(8).uppercase(), slot, "ON_SALE", admin)
         assertFails { jdbc.update("INSERT INTO look_item(id,code,slot,name,price_points,asset_key,status,created_by,created_at,updated_at) VALUES(?,'DB_ROOM_X','ROOM','x',1,'','ON_SALE',?,now(),now())",
             UUID.randomUUID(), admin) }
+        // #704 V50: 바닥·방 소품 칸은 아이템에 허용, 방 소품은 착용 슬롯이 아니고 자리는 1~8
+        val ids = listOf("FLOOR", "DECOR").associateWith { slot -> UUID.randomUUID().also {
+            jdbc.update("INSERT INTO look_item(id,code,slot,name,price_points,asset_key,status,created_by,created_at,updated_at) VALUES(?,?,?,'방',1,'','ON_SALE',?,now(),now())",
+                it, "DB_${slot}_" + UUID.randomUUID().toString().take(8).uppercase(), slot, admin) } }
+        assertEquals(1, jdbc.update("INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at) VALUES(?,'FLOOR',?,now())", student, ids["FLOOR"]))
+        assertFails { jdbc.update("INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at) VALUES(?,'DECOR',?,now())", student, ids["DECOR"]) }
+        for (no in listOf(0, 9)) assertFails { jdbc.update("INSERT INTO room_decor_spot(student_id,spot_no,look_item_id,saved_at) VALUES(?,?,?,now())", student, no, ids["DECOR"]) }
+        assertEquals(1, jdbc.update("INSERT INTO room_decor_spot(student_id,spot_no,look_item_id,saved_at) VALUES(?,8,?,now())", student, ids["DECOR"]))
     }
 }
