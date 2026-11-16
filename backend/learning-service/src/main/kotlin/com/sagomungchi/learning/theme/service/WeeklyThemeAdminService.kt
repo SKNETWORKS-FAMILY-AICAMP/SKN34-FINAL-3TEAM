@@ -162,7 +162,7 @@ class WeeklyThemeAdminService(
             intro = version.intro,
             days = repository.findDays(h.currentVersionId).map {
                 AdminThemeDay(ThemeDay.ofNumber(it.dayOfWeek), it.missionId, it.clue, it.rulesOut, it.dialogue, it.hintSpots, it.videoUri,
-                    videoUrl = assetUrls.url(it.videoUri), sceneImageUrl = assetUrls.url(it.sceneUri))
+                    videoUrl = assetUrls.url(it.videoUri), sceneImageUrl = assetUrls.url(it.sceneUri), clueFeature = it.clueFeature)
             },
             publishedAt = h.publishedAt,
             createdAt = h.createdAt,
@@ -182,6 +182,7 @@ class WeeklyThemeAdminService(
             outroImageUrl = assetUrls.url(story.outroImageUri),
             introVideoUrl = assetUrls.url(story.introVideoUri),
             outroVideoUrl = assetUrls.url(story.outroVideoUri),
+            features = story.features,
         )
     }
 

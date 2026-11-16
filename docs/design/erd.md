@@ -1316,6 +1316,7 @@ erDiagram
     jsonb candidates "NULL 허용 · 후보 이름 배열"
     varchar answer "NULL 허용 · 후보 중 정답"
     text answer_clue "NULL 허용 · 결정적 단서 (공개 시점 뒤)"
+    jsonb features "NULL 허용 · 후보 특징 표 [{name, values:[{candidate, value}]}] (#647)"
     uuid created_by
     timestamptz created_at
   }
@@ -1328,6 +1329,7 @@ erDiagram
     jsonb dialogue "NULL 허용 · 문제 전 대화 [{speaker, text}]"
     jsonb hint_spots "NULL 허용 · 그림 위 생각 열기 위치 [{seq, x, y}]"
     varchar video_uri "NULL 허용 · 문제 전 영상 S3 키(관리자 입력용, ai 테마 초안 채택분은 NULL)"
+    varchar clue_feature "NULL 허용 · 그날 단서가 쓰는 특징 이름 (#647)"
   }
   theme_review_view {
     uuid student_id PK "core 논리 참조"
@@ -1392,6 +1394,7 @@ erDiagram
 - `theme_story_view`는 학생·주·종류(`INTRO`·`OUTRO`)당 1행(`ON CONFLICT DO NOTHING`) 열람 멱등. 학생 삭제 때 함께 물리 삭제(4.3)
 - 큰 질문 정답 고르기(#484, V18, 사용자 결정 2026-11-12): `theme_answer_pick`은 학생·주당 1행(`ON CONFLICT DO NOTHING`, 한 주 한 번). 금요일 문제를 마무리한 뒤 후보 중 하나를 고르며 `mission_id`는 고를 때의 금요일 문제, `correct`는 고를 때 정답과 같았는지. 엔딩 상태(state-diagram 3.2.2)는 저장하지 않고 이 행과 그 문제 `THEME_REVIEW` 시도 마무리 시각(고른 뒤)으로 계산한다. `pick` 길이는 후보 상한 100자. 학생 삭제 때 함께 물리 삭제(4.3)
 - `theme_frame`(#559, P27, FN-RET-10): 회차(학생·테마·주)당 1개(UK). 학습 완료(돌아보기 저장) 트랜잭션에서 시도가 `THEME_DAY`·`THEME_REVIEW`면 회차 잠금(`pg_advisory_xact_lock`, 같은 회차의 다른 문제 완료가 동시에 커밋돼 서로 못 보는 경우 방지) 뒤 `INSERT … SELECT … ON CONFLICT DO NOTHING`. 완료 조건은 그 회차 완료 시도(`completed_at` 있음)를 문제별로 묶어 테마 게시본(없으면 현재본)의 요일 문제 5개와 모두 맞는 것이고, `awarded_at` = 문제별 처음 완료 시각 중 가장 늦은 값(프리미엄 일요일·자정 넘긴 이어하기 포함, 다시 풀기는 이미 있는 액자를 바꾸지 않음). `EXTRA`는 회차 칸이 없어 빠진다. `theme_version_id`는 지급 때 버전으로 고정해 이후 재게시와 무관하게 앨범 제목·그림을 유지하고, 판정 규칙이 바뀌어도 저장된 액자는 지우지 않는다. 도입 전 기록은 learning 기동 때마다 같은 조건으로 소급(`seen_at = awarded_at`, 다시 돌려도 같은 결과, `docs/report/retention-expansion.md` 9.2). 앨범·상세·확인·보유 확인은 `theme_week_start < 이번 주(KST)`만 본다. 학생 삭제 때 같은 트랜잭션에서 물리 삭제(4.3)
+- 단서 근거(#647, V21, 기준안): `weekly_theme_version.features`는 ai 테마 초안의 후보 특징 표(요일 `rules_out`을 계산한 근거), `weekly_theme_day.clue_feature`는 그날 단서가 쓰는 특징 이름. 둘 다 NULL 허용(사람이 쓴 테마·#647 전 채택분은 비어 있음, 기존 행 채움 없음)이고 다른 버전·요일 칸처럼 새 버전 때 복사한다. 학생 응답에는 그날 단서를 얻은 요일의 특징만, 전체 표는 엔딩 뒤만 넣는다(api-spec 2.11). 시연 테마는 채우지 않는다(사용자 결정 2026-11-16: 시연은 배포 환경에서 새로 생성한 테마)
 - `answer_clue`(결정적 단서): ai 응답 계약(api-spec 4.2)에 칸이 없어, 채택 때 learning이 요일 단서에서 마지막 틀린 후보를 빼는 날(`rules_out`이 비지 않은 마지막 요일)의 `clue`로 채우고 관리자가 고칠 수 있다(엔딩 화면의 정답 근거)
 - `theme_draft`(#438, 미션 초안 `mission_draft`와 같은 구조): 검사에 실패한 초안은 테마를 만들지 않아 `weekly_theme`과 따로 둔다. 채택 1회에 테마 1개(`theme_id` UK). 부분 UK `(grade, week_start) WHERE source = 'AUTO'`로 레플리카가 주간 자동 생성을 동시에 돌려도 학년·주당 자동 초안 1개(`ON CONFLICT DO NOTHING`). `input`은 `{topic, missions:[{thinkingType, inputType, standardCodes}]}`(관리자가 고르지 않은 유형은 learning이 채운 값), `check_results`는 시도마다 `{attempt, failures:[{stage, reasons[]}]}`, `output`은 ai 응답(api-spec 4.2 `/internal/theme-drafts`) 그대로. `lease_until`은 `mission_draft.lease_until`과 같은 점유 방식. 학생 ID·학생 답은 없다
 
@@ -1816,7 +1819,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V20, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 108개 테이블·940개 컬럼(core 61/524, learning 39/350, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V20·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V21, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 108개 테이블·942개 컬럼(core 61/524, learning 39/352, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V21(#647)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

@@ -10,7 +10,15 @@ from app.theme_draft.router import get_theme_draft_runner
 from tests.theme_draft.helpers import mission_body, request_body, sample_response
 
 HEADERS = {"X-Internal-Token": "test-token"}
-INTERNAL_THEME_FIELDS = {"features", "target", "clueType", "condition", "evidence"}
+# 특징 표 features는 #647부터 응답 선택 칸(이름·후보별 값만)
+INTERNAL_THEME_FIELDS = {
+    "target",
+    "clueType",
+    "condition",
+    "evidence",
+    "evidencePlan",
+    "standardCode",
+}
 
 
 class FakeRunner:
@@ -59,6 +67,7 @@ def test_response_uses_contract_fields_only() -> None:
         "candidates",
         "answer",
         "days",
+        "features",  # #647 선택 칸(없으면 null)
     }
     assert set(theme["days"][0]) == {
         "day",
@@ -67,7 +76,9 @@ def test_response_uses_contract_fields_only() -> None:
         "sceneNote",
         "clue",
         "rulesOut",
+        "clueFeature",  # #647 선택 칸(없으면 null)
     }
+    assert theme["features"] is None and theme["days"][0]["clueFeature"] is None
     assert not INTERNAL_THEME_FIELDS & (
         set(theme) | set(theme["days"][0])
     )  # 정답 논리 검사용 내부 칸은 응답에 없음
@@ -76,7 +87,7 @@ def test_response_uses_contract_fields_only() -> None:
         "hints",
         "elements",
     }
-    assert body["versions"] == {"model": "fake-model", "prompt": "theme-draft@1"}
+    assert body["versions"] == {"model": "fake-model", "prompt": "theme-draft@2"}
 
 
 def test_service_passes_deadline_from_settings() -> None:

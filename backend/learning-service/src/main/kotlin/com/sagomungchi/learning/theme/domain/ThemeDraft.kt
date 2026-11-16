@@ -33,7 +33,7 @@ data class ThemeAttemptFailures(val attempt: Int, val failures: List<ThemeFailur
 
 data class GeneratedCharacter(val name: String, val look: String)
 
-/** 요일 하나: 장소·그림 메모는 초안에만, 단서·rulesOut은 테마 요일 칸으로 */
+/** 요일 하나: 장소·그림 메모는 초안에만, 단서·rulesOut·그날 단서 특징 이름(#647 선택 칸)은 테마 요일 칸으로 */
 data class GeneratedThemeDay(
     val day: ThemeDay,
     val thinkingType: ThinkingType,
@@ -41,6 +41,7 @@ data class GeneratedThemeDay(
     val sceneNote: String,
     val clue: String,
     val rulesOut: List<String>,
+    val clueFeature: String? = null,
 )
 
 /** 테마 틀. 세계관·인물·그림 메모는 그림 생성용으로 초안에만 남고 테마에 저장하지 않음 */
@@ -56,6 +57,8 @@ data class GeneratedTheme(
     val candidates: List<String>,
     val answer: String,
     val days: List<GeneratedThemeDay>,
+    /** 후보 특징 표(#647 선택 칸). 예전 초안·특징 표 없는 응답은 null */
+    val features: List<ThemeFeature>? = null,
 )
 
 /** 요일 미션: draft는 미션 초안(api-spec 4.2 `/internal/mission-drafts` draft)과 같은 모양 */

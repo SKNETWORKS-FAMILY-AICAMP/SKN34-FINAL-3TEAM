@@ -10,6 +10,7 @@ import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.HintSpot
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
+import com.sagomungchi.learning.theme.domain.ThemeFeature
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeLimits
 import com.sagomungchi.learning.theme.domain.ThemeStory
@@ -56,6 +57,7 @@ data class WeeklyThemeRequest(
     val candidates: List<String>? = null,
     val answer: String? = null,
     val answerClue: String? = null,
+    val features: List<ThemeFeature>? = null,
 )
 
 data class WeeklyThemeDayRequest(
@@ -66,6 +68,7 @@ data class WeeklyThemeDayRequest(
     val dialogue: List<DialogueLine>? = null,
     val hintSpots: List<HintSpot>? = null,
     val videoUri: String? = null,
+    val clueFeature: String? = null,
 )
 
 /**
@@ -156,6 +159,7 @@ class AdminWeeklyThemeController(
                 },
                 hintSpots = it.hintSpots?.also { spots -> if (spots.size > MAX_SPOTS) invalid("$day hintSpots는 ${MAX_SPOTS}개 이하") },
                 videoUri = it.videoUri?.also { uri -> limit("$day videoUri", uri, MAX_URI) },
+                clueFeature = it.clueFeature?.also { name -> limit("$day clueFeature", name, MAX_NAME) },
             )
         }
         if (days.map { it.day }.toSet().size != days.size) invalid("요일이 겹침")
@@ -178,6 +182,14 @@ class AdminWeeklyThemeController(
                 candidates = candidates?.also { items("candidates", it, MAX_CANDIDATES, MAX_NAME) },
                 answer = answer?.also { limit("answer", it, MAX_NAME) },
                 answerClue = answerClue?.also { limit("answerClue", it, MAX_ANSWER_CLUE) },
+                features = features?.also { table ->
+                    if (table.size > MAX_FEATURES) invalid("features는 ${MAX_FEATURES}개 이하")
+                    table.forEach { feature ->
+                        limit("features name", feature.name, MAX_NAME)
+                        if (feature.values.size > MAX_CANDIDATES) invalid("features values는 ${MAX_CANDIDATES}개 이하")
+                        feature.values.forEach { limit("features candidate", it.candidate, MAX_NAME); limit("features value", it.value, MAX_NAME) }
+                    }
+                },
             ),
         )
     }
@@ -215,5 +227,6 @@ class AdminWeeklyThemeController(
         const val MAX_SPEAKER = ThemeLimits.SPEAKER
         const val MAX_LINE = ThemeLimits.LINE
         const val MAX_SPOTS = ThemeLimits.SPOTS
+        const val MAX_FEATURES = ThemeLimits.FEATURES
     }
 }

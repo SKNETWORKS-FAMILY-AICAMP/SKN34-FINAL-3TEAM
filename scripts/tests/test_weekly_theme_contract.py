@@ -160,6 +160,35 @@ class WeeklyThemeContractTest(unittest.TestCase):
         self.assertTrue({'grade', 'date', 'sundayTheme'} <= names, names)
         self.assertIn('THEME_PICK_NOT_ALLOWED', yaml.safe_dump(operation, allow_unicode=True))
 
+    def test_clue_features_are_optional_and_match_domain(self):
+        """#647 단서 근거: ai 응답 theme.features·days[].clueFeature는 선택 칸이고, learning 학생·관리자·초안 응답과 관리자 본문,
+        Kotlin 칸 이름이 같다(기존 칸은 바뀌지 않음)"""
+        ai = yaml.safe_load((ROOT / 'contracts/openapi/ai-service.yaml').read_text(encoding='utf-8'))['components']['schemas']
+        self.assertNotIn('features', ai['Theme']['required'])
+        self.assertNotIn('clueFeature', ai['ThemeDay']['required'])
+        self.assertEqual(ai['ThemeFeature']['required'], ['name', 'values'])
+        self.assertEqual(ai['ThemeFeatureValue']['required'], ['candidate', 'value'])
+        schemas = self.learning['components']['schemas']
+        day = schemas['WeeklyTheme']['properties']['days']['items']['properties']
+        self.assertEqual(day['clueFacts']['items']['$ref'], '#/components/schemas/ThemeFeatureValue')
+        self.assertEqual(day['clueFeature']['type'], ['string', 'null'])
+        self.assertEqual(schemas['WeeklyTheme']['properties']['features']['type'], ['array', 'null'])
+        self.assertIn('clueFeature', schemas['ThemeDayMission']['properties'])
+        self.assertNotIn('clueFeature', schemas['ThemeDayMission']['required'])
+        self.assertNotIn('features', schemas['AdminWeeklyThemeRequest']['required'])
+        self.assertIn('features', schemas['AdminWeeklyTheme']['properties'])
+        self.assertIn('clueFeature', schemas['AdminThemeDay']['properties'])
+        self.assertNotIn('features', schemas['GeneratedTheme']['required'])
+        views = (THEME / 'domain/ThemeViews.kt').read_text(encoding='utf-8')
+        for name in ('val clueFeature: String? = null', 'val clueFacts: List<ThemeFeatureValue>? = null',
+                     'val features: List<ThemeFeature>? = null'):
+            self.assertIn(name, views)
+        domain = (THEME / 'domain/WeeklyTheme.kt').read_text(encoding='utf-8')
+        self.assertIn('data class ThemeFeature(val name: String, val values: List<ThemeFeatureValue>)', domain)
+        self.assertIn('data class ThemeFeatureValue(val candidate: String, val value: String)', domain)
+        # 학생 응답을 그대로 전달하는 core 설명에 새 칸이 적혀 있음(코드 변경 없음)
+        self.assertIn('clueFacts', yaml.safe_dump(self.spec, allow_unicode=True))
+
     def parameter(self, item):
         if '$ref' not in item:
             return item

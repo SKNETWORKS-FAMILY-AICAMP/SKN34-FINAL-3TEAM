@@ -14,7 +14,8 @@ import java.util.UUID
  * completed는 월~금 다섯 문제를 각 요일(KST) 안에 학습 완료했는지(개근, 칸 이름은 core·report가 써서 유지).
  * #438: intro는 매일(시작 이야기를 그 주 첫 진입에 보여 주려고, 이전에는 월요일만). 종료 이야기·정답·결정적 단서·종료 장면은
  * 엔딩 상태(ThemeEnding)일 때만 채움. 그림·영상 URL은 presigned. introSeen·outroSeen은 이번 주 이야기 열람 여부.
- * #484: finished는 다섯 문제를 그 주 토요일 23:59:59(KST)까지 학습 완료(주간 완주, 일요일 완료 제외), ending은 그 주 엔딩 상태
+ * #484: finished는 다섯 문제를 그 주 토요일 23:59:59(KST)까지 학습 완료(주간 완주, 일요일 완료 제외), ending은 그 주 엔딩 상태.
+ * #647: features(후보 특징 표 전체)는 엔딩 상태일 때만, 요일 특징은 그 요일 단서를 얻은 뒤 days[].clueFeature·clueFacts로
  */
 data class WeeklyThemeView(
     val themeId: UUID,
@@ -41,6 +42,7 @@ data class WeeklyThemeView(
     val finished: Boolean = false,
     val ending: ThemeEndingState = ThemeEndingState.NOT_ENDED,
     val answerPick: AnswerPickView? = null,
+    val features: List<ThemeFeature>? = null,
 )
 
 /**
@@ -52,7 +54,8 @@ data class AnswerPickView(val pick: String, val correct: Boolean)
 /**
  * 요일 문제. attemptStatus는 이번 주 그 요일 문제(THEME_DAY) 최근 시도의 상태(`NOT_STARTED`·`IN_PROGRESS`·`COMPLETED`).
  * #438: clue·rulesOut은 그 요일이 공개됐을 때(`LOCKED`가 아님)만.
- * #484: completedOnDay는 그 요일 문제를 그 요일 KST 안에 학습 완료(당일 풀이, core THEME_ON_TIME 적립 근거)
+ * #484: completedOnDay는 그 요일 문제를 그 요일 KST 안에 학습 완료(당일 풀이, core THEME_ON_TIME 적립 근거).
+ * #647: clueFeature·clueFacts는 clue와 같은 조건(그 주에 학습 완료)에서 그날 단서가 쓰는 특징 이름과 후보별 값(단서 근거). 특징 표가 없으면 null
  */
 data class ThemeDayView(
     val day: ThemeDay,
@@ -64,6 +67,8 @@ data class ThemeDayView(
     val clue: String? = null,
     val rulesOut: List<String>? = null,
     val completedOnDay: Boolean = false,
+    val clueFeature: String? = null,
+    val clueFacts: List<ThemeFeatureValue>? = null,
 )
 
 /**
@@ -169,9 +174,10 @@ data class AdminWeeklyTheme(
     val outroImageUrl: String? = null,
     val introVideoUrl: String? = null,
     val outroVideoUrl: String? = null,
+    val features: List<ThemeFeature>? = null,
 )
 
-/** 관리자 테마 요일 (#438): 저장 값 + 미리보기 URL(문제 전 영상, 그날 미션 장면) */
+/** 관리자 테마 요일 (#438): 저장 값 + 미리보기 URL(문제 전 영상, 그날 미션 장면). #647 clueFeature는 그날 단서 특징 이름 */
 data class AdminThemeDay(
     val day: ThemeDay,
     val missionId: UUID,
@@ -182,6 +188,7 @@ data class AdminThemeDay(
     val videoUri: String? = null,
     val videoUrl: String? = null,
     val sceneImageUrl: String? = null,
+    val clueFeature: String? = null,
 )
 
 data class AdminWeeklyThemePage(val items: List<AdminWeeklyTheme>, val page: Int, val size: Int, val totalElements: Long)

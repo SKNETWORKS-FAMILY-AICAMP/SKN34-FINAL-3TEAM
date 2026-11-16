@@ -18,6 +18,8 @@ import com.sagomungchi.learning.theme.domain.GeneratedThemeMission
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDraftInput
 import com.sagomungchi.learning.theme.domain.ThemeDraftOutput
+import com.sagomungchi.learning.theme.domain.ThemeFeature
+import com.sagomungchi.learning.theme.domain.ThemeFeatureValue
 import com.sagomungchi.learning.theme.domain.ThemeDraftRules
 import com.sagomungchi.learning.theme.domain.ThemeFailure
 import com.sagomungchi.learning.theme.domain.ThemeGrade
@@ -36,6 +38,14 @@ object ThemeDraftFixtures {
         ThemeDay.THU to listOf("고양이"), ThemeDay.FRI to listOf("햄스터"),
     )
     val VERSIONS = DraftVersions("theme-draft@1", "gpt-6-luna")
+
+    /** 후보 특징 표(#647): 화 토끼·목 고양이·금 햄스터를 빼는 근거, 월·수 힌트는 털 */
+    val FEATURES = listOf(
+        ThemeFeature("털", listOf(ThemeFeatureValue("고양이", "짧은"), ThemeFeatureValue("강아지", "짧은"), ThemeFeatureValue("토끼", "긴"), ThemeFeatureValue("햄스터", "짧은"))),
+        ThemeFeature("울음", listOf(ThemeFeatureValue("고양이", "야옹"), ThemeFeatureValue("강아지", "멍멍"), ThemeFeatureValue("토끼", "조용"), ThemeFeatureValue("햄스터", "조용"))),
+        ThemeFeature("꼬리", listOf(ThemeFeatureValue("고양이", "긴"), ThemeFeatureValue("강아지", "긴"), ThemeFeatureValue("토끼", "긴"), ThemeFeatureValue("햄스터", "짧은"))),
+    )
+    val CLUE_FEATURES = mapOf(ThemeDay.MON to "털", ThemeDay.TUE to "털", ThemeDay.WED to "털", ThemeDay.THU to "울음", ThemeDay.FRI to "꼬리")
 
     /** 시드 성취기준: 초5~6 국어 4개·수학 1개, 초3~4 국어 4개·수학 1개 */
     private val CODES = mapOf(
@@ -98,13 +108,13 @@ object ThemeDraftFixtures {
     /** 검사를 통과하는 생성 결과 */
     fun output(input: ThemeDraftInput = input(), title: String = "사라진 강아지"): ThemeDraftOutput {
         val days = ThemeDraftRules.DAY_TYPES.map { (day, type) ->
-            GeneratedThemeDay(day, type, "${day.name} 장소", "${day.name} 그림", "${day.name} 단서", RULES_OUT.getValue(day))
+            GeneratedThemeDay(day, type, "${day.name} 장소", "${day.name} 그림", "${day.name} 단서", RULES_OUT.getValue(day), CLUE_FEATURES.getValue(day))
         }
         return ThemeDraftOutput(
             theme = GeneratedTheme(
                 title = title, world = "동물 마을", characters = listOf(GeneratedCharacter("뭉치", "갈색 강아지 탐정")), styleNote = "수채화",
                 outfit = "탐정 모자", intro = "강아지가 사라졌어요.", outro = "범인은 없었어요. 강아지는 집에 있었어요.",
-                bigQuestion = "사라진 동물은 누구일까?", candidates = CANDIDATES, answer = ANSWER, days = days,
+                bigQuestion = "사라진 동물은 누구일까?", candidates = CANDIDATES, answer = ANSWER, days = days, features = FEATURES,
             ),
             missions = ThemeDraftRules.DAY_TYPES.map { (day, type) ->
                 val mission = input.missions.single { it.thinkingType == type }

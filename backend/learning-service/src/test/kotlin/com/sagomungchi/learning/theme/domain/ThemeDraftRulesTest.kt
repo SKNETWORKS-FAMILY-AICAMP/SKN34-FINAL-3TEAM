@@ -145,6 +145,24 @@ class ThemeDraftRulesTest {
     }
 
     @Test
+    fun `특징 표는 선택이고 있으면 rulesOut과 맞는지 정답 논리로 봄 (#647)`() {
+        val output = ThemeDraftFixtures.output(input)
+        val theme = output.theme!!
+        // 특징 표 없는 응답(예전 ai)도 그대로 통과
+        val bare = output.copy(theme = theme.copy(features = null, days = theme.days.map { it.copy(clueFeature = null) }))
+        assertEquals(emptyList(), ThemeDraftRules.learningFailures(bare, input, grade, standards))
+        // 금요일 꼬리 값이 토끼도 짧은데 햄스터만 빠지면 LOGIC
+        val tail = ThemeFeature("꼬리", ThemeDraftFixtures.CANDIDATES.map { ThemeFeatureValue(it, if (it in listOf("토끼", "햄스터")) "짧은" else "긴") })
+        val split = output.copy(theme = theme.copy(features = ThemeDraftFixtures.FEATURES.dropLast(1) + tail))
+        assertEquals(
+            listOf("LOGIC FRI rulesOut이 특징 '꼬리' 값과 맞지 않음(값이 같은 후보가 갈림)"),
+            ThemeDraftRules.learningFailures(split, input, grade, standards),
+        )
+        val unknown = output.copy(theme = theme.copy(days = theme.days.map { if (it.day == ThemeDay.MON) it.copy(clueFeature = "냄새") else it }))
+        assertEquals(listOf("LOGIC MON clueFeature '냄새'은 특징 표의 이름"), ThemeDraftRules.learningFailures(unknown, input, grade, standards))
+    }
+
+    @Test
     fun `배치·미션 규칙·정답 논리·길이 위반을 사유 코드로 모음, 미션 규칙은 요일 접두어`() {
         val output = ThemeDraftFixtures.output(input)
         val theme = output.theme!!

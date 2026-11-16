@@ -86,6 +86,24 @@ class ThemeDay(ApiModel):
     scene_note: str
     clue: str
     rules_out: list[str]
+    # 그날 단서가 쓰는 특징 이름(features의 name, #647 선택 칸). 학생에게 단서 근거를
+    # 보여 주는 데 씀
+    clue_feature: str | None = None
+
+
+class ThemeFeatureValue(ApiModel):
+    candidate: str
+    value: str
+
+
+class ThemeFeature(ApiModel):
+    """후보 특징 표의 특징 하나(#647): 이름과 후보마다 값.
+
+    고른 성취기준 코드는 내부 칸이라 넣지 않음.
+    """
+
+    name: str
+    values: list[ThemeFeatureValue]
 
 
 class Theme(ApiModel):
@@ -100,6 +118,9 @@ class Theme(ApiModel):
     candidates: list[str]
     answer: str
     days: list[ThemeDay]
+    # 후보 특징 표(#647 선택 칸). rulesOut을 계산한 근거라 learning이 저장하고 학생에게는
+    # 얻은 요일 것만 보임
+    features: list[ThemeFeature] | None = None
 
 
 class ThemeMission(ApiModel):
@@ -235,7 +256,7 @@ ClueType = Literal[
 ]
 ReviewVerdict = Literal["PASS", "WARN", "FAIL"]
 StoryReviewId = Literal["CLUE_LOGIC", "ANSWER_HINT", "GRADE_VOCAB", "STANDARD_FIT", "SAFETY"]
-MissionReviewId = Literal["EXAMPLE_COMPLETE", "STANDARD_FIT", "MATERIAL"]
+MissionReviewId = Literal["EXAMPLE_COMPLETE", "STANDARD_FIT", "MATERIAL", "STORY_LINK"]
 
 
 class GeneratedCharacter(BaseModel):
@@ -292,6 +313,22 @@ class GeneratedDay(BaseModel):
     evidence: GeneratedEvidence
     discovery: str
     missionHook: str
+
+    @model_validator(mode="after")
+    def _no_empty_texts(self) -> "GeneratedDay":
+        """글 칸이 비면 형식 밖 응답으로 본다(LLM_INVALID_OUTPUT → 한 번 더 부름).
+
+        #535 8차: 줄거리 한 번이 다섯 요일의 증거 발견 줄·수사 연결 문장 10칸을 비워
+        REQUIRED로 다시 생성. JSON 스키마는 바꾸지 않는다(검증만).
+        """
+        empty = [
+            k
+            for k in ("place", "sceneNote", "clue", "discovery", "missionHook")
+            if not getattr(self, k).strip()
+        ]
+        if empty:
+            raise ValueError(f"{self.day} 빈 칸 {empty}")
+        return self
 
 
 # 그 컷 끝 뭉치 표정(입 모양으로만: smile 웃는 입, surprised 작은 o 입, determined 다문 일자 입).
@@ -352,6 +389,11 @@ class GeneratedFixes(BaseModel):
     때 그 칸만 고쳐 쓴 결과(fix_theme). 다른 칸은 그대로 둔다."""
 
     fixes: list[GeneratedFix]
+
+
+class GeneratedHookFixes(GeneratedFixes):
+    """미션이 통과한 뒤 그 요일 수사 연결 문장을 문제 소재에 맞게 고쳐 쓴 결과(fix_hook, #535).
+    모양은 GeneratedFixes와 같고 path는 `<요일>.missionHook`."""
 
 
 class GeneratedExampleFix(BaseModel):
