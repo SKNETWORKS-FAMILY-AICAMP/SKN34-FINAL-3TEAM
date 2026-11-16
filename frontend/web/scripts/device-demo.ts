@@ -145,6 +145,9 @@ export function createDeviceDemo(now = Date.now) {
         }
         if (path === '/register' && request.method === 'POST') {
           const data = await body(), code = normalizePairingCode(String(data.pairingCode ?? ''))
+          // core와 같이 이름 검사를 코드 소비보다 먼저
+          const label = String(data.label ?? '').trim()
+          if (!label || label.length > 80) fail(400, 'VALIDATION_FAILED', '입력값을 확인해 주세요.')
           const pairing = pairings.get(code)
           // await 이전에 소비하므로 다른 브라우저의 동시 등록도 한 번만 성공한다.
           pairings.delete(code)
@@ -152,7 +155,7 @@ export function createDeviceDemo(now = Date.now) {
             fail(400, 'PAIRING_CODE_INVALID', '코드가 맞지 않거나 시간이 지났어요. 보호자에게 새 코드를 받아 주세요.')
           const children = pairing.childIds.map((id) => linked(pairing.owner, id))
           const d: Device = { deviceId: randomUUID(), credential: randomBytes(32).toString('hex'),
-            owner: pairing.owner, childIds: pairing.childIds, label: String(data.label ?? '').trim().slice(0, 30) || '이름 없는 기기',
+            owner: pairing.owner, childIds: pairing.childIds, label,
             createdAt: new Date(now()).toISOString(), expiresAt: new Date(now() + DEVICE_TTL).toISOString(),
             lastUsedAt: null, revoked: false }
           devices.set(d.credential, d)

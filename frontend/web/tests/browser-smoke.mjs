@@ -117,11 +117,11 @@ try {
   await page.locator('.ux-analysis-result').waitFor()
   assert.equal((await page.locator('.ux-analysis-result').innerText()).includes('화면 시연'), true)
   checked.push('주간 리포트→원문→같은 자녀/기간 분석 / 메모 비공개')
-  await page.getByLabel('자녀 선택', { exact: true }).selectOption('demo-doyun')
+  await page.getByRole('group', { name: '자녀 선택', exact: true }).getByRole('button', { name: /도윤/ }).click()
   await page.getByText(/분석 대화는 프리미엄에서 이용할 수 있습니다/).waitFor()
   assert.equal(await page.locator('.ux-analysis-result').count(), 0)
   checked.push('자녀 변경 시 기존 분석 제거 / 무료 이용 잠금')
-  await page.getByLabel('자녀 선택', { exact: true }).selectOption('demo-seoyun')
+  await page.getByRole('group', { name: '자녀 선택', exact: true }).getByRole('button', { name: /서윤/ }).click()
   await page.getByRole('button', { name: '아이의 공책', exact: true }).click()
   for (const [width, height] of [
     [1024, 768],

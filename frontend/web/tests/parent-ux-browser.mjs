@@ -166,11 +166,8 @@ try {
  await page.getByRole('dialog', { name: '자동 갱신 해지', exact: true }).waitFor()
  assert.match(await page.getByRole('dialog').innerText(), /이용할 수 있으며 다음 자동 청구를 중단/)
  await page.keyboard.press('Escape')
- const childSelect = page.getByLabel('자녀 선택', { exact: true })
- const options = await childSelect.locator('option').evaluateAll(os => os.map(o => ({ value:o.value, text:o.textContent })))
- const freeChild = options.find(o => o.text.includes('도윤'))
- assert.ok(freeChild)
- await childSelect.selectOption(freeChild.value)
+ // 자녀 선택은 본문 버튼(2026-11-16)
+ await page.getByRole('group', { name:'자녀 선택', exact:true }).getByRole('button', { name:/도윤/ }).click()
  await page.getByRole('button', { name:'현재 무료 플랜', exact:true }).waitFor()
  await page.getByRole('radio').first().check()
  const requests=[]

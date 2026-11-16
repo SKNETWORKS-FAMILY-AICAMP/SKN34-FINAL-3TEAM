@@ -796,6 +796,21 @@
  #class-journal .ws-parent .ws-parent-menu .ws-menu-actions { margin-top: 0; }
 }
 
+/* 자녀 고르기 버튼(본문 맨 위, 학습 현황·리포트·계정 설정·이용권) */
+#class-journal .ws-parent .parent-child-picker { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+#class-journal .ws-parent .parent-child-picker button {
+  display: inline-flex; align-items: baseline; gap: 6px; min-height: 44px; padding: 8px 16px;
+  border: 1px solid #cfdcd2; border-radius: 999px; background: #fff; color: #192b21; font: inherit; cursor: pointer;
+}
+#class-journal .ws-parent .parent-child-picker button small { color: #46594d; font-size: 13px; }
+#class-journal .ws-parent .parent-child-picker button:hover { border-color: #9fc2aa; }
+#class-journal .ws-parent .parent-child-picker button[aria-pressed=true] { background: #1d5734; border-color: #1d5734; color: #fff; }
+#class-journal .ws-parent .parent-child-picker button[aria-pressed=true] small { color: #e8f2eb; }
+#class-journal .ws-parent .parent-child-picker button:focus-visible { outline: 3px solid #f2994a; outline-offset: 2px; }
+@media (max-width:640px) {
+  #class-journal .ws-parent .parent-child-picker { margin-bottom: 12px; }
+  #class-journal .ws-parent .parent-child-picker button { flex: 1 1 calc(50% - 4px); justify-content: center; }
+}
 /* Customizable native select: retain keyboard/form behaviour while styling its popup. */
 @supports (appearance: base-select) {
  @media (forced-colors: none) {

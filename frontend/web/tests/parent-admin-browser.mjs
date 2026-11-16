@@ -88,8 +88,8 @@ try {
     await p.getByRole('heading', { name: '서윤의 학습 기록' }).waitFor()
     assert.equal(
       await p
-        .getByLabel('자녀 선택', { exact: true })
-        .getByRole('option', { name: '새싹 · 초3' })
+        .getByRole('group', { name: '자녀 선택', exact: true })
+        .getByRole('button', { name: /새싹/ })
         .count(),
       0,
     )
@@ -219,7 +219,7 @@ try {
     await p.getByRole('button', { name: '기간 적용' }).click()
     await nav(p, '기록에 물어보기')
     assert.ok(p.url().includes('childId=demo-seoyun') && p.url().includes('from=2026-10-19'))
-    await p.getByLabel('자녀 선택', { exact: true }).selectOption('demo-doyun')
+    await p.getByRole('group', { name: '자녀 선택', exact: true }).getByRole('button', { name: /도윤/ }).click()
     await p.getByText('무료 플랜에는 분석 대화가 포함되지 않습니다.', { exact: false }).waitFor()
     assert.equal(await p.getByRole('button', { name: '답변 근거 보기' }).count(), 0)
     await nav(p, '리포트')
@@ -337,7 +337,7 @@ try {
     await p
       .getByText('대조 전 임시 문장입니다. 아직 확정되지 않았습니다.', { exact: true })
       .waitFor()
-    await p.getByLabel('자녀 선택', { exact: true }).selectOption('demo-doyun')
+    await p.getByRole('group', { name: '자녀 선택', exact: true }).getByRole('button', { name: /도윤/ }).click()
     await p.waitForFunction(() => window.__analysisAborts > 0)
     await p.getByText('무료 플랜에는 분석 대화가 포함되지 않습니다.', { exact: false }).waitFor()
     assert.equal(await p.getByRole('button', { name: '답변 근거 보기' }).count(), 0)
@@ -402,8 +402,8 @@ try {
     assert.deepEqual(sent.postDataJSON(), { nickname: '새 별명' })
     assert.equal(sent.headers()['x-reauth-token'], undefined)
     await p
-      .getByLabel('자녀 선택', { exact: true })
-      .getByRole('option', { name: '새 별명 · 초3' })
+      .getByRole('group', { name: '자녀 선택', exact: true })
+      .getByRole('button', { name: /새 별명/ })
       .waitFor({ state: 'attached' })
   })
   for (const [account, show, hide] of [

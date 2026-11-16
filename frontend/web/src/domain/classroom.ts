@@ -21,6 +21,8 @@ export interface Session {
   permissions?: import('./admin/operations.ts').Permission[]
   /** #415: PASSWORD는 ID·비밀번호 계정. 본인 재확인을 Google 대신 로그인 비밀번호로 한다. */
   authMethod?: 'GOOGLE' | 'PASSWORD'
+  /** #683: 학부모 로그인 아이디. ID·비밀번호 계정은 아이디, Google 계정은 Google 이메일 */
+  loginId?: string
 }
 export type InputType =
   'NARRATIVE' | 'SOLUTION_STEPS' | 'ESSAY' | 'CHOICE' | 'ORDERING' | 'CLASSIFICATION'
