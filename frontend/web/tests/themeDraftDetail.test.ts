@@ -48,25 +48,33 @@ test('상태별 동작: 채택은 READY만, 버리기는 READY·검사 실패·�
   assert.deepEqual(themeDraftActions('DISCARDED'), { adopt: false, discard: false, regenerate: true })
 })
 
-test('움직임 v1: 형식이 다르면 null, 좌표·확대는 범위 안으로, 잘못된 문구·지점은 버림', () => {
+// #440: 예전에는 범위 밖 값을 잘라 맞추고 방향을 글자('up'·'down'), 확대를 1~4로 읽었다. 학생 이야기 화면(retention.ts)과 같은
+// 한 함수로 합치면서 ai 계약(ThemeMotion v1) 범위를 하나라도 벗어나면 그림만(null)으로 바꿈(이슈 #440 "형식이 틀리면 그림만")
+test('움직임 v1: 형식이 다르거나 범위를 벗어나면 null(그림만), 문구는 시작 순으로 읽고 시각에 맞는 문구를 고른다', () => {
   assert.equal(readThemeMotion(null), null)
   assert.equal(readThemeMotion({ version: 2 }), null)
-  const m = readThemeMotion({
+  const ok = {
     version: 1, transition: { kind: 'fade', seconds: 0.5 },
-    camera: { from: { x: -10, y: 50, zoom: 1 }, to: { x: 40, y: 60, zoom: 9 }, seconds: 6 },
-    speakers: { 뭉치: { x: 39, y: 69, zoom: 1.2 }, 빈: {} },
-    effects: [{ shape: 'circle', color: '#fff', count: 99 }, { color: 'red' }],
-    captions: [{ start: 3, end: 6, text: '둘' }, { start: 0, end: 3, text: '하나' }, { start: 5, end: 4, text: '거꾸로' }],
-    spots: [{ x: 25, y: 70, label: '발자국', line: '어디로?', evidence: true }, { x: 10, y: 10 }],
-  })!
-  assert.deepEqual(m.camera?.from, { x: 0, y: 50, zoom: 1 })
-  assert.equal(m.camera?.to.zoom, 4)
-  assert.deepEqual(Object.keys(m.speakers), ['뭉치'])
-  assert.equal(m.effects.length, 1)
-  assert.equal(m.effects[0].count, 40)
+    camera: { from: { x: 0, y: 50, zoom: 1 }, to: { x: 40, y: 60, zoom: 1.4 }, seconds: 8 },
+    speakers: { 뭉치: { x: 39, y: 69, zoom: 1.2 } },
+    effects: [{ shape: 'circle', color: '#FFFFFF', count: 20, size: 6, direction: 359, speed: 20, opacity: 0.8 }],
+    captions: [{ start: 3, end: 6, text: '둘' }, { start: 0, end: 3, text: '하나' }],
+    spots: [{ x: 25, y: 70, label: '발자국', line: '어디로?', evidence: true }],
+  }
+  const m = readThemeMotion(ok)!
+  assert.deepEqual(m.camera?.to, { x: 40, y: 60, zoom: 1.4 })
   assert.deepEqual(m.captions.map((c) => c.text), ['하나', '둘'])
   assert.equal(m.spots.length, 1)
   assert.equal(captionAt(m, 1), '하나')
   assert.equal(captionAt(m, 4), '둘')
   assert.equal(captionAt(m, 7), null)
+  for (const bad of [
+    { ...ok, camera: { ...ok.camera, from: { x: -10, y: 50, zoom: 1 } } },
+    { ...ok, camera: { ...ok.camera, to: { x: 40, y: 60, zoom: 4 } } },
+    { ...ok, speakers: { 뭉치: { x: 39, y: 69, zoom: 1.2 }, 빈: {} } },
+    { ...ok, effects: [{ ...ok.effects[0], count: 99 }] },
+    { ...ok, effects: [{ ...ok.effects[0], color: '#fff' }] },
+    { ...ok, captions: [{ start: 5, end: 4, text: '거꾸로' }] },
+    { ...ok, spots: [{ x: 10, y: 10 }] },
+  ]) assert.equal(readThemeMotion(bad), null, JSON.stringify(bad).slice(0, 80))
 })
