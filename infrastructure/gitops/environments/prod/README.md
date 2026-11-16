@@ -8,7 +8,7 @@
 
 | 파일 | namespace / release | chart |
 |---|---|---|
-| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. `ai-service.json`의 설명 sLLM 연결(#476·#477: env `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`, egress `sllm-server:8080`)은 미적용. 테마 자산 버킷(#652: ai·learning의 `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`, Pod Identity agent egress)과 core의 app 기본 거부(#657: `namespaceDefaultDeny=true`, `app-default-deny`)도 미적용 |
+| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. `ai-service.json`의 설명 sLLM 연결(#476·#477: env `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`, egress `sllm-server:8080`)은 미적용. 테마 자산 버킷(#652: ai·learning의 `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`, Pod Identity agent egress)과 core의 app 기본 거부(#657: `namespaceDefaultDeny=true`, `app-default-deny`), ai M2 교차 확인 켜기(#668: env `M2_CROSS_CHECK_ENABLED=true`, 시연 설명 카드용)도 미적용 |
 | `platform-data.json` | platform / platform-data | `../../charts/platform-data` |
 | `external-secrets.json` | external-secrets / external-secrets | external-secrets/external-secrets 2.14.0 |
 | `aws-load-balancer-controller.json` | kube-system / aws-load-balancer-controller | eks/aws-load-balancer-controller 1.14.1 |

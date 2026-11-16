@@ -40,6 +40,17 @@ FROM memory_search_doc WHERE theme_week_start < :'this_monday'::date GROUP BY st
 SELECT 'demo624_last_week_m2_answers' AS check_name, count(DISTINCT a.student_id) AS students, count(*) AS answers
 FROM attempt a JOIN answer an ON an.attempt_id = a.id JOIN judgment j ON j.answer_id = an.id
 WHERE a.theme_week_start = :'this_monday'::date - 7 AND jsonb_typeof(j.model_scores->'m2') = 'object';
+-- #668: M2 교차 확인을 켠 뒤 지난 3주 판정 결과·보류 사유(MODEL_DISAGREEMENT는 M2·LLM 불일치)와 M2 입력이 있는 공개 기준표 수
+SELECT 'demo668_recent_judgments' AS check_name, j.result, j.held_reason,
+       count(*) FILTER (WHERE jsonb_typeof(j.model_scores->'m2') = 'object') AS with_m2, count(*) AS judgments
+FROM attempt a JOIN answer an ON an.attempt_id = a.id JOIN judgment j ON j.answer_id = an.id
+WHERE a.started_at >= (:'this_monday'::date - 21) AND j.process_status = 'DONE'
+GROUP BY j.result, j.held_reason ORDER BY j.result, j.held_reason;
+SELECT 'demo668_published_m2_rubrics' AS check_name, v.input_type, v.grade_min, count(*) AS missions
+FROM mission m JOIN mission_version v ON v.id = m.published_version_id JOIN rubric_version r ON r.id = m.published_rubric_version_id
+WHERE m.status = 'PUBLISHED' AND v.input_type IN ('NARRATIVE', 'ESSAY')
+  AND ((v.input_type = 'NARRATIVE' AND jsonb_array_length(coalesce(r.keywords, '[]'::jsonb)) > 0) OR r.essay_type IS NOT NULL)
+GROUP BY v.input_type, v.grade_min ORDER BY v.input_type, v.grade_min;
 \elif :is_report
 -- #624: 지난 주 주간 리포트의 설명 카드(FN-RPT-09, 검사 통과분)와 일일 리포트
 SELECT 'demo624_last_week_reports' AS check_name, w.status, count(*) AS reports,
