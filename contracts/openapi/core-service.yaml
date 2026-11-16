@@ -380,7 +380,7 @@ paths:
     get:
       tags: [Students]
       operationId: getStudentLookItems
-      summary: 테마 5·캐릭터 5와 판매 중이거나 이미 해금한 캐릭터 아이템 목록 (#389, P22). Cache-Control no-store
+      summary: 테마 5·캐릭터 12(#697)와 판매 중이거나 이미 해금한 캐릭터 아이템 목록 (#389, P22). Cache-Control no-store
       description: 'itemKey는 테마 THEME:<code>·캐릭터 COMPANION:<code>(해금값 코드 상수, lake·mungchi 무료, 나머지 테마 100·캐릭터 150), 아이템은 look_item.code. 판매 중단 아이템은 해금한 학생에게만 onSale false로 보인다.'
       responses:
         '200':
@@ -9025,7 +9025,7 @@ components:
         answer: {}
         authorStudentId: {type: string, format: uuid}
     StudentLookTheme: {type: string, enum: [lake, forest, factory, space, sea]}
-    StudentLookCompanion: {type: string, enum: [mungchi, tori, mongdol, kongi, monggeul]}
+    StudentLookCompanion: {type: string, enum: [mungchi, tori, mongdol, kongi, monggeul, snow, yarn, star, foam, paper, petal, ice], description: '동행 캐릭터 뭉치 친구들 12종(#697). 앞 5종은 기존 값, 뒤 7종은 웹 친구 id'}
     StudentLook:
       type: object
       additionalProperties: false
