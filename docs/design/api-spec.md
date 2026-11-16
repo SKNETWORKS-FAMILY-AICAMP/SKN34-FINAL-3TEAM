@@ -140,6 +140,7 @@
 | `ADMIN_MISSIONS_UNAVAILABLE` / `MISSION_AUDIT_UNAVAILABLE` / `LEARNING_STATS_UNAVAILABLE` / `LEARNING_REQUEST_FAILED` | 503 / 503 / 503 / learning 상태 | core 관리자 미션·감사·통계 조회의 learning 실패 / 허용 목록 밖 learning 오류 코드 대체 (2.8) |
 | `QUEUE_MANAGEMENT_NOT_CONFIGURED` / `QUEUE_MANAGEMENT_UNAVAILABLE` / `QUEUE_MANAGEMENT_TIMEOUT` / `QUEUE_MANAGEMENT_INVALID_RESPONSE` / `QUEUE_MANAGEMENT_INCOMPLETE` | 503 / 503 / 504 / 503 / 503 | 관리자 큐 조회: RabbitMQ 관리 API 미설정 / 연결 실패 / 5초 초과 / 응답 형식 오류 / 정의된 큐 누락 (2.8) |
 | `AI_PROMPT_VERSION_UNAVAILABLE` / `SCORING_UNAVAILABLE` | 503 | ai 활성 프롬프트 본문 없음 / scoring 모델 미준비 (내부 API, 4.2·4.3) |
+| `KNOWLEDGE_DATASET_NOT_FOUND` / `KNOWLEDGE_DATASET_STATE_CONFLICT` | 404 / 409 | learning 지식 판 관리: 없는 판 조회·활성화·제거 / `LOADING`이 아닌 판 활성화·적재 뒤 활성 판 변경·`RETIRED`가 아닌 판 제거·하루 99판 초과·같은 판 이름 동시 적재 (내부 API, 4.1.3, #466) |
 | `MODEL_PREFLIGHT_UNAVAILABLE` / `MODEL_PREFLIGHT_INVALID_RESPONSE` | 503 / 502 | 모델 파일 사전 검사 중 scoring 연결 실패·제한 시간 초과 / scoring 응답 오류·형식 위반 (5.2.1) |
 | `PAYMENT_ENTITLEMENT_UNAVAILABLE` / `PAYMENT_USAGE_UNAVAILABLE` / `REFUND_IN_PROGRESS` | 503 / 503 / 409 | 분석·피드백 이용권 확인 실패 / learning→core 사용 증빙 실패 / 환불 진행 중 프리미엄 사용. learning 피드백은 core `/internal/payment-usage/*` 409의 `code` 중 `REFUND_IN_PROGRESS`·`PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE`·`PAYMENT_USAGE_STATE_CHANGED`만 같은 코드 409로 전달하고, 그 밖의 코드·형식 오류 409는 환불로 안내하지 않고 `PAYMENT_USAGE_UNAVAILABLE` 503 (#276) |
 | `PAYMENT_NOT_FOUND` / `BILLING_KEY_REQUIRED` / `INVALID_PAGE` / `INVALID_DATE_RANGE` / `PAYMENT_RECONCILIATION_RANGE_REQUIRED` | 404 / 409 / 409 / 409 / 409 | 결제 없음 / 빌링키 등록 전 자동 갱신 켜기 / 페이지 범위 오류 / 조회 기간 오류 / 대사 조회 기간 누락 (2.6) |
@@ -1015,7 +1016,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - 적재 순서(C9 ①~⑦): 입력 검사(레코드 형식, 같은 판 안 조각 ID 겹침, 학기가 그 학년 것, 성취기준 문장 = `achievement_standard`, 확인 행 `reviewer = SAMPLE` 거부, 관계 끝: 성취기준·생각 유형·내용 요소 조각, 선수 코드는 `achievement_standard`) → 실패하면 판을 만들기 전에 `400 VALIDATION_FAILED` → ① 판 행 → ②④⑤⑥⑦ 한 트랜잭션: 조각, 학기 관계, 이전 활성 판 관계 옮기기 + 새 확인 행(늦은 `reviewedAt` 우선, 늦은 `REJECT`는 옮긴 관계를 뺌), 확인된 covers로 내용 요소·영역 학년·학기, `chunk_count`·`relation_count`(학기·fits·prerequisite·covers 행 합)
 - `recheck`: 옮기지 못한 관계(끝이 새 판에 없음)와 옮겼지만 끝 본문이 바뀐 관계를 C4 행 모양(`decision` 빈 칸, `evidence`에 사유, `datasetVersion` = 이전 판)으로. 스크립트 `--recheck-out`이 CSV로 저장해 #468 확인 파일에 다시 넣는다
-- 활성화 `409 KNOWLEDGE_DATASET_STATE_CONFLICT`: `LOADING`이 아님, 적재 뒤 활성 판이 바뀜(`source.previousVersion` ≠ 현재 활성 판, 다시 적재). 제거 `409`: `ACTIVE`·`LOADING`
+- 활성화 `409 KNOWLEDGE_DATASET_STATE_CONFLICT`: `LOADING`이 아님, 적재 뒤 활성 판이 바뀜(`source.previousVersion` ≠ 현재 활성 판, 다시 적재). 제거 `409`: `ACTIVE`·`LOADING`. 적재 `409`: 그날(KST) 판이 99개를 넘음, 같은 판 이름을 동시에 만듦(다시 적재)
 - 같은 입력을 다시 적재하면 같은 조각·관계 수(멱등)
 
 #### 4.1.4 기념 액자·추억 내부 API (P27, 구현 #559·#563·#564)
