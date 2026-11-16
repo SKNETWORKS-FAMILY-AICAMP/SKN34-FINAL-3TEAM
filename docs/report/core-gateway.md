@@ -632,6 +632,23 @@ core 통합 테스트(실제 JWT/MVC/PostgreSQL·Redis·RabbitMQ)로 권한·기
 - 검증 중 함께 찾은 차이: 대기 중인 `REQUESTED` 환불도 웹훅으로 PG 취소가 확인되면 바로 `COMPLETED`가 된다(`applyVerified`). 상태 다이어그램 6.3에 같이 적었다
 - 코드·계약 변경이 없으므로 core 테스트·OpenAPI는 그대로다
 
+### 24.10 환불 때 구독 취소 전이·사용 증빙 서킷 (#653·#654, 2026-11-16)
+
+2026-11-15 전체 재검토에서 나온 두 가지를 고쳤다. API·OpenAPI·마이그레이션 변경은 없다.
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| `RENEWAL_FAILED → CANCELED`(환불 완료) | 허용 전이로 상태도 6.2에 추가 | 갱신 실패 유예 중에도 직전 결제의 7일 환불이 가능하고, 환불 뒤에는 유예 권한을 남길 이유가 없다(P14 "환불 완료는 즉시 구독 종료") |
+| 이미 `CANCELED`인 구독의 환불 완료·PG 측 취소 | 상태·`canceled_at`·`revision`을 바꾸지 않음(처음 값 유지) | `CANCELED`는 끝 상태. 만료로 먼저 끝난 구독의 종료 시각이 환불 시각으로 덮이면 이용 기간 기록이 달라진다 |
+| 그 밖의 상태 | 구독 상태는 `ACTIVE`·`RENEWAL_FAILED`·`CANCELED` 셋뿐(`ck_subscription_status`)이라 다른 출발 상태는 없음 | V4 마이그레이션 |
+| 사용 증빙 조회 전송 | `PremiumUsageClient`가 직접 만들던 서킷 없는 RestClient 대신 공용 `LearningClient`의 `learning-json` 서킷을 공유, 응답 시간은 기존 5초 유지 | architecture 1.3·2.2 "core→learning은 `_common/client` 공용 전송". 일반 30초로 늘리면 환불 요청 응답이 길어져 동작이 바뀐다 |
+| 서킷이 열렸을 때 | 시간 초과·전송 실패와 같은 503 `REFUND_USAGE_UNAVAILABLE`. 환불 요청은 `REQUESTED` 동결로 남고(증빙 미확인), 관리자 승인은 진행하지 않음 | 2026-11-16 사용자 결정. 사용 여부를 모르면 미사용으로 간주하지 않는다는 24.4 규칙과 같다 |
+| `GradePromotionScheduler` | `guardianship/service`에서 `guardianship/scheduler/GradePromotionScheduler.kt`로 이동. cron·ShedLock 이름·호출 service 그대로 | architecture 2.1 "scheduler는 Presentation 패키지" |
+
+- 구현: 환불·PG 취소 두 경로(`RefundService.applyVerified`, `PaymentService.accept` `CANCELED` 분기)는 `PaymentTransactions.cancelRefundedSubscription` → mapper `cancelSubscription`의 조건부 UPDATE(`WHERE id=? AND status IN ('ACTIVE','RENEWAL_FAILED')`)를 쓴다. 이전에는 읽은 행을 무조건 `CANCELED`·`canceled_at=now()`로 저장했다. 상태를 먼저 확인하는 나머지 경로(만료·유예 종료·3회 실패·해지 시 기간 종료)는 그대로 복사 저장하되 `Subscription.CANCELABLE` 밖의 상태가 들어오면 `IllegalStateException`으로 막는다(현재 호출부는 모두 허용 상태에서만 부름)
+- 사용 증빙의 `since` 쿼리는 이제 URL 인코딩해 보낸다(`+09:00`의 `+`가 공백으로 읽히지 않게). learning은 시각을 Instant로 비교하므로 응답 모양은 같다
+- 검증: `PaymentIntegrationTest`에 이미 취소된 구독 환불 완료·PG 측 취소(상태·`canceled_at`·`revision` 불변), 갱신 실패 구독 환불(`CANCELED`·완료 시각·무료 전환), 복사 취소의 허용 상태 검사 4건. `PremiumUsageClientTest`에 서킷 OPEN → 503·learning 미호출, 증빙 실패가 `learning-json`에 집계되어 20건 뒤 OPEN, 6초 지연 응답이 5초에 시간 초과(일반 30초 아님) 3건
+
 ## 25. 주간 테마 영상 사용량 THEME_VIDEO·응답 칸 추가 (에픽 #436, 2026-11-12)
 
 learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서와 시작·종료 장면 영상·움직임, 엔딩 뒤 정답을 더하고, ai #437이 시작·종료 장면 영상을 만든다. 학년 전달(15절)과 같은 PR이다.

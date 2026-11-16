@@ -20,13 +20,19 @@ import java.net.SocketTimeoutException
 import java.time.Duration
 
 @Component
-class LearningClient private constructor(factory: InternalRestClientFactory, readTimeout: Duration,
+class LearningClient private constructor(private val factory: InternalRestClientFactory, readTimeout: Duration,
                                        internal val circuit: CircuitBreaker) {
     @Autowired
     constructor(factory: InternalRestClientFactory, properties: LearningHttpProperties) :
         this(factory, properties.readTimeout, circuit("learning-json") { it.status >= 500 })
 
     private val client = factory.create("learning", readTimeout)
+
+    /**
+     * #654 같은 서킷을 함께 쓰고 응답 시간만 다른 전송. 결제 환불의 learning 사용 증빙 조회(`PremiumUsageClient`)가
+     * 일반 `learning-json` 서킷을 공유하면서 기존 응답 시간 5초를 유지하려고 쓴다(architecture 1.3)
+     */
+    internal fun withReadTimeout(readTimeout: Duration) = LearningClient(factory, readTimeout, circuit)
 
     fun exchange(method: String, path: String, query: String? = null, body: ByteArray? = null,
                  ifMatch: String? = null, key: String? = null): HttpExchangeResult = try {

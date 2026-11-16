@@ -162,7 +162,7 @@ class PaymentService(private val repository: PaymentRepository, private val tx: 
                         check(repository.finishAttempt(attempt.id,"CANCELED",result.payment.paymentKey,null,tx.now())==1)
                         val canceled=if(payment.approvedAt!=null || result.payment.approvedAt!=null) "REFUNDED" else "CANCELED"
                         check(repository.savePayment(payment.copy(status=canceled,entitlementStatus=null,canceledAt=tx.now(),updatedAt=tx.now()))==1)
-                        order.subscriptionId?.let { repository.subscription(it)?.let { s -> repository.saveSubscription(tx.cancelSubscription(s)) } }
+                        order.subscriptionId?.let(tx::cancelRefundedSubscription)
                         notify(order,"PAYMENT_CHANGED","CANCELED")
                     }
                     else -> Unit

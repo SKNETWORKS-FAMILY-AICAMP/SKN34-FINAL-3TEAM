@@ -4,10 +4,6 @@ import com.sagomungchi.core.guardianship.domain.GradePromotion
 import com.sagomungchi.core.guardianship.domain.StudentGrade
 import com.sagomungchi.core.guardianship.repository.GradePromotionRepository
 import com.sagomungchi.core.notification.service.NotificationService
-import net.javacrumbs.shedlock.core.LockAssert
-import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
-import org.springframework.scheduling.annotation.Scheduled
-import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -34,15 +30,4 @@ class GradePromotionService(private val repository: GradePromotionRepository, pr
     }
 
     private companion object { val KST: ZoneId = ZoneId.of("Asia/Seoul") }
-}
-
-/** 3월 매일 00:05 KST. 3월 1일을 놓쳐도(배포·장애) 그 달 안의 다음 실행이 따라잡는다. */
-@Component
-class GradePromotionScheduler(private val service: GradePromotionService) {
-    @Scheduled(cron = "0 5 0 * 3 *", zone = "Asia/Seoul")
-    @SchedulerLock(name = "core-grade-promotion", lockAtMostFor = "PT30M", lockAtLeastFor = "PT1M")
-    fun promote() {
-        LockAssert.assertLocked()
-        service.promote(Instant.now())
-    }
 }
