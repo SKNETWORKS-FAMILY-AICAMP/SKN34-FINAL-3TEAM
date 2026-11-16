@@ -51,6 +51,10 @@ async def plan_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> Theme
         max_retries=ctx.settings.theme_llm_retries,
     )
     theme = fill_rules_out(generated.data.model_dump())
+    # 줄거리 종류(#634): 주제가 learning 씨앗이면 코드가 주제에서 읽은 값(모델이 다른 종류를
+    # 고르지 못하게), 관리자 자유 글이면 모델 값. 검사·칸 고쳐 쓰기·그림이 이 값으로 규칙을 고름
+    if seeded := ctx.prompt.body.seed_story_type(ctx.request):
+        theme["storyType"] = seeded
     # LLM이 쓴 종료 이야기는 마무리 장면(내부 칸 outroStory). 다섯 단서 정리는 코드가 표로 계산해
     # 앞에 붙인다(finalize_texts, #535 7차). 단서 앞 그때 시각도 코드가 붙임
     theme["outroStory"] = theme.get("outro") or ""

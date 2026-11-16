@@ -591,7 +591,7 @@ def test_image_prompts_and_review_follow_drawing_rules() -> None:
             evidence="SIGHTING",
         )
     )
-    assert user["evidenceKind"] == "SIGHTING" and user["answerPlaceAllowed"] is False
+    assert user["evidenceKind"] == "SIGHTING" and user["answerAllowed"] is False
     assert prompts.cut_reveals_answer("OUTRO") and not prompts.cut_reveals_answer("INTRO")
 
 

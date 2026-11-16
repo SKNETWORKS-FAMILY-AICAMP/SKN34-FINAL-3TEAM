@@ -22,6 +22,7 @@ from typing import Any
 from app.followup.leak_guard import find_text_leaks
 from app.mission_draft import checks as mission_checks
 from app.mission_draft.models import Draft, MissionDraftRequest
+from app.theme_draft.families import is_animal
 
 DAYS = ("MON", "TUE", "WED", "THU", "FRI")
 DAY_KO = dict(zip(DAYS, ("월", "화", "수", "목", "금"), strict=True))
@@ -78,7 +79,9 @@ MUNGCHI_HAND_WORDS = tuple(
     (
         "손을|손으로|손가락|두 손|한 손|양손|손뼉|박수|만세|팔을|양팔|"
         "가리키며|가리키고|가리킨다|가리켜|짚는|짚고|짚어|짚으|건네|건넨|안아|안고|안는|껴안|"
-        "놓는|놓고|놓아|내려놓|들어 올|들어올|집어|줍|쥐고|쥔다|뛰|점프|달리|달려|달린"
+        "놓는|놓고|놓아|내려놓|들어 올|들어올|집어|줍|쥐고|쥔다|뛰|점프|달리|달려|달린|"
+        # #634 동물 주인공: 뭉치가 동물을 붙잡는 꼴(붙잡는 건 중립 인물)
+        "잡아|잡고|잡는|붙잡"
     ).split("|")
 )
 # …이·…가로 끝나도 주어가 아닌 낱말(콘티 마디의 주어를 가를 때)
@@ -104,6 +107,9 @@ TRACE_FEATURE = re.compile(
 NOT_TRACE_FEATURE = re.compile(
     r"빛|햇|그늘|밝|조명|소리|냄새|바람|거리|시각|시간|꽃|풍경|시설|하늘|벽 색"
 )
+# 동물 주인공 가족(#634 ③)은 동물 몸이 남기는 흔적도 흔적 특징(발자국 크기는 위 '크기'로 이미 됨,
+# '발가락 수'·'털 색'은 위 표에 없어 흔적 날이 목격으로 바뀌던 틈, 설계 17.8.5)
+ANIMAL_TRACE_FEATURE = re.compile(r"발자국|발가락|발톱|꼬리|털|보폭")
 # 요일별 증거 종류·기록 매체 코드 배정(#535). 모델이 고르게 두면 기록이 단서 100개 중 49~53개로 쏠려
 # (실측 2026-11-11, 예시를 빼도 줄지 않음) 이름·주제 씨앗처럼 코드가 정한다. 구성은 흔적·목격 각
 # 1개 이상, 기록 2개 이하(기준안, 세 구성 평균이면 종류마다 1.67개)
@@ -145,7 +151,12 @@ COLOR = re.compile(
     r"빨간|빨강|파란|파랑|노란|노랑|초록|하얀|하양|흰|검은|검정|까만|분홍|주황|보라|갈색|회색|푸른|붉은"
 )
 FOREIGN = re.compile(r"[぀-ヿ㐀-䶿一-鿿]")  # 가나·한자(일본어로 샌 사례)
-UNSAFE = re.compile(r"살인|납치|유괴|폭력|담배|흉기|피투성이|자살")  # 나머지는 검토 모델
+# 나머지는 검토 모델. #634 경찰관 역할·동물 장난꾸러기: 체포·수갑·연행·처벌·훔치기·범인(사용자 결정
+# 2026-11-16 '범인' 넣음), '도둑'은 '도둑고양이'·'도둑게'·'도둑갈매기'(동물 이름)만 통과
+UNSAFE = re.compile(
+    r"살인|납치|유괴|폭력|담배|흉기|피투성이|자살|체포|수갑|연행|처벌|훔치|훔쳐|훔친|범인|"
+    r"도둑(?!고양이|게|갈매기)"
+)
 SPEAKER_PREFIX = re.compile(r"\s*[가-힣A-Za-z]{1,6}\s*:")
 NOMINAL_ENDINGS = "음함림름움색"  # 표 값의 명사형 끝(좁음·열림…). 문장에서는 좁았어·열린처럼 활용
 
@@ -217,6 +228,7 @@ FIX_REASON = (
     re.compile(r"^CUT_ACTION ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery|sceneNote)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
+    re.compile(r"^CANDIDATE_NAME (\S+?)에 "),  # #634 ③ 엔딩 전 글의 후보 동물 이름
     re.compile(r"^CLUE_WORDING (MON|TUE|WED|THU|FRI) (clue) "),
     re.compile(r"^CLUE_OWNER (MON|TUE|WED|THU|FRI) (clue) "),
     # 단서 문장의 허용 값 낱말이 빠지거나 허용 밖 값이 들어가면 그 단서만 고쳐 씀(#535 7차: 흔적
@@ -277,9 +289,11 @@ def evidence_plan(seed: str) -> dict[str, dict[str, str | None]]:
     }
 
 
-def traceable(feature: str | None) -> bool:
-    """그날 특징이 흔적(TRACE)으로 남을 수 있는지(TRACE_FEATURE 기준안)."""
+def traceable(feature: str | None, animal: bool = False) -> bool:
+    """그날 특징이 흔적(TRACE)으로 남을 수 있는지(TRACE_FEATURE 기준안, 동물 주인공은 몸 흔적도)."""
     f = feature or ""
+    if animal and ANIMAL_TRACE_FEATURE.search(f):
+        return True
     return bool(TRACE_FEATURE.search(f)) and not NOT_TRACE_FEATURE.search(f)
 
 
@@ -297,15 +311,16 @@ def fit_evidence_plan(theme: Theme) -> list[str]:
     feat = {
         d.get("day"): (d.get("condition") or {}).get("feature") for d in theme.get("days") or []
     }
+    animal = is_animal(theme)
     changed: list[str] = []
     for day in DAYS:
         slot = plan.get(day) or {}
-        if slot.get("kind") != "TRACE" or traceable(feat.get(day)):
+        if slot.get("kind") != "TRACE" or traceable(feat.get(day), animal):
             continue
         order = [
             o for k in ("SIGHTING", "RECORD") for o in DAYS if (plan.get(o) or {}).get("kind") == k
         ]
-        swap = next((o for o in order if traceable(feat.get(o))), None)
+        swap = next((o for o in order if traceable(feat.get(o), animal)), None)
         if swap:
             plan[day], plan[swap] = plan[swap], plan[day]
             # 단서 종류('발자국'은 흔적 날, '목격'·'기록'은 그 날)도 배정을 따라 함께 바꿈
@@ -324,7 +339,13 @@ def fit_evidence_plan(theme: Theme) -> list[str]:
 
 
 def target_words(theme: Theme) -> list[str]:
-    """흔적 단서가 누구의 흔적인지 밝힐 때 쓸 찾는 대상 낱말(마지막 낱말과, 이름이면 그 앞 명사)."""
+    """흔적 단서가 누구의 흔적인지 밝힐 때 쓸 찾는 대상 낱말(마지막 낱말과, 이름이면 그 앞 명사).
+
+    동물 주인공 가족은 '동물'로 고정(#634: target이 '눈길에 발자국을 남긴 동물'처럼 설명 글이라
+    앞 낱말 '남긴'이 대상 낱말로 뽑혔음, 설계 17.8.5).
+    """
+    if is_animal(theme):
+        return ["동물"]
     toks = [t for t in re.split(r"\s+", str(theme.get("target") or "").strip()) if t]
     if not toks:
         return []
@@ -355,6 +376,61 @@ def names_target(theme: Theme, text: str | None) -> bool:
         elif compact(w) in compact(text):
             return True
     return False
+
+
+def candidate_words(theme: Theme) -> list[str]:
+    """후보 이름과 머리 낱말('옆집 고양이' → '옆집 고양이'·'고양이'). 동물 주인공 가족 검사용."""
+    words: list[str] = []
+    for c in theme.get("candidates") or []:
+        toks = [t for t in re.split(r"\s+", str(c).strip()) if t]
+        words += [str(c).strip(), *toks[-1:]]
+    return list(dict.fromkeys(w for w in words if w))
+
+
+def candidate_names(theme: Theme, text: str | None) -> list[str]:
+    """글에 나온 후보 이름·머리 낱말(#634 ③: 엔딩 전 글에 후보 동물을 내지 않음).
+
+    두 글자 이상은 공백을 뺀 글에서 찾고, 한 글자 낱말('쥐'·'새')은 앞뒤가 다른 글자와 붙지 않은
+    꼴(조사는 허용)만 본다('개울'·'소리'의 '개'·'소'는 빼려고).
+    """
+    found = []
+    for w in candidate_words(theme):
+        if len(compact(w)) == 1:
+            pattern = (
+                rf"(?<![가-힣]){re.escape(w)}(?:이|가|은|는|을|를|도|의|와|과|랑|야)?(?![가-힣])"
+            )
+            hit = re.search(pattern, text or "") is not None
+        else:
+            hit = compact(w) in compact(text)
+        if hit:
+            found.append(w)
+    return found
+
+
+def candidate_name_fields(theme: Theme) -> list[tuple[str, str]]:
+    """동물 주인공 가족에서 엔딩 전에 보이는 글 칸 [(경로, 글)](종료 이야기·종료 콘티·단서 빼고).
+
+    단서는 학생이 그날 미션을 마친 뒤 보고 후보 목록과 함께 나오므로 뺀다(설계 17.8.5).
+    """
+    fields = [
+        (k, str(theme.get(k) or ""))
+        for k in ("title", "world", "intro", "bigQuestion", "styleNote", "outfit", "incident")
+    ]
+    fields += [
+        (f"{d['day']}.{k}", str(d.get(k) or ""))
+        for d in theme.get("days") or []
+        for k in ("place", "sceneNote", "discovery", "missionHook")
+    ]
+    fields += [
+        (f"characters.{c.get('name')}", f"{c.get('name') or ''} {c.get('look') or ''}")
+        for c in theme.get("characters") or []
+    ]
+    fields += [
+        (f"introCuts{i + 1}.{k}", str(c.get(k) or ""))
+        for i, c in enumerate(theme.get("introCuts") or [])
+        for k in ("scene", "action", "caption")
+    ]
+    return fields
 
 
 def day_text_max(day: dict, key: str) -> int:
@@ -878,6 +954,15 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
     ):
         if not str(theme.get(k) or "").strip():
             bad.append(f"REQUIRED {k}")
+    animal = is_animal(theme)
+    if (
+        animal
+    ):  # 동물 주인공 가족(#634 ③)의 내부 칸: 사건 물건·일(미션 소재), 정답 동물 모습(종료 그림)
+        bad += [
+            f"REQUIRED {k}"
+            for k in ("incident", "answerLook")
+            if not str(theme.get(k) or "").strip()
+        ]
     chars = theme.get("characters") or []
     if not CHARACTERS[0] <= len(chars) <= CHARACTERS[1] or any(
         not (c.get("name") or "").strip() or not (c.get("look") or "").strip() for c in chars
@@ -907,6 +992,14 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         bad.append(f"CANDIDATES 후보는 {CANDIDATE_CHARS[0]}~{CANDIDATE_CHARS[1]}자")
     if any(COLOR.search(c) for c in cands):
         bad.append("CANDIDATES 후보 이름에 색 낱말(색으로 빼면 이름과 모순)")
+    if animal:
+        # target은 미션·대화·그림 모델에 그대로 넘어가 정답 유출 검사 밖이라 후보 이름이
+        # 없어야 함(설계 17.8.5)
+        if named := candidate_names(theme, theme.get("target")):
+            bad.append(f"TARGET_NAMES target에 후보 동물 이름 {named}(정답을 드러내지 않는 말로)")
+        for path, text in candidate_name_fields(theme):
+            if named := candidate_names(theme, text):
+                bad.append(f"CANDIDATE_NAME {path}에 후보 동물 이름 {named}(엔딩 전 글)")
     days = theme.get("days") or []
     if tuple(d.get("day") for d in days) != DAYS:
         return bad + [f"DAYS 요일은 {list(DAYS)} 순서(지금 {[d.get('day') for d in days]})"]
@@ -1065,6 +1158,10 @@ def check_mission(
         )
     if any(FOREIGN.search(x) for x in [*texts, draft.title]):
         bad.append("LANGUAGE 한국어 밖 글자(가나·한자)")
+    # 동물 주인공 가족(#634 ③): 미션이 후보 동물을 말하면 정해진 단서보다 먼저 근거가 샘(설계 17.8.5
+    # 남은 위험, 프롬프트로 먼저 막고 새면 그 미션만 다시)
+    if is_animal(theme) and (named := candidate_names(theme, "\n".join([draft.title, *texts]))):
+        bad.append(f"CANDIDATE_NAME 문제·안내·생각 열기 질문·예시 답에 후보 동물 이름 {named}")
     if any("수" in st.code for st in request.standards):  # 수학 미션만(성취기준 코드 4수·6수)
         final = draft.answer_key.final_answer if draft.answer_key else None
         if ahead := math_ahead([*texts, final or ""], grade):
@@ -1099,6 +1196,8 @@ def hook_problems(theme: Theme, day: str, hook: str, draft: Draft, overlap: int)
     key = compact(theme.get("answer"))
     if key and key in compact(hook):
         bad.append("THEME_ANSWER_LEAK")
+    if is_animal(theme) and candidate_names(theme, hook):
+        bad.append("CANDIDATE_NAME")
     return bad
 
 
@@ -1209,6 +1308,10 @@ def check_dialogue(
             bad.append("LEAK ANSWER_KEY")
         if key and key in compact(text):
             bad.append(f"THEME_ANSWER_LEAK 대화에 테마 정답 낱말 '{theme['answer']}'")
+    if is_animal(theme):  # #634 ③: 후보 동물은 엔딩 전 대화에 말하지도 나오지도 않음
+        said = "\n".join(f"{x.get('speaker') or ''} {x.get('text') or ''}" for x in llm_lines)
+        if named := candidate_names(theme, said):
+            bad.append(f"CANDIDATE_NAME 대화 줄에 후보 동물 이름 {named}")
     return list(dict.fromkeys(bad))
 
 

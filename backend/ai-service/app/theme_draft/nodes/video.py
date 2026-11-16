@@ -76,7 +76,7 @@ async def film(
     assert ctx.video is not None
     body = ctx.prompt.body
     cut = theme[CUTS_KEY[scene]][index - 1]
-    shows_target = body.cut_shows_target(scene, index)
+    shows_target = body.cut_shows_target(theme, scene, index)
     feedback: list[str] = []
     bad: list[str] = []
     for attempt in range(ctx.settings.theme_video_max_regen + 1):

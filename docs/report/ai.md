@@ -371,7 +371,7 @@ core #43의 `GET /internal/model-versions/active`와 `model.version.activated.v1
 | `reportNarrative` | `ai/report-narrative` | `report_narrative/prompts.py`, `report@1` |
 | `reportTemplate` | `ai/report-template` | `analysis_agent/template_prompts.py`, `analysis-template@1` (#280) |
 | `missionDraft` | `ai/mission-draft` | `mission_draft/prompts.py`, `mission-draft@1` (#354) |
-| `themeDraft` | `ai/theme-draft` | `theme_draft/prompts.py`, `theme-draft@2`(생성·검토 프롬프트 한 묶음, #437·#535) |
+| `themeDraft` | `ai/theme-draft` | `theme_draft/prompts.py`, `theme-draft@3`(생성·검토 프롬프트 한 묶음, #437·#535, #634 줄거리 종류로 @3) |
 | `memoryExplanation` | `ai/memory-explanation` | `memory_explanation/prompts.py`, `memory-explanation@1` (#565) |
 
 각 버전은 실제 system 문구와 user 본문 구성 함수를 이미지 코드에 함께 넣은 뒤에만 활성화할 수 있다. 현재 이미지는 위 기본 버전의 본문만 보유한다. core snapshot에 해당 활성 항목이 없으면 기본 버전을 사용한다. 보유하지 않은 활성 버전은 다른 본문에 새 버전명만 붙이지 않고 해당 기능 요청과 `/internal/versions`를 `503 AI_PROMPT_VERSION_UNAVAILABLE`로 거부한다. 구독·core snapshot·이벤트 조정 또는 본문 준비가 되지 않으면 `/health/ready`의 `versions`는 DOWN이다. 요청 시작 때 본문·버전 참조를 잡아 분석의 분류/답변 두 LLM 호출과 되묻기 재생성까지 같은 버전을 사용한다.
@@ -1525,6 +1525,23 @@ core가 #543(V45)부터 `THEME_VIDEO`를 받게 되어(이벤트 스키마·`Cal
 6. 붙잡는 사람은 중립 인물로 제한
 7. 프롬프트 버전 `theme-draft@3`
 8. 켜는 순서 ①③ → ② → ④ → ⑤
+
+#### 17.8.10 1차 구현 (①③, 2026-11-16)
+| 곳 | 구현 | 설계와 다른 점·새로 정한 값 |
+|---|---|---|
+| `families.py`(새 모듈) | 종류 등록표 `STORY_TYPES`(`StoryType`: 코드·이름·라벨·가족·후보 범주·시작/종료 콘티 틀·대상이 나와도 되는 컷·결말·규칙 묶음), `parse_topic`(learning `ThemeTopicSeeds.parse`와 같은 규칙), `story_type(theme)`(없거나 모르는 값이면 LOST), `type_rules` | 설계의 `StoryFamily`(가족 단위)는 콘티 틀·노출 컷이 종류마다 달라(LOST 시작 1컷 노출, TREASURE 없음) **종류 단위 칸**으로 두고 가족 공통 글은 상수(`HIDDEN_COMMON`·`ANIMAL_COMMON`)로 묶음 |
+| `GeneratedTheme` | 내부 칸 `storyType`(기본 LOST)·`incident`·`answerLook`(기본 null). LLM 스키마는 strict라 모두 필수 | 기본값은 #634 전 테마·시험 고정 자료용 |
+| `plan_theme` | 씨앗이면 `seed_story_type`으로 `storyType`을 덮어씀 | — |
+| `plan_user` | 씨앗이면 그 종류 규칙 묶음 하나, 관리자 자유 글·주제 없음이면 네 종류 묶음을 모두 주고 모델이 고름 | 설계는 "자유 글이면 모델 값"만 정함 — 규칙을 먼저 줘야 해서 모두 줌(자유 글 요청만 프롬프트가 길어짐) |
+| `PLAN_SYSTEM` | 주인 아이·시작/결말·콘티 순서·큰 질문 종류·장소 후보 문장을 종류 규칙으로 옮기고 "줄거리 종류 규칙을 따른다"로. 차림은 "제복 모양은 되지만 실제 기관 휘장·글자는 쓰지 않는다", 흔적 특징에 동물 몸 흔적 | LOST 큰 질문을 장소(머문 곳·쉬어 간 곳·두고 온 곳·떨어뜨린 곳)로 좁힘(설계 17.8.4 [틈]) |
+| 콘티·결말 | `CUT_ROLES` → `cut_roles(theme, key)`, `fix_rules` outro는 종류 결말 | — |
+| 대상 노출 컷 | `cut_shows_target(theme, scene, index)` = 종류의 `target_cuts`(LOST 시작1·종료3·4, TREASURE 종료3·4, ③ 종료2~4). `images.py`·`video.py`·영상 시작 1컷 문구는 노출 컷이 시작 장면일 때만 | — |
+| 검토 칸 | 글 검토 요약에 `storyType`(③은 `incident`·`answerLook`), 그림·영상 검토 `answerPlace`·`answerPlaceAllowed` → `storyType`·`target`·`candidates`·`answer`(③ `answerLook`)·`answerAllowed`. 세 검토 SAFETY에 `SAFETY_STORY`(동물 습성·장난은 범죄 아님, 사람이 부드럽게 안아 올림은 폭력 아님, 제복은 역할일 뿐) | — |
+| ③ 코드 검사 | `REQUIRED incident·answerLook`, `TARGET_NAMES`(target에 후보 이름·머리 낱말), `CANDIDATE_NAME`(엔딩 전 글 칸·미션·대화 LLM 줄·고쳐 쓴 수사 연결 문장), `target_words` = `동물`, `traceable(feature, animal)`에 `발자국·발가락·발톱·꼬리·털·보폭` | 머리 낱말 = 후보 마지막 낱말, 한 글자 낱말(쥐·새)은 앞뒤에 다른 글자가 붙지 않은 꼴만(조사 허용, '개울'의 '개'는 안 잡음). `CANDIDATE_NAME` 글 칸 중 제목·장면 메모 등 `FIX_PATH` 칸은 칸 고쳐 쓰기, 세계·사건·인물 모습·시작 콘티 장면은 줄거리 다시 생성. 단서는 후보 목록과 함께 보여 검사 밖 |
+| ③ 미션·대화 | 미션 이야기 조각에 "이번 주 사건(incident)에서 소재, 동물 이야기·동물 설명 글 금지", 쓰지 말 낱말·피할 낱말에 머리 낱말, STORY_LINK 이야기에 `incident` | — |
+| ③ 그림·영상 | 엔딩 전 컷·미션 그림은 "후보 동물을 그리지 않음", 노출 컷은 `answerLook` 모습 고정, 영상 종료 3컷 "사람이 제자리에서 부드럽게 안아 올림" | — |
+| 모든 종류 | `UNSAFE`에 `체포·수갑·연행·처벌·훔치/훔쳐/훔친·범인·도둑(도둑고양이·도둑게·도둑갈매기 제외)`, `MUNGCHI_HAND_WORDS`에 `잡아·잡고·잡는·붙잡` | '훔치다'는 '땀을 훔치다'에도 걸려 다시 생성될 수 있음(실측에서 셈) |
+| 시험 | `tests/theme_draft/test_families.py`(씨앗 읽기 4종·옛 형식·자유 글, 규칙 주입, 그래프에서 씨앗 종류가 모델 값을 덮어씀·내부 칸이 응답에 없음, ③ 검사·칸 고쳐 쓰기 경로, 한 글자 낱말 경계, 위험 낱말, 노출 컷 4종, 그림·영상·검토 칸, 미션 이야기, 칸 고쳐 쓰기 규칙) | 기존 시험은 버전 `@3`, 검토 칸 `answerAllowed`, 큰 질문 규칙 위치만 바꿈 |
 
 ## 18. 추억 임베딩 구분·추억 설명 API (#565, 2026-11-12)
 
