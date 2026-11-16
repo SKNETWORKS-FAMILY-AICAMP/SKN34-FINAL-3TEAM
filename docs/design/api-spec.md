@@ -1222,7 +1222,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 | POST | `/internal/payment-usage/reservations` | learning 피드백 실행 전 프리미엄 사용 예약 `{studentId,sourceId}` → `{reservationId,premium}` (STUDENT+본인 scope, #48) |
 | POST | `/internal/payment-usage/completions` | learning 피드백 DONE 저장 후 사용 확정 `{studentId,reservationId,used}` (#48) |
-| GET | `/internal/students/{studentId}/profile` | report-worker: 학생 별명·`parentSharingEnabled` (4.0, #206) |
+| GET | `/internal/students/{studentId}/profile` | report-worker: 학생 별명·`parentSharingEnabled` (4.0, #206). learning: 추억 검색·설명 글에서 학생 별명을 가리기 위한 별명 조회(`memory/client/StudentProfileClient.kt`, P27 #563·#564) |
 | GET | `/internal/students/{studentId}/report-template` | report-worker: 현재 연결 학부모의 리포트 표시 설정 `{settings, revision}`. 학생 삭제 진행·비활성 409 `STUDENT_UNAVAILABLE` (#209) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고

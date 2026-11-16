@@ -531,7 +531,7 @@ paths:
     get:
       operationId: getInternalStudentProfile
       tags: [Children]
-      summary: 리포트 생성용 활성 학생 UUID·별명·학부모 공유 설정 조회
+      summary: 리포트 생성(report-worker)·추억 별명 가림(learning)용 활성 학생 UUID·별명·학부모 공유 설정 조회
       description: 내부 토큰과 SYSTEM 역할 및 대상 학생 scope 필수. 역할·scope 검사 후 기존 ACTIVE 전용 조회를 사용한다. 공개 Bearer 인증만으로 호출할 수 없다.
       security: [{InternalToken: []}]
       parameters:
@@ -6062,6 +6062,8 @@ paths:
       - BearerAuth: []
       - WithdrawalReceipt: []
   /internal/deletion-requests/{deletionRequestId}/completions:
+    servers:
+    - url: /
     post:
       operationId: completeStudentDeletion
       tags:
@@ -6138,8 +6140,6 @@ paths:
       security:
       - InternalToken: []
       description: SYSTEM 역할 및 대상 학생 X-Student-Scope 필수. learning/report 양쪽 완료 시에만 COMPLETED.
-    servers:
-    - url: /
   /children/{childId}/reports:
     get:
       tags:
@@ -12506,8 +12506,8 @@ components:
           type:
           - string
           - 'null'
+          description: 판정 요소 출처. RECORD는 기록 지표(Metric) 전용이라 판정 요소에는 오지 않는다(#656). 근거 구절이 없는 ai 요소는 null
           enum:
-          - RECORD
           - RULE
           - ANSWER_KEY
           - AI_OBSERVATION
