@@ -277,4 +277,69 @@ class MemorySearchTest {
             jdbc.update("DELETE FROM attempt WHERE id=?",id)
         }
     }
+
+    @Test fun `묶음 중간 실패로 롤백한 행은 성공에서 제외하고 재시도는 정확히 센다`() {
+        verifyWorkerCount(2, failAt=2)
+    }
+    @Test fun `앞 묶음의 커밋은 유지하고 다음 묶음 롤백은 성공에서 제외한다`() {
+        verifyWorkerCount(10, failAt=10)
+    }
+    @Test fun `커밋 직전 실패로 롤백한 행도 성공에서 제외한다`() {
+        verifyWorkerCount(2, failAt=2, commitFailure=true)
+    }
+    @Test fun `정상 여러 묶음은 실제 커밋된 전체 건수를 반환한다`() {
+        verifyWorkerCount(10)
+    }
+    @Test fun `삭제된 문서의 READY 갱신 영 건은 성공에서 제외한다`() {
+        verifyWorkerCount(2, deleteDuringEmbedding=true)
+    }
+
+    private fun verifyWorkerCount(count: Int, failAt: Int=0, commitFailure: Boolean=false, deleteDuringEmbedding: Boolean=false) {
+        repeat(count) { attempt() }; frame()
+        org.springframework.test.context.transaction.TestTransaction.flagForCommit()
+        org.springframework.test.context.transaction.TestTransaction.end()
+        val delegated=org.mockito.Mockito.mock(MemorySearchRepository::class.java,
+            org.mockito.AdditionalAnswers.delegatesTo<MemorySearchRepository>(repository))
+        var writes=0
+        org.mockito.Mockito.doAnswer { call ->
+            writes++
+            if(writes==failAt && !commitFailure)
+                throw org.springframework.dao.DataIntegrityViolationException("synthetic write failure")
+            val updated=repository.ready(call.getArgument(0),call.getArgument(1),call.getArgument(2),call.getArgument(3))
+            if(writes==failAt && commitFailure) {
+                org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    object: org.springframework.transaction.support.TransactionSynchronization {
+                        override fun beforeCommit(readOnly: Boolean) { throw IllegalStateException("synthetic commit failure") }
+                    })
+            }
+            updated
+        }.`when`(delegated).ready(
+            org.mockito.ArgumentMatchers.any<com.sagomungchi.learning.memory.repository.MemoryLease>()
+                ?: com.sagomungchi.learning.memory.repository.MemoryLease(UUID.randomUUID(),student,"synthetic",now),
+            org.mockito.ArgumentMatchers.anyList(),org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any<Instant>() ?: now)
+        val embedding=org.mockito.Mockito.mock(com.sagomungchi.learning.memory.client.MemoryEmbeddingClient::class.java)
+        org.mockito.Mockito.`when`(embedding.embed(org.mockito.ArgumentMatchers.anyList())).thenAnswer {
+            assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+            if(deleteDuringEmbedding) repository.deleteByStudent(student)
+            val texts=it.arguments[0] as List<*>
+            com.sagomungchi.learning.memory.client.MemoryEmbeddingResult("test-model",1536,List(texts.size){vector})
+        }
+        val privacy=org.mockito.Mockito.mock(com.sagomungchi.learning.memory.service.MemoryTextPrivacy::class.java)
+        org.mockito.Mockito.`when`(privacy.nickname(student)).thenReturn("synthetic")
+        org.mockito.Mockito.`when`(privacy.mask(org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())).thenAnswer {it.arguments[0]}
+        val worker=com.sagomungchi.learning.memory.service.MemoryEmbeddingWorker(delegated,embedding,privacy,
+            org.springframework.transaction.support.TransactionTemplate(transactionManager),java.time.Clock.fixed(now,java.time.ZoneOffset.UTC))
+        fun readyCount()=jdbc.queryForObject("SELECT count(*) FROM memory_search_doc WHERE student_id=? AND status='READY'",Int::class.java,student)!!
+        val reported=worker.runBatch()
+        val expected=when { deleteDuringEmbedding -> 0; failAt>0 -> ((failAt-1)/8)*8; else -> count }
+        assertEquals(expected,readyCount())
+        assertEquals(expected,reported,"롤백된 행은 성공 건수에 포함하지 않는다")
+        if(failAt>0) {
+            assertEquals(count-expected,jdbc.queryForObject("SELECT count(*) FROM memory_search_doc WHERE student_id=? AND status='FAILED'",Int::class.java,student))
+            assertEquals(count-expected,worker.runBatch())
+            assertEquals(count,readyCount())
+        }
+        if(!deleteDuringEmbedding) assertEquals(0,worker.runBatch())
+    }
 }

@@ -60,7 +60,11 @@ class MemoryEmbeddingWorker(private val repository: MemorySearchRepository,priva
             try {
                 val names=batch.map { it.studentId }.distinct().associateWith { privacy.nickname(it) }
                 val result=embedding.embed(batch.map { privacy.mask(it.text,names.getValue(it.studentId)) })
-                tx.executeWithoutResult { batch.forEachIndexed { i,lease->ready+=repository.ready(lease,result.vectors[i],result.model,clock.instant()) } }
+                // execute는 커밋까지 성공한 뒤 반환한다. 롤백된 묶음은 성공 건수에 포함하지 않는다.
+                val committed=tx.execute {
+                    batch.mapIndexed { i,lease->repository.ready(lease,result.vectors[i],result.model,clock.instant()) }.sum()
+                } ?: 0
+                ready+=committed
             } catch (_: Exception) {
                 // 원문을 포함할 수 있는 HTTP 예외는 로깅하지 않는다.
                 tx.executeWithoutResult { batch.forEach { repository.failed(it,5) } }
