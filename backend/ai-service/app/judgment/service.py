@@ -25,6 +25,7 @@ from app.judgment.models import (
     JudgmentResult,
     M1Observation,
     M2Observation,
+    M2Preparation,
     ModelScores,
     RubricElement,
     Versions,
@@ -129,8 +130,11 @@ class JudgmentService:
                 m2 = await self._scoring.m2_scores(m2_body, timeout)
                 if m2 is None:
                     return None
+                if not m2.scored:
+                    return ModelScores(m2_preparation=m2.preparation)
                 average = cross_check.mean(m2.scores)
                 return ModelScores(
+                    m2_preparation=m2.preparation,
                     m2=M2Observation(
                         input_type=m2.inputType,
                         scores=m2.scores,
@@ -138,9 +142,13 @@ class JudgmentService:
                         model=m2.model,
                         mean=average,
                         disagreement=cross_check.disagrees(
-                            result, m2.inputType, average, self._settings
+                            result,
+                            m2.inputType,
+                            average,
+                            _m2_chars(m2.preparation, m2_body["text"]),
+                            self._settings,
                         ),
-                    )
+                    ),
                 )
             m1 = await self._scoring.m1_check(m1_body or {}, timeout)
         except ScoringUnavailable as exc:
@@ -175,6 +183,11 @@ class JudgmentService:
         ):
             return "UNVERIFIED_SCOPE"
         return None
+
+
+def _m2_chars(preparation: M2Preparation | None, text: str) -> int:
+    """scoring이 정리한 글의 글자 수. 정리 결과가 없으면 원래 답의 공백 뺀 글자 수."""
+    return preparation.chars if preparation is not None else verifier.visible_length(text)
 
 
 def _judge_element(

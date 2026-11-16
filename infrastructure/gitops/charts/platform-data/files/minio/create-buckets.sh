@@ -35,3 +35,33 @@ for bucket in "$@"; do
   esac
   echo "MinIO bucket ready: $bucket"
 done
+
+# Optional placeholder objects for local stand-ins (#509), as space-separated "bucket/key".
+# An existing object is never overwritten.
+set -f
+for object in ${MINIO_PLACEHOLDER_OBJECTS:-}; do
+  bucket=${object%%/*}
+  key=${object#*/}
+  case "$bucket" in ''|*[!a-z0-9-]*) echo 'Invalid placeholder bucket' >&2; exit 1 ;; esac
+  case "$key" in
+    "$object"|''|/*|*/|*//*|*..*|*[!A-Za-z0-9._/-]*) echo 'Invalid placeholder key' >&2; exit 1 ;;
+  esac
+  status=$(printf 'user = "%s"\n' "$credentials" |
+    curl --config - --aws-sigv4 'aws:amz:us-east-1:s3' --silent --show-error \
+      --connect-timeout 3 --max-time 15 --head \
+      --output /dev/null --write-out '%{http_code}' "$endpoint/$bucket/$key")
+  case "$status" in
+    200) echo "MinIO placeholder exists: $object"; continue ;;
+    404) ;;
+    *) echo "MinIO placeholder check failed: HTTP $status" >&2; exit 1 ;;
+  esac
+  status=$(printf 'user = "%s"\n' "$credentials" |
+    curl --config - --aws-sigv4 'aws:amz:us-east-1:s3' --silent --show-error \
+      --connect-timeout 3 --max-time 15 --request PUT \
+      --data-binary 'sagomungchi local placeholder object (#509)' \
+      --output /tmp/minio-object.xml --write-out '%{http_code}' "$endpoint/$bucket/$key")
+  case "$status" in
+    200) echo "MinIO placeholder created: $object" ;;
+    *) echo "MinIO placeholder creation failed: HTTP $status" >&2; exit 1 ;;
+  esac
+done

@@ -1,24 +1,9 @@
-import { useState } from 'react'
-import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
-import { parentApi } from '../../data/parent/api.ts'
-import { useParentQuery } from '../../data/parent/queries.ts'
-import { ProfileSettings } from '../parent/AccountForms.tsx'
-import { AccountLifecycle } from './AccountLifecycle.tsx'
-import { Withdrawal } from './Withdrawal.tsx'
-import { Link } from 'react-router'
-import { useSession } from '../auth/sessionContext.ts'
+import { Navigate, useLocation } from 'react-router'
+
+/** 기존 계정 주소는 하나의 설정 화면으로 연결한다 (#427). */
 export function AccountPage() {
-  const { session } = useSession()
-  const consentReady = session?.nextAction !== 'CONSENT_REQUIRED'
-  const q=useParentQuery(['children'],signal=>parentApi.children(signal),consentReady)
-  const [id,setId]=useState('')
-  const child=consentReady ? q.data?.items.find(c=>c.id===id)??q.data?.items[0] : undefined
-  return <Workspace title="계정·자녀 관리" nav={[{path:'/parent/journal',label:'대시보드·공책'},{path:'/parent/account',label:'계정·자녀 관리'}]}>
-    <div className="svc-page"><h1>계정·자녀 관리</h1>{consentReady && <QueryFeedback query={q}/>}
-      <Link to="/parent/transfers">자녀 이관 · 받은 요청 확인</Link>
-      {child&&<><label>관리할 자녀<select value={child.id} onChange={e=>setId(e.target.value)}>{q.data?.items.map(c=><option key={c.id} value={c.id}>{c.nickname}</option>)}</select></label><ProfileSettings key={child.id} child={child}/><AccountLifecycle key={'manage'+child.id} child={child}/></>}
-      {!child&&<p>연결된 자녀 정보를 확인할 수 없습니다. 탈퇴 사전 확인은 아래에서 진행할 수 있습니다.</p>}
-      <Withdrawal/>
-    </div>
-  </Workspace>
+  const { search } = useLocation()
+  const params = new URLSearchParams(search)
+  params.set('section', 'account')
+  return <Navigate to={'/parent/settings?' + params.toString()} replace />
 }

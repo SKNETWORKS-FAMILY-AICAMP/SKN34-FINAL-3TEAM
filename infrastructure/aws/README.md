@@ -8,7 +8,7 @@ EKS는 [eksctl 설정](../eks/cluster.json), 나머지는 `demo-stack.json`(원�
 
 | 명령 | 동작 | AWS 변경 |
 |---|---|---|
-| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 7개, Secret 이름 11개, RDS·SG·subnet group, IAM 역할 10개(trust·정책 원문, #211 Karpenter 컨트롤러 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
+| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 7개, Secret 이름 11개, RDS·SG·subnet group, IAM 역할 12개(trust·정책 원문, #211 Karpenter 컨트롤러, #652 테마 자산 ai·learning 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
 | `apply --confirm-account 347161580747` | `plan`에서 MISSING인 자원만 생성. 기존 자원은 변경·삭제하지 않는다. Secret 값과 EKS는 만들지 않는다 | 생성만 |
 | `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` | 현재 subnet ID를 채운 eksctl 설정 출력 → `eksctl create cluster -f <파일>` (2026-11-04 eksctl 0.231.0 `--dry-run` 통과) | 없음 |
 | `apply --after-eksctl ...` | 새 클러스터의 cluster SG에서 RDS 5432 허용 | 생성만 |
@@ -21,7 +21,7 @@ python infrastructure/aws/demo_stack.py --profile sagomungchi-provided plan
 
 새 환경 순서: `apply` → 비밀 값 입력(Secrets Manager, 담당자) → `render-eksctl` → `eksctl create cluster` → `apply --after-eksctl` → [prod 초기 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185)(ESO·LB Controller·`rds-bootstrap`·migration·앱). CloudFront 배포·OAC·Function, ALB Ingress의 origin 헤더, 웹 업로드, Google OAuth 등록은 이 스크립트 범위 밖이며 아래 redacted 설정과 절차로 수동 구성한다. 계정 ID와 이름이 고정이므로 다른 계정에는 `demo-stack.json`·`iam/`·`cluster.json`을 먼저 바꾼다.
 
-[`rds-bootstrap.sql`](../gitops/charts/platform-data/files/postgres/rds-bootstrap.sql)은 로컬 PostgreSQL init과 같은 파일(#230)이며 DB 3개, DB별 migration(DDL)·app(DML) 계정, PUBLIC CONNECT 회수, migration 계정 소유 객체의 default privileges를 멱등으로 만든다. 계정 이름·비밀번호는 ESO Secret에서 환경변수로만 받고, 이미 있는 계정의 비밀번호는 바꾸지 않는다. migration 후 한 번 더 실행하면 기존 테이블 권한을 맞추고 `flyway_schema_history`·`alembic_version`의 app 권한을 회수한다.
+[`rds-bootstrap.sql`](../gitops/charts/platform-data/files/postgres/rds-bootstrap.sql)은 로컬 PostgreSQL init과 같은 파일(#230)이며 DB 3개, DB별 migration(DDL)·app(DML) 계정, PUBLIC CONNECT 회수, migration 계정 소유 객체의 default privileges를 멱등으로 만든다. learning_db에는 지식 저장소용 `vector` 확장도 만든다(#466). AWS 재가동 때 RDS 엔진의 pgvector 버전과 `rds.allowed_extensions` 허용 여부를 먼저 확인한다. 계정 이름·비밀번호는 ESO Secret에서 환경변수로만 받고, 이미 있는 계정의 비밀번호는 바꾸지 않는다. migration 후 한 번 더 실행하면 기존 테이블 권한을 맞추고 `flyway_schema_history`·`alembic_version`의 app 권한을 회수한다.
 
 ## 외부 요청 흐름
 
@@ -43,8 +43,30 @@ python infrastructure/aws/demo_stack.py --profile sagomungchi-provided plan
 
 - RDS `sagomungchi-demo-db`: PostgreSQL 17.11, db.t4g.small, Single-AZ, 비공개, 암호화, 백업 7일. 삭제 보호 false. PITR 복원 시각은 JSON에 기록했지만 실제 복원 시간·RPO/RTO 달성은 미검증이다.
 - `sagomungchi-demo-347161580747-{web,missions,reports,models}`: 버전 관리·Public Access Block 상태는 JSON 참고. 웹만 CloudFront OAC로 제공하며 reports/models는 앱 IAM 및 서비스 권한 검사를 통한다.
-- VPC의 available NAT GW는 1개이며 JSON에 ID·subnet을 기록했다. AZ 장애 시 외부 호출 복구 검증은 하지 않았다.
+- VPC의 available NAT GW는 1개이며 JSON에 ID·subnet을 기록했다. AZ 장애 시 외부 호출 복구 검증은 하지 않았다. 2026-11-12 데모 정지 중 비용 축소로 NAT와 EIP, core ALB를 지웠다. 같은 날 EKS 클러스터도 지웠다(RDS·S3·ECR·Secret·IAM·VPC는 유지). 다시 켤 때는 [EKS 재생성 순서](../eks/README.md#재생성-순서-2026-11-12-eks-삭제-이후)를 따른다.
 - RDS·S3·IAM 생성은 위 `demo_stack.py apply`로 정의했다. 웹 버킷 policy(CloudFront 배포 ID 필요)와 lifecycle은 정의하지 않았다. 관측 파일을 재생성 완료 근거로 사용하지 않는다.
+
+## 테마 자산 버킷 권한 (#652, 2026-11-16 정의·미적용)
+
+ai는 테마 초안 그림·영상을 `missions` 버킷의 `theme-drafts/{실행 ID}/{장면}`에 올리고, learning은 같은 키를 1시간짜리 presigned GET URL로 바꿔 학생 화면에 준다(#437·#438). 지금까지 prod 값에는 두 서비스의 `ASSET_S3_BUCKET`도 S3 권한 역할도 없어서, 그림·영상 단계와 자산 URL이 오류 없이 꺼져 있었다. 저장소에만 아래를 정의했고 AWS에는 만들지 않았다(조회도 하지 않음).
+
+| 역할 | Pod Identity 연결 | 권한(inline) |
+|---|---|---|
+| `sagomungchi-demo-ai-asset-s3-role` | `app/ai-service` | `s3:PutObject` — `missions` 버킷 `theme-drafts/*` |
+| `sagomungchi-demo-learning-asset-s3-role` | `app/learning-service` | `s3:GetObject` — 같은 경로(presigned URL 서명자 권한. 서명 자체는 S3를 부르지 않음) |
+
+- trust는 report·scoring 역할과 같은 형식(`pods.eks.amazonaws.com`, 클러스터 ARN·`app`·ServiceAccount 조건)이다. 두 앱 chart는 `serviceAccount.create` 기본값(true)으로 `ai-service`·`learning-service` ServiceAccount를 만든다.
+- 버킷은 기본 암호화 SSE-S3(AES256)라 KMS 권한은 필요 없다. 그림은 `<img>`·`<video>`가 presigned URL을 직접 열므로 CORS 설정도 필요 없다.
+- 두 앱의 NetworkPolicy egress에 Pod Identity agent `169.254.170.23/32:80`을 더했다(report·scoring·sLLM과 같음). 이것이 없으면 역할을 연결해도 자격 증명을 못 받는다. ai의 S3 업로드는 기존 공인 443 허용(S3 Gateway endpoint 대역 포함)으로 나간다.
+
+재가동 때 순서(A 계정, #601):
+
+1. `demo_stack.py plan` → 두 역할이 `MISSING`인지 확인 → `apply --confirm-account <계정>`이 역할·inline 정책을 만든다(기존 자원은 안 바꿈).
+2. 클러스터를 새로 만들면 `cluster.json`의 Pod Identity 10개에 두 연결이 들어 있다. 클러스터가 이미 있으면 `aws eks create-pod-identity-association --cluster-name sagomungchi-demo-eks --namespace app --service-account ai-service --role-arn <ai 역할 ARN>`(learning도 같게)로 만든다. 연결 뒤 Pod를 다시 띄워야 자격 증명이 주입된다.
+3. prod `ai-service.json`·`learning-service.json`으로 두 앱을 재배포한다(`ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`·agent egress 포함).
+4. 확인: 관리자 화면에서 테마 초안 1건 생성 → ai 로그에 그림 단계 경고(`skipped`)가 없고 `theme-drafts/` 객체가 생겼는지 → 학생 테마 화면 응답의 장면 URL이 null이 아니고 브라우저에서 열리는지. 결과는 [infra 보고서 9.8](../../docs/report/infra.md#98-prod-테마-자산-버킷과-네임스페이스-기본-거부-준비-652657-2026-11-16)에 적는다.
+
+B 계정(시연, 11/30 무렵)으로 옮길 때 바꿀 항목: 버킷 이름의 계정 번호(`prod/ai-service.json`·`learning-service.json`의 `ASSET_S3_BUCKET`), `iam/ai-asset-s3-role.*`·`iam/learning-asset-s3-role.*`의 버킷·클러스터 ARN, `eks/cluster.json`의 두 연결 role ARN. 다른 계정 번호 항목과 함께 바꾼다(#601 11/14 메모).
 
 ## 배포·복구 유의 사항
 
@@ -69,7 +91,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 ## S3 endpoint·NAT 점검 (#212, 2026-11-04)
 
-읽기 전용 점검이며 AWS 자원은 바꾸지 않았다. 상세 근거·비용 비교는 [#185 보고서의 #212 절](../../docs/report/issue-185-aws.md#s3-gateway-엔드포인트와-nat-병목-점검-212-2026-11-04).
+읽기 전용 점검이며 AWS 자원은 바꾸지 않았다. 상세 근거·비용 비교는 [#185 보고서의 #212 절](../../docs/report/infra.md#5-s3-gateway-엔드포인트와-nat-점검-212).
 
 - S3 Gateway endpoint와 private route 두 개의 `pl-78a54011` 경로가 active다. 정책은 기본 전체 허용을 유지한다. ECR layer 다운로드도 AWS 소유 버킷을 이 endpoint로 받으므로 우리 버킷만 허용하도록 좁히지 않는다.
 - scoring 모델 약 844MiB 다운로드 구간에 NAT 바이트는 0.04MiB였다. Pod 안 S3 DNS 해석 IP는 모두 prefix list 대역이고, report·scoring Pod의 `ListObjectsV2`는 200이다. `demo-observed.json`에 endpoint·route table을 기록했다.
@@ -78,7 +100,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 ## 관측·복구 우선순위
 
-아래는 초기 점검 당시의 후속 후보 목록이며 #185의 완료 조건 전체를 뜻하지 않는다. [경보·로그 보존 설정안](monitoring-plan.md)과 [미적용 경보 JSON](alarms.proposed.json)의 SNS/Lambda 방안은 보류했다. 이후 기존 설계의 Grafana→Discord 연결과 최소 경보를 배포했다. 전체 경보·추적은 #187, 자동 배포는 #186, 노드 자동확장은 #211에서 다룬다. 실제 완료 근거는 [#185 보고서](../../docs/report/issue-185-aws.md)의 후속 배포 절을 따른다.
+아래는 초기 점검 당시의 후속 후보 목록이며 #185의 완료 조건 전체를 뜻하지 않는다. 2026-11-03 제안(CloudWatch 경보 6개 + SNS→Lambda→Discord 중계, EKS 로그 14일 보존)은 채택하지 않았다. 경보 조건은 [미적용 경보 JSON](alarms.proposed.json)에 검토용으로만 남아 있고(`ActionsEnabled=false`, action 없음) AWS에 만들지 않았다. 당시 추정은 경보·secret 고정비 월 약 $1, 기존 EKS 로그 수집 약 1.2GiB/일(월 약 $28)이며 로그 그룹 보존 기간은 정하지 않았다. 이후 기존 설계의 Grafana→Discord 연결과 최소 경보를 배포했다. 전체 경보·추적은 #187, 자동 배포는 #186, 노드 자동확장은 #211에서 다룬다. 실제 완료 근거는 [#185 보고서](../../docs/report/infra.md#4-aws-데모-구성-185)의 후속 배포 절을 따른다.
 
 1. **경보와 로그 보존:** 서울 리전 `cloudwatch describe-alarms`의 metric/composite 목록이 모두 비어 있다. EKS `/aws/eks/sagomungchi-demo-eks/cluster` 로그 그룹은 retentionInDays 미설정이다. RDS는 Enhanced Monitoring interval=0, Performance Insights=true, CloudWatch log export 없음이다. 먼저 ALB unhealthy target·5xx, RDS 여유 저장공간·연결·CPU, 앱 readiness 및 큐 적체의 수집 가능 지표와 알림 수신 담당을 정한다. 임계값은 실측 후 정하고 로그 보관 기간·알림 채널·비용을 정한 뒤 구성한다. 이번 조회는 CloudFront용 us-east-1 경보나 외부 알림 도구까지 조사한 것은 아니다.
 2. **RDS 격리 복원:** 자동 스냅샷 두 개가 available이며, 자동 백업 API의 복원 범위는 2026-11-02 17:55:20.511~2026-11-03 19:32:50 KST였다. 백업 보존은 7일, backup window는 14:54–15:24 UTC(23:54–다음 날 00:24 KST), maintenance window는 금요일 13:31–14:01 UTC다. 이 범위는 조회 시점 값이므로 복원 직전에 다시 조회한다. 복원 대상 ID·시각·기간·비용·정리 담당을 확정한 뒤 별도 DB에 복원하고 TLS 접속, 서비스별 스키마·migration·건수·표본 정합성, 소요 시간을 기록한다. 원본 endpoint나 앱 Secret을 시험 DB로 변경하지 않는다. 복원 자원 생성·삭제는 이번에 실행하지 않았다.
@@ -90,6 +112,46 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 ## #185 검증 도구
 
 - `verify-viewer-ip.ps1`: 명시한 EKS context에서 Redis 카운터를 읽고 CloudFront 기기 등록 API에 유효하지 않은 코드로 두 번 요청한다. 직접 확인한 접속자 공인 IPv4를 `-ViewerIp`, 전용 kubeconfig를 `-Kubeconfig`로 전달한다. 두 번째 요청에는 위조 XFF를 넣는다. 실제 viewer 카운터 +2, 위조 IP 카운터 불변과 PAIRING_CODE_INVALID 응답을 모두 확인한다. 기기·페어링을 생성하지 않지만 IP별 10분 한도에서 2회를 사용한다. 동시 요청·카운터 TTL 만료·프록시 egress 차이가 있으면 실패로 보고 조사하며 카운터를 임의로 지우지 않는다.
-- `audit-demo-data.sql`: demo의 core_app 계정으로 read-only transaction에서 계정·학생의 demo flag별 건수, 결제 건수와 DB CONNECT 권한만 조회한다. 개인정보를 출력하지 않는다. demo flag가 false라고 실제 사용자라고 단정하거나, 별도 DB라는 이유만으로 모든 데이터가 demo라고 단정하지 않는다. 실제 배포의 외부 키·접속 대상·데이터 생성 절차와 함께 해석한다.
+- `audit-demo-data.sql`: read-only transaction에서 건수만 조회한다. core_db(core_app)는 계정·학생의 demo flag별 건수, 결제 건수, DB CONNECT 권한과 #624 시연 학생 준비 상태(프리미엄·추억의 벽·가구·지난 주 리포트)를 본다. learning_db(learning_app)는 진행 주 이전 액자 수·검색 문서 상태·지난 주 M2 점수 답변, 최근 3주 판정 결과·보류 사유별 건수(`MODEL_DISAGREEMENT` 포함)와 M2 입력이 있는 공개 기준표 수(#668)를, report_db(report_app)는 지난 주 주간 리포트의 설명 카드·최근 일일 리포트를 본다. 접속한 DB에 맞는 절만 실행되므로 같은 파일을 세 DB에 각각 돌린다(`demo-db-oneoff.k8s.yaml`의 `PGDATABASE`·Secret을 바꿔 실행). 개인정보를 출력하지 않는다. demo flag가 false라고 실제 사용자라고 단정하거나, 별도 DB라는 이유만으로 모든 데이터가 demo라고 단정하지 않는다. 실제 배포의 외부 키·접속 대상·데이터 생성 절차와 함께 해석한다.
 - `mark-confirmed-demo-data.sql`: 사용자가 테스트용이라고 확인한 기존 학부모 1명·학생 2명의 flag를 보정한 일회성 SQL이다. 자동 초기화나 일반 운영 DB에서 실행하지 않는다. 새 가입자의 demo 여부를 자동 설정하는 기능이 아니다.
 - `scan-repository-secrets.py`: Python 표준 라이브러리와 Gitleaks 8.30.1로 이력·현재 파일을 분리 검사한다. 예: `python infrastructure/aws/scan-repository-secrets.py --gitleaks <실행파일> --reports <저장소밖-보고서폴더>`. `.gitleaks.toml`의 예외는 검토한 합성 값과 비밀이 아닌 식별자에 한정한다. Git 무시 파일·원격의 미수신 이력은 검사 범위 밖이다.
+
+## 시연 계정 데이터 준비 (#624)
+
+12/7 시연에서 추억 앨범·추억 검색·추억의 벽·가구 스킨·지난 주 주간 리포트(설명 카드)·일일 리포트가 빈 화면이 되지 않도록, 가상 학생 2명(초3 무료·초5 프리미엄)에게 지난 3회차(11/16·11/23·11/30 주) 완료 기록을 만든다. 기록은 SQL INSERT 없이 실제 공개 API로 만든다. 지난 주(11/30 주)는 실제 시각으로, 그보다 앞선 2회차는 core·learning 시계를 그 주 토요일로 옮겨 만든다(결정·kind 확인: [docs/report/infra.md 9.7](../../docs/report/infra.md#97-시연-계정-데이터-준비-624-2026-11-13)). 가상 학생과 자체 미션만 쓴다(NFR-SEC-07).
+
+| 파일 | 역할 |
+|---|---|
+| `demo_account_data.py` | `children`(가상 자녀 등록·학부모 동의) → `themes`(대상 주 게시 확인) → `m2-rubric`(초5 테마 기준표 M2 입력 보강, #668) → `solve`(서버 시계 기준 이번 주 5문제·정답 고르기) → `decorate`(앨범 확인·벽·가구) → `verify`(화면 내용 API 확인). 표준 라이브러리만 쓰고 비밀값·답변 원문·presigned URL을 출력하지 않는다 |
+| `prepare-demo-account-students.sql` | 두 자녀와 학부모를 `is_demo`로 표시, 초5에 결제 없는 프리미엄 시험 구독(`product_snapshot.demoAccount = '624'`) |
+| `demo-clock.Dockerfile` | core·learning 이미지에 libfaketime만 더한 시험 시계 이미지. 준비 동안만 쓴다 |
+| `audit-demo-data.sql` | 준비 결과를 세 DB에서 건수로 점검 |
+
+### 사전 조건
+
+1. #601 재가동이 끝나고 12/1(화) 이전이다. 시연 학부모(ID·비밀번호 로그인)와 CONTENT 관리자 계정이 있다.
+2. 11/16·11/23·11/30 주의 G3·G5 테마가 게시돼 있다(`python demo_account_data.py themes --weeks 2026-11-16,2026-11-23,2026-11-30`). 정답 후보가 있는 테마여야 엔딩·정답까지 보인다.
+3. 추억의 벽에 걸 가구 look_item(DESK·WALL 등)이 판매 중이고, 한 회차 포인트(완주 기준 약 65~125)로 살 수 있는 값이다.
+4. 설명 카드(FN-RPT-09)는 다음이 모두 갖춰져야 나온다. 하나라도 빠지면 리포트는 "설명 미포함"으로 발행된다.
+   - 초5 테마의 서술 미션 기준표에 M2 핵심어(`keywords`), 논술은 `essayType`. 저장소 시드(`demo_missions.sql`)에는 넣지 않고 순서 3의 `m2-rubric`이 채운다(#668). 관리자 화면·초안으로 만든 테마 미션은 `--m2-input` JSON으로 핵심어를 준다. 설명은 생각 유형이 겹치지 않는 답변 최대 3개이고 초5 M2 활성 범위는 서술이라, 주마다 생각 유형이 다른 서술 미션 3개에 핵심어가 있어야 카드 3개가 나온다
+   - M2 `m2-klue-narrative` 활성(scope `judgment/grade-5/narrative`), 설명 모델 `report-explanation` 활성(scope `explanation/grade-5/narrative`)과 sLLM 서버(#476)
+   - ai `M2_CROSS_CHECK_ENABLED=true`. prod 값(`gitops/environments/prod/ai-service.json`)에 켜 두었다(#668, 앱 기본값은 false). 재배포가 이 파일로 helm upgrade를 하므로 `kubectl set env`로 켜면 다음 ai 재배포 때 꺼진다. M2는 기준표에 M2 입력이 있는 미션에서만 불리므로 영향은 `m2-rubric`으로 보강한 미션뿐이다. 켜 두면 LLM이 `CORRECT`인데 M2 평균이 낮거나 `RETHINK`인데 높으면 판정 보류 `HELD(MODEL_DISAGREEMENT)`가 생길 수 있다(api-spec 4.2.2, 글자 수 하한 미만은 제외). 보류 답변에는 M2 점수가 남아 설명 후보는 되지만 학생 화면에는 보류로 보이므로, `solve` 뒤 `audit-demo-data.sql`의 `demo668_recent_judgments`로 보류 건수를 확인한다
+   - 학생 원문 공개(`solve`가 켬)·프리미엄 구독
+
+### 순서
+
+환경 변수는 스크립트 머리말을 따른다(`DEMO_API_BASE`, `DEMO_PARENT_*`, `DEMO_ADMIN_*`). 값은 출력하지 않는다.
+
+1. 자녀 등록: `python demo_account_data.py children --child <초3 닉네임>:3 --child <초5 닉네임>:5`
+2. 시연 표시·프리미엄: `demo-db-oneoff.k8s.yaml`로 `prepare-demo-account-students.sql` 실행(`psql -v g3=<초3> -v g5=<초5> -v product_code=PREMIUM`). Pod의 `command`에 `-v` 세 개를 더한다.
+3. 설명 카드용 기준표(첫 `solve` 전에): `python demo_account_data.py m2-rubric --weeks 2026-11-16,2026-11-23,2026-11-30 [--m2-input <JSON>]`. 먼저 `--dry-run`으로 채울 미션을 본다. 공개 기준표를 복사해 M2 입력만 더한 새 기준표 버전을 저장·검토 승인·재게시하고, 이미 있으면 그대로 둔다. 주마다 "M2 입력 서술 3유형"이 나와야 한다. 입력이 없는 미션이나 공개 안 된 수정본이 걸린 미션이 있으면 실패하고 이름을 알려 준다. 판정은 답변 때의 공개 기준표로 하므로 보강 전에 푼 답변에는 M2 점수가 생기지 않는다
+4. 앞선 2회차(시험 시계):
+   - `docker build -f infrastructure/aws/demo-clock.Dockerfile --build-arg BASE=<배포 중인 core 이미지> -t <같은 ECR 저장소>:<태그>-demo-clock .`(learning도 같게) → ECR push
+   - core·learning Deployment를 그 이미지로 바꾸고 `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1`, `FAKETIME=@2026-11-21 05:00:00`(UTC, 토요일 14:00 KST), `FAKETIME_FORCE_MONOTONIC_FIX=1`, `FAKETIME_DONT_RESET=1`을 넣는다. monotonic을 위조하지 않으면(`FAKETIME_DONT_FAKE_MONOTONIC=1`) JVM 대기 스레드가 CPU 1코어를 계속 쓴다
+   - 롤아웃이 끝나면 `solve --child <초3>`, `solve --child <초5>`. 이어서 `FAKETIME=@2026-11-28 05:00:00`으로 바꿔 두 번 더 `solve`
+   - 앞선 주의 주간 리포트까지 원하면 그 주 일요일 23:56 KST로 옮겨 월요일 00:00 스케줄을 기다린다(sLLM KEDA cron은 실제 시각 기준이라 이때만 1대로 직접 올린다). 시연에 필요한 것은 지난 주 리포트뿐이라 생략할 수 있다
+   - 원래 이미지·환경 변수로 되돌리고(`kubectl set image`·`kubectl set env ...-`), Pod 시각이 실제 시각인지 확인한다. 이 동안 가짜 시각으로 서명한 S3 그림 URL은 403이고, 다른 사용자가 쓰지 않는 시간에만 한다
+5. 지난 주(실제 시각): 12/4(금)~12/5(토)에 `solve` 두 번. 무료도 금·토에는 다섯 요일이 모두 열린다(#483). 12/6 00:00 일일, 12/7 00:00 주간 리포트가 정기 스케줄로 만들어진다
+6. 12/7 00:00 이후: `decorate --child <닉네임> --min-frames 3 --keep-newest-unseen --furniture <DESK 코드>,<WALL 코드>`(가장 최근 회차는 "새 액자"로 남김) → `verify --child <닉네임> --query "<답변 소재 질문>"` → 세 DB에 `audit-demo-data.sql`
+
+되돌리기: 시험 구독은 `prepare-demo-account-students.sql` 머리말의 UPDATE로 해지한다. 학습 기록은 자녀 프로필 삭제(학부모 설정)로 지운다.

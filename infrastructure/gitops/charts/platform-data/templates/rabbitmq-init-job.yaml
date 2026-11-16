@@ -40,6 +40,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
                   key: {{ .Values.rabbitmq.passwordKey }}
+{{- range .Values.rabbitmq.servicePasswordKeys }}
+            - name: {{ . }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.existingSecret }}
+                  key: {{ . }}
+{{- end }}
             - name: RABBITMQ_MANAGEMENT_URL
               value: {{ printf "http://rabbitmq:%v" .Values.rabbitmq.managementPort | quote }}
             - name: WAIT_TIMEOUT_SECONDS

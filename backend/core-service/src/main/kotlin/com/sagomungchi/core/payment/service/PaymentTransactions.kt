@@ -34,7 +34,13 @@ class PaymentTransactions(manager: PlatformTransactionManager, private val accou
     fun ownedOrder(parent: UUID, no: String)= (repository.orderNo(no) ?: missing()).also { if(it.parentUserId != parent) forbidden() }
     fun ownedSubscription(parent: UUID, id: UUID)= (repository.subscription(id) ?: missing()).also { if(it.parentUserId != parent) forbidden() }
     fun product(order: PaymentOrder): Product = order.productSnapshot?.let { json.convertValue(it,Product::class.java) } ?: unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
-    fun cancelSubscription(s: Subscription) = s.copy(status="CANCELED",autoRenew=false,nextBillingDate=null,canceledAt=now(),updatedAt=now())
+    /** 이미 상태를 확인한 경로(갱신 실패·기간 만료)용. 허용 전이만 받는다(state-diagram 6.2, #653) */
+    fun cancelSubscription(s: Subscription): Subscription {
+        check(s.status in Subscription.CANCELABLE) { "subscription ${s.id} is ${s.status}" }
+        return s.copy(status="CANCELED",autoRenew=false,nextBillingDate=null,canceledAt=now(),updatedAt=now())
+    }
+    /** 환불 완료·PG 측 취소 확인(#653): 조건부 UPDATE라 이미 `CANCELED`인 구독은 상태·`canceled_at`을 그대로 둔다. 바꿨으면 true */
+    fun cancelRefundedSubscription(id: UUID): Boolean = repository.cancelSubscription(id,now())==1
     fun audit(actor: UUID, action: String, target: UUID) { check(repository.audit(UUID.randomUUID(),actor,action,target,now())==1) }
     companion object {
         fun missing(): Nothing=throw BusinessException(HttpStatus.NOT_FOUND,"PAYMENT_NOT_FOUND","결제 정보를 찾을 수 없습니다.")

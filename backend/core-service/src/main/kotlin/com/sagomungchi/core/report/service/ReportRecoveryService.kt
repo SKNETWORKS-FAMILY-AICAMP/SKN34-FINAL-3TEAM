@@ -18,7 +18,7 @@ import java.util.UUID
 @Service
 class ReportRecoveryService(private val repository: ReportJobRepository, private val client: ReportClient,
     private val lifecycle: ReportLifecycleService, @Qualifier("reportClock") private val clock: Clock,
-    @Value("\${app.report.recovery.stale-after:PT60M}") private val staleAfter: Duration) {
+    @Value("\${app.report.recovery.stale-after:PT4H}") private val staleAfter: Duration) {
     private val log = LoggerFactory.getLogger(javaClass)
     init { require(!staleAfter.isNegative && !staleAfter.isZero) }
 

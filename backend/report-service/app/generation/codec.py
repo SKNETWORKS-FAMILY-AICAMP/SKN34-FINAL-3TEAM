@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StrictBool, field_validator
 
-from app.generation.models import GenerateReport, ReportEvent, ReportStatus
+from app.generation.models import GenerateReport, PeriodType, ReportEvent, ReportStatus
 from app.messaging.contracts import InvalidEvent, uuid_text
 from app.messaging.envelope import EventEnvelope
 
@@ -21,6 +21,7 @@ class GenerateData(BaseModel):
     periodTo: date
     trigger: Literal["SCHEDULE", "REGENERATE", "ADMIN_RETRY"]
     narrativeEnabled: StrictBool
+    periodType: PeriodType = PeriodType.WEEKLY
 
     @field_validator("jobId", "studentId", mode="before")
     @classmethod
@@ -45,10 +46,16 @@ class ReportV1Codec:
             ):
                 raise ValueError("Unsupported message identity")
             data = GenerateData.model_validate(envelope.data)
+            if data.periodType == PeriodType.DAILY and data.narrativeEnabled:
+                raise ValueError("Daily reports cannot enable narrative")
             if uuid_text(envelope.subject) != data.studentId:
                 raise ValueError("Student identity mismatch")
-            if data.periodFrom.weekday() != 0 or data.periodTo != data.periodFrom + timedelta(
-                days=6
+            if (data.periodType == PeriodType.DAILY and data.periodFrom != data.periodTo) or (
+                data.periodType == PeriodType.WEEKLY
+                and (
+                    data.periodFrom.weekday() != 0
+                    or data.periodTo != data.periodFrom + timedelta(days=6)
+                )
             ):
                 raise ValueError("Expected a Monday-to-Sunday period")
             if envelope.time.utcoffset() is None:
@@ -61,6 +68,7 @@ class ReportV1Codec:
                 data.trigger,
                 data.narrativeEnabled,
                 requested_at=envelope.time,
+                period_type=data.periodType,
             )
         except (ValueError, TypeError, AttributeError, OverflowError):
             raise InvalidEvent("Invalid report.generate v1 contract") from None

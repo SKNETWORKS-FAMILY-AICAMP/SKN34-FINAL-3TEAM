@@ -23,8 +23,8 @@ class ReportJobService(private val repository: ReportJobRepository, private val 
     @Transactional
     fun scheduled(parent: UUID, studentId: UUID, period: ReportPeriod): ReportJobAccepted? {
         students.lockActive(studentId)
-        repository.lockWeek(studentId, period.from)
-        if (repository.scheduled(studentId, period.from) != null) return null
+        repository.lockPeriod(studentId, period)
+        if (repository.scheduled(studentId, period) != null) return null
         access.requireGuardian(parent, studentId)
         return create(studentId, period, ReportTrigger.SCHEDULE, null)
     }
@@ -34,28 +34,31 @@ class ReportJobService(private val repository: ReportJobRepository, private val 
         val original = repository.byReport(reportId) ?: missing()
         students.lockActive(original.studentId)
         val admin = access.regeneration(actor, original.studentId)
-        repository.lockWeek(original.studentId, original.periodFrom)
-        if (!admin && repository.regenerations(original.studentId, original.periodFrom) > 0)
-            throw BusinessException(HttpStatus.CONFLICT, "REPORT_REGENERATION_LIMIT", "이 주 리포트의 재생성 기회를 이미 사용했습니다.")
-        if (repository.inProgress(original.studentId, original.periodFrom))
-            throw BusinessException(HttpStatus.CONFLICT, "REPORT_GENERATION_IN_PROGRESS", "같은 주 리포트를 생성하고 있습니다.")
-        return create(original.studentId, ReportPeriod(original.periodFrom, original.periodTo),
-            if (admin) ReportTrigger.ADMIN_RETRY else ReportTrigger.REGENERATE, actor.account.id)
+        val period = original.period
+        repository.lockPeriod(original.studentId, period)
+        if (!admin && repository.regenerations(original.studentId, period) > 0)
+            throw BusinessException(HttpStatus.CONFLICT, "REPORT_REGENERATION_LIMIT", "${label(period)} 리포트의 재생성 기회를 이미 사용했습니다.")
+        if (repository.inProgress(original.studentId, period))
+            throw BusinessException(HttpStatus.CONFLICT, "REPORT_GENERATION_IN_PROGRESS", "같은 ${label(period)} 리포트를 생성하고 있습니다.")
+        return create(original.studentId, period, if (admin) ReportTrigger.ADMIN_RETRY else ReportTrigger.REGENERATE, actor.account.id)
     }
 
     /** Caller owns source/student/week validation and the acceptance transaction. */
     @Transactional(propagation = Propagation.MANDATORY)
     fun enqueueAdminRetry(original: ReportJob, actor: UUID): ReportJobAccepted =
-        create(original.studentId, ReportPeriod(original.periodFrom,original.periodTo), ReportTrigger.ADMIN_RETRY, actor)
+        create(original.studentId, original.period, ReportTrigger.ADMIN_RETRY, actor)
 
     private fun create(studentId: UUID, period: ReportPeriod, trigger: ReportTrigger, actor: UUID?): ReportJobAccepted {
-        val narrative = entitlements.narrativeEnabled(studentId)
-        val job = ReportJob(UUID.randomUUID(), studentId, period.from, period.to, trigger, actor, ReportJobStatus.QUEUED,
+        // Daily has no narrative; a payment outage must not block its command (P24).
+        val narrative = period.type.narrative && entitlements.narrativeEnabled(studentId)
+        val job = ReportJob(UUID.randomUUID(), studentId, period.type, period.from, period.to, trigger, actor, ReportJobStatus.QUEUED,
             null, null, OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC), null, null)
         repository.insert(job)
         writer.append(job, narrative)
         return ReportJobAccepted(job.id, studentId, period)
     }
+
+    private fun label(period: ReportPeriod) = if (period.type == ReportPeriodType.DAILY) "이 날" else "이 주"
 
     private fun missing(): Nothing = throw BusinessException(HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "리포트를 찾을 수 없습니다.")
 }

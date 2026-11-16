@@ -1,4 +1,4 @@
-# DB 스키마 결정·개발 가이드 (#5·#13·#14·#19)
+# DB 스키마 결정·개발 가이드
 
 V6 마이그레이션 주석이 참조하는 구 `db-policy-schema.md` 내용은 이 문서 2장(구 db-schema.md 포함). 설계 원본은 [ERD](../design/erd.md), 현재 버전·수치는 ERD 8장.
 
@@ -21,7 +21,7 @@ V6 마이그레이션 주석이 참조하는 구 `db-policy-schema.md` 내용은
 
 | 대상 | 적용 | 이유 |
 |---|---|---|
-| core `student` | `birth_year` NOT NULL, `user_account_id` 제거, 학년 3~6 CHECK | P01 보호자 중심 등록, P03 초3~6 |
+| core `student` | `birth_year` NOT NULL, `user_account_id` 제거, 학년 3~6 CHECK(V41에서 3~9로 넓힘, 자동 진급 #432·P26) | P01 보호자 중심 등록, P03 초3~6 |
 | core `guardianship.method` | `REGISTER`만 | P02 기존 계정 연결 제외 |
 | core `notification_setting.channel` | `IN_APP`만 | P10 |
 | core `error_report.category` | NOT NULL, 5유형 CHECK | 신고 유형 확정 |
@@ -30,7 +30,7 @@ V6 마이그레이션 주석이 참조하는 구 `db-policy-schema.md` 내용은
 | learning `followup_bank_question`·`followup.bank_question_id` | 질문은행 신설, source는 LLM·LLM_RETRY·BANK, BANK일 때만 ID 필수 | P16 재실패 시 질문은행 출처 추적 |
 
 - 상품 코드: ERD의 `FREE|PREMIUM 등`은 닫힌 enum이 아니라 초기 예시. `code` UK 유지, 새 상품 행은 새 고유 코드. 기존 `BASIC/PLUS`를 임의 변환하지 않음
-- 미정: 무료 상품을 새 버전으로 교체할 때 `code = FREE` 조회로는 선택 불가. 상품 기능 구현 전에 버전·상품군 선택 방식 확정 필요
+- 무료 상품 선택: `code = FREE` 조회 대신 `PAYMENT_FREE_PRODUCT_ID`로 지정(#48, 2026-10-28 결정, ERD 3.4)
 - 자녀 최대 3명, 되묻기 최대 2회, 질문은행 type 일치·활성 여부는 서비스 검증
 
 ### 기존 데이터가 있는 DB의 적용 절차
@@ -82,6 +82,7 @@ UNION ALL SELECT 'followup.bank_question_id', count(*) FROM followup
 6. ERD·실제 스키마 대조, 합성 데이터 제약 위반 검사
 7. 재실행 시 Flyway `migrationsExecuted=0`·이력 불변 확인
 8. report `downgrade base` → `upgrade head` 왕복 후 재검증
+9. 서비스별 계정 6개의 다른 DB 접속 거부, app 계정 DML 보유·DDL 거부·이력 테이블 접근 불가 확인(8절)
 
 | 항목 | 검사 |
 |---|---|
@@ -151,3 +152,80 @@ with transaction(factory) as session:
 | report dev | testcontainers 4.15.0 | pytest PostgreSQL fixture |
 
 새 production 의존성 없음. 테스트 데이터는 합성 값만 사용.
+
+## 8. 서비스별 DB 계정 (#230)
+
+2026-11-05 결정(#230). 아키텍처 1.1 "다른 서비스 DB 직접 접근 금지"를 DB 권한으로 강제.
+
+### 8.1 배경과 결정
+
+- 문제: 로컬 compose·kind의 앱·마이그레이션 전부가 슈퍼유저 `POSTGRES_USER` 1개를 공유 → core 계정으로 `learning_db`·`report_db` 접속·변경 가능
+- 운영 RDS는 이미 DB별 migrate·app 계정 6개 사용 중(prod ESO `core-db-credentials`·`core-migrate-credentials` 등), 재현 SQL은 #185의 `rds-bootstrap*.sql`
+- 결정
+  - 인스턴스 1개 유지, 로컬도 운영과 같은 계정 6개 구성
+  - `rds-bootstrap.sql`·`rds-bootstrap-db.sql`을 `infrastructure/aws/`에서 `infrastructure/gitops/charts/platform-data/files/postgres/`로 이동해 로컬 init과 `demo_stack.py rds-bootstrap`이 같은 파일 사용 (Helm `.Files`는 chart 밖 파일을 읽지 못함). 운영 실행 방식은 변화 없음
+  - 서비스별 Testcontainers 테스트는 기존 계정 유지, 계정 격리 검증은 `ci-db-schema`에서 수행
+- API 계약 변경 없음
+
+### 8.2 계정 구성
+
+| DB | migrate(DDL: Flyway·Alembic) | app(DML: 앱 런타임) |
+|---|---|---|
+| core_db | `core_migrate` | `core_app` |
+| learning_db | `learning_migrate` | `learning_app` |
+| report_db | `report_migrate` | `report_app` |
+
+- 각 DB의 PUBLIC `CONNECT`·`TEMPORARY` 회수, 해당 DB의 두 계정만 접속 가능
+- `public` schema 생성 권한은 migrate 계정만 보유. migrate 계정이 만든 테이블·sequence는 default privileges로 app 계정에 DML 부여
+- migration 후 bootstrap 재실행 시 `flyway_schema_history`·`alembic_version`의 app 권한 회수 (운영 절차와 동일)
+- 관리자 계정(`POSTGRES_USER`)은 컨테이너 초기화·관리 작업(e2e seed 포함) 전용, 앱·migration Secret에 미포함
+
+### 8.3 설정 위치
+
+| 대상 | 내용 |
+|---|---|
+| `files/postgres/init.sql` | `\ir bootstrap/rds-bootstrap.sql`만 실행. bootstrap 파일은 entrypoint가 단독 실행하지 않도록 `/docker-entrypoint-initdb.d/bootstrap/`에 배치 |
+| `.env` | 비밀번호 6개 `CORE_MIGRATE_PASSWORD`·`CORE_APP_PASSWORD`·`LEARNING_*`·`REPORT_*`. 계정 이름은 고정이라 미포함. URL에 그대로 들어가므로 영문·숫자·`-`·`_`만 사용 |
+| `compose.yaml` | postgres에 계정 env·bootstrap 마운트, core·learning 앱은 app 계정, `*-migrate`는 migrate 계정, report-migrate는 `report_migrate`·report-api/worker는 `report_app` URL |
+| platform-data chart | `postgres.serviceRoles`(env 접두사 → 계정 이름), 비밀번호는 `existingSecret`의 `<접두사>_PASSWORD` 키 |
+| `create-platform-secret.ps1` | `platform-data-credentials`에 비밀번호 6개 추가 |
+| `create-app-secrets.ps1` | `app-service-credentials`에 `CORE_DB_*`·`CORE_MIGRATE_*`·`LEARNING_DB_*`·`LEARNING_MIGRATE_*`, `REPORT_DATABASE_URL`(report_app)·`REPORT_ALEMBIC_DATABASE_URL`(report_migrate). 기존 `DB_USERNAME`·`DB_PASSWORD` 키 제거 |
+| `environments/local/*.yaml` | core·learning 앱 `*_DB_*`, Flyway `*_MIGRATE_*` 키 참조 |
+| `infrastructure/stubs/e2e.env` | e2e 합성 비밀번호 6개 |
+
+### 8.4 기존 로컬 환경 적용
+
+`init.sql`은 빈 데이터 디렉터리에서 최초 1회만 실행. 기존 볼륨은 테이블이 관리자 소유라 migrate 계정이 이후 migration을 적용할 수 없으므로 **PostgreSQL 볼륨 재생성(로컬 DB 데이터 삭제)** 필요.
+
+- Compose
+  1. `.env`에 비밀번호 6개 추가
+  2. `docker compose down` 후 `docker volume rm sagomungchi_postgres-data` (RabbitMQ 등 다른 볼륨 유지)
+  3. `docker compose up --build`
+- kind
+  1. `.env`에 비밀번호 6개 추가
+  2. 기존 Secret은 키가 달라 스크립트가 중단하므로 `platform/platform-data-credentials`·`app/app-service-credentials` 삭제 후 `create-platform-secret.ps1`·`create-app-secrets.ps1` 재실행
+  3. `kubectl -n platform delete pvc data-postgres-0 --wait=false` 후 `kubectl -n platform delete pod postgres-0` → StatefulSet이 새 PVC로 초기화
+  4. app namespace의 완료된 migration Job 삭제 후 Argo CD sync로 migration·앱 재기동
+- 비밀번호 변경도 기존 계정에 반영되지 않음(bootstrap은 기존 계정 비밀번호 미변경). 같은 절차로 재생성하거나 관리자 계정으로 `ALTER ROLE ... PASSWORD` 수동 실행
+
+### 8.5 운영 RDS
+
+- 같은 계정 구성을 [`demo_stack.py rds-bootstrap`](../../infrastructure/aws/README.md)이 RDS 관리 master 계정으로 Job 실행해 생성 (#185 절차 유지, SQL 경로만 변경)
+- ESO Secret 6개·`app/rds-ca` 준비 → bootstrap → migration → bootstrap 재실행 순서. 상세는 [prod README](../../infrastructure/gitops/environments/prod/README.md)
+- 이번 작업에서 실제 RDS 실행 없음
+
+### 8.6 검증
+
+- `scripts/check_db_migrations.py`(ci-db-schema): bootstrap → migrate 계정으로 Flyway·Alembic 적용 → bootstrap 재실행 → 재실행·report 왕복 → 6개 계정의 다른 DB 접속 거부, app 계정의 DML 보유·DDL 거부·이력 테이블 접근 불가 확인
+
+### 8.7 learning_db `vector` 확장 (#466)
+
+- 2026-11-11 팀 결정(에픽 #463)으로 생성에 벡터 검색·임베딩을 쓰지 않아 learning V17이 `knowledge_chunk.embedding`·HNSW 인덱스·`knowledge_dataset.embedding_model`·`embedding_dimensions`를 지웠다. 지금 `vector` 타입을 쓰는 칸은 없지만 V14가 처음부터 다시 적용될 때(새 볼륨, Testcontainers, CI) `vector` 타입이 필요하므로 아래 bootstrap·이미지는 그대로 둔다
+- 결정: 지식 저장소(#463)용 `vector`(pgvector 0.8.7)는 `rds-bootstrap.sql`의 learning_db 단계에서 관리자 계정이 `CREATE EXTENSION IF NOT EXISTS vector`로 만든다. pgvector는 trusted 확장이 아니어서 `learning_migrate`의 Flyway로는 만들 수 없다(`permission denied ... Must be superuser`). 확장은 schema public에 생기고 migrate·app 계정은 `vector` 타입·연산자·HNSW 인덱스를 그대로 쓴다
+- 이미지: 로컬 compose·kind·DB 스키마 CI·learning Testcontainers 모두 `pgvector/pgvector:0.8.7-pg17-trixie`(PG 17.11 Debian). alpine(musl)에서 초기화한 볼륨은 text 정렬이 달라 이미지 교체 뒤 DB마다 `REINDEX DATABASE` 1회 필요
+- 기존 볼륨 1회 적용: bootstrap은 빈 데이터 디렉터리에서만 돌므로 이미 있는 볼륨은 관리자 계정으로 한 번 실행한다(멱등, 재시작 없음). **learning V14 마이그레이션 전에** 해야 한다(없으면 migrate 계정의 V14가 superuser 권한 오류로 멈춤)
+  - Compose: `docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d learning_db -c "CREATE EXTENSION IF NOT EXISTS vector"'`
+  - kind: `kubectl -n platform exec postgres-0 -- sh -c 'psql -U "$POSTGRES_USER" -d learning_db -c "CREATE EXTENSION IF NOT EXISTS vector"'`
+  - 확인: `SELECT extversion FROM pg_extension WHERE extname = 'vector'` → `0.8.7`
+- 운영 RDS: AWS 재가동 때 `rds-bootstrap`을 다시 실행하면 같은 문장이 돈다. 그 전에 엔진 버전의 pgvector 버전과 파라미터 그룹 `rds.allowed_extensions`(설정돼 있다면 `vector` 포함)를 확인한다. 허용되지 않으면 `ON_ERROR_STOP`으로 bootstrap이 멈춘다
+- 지식 테이블(`knowledge_*`)은 learning V14(#466). V14 첫 문장 `CREATE EXTENSION IF NOT EXISTS vector`는 확장이 이미 있으면 권한 검사 없이 넘어가고(kind·RDS의 migrate 계정), 시험용 단독 DB(Testcontainers·검증 스크립트, superuser)에서는 직접 만든다. 확장이 없는 DB에 migrate 계정으로 돌리면 `permission denied to create extension "vector"`로 멈춘다(임시 컨테이너에서 세 경우 확인)

@@ -68,7 +68,7 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
 
     @Test fun `every existing call type can be queried and empty ranges stay empty`() {
         CallType.entries.forEach { usage.record(event("2026-11-12T01:00:00Z", it.name)) }
-        assertEquals(7, usage.summarize(day, day, null).size)
+        assertEquals(CallType.entries.size, usage.summarize(day, day, null).size)
         assertTrue(usage.summarize(day.plusDays(1), day.plusDays(2), null).isEmpty())
         CallType.entries.forEach { assertEquals(it.name, usage.summarize(day, day, it).single().callType) }
     }
@@ -121,6 +121,37 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
         assertEquals(1L, exported.getValue("llm.usage.month_to_date.unpriced_calls").longGaugeData.points.single().value)
         metrics.close()
         provider.close()
+    }
+
+    @Test fun `shipped application yml prices dotted model names and leaves Veo unpriced`() {
+        // application.yml 기본 단가(#651)가 '.'·'-' 모델명 키 그대로 읽히는지, 테스트 단가와 합쳐지는지
+        usage.record(event("2026-11-12T01:00:00Z", "JUDGMENT", model = "gpt-6-luna"))
+        usage.record(event("2026-11-12T01:00:00Z", "THEME_DRAFT", model = "gpt-6.1-terra"))
+        usage.record(event("2026-11-12T01:00:00Z", "KNOWLEDGE_EMBEDDING", model = "text-embedding-3-small", output = 0))
+        usage.record(event("2026-11-12T01:00:00Z", "THEME_IMAGE", model = "gpt-image-2.6-sunburst"))
+        usage.record(event("2026-11-12T01:00:00Z", "THEME_VIDEO", model = "veo-3.1-fast-generate-001",
+            input = null, output = null))
+        val byType = usage.summarize(day, day, null).associateBy { it.callType }
+        // 입력 1000·출력 2000 토큰, 100만 토큰당 USD
+        assertEquals(0, BigDecimal("0.0011").compareTo(byType.getValue("JUDGMENT").costUsd))
+        assertEquals(0, BigDecimal("0.011").compareTo(byType.getValue("THEME_DRAFT").costUsd))
+        assertEquals(0, BigDecimal("0.00002").compareTo(byType.getValue("KNOWLEDGE_EMBEDDING").costUsd))
+        assertEquals(0, BigDecimal("0.068").compareTo(byType.getValue("THEME_IMAGE").costUsd))
+        assertNull(byType.getValue("THEME_VIDEO").costUsd)
+        assertEquals(1L, byType.getValue("THEME_VIDEO").unpricedCalls)
+        val month = usage.monthToDate(Instant.parse("2026-11-12T02:00:00Z"))
+        assertEquals(0, BigDecimal("0.08012").compareTo(month.pricedUsd))
+        assertEquals(1L, month.unpricedCalls)
+    }
+
+    @Test fun `memory query rewrite usage is stored and priced with the default ai model`() {
+        // #680: ai 질의 변환(#681)은 기본 모델 gpt-6-luna(#651 단가 입력 0.10·출력 0.50 USD/100만 토큰)로 MEMORY_QUERY를 발행한다
+        usage.record(event("2026-11-12T01:00:00Z", "MEMORY_QUERY", model = "gpt-6-luna", input = 300, output = 60))
+        val row = usage.summarize(day, day, CallType.MEMORY_QUERY).single()
+        assertEquals("MEMORY_QUERY", row.callType)
+        assertEquals(1L, row.calls)
+        assertEquals(0, BigDecimal("0.00006").compareTo(row.costUsd))
+        assertEquals(0L, row.unpricedCalls)
     }
 
     @Test fun `reversed periods are rejected`() {

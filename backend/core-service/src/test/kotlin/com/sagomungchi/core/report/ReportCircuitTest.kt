@@ -28,7 +28,7 @@ class ReportCircuitTest {
         val client = ReportClient(InternalRestClientFactory(properties, RestClient.builder()), jacksonObjectMapper(), properties)
         val student = UUID.randomUUID()
         val context = UserContext(UUID.randomUUID().toString(), "PARENT", setOf(student.toString()), null)
-        val job = ReportJob(UUID.randomUUID(), student, LocalDate.parse("2026-10-19"), LocalDate.parse("2026-10-25"),
+        val job = ReportJob(UUID.randomUUID(), student, com.sagomungchi.core.report.domain.ReportPeriodType.WEEKLY, LocalDate.parse("2026-10-19"), LocalDate.parse("2026-10-25"),
             ReportTrigger.SCHEDULE, null, ReportJobStatus.RUNNING, null, null, OffsetDateTime.now(), null, null)
         UserContextHolder.set(context)
         try {

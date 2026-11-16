@@ -2,8 +2,6 @@ import { createBrowserRouter, Navigate, Outlet } from 'react-router'
 import { SessionProvider } from './auth/SessionProvider.tsx'
 import { LoginGate, PageLoading, RoleLayout } from './common/RoleLayout.tsx'
 import { OAuthCompletePage } from './auth/OAuthCompletePage.tsx'
-import { SupportEntry } from './support/SupportEntry.tsx'
-import { SupportResults } from './support/SupportResults.tsx'
 import { DeviceLogin } from './student/DeviceLogin.tsx'
 import { ServiceCenter } from './service/ServiceCenter.tsx'
 import { WithdrawalReceipt } from './service/Withdrawal.tsx'
@@ -61,9 +59,10 @@ export const router = createBrowserRouter([
         path: `/${role.toLowerCase()}`,
         element: <RoleLayout role={role} />,
         children: [
-          ...(['help', 'notices', 'notifications'] as const).map(page => ({ path: page, element: <ServiceCenter page={page} /> })),
-          ...(role === 'ADMIN' ? [] : [{ path: 'support', element: <SupportEntry /> }]),
-          ...(role !== 'ADMIN' ? [{ path: 'support/results', element: <SupportResults /> }] : []),
+          // 학생 도움말·문의·공지·알림은 학생 틀(StudentWorld) 안에서 그린다(#648). 학부모·관리자 화면은 그대로
+          ...(['help', 'notices', 'notifications'] as const).map(page => ({ path: page, element: role === 'PARENT' ? <ParentWorkspace /> : role === 'STUDENT' ? <ClassroomApp /> : <ServiceCenter page={page} /> })),
+          ...(role === 'ADMIN' ? [] : [{ path: 'support', element: role === 'PARENT' ? <ParentWorkspace /> : <ClassroomApp /> }]),
+          ...(role !== 'ADMIN' ? [{ path: 'support/results', element: role === 'PARENT' ? <ParentWorkspace /> : <ClassroomApp /> }] : []),
           ...(role === 'PARENT' ? [
             { path: 'account', element: <AccountPage /> },
             { path: 'transfers', element: <GuardianTransfers /> },

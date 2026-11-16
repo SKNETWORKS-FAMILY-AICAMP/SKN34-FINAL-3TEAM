@@ -46,7 +46,7 @@ abstract class GuardianTransferRecoveryHttpTest : PostgresRepositoryTest() {
    jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'합성 문서','테스트 동의',true,CURRENT_DATE,clock_timestamp())",id,kind,id.toString())
   }
  }
- private fun choices(guardian: Boolean)=consent.documents().filter { (it.kind=="GUARDIAN")==guardian }.map { ConsentChoice(it.documentId,it.version,true) }
+ private fun choices(guardian: Boolean)=consent.documents().filter { if (guardian) it.kind == "GUARDIAN" else it.kind in setOf("TERMS", "PRIVACY") }.map { ConsentChoice(it.documentId,it.version,true) }
  private fun parent(): IssuedAuth {
   val id=UUID.randomUUID().toString()
   return auth.login(GoogleProfile(id,"$id@example.test","회복 테스트"),null).also { consent.save(it.identity.account.id,null,choices(false)) }

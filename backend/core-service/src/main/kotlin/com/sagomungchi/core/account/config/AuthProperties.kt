@@ -20,6 +20,9 @@ data class AuthProperties(
     val googleJwkUrl: String = "https://www.googleapis.com/oauth2/v3/certs",
     /** Demo-only environments mark new Google parents as demo so they stay out of operating statistics. */
     val newAccountDemo: Boolean = false,
+    /** #415: parent ID/password signups allowed per client IP within [signupLimitWindow] (PBKDF2 is CPU-heavy). */
+    val signupLimitPerIp: Int = 5,
+    val signupLimitWindow: Duration = Duration.ofMinutes(10),
 ) {
     init {
         val origin = URI(webOrigin)
@@ -33,6 +36,7 @@ data class AuthProperties(
         require(accessTtl < refreshTtl)
         require(!reauthTtl.isNegative && !reauthTtl.isZero && reauthTtl <= Duration.ofMinutes(5))
         require(!studentAccessTtl.isNegative && !studentAccessTtl.isZero)
+        require(signupLimitPerIp > 0 && !signupLimitWindow.isNegative && !signupLimitWindow.isZero)
     }
     val callbackUrl: String get() = "$webOrigin/api/v1/auth/google/callback"
     val reauthCallbackUrl: String get() = "$webOrigin/api/v1/auth/google/reauth/callback"

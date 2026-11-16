@@ -29,7 +29,7 @@ class RecordExistsTest : PostgresRepositoryTest() {
         jdbc.update("INSERT INTO rubric_version(id,mission_id,version,created_by,created_at) VALUES(?,?,1,?,now())",rubric,mission,actor)
     }
     private fun attempt(student: UUID, active: Boolean = false) = UUID.randomUUID().also { id ->
-        jdbc.update("INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,updated_at) VALUES(?,?,?,?,?,3,?,now(),now())",
+        jdbc.update("INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,updated_at,context) VALUES(?,?,?,?,?,3,?,now(),now(),'EXTRA')",
             id,student,mission,version,rubric,if(active) "IN_PROGRESS" else "COMPLETED")
     }
     private fun answer(attempt: UUID, judgment: String? = "PENDING") = UUID.randomUUID().also { id ->

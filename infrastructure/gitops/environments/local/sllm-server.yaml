@@ -1,0 +1,63 @@
+# 설명 sLLM 서버 (#476, 에픽 #473). OpenAI 호환 /v1/chat/completions, 평소 0대.
+# local은 실제 모델 대신 OpenAI 호환 대역(infrastructure/stubs/llm-stub)을 쓴다.
+# 모델 내려받기(MinIO)·readiness·NetworkPolicy·KEDA cron 경로만 확인한다. 실제 llama.cpp 값은 prod 파일.
+nameOverride: sllm-server
+image:
+  repository: sagomungchi/llm-stub
+  tag: local
+# 첫 설치 때 0대로 시작한다(KEDA cron 창 밖). 창 안에서는 KEDA가 1대로 올린다.
+replicaCount: 0
+service:
+  port: 8080
+  targetPort: 8080
+probes:
+  startup: {enabled: true, path: /health, periodSeconds: 5, failureThreshold: 60}
+  liveness: {enabled: true, path: /health, periodSeconds: 10, timeoutSeconds: 5}
+  readiness: {enabled: true, path: /health, periodSeconds: 5, timeoutSeconds: 3}
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {cpu: 250m, memory: 128Mi}
+modelDownload:
+  enabled: true
+  image:
+    repository: amazon/aws-cli
+    tag: "2.39.6"
+  command: [sh, -c]
+  args:
+    - |
+      set -eu
+      aws s3 cp "s3://${MODEL_BUCKET}/${MODEL_KEY}" "${MODEL_DIR}/model.gguf" --only-show-errors
+      if [ -n "${MODEL_SHA256:-}" ]; then echo "${MODEL_SHA256}  ${MODEL_DIR}/model.gguf" | sha256sum -c -; fi
+      ls -l "${MODEL_DIR}"
+  env:
+    - {name: AWS_ENDPOINT_URL, value: "http://minio.platform.svc.cluster.local:9000"}
+    - {name: AWS_REGION, value: ap-northeast-2}
+    - {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_USER}}}
+    - {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_PASSWORD}}}
+    - {name: MODEL_BUCKET, value: sagomungchi-local-models}
+    # 대역 확인용 객체. 실제 모델 경로·SHA256은 #475 승인 뒤 정한다.
+    - {name: MODEL_KEY, value: explanation/stub/model.gguf}
+    - {name: MODEL_SHA256, value: ""}
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  sizeLimit: 1Gi
+hpa:
+  enabled: false
+pdb:
+  enabled: false
+keda:
+  enabled: true
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  # 주간 리포트 배치(월 00:00 KST) 앞뒤. #475 생성 시간 실측 뒤 end를 조정한다.
+  cron:
+    - {timezone: Asia/Seoul, start: "50 23 * * 0", end: "0 2 * * 1", desiredReplicas: 1}
+  renderReplicaCount: true
+  cooldownPeriod: 300
+networkPolicy:
+  enabled: true
+  ingressFromApps: [ai-service]
+  ingressFromPrometheus: true
+  egressToPlatform:
+    - {name: minio, port: 9000}

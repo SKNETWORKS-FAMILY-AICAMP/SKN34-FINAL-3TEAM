@@ -23,6 +23,8 @@ import java.net.URI
 @TestPropertySource(
     properties = [
         "app.internal.token=test-token",
+        "app.internal.callers.core=test-token",
+        "app.internal.callers.ai=ai-token",
         "app.internal.connect-timeout=1s",
         "app.internal.read-timeout=1s",
     ],
@@ -88,6 +90,27 @@ class InternalAuthFilterTest(@Autowired private val mockMvc: MockMvc) {
             status { isNotFound() }
             jsonPath("$.code") { value("NOT_FOUND") }
             jsonPath("$.traceId") { value("4bf92f3577b34da6a3ce929d0e0e4736") }
+        }
+    }
+
+    @Test
+    fun `ai 토큰은 기록 조회 밖 경로에서 403`() {
+        mockMvc.get("/internal/probe/students/s1") {
+            header("X-Internal-Token", "ai-token")
+            header("X-Student-Scope", "s1")
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("FORBIDDEN") }
+        }
+    }
+
+    @Test
+    fun `ai 토큰은 기록 조회 경로에서 필터 통과`() {
+        mockMvc.get("/internal/records/students/s1/summary") {
+            header("X-Internal-Token", "ai-token")
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("NOT_FOUND") }
         }
     }
 }

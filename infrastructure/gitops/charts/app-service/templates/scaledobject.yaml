@@ -1,6 +1,6 @@
 {{- if .Values.keda.enabled }}
 {{- if .Values.hpa.enabled }}{{ fail "HPA and KEDA cannot both own one Deployment" }}{{- end }}
-{{- if not .Values.keda.queues }}{{ fail "keda.queues must include each consumed queue" }}{{- end }}
+{{- if not (or .Values.keda.queues .Values.keda.cron) }}{{ fail "keda.queues or keda.cron must define at least one trigger" }}{{- end }}
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -24,5 +24,13 @@ spec:
         value: {{ $.Values.keda.queueLength | quote }}
       authenticationRef:
         name: {{ include "app-service.name" $ }}-rabbitmq
+    {{- end }}
+    {{- range .Values.keda.cron }}
+    - type: cron
+      metadata:
+        timezone: {{ required "keda.cron[].timezone is required" .timezone | quote }}
+        start: {{ required "keda.cron[].start is required" .start | quote }}
+        end: {{ required "keda.cron[].end is required" .end | quote }}
+        desiredReplicas: {{ default 1 .desiredReplicas | quote }}
     {{- end }}
 {{- end }}

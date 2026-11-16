@@ -15,10 +15,10 @@ from app.generation.models import (
     ReportStatus,
     WeeklyReport,
 )
-from app.generation.ports import ReportEventCodec, ReportGenerator
+from app.generation.ports import OutboxWriter, ReportEventCodec, ReportGenerator
 from app.generation.repository import ReportRepository
 from app.generation.unconfigured import GeneratorNotConfigured
-from app.outbox.repository import OutboxRepository
+from app.outbox import service as outbox_service
 from app.security import current_user_context
 
 
@@ -31,14 +31,14 @@ class GenerationService:
         codec: ReportEventCodec,
         *,
         repository: ReportRepository | None = None,
-        outbox: OutboxRepository | None = None,
+        outbox: OutboxWriter | None = None,
     ) -> None:
         self._factory = factory
         self._locks = locks
         self._generator = generator
         self._codec = codec
         self._repository = repository or ReportRepository()
-        self._outbox = outbox or OutboxRepository()
+        self._outbox = outbox
 
     async def generate(self, command: GenerateReport) -> None:
         # Preserve the lease even if cancellation arrives while acquisition is in a DB thread.
@@ -78,7 +78,10 @@ class GenerationService:
         envelope = self._codec.encode(event, context.traceparent if context else None)
         if envelope.type != event.event_type or envelope.subject != str(event.report.student_id):
             raise ValueError("Encoded event type/subject does not match report")
-        self._outbox.add(session, envelope)
+        if self._outbox is None:
+            outbox_service.add_event(session, envelope)
+        else:
+            self._outbox.add(session, envelope)
 
     def _start(self, command: GenerateReport) -> WeeklyReport | None:
         with transaction(self._factory) as session:
@@ -91,6 +94,7 @@ class GenerationService:
                     command.student_id,
                     command.period_from,
                     command.period_to,
+                    command.period_type,
                 )
                 is not None
             ):
@@ -122,17 +126,20 @@ class ReportReadService:
     def __init__(self):
         self._repository = ReportRepository()
 
-    def latest_page(self, session, student_id, status, page, size):
-        return self._repository.latest_page(session, student_id, status, page, size)
+    def latest_page(self, session, student_id, status, page, size, period_type=None):
+        return self._repository.latest_page(session, student_id, status, page, size, period_type)
 
     def find(self, session, report_id):
         return self._repository.find(session, report_id)
 
-    def revisions(self, session, student_id, period_from):
-        return self._repository.revisions(session, student_id, period_from)
+    def revisions(self, session, student_id, period_from, period_type="WEEKLY"):
+        return self._repository.revisions(session, student_id, period_from, period_type)
 
     def items(self, session, report_id):
         return self._repository.items(session, report_id)
+
+    def correction_impact(self, session, student_id, attempt_id):
+        return self._repository.correction_impact(session, student_id, attempt_id)
 
     def evidence(self, session, report_id, item_id):
         return self._repository.evidence(session, report_id, item_id)

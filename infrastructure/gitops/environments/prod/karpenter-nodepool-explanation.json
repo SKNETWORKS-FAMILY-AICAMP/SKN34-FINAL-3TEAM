@@ -1,0 +1,82 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "karpenter.sh/v1",
+      "kind": "NodePool",
+      "metadata": {
+        "name": "explanation-cpu"
+      },
+      "spec": {
+        "template": {
+          "metadata": {
+            "labels": {
+              "workload": "explanation-sllm"
+            }
+          },
+          "spec": {
+            "nodeClassRef": {
+              "group": "karpenter.k8s.aws",
+              "kind": "EC2NodeClass",
+              "name": "application"
+            },
+            "taints": [
+              {
+                "key": "workload",
+                "value": "explanation-sllm",
+                "effect": "NoSchedule"
+              }
+            ],
+            "requirements": [
+              {
+                "key": "node.kubernetes.io/instance-type",
+                "operator": "In",
+                "values": [
+                  "c7i.xlarge",
+                  "c6i.xlarge"
+                ]
+              },
+              {
+                "key": "karpenter.sh/capacity-type",
+                "operator": "In",
+                "values": [
+                  "on-demand"
+                ]
+              },
+              {
+                "key": "topology.kubernetes.io/zone",
+                "operator": "In",
+                "values": [
+                  "ap-northeast-2a",
+                  "ap-northeast-2b"
+                ]
+              },
+              {
+                "key": "kubernetes.io/arch",
+                "operator": "In",
+                "values": [
+                  "amd64"
+                ]
+              }
+            ],
+            "expireAfter": "24h"
+          }
+        },
+        "limits": {
+          "cpu": "4",
+          "memory": "8Gi"
+        },
+        "disruption": {
+          "consolidationPolicy": "WhenEmpty",
+          "consolidateAfter": "5m",
+          "budgets": [
+            {
+              "nodes": "1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

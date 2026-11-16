@@ -24,7 +24,34 @@
       "name": "INTERNAL_TOKEN",
       "valueFrom": {
         "secretKeyRef": {
-          "key": "INTERNAL_TOKEN",
+          "key": "INTERNAL_TOKEN_AI",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "INTERNAL_TOKEN_CORE",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN_CORE",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "INTERNAL_TOKEN_LEARNING",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN_LEARNING",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "INTERNAL_TOKEN_REPORT_WORKER",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN_REPORT_WORKER",
           "name": "internal-service-credentials"
         }
       }
@@ -33,7 +60,7 @@
       "name": "RABBITMQ_URL",
       "valueFrom": {
         "secretKeyRef": {
-          "key": "RABBITMQ_URL",
+          "key": "RABBITMQ_AI_URL",
           "name": "rabbitmq-credentials"
         }
       }
@@ -53,7 +80,7 @@
     },
     {
       "name": "OPENAI_MODEL",
-      "value": "gpt-6.1-terra"
+      "value": "gpt-6-luna"
     },
     {
       "name": "CORE_URL",
@@ -70,6 +97,30 @@
     {
       "name": "LANGFUSE_ENABLED",
       "value": "false"
+    },
+    {
+      "name": "EXPLANATION_BASE_URL",
+      "value": "http://sllm-server.app.svc.cluster.local:8080/v1"
+    },
+    {
+      "name": "EXPLANATION_MODEL",
+      "value": "report-explanation"
+    },
+    {
+      "name": "M2_CROSS_CHECK_ENABLED",
+      "value": "true"
+    },
+    {
+      "name": "ASSET_S3_BUCKET",
+      "value": "sagomungchi-demo-347161580747-missions"
+    },
+    {
+      "name": "S3_REGION",
+      "value": "ap-northeast-2"
+    },
+    {
+      "name": "AWS_REGION",
+      "value": "ap-northeast-2"
     }
   ],
   "hpa": {
@@ -79,7 +130,7 @@
     "cpuUtilization": 70
   },
   "image": {
-    "digest": "sha256:e2f170014aaefad7e11a50b8456f0d5e269b52bc4e3c02175190223c62ebdb1c",
+    "digest": "sha256:de70c3cddf55d72db17aa6184c48f0d7379ecc33df7fab7fab70ee73ba6070cb",
     "pullPolicy": "IfNotPresent",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/ai-service"
   },
@@ -111,6 +162,21 @@
             }
           }
         ]
+      },
+      {
+        "ports": [
+          {
+            "port": 80,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "169.254.170.23/32"
+            }
+          }
+        ]
       }
     ],
     "egressToApps": [
@@ -125,6 +191,10 @@
       {
         "name": "scoring-service",
         "port": 8001
+      },
+      {
+        "name": "sllm-server",
+        "port": 8080
       }
     ],
     "egressToPlatform": [
@@ -137,7 +207,6 @@
     "ingressFromApps": [
       "core-service",
       "learning-service",
-      "report-api",
       "report-worker"
     ]
   },
@@ -168,7 +237,7 @@
   "resources": {
     "limits": {
       "cpu": "500m",
-      "memory": "512Mi"
+      "memory": "1Gi"
     },
     "requests": {
       "cpu": "100m",

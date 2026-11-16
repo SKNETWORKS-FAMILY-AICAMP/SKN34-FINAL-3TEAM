@@ -37,15 +37,15 @@ class StudentProfileContractTest(unittest.TestCase):
             self.assertIn(code, response["description"])
             self.assertEqual(response["content"]["application/problem+json"]["schema"]["$ref"], "#/components/schemas/Problem")
 
-    def test_response_has_exactly_three_fields_and_no_store(self):
+    def test_response_has_minimal_profile_and_grade_with_no_store(self):
         schema = self.spec["components"]["schemas"]["InternalStudentProfile"]
-        self.assertEqual(set(schema["properties"]), {"studentId", "nickname", "parentSharingEnabled"})
-        self.assertEqual(set(schema["required"]), {"studentId", "nickname", "parentSharingEnabled"})
+        self.assertEqual(set(schema["properties"]), {"studentId", "nickname", "parentSharingEnabled", "grade"})
+        self.assertEqual(set(schema["required"]), {"studentId", "nickname", "parentSharingEnabled", "grade"})
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(self.op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"], "#/components/schemas/InternalStudentProfile")
         self.assertEqual(self.op["responses"]["200"]["headers"]["Cache-Control"]["schema"]["const"], "no-store")
 
     def test_generate_event_stays_free_of_nickname(self):
         schema = json.loads((ROOT / "contracts/events/report.generate.v1.schema.json").read_text(encoding="utf-8"))
-        self.assertEqual(set(schema["properties"]), {"jobId", "studentId", "periodFrom", "periodTo", "trigger", "narrativeEnabled"})
+        self.assertEqual(set(schema["properties"]), {"jobId", "studentId", "periodFrom", "periodTo", "trigger", "narrativeEnabled", "periodType"})
         self.assertFalse(schema["additionalProperties"])

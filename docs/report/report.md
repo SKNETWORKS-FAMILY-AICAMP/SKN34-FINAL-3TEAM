@@ -1,10 +1,11 @@
-# 주간 리포트 (#42·#50~#56·#129·#131·#132·#152·#167·#206·#209·#252)
+# 주간·일일 리포트
 
 계약은 [API 명세](../design/api-spec.md) 3.4·4.1.1·4.2.1·4.4·5.5, 메시지는 [report-messages](../../contracts/events/report-messages.md).
 
 ## 1. core 주간 리포트 (#42)
 
-- 매주 월요일 07:00 Asia/Seoul, 직전 월~일 `LocalDate`, 집계 경계 `[월 00:00 KST, 다음 월 00:00 KST)`. 기록 없는 자녀도 대상
+- 매주 월요일 00:00 Asia/Seoul(일요일 자정, 21장), 직전 월~일 `LocalDate`, 집계 경계 `[월 00:00 KST, 다음 월 00:00 KST)`. 기록 없는 자녀도 대상
+- P24 일일 리포트([기획 3.5](planning.md#35-일일-리포트리포트-대화-p24p25)): core 몫(매일 00:00 전날 작업·`report_job.period_type`·정기 UK·알림·조회)은 20장(#390). report 몫(`weekly_report.period_type`, 재생성 UK·revision 잠금, 일일 템플릿·테마 요약)은 #391로 구현([ERD 5.2](../design/erd.md#52-일일주간-기간-분리-391), 마이그레이션 `20261109_06`·`20261109_07`)
 - ShedLock(Spring/JDBC, 기존 `shedlock` 테이블, `usingDbTime`) + SCHEDULE 부분 UK로 재실행 중복 방지, 자녀·기간별 advisory transaction lock으로 정기·재생성 직렬화. 자녀별 실패는 격리하고 실행 끝에 전파
 - 작업 저장과 `OutboxWriter.append`는 같은 트랜잭션, HTTP는 밖. core `OutboxRelay`는 #166 이후 DB 트랜잭션 밖에서 발행·confirm을 기다리고 발행 시각만 짧은 트랜잭션으로 기록
 - 재생성: 부모는 자녀·주 계열 REGENERATE 1회(재생성 결과로 다시 요청해도 우회 불가), SERVICE_OPS 관리자는 ADMIN_RETRY 무제한. revision은 report가 배정
@@ -17,7 +18,7 @@
 - report-worker가 `report.generate`를 받아 작업 상태·결과 이벤트를 중복 없이 저장·발행. 공유 v1 스키마를 재사용(`report.generate` data는 `jobId·studentId·periodFrom·periodTo·trigger·narrativeEnabled` 6개, 요청 시각은 봉투 `time`)
 - `narrativeEnabled`는 필수 boolean. 누락·잘못된 형식은 DLQ
 - `app/messaging/contracts.py`는 엄격한 수신 DTO, `app/generation/codec.py`가 payload를 내부 모델로 변환. `requested_at`은 봉투 time을 보존(삭제 장벽에서 사용)
-- Outbox는 학생별 미발행 선두 중 적격 후보 100개에서 선점하며, 발행은 최대 15초다. #131에서 학생별 순서를 유지하고 실패한 학생만 1·5·15분 지연 후 격리한다. 다른 학생은 계속 처리한다. 브로커 대기 동안 트랜잭션·행 잠금은 없지만 학생별 session lock용 연결 1개를 사용한다(연결 풀과 worker 동시 실행 수를 함께 관리). [격리 조회·수동 재처리·마이그레이션](report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
+- Outbox는 학생별 미발행 선두 중 적격 후보 100개에서 선점하며, 발행은 최대 15초다. #131에서 학생별 순서를 유지하고 실패한 학생만 1·5·15분 지연 후 격리한다. 다른 학생은 계속 처리한다. 브로커 대기 동안 트랜잭션·행 잠금은 없지만 학생별 session lock용 연결 1개를 사용한다(연결 풀과 worker 동시 실행 수를 함께 관리). [격리 조회·수동 재처리·마이그레이션](#11-outbox-실패-격리와-학생별-발행-순서-131)
 - #56에서 기본 진입점에 core 별명 조회 → 기록 집계 → 서술 검증 → 파일 저장 생성기를 연결했다. 테스트용 `run(generator=...)` 주입도 유지한다.
 
 ## 3. 수치 계산 (#51)
@@ -84,13 +85,7 @@
 
 ## 9. 연결 상태
 
-| 항목 | 담당 | 내용 |
-|---|---|---|
-| 상품 권한 | core·상품 | 연결됨: #48 `ProductEntitlementService` 판정, #129 조회 헤더·최종 권한 확인(13장) |
-| 표시 이름 | core | 연결됨(#56): core `/internal/students/{studentId}/profile` 닉네임 조회, AI 전송 전 이름 가림 |
-| 생성기 조립 | report | 연결됨(#56): worker 기본 생성기 계산 → 서술 → 렌더링, 실제 ai 서술 API는 #64 |
-| 삭제 전체 | learning·core | 연결됨: learning `student.deleted` 소비·완료 보고(#128), core 미종료 작업 정리·늦은 이벤트 차단(#132, 14장) |
-| 운영 | 인프라 | 운영 S3·IAM/IRSA·공개 endpoint, Chromium `/tmp` writable volume, guard 표식 보존·SIGTERM 유예·DLQ 복구 |
+상품 권한(#48·#129, 13장), 표시 이름(#56), 생성기 조립(#56·#64), 학생 삭제(#128·#132, 14장)가 모두 연결됨. 운영 S3·Pod Identity·공개 endpoint는 AWS 데모에서 부모 다운로드까지 확인([infra 4.2](infra.md#42-실제-서비스-검증-11-0304)). Chromium `/tmp` 쓰기 볼륨·guard 표식 보존·SIGTERM 유예·DLQ 복구는 배포 values 기준([prod README](../../infrastructure/gitops/environments/prod/README.md)).
 
 ## 10. 기본 worker 연결 (#56·#130)
 
@@ -168,6 +163,7 @@ list는 payload·학생 식별자 없이 이벤트 id/type·실패 코드/횟수
 - 무료 상세의 AI 세 필드(서술·저녁 질문·생각 유형 summary)를 가리고, 무료 다운로드는 이미 생성된 free 파일을 사용한다. full URL은 최종 권한 상실 시 거부한다.
 - 무료 응답을 요청한 뒤 권한이 생긴 경우 프리미엄 사용을 기록하지 않는다. 환불과 같은 parent 잠금, 학생·동의 검사, 응답 학생·기간·판본 검사를 보존한다.
 - 데모 특례와 새로운 의존성은 추가하지 않는다. #132 작업 고착 정리는 별도 범위다.
+- P13·P24(#391): 일일 리포트는 서술이 없어 무료·프리미엄 동일 제공, 이 절의 무료 가림은 주간 리포트에만 적용
 
 ## 14. 종료 이벤트 유실 복구 (#132)
 
@@ -187,104 +183,169 @@ report-query와 report-recovery를 분리한다. 4xx·DATA_UNAVAILABLE 매핑, 2
 
 ## 16. 학생 공개 설정과 원문 제외 (#206)
 
-- 생성 입력은 메시지의 과거 공개 값에 의존하지 않습니다. `NamedGenerator`가 내부 core 프로필의 현재 `parentSharingEnabled`를 조회하며 누락은 비공개입니다. 생성 직전 원문·돌아보기 문장·인용 후보·근거 링크를 제거하고 AI 서술 호출을 생략합니다. 이후 저장·HTML/PDF/Markdown 렌더링에도 제거된 항목만 전달됩니다.
-- 학습 횟수·분모/분자·기간·유형과 전후 글자/문장 수는 동일하게 유지합니다. 원문을 새 문장으로 대체 생성하지 않습니다. nullable 원문 형태를 조회 스키마와 렌더러에 반영했습니다.
-- 이미 공개 상태에서 만든 리포트도 core 상세에서 현재 설정을 다시 검사해 원문·인용·파생 서술을 제거합니다. 비공개 중 기존 파일 URL 재발급과 근거 조회는 403으로 막습니다. 수치 화면은 계속 제공하며 이미 전달한 파일 자체를 회수하지는 못합니다.
-- 이번 구현은 비공개 전용 파일 재생성/다운로드 상품을 추가하지 않습니다. 다시 공개해도 비공개 중 생성한 리포트에 과거 원문을 자동 복원하지 않으며 필요하면 기존 재생성 규칙을 따릅니다.
-
-리포트 HTTP는 DB 트랜잭션 밖에서 실행합니다. HTTP 완료 뒤 `ReportViewService.recordWithSharing` 또는 파일 최종 기록 단계가 parent → student 순서로 현재 상품/공개 권한을 다시 확인합니다. 조회 도중 비공개 전환 시 과거 원문을 제거하고, 파일 서명 도중 전환 시 URL을 반환하지 않습니다.
+- 생성 입력은 메시지의 과거 공개 값에 의존하지 않음. `NamedGenerator`가 내부 core 프로필의 현재 `parentSharingEnabled`를 조회하며 누락은 비공개. 생성 직전 원문·돌아보기 문장·인용 후보·근거 링크를 제거하고 AI 서술 호출을 생략
+- 학습 횟수·분모/분자·기간·유형과 전후 글자/문장 수는 유지. 원문을 새 문장으로 대체 생성하지 않음
+- 이미 공개 상태에서 만든 리포트도 core 상세에서 현재 설정을 다시 검사해 원문·인용·파생 서술을 제거. 비공개 중 파일 URL 재발급과 근거 조회는 403. 이미 전달한 파일은 회수하지 못함
+- 다시 공개해도 비공개 중 생성한 리포트에 원문을 자동 복원하지 않음(필요하면 재생성)
+- 일일 리포트(#391)도 같은 규칙
+- 리포트 HTTP는 DB 트랜잭션 밖. HTTP 완료 뒤 `ReportViewService.recordWithSharing` 또는 파일 최종 기록 단계가 parent → student 순서로 현재 상품·공개 권한을 다시 확인. 조회·서명 도중 비공개로 바뀌면 원문·URL을 반환하지 않음
 
 ## 17. 학부모 대화 기반 리포트 표시 설정 (#209, #72)
 
-### 결정과 적용 범위
+#72 논의를 #209의 11/1 결정과 담당자 승인 범위로 구현.
 
-[#72](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/72)의 보고서 챗봇 논의를 [#209](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/209)의 11/1 결정과 사용자가 전달한 김태윤님 승인 답변 범위로 구현한다.
-
-- 원문 공개는 학생 본인의 전역 설정(#206)이다. 학부모 설정으로 공개를 강제하거나 섹션을 임의 삭제하지 않는다. 메모는 제외한다.
-- 순서: 생각 유형·전후 변화·돌아보기·원문 인용·요약·저녁 질문 6개 전체 순열. 학생·기간·상태·집계 기준·수치 표는 유지한다.
-- 강조: 기존 ATTEMPTS·COMPLETED·UNASSISTED 지표의 표시만 조정한다. 계산식·판정 기준은 바꾸지 않는다.
-- 톤: DEFAULT·EASY·CONCISE만 허용한다. 숫자·인용 대조와 기존 실패/대체 정책을 유지한다.
-
-### 요청·저장·생성 흐름
-
-기존 학부모 분석 대화 화면에서 자연어 요청 → 변경안 또는 확인 질문 → 명시적 확인 → 저장한다. 취소·만료·입력 수정·대화 전환·오류에는 자동 저장하지 않는다. AI는 허용 목록만 해석하며 학생 기록을 입력으로 보내지 않는다. 프롬프트 식별자는 `analysis-template@1`이다.
-
-core는 기존 대화 소유권·연결·동의·이용권과 학부모 행 잠금을 재사용한다. 외부 AI HTTP 동안 DB 잠금을 유지하지 않고 응답 후 권한을 다시 확인한다. 제안은 10분 만료·대화 ID 일치·일회성 확인·revision 검사를 거친다. 제안 접수는 기존 분석 사용 한도와 사용 증빙에 기록하며 조회·확정에는 추가 차감하지 않는다.
-
-학부모별 `parent_report_template`은 **V22**에 추가한다. 이미 병합된 #208 V20, #206 V21을 변경하지 않는다. report의 `CoreClient`는 현재 학생 공개 상태와 학부모 확정 설정을 모두 읽고, `NamedGenerator`가 두 값을 독립적으로 전달한다. 비공개면 기존 `RecordGenerator`가 원문·근거를 제거하고 AI 서술 호출을 생략한다. 설정 조회 오류를 기본값으로 숨기지 않는다.
-
-새 리포트에 `versions.template={settings,revision}`을 저장하고 full/free HTML·PDF·Markdown에 순서·강조를 반영한다. 톤은 허용된 AI 서술 요청에만 전달한다. 과거 판은 다시 쓰지 않고 현재 권한으로 과거 원문/파일 접근을 막는 #206 로직을 유지한다. 배포는 core V22와 내부 설정 API를 먼저 제공한 후 report worker를 갱신한다.
-
-### 실제 core → report 연결 재현과 한계
-
-`REPORT_TEMPLATE_PROBE_PYTHON`에 report-service 가상환경 Python 절대 경로를 지정하고 core에서 `gradlew test --tests '*ReportTemplate*' --rerun-tasks`를 실행한다. Python 환경이 없으면 기본 CI는 core HTTP/DB 테스트만 수행하며 연결 검증을 수행했다고 집계하지 않는다.
-
-`ReportTemplateHttpIntegrationTest`가 실제 core HTTP/JWT·PostgreSQL·Redis에서 제안 확인 후 revision 1을 저장한다. 보조 실행기 `scripts/verify_report_template_rendering.py`는 해당 core의 profile/template을 HTTP 조회해 report 생성 파이프라인과 실제 Chromium 파일 렌더링까지 실행한다. 공개·비공개 상태를 각각 확인하며 비공개는 AI 미호출·원문 제외, 공개는 EASY 톤 전달·숫자/인용 대조·무료 AI 문구 제외를 검사한다.
-
-이 연결 검증의 학습 기록·AI HTTP 응답/서술·파일 저장소는 합성이다. 실제 외부 LLM 품질, PG, 운영 S3, 운영 배포, 브라우저부터 실제 모든 서비스까지 이어지는 단일 종단 시나리오는 검증하지 않았다. 실제 API 키나 학생 원문·모델 파일은 커밋하지 않는다.
+- 원문 공개는 학생 본인의 전역 설정(#206). 학부모 설정으로 공개를 강제하거나 섹션을 임의 삭제하지 않음
+- 순서: 생각 유형·전후 변화·돌아보기·원문 인용·요약·저녁 질문 6개 전체 순열. 학생·기간·상태·집계 기준·수치 표는 유지
+- 강조: 기존 ATTEMPTS·COMPLETED·UNASSISTED 지표의 표시만 조정(계산식 불변)
+- 톤: DEFAULT·EASY·CONCISE만. 숫자·인용 대조와 실패·대체 정책 유지
+- 흐름: 분석 대화 화면에서 자연어 요청 → 변경안 또는 확인 질문 → 명시적 확인 → 저장. 취소·만료·입력 수정·대화 전환·오류에는 자동 저장하지 않음. AI는 허용 목록만 해석하며 학생 기록을 입력으로 받지 않음. 프롬프트 `analysis-template@1`
+- core는 외부 AI HTTP 동안 DB 잠금을 유지하지 않고 응답 후 권한 재확인. 제안은 10분 만료·대화 ID 일치·일회성 확인·revision 검사. 제안 접수는 분석 사용 한도에 기록, 조회·확정은 추가 차감 없음
+- 저장: 학부모별 `parent_report_template`(V22). report `CoreClient`가 학생 공개 상태와 학부모 확정 설정을 모두 읽음. 설정 조회 오류를 기본값으로 숨기지 않음
+- 새 리포트에 `versions.template={settings,revision}`을 저장하고 full/free HTML·PDF·Markdown에 순서·강조 반영. 과거 판은 다시 쓰지 않음. 배포는 core V22와 내부 설정 API 먼저, report worker 나중
+- 연결 검증: `REPORT_TEMPLATE_PROBE_PYTHON`에 report-service 가상환경 Python 경로를 지정하고 core에서 `gradlew test --tests '*ReportTemplate*' --rerun-tasks`. 보조 실행기 `scripts/verify_report_template_rendering.py`. 학습 기록·AI 응답·파일 저장소는 합성
 
 ## 18. report 기능 간 DB 직접 접근 제거 (#252)
 
-사용자 응답(code·status·본문), 이벤트 계약, DB 스키마·마이그레이션은 변경하지 않음.
+응답·이벤트 계약·DB 스키마 변경 없음.
 
-- query의 SQL을 generation의 `ReportRepository`로 이동하고 `ReportReadService`를 통해 호출한다. 최신 판을 먼저 고른 뒤 상태 필터를 적용하는 순서, 기간별 정렬·페이지, revision 선택, 항목 소속 검사, 파일 경로 검사는 유지한다.
-- deletion의 테이블·DB 접근은 `deletion/repository.py`로 이동한다. state에는 삭제 명령과 DB를 사용하지 않는 중복·경합·생성 허용 판정을 둔다. HTTP 409 오류는 deletion service에서 만든다.
-- 생성·복구는 `ensure_generation_allowed`, 조회는 `ensure_query_allowed`, worker의 보존 기간 정리는 `prune_processed`를 호출한다. 호출 서비스가 소유한 세션을 전달하고 repository에서 commit하지 않는다.
-- 삭제 완료는 generation service의 학생 리포트 삭제 → outbox service의 subject 삭제 → 삭제 장벽 완료·처리 이력 저장을 기존 한 트랜잭션에서 실행한다. 잠금 → 장벽 저장 → S3 삭제 → DB 삭제 → core 완료 보고 순서를 유지한다.
-- 이전 테스트의 `deletion.state` 테이블 import 호환은 `__getattr__`의 지연 재노출 두 이름만 남긴다. 업무 코드에서는 이 호환 경로를 사용하지 않는다. state에 SQLAlchemy·ApiError·DB 함수는 없다. 테이블의 정식 소유자는 deletion.repository다.
-- generation과 deletion은 서로의 서비스 기능이 필요하므로 삭제 완료 조합 함수에서만 generation service를 지연 import한다. 새 공통 라이브러리 없이 기존 서비스 경계를 사용한다.
-- repository의 `finish`는 자기 장벽·이력만 저장한다. 여러 기능을 정리하는 테스트는 서비스의 `finish_deletion`을 호출하도록 갱신했다.
-
-검증은 report 전체 테스트와 삭제 완료 실패 주입을 사용한다. 실패 주입은 리포트·Outbox 삭제 이후 장벽 완료 기록 단계에서 오류를 발생시켜 DB 전체 롤백, PENDING 장벽 유지, 완료 콜백 미전송, 같은 명령 재시도 성공을 확인한다. 실제 학생 데이터·운영 DB는 사용하지 않는다.
+- query의 SQL을 generation의 `ReportRepository`로 옮기고 `ReportReadService`를 통해 호출
+- deletion의 테이블·DB 접근은 `deletion/repository.py`. state에는 삭제 명령과 DB를 쓰지 않는 판정만. HTTP 409는 deletion service에서 생성
+- 생성·복구는 `ensure_generation_allowed`, 조회는 `ensure_query_allowed`, worker 보존 기간 정리는 `prune_processed`. 호출 서비스가 소유한 세션을 전달하고 repository에서 commit하지 않음
+- 삭제 완료는 generation의 학생 리포트 삭제 → outbox의 subject 삭제 → 삭제 장벽 완료·처리 이력 저장을 한 트랜잭션에서. 순서(잠금 → 장벽 저장 → S3 삭제 → DB 삭제 → core 완료 보고) 유지
+- generation과 deletion은 서로의 서비스가 필요해 삭제 완료 조합 함수에서만 generation service를 지연 import
+- 검증: 삭제 완료 실패 주입(장벽 완료 기록 단계 오류 → DB 전체 롤백, PENDING 유지, 완료 콜백 미전송, 재시도 성공)
 
 ## 19. 판정 요소 지표 연결 (#344)
 
-주간 리포트가 판정 결과를 쓰지 않아 수치가 시도 수·완료 수·도움 없이 시작한 비율·글자 수 변화뿐이었다. 무료 플랜은 수치만 보므로(P13) 이것이 받는 정보 전부였다. 기록 API의 판정 결과로 FN-RPT-05 생각 요소 지표를 계산해 기존 `Metric`에 붙인다. 공개 계약(learning `Element`, report `Metric`)은 바꾸지 않는다.
+기록 API의 판정 결과로 FN-RPT-05 생각 요소 지표를 계산해 기존 `Metric`에 붙인다. 공개 계약(learning `Element`, report `Metric`)은 바꾸지 않는다.
 
-### 연결
-
-- learning: `ElementView`·`StoredElement`에 `code`·`goodThought`를 넣었다(`findStoredElements`가 `rubric_element` 조인에서 읽음, 체크리스트는 기준표 요소 값). 계약(OpenAPI `Element`)에는 #262에서 이미 있던 필드다. 데모 시드 요소 code를 #262 대조표대로 바꿨다(요소 56개: 표준 44·정답 7·고유 5). 같은 행의 code만 바꿔 지난 판정은 `rubric_element_id`로 이어진다
-- report: `FeedbackInput`이 `judgment`(result·trial·elements의 code·goodThought·satisfied)를 읽는다. `status`가 `DONE`일 때만 쓰고, 필드가 빠지거나 같은 판정에 같은 요소가 두 번 오면 기록 계약 오류로 생성을 실패시킨다(빈 지표로 바꾸지 않음)
-- 배포 순서: learning을 먼저 배포한다. report는 판정이 있는 답의 `code`·`goodThought`를 필수로 읽으므로, 이 필드를 주지 않는 이전 learning에 붙으면 판정이 있는 기간의 생성이 계약 오류로 실패한다(빈 지표로 넘어가지 않음)
-- 지표는 기존 METRIC 3개 뒤에 붙는다. 화면(`MetricCards`)·파일 렌더러·서술 요청(`metric_line`)·숫자 대조(`allowed_numbers`)가 METRIC을 그대로 쓰므로 그쪽 코드는 바꾸지 않았다. 강조 지표(`highlightMetrics`)는 기존 3개 라벨만 가리킨다
-
-### 지표 (`generation/metrics.py` `element_tallies`)
+- learning: `ElementView`·`StoredElement`에 `code`·`goodThought`. 데모 시드 요소 code를 #262 대조표대로 변경
+- report: `FeedbackInput`이 `judgment`(result·trial·elements)를 읽음. `status`가 `DONE`일 때만 쓰고, 필드가 빠지거나 같은 요소가 두 번 오면 기록 계약 오류로 생성 실패(빈 지표로 바꾸지 않음)
+- **배포 순서**: learning 먼저. report는 판정이 있는 답의 `code`·`goodThought`를 필수로 읽음
+- 지표는 기존 METRIC 3개 뒤에 붙어 화면·렌더러·서술 요청·숫자 대조가 그대로 사용
 
 | 라벨 | 분자 / 분모 |
 |---|---|
-| 처음 답에서 확인된 생각 요소 (전체·기록 있는 유형별) | 처음 답에서 확인된 필수 생각 요소 수 / 처음 답의 필수 생각 요소 수 |
-| 되묻기 후 새로 확인된 생각 요소 | 처음 답에서 빠졌다가 2번째 이후 답 중 하나에서 확인된 필수 요소 수 / 처음 답에서 빠진 필수 요소 수 |
+| 처음 답에서 확인된 생각 요소 (전체·유형별) | 처음 답에서 확인된 필수 생각 요소 수 / 처음 답의 필수 생각 요소 수 |
+| 되묻기 후 새로 확인된 생각 요소 | 처음 답에서 빠졌다가 뒤 답 중 하나에서 확인된 필수 요소 수 / 처음 답에서 빠진 필수 요소 수 |
 | 따져 보기 논술 · 주장·근거·반론을 모두 쓴 처음 답 | 세 코드가 처음 답에 모두 확인된 시도 수 / 세 코드를 가진 따져 보기 논술 시도 수 |
-| 들어가면 좋은 생각 | 시도의 답 중 하나에서 확인된 들어가면 좋은 생각 수 / 그 요소 수 |
+| 들어가면 좋은 생각 | 시도의 답 중 하나에서 확인된 수 / 그 요소 수 |
 | 생각 요소 · {요소 이름} (표준 코드별) | 처음 답에 그 요소가 확인된 시도 수 / 그 요소가 있는 시도 수 |
 
-### 결정
+결정(`generation/metrics.py` `element_tallies`):
 
-1. **시범 판정 포함**: 사람 검증(P11) 전이라 지금 판정은 모두 `trial`이다. 빼면 지표가 하나도 나오지 않아 포함하고, 시범 판정이 섞인 지표는 `formula` 끝에 "(시범 판정 포함)"을 붙인다(FN-JDG-03 "AI 채점(시범)" 표시)
-2. **제외**: 처리 중·실패(판정 없음)와 `HELD` 판정은 분자·분모에서 뺀다. 처음 답이 제외되면 그 시도는 처음 답·보완·논증·표준 요소 지표에 들어가지 않는다(기준이 없음). 들어가면 좋은 생각은 다른 판정 답으로 센다
-3. **정답 요소 제외**: `ANSWER_KEY`·`FINAL_ANSWER`는 생각 요소가 아니라 정답 여부라(1.5) 모든 요소 지표에서 뺀다. 고르기·순서·분류만 한 기간에는 요소 지표가 없다
-4. **보완은 뒤 답 중 하나**: 보완 답의 판정은 그 답 글만 본다(learning 체크리스트와 같은 이유). 그래서 처음에 확인된 요소가 뒤 답에서 다시 빠져도 줄이지 않고, 처음에 빠진 요소가 뒤 답 중 하나에서 확인되면 센다
-5. **비율**: P08처럼 그 지표에 기여한 시도가 5개 미만이면 `value`는 null·`INSUFFICIENT_SAMPLE`이고 개수·분자·분모만 둔다. `count`는 분자다(기존 METRIC과 같음)
-6. **출처**: 생각 요소는 LLM만 판정하므로(규칙 판정은 정답 요소뿐) `sourceType = AI_OBSERVATION`
-7. **고유 요소 `e*`**: 처음 답·보완 지표에는 넣고(그 미션 충족률), 표준 요소별 출현에는 넣지 않는다(1.5). 따져 보기 논술 지표는 세 표준 코드를 모두 가진 시도만 센다(#262 전 기준표 제외)
-8. **판정이 없는 기간**: 판정이 없거나 모두 처리 중·실패·보류면 기존 METRIC 3개만 나온다. 기여한 시도가 없는 지표는 만들지 않는다
-9. **관찰은 답을 낸 주에 한 번**: 지난주에 시작해 이번 주에 고친 시도는 처음 답이 지난주 리포트에 이미 들어갔다. 그래서 처음 답·논증·표준 요소 지표는 기간 안에 낸 처음 답만 센다. 보완은 기간 안의 뒤 답만 보고, 기간 전 뒤 답에서 이미 채운 요소는 분자·분모에서 뺀다. 들어가면 좋은 생각도 기간 전에 확인된 것은 뺀다. 기존 기록 지표·전후 변화(P08 포함 기준)는 그대로다
+1. **시범 판정 포함**: 사람 검증(P11) 전이라 판정이 모두 `trial`. 포함하고 `formula` 끝에 "(시범 판정 포함)"
+2. **제외**: 처리 중·실패와 `HELD`, 정정된 판정(#244)은 분자·분모에서 제외. 처음 답이 제외되면 그 시도는 처음 답·보완·논증·표준 요소 지표에서 빠짐
+3. **정답 요소 제외**: `ANSWER_KEY`·`FINAL_ANSWER`는 생각 요소가 아님. 고르기·순서·분류만 한 기간에는 요소 지표 없음
+4. **보완은 뒤 답 중 하나**: 보완 답의 판정은 그 답 글만 보므로, 처음에 확인된 요소가 뒤에서 빠져도 줄이지 않음
+5. **비율**: 기여 시도 5개 미만이면 `value` null·`INSUFFICIENT_SAMPLE`
+6. **출처**: 항상 `sourceType = AI_OBSERVATION`(생각 요소는 LLM만 판정)
+7. **고유 요소 `e*`**: 처음 답·보완 지표에는 넣고 표준 요소별 출현에는 넣지 않음
+8. **판정이 없는 기간**: 기존 METRIC 3개만
+9. **관찰은 답을 낸 주에 한 번**: 처음 답·논증·표준 요소 지표는 기간 안에 낸 처음 답만. 보완은 기간 안의 뒤 답만 보고 기간 전에 이미 채운 요소는 제외
 
-### 이슈와 다른 점
+범위 밖: 같은 유형·학년군 미션끼리 기간 비교, 요소 기반 추천(FBF-38)·생각 조각(FN-DSH-13). E2E의 llm-stub는 항상 모든 요소를 찾으므로 실제 LLM E2E는 별도.
 
-- 이슈 결정 5 "규칙 판정만이면 `RULE`" → 항상 `AI_OBSERVATION`. 정답 요소를 빼면 남는 생각 요소는 LLM만 판정하고, 기록 API에는 판정 방식(`method`)이 없으며, 요소 `sourceType`은 충족된 요소에만 있어 출처를 요소에서 고를 수 없음
-- 이슈 "들어가면 좋은 생각: 마지막 답에서 확인된 수" → 시도의 판정 답 중 하나에서 확인된 수. 보완 답은 그 답 글만 판정해 앞 답에서 확인된 생각이 마지막 답에서 다시 빠질 수 있음(결정 4와 같은 이유)
-- 이슈 "따져 보기 논술 답 수" → 세 표준 코드를 모두 가진 따져 보기 논술 시도 수(#262 전 기준표가 분모를 키우지 않게)
-- 이슈에 없던 배포 순서(learning 먼저)를 넣음
-- 이슈 확인 필요(report 담당의 시범 판정 포함·라벨 문구, 프론트 담당의 `MetricCards` 배치)는 이 PR에서 제안대로 구현하고 리뷰에서 확정한다. 리포트 상세는 지표를 항목마다 나열하는 문서형이라 화면 수정은 하지 않음
+테스트: `test_element_metrics.py`, `test_learning_client.py`.
 
-### 범위 밖
+## 20. core 일일 리포트 일정·작업·알림·조회 (#390)
 
-판정 정정의 요소 지표 반영(정정은 `judgment_correction`에 결과만 남기고 요소 충족은 바꾸지 않음, #244 FN-SUP-03), 같은 유형·학년군 미션끼리 기간 비교(FN-RPT-05), 요소 기반 추천(FBF-38)·생각 조각(FN-DSH-13), #262 관리자 code 검사와 web 요소 고르기, 실제 LLM으로 학생부터 리포트까지의 E2E(지금 E2E의 llm-stub는 항상 모든 요소를 찾음).
+P24의 core 몫. 일일 리포트를 기간 종류(`period_type`)로 일반화해 주간의 작업·Outbox·복구·재처리·알림·다운로드 경로를 그대로 쓴다.
 
-### 검증
+- DB: V29·V30 `report_job.period_type`(기본값 없음), `ck_report_job_daily_period`(일일은 `period_from = period_to`), 정기 UK `(student_id, period_type, period_from) WHERE trigger='SCHEDULE'`. 알림 유형 `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`
+- 일정: `DailyReportScheduler` 매일 00:00 KST, ShedLock `core-daily-reports`(주간과 별도라 월요일에 둘 다 실행). 기록 없는 날도 작업 생성
+- advisory lock·정기 작업 조회·진행 중 검사·학부모 재생성 1회 모두 `(학생, period_type, period_from)` 단위
+- 조회: `GET /children/{childId}/reports?periodType`. 목록·상세 응답에 항상 `periodType`. 항목 종류가 필터와 다르거나 기간 모양이 종류와 맞지 않으면 502 `REPORT_CONTRACT_INVALID`
+- 재생성·재처리는 원작업의 `period`(종류 포함)를 그대로 사용
+- 보호자 공개가 꺼지면 일일 `problems[]`도 판정·요소 라벨만 남김
 
-- learning: 전체 테스트 290개 통과(Testcontainers). `SharedResponsesJsonTest`는 의도한 변경으로 기대 JSON에 `code`·`goodThought`를 넣음
-- 로컬 실연(이 브랜치로 learning·report 재빌드, 실제 ai-service·OpenAI 판정): 초5 데모 미션 5개를 core 경로로 풀어(되묻기 답 3건) 리포트를 생성. 지표가 손 계산 기대값과 같음(처음 답 8/11, 보완 3/3, 논증 1/1, 들어가면 좋은 생각 4/4), LLM 서술이 새 지표를 인용하고 숫자·인용·금지어 대조 통과, 기록에 물어보기 응답 대조 통과. 답 글은 직접 지은 합성 문장
-- 주별 합계 불변식(개인 검증, 저장소 밖 스크립트): 무작위 합성 기록 300명분(여러 주에 걸친 시도, 처리 중·실패·보류 섞임)을 4주로 나눠 계산해, 주별 분자·분모 합이 전체 기록에서 직접 센 값과 같음(처음 답·보완·들어가면 좋은 생각·표준 요소 14종). 기간 구분을 뺀 이전 동작으로는 같은 검사가 실패함(처음 답 중복)
-- report: `ruff check`·`ruff format --check`, 전체 `pytest`. 새 테스트 `test_element_metrics.py`(제외 규칙·5개 미만·보완·논증·들어가면 좋은 생각·표준 요소·숫자 대조 허용·기간 경계)와 `test_learning_client.py` 판정 파싱 4건. 기록은 모두 합성
+결정:
+
+1. **주간 명령은 `periodType`을 생략**: report-worker 수신 DTO가 `extra="forbid"`라 주간에 새 필드를 넣으면 구버전 worker에서 DLQ. 계약상 생략 = WEEKLY, 일일에만 `"DAILY"`
+2. **일일은 상품 권한을 조회하지 않음**: 서술이 없어 `narrativeEnabled`는 항상 false. 결제 장애가 일일 생성·열람을 막지 않고, 일일 열람은 프리미엄 사용으로 기록하지 않음
+3. **무료 사용자의 일일 상세(확인 필요)**: P24대로 무료도 전체 제공. P13 "무료는 수치만"과 겹치는 열린 결정이라 판단을 `ReportEntitlementService.dailyDetailEnabled` 한 곳에 모음(지금은 항상 true)
+4. **복구·lifecycle 계약은 그대로**: jobId로 작업을 찾으므로 기간 종류를 넣지 않음
+5. **목록 필터는 report에 맡김**: core가 항목을 걸러내면 페이지 봉투가 어긋나므로 필터를 전달하고 결과만 대조
+
+테스트: `DailyReportScheduleTest`, `ReportHttpTest`, `ReportMessagingTest`, `ReportPeriodTest`.
+
+## 21. 리포트 생성 시각 자정 변경 (#400)
+
+2026-11-09 결정: 다음 날·월요일 아침 생성은 그날·그 주 기록을 바로 볼 수 없어 대상 기간이 끝나는 자정에 생성. 주간 `0 0 0 * * MON`, 일일 `0 0 0 * * *`. 주 경계·대상 기간 규칙·알림 즉시 발송·ShedLock 설정은 그대로. API·메시지·DB 변경 없음.
+
+- **조기 실행 여유 1분**: 00:00은 기간 경계 바로 위라 스케줄러가 몇 ms 일찍 깨면 KST 날짜가 전날이 되어 일일은 이틀 전, 주간은 2주 전을 고름. 스케줄러가 `clock.instant() + EARLY_RUN_GRACE`(1분)를 넘김. 기간 함수의 의미는 그대로
+- 테스트: `ReportPeriodTest`(조기 -100ms·정각·지연 경계)
+
+## 22. 일일 리포트와 주간 테마 요약 (#391, 2026-11-09)
+
+P24의 report 몫.
+
+- 일일 리포트는 LLM 없이 문제별 판정·되묻기와 보완 답변·마지막 답변·생각 요소·돌아보기·검증된 인용을 조립. 무료·full 파일이 같은 내용. 비율·서술·저녁 질문·학부모 표시 설정은 적용하지 않음. 기록이 없으면 `COMPLETED`/`NO_RECORD`
+- 기존 P08 조회는 제출일 기준이라 전날 제출하고 오늘 마무리한 시도가 빠짐 → learning 기록 조회에 daily-attempts 추가(기존 주간 계산 불변). 기록 응답에 `attempt.context` 추가
+- 공개 인용은 learning evidence로 재조회해 학생·시도·답변 버전·부분 문자열 일치 확인. 실패를 정상 인용이나 `NO_RECORD`로 처리하지 않음
+- `themeSummary`는 별도 learning API에서 읽음. 비교는 learning이 `COMPARABLE`로 준 요소만 표시
+- DB: Alembic `20261109_06`(준비)·`20261109_07`(NOT NULL·CHECK·UK 확정, `report_item.PROBLEM`). 재생성 revision·최신 판 선택은 학생·기간 종류·시작일별. 일일 데이터가 있으면 downgrade 거부
+- `report.generate.v1`의 `periodType` 생략은 WEEKLY. 복구 요청에도 `periodType` 전달
+- **배포 순서**: DB 백업 → report worker 소비 중단·구버전 쓰기 차단 → 마이그레이션 → 새 learning·report-api·report-worker. 구버전 writer와 최종 스키마를 섞는 롤링 배포는 불가. learning producer(#385·#391)를 report worker보다 먼저
+- `REPORT_THEME_SUMMARY_ENABLED=true`가 기본. false면 새 주간 생성에서 테마 조회만 생략
+
+## 23. 판정 정정 영향 조회와 요소 지표 제외 (#244, 2026-11-09)
+
+- 내부 API `GET /internal/reports/correction-impact?studentId&attemptId`: 그 시도로 만든 완료 판 목록. core가 정정 성공 후 호출(api-spec 4.4·5.7)
+- 주간은 `THINKING_TYPE.missions[].attemptId`, 일일은 `PROBLEM.attemptId`로 찾음. 보호자 공유가 꺼진 판은 근거 연결을 저장하지 않아 `report_item_evidence`로는 찾을 수 없음
+- `judgment.corrected`가 true인 판정은 요소 지표와 일일 요소 표시에서 제외(제외 경로는 `HELD`와 같음)
+- 이미 만들어진 판은 바꾸지 않음. 표시·기록은 [core 21절](core-gateway.md#21-신고문의공지도움말-46) 「정정 영향 판정과 표시」
+
+## 24. 일일·주간 리포트 실서버 생성 확인 (#424, 2026-11-10)
+
+local kind에서 core → RabbitMQ → report-worker → core 알림까지 확인. 일일·주간 작업 생성, KEDA의 worker 0→1 기동, `COMPLETED`, 완료 알림까지 정상. 실제 00:00 정각 실행은 코드 테스트로만 검증.
+
+- **운영 주의**: 약관·처리방침을 개정하면 기존 학부모가 재동의 전까지 필수 동의 판정에서 빠져 리포트 생성·알림이 멈춤(설계대로). 시연 계정은 개정 뒤 다시 로그인해 동의
+- **kind 주의**: platform-data 차트를 새 큐 정의 전에 적용했으면 core가 큐 선언 오류를 반복 → platform-data를 다시 적용
+
+## 25. 주간 대표 답변 설명 연동 (#479, 2026-11-10)
+
+에픽 #473(설명 sLLM)의 report 몫. 계약은 api-spec 3.4·4.2.3.
+
+- 주간·프리미엄·원문 공개 대상만 설명 단계 실행. 기존 수치 집계·요약 뒤의 선택 단계라 점수 조회나 설명 실패가 리포트 생성을 실패시키지 않음. 일일·무료는 `explanations=null`
+- 후보: SYSTEM 범위 기록 목록에 `includeModelScores=true`. `modelScores.m2`가 있는 기간 내 답변을 최신순으로, 생각 유형 중복 없이 최대 3개
+- 학년은 core 학생 프로필의 `grade`. 서술 초5~6·논술 초4~6만 호출. 학년이 없으면 임의로 정하지 않고 설명만 미포함
+- `POST /internal/report-explanations` 요청은 `{grade,inputType,text,scores}`. 닉네임·식별자를 글에서 가리고 식별 필드는 넣지 않음
+- 받은 설명의 숫자·점수·등급·금지 표현과 인용을 다시 검사. 인용은 같은 답변·버전 원문과 요청 글 양쪽의 부분 문자열이어야 함. `quote=null`은 정상(인용 영역만 생략)
+- 상태: 하나 이상 검증되면 `INCLUDED`, 대상은 있지만 미활성·실패·검사 탈락이면 `NOT_INCLUDED`, 대상 없음·원문 비공개면 `NO_TARGET`. `weekly_report.verification.explanationState`에 저장, 본문은 `report_item.EXPLANATION`(Alembic `20261110_08`, 항목 CHECK만 확장). 기존 `narrative.modelExplanation`은 계속 null
+- 상세·HTML·PDF·Markdown에 같은 상태와 검증된 설명 표시. 무료 다운로드 변형에는 넣지 않음. core도 현재 이용권·공개 상태로 다시 가림
+- 대기 상한(CPU 실측 전 기준안): `REPORT_EXPLANATION_TIMEOUT_SECONDS=130`(ai 125초 마감보다 길게), `REPORT_EXPLANATION_BUDGET_SECONDS=400`. 최대 3건 순차, 재시도 없음. 상한 초과 시 이미 검증한 항목은 보존
+- 배포 순서: core 사용량(#490) → ai API(#491), learning 점수 공급(#489)과 함께. 공급자가 구버전이면 설명 미포함으로 기존 리포트 유지
+- 미실시: 실제 CPU 모델의 품질·지연 측정(#475), sLLM 서버(#476), 운영 배포
+
+## 26. 학부모 리포트 목록 전체 반환 (#500, 2026-11-11)
+
+- 원인: core가 report `GET /internal/reports`에 `page`·`size`를 넘기지 않아 기본 20건만 반환. 공개 `ReportList`는 `{items}`뿐이라 약 2.5주 뒤부터 과거 리포트가 목록에서 사라짐
+- 결정(사용자 승인): 공개 API에 페이지를 추가하지 않고 core가 `page=0`부터 `size=100`으로 짧은 페이지가 나올 때까지 조회해 합침. 자녀 1명당 1년 약 420건이라 응답 크기가 작음
+- 각 페이지에 기존 계약 검사를 적용하고 한 페이지라도 위반하면 502 `REPORT_CONTRACT_INVALID`. 50페이지(5000건)를 넘어도 같은 502
+- report는 `(period_from desc, period_type)`으로 정렬하며 이 조합이 유일해 offset 페이지 사이 중복·누락 없음
+- 계층 정리: `ConversationService`가 `ReportJobRepository`를 직접 쓰던 것을 `ReportQueryService.job(reportId)`로 변경
+
+## 27. 설명 후속: 대기·종료 시간, 검사 오탐, 후보 대체 (#508, 2026-11-11)
+
+- **복구 후보 기준 60분 → 4시간**(`app.report.recovery.stale-after` 기본 `PT4H`): 월 00:00에 주간·일일 작업이 함께 생기고 report-worker 1대·prefetch 1로 차례로 처리되어, 60분 기준에서는 설명이 켜진 뒤 약 9건 이후 대기 작업이 `REPORT_NOT_CREATED`로 실패할 수 있었음. 기준 > 주간 설명 대상 수 × (400초 + 기본 생성 시간) + 일일 처리 시간. 데모 30명 기준 약 215분. 학생 수나 설명 시간이 바뀌면 다시 계산. 진짜 유실 작업의 발견은 최대 4시간으로 늦어짐
+- sLLM 가동 창(일 23:50~월 02:00)은 그대로. 창 밖 호출은 설명만 빠지고(`NOT_INCLUDED`) 리포트는 완료
+- 설명 지표는 `explanationState` 비율로 정함([아키텍처 4.7](../design/architecture.md#47-운영-경보-구성-경계-187)). 규칙·임계값은 실측 뒤
+- 종료 유예: report-worker `terminationGracePeriodSeconds` 480초(설명 단계 400초 + 여유 80초). prod에 설명·테마 요약 환경 변수 명시
+- 수량 검사 오탐: `KOREAN_COUNT` 앞에 한글 음절이 오면 수 관형사로 보지 않음("정확한 문장" 통과, "한 문장"·"두번" 거부). 요약 검증의 같은 오탐도 해소
+- 후보 선정: 생각 유형마다 최신 답변부터 시도. ai 호출 전 제외(정정·빈 답변·학년·입력 유형·점수 형식·원문 대조 실패)는 같은 유형의 다음 답변으로. ai를 한 번 부른 유형은 결과와 관계없이 다시 부르지 않음(유형당 1회, 최대 3유형)
+- web 설명 본문 `white-space: pre-line`
+- 미실측: 실제 sLLM·클러스터에서의 월요일 배치 시간(#475·#476). 4시간은 계산값
+
+## 28. 주간 테마 요약 당일 풀이·엔딩 표시 (#486, 2026-11-11)
+
+주간 테마 개정(#483)의 report 몫(FN-RPT-17). 계약은 api-spec 4.1 내부 API 표(`weekly-theme/summary`)·5.17 #391 소비 계약.
+
+- 결정(사용자 승인): 요약의 `days[].completed`(그 요일 KST 안에 학습 완료 = 주간 테마 조회의 `completedOnDay`)는 이름·뜻 그대로, `days[].completedInWeek`(그 주 테마 시도 안에 학습 완료, 프리미엄 일요일 포함)를 추가. 요약에는 `completedOnDay`를 두지 않음(#507). 기존 칸 뜻이 그대로라 저장된 리포트 해석 불변
+- 범위: report만 먼저. learning 값 계산은 #484(칸 이름은 #484에 제안). LLM 서술은 테마 요약을 쓰지 않아 프롬프트 불변, core는 `themeSummary`를 그대로 전달, 웹 표시는 #487
+- **API 변경**: `ThemeSummary`·`ThemeDay`에 선택 칸 `days[].completedInWeek: boolean|null`, `finished: boolean|null`(주간 완주), `ending: NOT_ENDED|ENDED|null`. learning이 주지 않으면 `null`로 저장·응답. 최상위 `completed`는 개근. 경로·오류 코드 불변
+- 소비 검증(`ThemeSummaryBuilder`, 위반 시 작업 실패): 당일 풀이인데 `completedInWeek=false`, `finished=true`인데 다섯 요일이 아니거나 안 푼 요일 있음, `NO_RECORD`에 `finished=true`·`ending=ENDED`
+- 표시(Markdown·PDF 공통, `renderer.py` `theme_day_label`·`theme_status_lines`): 요일 "그날 풀었어요/나중에 풀었어요/못 풀었어요", 새 칸이 있으면 "개근"·"주간 완주"·"엔딩" 줄. 새 칸이 없거나 키가 없는 옛 저장본은 지금처럼 "완주"·요일별 "완료/미완료"
+- 기간: 일일은 완료 시각 기준(22절)이라 몰아 푼 날 그날 마무리한 테마 문제가 모두 잡힘. 주간 생성 시각(월 00:00) 불변, learning 요약은 `theme_week_start`로 모아 일요일 풀이도 포함. 한계: 일요일 시작·월 00:00 뒤 마무리한 시도는 재생성 때만 반영
+- 검증: report pytest 전체 통과(새 10개: 매일·몰아 푼 학생·엔딩 못 본 학생 표시, 이전 입력·옛 저장본 동일 표시, 검증 오류 5종, 일일 몰아 푼 문제), Ruff·OpenAPI 일치 통과. learning `AttemptComparisonIntegrationTest`의 실제 요약을 `validate_theme_summary_contracts.py`로 learning·report OpenAPI와 대조해 PASS
+- 남은 일: #484 병합 뒤 새 칸을 채운 실제 응답 대조와 kind 한 주 흐름 확인

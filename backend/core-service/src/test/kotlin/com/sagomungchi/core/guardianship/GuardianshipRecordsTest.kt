@@ -15,8 +15,8 @@ import com.sagomungchi.core.guardianship.service.GuardianshipService
 import com.sagomungchi.core.guardianship.service.StudentAccessService
 import com.sagomungchi.core.guardianship.service.StudentLearningContextService
 import com.sagomungchi.core.learning.LearningHttpStub
-import com.sagomungchi.core.learning.client.LearningClient
-import com.sagomungchi.core.learning.client.LearningHttpProperties
+import com.sagomungchi.core._common.client.LearningClient
+import com.sagomungchi.core._common.client.LearningHttpProperties
 import com.sagomungchi.core.learning.client.LearningRecordClient
 import com.sagomungchi.core.learning.service.LearningRecordService
 import org.junit.jupiter.api.Test

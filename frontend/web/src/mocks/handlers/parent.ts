@@ -5,12 +5,14 @@ import { counts } from '../../domain/classroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
 import type { Consent, ConsentDocument, ConsentHistory, Conversation, Scope } from '../../domain/parent.ts'
 import { validPeriod } from '../../domain/parent.ts'
+import { isStoredGrade } from '../../domain/grade.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import {
   mockAccounts,
   mockIdentity,
   mockAccountChildren,
   mockConsentHistory, mockConsentRequired, mockGuardianConsentRequired,
+  mockPasswordParents, mockPasswordLogin,
   workspaceScenario as mode,
 } from '../fixtures/accounts.ts'
 import {
@@ -24,10 +26,12 @@ import {
   thinking,
   ensureReports,
   makeWeekly,
+  makeDaily,
   inclusionRule,
 } from '../fixtures/parent.ts'
 import { guard, respond, problem } from './student.ts'
 import { guardianPasswordState, setGuardianPassword } from '../fixtures/guardianPassword.ts'
+import { mockPremium } from '../fixtures/payments.ts'
 import { pinProblem } from '../../domain/studentDevice.ts'
 export const page = <T>(items: T[]) => ({ items, page: 0, size: 20, totalElements: items.length })
 export const fail = (code: string, title: string, status = 400, retryable = false): never => {
@@ -122,7 +126,7 @@ async function conversationGuard(request: Request, id: string) {
   if (conversationOwners.has(id) && conversationOwners.get(id) !== mockIdentity.email) fail('NOT_FOUND', '본인의 대화를 찾을 수 없습니다.', 404)
   const child = await parentChild(request, c.childId)
   requireShared(c.childId)
-  if (request.method === 'POST' && child.plan !== 'PREMIUM')
+  if (request.method === 'POST' && !mockPremium(child.id))
     fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
   return c
 }
@@ -140,7 +144,6 @@ function evidenceResponse(items: ReturnType<typeof evidence>) {
 const downloadTickets = new Map<string, { file: string; childId: string; expires: number }>()
 const pinChallenges = new Map<string, { childId?: string; purpose?: string; scope?: string; bearer: string; expires: number }>()
 const pinGrants = new Map<string, { childId?: string; purpose?: string; scope?: string; bearer: string; expires: number }>()
-export function consumePinReauth(request: Request, childId: string) { return consumeActionReauth(request, 'PIN_CHANGE', childId) }
 export function consumeActionReauth(request: Request, purpose: string, childId?: string, scope?: string) {
   const key = request.headers.get('X-Reauth-Token') ?? ''
   const grant = pinGrants.get(key)
@@ -168,7 +171,8 @@ function streamMessage(
     messageId = retryId ?? crypto.randomUUID()
   let msg = c.messages.find((m) => m.messageId === messageId)
   if (!msg) {
-    msg = { messageId, question: data.question, status: 'RUNNING', scope }
+    // 대화의 첫 답변으로 정정 안내를 확인한다 (#244).
+    msg = { messageId, question: data.question, status: 'RUNNING', scope, correctionNotice: c.messages.length === 0 }
     c.messages.push(msg)
   } else {
     msg.status = 'RUNNING'
@@ -363,7 +367,6 @@ export const parentHandlers = [
         nickname: d.nickname,
         grade: d.grade,
         birthYear: d.birthYear,
-        plan: 'FREE',
       }
       rows.unshift(fixtureConsent(docs.find((doc) => doc.kind === 'GUARDIAN')!, c.id))
       store.replaceChildren([...children, c])
@@ -380,7 +383,7 @@ export const parentHandlers = [
       if (
         Object.keys(d).some((k) => k !== 'nickname' && k !== 'grade') ||
         (d.nickname !== undefined && (!nickname || nickname.length > 40)) ||
-        (d.grade !== undefined && (!Number.isInteger(d.grade) || Number(d.grade) < 3 || Number(d.grade) > 6))
+        (d.grade !== undefined && !isStoredGrade(d.grade))
       )
         fail('VALIDATION_FAILED', '별명·지원 학년을 확인해 주세요.')
       const updated = {
@@ -411,6 +414,26 @@ export const parentHandlers = [
       if (typeof password !== 'string' || pinProblem(password)) fail('VALIDATION_FAILED', '보호자 비밀번호는 반복·연속되지 않는 숫자 4~6자리입니다.', 422)
       consumeActionReauth(request, 'GUARDIAN_PASSWORD')
       return setGuardianPassword(password as string)
+    }),
+  ),
+  // #415 core POST /me/reauth/password와 같은 계약: ID·비밀번호 계정만, 맞으면 /me/reauth 완료와 같은 1회 토큰.
+  http.post('/api/v1/me/reauth/password', ({ request }) =>
+    respond(async () => {
+      parentGuard(request, true)
+      const body = (await request.json()) as { password?: unknown; purpose?: string; childId?: string; scope?: string }
+      const accountWide = ['WITHDRAWAL', 'GUARDIAN_PASSWORD', 'TRANSFER_ACCEPT'].includes(body.purpose ?? '')
+      if (!['PIN_CHANGE','CHILD_UNLINK','CHILD_DELETE','WITHDRAWAL','GUARDIAN_PASSWORD','CHILD_TRANSFER','TRANSFER_ACCEPT'].includes(body.purpose ?? '') ||
+        (accountWide && (body.childId !== undefined || body.scope !== undefined)) || (!accountWide && !body.childId) ||
+        (body.purpose === 'CHILD_DELETE' && !['PROFILE','RECORDS'].includes(body.scope ?? '')) ||
+        (body.purpose !== 'CHILD_DELETE' && body.scope !== undefined))
+        fail('VALIDATION_FAILED', '재인증 대상과 작업 범위를 확인해 주세요.')
+      const loginId = mockPasswordLogin.loginId
+      if (!loginId) fail('REAUTH_METHOD_MISMATCH', 'Google 계정은 Google로 본인 확인을 해 주세요.', 409)
+      if (!accountWide) await parentChild(request, body.childId!)
+      if (body.password !== mockPasswordParents.get(loginId!)?.password) fail('REAUTH_PASSWORD_INVALID', '비밀번호를 확인해 주세요.', 403)
+      const reauthToken = crypto.randomUUID(), expires = Date.now() + 300000
+      pinGrants.set(reauthToken, { childId: body.childId, purpose: body.purpose, scope: body.scope, bearer: request.headers.get('Authorization') ?? '', expires })
+      return { reauthToken, expiresAt: new Date(expires).toISOString() }
     }),
   ),
   http.post('/api/v1/me/reauth', ({ request }) =>
@@ -516,15 +539,21 @@ export const parentHandlers = [
   ),
   http.post('/api/v1/conversations', ({ request }) =>
     respond(async () => {
-      const scope = (await request.json()) as Scope,
-        c = await parentChild(request, scope.childId)
+      const body = (await request.json()) as Scope & { reportId?: string },
+        c = await parentChild(request, body.childId)
       requireShared(c.id)
-      if (c.plan !== 'PREMIUM')
+      if (!mockPremium(c.id))
         fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
+      // 일일 리포트 고정 대화(FN-RPT-16, P25): 그 리포트의 자녀·대상일·최신 판으로 고정
+      const fixed = body.reportId ? reports.get(body.reportId)?.at(-1) : undefined
+      if (body.reportId && (!fixed || fixed.periodType !== 'DAILY' || fixed.childId !== c.id))
+        fail('CONVERSATION_REPORT_INVALID', '이 자녀의 일일 리포트로만 대화를 만들 수 있습니다.', 422)
+      const scope = fixed ? { childId: c.id, from: fixed.period.from, to: fixed.period.to } : body
       if (!validPeriod(scope)) fail('VALIDATION_FAILED', '기간을 확인해 주세요.')
       const v: Conversation = {
         conversationId: crypto.randomUUID(),
         childId: c.id,
+        ...(fixed ? { reportId: fixed.reportId, reportRevision: fixed.revision } : {}),
         period: { from: scope.from, to: scope.to },
         title: '새 분석 대화',
         createdAt: new Date().toISOString(),
@@ -590,6 +619,9 @@ export const parentHandlers = [
       const c = await parentChild(request, String(params.childId))
       queryFault()
       const status = new URL(request.url).searchParams.get('status')
+      if (status !== null && !['RUNNING', 'COMPLETED', 'FAILED'].includes(status))
+        fail('VALIDATION_FAILED', '리포트 생성 상태를 확인해 주세요.')
+      const periodType = new URL(request.url).searchParams.get('periodType')
       // 리포트 목록은 페이지 없이 {items}만 반환한다(api-spec 1.1·5.5, ReportList).
       return {
         items: ensureReports(c)
@@ -602,7 +634,8 @@ export const parentHandlers = [
                   ? 'FAILED'
                   : r.status,
           }))
-          .filter((r) => !status || r.status === status),
+          .filter((r) => !status || r.status === status)
+          .filter((r) => !periodType || (r.periodType ?? 'WEEKLY') === periodType),
       }
     }),
   ),
@@ -618,9 +651,14 @@ export const parentHandlers = [
       pendingReports.delete(id)
       const c = await parentChild(request, r!.childId)
       const recomputed =
-        mode === 'empty' || mode === 'small' ? makeWeekly(c, r!.period, r!.revision) : r!
+        mode === 'empty' || mode === 'small'
+          ? r!.periodType === 'DAILY'
+            ? makeDaily(c, r!.period.from, r!.revision)
+            : makeWeekly(c, r!.period, r!.revision)
+          : r!
       const result = {
         ...recomputed,
+        explanations: !mockPremium(c.id) || recomputed.periodType === 'DAILY' ? null : mode === 'explanation-missing' ? { state: 'NOT_INCLUDED', items: [] } : recomputed.explanations,
         revisions: versions.map((v) => ({ revision: v.revision, generatedAt: v.generatedAt })),
         status:
           mode === 'report-running' ? 'RUNNING' : mode === 'report-failed' ? 'FAILED' : r!.status,
@@ -636,7 +674,7 @@ export const parentHandlers = [
         fail('REPORT_REGENERATION_LIMIT', '학부모 재생성은 리포트당 한 번만 가능합니다.', 409)
       const prev = versions.at(-1)!,
         c = await parentChild(request, prev.childId),
-        next = makeWeekly(c, prev.period, prev.revision + 1)
+        next = prev.periodType === 'DAILY' ? makeDaily(c, prev.period.from, prev.revision + 1) : makeWeekly(c, prev.period, prev.revision + 1)
       versions.push(next)
       regenerateCounts.set(id, 1)
       pendingReports.set(id, Date.now() + 1400)

@@ -3,3 +3,5 @@ gradlew text eol=lf
 *.sh text eol=lf
 *.bat text eol=crlf
 *.jar binary
+# 담당자 제공 메타데이터의 SHA-256을 플랫폼마다 동일하게 유지
+backend/scoring-service/metadata/1112b/**/score_cuts.json -text

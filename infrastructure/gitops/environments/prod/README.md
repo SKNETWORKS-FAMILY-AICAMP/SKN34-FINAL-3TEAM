@@ -8,17 +8,21 @@
 
 | 파일 | namespace / release | chart |
 |---|---|---|
-| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service` |
+| `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. `ai-service.json`의 설명 sLLM 연결(#476·#477: env `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`, egress `sllm-server:8080`)은 미적용. 테마 자산 버킷(#652: ai·learning의 `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`, Pod Identity agent egress)과 core의 app 기본 거부(#657: `namespaceDefaultDeny=true`, `app-default-deny`), ai M2 교차 확인 켜기(#668: env `M2_CROSS_CHECK_ENABLED=true`, 시연 설명 카드용)도 미적용 |
 | `platform-data.json` | platform / platform-data | `../../charts/platform-data` |
 | `external-secrets.json` | external-secrets / external-secrets | external-secrets/external-secrets 2.14.0 |
 | `aws-load-balancer-controller.json` | kube-system / aws-load-balancer-controller | eks/aws-load-balancer-controller 1.14.1 |
 | `external-secret-resources.json` | app·platform | SecretStore 2개, ExternalSecret 12개. 비밀 값 없이 원격 이름·키만 보존 |
 | `platform-network.json` | platform | 기본 ingress 거부, RabbitMQ·Redis 클라이언트 허용 |
 | `core-alb-network.json` | app | ALB public subnet에서 core:8080 허용 |
+| `app-oneoff-db-network.json` | app | 일회성 DB Pod(`rds-bootstrap` Job, `demo-db-oneoff`)의 DNS·RDS 5432 egress. app 기본 거부(#657) 때문에 필요, 미적용 |
+| `app-check-pods-network.json` | app | 배포 확인 Pod(`deployment-check` 라벨)의 core·learning·scoring egress(#657), 미적용 |
 | `karpenter.json` | kube-system / karpenter | oci://public.ecr.aws/karpenter/karpenter 1.15.1 (#211) |
 | `karpenter-nodepool.json` | cluster | EC2NodeClass `application`, NodePool `application-burst`. Karpenter 설치 후 `kubectl apply` (#211) |
+| `sllm-server.json` | app / sllm-server | `../../charts/app-service`. 설명 sLLM(#476). 미적용: KEDA 설치, `sllm-server` ServiceAccount Pod Identity(모델 버킷 읽기), llama.cpp 서버 이미지 ECR 게시·digest, 모델 경로·SHA256(#475) |
+| `karpenter-nodepool-explanation.json` | cluster | NodePool `explanation-cpu`(taint `workload=explanation-sllm`). `karpenter-nodepool.json`의 EC2NodeClass `application` 뒤에 `kubectl apply` (#476, 미적용) |
 
-이 values는 현재 라이브 리소스에서 수집했다. Helm chart 기본값 전체를 복사한 파일은 아니다. 배포된 앱 chart의 기반은 `b67d8a462b6b3dc239ecfc14b2aa185766c0c293`이며, 저장소 chart 변경 시 렌더링 차이를 먼저 검토한다. 앱 이미지는 각 파일의 digest로 고정한다. core digest에는 아직 커밋되지 않은 이용권 수정이 들어 있으므로 기반 SHA만으로 같은 이미지를 재빌드할 수 있다고 주장하지 않는다. scoring은 PR #288 병합 SHA `f6250bdd131c4875feba99212212bfdb580c353e`를 사용한다.
+앱 6개·platform·외부 chart values는 2026-11-03 라이브 리소스에서 수집하고 이후 배포 때 맞춘 값이다(아래 배포 기록). 그 뒤 저장소에만 추가한 값은 위 표에 미적용으로 표시한다. 특히 `ai-service.json`의 설명 sLLM 연결은 `sllm-server`가 설치되기 전에 ai를 재배포하면 함께 적용되어 없는 Service를 가리키므로, 그 상태에서는 설명 생성 호출만 연결 실패한다. ai 재배포는 sLLM 설치 뒤 또는 설명 실패를 감수할 때 한다. Helm chart 기본값 전체를 복사한 파일은 아니다. 이 디렉토리의 저장소 chart values·manifest JSON은 ci-gitops가 렌더링·kubeconform 검사한다(#509, 외부 chart values 제외). 배포된 앱 chart의 기반은 `b67d8a462b6b3dc239ecfc14b2aa185766c0c293`이며, 저장소 chart 변경 시 렌더링 차이를 먼저 검토한다. 앱 이미지는 각 파일의 digest로 고정한다. core digest에는 아직 커밋되지 않은 이용권 수정이 들어 있으므로 기반 SHA만으로 같은 이미지를 재빌드할 수 있다고 주장하지 않는다. scoring은 PR #288 병합 SHA `f6250bdd131c4875feba99212212bfdb580c353e`를 사용한다.
 
 ## 선행 조건
 
@@ -34,6 +38,8 @@
 `redeploy-app.ps1`은 기존 앱 release 한 개의 재배포 진입점이다. AWS 계정·실제 EKS endpoint·고정 digest·기존 release 상태를 확인하고 기본 실행은 server dry-run만 수행한다. `-Apply`를 지정할 때만 ESO Ready 확인 후 배포한다. 새 클러스터·DB 초기화·Secret 생성·웹 빌드·Ingress 생성은 수행하지 않는다. 현재 노드의 Pod 슬롯과 메모리 여유가 작으므로 preview 성공을 실제 rollout 성공으로 해석하지 않는다. 적용 전에 기존 Pod와 비교할 계획을 검토한다.
 
 승인 절차를 거친 배포·롤백은 [#186 운영 배포](../../../cd/README.md)의 `cd-release` workflow가 이 스크립트를 `-ImageDigest`(저장소 values는 그대로 두고 digest만 바꾼 임시 사본)로 호출한다.
+
+`sllm-server`(#476)도 `-Service`로 받는다. 이 스크립트는 기존 release만 다루므로 첫 설치는 수동 `helm upgrade --install`로 하고, 이미지 digest가 고정되기 전(`pending-475`)에는 스크립트가 거부한다. 저장소에서 빌드하는 이미지가 아니라 `cd-release` 대상이 아니다. KEDA cron 가동 창(일 23:50 ~ 월 02:00 KST)에 적용하면 다음 KEDA 확인까지 0대가 되므로 그 시간에는 실행하지 않는다.
 
 ```powershell
 pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service core-service -Kubeconfig '<AWS kubeconfig 절대 경로>' -Helm '<helm 실행 파일>'
@@ -60,7 +66,11 @@ kubectl --kubeconfig $kubeconfig get deployments -n app
 kubectl --kubeconfig $kubeconfig get pods,pvc -n platform
 ```
 
-NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책 변경은 별도 검토 후 `platform-network.json`, `core-alb-network.json`을 적용한다. 현재 app namespace 전체 default-deny 여부와 서비스별 egress 허용 범위는 [누락 점검](../../../../docs/report/issue-185-aws.md)을 따른다.
+NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책 변경은 별도 검토 후 `platform-network.json`, `core-alb-network.json`, `app-oneoff-db-network.json`, `app-check-pods-network.json`을 적용한다.
+
+app namespace 기본 거부(#657): `core-service.json`의 `namespaceDefaultDeny=true`가 `app-default-deny`(모든 Pod, 규칙 없음)를 만든다. 같은 이름 객체를 두 release가 가지면 Helm 소유권 충돌이 나므로 **core release에만** 켠다(local과 같음, learning은 false 유지). 앱 Deployment 7개와 migration Job은 이미 자기 정책으로 ingress·egress가 격리돼 있어 동작이 바뀌지 않는다. 새로 막히는 것은 자기 정책이 없는 Pod뿐이다: `kubectl run` 점검 Pod, `rds-bootstrap` Job, `demo-db-oneoff`, 배포 확인 Pod. 앞의 두 manifest를 core 재배포와 함께 적용하고, 그 밖의 일회성 Pod는 이 둘의 라벨을 쓰거나 자기 정책을 먼저 만든다. 판단 근거와 남은 확인은 [infra 보고서 9.8](../../../../docs/report/infra.md#98-prod-테마-자산-버킷과-네임스페이스-기본-거부-준비-652657-2026-11-16).
+
+되돌리기: `core-service.json`의 값을 false로 돌려 core만 재배포하거나, 급하면 `kubectl -n app delete networkpolicy app-default-deny`(다음 core 재배포 때 다시 생김).
 
 ## main 기준 core·웹 재배포 (2026-11-04, #185)
 
@@ -77,7 +87,7 @@ NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책
 
 1. 결제 Secret: Secrets Manager `sagomungchi/demo/app/payment`(공용 문서 테스트 키 `TOSS_TEST_SECRET_KEY`·`TOSS_TEST_MID`와 `PAYMENT_BILLING_ENCRYPTION_KEY`) → ESO 역할 inline 정책 `sagomungchi-demo-external-secrets-payment-read`(작업자 실행) → `external-secret-resources.json`의 `payment-credentials` Ready, 키 3개 동기화.
 2. [V26 사전 점검](../../../aws/check-v26-preconditions.sql): core_app 읽기 전용 Job으로 위반 0건, flyway 25 확인 후 Job 삭제.
-3. migration: `helm template … -f core-service.json -f migrations/core-service.json --show-only templates/migration-job.yaml`을 **`-n app`으로** 적용한다(렌더링 결과에 namespace가 없어 생략하면 kubeconfig 기본 namespace에 생성된다). V25 → V26 성공.
+3. migration: `helm template … -f core-service.json -f migrations/core-service.json --show-only templates/migration-job.yaml`(2026-11-16 이후는 `--show-only templates/migration-networkpolicy.yaml`도 함께, #657)을 **`-n app`으로** 적용한다(렌더링 결과에 namespace가 없어 생략하면 kubeconfig 기본 namespace에 생성된다). V25 → V26 성공.
 4. core: `core-service.json` digest 교체와 결제 키 8개(`payment-credentials`, `optional: true`)·`AUTH_NEW_ACCOUNT_DEMO=true` 추가 → `redeploy-app.ps1` dry-run → `-Apply`. release revision 5, 재시작 0. 보호자 이관(`APP_GUARDIAN_TRANSFER_ENABLED`)은 설정하지 않아 꺼져 있다.
 5. 웹: `npm ci && npm run build` → S3 web 버킷에 assets·정적 파일 먼저, `index.html` 마지막(`no-cache`). 이전 assets는 지우지 않았다.
 
@@ -86,6 +96,27 @@ NetworkPolicy는 기존 chart 정책과 **합집합**으로 동작한다. 정책
 core 외 learning·ai·scoring·report는 b67d8a 이미지로 남아 있다.
 
 2026-11-04 #186 배포 준비: main `a47a596`의 learning V9(`rubric_version` nullable 컬럼 2개·CHECK 제약)를 `learning-migrate:main-a47a596247ad`(`sha256:80254f13…d7bba`) Job `learning-service-migrate-main-a47a596247ad`로 적용했다. V8 → V9 성공, 앱 재시작 0. 기존 learning 이미지는 새 컬럼을 읽지 않아 호환된다. 앱은 `cd-release`로 같은 main SHA에 맞춘다. 2026-11-04 `cd-release` run 41796499774로 6개 release를 `main-a47a596247ad`로 배포했고 이 디렉토리의 앱 digest를 실제값으로 맞췄다. 롤백 리허설(run 41800966528·41802823411) 후 scoring도 같은 버전이다. 서비스 간 호출 계약은 이번 core 변경과 호환됨을 확인했으며, 같은 main 기준으로 맞추는 일은 후속이다.
+
+2026-11-05 main 배포: main `c6809dd`(PR #375)의 core V27·V28을 `core-migrate:main-c6809ddb65ee`(`sha256:5a639cd2…87fe`) Job `core-service-migrate-main-c6809ddb65ee`(V26 → V28)로, learning V10을 `learning-migrate:main-c6809ddb65ee`(`sha256:ad66d684…aaea`) Job `learning-service-migrate-main-c6809ddb65ee`(V9 → V10)로 먼저 적용했다. 성취기준 표 시드 765행은 Job `learning-seed-achievement-standards-c6809ddb65ee`로 넣었다. 적용 후 기존 앱 재시작 0. `migrations/`의 core·learning 값은 이 Job 기준이다. 앱은 `cd-release` run 42011445646(6개 release 적용, 배포 후 경로 확인만 422 실패, #376)과 run 42055199615(main `322e797`, PR #378, 같은 코드 재롤아웃, 경로 확인 6단계 통과)로 배포했다. 이 디렉토리의 앱 digest 6개는 run 42055199615 실제값이며 Deployment 이미지와 일치함을 확인했다.
+
+2026-11-06 데모 일시 정지: `demo_stack.py pause`로 앱·관측·RabbitMQ·Redis를 0으로 줄이고 RDS·EBS 스냅샷 후 노드그룹 2개 0대, RDS stopped. Karpenter는 컨트롤러 0개·NodePool `limits` 0으로 멈춰 있다(저장소 `karpenter-nodepool.json`의 상한은 재개 후 값). 재개 절차는 [EKS README](../../../eks/README.md#재개-순서와-완료-기준)를 따른다.
+
+## 자녀 이관(FN-ACC-15) prod 꺼 둠 (2026-11-16, #666)
+
+자녀 이관은 시연 범위 밖이라 prod에서 **꺼 둔다**. 서버 `APP_GUARDIAN_TRANSFER_ENABLED`와 웹 빌드 `VITE_GUARDIAN_TRANSFER_ENABLED`를 모두 설정하지 않는다(미설정=false). prod 값 파일·코드는 바꾸지 않는다. 이미 보낸 요청의 조회·취소·거절은 플래그와 관계없이 열려 있다(#307). V26은 2026-11-04 운영 RDS에 적용되어 DB 준비는 끝나 있다.
+
+이유:
+- 이관 대기 요청 만료, 수신 알림, 운영자 복구 절차가 미구현이다([auth-account 6절](../../../../docs/report/auth-account.md)).
+- 받는 학부모는 Google 로그인 계정만 조회된다. 아이디·비밀번호 학부모는 받는 쪽이 될 수 없다(#415).
+- 12/7 시연·12/8 최종 발표 흐름에 이관이 없다.
+
+켤 조건: 위 미구현 항목의 처리 또는 운영 방침 결정, 시연 흐름에 이관이 들어갈 경우 받는 계정을 Google 계정으로 준비.
+
+켜는 방법:
+1. `core-service.json`에 `APP_GUARDIAN_TRANSFER_ENABLED=true` 추가, 웹 빌드 환경에 `VITE_GUARDIAN_TRANSFER_ENABLED=true` 추가.
+2. `redeploy-app.ps1 -Service core-service` dry-run 결과 확인.
+3. 확인 후 `-Apply`로 core 재배포, 웹은 다시 빌드해 S3에 올리고 `index.html`을 마지막에 교체.
+4. 이 절과 auth-account 6절의 "꺼 둠" 기록을 갱신.
 
 ## 보존과 환경 경계
 
@@ -160,10 +191,10 @@ helm upgrade --install platform-data infrastructure/gitops/charts/platform-data 
 
 core/learning migration 이미지는 [core.Dockerfile](../../migrations/core.Dockerfile)·[learning.Dockerfile](../../migrations/learning.Dockerfile)로 같은 소스 revision에서 빌드한다. 현재 develop의 migration을 과거 배포 digest와 임의 조합하지 않는다. Flyway validate/migrate와 report Alembic upgrade head는 각 DB migration 계정·TLS로 별도 Job에서 실행하고 성공 이력을 확인한 후 앱을 올린다.
 
-prod 앱 values는 `migration.enabled=false`를 유지한다(실제 release와 일치). migration 입력은 [`migrations/`](migrations/)의 덮어쓰기 values이며, 공통 chart의 `migration.extraVolumes`·`extraVolumeMounts`로 `rds-ca`를 마운트하고 migrate Secret·고정 digest를 사용한다. Argo PreSync는 수동 Helm에서 선행을 보장하지 않으므로 Job만 렌더링해 먼저 적용한다.
+prod 앱 values는 `migration.enabled=false`를 유지한다(실제 release와 일치). migration 입력은 [`migrations/`](migrations/)의 덮어쓰기 values이며, 공통 chart의 `migration.extraVolumes`·`extraVolumeMounts`로 `rds-ca`를 마운트하고 migrate Secret·고정 digest를 사용한다. Argo PreSync는 수동 Helm에서 선행을 보장하지 않으므로 Job과 그 NetworkPolicy(`<앱>-migration`, DNS·RDS 5432 egress, `migrations/`의 `networkPolicy.migrationEgress`)만 렌더링해 먼저 적용한다. app 기본 거부(#657) 아래에서는 정책 없이 Job만 적용하면 DNS부터 막힌다.
 
 ```powershell
-helm template core-service infrastructure/gitops/charts/app-service -n app -f "$envDir/core-service.json" -f "$envDir/migrations/core-service.json" --show-only templates/migration-job.yaml | kubectl --kubeconfig $kubeconfig apply -f -
+helm template core-service infrastructure/gitops/charts/app-service -n app -f "$envDir/core-service.json" -f "$envDir/migrations/core-service.json" --show-only templates/migration-job.yaml --show-only templates/migration-networkpolicy.yaml | kubectl --kubeconfig $kubeconfig apply -f -
 kubectl --kubeconfig $kubeconfig -n app wait --for=condition=complete job/core-service-migrate-b67d8a462b6b --timeout=600s
 ```
 

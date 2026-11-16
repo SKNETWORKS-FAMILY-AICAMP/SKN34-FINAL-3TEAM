@@ -29,6 +29,8 @@ class AttemptComparisonIntegrationTest : PostgresRepositoryTest() {
     @Autowired lateinit var attempts: AttemptService
     @Autowired lateinit var answers: AnswerService
     @Autowired lateinit var jdbc: JdbcTemplate
+    @Autowired lateinit var themeReports: com.sagomungchi.learning.theme.service.WeeklyThemeReportService
+    @Autowired lateinit var mapper: com.fasterxml.jackson.databind.ObjectMapper
     private val student = UUID.randomUUID()
     private lateinit var rows: TestRows
     @BeforeEach fun prepare() {
@@ -60,6 +62,19 @@ class AttemptComparisonIntegrationTest : PostgresRepositoryTest() {
         assertEquals(before, attempts.get(previous.id))
         assertEquals("예전 까닭", result.previous!!.answers.single().text)
         assertEquals("새로운 까닭과 다른 생각", result.current.answers.single().text)
+        val week = java.time.LocalDate.of(2026, 11, 9)
+        val theme = rows.publishedTheme(listOf(mission.id) + rows.themeMissions().take(4).map { it.id }, week)
+        jdbc.update("UPDATE attempt SET context='THEME_DAY', theme_id=?, theme_week_start=? WHERE id=?", theme, week, previous.id)
+        jdbc.update("UPDATE attempt SET context='THEME_REVIEW', theme_id=?, theme_week_start=? WHERE id=?", theme, week, current.id)
+        UserContextHolder.set(UserContext(null, "SYSTEM", setOf(student.toString()), null))
+        val summary = themeReports.summary(student, week)
+        assertEquals(result.elements, summary.reviewRetries.single().comparison!!.elements)
+        val json = mapper.writeValueAsString(summary)
+        assertTrue(!json.contains("새로운 까닭과 다른 생각") && !json.contains("예전 까닭"))
+        val target = java.nio.file.Path.of("build/generated-contracts/theme-summary.json")
+        java.nio.file.Files.createDirectories(target.parent)
+        java.nio.file.Files.writeString(target, json)
+
     }
 
     @Test fun `마무리 전에는 비교를 공개하지 않고 첫 마무리는 이전 결과 없음`() {

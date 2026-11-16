@@ -17,8 +17,11 @@ class InternalRestClientFactory(
     private val properties: AppProperties,
     private val builder: RestClient.Builder,
 ) {
-    /** readTimeout은 기본 app.internal.read-timeout(35초, P12). 미션 초안 ai 호출만 따로 넘김(#353) */
-    fun create(service: String, readTimeout: Duration = properties.internal.readTimeout): RestClient {
+    /**
+     * readTimeout은 기본 app.internal.read-timeout(35초, P12), core는 app.internal.core-read-timeout(4초, #501).
+     * 미션 초안 ai 호출만 따로 넘김(#353)
+     */
+    fun create(service: String, readTimeout: Duration = defaultReadTimeout(service)): RestClient {
         val baseUrl = requireNotNull(properties.services[service]) { "app.services.$service 설정 없음" }
         val httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
@@ -40,7 +43,11 @@ class InternalRestClientFactory(
             .build()
     }
 
+    private fun defaultReadTimeout(service: String): Duration =
+        if (service == CORE) properties.internal.coreReadTimeout else properties.internal.readTimeout
+
     companion object {
+        const val CORE = "core"
         const val INTERNAL_TOKEN_HEADER = "X-Internal-Token"
     }
 }

@@ -71,7 +71,7 @@ def main():
     learning.execute("INSERT INTO mission(id,code,status,demo_only,sort_order,created_by,source,created_at,updated_at) VALUES(%s,%s,'DRAFT',true,1,%s,'MANUAL',now(),now())", (mission,str(mission),actor))
     learning.execute("INSERT INTO mission_version(id,mission_id,version,title,subject,grade_min,grade_max,thinking_type,input_type,question,created_by,created_at) VALUES(%s,%s,1,'Synthetic mission','language',3,6,'ANALYZE','NARRATIVE','Synthetic question',%s,now())", (version,mission,actor))
     learning.execute("INSERT INTO rubric_version(id,mission_id,version,created_by,created_at) VALUES(%s,%s,1,%s,now())", (rubric,mission,actor))
-    learning.execute("INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,updated_at) VALUES(%s,%s,%s,%s,%s,3,'IN_PROGRESS',now(),now())", (attempt,student,mission,version,rubric))
+    learning.execute("INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,updated_at,context) VALUES(%s,%s,%s,%s,%s,3,'IN_PROGRESS',now(),now(),'EXTRA')", (attempt,student,mission,version,rubric))
     learning.execute("INSERT INTO answer(id,attempt_id,version,input_type,content,plain_text,dictated_by_guardian,idempotency_key,submitted_at) VALUES(%s,%s,1,'NARRATIVE','{}',%s,false,%s,now())", (answer,attempt,quote,uuid.uuid4()))
     path = f"/api/v1/conversations/{conversation}/messages/{message}/evidence"
     before = request(path)

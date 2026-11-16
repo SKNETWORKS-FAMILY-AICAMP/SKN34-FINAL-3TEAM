@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>일일 리포트</title>
+<style>
+body { font-family:"Noto Sans CJK KR","Malgun Gothic",sans-serif; color:#183345; font-size:11px; line-height:1.75; }
+h1 { font-size:25px; color:#174c59; } h2 { font-size:16px; border-bottom:2px solid #d6e6e4; break-after:avoid; }
+h3 { font-size:12px; break-after:avoid; } p,li { white-space:pre-wrap; overflow-wrap:anywhere; }
+.meta { color:#49616e; } .record { border:1px solid #dce6e9; padding:12px; margin-top:16px; }
+</style></head><body>
+<h1>{{ name }}의 일일 리포트</h1>
+<p class="meta">{{ report.period.from }} · {{ report.revision }}판 · {{ state_labels[report.state] }}</p>
+<p>{{ report.inclusionRule or '' }}</p>
+{% if report.state == 'NO_RECORD' %}<p>확인된 학습 기록이 없습니다.</p>{% endif %}
+{% for metric in report.metrics %}<p>{{ metric.label }}: {{ metric.count }}건</p>{% endfor %}
+{% for problem in report.problems %}<section class="record">
+<h2>{{ problem.title }}</h2>
+<p>활동: {{ {'THEME_DAY':'오늘의 테마', 'THEME_REVIEW':'되돌아보기', 'EXTRA':'추가 문제'}.get(problem.context, '학습') }} · 판정: {{ {'CORRECT':'확인', 'PARTIAL':'일부 확인', 'RETHINK':'다시 생각하기', 'HELD':'판정 보류'}.get(problem.judgment, '판정 대기') }}</p>
+<h3>되묻기와 보완 답변</h3>
+{% for followup in problem.followups %}<p>{{ followup.question }}</p><p>{{ followup.answer or '보완 답변 없음' }}</p>{% else %}<p>제공할 되묻기 기록이 없습니다.</p>{% endfor %}
+<h3>마지막 답변</h3><p>{{ problem.finalAnswer or '원문 비공개 또는 답변 없음' }}</p>
+<h3>생각 요소</h3><ul>{% for element in problem.elements %}<li>{{ element.label }}: {{ '확인' if element.satisfied else '미확인' }}</li>{% else %}<li>확인할 판정 기록이 없습니다.</li>{% endfor %}</ul>
+<h3>돌아보기</h3><p>{{ difficulty_labels.get(problem.reflection.difficulty, '') }} {{ problem.reflection.text or ('원문 비공개' if problem.reflection.written else '미작성') }}</p>
+<h3>검증된 원문 인용</h3>{% for quote in problem.quotes %}{% if quote.verified %}<p>{{ quote.text }}</p>{% endif %}{% else %}<p>제공할 인용이 없습니다.</p>{% endfor %}
+</section>{% endfor %}
+</body></html>

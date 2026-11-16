@@ -5,8 +5,8 @@ import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
-import com.sagomungchi.core.learning.client.LearningClient
-import com.sagomungchi.core.learning.client.LearningHttpProperties
+import com.sagomungchi.core._common.client.LearningClient
+import com.sagomungchi.core._common.client.LearningHttpProperties
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
@@ -78,5 +78,21 @@ class LearningClientTest {
         stub.respond = { LearningHttpStub.Reply(502) }
         client.exchange("GET", "/missions")
         assertEquals(CircuitBreaker.State.OPEN, client.circuit.state)
+    }
+
+    @Test fun `memory search and explanation share learning-memory circuit with separate response budgets`() = LearningHttpStub().use { stub ->
+        // #566: 기본 응답 시간은 검색 30초·설명 45초(learning→ai 35초보다 큼, architecture 1.3)
+        assertEquals(Duration.ofSeconds(30), LearningHttpProperties().memorySearchTimeout)
+        assertEquals(Duration.ofSeconds(45), LearningHttpProperties().memoryExplanationTimeout)
+        val factory = InternalRestClientFactory(AppProperties(AppProperties.Internal("server-secret", Duration.ofSeconds(2), Duration.ofSeconds(30)),
+            mapOf("learning" to stub.url)), RestClient.builder())
+        val (search, explanation) = LearningClient.forMemory(factory, Duration.ofMillis(150), Duration.ofSeconds(3))
+        assertSame(search.circuit, explanation.circuit)
+        assertEquals("learning-memory", search.circuit.name)
+        stub.respond = { Thread.sleep(500); LearningHttpStub.Reply() }
+        assertEquals("LEARNING_TIMEOUT", assertFailsWith<BusinessException> { search.exchange("POST", "/students/s/memories/search") }.code)
+        assertEquals(200, explanation.exchange("POST", "/students/s/memories/explanations").status)
+        assertEquals(1, search.circuit.metrics.numberOfFailedCalls)
+        assertEquals(1, search.circuit.metrics.numberOfSuccessfulCalls)
     }
 }

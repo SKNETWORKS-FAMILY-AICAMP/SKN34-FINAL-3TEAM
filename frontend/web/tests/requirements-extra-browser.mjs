@@ -30,7 +30,7 @@ try{
     }
   }
   console.log('PASS 관리자 3개 화면 × 4개 규격')
-  await go('/review');await p.getByRole('button',{name:'학부모 시연 시작'}).click();await go('/parent/account')
+  await go('/review');await p.getByRole('button',{name:'학부모 시연 시작'}).click();await go('/parent/settings?section=account')
   const section=p.locator('section').filter({has:p.getByRole('heading',{name:'회원 탈퇴',exact:true})}).last()
   await section.getByRole('button',{name:'구독·환불 상태 먼저 확인'}).click()
   await section.getByText('진행 중 구독 0건',{exact:false}).waitFor()

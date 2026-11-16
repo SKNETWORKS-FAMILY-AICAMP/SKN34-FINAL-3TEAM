@@ -26,7 +26,7 @@
 .payment-result { max-width:720px; margin:8vh auto; padding:32px; border:1px solid #dce2dd; border-radius:8px; background:white; }
 .payment-result>a { display:inline-block; margin-bottom:28px; }
 .payment-result dl { margin:24px 0; }
-@media(max-width:1100px) { .payment-columns { grid-template-columns:minmax(0,1fr); } .payment-summary { order:-1; } }
+@media(max-width:1100px) { .payment-columns { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:600px) { .payment-panel,.payment-result { padding:20px; } .payment-result { margin:24px 16px; } .payment-option { flex-wrap:wrap; } .payment-page .payment-primary { width:100%; } }
 
 .payment-management { display:grid; gap:32px; margin-top:32px; }
@@ -47,3 +47,4 @@
 .payment-page button:disabled { cursor:default; color:#6a756d; }
 .payment-management small { display:block; overflow-wrap:anywhere; }
 .payment-management textarea { display:block; width:100%; min-height:100px; }
+.payment-page details > summary { cursor:pointer; min-height:44px; padding:10px 0; }

@@ -175,7 +175,7 @@ def test_invalid_shared_deletion_contract_is_rejected_before_side_effects(fault)
         )
     )
     assert message.rejected and not message.acked
-    assert not channel.default_exchange.published
+    assert not channel.retry_exchange.published
     assert current_user_context() is None
 
 
@@ -274,7 +274,7 @@ def test_s3_failure_routes_to_retry_and_leaves_pending_db_then_recovers(
         consumer.handle_message(channel, DELETION_QUEUE, StudentDeletedConsumer(service), message)
     )
     assert message.acked and not message.rejected
-    retry, queue = channel.default_exchange.published[0]
+    retry, queue = channel.retry_exchange.published[0]
     assert queue == DELETION_QUEUE + ".retry.1" and retry.headers["x-retry-count"] == 1
     assert guard(report_factory, report_student_id)["status"] == "PENDING"
     assert len(stored(report_factory, report_student_id)[0]) == 1 and not core.calls

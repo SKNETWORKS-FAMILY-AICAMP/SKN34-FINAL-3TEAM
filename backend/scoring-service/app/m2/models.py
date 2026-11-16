@@ -47,6 +47,7 @@ class M2Request(BaseModel):
     keywords: list[Keyword] = Field(default_factory=list, max_length=100)
 
     essayType: EssayType | None = None
+    essayLabels: list[Keyword] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def require_essay_type(self):
@@ -99,6 +100,35 @@ class ModelIdentity(BaseModel):
     revision: int = Field(ge=1)
 
 
+class Preparation(BaseModel):
+    ruleVersion: Literal["1112c"] = "1112c"
+    copied: int = Field(ge=0)
+    repeated: bool
+    chars: int = Field(ge=0)
+    labelsRemoved: int = Field(ge=0)
+    short: bool
+    truncated: bool = False
+    notices: list[
+        Literal[
+            "COPIED_REMOVED",
+            "REPEATED_REMOVED",
+            "SHORT_ANSWER",
+            "EMPTY_AFTER_CLEANING",
+            "ESSAY_TOO_SHORT",
+            "ESSAY_ORIGINALLY_SHORT",
+        ]
+    ] = Field(default_factory=list)
+
+
+class M2Skipped(BaseModel):
+    active: Literal[True] = True
+    scored: Literal[False] = False
+    reason: Literal["TEXT_TOO_SHORT"] = "TEXT_TOO_SHORT"
+    inputType: Literal["NARRATIVE", "ESSAY"]
+    model: ModelIdentity
+    preparation: Preparation
+
+
 class M2Active(BaseModel):
     active: Literal[True] = True
     inputType: Literal["NARRATIVE", "ESSAY"]
@@ -111,6 +141,8 @@ class M2Active(BaseModel):
         "결합 점수를 1~5로 자르고 소수 4자리로 반올림. 정수는 이 반올림 전 값으로 계산."
     )
     model: ModelIdentity
+
+    preparation: Preparation | None = None
 
     @model_validator(mode="after")
     def consistent_score_shape(self):

@@ -1,6 +1,7 @@
 """LLM 답변의 숫자·인용 대조 (FN-AGT-06). 하나라도 어긋나면 규칙 응답 모드로 (P16).
 
 - 숫자: 답변의 모든 아라비아 숫자가 계산 결과(개수·분자·분모·비율%)·기록 수·기간 날짜에 있어야 함.
+  고정 리포트 대화(#392)는 리포트 요약의 개수·문제 수·문제 제목 숫자도 허용 (report_numbers).
   따옴표 인용과 미션 제목 안의 숫자는 원문 그대로라 빼고 셈. "세 번"처럼 한글로 쓴 수는 대조할 수
   없으므로 실패로 봄 (프롬프트에서 아라비아 숫자를 쓰도록 지시).
 - 인용: 본문 따옴표 안 문장이 모두 원문에 그대로 있어야 함 (공백 차이만 허용).
@@ -12,7 +13,7 @@ import re
 from dataclasses import dataclass
 
 from app.analysis_agent.calculators import Computation
-from app.analysis_agent.models import Evidence, Verification
+from app.analysis_agent.models import Evidence, ReportSummary, Verification
 
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
 QUOTED = re.compile(r"[\"“”]([^\"“”]+)[\"“”]|['‘’]([^'‘’]+)['‘’]|「([^」]+)」")
@@ -73,6 +74,14 @@ def allowed_numbers(computation: Computation) -> set[str]:
             allowed.add(_normalize_number(f"{metric.value * 100:.1f}"))
             allowed.add(str(round(metric.value * 100)))
     return allowed
+
+
+def report_numbers(report: ReportSummary) -> set[str]:
+    """고정 리포트 요약에서 답변에 써도 되는 숫자: 지표 개수, 문제 수, 문제 제목 속 숫자."""
+    numbers = {str(metric.count) for metric in report.metrics} | {str(len(report.problems))}
+    for problem in report.problems:
+        numbers.update(_normalize_number(n) for n in NUMBER.findall(problem.title))
+    return numbers
 
 
 def _normalize_number(text: str) -> str:

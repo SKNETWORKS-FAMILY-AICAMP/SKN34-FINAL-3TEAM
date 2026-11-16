@@ -13,8 +13,13 @@ from app.m2.models import ITEMS, M2Request
 from app.m2.service import M2Service, infer
 from app.model_loader import LoadedModel
 from app.model_registry import ModelRegistry
-from tests.test_m2 import Usage, body, modern_model
+from tests.test_m2 import Usage, modern_model
+from tests.test_m2 import body as old_body
 from tests.test_model_registry import version
+
+
+def body(**changes):
+    return old_body(**({"text": "학생이 직접 쓴 충분한 길이의 합성 답변입니다."} | changes))
 
 
 def target_model(kind="NARRATIVE", release="3.0", scopes=None):
@@ -84,6 +89,16 @@ def test_default_off_preserves_entire_response_and_skips_rule(monkeypatch):
         "app.m2.service.content3_score", lambda *_: pytest.fail("disabled rule was called")
     )
     expected = {
+        "preparation": {
+            "ruleVersion": "1112c",
+            "copied": 0,
+            "repeated": False,
+            "chars": 20,
+            "labelsRemoved": 0,
+            "short": True,
+            "truncated": False,
+            "notices": ["SHORT_ANSWER"],
+        },
         "active": True,
         "inputType": "NARRATIVE",
         "scores": dict(zip(ITEMS, [1, 2, 3, 4, 5, 1, 2, 3, 4], strict=True)),
@@ -106,7 +121,11 @@ def test_enabled_changes_only_content3_and_can_be_disabled(monkeypatch, grade):
 
     monkeypatch.setattr(LoadedModel, "predict", predict)
     request = M2Request(
-        **body(grade=grade, text="훈 민 정 음을 배웠다.", keywords=["한글(훈민정음, 정음)"])
+        **body(
+            grade=grade,
+            text="훈 민 정 음의 역사를 자세히 배웠다.",
+            keywords=["한글(훈민정음, 정음)"],
+        )
     )
     registry = ModelRegistry(lambda _: loaded)
     asyncio.run(registry.load(loaded.metadata))

@@ -1,28 +1,28 @@
 """R2–R4 composition with the #119 scoped core student profile contract."""
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Protocol
 from uuid import UUID
 
 from app.clients.ai_client import AiClient
 from app.clients.learning_client import LearningClient
 from app.clients.storage import ObjectStorage
-from app.generation.models import GenerateReport, GenerationResult, WeeklyReport
+from app.config import get_settings
+from app.generation.explanation_generator import ExplanationGenerator
+from app.generation.models import (
+    GenerateReport,
+    GenerationResult,
+    StudentDisplayName,
+    WeeklyReport,
+)
 from app.generation.narrative_generator import NarrativeGenerator
 from app.generation.ports import ReportGenerator
 from app.generation.record_generator import RecordGenerator
 from app.generation.records import RecordContractError
+from app.generation.theme_summary import ThemeSummaryBuilder
 from app.rendering.generator import RenderingGenerator
 from app.rendering.renderer import ReportRenderer
 from app.security import current_user_context
-
-
-@dataclass(frozen=True)
-class StudentDisplayName:
-    student_id: UUID
-    nickname: str
-    parent_sharing_enabled: bool = False
-    template_snapshot: dict | None = None
 
 
 class DisplayNameProvider(Protocol):
@@ -52,8 +52,14 @@ class NamedGenerator:
                 command,
                 display_name=profile.nickname,
                 parent_sharing_enabled=profile.parent_sharing_enabled,
-                narrative_enabled=command.narrative_enabled and profile.parent_sharing_enabled,
-                template_snapshot=profile.template_snapshot,
+                narrative_enabled=command.narrative_enabled
+                and profile.parent_sharing_enabled
+                and command.period_type == "WEEKLY",
+                template_snapshot=profile.template_snapshot
+                if command.period_type == "WEEKLY"
+                else None,
+                grade=profile.grade,
+                explanation_enabled=command.narrative_enabled and command.period_type == "WEEKLY",
             ),
             report,
         )
@@ -68,7 +74,20 @@ def build_pipeline(
     return NamedGenerator(
         provider,
         RenderingGenerator(
-            NarrativeGenerator(RecordGenerator(learning), ai, learning),
+            ExplanationGenerator(
+                NarrativeGenerator(
+                    RecordGenerator(
+                        learning,
+                        theme_builder=ThemeSummaryBuilder(learning)
+                        if get_settings().report_theme_summary_enabled
+                        else None,
+                    ),
+                    ai,
+                    learning,
+                ),
+                ai,
+                learning,
+            ),
             ReportRenderer(),
             storage,
         ),

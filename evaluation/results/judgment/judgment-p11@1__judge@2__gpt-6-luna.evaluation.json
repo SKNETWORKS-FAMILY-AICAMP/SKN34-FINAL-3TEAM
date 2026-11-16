@@ -1,0 +1,13 @@
+{
+  "datasetId": "judgment-p11",
+  "datasetVersion": "1",
+  "baselineVersion": "없음(최초 기준선)",
+  "comparisonReport": "evaluation/results/judgment/judgment-p11@1__judge@2__gpt-6-luna.json | 사람-사람 결과 QWK 0.809, 사람-AI 결과 QWK 0.792, 보류 비율 0.12",
+  "trainingEvaluationSeparation": "판정은 학습 없는 프롬프트 방식. 평가 답안은 프롬프트에 넣지 않은 고정 자료",
+  "quoteAccuracy": "인용 불일치 보류 비율 0.0 (LLM 호출 사례 기준)",
+  "calculationAccuracy": "해당 없음: 서술·논술 판정은 계산을 하지 않음",
+  "humanReview": "평가자 2명 독립 표시(AI 판정 보기 전), 검토 기록: PR #332, evaluation/datasets/judgment/README.md",
+  "evaluatedScopes": [
+    "ai/judgment"
+  ]
+}

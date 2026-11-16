@@ -1,4 +1,5 @@
 # 실서버 E2E 전용 오버레이 (#246): 외부 의존(Google·LLM·토스)을 infrastructure/stubs 대역으로 교체, 합성 시드 적용
+# #625: M2 점수(scoring, S3 모델 필요)도 scoring-stub으로, 리포트 설명 sLLM은 llm-stub으로 교체
 # 실행: docker compose -p sagomungchi-e2e --env-file infrastructure/stubs/e2e.env \
 #         -f compose.yaml -f compose.minio.yaml -f compose.e2e.yaml \
 #         up -d --build --wait core-service learning-service ai-service report-api report-worker
@@ -13,6 +14,9 @@ services:
   llm-stub:
     build: ./infrastructure/stubs/llm-stub
 
+  scoring-stub:
+    build: ./infrastructure/stubs/scoring-stub
+
   toss-stub:
     build: ./infrastructure/stubs/toss-stub
     environment:
@@ -20,9 +24,9 @@ services:
       TOSS_TEST_BILLING_MID: ${TOSS_TEST_BILLING_MID:?e2e.env 필요}
       TOSS_TEST_BILLING_SECRET_KEY: ${TOSS_TEST_BILLING_SECRET_KEY:?e2e.env 필요}
 
-  # 동의 문서·상품·관리자(core_db)와 기존 데모 미션(learning_db) 적용
+  # 동의 문서·상품·관리자·꾸미기 아이템(core_db)과 기존 데모 미션·E2E 기준표 핵심어(learning_db) 적용
   e2e-seed:
-    image: postgres:17.11-alpine
+    image: pgvector/pgvector:0.8.7-pg17-trixie
     depends_on:
       core-migrate:
         condition: service_completed_successfully
@@ -36,12 +40,14 @@ services:
     volumes:
       - ./frontend/web/tests/e2e/seed/core.sql:/seed/core.sql:ro
       - ./backend/learning-service/db/seed/demo_missions.sql:/seed/demo_missions.sql:ro
+      - ./frontend/web/tests/e2e/seed/learning.sql:/seed/learning.sql:ro
     entrypoint:
       - /bin/sh
       - -ec
       - >-
         psql -v ON_ERROR_STOP=1 -v free_product_id="$$FREE_PRODUCT_ID" -d core_db -f /seed/core.sql &&
-        psql -v ON_ERROR_STOP=1 -d learning_db -f /seed/demo_missions.sql
+        psql -v ON_ERROR_STOP=1 -d learning_db -f /seed/demo_missions.sql &&
+        psql -v ON_ERROR_STOP=1 -d learning_db -f /seed/learning.sql
 
   core-service:
     depends_on:
@@ -61,6 +67,8 @@ services:
     depends_on:
       llm-stub:
         condition: service_healthy
+      scoring-stub:
+        condition: service_healthy
     environment:
       LLM_PROVIDER: openai
       OPENAI_BASE_URL: http://llm-stub:8080/v1
@@ -68,6 +76,10 @@ services:
       OPENAI_MODEL: e2e-stub
       OPENAI_JSON_MODE: json_schema
       ANTHROPIC_API_KEY: ""
+      # 주간 리포트 대표 답변 설명(FN-RPT-09)은 M2 점수가 있는 답변만 대상이라 교차 확인을 켠다
+      SCORING_URL: http://scoring-stub:8080
+      M2_CROSS_CHECK_ENABLED: "true"
+      EXPLANATION_BASE_URL: http://llm-stub:8080/v1
 
   learning-service:
     depends_on:

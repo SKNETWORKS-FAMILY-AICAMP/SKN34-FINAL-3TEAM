@@ -8,12 +8,14 @@ export interface Page<T> {
 }
 export interface ConsentDocument {
   documentId: string
-  kind: 'TERMS' | 'PRIVACY' | 'GUARDIAN'
+  kind: 'TERMS' | 'PRIVACY' | 'GUARDIAN' | 'COMMUNITY'
   version: string
   title: string
   content: string
   required: boolean
 }
+/** 가입·계정 단위 필수 동의 문서(이용 안내·개인정보). 자녀 단위 법정대리인·선택 커뮤니티 동의는 빠진다. */
+export const isAccountDocument = (d: Pick<ConsentDocument, 'kind'>) => d.kind === 'TERMS' || d.kind === 'PRIVACY'
 export interface ConsentHistory {
   consentId: string
   subjectUserId: string
@@ -82,6 +84,7 @@ export interface MessageResult {
   verification: AnalysisVerification
 }
 export interface ConversationMessage extends Partial<MessageResult> {
+  correctionNotice?: boolean
   messageId: string
   question: string
   status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
@@ -91,6 +94,9 @@ export interface ConversationMessage extends Partial<MessageResult> {
 export interface Conversation {
   conversationId: string
   childId: string
+  /** 일일 리포트 고정 대화(P25)면 그 리포트와 판 */
+  reportId?: string
+  reportRevision?: number
   period: Period
   title: string
   createdAt: string
@@ -108,9 +114,38 @@ export interface StreamState {
   clarification?: Clarification
   result?: MessageResult
 }
+/** 리포트 기간 종류(P24, API 명세 2.5 구현 예정). 서버가 아직 주지 않으면 주간으로 본다. */
+export type ReportPeriodType = 'DAILY' | 'WEEKLY'
+export const reportPeriodType = (r: { periodType?: ReportPeriodType }) => r.periodType ?? 'WEEKLY'
+/**
+ * 일일 리포트의 문제별 항목(API 명세 2.5 `problems[]`, 구현 예정).
+ * report #390 구현 때 세부 필드가 바뀌면 여기만 맞춘다. 서술 없이 실제 기록만 담는다(P24).
+ */
+export interface DailyProblem {
+  missionId: string
+  attemptId?: string
+  title: string
+  context: 'THEME_DAY' | 'THEME_REVIEW' | 'EXTRA' | null
+  judgment: 'CORRECT' | 'PARTIAL' | 'RETHINK' | 'HELD' | null
+  followups: { question: string; answer: string | null }[]
+  finalAnswer: string | null
+  elements: { label: string; satisfied: boolean }[]
+  reflection: { difficulty: string | null; text: string | null; written: boolean } | null
+  quotes: { answerId: string; text: string; verified: boolean }[]
+}
+/** 주간 리포트의 주간 테마 요약(FN-RPT-17, 구현 예정). */
+export interface ThemeSummary {
+  state?: QueryState
+  themeId: string | null
+  title: string | null
+  days: { day: string; missionId: string; title?: string; completed: boolean }[]
+  completed: boolean
+  reviewRetries: { missionId: string; title?: string }[]
+}
 export interface ReportItem {
   reportId: string
   childId: string
+  periodType?: ReportPeriodType
   period: Period
   revision: number
   status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
@@ -118,7 +153,14 @@ export interface ReportItem {
   generatedAt?: string | null
 }
 export interface WeeklyReport extends ReportItem {
+  /** api-spec 3.4, #473·#481. 이전 API 응답의 필드 생략도 허용한다. */
+  explanations?: { state: 'INCLUDED' | 'NOT_INCLUDED' | 'NO_TARGET'; items: ReportExplanation[] } | null
   parentSharingEnabled?: boolean
+  correctionNotice?: boolean
+  /** 일일 리포트만(DAILY) */
+  problems?: DailyProblem[]
+  /** 주간 리포트의 테마 요약(없으면 생략) */
+  themeSummary?: ThemeSummary | null
   revisions: { revision: number; generatedAt?: string }[]
   inclusionRule: string
   metrics: (Metric & { itemId?: string })[]
@@ -150,6 +192,15 @@ export interface WeeklyReport extends ReportItem {
   verification: { numbersMatched: boolean; quotesMatched: boolean }
   generatedAt?: string
   versions?: Record<string, string | null>
+}
+export interface ReportExplanation {
+  attemptId: string
+  answerId: string
+  answerVersion: number
+  missionTitle: string
+  thinkingType: ThinkingType
+  quote: string | null
+  text: string
 }
 export function validPeriod(p: Period) {
   return (

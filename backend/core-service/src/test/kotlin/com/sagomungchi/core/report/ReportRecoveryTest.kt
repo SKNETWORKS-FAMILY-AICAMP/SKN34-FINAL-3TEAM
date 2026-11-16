@@ -115,7 +115,7 @@ class ReportRecoveryTest : PostgresRepositoryTest() {
         assertEquals("REPORT_NOT_CREATED", repository.find(job.id)!!.failureReason)
         assertNull(repository.find(job.id)!!.reportId)
         assertEquals(1, executionCount(job)); assertEquals(0, notificationCount(job))
-        assertFalse(repository.inProgress(job.studentId, job.periodFrom))
+        assertFalse(repository.inProgress(job.studentId, job.period))
     }
 
     @Test fun `lost completion and failed result each record once and reject identity mismatch`() {
@@ -178,7 +178,7 @@ class ReportRecoveryTest : PostgresRepositoryTest() {
 
     @Test fun `recovery HTTP is outside transaction and deletion while awaiting response wins`() {
         val (parent, job) = newJob()
-        jdbc.update("UPDATE report_job SET created_at=? WHERE id=?",OffsetDateTime.now().minusMinutes(61),job.id)
+        jdbc.update("UPDATE report_job SET created_at=? WHERE id=?",OffsetDateTime.now().minusMinutes(241),job.id)
         respond = {
             delete(parent)
             200 to json.writeValueAsString(mapOf("jobId" to job.id,"studentId" to job.studentId,
@@ -192,7 +192,9 @@ class ReportRecoveryTest : PostgresRepositoryTest() {
 
     @Test fun `candidate policy skips recent jobs busy and HTTP failure remain pending until next recovery`() {
         val (_, recent) = newJob();val (_, old) = newJob()
-        jdbc.update("UPDATE report_job SET created_at=? WHERE id=?",OffsetDateTime.now().minusMinutes(61),old.id)
+        jdbc.update("UPDATE report_job SET created_at=? WHERE id=?",OffsetDateTime.now().minusMinutes(241),old.id)
+        // #508: a job queued behind the Monday explanation batch for over an hour is still not a candidate.
+        jdbc.update("UPDATE report_job SET created_at=? WHERE id=?",OffsetDateTime.now().minusMinutes(61),recent.id)
         fun response(status: String, reason: String? = null) = json.writeValueAsString(mapOf(
             "jobId" to old.id,"studentId" to old.studentId,"periodFrom" to old.periodFrom,"periodTo" to old.periodTo,
             "status" to status,"reportId" to null,"failureReason" to reason))
@@ -206,4 +208,21 @@ class ReportRecoveryTest : PostgresRepositoryTest() {
         assertEquals(ReportJobStatus.QUEUED,repository.find(recent.id)!!.status)
         assertEquals(1,executionCount(old))
     }
+    @Test fun `daily recovery sends period type and accepts legacy response fields`() {
+        val parent = parent(jdbc); val child = child(jdbc, parent)
+        val id = jobs.scheduled(parent, child, ReportPeriod(WEEK.from, WEEK.from, ReportPeriodType.DAILY))!!.jobId
+        val job = repository.find(id)!!
+        jdbc.update("UPDATE report_job SET created_at=? WHERE id=?", OffsetDateTime.now().minusMinutes(241), id)
+        var sentType: String? = null
+        respond = { body ->
+            sentType = json.readTree(body).path("periodType").asText()
+            200 to json.writeValueAsString(mapOf("jobId" to id, "studentId" to child,
+                "periodFrom" to job.periodFrom, "periodTo" to job.periodTo, "status" to "FAILED",
+                "reportId" to null, "failureReason" to "REPORT_NOT_CREATED"))
+        }
+        recovery.recover()
+        assertEquals("DAILY", sentType)
+        assertEquals(ReportJobStatus.FAILED, repository.find(id)!!.status)
+    }
+
 }

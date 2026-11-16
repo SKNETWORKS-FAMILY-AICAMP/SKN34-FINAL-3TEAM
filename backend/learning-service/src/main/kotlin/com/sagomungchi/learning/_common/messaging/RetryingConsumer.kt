@@ -12,7 +12,7 @@ class InvalidEventException(message: String) : RuntimeException(message)
 
 /**
  * 수동 ACK 소비 (아키텍처 1.6, core `RetryingConsumer`와 같은 동작).
- * 실패 시 x-retry-count +1 후 <큐>.retry.<회차>로 재발행(1·5·15분 TTL 만료 시 원래 큐 복귀, P12),
+ * 실패 시 x-retry-count +1 후 서비스 재시도 exchange(RETRY_EXCHANGE)로 <큐>.retry.<회차>에 재발행(1·5·15분 TTL 만료 시 원래 큐 복귀, P12),
  * 최대 횟수(= definitions.json 단계 큐 개수) 초과 시 reject → dlx → <큐>.dlq.
  * 메시지 변환 실패는 리스너 호출 전 컨테이너가 reject, 봉투·data 계약 위반(InvalidEventException)은 여기서 바로 reject → 재시도 없이 DLQ.
  * 전역 수동 ACK이므로 모든 @RabbitListener는 이 클래스로 처리 (ACK 누락 시 소비 정지)
@@ -43,7 +43,7 @@ class RetryingConsumer(
             log.warn("메시지 처리 실패, 재시도 {}회차: queue={}, messageId={}", retryCount + 1, queue, messageId, ex)
             message.messageProperties.setHeader(RETRY_COUNT_HEADER, retryCount + 1)
             rabbitTemplate.invoke { ops ->
-                ops.send("", "$queue.retry.${retryCount + 1}", message)
+                ops.send(MessagingConfig.RETRY_EXCHANGE, "$queue.retry.${retryCount + 1}", message)
                 ops.waitForConfirmsOrDie(MessagingConfig.CONFIRM_TIMEOUT_MS)
             }
             channel.basicAck(deliveryTag, false)

@@ -32,6 +32,8 @@ interface PaymentMapper {
     fun subscriptions(owner: UUID): List<Subscription>
     fun insertSubscription(row: Subscription): Int
     fun saveSubscription(row: Subscription): Int
+    /** #653 환불·PG 취소: `ACTIVE`·`RENEWAL_FAILED`일 때만 `CANCELED`로 바꾼다. 이미 `CANCELED`면 0 (canceled_at 처음 값 유지) */
+    fun cancelSubscription(@Param("id") id: UUID, @Param("now") now: OffsetDateTime): Int
     fun due(today: LocalDate): List<Subscription>
     fun recovery(): List<PaymentOrder>
     fun refunds(@Param("status") status: String?, @Param("offset") offset: Int, @Param("size") size: Int): List<RefundRequest>

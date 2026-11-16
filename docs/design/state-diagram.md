@@ -26,7 +26,7 @@
 
 ```mermaid
 stateDiagram-v2
-  [*] --> ACTIVE: 최초 Google 로그인·계정 생성
+  [*] --> ACTIVE: 최초 Google 로그인·계정 생성 / 학부모 ID 가입
   ACTIVE --> WITHDRAWAL_REQUESTED: 탈퇴 요청 (재확인 토큰)
   WITHDRAWAL_REQUESTED --> WITHDRAWN: 즉시 처리 완료
   WITHDRAWN --> [*]
@@ -39,7 +39,7 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `ACTIVE` | 최초 `GET /auth/google/callback` (#36) | `AuthService.login` | `(oauth_provider, oauth_subject)` UK로 PARENT 생성, 같은 `login_id`(이메일) 기존 계정은 자동 연결 없이 `ACCOUNT_EXISTS` |
+| → `ACTIVE` | 최초 `GET /auth/google/callback` (#36) · `POST /auth/parent/signup {loginId,password,name}` (#415) | `AuthService.login` · `AuthService.parentSignup` | Google은 `(oauth_provider, oauth_subject)` UK로 PARENT 생성, 같은 `login_id`(이메일) 기존 계정은 자동 연결 없이 `ACCOUNT_EXISTS`. ID 가입은 비밀번호 PARENT 생성(IP별 가입 횟수 제한, [API 명세서](api-spec.md) 5.1) |
 | `ACTIVE → WITHDRAWAL_REQUESTED` | `POST /me/withdrawal` + `X-Reauth-Token` | `AccountWithdrawalService.request` | 보낸 이관 대기 요청 없음(있으면 `409 TRANSFER_PENDING`, #289. 탈퇴 화면에서 이관 유지 또는 `POST /guardian-transfers/cancel-outgoing` 후 재진입) + 진행 중 구독·미처리 환불 없음(있으면 `409 WITHDRAWAL_BLOCKED`) + `WHERE status = 'ACTIVE'`, 같은 트랜잭션에 `withdrawal_request(REQUESTED)`·계정의 `auth_session` 전체 폐기(refresh 포함)·자녀 전원 삭제 요청 (P09). 이관 수락으로 종료된 연결(`transferred_at`)의 자녀와 선택 이관 상담은 삭제 대상에서 제외 |
 | `WITHDRAWAL_REQUESTED → WITHDRAWN` | 자녀 삭제 요청 전부 `COMPLETED` (P09) | `AccountManagementService.completeWithdrawal` | 진행 중 구독 없음·미처리 환불 없음, `withdrawal_request REQUESTED → COMPLETED` 동시 전이 |
 
@@ -104,6 +104,8 @@ stateDiagram-v2
 | → `AGREED`·`WITHDRAWN` | 가입·자녀 등록·동의 변경 (`POST /me/consents`, `POST /children`) | `ConsentService.save` | 현재 문서 전체 항목과 필수 문서(`required`) 동의가 있어야 저장. 항목마다 최신 행과 선택이 다를 때만 새 행 저장(동의 AGREED, 선택 항목 미동의 WITHDRAWN). 재동의도 새 AGREED 행. 권한은 같은 문서·주체·자녀의 최신 행으로 판정 |
 | `AGREED → WITHDRAWN` | `POST /me/consents/{id}/withdrawal` | `ConsentService.withdraw` | 보호자 행 잠금 후 본인 행 확인, 이미 WITHDRAWN이면 그대로 반환. 행 유지 + `withdrawn_at`. 필수 동의 철회 시 대상 자녀(자녀 동의) 또는 계정 이용 차단, 삭제·탈퇴는 별도 요청. 선택 동의는 해당 기능만 중단 (P09) |
 
+- 선택 동의 문서 `COMMUNITY`(자녀 단위, P20, #388): 자녀 동의 요청에 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있고 `COMMUNITY`만 보낼 때는 현재 법정대리인 동의가 필요. 거부(`WITHDRAWN` 행)·철회 시 커뮤니티 공개 설정을 끄고 공유물을 `HIDDEN_SETTING`으로 바꿈(3.6). 이관 전 보호자의 옛 동의 철회는 영향 없음
+
 ### 2.4 `guardian_transfer.status` (#289 탈퇴 전 자녀 이관)
 
 ```mermaid
@@ -135,11 +137,11 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-  [*] --> OPEN: Google 로그인 (PARENT·ADMIN)
+  [*] --> OPEN: Google 로그인 (PARENT·ADMIN) · 학부모 ID 가입·로그인 (PARENT) · 관리자 ID 로그인 (ADMIN)
   OPEN --> LOCKED: 동석 학생 진입 (locked_at, version+1)
   LOCKED --> OPEN: 보호자 비밀번호 확인 (version+1)
-  OPEN --> REVOKED: 로그아웃 · 탈퇴 · refresh 재사용
-  LOCKED --> REVOKED: 새 Google 로그인 · 탈퇴
+  OPEN --> REVOKED: 로그아웃 · 탈퇴 · refresh 재사용 · 새 로그인
+  LOCKED --> REVOKED: 새 로그인 · 탈퇴
   REVOKED --> [*]
 ```
 
@@ -147,9 +149,10 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
+| `→ OPEN` | `GET /auth/google/callback` · `POST /auth/parent/signup`·`POST /auth/parent/login {loginId,password}` · `POST /auth/admin/login {loginId,password}` | `AuthService.login` · `AuthService.parentSignup`·`parentLogin` · `AuthService.adminLogin` → `startSession` | Google은 PARENT·ADMIN, 학부모 ID 가입·로그인은 비밀번호 PARENT(#415, 5회 실패 시 15분 잠금), 관리자 ID 로그인은 `admin_credential` 행이 있는 ACTIVE ADMIN만(#369, [API 명세서](api-spec.md) 5.1). 모두 같은 브라우저의 이전 refresh 쿠키 세션과 그 세션에서 들어간 학생 세션을 폐기한 뒤 새 세션 발급 |
 | `OPEN → LOCKED` | `POST /auth/student-sessions` | `AuthService.enterStudent` | 부모 세션 행 잠금·version 일치·PARENT. 학생 auth_session을 `parent_session_id`=부모 세션으로 새로 만들고 학생 access만 발급. 부모 refresh 쿠키는 지우지 않음. 기존 부모 access는 `401 SESSION_CHANGED`, 잠긴 세션의 `/auth/refresh`는 refresh 토큰을 소비하지 않고 `401 PARENT_SESSION_LOCKED` |
 | `LOCKED → OPEN` | `POST /auth/parent-unlock {password}` | `AuthService.unlockParent`·`GuardianPasswordService.attempt` | refresh 쿠키의 잠긴 세션과 보호자 비밀번호 확인. 성공 시 `locked_at` 해제·version+1·그 세션에서 들어간 학생 세션 폐기·refresh 회전. 실패 횟수는 오류 응답 전에 커밋, 5회째부터 `423 GUARDIAN_PASSWORD_LOCKED`, 미설정은 `409 GUARDIAN_PASSWORD_NOT_SET`. 잠기지 않은 세션은 refresh와 같이 처리 |
-| `LOCKED → REVOKED` | 새 Google 로그인 | `AuthService.login` | 보호자 비밀번호 미설정·잠김일 때의 복귀 경로. 같은 브라우저의 이전 refresh 쿠키로 찾은 이전(잠긴) 세션과 그 세션에서 들어간 학생 세션을 폐기 |
+| `LOCKED → REVOKED` | 새 Google 로그인 · 관리자 ID 로그인 | `AuthService.login` · `AuthService.adminLogin` | 보호자 비밀번호 미설정·잠김일 때의 복귀 경로. 같은 브라우저의 이전 refresh 쿠키로 찾은 이전(잠긴) 세션과 그 세션에서 들어간 학생 세션을 폐기 |
 
 - 단독 PIN 학생 로그인은 별도 학생 세션을 만들며 부모 세션을 잠그지 않는다. 보호자 비밀번호(`guardian_password`)는 계정당 1행이며 설정·변경은 `PUT /me/guardian-password`(학부모 확인 → 규칙 검사 → `GUARDIAN_PASSWORD` 재인증 소비, 성공 시 실패 횟수·잠금 초기화). 근거: [API 명세서](api-spec.md) 5.1, [ERD](erd.md) V24
 
@@ -221,6 +224,52 @@ stateDiagram-v2
 - 되묻기는 시도당 최대 2회, 2회째 보완 답변 판정 후 되묻기 생성 없이 마무리 안내. 고르기 `CORRECT`도 되묻기 없이 마무리 안내 (P04)
 - 초안 `attempt_draft.version`: 저장마다 +1, `WHERE version = :ifMatch` (상태값 없음)
 
+#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385 → 2026-11-10 개정 #483)
+
+2026-11-10 개정(#483, 구현 learning #484·core #485): 공개된 문제가 쌓이는 누적 공개로 바꾼다. core #485는 일요일 허용 값 `sundayTheme` 전달·무료 테마 문제 한도 없음을, learning #484는 아래 요일 상태·시작 검사를 구현했다(`ThemeWeek.stateOf`·`WeeklyThemeService.checkStart`).
+
+```mermaid
+stateDiagram-v2
+  [*] --> LOCKED: 그 요일 전 (공개 전)
+  LOCKED --> OPEN: 그 요일 KST 00:00 공개
+  OPEN --> OPEN: 다음 날로 넘어가도 유지 (그 주 토요일 끝까지)
+  OPEN --> CLOSED: 일요일 KST 00:00 (무료)
+  OPEN --> SUNDAY_OPEN: 일요일 KST 00:00 (프리미엄, sundayTheme=true)
+  SUNDAY_OPEN --> CLOSED: 다음 주 월요일 KST 00:00
+  CLOSED --> [*]
+```
+
+- `SUNDAY_OPEN`은 응답 값이 아니라 설명용이다. 응답 `state`는 `LOCKED`·`OPEN`·`CLOSED` 셋 그대로이고, 프리미엄 일요일에는 `OPEN`으로 계산한다(일요일 허용 여부는 core #485가 상품 `features.sundayTheme`으로 판단해 learning 쿼리 `sundayTheme=true|false`로 전달, [api-spec 4.1](api-spec.md))
+- 월요일에는 월 문제만, 금요일에는 다섯 문제 모두 `OPEN`. 토요일에는 다섯 문제 모두 `OPEN`
+- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 그 주에 이미 마무리한 문제의 새 `THEME_DAY` 시도는 `409 THEME_DAY_CLOSED`로 거부한다(learning #484, 전에는 무료 하루 1개 429가 부수적으로 막았음 #506). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기존 코드 재사용, 일요일 전용 코드는 만들지 않음, #484)
+- 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용(일요일 포함). 당일 풀이(`completedOnDay`)·개근은 그 요일 KST 안의 학습 완료 시각만 인정, 주간 완주(`finished`)는 그 주 테마 시도로 토요일 23:59:59 KST까지 다섯 문제 학습 완료(일요일 완료 제외, #484)
+- 재사용 테마의 이미 푼 문제도 그 주 `OPEN`이면 `THEME_DAY` 신규 시도 가능(지난 주 시도는 "그 주에 마무리"에 들지 않음)
+- 이전 규칙(#385 구현, #484 전): 그 요일만 `OPEN`, 다음 날 `CLOSED`, 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준(개정 뒤에도 같음)
+
+#### 3.2.2 주간 테마 엔딩 (파생, 2026-11-10 개정 #483, learning #484)
+
+큰 질문 정답 고르기(금요일 문제를 마무리한 뒤 후보 중 하나, 한 주 한 번, #437·#484) 결과로 학생·주마다 정한다. 고른 값은 learning `theme_answer_pick`(학생·주당 1행, ERD 4.2.1)에 두고 엔딩은 저장하지 않고 계산한다(`ThemeEnding`, 사용자 결정 2026-11-12).
+
+```mermaid
+stateDiagram-v2
+  [*] --> NOT_ENDED: 그 주 테마 시작
+  NOT_ENDED --> ENDED: 정답 고르기에서 정답 (즉시, 평일 포함)
+  NOT_ENDED --> WAITING_RETRY: 정답 고르기에서 오답
+  WAITING_RETRY --> ENDED: 고른 뒤 토요일(프리미엄 일요일) 그 문제 다시 풀기 마무리 (다시 고르지 않음, 정답 공개)
+  WAITING_RETRY --> [*]: 다시 풀기 없이 주가 끝남 (엔딩 없음)
+  NOT_ENDED --> [*]: 정답 고르기 없이 주가 끝남 (엔딩 없음)
+```
+
+- 응답 값은 `ending`(`NOT_ENDED`·`ENDED`, 주간 테마 조회·요약, #484). `WAITING_RETRY`는 설명용이며 응답에서는 `NOT_ENDED`. 고르기 전에 마무리한 다시 풀기는 엔딩 조건에 들지 않는다
+- 정답 고르기 요청(`POST …/weekly-theme/answer-picks {pick}`, api-spec 2.11): 후보 밖 400, 큰 질문 없는 테마·금요일 문제 마무리 전·이미 고름·무료 일요일은 `409 THEME_PICK_NOT_ALLOWED`
+- `ENDED` 전에는 정답·종료 이야기(`outro`)를 응답에 넣지 않는다(#438 "공개 시점 전 제외"를 이 조건으로 바꿈). 종료 이야기 표시는 `ENDED` 뒤, 무료 일요일에는 이미 본 엔딩 다시 보기만
+- 정답 고르기가 있는 문제(큰 질문 테마의 금요일 문제)의 커뮤니티 열람은 그 문제로 고른 주에 `ENDED`인 학생만(P20, 아니면 `403 COMMUNITY_LOCKED_UNTIL_ENDING`, 사용자 결정 2026-11-12 새 코드. 학습 완료 전은 지금처럼 `COMMUNITY_LOCKED`)
+
+#438 추가:
+- 정답 구조 공개(#438 → #484): 요일 단서(`clue`·`rulesOut`)는 학생이 그 문제를 그 주에 학습 완료한 뒤에만 학생 응답에 넣는다(ai.md 17장 사용자 결정 2026-11-11 "미션을 마쳐야 단서", 공개 기준은 학습 완료 사용자 결정 2026-11-12. #438은 `LOCKED`가 아닐 때였음). 이야기 열람 기록은 INTRO 월~토(그 주 1번, 2026-11-10 사용자 결정으로 에픽의 '월요일 첫 진입'에서 바꿈. 웹은 그 주 처음 '오늘 문제 풀기'를 누를 때 보여 주고 기록, #589 2026-11-14)에 받는다
+- 단서 근거 공개(#647, 기준안): 요일 특징(`days[].clueFeature`·`clueFacts`, 그날 단서가 쓰는 특징의 후보별 값)은 그날 단서와 같은 조건(그 문제를 그 주에 학습 완료한 뒤)에서만, 후보 특징 표 전체(`features`)는 엔딩(`ENDED`) 뒤에만 학생 응답에 넣는다. 얻지 못한 요일 특징은 엔딩 전에 넣지 않는다
+- 종료 공개(#438 칸, 조건은 #483·#484): 종료 이야기·정답·결정적 단서·종료 장면 그림·영상·움직임은 엔딩 상태(3.2.2 `ENDED`)일 때만 학생 응답에 넣고 OUTRO 열람 기록도 그때만 받는다(엔딩 전 정답 제외). 엔딩 조건과 정답 고르기 저장·판정은 3.2.2(learning #484). 엔딩 여부는 한 곳(`ThemeEnding`)에서 판단하고, OUTRO 열람 기록은 엔딩이고 무료 일요일이 아닐 때 받는다(요일 무관). #484 전에는 토·일을 엔딩으로 봤다
+
 ### 3.3 `judgment.process_status` (판정 처리)
 
 ```mermaid
@@ -243,7 +292,7 @@ stateDiagram-v2
 | → `PENDING` | `POST /attempts/{id}/answers` | `JudgmentService.createPending` | `answer_id` UK |
 | `PENDING·FAILED → RUNNING`, 만료 `RUNNING → RUNNING` | `POST /answers/{id}/feedback` | `Judgment.acquire(now, lease)` | `SET process_status='RUNNING', lease_until=:until WHERE answer_id=:id AND (process_status IN ('PENDING','FAILED') OR (process_status='RUNNING' AND (lease_until IS NULL OR lease_until < now())))`. 리스 없는 `RUNNING`도 만료로 봄(엔티티 판단과 같게) |
 | `RUNNING → DONE` | 처리 완료 | `Judgment.done(...)`·`hold(reason)` | `WHERE id=:id AND process_status='RUNNING' AND lease_until=:until` (획득한 리스 값으로 늦게 끝난 이전 처리의 덮어쓰기 방지) |
-| `RUNNING → FAILED` | 예외·타임아웃 | `Judgment.fail(code)` | 위와 같은 리스 조건, `retry_count + 1` |
+| `RUNNING → FAILED` | 예외·타임아웃 | `Judgment.fail(code)` | 위와 같은 리스 조건, `retry_count`는 실패 때 1 증가(횟수 상한 없음, 다시 요청하면 처음부터) |
 | 만료 `RUNNING → FAILED` | 1분 주기 고착 탐지 (#241) | `StuckJudgmentScheduler` → `JudgmentService.failStuck(now)` | `SET process_status='FAILED', failure_code='LEASE_EXPIRED', retry_count=retry_count+1 WHERE process_status='RUNNING' AND (lease_until IS NULL OR lease_until < now)`. 만료 조건은 재획득과 같음(리스 없는 `RUNNING` 포함) |
 
 - 전이 실패(영향 0행) 시 현재 상태로 응답: `DONE` → 저장 결과, 유효 `RUNNING` → `status` 이벤트 후 종료 (API 1.4)
@@ -291,6 +340,115 @@ stateDiagram-v2
 
 - 다시 만들려면 새 초안을 요청한다(검사에 실패한 초안을 되살리지 않음). 검사 통과(`READY`)는 공개 승인이 아니며 채택 뒤 3.1 검토·게시를 거친다(P19, FAC-18)
 
+### 3.5 `weekly_theme.status` (P23, #385)
+
+```mermaid
+stateDiagram-v2
+  [*] --> DRAFT: 테마 작성
+  DRAFT --> REVIEW_REQUIRED: 검토 요청
+  REVIEW_REQUIRED --> DRAFT: 검토 중 수정
+  REVIEW_REQUIRED --> PUBLISHED: 게시(검토 요청한 현재본 = 승인) + 게시 검사 통과
+  PUBLISHED --> PUBLISHED: 수정·재검토·재게시
+  PUBLISHED --> UNPUBLISHED: 제공 중단
+  UNPUBLISHED --> REVIEW_REQUIRED: 수정 후 재검토
+```
+
+| 전이 | 트리거 | 조건 |
+|---|---|---|
+| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 검토 요청한 버전이 현재본(아니면 `409 CONFLICT`). 월~금 5개 요일 모두 게시 미션(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 테마 학년을 포함(초3·초4 논술 불가, #438 학년별 테마), 같은 학년·주 `PUBLISHED` 없음. 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors` |
+| `PUBLISHED → UNPUBLISHED` | `/unpublish` | 그 주 학생에게는 최근 게시 테마 재사용(P23). 이미 시작한 시도는 유지 |
+
+- 미션 상태(3.1)와 같은 전이 규칙. 별도 검토(승인·수정 요청) 경로는 없다(core #387이 7경로만 프록시): 검토 요청한 버전(`review_version_id`)이 현재본일 때의 게시가 승인이고, 검토 중 수정은 `DRAFT`로 돌아간다. 게시 중 수정은 새 버전을 현재본으로 두고 `PUBLISHED`를 유지하며 학생에게는 재게시 전까지 게시본이 보인다. 코드값은 [ERD 4.2.1](erd.md#421-주간-테마-p23-385-v11v12). 위에 없는 전이는 `409 CONFLICT`
+- 테마 초안 채택(3.5.1)으로 만든 테마도 `DRAFT`에서 시작한다(자동 게시 없음, 미션 5개도 `DRAFT`라 미션 게시 뒤에 테마 게시 검사를 통과)
+
+#### 3.5.1 `theme_draft.status` (#438)
+
+미션 초안(3.4)과 같은 상태·전이. 코드값은 [ERD 4.2.1](erd.md#421-주간-테마-p23-385-v11v12).
+
+```mermaid
+stateDiagram-v2
+  [*] --> GENERATING: 관리자 요청 또는 주간 자동 (attempts 0)
+  GENERATING --> GENERATING: 생성 1회 실패, 상한 미만 (사유 기록 후 다시 생성)
+  GENERATING --> READY: ai 결과(failure 없음)·learning 검사 통과
+  GENERATING --> CHECK_FAILED: 상한 도달, 마지막 실패가 검사(ai failure 단계 또는 learning 검사)
+  GENERATING --> FAILED: 상한 도달, 마지막 실패가 AI 호출
+  READY --> ADOPTED: 채택 (DRAFT 미션 5개 + DRAFT 테마)
+  READY --> DISCARDED: 버리기
+  CHECK_FAILED --> DISCARDED: 버리기
+  FAILED --> DISCARDED: 버리기
+```
+
+| 전이 | 트리거 | 담당 | 조건 |
+|---|---|---|---|
+| → `GENERATING` (관리자) | `POST /admin/theme-drafts` (CONTENT) | `ThemeDraftService.request` | 학년 `G3`~`G6`, 적용 주 월요일이고 이번 주 이후, 지정한 유형별 성취기준이 표에 있고 그 학년을 포함하는 학년군, 입력 방식이 유형·학년에 맞음(초3·초4 논술 불가), 유형 중복 없음(400). 고르지 않은 유형은 자동 생성과 같은 규칙으로 learning이 채움(채울 성취기준이 표에 없으면 `409 CONFLICT`). `source = ADMIN` |
+| → `GENERATING` (자동) | `ThemeDraftScheduler` 주간 크론(기준안 수요일 03:00 KST) | `ThemeDraftService.createWeekly` | 다음 주 `G3`·`G4`·`G5`·`G6` 각 1개, `source = AUTO`. 그 학년·주에 게시 테마가 있으면 그 학년은 건너뜀(사용자 결정 2026-11-10). 부분 UK `(grade, week_start) WHERE source = 'AUTO'` + `ON CONFLICT DO NOTHING`이라 레플리카가 같이 돌아도 학년·주당 하나 |
+| → `GENERATING` (다시 생성) | `POST /admin/theme-drafts/{id}/regenerate` | `ThemeDraftService.regenerate` | 원래 초안이 `READY`·`CHECK_FAILED`·`FAILED`·`DISCARDED`일 때 같은 `input`·학년·주로 **새 초안**(`source = ADMIN`, attempts 0)을 만들고 원래 초안은 그대로 둔다(사용자 결정 2026-11-10). `GENERATING`·`ADOPTED`는 `409 CONFLICT`. 응답은 새 초안(`draftId`) |
+| 생성 1회 | `ThemeDraftScheduler` 주기(기준안 10초) | `ThemeDraftService.generateNext` → `ThemeDraft.recordAttempt` | 리스 점유(기준안 18분) 뒤 ai 1회(대기 기준안 16분) + learning 검사. 점유한 리스가 그대로일 때만 저장해 늦은 작업이 덮어쓰지 않음. 작업이 중간에 죽으면 리스가 지나 다른 레플리카가 다시 맡고 그 시도는 세지 않음 |
+| `GENERATING → READY·CHECK_FAILED·FAILED` | 같음 | `ThemeDraft.recordAttempt` | 상한 기준안 3회(미션 초안과 같음). ai `200`의 `failure`(`THEME`·`MISSION`·`REVIEW`·`IMAGE`)와 learning 검사 실패는 검사 실패, ai `502`·`503`·대기 초과·서킷 열림은 AI 호출 실패(`failure_code`는 판정과 같은 `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`) |
+| `READY → ADOPTED` | `POST /admin/theme-drafts/{id}/adopt` | `ThemeDraftService.adopt` | 초안 행 잠금, 미션 5개(`DRAFT`, `source = LLM_THEME`)와 테마(`DRAFT`)를 같은 트랜잭션에. 그 뒤는 3.1·3.5 |
+| → `DISCARDED` | `POST /admin/theme-drafts/{id}/discard` | `ThemeDraft.discard` | `READY`·`CHECK_FAILED`·`FAILED`만. 나머지는 `409 CONFLICT` |
+
+- 검사 통과(`READY`)는 공개 승인이 아니다. 채택 뒤 미션 검토·게시(3.1)와 테마 검토 요청·게시(3.5)를 거친다(P19)
+
+### 3.6 `community_post.status` (P20, learning #386 구현)
+
+```mermaid
+stateDiagram-v2
+  [*] --> VISIBLE: 미션 첫 학습 완료 + 커뮤니티 공개 켜짐
+  [*] --> HIDDEN_SETTING: 공유 직전 공개 끔이 먼저 반영됨
+  VISIBLE --> HIDDEN_SETTING: 공개 끔·동의 철회·이관 수락
+  HIDDEN_SETTING --> VISIBLE: 공개 켬 + 동의 유효
+  VISIBLE --> HIDDEN_REPORT: 신고 접수
+  HIDDEN_SETTING --> HIDDEN_REPORT: 신고 접수(반영 지연 중)
+  HIDDEN_REPORT --> VISIBLE: 검토 결과 다시 공개
+  HIDDEN_REPORT --> HIDDEN_SETTING: 다시 공개 + 지금 공개 끔
+  HIDDEN_REPORT --> REMOVED: 검토 결과 계속 숨김
+  REMOVED --> [*]
+```
+
+| 전이 | 트리거 | 담당 |
+|---|---|---|
+| `VISIBLE ↔ HIDDEN_SETTING` | core `community-visibility` 호출(설정·동의·이관) | learning `CommunityService.setVisibility` |
+| `VISIBLE·HIDDEN_SETTING → HIDDEN_REPORT` | `error_report(targetType = COMMUNITY_POST)` 접수 | core `CommunityModerationService` → learning `moderation`(`CommunityRules.moderate`) |
+| `HIDDEN_REPORT → VISIBLE·HIDDEN_SETTING·REMOVED` | 신고 처리 완료(SERVICE_OPS). 다시 공개는 learning `community_visibility`가 끔이면 `HIDDEN_SETTING` | 같은 경로 |
+
+- `HIDDEN_REPORT`·`REMOVED`는 공개 설정을 다시 켜도 `VISIBLE`이 되지 않음. `REMOVED`는 끝 상태라 검토 요청을 다시 받아도 그대로(멱등)
+- 학생·미션당 1행(UK `(student_id, mission_id)`). 다시 풀기 시도는 공유하지 않아 새 행·전이 없음
+- 공개 설정을 다시 켜면 `HIDDEN_SETTING`만 `VISIBLE`로 복원(이관 수락 후 새 보호자 동의 때도 같음)
+- 학생 삭제 시 상태와 관계없이 물리 삭제(P09)
+
+### 3.7 `memory_search_doc.status` (P27, #563 구현)
+
+추억 검색 문서 임베딩([ERD 4.6](erd.md), [결정 기록](../report/retention-expansion.md)). learning은 ShedLock을 쓰지 않으므로 3.3 고착 탐지처럼 조건부 UPDATE로 레플리카 중복 처리를 막는다.
+
+```mermaid
+stateDiagram-v2
+  [*] --> PENDING: 테마 문제 학습 완료와 같은 트랜잭션 (또는 1회 소급)
+  PENDING --> PROCESSING: 주기 작업 선점 (리스 획득)
+  FAILED --> PROCESSING: 주기 작업 재시도 (retry_count 한도 안)
+  PROCESSING --> READY: 임베딩 저장
+  PROCESSING --> FAILED: ai 임베딩 실패·타임아웃
+  PROCESSING --> PENDING: 리스 만료 복구 (5회 미만)
+  PROCESSING --> FAILED: 리스 만료 (5회 도달)
+  READY --> [*]
+  note right of READY
+    검색 대상은 READY만
+    학생 답변은 수정되지 않아 READY 이후 전이 없음
+  end note
+```
+
+| 전이 | 트리거 | 담당 | 조건부 UPDATE |
+|---|---|---|---|
+| → `PENDING` | 테마 문제 학습 완료(`EXTRA` 제외) | learning 학습 완료 처리 | `attempt_id` UK, `ON CONFLICT DO NOTHING` |
+| `PENDING·FAILED → PROCESSING` | 주기 작업(기준안 1분, 최대 64행) | `MemoryEmbeddingScheduler` → `MemorySearchService` | `SET status='PROCESSING', lease_until=:until WHERE id IN (:ids) AND (status='PENDING' OR (status='FAILED' AND retry_count < :max))`. 영향받은 행만 처리 |
+| `PROCESSING → READY` | 임베딩 응답 | 같은 서비스 | `WHERE id=:id AND status='PROCESSING' AND lease_until=:until`, `embedding`·`embedding_model`·`embedded_at` 저장 |
+| `PROCESSING → FAILED` | 예외·타임아웃 | 같은 서비스 | 위와 같은 리스 조건, `retry_count`는 선점 시 증가(첫 시도 포함 5회) |
+| 만료 `PROCESSING → PENDING·FAILED` | 같은 주기 작업 | 같은 서비스 | `WHERE status='PROCESSING' AND lease_until <= now`, 5회에 닿으면 FAILED. 늦게 끝난 이전 처리는 리스 조건 때문에 0행 |
+
+- `retry_count`가 한도(기준안 5)에 닿은 `FAILED`는 자동 재시도하지 않고 운영 확인 대상. 반영 대기·실패 문서는 검색에서 빠지고 앨범 열람에는 영향 없음
+- 리스 시간은 learning→ai 임베딩 호출 타임아웃보다 길게 설정(짧으면 같은 문서를 중복 임베딩)
+- 학생 삭제 시 상태와 관계없이 물리 삭제(P09)
+
 ---
 
 ## 4. 작업 (대화·리포트·알림)
@@ -314,12 +472,13 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건부 UPDATE |
 |---|---|---|---|
-| → `QUEUED` | 스케줄(`SCHEDULE`)·`/regenerate`(`REGENERATE`)·`/admin/jobs/{id}/retry`(`ADMIN_RETRY`) | `ReportJobService` | 부분 UK `(student_id, period_from) WHERE trigger='SCHEDULE'` |
+| → `QUEUED` | 스케줄(`SCHEDULE`)·`/regenerate`(`REGENERATE`)·`/admin/jobs/{id}/retry`(`ADMIN_RETRY`) | `ReportJobService` | 부분 UK `(student_id, period_type, period_from) WHERE trigger='SCHEDULE'` (V30) |
 | `QUEUED → RUNNING` | `report.started` | `ReportJob.start()` | `WHERE id=:jobId AND status='QUEUED'`, `started_at` |
 | `QUEUED·RUNNING → COMPLETED` | `report.completed` | `ReportJob.complete(reportId)` | `WHERE id=:jobId AND status IN ('QUEUED','RUNNING')`, `report_id`·`completed_at` + 알림 |
 | `QUEUED·RUNNING → FAILED` | `report.failed` | `ReportJob.fail(reason)` | 위와 같음, `failure_reason` |
 
 - 종료 후 늦게 온 `report.started`는 영향 0행 → 무시 (역순 도착 허용)
+- P24(#390, V29·V30): `report_job.period_type`(`DAILY`·`WEEKLY`), 정기 생성 부분 UK `(student_id, period_type, period_from) WHERE trigger='SCHEDULE'`(월요일 일일·주간 작업의 `period_from`이 같음). 일일 작업도 같은 전이
 - `QUEUED` 고착(메시지 DLQ 이동)은 #132 복구 점검으로 실제 report 상태와 대조한 뒤 종료한다. 관리자는 `/admin/queues`·`/admin/jobs`에서 확인하며 자동 재생성은 하지 않는다.
 
 #### 4.1.1 종료 유실·삭제 (#132)
@@ -357,6 +516,8 @@ stateDiagram-v2
 | `RUNNING → FAILED` | 예외 | `ReportRepository.finish`(실패 사유) | 위와 같음 + `outbox(report.failed)` |
 
 - 기록 없는 주·표본 부족 주는 `COMPLETED` + `state`, 처리 실패(`FAILED`)와 구분 (FN-RPT-11)
+- 리포트 설명(FN-RPT-09, #479)의 생성 실패·검사 실패·시간 초과·모델 미활성은 `FAILED`로 바꾸지 않는다. `COMPLETED`로 끝내고 설명 상태만 `NOT_INCLUDED`로 남긴다(api-spec 3.4, P16)
+- #391 구현(P24): 일일 리포트도 같은 행·전이를 쓰고 `period_type = DAILY`로 구분. 기록 없는 날은 `COMPLETED` + `NO_RECORD`. 재생성 판 UK는 `(student_id, period_type, period_from, revision)`
 - 재생성은 새 행(`revision + 1`), 기존 결과 보존·최신판 기본 조회 (P06)
 - #152 관리자 실패 재처리도 **새 jobId·새 행**으로 위 전이를 시작한다. 원래 FAILED 행은 유지하며 같은 jobId의 COMPLETED·FAILED 메시지는 ACK 후 종료한다. 원작업 연결은 core #47이 관리하고, report는 요청한 새 jobId별 이벤트만 발행한다.
 
@@ -378,7 +539,7 @@ stateDiagram-v2
 | `QUEUED → RUNNING` | ai 호출 직전 | `ConversationMessage.start()` | `WHERE status='QUEUED'` + `job_execution(RUNNING)` |
 | `RUNNING → COMPLETED` | `result`·`clarification` 이벤트 | `complete(...)`·`clarify(...)` | `WHERE status='RUNNING'`, 확정 답변·`message_evidence` 같은 트랜잭션 |
 | `RUNNING → FAILED` | `error` 이벤트·예외·단절 | `fail(code)` | `failure_code` (`AI_UNAVAILABLE`·`STREAM_INTERRUPTED` 등). 대조 실패·LLM 장애는 규칙 응답으로 `COMPLETED` (P16) |
-| `FAILED → RUNNING` | `/messages/{id}/retry` | `retry()` | `WHERE status='FAILED'`, `retry_count + 1` |
+| `FAILED → RUNNING` | `/messages/{id}/retry` | `retry()` | `WHERE status='FAILED'`, `retry_count`는 선점 시 증가(첫 시도 포함 5회) |
 | `FAILED → RUNNING` (관리자, #47) | `/admin/jobs/{id}/retry` | `ConversationService.prepareAdminRetry` | 접수 트랜잭션에서 새 세대(`retry_count + 1`)로 선점하고 `conversation_job_retry`에 `QUEUED` 요청 저장. 실행은 `ConversationRetryWorker`가 같은 세대만 이어받고, 늦은 세대 결과는 현재 실행을 덮어쓰지 않음 |
 
 #### `conversation_job_retry.status` (관리자 대화 재처리 요청, V19)
@@ -450,6 +611,7 @@ stateDiagram-v2
 
 - `R_*`·`Q_*` 접두어 = 각 테이블 `status` 값
 - 접수만으로 판정 변경 금지, `RECEIVED → RESOLVED` 직행 금지 (검토 기록 필수, FN-SUP-02)
+- 대상 `COMMUNITY_POST` 신고(P20·P10, #388): 접수 시 공유물 `HIDDEN_REPORT`, `RESOLVED` + `review_result` `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 공유물 상태를 정함(3.6). 같은 공유물에 신고가 여럿이면 `REMOVED` 우선, 처리 중이 있으면 `HIDDEN_REPORT`
 
 ### 5.1 core 정정 실행 기록 (#46)
 
@@ -471,7 +633,9 @@ stateDiagram-v2
   APPROVED --> REFUND_REVIEW: 환불 요청
   REFUND_REVIEW --> REFUNDED: 환불 승인 + PG 취소 성공
   REFUND_REVIEW --> APPROVED: 환불 반려·PG 취소 실패
-  APPROVED --> CANCELED: PG 측 취소 통지 확인
+  APPROVED --> REFUNDED: PG 취소 확인 (FAILED 환불 재확인·PG 측 취소)
+  CONFIRMING --> REFUNDED: PG 취소 확인 (PG 승인 시각 있음)
+  CONFIRMING --> CANCELED: PG 취소 확인 (승인 전)
   REFUNDED --> [*]
   CANCELED --> [*]
   FAILED --> [*]
@@ -484,7 +648,9 @@ stateDiagram-v2
 | `CONFIRMING → APPROVED·FAILED` | 웹훅·`GET /payments/{orderId}`·스케줄러 재조회 | `PaymentService.refreshStatus`·`handleWebhook` | `WHERE status='CONFIRMING'`, 본문 대신 PG 조회 결과 사용 |
 | `APPROVED → REFUND_REVIEW` | `POST /payments/{id}/refund-requests` | `RefundService.request` → `Payment.startRefundReview()` | `WHERE status='APPROVED'`, 결제 7일 이내 + 프리미엄 기능 미사용 아니면 `409 REFUND_NOT_ALLOWED` (P14) |
 | `REFUND_REVIEW → REFUNDED·APPROVED` | 환불 승인 결과·반려 | `Payment.refund()` / 복귀 | `refund_request` 결과와 같은 트랜잭션 |
-| `APPROVED → CANCELED` | 웹훅 취소 통지 | `Payment.cancel()` | PG 조회로 확인된 경우만 |
+| `APPROVED·REFUND_REVIEW → REFUNDED` | 웹훅·조회로 PG `CANCELED`(잔액 0) 확인, 대기 환불(`REQUESTED`·`APPROVED`·`FAILED`)이 있을 때 | `PaymentWebhookService` → `RefundService.applyVerified` | 환불 행 `COMPLETED`와 같은 트랜잭션, 대상 구독 `CANCELED` (6.3) |
+| `APPROVED → REFUNDED` | 웹훅으로 PG `CANCELED`(잔액 0) 확인, 대기 환불 없음 | `PaymentWebhookService` → `PaymentService.accept` | 로컬 `approved_at`이 있으면 `CANCELED`가 아니라 `REFUNDED`. `REFUND_REVIEW` 단계를 거치지 않으며 대상 구독 `CANCELED`, `entitlement_status` 비움 |
+| `CONFIRMING → REFUNDED·CANCELED` | 승인 응답·웹훅·`GET /payments/{orderId}`·스케줄러 재조회에서 PG `CANCELED`(잔액 0) | `PaymentService.accept` | 로컬 또는 PG 응답에 승인 시각이 있으면 `REFUNDED`, 없으면(승인 전 취소) `CANCELED`. 대상 구독 `CANCELED` |
 
 | `entitlement_status` | 전이 | 담당 |
 |---|---|---|
@@ -492,7 +658,7 @@ stateDiagram-v2
 | → `RECOVERY_REQUIRED` | 승인 후 구독 반영 실패 | `Payment.requireRecovery()` |
 | `RECOVERY_REQUIRED → APPLIED` | 복구 재시도 (추가 청구 없음) | `SubscriptionService.recoverEntitlement` |
 
-- 부분 환불 없음, 전액 환불만 `REFUNDED` (P14). `REFUNDED` 시 대상 구독 즉시 `CANCELED`
+- 부분 환불 없음, 전액 환불만 `REFUNDED` (P14). `REFUNDED` 시 대상 구독 즉시 `CANCELED`(이미 `CANCELED`면 그대로, 6.2·#653)
 
 ### 6.2 `subscription.status`
 
@@ -505,6 +671,7 @@ stateDiagram-v2
   RENEWAL_FAILED --> CANCELED: 유예 기간 만료
   ACTIVE --> CANCELED: 자동 갱신 해지 후 이용 기간 종료
   ACTIVE --> CANCELED: 환불 완료
+  RENEWAL_FAILED --> CANCELED: 환불 완료
   CANCELED --> [*]
   note right of RENEWAL_FAILED
     유예 3일·매일 1회 최대 3회 재청구 (P13)
@@ -519,10 +686,11 @@ stateDiagram-v2
 | `ACTIVE → RENEWAL_FAILED` | 청구 실패 | `Subscription.renewalFailed(graceUntil)` | `renewal_retry_count + 1`, 알림 `SUBSCRIPTION_CHANGED` |
 | `RENEWAL_FAILED → ACTIVE·CANCELED` | 재청구 성공 / `grace_until` 경과 | `extend` / `cancel()` | 3회 재청구 모두 실패하거나 `grace_until`(실패일 + 3일) 경과 시 `CANCELED` (P13). 같은 기간 재청구는 월별 주문을 유지하고 `payment_charge_attempt`로 시도마다 새 PG 주문 (#48) |
 | `ACTIVE → CANCELED` | `auto_renew = false` + `period_end` 경과 | `BillingScheduler.expireCanceled` → `cancel()` | `auto_renew_canceled_at` 기록 후에만, `canceled_at` = `period_end` 경과 시점 (P14) |
-| `ACTIVE → CANCELED` | 환불 완료(`payment REFUNDED`) | `RefundService` → `cancel()` | 같은 트랜잭션, `canceled_at` = 환불 완료 시점 (P14) |
+| `ACTIVE·RENEWAL_FAILED → CANCELED` | 환불 완료·PG 측 취소 확인(`payment REFUNDED·CANCELED`) | `RefundService.applyVerified`·`PaymentService.accept` → `PaymentTransactions.cancelRefundedSubscription` | 같은 트랜잭션, `canceled_at` = 환불 완료 시점 (P14). 조건부 UPDATE `WHERE status IN ('ACTIVE','RENEWAL_FAILED')`라 이미 `CANCELED`인 구독은 상태·`canceled_at`(처음 값)을 바꾸지 않는다. 갱신 실패 유예 중 구독도 환불되면 바로 `CANCELED` (#653) |
 
 - 자동 갱신 해지(`DELETE /subscriptions/{id}/auto-renewal`)는 상태 전이 없이 `auto_renew = false`만 변경, `period_end` 전 해지 철회(`PUT`)는 `auto_renew = true` (P14)
 - `CANCELED` 이후 해당 자녀는 무료 플랜 한도 적용 (P13)
+- `CANCELED`는 끝 상태라 어떤 경로도 다시 `CANCELED`로 쓰지 않는다. 상태를 먼저 확인한 경로(만료·유예 종료·3회 실패)의 `PaymentTransactions.cancelSubscription`도 `ACTIVE`·`RENEWAL_FAILED`만 받는다(`Subscription.CANCELABLE`, #653)
 
 ### 6.3 `refund_request.status`
 
@@ -531,19 +699,35 @@ stateDiagram-v2
   [*] --> REQUESTED: 학부모 환불 요청
   REQUESTED --> APPROVED: 관리자 승인 (PAYMENT_REFUND)
   REQUESTED --> REJECTED: 관리자 반려 (사유)
+  REQUESTED --> REJECTED: 시스템 (결제 후 프리미엄 사용)
+  REQUESTED --> COMPLETED: PG 측 취소 확인 (웹훅)
   APPROVED --> COMPLETED: PG 취소 성공
-  APPROVED --> FAILED: PG 취소 실패
+  APPROVED --> FAILED: PG 취소 거절
+  FAILED --> REJECTED: 관리자 반려 (사유)
+  FAILED --> COMPLETED: PG 취소 재확인 (웹훅)
   COMPLETED --> [*]
   REJECTED --> [*]
-  FAILED --> [*]
+  note right of FAILED
+    대기 환불로 남음 (새 요청 행 없음)
+  end note
 ```
 
-- `REQUESTED → APPROVED`: 승인된 환불 합계 + 요청 금액 ≤ `payment.amount`, 아니면 `409 REFUND_NOT_ALLOWED` (FN-ADM-16)
-- `FAILED`는 종료, 재시도는 새 요청 행 (중복 취소 방지). 모든 전이에 `decided_by`·`audit_log`
+| 전이 | 트리거 | 담당 | 조건 |
+|---|---|---|---|
+| → `REQUESTED` | `POST /payments/{id}/refund-requests` | `RefundService.request` | 같은 주문에 대기 환불(`REQUESTED`·`APPROVED`·`FAILED`)이 있으면 새 행 없이 그 행을 반환(`PaymentMapper.pendingRefund`) |
+| `REQUESTED → REJECTED` (시스템) | 요청 직후 learning 사용 증빙 조회에서 결제 후 프리미엄 사용 확인(7일·결제 상태·core 프리미엄 사용 사전 검사 실패는 행 생성 없이 `409 REFUND_NOT_ALLOWED`·`409 REFUND_PREMIUM_USAGE_PRESENT`) | `RefundService.request` | `decided_by` 없음, `reject_reason`="결제 후 프리미엄 기능 사용", 결제 `APPROVED` 복귀, 응답 `409 REFUND_NOT_ALLOWED` (P14) |
+| `REQUESTED → APPROVED` | `POST /admin/refund-requests/{id}/approve` (`PAYMENT_REFUND`) | `RefundService.approve` | 사용 증빙 확인(`usage_verified_at`) 뒤에만, 아니면 `409 REFUND_NOT_READY`. 7일·금액·미사용 재확인 실패는 `409 REFUND_NOT_ALLOWED` (FN-ADM-16) |
+| `REQUESTED·FAILED → REJECTED` (관리자) | `POST /admin/refund-requests/{id}/reject` (`PAYMENT_REFUND`) | `RefundService.reject` | 그 밖의 상태는 `409 REFUND_STATE_CHANGED`. 결제 `APPROVED` 복귀 |
+| `APPROVED → COMPLETED·FAILED` | 승인 직후 PG 취소 결과·`APPROVED` 복구 조회(스케줄러·`GET /payments/{orderId}`) | `RefundService.applyVerified` | PG `CANCELED`(잔액 0)면 `COMPLETED`, PG가 취소를 거절하면 `FAILED`(결제 `APPROVED` 복귀). 결과 불명확은 `APPROVED`로 남겨 조회 복구 (6.4) |
+| `REQUESTED·FAILED → COMPLETED` | 웹훅 뒤 PG 조회로 `CANCELED`(잔액 0) 확인 | `PaymentWebhookService` → `RefundService.applyVerified` | 결제 `REFUNDED`·구독 `CANCELED`와 같은 트랜잭션 |
+
+- `FAILED`는 종료가 아니다. 대기 환불로 남아 학부모 재요청은 같은 행을 돌려받고, 관리자 반려나 PG 취소 재확인으로만 끝난다. 관리자 승인(`approve`)은 `REQUESTED`만 받으므로 `FAILED`를 다시 PG 취소하지 않는다(중복 취소 방지)
+- `FAILED`도 대기 환불이므로 탈퇴(`WITHDRAWAL_BLOCKED`)·구독 변경·상품 권한 판단(`refundPending`)을 막는다([API 명세서](api-spec.md) 탈퇴 precheck)
+- 관리자 전이에는 `decided_by`·`audit_log`, 시스템 반려에는 `decided_by` 없음
 
 ### 6.4 결제 상태 적용 보완 (#48)
 
-CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/payment.md)를 따른다.
+CONFIRMING은 PG 조회로만 확정하며, APPROVED/RECOVERY_REQUIRED는 추가 청구 없이 구독 반영을 재시도한다. REQUESTED 환불은 프리미엄 사용 동결 상태이며 증빙 미확인은 503이다. APPROVED 환불의 PG 결과 불명확은 FAILED로 바꾸지 않고 조회 복구한다. REFUNDED/CANCELED는 지연 DONE 통지로 되돌리지 않는다. PG 호출 중 parent 잠금은 유지하지 않으며 준비된 거래/환불이 탈퇴를 차단한다. 상세 계약은 [#48 보고서](../report/core-gateway.md#24-결제구독과-상품-권한-48184419)를 따른다.
 
 ---
 
@@ -586,6 +770,17 @@ stateDiagram-v2
 - confirm 후 `published_at` 기록 전 중단되면 같은 이벤트가 다시 발행됨 → 소비자는 `processed_event`로 멱등 처리 (at-least-once)
 
 report #131은 위 미발행 상태를 `next_attempt_at`·`quarantined_at`으로 세분한다. 별도 status 컬럼은 추가하지 않는다. 최초 실패 후 1·5·15분으로 재시도하고 총 4회 실패 시 격리한다. 해당 학생의 후속 이벤트는 선두를 추월하지 않으며 다른 학생의 발행은 계속된다. 운영 CLI의 수동 재처리는 같은 id·payload·순서 위치를 유지하면서 실패 횟수·대기·격리를 초기화하고 수동 처리 횟수와 시각을 남긴다. [상세 정책](../report/report.md#11-outbox-실패-격리와-학생별-발행-순서-131)
+
+### 7.3 `look_item.status` (P22, core #389 V35)
+
+```mermaid
+stateDiagram-v2
+  [*] --> ON_SALE: 등록 (CONTENT)
+  ON_SALE --> STOPPED: 판매 중단
+  STOPPED --> ON_SALE: 판매 재개
+```
+
+- `STOPPED`는 새 해금만 막고 이미 해금한 학생의 착용은 유지. 삭제 상태 없음(P22)
 
 ---
 

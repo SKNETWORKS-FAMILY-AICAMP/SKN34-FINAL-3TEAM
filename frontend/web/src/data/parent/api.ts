@@ -17,6 +17,7 @@ import type {
   StreamState,
   Evidence,
   ReportItem,
+  ReportPeriodType,
   WeeklyReport,
 } from '../../domain/parent.ts'
 export const json = (data: unknown, method = 'POST'): RequestInit => ({
@@ -82,6 +83,9 @@ export const parentApi = {
   conversation: (id: string, signal?: AbortSignal) =>
     apiFetch<Conversation>(`/conversations/${item(id)}`, { signal }),
   create: (scope: Scope) => apiFetch<Conversation>('/conversations', json(scope)),
+  /** 일일 리포트 고정 대화(API 명세 2.4, P25): 자녀·대상일·리포트 판은 서버가 리포트로 정한다. */
+  createForReport: (childId: string, reportId: string) =>
+    apiFetch<Conversation>('/conversations', json({ childId, reportId })),
   /** 분석 대화 예시 질문 (api-spec 2.4 AGT-12, 선택). available=false는 이 자녀의 기록이 없어 답할 수 없는 질문이다. */
   examples: async (childId: string, signal?: AbortSignal) => {
     const raw = await apiFetch<{ items?: unknown }>(`/agent/example-questions?childId=${item(childId)}`, { signal })
@@ -142,11 +146,15 @@ export const parentApi = {
       `/conversations/${item(id)}/messages/${item(messageId)}/evidence`,
       { signal },
     ),
-  reports: (childId: string, status: string, signal?: AbortSignal) =>
-    apiFetch<{ items: ReportItem[] }>(
-      `/children/${item(childId)}/reports${status ? `?status=${item(status)}` : ''}`,
+  reports: (childId: string, status: string, signal?: AbortSignal, periodType?: ReportPeriodType) => {
+    const q = new URLSearchParams()
+    if (status) q.set('status', status)
+    if (periodType) q.set('periodType', periodType)
+    return apiFetch<{ items: ReportItem[] }>(
+      `/children/${item(childId)}/reports${q.size ? `?${q}` : ''}`,
       { signal },
-    ),
+    )
+  },
   async report(id: string, childId: string, revision?: number, signal?: AbortSignal) {
     const r = await apiFetch<WeeklyReport>(
       `/reports/${item(id)}${revision ? `?revision=${revision}` : ''}`,

@@ -12,11 +12,16 @@ from app.clients.base import internal_client
 from app.clients.core_client import CoreClient
 from app.clients.scoring_client import ScoringClient
 from app.config import get_settings
+from app.embedding.router import router as embedding_router
 from app.errors import register_error_handlers
 from app.followup.router import router as followup_router
 from app.health.router import router as health_router
 from app.judgment.router import router as judgment_router
-from app.llm.providers import create_llm
+from app.llm.embeddings import create_embedder
+from app.llm.media import create_media_clients
+from app.llm.providers import create_explanation_llm, create_llm, create_theme_llms
+from app.memory_explanation.router import router as memory_explanation_router
+from app.memory_query.router import router as memory_query_router
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
@@ -25,8 +30,11 @@ from app.mission_draft.router import router as mission_draft_router
 from app.prompt_versions.registry import ActiveVersions
 from app.prompt_versions.router import router as versions_router
 from app.prompt_versions.service import PromptSync
+from app.report_explanation.router import router as report_explanation_router
 from app.report_narrative.router import router as report_narrative_router
 from app.security import InternalAuthMiddleware
+from app.theme_draft.router import router as theme_draft_router
+from app.theme_draft.storage import create_storage
 
 
 @asynccontextmanager
@@ -58,6 +66,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     usage_recorder = BackgroundUsageRecorder(app.state.usage_publisher)
     app.state.llm = create_llm(settings, recorder=usage_recorder)
     app.state.llm.langfuse = langfuse
+    # 리포트 설명만 클러스터 안 sLLM (#477). 다른 호출의 제공자는 그대로
+    app.state.explanation_llm = create_explanation_llm(settings, recorder=usage_recorder)
+    app.state.explanation_llm.langfuse = langfuse
+    # 주간 테마 초안 생성·검토 (#437). 모델은 테마 전용 설정, 같은 OpenAI 키
+    app.state.theme_llm, app.state.theme_review_llm = create_theme_llms(settings, usage_recorder)
+    app.state.theme_llm.langfuse = langfuse
+    app.state.theme_review_llm.langfuse = langfuse
+    # 테마 그림·영상·S3 (#437). 버킷이 비면 None이라 그림·영상·움직임을 건너뛰고 경고만
+    app.state.theme_image, app.state.theme_video = create_media_clients(settings, usage_recorder)
+    app.state.theme_storage = create_storage(settings)
+    # 임베딩 (#467). 사용량 callType은 purpose로 KNOWLEDGE_EMBEDDING·MEMORY_EMBEDDING(#565)
+    app.state.embedder = create_embedder(settings, recorder=usage_recorder)
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
@@ -92,7 +112,12 @@ def create_app() -> FastAPI:
     app.include_router(judgment_router)
     app.include_router(followup_router)
     app.include_router(mission_draft_router)
+    app.include_router(theme_draft_router)
     app.include_router(analysis_router)
     app.include_router(report_narrative_router)
+    app.include_router(report_explanation_router)
+    app.include_router(embedding_router)
+    app.include_router(memory_explanation_router)
+    app.include_router(memory_query_router)
     app.include_router(versions_router)
     return app

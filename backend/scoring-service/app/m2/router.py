@@ -4,13 +4,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
-from app.m2.models import M2Active, M2Inactive, M2Request
+from app.m2.models import M2Active, M2Inactive, M2Request, M2Skipped
 from app.security import UserContext, get_user_context
 
 router = APIRouter(prefix="/internal/m2")
 
 
-@router.post("/scores", response_model=M2Active | M2Inactive)
+@router.post(
+    "/scores", response_model=M2Active | M2Inactive | M2Skipped, response_model_exclude_none=True
+)
 async def score(
     body: M2Request,
     request: Request,

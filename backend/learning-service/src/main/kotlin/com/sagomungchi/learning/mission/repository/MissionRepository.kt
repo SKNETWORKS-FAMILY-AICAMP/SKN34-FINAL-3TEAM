@@ -91,6 +91,9 @@ class MissionRepository(
     }
 
     /** 새 미션 버전(이전 버전 불변)을 넣고 현재 버전으로. 넣은 버전 번호 */
+    /** 현재 버전의 장면·움직임 (#438 관리자 수정 이어받기). 현재 버전이 없으면 null */
+    fun findCurrentScene(missionId: UUID): com.sagomungchi.learning.mission.domain.MissionScene? = adminMapper.findCurrentScene(missionId)
+
     fun appendVersion(missionId: UUID, command: MissionCommand, now: Instant): Int {
         val versionId = UUID.randomUUID()
         val version = adminMapper.nextVersion(missionId)

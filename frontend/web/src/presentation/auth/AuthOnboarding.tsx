@@ -8,6 +8,7 @@ import { ChildRegistration, ConsentFields } from '../parent/AccountForms.tsx'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import type { Consent } from '../../domain/parent.ts'
+import { isAccountDocument } from '../../domain/parent.ts'
 
 export function AuthOnboarding() {
   const { session, setSession } = useSession()
@@ -27,19 +28,19 @@ export function AuthOnboarding() {
   return <main id="class-journal" style={{ maxWidth: 760, margin: '40px auto' }}><div className="ws-main ws-stack">
     <h1>{consent ? '이용 안내·필수 동의' : '자녀 등록'}</h1>
     <Link to="/parent/transfers">받은 자녀 이관 요청 확인</Link>
-    <Link to="/parent/account">계정·탈퇴 관리</Link>
+    <Link to="/parent/settings?section=account">계정 관리</Link>
     {consent ? <section className="ws-card">
       <p>현재 문서를 확인하고 동의해 주세요. 필수 동의를 철회하면 계정 이용이 제한되며 삭제·탈퇴는 별도 요청이 필요합니다.</p>
       <QueryFeedback query={documents} />
       <form className="ws-form" onSubmit={(e) => {
         e.preventDefault()
-        const choices = documents.data?.items.filter((d) => d.kind !== 'GUARDIAN').map((d) => ({
+        const choices = documents.data?.items.filter(isAccountDocument).map((d) => ({
           documentId: d.documentId, version: d.version,
           agreed: consents.some((c) => c.documentId === d.documentId && c.version === d.version && c.agreed),
         })) ?? []
         void save.mutateAsync({ consents: choices }).then(proceed).catch(() => {})
       }}>
-        {documents.data && !documents.error && <ConsentFields documents={documents.data.items.filter((d) => d.kind !== 'GUARDIAN')} value={consents} onChange={setConsents} />}
+        {documents.data && !documents.error && <ConsentFields documents={documents.data.items.filter(isAccountDocument)} value={consents} onChange={setConsents} />}
         <button className="cj-primary" disabled={!documents.data?.items.length || !!documents.error || save.isPending}>동의 저장하고 계속하기</button>
         <ErrorNotice error={save.error} />
       </form>

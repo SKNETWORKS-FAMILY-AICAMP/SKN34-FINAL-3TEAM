@@ -11,9 +11,10 @@ import type {
   Reflection,
   Report,
 } from '../../domain/classroom.ts'
-import { unlockParentSession } from '../apiClient.ts'
+import { apiFetch, notifyAuthChange, setAccessToken, unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
-import { getThinkingActivities, saveReflection } from './learningApi.ts'
+import { getAttemptComparison, getThinkingActivities, saveReflection, saveSelfAssessment } from './learningApi.ts'
+import { sharingApi } from './sharingApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
 import { pollFeedback } from './feedbackPolling.ts'
@@ -22,14 +23,21 @@ const gateway = createApiGateway()
 let restoration: ReturnType<typeof gateway.restore> | undefined
 export function restoreSession(fresh = false) {
   if (fresh) restoration = undefined
-  return (restoration ??= gateway.restore().catch((error) => {
-    throw error
-  }))
+  if (!restoration) {
+    const pending = gateway.restore().finally(() => {
+      if (restoration === pending) restoration = undefined
+    })
+    restoration = pending
+  }
+  return restoration
 }
 export const isDemo = typeof import.meta.env !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true'
 export const displayPeriods = calendarPeriods(
   isDemo ? new Date('2026-10-26T12:00:00+09:00') : new Date(),
 )
+/** 학생 화면 기간 이름(빈 화면 문구에 씀). 두 기간 밖이면 "이 기간". */
+export const periodName = (p: Period) =>
+  p.from === displayPeriods.recentPeriod.from ? '최근 7일' : p.from === displayPeriods.previousWeek.from ? '지난주' : '이 기간'
 export function setDemoScenario(value: DemoScenario) {
   if (isDemo) window.dispatchEvent(new CustomEvent('sagomungchi:mock-scenario', { detail: value }))
 }
@@ -41,6 +49,30 @@ export function useAuthentication() {
       if (!isDemo) throw new Error('이메일 로그인은 개발 시연에서만 제공합니다.')
       return demoEmailLogin(email, password)
     },
+    onSuccess: () => cache.clear(),
+  })
+  // #369: 등록된 관리자 ID·비밀번호 로그인. 실제·목업 모두 같은 경로이며, 권한·시작 화면은 /me로 다시 읽는다.
+  const adminLogin = useMutation({
+    mutationFn: async ({ loginId, password }: { loginId: string; password: string }) => {
+      const raw = (await apiFetch<Record<string, unknown>>('/auth/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ loginId, password }),
+      })) ?? {}
+      if (raw.role !== 'ADMIN' || typeof raw.accessToken !== 'string') throw new Error('관리자 로그인 응답이 계약과 다릅니다.')
+      setAccessToken(raw.accessToken, 'ADMIN')
+      const next = await restoreSession(true)
+      notifyAuthChange(next.role)
+      return next
+    },
+    onSuccess: () => cache.clear(),
+  })
+  // #415: 학부모 ID·비밀번호 로그인·가입. 성공하면 관리자 로그인과 같이 /me로 세션·시작 화면을 다시 읽는다.
+  const parentLogin = useMutation({
+    mutationFn: ({ loginId, password }: { loginId: string; password: string }) => passwordSession('/auth/parent/login', { loginId, password }),
+    onSuccess: () => cache.clear(),
+  })
+  const parentSignup = useMutation({
+    mutationFn: (data: { loginId: string; password: string; name: string }) => passwordSession('/auth/parent/signup', data),
     onSuccess: () => cache.clear(),
   })
   const logout = useMutation({ mutationFn: () => gateway.logout(), onSettled: () => cache.clear() })
@@ -56,7 +88,15 @@ export function useAuthentication() {
     },
     onSuccess: () => cache.clear(),
   })
-  return { login, logout, enter, unlock }
+  return { login, adminLogin, parentLogin, parentSignup, logout, enter, unlock }
+}
+async function passwordSession(path: '/auth/parent/login' | '/auth/parent/signup', body: Record<string, string>) {
+  const raw = (await apiFetch<Record<string, unknown>>(path, { method: 'POST', body: JSON.stringify(body) })) ?? {}
+  if (raw.role !== 'PARENT' || typeof raw.accessToken !== 'string') throw new Error('학부모 로그인 응답이 계약과 다릅니다.')
+  setAccessToken(raw.accessToken, 'PARENT')
+  const next = await restoreSession(true)
+  notifyAuthChange(next.role)
+  return next
 }
 export function useMockInvalidation() {
   const cache = useQueryClient()
@@ -149,16 +189,27 @@ export function useLearningActions() {
     void cache.invalidateQueries({ queryKey: ['records'] })
     void cache.invalidateQueries({ queryKey: ['missions'] })
     void cache.invalidateQueries({ queryKey: ['student-home'] })
+    // 학습 완료는 포인트·주간 테마 상태를 바꿀 수 있다(core 적립, P21).
+    if (a.status === 'COMPLETED') {
+      void cache.invalidateQueries({ queryKey: ['weekly-theme'] })
+      void cache.invalidateQueries({ queryKey: ['points'] })
+      void cache.invalidateQueries({ queryKey: ['community'] })
+    }
   }
   const start = useMutation({
     mutationFn: ({
       mission,
       child,
+      context,
     }: {
       mission: import('../../domain/classroom.ts').Mission
       child: Child
-    }) => gateway.start(mission, child),
-    onSuccess: update,
+      context?: import('../../domain/retention.ts').AttemptContext
+    }) => gateway.start(mission, child, context),
+    onSuccess: (a: Attempt) => {
+      update(a)
+      void cache.invalidateQueries({ queryKey: ['weekly-theme'] })
+    },
   })
   const save = useMutation({
     mutationFn: ({ id, draft }: { id: string; draft: Draft }) => gateway.saveDraft(id, draft),
@@ -253,4 +304,30 @@ export function useParentActions() {
       gateway.analyze(child, period, question),
   })
   return { regenerate, analyze }
+}
+
+/** 마무리한 시도의 이전·이번 답 비교(학생). 마무리 전에는 묻지 않는다. */
+export function useAttemptComparison(attempt: Attempt) {
+  return useQuery({ queryKey: ['attempt-comparison', attempt.attemptId], enabled: !!attempt.finishedAt,
+    retry: false, queryFn: ({ signal }) => getAttemptComparison(attempt.attemptId, signal) })
+}
+/** 학생 자기 점검 저장. 저장 뒤 서버 값으로 화면을 맞추는 일은 onSaved가 한다. */
+export function useSaveSelfAssessment(attemptId: string, onSaved: (rows: Awaited<ReturnType<typeof saveSelfAssessment>>) => void) {
+  return useMutation({
+    mutationFn: (checks: { elementId: string; checked: boolean }[]) => saveSelfAssessment(attemptId, checks),
+    onSuccess: onSaved,
+  })
+}
+/** 학생 본인의 답 공개 설정 조회·저장. 바꾸면 공유 브라우저에 남은 학부모 원문 캐시를 지운다. */
+export function useStudentSharing(childId: string) {
+  const cache = useQueryClient()
+  const key = ['sharing-preferences', 'STUDENT', childId]
+  const query = useQuery({ queryKey: key, queryFn: ({ signal }) => sharingApi.get(childId, 'STUDENT', signal), retry: false })
+  const save = useMutation({ mutationFn: (enabled: boolean) => sharingApi.save(childId, enabled),
+    onSuccess: value => {
+      cache.setQueryData(key, value)
+      // Shared-browser caches must not retain parent originals after a change.
+      cache.removeQueries({ predicate: q => ['parent', 'records', 'report', 'public-record'].includes(String(q.queryKey[0])) })
+    } })
+  return { query, save }
 }

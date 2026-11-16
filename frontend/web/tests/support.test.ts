@@ -27,7 +27,8 @@ test('정정 재시도는 동일한 Idempotency-Key와 enum 결과를 전달한�
 
 test('파생 결과가 모두 UNKNOWN이어도 전체 반영 완료라고 표시하지 않는다', () => {
   const text = correctionImpactText({ conversation: 'UNKNOWN', aggregation: 'UNKNOWN', report: 'UNKNOWN' })
-  assert.equal(text.split('반영 여부 미확인').length - 1, 3)
+  assert.equal(text.split('반영 여부 미확인').length - 1, 1)
+  assert.equal(text.split('영향 여부 미확인').length - 1, 2)
   assert.ok(text.includes('학습 수치 집계'))
   assert.ok(!text.includes('반영 확인'))
   assert.ok(!text.includes('모두 반영'))
@@ -41,6 +42,19 @@ test('집계 NOT_APPLIED는 변경 대상 없음도 포함하며 오류나 재�
   assert.ok(text.includes('리포트: 반영 확인'))
   assert.ok(!text.includes('재생성 필요'))
   assert.ok(!text.includes('처리 실패'))
+})
+
+test('대화·리포트 영향 값을 구분해 표시하고 영향 대상 ID는 문구에 넣지 않는다', () => {
+  const text = correctionImpactText({
+    conversation: 'NOT_AFFECTED',
+    aggregation: 'NOT_APPLIED',
+    report: 'AFFECTED',
+    reportIds: ['00000000-0000-0000-0000-000000000001'],
+  })
+  assert.ok(text.includes('분석 대화: 영향 없음'))
+  assert.ok(text.includes('리포트: 영향 있음(정정 안내 표시)'))
+  assert.ok(text.includes('학습 수치 집계: 미반영 확인'))
+  assert.ok(!text.includes('00000000'))
 })
 
 test('반영 정보가 없거나 형식이 잘못된 경우 성공으로 대체하지 않는다', () => {

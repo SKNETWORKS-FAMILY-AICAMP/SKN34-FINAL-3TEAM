@@ -17,7 +17,7 @@
 
 VPC·subnet·route·NAT·SG·IAM·RDS·S3·ECR은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185), 클러스터는 `cluster.json`이 정의한다. 2026-11-03 `plan`에서 55개 항목이 현재 자원과 일치했다. 같은 계정에서 `apply`는 이미 있는 자원을 건너뛰며, 현재 객체를 다른 IaC가 소유하도록 import하지 않는다. 새 계정 재생성은 실행하지 않았으므로 성공을 주장하지 않는다. eksctl은 작업자 IAM 사용자의 access entry를 자동으로 만들며, 콘솔에서 만든 현재 클러스터의 `student` access entry와 같은 권한인지는 생성 후 확인한다.
 
-노드 자동 확장은 Karpenter 1.15.1(NodePool `application-burst`, 평소 0대)과 core·learning·ai HPA로 한다(2026-11-05, [#211·#372](../../docs/report/issue-185-aws.md#eks-노드-자동-확장-karpenter와-앱-hpa-211372-2026-11-05)). 관리형 노드그룹 2개는 크기를 자동으로 바꾸지 않는다. `pause` 전에는 NodePool을 지우거나 `limits.cpu`를 0으로 바꿔 노드그룹 축소 중 Pending이 된 kube-system Pod 때문에 Karpenter 노드가 생기지 않게 한다. 노드를 0으로 줄여도 EKS control plane·NAT·RDS·EBS 비용은 남는다. RDS 복원 테스트와 데이터 백업을 확인하기 전 클러스터/PVC를 삭제하지 않는다.
+노드 자동 확장은 Karpenter 1.15.1(NodePool `application-burst`, 평소 0대)과 core·learning·ai HPA로 한다(2026-11-05, [#211·#372](../../docs/report/infra.md#6-karpenter와-앱-hpa-211372)). 관리형 노드그룹 2개는 크기를 자동으로 바꾸지 않는다. `demo_stack.py pause`는 워크로드를 0으로 줄인 뒤 NodePool `limits`를 0으로 바꾸고, 남은 NodeClaim을 지운 다음 Karpenter 컨트롤러를 0개로 줄인다. 노드그룹 축소 중 Pending이 된 kube-system Pod 때문에 Karpenter 노드가 생기지 않게 하기 위해서다. `resume`은 노드 Ready 뒤 컨트롤러 replica와 NodePool `limits`를 state 파일 값(없으면 `demo-stack.json`의 `karpenter.defaults`)으로 되돌린 다음 워크로드를 복구한다. 노드를 0으로 줄여도 EKS control plane·NAT·RDS·EBS 비용은 남는다. RDS 복원 테스트와 데이터 백업을 확인하기 전 클러스터/PVC를 삭제하지 않는다.
 
 ### IAM 추가 확인 (2026-11-03)
 
@@ -105,21 +105,56 @@ NAT는 정지 버튼이 있는 자원이 아니다. 시간 요금을 없애려�
 ### 정상 종료 순서
 
 1. 중단 시간과 재개 담당을 확정하고 신규 로그인·학습·보고서 요청 유입을 막는다. 현재 유지보수 페이지/차단 설정은 준비돼 있지 않으므로 실행 전에 별도 수단을 정한다. CloudFront를 그대로 두면 정적 웹이 열려도 API는 실패할 수 있다.
-2. 예약 작업·CronJob 및 자동 동기화/확장 controller 유무를 다시 확인하고 재기동 원인을 차단한다. 현재 Argo prod/HPA/KEDA/노드 autoscaler는 미구성이지만 실행 시점에 다시 확인한다. Grafana 외부 경보는 정해진 중단 기간만 silence하고 만료·재개 담당을 기록한다.
+2. 예약 작업·CronJob 및 자동 동기화/확장 controller 유무를 다시 확인하고 재기동 원인을 차단한다. 현재 Argo prod·KEDA는 미구성이고, core·learning·ai HPA와 Karpenter는 있다(#211). HPA는 replica를 0으로 줄인 Deployment를 다시 늘리지 않는다. Karpenter는 4.5단계에서 멈춘다. Grafana 외부 경보는 정해진 중단 기간만 silence하고 만료·재개 담당을 기록한다.
 3. 기존 SSE·학습·AI·리포트 작업을 완료시킨다. 새 요청/생성자를 먼저 멈추되, report-worker가 호출하는 core·learning·ai와 DB/RabbitMQ는 drain 동안 유지한다. RabbitMQ ready/unacked, 실행 중 작업·outbox를 확인하고 처리 미완료 상태에서는 다음 단계로 진행하지 않는다. DLQ는 성공 큐처럼 비우거나 삭제하지 않고 건수·처리 계획을 보존한다.
 4. worker와 앱을 정상 종료해 DB 쓰기·큐 소비가 멈춘 것을 확인한다. 앱 grace period를 기다리고 노드 강제 종료로 대신하지 않는다. replica 수를 0으로 변경한 값은 임시 운영 상태로 기록하며 prod 기본값에 덮어쓰지 않는다.
+4.5. Karpenter를 멈춘다. NodePool `application-burst`의 `limits`를 CPU·메모리 0으로 바꾸고, NodeClaim이 있으면 지워 Karpenter 노드를 정리한 뒤 컨트롤러를 0개로 줄인다. 원래 replica·`limits`는 state 파일에 남긴다.
 5. RDS 수동 snapshot을 만들고 available을 확인한다. RabbitMQ·Redis·Grafana·Prometheus는 정상 종료 후 Pod 종료·EBS 분리를 확인하고 필요한 EBS snapshot을 만들어 completed를 확인한다. snapshot에는 별도 비용이 들며 복원 시험이 없으면 그 한계를 기록한다. Redis AOF와 RabbitMQ 메시지 보존은 정상 종료·동일 PVC 재연결을 전제로 하며 임의 PVC 삭제를 하지 않는다.
 6. 데이터 보존 확인 후 두 노드그룹을 min=0, desired=0(max 유지)으로 변경한다. **EKS scaling-config 변경은 PDB를 존중하는 안전한 순차 종료로 간주하지 않는다.** 앞 단계의 워크로드 종료가 선행돼야 한다. [AWS 관리형 노드그룹 scaling 주의사항](https://docs.aws.amazon.com/eks/latest/userguide/update-managed-node-group.html)
 7. 노드·워크로드 중단과 DB 연결 종료를 확인한 뒤 RDS를 일시 정지한다. status=stopped, 정지 시각과 7일 자동 재시작 확인 시점을 기록한다. 자동 재정지 작업은 이번 범위에서 만들지 않는다.
 8. nodegroup·RDS 상태와 보존 자원을 재조회하고 청구 대시보드에서 남는 비용을 확인한다. 검증 증거 없이 클러스터/PVC/RDS/S3/NAT를 삭제하지 않는다.
 
+2026-11-06 실행 기록: Karpenter 단계가 스크립트에 들어가기 전이라 NodePool `limits` 0·컨트롤러 0개를 kubectl로 먼저 적용한 뒤 `pause --execute`를 실행했다. RabbitMQ 미처리 메시지 0, RDS snapshot `sagomungchi-demo-db-pause-20261106-100937`과 EBS snapshot 4개 완료, 노드그룹 2개 0대, RDS stopped, 계정 내 실행 중 EC2 0대를 확인했다. `application` 노드 2대는 CoreDNS·EBS CSI·metrics-server PDB(허용 0) 때문에 약 15분 뒤 종료됐다. state 파일은 작업자 PC(저장소 밖)에 있다.
+
+2026-11-12 정지 중 고정비 추가 축소: 정지 상태 하루 약 7천 원(추정, 계정 SCP가 Cost Explorer 조회를 막아 청구 내역 미확인) 중 EKS 컨트롤 플레인 다음으로 큰 NAT·ALB를 지웠다. EKS 클러스터·노드그룹·PVC·RDS·S3·ECR·Secret은 그대로 둔다.
+- ALB `sagomungchi-demo-core`(Ingress `app/core-demo-edge`가 만든 것)와 대상 그룹 `k8s-app-coreserv-…` 삭제. ALB 공인 IP 2개도 함께 해제됨. LB Controller가 만든 보안 그룹 2개(`k8s-app-coredemo-…`·`k8s-traffic-…`)는 비용이 없어 남김
+- NAT `sagomungchi-demo-nat-2a`(`nat-0e2085c827c381d79`) 삭제, EIP 반납. private route table 두 개의 `0.0.0.0/0` 경로는 blackhole 상태로 남음(노드 0대라 영향 없음)
+- 삭제 전 ALB·리스너·규칙·대상 그룹·NAT·EIP·route table 설정은 작업자 PC(저장소 밖)에 JSON으로 보관. ALB 규칙에는 origin 헤더 값이 있어 저장소에 넣지 않는다
+- 예상 절감: 하루 약 3천 원(NAT 시간·EIP, ALB 시간·공인 IP). 남는 고정비는 EKS 컨트롤 플레인·EBS·스냅숏·RDS 저장소·S3·ECR·Secrets Manager·로그
+- RDS는 2026-11-06 01:19 UTC에 정지해 7일 뒤(2026-11-13 10:19 KST 무렵) 자동으로 켜진다. 켜지면 다시 정지한다(정지는 다시 최대 7일)
+
+2026-11-12 EKS 클러스터 삭제(동섭 승인): NAT·ALB 삭제 뒤 남은 가장 큰 고정비(컨트롤 플레인 하루 약 3,300원 추정)를 없앴다.
+- 삭제 전 백업: ESO 대상이 아닌 관측 Secret 2개(`observability-credentials`, `discord-alert-webhook`)를 Secrets Manager `sagomungchi/demo/observability/grafana-admin`·`sagomungchi/demo/observability/discord-webhook`에 복사(원본과 해시 일치 확인, 값 미출력). 웹훅 TLS·LB TLS Secret은 chart가 다시 만든다
+- 작업자 PC(저장소 밖)에 보관: `describe-cluster`·노드그룹 2개·add-on 7개·access entry 3개와 정책, Pod Identity 8개, Helm release 11개 목록과 values, Karpenter NodePool·EC2NodeClass, Ingress, PVC, Deployment·StatefulSet replica 수. values·Ingress에는 비밀 참조가 있을 수 있어 저장소에 넣지 않는다
+- 노드그룹 `application`·`platform-observability`(0대) 삭제 → 클러스터 `sagomungchi-demo-eks` 삭제. Pod Identity 연결은 함께 사라졌다. 클러스터 SG `sg-086c7c83b3638da59`는 RDS SG의 5432 규칙이 참조하고 있어 남았다(비용 없음)
+- 남긴 것: RDS·S3·ECR·Secrets Manager·IAM 역할 10개·VPC·스냅숏·CloudWatch 로그, PVC였던 EBS 4개(위 표, 상태 available). 볼륨은 재연결 선택지로 둔다
+- Secret 백업을 위해 작업자 IP를 공개 접근 CIDR에 잠시 추가했고, 백업 뒤 원래 4개로 되돌린 것을 확인한 다음 클러스터를 지웠다
+
+### 재생성 순서 (2026-11-12 EKS 삭제 이후)
+
+아래 "재개 순서"는 클러스터가 있을 때의 절차다. 클러스터를 지웠으므로 다시 켤 때는 이 순서를 먼저 따른다. **처음 실행하는 절차**이므로 12/8 시연 1주 이상 전에 시작하고, 막힌 단계와 걸린 시간을 기록한다. 명령은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185)를 따른다.
+
+1. `demo_stack.py plan`으로 남은 자원을 확인하고 `apply --confirm-account 347161580747`로 NAT·EIP를 다시 만든다. private route table 두 개의 blackhole `0.0.0.0/0`을 `aws ec2 replace-route ... --nat-gateway-id <새 NAT>`로 고친다(`apply`는 기존 경로를 바꾸지 않음).
+2. RDS를 시작해 available을 확인한다.
+3. `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` → `eksctl create cluster -f <파일>`로 클러스터·노드그룹·add-on·Pod Identity를 만든다. 만든 뒤 access entry가 기존 `student` 권한과 같은지, Pod Identity 10개(#652 테마 자산 ai·learning 2개 포함)가 이 문서의 `cluster.json`과 같은지 확인한다.
+4. `apply --after-eksctl`로 새 클러스터 SG에서 RDS 5432를 허용한다. 앱이 RDS에 붙는 것을 확인한 뒤, 옛 클러스터 SG `sg-086c7c83b3638da59`를 가리키는 규칙과 그 SG를 정리한다.
+5. [prod 초기 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185) 2단계(gp3·namespace·ESO 2.14.0·LB Controller 1.14.1·`rds-ca`·platform-data)를 따른다. Karpenter 1.15.1과 NodePool·EC2NodeClass는 보관한 JSON과 이 문서 맨 위 Karpenter 설명(#211)을 대조해 설치한다.
+6. **DB는 그대로이므로 RDS bootstrap·migration·운영 데이터 seed는 다시 실행하지 않는다.** 앱 6개를 보관한 Helm values(같은 이미지 digest)로 설치하고 readiness를 확인한다.
+7. 관측 Secret 2개를 Secrets Manager 백업에서 만들고(값 미출력) observability chart를 설치한다. Grafana는 새 PVC면 대시보드·경보를 chart에서 다시 읽는지 확인한다.
+8. ALB Ingress를 origin 헤더를 Git 밖에서 주입해 적용하고, 새 ALB DNS로 CloudFront `/api/*` origin을 바꾼다. prefix list 제한을 확인한다.
+9. 로그인→학습 제출→리포트 조회를 확인하고 걸린 시간·실패 항목을 이 문서와 #573에 기록한다.
+
+RabbitMQ·Redis·Prometheus·Grafana는 새 PVC로 시작한다(큐는 정지 때 비어 있었음). 옛 EBS 4개를 다시 쓰려면 같은 AZ에 정적 PV로 연결해야 하며, 필요 없다고 확인되면 그때 지운다.
+
 ### 재개 순서와 완료 기준
 
+0. (2026-11-12 축소 이후) NAT를 다시 만든다. `demo_stack.py apply`는 NAT·EIP만 새로 만들고 **기존 private route table의 blackhole 경로는 바꾸지 않으므로**, 두 route table에 `aws ec2 replace-route --destination-cidr-block 0.0.0.0/0 --nat-gateway-id <새 NAT>`를 실행하고 `plan`이 차이 없음을 확인한다. ALB는 3단계에서 LB Controller가 Ingress로 다시 만들며 **DNS 이름이 바뀌므로** CloudFront `/api/*` origin을 새 ALB DNS로 바꾸고 origin 헤더·prefix list 제한이 유지되는지 확인한다.
 1. NAT·라우팅·Secret·ECR·S3가 유지되는지 확인하고 RDS를 시작해 available, endpoint·TLS·백업 설정을 확인한다.
 2. 두 노드그룹의 min/desired/max를 pause 때 저장한 값으로 복구한다. 노드 Ready와 VPC CNI·CoreDNS·EBS CSI·Pod Identity Agent를 확인한다. **노드 수만으로 AZ 배치가 보장되는 것은 아니다.** 2a/2b 양쪽 PVC를 연결할 수 있는 노드가 있는지 확인한다. 없으면 볼륨 affinity를 지우지 말고 해당 AZ 용량 문제를 해결한다.
+2.5. Karpenter 컨트롤러를 pause 전 replica로 되돌려 Ready를 확인하고, NodePool `limits`를 pause 전 값으로 되돌린다. 2026-11-06 state 파일처럼 Karpenter 값이 없으면 `demo-stack.json`의 `karpenter.defaults`(컨트롤러 1, CPU 4·메모리 16Gi)를 쓴다.
 3. ESO 동기화·LB Controller 준비, RabbitMQ·Redis StatefulSet 원래 replica 복구와 PVC 연결·데이터 보존을 확인한다. 새 PVC나 비밀번호로 대체하지 않는다. 복원 DB가 아니라 동일 DB 재개라면 seed/migration을 무조건 재실행하지 않는다.
 4. core·learning·report-api 등 의존 서비스를 복구하고 scoring·ai·report-worker를 원래 replica로 복구한다. 모델·프롬프트·큐·DB 연결과 모든 앱 readiness를 확인한다. observability도 원래 replica로 복구하고 datasource·경보 평가 상태를 확인한다.
 5. 외부 유입 차단을 해제하기 전에 로그인→학습 제출→리포트 조회를 확인한다. 검증 계정·횟수를 미리 정해 사용 한도와 실제 데이터 영향을 기록한다. 경보 silence를 종료하고 잔여 작업·DLQ·오류를 점검한다.
-6. 실제 중단/재개 시간과 실패 항목을 기록한다. 아직 이 절차를 실행하지 않았으므로 RTO 달성을 주장하지 않는다. 노드/PVC/DB 복귀 실패 시 공개 재개를 보류하고 원인 해결 또는 검증된 백업 복구로 전환한다.
+6. 실제 중단/재개 시간과 실패 항목을 기록한다. 재개는 아직 실행하지 않았으므로 RTO 달성을 주장하지 않는다. 노드/PVC/DB 복귀 실패 시 공개 재개를 보류하고 원인 해결 또는 검증된 백업 복구로 전환한다.
 
-장기 철거는 별도 단계다. 현재 eksctl 전체 생성 설정·RDS bootstrap·Secret 복구·초기 데이터·새 환경 복원 검증이 미완료이므로 **클러스터 삭제 후 재생성 안은 지금 실행 가능한 축소안으로 취급하지 않는다.** 초기 순서는 [prod 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185)를 따른다.
+장기 철거는 별도 단계다. 2026-11-12에 EKS 클러스터만 지웠고(위 기록) RDS·S3·ECR·Secret은 남겼다. 새 계정·빈 DB에서의 전체 재현(RDS bootstrap·초기 데이터 포함)은 여전히 검증되지 않았다. 초기 순서는 [prod 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185)를 따른다.

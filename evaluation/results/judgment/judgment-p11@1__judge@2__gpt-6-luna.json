@@ -1,0 +1,297 @@
+{
+  "prompt": "judge@2",
+  "model": "gpt-6-luna",
+  "overall": {
+    "cases": 100,
+    "callErrors": 0,
+    "held": 12,
+    "heldRatio": 0.12,
+    "heldReasons": {
+      "INSUFFICIENT_EVIDENCE": 3,
+      "TOO_SHORT": 9
+    },
+    "quoteMismatchRatio": 0.0,
+    "humanHuman": {
+      "resultQwk": 0.809,
+      "elementAgreement": 0.88,
+      "elementKappa": 0.759
+    },
+    "humanAi": {
+      "judgedCases": 88,
+      "resultQwk": 0.792,
+      "elementAgreement": 0.875,
+      "elementKappa": 0.749
+    }
+  },
+  "scopes": {
+    "judgment/grade-5/essay": {
+      "cases": 20,
+      "callErrors": 0,
+      "held": 2,
+      "heldRatio": 0.1,
+      "heldReasons": {
+        "TOO_SHORT": 2
+      },
+      "quoteMismatchRatio": 0.0,
+      "humanHuman": {
+        "resultQwk": 0.944,
+        "elementAgreement": 0.95,
+        "elementKappa": 0.895
+      },
+      "humanAi": {
+        "judgedCases": 18,
+        "resultQwk": 0.74,
+        "elementAgreement": 0.861,
+        "elementKappa": 0.685
+      }
+    },
+    "judgment/grade-5/narrative": {
+      "cases": 60,
+      "callErrors": 0,
+      "held": 5,
+      "heldRatio": 0.083,
+      "heldReasons": {
+        "TOO_SHORT": 5
+      },
+      "quoteMismatchRatio": 0.0,
+      "humanHuman": {
+        "resultQwk": 0.816,
+        "elementAgreement": 0.878,
+        "elementKappa": 0.749
+      },
+      "humanAi": {
+        "judgedCases": 55,
+        "resultQwk": 0.832,
+        "elementAgreement": 0.888,
+        "elementKappa": 0.776
+      }
+    },
+    "judgment/grade-5/solution_steps": {
+      "cases": 20,
+      "callErrors": 0,
+      "held": 5,
+      "heldRatio": 0.25,
+      "heldReasons": {
+        "INSUFFICIENT_EVIDENCE": 3,
+        "TOO_SHORT": 2
+      },
+      "quoteMismatchRatio": 0.0,
+      "humanHuman": {
+        "resultQwk": 0.701,
+        "elementAgreement": 0.817,
+        "elementKappa": 0.629
+      },
+      "humanAi": {
+        "judgedCases": 15,
+        "resultQwk": 0.676,
+        "elementAgreement": 0.844,
+        "elementKappa": 0.68
+      }
+    }
+  },
+  "missions": {
+    "DEMO-11-G5-ANALYZE": {
+      "cases": 20,
+      "callErrors": 0,
+      "held": 1,
+      "heldRatio": 0.05,
+      "heldReasons": {
+        "TOO_SHORT": 1
+      },
+      "quoteMismatchRatio": 0.0,
+      "humanHuman": {
+        "resultQwk": 0.755,
+        "elementAgreement": 0.8,
+        "elementKappa": 0.6
+      },
+      "humanAi": {
+        "judgedCases": 19,
+        "resultQwk": 0.845,
+        "elementAgreement": 0.869,
+        "elementKappa": 0.737
+      }
+    },
+    "DEMO-12-G5-EVALUATE": {
+      "cases": 20,
+      "callErrors": 0,
+      "held": 2,
+      "heldRatio": 0.1,
+      "heldReasons": {
+        "TOO_SHORT": 2
+      },
+      "quoteMismatchRatio": 0.0,
+      "humanHuman": {
+        "resultQwk": 0.944,
+        "elementAgreement": 0.95,
+        "elementKappa": 0.895
+      },
+      "humanAi": {
+        "judgedCases": 18,
+        "resultQwk": 0.74,
+        "elementAgreement": 0.861,
+        "elementKappa": 0.685
+      }
+    },
+    "DEMO-13-G5-CREATE": {
+      "cases": 20,
+      "callErrors": 0,
+      "held": 2,
+      "heldRatio": 0.1,
+      "heldReasons": {
+        "TOO_SHORT": 2
+      },
+      "quoteMismatchRatio": 0.0,
+      "humanHuman": {
+        "resultQwk": 0.826,
+        "elementAgreement": 0.883,
+        "elementKappa": 0.755
+      },
+      "humanAi": {
+        "judgedCases": 18,
+        "resultQwk": 0.857,
+        "elementAgreement": 0.898,
+        "elementKappa": 0.796
+      }
+    },
+    "DEMO-14-G5-SOLVE": {
+      "cases": 20,
+      "callErrors": 0,
+      "held": 5,
+      "heldRatio": 0.25,
+      "heldReasons": {
+        "INSUFFICIENT_EVIDENCE": 3,
+        "TOO_SHORT": 2
+      },
+      "quoteMismatchRatio": 0.0,
+      "humanHuman": {
+        "resultQwk": 0.701,
+        "elementAgreement": 0.817,
+        "elementKappa": 0.629
+      },
+      "humanAi": {
+        "judgedCases": 15,
+        "resultQwk": 0.676,
+        "elementAgreement": 0.844,
+        "elementKappa": 0.68
+      }
+    },
+    "DEMO-15-G5-REFLECT": {
+      "cases": 20,
+      "callErrors": 0,
+      "held": 2,
+      "heldRatio": 0.1,
+      "heldReasons": {
+        "TOO_SHORT": 2
+      },
+      "quoteMismatchRatio": 0.0,
+      "humanHuman": {
+        "resultQwk": 0.856,
+        "elementAgreement": 0.95,
+        "elementKappa": 0.895
+      },
+      "humanAi": {
+        "judgedCases": 18,
+        "resultQwk": 0.784,
+        "elementAgreement": 0.898,
+        "elementKappa": 0.796
+      }
+    }
+  },
+  "elements": {
+    "DEMO-11-G5-ANALYZE/e1": {
+      "cases": 20,
+      "judgedCases": 19,
+      "humanHumanAgreement": 0.85,
+      "humanAiAgreement": 0.921
+    },
+    "DEMO-11-G5-ANALYZE/e2": {
+      "cases": 20,
+      "judgedCases": 19,
+      "humanHumanAgreement": 0.7,
+      "humanAiAgreement": 0.868
+    },
+    "DEMO-11-G5-ANALYZE/e3": {
+      "cases": 20,
+      "judgedCases": 19,
+      "humanHumanAgreement": 0.85,
+      "humanAiAgreement": 0.816
+    },
+    "DEMO-12-G5-EVALUATE/e1": {
+      "cases": 20,
+      "judgedCases": 18,
+      "humanHumanAgreement": 1.0,
+      "humanAiAgreement": 0.889
+    },
+    "DEMO-12-G5-EVALUATE/e2": {
+      "cases": 20,
+      "judgedCases": 18,
+      "humanHumanAgreement": 1.0,
+      "humanAiAgreement": 0.944
+    },
+    "DEMO-12-G5-EVALUATE/e3": {
+      "cases": 20,
+      "judgedCases": 18,
+      "humanHumanAgreement": 0.85,
+      "humanAiAgreement": 0.75
+    },
+    "DEMO-13-G5-CREATE/e1": {
+      "cases": 20,
+      "judgedCases": 18,
+      "humanHumanAgreement": 0.9,
+      "humanAiAgreement": 0.889
+    },
+    "DEMO-13-G5-CREATE/e2": {
+      "cases": 20,
+      "judgedCases": 18,
+      "humanHumanAgreement": 0.85,
+      "humanAiAgreement": 0.917
+    },
+    "DEMO-13-G5-CREATE/e3": {
+      "cases": 20,
+      "judgedCases": 18,
+      "humanHumanAgreement": 0.9,
+      "humanAiAgreement": 0.889
+    },
+    "DEMO-14-G5-SOLVE/e1": {
+      "cases": 20,
+      "judgedCases": 15,
+      "humanHumanAgreement": 0.8,
+      "humanAiAgreement": 0.733
+    },
+    "DEMO-14-G5-SOLVE/e2": {
+      "cases": 20,
+      "judgedCases": 15,
+      "humanHumanAgreement": 0.8,
+      "humanAiAgreement": 0.967
+    },
+    "DEMO-14-G5-SOLVE/e3": {
+      "cases": 20,
+      "judgedCases": 15,
+      "humanHumanAgreement": 0.85,
+      "humanAiAgreement": 0.833
+    },
+    "DEMO-15-G5-REFLECT/e1": {
+      "cases": 20,
+      "judgedCases": 18,
+      "humanHumanAgreement": 0.95,
+      "humanAiAgreement": 0.917
+    },
+    "DEMO-15-G5-REFLECT/e2": {
+      "cases": 20,
+      "judgedCases": 18,
+      "humanHumanAgreement": 0.9,
+      "humanAiAgreement": 0.889
+    },
+    "DEMO-15-G5-REFLECT/e3": {
+      "cases": 20,
+      "judgedCases": 18,
+      "humanHumanAgreement": 1.0,
+      "humanAiAgreement": 0.889
+    }
+  },
+  "dataset": {
+    "id": "judgment-p11",
+    "version": "1",
+    "cases": 100
+  }
+}

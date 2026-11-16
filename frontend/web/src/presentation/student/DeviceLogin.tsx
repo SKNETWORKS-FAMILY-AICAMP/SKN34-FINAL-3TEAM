@@ -15,6 +15,7 @@ import type { DeviceLoginState, StudentProfile } from '../../domain/studentDevic
 import { useSession } from '../auth/sessionContext.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { PinPad } from './PinPad.tsx'
+import { Companion } from './world/Companion.tsx'
 import '../classroom.css'
 
 const DemoStudentEntry = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' ? lazy(() => import('./DemoStudentEntry.tsx')) : null
@@ -24,6 +25,11 @@ const code = (e: unknown) => (e instanceof ApiError ? e.problem.code : '')
 /**
  * 자녀 기기 진입 (P01 개정, FN-ACC-05). 학부모가 등록한 기기에서만 프로필·PIN 화면이 열린다.
  * 미등록·해제·만료 기기(401 STUDENT_DEVICE_INVALID)에는 PIN 화면 대신 코드 등록 화면만 보인다.
+ *
+ * 화면(#648, 설계 캔버스 Login·LoginSingle = SC-02-001~003): 밝은 하늘 틀 + 흰 종이 한 장에 한 단계씩.
+ * 등록은 크림 카드 폼, 자녀 선택은 기울인 프로필 카드, PIN은 왼쪽 인사(솜뭉치)·오른쪽 키패드 카드.
+ * 로고·서비스 문구는 두지 않는다(SC-02-001 Check Point) — 캔버스의 '사고뭉치' 글자와 둥근 띠 문구는 뺐다.
+ * 보호자 로그인은 모든 단계에서 오른쪽 위 한 곳에만 둔다. 화면 안 스크롤 없이 1440·768·390 한 화면에 들어간다.
  */
 export function DeviceLogin() {
   const [registered, setRegistered] = useState(false)
@@ -35,29 +41,36 @@ export function DeviceLogin() {
       <div className="cj-app-student">
       {/* 로그인 전이라 학생 설정을 모르므로 기본 테마(호수)로 그린다 */}
       <ThemeFrame>
-      <main className="device-login">
-        <section className="device-card" aria-busy={profiles.isPending}>
-          {DemoStudentEntry && <Suspense fallback={null}><DemoStudentEntry /></Suspense>}
-          {registered && !unregistered && <p role="status">기기 등록을 마쳤어요. 이제 내 PIN으로 들어가요.</p>}
-          {isDemo && <DemoDeviceScenario onApplied={() => void cache.invalidateQueries({ queryKey: ['student-device'] })} />}
+      <div className="device-login">
+        <div className="sl-top">
+          {(DemoStudentEntry || isDemo) && (
+            <div className="sl-demo">
+              {DemoStudentEntry && <Suspense fallback={null}><DemoStudentEntry /></Suspense>}
+              {isDemo && <DemoDeviceScenario onApplied={() => void cache.invalidateQueries({ queryKey: ['student-device'] })} />}
+            </div>
+          )}
+          <GuardianLogin />
+        </div>
+        <main className="sl-main" aria-busy={profiles.isPending}>
           {profiles.isPending ? (
-            <p role="status">이 기기를 확인하고 있어요.</p>
+            <p className="sl-note" role="status">이 기기를 확인하고 있어요.</p>
           ) : unregistered ? (
             <Registration onRegistered={() => setRegistered(true)} />
           ) : profiles.error instanceof ApiError && profiles.error.problem.status === 404 ? (
             // 백엔드에 기기·PIN API(명세 3.11)가 아직 없을 때. 원시 404 대신 동석 진입을 안내한다.
-            <>
-              <h1>자녀 기기 로그인은 준비 중이에요</h1>
-              <p className="lead">지금은 보호자가 로그인한 뒤 자녀를 골라 함께 시작할 수 있어요.</p>
-              <GuardianLinks />
-            </>
+            <div className="sl-center">
+              <h1 className="sl-plain-title">자녀 기기 로그인은 준비 중이에요</h1>
+              <p className="sl-lead">지금은 보호자가 로그인한 뒤 자녀를 골라 함께 시작할 수 있어요.</p>
+            </div>
           ) : profiles.error ? (
-            <ErrorNotice error={profiles.error} retry={() => void profiles.refetch()} />
+            <div className="sl-center">
+              <ErrorNotice error={profiles.error} retry={() => void profiles.refetch()} />
+            </div>
           ) : (
-            <ProfileAndPin profiles={profiles.data ?? []} />
+            <ProfileAndPin profiles={profiles.data ?? []} justRegistered={registered} />
           )}
-        </section>
-      </main>
+        </main>
+      </div>
       </ThemeFrame>
       </div>
     </div>
@@ -74,19 +87,23 @@ function Registration({ onRegistered }: { onRegistered: () => void }) {
     setParams((p) => { p.delete('code'); return p }, { replace: true, state: location.state })
   })
   const normalized = normalizePairingCode(value)
+  // core는 빈 이름·80자 초과를 VALIDATION_FAILED로 거부한다(StudentAuthService.register). 보내기 전에 막고 이유를 알려 준다
+  const name = label.trim()
+  const [triedEmptyName, setTriedEmptyName] = useState(false)
   return (
-    <>
-      <h1>이 기기를 학습용으로 등록해요</h1>
-      <p className="lead">
+    <div className="sl-register">
+      <h1 className="st-title-mix"><span>이 기기를 </span>학습용으로 등록해요</h1>
+      <p className="sl-lead">
         보호자 화면 ‘자녀 기기·PIN’에서 받은 {PAIRING_CODE_LENGTH}자리 코드를 입력해 주세요. 코드는 10분
         동안 한 번만 쓸 수 있어요.
       </p>
       <form
-        className="ws-form"
+        className="sl-card sl-register-form"
         onSubmit={(e) => {
           e.preventDefault()
           if (!validPairingCode(normalized)) return
-          register.mutate({ code: normalized, label })
+          if (!name) { setTriedEmptyName(true); return }
+          register.mutate({ code: normalized, label: name })
         }}
       >
         <label>
@@ -96,6 +113,7 @@ function Registration({ onRegistered }: { onRegistered: () => void }) {
             aria-label="등록 코드"
             autoComplete="off"
             spellCheck={false}
+            placeholder="예: AB12CD34"
             maxLength={PAIRING_CODE_LENGTH + 2}
             value={value}
             onChange={(e) => setValue(e.target.value)}
@@ -103,29 +121,42 @@ function Registration({ onRegistered }: { onRegistered: () => void }) {
           />
         </label>
         <label>
-          기기 이름 <small>보호자가 기기 목록에서 알아볼 이름</small>
+          <span>기기 이름 <small>보호자가 기기 목록에서 알아볼 이름</small></span>
           <input
+            className="device-name"
             aria-label="기기 이름"
             placeholder="예: 거실 컴퓨터"
             maxLength={30}
+            aria-required="true"
+            aria-invalid={triedEmptyName && !name ? true : undefined}
+            aria-describedby={triedEmptyName && !name ? 'device-name-error' : undefined}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
           />
         </label>
+        {triedEmptyName && !name && <p className="sl-alert" role="alert" id="device-name-error">기기 이름을 적어 주세요. 보호자가 기기 목록에서 이 이름으로 알아봐요.</p>}
         {value && !validPairingCode(normalized) && (
-          <p role="alert">코드는 영어 대문자와 숫자 {PAIRING_CODE_LENGTH}자리예요.</p>
+          <p className="sl-alert" role="alert">코드는 영어 대문자와 숫자 {PAIRING_CODE_LENGTH}자리예요.</p>
         )}
-        <button className="cj-primary" disabled={register.isPending || !validPairingCode(normalized)}>
+        <button className="sl-go" disabled={register.isPending || !validPairingCode(normalized)}>
           {register.isPending ? '등록하는 중' : '이 기기 등록하기'}
         </button>
         <ErrorNotice error={register.error} />
       </form>
-      <GuardianLinks />
-    </>
+    </div>
   )
 }
 
-function ProfileAndPin({ profiles }: { profiles: StudentProfile[] }) {
+/** 고른 친구를 맞이하는 솜뭉치(기본 동행 캐릭터). 로그인 전이라 학생이 고른 캐릭터는 모른다. 꾸밈 그림이라 읽지 않는다 */
+function Buddy() {
+  return (
+    <span className="sl-buddy" aria-hidden="true">
+      <Companion friend="cotton" size={190} decorative />
+    </span>
+  )
+}
+
+function ProfileAndPin({ profiles, justRegistered }: { profiles: StudentProfile[]; justRegistered: boolean }) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [state, setState] = useState<DeviceLoginState | null>(null)
@@ -137,37 +168,43 @@ function ProfileAndPin({ profiles }: { profiles: StudentProfile[] }) {
   // 기기에 자녀가 한 명이면 프로필 선택을 건너뛴다 (#59 확인 결과)
   const single = profiles.length === 1 && !showAll
   const selected = profiles.find((p) => p.childId === (single ? profiles[0].childId : chosen))
+  const registeredNote = justRegistered && (
+    <p className="sl-note sl-done" role="status">기기 등록을 마쳤어요. 이제 내 PIN으로 들어가요.</p>
+  )
 
   if (!profiles.length)
     return (
-      <>
-        <h1>이 기기에 등록된 친구가 없어요</h1>
-        <p className="lead">보호자에게 기기를 다시 등록해 달라고 해 주세요.</p>
-        <GuardianLinks />
-      </>
+      <div className="sl-center">
+        <h1 className="sl-plain-title">이 기기에 등록된 친구가 없어요</h1>
+        <p className="sl-lead">보호자에게 기기를 다시 등록해 달라고 해 주세요.</p>
+      </div>
     )
 
   if (!selected)
     return (
-      <>
-        <h1>누가 공부할까요?</h1>
-        <div className="device-profiles">
+      <div className="sl-choose">
+        <h1 className="st-title-mix"><span>누가 </span>공부할까요?</h1>
+        <ul className="sl-profiles">
           {profiles.map((p) => (
-            <button
-              key={p.childId}
-              type="button"
-              onClick={() => {
-                setChosen(p.childId)
-                setState(null)
-              }}
-            >
-              {p.nickname}
-              <small>{p.pinLocked ? '잠겨 있어요' : p.pinSet ? 'PIN으로 들어가요' : 'PIN이 아직 없어요'}</small>
-            </button>
+            <li key={p.childId}>
+              <button
+                type="button"
+                className="sl-profile"
+                data-locked={p.pinLocked || undefined}
+                onClick={() => {
+                  setChosen(p.childId)
+                  setState(null)
+                }}
+              >
+                <span className="sl-avatar" aria-hidden="true">{[...p.nickname][0]}</span>
+                <strong>{p.nickname}</strong>
+                <small>{p.pinLocked ? '잠겨 있어요' : p.pinSet ? 'PIN으로 들어가요' : 'PIN이 아직 없어요'}</small>
+              </button>
+            </li>
           ))}
-        </div>
-        <GuardianLinks />
-      </>
+        </ul>
+        {registeredNote || <p className="sl-note">보호자가 등록한 기기에서만 PIN으로 들어올 수 있어요.</p>}
+      </div>
     )
 
   const back = () => {
@@ -176,23 +213,37 @@ function ProfileAndPin({ profiles }: { profiles: StudentProfile[] }) {
     setState(null)
   }
   const locked = selected.pinLocked || state?.kind === 'locked'
+  const notSet = !locked && (!selected.pinSet || state?.kind === 'pin-not-set')
+  const blocked = locked || notSet
   return (
-    <>
-      <h1>{selected.nickname}, 안녕하세요!</h1>
-      {locked ? (
-        <p className="device-notice warn" role="alert">
-          PIN이 잠겼어요. 보호자에게 PIN을 다시 정해 달라고 해 주세요.
-        </p>
-      ) : !selected.pinSet || state?.kind === 'pin-not-set' ? (
-        <p className="device-notice warn" role="alert">
-          아직 PIN이 없어요. 보호자와 함께 로그인해서 시작해 주세요.
-        </p>
-      ) : (
-        <>
-          <p className="lead">내 PIN을 눌러 주세요.</p>
+    <div className={blocked ? 'sl-blocked' : 'sl-typing'}>
+      <div className="sl-hello">
+        <Buddy />
+        <h1 className="st-title-mix">{selected.nickname}<span>, 안녕하세요!</span></h1>
+        {locked ? (
+          <p className="sl-alert" role="alert">
+            PIN이 잠겼어요. 보호자에게 PIN을 다시 정해 달라고 해 주세요.
+          </p>
+        ) : notSet ? (
+          <p className="sl-alert" role="alert">
+            아직 PIN이 없어요. 보호자와 함께 로그인해서 시작해 주세요.
+          </p>
+        ) : (
+          registeredNote || (single && <p className="sl-note">이 기기에는 {selected.nickname}만 등록돼 있어요.</p>)
+        )}
+        {(profiles.length > 1 || single) && (
+          <button type="button" className="sl-pill" onClick={back}>
+            {single ? '내가 아니에요' : <><span aria-hidden="true">←</span>다른 친구 고르기</>}
+          </button>
+        )}
+      </div>
+      {!blocked && (
+        <section className="sl-card sl-pin" aria-label="PIN 입력">
+          <p className="sl-pin-title">내 PIN을 눌러 주세요.</p>
           <PinPad
             label="PIN 숫자 키패드"
             busy={login.isPending}
+            message={<LoginMessage state={state} />}
             onSubmit={(pin) => {
               setState(null)
               login.mutate(
@@ -214,18 +265,9 @@ function ProfileAndPin({ profiles }: { profiles: StudentProfile[] }) {
               )
             }}
           />
-          <LoginMessage state={state} />
-        </>
+        </section>
       )}
-      <div className="device-links">
-        {(profiles.length > 1 || single) && (
-          <button type="button" className="cj-secondary" onClick={back}>
-            {single ? '내가 아니에요' : '다른 친구 고르기'}
-          </button>
-        )}
-        <GuardianLinks inline />
-      </div>
-    </>
+    </div>
   )
 }
 
@@ -242,26 +284,25 @@ function LoginMessage({ state }: { state: DeviceLoginState | null }) {
             ? state.message
             : ''
   return text ? (
-    <p className="device-notice warn" role="alert">
+    <p className="sl-alert" role="alert">
       {text}
     </p>
   ) : null
 }
 
-/** 학생 → 학부모 화면 전환은 항상 학부모 로그인을 거친다 (FN-ACC-05). */
-function GuardianLinks({ inline = false }: { inline?: boolean }) {
-  const button = (
-    <button type="button" className="cj-secondary" onClick={requireParentLogin}>
+/** 학생 → 학부모 화면 전환은 항상 학부모 로그인을 거친다 (FN-ACC-05). 모든 단계에서 오른쪽 위 한 곳에 둔다 */
+function GuardianLogin() {
+  return (
+    <button type="button" className="sl-pill sl-guardian" onClick={requireParentLogin}>
       보호자 로그인
     </button>
   )
-  return inline ? button : <div className="device-links">{button}</div>
 }
 
 /** 개발(MSW) 전용 상태 선택기: 해제·만료 기기, PIN 잠금·미설정 시나리오 */
 function DemoDeviceScenario({ onApplied }: { onApplied: () => void }) {
   return (
-    <label className="ux-help">
+    <label className="sl-demo-state">
       기기 상태 시연
       <select
         aria-label="기기 상태 시연"

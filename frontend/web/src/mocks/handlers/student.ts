@@ -10,6 +10,7 @@ import {
   permissionsFor,
   mockAccountChildren,
   mockConsentRequired, mockGuardianConsentRequired,
+  mockPasswordParents, mockPasswordLogin, passwordParentKey,
 } from '../fixtures/accounts.ts'
 import {
   fixtureStore as store,
@@ -22,6 +23,11 @@ import {
 import { mockLooks, persistLooks } from '../fixtures/studentLook.ts'
 import { attemptGuardianPassword, lockParentSession, parentSessionLocked } from '../fixtures/guardianPassword.ts'
 import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook.ts'
+import type { StudentLook } from '../../domain/studentLook.ts'
+import { companionKey, FURNITURE_SLOTS, ITEM_SLOTS, themeKey } from '../../domain/retention.ts'
+import type { AttemptContext } from '../../domain/retention.ts'
+import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, weeklyThemeFor, weekRules } from '../fixtures/retention.ts'
+import { mockPremium } from '../fixtures/payments.ts'
 import { difficultyCodes } from '../../domain/learning.ts'
 
 let child: Child | undefined = store.snapshot().session?.child,
@@ -125,6 +131,45 @@ async function linked(id: string) {
     throw new ApiError({ status: 403, code: 'CHILD_NOT_LINKED', title: '연결된 자녀가 아닙니다.' })
   return c
 }
+/** 참여 기능 목업(handlers/retention.ts)이 쓰는 현재 학생. 학생 토큰이 아니면 403. */
+export function mockStudent() {
+  return studentOnly()
+}
+export const mockStudentHome = (c: Child) => store.home(c)
+/** 추억 앨범 목업(P27)이 회차 문제를 기존 시도 상세로 잇는 데 쓰는 그 학생의 최근 시도 */
+export const mockLatestAttempt = (studentId: string, missionId: string) =>
+  store.snapshot().attempts.filter((a) => a.studentId === studentId && a.mission.id === missionId)
+    .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0]?.attemptId ?? null
+/** 시작할 때 받은 시도 종류(목업). 기록 목록의 `context`(#700)로 돌려준다(#710) */
+const startedContexts = new Map<string, AttemptContext>()
+/** 기록 목록 `context`(#700, 선택 칸): 시작 때 받은 값, 없으면(예전 목업 기록) 이번 주 테마 문제면 THEME_DAY, 아니면 EXTRA */
+async function withContexts<T extends { attemptId: string; mission: { id: string } }>(owner: Child, rows: T[]) {
+  const home = await store.home(owner)
+  const week = weeklyThemeFor(owner.id, home.missions, owner.grade, mockPremium(owner.id) ? 'PREMIUM' : 'FREE')
+  const theme = new Set(week.days.map((d) => d.missionId))
+  return rows.map((r) => ({ ...r, context: startedContexts.get(r.attemptId) ?? (theme.has(r.mission.id) ? 'THEME_DAY' : 'EXTRA') }))
+}
+const startContext = async (request: Request) => {
+  const text = await request.clone().text()
+  return (text ? (JSON.parse(text) as { context?: AttemptContext }) : {}).context
+}
+/** 2.11 시작 맥락 검사(목업). 맥락 없이 부르는 기존 화면은 검사하지 않는다. */
+async function checkContext(request: Request, missionId: string) {
+  const context = await startContext(request)
+  if (!context || mockRole !== 'STUDENT' || !child) return
+  const home = await store.home(child)
+  const existing = home.missions.find((m) => m.id === missionId)?.status === 'IN_PROGRESS'
+  if (existing) return // 이어하기(200)는 요일 검사를 하지 않는다
+  const plan = mockPremium(child.id) ? 'PREMIUM' : 'FREE' // 이용권은 결제 목업 구독 한 곳에서 정함(#602)
+  const week = weeklyThemeFor(child.id, home.missions, child.grade, plan)
+  // 2026-11-10 개정(#484): 공개된(OPEN) 문제는 토요일(프리미엄 일요일)까지 새로 시작, 이미 마무리한 문제는 다시 풀기로.
+  if (context === 'THEME_DAY' && !week.days.some((d) => d.missionId === missionId && d.state === 'OPEN' && d.attemptStatus !== 'COMPLETED'))
+    throw new ApiError({ status: 409, code: 'THEME_DAY_CLOSED', title: '지금 새로 시작할 수 있는 테마 문제가 아니에요.' })
+  if (context === 'THEME_REVIEW' && !(weekRules(mockWeekday(), plan).weekend && week.review.missions.some((r) => r.missionId === missionId && r.completed)))
+    throw new ApiError({ status: 409, code: 'THEME_REVIEW_NOT_ALLOWED', title: '토요일에 이번 주 마무리한 문제만 다시 풀 수 있어요.' })
+  if (context === 'EXTRA' && !mockPremium(child.id))
+    throw new ApiError({ status: 403, code: 'PREMIUM_REQUIRED', title: '생각 유형별 추가 문제는 프리미엄에서 풀 수 있어요.' })
+}
 function studentOnly() {
   if (mockRole !== 'STUDENT' || !child)
     throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생만 바꿀 수 있는 설정입니다.' })
@@ -133,6 +178,23 @@ function studentOnly() {
 const id = (value: string | readonly string[] | undefined) => {
   if (!value) throw new Error('경로 식별값이 없습니다.')
   return String(value)
+}
+async function mockSignIn(email: string, password: string) {
+  const session = await store.login(email, password)
+  mockPasswordLogin.loginId = null
+  lockParentSession(false)
+  if (!permissionsFor(email).length)
+    store.replaceChildren(structuredClone(mockAccountChildren.get(email) ?? []))
+  mockIdentity.email = email
+  mockIdentity.permissions = permissionsFor(email)
+  mockRole = mockIdentity.permissions.length ? 'ADMIN' : 'PARENT'
+  if (mockRole === 'ADMIN')
+    store.restoreSnapshot({
+      ...store.snapshot(),
+      session: { role: 'ADMIN', permissions: mockIdentity.permissions },
+    })
+  child = undefined
+  return { ...session, role: mockRole, accessToken: issueToken() }
 }
 export const studentHandlers = [
   http.post('/api/v1/auth/login', ({ request }) =>
@@ -144,20 +206,61 @@ export const studentHandlers = [
           code: 'UNAUTHENTICATED',
           title: '시연 계정을 확인해 주세요.',
         })
-      const session = await store.login(data.email, data.password)
-      lockParentSession(false)
-      if (!permissionsFor(data.email).length)
-        store.replaceChildren(structuredClone(mockAccountChildren.get(data.email) ?? []))
-      mockIdentity.email = data.email
-      mockIdentity.permissions = permissionsFor(data.email)
-      mockRole = mockIdentity.permissions.length ? 'ADMIN' : 'PARENT'
-      if (mockRole === 'ADMIN')
-        store.restoreSnapshot({
-          ...store.snapshot(),
-          session: { role: 'ADMIN', permissions: mockIdentity.permissions },
-        })
-      child = undefined
-      return { ...session, role: mockRole, accessToken: issueToken() }
+      return mockSignIn(data.email, data.password)
+    }),
+  ),
+  // #369 core POST /auth/admin/login과 같은 계약: 관리자 시연 계정만, 실패는 모두 401 INVALID_CREDENTIALS.
+  http.post('/api/v1/auth/admin/login', ({ request }) =>
+    respond(async () => {
+      const data = (await request.json()) as { loginId?: string; password?: string }
+      const loginId = data.loginId?.trim() ?? ''
+      if (!permissionsFor(loginId).length || data.password !== 'demo-only')
+        throw new ApiError({ status: 401, code: 'INVALID_CREDENTIALS', title: '아이디 또는 비밀번호를 확인해 주세요.' })
+      return mockSignIn(loginId, 'demo-only')
+    }),
+  ),
+  // #415 core POST /auth/parent/signup·login과 같은 계약: ID는 영문·숫자 4~30자(소문자로 저장), 비밀번호 8~128자,
+  // 실패는 401 INVALID_CREDENTIALS, 연속 5회째부터 15분간 423 LOGIN_LOCKED.
+  http.post('/api/v1/auth/parent/signup', ({ request }) =>
+    respond(async () => {
+      const data = (await request.json()) as { loginId?: unknown; password?: unknown; name?: unknown }
+      const loginId = typeof data.loginId === 'string' ? data.loginId.trim().toLowerCase() : ''
+      const invalid = (title: string) => new ApiError({ status: 400, code: 'VALIDATION_FAILED', title })
+      if (!/^[a-z0-9]{4,30}$/.test(loginId)) throw invalid('아이디는 영문 소문자와 숫자 4~30자로 입력해 주세요.')
+      if (typeof data.password !== 'string' || data.password.length < 8 || data.password.length > 128) throw invalid('비밀번호는 8~128자로 입력해 주세요.')
+      if (typeof data.name !== 'string' || !data.name.trim() || data.name.trim().length > 80) throw invalid('이름을 확인해 주세요.')
+      if (mockPasswordParents.has(loginId)) throw new ApiError({ status: 409, code: 'LOGIN_ID_TAKEN', title: '이미 사용 중인 아이디입니다.' })
+      const email = passwordParentKey(loginId)
+      mockAccounts.add(email)
+      mockAccountChildren.set(email, [])
+      mockPasswordParents.set(loginId, { password: data.password, email, failed: 0, lockedUntil: 0 })
+      const issued = await mockSignIn(email, 'demo-only')
+      mockPasswordLogin.loginId = loginId
+      return { ...issued, nextAction: 'CONSENT_REQUIRED', startPath: '/parent/onboarding' }
+    }),
+  ),
+  http.post('/api/v1/auth/parent/login', ({ request }) =>
+    respond(async () => {
+      const data = (await request.json()) as { loginId?: unknown; password?: unknown }
+      const loginId = typeof data.loginId === 'string' ? data.loginId.trim().toLowerCase() : ''
+      const account = mockPasswordParents.get(loginId)
+      const invalid = () => new ApiError({ status: 401, code: 'INVALID_CREDENTIALS', title: '아이디 또는 비밀번호를 확인해 주세요.' })
+      if (!account) throw invalid()
+      if (account.lockedUntil > Date.now())
+        throw new ApiError({ status: 423, code: 'LOGIN_LOCKED', title: '로그인 시도가 많아 잠시 잠겼습니다. 15분 뒤 다시 시도해 주세요.' })
+      if (data.password !== account.password) {
+        account.failed += 1
+        if (account.failed >= 5) {
+          account.failed = 0
+          account.lockedUntil = Date.now() + 15 * 60_000
+          throw new ApiError({ status: 423, code: 'LOGIN_LOCKED', title: '로그인 시도가 많아 잠시 잠겼습니다. 15분 뒤 다시 시도해 주세요.' })
+        }
+        throw invalid()
+      }
+      account.failed = 0
+      const issued = await mockSignIn(account.email, 'demo-only')
+      mockPasswordLogin.loginId = loginId
+      return issued
     }),
   ),
   http.post('/api/v1/auth/refresh', () =>
@@ -221,6 +324,10 @@ export const studentHandlers = [
         ...s,
         ...(s.role === 'PARENT' ? { nextAction, startPath: nextAction === 'CONSENT_REQUIRED' ? '/parent/onboarding' : nextAction === 'CHILD_REGISTRATION_REQUIRED' ? '/parent/children/new' : '/parent/journal' } : {}),
         ...mockIdentity,
+        // #415: ID·비밀번호 계정은 email 대신 loginId, 재확인은 비밀번호로 한다.
+        ...(mockPasswordLogin.loginId
+          ? { email: null, loginId: mockPasswordLogin.loginId, authMethod: 'PASSWORD' }
+          : { loginId: (mockRole ?? s.role) === 'PARENT' ? mockIdentity.email : null, authMethod: 'GOOGLE' }),
         role: mockRole ?? s.role,
         permissions: s.role === 'ADMIN' ? (s.permissions ?? mockIdentity.permissions) : [],
       }
@@ -244,10 +351,29 @@ export const studentHandlers = [
     respond(async () => {
       guard(request)
       const me = studentOnly()
-      const body = (await request.json()) as { theme?: unknown; companion?: unknown }
+      const body = (await request.json()) as { theme?: unknown; companion?: unknown; equipped?: Record<string, unknown> }
       if (!isThemeId(body.theme) || !isCompanionId(body.companion))
         throw new ApiError({ status: 422, code: 'VALIDATION_FAILED', title: '고를 수 없는 테마나 캐릭터입니다.' })
-      const look = { theme: body.theme, companion: body.companion, updatedAt: new Date().toISOString() }
+      // P22: 잠긴 테마·캐릭터·아이템은 저장하지 않는다(409 LOOK_LOCKED). 잠금 전 저장 값은 해금 간주.
+      const before = mockLooks.get(me.id)
+      const keep = (key: string, old: string | undefined) => key === old || isUnlocked(me.id, key)
+      if (!keep(themeKey(body.theme), before && themeKey(before.theme)) || !keep(companionKey(body.companion), before && companionKey(before.companion)))
+        throw new ApiError({ status: 409, code: 'LOOK_LOCKED', title: '아직 해금하지 않은 꾸미기예요.' })
+      let equipped: StudentLook['equipped']
+      if (body.equipped !== undefined) {
+        // 가구 칸(P27, core #555 기준안): 생략하면 착용 유지, null이면 기본 스킨
+        equipped = { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null,
+          DESK: before?.equipped?.DESK ?? null, WALL: before?.equipped?.WALL ?? null, WARDROBE: before?.equipped?.WARDROBE ?? null }
+        for (const slot of [...ITEM_SLOTS, ...FURNITURE_SLOTS]) {
+          if (!(slot in body.equipped)) continue
+          const key = body.equipped?.[slot]
+          if (key === null || key === undefined) { equipped[slot] = null; continue }
+          if (typeof key !== 'string' || !isUnlocked(me.id, key))
+            throw new ApiError({ status: 409, code: 'LOOK_LOCKED', title: '아직 해금하지 않은 아이템이에요.' })
+          equipped[slot] = key
+        }
+      } else equipped = before?.equipped
+      const look: StudentLook = { theme: body.theme, companion: body.companion, ...(equipped ? { equipped } : {}), updatedAt: new Date().toISOString() }
       mockLooks.set(me.id, look)
       persistLooks()
       return look
@@ -310,7 +436,11 @@ export const studentHandlers = [
     respond(async () => {
       guard(request)
       const m = await store.mission(id(params.missionId), child!)
-      return wireAttempt(await store.start(m, child!))
+      await checkContext(request, m.id)
+      const started = await store.start(m, child!)
+      const context = await startContext(request)
+      if (context && !startedContexts.has(started.attemptId)) startedContexts.set(started.attemptId, context)
+      return wireAttempt(started)
     }, 201),
   ),
   http.get('/api/v1/attempts/:attemptId', ({ request, params }) =>
@@ -438,7 +568,14 @@ export const studentHandlers = [
       const raw = await request.json() as { difficulty: string; text: string }
       const difficulty = ({ EASY: '쉬웠어', NORMAL: '보통', HARD: '어려웠어' } as const)[raw.difficulty as 'EASY' | 'NORMAL' | 'HARD']
       if (!difficulty) throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: '난이도 코드를 확인해 주세요.' })
-      return wireAttempt(await store.reflect(id(params.attemptId), { difficulty, text: raw.text }))
+      const a = await store.reflect(id(params.attemptId), { difficulty, text: raw.text })
+      // core가 학습 완료 응답 경로에서 하는 적립·공유를 흉내 낸다(P20·P21).
+      if (mockRole === 'STUDENT' && child && a.status === 'COMPLETED') {
+        const last = a.answers.at(-1)
+        onMissionCompleted(child, a.mission, last?.text ?? '', (mockLooks.get(child.id) ?? DEFAULT_LOOK).companion)
+        persistRetention()
+      }
+      return wireAttempt(a)
     }),
   ),
   http.post('/api/v1/attempts/:attemptId/self-assessment', ({ request, params }) =>
@@ -464,7 +601,7 @@ export const studentHandlers = [
       const q = new URL(request.url).searchParams
       const period = { from: q.get('from') ?? '2000-01-01', to: q.get('to') ?? '2099-12-31' }
       const index = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20)
-      const rows = await store.records(child!, 'STUDENT', period)
+      const rows = await withContexts(child!, await store.records(child!, 'STUDENT', period))
       return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
         studentId: child!.id, state: rows.length ? 'OK' : 'NO_RECORD', period, inclusionRule: 'P08' }
     }),
@@ -488,11 +625,12 @@ export const studentHandlers = [
       guard(request)
       const url = new URL(request.url)
       requireShared(id(params.childId))
+      const owner = await linked(id(params.childId))
       return page(
-        await store.records(await linked(id(params.childId)), 'PARENT', {
+        await withContexts(owner, await store.records(owner, 'PARENT', {
           from: url.searchParams.get('from')!,
           to: url.searchParams.get('to')!,
-        }),
+        })),
       )
     }),
   ),

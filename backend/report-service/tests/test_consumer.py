@@ -36,7 +36,11 @@ class FakeExchange:
 
 class FakeChannel:
     def __init__(self) -> None:
-        self.default_exchange = FakeExchange()
+        self.retry_exchange = FakeExchange()
+
+    async def get_exchange(self, name: str, ensure: bool = True) -> FakeExchange:
+        assert (name, ensure) == ("report.retry", False)
+        return self.retry_exchange
 
 
 def envelope_body() -> bytes:
@@ -65,14 +69,14 @@ def test_success_acks() -> None:
     message = FakeMessage(envelope_body())
     channel = run(message, ok)
     assert message.acked and not message.rejected
-    assert channel.default_exchange.published == []
+    assert channel.retry_exchange.published == []
 
 
 def test_failure_republishes_to_retry_queue_with_count() -> None:
     message = FakeMessage(envelope_body(), {RETRY_COUNT_HEADER: 1})
     channel = run(message, fail)
 
-    [(retry, routing_key)] = channel.default_exchange.published
+    [(retry, routing_key)] = channel.retry_exchange.published
     assert routing_key == f"{QUEUE}.retry.2"
     assert retry.headers[RETRY_COUNT_HEADER] == 2
     assert json.loads(retry.body) == json.loads(message.body)
@@ -83,7 +87,7 @@ def test_failure_over_max_retries_rejects_to_dlq() -> None:
     message = FakeMessage(envelope_body(), {RETRY_COUNT_HEADER: 2})
     channel = run(message, fail)
     assert message.rejected and not message.acked
-    assert channel.default_exchange.published == []
+    assert channel.retry_exchange.published == []
 
 
 def test_malformed_envelope_rejects_without_retry() -> None:
@@ -96,7 +100,7 @@ def test_malformed_envelope_rejects_without_retry() -> None:
     message = FakeMessage(b"not-json")
     channel = run(message, handler)
     assert message.rejected and not called
-    assert channel.default_exchange.published == []
+    assert channel.retry_exchange.published == []
 
 
 def test_core_jackson_envelope_is_accepted() -> None:

@@ -1,5 +1,6 @@
 package com.sagomungchi.core.admin.domain
 
+import com.sagomungchi.core._common.json.JsonObject
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -22,12 +23,13 @@ data class OperationJob(val jobId: UUID, val type: OperationJobType, val status:
     val retryable: Boolean, val retryUnavailableReason: String?, val retryOfJobId: UUID? = null, val retryJobId: UUID? = null)
 data class OperationCount(val type: OperationJobType, val status: String, val count: Long)
 data class OperationAudit(val id: UUID, val actorUserId: UUID, val action: String, val targetType: String,
-    val targetId: UUID?, val result: String, val createdAt: Instant)
+    val targetId: UUID?, val result: String, val createdAt: Instant, val detail: JsonObject? = null)
 /** Free text from providers and legacy columns never becomes an operator-facing error. */
 object OperationErrors {
     private val safe = setOf("REDIS_PUBLISH_FAILED","GENERATION_FAILED","GENERATOR_NOT_CONFIGURED",
         "JOB_RETRY_UNAVAILABLE","JOB_NOT_FAILED","JOB_RETRY_IN_PROGRESS","SUPERSEDED","AI_UNAVAILABLE",
         "AI_TIMEOUT","STREAM_DISCONNECTED","CONVERSATION_FAILED",
-        "STREAM_INTERRUPTED","ANALYSIS_FAILED","ANALYSIS_TIMEOUT","AI_INVALID_RESPONSE","LEARNING_INVALID_RESPONSE","USAGE_LIMIT_REACHED","ANALYSIS_USAGE_UNAVAILABLE","CHILD_NOT_LINKED","CONSENT_REQUIRED","PAYMENT_ENTITLEMENT_UNAVAILABLE","PRODUCT_FEATURE_DISABLED","FORBIDDEN","STUDENT_DELETED","REPORT_NOT_CREATED","REPORT_EXECUTION_ABANDONED")
+        "STREAM_INTERRUPTED","ANALYSIS_FAILED","ANALYSIS_TIMEOUT","AI_INVALID_RESPONSE","LEARNING_INVALID_RESPONSE","USAGE_LIMIT_REACHED","ANALYSIS_USAGE_UNAVAILABLE","CHILD_NOT_LINKED","CONSENT_REQUIRED","PAYMENT_ENTITLEMENT_UNAVAILABLE","PRODUCT_FEATURE_DISABLED","FORBIDDEN","STUDENT_DELETED","REPORT_NOT_CREATED","REPORT_EXECUTION_ABANDONED",
+        "REPORT_NOT_FOUND","REPORT_UNAVAILABLE","REPORT_CONTRACT_INVALID","REPORT_SCOPE_REJECTED")
     fun code(value: String?): String? = value?.let { if (it in safe) it else "REDACTED_ERROR" }
 }

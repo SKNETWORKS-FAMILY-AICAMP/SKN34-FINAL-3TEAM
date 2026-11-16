@@ -54,6 +54,24 @@ class ReportMessagingTest : IntegrationTestSupport() {
         artifact("report-generate.json", payload)
     }
 
+    @Test fun `racing daily and weekly schedules of a Monday each publish one command through the real broker`() {
+        val user = parent(jdbc); val student = child(jdbc, user)
+        `when`(entitlement.narrativeEnabled(student)).thenReturn(false)
+        val day = ReportPeriod(WEEK.to.plusDays(1), WEEK.to.plusDays(1), ReportPeriodType.DAILY)
+        val week = ReportPeriod(WEEK.from.plusWeeks(1), WEEK.to.plusWeeks(1))
+        assertEquals(day.from, week.from)
+        val daily = race { jobs.scheduled(user, student, day) }.filterNotNull().single()
+        val weekly = race { jobs.scheduled(user, student, week) }.filterNotNull().single()
+        val command = receive("report.report.generate") { json.readTree(it.body)["data"]["jobId"].asText() == daily.jobId.toString() }
+        val payload = json.readTree(command.body)
+        assertEquals("DAILY", payload["data"]["periodType"].asText()); assertFalse(payload["data"]["narrativeEnabled"].asBoolean())
+        assertEquals(day.from.toString(), payload["data"]["periodTo"].asText())
+        val weeklyCommand = receive("report.report.generate") { json.readTree(it.body)["data"]["jobId"].asText() == weekly.jobId.toString() }
+        assertFalse(json.readTree(weeklyCommand.body)["data"].has("periodType"))
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM outbox_event WHERE subject=?", Int::class.java, student.toString()))
+        artifact("report-generate-daily.json", payload)
+    }
+
     @Test fun `concurrent parent regeneration reserves only one chance and keeps original report`() {
         val user = parent(jdbc); val student = child(jdbc, user); val original = completedJob(jdbc, student)
         val identity = actor(jdbc, user)
@@ -69,7 +87,7 @@ class ReportMessagingTest : IntegrationTestSupport() {
         assertFailsWith<IllegalStateException> {
             transaction.executeWithoutResult { jobs.scheduled(user, student, WEEK); error("abort after job and outbox writes") }
         }
-        assertNull(repository.scheduled(student, WEEK.from))
+        assertNull(repository.scheduled(student, WEEK))
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM outbox_event WHERE subject=?", Int::class.java, student.toString()))
         assertNotNull(jobs.scheduled(user, student, WEEK))
     }

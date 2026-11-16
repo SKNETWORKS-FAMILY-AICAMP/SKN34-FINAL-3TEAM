@@ -15,7 +15,15 @@ PROMPT_SCOPES = {
     "reportNarrative": "ai/report-narrative",
     "reportTemplate": "ai/report-template",
     "missionDraft": "ai/mission-draft",
+    "reportExplanation": "ai/report-explanation",
+    "themeDraft": "ai/theme-draft",
+    "memoryExplanation": "ai/memory-explanation",
+    "memoryQuery": "ai/memory-query",
 }
+# 프롬프트 외에 ai가 활성 범위를 보는 모델 (#477).
+# scope는 explanation/grade-{학년}/{narrative|essay}
+EXPLANATION_MODEL = "report-explanation"
+MODEL_NAMES = frozenset({EXPLANATION_MODEL})
 
 
 class ActiveVersionItem(BaseModel):
@@ -39,6 +47,13 @@ class ActiveVersionItem(BaseModel):
         if len(value) != len(set(value)):
             raise ValueError("duplicate scopes")
         return value
+
+
+def tracked(item: ActiveVersionItem) -> bool:
+    """ai가 보관하는 활성 항목: 아는 이름의 PROMPT와 설명 MODEL. 이름은 서로 겹치지 않음"""
+    return (item.kind == "PROMPT" and item.name in PROMPT_SCOPES) or (
+        item.kind == "MODEL" and item.name in MODEL_NAMES
+    )
 
 
 class ActiveSnapshot(BaseModel):

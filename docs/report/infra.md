@@ -1,0 +1,630 @@
+# 인프라·배포·운영
+
+로컬 kind 플랫폼, AWS 데모 배포, CD, 운영 경보·trace, 부하 시험의 결정과 근거. 실행 절차는 각 디렉터리 문서가 소유한다: [kind](../../infrastructure/kind/README.md), [platform-data](../../infrastructure/gitops/charts/platform-data/README.md), [prod 환경](../../infrastructure/gitops/environments/prod/README.md), [EKS](../../infrastructure/eks/README.md), [AWS](../../infrastructure/aws/README.md), [CD](../../infrastructure/cd/README.md), [부하 시험](../../evaluation/load/README.md). 경보 규칙·경계는 [아키텍처 4.7](../design/architecture.md#47-운영-경보-구성-경계-187).
+
+## 1. 로컬 플랫폼 (#17)
+
+[아키텍처 4.1](../design/architecture.md#41-환경-구분)의 로컬 Kubernetes 환경. 설정값은 [local values](../../infrastructure/gitops/environments/local/platform-data.yaml).
+
+### 1.1 환경 경계
+
+- 로컬은 kind 단일 노드에 PostgreSQL·RabbitMQ·Redis·MinIO, 운영은 RDS·S3와 RabbitMQ·Redis StatefulSet
+- 저장소 구성은 `platform-data` chart 하나. PostgreSQL·MinIO는 로컬 values에서만 활성화
+- 로컬 API·HTTP·HTTPS는 loopback에만 노출
+- 기준 PC: Windows 11, i5-1135G7 4코어·8스레드, 16GB, Docker Desktop WSL 2
+
+### 1.2 Kubernetes·CNI·Ingress 조합
+
+| 설정 | 근거 |
+|---|---|
+| kind v0.33.0 / Kubernetes v1.35.8 | ingress-nginx v1.15.1의 E2E 범위가 1.35까지. 공식 노드 이미지 digest 고정 |
+| Calico v3.33.0 / IPv4·iptables | Calico의 1.35 테스트 범위. 기본 CNI 비활성 |
+| `MutatingAdmissionPolicy` feature gate·beta API | Calico native v3 CRD 기본값 처리에 필요, 1.35에서 기본 비활성 |
+| Pod `10.244.0.0/16`, Service `10.96.0.0/12` | 기준 PC의 Wi-Fi·WSL·Docker 대역과 비중복. 다른 네트워크에서는 재확인 |
+| ingress-nginx controller v1.15.1 / chart 4.15.1 | 이슈 지정 유지(사용자 결정). 유지보수 종료 프로젝트라 버전 고정이 보안 패치를 뜻하지 않음. 운영 ALB 설계는 불변 |
+
+### 1.3 MinIO
+
+- 커뮤니티판의 소스 전용 배포 전환으로 Chainguard 공개 이미지 사용. linux/amd64 digest를 [공통 values](../../infrastructure/gitops/charts/platform-data/values.yaml) `minio.image`에 고정
+- 서버 이미지에 shell·curl이 있다고 가정하지 않음. 버킷 초기화는 `curlimages/curl:8.17.0`의 S3 SigV4 요청, 인증은 curl 설정 stdin
+- 버킷 3개(`sagomungchi-local-missions`·`-reports`·`-models`)가 단일 Pod·2Gi PVC 공유. 버킷 분리가 앱의 사용자별 권한 검사를 대체하지 않음
+
+### 1.4 초기화와 자격 증명
+
+- Compose MinIO는 [compose.minio.yaml](../../compose.minio.yaml)로 분리. Compose는 병합 전에 각 파일의 변수를 해석해 profile만으로 `${VAR:?}` 검사를 피할 수 없기 때문
+- Secret 준비 스크립트는 PowerShell 7 이상. MinIO 사용자명 3자·비밀번호 8자 이상
+- RabbitMQ는 계정 기동 후 Job이 관리 API로 `definitions.json` 반영(계정을 JSON에 넣지 않으려고 순서 분리). `default_queue_type`을 전역 quorum으로 강제하지 않음(Pod별 exclusive 큐와 충돌)
+- `init.sql`·`definitions.json`은 원래 위치에 두고 Helm `.Files`와 Compose 마운트가 같은 파일을 읽음
+- `.env`의 계정 6개만 `platform/platform-data-credentials` Secret으로 준비. 기존 Secret과 값이 다르면 덮어쓰지 않음(환경 변수 변경만으로 계정이 회전되지 않음)
+- 활성 저장소의 requests·limits·필수 설정이 없으면 렌더링 중단
+
+### 1.5 자원 예산
+
+requests는 스케줄링 기준, limits는 상한이며 실측값이 아님.
+
+| 대상 | CPU request / limit | 메모리 request / limit | PVC |
+|---|---|---|---|
+| PostgreSQL | 100m / 500m | 256Mi / 512Mi | 2Gi |
+| RabbitMQ | 250m / 1000m | 512Mi / 2Gi | 2Gi |
+| Redis | 50m / 250m | 64Mi / 256Mi | 512Mi |
+| MinIO | 100m / 500m | 256Mi / 1Gi | 2Gi |
+| ingress-nginx controller | 100m / 500m | 128Mi / 512Mi | - |
+| **상시 합계** | **600m / 2750m** | **1216Mi / 4.25Gi** | **6.5Gi** |
+
+- 초기화 Job(RabbitMQ·MinIO)은 각 50m/250m, 64Mi/128Mi
+- 플랫폼 전체 약 6GiB 예산(control plane 등 1.5GiB 포함). 앱·모델 추론·관측·이미지 빌드는 제외. Docker 상한 약 7.62GiB라 Compose 전체와 kind는 동시에 실행하지 않음
+- 시작값: PostgreSQL `shared_buffers=64MB`·`max_connections=40`·`work_mem=2MB`, RabbitMQ `vm_memory_high_watermark.absolute=1GiB`(quorum WAL 512MiB의 3배 고려해 limit 2Gi), Redis `maxmemory=128mb`·`noeviction`. 운영 튜닝 값 아님
+- StatefulSet 삭제·축소 시 PVC 보존(kind 노드 삭제로부터는 보호하지 않음). 로컬 provisioner는 PVC 요청을 quota로 강제하지 않을 수 있어 호스트 여유 30GiB 이상 권장
+
+## 2. 로컬 앱 배포·네트워크·관측 (#171)
+
+EKS 사용 확정(#171 PM 결정).
+
+| 릴리스 | Service / readiness | migration |
+|---|---|---|
+| core-service | 8080 / `/actuator/health/readiness` | 전용 Flyway 이미지 `migrate` |
+| learning-service | 8081 / `/actuator/health/readiness` | 전용 Flyway 이미지 `migrate` |
+| ai-service | 8000 / `/health/ready` | 없음 |
+| scoring-service | 8001 / `/health/ready` | 없음 |
+| report-api | 8002 / `/health/ready` | report 이미지의 `alembic upgrade head` |
+| report-worker | HTTP Service 없음 (`python -m app.worker`) | report-api의 migration 선행 |
+
+### 2.1 배포
+
+- core·learning Flyway는 앱 기동에서 비활성. 기존 SQL을 전용 이미지에 복사해 `FLYWAY_*`만 주입. migration 허용 NetworkPolicy는 PreSync wave -2, Job은 wave -1. `migration.revision`은 SQL/Alembic 변경 시 명시적으로 갱신. 실패 시 앱 sync 중단
+- local values의 `:local` 태그는 kind에 직접 로드할 빌드 입력
+- Secret: `app/app-service-credentials`, `observability/observability-credentials`. chart는 이름·키만 참조. URL 비밀번호는 URL 인코딩
+- **report Alembic URL**: `migrations/env.py`가 URL을 `ConfigParser`에 넘겨 `%`가 보간 오류를 일으킴. Alembic Job에만 `%`→`%%` 이스케이프한 `REPORT_ALEMBIC_DATABASE_URL`을 별도 키로 제공
+- core·learning Java agent는 chart의 선택적 initContainer(OTel Java agent 2.33.1 digest 고정)
+- local report presigned URL은 `S3_PUBLIC_ENDPOINT_URL=http://127.0.0.1:19000`. 호스트 다운로드 확인 시 MinIO 9000을 19000으로 port-forward
+
+### 2.2 네트워크·확장
+
+- `app`·`platform`·`observability` 기본 거부 + 필요한 포트만 허용. app ingress는 ingress-nginx → core 8080과 설계 4.3의 내부 호출만. RabbitMQ 관리 15672는 core와 초기화 Job, metrics 15692는 Prometheus만
+- startup·liveness는 `/health/live`·`/actuator/health/liveness`, readiness만 ready 경로. core snapshot·scoring 모델 준비가 오래 실패해도 startup probe가 백그라운드 재시도를 끊지 않도록 분리
+- local 단일 레플리카에서는 HPA/PDB 비활성. report-worker는 두 큐 기준 KEDA 0–1, `CONSUMER_PREFETCH=1`
+- core 15초 preStop·180초 grace·Spring graceful 30초는 SSE executor 85초·timer 5초를 고려한 시작값(롤링 종료 실측 전)
+- NetworkPolicy 렌더만으로 Calico/VPC CNI 동작이 증명되지 않음
+
+### 2.3 관측
+
+- local `observability` chart: OTel Collector v0.164.0, Prometheus v3.15.1, Grafana v13.3.0, KEDA 2.21.0. 외부 Ingress 없음, 저장은 `emptyDir`
+- Grafana: 저메모리 첫 기동이 60초를 넘어 startup probe 300초, Pod 두 개가 겹치지 않게 `Recreate`, CPU 한도 250m에서 throttling으로 startup 실패해 요청 100m·한도 1
+- AI·scoring·report-api에는 exporter가 없어 core·learning Java agent 지표만 수집
+- Langfuse: EKS 자체 호스팅 예정(#379, 미배포). 공식 최소 자원이 로컬 한도 초과. Collector에 EKS용 OTLP traces → Langfuse 전달 설정만 있음(local 비활성)
+- AI Langfuse v4 계측: `LANGFUSE_ENABLED` 기본 false. true이면 public/secret key와 Collector endpoint가 모두 필요(빠지면 기동 오류). call type·프롬프트 버전·모델·토큰·오류 코드만 기록, 원문·학생 ID 미전달
+
+### 2.4 검증에서 얻은 교훈
+
+- 다중 플랫폼 캐시 이미지는 `kind load docker-image`에서 digest 누락 오류 → `docker image save --platform linux/amd64` archive로 로드
+- kind 노드 `/tmp`는 별도 tmpfs라 archive가 containerd에서 보이지 않음 → 노드 `/root`에 복사
+- KEDA `scaledjobs.keda.sh` CRD가 client-side apply annotation 한도(262144 bytes) 초과 → chart `crds.additionalAnnotations`에 `argocd.argoproj.io/sync-options: Replace=true`(local 전용)
+- ingress-nginx controller가 0개면 admission webhook 연결 거부로 Helm 설치 실패 → controller 먼저 복구
+- Helm으로 직접 설치할 때는 Argo PreSync 훅이 없으므로 core·learning·report-api를 먼저 설치하고 migration Job 완료 후 나머지 설치
+- 미검증: 실제 모델 가중치 추론, SSE 진행 중 종료, Langfuse 저장·조회
+
+## 3. kind 통합과 환경값 (#273·#236·#312)
+
+### 3.1 kind 클러스터 통합 (#273)
+
+로컬 kind를 `sagomungchi-local` 하나로 통합(Docker 메모리 약 7.6GiB에서 두 클러스터 동시 운영 곤란).
+
+- 앱 Secret `create-app-secrets.ps1`과 platform Secret `create-platform-secret.ps1`이 같은 루트 `.env`를 읽어 계정 원본 단일화. 대상 context·노드를 고정 검사, 기존 Secret 값과 불일치 시 중단
+- 관측 Secret은 `.env`에 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`가 둘 다 있을 때만 생성
+- 옛 `sagomungchi-issue171` 클러스터·`kind-issue171` 네트워크가 남아 있으면 `kind delete cluster --name sagomungchi-issue171`, `docker network rm kind-issue171`
+
+### 3.2 kind 환경값·외부 egress (#236)
+
+kind values가 `compose.yaml`보다 적어 Google 로그인·토스 결제·LLM 판정이 동작하지 않던 문제 보완.
+
+- 외부 키(Google·토스·결제 암호화 키·`ANTHROPIC_API_KEY`)는 루트 `.env`를 원본으로 `create-app-secrets.ps1`이 값이 있을 때만 앱 Secret에 복사. values는 `optional: true` 참조. 토스 `live_` 키 거부
+- 인증 TTL·Redis 포트·LLM 공급자·모델 등 비밀이 아닌 값은 values에 compose 기본값
+- 추가하지 않은 값: `REDIS_PASSWORD`(양쪽 모두 비밀번호 없음), `OPENAI_BASE_URL`(sLLM 사용 시에만), report-api의 `RABBITMQ_URL`(소비는 worker만)
+- egress: core·ai에만 사설·CGNAT·link-local·loopback을 뺀 TCP 443 허용. Calico 오픈소스판에 FQDN 규칙이 없고 공급자 IP 목록은 유지 곤란
+- 웹은 호스트 Vite에서 `CORE_PROXY_TARGET`·`CORE_PROXY_HOST`로 `/api`를 kind Ingress(`api.sagomungchi.local`)에 전달
+- 토스 웹훅은 외부에서 로컬 kind로 들어올 수 없어 확인 범위 밖
+- 토스 결제위젯 키(`test_gck_`·`test_gsk_`)는 전자결제 신청 이후에만 보임. 신청 전에는 문서 테스트 키(`test_gck_docs_`·`test_gsk_docs_`)와 `TOSS_TEST_MID=tgen_docs` 사용(다르면 `PAYMENT_PG_MISMATCH`). 문서 테스트 키는 주문번호 조회가 `NOT_FOUND_MERCHANT`라 상태 재확인·복구·관리자 대조 경로 검증 불가
+- 실제 확인(2026-11-03): Ingress `/api` 200·외부 `/internal` 404, core→Google·토스와 ai→OpenAI 허용, learning 외부 443 차단, Google 로그인·LLM 판정·토스 테스트 결제 승인
+
+### 3.3 교차 확인·이관·content_3 설정 전달 (#312)
+
+- [AI 4.3](ai.md#43-판정-모델-교차-확인-69)의 교차 확인 설정 10개(판정 마감·scoring timeout·reserve, M2·M1 플래그와 경계)를 Compose·`.env.example`·GitOps local AI values에 전달. 값과 기본 false는 그대로
+- GitOps local core `APP_GUARDIAN_TRANSFER_ENABLED=false`, scoring `M2_CONTENT3_RULE_ENABLED=false` 추가
+- transfer-local은 scoring을 함께 실행하고 호스트 포트는 닫음. #305 이후 교차 확인이 꺼져 있으면 scoring을 부르지 않아 AI→scoring `service_healthy` 의존성은 제거(#502)
+- 회귀 검사: `scripts/tests/test_runtime_config.py`가 앱 기본값과 예제·values를 대조하고 합성 환경 파일로 Compose 렌더링 확인
+
+### 3.4 추억 검색 문서 임베딩 켜기 (#591)
+
+- learning `MEMORY_EMBEDDING_ENABLED`는 앱 기본 false(#563)인데 GitOps 값 어디에도 없어 배포에서 문서가 `PENDING`에 머물고 검색이 늘 `NO_RESULTS`였음(#562 kind 확인 D에서 발견)
+- GitOps local·prod learning 값에 `true` 추가. 주기 1분·선점 64행·8글 묶음은 앱 설정 그대로이고 `AI_URL`·`CORE_URL`·`INTERNAL_TOKEN`·learning→ai/core 네트워크 정책은 이미 있어 더 넣을 값 없음. 선점은 `FOR UPDATE SKIP LOCKED`라 prod HPA 최대 3대에서도 중복 임베딩 없음
+- 앱 기본값은 false 유지(테스트·Compose에서 실제 OpenAI 호출을 막음). Compose는 `${MEMORY_EMBEDDING_ENABLED:-false}`로 넘겨받음. 키 없이 켜면 문서가 5회 실패 뒤 `FAILED`가 되고 자동으로 되살아나지 않음
+- 비용: 문서는 8건씩 묶어 `text-embedding-3-small` 1회 호출, 검색 질문은 1회씩. kind 실측 문서 19건(평균 301자) 적재 약 6,000토큰, 1원 미만
+- kind 확인(2026-11-12): `READY` 2건을 `PENDING`으로 되돌린 뒤 helm upgrade(learning 17). 새 Pod 기동 약 1분 뒤 첫 주기에서 2건 `READY`(`text-embedding-3-small`), `MEMORY_EMBEDDING` 1회·724토큰 기록. 다른 서비스 변경 없음
+
+## 4. AWS 데모 구성 (#185)
+
+계정 347161580747 / ap-northeast-2. 수집한 values는 배포 상태를 보존한 것이며 새 계정을 처음부터 만드는 완성된 IaC는 아니다. 비밀 값·Secret data·CloudFront origin header 원문은 기록하지 않는다.
+
+| 항목 | 결정 |
+|---|---|
+| IaC | eksctl(`infrastructure/eks/cluster.json`) + AWS CLI 스크립트(`demo_stack.py` plan·apply·pause·resume). IAM 원문은 `infrastructure/aws/iam/` |
+| 진입 | 기본 cloudfront.net 도메인, CloudFront→ALB HTTP(ALB SG는 CloudFront prefix list만 허용, origin 헤더 규칙) |
+| 노드그룹 | 모두 On-Demand t3.medium: `application` 2대(최대 3), `platform-observability` 2대(`workload=platform:NoSchedule`). 상태 저장 서비스(replica 1, AZ 고정 EBS)에 Spot이 맞지 않아 설계의 Spot을 변경(PM 승인). scoring 메모리 예약 2Gi → 1Gi |
+| Pod 권한 | 설계의 IRSA 대신 EKS Pod Identity |
+| RDS | db.t4g.small Single-AZ. 서비스별 계정은 [db-dev-guide 8절](db-dev-guide.md#8-서비스별-db-계정-230) |
+| 데모 외 기간 | 노드 0대 + RDS 정지(`demo_stack.py pause`/`resume`, Karpenter 정지 포함). control plane·NAT·저장소 비용은 남음 |
+| 배포 기준 | develop → main 릴리스 PR 병합 후 그 SHA만 배포(ECR 태그 `main-<sha>`) |
+| 시연 계정 | `AUTH_NEW_ACCOUNT_DEMO=true`로 새 Google 부모를 `is_demo=true` 저장 |
+| 결제 | 공용 문서 테스트 키를 `sagomungchi/demo/app/payment` Secret으로 ESO 연결. 일반 결제 승인만 시연 가능 |
+| 비밀 스캔 | Gitleaks 8.30.1, 루트 `.gitleaks.toml`. 재실행 도구 `infrastructure/aws/scan-repository-secrets.py` |
+
+### 4.1 설계와 남은 차이
+
+| 항목 | 현재 | 남은 일 |
+|---|---|---|
+| RDS | 비공개·암호화·자동 백업 7일, Single-AZ, 삭제 보호 off | PITR 실제 복원, RPO 5분·RTO 4시간 미검증 |
+| 플랫폼 | RabbitMQ·Redis·관측 단일 replica, AZ 고정 PVC(RabbitMQ·Prometheus·Grafana 2a, Redis 2b) | EBS/PVC 삭제·AZ 장애 복구 미검증 |
+| 진입 | CloudFront→ALB HTTP origin | custom domain·ALB TLS 미구성 |
+| Secret | ESO·Secrets Manager 원격 key 참조 | 키 회전·장애 복구 미검증 |
+| NetworkPolicy | 서비스별 정책 있음, 일부 외부 연결은 넓은 CIDR. 저장소 값은 app 기본 거부를 켬(#657, 9.8), 배포 중이던 환경은 `namespaceDefaultDeny=false` | 설계 호출 표 전체 미검증, 기본 거부는 재가동 때 적용·확인 |
+| S3·IAM 재생성 | 인벤토리·정책 원문 보존. 테마 자산 ai·learning 역할 2개는 저장소에만 정의(#652, 9.8) | 새 계정 실제 생성 미실행 |
+| NAT | 2a 한 곳 | 다중 AZ는 담당자 결정 사항(5절) |
+
+### 4.2 실제 서비스 검증 (11-03~04)
+
+- CloudFront URL에서 학부모 Google 로그인·답변 제출·AI 피드백·돌아보기, 주간 리포트 생성과 PDF·Markdown 다운로드
+- 클라이언트 IP 판정([검증 스크립트](../../infrastructure/aws/verify-viewer-ip.ps1)): viewer IP 제한 카운터 증가, 위조 XFF 무시
+- 미실행: 신규 Google 가입 실계정, 공용 테스트 키 결제 승인, 새 클러스터 복원
+
+## 5. S3 Gateway 엔드포인트와 NAT 점검 (#212)
+
+10/29 멘토링의 "S3 엔드포인트 연결, core·NAT 구간 병목" 지적을 읽기 전용으로 점검(2026-11-04). AWS 자원 변경 없음.
+
+- S3 Gateway 엔드포인트(`sagomungchi-demo-vpce-s3`)가 이미 있고 private 라우팅 테이블 2개 모두 S3 prefix list → vpce 경로 active
+- **엔드포인트 정책은 기본 전체 허용 유지**: 노드의 ECR 이미지 layer도 AWS 소유 S3 버킷을 이 엔드포인트로 받아, 우리 버킷으로 좁히면 이미지 pull이 깨짐. 버킷 접근 제한은 Pod Identity 역할 정책이 맡음
+- S3가 NAT를 거치지 않는 근거: scoring Pod가 모델 약 844MiB를 받는 동안 NAT 수신 0.04MiB, Pod 안 DNS 해석 IP가 모두 S3 prefix list 대역
+- NAT를 거치는 것은 외부 호출뿐: ai→LLM API, core→토스·Google OAuth, ESO·Pod Identity→Secrets Manager·STS, kubelet→ECR API·공개 레지스트리, Grafana→Discord
+- **NAT 병목 없음**: 51시간 지표에서 활성 연결 최대 126(한도 55,000), 포트 할당 오류 0, 처리량 약 4.8GiB
+- 남은 위험은 가용성: NAT가 2a 한 곳이라 2a 장애 시 2b Pod도 외부 호출 불가
+
+| 완화안 | 월 추가 비용 | 판단 |
+|---|---|---|
+| A. 현재 유지(zonal NAT 1개) | $0 | **데모 기간 채택**. 2a 장애 때는 RabbitMQ·관측 EBS도 2a라 서비스가 이미 함께 멈춤 |
+| B. AZ별 zonal NAT | 약 +$46.7 | 운영 전환 결정 시 재검토(가장 단순) |
+| C. Regional NAT GW | 약 +$43~47 | 기존 NAT 교체, 도구 지원 확인 필요 |
+| D. Interface 엔드포인트 4종 | 약 +$76 | LLM·토스·OAuth는 그대로 NAT. 현재 양 대비 비쌈 |
+
+한계: VPC Flow Logs 없음(패킷 단위 경로 기록 없음), 350초 넘는 유휴 연결의 stale 오류는 미확인.
+
+## 6. Karpenter와 앱 HPA (#211·#372)
+
+Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 추가한다. 흐름은 트래픽 증가 → HPA가 Pod 증가 → 기존 노드 자리 부족 → Pending → Karpenter 노드 추가 → 부하 종료 후 HPA 축소 → 빈 노드 정리.
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 설치 | Karpenter 1.15.1 Helm(OCI), 수동 Helm. values `environments/prod/karpenter.json` | 1.35는 1.9 이상 지원. prod는 Argo CD 미구성 |
+| 노드 | t3.medium·t3.large On-Demand, 2a·2b. Spot·중단 알림 큐 미사용 | 앱이 replica 1·PDB 없음이라 Spot 회수가 곧 중단 |
+| 상한 | NodePool `limits` CPU 4·메모리 16Gi(최대 약 2대, 최악 약 $156/월) | 평소 0대 |
+| 정리 | `WhenEmptyOrUnderutilized`, `consolidateAfter 5m`, 한 번에 1노드, `expireAfter 720h` | 부하 종료 후 비용이 남지 않게 |
+| 기존 노드그룹 | 둘 다 유지. 컨트롤러는 `application` 노드에 replica 1 | 컨트롤러가 자기가 만든 노드에 있으면 안 됨 |
+| AZ·EBS | NodePool에 `workload=platform` taint 없음 → 상태 저장 Pod는 Karpenter 노드에 가지 않음 | PV의 AZ 제약 유지 |
+| HPA | core·learning·ai, 최소 1·최대 3·CPU 70%. scoring·report-api는 고정 | 평소 비용 불변. scoring은 모델 로딩·메모리 1Gi |
+| 축소 끊김 | 최소 1 유지 + `application` 노드그룹 preferred nodeAffinity + ReplicaSet 기본 삭제 순서(최근 Pod부터) | 아래 |
+
+- replica 1에서 노드를 정리하면 eviction이 Pod를 먼저 지워 새 Pod가 Ready가 될 때까지 끊긴다. 기본 Pod를 관리형 노드에 두고 늘어난 Pod만 Karpenter 노드에 올려, 축소 때 최근 Pod부터 지워지게 했다. 부하 중 재배포로 Pod 나이 순서가 바뀌면 한 번 끊길 수 있다. 최소 2 + PDB 안은 상시 노드 1대(약 $38/월)가 뜰 수 있어 보류
+- 적용(2026-11-05): metrics-server add-on, IAM 역할·Pod Identity, Karpenter, NodePool `application-burst`, 세 앱 HPA. 이미지 digest는 바꾸지 않음
+- t3.medium은 노드당 Pod 17개 제한이라 CPU·메모리보다 Pod 수로 먼저 Pending이 날 수 있음
+- 미실측: 부하 시 노드 확장·축소, 삭제 순서, ai의 CPU 기반 확장(2차 부하 시험 #384)
+- 후속: scoring HPA, report-worker KEDA, Spot 혼합(replica 2·PDB 이후)
+
+## 7. CD 배포 승인·이력·롤백 (#186)
+
+`cd-release.yml`: main 수동 실행 → GitHub Environment `prod` 승인 → 작업자 PC runner에서 Helm 적용 → 경로 확인 → 이력.
+
+### 7.1 확정 정책 (담당자 답변)
+
+- 이전 승인 앱이 현재 DB 스키마·데이터와 호환될 때만 새 승인을 받아 이미지 버전을 복귀. 비호환·미확인은 모두 복귀 차단. DB 버전 번호만으로 호환성을 판정하지 않음
+- API·이벤트 계약, 진행 중 학습·결제 작업 영향과 검증 근거를 함께 기록
+- DB 자동 downgrade·백업 자동 복원은 구현하지 않음
+- 운영 승인자는 `20220348-kim`·`kty2001` 2명(2026-11-03). 둘 중 한 명의 승인 없이는 실행하지 않음
+
+### 7.2 구현 결정
+
+| 결정 | 내용 | 근거 |
+|---|---|---|
+| 적용 위치 | 작업자 PC의 self-hosted runner(`cd-prod`) | EKS API 공개 접근이 작업자 공인 IP로 제한 |
+| 승인 | Environment `prod` 필수 승인자, main만 허용 | 승인자는 GitHub 승인 기록 API로 읽어 이력에 남김. 계획 파일의 승인 표시는 읽지 않음 |
+| 이미지 | publish job이 main SHA를 `main-<12자리>`로 ECR 게시, 있으면 재사용 | ECR 태그 IMMUTABLE. GitHub OIDC 역할은 ECR 쓰기만 |
+| 계획 입력 | 실행 입력 JSON(커밋하지 않음), 원문은 artifact | 계획의 SHA가 그 계획을 담은 커밋을 가리키는 순환 회피 |
+| 실행 게이트 | `scripts/cd_release.py`가 오류·차단 사유가 없을 때만 `executable=true` | 근거·승인자 미비 상태에서 게시·적용 차단 |
+| 적용 | release별 server dry-run 전체 → 순서대로 `redeploy-app.ps1 -ImageDigest -Apply` | 실패하면 다음 release 미적용, 자동 롤백 없음 |
+| 경로 확인 | 학생 PIN 로그인 → 시도 시작 → 답변 → 부모 refresh → 리포트 목록 | 판정(LLM)·결제 미호출. 부모 refresh 쿠키는 회전하므로 새 값을 fixture에 즉시 저장 |
+| 이력 | `history.json` artifact(90일)와 실행 요약 | workflow에 `contents: write`를 주지 않음 |
+| 롤백 | 이전 승인 digest를 같은 workflow·승인으로 적용 | DB downgrade 없음 |
+
+- OIDC trust: AWS IAM은 GitHub 토큰의 `job_workflow_ref`를 조건 키로 비교하지 못함. 저장소 OIDC subject에 `job_workflow_ref`를 포함시키고 trust를 `sub` 하나(`StringLike`)로 main의 `cd-release.yml`만 허용
+- deploy job `env`에서 `${{ runner.temp }}`를 쓰면 workflow 파일 오류가 됨 → 첫 step에서 `GITHUB_ENV`로 설정
+- migration과 웹(S3/CloudFront) 배포는 범위 밖. migration은 배포 전 prod README 절차로 적용
+- main·develop 브랜치 보호 규칙 없음(2026-11-04). main 직접 push로 workflow를 바꾸면 승인 전 publish job이 ECR 게시 역할을 쓸 수 있음. main 보호는 팀 결정 사항
+
+### 7.3 DB 호환성 검토 시 포함할 제약
+
+- #131 `20261030_04`: 기존 report-worker 중지 → migration → 새 worker 순서. 혼합 실행 미지원. downgrade 시 실패·격리·수동 재처리 메타데이터 소실
+- report 삭제 guard 제거는 삭제된 학생의 재생성 차단을 잃을 수 있어 무조건 롤백 금지
+- core·learning 앱 자동 migration은 꺼져 있음. 운영 DB 초기화·Flyway 이력 수정으로 버전을 맞추지 않음
+
+### 7.4 운영 실행에서 얻은 주의점
+
+- 11-04 첫 배포(main `a47a596`)·scoring 롤백 리허설·복귀, 11-05 두 번째 배포(main `322e797`) 완료. run 이력은 Actions artifact
+- 경로 확인 fixture 미션의 `inputType`이 답변 형식과 같아야 함(처음에 `CHOICE` 미션으로 400)
+- 이전 확인이 남긴 진행 중 시도를 돌려받으면 첫 답변 재제출이 422 → 저장된 답변 조회 경로로 처리(#376·#377)
+- runner가 쓰는 AWS 프로필은 `sagomungchi-provided`. 세션 만료 시 `aws login --profile sagomungchi-provided`
+- 배포 후 prod values의 앱 digest·migration 값을 실제 적용값으로 맞춤
+
+## 8. 운영 경보와 trace (#185·#187)
+
+| 항목 | 결정 |
+|---|---|
+| 경보 경로 | Grafana Alerting → 팀 디스코드 `aws-alerts`(webhook은 Secret `discord-alert-webhook`). SNS→Lambda 중계안은 채택하지 않음 |
+| chart 구조 | #185의 observability chart 구조(values `rules`, 조직 notification policy, datasource UID `prometheus`)가 기준. #187 독립 생성기는 제거 |
+| DLQ 수집 | opt-in `rabbitmq-dlq` job(`<큐>.dlq`만). DLQ 규칙이 있는데 수집이 꺼져 있으면 렌더 실패 |
+| 월 LLM 비용 | 예산 300 USD, 80%(240 USD) 경보, KST 달력 월. core `LlmCostMetrics` gauge(단가 있는 비용·미산정 호출 수 분리) |
+| 담당 | 동섭 1명, `aws-alerts` 한 채널 |
+| trace 저장소 | Tempo(observability chart 선택 구성, 72h). Langfuse는 LLM 계측용으로 별도 |
+
+### 8.1 구현에서 정한 것
+
+- target 규칙은 `min(up{job=~...})`라 job 자체가 사라지면 발생이 아니라 NoData로 보고(NoData 알림은 전송)
+- Prometheus·Collector·Grafana는 ConfigMap 변경을 다시 읽지 않아 재생성 annotation 사용
+- app-service chart가 env의 `JAVA_TOOL_OPTIONS`를 agent 옵션 뒤에 합침. 이전에는 prod의 `-XX:MaxRAMPercentage`가 agent 플래그를 덮어써 agent가 빠져 있었음
+- `app-metrics-missing`은 `absent() or absent()`로 쓰면 정상일 때 NoData가 됨 → `max(... or vector(0))`
+- 기존 `summarize`는 미산정 호출이 섞인 call type의 비용을 null로 내므로 예산용 `monthToDate`를 따로 둠
+- trace: core `OutboxWriter`가 봉투 `traceparent`를 넣고 `OutboxRelay`가 그 context에서 발행. report-worker는 `app/tracing.py`(OTel SDK)로 소비 span을 봉투 값에 연결
+- span 상태는 재시도 처리기·업무 실패가 예외를 밖으로 내지 않아 ERROR가 아니라 재시도 발행·DLQ 이동으로 드러남
+
+### 8.2 검증 상태
+
+- 경보: kind에서 실제 DLQ 적재 → 규칙 발생 → `aws-alerts` Firing·Resolved 수신(11-04). prod는 임시 규칙으로 수신 경로 확인(11-03)
+- trace: kind에서 명령 소비 → 동기 HTTP → 결과 이벤트 → 재시도·DLQ가 한 trace(span 67개). 로그인 사용자 요청 시작점은 미실행
+- 검증 도구: `infrastructure/gitops/charts/observability`의 `verify_chart.py`(격리 Docker에서 규칙 발생·회복)
+- 확인 필요: prod의 규칙 16개·Tempo 실제 적용 시각, core OTLP span 전송 404 경고 해소 여부
+- 남은 것: ai·report(Python) 자체 HTTP 지표, 임계값 실측 조정, 서비스별 담당 라우팅
+
+## 9. AWS 데모 부하 시험 1차 (#361)
+
+2026-11-05, k6로 CloudFront → ALB → core에 단계별 부하. Karpenter·HPA 적용 전. 2차는 #384.
+
+조건: core replica 1(CPU limit 1, Hikari 풀 10), RDS db.t4g.small, LLM은 클러스터 안 스텁(지연 2.5~4초), 시험 계정 1개(자녀 3명). 시나리오 `evaluation/load/core-load.js`(browse 55%·learn 20%·notify 15%·analyze 10%).
+
+| 항목 | 50명 | 100명 | 200명 | 300명 |
+|---|---|---|---|---|
+| API 오류 | 0/5,705 | 0/12,338 | 0/26,968 | 0/40,312 |
+| API p95 (ms) | 150 | 159 | 204 | 374 |
+| core 처리량 (req/s) | 26.9 | 59.3 | 133.1 | 197.4 |
+| core CPU 최대 (코어) | 0.13 | 0.23 | 0.48 | 0.69 |
+| core DB 풀 사용 / 대기 최대 | 1 / 0 | 1 / 0 | 2 / 0 | 9 / 8 |
+| RDS CPU 최대 (%) | 16 | 24 | 46 | 68 |
+
+**결론**
+
+1. 먼저 한계에 닿은 것은 DB 계층. RDS CPU가 VU에 비례해 약 350명에서 80%에 닿을 추세, 300명에서 core Hikari 풀 포화 직전
+2. core CPU는 그다음(약 400명에서 한도 추정)
+3. NAT는 훨씬 나중(계산 판단). 실제 LLM을 가정한 300명 트래픽도 약 6건/초·동시 연결 50개로 한도의 1% 미만
+4. 가상 스레드 pinning 기록 0건, Pod 재시작 0, RabbitMQ 적체 0
+
+**해석상 주의**
+
+- 시도는 자녀×미션마다 하나라 학습 칸이 3 × 5 = 15개로 고정. 판정 처리량 상한 약 1.4건/초이고 75명을 넘으면 LLM 쪽 부하가 늘지 않음
+- 칸을 얻지 못한 VU는 경합 호출을 반복해 300명 API의 약 35%가 경합. "DB가 먼저" 결론은 계정을 늘린 2차에서 재확인
+- 판정 경로까지 보려면 계정 수 × 15 ≥ 0.2 × VU(300명은 계정 4개). #415 이후 `evaluation/load/prepare_accounts.py`로 ID·비밀번호 시험 계정 생성 가능
+
+**개선 제안**
+
+| 우선 | 제안 |
+|---|---|
+| 1 | RDS Performance Insights로 상위 쿼리 확인. `student_attempts`(p95 818ms)·`student_home` 쿼리 계획·인덱스 점검 |
+| 2 | HPA 최대 Pod 수와 Hikari 풀 크기를 함께 정함(Pod 수 × 풀 ≤ RDS 최대 연결) |
+| 3 | RDS 사양·읽기 복제본·자주 읽는 조회 캐시 검토(t4g는 CPU 크레딧 방식) |
+| 4 | core HPA 기준은 CPU 0.5코어 근처로 시작 |
+| 5 | NAT 실측은 실제 LLM 또는 클러스터 밖 스텁으로 따로 |
+
+**남은 것**
+
+- 토스 공용 위젯 키가 500(code 5000)을 돌려줘 결제 불가였음. 팀 전용 테스트 키 전환 검토
+- 시험 데이터(시도 약 2,800건, 대화 106건 등)는 2차 시험 뒤 보호자 화면의 자녀 삭제 절차로 정리. SQL로 직접 지우지 않음. 시험용 기기 해제·k6 비밀 파일 삭제도 그때
+- ECR `sagomungchi/llm-stub` 이미지는 2차 시험용으로 보존. 그 외 변경(스텁 배포, ai `OPENAI_BASE_URL`, core `JAVA_TOOL_OPTIONS`, PREMIUM 상품, 시험 구독)은 원복 완료
+
+## 9.5 정지 중 고정비 축소 (#573, 2026-11-12)
+
+데모는 2026-11-06부터 정지 상태(노드그룹 0대, RDS stopped)인데도 하루 약 7천 원이 나가 지원 예산을 넘을 우려가 있었다(#573). 계정 SCP가 Cost Explorer(`ce:GetCostAndUsage`)를 막아 서비스별 청구는 조회하지 못했고, 아래 금액은 서울 리전 공시 단가로 계산한 추정이다.
+
+| 항목 | 하루 추정 | 결정 |
+|---|---|---|
+| EKS 컨트롤 플레인 + 노드그룹 정의 | 약 3,300원 | **삭제(2차).** 처음엔 재생성 절차 미검증으로 유지했으나, RDS·S3·ECR·Secrets Manager는 남아 DB 초기화·seed가 필요 없고 클러스터에만 있던 Secret을 백업한 뒤 지움. 12/8 시연 1주 전 재생성 |
+| NAT 게이트웨이 + EIP | 약 2,100원 | **삭제.** 노드 0대라 외부 호출이 없음. 재개 때 다시 만듦 |
+| ALB + 공인 IP 2개 | 약 1,000원 | **삭제.** 재개 때 LB Controller가 Ingress로 다시 만듦 |
+| EBS(PVC 4개)·스냅숏·RDS 저장소·S3·ECR·Secrets Manager·로그 | 약 500~800원 | 유지(데이터 보존) |
+| RDS 인스턴스 | 정지 중 0 | 정지 최대 7일 뒤 자동 재시작(첫 재시작 2026-11-13 10:19 KST 무렵) → 그때마다 다시 정지 |
+
+실행(동섭 승인, 2026-11-12)
+- ALB `sagomungchi-demo-core`와 대상 그룹을 지웠다. ALB 공인 IP 2개가 함께 해제됐다. LB Controller가 만든 보안 그룹 2개는 비용이 없어 남겼다
+- NAT `sagomungchi-demo-nat-2a`를 지우고 EIP를 반납했다. 계정에 남은 EIP는 0개다. private route table 두 개의 `0.0.0.0/0`은 blackhole로 남는다(노드 0대라 영향 없음)
+- 지우기 전 ALB 리스너·규칙·대상 그룹, NAT·EIP·route table 설정을 작업자 PC(저장소 밖)에 JSON으로 보관했다. ALB 규칙에는 CloudFront origin 헤더 값이 있어 저장소에 넣지 않는다
+
+2차 실행: EKS 삭제(동섭 승인, 2026-11-12)
+- 삭제 전 백업: ESO 동기화 대상이 아닌 Secret은 관측 2개뿐이라 Secrets Manager `sagomungchi/demo/observability/grafana-admin`·`…/discord-webhook`에 복사하고 원본과 해시로 일치를 확인했다(값 미출력). 클러스터·노드그룹·add-on·access entry·Pod Identity 8개·Helm release 11개 values·Karpenter·Ingress·PVC·replica 수는 작업자 PC(저장소 밖)에 JSON으로 보관했다
+- 노드그룹 `application`·`platform-observability`(모두 0대)를 지운 뒤 클러스터 `sagomungchi-demo-eks`를 지웠다. Pod Identity 연결은 함께 사라졌고, 클러스터 SG는 RDS SG 규칙이 참조해 남았다(비용 없음, 재생성 뒤 정리)
+- 남긴 것: RDS·S3·ECR·Secrets Manager·IAM 역할·VPC·스냅숏, PVC였던 EBS 4개(합계 10GiB, 월 약 1천 원, 재연결 선택지로 보존)
+
+결과: 하루 약 7천 원 → NAT·ALB 삭제 후 약 4천 원 → EKS 삭제 후 약 700원(모두 추정). 실제 금액은 결제 콘솔에서 며칠 치 청구로 확인한다.
+
+재개는 이제 재생성이다(→ [EKS 재생성 순서](../../infrastructure/eks/README.md#재생성-순서-2026-11-12-eks-삭제-이후)). 처음 실행하는 절차라 12/8 시연 1주 이상 전에 시작한다.
+
+## 9.6 ai 영상 이어 붙이기 메모리 (#586, 2026-11-12)
+
+#546 kind 확인에서 주간 테마 초안 첫 생성이 영상 컷 이어 붙이기 단계에서 ai 메모리 상한 512Mi를 넘어 OOMKilled됐다. 같은 입력을 1Gi로 다시 생성했을 때는 `READY`였다.
+
+측정 방법
+- Veo·OpenAI는 부르지 않았다. #546 때 MinIO `theme-drafts/`에 남은 INTRO·OUTRO 결과 영상(1280x720·24fps·22.5초)을 4·6·8·6초 컷으로 잘라 Veo 컷 대신 쓰고, 장면 그림(1536x864 PNG)으로 움직이는 그림 컷을 만들었다.
+- kind와 같은 이미지(`sagomungchi/ai-service:local`) 컨테이너에서 `app.main`을 불러 둔 채 `app/llm/media.py`·`theme_draft/nodes/video.py` 함수를 실제 흐름 순서대로 불렀다. CPU 상한은 500m, 메모리는 2Gi로 열어 두고 cgroup `memory.current`를 10ms 간격으로 읽어 단계별 최대값을 쟀다.
+- ffmpeg(libx264)는 CPU 상한이 아니라 보이는 코어 수만큼 스레드를 만든다. 그래서 kind 노드(16코어)와 운영 노드(t3.medium·t3.large, 2 vCPU)를 `--cpuset-cpus`로 나눠 쟀다.
+
+컨테이너 메모리 최대값(MiB, 대기 상태 약 145)
+
+| 단계 | 2코어(운영) | 4코어 | 16코어(kind) |
+|---|---|---|---|
+| 컷 8개 동시 검토(멈춤 감지·장면 뽑기) | 377 | 443 | 749 |
+| 움직이는 그림 컷 1개(8초) | 380 | 422 | 593 |
+| 컷 4개 다시 인코딩(앞뒤 멈춤 자르기) | 390 | 427 | 631 |
+| **이어 붙이기(Veo 컷 4개)** | **509** | **566** | **846** |
+| **이어 붙이기(Veo 1 + 그림 컷 3)** | **528** | **566** | **850** |
+
+- 메모리 대부분은 Python이 아니라 ffmpeg 하위 프로세스다. ffmpeg 최대 RSS는 2코어 391MiB, 16코어 709MiB였다. Python 쪽 컷 바이트는 수 MB라 영향이 작다.
+- 실제 서버는 측정 컨테이너보다 대기 메모리가 약 30MiB 많다(kind ai 약 175MiB).
+- 운영(2 vCPU)도 이어 붙이기가 512Mi를 넘는다. 영상을 켜면 운영도 같은 실패가 난다.
+
+결정
+
+| 항목 | 값 | 근거 |
+|---|---|---|
+| 메모리 상한 | 512Mi → **1Gi**(kind·운영) | kind 최대 약 880MiB(대기 차이 포함)에 여유 약 140MiB. 운영은 약 560MiB라 여유가 크다 |
+| 메모리 요청 | **256Mi 유지** | 평소 약 180MiB. 영상 작업은 주 1회 관리자 초안 생성 때만 몇 분이다 |
+| 적용 범위 | **영상을 켜든 끄든 항상 1Gi** | 요청을 그대로 두면 스케줄링·노드 용량이 바뀌지 않는다. 영상 스위치와 메모리 값을 따로 맞춰야 하는 실수를 없앤다 |
+
+영향 확인
+- 스케줄링은 요청만 보므로 앱 노드그룹(t3.medium)과 NodePool `application-burst`(CPU 4·메모리 16Gi 상한) 계산은 바뀌지 않는다.
+- HPA는 CPU 70%만 본다. 메모리 값은 확장 조건에 들어가지 않는다. 다만 ffmpeg가 CPU 상한 500m까지 쓰면 요청 100m 대비 70%를 넘어 영상 생성 몇 분 동안 ai가 최대 3개까지 늘 수 있다. 늘어난 Pod는 영상 작업을 나눠 받지 않고, 부하가 끝나면 줄어든다.
+- 상한 합은 늘지만(최대 3 replica × 1Gi), 요청을 넘는 메모리는 노드에 여유가 있을 때만 쓴다. 노드 메모리가 부족하면 요청을 넘게 쓰는 ai가 먼저 축출될 수 있다. 영상 작업 중 축출되면 초안은 실패로 끝나고 learning이 재시도한다.
+- 운영 `prod/ai-service.json`에는 아직 `THEME_VIDEO_ENABLED`·`ASSET_S3_BUCKET` 같은 테마 그림·영상 env가 없다. 운영에서 영상을 켜려면 이 env와 Google 자격 증명 배포(#538)가 따로 필요하다.
+
+검토한 대안(적용하지 않음)
+- 컷을 파일로 이어 붙이기: ffmpeg는 이미 임시 파일로 입력을 받는다. 줄일 수 있는 것은 Python이 쥔 수 MB뿐이라 효과가 거의 없다.
+- ffmpeg 스레드 제한: 16코어에서 출력 쪽만 `-threads 2`로 묶으면 이어 붙이기가 850 → 650MiB로 줄었다. 하지만 컷 8개 동시 검토(디코딩)가 710MiB로 남아, 입력 디코딩 스레드와 동시 처리 수까지 손봐야 한다. 상한 1Gi로 충분해 코드는 바꾸지 않았다. 코어가 많은 노드에서 영상을 켤 때 다시 검토한다.
+
+검증
+- local·prod `helm lint --strict`·`helm template`에서 limits 1Gi, requests 256Mi를 확인했다.
+- kind ai에 적용해 Running(cgroup `memory.max` 1Gi)을 확인했다. 영상은 꺼 둔 상태(`THEME_VIDEO_ENABLED=false`)다.
+  - #546 때 `kubectl set resources`로 바꾼 필드 소유권이 남아 있어 Helm 적용이 충돌했다. `helm upgrade --force-conflicts`로 그 필드를 Helm이 다시 가져왔다.
+- 완료 조건(영상을 켠 kind 초안 1건 `READY`)은 #546 재시도(상한 1Gi·영상 켬·`READY`·OOM 없음)와 위 실측으로 확인했다. Veo는 다시 부르지 않았다.
+- 실제 Veo 컷의 앞뒤 정지 구간 자르기(다시 인코딩)가 여러 컷에서 동시에 일어나는 경우는 재지 못했다.
+
+## 9.7 시연 계정 데이터 준비 (#624, 2026-11-13)
+
+추억 앨범·추억 검색(FN-RET-10~12)은 진행 주 이전에 5문제를 모두 끝낸 회차가 있어야 내용이 나오고, 주간 리포트 설명(FN-RPT-09)은 그 주 M2 점수가 있는 답변이 있어야 생긴다. 새 시연 계정은 빈 화면이라 12/7(월) 시연 전에 지난 회차 기록을 만드는 절차를 정했다. 실행 순서는 [infrastructure/aws/README.md](../../infrastructure/aws/README.md#시연-계정-데이터-준비-624)에 있다.
+
+### 9.7.1 결정 (담당자 확인 2026-11-13)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 기록 생성 방식 | 혼합 API: 지난 주(11/30 주)는 재가동 뒤 실제 시각으로, 앞선 2회차는 core·learning 시계를 그 주 토요일로 옮겨 같은 API 스크립트로 만든다. SQL INSERT 없음 | 시드 SQL은 learning·scoring·core·report 4개 DB의 시도·답변·판정·점수·포인트·문서·리포트 정합성을 손으로 맞춰야 하고 이슈의 "가능하면 API 흐름" 원칙과 어긋난다. 12/7이 월요일이라 지난 주는 실제로 지나가므로 시계를 옮길 필요가 없다. 실시간만으로 2회차 이상을 만들려면 EKS를 2주 켜 둬야 한다(비용) |
+| 회차·학생 | 초3 무료 1명·초5 프리미엄 1명, 학생별 3회차(11/16·11/23·11/30 주) | 검색 문서가 학생당 15개라 상위 3개 카드가 의미 있게 갈린다. 설명 카드는 명세상 프리미엄·M2 승인 범위(서술 초5·6)만이라 초5에서만 확인한다 |
+| 답변 내용 | 스크립트에 자체 작성한 가상 소재 15개(고양이·우산·텃밭 등)를 주·요일마다 다르게 넣는다 | 같은 미션이 반복돼도 답변 표현으로 회차가 구분돼 추억 검색을 보여 줄 수 있다(NFR-SEC-07) |
+| 풀이 시점 | 토요일 | 무료도 금·토에는 다섯 요일이 모두 열리고(#483) 토요일 정답 고르기로 바로 엔딩까지 간다. 일요일은 무료가 닫힌다 |
+
+### 9.7.2 kind 확인 (실제 17:20~17:45)
+
+- 대상: develop 배포 그대로(core 6e4eb6c9 이미지, learning 2026-11-13 이미지). 새 시연 학부모(ID·비밀번호)와 자녀 시연3학년(G3)·시연5학년(G5, `LOCAL-PLUS` 시험 구독)
+- 테마: G3 11/23은 있던 테마, 나머지 5개(G3 11/16·11/30, G5 11/16·11/23·11/30)는 기존 게시 테마를 복사해 관리자 API로 작성·게시했다(kind 게시 미션만 사용)
+- 시계: 11/21(토)·11/28(토)·12/5(토) 14:00 KST에 `solve`, 12/5 23:56 → 일일 리포트, 12/6 23:56 → 월요일 00:00 주간 리포트. 12/7 00시대에 `decorate`·`verify`
+- 결과(API와 웹 화면)
+
+| 항목 | 결과 |
+|---|---|
+| 회차 완료 | 두 학생 모두 3회차 5문제 완료·완주(finished), 초3은 정답 고르기로 엔딩(G5 바탕 테마는 정답 후보가 없어 엔딩 전) |
+| 추억 앨범 | 액자 3개, 최근 회차 "새 액자" 표시(웹 앨범 안내 "새 액자가 생겼어요!"), 회차 상세 5문제, 초3 엔딩 보임 |
+| 추억 검색 | 검색 문서 30개 모두 `READY`(실제 OpenAI 임베딩). "비 오는 날 우산을 같이 쓴 이야기" → 초3 11/16 회차, "자전거 타기 연습했던 거" → 초5 11/30 회차가 결과로 나옴. 웹 검색 화면은 #567 구현 전이라 API로만 확인 |
+| 추억의 벽·가구 | 벽 슬롯 3개(웹 내 방에 액자 3개·"새 액자 1"), DESK·WALL 가구 해금·착용 |
+| 주간 리포트 | 11/30~12/6 두 학생 `OK`. 초5는 설명 카드 3개 `INCLUDED`(웹 "대표 답변 설명"·"AI 관찰" 카드 3개, 문구는 대역) |
+| 일일 리포트 | 12/5 `OK`, 12/6(일, 기록 없음) `NO_RECORD` |
+| 점검 SQL | `audit-demo-data.sql` 세 DB 모두 통과(기준 월요일을 12/7로 바꾼 복사본) |
+
+임시로 바꾼 것(모두 되돌림): core·learning 시험 시계 이미지·환경 변수, ai `OPENAI_BASE_URL`=sllm-server(llm-stub 대역, 판정 LLM 비용 0), ai `M2_CROSS_CHECK_ENABLED=true`, sllm-server 임시 설치(KEDA 끔·1대). 되돌린 뒤 core·learning·ai ReplicaSet이 helm 상태와 같은 해시로 돌아가고 Pod 시각이 실제 시각인지 확인했다. 실제 OpenAI는 추억 검색 임베딩(문서 30건·질문 몇 건)만 불렀다.
+
+kind에 남긴 것: 시연 학부모·자녀 2명과 미래 날짜(11/16~12/7) 기록·리포트, 위 테마 5개(게시), G5 서술 미션 3개의 기준표 v2(M2 핵심어), MinIO `models/m2-klue-narrative/3.0/`, 모델 등록 `m2-klue-narrative` 3.0·`report-explanation` kind-stub-624(활성), 시험 시계 이미지 `sagomungchi/{core,learning}-service:demo-clock`. 활성 모델을 끄는 관리자 API가 없어(rollback은 이전 승인 버전으로만) 모델 활성 상태는 정리 방법을 정할 때까지 그대로 둔다.
+
+### 9.7.3 발견
+
+1. **설명 카드는 지금 운영 값으로는 나오지 않는다.** ai `M2_CROSS_CHECK_ENABLED` 기본 false(#305)라 M2를 부르지 않고, 저장소 시드 미션 기준표에 M2 핵심어(`keywords`)·논술 글 종류(`essayType`)가 없어 켜더라도 M2 입력이 없다. kind에서는 둘 다 임시로 채워야 설명 카드 3개가 생겼다. 시연에서 설명 카드를 보이려면 플래그를 켤지(판정 보류 `HELD` 발생 가능)와 초5 테마 미션 기준표 보완을 정해야 한다 → 9.7.5(#668)에서 정함
+2. 활성 모델을 끄는 경로가 없다. 첫 버전을 시험으로 활성화하면 DB를 직접 고치지 않고는 되돌릴 수 없다
+3. 새 학부모는 자녀 등록 전에 계정 동의(TERMS·PRIVACY)가 필요하다(`children` 명령이 처리)
+
+### 9.7.4 한계
+
+- AWS에서는 실행하지 않았다. 운영 적용은 #601 재가동 때이고, AWS 테마·가구 아이템·M2·sLLM 상태에 따라 사전 조건이 달라진다
+- 시험 시계 동안 가짜 시각으로 서명한 S3(MinIO) 그림 URL은 "not valid yet"으로 깨진다. kind 화면 확인의 그림 자리는 기본 그림이었다. AWS 지난 주 회차는 실제 시각이라 영향이 없다
+- 앞선 2회차의 주간·일일 리포트는 만들지 않았다(시연에 필요한 것은 지난 주 리포트)
+- 웹 추억 검색 화면(#567)은 구현 전이라 검색은 API로만 확인했다
+
+### 9.7.5 설명 카드용 기준표 M2 입력과 교차 확인 켜기 (#668, 2026-11-16)
+
+#661에서 설명 카드(FN-RPT-09)가 나오는 조건을 ① ai `M2_CROSS_CHECK_ENABLED=true` ② 미션 기준표 M2 입력(서술 `keywords`, 논술 `essayType`) ③ M2 활성 모델로 정리했다. ③은 #601 재가동 절차에 있고, 이번에 ①·②를 정했다.
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 교차 확인 켜기 | 켠다. 앱 기본값(false, #305)은 두고 prod 값 `gitops/environments/prod/ai-service.json`에 `true` | prod 값이 곧 AWS 데모 환경이고 `redeploy-app.ps1`·cd-release가 매번 이 파일로 helm upgrade를 한다. 시연 절차에서 `kubectl set env`로만 켜면 그 뒤 ai 재배포 때 꺼진다. M2는 기준표에 M2 입력이 있는 미션에서만 불리므로(api-spec 4.2.2) 영향은 시연 스크립트로 보강한 초5 테마 미션뿐이고, A 계정 시험도 시연과 같은 조건이 된다 |
+| 판정 보류 | 허용하고 확인 항목으로 둔다 | 켜면 LLM `CORRECT`·M2 평균 낮음(서술 2.0 이하) 또는 `RETHINK`·높음(4.0 이상)일 때 `HELD(MODEL_DISAGREEMENT)`가 생긴다(글자 수 하한 미만 제외). `audit-demo-data.sql`에 `demo668_recent_judgments`(최근 3주 판정 결과·보류 사유별 건수)를 더해 `solve` 뒤 확인한다 |
+| 기준표 M2 입력 위치 | 운영 시드 migration이 아니라 #624 시연 스크립트 `demo_account_data.py m2-rubric`에서만 | 운영 시드를 바꾸면 모든 환경 판정에 M2가 붙는다. 스크립트는 공개 기준표를 복사해 M2 입력만 더한 새 기준표 버전 → 검토 승인 → 재게시(api-spec 2.8 관리자 미션, P07 불변 버전)로 넣고, 이미 있으면 그대로 둔다 |
+| 입력 값 | 시드 G5 미션 4개는 스크립트 상수(`M2_INPUTS`): DEMO-11·13·15 서술 핵심어 3묶음(`핵심어(비슷한 말)`), DEMO-12 논술 `주장`. 관리자 화면·초안으로 만든 테마 미션은 `--m2-input` JSON | DEMO-11·15는 9.7.2 kind 확인 때 쓴 값 그대로. 설명은 생각 유형이 겹치지 않는 M2 점수 답변 최대 3개이고 초5 M2 활성 범위가 서술이라, 주마다 생각 유형이 다른 서술 미션 3개에 핵심어가 있어야 카드 3개가 나온다. 스크립트가 주별 "M2 입력 서술 N유형"을 출력한다 |
+
+kind 확인(실제 2026-11-16 09:57~10:07 KST, 공유 `kind-sagomungchi-local`)
+
+- 대상: develop 배포 그대로(helm ai rev 21·learning rev 18·core rev 13). 9.7.2의 시연 학부모·시연5학년(프리미엄 시험 구독)과 게시된 G5 테마 11/16·11/23·11/30
+- ai `kubectl set env M2_CROSS_CHECK_ENABLED=true` 적용
+- `m2-rubric --dry-run` → 실제 실행 → 재실행
+
+| 항목 | 결과 |
+|---|---|
+| 기준표 보강 | DEMO-12(논술) v1→v2 `essayType`, DEMO-13(서술) v1→v2 핵심어, kind 초안 M-E1708259 v8→v9 핵심어(`--m2-input`) 저장·검토 승인·재게시. DEMO-11·15·M-D0651927은 9.7.2 때 넣은 v2라 그대로. 세 주 모두 "M2 입력 서술 3유형(ANALYZE·CREATE·REFLECT)" |
+| 다시 실행 | 모든 미션 "있음"으로 아무것도 바꾸지 않음 |
+| 입력 없음 | 보강 전 `--m2-input` 없이 `--dry-run`하면 M-E1708259를 이름으로 알려 주고 실패 |
+| 새 답변 M2 점수 | learning만 시험 시계(12/5 토 14:00 KST)로 옮겨 시연5학년이 보강한 DEMO-13·M-E1708259를 추가 문제(`EXTRA`)로 풂(실제 LLM 판정 2건). 두 판정 모두 보강한 기준표 버전(v2·v9)으로 `model_scores.m2` 있음, `versions.model` `m2-klue-narrative@3.0`, 결과 `RETHINK`(보류 아님) |
+| 주간 설명 카드 | sLLM 서버 대역(llm-stub) 임시 설치 뒤 시연5학년 11/30~12/6 주간 리포트를 학부모 재생성 → `OK`, 설명 `INCLUDED` 카드 3개(ANALYZE·CREATE·REFLECT, 검사 통과). 카드는 같은 주 9.7.2 테마 답변(DEMO-11·M-D0651927·DEMO-15)이 뽑혔다. 새 답변 2개도 후보였지만 가짜 시각이 같은 12/5 05:00 UTC에서 시작해 9.7.2 답변이 약 20초 늦게 제출돼 "같은 생각 유형은 최근 답변 우선" 규칙으로 밀렸다 |
+| 점검 SQL | `demo668_recent_judgments`에 `MODEL_DISAGREEMENT` 0건, `demo668_published_m2_rubrics` 서술 G5 5개·논술 G5 1개 |
+
+임시로 바꾼 것(되돌림): learning 시험 시계 이미지·환경 변수(되돌린 뒤 helm 상태와 같은 ReplicaSet·실제 시각 확인), sLLM 서버 대역 설치(helm uninstall). 실제 OpenAI는 답변 2건의 판정·되묻기와 재생성 리포트 서술 1건만 불렀다.
+
+kind에 남긴 것: **ai `M2_CROSS_CHECK_ENABLED=true`**(kind ai는 helm rev 21 값과 다르다. 이어지는 #630 실측을 시연과 같은 조건으로 재기 위해 켜 둠, `helm upgrade`나 local 값 재적용 때 false로 돌아감), 위 기준표 새 버전 3개(게시), 시연5학년 12/5 추가 문제 시도 2건, 11/30 주 재생성 리포트(학부모 재생성 기회 사용).
+
+AWS에서 남은 확인(#601 재가동 뒤 B 계정)
+
+- prod 값 반영 뒤 ai Pod 환경 변수 `M2_CROSS_CHECK_ENABLED=true`
+- 시드·관리자 테마 기준으로 `m2-rubric`이 세 주 모두 "서술 3유형"을 내는지(초안 미션이면 `--m2-input` 준비)
+- 12/4~12/5 실제 시각 `solve` 뒤 `demo668_recent_judgments`의 보류 건수, 12/7 주간 리포트 설명 카드 3개(`verify`). 새 답변으로만 뽑히는 확인은 여기서 된다(지난 주 답변이 모두 보강 뒤에 생기므로)
+- 실제 sLLM 서버(llama.cpp)·`report-explanation` 활성 상태에서의 설명 문구(kind는 대역 문구)
+
+## 9.8 prod 테마 자산 버킷과 네임스페이스 기본 거부 준비 (#652·#657, 2026-11-16)
+
+AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고쳤다. AWS 호출은 읽기도 하지 않았고, 적용·확인은 A 계정 재가동(#601) 때 한다.
+
+### 9.8.1 테마 자산 버킷 (#652)
+
+- 문제: prod ai·learning 값에 `ASSET_S3_BUCKET`이 없어 ai는 그림·영상 단계를 건너뛰고(`app/theme_draft/storage.py` `create_storage`, `app/llm/media.py` `create_media_clients`), learning은 자산 URL을 null로 준다(`app.assets.bucket`). 오류가 나지 않아 눈에 띄지 않았다.
+- 값: 두 서비스에 `ASSET_S3_BUCKET=sagomungchi-demo-<A 계정>-missions`, `S3_REGION`·`AWS_REGION=ap-northeast-2`. local과 달리 `S3_ENDPOINT_URL`(ai)·`S3_PUBLIC_ENDPOINT_URL`(learning)은 넣지 않는다. 비어 있어야 AWS S3 주소로 올리고 서명한다(local 값은 MinIO 주소).
+- 권한: `infrastructure/aws/iam`에 ai·learning용 역할이 없었다(report·scoring만 있음). 역할 2개(ai `PutObject`, learning `GetObject`, 둘 다 `theme-drafts/*`만)와 trust를 정의하고 `demo-stack.json`(IAM 역할 12개)·`eks/cluster.json`(Pod Identity 10개)에 넣었다. 재가동 절차는 [AWS README 테마 자산 버킷 권한](../../infrastructure/aws/README.md#테마-자산-버킷-권한-652-2026-11-16-정의미적용).
+- 네트워크: 두 앱은 이미 자기 NetworkPolicy로 egress가 격리돼 있어, 역할만 연결하면 Pod Identity agent(`169.254.170.23:80`)에 못 닿아 자격 증명을 못 받는다. 두 앱 egress에 agent를 더했다(report·scoring·sLLM과 같은 규칙).
+- 한계: presigned URL은 Pod Identity 임시 자격 증명으로 서명하므로, 자격 증명 만료가 1시간(`url-ttl`)보다 가까우면 URL이 더 일찍 만료될 수 있다(`AssetUrls` 주석). 화면에서 그림이 중간에 안 보이면 이것부터 본다.
+- B 계정 이전 때 바꿀 항목: 버킷 이름·IAM 원문·`cluster.json`의 계정 번호(AWS README 같은 절).
+
+### 9.8.2 app 네임스페이스 기본 거부 (#657)
+
+결정(권장안): prod 값에 켜고 필요한 허용을 더하며, 실제 확인은 A 계정 재가동 때 한다.
+
+판단 근거(읽기 위주): 공유 local kind는 이날 Docker가 꺼져 있어 조회하지 못했고, 켜 보는 시험도 하지 않았다. 대신 다음으로 판단했다.
+
+- local은 이미 core 값에서 `namespaceDefaultDeny: true`로 app 기본 거부를 켜 둔 상태로 kind 확인 A~D(#436)·#546·#624를 통과했다. 기본 거부 아래에서 앱 7개·migration Job(Argo PreSync 정책 포함)이 동작한 근거다.
+- prod 앱 values 7개와 migration 덮어쓰기 3개를 helm 4.3.1로 렌더링해 모든 Pod 라벨이 어떤 정책에 선택되는지 대조했다. 앱 Deployment 7개는 이미 자기 정책(ingress·egress)으로 격리돼 있어 기본 거부를 더해도 허용 범위가 같다. NetworkPolicy는 합집합이므로 기본 거부는 "자기 정책이 없는 Pod"에만 영향을 준다.
+
+기본 거부를 켜면 막히는 것과 처리:
+
+| 대상 | 현재 prod | 처리 |
+|---|---|---|
+| migration Job(core·learning·report) | `--show-only migration-job.yaml`로 Job만 적용 → 정책 없음 | `migrations/*.json`에 `networkPolicy.migrationEgress`(RDS 5432) 추가, prod README 절차와 ci-gitops 렌더링에 `migration-networkpolicy.yaml`을 같이 넣음 |
+| `rds-bootstrap` Job(`demo_stack.py`), `demo-db-oneoff` Pod | 정책 없음 | `prod/app-oneoff-db-network.json`(DNS·RDS 5432) |
+| 배포 확인 Pod(`deployment-check` 라벨) | core·learning·scoring ingress만 허용, Pod 자체 egress 정책 없음 | `prod/app-check-pods-network.json`(DNS·core·learning·scoring) |
+| `kubectl run` 등 그 밖의 임시 Pod | 정책 없음 | 막히는 것이 의도. 필요하면 위 라벨을 쓰거나 정책을 먼저 만든다 |
+| KEDA(#476 sLLM cron) | prod 미설치 | cron 스케일러는 app Pod와 통신하지 않음. RabbitMQ 스케일러를 쓰면 platform 정책(`platform-network.json`) 문제이고 app 기본 거부와 무관 |
+| 관측(Collector·Prometheus·Langfuse) | 앱별 `egressToCollector`·`ingressFromPrometheus`·`egressToLangfuse` | 앱 Pod가 이미 격리돼 있어 변화 없음. 관측 Pod는 `observability` namespace라 대상 아님 |
+| ALB → core, kubelet probe, `kubectl exec`·`logs` | `core-alb-network.json`, 기존 격리 상태에서 동작 | 변화 없음 |
+
+- `app-default-deny`는 core release만 만든다. 두 release에 켜면 같은 이름 객체로 Helm 소유권 충돌이 난다.
+- 재가동 때 확인할 것: core 재배포 뒤 `kubectl -n app get networkpolicy app-default-deny`, 앱 7개 readiness, migration Job 1회 성공, `demo-db-oneoff`로 `select 1`, 정책 없는 `kubectl run` Pod의 DNS 조회가 실패하는지. 되돌리기는 prod README NetworkPolicy 절.
+
+## 9.9 서비스별 내부 토큰·브로커 계정 분리 (2026-11-16)
+
+전 서비스가 내부 토큰 1개(`INTERNAL_TOKEN`)와 RabbitMQ 기본 관리자 계정 1개를 공유해 한 Pod 토큰이 새면 모든 서비스의 `/internal/**`를 부르고 모든 큐를 읽기·삭제·발행할 수 있었다(예: report-worker 토큰으로 core 결제 사용 예약). 설계 문서에 분리 요구가 없어 DB 계정 분리(#230)와 같은 기준으로 나눴다. 규칙은 [아키텍처 2.2](../design/architecture.md#22-의존-규칙)·[4.5 Secret](../design/architecture.md#45-cicd), 허용 경로 표는 [API 명세서 4장](../design/api-spec.md#4-내부-api-internal).
+
+### 9.9.1 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 토큰 단위 | 호출 주체 7개(core·learning·ai·scoring·report-api·report-worker·ops)마다 1개. 보내는 쪽 `INTERNAL_TOKEN`은 그대로 자기 토큰 | 클라이언트(`InternalRestClientFactory`·`internal_client`) 코드 변경 없음. 호출 쌍마다 토큰(14개)은 관리 부담 대비 이득이 작음 |
+| 받는 쪽 검사 | 토큰으로 호출자 식별 후 호출자별 경로 허용 목록. 불일치 401, 허용 밖 403 | report-worker는 원래 core 별명 조회를 부르므로 호출자만 확인하면 예시 위험이 남음(사용자 결정: 호출자+경로) |
+| 허용 목록 위치 | 받는 쪽 코드 상수(Spring `InternalCallerPolicy`, Python `CALLER_PATHS`) | 권한은 코드 리뷰 대상. 토큰 값만 환경 변수 |
+| 같은 토큰 여러 호출자 | 허용 범위 합집합 | 테스트·일회용 검증 스택이 토큰 하나로 동작. 운영 값 중복·16자 미만은 `create-app-secrets.ps1`이 거부 |
+| 브로커 계정 | 서비스별 5개(이름 고정), 최소 권한 + `events.topic` 토픽 권한. 관리자는 앱에 미주입 | 큐 삭제·남의 큐 소비·남의 이벤트 키 발행 차단 |
+| 재시도 경로 | 기본 exchange → `core.retry`·`learning.retry`·`report.retry` | 기본 exchange 쓰기 권한은 큐 이름만으로 남의 큐에 넣을 수 있어 제거(사용자 결정) |
+| core 큐 현황 | core 계정에 `monitoring` 태그 | 관리 API 큐 목록 조회용. 메시지 내용 접근 없음 |
+
+### 9.9.2 남는 위험
+
+- 받는 쪽 Pod가 새면 그 Pod가 받는 호출자 토큰도 노출된다(예: learning Pod에는 core 토큰 포함). 해시 저장은 ESO·compose 값 생성이 복잡해져 이번 범위에서 제외
+- kind는 Secret 객체 1개(`app-service-credentials`)에 모든 키가 있고 Pod별로 필요한 키만 `secretKeyRef`로 받는다. Secret 읽기 RBAC가 있으면 전체가 보이는 점은 #230과 같다
+- learning은 core에게 `/internal/**` 전체를 연다(관리자·학습 프록시 대부분). core 토큰 유출은 여전히 learning 내부 API 전체 위험
+
+### 9.9.3 적용 절차
+
+- 로컬 `.env`: `.env.example`의 `INTERNAL_TOKEN_*` 6개(+선택 ops)와 `RABBITMQ_<SVC>_PASSWORD` 5개를 채우고 기존 `INTERNAL_TOKEN`은 지운다. compose는 `rabbitmq-init`이 실행될 때마다 계정·비밀번호·권한을 다시 반영한다
+- kind: 기존 `platform/platform-data-credentials`·`app/app-service-credentials`는 키가 달라 스크립트가 중단한다. 두 Secret을 지우고 `create-platform-secret.ps1`·`create-app-secrets.ps1`을 다시 실행한 뒤 platform-data(새 init Job)와 앱을 동기화한다
+- AWS 데모: Secrets Manager `sagomungchi/demo/app/internal`에 `INTERNAL_TOKEN_<호출자>` 6개, `sagomungchi/demo/platform/rabbitmq`에 `core_password`·`learning_password`·`ai_password`·`scoring_password`·`report_password`를 추가한다(기존 secret 이름이라 ESO IAM 변경 없음). 그 뒤 platform-data → 앱 순서로 재배포한다. 저장소에는 정의만 반영했고 실제 값 생성·재배포는 하지 않았다
+- 운영 스크립트(`scripts/knowledge`, `evaluation/runners/judgment_eval.py`)는 `INTERNAL_TOKEN` 환경 변수에 ops 토큰을 넣어 실행한다. kind에서 쓰려면 `.env`에 `INTERNAL_TOKEN_OPS`를 넣고 app Secret을 다시 만든다
+
+## 9.10 실제 LLM 조건 로컬 응답 시간 실측 (#630, 2026-11-16)
+
+1차 부하 시험(9절)은 LLM 스텁 기준이라 실제 LLM 지연이 빠져 있었다. 실제 OpenAI로 화면과 같은 core 경로의 응답 시간을 처음 쟀다. 결과 수치·호출 종류별 토큰·원가 산식은 [ai 19절](ai.md#19-실제-llm-조건-응답-시간원가-산식-630-2026-11-16).
+
+### 9.10.1 환경
+
+| 항목 | 값 |
+|---|---|
+| 클러스터 | local kind `kind-sagomungchi-local`, develop 배포(006c2476 기준) 그대로 |
+| 진입 | `http://127.0.0.1` + Host `api.sagomungchi.local`(ingress-nginx → core), 측정 PC = 클러스터 호스트 |
+| ai | 실제 OpenAI(`OPENAI_MODEL=gpt-6-luna`, 테마 검토 `gpt-6.1-terra`), `M2_CROSS_CHECK_ENABLED=true`(시연 조건, #668이 적용), `THEME_VIDEO_ENABLED=false` |
+| 동시 사용자 | 1명(요청을 한 건씩 차례로) |
+| 시각 | 2026-11-16 10:09~11:28 KST. 판정·분석·리포트 10:09~10:16, 테마 10:18~11:28 |
+| 재시작 | 측정 구간 동안 앱 Pod 재시작·교체 없음(15~20초마다 확인). 테마 초안만 ai에 `IMAGE_PROVIDER=fake`를 넣어 재시작한 뒤 재고 측정 뒤 원래 ReplicaSet으로 되돌림 |
+
+### 9.10.2 절차와 표본
+
+`evaluation/load/llm_latency.py`가 요청 시작부터 SSE `done`(리포트는 관리자 작업 `COMPLETED`, 테마는 초안이 `GENERATING`을 벗어날 때)까지를 잰다. 같은 시간대 `llm_usage`는 `llm_usage_window.sql`로 묶는다.
+
+| 흐름 | 경로 | 표본 |
+|---|---|---|
+| 판정·되묻기 | 학생 `POST /missions/{id}/attempts` → `POST /attempts/{id}/answers` → `POST /answers/{id}/feedback`(SSE). 되묻기가 오면 `followupId`로 답해 다시 판정 | 판정 SSE 30건(그중 LLM 되묻기 20건), 초5 서술 미션 10개 |
+| 분석 대화 | 학부모 `POST /conversations` → `POST /conversations/{id}/messages`(SSE) | 20건 |
+| 주간 리포트 서술 | 관리자 `POST /reports/{id}/regenerate` → `GET /admin/jobs/{jobId}` | 같은 리포트(시험 계정 `kindqa1` 자녀, 11/09 주) 5회 |
+| 테마 초안 글 | 관리자 `POST /admin/theme-drafts`(`G3`·`G4`·`G5`, 2027-01-04 주) → `GET /admin/theme-drafts/{id}` | 3건, 끝난 뒤 버림 처리 |
+
+- 시작 직후 learning이 다른 작업(#668)으로 교체돼 판정 4건(10:02~10:03)을 버리고 처음부터 다시 쟀다
+- 테마 G4는 관리자 access 토큰(15분) 만료로 폴링이 끊겨 learning `theme_draft.created_at → updated_at`(36분 27초)으로 보정했다. 스크립트는 401이면 다시 로그인하도록 고쳤다
+- 비용: 이번 측정 전체 $0.665(테마 글 $0.644)
+
+### 9.10.3 결과 요약
+
+| 흐름 | 건수 | p50 | p95 | 최대 |
+|---|---|---|---|---|
+| 판정 SSE(되묻기 없음) | 10 | 5.2초 | 8.9초 | 9.4초 |
+| 판정 + 되묻기 SSE | 20 | 7.2초 | 12.5초 | 14.0초 |
+| 분석 대화 SSE | 20 | 3.6초 | 8.9초 | 11.8초 |
+| 주간 리포트 재생성 | 5 | 13.2초 | 35.3초 | 40.6초 |
+| 테마 초안 글 | 3 | 4.8분 | — | 36.4분(`CHECK_FAILED`) |
+
+- 1차 부하 시험 판정 SSE p95(스텁 2.5~4초)와 바로 비교하지 않는다. 동시 사용자 수·환경이 달라 개선율·악화율을 내지 않는다
+- 실패 0건(HTTP·SSE `error` 없음). 분석 대화 LLM 호출 33회 중 1회 실패가 있었지만 응답은 정상 종료됐다
+
+### 9.10.4 만든 시험 데이터 (kind에 남김)
+
+| 대상 | 내용 |
+|---|---|
+| 학부모 `perf6301`(ID·비밀번호, `is_demo=false`) | 자녀 초5 `부하1`·`부하2`·`부하3`, 학생 기기 1대·PIN, 보호자 공유 켬. `prepare_accounts.py`로 만듦 |
+| 구독 3건 | 위 자녀 3명 `LOCAL-PLUS` ACTIVE(11/16~12/16, 자동 갱신 없음). 결제 없이 core_db에 직접 넣음(무료 학생은 일반 미션 시작 불가) |
+| 관리자 `perf630-admin` | CONTENT·SERVICE_OPS. `scripts/admin_account_sql.py`로 만듦 |
+| 학습 기록 | 서술 미션 시도 12개(버린 표본 포함)와 답변·판정·되묻기, 분석 대화 1개(질문 20개) |
+| 리포트 | `kindqa1` 자녀 11/09 주 주간 리포트 revision 2~6 |
+| 테마 초안 | 2027-01-04 주 G3·G4·G5 초안 3건(`DISCARDED`). 대역 그림은 MinIO `theme-drafts/` 아래 |
+| `llm_usage` | 10:02~11:28 KST 실제 호출 약 380건(같은 시간대 다른 세션의 kind 확인 호출이 일부 섞임, 측정분은 시간 구간으로 구분) |
+
+비밀번호·PIN·기기 쿠키는 저장소 밖 파일에만 있다. 정리(관리자 비활성화 `admin_account_sql.py --disable`, 구독 해지, 계정 탈퇴)는 #601 AWS 실측 뒤 함께 정한다.
+
+### 9.10.5 한계와 남은 것
+
+- 로컬 kind·동시 1명이라 NAT·ALB·실제 네트워크 지연과 동시 부하에서의 OpenAI 지연·429는 반영되지 않았다
+- AWS 실측은 #601 A 계정 재가동 때 같은 도구(`LOAD_API_BASE`·`LOAD_API_HOST`만 바꿈)로 한다. 동시 사용자를 늘린 실제 LLM 부하는 #384 범위
+- 테마 초안은 그림 대역이라 그림 생성 시간(1장 p50 약 34초, 11/12 기록)이 빠졌다
+
+## 10. 근거 링크
+
+- [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
+- [Calico 요구사항](https://docs.tigera.io/calico/latest/getting-started/kubernetes/requirements), [native v3 CRD](https://docs.tigera.io/calico/latest/operations/native-v3-crds)
+- [MinIO 배포 방식](https://github.com/minio/minio#source-only-distribution), [Chainguard MinIO](https://images.chainguard.dev/directory/image/minio/overview), [curl SigV4](https://curl.se/docs/manpage.html#--aws-sigv4)
+- [Compose 변수 해석](https://docs.docker.com/reference/compose-file/interpolation/), [RabbitMQ 메모리](https://www.rabbitmq.com/docs/memory), [quorum WAL](https://www.rabbitmq.com/docs/quorum-queues#resource-use), [Redis eviction](https://redis.io/docs/latest/develop/reference/eviction/)
+- [Langfuse 자체 호스팅 자원](https://langfuse.com/self-hosting/configuration/scaling), [Langfuse OTel 계약](https://langfuse.com/integrations/native/opentelemetry/migration-to-v4), [VPC 요금](https://aws.amazon.com/vpc/pricing/)

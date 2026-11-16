@@ -28,10 +28,25 @@ class ContractTests(unittest.TestCase):
         sql = populated_sql(["consent_document", "consent"], seeds)
         self.assertIn("SELECT 1 FROM consent)", sql)
         self.assertIn("FROM consent_document WHERE id NOT IN ('00000000-0000-4000-8000-000002350001'", sql)
-        migration = (ROOT / "backend/core-service/src/main/resources/db/migration/V25__seed_consent_documents.sql")
-        text = migration.read_text(encoding="utf-8")
-        self.assertEqual(len(seeds["consent_document"]), 3)
+        migrations = ROOT / "backend/core-service/src/main/resources/db/migration"
+        text = "".join(
+            (migrations / name).read_text(encoding="utf-8")
+            for name in ("V25__seed_consent_documents.sql", "V31__prepare_community_settings.sql",
+                         "V39__consent_documents_password_signup.sql")
+        )
+        self.assertEqual(len(seeds["consent_document"]), 6)
         for seed in seeds["consent_document"]:
+            self.assertIn(f"('{seed}', ", text)
+
+    def test_reward_rule_seed_rows_are_exempt_by_event_type(self):
+        seeds = MIGRATION_SEED_ROWS["core_db"]
+        sql = populated_sql(["reward_rule"], seeds)
+        self.assertIn("FROM reward_rule WHERE event_type NOT IN ('MISSION_COMPLETED'", sql)
+        # V35 seeds the first rules, V43 (#485) adds THEME_ON_TIME and THEME_FINISHED.
+        folder = ROOT / "backend/core-service/src/main/resources/db/migration"
+        text = "".join(next(folder.glob(name)).read_text(encoding="utf-8") for name in
+                       ("V*__reward_points_and_look_unlocks.sql", "V*__theme_free_limit_and_daily_points.sql"))
+        for seed in seeds["reward_rule"]:
             self.assertIn(f"('{seed}', ", text)
 
     def test_empty_erd_cannot_succeed_without_checks(self):

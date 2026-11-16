@@ -45,7 +45,7 @@ def test_requests_share_clients_without_reusing_user_scope_or_closing_early(monk
     engine, storage, clients, seen, configured = setup(monkeypatch)
     app = bootstrap.create_app()
 
-    @app.get("/internal/lifespan-probe")
+    @app.get("/internal/report-jobs/lifespan-probe")
     async def probe(service: Annotated[QueryService, Depends(query_service)]):
         await service._learning._client.get("/synthetic")
         assert service._storage() is storage
@@ -55,7 +55,7 @@ def test_requests_share_clients_without_reusing_user_scope_or_closing_early(monk
         results = []
         for user, scope in (("parent-a", "student-a"), ("parent-b", "student-b")):
             response = client.get(
-                "/internal/lifespan-probe",
+                "/internal/report-jobs/lifespan-probe",
                 headers={
                     "X-Internal-Token": "test-token",
                     "X-User-Id": user,
@@ -68,7 +68,7 @@ def test_requests_share_clients_without_reusing_user_scope_or_closing_early(monk
         # 권한 없는 다음 요청으로 이전 학생 scope가 전파되지 않는다.
         assert (
             client.get(
-                "/internal/lifespan-probe", headers={"X-Internal-Token": "test-token"}
+                "/internal/report-jobs/lifespan-probe", headers={"X-Internal-Token": "test-token"}
             ).status_code
             == 200
         )

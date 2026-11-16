@@ -185,6 +185,23 @@ class AdminMissionServiceTest : PostgresRepositoryTest() {
     private fun assertCode(status: Int, code: String, block: () -> Unit) =
         assertEquals(status to code, assertThrows<RuntimeException> { block() }.let { httpStatusOf(it)?.value() to errorCodeOf(it) })
 
+    @Test
+    fun `관리자 수정은 장면이 같으면 움직임을 이어받고 장면을 바꾸면 비움, 관리자 응답 장면은 저장 값 그대로 (#438)`() {
+        val key = "theme-drafts/run/MON.png"
+        // 테마 초안 채택처럼 움직임을 채운 미션 (관리자 API 본문에는 sceneMotion이 없음)
+        val id = service.create(command().copy(sceneUri = key, staticSceneUri = key, sceneMotion = mapOf("zoom" to 1.2))).id
+        val motion = { jdbc.queryForObject(
+            "SELECT v.scene_motion::text FROM mission m JOIN mission_version v ON v.id = m.current_version_id WHERE m.id = ?",
+            String::class.java, id) }
+
+        service.update(id, command(title = "제목만 고침").copy(sceneUri = key, staticSceneUri = key))
+        assertEquals("{\"zoom\": 1.2}", motion())
+        assertEquals(key, service.getForAdmin(id).versions.last().sceneUri)
+
+        service.update(id, command(title = "장면 바꿈").copy(sceneUri = "/scenes/new.png", staticSceneUri = "/scenes/new.png"))
+        assertNull(motion())
+    }
+
     private fun command(title: String = "미션", grade: Pair<Int, Int> = 5 to 5, thinking: ThinkingType = ThinkingType.ANALYZE) = MissionCommand(
         authorId = admin, title = title, subject = "과학", gradeMin = grade.first, gradeMax = grade.second, thinkingType = thinking,
         inputType = InputType.CHOICE, question = "왜 시들었을까?", guide = null, sceneUri = null, staticSceneUri = null,

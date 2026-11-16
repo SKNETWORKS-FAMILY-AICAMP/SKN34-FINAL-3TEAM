@@ -55,7 +55,7 @@ class QueueManagementClient(private val json: ObjectMapper,
         return mapOf("vhost" to "/","items" to queues)
     }
     companion object {
-        val BASES = listOf("report.report.generate","core.report.events","core.llm.usage.recorded","learning.student.deleted","report.student.deleted","core.event.audit")
+        val BASES = listOf("report.report.generate","core.report.events","core.llm.usage.recorded","learning.student.deleted","report.student.deleted","core.event.audit","core.model.loading.reported")
         fun names() = BASES.flatMap { base -> listOf(base,"$base.retry.1","$base.retry.2","$base.retry.3","$base.dlq") }.toSet()
     }
     private fun fail(code: String,status: HttpStatus=HttpStatus.SERVICE_UNAVAILABLE): Nothing = throw BusinessException(status,code,"큐 관리 API 응답을 확인하지 못했습니다.")

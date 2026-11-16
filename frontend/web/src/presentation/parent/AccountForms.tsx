@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import type { Child } from '../../domain/classroom.ts'
 import type { Consent, ConsentDocument } from '../../domain/parent.ts'
+import { isAccountDocument } from '../../domain/parent.ts'
+import { EDITABLE_GRADES, REGISTRATION_GRADES, gradeLabel, gradePromotionNotice } from '../../domain/grade.ts'
 import { parentApi } from '../../data/parent/api.ts'
 import { demoSignup } from '../../data/parent/demoSignup.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
 import { isDemo } from '../../data/classroom/useClassroom.ts'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { ParentIdSignup } from '../auth/ParentPasswordForms.tsx'
 export function ConsentFields({
   documents,
   value,
@@ -47,10 +50,11 @@ export function ConsentFields({
   )
 }
 export function SignupPage() {
+  // #415: 실제 모드는 Google 또는 아이디·비밀번호로 가입한다. 한 계정은 한 가지 로그인 수단만 쓴다(자동 연결 없음).
   if (!isDemo) return <Workspace title="이용 등록" nav={[]}><section className="ws-card">
     <h2>Google 계정으로 시작하기</h2><p>로그인 후 이용 동의와 자녀 등록을 진행합니다.</p>
     <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
-  </section></Workspace>
+  </section><section className="ws-card"><ParentIdSignup /></section></Workspace>
   return <DemoSignupPage />
 }
 function DemoSignupPage() {
@@ -128,7 +132,7 @@ function DemoSignupPage() {
             <QueryFeedback query={documents} />
             {documents.data && !documents.error && (
               <ConsentFields
-                documents={documents.data.items.filter((d) => d.kind !== 'GUARDIAN')}
+                documents={documents.data.items.filter(isAccountDocument)}
                 value={consents}
                 onChange={setConsents}
               />
@@ -198,13 +202,14 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
               setBirthYear(maxYear - (nextGrade + 6))
             }}
           >
-            {[3, 4, 5, 6].map((g) => (
+            {REGISTRATION_GRADES.map((g) => (
               <option key={g} value={g}>
-                초등 {g}학년
+                {gradeLabel(g)}
               </option>
             ))}
           </select>
         </label>
+        <p>{gradePromotionNotice}</p>
         <label>
           출생연도
           <select
@@ -241,14 +246,14 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
     </section>
   )
 }
-export function ProfileSettings({ child }: { child: Child }) {
+export function ProfileSettings({ child }: { child?: Child }) {
   const [name, setName] = useState(''),
-    [nickname, setNickname] = useState(child.nickname),
-    [grade, setGrade] = useState(child.grade),
+    [nickname, setNickname] = useState(child?.nickname ?? ''),
+    [grade, setGrade] = useState(child?.grade ?? 3),
     [notice, setNotice] = useState(''),
     updateMe = useParentMutation(parentApi.updateMe),
     update = useParentMutation((d: { nickname?: string; grade?: number }) =>
-      parentApi.updateChild(child.id, d),
+      parentApi.updateChild(child!.id, d),
     ),
     me = useParentQuery(['me'], () => parentApi.me())
   return (
@@ -282,10 +287,11 @@ export function ProfileSettings({ child }: { child: Child }) {
           <ErrorNotice error={updateMe.error} />
         </form>
       </section>
-      <section className="ws-card">
+      {child && <section className="ws-card">
         <h2>자녀 정보</h2>
         <p>학년 변경은 이후 제공 문제에만 적용됩니다. 과거 답변과 문항은 변경하지 않습니다.</p>
-        <p>현재 로그인 권한으로 별명과 학년을 수정합니다. 연결 해제·삭제는 아래에서 별도로 본인 확인합니다.</p>
+        <p>{gradePromotionNotice}</p>
+        <p>현재 로그인 권한으로 별명과 학년을 수정합니다. 연결 해제·삭제는 계정 관리 탭에서 별도로 본인 확인합니다.</p>
 
         <form
           className="ws-form"
@@ -319,9 +325,9 @@ export function ProfileSettings({ child }: { child: Child }) {
               value={grade}
               onChange={(e) => setGrade(Number(e.target.value))}
             >
-              {[3, 4, 5, 6].map((g) => (
+              {EDITABLE_GRADES.map((g) => (
                 <option key={g} value={g}>
-                  초등 {g}학년
+                  {gradeLabel(g)}
                 </option>
               ))}
             </select>
@@ -331,7 +337,7 @@ export function ProfileSettings({ child }: { child: Child }) {
           </button>
           <ErrorNotice error={update.error} />
         </form>
-      </section>
+      </section>}
       <p role="status">{notice}</p>
     </div>
   )

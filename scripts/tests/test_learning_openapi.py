@@ -35,11 +35,15 @@ class LearningOpenApiTests(unittest.TestCase):
         self.assertTrue({"201", "409", "422", "503", "504"}.issubset(responses))
 
     def test_proxy_does_not_access_learning_database_or_add_retry(self):
-        directory = ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/learning"
-        sources = "\n".join(file.read_text(encoding="utf-8") for file in directory.rglob("*.kt"))
+        core = ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core"
+        # #422: learning 내부 API 전송(LearningClient)은 _common/client 공용
+        files = [*(core / "learning").rglob("*.kt"), *(core / "_common/client").rglob("*.kt")]
+        sources = "\n".join(file.read_text(encoding="utf-8") for file in files)
         for forbidden in ("JdbcTemplate", "DataSource", "@Transactional", "Retry.decorate", "Retry.of", "learning_db"):
             self.assertNotIn(forbidden, sources)
-        self.assertIn('factory.create("learning", properties.readTimeout)', sources)
+        # #566: 전송별 응답 시간(일반 readTimeout·추억 검색/설명)을 받아 같은 팩토리로 만든다
+        self.assertIn('factory.create("learning", readTimeout)', sources)
+        self.assertIn('this(factory, properties.readTimeout, circuit("learning-json")', sources)
         self.assertIn('headers.set("Idempotency-Key", it)', sources)
 
     def test_mission_query_only_accepts_pagination_and_derives_profile_in_core(self):
@@ -47,5 +51,6 @@ class LearningOpenApiTests(unittest.TestCase):
         self.assertEqual({p["name"] for p in parameters}, {"page", "size"})
         source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/service/LearningProxyService.kt").read_text(encoding="utf-8")
         self.assertIn("students.requireLinked", source)
-        self.assertIn('"grade=${student.grade}"', source)
+        # #432: 중학생(7~9)은 중학교 과정 확장 전까지 초6(6)으로 맞춰 보낸다.
+        self.assertIn('"grade=${student.learningGrade}"', source)
         self.assertIn('"demo=${student.demo}"', source)

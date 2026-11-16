@@ -77,7 +77,10 @@ EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 P
 `verify_cd_deployment.py` 머리말의 형식이다. 시연 전용(`is_demo=true`) 계정·학생·공개 미션만 쓴다. 판정·결제는 호출하지 않는다.
 
 - `studentDeviceCookie`: 그 학생으로 등록한 브라우저의 `student_device` 쿠키(90일)
-- `missionId`: 학생 화면 `GET /api/v1/missions` 응답에서 `inputType`이 fixture `answer.inputType`(기본 `NARRATIVE`)과 같고 아직 시작하지 않은 미션. 판정을 부르지 않아 경로 확인마다 진행 중 시도·답변이 하나씩 남는다. 그래서 스크립트는 학생 미션 목록(`pick-mission` 단계)에서 이 미션이 시작 전이면 그대로, 아니면 `inputType`이 같은 다른 시작 전 미션을 골라 제출한다. 시작 전 미션이 없으면 이 미션의 진행 중 시도를 돌려받아 저장된 답변을 조회만 한다(`read-answer` 단계). 이때는 답변 쓰기를 새로 확인하지 않으므로, 쓰기까지 확인하려면 시연 학생에게 같은 입력 방식 미션을 공개한다.
+- 미션 고르기(#387, 2026-11-10 개정 #483·#485·#506): 스크립트는 학생 주간 테마 `GET /api/v1/students/me/weekly-theme`(`pick-mission` 단계)에서 열린(`OPEN`) 요일 문제 중 그 주에 마무리하지 않은 문제(진행 중 우선)를 `context: THEME_DAY`로, 없으면 되돌아보기가 열린 날(토요일, learning #484 전에는 토·일)에 그 주 마무리한 문제를 `THEME_REVIEW`로 시작한다. `context`를 빼면 `EXTRA`(추가 문제)가 되어 무료 학생은 403 `PREMIUM_REQUIRED`(V43), 프리미엄 학생은 배포마다 환불 판정용 프리미엄 사용(`EXTRA_MISSION`)이 남으므로 쓰지 않는다. 그 주 테마가 게시돼 있어야 하며(없으면 learning이 지난 테마를 재사용), 고를 문제가 없으면 `pick-mission`에서 실패한다.
+- 다시 확인할 때: 무료 테마 문제는 하루 한도(429)가 없다(core #485). 같은 날 다시 확인하면 진행 중 시도를 `200`으로 돌려받아 답변이 있으면 조회만 한다(`read-answer`). 열린 문제를 모두 마무리한 평일에는 고를 문제가 없어 `pick-mission`에서 실패하므로 다음 날·토요일에 확인한다(마무리한 문제의 새 `THEME_DAY`는 learning #484부터 409라 고르지 않음, #506). learning #484 배포 뒤 무료 시연 학생은 일요일이 닫혀 실패하므로, 일요일 확인은 프리미엄 시연 학생으로 한다.
+- `missionId`: 토·일 되돌아보기에서 먼저 고를 테마 미션(마무리한 문제 중 없으면 첫 마무리 문제). 평일에는 쓰지 않는다.
+- `answer`·`answers`: 시작 응답 `mission.inputType`에 맞는 답변을 쓴다. 기본 `answer`(예: `NARRATIVE`) 외 입력 방식 테마 문제가 있으면 `answers` 목록에 입력 방식별 답변을 더한다. 맞는 답변이 없으면 `start-attempt` 단계에서 실패하고 답변을 내지 않는다.
 - `parentRefreshCookie`: 같은 학부모로 Google 로그인한 브라우저의 `sagomungchi_refresh` 쿠키. **최초 로그인부터 최대 7일**이고 쓸 때마다 회전한다. 스크립트가 새 값을 파일에 바로 저장한다. 배포 전에 7일이 지났으면 다시 로그인해 넣는다. 같은 값을 브라우저와 동시에 쓰면 세션이 폐기되므로 fixture용 로그인은 따로 한다.
 
 ### E. 실행 스위치

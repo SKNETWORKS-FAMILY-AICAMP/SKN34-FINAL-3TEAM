@@ -12,12 +12,23 @@ COLLECTIONS = {
     ItemType.CHANGE: "changes",
     ItemType.REFLECTION: "reflections",
     ItemType.QUOTE: "quotes",
+    ItemType.PROBLEM: "problems",
 }
 
 
 def assemble(metadata: dict, items: list[tuple[str, str | None, dict]]) -> dict:
     detail = {**metadata, **{name: [] for name in COLLECTIONS.values()}}
+    explanation_state = detail.pop("explanationState", None)
+    detail["explanations"] = (
+        {"state": explanation_state, "items": []}
+        if explanation_state is not None and detail.get("periodType") != "DAILY"
+        else None
+    )
     for kind, identifier, payload in items:
+        if kind == ItemType.EXPLANATION:
+            if detail["explanations"] and explanation_state == "INCLUDED":
+                detail["explanations"]["items"].append(deepcopy(payload))
+            continue
         if kind not in COLLECTIONS:
             raise ValueError("Unknown report item type")
         value = deepcopy(payload)
@@ -49,6 +60,9 @@ def from_result(report: WeeklyReport, result: GenerationResult) -> dict:
             ],
             "inclusionRule": result.inclusion_rule,
             "narrative": result.narrative,
+            "periodType": report.period_type,
+            "themeSummary": result.theme_summary,
+            "explanationState": result.explanation_state,
             "verification": result.verification
             or {"numbersMatched": False, "quotesMatched": False},
             "versions": result.versions or {"prompt": None, "model": None},
@@ -63,6 +77,7 @@ def without_ai(detail: dict) -> dict:
     value = deepcopy(detail)
     value["narrative"] = None
     value["eveningQuestion"] = None
+    value["explanations"] = None
     for group in value["thinkingTypes"]:
         group.pop("summary", None)
     return value

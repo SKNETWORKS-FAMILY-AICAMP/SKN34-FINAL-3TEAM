@@ -74,7 +74,7 @@ def _leaks(draft: Draft, example_overlap_chars: int) -> list[str]:
     질문은 예시 답과 비교하지 않고, 안내·생각 열기 질문은 질문에 이미 있는 글을 빼고
     비교한다. 되묻기가 학생 답에 있는 글을 빼는 것과 같다. 정답 키·금지어는 셋 다 본다.
     """
-    answers, numeric = _answer_texts(draft)
+    answers, numeric = answer_texts(draft)
     found = find_text_leaks(draft.question, answers, draft.forbidden_terms, None, 0, [])
     for text in [draft.guide or "", *draft.hints]:
         found += find_text_leaks(
@@ -86,12 +86,12 @@ def _leaks(draft: Draft, example_overlap_chars: int) -> list[str]:
             [draft.question],
         )
     for text in [draft.question, draft.guide or "", *draft.hints]:
-        if numeric and any(_has_number(text, n) for n in numeric):
+        if numeric and any(has_number(text, n) for n in numeric):
             found.append("ANSWER_KEY")
     return list(dict.fromkeys(found))
 
 
-def _answer_texts(draft: Draft) -> tuple[list[str], list[str]]:
+def answer_texts(draft: Draft) -> tuple[list[str], list[str]]:
     """정답 키를 글로 바꿈. 고르기는 정답 선택지 이름, 풀이는 최종 답.
 
     순서·분류는 한 낱말로 정답을 나타낼 수 없어 제외한다. 숫자뿐인 최종 답은
@@ -112,5 +112,5 @@ def _answer_texts(draft: Draft) -> tuple[list[str], list[str]]:
     return texts, numeric
 
 
-def _has_number(text: str, number: str) -> bool:
+def has_number(text: str, number: str) -> bool:
     return any(match.group() == number for match in _DIGITS.finditer(text))

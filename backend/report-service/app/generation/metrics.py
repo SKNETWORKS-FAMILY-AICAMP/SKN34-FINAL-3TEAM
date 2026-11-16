@@ -82,9 +82,15 @@ TRIAL_NOTE = " (시범 판정 포함)"
 
 
 def usable_judgment(answer: AnswerRecord) -> JudgmentRecord | None:
-    """Pending/running/failed answers carry no judgment; HELD results are not counted (#344)."""
+    """Pending/running/failed answers carry no judgment; HELD results are not counted (#344).
+    A correction changes only the result, so its original elements are not counted either (#244)."""
     judgment = answer.judgment
-    if answer.process_status != "DONE" or judgment is None or judgment.result == "HELD":
+    if (
+        answer.process_status != "DONE"
+        or judgment is None
+        or judgment.result == "HELD"
+        or judgment.corrected
+    ):
         return None
     return judgment
 

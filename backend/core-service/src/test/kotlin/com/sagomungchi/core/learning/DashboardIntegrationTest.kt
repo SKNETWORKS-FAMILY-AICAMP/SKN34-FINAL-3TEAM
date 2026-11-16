@@ -4,7 +4,7 @@ import com.sagomungchi.core._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.account.domain.GoogleProfile
 import com.sagomungchi.core.account.service.AuthService
-import com.sagomungchi.core.learning.client.LearningClient
+import com.sagomungchi.core._common.client.LearningClient
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -97,7 +97,7 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
 
     private fun parentToken() = auth.login(GoogleProfile(subject, "$subject@example.test", null), null).accessToken
     private val period = "\"period\":{\"from\":\"2026-10-01\",\"to\":\"2026-10-07\"}"
-    private fun attemptJson(id: UUID = attempt, owner: UUID = child) = """{"attemptId":"$id","studentId":"$owner","mission":{"title":"mission"},"status":"IN_PROGRESS","answers":[],"helped":false,"draft":{"version":1,"content":{"memo":"PRIVATE-MEMO","answer":{}}},"nested":{"memo":"PRIVATE-NESTED"}}"""
+    private fun attemptJson(id: UUID = attempt, owner: UUID = child) = """{"attemptId":"$id","studentId":"$owner","context":"THEME_REVIEW","mission":{"title":"mission"},"status":"IN_PROGRESS","answers":[],"helped":false,"draft":{"version":1,"content":{"memo":"PRIVATE-MEMO","answer":{}}},"nested":{"memo":"PRIVATE-NESTED"}}"""
     private fun reply(resource: String, parent: Boolean = false, state: String = "NO_RECORD"): String {
         val identity = "studentId"
         val base = "\"$identity\":\"$child\",\"state\":\"$state\",$period"
@@ -141,6 +141,9 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
             assertEquals("repository-test-token", received.header("X-Internal-Token"))
             assertNull(received.header("Authorization"))
             if (resource == "home") { assertTrue(result.contains("PRIVATE-MEMO")); assertTrue(received.target.endsWith("&grade=3&demo=false")) }
+            // #700: learning attempt context is relayed unchanged (student/parent lists, parent detail, home resume).
+            val contextPath = mapOf("attempts" to "$.items[0].context", "detail" to "$.context", "home" to "$.resume.context")[resource]
+            if (contextPath != null) assertEquals("THEME_REVIEW", com.jayway.jsonpath.JsonPath.read<String>(result, contextPath))
             if (isParent || resource == "attempts") { assertFalse(result.contains("PRIVATE")); assertFalse(result.contains("\"draft\"")); assertFalse(result.contains("\"memo\"")) }
         }
     }

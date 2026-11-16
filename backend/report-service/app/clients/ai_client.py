@@ -4,7 +4,7 @@ from typing import Literal
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -37,6 +37,23 @@ class NarrativeResponse(ResponseModel):
     versions: Versions
 
 
+class Explanation(ResponseModel):
+    text: str = Field(min_length=1, max_length=10000)
+    quote: str | None = Field(max_length=50000)
+
+
+class ExplanationResponse(ResponseModel):
+    active: StrictBool
+    explanation: Explanation | None = None
+    versions: Versions | None = None
+
+    @model_validator(mode="after")
+    def active_fields(self):
+        if self.active and (self.explanation is None or self.versions is None):
+            raise ValueError("Active explanation requires content and versions")
+        return self
+
+
 class AiClient:
     def __init__(self, client: httpx.AsyncClient) -> None:
         self._client = client
@@ -45,3 +62,10 @@ class AiClient:
         response = await self._client.post("/internal/report-narratives", json=payload)
         response.raise_for_status()
         return NarrativeResponse.model_validate(response.json())
+
+    async def explanation(self, payload: dict, timeout: float) -> ExplanationResponse:
+        response = await self._client.post(
+            "/internal/report-explanations", json=payload, timeout=timeout
+        )
+        response.raise_for_status()
+        return ExplanationResponse.model_validate(response.json())

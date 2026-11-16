@@ -4,6 +4,7 @@ import com.sagomungchi.core.guardianship.service.StudentAccessService
 import com.sagomungchi.core.notification.service.NotificationService
 import com.sagomungchi.core.report.domain.ReportJobFinished
 import com.sagomungchi.core.report.domain.ReportJobStatus
+import com.sagomungchi.core.report.domain.ReportPeriodType
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Propagation
@@ -16,7 +17,8 @@ class ReportNotificationListener(private val students: StudentAccessService, pri
     @Transactional(propagation = Propagation.MANDATORY)
     fun finished(event: ReportJobFinished) {
         students.notificationParents(event.studentId).forEach {
-            notifications.report(it, event.studentId, event.sourceEventId, event.reportId, event.status == ReportJobStatus.FAILED)
+            notifications.report(it, event.studentId, event.sourceEventId, event.reportId, event.status == ReportJobStatus.FAILED,
+                event.periodType == ReportPeriodType.DAILY)
         }
     }
 }

@@ -31,7 +31,8 @@ class ReportViewService(private val repository: ReportJobRepository, private val
         access.requireGuardian(parent, studentId)
         if (sharingRequired) learningContext.requireShared(studentId)
         val shared = learningContext.sharingEnabled(studentId)
-        val narrative=shared && entitlements.narrativeEnabled(studentId)
+        // Only a narrative request consults the product, so daily views never depend on payment (P24).
+        val narrative=shared && (requestedNarrative || premiumRequired) && entitlements.narrativeEnabled(studentId)
         if(premiumRequired && !narrative) throw com.sagomungchi.core._common.exception.BusinessException(
             org.springframework.http.HttpStatus.FORBIDDEN,"REPORT_PREMIUM_REQUIRED","이 파일은 유료 서술을 포함합니다. 수치 전용 리포트가 필요합니다.")
         if(requestedNarrative && narrative) products.reportViewed(parent,studentId,reportId)

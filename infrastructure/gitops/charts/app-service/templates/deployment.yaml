@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "app-service.labels" . | nindent 4 }}
 spec:
-  {{- if not (or .Values.hpa.enabled .Values.keda.enabled) }}
+  {{- if or (not (or .Values.hpa.enabled .Values.keda.enabled)) (and .Values.keda.enabled .Values.keda.renderReplicaCount) }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   revisionHistoryLimit: 2
@@ -26,6 +26,14 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -37,8 +45,10 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
-      {{- if .Values.javaAgent.enabled }}
+      {{- if or .Values.javaAgent.enabled .Values.modelDownload.enabled }}
       initContainers:
+      {{- end }}
+      {{- if .Values.javaAgent.enabled }}
         - name: otel-javaagent
           image: {{ .Values.javaAgent.image | quote }}
           command: [cp, /javaagent.jar, /otel/javaagent.jar]
@@ -53,6 +63,42 @@ spec:
           volumeMounts:
             - name: otel-agent
               mountPath: /otel
+      {{- end }}
+      {{- if .Values.modelDownload.enabled }}
+        {{- /* #476: fetch the approved model into an emptyDir before the server starts. */}}
+        - name: model-download
+          image: {{ include "app-service.image" .Values.modelDownload.image | quote }}
+          imagePullPolicy: {{ .Values.modelDownload.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.modelDownload.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.modelDownload.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: HOME
+              value: /tmp
+            - name: MODEL_DIR
+              value: {{ .Values.modelDownload.mountPath | quote }}
+            {{- with .Values.modelDownload.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.modelDownload.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: model
+              mountPath: {{ .Values.modelDownload.mountPath }}
       {{- end }}
       containers:
         - name: {{ include "app-service.name" . }}
@@ -156,6 +202,11 @@ spec:
               mountPath: /otel
               readOnly: true
             {{- end }}
+            {{- if .Values.modelDownload.enabled }}
+            - name: model
+              mountPath: {{ .Values.modelDownload.mountPath }}
+              readOnly: true
+            {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -165,6 +216,11 @@ spec:
         {{- if .Values.javaAgent.enabled }}
         - name: otel-agent
           emptyDir: {}
+        {{- end }}
+        {{- if .Values.modelDownload.enabled }}
+        - name: model
+          emptyDir:
+            sizeLimit: {{ .Values.modelDownload.sizeLimit }}
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}

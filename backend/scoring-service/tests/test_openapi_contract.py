@@ -23,7 +23,12 @@ def test_documented_operations_and_response_models_match_runtime():
     assert (
         actual
         == documented
-        == {("get", "/versions"), ("post", "/m2/scores"), ("post", "/m1/checks")}
+        == {
+            ("get", "/versions"),
+            ("post", "/m2/scores"),
+            ("post", "/m1/checks"),
+            ("post", "/models/preflight"),
+        }
     )
     for name in (
         "ModelVersionSummary",
@@ -31,6 +36,8 @@ def test_documented_operations_and_response_models_match_runtime():
         "M2Request",
         "M2Active",
         "M2Inactive",
+        "M2Skipped",
+        "Preparation",
         "Scores",
         "EssayScores",
         "EssayRawScores",
@@ -44,6 +51,10 @@ def test_documented_operations_and_response_models_match_runtime():
     assert (
         spec["paths"]["/versions"]["get"]["responses"]["200"]["content"]
         == (runtime["paths"]["/internal/versions"]["get"]["responses"]["200"]["content"])
+    )
+    assert (
+        spec["paths"]["/m2/scores"]["post"]["responses"]["200"]["content"]
+        == runtime["paths"]["/internal/m2/scores"]["post"]["responses"]["200"]["content"]
     )
 
 

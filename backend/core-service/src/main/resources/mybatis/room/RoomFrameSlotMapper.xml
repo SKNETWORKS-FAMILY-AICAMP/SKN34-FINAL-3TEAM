@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.room.repository.RoomFrameSlotMapper">
+    <!-- #555 슬롯 교체끼리, 그리고 학생 삭제 확정(status 변경)과 직렬화한다. 삭제가 먼저 끝나면 저장하지 않는다. -->
+    <select id="lockActiveStudent" resultType="java.util.UUID" flushCache="true" useCache="false">
+        SELECT id FROM student WHERE id=#{studentId} AND status='ACTIVE' FOR NO KEY UPDATE
+    </select>
+    <select id="slots" resultType="com.sagomungchi.core.room.domain.FrameSlot" flushCache="true" useCache="false">
+        SELECT slot_no::int AS slot_no,theme_id,theme_week_start AS week_start FROM room_frame_slot
+        WHERE student_id=#{studentId} ORDER BY slot_no
+    </select>
+    <select id="hungSince" resultType="map" flushCache="true" useCache="false">
+        SELECT theme_id::text AS theme_id,theme_week_start::text AS week_start,saved_at FROM room_frame_slot WHERE student_id=#{studentId}
+    </select>
+    <delete id="deleteSlots">DELETE FROM room_frame_slot WHERE student_id=#{studentId}</delete>
+    <insert id="insertSlot">
+        INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at)
+        VALUES(#{studentId},#{slotNo},#{themeId},#{weekStart},#{now})
+    </insert>
+</mapper>

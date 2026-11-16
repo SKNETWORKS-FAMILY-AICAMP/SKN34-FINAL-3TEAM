@@ -2,6 +2,7 @@ package com.sagomungchi.learning.mission.service
 
 import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
+import com.sagomungchi.learning._common.persistence.TEST_POSTGRES_IMAGE
 import com.sagomungchi.learning.mission.client.AiDraftChecks
 import com.sagomungchi.learning.mission.client.AiDraftRequest
 import com.sagomungchi.learning.mission.client.AiDraftResponse
@@ -98,7 +99,7 @@ class MissionDraftConcurrencyTest {
 
     companion object {
         private val postgres by lazy {
-            PostgreSQLContainer<Nothing>("postgres:17.11-alpine").apply {
+            PostgreSQLContainer<Nothing>(TEST_POSTGRES_IMAGE).apply {
                 start()
                 Flyway.configure().dataSource(jdbcUrl, username, password)
                     .locations("classpath:db/migration").load().migrate()

@@ -1,32 +1,32 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { Link, useLocation } from 'react-router'
+import { useSession } from '../auth/sessionContext.ts'
+import { roleStart } from '../../domain/navigation.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { isDemo } from '../../data/classroom/useClassroom.ts'
 import type { Mission } from '../../domain/classroom.ts'
 
 export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => void }) {
   if (!error) return null
-  const message = error instanceof Error ? error.message : '요청을 처리하지 못했습니다.'
+  const message = error instanceof Error && /[가-힣]/.test(error.message) ? error.message : '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'
   const problem = error instanceof ApiError ? error.problem : null
   return (
     <div className="ux-error" role="alert" data-query-state="FAILED">
-      <strong>{problem?.title ?? message}</strong>
-      {problem?.detail && <p>{problem.detail}</p>}
+      <strong>{problem?.title && /[가-힣]/.test(problem.title) ? problem.title : message}</strong>
       {problem?.status === 404 && (
         <p>
-            요청한 기능 또는 기록을 찾지 못했습니다. 주소·대상 권한과 서버의 제공 범위를 확인해 주세요.
+            요청한 기능 또는 기록을 찾지 못했습니다. 화면으로 돌아가 다시 확인해 주세요.
         </p>
       )}
       {error instanceof TypeError && (
-        <p>core-service 연결 상태를 확인해 주세요. 예시 데이터로 자동 전환하지 않습니다.</p>
+        <p>연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요.</p>
       )}
-      {problem?.code && (
-        <small>
-          {problem.code}
-          {problem.traceId ? ` · 확인 번호 ${problem.traceId}` : ''}
-        </small>
-      )}
+      {(problem?.code || problem?.detail || error instanceof Error) && <details className="error-details"><summary>문제 자세히 보기</summary>
+        {problem?.detail && <p>{problem.detail}</p>}
+        <small>{problem?.code ?? (error instanceof Error ? error.message : '')}{problem?.traceId ? ` · 확인 번호 ${problem.traceId}` : ''}</small>
+      </details>}
       {problem?.missingFields?.length ? (
         <ul aria-label="게시 누락 항목">
           {problem.missingFields.map((field) => (
@@ -76,7 +76,7 @@ export function Modal({
       if (e.key === 'Escape') close.current()
       if (e.key !== 'Tab') return
       const elements = [
-        ...(panel.current?.querySelectorAll<HTMLElement>('button,input,textarea,select,summary') ??
+        ...(panel.current?.querySelectorAll<HTMLElement>('a[href],button,input,textarea,select,summary,[tabindex]:not([tabindex="-1"])') ??
           []),
       ].filter((el) => !el.hasAttribute('disabled') && el.getClientRects().length)
       const first = elements[0],
@@ -114,7 +114,18 @@ export function Modal({
     </div>
   )
 }
-export function Brand() {
+export function Brand({ linked = true }: { linked?: boolean }) {
+  const { session } = useSession()
+  const location = useLocation()
+  const scope = new URLSearchParams()
+  if (session?.role === 'PARENT' && location.pathname.startsWith('/parent/')) {
+    const current = new URLSearchParams(location.search)
+    for (const key of ['childId', 'from', 'to']) { const value = current.get(key); if (value) scope.set(key, value) }
+  }
+  const home = session ? roleStart(session.role) + (scope.size ? '?' + scope : '') : '/'
+  if (linked) return <Link className="app-brand" to={home} aria-label="사고뭉치 홈">
+    <img src="/brand-idea-transparent.png" alt="사고뭉치 · 생각을 잇는 배움" />
+  </Link>
   return (
     <span className="app-brand" role="img" aria-label="사고뭉치 · 생각을 잇는 배움">
       <img src="/brand-idea-transparent.png" alt="" aria-hidden="true" />
@@ -256,7 +267,7 @@ export function MemoCanvas() {
     <div className="ux-memo-drawing">
       <canvas
         ref={ref}
-        aria-label="학생 전용 그림 연습. 제출·판정·학부모 공유에 포함되지 않습니다."
+        aria-label="그림 연습"
       />
       <button
         type="button"
@@ -282,7 +293,7 @@ export function MemoCanvas() {
       >
         마지막 획 지우기
       </button>
-      <small>그림 연습은 현재 화면에서만 유지됩니다. 글 메모는 초안 저장 대상입니다.</small>
+      <small>그림은 이 화면을 나가면 사라져요.</small>
     </div>
   )
 }

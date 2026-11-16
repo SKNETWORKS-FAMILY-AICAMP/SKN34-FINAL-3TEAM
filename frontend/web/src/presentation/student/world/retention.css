@@ -1,0 +1,186 @@
+
+
+#class-journal .st-community h2,
+#class-journal .st-points-page h2 {
+  font-family: 'Black Han Sans', sans-serif;
+  font-weight: 400;
+  font-size: var(--st-fs-md, 22px);
+  margin: 12px 0 6px;
+}
+#class-journal .st-posts,
+#class-journal .st-ledger,
+#class-journal .st-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+#class-journal .st-community h1,
+#class-journal .st-points-page h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#class-journal .st-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0;
+  max-width: 420px;
+}
+#class-journal .st-post {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fffdf7;
+}
+#class-journal .st-post-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+#class-journal .st-post-answer {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+#class-journal .st-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#class-journal .st-reaction {
+  padding: 6px 12px;
+  border: 2px solid rgb(31 36 33 / 0.2);
+  border-radius: 999px;
+  background: #fff;
+}
+#class-journal .st-reaction[aria-pressed='true'] {
+  border-color: var(--st-accent);
+  background: #fff3df;
+}
+#class-journal .st-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+#class-journal .st-report {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+#class-journal .st-report textarea {
+  width: 100%;
+  min-height: 60px;
+}
+#class-journal .st-mine {
+  margin-top: 20px;
+}
+#class-journal .st-balance {
+  font-size: var(--st-fs-md, 22px);
+}
+#class-journal .st-balance strong {
+  font-family: 'Black Han Sans', sans-serif;
+  font-size: var(--st-fs-2xl, 40px);
+  font-weight: 400;
+}
+#class-journal .st-ledger li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: #fffdf7;
+}
+#class-journal .st-ledger strong[data-minus] {
+  color: #9a3412;
+}
+/* 꾸미기 해금 */
+#class-journal .st-pick-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#class-journal .st-pick:disabled {
+  opacity: 1;
+  cursor: default;
+}
+/* 뭉치 친구들(#648): 친구 색 바탕 */
+#class-journal .st-pick-friend .st-companion {
+  border-radius: 50%;
+  background: var(--st-friend-tint, transparent);
+}
+#class-journal .st-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--st-fs-xs, 13px);
+}
+#class-journal .st-unlock {
+  font-size: var(--st-fs-xs, 14px);
+  padding: 6px 10px;
+}
+#class-journal .st-points {
+  font-weight: 700;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+#class-journal .st-custom-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #edf4ed;
+  padding: 12px 16px;
+  border-radius: 14px;
+}
+#class-journal .st-custom-summary .st-companion { flex: none; }
+#class-journal .st-custom-summary p { margin: 4px 0; }
+#class-journal .st-unlock-confirm {
+  padding: 16px;
+  border: 2px solid #375f46;
+  border-radius: 14px;
+  background: #f2f6f0;
+}
+#class-journal .st-unlock-confirm p { margin: 10px 0; }
+#class-journal .st-custom-actions,
+#class-journal .st-points-pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+#class-journal .st-custom button:focus-visible {
+  outline: 3px solid #375f46;
+  outline-offset: 3px;
+}
+#class-journal .st-custom button { min-height: 44px; }
+@media (max-width: 480px) {
+  #class-journal .st-custom .st-pick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  #class-journal .st-slot-item { flex-wrap: wrap; }
+  #class-journal .st-custom-summary { gap: 10px; padding: 10px; }
+  #class-journal .st-custom-summary .st-companion { width: 64px; height: 64px; }
+}
+#class-journal .st-slot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  border: 2px solid rgb(31 36 33 / 0.12);
+  border-radius: 14px;
+  padding: 8px 12px;
+  margin: 8px 0 0;
+}
+#class-journal .st-slot-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+

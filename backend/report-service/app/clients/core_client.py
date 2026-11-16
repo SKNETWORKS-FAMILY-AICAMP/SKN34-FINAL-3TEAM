@@ -4,7 +4,7 @@ from uuid import UUID
 
 import httpx
 
-from app.generation.pipeline import StudentDisplayName
+from app.generation.models import StudentDisplayName
 from app.generation.records import RecordContractError
 from app.generation.template_settings import validate_snapshot
 
@@ -33,6 +33,7 @@ class CoreClient:
             nickname=profile["nickname"],
             parent_sharing_enabled=sharing,
             template_snapshot=validate_snapshot(settings.json()),
+            grade=profile.get("grade") if type(profile.get("grade")) is int else None,
         )
 
     async def report_deletion_completed(self, request_id: UUID):

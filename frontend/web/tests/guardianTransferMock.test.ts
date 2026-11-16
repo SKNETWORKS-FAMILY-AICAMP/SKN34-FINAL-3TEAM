@@ -49,7 +49,7 @@ before(() => server.listen({ onUnhandledFrame: 'error' }))
 after(() => server.close())
 beforeEach(async () => {
   sender = `sender-${++serial}@example.test`; receiver = `receiver-${serial}@example.test`
-  child = { id: crypto.randomUUID(), nickname: '이관 자녀', grade: 5, birthYear: 2015, plan: 'FREE' }
+  child = { id: crypto.randomUUID(), nickname: '이관 자녀', grade: 5, birthYear: 2015 }
   mockAccounts.add(sender); mockAccounts.add(receiver)
   mockAccountChildren.set(sender, [child]); mockAccountChildren.set(receiver, [])
   mockTransfers.clear(); transferUnavailableChildren.clear(); conversations.clear(); conversationOwners.clear()

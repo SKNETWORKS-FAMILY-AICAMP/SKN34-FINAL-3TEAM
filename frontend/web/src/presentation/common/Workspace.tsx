@@ -1,14 +1,10 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 function ServiceLinks({ role }: { role?: string }) {
-  const { session } = useSession()
-  // 스트림(RoleLayout)이 새 알림을 받으면 이 캐시가 다시 읽힌다.
-  const unread = useUnreadNotifications(!!role && role !== 'STUDENT' && (session?.nextAction ?? 'READY') === 'READY').data
+  const location = useLocation()
   if (!role) return null
   const root = '/' + role.toLowerCase()
   return <nav aria-label="이용 지원" className="ws-actions" style={{ marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
-    <Link to={root + '/help'}>도움말</Link><Link to={root + '/support'}>문의·오류 신고</Link><Link to={root + '/notices'}>공지</Link>
-    {role !== 'STUDENT' && <Link to={root + '/notifications'}>알림{unread?.items.length ? ` · 읽지 않음 ${unread.items.length}${unread.hasNext ? '+' : ''}` : ''}</Link>}
-    {role === 'PARENT' && <Link to="/parent/account">계정·자녀 관리</Link>}
+    {[['help', '도움말'], ['support', '문의·오류 신고'], ['notices', '공지']].map(([path, label]) => <Link key={path} to={root + '/' + path + location.search} aria-current={location.pathname === root + '/' + path ? 'page' : undefined}>{label}</Link>)}
     {isDemo && <Link to="/review">개발 점검표</Link>}
   </nav>
 }
@@ -17,7 +13,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthentication, isDemo } from '../../data/classroom/useClassroom.ts'
 import { useSession } from '../auth/sessionContext.ts'
-import { useUnreadNotifications } from '../../data/notifications.ts'
+import { NotificationBell } from './NotificationBell.tsx'
 import { Brand, ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { QueryStateNotice } from './QueryStateNotice.tsx'
 import type { Metric } from '../../domain/classroom.ts'
@@ -35,7 +31,8 @@ export function Workspace({
   aside,
 }: {
   title: string
-  nav: { path: string; label: string }[]
+  /** short·icon이 있으면 학부모 폰 크기에서 하단 바에 표시 */
+  nav: { path: string; label: string; short?: string; icon?: ReactNode }[]
   children: ReactNode
   actions?: ReactNode
   /** parent: 왼쪽 메뉴 + 본문 배치(학부모 대시보드 시안). 관리자는 기존 위쪽 메뉴 배치. */
@@ -49,6 +46,17 @@ export function Workspace({
     location = useLocation(),
     cache = useQueryClient()
   const [scenario, setScenario] = useState('normal')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const topbar = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const element = topbar.current
+    if (variant !== 'parent' || !element) return
+    const update = () => element.parentElement?.style.setProperty('--parent-topbar-height', `${element.getBoundingClientRect().height}px`)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [variant])
   async function leave() {
     try {
       await auth.logout.mutateAsync()
@@ -61,7 +69,7 @@ export function Workspace({
   }
   const logout = session && (
     <button
-      className="cj-secondary"
+      className="cj-secondary ws-logout"
       onClick={() => {
         void leave().catch(() => {})
       }}
@@ -103,6 +111,7 @@ export function Workspace({
             ['scope-change', '응답 범위 변경'],
             ['report-running', '리포트 생성 중'],
             ['report-failed', '리포트 생성 실패'],
+            ['explanation-missing', '주간 리포트 설명 미포함'],
             ['deleted-evidence', '삭제된 근거'],
             ['gone-evidence', '근거 410'],
             ['unlinked', '연결 안 된 자녀'],
@@ -125,6 +134,7 @@ export function Workspace({
           key={n.path}
           to={n.path + location.search}
           aria-current={location.pathname === n.path ? 'page' : undefined}
+          onClick={() => setMenuOpen(false)}
         >
           {n.label}
         </Link>
@@ -133,8 +143,7 @@ export function Workspace({
   )
   const footer = (
     <footer className="ws-footer">
-      자체 제작 문항·가상 기록을 사용하는 시연입니다. 기록이 적다는 것이 능력 부족을 뜻하지는
-      않습니다.
+      {isDemo ? '개발 목업 · 학습 기록과 결제는 가상 데이터입니다.' : '사고뭉치 · 아이의 생각이 쌓이는 곳'}
     </footer>
   )
   const expiredModal = expired && session && (
@@ -154,26 +163,36 @@ export function Workspace({
     return (
       <div id="class-journal">
         <div className="ws-shell ws-parent">
-          <aside className="ws-side">
-            <div className="ws-side-brand">
-              <Brand />
-              <span>{title}</span>
+          <a className="parent-skip" href="#parent-main">본문으로 건너뛰기</a>
+          <div className="ws-parent-topbar" ref={topbar}>
+            <div className="ws-topbar-card">
+            <header className="ws-header">
+              <div className="ws-top-brand"><Brand /></div>
+              <div className="ws-header-actions">{actions}</div>
+              <NotificationBell />
+              {logout}
+              <button className="cj-secondary ws-menu-toggle" aria-label="학부모 메뉴 열기" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>메뉴</button>
+            </header>
             </div>
+          </div>
+          <aside className="ws-side">
             {menu}
+            <section className="ws-support"><h2>이용 지원</h2><ServiceLinks role={session?.role} /></section>
             {aside}
           </aside>
           <div className="ws-body">
-            {demo}
-            <header className="ws-header">
-              <div className="ws-header-actions">
-                {actions}
-                {logout}
-              </div>
-            </header>
-            <main className="ws-main"><ServiceLinks role={session?.role} />{children}</main>
+            <main className="ws-main" id="parent-main" tabIndex={-1}>{children}</main>
             {footer}
           </div>
+          {nav.some(n => n.short) && <nav className="ws-bottom-nav" aria-label="학부모 하단 메뉴">
+            {nav.filter(n => n.short).map(n => (
+              <Link key={n.path} to={n.path + location.search} aria-label={n.label} aria-current={location.pathname === n.path ? 'page' : undefined}>
+                {n.icon}<span>{n.short}</span>
+              </Link>
+            ))}
+          </nav>}
           {expiredModal}
+          {menuOpen && <Modal title="학부모 메뉴" onClose={() => setMenuOpen(false)}><div className="ws-parent-menu">{menu}<div className="ws-menu-actions" onClick={event => { if ((event.target as Element).closest('button')) setMenuOpen(false) }}>{actions}{logout}</div><ServiceLinks role={session?.role} /></div></Modal>}
         </div>
       </div>
     )
@@ -186,6 +205,7 @@ export function Workspace({
           <div className="ws-header-actions">
             {actions}
             {logout}
+            <NotificationBell />
           </div>
         </header>
         {demo}
@@ -214,11 +234,13 @@ export function QueryFeedback({
     </>
   )
 }
-export function MetricCards({ metrics }: { metrics: Metric[] }) {
+export function MetricCards({ metrics, highlighted }: { metrics: Metric[]; highlighted?: number[] }) {
   return (
     <div className="ws-metrics">
       {metrics.map((m, i) => (
-        <article className="ws-card" key={i}>
+        <article className={highlighted ? 'ws-card report-highlight-target' : 'ws-card'} key={i}
+          data-answer-highlight={highlighted?.includes(i) ? 'true' : undefined} tabIndex={highlighted ? -1 : undefined}>
+          {highlighted?.includes(i) && <span className="report-highlight-label">선택한 답변의 근거</span>}
           <h3>{m.label}</h3>
           <strong className="ws-number">{metricText(m)}</strong>
           <QueryStateNotice state={m.state} />

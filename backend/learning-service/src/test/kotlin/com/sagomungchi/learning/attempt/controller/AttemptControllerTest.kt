@@ -2,6 +2,7 @@ package com.sagomungchi.learning.attempt.controller
 
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning.attempt.domain.Attempt
+import com.sagomungchi.learning.attempt.domain.AttemptContext
 import com.sagomungchi.learning.attempt.domain.AttemptDraft
 import com.sagomungchi.learning.attempt.domain.Difficulty
 import com.sagomungchi.learning.attempt.domain.DraftContent
@@ -33,6 +34,7 @@ import com.sagomungchi.learning.mission.domain.MissionSnapshot
 import com.sagomungchi.learning.mission.missionView
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoMoreInteractions
 import org.springframework.beans.factory.annotation.Autowired
@@ -101,6 +103,42 @@ class AttemptControllerTest(@Autowired private val mockMvc: MockMvc) {
         mockMvc.post("/internal/missions/${mission.id}/attempts?grade=3&demo=true") { asStudent() }.andExpect {
             status { isOk() }
         }
+    }
+
+    @Test
+    fun `시작 본문 context를 넘기고, 본문 없음·빈 객체·null은 EXTRA, 정해진 값 밖은 400 (#385)`() {
+        given(service.start(student, mission.id, 3, false, AttemptContext.THEME_DAY)).willReturn(AttemptStart(attempt, created = true))
+        given(service.start(student, mission.id, 3, false, AttemptContext.EXTRA)).willReturn(AttemptStart(attempt, created = false))
+        given(service.get(attempt.id)).willReturn(detail())
+        fun start(body: String?) = mockMvc.post("/internal/missions/${mission.id}/attempts?grade=3") {
+            asStudent()
+            body?.let {
+                contentType = MediaType.APPLICATION_JSON
+                content = it
+            }
+        }
+
+        start("""{"context":"THEME_DAY"}""").andExpect { status { isCreated() } }
+        listOf(null, "{}", """{"context":null}""", """{"context":"EXTRA"}""").forEach { body ->
+            start(body).andExpect { status { isOk() } }
+        }
+        start("""{"context":"TODAY"}""").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("VALIDATION_FAILED") }
+        }
+        // 본문 없음·{}·null·EXTRA 네 번 모두 EXTRA로 시작
+        verify(service, times(4)).start(student, mission.id, 3, false, AttemptContext.EXTRA)
+    }
+
+    @Test
+    fun `일요일 허용 값 sundayTheme 쿼리를 시작에 넘기고 없으면 false (#484)`() {
+        given(service.start(student, mission.id, 3, false, AttemptContext.THEME_DAY, true)).willReturn(AttemptStart(attempt, created = true))
+        given(service.get(attempt.id)).willReturn(detail())
+
+        mockMvc.post("/internal/missions/${mission.id}/attempts?grade=3&demo=false&sundayTheme=true") {
+            asStudent(); contentType = MediaType.APPLICATION_JSON; content = """{"context":"THEME_DAY"}"""
+        }.andExpect { status { isCreated() } }
+        verify(service).start(student, mission.id, 3, false, AttemptContext.THEME_DAY, true)
     }
 
     @Test

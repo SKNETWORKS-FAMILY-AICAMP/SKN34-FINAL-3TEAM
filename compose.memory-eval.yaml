@@ -1,0 +1,41 @@
+# 추억 검색 평가 전용 오버레이 (#568). E2E 스택(compose.e2e.yaml) 위에 얹어 PC 한 대에서 평가 기록을 만들고 잰다.
+# - 판정 LLM은 llm-stub(비용 0), 추억 검색 임베딩만 실제 OpenAI(EVAL_OPENAI_API_KEY). ai 임베딩은 OPENAI_BASE_URL을 쓰지 않는다
+# - core·learning은 시험 시계 이미지(infrastructure/aws/demo-clock.Dockerfile)로 띄우고 EVAL_FAKETIME으로 시각을 옮긴다(#624와 같은 방식)
+# - 순서·명령은 evaluation/datasets/memory/README.md "PC(compose)로 실행"
+# 실행: (셸에 EVAL_OPENAI_API_KEY) docker compose -p mem-eval --env-file infrastructure/stubs/e2e.env \
+#         -f compose.yaml -f compose.minio.yaml -f compose.e2e.yaml -f compose.memory-eval.yaml \
+#         up -d --wait core-service learning-service ai-service
+# 종료: 같은 옵션으로 down -v (평가 기록·임베딩이 모두 지워짐). 운영·시연 스택에 쓰지 않는다
+services:
+  core-service:
+    image: mem-eval-core-clock
+    pull_policy: never
+    build: !reset null
+    environment:
+      LD_PRELOAD: ${EVAL_LD_PRELOAD-}
+      FAKETIME: ${EVAL_FAKETIME:-+0}
+      FAKETIME_FORCE_MONOTONIC_FIX: "1"
+      FAKETIME_DONT_RESET: "1"
+
+  learning-service:
+    image: mem-eval-learning-clock
+    pull_policy: never
+    build: !reset null
+    environment:
+      LD_PRELOAD: ${EVAL_LD_PRELOAD-}
+      FAKETIME: ${EVAL_FAKETIME:-+0}
+      FAKETIME_FORCE_MONOTONIC_FIX: "1"
+      FAKETIME_DONT_RESET: "1"
+      MEMORY_EMBEDDING_ENABLED: "true"
+      MEMORY_MINIMUM_SIMILARITY: ${EVAL_MIN_SIMILARITY:-0.35}
+      MEMORY_QUERY_REWRITE_ENABLED: ${EVAL_QUERY_REWRITE:-false} # #682 질의 변환·하이브리드. 기본 꺼짐(벡터만), 하이브리드 잴 때만 EVAL_QUERY_REWRITE=true + ai 실제 LLM
+
+  ai-service:
+    environment:
+      OPENAI_API_KEY: ${EVAL_OPENAI_API_KEY:?셸 환경 변수 EVAL_OPENAI_API_KEY에 OpenAI 키 필요(임베딩용)}
+      # 기본은 판정·설명 모두 llm-stub. 설명 20건 평가 때만 EVAL_LLM_BASE_URL=https://api.openai.com/v1 · EVAL_LLM_MODEL=gpt-6-luna로 ai만 다시 띄움
+      OPENAI_BASE_URL: ${EVAL_LLM_BASE_URL-http://llm-stub:8080/v1}
+      OPENAI_MODEL: ${EVAL_LLM_MODEL:-e2e-stub}
+      EMBEDDING_PROVIDER: openai
+      EMBEDDING_MODEL: ${EVAL_EMBEDDING_MODEL:-text-embedding-3-small} # 개선 후보 비교 때만 EVAL_EMBEDDING_MODEL=text-embedding-3-large(1536차원 그대로), 바꾼 뒤 평가 DB 문서 다시 임베딩
+      EMBEDDING_DIMENSIONS: "1536"

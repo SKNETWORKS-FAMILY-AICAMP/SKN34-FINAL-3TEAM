@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 96 208 208" width="60" height="60">
+<!-- 옷 앞 장식(앞모습에만). 옷 그림과 같은 좌표·크기 -->
+<path d="M 100 170 L 82 163 L 86 179 Z M 100 170 L 118 163 L 114 179 Z" fill="#F2B21E" stroke="#3A2A20" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="100" cy="184" r="3.4" fill="#3A2A20"/><circle cx="100" cy="194" r="3.4" fill="#3A2A20"/>
+</svg>

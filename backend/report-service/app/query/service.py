@@ -2,9 +2,6 @@
 
 from uuid import UUID
 
-import httpx
-from pydantic import ValidationError
-
 from app.clients.storage import report_key
 from app.concurrency import run_blocking
 from app.database import run_db
@@ -30,6 +27,7 @@ def summary(row):
         "childId": str(row["student_id"]),
         "period": {"from": row["period_from"].isoformat(), "to": row["period_to"].isoformat()},
         "revision": row["revision"],
+        "periodType": row["period_type"],
         "status": row["status"],
         "state": row["state"],
     }
@@ -41,13 +39,17 @@ class QueryService:
         self._storage, self._ttl = storage_loader, ttl
         self._reports = ReportReadService()
 
-    async def list(self, student_id: UUID, status: str | None, page: int, size: int):
+    async def list(
+        self, student_id: UUID, status: str | None, page: int, size: int, period_type=None
+    ):
         require_student(student_id)
 
         def query():
             with self._factory() as session:
                 ensure_query_allowed(session, student_id)
-                rows, total = self._reports.latest_page(session, student_id, status, page, size)
+                rows, total = self._reports.latest_page(
+                    session, student_id, status, page, size, period_type
+                )
                 return {
                     "items": [summary(row) for row in rows],
                     "page": page,
@@ -65,12 +67,32 @@ class QueryService:
         ensure_query_allowed(session, row["student_id"])
         return row
 
+    async def correction_impact(self, student_id: UUID, attempt_id: UUID):
+        require_student(student_id)
+
+        def query():
+            with self._factory() as session:
+                ensure_query_allowed(session, student_id)
+                return {
+                    "items": [
+                        {
+                            "reportId": str(row["id"]),
+                            "periodType": row["period_type"],
+                            "periodFrom": row["period_from"].isoformat(),
+                            "revision": row["revision"],
+                        }
+                        for row in self._reports.correction_impact(session, student_id, attempt_id)
+                    ]
+                }
+
+        return await run_db(query)
+
     async def detail(self, report_id: UUID, revision: int | None, narrative_enabled: bool):
         def query():
             with self._factory() as session:
                 anchor = self._anchor(session, report_id)
                 versions = self._reports.revisions(
-                    session, anchor["student_id"], anchor["period_from"]
+                    session, anchor["student_id"], anchor["period_from"], anchor["period_type"]
                 )
                 row = next(
                     (r for r in versions if revision is None or r["revision"] == revision), None
@@ -86,6 +108,8 @@ class QueryService:
                     ],
                     "inclusionRule": row["inclusion_rule"],
                     "narrative": row["narrative"],
+                    "themeSummary": row["theme_summary"],
+                    "explanationState": (row["verification"] or {}).get("explanationState"),
                     "verification": row["verification"]
                     or {"numbersMatched": False, "quotesMatched": False},
                     "versions": row["versions"] or {"prompt": None, "model": None},
@@ -94,6 +118,8 @@ class QueryService:
                 }
                 values = []
                 for item in items:
+                    if item["item_type"] == "EXPLANATION" and not item["verified"]:
+                        continue
                     payload = dict(item["payload"])
                     if item["item_type"] == "QUOTE":
                         payload["verified"] = item["verified"] and payload.get("verified", False)
@@ -117,7 +143,7 @@ class QueryService:
         student_id, links = await run_db(query)
         try:
             evidence = await self._learning.evidence(student_id, links)
-        except (httpx.HTTPError, RecordContractError, ValidationError):
+        except RecordContractError:
             raise ApiError(503, "DATA_UNAVAILABLE", "근거 원문 조회에 실패했습니다") from None
         return {
             "items": [

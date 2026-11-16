@@ -19,7 +19,7 @@ data class AdminMission(
     val versions: List<AdminMissionVersion>,
     val rubrics: List<AdminRubric>,
     val reviews: List<AdminReview>,
-    /** 처음 만든 방식 (#353): 사람 작성 MANUAL, 초안 채택 LLM_DRAFT */
+    /** 처음 만든 방식 (#353): 사람 작성 MANUAL, 초안 채택 LLM_DRAFT, 테마 초안 채택 LLM_THEME(#438) */
     val source: MissionSource = MissionSource.MANUAL,
 )
 
@@ -122,7 +122,19 @@ data class MissionCommand(
     val demoOnly: Boolean,
     /** 성취기준별 성취수준 단계 (#353). 저장 때 모양만, 단계 수·키는 게시 때 확인 */
     val achievementLevels: Map<String, String>? = null,
-)
+    /** 장면 그림 움직임 (#438). 테마 초안 채택만 채우고 관리자 API 본문에는 없음(carryMotion) */
+    val sceneMotion: Map<String, Any?>? = null,
+) {
+    /**
+     * 관리자 수정 본문에는 sceneMotion이 없으므로(#438, 사용자 결정 2026-11-10) 장면(sceneUri)이 현재 버전과 같으면 그 움직임을 이어받고,
+     * 장면을 바꾸면 비운다(새 그림에 옛 움직임이 맞지 않음)
+     */
+    fun carryMotion(current: MissionScene?): MissionCommand =
+        if (sceneMotion != null || current == null) this else copy(sceneMotion = current.sceneMotion.takeIf { current.sceneUri == sceneUri })
+}
+
+/** 미션 현재 버전의 장면과 움직임 (#438, 관리자 수정 이어받기용) */
+data class MissionScene(val sceneUri: String?, val sceneMotion: Map<String, Any?>?)
 
 /** 기준표 저장 본문 = 새 기준표 버전. authorId는 core가 넘긴 관리자 ID */
 data class RubricCommand(

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 Object.defineProperty(globalThis, 'location', { value: new URL('http://localhost/'), configurable: true })
 const { setupServer } = await import('msw/node')
 const { studentHandlers } = await import('../src/mocks/handlers/student.ts')
+const { unlockedOf } = await import('../src/mocks/fixtures/retention.ts')
 
 const server = setupServer(...studentHandlers)
 server.listen({ onUnhandledFrame: 'error' })
@@ -40,6 +41,16 @@ test('꾸미기 설정: 학생만 읽고 바꾸며, 목록 밖 값은 422', asyn
     token: student,
   })
   assert.equal(bad.status, 422)
+
+  // P22: lake·mungchi 외 테마·캐릭터는 해금한 것만 저장한다.
+  const locked = await call('/students/me/preferences', {
+    method: 'PUT',
+    body: JSON.stringify({ theme: 'space', companion: 'kongi' }),
+    token: student,
+  })
+  assert.equal(locked.status, 409)
+  assert.equal(locked.body.code, 'LOOK_LOCKED')
+  unlockedOf(childId).push('THEME:space', 'COMPANION:kongi')
 
   const saved = await call('/students/me/preferences', {
     method: 'PUT',

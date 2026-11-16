@@ -106,7 +106,9 @@ def verify(args):
         env = os.environ.copy()
         env.update(DB_URL=f"jdbc:postgresql://{external_db or '127.0.0.1'}:{db_port}/{database}",
                    DB_USERNAME="issue39", DB_PASSWORD="issue39-disposable-password",
-                   INTERNAL_TOKEN=internal, RABBITMQ_USERNAME="unused", RABBITMQ_PASSWORD="unused",
+                   INTERNAL_TOKEN=internal,
+                   **{f"INTERNAL_TOKEN_{c}": internal for c in ("CORE", "AI", "LEARNING", "SCORING", "REPORT_API", "REPORT_WORKER")},
+                   RABBITMQ_USERNAME="unused", RABBITMQ_PASSWORD="unused",
                    AUTH_JWT_SECRET=base64.b64encode(b"issue39-only-disposable-jwt-secret-32bytes").decode(),
                    AUTH_WEB_ORIGIN=core_url, AUTH_COOKIE_SECURE="false", AI_URL=ai_url,
                    LEARNING_URL=learning_url, CORE_URL=core_url,
@@ -193,7 +195,7 @@ def verify(args):
             created.append(docker("create", "--rm", "--name", container, "-p", "127.0.0.1::5432",
                                   "--cpus=0.5", "--memory=256m",
                                   "-e", "POSTGRES_DB=" + core_db, "-e", "POSTGRES_USER=issue39",
-                                  "-e", "POSTGRES_PASSWORD=issue39-disposable-password", "postgres:17.11-alpine"))
+                                  "-e", "POSTGRES_PASSWORD=issue39-disposable-password", "pgvector/pgvector:0.8.7-pg17-trixie"))
             docker("start", created[-1])
             # The image's temporary init server accepts Unix sockets before its final restart, but not TCP.
             wait_for(lambda: subprocess.run(["docker", "exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "issue39", "-d", core_db],

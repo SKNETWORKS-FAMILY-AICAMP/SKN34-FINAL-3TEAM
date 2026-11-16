@@ -5,6 +5,7 @@
         <constructor>
             <idArg column="id" javaType="java.util.UUID"/>
             <arg column="student_id" javaType="java.util.UUID"/>
+            <arg column="period_type" javaType="com.sagomungchi.core.report.domain.ReportPeriodType"/>
             <arg column="period_from" javaType="java.time.LocalDate"/>
             <arg column="period_to" javaType="java.time.LocalDate"/>
             <arg column="trigger" javaType="com.sagomungchi.core.report.domain.ReportTrigger"/>
@@ -22,11 +23,13 @@
         SELECT DISTINCT g.parent_user_id FROM guardianship g JOIN user_account u ON u.id=g.parent_user_id
         WHERE g.status='LINKED' AND u.status='ACTIVE' AND u.role='PARENT' ORDER BY g.parent_user_id
     </select>
-    <select id="lockWeek" resultType="java.lang.Object" flushCache="true" useCache="false">
-        SELECT pg_advisory_xact_lock(hashtextextended('report:' || CAST(#{studentId} AS text) || ':' || CAST(#{from} AS text), 0))
+    <!-- Daily and weekly jobs of a Monday share period_from; the period type is part of every per-period key (P24). -->
+    <select id="lockPeriod" resultType="java.lang.Object" flushCache="true" useCache="false">
+        SELECT pg_advisory_xact_lock(hashtextextended('report:' || CAST(#{studentId} AS text) || ':' || CAST(#{type} AS text)
+            || ':' || CAST(#{from} AS text), 0))
     </select>
     <select id="scheduled" resultMap="job" useCache="false" flushCache="true">
-        SELECT * FROM report_job WHERE student_id=#{studentId} AND period_from=#{from} AND trigger='SCHEDULE'
+        SELECT * FROM report_job WHERE student_id=#{studentId} AND period_type=#{type} AND period_from=#{from} AND trigger='SCHEDULE'
     </select>
     <select id="stale" resultMap="job" useCache="false" flushCache="true">
         SELECT * FROM report_job WHERE status IN ('QUEUED','RUNNING') AND created_at &lt;= #{before}
@@ -40,15 +43,17 @@
     <select id="lock" resultMap="job" useCache="false" flushCache="true">SELECT * FROM report_job WHERE id=#{id} FOR UPDATE</select>
     <select id="byReport" resultMap="job" useCache="false" flushCache="true">SELECT * FROM report_job WHERE report_id=#{reportId}</select>
     <select id="inProgress" resultType="int" useCache="false" flushCache="true">
-        SELECT count(*) FROM report_job WHERE student_id=#{studentId} AND period_from=#{from} AND status IN ('QUEUED','RUNNING')
+        SELECT count(*) FROM report_job WHERE student_id=#{studentId} AND period_type=#{type} AND period_from=#{from}
+            AND status IN ('QUEUED','RUNNING')
     </select>
     <select id="regenerations" resultType="int" useCache="false" flushCache="true">
-        SELECT count(*) FROM report_job WHERE student_id=#{studentId} AND period_from=#{from} AND trigger='REGENERATE'
+        SELECT count(*) FROM report_job WHERE student_id=#{studentId} AND period_type=#{type} AND period_from=#{from}
+            AND trigger='REGENERATE'
     </select>
     <insert id="insert">
-        INSERT INTO report_job(id,student_id,period_from,period_to,trigger,requested_by,status,report_id,failure_reason,
+        INSERT INTO report_job(id,student_id,period_type,period_from,period_to,trigger,requested_by,status,report_id,failure_reason,
             retry_count,created_at,started_at,completed_at)
-        VALUES(#{id},#{studentId},#{periodFrom},#{periodTo},#{trigger},#{requestedBy},#{status},#{reportId},#{failureReason},
+        VALUES(#{id},#{studentId},#{periodType},#{periodFrom},#{periodTo},#{trigger},#{requestedBy},#{status},#{reportId},#{failureReason},
             0,#{createdAt},#{startedAt},#{completedAt})
     </insert>
     <update id="transition">

@@ -4,7 +4,8 @@ import java.util.UUID
 
 /**
  * 학생에게 보여 줄 공개 미션의 현재 버전 (FN-LRN-02·03).
- * 정답·예시 답·기준표는 마무리 전 공개 금지라 담지 않음. categories는 분류 그룹, answerUnit은 수학 최종 답 칸 뒤에 고정할 단위 (#79)
+ * 정답·예시 답·기준표는 마무리 전 공개 금지라 담지 않음. categories는 분류 그룹, answerUnit은 수학 최종 답 칸 뒤에 고정할 단위 (#79).
+ * #438: sceneMotion은 장면 그림 움직임(ai JSON 그대로). 학생용 조회(MissionService)는 sceneUri·staticSceneUri의 ai 키를 presigned URL로 바꿔 돌려줌
  */
 data class MissionView(
     val id: UUID,
@@ -24,6 +25,7 @@ data class MissionView(
     val demoOnly: Boolean,
     val categories: List<Category> = emptyList(),
     val answerUnit: String? = null,
+    val sceneMotion: Map<String, Any?>? = null,
 ) {
     /**
      * 학생에게 노출되는 미션 (state-diagram 3.1): 학년 범위 안, 논술 틀은 초5~6만 (P03),

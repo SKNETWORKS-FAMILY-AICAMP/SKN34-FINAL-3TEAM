@@ -11,10 +11,15 @@ $dbRoles = [ordered]@{
     LEARNING_MIGRATE = 'learning_migrate'; LEARNING_APP = 'learning_app'
     REPORT_MIGRATE = 'report_migrate'; REPORT_APP = 'report_app'
 }
+# Per-caller internal tokens and per-service broker accounts (architecture 2.2, 4.5). The ops token is
+# optional: set it only when running scripts/knowledge against kind through a port-forward.
+$tokenCallers = @('CORE', 'LEARNING', 'AI', 'SCORING', 'REPORT_API', 'REPORT_WORKER')
+$mqServices = @('CORE', 'LEARNING', 'AI', 'SCORING', 'REPORT')
 $requiredKeys = @(
-    'RABBITMQ_USER', 'RABBITMQ_PASSWORD',
-    'MINIO_ROOT_USER', 'MINIO_ROOT_PASSWORD', 'INTERNAL_TOKEN', 'AUTH_JWT_SECRET'
-) + @($dbRoles.Keys | ForEach-Object { "${_}_PASSWORD" })
+    'MINIO_ROOT_USER', 'MINIO_ROOT_PASSWORD', 'AUTH_JWT_SECRET'
+) + @($dbRoles.Keys | ForEach-Object { "${_}_PASSWORD" }) +
+    @($tokenCallers | ForEach-Object { "INTERNAL_TOKEN_$_" }) +
+    @($mqServices | ForEach-Object { "RABBITMQ_${_}_PASSWORD" })
 # External credentials copied as-is when set (#236). Keep in sync with environments/local/*.yaml.
 $passthroughKeys = @(
     'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
@@ -22,7 +27,7 @@ $passthroughKeys = @(
     'TOSS_TEST_SECRET_KEY', 'TOSSPAYMENTS_SECRET_KEY', 'TOSS_TEST_MID', 'TOSS_TEST_WEBHOOK_SECURITY_KEY',
     'TOSS_TEST_BILLING_SECRET_KEY', 'TOSS_TEST_BILLING_MID', 'TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY'
 )
-$optionalKeys = $passthroughKeys + @('GRAFANA_ADMIN_USER', 'GRAFANA_ADMIN_PASSWORD')
+$optionalKeys = $passthroughKeys + @('GRAFANA_ADMIN_USER', 'GRAFANA_ADMIN_PASSWORD', 'INTERNAL_TOKEN_OPS')
 
 # Pass manifests through UTF-8 stdin so no credential appears in a command argument or temp file.
 function Invoke-LocalKubectl {
@@ -77,11 +82,19 @@ foreach ($key in $requiredKeys) {
         throw "Missing environment key: $key"
     }
 }
-if ($credentials.RABBITMQ_USER.Contains(':')) { throw 'RABBITMQ_USER must not contain a colon.' }
+foreach ($service in $mqServices) {
+    if ($credentials["RABBITMQ_${service}_PASSWORD"] -cnotmatch '^[A-Za-z0-9_-]+$') { throw "RABBITMQ_${service}_PASSWORD must use only letters, digits, - and _." }
+}
 if ($credentials.MINIO_ROOT_USER.Length -lt 3 -or $credentials.MINIO_ROOT_PASSWORD.Length -lt 8) {
     throw 'MinIO requires a username of at least 3 characters and password of at least 8 characters.'
 }
-if ($credentials.INTERNAL_TOKEN.Length -lt 16) { throw 'INTERNAL_TOKEN must have at least 16 characters.' }
+if (-not [string]::IsNullOrWhiteSpace($credentials.INTERNAL_TOKEN_OPS)) { $tokenCallers += 'OPS' }
+$tokenValues = @($tokenCallers | ForEach-Object { $credentials["INTERNAL_TOKEN_$_"] })
+foreach ($caller in $tokenCallers) {
+    if ($credentials["INTERNAL_TOKEN_$caller"].Length -lt 16) { throw "INTERNAL_TOKEN_$caller must have at least 16 characters." }
+}
+# A shared value would let one caller use another caller's path allowlist.
+if (@($tokenValues | Sort-Object -CaseSensitive -Unique).Count -ne $tokenValues.Count) { throw 'INTERNAL_TOKEN_* values must all differ.' }
 try {
     if ([Convert]::FromBase64String($credentials.AUTH_JWT_SECRET).Length -lt 32) {
         throw 'AUTH_JWT_SECRET must decode to at least 32 bytes.'
@@ -105,8 +118,6 @@ if ($nodes.Count -ne 1 -or $nodes[0].metadata.name -cne $nodeName) {
     throw 'Context does not point to the sagomungchi-local kind cluster.'
 }
 
-$mqUser = [Uri]::EscapeDataString($credentials.RABBITMQ_USER)
-$mqPassword = [Uri]::EscapeDataString($credentials.RABBITMQ_PASSWORD)
 function Get-ReportDbUrl([string]$Role) {
     $user = [Uri]::EscapeDataString($dbRoles[$Role])
     $password = [Uri]::EscapeDataString($credentials["${Role}_PASSWORD"])
@@ -121,15 +132,19 @@ $app = @{
     LEARNING_DB_PASSWORD = $credentials.LEARNING_APP_PASSWORD
     LEARNING_MIGRATE_USERNAME = $dbRoles.LEARNING_MIGRATE
     LEARNING_MIGRATE_PASSWORD = $credentials.LEARNING_MIGRATE_PASSWORD
-    RABBITMQ_USERNAME = $credentials.RABBITMQ_USER
-    RABBITMQ_PASSWORD = $credentials.RABBITMQ_PASSWORD
-    RABBITMQ_URL = "amqp://${mqUser}:${mqPassword}@rabbitmq.platform.svc.cluster.local:5672/"
-    INTERNAL_TOKEN = $credentials.INTERNAL_TOKEN
     AUTH_JWT_SECRET = $credentials.AUTH_JWT_SECRET
     REPORT_DATABASE_URL = Get-ReportDbUrl 'REPORT_APP'
     REPORT_ALEMBIC_DATABASE_URL = (Get-ReportDbUrl 'REPORT_MIGRATE').Replace('%', '%%')
     MINIO_ROOT_USER = $credentials.MINIO_ROOT_USER
     MINIO_ROOT_PASSWORD = $credentials.MINIO_ROOT_PASSWORD
+}
+foreach ($caller in $tokenCallers) { $app["INTERNAL_TOKEN_$caller"] = $credentials["INTERNAL_TOKEN_$caller"] }
+foreach ($service in $mqServices) {
+    $name = $service.ToLowerInvariant()
+    $password = $credentials["RABBITMQ_${service}_PASSWORD"]
+    $app["RABBITMQ_${service}_USERNAME"] = $name
+    $app["RABBITMQ_${service}_PASSWORD"] = $password
+    $app["RABBITMQ_${service}_URL"] = "amqp://${name}:${password}@rabbitmq.platform.svc.cluster.local:5672/"
 }
 foreach ($key in $passthroughKeys) {
     if (-not [string]::IsNullOrWhiteSpace($credentials[$key])) { $app[$key] = $credentials[$key] }

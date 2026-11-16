@@ -1,9 +1,11 @@
 import { createDemoGateway } from '../../data/classroom/demoGateway.ts'
+import { mockPremium } from './payments.ts'
 import { blankAnswer } from '../../domain/classroom.ts'
 import type { AnswerContent, Attempt, Draft, Mission } from '../../domain/classroom.ts'
 
 // 기존 가상 학생/자체 문항 저장소를 MSW 안에서만 재사용한다. 앱 데이터 경로에 주입하지 않는다.
-export const fixtureStore = createDemoGateway()
+// 이용권은 결제 목업의 구독만 본다(fixtures/payments.ts).
+export const fixtureStore = createDemoGateway({ premium: childId => mockPremium(childId) })
 export const mockSubmissionReceipts = new Map<
   string,
   {

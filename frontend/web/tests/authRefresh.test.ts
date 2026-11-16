@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apiFetch, ApiError, setAccessToken, withAuth } from '../src/data/apiClient.ts'
+import { apiFetch, ApiError, refreshAccessToken, setAccessToken, withAuth } from '../src/data/apiClient.ts'
 import { streamSse } from '../src/data/sse.ts'
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -111,4 +111,47 @@ test('로그아웃 이후 도착한 refresh는 토큰을 되살리지 않음', a
   release()
   await assert.rejects(request)
   assert.equal(withAuth().has('Authorization'), false)
+})
+
+test('갱신 연결 오류·요청 제한·잘못된 응답은 로그인 만료로 바꾸지 않고 다시 확인할 수 있다', async t => {
+  let failure: 'network' | 'limited' | 'forbidden' | 'invalid' | 'none' = 'network'
+  setAccessToken('existing-parent', 'PARENT')
+  t.mock.method(globalThis, 'fetch', async () => {
+    if (failure === 'network') throw new TypeError('Failed to fetch')
+    if (failure === 'limited') return json({ code: 'RATE_LIMITED' }, 429)
+    if (failure === 'forbidden') return json({ code: 'ORIGIN_REJECTED' }, 403)
+    if (failure === 'invalid') return json({ accessToken: '' })
+    return json({ accessToken: 'recovered-parent', role: 'PARENT' })
+  })
+  for (const state of ['network', 'limited', 'forbidden', 'invalid'] as const) {
+    failure = state
+    await assert.rejects(refreshAccessToken(), (e) => e instanceof ApiError && e.problem.status !== 401)
+    assert.equal(withAuth().get('Authorization'), 'Bearer existing-parent')
+  }
+  failure = 'none'
+  await refreshAccessToken()
+  assert.equal(withAuth().get('Authorization'), 'Bearer recovered-parent')
+  setAccessToken(null)
+})
+
+test('다른 로그인 뒤 도착한 이전 401은 새 세션을 지우거나 이전 쓰기를 새 계정으로 재전송하지 않는다', async t => {
+  for (const code of ['TOKEN_EXPIRED', 'UNAUTHENTICATED']) {
+    let release!: () => void, started!: () => void
+    const waiting = new Promise<void>(resolve => { release = resolve })
+    const sent = new Promise<void>(resolve => { started = resolve })
+    let calls = 0
+    setAccessToken('previous-parent', 'PARENT')
+    t.mock.method(globalThis, 'fetch', async () => {
+      calls++; started(); await waiting
+      return json({ code }, 401)
+    })
+    const write = apiFetch('/children', { method: 'POST', body: '{"nickname":"이전 계정의 입력"}' })
+    await sent
+    setAccessToken('current-parent', 'PARENT')
+    release()
+    await assert.rejects(write, (e) => e instanceof ApiError && e.problem.code === 'SESSION_CHANGED')
+    assert.equal(calls, 1)
+    assert.equal(withAuth().get('Authorization'), 'Bearer current-parent')
+  }
+  setAccessToken(null)
 })

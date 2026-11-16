@@ -1,6 +1,6 @@
 # 로컬 kind 클러스터 기준과 설치 절차
 
-[이슈 #17](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/17)의 클러스터 설정이다. [아키텍처](../../docs/design/architecture.md#41-환경-구분)와 [자원 설계](../../docs/report/local-platform.md)를 따른다.
+[이슈 #17](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/17)의 클러스터 설정이다. [아키텍처](../../docs/design/architecture.md#41-환경-구분)와 [자원 설계](../../docs/report/infra.md)를 따른다.
 
 ## 클러스터에 사용할 값
 
@@ -55,7 +55,7 @@ netsh interface ipv4 show excludedportrange protocol=tcp
 - Docker Desktop Linux Engine과 WSL 2가 필요하다. kind v0.33.0·Helm v4.3.1의 Windows amd64 공식 배포 파일과 checksum을 확인해서 도구를 준비한다.
 - Secret 준비 스크립트는 PowerShell 7 이상이 필요하며 Windows 기본 PowerShell 5.1에서는 실행할 수 없다. 미설치 시 `winget install --id Microsoft.PowerShell --source winget`으로 설치하고 새 터미널에서 `pwsh --version`으로 7 이상인지 확인한다. 스크립트는 아래 절차의 `pwsh -File` 명령으로 실행한다. [공식 설치 안내](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows)를 따른다.
 - 기존 `sagomungchi-local` 클러스터·context가 있으면 생성 명령을 실행하기 전에 소유권과 상태를 확인한다. 삭제·덮어쓰기해서 진행하지 않는다.
-- [자원 설계](../../docs/report/local-platform.md)의 메모리·디스크 여유를 확보한다. 다른 작업의 컨테이너·WSL·프로그램을 자동으로 중단하거나 데이터를 정리하지 않는다.
+- [자원 설계](../../docs/report/infra.md)의 메모리·디스크 여유를 확보한다. 다른 작업의 컨테이너·WSL·프로그램을 자동으로 중단하거나 데이터를 정리하지 않는다.
 - 아래 명령은 저장소 루트에서 실행한다. API·HTTP·HTTPS는 loopback에서만 노출한다. 다른 PC·모바일 기기 접근은 별도 요구사항과 설계가 필요하다.
 
 ## 실제 설치 순서
@@ -103,14 +103,14 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --version 4.15.
 
 ### 5. 앱 배포
 
-앱 6종·관측도 같은 `sagomungchi-local` 클러스터에 배포한다. 별도 검증 클러스터를 두지 않는다. Secret 원본은 Compose와 같은 루트 `.env` 하나다.
+앱 6종과 설명 sLLM 대역(`sllm-server`, #476)·관측도 같은 `sagomungchi-local` 클러스터에 배포한다. 별도 검증 클러스터를 두지 않는다. Secret 원본은 Compose와 같은 루트 `.env` 하나다.
 
 ```powershell
 pwsh -File infrastructure/kind/create-app-secrets.ps1
 ```
 
 - 스크립트는 context·노드 이름을 검사한 뒤 `app/app-service-credentials`를 만든다. `.env`에 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`가 있으면 `observability/observability-credentials`도 만든다. 값은 kubectl의 UTF-8 stdin으로만 전달하고, 같은 이름의 Secret이 이미 있으면 값을 대조해 다르면 아무것도 바꾸지 않고 멈춘다.
-- 앱 이미지는 `environments/local/*.yaml`의 `sagomungchi/*:local` 이름으로 빌드한다. Docker의 다중 플랫폼 캐시 이미지는 `kind load docker-image`가 누락 digest로 실패할 수 있으므로 `docker image save --platform linux/amd64 -o <임시 archive> <이미지:local>` 뒤 `kind load image-archive <임시 archive> --name sagomungchi-local`로 로드하고 archive를 지운다.
+- 앱 이미지는 `environments/local/*.yaml`의 `sagomungchi/*:local` 이름으로 빌드한다. `sllm-server`는 `docker build -t sagomungchi/llm-stub:local infrastructure/stubs/llm-stub`으로 만든 대역 이미지를 쓰고, 내려받을 MinIO 객체는 platform-data 초기화 Job이 만든다(#509). Docker의 다중 플랫폼 캐시 이미지는 `kind load docker-image`가 누락 digest로 실패할 수 있으므로 `docker image save --platform linux/amd64 -o <임시 archive> <이미지:local>` 뒤 `kind load image-archive <임시 archive> --name sagomungchi-local`로 로드하고 archive를 지운다.
 - Helm·kubectl 명령은 모든 호출에 `--kube-context kind-sagomungchi-local` 또는 `--context kind-sagomungchi-local`을 명시한다. 동기화 순서는 [local Argo CD 안내](../gitops/argocd/local/README.md)를 따른다.
 - 전체 앱·모델·관측을 한 번에 기동할 메모리 예산은 검증되지 않았다. platform → migration·core·learning → 나머지 API → worker·KEDA → 관측 순으로 자원을 확인하며 올린다.
 - 외부 연동 키(#236): `.env`에 값이 있는 Google·OpenAI/Anthropic·토스 테스트 키·`PAYMENT_*`만 앱 Secret에 넣는다. 토스는 `test_` 키만 허용하며 `live_` 키는 스크립트가 거부한다. 키를 바꾸면 기존 Secret과 값이 달라 스크립트가 멈추므로, 저장된 데이터와 무관한 앱 Secret만 `kubectl --context kind-sagomungchi-local -n app delete secret app-service-credentials`로 지운 뒤 다시 만들고 core·ai를 재시작한다. platform Secret은 지우지 않는다.

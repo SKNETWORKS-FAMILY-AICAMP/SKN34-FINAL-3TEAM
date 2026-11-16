@@ -1,7 +1,7 @@
 [
   {
     "AlarmName": "sagomungchi-demo-alb-no-healthy-target",
-    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "AlarmDescription": "PROPOSED ONLY: review infrastructure/aws/README.md and bind confirmed SNS actions before enabling.",
     "ActionsEnabled": false,
     "AlarmActions": [],
     "OKActions": [],
@@ -28,7 +28,7 @@
   },
   {
     "AlarmName": "sagomungchi-demo-alb-5xx",
-    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "AlarmDescription": "PROPOSED ONLY: review infrastructure/aws/README.md and bind confirmed SNS actions before enabling.",
     "ActionsEnabled": false,
     "AlarmActions": [],
     "OKActions": [],
@@ -51,7 +51,7 @@
   },
   {
     "AlarmName": "sagomungchi-demo-target-5xx",
-    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "AlarmDescription": "PROPOSED ONLY: review infrastructure/aws/README.md and bind confirmed SNS actions before enabling.",
     "ActionsEnabled": false,
     "AlarmActions": [],
     "OKActions": [],
@@ -74,7 +74,7 @@
   },
   {
     "AlarmName": "sagomungchi-demo-rds-cpu-high",
-    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "AlarmDescription": "PROPOSED ONLY: review infrastructure/aws/README.md and bind confirmed SNS actions before enabling.",
     "ActionsEnabled": false,
     "AlarmActions": [],
     "OKActions": [],
@@ -97,7 +97,7 @@
   },
   {
     "AlarmName": "sagomungchi-demo-rds-storage-low",
-    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "AlarmDescription": "PROPOSED ONLY: review infrastructure/aws/README.md and bind confirmed SNS actions before enabling.",
     "ActionsEnabled": false,
     "AlarmActions": [],
     "OKActions": [],
@@ -120,7 +120,7 @@
   },
   {
     "AlarmName": "sagomungchi-demo-rds-connections-high",
-    "AlarmDescription": "PROPOSED ONLY: review monitoring-plan.md and bind confirmed SNS actions before enabling.",
+    "AlarmDescription": "PROPOSED ONLY: review infrastructure/aws/README.md and bind confirmed SNS actions before enabling.",
     "ActionsEnabled": false,
     "AlarmActions": [],
     "OKActions": [],

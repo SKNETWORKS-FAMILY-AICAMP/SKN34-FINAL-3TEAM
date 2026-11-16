@@ -23,6 +23,8 @@
             <arg column="categories" javaType="java.util.List"
                  typeHandler="com.sagomungchi.learning.mission.repository.CategoryListTypeHandler"/>
             <arg column="answer_unit" javaType="java.lang.String"/>
+            <arg column="scene_motion" javaType="java.util.Map"
+                 typeHandler="com.sagomungchi.learning.mission.repository.MotionTypeHandler"/>
         </constructor>
     </resultMap>
     <resultMap id="snapshot" type="com.sagomungchi.learning.mission.domain.MissionSnapshot">
@@ -82,7 +84,7 @@
                v.thinking_type, v.input_type, v.question, v.guide, v.scene_uri, v.static_scene_uri,
                COALESCE(v.choices, '[]'::jsonb) AS choices,
                COALESCE(v.input_template, '[]'::jsonb) AS input_template, m.demo_only,
-               COALESCE(v.categories, '[]'::jsonb) AS categories, v.answer_unit
+               COALESCE(v.categories, '[]'::jsonb) AS categories, v.answer_unit, v.scene_motion
     </sql>
 
     <!-- 학생에게는 공개 버전(published_*). 공개 중 수정한 current_*는 재게시 전까지 보이지 않음 (P07, #145) -->

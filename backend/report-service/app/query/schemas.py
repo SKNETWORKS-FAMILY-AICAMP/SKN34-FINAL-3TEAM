@@ -7,9 +7,10 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from app.generation.models import ReportState, ReportStatus
+from app.generation.models import PeriodType, ReportState, ReportStatus
 from app.generation.records import ThinkingType
 from app.generation.template_settings import TemplateSettings
+from app.generation.theme_summary import ThemeSummary
 
 
 class Response(BaseModel):
@@ -91,7 +92,43 @@ class Revision(Response):
     generated_at: AwareDatetime | None
 
 
+class DailyFollowup(Response):
+    question: str
+    answer: str | None
+
+
+class DailyElement(Response):
+    label: str
+    satisfied: bool
+
+
+class DailyReflection(Response):
+    written: bool
+    difficulty: str | None
+    text: str | None
+
+
+class DailyQuote(Response):
+    answer_id: UUID
+    text: str
+    verified: bool
+
+
+class DailyProblem(ItemResponse):
+    mission_id: UUID
+    attempt_id: UUID
+    title: str
+    context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None
+    judgment: Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"] | None
+    followups: list[DailyFollowup]
+    final_answer: str | None
+    elements: list[DailyElement]
+    reflection: DailyReflection
+    quotes: list[DailyQuote]
+
+
 class ReportSummary(Response):
+    period_type: PeriodType = PeriodType.WEEKLY
     report_id: UUID
     child_id: UUID
     period: PeriodResponse
@@ -131,6 +168,9 @@ class Versions(Response):
 
 
 class ReportDetail(ReportSummary):
+    explanations: "ReportExplanations | None" = None
+    problems: list[DailyProblem] = Field(default_factory=list)
+    theme_summary: ThemeSummary | None = None
     revisions: list[Revision]
     inclusion_rule: str | None
     metrics: list[Metric]
@@ -145,6 +185,21 @@ class ReportDetail(ReportSummary):
     generated_at: AwareDatetime | None
 
 
+class ReportExplanation(Response):
+    attempt_id: UUID
+    answer_id: UUID
+    answer_version: int = Field(ge=1)
+    mission_title: str
+    thinking_type: ThinkingType
+    quote: str | None
+    text: str
+
+
+class ReportExplanations(Response):
+    state: Literal["INCLUDED", "NOT_INCLUDED", "NO_TARGET"]
+    items: list[ReportExplanation] = Field(max_length=3)
+
+
 class Evidence(Response):
     attempt_id: UUID
     answer_id: UUID
@@ -153,6 +208,17 @@ class Evidence(Response):
     quote: str | None = None
     mission_title: str | None = None
     submitted_at: AwareDatetime | None = None
+
+
+class CorrectionImpactItem(Response):
+    report_id: UUID
+    period_type: PeriodType
+    period_from: date
+    revision: int
+
+
+class CorrectionImpact(Response):
+    items: list[CorrectionImpactItem]
 
 
 class EvidencePage(Response):

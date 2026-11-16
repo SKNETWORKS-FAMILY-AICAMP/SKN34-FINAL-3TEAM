@@ -6,8 +6,8 @@ from fastapi.security import APIKeyHeader
 
 from app.config import get_settings
 from app.errors import problem_responses
-from app.generation.models import ReportStatus
-from app.query.schemas import Download, EvidencePage, ReportDetail, ReportPage
+from app.generation.models import PeriodType, ReportStatus
+from app.query.schemas import CorrectionImpact, Download, EvidencePage, ReportDetail, ReportPage
 from app.query.service import QueryService
 
 router = APIRouter(
@@ -41,10 +41,24 @@ async def list_reports(
     service: Service,
     student_id: Annotated[UUID, Query(alias="studentId")],
     status: ReportStatus | None = None,
+    period_type: Annotated[PeriodType | None, Query(alias="periodType")] = None,
     page: int = Query(0, ge=0),
     size: int = Query(20, ge=1, le=100),
 ):
-    return await service.list(student_id, status, page, size)
+    return await service.list(student_id, status, page, size, period_type)
+
+
+@router.get(
+    "/correction-impact",
+    response_model=CorrectionImpact,
+    responses=problem_responses(400, 401, 403, 409),
+)
+async def correction_impact(
+    service: Service,
+    student_id: Annotated[UUID, Query(alias="studentId")],
+    attempt_id: Annotated[UUID, Query(alias="attemptId")],
+):
+    return await service.correction_impact(student_id, attempt_id)
 
 
 @router.get(

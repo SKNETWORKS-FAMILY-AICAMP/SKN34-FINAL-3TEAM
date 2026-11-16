@@ -1,193 +1,93 @@
-import { ParentSharingNotice } from './ParentSharingNotice.tsx'
-import { useEffect, useState } from 'react'
-import { useSearchParams, useLocation, useNavigate } from 'react-router'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { BookOpen, CreditCard, FileText, Settings, Smartphone } from 'lucide-react'
+import { Link, Navigate, useSearchParams, useLocation } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
 import { parentApi } from '../../data/parent/api.ts'
+import { sharingApi } from '../../data/classroom/sharingApi.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
-import { useAuthentication, displayPeriods } from '../../data/classroom/useClassroom.ts'
+import { displayPeriods } from '../../data/classroom/useClassroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
+import { gradeLabel } from '../../domain/grade.ts'
 import type { Scope } from '../../domain/parent.ts'
 import { validPeriod } from '../../domain/parent.ts'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
-import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
-import { ChildRegistration, ProfileSettings } from './AccountForms.tsx'
-import { ParentConversation } from './ParentConversation.tsx'
-import { ConsentSettings } from './ConsentSettings.tsx'
-import { ParentReports } from './ParentReports.tsx'
+import { ParentInsights } from './ParentInsights.tsx'
+import { ChildParticipation } from './ChildParticipation.tsx'
 import { StudentDevices } from './StudentDevices.tsx'
 import { ParentDashboard } from './ParentDashboard.tsx'
-import { AccountLifecycle } from '../service/AccountLifecycle.tsx'
-import { Withdrawal } from '../service/Withdrawal.tsx'
+import { ParentSettings } from './ParentSettings.tsx'
 import { ParentPayments } from './ParentPayments.tsx'
-import { EntitlementSummary } from './EntitlementSummary.tsx'
+import { ParentSharingNotice } from './ParentSharingNotice.tsx'
+
+const ServiceContent = lazy(() => import('../service/ServiceCenter.tsx').then(m => ({ default: m.ServiceContent })))
+const SupportResults = lazy(() => import('../support/SupportResults.tsx').then(m => ({ default: m.SupportResults })))
+
 export function ParentWorkspace() {
-  const [params, setParams] = useSearchParams(),
-    location = useLocation(),
-    navigate = useNavigate(),
-    { setSession, setSelected } = useSession(),
-    auth = useAuthentication(),
-    children = useParentQuery(['children'], (signal) => parentApi.children(signal)),
-    [registration, setRegistration] = useState(false)
-  const childId = params.get('childId') ?? '',
-    scope: Scope = {
-      childId,
-      from: params.get('from') ?? displayPeriods.recentPeriod.from,
-      to: params.get('to') ?? displayPeriods.recentPeriod.to,
-    },
-    child = children.data?.items.find((c) => c.id === childId)
+  const [params, setParams] = useSearchParams(), location = useLocation()
+  const { session, setSelected } = useSession()
+  const consentReady = session?.nextAction !== 'CONSENT_REQUIRED'
+  const children = useParentQuery(['children'], signal => parentApi.children(signal), consentReady)
+  const childId = params.get('childId') ?? ''
+  const scope: Scope = { childId, from: params.get('from') ?? displayPeriods.recentPeriod.from, to: params.get('to') ?? displayPeriods.recentPeriod.to }
+  const child = consentReady ? children.data?.items.find(c => c.id === childId) : undefined
+  const page = location.pathname.split('/')[2] ?? 'journal'
+  const hasPeriod = ['journal', 'analysis', 'report'].includes(page)
+  const sharing = useParentQuery(['sharing-preferences', childId], signal => sharingApi.get(childId, 'PARENT', signal), !!child && hasPeriod)
+  const canReadOriginals = sharing.data?.parentSharingEnabled === true && !sharing.error
   function select(c: Child, p: Period = scope) {
-    const next = new URLSearchParams({ childId: c.id, from: p.from, to: p.to })
-    setParams(next)
-    setSelected(c.id)
-    localStorage.setItem('sagomungchi:last-child', c.id)
+    const next = new URLSearchParams(params)
+    next.set('childId', c.id); next.set('from', p.from); next.set('to', p.to)
+    setParams(next); setSelected(c.id); localStorage.setItem('sagomungchi:last-child', c.id)
   }
   useEffect(() => {
-    if (!children.data || params.get('childId')) return
-    const last = localStorage.getItem('sagomungchi:last-child'),
-      c = children.data.items.find((c) => c.id === last) ?? children.data.items[0]
-    if (c) setParams({ childId: c.id, from: scope.from, to: scope.to }, { replace: true })
-  }, [children.data, params, setParams, scope.from, scope.to])
-  const page = location.pathname.split('/')[2] ?? 'journal',
-    nav = [
-      { path: '/parent/journal', label: '대시보드·공책' },
-      { path: '/parent/analysis', label: '기록에 물어보기' },
-      { path: '/parent/report', label: '주간 리포트' },
-      { path: '/parent/settings', label: '정보 관리' },
-      { path: '/parent/devices', label: '자녀 기기·PIN' },
-      { path: '/parent/billing', label: '이용권·결제' },
-    ]
-  return (
-    <Workspace
-      title="학부모 기록 공간"
-      nav={nav}
-      variant="parent"
-      aside={
-        child && (
-          <div className="ws-plan">
-            <span>이용권</span>
-            <strong>{child.nickname}</strong>
-            <EntitlementSummary childId={child.id} />
-          </div>
-        )
-      }
-      actions={
-        <>
-          <label>
-            자녀 선택{' '}
-            <select
-              aria-label="자녀 선택"
-              value={childId}
-              onChange={(e) => {
-                const c = children.data?.items.find((c) => c.id === e.target.value)
-                if (c) select(c)
-              }}
-            >
-              {!child && (
-                <option value={childId}>
-                  {childId ? '연결 여부 확인 필요' : '자녀를 선택해 주세요'}
-                </option>
-              )}
-              {children.data?.items.map((c) => (
-                <option value={c.id} key={c.id}>
-                  {c.nickname} · 초{c.grade}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="cj-secondary" onClick={() => setRegistration(true)}>
-            자녀 등록
-          </button>
-          {child && (
-            <button
-              className="cj-primary"
-              disabled={auth.enter.isPending || child.guardianConsentRequired}
-              onClick={() => {
-                void auth.enter
-                  .mutateAsync(child)
-                  .then((s) => {
-                    setSession(s)
-                    navigate('/student/home')
-                  })
-                  .catch(() => {})
-              }}
-            >
-              이 자녀로 학습 시작
-            </button>
-          )}
-        </>
-      }
-    >
-      <QueryFeedback query={children} />
-      <ErrorNotice error={auth.enter.error} />
-      {child?.recordState === 'UNAVAILABLE' && <p role="alert">기록 유무를 확인하지 못했습니다. 기록이 없는 상태와 다릅니다. 자녀 선택과 동석 진입은 사용할 수 있습니다.</p>}
-      {child?.hasRecords === false && child.recordState === 'AVAILABLE' && <p>아직 학습 기록이 없습니다. 이 자녀로 첫 학습을 시작해 주세요.</p>}
-      {child?.guardianConsentRequired && <p role="alert">법정대리인 동의가 필요합니다. 정보 관리에서 현재 문서에 동의해 주세요.</p>}
-      {page === 'settings' && <ConsentSettings key={child?.id} child={child} />}
-      {page !== 'billing' && <PeriodFilter
-        key={`${scope.from}:${scope.to}`}
-        period={scope}
-        onApply={({ from, to }) => {
-          const next = new URLSearchParams(params)
-          next.set('from', from)
-          next.set('to', to)
-          setParams(next)
-        }}
-      />}
-      {page !== 'billing' && <span className="ws-scope">
-        선택 범위 · {child?.nickname ?? '자녀 미선택'} · {scope.from} ~ {scope.to}
-      </span>}
-      {page === 'billing' ? <ParentPayments key={child?.id ?? 'all'} child={child} /> : children.data && !children.error && !children.data.items.length ? (
-        <section className="ws-card">
-          <h1>먼저 자녀를 등록해 주세요.</h1>
-          <p>연결된 자녀가 없어 아직 기록을 조회하지 않습니다.</p>
-          <ChildRegistration onCreated={(c) => select(c)} />
-        </section>
-      ) : page === 'devices' && children.data && !children.error ? (
-        <StudentDevices items={children.data.items} />
-      ) : childId && !child && children.data && !children.error ? (
-        <section className="ws-card">
-          <h1>자녀 연결을 확인해 주세요.</h1>
-          <p role="alert">CHILD_NOT_LINKED · 연결되지 않은 자녀의 기록은 표시하지 않습니다.</p>
-        </section>
-      ) : child && validPeriod(scope) && !children.error ? (
-        <div key={`${scope.childId}:${scope.from}:${scope.to}`}>
-          <ParentSharingNotice studentId={child.id} />
-          {page === 'analysis' ? (
-            <ParentConversation
-              child={child}
-              scope={scope}
-              onScope={(s) => {
-                const c = children.data?.items.find((c) => c.id === s.childId)
-                if (c) select(c, s)
-              }}
-            />
-          ) : page === 'report' ? (
-            <ParentReports
-              child={child}
-              scope={scope}
-              onAnalysis={(p) =>
-                navigate(`/parent/analysis?${new URLSearchParams({ childId: child.id, ...p })}`)
-              }
-            />
-          ) : page === 'settings' ? (
-            <><ProfileSettings child={child} /><AccountLifecycle key={child.id} child={child} /><Withdrawal /></>
-          ) : (
-            <ParentDashboard child={child} scope={scope} />
-          )}
-        </div>
-      ) : null}
-      {registration && (
-        <Modal title="자녀 프로필 등록" onClose={() => setRegistration(false)}>
-          <ChildRegistration
-            onCreated={(c) => {
-              select(c)
-              setRegistration(false)
-            }}
-          />
-        </Modal>
-      )}
-    </Workspace>
-  )
+    if (!consentReady || !children.data || params.get('childId')) return
+    const last = localStorage.getItem('sagomungchi:last-child')
+    const c = children.data.items.find(c => c.id === last) ?? children.data.items[0]
+    if (c) {
+      const next = new URLSearchParams(params)
+      next.set('childId', c.id); next.set('from', scope.from); next.set('to', scope.to)
+      setParams(next, { replace: true })
+    }
+  }, [consentReady, children.data, params, setParams, scope.from, scope.to])
+  const icon = { size: 22, strokeWidth: 1.8, 'aria-hidden': true } as const
+  const nav = [
+    { path: '/parent/journal', label: '학습 현황', short: '학습', icon: <BookOpen {...icon} /> },
+    { path: '/parent/report', label: '리포트·AI 챗봇', short: '리포트', icon: <FileText {...icon} /> },
+    { path: '/parent/settings', label: '계정·자녀 설정', short: '설정', icon: <Settings {...icon} /> },
+    { path: '/parent/devices', label: '기기·PIN', short: '기기', icon: <Smartphone {...icon} /> },
+    { path: '/parent/billing', label: '이용권·결제', short: '결제', icon: <CreditCard {...icon} /> },
+  ]
+  if (page === 'analysis') {
+    const next = new URLSearchParams(params); next.set('view', 'chat')
+    return <Navigate to={'/parent/report?' + next} replace />
+  }
+  // 자녀 선택은 상단 바가 아니라 자녀별 화면(학습 현황·리포트·계정 설정·이용권) 본문 맨 위 버튼으로 (2026-11-16 사용자 결정)
+  const pickerPages = ['journal', 'report', 'settings', 'billing']
+  const showPicker = consentReady && pickerPages.includes(page) && params.get('checkout') !== '1' && !!children.data?.items.length && !children.error
+  return <Workspace title="학부모 공간" nav={nav} variant="parent">
+    {consentReady && <QueryFeedback query={children} />}
+    {showPicker && <ChildPicker items={children.data!.items} selectedId={child?.id} onSelect={c => select(c)} />}
+    {child?.guardianConsentRequired && <p role="alert">자녀 이용을 위해 법정대리인 동의가 필요합니다. 계정·자녀 설정의 공개·동의에서 확인해 주세요.</p>}
+    {hasPeriod && child && (page !== 'report' || !validPeriod(scope)) && <details className="parent-scope"><summary>조회 기간 · {scope.from} ~ {scope.to}</summary><PeriodFilter key={`${scope.from}:${scope.to}`} period={scope} onApply={({ from, to }) => {
+      const next = new URLSearchParams(params); next.set('from', from); next.set('to', to); setParams(next)
+    }} /></details>}
+    {hasPeriod && child && !validPeriod(scope) && <p role="alert">조회 기간이 올바르지 않습니다. 시작일과 종료일을 다시 선택해 주세요.</p>}
+    {['help', 'support', 'notices', 'notifications'].includes(page) ? <Suspense fallback={<p role="status">불러오고 있습니다.</p>}>{location.pathname.endsWith('/support/results') ? <SupportResults /> : <ServiceContent page={page as 'help' | 'support' | 'notices' | 'notifications'} />}</Suspense>
+      : page === 'settings' ? <ParentSettings key={child?.id ?? 'account'} child={child} childCount={consentReady ? children.data?.items.length : undefined} onCreated={select} />
+      : page === 'billing' ? <ParentPayments key={child?.id ?? 'all'} child={child} />
+      : page === 'devices' && children.data && !children.error ? <StudentDevices items={children.data.items} />
+      : children.data && !children.error && !children.data.items.length ? <section className="ws-card"><h1>자녀를 등록하고 시작하세요</h1><p>등록한 자녀의 학습 현황과 리포트를 확인할 수 있습니다.</p><Link className="cj-primary" to="/parent/settings?section=profile">계정·자녀 설정에서 자녀 등록</Link></section>
+      : childId && !child && children.data && !children.error ? <section className="ws-card"><h1>자녀 연결 확인</h1><p role="alert">연결되지 않은 자녀의 기록은 표시하지 않습니다.</p></section>
+      : child && (!hasPeriod || validPeriod(scope)) && !children.error ? <div className="parent-content" key={`${child.id}:${page === 'report' ? 'insights' : hasPeriod ? scope.from + ':' + scope.to : page}`}>
+        {page === 'journal' && <ParentSharingNotice studentId={child.id} />}
+        {page === 'report' ? <ParentInsights key={`${scope.from}:${scope.to}:${canReadOriginals}:${sharing.isPending}`} child={child} scope={scope} canReadOriginals={canReadOriginals} sharingPending={sharing.isPending}
+          periodControl={<details className="parent-scope"><summary>질문할 기간 · {scope.from} ~ {scope.to}</summary><PeriodFilter key={`${scope.from}:${scope.to}`} period={scope} onApply={({ from, to }) => {
+            const next = new URLSearchParams(params); next.set('from', from); next.set('to', to); setParams(next)
+          }} /></details>}
+          onScope={s => { const c = children.data?.items.find(c => c.id === s.childId); if (c) select(c, s) }} />
+          : <><ParentDashboard child={child} scope={scope} canReadOriginals={canReadOriginals} sharingPending={sharing.isPending} /><ChildParticipation child={child} canReadOriginals={canReadOriginals} /></>}
+      </div> : null}
+  </Workspace>
 }
 function PeriodFilter({ period, onApply }: { period: Period; onApply: (p: Period) => void }) {
   const [from, setFrom] = useState(period.from),
@@ -230,4 +130,14 @@ function PeriodFilter({ period, onApply }: { period: Period; onApply: (p: Period
       {error && <p role="alert">{error}</p>}
     </>
   )
+}
+
+/** 자녀 고르기 버튼(지금 자녀는 눌린 상태). 고르면 기간은 그대로 두고 자녀만 바꾼다 */
+function ChildPicker({ items, selectedId, onSelect }: { items: Child[]; selectedId?: string; onSelect: (c: Child) => void }) {
+  return <div className="parent-child-picker" role="group" aria-label="자녀 선택">
+    {items.map(c => <button type="button" key={c.id} aria-pressed={c.id === selectedId}
+      onClick={() => { if (c.id !== selectedId) onSelect(c) }}>
+      <strong>{c.nickname}</strong><small>{gradeLabel(c.grade)}</small>
+    </button>)}
+  </div>
 }

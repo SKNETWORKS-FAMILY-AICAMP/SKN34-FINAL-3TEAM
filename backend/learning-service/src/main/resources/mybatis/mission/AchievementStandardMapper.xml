@@ -45,4 +45,11 @@
         SELECT <include refid="columns"/> FROM achievement_standard
         WHERE code IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
     </select>
+
+    <!-- 테마 초안 자동 성취기준 후보 (#438) -->
+    <select id="findAll" resultMap="standard" flushCache="true" useCache="false">
+        SELECT <include refid="columns"/> FROM achievement_standard
+        WHERE subject = #{subject} AND grade_band = #{gradeBand}
+        ORDER BY code
+    </select>
 </mapper>

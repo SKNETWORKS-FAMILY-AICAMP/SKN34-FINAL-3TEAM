@@ -11,6 +11,8 @@ import com.github.tomakehurst.wiremock.client.WireMock.post
 import com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
+import com.sagomungchi.learning._common.client.AiCallException
+import com.sagomungchi.learning._common.client.aiTransportFailureCode
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.config.InternalRestClientFactory
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
@@ -124,8 +126,8 @@ class AiClientTest {
         val connect = ResourceAccessException("I/O error", HttpConnectTimeoutException("HTTP connect timed out"))
         val response = ResourceAccessException("I/O error", HttpTimeoutException("request timed out"))
 
-        assertEquals("AI_UNAVAILABLE", AiClient.transportFailureCode(connect))
-        assertEquals("AI_TIMEOUT", AiClient.transportFailureCode(response))
+        assertEquals("AI_UNAVAILABLE", aiTransportFailureCode(connect))
+        assertEquals("AI_TIMEOUT", aiTransportFailureCode(response))
     }
 
     @Test

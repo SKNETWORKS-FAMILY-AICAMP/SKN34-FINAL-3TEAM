@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "report.generate.v1.schema.json",
   "title": "report.generate v1 data",
-  "description": "core-service → cmd.direct → report-worker. revision은 report가 자녀/주별로 직렬 배정한다.",
+  "description": "core-service → cmd.direct → report-worker. revision은 report가 자녀·기간 종류·대상 기간별로 직렬 배정한다. periodType 생략은 WEEKLY(P24 이전 발행 호환).",
   "type": "object",
   "required": [
     "jobId",
@@ -38,7 +38,35 @@
     },
     "narrativeEnabled": {
       "type": "boolean"
+    },
+    "periodType": {
+      "description": "P24 DAILY는 periodFrom = periodTo = 대상일(KST), WEEKLY는 월~일. 생략 시 WEEKLY",
+      "enum": [
+        "DAILY",
+        "WEEKLY"
+      ]
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "periodType"
+        ],
+        "properties": {
+          "periodType": {
+            "const": "DAILY"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "narrativeEnabled": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
 }

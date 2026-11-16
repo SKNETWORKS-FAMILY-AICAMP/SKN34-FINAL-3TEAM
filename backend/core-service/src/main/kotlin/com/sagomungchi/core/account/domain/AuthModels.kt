@@ -46,3 +46,6 @@ data class AuthenticatedAccount(
 )
 
 data class GoogleProfile(val subject: String, val email: String, val name: String?)
+
+/** #369 admin_credential / #415 parent_credential row: PBKDF2 hash plus the 5-failure, 15-minute lock state. */
+data class PasswordCredential(val userId: UUID, val passwordHash: String, val failedCount: Int, val lockedUntil: OffsetDateTime?)

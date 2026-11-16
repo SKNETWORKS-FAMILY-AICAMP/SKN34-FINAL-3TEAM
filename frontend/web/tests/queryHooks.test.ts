@@ -95,7 +95,7 @@ test('학부모 처리 중 쿼리는 재조회하고 완료 응답 뒤 자동 �
   assert.equal(calls, 2)
 })
 
-test('세션 복원은 동시 요청을 합치고 명시적 fresh 요청에서만 다시 조회한다', async t => {
+test('세션 복원은 진행 중 요청만 합치고 완료된 상태를 영구 재사용하지 않는다', async t => {
   let calls = 0
   mockFetch(t, url => {
     assert.equal(url, '/api/v1/me'); calls++
@@ -106,7 +106,17 @@ test('세션 복원은 동시 요청을 합치고 명시적 fresh 요청에서�
   const result = await first
   assert.equal(result.role, 'PARENT')
   assert.equal(calls, 1)
-  await classroom.restoreSession(true)
+  await classroom.restoreSession()
+  assert.equal(calls, 2)
+})
+
+test('실패한 세션 복원은 다음 확인에서 다시 조회해 복구한다', async t => {
+  let calls = 0
+  mockFetch(t, () => ++calls === 1
+    ? Response.json({ code: 'AUTH_UNAVAILABLE' }, { status: 503 })
+    : Response.json({ role: 'PARENT', nextAction: 'READY', startPath: '/parent/journal' }))
+  await assert.rejects(classroom.restoreSession(true))
+  assert.equal((await classroom.restoreSession()).role, 'PARENT')
   assert.equal(calls, 2)
 })
 
@@ -189,11 +199,11 @@ test('기기 관리의 페어링·PIN·해제 요청과 성공 후 캐시 갱신
   const h = await mount(t, device.useDeviceAdmin, cache)
   await act(async () => { await h.get().pairing.mutateAsync([child.id]) })
   assert.equal(cache.getQueryState(['children'])?.isInvalidated, false)
-  await act(async () => { await h.get().setPin.mutateAsync({ childId: child.id, pin: '4831', reauthToken: 'synthetic-proof' }) })
+  await act(async () => { await h.get().setPin.mutateAsync({ childId: child.id, pin: '4831' }) })
   await act(async () => { await h.get().revoke.mutateAsync('device-a') })
   assert.deepEqual(calls.map(c => c.method), ['POST', 'PUT', 'DELETE'])
   assert.deepEqual(calls[0].body, { childIds: [child.id] })
-  assert.equal(calls[1].proof, 'synthetic-proof')
+  assert.equal(calls[1].proof, null)
   assert.equal(cache.getQueryState(['children'])?.isInvalidated, true)
 })
 
@@ -368,4 +378,59 @@ test('공통 QueryClient는 같은 쿼리의 동시 HTTP를 합치고 명시적 
   assert.equal(calls, 1)
   queryClient.clear()
   assert.equal(queryClient.getQueryData(options.queryKey), undefined)
+})
+
+
+test('#389 해금 확정 응답은 선택 자녀의 모든 페이지 잔액·해금에만 반영한다', async t => {
+  const { useUnlock } = await import('../src/data/retention/queries.ts')
+  const cache = client()
+  const points = { balance: 150, items: [], page: 0, size: 20, totalElements: 21 }
+  const item = { itemKey: 'THEME:forest', name: '숲', slot: 'THEME', pricePoints: 100, unlocked: false, onSale: true, assetKey: null }
+  cache.setQueryData(['points', child.id, 0], points)
+  cache.setQueryData(['points', child.id, 1], { ...points, page: 1 })
+  cache.setQueryData(['points', 'other-child', 0], points)
+  cache.setQueryData(['look-items', child.id], [item])
+  mockFetch(t, (_url, init) => {
+    assert.equal(init.method, 'POST')
+    assert.equal(init.body, undefined)
+    assert.equal(new Headers(init.headers).get('Idempotency-Key'), '00000000-0000-4000-8000-000000000001')
+    return Response.json({ itemKey: item.itemKey, unlocked: true, balance: 50 })
+  })
+  const h = await mount(t, () => useUnlock(child.id), cache)
+  await act(async () => { await h.get().mutateAsync({ itemKey: item.itemKey, key: '00000000-0000-4000-8000-000000000001' }) })
+  for (const page of [0, 1]) assert.equal(cache.getQueryData<typeof points>(['points', child.id, page])?.balance, 50)
+  assert.equal(cache.getQueryData<typeof points>(['points', 'other-child', 0])?.balance, 150)
+  assert.deepEqual(cache.getQueryData(['look-items', child.id]), [{ ...item, unlocked: true }])
+})
+
+test('#389 다른 항목의 해금 응답은 성공·잔액 변경으로 표시하지 않는다', async t => {
+  const { useUnlock } = await import('../src/data/retention/queries.ts')
+  const cache = client(), points = { balance: 150, items: [], page: 0, size: 20, totalElements: 0 }
+  cache.setQueryData(['points', child.id, 0], points)
+  mockFetch(t, () => Response.json({ itemKey: 'THEME:space', unlocked: true, balance: 50 }))
+  const h = await mount(t, () => useUnlock(child.id), cache)
+  await act(async () => { await assert.rejects(h.get().mutateAsync({ itemKey: 'THEME:forest', key: crypto.randomUUID() }), /확인하지 못/) })
+  assert.deepEqual(cache.getQueryData(['points', child.id, 0]), points)
+})
+
+test('#433 친구 공개 설정은 창으로 돌아오면 다시 읽어 보호자 동의를 바로 반영한다', async t => {
+  const { useCommunitySettings } = await import('../src/data/retention/queries.ts')
+  const { focusManager } = await import('@tanstack/react-query')
+  let consentGranted = false, calls = 0
+  mockFetch(t, (url) => {
+    assert.match(url, /\/students\/me\/community-settings$/)
+    calls++
+    return Response.json({ enabled: false, consentGranted, updatedAt: null })
+  })
+  t.after(() => focusManager.setFocused(undefined))
+  // 앱 기본값이 바뀌어도(오래 신선·포커스 재조회 끔) 이 조회는 포커스마다 다시 읽어야 한다.
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000, refetchOnWindowFocus: false } } })
+  const h = await mount(t, () => useCommunitySettings(child.id), cache)
+  await until(() => h.get().isSuccess)
+  assert.equal(h.get().data?.consentGranted, false)
+  consentGranted = true // 보호자가 다른 창에서 동의했다.
+  await act(async () => { focusManager.setFocused(false) })
+  await act(async () => { focusManager.setFocused(true) })
+  await until(() => h.get().data?.consentGranted === true)
+  assert.equal(calls, 2)
 })

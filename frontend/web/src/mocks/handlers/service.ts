@@ -44,7 +44,7 @@ export const serviceHandlers = [
     ] : [
       { title:'자녀와 조회 기간',body:'선택한 자녀와 기간의 기록만 조회합니다. 다른 자녀로 바꾸면 분석 범위를 다시 확인해 주세요.' },
       { title:'숫자와 분석의 한계',body:'활동 건수와 답변 근거를 확인합니다. 기록이 적거나 판정이 보류된 경우 능력 점수로 해석하지 않습니다.' },
-      { title:'QR과 PIN으로 자녀 기기 등록',body:'자녀 기기·PIN에서 자녀별 본인 확인 후 PIN을 정하고 등록 코드를 발급합니다. 자녀 기기에서 QR을 열고 등록한 뒤 PIN을 입력해 주세요.' },
+      { title:'QR과 PIN으로 자녀 기기 등록',body:'자녀 기기·PIN에서 자녀별 PIN을 정하고 등록 코드를 발급합니다. 자녀 기기에서 QR을 열고 등록한 뒤 PIN을 입력해 주세요.' },
     ] }
   })),
   ...(['error-reports','inquiries'] as const).flatMap(kind => [
@@ -103,7 +103,7 @@ export const serviceHandlers = [
   http.get('/api/v1/notification-settings', ({ request }) => respond(async () => { adult(request); return preferences() })),
   http.put('/api/v1/notification-settings', ({ request }) => respond(async () => {
     adult(request); const data = await request.json() as NotificationSettings
-    if (!Array.isArray(data.items) || !data.items.length || data.items.length>6 || new Set(data.items.map(s=>s.type)).size!==data.items.length || data.items.some(s => !(s.type in notificationLabels) || typeof s.enabled !== 'boolean')) fail('VALIDATION_FAILED','알림 유형을 확인해 주세요.',422)
+    if (!Array.isArray(data.items) || !data.items.length || data.items.length>Object.keys(notificationLabels).length || new Set(data.items.map(s=>s.type)).size!==data.items.length || data.items.some(s => !(s.type in notificationLabels) || typeof s.enabled !== 'boolean')) fail('VALIDATION_FAILED','알림 유형을 확인해 주세요.',422)
     const next = { items:preferences().items.map(s => data.items.find(v => v.type === s.type) ?? s) }
     settings.set(owner(), next); return next
   })),
@@ -129,7 +129,7 @@ export const serviceHandlers = [
     if (!result||result.owner!==owner()||result.childId!==params.childId) fail('NOT_FOUND','삭제 요청이 없습니다.',404)
     return result
   })),
-  http.get('/api/v1/me/withdrawal/precheck', ({ request }) => respond(async () => { parentGuard(request,true); return { canWithdraw:true,activeSubscriptions:0,unresolvedRefunds:0,retainedTransactionsYears:5 } })),
+  http.get('/api/v1/me/withdrawal/precheck', ({ request }) => respond(async () => { parentGuard(request,true); return { canWithdraw:true,activeSubscriptions:0,unresolvedRefunds:0,pendingPayments:0,retainedTransactionsYears:5 } })),
   http.post('/api/v1/me/withdrawal',({request})=>respond(async()=>{
     parentGuard(request,true);requireNoPendingTransfer();consumeActionReauth(request,'WITHDRAWAL')
     const statusToken=crypto.randomUUID(),state={withdrawalRequestId:crypto.randomUUID(),status:'WITHDRAWAL_REQUESTED'}

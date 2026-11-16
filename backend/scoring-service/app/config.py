@@ -9,7 +9,11 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     service_name: str = "scoring-service"
-    internal_token: str
+    internal_token: str  # 이 서비스가 내부 호출에 보내는 자기 토큰
+    # 받는 쪽 허용 호출자 토큰 (security.CALLER_PATHS). 빈 값이면 그 호출자 거부
+    internal_token_ai: str = ""
+    internal_token_core: str = ""
+    internal_token_ops: str = ""
     rabbitmq_url: str = "amqp://localhost:5672/"
     http_connect_timeout: float = 2.0
     http_read_timeout: float = 30.0  # 내부 호출 기본값 (P12 목록 밖)

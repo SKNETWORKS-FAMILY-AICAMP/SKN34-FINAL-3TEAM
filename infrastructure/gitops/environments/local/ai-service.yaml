@@ -10,12 +10,18 @@ probes:
   startup: {enabled: true, path: /health/live, periodSeconds: 10, failureThreshold: 30}
   liveness: {enabled: true, path: /health/live, periodSeconds: 10, timeoutSeconds: 5}
   readiness: {enabled: true, path: /health/ready, periodSeconds: 10, timeoutSeconds: 5}
+# #586: 영상 이어 붙이기(ffmpeg libx264)가 컨테이너 최대 약 850MiB(16코어 kind 실측)라 상한 1Gi.
+# 평소 사용은 약 180MiB라 요청은 그대로 둔다. 영상을 끄고 켜도 같은 값이다.
 resources:
   requests: {cpu: 100m, memory: 256Mi}
-  limits: {cpu: 500m, memory: 512Mi}
+  limits: {cpu: 500m, memory: 1Gi}
 env:
-  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
-  - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_URL}}}
+  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_AI}}}
+  - {name: INTERNAL_TOKEN_CORE, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_CORE}}}
+  - {name: INTERNAL_TOKEN_LEARNING, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_LEARNING}}}
+  - {name: INTERNAL_TOKEN_REPORT_WORKER, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_REPORT_WORKER}}}
+  - {name: INTERNAL_TOKEN_OPS, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_OPS, optional: true}}}
+  - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_AI_URL}}}
   - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}
   - {name: SCORING_URL, value: "http://scoring-service.app.svc.cluster.local:8001"}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
@@ -28,17 +34,44 @@ env:
   - {name: M2_NARRATIVE_HIGH, value: "4.0"}
   - {name: M2_ESSAY_LOW, value: "1.0"}
   - {name: M2_ESSAY_HIGH, value: "2.0"}
+  - {name: M2_ESSAY_HIGH_ENABLED, value: "false"}
+  - {name: M2_NARRATIVE_MIN_CHARS, value: "100"}
+  - {name: M2_ESSAY_MIN_CHARS, value: "140"}
   - {name: M1_CHECK_ENABLED, value: "false"}
   - {name: M1_MIN_CONFIDENCE, value: "0.8"}
   - {name: OPENAI_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: OPENAI_API_KEY, optional: true}}}
   # #236: compose.yaml ai-service defaults; switch providers with LLM_PROVIDER and the matching key
   - {name: LLM_PROVIDER, value: openai}
-  - {name: OPENAI_MODEL, value: gpt-6.1-terra}
+  - {name: OPENAI_MODEL, value: gpt-6-luna}
   - {name: OPENAI_JSON_MODE, value: json_schema}
   - {name: ANTHROPIC_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: ANTHROPIC_API_KEY, optional: true}}}
   - {name: ANTHROPIC_MODEL, value: claude-sonnet-5-5}
   - {name: ANTHROPIC_EFFORT, value: medium}
   - {name: ANTHROPIC_FALLBACK, value: "true"}
+  # #476: 설명 sLLM 서버(평소 0대, KEDA cron). 모델이 활성일 때만 호출한다(#477).
+  - {name: EXPLANATION_BASE_URL, value: "http://sllm-server.app.svc.cluster.local:8080/v1"}
+  - {name: EXPLANATION_MODEL, value: report-explanation}
+  # #546·#538: 주간 테마 그림·영상. 버킷은 learning과 같고, 영상은 저장소 값에서 꺼 둔다.
+  # 영상 자격 증명은 kind에만 수동으로 넣는 Secret ai-theme-video(credentials.json·VIDEO_PROJECT).
+  # Secret이 없으면 파일이 없어 영상만 건너뛴다(optional).
+  - {name: ASSET_S3_BUCKET, value: sagomungchi-local-missions}
+  - {name: S3_ENDPOINT_URL, value: "http://minio.platform.svc.cluster.local:9000"}
+  - {name: S3_REGION, value: ap-northeast-2}
+  - {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_USER}}}
+  - {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_PASSWORD}}}
+  - {name: THEME_VIDEO_ENABLED, value: "false"}
+  - {name: THEME_VIDEO_MAX_REGEN, value: "0"}
+  - {name: GOOGLE_APPLICATION_CREDENTIALS, value: /etc/theme-video/credentials.json}
+  - {name: VIDEO_PROJECT, valueFrom: {secretKeyRef: {name: ai-theme-video, key: VIDEO_PROJECT, optional: true}}}
+extraVolumes:
+  - name: theme-video
+    secret:
+      secretName: ai-theme-video
+      optional: true
+      items:
+        - {key: credentials.json, path: credentials.json}
+extraVolumeMounts:
+  - {name: theme-video, mountPath: /etc/theme-video, readOnly: true}
 hpa:
   enabled: false
 pdb:
@@ -50,9 +83,11 @@ networkPolicy:
     - {name: core-service, port: 8080}
     - {name: learning-service, port: 8081}
     - {name: scoring-service, port: 8001}
+    - {name: sllm-server, port: 8080}
   egressToPlatform:
     - {name: rabbitmq, port: 5672}
-  # #236: LLM API over HTTPS. Calico OSS has no FQDN rules, so allow public 443 only.
+    - {name: minio, port: 9000}
+  # #236: LLM API over HTTPS(#538 Veo·Google 토큰 발급도 같은 443). Calico OSS has no FQDN rules, so allow public 443 only.
   egress:
     - to:
         - ipBlock:

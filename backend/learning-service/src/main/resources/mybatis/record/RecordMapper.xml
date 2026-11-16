@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.sagomungchi.learning.record.repository.RecordMapper">
+    <select id="findCompleted" resultType="java.util.UUID">
+        SELECT a.id FROM attempt a
+        WHERE a.student_id = #{studentId} AND a.status = 'COMPLETED'
+          AND a.completed_at &gt;= #{start} AND a.completed_at &lt; #{end}
+          AND NOT EXISTS (SELECT 1 FROM deleted_student d WHERE d.student_id = a.student_id)
+        ORDER BY a.completed_at, a.id
+    </select>
     <resultMap id="eligible" type="com.sagomungchi.learning.record.repository.EligibleAttempt">
         <constructor>
             <idArg column="attempt_id" javaType="java.util.UUID"/>
@@ -156,6 +163,19 @@
     <select id="findReflections" resultMap="reflection" flushCache="true" useCache="false">
         SELECT attempt_id, difficulty, changed_text AS text, created_at FROM reflection WHERE attempt_id IN
         <foreach collection="attemptIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <resultMap id="modelScores" type="com.sagomungchi.learning.record.repository.ModelScoresRow">
+        <constructor>
+            <arg column="answer_id" javaType="java.util.UUID"/>
+            <arg column="model_scores" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 판정 모델 점수 JSON 원문 (report 설명 대상 선정용, #478). 답변당 판정은 하나(uq_judgment_answer_id) -->
+    <select id="findModelScores" resultMap="modelScores" flushCache="true" useCache="false">
+        SELECT answer_id, model_scores::text AS model_scores FROM judgment WHERE answer_id IN
+        <foreach collection="answerIds" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
 
     <!--

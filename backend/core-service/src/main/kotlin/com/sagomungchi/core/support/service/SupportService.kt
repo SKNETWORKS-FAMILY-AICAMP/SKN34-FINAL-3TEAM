@@ -12,6 +12,8 @@ import com.sagomungchi.core.support.client.LearningSupportClient
 import com.sagomungchi.core.conversation.service.ConversationSupportService
 import com.sagomungchi.core.report.service.ReportSupportService
 import com.sagomungchi.core.notification.service.NotificationService
+import com.sagomungchi.core.community.domain.Community
+import com.sagomungchi.core.community.service.CommunityModerationService
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
@@ -22,7 +24,8 @@ import java.util.UUID
 class SupportService(private val repository: SupportRepository,private val access: SupportAccessService,
  private val learning: LearningSupportClient,private val conversations: ConversationSupportService,
  private val reports: ReportSupportService,private val notifications: NotificationService,
- private val idempotency: IdempotencyService,manager: org.springframework.transaction.PlatformTransactionManager,private val json: ObjectMapper) {
+ private val idempotency: IdempotencyService,manager: org.springframework.transaction.PlatformTransactionManager,private val json: ObjectMapper,
+ private val community: CommunityModerationService) {
  private val tx=TransactionTemplate(manager)
  private val db get()=repository.mapper
  private fun now()=OffsetDateTime.now(java.time.ZoneOffset.UTC).truncatedTo(java.time.temporal.ChronoUnit.MICROS)
@@ -39,6 +42,12 @@ class SupportService(private val repository: SupportRepository,private val acces
   val resolved=when(type) {
    "ANALYSIS" -> { if(actor.session.role!="PARENT") invalid(); (conversations.target(id,actor.account.id) ?: missing()) to null }
    "REPORT" -> { if(actor.session.role!="PARENT") invalid(); (reports.target(id) ?: missing()) to null }
+   // P20: only students report community posts; the report belongs to the reporter (author ID stays in learning).
+   Community.TARGET_TYPE -> {
+    if(actor.session.role!="STUDENT") invalid()
+    val reporter=actor.session.studentId ?: invalid()
+    community.requireReportable(id,reporter);reporter to null
+   }
    "JUDGMENT","FOLLOWUP","ATTEMPT" -> {
     val value=learning.target(type,id)
     val student=uuid(value,"studentId");val attempt=uuid(value,"attemptId")
@@ -55,7 +64,7 @@ class SupportService(private val repository: SupportRepository,private val acces
  fun submitReport(actor: AuthenticatedAccount,key: UUID,raw: ByteArray): HttpExchangeResult {
   access.user(actor)
   val command=try { json.readValue(raw,ReportSubmission::class.java) } catch(_: com.fasterxml.jackson.core.JsonProcessingException) { invalid() }
-  if(command.targetType !in setOf("JUDGMENT","FOLLOWUP","ANALYSIS","REPORT") || command.category !in setOf("WRONG_JUDGMENT","ODD_QUESTION","MISMATCH","INAPPROPRIATE","OTHER")) invalid()
+  if(command.targetType !in setOf("JUDGMENT","FOLLOWUP","ANALYSIS","REPORT",Community.TARGET_TYPE) || command.category !in setOf("WRONG_JUDGMENT","ODD_QUESTION","MISMATCH","INAPPROPRIATE","OTHER")) invalid()
   command.comment?.let { if(it.length>10000) invalid() }
   return idempotency.execute(key,actor.account.id,"POST /error-reports",setOf(actor.session.role)+actor.studentScope.map { it.toString() },raw) {
    // Durable unique submission protects the gap between business commit and common response storage.
@@ -70,6 +79,8 @@ class SupportService(private val repository: SupportRepository,private val acces
     val value=SupportReport(UUID.randomUUID(),actor.account.id,actor.session.role,actor.session.studentId,student,attempt,key,command.targetType,command.targetId,command.category,command.comment,"RECEIVED",null,null,null,now(),null)
     tx.execute { check(db.insertReport(value)==1);value }!!
    }
+   // Hidden immediately: core lists already exclude it; learning status follows (also on same-key retry).
+   if(saved.targetType==Community.TARGET_TYPE) community.apply(saved.targetId,saved.id)
    HttpExchangeResult(201,mapOf("Content-Type" to listOf("application/json"),"Location" to listOf("/api/v1/error-reports/${saved.id}")),json.writeValueAsBytes(reportView(saved.copy(status="RECEIVED",reviewResult=null,resolutionReason=null,reviewedBy=null,resolvedAt=null),false,false)))
   }
  }
@@ -86,6 +97,11 @@ class SupportService(private val repository: SupportRepository,private val acces
   if(!admin) access.owner(actor,value.reporterUserId,value.requesterRole,value.requesterStudentId,value.studentId)
   val view=reportView(value,admin).toMutableMap()
   if(admin && value.attemptId!=null) view["linkedAttempt"]=original(actor,"ERROR_REPORT",id,value.attemptId,value.studentId ?: conflict())
+  if(admin && value.targetType==Community.TARGET_TYPE) {
+   val post=community.original(value.targetId)
+   tx.executeWithoutResult { repository.audit(actor.account.id,"SUPPORT_ORIGINAL_VIEW","ERROR_REPORT",id,json.writeValueAsString(mapOf("postId" to value.targetId,"available" to post["available"]))) }
+   view["linkedPost"]=post
+  }
   return view
  }
  private fun original(actor: AuthenticatedAccount,type: String,id: UUID,attempt: UUID,student: UUID): JsonNode {
@@ -94,21 +110,28 @@ class SupportService(private val repository: SupportRepository,private val acces
   return data
  }
  private fun reportView(value: SupportReport,admin: Boolean,includeCorrections: Boolean=true): Map<String,Any?> {
-  val corrections=if(!includeCorrections) emptyList() else db.corrections(value.id).map { c -> mapOf("correctionId" to c.id,"reason" to c.reason,"corrected" to c.corrected,"previousResult" to c.previousResult,"status" to c.processingStatus,"createdAt" to c.createdAt,"completedAt" to c.completedAt,"impact" to c.impact?.let { json.readTree(it) }) }
+  val corrections=if(!includeCorrections) emptyList() else db.corrections(value.id).map { c -> mapOf("correctionId" to c.id,"reason" to c.reason,"corrected" to c.corrected,"previousResult" to c.previousResult,"status" to c.processingStatus,"createdAt" to c.createdAt,"completedAt" to c.completedAt,"impact" to c.impact?.takeIf { admin }?.let { json.readTree(it) }) }
   return mapOf("reportId" to value.id,"status" to value.status,"targetType" to value.targetType,"targetId" to value.targetId,"category" to value.category,"comment" to value.comment,"reviewReason" to value.resolutionReason,"reviewResult" to value.reviewResult,"createdAt" to value.createdAt,"resolvedAt" to value.resolvedAt,"corrections" to corrections.filter { admin || it["status"]=="COMPLETED" })
  }
  fun review(actor: AuthenticatedAccount,id: UUID,command: ReviewCommand): Map<String,Any?> {
   access.admin(actor);text(command.reviewReason);command.reviewResult?.let { text(it) }
-  return tx.execute {
+  val view=tx.execute {
    val value=db.lockReport(id) ?: missing()
-   if(value.status==command.status && value.resolutionReason==command.reviewReason && value.reviewResult==(command.reviewResult ?: command.reviewReason)) return@execute reportView(value,true)
+   // P20: a resolved community report is either shown again (VISIBLE) or kept hidden (REMOVED, also when omitted).
+   val result=if(value.targetType==Community.TARGET_TYPE && command.status=="RESOLVED")
+    (command.reviewResult ?: "REMOVED").also { if(it !in Community.REVIEW_RESULTS) invalid() }
+   else command.reviewResult ?: command.reviewReason
+   if(value.status==command.status && value.resolutionReason==command.reviewReason && value.reviewResult==result) return@execute reportView(value,true)
    if(db.correction(id)!=null) conflict() // pending/failed correction must be recovered, never manually hidden as resolved
    if(!((value.status=="RECEIVED" && command.status=="IN_REVIEW") || (value.status=="IN_REVIEW" && command.status=="RESOLVED"))) conflict()
-   val updated=value.copy(status=command.status,resolutionReason=command.reviewReason,reviewResult=command.reviewResult ?: command.reviewReason,reviewedBy=actor.account.id,resolvedAt=now().takeIf { command.status=="RESOLVED" })
+   val updated=value.copy(status=command.status,resolutionReason=command.reviewReason,reviewResult=result,reviewedBy=actor.account.id,resolvedAt=now().takeIf { command.status=="RESOLVED" })
    check(db.updateReport(updated)==1);repository.audit(actor.account.id,"SUPPORT_REVIEW","ERROR_REPORT",id)
    if(updated.status=="RESOLVED") notifyReport(updated)
    reportView(updated,true)
   }!!
+  // Outside the row lock; repeating the same review re-sends the post status after a failed sync.
+  if(view["targetType"]==Community.TARGET_TYPE) community.apply(view["targetId"] as UUID,id)
+  return view
  }
  private fun notifyReport(value: SupportReport) {
   if(value.requesterRole=="PARENT") notifications.support(value.reporterUserId,value.studentId,value.id,false)
@@ -142,17 +165,38 @@ class SupportService(private val repository: SupportRepository,private val acces
    }
    throw ex
   }
+  val impact=derivedImpact(value.studentId,value.attemptId,value.targetId,response["impact"])
   return tx.execute {
    val locked=db.lockReport(id) ?: missing();val current=db.correction(id) ?: missing()
    if(current.processingStatus!="COMPLETED") {
     if(response["previousResult"].asText()!=current.previousResult) conflict()
-    val completed=current.copy(processingStatus="COMPLETED",providerResult=json.writeValueAsString(response),impact=json.writeValueAsString(response["impact"]),completedAt=now())
+    val completed=current.copy(processingStatus="COMPLETED",providerResult=json.writeValueAsString(response),impact=json.writeValueAsString(impact),completedAt=now())
     check(db.updateCorrection(completed)==1)
     val updated=locked.copy(status="RESOLVED",reviewResult=command.corrected,resolutionReason=command.reason,reviewedBy=actor.account.id,resolvedAt=completed.completedAt)
     check(db.updateReport(updated)==1);repository.audit(actor.account.id,"CORRECTION_COMPLETED","ERROR_REPORT",id);notifyReport(updated)
    }
    reportView(report(id),true)
   }!!
+ }
+ /**
+  * FN-SUP-03 #244: which existing reports and answers used the corrected judgment. A failed lookup stays UNKNOWN and never blocks the correction.
+  * Reports match by attempt because evidence links are absent when parent sharing is off; answers match the exact judged answer. Outside transactions.
+  */
+ private fun derivedImpact(student: UUID?,attempt: UUID?,judgment: UUID,supplied: JsonNode): JsonNode {
+  if(student==null || attempt==null) return supplied
+  val affected=try { reports.affected(student,attempt) } catch(_: RuntimeException) { null }
+  val messages=try {
+   val answer=learning.original(attempt,student)["answers"].first { it.path("feedback").path("judgment").path("judgmentId").asText()==judgment.toString() }
+   conversations.citing(UUID.fromString(answer["answerId"].asText()))
+  } catch(_: RuntimeException) { null }
+  val pinned=try { affected.orEmpty().filter { it.periodType=="DAILY" }.flatMap { conversations.pinned(student,it.periodFrom,it.revision) }.distinct() } catch(_: RuntimeException) { null }
+  val result=supplied.deepCopy<JsonNode>() as com.fasterxml.jackson.databind.node.ObjectNode
+  result.put("report",when { affected==null -> "UNKNOWN"; affected.isEmpty() -> "NOT_AFFECTED"; else -> "AFFECTED" })
+  result.put("conversation",when { messages?.isNotEmpty()==true || pinned?.isNotEmpty()==true -> "AFFECTED"; affected==null || messages==null || pinned==null -> "UNKNOWN"; else -> "NOT_AFFECTED" })
+  affected?.takeIf { it.isNotEmpty() }?.let { result.set<JsonNode>("reportIds",json.valueToTree(it.map { report -> report.reportId })) }
+  messages?.takeIf { it.isNotEmpty() }?.let { result.set<JsonNode>("messageIds",json.valueToTree(it)) }
+  pinned?.takeIf { it.isNotEmpty() }?.let { result.set<JsonNode>("conversationIds",json.valueToTree(it)) }
+  return result
  }
  fun submitInquiry(actor: AuthenticatedAccount,command: InquirySubmission): Map<String,Any?> {
   access.user(actor);text(command.title,200);text(command.body)

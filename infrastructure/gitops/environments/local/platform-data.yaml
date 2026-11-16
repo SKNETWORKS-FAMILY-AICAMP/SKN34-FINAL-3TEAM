@@ -59,6 +59,10 @@ minio:
     missions: "sagomungchi-local-missions"
     reports: "sagomungchi-local-reports"
     models: "sagomungchi-local-models"
+  # sllm-server(llm-stub 대역)가 가동 창마다 내려받는 객체(#509). 새 kind에서도 Init이 성공하도록 만든다.
+  placeholderObjects:
+    - bucket: "sagomungchi-local-models"
+      key: "explanation/stub/model.gguf"
   resources:
     requests:
       cpu: "100m"

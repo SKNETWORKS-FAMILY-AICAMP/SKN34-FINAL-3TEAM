@@ -1,7 +1,7 @@
 package com.sagomungchi.core.learning.controller
 import com.sagomungchi.core.learning.service.AdminLearningService
-import com.sagomungchi.core.admin.service.operationPage
-import com.sagomungchi.core.admin.service.invalidOperations
+import com.sagomungchi.core._common.web.operationPage
+import com.sagomungchi.core._common.web.invalidOperations
 import com.sagomungchi.core._common.web.HttpExchangeResult
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatusCode

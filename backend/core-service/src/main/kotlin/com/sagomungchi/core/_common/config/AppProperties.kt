@@ -12,9 +12,12 @@ data class AppProperties(
     val llmPricing: Map<String, LlmPrice> = emptyMap(),
 ) {
     data class Internal(
+        /** 이 서비스가 내부 호출에 보내는 자기 토큰 */
         val token: String,
         val connectTimeout: Duration,
         val readTimeout: Duration,
+        /** 받는 쪽 호출자별 토큰 (InternalCallerPolicy 키). 빈 값이면 그 호출자 거부 */
+        val callers: Map<String, String> = emptyMap(),
     )
 
     data class Messaging(

@@ -1,15 +1,10 @@
 # 로컬 통합 실행: cp .env.example .env (값 채우기) → docker compose up --build
 name: sagomungchi
 
+# 내부 토큰·브로커 계정은 서비스별 (architecture 2.2·4.5). INTERNAL_TOKEN = 자기 토큰,
+# INTERNAL_TOKEN_<호출자> = 받는 쪽이 허용하는 호출자 토큰. RABBITMQ_USER는 rabbitmq-init·운영자 전용 관리자
 x-spring-env: &spring-env
   RABBITMQ_HOST: rabbitmq
-  RABBITMQ_USERNAME: ${RABBITMQ_USER:?.env 설정 필요}
-  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?.env 설정 필요}
-  INTERNAL_TOKEN: ${INTERNAL_TOKEN:?.env 설정 필요}
-
-x-python-env: &python-env
-  RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
-  INTERNAL_TOKEN: ${INTERNAL_TOKEN:?.env 설정 필요}
 
 x-python-healthcheck: &python-healthcheck
   interval: 10s
@@ -19,7 +14,9 @@ x-python-healthcheck: &python-healthcheck
 services:
   # ---------- 인프라 ----------
   postgres:
-    image: postgres:17.11-alpine
+    image: pgvector/pgvector:0.8.7-pg17-trixie
+    # #466: pgvector 포함 PostgreSQL 17.11(Debian). 기존 alpine(musl) 볼륨은 text 정렬이 달라 한 번 REINDEX DATABASE 필요
+    # (image는 postgres: 바로 다음 줄에 둔다. scripts/check_db_migrations.py가 이 위치로 읽음)
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?.env 설정 필요}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env 설정 필요}
@@ -66,7 +63,7 @@ services:
       timeout: 10s
       retries: 20
 
-  # definitions.json(exchange·queue·DLX)을 관리 API로 반영. 계정 정보는 파일에 두지 않음
+  # definitions.json(exchange·queue·DLX)을 관리 API로 반영하고 서비스 계정·권한 생성. 계정 정보는 파일에 두지 않음
   rabbitmq-init:
     image: curlimages/curl:8.17.0
     depends_on:
@@ -78,6 +75,11 @@ services:
     environment:
       RABBITMQ_USER: ${RABBITMQ_USER:?.env 설정 필요}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?.env 설정 필요}
+      RABBITMQ_CORE_PASSWORD: ${RABBITMQ_CORE_PASSWORD:?.env 설정 필요}
+      RABBITMQ_LEARNING_PASSWORD: ${RABBITMQ_LEARNING_PASSWORD:?.env 설정 필요}
+      RABBITMQ_AI_PASSWORD: ${RABBITMQ_AI_PASSWORD:?.env 설정 필요}
+      RABBITMQ_SCORING_PASSWORD: ${RABBITMQ_SCORING_PASSWORD:?.env 설정 필요}
+      RABBITMQ_REPORT_PASSWORD: ${RABBITMQ_REPORT_PASSWORD:?.env 설정 필요}
     entrypoint: [/bin/sh, /definitions/import-definitions.sh]
 
   redis:
@@ -136,12 +138,20 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *spring-env
+      RABBITMQ_USERNAME: core
+      RABBITMQ_PASSWORD: ${RABBITMQ_CORE_PASSWORD:?.env 설정 필요}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN_CORE:?.env 설정 필요}
+      INTERNAL_TOKEN_AI: ${INTERNAL_TOKEN_AI:?.env 설정 필요}
+      INTERNAL_TOKEN_SCORING: ${INTERNAL_TOKEN_SCORING:?.env 설정 필요}
+      INTERNAL_TOKEN_LEARNING: ${INTERNAL_TOKEN_LEARNING:?.env 설정 필요}
+      INTERNAL_TOKEN_REPORT_WORKER: ${INTERNAL_TOKEN_REPORT_WORKER:?.env 설정 필요}
       DB_URL: jdbc:postgresql://postgres:5432/core_db
       DB_USERNAME: core_app
       DB_PASSWORD: ${CORE_APP_PASSWORD}
       LEARNING_URL: http://learning-service:8081
       AI_URL: http://ai-service:8000
       REPORT_URL: http://report-api:8002
+      SCORING_URL: http://scoring-service:8001
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?base64 JWT 서명 키 설정 필요}
       AUTH_WEB_ORIGIN: ${AUTH_WEB_ORIGIN:-http://localhost:5173}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
@@ -166,10 +176,13 @@ services:
       TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY: ${TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY:-}
       PAYMENT_BILLING_ENCRYPTION_KEY: ${PAYMENT_BILLING_ENCRYPTION_KEY:-}
       APP_GUARDIAN_TRANSFER_ENABLED: "${APP_GUARDIAN_TRANSFER_ENABLED:-false}"
-      # 관리자 큐 현황(GET /admin/queues): RabbitMQ 관리 API, 로컬은 기존 브로커 계정 재사용
+      AUTH_NEW_ACCOUNT_DEMO: "${AUTH_NEW_ACCOUNT_DEMO:-false}"
+      AUTH_SIGNUP_LIMIT_PER_IP: "${AUTH_SIGNUP_LIMIT_PER_IP:-5}"
+      AUTH_SIGNUP_LIMIT_WINDOW: "${AUTH_SIGNUP_LIMIT_WINDOW:-10m}"
+      # 관리자 큐 현황(GET /admin/queues): RabbitMQ 관리 API, core 브로커 계정(monitoring 태그) 사용
       ADMIN_RABBIT_MANAGEMENT_URL: http://rabbitmq:15672
-      ADMIN_RABBIT_MANAGEMENT_USERNAME: ${RABBITMQ_USER}
-      ADMIN_RABBIT_MANAGEMENT_PASSWORD: ${RABBITMQ_PASSWORD}
+      ADMIN_RABBIT_MANAGEMENT_USERNAME: core
+      ADMIN_RABBIT_MANAGEMENT_PASSWORD: ${RABBITMQ_CORE_PASSWORD}
     ports:
       - "${CORE_HOST_PORT:-8080}:8080"
     healthcheck:
@@ -187,11 +200,24 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *spring-env
+      RABBITMQ_USERNAME: learning
+      RABBITMQ_PASSWORD: ${RABBITMQ_LEARNING_PASSWORD:?.env 설정 필요}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN_LEARNING:?.env 설정 필요}
+      INTERNAL_TOKEN_CORE: ${INTERNAL_TOKEN_CORE:?.env 설정 필요}
+      INTERNAL_TOKEN_AI: ${INTERNAL_TOKEN_AI:?.env 설정 필요}
+      INTERNAL_TOKEN_REPORT_API: ${INTERNAL_TOKEN_REPORT_API:?.env 설정 필요}
+      INTERNAL_TOKEN_REPORT_WORKER: ${INTERNAL_TOKEN_REPORT_WORKER:?.env 설정 필요}
+      INTERNAL_TOKEN_OPS: ${INTERNAL_TOKEN_OPS:-}
       DB_URL: jdbc:postgresql://postgres:5432/learning_db
       DB_USERNAME: learning_app
       DB_PASSWORD: ${LEARNING_APP_PASSWORD}
       CORE_URL: http://core-service:8080
       AI_URL: http://ai-service:8000
+      # #591: 추억 검색 문서 임베딩 주기 작업. 켜면 ai가 실제 임베딩을 호출하므로 OPENAI_API_KEY(또는 EMBEDDING_PROVIDER=fake)와 함께 켠다.
+      # 키 없이 켜면 문서가 5회 실패 뒤 FAILED가 되고 자동으로 되살아나지 않는다.
+      MEMORY_EMBEDDING_ENABLED: ${MEMORY_EMBEDDING_ENABLED:-false}
+      MEMORY_QUERY_REWRITE_ENABLED: ${MEMORY_QUERY_REWRITE_ENABLED:-true}
+      MEMORY_QUERY_REWRITE_TIMEOUT: ${MEMORY_QUERY_REWRITE_TIMEOUT:-8s}
     ports:
       - "${LEARNING_HOST_PORT:-8081}:8081"
     healthcheck:
@@ -206,11 +232,16 @@ services:
       rabbitmq-init:
         condition: service_completed_successfully
     environment:
-      <<: *python-env
+      RABBITMQ_URL: amqp://ai:${RABBITMQ_AI_PASSWORD:?.env 설정 필요}@rabbitmq:5672/
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN_AI:?.env 설정 필요}
+      INTERNAL_TOKEN_CORE: ${INTERNAL_TOKEN_CORE:?.env 설정 필요}
+      INTERNAL_TOKEN_LEARNING: ${INTERNAL_TOKEN_LEARNING:?.env 설정 필요}
+      INTERNAL_TOKEN_REPORT_WORKER: ${INTERNAL_TOKEN_REPORT_WORKER:?.env 설정 필요}
+      INTERNAL_TOKEN_OPS: ${INTERNAL_TOKEN_OPS:-}
       LEARNING_URL: http://learning-service:8081
       SCORING_URL: http://scoring-service:8001
       CORE_URL: http://core-service:8080
-      # #69: false여도 M2 점수는 기록한다. 시간·경계 기본값은 ai Settings와 동일.
+      # #69·#305: 교차 확인 false면 scoring을 부르지 않는다. 시간·경계 기본값은 ai Settings와 동일.
       JUDGE_DEADLINE: "${JUDGE_DEADLINE:-33.0}"
       SCORING_TIMEOUT: "${SCORING_TIMEOUT:-10.0}"
       SCORING_RESERVE: "${SCORING_RESERVE:-3.0}"
@@ -219,9 +250,13 @@ services:
       M2_NARRATIVE_HIGH: "${M2_NARRATIVE_HIGH:-4.0}"
       M2_ESSAY_LOW: "${M2_ESSAY_LOW:-1.0}"
       M2_ESSAY_HIGH: "${M2_ESSAY_HIGH:-2.0}"
-      M1_CHECK_ENABLED: "${M1_CHECK_ENABLED:-false}"
+      M2_ESSAY_HIGH_ENABLED: "${M2_ESSAY_HIGH_ENABLED:-false}"
+      M2_NARRATIVE_MIN_CHARS: "${M2_NARRATIVE_MIN_CHARS:-100}"
+      M2_ESSAY_MIN_CHARS: "${M2_ESSAY_MIN_CHARS:-140}"
+      M1_CHECK_ENABLED: "${M1_CHECK_ENABLED:-false}" # M1 미지원(#501): learning이 answerKey·solution을 보내지 않아 켜도 M1을 부르지 않음
       M1_MIN_CONFIDENCE: "${M1_MIN_CONFIDENCE:-0.8}"
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      MEMORY_QUERY_PROVIDER: ${MEMORY_QUERY_PROVIDER:-llm}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
       ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-medium}
@@ -230,6 +265,11 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_JSON_MODE: ${OPENAI_JSON_MODE:-json_schema}
+      EXPLANATION_BASE_URL: ${EXPLANATION_BASE_URL:-}
+      EXPLANATION_MODEL: ${EXPLANATION_MODEL:-report-explanation}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
     ports:
       - "${AI_HOST_PORT:-8000}:8000"
     healthcheck:
@@ -242,7 +282,11 @@ services:
       rabbitmq-init:
         condition: service_completed_successfully
     environment:
-      <<: *python-env
+      RABBITMQ_URL: amqp://scoring:${RABBITMQ_SCORING_PASSWORD:?.env 설정 필요}@rabbitmq:5672/
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN_SCORING:?.env 설정 필요}
+      INTERNAL_TOKEN_AI: ${INTERNAL_TOKEN_AI:?.env 설정 필요}
+      INTERNAL_TOKEN_CORE: ${INTERNAL_TOKEN_CORE:?.env 설정 필요}
+      INTERNAL_TOKEN_OPS: ${INTERNAL_TOKEN_OPS:-}
       CORE_URL: http://core-service:8080
       S3_BUCKET: ${SCORING_S3_BUCKET:-sagomungchi-local-models}
       S3_REGION: ${SCORING_S3_REGION:-ap-northeast-2}
@@ -261,15 +305,21 @@ services:
         condition: service_completed_successfully
       report-migrate:
         condition: service_completed_successfully
-    environment: &report-env
-      <<: *python-env
-      DATABASE_URL: postgresql+psycopg://report_app:${REPORT_APP_PASSWORD}@postgres:5432/report_db
-      LEARNING_URL: http://learning-service:8081
-      AI_URL: http://ai-service:8000
-      CORE_URL: http://core-service:8080
-      S3_BUCKET: ${REPORT_S3_BUCKET:-sagomungchi-local-reports}
-      S3_REGION: ${REPORT_S3_REGION:-ap-northeast-2}
-      REPORT_DOWNLOAD_TTL_SECONDS: ${REPORT_DOWNLOAD_TTL_SECONDS:-300}
+    environment:
+      <<: &report-env
+        DATABASE_URL: postgresql+psycopg://report_app:${REPORT_APP_PASSWORD}@postgres:5432/report_db
+        LEARNING_URL: http://learning-service:8081
+        AI_URL: http://ai-service:8000
+        CORE_URL: http://core-service:8080
+        S3_BUCKET: ${REPORT_S3_BUCKET:-sagomungchi-local-reports}
+        S3_REGION: ${REPORT_S3_REGION:-ap-northeast-2}
+        REPORT_THEME_SUMMARY_ENABLED: ${REPORT_THEME_SUMMARY_ENABLED:-true}
+        REPORT_EXPLANATION_TIMEOUT_SECONDS: ${REPORT_EXPLANATION_TIMEOUT_SECONDS:-130}
+        REPORT_EXPLANATION_BUDGET_SECONDS: ${REPORT_EXPLANATION_BUDGET_SECONDS:-400}
+        REPORT_DOWNLOAD_TTL_SECONDS: ${REPORT_DOWNLOAD_TTL_SECONDS:-300}
+      # report-api는 core만 호출받고 브로커를 쓰지 않음
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN_REPORT_API:?.env 설정 필요}
+      INTERNAL_TOKEN_CORE: ${INTERNAL_TOKEN_CORE:?.env 설정 필요}
     ports:
       - "${REPORT_HOST_PORT:-8002}:8002"
     healthcheck:
@@ -279,7 +329,11 @@ services:
   report-worker:
     build: ./backend/report-service
     depends_on: *report-deps
-    environment: *report-env
+    environment:
+      <<: *report-env
+      # report-worker는 HTTP 호출을 받지 않으므로 호출자 토큰 없음
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN_REPORT_WORKER:?.env 설정 필요}
+      RABBITMQ_URL: amqp://report:${RABBITMQ_REPORT_PASSWORD:?.env 설정 필요}@rabbitmq:5672/
     command: ["python", "-m", "app.worker"]
 
 volumes:

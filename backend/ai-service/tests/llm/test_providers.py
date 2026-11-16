@@ -232,6 +232,65 @@ def test_openai_parses_structured_output_with_usage() -> None:
     assert completions.kwargs["messages"][0] == {"role": "system", "content": "system"}
 
 
+PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 8
+JPEG = b"\xff\xd8\xff\xe0" + b"0" * 8
+
+
+def test_openai_without_images_sends_plain_text() -> None:
+    llm, completions = make_openai(completion('{"value": "ok"}'))
+    openai_once(llm)
+    assert completions.kwargs["messages"][1] == {"role": "user", "content": "user"}
+
+
+def test_openai_images_follow_text_as_data_urls() -> None:
+    """테마 그림 검토(#437): 글 뒤에 그림을 data URL 조각으로 붙인다."""
+    llm, completions = make_openai(completion('{"value": "ok"}'))
+    request = LlmRequest("system", "user", Answer, "THEME_DRAFT", "t@1", 512, 7.5, (PNG, JPEG))
+    asyncio.run(llm._request(request))
+    content = completions.kwargs["messages"][1]["content"]
+    assert content[0] == {"type": "text", "text": "user"}
+    assert [c["image_url"]["url"].split(";")[0] for c in content[1:]] == [
+        "data:image/png",
+        "data:image/jpeg",
+    ]
+
+
+def test_anthropic_images_come_before_text() -> None:
+    llm, messages = make_llm(message('{"value": "ok"}'))
+    request = LlmRequest("system", "user", Answer, "THEME_DRAFT", "t@1", 512, 7.5, (PNG,))
+    asyncio.run(llm._request(request))
+    content = messages.kwargs["messages"][0]["content"]
+    assert content[0]["source"]["media_type"] == "image/png" and content[-1]["text"] == "user"
+
+
+def test_generate_passes_images_to_request() -> None:
+    seen: list[LlmRequest] = []
+
+    class Spy(OpenAICompatibleLlm):
+        async def _request(self, request: LlmRequest):  # type: ignore[override]
+            seen.append(request)
+            return await super()._request(request)
+
+    completions = FakeCompletions(completion('{"value": "ok"}'))
+    llm = Spy(
+        api_key="k",
+        model="gpt-test",
+        base_url=None,
+        json_mode="json_schema",
+        timeout=15,
+        max_retries=0,
+        backoff_seconds=0,
+        recorder=recorder,
+        client=SimpleNamespace(chat=SimpleNamespace(completions=completions)),  # type: ignore[arg-type]
+    )
+    asyncio.run(
+        llm.generate(
+            system="s", user="u", output=Answer, call_type="X", prompt_version="p", images=[PNG]
+        )
+    )
+    assert seen[0].images == (PNG,)
+
+
 def test_openai_json_object_mode_puts_schema_in_system() -> None:
     # 스키마 강제를 지원하지 않는 sLLM 서버용
     llm, completions = make_openai(completion('{"value": "ok"}'), json_mode="json_object")

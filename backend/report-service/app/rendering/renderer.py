@@ -24,6 +24,32 @@ SOURCE_LABELS = {
 }
 
 
+def theme_day_label(day: dict) -> str:
+    """#486: 그날·나중에·못 풀었어요. completedInWeek가 없는 이전 입력은 완료/미완료 그대로."""
+    if day.get("completedInWeek") is None:
+        return "완료" if day["completed"] else "미완료"
+    if day["completed"]:
+        return "그날 풀었어요"
+    return "나중에 풀었어요" if day["completedInWeek"] else "못 풀었어요"
+
+
+def theme_status_lines(theme: dict) -> list[str]:
+    """#486 새 칸이 하나라도 있으면 개근·주간 완주·엔딩, 없으면 이전 완주 줄."""
+    finished, ending = theme.get("finished"), theme.get("ending")
+    if (
+        finished is None
+        and ending is None
+        and all(day.get("completedInWeek") is None for day in theme["days"])
+    ):
+        return ["완주: " + ("완료" if theme["completed"] else "미완료")]
+    lines = ["개근: " + ("했어요" if theme["completed"] else "못 했어요")]
+    if finished is not None:
+        lines.append("주간 완주: " + ("완료" if finished else "미완료"))
+    if ending is not None:
+        lines.append("엔딩: " + ("봤어요" if ending == "ENDED" else "아직 못 봤어요"))
+    return lines
+
+
 class ReportRenderer:
     def __init__(self) -> None:
         self._templates = Environment(
@@ -38,12 +64,16 @@ class ReportRenderer:
             state_labels=STATE_LABELS,
             source_labels=SOURCE_LABELS,
             difficulty_labels=DIFFICULTY_LABELS,
+            theme_day_label=theme_day_label,
+            theme_status_lines=theme_status_lines,
         )
 
     def render(self, report: dict, display_name: str) -> dict[str, bytes]:
         if not display_name.strip():
             raise ValueError("A trusted display name is required for report files")
-        html = self._templates.get_template("weekly.html").render(report=report, name=display_name)
+        html = self._templates.get_template(
+            "daily.html" if report.get("periodType") == "DAILY" else "weekly.html"
+        ).render(report=report, name=display_name)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(args=["--disable-dev-shm-usage"])
             try:
@@ -77,6 +107,49 @@ class ReportRenderer:
                 value = value.replace(char, "\\" + char)
             return value
 
+        if report.get("periodType") == "DAILY":
+            lines = [
+                f"# {safe(display_name)}의 일일 리포트",
+                report["period"]["from"],
+                f"{report['revision']}판 · {STATE_LABELS[report['state']]}",
+                "",
+            ]
+            for metric in report["metrics"]:
+                lines.append(f"{safe(metric['label'])}: {metric['count']}건")
+            for problem in report.get("problems", []):
+                lines.extend(
+                    [
+                        "",
+                        "## " + safe(problem["title"]),
+                        "판정: " + safe(problem["judgment"] or "판정 대기"),
+                    ]
+                )
+                for followup in problem["followups"]:
+                    lines.extend(
+                        [safe(followup["question"]), safe(followup["answer"] or "보완 답변 없음")]
+                    )
+                lines.extend(
+                    [
+                        "### 마지막 답변",
+                        safe(problem["finalAnswer"] or "원문 비공개 또는 답변 없음"),
+                    ]
+                )
+                for element in problem["elements"]:
+                    lines.append(
+                        safe(element["label"]) + (": 확인" if element["satisfied"] else ": 미확인")
+                    )
+                reflection = problem["reflection"]
+                lines.extend(
+                    [
+                        "### 돌아보기",
+                        safe(reflection["difficulty"] or "미작성"),
+                        safe(reflection["text"] or ""),
+                    ]
+                )
+                for quote in problem["quotes"]:
+                    if quote["verified"]:
+                        lines.append(safe(quote["text"]))
+            return "\n".join(lines) + "\n"
         lines = [
             f"# {safe(display_name)}의 주간 리포트",
             "",
@@ -176,4 +249,52 @@ class ReportRenderer:
         ordered = prefix + [
             line for key in settings.section_order for line in sections.get("## " + labels[key], [])
         ]
+        theme = report.get("themeSummary")
+        if theme:
+            ordered.extend(["", "## 이번 주 테마", safe(theme["title"] or "참여 기록 없음")])
+            if theme["state"] != "NO_RECORD":
+                ordered.extend(theme_status_lines(theme))
+                ordered.extend(
+                    safe(day["day"]) + ": " + theme_day_label(day) for day in theme["days"]
+                )
+                ordered.extend(
+                    "다시 풀기: " + safe(retry.get("title") or retry["missionId"])
+                    for retry in theme["reviewRetries"]
+                )
+            for retry in theme["reviewRetries"]:
+                comparison = retry.get("comparison")
+                if not comparison:
+                    continue
+                if comparison["state"] == "COMPARABLE":
+                    for element in comparison["elements"]:
+                        before = "확인" if element["previousSatisfied"] else "미확인"
+                        after = "확인" if element["currentSatisfied"] else "미확인"
+                        ordered.append(safe(element["label"]) + f": {before} → {after}")
+                else:
+                    ordered.append(
+                        "기준이 달라 비교하지 않음"
+                        if comparison["state"] == "CRITERIA_CHANGED"
+                        else "이전 기록 없음"
+                    )
+        explanations = report.get("explanations")
+        if explanations:
+            ordered.extend(["", "## 대표 답변 설명 · AI 관찰", ""])
+            if explanations["state"] == "INCLUDED":
+                for item in explanations["items"]:
+                    ordered.extend(
+                        [
+                            "### " + safe(item["missionTitle"]),
+                            safe(THINKING_LABELS[item["thinkingType"]]),
+                        ]
+                    )
+                    if item["quote"] is not None:
+                        ordered.append(safe(item["quote"]))
+                    ordered.append(safe(item["text"]))
+            elif explanations["state"] == "NOT_INCLUDED":
+                ordered.append(
+                    "설명 미포함 · 설명을 제공하지 못했습니다. "
+                    "학습 수치와 기록은 계속 확인할 수 있습니다."
+                )
+            else:
+                ordered.append("설명 대상 답변이 없어 AI 관찰 설명이 포함되지 않았습니다.")
         return "\n".join(ordered) + "\n"

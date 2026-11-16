@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from '../auth/sessionContext.ts'
 import { useBlocker, useNavigate } from 'react-router'
 import { ReportProblem } from '../service/ReportProblem.tsx'
-import { ArrowLeft, Check, Lightbulb, NotebookPen, Pencil, Volume2 } from 'lucide-react'
 import { useAttempt, useLearningActions, isDemo } from '../../data/classroom/useClassroom.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
 import {
@@ -13,23 +12,30 @@ import {
   blankAnswer,
   canAddAnswer,
   canFinish,
-  inputLabels,
   latestFeedback,
   validateAnswer,
   isVerifiedElement,
-  thinkingLabels,
+  studentThinkingLabels,
 } from '../../domain/classroom.ts'
 import type { AnswerContent, Attempt, Draft, Reflection } from '../../domain/classroom.ts'
 import { ActivityPaper, ErrorNotice, MemoCanvas, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from './MissionScene.tsx'
 import { Companion } from './world/Companion.tsx'
+import { SpeechBubble } from './world/SpeechBubble.tsx'
 import { useLook } from './world/lookContext.ts'
-import { STAGE_LABELS, companionLabel, missionStage } from '../../domain/studentLook.ts'
-import type { MissionStage } from '../../domain/studentLook.ts'
+import { companionLabel } from '../../domain/studentLook.ts'
+import { STEPS, difficultyLabel, feedbackHeadline, followupLabel } from './world/missionSteps.ts'
+import './world/mission-guide.css'
+import './world/work.css'
 import { ApiError } from '../../data/apiClient.ts'
 import { appendMemo, memoTargets } from '../../domain/memoTransfer.ts'
 
-export function StudentWorkPage({ attemptId, onBack }: { attemptId: string; onBack: () => void }) {
+/** onCompleted: 돌아보기까지 저장해 학습을 마무리한 직후(없으면 onBack). 엔딩이 되면 이야기의 끝으로 보내는 데 쓴다(#440). */
+export function StudentWorkPage({ attemptId, onBack, onHome, onCompleted }: { attemptId: string; onBack: () => void; onHome?: () => void; onCompleted?: () => void }) {
+  // 한 화면 고정(st-fit)을 뺌: 낮은 창의 마무리·돌아보기에서 흰 종이가 틀 안에서 스크롤하던 것을 페이지 전체 스크롤로(사용자 결정 2026-11-16)
+  return <main className="sw-page" aria-label="미션 풀이"><StudentWorkContent attemptId={attemptId} onBack={onBack} onHome={onHome ?? onBack} onCompleted={onCompleted ?? onBack} /></main>
+}
+function StudentWorkContent({ attemptId, onBack, onHome, onCompleted }: { attemptId: string; onBack: () => void; onHome: () => void; onCompleted: () => void }) {
   const query = useAttempt(attemptId)
   if (query.isPending)
     return (
@@ -38,17 +44,24 @@ export function StudentWorkPage({ attemptId, onBack }: { attemptId: string; onBa
       </div>
     )
   if (!query.data || query.error)
+    // 없는 시도 등으로 열지 못하면 메뉴가 숨겨진 막다른 화면이 되므로 돌아가는 버튼을 둔다(#648)
     return (
-      <ErrorNotice
-        error={query.error}
-        retry={() => {
-          void query.refetch()
-        }}
-      />
+      <div className="st-work-missing">
+        <ErrorNotice
+          error={query.error}
+          retry={() => {
+            void query.refetch()
+          }}
+        />
+        <div className="st-work-missing-actions">
+          <button type="button" className="st-button st-primary" onClick={onHome}>홈으로</button>
+          <button type="button" className="st-button" onClick={onBack}>내 공책으로</button>
+        </div>
+      </div>
     )
-  return <StudentEditor key={attemptId} a={query.data} onBack={onBack} />
+  return <StudentEditor key={attemptId} a={query.data} onBack={onBack} onCompleted={onCompleted} />
 }
-function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
+function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => void; onCompleted: () => void }) {
   const { session } = useSession()
   const navigate = useNavigate()
   const attemptId = a.attemptId,
@@ -77,6 +90,10 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
   const editVersion = useRef(0),
     submission = useRef<{ signature: string; key: string } | null>(null)
   const resumedFeedback = useRef<string | null>(null)
+  const title = useRef<HTMLHeadingElement>(null)
+  const result = useRef<HTMLDivElement>(null)
+  const [focusAnswerId, setFocusAnswerId] = useState<string | null>(null)
+  useEffect(() => { title.current?.focus() }, [])
   const requestFeedback = actions.feedback.mutateAsync
   useEffect(() => {
     const last = a.answers.at(-1)
@@ -185,6 +202,18 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
       setError(e)
     }
   }
+  // 자동 저장(입력 600ms 뒤) 중에 "다 썼어요"를 누르면 그 클릭을 기억해 두었다가 저장이 끝나면 보낸다.
+  // 예전에는 저장 중 버튼이 잠겨 그 사이 누른 클릭이 아무 반응 없이 사라졌다(실서버 E2E 2026-11-16 발견).
+  // 저장과 제출이 동시에 나가지 않게 하는 원래 목적은 그대로다
+  const [submitQueued, setSubmitQueued] = useState(false)
+  useEffect(() => {
+    // 저장이 끝나는 순간 한 번만 보낸다(sendQueued는 렌더마다 새로 만들어지는 함수라 의존성에 넣지 않음)
+    if (submitQueued && saveState !== 'SAVING' && !actions.save.isPending) void sendQueued()
+  }, [submitQueued, saveState, actions.save.isPending]) // eslint-disable-line react-hooks/exhaustive-deps
+  async function sendQueued() {
+    setSubmitQueued(false)
+    if (saveState !== 'CONFLICT') await submit()
+  }
   async function submit() {
     if (!draft || !a) return
     const message = validateAnswer(draft.answer, a.mission)
@@ -210,6 +239,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
         followupId: latestFeedback(a)?.followup?.followupId,
       })
       resumedFeedback.current = saved.answers.at(-1)!.answerId
+      setFocusAnswerId(saved.answers.at(-1)!.answerId)
       setDirty(false)
       setSaveState('SAVED')
       setMore(false)
@@ -259,20 +289,25 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
         reflection: { difficulty, text: reflection },
       })
       setReflectOpen(false)
-      onBack()
+      onCompleted()
     } catch (e) {
       setRetryAction(() => complete)
       setError(e)
     }
   }
-  const { companion } = useLook()
-  const stage = missionStage(a)
+  const { companion, worn } = useLook()
   // 판정 신고는 판정 ID로, 판정 전이면 신고하지 않음 (learning #146)
   const reportJudgmentId = latestFeedback(a)?.judgment?.judgmentId
   // retryable:false면 다시 요청해도 같은 실패라 재요청 버튼 대신 안내 (api-spec 3.2)
   const feedbackFinal = error instanceof ApiError && error.problem.retryable === false
   const f = latestFeedback(a),
-    writing = !a.finishedAt && (a.answers.length === 0 || more) && canAddAnswer(a)
+    writing = !a.finishedAt && (a.answers.length === 0 || more) && canAddAnswer(a),
+    guide = writing && draft ? writingGuide(draft.answer, more) : null
+  useEffect(() => {
+    if (!focusAnswerId || writing || !result.current) return
+    result.current.focus()
+    setFocusAnswerId(null)
+  }, [focusAnswerId, writing])
   const pending =
     actions.submit.isPending ||
     actions.feedback.isPending ||
@@ -284,417 +319,485 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
   const selectedMemoTarget = targets.some((t) => t.id === memoTarget)
     ? memoTarget
     : targets[0]?.id ?? ''
-  return (
-    <section className="cj-editor st-work" aria-label="미션 작성기">
-      <header className="st-work-top">
-        {reportJudgmentId && <ReportProblem targetType="JUDGMENT" targetId={reportJudgmentId}/>}
-        <button type="button" className="st-back" onClick={back}>
-          <ArrowLeft aria-hidden="true" />
-          공책으로
+  // 단계 칩(미션 안내와 같은 다섯 단계, #440): 안내 화면이 1단계라 이 화면은 2단계부터.
+  // 되묻기에 답하는 동안은 피드백 단계로 본다(시안 Feedback에서 덧붙이는 칸이 피드백 상자 안에 있음)
+  const step = a.status === 'COMPLETED' || reflectOpen ? 4 : a.finishedAt ? 3 : a.answers.length ? 2 : 1
+  const read = () => {
+    if (!window.speechSynthesis) {
+      setNotice('이 화면에서는 읽어 주기를 쓸 수 없어요.')
+      return
+    }
+    window.speechSynthesis.cancel()
+    const voice = new SpeechSynthesisUtterance(a.mission.question)
+    voice.lang = 'ko-KR'
+    window.speechSynthesis.speak(voice)
+  }
+  const saveLine = (
+    <div className="ux-save-line sw-save" role="status">
+      {!a.finishedAt && draft && (
+        <span>
+          {
+            {
+              SAVED: isDemo ? '저장했어요(모의)' : '저장했어요',
+              DIRTY: '아직 저장 전이에요',
+              SAVING: '저장하고 있어요',
+              FAILED: '저장하지 못했어요. 쓴 글은 그대로 있어요.',
+              CONFLICT: '다른 곳에서 쓴 글이 있어요. 어느 쪽을 쓸지 골라 주세요.',
+            }[saveState]
+          }
+        </span>
+      )}
+      {!a.finishedAt && draft?.savedAt && (
+        <time dateTime={draft.savedAt}>
+          마지막 저장 ·{' '}
+          {new Date(draft.savedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
+        </time>
+      )}
+    </div>
+  )
+  const memoToggle = (
+    <button type="button" className="sw-memo-toggle" aria-pressed={memo} disabled={!!a.finishedAt} onClick={() => setMemo(!memo)}>
+      생각 메모 · 나만 보기
+    </button>
+  )
+  // 생각 메모(시안 MissionWrite 노란 쪽지): 답 칸을 가리지 않고 아래에 같이 펼친다
+  const memoPanel = memo && draft && (
+    <section className="sw-memo" aria-label="생각 메모">
+      <strong className="sw-memo-title">생각 메모 · 나만 보기</strong>
+      <MemoCanvas />
+      <label className="cj-field">
+        글 메모
+        <textarea
+          data-testid="private-memo"
+          value={draft.memo}
+          maxLength={1200}
+          disabled={!!a.finishedAt}
+          onChange={(e) => {
+            editVersion.current++
+            setDraft({ ...draft, memo: e.target.value })
+            setDirty(true)
+            if (!['FAILED', 'CONFLICT', 'SAVING'].includes(saveState))
+              setSaveState('DIRTY')
+          }}
+        />
+      </label>
+      {targets.length ? (
+        <>
+          <label className="cj-field">
+            옮길 답변 칸
+            <select
+              aria-label="옮길 답변 칸"
+              value={selectedMemoTarget}
+              onChange={(e) => {
+                setMemoTarget(e.target.value)
+                setMemoError('')
+              }}
+            >
+              {targets.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
+          </label>
+          {!writing && (
+            <p>답을 쓰는 중에만 옮길 수 있어요.</p>
+          )}
+          <button
+            type="button"
+            className="sw-memo-move"
+            disabled={!writing || pending || saveState === 'CONFLICT' || !draft.memo.trim()}
+            onClick={() => {
+              try {
+                change(appendMemo(draft.answer, draft.memo, selectedMemoTarget))
+                setMemoError('')
+                setNotice('메모를 답에 붙였어요.')
+                setMemo(false)
+              } catch (e) {
+                setMemoError(e instanceof Error ? e.message : '메모를 옮기지 못했어요. 다시 해 볼까요?')
+              }
+            }}
+          >
+            메모를 답에 옮기기
+          </button>
+          {memoError && <p role="alert">{memoError}</p>}
+        </>
+      ) : (
+        <p>이 문제는 답 칸에서 직접 골라 주세요.</p>
+      )}
+    </section>
+  )
+  const alerts = (
+    <>
+      {notice && !reflectOpen && (
+        <p className="ux-error" role="alert">
+          {notice}
+        </p>
+      )}
+      <ErrorNotice
+        error={error}
+        retry={
+          retryAction
+            ? () => {
+                void retryAction()
+              }
+            : undefined
+        }
+      />
+      <ErrorNotice
+        error={saveError}
+        retry={
+          saveState === 'FAILED'
+            ? () => {
+                setSaveState('DIRTY')
+                setDirty(true)
+              }
+            : undefined
+        }
+      />
+      {saveState === 'CONFLICT' && !conflict && (
+        <button
+          type="button"
+          className="cj-secondary"
+          onClick={() => {
+            if (saveError instanceof DraftConflictError) setConflict(saveError.latest)
+          }}
+        >
+          다시 비교하기
         </button>
-        <ol className="st-steps" aria-label="미션 진행 단계">
-          {(Object.keys(STAGE_LABELS) as MissionStage[]).map((s, i, all) => {
-            const at = all.indexOf(stage)
-            return (
-              <li key={s} aria-current={s === stage ? 'step' : undefined} data-done={i < at || undefined}>
-                {i < at && <Check aria-hidden="true" />}
-                {STAGE_LABELS[s]}
-              </li>
-            )
-          })}
+      )}
+      {backup && (
+        <details className="ux-backup">
+          <summary>바꾸기 전 글 보기</summary>
+          <p>{answerText(backup.answer)}</p>
+        </details>
+      )}
+    </>
+  )
+  // 판정 결과 오류 신고(learning #146): 결과를 보여 주는 칸 아래에 둔다
+  const report = reportJudgmentId && (
+    <div className="sw-report">
+      <ReportProblem targetType="JUDGMENT" targetId={reportJudgmentId}/>
+    </div>
+  )
+  const answerVersions = (compact = false) => a.answers.map((v, i) => (
+    <section className="ux-answer-version sw-version" key={v.answerId} aria-label={v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`}>
+      <small>{v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`}</small>
+      <p className="cj-quote">{v.text}</p>
+      {!compact && v.feedback.judgment && (
+        <FeedbackEvidence feedback={v.feedback} text={v.text} />
+      )}
+      {/* 마지막 답의 되묻기는 오른쪽 피드백 상자가 보여 주므로 이전 답의 되묻기만(같은 질문 두 번 방지). 마무리 칸(compact)은 글만(시안 Finish) */}
+      {!compact && v.feedback.followup && i < a.answers.length - 1 && (
+        <div className="ux-timeline-question sw-asked">
+          <small>{followupLabel(v.feedback.followup.type)}</small>
+          <p>{v.feedback.followup.question}</p>
+        </div>
+      )}
+    </section>
+  ))
+  return (
+    <section className="st-work sw-work" aria-label="미션 작성기">
+      <header className="mg-top sw-top">
+        <div className="sw-head">
+          <button type="button" className="mg-back" onClick={back}>
+            <span aria-hidden="true">← </span>공책으로
+          </button>
+          <div className="sw-title">
+            <h1 ref={title} tabIndex={-1}>{a.mission.title}</h1>
+            <span>
+              {studentThinkingLabels[a.mission.thinkingType]} · {a.mission.subject} · 초{a.mission.grade}
+              {isDemo ? ' · 화면 시연' : ''}
+            </span>
+          </div>
+        </div>
+        <ol className="mg-steps" aria-label="미션 진행 단계">
+          {STEPS.map((s, i) => (
+            <li key={s} aria-current={i === step ? 'step' : undefined} data-done={i < step || undefined}>
+              {i + 1} {s}
+              {i < step && <span aria-hidden="true"> ✓</span>}
+            </li>
+          ))}
         </ol>
       </header>
-      <div className="st-paper st-work-paper">
-        <div className="ux-answer-paper">
-          <div className="ux-paper-question">
-            <p className="st-kicker">
-              {a.mission.subject} · {thinkingLabels[a.mission.thinkingType]} · 초등 {a.mission.grade}학년
-              {isDemo ? ' · 화면 시연' : ''}
-            </p>
-            <h1>{a.mission.title}</h1>
-            <div className="st-ask">
-              <Companion kind={companion} size={64} decorative />
-              <div className="st-say">
-                <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>
-                <h2>{a.mission.question}</h2>
-                <small>{memo ? '생각 메모 · 나만 보기' : inputLabels[a.mission.inputType]}</small>
-              </div>
-            </div>
+      {writing && draft ? (
+        // 답 쓰기(시안 MissionWrite): 왼쪽 그림·질문·생각 열기·도우미, 오른쪽 답 칸
+        <div className="sw-body sw-body-write">
+          <section className="sw-side" aria-label="질문">
             <MissionScene mission={a.mission} />
-            <div className="st-tools" role="group" aria-label="작성 도구">
-              <button type="button" aria-label="답변 쓰기" aria-pressed={!memo} onClick={() => setMemo(false)}>
-                <NotebookPen aria-hidden="true" />
-                답변
+            <h2 className="sw-question">
+              <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>
+              {a.mission.question}
+            </h2>
+            <div className="sw-tools">
+              <button type="button" className="mg-read" onClick={read}>
+                질문 읽어 주기
               </button>
               <button
                 type="button"
-                aria-label="생각 메모"
-                aria-pressed={memo}
-                onClick={() => setMemo(true)}
-                disabled={!!a.finishedAt}
-              >
-                <Pencil aria-hidden="true" />
-                메모
-              </button>
-              <button
-                type="button"
-                aria-label="생각 열기"
-                disabled={!!a.finishedAt}
+                className="sw-hint"
                 onClick={() => {
                   void actions.hint.mutateAsync(a.attemptId).then(setHint).catch(setError)
                 }}
               >
-                <Lightbulb aria-hidden="true" />
                 생각 열기
               </button>
-              <button
-                type="button"
-                aria-label="질문 읽기"
-                onClick={() => {
-                  if (!window.speechSynthesis) {
-                    setNotice('이 브라우저에서는 읽어주기를 지원하지 않습니다.')
-                    return
-                  }
-                  window.speechSynthesis.cancel()
-                  const voice = new SpeechSynthesisUtterance(a.mission.question)
-                  voice.lang = 'ko-KR'
-                  window.speechSynthesis.speak(voice)
-                }}
-              >
-                <Volume2 aria-hidden="true" />
-                읽어 주기
-              </button>
             </div>
-            {hint && (
-              <div className="st-ask st-hint">
-                <Companion kind={companion} size={48} decorative />
-                <div className="st-say">
-                  <strong>생각 열기</strong>
-                  <p>{hint}</p>
-                </div>
+            <div className="sw-helper">
+              <span className="sw-helper-face" aria-hidden="true">
+                <Companion kind={companion} size={72} worn={worn} decorative />
+              </span>
+              <SpeechBubble tail="left" className="sw-bubble" role="status">
+                {hint ? (
+                  <>
+                    <span className="sw-chip">생각 열기</span>
+                    <p>{hint}</p>
+                  </>
+                ) : guide ? (
+                  <>
+                    <p>{guide.line}</p>
+                    {guide.starters.length > 0 && (
+                      <div className="sw-starters" role="group" aria-label="이렇게 시작해 봐">
+                        {guide.starters.map((s) => (
+                          <button type="button" key={s.text} className="sw-starter" data-optional={s.optional || undefined}
+                            onClick={() => change(s.apply(draft.answer))}>
+                            {s.text}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p>막히면 ‘생각 열기’를 눌러 봐!</p>
+                )}
+              </SpeechBubble>
+            </div>
+          </section>
+          <section className="sw-panel" aria-labelledby="sw-panel-title">
+            <div className="sw-panel-head">
+              <h2 id="sw-panel-title">{more ? '더 말해 보기' : '내 생각 쓰기'}</h2>
+              <div className="sw-toolbar" role="group" aria-label="작성 도구">
+                {saveLine}
+                {memoToggle}
               </div>
-            )}
+            </div>
             {more && f?.followup && (
-              <div className="st-ask">
-                <Companion kind={companion} size={48} decorative />
-                <div className="st-say">
-                  <strong>한 걸음 더</strong>
-                  <p>{f.followup.question}</p>
+              <div className="sw-ask">
+                <span className="sw-ask-face" aria-hidden="true">
+                  <Companion kind={companion} size={60} worn={worn} decorative />
+                </span>
+                <div>
+                  <span className="sw-chip">{followupLabel(f.followup.type)}</span>
+                  <p className="sw-ask-text">{f.followup.question}</p>
+                  {report}
                 </div>
               </div>
             )}
-          </div>
-            {memo && draft ? (
-              <>
-                <div className="ux-private">
-                  학생 본인만 보는 메모입니다. 제출·판정·학부모 기록에 포함되지 않아요.
-                </div>
-                <MemoCanvas />
-                <label className="cj-field">
-                  글 메모
-                  <textarea
-                    data-testid="private-memo"
-                    value={draft.memo}
-                    maxLength={1200}
-                    disabled={!!a.finishedAt}
-                    onChange={(e) => {
-                      editVersion.current++
-                      setDraft({ ...draft, memo: e.target.value })
-                      setDirty(true)
-                      if (!['FAILED', 'CONFLICT', 'SAVING'].includes(saveState))
-                        setSaveState('DIRTY')
-                    }}
-                  />
-                </label>
-                {targets.length ? (
-                  <>
-                    <p>옮긴 글은 답변의 일부로 제출됩니다. 원래 메모는 지우지 않습니다.</p>
-                    <label className="cj-field">
-                      옮길 답변 칸
-                      <select
-                        aria-label="옮길 답변 칸"
-                        value={selectedMemoTarget}
-                        onChange={(e) => {
-                          setMemoTarget(e.target.value)
-                          setMemoError('')
-                        }}
-                      >
-                        {targets.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                      </select>
-                    </label>
-                    {!writing && (
-                      <p>답변을 쓰는 중에만 옮길 수 있습니다. 추가 답변 작성을 시작한 뒤 옮겨 주세요.</p>
-                    )}
-                    <button
-                      type="button"
-                      className="cj-secondary"
-                      disabled={!writing || pending || saveState === 'CONFLICT' || !draft.memo.trim()}
-                      onClick={() => {
-                        try {
-                          change(appendMemo(draft.answer, draft.memo, selectedMemoTarget))
-                          setMemoError('')
-                          setNotice('선택한 답변 칸에 글 메모를 덧붙였습니다. 제출 전에 확인해 주세요.')
-                          setMemo(false)
-                        } catch (e) {
-                          setMemoError(e instanceof Error ? e.message : '메모를 옮기지 못했습니다.')
-                        }
-                      }}
-                    >
-                      글 메모 전체를 답변으로 옮기기
-                    </button>
-                    {memoError && <p role="alert">{memoError}</p>}
-                  </>
-                ) : (
-                  <p>고르기·순서·분류 문제에서는 답변 화면에서 직접 골라 주세요. 글 메모를 선택 답으로 자동 변환하지 않습니다.</p>
-                )}
-              </>
-            ) : writing && draft ? (
-              <AnswerFields answer={draft.answer} mission={a.mission} onChange={change} />
-            ) : (
-              <>
-                {a.answers.map((v) => (
-                  <section className="ux-answer-version" key={v.answerId}>
-                    <small>
-                      {v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`} · 별도 버전
-                      보존
-                    </small>
-                    <p className="cj-quote">{v.text}</p>
-                    {v.feedback.judgment && (
-                      <FeedbackEvidence feedback={v.feedback} text={v.text} />
-                    )}
-                    {v.feedback.followup && (
-                      <div className="ux-timeline-question">
-                        <small>
-                          {v.feedback.followup.type === 'ONE_STEP_MORE'
-                            ? '한 걸음 더'
-                            : v.feedback.followup.type === 'LOOK_AGAIN'
-                              ? '다시 살펴보기'
-                              : '더 말해 보기'}
-                        </small>
-                        <p>{v.feedback.followup.question}</p>
-                      </div>
-                    )}
-                  </section>
-                ))}
-                {f && (
-                  <div className="ux-feedback" role="status">
-                    <strong>
-                      {f.status === 'DONE'
-                        ? f.judgment?.result === 'HELD'
-                          ? '판정 보류 · 답변은 기록했어요.'
-                          : f.judgment?.result === 'CORRECT'
-                            ? '정답을 확인했어요.'
-                            : '한 번 더 살펴볼까요?'
-                        : f.status === 'FAILED'
-                          ? '답변 저장 완료 · 피드백 처리 실패'
-                          : '답변 저장 완료 · 피드백 처리 중'}
-                    </strong>
-                    {f.judgment?.trial && (
-                      <small>AI 채점(시범){isDemo ? ' · 실제 모델 호출 없음' : ''}</small>
-                    )}
-                    {f.judgment?.result === 'HELD' && (
-                      <p>
-                        지금은 답을 판단하기 어려워요. 작성한 답은 저장했으니 질문을 읽고 생각을 더
-                        남겨 보세요.
-                      </p>
-                    )}
-                    {f.followup && !a.finishedAt && (
-                      <div className="st-ask">
-                        <Companion kind={companion} size={56} decorative />
-                        <div className="st-say">
-                          <p>{f.followup.question}</p>
-                          <small>
-                            {f.followup.source === 'BANK'
-                              ? '질문 은행'
-                              : f.followup.source === 'LLM_RETRY'
-                                ? '재생성된 질문'
-                                : 'AI 질문'}
-                            {isDemo ? ' · 시연 예시' : ''}
-                          </small>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {a.finishedAt ? (
-                  <>
-                    <h3>
-                      {a.revealKind === 'ANSWER'
-                        ? '정답과 비교해 보세요.'
-                        : '예시 답과 비교해 보세요.'}
-                    </h3>
-                    <p className="cj-quote">{a.reveal}</p>
-                    <h3>들어가면 좋은 생각</h3>
-                    <ul aria-label="마무리 체크리스트" className="ux-checklist">
-                      {(a.checklist ?? []).map((e) => {
-                        const checked = isVerifiedElement(
-                          e,
-                          a.answers.map((v) => v.text),
-                        )
-                        return (
-                          <li key={e.elementId}>
-                            <span>
-                              {checked ? '✓ 확인했어요' : '아직 확인하지 못했어요'} · {e.label}
-                            </span>
-                            {checked && <blockquote>{e.quote}</blockquote>}
-                          </li>
-                        )
-                      })}
-                    </ul>
-                    {!a.checklist?.length && (
-                      <p>근거로 확인한 항목이 아직 없습니다. 낮은 결과를 뜻하지는 않아요.</p>
-                    )}
-                    <AttemptComparisonPanel attempt={a} />
-                    <SelfAssessmentPanel key={a.attemptId} attempt={a} onBusyChange={setSelfAssessmentPending} />
-                    <ActivityPaper mission={a.mission} text={a.answers.at(-1)?.text} />
-                    {a.status === 'COMPLETED' ? (
-                      <div><p>
-                        돌아보기 완료 · {a.reflection?.difficulty}
-                        <br />
-                        {a.reflection?.text}
-                      </p>
-                      <button type="button" className="cj-secondary" disabled={actions.start.isPending || !session?.child}
-                        onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
-                          .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
-                        이 미션 다시 풀기
-                      </button><p>이번 답은 공책에 남고, 새 답으로 시작합니다.</p>
-                      <ErrorNotice error={actions.start.error} /></div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="cj-primary"
-                        disabled={selfAssessmentPending}
-                        onClick={() => {
-                          setReflectOpen(true)
-                          setNotice('')
-                        }}
-                      >
-                        돌아보기 남기기
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <div className="cj-modal-actions">
-                    {f?.status === 'FAILED' && feedbackFinal && (
-                      <p role="status">지금은 피드백을 다시 받을 수 없어요. 답변은 저장했으니 나중에 다시 확인해 주세요.</p>
-                    )}
-                    {f?.status === 'FAILED' && !feedbackFinal && (
-                      <button
-                        type="button"
-                        className="cj-primary"
-                        disabled={pending}
-                        onClick={() => {
-                          void feedback()
-                        }}
-                      >
-                        피드백만 다시 요청
-                      </button>
-                    )}
-                    {f?.status === 'RUNNING' && !pending && (
-                      <button
-                        type="button"
-                        className="cj-secondary"
-                        onClick={() => {
-                          void feedback()
-                        }}
-                      >
-                        처리 결과 다시 확인
-                      </button>
-                    )}
-                    {canAddAnswer(a) && a.answers.length > 0 && (
-                      <button type="button" className="cj-primary" onClick={() => setMore(true)}>
-                        질문에 답하기
-                      </button>
-                    )}
-                    {canFinish(a) && (
-                      <button
-                        type="button"
-                        className="cj-secondary"
-                        disabled={pending}
-                        onClick={() => {
-                          void finish()
-                        }}
-                      >
-                        {a.answers.length < 3 ? '이대로 돌아보기' : '마무리하기'}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-            {notice && !reflectOpen && (
-              <p className="ux-error" role="alert">
-                {notice}
-              </p>
-            )}
-            <ErrorNotice
-              error={error}
-              retry={
-                retryAction
-                  ? () => {
-                      void retryAction()
-                    }
-                  : undefined
-              }
-            />
-          </div>
-          <div className="st-actions">
-            <div className="ux-save-line" role="status">
-              {!a.finishedAt && draft && (
-                <span>
-                  {
-                    {
-                      SAVED: isDemo ? '초안 저장 완료(모의)' : '초안 저장 완료',
-                      DIRTY: '변경 내용 저장 대기',
-                      SAVING: '초안 저장 중',
-                      FAILED: '초안 저장 실패 · 입력은 유지됩니다.',
-                      CONFLICT: '초안 충돌 · 선택 전에는 덮어쓰지 않아요.',
-                    }[saveState]
-                  }
-                </span>
-              )}
-              {!a.finishedAt && draft?.savedAt && (
-                <time dateTime={draft.savedAt}>
-                  마지막 저장 ·{' '}
-                  {new Date(draft.savedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
-                </time>
-              )}
-              <small>
-                {a.finishedAt
-                  ? '마무리한 활동은 답변을 더 제출할 수 없어요.'
-                  : '다 쓰기 전에는 정답·예시 답을 보여 주지 않아요.'}
-              </small>
-            </div>
-            {writing && !memo && (
+            <AnswerFields answer={draft.answer} mission={a.mission} onChange={change} guide />
+            <div className="sw-submit-row">
               <button
                 type="button"
-                className="st-button st-primary"
-                disabled={pending || saveState === 'CONFLICT' || saveState === 'SAVING'}
+                className="mg-start sw-submit"
+                // 초안 자동 저장(actions.save) 중에는 잠그지 않고 누르면 저장 뒤 보낸다(위 submitQueued)
+                disabled={(pending && !actions.save.isPending) || saveState === 'CONFLICT' || submitQueued}
+                aria-busy={submitQueued}
                 onClick={() => {
-                  void submit()
+                  if (saveState === 'SAVING' || actions.save.isPending) setSubmitQueued(true)
+                  else void submit()
                 }}
               >
-                {a.answers.length ? '더해서 보내기' : '다 썼어요'}
+                {submitQueued ? '저장하고 보내는 중이에요' : a.answers.length ? '더해서 보내기' : '다 썼어요'}
+                <span aria-hidden="true"> →</span>
               </button>
+            </div>
+            {alerts}
+            {memoPanel}
+          </section>
+        </div>
+      ) : !a.finishedAt ? (
+        // 피드백(시안 Feedback): 왼쪽 내가 쓴 답, 오른쪽 피드백 상자와 되묻기
+        <div className="sw-body sw-body-feedback">
+          <section className="sw-answers" aria-label="내가 쓴 답">
+            <div className="sw-toolbar" role="group" aria-label="작성 도구">
+              {(memo || saveState !== 'SAVED') && saveLine}
+              {memoToggle}
+            </div>
+            {answerVersions()}
+            {memoPanel}
+          </section>
+          <section className="sw-feedback-panel" aria-label="피드백">
+            {f && (
+              <div ref={result} tabIndex={-1} className="ux-feedback sw-feedback" role="status">
+                <div className="sw-feedback-head">
+                  <h2>{feedbackHeadline(f)}</h2>
+                  {f.judgment?.trial && (
+                    <small className="sw-trial">AI 채점(시범){isDemo ? ' · 실제 모델 호출 없음' : ''}</small>
+                  )}
+                </div>
+                {f.judgment?.m2Notices?.map((notice) => (
+                  <p key={notice}>{notice}</p>
+                ))}
+                {f.judgment?.result === 'HELD' && (
+                  <p>질문을 다시 읽고 생각을 조금 더 써 볼까요?</p>
+                )}
+                {f.followup && (
+                  <div className="sw-ask">
+                    <span className="sw-ask-face" aria-hidden="true">
+                      <Companion kind={companion} size={60} worn={worn} decorative />
+                    </span>
+                    <div>
+                      <span className="sw-chip">{followupLabel(f.followup.type)}</span>
+                      <p className="sw-ask-text">{f.followup.question}</p>
+                      <small className="sw-source">
+                        {f.followup.source === 'BANK'
+                          ? '질문 은행'
+                          : f.followup.source === 'LLM_RETRY'
+                            ? '재생성된 질문'
+                            : 'AI 질문'}
+                        {isDemo ? ' · 시연 예시' : ''}
+                      </small>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
+            <div className="sw-actions">
+              {f?.status === 'FAILED' && feedbackFinal && (
+                <p role="status">지금은 피드백을 받을 수 없어요. 답은 저장했어요.</p>
+              )}
+              {f?.status === 'FAILED' && !feedbackFinal && (
+                <button
+                  type="button"
+                  className="mg-start sw-go"
+                  disabled={pending}
+                  onClick={() => {
+                    void feedback()
+                  }}
+                >
+                  피드백 다시 받기
+                </button>
+              )}
+              {f?.status === 'RUNNING' && !pending && (
+                <button
+                  type="button"
+                  className="mg-read"
+                  onClick={() => {
+                    void feedback()
+                  }}
+                >
+                  다시 확인하기
+                </button>
+              )}
+              {canFinish(a) && (
+                <button
+                  type="button"
+                  className="mg-read"
+                  disabled={pending}
+                  onClick={() => {
+                    void finish()
+                  }}
+                >
+                  {a.answers.length < 3 ? '이대로 돌아보기' : '마무리하기'}
+                </button>
+              )}
+              {canAddAnswer(a) && a.answers.length > 0 && (
+                <button type="button" className="mg-start sw-go" onClick={() => setMore(true)}>
+                  질문에 답하기
+                </button>
+              )}
+            </div>
+            {report}
+            {alerts}
+          </section>
+        </div>
+      ) : (
+        // 마무리(시안 Finish): 내 답·예시 답 → 들어가면 좋은 생각 → 내 답 돌아보기·이전 답 비교 → 돌아보기
+        <div className="sw-finish">
+          <div className="sw-finish-head">
+            <h2>
+              <span className="sw-finish-big">마무리 </span>
+              <span>{a.revealKind === 'ANSWER' ? '정답과 비교해 보세요' : '예시 답과 비교해 보세요'}</span>
+            </h2>
+            <small className="sw-done-note">다 끝낸 활동이에요.</small>
           </div>
-          <ErrorNotice
-            error={saveError}
-            retry={
-              saveState === 'FAILED'
-                ? () => {
-                    setSaveState('DIRTY')
-                    setDirty(true)
-                  }
-                : undefined
-            }
-          />
-      </div>
+          <div className="sw-reveal">
+            <section className="sw-card" aria-label="내 답">
+              <strong>내 답</strong>
+              {answerVersions(true)}
+              {f?.judgment?.m2Notices?.map((notice) => (
+                <p key={notice}>{notice}</p>
+              ))}
+              {report}
+            </section>
+            <section className="sw-card sw-card-reveal" aria-label={a.revealKind === 'ANSWER' ? '정답' : '예시 답'}>
+              <strong>{a.revealKind === 'ANSWER' ? '정답' : '예시 답'}</strong>
+              <p className="cj-quote">{a.reveal}</p>
+            </section>
+            <div className="sw-paper">
+              <ActivityPaper mission={a.mission} text={a.answers.at(-1)?.text} />
+            </div>
+          </div>
+          <section className="sw-ideas" aria-labelledby="sw-ideas-title">
+            <h3 id="sw-ideas-title">들어가면 좋은 생각</h3>
+            <ul aria-label="마무리 체크리스트" className="ux-checklist">
+              {(a.checklist ?? []).map((e) => {
+                const checked = isVerifiedElement(
+                  e,
+                  a.answers.map((v) => v.text),
+                )
+                return (
+                  <li key={e.elementId} data-checked={checked || undefined}>
+                    <span>
+                      <b>{checked ? '✓ 확인했어요' : '아직 확인하지 못했어요'}</b>
+                      <span className="st-visually-hidden"> · </span>
+                      {e.label}
+                    </span>
+                    {checked && <blockquote>{e.quote}</blockquote>}
+                  </li>
+                )
+              })}
+            </ul>
+            {!a.checklist?.length && (
+              <p>아직 확인된 것이 없어요.</p>
+            )}
+          </section>
+          <div className="sw-two">
+            <SelfAssessmentPanel key={a.attemptId} attempt={a} onBusyChange={setSelfAssessmentPending} />
+            <AttemptComparisonPanel attempt={a}>
+              {a.status === 'COMPLETED' ? (
+                <section className="sw-done" aria-label="돌아보기 완료">
+                  <p>
+                    <strong>돌아보기 완료 · {a.reflection?.difficulty}</strong>
+                    {a.reflection?.text && <span>{a.reflection.text}</span>}
+                  </p>
+                  <div>
+                    <button type="button" className="mg-start sw-go" disabled={actions.start.isPending || !session?.child}
+                      onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
+                        .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
+                      이 미션 다시 풀기
+                    </button>
+                    <p>이번 답은 공책에 남아요.</p>
+                  </div>
+                  <ErrorNotice error={actions.start.error} />
+                </section>
+              ) : (
+                <button
+                  type="button"
+                  className="mg-start sw-go"
+                  disabled={selfAssessmentPending}
+                  onClick={() => {
+                    setReflectOpen(true)
+                    setNotice('')
+                  }}
+                >
+                  돌아보기 남기기<span aria-hidden="true"> →</span>
+                </button>
+              )}
+            </AttemptComparisonPanel>
+          </div>
+          {alerts}
+        </div>
+      )}
       {(leaveOpen || blocker.state === 'blocked') && draft && (
         <Modal title="아직 저장하지 못한 입력이 있어요." onClose={stay}>
           <p>
-            저장 후 나가거나, 이 화면에서 계속 작성할 수 있습니다. 저장하지 않고 나가면 현재 입력은
-            사라집니다.
+            저장하고 나갈까요? 저장하지 않으면 쓴 글이 사라져요.
           </p>
           <ErrorNotice error={saveError} />
           <div className="cj-modal-actions">
@@ -711,7 +814,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 })
               }}
             >
-              초안 저장 후 나가기
+              저장하고 나가기
             </button>
             <button
               type="button"
@@ -732,7 +835,6 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
           <h3>서버의 최신 초안</h3>
           <p className="cj-quote">{answerText(conflict.answer)}</p>
           <p>글 메모: {conflict.memo || '없음'}</p>
-          <p>선택하기 전에는 어느 쪽도 덮어쓰지 않습니다.</p>
           <div className="cj-modal-actions">
             <button
               type="button"
@@ -746,7 +848,7 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 setSaveError(null)
               }}
             >
-              내 입력을 보관하고 최신 초안 사용
+              다른 곳에서 쓴 글 쓰기
             </button>
             <button
               type="button"
@@ -760,83 +862,121 @@ function StudentEditor({ a, onBack }: { a: Attempt; onBack: () => void }) {
                 setDirty(true)
               }}
             >
-              현재 입력으로 저장
+              지금 쓴 글로 저장
             </button>
           </div>
         </Modal>
       )}
-      {saveState === 'CONFLICT' && !conflict && (
-        <button
-          type="button"
-          className="cj-secondary"
-          onClick={() => {
-            if (saveError instanceof DraftConflictError) setConflict(saveError.latest)
-          }}
-        >
-          초안 다시 비교
-        </button>
-      )}
-      {backup && (
-        <details className="ux-backup">
-          <summary>교체 전 초안 확인</summary>
-          <p>{answerText(backup.answer)}</p>
-        </details>
-      )}
       {reflectOpen && (
+        // 돌아보기(시안 Reflect): 큰 난이도 버튼 세 개와 달라진 점
         <Modal title="이번 활동은 어땠나요?" onClose={() => setReflectOpen(false)}>
-          <div className="cj-difficulties">
-            {(['쉬웠어', '보통', '어려웠어'] as const).map((d) => (
-              <button
-                type="button"
-                key={d}
-                aria-pressed={difficulty === d}
-                onClick={() => setDifficulty(d)}
-              >
-                {d === '보통' ? '보통이에요' : d === '쉬웠어' ? '쉬웠어요' : '어려웠어요'}
-              </button>
-            ))}
+          <div className="sw-reflect">
+            <span className="sw-reflect-face" aria-hidden="true">
+              <Companion kind={companion} size={64} worn={worn} decorative />
+            </span>
+            <div className="cj-difficulties" role="group" aria-label="난이도">
+              {(['쉬웠어', '보통', '어려웠어'] as const).map((d) => (
+                <button
+                  type="button"
+                  key={d}
+                  data-level={d}
+                  aria-pressed={difficulty === d}
+                  onClick={() => setDifficulty(d)}
+                >
+                  {difficultyLabel(d)}
+                </button>
+              ))}
+            </div>
+            <label className="cj-field">
+              달라진 점 (선택)
+              <textarea
+                value={reflection}
+                onChange={(e) => setReflection(e.target.value)}
+                maxLength={1200}
+              />
+            </label>
+            {notice && <p role="alert">{notice}</p>}
+            <button
+              type="button"
+              className="mg-start sw-reflect-save"
+              disabled={pending}
+              onClick={() => {
+                void complete()
+              }}
+            >
+              돌아보기 저장하고 완료
+            </button>
+            <ErrorNotice error={error} />
           </div>
-          <label className="cj-field">
-            달라진 점 (선택)
-            <textarea
-              value={reflection}
-              onChange={(e) => setReflection(e.target.value)}
-              maxLength={1200}
-            />
-          </label>
-          {notice && <p role="alert">{notice}</p>}
-          <button
-            type="button"
-            className="cj-primary"
-            disabled={pending}
-            onClick={() => {
-              void complete()
-            }}
-          >
-            돌아보기 저장하고 완료
-          </button>
-          <ErrorNotice error={error} />
         </Modal>
       )}
     </section>
   )
 }
 
+/** 되묻기 종류 이름(시안 Feedback의 노란 꼬리표) */
+/**
+ * 답 쓰기 도우미(시안 MissionWrite 말풍선, 화면 안 규칙·AI 호출 없음, 사용자 의견 2026-11-15 "칸이 커서 어떻게 써야 할지 모를 것 같아").
+ * 글쓰기·주장 글에서 지금 쓴 만큼에 따라 한마디와 시작 문장 단추를 준다. 단추를 누르면 그 칸 끝에 문장이 붙는다(○○는 학생이 바꿔 씀).
+ * 낱말은 권유 기준일 뿐 판정이 아니다.
+ */
+type Starter = { text: string; optional?: boolean; apply: (a: AnswerContent) => AnswerContent }
+const plain = (s: string) => s.replace(/\s/g, '').length
+const append = (prev: string, add: string) => (prev.trim() ? prev.replace(/\s*$/, ' ') : '') + add
+function writingGuide(v: AnswerContent, more: boolean): { line: string; starters: Starter[] } | null {
+  if (v.inputType === 'NARRATIVE') {
+    const n = plain(v.text)
+    const add = (text: string, optional = false): Starter => ({ text, optional, apply: (a) => ({ ...a, text: append(a.text, text) }) })
+    if (n === 0)
+      return more
+        ? { line: '뭉치 질문에 이렇게 시작해 봐!', starters: [add('그건 ○○ 때문이에요.')] }
+        : { line: '뭐부터 쓸지 모르겠으면 이렇게 시작해 봐!', starters: [add('나는 ○○라고 생각해요.')] }
+    if (!/왜냐하면|때문|이유/.test(v.text)) return { line: '왜 그렇게 생각했는지도 써 볼까?', starters: [add('왜냐하면 ○○ 때문이에요.')] }
+    if (n < 10) return { line: '조금만 더 써 볼까? 한두 문장이면 충분해!', starters: [] }
+    return { line: '좋아! 다 썼으면 뭉치에게 보내 줘. 더 쓰고 싶으면 이것도 좋아.', starters: /다르게|다른 친구|다른 생각/.test(v.text) ? [] : [add('다르게 생각하면 ○○일 수도 있어요.', true)] }
+  }
+  if (v.inputType === 'SOLUTION_STEPS') {
+    const put = (i: number, text: string): Starter => ({ text, apply: (a) => ({ ...a, steps: a.steps.map((s, j) => (j === i ? append(s, text) : s)) }) })
+    const empty = v.steps.findIndex((s) => !s.trim())
+    if (empty === 0) return { line: '먼저 무엇을 구하는지 써 볼까?', starters: [put(0, '구하려는 것은 ○○이에요.')] }
+    if (empty > 0) return { line: '어떻게 계산했는지 식으로 써 봐!', starters: [put(empty, '○○ 방법으로 계산하면 ○ = ○ 이에요.')] }
+    if (!v.finalAnswer.trim()) return { line: '마지막으로 최종 답 칸에 답을 써 줘!', starters: [] }
+    return { line: '좋아! 답이 맞는지 한 번 더 보고 뭉치에게 보내 줘.', starters: [] }
+  }
+  if (v.inputType === 'ESSAY') {
+    const e = v.essay
+    const set = (text: string, put: (a: AnswerContent) => AnswerContent): Starter => ({ text, apply: put })
+    if (!e.claim.trim()) return { line: '먼저 내 주장을 한 문장으로 써 봐!', starters: [set('나는 ○○ 쪽이 좋다고 생각해요.', (a) => ({ ...a, essay: { ...a.essay, claim: append(a.essay.claim, '나는 ○○ 쪽이 좋다고 생각해요.') } }))] }
+    const empty = e.reasons.findIndex((r) => !r.trim())
+    if (empty >= 0) {
+      const text = empty === 0 ? '첫째, ○○ 때문이에요.' : '둘째, ○○ 때문이에요.'
+      return { line: `이유 ${empty + 1}을 써 볼까?`, starters: [set(text, (a) => ({ ...a, essay: { ...a.essay, reasons: a.essay.reasons.map((r, i) => (i === empty ? append(r, text) : r)) as [string, string] } }))] }
+    }
+    if (!e.rebuttal.trim()) return { line: '다르게 생각하는 친구에게 한마디 해 볼까?', starters: [set('○○라고 생각할 수도 있지만, ○○', (a) => ({ ...a, essay: { ...a.essay, rebuttal: append(a.essay.rebuttal, '○○라고 생각할 수도 있지만, ○○') } }))] }
+    return { line: '좋아! 다 썼으면 뭉치에게 보내 줘.', starters: [] }
+  }
+  return null
+}
+
 export function AnswerFields({
   answer: v,
   mission,
   onChange,
+  guide = false,
 }: {
   answer: AnswerContent
   mission: LearningMission
   onChange: (a: AnswerContent) => void
+  /** 학생 답 쓰기: 빈 칸 안내와 글자 수(시안 MissionWrite "한두 문장이면 충분해요"). 관리자 미리보기는 그대로 */
+  guide?: boolean
 }) {
-  const field = (label: string, value: string, setter: (value: string) => void) => (
+  const field = (label: string, value: string, setter: (value: string) => void, placeholder?: string) => (
     <label className="cj-field">
       {label}
       <textarea
         aria-label={label}
         value={value}
+        placeholder={guide ? placeholder : undefined}
         onChange={(e) => setter(e.target.value)}
         maxLength={2400}
       />
@@ -845,9 +985,22 @@ export function AnswerFields({
   return (
     <div className="ux-answer-fields">
       {v.inputType === 'NARRATIVE' &&
-        field('내 생각과 까닭', v.text, (text) => onChange({ ...v, text }))}
+        field('내 생각과 이유', v.text, (text) => onChange({ ...v, text }), '뭉치가 알려 준 문장으로 시작하거나 자유롭게 써 봐요')}
+      {v.inputType === 'NARRATIVE' && guide && (
+        <small className="sw-count" aria-live="polite">{v.text.replace(/\s/g, '').length ? `공백 빼고 ${v.text.replace(/\s/g, '').length}자` : '한두 문장이면 충분해요'}</small>
+      )}
       {v.inputType === 'SOLUTION_STEPS' && (
         <>
+          {/* 시안 Main·Problems 순서: 풀이 단계 다음에 최종 답 */}
+          {Array.from({ length: Math.max(v.steps.length, mission.inputTemplate?.length ?? 0) }, (_, i) => v.steps[i] ?? '').map((step, i) => (
+            <div key={i}>
+              {field(mission.inputTemplate?.[i] || `풀이 ${i + 1}`, step, (value) =>
+                onChange({ ...v, steps: Array.from({ length: Math.max(v.steps.length, mission.inputTemplate?.length ?? 0) }, (_, j) => i === j ? value : v.steps[j] ?? '') }),
+                // 수학 풀이 틀(기능 명세 1.5: 무엇을 구하나요·어떻게 구할까요·계산·확인해 보기)을 칸 안내로
+                i === 0 ? '무엇을 구하나요? 어떻게 구할까요?' : '계산한 식을 쓰고, 답이 맞는지 다시 봐요.',
+              )}
+            </div>
+          ))}
           <label className="cj-field">
             최종 답
             <span className="ux-answer-unit">
@@ -855,15 +1008,8 @@ export function AnswerFields({
                 maxLength={120} onChange={(e) => onChange({ ...v, finalAnswer: e.target.value })} />
               {mission.answerUnit && <span aria-label="답 단위">{mission.answerUnit}</span>}
             </span>
-            {mission.answerUnit && <small>단위는 옆에 표시되어 있어요. 수만 입력해 주세요.</small>}
+            {mission.answerUnit && <small>숫자만 써 주세요.</small>}
           </label>
-          {Array.from({ length: Math.max(v.steps.length, mission.inputTemplate?.length ?? 0) }, (_, i) => v.steps[i] ?? '').map((step, i) => (
-            <div key={i}>
-              {field(mission.inputTemplate?.[i] || `풀이 ${i + 1}`, step, (value) =>
-                onChange({ ...v, steps: Array.from({ length: Math.max(v.steps.length, mission.inputTemplate?.length ?? 0) }, (_, j) => i === j ? value : v.steps[j] ?? '') }),
-              )}
-            </div>
-          ))}
         </>
       )}
       {v.inputType === 'ESSAY' && (
@@ -873,7 +1019,7 @@ export function AnswerFields({
           )}
           {v.essay.reasons.map((reason, i) => (
             <div key={i}>
-              {field(mission.inputTemplate?.[i + 1] || `까닭 ${i + 1}`, reason, (value) =>
+              {field(mission.inputTemplate?.[i + 1] || `이유 ${i + 1}`, reason, (value) =>
                 onChange({
                   ...v,
                   essay: {
@@ -937,32 +1083,37 @@ export function AnswerFields({
         </>
       )}
       {v.inputType === 'CLASSIFICATION' && (
+        // 항목마다 무리 이름 단추(시안 InputTypes 분류하기). 같은 단추를 다시 누르면 고른 것을 뺀다
         <div className="ux-classification">
-          {mission.choices?.map((c) => (
-            <label className="cj-field" key={c.id}>
-              {c.label}
-              <select
-                aria-label={c.label}
-                value={v.assignments.find((a) => a.choiceId === c.id)?.categoryId ?? ''}
-                onChange={(e) =>
-                  onChange({
-                    ...v,
-                    assignments: [
-                      ...v.assignments.filter((a) => a.choiceId !== c.id),
-                      ...(e.target.value ? [{ choiceId: c.id, categoryId: e.target.value }] : []),
-                    ],
-                  })
-                }
-              >
-                <option value="">그룹을 골라 주세요</option>
-                {mission.categories?.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+          {mission.choices?.map((c) => {
+            const current = v.assignments.find((a) => a.choiceId === c.id)?.categoryId ?? ''
+            return (
+              <div className="ux-class-row" key={c.id}>
+                <span>{c.label}</span>
+                <div role="group" aria-label={c.label}>
+                  {mission.categories?.map((g) => (
+                    <button
+                      type="button"
+                      key={g.id}
+                      className="cj-secondary"
+                      aria-pressed={current === g.id}
+                      onClick={() =>
+                        onChange({
+                          ...v,
+                          assignments: [
+                            ...v.assignments.filter((a) => a.choiceId !== c.id),
+                            ...(current === g.id ? [] : [{ choiceId: c.id, categoryId: g.id }]),
+                          ],
+                        })
+                      }
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
       <label className="ux-guardian">
@@ -985,17 +1136,15 @@ function FeedbackEvidence({
 }) {
   const judgment = feedback.judgment
   if (!judgment) return null
+  // 결과 이름만(#440 26번): '판정'은 내부 말이라 빼고, 보류일 때는 피드백 상자가 이미 '답을 잘 받았어요.'라고 해서 이름을 안 보인다.
+  // 'AI 채점(시범)' 표시는 기능명세 FN-JDG-03이라 그대로 둠(#440 27번 보류)
+  const label = [
+    judgment.result === 'HELD' ? '' : { CORRECT: '정답', PARTIAL: '부분 정답', RETHINK: '다시 생각' }[judgment.result],
+    judgment.trial ? 'AI 채점(시범)' : '',
+  ].filter(Boolean).join(' · ')
   return (
     <div className="ux-evidence">
-      <small>
-        판정 ·{' '}
-        {
-          { CORRECT: '정답', PARTIAL: '부분 정답', RETHINK: '다시 생각', HELD: '판정 보류' }[
-            judgment.result
-          ]
-        }
-        {judgment.trial ? ' · AI 채점(시범)' : ''}
-      </small>
+      {label && <small>{label}</small>}
       <ul>
         {judgment.elements?.map((e) => {
           const verified = isVerifiedElement(e, [text])

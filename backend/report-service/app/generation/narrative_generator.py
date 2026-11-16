@@ -37,7 +37,8 @@ class NarrativeGenerator:
     async def generate(self, command: GenerateReport, report: WeeklyReport) -> GenerationResult:
         result = await self._previous.generate(command, report)
         if (
-            not command.narrative_enabled
+            command.period_type == "DAILY"
+            or not command.narrative_enabled
             or not command.parent_sharing_enabled
             or result.state == ReportState.NO_RECORD
         ):

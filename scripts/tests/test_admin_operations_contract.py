@@ -22,6 +22,16 @@ class AdminOperationsContracts(unittest.TestCase):
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
                 reviewed=deepcopy(current[name])
+                # #479 adds optional explanations; preserve every pre-existing report field.
+                if section=='schemas' and name=='ReportDetail':
+                    reviewed['allOf'][1]['properties'].pop('explanations',None)
+                # #700 documents the optional attempt context core already forwards from learning RecordAttempt.
+                if section=='schemas' and name in ('DashboardAttempt','DashboardPublicAttempt','DashboardAttemptDetail'):
+                    self.assertEqual(reviewed['properties'].pop('context')['enum'],['THEME_DAY','THEME_REVIEW','EXTRA'])
+                    self.assertNotIn('context',reviewed['required'])
+                # #367 extends registration only; retain all prior fields in the fingerprint.
+                if section=='schemas' and name=='RegisterModelVersion':
+                    reviewed['properties'].pop('registration',None)
                 # #163 explicitly approves only these support operation error responses.
                 # Normalize the approved additions while preserving every original field.
                 support_operations={'/error-reports':'post','/inquiries':'post',
@@ -73,6 +83,15 @@ class AdminOperationsContracts(unittest.TestCase):
                                 cookie['description']=cookie['description'].replace(
                                     '로그아웃은 refresh 쿠키를 만료시킨다. 학생 전환(/auth/student-sessions)은 잠긴 부모 refresh 쿠키를 지우지 않는다(V24).',
                                     '학생 전환·로그아웃은 refresh 쿠키를 만료시킨다.')
+                # #425 turns the Google reauth callback into a browser HTML page (JSON body removed). Check the new
+                # HTML-only responses, then restore the reviewed JSON shape so query parameters and security stay fingerprinted.
+                if section=='paths' and name=='/auth/google/reauth/callback':
+                    callback=reviewed['get']
+                    self.assertIn('sagomungchi-reauth',callback.pop('description'))
+                    self.assertEqual({code:list(r['content']) for code,r in callback['responses'].items()},{'200':['text/html'],'403':['text/html']})
+                    callback['responses']={'200':{'description':'정상 처리','content':{'application/json':{'schema':{'type':'object'}}}},
+                        '400':{'description':'유효하지 않은 입력'},'401':{'description':'인증 실패'},
+                        '403':{'description':'권한/재인증 실패'},'409':{'description':'정책/상태 충돌'}}
                 if section=='paths' and name=='/auth/refresh':
                     self.assertIn('PARENT_SESSION_LOCKED',reviewed['post']['responses']['401']['description'])
                     reviewed['post']['responses']['401']={'$ref':'#/components/responses/Unauthenticated'}
@@ -92,9 +111,128 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('code','goodThought'):
                         reviewed['required'].remove(field)
                         reviewed['properties'].pop(field)
+                    # #656 drops RECORD from the judgment element sourceType (Metric-only) and adds its description.
+                    source=reviewed['properties']['sourceType']
+                    self.assertIn('#656',source.pop('description'))
+                    self.assertEqual(source['enum'],['RULE','ANSWER_KEY','AI_OBSERVATION',None])
+                    source['enum']=['RECORD',*source['enum']]
+                # #415 parent ID/password login adds loginId·authMethod to /me and makes email nullable for those accounts.
+                if section=='schemas' and name=='ParentMeResponse':
+                    for field in ('loginId','authMethod'):
+                        reviewed['required'].remove(field)
+                        reviewed['properties'].pop(field)
+                    self.assertEqual(reviewed['properties']['email']['type'],['string','null'])
+                    reviewed['properties']['email']={'type':'string','format':'email'}
+                # #387 adds the attempt start {context} body and the core limit/premium errors; restore only the approved fields.
+                if section=='paths' and name=='/missions/{missionId}/attempts':
+                    post=reviewed['post']
+                    self.assertIn('USAGE_LIMIT_REACHED',post['responses']['429']['description'])
+                    self.assertIn('PREMIUM_REQUIRED',post['responses']['403']['description'])
+                    post.pop('requestBody')
+                    for status in ('400','403','409','429','503'):
+                        post['responses'].pop(status)
+                    post['description']=('STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 /internal/missions/{missionId}/attempts에 쿼리로 전달하며 '
+                        '클라이언트 query는 사용하지 않는다. learning은 신규 생성 201·기존 진행 시도 반환 200을 구분하며 core는 상태를 그대로 전달한다. '
+                        '신규 시도 제공 범위 검사·기존 진행 시도 선택과 당시 버전 유지는 learning 소유다. 일일 한도는 core Redis 책임이며 learning은 관여하지 않는다. '
+                        '후속 한도 연계는 201만 집계하고 200은 집계하지 않는다. 한도 도달 시에도 기존 이어하기는 허용하고 신규 생성만 차단해야 한다. '
+                        '한도 검사·기존 시도 판별·신규 생성 차단의 처리 순서는 후속 구현에서 검증한다. Redis 한도 기능은 현재 프록시 구현 범위 밖이다.')
+                    post['responses']['200']['description']='기존 진행 시도 반환(이어하기). 후속 일일 한도 집계 대상 아님.'
+                    post['responses']['201']['description']='신규 시도 생성. 후속 core Redis 일일 한도 집계 대상.'
                 # #355 adds only the ai mission draft usage type; the other call types stay fingerprinted.
                 if section=='schemas' and name=='CallType':
                     reviewed['enum'].remove('MISSION_DRAFT')
+                    # #439 adds only the ai weekly theme text/image usage types.
+                    reviewed['enum'].remove('THEME_DRAFT'); reviewed['enum'].remove('THEME_IMAGE')
+                    # #480 adds only the report explanation sLLM usage type.
+                    reviewed['enum'].remove('REPORT_EXPLANATION')
+                    # #467 adds only the knowledge embedding usage type.
+                    reviewed['enum'].remove('KNOWLEDGE_EMBEDDING')
+                    # #436 adds only the weekly theme video usage type.
+                    reviewed['enum'].remove('THEME_VIDEO')
+                    # #566 adds only the memory search embedding/explanation usage types.
+                    reviewed['enum'].remove('MEMORY_EMBEDDING'); reviewed['enum'].remove('MEMORY_EXPLANATION')
+                    # #680 adds only the memory search query rewrite usage type.
+                    reviewed['enum'].remove('MEMORY_QUERY')
+                # #390 (P24 daily report) adds only the periodType filter/field, daily detail fields and two
+                # daily notification types. Remove exactly those additions; every other field stays fingerprinted.
+                if section=='paths' and name=='/children/{childId}/reports':
+                    get=reviewed['get']
+                    self.assertEqual(get['summary'],'연결 자녀의 일일·주간 리포트 목록')
+                    get['summary']='연결 자녀의 주간 리포트 목록'
+                    get['parameters']=[p for p in get['parameters'] if p.get('name')!='periodType']
+                if section=='paths' and name=='/reports/{reportId}/regenerate':
+                    self.assertIn('P24',reviewed['post'].pop('description'))
+                if section=='schemas' and name in ('ReportSummary','ReportJobAccepted'):
+                    reviewed['required'].remove('periodType'); reviewed['properties'].pop('periodType')
+                if section=='schemas' and name=='ReportDetail':
+                    for field in ('problems','themeSummary','correctionNotice'):
+                        reviewed['allOf'][1]['properties'].pop(field)
+                if section=='schemas' and name=='NotificationType':
+                    # #432 adds only the GRADE_PROMOTED type (described in the same sentence).
+                    self.assertIn('GRADE_PROMOTED',reviewed.pop('description'))
+                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED','GRADE_PROMOTED'):
+                        reviewed['enum'].remove(value)
+                if section=='schemas' and name=='NotificationSettings':
+                    self.assertEqual(reviewed['properties']['items']['maxItems'],9)
+                    reviewed['properties']['items']['maxItems']=6
+                # #432 stores grades up to middle school third grade (9); only the upper bound changed.
+                if section=='schemas' and name in ('StudentDeviceToken','ChildListItem','DashboardChild','Child'):
+                    grade=reviewed['properties']['child']['properties']['grade'] if name=='StudentDeviceToken' else reviewed['properties']['grade']
+                    if name=='Child':
+                        self.assertEqual(grade['enum'],[3,4,5,6,7,8,9]); grade['enum']=[3,4,5,6]
+                    else:
+                        self.assertEqual(grade['maximum'],9); grade['maximum']=6
+                if section=='paths' and name=='/children/{childId}':
+                    grade=reviewed['patch']['requestBody']['content']['application/json']['schema']['properties']['grade']
+                    self.assertEqual(grade['maximum'],9); grade['maximum']=6
+                # #388 (P20 community) adds only the optional COMMUNITY consent kind, the COMMUNITY_POST report target,
+                # the community reviewResult rule and the admin linkedPost. Remove exactly those additions.
+                if section=='schemas' and name=='ConsentDocument':
+                    kind=reviewed['properties']['kind']
+                    self.assertIn('COMMUNITY',kind.pop('description'))
+                    kind['enum'].remove('COMMUNITY')
+                if section=='schemas' and name=='SupportReportSubmission':
+                    target=reviewed['properties']['targetType']
+                    self.assertIn('COMMUNITY_POST',target.pop('description'))
+                    target['enum'].remove('COMMUNITY_POST')
+                if section=='schemas' and name=='SupportReview':
+                    self.assertIn('COMMUNITY_POST',reviewed['properties']['reviewResult'].pop('description'))
+                if section=='schemas' and name=='SupportReport':
+                    self.assertEqual(reviewed['properties'].pop('linkedPost'),{'$ref':'#/components/schemas/CommunityLinkedPost'})
+                # #244 adds the corrected flag and extends the impact description; retain the original fingerprints.
+                if section=='schemas' and name=='DashboardJudgment':
+                    self.assertEqual(reviewed['properties'].pop('corrected')['type'],'boolean')
+                    # #614 documents the judgmentId core already forwards from learning Judgment.
+                    self.assertEqual(reviewed['properties'].pop('judgmentId')['format'],'uuid')
+                    reviewed['required'].remove('judgmentId')
+                # #614 documents the parentSharingEnabled flag core already adds to the report detail.
+                if section=='schemas' and name=='ReportDetail':
+                    detail=reviewed['allOf'][1]
+                    self.assertEqual(detail['properties'].pop('parentSharingEnabled')['type'],'boolean')
+                    detail['required'].remove('parentSharingEnabled')
+                if section=='schemas' and name=='SupportCorrection':
+                    original,added=reviewed['properties']['impact']['description'].split(' conversation·report는 AFFECTED')
+                    self.assertIn('신고자 응답은 null',added)
+                    reviewed['properties']['impact']['description']=original
+                # #367 adds optional evidence limitations; retain the original evidence fingerprint.
+                if section=='schemas' and name=='EvaluationEvidence':
+                    self.assertEqual(reviewed['properties'].pop('limitations')['default'],[])
+                if section=='schemas' and name=='RegisterModelVersion':
+                    self.assertEqual(reviewed.pop('allOf')[0]['then']['required'],['artifactUri'])
+                # #423 documents the existing response bodies (Kotlin DTO / report EvidencePage) instead of bare objects.
+                # Check the approved refs, then restore the reviewed {type: object} shape so everything else stays fingerprinted.
+                documented={('/me','patch','200'):'AccountName',('/children/{childId}','patch','200'):'Child',
+                    ('/children/{childId}/deletion-impact','get','200'):'ChildDeletionImpact',
+                    ('/me/withdrawal/precheck','get','200'):'WithdrawalPrecheck',
+                    ('/me/withdrawal','post','202'):'WithdrawalRequested',('/me/withdrawal','get','200'):'WithdrawalStatus'}
+                for (path,method,status),ref in documented.items():
+                    if section=='paths' and name==path:
+                        content=reviewed[method]['responses'][status]['content']['application/json']
+                        self.assertEqual(content['schema'],{'$ref':'#/components/schemas/'+ref})
+                        content['schema']={'type':'object'}
+                if section=='schemas' and name=='ReportEvidence':
+                    self.assertIn('EvidencePage',reviewed['description'])
+                    reviewed={'type':'object','description':'report-api 근거 JSON을 보존. 삭제 근거는 available=false. 구체적인 필드는 #54에서 확정한다.'}
                 canonical=json.dumps(reviewed,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
                 self.assertEqual(expected,hashlib.sha256(canonical).hexdigest(),f'{section}/{name}')
     def test_admin_paths_and_retry_key(self):
@@ -107,10 +245,10 @@ class AdminOperationsContracts(unittest.TestCase):
         schemas=self.doc['components']['schemas']
         self.assertNotIn('updatedAt',schemas['OperationJob']['properties'])
         self.assertNotIn('errorDetail',schemas['OperationExecution']['properties'])
-        self.assertNotIn('detail',schemas['OperationAudit']['properties'])
+        self.assertFalse(schemas['OperationAudit']['properties']['detail']['additionalProperties'])
         for name,schema in schemas.items():
             if name.startswith('Operation'): Draft202012Validator.check_schema(schema)
     def test_queue_allowlist(self):
         definition=json.loads((ROOT/'infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json').read_text())
-        self.assertEqual(30,len(definition['queues']))
+        self.assertEqual(35,len(definition['queues']))  # #370 work + 3 retry + DLQ 추가
         self.assertEqual({'/'},{q['vhost'] for q in definition['queues']})

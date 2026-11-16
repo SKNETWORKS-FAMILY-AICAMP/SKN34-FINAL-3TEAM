@@ -1,0 +1,19 @@
+{
+  "label": "C5 sample observations, not reviewed curriculum evidence",
+  "dataClassification": "sample",
+  "grade": 3,
+  "codes": [
+    "4국02-04",
+    "4수01-05",
+    "4과01-01",
+    "4사01-01",
+    "4도01-01"
+  ],
+  "thinkingTypes": [
+    "ANALYZE",
+    "EVALUATE",
+    "CREATE",
+    "SOLVE",
+    "REFLECT"
+  ]
+}

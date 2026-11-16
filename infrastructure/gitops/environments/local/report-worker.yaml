@@ -6,12 +6,17 @@ replicaCount: 0
 command: [python, -m, app.worker]
 service:
   enabled: false
+# #508: explanation budget 400s + base generation/render/upload margin
+terminationGracePeriodSeconds: 480
 resources:
   requests: {cpu: 100m, memory: 256Mi}
   limits: {cpu: 500m, memory: 768Mi}
 env:
-  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
-  - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_URL}}}
+  - {name: REPORT_EXPLANATION_TIMEOUT_SECONDS, value: "130"}
+  - {name: REPORT_EXPLANATION_BUDGET_SECONDS, value: "400"}
+  - {name: REPORT_THEME_SUMMARY_ENABLED, value: "true"}
+  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_REPORT_WORKER}}}
+  - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_REPORT_URL}}}
   - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: REPORT_DATABASE_URL}}}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
   - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}
@@ -32,7 +37,7 @@ keda:
     - report.student.deleted
   rabbitmqSecret:
     name: app-service-credentials
-    key: RABBITMQ_URL
+    key: RABBITMQ_REPORT_URL
 networkPolicy:
   enabled: true
   egressToApps:

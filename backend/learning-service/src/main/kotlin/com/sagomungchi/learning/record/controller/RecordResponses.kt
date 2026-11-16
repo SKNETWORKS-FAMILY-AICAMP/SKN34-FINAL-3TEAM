@@ -1,5 +1,11 @@
 package com.sagomungchi.learning.record.controller
 
+import com.sagomungchi.learning._common.web.FeedbackResponse
+import com.sagomungchi.learning._common.web.JudgmentResponse
+import com.sagomungchi.learning._common.web.ElementResponse
+import com.sagomungchi.learning._common.web.FollowupResponse
+import com.sagomungchi.learning._common.web.FeedbackVersions
+
 import com.fasterxml.jackson.annotation.JsonUnwrapped
 import com.sagomungchi.learning._common.web.AnswerItem
 import com.sagomungchi.learning._common.web.MissionListItemResponse
@@ -81,7 +87,7 @@ data class RecordAttemptResponse(
     val mission: MissionResponse,
     val status: AttemptStatus,
     val finishedAt: Instant?,
-    val answers: List<AnswerItem<FeedbackResult>>,
+    val answers: List<AnswerItem<FeedbackResponse>>,
     val helped: Boolean,
     val nextActions: List<NextAction>,
     val reveal: String?,
@@ -90,6 +96,7 @@ data class RecordAttemptResponse(
     val reflection: RecordReflection?,
     val completedAt: Instant?,
     val hintUsages: List<HintUsage>,
+    val context: com.sagomungchi.learning.attempt.domain.AttemptContext,
 ) {
     companion object {
         /** 시도 상세(AttemptResponse)와 같은 값을 AttemptDetail에서 직접 만듦: 다른 기능 controller DTO를 거치지 않음 (#251) */
@@ -110,6 +117,7 @@ data class RecordAttemptResponse(
                 reflection = detail.reflection?.let { RecordReflection(it.difficulty, it.text, checkNotNull(record.reflectionCreatedAt)) },
                 completedAt = detail.attempt.completedAt,
                 hintUsages = record.hintUsages.map(::HintUsage),
+                context = detail.attempt.context,
             )
         }
     }
@@ -214,6 +222,7 @@ internal fun MissionResponse.Companion.from(mission: MissionView) = MissionRespo
     inputTemplate = mission.inputTemplate,
     categories = mission.categories.map { OptionResponse(it.id, it.label) },
     answerUnit = mission.answerUnit,
+    sceneMotion = mission.sceneMotion,
 )
 
 internal fun MissionListItemResponse.Companion.from(item: MissionListItem) =
@@ -227,5 +236,18 @@ internal fun AnswerItem.Companion.from(answer: TimelineAnswer, feedback: Feedbac
     text = answer.text.orEmpty(),
     followupId = answer.followupId,
     content = answer.content,
-    feedback = feedback,
+    feedback = feedback.toResponse(),
+)
+
+internal fun FeedbackResult.toResponse() = FeedbackResponse(
+    status.name,
+    judgment?.let { j -> JudgmentResponse(
+        j.judgmentId, j.result.name, j.trial,
+        j.elements.map { e -> ElementResponse(
+            e.elementId, e.label, e.code, e.goodThought, e.satisfied, e.quote, e.sourceType?.name,
+        ) }, j.heldReason, j.corrected, j.modelScores, j.m2Notices,
+    ) },
+    followup?.let { FollowupResponse(it.followupId, it.type.name, it.question, it.source.name) },
+    nextActions.map { it.name },
+    versions?.let { FeedbackVersions(it.mission, it.rubric, it.model, it.prompt) },
 )

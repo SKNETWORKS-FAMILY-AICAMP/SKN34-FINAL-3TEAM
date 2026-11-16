@@ -14,7 +14,8 @@ resources:
   requests: {cpu: 100m, memory: 256Mi}
   limits: {cpu: 500m, memory: 768Mi}
 env:
-  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN}}}
+  - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_REPORT_API}}}
+  - {name: INTERNAL_TOKEN_CORE, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_CORE}}}
   - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: REPORT_DATABASE_URL}}}
   - {name: CORE_URL, value: "http://core-service.app.svc.cluster.local:8080"}
   - {name: LEARNING_URL, value: "http://learning-service.app.svc.cluster.local:8081"}
@@ -32,6 +33,9 @@ pdb:
 networkPolicy:
   enabled: true
   ingressFromApps: [core-service]
+  # #418: 리포트 근거 조회(GET /internal/records/evidence). prod report-api.json과 같은 허용
+  egressToApps:
+    - {name: learning-service, port: 8081}
   egressToPlatform:
     - {name: postgres, port: 5432}
     - {name: minio, port: 9000}
@@ -44,7 +48,7 @@ networkPolicy:
       ports: [{protocol: TCP, port: 5432}]
 migration:
   enabled: true
-  revision: "20261102-05"
+  revision: "20261110-08"
   image:
     repository: sagomungchi/report-service
     tag: local

@@ -37,8 +37,8 @@ class AdminReportRetryMessagingTest : IntegrationTestSupport() {
     @Test fun `accepted retry traverses real outbox and broker and isolates replayed result events`() {
         val owner=parent(jdbc);val student=child(jdbc,owner);val original=UUID.randomUUID();val user=account(jdbc)
         val admin=actor(jdbc,user,"ADMIN",setOf("SERVICE_OPS"))
-        jdbc.update("""INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,failure_reason,retry_count,created_at,completed_at)
-            VALUES(?,?,?,?,'SCHEDULE','FAILED','RENDER_FAILED',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""",original,student,WEEK.from,WEEK.to)
+        jdbc.update("""INSERT INTO report_job(id,student_id,period_type,period_from,period_to,trigger,status,failure_reason,retry_count,created_at,completed_at)
+            VALUES(?,?,'WEEKLY',?,?,'SCHEDULE','FAILED','RENDER_FAILED',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""",original,student,WEEK.from,WEEK.to)
         val response=retries.retry(original,UUID.randomUUID(),admin);assertEquals(202,response.status)
         val id=UUID.fromString(json.readTree(response.body).path("jobId").asText())
         var command: Message?=null

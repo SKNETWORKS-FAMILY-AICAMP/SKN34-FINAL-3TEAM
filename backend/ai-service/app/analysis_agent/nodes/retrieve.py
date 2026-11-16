@@ -16,6 +16,7 @@ from app.analysis_agent.models import Intent, Records, Scope, StreamError
 from app.analysis_agent.nodes.events import status
 from app.analysis_agent.state import AnalysisState
 from app.analysis_agent.tools import RecordTools
+from app.analysis_agent.verification import report_numbers
 from app.clients.learning_client import RecordsUnavailable
 
 ERROR_MESSAGES = {
@@ -61,5 +62,8 @@ def tool_calls(intent: Intent, tools: RecordTools, scope: Scope) -> dict[str, An
 
 async def compute(state: AnalysisState, runtime: Runtime[AgentContext]) -> AnalysisState:
     runtime.stream_writer(status("수치를 계산하는 중"))
-    computation = compute_metrics(state["intent"], state["records"], state["request"].scope)
+    request = state["request"]
+    computation = compute_metrics(state["intent"], state["records"], request.scope)
+    if request.report:  # 고정 리포트 대화(#392): 요약 숫자도 대조 허용
+        computation.extra_numbers |= report_numbers(request.report)
     return {"computation": computation}

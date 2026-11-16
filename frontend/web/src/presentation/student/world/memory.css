@@ -1,0 +1,110 @@
+/* 추억 앨범 "기억으로 찾기"(#567, 시안 Album). 색·글꼴은 학생 화면 기준 토큰(student-world.css)을 쓴다 */
+#class-journal .cj-app-student .st-memory {
+  display: flex; flex-direction: column; gap: 10px; padding: 16px 20px; border-radius: 26px;
+  background: var(--sk-soft); border: 2px solid var(--sk-line); min-height: 0;
+}
+#class-journal .cj-app-student .st-world .st-memory h2 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: var(--st-fs-lg); line-height: 1.1; color: var(--sk-ink); }
+#class-journal .cj-app-student .st-memory-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+#class-journal .cj-app-student .st-memory-form input {
+  flex: 1 1 420px; min-width: 0; min-height: 56px; box-sizing: border-box; padding: 0 22px; border-radius: 999px;
+  border: 3px solid var(--sk-ink); background: var(--sk-paper); color: var(--sk-ink); font: inherit; font-size: var(--st-fs-md);
+}
+#class-journal .cj-app-student .st-memory-form input[aria-invalid] { border-color: #a3360e; }
+#class-journal .cj-app-student .st-memory-form input:focus-visible,
+#class-journal .cj-app-student .st-memory button:focus-visible,
+#class-journal .cj-app-student .st-memory-cards > li:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: 3px; }
+#class-journal .cj-app-student .st-memory-go,
+#class-journal .cj-app-student .st-memory-explain {
+  min-height: 56px; padding: 0 28px; border-radius: 999px; border: 3px solid var(--sk-ink); background: var(--sk-accent);
+  color: var(--sk-ink); font-family: var(--st-display); font-size: var(--st-fs-md); cursor: pointer;
+}
+#class-journal .cj-app-student .st-memory-explain { min-height: 48px; padding: 0 22px; background: var(--sk-yellow); font-size: var(--st-fs-base); }
+#class-journal .cj-app-student .st-memory-go:hover:not(:disabled),
+#class-journal .cj-app-student .st-memory-explain:hover:not(:disabled) { background: var(--sk-ink); color: var(--sk-yellow); }
+#class-journal .cj-app-student .st-memory-go:disabled,
+#class-journal .cj-app-student .st-memory-explain:disabled { opacity: 0.55; cursor: default; }
+#class-journal .cj-app-student .st-memory-error { margin: 0; font-weight: 700; color: #a3360e; font-size: var(--st-fs-sm); }
+/* 예시 칩: 점선 + 앞에 "예시" 표시(입력 예시임을 표시, 결정 기록 3장) */
+#class-journal .cj-app-student .st-memory-examples { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#class-journal .cj-app-student .st-memory-ex-label {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border-radius: 999px;
+  background: var(--sk-ink); color: var(--sk-paper); font-weight: 700; font-size: var(--st-fs-xs);
+}
+#class-journal .cj-app-student .st-memory-examples ul { display: contents; list-style: none; }
+#class-journal .cj-app-student .st-memory-examples li { list-style: none; }
+#class-journal .cj-app-student .st-memory-examples button {
+  min-height: 44px; padding: 0 16px; border-radius: 999px; border: 2px dashed var(--sk-ink); background: transparent;
+  color: var(--sk-ink); font: inherit; font-size: var(--st-fs-sm); cursor: pointer;
+}
+#class-journal .cj-app-student .st-memory-examples button:hover { background: var(--sk-paper); }
+#class-journal .cj-app-student .st-memory-note { margin: 0; font-size: var(--st-fs-xs); color: var(--sk-sub); }
+#class-journal .cj-app-student .st-memory-result { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+#class-journal .cj-app-student .st-memory-result:empty { display: none; }
+#class-journal .cj-app-student .st-memory-box {
+  margin: 0; padding: 12px 18px; border-radius: 16px; background: var(--sk-paper); border: 2px solid var(--sk-line);
+  font-size: var(--st-fs-base); line-height: 1.55; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+}
+#class-journal .cj-app-student .st-memory-box p { margin: 0; flex: 1 1 260px; }
+#class-journal .cj-app-student .st-memory-box[data-tone='soft'] { background: #fff1d6; }
+#class-journal .cj-app-student .st-memory-box[data-tone='warn'] { background: #ffe3d3; border-color: #c2410c; }
+#class-journal .cj-app-student .st-memory-found { display: flex; flex-direction: column; gap: 12px; }
+#class-journal .cj-app-student .st-memory-found-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; }
+#class-journal .cj-app-student .st-memory-found-head strong { font-family: var(--st-display); font-weight: 400; font-size: var(--st-fs-md); }
+#class-journal .cj-app-student .st-memory-cards {
+  list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px;
+}
+#class-journal .cj-app-student .st-memory-cards > li {
+  background: var(--sk-paper); border: 2px solid var(--sk-line); border-radius: 20px; padding: 14px; display: flex; gap: 14px; min-width: 0;
+}
+#class-journal .cj-app-student .st-memory-frame {
+  flex: none; width: 140px; aspect-ratio: 4 / 3; border: 7px solid #8a5a33; border-radius: 4px; overflow: hidden; align-self: flex-start; background: #c6eae1;
+}
+#class-journal .cj-app-student .st-memory-frame img { display: block; width: 100%; height: 100%; object-fit: cover; }
+#class-journal .cj-app-student .st-memory-frame-empty { display: block; width: 100%; height: 100%; }
+#class-journal .cj-app-student .st-memory-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+#class-journal .cj-app-student .st-memory-week { font-size: var(--st-fs-xs); font-weight: 700; }
+#class-journal .cj-app-student .st-memory-card-body > strong { font-family: var(--st-display); font-weight: 400; font-size: var(--st-fs-md); }
+#class-journal .cj-app-student .st-memory-card-body ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+#class-journal .cj-app-student .st-memory-card-body ul li {
+  padding: 8px 10px; border-radius: 12px; background: #fff1d6; display: flex; gap: 8px; align-items: flex-start; font-size: var(--st-fs-sm);
+}
+#class-journal .cj-app-student .st-memory-card-body ul li > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#class-journal .cj-app-student .st-memory-card-body ul li > span:last-child > span {
+  font-family: var(--st-hand); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+#class-journal .cj-app-student .st-memory-more { font-size: var(--st-fs-xs); color: var(--sk-sub); font-weight: 700; }
+#class-journal .cj-app-student .st-memory-said { display: flex; flex-direction: column; gap: 12px; scroll-margin: 16px; }
+#class-journal .cj-app-student .st-memory-said:empty { display: none; }
+#class-journal .cj-app-student .st-memory-no {
+  flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--sk-ink); color: var(--sk-paper);
+  display: inline-flex; align-items: center; justify-content: center; font-family: var(--st-display); font-size: 14px;
+}
+#class-journal .cj-app-student .st-memory-no[aria-hidden='true'] { background: transparent; color: var(--sk-sub); }
+#class-journal .cj-app-student .st-memory-card-body .st-pill-link { align-self: flex-start; margin-top: auto; }
+#class-journal .cj-app-student .st-memory-say {
+  display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; border-radius: 20px; background: var(--sk-paper); border: 2px solid var(--sk-line);
+}
+#class-journal .cj-app-student .st-memory-say .st-companion { flex: none; width: 64px; height: 64px; }
+#class-journal .cj-app-student .st-memory-say p { margin: 0; font-family: var(--st-hand); font-weight: 700; font-size: var(--st-fs-md); line-height: 1.6; }
+#class-journal .cj-app-student .st-memory-cite {
+  margin-left: 2px; padding: 0 4px; min-height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--sk-ink);
+  font-family: var(--st-display); font-size: 0.9em; cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+}
+#class-journal .cj-app-student .st-memory-cite:hover { background: var(--sk-yellow); }
+/* 앨범은 한 화면 맞춤이 아니다(사용자 의견 2026-11-16 "화면 안에 스크롤 안 해도 되게"): 찾은 결과·액자 칸은 다 보이고 넘치면 페이지가 내려간다.
+   검색 칸은 줄어들지 않는다(줄면 내용이 아래 액자 칸 밑으로 깔림, 1024×768 시험에서 찾음) */
+#class-journal .cj-app-student .st-memory { flex: none; }
+@media (min-width: 901px) and (max-height: 820px) {
+  #class-journal .cj-app-student .st-memory { padding: 12px 16px; gap: 8px; }
+}
+@media (max-width: 560px) {
+  #class-journal .cj-app-student .st-memory { padding: 14px; border-radius: 20px; }
+  #class-journal .cj-app-student .st-memory-cards { grid-template-columns: minmax(0, 1fr); }
+  #class-journal .cj-app-student .st-memory-cards > li { padding: 12px; gap: 10px; }
+  #class-journal .cj-app-student .st-memory-frame { width: 84px; border-width: 5px; }
+  #class-journal .cj-app-student .st-memory-go { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #class-journal .cj-app-student .st-memory * { transition: none; }
+}

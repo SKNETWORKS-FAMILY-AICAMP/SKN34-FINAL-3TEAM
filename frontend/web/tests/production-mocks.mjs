@@ -55,11 +55,13 @@ for (const marker of [
   )
 // #170: 개발 전용 PIN이 축약된 운영 JS 문자열로 남아 있지 않아야 합니다.
 assert.equal(js.some((s) => /(['"`])5090\1/.test(s)), false, '운영 JS에 시연 PIN 포함')
-// #97: 실제 모드에는 이메일 로그인·가입·비밀번호 재확인 호출이 없다 (학부모 Google 인증, 학생 기기·PIN)
+// #97: 실제 모드에는 개발 시연용 이메일 로그인·가입(/auth/login·/auth/signup)과 /me/reauth의 비밀번호 본문이 없다.
+// #415 학부모 ID·비밀번호는 별도 경로(/auth/parent/login·/auth/parent/signup·/me/reauth/password)라 이 규칙에 걸리지 않는다.
 for (const [pattern, name] of [
   [/["'`]\/auth\/login["'`]/, '/auth/login'],
   [/["'`]\/auth\/signup["'`]/, '/auth/signup'],
-  [/\/me\/reauth["'`][^;]{0,80}password/, '/me/reauth {password}'],
+  // 호출 괄호 안의 본문만 본다. 바로 뒤에 오는 다른 함수 이름(passwordReauth 등)이나 경로는 세지 않는다.
+  [/\/me\/reauth["'`][^;)]{0,80}password/, '/me/reauth {password}'],
 ])
   assert.equal(js.some((s) => pattern.test(s)), false, `운영 JS에 제거한 호출 포함: ${name}`)
 console.log('운영 JS에 MSW·핸들러·가상 학생 fixture 없음 / 개발 worker 빌드 복사본 제외 확인')

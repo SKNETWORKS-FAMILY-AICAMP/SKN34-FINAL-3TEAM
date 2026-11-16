@@ -1,0 +1,227 @@
+{
+  "nameOverride": "sllm-server",
+  "image": {
+    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/sllm-server",
+    "tag": "pending-475",
+    "digest": ""
+  },
+  "replicaCount": 0,
+  "command": [
+    "/app/llama-server"
+  ],
+  "args": [
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080",
+    "--model",
+    "/models/model.gguf",
+    "--alias",
+    "report-explanation",
+    "--ctx-size",
+    "4096",
+    "--threads",
+    "3",
+    "--parallel",
+    "1",
+    "--metrics"
+  ],
+  "service": {
+    "port": 8080,
+    "targetPort": 8080
+  },
+  "probes": {
+    "startup": {
+      "enabled": true,
+      "path": "/health",
+      "periodSeconds": 10,
+      "failureThreshold": 60
+    },
+    "liveness": {
+      "enabled": true,
+      "path": "/health",
+      "periodSeconds": 10,
+      "timeoutSeconds": 5
+    },
+    "readiness": {
+      "enabled": true,
+      "path": "/health",
+      "periodSeconds": 10,
+      "timeoutSeconds": 5
+    }
+  },
+  "resources": {
+    "requests": {
+      "cpu": "3",
+      "memory": "5Gi",
+      "ephemeral-storage": "5Gi"
+    },
+    "limits": {
+      "cpu": "3500m",
+      "memory": "6Gi",
+      "ephemeral-storage": "8Gi"
+    }
+  },
+  "nodeSelector": {
+    "workload": "explanation-sllm"
+  },
+  "tolerations": [
+    {
+      "key": "workload",
+      "operator": "Equal",
+      "value": "explanation-sllm",
+      "effect": "NoSchedule"
+    }
+  ],
+  "serviceAccount": {
+    "create": true,
+    "automountToken": false
+  },
+  "modelDownload": {
+    "enabled": true,
+    "image": {
+      "repository": "amazon/aws-cli",
+      "tag": "2.39.6"
+    },
+    "command": [
+      "sh",
+      "-c"
+    ],
+    "args": [
+      "set -eu\naws s3 cp \"s3://${MODEL_BUCKET}/${MODEL_KEY}\" \"${MODEL_DIR}/model.gguf\" --only-show-errors\nif [ -n \"${MODEL_SHA256:-}\" ]; then echo \"${MODEL_SHA256}  ${MODEL_DIR}/model.gguf\" | sha256sum -c -; fi\nls -l \"${MODEL_DIR}\"\n"
+    ],
+    "env": [
+      {
+        "name": "AWS_REGION",
+        "value": "ap-northeast-2"
+      },
+      {
+        "name": "AWS_DEFAULT_REGION",
+        "value": "ap-northeast-2"
+      },
+      {
+        "name": "MODEL_BUCKET",
+        "value": "sagomungchi-demo-347161580747-models"
+      },
+      {
+        "name": "MODEL_KEY",
+        "value": "explanation/pending-475/model.gguf"
+      },
+      {
+        "name": "MODEL_SHA256",
+        "value": ""
+      }
+    ],
+    "resources": {
+      "requests": {
+        "cpu": "250m",
+        "memory": "256Mi"
+      },
+      "limits": {
+        "cpu": "1",
+        "memory": "512Mi"
+      }
+    },
+    "sizeLimit": "6Gi"
+  },
+  "hpa": {
+    "enabled": false
+  },
+  "pdb": {
+    "enabled": false
+  },
+  "keda": {
+    "enabled": true,
+    "minReplicaCount": 0,
+    "maxReplicaCount": 1,
+    "cron": [
+      {
+        "timezone": "Asia/Seoul",
+        "start": "50 23 * * 0",
+        "end": "0 2 * * 1",
+        "desiredReplicas": 1
+      }
+    ],
+    "renderReplicaCount": true,
+    "cooldownPeriod": 300
+  },
+  "networkPolicy": {
+    "enabled": true,
+    "ingressFromApps": [
+      "ai-service"
+    ],
+    "ingressFromPrometheus": true,
+    "egress": [
+      {
+        "ports": [
+          {
+            "port": 443,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "52.219.202.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.144.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.204.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "3.5.144.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "3.5.140.0/22"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.148.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.60.0/23"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "3.5.184.0/21"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "52.219.56.0/22"
+            }
+          }
+        ]
+      },
+      {
+        "ports": [
+          {
+            "port": 80,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "169.254.170.23/32"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

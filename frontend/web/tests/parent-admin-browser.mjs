@@ -88,8 +88,8 @@ try {
     await p.getByRole('heading', { name: '서윤의 학습 기록' }).waitFor()
     assert.equal(
       await p
-        .getByLabel('자녀 선택', { exact: true })
-        .getByRole('option', { name: '새싹 · 초3' })
+        .getByRole('group', { name: '자녀 선택', exact: true })
+        .getByRole('button', { name: /새싹/ })
         .count(),
       0,
     )
@@ -113,18 +113,18 @@ try {
     const created = p.waitForResponse((r) => r.url().endsWith('/api/v1/children') && r.request().method() === 'POST')
     await p.getByRole('button', { name: '자녀 등록하기' }).click()
     const child = await (await created).json()
-    assert.equal(child.plan, 'FREE')
+    assert.equal('plan' in child, false) // 이용권은 entitlement로만 확인한다(#602)
     await p.getByRole('heading', { name: '연두의 학습 기록' }).waitFor()
     await p.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
-    await p.getByRole('button', { name: '미션 고르기', exact: true }).click()
+    await p.getByRole('button', { name: /더 풀어 보기/ }).click() // #648: 미션 고르기는 홈 "더 풀어 보기"로
     await p.getByRole('article').filter({ has: p.getByRole('heading', { name: '도서관에 만화책을 더 둘까요?', exact: true }) })
       .getByRole('button', { name: '미션 열기' }).click()
-    await p.getByRole('button', { name: '작성하기 · 진행 중이면 이어서' }).click()
-    await p.getByLabel('내 생각과 까닭').fill(answer)
-    await p.getByRole('button', { name: '생각 메모', exact: true }).click()
+    await p.getByRole('button', { name: '미션 시작하기' }).click()
+    await p.getByLabel('내 생각과 이유').fill(answer)
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     await p.getByTestId('private-memo').fill(privateMemo)
-    await p.getByText('초안 저장 완료(모의)', { exact: true }).waitFor()
-    await p.getByRole('button', { name: '답변 쓰기', exact: true }).click()
+    await p.getByText('저장했어요(모의)', { exact: true }).waitFor()
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     const submitted = p.waitForRequest((r) => /\/attempts\/[^/]+\/answers$/.test(r.url()) && r.method() === 'POST')
     await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
     assert.equal(JSON.stringify((await submitted).postDataJSON()).includes(privateMemo), false)
@@ -133,7 +133,9 @@ try {
     await p.getByRole('button', { name: '보통이에요' }).click()
     await p.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
     await p.waitForURL('**/student/journal')
-    await p.getByRole('button', { name: '학부모 로그인으로', exact: true }).click()
+    // 학생 로그아웃은 설정 안에서(#583)
+    await p.getByRole('button', { name: '설정', exact: true }).click()
+    await p.getByRole('button', { name: '로그아웃', exact: true }).click()
     await p.getByLabel('이메일', { exact: true }).fill(email)
     await p.getByRole('button', { name: '시연 계정으로 로그인' }).click()
     await p.getByRole('heading', { name: '연두의 학습 기록' }).waitFor()
@@ -161,7 +163,7 @@ try {
     await p.getByRole('dialog').getByText(answer, { exact: true }).waitFor()
     assert.equal((await p.getByRole('dialog').innerText()).includes(privateMemo), false)
     await p.getByRole('button', { name: '창 닫기' }).click()
-    await nav(p, '주간 리포트')
+    await nav(p, '리포트')
     assert.equal(new URL(p.url()).search, scope)
     await p.locator('article.ws-card').filter({ has: p.getByRole('heading', { name: '2026-10-26 ~ 2026-11-01', exact: true }) })
       .getByRole('button', { name: '리포트 상세 보기' }).click()
@@ -197,9 +199,9 @@ try {
       catch (e) { limit = { status: e.problem?.status, code: e.problem?.code } }
       try { await parentApi.summary({ childId: 'other-guardian-child', from: '2026-10-20', to: '2026-10-26' }) }
       catch (e) { foreign = { status: e.problem?.status, code: e.problem?.code } }
-      return { plan: third.plan, count: (await parentApi.children()).items.length, limit, foreign }
+      return { plan: 'plan' in third, count: (await parentApi.children()).items.length, limit, foreign }
     })
-    assert.deepEqual(result, { plan: 'FREE', count: 3,
+    assert.deepEqual(result, { plan: false, count: 3,
       limit: { status: 409, code: 'CHILD_LIMIT_REACHED' },
       foreign: { status: 403, code: 'CHILD_NOT_LINKED' } })
   })
@@ -217,10 +219,10 @@ try {
     await p.getByRole('button', { name: '기간 적용' }).click()
     await nav(p, '기록에 물어보기')
     assert.ok(p.url().includes('childId=demo-seoyun') && p.url().includes('from=2026-10-19'))
-    await p.getByLabel('자녀 선택', { exact: true }).selectOption('demo-doyun')
+    await p.getByRole('group', { name: '자녀 선택', exact: true }).getByRole('button', { name: /도윤/ }).click()
     await p.getByText('무료 플랜에는 분석 대화가 포함되지 않습니다.', { exact: false }).waitFor()
     assert.equal(await p.getByRole('button', { name: '답변 근거 보기' }).count(), 0)
-    await nav(p, '주간 리포트')
+    await nav(p, '리포트')
     assert.ok(p.url().includes('childId=demo-doyun'))
     await p.getByRole('button', { name: '리포트 상세 보기' }).first().click()
     await p
@@ -335,7 +337,7 @@ try {
     await p
       .getByText('대조 전 임시 문장입니다. 아직 확정되지 않았습니다.', { exact: true })
       .waitFor()
-    await p.getByLabel('자녀 선택', { exact: true }).selectOption('demo-doyun')
+    await p.getByRole('group', { name: '자녀 선택', exact: true }).getByRole('button', { name: /도윤/ }).click()
     await p.waitForFunction(() => window.__analysisAborts > 0)
     await p.getByText('무료 플랜에는 분석 대화가 포함되지 않습니다.', { exact: false }).waitFor()
     assert.equal(await p.getByRole('button', { name: '답변 근거 보기' }).count(), 0)
@@ -344,7 +346,7 @@ try {
   })
   await check('리포트 상세 3.4·항목 근거·재생성 새 판/이전 판·md/pdf 다운로드', async (p) => {
     await login(p)
-    await nav(p, '주간 리포트')
+    await nav(p, '리포트')
     await p.getByRole('button', { name: '리포트 상세 보기' }).first().click()
     await p.getByRole('heading', { name: '리포트 상세', exact: true }).waitFor()
     await p.getByRole('button', { name: /근거$/ }).first().click()
@@ -373,7 +375,7 @@ try {
   for (const scenario of ['report-running', 'report-failed'])
     await check('리포트 상태 ' + scenario, async (p) => {
       await login(p)
-      await nav(p, '주간 리포트')
+      await nav(p, '리포트')
       await mode(p, scenario)
       await p.getByRole('button', { name: '리포트 상세 보기' }).first().click()
       await p
@@ -400,8 +402,8 @@ try {
     assert.deepEqual(sent.postDataJSON(), { nickname: '새 별명' })
     assert.equal(sent.headers()['x-reauth-token'], undefined)
     await p
-      .getByLabel('자녀 선택', { exact: true })
-      .getByRole('option', { name: '새 별명 · 초3' })
+      .getByRole('group', { name: '자녀 선택', exact: true })
+      .getByRole('button', { name: /새 별명/ })
       .waitFor({ state: 'attached' })
   })
   for (const [account, show, hide] of [
@@ -469,7 +471,9 @@ try {
       await p.getByRole('button', { name: '새 미션 작성' }).click()
       await p.getByLabel('미션 제목', { exact: true }).fill('새 정원 관찰')
       await p.getByLabel('미션 질문', { exact: true }).fill('두 잎의 차이를 관찰해 설명해 주세요.')
-      await p.getByLabel('성취기준', { exact: true }).fill('자체 시연 기준')
+      await p.getByLabel('성취기준 검색어', { exact: true }).fill('4과03-01')
+      await p.getByRole('button', { name: '성취기준 조회', exact: true }).click()
+      await p.getByRole('button', { name: '4과03-01 고르기', exact: true }).click()
       await p.getByRole('button', { name: '미션 초안 저장' }).click()
       await p.getByRole('button', { name: '게시', exact: true }).click()
       await p.getByRole('list', { name: '게시 누락 항목' }).waitFor()
@@ -482,7 +486,7 @@ try {
       await p.getByRole('button', { name: '현재 버전 검토 승인' }).click()
       await p.getByRole('button', { name: '학생 화면 미리보기' }).click()
       await p.getByRole('dialog', { name: '학생 화면 미리보기' }).waitFor()
-      await p.getByLabel('내 생각과 까닭').fill('미리보기 답변')
+      await p.getByLabel('내 생각과 이유').fill('미리보기 답변')
       await p.getByRole('button', { name: '창 닫기' }).click()
       await p.getByRole('button', { name: '게시', exact: true }).click()
       await p.getByRole('button', { name: '신규 제공 중단' }).waitFor()

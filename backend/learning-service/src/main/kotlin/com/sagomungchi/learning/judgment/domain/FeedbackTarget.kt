@@ -31,6 +31,8 @@ data class StoredJudgment(
     val promptVersion: String?,
     val missionLabel: String,
     val rubricLabel: String,
+    val corrected: Boolean = false,
+    val m2NoticeCodes: List<String> = emptyList(),
 )
 
 data class StoredElement(

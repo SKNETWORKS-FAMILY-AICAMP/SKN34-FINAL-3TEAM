@@ -11,6 +11,7 @@ import pytest
 from app.messaging.consumer import ActivationEnvelope, ModelVersionConsumer
 from app.model_registry import ModelRegistry
 from app.model_startup import ModelStartup
+from app.model_sync import ModelSync
 from tests.test_model_registry import SCOPE, loaded, version
 
 
@@ -124,12 +125,14 @@ def test_event_failure_keeps_old_model_then_retries_and_rollback_redownloads(cap
 )
 def test_event_filter_and_ack(kind, name, target):
     async def run():
-        startup = ModelStartup(None, ModelRegistry(loaded), 0.01)
+        sync = ModelSync(None, ModelRegistry(loaded), 0.01)
+        sync.reset()
+        consumer = ModelVersionConsumer(None, sync, 0.01)
         message = SimpleNamespace(
             body=json.dumps(event(kind=kind, name=name)).encode(), ack=AsyncMock()
         )
-        await ModelVersionConsumer.receive(message, startup)
-        assert bool(startup._pending) == target
+        await consumer.receive(message)
+        assert bool(sync._startup._pending) == target
         message.ack.assert_awaited_once()
 
     asyncio.run(run())
@@ -154,10 +157,12 @@ def test_invalid_events_discarded_without_retry_or_payload_log(mutation, caplog)
     async def run():
         payload = event()
         mutation(payload)
-        startup = ModelStartup(None, ModelRegistry(loaded), 0.01)
+        sync = ModelSync(None, ModelRegistry(loaded), 0.01)
+        sync.reset()
+        consumer = ModelVersionConsumer(None, sync, 0.01)
         message = SimpleNamespace(body=json.dumps(payload).encode(), ack=AsyncMock())
-        await ModelVersionConsumer.receive(message, startup)
-        assert not startup._pending
+        await consumer.receive(message)
+        assert not sync._startup._pending
         message.ack.assert_awaited_once()
 
     asyncio.run(run())
@@ -247,7 +252,7 @@ def test_bind_before_snapshot_and_reconnect_creates_new_queue():
                 return [version(1 if len(receivers) == 1 else 3)]
 
         registry = ModelRegistry(loaded)
-        consumer = ModelVersionConsumer(broker, Core(), registry, 0.005)
+        consumer = ModelVersionConsumer(broker, ModelSync(Core(), registry, 0.005), 0.005)
         consumer.start()
         try:
             await until(lambda: registry.versions() != [])

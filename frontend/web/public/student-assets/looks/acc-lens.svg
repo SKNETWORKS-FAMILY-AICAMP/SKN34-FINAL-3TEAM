@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" width="60" height="60">
+<!-- 돋보기(설계 캔버스 Mungchi 돋보기를 쥐는 자리 기준으로 다시 그림). 가운데가 쥐는 곳 -->
+<path d="M30 34 L22 52" stroke="#1F2421" stroke-width="7" stroke-linecap="round"/>
+<path d="M30 34 L22 52" stroke="#A8774F" stroke-width="3.5" stroke-linecap="round"/>
+<circle cx="36" cy="20" r="14" fill="#DFF3FB" fill-opacity=".8" stroke="#1F2421" stroke-width="4.5"/>
+<path d="M29 14 Q32 10 37 10" stroke="#FFFFFF" stroke-width="3" fill="none" stroke-linecap="round"/>
+</svg>

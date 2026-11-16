@@ -36,7 +36,9 @@ async function check(name, run, free = false) {
     const reply = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) }).catch(() => {})
     if (path.endsWith('/auth/refresh')) return reply({ accessToken: 'fixture-parent', role: 'PARENT' })
     if (path.endsWith('/me')) return reply({ userId: 'parent', role: 'PARENT', permissions: [], nextAction: 'READY', startPath: '/parent/analysis' })
-    if (path.endsWith('/children')) return reply({ items: [{ id: 'child', nickname: '합성학생', grade: 3, birthYear: 2017, ...(free ? { plan: 'FREE' } : {}) }] })
+    if (path.endsWith('/children')) return reply({ items: [{ id: 'child', nickname: '합성학생', grade: 3, birthYear: 2017 }] })
+    // 이용권은 entitlement로만 내려온다(#602).
+    if (path.endsWith('/entitlement')) return reply({ childId: 'child', product: { id: free ? 'free' : 'premium', code: free ? 'FREE' : 'PREMIUM', name: free ? '무료' : '프리미엄', price: free ? 0 : 14900, billingCycle: free ? 'NONE' : 'MONTHLY', childLimit: 1, active: true, features: {}, limits: {} }, subscriptionId: null, status: free ? 'FREE' : 'ACTIVE', autoRenew: false, periodEnd: null, graceUntil: null, refundPending: false, conversationEnabled: !free, narrativeEnabled: !free })
     if (path.endsWith('/conversations')) {
       if (req.method() === 'POST') {
         const c = { conversationId: `conversation-${state.conversations.length}`, childId: 'child', period: { from: '2026-10-19', to: '2026-10-25' }, messages: [] }

@@ -8,13 +8,35 @@ import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 
-data class ReportPeriod(val from: LocalDate, val to: LocalDate) {
-    init { require(from.dayOfWeek == DayOfWeek.MONDAY && to == from.plusDays(6)) }
+/** P06 weekly (KST Mon..Sun) or P24 daily (one KST day). The message/table names stay "weekly" for compatibility. */
+enum class ReportPeriodType(val narrative: Boolean) {
+    /** P24 template only: no LLM narrative or evening question, so the product is never consulted for it. */
+    DAILY(false),
+    WEEKLY(true),
+}
+
+data class ReportPeriod(val from: LocalDate, val to: LocalDate,
+    @get:com.fasterxml.jackson.annotation.JsonIgnore val type: ReportPeriodType = ReportPeriodType.WEEKLY) {
+    init {
+        when (type) {
+            ReportPeriodType.WEEKLY -> require(from.dayOfWeek == DayOfWeek.MONDAY && to == from.plusDays(6))
+            ReportPeriodType.DAILY -> require(from == to)
+        }
+    }
     companion object {
         val ZONE: ZoneId = ZoneId.of("Asia/Seoul")
         fun previousWeek(at: Instant): ReportPeriod {
             val monday = at.atZone(ZONE).toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
             return ReportPeriod(monday.minusWeeks(1), monday.minusDays(1))
+        }
+        /** The KST day before [at]; Saturday/Sunday are ordinary target days (P24). */
+        fun previousDay(at: Instant): ReportPeriod {
+            val day = at.atZone(ZONE).toLocalDate().minusDays(1)
+            return ReportPeriod(day, day, ReportPeriodType.DAILY)
+        }
+        fun previous(type: ReportPeriodType, at: Instant): ReportPeriod = when (type) {
+            ReportPeriodType.WEEKLY -> previousWeek(at)
+            ReportPeriodType.DAILY -> previousDay(at)
         }
     }
 }
@@ -32,6 +54,7 @@ enum class ReportTrigger { SCHEDULE, REGENERATE, ADMIN_RETRY }
 data class ReportJob(
     val id: UUID,
     val studentId: UUID,
+    val periodType: ReportPeriodType,
     val periodFrom: LocalDate,
     val periodTo: LocalDate,
     val trigger: ReportTrigger,
@@ -42,11 +65,13 @@ data class ReportJob(
     val createdAt: OffsetDateTime,
     val startedAt: OffsetDateTime?,
     val completedAt: OffsetDateTime?,
-)
+) {
+    val period: ReportPeriod get() = ReportPeriod(periodFrom, periodTo, periodType)
+}
 
 /** #44 can persist idempotent notifications in a BEFORE_COMMIT listener. No transport here. */
 data class ReportJobFinished(val sourceEventId: UUID, val jobId: UUID, val studentId: UUID,
-    val reportId: UUID, val status: ReportJobStatus)
+    val reportId: UUID, val status: ReportJobStatus, val periodType: ReportPeriodType = ReportPeriodType.WEEKLY)
 
 /** Every committed terminal transition, including recovery/deletion without a report ID. */
 data class ReportJobOutcomeRecorded(val sourceEventId: UUID, val jobId: UUID, val status: ReportJobStatus) {
@@ -70,7 +95,9 @@ data class ReportLifecycleEvent(val eventId: UUID, val jobId: UUID, val studentI
 }
 
 data class ReportJobAccepted(val jobId: UUID, val childId: UUID, val period: ReportPeriod,
-    val status: ReportJobStatus = ReportJobStatus.QUEUED)
+    val status: ReportJobStatus = ReportJobStatus.QUEUED) {
+    val periodType: ReportPeriodType get() = period.type
+}
 
 /** Validated internal recovery result; never contains report contents or URLs. */
 data class ReportReconciliation(val jobId: UUID, val studentId: UUID, val period: ReportPeriod,

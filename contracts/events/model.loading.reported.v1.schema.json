@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "model.loading.reported.v1.schema.json",
+  "title": "Scoring Pod model loading report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "podId",
+    "instanceId",
+    "sequence",
+    "models"
+  ],
+  "properties": {
+    "podId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$"
+    },
+    "instanceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "models": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "version",
+          "revision",
+          "status",
+          "errorType",
+          "loadedVersion",
+          "loadedRevision",
+          "previousModelRetained"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^(m1|m2)-[A-Za-z0-9._-]{1,96}$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "enum": [
+              "LOADING",
+              "LOADED",
+              "FAILED"
+            ]
+          },
+          "errorType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,99}$"
+          },
+          "loadedVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "loadedRevision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "previousModelRetained": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

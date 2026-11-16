@@ -134,7 +134,7 @@
     <insert id="insertVersion">
         INSERT INTO mission_version (id, mission_id, version, title, subject, grade_min, grade_max, thinking_type, input_type,
                                      question, guide, scene_uri, static_scene_uri, achievement_standards, choices, categories,
-                                     answer_unit, input_template, achievement_levels, created_by, created_at)
+                                     answer_unit, input_template, achievement_levels, scene_motion, created_by, created_at)
         VALUES (#{id}, #{missionId}, #{version}, #{command.title}, #{command.subject}, #{command.gradeMin},
                 #{command.gradeMax}, #{command.thinkingType}, #{command.inputType}, #{command.question},
                 #{command.guide,jdbcType=VARCHAR}, #{command.sceneUri,jdbcType=VARCHAR}, #{command.staticSceneUri,jdbcType=VARCHAR},
@@ -144,8 +144,23 @@
                 #{command.answerUnit,jdbcType=VARCHAR},
                 #{command.inputTemplate,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler},
                 #{command.achievementLevels,typeHandler=com.sagomungchi.learning.mission.repository.StringMapTypeHandler,jdbcType=OTHER},
+                #{command.sceneMotion,typeHandler=com.sagomungchi.learning.mission.repository.MotionTypeHandler,jdbcType=OTHER},
                 #{command.authorId}, #{now})
     </insert>
+
+    <resultMap id="currentScene" type="com.sagomungchi.learning.mission.domain.MissionScene">
+        <constructor>
+            <arg column="scene_uri" javaType="java.lang.String"/>
+            <arg column="scene_motion" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.mission.repository.MotionTypeHandler"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 현재 버전 장면·움직임 (#438): 관리자 수정 본문에 움직임이 없어 장면이 같으면 이어받음 -->
+    <select id="findCurrentScene" resultMap="currentScene">
+        SELECT v.scene_uri, v.scene_motion
+        FROM mission m JOIN mission_version v ON v.id = m.current_version_id
+        WHERE m.id = #{missionId}
+    </select>
 
     <update id="updateCurrentVersion">
         UPDATE mission SET current_version_id = #{versionId}, demo_only = #{demoOnly}, updated_at = #{now}

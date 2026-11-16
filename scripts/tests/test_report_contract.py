@@ -55,6 +55,17 @@ class ReportContractTests(unittest.TestCase):
             bad = copy.deepcopy(self.sample); bad[key] = value
             self.assertTrue(list(v.iter_errors(bad)), key)
 
+    def test_generate_period_type_is_optional_weekly_and_daily_has_no_narrative(self):
+        """P24 #390: absent periodType is WEEKLY (pre-P24 wire format); DAILY carries narrativeEnabled=false."""
+        v = self.validator("generate")
+        self.assertNotIn("periodType", self.schemas["generate"]["required"])
+        for value in ("DAILY", "WEEKLY"):
+            sample = {**self.sample, "periodType": value, "narrativeEnabled": False}
+            v.validate(sample)
+        v.validate({**self.sample, "periodType": "WEEKLY", "narrativeEnabled": True})
+        for bad in ({"periodType": "MONTHLY"}, {"periodType": "DAILY", "narrativeEnabled": True}, {"periodType": None}):
+            self.assertTrue(list(v.iter_errors({**self.sample, **bad})), bad)
+
     def test_lifecycle_identities_are_identical_and_failure_is_safe_code(self):
         identity = {"jobId": self.sample["jobId"], "studentId": self.sample["studentId"],
                     "reportId": "33333333-3333-4333-8333-333333333333"}

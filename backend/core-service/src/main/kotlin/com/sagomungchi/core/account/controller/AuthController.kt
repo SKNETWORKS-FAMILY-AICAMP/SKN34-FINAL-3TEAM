@@ -45,6 +45,20 @@ class AuthController(
         }
     }
 
+    /** #369: registered admins only. No signup; a previous refresh cookie's session is replaced like Google login. */
+    @PostMapping("/api/v1/auth/admin/login")
+    fun adminLogin(@RequestBody body: AdminLoginRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
+        issue(service.adminLogin(body.loginId, body.password, cookies.read(request, AuthCookies.REFRESH)), response)
+
+    /** #415: parent ID/password signup. Rate-limited per client IP; starts a PARENT session like Google signup. */
+    @PostMapping("/api/v1/auth/parent/signup")
+    fun parentSignup(@RequestBody body: ParentSignupRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
+        issue(service.parentSignup(body.loginId, body.password, body.name, request.remoteAddr, cookies.read(request, AuthCookies.REFRESH)), response)
+
+    @PostMapping("/api/v1/auth/parent/login")
+    fun parentLogin(@RequestBody body: AdminLoginRequest, request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
+        issue(service.parentLogin(body.loginId, body.password, cookies.read(request, AuthCookies.REFRESH)), response)
+
     @PostMapping("/api/v1/auth/refresh")
     fun refresh(request: HttpServletRequest, response: HttpServletResponse): Map<String, Any?> =
         issue(service.refresh(cookies.read(request, AuthCookies.REFRESH)), response)
@@ -86,7 +100,15 @@ class AuthController(
         val child = service.student(identity)
         if (identity.session.role == "STUDENT") return mapOf("role" to "STUDENT", "child" to child,
             "nextAction" to destination.nextAction, "startPath" to destination.startPath)
-        return mapOf("userId" to identity.account.id, "name" to identity.account.name, "email" to identity.account.email,
+        // #415: an account without a Google subject signs in with ID/password; its login_id is an ID, not an email.
+        // #683: a Google parent's login_id is its Google email, so it is also returned as that account's ID.
+        val password = identity.account.subject.isNullOrBlank()
+        val parent = identity.session.role == "PARENT"
+        val passwordParent = password && parent
+        return mapOf("userId" to identity.account.id, "name" to identity.account.name,
+            "email" to (if (passwordParent) null else identity.account.email),
+            "loginId" to (if (parent) identity.account.email else null),
+            "authMethod" to (if (password) "PASSWORD" else "GOOGLE"),
             "role" to identity.session.role, "permissions" to identity.permissions,
             "child" to child, "nextAction" to destination.nextAction, "startPath" to destination.startPath)
     }
@@ -106,4 +128,6 @@ class AuthController(
         .cacheControl(CacheControl.noStore()).header("Referrer-Policy", "no-referrer")
     data class StudentSessionRequest(val childId: UUID)
     data class ParentUnlockRequest(val password: String)
+    data class AdminLoginRequest(val loginId: String?, val password: String?)
+    data class ParentSignupRequest(val loginId: String?, val password: String?, val name: String?)
 }

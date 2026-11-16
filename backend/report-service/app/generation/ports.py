@@ -18,3 +18,9 @@ class ReportEventCodec(Protocol):
     def encode(
         self, event: ReportEvent, traceparent: str | None
     ) -> EventEnvelope[dict[str, Any]]: ...
+
+
+class OutboxWriter(Protocol):
+    """Test seam; production writes go through app.outbox.service.add_event."""
+
+    def add(self, session: Any, envelope: EventEnvelope[dict[str, Any]]) -> None: ...

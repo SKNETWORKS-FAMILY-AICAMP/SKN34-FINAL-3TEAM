@@ -106,6 +106,23 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
     private fun narrative(attempt: Attempt, text: String, followupId: UUID? = null) =
         submit(attempt, AnswerContent(text = text), InputType.NARRATIVE, followupId)
 
+    @Test
+    fun `논술 미션의 네 칸 이름과 원문을 함께 전달한다`() {
+        val setup = setup("ESSAY", grade = 5, elements = listOf("주장"))
+        val labels = listOf("내 생각", "첫 근거", "둘째 근거", "다른 생각")
+        jdbc.update("UPDATE mission_version SET input_template = ?::jsonb WHERE id = ?",
+            objectMapper.writeValueAsString(labels), setup.attempt.missionVersionId)
+        judgeReturns("CORRECT", listOf(setup.elements[0] to "도서관이 필요해요"))
+        followupReturns("ONE_STEP_MORE", "어떤 책을 읽고 싶나요?")
+        val answer = submit(setup.attempt, AnswerContent(essay = com.sagomungchi.learning.answer.domain.Essay(
+            "도서관이 필요해요", listOf("책을 읽을 수 있어요", "함께 공부할 수 있어요"), "조용히 이용하면 돼요")), InputType.ESSAY)
+        facade.feedback(answer.id)
+        val sent = lastBody("/internal/judgments")
+        assertEquals(labels, sent["essayLabels"].map { it.asText() })
+        assertTrue(sent["answerText"].asText().startsWith("내 생각: 도서관이 필요해요"))
+        assertEquals(sent["answerText"].asText(), jdbc.queryForObject("SELECT plain_text FROM answer WHERE id = ?", String::class.java, answer.id))
+    }
+
     private fun judgeReturns(result: String, elements: List<Pair<UUID, String?>>, heldReason: String? = null) {
         val items = elements.joinToString(",") { (id, quote) ->
             """{"elementId":"$id","quote":${quote?.let { "\"$it\"" } ?: "null"},"verified":${quote != null},"satisfied":${quote != null}}"""

@@ -11,6 +11,8 @@ from testcontainers.community.postgres import PostgresContainer
 from app.database import create_db_engine
 
 os.environ.setdefault("INTERNAL_TOKEN", "test-token")
+# 모든 호출자에 같은 토큰. 경로 허용 목록은 그대로 적용됨
+os.environ.setdefault("INTERNAL_TOKEN_CORE", "test-token")
 os.environ.setdefault("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:1/")
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://u:p@127.0.0.1:1/x")
 # 앱 lifespan의 S3 클라이언트 생성은 합성 자격 증명으로만 수행한다.

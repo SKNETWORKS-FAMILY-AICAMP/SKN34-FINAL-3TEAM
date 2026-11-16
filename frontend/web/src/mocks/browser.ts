@@ -3,10 +3,15 @@ import { paymentHandlers } from './handlers/payments.ts'
 import { adminServiceHandlers } from './handlers/adminService.ts'
 import { setupWorker } from 'msw/browser'
 import { serviceHandlers } from './handlers/service.ts'
-import { studentHandlers, setMockScenario } from './handlers/student.ts'
+import { studentHandlers, setMockScenario, mockStudent } from './handlers/student.ts'
+import { applyMockThemeState } from './fixtures/themeState.ts'
+import type { MockThemeState } from './fixtures/themeState.ts'
 import type { DemoScenario } from '../domain/classroom.ts'
 import { parentHandlers } from './handlers/parent.ts'
+import { retentionHandlers } from './handlers/retention.ts'
+import { memoryHandlers } from './handlers/memory.ts'
 import { adminHandlers } from './handlers/admin.ts'
+import { adminThemeDraftHandlers } from './handlers/adminThemeDrafts.ts'
 import { setWorkspaceScenario } from './fixtures/accounts.ts'
 import { setMockChildPlan } from './fixtures/childPlan.ts'
 import { studentDeviceHandlers } from './handlers/studentDevice.ts'
@@ -19,9 +24,13 @@ export const mockHandlers = [
   ...guardianTransferHandlers,
   ...paymentHandlers,
   ...adminServiceHandlers,
+  // 커뮤니티 신고·선택 동의는 기존 신고·동의 목업보다 먼저 받아야 한다.
+  ...retentionHandlers,
+  ...memoryHandlers,
   ...serviceHandlers,
   ...studentDeviceHandlers,
   ...parentHandlers,
+  ...adminThemeDraftHandlers,
   ...adminHandlers,
   ...studentHandlers,
 ]
@@ -46,6 +55,13 @@ export function installMockEvents() {
   window.addEventListener('sagomungchi:workspace-scenario', (event) =>
     setWorkspaceScenario((event as CustomEvent<string>).detail),
   )
+  // 개발 목업 "홈 상태"(캔버스 Home 보드와 같은 8가지)·프리미엄 바꿔 보기
+  window.addEventListener('sagomungchi:mock-theme-state', (event) => {
+    const { state, premium } = (event as CustomEvent<{ state: MockThemeState | ''; premium: boolean }>).detail
+    let student
+    try { student = mockStudent() } catch { return }
+    void applyMockThemeState(student, state, premium).finally(() => window.dispatchEvent(new Event('sagomungchi:mock-theme-state-applied')))
+  })
   window.addEventListener('sagomungchi:mock-scenario', (event) =>
     setMockScenario((event as CustomEvent<DemoScenario>).detail),
   )

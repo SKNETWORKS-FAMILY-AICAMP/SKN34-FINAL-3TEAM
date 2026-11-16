@@ -1,4 +1,4 @@
-# learning 학습 서비스 (#22~#27·#79·#80·#128·#145·#146·#82·#169·#137·#205·#241·#207·#201)
+# learning 학습 서비스
 
 계약은 [API 명세](../design/api-spec.md) 2.2·3.1~3.8·4.1과 [learning OpenAPI](../../contracts/openapi/learning-service.yaml), 판정 상태는 [상태 다이어그램](../design/state-diagram.md) 3장.
 
@@ -9,6 +9,7 @@
 - 상세는 목록과 같은 범위. 비공개·범위 밖 409 `MISSION_NOT_AVAILABLE`, 없으면 404
 - 수행 상태는 `MissionRepository`가 미션별 가장 최근 시도로 읽음(없으면 `NOT_STARTED`). `AttemptService`를 부르면 순환이라 Repository에서 직접
 - 진행 중 시도는 시작 당시 미션 버전을 유지(P07). 목록·상세는 현재 공개 버전
+- 2026-11-06 결정([서비스 기획 방향](planning.md#3-서비스-기획-방향-리텐션일일-리포트-2026-11-06-p20p25)): 학생 기본 경로가 주간 테마 당일 문제로 바뀌고 이 목록은 추가 문제(`EXTRA`) 고르기로 쓴다. 테마·요일 검사는 learning `theme`(24절, [API 2.11](../design/api-spec.md), [ERD 4.2.1](../design/erd.md#421-주간-테마-p23-385-v11v12))
 
 ### 데모 미션 시드
 
@@ -49,10 +50,10 @@
 | 첫 초안 | 시도 생성 트랜잭션에서 빈 초안(version 0) 생성, 저장은 항상 `UPDATE … WHERE version = :ifMatch` | 충돌 시 최신 초안을 항상 돌려줄 수 있음. version 0은 `savedAt` 없음 |
 | `If-Match` | `"7"`·`7`·`W/"7"` 허용, 아니면 400. 응답 `ETag`는 `"8"` | api-spec 1.4 |
 | 초안 충돌 | 409 `ATTEMPT_DRAFT_CONFLICT` + `latest` + 최신 `ETag`(attempt 전용 예외로 공통 처리 불변) | FN-LRN-17 |
-| 초안 저장 잠금 | 시도 행을 잠그고(`lockOwned`) 열림 확인 후 저장 | 마무리·돌아보기와 같은 순서로 직렬화([점검 기록 B14](audit.md)) |
+| 초안 저장 잠금 | 시도 행을 잠그고(`lockOwned`) 열림 확인 후 저장 | 마무리·돌아보기와 같은 순서로 직렬화([점검 기록 B14](testing-ci.md#5-develop-종합-점검-원장-16회차)) |
 | 쓰기 막는 때 | `COMPLETED` 시도의 초안·생각 열기는 409 `ATTEMPT_CLOSED`. 마무리 뒤 막는 것은 답변 제출 | state-diagram 3.2, P04 |
 | 생각 열기 | 열지 않은 질문을 `seq` 순으로, 다 열면 마지막 질문 반복, 열 때마다 `hint_usage` 기록. 질문 없는 미션 404 | 도움 이용 집계 근거(P08) |
-| 하루 미션 한도 | learning은 확인하지 않음 | core Redis 책임 |
+| 하루 미션 한도 | learning은 확인하지 않음 | core 책임. #210 결정으로 Redis가 아닌 PostgreSQL(`mission_daily_usage`, 무료 하루 1개 #387 구현 → 2026-11-10 개정 core #485부터 무료 테마 문제는 한도 없음·무료 `EXTRA` 재활성 때만). 무료 테마 문제 주 5개는 learning 누적 공개 규칙(#484) |
 
 ## 3. 답변 제출 (#24)
 
@@ -88,7 +89,7 @@
 | ai 호출 | 응답 35초, 재시도 없음, 서킷 20건·50%·30초(core와 같은 값). 요청 본문에 학생 이름·ID 없음(학년만) |
 | 결과 조회 순서 | 판정 행을 먼저 읽고 요소·되묻기를 읽음(READ COMMITTED에서 섞임 방지) |
 
-- 후속(이슈 분리): 판정 정정 수신 API(#80, 8절에서 구현), 미션 공개 검사(#81, 고르기도 요소 1개 이상 등), 판정 요청에 미션 질문 넣기, 고착 `RUNNING` 1분 주기 탐지(#241, 17절에서 구현)
+- 후속 결과: 판정 정정 수신 API(#80, 8절)·미션 공개 검사(#81)·고착 `RUNNING` 1분 주기 탐지(#241, 17절) 구현. 판정 요청의 미션 질문(`AiModels.question`)은 M2 입력에만 사용
 
 ## 5. 마무리·돌아보기·자기 평가 (#26)
 
@@ -100,6 +101,7 @@
 - 자기 평가: 마무리 뒤·완료 전. `{checks:[{elementId, checked}]}` 일부만 보내도 되고 재전송은 `checked`만 변경. 응답은 요소마다 `{elementId, label, selfChecked, aiChecked, quote}`
 - 마무리 경합: 판정 `saveResult` 트랜잭션 시작에서 시도 행을 `FOR UPDATE`로 다시 읽어 닫혔으면 되묻기를 저장하지 않음(마무리 대기·거절은 P04에 없는 조건이라 채택하지 않음)
 - 잠금 순서는 모두 시도 → 판정
+- P20·P21([서비스 기획 방향](planning.md#3-서비스-기획-방향-리텐션일일-리포트-2026-11-06-p20p25)): 돌아보기 저장(학습 완료) 성공 뒤 core가 포인트를 적립하고(core #389 구현, 미션은 시도 상세로 확인), 커뮤니티 공개가 켜진 학생이면 learning에 공유를 요청한다(#388 구현, 학생·미션당 1개, 처음 마무리한 시도의 마지막 답변). 시작 요청 `context`가 `THEME_DAY`면 신규 시도만 요일 검사
 
 ## 6. 학습 기록 조회 (#27)
 
@@ -124,11 +126,13 @@
 | 분류 | `mission_version.categories`, 그룹 이름 제공·없는 그룹 422·유출 검사 정답 전달. 아이가 기준을 정하는 분류는 서술 미션 |
 | 마이그레이션 | learning `V6__mission_categories_and_answer_unit.sql`(기존 V1~V5 불변) |
 
-- 웹 확인 필요: 최종 답 칸 뒤 `answerUnit` 표시, `categories` 표시, 수학 체크리스트의 "최종 답" 항목
+- 웹 표시: `answerUnit`·`categories`는 `StudentWorkPage`에 반영. 수학 체크리스트의 "최종 답" 항목은 확인 필요
 
 ## 8. 판정 정정 수신 (#80)
 
 core #46 관리자가 신고를 검토해 판정을 고치면 core가 `POST /internal/judgments/{judgmentId}/corrections`로 알림. 원판정·요소·답변은 그대로 두고 `judgment_correction` 행을 추가하고, 조회 때 최신 정정 결과를 보여 줌(FN-SUP-03, ERD "덮어쓰기 금지"). 설계 이름(`CorrectionController`·`JudgmentService.correct`·`CorrectionRepository`·`JudgmentCorrection`) 그대로, DB 변경 없음(V2 테이블). core 소비 계약은 `feature/core-support`의 `contracts/openapi/support-learning-required.yaml`(0.2.0 `x-correction-rules`)
+
+#244: 기록 응답 `judgment.corrected`를 추가(최신 정정이 있으면 true). 정정은 결과만 바꾸고 요소는 원판정 그대로라 report가 요소 지표에서 뺄 때 씀. 전체 내용은 [support-admin](core-gateway.md#21-신고문의공지도움말-46) 「정정 영향 판정과 표시」
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
@@ -146,7 +150,7 @@ core #46 관리자가 신고를 검토해 판정을 고치면 core가 `POST /int
 
 ## 9. 학생 삭제 소비·완료 보고 (#128)
 
-core가 자녀 삭제·탈퇴를 확정하면 `student.deleted`를 보내고, learning·report 두 곳의 완료 보고가 모두 와야 삭제 요청이 `COMPLETED`가 됨(api-spec 5.6). learning에 소비자가 없어 삭제·탈퇴가 끝나지 않던 문제([점검 기록 B3](audit.md))를 고침. 클래스 다이어그램 4.3 이름(`StudentDeletedConsumer`·`StudentDeletionService`·`CoreClient`·`DeletedStudentRepository`·`ProcessedEventRepository`·`AttemptService.deleteByStudent`) 그대로, DB 변경 없음(큐는 `definitions.json`, 표는 V3)
+core가 자녀 삭제·탈퇴를 확정하면 `student.deleted`를 보내고, learning·report 두 곳의 완료 보고가 모두 와야 삭제 요청이 `COMPLETED`가 됨(api-spec 5.6). learning에 소비자가 없어 삭제·탈퇴가 끝나지 않던 문제([점검 기록 B3](testing-ci.md#5-develop-종합-점검-원장-16회차))를 고침. 클래스 다이어그램 4.3 이름(`StudentDeletedConsumer`·`StudentDeletionService`·`CoreClient`·`DeletedStudentRepository`·`ProcessedEventRepository`·`AttemptService.deleteByStudent`) 그대로, DB 변경 없음(큐는 `definitions.json`, 표는 V3)
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
@@ -188,7 +192,7 @@ core #126(#47)이 관리자 미션 요청 10개(경로 8개)를 learning `/inter
   - 연동 검증 스크립트 4개(`verify_dashboard_learning`·`verify_report_learning`·`report_integration/scenario`·`verify_feedback_learning`): DB에 직접 넣는 게시 미션에 `published_*`도 채움(V7 뒤 학생 시작 실패 방지, CI 밖 수동 검증)
   - class-diagram 4.1 구현 상태 줄: #128 뒤에도 남아 있던 "`deleteByStudent` 미구현", "별도 `RubricRepository` 없음"
 - 확인 필요·한계:
-  - core가 learning 404를 아직 503 `ADMIN_MISSIONS_UNAVAILABLE`로 바꿈(없는 미션 실제 확인). core가 고치기로 함
+  - 당시 core가 learning 404를 503 `ADMIN_MISSIONS_UNAVAILABLE`로 바꿨으나, 이후 `AdminLearningService`가 404 `NOT_FOUND`를 그대로 전달하도록 수정됨
 
 ## 11. 신고 지원 조회 (#146)
 
@@ -230,7 +234,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 
 ## 13. domain 프레임워크 의존 정리 (#169)
 
-[점검 기록](audit.md) A3: learning domain 6개 파일이 `HttpStatus`(5개)·Jackson `@JsonInclude`(`Support.kt`)를 참조해 아키텍처 2.1 "Domain은 프레임워크 의존 금지"와 다름. 확인 필요 항목(domain의 HttpStatus 허용 여부)은 허용하지 않는 쪽으로 정함(core #168과 같은 결정 대상). 설계 문서의 원칙은 그대로이고, API 응답(code·status·본문)은 바뀌지 않음
+[점검 기록](testing-ci.md#5-develop-종합-점검-원장-16회차) A3: learning domain 6개 파일이 `HttpStatus`(5개)·Jackson `@JsonInclude`(`Support.kt`)를 참조해 아키텍처 2.1 "Domain은 프레임워크 의존 금지"와 다름. 확인 필요 항목(domain의 HttpStatus 허용 여부)은 허용하지 않는 쪽으로 정함(core #168과 같은 결정 대상). 설계 문서의 원칙은 그대로이고, API 응답(code·status·본문)은 바뀌지 않음
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
@@ -244,7 +248,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 
 ## 14. 공통 예외·초안 저장 경합 테스트 (#137)
 
-[점검 기록](audit.md) 1회차 테스트 공백의 learning 테스트 공백을 채움. 테스트만 추가했고 코드·설계·API 계약은 바꾸지 않음
+[점검 기록](testing-ci.md#5-develop-종합-점검-원장-16회차) 1회차 테스트 공백의 learning 테스트 공백을 채움. 테스트만 추가했고 코드·설계·API 계약은 바꾸지 않음
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
@@ -257,33 +261,9 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 
 ### 수정 범위와 실행 전제
 
-`scripts/verify_feedback_learning.py`가 임의 포트로 core를 띄우면서 learning에는 `CORE_URL`을 전달하지 않아 결제 사용 확인이 기본 8080으로 향했다. 실제 `core_url`을 전달하고, core 알림 구독자의 기동에 필요한 전용 Redis를 준비한다. production 코드·application.yml 기본값·공개 API·오류 계약·DB 스키마는 변경하지 않는다. 아키텍처 변경 없음.
-
-- 기본 모드: 기존 PostgreSQL 이미지 `postgres:17.11-alpine`과 저장소에서 쓰는 `redis:8.2.10-alpine`을 실행별 고유 컨테이너로 생성한다. 호스트 루프백의 동적 포트만 공개하고 각 컨테이너는 CPU 0.5, 메모리 DB 256MiB·Redis 64MiB로 제한한다. Redis 영속 저장은 끈다. Redis PING/PONG 뒤 앱을 시작한다.
-- 자식 JVM에 `CORE_URL`·`LEARNING_URL`·`AI_URL`과 `REDIS_HOST`·`REDIS_PORT`·빈 `REDIS_PASSWORD`를 명시해 기존 셸의 다른 Redis 설정을 물려받지 않는다. 앱 준비 확인은 readiness를 사용하며 이 검증 실행의 core 그룹에만 `redis`를 포함한다(learning은 DB). 검증 흐름은 공개 SSE 요청 → core → learning HTTP, learning → core 결제 사용 확인 및 learning → AI HTTP 대역이다.
-- 종료·예외·Ctrl+C 시 자식 JVM·AI HTTP 서버·로그를 닫고, 이 실행에서 생성한 정확한 컨테이너 ID만 `docker rm -f -v`로 역순 제거한다. 시작 전 생성된 컨테이너도 추적하며 이미지가 만든 익명 볼륨을 함께 제거한다. `--rm` 컨테이너를 `rm -f`로 직접 제거했을 때 익명 볼륨이 남는 것을 실제 이벤트·볼륨 조회로 발견해 `-v`를 명시했다. 정리 실패 하나가 나머지 컨테이너 정리를 막지 않으며 원래 오류에 정리 실패를 추가한다. 정리가 실패한 실행은 PASS JSON을 만들지 않는다. 강제 프로세스 종료·호스트 종료 시 finally 실행은 보장하지 않는다.
-- `--java`·`--output`·`--core-ref`·`--learning-ref`·`--learning-source`·`--learning-merged`는 유지한다. refs는 실제 JAR 빌드 소스를 기록하며 두 소스가 다르거나 미병합이면 각각 그대로 적는다. 결과 JSON은 기존 사례·JAR SHA-256과 실제 서비스 URL·Redis 주소·인프라 소유권·익명 볼륨 이름·제거한 컨테이너 ID를 함께 남긴다. 로그와 출력은 실행별 전용 디렉터리(`build/issue164/...`)에 둔다.
-
-저장소 루트에서 JDK 21과 Python 3.12, Docker Desktop Linux 엔진을 준비한다. core·learning 각각 `gradlew bootJar --no-daemon --max-workers=1 --no-watch-fs --console=plain -Pkotlin.compiler.execution.strategy=in-process`로 빌드한다. Windows는 각 서비스 디렉터리에서 `gradlew.bat`를 사용한다. 다음 명령은 두 JAR를 현재 checkout에서 빌드했고 그 checkout이 develop에 병합된 소스인 경우의 PowerShell 예시다(미병합 learning 소스는 `--learning-merged` 생략).
-
-```powershell
-$sourceRef = git rev-parse HEAD
-python scripts/verify_feedback_learning.py `
-  --core-jar backend/core-service/build/libs/core-service-0.0.1-SNAPSHOT.jar `
-  --learning-jar backend/learning-service/build/libs/learning-service-0.0.1-SNAPSHOT.jar `
-  --learning-source . --core-ref $sourceRef --learning-ref $sourceRef --learning-merged `
-  --java "$env:JAVA_HOME/bin/java.exe" --output build/issue164/run/result.json
-```
-
-Docker CLI가 없는 Linux 실행 환경은 아래 전용 sidecar 모드를 사용한다. DB·Redis 주소는 반드시 함께 지정하고 공유 호스트를 넣지 않는다. 접두사는 안전장치일 뿐 실제 독점 소유권을 증명하지 않으므로 호출자가 새 인스턴스임을 보장한다.
-
-| 항목 | 호출자가 먼저 준비할 값 |
-|---|---|
-| 네트워크 | 이 검증 전용 Docker network. JDK 21·Python·`psycopg[binary]`가 있는 실행 컨테이너와 아래 sidecar 두 개만 연결 |
-| DB | `issue39-feedback-db-<고유값>`, `postgres:17.11-alpine`, TCP 5432, 사용자 `issue39`, 암호 `issue39-disposable-password`, 초기 DB `issue39_core_feedback`. `pg_isready -h 127.0.0.1 -U issue39 -d issue39_core_feedback` 성공까지 기다림 |
-| Redis | `issue39-feedback-redis-<고유값>`, `redis:8.2.10-alpine`, TCP 6379, 암호 없음, `redis-server --save '' --appendonly no`. 실행 컨테이너에서 해당 이름으로 연결 가능해야 함 |
-| 인자 | 기존 JAR·ref·출력 인자에 `--db-host issue39-feedback-db-<고유값> --redis-host issue39-feedback-redis-<고유값>` 추가. 기존 외부 DB 단독 호출도 Redis 인자를 보완해야 함 |
-| 정리 | 스크립트는 두 sidecar·network를 삭제하지 않음. 호출자가 성공·실패·중단 뒤 자신이 만든 정확한 컨테이너 ID만 제거하고 마지막에 전용 network를 제거. DB는 새 인스턴스만 사용(learning DB 생성·마이그레이션이 있어 재사용 불가) |
+- 원인: `scripts/verify_feedback_learning.py`가 임의 포트로 core를 띄우면서 learning에 `CORE_URL`을 넘기지 않아 결제 사용 확인이 기본 8080으로 향함
+- 수정: 실행별 고유 PostgreSQL(`postgres:17.11-alpine`)·Redis(`redis:8.2.10-alpine`) 컨테이너, 자식 JVM에 서비스 URL·Redis 설정 명시, 종료·예외 때 이 실행의 컨테이너만 역순 제거
+- 실행: JDK 21·Python 3.12·Docker로 core·learning `bootJar` 후 스크립트 실행(인자는 스크립트 `--help`). Docker CLI가 없는 Linux에서는 `--db-host`·`--redis-host`로 호출자가 만든 일회용 sidecar를 지정하고 정리도 호출자가 함
 
 ### 검증
 
@@ -291,125 +271,99 @@ Docker CLI가 없는 Linux 실행 환경은 아래 전용 sidecar 모드를 사�
 
 ## 16. 학생 답변 표현 필터링 (#205)
 
-10/29 멘토링("초~중학생 대상이라 욕설·비속어 입력 대응 필수, 공신력 있는 가이드 기반 필터링·제출 차단")과 11/1 결정("유사 서비스 방식 탐색 후 답변 필터링, 필터 대상이면 제출 차단", [멘토링 기록](planning-decisions.md#1-1029-오프라인-멘토링-결정후속))에 따라 학생 답변(최초·보완)에 표현 검사를 넣음. 막는 답변은 저장·판정 요청 없이 `422 ANSWER_INAPPROPRIATE`. 계약은 [API 명세](../design/api-spec.md) 1.3과 4.1 답변 제출 줄, learning OpenAPI `submitAnswer` 422·`SubmitRequest`
-
-### 조사
-
-| 대상 | 방식 | 이번에 따른 것 |
-|---|---|---|
-| Scratch | 제출 차단, 걸린 단어 비공개, 예외 목록 | 제출 차단·걸린 말 비공개·오탐 예외 |
-| Roblox(13세 미만 채팅) | 가리기, 전화번호·주소 걸러 냄 | 연락처 범주 |
-| 네이버 클린봇·세이프봇 | AI 판단·가리기 | 따르지 않음(외부 AI 없이, 아래 사용자 결정) |
-| Code.org | 외부 필터 API | 따르지 않음 |
-| 국내 초중등 학습 서비스(밀크T·홈런·스마트올·클래스팅·엔트리·AI 디지털교과서) | 공개 자료 없음, 직접 시험 못 함 | 한계로 기록 |
-
-| 출처 | 라이선스·조건 | 결정 |
-|---|---|---|
-| [korcen](https://github.com/Tanat05/korcen) 2026판 `eecd9763` | MIT | 데이터·전처리 규칙만 JSON으로 옮김(코드·의존성 없음) |
-| korcen 2023판 `2cfdf958` | Apache 2.0 | 2026판에 없는 항목만. 2024-11 개편에서 `씨발`(오탐 예외로만 남음)·`존나`·`졸라`가 빠진 것을 측정에서 확인해 보충 |
-| 국립국어원 우리말샘 Open API | CC BY-SA 2.0 KR | 뜻풀이가 "욕하여·욕으로·비속하게 이르는 말"로 끝나는 3자 이상 일반어 61개 + "낮잡아·속되게 이르는 말" 중 데이터로 확인한 7개. 키는 `.env`, 응답 원자료는 저장소에 넣지 않음 |
-| Curse-detection-data, NSMC test | MIT, CC0 | 측정에만 씀. 저장소에 넣지 않음 |
-| KISO 이용자보호시스템(KSS) | 기업 신청 외부 API | 쓰지 않음. 학생 원문이 외부로 나가 NFR-SEC-03·architecture 4.3 허용 목록과 충돌, 장애 시 처리·키 관리·승인 시점 미정. 후속 |
-| LDNOOBW `ko` | CC BY 4.0 | 쓰지 않음. 72개, 검색 자동완성용이라 korcen·우리말샘으로 대신 |
-| hlog2e/bad_word_list, badwords-ko | 라이선스 없음, 단어 출처 불명 | 쓰지 않음 |
-| AI Hub 텍스트 윤리검증, K-MHaS | 신청·용도 제한(공개 저장소 재배포 불가), 원 저장소 라이선스 미확인 | 쓰지 않음 |
+10/29 멘토링과 11/1 결정([기획 1절](planning.md#1-1029-오프라인-멘토링-결정후속))에 따라 학생 답변(최초·보완)에 표현 검사를 넣음. 막는 답변은 저장·판정 요청 없이 `422 ANSWER_INAPPROPRIATE`. 계약은 [API 명세](../design/api-spec.md) 1.3·4.1.
 
 ### 기준과 범주
 
-| 범주(`ExpressionCategory`) | 근거 | 처리 | 안내(`detail`) |
-|---|---|---|---|
-| `PROFANITY` 욕설·비속어 | 청소년 보호법 시행령 [별표 2] 2.차, 방송심의에 관한 규정 제51조 제3항 | 항상 차단 | "고운 말로 바꿔서 다시 적어 주세요." |
-| `SEXUAL` 성적 표현 | [별표 2] 2.가·나·라, 같은 규정 제35조 제2항 | 항상 차단 | 같음 |
-| `HATE` 혐오·차별 | KISO 혐오표현 자율정책 가이드라인 제2조, 같은 규정 제21조 제3항 | 미션 본문에 나온 말이면 허용([별표 2] 1.가 맥락 고려) | 같음 |
-| `THREAT` 남을 향한 위협·자해 조장 | [별표 2] 2.바·사 | 항상 차단. 자기 감정 표현("죽고 싶다")은 막지 않음 | 같음 |
-| `PERSONAL_INFO` 연락처(휴대전화·이메일) | 유사 서비스(Roblox·Scratch)의 연락처 공유 금지, 이슈 제목 "금지 표현"과 11/1 결정의 해석(사용자 결정) | 항상 차단 | "전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요." |
+| 범주(`ExpressionCategory`) | 근거 | 처리 |
+|---|---|---|
+| `PROFANITY` 욕설·비속어 | 청소년 보호법 시행령 [별표 2] 2.차, 방송심의에 관한 규정 제51조 제3항 | 항상 차단 |
+| `SEXUAL` 성적 표현 | [별표 2] 2.가·나·라, 같은 규정 제35조 제2항 | 항상 차단 |
+| `HATE` 혐오·차별 | KISO 혐오표현 자율정책 가이드라인 제2조 | 미션 본문에 나온 말이면 허용 |
+| `THREAT` 남을 향한 위협·자해 조장 | [별표 2] 2.바·사 | 항상 차단. 자기 감정 표현("죽고 싶다")은 막지 않음 |
+| `PERSONAL_INFO` 연락처(휴대전화·이메일) | 유사 서비스(Roblox·Scratch)의 연락처 공유 금지(사용자 결정) | 항상 차단 |
 
-- 응답 `title`은 범주와 관계없이 "고쳐야 할 말이 있어요"(목업·실제 화면 비교 후 사용자 결정). 걸린 말·원문은 응답·로그에 넣지 않음(NFR-SEC-05). 로그는 `답변 표현 차단 attemptId=… category=…`
-- [별표 2]의 나머지 항목(아·자·카·타·파·하)과 약물·폭력 묘사는 글의 내용을 봐야 해서 단어로 다루지 않음. 단어로 막으면 교과 답변("담배는 몸에 해롭다", "전쟁에서 많이 죽었다")이 막힘
-- 여러 범주에 걸리면 enum 순서(`PROFANITY` → … → `PERSONAL_INFO`)로 하나
+- 응답 `title`은 "고쳐야 할 말이 있어요", `detail`은 범주별 안내. 걸린 말·원문은 응답·로그에 넣지 않음(로그는 `attemptId`·`category`만)
+- [별표 2]의 나머지 항목과 약물·폭력 묘사는 글의 내용을 봐야 해서 단어로 다루지 않음(교과 답변 "담배는 몸에 해롭다"가 막히지 않게)
 
-### 목록 (`backend/learning-service/src/main/resources/answer-filter/`)
+### 목록 출처 (`backend/learning-service/src/main/resources/answer-filter/`)
 
-| 파일 | 내용 |
+| 출처 | 결정 |
 |---|---|
-| `korcen.json` | 2026판 패턴 877·오탐 예외, 2023판에만 있는 패턴 54(`patterns2023`)·예외(`falsePositives2023`), 비슷한 글자 393·여러 글자 15, 범주별 남길 글자·치환. 범주 `general`·`minor`·`parent` → `PROFANITY`, `sexual` → `SEXUAL`, `race`·`belittle` → `HATE` |
-| `urimalsaem.json` | 61개, 항목마다 `targetCode`(우리말샘 원 항목) |
-| `team.json` | 팀 조정과 근거 수치(Curse 욕설·정상 표시 문장 수, NSMC 문장 수): 뺀 패턴 18, 좁힌 korcen 예외 1(`씨발라` → `수박씨발라`), 팀 오탐 예외 74, 맥락 단어 `새끼`와 항상 막는 결합형 8, 데이터로 더한 우리말샘 7, 철자 변형 24, 위협 14(뺀 후보 4) |
-| `korcen-LICENSE.txt`, `korcen-2023-LICENSE.txt` | MIT, Apache 2.0 원문 |
+| [korcen](https://github.com/Tanat05/korcen) 2026판(MIT)·2023판(Apache 2.0) | 데이터·전처리 규칙만 JSON으로 옮김(`korcen.json`). 2023판은 2026판에서 빠진 `씨발`·`존나` 등 보충 |
+| 국립국어원 우리말샘 Open API(CC BY-SA) | 뜻풀이가 "욕하여·비속하게 이르는 말"로 끝나는 일반어 61개 + 데이터로 확인한 7개(`urimalsaem.json`) |
+| 팀 조정(`team.json`) | 뺀 패턴 18, 오탐 예외 74, 맥락 단어 `새끼`와 항상 막는 결합형 8, 철자 변형 24, 위협 14. 근거 수치 포함 |
+| KISO KSS, LDNOOBW, 라이선스 없는 목록, AI Hub 윤리검증 | 쓰지 않음(학생 원문 외부 전송·라이선스·용도 제한) |
 
-- 원칙(사용자 결정): 팀이 낱말을 지어내지 않음. 더하는 말은 출처(korcen·우리말샘)나 측정 데이터에 실제로 나온 것만, 빼는 말은 겹치는 정상 문장 예와 횟수를 남김. 생성·측정 스크립트와 원자료는 저장소 밖
-- 뺀 korcen 패턴 예: `보지`(책을 보지)·`자지`(잠을 자지)·`세끼`(하루 세끼)·`시바`(시바견)·`자위`(자위권)·`운지`(행운지수)·`야스`(야스쿠니)·`깔보`·`뒤져`(가방을 뒤져, 위협 쓰임은 `THREAT`의 `뒤져라`·`뒤질래`로)·`ㅅㅅ`·`qt`·`tq` 등
-- 팀 오탐 예외 예: `새끼손가락`·`새끼줄`·`새끼를낳`·동물+`새끼`(22종), `강조까지`·`글자지`·`전개같`·`마이애미`, `닥쳐올`·`닥쳐왔`(닥치다=다가오다), `등신대`·`팔등신`·`0~9등신`, `눈깔사탕`
-- 맥락 단어 `새끼`: 동물 새끼 뜻이 있어 미션 본문에 나오면 허용. korcen은 맨 `새끼` 하나로 결합형을 잡아, 허용만 두면 미션에 `새끼`가 있을 때 `개새끼`까지 통과 → Curse에서 5회 이상 나온 결합형 8개(`개새끼`·`이새끼`·`저새끼`·`그새끼`·`새끼야`·`새끼들아`·`씹새끼`·`이런새끼`)는 항상 차단. 맨 `새끼`는 Curse 욕설 문장 322 / 정상 표시 8, 데모 미션에는 없음
-- 데이터로 더한 우리말샘 7개(실제 화면에서 `등신`이 통과해 기준을 세움): "낮잡아·속되게 이르는 말" 중 지금 목록으로 안 막히고 Curse 욕설 3회 이상·정상 표시 0 → `등신`·`아가리`·`개쓰레기`·`눈깔`(`PROFANITY`), `갈보`·`돌림빵`(`SEXUAL`), `저능아`(`HATE`). 같은 기준에 걸린 `깡통`·`나발`·`똥꼬`는 정상 낱말이라 뺌
-- 넣지 않은 말(사용자 결정): `바보`·`멍청이`·`호구`(비속어가 아닌 놀림말, `바보` NSMC 97회), 지역·장애를 낮잡는 우리말샘 22개(`봉사`·`장님`·`외다리`·`판수`·`벙어리`는 봉사활동·장님 코끼리 만지기·외다리 서기 같은 교과 문장과 겹치고 Curse 욕설에 거의 없음, 많이 나온 `정신병자`·`찐따`는 korcen에 있음), `홍어`(공신력 있는 출처에 없고 생선 이름)
+- 원칙(사용자 결정): 팀이 낱말을 지어내지 않음. 더하는 말은 출처나 측정 데이터에 실제로 나온 것만, 빼는 말은 겹치는 정상 문장 예와 횟수를 남김
+- 뺀 패턴은 정상 문장과 겹치는 것(`보지`: 책을 보지, `세끼`: 하루 세끼 등). `바보`·`멍청이`는 비속어가 아닌 놀림말이라 넣지 않음
+- 맥락 단어 `새끼`: 동물 새끼 뜻이 있어 미션 본문에 나오면 허용하되 결합형 8개는 항상 차단
 
 ### 검사 흐름 (`ExpressionPolicy`)
 
-1. 대상은 학생이 쓴 칸(`AnswerContent.writtenTexts`: 서술 글, 풀이 최종 답·단계, 논술 4칸)이고 칸마다 따로 검사(칸 사이를 잇지 않음). 원문과 "우회 보기"(전각 → 보통 글자, 한글 바로 옆 영문 한 글자 → 글자 이름, 풀어 쓴 자모 → 글자) 두 글을 검사
-2. 정규화(korcen 전처리): 주소 지우기 → 소문자 → 비슷한 글자(코드포인트 기준, 보조평면 57자 포함) → 여러 글자 → 띄어쓰기 지우기
-3. korcen 범주마다 범주 안 치환 → 오탐 예외 지우기(korcen 원본 그대로 + 글과 같이 정규화한 팀 예외) → 남길 글자만 둔 보기와 한글·자모만 둔 보기에서 부분 일치. 한글·자모 보기는 `시1발`을 잡으려고 #205에서 더함
-4. 낱말 목록(우리말샘 61·더한 7·변형·결합형·위협): 팀 예외를 지운 뒤 자모 포함 보기·한글만 보기에서 부분 일치
-5. `HATE`와 맥락 단어는 같은 말이 미션 본문(제목·질문·안내·선택지·그룹)에 나오면 제외. 연락처는 이메일 형식, 휴대전화(구분 기호 `-`·`.`·괄호·띄어쓰기를 지우고 한글 숫자 `공일공…`을 숫자로)
-6. 위치: `AnswerService.submit`의 누락 검사 다음·되묻기 연결 검사 전(api-spec 4.1 순서). 단어 대조라 외부 호출 없음. 막힌 요청은 core가 422를 같은 키 응답으로 저장(원문 없음), 웹은 답이 바뀌면 새 키
+1. 대상은 학생이 쓴 칸(`AnswerContent.writtenTexts`)이고 칸마다 따로 검사. 원문과 "우회 보기"(전각 → 보통 글자, 한글 옆 영문 한 글자 → 글자 이름, 풀어 쓴 자모 → 글자) 두 글을 검사
+2. 정규화(korcen 전처리): 주소 지우기 → 소문자 → 비슷한 글자 → 띄어쓰기 지우기
+3. korcen 범주별 치환 → 오탐 예외 지우기 → 부분 일치. 한글·자모만 둔 보기는 `시1발`을 잡으려고 추가
+4. `HATE`와 맥락 단어는 같은 말이 미션 본문에 나오면 제외. 연락처는 이메일 형식과 휴대전화(구분 기호·한글 숫자 정규화)
+5. 위치: `AnswerService.submit`의 누락 검사 다음·되묻기 연결 검사 전. 외부 호출 없음
 
-### 우회 표기 범위 (이슈 해야 할 일 3)
+막지 않는 우회: 영문 자판 위치대로 친 글(`qudtls`, 정상 영문 오탐이 훨씬 많음), 말로 쓴 이메일·집 전화번호, 정상 낱말과 겹치는 욕(`졸라`: 엄마를 졸라서).
 
-| 막는 우회 | 예 | 근거 |
-|---|---|---|
-| 띄어쓰기·기호·숫자 끼우기 | `씨 발`, `씨.발`, `씨*발`, `시1발`, `씨8발` | korcen 전처리 + 한글 보기 |
-| 영문 표기·비슷한 글자·센소리·자음 줄임 | `sibal`, `tlqkf`, `씨빨`, `씌발`, `시ㅂ발`, `ㅅㅂ` | korcen 패턴·비슷한 글자 표 |
-| 데이터에서 나온 철자 변형 | `븅신`, `씨밸`, `졵나`, `조온나`, `새낀` | 핵심 욕과 자모 1~2개 다르고 Curse 욕설 문장에 나오며 정상 글·함정에 없는 것 |
-| 풀어 쓴 자모 | `ㅆㅣㅂㅏㄹ`, `ㅂㅕㅇㅅㅣㄴ`, `ㅆㅣ발` | 두벌식 규칙(겹모음·겹받침)으로 합침. `ㅋㅋ`·`ㅠㅠ`·`ㅇㅇ`은 안 합쳐짐. Curse 정상 +0, NSMC +3(모두 실제 욕) |
-| 전각 글자 | `ｓｉｂａｌ`, `０１０-１２３４-５６７８` | 전각 영문·숫자·기호 범위만(NFKC는 호환 자모를 바꿔 `ㅅㅂ` 패턴이 깨져 쓰지 않음). 오탐 +0 |
-| 한글 옆 영문 글자 소리 | `c발`, `C발`, `M창`, `돌I` | 앞뒤가 영문이 아닌 한 글자만 글자 이름으로. `PC방`·`TV에서`·`B형`·`비타민C를`·`K팝`은 그대로. Curse 정상 +0, 데모 0, NSMC +35(모두 실제 욕) |
-| 연락처 표기 | `010.1234.5678`, `(010)1234-5678`, `공일공 일이삼사 오육칠팔` | 구분 기호 지우기·한글 숫자 |
-
-| 막지 않는 우회 | 이유 |
-|---|---|
-| 영문 낱말을 자판 위치대로 친 글(`qudtls` = 병신) | 측정: Curse 욕 +3에 Curse 정상 +33·NSMC +203·데모 문장 47 오탐(`Hello` → `ㅗ디ㅣㅐ`, `ㅗ`가 korcen 손가락 욕 패턴), 주소도 바뀜 |
-| 이메일을 말로 쓰기(`abc 골뱅이 naver.com`), 집 전화번호 | `@` 형식·휴대전화만 봄 |
-| 정상 낱말과 겹치는 욕 | `졸라`(엄마를 졸라서), `병신년`(丙申年), `새 끼니`·`쌍년도`·`애미야`처럼 띄어쓰기를 지우면 생기는 말 |
-
-### 측정 (최종 목록, 기준 구현과 Kotlin 판정 같음)
+### 측정
 
 | 데이터 | 결과 |
 |---|---|
-| Curse-detection-data 욕설 표시 2,044문장 | 1,223 막음(59.8%). 라벨에 욕 없는 모욕·비꼼·정치 비하가 섞여 낮게 나옴. 명시적 욕만 본 새 표본에서는 약 94~95%(목록 9차 시점 표본 검토) |
-| Curse 정상 표시 3,781문장 | 49(1.3%) |
-| NSMC test 리뷰 50,000문장 | 1,030(2.06%). 대부분 리뷰 속 실제 욕이고, 표본 검토로 정상 글 오탐은 약 0.1%(목록 9차 시점) |
-| 우리 데모 문장 491(learning 데모 시드·웹 데모 데이터) | 0 |
-| 학생 글 함정 약 80문장(교과·이야기·계산 답·영어·자음 줄임) | 0. 미션 없이 쓴 "고양이가 새끼를 다섯 마리 낳았다"만 막히고, 미션 본문에 `새끼`가 있으면 허용 |
-| Kotlin(`ExpressionPolicy`)과 Python 기준 구현 | Curse+NSMC 55,825문장 판정이 모두 같음 |
+| Curse-detection-data 욕설 표시 2,044문장 | 59.8% 차단(라벨에 욕 없는 모욕·비꼼이 섞임. 명시적 욕 표본은 약 94~95%) |
+| Curse 정상 표시 3,781문장 | 1.3% |
+| NSMC 리뷰 50,000문장 | 2.06%(대부분 실제 욕, 정상 글 오탐 약 0.1%) |
+| 데모 문장 491·학생 글 함정 약 80문장 | 0 |
 
-- 경과: korcen 2026판 네 범주만 47.8%(`씨발`·`존나`·패드립을 놓침) → 2023판 합침·`parent`·`minor`·한글 보기·오탐 정리·변형 59.1% → 우리말샘 7개 59.8%. 정상 표시 오탐은 49~50으로 거의 그대로
-- 측정 데이터는 성인 인터넷 글이라 초중등 답변과 다름. 그래서 우리 데모 문장과 학생 글 함정을 따로 검사하고 테스트(`ExpressionPolicyTest`)로 고정함
+측정 데이터는 성인 인터넷 글이라 초중등 답변과 다르다. 데모 문장과 학생 글 함정을 `ExpressionPolicyTest`로 고정했다. 생성·측정 스크립트와 원자료는 저장소 밖.
 
-### 실제 앱 확인 (11/02, 로컬 docker compose + web dev)
+### 결정 (11/01~11/02)
 
-- 학부모 Google 로그인 → 자녀(5학년) → 서술 미션에서 욕·연락처·`c발`·`ㅆㅣㅂㅏㄹ` 제출: 화면에 "고쳐야 할 말이 있어요"와 범주별 문구, 입력 유지, 다시 시도 버튼 없음(422). 정상 답은 저장·피드백 진행
-- 처음에 `등신`이 저장되어 위 "데이터로 더한 우리말샘 7개" 기준을 세움. 새 목록 배포(01:25:45 UTC) 뒤 `answer` 테이블에 막힌 답 없음, 로그는 `attemptId`·`category=PROFANITY`만
-- 화면에서 막혀도 "초안 저장 완료"가 보임: 초안 자동 저장(FN-LRN-15)은 검사하지 않아 `attempt_draft`에 남음(아래 사용자 결정)
+- 외부 AI 없음. 제출 전 검수 LLM도 넣지 않음: 막을 글도 LLM으로 보내게 되어 "저장·판정 요청 없이 차단"과 어긋나고 연락처가 LLM으로 넘어감 → 후속 이슈
+- 서버만 검사(단어 목록을 웹 번들에 넣지 않음)
+- 초안(`answer`·`memo`)과 돌아보기 글은 검사하지 않음(초안은 학생 본인만 보고 제출에 성공하면 비워짐)
 
-### 사용자 결정 (11/01~11/02)
+### 한계·확인 필요
 
-- 기준은 공신력 있는 가이드([별표 2]·방송심의 규정·KISO), 목록은 korcen(2026+2023)·우리말샘, 변형·위협·추가 낱말은 데이터에 나온 것만
-- 외부 AI 없음(제출 경로 의존·지연·비용·검증 가능성). 제출 전 검수 LLM도 넣지 않음: 막을 글도 LLM으로 보내게 되어 완료 조건 "저장·판정 요청 없이 차단"과 어긋나고, 연락처가 LLM으로 넘어가며, 제출 경로에 ai 호출·장애 처리·비용 2배가 생김 → 후속 이슈로 설계 다시
-- 범주 5개(연락처 포함), 범주별 안내, 제목 "고쳐야 할 말이 있어요"
-- 서버만 검사: 단어 목록을 웹 번들에 넣지 않음. 웹 데모 모드는 시나리오 `submit-inappropriate`(첫 제출 1회 차단, 연락처처럼 보이면 연락처 안내)
-- 초안(`answer`·`memo`)과 돌아보기 글은 검사하지 않음. 초안 `answer` 검사안을 api-spec·OpenAPI에 넣었다가 되돌림(초안은 학생 본인만 보는 `attempt_draft` 한 행이고 제출에 성공하면 비워짐, 판정·학부모·리포트로 가지 않음)
-- 우회: 자모 합치기·전각·한글 옆 영문 글자 소리는 넣고 영문 자판 위치는 넣지 않음(위 측정)
+- 욕 없는 모욕·비꼼·돌려 말한 성적 표현·특정 친구 놀림은 단어로 못 막음
+- 낱자 `ㅗ`는 korcen 손가락 욕 패턴이라 낱자를 섞어 쓴 글이 걸림
+- 초안 자동 저장·돌아보기 글에는 걸리는 말이 남을 수 있음
+- 학생 자기 감정 표현("죽고 싶다")의 보호자 알림 여부는 별도 기능으로 검토 필요
+- korcen의 MIT·Apache는 코드 라이선스라 단어 데이터의 출처까지 보증하지 않음
 
-- 설계와 다른 점: 없음. 설계에 새로 더함: class-diagram 4.1(`ExpressionPolicy`, `AnswerContent.writtenTexts`, `AnswerService --> ExpressionPolicy`, 답변 표현 검사 설명), sequence-diagram 3.1(검사 줄·설명), functional-spec FN-LRN-05(예외·상태), api-spec 1.3·4.1, learning OpenAPI. 목록 읽기를 `answer/repository`의 설정으로 두고 domain은 Kotlin 정규식만 쓰는 것은 architecture 2.1(domain 의존 금지·데이터 적재는 infrastructure)과 `FinishPolicy` <<value>> 선례를 따름
-- 한계: 욕 없는 모욕·비꼼·돌려 말한 성적 표현·특정 친구 놀림은 단어로 못 막음(후속 검수 LLM). 맥락 허용은 미션 본문에 같은 말이 있는지만 봄. 낱자 `ㅗ`는 korcen 손가락 욕 패턴이라 낱자를 섞어 쓴 글(`ㄱㅗㅏ자`)이 걸림(원래 동작). korcen 원본 오탐 예외 중 숫자가 든 것(`8등신`)은 korcen 정규화 때문에 원본에서도 동작하지 않음(팀 예외는 정규화해서 비교). 측정 데이터의 분포가 초중등 답변과 다름
-- 확인 필요: ① `ANSWER_INAPPROPRIATE`(범주별 `detail`) 팀 공지(api-spec 공유 계약, PR 전 사용자) ② 초안 자동 저장·돌아보기 글에는 걸리는 말이 남을 수 있음(학생 본인만 열람) ③ 학생 자기 감정 표현("죽고 싶다")의 보호자 알림 여부(아동 안전, 별도 기능) ④ korcen의 MIT·Apache는 코드 라이선스라 단어 데이터의 출처까지 보증하지 않음 ⑤ core 동의 문서 시드 부재(로컬 실행 시 발견, core 담당) ⑥ KISO KSS 신청 여부
-- 후속: 검수 LLM(제출 전 별도 검사, ai-service 검수 API·장애 시 처리·오탐·우회·비용 설계), 판정 LLM 응답에 "부적절 표현 의심" 표시(저장 후 보호자·관리자 확인), KISO KSS
+### 분류 모델 단계 (#688, 설계 #689)
+
+단어 목록은 욕 없는 모욕·비꼼을 못 막아(위 한계) 클러스터 안 한국어 분류 모델을 다음 단계로 붙인다. 학생 글은 외부로 보내지 않는다. 계약은 [API 명세](../design/api-spec.md) 4.3.4, 호출 기준은 [아키텍처](../design/architecture.md) 1.3
+
+- 흐름: 시도 잠금 전에 scoring 표현 분류를 불러 결과를 받아 둠 → 트랜잭션 안에서 단어 목록 통과 → 그 결과가 flagged면 `ExpressionCategory.INSULT`로 같은 422·표현 문구("고운 말로 바꿔서 다시 적어 주세요."). 응답에는 범주를 보이지 않음
+- 장애 시 통과로 정한 이유: 단어 목록이 이미 앞에 있고, 모델 장애로 모든 제출이 막히면 학습 자체가 멈춘다. 모델은 놓친 것을 더 잡는 보조 단계다
+- 잠금 전에 부르는 이유: `submit`은 시도 행을 잠근 트랜잭션이라 안에서 기다리면 최대 1.5초 동안 DB 연결과 잠금을 쥔다. 대가로 앞 단계(409·400·누락 422)에서 실패할 요청도 모델을 한 번 부른다. 같은 키 다시 보내기는 저장된 답을 돌려주므로 결과와 무관하다
+- 로그: `attemptId`·`category`·건너뜀 사유(`TIMEOUT`·`UNAVAILABLE`·`CIRCUIT_OPEN`·`INACTIVE`·`REJECTED`)만. 원문·걸린 말·점수 없음(NFR-SEC-05)
+
+| 항목 | 기준안 | 근거 |
+|---|---|---|
+| 응답 시간·서킷 | 연결 0.5초·응답 1.5초, `scoring-toxicity`, 재시도 없음 | 에픽 #688, architecture 1.3 공통 기준 |
+| 이름·범위 | `tox-` 접두어, scope `answer-filter` | 에픽 #688 |
+| 칸 수 | 1~20개, 넘으면 앞 20칸만 | 논술 4칸, 풀이 단계도 보통 몇 개 |
+| 글 길이 | 모든 칸 합계 1,500자, 넘으면 칸 순서대로 앞 1,500자만 검사 | learning에 답 길이 상한이 없음. 11/16 측정(창 128, CPU 1개): 1,000자 0.77초·1,500자 1.12초·2,000자 1.55초(응답 1.5초 넘음), 운영 scoring CPU limit 1개(`scoring-service.json`). AI Hub 초3~6 글 중 1,500자 넘는 비율 논술형 0.6%(8,023편, 1,000자면 16.9%)·서술형 0%·에세이 0%. 넘을 때 건너뛰면 글을 늘려 검사를 피할 수 있어 잘라서 검사 |
+| 창·마감 | 128토큰 창·겹침 32, scoring은 처리 1.3초 넘으면 멈추고 503 | 학습 데이터(K-MHaS·BEEP!) 95%가 100자 미만이라 학습 길이 128과 창을 맞춤, 창 길이에 따른 속도 차이는 거의 없음. learning이 1.5초에 끊은 뒤 버려질 계산으로 다음 요청이 기다리지 않게 |
+| 사용량 | 이벤트 없음, 지표(호출·flagged·건너뜀 사유·지연)만 | #691 본문(LLM 아님, 토큰 단가 없음). core `callType`은 늘리지 않음 |
+| 임계값 | 데모 문장 491·학생 글 함정 약 80문장 오탐 0, 정상 문장 추가 오탐 1% 이하(단어 목록 대비) | 에픽 기준안, 확정 전 |
+
+- 칸 수·글 길이·창·마감·잠금 전 호출은 이슈·에픽에 없어 담당자가 정한 기준안이다. 길이·창·마감은 11/16 측정(분류 머리 학습 전 `beomi/KcELECTRA-base`, 작업 공간 CPU 1개 스레드)이라 #691에서 실제 Pod로, M2와 CPU를 나눠 쓸 때도 다시 잰다. 메모리는 모델 로딩 약 +300MiB·추론 중 약 +300MiB로 limit 2Gi에 빠듯할 수 있어 같이 확인
+- 학습 데이터 후보(#690): 학습 K-MHaS·Korean HateSpeech(BEEP!)(CC BY-SA 4.0), 평가 APEACH(CC BY-SA 4.0), 기본 모델 `beomi/KcELECTRA-base`(MIT). KOLD(라이선스 표기 없음)·Korean UnSmile(상업 사용 문의 필요)은 제외. BEEP!는 저장소 LICENSE 원문, 나머지는 HF 데이터 카드로 확인(11/16). KOLD 저장소에는 LICENSE 파일이 없음
+- 12/7 데모에 넣는 것으로 진행. CC BY-SA는 에픽 제외 기준(비상업 전용·변경 금지·출처 불명)에 해당하지 않아 쓰며, 출처는 모델 문서에 표시하고 원자료·고친 데이터는 커밋·배포하지 않음
+- 확인 필요(팀장): 임계값 기준 확정(#690 결과와 함께)
+- 한계: 학습 데이터가 성인 뉴스 댓글이라 초등 답과 말투가 다르다. 미션 본문에 나온 말을 허용하는 규칙(`HATE`·맥락 단어)이 모델에는 없어 차별을 다루는 미션에서 오탐이 날 수 있다. 합계 1,500자 뒤의 글과 21번째 칸부터는 모델이 보지 않는다. 동시 요청이 몰리면 게이트에서 기다리다 통과될 수 있다. 장애 중에는 단어 목록만 적용된다
 
 ## 17. 고착 RUNNING 판정 1분 주기 탐지 (#241)
 
 P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 같은 답변에 피드백을 다시 요청할 때만 만료 리스를 재획득해서, 처리 Pod 종료·결과 기록 실패(`FeedbackFacade` 실패 기록) 뒤 학생이 떠난 판정은 `RUNNING`으로 계속 남았다.
 
-### 사용자 결정 (11/02)
+### 결정 (11/02)
 
 | 항목 | 결정 | 근거 |
 |---|---|---|
@@ -452,7 +406,7 @@ P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 
 
 `JudgmentServiceTest`: 만료·리스 없음만 전이, 미만료·`PENDING` 유지, 두 번 실행해도 한 번만, 탐지 뒤 재요청이 `FAILED → RUNNING` 후 정상 저장. SQL에서 리스 조건을 빼면 실패함을 확인.
 
-### 알려진 한계
+### 한계
 
 - 리스 90초를 넘겨 아직 살아 있는 처리가 있으면 탐지가 먼저 `FAILED`로 바꿔 그 결과가 버려짐. 탐지 전에는 다른 요청이 가져가지 않았다면 저장됐음. learning→ai 판정·되묻기가 각 35초라 정상 처리는 약 70초 안에 끝나고, 탐지는 리스 획득 90~150초 뒤라 드묾
 - 만료 판단은 각 Pod의 시각 기준(재획득과 같음). Pod 사이 시각 차이만큼 탐지가 앞당겨지거나 늦어짐
@@ -480,358 +434,711 @@ learning의 `spring.threads.virtual.enabled`를 false로 바꿔 기존 Tomcat의
 
 ## 20. 생각 요소 표준 코드 문서·계약 (#262)
 
-기준표 요소 code가 미션마다 자유 값(`e1` 등)이라 미션이 달라지면 같은 요소인지 알 수 없었다. 요구사항 FBF-38(요소 3회 연속 누락 시 그 유형 추천)·FAC-09(요소 지표)·기획서 5.3(4)(같은 유형 미션끼리 요소 비교)를 채우려고 표준 코드를 정했다. 이 이슈는 문서·계약만 고치고, 구현은 PM이 아래 "구현 인계"를 보고 learning·web 이슈로 발행한다.
+기준표 요소 code가 미션마다 자유 값이라 미션이 달라지면 같은 요소인지 알 수 없었다. 요구사항 FBF-38·FAC-09·기획서 5.3(4)(같은 유형 미션끼리 요소 비교)를 채우려고 표준 코드를 정했다. 구현은 #344·#353(learning), #356(web).
 
-### 사용자 결정 (11/03)
+### 결정 (11/03)
 
 | 항목 | 결정 | 근거 |
 |---|---|---|
-| 이슈 범위 | 문서·계약만, 구현은 PM 발행 | 기획 변경 의견이 오면 코드 없이 문서만 고침. 사람 평가(#199)는 표준 코드·공통 설명만 있으면 시작 가능. 이슈 지침 "API 계약 변경은 api-spec 먼저" |
-| FAC-09 "같은 기준표" | 유형별 평가 요소로 해석, 기획서 5.3(4) "같은 유형·학년군 미션끼리"와 같은 뜻 | FAC-09가 "유형/학년군"을 함께 적음(같은 미션끼리면 둘은 하나뿐). 비교 대상(처음 답 충족·되묻기 후 새 요소·연결어 변화)이 기획서 5.3(3)·(4) 지표와 같음 |
-| 요소 3종류 | 유형 공통(표준 코드)·성취기준 고유(`e`+숫자)·정답(`ANSWER_KEY`·`FINAL_ANSWER`) | 기획서 5.3(2) "요소를 성취기준에 맞춰 구체화", 새 컬럼 없이 `FINAL_ANSWER` 선례 |
-| 공통 설명 | 표준 코드마다 한 줄 정의, 미션 요소 설명은 그 구체화 | 같은 코드가 미션마다 같은 뜻으로 판정되고 사람 평가의 "같은 요소표"(기획서 5.3(5))가 됨. 판정 프롬프트는 그대로(LLM은 요소 이름·설명으로 판정하고 code는 받지 않음, `FeedbackFacade` `AiRubricElement`) |
-| 분석하기 | 기획서 2요소 그대로(`ANALYZE_RELATION`·`ANALYZE_REASON`) | 블룸 개정 분류 원문(Anderson & Krathwohl 2001, Potsdam 사본): 분류·비교는 "이해"(Understanding: classifying, comparing), "분석"은 나눈 부분 사이의 관계까지(determining how the parts relate). 11/2 "기획서가 블룸 분석·성취기준(분류·비교)보다 좁다"는 판단을 바로잡음. 비교·분류는 기획서의 기초 사고력 쪽(후속) |
-| 돌아보기 | 바뀐 생각·바뀐 까닭·자기 생각 과정·경험과 연결 **[기획서 변경]** | 시드 M05·M10·M15 모두 바뀐 생각(e1)·바뀐 까닭(e2)·자기 경험 연결(e3, 들어가면 좋은 생각). 기획서 ① "자기 생각 과정"은 미션 질문이 묻지 않아(시드 질문은 등장인물의 변화를 물음, functional-spec 1.5 "요소는 미션 질문에서 요구") 세 번째 요소에 넣음 |
-| M20 | "나의 사용" `REFLECT_CONNECT`, "돌아본 점"·"앞으로의 계획" 고유 | M20은 바뀐 생각이 아니라 지금 습관을 돌아보는 미션. 계획·다짐은 실제 적용이 아님(VALUE Transfer 제외와 같은 이유) |
-| 충족률·보완률 분모 | 필수 요소만, 들어가면 좋은 생각은 따로 셈 **[기획서 변경]** | 판정 규칙이 들어가면 좋은 생각을 필수에서 뺌(ai `judgment/service.py` `_result`). 분모에 넣으면 정답인데 충족률이 100%가 아님 |
-| 정답 예약 코드 | `ANSWER_KEY` 하나로 고르기·순서·분류 | 세 입력 방식은 규칙 판정이라 요소를 모두 정답 키로 기록(`FeedbackFacade.withAnswerKey`, `AI_INPUT_TYPES` 밖). 이름은 판정 출처 `source_type = ANSWER_KEY`와 같게 |
-| 따져 보기 논술 | `EVALUATE_CLAIM`·`EVALUATE_EVIDENCE`·`EVALUATE_PERSPECTIVE` 필수 | 기획서 5.3(3) 논증 요소 충족률(주장·근거·반론). 유형이 다른 논술과 "같은 유형 코드만" 규칙이 부딪히지 않게 따져 보기로 한정 |
-| 기록 응답 필드 | 공통 `Element`에 `code`·`goodThought` | 기록 API는 판정 요소(`elementId`·`label`·`satisfied`·`quote`·`sourceType`)와 `trial`을 이미 줌. report 지표에 빠진 것은 이 둘뿐. 학생 화면과 같이 쓰는 구조라 하나로 유지(#251 `AnswerItem<F>`) |
-| 검사 위치 | 저장 때 code 모양 400, 게시 때 유형·입력 방식 맞춤 422 `rubric.elements.code` | 저장 때는 미션 유형을 모름(미션 내용 `PATCH`와 기준표 `PUT`이 따로). 기존 게시 검사(`Mission.requirePublishable`, `FINAL_ANSWER` 검사)와 같은 자리 |
-| 시범 판정 포함 여부 | report 후속에서 정함 | 이 이슈는 `trial`을 내보내기만 함 |
-| 검증 지표(카파·QWK) | #199에서 정함 | 이 이슈와 무관. 있음/없음처럼 값이 두 개인 판정은 두 값이 같음 |
-| 기록 방식 | 기획 변경 2건을 "확정"으로 쓰고 팀 채팅에 공유, 의견이 오면 수정 | 사용자 결정 |
+| FAC-09 "같은 기준표" | 유형별 평가 요소로 해석 | FAC-09가 "유형/학년군"을 함께 적음 |
+| 요소 3종류 | 유형 공통(표준 코드)·성취기준 고유(`e`+숫자)·정답(`ANSWER_KEY`·`FINAL_ANSWER`) | 기획서 5.3(2), 새 컬럼 없이 `FINAL_ANSWER` 선례 |
+| 공통 설명 | 표준 코드마다 한 줄 정의, 미션 요소 설명은 그 구체화 | 판정 프롬프트는 그대로(LLM은 요소 이름·설명으로 판정하고 code는 받지 않음) |
+| 분석하기 | 기획서 2요소 그대로 | 블룸 개정 분류에서 분류·비교는 "이해", "분석"은 부분 사이의 관계까지. 비교·분류는 기초 사고력 쪽(후속) |
+| 돌아보기 | 바뀐 생각·바뀐 까닭·생각 과정/경험과 연결 **[기획서 변경]** | 시드가 모두 이 구성. 기획서 ① "자기 생각 과정"은 미션 질문이 묻지 않아 세 번째 요소에 넣음 |
+| 충족률·보완률 분모 | 필수 요소만, 들어가면 좋은 생각은 따로 **[기획서 변경]** | 분모에 넣으면 정답인데 충족률이 100%가 아님 |
+| 정답 예약 코드 | `ANSWER_KEY` 하나로 고르기·순서·분류 | 세 입력 방식은 규칙 판정. 이름은 판정 출처 `source_type`과 같게 |
+| 따져 보기 논술 | `EVALUATE_CLAIM`·`EVALUATE_EVIDENCE`·`EVALUATE_PERSPECTIVE` 필수 | 기획서 5.3(3) 논증 요소 충족률 |
+| 기록 응답 필드 | 공통 `Element`에 `code`·`goodThought` | report 지표에 빠진 것은 이 둘뿐 |
+| 검사 위치 | 저장 때 code 모양 400, 게시 때 유형·입력 방식 맞춤 422 `rubric.elements.code` | 저장 때는 미션 유형을 모름(미션 내용 `PATCH`와 기준표 `PUT`이 따로) |
+| DB CHECK | 두지 않음 | 이전 기준표 버전은 불변이라 자유 code가 남고, 미션 유형이 다른 테이블에 있음 |
 
 ### 표준 코드와 근거
 
-VALUE 루브릭 문구는 이슈 근거 자료의 원문 PDF 4종에서 확인했다(11/03).
-
 | 유형 | 코드 | 요소 | 근거 |
 |---|---|---|---|
-| 분석하기 | `ANALYZE_RELATION` | 원인·특징·관계 | 기획서 5.3(1) ①, 블룸 "분석", `[6과07-02]` 원인을 추리 |
+| 분석하기 | `ANALYZE_RELATION` | 원인·특징·관계 | 기획서 5.3(1) ①, 블룸 "분석" |
 | | `ANALYZE_REASON` | 까닭 잇기 | 기획서 5.3(1) ② |
 | 따져 보기 | `EVALUATE_CLAIM` | 주장 | VALUE Critical Thinking "Student's position" |
 | | `EVALUATE_EVIDENCE` | 근거 | 같은 루브릭 "Evidence" |
-| | `EVALUATE_PERSPECTIVE` | 다른 관점·반론 | 같은 루브릭 "Others' points of view are acknowledged" |
+| | `EVALUATE_PERSPECTIVE` | 다른 관점·반론 | 같은 루브릭 "Others' points of view" |
 | 새로 만들기 | `CREATE_NEW` | 새로운 생각 | VALUE Creative Thinking "Innovative Thinking" |
-| | `CREATE_WHY` | 왜 나은지 | 같은 루브릭 "Solving Problems … can articulate reason for choosing solution" |
+| | `CREATE_WHY` | 왜 나은지 | 같은 루브릭 "Solving Problems" |
 | | `CREATE_CONNECT` | 연결·변형 | 같은 루브릭 "Connecting, Synthesizing, Transforming" |
 | 문제 해결하기 | `SOLVE_DEFINE` | 문제 정하기 | VALUE Problem Solving "Define Problem" |
-| | `SOLVE_PLAN` | 방법 세우기 | "Identify Strategies"·"Propose Solutions/Hypotheses" |
+| | `SOLVE_PLAN` | 방법 세우기 | "Identify Strategies"·"Propose Solutions" |
 | | `SOLVE_CHECK` | 결과 확인 | "Evaluate Outcomes" |
 | 돌아보기 | `REFLECT_CHANGE` | 바뀐 생각 | 기획서 5.3(1) ②, VALUE Lifelong Learning "Reflection" |
-| | `REFLECT_REASON` | 바뀐 까닭 | 시드 M05·M10·M15 "바뀐/고친 까닭" |
-| | `REFLECT_CONNECT` | 생각 과정·경험과 연결 | 기획서 5.3(1) ①, "Reflection: Reviews prior learning (past experiences inside and outside of the classroom)", `[6국05-06]` |
+| | `REFLECT_REASON` | 바뀐 까닭 | 시드 M05·M10·M15 |
+| | `REFLECT_CONNECT` | 생각 과정·경험과 연결 | 기획서 5.3(1) ①, "Reflection: Reviews prior learning" |
 
-- 나이: 블룸은 학년이 아니라 생각 방식의 분류이고 VALUE는 대학생용이라, 학년 수준은 기획서 5.3대로 미션마다 연결한 성취기준이 맞춘다(functional-spec 1.5 한계)
-- 뺀 VALUE 항목: Curiosity·Initiative·Independence·Taking Risks·Acquiring Competencies(긴 기간의 행동이라 답 구절로 판정 어려움), Implement Solution(풀이 틀 계산·최종 답 규칙으로 대신), Transfer(돌아보기의 다짐은 실제 적용이 아님)
+- 블룸은 생각 방식의 분류이고 VALUE는 대학생용이라, 학년 수준은 미션마다 연결한 성취기준이 맞춤
+- 뺀 VALUE 항목: Curiosity·Initiative 등(긴 기간의 행동이라 답 구절로 판정 어려움), Transfer(돌아보기의 다짐은 실제 적용이 아님)
+- 시드 20문항 요소 56개: 표준 44·정답 7·고유 5. 같은 행의 code만 바꿔 지난 판정은 `rubric_element_id`로 이어짐
+- `rubric_element.code` 주석에 `A|B` 모양을 쓰면 `verify_db_schema.py`가 CHECK 허용 값으로 읽어 CI가 실패함(`·`로 구분)
 
-### 시드 20문항 code 대조
+### 한계
 
-요소 56개: 표준 44개(79%), 정답 7개, 고유 5개. 같은 행의 code만 바꾸므로 지난 판정은 `judgment_element.rubric_element_id`로 이어지고, 필수·들어가면 좋은 생각 여부(`good_thought`)는 그대로다.
-
-| 미션 | 유형·입력 | e1 | e2 | e3 | e4 |
-|---|---|---|---|---|---|
-| M01·M06·M16 | 분석·고르기 | `ANSWER_KEY` | | | |
-| M02 | 따져·서술 | `EVALUATE_CLAIM` | `EVALUATE_EVIDENCE` | `EVALUATE_PERSPECTIVE` | |
-| M03·M08·M13·M18 | 새로·서술 | `CREATE_NEW` | `CREATE_WHY` | `CREATE_CONNECT` | |
-| M04 | 문제·순서 | `ANSWER_KEY` | | | |
-| M05·M10·M15 | 돌아·서술 | `REFLECT_CHANGE` | `REFLECT_REASON` | `REFLECT_CONNECT` | |
-| M07 | 따져·서술 | 고유 `e1`(사실과 의견) | `EVALUATE_CLAIM`(내 의견) | `EVALUATE_PERSPECTIVE`(의견 비교) | |
-| M09·M14·M19 | 문제·풀이 | `SOLVE_DEFINE` | `SOLVE_PLAN` | `SOLVE_CHECK` | `FINAL_ANSWER`(그대로) |
-| M11 | 분석·서술 | 고유 `e1`(관찰 사실) | `ANALYZE_RELATION`(원인) | `ANALYZE_REASON`(까닭 잇기) | |
-| M12 | 따져·논술 | `EVALUATE_CLAIM` | `EVALUATE_PERSPECTIVE`(근거 평가) | `EVALUATE_EVIDENCE` | |
-| M17 | 따져·논술 | `EVALUATE_CLAIM` | `EVALUATE_EVIDENCE` | `EVALUATE_PERSPECTIVE` | 고유 `e4`(근거 출처) |
-| M20 | 돌아·서술 | `REFLECT_CONNECT`(나의 사용) | 고유 `e2`(돌아본 점) | 고유 `e3`(앞으로의 계획) | |
-
-- M12 "근거 평가"는 논술 틀 "반대 의견에 답하기" 칸에서 지우의 까닭을 따지는 요소라(시드 안내 문구) 반론으로 본다
-- 모든 시드가 게시 검사(유형 맞춤, 고르기·순서는 `ANSWER_KEY` 하나, 따져 보기 논술 세 코드)를 통과한다
-
-### 영향 확인
-
-learning `Element`에 `code`·`goodThought`를 더했을 때 응답을 받는 곳을 모두 확인했다.
-
-| 받는 곳 | 결과 | 근거 |
-|---|---|---|
-| core 학생 시도 상세 | 영향 없음. 계약이 "learning 응답 보존" | core `LearningController` `exchange` |
-| core 학부모 대시보드 | 코드 변경 없음, 계약 `DashboardElement`에 두 필드 추가 | `LearningRecordClient`가 기록 JSON을 그대로 넘김(`memo`·`draft`만 제거) |
-| core 관리자 게시 실패 | 영향 없음. `rubric.elements.code`가 모양 검사 통과 | `AdminLearningService` `missingFields` 정규식 |
-| report | 영향 없음. 모르는 필드 무시, `feedback.status`만 읽음 | `report-service/app/clients/learning_client.py` `extra="ignore"` |
-| 분석 대화(ai 에이전트) | 영향 없음. 모르는 필드 무시 | `analysis_agent/models.py` `extra="ignore"` |
-| web | 영향 없음. 쓰는 필드만 검사 | `data/classroom/apiGateway.ts` |
-| 이전 시도 비교(#207) | 영향 없음. 요소를 자유 형식으로 받음 | core `ComparisonSnapshot.elements` |
-| CI | core 계약 지문 테스트에 `DashboardElement` 변경 허용 추가. learning 응답을 계약으로 검사하는 CI는 없어 구현 전 일시 불일치로 깨지지 않음 | `scripts/tests/test_admin_operations_contract.py`, `.github/workflows/ci-contracts.yml` |
-| ai 되묻기 "한 걸음 더 방향" | 변경 없음. 필수 요소를 다 쓴 뒤 쓰는 방향이고 분석하기("원인·특징·관계를 하나 더")·돌아보기("자기 생각이 어떻게 흘러갔는지")가 새 요소와 어긋나지 않음 | ai `followup/prompts.py` `THINKING_DIRECTION` |
-
-### 구현 인계 (PM 발행용)
-
-learning
-
-| 할 일 | 위치 | 테스트 |
-|---|---|---|
-| 시드 code 교체(위 대조표) **(#344 반영)** | `db/seed/demo_missions.sql` | 게시 검사를 시드 20문항에 돌려 통과 **(#353 `DemoSeedPublishTest`)** |
-| 저장 때 code 모양 검사(표준 14개·`e`+숫자·`ANSWER_KEY`·`FINAL_ANSWER`, 아니면 400) **(#353 반영)** | `mission/controller/AdminMissionController` `RubricRequest.toCommand`, 표준 코드 목록은 `mission/domain` | `AdminMissionControllerTest` |
-| 게시 때 `rubric.elements.code`(유형 맞춤, 고르기·순서·분류는 `ANSWER_KEY` 하나, 따져 보기 논술 세 코드) **(#353 반영)** | `mission/domain/Mission` `PublishSnapshot.missingFields` | `AdminMissionServiceTest`·도메인 테스트 |
-| `Element`에 `code`·`goodThought` **(#344 반영)** | `judgment/domain/FeedbackResult` `ElementView`, `FeedbackTarget` `StoredElement`와 그 조회 SQL(`rubric_element` 조인에 `code`·`good_thought`), `attempt/domain/FinishResult.of`(체크리스트), `_common/web/SharedResponses` | `SharedResponsesJsonTest` 기대 JSON(의도한 변경), `AttemptControllerTest`·`FeedbackControllerTest`·`AttemptFinishTest` |
-
-web
-
-| 할 일 | 위치 |
-|---|---|
-| 요소 종류(공통·고유·정답)와 code 고르기, 미션 유형에 맞는 표준 코드 목록, 공통 설명 안내 | `presentation/admin/MissionManager.tsx`, `domain/admin/operations.ts` |
-| 저장 전 code 모양 검사. core가 learning 400의 `detail`을 넘기지 않아(`AdminLearningService`) 화면에서 먼저 알려야 함 | 같은 위치 |
-| 게시 전 검사에 `rubric.elements.code` 추가, 한글 이름 | `operations.ts`(기존 `FINAL_ANSWER` 사전 검사 옆, 한글 표) |
-
-### 설계·이슈와 다른 점
-
-- 이슈 해야 할 일·작업 위치의 구현(관리자 검사·시드·기록 API·web)은 이 이슈에서 빼고 PM 발행으로 넘김(사용자 결정)
-- 작업 위치 밖 수정: `contracts/openapi/core-service.yaml` `DashboardElement`, `scripts/tests/test_admin_operations_contract.py`. core가 learning 기록을 그대로 넘겨 계약을 맞춰야 하고, core 계약을 바꾸면 지문 테스트가 실패해서(선례 #242·#289)
-- 이슈 "위반 시 400" → 저장 400·게시 422로 나눔(위 결정)
-- 이슈 "고르기 정답용 예약 코드" → 고르기·순서·분류 공통 `ANSWER_KEY`. 이슈의 정답 요소 "고르기 M04"는 순서 미션
-- 이슈 "기록 API에 요소별 판정 결과가 없음" → 판정 요소와 `trial`은 이미 있고 `code`·`goodThought`만 없음. api-spec 4.1.1 `answers[].feedback` 설명이 실제 계약보다 짧았던 것을 함께 맞춤. 이슈의 "검증 여부"는 `trial`로 정함(`judgment_element.verified`는 미검증 충족을 DB CHECK가 이미 막아 새 정보가 없음)
-- 이슈 설계 초안의 분석하기 3요소(`ANALYZE_PARTS` 포함)는 쓰지 않음(위 결정). 시드 대조도 M11 "관찰 사실"은 고유, M12 "근거 평가"는 `EVALUATE_PERSPECTIVE`로 바꿈
-- FN-RPT-05 요소 지표, FN-DSH-12 추천·13 생각 조각은 report·프론트가 구현할 기능이라 "(#262, 담당 확인)"으로 표시
-- DB CHECK를 두지 않음: 이전 기준표 버전은 불변이라 자유 code가 남고, 미션 유형이 `mission_version`에 있어 행 단위 CHECK로 맞춤을 볼 수 없음
-- 기존 파일 수정: `functional-spec.md`(1.5 표·표준 요소 소절과 기획서와 다른 점, FN-ADM-10·11, FN-RPT-05, FN-DSH-12·13), `erd.md`(`rubric_element.code`, 게시 검사, #262 메모), `api-spec.md`(2.8 기준표 PUT, 3.2 예시, 4.1 관리자 미션 게시 실패, 4.1.1 `answers[]`), `class-diagram.md`(게시 검사), `learning-service.yaml`(`missingFields`, 요소 code, `Element`), `core-service.yaml`(`DashboardElement`), `test_admin_operations_contract.py`, `planning-decisions.md`(#213 2.4 "생각 유형 평가 요소" 확인 필요 행을 #262 결과로 갱신), `docs/README.md`
-
-### 검증
-
-- scripts/tests 100개 통과, `git diff --check` 통과
-- 지문 테스트의 `DashboardElement` 허용 줄을 빼면 `schemas/DashboardElement`로 실패하는 것을 확인 후 되돌림
-- DB 스키마 검사(`scripts/check_db_migrations.py`, 임시 PostgreSQL 17.11): 3개 DB 테이블·열·CHECK 값·인덱스가 ERD와 일치. 처음에는 `rubric_element.code` 주석의 `ANSWER_KEY|FINAL_ANSWER`를 검사기가 CHECK 허용 값으로 읽어(`verify_db_schema.py` `allowed_values`, `A|B` 모양) PR CI `ci-db-schema`가 실패해 `·`로 고침
-- 코드 변경이 없어 gradle 테스트는 돌리지 않음
-
-### 알려진 한계
-
-- 이 이슈가 머지된 뒤 learning 구현이 머지될 때까지 계약(`code`·`goodThought` 필수, `rubric.elements.code`)과 실제 응답이 다름
-- 이전 기준표 버전·#262 전에 만든 미션의 자유 code는 표준 코드가 아니라 미션을 넘는 지표에서 빠짐(고유 요소처럼 그 미션 충족률에만)
+- #262 전에 만든 미션의 자유 code는 미션을 넘는 지표에서 빠짐
 - 표준 요소는 사람 검증(P11) 전이라 AI 판정은 시범 표시
-- 후속: 기초 사고력(`mission_version.basic_skills`, 비교·분류) 연결, 성취수준 문장 연결, 기획서 6.2 미션 제작 흐름(LLM 초안 → 자동 검사 → APM 검수)의 FN-ADM-09 반영, 답 속 다른 유형 생각 기록
+- 후속: 기초 사고력(`mission_version.basic_skills`) 연결, 성취수준 문장 연결
 
 ## 21. 성취기준·성취수준 표와 미션 초안 흐름 문서·계약 (#336)
 
-기획서 6.2(미션 제작 방법)·5.3(2)(성취수준 문장에 맞춘 요소)와 요구사항 FAD-03·FAD-08·FAC-18·FFJ-10·FBN-09가 설계 문서에 처음부터 없던 것을 반영했다. #262처럼 문서만 바꾸고 구현은 PM이 이 절의 "구현 인계"로 learning·ai·core·web 이슈를 발행한다. 결과는 functional-spec 1.5 "성취기준·성취수준 연결"·FN-ADM-09·11·19·20·21, erd 4.1.1, api-spec 1.5·2.8·4.1·4.2·4.6, class-diagram 4.1.1·5.4, state-diagram 3.4, sequence-diagram 11. 모두 "(#336, 구현 전)"으로 표시했다.
+기획서 6.2(미션 제작 방법)·5.3(2)와 요구사항 FAD-03·FAD-08·FAC-18·FFJ-10·FBN-09가 설계에 없던 것을 반영했다. 구현은 learning #353(22절)·ai #354([ai 9장](ai.md#9-미션-초안-생성자동-검사-336-설계-354-구현))·core #355(23절)·web #356([frontend 12절](frontend.md#12-356-관리자-성취기준-고르기성취수준-단계미션-초안-화면-2026-11-09)).
 
-### 사용자 결정 (11/04)
+### 결정 (11/04)
 
 | 항목 | 결정 | 근거 |
 |---|---|---|
-| 이슈 범위 | 문서·계약만, 구현은 PM 발행. 12/7까지 설계 전체 구현(이슈 결정 1) | #262 결정 13과 같음 |
-| 성취기준 표 범위 (확인 필요 1) | 2022 개정 현행 765개 전체(초1~중3) | FAD-08이 수집본 전체 관리를 요구, functional-spec 1.5 학년 확장. 데이터가 작음 |
-| 이용 조건 (확인 필요 2) | 고시 원문(성취기준 문장)은 넣고, 평가원 성취수준 문장은 이용 조건 확인 전까지 넣지 않음 **[팀 확인 필요]** | 저장소가 공개(public)라 시드에 넣으면 공개됨. 수집데이터 보고서 "성취기준 문서: 이용 조건 확인 후 사용", 출처 국가교육과정정보센터 공개 문서. 평가원 자료의 이용 조건은 찾지 못함 |
-| 2026.1 일부개정 25개 (확인 필요 3) | 넣지 않고 FAD-08("790개")과 다름을 기록 | 12개 코드(`2즐01-01` 등)가 현행과 코드는 같고 문장이 달라 코드를 키로 쓸 수 없음. 2028년 적용, 초1~2만이라 지원 학년(P03) 밖 |
-| 생성 방식 (확인 필요 4) | 비동기: 요청은 `GENERATING`으로 저장하고 202, learning 주기 작업이 생성 1회씩 반복 | core→learning 일반 대기 30초(core `LearningHttpProperties`), ai LLM 1회 15초 + 재시도 1회(ai `config.py` `llm_timeout`·`llm_retry_backoff`, P12)라 동기 요청 안에서 재시도까지 끝낼 수 없음. 주기 작업은 learning `StuckJudgmentScheduler`, 점유는 `judgment.lease_until` 선례 |
-| 성취수준 단계 (확인 필요 5) | 미션 작성·초안 요청 때 성취기준마다 관리자가 고르고, `achievementStandards`(문자열 배열)는 그대로 둔 채 단계 필드(`achievementLevels`)를 따로 둠 | FAD-03 "모든 자체 미션은 … 성취수준 … 에 연결". `achievementStandards`를 객체로 바꾸면 web(`domain/admin/operations.ts` 85·260행, `presentation/admin/MissionManager.tsx` 278행)·learning OpenAPI 두 곳·learning 테스트 4개가 깨짐. 학년별 목표 단계는 기획에 없는 새 정책이라 정하지 않음 |
-| 시드 20문항 (확인 필요 6) | `source = MANUAL`, 성취수준 단계·요소 `standardCode`는 비우고 APM 검수 때 채움 | 추측으로 채우지 않음 |
-| "행동" | 칸을 두지 않고 검토 항목(학년·내용·행동이 미션과 맞는지)으로 | 기획서 6.2 ④ "검수·확정(APM): 학년·내용·행동(성취기준 동사)이 미션과 맞는지 확인". 수집데이터 보고서 `missions` 필드에도 없음. 현행 765개 중 605개(79%)가 "~하고·~하며·~하여"로 동작을 여러 개 이어 값 하나로 정하기 어려움 |
-| 계약 파일 시점 | ERD Mermaid·OpenAPI는 구현 이슈에서 코드와 함께 | ERD Mermaid는 `scripts/verify_db_schema.py`가 실제 DB와 테이블·컬럼을 그대로 대조하고(`erd.md`가 바뀌면 `ci-db-schema` 실행), learning·ai OpenAPI 경로는 컨트롤러·라우터와 같아야 함(`test_record_exists_openapi.py` 36개, `test_ai_openapi.py` 6개). #262는 기존 경로의 필드만 바꿔 OpenAPI를 같이 고쳤지만 #336은 새 경로·테이블이 중심 |
-
-### 성취기준 표 대조 (`standards_2022.csv`, #213 담당 개인 폴더)
-
-| 항목 | 값 |
-|---|---|
-| 전체 | 790행 = 2022 개정 현행 765 + 2026.1 일부개정 25(즐거운 생활 16·건강한 생활 9, 모두 초1~2) |
-| 현행 학년군 | 초1~2 100·초3~4 162·초5~6 169·중1~3 334. 성취수준 단계는 초 3단계(A~C), 중 5단계(A~E), 현행은 모두 있음 |
-| 코드 중복 | 12개(`2즐01-01`~`2즐03-04`). 현행과 2026.1이 같은 코드에 다른 문장 |
-| 코드 모양 | 원자료는 대괄호 포함(`[6국01-02]`), 시드 `achievement_standards`는 대괄호 없음(`6국01-02`) → 표도 대괄호 없이. `9사(일사)01-01` 같은 괄호 코드 74개 |
-| 시드 20문항 | 성취기준 코드 21개(초4 문제 해결 1문항이 2개) 모두 표에 있음 |
-| 생각 유형 후보(자동) | 현행 765개 중 335개 빈칸, 88개는 후보 2개 이상. 동사 낱말 규칙 값(`extract_standards.py` "사람이 검토해야 함")이라 넣지 않음 |
-| 비고 | 현행 79행. 66행은 "A·B 같은 기술(원자료 병합 칸)" 등, 13행은 고시 변환 때 빠진 기호 보완·성취수준 자료 문구 차이 같은 원문 대조 기록 → `note`로 넣음(FAD-08 "원문 대조" 구분) |
+| 성취기준 표 범위 | 2022 개정 현행 765개 전체(초1~중3) | FAD-08, 학년 확장. 데이터가 작음 |
+| 이용 조건 | 고시 원문(성취기준 문장)은 넣고, 평가원 성취수준 문장은 이용 조건 확인 전까지 넣지 않음 **[팀 확인 필요]** | 저장소가 공개라 시드에 넣으면 공개됨 |
+| 2026.1 일부개정 25개 | 넣지 않음 | 12개 코드가 현행과 코드는 같고 문장이 달라 코드를 키로 쓸 수 없음. 2028년 적용, 초1~2만 |
+| 생성 방식 | 비동기: 요청은 `GENERATING`으로 저장하고 202, learning 주기 작업이 생성 1회씩 반복 | 동기 요청 안에서 재시도까지 끝낼 수 없음 |
+| 성취수준 단계 | 성취기준마다 관리자가 고르고 `achievementStandards`(문자열 배열)는 그대로 둔 채 `achievementLevels`를 따로 둠 | 배열을 객체로 바꾸면 web·OpenAPI·테스트가 깨짐 |
+| 시드 20문항 | `source = MANUAL`, 성취수준 단계·요소 `standardCode`는 비우고 APM 검수 때 채움 | 추측으로 채우지 않음 |
+| "행동" | 칸을 두지 않고 검토 항목으로 | 현행 765개 중 79%가 동작을 여러 개 이어 값 하나로 정하기 어려움 |
 
 ### 설계에서 정한 것
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
-| 검사 분담 | ai: 필수 항목·학년별 질문 길이·정답·금지어·예시 답 노출. learning: 성취기준 실재·요소 code 규칙·요소 `standardCode`·입력 방식 모양 | 각자 가진 코드를 재사용: 노출 검사는 ai `followup/leak_guard.find_leaks`, 표와 code 규칙(게시 검사)은 learning. 이슈 초안은 ai가 모두 검사 |
-| 반복 위치 | ai는 호출 1번에 생성 1회, 반복은 learning | ai 안에서 3회 반복하면 최대 약 90초로 learning→ai 35초를 넘음. ai 마감은 되묻기와 같은 33초(`followup_deadline`) |
-| 서킷 | learning 초안용 ai 호출은 별도 서킷 `ai-mission-draft`(P12 값) | learning `AiClient`는 판정·되묻기가 서킷 `ai` 하나를 공유. 초안 실패가 학생 판정을 막지 않게(#305와 같은 문제). core `ai-report-template` 분리 선례 |
-| 실패 상태 | 상한에서 마지막 실패가 검사면 `CHECK_FAILED`, AI 호출이면 `FAILED`(`failure_code`는 판정과 같은 `AI_*`) | FAC-18 "반복 실패는 반려/실패로", 판정 실패 코드 재사용 |
-| 생성 방식 기록 | `mission.source`(`MANUAL`·`LLM_DRAFT`), 초안 연결은 `mission_draft.mission_id` 한쪽 | 미션이 처음 만들어진 방식이라 버전마다 바뀌지 않음. 이슈 초안은 `mission_version.source`·`draft_id` |
-| 성취기준 FK | 두지 않고 게시 검사 | `achievement_standards`가 jsonb 배열, 교육과정이 바뀌어 표를 다시 넣을 때 지난 버전이 막히지 않게 |
-| 초안 목록 API | `GET /admin/mission-drafts?status` 추가 | FFJ-10 "생성 출처·오류 이유·시도 횟수·… 상태를 확인". 이슈 초안에 없음 |
-| 다시 만들기 | 새 초안 요청(실패한 초안을 되살리지 않음) | 상태 전이가 단순하고 시도 기록이 초안마다 남음 |
-| 장면 | 초안의 `sceneNote`는 그림 제작 메모로 초안에만 두고 미션에 저장하지 않음 | 지금 미션은 장면을 질문 문장(시드)과 `scene_uri`(그림)로만 가짐 |
-| 표준 요소 입력 | learning이 FN 1.5 표에서 그 유형 코드·공통 설명을 ai에 보냄 | 코드 목록을 learning 한 곳에만 둠 |
+| 검사 분담 | ai: 필수 항목·질문 길이·정답·금지어·예시 답 노출. learning: 성취기준 실재·요소 code 규칙·`standardCode`·입력 방식 모양 | 각자 가진 코드 재사용 |
+| 반복 위치 | ai는 호출 1번에 생성 1회, 반복은 learning | ai 안에서 3회 반복하면 learning→ai 대기를 넘음 |
+| 서킷 | learning 초안용 ai 호출은 별도 서킷 `ai-mission-draft` | 초안 실패가 학생 판정을 막지 않게 |
+| 실패 상태 | 상한에서 마지막 실패가 검사면 `CHECK_FAILED`, AI 호출이면 `FAILED` | FAC-18 |
+| 생성 방식 기록 | `mission.source`(`MANUAL`·`LLM_DRAFT`), 초안 연결은 `mission_draft.mission_id` 한쪽 | 미션이 처음 만들어진 방식이라 버전마다 바뀌지 않음 |
+| 성취기준 FK | 두지 않고 게시 검사 | jsonb 배열. 교육과정이 바뀌어 표를 다시 넣을 때 지난 버전이 막히지 않게 |
+| 다시 만들기 | 새 초안 요청(실패한 초안을 되살리지 않음) | 시도 기록이 초안마다 남음 |
+| 장면 | 초안의 `sceneNote`는 초안에만 두고 미션에 저장하지 않음 | |
+| 표준 요소 입력 | learning이 그 유형 코드·공통 설명을 ai에 보냄 | 코드 목록을 learning 한 곳에만 |
 
-### 기준안 (새 값, 확정 필요)
+### 기준안 (확정 필요)
 
-| 값 | 기준안 | 정할 사람 | 근거 |
-|---|---|---|---|
-| 생성 시도 상한 | 3회(첫 생성 포함) | 김동섭(P19 "재생성 상한") | 이슈 예시 |
-| 학년별 질문 길이 | 없음(구현 전 확정 필요) | 김동섭(P19, FAD-06) | 참고: 시드 질문 길이 초3 67~156자, 초4 87~193자, 초5 88~173자, 초6 92~185자 |
-| 미션 상태 이름 | 기존 `DRAFT`·`REVIEW_REQUIRED`·`PUBLISHED`·`UNPUBLISHED` 유지 | 김동섭(P19 "상태 enum") | 기획서 6.2 ④ "초안 → 검토 완료 → 공개", 수집데이터 보고서 `draft`·`reviewed`. 이미 구현된 상태(#145)와 이름만 다름 |
-| 생성 주기 | 10초 | learning 구현 담당 | 관리자가 기다리는 시간 |
-| 생성 리스 | 90초 | - | 판정 리스(P12)와 같은 값 재사용 |
-| 채택 때 요소 배점 | 1 | APM | 시드 요소 56개 중 53개가 1. 채택 뒤 관리자가 고침 |
-
-### 구현 인계 (PM 발행용)
-
-순서: learning 표·시드와 ai 초안 생성을 먼저(12/7 미션 35개 일정), core 프록시, web 화면이 뒤. 초안의 요소 code 검사는 #262 게시 검사 규칙을 쓰므로 #262 learning 구현이 먼저이거나 같이 간다.
-
-learning
-
-| 할 일 | 위치 | 테스트 |
+| 값 | 기준안 | 정할 사람 |
 |---|---|---|
-| 새 Flyway 버전: `achievement_standard`·`mission_draft`, `mission.source`(기존 행 `MANUAL`)·`mission_version.achievement_levels`·`rubric_element.standard_code`. ERD 4.1.1을 4.1 Mermaid·6장·8장으로 옮김 | `resources/db/migration`, `docs/design/erd.md` | `scripts/check_db_migrations.py` |
-| 성취기준 시드(현행 765개, 대괄호 없는 코드, `levels`는 NULL) | `db/seed/` | 시드 20문항 코드가 모두 표에 있음 |
-| 관리자 미션: `achievementLevels`·요소 `standardCode` 저장(모양 400), `AdminMission.source`, 게시 누락 `achievementStandards`(표에 없는 코드)·`achievementLevels`·`rubric.elements.standardCode` | `mission/controller/AdminMissionController`, `mission/domain/Mission`, `mission/repository` | `AdminMissionServiceTest`·`MissionTest` |
-| 성취기준 조회·초안 요청·목록·상세·채택·버리기 | `AdminMissionDraftController`·`MissionDraftService`·`MissionDraft`·`MissionDraftRepository`·`AchievementStandardRepository`(class-diagram 4.1.1) | 상태 전이, 채택 동시 요청, 409 |
-| 주기 생성: 리스 점유·ai 1회·learning 검사·리스 대조 저장 | `MissionDraftScheduler`, `MissionDraftAiClient`(별도 서킷) | 레플리카 동시 실행에서 한 번만, 늦은 작업이 덮어쓰지 않음, 상한·실패 상태 |
-| OpenAPI 경로 6개 추가 | `contracts/openapi/learning-service.yaml` | `test_record_exists_openapi.py` 36 → 42 |
+| 생성 시도 상한 | 3회(첫 생성 포함) | 김동섭(P19) |
+| 학년별 질문 길이 | 전 학년 200자(시드 질문 길이 67~193자) | 김동섭(P19, FAD-06) |
+| 생성 주기 / 리스 | 10초 / 90초 | learning 구현 담당 |
+| 채택 때 요소 배점 | 1 | APM |
 
-ai
+성취기준 표(`standards_2022.csv`): 현행 학년군별 초1~2 100·초3~4 162·초5~6 169·중1~3 334. 성취수준 단계는 초 3단계(A~C), 중 5단계(A~E). 원자료 코드는 대괄호 포함이지만 표와 시드는 대괄호 없이 저장.
 
-| 할 일 | 위치 | 테스트 |
-|---|---|---|
-| `POST /internal/mission-drafts`: 생성 1회·검사(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`) | 새 `app/mission_draft/`(class-diagram 5.4) | 검사별 실패, 학생 정보 없는 입력, 형식 밖 응답 502 |
-| 프롬프트 `mission-draft@1`, 레지스트리 `missionDraft`·scope `ai/mission-draft`, `/internal/versions`에 `missionDraft` | `prompt_versions/` | `test_active_versions.py`·`test_versions.py` |
-| 사용량 `callType = MISSION_DRAFT` | `messaging/publisher.py` `CallType` | |
-| OpenAPI 경로 추가 | `contracts/openapi/ai-service.yaml` | `test_ai_openapi.py` 6 → 7 |
-
-core
-
-| 할 일 | 위치 |
-|---|---|
-| 공개 경로 `/admin/achievement-standards`·`/admin/mission-drafts…` 프록시(CONTENT), 초안 요청·채택·버리기 감사 | `learning/controller/AdminMissionsController`, `learning/service/AdminLearningService`, `contracts/openapi/core-service.yaml` |
-| `llm_usage.call_type`에 `MISSION_DRAFT`: 마이그레이션 CHECK, `usage/domain/UsageSummary.CallType`, `contracts/events/llm.usage.recorded.v1.schema.json`, core OpenAPI enum, ERD 3.5 Mermaid | core migration·usage, scoring `messaging/publisher.py` `CallType`(같은 목록) |
-
-web
-
-| 할 일 | 위치 |
-|---|---|
-| 성취기준 고르기(표 조회), 성취기준별 성취수준 단계, 요소별 연결 성취기준 | `presentation/admin/MissionManager.tsx`, `domain/admin/operations.ts`(지금은 성취기준을 줄바꿈 텍스트로 입력) |
-| 초안 요청·목록·상세(상태·시도 횟수·검사 실패 사유)·채택·버리기 | 관리자 화면 |
-| 게시 전 검사에 `achievementLevels`·`rubric.elements.standardCode` 한글 이름, 검토 화면에 학년·내용·행동 확인 안내 | `domain/admin/operations.ts` |
-
-### 영향 확인
-
-| 받는 곳 | 결과 | 근거 |
-|---|---|---|
-| 학생 미션 응답 | 영향 없음. 성취기준을 내보내지 않음 | learning 학생 응답(`MissionView`·`MissionResponses`)에 `achievementStandards` 없음 |
-| core 관리자 미션 프록시 | 응답 필드 추가(`source`·`achievementLevels`·`standardCode`)는 그대로 전달, 새 게시 누락 코드도 모양 검사 통과 | `AdminLearningService` 성공 응답 그대로, `missingFields` 정규식 `[a-zA-Z][a-zA-Z0-9.\[\]]{0,99}` |
-| core 관리자 미션 계약 테스트 | 새 경로는 `/admin/missions` 밖이라 10개 그대로 | `test_admin_missions_contract.py` |
-| `/internal/versions` 소비자 | core에 읽는 코드 없음, ai·api-spec만 바뀜 | core 전체에서 `/internal/versions` 호출 없음 |
-| LLM 사용량 | 호출 종류가 다섯 곳(이벤트 스키마·core enum·core CHECK·ERD·core OpenAPI)과 ai·scoring 발행 목록에 고정돼 같이 바꿔야 함 | 위 core 인계 |
-| report·분석 대화 | 영향 없음 | 성취기준·초안을 읽지 않음. 리포트의 연결 성취기준 표시는 범위 밖 |
-
-### 설계·이슈와 다른 점
-
-- 이슈 작업 위치 "OpenAPI 3개" → 구현 이슈에서(위 결정). 이슈 "erd 4.1에 추가" → Mermaid 밖 4.1.1 "구현 전" 절
-- 이슈 설계 초안 `mission_version.source`·`draft_id` → `mission.source` + `mission_draft.mission_id`(위 표)
-- 이슈 요구사항 목록에 FAD-08이 없어 더하고 FN-ADM-21(성취기준 표)을 신설. 이슈의 FN-ADM-20은 그대로 미션 초안
-- 이슈 "ai 자동 검사" → ai·learning 분담, 이슈에 없던 초안 목록 API 추가
-- `code` PK 그대로지만 2026.1 25개를 넣지 않아 가능(FAD-08과 다름, planning-decisions 2.5)
-- 기존 파일 수정: `functional-spec.md`(1.5 판정·표준 요소 문구와 새 소절, FN-ADM-09·11·19·20·21), `erd.md`(4.1 게시 검사 문구, 3.5 `llm_usage` 메모, 4.1.1), `api-spec.md`(1.5 상태 코드값, 2.8 표·프록시, 4.1 관리자 미션 행과 새 행, 4.2 새 행·`/internal/versions`·#68, 4.6 `callType`, 5.2 프롬프트 이름), `class-diagram.md`(3.5 메모, 4.1.1, 5.1 `ActiveVersions`, 5.4), `state-diagram.md`(3.4), `sequence-diagram.md`(9 메모, 11 신설, 확인 필요 가정 11 → 12), `ai.md`(9절), `planning-decisions.md`(2.5), `docs/README.md`
-
-### 검증
-
-- 기획서·수집데이터 보고서 PDF(PyMuPDF로 본문 추출)와 요구사항 정의서 v0.5 원문을 대조함. 이슈 본문의 기획서 6.2 요약은 원문과 같음
-- 성취기준 표 숫자는 원자료 CSV를 직접 셈(위 대조표)
-- 검증 명령 결과는 PR 본문에 적음
-
-### 알려진 한계
-
-- 성취수준 문장을 넣기 전에는 요소·초안을 성취기준 문장으로만 구체화해 기획서 5.3(2) "성취수준 문장에 맞춰"와 다름. 이용 조건이 확인되면 `levels`만 채우면 됨
-- 학년별 질문 길이 값이 없으면 `QUESTION_LENGTH` 검사를 할 수 없어 구현 전에 정해야 함
-- 미션 전체를 만드는 출력이 LLM 1회 15초(P12) 안에 끝나는지 재지 않음. 넘으면 AI 호출 실패로 세어지므로 실제 측정(NFR-PRF-01) 뒤 조정
-- 이 이슈가 머지된 뒤 구현까지 문서와 코드가 다름(모두 "구현 전" 표시)
-- 범위 밖(이슈 그대로): 시범 풀이 기록(FAR-09), 요소 기반 다음 미션 추천(FBF-38), 리포트의 연결 성취기준 표시, 기초 사고력 연결
+한계: 성취수준 문장을 넣기 전에는 요소·초안을 성취기준 문장으로만 구체화(이용 조건이 확인되면 `levels`만 채우면 됨). 범위 밖은 시범 풀이 기록(FAR-09), 요소 기반 추천(FBF-38), 리포트의 연결 성취기준 표시.
 
 ## 22. 성취기준 표·미션 초안 구현 (#353)
 
-21절 설계의 learning 몫과, #262에서 남은 관리자 code 검사를 구현했다. ai 초안 생성은 #354(PR #357), core 프록시·사용량은 #355, 관리자 화면은 #356이다.
-
-| 위치 | 내용 |
-|---|---|
-| V10 | `achievement_standard`·`mission_draft`, `mission.source`(기존 행 `MANUAL`, SQL DEFAULT 없음)·`mission_version.achievement_levels`·`rubric_element.standard_code`, 인덱스 `ix_mission_draft_status_created`. ERD 4.1 Mermaid·6장·8장으로 옮김 |
-| `db/seed/achievement_standards.sql` | 현행 765행(초1~2 100·초3~4 162·초5~6 169·중1~3 334), `levels` NULL, `note` 79행, `source` 교육부 고시 제2022-33호. 코드가 키라 다시 넣으면 덮어씀 |
-| `mission/domain/Standards.kt` | FN 1.5 표준 요소 표·code 규칙(`StandardElements`), 성취기준 행(`AchievementStandard`: 학년군 범위·단계 수) |
-| `PublishSnapshot` | 게시 누락 추가: `rubric.elements.code`(#262), `achievementStandards`(표에 없음·학년군 밖), `achievementLevels`, `rubric.elements.standardCode` |
-| `AdminMissionController` | 저장 때 모양 400: 요소 code(표준·`e`+숫자·예약), `achievementLevels`(A~E), 빈 `standardCode` |
-| 초안 | `MissionDraft`(상태 전이)·`DraftRules`(채택 변환·learning 검사·ai 요소 입력)·`MissionDraftService`·`MissionDraftRepository`(리스 점유·리스 대조 저장)·`AdminMissionDraftController`(경로 6개)·`MissionDraftScheduler`·`MissionDraftAiClient`(서킷 `ai-mission-draft`) |
-| 계약 | learning OpenAPI 경로 5개(조작 6개)·스키마, 관리자 미션 스키마에 `source`·`achievementLevels`·`standardCode` |
+21절 설계의 learning 몫. V10 `achievement_standard`·`mission_draft`, `mission.source`, `mission_version.achievement_levels`, `rubric_element.standard_code`. 시드 `db/seed/achievement_standards.sql`(765행, 코드가 키라 다시 넣으면 덮어씀).
 
 ### 결정
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
-| 채택 미션 칸 | 교과는 첫 성취기준의 교과, 입력 틀은 입력 방식별 고정 틀(풀이 4칸·논술 4칸, 데모 시드와 같음), 장면 그림·단위는 비움, 시연 전용 아님. `sceneNote`는 저장하지 않음 | 초안 출력에 `subject`·`inputTemplate`·`answerUnit`이 없음(계획 결정 1) |
-| learning 검사 | 채택할 미션·기준표를 게시 검사에 그대로 넣고(검토는 통과로 봄) 누락을 `ELEMENT_CODE`·`STANDARD_CODE`·`SHAPE`로 바꿈 | class-diagram 4.1.1 "게시 검사와 같은 함수". 채택한 초안이 검토만 거치면 게시 규칙을 통과함 |
-| 성취기준 학년군 검사 (#353 추가) | 미션 학년 범위가 고른 성취기준 각각의 `grade_band` 안. 초안 요청 400, 게시 422 `achievementStandards`. 이미 게시된 버전은 그대로 | 설계는 학년을 사람 검토 항목(기획서 6.2 ④)으로만 두어 초3 미션에 `6국…`을 골라도 생성·게시됨. 표의 학년군으로 자동 확인 가능(2026-11-04 결정, 이슈 #353 본문) |
-| 요청 때 성취수준 확인 | 단계가 고른 성취기준의 단계 수 안인지 요청 때 400 | 잘못된 단계로 ai를 부르지 않게. 게시 검사와 같은 규칙 |
-| 다음 생성의 이전 실패 | 지금까지 모든 시도의 실패 사유(겹치는 것 한 번) | 앞에서 고친 문제가 다시 나오지 않게. ai는 같은 사유를 한 번만 고칠 점으로 바꿈 |
-| 한 주기 생성 수 | 레플리카마다 주기(10초)에 초안 1개, 생성 1회 | class-diagram 4.1.1. 점유는 `FOR UPDATE SKIP LOCKED` + 조건 재확인 UPDATE |
-| ai 오류 분류 | `AiClient`의 오류 분류·서킷 값을 `postToAi`·`aiCircuitBreaker`로 빼서 함께 씀(판정 동작 그대로) | "AiClient와 같은 오류 분류" 설계를 코드 복사 없이 |
-| 미션 초안 시간 (P12 예외) | ai LLM 60초 1회·마감 63초, learning 초안 ai 클라이언트 대기 70초(`app.mission-draft.ai-read-timeout`, `InternalRestClientFactory.create(service, readTimeout)`). 생성 리스 90초 안 | 로컬 실연에서 논술 초안이 15초 제한에 막혀 3번 모두 `FAILED`. 기본 모델 `gpt-6-luna`는 실제 성취기준으로 15~31.7초(ai.md 9.2). 주기 작업이라 기다리는 사람이 없음(2026-11-05 결정, 이슈 #353 본문) |
-| 스케줄러 스레드 | `spring.task.scheduling.pool.size: 3`(`@Scheduled` 작업마다 하나) | 기본값 1이면 초안 생성(ai 대기 최대 70초) 동안 고착 판정 탐지(P12 1분)·처리 이벤트 정리가 밀림. 같은 작업은 `fixedDelay`라 스스로 겹치지 않음(`SchedulingPoolTest`) |
-| `mission.source` SQL DEFAULT | 두지 않고 V10에서 기존 행을 채운 뒤 NOT NULL. 데모 시드·검증 스크립트 7개·테스트 3곳이 값을 넘김 | ERD 1장 "DEFAULT 없음", `verify_db_schema.py`가 허용하는 예외는 `student.parent_sharing_enabled` 하나. 정책 검사(`check_policy_migrations.py`)는 V5까지만 적용해 그대로 |
-| 성취기준 시드 적용 | 파일만 추가하고 적용 방법은 시드 주석에. E2E 시드에는 넣지 않음 | 계획 결정 2. E2E 흐름이 게시 검사를 쓰지 않음 |
+| 채택 미션 칸 | 교과는 첫 성취기준의 교과, 입력 틀은 입력 방식별 고정 틀, 장면 그림·단위는 비움 | 초안 출력에 `subject`·`inputTemplate`·`answerUnit`이 없음 |
+| learning 검사 | 채택할 미션·기준표를 게시 검사에 그대로 넣고 누락을 `ELEMENT_CODE`·`STANDARD_CODE`·`SHAPE`로 바꿈 | 채택한 초안이 검토만 거치면 게시 규칙을 통과 |
+| 성취기준 학년군 검사 | 미션 학년 범위가 고른 성취기준 각각의 `grade_band` 안. 초안 요청 400, 게시 422 | 초3 미션에 `6국…`을 골라도 생성·게시되던 문제 |
+| 다음 생성의 이전 실패 | 지금까지 모든 시도의 실패 사유 전달 | 앞에서 고친 문제가 다시 나오지 않게 |
+| 한 주기 생성 수 | 레플리카마다 주기(10초)에 초안 1개. 점유는 `FOR UPDATE SKIP LOCKED` + 조건 재확인 UPDATE | |
+| 미션 초안 시간 (P12 예외) | ai LLM 60초 1회·마감 63초, learning ai 클라이언트 대기 70초(`app.mission-draft.ai-read-timeout`). 생성 리스 90초 안 | 논술 초안이 15초 제한에 막혀 모두 `FAILED`였음. 실측 15~31.7초. 주기 작업이라 기다리는 사람이 없음 |
+| 스케줄러 스레드 | `spring.task.scheduling.pool.size: 3` | 기본값 1이면 초안 생성 동안 고착 판정 탐지·이벤트 정리가 밀림 |
+| `mission.source` SQL DEFAULT | 두지 않고 V10에서 기존 행을 채운 뒤 NOT NULL | ERD "DEFAULT 없음" 규칙 |
 
-### 이슈와 다른 점
+### 한계
 
-- 이슈 "테스트: 시드 파일을 읽어 765행" → 테스트 DB에 시드를 실제로 넣어(`PostgresRepositoryTest`) 행 수·학년군별 수·데모 시드 코드 21개·`levels` NULL을 확인. 시드가 스키마에 그대로 들어가는지도 함께 봄
-- 학년군 검사를 범위에 추가(이슈 #353 본문 갱신)
-- ai 미션 초안 시간 설정 변경을 범위에 추가(이슈 #353 본문·라벨 `area:ai` 갱신). #354(PR #357)의 "기본 설정 유지" 결정을 실제 성취기준 실측으로 바꿈
-- learning OpenAPI는 경로 5개에 조작 6개(`/mission-drafts`에 POST·GET), `test_record_exists_openapi.py`는 조작 수를 세어 36 → 42
-- gitops 로컬 값의 learning 마이그레이션 리비전 v9 → v10(`test_core_migration_versions.py`)
+- **배포 순서**: ai를 먼저 배포. learning이 먼저 나가면 초안 요청이 AI 호출 실패 3회로 `FAILED`
+- **성취기준 시드를 먼저 넣어야 게시 가능**: 게시 검사가 성취기준 표를 읽으므로 V10 적용 뒤 시드를 넣기 전에는 모든 미션의 게시가 막힘
+- **대괄호 성취기준 코드**: `[6국01-02]`처럼 넣은 미션은 표에 없어 게시가 막힘(다시 골라야 함)
 
-### 알아 둘 점
-
-- **배포 순서**: ai(#357)를 먼저 배포. learning이 먼저 나가면 초안 요청이 AI 호출 실패 3회로 `FAILED`가 됨(초안이 없으면 ai를 부르지 않음)
-- **성취기준 시드를 먼저 넣어야 게시 가능**: 게시 검사가 성취기준 표를 읽으므로, V10 적용 뒤 `achievement_standards.sql`을 넣기 전에는 모든 미션의 게시가 `achievementStandards`로 막힘. 운영·로컬 모두 마이그레이션 직후 시드를 넣음
-- **관리자 화면 기준표 저장**: #262 저장 검사로 자유 code(`e1` 모양이 아닌 값)는 400. web(#356) 전까지 관리자 화면에서 표준 코드·`e`+숫자만 써야 함
-- **대괄호 성취기준 코드**: 관리자 화면에서 `[6국01-02]`처럼 넣은 미션은 표에 없어 게시가 막힘(표는 대괄호 없음)
-- 사용량 `MISSION_DRAFT`는 core(#355) 전까지 DLQ에 남음(#354). #355에서 반영(23절)
-
-### 검증
-
-- learning `./gradlew test bootJar` 통과(322개, Testcontainers). 새 테스트: `MissionTest`(code·성취기준·학년군·성취수준·요소 성취기준 게시 검사), `MissionDraftTest`(상태 전이·상한·실패 종류), `DraftRulesTest`(learning 검사 분류·채택 변환·ai 요소 입력), `MissionDraftServiceTest`(시드 765행, 요청 400, 생성·실패 누적·상한, 늦은 작업 덮어쓰기 없음, 채택·버리기·목록), `MissionDraftConcurrencyTest`(레플리카 4곳 동시 생성 1회, 동시 채택 미션 1개), `MissionDraftAiClientTest`(계약 필드·오류 분류·서킷 분리), `AdminMissionDraftControllerTest`, `DemoSeedPublishTest`(데모 시드 20문항이 새 게시 검사 통과, #262 인계)
-- `ci-db-schema` 재현: `check_db_migrations.py`(일회용 PostgreSQL, learning 21개 테이블·194개 칼럼이 ERD와 일치, 반복 마이그레이션 변화 없음), `scripts/tests` 156개
-- 로컬 실연(2026-11-05, 이 브랜치로 learning·ai 재빌드, 로컬 learning_db에 V10·성취기준 시드, ai `OPENAI_MODEL=gpt-6-luna`): learning 내부 API로 입력 방식 6가지 초안(논술은 성취기준 2개·성취수준 B)을 한꺼번에 요청 → 주기 작업이 차례로 생성해 6건 모두 첫 시도에 `READY`(193초 동안, ai 응답 200 6번·5xx 0번) → 채택(`LLM_DRAFT`) → 검토 → 게시 200(누락 없음). 학년군이 안 맞는 요청은 400, 같은 초안 재채택은 409. 시간 설정을 바꾸기 전에는 같은 실연에서 논술이 3번 모두 `AI_CALL` 실패로 `FAILED`였음
-- ai `ruff`·`pytest` 399개 통과(호출별 대기 덮어쓰기·초안 60초 1회 테스트 포함)
+테스트: `MissionDraftServiceTest`, `MissionDraftConcurrencyTest`(레플리카 4곳 동시 생성 1회), `DemoSeedPublishTest`.
 
 ## 23. core 성취기준·미션 초안 프록시와 사용량 MISSION_DRAFT (#355)
 
-21절 구현 인계의 core 몫. 관리자 화면은 #356이다.
+21절의 core 몫.
 
-| 위치 | 내용 |
-|---|---|
-| `learning/controller/AdminMissionDraftsController` | 공개 경로 `GET /admin/achievement-standards`, `POST·GET /admin/mission-drafts`, `GET /admin/mission-drafts/{draftId}`, `POST …/{draftId}/adopt`·`…/discard` → learning `/internal/admin/…` 같은 경로 |
-| `learning/service/AdminLearningService` | `achievementStandards`·`missionDrafts` 추가. 관리자 미션의 요청 감사 → 한 번 호출 → 응답 대상 확인 → 결과 감사 흐름을 `audited`로 빼서 미션·초안이 함께 씀(미션 동작 그대로) |
-| `account/controller/PublicAuthFilter` | `/admin/mission-drafts`·`/admin/achievement-standards`도 CONTENT |
-| `admin/service/MissionAuditService`·`MissionAuditRepository`·`MissionAuditMapper.xml` | `target_type`을 고정 `MISSION`에서 인자로(`MISSION`·`MISSION_DRAFT`), 채택 결과 detail에 `draftId` |
-| `V28__mission_draft_call_type.sql` | `ck_llm_usage_call_type`에 `MISSION_DRAFT`(V14와 같은 DROP·ADD). V27은 #243(PR #359) |
-| 호출 종류 목록 | core `CallType` enum, `llm.usage.recorded.v1` 스키마, core OpenAPI `CallType`, ERD 3.5 Mermaid, scoring `publisher.py` `CallType`. ai 발행 목록에는 #354에서 이미 있음. 순서는 ai와 같게 `REPORT_NARRATIVE` 다음 |
-| 계약 | core OpenAPI 경로 5개(조작 6개)·`AdminMissionDraftDocument`, gitops 로컬 core 마이그레이션 리비전 v27 → v28 |
+- 공개 경로 `GET /admin/achievement-standards`, `POST·GET /admin/mission-drafts`, `GET …/{draftId}`, `POST …/adopt`·`…/discard` → learning `/internal/admin/…` 같은 경로(CONTENT)
+- 컨트롤러는 새 `AdminMissionDraftsController`. `AdminMissionsController`에 넣으면 `test_admin_missions_contract`의 경로 대조가 흐려짐
+- 감사: 요청·버리기는 `target_type = MISSION_DRAFT`·응답 `draftId`, 채택의 결과 감사는 응답 `missionId`(`target_type = MISSION`, detail `draftId`). action `MISSION_DRAFT_{REQUEST,ADOPT,DISCARD}` + `_REQUESTED`·`_SUCCEEDED`·`_REJECTED`·`_UNKNOWN`
+- 응답에 초안·미션 ID가 없거나 다르면 503 `LEARNING_INVALID_RESPONSE` + `_UNKNOWN`, 다시 부르지 않음(결과를 모르는데 다시 부르면 초안이 두 번 생길 수 있음)
+- learning `VALIDATION_FAILED`·`NOT_FOUND`·`CONFLICT`·`FORBIDDEN`은 기존 허용 목록 그대로 전달하고 공급자 문장은 버림
+- 쿼리 검사: core는 `page`·`size`·초안 `status`·문자 길이만, `gradeBand`·`subject`·`q` 값은 learning이 검사(학년군 이름 목록을 한 곳에만)
+- 사용량 `MISSION_DRAFT`를 core `CallType`·이벤트 스키마·OpenAPI·ERD·scoring 발행 목록에 ai와 같은 순서로 추가(V28)
+- 계약 지문 파일은 그대로 두고 테스트에서 승인 변경만 빼고 비교(지문 파일을 다시 만들면 다른 변경도 묻힘)
+- DLQ: ai 배포 뒤 이 변경 전까지 나온 `MISSION_DRAFT` 사용량 메시지는 DLQ에 있음. 다시 넣으면 기록됨(`event_id` UK)
+
+테스트: `AdminOperationsIntegrationTest`, `scripts/tests/test_admin_mission_drafts_contract.py`.
+
+## 24. 주간 테마·요일 문제·되돌아보기 (#385)
+
+P23의 learning 몫. 2026-11-10 개정(#483: 누적 공개·토요일까지 풀기·일요일 닫힘·즉시 엔딩·당일 풀이/개근/주간 완주)은 learning #484가 구현했다(34장). 아래 표에서 #484로 바뀐 행은 그렇게 적었다. core 몫은 [core 18절](core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10).
+
+구성: V11·V12(`weekly_theme`·`weekly_theme_version`·`weekly_theme_day`·`theme_review_view`, `attempt.context`·`theme_id`·`theme_week_start`), `theme/` 패키지, 학생 `/internal/students/{id}/weekly-theme…` 3경로, 관리자 `/internal/admin/weekly-themes…` 7경로. 요일 판정용 `Clock.system(Asia/Seoul)` 빈.
 
 ### 결정
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
-| 컨트롤러 | 새 `AdminMissionDraftsController`(같은 `learning/controller` 패키지)·서비스는 기존 `AdminLearningService` | `AdminMissionsController`는 `/api/v1/admin/missions` 아래만 받고, `test_admin_missions_contract`가 그 파일의 `service.missions(…)` 호출로 learning 경로 10개를 셈. 같은 파일에 넣으면 그 대조가 흐려짐 |
-| 감사 대상 | 요청·버리기: `target_type = MISSION_DRAFT`, 결과는 응답 `draftId`(요청의 요청 감사는 아직 ID가 없어 NULL). 채택: 요청 감사는 초안, 결과 감사는 응답 `missionId`·버전(`target_type = MISSION`, detail `draftId`) | api-spec 2.8 "채택은 응답 `missionId`, FN-ADM-13". 채택이 미션을 만들므로 `MISSION_CREATE`처럼 미션 ID로 찾으면 처음부터 이력이 보임. 감사 조회 `targetType`은 정규식만 검사해 새 값이 바로 됨 |
-| 감사 action | `MISSION_DRAFT_REQUEST`·`MISSION_DRAFT_ADOPT`·`MISSION_DRAFT_DISCARD` + 기존 접미사 `_REQUESTED`·`_SUCCEEDED`·`_REJECTED`·`_UNKNOWN` | 미션 감사와 같은 규칙. 요청 본문·learning 오류 문장은 남기지 않음 |
-| 응답 대상 확인 | 초안 응답은 `draftId`(UUID, 버리기는 경로와 같아야 함)·`status`(문자열), 채택 응답은 미션 응답과 같은 `missionId`·`currentVersion`·`currentRubricVersion`. 어긋나면 503 `LEARNING_INVALID_RESPONSE` + `_UNKNOWN`, 다시 부르지 않음 | 관리자 미션과 같은 기준. 결과를 모르는데 다시 부르면 초안이 두 번 생길 수 있음 |
-| 오류 전달 | learning `VALIDATION_FAILED`(400)·`NOT_FOUND`(404)·`CONFLICT`(409)·`FORBIDDEN`은 기존 허용 목록 그대로 전달, 공급자 문장은 버림. 404 고정 문구 "미션 초안을 찾을 수 없습니다.", 미지원 405/501은 미션과 같은 `ADMIN_MISSIONS_UNAVAILABLE` | 새 코드를 만들면 web(#356) 처리가 늘어남. 같은 learning 관리자 API라 같은 코드로 충분 |
-| 쿼리 검사 | core는 `page`·`size`(기존 `operationPage`)·초안 `status`(learning `DraftStatus` 6개)·문자 쿼리 100자만 보고, `gradeBand`·`subject`·`q` 값은 learning이 검사 | 학년군 이름 목록을 learning 한 곳에만 둠. 문자 길이는 learning에 넘길 쿼리를 제한하려고 |
-| `MISSION_DRAFT` 위치 | 목록 가운데(`REPORT_NARRATIVE` 다음) | ai `CallType`(#354)과 같은 순서로 두어 일곱 곳을 같은 목록으로 대조 |
-| 계약 지문 | `admin_operations_base_contracts.json`은 그대로 두고, 테스트에서 `CallType`의 `MISSION_DRAFT`만 빼고 지문 비교 | 기존 #262·#242 정규화와 같은 방식. 지문 파일을 다시 만들면 다른 변경도 묻힘 |
+| 게시 중 수정 | 미션과 같은 버전 방식(`current_`·`published_`·`review_version_id`). 학생은 게시본, 관리자는 현재본, 재게시 때 교체 | 상태만 두면 수정하는 순간 학생 화면이 바뀜 |
+| 학년군·주 위치 | 테마 행(버전 밖). 게시 중 변경은 409 | 게시 부분 UK `(grade_band, week_start)` |
+| 검토·승인 | 별도 `/review` 경로 없음. 검토 요청한 버전이 현재본일 때의 게시가 승인. 검토 중 수정은 `DRAFT` | core가 7경로만 프록시 |
+| 학년군 검사 | 미션 게시본이 학년군 전체를 덮어야 함. 초3~4는 논술 불가, 시연 전용 제외 | 학년군 안 어느 학생에게나 문제가 열려야 함 |
+| 오류 코드 | 전이 불가 409 `CONFLICT`, 게시 검사 422 `WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]`(6종: `DAYS_INCOMPLETE`·`MISSION_NOT_PUBLISHED`·`MISSION_DEMO_ONLY`·`GRADE_BAND_MISMATCH`·`THINKING_TYPES`·`WEEK_ALREADY_PUBLISHED`) | 웹이 `errors[].message`를 그대로 표시 |
+| 이번 주 테마 | 그 주 게시본, 없으면 이전 최근 게시본(`reused`). 학년군에 게시 테마가 없으면 404 | P23 |
+| 시작 순서 | 진행 중 시도 반환(검사 없음) → 미션 공개·범위 → 테마 검사 | 자정이 지나도 이어하기 |
+| `THEME_DAY` | ~~이번 주 테마의 오늘(KST) 요일 문제만~~ → #484: 공개된(`OPEN`) 문제를 토요일까지, 그 주 이미 마무리한 문제는 거부. 아니면 409 `THEME_DAY_CLOSED` | 누적 공개(34장) |
+| `THEME_REVIEW` | 그 주 그 문제 `THEME_DAY` 시도를 마무리했을 때만, ~~토·일~~ → #484: 토요일·프리미엄 일요일. 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | |
+| 개근(칸 `completed`) | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료 | 금요일 문제를 토요일 01시에 끝내면 개근 아님. 주간 완주(`finished`)는 34장 |
+| 열람 기록 | `theme_review_view` 학생·주당 1행, 다시 보내도 200(`firstViewThisWeek`만 false) | 포인트 멱등 근거 |
+| 주간 요약 | `GET …/weekly-theme/summary?weekStart`. 테마는 그 주 학생 테마 시도에서 정하고 없으면 `NO_RECORD` | report는 학년군을 모름 |
+| 날짜 기준 | 조회·열람은 core가 넘긴 `date`, 시작 검사는 learning `Clock` | 둘 다 KST 오늘 |
 
-### 이슈와 다른 점
+- ERD 설계와 달리 `weekly_theme_version` 테이블을 더하고 제목·소개·요일 문제를 버전으로 옮김. 순환 FK는 `DEFERRABLE INITIALLY IMMEDIATE`
+- `weekly_theme.week_start` 월요일 CHECK. 학생 응답 `days[]`·`review.missions[]`에 `title`, 관리자 응답에 `version`·`publishedVersion`·`reviewRequested`
 
-- 이슈 작업 위치 "`AdminMissionsController`"에 넣지 않고 같은 패키지 새 컨트롤러로(위 결정)
-- 이슈에 없던 것: gitops 로컬 core 마이그레이션 리비전 v28(`test_core_migration_versions.py`), 새 계약 테스트 `test_admin_mission_drafts_contract.py`(core ↔ learning·core OpenAPI 경로 6개, 쿼리 이름, 초안 상태, CONTENT, 호출 종류 일곱 곳 대조), `LlmUsageQueryTest` 호출 종류 수 6 → 7
-- web의 사용량 호출 종류 이름표·목업(`frontend/web/src/presentation/admin/adminFormatting.ts`·`src/mocks/handlers/admin.ts`)에는 `MISSION_DRAFT`가 없음. web 범위(#356)라 바꾸지 않음
+### 한계
 
-### 알아 둘 점
+- **테마 미션 공개 중단**: 게시 테마의 미션이 공개 중단되면 그 요일 신규 시작은 409 `MISSION_NOT_AVAILABLE`
+- **다른 컨텍스트 진행 중 시도**: 같은 미션에 `EXTRA` 진행 중 시도가 있으면 `THEME_DAY` 요청도 그 시도를 원래 `context`로 돌려줌. 그 시도는 요일 상태·개근에 들어가지 않음
+- **주 중간 게시·중단**: 그 주 테마가 바뀜. 시도에는 당시 `theme_id`를 저장
+- **데모 테마 시드 없음**: 데모 미션은 학년 하나씩이라 학년군 테마를 게시할 수 없음. 확인할 때는 DB에서 학년 범위를 넓힘
+- MyBatis 세션 캐시라 한 트랜잭션에서 같은 조회를 다시 하면 앞 결과를 씀(테스트 작성 시 주의)
 
-- **마이그레이션 순서**: PR #359(V27)가 develop에 병합된 뒤 그 위에서 작업해 V27 → V28 순서. V28이 V27보다 먼저 적용된 DB는 없음(`outOfOrder` 꺼짐)
-- **DLQ 재처리**: #354 배포 뒤 이 변경 전까지 나온 `MISSION_DRAFT` 사용량 메시지는 core 소비자가 거부해 DLQ에 있음. 배포 뒤 다시 넣으면 기록됨(`event_id` UK로 중복 없음)
+테스트: `WeeklyThemeServiceTest`, `WeeklyThemeAdminServiceTest`, `AttemptThemeStartTest`, `scripts/tests/test_weekly_theme_contract.py`(core ↔ learning OpenAPI 3자 대조).
+
+## 25. 커뮤니티 공유물·반응·열람 검사 (#386)
+
+P20의 learning 몫. 공개 설정·`COMMUNITY` 동의·신고·작성자 별명은 core([auth-account 10절](auth-account.md#10-커뮤니티-공개-설정과-community-선택-동의-388-p20)).
+
+구성: V13 `community_post`(UK `(student_id, mission_id)`)·`community_reaction`·`community_visibility`, `community/` 패키지(내부 경로 7개).
+
+### 결정
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| "마무리"의 뜻 | 공유·열람·반응 모두 학습 완료(`attempt.status = COMPLETED`, 돌아보기 저장) 기준 | FN-RET-02 |
+| 공유 대상 시도 | 그 미션을 처음 학습 완료한 시도만. 아니면 409 `COMMUNITY_NOT_SHAREABLE`. 공유물이 이미 있으면 그 공유물을 200 | 설정을 끈 채 처음 완료하고 나중에 켠 뒤 다시 풀어도 공유하지 않음 |
+| 공유 답변 | 그 시도의 마지막 답변. 응답 `answer`는 `{inputType, text, content}`. 답변 행을 조인하고 복사하지 않음 | 고르기·분류는 `content`만으로는 ID라 읽을 수 없음. 삭제 때 한 곳만 지움 |
+| 표현 필터 | 공유 때 지금 `ExpressionPolicy`로 다시 검사, 걸리면 공유 안 함 | 제출 뒤 단어 목록이 바뀔 수 있음 |
+| 열람 목록 | `VISIBLE`만, 열람자 본인 공유물 제외, 반응 수 없음, `ORDER BY md5(id || seed), id` | 같은 seed면 같은 순서·쪽 나누기 유지(무작위·순위 없음) |
+| 반응 ID | `UUID.nameUUIDFromBytes("community-reaction:{postId}:{studentId}:{reaction}")` | core 포인트 사건 키와 1:1이라 껐다 켜서 적립을 반복할 수 없음 |
+| 반응 검사 순서 | 공유물 잠금 → `VISIBLE` 아니면 404 → 본인 글 409 → 미완료 403. 취소는 상태와 무관하게 허용 | 숨긴 글에 남긴 내 반응을 지울 수 있어야 함 |
+| `community_visibility` 표 | core가 알린 마지막 공개 여부를 저장. 신고 검토 다시 공개 때 끔이면 `HIDDEN_SETTING` | `HIDDEN_REPORT` 동안 설정을 끄면 나중에 다시 공개할 때 `VISIBLE`이 되는 문제 방지 |
+| 검토 전이 | `HIDDEN_REPORT`는 `REMOVED`가 아니면 숨김, `VISIBLE`은 `HIDDEN_REPORT`에서만, `REMOVED`는 끝 상태 | |
+| 학생 삭제 | 공유물에 달린 반응 → 남긴 반응 → 공유물 → 공개 여부를 시도 삭제 전에 | P09. 공유물이 시도·답변을 FK로 참조 |
+
+- api-spec보다 응답에 더한 필드: 공유 `{postId, created, status}`, 반응 `{…, reactionId}`, 목록 `page`·`size`. core는 읽는 필드만 사용
+- 한계: core 공개 전환 호출이 실패하면 `community_visibility`가 늦을 수 있음(새 공유물이 `HIDDEN_SETTING`으로 저장될 수 있고 다음 설정 저장 때 복원, 비공개 쪽으로 어긋남)
+- 테스트: `CommunityTest`, `CommunityRulesTest`, `scripts/validate_learning_community_contracts.py`(실제 응답 10종 ↔ OpenAPI)
+
+## 26. 주간 테마·커뮤니티 실서버 확인 (#424, 2026-11-10)
+
+local kind에서 core·learning·ai·report를 실제로 붙여 확인. 데모 미션 학년 범위는 kind DB에서만 5~6으로 넓힘(저장소 시드는 그대로).
+
+- 확인: 테마 작성 → 검토 요청 → 게시, 학생 요일 상태(`intro`는 월요일에만 채움), 오늘 문제 시작 → 답 → 실제 AI 피드백 → 마무리 → 돌아보기, 공유(보호자 COMMUNITY 동의 + 친구 공개), 다른 학생 열람(`seed` 쿼리 필요), 반응, 신고 즉시 `HIDDEN_REPORT`, 동의 철회 뒤 "다시 공개"로 처리해도 `HIDDEN_SETTING` 유지
+- 미확인: 주말 되돌아보기 열람, 월~금 개근
+
+## 27. report 집계 입력 판정 모델 점수 (#478, 2026-11-10)
+
+리포트 설명(에픽 #473)의 대상 선정 입력으로 report가 답변별 M2 점수를 받는다. 저장값(`judgment.model_scores`)을 그대로 넘기며 새 컬럼은 없다.
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 노출 조건 | `GET /internal/records/students/{id}/attempts?includeModelScores=true`일 때만 `answers[].feedback.judgment.modelScores` 키를 넣음 | 같은 경로를 core 대시보드와 ai 분석 대화 도구도 읽음. 늘 넣으면 점수가 학부모 화면과 외부 LLM 요청에 섞임 |
+| 호출 권한 | `X-User-Role: SYSTEM`만, 그 밖은 `403 FORBIDDEN` | learning에서도 한 번 더 막음 |
+| 값 | 저장 JSON 원문(`{m2, m1, skipped}`), M2를 부르지 않았으면 `null`. 처리 중·실패 답변은 키 없음 | 점수 해석·선정은 report 몫 |
+
+`daily-attempts`·기록 상세·evidence에는 넣지 않는다. 테스트: `RecordControllerTest`, `RecordServiceTest`.
+
+## 28. 교육과정 지식 RAG 계약 고정 (#464, 에픽 #463, 2026-11-11)
+
+하위 이슈 #465~#471이 서로 기다리지 않도록 형식·테이블·내부 API·샘플·가짜 구현을 먼저 정했다. 모든 값은 **기준안(팀 확인 전)**이다. ai 쪽(C6·C7·모델·가짜)은 [ai 15장](ai.md#15-교육과정-지식-rag-계약-464-2026-11-11), 실제 추출은 [knowledge](knowledge.md).
+
+| 계약 | 위치 |
+|---|---|
+| C1 추출 레코드 | `scripts/knowledge/schema/curriculum-record.schema.json` |
+| C2 조각·판 테이블, C3 관계 테이블, C9 판 규칙 | [ERD 4.5](../design/erd.md#45-교육과정-지식-rag-463-계약-464-구현-466) |
+| C4 관계 확인 파일 | `scripts/knowledge/schema/relation-review.schema.json` |
+| C5 learning 지식 내부 API | [api-spec 4.1.2](../design/api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), learning OpenAPI `/knowledge/*` |
+| C8 평가셋 | `scripts/knowledge/schema/eval-record.schema.json` |
+| 샘플 | `scripts/knowledge/samples/`(레코드 215줄, 확인 파일 29행, 평가셋 9줄) |
+
+| 항목 | 결정·기준안 | 근거 |
+|---|---|---|
+| 영역 레코드 나누기 | `scope`: 국어·수학·도덕 `BOTH`, 사회·과학은 내용 체계 영역(`CONTENT_SYSTEM`)과 성취기준 단원(`STANDARD_GROUP`)을 따로 | 원문에서 사회·과학은 영역과 단원이 다르고 고려 사항은 단원마다 있음 |
+| 내용 요소 학년·학기 | C1 레코드에 두지 않고 적재 때 확인된 covers로 계산 | covers는 사람 확인 결과라 추출 단계에서 알 수 없음 |
+| 조각 칸 추가 | `knowledge_chunk.record`(C1 원본), `knowledge_dataset.embedding_model`·`embedding_dimensions` | 다른 모델·차원 벡터를 막으려고 |
+| 선수 FK | `prerequisite_code`는 조각 FK 없이 성취기준 표 코드 검사 | 앞 학기 선수가 저장소 범위 밖일 수 있음 |
+| 대체 사유 | 근거 없음은 200 `reason`(`NO_ACTIVE_DATASET` 등 5개), 오류는 400·409·500 | "근거 없이 기존 방식"을 오류 처리와 구분 |
+| 인증 | 내부 토큰 + `X-User-Role: SYSTEM`, 학생 범위 없음 | 학생 정보를 받지 않음 |
+| `learned` | 개념 1~20개 묶음 요청 | 테마 검사가 낱말 여러 개를 한 번에 확인 |
+| 판 이름 | `kn-YYYYMMDD-NN` | 같은 날 여러 번 적재해도 겹치지 않게 |
+| 구현 전 표시 | OpenAPI `x-implementation-status: planned-issue-…`. 표시된 경로는 컨트롤러 대조 시험에서 제외 | #27 선례 |
+
+- 넣지 않는 자료: 평가원 성취수준 자료, 교육청 수업-평가 자료 문장(코드↔학기 대응만 사용), 블룸·VALUE 원문·번역
+- 고시 개정 확인(2026-11-11): 제2026-1호 일부개정과 제2022-33호의 초3~6 대상 교과 성취기준 331개 문장이 같음
+- 시험: `scripts/tests/test_knowledge_contracts.py`
+
+## 29. 교육과정 지식 저장소 (#466, 에픽 #463, 2026-11-11·12)
+
+#464 계약(C2·C3·C9)대로 `learning_db`에 지식 판·조각·관계 테이블과 판 적재·활성화·제거를 만들었다. 2026-11-11 팀 결정(에픽 #463)으로 미션·테마 생성에 벡터 검색·임베딩을 쓰지 않게 되어, 지식 표는 성취기준·생각 유형 **코드 조회용 관계형 표**로 정리했다(V17).
+
+- 테이블: learning V14 `knowledge_dataset`·`knowledge_chunk`·`knowledge_standard_semester`·`knowledge_fits`·`knowledge_prerequisite`·`knowledge_covers`. V17이 임베딩 칸(`knowledge_chunk.embedding vector(1536)`)·HNSW 인덱스·`knowledge_dataset.embedding_model`·`embedding_dimensions`를 지움
+- 판 관리 API: `/internal/admin/knowledge/datasets…`([api-spec 4.1.3](../design/api-spec.md#413-교육과정-지식-판-관리-466)), 운영 스크립트 `scripts/knowledge/manage_datasets.py`
+- 조회 API: #469 코드 조회(`standards?codes`, `thinking-types/{type}`)가 `ACTIVE` 판 하나만 읽음
+- `vector` 확장은 관리자 bootstrap([DB 개발 가이드 8.7](db-dev-guide.md#87-learning_db-vector-확장-466)). 지금 쓰는 칸은 없지만 V14를 처음부터 적용할 때 필요
+
+| 항목 | 결정 (동섭 2026-11-11) | 근거 |
+|---|---|---|
+| 관리 API 접근 | learning 내부 관리 경로 + 운영 스크립트, `SYSTEM` 역할. core 프록시·관리자 화면 없음 | 판 적재는 개발자·운영자 작업 |
+| 적재 실행 | 동기 요청(스크립트가 10분까지 대기) | 실패하면 판이 `LOADING`으로 남는 C9 규칙으로 충분 |
+| 임베딩 | 만들지 않음(V17, 2026-11-12 정리) | 생성은 학기 대응표·성취기준 코드 규칙으로 고름(에픽 #463 결정). 처음 구현(V14)의 `app.knowledge.embedding`·임베딩 재사용·활성화 전 임베딩 검사는 지움 |
+
+- 활성화는 적재와 분리. 적재 때 활성 판을 `source.previousVersion`에 두고, 활성화 때 활성 판이 바뀌었으면 409
+- 같은 관계 여러 행은 `reviewedAt`이 늦은 행. 이전 판에서 옮긴 관계보다 늦은 `REJECT`는 그 관계를 뺌
+- `content_hash`는 판을 바꿀 때 옮긴 관계의 끝 본문이 바뀌었는지 판정하는 데만 씀(바뀌면 다시 확인할 목록)
+- 실패한 `LOADING` 판은 지우지 않음(하루 99개 상한)
+- 샘플 확인 파일(reviewer `SAMPLE`)은 적재가 거부. kind 샘플 적재는 확인 파일 없이
+- 정렬 주의: Debian glibc는 `초1~2`가 `중1~3`보다 앞. 시험의 학년군 정렬은 `COLLATE "C"`로 고정
+- learning 마이그레이션을 적용하는 검증 스크립트는 pgvector 이미지 사용(V14가 `vector` 타입)
+- 시험: `KnowledgeRulesTest`(조각 해시·covers 학년·학기가 ai `fake.py`와 같음, 관계 규칙), `KnowledgeDatasetServiceTest`(적재·재적재 멱등·교체·제거·관계 옮기기), `scripts/tests/test_knowledge_manage_datasets.py`
+
+### 실제 추출본 적재 (kind, 2026-11-12)
+
+#465 `curriculum-v1`(교육부 고시 제2022-33호 별책 5~9, 1,341건)을 공유 kind에 적재·활성화했다. 사람 확인 관계(#468 확인 파일)는 아직 없어 학기 관계만 들어갔다.
+
+| 항목 | 값 |
+|---|---|
+| 판 | `kn-20261112-01` `ACTIVE`(이전 샘플 판 `kn-20261111-01`은 `RETIRED`) |
+| 원문 문서 | 5(국어·도덕·사회·수학·과학 교과 별책) |
+| 조각 | 1,341 = 성취기준 331·영역 114·내용 요소 886·교과 지침 5·생각 유형 5 |
+| 성취기준(교과) | 과학 102·수학 92·국어 64·사회 49·도덕 24 |
+| 학기 관계 | 425 = 3-1 56·3-2 56·4-1 58·4-2 54·5-1 47·5-2 50·6-1 53·6-2 51 |
+| 사람 확인 관계 | fits 0·prerequisite 0·covers 0(#468 확인 전). 내용 요소 학년·학기는 covers가 들어오면 채워짐 |
+| 소요 시간 | 적재·활성화 5초(운영 스크립트 기준) |
+| 표 크기 | `knowledge_chunk` 25 MB(V14 임베딩 칸 포함 시점. V17 적용 뒤 줄어듦) |
+
+- 확인: 성취기준 문장 331개가 `achievement_standard`와 같아 적재가 멈추지 않음. 코드 조회 `4수01-06`·`6국01-02` 본문, 3-1 수학 성취기준 18개
+- 이 적재는 V17 전 배포본(가짜 임베딩 `fake-bigram-v1` 설정)으로 했다. V17이 임베딩 칸을 지워도 조각·관계 행은 그대로 남는다
+- 원래 계획한 실제 OpenAI 임베딩(토큰 약 187,000개·요청 21회·약 0.004달러)은 팀 결정에 따라 부르지 않았다. 국어 교과 지침 조각 하나(11,445자)가 임베딩 상한(8,000자)을 넘는 문제도 임베딩을 쓰지 않아 없어졌다
+
+## 30. 지식 관계 후보 생성과 사람 확인 (#468, 에픽 #463, 2026-11-11)
+
+고시 자료로 자동으로 만들 수 없는 관계 세 가지(맞는 생각 유형 FITS·선수 PREREQUISITE·다루는 내용 요소 COVERS)의 후보를 만들고, 사람이 확인한 행만 관계 테이블에 넘기는 도구. 초3·초4 전체 사람 확인과 수락률 정리는 실제 레코드로 같은 도구를 써서 진행한다.
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| LLM 호출 | ai-service `create_llm` 재사용, ai-service 환경(`uv run`)에서 실행. 사용량은 표준 오류에만 남김 | 구조화 출력·재시도를 다시 만들지 않음 |
+| 사람 확인 | 두 명. 1차 파일 + 교차 파일 → `compare`로 다른 행 → 합의해 차이 0 → `validate --final` → 적재 | 사용자 결정 |
+| 선수 범위 | 같은 교과·학기가 앞선 **초3~6** 성취기준만. 3-1은 선수 후보 없음 | 초1~2는 지식 자료 밖 |
+| 앞 학기 | 선수의 마지막 학기 < 이 성취기준의 첫 학기. 학기 정보가 없으면 후보·수락 불가 | |
+| COVERS 범위 | 같은 교과·같은 고시 학년군 내용 요소 전체에서 유사도 상위 3(`--top`) | 사회·과학 성취기준 `domainId`는 단원이라 내용 체계 영역과 이어지지 않음 |
+| 선수 겹침 | 확인된 COVERS(`--covers`) 또는 이번 COVERS 상위로 겹침 많은 순 상위 10개를 LLM에 주고 0~3개 | 내용 요소가 겹치는 것 우선 |
+| evidence 형식 | 부분을 ` \| `로 잇고 `문장: `·`해설: `로 시작하는 부분은 원문 그대로. `validate`가 부분 문자열 검사 | |
+| FITS 거르기 | 유형·요소 코드가 틀리거나 인용이 원문에 없으면 버림, 최대 2개 | 근거 없는 유형은 내지 않음 |
+
+```
+cd backend/ai-service
+uv run python ../../scripts/knowledge/relation_candidates.py --records R --dataset-version kn-YYYYMMDD-NN \
+    --embedding http --out ../../scripts/knowledge/relations-reviewed/kn-YYYYMMDD-NN-candidates.csv
+python scripts/knowledge/review_relations.py validate FILE --records R [--final]
+python scripts/knowledge/review_relations.py compare FIRST CROSS
+python scripts/knowledge/review_relations.py stats FILE --records R
+python scripts/knowledge/review_relations.py coverage FILE --records R
+python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --dataset D
+```
+
+- `--embedding fake`(기본)는 가짜 벡터, `http`는 ai `POST /internal/embeddings`(`AI_URL`·`INTERNAL_TOKEN`, ai에 `EMBEDDING_PROVIDER=openai`와 키 필요)
+- `--final`은 미확인 행·`SAMPLE` 확인자 거부. 적재가 돌려주는 `recheck` CSV도 같은 절차로 다시 확인
+- LLM 입력은 성취기준 문장·해설, 생각 유형 지침, 내용 요소 글뿐(학생 정보 없음)
+- 한계: 실제 LLM 프롬프트 품질은 아직 재지 않음. 첫 실제 실행의 1차 확인 수락률로 보고 프롬프트 판(`relation-candidates-v1`)을 올림. 가짜 벡터는 품질 지표가 아님
+- 시험: `scripts/tests/test_knowledge_relations.py`
+
+## 31. 테마 초안 작업·학년별 테마·이야기 열람 (#438)
+
+에픽 #436(주간 테마 LLM 생성과 시작·종료 화면)의 learning 몫. ai 생성 그래프는 #437([ai 17장](ai.md#17-주간-테마-초안-생성-437)), core 프록시·사용량은 #439([core 15절](core-gateway.md#15-테마-초안-관리자-프록시이야기-열람-프록시사용량-theme_draft-439)), web은 #440·#441. 계약은 api-spec 1.3·4.1, learning OpenAPI 1.3.0.
+
+구성: V15(준비·복사)·V16(확정) `weekly_theme.grade`, 버전·요일의 이야기·S3 키·움직임·정답 구조·대화·생각 열기 위치 칸, `theme_story_view`, `theme_draft`, `mission.source` `LLM_THEME`, `mission_version.scene_motion`. `theme/`의 초안 도메인·스케줄러·ai 클라이언트, `_common/storage/AssetUrls`.
+
+### 학년별 테마
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 학년 | `G3`·`G4`·`G5`·`G6`. 시도 학년 → 테마 학년은 `min(학년, 6)`. 게시 부분 UK `(grade, week_start)` | 담당자 결정 2026-11-10, P26 |
+| 기존 학년군 테마 | `G3_4` 행은 `G3`로 바꾸고 같은 내용의 `G4` 복사본(새 ID)을 V15가 만듦. `G5_6` → `G5`·`G6`. 기존 시도·열람 기록의 `theme_id`는 원래 행 | 원래 행을 남기면 FK를 바꾸지 않아도 됨 |
+| 마이그레이션 순서 | 옛 게시 UK를 먼저 지운 뒤 복사(복사본도 `grade_band`가 같아 UK에 걸림). 순환 FK는 `SET CONSTRAINTS … DEFERRED` | |
+| 복사본 ID | `md5(원래 id \|\| ':G4')::uuid` | 어느 환경에서 돌려도 같은 ID라 테스트로 확인 가능 |
+| 전환 호환 | 학생 경로 세 개만 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽음. 관리자 경로는 `grade`만 | 학생 테마 조회가 끊기지 않게 |
+| 게시 검사 | 미션 학년 범위가 테마 학년을 포함, 초3·초4 논술 불가. 오류 코드 `GRADE_BAND_MISMATCH` → `GRADE_MISMATCH` | 웹은 `errors[].message`만 표시 |
+
+### 이야기·정답 구조·장면
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 이미지·영상 URL | DB에는 ai가 올린 S3 키, 응답 때 learning이 presigned URL로 변환(AWS SDK S3 presigner). core는 그대로 전달 | 리포트 PDF와 같은 방식. core에는 S3 연결이 없음 |
+| URL 유효기간 (기준안) | 1시간(`app.assets.url-ttl`) | 학생이 화면·영상을 보는 동안 열려 있어야 함 |
+| presign 대상 | ai 키(`theme-drafts/`로 시작)만. 그 밖의 값은 저장 값 그대로. 버킷 설정이 없으면 ai 키는 null | 관리자가 장면 칸을 자유 글로 넣어 형식을 알 수 없음 |
+| 변환 위치 | `MissionService` 학생용 조회 한 곳. 관리자 미션 응답 `sceneUri`는 저장된 키 그대로(테마 편집 응답에는 미리보기 URL 칸을 따로) | 웹이 관리자 응답을 그대로 다시 저장하므로 URL로 바꾸면 만료되는 URL이 저장됨 |
+| 문제 전 영상 위치 | 테마 요일 칸(`weekly_theme_day.video_uri`), 응답은 시도의 `themeScene.videoUrl`. ai는 `INTRO`·`OUTRO` 영상만 만들어 채택 테마에서는 null, 관리자가 넣을 때만 사용 | 같은 미션이 학년별 테마 여럿에 들어갈 수 있어 미션 응답에 넣으면 어느 테마 영상인지 정할 수 없음 |
+| 정답 구조 공개 | 요일 단서는 그 요일이 `OPEN`·`CLOSED`일 때(→ #484: 그 문제를 학습 완료한 뒤). 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만. 엔딩 판단은 `ThemeEnding` 한 곳(#484 전까지 토·일, #484가 정답 고르기 기준으로 바꿈 34장) | 엔딩 규칙(#483)은 #484 몫. 판단 자리만 두면 #484는 판단만 바꾸면 됨 |
+| 시작 이야기 | 그 주 처음 들어왔을 때 한 번(월~토). `intro`는 매일 채움 | 월요일에 안 온 학생도 이야기를 처음부터 봄 |
+| 이야기 열람 | `POST …/weekly-theme/story-views {kind}` → `{kind, firstViewThisWeek}`. INTRO는 일요일, OUTRO는 엔딩 상태가 아니면 409 `THEME_STORY_NOT_ALLOWED` | |
+| `answer_clue` | 채택 때 `rulesOut`이 비지 않은 마지막 요일의 `clue`로 채움 | ai 응답에 칸이 없어 단서 구조에서 계산 |
+| 정답 구조 저장 검사 | `rulesOut`이 비지 않은 날은 그때까지 남은 후보를 적어도 하나 새로 뺌 | 결정적 단서 계산의 전제 |
+| 생각 열기 위치 | `x`·`y` 0~100, `seq`는 그날 미션 기준표의 생각 열기 순번, 중복 금지. 위반 400 | |
+| 관리자 수정의 이어받기 | 이야기·정답 구조·요일 칸이 본문에 없거나 null이면 현재 버전 값을 이어받고, 빈 값(""·[]·{})이면 비움. 생각 열기 위치는 그 요일 미션이 같을 때만 | 지금 관리자 웹은 새 칸을 보내지 않아 전체 교체면 LLM 테마 내용이 사라짐 |
+| 장면 움직임 보존 | 관리자 미션 수정 본문에 `sceneMotion`이 없으면 `sceneUri`가 같을 때만 이전 값을 이어받음 | 관리자 미션 계약을 바꾸지 않으려고 |
+| 움직임 형식 | ai 형식 v1(`ThemeMotion`)을 칸 검사 없이 그대로 저장·전달 | `spots.line`은 ai가 단서 결론·정답 이름을 걸러 미리 드러나지 않음 |
+| 길이·개수 상한 (기준안) | S3 키 500자, 큰 질문 200자, 후보·정답 100자·10개, 단서 200자, 대화 20줄, 생각 열기 위치 10개, 종료 이야기 2000자. 상수는 도메인 `ThemeLimits` | |
+
+### 테마 초안
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 상태·다시 생성 | 미션 초안과 같은 전이. 다시 생성은 같은 입력으로 새 초안(`source = ADMIN`), 원래 초안은 그대로. `GENERATING`·`ADOPTED`는 409 | 자동 초안 부분 UK와 부딪히지 않음 |
+| 자동 생성 성취기준 (기준안) | 그 학년이 속한 학년군 표에서 `SOLVE`는 수학, 나머지는 국어. 같은 학년 최근 4주 초안에 쓴 코드는 빼고 무작위 1개. 초3·초4 따져 보기는 서술. #536에서 후보를 학기 대응표의 그 학년·학기로 거름(35장, RAG 안 씀) | P15 국어 우선, 문제 해결하기 수학 예외 |
+| 빈 유형·빈 주제 | 관리자가 고르지 않은 유형은 자동 규칙으로 채워 `input`에 저장. 주제가 비면 주제 씨앗으로 채움 | ai 요청은 유형 5개가 다 있어야 함 |
+| 주간 자동 | 수요일 03:00 KST(`app.theme-draft.weekly-cron`)에 다음 주 초안. 그 학년·주에 게시 테마가 있으면 만들지 않음. 학년마다 실패 격리 | 쓰지 않을 초안에 ai 비용을 쓰지 않게 |
+| 상한·대기 (기준안) | 생성 시도 3회, ai 마감 15분, learning→ai 대기 16분(`app.theme-draft.ai-read-timeout`), 리스 18분, 생성 주기 10초 | 실측 후 조정 |
+| 서킷 | `ai-theme-draft`. 느린 호출 설정 없음 | 테마 실패가 다른 호출을 막지 않게 |
+| 스레드 | `spring.task.scheduling.pool.size` 5. ai 호출은 트랜잭션 밖(16분 동안 DB 연결을 잡지 않음) | 긴 ai 대기가 고착 판정 탐지를 밀지 않게 |
+| learning 검사 | 요일·유형 배치(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`), 미션 5개 게시 규칙(`DraftRules.learningFailures`), 정답 논리, 글 길이. 대화·장면 키 모양은 보지 않음 | 채택한 테마를 관리자 화면에서 다시 저장할 때 400이 나지 않게 |
+| 실패 기록 | `check_results[].failures[].stage`: ai `THEME`·`MISSION`·`REVIEW`·`IMAGE`, learning `LEARNING`, 호출 실패 `AI_CALL`. ai에 보내는 `previousFailures`는 learning 실패를 `THEME`·`MISSION`으로 바꾸고 AI 호출 실패와 사유가 빈 묶음은 뺌. `MISSION` 사유는 `<요일> <검사 코드> <자세히>` | ai 요청 `stage`는 네 값 enum이고 `reasons`는 1개 이상이라 어기면 422로 같은 초안이 계속 실패 |
+| ai `failure`가 있을 때 | learning 검사 없이 ai 실패만 기록, 받은 결과는 `output`에 저장 | 관리자가 실패한 초안도 볼 수 있게 |
+| 자동으로 못 채울 때 | 관리자 요청은 409(성취기준 표가 비어 있음), 주간 자동은 그 학년만 건너뜀 | 요청 값이 아니라 서버 데이터 문제 |
+| 채택 | 미션 5개 `DRAFT`(`source = LLM_THEME`, 학년 범위 = 테마 학년, 요소 배점 1)와 테마 `DRAFT`를 한 트랜잭션. `MissionService.createFromDraft`에 출처 인자를 더해 재사용 | |
+| 응답 장면 | 생성 결과가 있으면 장면 7개를 INTRO·MON~FRI·OUTRO 순으로 항상 넣음(값이 없으면 null) | 웹이 고정 순서로 그릴 수 있게 |
+| 기능 간 호출 | 성취기준은 `MissionService.standards`, 게시 여부는 `WeeklyThemeAdminService.publishedExists`. 테마 ai 요청 타입은 `theme/client`에 따로(`AiThemeStandard`·`AiThemeElementCode`) | 기능 간 호출은 상대 기능의 service로만, client는 다른 기능 client를 참조하지 않음 |
+
+### 주제 씨앗 (2026-11-11)
+
+주제가 비면 ai가 공원·탐정으로 쏠려(#437 실측) learning이 주제 씨앗을 골라 `topic`에 넣는다. 계약 변경 없음.
+
+- 형식: `뭉치 역할: <역할(차림)> / 장소: <장소> / 찾는 대상: <대상>`. 목록 24개(`ThemeTopicSeeds.ALL`, 기준안). 찾는 대상은 잃어버린 물건·길 잃은 동물만(사람 탓 줄거리 없음)
+- 주간 자동은 항상, 관리자 요청은 `topic`을 비웠을 때. 관리자가 쓴 주제와 다시 생성은 그대로
+- 같은 학년에서 쓴 씨앗은 목록 개수만큼의 주 동안 제외(초안 상태 무관). 같은 주 다른 초안의 씨앗도 제외. 남는 게 없으면 가장 오래전에 쓴 것
+- 계절(기준안): 봄 3~5월·여름 6~8월·가을 9~11월·겨울 12~2월. 계절이 맞지 않는 씨앗 4개는 그때만
+
+### 자동 성취기준의 한계와 다음 설계
+
+아래는 #438 때 기록이고, #536에서 해결·변경했다(35장).
+
+- 학년군 표에서 고르므로 초3 테마에 4학년 내용이 뽑힐 수 있음(#437 실측에서 초3 통과율이 가장 낮았던 원인 중 하나). 성취기준 표에는 학년·학기 칸이 없어 지금은 거를 수 없고, 관리자가 성취기준을 지정하면 피할 수 있음 → #536: 학기 대응표로 그 학년·학기만 거름
+- 후보 풀 설계(기준안): 지식 RAG 적재 뒤 learning 지식 서비스(#469)에서 그 학년·학기(`knowledge_standard_semester`)와 유형(`knowledge_fits`) 성취기준을 받고, 없거나 장애면 학년군 표로 대체. ai 요청 계약은 그대로 → #536: RAG를 쓰지 않기로 해(팀 결정 2026-11-11) 지식 서비스 단계 없이 이번 학기 → 같은 학년군 지난 학기 → 학년군 표
+- 학기 규칙(기준안): `weekStart`가 3월 1일~8월 15일이면 1학기, 그 밖은 2학기 → #536에서 기준안대로 확정(사용자 결정 2026-11-12)하고 후보 풀에 씀(`ThemeSemester`)
+- 국어는 두 학년 공통 코드가 많아 코드로는 학년 수준을 거를 수 없음 → ai 검토(학년 어휘 `GRADE_VOCAB`)가 맡음. 처음 기록의 `learned`(#469)는 RAG를 쓰지 않기로 해 뺌
+- 확인 필요(#536에서 닫음): 주제와 가까운 성취기준을 고르려면 C5 `theme-candidates`를 부르는 쪽이 ai에서 learning으로 바뀜(#469 담당과 확인) → 주제가 있는 관리자 요청도 같은 학기 대응표 규칙으로 고르고, 벡터로 고르는 안은 하지 않음
+
+### 남은 확인
+
+- 정답 고르기 위치·저장·엔딩 판정은 #484(34장에서 구현). `sundayTheme`도 #484부터 읽음
+- 인프라: learning에 S3 역할이 없음. `theme-drafts/*` 읽기 역할(presign 서명용)과 버킷 이름(ai 쓰기 버킷과 같아야 함), 로컬은 브라우저가 닿는 MinIO 주소
+- presigned URL 한계: 응답마다 주소가 바뀌어 브라우저 캐시가 맞지 않음. 임시 자격 증명으로 서명하면 1시간보다 일찍 만료될 수 있음. 만료 403은 웹이 이번 주 테마를 다시 받아 처리(#440)
+- 주간 자동 시각에 learning이 모두 내려가 있으면 그 주 자동 초안이 생기지 않음(관리자 요청으로 대신)
+- api-spec 2.8·2.11 공개 줄 문구(학년, 새 응답 칸, INTRO 월~토·OUTRO 엔딩)는 core PR에서 맞춤
+- #437 그래프와 실제로 붙인 확인은 병합 뒤 kind에서 core와 함께
+
+테스트: `ThemeGradeMigrationTest`, `ThemeAnswerRulesTest`, `AssetUrlsTest`, `ThemeDraftServiceTest`, `ThemeDraftConcurrencyTest`(레플리카 4곳, 느린 ai 대기 중 내부 API 즉시 응답), `ThemeDraftAiStubFlowTest`, `ThemeTopicSeedsTest`, `scripts/tests/test_theme_drafts_contract.py`.
+
+## 32. 일일 리포트 완료일 조회 지원 (#391)
+
+`/internal/records/students/{studentId}/daily-attempts`는 같은 KST 날짜의 COMPLETED 시도를 완료 시각으로 찾는다. 기존 제출일 기준 P08 목록은 유지한다. 기존 RecordPage/원문 제외 정책·학생 scope·삭제 표식을 재사용하며 새 DB 컬럼은 없다. 전날 제출·오늘 완료, 진행 중 제외, 다른 학생 제외를 서비스 DB 테스트로 검증한다. 테마·context 자체 구현은 #385 범위다.
+
+### #391 후속 반영
+
+기록 목록·상세·daily-attempts에 실제 `attempt.context`를 추가했다. 주간 요약은 `WeeklyThemeReportService`가 #207 비교 로직을 재사용해 `reviewRetries[].comparison`에 상태와 요소 변화만 담는다. 학생 범위를 검사하고, 미마무리 시도는 null이며 원문·인용은 전달하지 않는다. 위 #385 이력의 기록 context 후속은 이 변경으로 완료했고 학생 시도 상세 context는 이번 범위 밖이다.
+
+## 33. 지식 코드 조회 내부 API (#469, 2026-11-12)
+
+### 확정 범위와 선행 변경
+
+[#463 팀 결정](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/463#issuecomment-6797018586), [#469 범위 조정](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/469#issuecomment-6797026238), #466·#470 담당자의 11/12 확인에 따라 C5는 코드 조회 두 경로만 제공한다. #547이 병합된 develop `7643cedd`를 반영했다. 이전 다섯 API와 벡터 검색 실험 기록을 현재 완료 기준으로 사용하지 않는다.
+
+| 유지·완료할 작업 | 범위에서 제외한 작업 |
+|---|---|
+| 성취기준 코드 조회, 생각 유형 지침 조회 | `search`, `theme-candidates`, `learned` |
+| ACTIVE 판 조회, 근거 참조, 학년 일치 여부, 확인된 관계 | 질의 벡터, 임베딩 모델 대조, 유사도 기준·k, 재귀 선수 판정 |
+| 질의 2초 예산과 지연 기록 | `HOLD` 처리 협의, 주제 벡터·배움 판정 예시 |
+
+learning V17은 #466에서 이미 적용한 마이그레이션이다. 조회 매퍼·시험 데이터에서 삭제된 임베딩 컬럼 참조를 없앴으며 이 PR에 새 마이그레이션은 없다. V14→V17 실행 이력에 필요한 pgvector 확장은 유지한다. ai의 C6 임베딩 API와 #468 오프라인 관계 후보 생성은 별도 기능으로 유지하고 회귀 검사했다.
+
+### 제공 계약과 #470 호출 방법
+
+| 호출 | 반환·용도 |
+|---|---|
+| `GET /internal/knowledge/standards?codes&grade&thinkingType` | 코드별 성취기준 문장·해설, 영역 내용 체계·고려 사항, 교과 지침, `fits`·`covers`, 선택한 생각 유형 지침 |
+| `GET /internal/knowledge/thinking-types/{type}` | 생각 유형의 팀 작성 지침과 출처 표기 |
+| `KnowledgeService.standards(codes: List<String>, grade: Int?, thinkingType: String?)` | HTTP 컨트롤러와 동일한 `KnowledgeBundle`. learning 미션 초안은 이 메서드를 직접 호출 |
+| `KnowledgeService.thinkingType(type: String)` | HTTP와 동일한 `ThinkingTypeResponse` |
+
+ai 테마 생성은 HTTP 경로를 사용한다. ai 호출 대기 시간과 C7 생성 연동은 #470 범위다. HTTP는 기존 내부 토큰과 SYSTEM 역할을 요구하며 학생 정보는 입력받지 않는다. 직접 호출도 같은 입력 검사·조회 서비스·읽기 트랜잭션을 거친다.
+
+- C5 응답은 [api-spec 4.1.2](../design/api-spec.md#412-교육과정-지식-내부-api-463-계약-464-c5-구현-469), 두 서비스 OpenAPI, ai `contracts.py`·`fake.py`·계약 시험을 함께 맞췄다.
+- `codes`는 1~10개, `grade`는 선택값 초3~6, `thinkingType`은 선택값 5유형이다. `gradeMatch=false`여도 요청한 코드는 반환한다. 학년으로 조회 결과를 삭제하는 필터가 아니다.
+- ACTIVE 판 하나의 `version`을 모든 조각·관계의 `dataset_version`에 사용한다. REPEATABLE READ 읽기 트랜잭션으로 조회 중 판과 본문이 함께 변경돼도 하나의 스냅숏만 반환한다. LOADING·RETIRED 판은 읽지 않는다.
+- 각 근거 조각에는 `{kind, id, datasetVersion}`을 붙인다. 사람이 확인하지 않은 관계는 제외하며 `fits=[]`, `covers=[]`는 정상 응답이다. 관계를 추정해 채우지 않는다.
+- 남는 200 응답 사유는 `NO_ACTIVE_DATASET`, `CODE_NOT_FOUND`다. 일부 코드만 없으면 정상 항목과 `missingCodes`를 함께 반환하고, 모든 요청 코드가 없을 때 `CODE_NOT_FOUND`다.
+- 벡터 전용 409와 세 사유 `BELOW_THRESHOLD`·`NO_CANDIDATE`·`NO_REVIEWED_RELATION`은 계약에서 제거했다. 제거된 POST 세 경로는 404이며 이전 클라이언트는 이 경로를 더 호출하면 안 된다.
+
+### 시간 예산과 운영 한계
+
+`app.knowledge.query-timeout-ms`는 기본 2000ms, 허용 범위 1~2000ms다. 각 SQL에 남은 `statement_timeout`을 적용하고 DTO 구성·트랜잭션 종료 뒤에도 예산을 확인한다. 로그에는 작업 이름·성공/실패/시간 초과·소요 시간만 남기며 지식 본문과 토큰은 남기지 않는다.
+
+실제 PostgreSQL에서 테이블 잠금을 유지했을 때 요청이 취소되어 500 `INTERNAL_ERROR`로 끝났고, 잠금 해제 후 다음 요청은 200으로 복구했다. 이번 실행의 시간 초과 로그는 2,007ms다. 2초는 질의 취소 예산이며 취소 전달·정리·HTTP 전송을 포함한 절대 응답 상한이 아니다. 공유 연결 풀 획득 대기를 여기서 강제로 중단하지는 못한다. ai 대기 시간은 #470에서 이 한계를 고려해 정한다.
+
+### 실제 적재본 검증
+
+일회용 PostgreSQL에 V17까지 마이그레이션·시드를 적용하고 #466 관리 API로 `curriculum-v1.jsonl` 1,341건을 적재·활성화했다. 구성은 성취기준 331·영역 114·내용 요소 886·교과 지침 5·생각 유형 지침 5다. 사람 확인 관계는 0건 그대로이며 확인된 것으로 바꾸지 않았다.
+
+| 질의 사례 | 횟수 | 확인한 결과 | 지연 최소~최대 |
+|---|---:|---|---:|
+| `4국02-04`, `4수01-06`, `4과01-01`, `4사01-01`, `4도01-01` | 5 | 원문 문장·해설 일치, 영역·교과·유형 지침, `gradeMatch=true`, 빈 관계 | 15.992~28.198ms |
+| 위 다섯 코드에 학년 6 요청 | 5 | 코드를 유지하면서 `gradeMatch=false` | 16.535~21.390ms |
+| ANALYZE·EVALUATE·CREATE·SOLVE·REFLECT | 5 | 각 유형 출제 지침, 동일 ACTIVE 판의 근거 | 9.750~11.304ms |
+
+값은 로컬 Spring MockMvc→실제 서비스→MyBatis→PostgreSQL 호출 15건의 경과 시간이다. 실제 네트워크 지연·AWS 부하 성능·생성 품질을 측정한 값은 아니다. 실행마다 소폭 달라지며 15건 모두 2초 미만을 검사한다. 코드 조회의 HTTP JSON과 서비스 직접 호출 DTO도 일치했다. 전체 응답·지연은 테스트가 `backend/learning-service/build/contracts/knowledge-actual-observations.json`에 재생성한다.
+
+실행 중인 learning의 읽기 전용 관측 도구도 코드 두 경로로 바꿨다. 내부 토큰을 환경 변수 `INTERNAL_TOKEN`으로 제공한다.
+
+```sh
+python scripts/knowledge/query_examples.py --learning-url http://127.0.0.1:8081 --cases scripts/knowledge/samples/query-examples.sample.json --output knowledge-observations.json
+```
+
+도구는 활성 판 확인 1회와 코드 5개·유형 5개를 조회한다. 판 교체·하위 근거 판 불일치·HTTP 실패 때 완료로 표시하지 않고 부분 결과를 보존한다. 분류 표시는 검토 인증이 아니며 `qualityAssessment=not_evaluated`를 유지한다.
+
+### 조정된 해야 할 일
+
+- [x] 성취기준 코드 조회와 생각 유형 지침 조회 구현
+- [x] learning 직접 호출용 공개 서비스 메서드와 HTTP의 동일 DTO 제공
+- [x] ACTIVE 판·같은 판의 조각/관계·근거 참조·빈 관계 처리
+- [x] 사유를 `NO_ACTIVE_DATASET`·`CODE_NOT_FOUND`로 정리
+- [x] 벡터 API·전용 오류/사유/설정/DTO 제거 및 api-spec·OpenAPI·ai 계약/가짜 구현/시험 동기화
+- [x] 기본 2초 질의 예산·지연 로그·잠금 취소·복구 검사
+- [x] 샘플과 실제 적재본의 조회·학년 일치·유형·내부 인증·판 교체 검사
+
+### 조정된 완료 조건
+
+- [x] 유지하는 두 API의 정상·근거 없음·오류·인증 시험 통과
+- [x] #466 V17 적재/활성화와 연결하고 삭제된 임베딩 컬럼을 참조하지 않음
+- [x] 실제 추출본의 코드 5개·학년 불일치 5개·생각 유형 5개 결과와 지연 기록
+- [x] HTTP와 직접 서비스 호출의 `KnowledgeBundle` 일치
+- [x] API 명세·OpenAPI·ai 모델/가짜 구현의 계약 검사 통과
+- [x] learning 전체 테스트·빌드, ai 회귀 검사, 저장소 스크립트 검사 통과
+
+### 검증 결과
+
+- learning `test bootJar`: 476개 통과, 실패·오류·건너뜀 0개, 실행 JAR 빌드 성공. 실제 PostgreSQL 기반 적재/조회·동시성 시험을 포함한다.
+- 지식 정상/근거 없음/400·401·403 HTTP JSON 10개가 OpenAPI 검사에 통과했다. 실제 추출본 질의 15개의 전체 응답도 OpenAPI와 ai Pydantic 모델 양쪽에 일치했다. 기존 커뮤니티·테마 요약 응답 계약 검사도 통과했다.
+- ai 전체 pytest 719개 통과. 최종 공유 함수·가짜 응답 변경 후 지식·임베딩 묶음 44개를 재실행해 모두 통과했다. Ruff check·format도 통과했다.
+- 저장소 스크립트 최종 304개 중 303개 통과·기존 조건부 1개 제외. 관측 도구 회귀 시험 5개를 포함한다. 제외 항목은 원본 HWP 경로(`KNOWLEDGE_SOURCE_DIR`)가 필요한 재추출 동일성 시험이며, 커밋된 실제 JSONL 적재·조회는 위에서 검증했다.
+
+위 결과는 로컬 검증이다. #470의 생성 연동 완료·생성 품질 승인·운영 배포·원격 PR CI 완료를 의미하지 않는다. 이슈 원문의 벡터 조회 세 경로와 관련 완료 조건은 합의로 제외된 것이며 구현 완료로 체크하지 않는다.
+
+## 34. 주간 테마 누적 공개·정답 고르기·엔딩·당일 풀이 (#484)
+
+P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포인트 사건)·report #486(요약 표시)이 기준안 칸 이름으로 먼저 구현해 둔 것을 그대로 맞췄다(#484 코멘트: core #485·#506, report #486 PR #534). 33장은 #469가 먼저 썼다. #536도 장을 더하므로 병합 순서에 따라 번호를 다시 맞춘다.
+
+구성: V18 `theme_answer_pick`, 학생 내부 경로 1개 추가(`POST /internal/students/{id}/weekly-theme/answer-picks`), `ThemeWeek.stateOf`·`WeeklyThemeService`·`ThemeEnding`·`CommunityService.requireCompleted` 수정. 시도 시작·주간 테마 조회·되돌아보기·이야기 열람이 `sundayTheme` 쿼리를 읽는다.
+
+### 결정
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 요일 상태 | 그 요일 KST 00:00 전 `LOCKED`, 공개 뒤 토요일까지 `OPEN`, 일요일 `CLOSED`. `sundayTheme=true`면 일요일도 `OPEN` | state-diagram 3.2.1. core는 일요일이고 상품이 허용할 때만 true를 보내므로 평일·토요일은 값과 무관 |
+| 마무리한 문제 신규 시작 | 그 주에 같은 문제 `THEME_DAY` 시도를 마무리했으면 409 `THEME_DAY_CLOSED`. 진행 중 시도 이어하기는 지금처럼 검사 없음 | core #506 부탁. 재시작마다 AI 피드백 호출이 생기고 토요일 다시 풀기를 우회할 수 있음 |
+| 일요일 거부 코드 | 새로 만들지 않음. 신규 시작 `THEME_DAY_CLOSED`, 다시 풀기·되돌아보기 `THEME_REVIEW_NOT_ALLOWED`, 이야기 `THEME_STORY_NOT_ALLOWED` | 설계 기준안 그대로. core는 받은 코드를 그대로 넘기고 web 목업에도 있음 |
+| 정답 고르기 방식 | 별도 경로 `answer-picks {pick}` + 새 표 `theme_answer_pick`(학생·주당 1행). 시도 계약은 그대로 | 사용자 결정 2026-11-12. 시도(attempt)에 칸을 더하면 모든 미션 흐름·시도 계약이 바뀜 |
+| 고를 수 있는 때·횟수 | 그 주 금요일 문제 `THEME_DAY` 시도를 마무리(`finished_at`)한 뒤, 한 주 한 번. 다시 고르지 않음 | 사용자 결정 2026-11-12. 설계 "금요일 문제 끝" |
+| 엔딩 판정 | 저장하지 않고 계산: 고르지 않음 `NOT_ENDED`, 맞힘 `ENDED`, 틀림이면 **고른 뒤** 금요일 문제 `THEME_REVIEW` 시도를 마무리했을 때 `ENDED` | state-diagram 3.2.2. 고르기 전 다시 풀기는 "오답 → 다시 풀기"가 아니므로 세지 않음(새로 정한 값) |
+| 고를 때 저장하는 값 | `mission_id`(고를 때 금요일 문제)·`pick`·`correct`(고를 때 정답과 같았는지)·`picked_at` | 고른 뒤 관리자가 정답·요일 문제를 고쳐도 판정이 흔들리지 않게 |
+| 정답 고르기 거부 | 후보 밖·빈 값 400 `VALIDATION_FAILED`, 큰 질문 없는 테마·금요일 문제 마무리 전·이미 고름·무료 일요일 409 `THEME_PICK_NOT_ALLOWED`(새 코드) | 기존 코드는 뜻이 달라 새로 둠 |
+| 요일 단서 공개 | `clue`·`rulesOut`은 그 문제를 그 주에 학습 완료(그 주 테마 시도 아무거나)한 뒤 | ai.md 17장 사용자 결정 2026-11-11 "미션을 마쳐야 단서", 기준은 학습 완료(사용자 결정 2026-11-12). #438은 `LOCKED`가 아닐 때였음 |
+| 당일 풀이 `completedOnDay` | 기존 계산 그대로(그 요일 문제 `THEME_DAY` 시도를 그 요일 KST 안에 학습 완료) | core #485 칸 이름 그대로 |
+| 주간 완주 `finished` | 다섯 문제 각각 그 주 테마 시도(`THEME_DAY`·`THEME_REVIEW`)로 일요일 00:00 KST 전에 학습 완료 | P21 "토요일 23:59:59까지, 일요일 제외". "학습 완료"는 report #486의 `completedInWeek`(그 주 테마 시도 안에 학습 완료)와 같은 기준이라 report 검증(완주면 다섯 요일 모두 `completedInWeek`)과 맞음 |
+| 요약 `completedInWeek` | 그 주 테마 시도 안에 학습 완료(일요일 포함) | report #486 칸 이름 그대로. `days[].completed`는 이름·뜻 유지(#507) |
+| `review.missions[].missed` | 공개됐지만(`LOCKED` 아님) 아직 마무리하지 않음(진행 중 포함) | api-spec 2.11, 칸 이름은 core·report 호환으로 유지 |
+| `perfectAttendance` | 만들지 않음. 개근은 기존 `completed` | core #506 결정 |
+| 커뮤니티 엔딩 전 잠김 | 정답 고르기 문제 = 큰 질문·정답이 있는 테마 버전의 금요일 문제. 학습 완료했어도 그 문제로 고른 주 중 `ENDED`인 주가 없으면 403 `COMMUNITY_LOCKED_UNTIL_ENDING`(고르지 않았으면 잠김) | P20. 새 코드는 사용자 결정 2026-11-12(core가 `COMMUNITY_LOCKED` 문구를 "이 미션을 마무리하면…"으로 고정해 덮어씀) |
+
+### API 변경
+
+| 경로 | 바뀐 것 |
+|---|---|
+| `POST /internal/missions/{id}/attempts` | 쿼리 `sundayTheme` 읽음. 409 `THEME_DAY_CLOSED` 뜻 넓힘(공개 전·무료 일요일·이미 마무리) |
+| `GET …/weekly-theme` | `days[].completedOnDay`·`finished`·`ending` 추가, `days[].clue`·`rulesOut` 공개 조건, `state`·`review.open`·`missed` 뜻, 쿼리 `sundayTheme` |
+| `POST …/weekly-theme/review-views` | 토요일·프리미엄 일요일만, 쿼리 `sundayTheme` |
+| `POST …/weekly-theme/story-views` | 쿼리 `sundayTheme`(계약에 빠져 있던 파라미터 추가), OUTRO는 엔딩 기준 |
+| `POST …/weekly-theme/answer-picks` | 새 경로 `{pick}` → `{correct, ending, answer}` |
+| `GET …/weekly-theme/summary` | `days[].completedInWeek`·`finished`·`ending` 추가 |
+| `GET /internal/community/missions/{id}/posts`, 반응 | 403 `COMMUNITY_LOCKED_UNTIL_ENDING` 추가 |
+
+### 같이 고친 파일
+
+- 설계: state-diagram 3.2.1·3.2.2(#506이 지우라고 한 "#484 구현 전까지 허용" 문구 포함), sequence-diagram 3.4·3.6.1·3.7, api-spec 오류 코드·상태값·2.9·2.11·4.1(공개 경로 `answer-picks` 줄·커뮤니티 잠김 문구는 core #550이 먼저 씀), functional-spec 개정 요약·FN-RET-05, class-diagram 4.4, ERD 4.2.1(`theme_answer_pick`)·길이 대조 목록·attempt.context·학생 삭제, usecase·user-flow, README·docs/README 상태 문구
+- web: 학생 포인트 안내의 당일 풀이·주간 완주 "준비 중" 표시 제거(`domain/retention.ts` `POINT_RULES.preparing`, `StudentPoints.tsx`, `tests/retention.test.ts`). #525가 "#484가 칸을 내보내면 지운다"로 넘긴 일이고 #506 완료 조건(화면 안내 = 실제 적립)
+- 계약·검사: learning OpenAPI, `scripts/verify_db_schema.py`(음성 검사 3건), `test_weekly_theme_contract.py`(테마 5경로 `sundayTheme` 선언), `test_record_exists_openapi.py`(learning 경로 수 +1, develop #469 반영 뒤 76), gitops local learning migration `revision` v17 → v18
+- learning 쪽에서 고치지 않은 다른 담당 몫: core `contracts/openapi/core-service.yaml`(4246·6514행 "#484 전까지" 설명)·`core-gateway.md` 18절 기준안 표시, report.md "#484 병합 뒤 실제 응답 대조"(report #486 남은 일)
+
+### 한계
+
+- 정답을 고르지 않고 주가 끝나면 엔딩이 없다(설계 3.2.2 그대로). 화면에서 금요일 문제 뒤 고르기를 놓치지 않게 하는 것은 web(#440·#487)
+- 고른 뒤 관리자가 후보·정답을 고치면 `correct`는 고를 때 값을 쓴다
+- `AttemptService`의 시각은 주입한 시계가 아니라 `Instant.now()`라 완료 시각 테스트는 행을 직접 넣는다(#385 그대로). 같은 트랜잭션 MyBatis 세션 캐시도 24장 그대로라 시험에서 학생을 나눠 확인
+- core는 #550(PR #551)으로 공개 경로 `POST /api/v1/students/me/weekly-theme/answer-picks`와 `COMMUNITY_LOCKED_UNTIL_ENDING` 공개 문구를 먼저 병합했다. 경로·쿼리(`grade`·`date`·`sundayTheme`)·본문·응답·코드가 learning과 같고, `test_weekly_theme_contract.py`의 learning 계약 대조가 이 PR부터 켜진다
+
+테스트: `WeeklyThemeServiceTest`(누적 공개·일요일·마무리한 문제 409·정답 고르기·엔딩·단서 공개·당일 풀이/주간 완주·요약·커뮤니티 잠김), `WeeklyThemeControllerTest`(`sundayTheme`·`answer-picks`), `AttemptThemeStartTest`, `AttemptControllerTest`, `ThemeAnswerRulesTest`(엔딩 판정). learning 471개, scripts 303개, `check_db_migrations.py`(learning 37표·329칼럼, 음성 검사 63), 요약·커뮤니티 실제 응답 계약 검사 통과.
+
+## 35. 주간 테마 자동 성취기준 룰 베이스 (#536, 2026-11-12)
+
+팀 결정(2026-11-11, 에픽 #463 정리 코멘트)으로 생성에 RAG(벡터 검색·임베딩)를 쓰지 않고 성취기준은 코드 규칙으로 고른다. 31장 "자동 성취기준의 한계와 다음 설계"의 학년 한계(초3 테마에 4학년 성취기준이 뽑힘, #437 실측 초3 실패 3건)를 #465 학기 대응표로 없앴다. 설계(class-diagram 4.4 "자동 성취기준 후보 풀")대로 learning이 계속 고르고 **후보 풀만** 바꿨다. ai 요청 `missions[].standards` 계약·DB·ERD는 그대로다.
+
+### 정한 것
+
+| 항목 | 내용 | 근거 |
+|---|---|---|
+| 후보 단계 | 교과마다 학년군 표(`standardsOf`)를 학기 대응표로 나눈 학기 단계 `candidatePools`: ① 이번 학기(`ThemeSemester.of`, 예: `4-2`) ② 같은 학년군에서 이번 학기까지 배운 학기(`ThemeSemester.soFar`, 예: 3-1~4-2). 앞 단계에서 최근 4주 코드·이미 고른 코드를 빼고 남는 게 있으면 그 단계에서 무작위. 학년군 표는 단계가 아니라 따로 두는 마지막 대체(`StandardCandidates.table`, 아래 "학기 후보가 없을 때") | 설계의 "지식 서비스 → 학년·학기 → 학년군 표"에서 RAG 단계(#466·#469)를 빼고, ②를 더함(사용자 결정 2026-11-12). ②는 이미 배운 내용이라 학년 어휘 문제가 없고 위 학년 내용은 그대로 막힘 |
+| 모든 단계가 최근 코드뿐일 때 | ① 단계에서 가장 오래전에 쓴 코드(최근 초안 조회가 `created_at` 순, 같은 코드면 마지막 사용 기준). 학년군 표로 넘어가지 않음. 처음 기록(#438)의 "최근 코드도 후보로 되돌려 무작위"에서 바꿈 | 사용자 결정 2026-11-12. 주제 씨앗(`ThemeTopicSeeds.choose`)과 같은 방식으로, 반복하더라도 간격이 가장 길게. 처음 구현은 학년군 표를 ③ 단계로 두어 ①·②가 최근 코드뿐이면 ③의 위 학년 코드를 골랐다(1년 시뮬레이션: 초3 1학기 6번·초5 1학기 15번). 단위 시험이 ③도 최근 코드인 경우만, 글 실측이 첫 선택만 봐서 못 잡았고, 2026-11-12 고침 |
+| 학기 대응표 위치 | learning 리소스 `resources/knowledge/semester_map.csv`(원본 `scripts/knowledge/semester_map.csv`의 사본), 시작 때 한 번 읽음(`StandardSemestersConfig`, 형식이 다르면 시작 실패) | 이슈 지침: 지식 판 적재·활성화에 기대지 않음. learning Docker 빌드가 `backend/learning-service`만 보므로 원본을 직접 읽을 수 없어 사본을 두고, 두 파일이 같은지는 `scripts/tests/test_knowledge_extract.py`가 확인(그 CI는 `backend/**`·`scripts/**` 변경에 돎) |
+| 읽는 칸 | 머리글 이름으로 `code`·`semesters`만. 학기 글자는 `숫자-1|2`(학년을 3~6으로 묶지 않음), 큰따옴표 칸(`basis`) 안 쉼표 처리 | 확장성: 판·연도·지역 칸이 늘거나 학년이 넓어져도 읽기 코드를 바꾸지 않게 |
+| 초1·초2 | 학기 대응표에 미리 넣음(사용자 결정 2026-11-12, knowledge.md 6절). 테마는 `G3`~`G6`이라 learning은 쓰지 않음 | 서비스 범위가 넓어질 때 데이터만으로 대비. 중학교 학기 자료는 아직 없고 고등학교는 과목 선택 구조라 별도 조사 |
+| 주제가 있는 관리자 요청 | 같은 규칙. 31장 "자동 성취기준의 한계와 다음 설계"의 확인 필요(`theme-candidates`를 부르는 쪽) 닫음 | 주제와 가까운 성취기준을 벡터로 고르는 안은 팀 결정으로 하지 않음 |
+| 학기 경계 | `weekStart`가 3월 1일~8월 15일이면 1학기, 그 밖(2월 포함)은 2학기(`ThemeSemester.of`) | 이슈 확인 필요 기준안대로 확정(사용자 결정 2026-11-12). 2월은 학년 끝이라 2학기 |
+| 같은 성취기준이 두 학기에 걸칠 때 | 그 학년·학기 목록에 있으면 후보(예: `4수01-14`는 3-1·4-2라 초3 1학기·초4 2학기 후보) | 이슈 확인 필요 기준안대로 확정(사용자 결정 2026-11-12). 학년군 단위 성취기준을 여러 단원에서 가르쳐 초3~6 331개 중 64개(국어 46)가 여러 학기 |
+| 교과 | 그대로: 문제 해결하기만 수학(FN 1.5 예외), 나머지 네 유형은 국어(P15 국어 우선). 학기 대응표의 사회·과학·도덕·통합교과 행은 쓰지 않음. 사회·과학·도덕까지 넓히는 이슈 2단계는 추후 확장 | 사용자 확인 2026-11-12(지금은 국어 우선 유지, 문제 해결하기만 수학 예외) |
+| 학기 후보가 없을 때 | 학기 단계에 고를 코드가 하나도 없을 때(대응표에 그 교과가 없거나 관리자가 학기 단계 코드를 다 지정함)만 그 교과를 학년군 표에서 같은 방식으로 고름. 이번 학기 코드가 없으면 경고 로그(`theme auto standards: no … standard for …`) | 지금 대응표는 학년·학기마다 국어 14~20개·수학 10~18개라 일어나지 않지만, 대응표가 바뀌거나 관리자 요청 코드 수(상한 없음)가 많아도 초안 생성이 멈추지 않게(#536 전과 같은 409 조건) |
+| 아래 학년군 | 넣지 않음. 초5 테마에 초3~4 성취기준, 초3 테마에 초1~2 성취기준을 쓰지 않음 | 미션 게시 규칙(#336·#353, ERD 4.1·4.1.1)이 미션 학년을 성취기준 학년군 안으로 묶고, 테마 초안 learning 검사(`DraftRules.learningFailures`)·관리자 요청 검사도 같은 규칙이라 넣으면 초안이 실패함. 반복이 느는 건 학년군 첫 학기 국어뿐이라 규칙을 바꾸지 않음(사용자 결정 2026-11-12) |
+
+후보 수: 테마 하나에 국어 4개·수학 1개를 쓰고 최근 4주 코드(국어 최대 16개)를 뺀다. 이번 학기 국어는 14~20개라 모자랄 수 있어 ② 단계를 더했다. ② 단계 국어는 3-2 25·4-1 29·4-2 30·5-2 23·6-1 31·6-2 34개로 늘고, 학년군 첫 학기(3-1 17·5-1 14개)만 그대로라 이때는 가장 오래전에 쓴 코드부터 다시 쓴다. 학년마다 매주 자동 초안 하나를 52주 만드는 시뮬레이션(learning 규칙을 옮긴 저장소 밖 계산)에서 국어 208개 중 ② 단계는 초3 5·초5 25·초6 39개, 가장 오래전 코드 다시 쓰기는 초3 60·초5 82개(3~4주 전에 쓴 것), 초4와 수학은 모두 ① 단계, 위 학년 코드는 0개다. 교과 넓히기(이슈 2단계)는 추후 확장으로 미뤘다.
+
+
+### 글 실측 (2026-11-12)
+
+서비스 자동 입력과 같은 조건(키 20개, 키마다 같은 무작위 시드·주제 씨앗, 적용 주 2026-11-16 = 2학기, 글 단계만, 저장소 밖 실측 도구)으로 두 묶음을 돌렸다. ai 코드는 둘 다 #437 최종본(develop)이고 **성취기준 고르는 규칙만** 다르다. 대조 묶음이 고른 성취기준은 #437 마지막 묶음과 20건 모두 같다.
+
+| | 대조(옛 규칙: 학년군 표) | #536(학기 대응표) |
+|---|---|---|
+| 입력에 학기 밖 성취기준이 있는 실행 | 20/20(코드 100개 중 57개) | 0/20 |
+| 통과 | 16/20 | **20/20** |
+| 실패 내용 | 초3 2건 글 검토 학년 어휘(`4수03-11` 정다각형, `4수01-14` 소수의 크기 비교·뺄셈), 초5 1건 ai 처리 실패(900초 마감), 초5 1건 금요일 미션 성취기준 맞음·마감 부족 | 없음 |
+| 글 검토 학년 어휘(`GRADE_VOCAB`) 중간 실패 | 7회 | **0회** |
+| 성취기준 맞음(`STANDARD_FIT`) 중간 실패(미션 검토·글 검토) | 8·3회 | 4·2회 |
+| 시간 중앙값·최대 | 284초·900초 | 291초·519초 |
+| 비용 합(캐시 할인 없이) | 약 $1.37 | 약 $1.14 |
+
+- #536 효과로 볼 수 있는 것: 학기 밖 입력 0건, 학년 어휘 중간 실패 7 → 0, 초3 실패 2건(옛 규칙에서 같은 코드로 다시 나옴). 성취기준 맞음 실패도 줄었으나 횟수가 적어 단정하지 않는다
+- 시간 중앙값은 차이가 없다. 최대 시간·비용 차이는 대조의 실패 두 건(마감까지 다시 생성)에서 나온다
+- 성취기준과 무관한 단계는 같은 ai 코드에서도 크게 흔들렸다(대화 검사 실패 8 → 4회, 줄거리 길이 사유 29 → 20, 증거 종류 사유 3 → 9). 20건으로는 그 정도 차이를 규칙 효과로 볼 수 없다
+- 통과한 결과에도 ai 검토 경고가 남는다(그림 제외). 단서 논리(`CLUE_LOGIC`) 경고가 대조 14건·#536 16건으로 두 규칙 모두 대부분의 실행에 있어 ai 쪽(#437) 품질 문제다. #536 쪽 학년 어휘 경고 1건은 낱말 '벽반사광' 풀이 요청이라 성취기준 학년과 무관하다
+- 처음 기록(2026-11-12 오전)은 #437 마지막 묶음(11-11, 지금보다 앞선 ai 코드)과 비교해 통과·시간·단계별 차이를 규칙 효과처럼 적었다. ai 코드가 달라 나눌 수 없어 이 대조 실측으로 바꿨다
+- 이 실측은 지난 학기 단계·가장 오래전 코드를 넣기 전 규칙으로 골랐지만, 최근 초안이 없는 첫 선택이라 두 규칙의 후보 집합(이번 학기)이 같다. 1학기 실측은 하지 않았다(학기 경계·거르기는 단위 시험)
+
+### 구현
+
+| 파일 | 내용 |
+|---|---|
+| `theme/domain/StandardSemesters.kt` | 대응표 값(코드 → 학기 집합)·`parse`(머리글 이름, RFC 4180 큰따옴표, 형식 검사) |
+| `theme/repository/StandardSemestersConfig.kt` | 리소스를 읽어 빈으로(`ExpressionPolicyConfig`와 같은 방식) |
+| `theme/domain/ThemeCalendar.kt` | `ThemeSemester`(학기 규칙 `of`, 같은 학년군에서 이번 학기까지 `soFar`) |
+| `theme/domain/ThemeDraftRules.kt` | `candidatePools`(교과별 `StandardCandidates`: 학기 단계 + 학년군 표). `autoStandards`는 결과 모양 그대로이고 인자만 바뀜: 최근 코드 `Set` → 오래된 순 `List`, 교과 표 → 교과별 `StandardCandidates` |
+| `theme/service/ThemeDraftService.kt` | `autoInput`이 후보 단계와 오래된 순 최근 코드를 넘김(생성자에 `StandardSemesters`) |
+| `resources/knowledge/semester_map.csv` | 학기 대응표 사본(431행) |
+
+시험: `StandardSemestersTest`(리소스 코드 = 성취기준 표 초1~6 431개·학기 빈 성취기준 없음, 4학년만인 `4수01-15`·`4수03-11`과 두 학기 `4수01-14`, 머리글 이름·큰따옴표·`7-1` 같은 학년도 읽음, 형식 오류 8가지 시작 실패, 학기 경계 2/23·3/1·8/15·8/16 등, 학년군에서 이번 학기까지 배운 학기), `ThemeDraftRulesTest`(학기 단계 나누기·학년군 표 따로, 이번 학기가 최근 코드뿐이면 지난 학기, 모두 최근이면 가장 오래전에 쓴 코드, 학기 단계가 최근 코드뿐이어도 위 학년 코드로 넘어가지 않고 학기 단계에 고를 코드가 없을 때만 학년군 표), `ThemeDraftServiceTest`(주간 자동·주제가 있는 관리자 요청의 자동 코드가 그 학년·학기 것, 최근 4주 제외 시험은 학기 풀 기준으로 바꿈, 배운 학기 코드를 최근 4주에 모두 써도 위 학년 코드를 고르지 않음). 위 학년 시험 두 개는 처음 구현(학년군 표를 ③ 단계로)으로 돌리면 실패함을 확인, `scripts/tests/test_knowledge_extract.py`(초1·초2 행, 사본 = 원본).
+
+설계와 다른 점·기존 파일 수정: class-diagram 4.4 후보 풀 문장(RAG 단계 뺌, 지난 학기 단계·가장 오래전 코드 더함)과 `ThemeDraftRules` 메서드 목록(`candidatePools`, `autoStandards` 인자. 이슈 지침은 '`autoStandards` 입출력 그대로'였고 학기 거르기 커밋까지는 그대로였으나, 지난 학기 단계·가장 오래전 코드(사용자 결정 2026-11-12)에 단계 구분과 사용 순서가 필요해 입력만 바뀜, 출력·ai 계약은 그대로), `ThemeDraftRulesTest` 기존 자동 성취기준 시험 두 개(인자 모양만 바꿈), 31장 "자동 생성 성취기준" 행과 "자동 성취기준의 한계와 다음 설계" 절(해결·변경 표시, 확인 필요 닫음), `ThemeDraftServiceTest` 최근 4주 제외 시험의 후보 목록(학년군 표 → 그 학년·학기 풀). api-spec의 `theme-candidates` 경로는 #469에서 계약과 함께 제거됐다(33장).
+
+## 36. 주간 테마 조회에 고른 큰 질문 정답 (#590, 2026-11-12)
+
+34장(#484)에서 정답 고르기 기록(`theme_answer_pick`)을 저장하고 엔딩 계산에 읽지만 주간 테마 조회 응답에는 내보내지 않았다. 화면(web #487·#440)이 학생이 이미 골랐는지·맞았는지 알 수 없어, 틀린 뒤 다시 들어오면 고르기 화면이 다시 나와 `409 THEME_PICK_NOT_ALLOWED`가 나고, 엔딩 뒤에는 맞힌 학생과 틀린 학생 모두 `ENDED`라 종료 화면의 정답 공개("정답은 ○○였어요", 에픽 #436·#440 코멘트)를 구분할 수 없었다.
+
+| 항목 | 내용 | 근거 |
+|---|---|---|
+| 칸 | `answerPick: {pick, correct} \| null`(`AnswerPickView`). 그 주에 고르지 않았으면 null | 저장 칸(`pick`·`correct`)과 정답 고르기 경로(`answer-picks {pick}`) 이름과 맞춤 |
+| 공개 시점 | 엔딩 전에도 채움 | 알 수 있는 건 고른 후보가 맞았는지뿐이고 고를 때 응답(`correct`)으로 이미 받는 값. 정답·결말·결정적 단서는 34장대로 엔딩 뒤에만 |
+| `correct` | 고를 때 저장한 값 그대로. 고른 뒤 관리자가 정답을 고쳐도 바뀌지 않음 | 34장 "고를 때 저장하는 값"과 같은 이유 |
+| 조회 | `current()`가 고른 기록을 한 번 읽어 엔딩 계산과 새 칸에 같이 씀(조회 수 그대로) | |
+| 다른 서비스 | core는 `WeeklyThemeDocument`(`additionalProperties: true`)로 그대로 전달해 코드 변경 없음(OpenAPI 설명만 갱신). report 테마 요약 경로는 그대로 | api-spec 2.11 |
+
+변경: `ThemeViews.kt`(`WeeklyThemeView.answerPick`·`AnswerPickView`), `WeeklyThemeService.current`, learning OpenAPI `WeeklyTheme.answerPick`, core OpenAPI `WeeklyThemeDocument` 설명, api-spec 2.11.
+
+테스트: `WeeklyThemeServiceTest`(안 고름 null, 맞힘 `{pick, true}`·엔딩, 틀림 `{pick, false}`·엔딩 전 정답·결말 없음, 토요일 다시 풀기 뒤 엔딩에도 `correct: false` 유지), `WeeklyThemeControllerTest`(JSON `answerPick` null과 `{pick, correct}`).
+
+
+## 37. domain JSON 의존과 응답 표현 분리 (#604, 2026-11-13)
+
+업무 동작·API·DB 스키마를 유지하고 JSON 변환 위치를 정리했다. 별도 계층이나 공통 라이브러리는 추가하지 않는다.
+
+| 대상 | 정리 |
+|---|---|
+| 피드백 | `_common/web/FeedbackResponses.kt`에 공용 응답 DTO. judgment·attempt·record controller가 각각 domain을 변환. `_common/web`는 기능 패키지를 import하지 않음 |
+| M2 안내 | MyBatis의 해당 컬럼에만 `M2NoticeCodesTypeHandler` 적용. JSON에서 문자열만 읽고 domain `M2Notices`는 허용 코드→안내 문구 정책만 담당 |
+| 지식 조각 | controller에서 JSON을 Map·List·문자열·숫자·불리언·null로 변환. domain은 Jackson 없이 조각 본문 생성·학기·관계 규칙 유지 |
+| 공유물 | 원시 행 `SharedAnswerRecord`는 repository에 둠. repository가 JSON을 파싱하고 원문 대체값을 계산해 domain에는 Map 전달 |
+
+### 선택 근거와 확인 항목
+
+- 응답 DTO: [PR #178](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/178)의 Jackson 응답 설정 분리, [PR #459](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/459)의 계층 정리 선례와 architecture 2.2의 공용 응답 규칙을 재사용했다. mixin으로 숨기지 않고 응답 경계를 명시한다.
+- 내부 값: 기존 `ContentMapTypeHandler`와 같은 표준 Kotlin 값 표현을 사용한다. `record`는 Map이며 `source`도 일반 입력에서는 Map이다. 원래 코드가 허용하던 source 값 종류를 새로 제한하지 않도록 `source`는 표준 값 `Any`로 보존한다.
+- 담당자 확인 완료(2026-11-13): 공용 응답 DTO 분리와 Map 등 일반 값 전달 두 방식으로 진행해도 되는지 질문했고, 담당자가 “예”로 승인했다고 작업자가 전달했다. #604의 두 확인 필요 항목에 대한 승인이다.
+- `contentHash`는 JSON 직렬화가 아니라 기존과 같은 NFC 본문 SHA-256이다. [PR #526](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/pull/526)의 샘플 215건 대조를 유지하고 실제 1,341건 본문 해시·record/source 값 왕복 대조를 추가했다.
+- #468의 중단 결정은 그대로 유지한다. 지식 기능 활성화·관계 생성·RAG 재도입은 없다.
+
+### 보존 계약
+
+- 일반 응답의 `modelScores` 키 생략, report 요청의 원시 객체 또는 JSON null 구분.
+- `m2Notices`가 비면 키 생략, 허용 안내만 표시. 잘못된 JSON·숫자·알 수 없는 코드를 안내로 노출하지 않음.
+- 처리 중 피드백의 nullable 필드와 빈 `nextActions`, 세 controller의 같은 응답 모양.
+- 공유물의 중첩 내용·null·배열 및 기존 plainText 우선순위.
+- 지식 본문 생성·NFC 해시·학기·관계 규칙, DB 저장 내용. 마이그레이션 없음.
 
 ### 검증
 
-- core `./gradlew clean test bootJar` 통과(develop #359 병합 뒤 기준 510개, 실패 0, JDK 21 임시 컨테이너 + Testcontainers). 새 테스트(`AdminOperationsIntegrationTest`): 초안 경로 6개가 learning 같은 경로로 ADMIN·관리자 ID·빈 학생 범위로 감, CONTENT 아닌 관리자는 403이고 learning을 부르지 않음, 잘못된 `status`·`size`·`page`·100자 넘는 `q`·배열 본문은 learning 전에 400, 요청·채택·버리기 감사 행(대상 종류·ID·`draftId`·결과), 응답에 초안·미션 ID가 없거나 다르면 503 `LEARNING_INVALID_RESPONSE` + `_UNKNOWN`이고 한 번만 부름, 404 고정 문구·400·409 코드 전달과 공급자 문장 제거, 405는 `ADMIN_MISSIONS_UNAVAILABLE`. 기존 `LlmUsageQueryTest`가 `CallType` 7개 모두를 실제 DB(V28 CHECK)에 넣고 조회
-- 루트 계약 테스트 `python -O -m unittest discover -s scripts/tests` 통과(163개, 새 `test_admin_mission_drafts_contract.py` 7개 포함)
-- `ci-db-schema` 재현: `check_db_migrations.py`(일회용 PostgreSQL) 통과. develop(#359 V27 병합 뒤) 기준 core V26 → V27 → V28 적용, 48개 테이블·448개 칼럼이 ERD와 일치, 반복 마이그레이션 변화 없음. 적용 뒤 `ck_llm_usage_call_type`에 `MISSION_DRAFT` 확인
-- scoring `ruff check`·`pytest` 통과(199개, 임시 컨테이너)
-- 로컬 실연(2026-11-05, 이 브랜치로 core·learning 이미지 빌드, compose 별도 프로젝트에 호스트 포트는 core만 열고 공유 kind·컨테이너는 그대로, 끝난 뒤 볼륨까지 삭제): learning_db에 성취기준 시드 765행, ai 자리에는 learning 테스트 `sampleDraft`와 같은 초안을 돌려주는 대역(LLM 호출 없음). core 공개 경로로 성취기준 조회(`gradeBand=초5~6`·`q=6국01-02`) 200 → 초안 요청 202(`GENERATING`, `X-Admin-Operation-Id`) → learning 주기 작업이 대역 ai를 불러 `READY`(1회) → 목록 `status=READY` 1건 → 채택 201(`DRAFT`·`LLM_DRAFT`, 미션 경로로 조회 200) → 재채택·채택된 초안 버리기 409 `CONFLICT`, 없는 초안 404, 학년군 밖 요청 400 `VALIDATION_FAILED` → 새 초안 버리기 200(`DISCARDED`). 감사 14행이 위 결정대로 남음(채택 결과는 `MISSION`·미션 ID·`draftId`). 실제 LLM과 사용량 이벤트 흐름은 이 실연에 없음(사용량 소비는 위 테스트와 CHECK로 확인)
+- develop `df02597a`에서 분기하고 최신 `632c84e7`을 충돌 없이 통합한 뒤 로컬 검증했다. 원격 CI 결과와 구분한다.
+- 통합 후 JDK 21·Testcontainers PostgreSQL에서 전체 `test bootJar` 성공: 566개 실행, 실패 0, 조건부 제외 2. 제외는 기존 #565 실제 AI 라우터와 #564 외부 임베딩·LLM 연동 테스트이며 이번 JSON 책임 분리 검증과 별개다.
+- 저장소 ci-contracts 검사: 312개 실행, 실패 0, 조건부 제외 1(원문 HWP 폴더가 있어야 실행하는 재추출 대조).
+- 실제 PostgreSQL 테스트가 생성한 커뮤니티·테마 요약·지식 조회 HTTP JSON의 OpenAPI 및 소비자 계약 검사 통과.
+- learning domain Jackson import 0, `git diff --check` 통과. 기존 215건과 실제 1,341건 지식 본문 해시 및 record/source 값 보존 확인.
+- 오류 문구 보존·import 정리 후 관련 회귀 테스트 12개 재실행(제외·실패 0)과 `bootJar` 통과. 이후 최신 develop 통합 후 전체 테스트에도 포함했다.
+
+## 38. 판정 요소 출처·정정 impact 계약 정리 (#656, 2026-11-16)
+
+응답은 바뀌지 않는다. 계약 표기만 실제 코드에 맞췄다.
+
+| 항목 | 변경 | 근거 |
+|---|---|---|
+| 판정 요소 `sourceType` | learning `Element`·core `DashboardElement`의 enum에서 `RECORD`를 뺌(`RULE`·`ANSWER_KEY`·`AI_OBSERVATION`·null) | 판정 요소를 만드는 `FeedbackFacade`는 `ANSWER_KEY`·`AI_OBSERVATION`·null만 넣는다. `RECORD`는 기록 지표(`Metric`) 출처다. web `apiGateway.ts`도 판정 요소의 `RECORD`를 계약 오류로 거부한다 |
+| 코드 `ElementSource` | 그대로 둠 | `judgment_element.source_type` DB CHECK(V2)와 MyBatis 매핑에 묶여 있어 enum 값을 빼면 마이그레이션이 필요하다. 쓰는 곳이 없어 계약만 좁혀도 응답은 같다 |
+| 정정 `impact` | 값은 그대로, 두 계약 설명이 서로를 가리키게 함 | 보내는 값의 기준은 `learning-service.yaml` 고정값(`CorrectionController` `CorrectionImpact`). `support-learning-required.yaml`의 enum 3종은 core `LearningSupportClient`가 받아들이는 범위다. 기존 테스트가 "받는 범위 ⊇ 보내는 값"을 검사한다 |
+
+- 검사: `scripts/tests/test_contract_alignment_656.py`가 두 계약의 판정 요소 enum과 web 검사 목록이 같은지 확인한다.
+
+## 39. 단서 근거(후보 특징 표) 저장·학생 공개 (#647, 2026-11-15)
+
+주간 테마 단서로 어느 후보가 빠질지의 근거(ai가 줄거리 단계에서 만드는 후보 특징 표)를 저장하고, 학생에게는 얻은 요일 것만 보여 준다. 기존 칸은 바꾸지 않고 선택 칸만 더했다(웹 표시는 이 이슈의 web 몫, 이번 변경 밖).
+
+### 정한 것
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 저장 | V21: `weekly_theme_version.features jsonb`(후보 특징 표 `[{name, values:[{candidate, value}]}]`), `weekly_theme_day.clue_feature varchar`(그날 단서 특징 이름). 둘 다 NULL 허용, 기존 행 채움 없음, 새 버전 때 복사 | 사람이 쓴 테마·#647 전 채택분은 비어 있음(ERD 4.2.1) |
+| 채택 | ai 응답 `theme.features`·`days[].clueFeature`(선택 칸)를 그대로 옮김. 예전 초안(`theme_draft.output`에 칸 없음)은 null | ai.md 17.7 |
+| 학생 응답(기준안) | `days[].clueFeature`·`clueFacts`(`[{candidate, value}]`, 그 특징의 후보별 값)는 `clue`와 같은 조건(그 문제를 그 주에 학습 완료한 뒤)에서만, `features`(전체 표)는 엔딩(`ending = ENDED`) 뒤만. 특징 표가 없거나 `clueFeature`가 표에 없으면 null | 이슈 지침 "단서를 얻은 요일의 특징만, 엔딩 뒤 전체". 단서 근거는 그날 단서 특징 값뿐이라 다른 요일 단서 결론이 새지 않음 |
+| 정답 논리 검사(기준안) | `ThemeAnswerRules.featureErrors`: 특징 이름은 비지 않고 겹치지 않음, 특징마다 후보 하나에 비지 않은 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지거나 함께 남음. 후보·정답 없이 표·`clueFeature`만 있으면 실패. 테마 초안 learning 검사(`LOGIC <사유>`)와 관리자 저장(`400`)이 같이 씀 | ai `fill_rules_out`은 허용 값 밖의 후보를 모두 빼므로 값이 같은 후보는 같은 쪽. 허용 값(`condition.allowed`)은 ai 내부 칸이라 받지 않아 이 이상은 보지 않음. 빈 `rulesOut`(힌트)은 이미 빠진 후보만 허용 값 밖일 수 있어 보지 않음 |
+| 관리자 본문·응답(기준안) | 본문·응답에 `features`, `days[].clueFeature` 선택 칸. 상한은 특징 10개(`ThemeLimits.FEATURES`, ai는 2~5개), 이름·후보·값 100자, 값 개수는 후보 상한 10 | 기존 칸과 같은 상한 규칙 |
+| 수정 때 이어받기 | 없거나 null이면 이전 버전 값을 이어받되 후보가 바뀌었거나 후보·정답을 비우면 표를 버림, 빈 배열이면 비움. `clueFeature`는 표가 남고 그날 `rulesOut`이 그대로일 때만 이어받음(빈 문자열이면 비움) | 지금 관리자 웹은 새 칸을 보내지 않아 이어받은 표가 새 후보·`rulesOut`과 어긋나 저장이 `400`으로 막히지 않게 |
+| 시연 테마 | 채우지 않음(사용자 결정 2026-11-16: 시연은 배포 환경에서 새로 생성한 테마로 하고, 지금 DB는 개발 환경이라 기존 시연 테마에 특징 표를 넣는 일회성 SQL은 두지 않음). 특징 표가 없는 기존 테마는 지금처럼 단서만 보임 |
+| core | 학생 주간 테마 응답을 learning JSON 그대로 넘겨 코드 변경 없음. `core-service.yaml` 설명 문구에 새 칸만 적음 | 이슈 지침 |
+
+### 계약
+
+- learning OpenAPI: 학생 `WeeklyTheme.features`·`days[].clueFeature`·`clueFacts`, 관리자 `AdminWeeklyThemeRequest.features`·`ThemeDayMission.clueFeature`·`AdminWeeklyTheme.features`·`AdminThemeDay.clueFeature`, 초안 `GeneratedTheme.features`·`days[].clueFeature`, 스키마 `ThemeFeature`·`ThemeFeatureValue`. 응답 칸은 항상 내보내고(null 허용) 본문 칸은 선택
+- `scripts/tests/test_weekly_theme_contract.py`: ai·learning 선택 칸, Kotlin 칸 이름, core 설명 대조
+- 같이 고친 파일: `infrastructure/gitops/environments/local/learning-service.yaml` migration `revision` v20 → v21(`test_core_migration_versions` 대조), `contracts/openapi/core-service.yaml` 학생 주간 테마 설명 문구, `infrastructure/aws/README.md` 시연 SQL 행
+
+### 시험
+
+- `ThemeAnswerRulesTest`: 표가 맞으면 통과·없으면 지금처럼, 형식·이름·값이 갈리는 날 사유, 힌트 날은 보지 않음, 수정 때 이어받기·버리기
+- `WeeklyThemeServiceTest`: 표 없는 테마는 특징 칸 null, 학습 완료한 요일만 `clueFeature`·`clueFacts`(마무리만 한 요일·안 푼 요일은 null), 엔딩 전 `features` null·엔딩 뒤 전체
+- `ThemeDraftRulesTest`(표 없는 응답 통과, 값이 갈리면 `LOGIC FRI …`, 표에 없는 이름 `LOGIC MON …`), `ThemeDraftServiceTest`(채택 때 저장·관리자 상세), `WeeklyThemeAdminServiceTest`(저장·이어받기·400), `AdminWeeklyThemeControllerTest`(본문 읽기·상한 400), `ThemeDraftAiClientTest`(응답 선택 칸 읽기)
+
+### 정하실 것
+
+- 학생 응답 칸 이름·모양: `clueFeature`·`clueFacts`는 이슈 본문 이름을 따랐고, `clueFacts`의 모양(`[{candidate, value}]`)과 엔딩 뒤 전체 표 칸 이름(`features`, ai·관리자와 같게)은 새로 정한 값(웹 #589·#487이 소비)
+- 관리자 수정 때 이어받기 규칙(후보가 바뀌면 표를 버림)과 정답 논리 검사 범위(같은 값 후보가 갈리지 않음까지)

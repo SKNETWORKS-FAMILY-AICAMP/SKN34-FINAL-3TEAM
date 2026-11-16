@@ -1,4 +1,4 @@
-# scoring 모델 서비스·M1 학습 코드 (#85~#88·#140·#263)
+# scoring 모델 서비스·M1 학습 코드·모델 업로드
 
 계약은 [API 명세 4.3](../design/api-spec.md#43-scoring-service-호출-ai)과 [scoring OpenAPI](../../contracts/openapi/scoring-service.yaml). 서술 3.0·논술 3.1 모델 호환과 content_3 보정은 [ai](ai.md) 4장.
 
@@ -9,6 +9,10 @@
 | #87 | M2 서술형·논술형 채점, 컷 변환·소수 원점수·모델 식별정보, 사용량 발행 |
 | #88 | M1 입력 계약, 인증·입력 검증, 미학습 상태 `active:false` |
 | #140 | 브로커 연결 복구·readiness·종료, 이벤트 봉투 스키마, 내부 헤더·학생 scope·trace 전파, 설정 로딩 테스트 보강 |
+| #228 | 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3개) 호환, 논술 4~6학년([ai 4.1](ai.md#41-서술-30논술-31-서비스-호환-228)) |
+| #263 | M1 학습·평가 코드를 `ml/m1`로 이관 |
+| #493 | 모델 산출물 전체 SHA-256 업로드 절차, 기존 12개 객체 보완 |
+| #688 | 답변 표현 분류 API `POST /internal/toxicity/checks`, 모델 이름 `tox-`·범위 `answer-filter` (계약 #689, 구현 #691) |
 
 ## 1. 모델 레지스트리·S3 로딩 (#85)
 
@@ -22,6 +26,7 @@
 | `app/model_registry.py` | 정확한 scope 검사, 낮은 revision 무시, 로딩 완료 후 교체, 실패 시 이전 모델 유지. 보고 revision은 실제 로딩 모델 기준 |
 | `app/clients/model_artifacts.py`, `app/model_loader.py` | 설정된 모델 버킷의 S3 디렉터리만 읽고 경로 이탈 차단. `save_pretrained` 모델·토크나이저와 `train_info.json` 로딩, 누락 가중치로 임의 초기화된 모델 거부 |
 | `app/model_startup.py`, `app/bootstrap.py` | 기동 조회·로딩의 백그라운드 재시도, models readiness, 종료 시 태스크 정리. health 요청이 core/S3를 직접 호출하지 않음 |
+| `app/model_sync.py` | 구독 세션마다 `ModelStartup`을 새로 만들고 scoring 대상 이벤트만 전달(#632, 소비자에서 분리) |
 
 - 설정: `S3_ENDPOINT_URL`(생략 시 AWS SDK 기본 endpoint·자격 증명 체인), `S3_BUCKET`, `S3_REGION`, `MODEL_CACHE_DIR`, `MODEL_RETRY_INTERVAL`. MinIO overlay가 endpoint·로컬 자격 증명 주입
 - `MODEL_CACHE_DIR`은 일시 다운로드 경로이며 롤백 캐시가 아님. 로컬 `local_data/scoring-models`(gitignore), 컨테이너 `/tmp/scoring-models`. readOnlyRootFilesystem 배포 시 쓰기 가능한 임시 볼륨 필요
@@ -43,7 +48,7 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 | 요구사항 | 구현 |
 |---|---|
 | Pod별 브로드캐스트 | `ModelVersionConsumer`가 서버 생성 이름의 exclusive·auto-delete 큐를 `events.topic`의 `model.version.*`에 바인딩 |
-| 큐 연결 후 초기 조회 | consume 등록까지 마친 다음 `ModelStartup` 시작. 조회 중 수신 메시지는 메모리에 보존 |
+| 큐 연결 후 초기 조회 | consume 등록 전 `ModelSync.reset`으로 새 `ModelStartup`을 만들고, consume 등록까지 마친 다음 시작. 조회 중 수신 메시지는 메모리에 보존 |
 | 순서 역전·중복 | 이름별 최신 이벤트 보존, `ModelRegistry`에서 revision 비교 |
 | scoring 모델만 적용 | kind MODEL이며 `m2-`·`m1-` 이름인 항목만 전달 |
 | 로딩 실패 | 기존 모델 유지·재시도. scope는 기존 모델과 최신 승인 범위의 교집합. 한 모델 실패가 다른 이름의 업데이트를 막지 않음 |
@@ -52,20 +57,24 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 | readiness | 최초 준비·재연결 조정 전 false. 빈 활성 목록은 준비 완료. 정상 기동 이후 교체 실패는 기존 모델 제공 유지 |
 | 로그 | 모델명·revision·큐명·예외 유형만. 메시지 본문·artifact URI·자격 증명 미기록 |
 
+### 소비자 계층 분리 (#632)
+
+ai #254(`PromptSync`)와 같은 구조로, 소비자에 있던 세션별 `ModelStartup` 생성과 `scoring_versions` 필터·`offer` 전달을 `app/model_sync.py`의 `ModelSync`로 옮겼다. `messaging/consumer.py`는 구독·재연결, 봉투 검증, `ModelSync.offer`, ACK만 맡는다. 세션 순서(소비 등록 전 `reset` → 바인딩·소비 등록 → `start` → 종료 시 `stop`)와 readiness·이벤트 계약·로그는 그대로다. snapshot 조회·revision 조정 본체는 기존 `ModelStartup`에 남는다.
+
 검증: `scripts/verify_scoring_events.py`가 격리된 core·RabbitMQ·MinIO·scoring 2개로 두 exclusive 큐·활성화·롤백 재다운로드·파일 누락 시 기존 버전 유지·브로커 중단 중 활성화 후 재연결 복구·임시 파일 정리를 확인(`2.1-check`는 같은 2.0 artifact를 가리키는 교체 검증용 메타데이터).
 
 ## 3. M2 채점 API (#87)
 
 - 담당자 답변(10/29): 관리자 입력 → `rubric_version.keywords` → learning `question/keywords` → AI → scoring `prompt/text/grade/inputType/keywords`. 핵심어는 서술형만, 없으면 비활성. 실제 장애는 503·판정 처리 실패. `score_cuts.json`으로 컷 변환하고 소수 원점수도 보존, 서술형 content_3도 모델 점수 사용. 컷이 없거나 손상된 모델을 반올림으로 대체하지 않음
 - `M2Service`는 기존 `ModelRegistry`·`LoadedModel` 재사용. 승인 scope는 `judgment/grade-5/narrative` 같은 정확 일치 값(문항 단위 승인은 요청에 문항 ID가 없어 범위 밖)
-- 초5·6만 지원. 모델/승인 범위 밖·핵심어 없는 서술형은 `active:false`
-- 학습 메타데이터의 `max_length=512`, 회귀 head, dataset, 핵심어 설정 검사. 첫 문장에 학년·지시문·서술형 핵심어, 글은 두 번째 문장으로 토큰화(`only_second`)
-- `bisect_right(cuts, raw)+1`은 학습 `numpy.digitize(raw, cuts)+1`과 같은 경계 처리. hol 1~4, 8항목 1~5. rawScores는 유한 원점수 그대로. 두 유형의 content_1~3 의미가 다르므로 inputType을 함께 반환하고 합산하지 않음
+- 현재 활성 학년은 서술 초5·6, 논술 초4~6(#228). 모델/승인 범위 밖·핵심어 없는 서술형은 `active:false`
+- 학습 메타데이터의 `max_length=512`, 회귀 head, dataset, 핵심어 설정 검사. 첫 문장에 학년·서술형 핵심어(논술은 글 종류), 글은 두 번째 문장으로 토큰화(`only_second`). 2.0 모델의 지시문 입력은 #228에서 제외
+- `bisect_right(cuts, raw)+1`은 학습 `numpy.digitize(raw, cuts)+1`과 같은 경계 처리. 서술 hol 1~4·8항목 1~5, 논술 3.1은 org·cont·exp 0~3(+1 없음, ai 4.1). rawScores는 유한 원점수 그대로. 두 유형의 content_1~3 의미가 다르므로 inputType을 함께 반환하고 합산하지 않음
 - CPU 작업은 `run_in_threadpool`, 서비스 단위 1개 동시 추론, 대기 최대 1초 이후 503. 추론 중 모델 교체 시 현재 요청은 캡처한 모델, 다음 요청은 새 버전
 - 사용량 발행은 제한된 백그라운드 태스크(최대 128, 1초 제한), 실패해도 채점 응답은 성공. 원문·학생 정보 없이 service=scoring, callType=M2, 토큰 null, 지연·성공 여부. 브로커 중단 중에도 이미 로딩된 모델의 채점은 200
 - 비활성은 `{"active":false}`만. 서비스는 점수를 DB에 저장하지 않음(`judgment.model_scores` 저장은 learning, ai 4장)
 
-응답 예시(형식 설명용 합성 값):
+응답 예시(형식 설명용 합성 값, 2.0 서술 모델 기준. 3.0·3.1 응답 키는 ai 4.1):
 
 ```json
 {
@@ -77,7 +86,7 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 }
 ```
 
-지연 측정(2.0, CPU x86_64·PyTorch 2.14.1+cpu·OMP/MKL 4스레드, 워밍업 3회 제외 30회, HTTP 포함, ms):
+지연 측정(이전 2.0 모델 기록, CPU x86_64·PyTorch 2.14.1+cpu·OMP/MKL 4스레드, 워밍업 3회 제외 30회, HTTP 포함, ms):
 
 | 유형 | 글자 수 | 중앙값 | p95 | 최대 |
 |---|---:|---:|---:|---:|
@@ -109,7 +118,7 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 
 ## 5. M1 학습·평가 코드 `ml/m1` (#263)
 
-저장소 밖 로컬 MVP 폴더에만 있던 M1 학습·평가 코드를 architecture 5장("모델 학습 코드는 `ml/`")과 NFR-AIQ-04("실험 실행 기록")에 맞춰 `ml/m1`로 이관. 목적은 코드 보존·재현이며 M1 본 학습은 범위 밖(국어(M2) 우선, [planning-decisions](planning-decisions.md)).
+저장소 밖 로컬 MVP 폴더에만 있던 M1 학습·평가 코드를 architecture 5장("모델 학습 코드는 `ml/`")과 NFR-AIQ-04("실험 실행 기록")에 맞춰 `ml/m1`로 이관. 목적은 코드 보존·재현이며 M1 본 학습은 범위 밖(국어(M2) 우선, [planning 2절](planning.md#2-국어m2-우선과-생각-유형-매핑-213)).
 
 | 항목 | 결정 | 근거 |
 |---|---|---|
@@ -130,3 +139,244 @@ core에서 모델 버전을 활성화하거나 롤백하면 모든 scoring 레�
 - scoring에서 M1을 구현하면 `build_model`·`model_input` 구조가 두 곳에 생김. `meta.json`의 `input_format`(`mathtext.model_input-v1`)으로 맞춤
 - `results/eda_71716.md`는 수동 정리본이라 EDA 재실행 시 자동 갱신되지 않음
 - 학습 데이터는 손글씨 OCR 텍스트, 앱 입력은 직접 입력이라 분포가 다름
+
+## 6. 모델 산출물 SHA-256 업로드 절차 (#493)
+
+사전 검사([ai 12절](ai.md#12-모델-사전-검사-368))는 S3 전체 파일 SHA-256이 없으면 실패한다. 그 값을 남기는 업로드 방식을 2026-11-10에 정했다.
+
+### 6.1 결정
+
+| 항목 | 결정 |
+| --- | --- |
+| 업로드 | 파일마다 `aws s3api put-object` 한 번. 전체 원본 SHA-256을 `--checksum-sha256`으로 명시 |
+| 체크섬 표현 | manifest는 소문자 16진수 64자리, S3 요청은 **32바이트 해시의 Base64**(16진수 문자열을 Base64로 바꾸지 않음) |
+| 자동 multipart 금지 | `aws s3 cp/sync`, SDK 고수준 `upload_file`을 쓰지 않음. multipart SHA-256은 COMPOSITE라 검사 계약을 만족하지 못함 |
+| 인정하지 않는 근거 | ETag·사용자 metadata·CRC 계열·COMPOSITE. `ChecksumType=FULL_OBJECT`만 있고 `ChecksumSHA256`이 없어도 불충분. 가중치 다운로드로 우회하지 않음 |
+| 크기 한도 | 단일 PUT 5GB. 준비 도구는 5,000,000,000바이트까지만 허용, 넘으면 중단하고 별도 결정(현재 가중치 약 443MB) |
+| 권한 | 업로드는 업로드 담당 자격 증명, scoring은 읽기 전용 유지. 사전 검사 PASS가 품질 승인·활성화를 뜻하지 않음 |
+
+근거: [S3 체크섬 유형](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity-upload.html), [업로드 크기 제한](https://docs.aws.amazon.com/AmazonS3/latest/userguide/upload-objects.html), [PutObject CLI](https://docs.aws.amazon.com/cli/latest/reference/s3api/put-object.html).
+
+### 6.2 로컬 준비 (AWS 접속 없음)
+
+모델별로 [ModelPreflightRequest](../../contracts/openapi/scoring-service.yaml) 형식 JSON(`name`·`version`·`artifactUri`·manifest의 6개 `{file, bytes, sha256}`)을 준비한다. 해시를 현재 파일에서 새로 만들어 manifest를 덮어쓰면 원본 대조가 아니므로 하지 않는다. 필수 파일은 `config.json`, `tokenizer.json`, `tokenizer_config.json`, `train_info.json`, `score_cuts.json`, `model.safetensors`.
+
+```powershell
+$modelDir = (Resolve-Path '<모델 원본 폴더>').Path
+$requestFile = (Resolve-Path '<사전 검사 요청 JSON>').Path
+$modelBucket = 'sagomungchi-demo-347161580747-models'
+$planFile = Join-Path $env:TEMP ('model-upload-' + [guid]::NewGuid() + '.json')
+
+python scripts/prepare_model_upload.py --request $requestFile --model-dir $modelDir --expected-bucket $modelBucket --output $planFile
+if ($LASTEXITCODE -ne 0) { throw '원본 대조 실패. 업로드하지 않음.' }
+$uploadPlan = Get-Content -LiteralPath $planFile -Raw -Encoding UTF8 | ConvertFrom-Json
+```
+
+도구는 파일명 중복·누락, 대상 버킷·경로, 크기, 원본 SHA-256을 확인한 뒤 계획 JSON을 만든다. 네트워크 기능이 없고 기존 출력 파일을 덮어쓰지 않는다. 계획 파일에는 로컬 경로가 있어 커밋하지 않는다.
+
+### 6.3 신규 키 업로드
+
+`--if-none-match '*'`를 지원하는 AWS CLI v2 필요. **존재하지 않는 신규 키에만** 쓴다(기존 키에는 412로 중단되는 것이 정상). `--body`는 일반 파일 경로이며 `fileb://`를 붙이지 않는다.
+
+```powershell
+$uploadProfile = '<업로드 담당 AWS 프로필>'
+$modelRegion = 'ap-northeast-2'
+$bucketOwner = '347161580747'
+$receiptDir = Join-Path $env:TEMP ('model-upload-receipts-' + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $receiptDir | Out-Null
+
+foreach ($artifact in $uploadPlan.files) {
+    $contentType = if ($artifact.file.EndsWith('.json')) { 'application/json' } else { 'application/octet-stream' }
+    $putArgs = @(
+        's3api', 'put-object', '--bucket', $uploadPlan.bucket,
+        '--key', $artifact.key, '--body', $artifact.path,
+        '--checksum-algorithm', 'SHA256', '--checksum-sha256', $artifact.checksumSHA256,
+        '--if-none-match', '*', '--content-type', $contentType,
+        '--expected-bucket-owner', $bucketOwner, '--region', $modelRegion,
+        '--profile', $uploadProfile, '--output', 'json', '--no-cli-pager'
+    )
+    $putJson = & aws @putArgs
+    if ($LASTEXITCODE -ne 0) { throw "PUT 실패: $($artifact.file). 후속 파일 중단." }
+    $put = ($putJson -join "`n") | ConvertFrom-Json
+
+    $headJson = & aws s3api head-object --bucket $uploadPlan.bucket --key $artifact.key --checksum-mode ENABLED --expected-bucket-owner $bucketOwner --region $modelRegion --profile $uploadProfile --output json --no-cli-pager
+    if ($LASTEXITCODE -ne 0) { throw "HEAD 실패: $($artifact.file). 성공 처리하지 않음." }
+    $head = ($headJson -join "`n") | ConvertFrom-Json
+    $receipt = @{ file = $artifact.file; key = $artifact.key; put = $put; head = $head }
+    $receipt | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $receiptDir ($artifact.file + '.receipt.json')) -Encoding UTF8
+    if ($head.ContentLength -ne $artifact.bytes -or
+        $head.ChecksumType -cne 'FULL_OBJECT' -or
+        $head.ChecksumSHA256 -cne $artifact.checksumSHA256 -or
+        $put.ChecksumSHA256 -cne $artifact.checksumSHA256) {
+        throw "전체 SHA-256 확인 실패: $($artifact.file). 등록·활성화하지 않음."
+    }
+}
+```
+
+6개 파일은 하나의 트랜잭션이 아니다. 중간 실패 시 올라간 객체와 영수증을 보존하고 등록하지 않는다. 재실행의 412를 없애려고 객체를 지우거나 조건을 제거하지 않는다.
+
+### 6.4 기존 키 보완
+
+이미 올바른 전체 SHA-256이 있으면 재업로드하지 않는다. 기존 키를 읽는 서비스에 영향을 줄 수 있어 업로드 담당자와 키·시점·복구 책임을 먼저 맞춘다.
+
+1. 현재 HEAD(`VersionId`·`ETag`·`ContentLength`·`ChecksumType`·Content-Type·Metadata)와 태그, 버킷 Versioning·암호화·객체 잠금·ACL 정책을 확인·보관
+2. 승인된 manifest와 같은 로컬 원본을 6.2 도구로 확인. 크기·해시가 다르면 중단. 가중치·score_cuts 교체를 체크섬 보완에 섞지 않음
+3. 파일별 `repair-put.json`으로 PUT. 신규 키의 `IfNoneMatch` 대신 **기존 HEAD의 `ETag`를 `IfMatch`**에(동시 변경 방지용이며 SHA-256의 대안 아님). Content-Type·Metadata 등 기존 속성 보존. HEAD 응답 전체를 PUT 입력으로 복사하지 않음(`LastModified`·`VersionId` 등은 PUT 인자가 아님)
+4. 6.3과 같은 HEAD 대조 후 새 VersionId 기록. 같은 원본이면 모델 버전·등록·승인 scope를 바꾸거나 다시 활성화하지 않음
+5. 문제가 생기면 보관한 이전 버전과 속성으로 복구
+
+```powershell
+$repairInput = (Resolve-Path '<검토한 repair-put.json>').Path
+$artifactPath = (Resolve-Path '<해당 원본 파일>').Path
+$repairJson = & aws s3api put-object --cli-input-json ("file://" + $repairInput) --body $artifactPath --region $modelRegion --profile $uploadProfile --output json --no-cli-pager
+if ($LASTEXITCODE -ne 0) { throw '기존 객체 보완 실패. 후속 작업 중단.' }
+```
+
+### 6.5 실행 결과와 남은 검증 (2026-11-10)
+
+- 서술 `m2-klue-narrative@3.0`·논술 `m2-klue-essay@3.1`의 12개 객체를 동일 원본으로 보완. 모두 `FULL_OBJECT` SHA-256과 manifest 일치, 기존 속성·이전 버전 보존. 키별 이전/새 VersionId는 [실행 증빙 JSON](evidence/issue493-s3-sha256-20261110.json)
+- 버킷 상태: Versioning Enabled, BucketOwnerEnforced, AES256, 객체 잠금 없음
+- CloudShell 운영자 자격 증명으로 `PreflightService.check`를 직접 실행해 두 모델 모두 `PASS / FILES_AND_METADATA_VERIFIED`(모델별 HEAD 6회·작은 JSON GET 3회). 배포 이미지·Pod 실행 결과가 아님
+- EKS·RDS 재가동, IAM·버킷 정책 변경, 모델 등록·활성화는 하지 않음
+- **남은 검증**(AWS 재가동 후): 실제 `app/scoring-service` Pod Identity로 읽기, 관리자 → core → scoring 경로의 사전 검사 PASS와 감사 기록
+
+### 6.6 로컬 검증 방법
+
+```powershell
+python -m unittest discover -s scripts/tests -p test_prepare_model_upload.py -v
+```
+
+MinIO 통합 검증은 `127.0.0.1:58193`의 일회용 MinIO와 `MODEL_UPLOAD_LOCAL=true`가 있을 때만 실행된다(없으면 건너뜀).
+
+```powershell
+docker run --detach --rm --name issue493-upload-local --publish 127.0.0.1:58193:9000 --env MINIO_ROOT_USER=model-upload-local --env MINIO_ROOT_PASSWORD=model-upload-test-only quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+$env:MODEL_UPLOAD_LOCAL = 'true'
+# backend/scoring-service 가상환경에서
+python -m pytest tests/test_preflight.py tests/test_model_upload_local.py -q
+Remove-Item Env:MODEL_UPLOAD_LOCAL
+docker stop issue493-upload-local
+```
+
+MinIO의 체크섬 오류 코드는 `XAmzContentChecksumMismatch`로 AWS의 `BadDigest`와 이름이 다르다. 잘못된 SHA-256 PUT은 400·객체 미생성, 신규 키 중복 PUT과 오래된 `IfMatch`는 412.
+
+## 7. M2 글 정리·b판 경계 (#549, 2026-11-12)
+
+논술 3.1·서술 3.0에 c판 규칙과 앞+끝 토큰화를 적용한다. 논술은 정리 후 100자 미만, 서술은 10자 미만이면 추론하지 않는다. 서술 10~99자는 채점하며 짧은 답 안내를 전달한다. 원문·승인 학년·활성화 정책은 유지하고 8:2 혼합은 최종 미채택이다.
+
+실제 모델·HTTP 검증, 조정된 체크리스트, 파일 해시, 적용·복귀 절차는 7.1~7.7에 기록했다(이전 `issue-549-m2-guards.md`를 합침, #663). b판 경계는 로컬 복사본에서 재로딩·복귀를 검증했으며 운영 S3 업로드·모델 활성화는 수행하지 않았다.
+
+### 7.1 확정 범위
+
+11/12 c판과 담당자 후속 답변을 적용한다. 논술 3.1·서술 3.0 단독 모델을 유지하며 8:2 혼합은 미채택으로 제외한다.
+논술은 칸 이름 → 지시문 복사 → 반복 제거 순서로 정리하고 100자 미만은 채점하지 않는다.
+서술은 복사 → 반복 제거 후 공백 제외 10자 미만은 채점하지 않고, 10~99자는 채점하며 짧은 답 안내를 준다.
+두 유형 모두 512토큰을 넘으면 앞+끝을 읽는다. 서술 content3 선택 보정은 정리한 글을 사용한다.
+학습 가중치·승인 학년·활성화 설정·제출 원문·생각 판정은 변경하지 않는다.
+
+### 7.2 응답 계약
+
+미활성은 기존 `active:false`. 활성 모델에서 길이 미달이면 `active:true, scored:false, reason:TEXT_TOO_SHORT`이며 scores/rawScores가 없다.
+정상 점수와 길이 미달 응답 모두 preparation에 copied/repeated/chars/labelsRemoved/short/truncated/notices/ruleVersion을 둔다.
+AI는 점수 없는 응답을 m2=null, m2Preparation에 저장한다. 평균·불일치와 리포트 설명 후보에서 제외한다.
+learning은 미션 inputTemplate의 네 칸 이름을 essayLabels로 전달한다. 학생 피드백에는 허용 목록으로 변환한 m2Notices 문구만 노출한다.
+
+### 7.3 기존 이슈에서 조정된 내용
+
+- 8:2 혼합은 최종 미채택이다. 두 번째 모델·혼합 로더·혼합 실패 정책은 구현 완료로 체크하지 않는다.
+- 최초 이슈의 논술 전용 범위를 c판 지침에 따라 서술 3.0까지 확장했다. 학년 승인 범위는 서술 초5~6, 논술 초4~6 그대로다.
+- c판에서 논술 칸 이름 제거와 두 유형의 앞+끝 토큰화를 추가했다.
+- 서술은 함수의 too_short 대신 서비스에서 chars < 10을 검사한다. 논술은 chars < 100이다.
+- 최종 지침의 b판 score_cuts를 두 모델에 적용한다. 로컬에 있던 이전 서술 경계도 b판과 달라, 최초 이슈의 “서술 경계 변경 없음”은 최종 지침으로 대체한다.
+- 원래 짧은 논술은 ESSAY_ORIGINALLY_SHORT, 복사·반복 제거 후 짧아진 논술은 ESSAY_TOO_SHORT로 안내를 구분한다.
+- 파일을 커밋하는 것과 운영 모델 저장소에 적용하는 것은 별개다. 운영 업로드·승인·활성화는 수행하지 않았다.
+
+근거: [담당자 최종 안내](https://skn-w7j3530.slack.com/archives/C0C8TTQ7457/p1794466074752509),
+[혼합 미채택·맞춤 칸 이름 안내](https://skn-w7j3530.slack.com/archives/D0C8SKZ069Y/p1794465676734649),
+[b판 정정](https://skn-w7j3530.slack.com/archives/C0C8TTQ7457/p1794447526242719).
+서술 10자 하한은 사용자가 공유한 담당자의 추가 확정 답변을 따른다.
+
+### 7.4 파일 이력·적용·복귀
+
+| 파일 | SHA-256 |
+|---|---|
+| m2_guard_1112c.zip | 8edd4655e9e135c61720413e6bae2ad48805122002d416a44b615a7ed0bf9846 |
+| m2_meta_1112b.zip | dfb66d0c418ac246914846f4404c6797c0072ac55daa1ae20d587e1c0cde0dd9 |
+| 논술 3.1 가중치 | 2ea2c0f50acb7a6713ff14a477fc96f524af901958d767ef5c11210a33811fea |
+| 서술 3.0 가중치 | 0b965a4152a5bf758112baa11187d5ca44c05e7231d0f4aa651a3845c90c1829 |
+
+제공 함수의 규칙은 유지했다. 패키지 상대 import·서식·주석을 정리하고 sys.path 조작과 직접 실행 예시는 제외했다.
+서술 길이 하한과 사용자 안내는 서비스에서 처리한다. 가중치와 학생 데이터는 Git에 넣지 않았다.
+경계 파일별 해시와 운영 반영·복귀 순서는 [b판 메타데이터 안내](../../backend/scoring-service/metadata/1112b/README.md)에 기록했다.
+
+### 7.5 검증 결과 (2026-11-12)
+
+최신 develop `bc482c70`(#584 포함)을 반영했다. 아래는 로컬 검증이며 원격 CI·운영 배포 성공을 의미하지 않는다.
+
+| 범위 | 결과 |
+|---|---|
+| scoring 전체 pytest | 246 통과, 기존 로컬 MinIO 업로드 선택 실행 2개 제외 |
+| AI 전체 pytest | 770 통과 |
+| learning 전체 PostgreSQL 통합·회귀 | 553 통과, 기존 #563·#564 외부 모델 선택 실행 2개 제외 |
+| learning bootJar | 통과 |
+| report 설명 회귀 | 38 통과 |
+| frontend | build·test:types·lint 통과, 테스트 294 통과 |
+| 실제 빌드 브라우저 | 1440·1024·768px에서 안내 표시·점수 비노출·가로 넘침 없음·페이지 오류 없음 |
+| 계약·스크립트 검사 | 312 실행, 실패 없음, 기존 조건부 1개 제외 |
+| scoring·AI Ruff check/format, 변경 report·스크립트 lint | 통과 |
+
+#### 실제 모델
+
+로컬에 내려받은 실제 safetensors와 tokenizer를 ModelLoader로 로딩했다. 합성 글만 사용했으며 AI Hub 학생 글이나 외부 LLM API는 사용하지 않았다.
+
+- 논술 3.1·서술 3.0 모두 정상 로딩, 복사·반복 제거 후 원래 글과 동일한 소수 원점수 확인.
+- 논술 맞춤 칸 이름 제거 전후 실제 점수 일치 확인.
+- 입력 한도 이하의 토큰이 기존 tokenizer 결과와 동일함을 대조.
+- 긴 글 입력 길이 512 및 마지막 글 토큰 포함 확인.
+- 논술 99/100자·서술 9/10자에서 채점 생략/진행 확인.
+- 실제 scoring HTTP 라우터에서 논술 초4~6·서술 초5~6 정상 응답, 짧은 글 점수 없음, 초3 비활성 확인.
+- b판 재로딩 후 같은 원점수와 새 경계 변환 확인. 이전 경계 파일로 다시 로딩해 같은 원점수·이전 정수 변환 복귀 확인.
+- 합성 예시 1편의 CPU 추론: 논술 약 0.57초, 서술 약 0.32초(torch 2스레드). 로딩 제외 단일 측정으로 운영 지연·품질 보증값이 아니다. AI의 기존 scoring 호출 상한은 10초이며 남은 판정 시간과 작은 값을 적용한다.
+- 전체 재현 명령: scoring 가상환경의 Python으로 `scripts/verify_m2_text_guards.py --artifacts <모델별 폴더의 상위> --output <별도 검증 폴더>` 실행. 원본 artifact는 수정하지 않는다.
+
+### 7.6 조정된 해야 할 일
+
+- [x] c판 규칙 패키지 추가·논술 칸 이름/복사/반복 제거·서술 복사/반복 제거
+- [x] 논술 100자·서술 10자 하한 및 서술 10~99자 안내
+- [x] 두 유형 앞+끝 토큰화, 정리한 글로 content3 선택 보정
+- [x] 점수 생략을 미활성·장애와 구분하는 scoring·AI 계약
+- [x] 맞춤 칸 이름 전달, 안내 저장·조회·학생 화면 표시
+- [x] b판 경계 파일·해시 기록 및 실제 모델 재로딩·복귀
+- [x] 원문·AI 판정·승인 범위·점수 비노출 유지
+- [x] 점수 없는 결과의 평균·불일치·리포트 설명 제외
+- [x] 테스트·API 명세·OpenAPI·검증 보고서 갱신
+
+### 7.7 조정된 완료 조건
+
+- [x] 변경 없는 글은 줄바꿈을 포함해 유지하고, 복사 제거가 반복 제거보다 먼저 실행됨
+- [x] 5자 미만 조각·복사/반복/혼합·맞춤 칸 이름 테스트 통과
+- [x] 정리 후 0/9/10/99/100자 경계와 추론·사용량 생략 테스트 통과
+- [x] 원래 짧은 논술과 제거 후 짧아진 논술 안내 구분
+- [x] 새 경계 직전·동일·직후 변환과 실제 재로딩·복귀 검증
+- [x] 실제 두 서비스 모델에서 짧은 입력 동일 토큰·긴 글 앞+끝 검증
+- [x] 학생 화면 안내가 유지되고 원문·숫자 점수가 노출되지 않음
+- [x] 서술 content3 설정·미활성·승인 범위·기존 판정·리포트 회귀 통과
+- [x] 최신 develop 반영·로컬 검증과 운영 적용 상태 구분
+
+혼합 관련 기존 체크박스는 미채택으로 범위에서 제외한다. 운영 S3 반영·모델 활성화·운영 품질 승인은 이 로컬 구현 검증 결과로 대신하지 않는다.
+
+## 8. 답변 표현 분류 API (#688, 계약 #689, 구현 #691)
+
+learning 답변 제출에서 단어 목록 다음 단계로 부르는 2분류 모델 추론이다. 계약은 [API 명세 4.3.4](../design/api-spec.md), 결정 근거는 [learning 16장](learning.md)
+
+| 항목 | 내용 |
+|---|---|
+| API | `POST /internal/toxicity/checks`, 호출 learning만(`CALLER_PATHS`에 `learning`, `INTERNAL_TOKEN_LEARNING`) |
+| 이름·범위 | 등록부 이름 규칙에 `tox-` 추가(scoring `model_versions.py`·`preflight.py`·`prepare_model_upload.py`, core `ModelLoadingService`, 이벤트 스키마), scope `answer-filter` |
+| 파일 | `score_cuts.json` 없는 5개. 사전 검사(#368)·로더가 이름 접두어별 파일 목록 사용 |
+| 로더 검사 | `single_label_classification`·`num_labels=2`, `train_info.json`의 `threshold`(0 초과 1 미만)·`max_length`·`stride` 필수 |
+| 판정 | 칸마다 128토큰 창·겹침 32, 창 하나라도 `threshold` 이상이면 그 칸 flagged, 한 칸이라도 flagged면 전체 flagged |
+| 동시 실행·마감 | tox 전용 게이트 1개(M2와 따로), 1초 대기 또는 처리 1.3초(창 8개 묶음 사이에서 확인) 넘으면 503 `SCORING_UNAVAILABLE`, `run_in_threadpool` |
+| 사용량 | 이벤트 없음, 지표(호출·flagged·지연)만 |
+| readiness | 활성 `tox-` 모델이 없어도 `models=UP`(#85 규칙), 요청에는 `{active:false}` |
+
+- 확인 필요: 같은 Pod에서 M2와 CPU를 나눠 쓸 때의 지연(#691), 필요하면 prod CPU 요청량 조정. 11/16 측정(분류 머리 학습 전 KcELECTRA-base, CPU 1개 스레드): 1,500자 1.12초, 메모리 로딩 약 +300MiB·추론 중 약 +300MiB(limit 2Gi)

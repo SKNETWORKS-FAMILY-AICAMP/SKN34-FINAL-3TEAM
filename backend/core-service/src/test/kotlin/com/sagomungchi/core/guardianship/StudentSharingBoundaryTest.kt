@@ -57,7 +57,7 @@ class StudentSharingBoundaryTest {
         val entitlement = mock(ReportEntitlementService::class.java)
         val report = UUID.randomUUID()
         val from = LocalDate.parse("2026-10-19"); val to = from.plusDays(6)
-        val job = ReportJob(UUID.randomUUID(), student, from, to, ReportTrigger.SCHEDULE, null,
+        val job = ReportJob(UUID.randomUUID(), student, com.sagomungchi.core.report.domain.ReportPeriodType.WEEKLY, from, to, ReportTrigger.SCHEDULE, null,
             ReportJobStatus.COMPLETED, report, null, OffsetDateTime.now(), null, OffsetDateTime.now())
         `when`(repository.byReport(report)).thenReturn(job)
         `when`(access.parent(student)).thenReturn(parent)
@@ -68,7 +68,7 @@ class StudentSharingBoundaryTest {
             "reflections":[{"written":true,"difficulty":"NORMAL","text":"합성비밀 돌아보기"}]}""")
         `when`(client.get(student, "/internal/reports/$report", emptyMap(), false)).thenReturn(body)
         `when`(views.recordWithSharing(report, student, parent, false)).thenReturn(ReportViewAccess(false, false))
-        val service = ReportQueryService(repository, access, client, views, entitlement, privacy)
+        val service = ReportQueryService(repository, access, client, views, entitlement, privacy, mock(com.sagomungchi.core.support.service.CorrectionNoticeService::class.java))
         val result = service.detail(report, null)
         assertEquals(3, result["metrics"][0]["count"].asInt())
         assertFalse(result["parentSharingEnabled"].asBoolean())

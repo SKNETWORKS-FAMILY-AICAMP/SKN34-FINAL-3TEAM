@@ -14,6 +14,7 @@
  <select id="receipt" resultMap="withdrawal" flushCache="true" useCache="false">SELECT id,user_id,status FROM withdrawal_request WHERE status_token_hash=#{hash}</select>
  <update id="complete">UPDATE withdrawal_request SET status='COMPLETED',completed_at=#{now} WHERE user_id=#{user} AND status='REQUESTED'</update>
  <update id="withdrawn">UPDATE user_account SET status='WITHDRAWN',display_name=NULL,login_id='withdrawn:' || id::text,updated_at=#{now} WHERE id=#{user} AND status='WITHDRAWAL_REQUESTED'</update>
+ <delete id="deleteParentCredential">DELETE FROM parent_credential WHERE user_id=#{user}</delete>
  <insert id="audit">INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,created_at) VALUES(#{id},#{actor},#{action},'ACCOUNT_MANAGEMENT',#{target},'SUCCESS',#{now})</insert>
 
 </mapper>

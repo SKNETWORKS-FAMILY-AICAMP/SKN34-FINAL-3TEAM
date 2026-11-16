@@ -3,6 +3,7 @@ package com.sagomungchi.core.report.controller
 import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.report.domain.ReportJobStatus
+import com.sagomungchi.core.report.domain.ReportPeriodType
 import com.sagomungchi.core.report.service.ReportJobService
 import com.sagomungchi.core.report.service.ReportQueryService
 import jakarta.servlet.http.HttpServletRequest
@@ -13,7 +14,8 @@ import java.util.UUID
 @RestController
 class ReportController(private val query: ReportQueryService, private val jobs: ReportJobService) {
     @GetMapping("/api/v1/children/{childId}/reports")
-    fun list(@PathVariable childId: UUID, @RequestParam(required = false) status: ReportJobStatus?) = query.list(childId, status)
+    fun list(@PathVariable childId: UUID, @RequestParam(required = false) status: ReportJobStatus?,
+        @RequestParam(required = false) periodType: ReportPeriodType?) = query.list(childId, status, periodType)
 
     @GetMapping("/api/v1/reports/{reportId}")
     fun detail(@PathVariable reportId: UUID, @RequestParam(required = false) revision: Int?) = query.detail(reportId, revision)

@@ -1,7 +1,7 @@
 #requires -Version 7.0
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('core-service','learning-service','ai-service','scoring-service','report-api','report-worker')][string]$Service,
+    [Parameter(Mandatory)][ValidateSet('core-service','learning-service','ai-service','scoring-service','report-api','report-worker','sllm-server')][string]$Service,
     [Parameter(Mandatory)][string]$Kubeconfig,
     [string]$Helm = 'helm',
     [string]$Profile = 'sagomungchi-provided',

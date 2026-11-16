@@ -72,8 +72,8 @@ class AdminReportRetryIntegrationTest : PostgresRepositoryTest() {
         val admin=account(jdbc,permission=permission)
         val identity=actor(jdbc,admin,"ADMIN",permission?.let { setOf(it) } ?: emptySet())
         val owner=parent(jdbc);val student=child(jdbc,owner);val original=UUID.randomUUID()
-        jdbc.update("""INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,failure_reason,retry_count,created_at,completed_at)
-            VALUES(?,?,?,?,'SCHEDULE',?,'RENDER_FAILED',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""",original,student,WEEK.from,WEEK.to,status)
+        jdbc.update("""INSERT INTO report_job(id,student_id,period_type,period_from,period_to,trigger,status,failure_reason,retry_count,created_at,completed_at)
+            VALUES(?,?,'WEEKLY',?,?,'SCHEDULE',?,'RENDER_FAILED',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""",original,student,WEEK.from,WEEK.to,status)
         return Fixture(identity,tokens.access(identity.session),student,original)
     }
     private fun post(f: Fixture,key: UUID=UUID.randomUUID(),job: UUID=f.original)=mvc.post("/api/v1/admin/jobs/$job/retry") {
@@ -199,7 +199,7 @@ class AdminReportRetryIntegrationTest : PostgresRepositoryTest() {
             assertNull(reports.successor(f.original))
         }
         val f=fixture();val other=UUID.randomUUID()
-        jdbc.update("INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,retry_count,created_at) VALUES(?,?,?,?,'ADMIN_RETRY','QUEUED',0,CURRENT_TIMESTAMP)",other,f.student,WEEK.from,WEEK.to)
+        jdbc.update("INSERT INTO report_job(id,student_id,period_type,period_from,period_to,trigger,status,retry_count,created_at) VALUES(?,?,'WEEKLY',?,?,'ADMIN_RETRY','QUEUED',0,CURRENT_TIMESTAMP)",other,f.student,WEEK.from,WEEK.to)
         post(f).andExpect { status { isConflict() };jsonPath("$.code") { value("REPORT_GENERATION_IN_PROGRESS") } }
         assertNull(reports.successor(f.original))
     }

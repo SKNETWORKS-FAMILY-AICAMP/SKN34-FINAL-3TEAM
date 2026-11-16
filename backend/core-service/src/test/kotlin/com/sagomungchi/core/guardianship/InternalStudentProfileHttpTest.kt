@@ -97,8 +97,9 @@ class InternalStudentProfileHttpTest(@Autowired private val mvc: MockMvc, @Autow
             header { string("Cache-Control", "no-store") }
             jsonPath("$.studentId") { value(student.toString()) }
             jsonPath("$.nickname") { value("합성 별명") }
+            jsonPath("$.grade") { value(3) }
         }.andReturn().response
-        assertEquals(setOf("studentId", "nickname", "parentSharingEnabled"), json.readTree(response.contentAsByteArray).fieldNames().asSequence().toSet())
+        assertEquals(setOf("studentId", "nickname", "parentSharingEnabled", "grade"), json.readTree(response.contentAsByteArray).fieldNames().asSequence().toSet())
         assertNull(UserContextHolder.currentOrNull())
         mvc.get(path) {
             header("X-Internal-Token", "profile-test-token")

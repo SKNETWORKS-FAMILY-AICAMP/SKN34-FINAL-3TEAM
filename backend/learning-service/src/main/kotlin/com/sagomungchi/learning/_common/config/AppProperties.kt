@@ -10,11 +10,24 @@ data class AppProperties(
     val messaging: Messaging = Messaging(),
     val judgment: Judgment = Judgment(),
     val missionDraft: MissionDraft = MissionDraft(),
+    val themeDraft: ThemeDraft = ThemeDraft(),
+    val themeFrame: ThemeFrame = ThemeFrame(),
 ) {
+    /** 기념 액자 (P27, #559). backfillOnStartup: 기동 때 도입 전·누락 회차 소급(ThemeFrameBackfillRunner, 멱등) */
+    data class ThemeFrame(val backfillOnStartup: Boolean = true)
+
     data class Internal(
+        /** 이 서비스가 내부 호출에 보내는 자기 토큰 */
         val token: String,
         val connectTimeout: Duration,
         val readTimeout: Duration,
+        /**
+         * core 호출(결제 사용 예약·완료, 삭제 완료 보고) 응답 대기 (#501). 피드백 경로의 안쪽 호출 합계
+         * 사용 예약 + 판정 + 되묻기 + 사용 완료 = 4 + 35 + 35 + 4 = 78초가 core→learning 피드백 80초보다 작게 둠 (architecture 1.3)
+         */
+        val coreReadTimeout: Duration = Duration.ofSeconds(4),
+        /** 받는 쪽 호출자별 토큰 (InternalCallerPolicy 키). 빈 값이면 그 호출자 거부 */
+        val callers: Map<String, String> = emptyMap(),
     )
 
     /** 소비 실패 재시도 횟수 (아키텍처 1.6, P12). definitions.json의 <큐>.retry.1~N 개수와 같아야 함 */
@@ -42,4 +55,21 @@ data class AppProperties(
          */
         val aiReadTimeout: Duration = Duration.ofSeconds(70),
     )
+
+    /**
+     * 주간 테마 초안 (#438, class-diagram 4.4). 생성 주기 app.theme-draft.interval·주간 자동 크론 app.theme-draft.weekly-cron(ThemeDraftScheduler).
+     * 값은 모두 기준안(learning.md #438 절): 상한 3회(미션 초안과 같음), ai 대기 16분(ai 마감 15분, P12 예외), 리스 18분(대기보다 길게).
+     * enabled는 생성 주기와 주간 자동을 함께 끔
+     */
+    data class ThemeDraft(
+        val enabled: Boolean = true,
+        val maxAttempts: Int = 3,
+        val aiReadTimeout: Duration = Duration.ofMinutes(16),
+        val lease: Duration = Duration.ofMinutes(18),
+    ) {
+        init {
+            require(maxAttempts >= 1) { "app.theme-draft.max-attempts는 1 이상: $maxAttempts" }
+            require(lease > aiReadTimeout) { "app.theme-draft.lease는 ai-read-timeout보다 길어야 함: $lease ≤ $aiReadTimeout" }
+        }
+    }
 }

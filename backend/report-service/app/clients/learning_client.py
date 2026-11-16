@@ -5,7 +5,15 @@ from typing import Literal
 from uuid import UUID
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, StrictInt
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    ValidationError,
+)
 from pydantic.alias_generators import to_camel
 
 from app.clients.base import internal_client
@@ -55,12 +63,16 @@ class ElementInput(InputModel):
     code: str = Field(min_length=1)
     good_thought: StrictBool
     satisfied: StrictBool
+    label: str | None = None
+    quote: str | None = None
 
 
 class JudgmentInput(InputModel):
     result: Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"]
     trial: StrictBool
     elements: list[ElementInput]
+    corrected: StrictBool = False
+    model_scores: object = None
 
     def record(self) -> JudgmentRecord:
         ids = [e.element_id for e in self.elements]
@@ -70,15 +82,22 @@ class JudgmentInput(InputModel):
             self.result,
             self.trial,
             tuple(
-                JudgedElement(e.element_id, e.code, e.good_thought, e.satisfied)
+                JudgedElement(e.element_id, e.code, e.good_thought, e.satisfied, e.label, e.quote)
                 for e in self.elements
             ),
+            self.corrected,
+            self.model_scores,
         )
+
+
+class FollowupInput(InputModel):
+    question: str
 
 
 class FeedbackInput(InputModel):
     status: Literal["PENDING", "RUNNING", "DONE", "FAILED"]
     judgment: JudgmentInput | None = None
+    followup: FollowupInput | None = None
 
     def judgment_record(self) -> JudgmentRecord | None:
         # The record API sends a judgment only for DONE feedback (API 4.1.1).
@@ -135,6 +154,7 @@ class AnswerInput(InputModel):
 
 
 class MissionInput(InputModel):
+    id: UUID | None = None
     title: str
     thinking_type: ThinkingType
 
@@ -159,12 +179,15 @@ class AttemptInput(InputModel):
     completed_at: AwareDatetime | None = None
     reflection: ReflectionInput | None = None
     available: StrictBool = True
+    context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None = None
 
     def record(self) -> AttemptRecord:
         return AttemptRecord(
             id=self.attempt_id,
             student_id=self.student_id,
             mission_title=self.mission.title,
+            mission_id=self.mission.id,
+            context=self.context,
             thinking_type=self.mission.thinking_type,
             status=self.status,
             answers=tuple(
@@ -177,6 +200,9 @@ class AttemptInput(InputModel):
                     a.written_text(),
                     a.input_type,
                     a.feedback.judgment_record(),
+                    a.feedback.followup.question
+                    if a.feedback.status == "DONE" and a.feedback.followup
+                    else None,
                 )
                 for a in self.answers
             ),
@@ -236,6 +262,18 @@ class LearningClient:
     def configured(cls) -> "LearningClient":
         return cls(internal_client(get_settings().learning_url))
 
+    async def theme_summary(self, student_id: UUID, week_start: date) -> dict:
+        context = current_user_context()
+        if context is None:
+            raise RecordContractError("Theme summary requires a scoped context")
+        context.require_student(str(student_id))
+        response = await self._client.get(
+            f"/internal/students/{student_id}/weekly-theme/summary",
+            params={"weekStart": week_start.isoformat()},
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def close(self) -> None:
         await self._client.aclose()
 
@@ -255,20 +293,16 @@ class LearningClient:
         keys = list(expected)
         for start in range(0, len(keys), 50):
             batch = keys[start : start + 50]
-            response = await self._client.get(
-                "/internal/records/evidence",
-                params={"answerIds": ",".join(str(key) for key in batch)},
-            )
-            if response.status_code == 410:
-                results.extend(
-                    EvidenceRecord(
-                        key, expected[key].attempt_id, expected[key].answer_version, None, False
-                    )
-                    for key in batch
+            try:
+                response = await self._client.get(
+                    "/internal/records/evidence",
+                    params={"answerIds": ",".join(str(key) for key in batch)},
                 )
-                continue
-            response.raise_for_status()
-            parsed = EvidenceResponse.model_validate(response.json())
+                response.raise_for_status()
+                parsed = EvidenceResponse.model_validate(response.json())
+            except (httpx.HTTPError, ValidationError) as exc:
+                # 전송·응답 형식 오류는 여기서 바꿔 service가 httpx를 모르게 한다
+                raise RecordContractError("Evidence lookup failed") from exc
             seen = set()
             for item in parsed.items:
                 if item.answer_id not in batch or item.answer_id in seen:
@@ -313,7 +347,7 @@ class LearningClient:
         response.raise_for_status()
         return response.json()
 
-    async def _pages(self, student_id: UUID, period: Period, suffix: str) -> list[dict]:
+    async def _pages(self, student_id: UUID, period: Period, suffix: str, **params) -> list[dict]:
         items, page, expected_total, expected_size = [], 0, None, None
         attempt_ids = set()
         while True:
@@ -324,6 +358,7 @@ class LearningClient:
                     **period.payload(),
                     "page": page,
                     "size": 100,
+                    **params,
                 },
             )
             response = PageInput.model_validate(raw)
@@ -356,6 +391,37 @@ class LearningClient:
             if len(response.items) != response.size:
                 raise RecordContractError("Learning records have a missing page")
             page += 1
+
+    async def explanation_attempts(
+        self, student_id: UUID, period: Period
+    ) -> tuple[AttemptRecord, ...]:
+        context = current_user_context()
+        if context is None or context.role != "SYSTEM":
+            raise RecordContractError("Model scores require a SYSTEM context")
+        context.require_student(str(student_id))
+        rows = await self._pages(student_id, period, "attempts", includeModelScores="true")
+        attempts = []
+        for row in rows:
+            if row.get("available") is False:
+                continue
+            attempt = AttemptInput.model_validate(row).record()
+            if attempt.student_id != student_id:
+                raise RecordContractError("Learning returned another student's attempt")
+            attempts.append(attempt)
+        return tuple(attempts)
+
+    async def daily_records(self, student_id: UUID, period: Period) -> LearningRecords:
+        context = current_user_context()
+        if context is None:
+            raise RecordContractError("Daily records require a scoped context")
+        context.require_student(str(student_id))
+        rows = await self._pages(student_id, period, "daily-attempts")
+        attempts = tuple(
+            AttemptInput.model_validate(row).record()
+            for row in rows
+            if row.get("available") is not False
+        )
+        return LearningRecords(student_id, period, attempts, (), ())
 
     async def records(self, student_id: UUID, period: Period) -> LearningRecords:
         context = current_user_context()

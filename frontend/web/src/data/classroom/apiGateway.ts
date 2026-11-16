@@ -3,6 +3,8 @@ import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession,
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
 import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
+import { isStoredGrade } from '../../domain/grade.ts'
+import { isAttemptContext } from '../../domain/retention.ts'
 import type {
   AnswerContent,
   AnalysisResult,
@@ -76,6 +78,9 @@ function attemptDto(raw: unknown): Attempt {
     return contractError('마무리 전 응답에 정답·예시·체크리스트가 포함되어 표시하지 않았습니다.')
   a.reflection = recordReflection(a.reflection)
   if (a.draft) a.draft = draftDto(data.draft, a.mission.inputType)
+  // 시도 종류(#700 선택 칸): 계약 값만 받고 모르는 값은 없는 것으로(#710)
+  if (isAttemptContext(data.context)) a.context = data.context
+  else delete a.context
   return a
 }
 function feedbackDto(raw: unknown): Feedback {
@@ -89,6 +94,8 @@ function feedbackDto(raw: unknown): Feedback {
   // 근거 구절이 없는 ai 요소는 sourceType null
   if (f.judgment != null) {
     const j = object(f.judgment)
+    if (j.m2Notices != null && (!Array.isArray(j.m2Notices) || j.m2Notices.some((n) => typeof n !== 'string')))
+      return contractError('글 정리 안내가 유효하지 않습니다.')
     if (typeof j.judgmentId !== 'string' || !['CORRECT', 'PARTIAL', 'RETHINK', 'HELD'].includes(String(j.result)))
       return contractError('피드백 판정의 judgmentId·result가 유효하지 않습니다.')
     if (j.elements != null && (!Array.isArray(j.elements) ||
@@ -184,14 +191,14 @@ export function createApiGateway(): ClassroomGateway {
         if (
           typeof c.id !== 'string' ||
           typeof c.nickname !== 'string' ||
-          !Number.isInteger(c.grade) ||
-          Number(c.grade) < 3 ||
-          Number(c.grade) > 6
+          !isStoredGrade(c.grade)
         )
           return contractError('학생 범위를 복원하지 못했습니다.')
         return { role: 'STUDENT', child: c as unknown as Child, nextAction: me.nextAction, startPath: me.startPath } as Session
       }
-      return { role: me.role, permissions: me.permissions, nextAction: me.nextAction, startPath: me.startPath } as Session
+      return { role: me.role, permissions: me.permissions, nextAction: me.nextAction, startPath: me.startPath,
+        ...(me.authMethod === 'PASSWORD' || me.authMethod === 'GOOGLE' ? { authMethod: me.authMethod } : {}),
+        ...(me.role === 'PARENT' && typeof me.loginId === 'string' && me.loginId ? { loginId: me.loginId } : {}) } as Session
     },
     async home(child) {
       const raw = object(await apiFetch('/students/me/home'))
@@ -213,14 +220,13 @@ export function createApiGateway(): ClassroomGateway {
       return list(await apiFetch<unknown>('/children')).map((raw) => {
         const c = object(raw)
         const grade = Number(c.grade)
-        if (grade < 3 || grade > 6) return contractError('자녀의 지원 학년은 3~6입니다.')
+        if (!isStoredGrade(grade)) return contractError('자녀 학년은 초3~중3(3~9)입니다.')
         return {
           id: text(c.childId ?? c.id, 'childId'),
           nickname: text(c.nickname, 'nickname'),
           grade,
           birthYear: Number(c.birthYear),
-          // core /children에는 plan이 없다(api-spec 3.7·5.3). 목업 fixture 값만 넘어오며, 실서버에서는 미확인이다.
-          plan: c.plan === 'PREMIUM' || c.plan === 'FREE' ? c.plan : undefined,
+          // 이용권은 /children 계약이 아니다(api-spec 3.7·5.3). 화면은 /children/{id}/entitlement로 확인한다.
           guardianConsentRequired: c.guardianConsentRequired,
           hasRecords: c.hasRecords,
           recordState: c.recordState,
@@ -266,8 +272,8 @@ export function createApiGateway(): ClassroomGateway {
       if (a.studentId !== child.id) return contractError('요청한 자녀와 원문의 자녀가 다릅니다.')
       return a
     },
-    async start(mission, _child) {
-      return attemptDto(await apiFetch<unknown>(`/missions/${mission.id}/attempts`, body({})))
+    async start(mission, _child, context) {
+      return attemptDto(await apiFetch<unknown>(`/missions/${mission.id}/attempts`, body(context ? { context } : {})))
     },
     async attempt(id) {
       const response = await apiResponse<unknown>(`/attempts/${id}`, { cache: 'no-store' })

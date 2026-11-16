@@ -32,6 +32,16 @@ const fail = (code: string, detail: string, status = 409): never => {
   throw new ApiError({ code, title: detail, detail, status })
 }
 const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 80))
+/** 시연 미션 장면 움직임: learning이 전달하는 ai 움직임 형식 v1 전체 모양(카메라·화자·살펴보기 포함)에 효과만 바꿔 넣는다 */
+const demoSceneMotion = (effects: object[], spots: object[]) => ({
+  version: 1,
+  transition: { kind: 'fade', seconds: 0.6 },
+  camera: { from: { x: 50, y: 50, zoom: 1 }, to: { x: 45, y: 55, zoom: 1.2 }, seconds: 12 },
+  speakers: { 뭉치: { x: 30, y: 70, zoom: 1.2 } },
+  effects,
+  captions: [],
+  spots,
+})
 export function demoMissions(grade: number): Mission[] {
   return [
     {
@@ -44,6 +54,8 @@ export function demoMissions(grade: number): Mission[] {
       question: '한 상자에 사과가 3개씩, 상자가 2개 있어요. 사과의 수와 어떻게 셌는지 남겨 주세요.',
       hint: '상자 하나에 든 수와 상자의 수를 나누어 살펴보세요.',
       scene: 'math',
+      // 미션 내용에 맞춘 시연 그림(2D 만화풍 생성, #648)
+      staticSceneUri: '/demo/missions/solve.jpg',
     },
     {
       id: `${grade}-analyze`,
@@ -55,6 +67,13 @@ export function demoMissions(grade: number): Mission[] {
       question: '두 화분에서 눈으로 확인할 수 있는 차이는 무엇인가요?',
       hint: '잎의 크기와 색을 비교해 보세요.',
       scene: 'science',
+      // 미션 내용에 맞춘 시연 그림(2D 만화풍 생성, #648)
+      staticSceneUri: '/demo/missions/analyze.jpg',
+      // 테마 문제 장면 움직임(ai 형식 v1 모양 그대로, 문제 화면은 effects만 재생하고 카메라·화자·살펴보기는 쓰지 않음, #440)
+      sceneMotion: demoSceneMotion([{ shape: 'leaf', color: '#7CB342', count: 8, size: 3, direction: 20, speed: 5, opacity: 0.6 }], [
+        { x: 30, y: 25, label: '큰 잎', line: '이 잎을 잘 봐!', evidence: true },
+        { x: 72, y: 55, label: '작은 화분', line: '여기도 볼까?', evidence: false },
+      ]),
       choices: [
         { id: 'leaf', label: '잎의 색과 크기' },
         { id: 'date', label: '심은 날짜' },
@@ -71,6 +90,8 @@ export function demoMissions(grade: number): Mission[] {
       question: '도서관에 만화책을 더 두면 좋을까요? 내 의견과 그렇게 생각한 까닭을 남겨 주세요.',
       hint: '직접 읽었던 책과, 다른 의견을 가진 친구를 떠올려 보세요.',
       scene: 'korean',
+      // 미션 내용에 맞춘 시연 그림(2D 만화풍 생성, #648)
+      staticSceneUri: '/demo/missions/evaluate.jpg',
     },
     {
       id: `${grade}-create`,
@@ -82,6 +103,12 @@ export function demoMissions(grade: number): Mission[] {
       question: '빈 상자를 새롭게 쓴다면 무엇을 만들고 싶나요? 어떻게 쓸지도 적어 주세요.',
       hint: '모양을 바꾸거나 다른 물건과 함께 써 볼까요?',
       scene: 'math',
+      // 미션 내용에 맞춘 시연 그림(2D 만화풍 생성, #648)
+      staticSceneUri: '/demo/missions/create.jpg',
+      sceneMotion: demoSceneMotion([{ shape: 'star', color: '#FFD54F', count: 10, size: 2, direction: 180, speed: 6, opacity: 0.7 }], [
+        { x: 48, y: 60, label: '빈 상자', line: '무엇이 될까?', evidence: true },
+        { x: 80, y: 35, label: '상자 로봇', line: '이렇게도 쓰네!', evidence: false },
+      ]),
     },
     {
       id: `${grade}-reflect`,
@@ -93,6 +120,8 @@ export function demoMissions(grade: number): Mission[] {
       question: '처음에는 어려웠지만 다시 해 본 일을 떠올려 보세요. 무엇을 바꾸었나요?',
       hint: '처음 방법과 다음에 바꾼 방법을 나누어 적어 보세요.',
       scene: 'korean',
+      // 미션 내용에 맞춘 시연 그림(2D 만화풍 생성, #648)
+      staticSceneUri: '/demo/missions/reflect.jpg',
     },
   ]
 }
@@ -105,7 +134,8 @@ export interface DemoSnapshot {
   keys: [string, string][]
   reports: [string, Report[]][]
 }
-export function createDemoGateway(): ClassroomGateway & {
+/** premium: 목업 이용권 판정(MSW는 결제 목업 구독을 넘긴다). 자녀 정보에는 이용권이 없다(api-spec 3.7). */
+export function createDemoGateway({ premium = (childId: string) => childId === 'demo-seoyun' }: { premium?: (childId: string) => boolean } = {}): ClassroomGateway & {
   login: NonNullable<ClassroomGateway['login']> // 개발 시연 이메일 로그인 (#97)
   snapshot: () => DemoSnapshot
   restoreSnapshot: (snapshot: DemoSnapshot) => void
@@ -113,8 +143,8 @@ export function createDemoGateway(): ClassroomGateway & {
   publishCatalog: (id: string, mission: Mission | null) => void
 } {
   const children: Child[] = [
-    { id: 'demo-seoyun', nickname: '서윤', grade: 3, birthYear: 2017, plan: 'PREMIUM' },
-    { id: 'demo-doyun', nickname: '도윤', grade: 5, birthYear: 2015, plan: 'FREE' },
+    { id: 'demo-seoyun', nickname: '서윤', grade: 3, birthYear: 2017 },
+    { id: 'demo-doyun', nickname: '도윤', grade: 5, birthYear: 2015 },
   ]
   const db = new Map<string, Attempt>(),
     keys = new Map<string, string>(),
@@ -164,6 +194,8 @@ export function createDemoGateway(): ClassroomGateway & {
           question: '씨앗이 자라는 순서대로 골라 주세요.',
           hint: '먼저 일어나는 변화를 떠올려 보세요.',
           scene: 'science',
+          // 미션 내용에 맞춘 시연 그림(2D 만화풍 생성, #648)
+          staticSceneUri: '/demo/missions/ordering.jpg',
           choices: [
             { id: 'sprout', label: '싹이 나요' },
             { id: 'seed', label: '씨앗을 심어요' },
@@ -180,6 +212,8 @@ export function createDemoGateway(): ClassroomGateway & {
           question: '각 물건을 알맞은 그룹에 넣어 주세요.',
           hint: '자석에 붙을지 생각해 보세요.',
           scene: 'science',
+          // 미션 내용에 맞춘 시연 그림(2D 만화풍 생성, #648)
+          staticSceneUri: '/demo/missions/classification.jpg',
           choices: [
             { id: 'nail', label: '철 못' },
             { id: 'paper', label: '종이' },
@@ -352,7 +386,7 @@ export function createDemoGateway(): ClassroomGateway & {
       metrics,
       records: rows,
       narrative:
-        child.plan === 'PREMIUM'
+        premium(child.id)
           ? '이 화면의 기록에서 계산한 개수와 아이의 원문을 함께 읽어 보세요. 사고력 수준을 진단하는 결과가 아닙니다.'
           : null,
       regenerations: 0,
@@ -475,7 +509,7 @@ export function createDemoGateway(): ClassroomGateway & {
       )
       if (existing) return copy(existing)
       if (
-        child.plan === 'FREE' &&
+        !premium(child.id) &&
         [...db.values()].filter((a) => a.studentId === child.id && a.attemptId.startsWith('new-'))
           .length >= 3
       )
@@ -677,7 +711,7 @@ export function createDemoGateway(): ClassroomGateway & {
     },
     async analyze(child, period, question) {
       requireParent(child)
-      if (child.plan === 'FREE')
+      if (!premium(child.id))
         fail('USAGE_LIMIT_REACHED', '분석 대화는 프리미엄에서 제공됩니다.', 429)
       const rows = eligibleRecords(records(child, period), period)
       const evidence = rows.map((r) => {

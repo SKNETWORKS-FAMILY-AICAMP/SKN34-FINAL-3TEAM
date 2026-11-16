@@ -11,15 +11,15 @@ import java.util.UUID
 @Mapper
 interface ReportJobMapper {
     fun candidateParents(): List<UUID>
-    fun lockWeek(@Param("studentId") studentId: UUID, @Param("from") from: LocalDate): Any?
-    fun scheduled(@Param("studentId") studentId: UUID, @Param("from") from: LocalDate): ReportJob?
+    fun lockPeriod(@Param("studentId") studentId: UUID, @Param("type") type: ReportPeriodType, @Param("from") from: LocalDate): Any?
+    fun scheduled(@Param("studentId") studentId: UUID, @Param("type") type: ReportPeriodType, @Param("from") from: LocalDate): ReportJob?
     fun stale(@Param("before") before: OffsetDateTime, @Param("after") after: UUID?): List<ReportJob>
     fun pendingForStudent(studentId: UUID): List<ReportJob>
     fun find(id: UUID): ReportJob?
     fun lock(id: UUID): ReportJob?
     fun byReport(reportId: UUID): ReportJob?
-    fun inProgress(@Param("studentId") studentId: UUID, @Param("from") from: LocalDate): Int
-    fun regenerations(@Param("studentId") studentId: UUID, @Param("from") from: LocalDate): Int
+    fun inProgress(@Param("studentId") studentId: UUID, @Param("type") type: ReportPeriodType, @Param("from") from: LocalDate): Int
+    fun regenerations(@Param("studentId") studentId: UUID, @Param("type") type: ReportPeriodType, @Param("from") from: LocalDate): Int
     fun insert(job: ReportJob): Int
     fun transition(@Param("jobId") jobId: UUID, @Param("status") status: ReportJobStatus,
         @Param("reportId") reportId: UUID?, @Param("failureReason") failureReason: String?,
@@ -33,15 +33,15 @@ interface ReportJobMapper {
 @Repository
 class ReportJobRepository(private val mapper: ReportJobMapper) {
     fun candidateParents() = mapper.candidateParents()
-    fun lockWeek(studentId: UUID, from: LocalDate) { mapper.lockWeek(studentId, from) }
-    fun scheduled(studentId: UUID, from: LocalDate) = mapper.scheduled(studentId, from)
+    fun lockPeriod(studentId: UUID, period: ReportPeriod) { mapper.lockPeriod(studentId, period.type, period.from) }
+    fun scheduled(studentId: UUID, period: ReportPeriod) = mapper.scheduled(studentId, period.type, period.from)
     fun stale(before: OffsetDateTime, after: UUID?) = mapper.stale(before, after)
     fun pendingForStudent(studentId: UUID) = mapper.pendingForStudent(studentId)
     fun find(id: UUID) = mapper.find(id)
     fun lock(id: UUID) = mapper.lock(id)
     fun byReport(reportId: UUID) = mapper.byReport(reportId)
-    fun inProgress(studentId: UUID, from: LocalDate) = mapper.inProgress(studentId, from) > 0
-    fun regenerations(studentId: UUID, from: LocalDate) = mapper.regenerations(studentId, from)
+    fun inProgress(studentId: UUID, period: ReportPeriod) = mapper.inProgress(studentId, period.type, period.from) > 0
+    fun regenerations(studentId: UUID, period: ReportPeriod) = mapper.regenerations(studentId, period.type, period.from)
     fun insert(job: ReportJob) { check(mapper.insert(job) == 1) }
     fun transition(jobId: UUID, status: ReportJobStatus, reportId: UUID?, reason: String?, at: OffsetDateTime) =
         mapper.transition(jobId, status, reportId, reason, at) == 1

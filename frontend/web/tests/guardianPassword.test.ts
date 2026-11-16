@@ -71,7 +71,7 @@ test('잠김·미설정이면 비밀번호 입력을 닫고 Google 로그인만 
     assert.equal(parentSessionLocked(), false)
   }
   assert.match(unlockProblem('GUARDIAN_PASSWORD_INVALID', 2), /남은 기회는 2번/)
-  assert.match(unlockProblem('GUARDIAN_PASSWORD_LOCKED'), /Google로 다시 로그인/)
+  assert.match(unlockProblem('GUARDIAN_PASSWORD_LOCKED'), /다시 로그인/)
 })
 
 test('목업: 보호자 비밀번호는 재인증 후 정하고, 동석 진입 뒤 refresh는 막히며 비밀번호로만 돌아온다', async () => {

@@ -44,7 +44,7 @@
     "/children/{childId}/deletion-requests": "633af8282f7e171c8dc68e4228ca93580fa02108e77dc42a6d19e4b4ae0a972f",
     "/children/{childId}/deletion-requests/{requestId}": "f422c6ad701cdbbb69c1f4ed191470cfc898432fe448db91b87eb4723192cc45",
     "/children/{childId}/link": "292d2d4452dc111f7a231322e8b1b4d75bee507bb0230349d1c2b899818ab704",
-    "/children/{childId}/pin": "f6482f52a2877ee3ed9b6e57fda69481ab5b38e4e4cea9ed7d76de91b5372288",
+    "/children/{childId}/pin": "2f0db318e787210d8171ed5bf5ab0e5b2426ec5520c0187db388b956edc88da9",
     "/children/{childId}/reports": "71c7e805de7bbd36ae113bc48985c08b50d3cc3d82797267c1049acf6467327b",
     "/children/{childId}/summary": "757065b92aa9f8d3c9e1e320036c5d7e7a784ea3fe46878cd533576e74d3c2e5",
     "/children/{childId}/thinking-types": "dd875fdc4d18ab155aaf157f14c91e7f55ef718d9a03dd4882a67a5dc1bbe34b",

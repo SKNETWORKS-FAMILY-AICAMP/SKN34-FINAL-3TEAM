@@ -313,3 +313,36 @@ def test_dlq_then_recovery_blocks_redelivery(
             await connection.close()
 
     asyncio.run(scenario())
+
+
+def test_daily_http_reconcile_keeps_core_response_contract(
+    report_factory, db_engine, report_student_id
+):
+    app = create_app()
+    app.state.session_factory, app.state.engine = report_factory, db_engine
+    client = TestClient(app)
+    job_id = uuid4()
+    body = dict(
+        studentId=str(report_student_id),
+        periodFrom="2026-11-02",
+        periodTo="2026-11-02",
+        periodType="DAILY",
+    )
+    headers = {
+        "X-Internal-Token": "test-token",
+        "X-User-Role": "SYSTEM",
+        "X-Student-Scope": str(report_student_id),
+    }
+    response = client.post(f"/internal/report-jobs/{job_id}/reconcile", json=body, headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {k: v for k, v in body.items() if k != "periodType"} | dict(
+        jobId=str(job_id), status="FAILED", reportId=None, failureReason="REPORT_NOT_CREATED"
+    )
+    assert (
+        client.post(
+            f"/internal/report-jobs/{job_id}/reconcile",
+            json=body | {"periodType": "WEEKLY", "periodTo": "2026-11-08"},
+            headers=headers,
+        ).status_code
+        == 409
+    )

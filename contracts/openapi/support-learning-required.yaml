@@ -234,7 +234,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CorrectionCommand'
+              $ref: '#/components/schemas/CorrectionRequest'
       x-tracking-scope: '#80'
       x-correction-rules:
         requiredProcessStatus: DONE
@@ -258,6 +258,7 @@ components:
   schemas:
     SupportTarget:
       type: object
+      additionalProperties: false
       required:
       - studentId
       - attemptId
@@ -272,14 +273,10 @@ components:
           type: string
           format: uuid
         previousResult:
-          type: string
-          enum:
-          - CORRECT
-          - PARTIAL
-          - RETHINK
-          - HELD
+          $ref: '#/components/schemas/JudgmentResult'
     SupportOriginal:
       type: object
+      additionalProperties: false
       required:
       - studentId
       - attemptId
@@ -295,6 +292,7 @@ components:
           type: array
           items:
             type: object
+            additionalProperties: false
             required:
             - answerId
             - version
@@ -311,8 +309,15 @@ components:
                 type: string
               feedback:
                 type: object
-                description: PublicAttempt feedback。draft/memo/name excluded
-    CorrectionCommand:
+                description: learning FeedbackResult와 같은 피드백. draft·memo·이름은 담지 않는다.
+    JudgmentResult:
+      type: string
+      enum:
+      - CORRECT
+      - PARTIAL
+      - RETHINK
+      - HELD
+    CorrectionRequest:
       type: object
       required:
       - reportId
@@ -326,14 +331,10 @@ components:
           type: string
           minLength: 1
         corrected:
-          type: string
-          enum:
-          - CORRECT
-          - PARTIAL
-          - RETHINK
-          - HELD
+          $ref: '#/components/schemas/JudgmentResult'
     CorrectionResult:
       type: object
+      additionalProperties: false
       required:
       - correctionId
       - previousResult
@@ -345,24 +346,15 @@ components:
           type: string
           format: uuid
         previousResult:
-          type: string
-          enum:
-          - CORRECT
-          - PARTIAL
-          - RETHINK
-          - HELD
+          $ref: '#/components/schemas/JudgmentResult'
         corrected:
-          type: string
-          enum:
-          - CORRECT
-          - PARTIAL
-          - RETHINK
-          - HELD
+          $ref: '#/components/schemas/JudgmentResult'
         createdAt:
           type: string
           format: date-time
         impact:
           type: object
+          additionalProperties: false
           required:
           - conversation
           - aggregation
@@ -401,7 +393,7 @@ components:
                 NOT_APPLIED: 해당 영역에 정정 반영을 수행하지 않았음을 확인함. 변경 대상 없음도 포함하며 오류나 후속 처리 필요를 뜻하지 않음.
                 UNKNOWN: 해당 영역의 반영 여부를 확인하지 못함.
               description: 리포트의 반영 여부. learning은 UNKNOWN을 허용함.
-          description: 판정 정정 성공과 독립적인 파생 결과 반영 확인 상태. 세 값이 모두 UNKNOWN이어도 정정 성공이다.
+          description: 판정 정정 성공과 독립적인 파생 결과 반영 확인 상태. 세 값이 모두 UNKNOWN이어도 정정 성공이다. 여기 enum은 core가 받아들이는 범위(LearningSupportClient 검사와 같음)이고, learning이 실제로 보내는 값은 learning-service.yaml CorrectionResult.impact 고정값(conversation UNKNOWN·aggregation NOT_APPLIED·report UNKNOWN)이 기준이다(#656).
           x-all-unknown-allows-success: true
     Problem:
       type: object

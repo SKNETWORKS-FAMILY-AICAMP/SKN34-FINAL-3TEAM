@@ -75,7 +75,7 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
         try {
             val body = try {
                 recoveryCircuit.executeSupplier { recoveryHttp.post().uri("/internal/report-jobs/{id}/reconcile", job.id)
-                    .body(mapOf("studentId" to job.studentId, "periodFrom" to job.periodFrom, "periodTo" to job.periodTo))
+                    .body(mapOf("studentId" to job.studentId, "periodFrom" to job.periodFrom, "periodTo" to job.periodTo, "periodType" to job.periodType.name))
                     .retrieve().body(String::class.java) }
             } catch (_: CallNotPermittedException) { throw unavailable()
             } catch (ex: RestClientResponseException) {
@@ -90,7 +90,7 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
                 fun text(field: String): String = node[field].also { require(it.isTextual) }.textValue()
                 val result = com.sagomungchi.core.report.domain.ReportReconciliation(
                     UUID.fromString(text("jobId")), UUID.fromString(text("studentId")),
-                    com.sagomungchi.core.report.domain.ReportPeriod(java.time.LocalDate.parse(text("periodFrom")), java.time.LocalDate.parse(text("periodTo"))),
+                    com.sagomungchi.core.report.domain.ReportPeriod(java.time.LocalDate.parse(text("periodFrom")), java.time.LocalDate.parse(text("periodTo")), job.periodType),
                     text("status"), if (node["reportId"].isNull) null else UUID.fromString(text("reportId")),
                     if (node["failureReason"].isNull) null else text("failureReason"))
                 require(result.jobId == job.id && result.studentId == job.studentId && result.period.from == job.periodFrom && result.period.to == job.periodTo)

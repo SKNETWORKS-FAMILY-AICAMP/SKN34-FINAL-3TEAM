@@ -36,7 +36,7 @@ class StartupWithoutMigrationTest {
 
     companion object {
         @Container @JvmField
-        val postgres = PostgreSQLContainer<Nothing>("postgres:17.11-alpine")
+        val postgres = PostgreSQLContainer<Nothing>(TEST_POSTGRES_IMAGE)
 
         @JvmStatic @DynamicPropertySource
         fun database(registry: DynamicPropertyRegistry) {

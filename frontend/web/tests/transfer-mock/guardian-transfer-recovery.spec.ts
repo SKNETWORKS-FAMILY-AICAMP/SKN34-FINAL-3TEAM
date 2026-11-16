@@ -30,9 +30,12 @@ async function pending(page: Page, consentMissing: boolean) {
   }, { id: transferId, revoke: consentMissing })
   if (consentMissing) {
     await expect(page).toHaveURL(/\/parent\/onboarding/)
-    await page.getByRole('link', { name: '계정·탈퇴 관리', exact: true }).click()
-  } else await page.getByRole('link', { name: '계정·자녀 관리', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '계정·자녀 관리', exact: true })).toBeVisible()
+    await page.getByRole('link', { name: '계정 관리', exact: true }).click()
+  } else {
+    await page.getByRole('link', { name: '계정·자녀 설정', exact: true }).click()
+    await page.getByRole('tab', { name: '계정 관리', exact: true }).click()
+  }
+  await expect(page.getByRole('heading', { name: '계정·자녀 설정', exact: true })).toBeVisible()
 }
 async function state(page: Page) {
   return page.evaluate(async id => {

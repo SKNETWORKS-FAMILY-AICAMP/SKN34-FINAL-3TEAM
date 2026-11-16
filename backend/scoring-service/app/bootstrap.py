@@ -21,7 +21,10 @@ from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
 from app.model_loader import ModelLoader
+from app.model_loading_reporter import ModelLoadingReporter
 from app.model_registry import ModelRegistry
+from app.model_sync import ModelSync
+from app.preflight import router as preflight_router
 from app.security import InternalAuthMiddleware
 from app.versions import router as versions_router
 
@@ -40,9 +43,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     async with internal_client(settings.core_url) as http:
         registry = ModelRegistry(ModelLoader(S3ModelArtifacts(settings)))
-        consumer = ModelVersionConsumer(
-            amqp, CoreClient(http), registry, settings.model_retry_interval
-        )
+        sync = ModelSync(CoreClient(http), registry, settings.model_retry_interval)
+        consumer = ModelVersionConsumer(amqp, sync, settings.model_retry_interval)
         app.state.model_registry = registry
         usage = UsagePublisher(EventPublisher(amqp), "scoring", "scoring-service")
         app.state.m2_service = M2Service(
@@ -55,11 +57,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.m1_service = M1Service()
         app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "models": consumer.is_ready}
+        reporter = ModelLoadingReporter(registry, EventPublisher(amqp))
+        reporter.start()
         consumer.start()
         try:
             yield
         finally:
             await consumer.close()
+            await reporter.close()
             await usage.close()
             await amqp.close()
 
@@ -70,6 +75,7 @@ def create_app() -> FastAPI:
     app.add_middleware(InternalAuthMiddleware)
     app.include_router(health_router)
     app.include_router(versions_router)
+    app.include_router(preflight_router)
     app.include_router(m2_router)
     app.include_router(m1_router)
     return app

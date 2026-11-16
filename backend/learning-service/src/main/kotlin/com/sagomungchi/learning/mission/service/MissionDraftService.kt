@@ -2,7 +2,7 @@ package com.sagomungchi.learning.mission.service
 
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.exception.BusinessException
-import com.sagomungchi.learning.judgment.client.AiCallException
+import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning.judgment.domain.Judgment
 import com.sagomungchi.learning.mission.client.AiDraftLevel
 import com.sagomungchi.learning.mission.client.AiDraftRequest
@@ -19,6 +19,8 @@ import com.sagomungchi.learning.mission.domain.DraftVersions
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionDraft
 import com.sagomungchi.learning.mission.domain.MissionView
+import com.sagomungchi.learning.mission.domain.StandardFilter
+import com.sagomungchi.learning.mission.domain.StandardPage
 import com.sagomungchi.learning.mission.repository.AchievementStandardRepository
 import com.sagomungchi.learning.mission.repository.MissionDraftRepository
 import org.slf4j.LoggerFactory
@@ -45,6 +47,9 @@ class MissionDraftService(
     private val properties: AppProperties,
 ) {
     val maxAttempts: Int get() = properties.missionDraft.maxAttempts
+
+    /** 성취기준 표 검색 (api-spec 4.1 `/internal/admin/achievement-standards`). 필터 값 검사는 controller */
+    fun standards(filter: StandardFilter): StandardPage = standardRepository.search(filter)
 
     /** 형식·성취기준 실재·학년군·학년·입력 방식·성취수준 단계를 확인(400)한 뒤 GENERATING, attempts 0 */
     @Transactional

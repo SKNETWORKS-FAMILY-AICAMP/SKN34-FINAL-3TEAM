@@ -4,9 +4,9 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.config.InternalRestClientFactory
-import com.sagomungchi.learning.judgment.client.AiCallException
-import com.sagomungchi.learning.judgment.client.aiCircuitBreaker
-import com.sagomungchi.learning.judgment.client.postToAi
+import com.sagomungchi.learning._common.client.AiCallException
+import com.sagomungchi.learning._common.client.aiCircuitBreaker
+import com.sagomungchi.learning._common.client.postToAi
 import com.sagomungchi.learning.mission.domain.DraftFailure
 import com.sagomungchi.learning.mission.domain.DraftVersions
 import com.sagomungchi.learning.mission.domain.GeneratedDraft

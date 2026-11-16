@@ -18,7 +18,7 @@ class ModelRegistryContractTests(unittest.TestCase):
     def test_registry_and_usage_operations_match_openapi(self):
         sources = ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core"
         actual = set()
-        for source in [sources / "admin/controller/ModelVersionController.kt", sources / "admin/controller/AiUsageController.kt"]:
+        for source in [sources / "admin/controller/ModelVersionController.kt", sources / "usage/controller/AiUsageController.kt"]:
             for method, path in re.findall(r'@(Get|Post)Mapping\("([^\"]+)"\)', source.read_text(encoding="utf-8")):
                 actual.add((method.lower(), path.removeprefix("/api/v1")))
         documented = {(method, path) for path, methods in self.api["paths"].items()
@@ -54,6 +54,13 @@ class ModelRegistryContractTests(unittest.TestCase):
         self.assertNotIn("approved", schemas["RollbackModelVersion"]["properties"])
         self.assertEqual(schemas["ModelVersion"]["properties"]["status"]["enum"], ["REGISTERED", "ACTIVE", "INACTIVE"])
         self.assertEqual(len(schemas["EvaluationEvidence"]["required"]), 9)
+
+    def test_model_requires_artifact_and_limitations_are_optional(self):
+        schemas = self.api['components']['schemas']
+        self.assertEqual(schemas['RegisterModelVersion']['allOf'][0]['if']['properties']['kind']['const'], 'MODEL')
+        self.assertEqual(schemas['RegisterModelVersion']['allOf'][0]['then']['required'], ['artifactUri'])
+        self.assertEqual(schemas['EvaluationEvidence']['properties']['limitations']['default'], [])
+        self.assertNotIn('limitations', schemas['EvaluationEvidence']['required'])
 
     def test_usage_keeps_null_totals_and_existing_call_type_enum(self):
         schemas = self.api["components"]["schemas"]

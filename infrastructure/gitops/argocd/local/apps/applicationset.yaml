@@ -13,6 +13,7 @@ spec:
           - {name: scoring-service}
           - {name: report-api}
           - {name: report-worker}
+          - {name: sllm-server}
   template:
     metadata:
       name: 'local-{{name}}'

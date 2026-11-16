@@ -16,6 +16,8 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import com.sagomungchi.core.learning.LearningHttpStub
 import org.mockito.ArgumentMatchers.anyString
+import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.not
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -110,6 +112,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
    jdbc.update("DELETE FROM message_evidence WHERE message_id IN (SELECT m.id FROM conversation_message m JOIN conversation c ON c.id=m.conversation_id WHERE c.student_id=?)",id)
    jdbc.update("DELETE FROM conversation_message WHERE conversation_id IN (SELECT id FROM conversation WHERE student_id=?)",id)
    jdbc.update("DELETE FROM conversation WHERE student_id=?",id)
+   jdbc.update("DELETE FROM memory_daily_usage WHERE student_id=?",id)
   }
   users.forEach { id ->
    jdbc.update("DELETE FROM refund_request WHERE payment_id IN (SELECT p.id FROM payment p JOIN payment_order o ON o.id=p.order_id WHERE o.parent_user_id=?)",id)
@@ -178,7 +181,14 @@ class AccountManagementTest : PostgresRepositoryTest() {
   val other=parent(); val foreign=child(other.identity.account.id)
   mvc.patch("/api/v1/children/$foreign") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":4}" }.andExpect { status { isForbidden() } }
   mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"nickname\":\" 새 이름 \",\"grade\":6}" }.andExpect { status { isOk() };jsonPath("$.nickname") { value("새 이름") };jsonPath("$.grade") { value(6) } }
-  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":7}" }.andExpect { status { isBadRequest() } }
+  // #432: 자동 진급과 맞춰 수정은 중3(9)까지 받는다. 학년이 바뀔 때만 학년 변경 시각을 남긴다.
+  val changed=jdbc.queryForObject("SELECT grade_changed_at FROM student WHERE id=?",java.time.OffsetDateTime::class.java,c)
+  assertNotNull(changed)
+  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"nickname\":\"별명만\"}" }.andExpect { status { isOk() };jsonPath("$.grade") { value(6) } }
+  assertEquals(changed,jdbc.queryForObject("SELECT grade_changed_at FROM student WHERE id=?",java.time.OffsetDateTime::class.java,c))
+  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":7}" }.andExpect { status { isOk() };jsonPath("$.grade") { value(7) } }
+  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":10}" }.andExpect { status { isBadRequest() } }
+  mvc.patch("/api/v1/children/$c") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"grade\":2}" }.andExpect { status { isBadRequest() } }
   mvc.patch("/api/v1/me") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"name\":\" 새 보호자 \"}" }.andExpect { status { isOk() };jsonPath("$.name") { value("새 보호자") } }
   jdbc.update("UPDATE consent SET status='WITHDRAWN',withdrawn_at=now() WHERE subject_user_id=?",p.identity.account.id)
   mvc.patch("/api/v1/me") { header("Authorization","Bearer ${p.accessToken}");contentType=MediaType.APPLICATION_JSON;content="{\"name\":\"우회\"}" }.andExpect { status { isForbidden() } }
@@ -215,6 +225,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
  }
  @Test fun `one service and duplicates cannot complete and both services erase only the target profile`() {
   val p=parent();val c=child(p.identity.account.id);val untouched=child(p.identity.account.id)
+  jdbc.update("INSERT INTO student_grade_promotion(student_id,school_year,from_grade,to_grade,promoted_at) VALUES(?,2026,3,4,now())",c)
   val request=children.delete(p.identity,c,DeletionScope.PROFILE,grant(p.identity,ReauthPurpose.CHILD_DELETE,c,"PROFILE"))
   repeat(2) { assertEquals("CONFIRMED",children.complete(request.deletionRequestId,"learning","SYSTEM",setOf(c.toString())).status) }
   assertEquals(1,count("SELECT count(*) FROM deletion_completion WHERE request_id=?",request.deletionRequestId))
@@ -223,6 +234,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
   children.complete(request.deletionRequestId,"report","SYSTEM",setOf(c.toString()))
   assertEquals(2,count("SELECT count(*) FROM deletion_completion WHERE request_id=?",request.deletionRequestId))
   assertEquals(1,count("SELECT count(*) FROM student WHERE id=? AND status='DELETED' AND nickname IS NULL AND grade IS NULL AND birth_year IS NULL",c))
+  assertEquals(0,count("SELECT count(*) FROM student_grade_promotion WHERE student_id=?",c))
   assertEquals("ACTIVE",jdbc.queryForObject("SELECT status FROM student WHERE id=?",String::class.java,untouched))
  }
  @Test fun `concurrent service reports preserve two unique completions`() {
@@ -323,7 +335,15 @@ class AccountManagementTest : PostgresRepositoryTest() {
   val id=json.readTree(response.contentAsString)["challengeId"].asText()
   val cookie=response.getHeaders("Set-Cookie").first().substringAfter("=").substringBefore(";")
   val state=tokens.verify(cookie,"oauth").getClaimAsString("state")
-  mvc.get("/api/v1/auth/google/reauth/callback") { param("code","new-code");param("state",state);cookie(Cookie(ReauthenticationController.COOKIE,cookie)) }.andExpect { status { isOk() };jsonPath("$.status") { value("VERIFIED") };jsonPath("$.reauthToken") { doesNotExist() } }
+  mvc.get("/api/v1/auth/google/reauth/callback") { param("code","new-code");param("state","forged");cookie(Cookie(ReauthenticationController.COOKIE,cookie)) }
+   .andExpect { status { isForbidden() };content { contentTypeCompatibleWith(MediaType.TEXT_HTML) };content { string(containsString("data-reauth-status=\"FAILED\"")) };content { string(not(containsString("<script"))) } }
+  val page=mvc.get("/api/v1/auth/google/reauth/callback") { param("code","new-code");param("state",state);cookie(Cookie(ReauthenticationController.COOKIE,cookie)) }
+   .andExpect { status { isOk() };content { contentTypeCompatibleWith(MediaType.TEXT_HTML) };header { string("Cache-Control","no-store") };header { string("Referrer-Policy","no-referrer") } }.andReturn().response
+  val html=page.contentAsString
+  val nonce=Regex("script-src 'nonce-([A-Za-z0-9_-]+)'").find(page.getHeader("Content-Security-Policy")!!)!!.groupValues[1]
+  assertTrue(html.contains("data-challenge-id=\"$id\"") && html.contains("<script nonce=\"$nonce\">") && html.contains("BroadcastChannel('sagomungchi-reauth')") && html.contains("window.close()"))
+  assertFalse(html.contains("reauthToken"))
+  assertTrue(page.getHeaders("Set-Cookie").any { it.startsWith("${ReauthenticationController.COOKIE}=;") && it.contains("Max-Age=0") })
   assertEquals(p.identity.session.id,auth.authenticate(p.accessToken).session.id)
   mvc.post("/api/v1/me/reauth") { header("Authorization","Bearer ${p.accessToken}");header("Origin","http://localhost:5173");header("X-Requested-With","XMLHttpRequest");contentType=MediaType.APPLICATION_JSON;content="{\"challengeId\":\"$id\"}" }.andExpect { status { isOk() };jsonPath("$.reauthToken") { isString() };header { string("Cache-Control","no-store") } }
  }
@@ -351,6 +371,16 @@ class AccountManagementTest : PostgresRepositoryTest() {
   assertEquals(0,count("SELECT count(*) FROM conversation WHERE student_id=?",c))
   assertEquals(1,count("SELECT count(*) FROM conversation WHERE student_id=?",other))
   assertEquals(1,count("SELECT count(*) FROM message_evidence e JOIN conversation_message m ON m.id=e.message_id JOIN conversation c ON c.id=m.conversation_id WHERE c.student_id=?",other))
+ }
+
+ @Test fun `memory daily usage is removed with deletion confirmation for target only`() {
+  // #566: 추억 검색·설명 사용량은 삭제 확정 트랜잭션에서 대상 학생 것만 지운다(ERD 3.4)
+  val p=parent();val c=child(p.identity.account.id);val other=child(p.identity.account.id)
+  listOf(c,other).forEach { child -> listOf("SEARCH","EXPLANATION").forEach { kind ->
+   jdbc.update("INSERT INTO memory_daily_usage(id,student_id,kind,usage_date,created_at) VALUES(?,?,?,CURRENT_DATE,now())",UUID.randomUUID(),child,kind) } }
+  children.delete(p.identity,c,DeletionScope.RECORDS,grant(p.identity,ReauthPurpose.CHILD_DELETE,c,"RECORDS"))
+  assertEquals(0,count("SELECT count(*) FROM memory_daily_usage WHERE student_id=?",c))
+  assertEquals(2,count("SELECT count(*) FROM memory_daily_usage WHERE student_id=?",other))
  }
 
  @Test fun `merged issue38 proxy cannot reach learning after unlink or deletion confirmation`() {

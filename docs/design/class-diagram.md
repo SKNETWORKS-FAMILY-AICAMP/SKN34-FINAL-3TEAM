@@ -15,7 +15,7 @@
 | 레이어 표기 | `<<controller>>` `<<consumer>>` `<<scheduler>>` = Presentation / `<<service>>` `<<facade>>` = Application / `<<entity>>` `<<value>>` = Domain / `<<repository>>` `<<client>>` `<<messaging>>` = Infrastructure |
 | 화살표 | `-->` 의존(호출), `..>` 생성·반환, `*--` 소유(같은 집합), `<|..` 구현 |
 | 의존 방향 | Presentation → Application → Infrastructure 단방향, Domain은 전 레이어가 참조 (아키텍처 2.2) |
-| 기능 간 호출 | 상대 기능의 `service`만 호출. 여러 기능 조합은 `facade` |
+| 기능 간 호출 | 상대 기능의 `service`만 호출. 여러 기능 조합은 주도 기능 `service`가 하고, 조합 대상이 많을 때만 `facade` (아키텍처 2.2, #422) |
 | 트랜잭션 | `<<service>>`·`<<facade>>` 메서드에서만 시작, 트랜잭션 안에서 HTTP·AMQP 호출 금지 |
 | Spring 루트 패키지 | `com.sagomungchi.<service>`, 다이어그램은 루트 이하 경로 생략 |
 | Python | 파일 1개 = 다이어그램 클래스 1개 기준. 함수 모음 모듈은 `<<module>>`로 표기 |
@@ -42,6 +42,11 @@ classDiagram
   class InternalAuthFilter {
     <<filter>>
     #doFilterInternal(request, response, chain)
+  }
+  class InternalCallerPolicy {
+    <<object>>
+    +allowed Map
+    +permits(caller, path) Boolean
   }
   class UserContext {
     <<value>>
@@ -130,6 +135,7 @@ classDiagram
   InternalRestClientFactory --> AppProperties
   InternalRestClientFactory --> UserContextHolder : 헤더 전달
   InternalAuthFilter --> AppProperties
+  InternalAuthFilter --> InternalCallerPolicy : 호출자별 경로
   InternalAuthFilter --> UserContextHolder : set·clear
   InternalAuthFilter ..> UserContext
   UserContext ..> BusinessException : 403
@@ -144,8 +150,8 @@ classDiagram
 
 | 클래스 | 위치 | 상태 | 책임 |
 |---|---|---|---|
-| `AppProperties`, `InternalRestClientFactory` | `_common/config` | 구현됨 | 내부 호출 RestClient(내부 토큰·컨텍스트 헤더·타임아웃, 재시도 없음) |
-| `InternalAuthFilter`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 토큰 검사, `X-User-*`·`X-Student-Scope` 컨텍스트 |
+| `AppProperties`, `InternalRestClientFactory` | `_common/config` | 구현됨 | 내부 호출 RestClient(자기 토큰 `app.internal.token`·컨텍스트 헤더·타임아웃, 재시도 없음). 받는 쪽 호출자 토큰은 `app.internal.callers.<호출자>` |
+| `InternalAuthFilter`, `InternalCallerPolicy`, `UserContext`, `UserContextHolder` | `_common/security` | 구현됨 | `/internal/**` 호출자 토큰 식별(불일치 401)·호출자별 경로 허용 목록(밖 403, 아키텍처 2.2), `X-User-*`·`X-Student-Scope` 컨텍스트 |
 | `BusinessException`, `DomainException`, `ErrorKind`, `GlobalExceptionHandler`, `Problems` | `_common/exception` | 구현됨 | RFC 9457 오류 응답. domain은 Spring 타입이 없는 `DomainException(kind, code, …)`만 던지고, `ErrorKind` → HTTP 상태는 `_common/exception`의 `statusOf` 하나가 정함(core 400·404·409, learning 400·409·422, #249). 예외에서 상태·code를 읽는 곳은 `httpStatusOf`·`errorCodeOf`(두 예외 모두 처리). `BusinessException`은 application·presentation 전용 |
 | `EventEnvelope`, `MessagingConfig` | `_common/messaging` | 구현됨 | CloudEvents 봉투, JSON 변환기 |
 | `OutboxWriter`, `OutboxRelay`, `OutboxEventRepository` | `_common/messaging` | 구현됨 (core만) | 같은 트랜잭션 `outbox_event` 저장 → 릴레이(ShedLock 단일 실행)가 DB 트랜잭션 밖에서 subject별 미발행 선두를 1건씩 발행·publisher confirm 대기 후 짧은 트랜잭션으로 `published_at` 기록(#166). 실패는 짧은 트랜잭션으로 `recordFailure`, 4번째 실패 격리(#243) |
@@ -165,6 +171,7 @@ classDiagram
   class Settings {
     <<config>>
     +internal_token str
+    +internal_token_<caller> str
     +rabbitmq_url str
     +http_read_timeout float
   }
@@ -193,6 +200,9 @@ classDiagram
     +current_user_context() UserContext
     +bind_user_context(context) Token
     +get_user_context(request) UserContext
+    +CALLER_PATHS dict
+    +matching_callers(token) list
+    +caller_permits(caller, path) bool
   }
   class InternalAuthMiddleware {
     <<middleware>>
@@ -248,6 +258,9 @@ classDiagram
     +authorize() Redirect
     +callback(code, state, error) Redirect
     +refresh(cookie) TokenResponse
+    +adminLogin(request) TokenResponse
+    +parentSignup(request) TokenResponse
+    +parentLogin(request) TokenResponse
     +logout(cookie, bearer)
     +student(request) TokenResponse
     +me() MeResponse
@@ -267,6 +280,9 @@ classDiagram
     +startGoogle() StartedGoogleLogin
     +completeGoogle(code, state, error, stateCookie, previousRefresh) IssuedAuth
     +login(profile, previousRefresh) IssuedAuth
+    +adminLogin(loginId, password, previousRefresh) IssuedAuth
+    +parentLogin(loginId, password, previousRefresh) IssuedAuth
+    +parentSignup(loginId, password, name, clientIp, previousRefresh) IssuedAuth
     +authenticate(accessToken) AuthenticatedAccount
     +refresh(refreshToken) IssuedAuth
     +enterStudent(refreshToken, studentId, expected) IssuedAuth
@@ -297,6 +313,36 @@ classDiagram
     +refresh(hash) RefreshToken
     +consume(id, now) Int
     +revoke(sessionId, now)
+    +adminCredential(loginId) PasswordCredential
+    +parentCredential(loginId) PasswordCredential
+    +parentCredentialOf(userId) PasswordCredential
+    +loginIdExists(loginId) Boolean
+    +insertPasswordParent(id, loginId, name, now, demo) Boolean
+    +insertParentCredential(userId, hash, now)
+  }
+  class PasswordCredentialService {
+    <<service>>
+    +hash(password) String
+    +verify(realm, credential, password, now) Failure
+  }
+  class PasswordCredential {
+    <<value>>
+    +userId UUID
+    +passwordHash String
+    +failedCount Int
+    +lockedUntil OffsetDateTime
+  }
+  class SignupRateLimiter {
+    <<repository>>
+    +acquire(clientIp)
+  }
+  class ReauthenticationService {
+    <<service>>
+    +start(identity, purpose, childId, scope) Started
+    +callback(code, state, error, cookie) UUID
+    +issue(identity, challengeId) Issued
+    +withPassword(identity, purpose, childId, scope, password) Issued
+    +consume(identity, token, purpose, childId, scope)
   }
   class AuthSession {
     <<value>>
@@ -308,7 +354,10 @@ classDiagram
   class StudentAccessService {
     <<service>>
     +linkedStudents(userId) List
+    +requireOwned(userId, studentId) LinkedStudent
     +requireLinked(userId, studentId) LinkedStudent
+    +lockActive(studentId)
+    +activeParents(studentId) List
   }
   class ConsentAccessService {
     <<service>>
@@ -323,7 +372,6 @@ classDiagram
     +register(request) DeviceResponse
     +profiles(deviceCookie) List
     +login(request, deviceCookie) StudentToken
-    +pin(childId, request, reauthToken)
   }
   class MeController {
     <<controller>>
@@ -388,11 +436,32 @@ classDiagram
     <<service>>
     +register(userId, nickname, grade, birthYear, choices) LinkedStudent
     +children(userId) List
-    +unlink(parentId, childId)
-    +authorizeChild(childId) UserContext
-    +authorizeLinkedChildren() UserContext
-    +linkedStudentIds(parentId) Set
-    +requestDeletion(parentId, reauthToken, childId, scope) DeletionRequest
+  }
+  class ChildManagementController {
+    <<controller>>
+    +update(childId, request) LinkedStudent
+    +impact(childId) Map
+    +unlink(childId, reauthToken)
+    +delete(childId, request, reauthToken) ChildDeletionState
+    +status(childId, requestId) ChildDeletionState
+    +complete(deletionRequestId, request) ChildDeletionState
+    +pin(childId, request)
+  }
+  class ChildManagementService {
+    <<service>>
+    +update(identity, id, nickname, grade) LinkedStudent
+    +impact(identity, id) Map
+    +unlink(identity, id, token)
+    +delete(identity, id, scope, token) ChildDeletionState
+    +deleteForWithdrawal(user)
+    +status(identity, child, id) ChildDeletionState
+    +complete(id, service, systemRole, studentScope) ChildDeletionState
+    -confirm(user, id, scope) DeletionRequest
+  }
+  class ChildAuthorizationService {
+    <<service>>
+    +requireOwned(user, child, linked)
+    +requireCurrent(user, child)
   }
   class UserAccount {
     <<entity>>
@@ -482,14 +551,24 @@ classDiagram
     +insert(entry)
     +withdraw(userId, consentId, now)
   }
-  class StudentRepository { <<repository>> }
+  class ChildManagementRepository {
+    <<repository>>
+    +owned(user, student, linked) Boolean
+    +lock(student) UUID
+    +unlink(user, student, now)
+    +pending(student) DeletionRequest
+    +insert(request)
+    +block(student, now)
+    +completion(id, service, now)
+    +complete(id, now)
+    +eraseProfile(student, now)
+  }
   class StudentAccessRepository {
     <<repository>>
     +linkedStudents(userId) List
     +linkedCount(userId) Int
     +insert(child, userId, demo, now)
   }
-  class DeletionRequestRepository { <<repository>> }
   class StudentDeviceRepository { <<repository>> }
   class OutboxWriter { <<messaging>> }
 
@@ -498,13 +577,19 @@ classDiagram
   AuthService --> GoogleOAuthClient : 트랜잭션 밖 코드 교환
   AuthService --> TokenService
   AuthService --> AuthRepository
+  AuthService --> PasswordCredentialService : 관리자·학부모 비밀번호 검사
+  AuthService --> SignupRateLimiter : 학부모 가입 IP 한도(Redis)
+  PasswordCredentialService --> AuthRepository : 실패 횟수·잠금
+  PasswordCredentialService ..> PasswordCredential
+  ReauthenticationService --> PasswordCredentialService : 비밀번호 재확인
+  ReauthenticationService --> AuthRepository : parent_credential
   AuthService --> StudentAccessService : 연결 자녀
   AuthService --> ConsentAccessService : 필수·법정대리인 동의
   AuthService ..> AuthSession
   MeController --> AccountService
   ConsentController --> ConsentService
   ChildrenController --> GuardianshipService
-  StudentDeviceController --> StudentPinService : PIN 변경
+  ChildManagementController --> StudentPinService : PIN 변경
   StudentDeviceController --> StudentAuthService
   StudentAuthService --> ChildAuthorizationService : 현재 자녀 권한
   StudentAuthService --> AuthService : 독립 학생 세션
@@ -527,10 +612,14 @@ classDiagram
   GuardianshipService --> ConsentAccessService : 현재 동의 확인
   GuardianshipService --> StudentAccessService
   GuardianshipService --> LearningRecordService : 기록 유무
-  GuardianshipService --> StudentRepository
   GuardianshipService --> StudentAccessRepository : 연결 자녀·등록
-  GuardianshipService --> DeletionRequestRepository
-  GuardianshipService --> OutboxWriter : student.deleted
+  ChildManagementController --> ChildManagementService
+  ChildManagementService --> ChildAuthorizationService : 보호자 소유 자녀
+  ChildManagementService --> ReauthenticationService : 해제·삭제 재확인
+  ChildManagementService --> ChildManagementRepository : 학생 행 잠금·삭제 요청
+  ChildManagementService --> OutboxWriter : student.deleted
+  ChildAuthorizationService --> ChildManagementRepository
+  ChildAuthorizationService --> StudentAccessService : requireCurrent
   GuardianTransferController --> GuardianTransferService
   GuardianTransferService --> GuardianTransferRepository : 연결 교체·상태
   GuardianTransferService --> ReauthenticationService : CHILD_TRANSFER·TRANSFER_ACCEPT
@@ -539,30 +628,34 @@ classDiagram
   GuardianTransferService ..> GuardianTransfer
   GuardianTransferAccessService --> GuardianTransferRepository
   AccountService --> GuardianTransferAccessService : 대기 중 탈퇴 차단
-  GuardianshipService --> GuardianTransferAccessService : 대기 중 해제·삭제 차단
+  ChildManagementService --> GuardianTransferAccessService : 대기 중 해제·삭제 차단
   AuthService --> GuardianPasswordService : 학부모 복귀
   MeController --> GuardianPasswordService : 보호자 비밀번호 설정
   AccountService ..> UserAccount
   GuardianshipService ..> Student
   GuardianshipService ..> Guardianship
-  GuardianshipService ..> DeletionRequest
+  ChildManagementService ..> DeletionRequest
 ```
 
-- `GuardianshipService.authorizeChild(childId)`: 학부모는 `guardianship LINKED` 확인 후 `studentScope = {childId}`로 컨텍스트 갱신, 학생은 본인 ID만. 미연결 시 `403 CHILD_NOT_LINKED` (FN-AGT-02, NFR-SEC-02)
-- 자녀 범위가 필요한 모든 controller는 하위 호출 전에 `authorizeChild` 호출 → `InternalRestClientFactory`가 그 컨텍스트를 헤더로 전달
-- `authorizeLinkedChildren()`: 경로에 자녀 ID가 없는 API(`/reports/{reportId}` 등)용. `studentScope = 연결 자녀 전체`로 전달하고 소유 서비스가 리소스의 학생 ID로 검사, 403은 core가 `CHILD_NOT_LINKED`로 변환
-- 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`), 학생 공개 설정(#206 `StudentSharingController` + `StudentLearningContextService.ownSharing`·`requireShared`), 꾸미기 설정(#234 `StudentLookController`·`StudentLookService`·domain `StudentLook`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`), 보호자 비밀번호(V24 `GuardianPasswordService`, `AccountManagementController`의 `/me/guardian-password`), 탈퇴 전 자녀 이관(#289 `GuardianTransferController`·`GuardianTransferService`·`GuardianTransferAccessService`·domain `GuardianTransfer`·`GuardianTransferRepository`, 상담 이전 `conversation/service/ConversationTransferService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름이며, 탈퇴·자녀 해제/삭제의 이관 대기 차단은 실제로 `AccountWithdrawalService`·`ChildManagementService`가 `GuardianTransferAccessService`를 호출한다
+- 자녀 인가는 중앙 메서드 없이 각 기능 service 안에서 한다. controller는 인가 service를 직접 부르지 않는다 (FN-AGT-02, NFR-SEC-02)
+  - `StudentAccessService.requireOwned(userId, studentId)`: 현재 연결 자녀인지 확인, 아니면 `403 CHILD_NOT_LINKED`. `requireLinked`는 여기에 필수·법정대리인 동의까지 확인한다
+  - `ChildAuthorizationService.requireCurrent`(연결+동의, 분석 대화 `ConversationService`·리포트 설정 `ReportTemplateService`·기기 로그인)·`requireOwned`(해제·삭제 대상 포함 소유 확인, `ChildManagementService`)
+  - 리포트는 `ReportAccessService.parent`·`requireGuardian`·`regeneration`(관리자 `SERVICE_OPS` 재생성 허용)이 `StudentAccessService.requireLinked`를 호출한다(3.3). 학습 프록시는 `StudentLearningContextService.requireLinked`(3.2)
+- 인가 후 하위 호출 직전에 해당 service·client가 `UserContextHolder`의 `studentScope`를 그 학생 한 명(`{studentId}`)으로 바꾸고 `InternalRestClientFactory`가 헤더로 전달한다. `reportId`처럼 경로에 자녀 ID가 없는 API도 core가 소유 작업에서 학생 ID를 먼저 찾아 같은 방식으로 좁힌다(연결 자녀 전체 범위 전달 없음)
+- `student.deleted` 발행은 `ChildManagementService`(삭제 확정 `confirm`)가 `OutboxWriter`로 한다. `GuardianshipService`는 자녀 등록(`register`)·목록(`children`)만 소유한다
+- 구현 상태: 인증(`AuthController`·`AuthService`·`TokenService`·`GoogleOAuthClient`), 동의·자녀(`ConsentController`·`ConsentService`·`ChildrenController`·`GuardianshipService`), 기기·PIN(`StudentDeviceController`·`StudentAuthService`·`StudentPinService`·`StudentDeviceCleanupService`, PIN 변경 `PUT /children/{childId}/pin`은 guardianship `ChildManagementController`, #422), 학생 공개 설정(#206 `StudentSharingController` + `StudentLearningContextService.ownSharing`·`requireShared`), 꾸미기 설정(#234 `StudentLookController`·`StudentLookService`·domain `StudentLook`), 계정 관리(`ReauthenticationService`·`AccountManagementService`·`AccountWithdrawalService`·`ChildManagementService`), 보호자 비밀번호(V24 `GuardianPasswordService`, `AccountManagementController`의 `/me/guardian-password`), 탈퇴 전 자녀 이관(#289 `GuardianTransferController`·`GuardianTransferService`·`GuardianTransferAccessService`·domain `GuardianTransfer`·`GuardianTransferRepository`, 상담 이전 `conversation/service/ConversationTransferService`) 구현됨. 그림의 `MeController`·`AccountService`와 Student entity 메서드명은 추상 이름이며, 탈퇴·자녀 해제/삭제의 이관 대기 차단은 실제로 `AccountWithdrawalService`·`ChildManagementService`가 `GuardianTransferAccessService`를 호출한다
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
-- `StudentAccessService`·`ConsentAccessService`는 인증용 읽기 전용 확인. 쓰기(자녀 등록·동의 저장)는 `GuardianshipService`·`ConsentService`(#37) 소유
+- `StudentAccessService`·`ConsentAccessService`는 인증·인가용 읽기 확인(학생 행 잠금 포함). 쓰기는 자녀 등록 `GuardianshipService`, 정보 수정·해제·삭제 `ChildManagementService`, 동의 저장 `ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
-- 이메일·비밀번호 가입·로그인·로그인 수단 변경 없음. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
-- 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장
+- ID·비밀번호 로그인은 관리자(#369, 가입 없음, `AuthService.adminLogin`, `admin_credential`)와 학부모(#415, `AuthService.parentSignup`·`parentLogin`, `parent_credential`) 두 가지다. 둘 다 `PasswordCredentialService`(`PinHasher` PBKDF2 해시·5회 실패 15분 잠금·없는 ID 더미 해시 검사)와 값 객체 `PasswordCredential`(옛 `AdminCredential`)을 공유하고, 실패는 커밋 뒤 던진다. 학부모 가입은 `SignupRateLimiter`(Redis 고정 창, IP당 기본 10분 5회)를 거친다. 로그인 수단 변경·연결과 비밀번호 찾기·변경은 없다. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
+- 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장. 비밀번호 학부모는 `ReauthenticationService.withPassword`(`POST /me/reauth/password`, #415)가 로그인 비밀번호를 확인하고 검증·발급을 마친 challenge·grant를 한 번에 만들어 `consume`은 그대로다. 실패는 로그인과 같은 `parent_credential` 횟수를 쓴다
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer 세션 행을 잠그고 연결·활성 자녀·필수·법정대리인 동의 확인 → 학부모 세션 `locked_at`·version 증가, `parent_session_id`를 가진 학생 세션 생성 → `STUDENT` access만 발급, 학부모 refresh 쿠키는 유지(잠김) (P01, 학부모 동석). 학생 계정·시연 링크 없음
 - `AuthService.unlockParent` (`POST /auth/parent-unlock`): 잠긴 학부모 refresh + `GuardianPasswordService.attempt`(PIN과 같은 해시·5회 잠금) → 잠금 해제·학생 세션 폐기·refresh 회전. `GuardianPasswordService.set`은 `GUARDIAN_PASSWORD` 재인증 grant를 1회 소비 (FN-ACC-05, 2026-11-03)
 - `StudentAuthService.login`: 기기 쿠키 해시로 `StudentDevice` 조회 → `isUsable`(미해제·미만료)·자녀 등록 확인 → `ChildAuthorizationService.requireCurrent`·`StudentAccessService.requireLinked` → 잠금·PIN 검사 → 동석 경로와 같은 `STUDENT` 토큰 발급, refresh 미발급 (P01, API 명세 3.11)
-- `StudentPinService.attempt`: 학생 행 잠금으로 실패 횟수 증가, 5회 도달 시 `pin_locked_at` 기록. `set`은 DB 재인증 소비와 해시·실패 횟수 0·잠금 해제를 한 번에 처리
+- `StudentPinService.attempt`: 학생 행 잠금으로 실패 횟수 증가, 5회 도달 시 `pin_locked_at` 기록. `set`은 현재 자녀 권한 확인 뒤 해시·실패 횟수 0·잠금 해제·감사를 한 번에 처리(추가 재인증 없음, 2026-11-10)
 - 페어링 코드는 Redis(10분·1회용), 기기 자격증명은 `student_device.token_hash`만 저장. 저장 구조는 ERD 3.1·6장(core V13)
 - `GuardianshipService.register`: 학년 3~6·출생연도 검증, 보호자 행 잠금 후 `LINKED` 자녀 3명이면 `CHILD_LIMIT_REACHED`, GUARDIAN 동의 필수 (P01·P02·P03). 다른 보호자 연결(`link`) 없음. 예외는 #289 이관 수락뿐이며 기존 연결을 종료(`transferred_at`)하고 새 연결(`method=TRANSFER`)로 교체하므로 자녀당 현재 보호자는 계속 1명(V26 부분 UK)
+- `GradePromotionService.promote`(#432, P26): `GradePromotionScheduler`가 3월 매일 00:05 KST(ShedLock `core-grade-promotion`)에 호출. 3월이 아니면 아무것도 하지 않고, 대상 학생을 한 SQL로 올리며 `student_grade_promotion`에 학년도 이력을 남긴 뒤 같은 트랜잭션에서 `NotificationService.gradePromoted`로 보호자에게 알린다. 학습 요청에는 `StudentLearningContext.learningGrade`(최대 6)를 쓴다
 - `GuardianTransferService` (#289): 요청·수락·거절·취소 모두 계정→학생→이관 요청 행 잠금 순서로 직렬화한다. 수락은 한 트랜잭션에서 받는 학부모 필수 동의·3명 한도·보내는 학부모 탈퇴 가능 상태·진행 중 분석 없음을 다시 확인하고, 연결 교체·보호자 동의 저장(실패 시 롤백)·선택 상담 소유 이전·학생 세션과 등록 기기 해제를 수행한다. 상태 전이는 [상태 다이어그램 2.4](state-diagram.md#24-guardian_transferstatus-289-탈퇴-전-자녀-이관), 흐름은 [시퀀스 다이어그램](sequence-diagram.md)의 이관 절. 컨트롤러는 항상 등록하며, 본인 목록·취소·거절은 기능 off·동의 누락에도 허용한다. 신규 대상 조회·요청·수락의 기능·동의 검사는 유지한다(#307)
 
 ### 3.2 학습 프록시·분석 대화 (learning · conversation)
@@ -668,8 +761,7 @@ classDiagram
     +streamAnalysis(request) Flow~AnalysisEvent~
     +cancel(streamId)
   }
-  class GuardianshipService { <<service>> }
-  class JobExecutionService { <<service>> }
+  class ChildAuthorizationService { <<service>> }
   class SseEmitters { <<web>> }
 
   LearningController --> LearningProxyService
@@ -684,20 +776,20 @@ classDiagram
   DashboardController --> LearningRecordService
   LearningRecordService --> StudentAccessService : 현재 연결·ACTIVE·동의
   LearningRecordService --> StudentLearningContextService : home 학년·demo
-  ConversationController --> GuardianshipService
   ConversationController --> ConversationService
   ConversationController --> SseEmitters
   ConversationService --> ConversationRepository
   ConversationService --> ConversationMessageRepository
   ConversationService --> AiClient
   ConversationService --> LearningClient : 근거 원문
-  ConversationService --> JobExecutionService : 실행 이력
+  ConversationService --> ChildAuthorizationService : requireCurrent
   ConversationService ..> Conversation
   ConversationService ..> ConversationMessage
 ```
 
 - `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/core-gateway.md))
 - 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). 분석 대화(#41)는 `ConversationController`·`ConversationService`(`prepare`·`transport`·`complete`·`fail`·`evidence`·`examples`)·`AnalysisStreamService`(SSE 실행)·`ConversationRepository`·`AiClient.stream`으로 구현됨. 그림의 `ConversationMessageRepository`는 `ConversationRepository`에, `Conversation`·`ConversationMessage` 엔티티 메서드는 서비스 검증에 포함되고, `JobExecutionService` 없이 `conversation_message` 상태·`retry_count`로 실행을 기록한다. `LearningClient.evidence`는 `LearningRecordClient.evidence`, `correctJudgment`는 `support/client/LearningSupportClient.correct`(3.5)
+- `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`, `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
 - `DashboardController`(학생 3개·학부모 4개 조회) → `LearningRecordService` → `LearningRecordClient` → `LearningClient`. 집계·home·상세는 learning 기록 API가 계산하고 core는 수치를 계산하지 않음 ([core 보고서](../report/core-gateway.md))
 - `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
 - `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
@@ -727,19 +819,29 @@ classDiagram
   }
   class ReportJobService {
     <<service>>
-    +scheduleWeekly(periodFrom, periodTo)
-    +regenerate(reportId, requestedBy) ReportJob
-    +retry(jobId, adminId) ReportJob
-    +onStarted(event)
-    +onCompleted(event)
-    +onFailed(event)
+    +scheduled(parent, studentId, period) ReportJobAccepted
+    +regenerate(reportId, actor) ReportJobAccepted
+    +enqueueAdminRetry(original, actor) ReportJobAccepted
+  }
+  class ReportAccessService {
+    <<service>>
+    +parent(studentId) UUID
+    +requireGuardian(parent, studentId)
+    +regeneration(actor, studentId) Boolean
+  }
+  class ReportLifecycleService {
+    <<service>>
+    +apply(event)
+    +reconcile(job, result)
+    +failForDeletion(studentId)
   }
   class ReportQueryService {
     <<service>>
-    +list(childId, status) Page
-    +detail(reportId) ReportDetail
-    +evidence(reportId, itemId) Evidence
-    +downloadUrl(reportId, format) DownloadUrl
+    +list(childId, status, periodType) JsonNode
+    +detail(reportId, revision) JsonNode
+    +pinned(reportId, revision) JsonNode
+    +evidence(reportId, itemId) JsonNode
+    +download(reportId, format) JsonNode
   }
   class ReportJob {
     <<entity>>
@@ -758,10 +860,8 @@ classDiagram
   }
   class ReportClient {
     <<client>>
-    +list(studentId, status) Page
-    +detail(reportId) ReportDetail
-    +evidence(reportId, itemId) Evidence
-    +fileUrl(reportId, format) DownloadUrl
+    +get(studentId, path, query, narrativeEnabled) JsonNode
+    +reconcile(job) ReportReconciliation
   }
   class NotificationController {
     <<controller>>
@@ -807,14 +907,18 @@ classDiagram
   class OutboxWriter { <<messaging>> }
   class ProcessedEventRepository { <<repository>> }
 
-  ReportController --> GuardianshipService
   ReportController --> ReportQueryService
   ReportController --> ReportJobService
   ReportScheduler --> ReportJobService
-  ReportEventConsumer --> ReportJobService
+  ReportJobService --> ReportAccessService : 보호자·SERVICE_OPS 재생성
+  ReportJobService --> StudentAccessService : lockActive
   ReportJobService --> ReportJobRepository
   ReportJobService --> ReportCommandWriter
-  ReportJobService --> ProcessedEventRepository
+  ReportEventConsumer --> ReportLifecycleService
+  ReportLifecycleService --> ProcessedEventRepository
+  ReportLifecycleService --> ReportJobRepository
+  ReportQueryService --> ReportAccessService : requireGuardian
+  ReportAccessService --> StudentAccessService : requireLinked
   ReportLifecycleService ..> ReportNotificationListener : ReportJobFinished (같은 트랜잭션)
   ReportNotificationListener --> NotificationService
   ReportCommandWriter --> OutboxWriter
@@ -828,15 +932,16 @@ classDiagram
   NotificationDispatchService --> NotificationRedisPublisher
   NotificationDispatchService --> NotificationDeliveryService
   NotificationRedisSubscriber --> NotificationStreams
-  class GuardianshipService { <<service>> }
+  class StudentAccessService { <<service>> }
 ```
 
-- `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 07:00 KST, 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
+- `ReportScheduler`: `@Scheduled` + `@SchedulerLock`(ShedLock), 매주 월 00:00 KST(일요일 자정, 2026-11-09 결정), 직전 월~일(KST) 대상, 기록 없는 학생 포함 (P06). 학생별 `report_job(SCHEDULE)` + outbox 저장, 부분 UK로 중복 방지
+- P24(#390): `DailyReportScheduler`가 매일 00:00 KST(대상일 자정, 2026-11-09 결정. 잠금 `core-daily-reports`) `ReportScheduleService.generate(at, DAILY)`로 전날 작업을 만든다. `period_type`은 7.1
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
 - 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
-- `ReportController`의 `reportId` 경로는 `GuardianshipService.authorizeLinkedChildren()` 사용 (3.1)
-- 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler` + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
+- 리포트 인가는 controller가 아니라 service 안에서 한다. `ReportQueryService`·`ReportViewService`는 `reportId`로 소유 작업(`ReportJobRepository.byReport`)을 찾은 뒤 `ReportAccessService.parent`(학부모 역할 + `StudentAccessService.requireLinked`)로 확인하고, `ReportClient.get`이 `studentScope`를 그 학생 한 명으로 좁혀 report에 전달한다. 재생성은 `ReportJobService.regenerate` → `ReportAccessService.regeneration`(학부모는 연결 확인, 관리자는 `SERVICE_OPS`) (3.1)
+- 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler`·`DailyReportScheduler`(P24, #390) + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
 
 #### 3.3.1 리포트 복구 호출 구조 (#132)
 
@@ -1064,10 +1169,45 @@ classDiagram
     +list(type, status) Page
     +retry(jobId, adminId) JobExecution
   }
-  class JobExecutionService {
+  class ModelPreflightController {
+    <<controller>>
+    +check(body, request) ModelPreflightResult
+  }
+  class ModelPreflightService {
     <<service>>
-    +begin(jobType, jobId, triggeredBy) JobExecution
-    +finish(executionId, status, errorCode)
+    +check(request, actor) ModelPreflightResult
+  }
+  class ScoringPreflightClient {
+    <<client>>
+    +check(request) ModelPreflightResult
+  }
+  class MissionAuditRepository {
+    <<repository>>
+    +insert(id, actor, action, targetType, target, result, detail)
+  }
+  class ModelLoadingRepository {
+    <<repository>>
+    +save(report, reportedAt)
+    +recent(since) List
+    +deleteExpired()
+  }
+  class ModelLoadingCleanupScheduler {
+    <<scheduler>>
+    +cleanup()
+  }
+  class ModelLoadingConsumer {
+    <<consumer>>
+    +receive(event, message, channel)
+  }
+  class ModelLoadingService {
+    <<service>>
+    +record(event)
+    +list() Map
+    +cleanup()
+  }
+  class ModelLoadingController {
+    <<controller>>
+    +list() Map
   }
   class ModelVersionService {
     <<service>>
@@ -1118,10 +1258,15 @@ classDiagram
     +insertIfAbsent(usage) Int
     +summarize(from, until, callType) List~UsageSummary~
   }
-  class QueueStatsRepository {
-    <<repository>>
-    +queues() List
+  class OperationsQueueService {
+    <<service>>
+    +queues() Map
   }
+  class QueueManagementClient {
+    <<client>>
+    +queues() Map
+  }
+  class OperationRetryRepository { <<repository>> }
 
   SupportController --> ErrorReportService
   SupportController --> InquiryService
@@ -1139,13 +1284,21 @@ classDiagram
   AdminController --> ErrorReportService
   AdminController --> RefundService
   AdminController --> AuditLogService
-  AdminController --> QueueStatsRepository
+  AdminController --> OperationsQueueService
+  OperationsQueueService --> QueueManagementClient : RabbitMQ 관리 API
   AdminMissionController --> LearningClient
   AdminMissionController --> AuditLogService
   InternalModelVersionController --> ModelVersionService
-  AdminJobService --> ReportJobService : 리포트 재처리
-  AdminJobService --> ConversationService : 대화 재처리
-  AdminJobService --> JobExecutionService
+  AdminJobService --> ReportJobService : 리포트 재처리(ReportAdminRetryService → enqueueAdminRetry)
+  AdminJobService --> ConversationService : 대화 재처리(ConversationAdminRetryService)
+  AdminJobService --> OperationRetryRepository : job_execution·감사
+  ModelPreflightController --> ModelPreflightService
+  ModelPreflightService --> ScoringPreflightClient : POST /internal/models/preflight
+  ModelPreflightService --> MissionAuditRepository : 결과 감사
+  ModelLoadingConsumer --> ModelLoadingService : model.loading.reported
+  ModelLoadingController --> ModelLoadingService
+  ModelLoadingCleanupScheduler --> ModelLoadingService : 1시간 주기
+  ModelLoadingService --> ModelLoadingRepository
   ModelVersionService --> OutboxWriter : model.version.activated
   ModelVersionService --> ModelVersionRepository : 상태·감사 같은 트랜잭션
   ModelVersionRepository --> ModelVersionMapper
@@ -1159,14 +1312,194 @@ classDiagram
   class OutboxWriter { <<messaging>> }
 ```
 
+- 정정 영향(#244): `SupportService` → `ReportSupportService.affected`·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
 - `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
-- 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), `QueueStatsRepository` = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
+- 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), 큐 현황 = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
-- #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. 나머지 운영 기능은 #47에서 구현됨(위 구현 이름).
+- #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. `AiUsageController`는 자기 기능 service만 부르도록 `usage/controller`에 둔다(#422, 경로 `GET /api/v1/admin/ai-usage` 동일). 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. 나머지 운영 기능은 #47에서 구현됨(위 구현 이름).
 - `ModelVersion`은 불변 data class다. 상태 전이는 `ModelVersionService`의 `activate`·`rollback`과 private `switch`에서 `copy` 후 Repository에 저장하며 Domain의 `activate()`·`deactivate()` 메서드는 없다.
 - `AuditLogService`는 아직 구현되지 않은 공용 감사 서비스 설계다. #43은 `ModelVersionService → ModelVersionRepository.audit → ModelVersionMapper.audit → audit_log` 경로로 감사 기록을 저장한다. 상태·감사·Outbox를 같은 트랜잭션으로 유지하며, #47 등에서 공용 감사 기능을 실제 도입할 때 이 경로의 통합을 검토한다. 현재 사용처만을 위해 공용 서비스를 추가하지 않는다 ([#43 보고서](../report/ai.md)).
-- `QueueStatsRepository`: RabbitMQ 관리 API(15672) 조회, 큐 길이·DLQ 적재량 (참고 레포 `QueueOperations*`)
-- #336 구현 전: `AdminMissionController`(= `learning/controller/AdminMissionsController`)가 성취기준 표·미션 초안 경로도 같은 방식으로 learning에 넘기고 초안 요청·채택·버리기를 감사 기록한다(api-spec 2.8). 사용량 호출 종류(`usage/domain/UsageSummary.CallType`)에 `MISSION_DRAFT` 추가
+- `OperationsQueueService` → `QueueManagementClient`: RabbitMQ 관리 API(15672) 조회, `definitions.json`의 고정 35개 큐(기본 큐 7개 × 기본·재시도 3·DLQ) 길이·DLQ 적재량 (참고 레포 `QueueOperations*`, api-spec 2.8.1)
+- 모델 파일 사전 검사(#368): `ModelPreflightController`(`POST /api/v1/admin/models/preflight`, SERVICE_OPS) → `ModelPreflightService` → `admin/client/ScoringPreflightClient`(`InternalRestClientFactory` 20초·재시도 없음) → scoring `POST /internal/models/preflight`. 결과·오류는 `MissionAuditRepository`(MyBatis `audit_log`, `target_type = MODEL_VERSION`, 대상 ID 없음)로 감사 기록. 검사 대상·결과 값 객체는 `admin/domain/ModelPreflight.kt`, 모르는 칸 거부는 controller DTO `ModelPreflightRequest`·`RegistrationArtifactRequest`가 맡고 domain은 Jackson에 의존하지 않는다(#422, api-spec 5.2.1, scoring 6장 `preflight.py`)
+- 모델 로딩 상태(#370): scoring `ModelLoadingReporter`가 발행한 `model.loading.reported`를 `admin/consumer/ModelLoadingConsumer`(큐 `core.model.loading.reported`, `RetryingConsumer`)가 받아 `ModelLoadingService.record`로 `model_loading_report`에 Pod·인스턴스별 최신 상태를 저장한다. `ModelLoadingController`(`GET /api/v1/admin/model-loading`)가 `list`로 조회 (아키텍처 1.4). 저장·조회·삭제 SQL은 `ModelLoadingRepository`(MyBatis `ModelLoadingMapper`), 1일 지난 보고 정리는 `admin/scheduler/ModelLoadingCleanupScheduler`가 1시간마다 `ModelLoadingService.cleanup` 호출(#422)
+- #336 구현(#355): `learning/controller/AdminMissionDraftsController`가 성취기준 표·미션 초안 경로를 같은 방식으로 learning에 넘기고 초안 요청·채택·버리기를 감사 기록한다(api-spec 2.8). 사용량 호출 종류(`usage/domain/UsageSummary.CallType`)에 `MISSION_DRAFT`
+
+### 3.6 커뮤니티·포인트·꾸미기 (community #388 · reward #389 구현)
+
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 core 클래스. 커뮤니티는 #388, 포인트·꾸미기는 #389로 구현했고 `RewardService.earn` 호출 연결(학습 완료·공유·반응·되돌아보기 열람)도 `ParticipationRewardService`로 구현했다(아래 연결 절). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+
+```mermaid
+classDiagram
+  direction TB
+  class CommunityController {
+    <<controller>>
+    +settings() CommunitySettings
+    +updateSettings(enabled) CommunitySettings
+    +missionPosts(missionId, seed, page) Page
+    +myPosts() List
+    +react(postId, reaction)
+    +unreact(postId, reaction)
+    +childPosts(childId) List
+  }
+  class CommunityService {
+    <<service>>
+    +updateSettings(studentId, enabled)
+    +shareCompleted(studentId, attemptId)
+    +applyVisibility(studentId, reason)
+    +moderate(postId, status, errorReportId)
+  }
+  class CommunityAuthorMapper {
+    <<service>>
+    +toAuthors(studentIds) Map
+  }
+  class CommunityClient {
+    <<client>>
+    +createPost(studentId, attemptId) PostResult
+    +missionPosts(missionId, viewerId, seed, page) Page
+    +react(postId, studentId, reaction) ReactionResult
+    +setVisibility(studentId, visible, reason)
+    +moderate(postId, status, errorReportId)
+  }
+  class RewardController {
+    <<controller>>
+    +myPoints(page) PointPage
+    +childPoints(childId, page) PointPage
+    +lookItems() List
+    +unlock(itemKey, idempotencyKey) UnlockResult
+    +purchase(itemKey, idempotencyKey) DecorPurchaseResult
+  }
+  class RewardService {
+    <<service>>
+    +earn(studentId, event, sourceKey) EarnResult
+    +points(studentId, page, size) Points
+    +deleteStudent(studentId)
+  }
+  class LookUnlockService {
+    <<service>>
+    +catalog() List
+    +unlock(itemKey, idempotencyKey) UnlockResult
+    +purchase(itemKey, idempotencyKey) DecorPurchaseResult
+    +requireUnlocked(studentId, theme, companion)
+    +replaceEquipment(studentId, equipped)
+  }
+  class LookItemAdminService {
+    <<service>>
+    +list(status, slot, page, size) Page
+    +create(command) LookItem
+    +update(itemId, command) LookItem
+  }
+  class RewardPointLedger {
+    <<entity>>
+    +isDuplicateOf(studentId, eventType, sourceKey) boolean
+  }
+  class LookItem {
+    <<entity>>
+    +stopSale()
+    +canUnlock() boolean
+  }
+  class RewardRuleRepository {
+    <<repository>>
+  }
+  class RewardLedgerRepository {
+    <<repository>>
+  }
+
+  CommunityController --> CommunityService
+  CommunityController --> CommunityAuthorMapper
+  CommunityController --> RewardService : react 성공 시 적립
+  CommunityService --> CommunityClient
+  CommunityService --> RewardService : 공유 성공 시 적립
+  RewardController --> RewardService
+  RewardController --> LookUnlockService
+  RewardController --> LookItemAdminService
+  LookUnlockService --> RewardService : 잔액 잠금
+  RewardService --> RewardRuleRepository
+  RewardService --> RewardLedgerRepository
+  RewardService ..> RewardPointLedger
+  LookItemAdminService ..> LookItem
+```
+
+- #389 구현: `RewardService.earn`이 적립 유일 진입점(`REQUIRES_NEW`, 적립하지 않은 이유는 `EarnOutcome`으로 반환, 예외 없음). 저장소는 MyBatis `RewardMapper` 하나이고 위 엔티티·저장소 상자는 설계 단위다. 아래 사건 연결도 #389 후속 PR로 구현했다: `ParticipationRewardService`(사건별 `earn` 호출, 어떤 실패도 던지지 않음)를 `LearningProxyService.reflection·weeklyTheme·reviewViewed`와 `CommunityService.react`가 부른다. 커뮤니티 작성자 `look.equipped`는 `CommunityAuthorMapper`가 `LookUnlockService.equipmentOf`로 채운다
+- 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.earn(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 구현은 `LearningProxyService.reflection`이 learning 저장 뒤 `ParticipationRewardService`(적립)·`CommunityService.shareCompleted`(공유)를 차례로 호출한다. 다른 기능 service 호출이라 의존 규칙(아키텍처 2.2)에 맞고, core의 다른 다기능 흐름과 같이 별도 `facade` 없이 service에서 조합한다(#422). `LearningController`는 `LearningProxyService`만 부른다
+- #704 바닥·방 소품: 바닥 `FLOOR`는 `LookCatalog.EQUIP_SLOTS`(착용 슬롯)에 들어가 해금·착용 클래스가 그대로다. 방 소품 `DECOR`는 `ITEM_SLOTS`(관리자 등록)에만 있고 `LookUnlockService.purchase`가 해금과 같은 잠금·원장·멱등으로 여러 번 산다(`unlock`은 방 소품을 422로 거절). 목록 `catalog`가 보유 개수 `ownedCount`·등록일 `createdAt`을 채운다. `RewardService.deleteStudent`가 원장보다 먼저 보유 행을 지운다
+- `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
+- 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
+- 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningProxyService.reflection` 돌아보기 저장 성공(또는 `409 ATTEMPT_CLOSED` 재요청) 뒤 `CommunityService.shareCompleted`, 결과 `postId`로 공유 포인트 적립(#389)
+- 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. #387 때는 무료 `THEME_DAY`·`EXTRA`를 셌고, 2026-11-10 개정(core #485)부터 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다
+- 2026-11-10 개정(#483, core #485 구현): `ProductEntitlementService.missionStart`는 `THEME_DAY`·`THEME_REVIEW`를 상품 조회 없이 통과시키고, `EXTRA`는 상품 `features.extraMissions`(값이 없으면 무료 거부·구독 중 허용, #506)로 판정한다. `ProductEntitlementService.sundayTheme(student, date)`가 KST 일요일에만 상품 `features.sundayTheme`을 읽어 learning 쿼리 `sundayTheme`을 정한다(`LearningProxyService`가 시도 시작·주간 테마 조회·열람 기록 2종에 붙임). `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 응답의 `days[].completedOnDay`(당일 풀이 `THEME_ON_TIME`)·`completed`(개근 `THEME_COMPLETED`, #506)·`finished`(주간 완주 `THEME_FINISHED`)로 적립을 보충한다. 사건 종류는 `RewardEvent` 8개(`UNLOCK` 포함)
+
+### 3.7 생활공간·추억 프록시 (P27, 구현 #555·#560·#566)
+
+2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md))의 core 클래스. 클래스 이름은 설계 단위이며 실제 이름과 다른 곳은 아래 구현 메모에 적는다. 가구 스킨은 기존 `LookUnlockService`·`StudentLookService`를 그대로 쓰고 슬롯 값만 늘린다(P22).
+
+```mermaid
+classDiagram
+  direction TB
+  class RoomController {
+    <<controller>>
+    +frameSlots() List
+    +saveFrameSlots(slots) List
+    +decorSpots() List
+    +saveDecorSpots(spots) List
+  }
+  class RoomDecorService {
+    <<service>>
+    +spots(studentId) List
+    +replace(studentId, spots) List
+    +deleteStudent(studentId)
+  }
+  class MemoryController {
+    <<controller>>
+    +album(page) Page
+    +round(themeId, weekStart) AlbumRound
+    +markSeen(themeId, weekStart)
+    +search(query) MemorySearchResult
+    +explain(query, attemptIds) MemoryExplanation
+  }
+  class FrameSlotService {
+    <<service>>
+    +slots(studentId) List
+    +replace(studentId, slots) List
+    +deleteStudent(studentId)
+  }
+  class MemoryUsageService {
+    <<service>>
+    +reserve(studentId, kind)
+    +deleteStudent(studentId)
+  }
+  class MemoryProxyService {
+    <<service>>
+    +album(studentId, page) Page
+    +round(studentId, themeId, weekStart) AlbumRound
+    +markSeen(studentId, themeId, weekStart)
+    +search(studentId, query) MemorySearchResult
+    +explain(studentId, query, attemptIds) MemoryExplanation
+  }
+  class LearningMemoryClient {
+    <<client>>
+    +ownsFrames(studentId, keys) boolean
+    +album(studentId, page) Page
+    +round(studentId, themeId, weekStart) AlbumRound
+    +markSeen(studentId, themeId, weekStart)
+    +search(studentId, query) MemorySearchResult
+    +explain(studentId, query, attemptIds) MemoryExplanation
+  }
+
+  RoomController --> FrameSlotService
+  RoomController --> RoomDecorService
+  MemoryController --> MemoryProxyService
+  FrameSlotService --> LearningMemoryClient : 보유 액자 확인
+  MemoryProxyService --> MemoryUsageService : 검색·설명 하루 한도
+  MemoryProxyService --> FrameSlotService : 앨범 전시 여부
+  MemoryProxyService --> LearningMemoryClient
+```
+
+- `MemoryUsageService.reserve`는 `memory_daily_usage`에 1행을 기록하고 KST 하루 건수가 `product.limits`(`dailyMemorySearches`·`dailyMemoryExplanations`)를 넘으면 `429 USAGE_LIMIT_REACHED`(`MissionUsageService`와 같은 방식). learning 5xx·전송 실패면 `release`로 되돌림(#566)
+- `LearningMemoryClient`는 `_common/client/LearningClient` 전송을 쓰되 검색·설명 경로가 별도 회로 `learning-memory` 하나를 함께 쓴다(검색 30초·설명 45초, 아키텍처 1.3, #566)
+- 학생 삭제 확정의 `clear`가 `FrameSlotService.deleteStudent`·`MemoryUsageService.deleteStudent`도 부름(P09)
+- #555 구현(core V47): 위 `RoomController`·`FrameSlotService`는 `room` 패키지의 `RoomController`·`RoomFrameSlotService`(MyBatis `RoomFrameSlotMapper`)다. 보유 확인·제목 조회는 설계의 `LearningMemoryClient` 대신 `room/client/LearningFrameClient`가 맡는다: learning `frames/ownership`·앨범 목록은 ai를 부르지 않는 DB 조회라 일반 `learning-json` 서킷의 `LearningClient`를 쓰고, 추억 검색·설명의 `learning-memory` 서킷과 나눈다. 삭제는 `StudentLookService.clear`(학생 삭제 확정 트랜잭션)가 `RoomFrameSlotService.deleteStudent`를 부른다. 가구 스킨은 `LookCatalog.FURNITURE_SLOTS`를 더했을 뿐 해금·착용 클래스는 그대로이고, `LookUnlockService.replaceEquipment`가 보낸 슬롯만 바꾸도록 바뀌었다
+- #704 구현(core V50): `RoomDecorService`(MyBatis `RoomDecorMapper`)가 방 소품 놓은 자리를 조회·전체 교체한다. 학생 행 `FOR NO KEY UPDATE` 뒤 보유 개수(`student_room_decor`)를 읽어 넘는 배치를 422로 거절하고, learning을 부르지 않아 트랜잭션 하나로 끝난다. 학생 삭제 확정의 `StudentLookService.clear`가 `RoomDecorService.deleteStudent`도 부른다
+- #560 구현: 앨범 3경로는 `MemoryController`→`MemoryProxyService.album`·`albumDetail`·`albumSeen`→`LearningMemoryClient`. 클라이언트의 앨범 메서드는 검색·설명용 `learning-memory`가 아니라 주입한 일반 `LearningClient`(`learning-json`)로 보낸다. 목록 `displayed`는 `RoomFrameSlotService.displayedFrames`(저장된 슬롯의 회차 키, learning 미호출)로 채운다
 
 ---
 
@@ -1203,8 +1536,8 @@ classDiagram
     +getForAdmin(missionId) AdminMission
     +preview(missionId) MissionPreview
     +create(command) Mission
-    +update(missionId, command) MissionVersion
-    +putRubric(missionId, command) RubricVersion
+    +update(missionId, command) AdminMissionVersion
+    +putRubric(missionId, command) AdminRubric
     +requestReview(missionId, missionVersion, rubricVersion)
     +review(missionId, reviewerId, missionVersion, rubricVersion, result, comment)
     +publish(missionId)
@@ -1222,17 +1555,17 @@ classDiagram
     +unpublish()
     +requirePublishable(snapshot)
   }
-  class MissionVersion { <<entity>> }
-  class RubricVersion {
-    <<entity>>
-    +elements List
+  class AdminMissionVersion { <<value>> }
+  class AdminRubric {
+    <<value>>
+    +elements List~AdminRubricElement~
     +answerKey AnswerKey
     +forbiddenTerms List
     +keywords List
     +essayType String
   }
-  class RubricElement {
-    <<entity>>
+  class AdminRubricElement {
+    <<value>>
     +judgeVerified Boolean
   }
   class AttemptController {
@@ -1300,6 +1633,10 @@ classDiagram
     <<value>>
     +blockedCategory(texts, mission) ExpressionCategory
   }
+  class ToxicityClient {
+    <<client>>
+    +check(texts) ToxicityResult
+  }
   class MissionRepository {
     <<repository>>
     +findRubric(missionVersionId, rubricVersionId) Rubric
@@ -1323,9 +1660,9 @@ classDiagram
   MissionService --> MissionRepository
   MissionService --> RubricRepository
   MissionService ..> Mission
-  Mission *-- MissionVersion
-  Mission *-- RubricVersion
-  RubricVersion *-- RubricElement
+  Mission *-- AdminMissionVersion
+  Mission *-- AdminRubric
+  AdminRubric *-- AdminRubricElement
   AttemptController --> AttemptService
   AttemptService --> MissionService : 공개 미션·당시 버전
   AttemptService --> AttemptRepository
@@ -1340,15 +1677,18 @@ classDiagram
   AnswerService --> AnswerRepository
   AnswerService --> JudgmentService : createPending
   AnswerService --> ExpressionPolicy : blockedCategory
+  AnswerService --> ToxicityClient : 잠금 전 표현 분류(#688)
   AnswerService ..> Answer
   Answer *-- AnswerContent
 ```
 
 - `AttemptService.start`: 부분 UK `(student_id, mission_id) WHERE IN_PROGRESS` 충돌 시 기존 시도 반환 (FN-LRN-16)
+- P23(#385): `start`에 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`, 생략 `EXTRA`) 추가, 신규 시도만 `WeeklyThemeService.checkStart`로 요일·되돌아보기 검사하고 그 주 테마를 시도에 저장(4.4)
 - `AttemptDraft.update(content, now)`가 다음 버전을 만들고 `AttemptDraftRepository.updateIfVersion(next, ifMatch)`가 `UPDATE ... WHERE version = :ifMatch` 실행, 영향 0행이면 `ATTEMPT_DRAFT_CONFLICT` + 최신 초안 (FN-LRN-17)
 - `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`·같은 본문이면 기존 답변 반환, 다른 본문이면 `422 IDEMPOTENCY_KEY_REUSED` (FN-LRN-10, API 1.4). `lockForAnswer`가 시도 행을 잠가(`FOR UPDATE`) 같은 시도의 제출을 한 줄로 세움. 저장하면 `clearSubmittedDraft`로 초안의 `answer`를 비우고 `memo`는 유지, 초안 version +1 (FN-LRN-15·16)
 - 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
 - 답변 표현 검사 (#205): `AnswerService.submit`이 누락 검사 다음·되묻기 연결 검사 전에 `ExpressionPolicy.blockedCategory(AnswerContent.writtenTexts(), mission)`를 부름. 학생이 쓴 칸(서술 글·풀이 최종 답과 단계·논술 4칸)을 칸마다 검사하고 고르기·분류·초안·메모는 검사하지 않음. 범주(`ExpressionCategory`: `PROFANITY`·`SEXUAL`·`HATE`·`THREAT`·`PERSONAL_INFO`)가 나오면 저장·판정 없이 `422 ANSWER_INAPPROPRIATE`(`detail`은 범주별 고정 문구), 로그는 `attemptId`·`category`만. 목록은 `resources/answer-filter`(korcen·우리말샘·팀 조정)를 `answer/repository/ExpressionPolicyConfig`가 읽어 빈으로 만들고, domain은 Kotlin 정규식만 씀. `HATE`와 맥락 단어(`새끼`)는 미션 본문(제목·질문·안내·선택지·그룹)에 나오면 허용
+- 표현 분류 모델 단계 (#688): `AnswerService.submit`이 시도 행 잠금 전에 `ToxicityClient.check(writtenTexts)`로 scoring 결과를 받아 둠(공백 칸 제외, 칸 순서대로 앞 20칸·합계 앞 1,500자까지만). 단어 목록을 통과한 뒤 그 결과가 flagged면 `ExpressionCategory.INSULT`로 같은 422(표현 문구). 결과가 없거나(시간 초과·장애·서킷 열림·`active:false`·계약 밖 응답·생략) flagged가 아니면 진행. 로그는 `attemptId`·`category`·건너뜀 사유만
 - `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
 - `AttemptService.finish`: 시도 행을 잠그고(`AttemptRepository.lockById`, 답변 제출·판정 저장과 같은 행) 본인 확인 → 이미 마무리했으면 기록 없이 같은 결과 → 타임라인으로 `FinishPolicy.canFinish`(sequence-diagram 3.3 순서) → `Attempt.finish(now)` → `AttemptRepository.finish`(`WHERE status = 'IN_PROGRESS' AND finished_at IS NULL`) → `FinishResult{finishedAt, reveal, revealKind, checklist}`. `Attempt.finish(now)`는 타임라인을 받지 않아 `canFinish`는 서비스가 먼저 부름
 - 공개 내용(FN-LRN-11): `reveal`은 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설), `revealKind`는 고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`. 체크리스트는 기준표 요소 전체, 이 시도의 처리 완료 판정(`JudgmentService.results`) 중 원문 구절과 함께 충족된 적 있는 요소만 체크하고 가장 최근 구절 표시. 시도 상세도 마무리 뒤에 같은 값
@@ -1386,6 +1726,7 @@ classDiagram
   }
   class MissionDraftService {
     <<service>>
+    +standards(filter) StandardPage
     +request(command) MissionDraft
     +adopt(draftId, author) AdminMission
     +discard(draftId) MissionDraft
@@ -1411,8 +1752,7 @@ classDiagram
   }
   class MissionService { <<service>> }
 
-  AdminMissionDraftController --> MissionDraftService
-  AdminMissionDraftController --> AchievementStandardRepository
+  AdminMissionDraftController --> MissionDraftService : 성취기준 검색 포함
   MissionDraftScheduler --> MissionDraftService : 주기 실행
   MissionDraftService --> MissionDraftRepository
   MissionDraftService --> AchievementStandardRepository
@@ -1438,7 +1778,7 @@ classDiagram
   direction TB
   class FeedbackController {
     <<controller>>
-    +feedback(answerId) FeedbackResult
+    +feedback(answerId) FeedbackResponse
   }
   class CorrectionController {
     <<controller>>
@@ -1644,6 +1984,294 @@ classDiagram
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
 - `AttemptService.deleteByStudent`: CASCADE 없이 한 트랜잭션에서 `judgment_correction`·`judgment_element` → `self_assessment`·`reflection`·`hint_usage`·`attempt_draft` → `followup`(`answer.followup_id`는 `SET CONSTRAINTS … DEFERRED`로 커밋 때 검사) → `judgment` → `answer` → `attempt` 순서로 학생의 시도 이하 기록 삭제(#128, ERD 4.3). 호출한 쪽 트랜잭션 안에서 실행
 
+### 4.4 주간 테마·커뮤니티 (theme #385 · community #386 구현)
+
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385, 커뮤니티(`community`)는 #386으로 구현한 이름·시그니처. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+
+```mermaid
+classDiagram
+  direction TB
+  class WeeklyThemeController {
+    <<controller>>
+    +current(studentId, grade, date) WeeklyThemeView
+    +reviewViewed(studentId, grade, date) ReviewViewResult
+    +storyViewed(studentId, grade, date, kind) StoryViewResult
+    +summary(studentId, weekStart) WeeklyThemeSummary
+  }
+  class AdminWeeklyThemeController {
+    <<controller>>
+    +list(grade, weekStart, status, page, size) AdminWeeklyThemePage
+    +create(request) AdminWeeklyTheme
+    +update(themeId, request) AdminWeeklyTheme
+    +requestReview(themeId) AdminWeeklyTheme
+    +publish(themeId) AdminWeeklyTheme
+    +unpublish(themeId) AdminWeeklyTheme
+  }
+  class WeeklyThemeService {
+    <<service>>
+    +current(studentId, grade, date, sundayTheme) WeeklyThemeView
+    +checkStart(studentId, missionId, grade, context, sundayTheme) ThemeAttempt
+    +recordReviewView(studentId, grade, date, sundayTheme) ReviewViewResult
+    +recordStoryView(studentId, grade, date, kind, sundayTheme) StoryViewResult
+    +pickAnswer(studentId, grade, date, pick, sundayTheme) AnswerPickResult
+    +ending(studentId, weekStart) ThemeEndingState
+    +lockedUntilEnding(studentId, missionId) Boolean
+    +scene(attemptId) ThemeScene
+    +summary(studentId, weekStart) WeeklyThemeSummary
+    +deleteByStudent(studentId) int
+  }
+  class WeeklyThemeAdminService {
+    <<service>>
+    +create(author, content) AdminWeeklyTheme
+    +update(themeId, author, content) AdminWeeklyTheme
+    +requestReview(themeId) AdminWeeklyTheme
+    +publish(themeId) AdminWeeklyTheme
+    +unpublish(themeId) AdminWeeklyTheme
+  }
+  class WeeklyTheme {
+    <<entity>>
+    +requireEditable(grade, weekStart)
+    +edited()
+    +requestReview()
+    +publish(errors)
+    +unpublish()
+  }
+  class ThemePublishCheck {
+    <<domain>>
+    +errors(grade, days, missions, otherPublished) List
+  }
+  class ThemeAnswerRules {
+    <<domain>>
+    +errors(candidates, answer, days) List
+    +featureErrors(candidates, features, days) List
+    +hintSpotErrors(spots, hintSeqs) List
+    +decisiveClue(candidates, answer, days) String
+  }
+  class ThemeEnding {
+    <<domain>>
+    +of(pick, reviewFinishedAt) ThemeEndingState
+  }
+  class AdminThemeDraftController {
+    <<controller>>
+    +request(body) ThemeDraftView
+    +list(status, source, page, size) Page
+    +detail(draftId) ThemeDraftView
+    +adopt(draftId) AdminWeeklyTheme
+    +discard(draftId) ThemeDraftView
+    +regenerate(draftId) ThemeDraftView
+  }
+  class ThemeDraftService {
+    <<service>>
+    +request(command, author) ThemeDraftView
+    +createWeekly(weekStart)
+    +regenerate(draftId, author) ThemeDraftView
+    +adopt(draftId, author) AdminWeeklyTheme
+    +discard(draftId) ThemeDraftView
+    +generateNext(now)
+  }
+  class ThemeDraft {
+    <<entity>>
+    +recordAttempt(result, maxAttempts, now)
+    +adopt(themeId)
+    +discard()
+    +previousFailures() List
+  }
+  class ThemeDraftRules {
+    <<domain>>
+    +learningFailures(output, input, grade, standards) List
+    +missionInput(mission, grade) DraftInput
+    +candidatePools(tables, semesters, current, soFar) Map
+    +autoStandards(grade, requested, recentCodes, pools, random) List
+    +adoptedMissions(output, input, grade, standards, author) List
+    +themeContent(output, grade, weekStart, missionIds) ThemeContent
+  }
+  class ThemeDraftScheduler { <<scheduler>> }
+  class ThemeDraftAiClient { <<client>> }
+  class ThemeDraftRepository {
+    <<repository>>
+    +insertAutoIfAbsent(draft) Boolean
+    +findInputs(grade, from, until) List
+    +claimNext(now, leaseUntil) ThemeDraft
+    +saveAttempt(draft, claimedLease)
+  }
+  class AssetUrls {
+    <<common>>
+    +url(stored) String
+  }
+  class AttemptService {
+    <<service>>
+    +start(studentId, missionId, grade, demo, context) AttemptStart
+  }
+  class CommunityController {
+    <<controller>>
+    +share(studentId, attemptId) ShareResponse
+    +post(postId) PostDetailView
+    +postAuthor(postId, viewerStudentId) PostAuthorView
+    +missionPosts(missionId, viewerStudentId, seed, page, size) MissionPostPage
+    +studentPosts(studentId) StudentPostList
+    +react(postId, reaction, studentId) ReactionCreated
+    +cancelReaction(postId, reaction, studentId) ReactionDeleted
+    +visibility(studentId, visible, reason) VisibilityResult
+    +moderate(postId, status, errorReportId) ModerationResponse
+  }
+  class CommunityService {
+    <<service>>
+    +share(studentId, attemptId) SharedPost
+    +missionPosts(missionId, viewer, seed, page, size) List
+    +studentPosts(studentId) List
+    +postAuthor(postId, viewer) PostAuthorView
+    +react(postId, studentId, reaction) ReactionResult
+    +setVisibility(studentId, visible, reason) VisibilityResult
+    +moderate(postId, status, errorReportId) CommunityPostStatus
+    +deleteByStudent(studentId) int
+  }
+  class CommunityRules {
+    <<domain>>
+    +moderate(current, requested, authorVisible) CommunityPostStatus
+    +initialStatus(authorVisible) CommunityPostStatus
+    +reactionId(postId, studentId, reaction) UUID
+  }
+
+  WeeklyThemeController --> WeeklyThemeService
+  AdminWeeklyThemeController --> WeeklyThemeAdminService
+  WeeklyThemeAdminService ..> WeeklyTheme
+  WeeklyThemeAdminService ..> ThemePublishCheck
+  WeeklyThemeAdminService ..> ThemeAnswerRules : 저장 때 정답 논리·생각 열기 위치
+  WeeklyThemeAdminService --> MissionService : 게시본 미션
+  WeeklyThemeService ..> ThemeEnding : 종료 공개·OUTRO
+  WeeklyThemeService --> AssetUrls : 그림·영상 URL
+  AttemptService --> WeeklyThemeService : context 검사·themeScene
+  AdminThemeDraftController --> ThemeDraftService
+  ThemeDraftScheduler --> ThemeDraftService : 생성 주기·주간 자동
+  ThemeDraftService --> ThemeDraftRepository
+  ThemeDraftService --> ThemeDraftAiClient : 생성 1회
+  ThemeDraftService ..> ThemeDraft
+  ThemeDraftService ..> ThemeDraftRules
+  ThemeDraftService --> MissionService : createFromDraft(LLM_THEME)·성취기준 조회
+  ThemeDraftService --> WeeklyThemeAdminService : 테마 DRAFT 생성·게시 여부
+  CommunityController --> CommunityService
+  CommunityService ..> CommunityRules
+  CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
+```
+
+- 기존 `AttemptService.start`(4.1)에 `context` 인자를 추가하고 `THEME_DAY`·`THEME_REVIEW`는 `WeeklyThemeService.checkStart`로 요일·되돌아보기 검사. 진행 중 시도 반환은 검사하지 않음(자정 후 이어하기)
+- `CommunityService.postAuthor`(#707, 친구 방 구경 core #708이 부름)는 새 판정 규칙 없이 `react`와 같은 순서로 막는다: `VISIBLE` 아님·없음 404 → 본인 글 409 → `requireCompleted`(403 `COMMUNITY_LOCKED`·`COMMUNITY_LOCKED_UNTIL_ENDING`). 읽기 전용 트랜잭션·행 잠금 없음, `{postId, studentId}`만 돌려줌
+- `CommunityService.share`는 학생·미션당 1개(UK `(student_id, mission_id)`), 이미 있으면 기존 공유물을 그대로 반환. 처음 학습 완료한 시도가 아니면(다시 풀기) 공유하지 않고, 공유 때 `ExpressionPolicy`(#205)를 다시 확인
+- 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
+- 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
+
+#438 추가(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
+- 학년: `GradeBand`(`G3_4`·`G5_6`)를 `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`)로 바꾼다. `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
+- 이야기·정답 구조: 버전·요일 새 칸은 테마 새 버전 때 함께 복사. `ThemeAnswerRules`가 관리자 저장 때 정답 논리(정답·후보·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어느 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐)와 `hintSpots`(0~100, 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음)를 검사(400). 결정적 단서 `decisiveClue`는 마지막 틀린 후보를 빼는 날의 단서
+- 학생 응답: 요일 단서는 그 문제를 그 주에 학습 완료한 뒤에만(#484), 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 엔딩(`ThemeEnding.of`가 `ENDED`)일 때만. 엔딩은 저장하지 않고 정답 고르기(`theme_answer_pick`)와 고른 뒤 금요일 문제 `THEME_REVIEW` 마무리 시각으로 계산한다(state-diagram 3.2.2, #484). 요일 상태는 `ThemeWeek.stateOf(day, today, sundayTheme)`(누적 공개, 일요일은 core 허용 값). 커뮤니티 `CommunityService`는 `lockedUntilEnding`으로 정답 고르기 문제를 엔딩 전에 잠근다(`COMMUNITY_LOCKED_UNTIL_ENDING`). INTRO는 월~토 언제든 받음(웹은 그 주 처음 '오늘 문제 풀기'를 누를 때 보여 주고 기록, #589), `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
+- 단서 근거(#647, 기준안): `ThemeStory.features`(`ThemeFeature(name, values: List<ThemeFeatureValue(candidate, value)>)`, `weekly_theme_version.features`)와 `ThemeDayMission.clueFeature`(`weekly_theme_day.clue_feature`)를 저장·복사한다. 테마 초안 채택은 ai 응답 `theme.features`·`days[].clueFeature`를 그대로 옮기고, `ThemeAnswerRules.featureErrors`가 특징마다 후보 하나에 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지는지 검사한다(테마 초안 learning 검사 `LOGIC`·관리자 저장 `400` 공통, 허용 값은 ai 내부 칸이라 그 이상은 보지 않음). `ThemeCarryOver`는 표를 이어받되 후보가 바뀌면 버리고 그날 `rulesOut`이 바뀌면 그날 `clueFeature`를 버린다. 학생 `ThemeDayView.clueFeature`·`clueFacts`는 그날 단서와 같은 조건(그 주 학습 완료), `WeeklyThemeView.features`는 엔딩 뒤만. 관리자 응답 `AdminWeeklyTheme.features`·`AdminThemeDay.clueFeature`
+- `AssetUrls`(`_common/storage`): ai 키(`theme-drafts/…`)만 단기 presigned URL(기준안 1시간)로 바꾸고 그 밖의 값은 그대로. 학생 미션·테마 응답과 관리자 테마 미리보기 칸에서 쓰고, 관리자 미션 응답은 저장 값 그대로
+- `themeScene`: 시도 시작·이어하기 응답에서 `context`가 `THEME_DAY`·`THEME_REVIEW`면 그 시도 `theme_id` 테마 게시본의 그 미션 요일 `{dialogue, hintSpots, videoUrl}`, `EXTRA`는 null. ai는 요일 문제 전 영상을 만들지 않아(#437 2026-11-11) 테마 초안 채택 테마의 `videoUrl`은 null이고, 요일 `video_uri`는 관리자가 직접 넣을 때만 쓰는 칸으로 남김
+- 테마 초안: 미션 초안(4.1.1)과 같은 구조. `ThemeDraftScheduler`는 주기(기준안 10초)마다 `generateNext`, 주간 크론(기준안 수요일 03:00 KST)에 `createWeekly`(다음 주 `G3`~`G6`, 부분 UK + `ON CONFLICT DO NOTHING`). `generateNext`는 리스(기준안 18분) 점유 → 트랜잭션 밖 ai 1회(`ThemeDraftAiClient`, 서킷 `ai-theme-draft`, 대기 기준안 16분) → `ThemeDraftRules.learningFailures`(요일·유형 배치, 미션 5개는 `DraftRules.learningFailures` 재사용, 정답 논리) → 점유 리스 대조 저장. `previousFailures`는 시간순, ai 단계 실패 그대로·learning 실패는 `THEME`/`MISSION`(사유 `<요일> <코드> <자세히>`)·AI 호출 실패 제외(#437 합의)
+- 채택: 초안 잠금 → 미션 5개 `MissionService.createFromDraft(command, rubric, LLM_THEME)`(장면 키·`sceneMotion` = ai 움직임 형식 v1을 칸 검사 없이 그대로, 요일 살펴보기 `spots` 포함) → `WeeklyThemeAdminService`로 테마 `DRAFT`(`hint_spots` NULL, `answer_clue` = 결정적 단서) → `ADOPTED` + `theme_id`, 한 트랜잭션. 다시 생성은 같은 입력의 새 초안(`ADMIN`)
+- `MissionService.createFromDraft`에 출처 인자(기본 `LLM_DRAFT`). `MissionCommand`에 `sceneMotion`, 관리자 미션 수정 본문에 없으면 `sceneUri`가 같을 때 이전 버전 값을 이어받음
+- 다른 기능은 service로만 부른다(architecture 계층 규칙): 성취기준은 `MissionService.standards(codes)`·`standardsOf(교과, 학년군)`, 주간 자동이 건너뛸 학년(그 학년·주 게시 테마 있음)은 `WeeklyThemeAdminService.publishedExists`. 자동 성취기준이 피할 최근 코드는 `ThemeDraftRepository.findInputs`(같은 학년, 적용 주 앞 4주)
+- 주제 씨앗(`ThemeTopicSeeds`, 기준안 24개, #437 B안 2026-11-11): 주간 자동과 주제 없이 온 관리자 요청에 `ThemeTopicSeeds.choose`가 `뭉치 역할: … / 장소: … / 찾는 대상: …` 하나를 골라 `input.topic`에 넣는다. 그 주 계절(`Season`, 적용 주 월요일의 달)에 맞는 씨앗 중 같은 학년 최근 씨앗(`findInputs`, 목록 개수만큼의 주, 초안 상태 무관)과 같은 주 다른 초안 씨앗(`findWeekInputs`)을 빼고 무작위, 남는 게 없으면 가장 오래전에 쓴 것. 관리자가 쓴 주제와 다시 생성의 저장된 주제는 그대로
+- 자동 성취기준 후보 풀(#536, RAG 안 씀 팀 결정 2026-11-11): learning이 계속 고르고 후보 풀만 바꾼다. `ThemeDraftService.autoInput`이 교과별 학년군 표(`standardsOf`)를 `ThemeDraftRules.candidatePools`로 학기 단계 ① 그 학년·학기(`ThemeSemester.of(grade, weekStart)`, 3월 1일~8월 15일 1학기, 확정 2026-11-12) ② 같은 학년군에서 이번 학기까지 배운 학기(`ThemeSemester.soFar`)와 학년군 표로 나누고(`StandardCandidates`), `autoStandards`가 최근 4주·이미 고른 코드를 빼고 남는 첫 단계에서 고른다. 모든 단계가 최근 코드뿐이면 ① 단계에서 가장 오래전에 쓴 코드(주제 씨앗과 같은 방식). 학년군 표(위 학년 성취기준 포함)는 학기 단계에 고를 코드가 하나도 없을 때만. 아래 학년군은 넣지 않는다(미션 게시 학년군 규칙 #353). 학기 대응표 `StandardSemesters`(<<value>>, 코드 → 학기)는 `StandardSemestersConfig`가 시작 때 resources/knowledge/semester_map.csv(원본 `scripts/knowledge/semester_map.csv` 사본)에서 읽는다(DB·지식 판에 기대지 않음). 최근 코드는 `findInputs`의 오래된 순 목록. ai 요청 `missions[].standards` 계약은 그대로, ai `retrieve`(#470)는 받은 코드의 근거 묶음만 가져온다
+- `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
+
+### 4.5 기념 액자·추억 검색 (P27, 구현 #559·#563·#564)
+
+2026-11-12 리텐션 확장 결정([결정 기록](../report/retention-expansion.md))의 learning `memory` 기능 패키지. 클래스 이름은 설계 단위이며 실제 이름과 다른 곳은 아래 구현 메모에 적는다. 저장 구조는 [ERD 4.6](erd.md), 상태는 [상태 3.7](state-diagram.md).
+
+```mermaid
+classDiagram
+  direction TB
+  class MemoryController {
+    <<controller>>
+    +album(studentId, page) Page
+    +round(studentId, themeId, weekStart) AlbumRound
+    +markSeen(studentId, themeId, weekStart)
+    +ownsFrames(studentId, keys) boolean
+    +explain(studentId, query, attemptIds) MemoryExplanation
+  }
+  class ThemeFrameService {
+    <<service>>
+    +awardIfComplete(attempt)
+    +backfill()
+    +owned(studentId, keys) boolean
+    +deleteByStudent(studentId)
+  }
+  class AlbumService {
+    <<service>>
+    +album(studentId, page) Page
+    +round(studentId, themeId, weekStart) AlbumRound
+  }
+  class MemorySearchController {
+    <<controller>>
+    +search(studentId, body) MemorySearchResult
+  }
+  class MemoryEmbeddingWorker {
+    <<service>>
+    +runBatch() int
+  }
+  class MemorySearchRepository {
+    <<repository>>
+    +register(attemptId) int
+    +deleteByStudent(studentId) int
+  }
+  class MemorySearchService {
+    <<service>>
+    +search(studentId, query) MemorySearchResult
+    +register(attemptId)
+    +deleteByStudent(studentId)
+  }
+  class MemoryExplanationService {
+    <<service>>
+    +explain(studentId, query, attemptIds) MemoryExplanation
+  }
+  class MemoryEmbeddingScheduler {
+    <<scheduler>>
+    +run()
+  }
+  class MemoryEmbeddingClient {
+    <<client>>
+    +embed(texts) Vectors
+  }
+  class MemoryExplanationAiClient {
+    <<client>>
+    +explain(query, evidence) ExplanationDraft
+  }
+  class MemoryQueryAiClient {
+    <<client>>
+    +rewrite(query, today) MemoryQuery
+  }
+  class MemoryEvidenceRules {
+    <<service>>
+    +valid(draft, evidence) boolean
+  }
+
+  MemoryController --> AlbumService
+  MemoryController --> ThemeFrameService
+  MemoryExplanationController --> MemoryExplanationService
+  MemoryEmbeddingScheduler --> MemoryEmbeddingWorker
+  MemoryEmbeddingWorker --> MemorySearchRepository
+  MemoryEmbeddingWorker --> MemoryEmbeddingClient
+  MemorySearchController --> MemorySearchService
+  MemorySearchService --> MemorySearchRepository
+  MemorySearchRepository --> MemoryVectorMapper
+  MemorySearchService --> MemoryEmbeddingClient : 질문·문서 임베딩
+  MemorySearchService --> MemoryQueryAiClient : 질의 변환(#679)
+  MemoryExplanationService --> MemoryEvidenceRepository : 본인 READY 근거 재확인
+  MemoryExplanationService --> MemoryEmbeddingClient : 질의 관련도 재확인
+  MemoryExplanationService --> MemoryExplanationAiClient
+  MemoryExplanationService ..> MemoryEvidenceRules
+  AlbumService --> ThemeFrameService
+```
+
+- 질의 변환·하이브리드(#679 설계, #682 구현): `MemoryQueryAiClient`는 ai `POST /internal/memory-queries`(읽기 8초, 재시도 없음, 서킷 `ai-memory-query`)를 부르고 실패(시간 초과·5xx·형식 밖·서킷 열림)를 서비스에 전달한다. 서비스는 해당 예외를 원문 로그 없이 null로 처리한다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩 → `MemorySearchRepository`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
+- #559 구현(learning V19): `ThemeFrameService`(지급·소급·보유·확인·삭제)·`AlbumService`·`MemoryController`의 앨범·확인·보유 확인과 기동 소급 `ThemeFrameBackfillRunner`. 회차 상세의 문제·시도·엔딩은 `WeeklyThemeService.pastRound`가 조합. 검색은 #563 구현, 설명은 #564 구현([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
+- 학습 완료 처리(기존 `AttemptService`의 돌아보기 저장 = 학습 완료)가 같은 트랜잭션에서 `ThemeFrameService.awardIfComplete`(회차 5문제 완료 시 액자)와 `MemorySearchService.register`(`PENDING` 문서, 내부에서 `MemorySearchRepository.register`)를 부름. 다른 기능은 memory repository를 직접 부르지 않음(architecture 2.2). `EXTRA` 시도는 둘 다 건너뜀
+- `MemoryEmbeddingScheduler`는 `StuckJudgmentScheduler`처럼 조건부 UPDATE 선점이라 잠금 없음(상태 3.7). `MemoryEmbeddingClient`는 ai `POST /internal/embeddings`(기존 계약, 요청당 8글, 최대 64글 계약 이내), 이전 `KnowledgeEmbedder`는 V17 정리로 없으므로 신규. HTTP 전송·외부 DTO는 `memory/client`(`MemoryEmbeddingClient`·`MemoryExplanationAiClient`·core 닉네임 조회 `StudentProfileClient`), 마스킹 정책(`MemoryTextPrivacy`)·업무 흐름은 `memory/service`. 생성 호출의 장애 판정(서킷 열림·전송 실패·502 밖 5xx → `MemoryAiOutageException`)은 `MemoryExplanationAiClient`가 맡음
+- `MemoryExplanationService`는 받은 `attemptIds`가 본인 `READY` 문서인지 다시 확인한 뒤 근거를 `[1]~[3]` 번호로만 보내고(학생·시도·답변 ID 미전송, 닉네임 마스킹), `MemoryEvidenceRules.valid`(번호 범위·인용 원문 포함)를 통과한 설명만 번호를 실제 회차·시도로 바꿔 반환
+- 앨범 회차 상세의 문제별 기록은 기존 `record` 기능의 시도 상세를 service로 불러 조합. 엔딩 표시 여부는 `WeeklyThemeService`의 엔딩 상태(#484 `ENDED`)로 판단
+- 학생 삭제 소비의 `StudentDeletionService`가 시도 삭제 전에 `MemorySearchService.deleteByStudent`, 같은 트랜잭션에서 `ThemeFrameService.deleteByStudent`를 호출
+
 ---
 
 ## 5. ai-service
@@ -1728,7 +2356,7 @@ classDiagram
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`(`m2_scores(body, timeout)`·`m1_check(body, timeout)`, 요청 본문은 `cross_check.m2_body`·`m1_body`가 만들고 `timeout`은 `SCORING_TIMEOUT`과 남은 판정 시간 중 작은 값, 비활성 응답이면 `None`), 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`(글 하나 검사는 `find_text_leaks()`, 미션 초안 검사와 공유). 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 여섯 이름(#280 `reportTemplate`, #354 `missionDraft` 포함, 5.4)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
+| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 열 이름(#280 `reportTemplate`, #354 `missionDraft` 5.4, #477 `reportExplanation`, #437 `themeDraft` 5.5, #565 `memoryExplanation` 5.6 포함, #681 `memoryQuery` 5.7 포함)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -1829,6 +2457,7 @@ classDiagram
 - 규칙 응답(`analysis_agent/templates.py`): 대조 실패·LLM 키 부재·호출 실패 시 계산된 `metrics`·`evidence`만 템플릿 문장으로 구성, `source = TEMPLATE`·`fallback` 표시 (FN-AGT-10, P16)
 - 구현 이름(#65·#66, #253): `router.py`는 SSE 형식 변환만 하고 `service.py`의 `AnalysisService`가 범위·기한 확인, 프롬프트 선택, 그래프 실행, 최종 상태의 이벤트 변환, 설정 제안(`propose_template`)을 맡는다. `AgentState` = `state.py`의 `AnalysisState`. `nodes`는 `nodes/understand.py`(`classify`, 범위 확인 포함)·`nodes/retrieve.py`(`retrieve` = plan·run_tools, `compute`)·`nodes/respond.py`(`answer`·`check` = verify, `fallback`·`insufficient`·`unsupported`)로 나뉨. 실제 분기는 [ai 보고서 2장](../report/ai.md#2-분석-대화-에이전트-langgraph)
 - `NarrativeService`: 서술·저녁 질문만 생성, 숫자 계산·대조는 report-service 담당
+- #477 `ExplanationService`(`report_explanation/`): 리포트 설명 1건 생성(FN-RPT-09). `ActiveVersions.model`로 설명 모델 활성 범위를 확인하고, 항목 선택·후처리·검사·인용 고르기는 `checks` 규칙. 설명 전용 `OpenAICompatibleLlm`(`create_explanation_llm`, `app.state.explanation_llm`)의 평문 `stream`만 쓰고 다른 호출의 제공자는 그대로. 미활성이면 `{active:false}`, 검사 실패 422 (api-spec 4.2.3)
 
 ### 5.3 메시징·클라이언트
 
@@ -1897,6 +2526,117 @@ classDiagram
 - 프롬프트: `prompts.py` 내장 `mission-draft@1`, #68 레지스트리 이름 `missionDraft`·scope `ai/mission-draft`(`ActiveVersions`·`/internal/versions`에 추가). 입력은 성취기준 문장·(있으면) 성취수준 문장·생각 유형·그 유형 표준 요소 공통 설명·학년·입력 방식뿐이고 학생 정보는 없음
 - 사용량: `LlmClient` 콜백 → `UsagePublisher`, `callType = MISSION_DRAFT`(이벤트 스키마·core enum·core CHECK와 같이 추가, ERD 3.5)
 
+### 5.5 주간 테마 초안 (theme_draft, #437)
+
+에픽 #436, FN-ADM-22, api-spec 4.2 `POST /internal/theme-drafts`. 새 모듈 `app/theme_draft/`는 분석 에이전트(5.2)처럼 LangGraph 그래프를 서비스가 실행하고, 미션 생성은 미션 초안(5.4)의 생성·검사를 재사용한다.
+
+```mermaid
+classDiagram
+  direction LR
+  class theme_draft_router {
+    <<router>>
+    +create(ThemeDraftRequest) ThemeDraftResponse
+  }
+  class ThemeDraftService {
+    <<service>>
+    +generate(request) ThemeDraftResponse
+  }
+  class ThemeDraftGraphRunner {
+    <<service>>
+    +run(request, deadline) ThemeDraftResponse
+  }
+  class NotReadyRunner {
+    <<service>>
+    +run() 503
+  }
+  class ThemeDraftGraph {
+    <<graph>>
+    +retrieve()
+    +plan_theme()
+    +check_theme()
+    +fix_theme(칸 하나만 고치면 되는 사유뿐이면 그 칸만 고쳐 쓰기)
+    +generate_mission(유형 5개 병렬, 요일마다 review_missions 포함)
+    +missions_done()
+    +generate_dialogue(요일 5개 병렬)
+    +review_story()
+    +generate_images(테마 옷 뭉치 → 시작 1컷 → 미션 5 + 컷 7, 그림마다 review_images)
+    +generate_videos(시작·종료 각 4컷 병렬, 컷마다 review_videos, 녹아드는 전환)
+    +generate_motion(그림이 있는 장면)
+  }
+  class ThemeChecks {
+    <<domain>>
+    +check_theme(theme, grade, codes) list~str~
+    +check_logic(theme, candidates, answer, days) list~str~
+    +check_mission(theme, request, draft, grade) list~str~
+    +check_dialogue(theme, day, dialogue, draft, grade) list~str~
+    +check_review(review, ids) fails·warns·shape
+    +motion(generated, speakers, captions, spots) ThemeMotion·warnings
+    +spots(generated, theme, day) 살펴보기·warnings
+  }
+  class MissionDraftService { <<service>> }
+  class DraftChecks { <<domain>> }
+  class LeakGuard { <<domain>> }
+  class LlmClient { <<client>> }
+  class ReviewLlmClient { <<client>> }
+  class ImageClient { <<client>> }
+  class VideoClient { <<client>> }
+  class ThemeStorage { <<client>> }
+  class ActiveVersions { <<registry>> }
+
+  theme_draft_router --> ThemeDraftService
+  theme_draft_router --> NotReadyRunner : 테마 모델 설정이 틀리면
+  ThemeDraftService --> ThemeDraftGraphRunner : 마감 전달
+  ThemeDraftGraphRunner --> ThemeDraftGraph : 마감 안에서 1회 실행
+  ThemeDraftGraphRunner --> ActiveVersions : themeDraft 프롬프트
+  ThemeDraftGraph --> LlmClient : 줄거리·대화·움직임
+  ThemeDraftGraph --> MissionDraftService : 유형별 미션 생성 재사용
+  ThemeDraftGraph --> ReviewLlmClient : 미션별·글·그림·영상 검토(생성과 다른 모델, 설정)
+  ThemeDraftGraph --> ImageClient
+  ThemeDraftGraph --> VideoClient : 컷 첫 그림만 고정
+  ThemeDraftGraph --> ThemeStorage : S3 theme-drafts/
+  ThemeDraftGraph --> ThemeChecks
+  MissionDraftService --> DraftChecks
+  ThemeChecks --> LeakGuard : 정답·대화 유출 검사
+```
+
+- 구조(구현 #437 글 단계): `router.py`가 실행기(`ThemeDraftRunner`)를 고르고 `service.py`의 `ThemeDraftGraphRunner`가 그래프 실행·응답 조립, `graph.py`가 LangGraph `StateGraph`(요일별 노드는 `Send` 병렬), `nodes/`가 노드, `models.py`가 요청·응답과 LLM 구조화 출력, `checks.py`·`prompts.py`. `review_story`가 `PASS`면 `generate_images → generate_videos → generate_motion`(`nodes/images.py`·`video.py`·`motion.py`). 그림 클라이언트나 저장소가 없으면 세 단계를 건너뛰고 `warnings(IMAGE, ALL, 그림 설정 없음)`만 남김
+- 모델 설정: 테마 전용 `theme_generation_model`(기본 `gpt-6-luna`)·`theme_review_model`(기본 `gpt-6.1-terra`), 같은 OpenAI 키. 기본 `OPENAI_MODEL`과 따로 둔다(생성과 검토는 다른 모델이어야 함. 로컬·운영 `OPENAI_MODEL`은 #502로 생성 모델과 같은 `gpt-6-luna`이고 검토만 `gpt-6.1-terra`). 두 값이 같거나 키가 없으면 기동은 막지 않고 테마 경로만 `503 AI_UNAVAILABLE`(`retryable: false`, `NotReadyRunner`). 다른 경로는 그대로 동작
+- 시간·상한 기준안: LLM 호출 타임아웃 300초(2026-11-11 180초에서 변경, 줄거리 1회 실측 130~170초)·재시도 0(재시도 대신 실패 사유 넣은 다시 생성), 단계마다 다시 생성 상한 2(첫 생성 포함 최대 3회), 줄거리 검사 사유가 모두 칸 하나만 고치면 되는 것(글자 수·증거 발견 줄 단서 값·후보·정답 이름·배정과 다른 증거 종류·매체, 글 칸만)이면 `fix_theme`이 그 칸만 고쳐 쓰고 다시 검사(상한 2, 넘으면 줄거리 다시 생성), 글 검토 재검토 상한 2, 마감까지 180초 미만 남으면 다음 다시 생성을 시작하지 않음(`DEADLINE` 사유를 붙여 실패), 최대 출력 토큰 줄거리·검토 32000·대화 8000
+- `ThemeDraftService.generate`: 요청 1번에 그래프를 한 번 끝까지 실행한다. 그래프 안에서 실패한 부분만 실패 사유를 넣어 상한(기준안 단계마다 2회)까지 다시 만들고(미션은 실패한 유형만, 대화는 실패한 요일만, 영상은 실패한 컷만), 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않는다. 그래도 실패하면 `failure{stage, reasons}`를 담아 200으로 돌려준다(`THEME`·`MISSION`·`REVIEW`·`IMAGE`). 대화·영상·움직임은 끝내 실패하면 그 항목만 빼고 `warnings`에 남긴다. learning은 `failure`가 있으면 `CHECK_FAILED`로 두고 다음 시도에 `previousFailures`로 넘긴다. 마감은 기준안 15분(learning→ai 16분 안)
+- 요일 배치: 줄거리 단계에서 기준안(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 에픽 확인 필요)대로 정하고 응답 `day`로 돌려준다. learning이 다시 검사
+- 줄거리 구조화 출력의 내부 칸(응답 `theme`에서는 뺌, 계약 그대로): 후보 특징 표 `features`(특징 이름·고른 성취기준 코드 `standardCode`(장면에서 골랐으면 비움)·후보별 값, 그날 성취기준 내용에서 고르는 것을 기본으로 하고 안 되면 장면에서. #647부터 이름·후보별 값만 응답 선택 칸 `theme.features`로, 요일 단서 조건의 특징 이름은 `days[].clueFeature`로 내보냄. `public_theme`이 만들고 `standardCode`는 내부 칸으로 남김), 요일별 단서 조건 `condition`(`RULE`·`HINT`, 특징, 허용 값), 단서 증거 `evidence`(`TRACE`·`SIGHTING`·`RECORD`와 그때), 요일별 증거 종류·기록 매체 배정 `evidencePlan`(#535, 아래), 요일별 증거 발견 줄 `discovery`(미션 전 대화 마지막 줄, 40자)와 수사 연결 문장 `missionHook`(증거 발견 줄 다음 대화 맨 끝 줄, 뭉치, 40자), 찾는 대상 `target`, 시작·종료 콘티(`introCuts`·`outroCuts`, 컷마다 장면·동작·문구·뭉치 표정 `mungchiMood`). 후보 기준안 모든 학년 4개. 뭉치는 테마 역할로 사건을 해결하러 가는 주인공이고 찾는 대상의 주인은 등장인물 중 한 명(사용자 결정 2026-11-11)
+- 증거 종류·기록 매체 코드 배정(#535, 요일별 강제는 사용자 결정 2026-11-16, 구성·매체 고르는 값은 기준안): 등장인물 이름처럼 코드가 요일별 증거 종류(흔적·목격·기록)와 기록 날 매체(사진·영상·메모·일지·녹음)를 정해 줄거리 요청에 넣는다(`checks.evidence_plan`·`prompts.evidence_plan_for`, 씨앗 `주-학년`이라 같은 요청이면 같은 배정, 구성은 흔적·목격 각 1개 이상·기록 2개 이하). `plan_theme`이 줄거리에 내부 칸 `evidencePlan`으로 붙이고 `public_theme`이 응답에서 뺀다(계약 그대로). 배정과 종류가 다르면 `CLUE_EVIDENCE`가 그날 `clue`·`discovery`·`missionHook` 세 칸을, 기록 매체 낱말이 없으면 `clue`·`discovery`를 사유로 내고 `fix_theme`이 `evidence.kind`를 배정대로 바꾼 뒤(`apply_evidence_plan`) 그 칸만 고쳐 쓴다(줄거리를 다시 만들지 않음) 줄거리를 만든 직후 코드가 두 가지를 고친다(`nodes/plan.code_adjust`, 2026-11-16 7차): ① 흔적 날 특징이 흔적에 남지 않는 것(빛·그늘·소리·거리 등, `checks.traceable` 기준안)이면 흔적이 맞는 다른 날과 배정·기록 매체·단서 종류를 통째로 바꾸고 맞는 날이 없으면 목격으로(`fit_evidence_plan`), ② 정답 논리(`LOGIC`)가 틀리면 특징 표는 두고 요일 조건만 3일 이내로 가장 적게 바꿈(`repair_logic`, 판정은 `check_logic`). 바뀐 날의 단서·증거 발견 줄·수사 연결 문장과 종료 이야기만 LLM 1번으로 고쳐 쓰고(바뀐 것이 있을 때만) 결과는 `check_theme`이 다시 봄
+- `ThemeChecks`(`checks.py` 모듈 함수): 정답 논리는 특징 표로 판정한다. 요일별 `rulesOut`은 LLM이 쓰지 않고 코드가 표와 조건으로 채운다(`fill_rules_out`, `RULE`은 허용 값 밖의 후보 전부(이미 빠진 후보 포함), `HINT`는 빈 배열). `RULE`은 빠지는 후보가 비어 있지 않음, `HINT`는 그때 남은 후보가 모두 허용 값 안(남은 후보를 빼면 `RULE`이어야 함), `RULE`은 그때 남은 후보를 적어도 하나 새로 뺌(learning 결정적 단서 계산과 맞춤, #438), 틀린 후보는 모두 `RULE`로 빠짐, 수요일까지 후보 2개 이상 남음(마지막 틀린 후보는 목요일 이후), 정답은 어떤 단서로도 빠지지 않음, 요일별 단서 5개(기준안 40자, 흔적 날은 누구의 흔적인지 찾는 대상 낱말을 넣고 46자, 낱말이 없으면 `CLUE_OWNER` 칸 고쳐 쓰기, #535), 단서 문장에 허용 값 낱말이 모두 있고 허용 밖 값 낱말이 없음(활용형·숫자 표기 차이 허용), `standardCode`는 이번 주 성취기준만, `evidence` 종류·때 필수, 찾는 대상은 대화 화자가 아님. 단서 규칙 중 코드로 볼 수 있는 것(정답 이름은 종료 이야기에만, 후보 이름의 색 낱말, 단서 종류 중복), 대화 형식·줄 수·길이·유출, 움직임 개수·속도·크기 상한. 단서는 학생이 그날 미션을 마친 뒤 보여 주므로 증거 발견 줄·장면 메모(`sceneNote`, #535 2026-11-16: 칸 고쳐 쓰기 대상)·대화 LLM 줄이 그날 허용 값을 말하면 `CLUE_EARLY`(정확히 일치하거나 명사형 끝을 뗀 2자 이상 줄기 일치, 한 글자 값은 낱말 첫머리에 올 때만(#535: 값 '게'가 '볼게'에 걸리던 오탐), `mentions_value` 하나로 비교, 수사 연결 문장은 배울 개념을 말하는 자리라 줄거리 검사에서는 보지 않고 미션 뒤 고쳐 쓴 문장만 `hook_problems`로 봄, #535), 증거 발견 줄·수사 연결 문장에 후보·정답 이름이면 `ANSWER_LEAK`, 시작 콘티 1·2컷(뭉치 없음) 표정이 `none`이 아니거나 3·4컷(뭉치 출동·도착)이 `none`이면 `CUT_MOOD`, 단서 문장의 증거(사진·영상·녹음·기록 등)와 evidence 종류가 다르거나 증거 종류·매체가 배정(`evidencePlan`)과 다르면 `CLUE_EVIDENCE`(칸 고쳐 쓰기 대상), 종료 콘티에 뭉치가 안 나오는 컷(`none`)이 있으면 `CUT_MOOD`. 살펴보기 한마디·이름이 미션 답·금지어·예시 답을 말하면 `checks.spot_leaks`로 그 물건을 뺀다. 검토 LLM은 단서 문장이 조건을 그대로 말하는지, 표 값이 자연스러운지, 없음에만 기대지 않는지, `HINT`가 일찍 답을 정하지 않는지를 본다 #535 8~10차(2026-11-16, ai.md 17.6.10): 종료 이야기 = 코드 정리(`outro_recap`, 표로 계산한 요일별 빠진 후보를 세 문장으로, 말투는 마무리 장면에 맞춤) + LLM 마무리 장면(내부 칸 `outroStory`, 응답에 없음, 요일 정리를 쓰면 `OUTRO_RECAP` 칸 고쳐 쓰기), 단서가 그때 시각을 말하지 않으면 코드가 앞에 붙임(`add_clue_time`, 시각이 있으면 그만큼 상한을 늘림), 단서 문장 허용 값 문제(`CLUE_TEXT`)는 칸 고쳐 쓰기, 정답을 빼는 요일은 허용 값에 정답 값을 더하는 코드 수리(`repair_logic` 1단계), 줄거리 글 칸이 비면 형식 밖 응답(`GeneratedDay` 검증), 수학 미션의 학년보다 앞선 개념은 `GRADE_MATH`(`MATH_AHEAD` 기준안)로 그 미션만 다시, 특징 표·단서의 π도 `GRADE_MATH`. 테마 LLM 클라이언트는 형식 밖 응답만 한 번 더 부름(`LlmClient.invalid_output_retries`, 테마만 1).
+- 미션: 유형마다 `MissionDraftService`의 생성·`DraftChecks`를 그대로 쓰고, 테마 이야기 조각과 학년별 생각 열기 질문 개수(기준안 초3 3개·초4 2개·초5 1개·초6 1개)를 더 넣는다. 찾는 대상 이름(아직 못 찾음, 정답은 주지 않음)과 RAG 근거 빈 칸(`knowledge`, 지금은 비움)도 넣는다. 문제 소재는 오늘 장소·찾는 대상·그날 찾은 증거에서 가져오고 수사 연결 문장이 말한 증거를 문제에 그대로 쓴다(사건과 무관한 그림책·시·자료 금지, 학생 자신의 경험을 쓰게 하는 부분은 그대로, #535), 정답 쓰기·정답 추리 문제·새 사건 사실·미션 답이 단서가 되는 것은 막는다. 미션 입력에는 그날 단서도 앞 요일 단서 목록도 넣지 않고(학생이 아직 못 얻었을 수 있음) 그날 `discovery`·`missionHook`을 넣되 둘 다 대화로 이미 나가므로 질문에 다시 쓰지 않게 한다(증거 자체를 살피게 하지 않고 어느 후보가 답인지 묻지 않음). 비교·점검할 글이 필요한 문제(예: 금요일 돌아보기)는 그 글을 문제 글에 직접 넣는다(그날 글만 읽고 풀 수 있게). 재사용은 `MissionDraftService.generate`에 선택 인자 `extra_user`(이야기 조각·테마 실패 사유를 미션 프롬프트 뒤에 덧붙임)·`call_type`(`THEME_DRAFT`)·`deadline`·`timeout`(테마 값)만 더한 최소 확장이고, 주지 않으면 기존 `/internal/mission-drafts` 동작과 같다(재시도·최대 토큰은 미션 초안 설정 그대로). 검사 분담(learning.md 21절): ai 미션 검사는 `DraftChecks`(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`)에 테마 몫(학년별 생각 열기 개수 `HINT_COUNT`, 테마 정답 유출 `THEME_ANSWER_LEAK`, 한국어 밖 글자 `LANGUAGE`)만 더하고, 요소 code·`standardCode`·입력 방식 모양은 learning이 본다. 기존 검사 사유(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`·learning이 돌려준 `STANDARD_CODE`·`ELEMENT_CODE`·`SHAPE`)는 미션 초안 `previousFailures`로, 테마 사유는 `extra_user`로 넣는다. 금요일도 큰 질문·후보·단서 목록을 넣지 않고 안내(`guide`)는 LLM이 만든 그대로 둔다(최종 후보 고르기는 웹·learning 화면, 사용자 결정 2026-11-11)
+- 수사 연결 문장 고쳐 쓰기 `fix_hook`(#535, 요일별 `generate_mission` 안에서 미션이 통과한 직후): 수사 연결 문장은 줄거리 단계에서 미션보다 먼저 정해져 문제 소재와 어긋날 수 있어, 그 요일 `missionHook`을 그날 문제 소재 낱말이 들어가게 LLM 1번(출력 `GeneratedHookFixes`)으로 고쳐 쓴다. 미션은 다시 만들지 않는다. 요일 노드 안에서 하므로 다른 요일 미션을 기다리지 않고, 결과는 상태 `hook_fixes`(요일 → 문장)로 돌려주며 `missions_done`이 이번에 만든 요일만 테마에 넣는다(2026-11-15 닫기 3차: 처음에는 `missions_done` 다음 별도 노드 `fix_hooks`가 모든 요일을 한 번에 고쳤으나 대화 앞에서 기다려 글 실측 평균이 늘어 옮김). 고친 문장이 줄거리 코드 검사(글자 수·후보 이름)에 걸리거나 그날 문제의 답·예시 답·단서 결론(허용 값)을 미리 말하면(`checks.hook_problems`) 원래 문장을 둔다. `STORY_LINK` 경고가 났던 요일만 미션 검토로 다시 확인해 통과하면 경고를 지우고 남으면 경고 그대로(사용자 결정 2026-11-15 경고만). 마감이 가까우면 건너뜀. 응답 계약 그대로
+- `review_missions`(`generate_mission`과 코드 검사·실패 유형 재생성 다음, `generate_dialogue` 앞): 검토 모델이 미션마다 따로 병렬로 본다. 예시 답(또는 정답 키)이 문제가 요구한 것을 모두 채우는지, 성취기준 핵심 행동·생각 유형과 맞는지(혼자 글로 답하는 미션이라 협력·발표는 보지 않음), 그날 글만 읽고 풀 수 있는지(그림에만 있는 정보·비교할 글이 빠진 문제 금지), 문제 소재가 수사 연결 문장이 말한 소재·오늘 장소·찾은 증거에서 왔는지(`STORY_LINK`, #535: 입력에 그날 `story` = 장소·찾는 대상·증거 발견 줄·수사 연결 문장, 정답·단서는 넣지 않음. 학생 자신의 경험 부분은 판정에서 뺌). `EXAMPLE_COMPLETE`·`STANDARD_FIT`·`MATERIAL` `FAIL`은 그 미션만 사유를 넣어 다시 만들고(상한 기준안 2회) 끝내 실패하면 `failure.stage = MISSION`, `WARN`은 `warnings`. `STORY_LINK`는 `FAIL`이어도 다시 만들지 않고 `warnings(MISSION, 요일)`로만 남긴다(사용자 결정 2026-11-15: 관리자가 채택 화면 #441의 경고를 보고 사람이 확인, `nodes/mission.WARN_ONLY_IDS`). 요일별 증거 종류 강제 배정(사용자 결정 2026-11-16)과 미션 소재 검사를 `STORY_LINK` 경고로 두는 것(사용자 결정 2026-11-15, 2026-11-16 확정)은 결정됨. 최종 `review_story`는 지금처럼 전체를 본다. 구현은 별도 노드가 아니라 요일별 `generate_mission` 노드 안에서 코드 검사 통과 뒤에 돈다(생성 → 검사 → 미션 검토 → 다시 생성 루프가 요일마다 독립이라 다른 요일을 기다리지 않음). 모든 요일이 끝나면 `missions_done`이 실패 요일을 모아 `failure.stage = MISSION`으로 끝낸다. 근거: 텍스트 시험(2026-11-10, lab3-reporter-2·lab3-inventor-2)에서 검토 1·2회차가 단서 논리로 줄거리를 통째로 다시 만들며 미션도 새로 생겨, 예시 답 문제는 검토 상한(3회) 마지막에야 드러나 고칠 기회가 없었음. 비용 기준안 미션당 약 $0.003
+- 대화: 그날 증거 발견 줄(`discovery`)과 수사 연결 문장(`missionHook`, 뭉치)을 코드가 대화 끝 두 줄로 그대로 넣고(증거 발견 줄 말하는 사람 `discoverySpeaker`는 LLM이 고르고 기본 뭉치) LLM은 나머지 줄만 만든다. 단서는 학생이 그날 미션을 마친 뒤 learning이 보여 주므로(#484) 대화에 넣지 않고 화~금 앞 요일 요약 줄도 없다(사용자 결정 2026-11-11). 학년별 줄 수(기준안 초3·초4 3~4줄, 초5·초6 2~3줄)는 끝 두 줄 포함. LLM이 띄어 쓴 등장인물 이름의 뒷부분만 화자로 쓰면(예: '캠핑장 관리인' → '관리인') 한 명에게만 맞고 찾는 대상이 아닐 때 코드가 원래 이름으로 바꾼 뒤 검사한다(`checks.full_speakers`, #535). 실패한 요일만 사유를 넣어 다시(상한 2), 끝내 실패하면 그 요일 대화만 빼고 `warnings(DIALOGUE)`
+- `review_story`: 검토 모델이 `CLUE_LOGIC`·`ANSWER_HINT`·`GRADE_VOCAB`·`STANDARD_FIT`·`SAFETY` 다섯 항목을 본다. `CLUE_LOGIC`·`ANSWER_HINT`·`SAFETY` `FAIL`은 사유를 넣어 줄거리부터(미션·대화 다섯 요일 모두 새로), `STANDARD_FIT`·`GRADE_VOCAB` `FAIL`은 그 요일(요일이 없으면 다섯 요일) 미션·대화만 다시 만들고 다시 검토한다. 항목 형식이 틀리면 검토만 다시. 재검토 상한(2)을 넘거나 마감이 가까우면 `failure.stage = REVIEW`, 마지막 검토의 `WARN`은 `warnings(REVIEW)`
+- `previousFailures` 반영: `THEME`·`REVIEW` 사유는 첫 줄거리 생성부터, `MISSION` 사유(`"<요일> <검사 코드> <자세히>"`)는 그 요일 미션 생성마다(요일이 없으면 다섯 요일) 넣는다. `IMAGE` 사유는 아직 넣지 않는다(넣는 방식 미정)
+- 그림: `gpt-image-2.6-sunburst`, 1536×864, medium. 테마 옷 뭉치 → 시작 1컷 첫 그림(인물 기준 그림) → 미션 그림 5장(`MON`~`FRI`)과 나머지 컷 첫 그림 7장을 [테마 옷 뭉치, 인물 기준 그림] 참조로 동시에 만든다(시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음). 응답 `INTRO`·`OUTRO` 그림은 4번째 컷 첫 그림. 프롬프트는 고정 스타일 + 뭉치(테마 옷) + 등장인물 모습 + 장면이고, 미션 그림은 그날 장면 메모·증거 발견 줄·미션 질문·생각 열기 질문(한국어 그대로, 가리키는 물건이 보이게)을 넣는다. 찾는 대상은 시작 1컷·종료 3·4컷에서만, 생각 풍선 없음. 그림마다 검토(`MUNGCHI`·`ANSWER_HINT`·`TEXT`·`SAFETY`·`SCENE_FIT`, 미션 그림은 `MISSION_FIT`). 영상 컷 검토는 `MORPH`·`ANSWER_HINT`·`TEXT`·`SAFETY`·`CONTINUITY`이고 `CONTINUITY`는 뭉치가 사건 대상(찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나 받는 장면(사람과 함께 잡아도)과 뭉치에게 팔·날개가 새로 생기는 것을 결함으로 보고, 차림 소품(돋보기·모자 등)을 쥐거나 지닌 것은 결함으로 보지 않는다(#535, 종료 3컷 규칙 '뭉치는 곁에서 지켜봄', 사용자 결정 2026-11-15 B안: 그림 검토 `MUNGCHI`와 같은 기준). 영상 생성 지시(`video_prompt`)·부정 조건(`VIDEO_NEGATIVE` "Mungchi grabbing or handing over objects")도 같은 기준: 첫 그림에 든 차림 소품은 그대로 들고, 새 물건·사건 대상을 집거나 건네지 않음(생성 쪽도 B안). 영상: `veo-3.1-fast-generate-001`, 720p·무음, 컷 4·6·8·6초, 컷 첫 그림만 고정(아래 그림체·영상 범위)
+- `ThemeStorage`(`storage.py`): 실행마다 ID를 만들어 `theme-drafts/{실행 ID}/{장면}.png`·`.mp4`로 올리고 키만 돌려준다(report-service `clients/storage.py` 패턴, boto3). 영상은 `INTRO`·`OUTRO`만
+- 그림체·뭉치·영상 범위(사용자 결정 2026-11-11): 2D 만화풍, 앱 솜뭉치 모양의 기본 뭉치 그림(`assets/`, 기준안)을 고쳐 테마 옷만 입힌 뒤(손에 소품 없음) 모든 그림의 첫 참조로 쓴다. 영상은 시작·종료만이고 장면마다 컷 4개(4·6·8·6초, 컷마다 장소·각도 다름)를 컷 첫 그림만 고정해 동시에 만든 뒤 0.5초 녹아드는 전환으로 이어 붙인다(`imageio-ffmpeg`, 22.5초). 둘 다 고정하면 비슷한 두 그림 사이를 억지로 이어 움직임이 흐물거리고 배경이 같아져(실측 2026-11-11) 첫 그림만 고정한다. 콘티(컷마다 장면·동작·문구)는 `plan_theme`이 내부 칸으로 함께 만든다. 실패한 컷만 다시 만들고, 설정이 꺼져 있거나 마감이 가까우면 영상을 건너뛰고 `warnings(VIDEO)`
+- `ImageClient`·`VideoClient`(`app/llm/media.py`, 이슈 작업 위치 `app/llm/`): 그림 생성(참조 그림 여러 장, OpenAI images edits)과 영상 생성(Veo 첫 그림 고정, 끝 그림은 선택, `negativePrompt`, 토큰은 Google 표준 자격 증명에서 만료 전 갱신 `GoogleTokenSource`, #538), 녹아드는 전환 이어 붙이기(`join_xfade`)·문구 시각(`xfade_caption_times`)·장면 뽑기(ffmpeg), 영상 크기(`size`, Veo 1280×720)와 끝내 실패한 컷을 대신하는 움직이는 그림 컷(`still_clip`, 첫 그림을 천천히 확대). 참조 그림이 없으면 `images.generate`. 시험은 가짜 구현
+- 움직임(형식 v1, `models.ThemeMotion`): `transition`·`camera`·`speakers{이름: {x, y, zoom}}`·`effects[]`(최대 2층)·`captions[{start, end, text}]`·`spots[{x, y, label, line, evidence}]`(요일 장면 살펴보기 2~3개, 증거 물건 1개, `checks.spots`가 맞춤, 2026-11-11 추가 선택 칸)(시작·종료 영상 문구). 좌표는 그림 %. 화자 위치는 생성 모델이 그림을 보고 정하고, 상한 밖 숫자는 `ThemeChecks.motion`이 맞추고 경고. 그림 입력은 `LlmClient.generate`의 선택 인자 `images`
+- 지식 검색(#470): `plan_theme` 앞 `retrieve` 노드와 `check_theme` 범위 확인 자리만 두고 기능 스위치(기본 꺼짐)로 막는다
+- 프롬프트: `prompts.py` 내장 `theme-draft@2`(생성·검토 묶음, #535에서 문구가 바뀌어 @1에서 올림), #68 레지스트리 이름 `themeDraft`·scope `ai/theme-draft`. 입력에 학생 정보 없음
+- 사용량: 글 생성·검토 `THEME_DRAFT`, 이미지 `THEME_IMAGE`, 영상 `THEME_VIDEO`. `THEME_VIDEO`는 `VeoVideoClient`가 컷 호출마다 1건(토큰 null), core #543(V45) 반영 뒤 #546부터 보냄
+
+### 5.6 추억 설명 (memory_explanation, #565)
+
+| 클래스 | 위치 | 책임 |
+|---|---|---|
+| `MemoryExplanationService` | `memory_explanation/service.py` | `memoryExplanation` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(사용량 `MEMORY_EXPLANATION`), `MEMORY_EXPLANATION_PROVIDER=fake`면 `fake.fake_generated`. LLM 실패 503, 형식 502, 검사 실패 422 |
+| `checks` | `memory_explanation/checks.py` | 모듈 함수 `check()`(문장 2~3개·빈 문장 → 형식, 근거 번호 없음·범위 밖·근거에 없는 인용 → 거부)와 `compose()`(문장 끝에 `[n]` 붙이고 `citations` 모음). 원문 없이 사유 코드만 로그 |
+| `EmbeddingService`·`EmbeddingClient` | `embedding/service.py`, `llm/embeddings.py` | 요청 `purpose`(`KNOWLEDGE`·`MEMORY`)로 사용량 `KNOWLEDGE_EMBEDDING`·`MEMORY_EMBEDDING`을 가름(#565). 벡터·재시도는 같음 |
+
+### 5.7 추억 검색 질의 변환 (memory_query, #679 설계, #681 구현)
+
+| 클래스 | 위치 | 책임 |
+|---|---|---|
+| `MemoryQueryService` | `memory_query/service.py` | `memoryQuery` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(출력 512토큰, 호출별 7초·재시도 없음, 사용량 `MEMORY_QUERY`), `MEMORY_QUERY_PROVIDER=fake`면 `fake.py`(공백 분리 키워드). 칸 규칙(키워드 0~5개·1~20자, `period` `from < to`, `searchText` 1~200자, `checks.py`) 위반·구조화 실패 502, LLM 실패 503. 원문 없이 사유 코드만 로그 |
+| `router` | `memory_query/router.py` | `POST /internal/memory-queries` 요청 검사(`query` 1~200자, `today` 날짜, 정의 밖 칸 400) 후 서비스 호출 (api-spec 4.2.7) |
+
 ---
 
 ## 6. scoring-service
@@ -1936,6 +2676,14 @@ classDiagram
     +score_cuts dict
     +predict(inputs) raw_scores
   }
+  class ModelSync {
+    <<service>>
+    +reset()
+    +start()
+    +offer(event_data)
+    +is_ready() bool
+    +stop()
+  }
   class ModelStartup {
     <<service>>
     +start()
@@ -1950,11 +2698,23 @@ classDiagram
   class ModelVersionConsumer {
     <<consumer>>
     +start()
-    +receive(message, startup)
+    +receive(message)
     +is_ready() bool
     +close()
   }
   class UsagePublisher { <<messaging>> }
+  class preflight_router {
+    <<router>>
+    +preflight(body) PreflightResult
+  }
+  class PreflightService {
+    <<service>>
+    +check(request) PreflightResult
+  }
+  class ModelLoadingReporter {
+    <<messaging>>
+    +start()
+  }
 
   m2_router --> M2Service
   m1_router --> M1Service
@@ -1966,15 +2726,22 @@ classDiagram
   ModelRegistry --> ModelLoader : 스레드풀 로딩
   ModelLoader --> S3ModelArtifacts
   versions_router --> ModelRegistry
-  ModelVersionConsumer --> ModelStartup : 큐 바인딩 후 시작·이벤트 전달
+  ModelVersionConsumer --> ModelSync : 소비 전 reset·바인딩 후 start·검증한 이벤트 offer
+  ModelSync --> ModelStartup : 구독 세션마다 새로 생성·scoring 대상만 전달
   M2Service --> UsagePublisher
   M1Service ..> UsagePublisher : 활성 추론 후속 연결
+  preflight_router --> PreflightService : core 중계 요청만
+  PreflightService --> S3ModelArtifacts : reader(파일 정보·작은 JSON 읽기)
+  ModelLoadingReporter --> ModelRegistry : Pod 전체 상태
+  ModelLoadingReporter --> UsagePublisher : model.loading.reported
 ```
 
 - `LoadedModel.predict`는 CPU 동기 추론 → `run_in_threadpool`로 호출해 이벤트 루프 차단 방지 (아키텍처 2.3)
 - 활성 범위 밖 학년·문항이면 `{active: false}` 반환. #88 현재 M1은 미학습으로 항상 비활성이며 추론·사용량 발행을 하지 않는다. 향후 M1 확신도 0.8 미만이면 scoring은 실수 위치를 제외하고 ai가 보류를 결정한다(P15).
 - 가중치는 S3 `artifact_uri`에서 로딩, 승인된 버전만 (아키텍처 5장)
-- #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. #87은 m2 라우터·M2Service·사용량 발행, #88은 M1 미학습 비활성 계약을 제공한다.
+- #85 구현: 레지스트리·S3 로더·versions 라우터. `get(name, scope)`는 승인 범위를 검사한 모델만 반환한다. #86은 `ModelVersionConsumer`·`ModelStartup`으로 이벤트 보존·재연결·모델 교체를 연결한다. #632에서 세션별 `ModelStartup` 생성과 scoring 대상 필터를 `ModelSync`(service)로 옮겨 소비자는 구독·재연결·봉투 검증·`ModelSync.offer`·ACK만 맡는다(ai #254 `PromptSync`와 같은 구조). #87은 m2 라우터·M2Service·사용량 발행, #88은 M1 미학습 비활성 계약을 제공한다.
+- #368 `preflight.py`: core만 부르는 `POST /internal/models/preflight`(router·`PreflightService`). 설정 버킷의 `models/` 경로 파일 존재·크기·SHA-256과 메타데이터를 검사하고 모델을 로딩하지 않는다 (api-spec 5.2.1). S3 요청·체크섬 해석·저장소 오류 변환(`ArtifactError`)은 `clients/model_artifacts.py`의 `reader`가 맡고, `PreflightService`는 크기·해시·모델 구조 판정만 한다. router·service·요청/응답 모델을 한 파일에 두는 구성은 유지하기로 했다(아키텍처 2.4, #608)
+- #370 `model_loading_reporter.py`: `ModelLoadingReporter`가 `ModelRegistry` 상태를 기동·변화 즉시와 30초 주기로 `model.loading.reported`에 담아 별도 `EventPublisher` 인스턴스(`messaging/publisher.py`, 그림은 `UsagePublisher`로 묶음)로 발행한다. 발행 실패는 로딩과 분리된다 (core 소비는 3.5)
 
 ---
 
@@ -2002,6 +2769,9 @@ classDiagram
   class NarrativeGenerator {
     +generate(command, report) GenerationResult
   }
+  class ExplanationGenerator {
+    +generate(command, report) GenerationResult
+  }
   class RenderingGenerator {
     +generate(command, report) GenerationResult
   }
@@ -2017,6 +2787,7 @@ classDiagram
     +state ReportState
     +inclusion_rule str
     +items tuple~ReportItem~
+    +explanation_state str
   }
   class ReportVerifier {
     <<service>>
@@ -2058,11 +2829,13 @@ classDiagram
   class LearningClient {
     <<client>>
     +records(student_id, period) LearningRecords
+    +explanation_attempts(student_id, period) tuple
     +evidence(student_id, links) tuple
   }
   class AiClient {
     <<client>>
     +narrative(request) NarrativeResponse
+    +explanation(payload, timeout) ExplanationResponse
   }
   class ObjectStorage {
     <<client>>
@@ -2108,7 +2881,10 @@ classDiagram
   NamedGenerator --> CoreClient : 학생 별명
   NamedGenerator --> RenderingGenerator : R4
   GenerationService --> JobLocks
-  RenderingGenerator --> NarrativeGenerator : R3
+  RenderingGenerator --> ExplanationGenerator : 설명 (#479)
+  ExplanationGenerator --> NarrativeGenerator : R3
+  ExplanationGenerator --> LearningClient : M2 점수 기록·원문 대조
+  ExplanationGenerator --> AiClient : 대표 답변 설명
   NarrativeGenerator --> RecordGenerator : R2
   RecordGenerator --> LearningClient
   RecordGenerator --> MetricsCalculator
@@ -2137,6 +2913,7 @@ classDiagram
 | `RecordGenerator`, `GenerationResult`·`ReportItem` | `generation/record_generator.py`·`models.py` | report-worker (R2 계산 결과를 종료 트랜잭션으로 전달) |
 | `LearningClient` | `clients/learning_client.py` | worker/API (`records`는 세 조회 정규화, `evidence`는 현재 원문·버전·삭제 대조) |
 | `NarrativeGenerator`, `RenderingGenerator`, `JobLocks` | `generation/narrative_generator.py`·`locking.py`, `rendering/generator.py` | report-worker |
+| `ExplanationGenerator` | `generation/explanation_generator.py` | report-worker (주간 설명, #479·#508) |
 | `ReportRenderer` | `rendering/renderer.py` (Jinja2 → HTML, Playwright → PDF, Markdown) | report-worker |
 | `OutboxRelay`, `OutboxRepository` | `outbox/` | report-worker (서비스의 종료 트랜잭션이 `OutboxRepository.add` 호출) |
 | `StudentDeletedConsumer`, `DeletionService` | `deletion/` | report-worker |
@@ -2147,10 +2924,59 @@ classDiagram
 - `GenerationService.generate`: `job_id`로 기존 행 조회 → 없으면 `RUNNING` 생성, `COMPLETED·FAILED`면 ACK만, `RUNNING`이면 같은 행으로 재실행. 기록 없음·표본 부족은 `COMPLETED + state`, 실패는 `FAILED` (FN-RPT-11)
 - `query_router`·`QueryService`: 모든 조회에서 리포트의 `student_id`가 `X-Student-Scope`에 있는지 검사, 없으면 403 (API 4장)
 - 수치·전후 변화는 `MetricsCalculator`(코드)에서만 계산, ai는 서술·저녁 질문만 (FN-RPT-03, 05)
-- `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)은 ai 호출 생략 (P06·P13)
+- `ReportVerifier`: 서술 속 숫자·인용을 계산 결과·learning 원문과 대조, 실패 시 서술을 템플릿 요약으로 교체(`narrative.source = TEMPLATE`, P16). `NO_RECORD`·무료 플랜(`narrativeEnabled = false`)·일일 리포트(`periodType = DAILY`)는 ai 호출 생략 (P06·P13)
+- 설명 단계(#479, #508): `ExplanationGenerator`가 `NarrativeGenerator` 뒤·`RenderingGenerator` 앞에서 실행(파이프라인 Record → Narrative → Explanation → Rendering). `LearningClient.explanation_attempts()`(`includeModelScores=true`)로 M2 점수가 있는 답변을 최신순으로 받고, 생각 유형마다 최신 답변부터 자격(정정·빈 답변·학년·입력 유형·점수 형식)과 원문 대조를 확인하며 실패하면 같은 유형의 다음 답변을 시도한다. 유형당 `AiClient.explanation()`은 결과와 관계없이 최대 1회, 최대 3유형. 검사 통과분만 `ReportItem(EXPLANATION)`이며 `GenerationResult.explanation_state`는 하나라도 통과하면 `INCLUDED`, M2 점수 답변이 없으면 `NO_TARGET`, 그 밖에는 `NOT_INCLUDED`. 실패·시간 초과·미활성은 리포트 실패로 바꾸지 않는다 (FN-RPT-09, P16, api-spec 3.4·4.2.3)
+
+### 7.1 리포트 기간 종류 (report #391 구현 · core #390 연동)
+
+2026-11-06 결정의 report 부분은 #391에서 구현했다. core 스케줄·알림(#390)은 구현했고 대화(#392)도 구현했으며 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+
+```mermaid
+classDiagram
+  direction LR
+  class ReportScheduler {
+    <<scheduler>>
+    +generateWeekly()
+    +generateDaily()
+  }
+  class ReportJobService {
+    <<service>>
+    +scheduleWeekly(periodFrom, periodTo)
+    +scheduleDaily(day)
+  }
+  class ConversationService {
+    <<service>>
+    +createForReport(childId, reportId) Conversation
+  }
+  class GenerationService {
+    <<service>>
+    +generate(command)
+  }
+  class DailyReportBuilder {
+    <<module>>
+    +build(records, sharing, learning) GenerationResult
+  }
+  class ThemeSummaryBuilder {
+    <<module>>
+    +build(studentId, period) ThemeSummary
+  }
+
+  ReportScheduler --> ReportJobService
+  GenerationService --> RecordGenerator
+  RecordGenerator --> DailyReportBuilder : periodType = DAILY
+  RecordGenerator --> ThemeSummaryBuilder : periodType = WEEKLY
+```
+
+- core(#390 구현): `WeeklyReportScheduler`·`DailyReportScheduler`가 각자 ShedLock으로 `ReportScheduleService.generate(at, periodType)`을 부르고, `ReportJobService.scheduled(parent, child, ReportPeriod)`가 보호자가 연결된 자녀별 작업 + Outbox를 저장한다(정기 부분 UK `(student_id, period_type, period_from)`). 기간 종류는 domain `ReportPeriodType`(`DAILY`·`WEEKLY`)과 `ReportPeriod(from, to, type)`이며 일일은 서술 없음(`narrative = false`)이라 상품 권한을 조회하지 않는다. 일일 상세 원문 제공 여부는 `ReportEntitlementService.dailyDetailEnabled` 한 곳에서 정한다
+- report-service `GenerationService`(7장)는 `periodType`으로 분기. `DailyReportBuilder`는 ai 서술 호출 없이 템플릿만 구성하고 기존 대조·렌더링을 재사용
+- core(#392 구현): `ConversationService.createForReport`는 `ReportJobRepository.byReport`로 일일·같은 자녀를 확인하고 `ReportQueryService.pinned`(최신 판)로 완료 여부를 본 뒤 기존 `create`와 같은 대화를 만들고 기간을 그날로 고정, `conversation.report_id`·`report_revision` 저장. 메시지마다 `ConversationService.report`가 `ReportQueryService.pinned(reportId, revision)`(열람 기록 없음)으로 그 판을 읽어 ai 요청 `report`에 개수·판정 요약으로 전달. ai는 `AnalysisRequest.report`(`ReportSummary`)를 답변 프롬프트 `[고정 리포트]`와 숫자 대조 허용값에 넣는다
+- report `ReportRepository`의 revision 잠금·UK 단위는 `(student_id, period_type, period_from)`
 
 ---
 
+
+- 테마 소비는 코드(`app/config.py` `report_theme_summary_enabled`)·kind `report-worker` 값 모두 `REPORT_THEME_SUMMARY_ENABLED=true`가 기본이다. 단, Docker Compose(`compose.yaml`)는 `${REPORT_THEME_SUMMARY_ENABLED:-false}`로 꺼 두므로 로컬 Compose에서 주간 테마 요약을 보려면 `.env`에서 켠다(기본값 통일은 별도 정리 이슈). #385/#391 learning을 먼저 배포한다. false는 새 주간 요약만 생략하는 복귀 설정이며 조회 오류를 참여 없음으로 바꾸지 않는다.
+
 ## 8. 확인 필요 가정
-- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작·피드백 한도는 미구현이며 #210 결정에 따라 PostgreSQL로 구현 예정(담당 클래스는 구현 시 `usage/`에 추가)
+- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작 한도는 #387에서 `ProductEntitlementService.missionStart`·`usage/MissionUsageService`·`mission_daily_usage`(#210 PostgreSQL 결정)로 구현했다(당시 무료 `THEME_DAY`·`EXTRA` 합쳐 하루 1개). 2026-11-10 개정(core #485)부터 무료 테마 문제는 한도가 없고 무료 `EXTRA`는 403 `PREMIUM_REQUIRED`라, 이 한도는 무료 상품에서 `EXTRA`를 다시 켠 경우에만 쓰인다. 피드백 한도는 미구현. 생각 유형별 미션 고르기(`EXTRA`)는 무료 상품에서 꺼진 동안 프리미엄 사용(`EXTRA_MISSION`) 기록
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정

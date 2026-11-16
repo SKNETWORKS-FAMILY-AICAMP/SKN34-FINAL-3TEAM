@@ -114,7 +114,7 @@ class RefundService(private val repository: PaymentRepository,private val tx: Pa
                 result is PgResult.Found && result.payment.status=="CANCELED" && result.payment.balanceAmount==0 -> {
                     check(repository.saveRefund(current.copy(status="COMPLETED",pgStatus="CANCELED"))==1)
                     check(repository.savePayment(p.copy(status="REFUNDED",canceledAt=tx.now(),entitlementStatus="APPLIED",updatedAt=tx.now()))==1)
-                    order.subscriptionId?.let { repository.subscription(it)?.let { s -> repository.saveSubscription(tx.cancelSubscription(s)) } }
+                    order.subscriptionId?.let(tx::cancelRefundedSubscription)
                     check(repository.finishAttempt(attempt.id,"CANCELED",null,null,tx.now())==1)
                     payments.notify(order,"PAYMENT_CHANGED","REFUNDED")
                     payments.notify(order,"SUBSCRIPTION_CHANGED","REFUNDED")

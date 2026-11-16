@@ -1,6 +1,7 @@
 import { ApiError, apiFetch, setAccessToken } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Child, Session } from '../../domain/classroom.ts'
+import { isStoredGrade } from '../../domain/grade.ts'
 import type { GuardianPasswordState, Pairing, StudentDevice, StudentProfile } from '../../domain/studentDevice.ts'
 
 const contractError = (detail: string): never => {
@@ -19,10 +20,7 @@ const item = (id: string) => encodeURIComponent(id)
  * `credentials: 'same-origin'`으로 브라우저가 알아서 보낸다.
  */
 export const studentDeviceApi = {
-  // #45: proof is bound to this session, PIN_CHANGE and exactly one child.
-  startPinReauth: (childId: string) => apiFetch<{ challengeId: string; authorizationUrl: string; expiresAt: string }>(
-    '/me/reauth', json({ purpose: 'PIN_CHANGE', childId })),
-  finishPinReauth: (challengeId: string) => apiFetch<{ reauthToken: string; expiresAt: string }>(
+  finishGuardianReauth: (challengeId: string) => apiFetch<{ reauthToken: string; expiresAt: string }>(
     '/me/reauth', json({ challengeId })),
   // 보호자 비밀번호: 학생 화면에서 잠긴 학부모 화면으로 돌아올 때 쓴다 (FN-ACC-05). 재인증은 계정 단위다.
   startGuardianReauth: () => apiFetch<{ challengeId: string; authorizationUrl: string; expiresAt: string }>(
@@ -51,11 +49,8 @@ export const studentDeviceApi = {
   },
   revoke: (deviceId: string) =>
     apiFetch<void>(`/student-devices/${item(deviceId)}`, { method: 'DELETE' }),
-  setPin: (childId: string, pin: string, reauthToken: string) =>
-    apiFetch<void>(`/children/${item(childId)}/pin`, {
-      ...json({ pin }, 'PUT'),
-      headers: { 'Content-Type': 'application/json', 'X-Reauth-Token': reauthToken },
-    }),
+  setPin: (childId: string, pin: string) =>
+    apiFetch<void>(`/children/${item(childId)}/pin`, json({ pin }, 'PUT')),
 
   // ── 자녀 기기 ───────────────────────────────────────
   register: (pairingCode: string, label: string) =>
@@ -81,17 +76,17 @@ export const studentDeviceApi = {
     if (raw.role !== 'STUDENT' || typeof raw.accessToken !== 'string')
       return contractError('학생 세션 role·accessToken이 필요합니다.')
     const c = raw.child ?? {}
-    const grade = Number(c.grade)
-    if (c.childId !== childId || typeof c.nickname !== 'string' || !(grade >= 3 && grade <= 6))
+    const grade = c.grade
+    const birthYear = c.birthYear
+    if (c.childId !== childId || typeof c.nickname !== 'string' || !isStoredGrade(grade) || typeof birthYear !== 'number' || !Number.isInteger(birthYear) || birthYear < 1900 || birthYear > new Date().getFullYear())
       return contractError('로그인한 자녀 정보가 요청과 다릅니다.')
     setAccessToken(raw.accessToken, 'STUDENT')
     const child: Child = {
       id: childId,
       nickname: c.nickname,
       grade,
-      // PIN 로그인 응답(API 명세 3.11)에는 출생연도가 없다. 학생 화면은 쓰지 않으므로 0으로 둔다.
-      birthYear: Number(c.birthYear ?? 0),
-      plan: c.plan === 'PREMIUM' || c.plan === 'FREE' ? c.plan : undefined,
+      // StudentDeviceToken의 필수 필드만 사용한다. 이용권은 이 응답에 포함되지 않는다 (#423).
+      birthYear,
     }
     return { role: 'STUDENT', entry: 'DEVICE', child }
   },

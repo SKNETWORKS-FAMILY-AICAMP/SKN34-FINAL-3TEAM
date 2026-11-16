@@ -1,124 +1,136 @@
+import { Link } from 'react-router'
 import { analysisResultLabel } from '../../domain/parent.ts'
 import { useEffect, useRef, useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
-import { useQueryClient } from '@tanstack/react-query'
 import type { Child } from '../../domain/classroom.ts'
-import type { Scope, StreamState, ConversationMessage, Evidence } from '../../domain/parent.ts'
+import type { Scope, StreamState, ConversationMessage, Conversation, Evidence } from '../../domain/parent.ts'
 import { parentApi } from '../../data/parent/api.ts'
-import { useParentQuery } from '../../data/parent/queries.ts'
+import { useConversationRequests, useParentQuery } from '../../data/parent/queries.ts'
+import { knownEntitlement, useChildEntitlement } from '../../data/payment/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { QueryFeedback, MetricCards, EvidenceItems } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { ReportTemplateEditor } from './ReportTemplateEditor.tsx'
+import type { ReportContext } from './ParentInsights.tsx'
+import type { ReportAnswer } from '../../domain/reportHighlight.ts'
 export function ParentConversation({
   child,
   scope,
   onScope,
+  canReadOriginals = false,
+  report,
+  onClearReport,
+  onAnswer,
+  selectedMessageId,
 }: {
+  canReadOriginals?: boolean
   child: Child
   scope: Scope
   onScope: (scope: Scope) => void
+  report?: ReportContext
+  onClearReport?: () => void
+  onAnswer?: (answer: ReportAnswer | null, reveal?: boolean) => void
+  selectedMessageId?: string
 }) {
-  const cache = useQueryClient(),
+  const requests = useConversationRequests(),
     list = useParentQuery(['conversations', child.id], (signal) =>
       parentApi.conversations(child.id, signal),
+      canReadOriginals && !report,
     ),
     [id, setId] = useState<string | null>(null),
     detail = useParentQuery(
       ['conversation', child.id, id],
       (signal) => parentApi.conversation(id!, signal),
-      !!id,
+      !!id && canReadOriginals,
     )
   const [question, setQuestion] = useState(''),
     [state, setState] = useState<StreamState>({ phase: 'IDLE', temporary: '' }),
     [error, setError] = useState<unknown>(null),
     [proof, setProof] = useState<{ conversationId: string; messageId: string } | null>(null),
-    controller = useRef<AbortController | null>(null),
-    active = useRef(true),
+    conversationRef = useRef<Conversation | null>(null),
     [lastQuestion, setLastQuestion] = useState(''),
-    [startingTemplate, setStartingTemplate] = useState(false)
+    [startingTemplate, setStartingTemplate] = useState(false),
+    [templateOpen, setTemplateOpen] = useState(false)
+  // 이용권은 entitlement로만 판단한다(#602). 조회 전·실패면 막지 않고 서버 응답을 따른다.
+  const entitlement = knownEntitlement(useChildEntitlement(child.id)),
+    conversationOff = entitlement?.conversationEnabled === false
+  // 대화 생성·SSE·취소·캐시 갱신은 data 훅이 맡는다(#606). 화면을 떠나면 진행 중 답변 생성을 취소한다.
   useEffect(() => {
-    active.current = true
-    return () => {
-      active.current = false
-      controller.current?.abort()
-    }
-  }, [])
+    if (!canReadOriginals) requests.abort()
+  }, [canReadOriginals, requests])
   async function ask(selectedScope?: Scope, retry?: ConversationMessage, example?: string) {
     const confirmedScope =
       selectedScope ??
       state.result?.scope ??
       (detail.data ? { ...detail.data.period, childId: child.id } : scope)
     const text = example ?? retry?.question ?? (state.phase === 'CLARIFICATION' && !question.trim() ? lastQuestion : question)
-    if (!text.trim() || child.plan === 'FREE') return
-    controller.current?.abort()
-    const abort = new AbortController()
-    controller.current = abort
+    if (!text.trim() || conversationOff || !canReadOriginals) return
     setError(null)
+    onAnswer?.(null)
     setLastQuestion(text)
     setState({ phase: 'RUNNING', temporary: '' })
     try {
-      let conversationId = id
-      if (!conversationId) {
-        const c = await parentApi.create(confirmedScope)
-        if (!active.current || abort.signal.aborted) return
-        conversationId = c.conversationId
-        setId(conversationId)
+      const done = await requests.ask({
+        conversationId: id, target: target(confirmedScope), text, scope: confirmedScope, retryId: retry?.messageId,
+        onCreated: (c) => { conversationRef.current = c; setId(c.conversationId) },
+        onState: setState,
+      })
+      if (!done) return
+      const { conversationId, result } = done
+      if (result) {
+        const context = detail.data?.conversationId === conversationId ? detail.data : conversationRef.current
+        onAnswer?.({ conversationId, message: { ...result, question: text, status: 'COMPLETED' }, reportId: context?.reportId, reportRevision: context?.reportRevision })
       }
-      await parentApi.message(
-        conversationId,
-        text,
-        confirmedScope,
-        (s) => {
-          if (active.current && !abort.signal.aborted) setState(s)
-        },
-        abort.signal,
-        retry?.messageId,
-      )
-      if (!active.current || abort.signal.aborted) return
       setQuestion('')
-      void cache.invalidateQueries({ queryKey: ['parent', 'conversation'] })
-      void cache.invalidateQueries({ queryKey: ['parent', 'conversations'] })
     } catch (e) {
-      if (!active.current || abort.signal.aborted) return
       setError(e)
       setState((previous) => ({ ...previous, phase: 'FAILED', temporary: '', result: undefined }))
-      void cache.invalidateQueries({ queryKey: ['parent', 'conversation'] })
     }
   }
+  /** 일일 리포트에서 시작한 대화는 그 리포트에 고정한다. */
+  function target(confirmedScope: Scope) {
+    return { childId: child.id, scope: confirmedScope, dailyReportId: report?.periodType === 'DAILY' ? report.reportId : undefined }
+  }
   function open(conversationId: string) {
-    controller.current?.abort()
+    requests.abort()
+    onAnswer?.(null); conversationRef.current = null
     setId(conversationId)
     setState({ phase: 'IDLE', temporary: '' })
     setError(null)
   }
   async function startTemplate() {
-    if (startingTemplate || child.plan === 'FREE') return
-    const abort = new AbortController()
-    controller.current?.abort(); controller.current = abort
+    if (startingTemplate || conversationOff || !canReadOriginals) return
     setStartingTemplate(true); setError(null)
+    onAnswer?.(null)
     try {
-      const conversation = await parentApi.create(scope)
-      if (!active.current || abort.signal.aborted) return
+      const conversation = await requests.start(target(scope))
+      if (!conversation) return
       setId(conversation.conversationId)
-      void cache.invalidateQueries({ queryKey: ['parent', 'conversations'] })
+      conversationRef.current = conversation
     } catch (e) {
-      if (active.current && !abort.signal.aborted) setError(e)
-    } finally { if (active.current) setStartingTemplate(false) }
+      setError(e)
+    } finally { setStartingTemplate(false) }
   }
   const messages = detail.data?.childId === child.id && !detail.error ? detail.data.messages : [],
     pending = state.phase === 'RUNNING'
+  if (!canReadOriginals) return <section className="ws-stack"><header><h2>AI 챗봇</h2><p>학습 기록을 바탕으로 궁금한 점을 질문하는 대화입니다.</p></header><div className="parent-private-records" role="note"><h2>답변 원문이 비공개여서 기록 분석 질문은 잠시 쉬어요</h2><p>학습 현황과 리포트의 수치는 계속 볼 수 있습니다. 원문을 분석하는 대화는 아이가 공개한 뒤 이용할 수 있습니다.</p><div className="ws-actions"><Link to={`/parent/journal?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">학습 현황 보기</Link><Link to={`/parent/report?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">리포트 보기</Link></div></div></section>
   return (
     <>
-      <h1>기록에 물어보기</h1>
+      <header className="parent-page-head">
+      <h2>AI 챗봇</h2>
+      <p>학습 기록에 대해 궁금한 점을 질문하고 답변의 근거를 확인하세요. 리포트는 정해진 주기로 자동 생성됩니다.</p>
       <p>
         {child.nickname} · 선택 기간 {scope.from} ~ {scope.to}
       </p>
-      <div className="ws-grid">
+      </header>
+      <div className="pc-layout">
         <aside className="ws-card">
-          <h2>이전 대화</h2>
-          <QueryFeedback query={list} />
-          {list.data &&
+          <h3>{report ? '질문에 연결한 리포트' : '이전 대화'}</h3>
+          {report && <div role="note"><p>{report.periodType === 'DAILY' ? '일일' : '주간'} 리포트 · {report.period.from} ~ {report.period.to}</p>
+            {report.periodType === 'DAILY' && <p>대화 시작 시 최신 리포트 판과 해당 날짜로 연결됩니다.</p>}
+            <button className="cj-secondary" onClick={onClearReport}>전체 기록으로 질문하기</button></div>}
+          {!report && <QueryFeedback query={list} />}
+          {!report && list.data &&
             !list.error &&
             list.data.items.map((c) => (
               <button
@@ -132,7 +144,8 @@ export function ParentConversation({
           <button
             className="cj-secondary"
             onClick={() => {
-              controller.current?.abort()
+              requests.abort()
+              onAnswer?.(null); conversationRef.current = null
               setId(null)
               setState({ phase: 'IDLE', temporary: '' })
               setError(null)
@@ -143,9 +156,6 @@ export function ParentConversation({
         </aside>
         <section className="ws-stack">
           {id && <QueryFeedback query={detail} />}
-          {child.plan !== 'FREE' && (id
-            ? <ReportTemplateEditor key={id} conversationId={id} />
-            : <button className="cj-secondary" disabled={pending || startingTemplate} onClick={() => { void startTemplate() }}>리포트 설정 대화 시작</button>)}
           {messages.map((m) => (
             <article className="ws-card" key={m.messageId}>
               <h3>보호자의 질문</h3>
@@ -156,7 +166,7 @@ export function ParentConversation({
                   {m.retryable && (
                     <button
                       className="cj-secondary"
-                      disabled={pending}
+                      disabled={!canReadOriginals || pending}
                       onClick={() => {
                         void ask(m.scope ?? scope, m)
                       }}
@@ -171,6 +181,9 @@ export function ParentConversation({
                 m.verification.quotesMatched && m.verification.contentAllowed !== false ? (
                 <>
                   <p>{m.answer}</p>
+                  {m.correctionNotice && (
+                    <p role="note">이 답변에 쓰인 판정 중 일부가 정정되었습니다.</p>
+                  )}
                   <ReportProblem targetType="ANALYSIS" targetId={m.messageId}/>
                   {m.scope && (
                     <p>
@@ -189,6 +202,10 @@ export function ParentConversation({
                     </p>
                   )}
                   {m.metrics && <MetricCards metrics={m.metrics} />}
+                  {onAnswer && <button className="cj-secondary" aria-pressed={selectedMessageId === m.messageId} disabled={pending}
+                    onClick={() => onAnswer({ conversationId: id!, message: m, reportId: detail.data?.reportId, reportRevision: detail.data?.reportRevision }, true)}>
+                    리포트 근거 위치 보기
+                  </button>}
                   <p>
                     출처 {m.source} · 조회 기록 {m.recordCount}건
                   </p>
@@ -223,8 +240,8 @@ export function ParentConversation({
                   className="cj-secondary"
                   key={i}
                   onClick={() => {
-                    if (option.scope.childId !== child.id) {
-                      controller.current?.abort()
+                    if (option.scope.childId !== child.id || report?.periodType === 'DAILY' && (option.scope.from !== scope.from || option.scope.to !== scope.to)) {
+                      requests.abort()
                       onScope(option.scope)
                     } else {
                       void ask(option.scope)
@@ -247,13 +264,14 @@ export function ParentConversation({
                 : undefined
             }
           />
-          {child.plan === 'FREE' && (
+          {conversationOff && (
             <p className="ws-card">
-              이 자녀의 무료 플랜에는 분석 대화가 포함되지 않습니다. 대시보드와 수치 리포트는 확인할
-              수 있습니다.
+              {entitlement?.refundPending
+                ? '환불 검토 중에는 분석 대화를 이용할 수 없습니다. 대시보드와 수치 리포트는 확인할 수 있습니다.'
+                : '이 자녀의 무료 플랜에는 분석 대화가 포함되지 않습니다. 대시보드와 수치 리포트는 확인할 수 있습니다.'}
             </p>
           )}
-          {child.plan !== 'FREE' && (
+          {!conversationOff && (
           <form
             className="ws-card ws-form"
             onSubmit={(e) => {
@@ -272,12 +290,12 @@ export function ParentConversation({
                 required
               />
             </label>
-            <button className="cj-primary" disabled={pending || startingTemplate}>
-              기록으로 답변 받기
+            <button className="cj-primary" disabled={!canReadOriginals || pending || startingTemplate}>
+              질문 보내기
             </button>
             <ExampleQuestions
               childId={child.id}
-              disabled={pending || startingTemplate}
+              disabled={!canReadOriginals || pending || startingTemplate}
               onPick={(text) => {
                 // 현재 자녀·기간(대화 범위)을 그대로 두고 질문만 채워 보낸다.
                 setQuestion(text)
@@ -285,11 +303,16 @@ export function ParentConversation({
               }}
             />
             <small>
-              다른 화면으로 이동하면 스트림을 취소합니다. 임시 문장을 확정 답변으로 남기지
-              않습니다.
+              다른 화면으로 이동하면 답변 생성을 중단합니다. 저장된 대화는 이전 대화에서 다시 볼 수 있습니다.
             </small>
           </form>
           )}
+          {!conversationOff && <details className="pc-template" onToggle={event => setTemplateOpen(event.currentTarget.open)}>
+            <summary>리포트 표시 설정 변경</summary>
+            {templateOpen && (id
+              ? <ReportTemplateEditor key={id} conversationId={id} />
+              : <button className="cj-secondary" disabled={pending || startingTemplate} onClick={() => { void startTemplate() }}>리포트 설정 대화 시작</button>)}
+          </details>}
         </section>
       </div>
       {proof && (

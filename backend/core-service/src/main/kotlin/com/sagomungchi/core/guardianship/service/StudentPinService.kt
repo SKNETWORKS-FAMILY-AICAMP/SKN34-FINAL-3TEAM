@@ -2,9 +2,7 @@ package com.sagomungchi.core.guardianship.service
 
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
-import com.sagomungchi.core.account.domain.ReauthPurpose
 import com.sagomungchi.core.account.service.AccountManagementService
-import com.sagomungchi.core.account.service.ReauthenticationService
 import com.sagomungchi.core.guardianship.domain.*
 import com.sagomungchi.core.guardianship.repository.StudentPinRepository
 import org.springframework.http.HttpStatus
@@ -15,15 +13,14 @@ import java.util.UUID
 
 @Service
 class StudentPinService(private val repository: StudentPinRepository, private val hasher: PinHasher,
-    private val accounts: AccountManagementService, private val reauth: ReauthenticationService,
+    private val accounts: AccountManagementService,
     private val children: ChildAuthorizationService) {
     @Transactional
-    fun set(identity: AuthenticatedAccount, child: UUID, pin: String, token: String?) {
+    fun set(identity: AuthenticatedAccount, child: UUID, pin: String) {
         if(!PinRules.valid(pin)) throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,"VALIDATION_FAILED","PIN은 반복·연속되지 않는 숫자 4~6자리입니다.")
         accounts.lock(identity)
         children.requireCurrent(identity.account.id,child)
         checkNotNull(repository.find(child,true))
-        reauth.consume(identity,token,ReauthPurpose.PIN_CHANGE,child)
         repository.set(child,hasher.hash(pin),AccountManagementService.now())
         accounts.audit(identity.account.id,"STUDENT_PIN_CHANGED",child)
     }

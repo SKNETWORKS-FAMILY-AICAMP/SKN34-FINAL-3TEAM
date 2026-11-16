@@ -130,17 +130,18 @@ def test_http_versions_auth_and_health_do_not_query_core(monkeypatch):
     monkeypatch.setattr(bootstrap, "AmqpConnection", Broker)
 
     class Consumer:
-        def __init__(self, amqp, core, registry, retry_interval):
-            self.startup = ModelStartup(core, registry, retry_interval)
+        def __init__(self, amqp, sync, retry_interval):
+            self.sync = sync
 
         def start(self):
-            self.startup.start()
+            self.sync.reset()
+            self.sync.start()
 
         async def is_ready(self):
-            return await self.startup.is_ready()
+            return await self.sync.is_ready()
 
         async def close(self):
-            await self.startup.close()
+            await self.sync.stop()
 
     monkeypatch.setattr(bootstrap, "ModelVersionConsumer", Consumer)
     with TestClient(bootstrap.create_app()) as client:

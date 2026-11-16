@@ -49,6 +49,18 @@ spec:
               value: {{ printf "http://minio:%v" .Values.minio.servicePort | quote }}
             - name: WAIT_TIMEOUT_SECONDS
               value: {{ .Values.minio.initialization.waitTimeoutSeconds | quote }}
+{{- with .Values.minio.placeholderObjects }}
+{{- $objects := list }}
+{{- range . }}
+{{- $bucket := required "minio.placeholderObjects[].bucket must be set" .bucket }}
+{{- if not (has $bucket (values $buckets)) }}
+{{- fail (printf "minio.placeholderObjects bucket %s is not in minio.buckets" $bucket) }}
+{{- end }}
+{{- $objects = append $objects (printf "%s/%s" $bucket (required "minio.placeholderObjects[].key must be set" .key)) }}
+{{- end }}
+            - name: MINIO_PLACEHOLDER_OBJECTS
+              value: {{ join " " $objects | quote }}
+{{- end }}
             - name: HOME
               value: /tmp
           securityContext:

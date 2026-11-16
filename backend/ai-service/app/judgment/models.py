@@ -60,6 +60,7 @@ class JudgmentRequest(ApiModel):
     question: str | None = None  # M2 prompt·M1 problem
     keywords: list[str] = Field(default_factory=list)  # 서술 M2 핵심어 묶음
     essay_type: EssayType | None = None  # 논술 M2 글 종류
+    essay_labels: list[str] = Field(default_factory=list, max_length=4)
     answer_key: str | None = None  # M1 정답
     solution: Solution | None = None  # M1 학생 풀이
 
@@ -95,10 +96,33 @@ class M1Observation(ApiModel):
     model: ModelIdentity
 
 
+class M2Preparation(ApiModel):
+    rule_version: Literal["1112c"] = "1112c"
+    copied: int = Field(ge=0)
+    repeated: bool
+    chars: int = Field(ge=0)
+    labels_removed: int = Field(ge=0)
+    short: bool
+    truncated: bool = False
+    notices: list[
+        Literal[
+            "COPIED_REMOVED",
+            "REPEATED_REMOVED",
+            "SHORT_ANSWER",
+            "EMPTY_AFTER_CLEANING",
+            "ESSAY_TOO_SHORT",
+            "ESSAY_ORIGINALLY_SHORT",
+        ]
+    ] = Field(default_factory=list)
+
+
 class ModelScores(ApiModel):
     """judgment.model_scores에 그대로 저장하는 AI 관찰. 학생 화면에 보이지 않음."""
 
     m2: M2Observation | None = None
+    m2_preparation: M2Preparation | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     m1: M1Observation | None = None
     # scoring 실패로 교차 확인 없이 LLM 판정만 쓴 경우 사유 (#305). 정상이면 null
     skipped: CrossCheckSkipped | None = None

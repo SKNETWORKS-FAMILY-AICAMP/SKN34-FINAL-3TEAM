@@ -31,6 +31,10 @@ data class Subscription(val id: UUID, val parentUserId: UUID, val studentId: UUI
     val createdAt: OffsetDateTime, val updatedAt: OffsetDateTime, val productSnapshot: JsonObject?,
     val billingAnchorDay: Int?, val lastBillingAttemptDate: LocalDate?,val revision: Long=0) {
     override fun toString() = "Subscription(id=$id,status=$status)"
+    companion object {
+        /** state-diagram 6.2: `CANCELED`로 갈 수 있는 상태. `CANCELED`는 끝 상태라 다시 취소하지 않는다(#653). mapper `cancelSubscription`과 같은 목록 */
+        val CANCELABLE = setOf("ACTIVE", "RENEWAL_FAILED")
+    }
 }
 
 data class RefundRequest(val id: UUID, val paymentId: UUID, val requestedBy: UUID, val amount: Int,

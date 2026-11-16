@@ -41,7 +41,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
     @Autowired lateinit var retry: OperationRetryService
     @Autowired lateinit var operations: OperationsService
     @MockitoSpyBean lateinit var missionAudits: com.sagomungchi.core.admin.repository.MissionAuditRepository
-    @MockitoSpyBean lateinit var learningClient: com.sagomungchi.core.learning.client.LearningClient
+    @MockitoSpyBean lateinit var learningClient: com.sagomungchi.core._common.client.LearningClient
     @MockitoSpyBean lateinit var publisher: NotificationRedisPublisher
     private fun token(permission: String?="SERVICE_OPS",role: String="ADMIN"): Pair<UUID,String> {
         val user=account(jdbc,role,permission)
@@ -120,7 +120,23 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         mvc.get("/api/v1/admin/jobs?from=2026-01-01&to=2026-01-03&type=NOTIFICATION&status=FAILED&size=1") { header("Authorization","Bearer $access") }.andExpect { status { isOk() };jsonPath("$.items.length()") { value(1) } }
         mvc.get("/api/v1/admin/jobs?from=2026-01-01&to=2026-01-03&page=1001") { header("Authorization","Bearer $access") }.andExpect { status { isBadRequest() } }
         val audits=mvc.get("/api/v1/admin/audit-logs?targetId=$id&targetType=NOTIFICATION") { header("Authorization","Bearer $access") }.andExpect { status { isOk() } }.andReturn().response.contentAsString
-        assertFalse(audits.contains("secret"));assertFalse(audits.contains("detail"))
+        assertFalse(audits.contains("secret"));assertTrue(json.readTree(audits)["items"].all { it["detail"] == null || it["detail"].isNull })
+    }
+    @Test fun `model version audit query exposes only the approved operation fields`() {
+        val (actor,access)=token(); val target=UUID.randomUUID(); val previous=UUID.randomUUID()
+        val detail=json.writeValueAsString(mapOf("name" to "m2-klue-essay", "version" to "3.1",
+            "scopes" to listOf("judgment/grade-5/essay"), "reason" to "범위를 확인하고 승인",
+            "reanalysisPlanned" to true, "previousVersionId" to previous, "secret" to "private student text"))
+        jdbc.update("INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at) VALUES(?,?,'MODEL_ACTIVATE','MODEL_VERSION',?,'SUCCESS',CAST(? AS jsonb),CURRENT_TIMESTAMP)", UUID.randomUUID(),actor,target,detail)
+        val body=mvc.get("/api/v1/admin/audit-logs?targetId=$target&targetType=MODEL_VERSION") {
+            header("Authorization","Bearer $access")
+        }.andExpect {
+            status { isOk() }; jsonPath("$.items[0].detail.scopes[0]") { value("judgment/grade-5/essay") }
+            jsonPath("$.items[0].detail.reason") { value("범위를 확인하고 승인") }
+            jsonPath("$.items[0].detail.reanalysisPlanned") { value(true) }
+            jsonPath("$.items[0].detail.previousVersionId") { value(previous.toString()) }
+        }.andReturn().response.contentAsString
+        assertFalse(body.contains("secret")); assertFalse(body.contains("private student text"))
     }
     @Test fun `real Redis retry stores actual execution and audit and replays same key response`() {
         val (actor,access)=token();val id=notification(actor);val key=UUID.randomUUID()
@@ -171,7 +187,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
     @Test fun `conversation retry rejects invalid owner without fabricated execution`() {
         val (actor,access)=token();val student=UUID.randomUUID();val report=UUID.randomUUID();val conv=UUID.randomUUID();val message=UUID.randomUUID()
         jdbc.update("INSERT INTO student(id,nickname,grade,birth_year,is_demo,status,pin_failed_count,created_at,updated_at) VALUES(?,'synthetic',3,2017,false,'ACTIVE',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",student)
-        jdbc.update("INSERT INTO report_job(id,student_id,period_from,period_to,trigger,status,retry_count,created_at) VALUES(?,?,'2026-01-01','2026-01-07','SCHEDULE','FAILED',0,CURRENT_TIMESTAMP)",report,student)
+        jdbc.update("INSERT INTO report_job(id,student_id,period_type,period_from,period_to,trigger,status,retry_count,created_at) VALUES(?,?,'WEEKLY','2026-01-01','2026-01-07','SCHEDULE','FAILED',0,CURRENT_TIMESTAMP)",report,student)
         jdbc.update("INSERT INTO conversation(id,parent_user_id,student_id,period_from,period_to,created_at,updated_at) VALUES(?,?,?,'2026-01-01','2026-01-07',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",conv,actor,student)
         jdbc.update("INSERT INTO conversation_message(id,conversation_id,seq,question,scope_changed,status,retry_count,created_at) VALUES(?,?,1,'student secret',false,'FAILED',0,CURRENT_TIMESTAMP)",message,conv)
         mvc.post("/api/v1/admin/jobs/$message/retry") { header("Authorization","Bearer $access");header("Idempotency-Key",UUID.randomUUID()) }.andExpect { status { isForbidden() } }
@@ -409,6 +425,120 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         missionStatus=405;missionBody="not-json"
         val unsupported=draftCall("GET","/achievement-standards",access)
         assertEquals(503,unsupported.status);assertEquals("ADMIN_MISSIONS_UNAVAILABLE",json.readTree(unsupported.contentAsString)["code"].asText())
+    }
+    @Test fun `weekly theme proxy forwards every route with CONTENT and audits changes by theme`() {
+        val (admin,access)=token("CONTENT");val theme=UUID.randomUUID()
+        val routes=listOf(
+            Triple("GET","/weekly-themes?grade=G3&weekStart=2026-11-09&status=DRAFT","/internal/admin/weekly-themes"),
+            Triple("POST","/weekly-themes","/internal/admin/weekly-themes"),
+            Triple("GET","/weekly-themes/$theme","/internal/admin/weekly-themes/$theme"),
+            Triple("PUT","/weekly-themes/$theme","/internal/admin/weekly-themes/$theme"),
+            Triple("POST","/weekly-themes/$theme/review-request","/internal/admin/weekly-themes/$theme/review-request"),
+            Triple("POST","/weekly-themes/$theme/publish","/internal/admin/weekly-themes/$theme/publish"),
+            Triple("POST","/weekly-themes/$theme/unpublish","/internal/admin/weekly-themes/$theme/unpublish"))
+        val payload="""{"grade":"G3","weekStart":"2026-11-09","title":"합성 테마","intro":"도입","days":[]}"""
+        for((method,path,internal) in routes) {
+            missionStatus=if(method=="POST" && path=="/weekly-themes") 201 else 200
+            missionBody="""{"themeId":"$theme","status":"DRAFT","items":[]}"""
+            val response=draftCall(method,path,access,if(method=="GET") null else payload)
+            assertEquals(missionStatus,response.status,path)
+            val received=requests.last();assertEquals(method,received.method);assertEquals(internal,received.path)
+            assertEquals(admin.toString(),received.user);assertEquals("ADMIN",received.role);assertNull(received.scope)
+            if(method!="GET") { assertEquals(payload,received.body);assertNotNull(response.getHeader("X-Admin-Operation-Id")) }
+        }
+        val rows=jdbc.queryForList("SELECT action,target_type,target_id,result FROM audit_log WHERE actor_user_id=? AND action LIKE 'WEEKLY_THEME_%'",admin)
+        assertEquals(10,rows.size);assertTrue(rows.all { it["target_type"]=="WEEKLY_THEME" })
+        for(action in listOf("CREATE","UPDATE","REVIEW_REQUEST","PUBLISH","UNPUBLISH"))
+            assertEquals(listOf(theme,"SUCCESS"),rows.single { it["action"]=="WEEKLY_THEME_${action}_SUCCEEDED" }.let { listOf(it["target_id"],it["result"]) },action)
+        val (_,ops)=token("SERVICE_OPS");requests.clear()
+        for((method,path,_) in routes) assertEquals(403,draftCall(method,path,ops,if(method=="GET") null else "{}").status,path)
+        for(path in listOf("/weekly-themes?grade=G3_4","/weekly-themes?weekStart=2026-11-10","/weekly-themes?status=PRIVATE","/weekly-themes?size=101"))
+            assertEquals(400,draftCall("GET",path,access).status,path)
+        assertEquals(400,draftCall("POST","/weekly-themes",access,"[]").status)
+        assertTrue(requests.isEmpty())
+    }
+    @Test fun `weekly theme publish check failure keeps the learning code and hides supplier text`() {
+        val (admin,access)=token("CONTENT");val theme=UUID.randomUUID()
+        missionStatus=422;missionBody="""{"status":422,"code":"WEEKLY_THEME_PUBLISH_INCOMPLETE","detail":"student secret"}"""
+        val failed=draftCall("POST","/weekly-themes/$theme/publish",access,"{}")
+        assertEquals(422,failed.status);assertEquals("WEEKLY_THEME_PUBLISH_INCOMPLETE",json.readTree(failed.contentAsString)["code"].asText())
+        assertFalse(failed.contentAsString.contains("secret"))
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='WEEKLY_THEME_PUBLISH_REJECTED'",Int::class.java,admin))
+        missionStatus=404;missionBody="""{"status":404,"code":"NOT_FOUND","detail":"secret"}"""
+        val missing=draftCall("GET","/weekly-themes/$theme",access)
+        assertEquals(404,missing.status);assertEquals("주간 테마를 찾을 수 없습니다.",json.readTree(missing.contentAsString)["title"].asText())
+        missionStatus=200;missionBody="""{"themeId":"${UUID.randomUUID()}","status":"PUBLISHED"}"""
+        val mismatch=draftCall("POST","/weekly-themes/$theme/publish",access,"{}")
+        assertEquals(503,mismatch.status);assertEquals("LEARNING_INVALID_RESPONSE",json.readTree(mismatch.contentAsString)["code"].asText())
+    }
+    @Test fun `theme draft proxy forwards every route with CONTENT and verified admin headers only`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID();val theme=UUID.randomUUID()
+        val routes=listOf(
+            Triple("POST","/theme-drafts","/internal/admin/theme-drafts"),
+            Triple("GET","/theme-drafts?status=READY&source=AUTO","/internal/admin/theme-drafts"),
+            Triple("GET","/theme-drafts/$draft","/internal/admin/theme-drafts/$draft"),
+            Triple("POST","/theme-drafts/$draft/adopt","/internal/admin/theme-drafts/$draft/adopt"),
+            Triple("POST","/theme-drafts/$draft/discard","/internal/admin/theme-drafts/$draft/discard"),
+            Triple("POST","/theme-drafts/$draft/regenerate","/internal/admin/theme-drafts/$draft/regenerate"))
+        val payload="""{"grade":"G4","weekStart":"2026-11-16","topic":"합성 주제"}"""
+        for((method,path,internal) in routes) {
+            missionStatus=when { path.endsWith("/adopt") -> 201; method=="POST" && (path=="/theme-drafts" || path.endsWith("/regenerate")) -> 202; else -> 200 }
+            missionBody=if(path.endsWith("/adopt")) """{"themeId":"$theme","status":"DRAFT"}""" else """{"draftId":"$draft","status":"GENERATING","items":[]}"""
+            val response=draftCall(method,path,access,if(method=="GET") null else payload)
+            assertEquals(missionStatus,response.status,path)
+            val received=requests.last();assertEquals(method,received.method);assertEquals(internal,received.path)
+            assertEquals(admin.toString(),received.user);assertEquals("ADMIN",received.role);assertNull(received.scope)
+            if(method=="POST") { assertEquals(payload,received.body);assertNotNull(response.getHeader("X-Admin-Operation-Id")) }
+        }
+        val (_,ops)=token("SERVICE_OPS");requests.clear()
+        for((method,path,_) in routes) assertEquals(403,draftCall(method,path,ops,if(method=="GET") null else "{}").status,path)
+        assertTrue(requests.isEmpty())
+        for(path in listOf("/theme-drafts?status=PRIVATE","/theme-drafts?source=MANUAL","/theme-drafts?size=101","/theme-drafts?page=-1"))
+            assertEquals(400,draftCall("GET",path,access).status,path)
+        assertEquals(400,draftCall("POST","/theme-drafts",access,"[]").status)
+        assertTrue(requests.isEmpty())
+    }
+    @Test fun `theme draft request regenerate adopt discard audit the draft and adopted theme`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID();val renewed=UUID.randomUUID();val theme=UUID.randomUUID()
+        missionStatus=202;missionBody="""{"draftId":"$draft","status":"GENERATING","request":{"note":"private secret"}}"""
+        val requested=draftCall("POST","/theme-drafts",access,"""{"grade":"G5"}""")
+        assertEquals(202,requested.status);assertTrue(requested.contentAsString.contains("GENERATING"))
+        // 다시 생성은 learning이 새 초안을 만들어도 응답 draftId를 대상으로 남긴다
+        missionBody="""{"draftId":"$renewed","status":"GENERATING"}"""
+        assertEquals(202,draftCall("POST","/theme-drafts/$draft/regenerate",access,"{}").status)
+        missionStatus=201;missionBody="""{"themeId":"$theme","status":"DRAFT","missionIds":["${UUID.randomUUID()}"]}"""
+        assertEquals(201,draftCall("POST","/theme-drafts/$draft/adopt",access,"{}").status)
+        missionStatus=409;missionBody="""{"status":409,"code":"CONFLICT","detail":"private secret"}"""
+        val conflict=draftCall("POST","/theme-drafts/$draft/discard",access,"{}")
+        assertEquals(409,conflict.status);assertEquals("CONFLICT",json.readTree(conflict.contentAsString)["code"].asText());assertFalse(conflict.contentAsString.contains("secret"))
+        val rows=jdbc.queryForList("SELECT action,target_type,target_id,result,detail::text AS detail FROM audit_log WHERE actor_user_id=? ORDER BY created_at,action",admin)
+        fun row(action: String)=rows.single { it["action"]==action }
+        assertEquals(listOf(null,"THEME_DRAFT"),listOf(row("THEME_DRAFT_REQUEST_REQUESTED")["target_id"],row("THEME_DRAFT_REQUEST_REQUESTED")["target_type"]))
+        assertEquals(listOf(draft,"THEME_DRAFT","SUCCESS"),row("THEME_DRAFT_REQUEST_SUCCEEDED").let { listOf(it["target_id"],it["target_type"],it["result"]) })
+        assertEquals(listOf(renewed,"THEME_DRAFT","SUCCESS"),row("THEME_DRAFT_REGENERATE_SUCCEEDED").let { listOf(it["target_id"],it["target_type"],it["result"]) })
+        assertEquals(listOf(draft,"THEME_DRAFT"),listOf(row("THEME_DRAFT_ADOPT_REQUESTED")["target_id"],row("THEME_DRAFT_ADOPT_REQUESTED")["target_type"]))
+        val adopted=row("THEME_DRAFT_ADOPT_SUCCEEDED")
+        assertEquals(listOf(theme,"WEEKLY_THEME","SUCCESS"),listOf(adopted["target_id"],adopted["target_type"],adopted["result"]))
+        val detail=json.readTree(adopted["detail"].toString())
+        assertEquals(draft.toString(),detail["draftId"].asText());assertEquals(201,detail["httpStatus"].asInt())
+        assertEquals(listOf(draft,"THEME_DRAFT","FAILURE"),row("THEME_DRAFT_DISCARD_REJECTED").let { listOf(it["target_id"],it["target_type"],it["result"]) })
+        assertEquals(8,rows.size);assertFalse(rows.toString().contains("secret"))
+    }
+    @Test fun `theme draft results that do not name the draft or theme stay unknown and are not retried`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID()
+        for((path,body) in listOf("/theme-drafts/$draft/discard" to """{"draftId":"${UUID.randomUUID()}","status":"DISCARDED"}""",
+            "/theme-drafts" to """{"status":"GENERATING"}""", "/theme-drafts/$draft/regenerate" to """{"draftId":"$draft"}""",
+            "/theme-drafts/$draft/adopt" to """{"draftId":"$draft","status":"ADOPTED"}""")) {
+            requests.clear();missionStatus=200;missionBody=body
+            val response=draftCall("POST",path,access,"{}")
+            assertEquals(503,response.status,path);assertEquals("LEARNING_INVALID_RESPONSE",json.readTree(response.contentAsString)["code"].asText())
+            assertEquals(1,requests.size)
+        }
+        assertEquals(4,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action LIKE 'THEME_DRAFT_%_UNKNOWN'",Int::class.java,admin))
+        missionStatus=404;missionBody="""{"status":404,"code":"NOT_FOUND","detail":"student secret"}"""
+        val missing=draftCall("GET","/theme-drafts/$draft",access)
+        assertEquals(404,missing.status);assertEquals("테마 초안을 찾을 수 없습니다.",json.readTree(missing.contentAsString)["title"].asText())
+        assertFalse(missing.contentAsString.contains("secret"))
     }
     companion object {
         data class Seen(val method: String,val path: String,val body: String,val role: String?,val scope: String?,val token: String?,val user: String?)

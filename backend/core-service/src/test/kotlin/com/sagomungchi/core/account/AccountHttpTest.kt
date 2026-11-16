@@ -212,18 +212,17 @@ class AccountHttpTest : PostgresRepositoryTest() {
         assertEquals(1,count("SELECT count(*) FROM student_device WHERE id=? AND revoked_at IS NOT NULL",d.deviceId))
         assertEquals(1,count("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='STUDENT_DEVICE_REVOKED'",p.identity.account.id))
     }
-    @Test fun `PIN change checks rules first then ownership and reauth before saving`() {
+    @Test fun `PIN change requires active parent ownership but no additional reauthentication`() {
         val p=parent();val c=child(p.identity.account.id);val q=parent();val foreign=child(q.identity.account.id)
-        fun put(token: String,child: UUID,pin: String,reauthToken: String?=null)=mvc.put("/api/v1/children/$child/pin") {
-            bearer(token);reauthToken?.let { header("X-Reauth-Token",it) };contentType=MediaType.APPLICATION_JSON;content="{\"pin\":\"$pin\"}"
+        fun put(token: String,child: UUID,pin: String)=mvc.put("/api/v1/children/$child/pin") {
+            bearer(token);contentType=MediaType.APPLICATION_JSON;content="{\"pin\":\"$pin\"}"
         }
         put(p.accessToken,c,"1234").problem(422,"VALIDATION_FAILED")
-        put(p.accessToken,c,"4831").problem(403,"REAUTH_REQUIRED")
-        put(p.accessToken,c,"4831",grant(p.identity,ReauthPurpose.CHILD_UNLINK,c)).problem(403,"REAUTH_REQUIRED")
-        put(p.accessToken,foreign,"4831",grant(q.identity,ReauthPurpose.PIN_CHANGE,foreign)).problem(403,"CHILD_NOT_LINKED")
-        put(student(p,c),c,"4831",grant(p.identity,ReauthPurpose.PIN_CHANGE,c)).studentBlocked()
+        put(p.accessToken,foreign,"4831").problem(403,"CHILD_NOT_LINKED")
+        put(student(p,c),c,"4831").studentBlocked()
+        mvc.put("/api/v1/children/$c/pin") { contentType=MediaType.APPLICATION_JSON;content="{\"pin\":\"4831\"}" }.andExpect { status { isUnauthorized() } }
         assertFalse(pins.state(c).pinSet);assertFalse(pins.state(foreign).pinSet)
-        put(p.accessToken,c,"4831",grant(p.identity,ReauthPurpose.PIN_CHANGE,c)).andExpect { status { isNoContent() };header { string("Cache-Control","no-store") } }
+        put(p.accessToken,c,"4831").andExpect { status { isNoContent() };header { string("Cache-Control","no-store") } }
         assertTrue(pins.state(c).pinSet)
         assertEquals(1,count("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='STUDENT_PIN_CHANGED'",p.identity.account.id))
     }

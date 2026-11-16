@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router'
+import { EntitlementName } from './parent/EntitlementSummary.tsx'
 import { useSession } from './auth/sessionContext.ts'
 import './student/pinpad.css'
 import { roleStart } from '../domain/navigation.ts'
+import { gradeLabel } from '../domain/grade.ts'
 import { StudentWorld } from './student/world/StudentWorld.tsx'
 import type { StudentPage } from './student/world/StudentWorld.tsx'
-import { ThinkingMap } from './student/world/ThinkingMap.tsx'
+import { StudentHome } from './student/world/StudentHome.tsx'
 import { StudentMissions } from './student/world/StudentMissions.tsx'
 import { ThinkingActivitiesPage } from './student/world/ThinkingActivities.tsx'
 import { isThinkingType } from '../domain/studentLook.ts'
@@ -38,15 +41,33 @@ import {
 import { inputLabels, shortRange, thinkingLabels } from '../domain/classroom.ts'
 import type { Child, DemoScenario, Period, PublicAttempt } from '../domain/classroom.ts'
 import { ActivityPaper, Brand, ErrorNotice, Modal } from './shared/ClassroomParts.tsx'
-import { StudentSharingPage } from './student/StudentSharingPage.tsx'
+import { ApiError } from '../data/apiClient.ts'
+import { MissionGuide } from './student/world/MissionGuide.tsx'
+import { ThemeClues } from './student/world/ThemeClues.tsx'
+import { AnswerPick } from './student/world/AnswerPick.tsx'
+import { ThemeStory } from './student/world/ThemeStory.tsx'
+import { ThemeReview } from './student/world/ThemeReview.tsx'
+import { StudentCommunity } from './student/world/StudentCommunity.tsx'
+import { StudentSettings } from './student/world/StudentSettings.tsx'
+import { StudentRoom } from './student/world/StudentRoom.tsx'
+import { StudentAlbum, StudentEpisode } from './student/world/StudentAlbum.tsx'
+import { StudentPoints } from './student/world/StudentPoints.tsx'
+import { StudentCustomize } from './student/world/Customize.tsx'
+import { isCustomizeTab } from './student/world/lookShop.ts'
+import { StudentFriends } from './student/world/StudentFriends.tsx'
+import { StudentHelp } from './student/world/StudentHelp.tsx'
+import { StudentJournal, StudentJournalEntry } from './student/world/StudentJournal.tsx'
+import { endingDue } from '../domain/retention.ts'
+import type { AttemptContext } from '../domain/retention.ts'
+import { useFetchWeeklyTheme } from '../data/retention/queries.ts'
 import { StudentWorkPage } from './student/StudentWorkPage.tsx'
-import { ParentAnalysis, ParentReport } from './parent/ParentFeatures.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
 import { ParentUnlock } from './auth/ParentUnlock.tsx'
+import { ParentIdLogin } from './auth/ParentPasswordForms.tsx'
 
 const { recentPeriod, previousWeek } = displayPeriods
-type Page = 'home' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'settings'
+type Page = 'home' | 'room' | 'album' | 'journal' | 'missions' | 'report' | 'analysis' | 'activities' | 'community' | 'points' | 'settings' | 'customize' | 'friends' | 'help' | 'support' | 'notices' | 'notifications' | 'theme/intro' | 'theme/clues' | 'theme/pick' | 'theme/ending' | 'theme/review'
 export function ClassroomApp() {
   const auth = useAuthentication(),
     { session, setSession, selected, setSelected, expired, setExpired, scenario, setScenario } =
@@ -58,14 +79,26 @@ export function ClassroomApp() {
   const work = location.pathname.startsWith('/student/attempts/')
     ? location.pathname.split('/')[3]
     : null
-  const studentPage: StudentPage = (['home', 'missions', 'activities', 'settings'] as const).find((p) => p === page) ?? 'journal'
+  const studentPage: StudentPage = ([
+    'home', 'room', 'album', 'missions', 'activities', 'community', 'points', 'settings',
+    'customize', 'friends', 'help', 'support', 'notices', 'notifications', 'theme',
+  ] as const).find((p) => p === page) ?? 'journal'
+  // 주간 테마 화면 /student/theme/intro|clues|pick|ending|review (user-flow #589 2026-11-14 URL, #440·#487)
+  const themeView = (['intro', 'clues', 'pick', 'ending', 'review'] as const).find((v) => v === location.pathname.split('/')[3]) ?? 'clues'
+  // 꾸미기 탭 /student/customize?tab=theme|friend|wear|furniture (#648 기준안)
+  const customizeTab = new URLSearchParams(location.search).get('tab')
+  // 추억 앨범 회차 상세 /student/album/:themeId/:weekStart (P27, #561)
+  const [, , , episodeTheme, episodeWeek] = location.pathname.split('/').map((s) => { try { return decodeURIComponent(s) } catch { return s } })
+  const episode = studentPage === 'album' && episodeTheme && episodeWeek ? { themeId: episodeTheme, weekStart: episodeWeek } : null
   const typeFilter = new URLSearchParams(location.search).get('type')
   const setPage = (page: Page) => navigate(`/${session?.role.toLowerCase() ?? 'parent'}/${page}`)
   const setWork = (id: string | null) =>
     navigate(id ? `/student/attempts/${encodeURIComponent(id)}` : '/student/journal')
   const [detail, setDetail] = useState<PublicAttempt | null>(null)
-  const [period, setPeriod] = useState<Period>(recentPeriod),
-    [analysisPeriod, setAnalysisPeriod] = useState<Period>(recentPeriod)
+  const [period, setPeriod] = useState<Period>(recentPeriod)
+  const [startContext, setStartContext] = useState<AttemptContext | undefined>()
+  // 그 주 처음 '오늘 문제 풀기'를 누르면 시작 이야기를 먼저 보고 그 문제로 이어간다(user-flow 사용자 결정 2026-11-13·14)
+  const [introThen, setIntroThen] = useState<{ mission: import('../domain/classroom.ts').Mission; context: AttemptContext } | null>(null)
   const [instructions, setInstructions] = useState<import('../domain/classroom.ts').Mission | null>(
     null,
   )
@@ -81,6 +114,7 @@ export function ClassroomApp() {
         ? session.child
         : (children.data?.find((c) => c.id === selected) ?? children.data?.[0])
   const missions = useMissions(session?.role === 'STUDENT' ? child : undefined)
+  const fetchWeeklyTheme = useFetchWeeklyTheme(session?.role === 'STUDENT' ? child?.id : undefined)
   const records = useRecords(child, session?.role === 'STUDENT' ? 'STUDENT' : 'PARENT', period)
   const sourceRecord = usePublicRecord(session?.role === 'PARENT' ? child : undefined, evidenceId, period)
   const learning = useLearningActions()
@@ -118,10 +152,16 @@ export function ClassroomApp() {
       /* mutation 오류를 화면에 표시 */
     }
   }
+  /** 미션 안내 창을 연다. context(2.11)는 시작 버튼을 누를 때 함께 보낸다. */
+  function openMission(mission: import('../domain/classroom.ts').Mission, context?: AttemptContext) {
+    learning.start.reset()
+    setStartContext(context)
+    setInstructions(mission)
+  }
   async function start(mission: import('../domain/classroom.ts').Mission) {
     if (!child) return
     try {
-      const a = await learning.start.mutateAsync({ mission, child })
+      const a = await learning.start.mutateAsync({ mission, child, context: startContext })
       setWork(a.attemptId)
       setInstructions(null)
     } catch {
@@ -142,24 +182,20 @@ export function ClassroomApp() {
       : [
           { page: 'journal', label: '아이의 공책', icon: NotebookPen },
           { page: 'report', label: '주간 리포트', icon: BookOpen },
-          { page: 'analysis', label: '기록에 물어보기', icon: MessagesSquare },
+          { page: 'analysis', label: 'AI 챗봇', icon: MessagesSquare },
         ]
   const switchChild = (id: string) => {
     setSelected(id)
     setDetail(null)
     setEvidenceId(null)
     setSubject('all')
-    setAnalysisPeriod(recentPeriod)
     setMessage('')
   }
-  const evidence = (id: string) => setEvidenceId(id)
   return (
     <div id="class-journal">
-      <div className="ux-preview">
+      {isDemo && <div className="ux-preview">
         <span>
-          {isDemo
-            ? import.meta.env.VITE_PAYMENT_TEST === 'true' ? '결제 테스트 모드 · 학습 데이터는 가상 · 토스 테스트 결제 연동' : 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'
-            : 'API 연결 모드 · core 공개 API만 호출 · 오류 시 예시 데이터 대체 없음'}
+          {import.meta.env.VITE_PAYMENT_TEST === 'true' ? '결제 테스트 모드 · 학습 데이터는 가상 · 토스 테스트 결제 연동' : 'MSW 목업 모드 · 실제 API 요청을 가로채는 가상 응답 · 운영 서버 호출 없음'}
         </span>
         {isDemo && (
           <label>
@@ -204,8 +240,9 @@ export function ClassroomApp() {
             </select>
           </label>
         )}
-        <small>develop 66f6052 기준 · PC 정식 / 태블릿 확장 시안</small>
-      </div>
+        {isDemo && session?.role === 'STUDENT' && <MockThemeState />}
+        <small>화면 동작 확인용 개발 시연</small>
+      </div>}
       <div className={session?.role === 'STUDENT' ? 'cj-app cj-app-student' : 'cj-app'}>
         {expired && session && (
           <Modal title="다시 로그인해 주세요." onClose={() => {}}>
@@ -248,7 +285,7 @@ export function ClassroomApp() {
               <p className="ux-help">
                 {isDemo
                   ? '화면 시연용 계정입니다. 실제 이메일·아동 개인정보를 입력하지 마세요.'
-                  : 'Google 계정으로 로그인하고 자녀를 등록해 주세요.'}
+                  : 'Google 계정이나 아이디로 로그인하고 자녀를 등록해 주세요.'}
               </p>
             </div>
             <div className="ux-login-forms">
@@ -259,11 +296,12 @@ export function ClassroomApp() {
             }} />
             {!isDemo ? (
               <section className="ux-login-form">
-                <h2>학부모·관리자 로그인</h2>
+                <h2>학부모 로그인</h2>
                 <a className="cj-primary" href="/api/v1/auth/google/authorize">Google 계정으로 계속하기</a>
+                <ParentIdLogin />
                 <nav className="ux-login-links" aria-label="로그인 도움 메뉴">
                   <Link to="/login-help">로그인 도움말</Link>
-                  <Link to="/admin/login">관리자 로그인</Link>
+                  <Link to="/signup">아이디로 가입</Link>
                 </nav>
                 <p>처음 로그인하면 이용 동의와 자녀 등록을 진행합니다.</p>
                 {new URLSearchParams(location.search).has('oauthError') &&
@@ -307,17 +345,10 @@ export function ClassroomApp() {
               <ErrorNotice error={auth.login.error} />
               <nav className="ux-login-links" aria-label="로그인 도움 메뉴">
                   <Link to="/login-help">로그인 도움말</Link>
-                  <Link to="/admin/login">관리자 로그인</Link>
                 </nav>
               <button type="button" className="cj-secondary ux-login-signup" onClick={() => navigate('/signup')}>
                 처음이신가요? 이용 등록
               </button>
-              {isDemo && (
-                <small className="ux-login-demo-note">
-                  관리자 시연: admin / content / ops / payment / refund@example.test · 비밀번호
-                  demo-only
-                </small>
-              )}
             </form>}
             </div>
           </main>
@@ -341,14 +372,11 @@ export function ClassroomApp() {
         ) : session.role === 'STUDENT' && child ? (
           <StudentWorld
             child={child}
-            page={work ? null : studentPage}
-            focus={!!work}
+            page={work || instructions ? null : studentPage}
+            focus={!!work || !!instructions || (studentPage === 'theme' && (themeView === 'intro' || themeView === 'ending'))}
             onNavigate={(p) => {
-              setPage(p)
+              setPage(p === 'theme' ? 'home' : p)
               setDetail(null)
-            }}
-            onLeave={() => {
-              void leave()
             }}
           >
             <ErrorNotice error={auth.logout.error} />
@@ -360,88 +388,137 @@ export function ClassroomApp() {
                   setWork(null)
                   setPage('journal')
                 }}
+                onHome={() => setPage('home')}
+                onCompleted={() => {
+                  // 토요일(프리미엄 일요일) 금요일 문제 다시 풀기를 마무리해 엔딩이 되면 공책 대신 그 자리에서 이야기의 끝
+                  // (user-flow 3.2 RV → ENDING, #440). 테마를 못 받으면 예전처럼 공책
+                  void fetchWeeklyTheme()
+                    .then((theme) => !!theme && endingDue(theme), () => false)
+                    .then((due) => setPage(due ? 'theme/ending' : 'journal'))
+                }}
               />
-            ) : studentPage === 'settings' ? (<StudentSharingPage key={child.id} child={child} />
+            ) : instructions ? (
+              // 학생 미션 안내는 작은 창 대신 학생 틀 안 전체 화면(시안 MissionGuide, #648)
+              <MissionGuide
+                key={instructions.id}
+                id={instructions.id}
+                child={child}
+                backLabel={studentPage === 'missions' ? '미션 고르기' : studentPage === 'home' ? '홈' : '돌아가기'}
+                onClose={() => {
+                  const opened = instructions.id
+                  setInstructions(null)
+                  // 닫으면 그 미션을 연 버튼으로 초점을 돌려준다(예전 안내 창처럼, #640)
+                  requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-open-mission="${CSS.escape(opened)}"]`)?.focus())
+                }}
+                onStart={start}
+                pending={learning.start.isPending}
+                error={learning.start.error}
+              />
+            ) : studentPage === 'theme' && themeView === 'pick' ? (
+              <AnswerPick child={child} onHome={() => setPage('home')} onEnding={() => setPage('theme/ending')}
+                onJournal={() => setPage('journal')} onResume={setWork} onStartTheme={(m, context) => openMission(m, context)} />
+            ) : studentPage === 'theme' && (themeView === 'intro' || themeView === 'ending') ? (
+              <ThemeStory key={themeView} child={child} kind={themeView === 'ending' ? 'OUTRO' : 'INTRO'}
+                onHome={() => {
+                  // 시작 이야기를 '오늘 문제 풀기'에서 열었으면 그 문제 안내로 이어간다
+                  setPage('home')
+                  if (themeView === 'intro' && introThen) openMission(introThen.mission, introThen.context)
+                  setIntroThen(null)
+                }}
+                continuing={themeView === 'intro' && !!introThen}
+                onAlbum={() => setPage('album')} onCommunity={() => setPage('community')} />
+            ) : studentPage === 'theme' && themeView === 'review' ? (
+              <ThemeReview child={child} onJournal={() => setPage('journal')} onEnding={() => setPage('theme/ending')}
+                onHome={() => setPage('home')} onResume={setWork} onStartTheme={(m, context) => openMission(m, context)} />
+            ) : studentPage === 'theme' ? (
+              <ThemeClues child={child} onHome={() => setPage('home')} onPick={() => setPage('theme/pick')} />
+            ) : studentPage === 'help' || studentPage === 'support' || studentPage === 'notices' || studentPage === 'notifications' ? (
+              // 학생 도움말·문의·공지·알림도 학생 틀 안에서(#648)
+              <StudentHelp page={studentPage === 'support' && location.pathname.split('/')[3] === 'results' ? 'results' : studentPage} />
+            ) : studentPage === 'settings' ? (
+              // 공개 설정·내 포인트·로그아웃은 설정 한 곳(#583). 포인트 내역은 "내 포인트 보기"(/student/points, #648)
+              <StudentSettings
+                key={child.id}
+                child={child}
+                onPoints={() => setPage('points')}
+                leaving={auth.logout.isPending}
+                onLogout={() => {
+                  void leave()
+                }}
+              />
+            ) : studentPage === 'points' ? (
+              <StudentPoints key={child.id} child={child} onSettings={() => setPage('settings')} onCustomize={() => navigate('/student/customize')} />
+            ) : studentPage === 'customize' ? (
+              <StudentCustomize
+                child={child}
+                tab={isCustomizeTab(customizeTab) ? customizeTab : 'theme'}
+                onTab={(tab) => navigate(`/student/customize?tab=${tab}`, { replace: true })}
+                onBack={() => setPage('room')}
+              />
+            ) : studentPage === 'friends' ? (
+              <StudentFriends child={child} />
+            ) : studentPage === 'community' ? (
+              <StudentCommunity key={child.id} child={child} onSettings={() => setPage('settings')} />
+            ) : studentPage === 'room' ? (
+              <StudentRoom
+                key={child.id}
+                child={child}
+                onTheme={() => setPage('home')}
+                onAlbum={() => setPage('album')}
+                onCustomize={(tab) => navigate(tab ? `/student/customize?tab=${tab}` : '/student/customize')}
+                onFriends={() => setPage('friends')}
+                onStory={() => setPage('theme/intro')}
+                onJournal={() => setPage('journal')}
+                onCommunity={() => setPage('community')}
+              />
+            ) : studentPage === 'album' && episode ? (
+              <StudentEpisode
+                key={`${child.id}:${episode.themeId}:${episode.weekStart}`}
+                child={child}
+                themeId={episode.themeId}
+                weekStart={episode.weekStart}
+                onBack={() => setPage('album')}
+                onRoom={() => setPage('room')}
+                onAttempt={setWork}
+              />
+            ) : studentPage === 'album' ? (
+              <StudentAlbum
+                key={child.id}
+                child={child}
+                onRoom={() => setPage('room')}
+                onOpen={(e) => navigate(`/student/album/${encodeURIComponent(e.themeId)}/${encodeURIComponent(e.weekStart)}`)}
+              />
             ) : studentPage === 'activities' ? (
               <ThinkingActivitiesPage key={child.id} child={child} />
             ) : studentPage === 'home' ? (
-              <ThinkingMap
+              <StudentHome
                 child={child}
                 onResume={setWork}
-                onOpen={setInstructions}
-                onType={(t) => navigate(`/student/missions?type=${t}`)}
+                onStartTheme={(m, context) => openMission(m, context)}
                 onJournal={() => setPage('journal')}
+                onRoom={() => setPage('room')}
+                onMissions={() => navigate('/student/missions')}
+                onPoints={() => setPage('friends')}
+                onClues={() => setPage('theme/clues')}
+                onPick={() => setPage('theme/pick')}
+                onStory={(kind, replace) => navigate(`/student/theme/${kind === 'OUTRO' ? 'ending' : 'intro'}`, { replace })}
+                onIntroThen={(mission, context) => {
+                  setIntroThen({ mission, context })
+                  setPage('theme/intro')
+                }}
+                onReview={() => setPage('theme/review')}
               />
             ) : studentPage === 'missions' ? (
               <StudentMissions
                 child={child}
                 type={isThinkingType(typeFilter) ? typeFilter : null}
                 onType={(t) => navigate(t ? `/student/missions?type=${t}` : '/student/missions')}
-                onOpen={setInstructions}
+                onOpen={(m) => openMission(m, 'EXTRA')}
               />
             ) : detail ? (
-              <main className="st-paper st-sheet">
-                <RecordDetail record={detail} child={child} onClose={() => setDetail(null)} />
-              </main>
+              <StudentJournalEntry key={detail.attemptId} record={detail} child={child} onBack={() => setDetail(null)} onWork={(id) => { setDetail(null); setWork(id) }} />
             ) : (
-              <main className="st-paper st-sheet">
-                <div className="cj-feedbar">
-                  <h1>
-                    <NotebookPen />
-                    나의 공책
-                  </h1>
-                  <div className="cj-filters">
-                    <select
-                      aria-label="과목 필터"
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                    >
-                      <option value="all">모든 과목</option>
-                      {subjects.map((s) => (
-                        <option key={s}>{s}</option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label="공책 기간"
-                      value={period.from}
-                      onChange={(e) =>
-                        setPeriod(e.target.value === recentPeriod.from ? recentPeriod : previousWeek)
-                      }
-                    >
-                      <option value={recentPeriod.from}>최근 7일 · {shortRange(recentPeriod)}</option>
-                      <option value={previousWeek.from}>지난주 · {shortRange(previousWeek)}</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="cj-feed">
-                  {records.isPending && (
-                    <QueryStateNotice state="PROCESSING">기록을 읽는 중입니다.</QueryStateNotice>
-                  )}
-                  <ErrorNotice
-                    error={records.error}
-                    retry={() => {
-                      void records.refetch()
-                    }}
-                  />
-                  {records.isSuccess && rows.length === 0 && (
-                    <QueryStateNotice state="NO_RECORD">
-                      이 기간·과목에 제출한 답변이 없습니다.
-                      <button type="button" className="cj-primary" onClick={() => setPage('missions')}>
-                        첫 미션 고르기
-                      </button>
-                    </QueryStateNotice>
-                  )}
-                  {rows.map((r) => (
-                    <RecordCard
-                      key={r.attemptId}
-                      record={r}
-                      child={child}
-                      onDetail={() => setDetail(r)}
-                      onContinue={() => setWork(r.attemptId)}
-                    />
-                  ))}
-                </div>
-              </main>
+              <StudentJournal key={child.id} child={child} onDetail={setDetail} onContinue={setWork} onMissions={() => setPage('missions')} />
             )}
           </StudentWorld>
         ) : (
@@ -456,7 +533,7 @@ export function ClassroomApp() {
                     setDetail(null)
                   }}
                 >
-                  <Brand />
+                  <Brand linked={false} />
                 </button>
                 {session.role === 'PARENT' ? (
                   <select
@@ -467,7 +544,7 @@ export function ClassroomApp() {
                   >
                     {children.data?.map((c) => (
                       <option value={c.id} key={c.id}>
-                        {c.nickname} · 초{c.grade}
+                        {c.nickname} · {gradeLabel(c.grade)}
                       </option>
                     ))}
                   </select>
@@ -494,7 +571,7 @@ export function ClassroomApp() {
                 <button
                   type="button"
                   className="cj-plain"
-                  aria-label={session.role === 'STUDENT' ? '학부모 로그인으로' : '로그아웃'}
+                  aria-label="로그아웃"
                   onClick={() => {
                     void leave()
                   }}
@@ -529,23 +606,8 @@ export function ClassroomApp() {
                 )}
                 {child && detail ? (
                   <RecordDetail record={detail} child={child} onClose={() => setDetail(null)} />
-                ) : child && page === 'report' && session.role === 'PARENT' ? (
-                  <ParentReport
-                    key={child.id}
-                    child={child}
-                    onEvidence={evidence}
-                    onAnalysis={(p) => {
-                      setAnalysisPeriod(p)
-                      setPage('analysis')
-                    }}
-                  />
-                ) : child && page === 'analysis' && session.role === 'PARENT' ? (
-                  <ParentAnalysis
-                    key={`${child.id}:${analysisPeriod.from}:${analysisPeriod.to}`}
-                    child={child}
-                    period={analysisPeriod}
-                    onEvidence={evidence}
-                  />
+                ) : child && session.role === 'PARENT' && (page === 'report' || page === 'analysis') ? (
+                  <Navigate to={'/parent/' + page + '?' + new URLSearchParams({ childId: child.id })} replace />
                 ) : (
                   <>
                     <div className="cj-feedbar">
@@ -554,7 +616,7 @@ export function ClassroomApp() {
                         {page === 'missions'
                           ? '미션'
                           : session.role === 'STUDENT'
-                            ? '나의 공책'
+                            ? '내 공책'
                             : '아이의 공책'}
                       </h1>
                       <div className="cj-filters">
@@ -592,8 +654,8 @@ export function ClassroomApp() {
                       {session.role === 'PARENT' && child && (
                         <div className="ux-parent-entry">
                           <span>
-                            <strong>{child.nickname}</strong> · 초등 {child.grade}학년 ·{' '}
-                            {child.plan === 'FREE' ? '무료' : child.plan === 'PREMIUM' ? '프리미엄' : '이용권 확인 필요'}
+                            <strong>{child.nickname}</strong> · {gradeLabel(child.grade)} ·{' '}
+                            <EntitlementName childId={child.id} />
                           </span>
                           <button
                             type="button"
@@ -704,7 +766,7 @@ export function ClassroomApp() {
                   <h2>{child?.nickname ?? '자녀'}의 공책</h2>
                   <p>
                     {child
-                      ? `초등 ${child.grade}학년 · ${session.role === 'STUDENT' ? '학생' : '학부모'}`
+                      ? `${gradeLabel(child.grade)} · ${session.role === 'STUDENT' ? '학생' : '학부모'}`
                       : '자녀 선택'}
                   </p>
                 </div>
@@ -775,7 +837,7 @@ export function ClassroomApp() {
             </footer>
           </>
         )}
-        {instructions && child && (
+        {instructions && child && session?.role !== 'STUDENT' && (
           <MissionInstructions
             id={instructions.id}
             child={child}
@@ -815,11 +877,7 @@ export function ClassroomApp() {
           </Modal>
         )}
       </div>
-      <div className="cj-announcement" role="status">
-        {isDemo
-          ? '실제 아동 정보·음성·AI Hub 원본을 사용하지 않는 UX 검증용 예시입니다.'
-          : '인증 토큰은 메모리에만 보관합니다. 내부 서비스에는 브라우저가 직접 연결하지 않습니다.'}
-      </div>
+      {isDemo && <div className="cj-announcement" role="status">실제 아동 정보·음성·AI Hub 원본을 사용하지 않는 UX 검증용 예시입니다.</div>}
     </div>
   )
 }
@@ -840,9 +898,10 @@ function MissionInstructions({
 }) {
   const query = useMission(id, child),
     m = query.data
+  const premiumOnly = error instanceof ApiError && error.problem?.code === 'PREMIUM_REQUIRED'
   return (
     <Modal title={m?.title ?? '미션 안내'} onClose={onClose}>
-      {query.isPending && <p role="status">질문과 입력 틀을 확인하는 중입니다.</p>}
+      {query.isPending && <p role="status">미션을 불러오고 있어요.</p>}
       <ErrorNotice
         error={query.error}
         retry={() => {
@@ -856,21 +915,33 @@ function MissionInstructions({
           </span>
           <ActivityPaper mission={m} />
           <p>{m.question}</p>
-          <p className="ux-help">
-            미션에서 정한 답변 틀을 사용해 주세요. 메모는 제출 답변과 별도입니다.
-          </p>
-          <ErrorNotice error={error} />
+          {premiumOnly ? (
+            // 무료 학생의 추가 문제(EXTRA) 403 PREMIUM_REQUIRED(#487). 학생은 이용권을 미리 알 수 없어 시작할 때 안내한다.
+            // 아이 화면에는 결제 유도 문구를 넣지 않는다(구매 안내는 보호자 화면에서만, #487·FN-DSH-01)
+            <div className="st-premium-note" role="status">
+              <strong>생각 유형별 더 풀어 보기는 프리미엄에서 열려요.</strong>
+              <p>이번 주 테마 문제는 그대로 풀 수 있어요. 홈에서 오늘 문제를 풀어 볼까요?</p>
+            </div>
+          ) : (
+            <ErrorNotice error={error} />
+          )}
           <div className="cj-modal-actions">
-            <button
-              type="button"
-              className="cj-primary"
-              disabled={pending}
-              onClick={() => {
-                void onStart(m)
-              }}
-            >
-              작성하기 · 진행 중이면 이어서
-            </button>
+            {premiumOnly ? (
+              <button type="button" className="cj-primary" onClick={onClose}>
+                닫기
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="cj-primary"
+                disabled={pending}
+                onClick={() => {
+                  void onStart(m)
+                }}
+              >
+                미션 시작하기
+              </button>
+            )}
           </div>
         </>
       )}
@@ -1010,5 +1081,40 @@ function RecordDetail({
         <small>생각 메모는 이 학습 원문 조회에 포함되지 않습니다.</small>
       </article>
     </div>
+  )
+}
+
+const MOCK_THEME_STATE_KEY = 'sagomungchi:msw-theme-state'
+const THEME_STATES: [string, string][] = [
+  ['', '실제 날짜'], ['today', '오늘 문제'], ['behind', '안 푼 지난 문제'], ['resume', '이어하기'], ['pick', '정답 고르기'],
+  ['ended', '엔딩 뒤'], ['sat', '토요일'], ['sun', '일요일(무료)'], ['none', '테마 없음'],
+]
+/**
+ * 목업 "홈 상태" 바꿔 보기(캔버스 Home 보드 homeState와 같은 8가지 + 프리미엄, #440·#487 "MSW 요일 바꿔 보기").
+ * 고르면 그 요일·이번 주 다섯 문제 푼 상태·정답 고르기를 목업에 만들고 화면을 다시 받는다(문제를 직접 풀지 않아도 됨).
+ */
+function MockThemeState() {
+  const cache = useQueryClient()
+  const read = () => { try { return JSON.parse(sessionStorage.getItem(MOCK_THEME_STATE_KEY) ?? '{}') as { state?: string; premium?: boolean } } catch { return {} } }
+  const [value, setValue] = useState(() => ({ state: read().state ?? '', premium: read().premium ?? false }))
+  const apply = (next: { state: string; premium: boolean }) => {
+    setValue(next)
+    try { sessionStorage.setItem(MOCK_THEME_STATE_KEY, JSON.stringify(next)) } catch { /* 저장소를 못 쓰면 이번 화면만 */ }
+    const done = () => { window.removeEventListener('sagomungchi:mock-theme-state-applied', done); void cache.invalidateQueries() }
+    window.addEventListener('sagomungchi:mock-theme-state-applied', done)
+    window.dispatchEvent(new CustomEvent('sagomungchi:mock-theme-state', { detail: next }))
+  }
+  return (
+    <>
+      <label>
+        홈 상태
+        <select aria-label="목업 홈 상태" value={value.state} onChange={(e) => apply({ ...value, state: e.target.value })}>
+          {THEME_STATES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+        </select>
+      </label>
+      <label>
+        <input type="checkbox" checked={value.premium} onChange={(e) => apply({ ...value, premium: e.target.checked })} /> 프리미엄
+      </label>
+    </>
   )
 }

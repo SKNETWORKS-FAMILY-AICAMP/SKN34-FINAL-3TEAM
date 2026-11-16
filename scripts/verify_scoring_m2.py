@@ -15,12 +15,16 @@ import jsonschema
 from verify_scoring_models import BUCKET, ROOT, verify, wait
 
 
-def check_scores(run, url, core, access, headers, password, results, passed, *, epic=False):
+def check_scores(
+    run, url, core, access, headers, password, results, passed, *, epic=False
+):
     if any(m["version"] != "2.0" for m in results["models"]):
         return check_new_scores(url, headers, results, passed)
     endpoint, rabbit = url("scoring", 8001), url("rabbitmq", 15672)
     queue = "issue87.usage.probe"
-    with httpx.Client(base_url=rabbit, auth=("verify", password), timeout=10) as management:
+    with httpx.Client(
+        base_url=rabbit, auth=("verify", password), timeout=10
+    ) as management:
         management.put(
             f"/api/queues/%2F/{queue}",
             json={"durable": True, "auto_delete": False, "arguments": {}},
@@ -29,7 +33,9 @@ def check_scores(run, url, core, access, headers, password, results, passed, *, 
             f"/api/bindings/%2F/e/events.topic/q/{queue}",
             json={"routing_key": "llm.usage.recorded", "arguments": {}},
         ).raise_for_status()
-    sentence = "친구와 이야기할 때 서로의 생각을 존중하면 오해가 줄어들고 의사소통이 잘 된다. "
+    sentence = (
+        "친구와 이야기할 때 서로의 생각을 존중하면 오해가 줄어들고 의사소통이 잘 된다. "
+    )
 
     def request(kind="NARRATIVE", chars=200, **changes):
         return {
@@ -43,12 +49,18 @@ def check_scores(run, url, core, access, headers, password, results, passed, *, 
         }
 
     with httpx.Client(base_url=endpoint, headers=headers, timeout=35) as client:
-        assert httpx.post(endpoint + "/internal/m2/scores", json=request()).status_code == 401
-        assert client.post("/internal/m2/scores", json=request(grade="5")).status_code == 400
+        assert (
+            httpx.post(endpoint + "/internal/m2/scores", json=request()).status_code
+            == 401
+        )
+        assert (
+            client.post("/internal/m2/scores", json=request(grade="5")).status_code
+            == 400
+        )
         for changes in ({"grade": 3}, {"grade": 4}, {"grade": 6}, {"keywords": []}):
-            assert client.post("/internal/m2/scores", json=request(**changes)).json() == {
-                "active": False
-            }
+            assert client.post(
+                "/internal/m2/scores", json=request(**changes)
+            ).json() == {"active": False}
         passed("HTTP 401/400 and inactive grade/scope/missing narrative keywords")
         spec = json.loads(
             run(
@@ -68,7 +80,9 @@ def check_scores(run, url, core, access, headers, password, results, passed, *, 
                 timings = []
                 for i in range(33):
                     before = time.perf_counter()
-                    response = client.post("/internal/m2/scores", json=request(kind, chars))
+                    response = client.post(
+                        "/internal/m2/scores", json=request(kind, chars)
+                    )
                     duration = (time.perf_counter() - before) * 1000
                     response.raise_for_status()
                     data = response.json()
@@ -83,7 +97,8 @@ def check_scores(run, url, core, access, headers, password, results, passed, *, 
                     assert data["model"]["version"] == "2.0"
                     cuts = results["cuts"][data["model"]["name"]]
                     assert data["scores"] == {
-                        k: bisect_right(cuts[k], v) + 1 for k, v in data["rawScores"].items()
+                        k: bisect_right(cuts[k], v) + 1
+                        for k, v in data["rawScores"].items()
                     }
                     if i >= 3:
                         timings.append(duration)
@@ -109,9 +124,11 @@ def check_scores(run, url, core, access, headers, password, results, passed, *, 
                 "scoring",
                 "python",
                 "-c",
-                "import torch,platform,json; "
-                "print(json.dumps({'threads':torch.get_num_threads(),"
-                "'cpu':platform.machine(),'torch':torch.__version__}))",
+                (
+                    "import torch,platform,json; "
+                    "print(json.dumps({'threads':torch.get_num_threads(),"
+                    "'cpu':platform.machine(),'torch':torch.__version__}))"
+                ),
             ]
         ).strip()
 
@@ -187,7 +204,9 @@ def check_scores(run, url, core, access, headers, password, results, passed, *, 
                         "version": release,
                         "revision": revision,
                     }
-                passed(f"real core {verb} event reflected in M2 HTTP response: {release}")
+                passed(
+                    f"real core {verb} event reflected in M2 HTTP response: {release}"
+                )
 
         with httpx.Client(base_url=rabbit, auth=("verify", password)) as management:
             response = management.post(
@@ -210,18 +229,27 @@ def check_scores(run, url, core, access, headers, password, results, passed, *, 
                 jsonschema.validate(
                     value,
                     json.loads(
-                        (ROOT / "contracts/events" / schema_name).read_text(encoding="utf-8")
+                        (ROOT / "contracts/events" / schema_name).read_text(
+                            encoding="utf-8"
+                        )
                     ),
                 )
-            assert event["data"]["service"] == "scoring" and event["data"]["callType"] == "M2"
+            assert (
+                event["data"]["service"] == "scoring"
+                and event["data"]["callType"] == "M2"
+            )
             assert event["data"]["inputTokens"] is None
             assert "친구" not in json.dumps(event, ensure_ascii=False)
         results["usage_events"] = {"count": len(events), "sample": events[0]}
-        passed("actual RabbitMQ M2 usage envelopes validate shared schema and omit raw input")
+        passed(
+            "actual RabbitMQ M2 usage envelopes validate shared schema and omit raw input"
+        )
         if epic:
             from verify_scoring_epic import check_epic
 
-            check_epic(run, endpoint, rabbit, headers, password, request, results, passed)
+            check_epic(
+                run, endpoint, rabbit, headers, password, request, results, passed
+            )
         # 브로커 장애는 응답 실패로 전파하지 않는다.
         run(["exec", "-T", "rabbitmq", "rabbitmqctl", "stop_app"])
         wait(endpoint + "/health/ready", lambda r: r.status_code == 503)
@@ -236,16 +264,22 @@ def check_new_scores(url, headers, results, passed):
     """#228 실제 모델·HTTP 응답. 품질 평가는 합성 글로 주장하지 않는다."""
     endpoint = url("scoring", 8001)
     spec = httpx.get(endpoint + "/openapi.json").json()
-    schema = {**spec["components"]["schemas"]["M2Active"], "components": spec["components"]}
+    schema = {
+        **spec["components"]["schemas"]["M2Active"],
+        "components": spec["components"],
+    }
     results["responses"] = []
     with httpx.Client(base_url=endpoint, headers=headers, timeout=60) as client:
         for kind, grades in (("NARRATIVE", (5, 6)), ("ESSAY", (4, 5, 6))):
             for grade in grades:
                 body = {
-                    "prompt": "무시되는 합성 지시문",
+                    "prompt": "친구와 협력하는 방법을 설명해 보세요.",
                     "text": (
                         "친구의 생각을 듣고 서로 돕는 것이 중요합니다. "
-                        "함께 이야기하면 문제를 해결할 수 있습니다."
+                        "함께 이야기하면 문제를 해결할 수 있습니다. "
+                        "친구가 어려워하는 일이 있으면 어떤 도움이 필요한지 먼저 물어보겠습니다. "
+                        "서로 다른 의견이 있더라도 끝까지 듣고 함께 할 수 있는 방법을 찾겠습니다. "
+                        "이런 경험이 쌓이면 다음에도 서로 믿고 협력할 수 있다고 생각합니다."
                     ),
                     "grade": grade,
                     "inputType": kind,
@@ -260,13 +294,20 @@ def check_new_scores(url, headers, results, passed):
                 assert data["active"] is True
                 name = "m2-klue-" + ("narrative" if kind == "NARRATIVE" else "essay")
                 assert data["model"]["name"] == name
-                assert data["model"]["version"] == ("3.0" if kind == "NARRATIVE" else "3.1")
+                assert data["model"]["version"] == (
+                    "3.0" if kind == "NARRATIVE" else "3.1"
+                )
                 assert data["scores"] == {
-                    k: bisect_right(results["cuts"][name][k], v) + (1 if kind == "NARRATIVE" else 0)
+                    k: bisect_right(results["cuts"][name][k], v)
+                    + (1 if kind == "NARRATIVE" else 0)
                     for k, v in data["rawScores"].items()
                 }
                 if kind == "ESSAY":
-                    assert set(data["scores"]) == set(data["rawScores"]) == {"org", "cont", "exp"}
+                    assert (
+                        set(data["scores"])
+                        == set(data["rawScores"])
+                        == {"org", "cont", "exp"}
+                    )
                 else:
                     assert len(data["scores"]) == 9
                 results["responses"].append(
@@ -276,7 +317,9 @@ def check_new_scores(url, headers, results, passed):
                         "latencyMs": round((time.perf_counter() - started) * 1000, 2),
                     }
                 )
-                passed(f"{kind} grade {grade}: active, integer/raw scores and version match")
+                passed(
+                    f"{kind} grade {grade}: active, integer/raw scores and version match"
+                )
         for kind, grade in (("NARRATIVE", 3), ("NARRATIVE", 4), ("ESSAY", 3)):
             assert client.post(
                 "/internal/m2/scores", json={**body, "inputType": kind, "grade": grade}
@@ -287,8 +330,12 @@ def check_new_scores(url, headers, results, passed):
         ).json() == {"active": False}
         body.pop("essayType")
         assert client.post("/internal/m2/scores", json=body).status_code == 400
-        assert httpx.post(endpoint + "/internal/m2/scores", json=body).status_code == 401
-        passed("unsupported grade, missing keywords/essayType and authentication verified")
+        assert (
+            httpx.post(endpoint + "/internal/m2/scores", json=body).status_code == 401
+        )
+        passed(
+            "unsupported grade, missing keywords/essayType and authentication verified"
+        )
 
 
 if __name__ == "__main__":
@@ -308,6 +355,8 @@ if __name__ == "__main__":
         args.output.resolve(),
         args.image,
         scores=True,
-        releases={"m2-klue-narrative": "3.0", "m2-klue-essay": "3.1"} if args.new_models else None,
+        releases={"m2-klue-narrative": "3.0", "m2-klue-essay": "3.1"}
+        if args.new_models
+        else None,
         essay_cuts=args.essay_cuts,
     )

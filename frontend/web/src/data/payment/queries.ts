@@ -1,8 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PaymentState, PaymentSubscription } from '../../domain/payment.ts'
+import type { ChildEntitlement, PaymentState, PaymentSubscription } from '../../domain/payment.ts'
 import { paymentApi } from './api.ts'
 
 const stateKey = (orderId: string) => ['parent', 'payment-result', orderId]
+
+/**
+ * 자녀 이용권(GET /children/{id}/entitlement). 무료·프리미엄 판단의 유일한 출처다.
+ * /children 응답에는 이용권이 없다(api-spec 3.7). 조회 전·실패면 data가 없으며 무료로 가정하지 않는다.
+ */
+export function useChildEntitlement(childId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['parent', 'entitlement', childId],
+    queryFn: ({ signal }) => paymentApi.entitlement(childId, signal),
+    enabled: enabled && !!childId,
+    retry: false,
+  })
+}
+/** 조회에 성공했을 때만 값을 준다. 조회 전·실패는 undefined(서버가 최종 판단). */
+export function knownEntitlement(query: { data?: ChildEntitlement; error: unknown }) {
+  return query.error ? undefined : query.data
+}
 
 /**
  * 결제 결과 재조회 간격. 승인 대기(PENDING·CONFIRMING)나 이용권 복구 필요(APPROVED+RECOVERY_REQUIRED)일 때만

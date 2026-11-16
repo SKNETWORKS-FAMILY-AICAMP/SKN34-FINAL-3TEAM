@@ -53,12 +53,15 @@ test('입력 방식별 정답 객체와 모든 문항 기준표, 풀이 최종 �
   r.elements = [{ code: 'FINAL_ANSWER', label: '최종 답', description: '', points: 1, commonErrors: [], goodThought: true, judgeVerified: false }]
   v.inputType = 'SOLUTION_STEPS'; r.answerKey = { finalAnswer: '30' }
   assert.ok(missingMissionFields(m).includes('rubric.elements'))
-  r.elements.push({ ...r.elements[0], code: 'STEPS', label: '풀이' })
+  r.elements.push({ ...r.elements[0], code: 'e2', label: '풀이' })
   assert.deepEqual(missingMissionFields(m), [])
   assert.equal(validAnswerKey(v, { finalAnswer: '30m²' }), false)
   v.inputType = 'CHOICE'; v.choices = [{ id: 'c1', label: '하나' }, { id: 'c2', label: '둘' }]
   assert.ok(missingMissionFields(m).includes('rubric.elements'))
   r.elements = r.elements.filter((e) => e.code !== 'FINAL_ANSWER'); r.answerKey = { choiceIds: ['c2'] }
+  // #262: 고르기는 정답 요소(ANSWER_KEY) 하나만
+  assert.ok(missingMissionFields(m).includes('rubric.elements.code'))
+  r.elements = [{ ...r.elements[0], code: 'ANSWER_KEY', label: '정답', standardCode: null }]
   assert.deepEqual(missingMissionFields(m), [])
   assert.equal(validAnswerKey(v, { choiceIds: ['c1', 'c2'], finalAnswer: null, assignments: null }), false)
   assert.equal(validAnswerKey(v, { choiceIds: ['c2'], finalAnswer: null, assignments: null }), true)

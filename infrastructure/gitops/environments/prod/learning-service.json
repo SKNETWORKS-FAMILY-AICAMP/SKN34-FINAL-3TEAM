@@ -48,18 +48,13 @@
     },
     {
       "name": "RABBITMQ_USERNAME",
-      "valueFrom": {
-        "secretKeyRef": {
-          "key": "RABBITMQ_USERNAME",
-          "name": "rabbitmq-credentials"
-        }
-      }
+      "value": "learning"
     },
     {
       "name": "RABBITMQ_PASSWORD",
       "valueFrom": {
         "secretKeyRef": {
-          "key": "RABBITMQ_PASSWORD",
+          "key": "RABBITMQ_LEARNING_PASSWORD",
           "name": "rabbitmq-credentials"
         }
       }
@@ -68,7 +63,43 @@
       "name": "INTERNAL_TOKEN",
       "valueFrom": {
         "secretKeyRef": {
-          "key": "INTERNAL_TOKEN",
+          "key": "INTERNAL_TOKEN_LEARNING",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "INTERNAL_TOKEN_CORE",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN_CORE",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "INTERNAL_TOKEN_AI",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN_AI",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "INTERNAL_TOKEN_REPORT_API",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN_REPORT_API",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
+      "name": "INTERNAL_TOKEN_REPORT_WORKER",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN_REPORT_WORKER",
           "name": "internal-service-credentials"
         }
       }
@@ -84,6 +115,30 @@
     {
       "name": "CORE_URL",
       "value": "http://core-service.app.svc.cluster.local:8080"
+    },
+    {
+      "name": "MEMORY_EMBEDDING_ENABLED",
+      "value": "true"
+    },
+    {
+      "name": "MEMORY_QUERY_REWRITE_ENABLED",
+      "value": "true"
+    },
+    {
+      "name": "MEMORY_QUERY_REWRITE_TIMEOUT",
+      "value": "8s"
+    },
+    {
+      "name": "ASSET_S3_BUCKET",
+      "value": "sagomungchi-demo-347161580747-missions"
+    },
+    {
+      "name": "S3_REGION",
+      "value": "ap-northeast-2"
+    },
+    {
+      "name": "AWS_REGION",
+      "value": "ap-northeast-2"
     }
   ],
   "extraVolumeMounts": [
@@ -108,7 +163,7 @@
     "cpuUtilization": 70
   },
   "image": {
-    "digest": "sha256:2aa5699c5e0e95432258286dc7f617a88783f7b41e408e6fa4d93a63213e2d97",
+    "digest": "sha256:deef0fc1b721f8f79446ec7d1a8e5cfe9a3e3b836854984b1854b29f23a69f61",
     "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-service"
   },
   "ingress": {
@@ -142,6 +197,21 @@
           {
             "ipBlock": {
               "cidr": "10.20.144.0/20"
+            }
+          }
+        ]
+      },
+      {
+        "ports": [
+          {
+            "port": 80,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "169.254.170.23/32"
             }
           }
         ]

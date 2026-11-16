@@ -204,7 +204,9 @@ def test_learning_evidence_lookup_checks_identity_and_deleted_records(case):
             assert request.url.path == "/internal/records/evidence"
             assert request.url.params["answerIds"] == str(answer.id)
             if case == "gone":
-                return httpx.Response(410)
+                # learning은 삭제된 기록을 410이 아니라 200 + available=false로 알린다.
+                data = {"items": [{"answerId": str(answer.id), "available": False}]}
+                return httpx.Response(200, json=data)
             data = {
                 "items": []
                 if case == "missing"

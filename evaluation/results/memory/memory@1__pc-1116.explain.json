@@ -1,0 +1,29 @@
+{
+ "dataset": "memory@1",
+ "sheet": "memory@1__pc-1116.explain-sheet.csv",
+ "checker": "수빈",
+ "summarizedAt": "2026-11-16T19:49:11+09:00",
+ "requests": 20,
+ "states": {
+  "GENERATED": 18,
+  "FAILED": 2
+ },
+ "generated": 18,
+ "topCardIsGold": 17,
+ "marks": {
+  "근거 일치": 18,
+  "근거 밖 활동": 0,
+  "감정 추정": 0,
+  "의도 추정": 0,
+  "능력 추정": 0
+ },
+ "criteria": {
+  "근거 밖 활동·추정 0건": true
+ },
+ "latencyMs": {
+  "p50": 4730.0,
+  "p95": 12128.1,
+  "max": 12245.8,
+  "note": "learning 내부 API, 질문 임베딩·LLM 생성 포함"
+ }
+}

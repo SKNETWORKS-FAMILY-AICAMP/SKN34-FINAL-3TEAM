@@ -33,6 +33,33 @@ class SupportContractTest(unittest.TestCase):
   for path in ('/support/targets/{targetType}/{targetId}','/support/attempts/{attemptId}'):
    self.assertIn(path,actual['paths'])
 
+ def test_consumer_schemas_stay_in_sync_with_learning_supplier(self):
+  # #423: core 소비 계약 사본이 learning 공급 계약과 어긋나지 않게 구조(설명·x- 확장 제외)를 비교한다.
+  supplier=yaml.safe_load((ROOT/'contracts/openapi/learning-service.yaml').read_text(encoding='utf-8'))
+  consumer=yaml.safe_load((ROOT/'contracts/openapi/support-learning-required.yaml').read_text(encoding='utf-8'))
+  def shape(node,api):
+   if isinstance(node,dict):
+    if set(node)-{'description'}=={'allOf'} and len(node['allOf'])==1: return shape(node['allOf'][0],api)
+    if '$ref' in node: return shape(api['components']['schemas'][node['$ref'].rsplit('/',1)[1]],api)
+    return {k:shape(v,api) for k,v in node.items() if k not in ('description','title') and not k.startswith('x-')}
+   if isinstance(node,list): return [shape(v,api) for v in node]
+   return node
+  for name in ('SupportTarget','CorrectionRequest','JudgmentResult'):
+   self.assertEqual(shape(consumer['components']['schemas'][name],consumer),shape(supplier['components']['schemas'][name],supplier),name)
+  for path,method,ref in (('/judgments/{judgmentId}/corrections','post','CorrectionRequest'),):
+   self.assertEqual(consumer['paths'][path][method]['requestBody']['content']['application/json']['schema'],{'$ref':'#/components/schemas/'+ref})
+   self.assertEqual(supplier['paths'][path][method]['requestBody']['content']['application/json']['schema'],{'$ref':'#/components/schemas/'+ref})
+  original=[shape(api['components']['schemas']['SupportOriginal'],api) for api in (consumer,supplier)]
+  for item in original: item['properties']['answers']['items']['properties'].pop('feedback')
+  self.assertEqual(*original)
+  # 결과는 core가 받는 범위(enum)가 learning이 보내는 값(const)을 포함해야 한다.
+  result=[shape(api['components']['schemas']['CorrectionResult'],api) for api in (consumer,supplier)]
+  impact=[r['properties'].pop('impact') for r in result]
+  self.assertEqual(*result)
+  self.assertEqual(impact[0]['required'],impact[1]['required'])
+  self.assertIs(impact[0]['additionalProperties'],False)
+  for field,sent in impact[1]['properties'].items():
+   self.assertIn(sent['const'],impact[0]['properties'][field]['enum'],field)
  def test_correction_security_and_replay_contract(self):
   api=yaml.safe_load((ROOT/'contracts/openapi/support-learning-required.yaml').read_text(encoding='utf-8'))
   self.assertEqual(api['security'],[{'InternalToken':[]}])

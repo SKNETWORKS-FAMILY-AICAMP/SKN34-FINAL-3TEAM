@@ -5,7 +5,7 @@ import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core._common.web.IdempotencyService
 import com.sagomungchi.core.account.domain.GoogleProfile
 import com.sagomungchi.core.account.service.AuthService
-import com.sagomungchi.core.learning.client.LearningClient
+import com.sagomungchi.core._common.client.LearningClient
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -16,6 +16,7 @@ import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
@@ -23,6 +24,10 @@ import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import java.time.Clock
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -37,6 +42,9 @@ import kotlin.test.*
 @AutoConfigureMockMvc
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class LearningProxyIntegrationTest : PostgresRepositoryTest() {
+    /** #485: 시도 시작은 KST 일요일에만 상품으로 일요일 허용을 판단한다. 실행 요일과 무관하도록 일요일이면 하루 앞 시각을 쓴다 */
+    @MockitoBean(name = "paymentClock") lateinit var paymentClock: Clock
+
     @Autowired lateinit var mvc: MockMvc
     @Autowired lateinit var auth: AuthService
     @Autowired lateinit var jdbc: JdbcTemplate
@@ -52,6 +60,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
     private val body = "{ \"inputType\":\"NARRATIVE\", \"text\":\"내 생각\" }"
 
     companion object {
+        private const val REVIEW_CONTEXT = "{\"context\":\"THEME_REVIEW\"}"
         private val stub = LearningHttpStub()
         @JvmStatic @DynamicPropertySource fun learning(registry: DynamicPropertyRegistry) {
             registry.add("app.services.learning") { stub.url }
@@ -60,6 +69,9 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
     }
 
     @BeforeEach fun prepare() {
+        org.mockito.Mockito.`when`(paymentClock.instant()).thenAnswer {
+            Instant.now().let { if (it.atZone(ZoneId.of("Asia/Seoul")).dayOfWeek == DayOfWeek.SUNDAY) it.minusSeconds(86_400) else it }
+        }
         stub.reset(); client.circuit.reset()
         subject = UUID.randomUUID().toString()
         val parent = auth.login(GoogleProfile(subject, "$subject@example.test", "테스트 보호자"), null)
@@ -87,6 +99,8 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
             jdbc.update("DELETE FROM auth_session WHERE user_id=?", user)
             jdbc.update("DELETE FROM guardianship WHERE parent_user_id=?", user)
             jdbc.update("DELETE FROM user_account WHERE id=?", user)
+            jdbc.update("DELETE FROM reward_point_ledger WHERE student_id=?", child)
+            jdbc.update("DELETE FROM reward_point_balance WHERE student_id=?", child)
             jdbc.update("DELETE FROM student WHERE id=?", child)
         }
         documents.forEach { jdbc.update("DELETE FROM consent_document WHERE id=?", it) }; documents.clear()
@@ -100,7 +114,9 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         .also { req ->
             key?.let { req.header("Idempotency-Key", it) }
             ifMatch?.let { req.header("If-Match", it) }
-            content?.let { req.contentType(MediaType.APPLICATION_JSON).content(it) }
+            // #387: 시도 시작의 context 생략은 EXTRA(상품 판정)라, 프록시 자체 검사는 상품과 무관한 되돌아보기로 한다
+            (content ?: REVIEW_CONTEXT.takeIf { method == "POST" && path.substringBefore('?').endsWith("/attempts") && path.contains("/missions/") })
+                ?.let { req.contentType(MediaType.APPLICATION_JSON).content(it) }
         })
 
     @Test fun `attempt details disable storage while preserving draft ETag across completion changes`() {
@@ -132,12 +148,12 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
                 .andExpect(status().`is`(if (path.endsWith("/answers")) 201 else 200))
                 .andExpect(header().string("ETag", "\"8\""))
                 .andExpect(content().string("{ \"raw\": \"생각\" }"))
-            val received = stub.requests.last()
-            assertEquals(method, received.method)
+            // 돌아보기 저장 뒤 core는 학습 완료 적립(#389)을 위해 시도 상세를 GET으로 다시 읽는다
+            val received = stub.requests.last { it.method == method }
             val expectedQuery = when {
                 method == "GET" && path == "/missions" -> "?grade=3&demo=false&page=0&size=20"
                 method == "GET" && path.startsWith("/missions/") -> "?grade=3&demo=false"
-                method == "POST" && path == "/missions/$mission/attempts" -> "?grade=3&demo=false"
+                method == "POST" && path == "/missions/$mission/attempts" -> "?grade=3&demo=false&sundayTheme=false"
                 else -> ""
             }
             assertEquals("/internal$path$expectedQuery", received.target)
@@ -195,17 +211,19 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         val mission = UUID.randomUUID()
         val routes = listOf("GET" to "/missions", "GET" to "/missions/$mission", "POST" to "/missions/$mission/attempts")
         // The same signed session must use current core data, never client values or a cached profile.
-        listOf(5 to true, 3 to false).forEach { (grade, demo) ->
-            jdbc.update("UPDATE student SET grade=?,is_demo=? WHERE id=?", grade, demo, child)
+        // #432: 중학생(7~9)은 중학교 과정 확장 전까지 초6 문제를 받는다.
+        listOf(Triple(5, true, 5), Triple(3, false, 3), Triple(8, false, 6)).forEach { (stored, demo, grade) ->
+            jdbc.update("UPDATE student SET grade=?,is_demo=? WHERE id=?", stored, demo, child)
             routes.forEach { (method, path) ->
                 val forgedQuery = "grade=6&grade=4&demo=${!demo}&demo=${!demo}&studentId=${UUID.randomUUID()}&page=1&size=2"
                 call(method, "/api/v1$path?$forgedQuery").andExpect(status().isOk())
                 val pagination = if (path == "/missions") "&page=1&size=2" else ""
-                assertEquals("/internal$path?grade=$grade&demo=$demo$pagination", stub.requests.last().target)
+                val sunday = if (method == "POST") "&sundayTheme=false" else ""  // #485 시도 시작만
+                assertEquals("/internal$path?grade=$grade&demo=$demo$pagination$sunday", stub.requests.last().target)
                 assertEquals(child.toString(), stub.requests.last().header("X-Student-Scope"))
             }
         }
-        assertEquals(6, stub.requests.size)
+        assertEquals(9, stub.requests.size)
     }
 
     @Test fun `attempt start preserves learning 201 for a newly created attempt`() {
@@ -216,7 +234,18 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         call("POST", "/api/v1/missions/$mission/attempts?grade=6&demo=true")
             .andExpect(status().isCreated()).andExpect(content().string(response))
 
-        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false", stub.requests.single().target)
+        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false&sundayTheme=false", stub.requests.single().target)
+        assertEquals(REVIEW_CONTEXT, stub.requests.single().body)
+        assertEquals("application/json", stub.requests.single().header("Content-Type"))
+    }
+
+    @Test fun `attempt start rejects unknown context fields and values before forwarding`() {
+        val mission = UUID.randomUUID()
+        listOf("{\"context\":\"DAILY\"}", "{\"context\":1}", "{\"context\":\"THEME_DAY\",\"themeId\":\"x\"}", "[]", "nope").forEach {
+            call("POST", "/api/v1/missions/$mission/attempts", content = it).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        }
+        assertTrue(stub.requests.isEmpty())
     }
 
     @Test fun `attempt start preserves learning 200 for an existing in-progress attempt`() {
@@ -227,7 +256,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         call("POST", "/api/v1/missions/$mission/attempts?grade=6&demo=true")
             .andExpect(status().isOk()).andExpect(content().string(response))
 
-        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false", stub.requests.single().target)
+        assertEquals("/internal/missions/$mission/attempts?grade=3&demo=false&sundayTheme=false", stub.requests.single().target)
     }
 
     @Test fun `mission queries and attempt start reject invalid session and unlinked student before forwarding`() {

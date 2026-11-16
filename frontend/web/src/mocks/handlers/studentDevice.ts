@@ -16,7 +16,7 @@ import {
   persistDeviceState,
 } from '../fixtures/studentDevice.ts'
 import { respond, startDeviceStudentSession } from './student.ts'
-import { fail, page, parentChild, parentGuard, consumePinReauth, mockChildConsentMetadata } from './parent.ts'
+import { fail, page, parentChild, parentGuard, mockChildConsentMetadata } from './parent.ts'
 import { demoRequest, sharedDeviceDemo, sharedParentRequest } from '../sharedDevice.ts'
 import type { SharedLogin } from '../sharedDevice.ts'
 
@@ -77,7 +77,6 @@ export const studentDeviceHandlers = [
           errors: [{ field: 'pin', reason: problem }],
         })
       const hash = await hashPin(c.id, pin)
-      consumePinReauth(request, c.id)
       if (sharedDeviceDemo) return sharedParentRequest(`/pins/${encodeURIComponent(c.id)}`, {
         method: 'PUT', body: JSON.stringify({ pin }),
       })
@@ -141,6 +140,9 @@ export const studentDeviceHandlers = [
     save(async () => {
       const data = (await request.json()) as { pairingCode: string; label: string }
       if (sharedDeviceDemo) return demoRequest('/register', { method: 'POST', body: JSON.stringify(data) })
+      // core와 같이 이름 검사를 코드 소비보다 먼저(빈 이름·80자 초과는 400, 코드는 그대로 남음)
+      const label = String(data.label ?? '').trim()
+      if (!label || label.length > 80) fail('VALIDATION_FAILED', '입력값을 확인해 주세요.')
       const code = normalizePairingCode(String(data.pairingCode ?? ''))
       const pairing = deviceState.pairings[code]
       delete deviceState.pairings[code] // 1회용: 성공·실패 관계없이 조회한 코드는 버린다
@@ -149,7 +151,7 @@ export const studentDeviceHandlers = [
       const now = Date.now()
       const device = {
         deviceId: crypto.randomUUID(),
-        label: String(data.label ?? '').trim().slice(0, 30) || '이름 없는 기기',
+        label,
         owner: pairing!.owner,
         childIds: pairing!.children.map((c) => c.id),
         createdAt: new Date(now).toISOString(),
@@ -187,7 +189,7 @@ export const studentDeviceHandlers = [
         const data = await request.json()
         const result = await demoRequest<SharedLogin>('/login', { method: 'POST', body: JSON.stringify(data) })
         const accessToken = startDeviceStudentSession(result.child, result.children)
-        return { accessToken, role: 'STUDENT', child: { ...result.child, childId: result.child.id } }
+        return { accessToken, role: 'STUDENT', child: { childId: result.child.id, nickname: result.child.nickname, grade: result.child.grade, birthYear: result.child.birthYear } }
       }
       const d = currentDevice() ?? deviceInvalid()
       const { childId, pin } = (await request.json()) as { childId: string; pin: string }
@@ -218,7 +220,7 @@ export const studentDeviceHandlers = [
       return {
         accessToken,
         role: 'STUDENT',
-        child: { childId: child!.id, nickname: child!.nickname, grade: child!.grade, plan: child!.plan },
+        child: { childId: child!.id, nickname: child!.nickname, grade: child!.grade, birthYear: child!.birthYear },
       }
     }),
   ),

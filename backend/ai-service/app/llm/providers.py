@@ -10,6 +10,7 @@
 스트림(_stream)은 일반 텍스트 조각만 내보내고 마지막에 StreamEnd(모델·토큰)를 보냄.
 """
 
+import base64
 import json
 from collections.abc import AsyncIterator
 from typing import Any, Literal
@@ -40,6 +41,41 @@ from app.llm.base import (
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
+def image_mime(data: bytes) -> str:
+    """그림 바이트의 형식(앞 바이트로 판단). 모르는 형식은 PNG로 본다."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
+def _b64(data: bytes) -> str:
+    return base64.b64encode(data).decode()
+
+
+def openai_content(request: LlmRequest[Any]) -> str | list[dict[str, Any]]:
+    """그림이 없으면 글 그대로(기존 요청과 같음), 있으면 글 + data URL 그림 조각."""
+    if not request.images:
+        return request.user
+    return [{"type": "text", "text": request.user}] + [
+        {"type": "image_url", "image_url": {"url": f"data:{image_mime(i)};base64,{_b64(i)}"}}
+        for i in request.images
+    ]
+
+
+def anthropic_content(request: LlmRequest[Any]) -> str | list[dict[str, Any]]:
+    if not request.images:
+        return request.user
+    return [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": image_mime(i), "data": _b64(i)},
+        }
+        for i in request.images
+    ] + [{"type": "text", "text": request.user}]
+
+
 class AnthropicLlm(LlmClient):
     def __init__(
         self,
@@ -67,7 +103,7 @@ class AnthropicLlm(LlmClient):
                 model=self.model,
                 max_tokens=request.max_tokens,
                 system=request.system,
-                messages=[{"role": "user", "content": request.user}],
+                messages=[{"role": "user", "content": anthropic_content(request)}],
                 output_config={
                     "effort": self._effort,
                     "format": {
@@ -171,7 +207,7 @@ class OpenAICompatibleLlm(LlmClient):
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system},
-                    {"role": "user", "content": request.user},
+                    {"role": "user", "content": openai_content(request)},  # type: ignore[misc]
                 ],
                 response_format=response_format,  # type: ignore[arg-type]
                 max_completion_tokens=request.max_tokens,
@@ -324,6 +360,73 @@ def create_llm(settings: Settings, recorder: UsageRecorder) -> LlmClient:
     raise ValueError(f"지원하지 않는 LLM_PROVIDER: {settings.llm_provider}")
 
 
+def create_explanation_llm(settings: Settings, recorder: UsageRecorder) -> LlmClient:
+    """리포트 설명 전용 sLLM 클라이언트 (#477). 평문 생성(stream)만 쓰고 재시도 없음.
+
+    주소가 없으면 UnconfiguredLlm: 서버는 기동하고 설명만 503 AI_UNAVAILABLE.
+    """
+    if not settings.explanation_base_url:
+        return UnconfiguredLlm(settings.explanation_model, recorder)
+    return OpenAICompatibleLlm(
+        api_key=settings.explanation_api_key,
+        model=settings.explanation_model,
+        base_url=settings.explanation_base_url,
+        json_mode="json_object",
+        timeout=settings.explanation_llm_timeout,
+        max_retries=0,
+        backoff_seconds=settings.llm_retry_backoff,
+        recorder=recorder,
+    )
+
+
+def theme_llm_problem(settings: Settings) -> str | None:
+    """테마 생성·검토 모델 설정 문제. 있으면 테마 경로만 503 (ai 서비스 전체는 계속 동작)."""
+    if settings.theme_generation_model == settings.theme_review_model:
+        return "테마 검토 모델이 생성 모델과 같음(THEME_REVIEW_MODEL을 다르게 설정)"
+    if not settings.openai_api_key:
+        return "테마 생성용 OpenAI 키가 없음"
+    return None
+
+
+def create_theme_llms(settings: Settings, recorder: UsageRecorder) -> tuple[LlmClient, LlmClient]:
+    """주간 테마 생성용·검토용 클라이언트 (#437). 같은 OpenAI 키, 모델은 테마 전용 설정.
+
+    기본 LLM_PROVIDER·OPENAI_MODEL과 따로 둔다(운영 OPENAI_MODEL이 검토 모델과 같아서).
+    """
+    if not settings.openai_api_key:
+        return (
+            UnconfiguredLlm(settings.theme_generation_model, recorder),
+            UnconfiguredLlm(settings.theme_review_model, recorder),
+        )
+
+    def make(model: str) -> LlmClient:
+        client = OpenAICompatibleLlm(
+            api_key=settings.openai_api_key,
+            model=model,
+            base_url=None,
+            json_mode="json_schema",
+            timeout=settings.theme_llm_timeout,
+            max_retries=settings.theme_llm_retries,
+            backoff_seconds=settings.llm_retry_backoff,
+            recorder=recorder,
+        )
+        # 형식 밖 응답만 한 번 더(테마 경로의 미션 생성·칸 고쳐 쓰기·검토 모두 이 클라이언트를 씀)
+        client.invalid_output_retries = settings.theme_llm_invalid_retries
+        return client
+
+    return make(settings.theme_generation_model), make(settings.theme_review_model)
+
+
 def get_llm(request: Request) -> LlmClient:
     """라우터 의존성: 기동 시 만든 app.state.llm. 테스트는 dependency_overrides로 교체."""
     return request.app.state.llm
+
+
+def get_explanation_llm(request: Request) -> LlmClient:
+    """라우터 의존성: 기동 시 만든 app.state.explanation_llm (#477)."""
+    return request.app.state.explanation_llm
+
+
+def get_theme_llms(request: Request) -> tuple[LlmClient, LlmClient]:
+    """라우터 의존성: 기동 시 만든 테마 생성·검토 클라이언트 (#437)."""
+    return request.app.state.theme_llm, request.app.state.theme_review_llm
