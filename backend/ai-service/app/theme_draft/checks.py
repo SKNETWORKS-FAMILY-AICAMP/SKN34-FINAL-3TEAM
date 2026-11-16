@@ -311,6 +311,16 @@ def traceable(feature: str | None, kind: StoryType | None = None) -> bool:
     return bool(TRACE_FEATURE.search(f)) and not NOT_TRACE_FEATURE.search(f)
 
 
+def kind_fits(kind: StoryType, feature: str | None, evidence: str | None) -> bool:
+    """그날 특징을 그 증거 종류로 알 수 있는지. 사실표 특징은 표의 kinds, 그 밖은 흔적만 본다
+    (TRACE면 traceable, 목격·기록은 어떤 특징이든 됨 — #535부터의 규칙 그대로)."""
+    table = kind.facts
+    allowed = table.kinds_of(feature or "") if table is not None else None
+    if allowed is not None:
+        return evidence in allowed
+    return evidence != "TRACE" or traceable(feature, kind)
+
+
 def fit_evidence_plan(theme: Theme) -> list[str]:
     """흔적 배정을 흔적으로 남을 수 있는 특징의 날로 옮긴다(#535 6차, 요일별 강제 배정은 유지).
 
@@ -329,12 +339,26 @@ def fit_evidence_plan(theme: Theme) -> list[str]:
     changed: list[str] = []
     for day in DAYS:
         slot = plan.get(day) or {}
-        if slot.get("kind") != "TRACE" or traceable(feat.get(day), kind):
+        if kind_fits(kind, feat.get(day), slot.get("kind")):
             continue
+        mine = slot.get("kind")
+        # 바꿔도 두 날 모두 맞는 날(목격 날 먼저, 다음 기록·흔적 날). 사실표 특징이면 목격·기록 날도
+        # 바뀔 수 있음(#634 ②: 소리를 목격 날에 둔 경우)
         order = [
-            o for k in ("SIGHTING", "RECORD") for o in DAYS if (plan.get(o) or {}).get("kind") == k
+            o
+            for k in ("SIGHTING", "RECORD", "TRACE")
+            for o in DAYS
+            if o != day and (plan.get(o) or {}).get("kind") == k and k != mine
         ]
-        swap = next((o for o in order if traceable(feat.get(o), kind)), None)
+        swap = next(
+            (
+                o
+                for o in order
+                if kind_fits(kind, feat.get(day), (plan.get(o) or {}).get("kind"))
+                and kind_fits(kind, feat.get(o), mine)
+            ),
+            None,
+        )
         if swap:
             plan[day], plan[swap] = plan[swap], plan[day]
             # 단서 종류('발자국'은 흔적 날, '목격'·'기록'은 그 날)도 배정을 따라 함께 바꿈
@@ -342,11 +366,20 @@ def fit_evidence_plan(theme: Theme) -> list[str]:
             a["clueType"], b["clueType"] = b.get("clueType"), a.get("clueType")
             changed += [day, swap]
         else:
-            plan[day] = {"kind": "SIGHTING", "medium": None}
+            # 맞는 짝이 없으면 그 특징으로 알 수 있는 종류로 바꿈(흔적이 아니면 목격 먼저, 기록이면
+            # 아직 안 쓴 매체). 요일마다 증거가 섞이는 목표는 유지(구성이 조금 바뀔 수 있음)
+            new = next(
+                (k for k in ("SIGHTING", "RECORD", "TRACE") if kind_fits(kind, feat.get(day), k)),
+                "SIGHTING",
+            )
+            used_media = {(plan.get(o) or {}).get("medium") for o in DAYS}
+            medium = next((m for m in RECORD_MEDIA if m not in used_media), RECORD_MEDIA[0])
+            plan[day] = {"kind": new, "medium": medium if new == "RECORD" else None}
             d = theme_day(theme, day)
             used = {x.get("clueType") for x in theme.get("days") or []}
-            if d.get("clueType") == "발자국" and "목격" not in used:
-                d["clueType"] = "목격"
+            want = {"SIGHTING": "목격", "RECORD": "기록", "TRACE": "발자국"}[new]
+            if d.get("clueType") in ("발자국", "목격", "기록") and want not in used:
+                d["clueType"] = want
             changed.append(day)
     theme["evidencePlan"] = plan
     return list(dict.fromkeys(changed))

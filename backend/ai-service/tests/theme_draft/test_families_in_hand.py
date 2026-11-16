@@ -46,7 +46,7 @@ def gift_theme() -> dict[str, Any]:
     ]
     # 월(흔적) 무게로 목도리·고무공, 금(기록) 소리로 그림책이 빠짐
     for d, clue, kind, feat, allowed in (
-        ("MON", "상자를 들어 보니 묵직한 무게였어.", "RULE", "무게", ["묵직한 무게"]),
+        ("MON", "상자를 들어 보니 묵직한 상자였어.", "RULE", "상자 무게", ["묵직한 상자"]),
         ("TUE", "그릇 가게나 서점에서 나오는 걸 봤대.", "HINT", "산 가게", ["그릇 가게", "서점"]),
         (
             "WED",
@@ -55,7 +55,7 @@ def gift_theme() -> dict[str, Any]:
             "산 가게",
             ["서점", "그릇 가게"],
         ),
-        ("THU", "상자를 다시 들어 보니 묵직한 무게였어.", "HINT", "무게", ["묵직한 무게"]),
+        ("THU", "상자를 다시 들어 보니 묵직한 상자였어.", "HINT", "상자 무게", ["묵직한 상자"]),
         (
             "FRI",
             "메모에 달그락 소리가 난다고 적혀 있었어.",
@@ -200,3 +200,34 @@ def test_fact_table_names_fit_candidate_length_check() -> None:
     lo, hi = checks.CANDIDATE_CHARS
     for table in (families.ANIMALS, families.GIFTS, families.INGREDIENTS):
         assert all(lo <= len(name) <= hi for name in table.rows), table.name
+
+
+def test_evidence_plan_follows_what_each_fact_feature_can_show() -> None:
+    """사실표 특징마다 알 수 있는 증거 종류(kinds)에 맞춰 요일 배정을 바꾼다(② 작은 실측 2차: 소리를
+    목격 날에 둠). 두 날을 바꿔 둘 다 맞으면 맞바꾸고, 짝이 없으면 그 특징으로 알 수 있는 종류로."""
+    theme = gift_theme()
+    sound = {"kind": "RULE", "feature": "흔들면 나는 소리", "allowed": ["달그락 소리"]}
+    shop = {"kind": "HINT", "feature": "산 가게", "allowed": ["서점", "그릇 가게"]}
+    checks.theme_day(theme, "MON")["condition"] = sound
+    checks.theme_day(theme, "TUE")["condition"] = shop
+    theme["evidencePlan"] = {
+        "MON": {"kind": "SIGHTING", "medium": None},  # 소리는 목격으로 알 수 없음
+        "TUE": {"kind": "TRACE", "medium": None},  # 산 가게는 흔적으로 알 수 없음
+        "WED": {"kind": "SIGHTING", "medium": None},
+        "THU": {"kind": "TRACE", "medium": None},
+        "FRI": {"kind": "RECORD", "medium": "메모"},
+    }
+    assert checks.fit_evidence_plan(theme) == ["MON", "TUE"]
+    assert theme["evidencePlan"]["MON"]["kind"] == "TRACE"
+    assert theme["evidencePlan"]["TUE"]["kind"] == "SIGHTING"
+    assert not checks.kind_fits(families.GIFT, "산 가게", "TRACE")
+    assert checks.kind_fits(families.GIFT, "산 가게", "RECORD")
+    assert not checks.kind_fits(families.SECRET_INGREDIENT, "맛", "SIGHTING")
+    assert not checks.kind_fits(families.PRANK, "꼬리 모양", "TRACE")
+    assert checks.kind_fits(families.LOST, "냄새", "SIGHTING")  # 사실표 밖은 흔적만 봄
+    # 짝이 없으면 그 특징으로 알 수 있는 종류로(목격 먼저)
+    lone = gift_theme()
+    checks.theme_day(lone, "WED")["condition"] = shop
+    lone["evidencePlan"] = {d: {"kind": "TRACE", "medium": None} for d in checks.DAYS}
+    assert checks.fit_evidence_plan(lone) == ["TUE", "WED"]
+    assert lone["evidencePlan"]["WED"]["kind"] == "SIGHTING"
