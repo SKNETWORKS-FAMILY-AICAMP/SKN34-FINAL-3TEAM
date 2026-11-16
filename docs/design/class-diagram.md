@@ -2240,7 +2240,7 @@ classDiagram
   AlbumService --> ThemeFrameService
 ```
 
-- 질의 변환·하이브리드(#679 설계, #682 구현 전): `MemoryQueryClient`는 ai `POST /internal/memory-queries`(읽기 5초, 재시도 없음, 서킷 `ai-memory-query`)를 부르고 모든 실패(시간 초과·5xx·형식 밖·서킷 열림)에서 예외 대신 null을 돌려준다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩 → `MemorySearchRepository`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
+- 질의 변환·하이브리드(#679 설계, #682 구현 전): `MemoryQueryClient`는 ai `POST /internal/memory-queries`(읽기 8초, 재시도 없음, 서킷 `ai-memory-query`)를 부르고 모든 실패(시간 초과·5xx·형식 밖·서킷 열림)에서 예외 대신 null을 돌려준다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩 → `MemorySearchRepository`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
 - #559 구현(learning V19): `ThemeFrameService`(지급·소급·보유·확인·삭제)·`AlbumService`·`MemoryController`의 앨범·확인·보유 확인과 기동 소급 `ThemeFrameBackfillRunner`. 회차 상세의 문제·시도·엔딩은 `WeeklyThemeService.pastRound`가 조합. 검색은 #563 구현, 설명은 #564 구현([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 - 학습 완료 처리(기존 `AttemptService`의 돌아보기 저장 = 학습 완료)가 같은 트랜잭션에서 `ThemeFrameService.awardIfComplete`(회차 5문제 완료 시 액자)와 `MemorySearchService.register`(`PENDING` 문서, 내부에서 `MemorySearchRepository.register`)를 부름. 다른 기능은 memory repository를 직접 부르지 않음(architecture 2.2). `EXTRA` 시도는 둘 다 건너뜀
 - `MemoryEmbeddingScheduler`는 `StuckJudgmentScheduler`처럼 조건부 UPDATE 선점이라 잠금 없음(상태 3.7). `MemoryEmbeddingClient`는 ai `POST /internal/embeddings`(기존 계약, 요청당 8글, 최대 64글 계약 이내), 이전 `KnowledgeEmbedder`는 V17 정리로 없으므로 신규. HTTP 전송·외부 DTO는 `memory/client`(`MemoryEmbeddingClient`·`MemoryExplanationAiClient`·core 닉네임 조회 `StudentProfileClient`), 마스킹 정책(`MemoryTextPrivacy`)·업무 흐름은 `memory/service`. 생성 호출의 장애 판정(서킷 열림·전송 실패·502 밖 5xx → `MemoryAiOutageException`)은 `MemoryExplanationAiClient`가 맡음
@@ -2332,7 +2332,7 @@ classDiagram
 | `JudgmentService` | `judgment/service.py` | 사전 보류(`TOO_SHORT`·`UNVERIFIED_SCOPE`) → 추출 → 대조 → 요소·배점으로 `CORRECT|PARTIAL|RETHINK|HELD` 결정 (업무 판단은 service, 아키텍처 2.1) → M2 교차 확인(불일치 시 `HELD(MODEL_DISAGREEMENT)`, `M2_CROSS_CHECK_ENABLED` 기본 꺼짐이면 기록만) → 풀이 단계는 M1 점검(확신도 미만 `HELD(LOW_CONFIDENCE)`, `M1_CHECK_ENABLED` 기본 꺼짐) → 응답. scoring 호출은 `clients/scoring_client.ScoringClient`(`m2_scores(body, timeout)`·`m1_check(body, timeout)`, 요청 본문은 `cross_check.m2_body`·`m1_body`가 만들고 `timeout`은 `SCORING_TIMEOUT`과 남은 판정 시간 중 작은 값, 비활성 응답이면 `None`), 불일치 계산은 `judgment/cross_check.py` (#69, api-spec 4.2.2) |
 | `LeakGuard` | `followup/leak_guard.py` | 모듈 함수 `find_leaks()`(글 하나 검사는 `find_text_leaks()`, 미션 초안 검사와 공유). 정답 키·예시 답·금지어 포함 검사. 실패 시 1회 재생성(`LLM_RETRY`), 재실패 시 `question` 없이 `leakCheck.passed = false` 반환 → learning이 질문 은행 선택 (`BANK`, P16) |
 | `LlmClient` | `llm/base.py`, 제공자는 `llm/providers.py` | 제공자 교체 지점(Claude·OpenAI·OpenAI 호환 sLLM, `LLM_PROVIDER`), LLM 호출 재시도는 이 클래스에서만 (아키텍처 1.3), 호출마다 사용량 콜백(`BackgroundUsageRecorder` → `UsagePublisher`, 발행 실패는 로그만). `stream`은 분석 대화 답변의 일반 텍스트 조각(첫 조각 전 실패만 재시도) |
-| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 아홉 이름(#280 `reportTemplate`, #354 `missionDraft` 5.4, #477 `reportExplanation`, #437 `themeDraft` 5.5, #565 `memoryExplanation` 5.6 포함, #679 `memoryQuery` 5.7은 #681 구현 뒤 열 이름)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
+| `ActiveVersions` | `prompt_versions/registry.py` (#254, 조정은 `prompt_versions/service.py` `PromptSync`) | #68에서 내장 버전과 core 활성 `PROMPT` 열 이름(#280 `reportTemplate`, #354 `missionDraft` 5.4, #477 `reportExplanation`, #437 `themeDraft` 5.5, #565 `memoryExplanation` 5.6 포함, #681 `memoryQuery` 5.7 포함)·승인 scope를 조정한다. 선택한 실제 본문·버전을 요청 동안 고정하고 `/internal/versions`에 같은 버전을 제공한다. 미보유 활성 버전은 명시적 503과 readiness DOWN |
 
 ### 5.2 분석 에이전트·리포트 서술 (analysis_agent · report_narrative)
 
@@ -2604,11 +2604,11 @@ classDiagram
 | `checks` | `memory_explanation/checks.py` | 모듈 함수 `check()`(문장 2~3개·빈 문장 → 형식, 근거 번호 없음·범위 밖·근거에 없는 인용 → 거부)와 `compose()`(문장 끝에 `[n]` 붙이고 `citations` 모음). 원문 없이 사유 코드만 로그 |
 | `EmbeddingService`·`EmbeddingClient` | `embedding/service.py`, `llm/embeddings.py` | 요청 `purpose`(`KNOWLEDGE`·`MEMORY`)로 사용량 `KNOWLEDGE_EMBEDDING`·`MEMORY_EMBEDDING`을 가름(#565). 벡터·재시도는 같음 |
 
-### 5.7 추억 검색 질의 변환 (memory_query, #679 설계, #681 구현 전)
+### 5.7 추억 검색 질의 변환 (memory_query, #679 설계, #681 구현)
 
 | 클래스 | 위치 | 책임 |
 |---|---|---|
-| `MemoryQueryService` | `memory_query/service.py` | `memoryQuery` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(출력 256토큰, 호출별 4초·재시도 없음, 사용량 `MEMORY_QUERY`), `MEMORY_QUERY_PROVIDER=fake`면 `fake.py`(공백 분리 키워드). 칸 규칙(키워드 0~5개·1~20자, `period` `from < to`, `searchText` 1~200자) 위반·구조화 실패 502, LLM 실패 503. 원문 없이 사유 코드만 로그 |
+| `MemoryQueryService` | `memory_query/service.py` | `memoryQuery` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(출력 512토큰, 호출별 7초·재시도 없음, 사용량 `MEMORY_QUERY`), `MEMORY_QUERY_PROVIDER=fake`면 `fake.py`(공백 분리 키워드). 칸 규칙(키워드 0~5개·1~20자, `period` `from < to`, `searchText` 1~200자, `checks.py`) 위반·구조화 실패 502, LLM 실패 503. 원문 없이 사유 코드만 로그 |
 | `router` | `memory_query/router.py` | `POST /internal/memory-queries` 요청 검사(`query` 1~200자, `today` 날짜, 정의 밖 칸 400) 후 서비스 호출 (api-spec 4.2.7) |
 
 ---
