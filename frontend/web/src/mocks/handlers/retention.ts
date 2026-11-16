@@ -12,6 +12,7 @@ import {
   framesOf,
   isUnlocked,
   lookCatalog,
+  MOCK_STORY,
   mockWeekday,
   persistRetention,
   pointsOf,
@@ -22,10 +23,13 @@ import {
   setCommunityEnabled,
   setConsent,
   unlockedOf,
+  weekRules,
   weekStart,
   weeklyThemeFor,
+  frameImageOf,
 } from '../fixtures/retention.ts'
 import { guard, mockLatestAttempt, mockStudent, mockStudentHome, respond } from './student.ts'
+import { mockThemeNone } from '../fixtures/themeState.ts'
 import { consentRows, docs, fixtureConsent, parentChild } from './parent.ts'
 import { allow } from './admin.ts'
 import { ALL_ITEM_SLOTS, THEME_DAYS } from '../../domain/retention.ts'
@@ -34,6 +38,10 @@ import type { MockLookItem, MockWeeklyTheme } from '../fixtures/retention.ts'
 import { THINKING_ORDER } from '../../domain/studentLook.ts'
 import { missions as adminMissions } from '../fixtures/admin/operations.ts'
 import type { ConsentDocument } from '../../domain/parent.ts'
+import { mockPremium } from '../fixtures/payments.ts'
+
+/** 이용권은 결제 목업 구독 한 곳에서 정한다(#602, Child.plan 없음). */
+const planOf = (childId: string) => (mockPremium(childId) ? 'PREMIUM' : 'FREE') as 'FREE' | 'PREMIUM'
 
 /**
  * 2026-11-06 결정(에픽 #396) 학생·학부모 참여 기능 목업. 계약은 API 명세 2.9~2.11(구현 예정).
@@ -122,21 +130,63 @@ export const retentionHandlers = [
     respond(async () => {
       guard(request)
       const me = mockStudent()
-      return weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade)
+      if (mockThemeNone()) return {} // 개발 목업 "테마 없음"(빈 응답이면 웹은 테마 없는 홈)
+      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade, planOf(me.id))
+      // core가 조회 응답으로 하는 테마 적립 보충을 흉내 낸다(#485): 당일 풀이·개근·주간 완주.
+      const key = `${me.id}:${weekStart()}`
+      week.days.forEach((d) => d.completedOnDay && earn(me.id, 'THEME_ON_TIME', `${key}:${d.day}`))
+      if (week.completed) earn(me.id, 'THEME_COMPLETED', key)
+      if (week.finished) earn(me.id, 'THEME_FINISHED', key)
+      return saved(week)
     }),
   ),
   http.post('/api/v1/students/me/weekly-theme/review-views', ({ request }) =>
     respond(async () => {
       guard(request)
       const me = mockStudent()
-      if (mockWeekday() < 5) fail(409, 'THEME_REVIEW_NOT_ALLOWED', '되돌아보기는 토·일에 열려요.')
+      // 토요일(프리미엄은 일요일도)만. 평일·무료 일요일은 409(#484).
+      if (!weekRules(mockWeekday(), planOf(me.id)).weekend) fail(409, 'THEME_REVIEW_NOT_ALLOWED', '되돌아보기는 토요일에 열려요.')
       const key = `${me.id}:${weekStart()}`
       const first = !retentionState.reviewViews.includes(key)
       if (first) retentionState.reviewViews.push(key)
       earn(me.id, 'REVIEW_VIEWED', key)
-      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade)
+      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade, planOf(me.id))
       if (week.completed) earn(me.id, 'THEME_COMPLETED', key)
       return saved({ firstViewThisWeek: first, completed: week.completed })
+    }),
+  ),
+  // 시작·종료 이야기 열람(learning #438·#484 판정 흉내): INTRO는 무료 일요일만 거부, OUTRO는 엔딩 뒤에만.
+  http.post('/api/v1/students/me/weekly-theme/story-views', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const { kind } = ((await request.json().catch(() => ({}))) ?? {}) as { kind?: unknown }
+      if (kind !== 'INTRO' && kind !== 'OUTRO') fail(400, 'VALIDATION_FAILED', '이야기 종류를 확인해 주세요.')
+      const week = weeklyThemeFor(me.id, (await mockStudentHome(me)).missions, me.grade, planOf(me.id))
+      if (weekRules(mockWeekday(), planOf(me.id)).closed || (kind === 'OUTRO' && week.ending !== 'ENDED'))
+        fail(409, 'THEME_STORY_NOT_ALLOWED', '지금은 이 이야기를 기록할 수 없어요.')
+      const key = `${me.id}:${weekStart()}:${kind}`
+      const first = !retentionState.storyViews.includes(key)
+      if (first) retentionState.storyViews.push(key)
+      return saved({ kind, firstViewThisWeek: first })
+    }),
+  ),
+  // 큰 질문 정답 고르기(learning #484 판정 흉내): 금요일 문제 학습 완료 뒤 한 주 한 번, 후보 밖은 400.
+  http.post('/api/v1/students/me/weekly-theme/answer-picks', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const { pick } = ((await request.json().catch(() => ({}))) ?? {}) as { pick?: unknown }
+      if (typeof pick !== 'string' || !pick.trim()) fail(400, 'VALIDATION_FAILED', '고를 후보를 확인해 주세요.')
+      const missions = (await mockStudentHome(me)).missions
+      const week = weeklyThemeFor(me.id, missions, me.grade, planOf(me.id))
+      const key = `${me.id}:${weekStart()}`
+      if (!week.candidates?.includes(pick as string)) fail(400, 'VALIDATION_FAILED', '후보 중에서 골라 주세요.')
+      if (weekRules(mockWeekday(), planOf(me.id)).closed || week.days[4]?.attemptStatus !== 'COMPLETED' || retentionState.picks[key])
+        fail(409, 'THEME_PICK_NOT_ALLOWED', '지금은 정답을 고를 수 없어요.')
+      retentionState.picks[key] = { pick: pick as string, correct: pick === MOCK_STORY.answer, at: new Date().toISOString() }
+      const after = weeklyThemeFor(me.id, missions, me.grade, planOf(me.id))
+      return saved({ correct: pick === MOCK_STORY.answer, ending: after.ending, answer: after.answer })
     }),
   ),
 
@@ -148,7 +198,7 @@ export const retentionHandlers = [
       const frames = framesOf(me.id, (await mockStudentHome(me)).missions)
       return { slots: frameSlotsOf(me.id).flatMap((s) => {
         const f = frames.find((x) => x.themeId === s.themeId && x.weekStart === s.weekStart)
-        return f ? [{ ...s, title: f.title, imageUrl: null }] : []
+        return f ? [{ ...s, title: f.title, imageUrl: frameImageOf(f) }] : []
       }) }
     }),
   ),
@@ -167,7 +217,8 @@ export const retentionHandlers = [
       if (slots.some((s) => !frames.some((f) => f.themeId === s.themeId && f.weekStart === s.weekStart)))
         fail(404, 'THEME_FRAME_NOT_FOUND', '가지고 있지 않은 액자예요.')
       retentionState.frameSlots[me.id] = slots
-      return saved({ slots: slots.map((s) => ({ ...s, title: frames.find((f) => f.themeId === s.themeId && f.weekStart === s.weekStart)!.title, imageUrl: null })) })
+      return saved({ slots: slots.map((s) => ({ ...s, title: frames.find((f) => f.themeId === s.themeId && f.weekStart === s.weekStart)!.title,
+        imageUrl: frameImageOf(frames.find((f) => f.themeId === s.themeId && f.weekStart === s.weekStart)!) })) })
     }),
   ),
   http.get('/api/v1/students/me/album', ({ request }) =>
@@ -178,7 +229,7 @@ export const retentionHandlers = [
       const frames = [...framesOf(me.id, (await mockStudentHome(me)).missions)].sort((a, b) => b.weekStart.localeCompare(a.weekStart))
       const shown = new Set(frameSlotsOf(me.id).map((s) => `${s.themeId}@${s.weekStart}`))
       return {
-        items: frames.slice(p * size, p * size + size).map((f) => ({ themeId: f.themeId, weekStart: f.weekStart, title: f.title, imageUrl: null,
+        items: frames.slice(p * size, p * size + size).map((f) => ({ themeId: f.themeId, weekStart: f.weekStart, title: f.title, imageUrl: frameImageOf(f),
           awardedAt: f.awardedAt, seen: !!f.seenAt, displayed: shown.has(`${f.themeId}@${f.weekStart}`) })),
         page: p, size, totalElements: frames.length,
       }
@@ -192,7 +243,7 @@ export const retentionHandlers = [
         .find((x) => x.themeId === String(params.themeId) && x.weekStart === String(params.weekStart))
       if (!f) return fail(404, 'THEME_FRAME_NOT_FOUND', '가지고 있지 않은 액자예요.')
       return {
-        themeId: f.themeId, weekStart: f.weekStart, title: f.title, awardedAt: f.awardedAt,
+        themeId: f.themeId, weekStart: f.weekStart, title: f.title, imageUrl: frameImageOf(f), awardedAt: f.awardedAt,
         missions: f.missions.map((m) => ({ ...m, attemptId: mockLatestAttempt(me.id, m.missionId) })),
         ending: { seen: f.endingSeen, outro: f.endingSeen ? f.outro : null, answer: f.endingSeen ? f.answer : null },
       }
