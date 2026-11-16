@@ -11,13 +11,16 @@ import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.mission.domain.InputType
+import com.sagomungchi.learning.theme.service.WeeklyThemeService
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.doReturn
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import org.springframework.test.web.servlet.MockHttpServletRequestDsl
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
@@ -43,6 +46,7 @@ class CommunityTest : PostgresRepositoryTest() {
     @Autowired lateinit var json: ObjectMapper
     @Autowired lateinit var attemptService: AttemptService
     @Autowired lateinit var answerService: AnswerService
+    @MockitoSpyBean lateinit var weeklyThemeService: WeeklyThemeService
 
     private lateinit var rows: TestRows
     private lateinit var mission: TestRows.SeededMission
@@ -165,6 +169,48 @@ class CommunityTest : PostgresRepositoryTest() {
         moderate(post, "HIDDEN_REPORT").andExpect { status { isOk() } }
         react(post, reader, "DIFFERENT_VIEW").andExpect { status { isNotFound() }; jsonPath("$.code") { value("COMMUNITY_POST_NOT_FOUND") } }
         unreact(post, reader, "WANT_MORE").andExpect { status { isOk() }; jsonPath("$.deleted") { value(true) } }
+    }
+
+    @Test
+    fun `친구 방 구경용 작성자 확인은 반응 남기기와 같은 순서로 막고 작성자 ID만 돌려줌`() {
+        val author = UUID.randomUUID()
+        val reader = UUID.randomUUID()
+        val post = shareCompleted(author, "작성자 답")
+        shareCompleted(reader, "읽는 학생 답")
+
+        postAuthor(post, reader).andExpect {
+            status { isOk() }
+            header { string("Cache-Control", "no-store") }
+            jsonPath("$.postId") { value(post.toString()) }
+            jsonPath("$.studentId") { value(author.toString()) }
+        }.snapshot("post-author")
+        assertEquals(setOf("postId", "studentId"), postAuthor(post, reader).body().fieldNames().asSequence().toSet())
+
+        postAuthor(post, author).andExpect { status { isConflict() }; jsonPath("$.code") { value("COMMUNITY_OWN_POST") } }
+        val stranger = UUID.randomUUID()
+        postAuthor(post, stranger).andExpect { status { isForbidden() }; jsonPath("$.code") { value("COMMUNITY_LOCKED") } }
+        doReturn(true).`when`(weeklyThemeService).lockedUntilEnding(reader, mission.id)
+        postAuthor(post, reader).andExpect { status { isForbidden() }; jsonPath("$.code") { value("COMMUNITY_LOCKED_UNTIL_ENDING") } }
+        doReturn(false).`when`(weeklyThemeService).lockedUntilEnding(reader, mission.id)
+
+        // scope와 viewerStudentId가 다르거나 학생 요청이 아니면 403(learning 판정 전)
+        mvc.get("/internal/community/posts/$post/author") { internal("STUDENT", UUID.randomUUID()); param("viewerStudentId", reader.toString()) }
+            .andExpect { status { isForbidden() }; jsonPath("$.code") { value("FORBIDDEN") } }
+        mvc.get("/internal/community/posts/$post/author") { internal("SYSTEM", reader); param("viewerStudentId", reader.toString()) }
+            .andExpect { status { isForbidden() }; jsonPath("$.code") { value("FORBIDDEN") } }
+
+        // 공개(VISIBLE)가 아니거나 없으면 404: 없는 글, 설정 비공개, 신고 숨김, 삭제. 숨긴 글이면 본인·잠금보다 404가 먼저
+        postAuthor(UUID.randomUUID(), reader).andExpect { status { isNotFound() }; jsonPath("$.code") { value("COMMUNITY_POST_NOT_FOUND") } }
+        visibility(author, false, "SETTING")
+        assertEquals("HIDDEN_SETTING", status(post))
+        postAuthor(post, reader).andExpect { status { isNotFound() }; jsonPath("$.code") { value("COMMUNITY_POST_NOT_FOUND") } }
+        postAuthor(post, author).andExpect { status { isNotFound() } }
+        visibility(author, true, "SETTING")
+        moderate(post, "HIDDEN_REPORT")
+        postAuthor(post, reader).andExpect { status { isNotFound() }; jsonPath("$.code") { value("COMMUNITY_POST_NOT_FOUND") } }
+        postAuthor(post, stranger).andExpect { status { isNotFound() } }
+        moderate(post, "REMOVED")
+        postAuthor(post, reader).andExpect { status { isNotFound() }; jsonPath("$.code") { value("COMMUNITY_POST_NOT_FOUND") } }
     }
 
     @Test
@@ -294,6 +340,10 @@ class CommunityTest : PostgresRepositoryTest() {
     private fun missionPosts(viewer: UUID, page: Int = 0, size: Int = 20) = mvc.get("/internal/community/missions/${mission.id}/posts") {
         internal("STUDENT", viewer)
         param("viewerStudentId", viewer.toString()); param("seed", "seed-1"); param("page", "$page"); param("size", "$size")
+    }
+
+    private fun postAuthor(post: UUID, viewer: UUID) = mvc.get("/internal/community/posts/$post/author") {
+        internal("STUDENT", viewer); param("viewerStudentId", viewer.toString())
     }
 
     private fun react(post: UUID, student: UUID, reaction: String) = mvc.put("/internal/community/posts/$post/reactions/$reaction") {
