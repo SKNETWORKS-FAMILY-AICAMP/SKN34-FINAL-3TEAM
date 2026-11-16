@@ -36,17 +36,21 @@ class ApiFailure(RuntimeError):
 class Client:
     """One account's browser-like session: cookie jar plus the Origin/X-Requested-With headers core requires."""
 
-    def __init__(self, base_url):
-        self.origin = base_url.rstrip("/")
+    def __init__(self, base_url, host=None, origin=None):
+        self.base = base_url.rstrip("/")
+        self.origin = (origin or self.base).rstrip("/")
+        self.host = host
         self.jar = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
         self.token = None
 
     def call(self, step, method, path, body=None, headers=None):
-        request = urllib.request.Request(self.origin + "/api/v1" + path, method=method,
+        request = urllib.request.Request(self.base + "/api/v1" + path, method=method,
                                          data=None if body is None else json.dumps(body).encode("utf-8"))
         request.add_header("Content-Type", "application/json")
         request.add_header("Origin", self.origin)
+        if self.host:
+            request.add_header("Host", self.host)
         request.add_header("X-Requested-With", "XMLHttpRequest")
         if self.token:
             request.add_header("Authorization", "Bearer " + self.token)
@@ -98,8 +102,8 @@ def signup(client, login_id, password, wait):
             time.sleep(60)
 
 
-def prepare(base_url, login_id, children, grade, wait):
-    client = Client(base_url)
+def prepare(base_url, login_id, children, grade, wait, host=None, origin=None):
+    client = Client(base_url, host, origin)
     password = secrets.token_urlsafe(18)
     issued = signup(client, login_id, password, wait)
     client.token = issued["accessToken"]
@@ -132,6 +136,8 @@ def main(argv=None):
     parser.add_argument("--base-url", default=os.environ.get("BASE_URL", "http://localhost:5173"))
     parser.add_argument("--count", type=int, default=4, help="accounts to have in the secrets file (default 4)")
     parser.add_argument("--prefix", default="load", help="login ID prefix; IDs are <prefix><n>, letters and digits only")
+    parser.add_argument("--host", help="Host header when the ingress needs one (kind: api.sagomungchi.local)")
+    parser.add_argument("--origin", help="Origin header when it differs from --base-url (kind: http://localhost:5173)")
     parser.add_argument("--children", type=int, default=3, choices=(1, 2, 3))
     parser.add_argument("--grade", type=int, default=5, choices=(3, 4, 5, 6))
     parser.add_argument("--secrets", required=True, type=Path, help="k6 secrets file outside the repository")
@@ -149,7 +155,8 @@ def main(argv=None):
         if login_id in known:
             continue
         try:
-            accounts.append(prepare(args.base_url, login_id, args.children, args.grade, args.wait))
+            accounts.append(prepare(args.base_url, login_id, args.children, args.grade, args.wait,
+                                    args.host, args.origin))
         except ApiFailure as failure:
             print(f"{login_id}: {failure}", file=sys.stderr)
             break

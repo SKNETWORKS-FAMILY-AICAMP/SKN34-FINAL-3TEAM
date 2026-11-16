@@ -492,6 +492,69 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 - `app-default-deny`는 core release만 만든다. 두 release에 켜면 같은 이름 객체로 Helm 소유권 충돌이 난다.
 - 재가동 때 확인할 것: core 재배포 뒤 `kubectl -n app get networkpolicy app-default-deny`, 앱 7개 readiness, migration Job 1회 성공, `demo-db-oneoff`로 `select 1`, 정책 없는 `kubectl run` Pod의 DNS 조회가 실패하는지. 되돌리기는 prod README NetworkPolicy 절.
 
+## 9.9 실제 LLM 조건 로컬 응답 시간 실측 (#630, 2026-11-16)
+
+1차 부하 시험(9절)은 LLM 스텁 기준이라 실제 LLM 지연이 빠져 있었다. 실제 OpenAI로 화면과 같은 core 경로의 응답 시간을 처음 쟀다. 결과 수치·호출 종류별 토큰·원가 산식은 [ai 19절](ai.md#19-실제-llm-조건-응답-시간원가-산식-630-2026-11-16).
+
+### 9.9.1 환경
+
+| 항목 | 값 |
+|---|---|
+| 클러스터 | local kind `kind-sagomungchi-local`, develop 배포(006c2476 기준) 그대로 |
+| 진입 | `http://127.0.0.1` + Host `api.sagomungchi.local`(ingress-nginx → core), 측정 PC = 클러스터 호스트 |
+| ai | 실제 OpenAI(`OPENAI_MODEL=gpt-6-luna`, 테마 검토 `gpt-6.1-terra`), `M2_CROSS_CHECK_ENABLED=true`(시연 조건, #668이 적용), `THEME_VIDEO_ENABLED=false` |
+| 동시 사용자 | 1명(요청을 한 건씩 차례로) |
+| 시각 | 2026-11-16 10:09~11:28 KST. 판정·분석·리포트 10:09~10:16, 테마 10:18~11:28 |
+| 재시작 | 측정 구간 동안 앱 Pod 재시작·교체 없음(15~20초마다 확인). 테마 초안만 ai에 `IMAGE_PROVIDER=fake`를 넣어 재시작한 뒤 재고 측정 뒤 원래 ReplicaSet으로 되돌림 |
+
+### 9.9.2 절차와 표본
+
+`evaluation/load/llm_latency.py`가 요청 시작부터 SSE `done`(리포트는 관리자 작업 `COMPLETED`, 테마는 초안이 `GENERATING`을 벗어날 때)까지를 잰다. 같은 시간대 `llm_usage`는 `llm_usage_window.sql`로 묶는다.
+
+| 흐름 | 경로 | 표본 |
+|---|---|---|
+| 판정·되묻기 | 학생 `POST /missions/{id}/attempts` → `POST /attempts/{id}/answers` → `POST /answers/{id}/feedback`(SSE). 되묻기가 오면 `followupId`로 답해 다시 판정 | 판정 SSE 30건(그중 LLM 되묻기 20건), 초5 서술 미션 10개 |
+| 분석 대화 | 학부모 `POST /conversations` → `POST /conversations/{id}/messages`(SSE) | 20건 |
+| 주간 리포트 서술 | 관리자 `POST /reports/{id}/regenerate` → `GET /admin/jobs/{jobId}` | 같은 리포트(시험 계정 `kindqa1` 자녀, 11/09 주) 5회 |
+| 테마 초안 글 | 관리자 `POST /admin/theme-drafts`(`G3`·`G4`·`G5`, 2027-01-04 주) → `GET /admin/theme-drafts/{id}` | 3건, 끝난 뒤 버림 처리 |
+
+- 시작 직후 learning이 다른 작업(#668)으로 교체돼 판정 4건(10:02~10:03)을 버리고 처음부터 다시 쟀다
+- 테마 G4는 관리자 access 토큰(15분) 만료로 폴링이 끊겨 learning `theme_draft.created_at → updated_at`(36분 27초)으로 보정했다. 스크립트는 401이면 다시 로그인하도록 고쳤다
+- 비용: 이번 측정 전체 $0.665(테마 글 $0.644)
+
+### 9.9.3 결과 요약
+
+| 흐름 | 건수 | p50 | p95 | 최대 |
+|---|---|---|---|---|
+| 판정 SSE(되묻기 없음) | 10 | 5.2초 | 8.9초 | 9.4초 |
+| 판정 + 되묻기 SSE | 20 | 7.2초 | 12.5초 | 14.0초 |
+| 분석 대화 SSE | 20 | 3.6초 | 8.9초 | 11.8초 |
+| 주간 리포트 재생성 | 5 | 13.2초 | 35.3초 | 40.6초 |
+| 테마 초안 글 | 3 | 4.8분 | — | 36.4분(`CHECK_FAILED`) |
+
+- 1차 부하 시험 판정 SSE p95(스텁 2.5~4초)와 바로 비교하지 않는다. 동시 사용자 수·환경이 달라 개선율·악화율을 내지 않는다
+- 실패 0건(HTTP·SSE `error` 없음). 분석 대화 LLM 호출 33회 중 1회 실패가 있었지만 응답은 정상 종료됐다
+
+### 9.9.4 만든 시험 데이터 (kind에 남김)
+
+| 대상 | 내용 |
+|---|---|
+| 학부모 `perf6301`(ID·비밀번호, `is_demo=false`) | 자녀 초5 `부하1`·`부하2`·`부하3`, 학생 기기 1대·PIN, 보호자 공유 켬. `prepare_accounts.py`로 만듦 |
+| 구독 3건 | 위 자녀 3명 `LOCAL-PLUS` ACTIVE(11/16~12/16, 자동 갱신 없음). 결제 없이 core_db에 직접 넣음(무료 학생은 일반 미션 시작 불가) |
+| 관리자 `perf630-admin` | CONTENT·SERVICE_OPS. `scripts/admin_account_sql.py`로 만듦 |
+| 학습 기록 | 서술 미션 시도 12개(버린 표본 포함)와 답변·판정·되묻기, 분석 대화 1개(질문 20개) |
+| 리포트 | `kindqa1` 자녀 11/09 주 주간 리포트 revision 2~6 |
+| 테마 초안 | 2027-01-04 주 G3·G4·G5 초안 3건(`DISCARDED`). 대역 그림은 MinIO `theme-drafts/` 아래 |
+| `llm_usage` | 10:02~11:28 KST 실제 호출 약 380건(같은 시간대 다른 세션의 kind 확인 호출이 일부 섞임, 측정분은 시간 구간으로 구분) |
+
+비밀번호·PIN·기기 쿠키는 저장소 밖 파일에만 있다. 정리(관리자 비활성화 `admin_account_sql.py --disable`, 구독 해지, 계정 탈퇴)는 #601 AWS 실측 뒤 함께 정한다.
+
+### 9.9.5 한계와 남은 것
+
+- 로컬 kind·동시 1명이라 NAT·ALB·실제 네트워크 지연과 동시 부하에서의 OpenAI 지연·429는 반영되지 않았다
+- AWS 실측은 #601 A 계정 재가동 때 같은 도구(`LOAD_API_BASE`·`LOAD_API_HOST`만 바꿈)로 한다. 동시 사용자를 늘린 실제 LLM 부하는 #384 범위
+- 테마 초안은 그림 대역이라 그림 생성 시간(1장 p50 약 34초, 11/12 기록)이 빠졌다
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
