@@ -9,6 +9,9 @@ import com.sagomungchi.learning.theme.domain.AdminWeeklyThemePage
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
+import com.sagomungchi.learning.theme.domain.ThemeFeature
+import com.sagomungchi.learning.theme.domain.ThemeFeatureValue
+import com.sagomungchi.learning.theme.domain.ThemeStory
 import com.sagomungchi.learning.theme.domain.ThemePublishError
 import com.sagomungchi.learning.theme.domain.WeeklyThemePublishIncompleteException
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
@@ -80,6 +83,25 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
+    fun `특징 표와 요일 특징 이름을 본문에서 읽어 서비스에 넘기고 응답에 담음 (#647)`() {
+        val features = listOf(ThemeFeature("털", listOf(ThemeFeatureValue("고양이", "짧은"), ThemeFeatureValue("강아지", "긴"))))
+        val content = ThemeContent(ThemeGrade.G3, monday, "물의 여행", "소개", listOf(ThemeDayMission(ThemeDay.MON, mission, clueFeature = "털")),
+            ThemeStory(features = features))
+        given(service.create(admin, content)).willReturn(
+            theme.copy(days = listOf(AdminThemeDay(ThemeDay.MON, mission, clueFeature = "털")), features = features),
+        )
+        val withFeatures = body.replace("\"missionId\":\"$mission\"", "\"missionId\":\"$mission\",\"clueFeature\":\"털\"")
+            .replace("}]}", "}],\"features\":[{\"name\":\"털\",\"values\":[{\"candidate\":\"고양이\",\"value\":\"짧은\"},{\"candidate\":\"강아지\",\"value\":\"긴\"}]}]}")
+
+        mockMvc.post("/internal/admin/weekly-themes") { asAdmin(content = withFeatures) }.andExpect {
+            status { isCreated() }
+            jsonPath("$.days[0].clueFeature") { value("털") }
+            jsonPath("$.features[0].name") { value("털") }
+            jsonPath("$.features[0].values[1].value") { value("긴") }
+        }
+    }
+
+    @Test
     fun `목록은 필터를 넘기고 items·page·size·totalElements 봉투`() {
         given(service.list(ThemeGrade.G5, monday, WeeklyThemeStatus.PUBLISHED, 1, 10)).willReturn(AdminWeeklyThemePage(listOf(theme), 1, 10, 11))
 
@@ -141,6 +163,10 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
             body.replace("""[{"day":"MON","missionId":"$mission"}]""", """[{"day":"MON","missionId":"$mission"},{"day":"MON","missionId":"${UUID.randomUUID()}"}]"""),
             body.replace("""[{"day":"MON","missionId":"$mission"}]""", """[{"day":"MON","missionId":"$mission"},{"day":"TUE","missionId":"$mission"}]"""),
             body.replace("\"MON\"", "\"SAT\""),
+            // #647 특징 표 상한: 특징 11개, 특징 이름 101자, 요일 특징 이름 101자
+            body.replace("}]}", "}],\"features\":[${(1..11).joinToString(",") { "{\"name\":\"특징$it\",\"values\":[]}" }}]}"),
+            body.replace("}]}", "}],\"features\":[{\"name\":\"${"가".repeat(101)}\",\"values\":[]}]}"),
+            body.replace("\"missionId\":\"$mission\"", "\"missionId\":\"$mission\",\"clueFeature\":\"${"가".repeat(101)}\""),
         ).forEach { wrong ->
             mockMvc.post("/internal/admin/weekly-themes") { asAdmin(content = wrong) }.andExpect {
                 status { isBadRequest() }

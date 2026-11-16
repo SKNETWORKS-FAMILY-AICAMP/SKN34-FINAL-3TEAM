@@ -37,6 +37,7 @@
             <arg column="candidates" javaType="java.util.List" typeHandler="com.sagomungchi.learning.mission.repository.StringListTypeHandler"/>
             <arg column="answer" javaType="java.lang.String"/>
             <arg column="answer_clue" javaType="java.lang.String"/>
+            <arg column="features" javaType="java.util.List" typeHandler="com.sagomungchi.learning.theme.repository.FeatureListTypeHandler"/>
         </constructor>
     </resultMap>
 
@@ -52,6 +53,7 @@
             <arg column="hint_spots" javaType="java.util.List" typeHandler="com.sagomungchi.learning.theme.repository.HintSpotListTypeHandler"/>
             <arg column="video_uri" javaType="java.lang.String"/>
             <arg column="scene_uri" javaType="java.lang.String"/>
+            <arg column="clue_feature" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
 
@@ -138,14 +140,14 @@
 
     <select id="findVersion" resultMap="version">
         SELECT id, version, title, intro, outro, intro_image_uri, outro_image_uri, intro_video_uri, outro_video_uri,
-               intro_motion, outro_motion, big_question, candidates, answer, answer_clue
+               intro_motion, outro_motion, big_question, candidates, answer, answer_clue, features
         FROM weekly_theme_version WHERE id = #{versionId}
     </select>
 
     <!-- 요일 미션 표시: 미션 게시본 제목·생각 유형·장면, 게시본이 없으면(공개 중단 등) 현재본. 요일 칸(#438) 함께 -->
     <select id="findDays" resultMap="day">
         SELECT d.day_of_week, d.mission_id, v.title, v.thinking_type,
-               d.clue, d.rules_out, d.dialogue, d.hint_spots, d.video_uri, v.scene_uri
+               d.clue, d.rules_out, d.dialogue, d.hint_spots, d.video_uri, v.scene_uri, d.clue_feature
         FROM weekly_theme_day d
         JOIN mission m ON m.id = d.mission_id
         JOIN mission_version v ON v.id = COALESCE(m.published_version_id, m.current_version_id)
@@ -171,23 +173,26 @@
     <insert id="insertVersion">
         INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, outro, intro_image_uri, outro_image_uri,
                                           intro_video_uri, outro_video_uri, intro_motion, outro_motion, big_question,
-                                          candidates, answer, answer_clue, created_by, created_at)
+                                          candidates, answer, answer_clue, features, created_by, created_at)
         VALUES (#{id}, #{themeId}, #{version}, #{title}, #{intro}, #{story.outro}, #{story.introImageUri}, #{story.outroImageUri},
                 #{story.introVideoUri}, #{story.outroVideoUri},
                 #{story.introMotion,typeHandler=com.sagomungchi.learning.mission.repository.MotionTypeHandler,jdbcType=OTHER},
                 #{story.outroMotion,typeHandler=com.sagomungchi.learning.mission.repository.MotionTypeHandler,jdbcType=OTHER},
                 #{story.bigQuestion},
                 #{story.candidates,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler,jdbcType=OTHER},
-                #{story.answer}, #{story.answerClue}, #{createdBy}, #{now})
+                #{story.answer}, #{story.answerClue},
+                #{story.features,typeHandler=com.sagomungchi.learning.theme.repository.FeatureListTypeHandler,jdbcType=OTHER},
+                #{createdBy}, #{now})
     </insert>
 
     <insert id="insertDay">
-        INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id, clue, rules_out, dialogue, hint_spots, video_uri)
+        INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id, clue, rules_out, dialogue, hint_spots, video_uri,
+                                      clue_feature)
         VALUES (#{versionId}, #{dayOfWeek}, #{day.missionId}, #{day.clue},
                 #{day.rulesOut,typeHandler=com.sagomungchi.learning.mission.repository.StringListTypeHandler,jdbcType=OTHER},
                 #{day.dialogue,typeHandler=com.sagomungchi.learning.theme.repository.DialogueListTypeHandler,jdbcType=OTHER},
                 #{day.hintSpots,typeHandler=com.sagomungchi.learning.theme.repository.HintSpotListTypeHandler,jdbcType=OTHER},
-                #{day.videoUri})
+                #{day.videoUri}, #{day.clueFeature})
     </insert>
 
     <update id="updateHeader">

@@ -3929,7 +3929,7 @@ components:
       type: object
       required: [themeId, weekStart, title, intro, reused, days, review, completed, bigQuestion, candidates, introImageUrl,
                  introVideoUrl, introMotion, introSeen, outroSeen, outro, outroImageUrl, outroVideoUrl, outroMotion, answer, answerClue,
-                 finished, ending, answerPick]
+                 finished, ending, answerPick, features]
       properties:
         themeId: {type: string, format: uuid}
         weekStart: {type: string, format: date, description: 이번 주 KST 월요일(재사용 테마도 이번 주)}
@@ -3953,7 +3953,7 @@ components:
           type: array
           items:
             type: object
-            required: [day, missionId, title, thinkingType, state, attemptStatus, clue, rulesOut, completedOnDay]
+            required: [day, missionId, title, thinkingType, state, attemptStatus, clue, rulesOut, completedOnDay, clueFeature, clueFacts]
             properties:
               day: {$ref: '#/components/schemas/ThemeDay'}
               missionId: {type: string, format: uuid}
@@ -3962,6 +3962,11 @@ components:
               state: {type: string, enum: [LOCKED, OPEN, CLOSED]}
               clue: {type: [string, 'null'], description: '그날 단서(#438). 그 문제를 그 주에 학습 완료한 뒤에만, 아니면 null(#484)'}
               rulesOut: {type: [array, 'null'], items: {type: string}, description: '그날 단서로 빠지는 후보(빈 배열 가능). clue와 같은 조건'}
+              clueFeature: {type: [string, 'null'], description: '그날 단서가 쓰는 특징 이름(#647). clue와 같은 조건(그 주에 학습 완료한 뒤), 특징 표가 없는 테마는 null'}
+              clueFacts:
+                type: [array, 'null']
+                description: '그날 특징의 후보별 값(단서 근거, #647). clueFeature와 같은 조건. 얻지 못한 요일 특징은 넣지 않음'
+                items: {$ref: '#/components/schemas/ThemeFeatureValue'}
               completedOnDay: {type: boolean, description: '그 요일 문제를 그 요일 KST 안에 학습 완료(당일 풀이, core THEME_ON_TIME 근거, #484)'}
               attemptStatus:
                 type: string
@@ -3985,6 +3990,10 @@ components:
         completed: {type: boolean, description: '월~금 다섯 문제를 각 요일(KST) 안에 학습 완료(개근, 개정 전 이름 완주). core가 개근 THEME_COMPLETED로 적립(#485·#506)'}
         finished: {type: boolean, description: '다섯 문제를 그 주 토요일 23:59:59(KST)까지 학습 완료(주간 완주, 일요일 완료 제외). core THEME_FINISHED 근거(#484)'}
         ending: {$ref: '#/components/schemas/ThemeEnding'}
+        features:
+          type: [array, 'null']
+          description: '후보 특징 표 전체(#647). 엔딩 상태(ending = ENDED)일 때만, 특징 표가 없는 테마는 null. 엔딩 전에는 얻은 요일 특징만 days[].clueFacts로'
+          items: {$ref: '#/components/schemas/ThemeFeature'}
         answerPick:
           description: >-
             그 주 학생이 고른 큰 질문 정답(#590, theme_answer_pick). 고르지 않았으면 null. 엔딩 전에도 채움(고른 후보가 맞았는지만,
@@ -4175,9 +4184,10 @@ components:
         dialogue: {type: [array, 'null'], maxItems: 20, items: {$ref: '#/components/schemas/DialogueLine'}}
         hintSpots: {type: [array, 'null'], maxItems: 10, items: {$ref: '#/components/schemas/HintSpot'}}
         videoUri: {type: [string, 'null'], maxLength: 500, description: 문제 전 영상 S3 키. ai는 요일 영상을 만들지 않아 관리자가 직접 넣을 때만 씀}
+        clueFeature: {type: [string, 'null'], maxLength: 100, description: '그날 단서가 쓰는 특징 이름(#647, features의 name). 없거나 null이면 이전 버전 값을 이어받되 특징 표가 없어지거나 그날 rulesOut이 바뀌면 이어받지 않음, 빈 문자열이면 비움'}
     AdminThemeDay:
       type: object
-      required: [day, missionId, clue, rulesOut, dialogue, hintSpots, videoUri, videoUrl, sceneImageUrl]
+      required: [day, missionId, clue, rulesOut, dialogue, hintSpots, videoUri, videoUrl, sceneImageUrl, clueFeature]
       properties:
         day: {$ref: '#/components/schemas/ThemeDay'}
         missionId: {type: string, format: uuid}
@@ -4188,6 +4198,7 @@ components:
         videoUri: {type: [string, 'null'], description: 저장된 S3 키}
         videoUrl: {type: [string, 'null'], description: 미리보기 presigned URL}
         sceneImageUrl: {type: [string, 'null'], description: '그날 미션 장면 미리보기 URL(게시본, 없으면 현재본)'}
+        clueFeature: {type: [string, 'null'], description: 그날 단서가 쓰는 특징 이름(#647)}
     AdminWeeklyThemeRequest:
       type: object
       required: [grade, weekStart, title, intro, days]
@@ -4217,6 +4228,13 @@ components:
         candidates: {type: [array, 'null'], maxItems: 10, items: {type: string, maxLength: 100}}
         answer: {type: [string, 'null'], maxLength: 100}
         answerClue: {type: [string, 'null'], maxLength: 500}
+        features:
+          type: [array, 'null']
+          maxItems: 10
+          description: >-
+            후보 특징 표(#647, ai 테마 초안 채택분). 없거나 null이면 이전 버전 값을 이어받되 후보가 바뀌었거나 후보·정답을 비우면 버림, 빈 배열이면 비움.
+            저장 때 특징마다 후보 하나에 값 하나, 요일 clueFeature는 표의 이름, 후보를 빼는 날은 그 특징 값이 같은 후보끼리 함께 빠지는지 검사(400)
+          items: {$ref: '#/components/schemas/ThemeFeature'}
     ThemeDraftStatus:
       type: string
       enum: [GENERATING, READY, CHECK_FAILED, FAILED, ADOPTED, DISCARDED]
@@ -4298,6 +4316,11 @@ components:
               sceneNote: {type: string}
               clue: {type: string}
               rulesOut: {type: array, items: {type: string}}
+              clueFeature: {type: [string, 'null'], description: '그날 단서가 쓰는 특징 이름(#647 선택 칸, 예전 초안은 null)'}
+        features:
+          type: [array, 'null']
+          description: '후보 특징 표(#647 선택 칸, ai 응답 그대로. 예전 초안은 null)'
+          items: {$ref: '#/components/schemas/ThemeFeature'}
     ThemeDraftScene:
       type: object
       additionalProperties: false
@@ -4436,6 +4459,28 @@ components:
         outroImageUrl: {type: [string, 'null']}
         introVideoUrl: {type: [string, 'null']}
         outroVideoUrl: {type: [string, 'null']}
+        features:
+          type: [array, 'null']
+          description: 후보 특징 표(#647). 사람이 쓴 테마·기존 테마는 null
+          items: {$ref: '#/components/schemas/ThemeFeature'}
+    ThemeFeature:
+      type: object
+      additionalProperties: false
+      description: 후보 특징 표의 특징 하나(#647, ai 응답 theme.features). values는 후보마다 하나
+      required: [name, values]
+      properties:
+        name: {type: string, maxLength: 100}
+        values:
+          type: array
+          maxItems: 10
+          items: {$ref: '#/components/schemas/ThemeFeatureValue'}
+    ThemeFeatureValue:
+      type: object
+      additionalProperties: false
+      required: [candidate, value]
+      properties:
+        candidate: {type: string, maxLength: 100}
+        value: {type: string, maxLength: 100}
     AdminWeeklyThemePage:
       type: object
       required: [items, page, size, totalElements]

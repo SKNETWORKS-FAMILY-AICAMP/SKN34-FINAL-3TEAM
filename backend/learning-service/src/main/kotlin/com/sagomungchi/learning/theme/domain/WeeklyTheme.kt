@@ -137,7 +137,7 @@ object ThemePublishCheck {
 
 /**
  * 요일 하나의 문제 (`weekly_theme_day`). #438: 그날 단서·빠지는 후보, 문제 전 대화, 그림 위 생각 열기 위치, 문제 전 영상 S3 키(모두 선택).
- * `rulesOut`의 빈 목록은 "그날 단서로 빠지는 후보 없음"이라는 값이다
+ * `rulesOut`의 빈 목록은 "그날 단서로 빠지는 후보 없음"이라는 값이다. #647: clueFeature는 그날 단서가 쓰는 특징 이름(ThemeStory.features의 name)
  */
 data class ThemeDayMission(
     val day: ThemeDay,
@@ -147,7 +147,17 @@ data class ThemeDayMission(
     val dialogue: List<DialogueLine>? = null,
     val hintSpots: List<HintSpot>? = null,
     val videoUri: String? = null,
+    val clueFeature: String? = null,
 )
+
+/** 후보 특징 표의 한 칸 (#647): 후보와 그 특징 값 */
+data class ThemeFeatureValue(val candidate: String, val value: String)
+
+/** 후보 특징 표의 특징 하나 (#647, ai 응답 theme.features): 이름과 후보마다 값. 요일 rulesOut을 계산한 근거 */
+data class ThemeFeature(val name: String, val values: List<ThemeFeatureValue>) {
+    /** 후보 → 값 */
+    fun valueOf(): Map<String, String> = values.associate { it.candidate to it.value }
+}
 
 /** 문제 전 대화 한 줄 (#438) */
 data class DialogueLine(val speaker: String, val text: String)
@@ -157,7 +167,8 @@ data class HintSpot(val seq: Int, val x: Double, val y: Double)
 
 /**
  * 테마 이야기·장면·정답 구조 (`weekly_theme_version`, #438, 기준안). 사람이 쓴 테마는 비워도 되어 모두 선택.
- * `*Uri`는 ai가 올린 S3 키(응답 URL은 AssetUrls), 움직임은 ai가 정한 JSON 객체 그대로
+ * `*Uri`는 ai가 올린 S3 키(응답 URL은 AssetUrls), 움직임은 ai가 정한 JSON 객체 그대로.
+ * #647: features는 후보 특징 표(ai 테마 초안 채택분, 사람이 쓴 테마·기존 테마는 null)
  */
 data class ThemeStory(
     val outro: String? = null,
@@ -171,6 +182,7 @@ data class ThemeStory(
     val candidates: List<String>? = null,
     val answer: String? = null,
     val answerClue: String? = null,
+    val features: List<ThemeFeature>? = null,
 )
 
 /**
@@ -190,6 +202,8 @@ object ThemeLimits {
     const val SPEAKER = 40
     const val LINE = 200
     const val SPOTS = 10
+    /** 후보 특징 표의 특징 수 (#647 기준안. ai는 2~5개를 만듦) */
+    const val FEATURES = 10
 }
 
 /** 테마 저장 내용 (작성·수정 본문을 검사한 값) */

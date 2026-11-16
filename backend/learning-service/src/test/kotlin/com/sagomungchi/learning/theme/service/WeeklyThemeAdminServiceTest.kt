@@ -4,6 +4,7 @@ import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.errorCodeOf
 import com.sagomungchi.learning._common.exception.httpStatusOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
+import com.sagomungchi.learning.theme.ThemeDraftFixtures
 import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.HintSpot
 import com.sagomungchi.learning.theme.domain.ThemeGrade
@@ -258,6 +259,32 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
             service.update(id, admin, content().copy(story = ThemeStory(candidates = listOf("사자", "강아지"))))
         }
         assertEquals(1, service.get(id).version)
+    }
+
+    @Test
+    fun `특징 표·요일 특징 이름을 저장해 관리자 응답에 담고, 수정 때 이어받으며 표와 어긋나면 400 (#647)`() {
+        val withFeatures = storyContent().let { c ->
+            c.copy(
+                days = c.days.map { it.copy(clueFeature = ThemeDraftFixtures.CLUE_FEATURES.getValue(it.day)) },
+                story = c.story.copy(features = ThemeDraftFixtures.FEATURES),
+            )
+        }
+        val saved = service.create(admin, withFeatures)
+        assertEquals(ThemeDraftFixtures.FEATURES, saved.features)
+        assertEquals(ThemeDraftFixtures.CLUE_FEATURES.values.toList(), saved.days.map { it.clueFeature })
+
+        // 지금 관리자 웹처럼 새 칸 없이 제목만 고치면 그대로 이어받음
+        val kept = service.update(saved.themeId, admin, content(title = "새 제목"))
+        assertEquals(ThemeDraftFixtures.FEATURES, kept.features)
+        assertEquals("꼬리", kept.days.last().clueFeature)
+
+        // 표에 없는 특징 이름은 400, 특징 표가 없는 테마는 지금처럼 null
+        assertError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED") {
+            service.create(admin, withFeatures.copy(days = withFeatures.days.map { if (it.day == ThemeDay.MON) it.copy(clueFeature = "냄새") else it }))
+        }
+        val plain = service.create(admin, storyContent(title = "특징 없는 테마"))
+        assertNull(plain.features)
+        assertTrue(plain.days.all { it.clueFeature == null })
     }
 
     @Test
