@@ -21,6 +21,7 @@ from app.llm.embeddings import create_embedder
 from app.llm.media import create_media_clients
 from app.llm.providers import create_explanation_llm, create_llm, create_theme_llms
 from app.memory_explanation.router import router as memory_explanation_router
+from app.memory_query.router import router as memory_query_router
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
 from app.messaging.publisher import EventPublisher, UsagePublisher
@@ -117,5 +118,6 @@ def create_app() -> FastAPI:
     app.include_router(report_explanation_router)
     app.include_router(embedding_router)
     app.include_router(memory_explanation_router)
+    app.include_router(memory_query_router)
     app.include_router(versions_router)
     return app

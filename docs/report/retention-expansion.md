@@ -238,7 +238,7 @@
 - 새 서비스·Pod·네트워크 정책 없음. learning→ai, ai→LLM API는 이미 허용됨
 - 벡터 저장은 기존 RDS learning_db. `vector` 확장은 이미 bootstrap으로 설치됨
 - 통신 경로 2개 추가: 추억 검색(Web→core→learning→ai 임베딩), 추억 설명(Web→core→learning→ai LLM), 둘 다 동기 HTTP
-- 타임아웃: ai LLM 호출(15초·재시도 1회) 때문에 learning→ai 설명은 35초가 필요해 core→learning 일반 프록시(30초)를 넘음 → 설명 경로는 별도 회로 `learning-memory`(core→learning 45초, 2026-11-12 확정). 검색은 질의 변환 5초 + 임베딩 20초라 30초 안이며(16장), ai 장애가 일반 프록시 회로로 번지지 않게 같은 `learning-memory` 회로를 씀(9.1)
+- 타임아웃: ai LLM 호출(15초·재시도 1회) 때문에 learning→ai 설명은 35초가 필요해 core→learning 일반 프록시(30초)를 넘음 → 설명 경로는 별도 회로 `learning-memory`(core→learning 45초, 2026-11-12 확정). 검색은 질의 변환 8초 + 임베딩 20초라 30초 안이며(16장), ai 장애가 일반 프록시 회로로 번지지 않게 같은 `learning-memory` 회로를 씀(9.1)
 - 비동기 임베딩은 RabbitMQ 이벤트 없이 learning 주기 작업으로 처리 → "learning은 발행 없음" 원칙 유지
 - LLM 사용량 유형 추가: `MEMORY_EMBEDDING`, `MEMORY_EXPLANATION`(core `llm_usage.call_type` 마이그레이션 1개). 질의 변환 `MEMORY_QUERY`는 2026-11-16 추가(core 마이그레이션 1개 더, 16장)
 - 개인정보 범위: 추억 검색 임베딩·설명은 판정처럼 외부 LLM 사용. "학생 글이 클러스터 밖으로 나가지 않음"은 리포트 설명 sLLM 한정
@@ -696,8 +696,8 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 | 항목 | 결정 |
 |---|---|
 | ai 내부 API | `POST /internal/memory-queries` `{query, today}` → `{keywords:[최대 5], period:{from,to}\|null, searchText, versions}`(api-spec 4.2.7). 질문은 learning이 마스킹한 뒤 전송 |
-| 모델·시간 | ai 기본 LLM, 출력 상한 256토큰, ai LLM 호출 4초·재시도 없음(호출별 덮어쓰기), learning→ai 5초·재시도 없음, learning 서킷 `ai-memory-query` |
-| 시간 예산 | core→learning 검색 30초 > 변환 5초 + 임베딩 20초 + DB 처리 |
+| 모델·시간 | ai 기본 LLM, 출력 상한 512토큰, ai LLM 호출 7초·재시도 없음(호출별 덮어쓰기), learning→ai 8초·재시도 없음(2026-11-16 실측으로 256토큰·4초·5초에서 변경, 16.7), learning 서킷 `ai-memory-query` |
+| 시간 예산 | core→learning 검색 30초 > 변환 8초 + 임베딩 20초 + DB 처리 |
 | 프롬프트 | 이름 `memoryQuery`, 승인 scope `ai/memory-query`, 내장 버전 `memory-query@1` |
 | 가짜 구현 | `MEMORY_QUERY_PROVIDER=fake`: 공백 분리 키워드(앞 5개), 기간 없음, `searchText`=원문, 사용량 없음 |
 | 사용량 | 새 `callType` `MEMORY_QUERY`(core `llm_usage` CHECK·`CallType`·OpenAPI·이벤트 스키마·ai/scoring 발행 목록, #680). ai는 #680 병합 뒤에만 발행 |
@@ -711,14 +711,14 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 | 설정 | learning `app.memory.query-rewrite.enabled`(기본 true). false면 변경 전 벡터 단독 검색 |
 | DB | learning 스키마 변경 없음(학생당 문서가 적어 필터 뒤 정확 탐색, 새 인덱스·`pg_trgm` 없음). core 마이그레이션 1개(`callType` 확장) |
 | 저장·로그 | 질문·변환 결과 미저장, 운영 로그 원문 미기록(NFR-SEC-05) |
-| 비용·지연 | 검색 1회당 LLM 약 $0.0001 추가, 지연 1~2초 증가. 하루 한도 20회 그대로 |
+| 비용·지연 | 검색 1회당 LLM 약 $0.0001 추가, 지연 1~2초 증가(설계 추정). 실측은 약 $0.0003·3.7~5.5초(16.7). 하루 한도 20회 그대로 |
 
 ### 16.4 근거
 - RRF: 코사인 유사도와 키워드 일치 수는 단위가 달라 점수끼리 더하면 가산점 크기를 평가셋으로 맞춰야 함. 순위 기반 합치기는 조정값이 k 하나뿐임
 - 키워드로만 걸린 문서 포함: 정확한 단어("토끼")가 들어간 기록을 놓치지 않게 함. 반복 결과 문제를 줄이는 것이 이번 변경의 목적임
 - 기간 없음 → `NO_RESULTS`: 학생이 말한 기간과 다른 기록을 보여주지 않음. 기존 "관련 결과 없음" 화면 재사용
 - 설명 원문 유지: 공개 설명 API·흐름(13장)을 바꾸지 않고 LLM 호출을 늘리지 않음
-- ai 4초: ai 기본 LLM 설정(15초·재시도 1회)이면 learning 5초가 끊은 뒤에도 ai가 계속 호출해 사용량만 쌓임
+- ai 7초(처음 4초): ai 기본 LLM 설정(15초·재시도 1회)이면 learning 8초가 끊은 뒤에도 ai가 계속 호출해 사용량만 쌓임. learning보다 1초 짧게 둠
 
 ### 16.5 후속 이슈
 - core #680 `MEMORY_QUERY` 사용량 유형
@@ -731,3 +731,11 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 - 같은 목록을 이벤트 스키마·core `CallType`·core OpenAPI `CallType`·ERD 주석·ai/scoring 발행 허용 목록·웹 관리자 사용량 "호출 종류" 필터(표시명 "추억 검색 질의 변환")에 함께 더함. 관리자 집계 `GET /admin/ai-usage`는 `CallType` enum을 그대로 써서 코드 변경 없음
 - 비용: ai 기본 모델 `gpt-6-luna` 단가(#651, 입력 0.10·출력 0.50 USD/100만 토큰)로 소비 시 `cost_usd` 계산. 예: 입력 300·출력 60토큰 = 0.00006 USD
 - 병합 순서: 이 변경이 ai #681보다 먼저 배포되어야 함. 먼저 발행되면 core CHECK가 거부해 이벤트가 DLQ에 남음(`MISSION_DRAFT`·`THEME_VIDEO` 선례). GitOps local core 마이그레이션 리비전 v48
+
+### 16.7 ai 질의 변환 구현 (#681, 2026-11-16)
+- `app/memory_query/`로 4.2.7 구현. 키워드 최대 5개·재시도 없음·가짜 구현 규칙은 기준안 그대로
+- 시간·출력 변경(담당자 확인 2026-11-16): 실제 `gpt-6-luna` 지연 2.3~5.5초·출력 140~512토큰(추론 포함)이라 ai 호출 4초→7초, 출력 256→512토큰, learning→ai 5초→8초로 바꿈. 검색 예산 30초 > 8초 + 임베딩 20초는 유지. 건당 비용은 약 $0.0003으로 16.3 추정($0.0001)보다 큼([ai 보고서 20.1](ai.md#201-실제-llm-확인-2026-11-16-로컬-컨테이너에서-서비스-직접-호출))
+- 기간을 해석할 수 없을 때(확정 2026-11-16): `period = null`로 두고 키워드·검색용 문장은 그대로 돌려줌(502로 버리면 키워드 검색까지 잃음). "예전에"·"얼마 전"·"방학 때"·계절·"~쯤 전"은 날짜를 짐작하지 않게 프롬프트에 예시로 적음(짐작한 기간이 틀리면 `NO_RESULTS`가 되므로)
+- 형식 밖 응답은 고치지 않고 502(키워드 앞뒤 공백·중복만 정리). learning은 원문 검색으로 대체
+- 질문 속 지시 방어: 구분자 + 꺾쇠 전각 치환 + 시스템 규칙, 결과는 칸 검사로 한 번 더 막음
+- ai 발행 목록 `MEMORY_QUERY`는 core #680(16.6)이 먼저 더했고 이 변경은 그 뒤에 병합. 구현 상세는 [ai 보고서 20장](ai.md#20-추억-검색-질의-변환-api-681-2026-11-16)

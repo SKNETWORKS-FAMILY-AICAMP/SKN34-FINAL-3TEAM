@@ -893,7 +893,7 @@ sequenceDiagram
     C->>CDB: memory_daily_usage (SEARCH) 기록, 오늘 건수 > 한도면 롤백 후 429 USAGE_LIMIT_REACHED
   end
   C->>L: POST /internal/students/{id}/memories/search {query}
-  L->>A: POST /internal/memory-queries {query(마스킹), today} (5초, 서킷 ai-memory-query)
+  L->>A: POST /internal/memory-queries {query(마스킹), today} (8초, 서킷 ai-memory-query)
   alt 변환 성공
     A->>LLM: 질의 변환 (callType MEMORY_QUERY)
     A-->>L: {keywords, period, searchText}

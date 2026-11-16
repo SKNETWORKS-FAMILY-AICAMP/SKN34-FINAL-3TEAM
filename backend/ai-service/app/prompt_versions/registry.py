@@ -10,6 +10,7 @@ from app.errors import ApiError
 from app.followup import prompts as followup_prompts
 from app.judgment import prompts as judgment_prompts
 from app.memory_explanation import prompts as memory_explanation_prompts
+from app.memory_query import prompts as memory_query_prompts
 from app.mission_draft import prompts as mission_draft_prompts
 from app.prompt_versions.models import PROMPT_SCOPES, ActiveVersionItem, PromptChoice, tracked
 from app.report_explanation import prompts as report_explanation_prompts
@@ -28,6 +29,7 @@ BUILTIN_PROMPTS: dict[str, ModuleType] = {
     "reportExplanation": report_explanation_prompts,
     "themeDraft": theme_draft_prompts,
     "memoryExplanation": memory_explanation_prompts,
+    "memoryQuery": memory_query_prompts,
 }
 
 
