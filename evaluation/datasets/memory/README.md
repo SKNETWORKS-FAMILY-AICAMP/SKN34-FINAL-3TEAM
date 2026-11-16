@@ -1,6 +1,6 @@
 # 추억 검색 평가셋 memory@1 (#568)
 
-추억 검색(P27, #563)이 "말로 지난 기록 찾기"를 얼마나 맞히는지, 범위 밖 기록을 내지 않는지 재는 합성 평가셋. 기준안은 [retention-expansion.md 17장](../../../docs/report/retention-expansion.md)(질의 변환·하이브리드 설계는 16장), 러너는 [`evaluation/runners/memory_search_eval.py`](../../runners/memory_search_eval.py)
+추억 검색(P27, #563)이 "말로 지난 기록 찾기"를 얼마나 맞히는지, 범위 밖 기록을 내지 않는지 재는 합성 평가셋. 기준안은 [retention-expansion.md 18장](../../../docs/report/retention-expansion.md)(질의 변환·하이브리드 설계는 16장), 러너는 [`evaluation/runners/memory_search_eval.py`](../../runners/memory_search_eval.py)
 
 - 가상 학생·자체 테마 이야기·저장소 시드 미션만 사용. AI Hub 글·실제 아동 정보 없음(NFR-SEC-07)
 - 학생 답은 평가용 자체 작성 예시(Claude 초안, 실제 학생 글 아님)

@@ -4,6 +4,7 @@ import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts
 import { streamSse } from '../sse.ts'
 import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
 import { isStoredGrade } from '../../domain/grade.ts'
+import { isAttemptContext } from '../../domain/retention.ts'
 import type {
   AnswerContent,
   AnalysisResult,
@@ -77,6 +78,9 @@ function attemptDto(raw: unknown): Attempt {
     return contractError('마무리 전 응답에 정답·예시·체크리스트가 포함되어 표시하지 않았습니다.')
   a.reflection = recordReflection(a.reflection)
   if (a.draft) a.draft = draftDto(data.draft, a.mission.inputType)
+  // 시도 종류(#700 선택 칸): 계약 값만 받고 모르는 값은 없는 것으로(#710)
+  if (isAttemptContext(data.context)) a.context = data.context
+  else delete a.context
   return a
 }
 function feedbackDto(raw: unknown): Feedback {

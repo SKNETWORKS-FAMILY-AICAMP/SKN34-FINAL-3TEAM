@@ -1,4 +1,4 @@
-"""추억 검색 평가 러너 (#568, 기준안 retention-expansion.md 17장, 하이브리드는 score --as-served).
+"""추억 검색 평가 러너 (#568, 기준안 retention-expansion.md 18장, 하이브리드는 score --as-served).
 
 평가셋 memory@1(evaluation/datasets/memory/)의 질문마다 같은 DB·같은 접근 범위에서 검색 방식만 바꿔 비교한다.
 

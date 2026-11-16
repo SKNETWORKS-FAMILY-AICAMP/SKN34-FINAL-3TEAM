@@ -171,6 +171,13 @@ object ThemeDraftRules {
         theme.candidates.forEach { length("candidates", it, ThemeLimits.NAME) }
         length("answer", theme.answer, ThemeLimits.NAME)
         theme.days.forEach { length("${it.day} clue", it.clue, ThemeLimits.CLUE) }
+        theme.features?.let { table ->
+            if (table.size > ThemeLimits.FEATURES) reasons += "$LENGTH features는 ${ThemeLimits.FEATURES}개 이하"
+            table.forEach { feature ->
+                length("features name", feature.name, ThemeLimits.NAME)
+                feature.values.forEach { length("features value", it.value, ThemeLimits.NAME) }
+            }
+        }
         return reasons.distinct()
     }
 
@@ -205,7 +212,7 @@ object ThemeDraftRules {
         val dialogues = output.dialogues.groupBy { it.day }.mapValues { (_, lines) -> lines.first().lines }
         val days = theme.days.sortedBy { it.day.number }.map {
             ThemeDayMission(it.day, missionIds.getValue(it.day), clue = it.clue, rulesOut = it.rulesOut, dialogue = dialogues[it.day],
-                hintSpots = null, videoUri = output.videos[it.day.name])
+                hintSpots = null, videoUri = output.videos[it.day.name], clueFeature = it.clueFeature)
         }
         return ThemeContent(
             grade = grade,
@@ -227,8 +234,9 @@ object ThemeDraftRules {
         )
     }
 
-    private fun story(theme: GeneratedTheme) = ThemeStory(candidates = theme.candidates, answer = theme.answer)
+    /** 정답 구조와 특징 표(#647, 있으면 채택 때 저장하고 ThemeAnswerRules가 rulesOut과 맞는지 봄) */
+    private fun story(theme: GeneratedTheme) = ThemeStory(candidates = theme.candidates, answer = theme.answer, features = theme.features)
 
     private fun logicDays(theme: GeneratedTheme) =
-        theme.days.map { ThemeDayMission(it.day, PLACEHOLDER_MISSION, clue = it.clue, rulesOut = it.rulesOut) }
+        theme.days.map { ThemeDayMission(it.day, PLACEHOLDER_MISSION, clue = it.clue, rulesOut = it.rulesOut, clueFeature = it.clueFeature) }
 }

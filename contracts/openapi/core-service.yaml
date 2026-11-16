@@ -380,7 +380,7 @@ paths:
     get:
       tags: [Students]
       operationId: getStudentLookItems
-      summary: 테마 5·캐릭터 5와 판매 중이거나 이미 해금한 캐릭터 아이템 목록 (#389, P22). Cache-Control no-store
+      summary: 테마 5·캐릭터 12(#697)와 판매 중이거나 이미 해금한 캐릭터 아이템 목록 (#389, P22). Cache-Control no-store
       description: 'itemKey는 테마 THEME:<code>·캐릭터 COMPANION:<code>(해금값 코드 상수, lake·mungchi 무료, 나머지 테마 100·캐릭터 150), 아이템은 look_item.code. 판매 중단 아이템은 해금한 학생에게만 onSale false로 보인다.'
       responses:
         '200':
@@ -9025,7 +9025,7 @@ components:
         answer: {}
         authorStudentId: {type: string, format: uuid}
     StudentLookTheme: {type: string, enum: [lake, forest, factory, space, sea]}
-    StudentLookCompanion: {type: string, enum: [mungchi, tori, mongdol, kongi, monggeul]}
+    StudentLookCompanion: {type: string, enum: [mungchi, tori, mongdol, kongi, monggeul, snow, yarn, star, foam, paper, petal, ice], description: '동행 캐릭터 뭉치 친구들 12종(#697). 앞 5종은 기존 값, 뒤 7종은 웹 친구 id'}
     StudentLook:
       type: object
       additionalProperties: false
@@ -10048,7 +10048,7 @@ components:
     WeeklyThemeDocument:
       type: object
       additionalProperties: true
-      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed}(#439부터 outro·introImageUrl·outroImageUrl·introSeen·outroSeen 추가, 에픽 #436 bigQuestion·candidates·days[].clue·rulesOut·introVideoUrl·outroVideoUrl·introMotion·outroMotion·answer·answerClue 추가(learning #438 소유, 요일 영상은 없음), #590 고른 큰 질문 정답 answerPick({pick, correct} 또는 null) 추가. core는 바꾸지 않고 전달하며 포인트 적립에 weekStart·completed·finished·days[].missionId·attemptStatus·day·completedOnDay만 읽는다. 정답·종료 이야기는 learning이 엔딩 전에 비운다) 또는 되돌아보기 열람 결과 {firstViewThisWeek, completed}·이야기 열람 결과(learning #438 소유).'
+      description: 'learning 소유 학생 주간 테마 JSON object (#387, #385, api-spec 2.11). {themeId, weekStart, title, intro, reused, days[], review, completed}(#439부터 outro·introImageUrl·outroImageUrl·introSeen·outroSeen 추가, 에픽 #436 bigQuestion·candidates·days[].clue·rulesOut·introVideoUrl·outroVideoUrl·introMotion·outroMotion·answer·answerClue 추가(learning #438 소유, 요일 영상은 없음), #590 고른 큰 질문 정답 answerPick({pick, correct} 또는 null) 추가. #647 단서 근거 days[].clueFeature·clueFacts(그 요일 단서를 얻은 뒤만)와 features(후보 특징 표 전체, 엔딩 뒤만) 추가. core는 바꾸지 않고 전달하며 포인트 적립에 weekStart·completed·finished·days[].missionId·attemptStatus·day·completedOnDay만 읽는다. 정답·종료 이야기는 learning이 엔딩 전에 비운다) 또는 되돌아보기 열람 결과 {firstViewThisWeek, completed}·이야기 열람 결과(learning #438 소유).'
     WeeklyThemeStoryViewRequest:
       type: object
       additionalProperties: false
@@ -12214,6 +12214,13 @@ components:
         studentId:
           type: string
           format: uuid
+        context:
+          type: string
+          enum:
+          - THEME_DAY
+          - THEME_REVIEW
+          - EXTRA
+          description: 시도 종류. learning attempt.context를 그대로 전달(#385). 선택 칸
         mission:
           $ref: '#/components/schemas/DashboardMission'
         status:
@@ -12669,6 +12676,13 @@ components:
         studentId:
           type: string
           format: uuid
+        context:
+          type: string
+          enum:
+          - THEME_DAY
+          - THEME_REVIEW
+          - EXTRA
+          description: 시도 종류. learning attempt.context를 그대로 전달(#385). 선택 칸
         mission:
           $ref: '#/components/schemas/DashboardMission'
         status:
@@ -13009,6 +13023,13 @@ components:
         studentId:
           type: string
           format: uuid
+        context:
+          type: string
+          enum:
+          - THEME_DAY
+          - THEME_REVIEW
+          - EXTRA
+          description: 시도 종류. learning attempt.context를 그대로 전달(#385). 선택 칸
         mission:
           $ref: '#/components/schemas/DashboardMission'
         status:

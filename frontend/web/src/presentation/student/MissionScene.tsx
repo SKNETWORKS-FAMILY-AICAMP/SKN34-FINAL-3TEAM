@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { Mission } from '../../domain/classroom.ts'
+import { readThemeMotion } from '../../domain/themeMotion.ts'
+import { MotionEffects } from '../common/MotionEffects.tsx'
+
+/**
+ * 문제 화면 장면 그림. 미션 응답의 `sceneMotion`(ai 움직임 형식 v1, learning #438이 그대로 전달)이 있으면 그림 위에 효과(effects)만 재생한다
+ * (ai OpenAPI ThemeMotion "웹 재생: 문제 화면은 effects만", #440). 카메라·화자·문구는 문제 화면에서 쓰지 않고, 살펴보기 지점(spots)은
+ * 학생 화면에 넣지 않는다(사용자 결정 2026-11-13). 값이 없거나 형식이 틀리면 그림만, 움직임 줄이기면 재생하지 않는다.
+ * 그림을 못 불러오면 같은 자리에 "그림을 불러오지 못했어요" 칸(레이아웃 그대로).
+ */
 export function MissionScene({ mission }: { mission: Mission }) {
   const [reduce, setReduce] = useState(
     () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -11,12 +20,21 @@ export function MissionScene({ mission }: { mission: Mission }) {
     return () => media.removeEventListener('change', changed)
   }, [])
   const uri = reduce ? mission.staticSceneUri : mission.sceneUri || mission.staticSceneUri
+  const [broken, setBroken] = useState<string | null>(null)
+  const effects = readThemeMotion(mission.sceneMotion)?.effects ?? []
   if (uri && /^(https?:\/\/|\/[^/])/.test(uri))
     return (
       <figure className="ux-scene" data-motion={reduce ? 'static' : 'animated'}>
-        <img src={uri} alt={mission.question} style={{ width: '100%', height: 'auto' }} />
+        {broken === uri ? (
+          <span className="ux-scene-missing" role="img" aria-label={`${mission.question} (그림을 불러오지 못했어요)`}>그림을 불러오지 못했어요</span>
+        ) : (
+          <span className="ux-scene-art">
+            <img src={uri} alt={mission.question} style={{ width: '100%', height: 'auto' }} onError={() => setBroken(uri)} />
+            {!reduce && effects.length > 0 && <MotionEffects effects={effects} />}
+          </span>
+        )}
         <figcaption>
-          {reduce ? '정적 장면' : '미션 장면'}
+          {reduce ? '정적 장면' : effects.length > 0 && broken !== uri ? '움직이는 장면' : '미션 장면'}
           <label>
             <input
               type="checkbox"
@@ -40,7 +58,7 @@ export function MissionScene({ mission }: { mission: Mission }) {
       <SceneArt mission={mission} />
       <figcaption>
         <span>
-          {reduce ? '정적 장면' : '움직이는 장면'} · 장면에서 확인한 것을 답에 남겨 주세요.
+          {reduce ? '정적 장면' : '움직이는 장면'}
         </span>
         <label>
           <input

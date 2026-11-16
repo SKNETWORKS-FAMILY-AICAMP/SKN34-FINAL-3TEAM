@@ -11,6 +11,7 @@ import com.sagomungchi.learning.theme.domain.AnswerPickResult
 import com.sagomungchi.learning.theme.domain.AnswerPickView
 import com.sagomungchi.learning.theme.domain.DayState
 import com.sagomungchi.learning.theme.domain.ThemeEndingState
+import com.sagomungchi.learning.theme.domain.ThemeFeatureValue
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeStoryKind
@@ -333,6 +334,63 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         // 고르지 않았으면 고른 정답 칸도 없음 (#590)
         assertNull(view.answerPick)
         assertNull(notEnded.answerPick)
+    }
+
+    /** 게시 테마에 후보 특징 표와 요일 특징 이름을 넣음 (#647, addStory의 화 토끼·목 고양이·금 햄스터와 맞는 값) */
+    private fun addFeatures() {
+        val versionId = jdbc.queryForObject("SELECT published_version_id FROM weekly_theme WHERE id = ?", UUID::class.java, themeId)
+        jdbc.update(
+            """UPDATE weekly_theme_version SET features = ?::jsonb WHERE id = ?""",
+            """[{"name":"털","values":[{"candidate":"고양이","value":"짧은"},{"candidate":"강아지","value":"짧은"},
+                {"candidate":"토끼","value":"긴"},{"candidate":"햄스터","value":"짧은"}]},
+               {"name":"울음","values":[{"candidate":"고양이","value":"야옹"},{"candidate":"강아지","value":"멍멍"},
+                {"candidate":"토끼","value":"조용"},{"candidate":"햄스터","value":"조용"}]}]""",
+            versionId,
+        )
+        mapOf(1 to "털", 2 to "털", 4 to "울음").forEach { (day, name) ->
+            jdbc.update("UPDATE weekly_theme_day SET clue_feature = ? WHERE theme_version_id = ? AND day_of_week = ?", name, versionId, day)
+        }
+    }
+
+    @Test
+    fun `특징 표가 없는 테마는 지금처럼 단서만이고 특징 칸은 null (#647)`() {
+        addStory()
+        val wednesday = WEEK.plusDays(2)
+        attempt(missions[0], "THEME_DAY", at(WEEK), at(WEEK, 11), at(WEEK, 12))
+        val view = serviceOn(wednesday).current(student, ThemeGrade.G3, wednesday)
+        assertEquals("단서 1", view.days[0].clue)
+        assertTrue(view.days.all { it.clueFeature == null && it.clueFacts == null })
+        assertNull(view.features)
+    }
+
+    @Test
+    fun `요일 특징은 그 요일 단서를 얻은 뒤만, 특징 표 전체는 엔딩 뒤 (#647)`() {
+        addStory()
+        addFeatures()
+        val wednesday = WEEK.plusDays(2)
+        attempt(missions[0], "THEME_DAY", at(WEEK), at(WEEK, 11), at(WEEK, 12)) // 월요일 학습 완료
+        attempt(missions[1], "THEME_DAY", at(WEEK.plusDays(1)), at(WEEK.plusDays(1), 11)) // 화요일 마무리만(단서 전)
+        // 금요일 문제도 마무리만(정답 고르기용). 조회 뒤 JDBC로 넣으면 같은 트랜잭션의 MyBatis 캐시가 못 봐서 미리 넣음
+        val friday = WEEK.plusDays(4)
+        attempt(missions[4], "THEME_DAY", at(friday, 9), finishedAt = at(friday, 10))
+
+        val view = serviceOn(wednesday).current(student, ThemeGrade.G3, wednesday)
+        assertEquals(listOf("털", null, null, null, null), view.days.map { it.clueFeature })
+        assertEquals(
+            listOf(ThemeFeatureValue("고양이", "짧은"), ThemeFeatureValue("강아지", "짧은"), ThemeFeatureValue("토끼", "긴"), ThemeFeatureValue("햄스터", "짧은")),
+            view.days[0].clueFacts,
+        )
+        // 얻지 못한 화요일(마무리만)·목요일 특징과 전체 표는 엔딩 전에는 없음
+        assertTrue(view.days.drop(1).all { it.clueFacts == null })
+        assertNull(view.features)
+
+        // 정답을 맞혀 엔딩이면 전체 표
+        serviceOn(friday).pickAnswer(student, ThemeGrade.G3, friday, "강아지")
+        val ended = serviceOn(friday).current(student, ThemeGrade.G3, friday)
+        assertEquals(ThemeEndingState.ENDED, ended.ending)
+        assertEquals(listOf("털", "울음"), ended.features!!.map { it.name })
+        assertEquals("털", ended.days[0].clueFeature)
+        assertNull(ended.days[3].clueFacts) // 목요일 문제는 풀지 않아 요일 특징은 없음(전체 표로는 볼 수 있음)
     }
 
     @Test

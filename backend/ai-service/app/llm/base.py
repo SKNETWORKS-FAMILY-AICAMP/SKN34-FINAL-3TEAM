@@ -129,6 +129,10 @@ class LlmClient(ABC):
         self._backoff_seconds = backoff_seconds
         self._timeout = timeout
         self.langfuse: Langfuse | None = None
+        # 형식 밖 응답(LLM_INVALID_OUTPUT)만 max_retries와 따로 더 부르는 횟수. 기본 0(지금과 같음).
+        # 주간 테마는 1(#535 7차: 응답 한 번이 형식 밖이면 테마 실행 전체가 끝나 글 20건 3번 중 4건
+        # 실패)
+        self.invalid_output_retries = 0
 
     @property
     def model(self) -> str:
@@ -155,7 +159,8 @@ class LlmClient(ABC):
         images를 주면 user 글 뒤에 그림을 함께 보냄(테마 그림 검토·화자 위치 #437)
         """
         retries = self._max_retries if max_retries is None else max_retries
-        for attempt in range(retries + 1):
+        invalid_extra, invalid_used = self.invalid_output_retries, 0
+        for attempt in range(retries + 1 + invalid_extra):
             timeout_this = self._timeout if timeout is None else timeout
             if deadline is not None:
                 timeout_this = min(timeout_this, deadline - time.monotonic())
@@ -188,9 +193,13 @@ class LlmClient(ABC):
                             exc,
                             observation=observation,
                         )
-                    if not exc.retryable or attempt == retries:
+                    if exc.retryable and attempt - invalid_used < retries:
+                        retry = True
+                    elif exc.code == "LLM_INVALID_OUTPUT" and invalid_used < invalid_extra:
+                        invalid_used += 1
+                        retry = True
+                    else:
                         raise LlmUnavailable(exc.code, exc.retryable) from exc
-                    retry = True
                 else:
                     self._record(
                         request,

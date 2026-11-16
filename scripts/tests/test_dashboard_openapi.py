@@ -43,6 +43,10 @@ class DashboardContractTest(unittest.TestCase):
             self.assertTrue({'completedAt', 'hintUsages'}.issubset(shape['required']))
             for field in ['completedAt', 'hintUsages']:
                 self.assertEqual(shape['properties'][field], learning['components']['schemas']['RecordAttempt']['properties'][field])
+            # #700: optional attempt context relayed as-is from learning.
+            context = {k: v for k, v in shape['properties']['context'].items() if k != 'description'}
+            self.assertEqual(context, learning['components']['schemas']['RecordAttempt']['properties']['context'])
+            self.assertNotIn('context', shape['required'])
         self.assertIn('createdAt', core['components']['schemas']['DashboardRecordReflection']['required'])
         self.assertNotIn('createdAt', core['components']['schemas']['DashboardReflection']['required'])
         for name in ['DashboardPublicAttempt', 'DashboardAttemptDetail']:

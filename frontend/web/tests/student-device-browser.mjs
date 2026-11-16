@@ -90,7 +90,7 @@ try {
     await p.getByRole('group', { name: 'PIN 숫자 키패드', exact: true }).waitFor()
     await typePin(p, '5090')
     await p.waitForURL('**/student/home')
-    await p.getByRole('heading', { name: '생각 지도', exact: true }).waitFor()
+    await p.getByRole('region', { name: /^우리 집/ }).waitFor() // #648 새 홈
   })
   await check('QR URL의 등록 코드는 초기 인증 확인 후에도 유지', async (p) => {
     await p.goto(base + '/student/login?code=ABCD2345', { waitUntil: 'domcontentloaded' })
@@ -114,8 +114,9 @@ try {
     await p.getByRole('heading', { name: '서윤, 안녕하세요!' }).waitFor()
     await typePin(p, '4831')
     await p.waitForURL('**/student/home')
-    await p.getByRole('heading', { name: /^학습 홈/ }).waitFor()
-    await p.getByRole('button', { name: '미션 고르기', exact: true }).click()
+    await p.getByRole('region', { name: /^우리 집/ }).waitFor() // #648 새 홈
+    await p.getByRole('button', { name: '홈', exact: true }).click() // #648: 미션 고르기는 홈 "더 풀어 보기"로
+    await p.getByRole('button', { name: /더 풀어 보기/ }).click()
     await p.getByRole('button', { name: '미션 열기' }).first().click()
     await p.getByRole('button', { name: '미션 시작하기' }).click()
     await p.waitForURL('**/student/attempts/*')
@@ -158,7 +159,8 @@ try {
     await registerDevice(p, code)
     await typePin(p, '4831')
     await p.waitForURL('**/student/home')
-    await p.getByRole('button', { name: '미션 고르기', exact: true }).click()
+    await p.getByRole('button', { name: '홈', exact: true }).click() // #648: 미션 고르기는 홈 "더 풀어 보기"로
+    await p.getByRole('button', { name: /더 풀어 보기/ }).click()
     await p.getByRole('button', { name: '미션 열기' }).first().click()
     await p.getByRole('button', { name: '미션 시작하기' }).click()
     await p.waitForURL('**/student/attempts/*')
@@ -174,7 +176,8 @@ try {
     await registerDevice(p, code)
     await typePin(p, '4831')
     await p.waitForURL('**/student/home')
-    await p.getByRole('button', { name: '미션 고르기', exact: true }).click()
+    await p.getByRole('button', { name: '홈', exact: true }).click() // #648: 미션 고르기는 홈 "더 풀어 보기"로
+    await p.getByRole('button', { name: /더 풀어 보기/ }).click()
     await p
       .getByRole('article')
       .filter({ has: p.getByRole('heading', { name: '도서관에 만화책을 더 둘까요?', exact: true }) })
@@ -183,13 +186,13 @@ try {
     await p.getByRole('button', { name: '미션 시작하기' }).click()
     await p.waitForURL('**/student/attempts/*')
     const url = p.url()
-    await p.getByLabel('내 생각과 까닭').fill('만료 전에 저장한 초안')
+    await p.getByLabel('내 생각과 이유').fill('만료 전에 저장한 초안')
     await p.getByText('저장했어요(모의)', { exact: true }).waitFor()
     await p.getByLabel('상태 시연').selectOption('token-expired')
     await p.waitForURL('**/student/login')
     await typePin(p, '4831')
     await p.waitForURL(url)
-    assert.equal(await p.getByLabel('내 생각과 까닭').inputValue(), '만료 전에 저장한 초안')
+    assert.equal(await p.getByLabel('내 생각과 이유').inputValue(), '만료 전에 저장한 초안')
   })
 
   await check('물리 키보드만으로 PIN 입력·만료 후 쿼리까지 같은 화면으로 복귀', async (p) => {
@@ -207,7 +210,7 @@ try {
     await p.keyboard.type('4831')
     await p.keyboard.press('Enter')
     await p.waitForURL(/\/student\/missions\?type=ANALYZE$/)
-    assert.equal(await p.getByRole('button', { name: '분석하기', exact: true }).getAttribute('aria-pressed'), 'true')
+    assert.equal(await p.getByRole('button', { name: '꼼꼼히 살펴보기', exact: true }).getAttribute('aria-pressed'), 'true')
   })
 
   await check('학생 → 학부모 전환은 학부모 로그인 요구', async (p) => {

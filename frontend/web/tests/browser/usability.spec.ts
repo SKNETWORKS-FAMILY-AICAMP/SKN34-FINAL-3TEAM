@@ -87,7 +87,7 @@ test('동의 전 공개는 설명을 열고 상태 갱신 후에만 선택할 �
   for (const digit of ['5', '0', '9', '0']) await page.getByRole('button', { name: digit, exact: true }).click()
   await page.getByRole('button', { name: /확인|들어가기/ }).click()
   await expect(page).toHaveURL(/\/student\/home/)
-  await expect(page.locator('.st-today')).toBeVisible()
+  await expect(page.getByRole('region', { name: /^우리 집/ })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
   await page.getByRole('button', { name: '설정', exact: true }).click()
   const sharing = page.getByRole('radio', { name: '친구들에게 보여 줄게요', exact: true })

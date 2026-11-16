@@ -118,6 +118,40 @@ def test_retries_exhausted_raises_unavailable() -> None:
     assert len(llm.usages) == 3
 
 
+def test_invalid_output_retried_once_more_even_with_zero_retries() -> None:
+    # 주간 테마(#535 7차): max_retries=0이어도 형식 밖 응답만 invalid_output_retries만큼 더 부름
+    llm = ScriptedLlm(
+        [LlmError("LLM_INVALID_OUTPUT", retryable=True), Answer(value="ok")], max_retries=0
+    )
+    llm.invalid_output_retries = 1
+    assert generate(llm).data.value == "ok"
+    assert llm.calls == 2
+
+
+def test_invalid_output_extra_retry_is_capped_and_other_errors_not_extended() -> None:
+    llm = ScriptedLlm([LlmError("LLM_INVALID_OUTPUT", retryable=True)] * 3, max_retries=0)
+    llm.invalid_output_retries = 1
+    with pytest.raises(LlmUnavailable) as exc:
+        generate(llm)
+    assert (exc.value.code, llm.calls) == ("LLM_INVALID_OUTPUT", 2)
+    timeout = ScriptedLlm(
+        [LlmError("LLM_TIMEOUT", retryable=True), Answer(value="ok")], max_retries=0
+    )
+    timeout.invalid_output_retries = 1
+    with pytest.raises(LlmUnavailable) as exc:
+        generate(timeout)
+    assert (exc.value.code, timeout.calls) == ("LLM_TIMEOUT", 1)  # 시간 초과는 늘리지 않음
+
+
+def test_invalid_output_extra_comes_after_normal_retries() -> None:
+    llm = ScriptedLlm(
+        [LlmError("LLM_INVALID_OUTPUT", retryable=True)] * 2 + [Answer(value="ok")], max_retries=1
+    )
+    llm.invalid_output_retries = 1
+    assert generate(llm).data.value == "ok"
+    assert llm.calls == 3
+
+
 def test_recorder_failure_does_not_break_call() -> None:
     llm = ScriptedLlm([Answer(value="ok")])
 

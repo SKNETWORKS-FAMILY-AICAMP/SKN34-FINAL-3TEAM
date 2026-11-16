@@ -13,6 +13,7 @@ snapshots = {
     "share-created": ("/community/posts", "post", "201"),
     "share-existing": ("/community/posts", "post", "200"),
     "post-detail": ("/community/posts/{postId}", "get", "200"),
+    "post-author": ("/community/posts/{postId}/author", "get", "200"),
     "mission-posts": ("/community/missions/{missionId}/posts", "get", "200"),
     "student-posts-student": ("/community/students/{studentId}/posts", "get", "200"),
     "student-posts-parent": ("/community/students/{studentId}/posts", "get", "200"),
@@ -40,4 +41,6 @@ assert items and all({"postId", "studentId", "answer", "myReactions"} <= set(ite
 assert all("reactions" not in item for item in items), "mission list must not expose reaction counts"
 assert all(set(item["answer"]) == {"inputType", "text", "content"} for item in items), "answer must not carry memo/judgment"
 assert {"postId", "studentId", "status"} <= set(load("post-detail"))
+# 친구 방 구경(#707·#708): 작성자 확인은 postId·studentId만(답변·미션·상태·반응 없음)
+assert set(load("post-author")) == {"postId", "studentId"}, "post author check must expose only postId and studentId"
 print("community: fields read by core CommunityClient are present; no reaction counts in mission list")

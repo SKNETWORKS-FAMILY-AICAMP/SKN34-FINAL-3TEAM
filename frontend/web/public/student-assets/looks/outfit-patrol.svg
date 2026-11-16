@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 96 208 208" width="60" height="60">
+<!-- 설계 캔버스 Mungchi 옷 그림. 몸 폭 전체 띠로 그리고 Companion이 친구 몸 윤곽으로 잘라 입힌다(가운데 (100,200), 가로 208) -->
+<path d="M-4 146 Q100 178 204 146 V210 H-4Z" fill="#4F41B8" stroke="#3A2A20" stroke-width="4" stroke-linejoin="round"/>
+<path d="M 66 154 V 210 M 134 154 V 210" stroke="#FFE45C" stroke-width="10"/>
+</svg>

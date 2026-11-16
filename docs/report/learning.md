@@ -334,6 +334,31 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - 학생 자기 감정 표현("죽고 싶다")의 보호자 알림 여부는 별도 기능으로 검토 필요
 - korcen의 MIT·Apache는 코드 라이선스라 단어 데이터의 출처까지 보증하지 않음
 
+### 분류 모델 단계 (#688, 설계 #689)
+
+단어 목록은 욕 없는 모욕·비꼼을 못 막아(위 한계) 클러스터 안 한국어 분류 모델을 다음 단계로 붙인다. 학생 글은 외부로 보내지 않는다. 계약은 [API 명세](../design/api-spec.md) 4.3.4, 호출 기준은 [아키텍처](../design/architecture.md) 1.3
+
+- 흐름: 시도 잠금 전에 scoring 표현 분류를 불러 결과를 받아 둠 → 트랜잭션 안에서 단어 목록 통과 → 그 결과가 flagged면 `ExpressionCategory.INSULT`로 같은 422·표현 문구("고운 말로 바꿔서 다시 적어 주세요."). 응답에는 범주를 보이지 않음
+- 장애 시 통과로 정한 이유: 단어 목록이 이미 앞에 있고, 모델 장애로 모든 제출이 막히면 학습 자체가 멈춘다. 모델은 놓친 것을 더 잡는 보조 단계다
+- 잠금 전에 부르는 이유: `submit`은 시도 행을 잠근 트랜잭션이라 안에서 기다리면 최대 1.5초 동안 DB 연결과 잠금을 쥔다. 대가로 앞 단계(409·400·누락 422)에서 실패할 요청도 모델을 한 번 부른다. 같은 키 다시 보내기는 저장된 답을 돌려주므로 결과와 무관하다
+- 로그: `attemptId`·`category`·건너뜀 사유(`TIMEOUT`·`UNAVAILABLE`·`CIRCUIT_OPEN`·`INACTIVE`·`REJECTED`)만. 원문·걸린 말·점수 없음(NFR-SEC-05)
+
+| 항목 | 기준안 | 근거 |
+|---|---|---|
+| 응답 시간·서킷 | 연결 0.5초·응답 1.5초, `scoring-toxicity`, 재시도 없음 | 에픽 #688, architecture 1.3 공통 기준 |
+| 이름·범위 | `tox-` 접두어, scope `answer-filter` | 에픽 #688 |
+| 칸 수 | 1~20개, 넘으면 앞 20칸만 | 논술 4칸, 풀이 단계도 보통 몇 개 |
+| 글 길이 | 모든 칸 합계 1,500자, 넘으면 칸 순서대로 앞 1,500자만 검사 | learning에 답 길이 상한이 없음. 11/16 측정(창 128, CPU 1개): 1,000자 0.77초·1,500자 1.12초·2,000자 1.55초(응답 1.5초 넘음), 운영 scoring CPU limit 1개(`scoring-service.json`). AI Hub 초3~6 글 중 1,500자 넘는 비율 논술형 0.6%(8,023편, 1,000자면 16.9%)·서술형 0%·에세이 0%. 넘을 때 건너뛰면 글을 늘려 검사를 피할 수 있어 잘라서 검사 |
+| 창·마감 | 128토큰 창·겹침 32, scoring은 처리 1.3초 넘으면 멈추고 503 | 학습 데이터(K-MHaS·BEEP!) 95%가 100자 미만이라 학습 길이 128과 창을 맞춤, 창 길이에 따른 속도 차이는 거의 없음. learning이 1.5초에 끊은 뒤 버려질 계산으로 다음 요청이 기다리지 않게 |
+| 사용량 | 이벤트 없음, 지표(호출·flagged·건너뜀 사유·지연)만 | #691 본문(LLM 아님, 토큰 단가 없음). core `callType`은 늘리지 않음 |
+| 임계값 | 데모 문장 491·학생 글 함정 약 80문장 오탐 0, 정상 문장 추가 오탐 1% 이하(단어 목록 대비) | 에픽 기준안, 확정 전 |
+
+- 칸 수·글 길이·창·마감·잠금 전 호출은 이슈·에픽에 없어 담당자가 정한 기준안이다. 길이·창·마감은 11/16 측정(분류 머리 학습 전 `beomi/KcELECTRA-base`, 작업 공간 CPU 1개 스레드)이라 #691에서 실제 Pod로, M2와 CPU를 나눠 쓸 때도 다시 잰다. 메모리는 모델 로딩 약 +300MiB·추론 중 약 +300MiB로 limit 2Gi에 빠듯할 수 있어 같이 확인
+- 학습 데이터 후보(#690): 학습 K-MHaS·Korean HateSpeech(BEEP!)(CC BY-SA 4.0), 평가 APEACH(CC BY-SA 4.0), 기본 모델 `beomi/KcELECTRA-base`(MIT). KOLD(라이선스 표기 없음)·Korean UnSmile(상업 사용 문의 필요)은 제외. BEEP!는 저장소 LICENSE 원문, 나머지는 HF 데이터 카드로 확인(11/16). KOLD 저장소에는 LICENSE 파일이 없음
+- 12/7 데모에 넣는 것으로 진행. CC BY-SA는 에픽 제외 기준(비상업 전용·변경 금지·출처 불명)에 해당하지 않아 쓰며, 출처는 모델 문서에 표시하고 원자료·고친 데이터는 커밋·배포하지 않음
+- 확인 필요(팀장): 임계값 기준 확정(#690 결과와 함께)
+- 한계: 학습 데이터가 성인 뉴스 댓글이라 초등 답과 말투가 다르다. 미션 본문에 나온 말을 허용하는 규칙(`HATE`·맥락 단어)이 모델에는 없어 차별을 다루는 미션에서 오탐이 날 수 있다. 합계 1,500자 뒤의 글과 21번째 칸부터는 모델이 보지 않는다. 동시 요청이 몰리면 게이트에서 기다리다 통과될 수 있다. 장애 중에는 단어 목록만 적용된다
+
 ## 17. 고착 RUNNING 판정 1분 주기 탐지 (#241)
 
 P12 "판정 리스 90초·고착 탐지 1분"의 탐지 작업. 지금까지는 같은 답변에 피드백을 다시 요청할 때만 만료 리스를 재획득해서, 처리 Pod 종료·결과 기록 실패(`FeedbackFacade` 실패 기록) 뒤 학생이 떠난 판정은 `RUNNING`으로 계속 남았다.
@@ -1083,3 +1108,37 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 | 정정 `impact` | 값은 그대로, 두 계약 설명이 서로를 가리키게 함 | 보내는 값의 기준은 `learning-service.yaml` 고정값(`CorrectionController` `CorrectionImpact`). `support-learning-required.yaml`의 enum 3종은 core `LearningSupportClient`가 받아들이는 범위다. 기존 테스트가 "받는 범위 ⊇ 보내는 값"을 검사한다 |
 
 - 검사: `scripts/tests/test_contract_alignment_656.py`가 두 계약의 판정 요소 enum과 web 검사 목록이 같은지 확인한다.
+
+## 39. 단서 근거(후보 특징 표) 저장·학생 공개 (#647, 2026-11-15)
+
+주간 테마 단서로 어느 후보가 빠질지의 근거(ai가 줄거리 단계에서 만드는 후보 특징 표)를 저장하고, 학생에게는 얻은 요일 것만 보여 준다. 기존 칸은 바꾸지 않고 선택 칸만 더했다(웹 표시는 이 이슈의 web 몫, 이번 변경 밖).
+
+### 정한 것
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 저장 | V21: `weekly_theme_version.features jsonb`(후보 특징 표 `[{name, values:[{candidate, value}]}]`), `weekly_theme_day.clue_feature varchar`(그날 단서 특징 이름). 둘 다 NULL 허용, 기존 행 채움 없음, 새 버전 때 복사 | 사람이 쓴 테마·#647 전 채택분은 비어 있음(ERD 4.2.1) |
+| 채택 | ai 응답 `theme.features`·`days[].clueFeature`(선택 칸)를 그대로 옮김. 예전 초안(`theme_draft.output`에 칸 없음)은 null | ai.md 17.7 |
+| 학생 응답(기준안) | `days[].clueFeature`·`clueFacts`(`[{candidate, value}]`, 그 특징의 후보별 값)는 `clue`와 같은 조건(그 문제를 그 주에 학습 완료한 뒤)에서만, `features`(전체 표)는 엔딩(`ending = ENDED`) 뒤만. 특징 표가 없거나 `clueFeature`가 표에 없으면 null | 이슈 지침 "단서를 얻은 요일의 특징만, 엔딩 뒤 전체". 단서 근거는 그날 단서 특징 값뿐이라 다른 요일 단서 결론이 새지 않음 |
+| 정답 논리 검사(기준안) | `ThemeAnswerRules.featureErrors`: 특징 이름은 비지 않고 겹치지 않음, 특징마다 후보 하나에 비지 않은 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지거나 함께 남음. 후보·정답 없이 표·`clueFeature`만 있으면 실패. 테마 초안 learning 검사(`LOGIC <사유>`)와 관리자 저장(`400`)이 같이 씀 | ai `fill_rules_out`은 허용 값 밖의 후보를 모두 빼므로 값이 같은 후보는 같은 쪽. 허용 값(`condition.allowed`)은 ai 내부 칸이라 받지 않아 이 이상은 보지 않음. 빈 `rulesOut`(힌트)은 이미 빠진 후보만 허용 값 밖일 수 있어 보지 않음 |
+| 관리자 본문·응답(기준안) | 본문·응답에 `features`, `days[].clueFeature` 선택 칸. 상한은 특징 10개(`ThemeLimits.FEATURES`, ai는 2~5개), 이름·후보·값 100자, 값 개수는 후보 상한 10 | 기존 칸과 같은 상한 규칙 |
+| 수정 때 이어받기 | 없거나 null이면 이전 버전 값을 이어받되 후보가 바뀌었거나 후보·정답을 비우면 표를 버림, 빈 배열이면 비움. `clueFeature`는 표가 남고 그날 `rulesOut`이 그대로일 때만 이어받음(빈 문자열이면 비움) | 지금 관리자 웹은 새 칸을 보내지 않아 이어받은 표가 새 후보·`rulesOut`과 어긋나 저장이 `400`으로 막히지 않게 |
+| 시연 테마 | 채우지 않음(사용자 결정 2026-11-16: 시연은 배포 환경에서 새로 생성한 테마로 하고, 지금 DB는 개발 환경이라 기존 시연 테마에 특징 표를 넣는 일회성 SQL은 두지 않음). 특징 표가 없는 기존 테마는 지금처럼 단서만 보임 |
+| core | 학생 주간 테마 응답을 learning JSON 그대로 넘겨 코드 변경 없음. `core-service.yaml` 설명 문구에 새 칸만 적음 | 이슈 지침 |
+
+### 계약
+
+- learning OpenAPI: 학생 `WeeklyTheme.features`·`days[].clueFeature`·`clueFacts`, 관리자 `AdminWeeklyThemeRequest.features`·`ThemeDayMission.clueFeature`·`AdminWeeklyTheme.features`·`AdminThemeDay.clueFeature`, 초안 `GeneratedTheme.features`·`days[].clueFeature`, 스키마 `ThemeFeature`·`ThemeFeatureValue`. 응답 칸은 항상 내보내고(null 허용) 본문 칸은 선택
+- `scripts/tests/test_weekly_theme_contract.py`: ai·learning 선택 칸, Kotlin 칸 이름, core 설명 대조
+- 같이 고친 파일: `infrastructure/gitops/environments/local/learning-service.yaml` migration `revision` v20 → v21(`test_core_migration_versions` 대조), `contracts/openapi/core-service.yaml` 학생 주간 테마 설명 문구, `infrastructure/aws/README.md` 시연 SQL 행
+
+### 시험
+
+- `ThemeAnswerRulesTest`: 표가 맞으면 통과·없으면 지금처럼, 형식·이름·값이 갈리는 날 사유, 힌트 날은 보지 않음, 수정 때 이어받기·버리기
+- `WeeklyThemeServiceTest`: 표 없는 테마는 특징 칸 null, 학습 완료한 요일만 `clueFeature`·`clueFacts`(마무리만 한 요일·안 푼 요일은 null), 엔딩 전 `features` null·엔딩 뒤 전체
+- `ThemeDraftRulesTest`(표 없는 응답 통과, 값이 갈리면 `LOGIC FRI …`, 표에 없는 이름 `LOGIC MON …`), `ThemeDraftServiceTest`(채택 때 저장·관리자 상세), `WeeklyThemeAdminServiceTest`(저장·이어받기·400), `AdminWeeklyThemeControllerTest`(본문 읽기·상한 400), `ThemeDraftAiClientTest`(응답 선택 칸 읽기)
+
+### 정하실 것
+
+- 학생 응답 칸 이름·모양: `clueFeature`·`clueFacts`는 이슈 본문 이름을 따랐고, `clueFacts`의 모양(`[{candidate, value}]`)과 엔딩 뒤 전체 표 칸 이름(`features`, ai·관리자와 같게)은 새로 정한 값(웹 #589·#487이 소비)
+- 관리자 수정 때 이어받기 규칙(후보가 바뀌면 표를 버림)과 정답 논리 검사 범위(같은 값 후보가 갈리지 않음까지)

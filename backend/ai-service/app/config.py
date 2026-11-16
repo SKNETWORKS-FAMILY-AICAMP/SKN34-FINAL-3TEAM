@@ -100,6 +100,8 @@ class Settings(BaseSettings):
     # 시간 초과가 나서(repo-fair4-4) 300초로 올림. 전체는 theme_draft_deadline이 막음
     theme_llm_timeout: float = 300.0
     theme_llm_retries: int = 0  # 재시도 대신 그래프의 실패 사유 넣은 다시 생성
+    # 형식 밖 응답(LLM_INVALID_OUTPUT)만 한 번 더 부름(#535 7차, 기준안). 시간 초과 등은 그대로 0
+    theme_llm_invalid_retries: int = 1
     theme_max_regen: int = 2  # 단계마다 다시 생성 상한(기준안, 첫 생성 포함 최대 3회)
     # 줄거리 검사가 칸 하나만 고치면 되는 사유로만 실패하면 줄거리 전체 대신 그 칸만 고쳐 쓰는
     # 상한(기준안). 줄거리 다시 생성 횟수와 따로 셈

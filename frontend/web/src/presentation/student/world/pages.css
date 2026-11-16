@@ -1,0 +1,1189 @@
+/* 학생 화면 시안 맞추기(#648, 2026-11-15): 설정·포인트·도움말·내 방·회차 상세·꾸미기·뭉치 친구들·내 공책·생각 활동·친구 생각·미션 고르기.
+   디자인 기준 "맑은 하늘"(--sk-* 토큰): 흰 종이·진한 글자·남청 선 2px·주황 강조(위 글자는 진한 색)·노랑 포인트.
+   칸 안 스크롤은 두지 않는다(사용자 의견 2026-11-16 "화면 안에 스크롤 안 해도 되게"): 내용은 다 보이고, 넘치면 페이지 전체가 내려간다.
+   PC 한 화면 고정(.st-fit)은 내 방(사용자 의견 2026-11-15 "스크롤을 해야 하는 게 말이 안 돼")만 쓴다(문제 푸는 화면은 2026-11-16 결정으로 페이지 스크롤).
+   900px 이하는 한 줄로 쌓고 문서 전체가 스크롤한다. */
+
+/* ── 공통: 흰 종이 안의 화면은 종이 위에 바로 그린다(예전 종이 속 종이·그림자 없앰) ── */
+#class-journal .cj-app-student .st-stage > .st-sheet {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+#class-journal .cj-app-student .st-world .st-title-mix {
+  margin: 0;
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: clamp(44px, 4.2vw, 68px);
+  line-height: 1;
+  letter-spacing: -1px;
+  color: var(--sk-ink);
+}
+#class-journal .cj-app-student .st-title-mix span {
+  font-family: var(--st-hand);
+  font-weight: 400;
+  font-size: 0.8em;
+}
+#class-journal .cj-app-student .st-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+/* 학생 화면 제목은 모두 공통 제목 모양(.st-title-mix, #648 38행). 설정·미션 고르기만 따로 놀던 규칙은 지움 */
+#class-journal .cj-app-student .st-page-head p {
+  margin: 8px 0 0;
+  font-size: 17px;
+  color: var(--sk-ink);
+}
+#class-journal .cj-app-student .st-pill-back,
+#class-journal .cj-app-student .st-pill-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: 'Gowun Dodum', 'Malgun Gothic', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  text-decoration: none;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-pill-back svg { width: 18px; height: 18px; }
+#class-journal .cj-app-student .st-pill-link { border-width: 3px; }
+#class-journal .cj-app-student .st-pill-back:hover,
+#class-journal .cj-app-student .st-pill-link:hover,
+#class-journal .cj-app-student .st-pill-link[aria-pressed='true'] {
+  background: var(--sk-ink);
+  color: var(--sk-yellow);
+}
+#class-journal .cj-app-student .st-world .st-dark-button {
+  align-self: flex-start;
+  min-height: 52px;
+  padding: 0 26px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-ink);
+  color: #ffffff;
+  font-family: var(--st-display);
+  font-size: 20px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-dark-button:disabled { opacity: 0.7; cursor: default; }
+#class-journal .cj-app-student .st-points-pill {
+  margin: 0;
+  align-self: center;
+  padding: 8px 16px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: var(--sk-yellow);
+  color: var(--sk-ink);
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+}
+#class-journal .cj-app-student .st-segment {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+}
+#class-journal .cj-app-student .st-segment button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sk-ink);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-segment button[aria-pressed='true'] { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-card-line {
+  border: 2px solid var(--sk-line);
+  border-radius: 18px;
+  background: var(--sk-paper);
+}
+
+/* PC 한 화면: 흰 종이 높이를 창에 맞추고 .st-fit 화면(내 방)이 남은 높이를 채운다.
+   창 높이 기준 700 → 520: 화면 배율(125% 등)로 웹 기준 높이가 700보다 낮은 PC에서도 내 방이 창에 맞게(2026-11-16 "방이 너무 크다니까 다 스크롤이 되네") */
+@media (min-width: 901px) and (min-height: 520px) {
+  #class-journal .cj-app-student .st-world:has(.st-fit) .st-shell { height: calc(100dvh - 88px); min-height: 0; }
+  /* overflow-y: auto — 창이 낮아 칸 안 스크롤로도 다 못 담으면 잘려서 닿지 못하지 않게 안쪽 영역 전체가 스크롤(검증 2026-11-15) */
+  #class-journal .cj-app-student .st-world:has(.st-fit) .st-stage { display: flex; flex-direction: column; min-height: 0; padding-bottom: 24px; overflow-y: auto; }
+  #class-journal .cj-app-student .st-stage > .st-fit { flex: 1 1 auto; min-height: 0; }
+}
+
+/* ── 설정 (시안 Settings): 카드 3개, 포인트 카드 노랑 ── */
+#class-journal .cj-app-student .st-settings-page { display: flex; flex-direction: column; gap: 20px; }
+#class-journal .cj-app-student .st-settings-page .st-page-head { flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 8px 24px; }
+#class-journal .cj-app-student .st-set-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+#class-journal .cj-app-student .st-set-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 22px;
+  border: 2px solid var(--sk-line);
+  border-radius: 26px;
+  background: var(--sk-paper);
+}
+#class-journal .cj-app-student .st-set-card h2 {
+  margin: 0;
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: 28px;
+}
+#class-journal .cj-app-student .st-set-card p { margin: 0; font-size: 16px; line-height: 1.6; }
+#class-journal .cj-app-student .st-set-points { background: var(--sk-yellow); }
+#class-journal .cj-app-student .st-set-balance {
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: 72px;
+  line-height: 1;
+}
+#class-journal .cj-app-student .st-set-links { display: flex; flex-wrap: wrap; gap: 16px; margin: 0; font-weight: 700; font-size: 16px; }
+#class-journal .cj-app-student .st-set-links a { display: inline-flex; align-items: center; min-height: 44px; color: var(--sk-ink); }
+/* 공개 설정 카드 안: 예전 공개 설정 화면 규칙(테두리·여백)을 카드에 맞게 줄인다 */
+#class-journal .cj-app-student .st-set-sharing .st-sharing { margin: 0; padding: 0; border: 0; max-width: none; display: flex; flex-direction: column; gap: 10px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing h3 { margin: 6px 0 0; font-family: var(--st-display); font-weight: 400; font-size: 21px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing p { margin: 0; font-size: 15px; line-height: 1.55; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing fieldset {
+  margin: 0;
+  padding: 8px 10px 10px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--sk-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#class-journal .cj-app-student .st-set-sharing .st-sharing legend { float: left; width: 100%; padding: 0 4px 2px; font-weight: 700; font-size: 15px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing fieldset label { flex: 1 1 100%; min-height: 48px; padding: 8px 10px; font-size: 16px; font-weight: 700; background: var(--sk-paper); }
+#class-journal .cj-app-student .st-set-sharing .st-sharing-actions .st-button { min-height: 44px; padding: 0 14px; font-size: 15px; border-radius: 999px; }
+#class-journal .cj-app-student .st-set-sharing .st-consent-note { margin: 0; }
+#class-journal .cj-app-student .st-set-sharing section[aria-labelledby='community-h'] { display: flex; flex-direction: column; gap: 10px; }
+/* 설정은 카드 안쪽 스크롤을 두지 않는다(사용자 확인 2026-11-15). 1440×900에서는 한 화면에 들어오고, 창이 낮으면 화면 전체가 내려간다 */
+
+/* ── 내 포인트 (시안 Points): 왼쪽 잔액·쌓는 법, 오른쪽 내역 ── */
+#class-journal .cj-app-student .st-points-page { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 28px; align-items: start; }
+#class-journal .cj-app-student .st-points-left,
+#class-journal .cj-app-student .st-points-right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+#class-journal .cj-app-student .st-points-page h1:focus { outline: none; }
+#class-journal .cj-app-student .st-points-page h1:focus-visible { outline: 3px solid #f2a65a; outline-offset: 3px; }
+#class-journal .cj-app-student .st-points-page .st-balance {
+  align-self: flex-start;
+  margin: 0;
+  padding: 14px 26px;
+  border: 3px solid var(--sk-line);
+  border-radius: 26px;
+  background: var(--sk-yellow);
+  box-shadow: var(--sk-shadow);
+  transform: rotate(-2deg);
+  font-size: 20px;
+  font-weight: 700;
+}
+#class-journal .cj-app-student .st-points-page .st-balance strong { font-size: 80px; line-height: 1; margin: 0 6px; }
+#class-journal .cj-app-student .st-points-page .st-button.st-primary { align-self: flex-start; border-radius: 999px; min-height: 52px; font-size: 19px; }
+#class-journal .cj-app-student .st-points-page h2 { margin: 6px 0 0; font-family: var(--st-display); font-weight: 400; font-size: 26px; }
+#class-journal .cj-app-student .st-points-page .st-rules li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 14px;
+  background: var(--sk-paper);
+}
+#class-journal .cj-app-student .st-points-page .st-rules li > b { flex: none; width: 48px; font-family: var(--st-display); font-weight: 400; font-size: 20px; color: #9a4410; }
+#class-journal .cj-app-student .st-points-page .st-rules li span,
+#class-journal .cj-app-student .st-points-page .st-ledger li span { display: flex; flex-direction: column; font-size: 16px; }
+#class-journal .cj-app-student .st-points-page .st-rules small,
+#class-journal .cj-app-student .st-points-page .st-ledger small { font-size: 14px; color: var(--sk-sub); }
+#class-journal .cj-app-student .st-points-page .st-ledger li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border: 2px solid var(--sk-line);
+  border-radius: 16px;
+  background: var(--sk-paper);
+}
+#class-journal .cj-app-student .st-points-page .st-ledger strong { font-family: var(--st-display); font-weight: 400; font-size: 22px; color: #2f6a00; }
+#class-journal .cj-app-student .st-points-page .st-ledger strong[data-minus] { color: #9a3412; }
+#class-journal .cj-app-student .st-points-page .st-points-pages { justify-content: space-between; }
+#class-journal .cj-app-student .st-points-page .st-points-pages .st-button { min-height: 44px; padding: 0 18px; border-radius: 999px; font-size: 15px; }
+/* 내역은 칸 안에서 스크롤하지 않고 다 보인다(넘치면 페이지가 내려감, 사용자 의견 2026-11-16) */
+@media (min-width: 901px) and (min-height: 700px) {
+  #class-journal .cj-app-student .st-points-right { padding-top: 58px; }
+  #class-journal .cj-app-student .st-points-left .st-rules { gap: 6px; }
+}
+
+/* ── 도움말·문의 (시안 Help): 2단 ── */
+#class-journal .cj-app-student .st-help { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+#class-journal .cj-app-student .st-help-faq { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+#class-journal .cj-app-student .st-help h1,
+#class-journal .cj-app-student .st-help-single h1 {
+  margin: 0;
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: clamp(44px, 4vw, 62px);
+  line-height: 1;
+}
+#class-journal .cj-app-student .st-help .ws-card,
+#class-journal .cj-app-student .st-help-single .ws-card {
+  margin: 0;
+  padding: 14px 18px;
+  border: 2px solid var(--sk-line);
+  border-radius: 18px;
+  background: var(--sk-paper);
+  box-shadow: none;
+}
+#class-journal .cj-app-student .st-help-faq details summary {
+  min-height: 28px;
+  font-family: var(--st-display);
+  font-size: 21px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-help-faq details p { margin: 10px 0 0; font-size: 17px; line-height: 1.6; }
+#class-journal .cj-app-student .st-help-notice {
+  margin: 0;
+  padding: 14px 18px;
+  border: 2px dashed var(--sk-line);
+  border-radius: 18px;
+  background: var(--sk-soft);
+  font-size: 16px;
+}
+#class-journal .cj-app-student .st-help-notice a,
+#class-journal .cj-app-student .st-help-link { color: var(--sk-ink); font-weight: 700; }
+#class-journal .cj-app-student .st-help-link { display: inline-flex; align-items: center; min-height: 44px; font-size: 16px; }
+#class-journal .cj-app-student .st-help-support {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 22px;
+  border: 3px solid var(--sk-line);
+  border-radius: 26px;
+  background: #fff1d6;
+  box-shadow: 0 6px 0 rgb(31 78 107 / 0.18);
+}
+#class-journal .cj-app-student .st-help-support h2 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: 34px; }
+#class-journal .cj-app-student .st-help-support h3 { margin: 4px 0 0; font-size: 18px; }
+#class-journal .cj-app-student .st-help-support p { margin: 0; font-size: 15px; line-height: 1.55; }
+#class-journal .cj-app-student .st-help-support .ws-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+#class-journal .cj-app-student .st-help-support .ws-actions button {
+  min-height: 46px;
+  padding: 0 18px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-help-support .ws-actions button[aria-pressed='true'] { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-help-support .ws-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+#class-journal .cj-app-student .st-help-support .ws-form label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 16px; }
+#class-journal .cj-app-student .st-help-support .ws-form input,
+#class-journal .cj-app-student .st-help-support .ws-form select,
+#class-journal .cj-app-student .st-help-support .ws-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 50px;
+  padding: 10px 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 14px;
+  background: var(--sk-paper);
+  font-family: inherit;
+  font-size: 16px;
+}
+#class-journal .cj-app-student .st-help-support .ws-form textarea { min-height: 110px; resize: vertical; }
+#class-journal .cj-app-student .st-help-support .ws-form small { font-size: 14px; color: var(--sk-ink); }
+#class-journal .cj-app-student .st-help-support .ws-form .cj-primary {
+  min-height: 58px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-accent);
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-size: 22px;
+}
+#class-journal .cj-app-student .st-help-support .ws-form .cj-primary:disabled { opacity: 0.6; }
+#class-journal .cj-app-student .st-help-support .ws-card { background: var(--sk-paper); }
+#class-journal .cj-app-student .st-help-single { display: flex; flex-direction: column; gap: 16px; max-width: 1100px; }
+#class-journal .cj-app-student .st-help-single .ws-card h1 { font-size: clamp(36px, 3.4vw, 52px); }
+
+/* 내 방(시안 MyPage 디오라마)은 room.css */
+
+/* ── 회차 상세 (시안 AlbumDetail): 큰 액자 + 제목, 다섯 문제 카드 한 줄 ── */
+#class-journal .cj-app-student .st-episode-page { display: flex; flex-direction: column; gap: 14px; }
+#class-journal .cj-app-student .st-episode-nav { display: flex; flex-wrap: wrap; gap: 10px; }
+#class-journal .cj-app-student .st-episode-head { display: flex; flex-wrap: wrap; align-items: center; gap: 20px 40px; }
+#class-journal .cj-app-student .st-episode-frame {
+  flex: none;
+  width: min(360px, 30vw);
+  margin: 6px 0 10px 6px;
+  border: 14px solid #8a5a33;
+  outline: 3px solid var(--sk-line);
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 10px 12px 0 rgb(58 42 32 / 0.3);
+  transform: rotate(-2deg);
+}
+#class-journal .cj-app-student .st-episode-frame .st-frame-art { aspect-ratio: 4 / 3; border: 0; outline: 0; border-radius: 0; }
+#class-journal .cj-app-student .st-episode-title { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+#class-journal .cj-app-student .st-episode-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: var(--sk-yellow);
+  font-weight: 700;
+  font-size: 15px;
+}
+#class-journal .cj-app-student .st-episode-title h1 {
+  margin: 0;
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: clamp(38px, 3.8vw, 60px);
+  line-height: 1.05;
+  letter-spacing: -1px;
+}
+#class-journal .cj-app-student .st-episode-title > p { margin: 0; font-family: var(--st-hand); font-weight: 700; font-size: 20px; }
+#class-journal .cj-app-student .st-episode-page .st-episode-ending {
+  margin: 4px 0 0;
+  padding: 14px 18px;
+  border: 3px solid var(--sk-line);
+  border-left-width: 3px;
+  border-radius: 20px;
+  background: var(--sk-soft);
+  color: var(--sk-ink);
+}
+#class-journal .cj-app-student .st-episode-page .st-episode-ending[data-seen] { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-episode-page .st-episode-ending[data-seen] .st-meta { color: #ffffff; }
+#class-journal .cj-app-student .st-episode-page .st-episode-ending h2 { margin: 0 0 6px; font-family: var(--st-display); font-weight: 400; font-size: 24px; }
+#class-journal .cj-app-student .st-episode-page .st-episode-ending p { margin: 4px 0 0; font-size: 16px; line-height: 1.55; }
+#class-journal .cj-app-student .st-episode-week h2 { margin: 0 0 10px; font-family: var(--st-display); font-weight: 400; font-size: 28px; }
+#class-journal .cj-app-student .st-episode-page .st-episode-missions {
+  margin: 0;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+#class-journal .cj-app-student .st-episode-page .st-episode-missions li {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 12px 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: var(--sk-paper);
+}
+#class-journal .cj-app-student .st-episode-tile {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  border: 2px solid var(--sk-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--st-hue) 22%, #ffffff);
+  font-family: var(--st-display);
+  font-size: 40px;
+  color: var(--sk-ink);
+}
+/* 문제 칸에 그 문제 장면 그림(2026-11-16), 왼쪽 위에 요일 */
+#class-journal .cj-app-student .st-episode-tile.has-art { position: relative; overflow: hidden; background: var(--sk-paper); }
+#class-journal .cj-app-student .st-episode-tile.has-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#class-journal .cj-app-student .st-episode-tile.has-art b { position: absolute; left: 6px; top: 6px; padding: 0 10px; border: 2px solid var(--sk-line); border-radius: 999px; background: var(--sk-paper); font-weight: 400; font-size: 18px; line-height: 1.5; }
+#class-journal .cj-app-student .st-episode-kind { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; }
+#class-journal .cj-app-student .st-episode-kind i { width: 12px; height: 12px; border-radius: 50%; background: var(--st-hue); }
+#class-journal .cj-app-student .st-episode-page .st-episode-kind .st-day { display: inline; width: auto; height: auto; border: 0; background: none; }
+#class-journal .cj-app-student .st-episode-page .st-episode-missions small { display: inline; color: var(--sk-ink); font-size: 14px; }
+#class-journal .cj-app-student .st-episode-page .st-episode-missions strong { font-family: var(--st-display); font-weight: 400; font-size: 20px; line-height: 1.2; }
+#class-journal .cj-app-student .st-episode-page .st-episode-missions .st-pill-link { margin-top: auto; align-self: stretch; }
+#class-journal .cj-app-student .st-episode-page .st-episode-missions .st-meta { margin-top: auto; }
+/* PC: 액자와 글을 나란히, 글은 칸 안 스크롤 없이 다 보인다(페이지 전체 스크롤, 사용자 의견 2026-11-16) */
+@media (min-width: 901px) {
+  #class-journal .cj-app-student .st-episode-head { flex-wrap: nowrap; align-items: center; }
+  #class-journal .cj-app-student .st-episode-frame { width: min(380px, 32vw); }
+}
+
+/* ── 꾸미기 (시안 Customize): 왼쪽 미리 보기 + 오른쪽 탭 4개 + 아래 버튼 ──
+   카드는 미리 보기만 바꾸고 아래 버튼(쓰기·입히기·N포인트로 열기)이 저장·해금한다(2026-11-15 시안 맞추기) */
+#class-journal .cj-app-student .st-custom-page { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 28px; align-items: start; }
+#class-journal .cj-app-student .st-custom-left,
+#class-journal .cj-app-student .st-custom-right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+#class-journal .cj-app-student .st-custom-right { gap: 12px; }
+#class-journal .cj-app-student .st-custom-page .st-meta { margin: 0; font-size: 15px; color: var(--sk-ink); }
+#class-journal .cj-app-student .st-world .st-custom-page .st-title-mix { font-size: 72px; }
+#class-journal .cj-app-student .st-custom-page .st-title-mix span { font-size: 0.64em; }
+/* 미리 보기 상자: 고르는 중인 테마 색으로 칠한다 */
+#class-journal .cj-app-student .st-custom-preview-box {
+  position: relative;
+  border: 3px solid var(--sk-line);
+  border-radius: 30px;
+  background: var(--st-preview-frame, var(--sk-frame));
+  box-shadow: var(--sk-shadow);
+  overflow: hidden;
+  transition: background-color 0.45s ease;
+}
+#class-journal .cj-app-student .st-preview-home { padding: 16px; }
+#class-journal .cj-app-student .st-preview-paper { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 20px; background: var(--sk-paper); }
+#class-journal .cj-app-student .st-preview-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0; font-size: 14px; }
+#class-journal .cj-app-student .st-preview-head span { display: flex; gap: 4px; }
+#class-journal .cj-app-student .st-preview-head em,
+#class-journal .cj-app-student .st-preview-head i { padding: 4px 10px; border-radius: 999px; font-style: normal; font-weight: 700; font-size: var(--st-fs-xs, 14px); }
+#class-journal .cj-app-student .st-preview-head em { background: var(--st-preview-frame, var(--sk-frame)); color: var(--sk-ink); }
+#class-journal .cj-app-student .st-preview-head i { border: 1.5px solid var(--sk-ink); }
+#class-journal .cj-app-student .st-preview-scene { position: relative; aspect-ratio: 3 / 2; border: 2px solid var(--sk-line); border-radius: 18px; overflow: hidden; }
+#class-journal .cj-app-student .st-preview-art { position: absolute; left: 0; right: 0; top: 50%; aspect-ratio: 10 / 8; transform: translateY(-50%); }
+#class-journal .cj-app-student .st-preview-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+#class-journal .cj-app-student .st-preview-buddy { position: absolute; }
+#class-journal .cj-app-student .st-preview-buddy .st-companion { width: 100%; height: auto; }
+#class-journal .cj-app-student .st-preview-stage { display: flex; align-items: center; justify-content: center; aspect-ratio: 1 / 1; }
+#class-journal .cj-app-student .st-preview-name {
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  padding: 4px 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  font-weight: 700;
+  font-size: 15px;
+}
+#class-journal .cj-app-student .st-preview-ground { position: absolute; left: 12%; right: 12%; bottom: 10%; height: 18%; border: 2px solid var(--sk-line); border-radius: 50%; background: var(--st-preview-top, #f4ecdc); }
+#class-journal .cj-app-student .st-preview-big { position: relative; margin-top: 30px; width: min(240px, 60%); animation: st-custom-bob 3s ease-in-out infinite; }
+@keyframes st-custom-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+#class-journal .cj-app-student .st-preview-big .st-companion { width: 100%; height: auto; }
+/* 내 방 가구 탭: 작은 내 방 미리 보기(사용자 결정 2026-11-16 "뭐가 어떻게 변하는지 보여야지") */
+#class-journal .cj-app-student .st-preview-roombox { padding: 0; }
+#class-journal .cj-app-student .st-preview-roombox .st-room-scene-mini { border-radius: 27px; }
+#class-journal .cj-app-student .st-custom-page .st-preview-room-note { font-size: 16px; line-height: 1.6; }
+#class-journal .cj-app-student .st-preview-room-note b { font-weight: 800; }
+/* 주황 글자는 크림 바탕에서 대비가 낮아(2.1:1) 글자는 진한 색, 주황은 밑줄로만 */
+#class-journal .cj-app-student .st-world .st-link-inline {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sk-ink);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: var(--sk-accent);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+/* 탭 줄 */
+#class-journal .cj-app-student .st-custom-tabbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#class-journal .cj-app-student .st-custom-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-right: auto; }
+#class-journal .cj-app-student .st-world .st-custom-tabs button {
+  min-height: 52px;
+  padding: 0 20px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-size: 18px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-custom-tabs button[aria-selected='true'] { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-custom-question { margin: 0 0 14px; font-family: var(--st-hand); font-weight: 700; font-size: 30px; }
+#class-journal .cj-app-student .st-custom-panel { min-width: 0; }
+/* 카드: 고른 카드는 주황 4px 테두리, 상태 꼬리표(쓰는 중·가지고 있어요·N포인트) */
+#class-journal .cj-app-student .st-custom-page .st-pick-grid { margin: 0; gap: 16px; }
+#class-journal .cj-app-student .st-custom-page .st-pick-themes { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+#class-journal .cj-app-student .st-custom-page .st-pick-friends { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
+/* PC: 12종을 6개씩 두 줄로 한 화면에(사용자 의견 2026-11-16 "너무 밑에 스크롤") */
+@media (min-width: 901px) {
+  #class-journal .cj-app-student .st-custom-page .st-pick-friends { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+  #class-journal .cj-app-student .st-custom-page .st-pick-themes { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+  #class-journal .cj-app-student .st-world .st-custom-page .st-pick-friend { padding: 8px 4px 10px; }
+  #class-journal .cj-app-student .st-custom-page .st-pick-friend .st-companion { width: 62px; height: 62px; }
+  #class-journal .cj-app-student .st-custom-page .st-pick-friend strong { font-size: 15px; }
+}
+#class-journal .cj-app-student .st-world .st-custom-page .st-pick {
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: var(--sk-paper);
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+#class-journal .cj-app-student .st-world .st-custom-page .st-pick:not(:disabled):hover,
+#class-journal .cj-app-student .st-world .st-custom-page .st-pick-tile:not(:disabled):hover { transform: translateY(-4px); }
+#class-journal .cj-app-student .st-world .st-custom-page .st-pick[aria-pressed='true'],
+#class-journal .cj-app-student .st-world .st-custom-page .st-pick-tile[aria-pressed='true'] { border: 4px solid var(--sk-accent); }
+#class-journal .cj-app-student .st-custom-page .st-pick-theme { padding: 0; overflow: hidden; gap: 4px; }
+#class-journal .cj-app-student .st-custom-page .st-pick-theme .st-swatch { border-radius: 0; border-bottom: 2px solid var(--sk-line); }
+#class-journal .cj-app-student .st-custom-page .st-pick-theme strong { margin: 8px 14px 0; font-size: 21px; }
+#class-journal .cj-app-student .st-custom-page .st-pick-theme small { margin: 0 14px; font-size: var(--st-fs-xs, 14px); color: var(--sk-ink); }
+#class-journal .cj-app-student .st-custom-page .st-pick-theme .st-pick-pill { margin: 4px 14px 14px; }
+#class-journal .cj-app-student .st-custom-page .st-pick-pill {
+  align-self: flex-start;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: #fff1d6;
+  color: var(--sk-ink);
+  font-weight: 700;
+  font-size: var(--st-fs-xs, 14px);
+}
+#class-journal .cj-app-student .st-custom-page .st-pick-theme .st-pick-pill:not([data-kind='locked']) { background: var(--sk-yellow); }
+#class-journal .cj-app-student .st-world .st-custom-page .st-pick-friend { gap: 4px; padding: 10px 8px 12px; background: var(--st-friend-tint, var(--sk-paper)); }
+#class-journal .cj-app-student .st-custom-page .st-pick-friend strong { font-size: 18px; }
+#class-journal .cj-app-student .st-custom-page .st-pick-friend .st-pick-pill { align-self: center; padding: 2px 10px; background: var(--sk-paper); font-size: var(--st-fs-xs, 14px); }
+#class-journal .cj-app-student .st-custom-page .st-pick-friend .st-pick-pill[data-kind='using'] { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-world .st-custom-page .st-pick-soon { cursor: default; }
+/* 옷 입히기·내 방 가구: 칸별 타일(캐릭터에 그 옷만 입힌 작은 그림, 가구는 색 견본) */
+#class-journal .cj-app-student .st-pick-groups { display: flex; flex-direction: column; gap: 16px; }
+/* 칸 고르기(모자·옷·소품 / 벽지·책상·추억의 벽·옷장): 한 번에 한 칸만 보여 페이지가 길어지지 않게(2026-11-16) */
+#class-journal .cj-app-student .st-pick-slotbar { display: flex; flex-wrap: wrap; gap: 8px; }
+#class-journal .cj-app-student .st-world .st-pick-slotbar button {
+  position: relative;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-world .st-pick-slotbar button[aria-pressed='true'] { background: var(--sk-yellow, #ffd84d); }
+#class-journal .cj-app-student .st-pick-slotbar i { position: absolute; top: -3px; right: -3px; width: 11px; height: 11px; border: 2px solid var(--sk-line); border-radius: 50%; background: var(--sk-accent); }
+#class-journal .cj-app-student .st-pick-group { display: flex; flex-direction: column; gap: 8px; }
+#class-journal .cj-app-student .st-pick-group > b { font-size: 17px; }
+#class-journal .cj-app-student .st-pick-tiles { display: flex; flex-wrap: wrap; gap: 10px; }
+#class-journal .cj-app-student .st-world .st-pick-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 128px;
+  padding: 8px 10px 10px;
+  border: 2px solid var(--sk-line);
+  border-radius: 18px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+#class-journal .cj-app-student .st-world .st-pick-tile:disabled { cursor: default; opacity: 0.6; }
+#class-journal .cj-app-student .st-tile-art { display: flex; align-items: flex-end; justify-content: center; width: 64px; height: 70px; overflow: hidden; }
+#class-journal .cj-app-student .st-tile-swatch { align-items: center; height: 64px; border: 2px solid var(--sk-line); border-radius: 16px; box-sizing: border-box; font-family: var(--st-display); font-size: 20px; }
+#class-journal .cj-app-student .st-pick-tile strong { font-size: 15px; font-weight: 700; }
+#class-journal .cj-app-student .st-pick-tile small { font-size: var(--st-fs-xs, 14px); }
+#class-journal .cj-app-student .st-custom-page .st-pick-tile .st-pick-pill { align-self: center; padding: 2px 10px; font-size: var(--st-fs-xs, 14px); }
+#class-journal .cj-app-student .st-world .st-pick-furniture { min-width: 170px; padding: 14px 10px; border-radius: 22px; gap: 8px; }
+#class-journal .cj-app-student .st-tile-room { width: 128px; height: 100px; align-items: stretch; }
+#class-journal .cj-app-student .st-pick-furniture strong { font-family: var(--st-display); font-weight: 400; font-size: 20px; }
+#class-journal .cj-app-student .st-custom-page .st-pick-furniture .st-pick-pill { font-size: var(--st-fs-xs, 14px); padding: 3px 12px; }
+#class-journal .cj-app-student .st-custom-page .st-pick-furniture .st-pick-pill[data-kind='using'] { background: var(--sk-yellow); }
+/* 아래 버튼 줄 */
+#class-journal .cj-app-student .st-custom-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: #fff1d6;
+}
+#class-journal .cj-app-student .st-custom-action > span { display: flex; flex-direction: column; gap: 2px; }
+#class-journal .cj-app-student .st-custom-action b { font-size: 17px; }
+#class-journal .cj-app-student .st-custom-action small { font-size: 14px; }
+#class-journal .cj-app-student .st-world .st-custom-go {
+  min-height: 54px;
+  padding: 0 26px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-accent);
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-size: 19px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+#class-journal .cj-app-student .st-world .st-custom-go:not(:disabled):hover { background: var(--sk-ink); color: var(--sk-yellow); }
+#class-journal .cj-app-student .st-world .st-custom-go:disabled { cursor: default; opacity: 1; background: #e6e1d6; }
+#class-journal .cj-app-student .st-custom-page .st-unlock-confirm,
+#class-journal .cj-app-student .st-friends-page .st-unlock-confirm {
+  border: 3px solid var(--sk-line);
+  border-radius: 20px;
+  background: #fff1d6;
+}
+#class-journal .cj-app-student .st-custom-page .st-unlock-confirm { padding: 12px 16px; }
+#class-journal .cj-app-student .st-custom-page .st-unlock-confirm h3 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: 20px; }
+#class-journal .cj-app-student .st-custom-page .st-unlock-confirm p { margin: 6px 0; }
+#class-journal .cj-app-student .st-custom-page .st-unlock-confirm .st-button { border-radius: 999px; min-height: 44px; }
+#class-journal .cj-app-student .st-custom-page .st-custom-note { font-size: 14px; }
+#class-journal .cj-app-student .st-custom-page .st-look-status { margin: 0; min-height: 1.4em; }
+#class-journal .cj-app-student .st-custom-page .st-look-status:empty { display: none; }
+/* 고르기 칸은 칸 안에서 스크롤하지 않고 다 보인다(넘치면 페이지가 내려감, 사용자 의견 2026-11-16). 미리 보기 크기는 그대로 */
+@media (min-width: 901px) and (min-height: 700px) {
+  #class-journal .cj-app-student .st-custom-right { padding-top: 56px; }
+  #class-journal .cj-app-student .st-custom-left .st-preview-stage { width: min(100%, calc(100dvh - 430px)); align-self: center; }
+  #class-journal .cj-app-student .st-custom-left .st-preview-home { width: min(100%, calc((100dvh - 470px) * 1.25)); align-self: center; box-sizing: border-box; }
+}
+/* 1024 같은 중간 폭: 왼쪽을 좁히고 탭·버튼 줄을 줄여 고르기 칸이 보이게 */
+@media (min-width: 901px) and (max-width: 1200px) {
+  #class-journal .cj-app-student .st-custom-page { grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 22px; }
+  #class-journal .cj-app-student .st-world .st-custom-page .st-title-mix { font-size: 56px; }
+  #class-journal .cj-app-student .st-world .st-custom-tabs button { min-height: 44px; padding: 0 14px; font-size: 16px; }
+  #class-journal .cj-app-student .st-custom-question { margin-bottom: 10px; font-size: 24px; }
+  #class-journal .cj-app-student .st-custom-action { flex-wrap: nowrap; padding: 10px 14px; }
+  #class-journal .cj-app-student .st-world .st-custom-go { flex: none; min-height: 48px; padding: 0 18px; font-size: 17px; }
+}
+@media (min-width: 901px) and (max-width: 1200px) and (min-height: 700px) {
+  #class-journal .cj-app-student .st-custom-right { padding-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #class-journal .cj-app-student .st-custom-preview-box { transition: none; }
+  #class-journal .cj-app-student .st-preview-big { animation: none; }
+  #class-journal .cj-app-student .st-world .st-custom-page .st-pick,
+  #class-journal .cj-app-student .st-world .st-pick-tile,
+  #class-journal .cj-app-student .st-world .st-custom-go { transition: none; }
+}
+
+/* ── 뭉치 친구들 (시안 Friends): 큰 캐릭터 + 12장 카드 ── */
+#class-journal .cj-app-student .st-friends-page { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 32px; align-items: start; }
+#class-journal .cj-app-student .st-friends-left { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; text-align: center; }
+#class-journal .cj-app-student .st-world .st-friends-title {
+  align-self: flex-start;
+  margin: 0;
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: clamp(48px, 4.6vw, 76px);
+  line-height: 0.95;
+  letter-spacing: -2px;
+}
+#class-journal .cj-app-student .st-friends-title span + span { font-family: var(--st-hand); font-size: 0.85em; }
+#class-journal .cj-app-student .st-friend-stage { position: relative; width: min(300px, 80vw); aspect-ratio: 1; }
+#class-journal .cj-app-student .st-friend-ring { position: absolute; inset: 0; width: 100%; height: 100%; animation: st-spin 24s linear infinite; }
+#class-journal .cj-app-student .st-friend-ring circle { fill: var(--st-friend-tint, #fff1d6); stroke: #3a2a20; stroke-width: 2.5; }
+#class-journal .cj-app-student .st-friend-ring text { font-family: var(--st-display); font-size: 13px; letter-spacing: 2.5px; fill: var(--sk-ink); }
+#class-journal .cj-app-student .st-friend-big { position: absolute; left: 50%; top: 50%; width: 62%; transform: translate(-50%, -52%); }
+#class-journal .cj-app-student .st-friend-big .st-companion { width: 100%; height: auto; }
+@keyframes st-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #class-journal .cj-app-student .st-friend-ring { animation: none; } }
+#class-journal .cj-app-student .st-friend-info h2 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: 40px; }
+#class-journal .cj-app-student .st-friend-info p { margin: 4px 0 0; font-family: var(--st-hand); font-weight: 700; font-size: 20px; }
+#class-journal .cj-app-student .st-world .st-friend-action {
+  align-self: stretch;
+  min-height: 64px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-accent);
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-size: 24px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-friend-action:not(:disabled):hover { background: var(--sk-ink); color: var(--sk-yellow); }
+#class-journal .cj-app-student .st-friend-action:disabled { cursor: default; background: var(--sk-soft); }
+#class-journal .cj-app-student .st-friends-left .st-unlock-confirm { align-self: stretch; text-align: left; }
+#class-journal .cj-app-student .st-friends-left .st-look-status { margin: 0; }
+#class-journal .cj-app-student .st-friend-cards {
+  list-style: none;
+  margin: 0;
+  padding: 8px 10px 14px 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 20px 18px;
+}
+#class-journal .cj-app-student .st-friend-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 26px;
+  background: var(--st-friend-tint, var(--sk-paper));
+  box-shadow: 4px 4px 0 #3a2a20;
+  color: var(--sk-ink);
+  font-family: inherit;
+  transform: rotate(var(--st-tilt, 0deg));
+  transition: transform 0.25s ease;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-friend-card:hover { transform: rotate(0deg) translateY(-4px); }
+#class-journal .cj-app-student .st-friend-card[aria-pressed='true'] { border: 4px solid var(--sk-accent); box-shadow: 8px 8px 0 var(--sk-accent); }
+#class-journal .cj-app-student .st-friend-card[data-kind='soon'] .st-companion { opacity: 0.55; }
+#class-journal .cj-app-student .st-friend-card strong { font-family: var(--st-display); font-weight: 400; font-size: 21px; }
+#class-journal .cj-app-student .st-friend-pill { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 999px; background: var(--sk-paper); font-weight: 700; font-size: 14px; }
+#class-journal .cj-app-student .st-friend-card[data-kind='using'] .st-friend-pill { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-friend-card[data-kind='owned'] .st-friend-pill { background: #ddf6d2; }
+@media (prefers-reduced-motion: reduce) { #class-journal .cj-app-student .st-friend-card { transition: none; } }
+@media (min-width: 901px) and (min-height: 700px) {
+  #class-journal .cj-app-student .st-friend-stage { width: min(300px, calc(100dvh - 600px)); min-width: 180px; }
+}
+
+/* ── 내 공책 (시안 Journal): 주별 묶음 ── */
+#class-journal .cj-app-student .st-journal-page { display: flex; flex-direction: column; gap: 18px; }
+#class-journal .cj-app-student .st-journal-weeks {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 2px 4px 6px 2px;
+}
+#class-journal .cj-app-student .st-journal-week h2 { margin: 0 0 10px; font-family: var(--st-display); font-weight: 400; font-size: 26px; }
+#class-journal .cj-app-student .st-journal-week h2 small { font-family: 'Gowun Dodum', sans-serif; font-size: 15px; color: var(--sk-sub); }
+#class-journal .cj-app-student .st-journal-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+#class-journal .cj-app-student .st-journal-row { display: flex; align-items: center; gap: 10px; }
+#class-journal .cj-app-student .st-journal-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 18px;
+  border: 2px solid var(--sk-line);
+  border-radius: 18px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+#class-journal .cj-app-student .st-journal-open:hover { transform: translateY(-2px); }
+#class-journal .cj-app-student .st-journal-open > i { flex: none; width: 16px; height: 44px; border-radius: 8px; background: var(--st-hue); }
+#class-journal .cj-app-student .st-journal-date { flex: none; width: 104px; font-weight: 700; font-size: 15px; }
+#class-journal .cj-app-student .st-journal-title { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; }
+#class-journal .cj-app-student .st-journal-title strong { font-family: var(--st-display); font-weight: 400; font-size: 21px; }
+#class-journal .cj-app-student .st-journal-title small { font-size: 14px; color: var(--sk-sub); }
+#class-journal .cj-app-student .st-journal-status { flex: none; padding: 4px 14px; border-radius: 999px; background: var(--sk-yellow); font-weight: 700; font-size: 14px; }
+#class-journal .cj-app-student .st-journal-status[data-done] { background: #ddf6d2; }
+#class-journal .cj-app-student .st-journal-row .st-pill-link { flex: none; align-self: center; }
+#class-journal .cj-app-student .st-journal-page .cj-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 공책 탭(#710): 꾸미기 탭과 같은 알약 모양, 개수는 옅게 */
+#class-journal .cj-app-student .st-journal-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+#class-journal .cj-app-student .st-world .st-journal-tabs button {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-size: 17px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-journal-tabs button[aria-selected='true'] { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-journal-tabs button:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: 3px; }
+#class-journal .cj-app-student .st-journal-count { font-family: 'Gowun Dodum', 'Malgun Gothic', sans-serif; font-weight: 700; opacity: 0.75; }
+#class-journal .cj-app-student .st-journal-page .cj-filters select { min-height: 48px; padding: 0 14px; border: 2px solid var(--sk-line); border-radius: 14px; background: var(--sk-paper); font-family: inherit; font-size: 16px; }
+@media (prefers-reduced-motion: reduce) { #class-journal .cj-app-student .st-journal-open { transition: none; } }
+
+/* ── 내 공책 기록 상세 (시안 JournalDetail, 2026-11-16): 장면·꼬리표·섞은 제목, 답 버전 카드 두 칸, 돌아보기·다시 풀기 ──
+   .st-fit이 아니라 PC에서도 학생 틀 전체가 아래로 내려간다(칸 안 스크롤 없음). --st-hue는 생각 유형 색(꼬리표·마지막 카드 그림자) */
+#class-journal .cj-app-student .st-jd-page { display: flex; flex-direction: column; gap: 20px; }
+#class-journal .cj-app-student .st-jd-head { display: flex; flex-wrap: wrap; align-items: center; gap: 20px 28px; }
+#class-journal .cj-app-student .st-jd-scene {
+  flex: none;
+  box-sizing: border-box;
+  width: min(360px, 100%);
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border: 3px solid var(--sk-line);
+  border-radius: 20px;
+  transform: rotate(-1.5deg);
+}
+#class-journal .cj-app-student .st-jd-title { flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+#class-journal .cj-app-student .st-jd-tag {
+  align-self: flex-start;
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: var(--st-hue);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 15px;
+}
+#class-journal .cj-app-student .st-world .st-jd-page .st-title-mix { font-size: clamp(40px, 4.2vw, 60px); overflow-wrap: anywhere; }
+#class-journal .cj-app-student .st-jd-page .st-title-mix span { font-size: 0.84em; }
+#class-journal .cj-app-student .st-jd-page .st-title-mix:focus { outline: none; }
+#class-journal .cj-app-student .st-jd-page .st-title-mix:focus-visible { outline: 3px solid var(--sk-accent); outline-offset: 4px; }
+#class-journal .cj-app-student .st-jd-question { margin: 0; font-family: var(--st-hand); font-weight: 700; font-size: 19px; line-height: 1.6; }
+#class-journal .cj-app-student .st-jd-answers,
+#class-journal .cj-app-student .st-jd-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+#class-journal .cj-app-student .st-jd-answers > :only-child,
+#class-journal .cj-app-student .st-jd-foot > :only-child { grid-column: 1 / -1; }
+#class-journal .cj-app-student .st-jd-version {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: var(--sk-paper);
+}
+#class-journal .cj-app-student .st-jd-version[data-last] { border-width: 3px; box-shadow: 8px 8px 0 var(--st-hue); }
+#class-journal .cj-app-student .st-jd-version-name { font-weight: 700; font-size: 14px; color: var(--sk-ink); }
+#class-journal .cj-app-student .st-jd-steps { margin: 0; padding-left: 26px; list-style: decimal; font-family: var(--st-hand); font-weight: 700; font-size: 17px; line-height: 1.7; overflow-wrap: anywhere; }
+#class-journal .cj-app-student .st-jd-steps li[data-empty] { font-weight: 400; color: var(--sk-sub); }
+#class-journal .cj-app-student .st-jd-final { margin: 0; font-size: 16px; }
+#class-journal .cj-app-student .st-jd-text { margin: 0; font-family: var(--st-hand); font-weight: 700; font-size: 17px; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
+#class-journal .cj-app-student .st-jd-essay { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+#class-journal .cj-app-student .st-jd-essay dt { font-weight: 700; font-size: 14px; }
+#class-journal .cj-app-student .st-jd-essay dd { margin: 0; font-family: var(--st-hand); font-weight: 700; font-size: 17px; line-height: 1.6; overflow-wrap: anywhere; }
+#class-journal .cj-app-student .st-jd-asked { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 14px; background: var(--sk-soft); }
+#class-journal .cj-app-student .st-jd-asked small { font-weight: 700; font-size: var(--st-fs-xs, 14px); }
+#class-journal .cj-app-student .st-jd-asked p { margin: 0; font-size: 16px; }
+#class-journal .cj-app-student .st-jd-verdict { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+#class-journal .cj-app-student .st-jd-verdict span { padding: 4px 12px; border-radius: 999px; background: var(--sk-yellow); font-weight: 700; font-size: 14px; }
+#class-journal .cj-app-student .st-jd-verdict[data-correct] span { background: #ddf6d2; }
+#class-journal .cj-app-student .st-jd-verdict small { font-size: var(--st-fs-xs, 14px); color: var(--sk-sub); }
+#class-journal .cj-app-student .st-jd-reflect,
+#class-journal .cj-app-student .st-jd-retry { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; border-radius: 22px; }
+#class-journal .cj-app-student .st-jd-reflect { border: 2px solid var(--sk-line); background: #fff1d6; }
+#class-journal .cj-app-student .st-jd-retry { gap: 10px; border: 3px dashed #7a8c88; background: var(--sk-paper); }
+#class-journal .cj-app-student .st-jd-foot h2 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: 22px; }
+#class-journal .cj-app-student .st-jd-foot p { margin: 0; font-size: 16px; line-height: 1.55; }
+#class-journal .cj-app-student .st-jd-retry .st-pill-link { min-height: 48px; padding: 0 20px; }
+#class-journal .cj-app-student .st-jd-retry .st-pill-link:disabled { opacity: 0.6; cursor: default; }
+#class-journal .cj-app-student .st-jd-empty { margin: 0; font-size: 16px; }
+@media (max-width: 900px) {
+  #class-journal .cj-app-student .st-jd-answers,
+  #class-journal .cj-app-student .st-jd-foot { grid-template-columns: minmax(0, 1fr); }
+  #class-journal .cj-app-student .st-jd-scene { width: 100%; transform: none; }
+  #class-journal .cj-app-student .st-jd-question { font-size: 17px; }
+}
+
+/* ── 생각 활동 (시안 Activities): 유형 다섯 칸 + 목록 ── */
+#class-journal .cj-app-student .st-activities-page { display: flex; flex-direction: column; gap: 18px; }
+#class-journal .cj-app-student .st-activity-types { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+#class-journal .cj-app-student .st-activity-type {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: #ffffff;
+  font-size: 15px;
+}
+/* 시안처럼 해 본 유형만 그 색으로 칠하고, 아직인 칸은 흰 바탕(사용자 확인 2026-11-15) */
+#class-journal .cj-app-student .st-activity-type[data-done] { background: color-mix(in srgb, var(--st-hue) 12%, #ffffff); }
+#class-journal .cj-app-student .st-activity-type:not([data-done]) { border-style: dashed; border-color: color-mix(in srgb, var(--sk-line) 45%, #ffffff); color: color-mix(in srgb, currentColor 55%, #ffffff); }
+#class-journal .cj-app-student .st-activity-type:not([data-done]) strong i { opacity: .55; }
+#class-journal .cj-app-student .st-activity-types-wrap { display: flex; flex-direction: column; gap: 10px; }
+#class-journal .cj-app-student .st-activity-types-wrap h2 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: 22px; }
+#class-journal .cj-app-student .st-activity-type:nth-child(odd) { transform: rotate(-0.8deg); }
+#class-journal .cj-app-student .st-activity-type:nth-child(even) { transform: rotate(0.8deg); }
+#class-journal .cj-app-student .st-activity-type strong { display: flex; align-items: center; gap: 8px; font-family: var(--st-display); font-weight: 400; font-size: 20px; }
+#class-journal .cj-app-student .st-activity-type strong i { width: 14px; height: 14px; border: 2px solid var(--sk-line); border-radius: 50%; background: var(--st-hue); }
+#class-journal .cj-app-student .st-activity-list { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+#class-journal .cj-app-student .st-activity-list h2 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: 28px; }
+#class-journal .cj-app-student .st-activity-list .st-scroll { padding: 2px 4px 6px 2px; }
+#class-journal .cj-app-student .st-activities { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+#class-journal .cj-app-student .st-activity {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 18px;
+  border: 2px solid var(--sk-line);
+  border-radius: 18px;
+  background: var(--sk-paper);
+  box-shadow: none;
+}
+#class-journal .cj-app-student .st-activity-bar { flex: none; width: 14px; height: 48px; border-radius: 7px; background: var(--st-hue, #7a8c88); }
+#class-journal .cj-app-student .st-activity-name { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; }
+#class-journal .cj-app-student .st-activity-name h3 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: 21px; }
+#class-journal .cj-app-student .st-activity-name small { font-size: 14px; color: var(--sk-sub); }
+#class-journal .cj-app-student .st-activity-reflect { flex: 2 1 340px; margin: 0; font-family: var(--st-hand); font-weight: 700; font-size: 17px; }
+#class-journal .cj-app-student .st-activity-reflect b { font-family: 'Gowun Dodum', sans-serif; margin-right: 8px; padding: 2px 10px; border-radius: 999px; background: var(--sk-soft); font-size: 14px; }
+#class-journal .cj-app-student .st-activity-reflect .st-activity-note { display: inline; margin: 0; font-size: inherit; }
+
+/* ── 친구 생각 (시안 Community): 왼쪽 미션 목록, 오른쪽 글 ── */
+#class-journal .cj-app-student .st-stage > .st-community { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 28px; align-items: start; }
+#class-journal .cj-app-student .st-community-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+#class-journal .cj-app-student .st-community-missions { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+#class-journal .cj-app-student .st-community-missions strong { font-size: 16px; }
+#class-journal .cj-app-student .st-community-missions ul { list-style: none; margin: 0; padding: 2px; display: flex; flex-direction: column; gap: 8px; }
+#class-journal .cj-app-student .st-community-missions button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 56px;
+  padding: 10px 16px;
+  border: 2px solid var(--sk-line);
+  border-radius: 16px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-community-missions button b { font-family: var(--st-display); font-weight: 400; font-size: 19px; }
+#class-journal .cj-app-student .st-community-missions button small { font-size: 14px; }
+#class-journal .cj-app-student .st-community-missions button[aria-pressed='true'] { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-community-missions button[aria-pressed='true'] small { color: #e6f0ee; }
+#class-journal .cj-app-student .st-community-note { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--sk-soft); font-size: 14px; line-height: 1.5; }
+#class-journal .cj-app-student .st-community-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+#class-journal .cj-app-student .st-community-right h2 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: 26px; }
+#class-journal .cj-app-student .st-community-right .st-scroll { padding: 4px 6px 8px 4px; }
+#class-journal .cj-app-student .st-community-right .st-posts { gap: 18px; }
+#class-journal .cj-app-student .st-community-right .st-post {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: var(--sk-paper);
+}
+#class-journal .cj-app-student .st-community-right .st-post:nth-child(odd) { transform: rotate(-0.4deg); }
+#class-journal .cj-app-student .st-community-right .st-post:nth-child(even) { transform: rotate(0.4deg); }
+#class-journal .cj-app-student .st-community-right .st-post-author strong { font-family: var(--st-display); font-weight: 400; font-size: 20px; }
+#class-journal .cj-app-student .st-community-right .st-post-answer { margin: 0; font-family: var(--st-hand); font-weight: 700; font-size: 18px; line-height: 1.65; }
+#class-journal .cj-app-student .st-community-right .st-reaction { min-height: 44px; padding: 0 14px; border: 2px solid var(--sk-line); background: var(--sk-paper); color: var(--sk-ink); font-family: inherit; font-weight: 700; font-size: 14px; }
+#class-journal .cj-app-student .st-community-right .st-reaction[aria-pressed='true'] { border-color: var(--sk-line); background: var(--sk-yellow); }
+#class-journal .cj-app-student .st-community-right .st-post-report { display: flex; justify-content: flex-end; }
+#class-journal .cj-app-student .st-community-right .st-post-report .st-link { min-height: 44px; color: var(--sk-sub); font-size: 14px; }
+#class-journal .cj-app-student .st-community-right .st-kicker { color: var(--sk-ink); }
+#class-journal .cj-app-student .st-community-left > .st-pill-link { align-self: flex-start; }
+
+/* ── 미션 고르기 (시안 MissionPick): 카드는 다 보이고 넘치면 페이지가 내려간다(사용자 의견 2026-11-16) ── */
+#class-journal .cj-app-student .st-missions-page { display: flex; flex-direction: column; gap: 16px; }
+#class-journal .cj-app-student .st-missions-page .st-chips button { min-height: 48px; border-color: var(--sk-line); }
+#class-journal .cj-app-student .st-missions-page .st-chips button[aria-pressed='true'] { background: var(--sk-ink); color: #ffffff; }
+#class-journal .cj-app-student .st-missions-page .st-select select { min-height: 48px; border-color: var(--sk-line); background: var(--sk-paper); }
+#class-journal .cj-app-student .st-missions-page .st-cards { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 22px; padding: 6px 12px 14px 4px; align-content: start; }
+#class-journal .cj-app-student .st-missions-page .st-card { border: 2px solid var(--sk-line); border-radius: 24px; background: var(--sk-paper); box-shadow: 6px 6px 0 #b8551c; }
+#class-journal .cj-app-student .st-missions-page .st-card .st-photo { margin: 0; padding: 0; border: 2px solid var(--sk-line); border-radius: 14px; overflow: hidden; box-shadow: none; transform: none; aspect-ratio: 16 / 9; }
+#class-journal .cj-app-student .st-missions-page .st-card .st-photo svg { width: 100%; height: 100%; object-fit: cover; }
+#class-journal .cj-app-student .st-missions-page .st-kicker { color: var(--sk-ink); font-family: 'Gowun Dodum', sans-serif; font-weight: 700; }
+#class-journal .cj-app-student .st-missions-page .st-card .st-button.st-primary { min-height: 48px; border-radius: 999px; font-size: 17px; }
+@media (min-width: 901px) and (min-height: 700px) {
+  #class-journal .cj-app-student .st-missions-page .st-island-activities { margin: 0; }
+}
+
+/* ── 문제 화면을 못 열었을 때 돌아가기(#648 B) ── */
+#class-journal .cj-app-student .st-work-missing { display: flex; flex-direction: column; gap: 16px; max-width: 920px; margin: 0 auto; }
+#class-journal .cj-app-student .st-work-missing-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+#class-journal .cj-app-student .st-work-missing-actions .st-button { border-radius: 999px; min-height: 52px; }
+
+/* ── 900px 이하: 한 줄로 쌓기 ── */
+@media (max-width: 900px) {
+  #class-journal .cj-app-student .st-set-grid,
+  #class-journal .cj-app-student .st-points-page,
+  #class-journal .cj-app-student .st-help,
+  #class-journal .cj-app-student .st-custom-page,
+  #class-journal .cj-app-student .st-friends-page,
+  #class-journal .cj-app-student .st-stage > .st-community { grid-template-columns: minmax(0, 1fr); }
+  #class-journal .cj-app-student .st-points-right { padding-top: 0; }
+  #class-journal .cj-app-student .st-activity-types { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #class-journal .cj-app-student .st-activity-type:last-child { grid-column: 1 / -1; }
+  #class-journal .cj-app-student .st-episode-page .st-episode-missions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #class-journal .cj-app-student .st-episode-frame { width: min(320px, 78vw); }
+  #class-journal .cj-app-student .st-friend-cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px 12px; }
+  #class-journal .cj-app-student .st-custom-preview-box.st-preview-stage { max-width: 320px; width: 100%; align-self: center; }
+}
+@media (max-width: 640px) {
+  #class-journal .cj-app-student .st-set-balance { font-size: 56px; }
+  #class-journal .cj-app-student .st-points-page .st-balance strong { font-size: 60px; }
+  #class-journal .cj-app-student .st-help-support { padding: 16px; }
+  #class-journal .cj-app-student .st-journal-row { flex-direction: column; align-items: stretch; }
+  #class-journal .cj-app-student .st-journal-row .st-pill-link { align-self: flex-end; }
+  #class-journal .cj-app-student .st-journal-date { width: auto; }
+  #class-journal .cj-app-student .st-episode-page .st-episode-missions { grid-template-columns: minmax(0, 1fr); }
+  #class-journal .cj-app-student .st-custom-tabs button { padding: 0 14px; font-size: 16px; }
+  #class-journal .cj-app-student .st-friend-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #class-journal .cj-app-student .st-friend-card strong { font-size: 18px; }
+  #class-journal .cj-app-student .st-segment button { padding: 0 12px; }
+  #class-journal .cj-app-student .st-world .st-title-mix,
+  #class-journal .cj-app-student .st-world .st-friends-title { font-size: 44px; }
+  #class-journal .cj-app-student .st-custom-page .st-pick-themes,
+  #class-journal .cj-app-student .st-custom-page .st-pick-friends { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  #class-journal .cj-app-student .st-custom-preview-box.st-preview-home { max-width: 300px; align-self: center; width: 100%; }
+}
+#class-journal .cj-app-student .st-help-support .ws-form.ws-card { padding: 0; border: 0; background: transparent; }
+#class-journal .cj-app-student .st-world .st-friend-action:disabled { opacity: 1; color: var(--sk-ink); border-color: var(--sk-line); }
+
+/* ── 대조 검증 뒤 고친 것 (2026-11-15) ── */
+/* 공책 기간 선택: 공용 규칙 max-width 150px 때문에 "최근 7일 · 10.2…"로 잘림 */
+#class-journal .cj-app-student .st-journal-page .cj-filters select { max-width: none; width: auto; }
+@media (max-width: 640px) {
+  #class-journal .cj-app-student .st-journal-page .cj-filters { width: 100%; }
+  #class-journal .cj-app-student .st-journal-page .cj-filters select { flex: 1 1 100%; }
+}
+/* 공책 빈 상태: 예전 회녹색 상자 대신 새 디자인, 글과 버튼 사이 간격 */
+#class-journal .cj-app-student .st-journal-weeks [data-query-state='NO_RECORD'] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 22px 24px;
+  border: 2px dashed var(--sk-line);
+  border-radius: 20px;
+  background: var(--sk-soft);
+  color: var(--sk-ink);
+  font-size: 17px;
+}
+/* 미션 고르기 카드 그림: 장면 그림을 칸에 꽉 채움(흰 띠 없음) */
+#class-journal .cj-app-student .st-card .st-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* 친구 생각: 마무리한 미션이 없을 때 오른쪽 칸 안내 */
+#class-journal .cj-app-student .st-community-empty {
+  margin: 0;
+  padding: 22px 24px;
+  border: 2px dashed var(--sk-line);
+  border-radius: 20px;
+  background: var(--sk-soft);
+  font-size: 17px;
+}
+/* 처리 결과(학생 틀 안): 제목·본문 간격, 돌아가기를 버튼 모양으로 */
+#class-journal .cj-app-student .st-help-single .ws-card { display: flex; flex-direction: column; gap: 10px; }
+#class-journal .cj-app-student .st-help-single .ws-card h2 { margin: 12px 0 0; font-family: 'Black Han Sans', sans-serif; font-weight: 400; font-size: 22px; }
+#class-journal .cj-app-student .st-help-single .ws-card p { margin: 0; }
+#class-journal .cj-app-student .st-help-single .ws-card > a:last-child {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 10px 20px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  color: var(--sk-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+/* 설정: 공개 설정 카드가 좁은 3열 칸에서 넘쳐 안쪽 스크롤이 생기던 것(사용자 확인 2026-11-15).
+   학부모 공개까지 들어가 시안보다 내용이 많아, 넓은 화면에서는 왼쪽에 공개 설정(두 줄 높이), 오른쪽에 포인트·로그아웃을 쌓는다 */
+#class-journal .cj-app-student .st-settings-page .st-page-head h1 { margin: 0; }
+#class-journal .cj-app-student .st-settings-page .st-page-head p { margin: 4px 0 0; }
+@media (min-width: 901px) {
+  /* 3열 중 공개 설정이 두 칸 폭·두 줄 높이, 셋째 칸에 포인트·로그아웃을 쌓음. 공개 설정 안은 학부모 공개 | 친구 공개 두 칸 */
+  #class-journal .cj-app-student .st-settings-page .st-set-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: auto auto;
+    align-items: stretch;
+  }
+  #class-journal .cj-app-student .st-settings-page .st-set-sharing { grid-column: 1 / span 2; grid-row: 1 / span 2; }
+  #class-journal .cj-app-student .st-set-sharing .st-sharing.st-settings-part {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 10px 24px;
+  }
+  #class-journal .cj-app-student .st-set-sharing .st-sharing.st-settings-part > h2 { grid-column: 1 / -1; }
+  #class-journal .cj-app-student .st-set-sharing .st-sharing-parent { grid-column: 1; display: flex; flex-direction: column; gap: 8px; }
+  #class-journal .cj-app-student .st-set-sharing .st-sharing.st-settings-part > section { grid-column: 2; }
+}
+#class-journal .cj-app-student .st-set-sharing .st-sharing { gap: 8px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 10px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing fieldset label {
+  flex: 1 1 200px;
+  flex-wrap: wrap;
+  min-height: 48px;
+  padding: 8px 14px;
+  gap: 4px 10px;
+  border: 2px solid var(--sk-line);
+  border-radius: 14px;
+  font-size: 16px;
+}
+#class-journal .cj-app-student .st-set-sharing .st-sharing fieldset label:has(input:checked) { border-color: var(--sk-accent); background: #fff3d6; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing fieldset label .st-badge { flex-basis: 100%; padding-left: 30px; font-size: var(--st-fs-xs, 14px); }
+#class-journal .cj-app-student .st-set-sharing .st-sharing input { width: 20px; height: 20px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing h3 { margin: 4px 0 0; font-size: 19px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing p,
+#class-journal .cj-app-student .st-set-sharing .st-consent-note { font-size: 14px; line-height: 1.5; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing-actions { gap: 8px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing fieldset label { min-height: 42px; padding: 6px 12px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing fieldset { padding: 8px; gap: 6px; }
+#class-journal .cj-app-student .st-set-sharing .st-sharing fieldset label .st-badge { padding: 0 0 0 30px; border: 0; background: none; color: #8a4b12; font-size: var(--st-fs-xs, 14px); }
+#class-journal .cj-app-student .st-set-sharing .st-consent-note { padding: 8px 12px; }
+#class-journal .cj-app-student .st-settings-page { gap: 16px; }
+
+
+/* 꾸미기 캐릭터 무대 돌려 보기(앞·옆·뒤, 2026-11-16) */
+#class-journal .cj-app-student .st-preview-turn {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: var(--sk-paper);
+}
+#class-journal .cj-app-student .st-world .st-preview-turn button {
+  min-width: 40px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sk-ink);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+#class-journal .cj-app-student .st-world .st-preview-turn button[aria-pressed='true'] { background: var(--sk-ink); color: #ffffff; }
+
+/* 설정: 낮은 PC 창(화면 배율 125% 등으로 웹 기준 높이 860 이하)에서도 한 화면에 — 제목·카드 여백·선택 칸 높이를 줄임(사용자 의견 2026-11-16 "설정 창도 화면에 안 맞는데") */
+@media (min-width: 901px) and (max-height: 860px) {
+  #class-journal .cj-app-student .st-settings-page { gap: 8px; }
+  #class-journal .cj-app-student .st-world .st-settings-page .st-page-head h1 { font-size: 48px; line-height: 1.05; }
+  #class-journal .cj-app-student .st-settings-page .st-page-head p { margin-top: 2px; font-size: 15px; }
+  #class-journal .cj-app-student .st-settings-page .st-set-grid { gap: 10px; }
+  #class-journal .cj-app-student .st-settings-page .st-set-card { gap: 6px; padding: 12px 16px; border-radius: 22px; }
+  #class-journal .cj-app-student .st-settings-page .st-set-card h2 { font-size: 22px; }
+  #class-journal .cj-app-student .st-settings-page .st-set-card p { font-size: 14px; line-height: 1.45; }
+  #class-journal .cj-app-student .st-settings-page .st-set-balance { font-size: 48px; }
+  #class-journal .cj-app-student .st-set-sharing .st-sharing { gap: 6px; }
+  #class-journal .cj-app-student .st-set-sharing .st-sharing h3 { margin-top: 2px; font-size: 18px; }
+  #class-journal .cj-app-student .st-set-sharing .st-sharing p { font-size: 14px; line-height: 1.45; }
+  #class-journal .cj-app-student .st-set-sharing .st-sharing fieldset { padding: 8px; gap: 6px; }
+  #class-journal .cj-app-student .st-set-sharing .st-sharing fieldset label { min-height: 44px; padding: 4px 10px; font-size: 15px; }
+  #class-journal .cj-app-student .st-set-sharing section[aria-labelledby='community-h'] { gap: 6px; }
+  #class-journal .cj-app-student .st-set-sharing .st-consent-note { padding: 8px 12px; font-size: 14px; }
+  /* 바깥 여백도 설정 화면에서만 줄임(파란 틀 44 → 16, 흰 종이 아래 48 → 16) */
+  #class-journal .cj-app-student .st-world:has(.st-settings-page) { padding-block: 16px; }
+  #class-journal .cj-app-student .st-world:has(.st-settings-page) .st-stage { padding-bottom: 16px; }
+  #class-journal .cj-app-student .st-world .st-settings-page .st-page-head h1 { font-size: 40px; }
+}

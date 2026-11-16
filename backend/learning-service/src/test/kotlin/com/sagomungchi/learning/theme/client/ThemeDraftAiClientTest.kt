@@ -19,6 +19,7 @@ import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeFailure
+import com.sagomungchi.learning.theme.domain.ThemeFeatureValue
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -57,7 +58,10 @@ class ThemeDraftAiClientTest {
         "theme":{"title":"사라진 책","world":"마을 도서관","characters":[{"name":"뭉치","look":"갈색 강아지"}],"styleNote":"수채화",
           "outfit":"탐정 모자","intro":"책이 사라졌어요.","outro":"책은 반납함에 있었어요.","bigQuestion":"책은 어디에?",
           "candidates":["서가","반납함","창고","책상"],"answer":"반납함",
-          "days":[{"day":"MON","thinkingType":"ANALYZE","place":"서가","sceneNote":"빈 칸","clue":"서가에는 먼지 자국만","rulesOut":["서가"]}]},
+          "days":[{"day":"MON","thinkingType":"ANALYZE","place":"서가","sceneNote":"빈 칸","clue":"서가에는 먼지 자국만","rulesOut":["서가"],
+            "clueFeature":"먼지"}],
+          "features":[{"name":"먼지","values":[{"candidate":"서가","value":"쌓임"},{"candidate":"반납함","value":"없음"},
+            {"candidate":"창고","value":"없음"},{"candidate":"책상","value":"없음"}]}]},
         "missions":[{"day":"MON","thinkingType":"ANALYZE","draft":$draft}],
         "dialogues":[{"day":"MON","lines":[{"speaker":"뭉치","text":"어디 갔지?"}]}],
         "images":{"INTRO":"theme-drafts/r1/INTRO.png","MON":"theme-drafts/r1/MON.png"},
@@ -102,6 +106,10 @@ class ThemeDraftAiClientTest {
         )
         val theme = result.theme!!
         assertEquals(listOf("반납함", ThemeDay.MON, listOf("서가")), listOf(theme.answer, theme.days.single().day, theme.days.single().rulesOut))
+        // #647 선택 칸: 특징 표·요일 특징 이름
+        assertEquals("먼지", theme.days.single().clueFeature)
+        assertEquals(listOf("먼지"), theme.features!!.map { it.name })
+        assertEquals(ThemeFeatureValue("서가", "쌓임"), theme.features!!.single().values.first())
         assertEquals("책 찾기", result.missions.single().draft.title)
         assertEquals(listOf(DialogueLine("뭉치", "어디 갔지?")), result.dialogues.single().lines)
         assertEquals(mapOf("INTRO" to "theme-drafts/r1/INTRO.mp4"), result.videos)

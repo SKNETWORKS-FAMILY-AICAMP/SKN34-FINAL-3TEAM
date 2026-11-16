@@ -1,4 +1,4 @@
-import { enterStudentFixture } from './studentFixture.ts'
+import { enterStudentFixture, waitForStudentHome } from './studentFixture.ts'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
@@ -20,7 +20,7 @@ async function studentLogin(page: Page) {
   await expect(page.getByRole('button', { name: '5', exact: true })).toBeVisible()
   for (const digit of ['5', '0', '9', '0']) await page.getByRole('button', { name: digit, exact: true }).click()
   await page.getByRole('button', { name: /확인|들어가기/ }).click()
-  await expect(page).toHaveURL(/\/student\/home/)
+  await waitForStudentHome(page)
 }
 
 const friendsOption = (page: Page) => page.getByRole('radio', { name: /친구들에게 보여 줄게요/ })

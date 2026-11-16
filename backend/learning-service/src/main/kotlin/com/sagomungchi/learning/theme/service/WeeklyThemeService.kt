@@ -55,7 +55,7 @@ class WeeklyThemeService(
     /**
      * 이번 주 테마·요일 상태·되돌아보기 목록 (api-spec 2.11). 학년에 게시 테마가 하나도 없으면 404.
      * #484: 요일 단서(clue·rulesOut)는 그 문제를 그 주에 학습 완료한 뒤(ai.md 17장 사용자 결정 2026-11-11 "미션을 마쳐야 단서"),
-     * 종료 이야기·정답은 엔딩(ThemeEnding) 뒤
+     * 종료 이야기·정답은 엔딩(ThemeEnding) 뒤. #647: 요일 특징(clueFeature·clueFacts)은 단서와 같이, 특징 표 전체(features)는 엔딩 뒤
      */
     @Transactional(readOnly = true)
     fun current(studentId: UUID, grade: ThemeGrade, date: LocalDate, sundayTheme: Boolean = false): WeeklyThemeView {
@@ -77,6 +77,8 @@ class WeeklyThemeService(
             reused = theme.weekStart != week,
             days = days.map { day ->
                 val solved = completedInWeek(attempts, day.missionId)
+                // #647 단서 근거: 그날 단서와 같은 조건(그 주 학습 완료)에서 그날 특징의 후보별 값만, 얻지 못한 요일·전체 표는 넣지 않음
+                val feature = story.features?.firstOrNull { it.name == day.clueFeature }?.takeIf { solved }
                 ThemeDayView(
                     day = ThemeDay.ofNumber(day.dayOfWeek),
                     missionId = day.missionId,
@@ -87,6 +89,8 @@ class WeeklyThemeService(
                     clue = day.clue.takeIf { solved },
                     rulesOut = day.rulesOut.takeIf { solved },
                     completedOnDay = completedOnDay(attempts, day, week),
+                    clueFeature = feature?.name,
+                    clueFacts = feature?.values,
                 )
             },
             review = ThemeReview(
@@ -115,6 +119,7 @@ class WeeklyThemeService(
             finished = finishedWeek(days, attempts, week),
             ending = ending,
             answerPick = pick?.let { AnswerPickView(it.pick, it.correct) },
+            features = story.features.takeIf { ended },
         )
     }
 

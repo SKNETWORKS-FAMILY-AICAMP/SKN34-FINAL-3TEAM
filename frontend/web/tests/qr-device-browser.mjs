@@ -93,7 +93,7 @@ try {
   await tablet.getByText('남은 기회는 4번이에요.', { exact: false }).waitFor()
   await pin(tablet, '4831')
   await tablet.waitForURL('**/student/home')
-  await tablet.getByRole('heading', { name: /^학습 홈/ }).waitFor()
+  await tablet.getByRole('region', { name: /^우리 집/ }).waitFor() // #648 새 홈
   if (out) await tablet.screenshot({ path: path.join(out, 'tablet-home.jpg'), type: 'jpeg' })
   console.log('PASS 틀린 PIN 안내 → 올바른 PIN → 학생 학습 홈')
 

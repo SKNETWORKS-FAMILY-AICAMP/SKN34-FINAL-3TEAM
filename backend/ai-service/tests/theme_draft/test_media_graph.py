@@ -28,6 +28,7 @@ from app.prompt_versions.registry import ActiveVersions
 from app.theme_draft.checks import DAY_TYPE, DAYS, VIDEO_REVIEW_IDS, motion, spots
 from app.theme_draft.models import (
     GeneratedDialogue,
+    GeneratedHookFixes,
     GeneratedImageReview,
     GeneratedMissionReview,
     GeneratedMotion,
@@ -118,6 +119,7 @@ def gen_llm(motion_reply: Callable[[dict], Any] | None = None) -> MediaLlm:
             GeneratedTheme: lambda n, d: generated_theme(),
             GeneratedDraft: lambda n, d: mission_draft(DAY_TYPE[d]),
             GeneratedDialogue: lambda n, d: dialogue(),
+            GeneratedHookFixes: lambda n, d: GeneratedHookFixes(fixes=[]),
         },
     )
     reply = motion_reply or (
@@ -749,3 +751,50 @@ def test_video_prompt_and_review_keep_everyone_and_outfit() -> None:
     assert (
         "한눈에 알아보게" in prompts.PLAN_SYSTEM and "화면 밖으로 나가거나" in prompts.PLAN_SYSTEM
     )
+
+
+def test_video_prompt_keeps_held_outfit_props_but_blocks_grabbing() -> None:
+    """영상 생성도 검토와 같은 기준(사용자 결정 2026-11-15, 생성 쪽도 B안): 첫 그림에 든 차림 소품은
+    그대로 들어도 되고, 새 물건·사건 대상을 집거나 건네는 것과 손 들기·팔/날개 생김은 막음."""
+    from app.theme_draft import prompts
+
+    theme = valid_theme()
+    text = prompts.video_prompt(theme, "OUTRO", 3, OUTRO_CUTS[2], [])
+    assert (
+        "never picks up, lifts, hugs, hands over or receives anything, especially 강아지 보리"
+        in text
+    )
+    assert "already holds in the first frame (such as a magnifying glass) stays in its hand" in text
+    assert "raises its hands" in text and "no arms, wings or stretched limbs" in text
+    assert "holds, hugs or hands over anything" not in text  # 예전 "아무것도 들지 않음" 문구는 없음
+    assert "Mungchi grabbing or handing over objects" in VIDEO_NEGATIVE
+    assert "Mungchi holding objects" not in VIDEO_NEGATIVE
+    assert "Mungchi raising hands" in VIDEO_NEGATIVE and "wings" in VIDEO_NEGATIVE
+
+
+def test_video_review_flags_target_grab_but_not_outfit_props() -> None:
+    """영상 검토 CONTINUITY 결함은 뭉치가 사건 대상을 잡거나 건네는 것(사람과 함께 잡기 포함)과
+    팔·날개가 새로 생기는 것만. 차림 소품(돋보기·모자 등)을 쥐거나 지닌 것은 결함이 아님(실측
+    2026-11-11 종료 3컷, 사용자 결정 2026-11-15 B안: 그림 검토 MUNGCHI가 손에 든 물건을 허용해
+    첫 그림 통과·영상 실패로 어긋나지 않게)."""
+    from app.theme_draft import prompts
+
+    system = prompts.VIDEO_REVIEW_SYSTEM
+    continuity = system.split("CONTINUITY:")[1].split("MORPH:")[0]
+    assert "뭉치에게 팔·날개가 새로 생기지 않는지" in continuity
+    assert (
+        "사건 대상(target, 찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나"
+        in continuity
+    )
+    assert "사람과 함께 잡아도 결함" in continuity
+    assert "차림 소품" in continuity and "결함이 아니다" in continuity
+    assert "뭉치 손이 물건을 쥐고 있어도 결함" not in system  # 예전(08eb4f5b) 넓은 문구는 없음
+    morph = system.split("MORPH:")[1].split("ANSWER_HINT:")[0]
+    assert "뭉치가 쥔 차림 소품은 동작에 따라 달라도 된다" in morph
+    # 그림 검토는 손에 든 물건을 허용(영상과 같은 기준)
+    assert "손에 든 물건·자세·표정은" in prompts.IMAGE_REVIEW_SYSTEM
+    # 검토 입력에 사건 대상 이름이 들어가 판단 근거가 됨
+    user = prompts.video_review_user(
+        {"target": "꼬마 로봇", "answer": "소리방"}, {"scene": "s", "action": "a"}, True
+    )
+    assert '"target": "꼬마 로봇"' in user

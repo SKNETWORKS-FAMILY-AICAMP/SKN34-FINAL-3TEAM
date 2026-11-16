@@ -1109,7 +1109,7 @@ components:
       - warnings
       - failure
       - versions
-      description: 끝내 실패하면 200 + failure(learning CHECK_FAILED). 줄거리 단계에서 끝내 실패하면 theme은 null. 대화·영상·움직임은 끝내 실패해도 그 항목만 빼고 warnings. 정답 논리 검사용 내부 칸(특징 표 등)은 넣지 않음
+      description: 끝내 실패하면 200 + failure(learning CHECK_FAILED). 줄거리 단계에서 끝내 실패하면 theme은 null. 대화·영상·움직임은 끝내 실패해도 그 항목만 빼고 warnings. 정답 논리 검사용 내부 칸(단서 조건·증거·증거 배정·특징의 성취기준 코드 등)은 넣지 않음. 후보 특징 표 theme.features와 days[].clueFeature는 #647 선택 칸
     Theme:
       properties:
         title:
@@ -1140,6 +1140,13 @@ components:
           items:
             $ref: '#/components/schemas/ThemeDay'
           type: array
+        features:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ThemeFeature'
+            type: array
+          - type: 'null'
+          description: '후보 특징 표(#647 선택 칸). 요일 단서 rulesOut을 계산한 근거로 특징마다 이름과 후보별 값. 특징의 성취기준 코드는 내부 칸이라 넣지 않음. 없으면 null(예전 생성 결과와 같이 읽음)'
       type: object
       required:
       - title
@@ -1191,6 +1198,11 @@ components:
           items:
             type: string
           type: array
+        clueFeature:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: 그날 단서가 쓰는 특징 이름(theme.features의 name, #647 선택 칸). 없으면 null
       type: object
       required:
       - day
@@ -1199,6 +1211,29 @@ components:
       - sceneNote
       - clue
       - rulesOut
+    ThemeFeature:
+      description: 후보 특징 표의 특징 하나(#647). values는 후보마다 하나
+      properties:
+        name:
+          type: string
+        values:
+          items:
+            $ref: '#/components/schemas/ThemeFeatureValue'
+          type: array
+      type: object
+      required:
+      - name
+      - values
+    ThemeFeatureValue:
+      properties:
+        candidate:
+          type: string
+        value:
+          type: string
+      type: object
+      required:
+      - candidate
+      - value
     ThemeMission:
       properties:
         day:

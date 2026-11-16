@@ -1,4 +1,8 @@
-"""#234 student look values stay identical across OpenAPI, core, migration and web."""
+"""#234 student look values stay identical across OpenAPI, core, migration and web.
+
+#697: companions are 12 in OpenAPI/core/V49. Web CompanionId keeps 5 until #698, so web is only
+checked to be a subset; #698 restores the equality check.
+"""
 
 from pathlib import Path
 import re
@@ -27,13 +31,16 @@ class StudentLookContractTest(unittest.TestCase):
     def test_values_match_core_constants_migration_and_web_domain(self):
         kotlin = (CORE / "kotlin/com/sagomungchi/core/guardianship/domain/StudentLook.kt").read_text(encoding="utf-8")
         migration = (CORE / "resources/db/migration/V23__student_look_preferences.sql").read_text(encoding="utf-8")
+        companions_migration = (CORE / "resources/db/migration/V49__student_look_companions_12.sql").read_text(encoding="utf-8")
         web = (ROOT / "frontend/web/src/domain/studentLook.ts").read_text(encoding="utf-8")
         for name, expected in [("THEMES", self.themes), ("COMPANIONS", self.companions)]:
             self.assertEqual(quoted(re.search(name + r" = setOf\(([^)]*)\)", kotlin)[1]), expected)
         self.assertEqual(quoted(re.search(r"look_theme IN \(([^)]*)\)", migration)[1]), self.themes)
-        self.assertEqual(quoted(re.search(r"look_companion IN \(([^)]*)\)", migration)[1]), self.companions)
+        self.assertEqual(quoted(re.search(r"look_companion IN\s*\(([^)]*)\)", companions_migration)[1]), self.companions)
         self.assertEqual(quoted(re.search(r"type ThemeId = (.*)", web)[1]), self.themes)
-        self.assertEqual(quoted(re.search(r"type CompanionId = (.*)", web)[1]), self.companions)
+        # #697: subset until web #698 unlocks all 12 friends (then back to assertEqual)
+        self.assertLessEqual(quoted(re.search(r"type CompanionId = (.*)", web)[1]), self.companions)
+        self.assertEqual(len(self.companions), 12)
         self.assertIn("{ theme: 'lake', companion: 'mungchi', updatedAt: null }", web)
         self.assertIn('StudentLook("lake", "mungchi", null)', kotlin)
 

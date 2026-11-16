@@ -36,6 +36,8 @@ export interface MockPost {
   studentId: string
   nickname: string
   companion: CompanionId
+  /** 작성자 착용(아이템 키). 친구 생각 응답의 `author.look.equipped`(#635) */
+  equipped?: Partial<Record<'HAT' | 'OUTFIT' | 'ACCESSORY', string>>
   missionId: string
   missionTitle: string
   answer: string
@@ -83,6 +85,12 @@ interface State {
   reviewViews: string[]
   items: MockLookItem[]
   themes: MockWeeklyTheme[]
+  /** `학생:주:INTRO|OUTRO` 이야기 열람 기록(주 1회). */
+  storyViews: string[]
+  /** `학생:주` → 큰 질문 정답 고르기(한 주 한 번). */
+  picks: Record<string, { pick: string; correct: boolean; at: string }>
+  /** `학생:주:미션` → 마지막 학습 완료 요일(0=월 … 6=일)·시각. 당일 풀이·틀린 뒤 다시 풀기 판정에 쓴다. */
+  completions: Record<string, { weekday: number; at: string }>
   /** 기념 액자(P27): studentId → 보유 회차. 지난 주 회차만 */
   frames: Record<string, MockFrame[]>
   /** 추억의 벽: studentId → 슬롯 */
@@ -114,6 +122,19 @@ const seedItems = (): MockLookItem[] => [
   { itemId: 'look-wall-2', code: 'WALL_PASTEL', slot: 'WALL', name: '구름 벽', pricePoints: 120, assetKey: 'room/wall-pastel.svg', status: 'ON_SALE', updatedAt: '2026-11-12T00:00:00Z' },
   { itemId: 'look-wardrobe-1', code: 'WARDROBE_SKY', slot: 'WARDROBE', name: '하늘 옷장', pricePoints: 60, assetKey: 'room/wardrobe-sky.svg', status: 'ON_SALE', updatedAt: '2026-11-12T00:00:00Z' },
   { itemId: 'look-wardrobe-2', code: 'WARDROBE_BERRY', slot: 'WARDROBE', name: '딸기 옷장', pricePoints: 120, assetKey: 'room/wardrobe-berry.svg', status: 'ON_SALE', updatedAt: '2026-11-12T00:00:00Z' },
+  // 목업에서 살 것을 늘림(2026-11-16, 내 방 세트: 책상 → 책장, 옷장 → 문, 추억의 벽 → 액자 테두리, 벽지 → 바닥·러그·커튼)
+  { itemId: 'look-desk-3', code: 'DESK_CHERRY', slot: 'DESK', name: '체리 책상', pricePoints: 90, assetKey: 'room/desk-cherry.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  { itemId: 'look-wall-3', code: 'WALL_STAR', slot: 'WALL', name: '별빛 벽', pricePoints: 90, assetKey: 'room/wall-star.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  { itemId: 'look-wardrobe-3', code: 'WARDROBE_LEMON', slot: 'WARDROBE', name: '레몬 옷장', pricePoints: 90, assetKey: 'room/wardrobe-lemon.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  { itemId: 'look-bg-2', code: 'BG_CREAM', slot: 'BACKGROUND', name: '크림 줄무늬', pricePoints: 40, assetKey: 'room/wall-cream.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  { itemId: 'look-bg-3', code: 'BG_SKY', slot: 'BACKGROUND', name: '하늘 구름', pricePoints: 60, assetKey: 'room/wall-sky.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  // 설계 캔버스 Mungchi의 나머지 착용 그림(public/student-assets/looks, 2026-11-16 사용자 의견 "꾸미기에서 옷이 안 돼")
+  { itemId: 'look-hat-3', code: 'HAT_DETECTIVE', slot: 'HAT', name: '탐정 모자', pricePoints: 60, assetKey: 'looks/hat-detective.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  { itemId: 'look-hat-4', code: 'HAT_RESCUE', slot: 'HAT', name: '구조대 모자', pricePoints: 60, assetKey: 'looks/hat-rescue.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  { itemId: 'look-hat-5', code: 'HAT_PATROL', slot: 'HAT', name: '순찰대 모자', pricePoints: 60, assetKey: 'looks/hat-patrol.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  { itemId: 'look-outfit-2', code: 'OUTFIT_RESCUE', slot: 'OUTFIT', name: '구조대 조끼', pricePoints: 80, assetKey: 'looks/outfit-rescue.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  { itemId: 'look-outfit-3', code: 'OUTFIT_PATROL', slot: 'OUTFIT', name: '순찰대 옷', pricePoints: 80, assetKey: 'looks/outfit-patrol.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  { itemId: 'look-acc-2', code: 'ACC_LIGHT', slot: 'ACCESSORY', name: '손전등', pricePoints: 40, assetKey: 'looks/acc-light.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
 ]
 const empty = (): State => ({
   ledger: {},
@@ -127,6 +148,9 @@ const empty = (): State => ({
   reviewViews: [],
   items: seedItems(),
   themes: [],
+  storyViews: [],
+  picks: {},
+  completions: {},
   frames: {},
   frameSlots: {},
 })
@@ -248,7 +272,10 @@ export function themeMissions(missions: Mission[], grade: number) {
   if (published) {
     const byId = new Map(missions.map((m) => [m.id, m]))
     const days = published.days.flatMap((d) => (byId.get(d.missionId) ? [{ day: d.day, mission: byId.get(d.missionId)! }] : []))
-    if (days.length === 5) return { themeId: published.themeId, title: published.title, intro: published.intro, reused: false, days }
+    // 테마 초안 채택(#441 목업)이나 관리자가 넣은 그림·영상·움직임도 학생 응답에 그대로(실서버처럼, #440)
+    const scene = { introImageUrl: published.introImageUrl ?? null, introVideoUrl: published.introVideoUrl ?? null, introMotion: published.introMotion ?? null,
+      outroImageUrl: published.outroImageUrl ?? null, outroVideoUrl: published.outroVideoUrl ?? null, outroMotion: published.outroMotion ?? null }
+    if (days.length === 5) return { themeId: published.themeId, title: published.title, intro: published.intro, reused: false, days, scene }
   }
   const picked = THINKING_ORDER.map((type) => missions.find((m) => m.thinkingType === type)).filter((m): m is Mission => !!m)
   return {
@@ -257,45 +284,144 @@ export function themeMissions(missions: Mission[], grade: number) {
     intro: '이번 주에는 이야기 마을에서 일어난 일을 하루에 하나씩 살펴봐요. 금요일까지 다섯 가지 생각을 써 보면 마을의 수수께끼가 풀려요.',
     reused: picked.length < 5,
     days: picked.slice(0, 5).map((mission, i) => ({ day: THEME_DAYS[i], mission })),
+    scene: null,
   }
 }
-export function weeklyThemeFor(studentId: string, missions: Mission[], grade: number) {
+/**
+ * 가상 테마의 큰 질문·후보·요일 단서(#438 모양). 단서는 rulesOut이 빈 날(힌트)도 섞고,
+ * 마지막 틀린 후보는 목요일에 빠진다(기준안 "금요일 전에 답이 드러나지 않게").
+ */
+export const MOCK_STORY = {
+  bigQuestion: '마을 시계탑의 종을 밤마다 몰래 울린 건 누구일까?',
+  candidates: ['다람쥐 우체부', '고양이 빵집 주인', '부엉이 선생님', '토끼 정원사'],
+  answer: '부엉이 선생님',
+  clues: [
+    { clue: '종 아래에 도토리 껍질이 하나도 없었어요.', rulesOut: ['다람쥐 우체부'] },
+    { clue: '그날 밤 빵집은 일찍 불이 꺼져 있었어요.', rulesOut: ['고양이 빵집 주인'] },
+    { clue: '종은 늘 밤 열두 시에만 울렸어요.', rulesOut: [] },
+    { clue: '정원사는 그 시각 연못가에서 물을 주고 있었어요.', rulesOut: ['토끼 정원사'] },
+    { clue: '종 옆 난간에 커다란 깃털 하나가 걸려 있었어요.', rulesOut: [] },
+  ],
+  /**
+   * 후보 특징 표(#647 단서 근거). 요일 단서는 이 표의 한 특징으로 후보를 뺀다. 학생에게는 단서를 얻은 요일 특징만, 엔딩 뒤에는 전체.
+   * 수요일·금요일은 힌트(새로 빠지는 후보 없음). 목요일까지 정답(부엉이 선생님)이 드러나지 않게 값을 골랐다.
+   */
+  features: [
+    { name: '도토리를 먹나요', values: [['다람쥐 우체부', '먹어요'], ['고양이 빵집 주인', '안 먹어요'], ['부엉이 선생님', '안 먹어요'], ['토끼 정원사', '안 먹어요']] },
+    { name: '그날 밤 일하는 곳 불', values: [['다람쥐 우체부', '켜짐'], ['고양이 빵집 주인', '꺼짐'], ['부엉이 선생님', '켜짐'], ['토끼 정원사', '켜짐']] },
+    { name: '밤 열두 시에', values: [['다람쥐 우체부', '깨어 있어요'], ['고양이 빵집 주인', '깨어 있어요'], ['부엉이 선생님', '깨어 있어요'], ['토끼 정원사', '깨어 있어요']] },
+    { name: '그 시각 있던 곳', values: [['다람쥐 우체부', '시계탑 광장'], ['고양이 빵집 주인', '빵집'], ['부엉이 선생님', '시계탑 광장'], ['토끼 정원사', '연못가']] },
+    { name: '깃털이 있나요', values: [['다람쥐 우체부', '없어요'], ['고양이 빵집 주인', '없어요'], ['부엉이 선생님', '있어요'], ['토끼 정원사', '없어요']] },
+  ].map((f) => ({ name: f.name, values: f.values.map(([candidate, value]) => ({ candidate, value })) })),
+  outro: '부엉이 선생님은 밤에 잠들지 못하는 아기 새들을 위해 종을 울려 자장가 시간을 알려 주고 있었어요. 마을 사람들은 이제 열두 시 종소리를 들으면 미소를 지어요.',
+}
+/** 목업 가상 테마의 시작·끝 장면(2D 만화풍 생성 그림, 목업 전용)과 움직임 v1 예시(카메라·컷 문구·효과). */
+const MOCK_SCENE = {
+  intro: '/demo/story/intro.jpg',
+  outro: '/demo/story/outro.jpg',
+  motion: (lines: string[]) => ({
+    version: 1,
+    transition: { kind: 'fade', seconds: 0.6 },
+    camera: { from: { x: 50, y: 40, zoom: 1.18 }, to: { x: 50, y: 55, zoom: 1 }, seconds: 12 },
+    speakers: {},
+    effects: [{ shape: 'star', color: '#FFE08A', count: 10, size: 3, direction: 180, speed: 4, opacity: 0.6 }],
+    captions: lines.map((text, i) => ({ start: i * 4, end: i * 4 + 4, text })),
+    spots: [],
+  }),
+}
+const FRIDAY = 4
+const isPremium = (plan?: 'FREE' | 'PREMIUM') => plan === 'PREMIUM'
+/** 날짜 판정은 learning 몫: 목업은 요일(sessionStorage로 바꿔 보기)과 요금제로만 흉내 낸다. */
+export function weekRules(weekday: number, plan?: 'FREE' | 'PREMIUM') {
+  const sunday = weekday === 6
+  const sundayTheme = sunday && isPremium(plan)
+  return {
+    sundayTheme,
+    /** 무료 일요일: 테마 닫힘(풀기·다시 풀기·새 이야기·정답 고르기 불가). */
+    closed: sunday && !sundayTheme,
+    /** 토요일·프리미엄 일요일: 안 푼 문제 새로 풀기·다시 풀기·되돌아보기. */
+    weekend: weekday === 5 || sundayTheme,
+  }
+}
+const completionKey = (studentId: string, missionId: string) => `${studentId}:${weekStart()}:${missionId}`
+/** 학습 완료 시각을 남긴다(core가 아닌 learning 판정 흉내: 당일 풀이·틀린 뒤 금요일 다시 풀기). */
+export function recordCompletion(studentId: string, missionId: string) {
+  retentionState.completions[completionKey(studentId, missionId)] = { weekday: mockWeekday(), at: now() }
+}
+export function weeklyThemeFor(studentId: string, missions: Mission[], grade: number, plan?: 'FREE' | 'PREMIUM') {
   const weekday = mockWeekday()
+  const rules = weekRules(weekday, plan)
   const theme = themeMissions(missions, grade)
-  const weekend = weekday >= 5
-  const days = theme.days.map(({ day, mission }, i) => ({
-    day,
-    missionId: mission.id,
-    thinkingType: mission.thinkingType,
-    title: mission.title,
-    state: weekend || i < weekday ? 'CLOSED' : i === weekday ? 'OPEN' : 'LOCKED',
-    attemptStatus: mission.status ?? 'NOT_STARTED',
-  }))
-  const viewed = retentionState.reviewViews.includes(`${studentId}:${weekStart()}`)
+  const week = `${studentId}:${weekStart()}`
+  const days = theme.days.map(({ day, mission }, i) => {
+    const attemptStatus = mission.status ?? 'NOT_STARTED'
+    const done = attemptStatus === 'COMPLETED'
+    const completion = retentionState.completions[completionKey(studentId, mission.id)]
+    return {
+      day,
+      missionId: mission.id,
+      thinkingType: mission.thinkingType,
+      title: mission.title,
+      // 공개된 문제는 토요일(프리미엄 일요일)까지 쌓여 열려 있다. 무료 일요일은 모두 닫힘(#484).
+      state: rules.closed ? 'CLOSED' : rules.weekend || i <= weekday ? 'OPEN' : 'LOCKED',
+      attemptStatus,
+      clue: done ? MOCK_STORY.clues[i].clue : null,
+      rulesOut: done ? MOCK_STORY.clues[i].rulesOut : null,
+      completedOnDay: done && completion?.weekday === i,
+      clueFeature: done ? MOCK_STORY.features[i].name : null,
+      clueFacts: done ? MOCK_STORY.features[i].values : null,
+    }
+  })
+  const picked = retentionState.picks[week]
+  const fridayMission = days[FRIDAY]?.missionId
+  const fridayRedo = fridayMission ? retentionState.completions[completionKey(studentId, fridayMission)] : undefined
+  // 틀렸으면 고른 뒤 토요일(프리미엄 일요일) 금요일 문제 다시 풀기를 마무리해야 엔딩(맞든 틀리든 정답 공개).
+  const ended = !!picked && (picked.correct || (!!fridayRedo && fridayRedo.weekday >= 5 && fridayRedo.at > picked.at))
+  const hasStory = days.length === 5
+  // 관리자가 게시한 테마가 아니면(가상 테마) 목업 장면 그림을 붙인다
+  const mockScene = hasStory && theme.themeId.startsWith('mock-theme-')
   return {
     themeId: theme.themeId,
     weekStart: weekStart(),
     title: theme.title,
-    intro: weekday === 0 ? theme.intro : null,
+    intro: theme.intro,
     reused: theme.reused,
     days,
     review: {
-      open: weekend,
+      open: rules.weekend,
       missions: days.map((d) => ({
         missionId: d.missionId,
         title: d.title,
         completed: d.attemptStatus === 'COMPLETED',
-        missed: d.attemptStatus !== 'COMPLETED',
+        missed: d.state !== 'LOCKED' && d.attemptStatus !== 'COMPLETED',
       })),
     },
-    completed: viewed && days.length === 5 && days.every((d) => d.attemptStatus === 'COMPLETED'),
+    completed: days.length === 5 && days.every((d) => d.completedOnDay),
+    // 목업은 일요일 완료를 따로 세지 않는다(실제 판정은 learning #484).
+    finished: days.length === 5 && days.every((d) => d.attemptStatus === 'COMPLETED'),
+    ending: ended ? 'ENDED' : 'NOT_ENDED',
+    bigQuestion: hasStory ? MOCK_STORY.bigQuestion : null,
+    candidates: hasStory ? MOCK_STORY.candidates : null,
+    introImageUrl: mockScene ? MOCK_SCENE.intro : (theme.scene?.introImageUrl ?? null),
+    introVideoUrl: theme.scene?.introVideoUrl ?? null,
+    introMotion: mockScene ? MOCK_SCENE.motion(['밤마다 시계탑 종이 울렸어', '누가 울린 걸까?', '하루에 하나씩 단서를 모아 보자']) : (theme.scene?.introMotion ?? null),
+    introSeen: retentionState.storyViews.includes(`${week}:INTRO`),
+    outroSeen: retentionState.storyViews.includes(`${week}:OUTRO`),
+    outro: ended ? MOCK_STORY.outro : null,
+    outroImageUrl: !ended ? null : mockScene ? MOCK_SCENE.outro : (theme.scene?.outroImageUrl ?? null),
+    outroVideoUrl: ended ? (theme.scene?.outroVideoUrl ?? null) : null,
+    outroMotion: !ended ? null : mockScene ? MOCK_SCENE.motion(['종을 울린 건 부엉이 선생님!', '아기 새들의 자장가 시간이었어']) : (theme.scene?.outroMotion ?? null),
+    answer: ended ? MOCK_STORY.answer : null,
+    answerClue: ended ? MOCK_STORY.clues[3].clue : null,
+    answerPick: picked ? { pick: picked.pick, correct: picked.correct } : null,
+    features: ended && hasStory ? MOCK_STORY.features : null,
   }
 }
 
 // ---------- 커뮤니티 ----------
-const friends: { nickname: string; companion: CompanionId; answer: (title: string) => string }[] = [
-  { nickname: '하늘별', companion: 'tori', answer: (t) => `${t}에서 나는 먼저 무엇이 달라졌는지 찾았어. 왜냐하면 달라진 곳에 까닭이 숨어 있을 것 같았거든.` },
-  { nickname: '초록콩', companion: 'kongi', answer: () => '나는 다른 방법도 생각해 봤어. 그래서 두 가지를 비교하니까 하나가 더 알맞아 보였어.' },
+const friends: { nickname: string; companion: CompanionId; equipped?: MockPost['equipped']; answer: (title: string) => string }[] = [
+  { nickname: '하늘별', companion: 'tori', equipped: { HAT: 'HAT_ACORN' }, answer: (t) => `${t}에서 나는 먼저 무엇이 달라졌는지 찾았어. 왜냐하면 달라진 곳에 까닭이 숨어 있을 것 같았거든.` },
+  { nickname: '초록콩', companion: 'kongi', equipped: { OUTFIT: 'OUTFIT_RAIN', ACCESSORY: 'ACC_LENS' }, answer: () => '나는 다른 방법도 생각해 봤어. 그래서 두 가지를 비교하니까 하나가 더 알맞아 보였어.' },
   { nickname: '구름빵', companion: 'monggeul', answer: () => '처음엔 잘 모르겠었는데 그림을 다시 보니 순서가 보였어. 그 순서대로 쓰면 이해가 돼.' },
 ]
 export function seedFriendPosts(mission: Pick<Mission, 'id' | 'title'>) {
@@ -306,6 +432,7 @@ export function seedFriendPosts(mission: Pick<Mission, 'id' | 'title'>) {
       studentId: `friend-${i}`,
       nickname: f.nickname,
       companion: f.companion,
+      equipped: f.equipped,
       missionId: mission.id,
       missionTitle: mission.title,
       answer: f.answer(mission.title),
@@ -330,6 +457,7 @@ export function setCommunityEnabled(studentId: string, enabled: boolean) {
 }
 /** 마무리(학습 완료) 후 core가 하는 일: 미션당 최초 적립, 공개가 켜져 있으면 미션당 1개 공유. */
 export function onMissionCompleted(student: Child, mission: Pick<Mission, 'id' | 'title'>, answer: string, companion: CompanionId) {
+  recordCompletion(student.id, mission.id)
   earn(student.id, 'MISSION_COMPLETED', mission.id)
   if (!communityOf(student.id).enabled || !answer.trim()) return
   if (retentionState.posts.some((p) => p.studentId === student.id && p.missionId === mission.id)) return
@@ -368,11 +496,17 @@ export function seededShuffle<T>(items: T[], seed: string) {
 // ---------- 기념 액자·추억 앨범·추억의 벽 (P27, API 명세 2.12 기준안) ----------
 /** 빈 앨범을 보려면 개발 도구에서 sessionStorage에 이 키로 '1'을 넣는다. */
 export const MOCK_ALBUM_EMPTY_KEY = 'sagomungchi:msw-album-empty'
+/**
+ * 지난 회차 시작 이야기 그림: 실제 서버는 액자에 그 주 테마의 시작 이야기 생성 그림을 준다(learning AlbumService introImageUrl).
+ * 목업도 같은 그림 생성 설정(ai-service IMAGE_STYLE·뭉치 참조 그림·gpt-image)으로 만든 그림을 쓴다(2026-11-16 사용자 의견 "우리 그림 생성되는 건데 저기 있어야 하는 거 아니야")
+ */
 const PAST_THEMES = [
-  { title: '잃어버린 지도 조각', outro: '다섯 조각을 모두 맞추자 지도가 호수 한가운데 섬을 가리켰어요.', answer: '등대 아래 바위' },
-  { title: '별빛 우체국', outro: '마지막 편지는 우체국장 할아버지가 어릴 때 쓴 편지였어요.', answer: '우체국장 할아버지' },
-  { title: '숲속 발명 대회', outro: '다람쥐의 도토리 굴리개가 숲 친구들의 표를 가장 많이 받았어요.', answer: '도토리 굴리개' },
+  { title: '잃어버린 지도 조각', outro: '다섯 조각을 모두 맞추자 지도가 호수 한가운데 섬을 가리켰어요.', answer: '등대 아래 바위', image: '/demo/album/past-map.jpg' },
+  { title: '별빛 우체국', outro: '마지막 편지는 우체국장 할아버지가 어릴 때 쓴 편지였어요.', answer: '우체국장 할아버지', image: '/demo/album/past-post.jpg' },
+  { title: '숲속 발명 대회', outro: '다람쥐의 도토리 굴리개가 숲 친구들의 표를 가장 많이 받았어요.', answer: '도토리 굴리개', image: '/demo/album/past-forest.jpg' },
 ]
+/** 회차 시작 그림 주소(저장해 둔 목업 상태에도 쓰이게 제목으로 찾음), 없으면 null */
+export const frameImageOf = (f: { title: string }) => PAST_THEMES.find((t) => t.title === f.title)?.image ?? null
 const addDays = (iso: string, days: number) => {
   const d = new Date(`${iso}T00:00:00Z`)
   d.setUTCDate(d.getUTCDate() + days)
