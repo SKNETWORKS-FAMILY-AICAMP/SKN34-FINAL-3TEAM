@@ -184,7 +184,8 @@ export function StudentHome({
                     </span>
                   </button>
                   <p className="sh-cta-note">
-                    <span>단서 {clueCount(theme)}장을 모두 모았어요</span>
+                    {/* 다 모았을 때만 "모두"(한 요일을 건너뛰면 5장 중 4장, #715) */}
+                    <span>단서 {clueCount(theme)}장을 {clueCount(theme) >= theme.days.length ? '모두 ' : ''}모았어요</span>
                     <b>정답은 한 주에 한 번 골라요</b>
                   </p>
                 </div>

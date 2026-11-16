@@ -149,7 +149,8 @@ export function ThemeStory({ child, kind, onHome, onAlbum, onCommunity, continui
     <main className="st-paper st-sheet tw-page tw-story">
       <header className="tw-head">
         <div>
-          <p className="tw-kicker">{theme.title}{pick ? ` · ${pick.correct ? '금요일' : '토요일'}` : ''}</p>
+          {/* 머리말은 테마 제목만: 고른 날짜가 응답에 없어 요일을 정답 여부로 짐작하면 토요일에 맞혀도 "금요일"로 나왔음(#715). 맞혔는지는 오른쪽 결과 문구가 보여 줌 */}
+          <p className="tw-kicker">{theme.title}</p>
           <h1 ref={head} tabIndex={-1} className="st-title-mix tw-ending-title"><span>이야기의</span>끝</h1>
         </div>
         {canPlay && <button type="button" className="tw-go tw-go-plain tw-go-small" onClick={() => setStage('video')}>{m.video ? '끝 영상 다시 보기' : '끝 장면 다시 보기'}</button>}

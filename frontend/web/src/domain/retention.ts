@@ -433,6 +433,22 @@ export function knownFacts(theme: WeeklyTheme, candidate: string) {
     return value ? [{ day: d.day, feature: d.clueFeature!, value }] : []
   })
 }
+/**
+ * 후보 카드에 보일 특징(#715 1번). 엔딩 전에는 푼 요일의 단서만(knownFacts, 정답이 미리 새지 않게).
+ * 엔딩 뒤 특징 표(features)가 오면 표 순서대로 그 후보의 특징을 모두 보이고, 단서로 직접 알아낸 것은 learned.
+ * 건너뛴 요일의 특징도 엔딩 뒤에는 볼 수 있다(kind 확인에서 features를 읽기만 하고 어디에도 안 보이던 것).
+ */
+export function candidateFacts(theme: WeeklyTheme, candidate: string): { feature: string; value: string; learned: boolean }[] {
+  const known = knownFacts(theme, candidate)
+  if (theme.ending !== 'ENDED' || !theme.features?.length) return known.map((f) => ({ feature: f.feature, value: f.value, learned: true }))
+  const all = theme.features.flatMap((f) => {
+    const value = f.values.find((v) => v.candidate === candidate)?.value
+    return value ? [{ feature: f.name, value, learned: known.some((k) => k.feature === f.name) }] : []
+  })
+  // 표에 없는 단서(있으면 안 되지만)도 잃지 않게 뒤에 붙임
+  for (const k of known) if (!all.some((a) => a.feature === k.feature)) all.push({ feature: k.feature, value: k.value, learned: true })
+  return all
+}
 /** 그 후보를 처음 뺀 요일(학생이 본 단서 기준). */
 export const ruledOutOn = (theme: WeeklyTheme, candidate: string) => theme.days.find((d) => d.rulesOut?.includes(candidate))?.day ?? null
 /** 지금까지 받은 단서 수. */

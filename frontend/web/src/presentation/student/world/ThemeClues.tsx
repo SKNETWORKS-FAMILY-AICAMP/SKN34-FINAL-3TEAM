@@ -85,15 +85,17 @@ export function ThemeClues({ child, onHome, onPick }: { child: Child; onHome: ()
         <ol className="tw-clue-cards">
           {theme.days.map((d) => {
             const got = !!d.clue
+            const ended = theme.ending === 'ENDED' && !!theme.features?.length
             const isNew = got && d.day === last && theme.ending !== 'ENDED'
             const { fresh, again } = clueEffect(theme, d)
             return (
               <li key={d.day} data-state={!got ? 'locked' : isNew ? 'new' : 'got'}>
                 <span className="tw-clue-top">
                   <span className="tw-day">{dayName(d.day).slice(0, 1)}</span>
-                  {!got ? '아직 못 얻었어요' : isNew ? '새 단서!' : ''}
+                  {!got ? (ended ? '못 얻은 단서' : '아직 못 얻었어요') : isNew ? '새 단서!' : ''}
                 </span>
-                <p className="tw-clue-text">{got ? d.clue : `${dayName(d.day)} 문제를 마치면 열려요.`}</p>
+                {/* 엔딩 뒤에는 "마치면 열려요" 대신 위 후보 카드에 공개된 것을 알림(#715 1번과 같은 화면) */}
+                <p className="tw-clue-text">{got ? d.clue : ended ? '정답이 나와서 이 날 특징은 위 후보 카드에 ‘엔딩 뒤 공개’로 보여요.' : `${dayName(d.day)} 문제를 마치면 열려요.`}</p>
                 {got && <ClueFacts day={d} />}
                 {got && theme.candidates.length > 0 && (
                   <span className="tw-effect" data-fresh={fresh.length > 0 || undefined}>

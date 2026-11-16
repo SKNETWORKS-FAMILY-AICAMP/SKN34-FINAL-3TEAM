@@ -120,7 +120,11 @@ test('이어하기(목요일): 큰 버튼과 푸는 중 칩은 쓰던 문제를 
 
 test('정답 고르기(금요일): 단서를 다 모으면 큰 버튼이 정답 고르기이고, 맞히면 이야기의 끝으로 간다', async ({ page }) => {
   await student(page)
+  // #715 4: 한 요일을 건너뛰면 4장만 모았으니 "모두"라고 하지 않는다
+  await week(page, { weekday: 4, days: 'DD-DD' })
+  await expect(page.getByText('단서 4장을 모았어요', { exact: true })).toBeVisible()
   await homeState(page, 'pick')
+  await expect(page.getByText('단서 5장을 모두 모았어요', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: /정답 고르러 가기/ }).click()
   await page.getByRole('button', { name: /부엉이 선생님/ }).first().click()
   await page.getByRole('button', { name: '이걸로 정하기' }).click()
@@ -236,4 +240,24 @@ test('홈 상태마다 PC 1440×900은 학생 틀이 한 화면 안, 휴대전�
   if (testInfo.project.name === 'laptop')
     expect(await page.locator('.st-world').evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(900)
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+// #715 1번: 엔딩 뒤에는 특징 표 전체로 후보 카드를 채운다. 건너뛴 요일 특징은 "엔딩 뒤 공개", 엔딩 전에는 단서만
+const go = (page: Page, path: string) =>
+  page.evaluate(path => { history.pushState({}, '', path); dispatchEvent(new PopStateEvent('popstate')) }, path)
+test('단서 모음 후보 카드: 엔딩 전에는 푼 요일 단서만, 엔딩 뒤에는 건너뛴 요일 특징도 엔딩 뒤 공개로', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 4, days: 'DD-DD' })
+  await go(page, '/student/theme/clues')
+  const owl = page.getByRole('list', { name: '부엉이 선생님에 대해 알아낸 것' })
+  await expect(owl.getByRole('listitem')).toHaveCount(4)
+  await expect(owl).not.toContainText('엔딩 뒤 공개')
+  await go(page, '/student/home')
+  await week(page, { weekday: 5, days: 'DD-DD', pick: 'correct' })
+  await go(page, '/student/theme/clues')
+  await expect(owl.getByRole('listitem')).toHaveCount(5)
+  await expect(owl.getByRole('listitem').filter({ hasText: '엔딩 뒤 공개' })).toHaveCount(1)
+  // 요일별 단서의 건너뛴 수요일 칸도 엔딩 뒤에는 "마치면 열려요" 대신 후보 카드를 가리킴
+  await expect(page.getByText('수요일 문제를 마치면 열려요.')).toHaveCount(0)
+  await expect(page.locator('.tw-clue-top').filter({ hasText: '못 얻은 단서' })).toHaveCount(1)
 })
