@@ -1,0 +1,967 @@
+/* 문제 푸는 화면(시안 MissionWrite·InputTypes·Problems·Feedback·Finish·Reflect, #440).
+   미션 안내(mission-guide.css)의 돌아가기·단계 칩·읽어 주기·시작 버튼(.mg-*)을 그대로 이어 쓰고, 이 파일은 화면 안 칸만 정한다.
+   PC(901px 이상, 창 높이 700px 이상)에서는 다른 .st-fit 화면처럼 흰 종이 안을 채우고 넘치면 종이 안에서 스크롤한다.
+   900px 이하는 한 줄로 쌓고 문서 전체가 스크롤한다. 글자 크기는 #431 토큰(--st-fs-*)을 쓴다. */
+
+#class-journal .st-world .sw-work {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* ── 위 줄: 돌아가기 · 미션 이름 · 단계 칩 ── */
+#class-journal .st-world .sw-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  min-width: 0;
+}
+#class-journal .st-world .sw-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  min-width: 0;
+}
+#class-journal .st-world .sw-title h1 {
+  font-family: var(--st-display);
+  font-size: var(--st-fs-lg, 26px);
+  line-height: 1.15;
+  color: var(--sk-ink);
+}
+#class-journal .st-world .sw-title h1:focus { outline: none; }
+#class-journal .st-world .sw-title span {
+  font-weight: 700;
+  font-size: var(--st-fs-sm, 15px);
+}
+/* 판정 결과 오류 신고 링크(결과 칸 아래) */
+#class-journal .st-world .sw-report {
+  display: flex;
+  justify-content: flex-end;
+  font-size: var(--st-fs-xs, 14px);
+}
+#class-journal .st-world .sw-ask .sw-report,
+#class-journal .st-world .sw-card .sw-report { justify-content: flex-start; }
+#class-journal .st-world .sw-report a { color: var(--sk-sub); font-weight: 700; }
+/* 지난 단계는 연두 바탕(시안 1 질문 읽기 ✓) */
+#class-journal .st-world .sw-work .mg-steps li[data-done] {
+  border-color: #ddf6d2;
+  background: #ddf6d2;
+}
+
+/* ── 공통 칸 ── */
+#class-journal .st-world .sw-body {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+#class-journal .st-world .sw-body-write {
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+  align-items: stretch;
+}
+#class-journal .st-world .sw-body-feedback {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+  align-items: start;
+}
+#class-journal .st-world .sw-chip {
+  align-self: flex-start;
+  display: inline-block;
+  padding: 2px 12px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: var(--sk-yellow);
+  font-weight: 700;
+  font-size: var(--st-fs-xs, 14px);
+  line-height: 1.5;
+}
+#class-journal .st-world .sw-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+#class-journal .st-world .sw-save {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  margin: 0;
+  color: #2f6b3a;
+  font-weight: 700;
+  font-size: var(--st-fs-xs, 14px);
+  line-height: 1.35;
+  text-align: right;
+}
+#class-journal .st-world .sw-save time {
+  color: var(--sk-sub);
+  font-weight: 400;
+}
+#class-journal .st-world .sw-memo-toggle {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-weight: 700;
+  font-size: var(--st-fs-sm, 15px);
+  cursor: pointer;
+}
+#class-journal .st-world .sw-memo-toggle[aria-pressed='true'] { background: #fff8c9; }
+#class-journal .st-world .sw-memo-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── 답 쓰기 왼쪽: 그림 · 질문 · 읽어 주기/생각 열기 · 도우미 말풍선 ── */
+#class-journal .st-world .sw-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+#class-journal .st-world .sw-side .ux-scene {
+  margin: 0;
+  max-width: none;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  transform: none;
+}
+#class-journal .st-world .sw-side .ux-scene img,
+#class-journal .st-world .sw-side .ux-scene svg {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  border: 2px solid var(--sk-line);
+  border-radius: 20px;
+  background: #f3f3df;
+}
+#class-journal .st-world .sw-side .ux-scene img {
+  aspect-ratio: 16 / 7;
+  object-fit: cover;
+}
+/* 효과 층은 그림 테두리(2px·둥근 모서리 20px) 안쪽에만(#440) */
+#class-journal .st-world .sw-side .ux-scene-art .tm-effects { inset: 2px; border-radius: 18px; }
+#class-journal .st-world .sw-side .ux-scene-missing {
+  aspect-ratio: 16 / 7;
+  border: 2px dashed var(--sk-line);
+  border-radius: 20px;
+  color: var(--sk-sub);
+  font-size: var(--st-fs-sm, 15px);
+}
+#class-journal .st-world .sw-side .ux-scene figcaption {
+  margin-top: 6px;
+  color: var(--sk-sub);
+  font-size: var(--st-fs-xs, 14px);
+}
+#class-journal .st-world .sw-side .ux-scene figcaption label { min-height: 32px; }
+#class-journal .st-world .sw-question {
+  margin: 0;
+  padding: 14px 16px;
+  border: 2px solid var(--sk-line);
+  border-radius: 16px;
+  background: #fff1d6;
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: var(--st-fs-base, 18px);
+  line-height: 1.6;
+}
+#class-journal .st-world .sw-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+#class-journal .st-world .sw-tools button {
+  min-height: 48px;
+  padding: 0 18px;
+  border-width: 2px;
+  font-size: var(--st-fs-sm, 16px);
+}
+#class-journal .st-world .sw-hint {
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: #fff1d6;
+  color: var(--sk-ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+#class-journal .st-world .sw-hint:hover { background: #ffe6b3; }
+/* 도우미는 왼쪽 칸 맨 아래, 길어져 스크롤해도 화면 아래에 붙어 있다(시안 mb-dock sticky) */
+#class-journal .st-world .sw-helper {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: auto;
+  padding: 8px 0 6px;
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+}
+#class-journal .st-world .sw-helper-face {
+  flex: none;
+  width: 80px;
+  display: flex;
+  justify-content: center;
+}
+#class-journal .st-world .sw-bubble {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  /* 바탕·테두리·둥글기·그림자·꼬리는 공통 말풍선(SpeechBubble, bubble.css) */
+}
+#class-journal .st-world .sw-bubble p {
+  margin: 0;
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: var(--st-fs-md, 19px);
+  line-height: 1.45;
+}
+
+/* ── 답 쓰기 오른쪽: 답 칸 상자 ── */
+#class-journal .st-world .sw-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 22px;
+  border: 3px solid var(--sk-line);
+  border-radius: 26px;
+  background: var(--sk-paper);
+  box-shadow: 10px 10px 0 #b8551c;
+}
+#class-journal .st-world .sw-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#class-journal .st-world .sw-panel-head h2 {
+  font-size: clamp(26px, 2.1vw, 32px);
+  line-height: 1.15;
+}
+#class-journal .st-world .sw-submit-row {
+  display: flex;
+  justify-content: flex-end;
+}
+#class-journal .st-world .sw-submit,
+#class-journal .st-world .sw-go {
+  flex: none;
+  min-width: 0;
+  min-height: 60px;
+  padding: 0 32px;
+  font-size: clamp(20px, 1.6vw, 24px);
+}
+
+/* 입력 틀(시안 InputTypes·Problems): 남청 2px 선 칸, 손글씨 아닌 본문 글꼴 */
+#class-journal .st-world .sw-work .ux-answer-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: none;
+  margin: 0;
+}
+#class-journal .st-world .sw-work .ux-answer-fields > div { min-width: 0; }
+#class-journal .st-world .sw-work .cj-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  color: var(--sk-ink);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: var(--st-fs-sm, 16px);
+}
+#class-journal .st-world .sw-work .cj-field input,
+#class-journal .st-world .sw-work .cj-field textarea,
+#class-journal .st-world .sw-work .cj-field select {
+  box-sizing: border-box;
+  width: 100%;
+  border: 2px solid var(--sk-line);
+  border-radius: 14px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: 'Gowun Dodum', 'Malgun Gothic', sans-serif;
+  font-weight: 400;
+  font-size: var(--st-fs-base, 18px);
+  line-height: 1.6;
+}
+#class-journal .st-world .sw-work .cj-field input,
+#class-journal .st-world .sw-work .cj-field textarea { padding: 10px 14px; }
+#class-journal .st-world .sw-work .cj-field input { min-height: 48px; }
+#class-journal .st-world .sw-work .cj-field textarea { min-height: 72px; resize: vertical; }
+#class-journal .st-world .sw-work .cj-field select { min-height: 44px; padding: 0 12px; }
+/* 글쓰기 한 칸은 시안 MissionWrite처럼 6줄 남짓만(칸이 너무 크면 초등학생이 무엇을 얼마나 쓸지 모름, 사용자 의견 2026-11-15).
+   남은 높이까지 늘리지 않고, 아래에 "한두 문장이면 충분해요"·글자 수를 둔다 */
+#class-journal .st-world .sw-work .ux-answer-fields > .cj-field:first-child textarea[placeholder] { min-height: 170px; height: 190px; }
+#class-journal .st-world .sw-work .cj-field textarea::placeholder { color: #6b7d79; }
+#class-journal .st-world .sw-count { align-self: flex-end; margin-top: -4px; color: var(--sk-sub); font-size: 14px; }
+#class-journal .st-world .sw-starters { display: flex; flex-wrap: wrap; gap: 8px; }
+#class-journal .st-world .sw-starter {
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: #fff1d6;
+  color: var(--sk-ink);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+#class-journal .st-world .sw-starter[data-optional] { border-style: dashed; background: var(--sk-paper); }
+#class-journal .st-world .sw-starter:hover { background: var(--sk-yellow); }
+#class-journal .st-world .sw-starter:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: 3px; }
+#class-journal .st-world .sw-work .ux-answer-unit { gap: 10px; }
+#class-journal .st-world .sw-work .ux-answer-unit input { flex: none; width: 160px; }
+#class-journal .st-world .sw-work .ux-answer-unit > span { font-size: var(--st-fs-base, 18px); }
+#class-journal .st-world .sw-work .cj-field small { font-weight: 400; }
+
+/* 고르기: 번호 동그라미 + 한 줄 칸(시안 InputTypes 고르기). 번호는 CSS로만 붙여 운영자 미리보기 글은 그대로 */
+#class-journal .st-world .sw-work .ux-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  counter-reset: sw-choice;
+}
+#class-journal .st-world .sw-work .ux-choices button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 16px;
+  border: 2px solid var(--sk-line);
+  border-radius: 16px;
+  background: var(--sk-paper);
+  box-shadow: none;
+  color: var(--sk-ink);
+  font-family: inherit;
+  font-weight: 400;
+  font-size: var(--st-fs-base, 18px);
+  text-align: left;
+  counter-increment: sw-choice;
+}
+#class-journal .st-world .sw-work .ux-choices button::before {
+  content: counter(sw-choice);
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--sk-line);
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--sk-ink);
+  color: #ffffff;
+  font-family: var(--st-display);
+  font-size: 15px;
+}
+#class-journal .st-world .sw-work .ux-choices button[aria-pressed='true'] {
+  border: 3px solid var(--sk-accent);
+  background: #fff1d6;
+}
+#class-journal .st-world .sw-work .ux-choices button[aria-pressed='true']::before { background: var(--sk-accent); }
+/* 순서 맞추기: 순서대로 누르는 단추 줄 + 고른 순서(시안 Problems 순서 맞추기) */
+#class-journal .st-world .sw-work .ux-choices:has(+ ol) {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+#class-journal .st-world .sw-work .ux-choices:has(+ ol) button {
+  padding: 0 20px;
+  font-weight: 700;
+}
+#class-journal .st-world .sw-work .ux-choices:has(+ ol) button::before { content: none; }
+#class-journal .st-world .sw-work .ux-answer-fields > ol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 44px;
+  margin: 0;
+  padding: 12px 14px 12px 34px;
+  border: 2px solid var(--sk-line);
+  border-radius: 14px;
+  background: #fff1d6;
+  font-size: var(--st-fs-base, 18px);
+}
+#class-journal .st-world .sw-work .ux-answer-fields > .cj-secondary,
+#class-journal .st-world .sw-work .ux-class-row .cj-secondary {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: var(--st-fs-sm, 15px);
+}
+#class-journal .st-world .sw-work .ux-answer-fields > .cj-secondary { align-self: flex-start; }
+/* 분류하기: 항목 줄마다 무리 이름 단추(시안 InputTypes 분류하기) */
+#class-journal .st-world .sw-work .ux-classification {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#class-journal .st-world .sw-work .ux-class-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 16px;
+  background: var(--sk-soft);
+}
+#class-journal .st-world .sw-work .ux-class-row > span {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: var(--st-fs-base, 17px);
+}
+#class-journal .st-world .sw-work .ux-class-row > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#class-journal .st-world .sw-work .ux-class-row .cj-secondary { border-color: var(--sk-line); padding: 0 12px; }
+#class-journal .st-world .sw-work .ux-class-row .cj-secondary[aria-pressed='true']:nth-child(odd) { background: var(--sk-yellow); }
+#class-journal .st-world .sw-work .ux-class-row .cj-secondary[aria-pressed='true']:nth-child(even) { background: #cfe6fa; }
+#class-journal .st-world .sw-work .ux-guardian {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--sk-ink);
+  font-size: var(--st-fs-sm, 15px);
+}
+#class-journal .st-world .sw-work input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--sk-accent);
+}
+
+/* 생각 메모: 노란 쪽지(시안 MissionWrite) */
+#class-journal .st-world .sw-memo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 18px;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: #fff8c9;
+  transform: rotate(0.4deg);
+}
+#class-journal .st-world .sw-memo p { margin: 0; font-size: var(--st-fs-sm, 15px); }
+#class-journal .st-world .sw-memo-title {
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: var(--st-fs-md, 22px);
+}
+#class-journal .st-world .sw-memo .cj-field textarea {
+  min-height: 96px;
+  border-style: dashed;
+  background: transparent;
+}
+#class-journal .st-world .sw-memo .ux-memo-drawing { gap: 8px 12px; }
+#class-journal .st-world .sw-memo .ux-memo-drawing canvas {
+  height: 160px;
+  border: 2px dashed var(--sk-line);
+  border-radius: 12px;
+  background: var(--sk-paper);
+}
+#class-journal .st-world .sw-memo .ux-memo-drawing .cj-secondary {
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--sk-paper);
+  font-family: inherit;
+  font-weight: 700;
+}
+#class-journal .st-world .sw-memo .ux-memo-drawing small { font-size: var(--st-fs-xs, 14px); }
+#class-journal .st-world .sw-memo-move {
+  min-height: 48px;
+  padding: 0 16px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-weight: 700;
+  font-size: var(--st-fs-sm, 15px);
+  cursor: pointer;
+}
+#class-journal .st-world .sw-memo-move:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ── 피드백(시안 Feedback): 왼쪽 내가 쓴 답, 오른쪽 하늘색 피드백 상자 ── */
+#class-journal .st-world .sw-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+#class-journal .st-world .sw-answers > .sw-toolbar { justify-content: flex-start; flex-direction: row-reverse; }
+#class-journal .st-world .sw-version {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+#class-journal .st-world .sw-version > small {
+  font-weight: 700;
+  font-size: var(--st-fs-sm, 15px);
+}
+#class-journal .st-world .sw-version .cj-quote {
+  margin: 0;
+  padding: 18px 20px;
+  border: 2px solid var(--sk-line);
+  border-radius: 20px;
+  background: var(--sk-paper);
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: var(--st-fs-base, 19px);
+  line-height: 1.7;
+}
+#class-journal .st-world .sw-work .ux-evidence {
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--sk-soft);
+  font-size: var(--st-fs-xs, 14px);
+}
+#class-journal .st-world .sw-work .ux-evidence small { font-weight: 700; }
+#class-journal .st-world .sw-work .ux-evidence ul { margin: 6px 0 0; }
+#class-journal .st-world .sw-work .ux-evidence li { margin: 4px 0; }
+#class-journal .st-world .sw-asked {
+  margin: 0;
+  padding: 10px 14px;
+  border: 2px dashed var(--sk-line);
+  border-radius: 14px;
+  background: #fff8e6;
+  font-size: var(--st-fs-sm, 15px);
+}
+#class-journal .st-world .sw-asked small { font-weight: 700; }
+#class-journal .st-world .sw-asked p { margin: 2px 0 0; }
+#class-journal .st-world .sw-feedback-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 22px;
+  border: 3px solid var(--sk-line);
+  border-radius: 26px;
+  background: var(--sk-soft);
+  box-shadow: 0 6px 0 rgb(31 78 107 / 0.18);
+}
+#class-journal .st-world .sw-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font-size: var(--st-fs-base, 18px);
+  line-height: 1.6;
+}
+#class-journal .st-world .sw-feedback:focus { outline: none; }
+#class-journal .st-world .sw-feedback p { margin: 0; }
+#class-journal .st-world .sw-feedback-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#class-journal .st-world .sw-feedback-head h2 {
+  font-size: clamp(26px, 2.3vw, 34px);
+  line-height: 1.15;
+}
+#class-journal .st-world .sw-feedback .sw-trial {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 12px;
+  border: 2px solid #7a8c88;
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: #4a5d59;
+  font-weight: 700;
+  font-size: var(--st-fs-xs, 14px);
+}
+#class-journal .st-world .sw-ask {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+#class-journal .st-world .sw-ask-face {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--sk-line);
+  border-radius: 50%;
+  background: var(--sk-paper);
+  box-shadow: 0 0 0 4px #ffffff, 0 0 0 7px var(--sk-line);
+  overflow: hidden;
+}
+#class-journal .st-world .sw-ask > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+#class-journal .st-world .sw-ask-text {
+  margin: 0;
+  padding: 14px 16px;
+  border: 2px solid var(--sk-line);
+  border-radius: 4px 18px 18px 18px;
+  background: var(--sk-paper);
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: var(--st-fs-md, 21px);
+  line-height: 1.55;
+}
+#class-journal .st-world .sw-feedback .sw-source {
+  display: block;
+  margin: 0;
+  color: var(--sk-sub);
+  font-size: var(--st-fs-xs, 14px);
+}
+#class-journal .st-world .sw-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+#class-journal .st-world .sw-actions > p { flex-basis: 100%; margin: 0; text-align: right; }
+#class-journal .st-world .sw-actions .mg-read { min-height: 56px; padding: 0 22px; }
+#class-journal .st-world .sw-actions .sw-go { min-height: 56px; padding: 0 28px; font-size: clamp(19px, 1.5vw, 22px); }
+#class-journal .st-world .sw-work .mg-read:disabled,
+#class-journal .st-world .sw-work .mg-start:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── 마무리(시안 Finish) ── */
+#class-journal .st-world .sw-finish {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+#class-journal .st-world .sw-finish-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+#class-journal .st-world .sw-finish-head h2 {
+  line-height: 1.05;
+  letter-spacing: -1px;
+}
+#class-journal .st-world .sw-finish-head h2 > span:last-child {
+  font-family: var(--st-hand);
+  font-weight: 400;
+  font-size: clamp(26px, 2.5vw, 36px);
+}
+#class-journal .st-world .sw-finish-big { font-size: clamp(34px, 3.2vw, 46px); }
+#class-journal .st-world .sw-done-note {
+  color: var(--sk-sub);
+  font-weight: 700;
+  font-size: var(--st-fs-xs, 14px);
+}
+#class-journal .st-world .sw-two {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+#class-journal .st-world .sw-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px 20px;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: var(--sk-paper);
+}
+#class-journal .st-world .sw-card > strong { font-weight: 700; font-size: var(--st-fs-sm, 16px); }
+#class-journal .st-world .sw-card > p { margin: 0; }
+#class-journal .st-world .sw-card-reveal { background: #fff1d6; }
+#class-journal .st-world .sw-card .cj-quote,
+#class-journal .st-world .sw-card .sw-version .cj-quote {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: var(--st-fs-base, 18px);
+  line-height: 1.7;
+}
+#class-journal .st-world .sw-card .sw-version { gap: 4px; }
+#class-journal .st-world .sw-card .sw-version + .sw-version {
+  padding-top: 8px;
+  border-top: 2px dashed rgb(31 78 107 / 0.2);
+}
+#class-journal .st-world .sw-ideas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 20px;
+  border: 2px solid var(--sk-line);
+  border-radius: 24px;
+  background: var(--sk-soft);
+}
+#class-journal .st-world .sw-ideas h3 { font-size: clamp(20px, 1.6vw, 22px); }
+#class-journal .st-world .sw-ideas p { margin: 0; }
+#class-journal .st-world .sw-ideas .ux-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+#class-journal .st-world .sw-ideas .ux-checklist li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 14px;
+  border-radius: 14px;
+  background: var(--sk-paper);
+}
+#class-journal .st-world .sw-ideas .ux-checklist li > span {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--st-fs-base, 17px);
+}
+#class-journal .st-world .sw-ideas .ux-checklist b {
+  flex: none;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #fff1d6;
+  font-weight: 700;
+  font-size: var(--st-fs-xs, 14px);
+}
+#class-journal .st-world .sw-ideas .ux-checklist li[data-checked] b { background: #ddf6d2; }
+#class-journal .st-world .sw-ideas .ux-checklist blockquote { margin: 0; font-size: var(--st-fs-sm, 15px); }
+/* 내 답 돌아보기(SelfAssessmentPanel)·이전 답 비교(AttemptComparisonPanel) 카드 */
+#class-journal .st-world .sw-work .ux-self-assessment,
+#class-journal .st-world .sw-work .st-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 20px;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: var(--sk-paper);
+}
+#class-journal .st-world .sw-work .st-comparison { border: 3px dashed #7a8c88; }
+#class-journal .st-world .sw-work .ux-self-assessment h3,
+#class-journal .st-world .sw-work .st-comparison h3 {
+  margin: 0;
+  font-size: clamp(20px, 1.7vw, 24px);
+  line-height: 1.2;
+}
+#class-journal .st-world .sw-work .ux-self-assessment p,
+#class-journal .st-world .sw-work .st-comparison p { margin: 0; font-size: var(--st-fs-sm, 16px); }
+#class-journal .st-world .sw-work .ux-self-assessment .ux-checklist { display: flex; flex-direction: column; gap: 0; margin: 0; }
+#class-journal .st-world .sw-work .ux-self-row { gap: 10px; font-size: var(--st-fs-base, 16px); }
+#class-journal .st-world .sw-work .ux-self-row input[type='checkbox'] { width: 22px; height: 22px; }
+#class-journal .st-world .sw-work .ux-self-assessment > .cj-secondary {
+  align-self: flex-start;
+  min-height: 48px;
+  padding: 0 20px;
+  background: var(--sk-paper);
+  font-family: inherit;
+  font-weight: 700;
+}
+#class-journal .st-world .sw-work .ux-assessment-result { border-bottom: 2px dashed rgb(31 78 107 / 0.2); }
+#class-journal .st-world .sw-work .st-comparison-pair { margin: 4px 0; gap: 14px; }
+#class-journal .st-world .sw-work .st-comparison-pair article { border: 2px solid var(--sk-line); border-radius: 16px; }
+#class-journal .st-world .sw-work .st-comparison-elements { margin: 0; }
+#class-journal .st-world .sw-work .st-comparison-elements li { border-bottom: 2px dashed rgb(31 78 107 / 0.2); }
+/* 돌아보기 남기기 단추는 비교 칸 아래 오른쪽(시안 Finish '마무리하기 →' 자리) */
+#class-journal .st-world .sw-work .st-comparison-foot {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+#class-journal .st-world .sw-work .st-comparison-foot .sw-go { min-height: 62px; padding: 0 34px; }
+@media (max-width: 900px) {
+  #class-journal .st-world .sw-work .st-comparison-foot > .sw-go { flex: 1; }
+}
+/* 내 답 · 예시 답 · 내 활동지(공책 그림) 한 줄 */
+#class-journal .st-world .sw-reveal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(200px, 270px);
+  gap: 20px;
+  align-items: stretch;
+}
+#class-journal .st-world .sw-paper { display: flex; align-items: center; min-width: 0; }
+#class-journal .st-world .sw-paper .cj-art {
+  box-sizing: border-box;
+  width: 100%;
+  border: 2px solid var(--sk-line);
+  border-radius: 16px;
+}
+/* 돌아보기를 마친 활동: 비교 칸 아래에 남긴 돌아보기와 다시 풀기 */
+#class-journal .st-world .sw-done {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 10px;
+  border-top: 2px dashed rgb(31 78 107 / 0.2);
+}
+#class-journal .st-world .sw-done > div { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; margin-left: auto; text-align: right; }
+#class-journal .st-world .sw-done p {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: var(--st-fs-sm, 16px);
+}
+#class-journal .st-world .sw-done strong {
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: var(--st-fs-md, 22px);
+}
+
+/* ── 돌아보기 창(시안 Reflect): 도우미 얼굴, 큰 난이도 단추 세 개, 꽉 찬 저장 단추 ── */
+#class-journal .st-world .cj-modal:has(.sw-reflect) {
+  position: relative;
+  max-width: 640px;
+  border: 3px solid var(--sk-line);
+  border-radius: 30px;
+  box-shadow: 0 6px 0 rgb(31 78 107 / 0.18);
+}
+#class-journal .st-world .cj-modal:has(.sw-reflect) .cj-modal-head {
+  padding: 30px 24px 0 110px;
+  border-bottom: 0;
+}
+#class-journal .st-world .cj-modal:has(.sw-reflect) .cj-modal-head h2 {
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1.1;
+}
+#class-journal .st-world .cj-modal:has(.sw-reflect) .cj-modal-body { padding: 22px 30px 30px; }
+#class-journal .st-world .sw-reflect {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+#class-journal .st-world .sw-reflect-face {
+  position: absolute;
+  top: 22px;
+  left: 30px;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--sk-line);
+  border-radius: 50%;
+  background: var(--sk-paper);
+  overflow: hidden;
+}
+#class-journal .st-world .sw-reflect .cj-difficulties {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+#class-journal .st-world .sw-reflect .cj-difficulties button {
+  min-height: 96px;
+  padding: 8px;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: var(--sk-paper);
+  box-shadow: none;
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-size: clamp(19px, 2vw, 24px);
+  cursor: pointer;
+}
+#class-journal .st-world .sw-reflect .cj-difficulties button:nth-child(1) { transform: rotate(-2deg); }
+#class-journal .st-world .sw-reflect .cj-difficulties button:nth-child(3) { transform: rotate(2deg); }
+#class-journal .st-world .sw-reflect .cj-difficulties button[aria-pressed='true'] { border: 4px solid var(--sk-accent); }
+#class-journal .st-world .sw-reflect .cj-difficulties button[aria-pressed='true'][data-level='쉬웠어'] { background: #ddf6d2; }
+#class-journal .st-world .sw-reflect .cj-difficulties button[aria-pressed='true'][data-level='보통'] { background: #fff1d6; }
+#class-journal .st-world .sw-reflect .cj-difficulties button[aria-pressed='true'][data-level='어려웠어'] { background: #fbd3df; }
+#class-journal .st-world .sw-reflect .cj-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  font-weight: 700;
+  font-size: var(--st-fs-sm, 16px);
+}
+#class-journal .st-world .sw-reflect .cj-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  padding: 10px 14px;
+  border: 2px solid var(--sk-line);
+  border-radius: 14px;
+  background: var(--sk-paper);
+  font-family: inherit;
+  font-size: var(--st-fs-base, 17px);
+}
+#class-journal .st-world .sw-reflect p[role='alert'] { margin: 0; color: #a3360e; font-weight: 700; }
+#class-journal .st-world .sw-reflect-save { flex: none; width: 100%; min-height: 62px; font-size: clamp(20px, 1.7vw, 24px); }
+
+/* ── 알림·오류 ── */
+#class-journal .st-world .sw-work .ux-error { margin: 0; }
+#class-journal .st-world .sw-work .ux-backup {
+  padding: 10px 14px;
+  border: 2px dashed var(--sk-line);
+  border-radius: 14px;
+  background: var(--sk-paper);
+}
+
+/* PC 한 화면(다른 .st-fit 화면과 같은 기준): 쓰기·피드백 칸이 남은 높이를 채워 도우미 말풍선이 아래에 붙는다 */
+@media (min-width: 901px) and (min-height: 700px) {
+  #class-journal .cj-app-student .st-stage > .sw-page { display: flex; flex-direction: column; }
+  #class-journal .st-world .sw-page > .sw-work { flex: 1 1 auto; }
+  #class-journal .st-world .sw-page .sw-body-write { flex: 1 1 auto; }
+}
+
+@media (max-width: 900px) {
+  #class-journal .st-world .sw-body-write,
+  #class-journal .st-world .sw-body-feedback { grid-template-columns: minmax(0, 1fr); }
+  #class-journal .st-world .sw-panel { padding: 16px; box-shadow: 6px 6px 0 #b8551c; }
+  #class-journal .st-world .sw-feedback-panel { padding: 16px; }
+  #class-journal .st-world .sw-helper-face { width: 64px; }
+  #class-journal .st-world .sw-submit-row .sw-submit { flex: 1; }
+  #class-journal .st-world .sw-ask-face { width: 56px; height: 56px; }
+  #class-journal .st-world .sw-reveal { grid-template-columns: minmax(0, 1fr); }
+  #class-journal .st-world .sw-paper { max-width: 360px; }
+  #class-journal .st-world .sw-helper { position: static; }
+}
+@media (max-width: 520px) {
+  #class-journal .st-world .cj-modal:has(.sw-reflect) .cj-modal-head { padding: 22px 18px 0 92px; }
+  #class-journal .st-world .cj-modal:has(.sw-reflect) .cj-modal-body { padding: 18px; }
+  #class-journal .st-world .sw-reflect-face { top: 16px; left: 18px; }
+  #class-journal .st-world .sw-reflect .cj-difficulties { gap: 8px; }
+  #class-journal .st-world .sw-reflect .cj-difficulties button { min-height: 76px; font-size: 18px; }
+}
+/* 움직임 줄이기: 기울인 쪽지·단추를 바로 세운다(미션 안내 그림과 같은 기준) */
+@media (prefers-reduced-motion: reduce) {
+  #class-journal .st-world .sw-memo,
+  #class-journal .st-world .sw-reflect .cj-difficulties button { transform: none !important; }
+}

@@ -1,4 +1,4 @@
-import { enterStudentFixture } from './studentFixture.ts'
+import { enterStudentFixture, waitForStudentHome } from './studentFixture.ts'
 import { writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -22,13 +22,13 @@ async function studentLogin(page: Page) {
   await expect(page.getByRole('button', { name: '5', exact: true })).toBeVisible()
   for (const digit of ['5', '0', '9', '0']) await page.getByRole('button', { name: digit, exact: true }).click()
   await page.getByRole('button', { name: /확인|들어가기/ }).click()
-  await expect(page).toHaveURL(/\/student\/home/)
+  await waitForStudentHome(page)
 }
 
 test('학생 공개 설정 @responsive', async ({ page }, testInfo) => {
   await studentLogin(page)
   await page.getByRole('button', { name: '설정', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '내 답 공개 설정', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '공개 설정', exact: true })).toBeVisible()
   await expect(page.getByRole('radio', { name: '비공개로 둘게요' })).toBeChecked()
   await page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
   await expect(page.getByRole('status').filter({ hasText: '지금은 공개예요.' })).toBeVisible()
@@ -48,16 +48,19 @@ test('학생 설정 한 곳에서 공개 설정·내 포인트·로그아웃, �
   await menu.getByRole('button', { name: '설정', exact: true }).click()
   await expect(page).toHaveURL(/\/student\/settings/)
   await expect(page.getByRole('heading', { name: '설정', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '내 답 공개 설정', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '공개 설정', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '내 포인트', exact: true })).toBeVisible()
+  // #648: 포인트 내역은 설정 카드의 "내 포인트 보기"로 여는 내 포인트 화면(/student/points)
   await page.getByRole('button', { name: '내 포인트 보기', exact: true }).click()
+  await expect(page).toHaveURL(/\/student\/points/)
   await expect(page.getByRole('heading', { name: '내 포인트', exact: true })).toBeFocused()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  await menu.getByRole('button', { name: '설정', exact: true }).click()
   await page.getByRole('button', { name: '로그아웃', exact: true }).click()
   await expect(page).toHaveURL(/\/login/)
 })
 
-test('옛 내 포인트 주소는 설정의 포인트 부분을 연다 (#583)', async ({ page }) => {
+test('내 포인트 주소는 포인트 화면을 열고 설정 메뉴 아래로 표시한다 (#583·#648)', async ({ page }) => {
   await studentLogin(page)
   await page.evaluate(() => { history.pushState({}, '', '/student/points'); dispatchEvent(new PopStateEvent('popstate')) })
   await expect(page.getByRole('heading', { name: '내 포인트', exact: true })).toBeFocused()
@@ -131,8 +134,8 @@ test('학생 시연 기기 준비 → PIN 인증 → 학생 홈', async ({ page 
   await expect(page.getByRole('button', { name: '5', exact: true })).toBeVisible()
   for (const digit of ['5', '0', '9', '0']) await page.getByRole('button', { name: digit, exact: true }).click()
   await page.getByRole('button', { name: /확인|들어가기/ }).click()
-  await expect(page).toHaveURL(/\/student\/home/)
-  await expect(page.getByRole('heading', { name: /학습 홈/ })).toBeAttached()
+  await waitForStudentHome(page)
+  await expect(page.getByRole('region', { name: /^우리 집/ })).toBeVisible()
 })
 
 test('관리자 로그인은 사용자 화면에 링크가 없고, 학부모 계정·틀린 비밀번호는 같은 안내를 준다 (#369)', async ({ page }) => {
@@ -200,8 +203,9 @@ test('학생 생각 활동 메뉴와 섬 화면의 해 본 생각 (#240) @respon
   await expect(page.getByText(/레벨|등급|순위|점수/)).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
   await page.screenshot({ path: testInfo.outputPath('student-activities.png'), fullPage: true })
-  // 학생 세션은 새로고침하면 PIN을 다시 받으므로 메뉴로 이동해 섬(생각 유형)을 고른다.
-  await page.getByRole('button', { name: '미션 고르기', exact: true }).click()
+  // 학생 세션은 새로고침하면 PIN을 다시 받으므로 메뉴로 홈에 가서 "더 풀어 보기"(미션 고르기, #648 메뉴에서 뺌)로 섬(생각 유형)을 고른다.
+  await page.getByRole('button', { name: '홈', exact: true }).click()
+  await page.getByRole('button', { name: /더 풀어 보기/ }).click()
   await page.getByRole('group', { name: '생각 유형' }).getByRole('button').nth(1).click()
   await expect(page.getByRole('heading', { name: /에서 해 본 생각$/ })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('student-island-activities.png'), fullPage: true })

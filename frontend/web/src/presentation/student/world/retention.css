@@ -1,86 +1,12 @@
-/* 2026-11-06 결정 학생 참여 화면: 주간 테마·되돌아보기·친구 생각·포인트·해금 (#393, #389 web) */
-#class-journal .st-week {
-  padding: 18px 20px;
-  border-radius: 20px;
-  margin-bottom: 18px;
-}
-#class-journal .st-week h2 {
-  font-family: 'Do Hyeon', sans-serif;
-  font-weight: 400;
-  font-size: var(--st-fs-lg, 28px);
-  margin: 4px 0 8px;
-}
-#class-journal .st-week .st-kicker {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-#class-journal .st-week-intro {
-  margin: 0 0 12px;
-  line-height: 1.6;
-}
-#class-journal .st-week-days {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-#class-journal .st-week-days li {
-  display: grid;
-  grid-template-columns: 44px 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 10px;
-  border-radius: 14px;
-  background: #fffdf7;
-}
-#class-journal .st-week-days li[data-state='LOCKED'] {
-  opacity: 0.6;
-}
-#class-journal .st-week-days li[data-state='OPEN'] {
-  outline: 3px solid var(--st-accent);
-}
-#class-journal .st-week-day {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 4px solid;
-  border-radius: 50%;
-  font-family: 'Do Hyeon', sans-serif;
-  font-size: var(--st-fs-md, 20px);
-}
-#class-journal .st-week-days li[data-done] .st-week-day {
-  background: #e9f3dc;
-}
-#class-journal .st-week-title {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-#class-journal .st-week-title small,
-#class-journal .st-review small {
-  color: #4a4a45;
-}
-#class-journal .st-week-done {
-  font-weight: 700;
-  margin: 12px 0 0;
-}
-#class-journal .st-review {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 2px dashed rgb(31 36 33 / 0.2);
-}
-#class-journal .st-review h3,
+
+
 #class-journal .st-community h2,
 #class-journal .st-points-page h2 {
-  font-family: 'Do Hyeon', sans-serif;
+  font-family: 'Black Han Sans', sans-serif;
   font-weight: 400;
   font-size: var(--st-fs-md, 22px);
   margin: 12px 0 6px;
 }
-#class-journal .st-review ul,
 #class-journal .st-posts,
 #class-journal .st-ledger,
 #class-journal .st-rules {
@@ -89,16 +15,6 @@
   padding: 0;
   display: grid;
   gap: 8px;
-}
-#class-journal .st-review li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-#class-journal .st-review li[data-missed] span {
-  color: #6b6b64;
 }
 #class-journal .st-community h1,
 #class-journal .st-points-page h1 {
@@ -170,7 +86,7 @@
   font-size: var(--st-fs-md, 22px);
 }
 #class-journal .st-balance strong {
-  font-family: 'Do Hyeon', sans-serif;
+  font-family: 'Black Han Sans', sans-serif;
   font-size: var(--st-fs-2xl, 40px);
   font-weight: 400;
 }
@@ -195,6 +111,14 @@
 #class-journal .st-pick:disabled {
   opacity: 1;
   cursor: default;
+}
+/* 뭉치 친구들(#648): 친구 색 바탕, 아직 고를 수 없는 친구(곧 만나요)는 그림만 흐리게 */
+#class-journal .st-pick-friend .st-companion {
+  border-radius: 50%;
+  background: var(--st-friend-tint, transparent);
+}
+#class-journal .st-pick-soon .st-companion {
+  opacity: 0.55;
 }
 #class-journal .st-lock {
   display: inline-flex;
@@ -263,22 +187,3 @@
   gap: 6px;
 }
 
-/* 주간 계획은 넓은 화면에서 다섯 칸, 태블릿·휴대폰에서는 오늘 문제를 첫 줄 전체에 둔다. */
-#class-journal .cj-app-student .st-week-days { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-#class-journal .cj-app-student .st-week-days li { grid-template-columns: 40px minmax(0, 1fr); align-content: start; gap: 12px; min-width: 0; padding: 14px; }
-#class-journal .cj-app-student .st-week-days li button { grid-column: 1 / -1; width: 100%; min-height: 48px; padding: 10px 12px; white-space: normal; }
-#class-journal .cj-app-student .st-week-title { font-size: var(--st-fs-sm, 16px); overflow-wrap: anywhere; }
-#class-journal .cj-app-student .st-week-title small { font-size: var(--st-fs-xs, 13px); }
-#class-journal .cj-app-student .st-week-days li[data-state=LOCKED] { opacity: 1; background: #e9e4d9; color: #55534c; }
-@media (max-width: 1100px) {
-  #class-journal .cj-app-student .st-week-days { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #class-journal .cj-app-student .st-week-days li[data-state=OPEN] { grid-column: 1 / -1; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; }
-  #class-journal .cj-app-student .st-week-days li[data-state=OPEN] button { grid-column: auto; width: auto; }
-}
-@media (max-width: 640px) {
-  #class-journal .cj-app-student .st-week { padding: 20px 16px; border-radius: 12px; }
-  #class-journal .cj-app-student .st-week-days li { gap: 10px; padding: 12px; grid-template-columns: 32px minmax(0, 1fr); }
-  #class-journal .cj-app-student .st-week-day { width: 32px; height: 32px; font-size: var(--st-fs-base, 18px); border-width: 3px; }
-  #class-journal .cj-app-student .st-week-days li[data-state=OPEN] { grid-template-columns: 32px minmax(0, 1fr); }
-  #class-journal .cj-app-student .st-week-days li[data-state=OPEN] button { grid-column: 1 / -1; width: 100%; }
-}

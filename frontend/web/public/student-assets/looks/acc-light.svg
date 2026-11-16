@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" width="60" height="60">
+<!-- 손전등(쥐는 자리 기준, 남색 몸통·노란 머리, 불빛은 머리에서 같은 방향으로 퍼짐). 가운데가 쥐는 곳 -->
+<g transform="rotate(-24 30 30)">
+<path d="M45 25 L57 19 V42 L45 36Z" fill="#FFF3B8" fill-opacity=".85"/>
+<rect x="14" y="24" width="22" height="13" rx="5" fill="#4F41B8" stroke="#1F2421" stroke-width="3"/>
+<path d="M35 22 H42 Q45 22 45 25 V36 Q45 39 42 39 H35Z" fill="#FFE45C" stroke="#1F2421" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="23" cy="30.5" r="2.4" fill="#FFE45C"/>
+</g>
+</svg>

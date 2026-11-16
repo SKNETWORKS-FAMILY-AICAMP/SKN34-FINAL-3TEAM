@@ -84,8 +84,12 @@ function ownerOf(childId: string) {
   for (const [owner, children] of mockAccountChildren) if (children.some(c => c.id === childId)) return owner
   return mockIdentity.email
 }
-/** 테스트 설정 전용: 구독을 붙이거나(PREMIUM) 이용 중 구독을 지운다(FREE). 결제 내역은 건드리지 않는다. */
-export function setMockSubscription(childId: string, plan: 'FREE' | 'PREMIUM', owner = mockIdentity.email) {
+/**
+ * 테스트 설정 전용: 구독을 붙이거나(PREMIUM) 이용 중 구독을 지운다(FREE). 결제 내역은 건드리지 않는다.
+ * 기본 보호자는 `mockPremium`이 읽는 곳과 같게 그 자녀의 보호자(#487: 전에는 지금 로그인한 계정이라, 시연 PIN 학생에서
+ * 목업 막대 "프리미엄"을 켜도 다른 보호자 계정에 구독이 붙어 일요일이 무료처럼 닫혔다)
+ */
+export function setMockSubscription(childId: string, plan: 'FREE' | 'PREMIUM', owner = ownerOf(childId)) {
   const a = paymentAccount(owner)
   a.subscriptions = a.subscriptions.filter(s => s.childId !== childId || !['ACTIVE', 'RENEWAL_FAILED'].includes(s.status))
   if (plan === 'PREMIUM') addMockSubscription(a, childId)

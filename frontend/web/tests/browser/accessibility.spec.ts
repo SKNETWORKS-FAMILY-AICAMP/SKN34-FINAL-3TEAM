@@ -1,3 +1,4 @@
+import { waitForStudentHome } from './studentFixture.ts'
 import { test, expect } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
@@ -11,7 +12,7 @@ async function student(page: Page) {
   await expect(page.getByRole('button', { name: '5', exact: true })).toBeVisible()
   for (const digit of ['5', '0', '9', '0']) await page.getByRole('button', { name: digit, exact: true }).click()
   await page.getByRole('button', { name: /확인|들어가기/ }).click()
-  await expect(page).toHaveURL(/\/student\/home/)
+  await waitForStudentHome(page)
 }
 
 async function navigate(page: Page, path: string) {
@@ -81,13 +82,17 @@ test('#639·#640 학생 화면 본문·이름줄 대비·도움말·공책 터�
 
 test('#640 미션 안내 배지 대비·닫기 조작 영역·키보드 복귀 @responsive', async ({ page }) => {
   await student(page)
-  const start = page.getByRole('button', { name: '시작하기', exact: true })
+  // #648 새 홈에는 오늘의 미션 카드가 없어, 미션 안내 창은 "더 풀어 보기"(미션 고르기)의 미션 열기로 연다
+  await page.getByRole('button', { name: /더 풀어 보기/ }).click()
+  const start = page.getByRole('button', { name: '미션 열기', exact: true }).first()
   await start.click()
-  const dialog = page.getByRole('dialog')
-  await contrast(dialog.locator('.cj-badge'))
-  await target44(dialog.getByRole('button', { name: '창 닫기' }))
+  // #648: 학생 미션 안내는 창이 아니라 학생 틀 안 전체 화면(시안 MissionGuide). 꼬리표 대비·돌아가기 조작 영역·Esc 뒤 초점 복귀는 그대로 본다
+  const guide = page.locator('.mg-page')
+  await expect(page.getByRole('heading', { level: 1 })).toBeFocused()
+  await contrast(guide.locator('.mg-tag'))
+  await target44(guide.getByRole('button', { name: '← 미션 고르기' }))
   await page.keyboard.press('Escape')
-  await expect(dialog).toHaveCount(0)
+  await expect(guide).toHaveCount(0)
   await expect(start).toBeFocused()
 })
 
@@ -95,7 +100,7 @@ test('#639·#641 풀이 진입·제출 결과 포커스, 저장·실패 알림 �
   await work(page)
   await landmarks(page)
   await expect(page.getByRole('region', { name: '미션 작성기' })).toBeVisible()
-  const answer = page.getByRole('textbox', { name: '내 생각과 까닭', exact: true })
+  const answer = page.getByRole('textbox', { name: '내 생각과 이유', exact: true })
   await answer.fill('저는 찬성해요. 친구와 함께 생각하면 서로 다른 까닭을 배울 수 있기 때문이에요.')
   await expect(page.locator('.ux-save-line[role=status]')).toContainText('저장했어요')
   await expect(answer).toBeFocused()

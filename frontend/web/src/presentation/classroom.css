@@ -13,6 +13,24 @@ body {
   height: auto !important;
   aspect-ratio: 600/170;
 }
+/* 장면 그림과 그 위 효과 층(움직임 형식 v1 effects, #440). 감싼 상자는 그림 크기 그대로 */
+.ux-scene-art {
+  position: relative;
+  display: block;
+}
+/* 그림을 못 불러왔을 때 같은 자리에 두는 칸(#440) */
+.ux-scene-missing {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  border: 1px dashed #b9b4a8;
+  border-radius: 8px;
+  background: #f3f3df;
+  color: #65766b;
+  text-align: center;
+}
 .ux-scene figcaption {
   display: flex;
   align-items: center;
