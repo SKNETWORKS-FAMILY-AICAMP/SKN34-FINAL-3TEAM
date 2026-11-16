@@ -237,6 +237,7 @@ FIX_REASON = (
     re.compile(r"^CLUE_TEXT (MON|TUE|WED|THU|FRI) (clue) "),
     re.compile(r"^OUTRO_RECAP (outro) "),
     re.compile(r"^HIDE_SPOT (MON|TUE|WED|THU|FRI) (sceneNote|discovery|clue|missionHook) "),
+    re.compile(r"^CLUE_PROOF (MON|TUE|WED|THU|FRI) (clue) "),
     # #634 ③: 사건(incident)·정답 동물 모습(answerLook)이 비면 그 칸만 써 넣음(판정 실측 3건이
     # 이 사유로 줄거리를 다시 만듦)
     re.compile(r"^REQUIRED (incident|answerLook)$"),
@@ -504,6 +505,27 @@ def answer_fact_hits(theme: Theme, text: str | None) -> list[str]:
 # 보물 쪽지(#634 ①): 숨긴 곳은 끝까지 모르는 답인데 엔딩 전 글이 '숨긴 자리에서 흔적을 찾았다'처럼
 # 이미 아는 듯이 써서 글 검토 CLUE_LOGIC(1차 판정 2회 8번 중 7번이 보물 쪽지)
 HIDE_SPOT = re.compile(r"숨(?:긴|겨 ?둔|겨 ?놓은) ?(?:자리|곳|장소|위치)")
+
+
+# 산 가게 단서는 그 가게에서 '샀다'는 근거가 있어야 함(#634 ② 작은 실측 1~3차: "가게에 간·나온
+# 모습만으로는 거기서 샀다는 근거가 없음"이 되풀이, 프롬프트로 좁혀도 남아 코드 검사로)
+BUY_WORDS = re.compile(r"샀|사는|사 가|사 오|사러|사서|계산|영수증|스티커|구입|주문")
+PROOF_FEATURES = ("산 가게",)
+
+
+def clue_proof_problems(theme: Theme) -> list[str]:
+    """산 가게 단서에 산 근거 말이 없으면(CLUE_PROOF, 칸 고쳐 쓰기)."""
+    if story_type(theme).facts is None:
+        return []
+    bad = []
+    for d in theme.get("days") or []:
+        cond = d.get("condition") or {}
+        if cond.get("feature") in PROOF_FEATURES and not BUY_WORDS.search(str(d.get("clue") or "")):
+            bad.append(
+                f"CLUE_PROOF {d['day']} clue 산 가게 단서에 그 가게에서 산 근거(샀다·계산·영수증·"
+                "스티커)가 없음(가게에 간·나온 모습만으로는 근거가 안 됨)"
+            )
+    return bad
 
 
 def hide_spot_problems(theme: Theme) -> list[str]:
@@ -1155,6 +1177,7 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         bad.append("CANDIDATES 후보 이름에 색 낱말(색으로 빼면 이름과 모순)")
     if story_type(theme).code == "TREASURE":
         bad += hide_spot_problems(theme)
+    bad += clue_proof_problems(theme)
     if (table := story_type(theme).facts) is not None:  # 사실표 종류(동물·선물·재료, #634)
         bad += fact_table_problems(theme)
         # target은 미션·대화·그림 모델에 그대로 넘어가 정답 유출 검사 밖이라 후보 이름·정답만의

@@ -47,10 +47,10 @@ def gift_theme() -> dict[str, Any]:
     # 월(흔적) 무게로 목도리·고무공, 금(기록) 소리로 그림책이 빠짐
     for d, clue, kind, feat, allowed in (
         ("MON", "상자를 들어 보니 묵직한 상자였어.", "RULE", "상자 무게", ["묵직한 상자"]),
-        ("TUE", "그릇 가게나 서점에서 나오는 걸 봤대.", "HINT", "산 가게", ["그릇 가게", "서점"]),
+        ("TUE", "그릇 가게나 서점에서 사는 걸 봤대.", "HINT", "산 가게", ["그릇 가게", "서점"]),
         (
             "WED",
-            "봉지를 든 사람이 서점이나 그릇 가게 앞에 있었대.",
+            "서점이나 그릇 가게에서 계산하는 걸 봤대.",
             "HINT",
             "산 가게",
             ["서점", "그릇 가게"],
@@ -231,3 +231,13 @@ def test_evidence_plan_follows_what_each_fact_feature_can_show() -> None:
     lone["evidencePlan"] = {d: {"kind": "TRACE", "medium": None} for d in checks.DAYS}
     assert checks.fit_evidence_plan(lone) == ["TUE", "WED"]
     assert lone["evidencePlan"]["WED"]["kind"] == "SIGHTING"
+
+
+def test_shop_clue_needs_buying_proof() -> None:
+    """산 가게 단서는 그 가게에서 '샀다'는 근거 말이 있어야 함(CLUE_PROOF, 칸 고쳐 쓰기)."""
+    went = day_with(gift_theme(), "TUE", clue="그릇 가게나 서점에서 나오는 걸 봤대.")
+    bad = checks.check_theme(went, 3)
+    assert codes(bad) == ["CLUE_PROOF"] and list(checks.fix_targets(bad)) == ["TUE.clue"]
+    bought = day_with(gift_theme(), "TUE", clue="그릇 가게나 서점에서 계산하는 걸 봤대.")
+    assert checks.check_theme(bought, 3) == []
+    assert checks.clue_proof_problems(valid_theme()) == []  # 사실표 종류만
