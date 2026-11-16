@@ -12214,6 +12214,13 @@ components:
         studentId:
           type: string
           format: uuid
+        context:
+          type: string
+          enum:
+          - THEME_DAY
+          - THEME_REVIEW
+          - EXTRA
+          description: 시도 종류. learning attempt.context를 그대로 전달(#385). 선택 칸
         mission:
           $ref: '#/components/schemas/DashboardMission'
         status:
@@ -12669,6 +12676,13 @@ components:
         studentId:
           type: string
           format: uuid
+        context:
+          type: string
+          enum:
+          - THEME_DAY
+          - THEME_REVIEW
+          - EXTRA
+          description: 시도 종류. learning attempt.context를 그대로 전달(#385). 선택 칸
         mission:
           $ref: '#/components/schemas/DashboardMission'
         status:
@@ -13009,6 +13023,13 @@ components:
         studentId:
           type: string
           format: uuid
+        context:
+          type: string
+          enum:
+          - THEME_DAY
+          - THEME_REVIEW
+          - EXTRA
+          description: 시도 종류. learning attempt.context를 그대로 전달(#385). 선택 칸
         mission:
           $ref: '#/components/schemas/DashboardMission'
         status:

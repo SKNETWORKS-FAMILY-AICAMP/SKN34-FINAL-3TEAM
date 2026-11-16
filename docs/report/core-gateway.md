@@ -808,3 +808,19 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 - 비용은 ai 기본 모델 `gpt-6-luna` 단가(29장)로 계산된다
 - **병합 순서**: 이 변경이 ai #681보다 먼저 배포되어야 한다. 먼저 발행되면 CHECK가 행을 거부해 이벤트가 DLQ에 남는다(`MISSION_DRAFT`·`THEME_VIDEO` 선례)
 - 검증: `LlmUsageQueryTest`에 `MEMORY_QUERY` 저장·조회·`gpt-6-luna` 비용(입력 300·출력 60 → 0.00006 USD) 시험을 더했다. 기존 "모든 유형 조회" 시험이 새 enum 값도 저장·필터한다
+
+## 31. 대시보드 시도 응답의 context 계약 반영 (#700, 2026-11-16)
+
+웹 학생 "내 공책"을 "테마 문제(`THEME_DAY`·`THEME_REVIEW`) / 더 풀어 본 문제(`EXTRA`)" 탭으로 나누기 위해(웹 #648) 시도 종류 `context`를 core 공개 계약에 적었다.
+
+- **근거**: learning은 `attempt.context`를 저장하고(#385, V12) 기록 응답 `RecordAttempt`·`RecordAttemptDetail`(home `resume` 포함)에 선택 칸으로 내보낸다. core `LearningRecordClient`는 본문을 그대로 넘기고 memo·draft만 지우므로 응답에는 이미 `context`가 있었지만, core 계약의 해당 스키마는 `additionalProperties: false`인데 칸이 없어 계약과 실제 응답이 어긋나 있었다.
+- **결정**: 계약 문서에 칸만 추가하고 core 운영 코드는 바꾸지 않는다. 선택 칸(required 아님)이며 정의는 learning과 같은 `{type: string, enum: [THEME_DAY, THEME_REVIEW, EXTRA]}`.
+
+| 스키마 | 쓰는 경로 |
+|---|---|
+| `DashboardPublicAttempt` | `GET /students/me/attempts`, `GET /children/{childId}/attempts` 목록 항목 |
+| `DashboardAttemptDetail` | `GET /children/{childId}/attempts/{attemptId}` 학부모 상세 |
+| `DashboardAttempt` | `GET /students/me/home`의 `resume`(learning `RecordHome.resume`도 `RecordAttempt`) |
+
+- `context`가 없는 기록의 표시 기준(웹 기준안: "테마 문제" 탭)은 웹 #648에서 정한다
+- 검증: `DashboardIntegrationTest`가 learning이 준 `context`를 학생·학부모 목록, 학부모 상세, 학생 home `resume`에서 그대로 받는지 확인한다. `scripts/tests`는 core 세 스키마의 정의가 learning `RecordAttempt`와 같고 required가 아님을 확인하고, 기준 지문 비교에서는 이 칸만 빼고 비교한다
