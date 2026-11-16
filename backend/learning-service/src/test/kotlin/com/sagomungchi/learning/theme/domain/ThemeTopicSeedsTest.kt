@@ -25,14 +25,14 @@ class ThemeTopicSeedsTest {
     private fun oldFormat(seed: ThemeTopicSeed) = "뭉치 역할: ${seed.role} / 장소: ${seed.place} / 찾는 대상: ${seed.target}"
 
     @Test
-    fun `씨앗은 36개(잃어버린 것 24·나머지 종류 4개씩)이고 겹치지 않으며 ai 형식·주제 상한 안, 다시 쓰지 않는 기간은 목록 개수`() {
-        assertEquals(36, seeds.size)
-        assertEquals(mapOf(StoryType.LOST to 24, StoryType.TREASURE to 4, StoryType.PRANK to 4, StoryType.FOOTPRINT to 4),
+    fun `씨앗은 48개(잃어버린 것 24·나머지 종류 4개씩)이고 겹치지 않으며 ai 형식·주제 상한 안, 다시 쓰지 않는 기간은 목록 개수`() {
+        assertEquals(48, seeds.size)
+        assertEquals(StoryType.entries.associateWith { if (it == StoryType.LOST) 24 else 4 },
             seeds.groupingBy { it.type }.eachCount())
         assertEquals(seeds.size, seeds.map { Triple(it.role.substringBefore('('), it.place, it.target) }.toSet().size)
-        assertEquals(36L, ThemeTopicSeeds.RECENT_WEEKS)
+        assertEquals(48L, ThemeTopicSeeds.RECENT_WEEKS)
         seeds.forEach {
-            assertTrue(Regex("^줄거리: .+ / 뭉치 역할: .+ / 장소: .+ / (찾는 대상|밝힐 것): .+$").matches(it.topic), it.topic)
+            assertTrue(Regex("^줄거리: .+ / 뭉치 역할: .+ / 장소: .+ / (찾는 대상|밝힐 것|손에 든 것): .+$").matches(it.topic), it.topic)
             assertTrue(it.topic.length <= ThemeDraftService.MAX_TOPIC, it.topic)
             assertTrue(listOf(it.role, it.place, it.target).none { v -> " / " in v || ": " in v }, it.topic) // 칸 구분자가 값에 없음
             assertEquals(ParsedTopic(it.type, it.role, it.place, it.target), ThemeTopicSeeds.parse(it.topic))
@@ -49,6 +49,9 @@ class ThemeTopicSeedsTest {
         assertEquals(2, animal.count { it.role.startsWith("경찰관(") })
         assertEquals(1, animal.count { it.role.startsWith("소방관(") })
         seeds.filter { it.type == StoryType.LOST || it.type == StoryType.TREASURE }.forEach { assertTrue("/ 찾는 대상: " in it.topic, it.topic) }
+        // ② 출처·정체(#634 ai.md 17.8.13): 처음부터 손에 든 것
+        seeds.filter { it.type in setOf(StoryType.ORIGIN, StoryType.GIFT, StoryType.SECRET_INGREDIENT) }
+            .forEach { assertTrue("/ 손에 든 것: " in it.topic, it.topic) }
     }
 
     @Test
@@ -64,7 +67,7 @@ class ThemeTopicSeedsTest {
             ),
             seasonal,
         )
-        assertEquals(31, fitting(autumn).size)
+        assertEquals(43, fitting(autumn).size)
         assertTrue(fitting(LocalDate.of(2027, 1, 4)).any { "눈썰매장" in it })
         assertFalse(fitting(LocalDate.of(2027, 7, 5)).any { "눈썰매장" in it })
         assertTrue(fitting(LocalDate.of(2027, 7, 5)).any { "바닷가 모래사장" in it })
@@ -90,7 +93,7 @@ class ThemeTopicSeedsTest {
         val lastWeek = listOf(seeds.first { it.type == StoryType.LOST }.topic)
         val chosen = (0 until 60).map { type(ThemeTopicSeeds.choose(autumn, emptyList(), emptySet(), Random(it), lastWeekTopics = lastWeek)) }
         assertFalse(StoryType.LOST in chosen)
-        assertEquals(setOf(StoryType.TREASURE, StoryType.PRANK, StoryType.FOOTPRINT), chosen.toSet())
+        assertEquals(StoryType.entries.toSet() - StoryType.LOST, chosen.toSet())
 
         val all = StoryType.entries.map { t -> seeds.first { it.type == t }.topic }
         val relaxed = (0 until 60).map { type(ThemeTopicSeeds.choose(autumn, emptyList(), emptySet(), Random(it), lastWeekTopics = all)) }

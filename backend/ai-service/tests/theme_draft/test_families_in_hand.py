@@ -1,0 +1,193 @@
+"""② 손에 든 것의 출처·정체 (#634, 설계 ai.md 17.8.13): 출처 찾기·선물 상자 수수께끼·비밀 재료
+찾기. '대상을 아직 못 찾았다' 전제 뒤집기, 선물·재료 사실표, 후보 이름·정답만의 값 감추기."""
+
+import copy
+import json
+from typing import Any
+
+import pytest
+
+from app.config import get_settings
+from app.mission_draft.models import Draft, MissionDraftRequest
+from app.theme_draft import checks, families, prompts
+from app.theme_draft.models import ThemeDraftRequest
+from tests.theme_draft.fixtures import day_with, feature, mission_draft, valid_theme
+from tests.theme_draft.helpers import request_body
+
+SEEDS = {
+    "ORIGIN": "줄거리: 출처 찾기 / 뭉치 역할: 수의사(하얀 가운·청진기 목걸이) / "
+    "장소: 아파트 놀이터 / 손에 든 것: 놀이터에서 만난 길 잃은 강아지",
+    "GIFT": "줄거리: 선물 상자 수수께끼 / 뭉치 역할: 마술사(마술 모자·나비넥타이) / "
+    "장소: 아이의 생일 파티 / 손에 든 것: 생일에 받은 리본 상자",
+    "SECRET_INGREDIENT": "줄거리: 비밀 재료 찾기 / 뭉치 역할: 요리사(요리사 모자·앞치마) / "
+    "장소: 마을 떡집 / 손에 든 것: 대회에 낸 할머니의 떡",
+}
+GIFT_OF = {"놀이터": "목도리", "텃밭": "머그컵", "창고": "고무공", "정자": "그림책"}
+
+
+def codes(reasons: list[str]) -> list[str]:
+    return sorted(r.split(" ")[0] for r in reasons)
+
+
+def gift_theme() -> dict[str, Any]:
+    """valid_theme의 장소 후보를 선물로 바꾼 선물 상자 줄거리(check_theme을 통과). 정답 머그컵."""
+    theme = copy.deepcopy(valid_theme())
+    theme |= {
+        "storyType": "GIFT",
+        "target": "생일에 받은 리본 상자",
+        "candidates": [GIFT_OF[c] for c in theme["candidates"]],
+        "answer": GIFT_OF[theme["answer"]],
+        "bigQuestion": "상자에 넣은 선물은 무엇이었을까?",
+    }
+    cands = theme["candidates"]
+    theme["features"] = [
+        feature(name, {c: families.GIFTS.fact(c, name) or "" for c in cands})
+        for name in families.GIFTS.features
+    ]
+    # 월(흔적) 무게로 목도리·공, 금(기록) 소리로 그림책이 빠짐
+    for d, clue, kind, feat, allowed in (
+        ("MON", "상자를 들어 보니 묵직한 무게였어.", "RULE", "무게", ["묵직한 무게"]),
+        ("TUE", "포장한 사람은 단단한 느낌이라고 했대.", "HINT", "눌러 본 느낌", ["단단한 느낌"]),
+        ("WED", "가게 아저씨는 묵직한 무게의 봉지를 봤대.", "HINT", "무게", ["묵직한 무게"]),
+        ("THU", "상자를 눌러 보니 단단한 느낌이 났어.", "HINT", "눌러 본 느낌", ["단단한 느낌"]),
+        (
+            "FRI",
+            "메모에 달그락 소리가 난다고 적혀 있었어.",
+            "RULE",
+            "흔들면 나는 소리",
+            ["달그락 소리"],
+        ),
+    ):
+        day = checks.theme_day(theme, d)
+        day["clue"] = clue
+        day["condition"] = {"kind": kind, "feature": feat, "allowed": allowed}
+    return theme
+
+
+# ---------------------------------------------------------------- 등록표·씨앗
+@pytest.mark.parametrize("code", list(SEEDS))
+def test_in_hand_seed_topic_gives_story_type(code: str) -> None:
+    found = families.parse_topic(SEEDS[code])
+    assert found is not None and found.code == code and found.target_in_hand
+    user = prompts.plan_user(ThemeDraftRequest.model_validate(request_body(topic=SEEDS[code])), [])
+    assert f"storyType: {code}" in user and "처음부터 등장인물이 가지고 있다" in user
+
+
+def test_fact_tables_values_do_not_contain_each_other() -> None:
+    for table in (families.ANIMALS, families.GIFTS, families.INGREDIENTS):
+        for i, name in enumerate(table.features):
+            values = {row[i] for row in table.rows.values()}
+            assert not [
+                (a, b)
+                for a in values
+                for b in values
+                if a != b and a.replace(" ", "") in b.replace(" ", "")
+            ], (table.name, name)
+
+
+def test_in_hand_trace_features() -> None:
+    assert checks.traceable("흔들면 나는 소리", families.GIFT)
+    assert checks.traceable("물드는 색", families.SECRET_INGREDIENT)
+    assert checks.traceable("묻은 꽃가루", families.ORIGIN)
+    assert not checks.traceable("자라는 곳", families.SECRET_INGREDIENT)  # 목격·기록 날
+    assert not checks.traceable("냄새")  # 숨은 것 가족은 그대로
+
+
+# ---------------------------------------------------------------- 코드 검사
+def test_gift_theme_passes_without_incident_and_hides_candidates_and_answer_values() -> None:
+    assert checks.check_theme(gift_theme(), 3) == []  # 동물이 아니라 incident·answerLook 필수 아님
+    assert checks.answer_facts(gift_theme()) == ["달그락 소리"]  # 그림책과 겹치는 값은 빼고
+    bad = checks.check_theme(
+        day_with(gift_theme(), "TUE", sceneNote="서윤이 그림책을 펼친 장면"), 3
+    )
+    assert bad == ["CANDIDATE_NAME TUE.sceneNote에 후보 선물 이름 ['그림책'](엔딩 전 글)"]
+    leak = {
+        **gift_theme(),
+        "intro": "생일에 받은 상자를 흔들자 달그락 소리가 났어요. 뭉치가 출동해요.",
+    }
+    bad = checks.check_theme(leak, 3)
+    assert bad == ["ANSWER_FACT intro에 정답만의 선물 값 ['달그락 소리'](엔딩 전 글)"]
+    assert list(checks.fix_targets(bad)) == ["intro"]
+    bad = checks.check_theme({**gift_theme(), "target": "머그컵이 든 상자"}, 3)
+    assert codes(bad) == ["TARGET_NAMES"]
+    outside = {**gift_theme(), "candidates": ["목도리", "머그컵", "고무공", "자전거"]}
+    assert "FACT_TABLE" in codes(checks.check_theme(outside, 3))
+
+
+def mission_inputs() -> MissionDraftRequest:
+    m = ThemeDraftRequest.model_validate(request_body()).mission_for("ANALYZE")
+    return MissionDraftRequest(
+        standards=m.standards,
+        thinking_type=m.thinking_type,
+        element_codes=m.element_codes,
+        grade_min=3,
+        grade_max=3,
+        input_type=m.input_type,
+        previous_failures=[],
+    )
+
+
+@pytest.mark.parametrize(
+    "question", ["그림책을 소개하는 글을 써 보자.", "달그락 소리가 나는 까닭을 써 보자."]
+)
+def test_gift_mission_with_candidate_or_answer_value_is_redone(question: str) -> None:
+    s = get_settings()
+    draft = Draft.model_validate(mission_draft("ANALYZE", question=question).model_dump())
+    bad = checks.check_mission(
+        gift_theme(),
+        mission_inputs(),
+        draft,
+        3,
+        s.mission_draft_question_max_chars,
+        s.followup_example_overlap_chars,
+    )
+    assert "CANDIDATE_NAME" in codes(bad)
+
+
+# ---------------------------------------------------------------- '못 찾은 대상' 전제 뒤집기
+def test_mission_dialogue_and_review_say_target_is_in_hand() -> None:
+    gift = gift_theme()
+    text = prompts.story_text(gift, "MON", 3)
+    assert "손에 든 대상: 생일에 받은 리본 상자" in text and "아직 찾지 못했으므로" not in text
+    assert "선물 이름, 머리 낱말·정답의 표 값 포함" not in text  # 후보 범주는 '물건'
+    assert (
+        "물건 후보 이름, 머리 낱말·정답의 표 값 포함): 목도리, 머그컵, 고무공, 그림책, 달그락 소리"
+        in text
+    )
+    assert "아직 찾지 못했으므로" in prompts.story_text(valid_theme(), "MON", 3)
+    plain = Draft.model_validate(mission_draft("ANALYZE").model_dump())
+    assert "손에 든 대상(대화에 나와도 됨" in prompts.dialogue_user(gift, "MON", plain, 3, [])
+    review = json.loads(
+        prompts.mission_review_user(mission_inputs(), plain, 3, gift["target"], in_hand=True)
+    )
+    assert review["target"] == "생일에 받은 리본 상자(처음부터 손에 든 대상)"
+    assert "손에 든 것 종류(storyType ORIGIN·GIFT·SECRET_INGREDIENT)" in prompts.REVIEW_SYSTEM
+    assert prompts.target_in_hand(gift) and not prompts.target_in_hand(valid_theme())
+
+
+def test_pictures_keep_gift_closed_and_ingredient_food_hidden_until_reveal() -> None:
+    gift = gift_theme()
+    intro2 = prompts.cut_image_prompt(gift, "INTRO", 2, gift["introCuts"][1], [])
+    assert "closed (do not show what is inside)" in intro2
+    assert "Do not draw any of these gift items: 목도리, 머그컵, 고무공, 그림책." in intro2
+    outro3 = prompts.cut_image_prompt(gift, "OUTRO", 3, gift["outroCuts"][2], [])
+    assert "The answer, 머그컵, may appear" in outro3 and "gift items" not in outro3
+    mission = prompts.mission_image_prompt(
+        gift, "MON", Draft.model_validate(mission_draft("ANALYZE").model_dump()), []
+    )
+    assert "may appear in the characters' hands" in mission and "gift box stays closed" in mission
+    food = {**gift, "storyType": "SECRET_INGREDIENT", "target": "대회에 낸 할머니의 떡"}
+    intro = prompts.cut_image_prompt(food, "INTRO", 2, food["introCuts"][1], [])
+    assert "Do not draw 대회에 낸 할머니의 떡" in intro  # 물든 색이 답이라 엔딩 전엔 그리지 않음
+    video = prompts.video_prompt(gift, "INTRO", 4, gift["introCuts"][3], [])
+    assert "The gift box stays closed." in video and "Do not show any of these gift items" in video
+    assert prompts.cut_shows_target(gift, "INTRO", 1) and not prompts.cut_shows_target(
+        food, "INTRO", 1
+    )
+
+
+def test_fact_table_names_fit_candidate_length_check() -> None:
+    """사실표 이름이 후보 글자 수 검사(2~10자)에 걸리면 고를 때마다 다시 생성됨(쥐·공·쑥 → 바꿈)."""
+    lo, hi = checks.CANDIDATE_CHARS
+    for table in (families.ANIMALS, families.GIFTS, families.INGREDIENTS):
+        assert all(lo <= len(name) <= hi for name in table.rows), table.name

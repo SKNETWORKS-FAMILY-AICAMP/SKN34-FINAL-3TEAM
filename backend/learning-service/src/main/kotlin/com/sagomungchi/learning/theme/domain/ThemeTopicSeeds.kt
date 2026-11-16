@@ -19,14 +19,18 @@ enum class Season(private val months: Set<Month>) {
 
 /**
  * 줄거리 종류 (#634, 사용자 결정 2026-11-15·16). `label`은 `topic` 첫 칸에 그대로 들어가 ai가 읽는다(ai `STORY_TYPES`와 같은 표).
- * `targetLabel`은 넷째 칸 이름: 숨은 것은 `찾는 대상`, 동물 주인공은 정답을 드러내지 않는 `밝힐 것`(예: "떡을 몰래 먹은 동물").
- * 1차로 ①숨은 것·③동물 주인공만 씨앗이 있고, ②④⑤는 그 가족 실측을 통과하면 씨앗을 더해 켠다(씨앗이 없는 종류는 고르지 않음)
+ * `targetLabel`은 넷째 칸 이름: 숨은 것은 `찾는 대상`, 동물 주인공은 정답을 드러내지 않는 `밝힐 것`(예: "떡을 몰래 먹은 동물"),
+ * ② 출처·정체는 처음부터 손에 있는 것이라 `손에 든 것`(예: "생일에 받은 리본 상자", 2026-11-16 설계 ai.md 17.8.13).
+ * ①③②를 켰고 ④⑤는 그 가족 실측을 통과하면 씨앗을 더해 켠다(씨앗이 없는 종류는 고르지 않음)
  */
 enum class StoryType(val label: String, val targetLabel: String) {
     LOST("잃어버린 것 찾기", "찾는 대상"),
     TREASURE("보물 쪽지 따라가기", "찾는 대상"),
     PRANK("동물 장난꾸러기 찾기", "밝힐 것"),
     FOOTPRINT("발자국 주인 찾기", "밝힐 것"),
+    ORIGIN("출처 찾기", "손에 든 것"),
+    GIFT("선물 상자 수수께끼", "손에 든 것"),
+    SECRET_INGREDIENT("비밀 재료 찾기", "손에 든 것"),
     ;
 
     companion object {
@@ -68,6 +72,9 @@ object ThemeTopicSeeds {
     private val TREASURE = StoryType.TREASURE
     private val PRANK = StoryType.PRANK
     private val FOOTPRINT = StoryType.FOOTPRINT
+    private val ORIGIN = StoryType.ORIGIN
+    private val GIFT = StoryType.GIFT
+    private val INGREDIENT = StoryType.SECRET_INGREDIENT
 
     val ALL: List<ThemeTopicSeed> = listOf(
         ThemeTopicSeed(LOST, "탐정(탐정 모자·돋보기)", "동네 시장", "가게 주인 아이의 반려 고양이"),
@@ -109,6 +116,21 @@ object ThemeTopicSeeds {
         ThemeTopicSeed(FOOTPRINT, "소방관(방화복·소방 헬멧)", "마을 소방서 앞마당", "진흙길에 발자국을 남긴 동물"),
         ThemeTopicSeed(FOOTPRINT, "생태 연구원(연구 조끼·관찰 모자)", "강가 갈대밭", "젖은 모래에 발자국을 남긴 동물"),
         ThemeTopicSeed(FOOTPRINT, "동물 탐사대(탐사 조끼·쌍안경)", "뒷산 산책로", "눈길에 발자국을 남긴 동물", setOf(Season.WINTER)),
+        // ② 출처 찾기(#634, ai.md 17.8.13): 손에 든 것이 온 곳(장소)을 밝힘, 잃은 사람·보낸 사람을 탓하지 않음
+        ThemeTopicSeed(ORIGIN, "수의사(하얀 가운·청진기 목걸이)", "아파트 놀이터", "놀이터에서 만난 길 잃은 강아지"),
+        ThemeTopicSeed(ORIGIN, "택배 기사(택배 조끼·모자)", "마을 상가 거리", "주소가 지워진 택배 상자"),
+        ThemeTopicSeed(ORIGIN, "탐정(탐정 모자·돋보기)", "학교 앞 문방구 거리", "운동장에 떨어져 있던 털장갑"),
+        ThemeTopicSeed(ORIGIN, "우체부(우체부 모자·가방)", "바닷가 마을", "우체통에 들어 있던 보낸 곳 없는 편지"),
+        // ② 선물 상자 수수께끼: 상자 안 선물(물건)을 밝힘, 대상 글에 선물 이름을 쓰지 않음
+        ThemeTopicSeed(GIFT, "마술사(마술 모자·나비넥타이)", "아이의 생일 파티", "생일에 받은 리본 상자"),
+        ThemeTopicSeed(GIFT, "택배 기사(택배 조끼·모자)", "아파트 현관", "할머니가 보낸 선물 상자"),
+        ThemeTopicSeed(GIFT, "사진가(카메라 목걸이·베레모)", "학교 교실", "선생님이 준비한 선물 상자"),
+        ThemeTopicSeed(GIFT, "탐정(탐정 모자·돋보기)", "마을 도서관", "친구가 남긴 수수께끼 선물 상자"),
+        // ② 비밀 재료 찾기: 음식에 넣은 재료를 밝힘, 대상 글에 재료 이름·색을 쓰지 않음
+        ThemeTopicSeed(INGREDIENT, "요리사(요리사 모자·앞치마)", "마을 떡집", "대회에 낸 할머니의 떡"),
+        ThemeTopicSeed(INGREDIENT, "제빵사(제빵사 모자·앞치마)", "동네 빵집", "빵집 사장님의 새 빵"),
+        ThemeTopicSeed(INGREDIENT, "식품 연구원(실험 가운·고글)", "어린이 요리 교실", "친구가 만든 주스"),
+        ThemeTopicSeed(INGREDIENT, "농부(밀짚모자·작은 앞치마)", "체험 농장", "농장 카페의 비밀 케이크"),
     )
 
     /** 같은 학년에서 쓴 씨앗을 다시 쓰지 않는 기간(주) = 목록 개수. 목록을 늘리면 반복 주기도 늘어남 */
@@ -117,7 +139,7 @@ object ThemeTopicSeeds {
     /** 같은 학년에서 쓴 역할을 다시 쓰지 않는 기간(주, 기준안 #634: 탐정 쏠림 #437 실측 19건 중 13건) */
     const val ROLE_WEEKS: Long = 4
 
-    private val NEW = Regex("""^줄거리: (.+?) / 뭉치 역할: (.+?) / 장소: (.+?) / (찾는 대상|밝힐 것): (.+)$""")
+    private val NEW = Regex("""^줄거리: (.+?) / 뭉치 역할: (.+?) / 장소: (.+?) / (찾는 대상|밝힐 것|손에 든 것): (.+)$""")
     private val OLD = Regex("""^뭉치 역할: (.+?) / 장소: (.+?) / 찾는 대상: (.+)$""")
 
     /**

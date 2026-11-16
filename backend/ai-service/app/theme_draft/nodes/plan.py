@@ -13,8 +13,8 @@ from langgraph.runtime import Runtime
 
 from app.theme_draft.checks import (
     DAYS,
-    apply_animal_facts,
     apply_evidence_plan,
+    apply_facts,
     check_theme,
     evidence_plan_problems,
     fill_rules_out,
@@ -101,15 +101,15 @@ def code_adjust(theme: dict) -> dict[str, list[str]]:
     고칠 칸 {경로: [사유]}를 돌려준다(바뀐 것이 없으면 빈 사전).
     """
     targets: dict[str, list[str]] = {}
-    # 0. 동물 주인공 가족(#634): 특징 값을 동물 사실표 값으로 맞춤. 그 특징을 쓰는 날 단서는
+    # 0. 사실표 종류(#634 동물·선물·재료): 특징 값을 사실표 값으로 맞춤. 그 특징을 쓰는 날 단서는
     #    새 값으로 고쳐 씀
-    for feature in apply_animal_facts(theme):
+    for feature in apply_facts(theme):
         fill_rules_out(theme)
         for d in theme.get("days") or []:
             cond = d.get("condition") or {}
             if cond.get("feature") == feature:
                 targets.setdefault(f"{d['day']}.clue", []).append(
-                    f"ANIMAL_FACT {d['day']} 특징 '{feature}' 값을 코드가 동물 사실표로 "
+                    f"FACT_FIX {d['day']} 특징 '{feature}' 값을 코드가 사실표로 "
                     f"맞춤(허용 값 "
                     f"{cond.get('allowed')}): 단서 문장을 새 값에 맞게"
                 )

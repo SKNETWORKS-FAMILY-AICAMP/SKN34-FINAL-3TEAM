@@ -22,13 +22,7 @@ from typing import Any
 from app.followup.leak_guard import find_text_leaks
 from app.mission_draft import checks as mission_checks
 from app.mission_draft.models import Draft, MissionDraftRequest
-from app.theme_draft.families import (
-    ANIMAL_FACTS,
-    ANIMAL_FEATURES,
-    animal_fact,
-    is_animal,
-    story_type,
-)
+from app.theme_draft.families import StoryType, is_animal, story_type
 
 DAYS = ("MON", "TUE", "WED", "THU", "FRI")
 DAY_KO = dict(zip(DAYS, ("월", "화", "수", "목", "금"), strict=True))
@@ -115,10 +109,6 @@ TRACE_FEATURE = re.compile(
 NOT_TRACE_FEATURE = re.compile(
     r"빛|햇|그늘|밝|조명|소리|냄새|바람|거리|시각|시간|꽃|풍경|시설|하늘|벽 색"
 )
-# 동물 주인공 가족(#634 ③)의 흔적 특징: 동물 몸이 남기는 것(사실표의 몸을 덮은 것·발자국 발 수·
-# 발자국의 발톱). 꼬리 모양은 흔적에 남지 않아 목격·기록 날로(위 표의 '모양'에 걸리지 않게 동물은
-# 이 표만 봄, 설계 17.8.5)
-ANIMAL_TRACE_FEATURE = re.compile(r"발자국|발가락|발톱|덮은|털|깃털|가시")
 # 요일별 증거 종류·기록 매체 코드 배정(#535). 모델이 고르게 두면 기록이 단서 100개 중 49~53개로 쏠려
 # (실측 2026-11-11, 예시를 빼도 줄지 않음) 이름·주제 씨앗처럼 코드가 정한다. 구성은 흔적·목격 각
 # 1개 이상, 기록 2개 이하(기준안, 세 구성 평균이면 종류마다 1.67개)
@@ -237,7 +227,8 @@ FIX_REASON = (
     re.compile(r"^CUT_ACTION ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery|sceneNote)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
-    re.compile(r"^CANDIDATE_NAME (\S+?)에 "),  # #634 ③ 엔딩 전 글의 후보 동물 이름
+    re.compile(r"^CANDIDATE_NAME (\S+?)에 "),  # #634 엔딩 전 글의 후보 이름(사실표 종류)
+    re.compile(r"^ANSWER_FACT (\S+?)에 "),  # #634 ② 엔딩 전 글의 정답만의 표 값
     re.compile(r"^CLUE_WORDING (MON|TUE|WED|THU|FRI) (clue) "),
     re.compile(r"^CLUE_OWNER (MON|TUE|WED|THU|FRI) (clue) "),
     # 단서 문장의 허용 값 낱말이 빠지거나 허용 밖 값이 들어가면 그 단서만 고쳐 씀(#535 7차: 흔적
@@ -306,11 +297,17 @@ def evidence_plan(seed: str) -> dict[str, dict[str, str | None]]:
     }
 
 
-def traceable(feature: str | None, animal: bool = False) -> bool:
-    """그날 특징이 흔적(TRACE)으로 남을 수 있는지(TRACE_FEATURE 기준안, 동물 주인공은 몸 흔적도)."""
+def traceable(feature: str | None, kind: StoryType | None = None) -> bool:
+    """그날 특징이 흔적(TRACE)으로 남을 수 있는지(TRACE_FEATURE 기준안).
+
+    종류별 흔적 특징(families: 동물은 몸 흔적만, 손에 든 것은 대상에 묻거나 밴 것·대상 자체를 더함).
+    """
     f = feature or ""
-    if animal:
-        return bool(ANIMAL_TRACE_FEATURE.search(f))
+    if kind is not None and kind.trace is not None:
+        if kind.trace.search(f):
+            return True
+        if kind.trace_only:
+            return False
     return bool(TRACE_FEATURE.search(f)) and not NOT_TRACE_FEATURE.search(f)
 
 
@@ -328,16 +325,16 @@ def fit_evidence_plan(theme: Theme) -> list[str]:
     feat = {
         d.get("day"): (d.get("condition") or {}).get("feature") for d in theme.get("days") or []
     }
-    animal = is_animal(theme)
+    kind = story_type(theme)
     changed: list[str] = []
     for day in DAYS:
         slot = plan.get(day) or {}
-        if slot.get("kind") != "TRACE" or traceable(feat.get(day), animal):
+        if slot.get("kind") != "TRACE" or traceable(feat.get(day), kind):
             continue
         order = [
             o for k in ("SIGHTING", "RECORD") for o in DAYS if (plan.get(o) or {}).get("kind") == k
         ]
-        swap = next((o for o in order if traceable(feat.get(o), animal)), None)
+        swap = next((o for o in order if traceable(feat.get(o), kind)), None)
         if swap:
             plan[day], plan[swap] = plan[swap], plan[day]
             # 단서 종류('발자국'은 흔적 날, '목격'·'기록'은 그 날)도 배정을 따라 함께 바꿈
@@ -387,21 +384,22 @@ def _adnominal(word: str) -> bool:
     return (ord(last) - 0xAC00) % 28 in (4, 8)  # 받침 ㄴ(4)·ㄹ(8)
 
 
-def apply_animal_facts(theme: Theme) -> list[str]:
-    """동물 주인공 가족의 특징 표 값을 동물 사실표 값으로 맞춘다(#634, 사실표는 families).
+def apply_facts(theme: Theme) -> list[str]:
+    """사실표 종류(동물·선물·재료)의 특징 표 값을 사실표 값으로 맞춘다(#634, 사실표는 families).
 
     모델이 지은 동물 특징이 틀려 글 검토 CLUE_LOGIC으로 줄거리를 되풀이했음(1차 작은 실측). 표 밖
-    동물·특징은 그대로 두고 check_theme이 ANIMAL_TABLE로 다시 만들게 한다. 값을 바꾼 특징 이름을
+    후보·특징은 그대로 두고 check_theme이 FACT_TABLE로 다시 만들게 한다. 값을 바꾼 특징 이름을
     돌려준다(그 특징을 쓰는 날 단서는 칸 고쳐 쓰기).
     """
-    if not is_animal(theme):
+    table = story_type(theme).facts
+    if table is None:
         return []
     changed = []
     for f in theme.get("features") or []:
         name = str(f.get("name") or "")
         old = {str(v.get("candidate")): v.get("value") for v in f.get("values") or []}
         for v in f.get("values") or []:
-            fact = animal_fact(str(v.get("candidate") or ""), name)
+            fact = table.fact(str(v.get("candidate") or ""), name)
             if fact is not None and v.get("value") != fact:
                 v["value"] = fact
                 changed.append(name)
@@ -419,30 +417,55 @@ def apply_animal_facts(theme: Theme) -> list[str]:
     return list(dict.fromkeys(changed))
 
 
-def animal_table_problems(theme: Theme) -> list[str]:
-    """후보·특징이 동물 사실표 안인지, 값이 표 값인지(ANIMAL_TABLE, 줄거리 다시 생성)."""
+def fact_table_problems(theme: Theme) -> list[str]:
+    """후보·특징이 사실표 안인지, 값이 표 값인지(FACT_TABLE, 줄거리 다시 생성)."""
+    table = story_type(theme).facts
+    if table is None:
+        return []
     bad = []
-    outside = [c for c in theme.get("candidates") or [] if c.strip() not in ANIMAL_FACTS]
+    outside = [c for c in theme.get("candidates") or [] if c.strip() not in table.rows]
     if outside:
         bad.append(
-            f"ANIMAL_TABLE 후보 {outside}는 동물 사실표 밖(표 이름 그대로: {list(ANIMAL_FACTS)})"
+            f"FACT_TABLE 후보 {outside}는 {table.name} 사실표 밖(표 이름 그대로: "
+            f"{list(table.rows)})"
         )
     names = [f.get("name") for f in theme.get("features") or []]
-    if odd := [n for n in names if n not in ANIMAL_FEATURES]:
+    if odd := [n for n in names if n not in table.features]:
         bad.append(
-            f"ANIMAL_TABLE 특징 {odd}는 동물 사실표 밖"
-            f"(표 특징 이름 그대로: {list(ANIMAL_FEATURES)})"
+            f"FACT_TABLE 특징 {odd}는 {table.name} 사실표 밖"
+            f"(표 특징 이름 그대로: {list(table.features)})"
         )
     wrong = [
         f"{f.get('name')}·{v.get('candidate')}"
         for f in theme.get("features") or []
         for v in f.get("values") or []
-        if (fact := animal_fact(str(v.get("candidate") or ""), str(f.get("name") or "")))
+        if (fact := table.fact(str(v.get("candidate") or ""), str(f.get("name") or "")))
         and v.get("value") != fact
     ]
     if wrong:
-        bad.append(f"ANIMAL_TABLE 특징 값이 사실표와 다름 {wrong}")
+        bad.append(f"FACT_TABLE 특징 값이 사실표와 다름 {wrong}")
     return bad
+
+
+def answer_facts(theme: Theme) -> list[str]:
+    """정답만 가진 사실표 값(다른 후보 누구도 같은 특징에서 그 값을 갖지 않음). 엔딩 전 글에 나오면
+    단서 없이 정답이 보인다(#634 ② 설계: '분홍빛 떡'이면 딸기, ANSWER_FACT)."""
+    table = story_type(theme).facts
+    answer = str(theme.get("answer") or "").strip()
+    cands = [str(c).strip() for c in theme.get("candidates") or []]
+    if table is None or answer not in table.rows:
+        return []
+    out = []
+    for feature in table.features:
+        mine = table.fact(answer, feature)
+        others = {table.fact(c, feature) for c in cands if c != answer}
+        if mine and mine not in others:
+            out.append(mine)
+    return out
+
+
+def answer_fact_hits(theme: Theme, text: str | None) -> list[str]:
+    return [v for v in answer_facts(theme) if compact(v) in compact(text)]
 
 
 # 보물 쪽지(#634 ①): 숨긴 곳은 끝까지 모르는 답인데 엔딩 전 글이 '숨긴 자리에서 흔적을 찾았다'처럼
@@ -1099,15 +1122,21 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         bad.append("CANDIDATES 후보 이름에 색 낱말(색으로 빼면 이름과 모순)")
     if story_type(theme).code == "TREASURE":
         bad += hide_spot_problems(theme)
-    if animal:
-        bad += animal_table_problems(theme)
-        # target은 미션·대화·그림 모델에 그대로 넘어가 정답 유출 검사 밖이라 후보 이름이
-        # 없어야 함(설계 17.8.5)
-        if named := candidate_names(theme, theme.get("target")):
-            bad.append(f"TARGET_NAMES target에 후보 동물 이름 {named}(정답을 드러내지 않는 말로)")
+    if (table := story_type(theme).facts) is not None:  # 사실표 종류(동물·선물·재료, #634)
+        bad += fact_table_problems(theme)
+        # target은 미션·대화·그림 모델에 그대로 넘어가 정답 유출 검사 밖이라 후보 이름·정답만의
+        # 표 값이 없어야 함(설계 17.8.5·17.8.13)
+        if named := candidate_names(theme, theme.get("target")) + answer_fact_hits(
+            theme, theme.get("target")
+        ):
+            bad.append(
+                f"TARGET_NAMES target에 후보 {table.name} 이름 {named}(정답을 드러내지 않는 말로)"
+            )
         for path, text in candidate_name_fields(theme):
             if named := candidate_names(theme, text):
-                bad.append(f"CANDIDATE_NAME {path}에 후보 동물 이름 {named}(엔딩 전 글)")
+                bad.append(f"CANDIDATE_NAME {path}에 후보 {table.name} 이름 {named}(엔딩 전 글)")
+            if hits := answer_fact_hits(theme, text):
+                bad.append(f"ANSWER_FACT {path}에 정답만의 {table.name} 값 {hits}(엔딩 전 글)")
     days = theme.get("days") or []
     if tuple(d.get("day") for d in days) != DAYS:
         return bad + [f"DAYS 요일은 {list(DAYS)} 순서(지금 {[d.get('day') for d in days]})"]
@@ -1268,8 +1297,14 @@ def check_mission(
         bad.append("LANGUAGE 한국어 밖 글자(가나·한자)")
     # 동물 주인공 가족(#634 ③): 미션이 후보 동물을 말하면 정해진 단서보다 먼저 근거가 샘(설계 17.8.5
     # 남은 위험, 프롬프트로 먼저 막고 새면 그 미션만 다시)
-    if is_animal(theme) and (named := candidate_names(theme, "\n".join([draft.title, *texts]))):
-        bad.append(f"CANDIDATE_NAME 문제·안내·생각 열기 질문·예시 답에 후보 동물 이름 {named}")
+    joined = "\n".join([draft.title, *texts])
+    if story_type(theme).hide_candidates and (
+        named := candidate_names(theme, joined) + answer_fact_hits(theme, joined)
+    ):
+        name = story_type(theme).facts.name  # type: ignore[union-attr]
+        bad.append(
+            f"CANDIDATE_NAME 문제·안내·생각 열기 질문·예시 답에 후보 {name} 이름·정답 값 {named}"
+        )
     if any("수" in st.code for st in request.standards):  # 수학 미션만(성취기준 코드 4수·6수)
         final = draft.answer_key.final_answer if draft.answer_key else None
         if ahead := math_ahead([*texts, final or ""], grade):
@@ -1304,7 +1339,9 @@ def hook_problems(theme: Theme, day: str, hook: str, draft: Draft, overlap: int)
     key = compact(theme.get("answer"))
     if key and key in compact(hook):
         bad.append("THEME_ANSWER_LEAK")
-    if is_animal(theme) and candidate_names(theme, hook):
+    if story_type(theme).hide_candidates and (
+        candidate_names(theme, hook) or answer_fact_hits(theme, hook)
+    ):
         bad.append("CANDIDATE_NAME")
     return bad
 
@@ -1416,10 +1453,11 @@ def check_dialogue(
             bad.append("LEAK ANSWER_KEY")
         if key and key in compact(text):
             bad.append(f"THEME_ANSWER_LEAK 대화에 테마 정답 낱말 '{theme['answer']}'")
-    if is_animal(theme):  # #634 ③: 후보 동물은 엔딩 전 대화에 말하지도 나오지도 않음
+    if story_type(theme).hide_candidates:  # #634: 후보는 엔딩 전 대화에 말하지도 나오지도 않음
         said = "\n".join(f"{x.get('speaker') or ''} {x.get('text') or ''}" for x in llm_lines)
-        if named := candidate_names(theme, said):
-            bad.append(f"CANDIDATE_NAME 대화 줄에 후보 동물 이름 {named}")
+        if named := candidate_names(theme, said) + answer_fact_hits(theme, said):
+            name = story_type(theme).facts.name  # type: ignore[union-attr]
+            bad.append(f"CANDIDATE_NAME 대화 줄에 후보 {name} 이름 {named}")
     return list(dict.fromkeys(bad))
 
 

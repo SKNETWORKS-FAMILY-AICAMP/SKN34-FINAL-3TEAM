@@ -66,7 +66,13 @@ async def review_mission(
     generated = await ctx.review_llm.generate(
         system=body.MISSION_REVIEW_SYSTEM,
         user=body.mission_review_user(
-            request, draft, ctx.grade, theme.get("target"), knowledge, body.story_brief(theme, day)
+            request,
+            draft,
+            ctx.grade,
+            theme.get("target"),
+            knowledge,
+            body.story_brief(theme, day),
+            in_hand=body.target_in_hand(theme),
         ),
         output=GeneratedMissionReview,
         call_type=THEME_CALL_TYPE,

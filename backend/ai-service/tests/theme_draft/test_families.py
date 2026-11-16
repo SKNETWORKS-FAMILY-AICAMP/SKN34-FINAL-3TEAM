@@ -185,10 +185,12 @@ def test_animal_trace_words_and_features() -> None:
     assert checks.target_words({"target": "눈길에 발자국을 남긴 동물"}) == ["동물"]
     assert checks.target_words({"target": "할아버지가 숨긴 타임캡슐"}) == ["타임캡슐"]
     assert checks.target_words({"target": "강아지 보리"}) == ["보리", "강아지"]
-    assert not checks.traceable("발가락 수") and checks.traceable("발자국 발 수", animal=True)
-    assert checks.traceable("몸을 덮은 것", animal=True) and checks.traceable("발자국의 발톱", True)
-    assert not checks.traceable("꼬리 모양", animal=True)  # 꼬리는 목격·기록 날
-    assert not checks.traceable("냄새", animal=True)
+    assert not checks.traceable("발가락 수") and checks.traceable("발자국 발 수", families.PRANK)
+    assert checks.traceable("몸을 덮은 것", families.PRANK) and checks.traceable(
+        "발자국의 발톱", families.PRANK
+    )
+    assert not checks.traceable("꼬리 모양", families.PRANK)  # 꼬리는 목격·기록 날
+    assert not checks.traceable("냄새", families.PRANK)
     bad = checks.check_theme(
         day_with(animal_theme(), "MON", clue="발자국에 발톱 자국이 있었어."), 3
     )
@@ -199,22 +201,22 @@ def test_animal_trace_words_and_features() -> None:
 
 def test_animal_fact_table_values_are_fixed_by_code() -> None:
     """모델이 지은 동물 특징 값은 사실표 값으로 맞추고, 그 특징을 쓰는 날 허용 값은 허용하던 후보의
-    새 값으로 옮긴다(빼려던 후보가 그대로). 표 밖 동물·특징은 ANIMAL_TABLE로 다시 생성."""
+    새 값으로 옮긴다(빼려던 후보가 그대로). 표 밖 동물·특징은 FACT_TABLE로 다시 생성."""
     theme = animal_theme()
     tail = next(f for f in theme["features"] if f["name"] == "꼬리 모양")
     for v in tail["values"]:
         v["value"] = {"너구리": "고리무늬 꼬리"}.get(v["candidate"], v["value"])
     checks.theme_day(theme, "FRI")["condition"]["allowed"] = ["고리무늬 꼬리"]
-    assert checks.animal_table_problems(theme) == [
-        "ANIMAL_TABLE 특징 값이 사실표와 다름 ['꼬리 모양·너구리']"
+    assert checks.fact_table_problems(theme) == [
+        "FACT_TABLE 특징 값이 사실표와 다름 ['꼬리 모양·너구리']"
     ]
-    assert checks.apply_animal_facts(theme) == ["꼬리 모양"]
+    assert checks.apply_facts(theme) == ["꼬리 모양"]
     assert checks.theme_day(theme, "FRI")["condition"]["allowed"] == ["굵은 꼬리"]
-    assert checks.animal_table_problems(theme) == []
-    assert checks.apply_animal_facts(valid_theme()) == []  # 숨은 것 가족은 그대로
+    assert checks.fact_table_problems(theme) == []
+    assert checks.apply_facts(valid_theme()) == []  # 숨은 것 가족은 그대로
     outside = {**animal_theme(), "candidates": ["고양이", "너구리", "까치", "여우"]}
     outside["features"] = [*outside["features"], feature("다니는 때", {"고양이": "밤"})]
-    assert codes(checks.animal_table_problems(outside)) == ["ANIMAL_TABLE", "ANIMAL_TABLE"]
+    assert codes(checks.fact_table_problems(outside)) == ["FACT_TABLE", "FACT_TABLE"]
 
 
 def test_animal_rules_carry_fact_table_and_values_do_not_contain_each_other() -> None:
@@ -347,7 +349,10 @@ def test_animal_mission_story_uses_incident_and_bans_candidate_heads() -> None:
     theme = animal_theme()
     text = prompts.story_text(theme, "MON", 3)
     assert "이번 주 사건: 떡 접시가 비어 있고" in text and "동물 이야기·동물 설명" in text
-    assert "동물 후보 이름, 머리 낱말 포함): 고양이, 너구리, 까치, 다람쥐" in text
+    assert (
+        "동물 후보 이름, 머리 낱말·정답의 표 값 포함): 고양이, 너구리, 까치, 다람쥐, 굵은 꼬리"
+        in text
+    )
     assert "이번 주 사건" not in prompts.story_text(valid_theme(), "MON", 3)
     assert prompts.story_brief(theme, "MON")["incident"].startswith("떡 접시")
     assert "incident" not in prompts.story_brief(valid_theme(), "MON")

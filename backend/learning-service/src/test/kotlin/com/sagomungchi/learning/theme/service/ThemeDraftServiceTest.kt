@@ -213,7 +213,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         val topic = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = null, missions = emptyList())).input.topic
 
         val parsed = ThemeTopicSeeds.parse(topic)!!
-        assertTrue(parsed.type in setOf(StoryType.PRANK, StoryType.FOOTPRINT), topic)
+        assertTrue(parsed.type !in setOf(StoryType.LOST, StoryType.TREASURE), topic)
         assertNotEquals("경찰관", parsed.roleName) // 장난꾸러기 찾기 경찰관 씨앗도 역할로 빠짐
     }
 
