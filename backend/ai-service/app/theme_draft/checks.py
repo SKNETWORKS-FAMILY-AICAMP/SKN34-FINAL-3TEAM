@@ -22,7 +22,13 @@ from typing import Any
 from app.followup.leak_guard import find_text_leaks
 from app.mission_draft import checks as mission_checks
 from app.mission_draft.models import Draft, MissionDraftRequest
-from app.theme_draft.families import ANIMAL_FACTS, ANIMAL_FEATURES, animal_fact, is_animal
+from app.theme_draft.families import (
+    ANIMAL_FACTS,
+    ANIMAL_FEATURES,
+    animal_fact,
+    is_animal,
+    story_type,
+)
 
 DAYS = ("MON", "TUE", "WED", "THU", "FRI")
 DAY_KO = dict(zip(DAYS, ("월", "화", "수", "목", "금"), strict=True))
@@ -239,6 +245,7 @@ FIX_REASON = (
     # 되풀이됨)
     re.compile(r"^CLUE_TEXT (MON|TUE|WED|THU|FRI) (clue) "),
     re.compile(r"^OUTRO_RECAP (outro) "),
+    re.compile(r"^HIDE_SPOT (MON|TUE|WED|THU|FRI) (sceneNote|discovery|clue|missionHook) "),
     # #634 ③: 사건(incident)·정답 동물 모습(answerLook)이 비면 그 칸만 써 넣음(판정 실측 3건이
     # 이 사유로 줄거리를 다시 만듦)
     re.compile(r"^REQUIRED (incident|answerLook)$"),
@@ -435,6 +442,24 @@ def animal_table_problems(theme: Theme) -> list[str]:
     ]
     if wrong:
         bad.append(f"ANIMAL_TABLE 특징 값이 사실표와 다름 {wrong}")
+    return bad
+
+
+# 보물 쪽지(#634 ①): 숨긴 곳은 끝까지 모르는 답인데 엔딩 전 글이 '숨긴 자리에서 흔적을 찾았다'처럼
+# 이미 아는 듯이 써서 글 검토 CLUE_LOGIC(1차 판정 2회 8번 중 7번이 보물 쪽지)
+HIDE_SPOT = re.compile(r"숨(?:긴|겨 ?둔|겨 ?놓은) ?(?:자리|곳|장소|위치)")
+
+
+def hide_spot_problems(theme: Theme) -> list[str]:
+    """보물 쪽지 엔딩 전 글에 '숨긴 자리·숨긴 곳'(HIDE_SPOT, 칸 고쳐 쓰기)."""
+    bad = []
+    for d in theme.get("days") or []:
+        for k in ("sceneNote", "discovery", "clue", "missionHook"):
+            if m := HIDE_SPOT.search(str(d.get(k) or "")):
+                bad.append(
+                    f"HIDE_SPOT {d['day']} {k} 숨긴 곳은 아직 모르는데 '{m.group()}'이라고 씀"
+                    "(보물을 들고 지나간 길·잠시 내려놓은 자리로)"
+                )
     return bad
 
 
@@ -1072,6 +1097,8 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         bad.append(f"CANDIDATES 후보는 {CANDIDATE_CHARS[0]}~{CANDIDATE_CHARS[1]}자")
     if any(COLOR.search(c) for c in cands):
         bad.append("CANDIDATES 후보 이름에 색 낱말(색으로 빼면 이름과 모순)")
+    if story_type(theme).code == "TREASURE":
+        bad += hide_spot_problems(theme)
     if animal:
         bad += animal_table_problems(theme)
         # target은 미션·대화·그림 모델에 그대로 넘어가 정답 유출 검사 밖이라 후보 이름이

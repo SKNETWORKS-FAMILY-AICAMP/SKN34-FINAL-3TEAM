@@ -388,3 +388,21 @@ def test_empty_incident_is_field_fixed_and_subject_after_place_word_is_found() -
     assert "이번 주 사건 물건·일 한 줄" in prompts.fix_rules(animal_theme(), "incident")[0]
     assert not checks.cut_action_problems("강가 안내원이 너구리를 부드럽게 안아 올린다.")
     assert checks.cut_action_problems("강가에서 뭉치가 너구리를 안아 올린다.")
+
+
+def test_treasure_hide_spot_before_ending_is_field_fixed() -> None:
+    """보물 쪽지: 숨긴 곳은 끝까지 모르는 답이라 엔딩 전 글에 '숨긴 자리'를 쓰면 HIDE_SPOT(칸 고쳐
+    쓰기). 다른 종류·종료 이야기는 보지 않음."""
+    treasure = {**valid_theme(), "storyType": "TREASURE"}
+    assert checks.check_theme(treasure, 3) == []
+    bad = checks.check_theme(day_with(treasure, "MON", discovery="숨긴 자리에서 흔적을 찾았어!"), 3)
+    assert codes(bad) == ["HIDE_SPOT"] and list(checks.fix_targets(bad)) == ["MON.discovery"]
+    assert (
+        "숨겨 둔 곳"
+        in checks.hide_spot_problems(day_with(treasure, "TUE", clue="숨겨 둔 곳 바닥은 흙이었어."))[
+            0
+        ]
+    )
+    lost = day_with(valid_theme(), "MON", discovery="숨긴 자리에서 흔적을 찾았어!")
+    assert "HIDE_SPOT" not in codes(checks.check_theme(lost, 3))
+    assert "HIDE_SPOT" in families.type_rules(families.TREASURE)
