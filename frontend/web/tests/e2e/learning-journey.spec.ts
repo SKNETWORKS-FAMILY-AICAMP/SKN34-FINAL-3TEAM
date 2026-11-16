@@ -2,7 +2,7 @@ import { expect, test, type BrowserContext } from '@playwright/test'
 import { newParent, useGoogleIdentity, type GoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { queueWeeklyReport } from './support/db.ts'
-import { loginStudent, solveNarrative, startExtraMission, studentMenu } from './support/student.ts'
+import { expectJournalDone, loginStudent, solveNarrative, startExtraMission, studentMenu } from './support/student.ts'
 
 const mission = '쉬는 시간을 늘린다면?' // backend/learning-service/db/seed/demo_missions.sql 2번 (초3·NARRATIVE)
 
@@ -26,9 +26,8 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     // 미션 고르기는 추가 문제(EXTRA)라 무료는 프리미엄 전용이지만, E2E 무료 상품은 시드에서 명시적으로 켰다(seed/core.sql, #506)
     await startExtraMission(page, mission)
     await solveNarrative(page, '저는 찬성이에요. 쉬는 시간이 길면 친구들과 더 오래 놀 수 있기 때문이에요.')
-    const record = page.locator('article', { hasText: `국어 · ${mission}` })
-    await expect(record).toBeVisible()
-    await expect(record.getByText('완료', { exact: false })).toBeVisible()
+    // #648: 완료 기록은 내 공책 한 줄의 '마무리' 상태로 확인한다(옛 기록 카드 "국어 · 제목 … 완료" 대신)
+    await expectJournalDone(page, mission)
 
     // 답변 원문은 기본 비공개라 학부모 공책에 보이도록 학생이 공개로 바꾼다.
     await studentMenu(page, '설정')

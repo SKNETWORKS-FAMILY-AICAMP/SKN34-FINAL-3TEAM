@@ -12,6 +12,7 @@
 | #228 | 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3개) 호환, 논술 4~6학년([ai 4.1](ai.md#41-서술-30논술-31-서비스-호환-228)) |
 | #263 | M1 학습·평가 코드를 `ml/m1`로 이관 |
 | #493 | 모델 산출물 전체 SHA-256 업로드 절차, 기존 12개 객체 보완 |
+| #688 | 답변 표현 분류 API `POST /internal/toxicity/checks`, 모델 이름 `tox-`·범위 `answer-filter` (계약 #689, 구현 #691) |
 
 ## 1. 모델 레지스트리·S3 로딩 (#85)
 
@@ -362,3 +363,20 @@ learning은 미션 inputTemplate의 네 칸 이름을 essayLabels로 전달한�
 - [x] 최신 develop 반영·로컬 검증과 운영 적용 상태 구분
 
 혼합 관련 기존 체크박스는 미채택으로 범위에서 제외한다. 운영 S3 반영·모델 활성화·운영 품질 승인은 이 로컬 구현 검증 결과로 대신하지 않는다.
+
+## 8. 답변 표현 분류 API (#688, 계약 #689, 구현 #691)
+
+learning 답변 제출에서 단어 목록 다음 단계로 부르는 2분류 모델 추론이다. 계약은 [API 명세 4.3.4](../design/api-spec.md), 결정 근거는 [learning 16장](learning.md)
+
+| 항목 | 내용 |
+|---|---|
+| API | `POST /internal/toxicity/checks`, 호출 learning만(`CALLER_PATHS`에 `learning`, `INTERNAL_TOKEN_LEARNING`) |
+| 이름·범위 | 등록부 이름 규칙에 `tox-` 추가(scoring `model_versions.py`·`preflight.py`·`prepare_model_upload.py`, core `ModelLoadingService`, 이벤트 스키마), scope `answer-filter` |
+| 파일 | `score_cuts.json` 없는 5개. 사전 검사(#368)·로더가 이름 접두어별 파일 목록 사용 |
+| 로더 검사 | `single_label_classification`·`num_labels=2`, `train_info.json`의 `threshold`(0 초과 1 미만)·`max_length`·`stride` 필수 |
+| 판정 | 칸마다 128토큰 창·겹침 32, 창 하나라도 `threshold` 이상이면 그 칸 flagged, 한 칸이라도 flagged면 전체 flagged |
+| 동시 실행·마감 | tox 전용 게이트 1개(M2와 따로), 1초 대기 또는 처리 1.3초(창 8개 묶음 사이에서 확인) 넘으면 503 `SCORING_UNAVAILABLE`, `run_in_threadpool` |
+| 사용량 | 이벤트 없음, 지표(호출·flagged·지연)만 |
+| readiness | 활성 `tox-` 모델이 없어도 `models=UP`(#85 규칙), 요청에는 `{active:false}` |
+
+- 확인 필요: 같은 Pod에서 M2와 CPU를 나눠 쓸 때의 지연(#691), 필요하면 prod CPU 요청량 조정. 11/16 측정(분류 머리 학습 전 KcELECTRA-base, CPU 1개 스레드): 1,500자 1.12초, 메모리 로딩 약 +300MiB·추론 중 약 +300MiB(limit 2Gi)

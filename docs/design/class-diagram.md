@@ -1620,6 +1620,10 @@ classDiagram
     <<value>>
     +blockedCategory(texts, mission) ExpressionCategory
   }
+  class ToxicityClient {
+    <<client>>
+    +check(texts) ToxicityResult
+  }
   class MissionRepository {
     <<repository>>
     +findRubric(missionVersionId, rubricVersionId) Rubric
@@ -1660,6 +1664,7 @@ classDiagram
   AnswerService --> AnswerRepository
   AnswerService --> JudgmentService : createPending
   AnswerService --> ExpressionPolicy : blockedCategory
+  AnswerService --> ToxicityClient : 잠금 전 표현 분류(#688)
   AnswerService ..> Answer
   Answer *-- AnswerContent
 ```
@@ -1670,6 +1675,7 @@ classDiagram
 - `AnswerService.submit`: 같은 트랜잭션에 `answer` 버전 추가 + `judgment(PENDING)` 생성. 같은 `idempotency_key`·같은 본문이면 기존 답변 반환, 다른 본문이면 `422 IDEMPOTENCY_KEY_REUSED` (FN-LRN-10, API 1.4). `lockForAnswer`가 시도 행을 잠가(`FOR UPDATE`) 같은 시도의 제출을 한 줄로 세움. 저장하면 `clearSubmittedDraft`로 초안의 `answer`를 비우고 `memo`는 유지, 초안 version +1 (FN-LRN-15·16)
 - 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
 - 답변 표현 검사 (#205): `AnswerService.submit`이 누락 검사 다음·되묻기 연결 검사 전에 `ExpressionPolicy.blockedCategory(AnswerContent.writtenTexts(), mission)`를 부름. 학생이 쓴 칸(서술 글·풀이 최종 답과 단계·논술 4칸)을 칸마다 검사하고 고르기·분류·초안·메모는 검사하지 않음. 범주(`ExpressionCategory`: `PROFANITY`·`SEXUAL`·`HATE`·`THREAT`·`PERSONAL_INFO`)가 나오면 저장·판정 없이 `422 ANSWER_INAPPROPRIATE`(`detail`은 범주별 고정 문구), 로그는 `attemptId`·`category`만. 목록은 `resources/answer-filter`(korcen·우리말샘·팀 조정)를 `answer/repository/ExpressionPolicyConfig`가 읽어 빈으로 만들고, domain은 Kotlin 정규식만 씀. `HATE`와 맥락 단어(`새끼`)는 미션 본문(제목·질문·안내·선택지·그룹)에 나오면 허용
+- 표현 분류 모델 단계 (#688): `AnswerService.submit`이 시도 행 잠금 전에 `ToxicityClient.check(writtenTexts)`로 scoring 결과를 받아 둠(공백 칸 제외, 칸 순서대로 앞 20칸·합계 앞 1,500자까지만). 단어 목록을 통과한 뒤 그 결과가 flagged면 `ExpressionCategory.INSULT`로 같은 422(표현 문구). 결과가 없거나(시간 초과·장애·서킷 열림·`active:false`·계약 밖 응답·생략) flagged가 아니면 진행. 로그는 `attemptId`·`category`·건너뜀 사유만
 - `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
 - `AttemptService.finish`: 시도 행을 잠그고(`AttemptRepository.lockById`, 답변 제출·판정 저장과 같은 행) 본인 확인 → 이미 마무리했으면 기록 없이 같은 결과 → 타임라인으로 `FinishPolicy.canFinish`(sequence-diagram 3.3 순서) → `Attempt.finish(now)` → `AttemptRepository.finish`(`WHERE status = 'IN_PROGRESS' AND finished_at IS NULL`) → `FinishResult{finishedAt, reveal, revealKind, checklist}`. `Attempt.finish(now)`는 타임라인을 받지 않아 `canFinish`는 서비스가 먼저 부름
 - 공개 내용(FN-LRN-11): `reveal`은 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설), `revealKind`는 고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`. 체크리스트는 기준표 요소 전체, 이 시도의 처리 완료 판정(`JudgmentService.results`) 중 원문 구절과 함께 충족된 적 있는 요소만 체크하고 가장 최근 구절 표시. 시도 상세도 마무리 뒤에 같은 값
@@ -2141,7 +2147,7 @@ classDiagram
 #438 추가(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
 - 학년: `GradeBand`(`G3_4`·`G5_6`)를 `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`)로 바꾼다. `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
 - 이야기·정답 구조: 버전·요일 새 칸은 테마 새 버전 때 함께 복사. `ThemeAnswerRules`가 관리자 저장 때 정답 논리(정답·후보·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어느 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐)와 `hintSpots`(0~100, 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음)를 검사(400). 결정적 단서 `decisiveClue`는 마지막 틀린 후보를 빼는 날의 단서
-- 학생 응답: 요일 단서는 그 문제를 그 주에 학습 완료한 뒤에만(#484), 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 엔딩(`ThemeEnding.of`가 `ENDED`)일 때만. 엔딩은 저장하지 않고 정답 고르기(`theme_answer_pick`)와 고른 뒤 금요일 문제 `THEME_REVIEW` 마무리 시각으로 계산한다(state-diagram 3.2.2, #484). 요일 상태는 `ThemeWeek.stateOf(day, today, sundayTheme)`(누적 공개, 일요일은 core 허용 값). 커뮤니티 `CommunityService`는 `lockedUntilEnding`으로 정답 고르기 문제를 엔딩 전에 잠근다(`COMMUNITY_LOCKED_UNTIL_ENDING`). INTRO는 월~토 그 주 첫 진입, `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
+- 학생 응답: 요일 단서는 그 문제를 그 주에 학습 완료한 뒤에만(#484), 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 엔딩(`ThemeEnding.of`가 `ENDED`)일 때만. 엔딩은 저장하지 않고 정답 고르기(`theme_answer_pick`)와 고른 뒤 금요일 문제 `THEME_REVIEW` 마무리 시각으로 계산한다(state-diagram 3.2.2, #484). 요일 상태는 `ThemeWeek.stateOf(day, today, sundayTheme)`(누적 공개, 일요일은 core 허용 값). 커뮤니티 `CommunityService`는 `lockedUntilEnding`으로 정답 고르기 문제를 엔딩 전에 잠근다(`COMMUNITY_LOCKED_UNTIL_ENDING`). INTRO는 월~토 언제든 받음(웹은 그 주 처음 '오늘 문제 풀기'를 누를 때 보여 주고 기록, #589), `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
 - 단서 근거(#647, 기준안): `ThemeStory.features`(`ThemeFeature(name, values: List<ThemeFeatureValue(candidate, value)>)`, `weekly_theme_version.features`)와 `ThemeDayMission.clueFeature`(`weekly_theme_day.clue_feature`)를 저장·복사한다. 테마 초안 채택은 ai 응답 `theme.features`·`days[].clueFeature`를 그대로 옮기고, `ThemeAnswerRules.featureErrors`가 특징마다 후보 하나에 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지는지 검사한다(테마 초안 learning 검사 `LOGIC`·관리자 저장 `400` 공통, 허용 값은 ai 내부 칸이라 그 이상은 보지 않음). `ThemeCarryOver`는 표를 이어받되 후보가 바뀌면 버리고 그날 `rulesOut`이 바뀌면 그날 `clueFeature`를 버린다. 학생 `ThemeDayView.clueFeature`·`clueFacts`는 그날 단서와 같은 조건(그 주 학습 완료), `WeeklyThemeView.features`는 엔딩 뒤만. 관리자 응답 `AdminWeeklyTheme.features`·`AdminThemeDay.clueFeature`
 - `AssetUrls`(`_common/storage`): ai 키(`theme-drafts/…`)만 단기 presigned URL(기준안 1시간)로 바꾸고 그 밖의 값은 그대로. 학생 미션·테마 응답과 관리자 테마 미리보기 칸에서 쓰고, 관리자 미션 응답은 저장 값 그대로
 - `themeScene`: 시도 시작·이어하기 응답에서 `context`가 `THEME_DAY`·`THEME_REVIEW`면 그 시도 `theme_id` 테마 게시본의 그 미션 요일 `{dialogue, hintSpots, videoUrl}`, `EXTRA`는 null. ai는 요일 문제 전 영상을 만들지 않아(#437 2026-11-11) 테마 초안 채택 테마의 `videoUrl`은 null이고, 요일 `video_uri`는 관리자가 직접 넣을 때만 쓰는 칸으로 남김

@@ -88,17 +88,17 @@ Node 22 alpine 표준 라이브러리만 사용(RS256 서명 필요). 각 이미
 | 스펙 | 흐름 |
 |---|---|
 | `admin-home.spec.ts` | 관리자 Google 로그인 → `/admin/home` 운영 현황·실제 집계 기간·학습 시도·처리 현황 |
-| `learning-journey.spec.ts` 1 | 학부모 로그인·동의·자녀 등록 → 학습 시작 → 미션 작성·제출 → 정답 판정·되묻기 → 돌아보기 저장 → 공책 완료 → 답 공개 설정 |
+| `learning-journey.spec.ts` 1 | 학부모 로그인·동의·자녀 등록 → 학습 시작 → 미션 작성·제출 → 정답 판정·되묻기 → 돌아보기 저장 → 내 공책 한 줄 '마무리' → 답 공개 설정 |
 | `learning-journey.spec.ts` 2 | 같은 학부모 재로그인 → 대시보드 학습 기록·원문 보기 → 이번 주 리포트 생성 → 상세 기간·수치 |
 | `payment.spec.ts` | 유료 이용권 선택 → 주문 생성 → `/payment/success` → core confirm이 toss-stub 호출 → 결제 완료 |
-| `weekly-theme.spec.ts`(#625) | 관리자 테마 게시 → 학생 홈 "이번 주 테마" 제목·시작 이야기 → 월요일 "오늘 문제 풀기" → 답·정답 판정 → 되묻기 답 → 마무리·돌아보기 → 요일 "끝냈어요" → 포인트 잔액·"미션 학습 완료" 내역 → 꾸미기 아이템 해금(잔액 차감) → 착용. KST 일요일 skip |
-| `community.spec.ts`(#625) | 학부모 커뮤니티 선택 동의 → 학생 친구 공개 켜기 → 같은 미션 마무리(공유) → 동의 없는 다른 학생은 마무리 전 "아직 마무리한 미션이 없어요"·마무리 뒤 "친구 생각"에서 답 열람 → 반응 → 작성자 "내가 나눈 생각"에 받은 반응 수 |
-| `student-room.spec.ts`(#625) | 학생 메뉴 "내 방" → 추억의 벽·학습 책상·옷장 → "추억 앨범 열기" → 빈 앨범 안내(이번 주·미완료 주 숨김) → 내 방으로 |
+| `weekly-theme.spec.ts`(#625) | 관리자 테마 게시 → 학생 홈 테마 제목·요일 칩 → 월요일 문제 열기(월요일 "오늘 문제 풀기", 화~토 "아직 안 푼 문제 · 월요일") → 시작 이야기 화면(`/student/theme/intro`) → 미션 안내 → 답·정답 판정 → 되묻기 답 → 마무리·돌아보기 → 홈 월요일 칩 ✓ → 내 포인트 잔액·"미션 학습 완료" 내역 → 꾸미기 페이지 "옷 입히기" 탭 E2E 모자 해금(잔액 차감) → "이대로 입기". KST 일요일 skip |
+| `community.spec.ts`(#625) | 학부모 커뮤니티 선택 동의 → 학생 친구 공개 켜기 → 같은 미션 마무리(공유) → 동의 없는 다른 학생은 마무리 전 "아직 마무리한 미션이 없어요"·마무리 뒤 "친구 생각"에서 미션 골라 답 열람 → 반응 "이유가 잘 보여" → 작성자 "내가 나눈 생각 보기"에 받은 반응 수 |
+| `student-room.spec.ts`(#625) | 학생 메뉴 "내 방" → "○○의 미니룸" 가구 이름표 6개 → "추억 앨범 열기" → 기념 액자 0개·안내 칸(이번 주 테마가 있으면 "이번 주 액자 자리") → "← 내 방" |
 | `parent-reports.spec.ts`(#625) | 설명 모델 등록·활성화 → 초5 자녀·프리미엄 결제 → 학생 학부모 공개 → 11번 서술 답·되묻기 → 일일 리포트 상세 "그날 푼 문제" 되묻기·마지막 답·원문 근거 → 주간 리포트 상세 "대표 답변 설명" 카드(미션 제목·AI 관찰) |
 
 - 학생 토큰은 메모리에만 있어 학생 단계는 화면 내 이동만 사용. 학생 모드 진입 시 학부모 refresh 쿠키가 지워져 학부모 단계는 새 컨텍스트에서 재로그인
 - 토스 결제 위젯 JS·Google 폰트 차단, 외부 네트워크 호출 없음
-- 학생 기기 등록·PIN 로그인·서술 미션 풀이·결제는 `support/student.ts`·`support/payment.ts` 공용 도우미(#625에서 기존 스펙의 같은 단계를 옮김)
+- 학생 기기 등록·PIN 로그인·서술 미션 풀이·결제는 `support/student.ts`·`support/payment.ts` 공용 도우미(#625에서 기존 스펙의 같은 단계를 옮김). 추가 문제는 홈 "더 풀어 보기"로 연다(테마 없는 학년의 홈에도 있음, #648)
 - 가입 도우미는 동의 문서 제목을 고정하지 않고 화면이 조회한 `/api/v1/consent-documents` 응답의 TERMS·PRIVACY·GUARDIAN 3종 제목으로 체크박스 선택(V25 실제 문서가 합성 시드보다 최신이라 선택되는 문서가 바뀜, PR #300)
 
 ### 실행
@@ -117,6 +117,8 @@ $COMPOSE down -v
 검증(로컬, 2026-11-02·11-03): 4개 시나리오 통과, 실행 후 DB에서 `llm_usage` 모델 `e2e-stub`·되묻기 출처 `LLM`, `payment` `APPROVED`·구독 `ACTIVE`, `report_job` COMPLETED·report_id 연결 확인.
 
 검증(로컬 Docker compose 새 스택 `down -v` 뒤 `up --build`, Windows 11·Docker 29.6, 2026-11-13 금요일 KST, #625): 기존 4개 + 신규 4개 스펙 9개 테스트 통과(2.0분). 실행 후 DB 확인: core `student_look_unlock` `E2E_HAT`(원장 연결)·`reward_point_ledger` `MISSION_COMPLETED` 10·`COMMUNITY_POSTED` 5·`REACTION_GIVEN` 1·`UNLOCK` -10, `model_version` `report-explanation` ACTIVE, learning `weekly_theme` PUBLISHED(주 2026-11-09)·`community_reaction` `CLEAR_REASON`·M2 점수가 저장된 판정 2건(핵심어를 넣은 11번 답·되묻기 답), report `report_item` `EXPLANATION` 1건. 수행 구분(NFR-QA-04): 모의 응답(LLM·M2·설명 sLLM·Google·토스 대역)만 사용, PG 테스트 거래·실제 API·배포 확인은 미수행, 원격 CI(`e2e.yml`)는 아직 미실행. 금요일 실행이라 월요일 문제 당일 풀이(+5)는 확인하지 않음. 같은 브랜치를 develop(#649 M2 경계·#639~641 풀이 화면 접근성 포함)에 맞춘 뒤 2026-11-15 일요일 KST 새 스택에서 다시 실행: 8개 통과·`weekly-theme.spec.ts` 1개는 일요일 skip(사유 표시), report `EXPLANATION` 1건·`community_reaction` `CLEAR_REASON` 재확인. 이 실행에서 커뮤니티 동의 상태 문구와 다른 동의 목록의 "불러오고 있습니다." status가 함께 잡히는 경우가 있어 현재 상태 문구(`현재 …`)만 보도록 선택자를 좁힘
+
+검증(#648 새 학생 화면에 맞춤, 로컬 Docker 29.8 compose `e2e.yml`과 같은 명령, 2026-11-16 월요일 KST): `weekly-theme`·`community`·`learning-journey`·`student-room`·`parent-reports`와 `support/student.ts`를 새 화면(홈 요일 칩·시작 이야기 화면·꾸미기 페이지·내 공책 한 줄·친구 생각 미션 버튼·미니룸)에 맞춤([frontend](frontend.md) "실서버 E2E를 새 학생 화면에 맞춤"). 새 스택(`down -v` 뒤 `up --build`, 테마 없는 상태에서 시작) 9개 통과(6.0분), 같은 스택 재실행(초3 테마 있음 → 홈 "더 풀어 보기"·앨범 "이번 주 액자 자리" 경로) 9개 통과(4.6분). 실행 뒤 core `reward_point_ledger`: `MISSION_COMPLETED` 10×10·`THEME_ON_TIME` 5×2(월요일 당일 풀이 첫 확인)·`COMMUNITY_POSTED` 5×2·`REACTION_GIVEN` 1×2·`UNLOCK` -10×2. 중간 실행 1회에서 답 입력 직후 자동 저장과 "다 썼어요" 클릭이 겹쳐 제출되지 않은 채 멈춰, 도우미가 자동 저장 완료("저장했어요")를 본 뒤 보내게 함(화면도 저장 중에 누르면 저장 뒤 보내게 고침, [frontend](frontend.md) 같은 절). 수행 구분은 위와 같음(대역만, 원격 CI 미실행)
 
 ### 미검증 범위
 

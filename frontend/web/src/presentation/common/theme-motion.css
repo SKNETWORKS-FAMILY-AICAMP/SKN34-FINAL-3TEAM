@@ -1,4 +1,4 @@
-/* 장면 움직임 재생기 (형식 v1, ThemeMotionPlayer) */
+/* 장면 움직임 재생기 (형식 v1, ThemeMotionPlayer·MotionEffects) */
 .tm-player { margin: 0; }
 .tm-stage {
   position: relative;
@@ -6,10 +6,14 @@
   aspect-ratio: 16 / 9;
   border-radius: 8px;
   background: #1f2421;
-  animation: tm-fade 0.5s ease-out both;
 }
-.tm-player[data-motion='static'] .tm-stage { animation: none; }
-.tm-stage > img, .tm-stage > video {
+/* 장면이 들어오는 방식(transition.kind). none·움직임 줄이기는 바로 보임. 밝기는 바꾸지 않는다(깜빡임 없음) */
+.tm-shot { position: absolute; inset: 0; animation: none 0.5s ease-out both; }
+.tm-shot[data-transition='fade'] { animation-name: tm-fade; }
+.tm-shot[data-transition='slide-left'] { animation-name: tm-slide-left; }
+.tm-shot[data-transition='slide-right'] { animation-name: tm-slide-right; }
+.tm-shot[data-transition='zoom'] { animation-name: tm-zoom; }
+.tm-shot > img, .tm-shot > video {
   display: block;
   width: 100% !important;
   height: 100% !important;
@@ -23,18 +27,23 @@
   border: 1px dashed #b9b4a8;
   border-radius: 8px;
   color: #6b6a65;
+  text-align: center;
 }
 .tm-caption {
+  /* 자막은 글 길이만큼만(예전에는 그림 폭 84% 띠라 영상에 비해 너무 컸음, 사용자 의견 2026-11-16) */
   position: absolute;
-  left: 8%;
-  right: 8%;
-  bottom: 7%;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(31, 36, 33, 0.72);
+  left: 50%;
+  bottom: 6%;
+  max-width: 84%;
+  width: max-content;
+  transform: translateX(-50%);
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(31, 36, 33, 0.68);
   color: #fffdf7;
   text-align: center;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 .tm-spot {
   position: absolute;
@@ -52,17 +61,40 @@
 .tm-spot[data-evidence] { background: #f2c14e; }
 .tm-spot-list { margin: 6px 0 0; padding-left: 1.4em; font-size: 0.9rem; }
 .tm-replay { margin-top: 6px; }
-.tm-effect { position: absolute; inset: 0; pointer-events: none; }
-.tm-effect i {
+
+/* 효과 층(effects): 입자마다 시작·끝 위치(--x0·--y0 → --x1·--y1, px)를 MotionEffects가 계약 단위로 계산해 넣는다 */
+.tm-effects { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: inherit; }
+.tm-fx {
   position: absolute;
-  top: -5%;
-  animation: tm-fall linear infinite;
+  left: 0;
+  top: 0;
+  background: currentColor;
+  border-radius: 50%;
+  animation-name: tm-move;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  transform: translate(var(--x0), var(--y0));
 }
-.tm-effect[data-direction='up'] i { top: auto; bottom: -5%; animation-name: tm-rise; }
+.tm-fx[data-shape='snow'] { background: radial-gradient(circle, currentColor 0 42%, transparent 72%); }
+.tm-fx[data-shape='bubble'] { background: transparent; box-shadow: inset 0 0 0 2px currentColor; }
+.tm-fx[data-shape='drop'] { border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%; scale: 0.62 1; }
+.tm-fx[data-shape='leaf'] { border-radius: 0 100% 0 100%; animation-name: tm-move, tm-spin; }
+.tm-fx[data-shape='petal'] { border-radius: 90% 10% 90% 10%; animation-name: tm-move, tm-spin; }
+.tm-fx[data-shape='confetti'] { border-radius: 1px; scale: 1 0.45; animation-name: tm-move, tm-spin; }
+.tm-fx[data-shape='star'] {
+  border-radius: 0;
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
 @keyframes tm-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes tm-fall { to { transform: translateY(110cqh); } }
-@keyframes tm-rise { to { transform: translateY(-110cqh); } }
-.tm-stage { container-type: size; }
+@keyframes tm-slide-left { from { transform: translateX(12%); } to { transform: none; } }
+@keyframes tm-slide-right { from { transform: translateX(-12%); } to { transform: none; } }
+@keyframes tm-zoom { from { transform: scale(1.12); } to { transform: none; } }
+@keyframes tm-move {
+  from { transform: translate(var(--x0), var(--y0)); }
+  to { transform: translate(var(--x1), var(--y1)); }
+}
+@keyframes tm-spin { to { rotate: 360deg; } }
 @media (prefers-reduced-motion: reduce) {
-  .tm-stage, .tm-effect i { animation: none !important; }
+  .tm-shot { animation: none !important; }
+  .tm-effects { display: none; }
 }
