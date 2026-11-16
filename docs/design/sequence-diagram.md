@@ -795,7 +795,7 @@ sequenceDiagram
   participant C as core
   participant L as learning
 
-  Note over W: 월~토 그 주 첫 진입(introSeen=false) → 시작 화면, 엔딩 상태에서 outroSeen=false → 종료 화면
+  Note over W: 월~토 그 주 처음 '오늘 문제 풀기'(introSeen=false, #589) → 시작 화면, 엔딩 상태에서 outroSeen=false → 종료 화면
   W->>C: POST /students/me/weekly-theme/story-views {kind}
   C->>L: POST /internal/students/{id}/weekly-theme/story-views?grade&date&sundayTheme {kind}
   L->>L: INTRO는 월~토·프리미엄 일요일, OUTRO는 엔딩 상태이고 무료 일요일이 아닌지 (아니면 409 THEME_STORY_NOT_ALLOWED), 게시 테마 확인(없으면 404)
