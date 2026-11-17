@@ -1744,6 +1744,18 @@
       },
       "ReportExplanation": {
         "properties": {
+          "itemId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itemid"
+          },
           "attemptId": {
             "type": "string",
             "format": "uuid",

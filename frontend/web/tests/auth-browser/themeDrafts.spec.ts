@@ -183,3 +183,47 @@ test('테마 목록 필터·기존 테마 편집도 학년 하나를 전송한�
   await expect.poll(() => calls.find(c => c.path === '/admin/weekly-themes/' + themeId && c.method === 'PUT')?.body).toEqual(expect.objectContaining({ grade: 'G4' }))
   expect(calls.find(c => c.path === '/admin/weekly-themes/' + themeId && c.method === 'PUT')?.body).not.toHaveProperty('gradeBand')
 })
+
+test('#537 부분 다시 생성: 다시 만들 수 있는 장면에만 버튼, 그 칸에서 확인하면 targets만 보내고 새 초안에 원래 초안·대상을 보인다', async ({ page, context }) => {
+  const calls = await confirmedResponses(context)
+  const next = '00000000-0000-4000-8000-000000000537'
+  const ready = {
+    draftId: id, status: 'READY', source: 'ADMIN', grade: 'G3', weekStart: '2026-11-16', attempts: 1, maxAttempts: 3,
+    input: { topic: '도서관', missions: [], regenerate: null }, checkResults: [],
+    draft: { theme: { title: '합성 테마', intro: '합성 시작 이야기', outro: '합성 종료 이야기', bigQuestion: '합성 큰 질문', candidates: ['가', '나'], answer: '가',
+      days: days.map(day => ({ day, thinkingType: 'ANALYZE', place: '', clue: '', rulesOut: [] })) },
+    missions: days.map(day => ({ day, thinkingType: 'ANALYZE', draft: { title: `합성 ${day} 문제`, question: '합성 질문', guide: null } })),
+    dialogues: [], warnings: [] },
+    scenes: [], regenerableTargets: ['VIDEO:INTRO', 'IMAGE:INTRO', 'IMAGE:MON', 'MISSION:MON'],
+    failureCode: null, versions: { prompt: 'p', model: 'm' }, themeId: null, requestedBy: null, createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z',
+  }
+  await context.route('**/api/v1/admin/theme-drafts/' + id, route => route.fulfill({ json: ready }))
+  await context.route('**/api/v1/admin/theme-drafts/' + next, route => route.fulfill({ json: {
+    draftId: next, status: 'GENERATING', source: 'ADMIN', grade: 'G3', weekStart: '2026-11-16',
+    input: { topic: '도서관', missions: [], regenerate: { baseDraftId: id, targets: ['VIDEO:INTRO'] } }, regenerableTargets: [] } }))
+  await context.route('**/api/v1/admin/theme-drafts/' + id + '/regenerate', route => {
+    calls.push({ path: '/admin/theme-drafts/' + id + '/regenerate', method: route.request().method(), body: route.request().postDataJSON(), search: '' })
+    return route.fulfill({ status: 202, json: { draftId: next, status: 'GENERATING', input: { regenerate: { baseDraftId: id, targets: ['VIDEO:INTRO'] } } } })
+  })
+  await page.goto('/admin/theme-drafts?draftId=' + id)
+  const intro = page.getByRole('region', { name: '시작 이야기' }), outro = page.getByRole('region', { name: '종료 이야기' })
+  await expect(intro.getByRole('button', { name: '시작 이야기 영상 다시 만들기' })).toBeVisible()
+  await expect(intro.getByRole('button', { name: '시작 이야기 그림 다시 만들기' })).toBeVisible()
+  await expect(outro.getByRole('button', { name: /다시 만들기/ })).toHaveCount(0) // 목록에 없는 대상은 버튼 없음
+  await expect(page.getByRole('region', { name: '월요일 문제' }).getByRole('button', { name: /다시 만들기/ })).toHaveCount(2)
+  await expect(page.getByRole('region', { name: '화요일 문제' }).getByRole('button', { name: /다시 만들기/ })).toHaveCount(0)
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  }
+  await intro.getByRole('button', { name: '시작 이야기 영상 다시 만들기' }).click()
+  const dialog = intro.getByRole('alertdialog', { name: '시작 영상 다시 만들기 확인' }) // 누른 칸 안에서 확인
+  await expect(dialog).toContainText('시작 영상만 다시 만들까요? 그림·글은 그대로 둡니다.')
+  await dialog.getByRole('button', { name: '다시 만들기', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp('draftId=' + next))
+  expect(calls.filter(c => c.path.endsWith('/regenerate'))).toEqual([expect.objectContaining({ method: 'POST', body: { targets: ['VIDEO:INTRO'] } })])
+  await expect(page.getByText('시작 영상만 다시 만듦', { exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: /다시 만들기|다시 생성/ })).toHaveCount(0) // 생성 중에는 장면·전체 다시 생성 모두 없음
+  await page.getByRole('button', { name: '원래 초안 열기', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp('draftId=' + id))
+})

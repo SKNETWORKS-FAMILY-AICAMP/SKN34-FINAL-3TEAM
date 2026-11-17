@@ -1,0 +1,29 @@
+# ml/tox (답변 표현 분류 모델) 린트·단위 테스트 (이슈 #690, ci-ml-m1.yml과 같은 방식)
+# torch·transformers(수 GB)는 설치하지 않음(train.py는 학습할 때만 불러옴). 공개 데이터 없이 가짜 파일만 사용
+name: ci-ml-tox
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "ml/tox/**"
+      - ".github/workflows/ci-ml-tox.yml"
+  pull_request:
+    paths:
+      - "ml/tox/**"
+      - ".github/workflows/ci-ml-tox.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml/tox
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+      - run: uv venv --python 3.12
+      - run: uv pip install "pytest>=9.2.0" "ruff==0.17.2"
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+      - run: uv run --no-sync pytest -q

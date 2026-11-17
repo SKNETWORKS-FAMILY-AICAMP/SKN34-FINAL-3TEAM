@@ -6,6 +6,8 @@
 - 테마 모델 설정이 틀리면(검토 모델 = 생성 모델, 키 없음) 이 경로만 503(NotReadyRunner).
 - 글 단계(줄거리·미션·대화·글 검토) 뒤 그림·영상·움직임. 그림 클라이언트나 저장소가 없으면
   images·videos·motions는 빈 값이고 warnings(IMAGE) "그림 설정 없음".
+- 응답 regen은 부분 다시 생성 재료와 다시 만들 수 있는 대상(#537, app/theme_draft/regen.py). 요청에
+  regenerate가 있으면 원래 결과에서 고른 대상만 다시 만들고 나머지는 원래 값 그대로 돌려준다.
 """
 
 import re
@@ -30,6 +32,7 @@ from app.theme_draft.models import (
     ThemeWarning,
 )
 from app.theme_draft.nodes import ThemeContext, ThemeState
+from app.theme_draft.regen import bundle
 from app.theme_draft.storage import ThemeStorage, new_run_id
 
 DAY_PREFIX = re.compile(r"^(MON|TUE|WED|THU|FRI)\s+(.+)$")
@@ -90,11 +93,13 @@ def initial_state(request: ThemeDraftRequest) -> ThemeState:
         "image_seed": image_seed,
         "mission_seed": {},
         "review_runs": 0,
+        "partial": request.regenerate is not None,  # 부분 다시 생성(#537): restore부터
     }
 
 
 def warnings_of(state: ThemeState) -> list[ThemeWarning]:
-    out: list[ThemeWarning] = []
+    # 부분 다시 생성(#537): 원래 경고 중 다시 만들지 않은 항목 것을 먼저
+    out: list[ThemeWarning] = [ThemeWarning(**w) for w in state.get("base_warnings") or []]
     for day in DAYS:
         out += [
             ThemeWarning(stage="MISSION", item=day, reason=r)
@@ -137,6 +142,7 @@ def assemble(state: ThemeState, model: str, prompt_version: str) -> ThemeDraftRe
         "warnings": warnings_of(state),
         "failure": ThemeFailureResult(**failure) if failure else None,
         "versions": LlmVersions(model=model, prompt=prompt_version),
+        "regen": bundle(state),
     }
     return ThemeDraftResponse.model_validate(payload)
 

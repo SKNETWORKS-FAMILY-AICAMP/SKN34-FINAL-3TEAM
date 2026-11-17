@@ -1,69 +1,118 @@
-"""설명할 항목 고르기·규칙 후처리·검사·인용 구절 고르기. 모두 규칙이고 LLM을 부르지 않음 (#477).
+"""상세 설명 정리·검사·조립·인용 구절 고르기. 모두 규칙이고 LLM을 부르지 않음 (#477, @3).
 
-- 항목: 잘한 점(가장 높은 항목) 1개 + 함께 이야기해 볼 점(가장 낮은 항목) 1개. 동점은 항목 표 순서,
-  모두 같은 점수면 1개만(중간 이상이면 잘한 점, 아니면 함께 이야기해 볼 점).
-  서술 총점(hol)은 고르지 않음
-- 후처리: 이유 문장 중 숫자·금지어(점수·등급 등)가 있는 문장은 버림.
-  남는 문장이 없으면 그 항목은 실패
+- 정리(clean, 2026-11-17 LoRA용 완화): 설명 전체를 버리는 대신 문장 단위로 고친다.
+  · 목록 기호·Markdown 머리는 지우고, 반복된 마침표·빈 따옴표 덩어리는 줄임
+  · 큰따옴표 인용은 앞뒤 공백을 다듬어 학생 글에 그대로 있으면 큰따옴표로 두고,
+    없으면 작은따옴표로 바꿈(지어낸 문장을 원문 인용처럼 보이지 않게)
+  · 금지어(점수·등급·사고력 등, report 검사와 같은 범위)·인사말, 학생 글에 없는 숫자·횟수
+    표현이 든 문장은 그 문장만 뺌
+- 검사(allowed): 정리 뒤에도 남은 금지 요소가 있으면 거절(마지막 안전장치)
+- 조립: "상세 분석 / 보완할 지점 / 개선 방안" 소제목 줄과 본문을 빈 줄로 이어 붙임
 - 인용: 설명과 낱말 앞 두 글자가 가장 많이 겹치는 학생 글 문장(원문 그대로). 2개 미만이면 null
 """
 
 import re
-from dataclasses import dataclass
-from typing import Literal
 
-from app.analysis_agent.verification import FORBIDDEN
-from app.report_explanation.models import ITEM_LABELS, SCORE_RANGES, ExplanationRequest
+from app.analysis_agent.verification import FORBIDDEN as ANALYSIS_FORBIDDEN
+from app.report_explanation.models import ExplanationDetail
 
-Role = Literal["STRENGTH", "DISCUSS"]
-ROLE_PREFIX: dict[Role, str] = {"STRENGTH": "잘한 점", "DISCUSS": "함께 이야기해 볼 점"}
-# 문장에 남기지 않는 표현: 숫자(점수·횟수·학년 등), 금지어(레벨·등급·점수·사고력 단정 등)
-DIGIT = re.compile(r"[0-9０-９]")
+# report-service 설명 검사(FORBIDDEN·UNSUPPORTED_CLAIM)와 같은 범위까지 막아
+# report에서 설명이 통째로 빠지지 않게
+FORBIDDEN = (*ANALYSIS_FORBIDDEN, "순위", "백분위", "백분율", "퍼센트")
+NUMBER = re.compile(r"[0-9０-９]+")
+KOREAN_COUNT = re.compile(
+    r"(?<![가-힣])(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|스무)\s*(?:번|회|개|건|문장|글자)"
+)
 SENTENCE = re.compile(r"[^.!?。\n]+[.!?。]?")
 WORD = re.compile(r"[가-힣A-Za-z]{2,}")
-MAX_SENTENCES_PER_ITEM = 2
+PREFACE = re.compile(r"안녕하세요|학부모님|분석한 결과를 드립니다|지금부터 살펴보겠")
+LIST_OR_MARKDOWN = re.compile(r"^\s*(?:[-*•#]+|\d+[.)])\s", re.MULTILINE)
+DOUBLE_QUOTED = re.compile(r'[“"「『]([^”"」』]*)[”"」』]')
+EMPTY_QUOTES = re.compile(r"(?:['\"“”‘’]\s*){3,}")
+REPEATED_DOTS = re.compile(r"\.(?:\s*\.)+")
+SENTENCE_END = ".!?。"
+QUOTE_PAIRS = {'"': '"', "'": "'"}
 MIN_QUOTE_OVERLAP = 2
-
-
-@dataclass(frozen=True)
-class Target:
-    role: Role
-    key: str
-    label: str
-    score: int
-
-
-def select_items(request: ExplanationRequest) -> list[Target]:
-    labels = ITEM_LABELS[request.input_type]
-    keys = [key for key in labels if key != "hol"]
-    best = max(keys, key=lambda key: (request.scores[key], -keys.index(key)))
-    worst = min(keys, key=lambda key: (request.scores[key], keys.index(key)))
-
-    def target(role: Role, key: str) -> Target:
-        return Target(role, key, labels[key], request.scores[key])
-
-    if request.scores[best] != request.scores[worst]:
-        return [target("STRENGTH", best), target("DISCUSS", worst)]
-    low, high = SCORE_RANGES[request.input_type][best]
-    role: Role = "STRENGTH" if request.scores[best] >= (low + high) / 2 else "DISCUSS"
-    return [target(role, best)]
+TITLES = ("상세 분석", "보완할 지점", "개선 방안")
 
 
 def sentences(text: str) -> list[str]:
     return [part.strip() for part in SENTENCE.findall(text) if part.strip()]
 
 
-def allowed(text: str) -> bool:
-    return not DIGIT.search(text) and not any(word in text for word in FORBIDDEN)
+def _requote(match: re.Match[str], source: str) -> str:
+    inner = match.group(1).strip()
+    if not inner:
+        return ""
+    return f'"{inner}"' if inner in source else f"'{inner}'"
 
 
-def clean(generated: str) -> list[str]:
-    """숫자·금지어가 있는 문장을 버리고 앞에서 최대 2문장. 빈 목록이면 그 항목은 실패"""
-    return [s for s in sentences(generated) if allowed(s)][:MAX_SENTENCES_PER_ITEM]
+def _split(paragraph: str) -> list[str]:
+    """따옴표 안의 마침표에서는 자르지 않는 문장 나누기"""
+    parts, start, closing = [], 0, None
+    for index, char in enumerate(paragraph):
+        if closing is not None:
+            if char == closing:
+                closing = None
+        elif char in QUOTE_PAIRS:
+            closing = QUOTE_PAIRS[char]
+        elif char in SENTENCE_END and (
+            index + 1 == len(paragraph) or paragraph[index + 1].isspace()
+        ):
+            parts.append(paragraph[start : index + 1].strip())
+            start = index + 1
+    parts.append(paragraph[start:].strip())
+    return [part for part in parts if part]
 
 
-def compose(parts: list[tuple[Role, list[str]]]) -> str:
-    return "\n".join(f"{ROLE_PREFIX[role]}: {' '.join(lines)}" for role, lines in parts)
+def _keep(sentence: str, source: str) -> bool:
+    if any(word in sentence for word in FORBIDDEN) or PREFACE.search(sentence):
+        return False
+    if sentence.count('"') % 2 or sentence.count("'") % 2:
+        return False  # 짝이 맞지 않는 따옴표(잘린 인용)
+    if not set(NUMBER.findall(sentence)) <= set(NUMBER.findall(source)):
+        return False  # "3"은 원문의 "30" 안에 있어도 허용하지 않음
+    return all(match.group(0) in source for match in KOREAN_COUNT.finditer(sentence))
+
+
+def clean(text: str | None, source: str) -> str:
+    """문장 단위로 고치고 빼서 남은 본문. 남는 문장이 없으면 빈 문자열"""
+    if not text:
+        return ""
+    text = LIST_OR_MARKDOWN.sub("", text)
+    text = EMPTY_QUOTES.sub(" ", text)
+    text = DOUBLE_QUOTED.sub(lambda match: _requote(match, source), text)
+    text = REPEATED_DOTS.sub(".", text)
+    paragraphs = []
+    for paragraph in re.split(r"\n\s*\n", text):
+        flat = re.sub(r"\s+", " ", paragraph).strip()
+        kept = [s for s in _split(flat) if _keep(s, source)]
+        if kept:
+            paragraphs.append(" ".join(kept))
+    return "\n\n".join(paragraphs)
+
+
+def allowed(text: str, source: str) -> bool:
+    """금지어·인사말·목록 기호가 없고, 숫자는 학생 글에 있는 수만, 큰따옴표 인용은 원문 그대로만"""
+    if not text.strip() or any(word in text for word in FORBIDDEN):
+        return False
+    if PREFACE.search(text) or LIST_OR_MARKDOWN.search(text):
+        return False
+    if any(quote not in source for quote in DOUBLE_QUOTED.findall(text)):
+        return False
+    numbers_in_source = set(NUMBER.findall(source))
+    return all(number in numbers_in_source for number in NUMBER.findall(text))
+
+
+def parts(detail: ExplanationDetail, source: str = "") -> list[tuple[str, str]]:
+    bodies = (detail.analysis, detail.improvement_points, detail.next_steps)
+    pairs = zip(TITLES, bodies, strict=True)
+    cleaned = ((title, clean(body, source)) for title, body in pairs)
+    return [(title, body) for title, body in cleaned if body]
+
+
+def compose(sections: list[tuple[str, str]]) -> str:
+    return "\n\n".join(f"{title}\n{body}" for title, body in sections)
 
 
 def _stems(text: str) -> set[str]:

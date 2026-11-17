@@ -361,22 +361,10 @@ def create_llm(settings: Settings, recorder: UsageRecorder) -> LlmClient:
 
 
 def create_explanation_llm(settings: Settings, recorder: UsageRecorder) -> LlmClient:
-    """리포트 설명 전용 sLLM 클라이언트 (#477). 평문 생성(stream)만 쓰고 재시도 없음.
+    """Detailed report explanations use the same pinned LoRA endpoint as summaries."""
+    from app.llm.report import create_report_llm
 
-    주소가 없으면 UnconfiguredLlm: 서버는 기동하고 설명만 503 AI_UNAVAILABLE.
-    """
-    if not settings.explanation_base_url:
-        return UnconfiguredLlm(settings.explanation_model, recorder)
-    return OpenAICompatibleLlm(
-        api_key=settings.explanation_api_key,
-        model=settings.explanation_model,
-        base_url=settings.explanation_base_url,
-        json_mode="json_object",
-        timeout=settings.explanation_llm_timeout,
-        max_retries=0,
-        backoff_seconds=settings.llm_retry_backoff,
-        recorder=recorder,
-    )
+    return create_report_llm(settings, recorder)
 
 
 def theme_llm_problem(settings: Settings) -> str | None:

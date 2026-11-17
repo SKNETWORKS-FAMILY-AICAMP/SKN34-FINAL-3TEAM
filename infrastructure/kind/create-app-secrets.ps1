@@ -25,7 +25,9 @@ $passthroughKeys = @(
     'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
     'PAYMENT_FREE_PRODUCT_ID', 'PAYMENT_BILLING_ENCRYPTION_KEY',
     'TOSS_TEST_SECRET_KEY', 'TOSSPAYMENTS_SECRET_KEY', 'TOSS_TEST_MID', 'TOSS_TEST_WEBHOOK_SECURITY_KEY',
-    'TOSS_TEST_BILLING_SECRET_KEY', 'TOSS_TEST_BILLING_MID', 'TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY'
+    'TOSS_TEST_BILLING_SECRET_KEY', 'TOSS_TEST_BILLING_MID', 'TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY',
+    # #751: report Gemma RunPod endpoint and key; report summaries fail (503) without them.
+    'SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA', 'SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA'
 )
 $optionalKeys = $passthroughKeys + @('GRAFANA_ADMIN_USER', 'GRAFANA_ADMIN_PASSWORD', 'INTERNAL_TOKEN_OPS')
 
@@ -148,6 +150,9 @@ foreach ($service in $mqServices) {
 }
 foreach ($key in $passthroughKeys) {
     if (-not [string]::IsNullOrWhiteSpace($credentials[$key])) { $app[$key] = $credentials[$key] }
+}
+foreach ($key in @('SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA', 'SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA')) {
+    if (-not $app.ContainsKey($key)) { Write-Warning "$key is empty; report AI summaries will fail until it is set." }
 }
 # The platform Secret stays with create-platform-secret.ps1; both read the same .env.
 $targets = @(@{Namespace = 'app'; Name = 'app-service-credentials'; Values = $app})

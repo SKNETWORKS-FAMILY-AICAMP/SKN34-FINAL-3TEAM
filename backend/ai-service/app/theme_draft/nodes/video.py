@@ -11,6 +11,8 @@
 - 0.5초 겹쳐 녹아드는 전환(ffmpeg xfade)으로 이어 S3 .mp4
 - 영상 클라이언트가 없거나(THEME_VIDEO_ENABLED=false) 마감까지 theme_video_min_seconds(기준안
   300초)가 안 남으면 건너뛰고 경고. 사용량은 영상 클라이언트가 컷 호출마다 THEME_VIDEO로 기록(#546)
+- 부분 다시 생성(#537): redo_videos 장면만 다시 찍고 나머지 영상·컷 길이는 원래 값 그대로
+  (kept_videos)
 """
 
 import asyncio
@@ -76,7 +78,7 @@ async def film(
     assert ctx.video is not None
     body = ctx.prompt.body
     cut = theme[CUTS_KEY[scene]][index - 1]
-    shows_target = body.cut_shows_target(scene, index)
+    shows_target = body.cut_shows_target(theme, scene, index)
     feedback: list[str] = []
     bad: list[str] = []
     for attempt in range(ctx.settings.theme_video_max_regen + 1):
@@ -152,10 +154,17 @@ async def join_and_put(
 
 async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeState:
     ctx = runtime.context
+    partial = bool(state.get("partial"))
+    redo = state.get("redo_videos") or []
+    if partial and not redo:
+        return {}  # 부분 다시 생성에서 영상은 그대로(#537)
     if ctx.video is None:
-        return {"media_warnings": [warning("VIDEO", "ALL", VIDEO_OFF)]}
+        return {**kept_videos(state, []), "media_warnings": [warning("VIDEO", "ALL", VIDEO_OFF)]}
     if ctx.deadline - ctx.clock() < ctx.settings.theme_video_min_seconds:
-        return {"media_warnings": [warning("VIDEO", "ALL", VIDEO_DEADLINE)]}
+        return {
+            **kept_videos(state, []),
+            "media_warnings": [warning("VIDEO", "ALL", VIDEO_DEADLINE)],
+        }
     theme = state["theme"]
     assert theme is not None
     durations = list(ctx.settings.theme_video_cut_seconds)
@@ -163,7 +172,7 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
     warnings: list[dict] = []
     scenes = []
     for scene in CUT_SCENES:
-        if scene in (state.get("video_skip") or []):
+        if scene in (state.get("video_skip") or []) or (partial and scene not in redo):
             continue  # 컷 그림 실패 경고는 generate_images가 남김
         if len(theme[CUTS_KEY[scene]]) != len(durations):
             warnings.append(warning("VIDEO", scene, "컷 수와 THEME_VIDEO_CUT_SECONDS 길이가 다름"))
@@ -208,4 +217,27 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             logger.info("theme video %s %.1fs model=%s", scene, sum(actual), ctx.video.model)
         else:
             warnings.append(warning("VIDEO", scene, error or "JOIN"))
-    return {"video_keys": keys, "video_durations": lengths, "media_warnings": warnings}
+    if not partial:
+        return {"video_keys": keys, "video_durations": lengths, "media_warnings": warnings}
+    merged = kept_videos(state, list(keys))
+    merged["video_keys"] |= keys
+    merged["video_durations"] |= lengths
+    return {**merged, "media_warnings": warnings}
+
+
+def kept_videos(state: ThemeState, made: list[str]) -> ThemeState:
+    """부분 다시 생성(#537): 원래 영상 중 남길 것. 컷 그림을 다시 그렸는데 새 영상을 못 만든 장면은
+    옛 그림으로 찍은 영상이라 뺀다(처음 생성에서 영상을 못 만들면 빼는 것과 같음). 영상만 다시
+    만들다 실패한 장면은 원래 영상을 그대로 둔다."""
+    if not state.get("partial"):
+        return {}
+    redrawn = {
+        s for s in state.get("redo_videos") or [] if f"{s}1" in (state.get("redo_images") or [])
+    }
+    stale = redrawn - set(made)
+    return {
+        "video_keys": {k: v for k, v in (state.get("video_keys") or {}).items() if k not in stale},
+        "video_durations": {
+            k: v for k, v in (state.get("video_durations") or {}).items() if k not in stale
+        },
+    }

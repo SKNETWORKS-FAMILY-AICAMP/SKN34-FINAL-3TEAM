@@ -185,7 +185,7 @@ class ReportDetail(ReportSummary):
     generated_at: AwareDatetime | None
 
 
-class ReportExplanation(Response):
+class ReportExplanation(ItemResponse):
     attempt_id: UUID
     answer_id: UUID
     answer_version: int = Field(ge=1)

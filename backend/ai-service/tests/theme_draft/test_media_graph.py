@@ -235,7 +235,12 @@ def test_images_motion_and_video_off_warning() -> None:
     assert response.failure is None
     assert set(response.images) == set(SCENES)
     assert all(KEY.fullmatch(k) and k.endswith(f"/{s}.png") for s, k in response.images.items())
-    assert {k for k in storage.objects} == set(response.images.values())
+    # 장면 그림 7장 + 부분 다시 생성 재료(테마 옷 뭉치·컷 첫 그림 8장, #537)
+    assert response.regen is not None
+    assert set(storage.objects) == set(response.images.values()) | set(
+        response.regen["assets"].values()
+    )
+    assert len(storage.objects) == 16
     assert {ct for _, ct in storage.objects.values()} == {"image/png"}
     # 테마 옷 뭉치(기본 그림 1장 참조) → 시작 1컷(참조 없음) → 나머지 12장
     assert (
@@ -591,7 +596,7 @@ def test_image_prompts_and_review_follow_drawing_rules() -> None:
             evidence="SIGHTING",
         )
     )
-    assert user["evidenceKind"] == "SIGHTING" and user["answerPlaceAllowed"] is False
+    assert user["evidenceKind"] == "SIGHTING" and user["answerAllowed"] is False
     assert prompts.cut_reveals_answer("OUTRO") and not prompts.cut_reveals_answer("INTRO")
 
 
@@ -710,7 +715,8 @@ def test_route_uses_media_clients_from_app_state(monkeypatch: pytest.MonkeyPatch
         get_settings.cache_clear()
     body = response.json()
     assert response.status_code == 200 and body["failure"] is None
-    assert set(body["images"]) == set(SCENES) and len(storage.objects) == 7
+    # 장면 그림 7장 + 재료 그림 9장(테마 옷 뭉치·컷 첫 그림 8장, #537)
+    assert set(body["images"]) == set(SCENES) and len(storage.objects) == 16
     assert set(body["motions"]["MON"]["camera"]) == {"from", "to", "seconds"}
     assert DAYS[0] in body["motions"]
 

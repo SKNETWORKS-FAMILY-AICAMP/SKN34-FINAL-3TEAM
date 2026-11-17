@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-16",
+  "scope": "synthetic local UI demo; not a benchmark",
+  "actual_gemma_calls": 3,
+  "completed": 3,
+  "unedited_cache_matches_receipts": true,
+  "new_gt_or_human_quality_score": null,
+  "quality_notes": [
+    "Formal 합니다 endings persisted despite requested 해요 style",
+    "Semantic claims are not verified by JSON validation; library improvement critique needs human review"
+  ],
+  "items": [
+    {
+      "id": "structured-report-demo-library",
+      "characters": 520,
+      "delay_ms": 314487,
+      "execution_ms": 6314,
+      "elapsed_seconds": 322.91577680000046
+    },
+    {
+      "id": "structured-report-demo-phone",
+      "characters": 502,
+      "delay_ms": 62,
+      "execution_ms": 2863,
+      "elapsed_seconds": 4.641141799998877
+    },
+    {
+      "id": "structured-report-demo-pencil",
+      "characters": 460,
+      "delay_ms": 71,
+      "execution_ms": 2857,
+      "elapsed_seconds": 4.526119499998458
+    }
+  ]
+}

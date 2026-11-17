@@ -31,6 +31,37 @@ export const failureStageLabels: Record<string, string> = {
   THEME: '줄거리', MISSION: '요일 문제', REVIEW: '검토', IMAGE: '그림', VIDEO: '영상', LEARNING: '서비스 검사', AI_CALL: 'AI 호출',
 }
 export interface ThemeDraftScene { scene: ThemeSceneName; imageUrl: string | null; videoUrl: string | null; motion: unknown }
+/**
+ * 부분 다시 생성 대상 14개(#537, 사용자 결정 2026-11-17, learning ThemeDraftRules.REGEN_TARGETS·ai RegenTarget과 같은 값).
+ * 같이 바뀌는 범위는 ai가 정한다: 시작·종료 그림은 컷 그림 4장과 영상까지, 요일 미션은 대화·그림까지
+ */
+export type RegenKind = 'VIDEO' | 'IMAGE' | 'MISSION'
+export type RegenTarget = `${RegenKind}:${ThemeSceneName}`
+export const REGEN_TARGETS: RegenTarget[] = [
+  'VIDEO:INTRO', 'VIDEO:OUTRO', 'IMAGE:INTRO', 'IMAGE:OUTRO',
+  'IMAGE:MON', 'IMAGE:TUE', 'IMAGE:WED', 'IMAGE:THU', 'IMAGE:FRI',
+  'MISSION:MON', 'MISSION:TUE', 'MISSION:WED', 'MISSION:THU', 'MISSION:FRI',
+]
+/** 장면 칸마다 보이는 버튼 종류(시작·종료는 영상·그림, 요일은 그림·미션) */
+export const regenKindsOf = (scene: ThemeSceneName): RegenKind[] => scene === 'INTRO' || scene === 'OUTRO' ? ['VIDEO', 'IMAGE'] : ['IMAGE', 'MISSION']
+export const regenButtonLabels: Record<RegenKind, string> = { VIDEO: '영상 다시 만들기', IMAGE: '그림 다시 만들기', MISSION: '미션 다시 만들기' }
+const regenSceneNames: Record<ThemeSceneName, string> = { INTRO: '시작', OUTRO: '종료', MON: '월요일', TUE: '화요일', WED: '수요일', THU: '목요일', FRI: '금요일' }
+const regenKindNames: Record<RegenKind, string> = { VIDEO: '영상', IMAGE: '그림', MISSION: '미션' }
+const splitTarget = (target: RegenTarget) => target.split(':') as [RegenKind, ThemeSceneName]
+/** "시작 영상"·"월요일 미션" */
+export function regenTargetLabel(target: RegenTarget): string {
+  const [kind, scene] = splitTarget(target)
+  return `${regenSceneNames[scene]} ${regenKindNames[kind]}`
+}
+/** 확인 창 문구: 같이 바뀌는 범위를 말한다 */
+export function regenConfirmText(target: RegenTarget): string {
+  const [kind, scene] = splitTarget(target), name = regenSceneNames[scene]
+  const scope = kind === 'VIDEO' ? `${name} 영상만 다시 만들까요? 그림·글은 그대로 둡니다.`
+    : kind === 'IMAGE' && (scene === 'INTRO' || scene === 'OUTRO') ? `${name} 컷 그림 4장과 ${name} 영상을 다시 만들까요?`
+    : kind === 'IMAGE' ? `${name} 그림만 다시 만들까요?`
+    : `${name} 미션과 대화, 그림을 다시 만들까요? 다른 요일은 그대로 둡니다.`
+  return `${scope} 새 초안으로 만들고 지금 초안은 그대로 남습니다.`
+}
 export interface ThemeDraftDay { day: ThemeSceneName; thinkingType: ThinkingType | null; place: string; clue: string; rulesOut: string[] }
 export interface ThemeDraftMission { day: ThemeSceneName; thinkingType: ThinkingType | null; title: string; question: string; guide: string | null }
 export interface ThemeDraftContent {
@@ -47,7 +78,12 @@ export interface ThemeDraft {
   weekStart: string | null
   attempts: number
   maxAttempts: number
-  input: { topic: string | null; missions: { thinkingType: ThinkingType | null; inputType: InputType | null; standardCodes: string[] }[] }
+  input: {
+    topic: string | null
+    missions: { thinkingType: ThinkingType | null; inputType: InputType | null; standardCodes: string[] }[]
+    /** 부분 다시 생성으로 만든 초안만(#537): 재료를 가진 원래 초안과 대상 */
+    regenerate: { baseDraftId: string; targets: RegenTarget[] } | null
+  }
   checkResults: { attempt: number; failures: { stage: string; reasons: string[] }[] }[]
   draft: ThemeDraftContent | null
   scenes: ThemeDraftScene[]
@@ -56,6 +92,8 @@ export interface ThemeDraft {
   themeId: string | null
   createdAt: string | null
   updatedAt: string | null
+  /** 지금 다시 만들 수 있는 대상(#537). 없거나 모르는 값은 빈 배열·제외 */
+  regenerableTargets: RegenTarget[]
 }
 
 const rec = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {})
@@ -65,6 +103,7 @@ const strOrNull = (v: unknown) => (typeof v === 'string' && v ? v : null)
 const int = (v: unknown) => (Number.isInteger(v) && Number(v) >= 0 ? Number(v) : 0)
 const scene = (v: unknown): ThemeSceneName | null => (THEME_SCENES as unknown[]).includes(v) ? (v as ThemeSceneName) : null
 const thinking = (v: unknown): ThinkingType | null => (THINKING_ORDER as unknown[]).includes(v) ? (v as ThinkingType) : null
+const regenTargets = (v: unknown): RegenTarget[] => [...new Set(arr(v).filter((t): t is RegenTarget => (REGEN_TARGETS as unknown[]).includes(t)))]
 
 function content(raw: unknown): ThemeDraftContent | null {
   if (!raw || typeof raw !== 'object') return null
@@ -118,6 +157,7 @@ export function themeDraftOf(raw: unknown): ThemeDraft {
         return { thinkingType: thinking(v.thinkingType), inputType: Object.hasOwn(inputLabels, str(v.inputType)) ? (v.inputType as InputType) : null,
           standardCodes: arr(v.standardCodes).filter((c): c is string => typeof c === 'string') }
       }),
+      regenerate: regenerateOf(input.regenerate),
     },
     checkResults: arr(value.checkResults).map((x) => {
       const v = rec(x)
@@ -136,7 +176,13 @@ export function themeDraftOf(raw: unknown): ThemeDraft {
     themeId: strOrNull(value.themeId),
     createdAt: strOrNull(value.createdAt),
     updatedAt: strOrNull(value.updatedAt),
+    regenerableTargets: regenTargets(value.regenerableTargets),
   }
+}
+
+function regenerateOf(raw: unknown): ThemeDraft['input']['regenerate'] {
+  const v = rec(raw), targets = regenTargets(v.targets)
+  return typeof v.baseDraftId === 'string' && v.baseDraftId && targets.length ? { baseDraftId: v.baseDraftId, targets } : null
 }
 
 /** 상태별로 보이는 동작. 최종 판단은 서버(불가 전이 409 CONFLICT) */

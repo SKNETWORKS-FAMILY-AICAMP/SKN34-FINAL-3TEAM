@@ -21,6 +21,10 @@ body:has(.admin-shell){background:#f3f7f4}
 #class-journal .ad-muted{color:#6b6a65;font-size:.9rem}
 #class-journal .ad-inline{display:inline-flex;align-items:center;gap:6px;margin:8px 0}
 @media(max-width:760px){#class-journal .ad-story{grid-template-columns:minmax(0,1fr)}}
+/* #537 장면 칸 부분 다시 생성 버튼(작게, 줄바꿈), 원래 초안 열기(글자형 버튼) */
+#class-journal .ad-scene-actions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}
+#class-journal .admin-shell .ad-scene-actions button{min-height:34px;font-size:13px;padding:5px 10px}
+@media(max-width:760px){#class-journal .admin-shell .ad-scene-actions button{min-height:44px}}
 #class-journal:has(>.admin-shell){padding:0;margin:0;background:#fff;min-height:100vh}
 #class-journal .admin-shell{--cj-ink:#14291d;--cj-muted:#3f5547;--cj-line:#bdcfc2;--ad-control-line:#7e9285;--cj-accent:#277044;--cj-accent-dark:#1d5734;--cj-paper:#fff;--cj-bg:#f3f7f4;--cj-mint:#e8f2eb;--cj-warm:#f3f7f4;--cj-warn:#444;--cj-danger:#333;display:grid;grid-template-columns:208px minmax(0,1fr);grid-template-rows:64px 1fr;min-height:100vh;background:var(--cj-bg);color:var(--cj-ink);font-family:'Noto Sans KR',Arial,sans-serif;font-size:15px;line-height:1.65}
 #class-journal .admin-shell *{box-sizing:border-box}
@@ -236,3 +240,7 @@ body:has(.admin-shell){background:#f3f7f4}
 #class-journal .admin-shell .ad-badge,
 #class-journal .admin-shell .ad-badge:is(.is-active,.is-success){background:#fff;border-color:var(--cj-accent);color:var(--cj-accent-dark)}
 #class-journal .admin-shell .ad-badge.is-danger{background:#fff;border-color:#b3342d;color:#a12d27}
+/* #537 원래 초안 열기: 위 초록 작업 버튼 규칙보다 뒤·구체적으로 둔 글자형 버튼 */
+#class-journal .admin-shell .ad-main button.ad-link-button,
+#class-journal .admin-shell .ad-main button.ad-link-button:hover:not(:disabled){min-height:0;padding:0;border:0;background:none;color:var(--cj-accent);text-decoration:underline}
+@media(max-width:760px){#class-journal .admin-shell .ad-main button.ad-link-button{min-height:44px}}

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.followup.models import LlmVersions, ThinkingType
 from app.judgment.models import ApiModel
 from app.mission_draft.models import ESSAY_MIN_GRADE, Draft, ElementCode, InputType, Standard
+from app.theme_draft.families import StoryTypeCode
 
 Day = Literal["MON", "TUE", "WED", "THU", "FRI"]
 Scene = Literal["INTRO", "MON", "TUE", "WED", "THU", "FRI", "OUTRO"]
@@ -48,6 +49,60 @@ class ThemeFailure(ApiModel):
     reasons: list[str] = Field(min_length=1)
 
 
+REGEN_VERSION = 1  # regen 묶음 모양 번호(ai 전용 칸이 바뀌면 올림)
+# 부분 다시 생성 대상(#537, 사용자 결정 2026-11-17).
+# 영상은 시작·종료만, 그림은 장면 7개, 미션은 요일 5개
+RegenTarget = Literal[
+    "VIDEO:INTRO",
+    "VIDEO:OUTRO",
+    "IMAGE:INTRO",
+    "IMAGE:OUTRO",
+    "IMAGE:MON",
+    "IMAGE:TUE",
+    "IMAGE:WED",
+    "IMAGE:THU",
+    "IMAGE:FRI",
+    "MISSION:MON",
+    "MISSION:TUE",
+    "MISSION:WED",
+    "MISSION:THU",
+    "MISSION:FRI",
+]
+
+
+class ThemeRegenBase(ApiModel):
+    """원래 초안 결과(learning이 저장한 output 그대로).
+
+    공개 theme은 쓰지 않고 regen.theme을 쓴다.
+    """
+
+    missions: list["ThemeMission"] = Field(default_factory=list)
+    dialogues: list["ThemeDialogue"] = Field(default_factory=list)
+    images: dict[str, str] = Field(default_factory=dict)
+    videos: dict[str, str] = Field(default_factory=dict)
+    motions: dict[str, dict] = Field(default_factory=dict)
+    warnings: list["ThemeWarning"] = Field(default_factory=list)
+    regen: dict
+
+
+class ThemeRegenerate(ApiModel):
+    """부분 다시 생성 요청: 대상과 원래 초안 결과. 대상은 원래 결과 regen.targets 안이어야 한다."""
+
+    targets: list[RegenTarget] = Field(min_length=1)
+    base: ThemeRegenBase
+
+    @model_validator(mode="after")
+    def targets_available(self) -> Self:
+        self.targets = list(dict.fromkeys(self.targets))
+        regen = self.base.regen
+        if regen.get("version") != REGEN_VERSION or not isinstance(regen.get("theme"), dict):
+            raise ValueError("base.regen 형식이 아님")
+        missing = [t for t in self.targets if t not in (regen.get("targets") or [])]
+        if missing:
+            raise ValueError(f"재료가 없어 다시 만들 수 없는 대상: {missing}")
+        return self
+
+
 class ThemeDraftRequest(ApiModel):
     grade_min: int = Field(ge=3, le=6)
     grade_max: int = Field(ge=3, le=6)
@@ -55,6 +110,8 @@ class ThemeDraftRequest(ApiModel):
     topic: str | None = None
     missions: list[ThemeMissionInput] = Field(min_length=5, max_length=5)
     previous_failures: list[ThemeFailure] = Field(default_factory=list)
+    # 부분 다시 생성(#537). 없으면 지금처럼 전체 생성
+    regenerate: ThemeRegenerate | None = None
 
     @model_validator(mode="after")
     def shape_fits(self) -> Self:
@@ -232,6 +289,14 @@ class ThemeDraftResponse(ApiModel):
     warnings: list[ThemeWarning]
     failure: ThemeFailureResult | None
     versions: LlmVersions
+    # 부분 다시 생성 재료(#537). learning은 targets만 읽고 나머지는 열어 보지 않고 저장·전달.
+    # 글 단계까지 못 가면 null
+    regen: dict | None = None
+
+
+ThemeRegenBase.model_rebuild()
+ThemeRegenerate.model_rebuild()
+ThemeDraftRequest.model_rebuild()
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +414,13 @@ class GeneratedCut(BaseModel):
 
 
 class GeneratedTheme(BaseModel):
+    """줄거리 출력. storyType·incident·answerLook은 #634 내부 칸(응답 theme에 넣지 않음).
+
+    기본값은 #634 전 테마·시험 고정 자료용이고, LLM 스키마는 strict라 모두 필수(기본값 제거).
+    storyType은 주제가 learning 씨앗이면 코드가 주제에서 읽은 값으로 덮어쓴다(plan_theme).
+    """
+
+    storyType: StoryTypeCode = "LOST"
     title: str
     world: str
     characters: list[GeneratedCharacter]
@@ -358,8 +430,12 @@ class GeneratedTheme(BaseModel):
     outro: str
     bigQuestion: str
     target: str
+    # 동물 주인공 가족(③)만: 사건 물건·일 한 줄(미션 소재), 정답 동물 겉모습 한 줄(종료
+    # 그림). 그 밖 종류는 null
+    incident: str | None = None
     candidates: list[str]
     answer: str
+    answerLook: str | None = None
     features: list[GeneratedFeature]
     days: list[GeneratedDay]
     introCuts: list[GeneratedCut]

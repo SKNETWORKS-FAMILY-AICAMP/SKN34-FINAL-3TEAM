@@ -56,7 +56,7 @@ def test_configured_route_runs_graph_with_theme_llms(env: pytest.MonkeyPatch) ->
 
     status, body = post_theme(swap)
     assert status == 200 and body["failure"] is None
-    assert body["versions"] == {"model": "gen-model", "prompt": "theme-draft@2"}
+    assert body["versions"] == {"model": "gen-model", "prompt": "theme-draft@3"}
     assert len(body["missions"]) == 5 and len(body["dialogues"]) == 5
     assert gen.count("GeneratedTheme") == 1 and review.count("GeneratedStoryReview") == 1
 

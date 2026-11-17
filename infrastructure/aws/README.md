@@ -52,7 +52,7 @@ ai는 테마 초안 그림·영상을 `missions` 버킷의 `theme-drafts/{실행
 
 | 역할 | Pod Identity 연결 | 권한(inline) |
 |---|---|---|
-| `sagomungchi-demo-ai-asset-s3-role` | `app/ai-service` | `s3:PutObject` — `missions` 버킷 `theme-drafts/*` |
+| `sagomungchi-demo-ai-asset-s3-role` | `app/ai-service` | `s3:PutObject`·`s3:GetObject` — `missions` 버킷 `theme-drafts/*`(읽기는 테마 초안 부분 다시 생성 재료, #537. 정책 이름 `ai-asset-s3-write`는 그대로) |
 | `sagomungchi-demo-learning-asset-s3-role` | `app/learning-service` | `s3:GetObject` — 같은 경로(presigned URL 서명자 권한. 서명 자체는 S3를 부르지 않음) |
 
 - trust는 report·scoring 역할과 같은 형식(`pods.eks.amazonaws.com`, 클러스터 ARN·`app`·ServiceAccount 조건)이다. 두 앱 chart는 `serviceAccount.create` 기본값(true)으로 `ai-service`·`learning-service` ServiceAccount를 만든다.

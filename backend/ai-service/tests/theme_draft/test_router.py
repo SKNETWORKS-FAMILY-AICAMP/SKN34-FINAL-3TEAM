@@ -53,6 +53,7 @@ def test_response_uses_contract_fields_only() -> None:
         "warnings",
         "failure",
         "versions",
+        "regen",  # 부분 다시 생성 재료(#537)
     }
     theme = body["theme"]
     assert set(theme) == {
@@ -87,7 +88,7 @@ def test_response_uses_contract_fields_only() -> None:
         "hints",
         "elements",
     }
-    assert body["versions"] == {"model": "fake-model", "prompt": "theme-draft@2"}
+    assert body["versions"] == {"model": "fake-model", "prompt": "theme-draft@3"}
 
 
 def test_service_passes_deadline_from_settings() -> None:

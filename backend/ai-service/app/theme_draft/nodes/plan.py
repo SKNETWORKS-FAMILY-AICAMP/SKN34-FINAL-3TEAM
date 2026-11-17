@@ -14,17 +14,20 @@ from langgraph.runtime import Runtime
 from app.theme_draft.checks import (
     DAYS,
     apply_evidence_plan,
+    apply_facts,
     check_theme,
     evidence_plan_problems,
     fill_rules_out,
     finalize_texts,
     fit_evidence_plan,
+    fit_media,
     fix_targets,
     plan_slot,
     repair_logic,
     set_text_at,
     theme_day,
 )
+from app.theme_draft.families import story_type
 from app.theme_draft.models import GeneratedFixes, GeneratedTheme
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState
 
@@ -51,12 +54,24 @@ async def plan_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> Theme
         max_retries=ctx.settings.theme_llm_retries,
     )
     theme = fill_rules_out(generated.data.model_dump())
+    # 줄거리 종류(#634): 주제가 learning 씨앗이면 코드가 주제에서 읽은 값(모델이 다른 종류를
+    # 고르지 못하게), 관리자 자유 글이면 모델 값. 검사·칸 고쳐 쓰기·그림이 이 값으로 규칙을 고름
+    if seeded := ctx.prompt.body.seed_story_type(ctx.request):
+        theme["storyType"] = seeded
     # LLM이 쓴 종료 이야기는 마무리 장면(내부 칸 outroStory). 다섯 단서 정리는 코드가 표로 계산해
     # 앞에 붙인다(finalize_texts, #535 7차). 단서 앞 그때 시각도 코드가 붙임
     theme["outroStory"] = theme.get("outro") or ""
+    # 시작 이야기 끝에 규칙 문장을 코드가 붙이는 종류(#634 ④ 시간 탐정 마을 규칙): 모델 몫은 내부 칸
+    # introStory, 학생이 보는 intro는 finalize_texts가 합침
+    if story_type(theme).intro_notes:
+        theme["introStory"] = theme.get("intro") or ""
     # 증거 종류·기록 매체 배정(내부 칸, 응답에는 넣지 않음). 줄거리와 다르면 check_theme이
     # CLUE_EVIDENCE로 그날 칸만 고쳐 쓰게 함(#535)
     theme["evidencePlan"] = ctx.prompt.body.evidence_plan_for(ctx.request)
+    # 범주가 있는 사실표 종류(소리 탐정)의 후보 4개·정답(내부 칸, 코드가 정함 — SAME_KIND가 봄,
+    # #634 ⑤)
+    if plan := ctx.prompt.body.candidate_plan_for(ctx.request):
+        theme["candidatePlan"] = plan
     targets = code_adjust(theme)
     if targets and ctx.can_regenerate():
         # 코드가 배정·조건을 고친 칸만 한 번에 고쳐 씀(LLM 1번, 바뀐 것이 있을 때만).
@@ -96,11 +111,25 @@ def code_adjust(theme: dict) -> dict[str, list[str]]:
     고칠 칸 {경로: [사유]}를 돌려준다(바뀐 것이 없으면 빈 사전).
     """
     targets: dict[str, list[str]] = {}
-    for day in fit_evidence_plan(theme):
+    # 0. 사실표 종류(#634 동물·선물·재료): 특징 값을 사실표 값으로 맞춤. 그 특징을 쓰는 날 단서는
+    #    새 값으로 고쳐 씀
+    for feature in apply_facts(theme):
+        fill_rules_out(theme)
+        for d in theme.get("days") or []:
+            cond = d.get("condition") or {}
+            if cond.get("feature") == feature:
+                targets.setdefault(f"{d['day']}.clue", []).append(
+                    f"FACT_FIX {d['day']} 특징 '{feature}' 값을 코드가 사실표로 "
+                    f"맞춤(허용 값 "
+                    f"{cond.get('allowed')}): 단서 문장을 새 값에 맞게"
+                )
+    # 흔적 배정 옮기기 뒤 기록 매체를 그날 특징에 맞춤(#634 ⑤: 소리는 사진으로 알 수 없음)
+    for day in dict.fromkeys([*fit_evidence_plan(theme), *fit_media(theme)]):
         slot = plan_slot(theme, day)
         for reason in evidence_plan_problems(theme_day(theme, day), slot or {}):
             path = f"{day}.{reason.split(' ')[2]}"
-            targets.setdefault(path, []).append(reason)
+            if reason not in targets.get(path, []):
+                targets.setdefault(path, []).append(reason)
     changed = repair_logic(theme)
     for day in changed:
         cond = theme_day(theme, day).get("condition") or {}

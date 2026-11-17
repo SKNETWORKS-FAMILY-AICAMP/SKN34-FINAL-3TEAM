@@ -1,0 +1,5 @@
+# 원자료·분할·체크포인트·모델 폴더는 커밋하지 않음 (NFR-DAT-03, #690)
+data/
+checkpoints/
+models/
+.venv/
