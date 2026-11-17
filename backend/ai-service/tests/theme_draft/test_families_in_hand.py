@@ -290,3 +290,15 @@ def test_in_hand_sighting_clue_must_not_be_trace() -> None:
     assert not [r for r in checks.check_theme(lost, 3) if "목격 날 단서가" in r]
     assert families.TIMES.media_of("가로등") == frozenset({"사진", "영상", "일지", "메모"})
     assert "동물 먹이" in prompts.SAFETY_STORY and "동물 먹이" in prompts.PLAN_SYSTEM
+
+
+def test_mungchi_alone_cut_does_not_draw_in_hand_target() -> None:
+    # 그림·영상 실측: 선물 상자 시작 3컷(뭉치 혼자 출동)에서 뭉치가 상자를 들고 그려짐
+    gift = gift_theme()
+    cut3 = prompts.cut_image_prompt(gift, "INTRO", 3, gift["introCuts"][2], [])
+    assert "Do not draw 생일에 받은 리본 상자 in this picture; Mungchi holds nothing." in cut3
+    assert "closed (do not show what is inside)" not in cut3
+    cut4 = prompts.cut_image_prompt(gift, "INTRO", 4, gift["introCuts"][3], [])
+    assert "closed (do not show what is inside)" in cut4  # 사람이 있는 컷은 그대로
+    video3 = prompts.video_prompt(gift, "INTRO", 3, gift["introCuts"][2], [])
+    assert "Do not show 생일에 받은 리본 상자; Mungchi holds nothing." in video3

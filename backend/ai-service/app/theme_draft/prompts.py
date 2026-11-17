@@ -1419,6 +1419,14 @@ def target_lines(theme: Theme, scene: str, index: int) -> list[str]:
     lines = []
     if not t.target_visual:  # #634 ④ 시간 탐정: 대상 지시 없음(시계 금지는 아래 후보 줄)
         pass
+    elif shows and t.target_in_hand and not cut_has_characters(scene, index):
+        # 뭉치 혼자 출동하는 컷: 대상을 들 사람이 없어 뭉치가 들게 그려짐(그림·영상 실측 선물 상자
+        # 시작 3컷, 영상 검토 CONTINUITY "뭉치가 사건 대상을 들고 있음"). 이 컷에는 대상을 그리지
+        # 않음
+        lines.append(
+            f"Do not draw {theme.get('target') or 'the target'} in this picture; Mungchi holds "
+            "nothing."
+        )
     elif shows and t.code == "GIFT" and (scene, index) not in t.answer_cuts:
         lines.append(
             f"{theme.get('target') or 'The gift box'}: a plain square gift box with a ribbon, the "
@@ -1683,6 +1691,10 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         )
     elif scene == "INTRO" and shows and not t.target_in_hand:  # 잃어버린 것 시작 1컷
         about_target = f"{target} may be held or used, but do not show where it is put or hidden."
+    elif shows and t.target_in_hand and not cut_has_characters(scene, index):
+        about_target = (
+            f"Do not show {target}; Mungchi holds nothing."  # 뭉치 혼자 출동 컷(그림과 같게)
+        )
     elif shows:
         about_target = (
             "The gift box stays closed."
