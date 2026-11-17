@@ -553,16 +553,21 @@ def fact_table_problems(theme: Theme) -> list[str]:
     # 한 범주(#634 ⑤ 이슈 결정: 소리 탐정 후보는 동물만 또는 물건만)
     if table.groups:
         kinds = {table.group(c) for c in theme.get("candidates") or [] if table.group(str(c))}
-        want = theme.get("candidateGroup")  # 코드가 정한 범주(plan_theme, 내부 칸)
+        # 코드가 정한 후보 4개·정답(plan_theme 내부 칸 candidatePlan, 같은 씨앗)
+        plan = theme.get("candidatePlan") or {}
         if len(kinds) > 1:
             bad.append(
                 f"SAME_KIND 후보 {theme.get('candidates')}가 여러 범주({sorted(kinds)})에 걸침(한 "
                 "범주에서만 4개)"
             )
-        elif want and kinds and kinds != {want}:
+        elif plan and (
+            sorted(str(c).strip() for c in theme.get("candidates") or [])
+            != sorted(plan.get("candidates") or [])
+            or str(theme.get("answer") or "").strip() != plan.get("answer")
+        ):
             bad.append(
-                f"SAME_KIND 후보 {theme.get('candidates')}가 정해진 범주 '{want}'가 아님"
-                "(그 범주에서 4개)"
+                f"SAME_KIND 후보·정답이 정해진 것과 다름(candidates {plan.get('candidates')}, "
+                f"answer {plan.get('answer')} 그대로)"
             )
     # 정답을 다른 후보와 있는 값 특징만으로 가를 수 있어야 함(#634 ④: 없는 값은 단서로 못 쓰고,
     # 모든 값이 같은 후보(오전 10시·오후 3시)는 정답을 가릴 수 없음)

@@ -16,6 +16,7 @@ PLAN_SYSTEM에 두고 종류 규칙 묶음(families.type_rules)을 plan_user가 
 """
 
 import json
+from typing import Any
 
 from app.followup.prompts import grade_style
 from app.mission_draft.models import Draft, MissionDraftRequest
@@ -366,6 +367,24 @@ def candidate_group_for(request: ThemeDraftRequest) -> str | None:
     return random.Random(f"{plan_seed(request)}-group").choice(groups)
 
 
+def candidate_plan_for(request: ThemeDraftRequest) -> dict[str, Any] | None:
+    """범주가 있는 사실표 종류(소리 탐정)의 후보 4개와 정답(코드가 정함, 같은 씨앗).
+
+    범주만 정하면 모델이 늘 같은 4개·같은 정답을 골랐음(#634 ⑤ 작은 실측: 동물 4건 모두 부엉이·
+    고양이·생쥐·너구리, 물건 4건 중 정답 바람개비 3건). 표의 줄은 소리 난 곳이 모두 달라 어떤 4개를
+    골라도 정답을 가를 수 있음(FactTable.blocked가 비어 있음, 시험). 그 밖은 None."""
+    import random
+
+    group = candidate_group_for(request)
+    found = parse_topic(request.topic)
+    if group is None or found is None or found.facts is None:
+        return None
+    names = [c for c in found.facts.rows if found.facts.group(c) == group]
+    rng = random.Random(f"{plan_seed(request)}-candidates")
+    cands = rng.sample(names, CANDIDATES[request.grade])
+    return {"group": group, "candidates": cands, "answer": rng.choice(cands)}
+
+
 def evidence_plan_lines(plan: dict[str, dict[str, str | None]]) -> list[str]:
     lines = ["", "증거 종류 배정(evidence.kind, 코드가 정함. 요일마다 그대로 따른다):"]
     for day, slot in plan.items():
@@ -418,11 +437,11 @@ def story_type_lines(request: ThemeDraftRequest) -> list[str]:
     found = parse_topic(request.topic)
     if found:
         lines = [f"storyType: {found.code}(주제가 정함, 그대로 쓴다)", type_rules(found)]
-        if (group := candidate_group_for(request)) and found.facts is not None:
-            names = [c for c in found.facts.rows if found.facts.group(c) == group]
+        if plan := candidate_plan_for(request):
             lines.append(
-                f"이번 테마 후보 범주: {group}(코드가 정함. candidates는 {'·'.join(names)} 가운데 "
-                "4개, 코드 검사 SAME_KIND)"
+                f"이번 테마 후보(코드가 정함, 범주 {plan['group']}): candidates는 "
+                f"{'·'.join(plan['candidates'])}, answer는 {plan['answer']}(그대로 쓴다, 코드 검사 "
+                "SAME_KIND). 정답 이름은 엔딩 전 글에 쓰지 않는다."
             )
         return lines
     return [

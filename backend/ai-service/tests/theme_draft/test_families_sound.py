@@ -237,25 +237,27 @@ def test_when_keeps_its_rules_after_flag_split() -> None:
     assert families.SOUNDS.drawable and not families.TIMES.drawable
 
 
-def test_code_picks_candidate_group() -> None:
-    # 작은 실측 4건 모두 같은 동물 4마리 → 범주는 코드가 정함(같은 요청은 같은 범주,
-    # 주·학년마다 섞임)
-    groups = {
-        prompts.candidate_group_for(
+def test_code_picks_candidates_and_answer() -> None:
+    # 작은 실측: 동물 4건 모두 같은 4마리, 물건 4건 중 정답 바람개비 3건 → 범주·후보 4개·정답은
+    # 코드가 정함(같은 요청은 같은 값, 주·학년마다 섞임)
+    plans = [
+        prompts.candidate_plan_for(
             ThemeDraftRequest.model_validate(request_body(topic=SEED, grade=g))
         )
         for g in (3, 4, 5, 6)
-    }
-    assert groups <= {"동물", "물건"}
-    request = ThemeDraftRequest.model_validate(request_body(topic=SEED))
-    assert prompts.candidate_group_for(request) == prompts.candidate_group_for(request)
-    assert "이번 테마 후보 범주:" in prompts.plan_user(request, [])
-    lost = ThemeDraftRequest.model_validate(request_body())
-    assert prompts.candidate_group_for(lost) is None
-    wrong = {**sound_theme(), "candidateGroup": "물건"}
-    assert any("정해진 범주 '물건'" in r for r in checks.fact_table_problems(wrong))
-    assert not [
-        r
-        for r in checks.fact_table_problems({**sound_theme(), "candidateGroup": "동물"})
-        if r.startswith("SAME_KIND")
     ]
+    for plan in plans:
+        assert plan is not None and plan["group"] in {"동물", "물건"}
+        names = plan["candidates"]
+        assert len(set(names)) == 4 and plan["answer"] in names
+        assert {families.SOUNDS.group(c) for c in names} == {plan["group"]}
+    request = ThemeDraftRequest.model_validate(request_body(topic=SEED))
+    assert prompts.candidate_plan_for(request) == prompts.candidate_plan_for(request)
+    plan = prompts.candidate_plan_for(request)
+    assert f"answer는 {plan['answer']}" in prompts.plan_user(request, [])  # type: ignore[index]
+    assert prompts.candidate_plan_for(ThemeDraftRequest.model_validate(request_body())) is None
+    fixed = {"group": "동물", "candidates": list(ANIMALS), "answer": "너구리"}
+    ok = {**sound_theme(), "candidatePlan": fixed}
+    assert not [r for r in checks.fact_table_problems(ok) if r.startswith("SAME_KIND")]
+    other = {**sound_theme(), "candidatePlan": {**fixed, "answer": "생쥐"}}
+    assert any(r.startswith("SAME_KIND 후보·정답이") for r in checks.fact_table_problems(other))

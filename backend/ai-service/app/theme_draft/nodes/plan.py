@@ -68,9 +68,10 @@ async def plan_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> Theme
     # 증거 종류·기록 매체 배정(내부 칸, 응답에는 넣지 않음). 줄거리와 다르면 check_theme이
     # CLUE_EVIDENCE로 그날 칸만 고쳐 쓰게 함(#535)
     theme["evidencePlan"] = ctx.prompt.body.evidence_plan_for(ctx.request)
-    # 범주가 있는 사실표 종류(소리 탐정)의 후보 범주(내부 칸, 코드가 정함 — SAME_KIND가 봄, #634 ⑤)
-    if group := ctx.prompt.body.candidate_group_for(ctx.request):
-        theme["candidateGroup"] = group
+    # 범주가 있는 사실표 종류(소리 탐정)의 후보 4개·정답(내부 칸, 코드가 정함 — SAME_KIND가 봄,
+    # #634 ⑤)
+    if plan := ctx.prompt.body.candidate_plan_for(ctx.request):
+        theme["candidatePlan"] = plan
     targets = code_adjust(theme)
     if targets and ctx.can_regenerate():
         # 코드가 배정·조건을 고친 칸만 한 번에 고쳐 씀(LLM 1번, 바뀐 것이 있을 때만).
