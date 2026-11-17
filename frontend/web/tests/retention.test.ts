@@ -413,7 +413,7 @@ test('#705 꾸미기 목록: 방 소품 보유 개수·등록일을 읽고, 다�
   assert.equal(SLOT_LABELS.FLOOR, '바닥')
   assert.equal(SLOT_LABELS.DECOR, '방 소품')
   assert.equal(SLOT_LABELS.ACCESSORY, '소품', '캐릭터 착용 칸 소품은 그대로')
-  assert.equal(ALL_ITEM_SLOTS.includes('FLOOR') || ALL_ITEM_SLOTS.includes('DECOR'), false, '관리자 칸 선택은 #706에서')
+  assert.equal(ALL_ITEM_SLOTS.includes('FLOOR') && ALL_ITEM_SLOTS.includes('DECOR'), true, '관리자 칸 선택에 바닥·방 소품(#706 병합)')
 })
 
 test('#705 착용 바닥 칸은 서버가 줄 때만 만들고, 방 소품은 착용 칸이 아니다', () => {

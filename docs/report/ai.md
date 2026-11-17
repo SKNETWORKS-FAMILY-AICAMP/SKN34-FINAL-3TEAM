@@ -693,6 +693,18 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 - 인프라 확인(담당자와): 인증 방식 확정, GCP 권한·Veo 동시 요청 할당량, ai-service 서비스 계정 생성(지금 `create: false`)과 S3 쓰기 IRSA, 영상 env(`THEME_VIDEO_ENABLED`·`VIDEO_PROJECT`·`VIDEO_LOCATION`·`VIDEO_MODEL`·`ASSET_S3_BUCKET`·`GOOGLE_APPLICATION_CREDENTIALS`), 자원 한도(메모리 512Mi·CPU 500m, 컷 다시 인코딩에 모자랄 수 있음, 측정 안 함)
 - 자격 증명을 못 찾으면 google-auth가 GCE 메타데이터 서버를 확인하는데 네트워크 정책이 `169.254.0.0/16`을 막아 기동이 몇 초 늦어질 수 있음(영상 켜짐 + `VIDEO_PROJECT`일 때만)
 
+**prod 설정 (#734, #600 하위, 2026-11-17)**: 인증은 B안(사용자 결정 2026-11-17, #600 댓글). 기존 서비스 계정 `theme-veo` 키를 그대로 쓰고 비용은 GCP 프로젝트 쪽에서 관리한다. 위 표의 "운영(기준안)" 경로(키 → Secrets Manager → ExternalSecret 파일 마운트)를 prod에 넣었다.
+
+| 위치 | 값 |
+|---|---|
+| Secrets Manager `sagomungchi/demo/app/ai` | property `THEME_VIDEO_CREDENTIALS_JSON`(서비스 계정 키 JSON 문자열)·`VIDEO_PROJECT`. 기존 `OPENAI_API_KEY`와 같은 비밀. 값은 저장소에 두지 않음 |
+| `prod/external-secret-resources.json` | ExternalSecret `ai-theme-video`(app) → Secret `ai-theme-video` 키 `credentials.json`·`VIDEO_PROJECT`. 이름은 kind와 같음 |
+| `prod/ai-service.json` env | `THEME_VIDEO_ENABLED=true`, `THEME_VIDEO_MAX_REGEN=0`(테마 1회 Veo 8번), `GOOGLE_APPLICATION_CREDENTIALS=/etc/theme-video/credentials.json`, `VIDEO_PROJECT`(secretKeyRef). `VIDEO_LOCATION`·`VIDEO_MODEL`은 설정 기본값(`us-central1`·`veo-3.1-fast-generate-001`)이라 넣지 않음 |
+| `prod/ai-service.json` 볼륨 | Secret `ai-theme-video`의 `credentials.json`만 `/etc/theme-video`에 읽기 전용 마운트. env·볼륨 모두 `optional: true`라 Secret 동기화가 실패해도 ai는 뜨고 영상만 건너뜀(kind와 같음) |
+| 그 밖 | ESO 역할의 인라인 정책 `external-secrets-ai-read`가 이미 `sagomungchi/demo/app/ai-??????`를 읽어 IAM 변경 없음. 공용 443 egress·S3 쓰기 Pod Identity(#652)·메모리 상한 1Gi(#586)도 이미 있음 |
+
+- 저장소 검증만 함(helm 렌더링·`scripts/tests`). ExternalSecret 동기화, Pod의 키 파일·`VIDEO_PROJECT` 확인, 실제 영상 생성은 A 계정 재가동(#601) 때 확인한다. 운영 반영은 main SHA 배포(cd-release) 때
+
 ### 17.5 영상 사용량 `THEME_VIDEO` (#546, 2026-11-12)
 
 core가 #543(V45)부터 `THEME_VIDEO`를 받게 되어(이벤트 스키마·`CallType`·`ck_llm_usage_call_type`·관리자 필터) ai도 영상 사용량을 보낸다.

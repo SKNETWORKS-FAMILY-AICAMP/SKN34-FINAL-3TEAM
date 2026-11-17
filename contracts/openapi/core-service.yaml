@@ -543,7 +543,7 @@ paths:
       tags: [Students]
       operationId: getRoomDecorSpots
       summary: 내 방에 놓은 방 소품 (#704, FN-RET-09, P27 개정). 학생 본인만, 학부모·관리자 403
-      description: 놓은 자리만 번호순(빈 자리 없음). 이름·그림 키는 look_item 값. 보유 개수는 /students/me/look-items의 ownedCount
+      description: 놓은 기준 칸만 면(FLOOR → WALL_BACK → WALL_LEFT) → row → col 순(빈 칸 없음). 이름·그림 키는 look_item 값. 보유 개수는 /students/me/look-items의 ownedCount
       responses:
         '200':
           description: 지금 놓은 방 소품 (Cache-Control no-store)
@@ -556,8 +556,8 @@ paths:
       operationId: replaceRoomDecorSpots
       summary: 방 소품 놓은 자리 전체 교체 (#704). 빈 목록은 모두 치움
       description: >-
-        자리 1~8(종류 구분 없음)에 가진 방 소품을 놓는다. 같은 방 소품은 보유 개수만큼 여러 자리에 놓을 수 있다. 기존 가구는 고정.
-        spots 누락·9개 이상·spotNo 1~8 밖·같은 spotNo 두 번·빈 칸·가지지 않은 방 소품(방 소품이 아닌 아이템 포함)·보유 개수보다 많이 놓기는
+        바닥·뒷벽·왼쪽 벽 기준 칸에 가진 방 소품을 최대 8개 놓는다(#723). 큰 소품의 크기·겹침·허용 면·가구·이동 경로는 웹이 검사한다. 같은 방 소품은 보유 개수만큼 여러 자리에 놓을 수 있다. 기존 가구는 고정.
+        spots 누락·9개 이상·면별 col/row 범위 밖·같은 surface/col/row 두 번·빈 칸·가지지 않은 방 소품(방 소품이 아닌 아이템 포함)·보유 개수보다 많이 놓기는
         422 VALIDATION_FAILED(아무것도 바꾸지 않음). 판매 중단돼도 가진 방 소품은 놓을 수 있다. 한 트랜잭션에서 학생 행을 잠그고 전체를 바꾼다.
         삭제 확정된 학생은 409 STUDENT_UNAVAILABLE
       requestBody:
@@ -9095,13 +9095,28 @@ components:
             decor:
               type: array
               maxItems: 8
-              description: 방 소품 놓은 자리(#704, 자리 번호순, 빈 자리 없음). 아이템 코드·이름·보유 개수 없음
+              description: 방 소품 기준 칸(#723, 면 FLOOR → WALL_BACK → WALL_LEFT → row → col 순, 빈 칸 없음). 아이템 코드·이름·보유 개수 없음
               items:
                 type: object
                 additionalProperties: false
-                required: [spotNo, assetKey]
+                required: [surface, col, row, assetKey]
+                oneOf:
+                  - properties:
+                      surface: {const: FLOOR}
+                      col: {maximum: 16}
+                      row: {maximum: 12}
+                  - properties:
+                      surface: {const: WALL_BACK}
+                      col: {maximum: 15}
+                      row: {maximum: 5}
+                  - properties:
+                      surface: {const: WALL_LEFT}
+                      col: {maximum: 10}
+                      row: {maximum: 5}
                 properties:
-                  spotNo: {type: integer, minimum: 1, maximum: 8}
+                  surface: {type: string, enum: [FLOOR, WALL_BACK, WALL_LEFT]}
+                  col: {type: integer, minimum: 0, maximum: 16}
+                  row: {type: integer, minimum: 0, maximum: 12}
                   assetKey: {type: string}
             frames:
               type: array
@@ -9251,16 +9266,46 @@ components:
     RoomDecorSpotInput:
       type: object
       additionalProperties: false
-      required: [spotNo, itemKey]
+      required: [surface, col, row, itemKey]
+      oneOf:
+        - properties:
+            surface: {const: FLOOR}
+            col: {maximum: 16}
+            row: {maximum: 12}
+        - properties:
+            surface: {const: WALL_BACK}
+            col: {maximum: 15}
+            row: {maximum: 5}
+        - properties:
+            surface: {const: WALL_LEFT}
+            col: {maximum: 10}
+            row: {maximum: 5}
       properties:
-        spotNo: {type: integer, minimum: 1, maximum: 8}
+        surface: {type: string, enum: [FLOOR, WALL_BACK, WALL_LEFT]}
+        col: {type: integer, minimum: 0, maximum: 16}
+        row: {type: integer, minimum: 0, maximum: 12}
         itemKey: {type: string, description: 방 소품 look_item 코드}
     RoomDecorSpot:
       type: object
       additionalProperties: false
-      required: [spotNo, itemKey, name, assetKey]
+      required: [surface, col, row, itemKey, name, assetKey]
+      oneOf:
+        - properties:
+            surface: {const: FLOOR}
+            col: {maximum: 16}
+            row: {maximum: 12}
+        - properties:
+            surface: {const: WALL_BACK}
+            col: {maximum: 15}
+            row: {maximum: 5}
+        - properties:
+            surface: {const: WALL_LEFT}
+            col: {maximum: 10}
+            row: {maximum: 5}
       properties:
-        spotNo: {type: integer, minimum: 1, maximum: 8}
+        surface: {type: string, enum: [FLOOR, WALL_BACK, WALL_LEFT]}
+        col: {type: integer, minimum: 0, maximum: 16}
+        row: {type: integer, minimum: 0, maximum: 12}
         itemKey: {type: string}
         name: {type: string}
         assetKey: {type: string}
@@ -9272,7 +9317,7 @@ components:
         spots:
           type: array
           maxItems: 8
-          description: 놓은 자리만 번호순 (#704)
+          description: 놓은 기준 칸만 면(FLOOR → WALL_BACK → WALL_LEFT) → row → col 순 (#723)
           items: {$ref: '#/components/schemas/RoomDecorSpot'}
     RoomFrameSlots:
       type: object
@@ -11994,7 +12039,7 @@ components:
           type:
           - string
           - 'null'
-          description: 학부모의 로그인 ID. ID·비밀번호 학부모(#415)는 아이디, Google 학부모(#683)는 login_id로 저장한 Google 이메일. 관리자는 null.
+          description: 학부모의 로그인 ID. ID·비밀번호 학부모(#415)는 아이디, Google 학부모(#683)는 최근 Google 로그인에서 검증해 login_id에 반영한 이메일. 관리자는 null.
         authMethod:
           type: string
           enum:

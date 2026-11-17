@@ -90,15 +90,14 @@ export type FloorSlot = 'FLOOR'
  * 같은 아이템을 여러 개 사서(`purchase`) 내 방에 놓는다. 그래서 `Equipped`에는 들어가지 않는다.
  */
 export type DecorSlot = 'DECOR'
-export type ItemSlot = CharacterSlot | FurnitureSlot | FloorSlot | DecorSlot
+export type WearableSlot = CharacterSlot | FurnitureSlot
+/** 방 소품은 여러 개 구매·배치하며 착용 칸이 아니다(#704·#706). */
+export type ItemSlot = WearableSlot | FloorSlot | DecorSlot
 export type LookSlot = 'THEME' | 'COMPANION' | ItemSlot
 export const ITEM_SLOTS: CharacterSlot[] = ['HAT', 'OUTFIT', 'ACCESSORY', 'BACKGROUND']
 export const FURNITURE_SLOTS: FurnitureSlot[] = ['DESK', 'WALL', 'WARDROBE']
-/**
- * 관리자 아이템 등록에서 고르는 칸 전체. 바닥·방 소품 칸은 관리자 웹 #706이 화면과 함께 더한다
- * (학생 웹 #705는 칸 타입·이름만 더하고 관리자 화면 동작은 바꾸지 않는다).
- */
-export const ALL_ITEM_SLOTS: ItemSlot[] = [...ITEM_SLOTS, ...FURNITURE_SLOTS]
+/** 관리자 아이템 등록에서 고르는 칸 전체(바닥·방 소품은 관리자 웹 #706이 더함) */
+export const ALL_ITEM_SLOTS: ItemSlot[] = [...ITEM_SLOTS, ...FURNITURE_SLOTS, 'FLOOR', 'DECOR']
 /** 방 소품 아이템당 보유 상한(#704 확정, 넘으면 409 `LOOK_DECOR_LIMIT`). 목록 `ownedCount`의 최댓값과 같다 */
 export const DECOR_MAX_OWNED = 8
 export const SLOT_LABELS: Record<LookSlot, string> = {
