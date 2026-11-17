@@ -25,12 +25,12 @@ class ThemeTopicSeedsTest {
     private fun oldFormat(seed: ThemeTopicSeed) = "뭉치 역할: ${seed.role} / 장소: ${seed.place} / 찾는 대상: ${seed.target}"
 
     @Test
-    fun `씨앗은 60개(잃어버린 것 24·나머지 종류 4개씩)이고 겹치지 않으며 ai 형식·주제 상한 안, 다시 쓰지 않는 기간은 목록 개수`() {
-        assertEquals(60, seeds.size)
+    fun `씨앗은 64개(잃어버린 것 24·나머지 종류 4개씩)이고 겹치지 않으며 ai 형식·주제 상한 안, 다시 쓰지 않는 기간은 목록 개수`() {
+        assertEquals(64, seeds.size)
         assertEquals(StoryType.entries.associateWith { if (it == StoryType.LOST) 24 else 4 },
             seeds.groupingBy { it.type }.eachCount())
         assertEquals(seeds.size, seeds.map { Triple(it.role.substringBefore('('), it.place, it.target) }.toSet().size)
-        assertEquals(60L, ThemeTopicSeeds.RECENT_WEEKS)
+        assertEquals(64L, ThemeTopicSeeds.RECENT_WEEKS)
         seeds.forEach {
             assertTrue(Regex("^줄거리: .+ / 뭉치 역할: .+ / 장소: .+ / (찾는 대상|밝힐 것|손에 든 것): .+$").matches(it.topic), it.topic)
             assertTrue(it.topic.length <= ThemeDraftService.MAX_TOPIC, it.topic)
@@ -62,6 +62,12 @@ class ThemeTopicSeedsTest {
             assertTrue(it.target.endsWith("탈것") && "/ 밝힐 것: " in it.topic, it.topic)
             assertTrue(listOf("자전거", "킥보드", "버스", "기차", "여객선").none { v -> v in it.topic }, it.topic)
         }
+        // ⑤ 소리 탐정(ai.md 17.8.18): 대상 글은 '…소리'로 끝나고 후보 동물·물건 이름이 없음
+        val soundCandidates = listOf("부엉이", "고양이", "생쥐", "너구리", "강아지", "바람개비", "그네", "양동이", "깡통", "현수막")
+        seeds.filter { it.type == StoryType.SOUND }.forEach {
+            assertTrue(it.target.endsWith("소리") && "/ 밝힐 것: " in it.topic, it.topic)
+            assertTrue(soundCandidates.none { v -> v in it.topic }, it.topic)
+        }
     }
 
     @Test
@@ -77,7 +83,7 @@ class ThemeTopicSeedsTest {
             ),
             seasonal,
         )
-        assertEquals(54, fitting(autumn).size)
+        assertEquals(58, fitting(autumn).size)
         assertTrue(fitting(LocalDate.of(2027, 1, 4)).any { "눈썰매장" in it })
         assertFalse(fitting(LocalDate.of(2027, 7, 5)).any { "눈썰매장" in it })
         assertTrue(fitting(LocalDate.of(2027, 7, 5)).any { "바닷가 모래사장" in it })

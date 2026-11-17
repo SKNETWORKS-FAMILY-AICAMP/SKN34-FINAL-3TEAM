@@ -29,13 +29,13 @@ from app.theme_draft.checks import (
     EVIDENCE_KO,
     HINTS,
     Theme,
-    answer_facts,
     candidate_words,
     clue_person,
     evidence_plan,
     feature_table,
     plan_for_type,
     plan_slot,
+    secret_values,
     target_words,
     text_at,
     text_max,
@@ -113,7 +113,8 @@ PLAN_SYSTEM = (
     "차림은 outfit에, 장소는 사건이 일어나는 곳(장면·후보는 그 장소 안이나 둘레)으로, 넷째 칸 "
     "글은 target으로(글 그대로). 주제가 그냥 글이면 그 주제에 맞게 고른다.\n"
     "- storyType은 줄거리 종류 코드(아래 줄거리 종류 규칙). 동물 주인공 종류(PRANK·FOOTPRINT)는 "
-    "incident·answerLook을 반드시 채운다(비우면 코드 검사 REQUIRED). 그 밖 종류는 둘 다 null.\n"
+    "incident·answerLook을, 소리 탐정(SOUND)은 answerLook을 반드시 채운다(비우면 코드 검사 "
+    "REQUIRED). 그 밖은 null.\n"
     "- 학생이 집·학교·마을에서 직접 보는 사물과 일만. 범죄·폭력·위험·무서운 일 금지. 시각은 "
     "오전·오후를 붙인 12시간제로 쓰고 이야기에 맞는 때를 고른다.\n"
     "- days는 MON~FRI 다섯 장면이고 thinkingType은 주어진 요일 배치 그대로. place는 그날 장소(20자 "
@@ -499,12 +500,16 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
                 else "",
                 "말한 사람을 붙이지 않고, 새 사실을 더하지 않는다.",
                 names,
-                ""
-                if story_type(theme).clue_time
-                else "어떤 시각(3시·정오 등)도 쓰지 않는다(그때가 정답, '그 일을 할 때'처럼).",
-                # #634 ④ 탈것 찾기 CLUE_OWNER: 온 사람을 넣고 탈것을 봤다고 쓰지 않음
-                f"온 사람('{person}')을 넣어 그 사람이 탄 탈것의 증거임을 밝히고, 탈것을 봤다고 "
-                "쓰지 않는다(들고 온 것을 봤거나 소리를 들은 것으로)."
+                "어떤 시각(3시·정오 등)도 쓰지 않는다(그때가 정답, '그 일을 할 때'처럼)."
+                if story_type(theme).hide_times
+                else "",
+                # #634 ④⑤ CLUE_OWNER: 탈것은 온 사람(탈것을 봤다고 쓰지 않음), 소리는 '소리' 낱말
+                (
+                    f"'{person}' 낱말을 넣어 그 소리의 증거임을 밝힌다."
+                    if story_type(theme).clue_word
+                    else f"온 사람('{person}')을 넣어 그 사람이 탄 탈것의 증거임을 밝히고, 탈것을 "
+                    "봤다고 쓰지 않는다(들고 온 것을 봤거나 소리를 들은 것으로)."
+                )
                 if (person := clue_person(theme))
                 else "",
             ]
@@ -550,24 +555,23 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
         ]
     if path == "answerLook":
         return [
-            f"정답 동물 {theme.get('answer') or ''}의 겉모습 한 줄(종료 그림·영상에서 같은 "
-            "모습으로 그림). 특징 표의 정답 동물 값과 맞게 쓴다."
+            f"정답 {theme.get('answer') or ''}의 겉모습 한 줄(종료 그림·영상에서 같은 "
+            "모습으로 그림). 특징 표의 정답 값과 맞게 쓴다."
         ]
     if path == "outro":  # 마무리 장면만(다섯 단서 정리는 코드가 앞에 붙임, #535 7차)
         return [
             f"종료 이야기의 마무리 장면만 쓴다: {story_type(theme).outro_rule} "
             "요일 이름·빠진 후보 정리는 쓰지 않는다(코드가 앞에 붙임). 정답 이름은 써도 된다.",
-            # #634 ④ OUTRO_ANSWER: 시간 탐정 마무리 장면은 정답 시각 그대로
-            ""
-            if story_type(theme).clue_time
-            else f"시각은 정답 '{theme.get('answer') or ''}' 그대로 쓰고 다른 후보 시각은 "
-            "쓰지 않는다.",
+            # #634 ④⑤ OUTRO_ANSWER: 마무리 장면은 정답 그대로
+            f"정답 '{theme.get('answer') or ''}' 그대로 쓰고 다른 후보는 쓰지 않는다."
+            if story_type(theme).outro_check
+            else "",
         ]
     t = story_type(theme)
     extra = []
     if path == "intro" and t.intro_notes:  # #634 ④ 마을 규칙은 코드가 끝에 붙임
         extra.append(f"끝의 규칙 문장('{t.intro_notes[0]}')은 코드가 붙이므로 쓰지 않는다.")
-    if not t.clue_time:  # #634 ④ 시간 탐정: TIME_WORD
+    if t.hide_times:  # #634 ④ 시간 탐정: TIME_WORD
         extra.append("어떤 시각(3시·오전 9시·정오 등)도 쓰지 않는다('그 일을 할 때'·'아침에'처럼).")
     if t.facts is not None:  # #634 CANDIDATE_NAME: 엔딩 전 글
         return [
@@ -662,7 +666,7 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
     animal = story_type(theme).animal
     hide = story_type(theme).hide_candidates
     avoid_names = (
-        [*candidate_words(theme), *answer_facts(theme)] if hide else theme.get("candidates") or []
+        [*candidate_words(theme), *secret_values(theme)] if hide else theme.get("candidates") or []
     )
     lines = [
         "",
@@ -747,11 +751,10 @@ def story_text(theme: Theme, day: str, grade: int, knowledge: list[str] | None =
             "곁에 있는 것으로 나와도 된다. 그 대상의 단서 특징 값(색·맛·무게·소리 등)은 문제에 "
             "정해 쓰지 않는다."
             if story_type(theme).target_in_hand
-            # #634 ④ 시간 탐정: 그 일은 알려진 사실이고 모르는 것은 때뿐(TIME_WORD와 같은 낱말)
-            else f"- 밝힐 것: {theme.get('target') or ''}. 그 일은 이야기에 나와도 되지만 "
-            "그 일을 한 때는 모른다. 문제·안내·생각 열기 질문·예시 답에 어떤 시각(3시·오전 9시·"
-            "정오 등)도 쓰지 않는다(시각 계산 문제도 내지 않음)."
-            if not story_type(theme).clue_time
+            # #634 ④⑤ 시간 탐정·소리 탐정: 그 일·그 소리는 알려진 사실, 모르는 것은 때·소리를 낸 것
+            else f"- 밝힐 것: {theme.get('target') or ''}. {story_type(theme).target_note}. "
+            "문제·안내·생각 열기 질문·예시 답에도 그대로 지킨다."
+            if story_type(theme).target_note
             else f"- 찾는 대상: {theme.get('target') or ''}. 아직 찾지 못했으므로 문제에서 지금 "
             "보거나 만지거나 곁에 있는 것처럼 쓰지 않는다. 사진·영상·기록에 찍힌 지나간 때의 "
             "모습은 써도 된다(지금 있는 곳은 쓰지 않음)."
@@ -891,7 +894,7 @@ def avoid_words(theme: Theme, day: str) -> list[str]:
     # 동물 주인공 가족은 후보 머리 낱말까지(#634 ③ CANDIDATE_NAME과 같은 낱말)
     hide = story_type(theme).hide_candidates
     names = (
-        [*candidate_words(theme), *answer_facts(theme)] if hide else theme.get("candidates") or []
+        [*candidate_words(theme), *secret_values(theme)] if hide else theme.get("candidates") or []
     )
     return list(dict.fromkeys([*allowed, *names]))
 
@@ -915,9 +918,8 @@ def dialogue_user(theme: Theme, day: str, draft: Draft, grade: int, feedback: li
             "손에 든 대상(대화에 나와도 됨, 단서 특징 값은 말하지 않음): "
             f"{theme.get('target') or ''}"
             if story_type(theme).target_in_hand
-            else "밝힐 때(그 일은 말해도 되지만 언제였는지·어떤 시각도 말하지 않음): "
-            f"{theme.get('target') or ''}"
-            if not story_type(theme).clue_time
+            else f"밝힐 것({story_type(theme).target_note}): {theme.get('target') or ''}"
+            if story_type(theme).target_note
             else f"찾는 대상(대화에서 말하지 않고 나타나지 않음): {theme.get('target') or ''}"
         ),
         f"오늘 문제(대화 뒤에 나옴, 값·풀이·답을 대화에 쓰지 않음): {draft.question}",
@@ -939,7 +941,8 @@ def dialogue_user(theme: Theme, day: str, draft: Draft, grade: int, feedback: li
 SAFETY_STORY = (
     "동물의 습성·장난은 범죄가 아니고, 사람이 동물을 제자리에서 부드럽게 안아 올리는 것은 "
     "폭력·위험이 아니다. 경찰관·소방관 차림은 해결사 역할일 뿐이다(체포·수갑·벌주기가 나오면 "
-    "결함)."
+    "결함). 밤에 들린 궁금한 소리 이야기(소리 탐정)는 무섭지 않은 궁금증이다(귀신·괴물·유령이 "
+    "나오면 결함)."
 )
 
 REVIEW_SYSTEM = (
@@ -977,7 +980,10 @@ REVIEW_SYSTEM = (
     "것(종소리·빵집·가로등)의 목격·기록이고, 시작 이야기 끝의 마을 규칙(코드가 붙임)으로 후보 "
     "시각을 가른다(흔적 단서가 없는 것도 설계). 엔딩 전 글에 시각이 나오면 결함. 탈것 찾기"
     "(storyType VEHICLE)는 온 사람이 처음부터 나오고 모르는 것은 타고 온 탈것뿐이다(엔딩 전에 "
-    "탈것이 장면에 나오면 결함). 소리를 들은 사람의 증언은 목격(SIGHTING)이다.\n"
+    "탈것이 장면에 나오면 결함). 소리를 들은 사람의 증언은 목격(SIGHTING)이다. 소리 탐정"
+    "(storyType SOUND)은 그 소리가 처음부터 알려진 사실이고 모르는 것은 소리를 낸 것뿐이며, "
+    "흔적 단서가 없고 여러 밤의 증거여도 같은 소리면 같은 그때로 본다(설계, 결함 아님). 결말에서 "
+    "동물을 만지거나 붙잡으면 결함.\n"
     "CLUE_LOGIC: 정답 논리(어느 후보가 언제 빠지고 정답만 남는지)는 특징 표(features)와 단서 "
     "조건(condition)으로 코드가 "
     '이미 확인했다. 너는 다음을 본다. 각 단서가 찾는 대상 자체의 흔적·목격·기록으로 "대상이 그 '
@@ -1002,7 +1008,8 @@ REVIEW_SYSTEM = (
     "밤에 다닌다' 같은 상식 문장을 단서로 쓰면 결함). 목격·기록은 부분만 보인 것이 설계라 동물 "
     "전체를 보지 못했다는 이유로 결함이 아니다. "
     # #634 ④: 마을 규칙표·탈것 사실표도 코드가 정한 값
-    "후보가 시각(WHEN)·탈것(VEHICLE)이면 특징 표 값은 코드가 정한 마을 규칙표·탈것 사실표 값"
+    "후보가 시각(WHEN)·탈것(VEHICLE)·소리를 낸 것(SOUND)이면 특징 표 값은 코드가 정한 마을 "
+    "규칙표·탈것 사실표·소리 사실표 값"
     "(예: 버스·기차·여객선은 정류장·역·나루에서 내려 도착한 곳에 바퀴 자국이 없음)이라 맞다고 보고 "
     "다시 따지지 않는다.\n"
     "ANSWER_HINT: 종료 이야기(outro)·종료 콘티(outroCuts) "
@@ -1085,11 +1092,10 @@ def review_user(
     }
     t = story_type(theme)
     summary["storyType"] = f"{t.code}({t.label}, 후보는 {t.candidate_kind})"
-    if t.animal:  # 사건 물건·일과 정답 동물 모습(종료 그림 기준)
-        summary |= {
-            "incident": theme.get("incident") or "",
-            "answerLook": theme.get("answerLook") or "",
-        }
+    if t.animal:  # 사건 물건·일(미션 소재)
+        summary["incident"] = theme.get("incident") or ""
+    if t.needs_answer_look:  # 정답 모습(종료 그림 기준, ③·⑤)
+        summary["answerLook"] = theme.get("answerLook") or ""
     summary |= {
         "protagonist": "뭉치: 솜뭉치 모양의 주인공 캐릭터, 테마 역할로 사건을 해결하러 온 "
         "해결사(찾는 대상이 아님)",
@@ -1296,7 +1302,13 @@ def _no_target(theme: Theme) -> str:
 
 
 # 사실표 종류의 후보 이름(영어 지시문용)
-FACT_EN = {"동물": "animals", "선물": "gift items", "재료": "ingredients", "탈것": "vehicles"}
+FACT_EN = {
+    "동물": "animals",
+    "선물": "gift items",
+    "재료": "ingredients",
+    "탈것": "vehicles",
+    "소리": "animals or objects",
+}
 
 
 def _no_candidates(theme: Theme) -> str:
@@ -1304,8 +1316,8 @@ def _no_candidates(theme: Theme) -> str:
     t = story_type(theme)
     if t.facts is None:
         return ""
-    if not t.target_visual:  # #634 ④ 시간 탐정: 후보가 시각이라 그림에 시각이 보이면 답이 보임
-        return "Do not draw any clock or watch (it would show the time)."
+    if t.facts.image_hide:  # 표가 정함(#634 ④ 시간 탐정: 그림에 시계가 보이면 답이 보임)
+        return t.facts.image_hide
     cands = ", ".join(theme.get("candidates") or [])
     return f"Do not draw any of these {FACT_EN.get(t.facts.name, 'candidates')}: {cands}."
 
@@ -1356,9 +1368,17 @@ def target_lines(theme: Theme, scene: str, index: int) -> list[str]:
     if t.facts is not None:
         if (scene, index) not in t.answer_cuts:
             lines.append(_no_candidates(theme))
-        elif t.target_visual:
+        elif t.facts.drawable and t.needs_answer_look:  # #634 ⑤ 정답 모습 고정
+            lines.append(f"{_answer_look(theme)} Draw it the same in every picture.")
+        elif t.facts.drawable:
             lines.append(f"The answer, {theme.get('answer') or ''}, may appear as the scene says.")
     return lines
+
+
+def _answer_look(theme: Theme) -> str:
+    """정답 모습(answerLook)이 필수인 종류의 정답(소리 탐정의 동물·물건, #634 ⑤)."""
+    answer, look = theme.get("answer") or "", theme.get("answerLook") or ""
+    return f"The answer, {answer}, looks like this (Korean): {look}."
 
 
 def _answer_animal(theme: Theme) -> str:
@@ -1480,7 +1500,9 @@ IMAGE_REVIEW_SYSTEM = (
     "storyType이 동물 주인공(PRANK·FOOTPRINT)이면 candidates는 후보 동물이고 정답(answer)은 그중 "
     "한 동물이다. 시간 탐정(WHEN)이면 candidates는 후보 시각이라 정답 공개가 허용되지 않은 그림에 "
     "시계가 보이면 ANSWER_HINT 결함이고 target(그 일을 한 때)은 그릴 것이 없다. 탈것 찾기(VEHICLE)"
-    "면 candidates는 후보 탈것이라 정답 공개가 허용되지 않은 그림에 그 탈것이 보이면 결함.\n"
+    "면 candidates는 후보 탈것이라 정답 공개가 허용되지 않은 그림에 그 탈것이 보이면 결함. 소리 "
+    "탐정(SOUND)이면 candidates는 후보 동물·물건이라 정답 공개가 허용되지 않은 그림에 그 가운데 "
+    "어느 것이라도 보이면 결함이고 target(밤마다 들린 소리)은 그릴 것이 없다.\n"
     "MUNGCHI: 뭉치가 나와야 하는 그림이면 기준 모습과 같은지(크림색 몽글몽글한 몸, 몸 아래쪽 "
     "가운데 얼굴, 흰자 없는 점 눈, 분홍 볼, 작은 손, "
     "갈색 짧은 발, 테마 옷). 손에 든 물건·자세·표정은 "
@@ -1511,7 +1533,7 @@ def _story_keys(theme: Theme) -> dict:
         "candidates": theme.get("candidates") or [],
         "answer": theme.get("answer") or "",
     }
-    if t.animal:
+    if t.needs_answer_look:
         keys["answerLook"] = theme.get("answerLook") or ""
     return keys
 
@@ -1583,8 +1605,12 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         mungchi.append("Only Mungchi is in this clip (no other characters).")
     t = story_type(theme)
     shows = cut_shows_target(theme, scene, index)
-    if not t.target_visual:  # #634 ④ 시간 탐정: 대상 지시 없음(시계 금지는 아래)
+    if not t.target_visual:  # #634 ④⑤ 대상(때·소리)은 그릴 것이 없음(후보 감추기는 아래)
         about_target = ""
+        if t.facts is not None and t.facts.drawable and (scene, index) in t.answer_cuts:
+            about_target = f"{_answer_look(theme)} Keep it looking the same."
+            if t.facts.group(str(theme.get("answer") or "")) == "동물":
+                about_target += " Nobody touches, lifts or holds the animal; everyone watches it."
     elif t.animal and shows:
         # #634 ③: 정답 동물은 같은 모습, 사람이 제자리에서 부드럽게 안아 올리는 것은 됨
         # (뭉치는 안 됨)

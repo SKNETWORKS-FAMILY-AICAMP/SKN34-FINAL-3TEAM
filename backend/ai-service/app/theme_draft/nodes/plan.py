@@ -20,6 +20,7 @@ from app.theme_draft.checks import (
     fill_rules_out,
     finalize_texts,
     fit_evidence_plan,
+    fit_media,
     fix_targets,
     plan_slot,
     repair_logic,
@@ -118,11 +119,13 @@ def code_adjust(theme: dict) -> dict[str, list[str]]:
                     f"맞춤(허용 값 "
                     f"{cond.get('allowed')}): 단서 문장을 새 값에 맞게"
                 )
-    for day in fit_evidence_plan(theme):
+    # 흔적 배정 옮기기 뒤 기록 매체를 그날 특징에 맞춤(#634 ⑤: 소리는 사진으로 알 수 없음)
+    for day in dict.fromkeys([*fit_evidence_plan(theme), *fit_media(theme)]):
         slot = plan_slot(theme, day)
         for reason in evidence_plan_problems(theme_day(theme, day), slot or {}):
             path = f"{day}.{reason.split(' ')[2]}"
-            targets.setdefault(path, []).append(reason)
+            if reason not in targets.get(path, []):
+                targets.setdefault(path, []).append(reason)
     changed = repair_logic(theme)
     for day in changed:
         cond = theme_day(theme, day).get("condition") or {}

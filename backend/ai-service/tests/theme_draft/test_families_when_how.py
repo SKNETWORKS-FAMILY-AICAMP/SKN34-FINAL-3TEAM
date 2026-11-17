@@ -347,7 +347,9 @@ def test_when_prompts_hide_times_and_clocks() -> None:
     assert "밝힐 것: 화단에 물을 준 때" in text and "아직 찾지 못했으므로" not in text
     assert "7시" in text  # 쓰지 말 낱말(후보 머리 낱말)
     plain = Draft.model_validate(mission_draft("ANALYZE").model_dump())
-    assert "밝힐 때(그 일은 말해도 되지만" in prompts.dialogue_user(theme, "MON", plain, 3, [])
+    assert "밝힐 것(그 일은 이야기에 나와도 되지만" in prompts.dialogue_user(
+        theme, "MON", plain, 3, []
+    )
     cut = prompts.cut_image_prompt(theme, "INTRO", 2, theme["introCuts"][1], [])
     assert "Do not draw any clock or watch" in cut and "화단에 물을 준 때" not in cut
     outro = prompts.cut_image_prompt(theme, "OUTRO", 3, theme["outroCuts"][2], [])
@@ -444,7 +446,7 @@ def test_when_outro_must_keep_answer_time() -> None:
     short = {**theme, "outroStory": "관리인 아저씨가 7시에 물을 줬대요."}
     assert checks.outro_other_candidates(short) == ["아침 7시"]
     assert checks.outro_other_candidates({**vehicle_theme(), "outroStory": "기차 아님"}) == []
-    assert any("다른 후보 시각" in r for r in prompts.fix_rules(wrong, "outro"))
+    assert any("다른 후보는 쓰지 않는다" in r for r in prompts.fix_rules(wrong, "outro"))
 
 
 def test_route_trace_is_only_what_sticks_to_target() -> None:

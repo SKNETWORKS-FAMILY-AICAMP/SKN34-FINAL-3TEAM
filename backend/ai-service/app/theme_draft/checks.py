@@ -154,6 +154,7 @@ FOREIGN = re.compile(r"[぀-ヿ㐀-䶿一-鿿]")  # 가나·한자(일본어로 
 # 2026-11-16 '범인' 넣음), '도둑'은 '도둑고양이'·'도둑게'·'도둑갈매기'(동물 이름)만 통과
 UNSAFE = re.compile(
     r"살인|납치|유괴|폭력|담배|흉기|피투성이|자살|체포|수갑|연행|처벌|훔치|훔쳐|훔친|범인|"
+    r"귀신|괴물|유령|"  # #634 ⑤ 밤 소리 이야기가 무서워지지 않게
     r"도둑(?!고양이|게|갈매기)"
 )
 SPEAKER_PREFIX = re.compile(r"\s*[가-힣A-Za-z]{1,6}\s*:")
@@ -308,12 +309,24 @@ def plan_for_type(
     줄거리 뒤 fit_evidence_plan도 같은 쪽으로 바꾸지만, 모델이 흔적 배정을 받으면 흔적 단서를 지어
     CLUE_EVIDENCE 칸 고쳐 쓰기가 늘어서 미리 맞춤(#634 ④, 흔적 0개 — 사용자 확인 2026-11-17).
     """
-    if kind is None or not kind.no_trace:
+    if kind is None:
         return plan
-    return {
-        day: ({"kind": "SIGHTING", "medium": None} if slot.get("kind") == "TRACE" else dict(slot))
-        for day, slot in plan.items()
-    }
+    out = {d: dict(slot) for d, slot in plan.items()}
+    if kind.no_trace:
+        for slot in out.values():
+            if slot.get("kind") == "TRACE":
+                slot.update(kind="SIGHTING", medium=None)
+    # 표의 어느 특징도 쓰지 않는 매체(소리 탐정의 사진)는 미리 다른 매체로(#634 ⑤ 틈 5)
+    table = kind.facts
+    if table is not None and table.media and set(table.media) == set(table.features):
+        usable = [m for m in RECORD_MEDIA if any(m in ms for ms in table.media.values())]
+        used = {slot.get("medium") for slot in out.values()}
+        for slot in out.values():
+            if slot.get("kind") == "RECORD" and slot.get("medium") not in usable:
+                new = next((m for m in usable if m not in used), usable[0])
+                slot["medium"] = new
+                used.add(new)
+    return out if out != plan else plan
 
 
 def traceable(feature: str | None, kind: StoryType | None = None) -> bool:
@@ -404,6 +417,31 @@ def fit_evidence_plan(theme: Theme) -> list[str]:
     return list(dict.fromkeys(changed))
 
 
+def fit_media(theme: Theme) -> list[str]:
+    """기록 날 매체를 그날 특징에 맞춘다(사실표 media, #634 ⑤ 설계 17.8.18 틈 5).
+
+    배정은 줄거리보다 먼저 정해져 소리 특징 날에 사진이 올 수 있음. 맞지 않으면 다른 날이 쓰지
+    않는 맞는 매체로 바꾸고(없으면 맞는 매체 첫째) 바뀐 요일을 돌려준다(그날 단서·증거 발견 줄은
+    CLUE_EVIDENCE 칸 고쳐 쓰기).
+    """
+    plan = theme.get("evidencePlan") or {}
+    table = story_type(theme).facts
+    if not plan or table is None or not table.media:
+        return []
+    changed = []
+    for d in theme.get("days") or []:
+        slot = plan.get(d.get("day")) or {}
+        allowed = table.media_of(str((d.get("condition") or {}).get("feature") or ""))
+        if slot.get("kind") != "RECORD" or allowed is None or slot.get("medium") in allowed:
+            continue
+        used = {(plan.get(o) or {}).get("medium") for o in DAYS if o != d.get("day")}
+        ordered = [m for m in RECORD_MEDIA if m in allowed]
+        slot["medium"] = next((m for m in ordered if m not in used), ordered[0])
+        changed.append(d["day"])
+    theme["evidencePlan"] = plan
+    return changed
+
+
 def target_words(theme: Theme) -> list[str]:
     """흔적 단서가 누구의 흔적인지 밝힐 때 쓸 찾는 대상 낱말(마지막 낱말과, 이름이면 그 앞 명사).
 
@@ -431,8 +469,12 @@ PERSON_OF_TARGET = re.compile(r"^\s*(.+?)(?:이|가) 타고 온")
 
 
 def clue_person(theme: Theme) -> str | None:
-    """탈것 찾기의 온 사람('삼촌이 타고 온 탈것' → '삼촌', 공백 뺀 꼴). 다른 종류·형식 밖은 None."""
-    if story_type(theme).code != "VEHICLE":
+    """모든 단서에 넣을 낱말(CLUE_OWNER, 공백 뺀 꼴): 탈것 찾기의 온 사람('삼촌이 타고 온 탈것' →
+    '삼촌'), 소리 탐정의 '소리'(families.clue_word). 그 밖·형식 밖은 None."""
+    t = story_type(theme)
+    if t.clue_word:
+        return t.clue_word
+    if t.code != "VEHICLE":
         return None
     m = PERSON_OF_TARGET.match(str(theme.get("target") or ""))
     return compact(m.group(1)) if m else None
@@ -508,6 +550,14 @@ def fact_table_problems(theme: Theme) -> list[str]:
     ]
     if wrong:
         bad.append(f"FACT_TABLE 특징 값이 사실표와 다름 {wrong}")
+    # 한 범주(#634 ⑤ 이슈 결정: 소리 탐정 후보는 동물만 또는 물건만)
+    if table.groups:
+        kinds = {table.group(c) for c in theme.get("candidates") or [] if table.group(str(c))}
+        if len(kinds) > 1:
+            bad.append(
+                f"SAME_KIND 후보 {theme.get('candidates')}가 여러 범주({sorted(kinds)})에 걸침(한 "
+                "범주에서만 4개)"
+            )
     # 정답을 다른 후보와 있는 값 특징만으로 가를 수 있어야 함(#634 ④: 없는 값은 단서로 못 쓰고,
     # 모든 값이 같은 후보(오전 10시·오후 3시)는 정답을 가릴 수 없음)
     answer = str(theme.get("answer") or "").strip()
@@ -538,7 +588,7 @@ def outro_other_candidates(theme: Theme) -> list[str]:
     낱말('7시')을 찾는다(정답 '저녁 7시'와 후보 '아침 7시'처럼 머리 낱말이 같으면 정답을 다 써야
     통과).
     """
-    if story_type(theme).clue_time or "outroStory" not in theme:
+    if not story_type(theme).outro_check or "outroStory" not in theme:
         return []
     answer = compact(theme.get("answer"))
     text = compact(theme.get("outroStory")).replace(answer, "") if answer else ""
@@ -602,8 +652,8 @@ TIME_WORD = re.compile(
 
 
 def time_word_problems(theme: Theme) -> list[str]:
-    """시각을 붙이지 않는 종류의 엔딩 전 글·단서에 시각(TIME_WORD, 칸 고쳐 쓰기)."""
-    if story_type(theme).clue_time:
+    """시각을 감추는 종류(시간 탐정)의 엔딩 전 글·단서에 시각(TIME_WORD, 칸 고쳐 쓰기)."""
+    if not story_type(theme).hide_times:
         return []
     fields = [*candidate_name_fields(theme)]
     fields += [(f"{d['day']}.clue", str(d.get("clue") or "")) for d in theme.get("days") or []]
@@ -634,8 +684,25 @@ def answer_facts(theme: Theme) -> list[str]:
     return out
 
 
+def secret_values(theme: Theme) -> list[str]:
+    """엔딩 전 글·미션·대화에 쓰지 않는 표 값. 보통은 정답만의 값(answer_facts), 소리 탐정처럼
+    strict_facts인 종류는 그 테마 후보끼리 값이 갈리는 표 값 전부(후보 모두 같은 값은 정보가 없어
+    허용, #634 ⑤ 설계 17.8.18 틈 4)."""
+    t = story_type(theme)
+    table = t.facts
+    if table is None or not t.strict_facts:
+        return answer_facts(theme)
+    cands = [str(c).strip() for c in theme.get("candidates") or [] if str(c).strip() in table.rows]
+    out: list[str] = []
+    for feature in table.features:
+        vals = [table.fact(c, feature) for c in cands]
+        if len(set(vals)) > 1:
+            out += [v for v in dict.fromkeys(vals) if v]
+    return out
+
+
 def answer_fact_hits(theme: Theme, text: str | None) -> list[str]:
-    return [v for v in answer_facts(theme) if compact(v) in compact(text)]
+    return [v for v in secret_values(theme) if compact(v) in compact(text)]
 
 
 # 보물 쪽지(#634 ①): 숨긴 곳은 끝까지 모르는 답인데 엔딩 전 글이 '숨긴 자리에서 흔적을 찾았다'처럼
@@ -1324,15 +1391,12 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
     ):
         if not str(theme.get(k) or "").strip():
             bad.append(f"REQUIRED {k}")
-    animal = is_animal(theme)
-    if (
-        animal
-    ):  # 동물 주인공 가족(#634 ③)의 내부 칸: 사건 물건·일(미션 소재), 정답 동물 모습(종료 그림)
-        bad += [
-            f"REQUIRED {k}"
-            for k in ("incident", "answerLook")
-            if not str(theme.get(k) or "").strip()
-        ]
+    # 동물 주인공 가족(#634 ③)의 사건 물건·일(미션 소재), 정답 모습(종료 그림, ③·⑤
+    # needs_answer_look)
+    required = ["incident"] if is_animal(theme) else []
+    if story_type(theme).needs_answer_look:
+        required.append("answerLook")
+    bad += [f"REQUIRED {k}" for k in required if not str(theme.get(k) or "").strip()]
     chars = theme.get("characters") or []
     if not CHARACTERS[0] <= len(chars) <= CHARACTERS[1] or any(
         not (c.get("name") or "").strip() or not (c.get("look") or "").strip() for c in chars
@@ -1390,7 +1454,8 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
             if named := candidate_names(theme, text):
                 bad.append(f"CANDIDATE_NAME {path}에 후보 {table.name} 이름 {named}(엔딩 전 글)")
             if hits := answer_fact_hits(theme, text):
-                bad.append(f"ANSWER_FACT {path}에 정답만의 {table.name} 값 {hits}(엔딩 전 글)")
+                which = "후보를 가르는" if story_type(theme).strict_facts else "정답만의"
+                bad.append(f"ANSWER_FACT {path}에 {which} {table.name} 값 {hits}(엔딩 전 글)")
     days = theme.get("days") or []
     if tuple(d.get("day") for d in days) != DAYS:
         return bad + [f"DAYS 요일은 {list(DAYS)} 순서(지금 {[d.get('day') for d in days]})"]
@@ -1433,10 +1498,12 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         # 났다'만 써서 글 검토 CLUE_LOGIC "그 소리가 할머니의 탈것에서 났다는 연결이 없음")
         person = clue_person(theme)
         if person and person not in compact(d.get("clue")):
-            bad.append(
-                f"CLUE_OWNER {d['day']} clue 단서에 온 사람('{person}')이 없음(그 사람이 탄 "
-                "탈것의 증거임을 밝힘)"
+            why = (
+                f"'{person}' 낱말이 없음(그 소리의 증거임을 밝힘)"
+                if story_type(theme).clue_word
+                else f"온 사람('{person}')이 없음(그 사람이 탄 탈것의 증거임을 밝힘)"
             )
+            bad.append(f"CLUE_OWNER {d['day']} clue 단서에 {why}")
         if early := early_values(d, d.get("discovery")):
             bad.append(f"CLUE_EARLY {d['day']} discovery에 그날 단서 결론(허용 값 {early})")
         # 장면 메모가 증거가 남은 자리의 특징 값을 말하면 대화·그림이 문제 전에 단서를 알려 줌

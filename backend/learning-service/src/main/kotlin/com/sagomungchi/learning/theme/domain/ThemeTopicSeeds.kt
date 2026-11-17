@@ -22,7 +22,7 @@ enum class Season(private val months: Set<Month>) {
  * `targetLabel`은 넷째 칸 이름: 숨은 것은 `찾는 대상`, 동물 주인공은 정답을 드러내지 않는 `밝힐 것`(예: "떡을 몰래 먹은 동물"),
  * ② 출처·정체는 처음부터 손에 있는 것이라 `손에 든 것`(예: "생일에 받은 리본 상자", 2026-11-16 설계 ai.md 17.8.13).
  * ④ 때·길·방법(설계 ai.md 17.8.17): 시간 탐정·탈것은 `밝힐 것`(예: "화단에 물을 준 때", "삼촌이 타고 온 탈것"), 길은 `손에 든 것`.
- * ①③②④를 켰고 ⑤는 그 가족 실측을 통과하면 씨앗을 더해 켠다(씨앗이 없는 종류는 고르지 않음)
+ * ⑤ 소리 탐정(설계 ai.md 17.8.18)은 `밝힐 것`(예: "할머니 댁 마당에서 밤마다 들린 소리"). 다섯 가족 모두 켬
  */
 enum class StoryType(val label: String, val targetLabel: String) {
     LOST("잃어버린 것 찾기", "찾는 대상"),
@@ -35,6 +35,7 @@ enum class StoryType(val label: String, val targetLabel: String) {
     WHEN("시간 탐정", "밝힐 것"),
     ROUTE("어느 길로 왔을까", "손에 든 것"),
     VEHICLE("무엇을 타고 왔을까", "밝힐 것"),
+    SOUND("소리 탐정", "밝힐 것"),
     ;
 
     companion object {
@@ -82,6 +83,7 @@ object ThemeTopicSeeds {
     private val WHEN = StoryType.WHEN
     private val ROUTE = StoryType.ROUTE
     private val VEHICLE = StoryType.VEHICLE
+    private val SOUND = StoryType.SOUND
 
     val ALL: List<ThemeTopicSeed> = listOf(
         ThemeTopicSeed(LOST, "탐정(탐정 모자·돋보기)", "동네 시장", "가게 주인 아이의 반려 고양이"),
@@ -154,6 +156,12 @@ object ThemeTopicSeeds {
         ThemeTopicSeed(VEHICLE, "탐정(탐정 모자·돋보기)", "할머니 댁 시골 마을", "할머니가 타고 온 탈것"),
         ThemeTopicSeed(VEHICLE, "기자(취재 모자·목에 건 수첩)", "아파트 단지", "사촌 언니가 타고 온 탈것"),
         ThemeTopicSeed(VEHICLE, "등대지기 조수(털모자·목도리)", "섬마을 분교", "선생님이 타고 온 탈것"),
+        // ⑤ 소리 탐정: 밤마다 들린 소리를 낸 것(동물만 또는 물건만)을 밝힘. 장소·대상에 후보 이름과 ai 소리 사실표의
+        // 소리 난 곳 값을 쓰지 않음(ai가 엔딩 전 글의 후보를 가르는 값을 막음), 무섭지 않은 궁금증
+        ThemeTopicSeed(SOUND, "소리 박사(헤드폰·연구 가운)", "할머니 댁 시골집", "할머니 댁 마당에서 밤마다 들린 소리"),
+        ThemeTopicSeed(SOUND, "숲 해설가(챙 모자·나뭇잎 배지)", "숲속 캠핑장", "캠핑장 텐트 밖에서 밤마다 들린 소리"),
+        ThemeTopicSeed(SOUND, "탐정(탐정 모자·돋보기)", "시골 학교", "학교 운동장 쪽에서 밤마다 들린 소리"),
+        ThemeTopicSeed(SOUND, "기자(취재 모자·목에 건 수첩)", "바닷가 민박집", "민박집 창밖에서 밤마다 들린 소리"),
     )
 
     /** 같은 학년에서 쓴 씨앗을 다시 쓰지 않는 기간(주) = 목록 개수. 목록을 늘리면 반복 주기도 늘어남 */

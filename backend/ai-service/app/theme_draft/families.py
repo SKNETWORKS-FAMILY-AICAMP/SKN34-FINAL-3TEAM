@@ -6,7 +6,7 @@
 
 가족: ① 숨은 것(HIDDEN, 후보는 장소) — LOST·TREASURE, ③ 동물 주인공(ANIMAL) — PRANK·FOOTPRINT,
 ② 손에 든 것의 출처·정체(IN_HAND) — ORIGIN·GIFT·SECRET_INGREDIENT, ④ 때·길·방법(WHEN_HOW) —
-WHEN·ROUTE·VEHICLE(설계 17.8.17). ⑤는 ④ 실측을 통과한 뒤 켠다.
+WHEN·ROUTE·VEHICLE(설계 17.8.17), ⑤ 소리(SOUND) — SOUND(설계 17.8.18).
 성질별 칸: 사실표(facts, 있으면 후보 이름을 엔딩 전에 감춤), 대상이 처음부터 손에 있음
 (target_in_hand), 정답 후보가 그림에 나와도 되는 컷(answer_cuts), 종류별 흔적 특징(trace),
 시작 이야기 끝에 코드가 붙이는 규칙(intro_notes), 단서 앞 시각 붙이기(clue_time), 대상을 그림에
@@ -29,8 +29,9 @@ StoryTypeCode = Literal[
     "WHEN",
     "ROUTE",
     "VEHICLE",
+    "SOUND",
 ]
-FamilyCode = Literal["HIDDEN", "ANIMAL", "IN_HAND", "WHEN_HOW"]
+FamilyCode = Literal["HIDDEN", "ANIMAL", "IN_HAND", "WHEN_HOW", "SOUND"]
 
 # 종료 콘티 1컷(단서 정리)은 모든 종류가 같다
 OUTRO_THINK = "뭉치가 바닥·탁자에 놓인 단서들 앞에서 생각을 정리함"
@@ -65,6 +66,16 @@ class FactTable:
     # 정답은
     # 있는 값 특징만으로 다른 후보와 갈라져야 함(FACT_TABLE)
     absent: frozenset[str] = frozenset()
+    # 범주(후보 → 동물·물건). 있으면 후보 4개는 한 범주에서만(#634 ⑤ 이슈 결정, SAME_KIND)
+    groups: dict[str, str] | None = None
+    # 특징별 기록 매체(RECORD 날). 소리는 사진으로, 무게·맛은 사진·영상으로 알 수 없음(⑤ 설계
+    # 17.8.18 틈 5) — 줄거리 직후 코드가 맞지 않는 매체를 바꿈(checks.fit_media)
+    media: dict[str, frozenset[str]] | None = None
+    # 정답 공개 전 그림·영상에 감출 것(영어 지시). 없으면 후보 목록(checks 밖
+    # prompts._no_candidates)
+    image_hide: str | None = None
+    # 종료 컷에 정답을 그릴 수 있는지(시각 표는 그릴 것이 없음)
+    drawable: bool = True
 
     def kinds_of(self, feature: str) -> frozenset[str] | None:
         return (self.kinds or {}).get(feature)
@@ -74,6 +85,12 @@ class FactTable:
         if row is None or feature not in self.features:
             return None
         return row[self.features.index(feature)]
+
+    def media_of(self, feature: str) -> frozenset[str] | None:
+        return (self.media or {}).get(feature)
+
+    def group(self, candidate: str) -> str | None:
+        return (self.groups or {}).get(candidate.strip())
 
     def present(self, candidate: str, feature: str) -> bool:
         """그 후보의 그 특징 값이 '있는 값'인지(표 밖이면 False)."""
@@ -114,6 +131,28 @@ class FactTable:
             "FACT_TABLE)" + (f": {blocked}" if blocked else "") + ".\n"
         )
 
+    def extra_rule(self) -> str:
+        """범주·기록 매체 규칙(그 칸이 있는 표만)."""
+        out = ""
+        if self.groups:
+            kinds = sorted(set(self.groups.values()))
+            out += (
+                f"- 후보 4개는 한 범주({'·'.join(kinds)} 가운데 하나)에서만 고른다(섞으면 코드 "
+                "검사 "
+                "SAME_KIND). 범주: "
+                + " / ".join(
+                    f"{g}: {'·'.join(c for c, x in self.groups.items() if x == g)}" for g in kinds
+                )
+                + "\n"
+            )
+        if self.media:
+            out += (
+                "- 기록(RECORD) 날의 기록 매체는 특징에 맞게(안 맞으면 코드가 매체를 바꿈): "
+                + " / ".join(f"{f}: {'·'.join(sorted(m))}" for f, m in self.media.items())
+                + "\n"
+            )
+        return out
+
     def rule(self) -> str:
         """줄거리 규칙: 후보·특징은 표 안에서, 값은 표 값 그대로(코드가 맞춤)."""
         kinds = " / ".join(
@@ -135,6 +174,7 @@ class FactTable:
                 else ""
             )
             + self.absent_rule()
+            + self.extra_rule()
             + "- 엔딩 전 글(title·world·intro·시작 "
             "콘티·place·sceneNote·discovery·missionHook·incident·"
             f"인물 모습)에는 후보 {self.name} 이름과 정답 {self.name}만의 표 값을 쓰지 않는다(코드 "
@@ -174,6 +214,21 @@ class StoryType:
     owner_words: tuple[str, ...] = ()
     # 장소가 맞아야 후보로 둘 수 있는 이름과 그 장소 말(탈것의 배는 물가에서만, VEHICLE_PLACE)
     place_needs: tuple[tuple[str, re.Pattern[str]], ...] = ()
+    # ⑤ 설계 17.8.18 틈 2: ④에서 시간 탐정 표시처럼 쓰던 칸(clue_time·target_visual)을 성질별로 나눔
+    # 엔딩 전 글·미션·대화에 시각을 쓰지 않음(TIME_WORD, 시간 탐정)
+    hide_times: bool = False
+    # 마무리 장면에 정답 아닌 후보면 칸 고쳐 쓰기(OUTRO_ANSWER, 시간 탐정·소리 탐정)
+    outro_check: bool = False
+    # 미션 이야기 조각·대화에서 대상을 말하는 법(없으면 찾는 대상·손에 든 것 문구)
+    target_note: str | None = None
+    # 정답 모습 칸(answerLook) 필수 — 종료 컷마다 같은 모습으로 그림(동물 주인공·소리 탐정)
+    needs_answer_look: bool = False
+    # 엔딩 전 글·미션·대화에서 정답만의 값뿐 아니라 그 테마 후보끼리 갈리는 표 값 전부를 막음(소리
+    # 탐정:
+    # 시작 이야기의 소리 묘사가 단서를 앞질러 말함, 틈 4)
+    strict_facts: bool = False
+    # 모든 단서에 넣을 낱말(CLUE_OWNER, 소리 탐정 '소리'). 탈것의 온 사람은 target에서 뽑음
+    clue_word: str | None = None
 
     @property
     def animal(self) -> bool:
@@ -328,6 +383,10 @@ GIFTS = FactTable(
         "흔들면 나는 소리": frozenset({"TRACE", "RECORD"}),
         "산 가게": frozenset({"SIGHTING", "RECORD"}),
     },
+    media={
+        "상자 무게": frozenset({"메모", "일지"}),
+        "흔들면 나는 소리": frozenset({"녹음", "영상", "메모", "일지"}),
+    },
 )
 
 # 재료 사실표(#634 ②, 기준안): 음식에 물드는 색은 그림에 보이면 답이 되므로 엔딩 전 그림에 음식을
@@ -352,6 +411,7 @@ INGREDIENTS = FactTable(
         "맛": frozenset({"TRACE", "RECORD"}),
         "산 가게": frozenset({"SIGHTING", "RECORD"}),
     },
+    media={"맛": frozenset({"메모", "일지"})},
 )
 
 
@@ -429,6 +489,7 @@ PRANK = StoryType(
     trace=ANIMAL_TRACE,
     trace_only=True,
     owner_words=("동물",),
+    needs_answer_look=True,
 )
 
 FOOTPRINT = StoryType(
@@ -450,6 +511,7 @@ FOOTPRINT = StoryType(
     trace=ANIMAL_TRACE,
     trace_only=True,
     owner_words=("동물",),
+    needs_answer_look=True,
 )
 
 # ② 손에 든 것(설계 17.8.13): 대상이 처음부터 손에 있어 공통 규칙의 '대상은 종료 전까지 못 찾음'·
@@ -618,6 +680,9 @@ TIMES = FactTable(
         "가로등": frozenset({"SIGHTING", "RECORD"}),
     },
     absent=frozenset({"종 안 울림"}),
+    media={"종소리": frozenset({"녹음", "영상", "일지", "메모"})},
+    image_hide="Do not draw any clock or watch (it would show the time).",
+    drawable=False,
 )
 # 시작 이야기 끝에 코드가 붙이는 마을 규칙(말투 '요'·'다'·반말). 경계 시각은 표에 두지 않음(아침
 # 7시는
@@ -650,6 +715,7 @@ VEHICLES = FactTable(
         "들린 소리": frozenset({"SIGHTING", "RECORD"}),
     },
     absent=frozenset({"바퀴 자국 없음"}),
+    media={"들린 소리": frozenset({"녹음", "영상", "일지", "메모"})},
 )
 # 길 종류의 흔적 특징: 지나온 길에서 대상에 묻은 것만(이 표만 봄). ②의 IN_HAND_TRACE는 대상 자체를
 # 살피는 무게·소리·맛까지 흔적으로 봐서, 길에서 들린 소리가 흔적 날에 배정돼 글 검토 CLUE_LOGIC
@@ -716,6 +782,10 @@ WHEN = StoryType(
     intro_notes=TOWN_NOTES,
     clue_time=False,
     target_visual=False,
+    hide_times=True,
+    outro_check=True,
+    target_note="그 일은 이야기에 나와도 되지만 그 일을 한 때는 모른다. 어떤 시각(3시·오전 "
+    "9시·정오 등)도 쓰지 않는다(시각 계산 문제도 내지 않음)",
 )
 
 ROUTE = StoryType(
@@ -810,6 +880,114 @@ VEHICLE = StoryType(
     place_needs=(("여객선", WATER_PLACE),),
 )
 
+# ⑤ 소리(설계 17.8.18, 사용자 확인 2026-11-17). 물건은 소리를 내는 것이 분명하고 장면에 저절로
+# 나오지
+# 않는 바깥 물건만, 동물은 계절을 타지 않는 것만(겨울잠·여름 곤충 없음). 값은 단서 문장에 그대로
+# 들어가는 꼴, 소리 난 곳은 흔한 장소 낱말이 아닌 꼴(정답만의 값은 엔딩 전 글에 못 씀)
+SOUND_MEDIA = frozenset({"녹음", "영상", "일지", "메모"})
+SOUNDS = FactTable(
+    name="소리",
+    features=("소리 난 곳", "소리 느낌", "소리 나는 밤", "소리 움직임"),
+    rows={
+        "부엉이": ("높은 나무 위", "우는 소리", "매일 밤", "한곳에서 나는 소리"),
+        "고양이": ("지붕 꼭대기", "우는 소리", "매일 밤", "옮겨 다니는 소리"),
+        "생쥐": ("천장 안쪽", "긁는 소리", "매일 밤", "옮겨 다니는 소리"),
+        "너구리": ("쓰레기통 둘레", "뒤적이는 소리", "매일 밤", "옮겨 다니는 소리"),
+        "강아지": ("개집 앞", "낑낑 소리", "매일 밤", "한곳에서 나는 소리"),
+        "바람개비": ("화단 가운데", "팔랑이는 소리", "바람 부는 밤", "한곳에서 나는 소리"),
+        "녹슨 그네": ("놀이터 구석", "끼익 소리", "바람 부는 밤", "한곳에서 나는 소리"),
+        "빈 양동이": ("수돗가 바닥", "똑똑 소리", "비 오는 밤", "한곳에서 나는 소리"),
+        "빈 깡통": ("골목 바닥", "데구루루 소리", "바람 부는 밤", "옮겨 다니는 소리"),
+        "현수막": ("담장 위", "펄럭이는 소리", "바람 부는 밤", "한곳에서 나는 소리"),
+    },
+    # 소리는 흔적에 남지 않음: 들은 사람의 목격, 녹음·영상·일지·메모 기록(흔적 0개, 이슈 결정
+    # "녹음·목격 위주")
+    kinds={
+        "소리 난 곳": frozenset({"SIGHTING", "RECORD"}),
+        "소리 느낌": frozenset({"SIGHTING", "RECORD"}),
+        "소리 나는 밤": frozenset({"SIGHTING", "RECORD"}),
+        "소리 움직임": frozenset({"SIGHTING", "RECORD"}),
+    },
+    groups={
+        **{c: "동물" for c in ("부엉이", "고양이", "생쥐", "너구리", "강아지")},
+        **{c: "물건" for c in ("바람개비", "녹슨 그네", "빈 양동이", "빈 깡통", "현수막")},
+    },
+    media={
+        "소리 난 곳": frozenset({"영상", "일지", "메모"}),
+        "소리 느낌": SOUND_MEDIA,
+        "소리 나는 밤": frozenset({"일지", "메모"}),
+        "소리 움직임": SOUND_MEDIA,
+    },
+)
+SOUND_TARGET_CUTS = frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)})
+
+SOUND = StoryType(
+    code="SOUND",
+    label="소리 탐정",
+    target_label="밝힐 것",
+    family="SOUND",
+    candidate_kind="동물·물건",
+    intro_cuts=(
+        "사건 장소의 평소 모습과 아이(밤이라도 밝고 포근한 색, 후보 동물·물건은 보이지 않음, 뭉치 "
+        "안 "
+        "나옴)",
+        "아이가 밤에 궁금한 소리를 듣고 귀 기울임(무섭지 않게, 후보는 보이지 않음, 뭉치 안 나옴)",
+        INTRO_GO,
+        INTRO_ARRIVE,
+    ),
+    outro_cuts=(
+        OUTRO_THINK,
+        "정답(answerLook 모습)이 있는 곳에 도착해 바라봄",
+        "동물이면 모두 조금 떨어져서 함께 바라봄(만지지 않음), 물건이면 사람이 소리가 나지 않게 "
+        "손봄(뭉치는 곁에서 지켜봄)",
+        "함께 웃으며 기뻐함",
+    ),
+    target_cuts=ALL_CUTS,  # 대상이 '소리'라 그릴 것이 없음(target_visual)
+    outro_rule=(
+        "소리의 정체(정답)가 밝혀지는 장면만 쓴다. 동물이면 모두 조금 떨어져서 함께 바라보며 웃고 "
+        "만지거나 붙잡지 않는다. 물건이면 사람이 소리가 나지 않게 손본다(바람개비를 단단히 "
+        "꽂음·그네에 "
+        "기름칠·양동이를 엎어 둠·깡통을 치움·현수막을 묶음). 뭉치는 곁에서 지켜본다."
+    ),
+    rules=(
+        "- 사건: 아이(학생 또래, 등장인물 중 한 명)가 밤마다 궁금한 소리를 듣는다. 소리는 무섭지 "
+        "않은 "
+        "궁금증일 뿐이다(귀신·괴물·유령 없음, 코드 검사 UNSAFE). 그 소리는 처음부터 알려진 "
+        "사실이라 "
+        "이야기에 나와도 되고, 모르는 것은 소리를 낸 것이다.\n"
+        "- target은 주제의 '밝힐 것' 글을 그대로 쓴다(후보 이름·표 값 없이). 큰 질문은 그 소리를 "
+        "낸 "
+        "것을 묻는다(예: '밤마다 들린 소리의 정체는 무엇이었을까?').\n"
+        + SOUNDS.rule()
+        + "- 엔딩 전 글·미션·대화에는 그 테마 후보끼리 값이 갈리는 표 값(소리 난 곳·소리 느낌 "
+        "등)을 쓰지 않는다(정답만의 값이 아니어도 단서를 앞질러 말함, 코드 검사 ANSWER_FACT). "
+        "시작 이야기는 '이상한 소리'·'궁금한 소리'처럼 쓴다.\n"
+        "- answerLook: 정답 동물·물건의 겉모습 한 줄(종료 그림·영상에서 같은 모습으로 그림). "
+        "반드시 "
+        "채운다(코드 검사 REQUIRED). incident는 null.\n"
+        "- 증거: 그 소리를 들은 사람의 목격(들은 사람의 증언도 SIGHTING), 녹음·영상·일지·메모 "
+        "기록. "
+        "소리는 흔적에 남지 않아 흔적 단서가 없다. 모든 단서(clue)에 '소리' 낱말을 넣어 그 소리의 "
+        "증거임을 밝힌다(코드 검사 CLUE_OWNER, 예: '녹음에 끼익 소리가 담겼어'). 이 종류에서는 "
+        "공통 "
+        "규칙의 '다섯 단서가 같은 그때'를 '소리가 나던 밤'으로 본다: evidence.when은 '소리가 나던 "
+        "밤'이고, 여러 밤의 증거여도 같은 소리면 같은 그때다.\n"
+        "- 엔딩 전 장면·콘티에 후보 동물·물건을 내지 않는다.\n"
+        "- intro: 아이가 궁금한 소리를 들은 데서 시작해 테마 역할의 뭉치가 현장으로 출동해 큰 "
+        "질문을 "
+        "맡는 데까지.\n"
+    ),
+    facts=SOUNDS,
+    answer_cuts=SOUND_TARGET_CUTS,
+    target_visual=False,
+    outro_check=True,
+    target_note="그 소리는 이야기에 나와도 되지만 소리를 낸 것은 모른다. 후보끼리 갈리는 소리 값"
+    "(소리 난 곳·소리 느낌 등)은 쓰지 않는다",
+    needs_answer_look=True,
+    strict_facts=True,
+    clue_word="소리",
+)
+
 STORY_TYPES: dict[str, StoryType] = {
     t.code: t
     for t in (
@@ -823,6 +1001,7 @@ STORY_TYPES: dict[str, StoryType] = {
         WHEN,
         ROUTE,
         VEHICLE,
+        SOUND,
     )
 }
 BY_LABEL = {t.label: t for t in STORY_TYPES.values()}
