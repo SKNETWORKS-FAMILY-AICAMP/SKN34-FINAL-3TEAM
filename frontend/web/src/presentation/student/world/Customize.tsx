@@ -222,12 +222,14 @@ function TabContent({ shop, picks, tab }: { shop: LookShop; picks: Picks; tab: C
     return (
       <button key={`${slot}:${key ?? 'none'}`} type="button" className="st-pick-tile"
         aria-pressed={picks.item(slot) === key} disabled={lockedItem && (!item.onSale || !catalog)} onClick={() => picks.pickItem(slot, key)}>
-        {item && isNewItem(item) && <span className="st-new-tag">새로 나왔어요</span>}
+        {/* 꼬리표는 그림 위에 보이고, 화면 읽기는 이름 뒤에 읽음(단추 이름이 아이템 이름으로 시작하게) */}
+        {item && isNewItem(item) && <span className="st-new-tag" aria-hidden="true">새로 나왔어요</span>}
         <span className="st-tile-art" aria-hidden="true">
           <Companion friend={picks.friend} size={64} decorative worn={item?.assetKey ? { [slot]: item.assetKey } : {}} />
         </span>
         <strong>{name}</strong>
         {status && <span className="st-pick-pill" data-kind={lockedItem ? 'locked' : using ? 'using' : 'owned'}>{status}</span>}
+        {item && isNewItem(item) && <span className="st-visually-hidden">, 새로 나왔어요</span>}
       </button>
     )
   }
