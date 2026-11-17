@@ -2,7 +2,7 @@ import { apiFetch } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Page } from '../../domain/parent.ts'
 import { themeDraftOf } from '../../domain/admin/themeDrafts.ts'
-import type { ThemeDraftRequest } from '../../domain/admin/themeDrafts.ts'
+import type { RegenTarget, ThemeDraftRequest } from '../../domain/admin/themeDrafts.ts'
 import type {
   AdminLookItem,
   AdminWeeklyTheme,
@@ -25,7 +25,9 @@ export const adminRetentionApi = {
   },
   themeDraft: async (id: string, signal?: AbortSignal) => themeDraftOf(await apiFetch(`/admin/theme-drafts/${p(id)}`, { signal })),
   requestThemeDraft: async (body: ThemeDraftRequest) => themeDraftOf(await apiFetch('/admin/theme-drafts', json(body))),
-  themeDraftAction: async (id: string, action: 'discard' | 'regenerate') => themeDraftOf(await apiFetch(`/admin/theme-drafts/${p(id)}/${action}`, json({}))),
+  /** 다시 생성에 대상을 주면 부분 다시 생성(#537) `{targets}`, 없으면 지금처럼 `{}`(전체) */
+  themeDraftAction: async (id: string, action: 'discard' | 'regenerate', targets?: RegenTarget[]) =>
+    themeDraftOf(await apiFetch(`/admin/theme-drafts/${p(id)}/${action}`, json(action === 'regenerate' && targets?.length ? { targets } : {}))),
   adoptThemeDraft: async (id: string) => {
     const result = await apiFetch<{ themeId?: unknown }>(`/admin/theme-drafts/${p(id)}/adopt`, json({}))
     if (typeof result?.themeId !== 'string' || !result.themeId) throw new Error('채택한 테마를 확인하지 못했습니다. 목록에서 결과를 먼저 확인해 주세요.')
