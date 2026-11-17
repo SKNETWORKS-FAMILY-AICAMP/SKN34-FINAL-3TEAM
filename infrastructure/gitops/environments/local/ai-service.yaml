@@ -51,6 +51,9 @@ env:
   # #476: 설명 sLLM 서버(평소 0대, KEDA cron). 모델이 활성일 때만 호출한다(#477).
   - {name: EXPLANATION_BASE_URL, value: "http://sllm-server.app.svc.cluster.local:8080/v1"}
   - {name: EXPLANATION_MODEL, value: report-explanation}
+  # #751: 리포트 요약·저녁 질문·상세 설명은 RunPod LoRA Gemma 고정(#475). .env 값이 없으면 리포트 요약이 503.
+  - {name: SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA, valueFrom: {secretKeyRef: {name: app-service-credentials, key: SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA, optional: true}}}
+  - {name: SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA, valueFrom: {secretKeyRef: {name: app-service-credentials, key: SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA, optional: true}}}
   # #546·#538: 주간 테마 그림·영상. 버킷은 learning과 같고, 영상은 저장소 값에서 꺼 둔다.
   # 영상 자격 증명은 kind에만 수동으로 넣는 Secret ai-theme-video(credentials.json·VIDEO_PROJECT).
   # Secret이 없으면 파일이 없어 영상만 건너뛴다(optional).
