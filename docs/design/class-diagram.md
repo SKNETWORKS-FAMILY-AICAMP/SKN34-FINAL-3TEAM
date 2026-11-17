@@ -1463,8 +1463,9 @@ classDiagram
   }
   class RoomDecorService {
     <<service>>
-    +spots(studentId) List
-    +replace(studentId, spots) List
+    +spots() DecorSpots
+    +replace(spots) DecorSpots
+    +friendSpots(studentId) List
     +deleteStudent(studentId)
   }
   class MemoryController {
@@ -1519,6 +1520,7 @@ classDiagram
 - 학생 삭제 확정의 `clear`가 `FrameSlotService.deleteStudent`·`MemoryUsageService.deleteStudent`도 부름(P09)
 - #555 구현(core V47): 위 `RoomController`·`FrameSlotService`는 `room` 패키지의 `RoomController`·`RoomFrameSlotService`(MyBatis `RoomFrameSlotMapper`)다. 보유 확인·제목 조회는 설계의 `LearningMemoryClient` 대신 `room/client/LearningFrameClient`가 맡는다: learning `frames/ownership`·앨범 목록은 ai를 부르지 않는 DB 조회라 일반 `learning-json` 서킷의 `LearningClient`를 쓰고, 추억 검색·설명의 `learning-memory` 서킷과 나눈다. 삭제는 `StudentLookService.clear`(학생 삭제 확정 트랜잭션)가 `RoomFrameSlotService.deleteStudent`를 부른다. 가구 스킨은 `LookCatalog.FURNITURE_SLOTS`를 더했을 뿐 해금·착용 클래스는 그대로이고, `LookUnlockService.replaceEquipment`가 보낸 슬롯만 바꾸도록 바뀌었다
 - #708 구현: `RoomFrameSlotService.friendFrames`는 다른 학생(친구)의 슬롯을 `LearningFrameClient.albumFramesOf`로 채운다. 요청 사용자(열람자) 범위가 아니라 친구 범위(`X-Student-Scope` = 친구, `X-User-Role: SYSTEM`)로 잠깐 바꿔 부르고, 결과에는 `slotNo`·제목·그림만 둔다(회차 키 없음). 걸린 액자가 없으면 learning을 부르지 않는다
+- #723(core V51): `surface`·`col`·`row` 기준 칸을 저장한다. 면별 범위·기준 칸 중복·8개 상한 검사는 잠금 전에, 보유 검사는 잠금 뒤에 한다. 면(FLOOR → WALL_BACK → WALL_LEFT) → row → col 순으로 본인·친구 조회에 같은 칸을 반환한다. 큰 소품 크기·겹침·허용 면·가구·이동 경로 검사는 웹 몫이다.
 - #704 구현(core V50): `RoomDecorService`(MyBatis `RoomDecorMapper`)가 방 소품 놓은 자리를 조회·전체 교체한다. 학생 행 `FOR NO KEY UPDATE` 뒤 보유 개수(`student_room_decor`)를 읽어 넘는 배치를 422로 거절하고, learning을 부르지 않아 트랜잭션 하나로 끝난다. 학생 삭제 확정의 `StudentLookService.clear`가 `RoomDecorService.deleteStudent`도 부른다
 - #560 구현: 앨범 3경로는 `MemoryController`→`MemoryProxyService.album`·`albumDetail`·`albumSeen`→`LearningMemoryClient`. 클라이언트의 앨범 메서드는 검색·설명용 `learning-memory`가 아니라 주입한 일반 `LearningClient`(`learning-json`)로 보낸다. 목록 `displayed`는 `RoomFrameSlotService.displayedFrames`(저장된 슬롯의 회차 키, learning 미호출)로 채운다
 

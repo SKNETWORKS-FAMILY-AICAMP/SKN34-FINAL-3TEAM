@@ -6,9 +6,9 @@
         SELECT id FROM student WHERE id=#{studentId} AND status='ACTIVE' FOR NO KEY UPDATE
     </select>
     <select id="spots" resultType="com.sagomungchi.core.room.domain.DecorSpotView" flushCache="true" useCache="false">
-        SELECT s.spot_no::int AS spot_no,i.code AS item_key,i.name AS name,i.asset_key AS asset_key
+        SELECT s.surface AS surface,s.cell_col::int AS col,s.cell_row::int AS row,i.code AS item_key,i.name AS name,i.asset_key AS asset_key
         FROM room_decor_spot s JOIN look_item i ON i.id=s.look_item_id
-        WHERE s.student_id=#{studentId} ORDER BY s.spot_no
+        WHERE s.student_id=#{studentId} ORDER BY CASE s.surface WHEN 'FLOOR' THEN 0 WHEN 'WALL_BACK' THEN 1 WHEN 'WALL_LEFT' THEN 2 END,s.cell_row,s.cell_col
     </select>
     <select id="owned" resultType="com.sagomungchi.core.room.domain.OwnedDecor" flushCache="true" useCache="false">
         SELECT i.id AS item_id,i.code AS code,i.name AS name,i.asset_key AS asset_key,count(*)::int AS owned
@@ -17,6 +17,7 @@
     </select>
     <delete id="deleteSpots">DELETE FROM room_decor_spot WHERE student_id=#{studentId}</delete>
     <insert id="insertSpot">
-        INSERT INTO room_decor_spot(student_id,spot_no,look_item_id,saved_at) VALUES(#{studentId},#{spotNo},#{itemId},#{now})
+        INSERT INTO room_decor_spot(student_id,surface,cell_col,cell_row,look_item_id,saved_at)
+        VALUES(#{studentId},#{surface},#{col},#{row},#{itemId},#{now})
     </insert>
 </mapper>
