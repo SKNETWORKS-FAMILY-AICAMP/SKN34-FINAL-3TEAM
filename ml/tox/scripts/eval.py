@@ -27,6 +27,7 @@ from train import binary_metrics, check_artifact, read_jsonl
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 DEMO_SQL = "backend/learning-service/db/seed/demo_missions.sql"
+WEB_DEMO = "frontend/web/src/data/classroom/demoGateway.ts"
 TRAP_TEST = (
     "backend/learning-service/src/test/kotlin/com/sagomungchi/learning/answer/domain/"
     "ExpressionPolicyTest.kt"
@@ -46,6 +47,16 @@ def sql_sentences(text: str) -> list[str]:
     return out
 
 
+def ts_sentences(text: str) -> list[str]:
+    """웹 데모 데이터(TS)의 따옴표·백틱 문자열 중 한글이 있는 것. `${...}` 자리는 지움."""
+    out = []
+    for m in re.finditer(r"([\"'`])((?:\\.|(?!\1).)*?)\1", text):
+        s = re.sub(r"\$\{[^}]*\}", "", m.group(2)).replace("\\n", "\n")
+        if re.search(r"[가-힣]", s):
+            out.append(s)
+    return out
+
+
 def _string_list(text: str, start: int) -> list[str]:
     """start(`listOf(` 바로 뒤)부터 닫는 괄호까지의 큰따옴표 문자열."""
     out, i = [], start
@@ -60,18 +71,31 @@ def _string_list(text: str, start: int) -> list[str]:
 
 
 def kotlin_pass_sentences(text: str) -> list[str]:
-    """`assertAll(null, listOf(...))`와 `assertEquals(null, check("..."))`의 문장."""
+    """`assertAll(null, listOf(...))`와 미션 없이 부른 `assertEquals(null, check("..."))`의 문장."""
     out = []
     for m in re.finditer(r"assertAll\(\s*null\s*,\s*listOf\(", text):
         out += _string_list(text, m.end())
-    out += re.findall(r'assertEquals\(\s*null\s*,\s*check\("((?:[^"\\]|\\.)*)"', text)
+    out += re.findall(r'assertEquals\(\s*null\s*,\s*check\("((?:[^"\\]|\\.)*)"\)\)', text)
     return out
 
 
+def kotlin_context_sentences(text: str) -> list[str]:
+    """미션 본문을 같이 넘겨야 허용되는 문장(`check("...", 미션)`). 모델은 미션을 안 보므로
+    임계값 조건에서 빼고 확률만 기록한다(#205 측정도 미션 없이는 막히는 예외로 둠)."""
+    return re.findall(r'assertEquals\(\s*null\s*,\s*check\("((?:[^"\\]|\\.)*)"\s*,', text)
+
+
 def must_pass(repo: pathlib.Path = REPO) -> dict[str, list[str]]:
+    """꼭 통과할 글. #205의 "데모 문장 491"은 learning 데모 시드 + 웹 데모 데이터(11/02 기준,
+    추출 스크립트 저장소 밖)라 지금 파일에서 같은 방식으로 다시 뽑는다."""
     demo = sql_sentences((repo / DEMO_SQL).read_text(encoding="utf-8"))
+    web = ts_sentences((repo / WEB_DEMO).read_text(encoding="utf-8"))
     trap = kotlin_pass_sentences((repo / TRAP_TEST).read_text(encoding="utf-8"))
-    return {"demo": list(dict.fromkeys(demo)), "trap": list(dict.fromkeys(trap))}
+    return {
+        "demo": list(dict.fromkeys(demo)),
+        "web": list(dict.fromkeys(web)),
+        "trap": list(dict.fromkeys(trap)),
+    }
 
 
 def pick_threshold(
@@ -121,7 +145,9 @@ def score_texts(model, tokenizer, texts, max_length, stride, device, batch_size=
     return out
 
 
-def evaluate(args: argparse.Namespace) -> dict:
+def evaluate(args: argparse.Namespace, saved: dict | None = None) -> dict:
+    """saved를 주면 글별 확률·라벨을 셋 이름으로 담는다(--save-probs, wordlist.py 입력)."""
+    saved = {} if saved is None else saved
     import torch
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
@@ -140,10 +166,13 @@ def evaluate(args: argparse.Namespace) -> dict:
 
     sets = must_pass(args.repo)
     mp = {name: score(texts) for name, texts in sets.items()}
+    context = kotlin_context_sentences((args.repo / TRAP_TEST).read_text(encoding="utf-8"))
+    cprobs = score(context)
     mp_max = max(max(v) for v in mp.values() if v)
     valid = read_jsonl(args.data / "valid.jsonl", args.limit)
     valid_probs = score([x["text"] for x in valid])
     valid_labels = [x["label"] for x in valid]
+    saved["valid"] = (valid_probs, valid_labels)
     threshold, chosen = pick_threshold(valid_probs, valid_labels, mp_max, args.max_fpr)
 
     def metrics_at(path: pathlib.Path):
@@ -152,6 +181,7 @@ def evaluate(args: argparse.Namespace) -> dict:
         rows = read_jsonl(path, args.limit)
         probs = score([x["text"] for x in rows])
         labels = [x["label"] for x in rows]
+        saved[path.stem] = (probs, labels)
         at = {"default0.5": binary_metrics(probs, labels, 0.5)}
         if threshold is not None:
             at["chosen"] = binary_metrics(probs, labels, threshold)
@@ -175,6 +205,9 @@ def evaluate(args: argparse.Namespace) -> dict:
             "flaggedAtChosen": 0 if threshold is not None else None,
             "flaggedAt0.5": sum(1 for v in mp.values() for p in v if p >= 0.5),
             "top10": [{"set": n, "text": t, "prob": round(p, 4)} for p, n, t in top],
+            "contextOnly": [
+                {"text": t, "prob": round(p, 4)} for t, p in zip(context, cprobs, strict=True)
+            ],
         },
         "test": metrics_at(args.data / "test.jsonl"),
         "apeach": metrics_at(args.data / "apeach.jsonl"),
@@ -192,9 +225,20 @@ def main(argv=None):
     ap.add_argument("--limit", default=None, type=int, help="동작 확인용: 각 셋 N개만")
     ap.add_argument("--write", action="store_true", help="고른 임계값을 train_info.json에 씀")
     ap.add_argument("--int8", action="store_true", help="동적 양자화한 모델로 잼(CPU)")
+    ap.add_argument("--save-probs", type=pathlib.Path, help="글별 확률·라벨 npz(글 없음)")
     args = ap.parse_args(argv)
     args.out = args.out or pathlib.Path(f"results/eval_tox{'_int8' if args.int8 else ''}.json")
-    result = evaluate(args)
+    saved: dict = {}
+    result = evaluate(args, saved)
+    if args.save_probs:
+        import numpy as np
+
+        args.save_probs.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(
+            args.save_probs,
+            **{f"{k}_probs": np.array(p, dtype=np.float32) for k, (p, _) in saved.items()},
+            **{f"{k}_labels": np.array(y, dtype=np.int8) for k, (_, y) in saved.items()},
+        )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"임계값 {result['threshold']} · 꼭 통과할 글 최고 확률 {result['mustPass']['maxProb']}")
@@ -207,6 +251,7 @@ def main(argv=None):
         info["threshold"] = result["threshold"]
         mode = "int8" if args.int8 else "fp32"
         info["thresholdSource"] = f"eval.py {result['evaluatedAt'][:10]} {mode}: {result['rule']}"
+        info["quantization"] = "int8-dynamic" if args.int8 else "none"  # api-spec 5.2 로더 기준
         path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"train_info.json threshold → {result['threshold']}")
 
