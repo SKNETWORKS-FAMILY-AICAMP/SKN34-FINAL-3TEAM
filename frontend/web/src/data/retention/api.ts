@@ -5,8 +5,11 @@ import {
   readAnswerPick,
   readCommunityPosts,
   readCommunitySettings,
+  readDecorPurchaseResult,
   readEpisode,
+  readDecorSpots,
   readFrameSlots,
+  readFriendRoom,
   readLookItems,
   readMyPosts,
   readPoints,
@@ -18,7 +21,10 @@ import type {
   AnswerPickResult,
   CommunityPost,
   Episode,
+  DecorSpot,
+  DecorSurface,
   FrameSlot,
+  FriendRoom,
   CommunitySettings,
   LookItem,
   MyCommunityPost,
@@ -50,6 +56,16 @@ export const retentionApi = {
       headers: { 'Idempotency-Key': idempotencyKey },
       cache: 'no-store',
     }), itemKey),
+  /**
+   * 방 소품 사기(#704, `DECOR`만). Idempotency-Key 필수: 같은 키 재전송은 처음 응답(한 번만 차감),
+   * 키가 다르면 새 구매로 한 번 더 산다. 그래서 부르는 쪽이 사기마다 새 키를 만든다.
+   */
+  purchaseDecor: async (itemKey: string, idempotencyKey: string) =>
+    readDecorPurchaseResult(await apiFetch<unknown>(`/students/me/look-items/${e(itemKey)}/purchase`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      cache: 'no-store',
+    }), itemKey),
 
   // 주간 테마·되돌아보기 (2.11)
   weeklyTheme: async (signal?: AbortSignal): Promise<WeeklyTheme | null> =>
@@ -71,6 +87,12 @@ export const retentionApi = {
   /** 전체 교체. 빈 슬롯은 보내지 않는다 */
   saveFrameSlots: async (slots: { slotNo: number; themeId: string; weekStart: string }[]): Promise<FrameSlot[]> =>
     readFrameSlots(await apiFetch<unknown>('/students/me/room/frame-slots', json({ slots }, 'PUT'))),
+  /** 방 소품 놓은 칸(core #723 계약안). 전체 교체, 빈 목록은 모두 치움 */
+  decorSpots: async (signal?: AbortSignal): Promise<DecorSpot[]> =>
+    readDecorSpots(await apiFetch<unknown>('/students/me/room/decor-spots', { signal, cache: 'no-store' })),
+  /** color는 core 색 후속 전에는 보내지 않는다(지금 계약 RoomDecorSpotInput에 없음, additionalProperties: false) */
+  saveDecorSpots: async (spots: { surface: DecorSurface; col: number; row: number; itemKey: string; color?: string | null }[]): Promise<DecorSpot[]> =>
+    readDecorSpots(await apiFetch<unknown>('/students/me/room/decor-spots', json({ spots }, 'PUT'))),
   album: async (signal?: AbortSignal, page = 0, size = 12): Promise<Album> =>
     readAlbum(await apiFetch<unknown>(`/students/me/album?${pageQuery(page, size)}`, { signal, cache: 'no-store' })),
   episode: async (themeId: string, weekStart: string, signal?: AbortSignal): Promise<Episode> =>
@@ -93,6 +115,9 @@ export const retentionApi = {
     readMyPosts(await apiFetch<unknown>('/students/me/community-posts', { signal })),
   childPosts: async (childId: string, signal?: AbortSignal): Promise<MyCommunityPost[]> =>
     readMyPosts(await apiFetch<unknown>(`/children/${e(childId)}/community-posts`, { signal })),
+  /** 친구 방 구경(#708·#709): 친구 생각 글 번호로 그 작성자의 방을 읽기만 한다 */
+  friendRoom: async (postId: string, signal?: AbortSignal): Promise<FriendRoom> =>
+    readFriendRoom(await apiFetch<unknown>(`/community-posts/${e(postId)}/room`, { signal, cache: 'no-store' })),
   react: async (postId: string, reaction: Reaction, on: boolean): Promise<void> => {
     await apiFetch<unknown>(`/community-posts/${e(postId)}/reactions/${reaction}`, { method: on ? 'PUT' : 'DELETE' })
   },

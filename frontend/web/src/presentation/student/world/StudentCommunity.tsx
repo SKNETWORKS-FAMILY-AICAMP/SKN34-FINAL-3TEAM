@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Flag } from 'lucide-react'
+import { Flag, House } from 'lucide-react'
 import { useStudentHome } from '../../../data/classroom/useClassroom.ts'
 import {
   useCommunitySettings,
@@ -15,6 +15,7 @@ import { POST_STATUS_LABELS, REACTION_LABELS, REACTIONS, wornAssets } from '../.
 import type { CommunityPost } from '../../../domain/retention.ts'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { Companion } from './Companion.tsx'
+import { FriendRoom } from './FriendRoom.tsx'
 import './retention.css'
 
 /**
@@ -22,6 +23,8 @@ import './retention.css'
  * 마무리한 미션에서만 같은 미션 친구들의 답을 볼 수 있고, 정해진 반응 네 가지만 남긴다.
  * 순서는 무작위이고 반응 수·순위·인기순은 보여 주지 않는다(받은 반응 수는 내 글에서만).
  * #648 시안 Community: 왼쪽 미션 목록, 오른쪽 친구들 글(그 칸 안에서만 스크롤). "내가 나눈 생각"은 오른쪽 칸을 바꿔 보여 준다.
+ * 친구 방 놀러 가기(#709, FN-RET-14): 글 카드의 "놀러 가기"를 누르면 이 화면 자리에 친구 방을 보여 준다(주소는 그대로, 기준안).
+ * 친구 생각 화면은 지우지 않고 숨겨 두어 돌아오면 고른 미션·같은 seed 순서·스크롤 위치가 그대로다.
  */
 export function StudentCommunity({ child, onSettings }: { child: Child; onSettings: () => void }) {
   const home = useStudentHome(child)
@@ -34,8 +37,12 @@ export function StudentCommunity({ child, onSettings }: { child: Child; onSettin
   // 같은 화면에서는 같은 순서로 보이게 seed를 한 번 정한다.
   const [seed] = useState(() => crypto.randomUUID().slice(0, 8))
   const posts = useMissionPosts(child.id, selected, seed)
+  // 놀러 간 친구 글: 글 번호와 별명만 둔다(학생 ID는 응답에도 없음, NFR-SEC-02)
+  const [visiting, setVisiting] = useState<{ postId: string; nickname: string } | null>(null)
   return (
-    <main className="st-paper st-sheet st-community">
+    <>
+    {visiting && <FriendRoom child={child} postId={visiting.postId} nickname={visiting.nickname} onBack={() => setVisiting(null)} />}
+    <main className="st-paper st-sheet st-community" hidden={!!visiting}>
       <section className="st-community-left" aria-labelledby="community-title">
         <h1 id="community-title" className="st-title-mix">
           친구 <span>생각</span>
@@ -116,7 +123,8 @@ export function StudentCommunity({ child, onSettings }: { child: Child; onSettin
               {posts.isSuccess && posts.data.length === 0 && <p role="status">이 미션에는 아직 친구들 생각이 없어요.</p>}
               <ul className="st-posts">
                 {posts.data?.map((p) => (
-                  <PostCard key={p.postId} child={child} post={p} />
+                  <PostCard key={p.postId} child={child} post={p}
+                    onVisit={() => setVisiting({ postId: p.postId, nickname: p.author.nickname })} />
                 ))}
               </ul>
             </div>
@@ -124,10 +132,11 @@ export function StudentCommunity({ child, onSettings }: { child: Child; onSettin
         )}
       </section>
     </main>
+    </>
   )
 }
 
-function PostCard({ child, post }: { child: Child; post: CommunityPost }) {
+function PostCard({ child, post, onVisit }: { child: Child; post: CommunityPost; onVisit: () => void }) {
   const react = useReact(child.id)
   const report = useReportPost(child.id)
   const [reporting, setReporting] = useState(false)
@@ -141,6 +150,10 @@ function PostCard({ child, post }: { child: Child; post: CommunityPost }) {
       <p className="st-post-author">
         <Companion kind={post.author.companion} size={40} decorative worn={worn} />
         <strong>{post.author.nickname}</strong>
+        <button type="button" className="st-pill-link st-post-visit" onClick={onVisit}
+          aria-label={`${post.author.nickname}의 방에 놀러 가기`}>
+          <House aria-hidden="true" size={18} /> 놀러 가기
+        </button>
       </p>
       <p className="st-post-answer">{post.answer}</p>
       <div className="st-reactions" role="group" aria-label={`${post.author.nickname}의 생각에 반응하기`}>
