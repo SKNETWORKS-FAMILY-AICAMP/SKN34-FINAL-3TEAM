@@ -17,8 +17,17 @@ enum class ThemeDraftSource { AUTO, ADMIN }
 /** 유형 하나의 미션 입력 (theme_draft.input.missions[]). 성취기준은 1개 이상 */
 data class ThemeMissionInput(val thinkingType: ThinkingType, val inputType: InputType, val standardCodes: List<String>)
 
-/** theme_draft.input: 주제와 유형 5개의 미션 입력(관리자가 고르지 않은 유형은 learning이 채운 값), 유형 순(월~금 배치 순) */
-data class ThemeDraftInput(val topic: String?, val missions: List<ThemeMissionInput>)
+/**
+ * 부분 다시 생성 (#537, theme_draft.input.regenerate): 재료를 가진 원래 초안과 다시 만들 대상(ThemeDraftRules.REGEN_TARGETS 값).
+ * 생성 작업이 원래 초안 output을 ai 요청 `regenerate.base`로 넘긴다
+ */
+data class ThemeDraftRegenerate(val baseDraftId: UUID, val targets: List<String>)
+
+/**
+ * theme_draft.input: 주제와 유형 5개의 미션 입력(관리자가 고르지 않은 유형은 learning이 채운 값), 유형 순(월~금 배치 순).
+ * regenerate는 부분 다시 생성으로 만든 초안만(#537), 예전 행·전체 생성은 null
+ */
+data class ThemeDraftInput(val topic: String?, val missions: List<ThemeMissionInput>, val regenerate: ThemeDraftRegenerate? = null)
 
 /**
  * 실패 한 묶음 (check_results[].failures[]). stage는 ai `THEME`·`MISSION`·`REVIEW`·`IMAGE`, learning 검사 `LEARNING`,
@@ -71,7 +80,8 @@ data class ThemeWarning(val stage: String, val item: String, val reason: String)
 
 /**
  * 생성 결과 (theme_draft.output). 장면 키는 `INTRO`·`MON`~`FRI`·`OUTRO`, 그림·영상 값은 ai가 올린 S3 키(`theme-drafts/…`),
- * 움직임은 ai가 정한 JSON 객체. 실패 단계(failure)와 버전은 check_results·버전 칼럼에 따로 둠
+ * 움직임은 ai가 정한 JSON 객체. 실패 단계(failure)와 버전은 check_results·버전 칼럼에 따로 둠.
+ * regen은 부분 다시 생성 재료(#537): learning은 `targets`만 읽고 나머지는 열어 보지 않고 저장·전달. 예전 행·글 단계 전 실패는 null
  */
 data class ThemeDraftOutput(
     val theme: GeneratedTheme?,
@@ -81,15 +91,26 @@ data class ThemeDraftOutput(
     val videos: Map<String, String>,
     val motions: Map<String, Map<String, Any?>>,
     val warnings: List<ThemeWarning>,
-)
+    val regen: Map<String, Any?>? = null,
+) {
+    /** regen.targets 중 문자열만 (없거나 모양이 다르면 빈 목록) */
+    fun regenTargets(): List<String> = (regen?.get(REGEN_TARGETS_KEY) as? List<*>).orEmpty().filterIsInstance<String>()
+
+    private companion object {
+        const val REGEN_TARGETS_KEY = "targets"
+    }
+}
 
 /** 생성 1회 결과 */
 sealed interface ThemeDraftAttempt {
     /** ai(failure 없음)·learning 검사 통과 */
     data class Passed(val output: ThemeDraftOutput, val versions: DraftVersions) : ThemeDraftAttempt
 
-    /** 결과는 받았지만 ai failure 또는 learning 검사 실패 */
-    data class CheckFailed(val output: ThemeDraftOutput, val failures: List<ThemeFailure>, val versions: DraftVersions) : ThemeDraftAttempt
+    /**
+     * 결과는 받았지만 ai failure 또는 learning 검사 실패. output null은 ai를 부르기 전 learning 검사에서 끝난 경우
+     * (부분 다시 생성의 원래 초안·재료 없음 `BASE_MISSING`, #537)라 이전 결과·버전을 지우지 않음
+     */
+    data class CheckFailed(val output: ThemeDraftOutput?, val failures: List<ThemeFailure>, val versions: DraftVersions?) : ThemeDraftAttempt
 
     /** AI 호출 실패 (failureCode는 판정과 같은 AI_*) */
     data class AiFailed(val failureCode: String) : ThemeDraftAttempt
@@ -162,8 +183,8 @@ class ThemeDraft(
                 status = DraftStatus.READY
             }
             is ThemeDraftAttempt.CheckFailed -> {
-                output = result.output
-                versions = result.versions
+                result.output?.let { output = it }
+                result.versions?.let { versions = it }
                 failureCode = null
                 checkResults = checkResults + ThemeAttemptFailures(attempts, result.failures)
                 if (attempts >= maxAttempts) status = DraftStatus.CHECK_FAILED
@@ -197,12 +218,25 @@ class ThemeDraft(
     }
 
     /**
-     * 다시 생성 (사용자 결정 2026-11-10): READY·CHECK_FAILED·FAILED·DISCARDED에서만 같은 input·학년·주의 새 초안(ADMIN, attempts 0).
-     * 이 초안은 그대로 둔다. GENERATING·ADOPTED는 409
+     * 부분 다시 생성할 수 있는 대상 (#537, 응답 regenerableTargets): 다시 생성할 수 있는 상태이고 output.regen.targets가 있으면 그 목록
      */
-    fun regenerate(id: UUID, requestedBy: UUID, now: Instant): ThemeDraft {
+    val regenerableTargets: List<String>
+        get() = if (status in REGENERABLE) output?.regenTargets().orEmpty() else emptyList()
+
+    /**
+     * 다시 생성 (사용자 결정 2026-11-10): READY·CHECK_FAILED·FAILED·DISCARDED에서만 같은 input·학년·주의 새 초안(ADMIN, attempts 0).
+     * 이 초안은 그대로 둔다. GENERATING·ADOPTED는 409.
+     * 부분 다시 생성(#537, targets 있음): 대상이 모두 이 초안의 regen.targets 안이어야 하고(아니면 409, 재료 없음)
+     * 새 초안 input.regenerate = {이 초안 ID, targets}. 전체 다시 생성(targets null)은 input.regenerate를 비워 처음부터 만든다
+     */
+    fun regenerate(id: UUID, requestedBy: UUID, now: Instant, targets: List<String>? = null): ThemeDraft {
         if (status !in REGENERABLE) conflict("다시 생성할 수 없는 상태")
-        return requested(id, grade, weekStart, ThemeDraftSource.ADMIN, requestedBy, input, now)
+        val available = regenerableTargets
+        targets?.filterNot { it in available }?.takeIf { it.isNotEmpty() }?.let {
+            throw DomainException(ErrorKind.CONFLICT, "CONFLICT", "초안 상태 충돌", "다시 만들 재료가 없는 대상: ${it.joinToString()}")
+        }
+        val regenerate = targets?.let { ThemeDraftRegenerate(this.id, it) }
+        return requested(id, grade, weekStart, ThemeDraftSource.ADMIN, requestedBy, input.copy(regenerate = regenerate), now)
     }
 
     private fun conflict(detail: String): Nothing =
@@ -274,6 +308,8 @@ data class ThemeDraftView(
     val requestedBy: UUID?,
     val createdAt: Instant,
     val updatedAt: Instant,
+    /** 부분 다시 생성할 수 있는 대상 (#537, ThemeDraft.regenerableTargets). 없으면 빈 배열 */
+    val regenerableTargets: List<String> = emptyList(),
 )
 
 data class ThemeDraftViewPage(val items: List<ThemeDraftView>, val page: Int, val size: Int, val totalElements: Long)

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router'
+import { ArrowLeft } from 'lucide-react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ReportExplanations } from './ReportExplanations.tsx'
 import type { Child } from '../../domain/classroom.ts'
@@ -25,19 +27,22 @@ export function ParentReports({
   onReportChange?: () => void
   onAskReport: (report: ReportContext) => void
 }) {
+  const [params, setParams] = useSearchParams()
   const [status, setStatus] = useState(''),
     [kind, setKind] = useState<ReportPeriodType | ''>(''),
-    [id, setId] = useState<string | null>(null),
     [revision, setRevision] = useState<number | undefined>(),
     list = useParentQuery(['reports', child.id, status, kind], (signal) =>
       parentApi.reports(child.id, status, signal, kind || undefined), !preview,
     )
   const selected = preview ?? highlight
-  const activeId = selected?.reportId ?? id
+  // Deep links can open only reports returned for the currently selected child.
+  const requestedId = params.get('reportId')
+  const linkedId = list.data?.items.find(item => item.reportId === requestedId && item.childId === child.id)?.reportId
+  const activeId = selected?.reportId ?? linkedId
   const activeRevision = selected?.revision ?? revision
   return (
     <>
-      {!preview && <>
+      {!preview && !activeId && <>
       <header className="parent-page-head"><h2>리포트</h2>
       <p>
         하루·한 주의 학습을 자동으로 정리한 결과입니다. 궁금한 점은 AI 챗봇에서 질문할 수 있습니다.
@@ -69,12 +74,15 @@ export function ParentReports({
       </div>
       <QueryFeedback query={list} />
       {list.data && !list.error && (
-        <div className="ws-metrics">
+        <div className="parent-report-groups">
           {!list.data.items.length && <p>아직 생성된 리포트가 없습니다.</p>}
-          {list.data.items.map((r) => (
+          {(['WEEKLY', 'DAILY'] as const).filter(type => !kind || type === kind).map(type => <section className="parent-report-group" key={type} aria-labelledby={`report-group-${type}`}>
+            <h2 id={`report-group-${type}`}>{type === 'WEEKLY' ? '주간 리포트' : '일일 리포트'}</h2>
+            <div className="parent-report-grid">
+          {list.data.items.filter(item => reportPeriodType(item) === type).map((r) => (
             <article className="ws-card" key={r.reportId}>
               <p className="ws-tag">{reportPeriodType(r) === 'DAILY' ? '일일 리포트' : '주간 리포트'}</p>
-              <h2>{reportPeriodType(r) === 'DAILY' ? r.period.from : `${r.period.from} ~ ${r.period.to}`}</h2>
+              <h3>{reportPeriodType(r) === 'DAILY' ? r.period.from : `${r.period.from} ~ ${r.period.to}`}</h3>
               <p>
                 {r.status === 'COMPLETED'
                   ? '생성 완료'
@@ -86,17 +94,27 @@ export function ParentReports({
               <button
                 className="cj-secondary"
                 onClick={() => {
-                  onReportChange?.(); setId(r.reportId)
+                  onReportChange?.()
                   setRevision(undefined)
+                  const next = new URLSearchParams(params); next.set('reportId', r.reportId); setParams(next)
+                  window.scrollTo({ top: 0, behavior: 'instant' })
                 }}
               >
-                리포트 상세 보기
+                리포트 보기
               </button>
             </article>
           ))}
+            </div>
+            {!list.data.items.some(item => reportPeriodType(item) === type) && <p>{type === 'WEEKLY' ? '주간' : '일일'} 리포트가 없습니다.</p>}
+          </section>)}
         </div>
       )}
       </>}
+      {!preview && activeId && <div className="parent-report-detail-nav"><button className="parent-report-back" aria-label="리포트 목록으로 돌아가기" onClick={() => {
+        onReportChange?.(); setRevision(undefined)
+        const next = new URLSearchParams(params); next.delete('reportId'); setParams(next)
+        window.scrollTo({ top: 0, behavior: 'instant' })
+      }}><ArrowLeft size={20} aria-hidden="true" />리포트 목록</button></div>}
       {activeId && (
         <ReportDetail
           key={activeId}
@@ -104,8 +122,8 @@ export function ParentReports({
           id={activeId}
           revision={activeRevision}
           compact={!!preview} highlight={highlight} revealToken={revealToken}
-          onRevision={value => { setId(activeId); setRevision(value); onReportChange?.() }}
-          onAskReport={value => { setId(value.reportId); setRevision(value.revision); onAskReport(value) }}
+          onRevision={value => { setRevision(value); onReportChange?.() }}
+          onAskReport={value => { setRevision(value.revision); onAskReport(value) }}
         />
       )}
     </>

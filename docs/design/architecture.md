@@ -83,6 +83,7 @@
 |---|---|---|
 | 답변 제출 (Web→core→learning) | 동기 HTTP, `Idempotency-Key` | 저장 성공을 즉시 확정, 중복 제출 1회 반영 |
 | 답변 표현 분류 (learning→scoring, #688) | 동기 HTTP, 장애 시 통과 | 답변 제출 안에서 학생이 기다림. 단어 목록 다음 단계라 모델이 없어도 제출은 막지 않음 |
+| 표현 분류 재학습 (CronJob `tox-retrain`→learning·core, #725) | 동기 HTTP, ops 토큰, 재시도 없음 | 주 1회 일괄 작업. 실패하면 다음 주기에 다시 하므로 재시도·서킷을 두지 않음(4.4) |
 | 피드백: 판정·되묻기 (Web→core→learning→ai→scoring) | 동기 HTTP + core에서 SSE 전달 | 학생 실시간 대기. 답변 저장과 분리된 별도 요청이라 AI 실패 시 저장 결과 보존, 같은 요청 재호출로 재시도 |
 | 분석 대화 (Web→core→ai, 도구→learning) | 동기 HTTP + SSE 스트리밍 | 학부모 실시간 대기 |
 | 대시보드·리포트 조회 (Web→core→learning/report) | 동기 HTTP | 단순 조회 |
@@ -94,7 +95,7 @@
 - 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353. 주간 테마 초안은 호출 1번에 그래프를 끝까지 돌리는 주기 작업이라 ai LLM 호출당 300초·재시도 없음·전체 마감 900초, learning→ai 읽기 16분·생성 리스 18분, #437·#438. 값은 ai `theme_llm_timeout`·`theme_draft_deadline`, learning `app.theme-draft.ai-read-timeout`·`lease`), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ(예외: 주간 리포트 설명은 주 1회 배치라 report→ai 호출당 130초·설명 단계 400초, 리포트 작업 복구 후보 4시간, #479·#508). 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
   - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`·`learning-memory`), learning→ai(판정·되묻기 `ai`, 미션 초안 `ai-mission-draft`, 주간 테마 초안 `ai-theme-draft`, 추억 검색 임베딩 `ai-memory-embedding`, 추억 설명 `ai-memory-explanation`, 추억 검색 질의 변환 `ai-memory-query`(#679 설계, #682 구현). 기준은 아래와 같고, 기능마다 서킷을 나눠 한 기능의 ai 장애가 다른 호출을 막지 않게 한다, #305·#353·#438·#563·#564), learning→scoring(답변 표현 분류 `scoring-toxicity`, #688), core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 결제 환불의 learning 사용 증빙 조회(`payment/client/PremiumUsageClient`)는 `learning-json`을 함께 쓰고 응답 시간만 5초다(`LearningClient.withReadTimeout`, #654). 서킷 차단도 시간 초과·전송 실패와 같이 503 `REFUND_USAGE_UNAVAILABLE`(사용 여부 확인 불가, 환불 요청·승인 진행 안 함)이다. 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
 - #305 learning→ai 판정·되묻기는 서킷 `ai` 하나를 함께 쓰므로, 그 뒤 ai→scoring 실패가 이 서킷으로 번지지 않게 ai에서 끊는다. ai→scoring(M2·M1)은 교차 확인 플래그(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`, 기본 꺼짐)가 켜진 경우에만 부르고, scoring 장애·시간 초과·5xx·4xx(입력 한도 초과 등)·계약 밖 응답은 503으로 바꾸지 않는다. ai는 교차 확인을 생략한 LLM 판정을 200으로 돌려주고 `modelScores.skipped`(`SCORING_UNAVAILABLE`·`SCORING_REJECTED`)에 사유를 남긴다(api-spec 4.2.2). 따라서 scoring 장애는 learning `ai` 서킷의 실패로 집계되지 않고 scoring과 무관한 판정·되묻기를 막지 않는다. 대신 교차 확인 없이 확정된 판정은 다시 판정하지 않는다. ai→scoring에는 서킷·재시도를 따로 두지 않는다(요청마다 남은 판정 시간 안의 timeout만).
-- #688 learning→scoring 답변 표현 분류(`POST /internal/toxicity/checks`, api-spec 4.3.4)는 연결 0.5초·응답 1.5초, 서킷 `scoring-toxicity`(공통 기준: 최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·전송 오류·시간 초과·5xx 실패), 재시도 없음. 시간 초과·전송 오류·5xx·4xx·계약 밖 응답·서킷 열림·`{active:false}`는 모두 모델 검사만 건너뛰고 제출을 진행한다(fail-open, 로그는 `attemptId`·건너뜀 사유만). learning은 시도 행 잠금·트랜잭션 전에 결과를 받아 둔다(DB 연결과 잠금을 쥔 채 기다리지 않음). 답변 제출 core→learning 30초 안이다
+- #688 learning→scoring 답변 표현 분류(`POST /internal/toxicity/checks`, api-spec 4.3.4)는 연결 공통값(`app.internal.connect-timeout` 2초, `InternalRestClientFactory` 그대로)·응답 1.5초, 서킷 `scoring-toxicity`(공통 기준: 최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·전송 오류·시간 초과·5xx 실패), 재시도 없음. 시간 초과·전송 오류·5xx·4xx·계약 밖 응답·서킷 열림·`{active:false}`는 모두 모델 검사만 건너뛰고 제출을 진행한다(fail-open, 로그는 `attemptId`·건너뜀 사유만). learning은 시도 행 잠금·트랜잭션 전에 결과를 받아 둔다(DB 연결과 잠금을 쥔 채 기다리지 않음). 답변 제출 core→learning 30초 안이다
 - #280 core→ai 리포트 설정 제안(`AiClient.reportTemplate`, 25초)은 분석 스트림과 분리한 작은 서킷 `ai-report-template`(최근/최소 10건·실패율 50%·30초 차단·half-open 1건)을 쓴다. 설정 제안 실패가 분석 대화 스트림을 차단하지 않게 하기 위해서다. HTTP 4xx는 성공으로, 전송 오류·시간 초과·5xx(ai `AI_UNAVAILABLE`·`AI_PROMPT_VERSION_UNAVAILABLE` 포함)·빈 본문은 실패로 센다. OPEN은 기존 502 `AI_UNAVAILABLE`로 실패하며 이미 차감한 분석 사용량은 그대로 둔다. 재시도는 추가하지 않는다.
 - #167 분석 서킷은 헤더/첫 이벤트가 아닌 스트림 종료 결과를 집계한다. 중간 EOF·잘못된 스트림·시간 초과·error 이벤트는 실패, 정상 done/clarification 및 기존 TEMPLATE 결과는 성공이다. 사용자 취소·core 권한/저장/전송 처리 오류는 AI 실패 집계에서 제외하고 half-open 허가를 반환한다. OPEN은 기존 AI_UNAVAILABLE로 실패하며, 이미 접수한 분석 시도의 한도/사용 이력 차감은 보존한다. HTTP/1.1과 기존 body 종료·timer 취소를 유지한다.
 - 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning 피드백 80초 > learning→core 결제 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초. learning→core는 `app.internal.core-read-timeout` 4초로 ai 35초와 따로 둔다, #501). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
@@ -788,17 +789,19 @@ backend/report-service/
 
 | 대상 | ingress 허용 | egress 허용 |
 |---|---|---|
-| core | ALB(public 서브넷 ipBlock, `core-alb-network.json`), learning, ai, scoring, report-worker, 배포 점검 Pod(`deployment-check: core-learning-health`) | learning, ai, scoring(모델 사전 검사 #368), report-api, RabbitMQ(5672·15672), Redis, RDS, 공인 IPv4 443(NAT: 토스·Google OAuth), Collector |
-| learning | core, ai, report-api, report-worker, 배포 점검 Pod(`core-learning-health`) | core, ai, scoring(답변 표현 분류 #688), RabbitMQ(5672), RDS, Pod Identity agent(테마 자산 URL 서명, #652), Collector |
+| core | ALB(public 서브넷 ipBlock, `core-alb-network.json`), learning, ai, scoring, report-worker, 재학습 작업(`tox-retrain`, #725), 배포 점검 Pod(`deployment-check: core-learning-health`) | learning, ai, scoring(모델 사전 검사 #368), report-api, RabbitMQ(5672·15672), Redis, RDS, 공인 IPv4 443(NAT: 토스·Google OAuth), Collector |
+| learning | core, ai, report-api, report-worker, 재학습 작업(`tox-retrain`, #725), 배포 점검 Pod(`core-learning-health`) | core, ai, scoring(답변 표현 분류 #688), RabbitMQ(5672), RDS, Pod Identity agent(테마 자산 URL 서명, #652), Collector |
 | ai | core, learning, report-worker | core, learning, scoring, 설명 sLLM 서버(#476), RabbitMQ(5672), 공인 IPv4 443(NAT: LLM API·이미지 생성 API·Google Cloud 영상 API, S3 테마 초안 이미지·영상 쓰기, #437), Pod Identity agent(#652) |
 | scoring | ai, core(모델 사전 검사 #368), learning(답변 표현 분류 #688), 배포 점검 Pod(`deployment-check: scoring-check`) | core, RabbitMQ(5672), S3(443, 리전 S3 IP 대역)·Pod Identity agent |
 | report-api | core | learning(근거 조회), RDS, S3·Pod Identity agent |
 | report-worker | 없음 | core, learning, ai, RabbitMQ(5672), RDS, S3·Pod Identity agent, Collector |
+| 표현 분류 재학습 작업 `tox-retrain`(#725) | 없음 | core, learning, S3(443, 리전 S3 IP 대역)·Pod Identity agent / local: MinIO |
 | 설명 sLLM 서버(#476) | ai, Prometheus | S3(모델 로딩, initContainer)·Pod Identity agent / local: MinIO |
 | RabbitMQ | `app` namespace 전체(5672), core·`rabbitmq-init`(관리 API 15672), Prometheus(15692) | - |
 | Redis | core(6379, `redis-allow-core`) | - |
 
   - #688 learning→scoring(8001) 허용은 설계 값이다. prod·local 값(`learning-service.*`·`scoring-service.*`)은 #691·#692에서 반영하며, 그 전까지는 "표가 prod 값과 같다"는 위 문장의 예외다
+  - #725 재학습 작업 `tox-retrain` 행과 core·learning ingress 추가도 설계 값이다. 값 반영은 #730이며 그 전까지 같은 예외다
   - 전 Pod 공통 egress는 kube-dns(53)뿐이다. OTel Collector(4317·4318) egress는 `egressToCollector`를 켠 core·learning·report-worker만 있다. 이 셋만 OTLP를 보낸다(core·learning Java agent 지표·trace, report-worker SDK trace, 4.6). ai·scoring·report-api는 prod에서 OTLP를 보내지 않아(자체 span 없음, ai Langfuse `LANGFUSE_ENABLED=false`) Collector egress가 없다. Langfuse egress(`egressToLangfuse`)는 어느 앱에도 켜지 않았다
   - Prometheus는 앱 지표를 Collector에서 받으므로 앱 Pod ingress에 Prometheus를 허용한 것은 직접 수집하는 설명 sLLM 서버(`--metrics`)뿐이다. platform에서는 RabbitMQ 15692만 허용한다(`observability-platform-network.json`)
   - 공인 IPv4 443은 사설·CGNAT·link-local·loopback 대역을 뺀 `0.0.0.0/0` ipBlock이다. EKS VPC CNI NetworkPolicy(`enableNetworkPolicy`)는 FQDN으로 좁힐 수 없어 core·ai는 목적지 도메인이 아닌 포트로만 제한된다
@@ -814,6 +817,7 @@ backend/report-service/
     | learning | `memory/client/StudentProfileClient.kt` | 추억 검색·설명에서 학생 별명을 가리기 위한 별명 조회 `GET /internal/students/{id}/profile` (SYSTEM·대상 학생 scope, P27 #563·#564) |
     | report-worker | `app/clients/core_client.py` | 학생 별명 `GET /internal/students/{id}/profile`(#119)·리포트 표시 설정 `GET /internal/students/{id}/report-template`(#209) 조회, 삭제 완료 보고 |
     | ai·scoring | `app/clients/core_client.py` | 기동·재연결 시 활성 버전 snapshot `GET /internal/model-versions/active` (ai #68, scoring #85) |
+    | 재학습 작업(ops) | `ml/tox` 재학습 진입점(#729) | 활성 `tox-` 버전 조회 `GET /internal/model-versions/active`, 자동 등록 `POST /internal/model-versions` (#725, api-spec 5.2) |
 
   - P27(#563·#564 구현) learning→ai 추가 호출: `memory/client/MemoryEmbeddingClient`(`POST /internal/embeddings`, 기존 경로)·`MemoryExplanationAiClient`(`POST /internal/memory-explanations`)·`MemoryQueryAiClient`(`POST /internal/memory-queries`, #679 설계·#682 구현). learning→ai egress는 이미 허용돼 네트워크 정책 변경 없음
   - #688 learning→scoring 호출: `answer/client/ToxicityClient`(`POST /internal/toxicity/checks`, api-spec 4.3.4). 새 호출이라 위 표의 learning egress·scoring ingress에 추가한다(구현 #692·#691)
@@ -846,6 +850,11 @@ backend/report-service/
   - AWS 데모는 KEDA 미설치(4.4 AWS 데모 적용)라 KEDA 설치·Pod Identity 연결·NodePool 적용·서버 이미지 ECR 게시가 남아 있다(AWS 작업 보류, `environments/prod/sllm-server.json`·`karpenter-nodepool-explanation.json`은 파일만 작성). 두 파일은 ci-gitops가 렌더링·스키마 검사한다(#509)
   - 첫 설치는 `redeploy-app.ps1`이 기존 release만 다루므로 수동 `helm upgrade --install`로 한다. 그 뒤 값 변경은 `redeploy-app.ps1 -Service sllm-server`로 재배포한다(이미지 digest가 고정돼야 통과). 저장소에서 빌드하는 이미지가 아니라 `cd-release` 대상이 아니다
   - 생성 시간은 건당 20~30초 가정(30명 × 3건 약 40분), #475 실측 후 시간대·대기 상한·인스턴스 유형 조정. report의 설명 단계 상한(리포트당 400초)으로는 최악 30명 × 400초 = 200분이라 창(약 2시간)을 넘을 수 있으며, 창 밖 호출은 설명만 빠지고 리포트는 완료된다(P16, #508)
+- 표현 분류 재학습 작업(#688 재학습 자동화, 설계 #725, 이미지 #729, 배포 #730)
+  - app namespace CronJob `tox-retrain`, 주 1회(기준안 일요일 03:00 `Asia/Seoul`), `concurrencyPolicy: Forbid`, `backoffLimit` 0(실패하면 다음 주기), 실행 시간 상한(`activeDeadlineSeconds`, #729 실측으로 정함). 수동 실행은 `kubectl create job --from=cronjob/tox-retrain`
+  - 순서: learning 새 라벨 수(`label-count`) → 기준안 200건 미만이면 성공 종료 → 내보내기 + S3 비공개 경로의 공개 학습 데이터 일부 → core 활성 snapshot의 `tox-` 모델을 S3에서 받아 이어 학습(CPU) → 같은 평가 세트로 후보·활성 비교·추천 태그 → `scripts/prepare_model_upload.py` 방식으로 S3 `models/` 업로드 → core 내부 등록(api-spec 5.2 재학습 자동 등록) → S3 `models/tox-retrain/last.json`에 이번 라벨 범위 기록(다음 실행의 기준, 시퀀스 9.1). 활성화는 사람(FN-ADM-18)
+  - 학습 데이터·체크포인트는 emptyDir에만 두고 Pod와 함께 지운다. 학생 글은 클러스터 밖으로 보내지 않는다. ops 내부 토큰은 ESO로 주입
+  - 자원: 학습 중 CPU·메모리 요청은 #729 실측값. 앱 노드그룹과 Karpenter `application-burst` 중 어디에 둘지는 #730에서 정함
 - 종료 처리: core는 preStop 지연 + terminationGracePeriod로 SSE 정리 시간 확보 (롤링 배포·축소 시 단절은 클라이언트 재연결로 처리)
   - 피드백 executor 종료 대기는 최대 85초, heartbeat timer 종료 대기는 최대 5초다. 배포 시 `terminationGracePeriodSeconds`는 preStop 지연 + Spring/Tomcat 종료 단계의 예산 + 이 최대 90초 + 안전 여유보다 길게 설정하고 실제 롤링 종료로 검증한다. local chart 시작값은 preStop 15초·grace 180초([로컬 플랫폼](../report/infra.md) 8장). SIGKILL·프로세스 강제 종료 후에도 진행 중 호출이 보존된다는 의미는 아니다.
 - probe: readiness는 자기 연결과 백그라운드 초기화 상태만 확인, 요청마다 하위 서비스 호출 금지. ai는 RabbitMQ 구독·core 활성 버전 snapshot 조정·사용 가능한 프롬프트 본문을 완료해야 Ready이며 core 조회 실패·재연결 조정·미보유 활성 본문은 NotReady다(#68).
@@ -940,6 +949,7 @@ prod는 core·learning의 Java agent와 Collector egress를 켜야 이 규칙들
 - local values는 Tempo·trace를 켜지 않는다. 검증 시 opt-in으로 켠다.
 - 임계값은 초기 기준이다. 실측 부하 기반 조정과 서비스별 담당 라우팅은 후속이다.
 - 리포트 설명(#476·#479): 배치 시간대 설명 sLLM 서버 기동 실패와 설명 `NOT_INCLUDED` 비율 경보는 아직 없다. 설명이 빠져도 리포트는 `COMPLETED`로 끝나 기존 DLQ·오류율 규칙에 잡히지 않는다. 지표는 report DB `weekly_report.verification` JSONB의 `explanationState`(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`, #479)로 정한다(#508): 월요일 배치 주간 리포트 중 `NO_TARGET`을 뺀 대상에서 `NOT_INCLUDED` 비율과, sLLM 가동 창 안에서 `INCLUDED`가 0건인지를 본다. 상태가 없는 이전 리포트는 집계에서 뺀다. report-worker는 아직 지표를 내보내지 않으므로 지금은 report DB 조회로 확인하고, 지표 내보내기·Grafana 규칙·임계값은 #475 실측 뒤 정한다.
+- 표현 분류 재학습(#725): `tox-retrain` Job 실패를 기존 Grafana → Discord 경로로 알린다. Job 상태 지표 출처(kube-state-metrics 유무)는 #730에서 확인하고, 그 전까지는 관리자 모델 등록부에 새 버전이 없는 것과 `kubectl get jobs`로 확인한다.
 
 ## 5. 디렉토리 구조
 
@@ -983,9 +993,10 @@ SKN34-FINAL-3TEAM/
 │  └─ openapi/
 │     ├─ <service>.yaml          # api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
 │     └─ support-learning-required.yaml  # support↔learning 협의용 계약 (현재 learning 구현 명세와 구분)
-├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님)
+├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님. 예외: tox 재학습 이미지)
 │  ├─ m2/
 │  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
+│  ├─ tox/                       # 답변 표현 분류 학습·평가(#690), (예정) 재학습 진입점·CPU 이미지(#729, CronJob #730)
 │  └─ sllm/                      # (예정) 설명 sLLM 학습·평가·양자화 (#475)
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
@@ -1074,7 +1085,7 @@ SKN34-FINAL-3TEAM/
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
 │     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143·#237); asyncapi 검사는 미구현
 │     ├─ ci-gitops.yml           # chart lint·렌더·스키마 검증(local YAML·prod JSON), migration 이미지 빌드 (#238·#509)
-│     ├─ ci-ml-m1.yml · ci-ml-m2.yml  # ml/m1·ml/m2 ruff·pytest
+│     ├─ ci-ml-m1.yml · ci-ml-m2.yml · ci-ml-tox.yml  # ml/m1·ml/m2·ml/tox ruff·pytest
 │     ├─ cd-candidate.yml        # #186 CD 도구 검사(계획 검증·실행기 테스트, 배포 없음)
 │     ├─ cd-release.yml          # #186 운영 배포(main 수동 실행, 4.5)
 │     └─ e2e.yml                 # 실서버 E2E: 수동·E2E 구성 변경 PR (#246). 야간 schedule은 기본 브랜치(main)에 병합된 뒤부터 동작
@@ -1139,6 +1150,7 @@ SKN34-FINAL-3TEAM/
 
 ## 7. 확인 필요 가정
 - 학습(M2·M1·설명 sLLM)은 클러스터 밖 RunPod GPU에서 AI Hub 데이터만으로 수행하고 결과(가중치)만 S3로 반입. 설명 문장 생성은 클러스터 안 CPU sLLM 서버에서 수행해 학생 글이 AWS 밖으로 나가지 않음 (2026-11-10 결정, #473). 리포트 설명에 한정하며 추억 검색·설명(P27)은 외부 LLM API 사용
+- 예외: 답변 표현 분류(`tox-`) 재학습은 학생 답변이 학습 데이터에 들어가 RunPod을 쓰지 않고 클러스터 안 CPU CronJob에서 현재 활성 모델을 이어 학습한다. 클러스터 안 GPU는 두지 않는다(설명 sLLM과 같은 이유: GPU 할당량 대기 위험). 첫 모델(#690)은 공개 데이터만이라 기존처럼 클러스터 밖에서 학습할 수 있다 (2026-11-17 결정, #725)
 - AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·Pod Identity 제외)
 
 ### 7.1 구현 결정 요약

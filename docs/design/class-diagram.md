@@ -1163,6 +1163,7 @@ classDiagram
   class InternalModelVersionController {
     <<controller>>
     +active() Map
+    +registerFromPipeline(body) ModelVersion
   }
   class AdminJobService {
     <<service>>
@@ -1213,6 +1214,7 @@ classDiagram
     <<service>>
     +list(kind, page, size) ModelVersionPage
     +register(command, actor) ModelVersion
+    +registerFromPipeline(command) ModelVersion
     +activate(id, command, actor) ModelVersion
     +rollback(id, command, actor) ModelVersion
     +active() List~ActiveModelVersion~
@@ -1289,6 +1291,7 @@ classDiagram
   AdminMissionController --> LearningClient
   AdminMissionController --> AuditLogService
   InternalModelVersionController --> ModelVersionService
+  ModelVersionService --> ModelPreflightService : 재학습 자동 등록 전 검사(#725)
   AdminJobService --> ReportJobService : 리포트 재처리(ReportAdminRetryService → enqueueAdminRetry)
   AdminJobService --> ConversationService : 대화 재처리(ConversationAdminRetryService)
   AdminJobService --> OperationRetryRepository : job_execution·감사
@@ -1322,6 +1325,7 @@ classDiagram
 - `OperationsQueueService` → `QueueManagementClient`: RabbitMQ 관리 API(15672) 조회, `definitions.json`의 고정 35개 큐(기본 큐 7개 × 기본·재시도 3·DLQ) 길이·DLQ 적재량 (참고 레포 `QueueOperations*`, api-spec 2.8.1)
 - 모델 파일 사전 검사(#368): `ModelPreflightController`(`POST /api/v1/admin/models/preflight`, SERVICE_OPS) → `ModelPreflightService` → `admin/client/ScoringPreflightClient`(`InternalRestClientFactory` 20초·재시도 없음) → scoring `POST /internal/models/preflight`. 결과·오류는 `MissionAuditRepository`(MyBatis `audit_log`, `target_type = MODEL_VERSION`, 대상 ID 없음)로 감사 기록. 검사 대상·결과 값 객체는 `admin/domain/ModelPreflight.kt`, 모르는 칸 거부는 controller DTO `ModelPreflightRequest`·`RegistrationArtifactRequest`가 맡고 domain은 Jackson에 의존하지 않는다(#422, api-spec 5.2.1, scoring 6장 `preflight.py`)
 - 모델 로딩 상태(#370): scoring `ModelLoadingReporter`가 발행한 `model.loading.reported`를 `admin/consumer/ModelLoadingConsumer`(큐 `core.model.loading.reported`, `RetryingConsumer`)가 받아 `ModelLoadingService.record`로 `model_loading_report`에 Pod·인스턴스별 최신 상태를 저장한다. `ModelLoadingController`(`GET /api/v1/admin/model-loading`)가 `list`로 조회 (아키텍처 1.4). 저장·조회·삭제 SQL은 `ModelLoadingRepository`(MyBatis `ModelLoadingMapper`), 1일 지난 보고 정리는 `admin/scheduler/ModelLoadingCleanupScheduler`가 1시간마다 `ModelLoadingService.cleanup` 호출(#422)
+- 재학습 자동 등록·표현 검토(#725, 구현 #728): `InternalModelVersionController.registerFromPipeline`(`POST /internal/model-versions`, ops 토큰)은 `ModelVersionService.registerFromPipeline` → `ModelPreflightService.check`(actor = 재학습 계정 `app.model-registry.pipeline-actor-id`) → PASS면 기존 `register`와 같은 저장·감사(actor 같음). `tox-` MODEL·`registration.source = PIPELINE`·`evaluation.recommendation` 필수 검사는 service에서. 관리자 표현 검토는 `learning/controller/AdminExpressionReviewsController`가 관리자 미션처럼 learning `/internal/admin/expression-reviews…`로 넘기고 `EXPRESSION_REVIEW_VIEW`·`EXPRESSION_REVIEW_LABEL` 감사 기록(api-spec 2.8·4.1.5)
 - #336 구현(#355): `learning/controller/AdminMissionDraftsController`가 성취기준 표·미션 초안 경로를 같은 방식으로 learning에 넘기고 초안 요청·채택·버리기를 감사 기록한다(api-spec 2.8). 사용량 호출 종류(`usage/domain/UsageSummary.CallType`)에 `MISSION_DRAFT`
 
 ### 3.6 커뮤니티·포인트·꾸미기 (community #388 · reward #389 구현)
@@ -1340,6 +1344,11 @@ classDiagram
     +react(postId, reaction)
     +unreact(postId, reaction)
     +childPosts(childId) List
+    +friendRoom(postId) FriendRoom
+  }
+  class FriendRoomService {
+    <<service>>
+    +room(postId) FriendRoom
   }
   class CommunityService {
     <<service>>
@@ -1359,6 +1368,7 @@ classDiagram
     +react(postId, studentId, reaction) ReactionResult
     +setVisibility(studentId, visible, reason)
     +moderate(postId, status, errorReportId)
+    +postAuthor(postId, viewerId, viewerUser) UUID
   }
   class RewardController {
     <<controller>>
@@ -1381,6 +1391,7 @@ classDiagram
     +purchase(itemKey, idempotencyKey) DecorPurchaseResult
     +requireUnlocked(studentId, theme, companion)
     +replaceEquipment(studentId, equipped)
+    +equipmentAssets(studentId) Map
   }
   class LookItemAdminService {
     <<service>>
@@ -1409,6 +1420,13 @@ classDiagram
   CommunityController --> RewardService : react 성공 시 적립
   CommunityService --> CommunityClient
   CommunityService --> RewardService : 공유 성공 시 적립
+  CommunityController --> FriendRoomService
+  FriendRoomService --> CommunityRepository : 신고 숨김
+  FriendRoomService --> CommunityClient : 작성자 찾기·열람 검사
+  FriendRoomService --> CommunityAuthorMapper : 작성자 공개 판정·별명
+  FriendRoomService --> LookUnlockService : 착용 그림 키
+  FriendRoomService --> RoomFrameSlotService : 액자 그림·제목
+  FriendRoomService --> RoomDecorService : 방 소품 놓은 자리
   RewardController --> RewardService
   RewardController --> LookUnlockService
   RewardController --> LookItemAdminService
@@ -1421,6 +1439,7 @@ classDiagram
 
 - #389 구현: `RewardService.earn`이 적립 유일 진입점(`REQUIRES_NEW`, 적립하지 않은 이유는 `EarnOutcome`으로 반환, 예외 없음). 저장소는 MyBatis `RewardMapper` 하나이고 위 엔티티·저장소 상자는 설계 단위다. 아래 사건 연결도 #389 후속 PR로 구현했다: `ParticipationRewardService`(사건별 `earn` 호출, 어떤 실패도 던지지 않음)를 `LearningProxyService.reflection·weeklyTheme·reviewViewed`와 `CommunityService.react`가 부른다. 커뮤니티 작성자 `look.equipped`는 `CommunityAuthorMapper`가 `LookUnlockService.equipmentOf`로 채운다
 - 학습 완료 적립: 기존 `LearningProxyService`의 돌아보기 저장 성공 후 `RewardService.earn(MISSION_COMPLETED, missionId)` → `CommunityService.shareCompleted`(설정·동의 확인, 학생·미션당 1개라 다시 풀기는 learning이 무시). 적립 저장 실패는 학습 응답을 실패로 바꾸지 않고, 같은 사건 재요청·주간 테마 조회 때 `award`가 사건 키 UK로 멱등 보충. 구현은 `LearningProxyService.reflection`이 learning 저장 뒤 `ParticipationRewardService`(적립)·`CommunityService.shareCompleted`(공유)를 차례로 호출한다. 다른 기능 service 호출이라 의존 규칙(아키텍처 2.2)에 맞고, core의 다른 다기능 흐름과 같이 별도 `facade` 없이 service에서 조합한다(#422). `LearningController`는 `LearningProxyService`만 부른다
+- 친구 방 구경(#708): `FriendRoomService.room`이 학생 세션 확인 → `CommunityRepository.reportHidden`(404) → `CommunityClient.postAuthor`(learning #707, 오류 그대로 전달) → `CommunityAuthorMapper.toAuthors`(없으면 404) → `LookUnlockService.equipmentAssets`(착용 여덟 칸 그림 키, 바닥 포함·판매 중단 포함) → `RoomDecorService.friendSpots`(방 소품 놓은 자리, 그림 키만, #704) → `RoomFrameSlotService.friendFrames`(작성자 범위로 learning 앨범) 순서로 조합한다. 트랜잭션 없이 읽기만 해 learning을 기다리는 동안 DB 잠금이 없다. 응답에 학생 ID·회차 키를 넣지 않는다. 커뮤니티 목록 `look.equipped`(`equipmentOf`, 캐릭터 네 슬롯 아이템 코드)는 그대로다
 - #704 바닥·방 소품: 바닥 `FLOOR`는 `LookCatalog.EQUIP_SLOTS`(착용 슬롯)에 들어가 해금·착용 클래스가 그대로다. 방 소품 `DECOR`는 `ITEM_SLOTS`(관리자 등록)에만 있고 `LookUnlockService.purchase`가 해금과 같은 잠금·원장·멱등으로 여러 번 산다(`unlock`은 방 소품을 422로 거절). 목록 `catalog`가 보유 개수 `ownedCount`·등록일 `createdAt`을 채운다. `RewardService.deleteStudent`가 원장보다 먼저 보유 행을 지운다
 - `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
@@ -1444,8 +1463,9 @@ classDiagram
   }
   class RoomDecorService {
     <<service>>
-    +spots(studentId) List
-    +replace(studentId, spots) List
+    +spots() DecorSpots
+    +replace(spots) DecorSpots
+    +friendSpots(studentId) List
     +deleteStudent(studentId)
   }
   class MemoryController {
@@ -1460,6 +1480,7 @@ classDiagram
     <<service>>
     +slots(studentId) List
     +replace(studentId, slots) List
+    +friendFrames(studentId) List
     +deleteStudent(studentId)
   }
   class MemoryUsageService {
@@ -1498,6 +1519,8 @@ classDiagram
 - `LearningMemoryClient`는 `_common/client/LearningClient` 전송을 쓰되 검색·설명 경로가 별도 회로 `learning-memory` 하나를 함께 쓴다(검색 30초·설명 45초, 아키텍처 1.3, #566)
 - 학생 삭제 확정의 `clear`가 `FrameSlotService.deleteStudent`·`MemoryUsageService.deleteStudent`도 부름(P09)
 - #555 구현(core V47): 위 `RoomController`·`FrameSlotService`는 `room` 패키지의 `RoomController`·`RoomFrameSlotService`(MyBatis `RoomFrameSlotMapper`)다. 보유 확인·제목 조회는 설계의 `LearningMemoryClient` 대신 `room/client/LearningFrameClient`가 맡는다: learning `frames/ownership`·앨범 목록은 ai를 부르지 않는 DB 조회라 일반 `learning-json` 서킷의 `LearningClient`를 쓰고, 추억 검색·설명의 `learning-memory` 서킷과 나눈다. 삭제는 `StudentLookService.clear`(학생 삭제 확정 트랜잭션)가 `RoomFrameSlotService.deleteStudent`를 부른다. 가구 스킨은 `LookCatalog.FURNITURE_SLOTS`를 더했을 뿐 해금·착용 클래스는 그대로이고, `LookUnlockService.replaceEquipment`가 보낸 슬롯만 바꾸도록 바뀌었다
+- #708 구현: `RoomFrameSlotService.friendFrames`는 다른 학생(친구)의 슬롯을 `LearningFrameClient.albumFramesOf`로 채운다. 요청 사용자(열람자) 범위가 아니라 친구 범위(`X-Student-Scope` = 친구, `X-User-Role: SYSTEM`)로 잠깐 바꿔 부르고, 결과에는 `slotNo`·제목·그림만 둔다(회차 키 없음). 걸린 액자가 없으면 learning을 부르지 않는다
+- #723(core V51): `surface`·`col`·`row` 기준 칸을 저장한다. 면별 범위·기준 칸 중복·8개 상한 검사는 잠금 전에, 보유 검사는 잠금 뒤에 한다. 면(FLOOR → WALL_BACK → WALL_LEFT) → row → col 순으로 본인·친구 조회에 같은 칸을 반환한다. 큰 소품 크기·겹침·허용 면·가구·이동 경로 검사는 웹 몫이다.
 - #704 구현(core V50): `RoomDecorService`(MyBatis `RoomDecorMapper`)가 방 소품 놓은 자리를 조회·전체 교체한다. 학생 행 `FOR NO KEY UPDATE` 뒤 보유 개수(`student_room_decor`)를 읽어 넘는 배치를 422로 거절하고, learning을 부르지 않아 트랜잭션 하나로 끝난다. 학생 삭제 확정의 `StudentLookService.clear`가 `RoomDecorService.deleteStudent`도 부른다
 - #560 구현: 앨범 3경로는 `MemoryController`→`MemoryProxyService.album`·`albumDetail`·`albumSeen`→`LearningMemoryClient`. 클라이언트의 앨범 메서드는 검색·설명용 `learning-memory`가 아니라 주입한 일반 `LearningClient`(`learning-json`)로 보낸다. 목록 `displayed`는 `RoomFrameSlotService.displayedFrames`(저장된 슬롯의 회차 키, learning 미호출)로 채운다
 
@@ -1637,6 +1660,25 @@ classDiagram
     <<client>>
     +check(texts) ToxicityResult
   }
+  class ToxicityResult {
+    <<value>>
+    +flagged Boolean
+    +review Boolean
+    +modelVersion String
+  }
+  class ExpressionReviewService {
+    <<service>>
+    +recordGrayZone(answerId, modelVersion)
+    +recordReported(answerId)
+    +autoLabel(answerId, moderationStatus)
+    +list(labeled, source, page) Page
+    +label(reviewId, label, adminId)
+    +labelCount(since) LabelCount
+    +export(since, until) List~TrainingRow~
+  }
+  class ExpressionReviewRepository { <<repository>> }
+  class AdminExpressionReviewController { <<controller>> }
+  class ExpressionReviewExportController { <<controller>> }
   class MissionRepository {
     <<repository>>
     +findRubric(missionVersionId, rubricVersionId) Rubric
@@ -1678,6 +1720,11 @@ classDiagram
   AnswerService --> JudgmentService : createPending
   AnswerService --> ExpressionPolicy : blockedCategory
   AnswerService --> ToxicityClient : 잠금 전 표현 분류(#688)
+  ToxicityClient ..> ToxicityResult
+  AnswerService --> ExpressionReviewService : review면 recordGrayZone(#725)
+  AdminExpressionReviewController --> ExpressionReviewService
+  ExpressionReviewExportController --> ExpressionReviewService
+  ExpressionReviewService --> ExpressionReviewRepository
   AnswerService ..> Answer
   Answer *-- AnswerContent
 ```
@@ -1689,6 +1736,7 @@ classDiagram
 - 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
 - 답변 표현 검사 (#205): `AnswerService.submit`이 누락 검사 다음·되묻기 연결 검사 전에 `ExpressionPolicy.blockedCategory(AnswerContent.writtenTexts(), mission)`를 부름. 학생이 쓴 칸(서술 글·풀이 최종 답과 단계·논술 4칸)을 칸마다 검사하고 고르기·분류·초안·메모는 검사하지 않음. 범주(`ExpressionCategory`: `PROFANITY`·`SEXUAL`·`HATE`·`THREAT`·`PERSONAL_INFO`)가 나오면 저장·판정 없이 `422 ANSWER_INAPPROPRIATE`(`detail`은 범주별 고정 문구), 로그는 `attemptId`·`category`만. 목록은 `resources/answer-filter`(korcen·우리말샘·팀 조정)를 `answer/repository/ExpressionPolicyConfig`가 읽어 빈으로 만들고, domain은 Kotlin 정규식만 씀. `HATE`와 맥락 단어(`새끼`)는 미션 본문(제목·질문·안내·선택지·그룹)에 나오면 허용
 - 표현 분류 모델 단계 (#688): `AnswerService.submit`이 시도 행 잠금 전에 `ToxicityClient.check(writtenTexts)`로 scoring 결과를 받아 둠(공백 칸 제외, 칸 순서대로 앞 20칸·합계 앞 1,500자까지만). 단어 목록을 통과한 뒤 그 결과가 flagged면 `ExpressionCategory.INSULT`로 같은 422(표현 문구). 결과가 없거나(시간 초과·장애·서킷 열림·`active:false`·계약 밖 응답·생략) flagged가 아니면 진행. 로그는 `attemptId`·`category`·건너뜀 사유만
+- 표현 검토 대기 (#725, 구현 #727): `ToxicityResult.review`가 참이고 답변을 저장하면 같은 트랜잭션에서 `ExpressionReviewService.recordGrayZone(answerId, modelVersion)`(UK `(answer_id, source)`라 다시 보내기 중복 없음). 패키지는 `answer/` 아래(`answer/service/ExpressionReviewService`, `answer/controller/AdminExpressionReviewController`·`ExpressionReviewExportController`, `answer/repository/ExpressionReviewRepository`). 커뮤니티 운영 반영(`CommunityService`의 moderation 처리)이 `recordReported`·`autoLabel`을 부른다(`HIDDEN_REPORT` → 행 추가, `REMOVED`·`VISIBLE` → 자동 라벨, 직접 라벨한 행은 그대로). 학생 삭제는 답변보다 먼저 이 학생 답변의 행을 지움(ERD 4.3.2). `export`는 학생이 쓴 칸을 이어 1,500자로 자른 글과 라벨만 반환
 - `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
 - `AttemptService.finish`: 시도 행을 잠그고(`AttemptRepository.lockById`, 답변 제출·판정 저장과 같은 행) 본인 확인 → 이미 마무리했으면 기록 없이 같은 결과 → 타임라인으로 `FinishPolicy.canFinish`(sequence-diagram 3.3 순서) → `Attempt.finish(now)` → `AttemptRepository.finish`(`WHERE status = 'IN_PROGRESS' AND finished_at IS NULL`) → `FinishResult{finishedAt, reveal, revealKind, checklist}`. `Attempt.finish(now)`는 타임라인을 받지 않아 `canFinish`는 서비스가 먼저 부름
 - 공개 내용(FN-LRN-11): `reveal`은 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설), `revealKind`는 고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`. 체크리스트는 기준표 요소 전체, 이 시도의 처리 완료 판정(`JudgmentService.results`) 중 원문 구절과 함께 충족된 적 있는 요소만 체크하고 가장 최근 구절 표시. 시도 상세도 마무리 뒤에 같은 값
@@ -2058,13 +2106,13 @@ classDiagram
     +detail(draftId) ThemeDraftView
     +adopt(draftId) AdminWeeklyTheme
     +discard(draftId) ThemeDraftView
-    +regenerate(draftId) ThemeDraftView
+    +regenerate(draftId, targets?) ThemeDraftView
   }
   class ThemeDraftService {
     <<service>>
     +request(command, author) ThemeDraftView
     +createWeekly(weekStart)
-    +regenerate(draftId, author) ThemeDraftView
+    +regenerate(draftId, author, targets?) ThemeDraftView
     +adopt(draftId, author) AdminWeeklyTheme
     +discard(draftId) ThemeDraftView
     +generateNext(now)

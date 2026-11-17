@@ -15,10 +15,12 @@ import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.record.domain.Period
 import com.sagomungchi.learning.theme.ThemeDraftFixtures
 import com.sagomungchi.learning.theme.client.AiThemeDraftRequest
+import com.sagomungchi.learning.theme.client.AiThemeRegenerate
 import com.sagomungchi.learning.theme.client.ThemeDraftAiClient
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDraft
 import com.sagomungchi.learning.theme.domain.ThemeDraftInput
+import com.sagomungchi.learning.theme.domain.ThemeDraftRegenerate
 import com.sagomungchi.learning.theme.domain.ThemeDraftRules
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeFailure
@@ -320,6 +322,87 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `부분 다시 생성은 원래 초안 regen 대상만, 생성 작업은 원래 output을 base로 넘기고 새 regen까지 저장, 부분 결과에서 또 부분 다시 생성`() {
+        val ready = readyDraft(ThemeDraftFixtures.regen())
+        assertEquals(listOf("VIDEO:INTRO", "IMAGE:MON", "MISSION:WED"), service.view(ready).regenerableTargets)
+        assertCode(409, "CONFLICT") { service.regenerate(ready.id, admin, listOf("VIDEO:INTRO", "IMAGE:TUE")) } // 재료 없는 대상
+
+        val partial = service.regenerate(ready.id, admin, listOf("VIDEO:INTRO"))
+
+        val waiting = drafts.findById(partial.id)!!
+        assertEquals(ThemeDraftRegenerate(ready.id, listOf("VIDEO:INTRO")), waiting.input.regenerate)
+        assertEquals(ready.input, waiting.input.copy(regenerate = null))
+        assertEquals(listOf(DraftStatus.GENERATING, 0, ThemeDraftSource.ADMIN), listOf(waiting.status, waiting.attempts, waiting.source))
+        assertEquals(emptyList(), service.view(waiting).regenerableTargets) // 생성 중
+
+        val base = drafts.findById(ready.id)!!.output!!
+        val changed = base.copy(
+            videos = base.videos + ("INTRO" to ThemeDraftFixtures.key("INTRO", "mp4", run = "run-2")),
+            regen = ThemeDraftFixtures.regen(listOf("VIDEO:INTRO", "IMAGE:FRI"), run = "run-2"),
+        )
+        given(ai.generate(anyRequest())).willReturn(ThemeDraftFixtures.response(changed))
+        assertTrue(service.generateNext(Instant.now()))
+
+        val requests = ArgumentCaptor.forClass(AiThemeDraftRequest::class.java)
+        verify(ai, times(2)).generate(requests.capture() ?: placeholder)
+        assertNull(requests.allValues[0].regenerate) // 처음 전체 생성
+        assertEquals(AiThemeRegenerate(listOf("VIDEO:INTRO"), base), requests.allValues[1].regenerate) // 원래 output 그대로(regen 포함)
+        assertEquals(ThemeDraftFixtures.regen(), requests.allValues[1].regenerate!!.base.regen)
+        assertEquals(emptyList(), requests.allValues[1].previousFailures)
+
+        val done = drafts.findById(partial.id)!!
+        assertEquals(Triple(DraftStatus.READY, 1, changed), Triple(done.status, done.attempts, done.output))
+        val view = service.view(done)
+        assertEquals(listOf("VIDEO:INTRO", "IMAGE:FRI"), view.regenerableTargets)
+        assertEquals(ThemeDraftFixtures.key("INTRO", "mp4", run = "run-2"), done.output!!.videos["INTRO"])
+        assertEquals(base, drafts.findById(ready.id)!!.output) // 원래 초안은 그대로
+        assertEquals(DraftStatus.READY, drafts.findById(ready.id)!!.status)
+
+        val again = service.regenerate(partial.id, admin, listOf("IMAGE:FRI"))
+        assertEquals(ThemeDraftRegenerate(partial.id, listOf("IMAGE:FRI")), again.input.regenerate)
+        assertNull(service.regenerate(partial.id, admin).input.regenerate) // 전체는 처음부터
+    }
+
+    @Test
+    fun `부분 다시 생성의 원래 초안이 없거나 재료가 없으면 ai를 부르지 않고 LEARNING BASE_MISSING, 상한이면 CHECK_FAILED`() {
+        val noRegen = readyDraft() // 이 기능 전처럼 regen 없는 결과
+        val input = drafts.findById(noRegen.id)!!.input
+        val partials = listOf(noRegen.id, UUID.randomUUID()).map { base ->
+            ThemeDraft.requested(UUID.randomUUID(), ThemeGrade.G5, nextWeek, ThemeDraftSource.ADMIN, admin,
+                input.copy(regenerate = ThemeDraftRegenerate(base, listOf("VIDEO:INTRO"))), Instant.now()).also(drafts::insert)
+        }
+
+        repeat(2 * properties.themeDraft.maxAttempts) { assertTrue(service.generateNext(Instant.now())) }
+
+        verify(ai, times(1)).generate(anyRequest()) // 처음 전체 생성 1회뿐
+        partials.forEach { partial ->
+            val failed = drafts.findById(partial.id)!!
+            assertEquals(Triple(DraftStatus.CHECK_FAILED, properties.themeDraft.maxAttempts, null), Triple(failed.status, failed.attempts, failed.output))
+            failed.checkResults.forEach {
+                val failure = it.failures.single()
+                assertEquals(ThemeDraft.LEARNING, failure.stage)
+                assertTrue(failure.reasons.single().startsWith("${ThemeDraftRules.BASE_MISSING} 원래 초안 ${partial.input.regenerate!!.baseDraftId}"), failure.toString())
+            }
+        }
+    }
+
+    @Test
+    fun `예전 행(input regenerate·output regen 칸 없음)도 읽히고 다시 만들 대상은 없어 부분은 409, 전체는 그대로`() {
+        val ready = readyDraft()
+        jdbc.update("UPDATE theme_draft SET input = input - 'regenerate', output = output - 'regen' WHERE id = ?", ready.id)
+        assertEquals(false, jdbc.queryForObject(
+            "SELECT jsonb_exists(input, 'regenerate') OR jsonb_exists(output, 'regen') FROM theme_draft WHERE id = ?", Boolean::class.java, ready.id))
+
+        val old = drafts.findById(ready.id)!!
+
+        assertNull(old.input.regenerate)
+        assertNull(old.output!!.regen)
+        assertEquals(emptyList(), service.view(old).regenerableTargets)
+        assertCode(409, "CONFLICT") { service.regenerate(ready.id, admin, listOf("VIDEO:INTRO")) }
+        assertNull(drafts.findById(service.regenerate(ready.id, admin).id)!!.input.regenerate)
+    }
+
+    @Test
     fun `목록은 상태·출처로 거르고 최근 요청 순, 응답 장면은 7개이고 그림·시작·종료 영상은 presigned URL`() {
         val ready = readyDraft()
         service.createWeekly(nextWeek.plusWeeks(1))
@@ -345,10 +428,10 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         assertEquals(emptyList(), service.view(service.request(command(weekStart = nextWeek.plusWeeks(2)))).scenes) // 생성 전
     }
 
-    private fun readyDraft(): ThemeDraft {
+    private fun readyDraft(regen: Map<String, Any?>? = null): ThemeDraft {
         val draft = service.request(command())
         val input = drafts.findById(draft.id)!!.input
-        given(ai.generate(anyRequest())).willReturn(ThemeDraftFixtures.response(ThemeDraftFixtures.output(input)))
+        given(ai.generate(anyRequest())).willReturn(ThemeDraftFixtures.response(ThemeDraftFixtures.output(input).copy(regen = regen)))
         assertTrue(service.generateNext(Instant.now()))
         return drafts.findById(draft.id)!!.also { assertEquals(DraftStatus.READY, it.status) }
     }

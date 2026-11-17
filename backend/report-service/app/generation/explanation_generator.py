@@ -15,16 +15,20 @@ logger = logging.getLogger(__name__)
 FORBIDDEN = re.compile(r"점수|등급|레벨|순위|사고력|백분위|백분율|퍼센트|퍼센트포인트")
 
 
+EXPLAINED_INPUTS = ("NARRATIVE", "ESSAY")
+NUMBER = re.compile(r"\d+")
+
+
 def candidates(attempts, period):
+    # 2026-11-16 local Gemma detail: an m2 score is no longer required; the detail prompt reads
+    # the answer and mission title only, and scores are forwarded when they exist.
     rows = [
         (attempt, answer)
         for attempt in attempts
         for answer in attempt.answers
         if period.includes(answer.submitted_at)
         and answer.process_status == "DONE"
-        and answer.judgment is not None
-        and isinstance(answer.judgment.model_scores, dict)
-        and answer.judgment.model_scores.get("m2") is not None
+        and answer.input_type in EXPLAINED_INPUTS
     ]
     # Newest first. The caller tries the next answer of the same type when one fails the
     # pre-call checks, so an excluded latest answer does not empty its type (#508).
@@ -32,7 +36,29 @@ def candidates(attempts, period):
     return rows
 
 
+SCORE_RANGES = {
+    "NARRATIVE": {
+        "hol": (1, 4),
+        **dict.fromkeys(
+            (
+                "task_1",
+                "content_1",
+                "content_2",
+                "content_3",
+                "organization_1",
+                "organization_2",
+                "expression_1",
+                "expression_2",
+            ),
+            (1, 5),
+        ),
+    },
+    "ESSAY": dict.fromkeys(("org", "cont", "exp"), (0, 3)),
+}
+
+
 def input_scores(answer, grade):
+    """m2 scores when present (validated), otherwise None. Scope and text are always checked."""
     if type(grade) is not int or not (
         answer.input_type == "NARRATIVE"
         and grade in (5, 6)
@@ -40,30 +66,15 @@ def input_scores(answer, grade):
         and grade in (4, 5, 6)
     ):
         raise RecordContractError("Explanation is outside the supported scope")
-    if answer.judgment.corrected or not answer.written_text.strip():
-        raise RecordContractError("Explanation requires an unchanged scored answer")
-    model = answer.judgment.model_scores["m2"]
+    judgment = answer.judgment
+    if (judgment is not None and judgment.corrected) or not answer.written_text.strip():
+        raise RecordContractError("Explanation requires an unchanged answer")
+    models = judgment.model_scores if judgment is not None else None
+    model = models.get("m2") if isinstance(models, dict) else None
+    if model is None:
+        return None
     scores = model.get("scores") if isinstance(model, dict) else None
-    ranges = (
-        {
-            "hol": (1, 4),
-            **dict.fromkeys(
-                (
-                    "task_1",
-                    "content_1",
-                    "content_2",
-                    "content_3",
-                    "organization_1",
-                    "organization_2",
-                    "expression_1",
-                    "expression_2",
-                ),
-                (1, 5),
-            ),
-        }
-        if answer.input_type == "NARRATIVE"
-        else dict.fromkeys(("org", "cont", "exp"), (0, 3))
-    )
+    ranges = SCORE_RANGES[answer.input_type]
     if (
         not isinstance(scores, dict)
         or set(scores) != set(ranges)
@@ -76,14 +87,22 @@ def input_scores(answer, grade):
     return scores
 
 
+def unsupported_numbers(text, original):
+    """Numbers and counted phrases are allowed only when the student wrote them (e.g. "30분")."""
+    if any(char.isnumeric() and char not in "0123456789" for char in text):
+        return True
+    if not set(NUMBER.findall(text)) <= set(NUMBER.findall(original)):
+        return True  # whole numbers only: "3" is not allowed by an original "30"
+    return any(match.group(0) not in original for match in KOREAN_COUNT.finditer(text))
+
+
 def verify(explanation, original, command, request_text):
     text, quote = explanation.text, explanation.quote
     if (
         not text.strip()
-        or any(char.isnumeric() for char in text)
+        or unsupported_numbers(text, original)
         or FORBIDDEN.search(text)
         or UNSUPPORTED_CLAIM.search(text)
-        or KOREAN_COUNT.search(text)
         or command.display_name in text
         or str(command.student_id) in text
         or any(value not in original for value in QUOTED.findall(text))
@@ -161,7 +180,8 @@ class ExplanationGenerator:
                                     "grade": command.grade,
                                     "inputType": answer.input_type,
                                     "text": text,
-                                    "scores": scores,
+                                    "topic": attempt.mission_title,
+                                    **({"scores": scores} if scores is not None else {}),
                                 },
                                 settings.report_explanation_timeout_seconds,
                             ),

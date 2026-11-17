@@ -12,6 +12,7 @@ from app.prompt_versions.registry import ActiveVersions
 from app.prompt_versions.service import PromptSync
 from app.report_explanation.models import (
     ActiveExplanationResponse,
+    ExplanationDetail,
     ExplanationRequest,
     InactiveExplanationResponse,
 )
@@ -55,28 +56,42 @@ def explain(llm: FakeLlm, body: dict = BODY, versions: ActiveVersions | None = N
     return asyncio.run(service(llm, versions).explain(ExplanationRequest.model_validate(body)))
 
 
-def test_two_items_become_parent_text_with_quote_and_registry_version() -> None:
-    llm = FakeLlm(
-        "강아지가 산책으로 운동이 된다는 까닭을 구체적으로 들었음. 그래서 5점.",
-        "앞 문장과 뒤 문장을 잇는 말이 부족함.",
-    )
-    result = explain(llm)
+def detail(**changes) -> ExplanationDetail:
+    values = {
+        "analysis": "강아지가 산책을 좋아해서 운동이 된다는 까닭을 들어 주장을 펼쳤습니다.",
+        "improvement_points": "다만, 키우고 싶은 까닭과 운동 이야기의 연결이 짧습니다.",
+        "next_steps": "앞으로 '강아지와 산책하면 무엇이 좋을까?'라고 물어봐 주세요.",
+    }
+    return ExplanationDetail(**(values | changes))
+
+
+def test_one_call_becomes_titled_detail_with_quote_and_registry_version() -> None:
+    llm = FakeLlm(detail())
+    result = explain(llm, {**BODY, "topic": "키우고 싶은 동물과 까닭을 써 보세요."})
     assert isinstance(result, ActiveExplanationResponse)
     assert result.explanation.text == (
-        "잘한 점: 강아지가 산책으로 운동이 된다는 까닭을 구체적으로 들었음.\n"
-        "함께 이야기해 볼 점: 앞 문장과 뒤 문장을 잇는 말이 부족함."
+        "상세 분석\n강아지가 산책을 좋아해서 운동이 된다는 까닭을 들어 주장을 펼쳤습니다.\n\n"
+        "보완할 지점\n다만, 키우고 싶은 까닭과 운동 이야기의 연결이 짧습니다.\n\n"
+        "개선 방안\n앞으로 '강아지와 산책하면 무엇이 좋을까?'라고 물어봐 주세요."
     )
     assert result.explanation.quote == "왜냐하면 강아지는 산책을 좋아해서 운동이 된다."
     assert result.versions.model_dump() == {
         "model": "report-explanation@lora-1",
-        "prompt": "report-explanation@1",
+        "prompt": "report-explanation@3",
     }
-    assert [r.user.splitlines()[0] for r in llm.requests] == [
-        "[학년] 초5 [항목] 구체성 [점수] 5",
-        "[학년] 초5 [항목] 연결성 [점수] 2",
+    [request] = llm.requests
+    assert request.user.splitlines()[:3] == [
+        "[학년] 초등 5학년",
+        "[문제] 키우고 싶은 동물과 까닭을 써 보세요.",
+        "[학생 글]",
     ]
-    assert all(r.user.endswith(TEXT) for r in llm.requests)
+    assert request.user.endswith(TEXT) and "4" not in request.user  # 점수는 넣지 않음
     assert {u.call_type for u in llm.usages} == {"REPORT_EXPLANATION"}
+
+
+def test_scores_are_optional() -> None:
+    body = {key: value for key, value in BODY.items() if key != "scores"}
+    assert isinstance(explain(FakeLlm(detail()), body), ActiveExplanationResponse)
 
 
 @pytest.mark.parametrize(
@@ -101,16 +116,32 @@ def test_prompt_with_same_name_does_not_activate_model() -> None:
     assert isinstance(explain(FakeLlm(), versions=versions), InactiveExplanationResponse)
 
 
-def test_item_left_empty_after_cleaning_is_422_not_retryable() -> None:
-    llm = FakeLlm("까닭을 들었음.", "3점짜리 글임. 점수가 낮음.")
+def test_analysis_left_empty_after_cleaning_is_422_not_retryable() -> None:
+    llm = FakeLlm(detail(analysis="점수가 낮은 글입니다. 등급은 보통입니다."))
     with pytest.raises(ApiError) as error:
         explain(llm)
     assert (error.value.status, error.value.code) == (422, "AI_EXPLANATION_REJECTED")
     assert error.value.extra == {"retryable": False}
 
 
+def test_bad_sentence_is_dropped_not_the_whole_explanation() -> None:
+    llm = FakeLlm(detail(improvement_points="다만, 연결이 짧습니다. 점수가 낮은 글입니다."))
+    result = explain(llm)
+    assert isinstance(result, ActiveExplanationResponse)
+    assert "보완할 지점\n다만, 연결이 짧습니다.\n\n" in result.explanation.text
+    assert "점수" not in result.explanation.text
+
+
+def test_invalid_output_does_not_submit_a_second_serverless_job() -> None:
+    llm = FakeLlm(LlmError("LLM_INVALID_OUTPUT", retryable=True), detail())
+    with pytest.raises(ApiError) as error:
+        explain(llm)
+    assert error.value.code == "AI_UNAVAILABLE"
+    assert len(llm.requests) == 1
+
+
 def test_llm_failure_is_503() -> None:
-    llm = FakeLlm(LlmError("LLM_SERVER_ERROR", retryable=True))
+    llm = FakeLlm(*[LlmError("LLM_SERVER_ERROR", retryable=True)] * 2)
     with pytest.raises(ApiError) as error:
         explain(llm)
     assert (error.value.status, error.value.code) == (503, "AI_UNAVAILABLE")
@@ -139,3 +170,13 @@ def test_prompt_sync_keeps_model_event_received_before_snapshot() -> None:
     asyncio.run(sync.synchronize(asyncio.Event()))
     assert versions.model("report-explanation", "explanation/grade-5/narrative") is not None
     assert versions.model("m2-klue-narrative", "explanation/grade-5/narrative") is None
+
+
+def test_local_skip_registry_calls_llm_without_active_model(monkeypatch) -> None:
+    llm = FakeLlm(detail())
+    monkeypatch.setenv("EXPLANATION_LOCAL_SKIP_REGISTRY", "1")
+    result = explain(llm, versions=ActiveVersions())
+    assert isinstance(result, ActiveExplanationResponse)
+    assert result.versions.model == "gemma-4-26b-a4b-it-qat-awq-int4@local-unregistered"
+    monkeypatch.setenv("EXPLANATION_LOCAL_SKIP_REGISTRY", "true")  # 정확히 "1"만 켬
+    assert isinstance(explain(FakeLlm(), versions=ActiveVersions()), InactiveExplanationResponse)

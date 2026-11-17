@@ -26,7 +26,8 @@ def test_scene_key_format_learning_presigns() -> None:
     ("run_id", "scene", "ext"),
     [
         ("../etc", "MON", "png"),  # 실행 ID 형식 밖
-        ("a" * 32, "INTRO1", "png"),  # 컷 그림은 올리지 않음(장면 7개만)
+        ("a" * 32, "INTRO1", "mp4"),  # 재료(컷 첫 그림, #537)는 그림만
+        ("a" * 32, "INTRO5", "png"),  # 컷은 4개
         ("a" * 32, "MON", "jpg"),
     ],
 )

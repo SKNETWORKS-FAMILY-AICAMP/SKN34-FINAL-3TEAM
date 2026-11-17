@@ -16,6 +16,9 @@ data class FrameSlotView(val slotNo: Int, val themeId: UUID, val weekStart: Loca
 
 data class FrameSlots(val slots: List<FrameSlotView>)
 
+/** 친구 방 구경(#708)에 보이는 액자. 회차 키(`themeId`·`weekStart`)를 넣지 않아 회차 상세를 열 수 없다. */
+data class FriendFrameView(val slotNo: Int, val title: String, val imageUrl: String?)
+
 /** learning 앨범 목록 한 줄 중 슬롯 표시에 쓰는 칸 */
 data class AlbumFrame(val title: String, val imageUrl: String?)
 

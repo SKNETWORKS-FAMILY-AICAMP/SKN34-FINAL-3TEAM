@@ -1,8 +1,8 @@
 import { http } from 'msw/http'
 import type { AdminMission } from '../../domain/admin/operations.ts'
 import type { ThinkingType } from '../../domain/classroom.ts'
-import { themeDraftRequestErrors, THEME_SCENES } from '../../domain/admin/themeDrafts.ts'
-import type { ThemeDraftRequest, ThemeDraftStatus, ThemeSceneName } from '../../domain/admin/themeDrafts.ts'
+import { REGEN_TARGETS, regenTargetLabel, themeDraftRequestErrors, THEME_SCENES } from '../../domain/admin/themeDrafts.ts'
+import type { RegenTarget, ThemeDraftRequest, ThemeDraftStatus, ThemeSceneName } from '../../domain/admin/themeDrafts.ts'
 import { THINKING_ORDER } from '../../domain/studentLook.ts'
 import { THEME_DAYS } from '../../domain/retention.ts'
 import { achievementStandards, audit, missions, stamp } from '../fixtures/admin/operations.ts'
@@ -16,6 +16,8 @@ import { respond } from './student.ts'
  * - 요청 3초 뒤 조회에서 결과가 생김. 주제에 '실패'가 있으면 CHECK_FAILED(검사 실패 사유·초안 함께)
  * - 그림은 가상 SVG data URL, 영상 없음(움직임은 그림 위 카메라·문구·살펴보기 지점으로 확인)
  * - 채택: 미션 5개 DRAFT(source LLM_THEME)·테마 DRAFT. 게시는 미션·테마를 각각
+ * - 부분 다시 생성(#537): 본문 targets가 있으면 원래 초안 결과를 복사하고 고른 장면만 바꾼다(그림 제목·미션 제목에 '다시 만듦').
+ *   다시 만들 수 있는 대상은 저장하지 않고 응답할 때 계산한다(이 기능 전에 저장된 목업 초안도 같게 보이게)
  */
 interface MockThemeDraft {
   draftId: string
@@ -25,7 +27,11 @@ interface MockThemeDraft {
   weekStart: string
   attempts: number
   maxAttempts: number
-  input: { topic: string | null; missions: { thinkingType: ThinkingType; inputType: string; standardCodes: string[] }[] }
+  input: {
+    topic: string | null
+    missions: { thinkingType: ThinkingType; inputType: string; standardCodes: string[] }[]
+    regenerate?: { baseDraftId: string; targets: RegenTarget[] } | null
+  }
   checkResults: { attempt: number; failures: { stage: string; reasons: string[] }[] }[]
   draft: Record<string, unknown> | null
   scenes: { scene: ThemeSceneName; imageUrl: string | null; videoUrl: string | null; motion: unknown }[]
@@ -89,6 +95,7 @@ function filledInput(body: ThemeDraftRequest): MockThemeDraft['input'] {
   }
 }
 function result(d: MockThemeDraft) {
+  if (d.input.regenerate) return partialResult(d, d.input.regenerate)
   const title = '사라진 종을 찾아라', failing = d.input.topic?.includes('실패')
   const candidates = ['시계탑', '분수대', '빵집', '도서관']
   d.draft = {
@@ -115,6 +122,40 @@ function result(d: MockThemeDraft) {
     d.checkResults.push({ attempt: d.attempts, failures: [{ stage: 'LEARNING', reasons: ['WED QUESTION_LENGTH 질문이 너무 깁니다.'] }] })
   } else d.status = 'READY'
   d.updatedAt = stamp()
+}
+const REGENERABLE: ThemeDraftStatus[] = ['READY', 'CHECK_FAILED', 'FAILED', 'DISCARDED']
+/** learning regenerableTargets 흉내: 다시 생성할 수 있는 상태이고 요일 미션 5개가 있으면 14개 모두(목업은 재료가 늘 있음) */
+function regenerableTargets(d: MockThemeDraft): RegenTarget[] {
+  const missionCount = Array.isArray((d.draft as { missions?: unknown[] } | null)?.missions) ? (d.draft as { missions: unknown[] }).missions.length : 0
+  return REGENERABLE.includes(d.status) && missionCount === 5 ? [...REGEN_TARGETS] : []
+}
+const view = (d: MockThemeDraft) => ({ ...d, input: { ...d.input, regenerate: d.input.regenerate ?? null }, regenerableTargets: regenerableTargets(d) })
+/** 부분 다시 생성 결과: 원래 초안 결과를 복사하고 고른 장면만 바꿈(그림·영상·움직임·미션 표시) */
+function partialResult(d: MockThemeDraft, spec: { baseDraftId: string; targets: RegenTarget[] }) {
+  const base = drafts.find((x) => x.draftId === spec.baseDraftId)
+  d.attempts += 1
+  d.updatedAt = stamp()
+  if (!base?.draft) {
+    d.checkResults.push({ attempt: d.attempts, failures: [{ stage: 'LEARNING', reasons: [`BASE_MISSING 원래 초안 ${spec.baseDraftId}의 생성 결과·재료(regen) 없음`] }] })
+    d.status = d.attempts >= d.maxAttempts ? 'CHECK_FAILED' : 'GENERATING'
+    return
+  }
+  const draft = structuredClone(base.draft) as { theme: { title: string }; missions: { day: string; draft: { title: string } }[] }
+  const scenes = structuredClone(base.scenes)
+  for (const target of spec.targets) {
+    const [kind, name] = target.split(':') as ['VIDEO' | 'IMAGE' | 'MISSION', ThemeSceneName]
+    const s = scenes.find((x) => x.scene === name)
+    if (s) s.imageUrl = kind === 'VIDEO' ? s.imageUrl : sceneSvg(name, `${draft.theme.title} · 다시 만듦`)
+    if (s) s.motion = motionOf(name) // 다시 정한 움직임(목업은 같은 값)
+    if (kind === 'MISSION') {
+      const m = draft.missions.find((x) => x.day === name)
+      if (m) m.draft.title = `${m.draft.title} (다시 만듦)`
+    }
+  }
+  d.draft = draft
+  d.scenes = scenes
+  d.versions = { prompt: 'theme-draft-mock-1', model: 'mock-model' }
+  d.status = 'READY'
 }
 /** 요청 3초 뒤 처음 조회할 때 결과가 생김(화면의 5초 주기 조회로 바뀌는 것까지 확인) */
 const GENERATE_MS = 3_000
@@ -186,7 +227,7 @@ export const adminThemeDraftHandlers = [
       const d = create(body, 'ADMIN')
       audit('THEME_DRAFT_REQUEST', 'THEME_DRAFT', d.draftId, 'SUCCESS', '테마 초안 생성 요청')
       persist()
-      return d
+      return view(d)
     }, 202),
   ),
   http.get('/api/v1/admin/theme-drafts', ({ request }) =>
@@ -197,7 +238,7 @@ export const adminThemeDraftHandlers = [
       if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100) learningFail()
       const rows = drafts.map(advance).filter((d) => (!status || d.status === status) && (!source || d.source === source))
       persist()
-      return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length }
+      return { items: rows.slice(index * size, (index + 1) * size).map(view), page: index, size, totalElements: rows.length }
     }),
   ),
   http.get('/api/v1/admin/theme-drafts/:draftId', ({ request, params }) =>
@@ -205,7 +246,7 @@ export const adminThemeDraftHandlers = [
       allow(request, 'CONTENT')
       const d = advance(byId(String(params.draftId)))
       persist()
-      return d
+      return view(d)
     }),
   ),
   http.post('/api/v1/admin/theme-drafts/:draftId/adopt', ({ request, params }) =>
@@ -227,19 +268,26 @@ export const adminThemeDraftHandlers = [
       Object.assign(d, { status: 'DISCARDED', updatedAt: stamp() })
       audit('THEME_DRAFT_DISCARD', 'THEME_DRAFT', d.draftId, 'SUCCESS', '초안 버림')
       persist()
-      return d
+      return view(d)
     }),
   ),
   http.post('/api/v1/admin/theme-drafts/:draftId/regenerate', ({ request, params }) =>
     respond(async () => {
       allow(request, 'CONTENT')
       const d = byId(String(params.draftId))
+      // learning #537과 같은 검사: targets 없음·null은 전체, 목록이면 1개 이상·알려진 값만(400), 다시 만들 수 없는 대상은 409
+      const raw = ((await request.json().catch(() => ({}))) as { targets?: unknown }).targets
+      if (raw != null && (!Array.isArray(raw) || !raw.length || raw.some((t) => !(REGEN_TARGETS as unknown[]).includes(t)))) learningFail()
+      const targets = raw == null ? null : [...new Set(raw as RegenTarget[])]
       if (d.status === 'GENERATING' || d.status === 'ADOPTED') learningFail(409, 'CONFLICT')
+      if (targets && targets.some((t) => !regenerableTargets(d).includes(t))) learningFail(409, 'CONFLICT')
       const next = create({ grade: d.grade, weekStart: d.weekStart, topic: d.input.topic ?? undefined,
         missions: d.input.missions as ThemeDraftRequest['missions'] }, 'ADMIN')
-      audit('THEME_DRAFT_REGENERATE', 'THEME_DRAFT', next.draftId, 'SUCCESS', `초안 ${d.draftId} 다시 생성`)
+      next.input = { ...structuredClone(d.input), regenerate: targets ? { baseDraftId: d.draftId, targets } : null }
+      audit('THEME_DRAFT_REGENERATE', 'THEME_DRAFT', next.draftId, 'SUCCESS',
+        targets ? `초안 ${d.draftId} 부분 다시 생성(${targets.map(regenTargetLabel).join(', ')})` : `초안 ${d.draftId} 다시 생성`)
       persist()
-      return next
+      return view(next)
     }, 202),
   ),
 ]

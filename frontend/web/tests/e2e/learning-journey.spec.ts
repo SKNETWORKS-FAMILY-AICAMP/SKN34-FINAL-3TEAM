@@ -55,7 +55,7 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
       await expect(card.getByText('생성 완료')).toBeVisible({ timeout: 5_000 })
     }).toPass({ timeout: 120_000, intervals: [3_000] })
 
-    await card.getByRole('button', { name: '리포트 상세 보기' }).click()
+    await card.getByRole('button', { name: '리포트 보기' }).click()
     await expect(page.getByRole('heading', { name: '리포트 상세' })).toBeVisible()
     await expect(page.getByText(`실제 리포트 기간 · ${from} ~ ${to}`, { exact: false })).toBeVisible()
     await expect(page.getByText('수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.')).toBeVisible()

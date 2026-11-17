@@ -116,7 +116,7 @@ def setup_case(attempts=None, ai=None):
     return command, report, base, learning, ai, generator
 
 
-def test_scoreless_m2_preparation_is_not_an_explanation_candidate():
+def test_scoreless_m2_preparation_is_explained_without_scores():
     student = fixed_result()[0].student_id
     attempt = scored(student)
     answer = replace(
@@ -133,8 +133,15 @@ def test_scoreless_m2_preparation_is_not_an_explanation_candidate():
     )
     command, report, base, _, ai, generator = setup_case([replace(attempt, answers=(answer,))])
     result = asyncio.run(generator.generate(command, report))
-    assert not ai.calls
-    assert result.items == base.items
+    # 2026-11-16 local Gemma detail: scores are optional and the mission title is the topic.
+    assert ai.calls[0][0] == {
+        "grade": 5,
+        "inputType": "NARRATIVE",
+        "text": TEXT,
+        "topic": "합성 미션",
+    }
+    assert result.explanation_state == "INCLUDED"
+    assert result.items[: len(base.items)] == base.items
     assert result.state == base.state
 
 
@@ -158,8 +165,8 @@ def test_latest_answer_per_type_max_three_and_existing_report_unchanged():
     assert result.explanation_state == "INCLUDED"
     for item in explanations:
         assert item.verified and item.evidence[0].answer_version == item.payload["answerVersion"]
-    assert set(ai.calls[0][0]) == {"grade", "inputType", "text", "scores"}
-    assert ai.calls[0][1] == 130
+    assert set(ai.calls[0][0]) == {"grade", "inputType", "text", "topic", "scores"}
+    assert ai.calls[0][1] == 310
 
 
 @pytest.mark.parametrize("fault", ["inactive", "timeout", RuntimeError("PRIVATE RAW TEXT")])
@@ -226,9 +233,17 @@ def test_missing_or_unsupported_grade_does_not_invent_a_grade(grade):
     assert result.explanation_state == "NOT_INCLUDED" and not ai.calls
 
 
-def test_no_scores_is_no_target_and_essay_grade_four_is_supported():
+def unsupported_input(student):
+    attempt = attempt_for(student)
+    return replace(attempt, answers=(replace(attempt.answers[0], input_type="CHOICE"),))
+
+
+def test_unscored_answer_is_explained_other_inputs_are_no_target_and_essay_grade_four():
     student = fixed_result()[0].student_id
-    command, report, _, _, ai, generator = setup_case([attempt_for(student)])
+    command, report, _, _, ai, generator = setup_case([attempt_for(student, texts=(TEXT,))])
+    assert asyncio.run(generator.generate(command, report)).explanation_state == "INCLUDED"
+    assert "scores" not in ai.calls[0][0]
+    command, report, _, _, ai, generator = setup_case([unsupported_input(student)])
     assert asyncio.run(generator.generate(command, report)).explanation_state == "NO_TARGET"
     assert not ai.calls
     attempt = scored(student)
@@ -264,6 +279,27 @@ def test_invalid_quotes_numbers_and_claims_are_not_saved(quote, text):
     command, report, base, _, _, generator = setup_case(ai=AI(quote=quote, text=text))
     result = asyncio.run(generator.generate(command, report))
     assert result.items == base.items and result.explanation_state == "NOT_INCLUDED"
+
+
+def test_numbers_and_counts_written_by_the_student_are_allowed():
+    student = fixed_result()[0].student_id
+    source = "버스를 타고 30분이나 가야 해서 한 번 더 생각했다."
+    attempt = attempt_for(student, texts=(source,))
+
+    class Source(Records):
+        async def evidence(self, student, links):
+            return tuple(
+                EvidenceRecord(link.answer_id, link.attempt_id, link.answer_version, source, True)
+                for link in links
+            )
+
+    text = "상세 분석\n버스로 30분 걸린다는 근거와 한 번 더 생각한 과정을 썼습니다."
+    command, report, _, _, _, _ = setup_case()
+    ai = AI(quote=None, text=text)
+    generator = ExplanationGenerator(Base(fixed_result()[1]), ai, Source([attempt]))
+    result = asyncio.run(generator.generate(command, report))
+    assert result.explanation_state == "INCLUDED"
+    assert result.items[-1].payload["text"] == text
 
 
 @pytest.mark.parametrize(
@@ -343,7 +379,7 @@ def test_pdf_html_markdown_and_free_projection(quote):
 )
 def test_omitted_explanations_render_in_all_formats(has_scores, state, notice):
     student = fixed_result()[0].student_id
-    attempts = [scored(student)] if has_scores else [attempt_for(student)]
+    attempts = [scored(student)] if has_scores else [unsupported_input(student)]
     command, report, base, _, _, generator = setup_case(attempts, AI(fault="inactive"))
     result = asyncio.run(generator.generate(command, report))
     assert result.explanation_state == state and result.state == base.state
@@ -371,7 +407,7 @@ def test_system_opt_in_learning_and_ai_wire_contracts():
             assert request.url.params["includeModelScores"] == "true"
             return httpx.Response(200, json=page(student, [wire]))
         assert request.url.path == "/internal/report-explanations"
-        assert set(json.loads(request.content)) == {"grade", "inputType", "text", "scores"}
+        assert set(json.loads(request.content)) == {"grade", "inputType", "text", "topic", "scores"}
         return httpx.Response(
             200,
             json={
@@ -397,7 +433,14 @@ def test_system_opt_in_learning_and_ai_wire_contracts():
                 records = await client.explanation_attempts(student, PERIOD)
                 assert records[0].answers[0].judgment.model_scores["m2"]["scores"] == SCORES
                 response = await AiClient(http).explanation(
-                    {"grade": 5, "inputType": "NARRATIVE", "text": TEXT, "scores": SCORES}, 130
+                    {
+                        "grade": 5,
+                        "inputType": "NARRATIVE",
+                        "text": TEXT,
+                        "topic": "합성 미션",
+                        "scores": SCORES,
+                    },
+                    130,
                 )
                 assert response.active and response.explanation.quote is None
             finally:
@@ -456,9 +499,19 @@ def test_real_db_persists_state_items_and_evidence_and_free_hides(
             paid = await service.detail(report.id, None, True)
             free = await service.detail(report.id, None, False)
             assert paid["explanations"]["state"] == result.explanation_state
+            if items:
+                assert paid["explanations"]["items"][0]["itemId"] == str(items[0]["id"])
             assert free["explanations"] is None
             assert EXPLANATION not in json.dumps(free, ensure_ascii=False, default=str)
         finally:
             reset_user_context(reset)
 
     asyncio.run(query())
+
+
+def test_number_inside_a_longer_student_number_is_not_allowed():
+    from app.generation.explanation_generator import unsupported_numbers
+
+    original = "버스를 타고 30분이나 가야 한다."
+    assert not unsupported_numbers("30분 걸린다고 썼습니다.", original)
+    assert unsupported_numbers("근거를 3개 들었습니다.", original)

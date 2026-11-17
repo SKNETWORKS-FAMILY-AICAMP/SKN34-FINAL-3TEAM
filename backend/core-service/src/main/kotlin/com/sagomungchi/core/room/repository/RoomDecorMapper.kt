@@ -14,6 +14,7 @@ interface RoomDecorMapper {
     /** 아이템별 보유 개수(판매 중단 아이템 포함) */
     fun owned(studentId: UUID): List<OwnedDecor>
     fun deleteSpots(studentId: UUID): Int
-    fun insertSpot(@Param("studentId") studentId: UUID, @Param("spotNo") spotNo: Int, @Param("itemId") itemId: UUID,
+    fun insertSpot(@Param("studentId") studentId: UUID, @Param("surface") surface: String,
+                   @Param("col") col: Int, @Param("row") row: Int, @Param("itemId") itemId: UUID,
                    @Param("now") now: OffsetDateTime): Int
 }

@@ -52,6 +52,53 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
     @BeforeEach fun prepare() { subject = UUID.randomUUID().toString() }
     private fun login() = auth.login(GoogleProfile(subject, "$subject@example.test", "보호자"), null)
 
+    @Test fun `Google parent ID follows verified email on repeat login and repairs legacy ID`() {
+        val first = login()
+        val id = first.identity.account.id
+        assertEquals("$subject@example.test", first.identity.account.email)
+        assertEquals(id, login().identity.account.id)
+        jdbc.update("UPDATE user_account SET login_id=? WHERE id=?", "legacy-$subject", id)
+        val latest = "changed-$subject@example.test"
+        val next = auth.login(GoogleProfile(subject, latest, "보호자"), first.refreshToken)
+        assertEquals(id, next.identity.account.id)
+        assertEquals(latest, jdbc.queryForObject("SELECT login_id FROM user_account WHERE id=?", String::class.java, id))
+        mvc.get("/api/v1/me") { header("Authorization", "Bearer ${next.accessToken}") }.andExpect {
+            status { isOk() }; jsonPath("$.loginId") { value(latest) }; jsonPath("$.email") { value(latest) }
+            jsonPath("$.authMethod") { value("GOOGLE") }
+        }
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM parent_credential WHERE user_id=?", Int::class.java, id))
+    }
+
+    @Test fun `Google email conflict retains old identity and sessions without account linking`() {
+        val first = login()
+        val other = auth.login(GoogleProfile("other-$subject", "taken-$subject@example.test", "합성 보호자"), null)
+        val conflict = assertFailsWith<BusinessException> {
+            auth.login(GoogleProfile(subject, other.identity.account.email, null), first.refreshToken)
+        }
+        assertEquals("ACCOUNT_EXISTS", conflict.code)
+        assertFalse(conflict.message.orEmpty().contains(other.identity.account.email))
+        assertEquals(first.identity.account.email, auth.authenticate(first.accessToken).account.email)
+        assertEquals(first.identity.account.id, auth.refresh(first.refreshToken).identity.account.id)
+        assertEquals(other.identity.account.id, auth.authenticate(other.accessToken).account.id)
+    }
+
+    @Test fun `concurrent Google email claims leave one owner and roll back the losing session`() {
+        val first = login()
+        val other = auth.login(GoogleProfile("other-$subject", "other-$subject@example.test", null), null)
+        val target = "shared-$subject@example.test"
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val outcomes = executor.invokeAll(listOf(subject to first, "other-$subject" to other).map { (sub, issued) ->
+                Callable { runCatching { auth.login(GoogleProfile(sub, target, null), issued.refreshToken) } }
+            }).map { it.get() }
+            assertEquals(1, outcomes.count { it.isSuccess })
+            assertEquals("ACCOUNT_EXISTS", (outcomes.single { it.isFailure }.exceptionOrNull() as BusinessException).code)
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM user_account WHERE login_id=?", Int::class.java, target))
+            val loser = if (outcomes[0].isFailure) first else other
+            assertEquals(loser.identity.account.email, auth.authenticate(loser.accessToken).account.email)
+        } finally { executor.shutdownNow() }
+    }
+
     @Test fun `device entry paths reach MVC without Bearer while accompanied entry stays protected`() {
         mvc.get("/api/v1/auth/student/profiles").andExpect {
             status { isUnauthorized() }; jsonPath("$.code") { value("STUDENT_DEVICE_INVALID") }

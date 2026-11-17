@@ -35,6 +35,16 @@ object ThemeDraftRules {
     /** 장면 7개 순서 (시작·월~금·종료) */
     val SCENES: List<String> = listOf(INTRO) + ThemeDay.entries.map { it.name } + OUTRO
 
+    /**
+     * 부분 다시 생성 대상 14개 (#537 계약, ai와 같은 값): 시작·종료 영상 2, 시작·종료 그림 2, 요일 그림 5, 요일 미션 5.
+     * 같이 바뀌는 범위(움직임·컷 그림·대화 등)는 ai가 정한다
+     */
+    val REGEN_TARGETS: Set<String> = linkedSetOf("VIDEO:$INTRO", "VIDEO:$OUTRO", "IMAGE:$INTRO", "IMAGE:$OUTRO") +
+        ThemeDay.entries.map { "IMAGE:${it.name}" } + ThemeDay.entries.map { "MISSION:${it.name}" }
+
+    /** 원래 초안·재료가 없어 ai를 부르지 않고 끝낸 부분 다시 생성의 learning 검사 사유 접두어 (#537) */
+    const val BASE_MISSING = "BASE_MISSING"
+
     /** learning 검사 코드. 미션 규칙은 `<요일> <DraftRules 검사 코드> <자세히>`, 나머지는 아래 코드로 시작 (ai THEME으로 감) */
     const val PLACEMENT = "PLACEMENT"
     const val LOGIC = "LOGIC"

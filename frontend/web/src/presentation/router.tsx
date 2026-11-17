@@ -22,9 +22,12 @@ const AccountPage = page(() => import('./service/AccountPage.tsx').then(m => m.A
 const GuardianTransfers = page(() => import('./service/GuardianTransfers.tsx').then(m => m.GuardianTransfers))
 const AuthOnboarding = page(() => import('./auth/AuthOnboarding.tsx').then(m => m.AuthOnboarding))
 const ReviewPage = import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true' ? lazy(() => import('./service/ReviewPage.tsx').then(m => ({ default: m.ReviewPage }))) : null
+const LandingPage = page(() => import('./landing/LandingPage.tsx').then(m => m.LandingPage))
 
 // URL 입력만으로 역할을 부여하지 않는다. 로그인 응답/학생 세션으로 진입한다.
 export const router = createBrowserRouter([
+  // 공개 소개 화면은 세션 복원·백엔드 연결 여부와 관계없이 열 수 있다 (#724).
+  { path: '/', element: <Suspense fallback={<PageLoading />}><LandingPage /></Suspense> },
   {
     element: (
       <SessionProvider>
