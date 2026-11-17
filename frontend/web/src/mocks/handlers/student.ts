@@ -361,10 +361,11 @@ export const studentHandlers = [
         throw new ApiError({ status: 409, code: 'LOOK_LOCKED', title: '아직 해금하지 않은 꾸미기예요.' })
       let equipped: StudentLook['equipped']
       if (body.equipped !== undefined) {
-        // 가구 칸(P27, core #555 기준안): 생략하면 착용 유지, null이면 기본 스킨
+        // 가구 칸(P27, core #555 기준안)·바닥 칸(#704): 생략하면 착용 유지, null이면 기본 스킨·벽지 세트의 바닥
         equipped = { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null,
-          DESK: before?.equipped?.DESK ?? null, WALL: before?.equipped?.WALL ?? null, WARDROBE: before?.equipped?.WARDROBE ?? null }
-        for (const slot of [...ITEM_SLOTS, ...FURNITURE_SLOTS]) {
+          DESK: before?.equipped?.DESK ?? null, WALL: before?.equipped?.WALL ?? null, WARDROBE: before?.equipped?.WARDROBE ?? null,
+          FLOOR: before?.equipped?.FLOOR ?? null }
+        for (const slot of [...ITEM_SLOTS, ...FURNITURE_SLOTS, 'FLOOR' as const]) {
           if (!(slot in body.equipped)) continue
           const key = body.equipped?.[slot]
           if (key === null || key === undefined) { equipped[slot] = null; continue }

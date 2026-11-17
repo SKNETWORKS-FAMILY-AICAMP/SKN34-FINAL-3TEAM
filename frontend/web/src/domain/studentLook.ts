@@ -9,11 +9,11 @@ export interface StudentLook {
   theme: ThemeId
   companion: CompanionId
   /**
-   * 캐릭터 아이템 4슬롯(P22) + 내 방 가구 스킨 3슬롯(P27). 서버가 아직 주지 않으면 모두 null.
-   * 가구 칸은 서버 응답에 있을 때만 둔다(domain/retention.ts Equipped).
+   * 캐릭터 아이템 4슬롯(P22) + 내 방 가구 스킨 3슬롯(P27) + 바닥(#704). 서버가 아직 주지 않으면 모두 null.
+   * 가구 칸·바닥 칸은 서버 응답에 있을 때만 둔다(domain/retention.ts Equipped).
    */
   equipped?: Record<'HAT' | 'OUTFIT' | 'ACCESSORY' | 'BACKGROUND', string | null> &
-    Partial<Record<'DESK' | 'WALL' | 'WARDROBE', string | null>>
+    Partial<Record<'DESK' | 'WALL' | 'WARDROBE' | 'FLOOR', string | null>>
   updatedAt: string | null
 }
 export interface Theme {
@@ -104,8 +104,9 @@ export const companionLabel = (id: CompanionId) => friendById(companionToFriend(
 /** 서버 응답을 검사해 알 수 없는 값은 기본값으로 둔다(화면이 깨지지 않게). */
 export function readLook(raw: unknown): StudentLook {
   const v = (raw ?? {}) as Partial<Record<keyof StudentLook, unknown>>
-  const eq = (v.equipped ?? {}) as Partial<Record<'HAT' | 'OUTFIT' | 'ACCESSORY' | 'BACKGROUND' | 'DESK' | 'WALL' | 'WARDROBE', unknown>>
-  const furniture = (['DESK', 'WALL', 'WARDROBE'] as const).filter((s) => s in eq)
+  const eq = (v.equipped ?? {}) as Partial<Record<'HAT' | 'OUTFIT' | 'ACCESSORY' | 'BACKGROUND' | 'DESK' | 'WALL' | 'WARDROBE' | 'FLOOR', unknown>>
+  // 가구 칸·바닥 칸(#704)은 서버가 준 때만 만든다: 그 칸을 모르는 서버에 착용 저장으로 보내면 422
+  const furniture = (['DESK', 'WALL', 'WARDROBE', 'FLOOR'] as const).filter((s) => s in eq)
   const slot = (x: unknown) => (typeof x === 'string' && x ? x : null)
   return {
     theme: isThemeId(v.theme) ? v.theme : DEFAULT_LOOK.theme,

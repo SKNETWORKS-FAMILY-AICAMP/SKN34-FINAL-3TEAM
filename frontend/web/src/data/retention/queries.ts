@@ -68,6 +68,27 @@ export function useUnlock(childId: string | undefined) {
   })
 }
 
+/**
+ * 방 소품 사기(#704). 멱등 키는 부르는 쪽(lookShop)이 사기마다 새로 만든다. 성공하면 서버가 확정한
+ * 보유 개수·잔액을 바로 반영하고(보유 1개 이상 = `unlocked` true), 끝나면 목록·잔액을 다시 받는다.
+ */
+export function usePurchaseDecor(childId: string | undefined) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: ({ itemKey, key }: { itemKey: string; key: string }) => retentionApi.purchaseDecor(itemKey, key),
+    onSuccess: (result) => {
+      cache.setQueriesData<Points>({ queryKey: ['points', childId] }, before => before ? { ...before, balance: result.balance } : before)
+      cache.setQueryData<LookItem[]>(['look-items', childId], before => before?.map(item =>
+        item.itemKey === result.itemKey ? { ...item, ownedCount: result.ownedCount, unlocked: true } : item))
+    },
+    onSettled: () => Promise.all([
+      cache.invalidateQueries({ queryKey: ['look-items', childId] }),
+      cache.invalidateQueries({ queryKey: ['points', childId] }),
+      cache.invalidateQueries({ queryKey: ['parent', 'points', childId] }),
+    ]),
+  })
+}
+
 export const useWeeklyTheme = (childId: string | undefined) =>
   useQuery({
     queryKey: ['weekly-theme', childId],

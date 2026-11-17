@@ -43,7 +43,7 @@ test('포인트는 실제 페이지 정보를 보존하고 잘못된 잔액·목
   for (const invalid of [{ ...value, balance: '50' }, { ...value, balance: -1 }, { ...value, items: null }, { ...value, size: 0 }])
     assert.throws(() => readPoints(invalid), /확인하지 못/)
   assert.throws(() => readLookItems({}), /확인하지 못/)
-  const item = { itemKey: 'THEME:space', name: '소행성', slot: 'THEME' as const, pricePoints: 100, unlocked: false, onSale: true, assetKey: null }
+  const item = { itemKey: 'THEME:space', name: '소행성', slot: 'THEME' as const, pricePoints: 100, unlocked: false, onSale: true, assetKey: null, ownedCount: null, createdAt: null }
   assert.deepEqual(readLookItems({ items: [item, { itemKey: 'x', slot: 'SHOES' }] }), [item])
   assert.throws(() => readLookItems({ items: [{ ...item, pricePoints: '100' }] }), /확인하지 못/)
   assert.equal(isLookUnlocked([item], 'THEME:space'), false)
@@ -356,7 +356,7 @@ test('#389 실제 조회·해금 응답과 assetKey를 보존하고 HTTP 캐시�
   setAccessToken('synthetic-student', 'STUDENT')
   const calls: { url: string; init: RequestInit }[] = []
   const points = { balance: 120, items: [], page: 2, size: 20, totalElements: 40 }
-  const item = { itemKey: 'HAT_ACORN', slot: 'HAT', name: '도토리 모자', pricePoints: 40, unlocked: false, onSale: true, assetKey: 'looks/hat-acorn.svg' }
+  const item = { itemKey: 'HAT_ACORN', slot: 'HAT', name: '도토리 모자', pricePoints: 40, unlocked: false, onSale: true, assetKey: 'looks/hat-acorn.svg', ownedCount: null, createdAt: '2026-11-06T00:00:00Z' }
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
     calls.push({ url: String(url), init })
     return Response.json(String(url).endsWith('/unlock') ? { itemKey: item.itemKey, unlocked: true, balance: 80 }

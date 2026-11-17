@@ -83,12 +83,24 @@ export function readPoints(raw: unknown): Points {
 export type CharacterSlot = 'HAT' | 'OUTFIT' | 'ACCESSORY' | 'BACKGROUND'
 /** 내 방 가구 스킨 칸(P27, API 명세 2.10 2026-11-12). 가구 1개 = 착용 칸 1개 */
 export type FurnitureSlot = 'DESK' | 'WALL' | 'WARDROBE'
-export type ItemSlot = CharacterSlot | FurnitureSlot
+/** 내 방 바닥 칸(#704). 벽지·가구처럼 한 번 해금하고 착용한다. 착용 없음(null·없음) = 벽지 세트의 바닥 */
+export type FloorSlot = 'FLOOR'
+/**
+ * 방 소품 칸(#704). 캐릭터가 손에 드는 착용 칸 `ACCESSORY`("소품")와 다른 칸이고, 착용 칸이 아니라
+ * 같은 아이템을 여러 개 사서(`purchase`) 내 방에 놓는다. 그래서 `Equipped`에는 들어가지 않는다.
+ */
+export type DecorSlot = 'DECOR'
+export type ItemSlot = CharacterSlot | FurnitureSlot | FloorSlot | DecorSlot
 export type LookSlot = 'THEME' | 'COMPANION' | ItemSlot
 export const ITEM_SLOTS: CharacterSlot[] = ['HAT', 'OUTFIT', 'ACCESSORY', 'BACKGROUND']
 export const FURNITURE_SLOTS: FurnitureSlot[] = ['DESK', 'WALL', 'WARDROBE']
-/** 관리자 아이템 등록에서 고르는 칸 전체 */
+/**
+ * 관리자 아이템 등록에서 고르는 칸 전체. 바닥·방 소품 칸은 관리자 웹 #706이 화면과 함께 더한다
+ * (학생 웹 #705는 칸 타입·이름만 더하고 관리자 화면 동작은 바꾸지 않는다).
+ */
 export const ALL_ITEM_SLOTS: ItemSlot[] = [...ITEM_SLOTS, ...FURNITURE_SLOTS]
+/** 방 소품 아이템당 보유 상한(#704 확정, 넘으면 409 `LOOK_DECOR_LIMIT`). 목록 `ownedCount`의 최댓값과 같다 */
+export const DECOR_MAX_OWNED = 8
 export const SLOT_LABELS: Record<LookSlot, string> = {
   THEME: '테마',
   COMPANION: '캐릭터',
@@ -99,12 +111,16 @@ export const SLOT_LABELS: Record<LookSlot, string> = {
   DESK: '학습 책상',
   WALL: '추억의 벽',
   WARDROBE: '옷장',
+  FLOOR: '바닥',
+  // 캐릭터 착용 칸 ACCESSORY "소품"과 헷갈리지 않게 "방 소품"(#704)
+  DECOR: '방 소품',
 }
 /**
- * 착용 칸. 가구 칸은 서버가 알려 준 때만 둔다: 가구 칸을 모르는 서버(core #555 전)에 보내면
- * 422라 기존 꾸미기 저장이 깨지지 않게 한다. 가구 칸이 비면(null·없음) 기본 스킨.
+ * 착용 칸. 가구 칸·바닥 칸은 서버가 알려 준 때만 둔다: 그 칸을 모르는 서버(가구는 core #555 전, 바닥은 #704 전)에
+ * 보내면 422라 기존 꾸미기 저장이 깨지지 않게 한다. 가구 칸이 비면(null·없음) 기본 스킨, 바닥 칸이 비면 벽지 세트의 바닥.
+ * 방 소품(`DECOR`)은 착용 칸이 아니라 늘 비어 있다(`DECOR?: never`: 꾸미기 화면이 `ItemSlot`으로 착용 값을 찾으면 undefined).
  */
-export type Equipped = Record<CharacterSlot, string | null> & Partial<Record<FurnitureSlot, string | null>>
+export type Equipped = Record<CharacterSlot, string | null> & Partial<Record<FurnitureSlot | FloorSlot, string | null>> & { DECOR?: never }
 export const NO_EQUIPPED: Equipped = { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null }
 export const FREE_THEME: ThemeId = 'lake'
 export const FREE_COMPANION: CompanionId = 'mungchi'
@@ -122,8 +138,13 @@ export interface LookItem {
   unlocked: boolean
   onSale: boolean
   assetKey: string | null
+  /** 방 소품(`DECOR`) 보유 개수 0~8(#704). 다른 칸은 null. 0이면 `unlocked` false */
+  ownedCount: number | null
+  /** 관리자 아이템 등록일(#704, 꾸미기 "새로 나왔어요"). 테마·캐릭터와 날짜로 읽지 못한 값은 null */
+  createdAt: string | null
 }
 const isSlot = (v: unknown): v is LookSlot => typeof v === 'string' && v in SLOT_LABELS
+const isOwnedCount = (v: unknown): v is number => nonNegativeInteger(v) && v <= DECOR_MAX_OWNED
 
 export function readLookItems(raw: unknown): LookItem[] {
   const items = (raw as { items?: unknown })?.items
@@ -134,12 +155,17 @@ export function readLookItems(raw: unknown): LookItem[] {
     if (!v.itemKey || typeof v.name !== 'string' || !nonNegativeInteger(v.pricePoints) ||
         typeof v.unlocked !== 'boolean' || typeof v.onSale !== 'boolean' ||
         (v.assetKey !== null && typeof v.assetKey !== 'string')) return rewardContractError()
+    // 방 소품은 보유 개수를 모르면 더 살 수 있는지·몇 개 놓을지 정할 수 없어 그 항목만 버린다(목록 전체는 살림)
+    if (v.slot === 'DECOR' && !isOwnedCount(v.ownedCount)) return []
     return [
       {
         itemKey: v.itemKey,
         slot: v.slot,
         name: v.name, pricePoints: v.pricePoints, unlocked: v.unlocked, onSale: v.onSale,
         assetKey: v.assetKey,
+        // 방 소품이 아닌 칸의 보유 개수는 계약상 null이라 값이 와도 쓰지 않는다
+        ownedCount: v.slot === 'DECOR' ? (v.ownedCount as number) : null,
+        createdAt: typeof v.createdAt === 'string' && Number.isFinite(Date.parse(v.createdAt)) ? v.createdAt : null,
       },
     ]
   })
@@ -150,12 +176,20 @@ export function readUnlockResult(raw: unknown, itemKey: string): UnlockResult {
   if (value.itemKey !== itemKey || value.unlocked !== true || !nonNegativeInteger(value.balance)) return rewardContractError()
   return { itemKey, unlocked: true, balance: value.balance }
 }
+/** 방 소품 사기 응답(#704 `LookDecorPurchaseResult`): 산 뒤 보유 개수 1~8과 잔액 */
+export interface DecorPurchaseResult { itemKey: string; ownedCount: number; balance: number }
+export function readDecorPurchaseResult(raw: unknown, itemKey: string): DecorPurchaseResult {
+  const value = (raw ?? {}) as Partial<Record<keyof DecorPurchaseResult, unknown>>
+  if (value.itemKey !== itemKey || !isOwnedCount(value.ownedCount) || value.ownedCount < 1 || !nonNegativeInteger(value.balance))
+    return rewardContractError()
+  return { itemKey, ownedCount: value.ownedCount, balance: value.balance }
+}
 export function readEquipped(raw: unknown): Equipped {
   const v = (raw ?? {}) as Partial<Record<ItemSlot, unknown>>
   const value = (s: ItemSlot) => (typeof v[s] === 'string' && v[s] ? (v[s] as string) : null)
   return Object.fromEntries([
     ...ITEM_SLOTS.map((s) => [s, value(s)]),
-    ...FURNITURE_SLOTS.filter((s) => s in v).map((s) => [s, value(s)]),
+    ...[...FURNITURE_SLOTS, 'FLOOR' as const].filter((s) => s in v).map((s) => [s, value(s)]),
   ]) as Equipped
 }
 /** 테마·캐릭터는 목록에 없을 때도 무료 항목은 열려 있다고 본다(목록 실패가 기본 모습을 막지 않게). */
@@ -173,6 +207,8 @@ export function baseLookCatalog(): Omit<LookItem, 'unlocked'>[] {
       pricePoints: t.id === FREE_THEME ? 0 : THEME_PRICE,
       onSale: true,
       assetKey: null,
+      ownedCount: null,
+      createdAt: null,
     })),
     ...COMPANIONS.map((c) => ({
       itemKey: companionKey(c.id),
@@ -181,6 +217,8 @@ export function baseLookCatalog(): Omit<LookItem, 'unlocked'>[] {
       pricePoints: c.id === FREE_COMPANION ? 0 : COMPANION_PRICE,
       onSale: true,
       assetKey: null,
+      ownedCount: null,
+      createdAt: null,
     })),
   ]
 }

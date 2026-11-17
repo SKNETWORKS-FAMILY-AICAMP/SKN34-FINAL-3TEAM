@@ -1,12 +1,13 @@
 import { THEME_GRADE_LABELS } from '../../domain/admin/retention.ts'
 import { http, HttpResponse } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
-import { REACTIONS } from '../../domain/retention.ts'
+import { baseLookCatalog, DECOR_MAX_OWNED, REACTIONS } from '../../domain/retention.ts'
 import type { Reaction } from '../../domain/retention.ts'
 import {
   balanceOf,
   communityOf,
   consentOf,
+  decorOf,
   earn,
   frameSlotsOf,
   framesOf,
@@ -58,6 +59,23 @@ const saved = <T>(value: T) => {
   persistRetention()
   return value
 }
+/**
+ * 해금·방 소품 사기의 멱등 키 검사(core `IdempotencyService` 흉내). UUID가 아니면 400, 다른 요청(다른 경로나 다른 항목)에
+ * 쓴 키면 422 `IDEMPOTENCY_KEY_REUSED`(API 명세 1장 오류 표). 처음 보는 키는 처리 전에 이 요청에 묶어서, 거절(4xx)된 키로
+ * 다른 항목을 보내도 422다(core도 처리 전에 경로·요청 해시를 기록). 같은 요청 재전송은 처음 성공 응답이 있으면 그것을 쓴다.
+ */
+function idempotencyReceipt(request: Request, studentId: string, endpoint: 'unlock' | 'purchase', itemKey: string) {
+  const key = request.headers.get('Idempotency-Key')
+  if (!key || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key))
+    fail(400, 'VALIDATION_FAILED', 'Idempotency-Key(UUID)가 필요합니다.')
+  const receipt = `${studentId}:${key}`
+  const mine = endpoint === 'unlock' ? retentionState.unlockKeys : retentionState.purchaseKeys
+  const other = endpoint === 'unlock' ? retentionState.purchaseKeys : retentionState.unlockKeys
+  if (receipt in other || (receipt in mine && mine[receipt] !== itemKey))
+    fail(422, 'IDEMPOTENCY_KEY_REUSED', '같은 키에 다른 요청을 사용할 수 없습니다.')
+  mine[receipt] = itemKey
+  return receipt
+}
 const isReaction = (v: unknown): v is Reaction => typeof v === 'string' && (REACTIONS as string[]).includes(v)
 const postView = (p: (typeof retentionState.posts)[number]) => ({
   postId: p.postId,
@@ -95,22 +113,18 @@ export const retentionHandlers = [
     respond(async () => {
       guard(request)
       const me = mockStudent()
-      const key = request.headers.get('Idempotency-Key')
-      if (!key || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key))
-        fail(400, 'VALIDATION_FAILED', 'Idempotency-Key(UUID)가 필요합니다.')
       const itemKey = decodeURIComponent(String(params.itemKey))
-      const receipt = `${me.id}:${key}`
-      if (retentionState.unlockKeys[receipt]) {
-        if (retentionState.unlockKeys[receipt] !== itemKey) fail(409, 'IDEMPOTENCY_KEY_REUSED', '다른 요청에 쓴 키입니다.')
-        return retentionState.unlockResults[receipt] ?? { itemKey, unlocked: true, balance: balanceOf(me.id) }
-      }
+      const receipt = idempotencyReceipt(request, me.id, 'unlock', itemKey)
+      const replay = retentionState.unlockResults[receipt]
+      if (replay) return replay
       const item = lookCatalog(me.id).find((i) => i.itemKey === itemKey) ??
         // 판매 중단 아이템은 목록에서 빠지므로 관리자 목록으로 한 번 더 찾는다.
-        retentionState.items.filter((i) => i.code === itemKey).map((i) => ({ itemKey: i.code, pricePoints: i.pricePoints, unlocked: false, onSale: false }))[0]
+        retentionState.items.filter((i) => i.code === itemKey).map((i) => ({ itemKey: i.code, slot: i.slot, pricePoints: i.pricePoints, unlocked: false, onSale: false }))[0]
       if (!item) fail(404, 'LOOK_ITEM_NOT_FOUND', '없는 꾸미기 항목입니다.')
+      // 방 소품은 해금이 아니라 사기(#704, core도 422 VALIDATION_FAILED)
+      if (item!.slot === 'DECOR') fail(422, 'VALIDATION_FAILED', '방 소품은 사기로 살 수 있어요.')
       if (item!.unlocked || isUnlocked(me.id, itemKey)) {
         const result = { itemKey, unlocked: true as const, balance: balanceOf(me.id) }
-        retentionState.unlockKeys[receipt] = itemKey
         retentionState.unlockResults[receipt] = result
         return saved(result)
       }
@@ -118,9 +132,34 @@ export const retentionHandlers = [
       if (balanceOf(me.id) < item!.pricePoints) fail(409, 'INSUFFICIENT_POINTS', '포인트가 모자라요.')
       retentionState.ledger[me.id].push({ eventType: 'UNLOCK', amount: -item!.pricePoints, createdAt: new Date().toISOString(), sourceKey: receipt })
       unlockedOf(me.id).push(itemKey)
-      retentionState.unlockKeys[receipt] = itemKey
       const result = { itemKey, unlocked: true as const, balance: balanceOf(me.id) }
       retentionState.unlockResults[receipt] = result
+      return saved(result)
+    }),
+  ),
+  // 방 소품 사기(#704): 같은 아이템을 여러 번 산다. 키가 다르면 새 구매, 같은 키는 처음 응답(한 번만 차감)
+  http.post('/api/v1/students/me/look-items/:itemKey/purchase', ({ request, params }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const itemKey = decodeURIComponent(String(params.itemKey))
+      const receipt = idempotencyReceipt(request, me.id, 'purchase', itemKey)
+      const replay = retentionState.purchaseResults[receipt]
+      if (replay) return replay
+      // 테마·캐릭터·착용 아이템·가구·바닥은 사기 대상이 아니다(core 422 VALIDATION_FAILED, 없는 항목만 404)
+      if (baseLookCatalog().some((i) => i.itemKey === itemKey)) fail(422, 'VALIDATION_FAILED', '방 소품만 여러 개 살 수 있어요.')
+      const item = retentionState.items.find((i) => i.code === itemKey)
+      if (!item) fail(404, 'LOOK_ITEM_NOT_FOUND', '없는 꾸미기 항목입니다.')
+      if (item!.slot !== 'DECOR') fail(422, 'VALIDATION_FAILED', '방 소품만 여러 개 살 수 있어요.')
+      if (item!.status !== 'ON_SALE') fail(409, 'LOOK_ITEM_NOT_ON_SALE', '지금은 살 수 없는 항목이에요.')
+      const owned = decorOf(me.id)[itemKey] ?? 0
+      if (owned >= DECOR_MAX_OWNED) fail(409, 'LOOK_DECOR_LIMIT', `이 방 소품은 ${DECOR_MAX_OWNED}개까지 가질 수 있어요.`)
+      if (balanceOf(me.id) < item!.pricePoints) fail(409, 'INSUFFICIENT_POINTS', '포인트가 모자라요.')
+      // 원장 사건 키는 core처럼 구매마다 다르게(itemKey:Idempotency-Key)
+      retentionState.ledger[me.id].push({ eventType: 'UNLOCK', amount: -item!.pricePoints, createdAt: new Date().toISOString(), sourceKey: `${itemKey}:${receipt}` })
+      decorOf(me.id)[itemKey] = owned + 1
+      const result = { itemKey, ownedCount: owned + 1, balance: balanceOf(me.id) }
+      retentionState.purchaseResults[receipt] = result
       return saved(result)
     }),
   ),
@@ -477,6 +516,8 @@ export const retentionHandlers = [
         slot: b.slot as ItemSlot,
         ...itemFields(b),
         status: 'ON_SALE',
+        // 학생 목록 createdAt(#704 "새로 나왔어요")의 기준
+        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }
       retentionState.items.push(item)

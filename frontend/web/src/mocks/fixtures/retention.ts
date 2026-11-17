@@ -52,8 +52,12 @@ export interface MockLookItem {
   pricePoints: number
   assetKey: string
   status: 'ON_SALE' | 'STOPPED'
+  /** 관리자 등록일(#704 학생 목록 `createdAt`). 전에 저장한 개발 상태에는 없어서 그때는 updatedAt을 쓴다 */
+  createdAt?: string
   updatedAt: string
 }
+/** 방 소품 사기 응답(#704 `LookDecorPurchaseResult`) */
+export interface MockDecorPurchase { itemKey: string; ownedCount: number; balance: number }
 export interface MockWeeklyTheme {
   themeId: string
   grade: ThemeGrade
@@ -77,7 +81,13 @@ interface State {
   unlocked: Record<string, string[]>
   unlockKeys: Record<string, string>
   unlockResults: Record<string, { itemKey: string; unlocked: true; balance: number }>
-  community: Record<string, { enabled: boolean; updatedAt: string | null }>
+  /** 방 소품 보유(#704): studentId → 아이템 코드 → 산 개수(core는 구매 1번 = 1행) */
+  decor: Record<string, Record<string, number>>
+  /** 방 소품 사기 멱등 키: `학생:키` → 그 키로 산 아이템 코드 */
+  purchaseKeys: Record<string, string>
+  /** 방 소품 사기 멱등 키별 처음 응답(같은 키 재요청은 이 응답을 그대로) */
+  purchaseResults: Record<string, MockDecorPurchase>
+  community:Record<string, { enabled: boolean; updatedAt: string | null }>
   consent: Record<string, boolean>
   posts: MockPost[]
   /** postId → studentId → 반응 */
@@ -135,12 +145,23 @@ const seedItems = (): MockLookItem[] => [
   { itemId: 'look-outfit-2', code: 'OUTFIT_RESCUE', slot: 'OUTFIT', name: '구조대 조끼', pricePoints: 80, assetKey: 'looks/outfit-rescue.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
   { itemId: 'look-outfit-3', code: 'OUTFIT_PATROL', slot: 'OUTFIT', name: '순찰대 옷', pricePoints: 80, assetKey: 'looks/outfit-patrol.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
   { itemId: 'look-acc-2', code: 'ACC_LIGHT', slot: 'ACCESSORY', name: '손전등', pricePoints: 40, assetKey: 'looks/acc-light.svg', status: 'ON_SALE', updatedAt: '2026-11-16T00:00:00Z' },
+  // 내 방 바닥(#704 FLOOR, #705 기준안): 시안 MyPage 서랍 "바닥". 해금·착용은 가구와 같고 가격도 가구 가격대(60·90·120)
+  { itemId: 'look-floor-1', code: 'FLOOR_WOOD', slot: 'FLOOR', name: '나무 마루', pricePoints: 60, assetKey: 'room/floor-wood.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-floor-2', code: 'FLOOR_MINT', slot: 'FLOOR', name: '민트 타일', pricePoints: 90, assetKey: 'room/floor-mint.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-floor-3', code: 'FLOOR_CARPET', slot: 'FLOOR', name: '초록 카펫', pricePoints: 120, assetKey: 'room/floor-carpet.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  // 방 소품(#704 DECOR, #705 기준안): 시안 MyPage 서랍 "소품". 여러 개 사므로 가구 한 개(60)보다 낮게, 착용 소품(30·40)·벽지(40·60) 가격대
+  { itemId: 'look-decor-1', code: 'DECOR_PLANT', slot: 'DECOR', name: '화분', pricePoints: 30, assetKey: 'room/decor-plant.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-decor-2', code: 'DECOR_RUG', slot: 'DECOR', name: '러그', pricePoints: 50, assetKey: 'room/decor-rug.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-decor-3', code: 'DECOR_LIGHTS', slot: 'DECOR', name: '줄 조명', pricePoints: 40, assetKey: 'room/decor-lights.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
 ]
 const empty = (): State => ({
   ledger: {},
   unlocked: {},
   unlockKeys: {},
   unlockResults: {},
+  decor: {},
+  purchaseKeys: {},
+  purchaseResults: {},
   community: {},
   consent: {},
   posts: [],
@@ -243,8 +264,15 @@ export function earn(studentId: string, eventType: Exclude<PointEventType, 'UNLO
 
 // ---------- 꾸미기 ----------
 export const unlockedOf = (studentId: string) => (retentionState.unlocked[studentId] ??= [])
+/** 방 소품 보유 개수(#704): 아이템 코드 → 산 개수 */
+export const decorOf = (studentId: string) => (retentionState.decor[studentId] ??= {})
+/**
+ * 학생 꾸미기 목록(core `LookUnlockService.catalog` 흉내). 방 소품은 보유 개수 `ownedCount`(0이면 unlocked false),
+ * 다른 칸은 null. `createdAt`은 관리자 등록일, 테마·캐릭터는 null. 판매 중단은 가진 학생에게만 보인다.
+ */
 export function lookCatalog(studentId: string) {
   const owned = new Set(unlockedOf(studentId))
+  const decor = decorOf(studentId)
   return [
     ...baseLookCatalog().map((i) => ({
       ...i,
@@ -255,9 +283,11 @@ export function lookCatalog(studentId: string) {
       slot: i.slot,
       name: i.name,
       pricePoints: i.pricePoints,
-      unlocked: owned.has(i.code),
+      unlocked: i.slot === 'DECOR' ? (decor[i.code] ?? 0) > 0 : owned.has(i.code),
       onSale: i.status === 'ON_SALE',
       assetKey: i.assetKey,
+      ownedCount: i.slot === 'DECOR' ? decor[i.code] ?? 0 : null,
+      createdAt: i.createdAt ?? i.updatedAt,
     })),
   ].filter((i) => i.onSale || i.unlocked)
 }

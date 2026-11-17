@@ -19,8 +19,8 @@ async function rewardServer(page: Page, initialBalance = 300) {
   }
   const child = { id: '00000000-0000-4000-8000-000000000001', nickname: '합성 학생', grade: 3, birthYear: 2017 }
   const catalog = (): LookItem[] => [...baseLookCatalog().map(i => ({ ...i, unlocked: state.owned.has(i.itemKey) && !(state.lagCatalog && i.itemKey === 'THEME:forest') })),
-    { itemKey: 'HAT_ACORN', slot: 'HAT', name: '도토리 모자', pricePoints: 40, unlocked: state.owned.has('HAT_ACORN'), onSale: true, assetKey: 'looks/hat-acorn.svg' },
-    { itemKey: 'HAT_CROWN', slot: 'HAT', name: '종이 왕관', pricePoints: 80, unlocked: true, onSale: false, assetKey: 'looks/hat-crown.svg' }]
+    { itemKey: 'HAT_ACORN', slot: 'HAT', name: '도토리 모자', pricePoints: 40, unlocked: state.owned.has('HAT_ACORN'), onSale: true, assetKey: 'looks/hat-acorn.svg', ownedCount: null, createdAt: '2026-11-06T00:00:00Z' },
+    { itemKey: 'HAT_CROWN', slot: 'HAT', name: '종이 왕관', pricePoints: 80, unlocked: true, onSale: false, assetKey: 'looks/hat-crown.svg', ownedCount: null, createdAt: '2026-11-06T00:00:00Z' }]
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort())
   await page.route('**/api/v1/**', async (route: Route) => {
     const request = route.request(), url = new URL(request.url()), path = decodeURIComponent(url.pathname).replace('/api/v1', '')

@@ -5,6 +5,7 @@ import {
   readAnswerPick,
   readCommunityPosts,
   readCommunitySettings,
+  readDecorPurchaseResult,
   readEpisode,
   readFrameSlots,
   readLookItems,
@@ -46,6 +47,16 @@ export const retentionApi = {
   /** 해금은 Idempotency-Key 필수. 같은 키 재전송은 한 번만 차감된다. */
   unlock: async (itemKey: string, idempotencyKey: string) =>
     readUnlockResult(await apiFetch<unknown>(`/students/me/look-items/${e(itemKey)}/unlock`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      cache: 'no-store',
+    }), itemKey),
+  /**
+   * 방 소품 사기(#704, `DECOR`만). Idempotency-Key 필수: 같은 키 재전송은 처음 응답(한 번만 차감),
+   * 키가 다르면 새 구매로 한 번 더 산다. 그래서 부르는 쪽이 사기마다 새 키를 만든다.
+   */
+  purchaseDecor: async (itemKey: string, idempotencyKey: string) =>
+    readDecorPurchaseResult(await apiFetch<unknown>(`/students/me/look-items/${e(itemKey)}/purchase`, {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },
       cache: 'no-store',
