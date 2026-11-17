@@ -14,6 +14,7 @@ import com.sagomungchi.core.account.service.dto.StartedGoogleLogin
 import com.sagomungchi.core.consent.service.ConsentAccessService
 import com.sagomungchi.core.guardianship.service.StudentAccessService
 import org.springframework.http.HttpStatus
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
@@ -61,6 +62,15 @@ class AuthService(
         }
         requireActive(account)
         if (account.role !in setOf("PARENT", "ADMIN")) throw unauthenticated()
+        if (account.role == "PARENT" && account.email != profile.email) {
+            try {
+                repository.updateGoogleEmail(account.id, profile.email, now)
+            } catch (_: DuplicateKeyException) {
+                // Throw out of the transaction: retain the old ID and sessions on a unique-key race.
+                throw BusinessException(HttpStatus.CONFLICT, "ACCOUNT_EXISTS", "같은 이메일의 기존 계정은 자동 연결하지 않습니다.")
+            }
+            account = account.copy(email = profile.email)
+        }
         startSession(account, previousRefresh, now)
     })
 

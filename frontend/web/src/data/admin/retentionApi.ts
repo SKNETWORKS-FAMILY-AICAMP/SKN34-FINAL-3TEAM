@@ -41,7 +41,8 @@ export const adminRetentionApi = {
     apiFetch<AdminWeeklyTheme>(`/admin/weekly-themes/${p(id)}`, json(data, 'PUT')),
   themeAction: (id: string, action: 'review-request' | 'publish' | 'unpublish') =>
     apiFetch<AdminWeeklyTheme>(`/admin/weekly-themes/${p(id)}/${action}`, json({})),
-  items: (signal?: AbortSignal) => apiFetch<Page<AdminLookItem>>('/admin/look-items', { signal }),
+  items: (signal?: AbortSignal, slot?: string, page = 0) =>
+    apiFetch<Page<AdminLookItem>>(`/admin/look-items?${query({ slot, page: String(page), size: '20' })}`, { signal }),
   createItem: (data: LookItemInput) => apiFetch<AdminLookItem>('/admin/look-items', json(data)),
   updateItem: (id: string, data: Partial<Pick<AdminLookItem, 'name' | 'pricePoints' | 'assetKey'>> & { status?: LookItemStatus }) =>
     apiFetch<AdminLookItem>(`/admin/look-items/${p(id)}`, json(data, 'PATCH')),

@@ -12057,7 +12057,7 @@ components:
           type:
           - string
           - 'null'
-          description: 학부모의 로그인 ID. ID·비밀번호 학부모(#415)는 아이디, Google 학부모(#683)는 login_id로 저장한 Google 이메일. 관리자는 null.
+          description: 학부모의 로그인 ID. ID·비밀번호 학부모(#415)는 아이디, Google 학부모(#683)는 최근 Google 로그인에서 검증해 login_id에 반영한 이메일. 관리자는 null.
         authMethod:
           type: string
           enum:

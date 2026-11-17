@@ -32,7 +32,7 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
     calls.push({ path, method: request.method(), body, proof: request.headers()['x-reauth-token'] })
     const json = (value: unknown, status = 200) => route.fulfill({ status, json: value })
     if (path === '/auth/refresh') return json({ role: 'PARENT', accessToken: 'synthetic-parent', expiresIn: 900 })
-    if (path === '/me') return json({ role: 'PARENT', authMethod: 'GOOGLE', name: '합성 보호자', email: 'parent@example.test', nextAction: 'READY', startPath: '/parent/journal' })
+    if (path === '/me') return json({ role: 'PARENT', authMethod: 'GOOGLE', loginId: 'parent@example.test', name: '합성 보호자', email: 'parent@example.test', nextAction: 'READY', startPath: '/parent/journal' })
     if (path === '/children') return json({ items: children })
     if (path.endsWith('/sharing-preferences')) return json({ studentId: path.split('/')[2], parentSharingEnabled: true })
     if (path.endsWith('/entitlement')) return json({ ...entitlement, childId: path.split('/')[2] })
@@ -69,7 +69,7 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
     if (path === '/agent/example-questions') return json({ items: [] })
     if (path.endsWith('/summary')) return json({ childId, period, state: 'NO_RECORD', metrics: [] })
     if (path.endsWith('/thinking-types')) return json({ childId, state: 'NO_RECORD', items: [] })
-    if (path.endsWith('/attempts')) return json({ childId, items: [], page: 0, size: 20, totalElements: 0 })
+    if (path.endsWith('/attempts')) return json({ childId, period, items: [], page: 0, size: 20, totalElements: 0 })
     return json({ status: 404, code: 'NOT_FOUND', title: '합성 검사에 없는 요청입니다.' }, 404)
   })
   return { calls, period, controls, report, children, entitlement }
@@ -91,6 +91,17 @@ async function capture(page: Page, name: string) {
     await page.screenshot({ path: `${out}/${name}-${width}.png`, fullPage: true })
   }
 }
+
+test('학습 기록이 없으면 실제 기기·PIN 진입 경로를 안내한다 (#715)', async ({ page, context }) => {
+  await parentServer(context)
+  await page.goto(`/parent/journal?childId=${childId}`)
+  const status = page.locator('[data-query-state="NO_RECORD"]')
+  await expect(status).toContainText('기기·PIN에서 학생 기기를 등록한 뒤')
+  await expect(status).toContainText('학생 화면에서 PIN으로 로그인')
+  await expect(page.getByText('이 자녀로 학습 시작', { exact: false })).toHaveCount(0)
+  await page.getByRole('link', { name: '기기·PIN', exact: true }).click()
+  await expect(page).toHaveURL(/\/parent\/devices/)
+})
 
 test('로고는 홈으로 연결하고 자녀 추가는 계정·자녀 설정에서만 연다', async ({ page, context }) => {
   await parentServer(context)
@@ -320,4 +331,12 @@ for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481:
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   if (kind === 'DAILY') await expect(area).toHaveCount(0)
   else await expect(area.getByRole('note')).toContainText(kind === 'FREE' ? '프리미엄' : kind === 'PRIVATE' ? '비공개' : '확인하지 못했습니다.')
+})
+
+test('Google 이메일 아이디를 계정 관리에 표시한다 (#683)', async ({ page, context }) => {
+  await parentServer(context)
+  await page.goto(`/parent/settings?childId=${childId}&section=account`)
+  const card = page.getByRole('region', { name: '로그인 아이디', exact: true })
+  await expect(card.getByText('parent@example.test', { exact: true })).toBeVisible()
+  await expect(card.getByText('Google 계정으로 로그인합니다. 아이디는 Google 이메일입니다.')).toBeVisible()
 })
