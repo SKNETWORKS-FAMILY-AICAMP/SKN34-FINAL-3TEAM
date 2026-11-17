@@ -348,7 +348,7 @@ test('#481: 주간 설명 카드의 미션·유형·인용·설명과 AI 관찰�
   await expect(area.getByRole('heading', { name: explanation.missionTitle, exact: true })).toBeVisible()
   await expect(area.getByText('AI 관찰', { exact: true })).toHaveCount(2)
   await expect(area.getByText('분석하기 ·', { exact: false })).toBeVisible()
-  await expect(area.getByRole('heading', { name: '학생 글 전체', exact: true })).toBeVisible()
+  await expect(area.getByRole('heading', { name: '학생 글 전체', exact: true })).toHaveCount(2)
   await expect(area.locator('blockquote').first()).toHaveText('나무는 그늘을 만들어 줍니다. 더운 날 그늘에서 쉬면 시원합니다. 그래서 나무를 보호해야 합니다.')
   await expect(area.getByText(explanation.text, { exact: true })).toHaveCount(2)
   await capture(page, 'report-explanations')

@@ -64,12 +64,18 @@ services:
 
   # 실제 LLM 키가 셸 환경에 있어도 쓰이지 않도록 고정
   ai-service:
+    command: [uvicorn, report_e2e:app, --host, 0.0.0.0, --port, "8000"]
+    volumes:
+      - ./infrastructure/stubs/ai-report-e2e.py:/app/report_e2e.py:ro
     depends_on:
       llm-stub:
         condition: service_healthy
       scoring-stub:
         condition: service_healthy
     environment:
+      SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA: ""
+      SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA: ""
+      SERVICE_NAME: ai-report-e2e
       LLM_PROVIDER: openai
       OPENAI_BASE_URL: http://llm-stub:8080/v1
       OPENAI_API_KEY: ""

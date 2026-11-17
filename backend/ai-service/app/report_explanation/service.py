@@ -7,7 +7,9 @@
 3. 문장 단위 정리(checks.clean) → 규칙 검사 → "상세 분석 / 보완할 지점 / 개선 방안" 조립 → 인용
 
 로컬 전용: 환경변수 EXPLANATION_LOCAL_SKIP_REGISTRY=1이면 1의 레지스트리 확인을 건너뛰고
-바로 부른다(로컬 Docker 시연용, 2026-11-17 사용자 결정). 기본은 꺼짐이며 운영에서는 레지스트리 승인 검사를 유지한다. 이때 versions.model은 "{EXPLANATION_MODEL 설정값}@local-unregistered"로
+바로 부른다(로컬 Docker 시연용, 2026-11-17 사용자 결정).
+기본은 꺼짐이며 운영에서는 레지스트리 승인 검사를 유지한다.
+이때 versions.model은 "{REPORT_GEMMA_MODEL 설정값}@local-unregistered"로
 남겨 승인 모델과 구분한다.
 
 LLM 실패·미설정·마감 초과는 503 AI_UNAVAILABLE, 검사 실패는 422 AI_EXPLANATION_REJECTED.
