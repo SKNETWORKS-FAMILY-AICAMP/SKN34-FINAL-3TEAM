@@ -25,14 +25,20 @@ import {
   wornAssets,
   journalTab,
   isAttemptContext,
+  ALL_ITEM_SLOTS,
+  DECOR_MAX_OWNED,
+  readDecorPurchaseResult,
+  readEquipped,
+  SLOT_LABELS,
 } from '../src/domain/retention.ts'
 import { readLook } from '../src/domain/studentLook.ts'
+import { canBuyMore, createIdempotencyKeys, keepIdempotencyKey, unlockMessage } from '../src/presentation/student/world/lookShop.ts'
 // 움직임 읽기는 domain/themeMotion.ts 하나(#440에서 retention.ts 중복 정리)
 import { readThemeMotion } from '../src/domain/themeMotion.ts'
 import { isAccountDocument, reportPeriodType } from '../src/domain/parent.ts'
 import { retentionApi } from '../src/data/retention/api.ts'
 import { studentLookApi } from '../src/data/studentLook/api.ts'
-import { setAccessToken } from '../src/data/apiClient.ts'
+import { ApiError, setAccessToken } from '../src/data/apiClient.ts'
 
 test.afterEach(() => setAccessToken(null))
 
@@ -378,4 +384,111 @@ test('당일 풀이·주간 완주는 learning #484 판정 칸으로 적립되�
     [['THEME_ON_TIME', 5], ['THEME_FINISHED', 10]],
   )
   assert.ok(POINT_RULES.every((r) => !('preparing' in r)))
+})
+
+test('#705 꾸미기 목록: 방 소품 보유 개수·등록일을 읽고, 다른 칸 보유 개수는 null, 보유 개수가 틀린 방 소품만 버린다', () => {
+  const at = '2026-11-17T00:00:00Z'
+  const base = { name: '이름', pricePoints: 30, onSale: true, assetKey: 'room/decor-plant.svg' }
+  const items = readLookItems({ items: [
+    { ...base, itemKey: 'DECOR_PLANT', slot: 'DECOR', unlocked: true, ownedCount: 3, createdAt: at },
+    { ...base, itemKey: 'DECOR_RUG', slot: 'DECOR', unlocked: false, ownedCount: 0, createdAt: at },
+    { ...base, itemKey: 'FLOOR_WOOD', slot: 'FLOOR', unlocked: false, ownedCount: 5, createdAt: at },
+    { ...base, itemKey: 'THEME:space', slot: 'THEME', assetKey: null, unlocked: false, ownedCount: null, createdAt: null },
+    { ...base, itemKey: 'HAT_ACORN', slot: 'HAT', unlocked: false, ownedCount: null, createdAt: '날짜 아님' },
+    // 보유 개수를 모르는 방 소품(없음·음수·상한 초과·소수)은 그 항목만 버린다
+    { ...base, itemKey: 'DECOR_A', slot: 'DECOR', unlocked: false, createdAt: at },
+    { ...base, itemKey: 'DECOR_B', slot: 'DECOR', unlocked: false, ownedCount: -1, createdAt: at },
+    { ...base, itemKey: 'DECOR_C', slot: 'DECOR', unlocked: true, ownedCount: DECOR_MAX_OWNED + 1, createdAt: at },
+    { ...base, itemKey: 'DECOR_D', slot: 'DECOR', unlocked: true, ownedCount: 1.5, createdAt: at },
+  ] })
+  assert.deepEqual(items.map((i) => [i.itemKey, i.slot, i.ownedCount, i.createdAt]), [
+    ['DECOR_PLANT', 'DECOR', 3, at],
+    ['DECOR_RUG', 'DECOR', 0, at],
+    ['FLOOR_WOOD', 'FLOOR', null, at],
+    ['THEME:space', 'THEME', null, null],
+    ['HAT_ACORN', 'HAT', null, null],
+  ])
+  assert.equal(DECOR_MAX_OWNED, 8)
+  assert.equal(SLOT_LABELS.FLOOR, '바닥')
+  assert.equal(SLOT_LABELS.DECOR, '방 소품')
+  assert.equal(SLOT_LABELS.ACCESSORY, '소품', '캐릭터 착용 칸 소품은 그대로')
+  assert.equal(ALL_ITEM_SLOTS.includes('FLOOR') || ALL_ITEM_SLOTS.includes('DECOR'), false, '관리자 칸 선택은 #706에서')
+})
+
+test('#705 착용 바닥 칸은 서버가 줄 때만 만들고, 방 소품은 착용 칸이 아니다', () => {
+  const look = readLook({ theme: 'lake', companion: 'mungchi', equipped: { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null, DESK: null, WALL: null, WARDROBE: null, FLOOR: 'FLOOR_MINT', DECOR: 'DECOR_PLANT' } })
+  assert.equal(look.equipped?.FLOOR, 'FLOOR_MINT')
+  assert.equal('DECOR' in (look.equipped ?? {}), false)
+  assert.equal('FLOOR' in (readLook({ theme: 'lake', companion: 'mungchi', equipped: { HAT: null, DESK: null } }).equipped ?? {}), false)
+  assert.equal(readLook({ theme: 'lake', companion: 'mungchi', equipped: { FLOOR: 3 } }).equipped?.FLOOR, null)
+  assert.equal(readEquipped({ FLOOR: 'FLOOR_WOOD' }).FLOOR, 'FLOOR_WOOD')
+  assert.equal('FLOOR' in readEquipped({ HAT: 'HAT_ACORN' }), false)
+})
+
+test('#705 방 소품 사기: 명세 경로·멱등 키로 보내고, 응답의 보유 개수·잔액만 받는다', async (t) => {
+  setAccessToken('synthetic-student', 'STUDENT')
+  const calls: { url: string; init: RequestInit }[] = []
+  let body: unknown = { itemKey: 'DECOR_PLANT', ownedCount: 2, balance: 57 }
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    calls.push({ url: String(url), init })
+    return Response.json(body)
+  })
+  assert.deepEqual(await retentionApi.purchaseDecor('DECOR_PLANT', 'key-3'), { itemKey: 'DECOR_PLANT', ownedCount: 2, balance: 57 })
+  assert.equal(`${calls[0].init.method} ${calls[0].url}`, 'POST /api/v1/students/me/look-items/DECOR_PLANT/purchase')
+  assert.equal(new Headers(calls[0].init.headers).get('Idempotency-Key'), 'key-3')
+  assert.equal(calls[0].init.body, undefined)
+  assert.equal(calls[0].init.cache, 'no-store')
+  for (const bad of [
+    { itemKey: 'DECOR_RUG', ownedCount: 2, balance: 57 },
+    { itemKey: 'DECOR_PLANT', ownedCount: 0, balance: 57 },
+    { itemKey: 'DECOR_PLANT', ownedCount: 9, balance: 57 },
+    { itemKey: 'DECOR_PLANT', ownedCount: 2, balance: -1 },
+  ]) {
+    body = bad
+    await assert.rejects(retentionApi.purchaseDecor('DECOR_PLANT', 'key-4'), /확인하지 못/, JSON.stringify(bad))
+  }
+  assert.deepEqual(readDecorPurchaseResult({ itemKey: 'X', ownedCount: 8, balance: 0 }, 'X'), { itemKey: 'X', ownedCount: 8, balance: 0 })
+})
+
+test('#705 멱등 키: 사기마다 새 키, 응답을 못 받으면 같은 키로 다시, 확정 4xx 뒤에는 키를 버린다', () => {
+  let n = 0
+  const keys = createIdempotencyKeys(() => `key-${++n}`)
+  const problem = (status: number, code: string) => new ApiError({ status, code, title: code })
+  // 성공하면 다음 사기는 새 키(같은 방 소품을 두 번 사도 두 번째가 첫 응답으로 돌아오지 않게)
+  const first = keys.take('DECOR_PLANT')
+  keys.settle('DECOR_PLANT', first)
+  const second = keys.take('DECOR_PLANT')
+  assert.notEqual(second, first)
+  // 응답을 못 받음(네트워크 오류)·5xx·처리 중·응답 읽기 실패는 같은 키로 다시
+  for (const lost of [new TypeError('Failed to fetch'), problem(503, 'IDEMPOTENCY_UNAVAILABLE'), problem(409, 'IDEMPOTENCY_IN_PROGRESS'), new Error('포인트·꾸미기 정보를 확인하지 못했어요.')]) {
+    keys.settle('DECOR_PLANT', second, lost)
+    assert.equal(keys.take('DECOR_PLANT'), second, String(lost))
+  }
+  // 확정 4xx(잔액 부족·판매 중단·보유 상한·없는 항목·키 재사용·방 소품 해금)는 키를 버린다
+  for (const code of ['INSUFFICIENT_POINTS', 'LOOK_ITEM_NOT_ON_SALE', 'LOOK_DECOR_LIMIT', 'LOOK_ITEM_NOT_FOUND', 'IDEMPOTENCY_KEY_REUSED', 'VALIDATION_FAILED']) {
+    const used = keys.take('THEME:space')
+    keys.settle('THEME:space', used, problem(code === 'LOOK_ITEM_NOT_FOUND' ? 404 : code === 'IDEMPOTENCY_KEY_REUSED' || code === 'VALIDATION_FAILED' ? 422 : 409, code))
+    assert.equal(keys.peek('THEME:space'), undefined, code)
+    assert.notEqual(keys.take('THEME:space'), used, code)
+    keys.settle('THEME:space', keys.peek('THEME:space')!)
+  }
+  // 항목마다 따로, 늦게 끝난 옛 요청은 새 키를 지우지 않는다
+  const a = keys.take('A'), b = keys.take('B')
+  assert.notEqual(a, b)
+  keys.settle('A', 'old-key')
+  assert.equal(keys.peek('A'), a)
+  assert.equal(keepIdempotencyKey(problem(401, 'SESSION_CHANGED')), true)
+  assert.equal(keepIdempotencyKey(problem(500, 'INTERNAL')), true)
+  assert.equal(keepIdempotencyKey(problem(400, 'VALIDATION_FAILED')), false)
+})
+
+test('#705 방 소품 사기 가능·오류 문구: 판매 중이고 8개 전까지만, 보유 상한은 "더 살 수 없어요"', () => {
+  const decor = { itemKey: 'DECOR_PLANT', slot: 'DECOR' as const, name: '화분', pricePoints: 30, unlocked: true, onSale: true, assetKey: 'room/decor-plant.svg', ownedCount: 7, createdAt: null }
+  assert.equal(canBuyMore(decor), true)
+  assert.equal(canBuyMore({ ...decor, ownedCount: 8 }), false)
+  assert.equal(canBuyMore({ ...decor, onSale: false }), false, '판매 중단은 새로 살 수 없음')
+  assert.equal(canBuyMore({ ...decor, slot: 'FLOOR', ownedCount: null }), false, '바닥은 해금')
+  assert.equal(canBuyMore(undefined), false)
+  assert.match(unlockMessage(new ApiError({ status: 409, code: 'LOOK_DECOR_LIMIT', title: '' }))!, /더 살 수 없어요/)
+  assert.equal(unlockMessage(new ApiError({ status: 409, code: 'INSUFFICIENT_POINTS', title: '' })), '포인트가 조금 모자라요. 미션을 끝내면 포인트가 쌓여요.')
 })

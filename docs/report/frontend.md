@@ -864,6 +864,54 @@ develop에서 들어온 실서버 E2E(#625)가 옛 학생 화면 문구로 쓰�
   - ① 게시 테마가 없는 학년에서는 홈에 "더 풀어 보기"가 없어 프리미엄 학생이 미션 고르기에 들어갈 길이 빈 내 공책의 "미션 고르기"뿐이었다 → `StudentHome.tsx` 테마 없음 화면("이번 주 테마를 준비하고 있어요")의 "내 공책 보기" 아래에도 "더 풀어 보기(미션 고르기) →". 목업 홈 상태 "테마 없음"에서 눌러 `/student/missions` 도착 확인
   - ② 답 칸 입력 600ms 뒤 자동 저장이 시작되는 순간 "다 썼어요"를 누르면 저장 중 버튼이 잠겨 클릭이 아무 반응 없이 사라졌다(실서버 실행 1회 재현, develop부터 있던 동작) → `StudentWorkPage.tsx`: 초안 저장 중에는 버튼을 잠그지 않고, 누르면 기억해 두었다가(`submitQueued`, 버튼 글자 "저장하고 보내는 중이에요"·`aria-busy`) 저장이 끝나면 한 번 보낸다. 저장과 제출이 동시에 나가지 않게 하는 원래 목적은 그대로, 저장이 충돌(CONFLICT)로 끝나면 보내지 않음. 목업에서 초안 저장을 1.5초 늦춘 채 저장 중에 눌러, 저장 중에는 `POST answers` 0번·저장 뒤 1번 확인
 
+## 내 방 바닥·방 소품: 데이터·사기 (#705, 2026-11-17)
+
+core #704(바닥 `FLOOR`·방 소품 `DECOR`, V50, 2026-11-16 병합)의 학생 웹 몫 가운데 **그림이 없는 부분**(계약 읽기·사기 요청·상태 훅·목업·시험)만 먼저 했다. 꾸미기 탭 화면·바닥 그림·방 소품 놓기는 사용자가 단계마다 확인하며 따로 하고, 놓은 자리(`decor-spots`)는 core #723에서 모양이 바뀔 예정이라 읽기·저장·목업 모두 손대지 않았다. 화면 모양이 바뀐 곳은 없다.
+
+### 바꾼 것
+
+- **칸**(`domain/retention.ts`): `ItemSlot`에 `FLOOR`·`DECOR`(타입 `FloorSlot`·`DecorSlot`), `SLOT_LABELS`에 "바닥"·"방 소품"(캐릭터 착용 칸 `ACCESSORY` "소품"은 그대로). 보유 상한 `DECOR_MAX_OWNED = 8`(#704 확정값). 관리자 칸 선택 `ALL_ITEM_SLOTS`는 그대로 두었다(관리자 웹 #706 몫)
+- **목록 읽기**(`readLookItems`): `ownedCount`(방 소품만 0~8 정수, 다른 칸은 값이 와도 null)·`createdAt`(날짜로 읽히면 그대로, 아니면 null)을 더함. 모르는 칸은 지금처럼 버리고 기존 칸 처리는 그대로
+- **착용**: `Equipped`·`StudentLook.equipped`에 `FLOOR`. 가구 칸처럼 서버 응답에 있을 때만 만들어(`readLook`·`readEquipped`) 착용 저장에도 그때만 보낸다. 방 소품은 착용 칸이 아니라 `Equipped`에 들어가지 않는다
+- **사기 요청**(`data/retention/api.ts` `purchaseDecor`): `POST /students/me/look-items/{itemKey}/purchase` + `Idempotency-Key`, 응답 `LookDecorPurchaseResult`를 `readDecorPurchaseResult`로 검사(항목이 다르거나 보유 개수 1~8·잔액 0 이상이 아니면 계약 오류). 훅 `usePurchaseDecor`(`queries.ts`)는 성공하면 그 방 소품의 `ownedCount`·`unlocked`와 선택 자녀 잔액(모든 페이지)을 서버 값으로 바로 바꾸고, 끝나면 목록·잔액을 다시 받는다(해금 `useUnlock`과 같은 방식)
+- **상태 훅**(`presentation/student/world/lookShop.ts`, 화면 아님): `startPurchase`·`confirmPurchase`·`purchase`(뮤테이션)를 더함. 방 소품 사기는 확인 상태(`confirming`)를 해금과 같이 쓰고, `canBuyMore`(판매 중이고 8개 전)일 때만 보낸다. `confirmUnlock`은 방 소품이면 보내지 않는다(서버도 422)
+- **멱등 키**(`createIdempotencyKeys`): 항목별로 **응답을 못 받은 요청의 키만** 남겨 다음 요청이 같은 키로 다시 가고, 성공하거나 확정 거절이면 지워 다음 요청은 새 키로 간다. 그래서 방 소품은 사기마다 새 키(성공 뒤 키를 남기면 두 번째 구매가 첫 응답으로 돌아옴), 응답을 못 받았을 때만 같은 키(같은 구매로 한 번만 차감)
+- **기존 버그 1**(이슈 "이 화면의 기존 버그" 첫째 줄): 해금 키가 확정 4xx 뒤에도 남던 것 → 확정 4xx면 키를 버린다(아래 기준안). 해금·사기 모두 같은 장부를 쓴다
+- **오류 문구**(`unlockMessage`): 409 `LOOK_DECOR_LIMIT` → "이 방 소품은 더 살 수 없어요. 8개까지 가질 수 있어요." 잔액 부족·판매 중단은 해금과 같은 문구
+- **목업**(`mocks/fixtures/retention.ts`·`mocks/handlers/retention.ts`): 바닥 3개·방 소품 3개 고정 아이템(아래 표), 학생 목록 `ownedCount`·`createdAt`(예전 개발 상태처럼 등록일이 없는 아이템은 `updatedAt`), 방 소품 보유 `decor`, 사기 경로(키별 처음 응답 재사용, 키가 다르면 새 구매, 아이템당 8개 넘으면 409 `LOOK_DECOR_LIMIT`, 잔액 부족 409 `INSUFFICIENT_POINTS`, 판매 중단 409 `LOOK_ITEM_NOT_ON_SALE`, 방 소품이 아닌 항목 422 `VALIDATION_FAILED`, 없는 항목 404). 방 소품을 해금 경로로 부르면 422 `VALIDATION_FAILED`. 관리자 아이템 등록 목업도 `createdAt`을 채움
+- **기존 버그 3**(이슈 "이 화면의 기존 버그" 셋째 줄): 목업에서 같은 멱등 키·다른 항목이 409 `IDEMPOTENCY_KEY_REUSED`였던 것 → 계약·core대로 422. 해금·사기 공통 검사 `idempotencyReceipt`: core `IdempotencyService`처럼 처음 보는 키를 **처리 전에** 그 요청(경로·항목)에 묶어, 거절된 키로 다른 항목을 보내도 422, 해금에 쓴 키로 사기(또는 반대)도 422. 같은 키·같은 요청은 처음 성공 응답이 있으면 그것을, 없으면(거절됐던 요청) 다시 처리한다(core도 4xx 예외 응답은 저장하지 않음)
+- **목업 꾸미기 저장**(`mocks/handlers/student.ts`): 착용 응답에 `FLOOR`(생략하면 유지, null이면 벽지 세트의 바닥). 목업도 #704 서버처럼 바닥 칸을 알려 줘야 웹이 바닥 착용을 보낼 수 있어서 이 파일 한 곳을 같이 고쳤다
+
+### 새로 정한 값 (기준안)
+
+| 칸 | 코드 | 이름 | 가격 | 그림 키 |
+|---|---|---|---|---|
+| 바닥 | `FLOOR_WOOD` | 나무 마루 | 60 | `room/floor-wood.svg` |
+| 바닥 | `FLOOR_MINT` | 민트 타일 | 90 | `room/floor-mint.svg` |
+| 바닥 | `FLOOR_CARPET` | 초록 카펫 | 120 | `room/floor-carpet.svg` |
+| 방 소품 | `DECOR_PLANT` | 화분 | 30 | `room/decor-plant.svg` |
+| 방 소품 | `DECOR_RUG` | 러그 | 50 | `room/decor-rug.svg` |
+| 방 소품 | `DECOR_LIGHTS` | 줄 조명 | 40 | `room/decor-lights.svg` |
+
+- 이름은 시안 MyPage 서랍의 바닥(나무 마루·민트 타일·초록 카펫)·소품(화분·러그·줄 조명). 가격은 바닥은 가구 스킨 가격대(60·90·120), 방 소품은 여러 개 사므로 가구 한 개(60)보다 낮게 착용 소품(30·40)·벽지(40·60) 가격대로 정했다. 목업 등록일은 2026-11-17(꾸미기 "새로 나왔어요" 확인용)
+- 그림 키는 지금 가구 키(`room/desk-mint.svg` 등)와 같은 `room/<칸>-<이름>.svg` 꼴의 기준안이다. 실제 그림 표(`roomAssets.ts`)와 관리자가 등록할 키 목록 알림(`retention-expansion.md` 3.7 방식)은 바닥 그림 작업 때 함께 정한다
+- "응답을 못 받은 경우"(키를 남기는 경우): 웹 오류가 `ApiError`가 아님(네트워크 오류, 200을 받았지만 응답을 읽지 못함), 5xx(core 503 `IDEMPOTENCY_UNAVAILABLE`은 "같은 키로 다시 요청" 안내), 401(로그인 상태가 바뀌어 받은 응답을 버린 경우도 있어 처리 여부를 모름), 409 `IDEMPOTENCY_IN_PROGRESS`(같은 키를 처리 중). 그 밖의 4xx(400·404·409 잔액 부족·판매 중단·보유 상한·422 키 재사용·검증 실패)는 확정 거절로 보고 키를 버린다
+
+### 계약과 다르거나 애매했던 점
+
+- 계약은 `ownedCount`·`createdAt`이 필수지만 웹은 오류로 보지 않는다: 방 소품인데 `ownedCount`가 0~8 정수가 아니면 **그 항목만** 버리고(더 살 수 있는지·몇 개 놓을지 정할 수 없어서, 목록 전체는 살림), `createdAt`이 없거나 날짜가 아니면 null("새로 나왔어요"만 안 붙음)
+- `Equipped`에 `DECOR?: never`를 두었다. 착용 칸에 방 소품이 들어간다는 뜻이 아니라, 꾸미기 화면(`Customize.tsx`)이 `ItemSlot`으로 착용 값을 찾는 곳이 칸이 늘어도 타입 오류 없이 undefined를 받게 하려는 웹 타입 장치다(이번에 화면 파일은 고치지 않음). 서버로는 보내지 않는다
+- 이슈 기존 버그 1은 "확정 4xx 뒤 같은 오류로 돌아옴"으로 적혀 있지만, core `IdempotencyService`는 처리 중 던진 4xx를 멱등 응답으로 저장하지 않아 실서버에서는 같은 키·같은 항목이면 다시 계산한다(잔액이 늘었으면 성공). 다만 키가 그 요청에 묶여 다른 요청에 쓰면 422라, 확정 거절 뒤 키를 버리는 쪽이 계약에 맞아 이슈대로 고쳤다
+- 목업 꾸미기 저장은 다른 칸 아이템을 착용 칸에 넣어도(예: 방 소품 코드를 `FLOOR`에) core처럼 422로 막지 않는다(전부터 칸 검사 없음, 이번에 바꾸지 않음)
+- 판매 중단된 방 소품은 core처럼 가진 학생에게만 `onSale:false`로 남는다(`ownedCount` 그대로). 판매 중단 뒤 놓은 자리는 #723 뒤에 본다
+- 관리자 아이템 목록(`RetentionManager.tsx`)은 코드를 고치지 않았지만, `SLOT_LABELS`에 이름이 생겨 실서버·목업의 바닥·방 소품 행 칸 이름이 빈칸 대신 "바닥"·"방 소품"으로 보인다. 등록 칸 선택은 그대로(#706)
+
+### 시험
+
+- 단위: `retention.test.ts` 5개 더함(목록 보유 개수·등록일·틀린 방 소품만 버림·칸 이름, 착용 바닥 칸, 사기 요청 경로·키·응답 검사, 멱등 키 장부 — 사기마다 새 키·응답 유실은 같은 키·확정 4xx 뒤 버림·옛 요청이 새 키를 지우지 않음, 살 수 있는지·`LOOK_DECOR_LIMIT` 문구), `retentionMock.test.ts` 2개(해금 같은 키·다른 항목 422·거절된 키도 묶임·방 소품 해금 422·바닥 해금·착용·유지·해제, 사기 키별 새 구매·같은 키 처음 응답·키 재사용 422·다른 칸 422·없는 항목 404·8개 상한 409·잔액 부족·판매 중단), `queryHooks.test.ts` 1개(사기 응답이 그 방 소품 보유 개수와 선택 자녀 잔액에만 반영)
+- 바꾼 시험(뜻 유지): 목록 응답 모양에 `ownedCount`·`createdAt`을 더함 — `retention.test.ts` 2곳(읽기 결과 비교), `wornAssets.test.ts`(시험용 아이템), `reward-browser/customize.spec.ts`(가짜 서버 목록 응답)
+- 결과: 단위 353개 통과(이 작업으로 8개 늘어남), `test:types`·oxlint 경고 0·빌드 통과, 보상 브라우저 12개 통과(설정을 복사해 포트 5311로). 목업·실서버 브라우저 시험과 화면 확인은 화면 작업이 없어 이번에 돌리지 않았다
+
 ## 관리자 테마 초안 상세·채택과 움직임 재생기 (#441, 2026-11-12)
 
 15절의 남은 몫. learning #438(상세 DTO·상태 전이)·core #439(중계) 병합 뒤 확정 계약(learning OpenAPI `ThemeDraft`, api-spec 4.1)으로 완성했다. **API 변경 없음**(기존 경로·응답을 그대로 읽음).
