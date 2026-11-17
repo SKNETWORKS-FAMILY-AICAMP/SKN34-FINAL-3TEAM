@@ -1,6 +1,38 @@
 import { thinkingLabels } from '../../domain/classroom.ts'
-import type { WeeklyReport } from '../../domain/parent.ts'
+import { parentApi } from '../../data/parent/api.ts'
+import { useParentQuery } from '../../data/parent/queries.ts'
+import type { ReportExplanation, WeeklyReport } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
+import { explanationBlocks, explanationSections } from '../../domain/reportExplanation.ts'
+
+function ExplanationBody({ text }: { text: string }) {
+  return <div className="report-explanation-sections">{explanationSections(text).map((section, index) =>
+    <div className="report-explanation-section" key={index}>
+      <h5>{section.title}</h5>
+      <div className="report-explanation-copy">{explanationBlocks(section.body).map((block, blockIndex) => {
+        if (block.kind === 'paragraph') return <p key={blockIndex}>{block.text}</p>
+        const List = block.ordered ? 'ol' : 'ul'
+        return <List key={blockIndex}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</List>
+      })}</div>
+    </div>)}</div>
+}
+
+function OriginalAnswer({ report, item }: { report: WeeklyReport; item: ReportExplanation }) {
+  const query = useParentQuery(
+    ['report-original', report.childId, report.reportId, report.revision, item.itemId, item.answerId, item.answerVersion],
+    (signal) => parentApi.reportEvidence(report.reportId, item.itemId!, signal),
+    !!item.itemId,
+  )
+  const original = !query.error && query.data?.items.find(source => source.available === true &&
+    source.attemptId === item.attemptId && source.answerId === item.answerId && source.answerVersion === item.answerVersion &&
+    typeof source.quote === 'string' && source.quote.trim())
+  return <div className="report-explanation-evidence">
+    <h5>학생 글 전체</h5>
+    {original ? <blockquote>{original.quote}</blockquote>
+      : item.itemId && query.isPending ? <p role="status">원문 전체를 불러오고 있습니다.</p>
+      : <p role="status">이 설명에 연결된 원문 전체를 확인할 수 없습니다.</p>}
+  </div>
+}
 
 /** narrativeEnabled: entitlement 조회 값(#602). 조회 전·실패면 undefined이며 서버의 explanations만 따른다. */
 export function ReportExplanations({ report, narrativeEnabled }: { report: WeeklyReport; narrativeEnabled?: boolean }) {
@@ -22,11 +54,11 @@ export function ReportExplanations({ report, narrativeEnabled }: { report: Weekl
   if (notice) items = undefined
   return <section className="report-explanations" aria-labelledby="report-explanations-title">
     <h3 id="report-explanations-title">대표 답변 설명</h3>
-    {notice ? <p role="note">{notice}</p> : <div className="ws-stack">{items!.map(item => <article className="ws-card" key={`${item.answerId}:${item.answerVersion}`}>
+    {notice ? <p role="note">{notice}</p> : <div className="ws-stack">{items!.map(item => <article className="ws-card report-explanation-card" key={`${item.answerId}:${item.answerVersion}`}>
       <h4>{item.missionTitle}</h4>
       <p>{thinkingLabels[item.thinkingType]} · <span className="ws-tag">AI 관찰</span></p>
-      {item.quote !== null && <blockquote>{item.quote}</blockquote>}
-      <p className="report-explanation-text">{item.text}</p>
+      <OriginalAnswer report={report} item={item} />
+      <ExplanationBody text={item.text} />
     </article>)}</div>}
   </section>
 }

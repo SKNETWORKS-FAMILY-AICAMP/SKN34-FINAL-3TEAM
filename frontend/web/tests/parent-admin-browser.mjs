@@ -166,7 +166,7 @@ try {
     await nav(p, '리포트')
     assert.equal(new URL(p.url()).search, scope)
     await p.locator('article.ws-card').filter({ has: p.getByRole('heading', { name: '2026-10-26 ~ 2026-11-01', exact: true }) })
-      .getByRole('button', { name: '리포트 상세 보기' }).click()
+      .getByRole('button', { name: '리포트 보기' }).click()
     await p.getByRole('heading', { name: '아이의 말', exact: true }).waitFor()
     await p.locator('blockquote').getByText(answer, { exact: true }).waitFor()
     await p.getByRole('button', { name: /근거$/ }).first().click()
@@ -224,7 +224,7 @@ try {
     assert.equal(await p.getByRole('button', { name: '답변 근거 보기' }).count(), 0)
     await nav(p, '리포트')
     assert.ok(p.url().includes('childId=demo-doyun'))
-    await p.getByRole('button', { name: '리포트 상세 보기' }).first().click()
+    await p.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기' }).first().click()
     await p
       .getByText('수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.', {
         exact: true,
@@ -347,7 +347,7 @@ try {
   await check('리포트 상세 3.4·항목 근거·재생성 새 판/이전 판·md/pdf 다운로드', async (p) => {
     await login(p)
     await nav(p, '리포트')
-    await p.getByRole('button', { name: '리포트 상세 보기' }).first().click()
+    await p.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기' }).first().click()
     await p.getByRole('heading', { name: '리포트 상세', exact: true }).waitFor()
     await p.getByRole('button', { name: /근거$/ }).first().click()
     await p.getByRole('dialog', { name: '리포트 항목 근거' }).waitFor()
@@ -377,7 +377,7 @@ try {
       await login(p)
       await nav(p, '리포트')
       await mode(p, scenario)
-      await p.getByRole('button', { name: '리포트 상세 보기' }).first().click()
+      await p.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기' }).first().click()
       await p
         .getByText(
           scenario === 'report-running'

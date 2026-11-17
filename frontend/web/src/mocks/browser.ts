@@ -56,10 +56,30 @@ export function installMockEvents() {
   )
 }
 export async function startMockWorker() {
+  const reportDemo = await import('./fixtures/structuredReportDemo.ts')
+  if (reportDemo.structuredReportDemoRequested()) reportDemo.rememberStructuredReportDemo()
+  if (reportDemo.hasStructuredReportDemo()) {
+    // Generated server-side by the explicitly invoked runner. Never a paid call on page load.
+    let cache: import('./fixtures/structuredReportDemo.ts').GemmaReportCache | undefined
+    try {
+      const response = await fetch('/.taste-skill/structured-report-demo/gemma-explanations.json', { cache: 'no-store' })
+      if (response.ok) {
+        const value = await response.json()
+        if (typeof value?.model === 'string' && typeof value?.promptVersion === 'string' && Array.isArray(value?.items)) cache = value
+      }
+    } catch { /* No handwritten explanation is substituted when the real output is missing. */ }
+    reportDemo.seedStructuredReportDemo(cache)
+  }
   installMockEvents()
   const worker = setupWorker(...mockHandlers)
   await worker.start({
     quiet: true,
     onUnhandledFrame: 'bypass',
   })
+  if (reportDemo.structuredReportDemoRequested()) {
+    // Explicit local demo entry only, not a production authentication shortcut.
+    const response = await fetch('/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'parent@example.test', password: 'demo-only' }) })
+    if (!response.ok) throw new Error('리포트 시연 계정에 로그인하지 못했습니다.')
+  }
 }

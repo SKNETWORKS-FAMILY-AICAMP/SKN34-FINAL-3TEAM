@@ -25,10 +25,10 @@ def test_versions_returns_active_prompt_versions() -> None:
             "judgment": "judge@2",
             "followup": "followup@4",
             "analysis": "analysis@4",
-            "reportNarrative": "report@1",
+            "reportNarrative": "report@2",
             "reportTemplate": "analysis-template@1",
             "missionDraft": "mission-draft@1",
-            "reportExplanation": "report-explanation@1",
+            "reportExplanation": "report-explanation@3",
             "themeDraft": "theme-draft@1",
             "memoryExplanation": "memory-explanation@1",
         }

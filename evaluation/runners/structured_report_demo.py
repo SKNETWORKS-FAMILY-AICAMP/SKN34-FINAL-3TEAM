@@ -1,0 +1,78 @@
+"""Generate and cache actual Gemma details for the opt-in synthetic local report.
+
+Explicitly authorized by the user's request to connect real Gemma. At most three inference
+submissions, no retries of inference POST, and no calls from the browser or on page refresh.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+
+from explanation_eval import Client, canonical, digest, load_env, public_input, save
+
+
+def valid(value):
+    if set(value) != {"analysis", "improvement_points", "next_steps"}:
+        raise ValueError("STRUCTURE_KEYS")
+    if not isinstance(value["analysis"], str) or not value["analysis"].strip():
+        raise ValueError("ANALYSIS_MISSING")
+    if value["improvement_points"] is not None and (
+        not isinstance(value["improvement_points"], str) or not value["improvement_points"].strip()
+    ):
+        raise ValueError("IMPROVEMENT_SHAPE")
+    steps = value["next_steps"]
+    if not isinstance(steps, list) or not 1 <= len(steps) <= 2 or not all(
+        isinstance(step, str) and step.strip() for step in steps
+    ):
+        raise ValueError("STEPS_SHAPE")
+    text = " ".join([value["analysis"], value["improvement_points"] or "", *steps])
+    if re.search(r"안녕하세요|학부모님|분석한 결과를 드립니다|지금부터 살펴보겠", text):
+        raise ValueError("UNWANTED_PREFACE")
+
+
+def run(args):
+    cases = json.loads(args.cases.read_text(encoding="utf-8"))
+    if len(cases) != 3 or any(case.get("origin") != "synthetic_ui_demo" for case in cases):
+        raise ValueError("THREE_SYNTHETIC_DEMO_CASES_REQUIRED")
+    rules = args.prompt.read_text(encoding="utf-8").split("```text\n", 1)[1].split("```", 1)[0]
+    manifest = {"version": "structured-report-detail@2", "dataset_hash": digest(cases),
+                "rules_hash": digest(rules), "max_new_inference_calls": 3,
+                "authorization": "User explicitly requested actual Gemma explanations for the synthetic report",
+                "human_quality_review": "PENDING", "is_benchmark": False}
+    if (args.out / "manifest.json").exists():
+        if json.loads((args.out / "manifest.json").read_text(encoding="utf-8")) != manifest:
+            raise ValueError("MANIFEST_CHANGED")
+    save(args.out / "manifest.json", manifest)
+    env = load_env(args.env_file)
+    client = Client(env, args.out, "SAGOMUNGCHI_SLLM_SERVERLESS_gemma",
+                    "SAGOMUNGCHI_SLLM_SERVERLESS_KEY_gemma", env.get("REPORT_GEMMA_MODEL", ""), 600, 3)
+    results = {}
+    # Browser-facing cache contains only synthetic source and final model content, never receipts/keys.
+    cache = {"model": client.model, "promptVersion": manifest["version"], "items": []}
+    for case in cases:
+        try:
+            value, key = client.generate("gemma", "structured_report_detail_v2",
+                                         rules + "\n자료:\n" + canonical(public_input(case)))
+            valid(value)
+            cache["items"].append({"attemptId": case["id"], "answerVersion": case["answerVersion"],
+                                   "sourceText": case["answer"], "text": json.dumps(value, ensure_ascii=False)})
+            results[case["id"]] = {"state": "COMPLETED", "call_key": key,
+                                   "characters": len(json.dumps(value, ensure_ascii=False))}
+        except ValueError as exc:
+            results[case["id"]] = {"state": "FAILED", "error": str(exc)}
+        save(args.out / "results.json", results)
+        save(args.cache, cache)
+        print(case["id"], results[case["id"]]["state"], flush=True)
+    print("Completed", len(cache["items"]), "of", len(cases), flush=True)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cases", type=Path, required=True)
+    parser.add_argument("--prompt", type=Path, required=True)
+    parser.add_argument("--env-file", type=Path, required=True)
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--cache", type=Path, required=True)
+    run(parser.parse_args())

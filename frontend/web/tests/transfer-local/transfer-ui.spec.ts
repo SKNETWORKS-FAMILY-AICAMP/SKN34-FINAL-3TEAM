@@ -87,7 +87,7 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
     await receiverPage.goto('/parent/report')
     const kept = receiverPage.locator('article', { has: receiverPage.getByRole('heading', { name: `${start} ~ ${end}` }) })
     await expect(kept.getByText('생성 완료')).toBeVisible()
-    await kept.getByRole('button', { name: '리포트 상세 보기' }).click()
+    await kept.getByRole('button', { name: '리포트 보기' }).click()
     await expect(receiverPage.getByRole('heading', { name: '리포트 상세' })).toBeVisible()
     await expect(receiverPage.getByText(`실제 리포트 기간 · ${start} ~ ${end}`, { exact: false })).toBeVisible()
     await expect(receiverPage.getByText('수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.')).toBeVisible()

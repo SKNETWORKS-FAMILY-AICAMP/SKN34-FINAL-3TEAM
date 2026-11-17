@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request
 
 from app.config import get_settings
 from app.llm.base import LlmClient
-from app.llm.providers import get_llm
+from app.llm.report import get_report_llm
 from app.report_narrative.models import NarrativeRequest, NarrativeResponse
 from app.report_narrative.service import NarrativeService
 
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/internal/report-narratives", tags=["report-narrative
 
 
 def get_narrative_service(
-    request: Request, llm: Annotated[LlmClient, Depends(get_llm)]
+    request: Request, llm: Annotated[LlmClient, Depends(get_report_llm)]
 ) -> NarrativeService:
     return NarrativeService(llm, get_settings(), request.app.state.active_versions)
 

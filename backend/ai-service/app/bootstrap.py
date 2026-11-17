@@ -20,6 +20,7 @@ from app.judgment.router import router as judgment_router
 from app.llm.embeddings import create_embedder
 from app.llm.media import create_media_clients
 from app.llm.providers import create_explanation_llm, create_llm, create_theme_llms
+from app.llm.report import create_report_llm
 from app.memory_explanation.router import router as memory_explanation_router
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import ModelVersionConsumer
@@ -65,7 +66,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     usage_recorder = BackgroundUsageRecorder(app.state.usage_publisher)
     app.state.llm = create_llm(settings, recorder=usage_recorder)
     app.state.llm.langfuse = langfuse
-    # 리포트 설명만 클러스터 안 sLLM (#477). 다른 호출의 제공자는 그대로
+    app.state.report_llm = create_report_llm(settings, usage_recorder)
+    app.state.report_llm.langfuse = langfuse
+    # Summary and detailed report text are pinned to the same LoRA endpoint.
     app.state.explanation_llm = create_explanation_llm(settings, recorder=usage_recorder)
     app.state.explanation_llm.langfuse = langfuse
     # 주간 테마 초안 생성·검토 (#437). 모델은 테마 전용 설정, 같은 OpenAI 키
