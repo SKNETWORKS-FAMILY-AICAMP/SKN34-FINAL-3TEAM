@@ -422,6 +422,7 @@ for (const mode of ['unavailable', 'version', 'failure'] as const) test(`원문 
   await expect(area.getByText('이 설명에 연결된 원문 전체를 확인할 수 없습니다.')).toBeVisible()
   await expect(area.locator('blockquote')).toHaveCount(0)
   await expect(area.getByText(explanation.text, { exact: true })).toBeVisible()
+})
 
 test('Google 이메일 아이디를 계정 관리에 표시한다 (#683)', async ({ page, context }) => {
   await parentServer(context)
