@@ -273,3 +273,20 @@ def test_in_hand_clues_get_no_clock_time() -> None:
     assert checks.add_clue_time(gift)["days"][0]["clue"] == before
     assert "단서에 시각(3시·10시 반 등)을 쓰지 않고" in families.type_rules(families.GIFT)
     assert families.INGREDIENTS.features[1] == "재료 맛"
+
+
+def test_in_hand_sighting_clue_must_not_be_trace() -> None:
+    # 마지막 확인 3차: 길 종류에서 '상자에 묻은 먼지 색'을 목격 날에 씀 → CLUE_EVIDENCE 칸 고쳐 쓰기
+    theme = day_with(
+        {**valid_theme(), "storyType": "ROUTE"}, "TUE", clue="보리 털에 흙이 묻어 있었대."
+    )
+    bad = [r for r in checks.check_theme(theme, 3) if r.startswith("CLUE_EVIDENCE")]
+    assert bad == [
+        "CLUE_EVIDENCE TUE clue 목격 날 단서가 대상에 남은 흔적을 말함(그 길·가게에서 대상을 "
+        "나르거나 든 사람을 본 목격으로 씀)"
+    ]
+    assert list(checks.fix_targets(bad)) == ["TUE.clue"]
+    lost = day_with(valid_theme(), "TUE", clue="보리 털에 흙이 묻어 있었대.")  # 다른 종류는 그대로
+    assert not [r for r in checks.check_theme(lost, 3) if "목격 날 단서가" in r]
+    assert families.TIMES.media_of("가로등") == frozenset({"사진", "영상", "일지", "메모"})
+    assert "동물 먹이" in prompts.SAFETY_STORY and "동물 먹이" in prompts.PLAN_SYSTEM

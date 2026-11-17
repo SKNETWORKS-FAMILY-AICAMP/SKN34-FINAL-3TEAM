@@ -286,6 +286,20 @@ def clue_evidence_mismatch(day: dict) -> bool:
     return (has_record and kind != "RECORD") or (kind == "RECORD" and not has_record)
 
 
+# 손에 든 것 종류의 목격 날 단서가 대상에 남은 것을 말하는 꼴(마지막 확인 3차: 길 종류에서 '상자에
+# 묻은 먼지 색'을 목격 날에 써서 글 검토 CLUE_LOGIC 3건 "흔적인데 목격으로 표시")
+SIGHTING_TRACE_WORDS = re.compile(r"흔적|자국|묻은|묻어|묻었|얼룩|남아 있|남은")
+
+
+def sighting_names_trace(theme: Theme, day: dict) -> bool:
+    """손에 든 것 종류에서 목격 날 단서가 흔적을 말하는지(CLUE_EVIDENCE, 칸 고쳐 쓰기)."""
+    if not story_type(theme).target_in_hand:
+        return False
+    if (day.get("evidence") or {}).get("kind") != "SIGHTING":
+        return False
+    return bool(SIGHTING_TRACE_WORDS.search(str(day.get("clue") or "")))
+
+
 def evidence_plan(seed: str) -> dict[str, dict[str, str | None]]:
     """요일별 증거 종류·기록 매체 배정 {요일: {kind, medium}}.
 
@@ -1521,6 +1535,12 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
                 f"CLUE_EVIDENCE {d['day']} clue 단서 문장의 "
                 "증거와 evidence 종류가 다름(사진·영상·녹음·기록·"
                 "일지·메모를 말하면 RECORD, RECORD면 그 기록을 말함)"
+            )
+        elif not clue_planned and sighting_names_trace(theme, d):
+            bad.append(
+                f"CLUE_EVIDENCE {d['day']} clue 목격 날 단서가 대상에 남은 흔적을 말함(그 "
+                "길·가게에서 "
+                "대상을 나르거나 든 사람을 본 목격으로 씀)"
             )
         for problem in clue_wording_problems(d):
             bad.append(f"CLUE_WORDING {d['day']} clue {problem}")

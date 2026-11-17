@@ -701,7 +701,12 @@ TIMES = FactTable(
         "가로등": frozenset({"SIGHTING", "RECORD"}),
     },
     absent=frozenset({"종 안 울림"}),
-    media={"종소리": frozenset({"녹음", "영상", "일지", "메모"})},
+    # 빵집 문·가로등은 눈으로 보는 것(마지막 확인 3차: '가로등이 켜진 걸 녹음' 글 검토 CLUE_LOGIC)
+    media={
+        "종소리": frozenset({"녹음", "영상", "일지", "메모"}),
+        "빵집 문": frozenset({"사진", "영상", "일지", "메모"}),
+        "가로등": frozenset({"사진", "영상", "일지", "메모"}),
+    },
     image_hide="Do not draw any clock or watch (it would show the time).",
     drawable=False,
 )
