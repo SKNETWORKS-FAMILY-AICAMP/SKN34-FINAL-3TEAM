@@ -5,9 +5,13 @@
 `ThemeTopicSeeds.StoryType`과 같은 표다(learning이 주제 씨앗 `topic` 첫 칸에 넣음).
 
 가족: ① 숨은 것(HIDDEN, 후보는 장소) — LOST·TREASURE, ③ 동물 주인공(ANIMAL) — PRANK·FOOTPRINT,
-② 손에 든 것의 출처·정체(IN_HAND) — ORIGIN·GIFT·SECRET_INGREDIENT. ④⑤는 ② 실측을 통과한 뒤 켠다.
+② 손에 든 것의 출처·정체(IN_HAND) — ORIGIN·GIFT·SECRET_INGREDIENT, ④ 때·길·방법(WHEN_HOW) —
+WHEN·ROUTE·VEHICLE(설계 17.8.17). ⑤는 ④ 실측을 통과한 뒤 켠다.
 성질별 칸: 사실표(facts, 있으면 후보 이름을 엔딩 전에 감춤), 대상이 처음부터 손에 있음
-(target_in_hand), 정답 후보가 그림에 나와도 되는 컷(answer_cuts), 종류별 흔적 특징(trace).
+(target_in_hand), 정답 후보가 그림에 나와도 되는 컷(answer_cuts), 종류별 흔적 특징(trace),
+시작 이야기 끝에 코드가 붙이는 규칙(intro_notes), 단서 앞 시각 붙이기(clue_time), 대상을 그림에
+그릴 수 있는지(target_visual), 흔적 단서의 주인 낱말(owner_words), 장소가 맞아야 둘 수 있는
+후보(place_needs).
 """
 
 import re
@@ -15,9 +19,18 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 StoryTypeCode = Literal[
-    "LOST", "TREASURE", "PRANK", "FOOTPRINT", "ORIGIN", "GIFT", "SECRET_INGREDIENT"
+    "LOST",
+    "TREASURE",
+    "PRANK",
+    "FOOTPRINT",
+    "ORIGIN",
+    "GIFT",
+    "SECRET_INGREDIENT",
+    "WHEN",
+    "ROUTE",
+    "VEHICLE",
 ]
-FamilyCode = Literal["HIDDEN", "ANIMAL", "IN_HAND"]
+FamilyCode = Literal["HIDDEN", "ANIMAL", "IN_HAND", "WHEN_HOW"]
 
 # 종료 콘티 1컷(단서 정리)은 모든 종류가 같다
 OUTRO_THINK = "뭉치가 바닥·탁자에 놓인 단서들 앞에서 생각을 정리함"
@@ -47,6 +60,11 @@ class FactTable:
     # 맞춘다(checks.fit_evidence_plan). ② 작은 실측 2차: 소리를 목격으로, 맛을 목격으로 써서 글 검토
     # CLUE_LOGIC("소리 단서의 증거 종류가 목격", "맛은 눈으로 확인할 수 없음")
     kinds: dict[str, frozenset[str]] | None = None
+    # '없는 값'(종소리 없음·표 없음처럼 무엇이 없다는 값). 초등학생이 근거로 내세우기 약하고 글 검토
+    # CLUE_LOGIC에 걸리기 쉬워 단서로 쓰지 않는다(#634 ④ 사용자 확인 2026-11-17, CLUE_ABSENT).
+    # 정답은
+    # 있는 값 특징만으로 다른 후보와 갈라져야 함(FACT_TABLE)
+    absent: frozenset[str] = frozenset()
 
     def kinds_of(self, feature: str) -> frozenset[str] | None:
         return (self.kinds or {}).get(feature)
@@ -57,9 +75,44 @@ class FactTable:
             return None
         return row[self.features.index(feature)]
 
+    def present(self, candidate: str, feature: str) -> bool:
+        """그 후보의 그 특징 값이 '있는 값'인지(표 밖이면 False)."""
+        value = self.fact(candidate, feature)
+        return value is not None and value not in self.absent
+
+    def separable(self, answer: str, other: str, features: tuple[str, ...] | list[str]) -> bool:
+        """정답을 그 후보와 정답의 '있는 값' 특징만으로 가를 수 있는지."""
+        return any(
+            self.present(answer, f) and self.fact(answer, f) != self.fact(other, f)
+            for f in features
+        )
+
+    def blocked(self) -> dict[str, list[str]]:
+        """정답별로 후보로 둘 수 없는 이름(표의 모든 특징으로도 가를 수 없음). 없으면 빈 사전."""
+        out = {
+            a: [c for c in self.rows if c != a and not self.separable(a, c, self.features)]
+            for a in self.rows
+        }
+        return {a: cs for a, cs in out.items() if cs}
+
     def text(self) -> str:
         head = " | ".join([self.name, *self.features])
         return "\n".join([f"  {head}", *(f"  {' | '.join([k, *v])}" for k, v in self.rows.items())])
+
+    def absent_rule(self) -> str:
+        """없는 값 규칙(없는 값이 있는 표만)."""
+        if not self.absent:
+            return ""
+        blocked = "; ".join(
+            f"정답이 {a}면 후보에 {'·'.join(cs)}를 두지 않음" for a, cs in self.blocked().items()
+        )
+        return (
+            f"- 없는 값 {sorted(self.absent)}은 단서로 쓰지 않는다: 정답의 값이 없는 값인 특징은 "
+            "그 테마의 단서 특징(condition.feature)으로 쓰지 않고, allowed에도 없는 값을 넣지 "
+            "않는다(코드 검사 CLUE_ABSENT, 무엇이 없다는 말은 근거가 약함). 정답은 features에 넣은 "
+            "특징 가운데 정답의 값이 있는 값인 특징만으로 다른 후보와 모두 갈라져야 한다(코드 검사 "
+            "FACT_TABLE)" + (f": {blocked}" if blocked else "") + ".\n"
+        )
 
     def rule(self) -> str:
         """줄거리 규칙: 후보·특징은 표 안에서, 값은 표 값 그대로(코드가 맞춤)."""
@@ -81,8 +134,8 @@ class FactTable:
                 if kinds
                 else ""
             )
-            + ""
-            "- 엔딩 전 글(title·world·intro·시작 "
+            + self.absent_rule()
+            + "- 엔딩 전 글(title·world·intro·시작 "
             "콘티·place·sceneNote·discovery·missionHook·incident·"
             f"인물 모습)에는 후보 {self.name} 이름과 정답 {self.name}만의 표 값을 쓰지 않는다(코드 "
             "검사 "
@@ -109,6 +162,18 @@ class StoryType:
     trace_only: bool = (
         False  # True면 일반 흔적 표 대신 이 표만(동물: '꼬리 모양'의 '모양'을 빼려고)
     )
+    # ④: 시작 이야기 끝에 코드가 붙이는 규칙 문장(말투별 '…요.'·'…다.'·'…어.' 세 꼴). 학생 화면에는
+    # 시작 이야기만 보여 시각을 가르는 마을 규칙을 여기에 둔다(checks.compose_intro)
+    intro_notes: tuple[str, str, str] | None = None
+    # 단서 앞에 그때 시각을 붙이는지(#535 add_clue_time). 시간 탐정은 그때가 곧 정답이라 끔
+    clue_time: bool = True
+    # 대상을 그림에 그릴 수 있는지(시간 탐정의 대상은 '때'라 그릴 것이 없음 — 그리지 말라는 지시와
+    # 그림 검토의 대상 판정을 빼고, 시계를 그리지 않게 함)
+    target_visual: bool = True
+    # 흔적 단서에 넣을 주인 낱말(비면 target에서 뽑음). 동물: '동물', 탈것: '탈것'·'바퀴'
+    owner_words: tuple[str, ...] = ()
+    # 장소가 맞아야 후보로 둘 수 있는 이름과 그 장소 말(탈것의 배는 물가에서만, VEHICLE_PLACE)
+    place_needs: tuple[tuple[str, re.Pattern[str]], ...] = ()
 
     @property
     def animal(self) -> bool:
@@ -118,6 +183,17 @@ class StoryType:
     def hide_candidates(self) -> bool:
         """후보 이름을 엔딩 전 글·미션·대화·그림에 감추는 종류(사실표가 있는 종류)."""
         return self.facts is not None
+
+    @property
+    def no_trace(self) -> bool:
+        """사실표 특징 어느 것도 흔적으로 알 수 없는 종류(시간 탐정). 증거 배정의 흔적을 미리
+        목격으로 바꿔 모델에 준다(checks.plan_for_type)."""
+        table = self.facts
+        return (
+            table is not None
+            and table.kinds is not None
+            and all("TRACE" not in (table.kinds_of(f) or ALL_KINDS) for f in table.features)
+        )
 
 
 HIDDEN_COMMON = (
@@ -352,6 +428,7 @@ PRANK = StoryType(
     answer_cuts=ANIMAL_TARGET_CUTS,
     trace=ANIMAL_TRACE,
     trace_only=True,
+    owner_words=("동물",),
 )
 
 FOOTPRINT = StoryType(
@@ -372,6 +449,7 @@ FOOTPRINT = StoryType(
     answer_cuts=ANIMAL_TARGET_CUTS,
     trace=ANIMAL_TRACE,
     trace_only=True,
+    owner_words=("동물",),
 )
 
 # ② 손에 든 것(설계 17.8.13): 대상이 처음부터 손에 있어 공통 규칙의 '대상은 종료 전까지 못 찾음'·
@@ -516,8 +594,221 @@ SECRET_INGREDIENT = StoryType(
     trace=IN_HAND_TRACE,
 )
 
+# ④ 때·길·방법(설계 17.8.17, 사용자 확인 2026-11-17)
+# 시간 탐정 마을 규칙표(기준안): 그림자·밝기는 계절마다 달라 시각을 가르는 근거로 애매해 마을
+# 규칙으로
+# 정함. 값은 단서 문장에 그대로 들어가는 꼴('열린 빵집이 보였대')로 둠(값 낱말이 단서에 그대로
+# 있어야
+# 함, CLUE_TEXT). 오전 10시·오후 3시는 세 값이 같아 한 테마에 함께 두지 못함(FACT_TABLE)
+TIMES = FactTable(
+    name="시각",
+    features=("종소리", "빵집 문", "가로등"),
+    rows={
+        "아침 7시": ("종 안 울림", "닫힌 빵집", "꺼진 가로등"),
+        "오전 10시": ("종 안 울림", "열린 빵집", "꺼진 가로등"),
+        "낮 12시": ("종소리", "열린 빵집", "꺼진 가로등"),
+        "오후 3시": ("종 안 울림", "열린 빵집", "꺼진 가로등"),
+        "저녁 7시": ("종 안 울림", "열린 빵집", "켜진 가로등"),
+        "밤 9시": ("종 안 울림", "닫힌 빵집", "켜진 가로등"),
+    },
+    # 그때 들리거나 보인 것이라 흔적에 남지 않음: 들은·본 사람의 목격, 그때 찍힌 사진·영상·녹음 기록
+    kinds={
+        "종소리": frozenset({"SIGHTING", "RECORD"}),
+        "빵집 문": frozenset({"SIGHTING", "RECORD"}),
+        "가로등": frozenset({"SIGHTING", "RECORD"}),
+    },
+    absent=frozenset({"종 안 울림"}),
+)
+# 시작 이야기 끝에 코드가 붙이는 마을 규칙(말투 '요'·'다'·반말). 경계 시각은 표에 두지 않음(아침
+# 7시는
+# 가로등이 꺼진 뒤, 저녁 7시는 켜진 뒤·빵집 닫기 전)
+TOWN_RULE = (
+    "이 마을 종은 낮 12시에만 울리고, 빵집은 오전 9시부터 저녁 8시까지 문을 열고, 가로등은 "
+    "저녁 6시부터 아침 6시까지 "
+)
+TOWN_NOTES = (TOWN_RULE + "켜져요.", TOWN_RULE + "켜진다.", TOWN_RULE + "켜져.")
+
+# 탈것 사실표(기준안). 집 앞 바퀴 자국: 자전거·킥보드는 집 앞까지 타고 와 세우고 버스·기차·배는
+# 정류장·역·나루에서 내림(버스에도 바퀴가 있어 '바퀴 자국 없음'만 쓰면 헷갈림, 사용자 확인).
+# 들고 온 것: 처음 설계의 '들고 온 표'(버스표·기차표)는 값에 후보 이름이 들어가 단서가 정답 이름을
+# 그대로 말함(ANSWER_LEAK, 시험에서 발견) → 이름이 없는 물건으로(값에 후보 이름 없음, 시험으로 지킴)
+VEHICLES = FactTable(
+    name="탈것",
+    features=("집 앞 바퀴 자국", "들고 온 것", "들린 소리"),
+    rows={
+        "자전거": ("가는 바퀴 자국", "헬멧", "따르릉 소리"),
+        "킥보드": ("작은 바퀴 자국", "헬멧", "드르륵 소리"),
+        "버스": ("바퀴 자국 없음", "교통카드", "부릉 소리"),
+        "기차": ("바퀴 자국 없음", "좌석표", "덜컹덜컹 소리"),
+        "여객선": ("바퀴 자국 없음", "배표", "뱃고동 소리"),
+    },
+    kinds={
+        "집 앞 바퀴 자국": frozenset({"TRACE", "RECORD"}),
+        "들고 온 것": frozenset({"SIGHTING", "RECORD"}),
+        "들린 소리": frozenset({"SIGHTING", "RECORD"}),
+    },
+    absent=frozenset({"바퀴 자국 없음"}),
+)
+# 여객선은 물가에서만(VEHICLE_PLACE). '강' 한 글자는 강아지·강당에 걸려 붙은 꼴만
+WATER_PLACE = re.compile(
+    r"바다|바닷|강가|강변|강물|강둑|강을|강에|항구|포구|섬|호수|부두|나루|선착장|뱃길"
+)
+
+WHEN = StoryType(
+    code="WHEN",
+    label="시간 탐정",
+    target_label="밝힐 것",
+    family="WHEN_HOW",
+    candidate_kind="시각",
+    intro_cuts=(
+        "사건 장소의 평소 모습과 아이(뭉치 안 나옴, 시계는 보이지 않음)",
+        "아이가 이미 끝나 있는 그 일(target의 일, 예: 젖은 화단)을 보고 언제였는지 궁금해함"
+        "(시계는 보이지 않음, 뭉치 안 나옴)",
+        INTRO_GO,
+        INTRO_ARRIVE,
+    ),
+    outro_cuts=(
+        OUTRO_THINK,
+        "그 일을 한 사람 앞에 도착해 바라봄",
+        "그 사람이 그때 한 일을 웃으며 이야기함(뭉치는 곁에서 지켜봄)",
+        "함께 기뻐함",
+    ),
+    target_cuts=ALL_CUTS,  # 대상이 '때'라 그릴 것이 없음(target_visual)
+    outro_rule=(
+        "뭉치와 아이가 그 일을 한 사람을 찾아가 정답 시각에 그 일을 했다는 것을 확인하고 고마움을 "
+        "전하며 함께 기뻐하는 장면만 쓴다(그 사람은 결말에서 처음 나와도 된다)."
+    ),
+    rules=(
+        "- 사건: 누군가 한 일(target 글, 예: '화단에 물을 준 때'의 물 주기)이 이미 끝나 있고 언제 "
+        "했는지 모른다. 그 일을 알아챈 아이(학생 또래)가 등장인물 중 한 명이다. 그 일은 처음부터 "
+        "알려진 사실이라 이야기에 나와도 되고, 모르는 것은 때뿐이다. 그 일을 한 사람은 탓하지 "
+        "않는다.\n"
+        "- target은 주제의 '밝힐 것' 글을 그대로 쓴다(시각을 쓰지 않음). 큰 질문은 그 일을 한 때를 "
+        "묻는다(예: '화단에 물을 준 건 언제였을까?').\n"
+        + TIMES.rule()
+        + "- 시각을 가르는 마을 규칙은 코드가 시작 이야기(intro) 끝에 붙인다: '"
+        + TOWN_NOTES[0]
+        + "' intro에는 이 규칙과 어떤 시각도 쓰지 않는다.\n"
+        "- 이 종류에서는 공통 규칙의 'clue 문장 안에 그때의 시각을 넣는다'와 '시각은 오전·오후 "
+        "12시간제로 쓴다'를 쓰지 않는다: 그때가 곧 정답이다. evidence.when은 '화단에 물을 준 "
+        "그때'처럼 그 일로 쓰고, 엔딩 전 글(clue·장면·대화 줄 포함)에 어떤 시각(3시·오전 9시·"
+        "정오 등)도 쓰지 않는다(코드 검사 TIME_WORD·CANDIDATE_NAME). 다른 날 장면의 때도 시각 "
+        "대신 '아침에'·'점심 먹고'처럼 쓴다.\n"
+        "- 증거: 그 일을 하던 그때 들린 종소리, 보인 빵집·가로등을 그때 듣거나 본 사람의 목격"
+        "(들은 사람의 증언도 SIGHTING), 그때 찍힌 사진·영상·녹음 기록. 단서는 '물을 줄 때 열린 "
+        "빵집이 보였대'처럼 그 일과 그때 보이거나 들린 것을 잇는다. 그 일의 흔적(젖은 흙)은 "
+        "시각을 알려 주지 않아 단서로 쓰지 않는다(이 종류는 흔적 단서가 없다).\n"
+        "- 엔딩 전 장면·콘티에 시계를 두지 않는다(그림에 시각이 보임).\n"
+        "- intro: 아이가 그 일을 알아챈 데서 시작해 테마 역할의 뭉치가 현장으로 출동해 큰 질문을 "
+        "맡는 데까지.\n"
+    ),
+    facts=TIMES,
+    answer_cuts=frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)}),
+    intro_notes=TOWN_NOTES,
+    clue_time=False,
+    target_visual=False,
+)
+
+ROUTE = StoryType(
+    code="ROUTE",
+    label="어느 길로 왔을까",
+    target_label="손에 든 것",
+    family="WHEN_HOW",
+    candidate_kind="길",
+    intro_cuts=(
+        "사건 장소의 평소 모습과 아이(뭉치 안 나옴)",
+        "아이가 배달된 대상(target)을 받아 들고 어느 길로 왔을지 궁금해함(뭉치 안 나옴)",
+        *IN_HAND_INTRO_GO,
+    ),
+    outro_cuts=(
+        OUTRO_THINK,
+        "정답 길에 도착해 바라봄",
+        "그 길에서 대상을 나른 사람을 만나 반갑게 인사함(뭉치는 곁에서 지켜봄)",
+        "함께 기뻐함",
+    ),
+    target_cuts=ALL_CUTS,
+    outro_rule=(
+        "뭉치와 아이가 정답 길을 따라 걸어가 대상을 나른 사람을 만나고 고마움을 전하며 함께 "
+        "기뻐하는 장면만 쓴다(나른 사람은 결말에서 처음 나와도 된다)."
+    ),
+    rules=(
+        IN_HAND_COMMON
+        + "- 사건: 학생 또래 아이가 받은 것(target, 예: 할머니가 보낸 택배 상자·누가 문 앞에 두고 "
+        "간 꽃다발)이 어느 길로 왔는지 모른다. 나른 사람을 탓하지 않는다.\n"
+        "- 큰 질문은 그것이 지나온 길을 묻는다(예: '택배는 어느 길로 배달됐을까?'). candidates는 "
+        "그 장소 둘레의 서로 다른 길 이름이다(골목길·큰길·공원 산책길·강둑길처럼 테마 장소에 "
+        "맞게).\n"
+        "- 증거: 대상에 묻은 것(흙·풀물·물방울·꽃가루)은 흔적, 그 길로 대상을 나르는 사람을 본 "
+        "부분 목격, 그때의 기록(배달 기록 일부·사진). 길 이름이 적힌 것(주소·배달 기록의 길 "
+        "이름)은 쓰지 않는다(답이 바로 보임). 흔적·기록 단서에는 대상 낱말(target)을 넣는다. 그날 "
+        "장소(place)를 정답 길로 두지 않는다.\n"
+        "- intro: 아이가 대상을 받은 데서 시작해 테마 역할의 뭉치가 현장으로 출동해 큰 질문을 "
+        "맡는 데까지.\n"
+    ),
+    target_in_hand=True,
+    trace=IN_HAND_TRACE,
+)
+
+VEHICLE_TARGET_CUTS = frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)})
+VEHICLE = StoryType(
+    code="VEHICLE",
+    label="무엇을 타고 왔을까",
+    target_label="밝힐 것",
+    family="WHEN_HOW",
+    candidate_kind="탈것",
+    intro_cuts=(
+        "사건 장소의 평소 모습과 아이(뭉치 안 나옴)",
+        "온 사람(target 글의 사람)이 아이와 반갑게 인사함(탈것은 보이지 않음, 뭉치 안 나옴)",
+        INTRO_GO,
+        INTRO_ARRIVE,
+    ),
+    outro_cuts=(
+        OUTRO_THINK,
+        "정답 탈것이 있는 곳(집 앞·정류장·역·나루터)에 도착해 바라봄",
+        "온 사람이 탈것 곁에서 웃음(뭉치는 곁에서 지켜봄)",
+        "함께 기뻐함",
+    ),
+    target_cuts=VEHICLE_TARGET_CUTS,  # 대상 = 타고 온 탈것(엔딩에서만)
+    outro_rule=(
+        "뭉치와 아이가 온 사람과 함께 그 사람이 타고 온 탈것을 보러 가 확인하고 함께 기뻐하는 "
+        "장면만 쓴다."
+    ),
+    rules=(
+        "- 사건: 손님(target 글의 사람, 예: 삼촌)이 아이 집이나 마을에 왔는데 무엇을 타고 왔는지 "
+        "모른다(깜짝 방문 등). 온 사람은 등장인물이고 처음부터 나와도 되지만 타고 온 탈것은 "
+        "토요일까지 말하지 않는다. target은 주제의 '밝힐 것' 글을 그대로 쓴다(예: '삼촌이 타고 온 "
+        "탈것'). 엔딩 전에는 탈것이 장면·콘티에 나오지 않는다.\n"
+        "- 큰 질문은 타고 온 탈것을 묻는다(예: '삼촌은 무엇을 타고 왔을까?').\n"
+        + VEHICLES.rule()
+        + "- 여객선은 장소가 바닷가·강가·섬처럼 물가일 때만 후보로 둔다(world나 intro에 "
+        "바다·강가·항구 같은 물가 말이 있어야 함, 코드 검사 VEHICLE_PLACE).\n"
+        "- 증거: 집 앞 바퀴 자국은 집 앞에 남은 흔적(흔적 단서에는 '바퀴' 낱말)이나 그 자국을 찍은 "
+        "사진, 들고 온 것은 온 사람이 그것을 들고 오거나 꺼내는 걸 본 목격이나 그것을 찍은 사진, "
+        "들린 소리는 그가 "
+        "올 때 소리를 들은 사람의 목격(들은 사람의 증언도 SIGHTING)이나 녹음으로 쓴다. 탈것 이름이 "
+        "적힌 것(노선 이름·정류장 이름)은 쓰지 않는다.\n"
+        "- intro: 손님이 온 데서 시작해 테마 역할의 뭉치가 현장으로 출동해 큰 질문을 맡는 데까지.\n"
+    ),
+    facts=VEHICLES,
+    answer_cuts=VEHICLE_TARGET_CUTS,
+    owner_words=("탈것", "바퀴"),
+    place_needs=(("여객선", WATER_PLACE),),
+)
+
 STORY_TYPES: dict[str, StoryType] = {
-    t.code: t for t in (LOST, TREASURE, PRANK, FOOTPRINT, ORIGIN, GIFT, SECRET_INGREDIENT)
+    t.code: t
+    for t in (
+        LOST,
+        TREASURE,
+        PRANK,
+        FOOTPRINT,
+        ORIGIN,
+        GIFT,
+        SECRET_INGREDIENT,
+        WHEN,
+        ROUTE,
+        VEHICLE,
+    )
 }
 BY_LABEL = {t.label: t for t in STORY_TYPES.values()}
 

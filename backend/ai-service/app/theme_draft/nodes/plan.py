@@ -26,6 +26,7 @@ from app.theme_draft.checks import (
     set_text_at,
     theme_day,
 )
+from app.theme_draft.families import story_type
 from app.theme_draft.models import GeneratedFixes, GeneratedTheme
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState
 
@@ -59,6 +60,10 @@ async def plan_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> Theme
     # LLM이 쓴 종료 이야기는 마무리 장면(내부 칸 outroStory). 다섯 단서 정리는 코드가 표로 계산해
     # 앞에 붙인다(finalize_texts, #535 7차). 단서 앞 그때 시각도 코드가 붙임
     theme["outroStory"] = theme.get("outro") or ""
+    # 시작 이야기 끝에 규칙 문장을 코드가 붙이는 종류(#634 ④ 시간 탐정 마을 규칙): 모델 몫은 내부 칸
+    # introStory, 학생이 보는 intro는 finalize_texts가 합침
+    if story_type(theme).intro_notes:
+        theme["introStory"] = theme.get("intro") or ""
     # 증거 종류·기록 매체 배정(내부 칸, 응답에는 넣지 않음). 줄거리와 다르면 check_theme이
     # CLUE_EVIDENCE로 그날 칸만 고쳐 쓰게 함(#535)
     theme["evidencePlan"] = ctx.prompt.body.evidence_plan_for(ctx.request)

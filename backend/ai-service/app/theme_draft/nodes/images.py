@@ -186,7 +186,8 @@ def mission_shot(
         refs=[outfit] + ([person] if person is not None else []),
         ids=MISSION_IMAGE_REVIEW_IDS,
         has_mungchi=True,
-        shows_target=False,
+        # 손에 든 것(대상이 늘 보이는 종류)·시간 탐정은 참, 그 밖은 거짓(#634, 그림 지시와 같게)
+        shows_target=body.mission_shows_target(theme),
         question=draft.question,
         hints=[h for h in draft.hints if h.strip()],
         discovery=d.get("discovery"),

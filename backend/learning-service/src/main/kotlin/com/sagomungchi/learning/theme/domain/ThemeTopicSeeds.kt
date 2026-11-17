@@ -21,7 +21,8 @@ enum class Season(private val months: Set<Month>) {
  * 줄거리 종류 (#634, 사용자 결정 2026-11-15·16). `label`은 `topic` 첫 칸에 그대로 들어가 ai가 읽는다(ai `STORY_TYPES`와 같은 표).
  * `targetLabel`은 넷째 칸 이름: 숨은 것은 `찾는 대상`, 동물 주인공은 정답을 드러내지 않는 `밝힐 것`(예: "떡을 몰래 먹은 동물"),
  * ② 출처·정체는 처음부터 손에 있는 것이라 `손에 든 것`(예: "생일에 받은 리본 상자", 2026-11-16 설계 ai.md 17.8.13).
- * ①③②를 켰고 ④⑤는 그 가족 실측을 통과하면 씨앗을 더해 켠다(씨앗이 없는 종류는 고르지 않음)
+ * ④ 때·길·방법(설계 ai.md 17.8.17): 시간 탐정·탈것은 `밝힐 것`(예: "화단에 물을 준 때", "삼촌이 타고 온 탈것"), 길은 `손에 든 것`.
+ * ①③②④를 켰고 ⑤는 그 가족 실측을 통과하면 씨앗을 더해 켠다(씨앗이 없는 종류는 고르지 않음)
  */
 enum class StoryType(val label: String, val targetLabel: String) {
     LOST("잃어버린 것 찾기", "찾는 대상"),
@@ -31,6 +32,9 @@ enum class StoryType(val label: String, val targetLabel: String) {
     ORIGIN("출처 찾기", "손에 든 것"),
     GIFT("선물 상자 수수께끼", "손에 든 것"),
     SECRET_INGREDIENT("비밀 재료 찾기", "손에 든 것"),
+    WHEN("시간 탐정", "밝힐 것"),
+    ROUTE("어느 길로 왔을까", "손에 든 것"),
+    VEHICLE("무엇을 타고 왔을까", "밝힐 것"),
     ;
 
     companion object {
@@ -75,6 +79,9 @@ object ThemeTopicSeeds {
     private val ORIGIN = StoryType.ORIGIN
     private val GIFT = StoryType.GIFT
     private val INGREDIENT = StoryType.SECRET_INGREDIENT
+    private val WHEN = StoryType.WHEN
+    private val ROUTE = StoryType.ROUTE
+    private val VEHICLE = StoryType.VEHICLE
 
     val ALL: List<ThemeTopicSeed> = listOf(
         ThemeTopicSeed(LOST, "탐정(탐정 모자·돋보기)", "동네 시장", "가게 주인 아이의 반려 고양이"),
@@ -131,6 +138,22 @@ object ThemeTopicSeeds {
         ThemeTopicSeed(INGREDIENT, "제빵사(제빵사 모자·앞치마)", "동네 빵집", "빵집 사장님의 새 빵"),
         ThemeTopicSeed(INGREDIENT, "식품 연구원(실험 가운·고글)", "어린이 요리 교실", "친구가 만든 주스"),
         ThemeTopicSeed(INGREDIENT, "농부(밀짚모자·작은 앞치마)", "체험 농장", "농장 카페의 비밀 케이크"),
+        // ④ 시간 탐정(#634, ai.md 17.8.17): 그 일을 한 때(후보 시각)를 밝힘, 대상 글에 시각을 쓰지 않음
+        ThemeTopicSeed(WHEN, "시간 탐정(체크무늬 모자·나비넥타이)", "아파트 화단", "화단에 물을 준 때"),
+        ThemeTopicSeed(WHEN, "기자(취재 모자·목에 건 수첩)", "마을 작은 도서관", "반납함에 그림책을 넣은 때"),
+        ThemeTopicSeed(WHEN, "과학 탐사대(고글·실험 가운)", "학교 연못", "연못 물고기에게 먹이를 준 때"),
+        ThemeTopicSeed(WHEN, "마을 지킴이(형광 조끼·호루라기 목걸이)", "동네 놀이터", "놀이터에 눈사람을 만든 때", setOf(Season.WINTER)),
+        // ④ 어느 길로 왔을까: 손에 든 것이 지나온 길을 밝힘, 나른 사람을 탓하지 않음
+        ThemeTopicSeed(ROUTE, "우체부(우체부 모자·가방)", "골목 동네", "할머니가 보낸 택배 상자"),
+        ThemeTopicSeed(ROUTE, "탐정(탐정 모자·돋보기)", "아파트 단지", "문 앞에 놓여 있던 꽃다발"),
+        ThemeTopicSeed(ROUTE, "택배 기사(택배 조끼·모자)", "학교 앞 거리", "교실로 배달된 우유 상자"),
+        ThemeTopicSeed(ROUTE, "캠핑 대장(캠핑 모자·손전등 목걸이)", "강가 캠핑장", "캠핑장에 배달된 도시락 꾸러미"),
+        // ④ 무엇을 타고 왔을까: 온 사람이 탄 탈것을 밝힘. 장소·대상·역할에 탈것 이름을 쓰지 않음(ai가 엔딩 전 글의
+        // 후보 탈것 이름을 막음), 여객선은 물가 장소에서만 후보가 됨(ai VEHICLE_PLACE)
+        ThemeTopicSeed(VEHICLE, "역무원(역무원 모자·호루라기 목걸이)", "바닷가 마을", "삼촌이 타고 온 탈것"),
+        ThemeTopicSeed(VEHICLE, "탐정(탐정 모자·돋보기)", "할머니 댁 시골 마을", "할머니가 타고 온 탈것"),
+        ThemeTopicSeed(VEHICLE, "기자(취재 모자·목에 건 수첩)", "아파트 단지", "사촌 언니가 타고 온 탈것"),
+        ThemeTopicSeed(VEHICLE, "등대지기 조수(털모자·목도리)", "섬마을 분교", "선생님이 타고 온 탈것"),
     )
 
     /** 같은 학년에서 쓴 씨앗을 다시 쓰지 않는 기간(주) = 목록 개수. 목록을 늘리면 반복 주기도 늘어남 */

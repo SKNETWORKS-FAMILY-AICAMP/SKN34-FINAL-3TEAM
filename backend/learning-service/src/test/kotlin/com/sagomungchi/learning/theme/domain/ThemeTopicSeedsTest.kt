@@ -25,12 +25,12 @@ class ThemeTopicSeedsTest {
     private fun oldFormat(seed: ThemeTopicSeed) = "뭉치 역할: ${seed.role} / 장소: ${seed.place} / 찾는 대상: ${seed.target}"
 
     @Test
-    fun `씨앗은 48개(잃어버린 것 24·나머지 종류 4개씩)이고 겹치지 않으며 ai 형식·주제 상한 안, 다시 쓰지 않는 기간은 목록 개수`() {
-        assertEquals(48, seeds.size)
+    fun `씨앗은 60개(잃어버린 것 24·나머지 종류 4개씩)이고 겹치지 않으며 ai 형식·주제 상한 안, 다시 쓰지 않는 기간은 목록 개수`() {
+        assertEquals(60, seeds.size)
         assertEquals(StoryType.entries.associateWith { if (it == StoryType.LOST) 24 else 4 },
             seeds.groupingBy { it.type }.eachCount())
         assertEquals(seeds.size, seeds.map { Triple(it.role.substringBefore('('), it.place, it.target) }.toSet().size)
-        assertEquals(48L, ThemeTopicSeeds.RECENT_WEEKS)
+        assertEquals(60L, ThemeTopicSeeds.RECENT_WEEKS)
         seeds.forEach {
             assertTrue(Regex("^줄거리: .+ / 뭉치 역할: .+ / 장소: .+ / (찾는 대상|밝힐 것|손에 든 것): .+$").matches(it.topic), it.topic)
             assertTrue(it.topic.length <= ThemeDraftService.MAX_TOPIC, it.topic)
@@ -50,8 +50,18 @@ class ThemeTopicSeedsTest {
         assertEquals(1, animal.count { it.role.startsWith("소방관(") })
         seeds.filter { it.type == StoryType.LOST || it.type == StoryType.TREASURE }.forEach { assertTrue("/ 찾는 대상: " in it.topic, it.topic) }
         // ② 출처·정체(#634 ai.md 17.8.13): 처음부터 손에 든 것
-        seeds.filter { it.type in setOf(StoryType.ORIGIN, StoryType.GIFT, StoryType.SECRET_INGREDIENT) }
+        seeds.filter { it.type in setOf(StoryType.ORIGIN, StoryType.GIFT, StoryType.SECRET_INGREDIENT, StoryType.ROUTE) }
             .forEach { assertTrue("/ 손에 든 것: " in it.topic, it.topic) }
+        // ④(#634 ai.md 17.8.17): 시간 탐정은 대상 글에 시각 없이 '때'로 끝남(ai가 엔딩 전 시각을 막음), 탈것은
+        // 역할·장소·대상에 후보 탈것 이름이 없음(ai가 엔딩 전 글의 후보 이름을 막음)
+        seeds.filter { it.type == StoryType.WHEN }.forEach {
+            assertTrue(it.target.endsWith("때") && "/ 밝힐 것: " in it.topic, it.topic)
+            assertFalse(Regex("""\d|정오|자정""").containsMatchIn(it.topic), it.topic)
+        }
+        seeds.filter { it.type == StoryType.VEHICLE }.forEach {
+            assertTrue(it.target.endsWith("탈것") && "/ 밝힐 것: " in it.topic, it.topic)
+            assertTrue(listOf("자전거", "킥보드", "버스", "기차", "여객선").none { v -> v in it.topic }, it.topic)
+        }
     }
 
     @Test
@@ -63,11 +73,11 @@ class ThemeTopicSeedsTest {
             mapOf(
                 "바닷가 모래사장" to setOf(Season.SUMMER), "갯벌 체험장" to setOf(Season.SUMMER), "눈썰매장" to setOf(Season.WINTER),
                 "할머니 댁 꽃밭" to setOf(Season.SPRING, Season.SUMMER), "사과 과수원" to setOf(Season.AUTUMN),
-                "뒷산 산책로" to setOf(Season.WINTER),
+                "뒷산 산책로" to setOf(Season.WINTER), "동네 놀이터" to setOf(Season.WINTER),
             ),
             seasonal,
         )
-        assertEquals(43, fitting(autumn).size)
+        assertEquals(54, fitting(autumn).size)
         assertTrue(fitting(LocalDate.of(2027, 1, 4)).any { "눈썰매장" in it })
         assertFalse(fitting(LocalDate.of(2027, 7, 5)).any { "눈썰매장" in it })
         assertTrue(fitting(LocalDate.of(2027, 7, 5)).any { "바닷가 모래사장" in it })

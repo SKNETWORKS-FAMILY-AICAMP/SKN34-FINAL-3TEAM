@@ -170,7 +170,7 @@ def test_mission_dialogue_and_review_say_target_is_in_hand() -> None:
         prompts.mission_review_user(mission_inputs(), plain, 3, gift["target"], in_hand=True)
     )
     assert review["target"] == "생일에 받은 리본 상자(처음부터 손에 든 대상)"
-    assert "손에 든 것 종류(storyType ORIGIN·GIFT·SECRET_INGREDIENT)" in prompts.REVIEW_SYSTEM
+    assert "손에 든 것 종류(storyType ORIGIN·GIFT·SECRET_INGREDIENT·ROUTE)" in prompts.REVIEW_SYSTEM
     assert prompts.target_in_hand(gift) and not prompts.target_in_hand(valid_theme())
 
 

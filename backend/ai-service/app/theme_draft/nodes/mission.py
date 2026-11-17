@@ -69,7 +69,7 @@ async def review_mission(
             request,
             draft,
             ctx.grade,
-            theme.get("target"),
+            body.mission_target(theme),  # 시간 탐정은 대상이 '때'라 주지 않음(#634 ④)
             knowledge,
             body.story_brief(theme, day),
             in_hand=body.target_in_hand(theme),
