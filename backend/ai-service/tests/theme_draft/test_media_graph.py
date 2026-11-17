@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from app.bootstrap import create_app
 from app.config import get_settings
 from app.llm.base import LlmError, LlmRequest, ProviderResponse, T
-from app.llm.media import FakeImageClient, FakeVideoClient, still_clip, tiny_png
+from app.llm.media import FakeImageClient, FakeVideoClient, color_clip, still_clip, tiny_png
 from app.mission_draft.models import Draft
 from app.mission_draft.prompts import GeneratedDraft
 from app.prompt_versions.registry import ActiveVersions
@@ -42,6 +42,8 @@ from app.theme_draft.models import (
     ThemeMotion,
     VideoReviewItem,
 )
+from app.theme_draft.nodes import images as image_node
+from app.theme_draft.nodes import video as video_node
 from app.theme_draft.nodes.video import STILL_NOTE
 from app.theme_draft.prompts import VIDEO_NEGATIVE
 from app.theme_draft.service import ThemeDraftGraphRunner
@@ -172,13 +174,15 @@ def run(
     video: FakeVideoClient | None = None,
     storage: MemoryThemeStorage | None = None,
     deadline_in: float = 900,
+    settings: dict[str, Any] | None = None,
     **body: Any,
 ) -> ThemeDraftResponse:
+    """settings: 설정 덮어쓰기(예: 그림·영상 대역 {"image_provider": "fake"}, #716)."""
     request = ThemeDraftRequest.model_validate(request_body(**body))
     runner = ThemeDraftGraphRunner(
         gen,
         review,
-        get_settings(),
+        get_settings().model_copy(update=settings or {}),
         ActiveVersions(),
         image=image,
         video=video,
@@ -343,6 +347,44 @@ def test_image_review_fail_redraws_only_that_image_with_reason() -> None:
     assert len(prompts_with(image, "장소 마을 wed 길")) == 1
 
 
+def reviewed(llm: MediaLlm, output: type) -> int:
+    """검토 LLM이 그 출력 형식으로 불린 횟수."""
+    return sum(1 for name, _ in llm.image_counts if name == output.__name__)
+
+
+def test_fake_image_provider_skips_image_review_with_one_warning() -> None:
+    """#716: 그림 대역(IMAGE_PROVIDER=fake)이면 검토 모델에 대역 그림을 보내지 않고 통과,
+    경고 한 줄.
+
+    검토가 불리면 모든 그림을 FAIL로 돌려주게 해 두어도 다시 그리기·IMAGE 실패가 없어야 한다.
+    """
+    image = FakeImageClient()
+    review = review_llm(image=lambda u: {i: "FAIL" for i in u["items"]})
+    response = run(
+        gen_llm(),
+        review,
+        image=image,
+        storage=MemoryThemeStorage(),
+        settings={"image_provider": "fake"},
+    )
+    assert response.failure is None
+    assert set(response.images) == set(SCENES)
+    assert len(image.calls) == 14  # 테마 옷 뭉치 + 13장, 다시 그리기 없음
+    assert reviewed(review, GeneratedImageReview) == 0
+    assert reviewed(review, GeneratedStoryReview) == 1  # 글 검토는 그대로
+    fake = [w for w in response.warnings if w.reason == image_node.FAKE_REVIEW_SKIPPED]
+    assert [(w.stage, w.item) for w in fake] == [("IMAGE", "ALL")]
+
+
+def test_real_image_provider_still_reviews_every_image() -> None:
+    """#716: 실제 그림 설정(기본 openai)이면 지금처럼 그림마다 검토하고 대역 경고가 없다."""
+    review = review_llm()
+    response = run(gen_llm(), review, image=FakeImageClient(), storage=MemoryThemeStorage())
+    assert response.failure is None
+    assert reviewed(review, GeneratedImageReview) == 13
+    assert all(w.reason != image_node.FAKE_REVIEW_SKIPPED for w in response.warnings)
+
+
 def test_request_image_failures_seed_image_prompts() -> None:
     """요청 previousFailures의 IMAGE 사유: 그림 이름이 붙으면 그 그림, 없으면 모든 그림의 첫
     그리기부터 들어감(테마 옷 뭉치는 제외)."""
@@ -419,6 +461,59 @@ def test_video_success_joins_cuts_with_captions() -> None:
         (16.75, 22.5, INTRO_CUTS[3]["caption"]),
     ]
     assert response.motions["MON"].captions == []
+
+
+def test_fake_video_provider_skips_video_review_with_one_warning() -> None:
+    """#716: 영상 대역(VIDEO_PROVIDER=fake)이면 컷 검토 없이 통과(멈춤 확인은 그대로),
+    경고 한 줄."""
+    video = FakeVideoClient()
+    review = review_llm(video=lambda u: {"MORPH": "FAIL"})  # 불리면 모든 컷 FAIL
+    response = run(
+        gen_llm(),
+        review,
+        image=FakeImageClient(),
+        video=video,
+        storage=MemoryThemeStorage(),
+        settings={"video_provider": "fake"},
+    )
+    assert response.failure is None
+    assert set(response.videos) == {"INTRO", "OUTRO"}
+    assert len(video.calls) == 8  # 다시 만들기 없음
+    assert reviewed(review, GeneratedVideoReview) == 0
+    assert reviewed(review, GeneratedImageReview) == 13  # 그림은 실제 설정이라 그대로 검토
+    assert all(STILL_NOTE not in w.reason for w in response.warnings)  # 대신한 컷 없음
+    fake = [w for w in response.warnings if w.reason == video_node.FAKE_REVIEW_SKIPPED]
+    assert [(w.stage, w.item) for w in fake] == [("VIDEO", "ALL")]
+
+
+def test_fake_video_provider_still_checks_freezes() -> None:
+    """#716: 영상 대역이어도 멈춤 확인(ffmpeg, 모델 아님)은 그대로 해서 멈춘 컷은 다시 만든다."""
+
+    class StillOnce(FakeVideoClient):
+        stilled = False
+
+        async def generate(
+            self, prompt: str, first: bytes, last: bytes | None = None, **kw: Any
+        ) -> bytes:
+            clip = await super().generate(prompt, first, last, **kw)
+            if (
+                not self.stilled and INTRO_CUTS[0]["action"] in prompt
+            ):  # 시작 1컷 처음 한 번만 정지 화면
+                self.stilled = True
+                return await asyncio.to_thread(color_clip, 1, kw["seconds"], True)
+            return clip
+
+    video = StillOnce()
+    response = run(
+        gen_llm(),
+        review_llm(),
+        image=FakeImageClient(),
+        video=video,
+        storage=MemoryThemeStorage(),
+        settings={"video_provider": "fake"},
+    )
+    assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
+    assert len(video.calls) == 9  # 멈춘 1컷을 다시 만듦
 
 
 def test_failed_video_cut_becomes_still_cut() -> None:
