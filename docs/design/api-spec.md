@@ -1305,7 +1305,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - JWT에는 `sub`(계정 UUID), `sid`, `ver`, `role`, `studentId`(학생만), `iss`, `aud`, `iat`, `exp`, `jti`를 넣는다. 매 요청에서 세션·현재 계정·자녀 연결·동의를 확인한다. 기기 해제 시 기존 학생 access를 즉시 폐기하는 별도 정책은 추가하지 않는다.
 - 학부모 access 기본 15분, 학생은 `AUTH_STUDENT_ACCESS_TTL`로 별도 관리하며 초기 기본값은 15분이다. 학생 만료·새로고침 시 자동 refresh하지 않고 학생 진입 화면으로 이동한다. 기기·PIN API로 단독 재진입하며 미등록 기기는 등록을 안내한다. 토큰을 영구 저장해 새로고침을 우회하지 않는다.
 - 부모 refresh 응답 `{accessToken,expiresIn,role,child:null,nextAction,startPath}` + 회전 쿠키. 동석 응답 `{accessToken,expiresIn,role:STUDENT,child,nextAction:READY,startPath:/student/home}`, Set-Cookie 없음(잠긴 학부모 refresh 유지). child는 `{id,nickname,grade,birthYear}`(기존 #7 소비자 계약)이다. 단독 PIN 로그인 응답(3.11)은 `child.childId`를 쓰므로 프론트 경계에서 정규화한다.
-- `GET /me`는 부모/관리자에게 `{userId,name,email,loginId,authMethod,role,permissions,child:null,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. `authMethod`는 Google subject가 있으면 `GOOGLE`, 없으면 `PASSWORD`(#415)다. `loginId`는 학부모에게만 주며 비밀번호 학부모는 아이디, Google 학부모는 가입 때 `login_id`로 저장한 Google 이메일이다(#683, 2026-11-16). 관리자·학생은 null이다. 비밀번호 학부모의 `email`은 null이다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
+- `GET /me`는 부모/관리자에게 `{userId,name,email,loginId,authMethod,role,permissions,child:null,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. `authMethod`는 Google subject가 있으면 `GOOGLE`, 없으면 `PASSWORD`(#415)다. `loginId`는 학부모에게만 주며 비밀번호 학부모는 아이디, Google 학부모는 최근 Google 로그인에서 검증한 이메일이다(#683, 2026-11-16). 관리자·학생은 null이다. 비밀번호 학부모의 `email`은 null이다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
 - 로그아웃은 현재 쿠키의 부모 세션 또는 Bearer로 전달된 학생 세션을 종료하고 refresh 쿠키를 삭제한다. 다른 기기는 유지한다. 쿠키 API는 정확한 web Origin과 `X-Requested-With: XMLHttpRequest`를 요구한다.
 - web/API 동일 origin. refresh 쿠키 `sagomungchi_refresh`: HttpOnly·Secure·SameSite=Strict·Path=/api/v1/auth. OAuth 상태 쿠키 `sagomungchi_oauth`: HttpOnly·Secure·SameSite=Lax·Path=/api/v1/auth/google, 10분. 로컬 HTTP만 Secure=false.
 - Google state·nonce·PKCE S256 및 ID 토큰 JWKS 서명·iss·aud·exp·nonce 검증. 서비스 토큰을 URL에 넣지 않는다. callback 성공은 `/oauth/complete`, 실패는 `/login?oauthError=<고정 코드>`.
@@ -1636,3 +1636,9 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 배치 주기는 1분, 선점은 최대 64행, AI 요청은 최대 8글씩 순차 처리한다(계약 상한 64글 이내). AI 읽기 20초, core 프로필 읽기 4초, 리스 600초, 재시도는 첫 시도 포함 5회다. 리스는 연결 시간까지 포함한 최대 64회 프로필·8회 AI 대기보다 길다. 벡터 저장·코사인 정렬은 MyBatis 문자열→vector 형변환으로 구현해 드라이버를 추가하지 않는다. 등록·선점은 JdbcTemplate을 사용하고 같은 Spring 트랜잭션에 참여한다.
 
 `MEMORY_EMBEDDING_ENABLED` 앱 기본 false. #565 연동 확인 뒤 GitOps local·prod learning 값에서 true로 켠다(#591). Compose는 `.env`로 넘겨받고 기본 false다(키 없이 켜면 문서가 5회 실패 뒤 `FAILED`). 이미 등록된 문서는 보존하며 활성화 후 주기 작업이 멱등 소급 등록·만료 리스 회수·선점을 한다. 학생 닉네임 조회 실패 시 AI에 보내지 않으며 알려진 닉네임·UUID를 마스킹한다. 운영 로그에 질문·원문을 기록하지 않는다. 원문은 내부 DB에 저장하고 AI 전송용 문자열만 최대 8,000자로 제한한다.
+
+### Google 이메일 아이디 갱신 (#683, 2026-11-17)
+
+- 같은 Google subject의 PARENT는 로그인할 때 검증된 최신 이메일로 `login_id`를 갱신한다(사용자 결정). 기존 계정도 재로그인 시 복구하며, Google 이메일은 별도 컬럼에 저장하지 않아 오프라인 일괄 추정·변환은 하지 않는다.
+- 활성 상태·역할 검사 뒤 계정 행을 잠그고 갱신한다. 이메일 중복(고유 제약 포함)은 409 `ACCOUNT_EXISTS`로 거절하고 아이디·세션·refresh 교체를 모두 롤백한다. 이메일을 오류·로그에 싣거나 계정을 자동 연결하지 않는다.
+- `/me.loginId`·`email`과 계정 설정은 갱신된 이메일을 반환·표시한다. Google 계정에 비밀번호 로그인 수단을 추가하지 않는다.

@@ -79,7 +79,7 @@ erDiagram
   user_account {
     uuid id PK
     varchar role "STUDENT|PARENT|ADMIN"
-    varchar login_id UK "로그인 ID(Google·관리자는 이메일, ID·비밀번호 학부모는 영문 소문자·숫자 아이디)"
+    varchar login_id UK "로그인 ID(Google 학부모는 최근 로그인에서 검증한 이메일, 관리자는 이메일, ID·비밀번호 학부모는 영문 소문자·숫자 아이디)"
     varchar password_hash "NULL 허용 · 기존 데이터 보존, 로그인 미사용(비밀번호는 admin_credential·parent_credential)"
     varchar oauth_provider "NULL 허용 · GOOGLE"
     varchar oauth_subject "NULL 허용 · provider와 복합 UK"

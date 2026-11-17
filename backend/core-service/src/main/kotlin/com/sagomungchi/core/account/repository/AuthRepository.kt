@@ -13,6 +13,7 @@ import java.util.UUID
 class AuthRepository(private val mapper: AuthMapper) {
     fun account(id: UUID) = mapper.findAccount(id)
     fun googleAccount(subject: String) = mapper.findGoogleAccount(subject)
+    fun updateGoogleEmail(id: UUID, email: String, now: OffsetDateTime) { check(mapper.updateGoogleEmail(id, email, now) == 1) }
     fun insertAccount(account: AuthAccount, now: OffsetDateTime, demo: Boolean) = mapper.insertAccount(account, now, demo)
     fun permissions(userId: UUID) = mapper.permissions(userId)
     fun insertSession(session: AuthSession) { check(mapper.insertSession(session) == 1) }

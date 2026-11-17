@@ -281,6 +281,30 @@ test('관리자: 주간 테마 작성→검토→게시 검사, 꾸미기 아이
   assert.ok((await call('/admin/look-items')).data.items.some((i: { code: string }) => i.code === 'HAT_TEST'), '삭제하지 않고 남는다')
 })
 
+test('관리자 바닥·방 소품 생성과 칸 필터는 기존 착용 칸과 구분한다 (#706)', async () => {
+  token = (await call('/auth/login', { email: 'content@example.test', password: 'demo-only' })).data.accessToken
+  for (const slot of ['FLOOR', 'DECOR']) {
+    const created = await call('/admin/look-items', { code: `${slot}_TEST`, slot, name: '합성 시험 항목', pricePoints: 30, assetKey: `room/test-${slot.toLowerCase()}.svg` })
+    assert.equal(created.status, 201)
+    assert.equal(created.data.slot, slot)
+    const filtered = await call(`/admin/look-items?slot=${slot}`)
+    assert.ok(filtered.data.items.some((i: { code: string }) => i.code === `${slot}_TEST`))
+    assert.ok(filtered.data.items.every((i: { slot: string }) => i.slot === slot))
+  }
+  assert.equal((await call('/admin/look-items?slot=UNKNOWN')).status, 422)
+  assert.equal((await call('/admin/look-items', { code: 'UNKNOWN_TEST', slot: 'UNKNOWN', name: '잘못된 칸', pricePoints: 30, assetKey: 'test.svg' })).status, 422)
+  const all = (await call('/admin/look-items')).data.items as { slot: string }[]
+  assert.ok(['HAT', 'FLOOR', 'DECOR'].every(slot => all.some(i => i.slot === slot)))
+  assert.ok((await call('/admin/look-items?slot=HAT')).data.items.every((i: { slot: string }) => i.slot === 'HAT'))
+  const first = (await call('/admin/look-items?size=2')).data
+  const next = (await call('/admin/look-items?size=2&page=1')).data
+  assert.equal(first.items.length, 2)
+  assert.equal(next.page, 1)
+  assert.equal(first.totalElements, next.totalElements)
+  assert.ok(first.items.every((item: { itemId: string }) => !next.items.some((other: { itemId: string }) => other.itemId === item.itemId)))
+  assert.equal((await call('/admin/look-items?size=0')).status, 400)
+})
+
 test('관리자 테마 목업: 학년 네 개를 각각 저장·조회하며 숫자와 옛 학년군은 받지 않는다', async () => {
   token = (await call('/auth/login', { email: 'content@example.test', password: 'demo-only' })).data.accessToken
   const body = { weekStart: '2026-11-16', title: '학년별 검증 테마', intro: '도입 이야기', days: [] }

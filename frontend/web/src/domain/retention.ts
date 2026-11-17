@@ -83,12 +83,14 @@ export function readPoints(raw: unknown): Points {
 export type CharacterSlot = 'HAT' | 'OUTFIT' | 'ACCESSORY' | 'BACKGROUND'
 /** 내 방 가구 스킨 칸(P27, API 명세 2.10 2026-11-12). 가구 1개 = 착용 칸 1개 */
 export type FurnitureSlot = 'DESK' | 'WALL' | 'WARDROBE'
-export type ItemSlot = CharacterSlot | FurnitureSlot
+export type WearableSlot = CharacterSlot | FurnitureSlot
+/** 방 소품은 여러 개 구매·배치하며 착용 칸이 아니다(#704·#706). */
+export type ItemSlot = WearableSlot | 'FLOOR' | 'DECOR'
 export type LookSlot = 'THEME' | 'COMPANION' | ItemSlot
 export const ITEM_SLOTS: CharacterSlot[] = ['HAT', 'OUTFIT', 'ACCESSORY', 'BACKGROUND']
 export const FURNITURE_SLOTS: FurnitureSlot[] = ['DESK', 'WALL', 'WARDROBE']
 /** 관리자 아이템 등록에서 고르는 칸 전체 */
-export const ALL_ITEM_SLOTS: ItemSlot[] = [...ITEM_SLOTS, ...FURNITURE_SLOTS]
+export const ALL_ITEM_SLOTS: ItemSlot[] = [...ITEM_SLOTS, ...FURNITURE_SLOTS, 'FLOOR', 'DECOR']
 export const SLOT_LABELS: Record<LookSlot, string> = {
   THEME: '테마',
   COMPANION: '캐릭터',
@@ -99,6 +101,8 @@ export const SLOT_LABELS: Record<LookSlot, string> = {
   DESK: '학습 책상',
   WALL: '추억의 벽',
   WARDROBE: '옷장',
+  FLOOR: '바닥',
+  DECOR: '방 소품',
 }
 /**
  * 착용 칸. 가구 칸은 서버가 알려 준 때만 둔다: 가구 칸을 모르는 서버(core #555 전)에 보내면
