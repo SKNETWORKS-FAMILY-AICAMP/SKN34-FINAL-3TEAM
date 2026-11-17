@@ -27,6 +27,7 @@ import {
   weekStart,
   weeklyThemeFor,
   frameImageOf,
+  FRIEND_ROOMS,
 } from '../fixtures/retention.ts'
 import { guard, mockLatestAttempt, mockStudent, mockStudentHome, respond } from './student.ts'
 import { mockThemeNone } from '../fixtures/themeState.ts'
@@ -303,6 +304,28 @@ export const retentionHandlers = [
             createdAt: x.createdAt,
           })),
       })
+    }),
+  ),
+  // 친구 방 구경(#708 계약, #709): 친구 생각 목록과 같은 조건. 학생 ID·회차 키는 내보내지 않는다
+  http.get('/api/v1/community-posts/:postId/room', ({ request, params }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const post = retentionState.posts.find((p) => p.postId === String(params.postId))
+      if (!post || post.status !== 'VISIBLE') fail(404, 'COMMUNITY_POST_NOT_FOUND', '볼 수 없는 글이에요.')
+      if (post!.studentId === me.id) fail(409, 'COMMUNITY_OWN_POST', '내 글이에요.')
+      const mission = (await mockStudentHome(me)).missions.find((m) => m.id === post!.missionId)
+      if (mission && mission.status !== 'COMPLETED') fail(403, 'COMMUNITY_LOCKED', '이 미션을 마무리하면 친구들 생각을 볼 수 있어요.')
+      const room = FRIEND_ROOMS[Number(post!.studentId.replace('friend-', ''))]
+      if (!room) fail(404, 'COMMUNITY_POST_NOT_FOUND', '볼 수 없는 글이에요.')
+      const asset = (code: string | undefined) => (code ? retentionState.items.find((i) => i.code === code)?.assetKey ?? null : null)
+      return {
+        nickname: post!.nickname,
+        look: { theme: 'lake', companion: post!.companion,
+          equipped: { HAT: asset(post!.equipped?.HAT), OUTFIT: asset(post!.equipped?.OUTFIT), ACCESSORY: asset(post!.equipped?.ACCESSORY) } },
+        room: { wallpaper: room!.wallpaper, floor: room!.floor, furniture: room!.furniture, decor: [],
+          frames: room!.frames.map((f, i) => ({ slotNo: i + 1, title: f.title, imageUrl: f.withImage ? frameImageOf(f) : null })) },
+      }
     }),
   ),
   http.get('/api/v1/students/me/community-posts', ({ request }) =>

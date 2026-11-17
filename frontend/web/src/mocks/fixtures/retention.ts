@@ -424,6 +424,22 @@ const friends: { nickname: string; companion: CompanionId; equipped?: MockPost['
   { nickname: '초록콩', companion: 'kongi', equipped: { OUTFIT: 'OUTFIT_RAIN', ACCESSORY: 'ACC_LENS' }, answer: () => '나는 다른 방법도 생각해 봤어. 그래서 두 가지를 비교하니까 하나가 더 알맞아 보였어.' },
   { nickname: '구름빵', companion: 'snow', answer: () => '처음엔 잘 모르겠었는데 그림을 다시 보니 순서가 보였어. 그 순서대로 쓰면 이해가 돼.' },
 ]
+/**
+ * 목업 친구 방(#709): 친구 순서(`friend-0`…)와 같다. 그림 키는 서버처럼 `look_item.asset_key` 그대로.
+ * 하늘별은 꾸민 방·액자 두 장, 초록콩은 다른 색·그림 없는 액자 한 장, 구름빵은 기본 방(꾸미지 않음)
+ */
+export const FRIEND_ROOMS: {
+  wallpaper: string | null
+  floor: string | null
+  furniture: { DESK: string | null; WALL: string | null; WARDROBE: string | null }
+  frames: { title: string; withImage: boolean }[]
+}[] = [
+  { wallpaper: 'room/wall-sky.svg', floor: null, furniture: { DESK: 'room/desk-cherry.svg', WALL: null, WARDROBE: 'room/wardrobe-berry.svg' },
+    frames: [{ title: '잃어버린 지도 조각', withImage: true }, { title: '별빛 우체국', withImage: true }] },
+  { wallpaper: 'room/wall-cream.svg', floor: null, furniture: { DESK: 'room/desk-mint.svg', WALL: 'room/wall-wood.svg', WARDROBE: 'room/wardrobe-lemon.svg' },
+    frames: [{ title: '숲속 발명 대회', withImage: false }] },
+  { wallpaper: null, floor: null, furniture: { DESK: null, WALL: null, WARDROBE: null }, frames: [] },
+]
 export function seedFriendPosts(mission: Pick<Mission, 'id' | 'title'>) {
   if (retentionState.posts.some((p) => p.missionId === mission.id && p.studentId.startsWith('friend-'))) return
   friends.forEach((f, i) =>

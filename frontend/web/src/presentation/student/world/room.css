@@ -891,3 +891,68 @@
 @media (prefers-reduced-motion: reduce) {
   #class-journal .cj-app-student .st-f.is-glow { animation: none; filter: drop-shadow(0 0 10px rgba(255, 200, 40, 0.9)); }
 }
+
+/* ── 친구 방 놀러 가기(#709): 내 방 그림 그대로. 액자를 누르면 방 칸 위에 크게, 친구 이름표 ── */
+#class-journal .cj-app-student .st-world .st-room-slot.st-friend-frame { pointer-events: auto; cursor: zoom-in; }
+#class-journal .cj-app-student .st-world .st-room-slot.st-friend-frame:hover { outline: 6px solid var(--sk-yellow); outline-offset: 2px; }
+#class-journal .cj-app-student .st-world .st-room-slot.st-friend-frame:focus-visible { outline: 6px solid var(--sk-accent); outline-offset: 2px; }
+#class-journal .cj-app-student .st-friend-frame-backdrop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  min-height: 100%;
+  box-sizing: border-box;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: rgba(15, 40, 50, 0.38);
+}
+/* 좁은 화면: 방 칸이 낮아 창이 방 칸 아래 빈 곳까지 내려온다(방 칸은 이 너비에서 overflow: visible) */
+#class-journal .cj-app-student .st-friend-frame-backdrop.is-narrow { align-items: flex-start; border-radius: 28px; }
+#class-journal .cj-app-student .st-friend-frame-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-height: 100%;
+  padding: 12px 16px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 20px;
+  background: var(--sk-paper);
+  box-shadow: 0 6px 0 rgba(15, 40, 50, 0.25);
+}
+#class-journal .cj-app-student .st-friend-frame-art {
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 8px solid var(--st-frame-wood, #8a5a33);
+  background: #ffffff;
+}
+#class-journal .cj-app-student .st-friend-frame-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+#class-journal .cj-app-student .st-friend-frame-view h2 { margin: 0; font-family: var(--st-display); font-weight: 400; font-size: 22px; text-align: center; }
+#class-journal .cj-app-student .st-world .st-friend-name {
+  margin: -20px 0 0 -70px;
+  width: 140px;
+  padding: 6px 10px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 999px;
+  background: #fffbea;
+  color: var(--sk-ink);
+  font-family: 'Gowun Dodum', 'Malgun Gothic', sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  text-align: center;
+}
+#class-journal .cj-app-student .st-friend-room-closed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 22px 24px;
+  border: 3px dashed var(--sk-line);
+  border-radius: 24px;
+  background: var(--sk-soft);
+}
+#class-journal .cj-app-student .st-friend-room-closed strong { font-family: var(--st-display); font-weight: 400; font-size: 24px; }
+#class-journal .cj-app-student .st-friend-room-closed p { margin: 0; }
