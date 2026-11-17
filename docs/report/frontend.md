@@ -1012,7 +1012,7 @@ core #704(바닥 `FLOOR`·방 소품 `DECOR`, V50, 2026-11-16 병합)의 학생 
 - `world/roomArt.ts`: 바닥 그림이 고른 바닥을 따름, 원래 화분·러그 뺌
 - `world/useRoomWalk.ts`: 밀어 보기(손가락·마우스로 좌우, 뭉치 따라가기, 밀린 만큼 걷기 경계·방 위 단추 비교)와 놓기 확대(`fitSpan`·`focus`), `world/RoomPanArrows.tsx`(새, 화면 밖 소품 화살표). 내 방·친구 방이 같이 씀
 - `world/StudentRoom.tsx`: 서랍 바닥·방 소품 탭, 서랍에서 열기·사기(`useLookShop`), 놓기 초안·옮기기·저장, 늦게 온 액자 목록 버그(목록을 받기 전에는 방 꾸미기를 열지 않음), 꾸미는 동안 추억 앨범 단추 숨김, 아래 칩·기록 카드 정리
-- `world/Customize.tsx`·`lookShop.ts`: 탭 셋, 방 소품 사기 확인 창(서랍이 같이 씀), "새로 나왔어요"(등록 7일 안, 기준안)
+- `world/Customize.tsx`·`lookShop.ts`: 탭 셋, 방 소품 사기 확인 창(서랍이 같이 씀), "새로 나왔어요"(등록 7일 안, 기준안). 꼬리표는 그림 위에 보이고 화면 읽기는 이름 뒤에 읽는다(단추 이름이 아이템 이름으로 시작, 실서버 E2E에서 드러남)
 - `world/FriendRoom.tsx`: 친구가 고른 바닥·놓은 방 소품
 - 데이터: `readDecorSpots`(색 포함), `decorSpots`·`saveDecorSpots`, `useDecorSpots`·`useSaveDecorSpots`. MSW `GET·PUT /students/me/room/decor-spots`(서버와 같은 검사·정렬), 목업 방 소품 15가지
 
