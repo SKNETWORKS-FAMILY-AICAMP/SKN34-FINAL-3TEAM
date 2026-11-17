@@ -6,7 +6,7 @@ import { useSession } from '../auth/sessionContext.ts'
 import { Brand, ErrorNotice } from '../shared/ClassroomParts.tsx'
 import './admin-login.css'
 
-/** 사용자 화면에서 링크하지 않는 관리자 전용 주소. 가입 없이 등록된 관리자 계정만 로그인한다 (#369). */
+/** 공개 루트의 관리자 진입(#724). 가입 없이 등록된 관리자 계정만 로그인한다 (#369). */
 export function AdminLoginPage() {
   const auth = useAuthentication(), { setSession, setSelected } = useSession(), navigate = useNavigate()
   const [params] = useSearchParams()
