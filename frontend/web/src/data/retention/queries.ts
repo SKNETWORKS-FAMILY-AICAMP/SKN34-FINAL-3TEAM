@@ -168,6 +168,15 @@ export const useMissionPosts = (childId: string | undefined, missionId: string |
     enabled: !!childId && !!missionId,
     ...quiet,
   })
+/** 친구 방(#709). 들어갈 때마다 다시 받는다(친구가 그사이 방을 바꿨을 수 있음, 서버 no-store) */
+export const useFriendRoom = (childId: string | undefined, postId: string | null) =>
+  useQuery({
+    queryKey: ['community', 'room', childId, postId],
+    queryFn: ({ signal }) => retentionApi.friendRoom(postId!, signal),
+    enabled: !!childId && !!postId,
+    gcTime: 0,
+    ...quiet,
+  })
 export const useMyPosts = (childId: string | undefined) =>
   useQuery({ queryKey: ['community', 'mine', childId], queryFn: ({ signal }) => retentionApi.myPosts(signal), enabled: !!childId, ...quiet })
 export const useChildPosts = (childId: string | undefined, enabled = true) =>

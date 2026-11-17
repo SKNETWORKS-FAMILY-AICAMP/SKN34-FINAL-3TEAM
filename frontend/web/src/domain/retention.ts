@@ -592,6 +592,68 @@ export function readMyPosts(raw: unknown): MyCommunityPost[] {
   })
 }
 
+// ---------- 친구 방 구경 (API 명세 2.9, FN-RET-14, core #708·web #709) ----------
+type WornSlot = 'HAT' | 'OUTFIT' | 'ACCESSORY'
+/** 친구 방(읽기 전용). 착용·벽지·가구 값은 모두 그림 키(서버가 바로 줌, 판매 중단 아이템도 그대로), null이면 기본 모습·기본 스킨 */
+export interface FriendRoom {
+  nickname: string
+  companion: CompanionId
+  /** 친구 뭉치 착용 그림 키(캐릭터 세 칸) */
+  worn: Partial<Record<WornSlot, string>>
+  /** `floor` null = 벽지 세트의 바닥(#704) */
+  room: { wallpaper: string | null; floor: string | null; desk: string | null; wall: string | null; wardrobe: string | null }
+  /** 추억의 벽 액자(번호순). 회차 키가 없어 회차 상세를 열 수 없다 */
+  frames: { slotNo: number; title: string; imageUrl: string | null }[]
+}
+function friendRoomContractError(): never {
+  throw new Error('친구 방 정보를 확인하지 못했어요. 다시 확인해 주세요.')
+}
+/** 그림 키 칸: 문자열이나 null만 받는다 */
+const assetOrNull = (v: unknown): string | null => {
+  if (v === null || v === undefined) return null
+  if (typeof v !== 'string') return friendRoomContractError()
+  return v || null
+}
+/**
+ * 친구 방 응답 읽기. 모르는 칸(학생 ID·회차 키 등이 와도)은 화면 상태에 두지 않는다.
+ * 방 소품 `decor`는 #723(자리 번호 → 바닥·벽 칸)이 끝나면 읽는다. 지금은 읽지 않아 그리지 않는다.
+ */
+export function readFriendRoom(raw: unknown): FriendRoom {
+  const v = (raw ?? {}) as Record<string, unknown>
+  const look = v.look as Record<string, unknown> | undefined
+  const room = v.room as Record<string, unknown> | undefined
+  if (typeof v.nickname !== 'string' || !look || typeof look !== 'object' || !room || typeof room !== 'object') return friendRoomContractError()
+  const equipped = (look.equipped ?? {}) as Record<string, unknown>
+  const furniture = (room.furniture ?? {}) as Record<string, unknown>
+  if (typeof equipped !== 'object' || typeof furniture !== 'object' || !Array.isArray(room.frames)) return friendRoomContractError()
+  const worn: Partial<Record<WornSlot, string>> = {}
+  for (const slot of ['HAT', 'OUTFIT', 'ACCESSORY'] as const) {
+    const asset = assetOrNull(equipped[slot])
+    if (asset) worn[slot] = asset
+  }
+  const seen = new Set<number>()
+  const frames = room.frames.map((x) => {
+    const f = (x ?? {}) as Record<string, unknown>
+    const no = Number(f.slotNo)
+    if (!Number.isInteger(f.slotNo) || no < 1 || no > FRAME_SLOT_COUNT || seen.has(no) || typeof f.title !== 'string') return friendRoomContractError()
+    seen.add(no)
+    return { slotNo: no, title: f.title, imageUrl: typeof f.imageUrl === 'string' && f.imageUrl ? f.imageUrl : null }
+  }).sort((a, b) => a.slotNo - b.slotNo)
+  return {
+    nickname: v.nickname || '친구',
+    companion: COMPANIONS.find((c) => c.id === look.companion)?.id ?? FREE_COMPANION,
+    worn,
+    room: {
+      wallpaper: assetOrNull(room.wallpaper),
+      floor: assetOrNull(room.floor),
+      desk: assetOrNull(furniture.DESK),
+      wall: assetOrNull(furniture.WALL),
+      wardrobe: assetOrNull(furniture.WARDROBE),
+    },
+    frames,
+  }
+}
+
 // ---------- 내 방 추억의 벽·추억 앨범 (API 명세 2.12, P27, FN-RET-09~11) ----------
 /** 추억의 벽 슬롯 수(기준안 6, 확장안 3.1) */
 export const FRAME_SLOT_COUNT = 6

@@ -75,6 +75,27 @@ test('보호자 동의 → 친구 공개 → 같은 미션 마무리 학생이 �
       await author.page.getByRole('button', { name: '내가 나눈 생각 보기' }).click()
       await expect(mine.getByText('받은 반응: 이유가 잘 보여 1')).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 30_000 })
+
+    // #709 친구 방 놀러 가기(실서버 core #708·learning #707): 열람자가 작성자 글에서 그 방에 놀러 간다
+    const visit = post.getByRole('button', { name: `${author.nickname}의 방에 놀러 가기` })
+    const backToPosts = viewer.page.getByRole('button', { name: /친구 생각으로 돌아가기/ })
+    await visit.click()
+    await expect(viewer.page.getByRole('heading', { name: `${author.nickname}의 방에 놀러 왔어요` })).toBeVisible()
+    const room = viewer.page.getByRole('region', { name: `${author.nickname}의 방` })
+    await expect(room.locator('.st-friend-name')).toHaveText(author.nickname)
+    await expect(viewer.page.getByRole('button', { name: '방 꾸미기' })).toHaveCount(0)
+    await expect(room.getByRole('button', { name: /^액자 크게 보기: / })).toHaveCount(0) // 새 학생이라 걸린 액자 없음
+
+    // 작성자가 친구 공개를 끄면 같은 글에서 다시 놀러 갈 수 없고, 이유는 말하지 않는다(404 COMMUNITY_POST_NOT_FOUND)
+    await studentMenu(author.page, '설정')
+    await sharing(author.page).getByRole('radio', { name: '나만 볼게요' }).click()
+    await expect(sharing(author.page).getByText('친구 공개 꺼짐')).toBeVisible()
+    await backToPosts.click()
+    await expect(post.getByText(answer)).toBeVisible() // 목록은 아직 예전 것(친구 생각 화면을 숨겨 두었을 뿐)
+    await visit.click()
+    await expect(viewer.page.getByRole('alert')).toContainText('지금은 이 친구 방에 놀러 갈 수 없어요.')
+    await backToPosts.click()
+    await expect(viewer.page.getByText(answer)).toHaveCount(0) // 404 뒤 목록을 다시 받아 그 글이 빠짐
   } finally {
     for (const context of contexts) await context.close()
   }

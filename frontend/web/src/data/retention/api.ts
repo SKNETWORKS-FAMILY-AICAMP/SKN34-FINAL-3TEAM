@@ -8,6 +8,7 @@ import {
   readDecorPurchaseResult,
   readEpisode,
   readFrameSlots,
+  readFriendRoom,
   readLookItems,
   readMyPosts,
   readPoints,
@@ -20,6 +21,7 @@ import type {
   CommunityPost,
   Episode,
   FrameSlot,
+  FriendRoom,
   CommunitySettings,
   LookItem,
   MyCommunityPost,
@@ -104,6 +106,9 @@ export const retentionApi = {
     readMyPosts(await apiFetch<unknown>('/students/me/community-posts', { signal })),
   childPosts: async (childId: string, signal?: AbortSignal): Promise<MyCommunityPost[]> =>
     readMyPosts(await apiFetch<unknown>(`/children/${e(childId)}/community-posts`, { signal })),
+  /** 친구 방 구경(#708·#709): 친구 생각 글 번호로 그 작성자의 방을 읽기만 한다 */
+  friendRoom: async (postId: string, signal?: AbortSignal): Promise<FriendRoom> =>
+    readFriendRoom(await apiFetch<unknown>(`/community-posts/${e(postId)}/room`, { signal, cache: 'no-store' })),
   react: async (postId: string, reaction: Reaction, on: boolean): Promise<void> => {
     await apiFetch<unknown>(`/community-posts/${e(postId)}/reactions/${reaction}`, { method: on ? 'PUT' : 'DELETE' })
   },
