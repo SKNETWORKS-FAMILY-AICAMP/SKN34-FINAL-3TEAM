@@ -289,6 +289,18 @@ test('전체 리포트도 주간·일일 그리드를 분리하고 목록과 상
   expect(new URL(page.url()).searchParams.has('reportId')).toBe(false)
   await daily.getByRole('button', { name: '리포트 보기', exact: true }).click()
   await expect(page.getByRole('heading', { name: '일일 리포트 상세', exact: true })).toBeVisible()
+  // 상세에서 메뉴로 리포트를 다시 누르면 목록으로 돌아가야 한다 (메뉴 링크가 reportId를 이어가지 않음)
+  const reportMenu = page.getByRole('link', { name: '리포트·AI 챗봇', exact: true })
+  for (const href of await reportMenu.evaluateAll(links => links.map(link => link.getAttribute('href') ?? ''))) {
+    const query = new URL(href, page.url()).searchParams
+    expect(query.has('reportId')).toBe(false)
+    expect(query.get('childId')).toBe(childId)
+  }
+  await reportMenu.filter({ visible: true }).first().click()
+  await expect(weekly).toBeVisible()
+  await expect(daily).toBeVisible()
+  expect(new URL(page.url()).searchParams.has('reportId')).toBe(false)
+  await daily.getByRole('button', { name: '리포트 보기', exact: true }).click()
   await page.getByRole('button', { name: '리포트 목록으로 돌아가기', exact: true }).click()
   await page.getByLabel('리포트 종류', { exact: true }).selectOption('WEEKLY')
   await expect(weekly).toBeVisible()

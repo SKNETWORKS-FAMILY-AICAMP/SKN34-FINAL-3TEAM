@@ -1,10 +1,18 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+// 메뉴 이동 때는 자녀·기간 같은 쿼리만 이어가고, 화면 안에서 연 리포트(reportId)는 버린다.
+// 남기면 메뉴를 눌러도 같은 리포트 상세가 다시 열려 목록으로 못 돌아간다.
+function menuSearch(search: string) {
+  const next = new URLSearchParams(search)
+  next.delete('reportId')
+  const value = next.toString()
+  return value ? '?' + value : ''
+}
 function ServiceLinks({ role }: { role?: string }) {
   const location = useLocation()
   if (!role) return null
   const root = '/' + role.toLowerCase()
   return <nav aria-label="이용 지원" className="ws-actions" style={{ marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
-    {[['help', '도움말'], ['support', '문의·오류 신고'], ['notices', '공지']].map(([path, label]) => <Link key={path} to={root + '/' + path + location.search} aria-current={location.pathname === root + '/' + path ? 'page' : undefined}>{label}</Link>)}
+    {[['help', '도움말'], ['support', '문의·오류 신고'], ['notices', '공지']].map(([path, label]) => <Link key={path} to={root + '/' + path + menuSearch(location.search)} aria-current={location.pathname === root + '/' + path ? 'page' : undefined}>{label}</Link>)}
     {isDemo && <Link to="/review">개발 점검표</Link>}
   </nav>
 }
@@ -132,7 +140,7 @@ export function Workspace({
       {nav.map((n) => (
         <Link
           key={n.path}
-          to={n.path + location.search}
+          to={n.path + menuSearch(location.search)}
           aria-current={location.pathname === n.path ? 'page' : undefined}
           onClick={() => setMenuOpen(false)}
         >
@@ -186,7 +194,7 @@ export function Workspace({
           </div>
           {nav.some(n => n.short) && <nav className="ws-bottom-nav" aria-label="학부모 하단 메뉴">
             {nav.filter(n => n.short).map(n => (
-              <Link key={n.path} to={n.path + location.search} aria-label={n.label} aria-current={location.pathname === n.path ? 'page' : undefined}>
+              <Link key={n.path} to={n.path + menuSearch(location.search)} aria-label={n.label} aria-current={location.pathname === n.path ? 'page' : undefined}>
                 {n.icon}<span>{n.short}</span>
               </Link>
             ))}
