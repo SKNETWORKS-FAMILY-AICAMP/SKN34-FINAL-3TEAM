@@ -34,7 +34,7 @@ import { guard, mockLatestAttempt, mockStudent, mockStudentHome, respond } from 
 import { mockThemeNone } from '../fixtures/themeState.ts'
 import { consentRows, docs, fixtureConsent, parentChild } from './parent.ts'
 import { allow } from './admin.ts'
-import { ALL_ITEM_SLOTS, THEME_DAYS } from '../../domain/retention.ts'
+import { ALL_ITEM_SLOTS, DECOR_COLOR_RE, DECOR_SPOT_LIMIT, inDecorGrid, isDecorSurface, THEME_DAYS } from '../../domain/retention.ts'
 import type { ItemSlot, ThemeDay } from '../../domain/retention.ts'
 import type { MockLookItem, MockWeeklyTheme } from '../fixtures/retention.ts'
 import { THINKING_ORDER } from '../../domain/studentLook.ts'
@@ -51,6 +51,12 @@ const planOf = (childId: string) => (mockPremium(childId) ? 'PREMIUM' : 'FREE') 
  */
 const fail = (status: number, code: string, title: string): never => {
   throw new ApiError({ status, code, title })
+}
+/** 놓은 칸 응답(서버 정렬: 면 FLOOR → WALL_BACK → WALL_LEFT, 그다음 row·col) */
+const SURFACE_ORDER = { FLOOR: 0, WALL_BACK: 1, WALL_LEFT: 2 } as const
+function decorSpotsView(spots: { surface: 'FLOOR' | 'WALL_BACK' | 'WALL_LEFT'; col: number; row: number; itemKey: string; color?: string | null }[]) {
+  return [...spots].sort((a, b) => SURFACE_ORDER[a.surface] - SURFACE_ORDER[b.surface] || a.row - b.row || a.col - b.col)
+    .map((s) => { const item = retentionState.items.find((i) => i.code === s.itemKey); return { ...s, color: s.color ?? null, name: item?.name ?? '', assetKey: item?.assetKey ?? '' } })
 }
 const page = (request: Request) => {
   const q = new URL(request.url).searchParams
@@ -242,6 +248,32 @@ export const retentionHandlers = [
       }) }
     }),
   ),
+  // 방 소품 놓은 칸(#705, core #723 계약안): 서버처럼 범위·같은 기준 칸·개수 상한·보유 개수만 검사(가구 칸·겹침·길은 웹)
+  http.get('/api/v1/students/me/room/decor-spots', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      return { spots: decorSpotsView((retentionState.decorSpots ??= {})[me.id] ?? []) }
+    }),
+  ),
+  http.put('/api/v1/students/me/room/decor-spots', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      const me = mockStudent()
+      const body = (await request.json()) as { spots?: unknown }
+      const bad = () => fail(422, 'VALIDATION_FAILED', '자리 번호와 방 소품을 확인해 주세요. 가진 개수만큼만 놓을 수 있어요.')
+      if (!Array.isArray(body.spots) || body.spots.length > DECOR_SPOT_LIMIT) bad()
+      const spots = (body.spots as Record<string, unknown>[]).map((s) => ({ surface: s?.surface, col: Number(s?.col), row: Number(s?.row), itemKey: String(s?.itemKey ?? ''), color: s?.color ?? null }))
+      if (spots.some((s) => !isDecorSurface(s.surface) || !inDecorGrid(s.surface, s.col, s.row) || !s.itemKey || (s.color !== null && (typeof s.color !== 'string' || !DECOR_COLOR_RE.test(s.color))))) bad()
+      if (new Set(spots.map((s) => `${s.surface}:${s.col}:${s.row}`)).size !== spots.length) bad()
+      const owned = decorOf(me.id)
+      const count: Record<string, number> = {}
+      for (const s of spots) count[s.itemKey] = (count[s.itemKey] ?? 0) + 1
+      if (Object.entries(count).some(([code, n]) => (owned[code] ?? 0) < n)) bad()
+      ;(retentionState.decorSpots ??= {})[me.id] = spots as { surface: 'FLOOR' | 'WALL_BACK' | 'WALL_LEFT'; col: number; row: number; itemKey: string; color: string | null }[]
+      return saved({ spots: decorSpotsView(retentionState.decorSpots[me.id]) })
+    }),
+  ),
   http.put('/api/v1/students/me/room/frame-slots', ({ request }) =>
     respond(async () => {
       guard(request)
@@ -362,7 +394,7 @@ export const retentionHandlers = [
         nickname: post!.nickname,
         look: { theme: 'lake', companion: post!.companion,
           equipped: { HAT: asset(post!.equipped?.HAT), OUTFIT: asset(post!.equipped?.OUTFIT), ACCESSORY: asset(post!.equipped?.ACCESSORY) } },
-        room: { wallpaper: room!.wallpaper, floor: room!.floor, furniture: room!.furniture, decor: [],
+        room: { wallpaper: room!.wallpaper, floor: room!.floor, furniture: room!.furniture, decor: room!.decor ?? [],
           frames: room!.frames.map((f, i) => ({ slotNo: i + 1, title: f.title, imageUrl: f.withImage ? frameImageOf(f) : null })) },
       }
     }),

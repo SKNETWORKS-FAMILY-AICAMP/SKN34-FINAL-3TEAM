@@ -44,14 +44,16 @@ export const skinOf = (slot: FurnitureSlot, assetKey: string | null | undefined)
   FURNITURE_SKINS[slot].find((s) => s.assetKey === assetKey) ?? FURNITURE_SKINS[slot][0]
 export const furnitureSkinName = (slot: FurnitureSlot, assetKey: string | null) => skinOf(slot, assetKey).name
 
-/** 내 방 착용 칸: 벽지(BACKGROUND) + 가구 3칸 */
-export type RoomSlot = 'BACKGROUND' | FurnitureSlot
+/** 내 방 착용 칸: 벽지(BACKGROUND) + 바닥(FLOOR, #705) + 가구 3칸 */
+export type RoomSlot = 'BACKGROUND' | 'FLOOR' | FurnitureSlot
 /**
  * 칸 하나를 바꾸면 함께 바뀌는 것(세트, 사용자 결정 2026-11-16). 꾸미기·방 꾸미기 칸 아래에 그대로 적어
  * "무엇이 어떻게 바뀌는지" 보이게 한다(사용자 의견 2026-11-16 "가독성이 없어").
  */
 export const ROOM_SET_PARTS: Record<RoomSlot, string> = {
-  BACKGROUND: '벽지 · 바닥 · 러그 · 커튼',
+  // 바닥을 따로 고르지 않았으면 벽지 세트의 바닥이 깔린다(#704 확정: 바닥 착용 없음 = 벽지 세트 바닥)
+  BACKGROUND: '벽지 · 커튼 · 기본 바닥',
+  FLOOR: '바닥',
   DESK: '책상 · 책장',
   WALL: '추억의 벽 · 액자 테두리',
   WARDROBE: '옷장 · 문',
@@ -62,32 +64,107 @@ export const ROOM_SET_PARTS: Record<RoomSlot, string> = {
  * 기존 배경 아이템(별빛 배경)은 같은 assetKey로 "별밤" 벽지를 쓴다.
  */
 /**
- * 벽지 세트: 벽 무늬 + 러그 색 + 창문 커튼 색(사용자 결정 2026-11-16 "세트") + 바닥 마루 [판 색, 판 사이 줄 색].
+ * 벽지 세트: 벽 무늬 + 창문 커튼 색(사용자 결정 2026-11-16 "세트") + 바닥 마루 [판 색, 판 사이 줄 색]. 원래 러그 그림은 뺐다(사용자 결정 2026-11-17, 러그는 방 소품으로 사서 깖 #705).
  * 바닥은 서버 칸이 없어 벽지 세트에 넣었다(사용자 결정 2026-11-16 "바닥 설정도 있어야 해" → 지금은 세트, 바닥만 따로 고르는 칸은 core FLOOR 칸으로)
  */
-type Wallpaper = { name: string; swatch: string; paint: string; rug: string; curtain: string; floor: [string, string] }
+type Wallpaper = { name: string; swatch: string; paint: string; curtain: string; floor: [string, string] }
 const dots = 'radial-gradient(circle at 6px 6px, rgba(255,255,255,.65) 2.6px, transparent 3.2px) 0 0 / 26px 26px'
 export const WALLPAPERS: Record<string, Wallpaper> = {
-  [DEFAULT_WALLPAPER]: { name: '민트 물방울', swatch: '#DDF1FF', paint: `${dots}, #DDF1FF`, rug: '#F7AEC4', curtain: '#FFD84D', floor: ['#E9D2A8', '#C9A877'] },
+  [DEFAULT_WALLPAPER]: { name: '민트 물방울', swatch: '#DDF1FF', paint: `${dots}, #DDF1FF`, curtain: '#FFD84D', floor: ['#E9D2A8', '#C9A877'] },
   'looks/bg-stars.svg': {
     name: '별밤',
     swatch: '#2A2070',
     paint: 'radial-gradient(circle at 22px 22px, #FFE45C 3.4px, transparent 4px) 0 0 / 84px 84px, radial-gradient(circle at 62px 58px, #FFFFFF 2px, transparent 2.6px) 0 0 / 84px 84px, #2A2070',
-    rug: '#FFD84D',
+   
     curtain: '#7FC8D8',
     floor: ['#B98A5E', '#8E6440'],
   },
   // 시안 MyPage 벽지 무늬(목업 추가 아이템, 2026-11-16)
   'room/wall-cream.svg': {
     name: '크림 줄무늬', swatch: '#F6E3C8',
-    paint: 'repeating-linear-gradient(90deg, rgba(255,255,255,.5) 0 14px, transparent 14px 36px), #F6E3C8', rug: '#9CCB8C', curtain: '#F7AEC4', floor: ['#F3E6CF', '#D8C29C'],
+    paint: 'repeating-linear-gradient(90deg, rgba(255,255,255,.5) 0 14px, transparent 14px 36px), #F6E3C8', curtain: '#F7AEC4', floor: ['#F3E6CF', '#D8C29C'],
   },
   'room/wall-sky.svg': {
     name: '하늘 구름', swatch: '#CFE6FA',
-    paint: 'radial-gradient(ellipse 46px 20px at 60px 46px, rgba(255,255,255,.85) 96%, transparent 100%) 0 0 / 170px 110px, #BFDDF5', rug: '#FFE9A8', curtain: '#FFFFFF', floor: ['#DCE3E8', '#AFBCC6'],
+    paint: 'radial-gradient(ellipse 46px 20px at 60px 46px, rgba(255,255,255,.85) 96%, transparent 100%) 0 0 / 170px 110px, #BFDDF5', curtain: '#FFFFFF', floor: ['#DCE3E8', '#AFBCC6'],
   },
 }
 export const wallpaperOf = (assetKey: string | null | undefined) => WALLPAPERS[assetKey ?? ''] ?? WALLPAPERS[DEFAULT_WALLPAPER]
+
+/**
+ * 바닥(FLOOR 착용 아이템, #705·core #704). 시안 MyPage 서랍의 바닥 세 가지를 방 그림체(CSS 무늬)로 옮겼다.
+ * paint는 큰 방(방 단위 px), thumb은 고르기 칸 그림(작은 칸)용. 모르는 그림 키나 착용 없음은 벽지 세트의 바닥.
+ * 관리자가 등록할 그림 키 = 아래 키(docs/report/retention-expansion.md 3.7 방식으로 알림).
+ */
+type Floor = { name: string; swatch: string; paint: string; thumb: string }
+export const FLOORS: Record<string, Floor> = {
+  'room/floor-wood.svg': {
+    name: '나무 마루', swatch: '#C98B55',
+    paint: 'repeating-linear-gradient(90deg, #DDA772 0 108px, #B5793F 108px 111px)',
+    thumb: 'repeating-linear-gradient(90deg, #DDA772 0 10px, #B5793F 10px 11px)',
+  },
+  'room/floor-mint.svg': {
+    name: '민트 타일', swatch: '#BFE6D3',
+    paint: 'linear-gradient(90deg, #8FC9AE 0 4px, transparent 4px) 0 0 / 96px 96px, linear-gradient(#8FC9AE 0 4px, transparent 4px) 0 0 / 96px 96px, #CDEEDD',
+    thumb: 'linear-gradient(90deg, #8FC9AE 0 1px, transparent 1px) 0 0 / 12px 12px, linear-gradient(#8FC9AE 0 1px, transparent 1px) 0 0 / 12px 12px, #CDEEDD',
+  },
+  'room/floor-carpet.svg': {
+    name: '초록 카펫', swatch: '#8CC27C',
+    paint: 'radial-gradient(circle at 12px 12px, rgba(255,255,255,.22) 2.4px, transparent 3px) 0 0 / 26px 26px, radial-gradient(circle at 25px 25px, rgba(47,110,60,.18) 2.4px, transparent 3px) 0 0 / 26px 26px, #8CC27C',
+    thumb: 'radial-gradient(circle at 3px 3px, rgba(255,255,255,.3) 1px, transparent 1.4px) 0 0 / 7px 7px, #8CC27C',
+  },
+}
+export const floorOf = (assetKey: string | null | undefined): Floor | undefined => FLOORS[assetKey ?? '']
+/** 방 바닥 무늬: 고른 바닥, 없으면 벽지 세트의 바닥 마루 */
+export function floorPaint(floor: string | null | undefined, wallpaper: string | null | undefined, small = false) {
+  const f = floorOf(floor)
+  if (f) return small ? f.thumb : f.paint
+  const [plank, line] = wallpaperOf(wallpaper).floor
+  return small ? `repeating-linear-gradient(90deg, ${plank} 0 10px, ${line} 10px 11px)` : `repeating-linear-gradient(90deg, ${plank} 0 108px, ${line} 108px 111px)`
+}
+/**
+ * 방 소품(DECOR, #705·core #704). 같은 것을 여러 개 사서 내 방 칸에 놓는다(놓기는 core #723 칸 계약 뒤).
+ * kind: 바닥에 놓는지 벽에 거는지, cells: 차지하는 칸 수 [가로, 세로](#723: 서버는 기준 칸만 저장하고 크기·겹침은 웹이 본다). 모두 기준안.
+ * 관리자가 등록할 그림 키 = 아래 키. 목록에 없는 키는 그림을 그리지 않는다.
+ */
+export type DecorKind = 'FLOOR' | 'WALL'
+/**
+ * solid: 뭉치가 지나가지 못함(서 있는 것). 러그처럼 바닥에 깔리면 false
+ * drape: 추억의 벽(게시판·액자)과 창문(커튼·봉) 위에도 걸 수 있음(사용자 의견·결정 2026-11-17). 액자·창문을 가리는 벽 소품은 false(기본)
+ * stand: 바닥에 서는 소품의 그림판 크기 [가로, 높이](방 단위, 화면을 보는 그림판으로 그림). 없으면 바닥에 깔림
+ * 색은 decorDraw.ts DECOR_COLORS(놓은 것마다 고름, core #723 color). 15가지·크기·색 모두 기준안(사용자 결정 2026-11-17 "여러 개, 색상이든 크기든")
+ */
+type Decor = { name: string; kind: DecorKind; cells: [number, number]; solid: boolean; drape?: boolean; stand?: [number, number] }
+export const DECORS: Record<string, Decor> = {
+  // 바닥에 서는 것
+  'room/decor-plant.svg': { name: '작은 화분', kind: 'FLOOR', cells: [1, 1], solid: true, stand: [92, 110] },
+  'room/decor-plant-big.svg': { name: '큰 화분', kind: 'FLOOR', cells: [1, 1], solid: true, stand: [154, 196] },
+  'room/decor-cactus.svg': { name: '선인장', kind: 'FLOOR', cells: [1, 1], solid: true, stand: [90, 108] },
+  'room/decor-lamp.svg': { name: '스탠드 조명', kind: 'FLOOR', cells: [1, 1], solid: true, stand: [104, 182] },
+  'room/decor-doll.svg': { name: '뭉치 인형', kind: 'FLOOR', cells: [1, 1], solid: true, stand: [100, 100] },
+  'room/decor-books.svg': { name: '쌓은 책', kind: 'FLOOR', cells: [1, 1], solid: true, stand: [92, 67] },
+  'room/decor-beanbag.svg': { name: '빈백 소파', kind: 'FLOOR', cells: [2, 1], solid: true, stand: [152, 98] },
+  // 바닥에 까는 것
+  'room/decor-rug.svg': { name: '동그란 러그', kind: 'FLOOR', cells: [2, 2], solid: false },
+  'room/decor-rug-square.svg': { name: '네모 러그', kind: 'FLOOR', cells: [3, 2], solid: false },
+  'room/decor-rug-star.svg': { name: '별 러그', kind: 'FLOOR', cells: [2, 2], solid: false },
+  // 벽에 거는 것
+  'room/decor-lights.svg': { name: '줄 조명', kind: 'WALL', cells: [3, 1], solid: false, drape: true },
+  'room/decor-garland.svg': { name: '깃발 가랜드', kind: 'WALL', cells: [3, 1], solid: false, drape: true },
+  'room/decor-clock.svg': { name: '벽시계', kind: 'WALL', cells: [1, 1], solid: false },
+  'room/decor-picture.svg': { name: '작은 그림', kind: 'WALL', cells: [1, 1], solid: false },
+  'room/decor-shelf.svg': { name: '벽 선반', kind: 'WALL', cells: [2, 1], solid: false },
+}
+export const decorOf = (assetKey: string | null | undefined): Decor | undefined => DECORS[assetKey ?? '']
+/** 놓는 곳·크기 한 줄(예: "바닥 · 1칸", "벽 · 2×1칸") */
+export const decorPlaceText = (assetKey: string | null | undefined) => {
+  const d = decorOf(assetKey)
+  if (!d) return '방 소품'
+  const [w, h] = d.cells
+  return `${d.kind === 'WALL' ? '벽' : '바닥'} · ${w * h === 1 ? '1칸' : `${w}×${h}칸`}`
+}
+/** 바닥 칸 이름(착용 없음은 벽지 세트 바닥) */
+export const floorName = (assetKey: string | null | undefined) => floorOf(assetKey)?.name ?? '벽지와 같은 바닥'
 
 // ---------- 착용 위치 기준점 (#557 표, #455 렌더링에서 사용, #648 친구 12종) ----------
 type WearAnchor = { x: number; y: number; scale: number }

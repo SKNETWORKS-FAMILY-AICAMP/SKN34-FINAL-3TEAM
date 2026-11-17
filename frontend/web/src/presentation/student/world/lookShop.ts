@@ -58,6 +58,13 @@ export function createIdempotencyKeys(newKey: () => string = () => crypto.random
 /** 방 소품을 한 개 더 살 수 있는지(판매 중이고 보유 상한 전). 잔액은 따로 본다 */
 export const canBuyMore = (item: LookItem | undefined) =>
   !!item && item.slot === 'DECOR' && item.onSale && (item.ownedCount ?? 0) < DECOR_MAX_OWNED
+/** "새로 나왔어요"로 볼 기간(일, 기준안 7일, #705). 관리자 등록일(`createdAt`) 기준 */
+export const NEW_ITEM_DAYS = 7
+export const isNewItem = (item: LookItem, now = Date.now()) => {
+  if (!item.createdAt) return false
+  const at = Date.parse(item.createdAt)
+  return Number.isFinite(at) && now - at >= 0 && now - at < NEW_ITEM_DAYS * 86_400_000
+}
 /** 서버 아이템 이름 대신 화면 이름을 쓴다: 동행 캐릭터는 뭉치 친구 이름(#648) */
 export const itemName = (item: LookItem) => {
   const friend = item.slot === 'COMPANION' && FRIENDS.find((f) => companionKey(f.companion) === item.itemKey)
@@ -147,13 +154,13 @@ export type LookShop = ReturnType<typeof useLookShop>
 /** 화면 테마별 바깥 틀 색(student-world.css `[data-theme]`의 --sk-frame과 같은 값). 꾸미기 미리 보기가 고르는 중인 테마 색을 칠한다 */
 export const THEME_FRAME: Record<ThemeId, string> = { lake: '#3eafed', forest: '#6dbf5a', factory: '#8fa8cc', space: '#a47bea', sea: '#1bbbd4' }
 
-export type CustomizeTab = 'theme' | 'friend' | 'wear' | 'furniture'
+/** 꾸미기 화면 탭(뭉치·화면). 방에 관한 것(벽지·바닥·가구·방 소품·액자)은 모두 내 방 "방 꾸미기" 서랍에서(사용자 결정 2026-11-17, #705) */
+export type CustomizeTab = 'theme' | 'friend' | 'wear'
 /** 꾸미기 탭 4개(#648 시안 Customize). question은 탭 안 고르기 영역 이름 */
 export const CUSTOMIZE_TABS: { id: CustomizeTab; label: string; question: string }[] = [
   { id: 'theme', label: '화면 테마', question: '어떤 색으로 꾸밀까?' },
   { id: 'friend', label: '캐릭터', question: '누구랑 같이 다닐까?' },
   { id: 'wear', label: '옷 입히기', question: '친구에게 입혀 볼까?' },
-  { id: 'furniture', label: '내 방 가구', question: '내 방 가구를 바꿔 볼까?' },
 ]
 export const isCustomizeTab = (v: string | null): v is CustomizeTab => CUSTOMIZE_TABS.some((tab) => tab.id === v)
 

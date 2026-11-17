@@ -1,34 +1,42 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { RotateCcw, RotateCw, X } from 'lucide-react'
 import { useSaveLook, useStudentLook } from '../../../data/studentLook/queries.ts'
-import { useAlbum, useFrameSlots, useLookItems, useMarkFramesSeen, useSaveFrameSlots, useWeeklyTheme } from '../../../data/retention/queries.ts'
+import { useAlbum, useDecorSpots, useFrameSlots, useLookItems, useMarkFramesSeen, useSaveDecorSpots, useSaveFrameSlots, useWeeklyTheme } from '../../../data/retention/queries.ts'
+import { blockedByDecor, cellPlane, cellsOf, decorFaces, decorFloorBlocks, drawableDecor, firstPlace, placeableCells, placeProblem, stepCell } from './decorArt.ts'
 import { ApiError } from '../../../data/apiClient.ts'
 import type { Child } from '../../../domain/classroom.ts'
-import { episodeKey, FRAME_SLOT_COUNT, FURNITURE_SLOTS, NO_EQUIPPED, SLOT_LABELS, weekLabel } from '../../../domain/retention.ts'
-import type { AlbumItem, FrameSlot, FurnitureSlot, LookItem } from '../../../domain/retention.ts'
+import { DECOR_MAX_OWNED, DECOR_SPOT_LIMIT, episodeKey, FRAME_SLOT_COUNT, FURNITURE_SLOTS, NO_EQUIPPED, SLOT_LABELS, weekLabel } from '../../../domain/retention.ts'
+import type { AlbumItem, DecorSurface, FrameSlot, FurnitureSlot, LookItem } from '../../../domain/retention.ts'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { Companion } from './Companion.tsx'
 import { SpeechBubble } from './SpeechBubble.tsx'
 import { boardTagTransform, WORLD_TOP, DESK_X, DESK_Z, DOOR, faceStyle, MAT_RADIUS, MATS, projectToHolder, ROOM, roomFaces, SHELF, slotTransform, WARDROBE, WINDOW_Z } from './roomArt.ts'
 import { CAN_ROTATE, CAN_WALK, clamp, useRoomWalk } from './useRoomWalk.ts'
 import type { MatId } from './roomArt.ts'
-import { furnitureSkinName, ROOM_SET_PARTS, skinOf, wallpaperOf } from './roomAssets.ts'
+import { decorPlaceText, floorName, furnitureSkinName, ROOM_SET_PARTS, skinOf, wallpaperOf } from './roomAssets.ts'
 import type { RoomSlot } from './roomAssets.ts'
-import { FurnitureThumb } from './FurnitureThumb.tsx'
+import { DecorThumb, FurnitureThumb } from './FurnitureThumb.tsx'
+import { decorColor, decorColors } from './decorDraw.ts'
 import { FrameScene } from './FrameScene.tsx'
 import { glowClass, useGlow } from './roomGlow.ts'
+import { canBuyMore, unlockMessage, useLookShop } from './lookShop.ts'
+import { josa } from './themeWeek.ts'
 import type { CustomizeTab } from './lookShop.ts'
+import { UnlockConfirm } from './Customize.tsx'
 import { useLook } from './lookContext.ts'
 import './room.css'
 
 type Placed = { slotNo: number; themeId: string; weekStart: string; title: string; imageUrl: string | null }
 /** 내 방에서 바꾸는 착용 칸: 벽지(배경 아이템)와 가구 3종 */
-type RoomTab = 'frames' | 'wallpaper' | 'furniture'
+type RoomTab = 'frames' | 'wallpaper' | 'floor' | 'furniture' | 'decor'
 const ROOM_TABS: { id: RoomTab; label: string; hint: string }[] = [
   { id: 'frames', label: '액자 걸기', hint: '빈 자리를 눌러 기념 액자를 걸어요.' },
-  { id: 'wallpaper', label: '벽지', hint: '벽지·바닥·러그·커튼이 같이 바뀌어요. 새 벽지는 꾸미기 ‘내 방 가구’에서 열어요.' },
-  { id: 'furniture', label: '가구', hint: '책상·책장, 추억의 벽·액자, 옷장·문이 같이 바뀌어요.' },
+  { id: 'wallpaper', label: '벽지', hint: '벽지·커튼이 같이 바뀌어요. 바닥을 따로 안 골랐으면 바닥도 같이 바뀌어요. 안 연 것도 눌러서 바로 열 수 있어요.' },
+  { id: 'floor', label: '바닥', hint: '바닥만 바뀌어요. 기본은 벽지와 같이 바뀌는 바닥이에요. 안 연 것도 눌러서 바로 열 수 있어요.' },
+  { id: 'furniture', label: '가구', hint: '책상·책장, 추억의 벽·액자, 옷장·문이 같이 바뀌어요. 안 연 것도 눌러서 바로 열 수 있어요.' },
+  // 놓기는 core #723(바닥·벽 칸) 뒤에 이 탭에 붙인다. 지금은 사기만
+  { id: 'decor', label: '방 소품', hint: '[놓기]로 방에 놓고 화살표나 초록 칸으로 옮겨요. 같은 것을 여러 개 살 수 있어요(하나에 8개까지).' },
 ]
 
 /** 착용 itemKey → 그림 assetKey. 목록을 못 받으면 기본 그림 */
@@ -45,6 +53,10 @@ const frameSaveMessage = (e: unknown) => {
   return '벽에 걸지 못했어요. 고른 그대로 두었으니 잠시 뒤에 다시 저장해 주세요.'
 }
 const LOOK_SAVE_FAILED = '벽지·가구를 바꾸지 못했어요. 고른 그대로 두었으니 잠시 뒤에 다시 저장해 주세요.'
+const DECOR_SAVE_FAILED = '방 소품을 놓지 못했어요. 놓은 그대로 두었으니 잠시 뒤에 다시 저장해 주세요.'
+/** 방 소품 초안 한 칸(서버에 보내는 모양, core #723 계약안) */
+type DraftDecor = { surface: DecorSurface; col: number; row: number; itemKey: string; color: string | null }
+const decorKey = (list: DraftDecor[]) => JSON.stringify(list.map((d) => `${d.surface}:${d.col}:${d.row}:${d.itemKey}:${d.color ?? ''}`).sort())
 
 /** 액자 속 그림이 없을 때 쓰는 작은 풍경. 회차마다 언덕 색만 달라진다 */
 function FrameArt({ frame }: { frame: { themeId: string; title?: string; imageUrl: string | null } }) {
@@ -55,7 +67,7 @@ function FrameArt({ frame }: { frame: { themeId: string; title?: string; imageUr
 
 /**
  * 내 방(/student/room, P27·FN-RET-09, #556·#648). 시안 MyPage의 그림체를 방 안 시점·고정 시점으로 그린다.
- * 사용자 결정 2026-11-16: 가구 = 메뉴. 러그에서 출발한 뭉치가 바닥을 누르거나 방향키로 걸어가 갈 곳 앞 발판에 서면 말풍선 단추로 간다
+ * 사용자 결정 2026-11-16: 가구 = 메뉴. 방 가운데(출발 자리)에서 출발한 뭉치가 바닥을 누르거나 방향키로 걸어가 갈 곳 앞 발판에 서면 말풍선 단추로 간다
  * (책상 → 홈, 창문 → 시작 이야기, 추억의 벽 → 앨범, 옷장 → 옷 입히기·뭉치 친구들, 문 → 친구 생각, 책장 → 내 공책). 가구 이름표를 누르면 걷지 않고 바로 간다.
  * "방 꾸미기"를 누르면 아래 서랍(액자 걸기·벽지·가구)에서 고른 것이 위 방에 바로 보이고, 저장해야 반영된다
  * (액자는 추억의 벽 저장 PUT, 벽지·가구는 착용 저장 PUT). 뭉치 자리는 저장하지 않는다.
@@ -102,27 +114,52 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
   const [errors, setErrors] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [newSeen, setNewSeen] = useState(false)
+  // 방 소품 놓기 초안(#705): 놓은 칸 목록, 고른(옮기는) 소품 순서, 못 놓는 까닭 한 줄
+  const [draftDecor, setDraftDecor] = useState<DraftDecor[]>([])
+  const [pickedDecor, setPickedDecor] = useState<number | null>(null)
+  const [decorMsg, setDecorMsg] = useState('')
   // 저장·취소 알림은 잠시 보이고 사라진다(화면 읽기 프로그램은 바뀔 때 읽음)
   useEffect(() => {
     if (!note) return
     const id = window.setTimeout(() => setNote(''), 4000)
     return () => clearTimeout(id)
   }, [note])
+  // 놓은 방 소품(#705, core #723 계약안): 그릴 수 있는 것만(그림 목록·맞는 면·막힌 칸·겹침 거름). 선 것은 걷기 막힘
+  const decorSpots = useDecorSpots(child.id)
+  const saveDecor = useSaveDecorSpots(child.id)
+  /** 놓은 칸 목록을 받았나. 받기 전에는 방 소품 놓기를 열지 않는다(빈 목록으로 저장하면 놓은 소품이 다 사라짐, 액자 버그와 같은 까닭) */
+  const decorReady = decorSpots.isSuccess
+  const savedDecor: DraftDecor[] = (decorSpots.data ?? []).map(({ surface, col, row, itemKey, color }) => ({ surface, col, row, itemKey, color }))
+  const decorAsset = (itemKey: string) => catalog?.find((i) => i.itemKey === itemKey)?.assetKey ?? decorSpots.data?.find((s) => s.itemKey === itemKey)?.assetKey ?? ''
+  const decorNow = (editing && decorReady ? draftDecor : savedDecor).map((d) => ({ ...d, assetKey: decorAsset(d.itemKey) }))
+  const shownDecor = drawableDecor(decorNow)
   const {
     view, dragging, pos, facing, pose, moving, jumping, stageRef, holderRef, roomRef, drawerRef,
     fit, holderH, scale, worldScale, onKeyDown, onKeyUp, onBlur, onPointerDown, onFloorClick, turn, faceCamera,
-  } = useRoomWalk({ paused: editing })
+  } = useRoomWalk({ paused: editing, blocked: blockedByDecor(decorFloorBlocks(shownDecor)) })
   const frames = editing ? draftFrames : placed
   const { glow, flash } = useGlow()
   const wearing = (slot: RoomSlot) => (editing && slot in draftLook ? draftLook[slot] ?? null : equipped[slot] ?? null)
   const framesChanged = editing && !sameFrames(draftFrames, placed)
+  // 방 꾸미기 서랍에서 바로 열기(사용자 의견 2026-11-17 "구매를 방 꾸미기에서도 할 수 있게"): 꾸미기 화면과 같은 해금 흐름(lookShop)
+  const shop = useLookShop(child)
+  /** 아직 안 연 것을 고른 칸이 있나(열지 않은 채 저장하면 서버가 LOOK_LOCKED로 거절) */
+  const lockedDraft = editing && (Object.values(draftLook) as (string | null | undefined)[]).some((k) => !!k && catalog?.some((i) => i.itemKey === k && !i.unlocked))
   const lookChanged = editing && (Object.keys(draftLook) as RoomSlot[]).some((s) => (draftLook[s] ?? null) !== (equipped[s] ?? null))
-  const slotItems = (slot: RoomSlot) => (catalog ?? []).filter((i) => i.slot === slot)
-  const tabs = ROOM_TABS.filter((x) => x.id === 'frames' || (x.id === 'wallpaper' ? slotItems('BACKGROUND').length > 0 : FURNITURE_SLOTS.some((s) => slotItems(s).length > 0)))
+  const decorChanged = editing && decorReady && decorKey(draftDecor) !== decorKey(savedDecor)
+  const slotItems = (slot: RoomSlot | 'DECOR') => (catalog ?? []).filter((i) => i.slot === slot)
+  const tabs = ROOM_TABS.filter((x) => x.id === 'frames' || (x.id === 'wallpaper' ? slotItems('BACKGROUND').length > 0 : x.id === 'floor' ? slotItems('FLOOR').length > 0 : x.id === 'decor' ? slotItems('DECOR').length > 0 : FURNITURE_SLOTS.some((s) => slotItems(s).length > 0)))
 
+  /** 걸린 액자 목록을 받았나. 받기 전에 방 꾸미기를 열면 빈 목록으로 초안을 만들어, 저장하면 걸린 액자가 모두 내려갔다(#705 기존 버그) */
+  const framesReady = slots.isSuccess
   const startEdit = (slotNo: number | null = null) => {
+    if (!framesReady) return
+    shop.cancelUnlock()
     setDraftFrames(placed)
     setDraftLook({})
+    setDraftDecor(savedDecor)
+    setPickedDecor(null)
+    setDecorMsg('')
     setTab('frames')
     setPicking(slotNo)
     setErrors([])
@@ -130,7 +167,9 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
     setEditing(true)
   }
   const cancel = () => {
+    shop.cancelUnlock()
     setEditing(false)
+    setPickedDecor(null)
     setPicking(null)
     setErrors([])
     setNote('바꾼 내용을 취소했어요.')
@@ -149,7 +188,7 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
     setSaving(true)
     setErrors([])
     const jobs: Promise<unknown>[] = []
-    const kinds: ('frames' | 'look')[] = []
+    const kinds: ('frames' | 'look' | 'decor')[] = []
     if (framesChanged) {
       kinds.push('frames')
       jobs.push(saveFrames.mutateAsync(draftFrames.map(({ slotNo, themeId, weekStart }) => ({ slotNo, themeId, weekStart }))))
@@ -158,15 +197,20 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
       kinds.push('look')
       jobs.push(saveLook.mutateAsync({ theme: t.id, companion, equipped: { ...equipped, ...draftLook } }))
     }
+    if (decorChanged) {
+      kinds.push('decor')
+      jobs.push(saveDecor.mutateAsync(draftDecor))
+    }
     const results = await Promise.allSettled(jobs)
     setSaving(false)
-    const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [kinds[i] === 'frames' ? frameSaveMessage(r.reason) : LOOK_SAVE_FAILED] : []))
+    const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [kinds[i] === 'frames' ? frameSaveMessage(r.reason) : kinds[i] === 'decor' ? DECOR_SAVE_FAILED : LOOK_SAVE_FAILED] : []))
     if (failed.length) {
       setErrors(failed)
       return
     }
     setEditing(false)
     setPicking(null)
+    setPickedDecor(null)
     setNote(kinds.length === 1 && kinds[0] === 'frames' ? '추억의 벽을 저장했어요.' : '내 방을 저장했어요.')
   }
 
@@ -178,10 +222,11 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
 
   const faces = roomFaces({
     wallpaper: assetOf(catalog, wearing('BACKGROUND')),
+    floor: assetOf(catalog, wearing('FLOOR')),
     desk: assetOf(catalog, wearing('DESK')),
     wall: assetOf(catalog, wearing('WALL')),
     wardrobe: assetOf(catalog, wearing('WARDROBE')),
-  }, onMat)
+  }, onMat).concat(decorFaces(shownDecor, faceCamera))
   const framing = editing && tab === 'frames'
   const showNew = !editing && !newSeen && unseen.length > 0
   const firstEmpty = Array.from({ length: FRAME_SLOT_COUNT }, (_, i) => i + 1).find((n) => !placed.some((p) => p.slotNo === n)) ?? null
@@ -222,17 +267,96 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
     const key = item?.itemKey ?? null
     const selected = wearing(slot) === key
     const lockedItem = !!item && !item.unlocked
-    const name = item ? item.name : slot === 'BACKGROUND' ? `${wallpaperOf(null).name} (기본)` : `${furnitureSkinName(slot, null)} (기본)`
+    // 안 연 것도 판매 중이면 눌러서 방에 먼저 보고 바로 열 수 있다(포인트는 열 때 차감, 방에는 저장해야 반영)
+    const canOpen = lockedItem && item.onSale && !!catalog
+    const name = item ? item.name : slot === 'BACKGROUND' ? `${wallpaperOf(null).name} (기본)` : slot === 'FLOOR' ? `${floorName(null)} (기본)` : `${furnitureSkinName(slot, null)} (기본)`
     return (
-      <button key={`${slot}:${key ?? 'none'}`} type="button" className="st-room-choice" aria-pressed={selected} disabled={lockedItem || saving}
-        onClick={() => { setDraftLook((d) => ({ ...d, [slot]: key })); setErrors([]); flash(slot) }}>
+      <button key={`${slot}:${key ?? 'none'}`} type="button" className="st-room-choice" aria-pressed={selected} disabled={(lockedItem && !canOpen) || saving || shop.busy}
+        onClick={() => {
+          setDraftLook((d) => ({ ...d, [slot]: key })); setErrors([]); flash(slot)
+          if (canOpen) shop.startUnlock(key!)
+          else if (shop.confirming) shop.cancelUnlock()
+        }}>
         {/* 색 네모 대신 그 칸이 바꾸는 가구 그림(세트 포함), 아래 줄에 함께 바뀌는 것 */}
-        <span className="st-room-swatch"><FurnitureThumb slot={slot} assetKey={item?.assetKey} /></span>
+        <span className="st-room-swatch"><FurnitureThumb slot={slot} assetKey={item?.assetKey} wallpaper={assetOf(catalog, wearing('BACKGROUND'))} /></span>
         <span><b>{name}</b><small>{ROOM_SET_PARTS[slot]}</small>
-          <small>{lockedItem ? (item.onSale ? `${item.pricePoints.toLocaleString('ko-KR')}포인트 · 꾸미기에서 열기` : '지금은 열 수 없어요') : '가지고 있어요'}</small></span>
+          <small>{lockedItem ? (item.onSale ? `${item.pricePoints.toLocaleString('ko-KR')}포인트 · 눌러서 열기` : '지금은 열 수 없어요') : '가지고 있어요'}</small></span>
       </button>
     )
   }
+
+  // ---- 방 소품 놓기(#705, core #723 계약안) ----
+  const draftPlaced = draftDecor.map((d) => ({ ...d, assetKey: decorAsset(d.itemKey) }))
+  const picked = pickedDecor !== null ? draftPlaced[pickedDecor] : undefined
+  /** 놓을 수 있는 칸(고른 소품 기준). 길 검사가 들어 있어 고른 것·초안이 바뀔 때만 다시 센다 */
+  const draftSig = decorKey(draftDecor)
+  const pickedAsset = picked?.assetKey
+  const placeCells = useMemo(() => (pickedAsset ? placeableCells(draftPlaced, pickedDecor, pickedAsset) : []),
+    [draftSig, pickedDecor, pickedAsset]) // eslint-disable-line react-hooks/exhaustive-deps
+  const placedCount = (itemKey: string) => draftDecor.filter((d) => d.itemKey === itemKey).length
+  /** [놓기]: 가까운 놓을 수 있는 칸에 하나 놓고 그것을 고른다 */
+  const placeNew = (item: LookItem) => {
+    setDecorMsg('')
+    if (draftDecor.length >= DECOR_SPOT_LIMIT) { setDecorMsg(`방 소품은 한 번에 ${DECOR_SPOT_LIMIT}개까지 놓을 수 있어요.`); return }
+    if (placedCount(item.itemKey) >= (item.ownedCount ?? 0)) { setDecorMsg('가진 만큼 모두 놓았어요. 더 놓으려면 하나 더 사요.'); return }
+    const spot = firstPlace(draftPlaced, item.assetKey ?? '')
+    if (!spot) { setDecorMsg('지금은 놓을 자리가 없어요. 다른 소품을 치우거나 옮겨 보세요.'); return }
+    setDraftDecor((d) => [...d, { ...spot, itemKey: item.itemKey, color: null }])
+    setPickedDecor(draftDecor.length)
+  }
+  /** 고른 소품을 그 칸으로(초록 칸 누르기·화살표). 못 놓으면 까닭을 알린다 */
+  const moveTo = (surface: DecorSurface, col: number, row: number) => {
+    if (pickedDecor === null || !picked) return
+    const why = placeProblem(draftPlaced, pickedDecor, { surface, col, row, assetKey: picked.assetKey })
+    if (why) { setDecorMsg(why); return }
+    setDecorMsg('')
+    setDraftDecor((d) => d.map((x, i) => (i === pickedDecor ? { ...x, surface, col, row } : x)))
+  }
+  const nudge = (dir: 'left' | 'right' | 'up' | 'down') => {
+    if (!picked) return
+    const { dc, dr } = stepCell(picked.surface, dir)
+    moveTo(picked.surface, picked.col + dc, picked.row + dr)
+  }
+  /** 고른 소품 색 바꾸기(놓은 것마다, core #723 color) */
+  const paint = (color: string) => {
+    if (pickedDecor === null) return
+    setDraftDecor((d) => d.map((x, i) => (i === pickedDecor ? { ...x, color } : x)))
+  }
+  const removePicked = () => {
+    if (pickedDecor === null) return
+    setDraftDecor((d) => d.filter((_, i) => i !== pickedDecor))
+    setPickedDecor(null)
+    setDecorMsg('')
+  }
+  const decoring = editing && tab === 'decor' && decorReady
+  // 방 소품 작은 카드(#705, 사용자 의견 2026-11-17 "이게 좀 어색하다"로 다시 짬): 한 줄에 나란히(좁은 화면은 옆으로 밀기)
+  const decorChoice = (item: LookItem) => {
+    const owned = item.ownedCount ?? 0
+    const placedN = placedCount(item.itemKey)
+    const price = item.pricePoints.toLocaleString('ko-KR')
+    return (
+      <div key={item.itemKey} className="st-decor-card">
+        <span className="st-decor-thumb"><DecorThumb assetKey={item.assetKey} /></span>
+        <b>{item.name}</b>
+        <small>{decorPlaceText(item.assetKey)} · 놓음 {placedN}/{owned}</small>
+        <span className="st-decor-buttons">
+          <button type="button" className="st-room-btn" disabled={!decorReady || placedN >= owned || saving} onClick={() => placeNew(item)}
+            aria-label={`${item.name} 놓기`}>놓기</button>
+          <button type="button" className="st-room-btn" disabled={!canBuyMore(item) || saving || shop.busy} onClick={() => shop.startPurchase(item.itemKey)}
+            aria-label={owned >= DECOR_MAX_OWNED ? `${item.name} 더 살 수 없어요` : `${item.name} 1개 사기, ${price}포인트`}>
+            {owned >= DECOR_MAX_OWNED ? '다 있어요' : !item.onSale ? '판매 끝' : `+사기 ${price}P`}
+          </button>
+        </span>
+      </div>
+    )
+  }
+  const pickedName = picked ? catalog?.find((i) => i.itemKey === picked.itemKey)?.name ?? '방 소품' : ''
+  // 옮기기를 시작하면 방이 보이게(좁은 화면은 서랍 아래에서 방이 화면 위로 밀려 있었음)
+  useEffect(() => {
+    if (pickedDecor === null || fit.w >= 700) return
+    roomRef.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }, [pickedDecor === null]) // eslint-disable-line react-hooks/exhaustive-deps
+  const bought = shop.purchase.data && catalog?.find((i) => i.itemKey === shop.purchase.data!.itemKey)
 
   return (
     <main className="st-paper st-sheet st-fit st-room-page">
@@ -242,19 +366,21 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
           {editing ? (
             <>
               <button type="button" className="st-room-btn" disabled={saving} onClick={cancel}>취소</button>
-              <button type="button" className="st-room-btn st-room-go" disabled={saving || (!framesChanged && !lookChanged)} onClick={() => void save()}>
+              <button type="button" className="st-room-btn st-room-go" disabled={saving || (!framesChanged && !lookChanged && !decorChanged) || lockedDraft || !!shop.confirming} onClick={() => void save()}>
                 {saving ? '저장하는 중이에요' : '저장'}
               </button>
             </>
           ) : (
             <>
               <button type="button" className="st-room-btn" onClick={() => onCustomize('friend')}>캐릭터·옷 꾸미기</button>
-              <button type="button" className="st-room-btn st-room-go" onClick={() => startEdit()}>방 꾸미기</button>
+              <button type="button" className="st-room-btn st-room-go" disabled={!framesReady} onClick={() => startEdit()}>{slots.isPending ? '방을 불러오고 있어요' : '방 꾸미기'}</button>
             </>
           )}
         </div>
       </div>
       <ErrorNotice error={look.error} retry={() => void look.refetch()} />
+      {/* 걸린 액자 목록을 못 받으면 방 꾸미기를 열지 않는다(빈 목록으로 저장해 액자가 내려가지 않게) */}
+      <ErrorNotice error={slots.error} retry={() => void slots.refetch()} />
 
       <section ref={roomRef} className="st-mini-room" aria-label="내 방">
         <div ref={holderRef} className="st-room-holder" style={{ height: Math.round(holderH), '--st-frame-wood': frameWood } as CSSProperties}>
@@ -267,6 +393,20 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
                 // 방 꾸미기에서 칸을 고르면 그 칸이 바꾸는 가구만 잠깐 반짝인다(사용자 의견 2026-11-16 "뭐가 어떻게 변하는지 보여야지")
                 const g = glowClass(f.part, glow)
                 return <div key={f.key + g.suffix} className={`st-f${f.floor && CAN_WALK ? ' st-room-floor' : ''}${g.cls}`} style={faceStyle(f)} onClick={f.floor && CAN_WALK ? onFloorClick : undefined} aria-hidden="true" />
+              })}
+              {/* 방 소품 놓기(#705): 놓인 소품을 눌러 고르고, 고른 소품은 주황 테두리, 놓을 수 있는 칸은 초록(누르면 옮김). 키보드는 서랍의 화살표 */}
+              {decoring && draftPlaced.map((p, i) => {
+                const [w, h] = (cellsOf(p).reduce((a, c) => [Math.max(a[0], c.col - p.col + 1), Math.max(a[1], c.row - p.row + 1)], [1, 1]))
+                const pl = cellPlane(p.surface, p.col, p.row, w, h)
+                return <button key={`hit${i}`} type="button" tabIndex={-1} aria-hidden="true" className={`st-f st-decor-hit${i === pickedDecor ? ' is-picked' : ''}`}
+                  style={{ width: pl.w, height: pl.h, marginLeft: -pl.w / 2, marginTop: -pl.h / 2, transform: pl.tf }}
+                  onClick={() => { setPickedDecor(i); setDecorMsg('') }} />
+              })}
+              {decoring && picked && placeCells.map((c) => {
+                const pl = cellPlane(c.surface, c.col, c.row)
+                return <button key={`cell${c.surface}${c.col}-${c.row}`} type="button" tabIndex={-1} aria-hidden="true" className="st-f st-decor-cell"
+                  style={{ width: pl.w, height: pl.h, marginLeft: -pl.w / 2, marginTop: -pl.h / 2, transform: pl.tf }}
+                  onClick={() => moveTo(c.surface, c.col, c.row)} />
               })}
               {editing ? (
                 <div className="st-f st-room-boardtag" style={{ transform: boardTagTransform }} aria-hidden="true">추억의 벽</div>
@@ -316,10 +456,10 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
               {bubble.more && <button type="button" className="st-room-bubble-go is-second" onClick={bubble.more.go}>{bubble.more.label}</button>}
             </SpeechBubble>
           )}
-          <button type="button" className="st-room-album" data-room-ui onClick={onAlbum}>
+          {!editing && <button type="button" className="st-room-album" data-room-ui onClick={onAlbum}>
             <span className="st-room-thumb" aria-hidden="true">{thumb ? <FrameArt frame={thumb} /> : <span className="st-room-scene" />}</span>
             추억 앨범 열기
-          </button>
+          </button>}
           {CAN_WALK && !editing && <p className="st-room-hint" data-room-ui aria-hidden="true">바닥을 누르면 걸어가요 · 방향키로 움직여요</p>}
           {CAN_ROTATE && (
             <div className="st-room-controls" data-room-ui>
@@ -335,7 +475,7 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
             <button type="button" className="st-room-close" aria-label="새 액자 알림 닫기" onClick={dismissNew}><X aria-hidden="true" /></button>
             <strong>새 액자를 받았어요!</strong>
             <span>「{unseen[0].title || '이름 없는 테마'}」 다섯 문제를 모두 마쳤어요.{unseen.length > 1 && ` 새 액자가 ${unseen.length}개 있어요.`}</span>
-            <button type="button" className="st-room-go" onClick={() => { dismissNew(); startEdit(firstEmpty) }}>벽에 걸어 보기</button>
+            <button type="button" className="st-room-go" disabled={!framesReady} onClick={() => { dismissNew(); startEdit(firstEmpty) }}>벽에 걸어 보기</button>
           </div>
         )}
 
@@ -374,8 +514,6 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
           <div className="st-room-chips" aria-label="내 기록" data-room-ui>
             <span className="st-room-chip is-purple">이번 주 <b>{theme ? solved : 0}</b> / 5 문제</span>
             <button type="button" className="st-room-chip is-yellow" onClick={onAlbum}>기념 액자 <b>{album.data?.totalElements ?? 0}</b>개 →</button>
-            <button type="button" className="st-room-chip is-green" onClick={() => onCustomize()}>꾸미기 →</button>
-            <button type="button" className="st-room-chip" onClick={onFriends}>뭉치 친구들 →</button>
           </div>
         )}
         <p className="st-room-note" role="status">{note}</p>
@@ -392,9 +530,10 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
         <section ref={drawerRef} className="st-room-drawer" aria-label="방 꾸미기">
           <div className="st-room-drawer-head">
             {tabs.map((x) => (
-              <button key={x.id} type="button" aria-pressed={tab === x.id} onClick={() => { setTab(x.id); setPicking(null) }}>{x.label}</button>
+              <button key={x.id} type="button" aria-pressed={tab === x.id} onClick={() => { setTab(x.id); setPicking(null); shop.cancelUnlock(); setPickedDecor(null); setDecorMsg('') }}>{x.label}</button>
             ))}
             <span>{ROOM_TABS.find((x) => x.id === tab)!.hint}</span>
+            {tab !== 'frames' && <b className="st-points-pill st-room-points" role="status">{shop.balance !== undefined ? `내 포인트 ${shop.balance.toLocaleString('ko-KR')}` : '포인트 확인 중'}</b>}
           </div>
           {tab === 'frames' && (
             <p className="st-room-drawer-note">
@@ -404,6 +543,45 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
           )}
           {tab === 'wallpaper' && (
             <div className="st-room-choices">{[null, ...slotItems('BACKGROUND')].map((item) => choice('BACKGROUND', item))}</div>
+          )}
+          {tab === 'decor' && (
+            <>
+              {decorSpots.isPending && <p role="status" className="st-room-drawer-note">놓은 방 소품을 불러오고 있어요.</p>}
+              <ErrorNotice error={decorSpots.error} retry={() => void decorSpots.refetch()} />
+              {/* 고르는 모드: 소품 카드 한 줄 / 옮기는 모드: 목록은 숨기고 옮기기 판만(서랍이 짧아 방과 같이 보임) */}
+              {!picked ? (
+                <div className="st-decor-cards">{slotItems('DECOR').map(decorChoice)}</div>
+              ) : (
+                <div className="st-decor-move" role="group" aria-label={`${pickedName} 옮기기`}>
+                  <div className="st-decor-move-head">
+                    <span className="st-decor-thumb"><DecorThumb assetKey={picked.assetKey} color={picked.color} /></span>
+                    <span><b>{pickedName} 옮기는 중</b><small>방의 초록 칸을 눌러도 옮겨져요.</small></span>
+                  </div>
+                  {decorColors(picked.assetKey).length > 1 && (
+                    <div className="st-decor-colors" role="group" aria-label={`${pickedName} 색`}>
+                      {decorColors(picked.assetKey).map((col) => (
+                        <button key={col.key} type="button" aria-pressed={(decorColor(picked.assetKey, picked.color)?.key ?? '') === col.key} aria-label={col.label}
+                          title={col.label} style={{ background: col.swatch }} onClick={() => paint(col.key)} />
+                      ))}
+                    </div>
+                  )}
+                  <div className="st-decor-pad">
+                    <button type="button" className="st-room-btn is-up" aria-label={picked.surface === 'FLOOR' ? '뒤로 한 칸' : '위로 한 칸'} onClick={() => nudge('up')}>↑</button>
+                    <button type="button" className="st-room-btn is-left" aria-label="왼쪽으로 한 칸" onClick={() => nudge('left')}>←</button>
+                    <button type="button" className="st-room-btn is-right" aria-label="오른쪽으로 한 칸" onClick={() => nudge('right')}>→</button>
+                    <button type="button" className="st-room-btn is-down" aria-label={picked.surface === 'FLOOR' ? '앞으로 한 칸' : '아래로 한 칸'} onClick={() => nudge('down')}>↓</button>
+                  </div>
+                  <div className="st-decor-move-actions">
+                    <button type="button" className="st-room-btn" onClick={removePicked}>치우기</button>
+                    <button type="button" className="st-room-btn st-room-go" onClick={() => { setPickedDecor(null); setDecorMsg('') }}>다 놓았어요</button>
+                  </div>
+                </div>
+              )}
+              {decorMsg && <p role="alert" className="st-room-error">{decorMsg}</p>}
+            </>
+          )}
+          {tab === 'floor' && (
+            <div className="st-room-choices">{[null, ...slotItems('FLOOR')].map((item) => choice('FLOOR', item))}</div>
           )}
           {tab === 'furniture' && (
             <>
@@ -421,6 +599,18 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
               </div>
             </>
           )}
+          {tab !== 'frames' && <UnlockConfirm shop={shop} />}
+          {tab !== 'frames' && (shop.unlock.isPending || shop.unlock.isSuccess) && (
+            <p role="status" className="st-room-drawer-note">{shop.unlock.isPending ? '여는 중이에요.' : '열었어요! 저장을 누르면 내 방에 반영돼요.'}</p>
+          )}
+          {tab === 'decor' && (shop.purchase.isPending || shop.purchase.isSuccess) && (
+            <p role="status" className="st-room-drawer-note">{shop.purchase.isPending ? '사는 중이에요.' : `샀어요! ${josa.subject(bought ? bought.name : '방 소품')} ${shop.purchase.data!.ownedCount}개 있어요.`}</p>
+          )}
+          {tab === 'decor' && shop.purchase.isError && (unlockMessage(shop.purchase.error)
+            ? <p role="alert" className="st-room-error">{unlockMessage(shop.purchase.error)}</p> : <ErrorNotice error={shop.purchase.error} />)}
+          {tab !== 'frames' && shop.unlock.isError && (unlockMessage(shop.unlock.error)
+            ? <p role="alert" className="st-room-error">{unlockMessage(shop.unlock.error)}</p> : <ErrorNotice error={shop.unlock.error} />)}
+          {lockedDraft && !shop.confirming && <p role="status" className="st-room-error">아직 안 연 것을 골랐어요. 열거나 다른 것을 골라야 저장할 수 있어요.</p>}
           {errors.map((m) => <p key={m} role="alert" className="st-room-error">{m}</p>)}
         </section>
       )}
@@ -435,14 +625,6 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
           <span>기념 액자</span>
           <strong>{album.data?.totalElements ?? 0}<small> 개</small></strong>
           <button type="button" className="st-room-link" onClick={onAlbum}>추억 앨범에서 보기 →</button>
-        </div>
-        <div className="st-room-record is-green">
-          <span>나만의 꾸미기</span>
-          <strong className="st-room-record-words">테마 · 캐릭터 · 옷 · 가구</strong>
-          <span className="st-room-links">
-            <button type="button" className="st-room-link" onClick={() => onCustomize()}>꾸미기 열기 →</button>
-            <button type="button" className="st-room-link" onClick={onFriends}>뭉치 친구들 →</button>
-          </span>
         </div>
       </section>
     </main>

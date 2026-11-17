@@ -490,10 +490,6 @@
 @keyframes st-custom-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
 #class-journal .cj-app-student .st-preview-big .st-companion { width: 100%; height: auto; }
 /* 내 방 가구 탭: 작은 내 방 미리 보기(사용자 결정 2026-11-16 "뭐가 어떻게 변하는지 보여야지") */
-#class-journal .cj-app-student .st-preview-roombox { padding: 0; }
-#class-journal .cj-app-student .st-preview-roombox .st-room-scene-mini { border-radius: 27px; }
-#class-journal .cj-app-student .st-custom-page .st-preview-room-note { font-size: 16px; line-height: 1.6; }
-#class-journal .cj-app-student .st-preview-room-note b { font-weight: 800; }
 /* 주황 글자는 크림 바탕에서 대비가 낮아(2.1:1) 글자는 진한 색, 주황은 밑줄로만 */
 #class-journal .cj-app-student .st-world .st-link-inline {
   padding: 0;
@@ -609,11 +605,6 @@
 #class-journal .cj-app-student .st-pick-tile strong { font-size: 15px; font-weight: 700; }
 #class-journal .cj-app-student .st-pick-tile small { font-size: var(--st-fs-xs, 14px); }
 #class-journal .cj-app-student .st-custom-page .st-pick-tile .st-pick-pill { align-self: center; padding: 2px 10px; font-size: var(--st-fs-xs, 14px); }
-#class-journal .cj-app-student .st-world .st-pick-furniture { min-width: 170px; padding: 14px 10px; border-radius: 22px; gap: 8px; }
-#class-journal .cj-app-student .st-tile-room { width: 128px; height: 100px; align-items: stretch; }
-#class-journal .cj-app-student .st-pick-furniture strong { font-family: var(--st-display); font-weight: 400; font-size: 20px; }
-#class-journal .cj-app-student .st-custom-page .st-pick-furniture .st-pick-pill { font-size: var(--st-fs-xs, 14px); padding: 3px 12px; }
-#class-journal .cj-app-student .st-custom-page .st-pick-furniture .st-pick-pill[data-kind='using'] { background: var(--sk-yellow); }
 /* 아래 버튼 줄 */
 #class-journal .cj-app-student .st-custom-action {
   display: flex;
@@ -1187,4 +1178,21 @@
   #class-journal .cj-app-student .st-world:has(.st-settings-page) { padding-block: 16px; }
   #class-journal .cj-app-student .st-world:has(.st-settings-page) .st-stage { padding-bottom: 16px; }
   #class-journal .cj-app-student .st-world .st-settings-page .st-page-head h1 { font-size: 40px; }
+}
+
+/* 꾸미기 "새로 나왔어요"(#705, 등록 7일 안) */
+#class-journal .cj-app-student .st-pick-tile { position: relative; }
+#class-journal .cj-app-student .st-new-tag {
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  z-index: 1;
+  padding: 2px 9px;
+  border: 2px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-yellow);
+  color: var(--sk-ink);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }

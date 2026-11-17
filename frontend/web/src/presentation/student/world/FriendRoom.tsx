@@ -14,9 +14,10 @@ import { boardTagTransform, faceStyle, MATS, projectToHolder, roomFaces, RUG, sl
 import { skinOf } from './roomAssets.ts'
 import { useLook } from './lookContext.ts'
 import { CAN_WALK, clamp, useRoomWalk } from './useRoomWalk.ts'
+import { blockedByDecor, decorFaces, decorFloorBlocks, drawableDecor } from './decorArt.ts'
 import './room.css'
 
-/** 방 주인 뭉치는 방 가운데(러그 위)에 서 있다(사용자 결정 2026-11-17). 내 뭉치는 이 둘레를 지나가지 못한다 */
+/** 방 주인 뭉치는 방 가운데(출발 자리)에 서 있다(사용자 결정 2026-11-17). 내 뭉치는 이 둘레를 지나가지 못한다 */
 const FRIEND_SPOT = { x: RUG.x, z: RUG.z } as const
 const FRIEND_RADIUS = 125
 /** 이만큼 가까이 와서 멈추면 친구 뭉치가 인사한다 */
@@ -90,10 +91,13 @@ function FriendRoomError({ error, retry }: { error: Error; retry: () => void }) 
 function FriendRoomScene({ data }: { data: FriendRoomData }) {
   const { companion, worn } = useLook()
   const near = (x: number, z: number, r: number) => Math.hypot(x - FRIEND_SPOT.x, z - FRIEND_SPOT.z) < r
+  // 친구가 놓은 방 소품(#723 칸 모양): 그릴 수 있는 것만, 선 것은 걷기 막힘
+  const shownDecor = drawableDecor(data.decor)
+  const decorBlocked = blockedByDecor(decorFloorBlocks(shownDecor))
   const {
     view, pos, facing, pose, moving, jumping, stageRef, holderRef, roomRef,
     fit, holderH, scale, worldScale, onKeyDown, onKeyUp, onBlur, onPointerDown, onFloorClick, faceCamera, canStand, placeAt,
-  } = useRoomWalk({ start: { x: DOOR_MAT.x, z: DOOR_MAT.z }, blocked: (x, z) => near(x, z, FRIEND_RADIUS) })
+  } = useRoomWalk({ start: { x: DOOR_MAT.x, z: DOOR_MAT.z }, blocked: (x, z) => near(x, z, FRIEND_RADIUS) || decorBlocked(x, z) })
   const [greeting] = useState(() => GREETINGS[Math.floor(Math.random() * GREETINGS.length)])
   // 크게 보는 액자: 열면 닫기 단추로, 닫으면 누른 액자로 초점을 돌린다
   const [viewing, setViewing] = useState<number | null>(null)
@@ -112,8 +116,9 @@ function FriendRoomScene({ data }: { data: FriendRoomData }) {
     return () => clearTimeout(id)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- 들어올 때 한 번만(걷기 함수는 그릴 때마다 새로 만들어짐)
 
-  const faces = roomFaces({ wallpaper: data.room.wallpaper, desk: data.room.desk, wall: data.room.wall, wardrobe: data.room.wardrobe })
+  const faces = roomFaces({ wallpaper: data.room.wallpaper, floor: data.room.floor, desk: data.room.desk, wall: data.room.wall, wardrobe: data.room.wardrobe })
     .filter((f) => !f.key.startsWith('mat-')) // 가구 앞 발판은 내 방 메뉴용이라 친구 방에서는 그리지 않음
+    .concat(decorFaces(shownDecor, faceCamera))
   const frameWood = skinOf('WALL', data.room.wall).set[0]
   const greet = !moving && near(pos.x, pos.z, GREET_RADIUS)
   const bubbleAt = projectToHolder(FRIEND_SPOT.x, -250, FRIEND_SPOT.z, { ...view, ws: worldScale, stageScale: scale, holderW: fit.w })
@@ -141,7 +146,7 @@ function FriendRoomScene({ data }: { data: FriendRoomData }) {
                 <div key={i} className="st-f st-room-slot" style={style} role="img" aria-label={`${i + 1}번 자리 비어 있음`} />
               )
             })}
-            {/* 친구 뭉치: 착용 그대로 러그 옆에 서 있고 이름표가 위에 */}
+            {/* 방 주인 뭉치: 착용 그대로 방 가운데에 서 있고 이름표가 위에 */}
             <div className="st-f st-room-shadow" aria-hidden="true" style={{ transform: `translate3d(${FRIEND_SPOT.x}px,-2px,${FRIEND_SPOT.z}px) rotateX(90deg)` }} />
             <div className="st-f st-room-char st-friend-char" aria-hidden="true" style={{ transform: faceCamera(FRIEND_SPOT.x, 0, FRIEND_SPOT.z) }}>
               <div className="st-room-bob"><Companion kind={data.companion} size={140} decorative worn={data.worn} /></div>

@@ -4,39 +4,46 @@ import { ArrowLeft } from 'lucide-react'
 import type { Child } from '../../../domain/classroom.ts'
 import { companionToFriend, friendById, FRIENDS, THEMES } from '../../../domain/studentLook.ts'
 import type { FriendId, ThemeId } from '../../../domain/studentLook.ts'
-import { companionKey, FURNITURE_SLOTS, ITEM_SLOTS, SLOT_LABELS, themeKey, wornAssets } from '../../../domain/retention.ts'
-import type { CharacterSlot, FurnitureSlot, ItemSlot, LookItem } from '../../../domain/retention.ts'
+import { companionKey, DECOR_MAX_OWNED, ITEM_SLOTS, SLOT_LABELS, themeKey, wornAssets } from '../../../domain/retention.ts'
+import type { CharacterSlot, ItemSlot, LookItem } from '../../../domain/retention.ts'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { Companion } from './Companion.tsx'
 import type { FriendView } from './friendArt.ts'
 import { ThemeSwatch } from './ThemeArt.tsx'
-import { furnitureSkinName, ROOM_SET_PARTS, wallpaperOf } from './roomAssets.ts'
-import type { RoomSlot } from './roomAssets.ts'
-import { FurnitureThumb } from './FurnitureThumb.tsx'
-import { RoomScene } from './RoomScene.tsx'
+import { wallpaperOf } from './roomAssets.ts'
 import { BUDDY_WIDTH, SCENE } from './homeScene.ts'
-import { useGlow } from './roomGlow.ts'
-import { CUSTOMIZE_TABS, itemName, THEME_FRAME, unlockMessage, useLookShop } from './lookShop.ts'
+import { canBuyMore, CUSTOMIZE_TABS, isNewItem, itemName, THEME_FRAME, unlockMessage, useLookShop } from './lookShop.ts'
 import type { CustomizeTab, LookShop } from './lookShop.ts'
 import './retention.css'
 
-/** 꾸미기 해금 확인(#389). 확인을 누르기 전에는 요청을 보내지 않는다 */
+/**
+ * 꾸미기 해금 확인(#389). 확인을 누르기 전에는 요청을 보내지 않는다.
+ * 방 소품(#705)은 해금이 아니라 한 개씩 사기: 같은 확인 상태를 쓰고 문구·단추만 다르다.
+ */
 export function UnlockConfirm({ shop }: { shop: LookShop }) {
-  const { confirming, pendingItem, balance, affordable, busy, unlock } = shop
+  const { confirming, pendingItem, balance, affordable, busy, unlock, purchase } = shop
   const ref = useRef<HTMLElement>(null)
   useEffect(() => { if (confirming) ref.current?.focus() }, [confirming])
   if (!confirming) return null
+  const buying = pendingItem?.slot === 'DECOR'
   return (
-    <section ref={ref} tabIndex={-1} className="st-unlock-confirm" aria-label="꾸미기 해금 확인">
-      <h3>{pendingItem ? itemName(pendingItem) : '꾸미기'} 해금할까요?</h3>
+    <section ref={ref} tabIndex={-1} className="st-unlock-confirm" aria-label={buying ? '방 소품 사기 확인' : '꾸미기 해금 확인'}>
+      <h3>{pendingItem ? itemName(pendingItem) : '꾸미기'} {buying ? '1개 살까요?' : '해금할까요?'}</h3>
       {pendingItem && balance !== undefined && <p>{pendingItem.pricePoints.toLocaleString('ko-KR')}포인트를 써요.
-        {affordable ? ` 해금 후 ${Math.max(0, balance - pendingItem.pricePoints).toLocaleString('ko-KR')}포인트가 남아요.`
+        {affordable ? ` ${buying ? '사고 나면' : '해금 후'} ${Math.max(0, balance - pendingItem.pricePoints).toLocaleString('ko-KR')}포인트가 남아요.`
           : ` ${Math.max(0, pendingItem.pricePoints - balance).toLocaleString('ko-KR')}포인트가 더 필요해요.`}</p>}
-      <p className="st-meta">한 번 열면 계속 쓸 수 있어요. 쓴 포인트는 돌려받을 수 없어요.</p>
+      <p className="st-meta">{buying
+        ? `지금 ${pendingItem?.ownedCount ?? 0}개 있어요. 하나에 ${DECOR_MAX_OWNED}개까지 가질 수 있어요. 쓴 포인트는 돌려받을 수 없어요.`
+        : '한 번 열면 계속 쓸 수 있어요. 쓴 포인트는 돌려받을 수 없어요.'}</p>
       <div className="st-custom-actions">
         <button type="button" className="st-button" disabled={busy} onClick={shop.cancelUnlock}>취소</button>
-        <button type="button" className="st-button st-primary" disabled={busy || !affordable || !pendingItem?.onSale || pendingItem?.unlocked}
-          onClick={shop.confirmUnlock}>{unlock.isPending ? '해금하는 중이에요' : '포인트로 해금하기'}</button>
+        {buying ? (
+          <button type="button" className="st-button st-primary" disabled={busy || !affordable || !canBuyMore(pendingItem)}
+            onClick={shop.confirmPurchase}>{purchase.isPending ? '사는 중이에요' : '포인트로 사기'}</button>
+        ) : (
+          <button type="button" className="st-button st-primary" disabled={busy || !affordable || !pendingItem?.onSale || pendingItem?.unlocked}
+            onClick={shop.confirmUnlock}>{unlock.isPending ? '해금하는 중이에요' : '포인트로 해금하기'}</button>
+        )}
       </div>
     </section>
   )
@@ -81,20 +88,12 @@ export function LookLoadState({ shop }: { shop: LookShop }) {
 }
 
 const won = (n: number) => n.toLocaleString('ko-KR')
+const slotLabel = (slot: ItemSlot) => SLOT_LABELS[slot]
 const VIEWS: { id: FriendView; label: string }[] = [{ id: 'front', label: '앞' }, { id: 'side', label: '옆' }, { id: 'back', label: '뒤' }]
 /** 착용 칸 "안 쓰기" 이름 */
 const NONE_LABEL: Record<CharacterSlot, string> = { HAT: '안 쓰기', OUTFIT: '안 입기', ACCESSORY: '없음', BACKGROUND: `${wallpaperOf(null).name} (기본)` }
-/** 옷 입히기는 모자·옷·소품(시안 Customize), 배경(= 내 방 벽지)은 내 방 가구 탭으로(2026-11-16) */
+/** 옷 입히기는 모자·옷·소품(시안 Customize). 배경(= 내 방 벽지)과 방 꾸미기는 내 방 "방 꾸미기" 서랍에서(2026-11-17) */
 const WEAR_SLOTS: ItemSlot[] = ['HAT', 'OUTFIT', 'ACCESSORY']
-const ROOM_SLOTS: ItemSlot[] = ['BACKGROUND', ...FURNITURE_SLOTS]
-const slotLabel = (slot: ItemSlot) => (slot === 'BACKGROUND' ? '벽지' : SLOT_LABELS[slot])
-/** 미리 보기 방 설명용 이름(목록에 없으면 기본 이름) */
-const roomItemName = (shop: LookShop, slot: RoomSlot, key: string | null) => {
-  const item = key ? shop.catalog?.find((i) => i.itemKey === key) : undefined
-  if (item) return itemName(item)
-  return slot === 'BACKGROUND' ? `${wallpaperOf(null).name}` : furnitureSkinName(slot, null)
-}
-const isRoomSlot = (slot: ItemSlot): slot is RoomSlot => (ROOM_SLOTS as ItemSlot[]).includes(slot)
 
 /**
  * 꾸미기 화면에서 고르는 중인 것(미리 보기). 시안 Customize대로 카드를 누르면 왼쪽 미리 보기만 바뀌고,
@@ -105,24 +104,19 @@ function usePicks(shop: LookShop) {
   const [theme, setTheme] = useState<ThemeId | null>(null)
   const [friend, setFriend] = useState<FriendId | null>(null)
   const [items, setItems] = useState<Partial<Record<ItemSlot, string | null>>>({})
+  // 옷 입히기 칸 줄에서 고른 칸(모자·옷·소품)
+  const [group, setGroup] = useState<ItemSlot | null>(null)
   const item = (slot: ItemSlot) => (slot in items ? items[slot] ?? null : shop.equipped[slot] ?? null)
   const leaveConfirm = () => { if (shop.confirming) shop.cancelUnlock() }
-  const { glow, flash } = useGlow()
-  const [last, setLast] = useState<RoomSlot | null>(null)
-  const assetOf = (key: string | null) => (key && shop.catalog?.find((i) => i.itemKey === key)?.assetKey) || null
   return {
     theme: theme ?? shop.t.id,
     friend: friend ?? companionToFriend(shop.companion),
     item,
     pickTheme: (id: ThemeId) => { leaveConfirm(); setTheme(id) },
     pickFriend: (id: FriendId) => { leaveConfirm(); setFriend(id) },
-    pickItem: (slot: ItemSlot, key: string | null) => { leaveConfirm(); setItems((before) => ({ ...before, [slot]: key })); if (isRoomSlot(slot)) { flash(slot); setLast(slot) } },
-    /** 방금 고른 내 방 칸(미리 보기 방에서 그 가구만 잠깐 반짝임) */
-    glow,
-    /** 마지막으로 고른 내 방 칸(미리 보기 아래 "무엇이 바뀌는지" 한 줄) */
-    last,
-    /** 미리 보기 방 그림(고르는 중인 벽지·가구, 아직 안 연 것도) */
-    room: { wallpaper: assetOf(item('BACKGROUND')), desk: assetOf(item('DESK')), wall: assetOf(item('WALL')), wardrobe: assetOf(item('WARDROBE')) },
+    pickItem: (slot: ItemSlot, key: string | null) => { leaveConfirm(); setItems((before) => ({ ...before, [slot]: key })) },
+    group,
+    pickGroup: (slot: ItemSlot) => { leaveConfirm(); setGroup(slot) },
     /** 미리 보기 캐릭터가 입은 그림(옷 입히기 탭에서 고른 것까지) */
     worn: wornAssets({ ...shop.equipped, ...Object.fromEntries(ITEM_SLOTS.map((s) => [s, item(s)])) }, shop.catalog),
   }
@@ -153,10 +147,10 @@ function tabAction(shop: LookShop, picks: Picks, tab: CustomizeTab): Action {
     if (!locked(key)) return { title: f.name, note: '가지고 있어요.', label: '함께 다니기', ready: !choosingBlocked, using: false, run: () => choose({ companion: c }) }
     return { title: f.name, note: '새 친구를 만나 볼까?', using: false, ...unlockOr(key, `${won(price(key))}포인트로 만나기`) }
   }
-  // 옷 입히기·내 방 가구: 칸마다 고른 것을 모아 한 번에 입힌다. 아직 안 연 것이 있으면 하나씩 해금부터
-  const slots: ItemSlot[] = tab === 'wear' ? WEAR_SLOTS : ROOM_SLOTS
-  const [word, subject, is] = tab === 'wear' ? ['옷', '옷이', '옷이에요'] : ['가구', '가구가', '가구예요']
-  const title = tab === 'wear' ? '입혀 보는 중' : '내 방 가구'
+  // 옷 입히기: 칸마다 고른 것을 모아 한 번에 입힌다. 아직 안 연 것이 있으면 하나씩 해금부터
+  const slots = WEAR_SLOTS
+  const [word, subject, is] = ['옷', '옷이', '옷이에요']
+  const title = '입혀 보는 중'
   const lockedKeys = slots.map(picks.item).filter((k): k is string => !!k && locked(k))
   if (lockedKeys.length) {
     const first = catalog?.find((i) => i.itemKey === lockedKeys[0])
@@ -164,16 +158,15 @@ function tabAction(shop: LookShop, picks: Picks, tab: CustomizeTab): Action {
       ...unlockOr(lockedKeys[0], `${first ? itemName(first) : word} ${won(price(lockedKeys[0]))}포인트로 열기`) }
   }
   const same = slots.every((s) => picks.item(s) === (shop.equipped[s] ?? null))
-  if (same) return { title, note: `모두 가지고 있는 ${is}.`, label: tab === 'wear' ? '입고 있어요' : '쓰는 중', ready: false, using: true }
-  return { title, note: `모두 가지고 있는 ${is}.`, label: tab === 'wear' ? '이대로 입기' : '이 가구로 바꾸기', ready: !choosingBlocked, using: false,
+  if (same) return { title, note: `모두 가지고 있는 ${is}.`, label: '입고 있어요', ready: false, using: true }
+  return { title, note: `모두 가지고 있는 ${is}.`, label: '이대로 입기', ready: !choosingBlocked, using: false,
     run: () => choose({ equipped: { ...shop.equipped, ...Object.fromEntries(slots.map((s) => [s, picks.item(s)])) } }) }
 }
 
 /** 고르기 탭 하나의 내용(카드를 누르면 미리 보기만 바뀐다) */
 function TabContent({ shop, picks, tab }: { shop: LookShop; picks: Picks; tab: CustomizeTab }) {
   const { t, companion, catalog, locked, price } = shop
-  // 옷 입히기·내 방 가구는 칸(모자·옷·소품 / 벽지·책상·추억의 벽·옷장)을 하나씩 골라 본다(사용자 의견 2026-11-16 "너무 밑에 스크롤해야 하는 거야")
-  const [group, setGroup] = useState<ItemSlot | null>(null)
+  // 옷 입히기는 칸(모자·옷·소품)을 하나씩 골라 본다(사용자 의견 2026-11-16 "너무 밑에 스크롤해야 하는 거야")
   const lockText = (itemKey: string) => (catalog?.some((i) => i.itemKey === itemKey) ? `${won(price(itemKey))}포인트` : '해금 확인 필요')
   const slotItems = (slot: ItemSlot): LookItem[] => (catalog ?? []).filter((i) => i.slot === slot)
 
@@ -223,38 +216,32 @@ function TabContent({ shop, picks, tab }: { shop: LookShop; picks: Picks; tab: C
   const tile = (slot: ItemSlot, item: LookItem | null) => {
     const key = item?.itemKey ?? null
     const lockedItem = !!item && !item.unlocked
-    const name = item ? itemName(item) : slot in NONE_LABEL ? NONE_LABEL[slot as CharacterSlot] : `${furnitureSkinName(slot as FurnitureSlot, null)} (기본)`
+    const name = item ? itemName(item) : NONE_LABEL[slot as CharacterSlot]
     const using = (shop.equipped[slot] ?? null) === key
-    const status = lockedItem ? (item.onSale ? `${won(item.pricePoints)}포인트` : '지금은 열 수 없어요')
-      : tab === 'furniture' ? (using ? '쓰는 중' : '가지고 있어요') : item ? '가지고 있어요' : ''
+    const status = lockedItem ? (item.onSale ? `${won(item.pricePoints)}포인트` : '지금은 열 수 없어요') : item ? '가지고 있어요' : ''
     return (
-      <button key={`${slot}:${key ?? 'none'}`} type="button" className={`st-pick-tile${tab === 'furniture' ? ' st-pick-furniture' : ''}`}
+      <button key={`${slot}:${key ?? 'none'}`} type="button" className="st-pick-tile"
         aria-pressed={picks.item(slot) === key} disabled={lockedItem && (!item.onSale || !catalog)} onClick={() => picks.pickItem(slot, key)}>
-        {tab === 'furniture' ? (
-          <span className="st-tile-art st-tile-room"><FurnitureThumb slot={slot as RoomSlot} assetKey={item?.assetKey} /></span>
-        ) : (
-          <span className="st-tile-art" aria-hidden="true">
-            <Companion friend={picks.friend} size={64} decorative worn={item?.assetKey ? { [slot]: item.assetKey } : {}} />
-          </span>
-        )}
+        {item && isNewItem(item) && <span className="st-new-tag">새로 나왔어요</span>}
+        <span className="st-tile-art" aria-hidden="true">
+          <Companion friend={picks.friend} size={64} decorative worn={item?.assetKey ? { [slot]: item.assetKey } : {}} />
+        </span>
         <strong>{name}</strong>
-        {/* 함께 바뀌는 것(세트)을 칸마다 적는다 */}
-        {tab === 'furniture' && <small>{ROOM_SET_PARTS[slot as RoomSlot]}</small>}
         {status && <span className="st-pick-pill" data-kind={lockedItem ? 'locked' : using ? 'using' : 'owned'}>{status}</span>}
       </button>
     )
   }
-  const slots: ItemSlot[] = tab === 'wear' ? WEAR_SLOTS : ROOM_SLOTS
-  // 내 방 가구 스킨(P27): 기본 스킨은 착용 칸이 빈 상태라 목록에 아이템이 없어도 고를 수 있다
-  if (!slots.some((s) => slotItems(s).length > 0))
-    return <p className="st-empty">{tab === 'wear' ? '아직 입혀 볼 옷이 없어요. 곧 새 옷이 들어와요.' : '아직 바꿀 수 있는 가구가 없어요.'}</p>
-  const groupSlots = slots.filter((s) => tab !== 'wear' || slotItems(s).length > 0)
+  if (!WEAR_SLOTS.some((s) => slotItems(s).length > 0))
+    return <p className="st-empty">아직 입혀 볼 옷이 없어요. 곧 새 옷이 들어와요.</p>
+  // 아이템이 있는 칸만
+  const groupSlots = WEAR_SLOTS.filter((s) => slotItems(s).length > 0)
+  const group = picks.group
   const shown = group && groupSlots.includes(group) ? group : groupSlots[0]
   return (
     <div className="st-pick-groups">
-      <div className="st-pick-slotbar" role="group" aria-label={tab === 'wear' ? '입혀 볼 곳' : '바꿀 것'}>
+      <div className="st-pick-slotbar" role="group" aria-label="입혀 볼 곳">
         {groupSlots.map((s) => (
-          <button key={s} type="button" aria-pressed={s === shown} onClick={() => setGroup(s)}>
+          <button key={s} type="button" aria-pressed={s === shown} onClick={() => picks.pickGroup(s)}>
             {slotLabel(s)}
             {picks.item(s) !== (shop.equipped[s] ?? null) && <i aria-label="고른 것 있음" />}
           </button>
@@ -312,8 +299,8 @@ function CustomizeTabs({ shop, picks, tab, onTab }: { shop: LookShop; picks: Pic
   )
 }
 
-/** 왼쪽 미리 보기: 화면 테마 탭은 작은 홈(우리 집 그림 + 캐릭터), 캐릭터·옷 탭은 캐릭터 무대, 가구 탭은 작은 내 방 */
-function Preview({ shop, picks, tab, onRoom }: { shop: LookShop; picks: Picks; tab: CustomizeTab; onRoom: () => void }) {
+/** 왼쪽 미리 보기: 화면 테마 탭은 작은 홈(우리 집 그림 + 캐릭터), 캐릭터·옷 탭은 캐릭터 무대 */
+function Preview({ shop, picks, tab }: { shop: LookShop; picks: Picks; tab: CustomizeTab }) {
   const th = THEMES[picks.theme]
   const frame = { '--st-preview-frame': THEME_FRAME[th.id], '--st-preview-top': th.top } as CSSProperties
   if (tab === 'theme')
@@ -336,23 +323,7 @@ function Preview({ shop, picks, tab, onRoom }: { shop: LookShop; picks: Picks; t
         <p className="st-meta">이 테마를 쓰면 바깥 테두리와 홈 그림이 같이 바뀌어요.</p>
       </>
     )
-  if (tab === 'furniture') {
-    // 시안의 "가구는 내 방에서 바로 바꿔요" 안내 카드 대신 작은 내 방(사용자 결정 2026-11-16 "뭐가 어떻게 변하는지 보여야지").
-    // 칸을 누르면 이 방에서 먼저 바뀌고 바뀐 가구가 잠깐 반짝인다. 아직 안 연 가구도 미리 볼 수 있다
-    const last = picks.last
-    return (
-      <>
-        <div className="st-custom-preview-box st-preview-roombox" style={frame}>
-          <RoomScene look={picks.room} glow={picks.glow} companion={shop.companion} worn={shop.worn}
-            label={`고르는 중인 내 방: ${(['BACKGROUND', ...FURNITURE_SLOTS] as RoomSlot[]).map((s) => `${slotLabel(s)} ${roomItemName(shop, s, picks.item(s))}`).join(', ')}`} />
-        </div>
-        <p className="st-meta st-preview-room-note">
-          {last ? <><b>{ROOM_SET_PARTS[last]}</b>{last === 'WALL' ? '가' : '이'} 바뀌어요.</> : '칸을 누르면 이 방에서 먼저 볼 수 있어요.'}
-          {' '}<button type="button" className="st-link-inline" onClick={onRoom}>내 방으로 가기 →</button>
-        </p>
-      </>
-    )
-  }
+
   const f = friendById(picks.friend)
   return <StagePreview frame={frame} friend={f} worn={picks.worn} />
 }
@@ -377,7 +348,7 @@ function StagePreview({ frame, friend: f, worn }: { frame: CSSProperties; friend
 
 /**
  * 꾸미기 화면(/student/customize?tab=, #648 시안 Customize, URL 기준안). 학생 틀 안 전체 화면이고
- * 왼쪽 미리 보기 + 오른쪽 탭 4개(화면 테마·캐릭터·옷 입히기·내 방 가구) + 아래 버튼.
+ * 왼쪽 미리 보기 + 오른쪽 탭 3개(화면 테마·캐릭터·옷 입히기) + 아래 버튼. 방 꾸미기는 내 방 서랍에서(2026-11-17, 예전 "내 방 가구" 탭은 뺌).
  * 카드는 미리 보기만 바꾸고, 아래 버튼이 저장(PUT 설정)·해금(확인 단계 → POST 해금, 멱등 키)을 한다. 요청은 예전 꾸미기 창과 같다.
  */
 export function StudentCustomize({ child, tab, onTab, onBack }: {
@@ -396,7 +367,7 @@ function CustomizePage({ child, tab, onTab, onBack }: { child: Child; tab: Custo
       <section className="st-custom-left" aria-label="미리 보기">
         <button type="button" className="st-pill-back" onClick={onBack}><ArrowLeft aria-hidden="true" /> 내 방</button>
         <h1 className="st-title-mix"><span>나만의 </span>꾸미기</h1>
-        <Preview shop={shop} picks={picks} tab={tab} onRoom={onBack} />
+        <Preview shop={shop} picks={picks} tab={tab} />
       </section>
       <section className="st-custom-right" aria-label="꾸미기 고르기">
         <CustomizeTabs shop={shop} picks={picks} tab={tab} onTab={onTab} />

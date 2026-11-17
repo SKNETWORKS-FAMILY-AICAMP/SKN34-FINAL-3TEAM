@@ -684,7 +684,7 @@
   #class-journal .cj-app-student .st-room-chips { display: none; }
 }
 
-#class-journal .cj-app-student .st-room-records { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding-top: 8px; }
+#class-journal .cj-app-student .st-room-records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding-top: 8px; }
 #class-journal .cj-app-student .st-room-record {
   display: flex;
   flex-direction: column;
@@ -875,13 +875,13 @@
 #class-journal .cj-app-student .st-world .st-fthumb svg { display: block; width: 100%; height: 100%; max-width: none; }
 #class-journal .cj-app-student .st-fthumb-paper { position: absolute; inset: 0 0 18% 0; }
 #class-journal .cj-app-student .st-fthumb-floor { position: absolute; inset: 82% 0 0 0; background: #e9d2a8; border-top: 2px solid var(--sk-line); }
+/* 바닥 칸 그림(#705): 바닥이 칸 대부분, 위에 벽 조각만 흐리게 */
+#class-journal .cj-app-student .st-fthumb-floorpick .st-fthumb-paper { inset: 0 0 62% 0; }
+#class-journal .cj-app-student .st-fthumb-floorpick .st-fthumb-floor { inset: 38% 0 0 0; }
 #class-journal .cj-app-student .st-fthumb-window { position: absolute; left: 36%; top: 12%; width: 28%; height: 34%; border: 2px solid var(--sk-line); border-radius: 3px; background: #cfe6fa; }
 #class-journal .cj-app-student .st-fthumb-curtain { position: absolute; top: 8%; width: 12%; height: 48%; border: 2px solid var(--sk-line); border-radius: 0 0 8px 8px; }
 #class-journal .cj-app-student .st-fthumb-curtain.is-left { left: 24%; }
 #class-journal .cj-app-student .st-fthumb-curtain.is-right { right: 24%; }
-#class-journal .cj-app-student .st-fthumb-rug { position: absolute; left: 22%; right: 22%; bottom: 4%; height: 22%; border: 2px solid var(--sk-line); border-radius: 50%; }
-/* 꾸미기 미리 보기 방(RoomScene.tsx): 내 방 무대를 칸 폭에 맞춰 줄임 */
-#class-journal .cj-app-student .st-room-scene-mini { position: relative; overflow: hidden; }
 /* 고른 칸이 바꾸는 가구만 잠깐 반짝임(roomGlow.ts GLOW_MS와 같은 1.6초) */
 #class-journal .cj-app-student .st-f.is-glow { animation: st-room-glow 1.6s ease-in-out; }
 @keyframes st-room-glow {
@@ -956,3 +956,87 @@
 }
 #class-journal .cj-app-student .st-friend-room-closed strong { font-family: var(--st-display); font-weight: 400; font-size: 24px; }
 #class-journal .cj-app-student .st-friend-room-closed p { margin: 0; }
+/* 방 꾸미기 서랍 포인트(#705, 서랍에서 바로 열기) */
+#class-journal .cj-app-student .st-room-drawer-head .st-room-points { margin-left: auto; white-space: nowrap; }
+/* 서랍 안 해금 확인은 두 줄로(크면 PC 한 화면에서 방이 작아짐) */
+#class-journal .cj-app-student .st-room-drawer .st-unlock-confirm { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 12px; padding: 10px 14px; }
+#class-journal .cj-app-student .st-room-drawer .st-unlock-confirm h3 { grid-column: 1; margin: 0; font-size: 17px; }
+#class-journal .cj-app-student .st-room-drawer .st-unlock-confirm p { grid-column: 1; margin: 0; font-size: 14px; }
+#class-journal .cj-app-student .st-room-drawer .st-unlock-confirm .st-custom-actions { grid-column: 2; grid-row: 1 / span 3; margin: 0; }
+@media (max-width: 640px) {
+  #class-journal .cj-app-student .st-room-drawer .st-unlock-confirm { grid-template-columns: 1fr; }
+  #class-journal .cj-app-student .st-room-drawer .st-unlock-confirm .st-custom-actions { grid-column: 1; grid-row: auto; }
+}
+
+/* 방 소품 놓기(#705): 놓을 수 있는 칸(초록), 놓인 소품 누르기(투명), 고른 소품(주황 점선) */
+#class-journal .cj-app-student .st-world .st-decor-cell { padding: 0; pointer-events: auto; cursor: pointer; background: rgba(60, 200, 120, 0.28); border: 2px solid rgba(20, 120, 70, 0.55); border-radius: 6px; }
+#class-journal .cj-app-student .st-world .st-decor-cell:hover { background: rgba(60, 200, 120, 0.55); }
+#class-journal .cj-app-student .st-world .st-decor-hit { padding: 0; pointer-events: auto; cursor: pointer; background: transparent; border: 3px dashed transparent; border-radius: 8px; }
+#class-journal .cj-app-student .st-world .st-decor-hit:hover { border-color: rgba(240, 138, 36, 0.6); }
+#class-journal .cj-app-student .st-world .st-decor-hit.is-picked { border: 6px dashed #f08a24; background: rgba(255, 170, 40, 0.4); }
+/* 방 소품 카드(고르는 모드): 한 줄에 나란히, 좁은 화면은 옆으로 밀기 */
+/* 15가지라 여러 줄이면 서랍이 길어져 방이 작아짐 → 모든 화면에서 한 줄, 옆으로 밀기 */
+#class-journal .cj-app-student .st-decor-cards { display: flex; flex-wrap: nowrap; gap: 10px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
+#class-journal .cj-app-student .st-decor-cards .st-decor-card { flex: 0 0 240px; scroll-snap-align: start; }
+#class-journal .cj-app-student .st-decor-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: center;
+  width: 250px;
+  padding: 10px 12px;
+  border: 2px solid var(--sk-line);
+  border-radius: 18px;
+  background: var(--sk-paper);
+}
+#class-journal .cj-app-student .st-decor-card .st-decor-thumb { grid-row: 1 / span 2; }
+#class-journal .cj-app-student .st-decor-card b { font-size: 16px; }
+#class-journal .cj-app-student .st-decor-card small { color: var(--sk-sub); font-size: 13px; }
+#class-journal .cj-app-student .st-decor-thumb { display: block; width: 58px; height: 46px; border: 2px solid var(--sk-line); border-radius: 12px; overflow: hidden; background: #fff; }
+#class-journal .cj-app-student .st-decor-buttons { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 6px; }
+#class-journal .cj-app-student .st-decor-buttons .st-room-btn { flex: 1 1 0; min-height: 44px; padding: 0 10px; font-size: 15px; white-space: nowrap; }
+@media (max-width: 640px) {
+  #class-journal .cj-app-student .st-decor-cards { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+  #class-journal .cj-app-student .st-decor-card { flex: 0 0 82%; width: auto; scroll-snap-align: start; }
+}
+/* 옮기는 모드: 왼쪽 이름·치우기·다 놓았어요, 오른쪽 십자 화살표 */
+#class-journal .cj-app-student .st-decor-move {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 10px 14px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 2px dashed #f08a24;
+  border-radius: 18px;
+  background: #fff7ea;
+}
+#class-journal .cj-app-student .st-decor-move-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#class-journal .cj-app-student .st-decor-move-head span:last-child { display: flex; flex-direction: column; min-width: 0; }
+#class-journal .cj-app-student .st-decor-move-head small { color: var(--sk-sub); font-size: 13px; }
+#class-journal .cj-app-student .st-decor-pad { grid-column: 2; grid-row: 1 / span 2; display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 4px; }
+#class-journal .cj-app-student .st-decor-pad .st-room-btn { min-width: 0; min-height: 0; width: 44px; height: 44px; padding: 0; font-size: 20px; }
+#class-journal .cj-app-student .st-decor-pad .is-up { grid-area: 1 / 2; }
+#class-journal .cj-app-student .st-decor-pad .is-left { grid-area: 2 / 1; }
+#class-journal .cj-app-student .st-decor-pad .is-right { grid-area: 2 / 3; }
+#class-journal .cj-app-student .st-decor-pad .is-down { grid-area: 3 / 2; }
+#class-journal .cj-app-student .st-decor-move-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#class-journal .cj-app-student .st-decor-move-actions .st-room-btn { min-height: 44px; padding: 0 14px; }
+#class-journal .cj-app-student .st-decor-move .st-decor-thumb { flex: 0 0 58px; }
+#class-journal .cj-app-student .st-decor-move-actions .st-room-btn { white-space: nowrap; }
+@media (max-width: 640px) {
+  /* 좁은 화면 옮기기 판: 위 한 줄 이름, 아래 왼쪽 치우기·다 놓았어요(세로), 오른쪽 십자 화살표 */
+  #class-journal .cj-app-student .st-decor-move-head { grid-column: 1 / -1; }
+  #class-journal .cj-app-student .st-decor-pad { grid-row: 2; }
+  #class-journal .cj-app-student .st-decor-move-actions { flex-direction: column; align-self: stretch; justify-content: center; }
+}
+/* 방 소품 색 고르기(#705, 놓은 것마다 색): 44px 동그라미 */
+#class-journal .cj-app-student .st-decor-colors { grid-column: 1; display: flex; flex-wrap: wrap; gap: 8px; }
+#class-journal .cj-app-student .st-decor-colors button { width: 44px; height: 44px; border: 3px solid var(--sk-line); border-radius: 50%; cursor: pointer; }
+#class-journal .cj-app-student .st-decor-colors button[aria-pressed='true'] { outline: 4px solid #f08a24; outline-offset: 2px; }
+#class-journal .cj-app-student .st-dthumb { background-color: #FFFDF6; }
+@media (max-width: 640px) {
+  #class-journal .cj-app-student .st-decor-colors { grid-column: 1 / -1; }
+}

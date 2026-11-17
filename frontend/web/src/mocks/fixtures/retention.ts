@@ -83,6 +83,8 @@ interface State {
   unlockResults: Record<string, { itemKey: string; unlocked: true; balance: number }>
   /** 방 소품 보유(#704): studentId → 아이템 코드 → 산 개수(core는 구매 1번 = 1행) */
   decor: Record<string, Record<string, number>>
+  /** 방 소품 놓은 칸(#705, core #723 계약안): studentId → 칸 목록 */
+  decorSpots?: Record<string, { surface: 'FLOOR' | 'WALL_BACK' | 'WALL_LEFT'; col: number; row: number; itemKey: string; color?: string | null }[]>
   /** 방 소품 사기 멱등 키: `학생:키` → 그 키로 산 아이템 코드 */
   purchaseKeys: Record<string, string>
   /** 방 소품 사기 멱등 키별 처음 응답(같은 키 재요청은 이 응답을 그대로) */
@@ -150,9 +152,22 @@ const seedItems = (): MockLookItem[] => [
   { itemId: 'look-floor-2', code: 'FLOOR_MINT', slot: 'FLOOR', name: '민트 타일', pricePoints: 90, assetKey: 'room/floor-mint.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
   { itemId: 'look-floor-3', code: 'FLOOR_CARPET', slot: 'FLOOR', name: '초록 카펫', pricePoints: 120, assetKey: 'room/floor-carpet.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
   // 방 소품(#704 DECOR, #705 기준안): 시안 MyPage 서랍 "소품". 여러 개 사므로 가구 한 개(60)보다 낮게, 착용 소품(30·40)·벽지(40·60) 가격대
-  { itemId: 'look-decor-1', code: 'DECOR_PLANT', slot: 'DECOR', name: '화분', pricePoints: 30, assetKey: 'room/decor-plant.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
-  { itemId: 'look-decor-2', code: 'DECOR_RUG', slot: 'DECOR', name: '러그', pricePoints: 50, assetKey: 'room/decor-rug.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
-  { itemId: 'look-decor-3', code: 'DECOR_LIGHTS', slot: 'DECOR', name: '줄 조명', pricePoints: 40, assetKey: 'room/decor-lights.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  // 방 소품 15가지(#705 기준안, 사용자 결정 2026-11-17 "여러 개, 색상이든 크기든"): 색은 놓을 때 고른다(core #723 color). 일부만 최근 등록(새로 나왔어요)
+  { itemId: 'look-decor-1', code: 'DECOR_PLANT', slot: 'DECOR', name: '작은 화분', pricePoints: 30, assetKey: 'room/decor-plant.svg', status: 'ON_SALE', createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z' },
+  { itemId: 'look-decor-2', code: 'DECOR_PLANT_BIG', slot: 'DECOR', name: '큰 화분', pricePoints: 50, assetKey: 'room/decor-plant-big.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-decor-3', code: 'DECOR_CACTUS', slot: 'DECOR', name: '선인장', pricePoints: 30, assetKey: 'room/decor-cactus.svg', status: 'ON_SALE', createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z' },
+  { itemId: 'look-decor-4', code: 'DECOR_LAMP', slot: 'DECOR', name: '스탠드 조명', pricePoints: 50, assetKey: 'room/decor-lamp.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-decor-5', code: 'DECOR_DOLL', slot: 'DECOR', name: '뭉치 인형', pricePoints: 60, assetKey: 'room/decor-doll.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-decor-6', code: 'DECOR_BOOKS', slot: 'DECOR', name: '쌓은 책', pricePoints: 20, assetKey: 'room/decor-books.svg', status: 'ON_SALE', createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z' },
+  { itemId: 'look-decor-7', code: 'DECOR_BEANBAG', slot: 'DECOR', name: '빈백 소파', pricePoints: 70, assetKey: 'room/decor-beanbag.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-decor-8', code: 'DECOR_RUG', slot: 'DECOR', name: '동그란 러그', pricePoints: 50, assetKey: 'room/decor-rug.svg', status: 'ON_SALE', createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z' },
+  { itemId: 'look-decor-9', code: 'DECOR_RUG_SQUARE', slot: 'DECOR', name: '네모 러그', pricePoints: 60, assetKey: 'room/decor-rug-square.svg', status: 'ON_SALE', createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z' },
+  { itemId: 'look-decor-10', code: 'DECOR_RUG_STAR', slot: 'DECOR', name: '별 러그', pricePoints: 60, assetKey: 'room/decor-rug-star.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-decor-11', code: 'DECOR_LIGHTS', slot: 'DECOR', name: '줄 조명', pricePoints: 40, assetKey: 'room/decor-lights.svg', status: 'ON_SALE', createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z' },
+  { itemId: 'look-decor-12', code: 'DECOR_GARLAND', slot: 'DECOR', name: '깃발 가랜드', pricePoints: 40, assetKey: 'room/decor-garland.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-decor-13', code: 'DECOR_CLOCK', slot: 'DECOR', name: '벽시계', pricePoints: 30, assetKey: 'room/decor-clock.svg', status: 'ON_SALE', createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z' },
+  { itemId: 'look-decor-14', code: 'DECOR_PICTURE', slot: 'DECOR', name: '작은 그림', pricePoints: 30, assetKey: 'room/decor-picture.svg', status: 'ON_SALE', createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z' },
+  { itemId: 'look-decor-15', code: 'DECOR_SHELF', slot: 'DECOR', name: '벽 선반', pricePoints: 50, assetKey: 'room/decor-shelf.svg', status: 'ON_SALE', createdAt: '2026-11-17T00:00:00Z', updatedAt: '2026-11-17T00:00:00Z' },
 ]
 const empty = (): State => ({
   ledger: {},
@@ -160,6 +175,7 @@ const empty = (): State => ({
   unlockKeys: {},
   unlockResults: {},
   decor: {},
+  decorSpots: {},
   purchaseKeys: {},
   purchaseResults: {},
   community: {},
@@ -456,17 +472,21 @@ const friends: { nickname: string; companion: CompanionId; equipped?: MockPost['
 ]
 /**
  * 목업 친구 방(#709): 친구 순서(`friend-0`…)와 같다. 그림 키는 서버처럼 `look_item.asset_key` 그대로.
- * 하늘별은 꾸민 방·액자 두 장, 초록콩은 다른 색·그림 없는 액자 한 장, 구름빵은 기본 방(꾸미지 않음)
+ * 하늘별은 꾸민 방·액자 두 장, 초록콩은 다른 색·민트 타일 바닥(#705)·그림 없는 액자 한 장, 구름빵은 기본 방(꾸미지 않음)
  */
 export const FRIEND_ROOMS: {
   wallpaper: string | null
   floor: string | null
   furniture: { DESK: string | null; WALL: string | null; WARDROBE: string | null }
   frames: { title: string; withImage: boolean }[]
+  /** 친구가 놓은 방 소품(#723 칸 모양) */
+  decor?: { surface: 'FLOOR' | 'WALL_BACK' | 'WALL_LEFT'; col: number; row: number; color?: string | null; assetKey: string }[]
 }[] = [
   { wallpaper: 'room/wall-sky.svg', floor: null, furniture: { DESK: 'room/desk-cherry.svg', WALL: null, WARDROBE: 'room/wardrobe-berry.svg' },
-    frames: [{ title: '잃어버린 지도 조각', withImage: true }, { title: '별빛 우체국', withImage: true }] },
-  { wallpaper: 'room/wall-cream.svg', floor: null, furniture: { DESK: 'room/desk-mint.svg', WALL: 'room/wall-wood.svg', WARDROBE: 'room/wardrobe-lemon.svg' },
+    frames: [{ title: '잃어버린 지도 조각', withImage: true }, { title: '별빛 우체국', withImage: true }],
+    decor: [{ surface: 'FLOOR', col: 12, row: 4, color: 'white', assetKey: 'room/decor-plant-big.svg' }, { surface: 'FLOOR', col: 11, row: 6, color: 'pink', assetKey: 'room/decor-rug.svg' },
+      { surface: 'FLOOR', col: 13, row: 7, color: 'sky', assetKey: 'room/decor-beanbag.svg' }, { surface: 'WALL_BACK', col: 3, row: 2, color: null, assetKey: 'room/decor-lights.svg' }, { surface: 'WALL_BACK', col: 14, row: 1, color: 'pink', assetKey: 'room/decor-clock.svg' }] },
+  { wallpaper: 'room/wall-cream.svg', floor: 'room/floor-mint.svg', furniture: { DESK: 'room/desk-mint.svg', WALL: 'room/wall-wood.svg', WARDROBE: 'room/wardrobe-lemon.svg' },
     frames: [{ title: '숲속 발명 대회', withImage: false }] },
   { wallpaper: null, floor: null, furniture: { DESK: null, WALL: null, WARDROBE: null }, frames: [] },
 ]

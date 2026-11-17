@@ -518,7 +518,20 @@ test('#709 친구 방 응답: 그림 키·기본값·액자 순서를 읽고, �
       { slotNo: 1, title: '잃어버린 지도 조각', imageUrl: null },
       { slotNo: 3, title: '별빛 우체국', imageUrl: '/demo/album/past-post.jpg' },
     ],
+    decor: [], // 예전 자리 번호 모양(spotNo)은 버린다(#723 칸 모양만)
   })
+  // 방 소품은 #723 칸 모양만, 범위 밖·모르는 면·그림 키 없는 칸은 버린다
+  assert.deepEqual(readFriendRoom({ nickname: '초록콩', look: { equipped: {} }, room: { furniture: {}, frames: [], decor: [
+    { surface: 'FLOOR', col: 12, row: 4, color: 'blue', assetKey: 'room/decor-plant.svg' },
+    { surface: 'WALL_LEFT', col: 8, row: 1, color: 'NOT OK', assetKey: 'room/decor-lights.svg' },
+    { surface: 'FLOOR', col: 17, row: 0, assetKey: 'room/decor-plant.svg' },
+    { surface: 'CEILING', col: 0, row: 0, assetKey: 'room/decor-plant.svg' },
+    { surface: 'WALL_BACK', col: 0, row: 0 },
+  ] } }).decor, [
+    { surface: 'FLOOR', col: 12, row: 4, color: 'blue', assetKey: 'room/decor-plant.svg' },
+    // 색 형식이 틀리면 기본 색(null)으로 읽는다(#723 color)
+    { surface: 'WALL_LEFT', col: 8, row: 1, color: null, assetKey: 'room/decor-lights.svg' },
+  ])
   // 모르는 캐릭터는 기본 캐릭터, 빈 별명은 "친구"
   assert.equal(readFriendRoom({ nickname: '', look: { companion: 'nope', equipped: {} }, room: { furniture: {}, frames: [] } }).companion, 'mungchi')
   assert.equal(readFriendRoom({ nickname: '', look: { equipped: {} }, room: { furniture: {}, frames: [] } }).nickname, '친구')

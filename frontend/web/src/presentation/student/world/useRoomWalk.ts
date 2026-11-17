@@ -20,7 +20,7 @@ export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b
 
 /**
  * 방 안 걷기·크기 맞추기(#709에서 내 방 StudentRoom에서 떼어 냄, 동작은 그대로). 내 방과 친구 방(놀러 가기)이 같이 쓴다.
- * - start: 뭉치 처음 자리(내 방은 러그, 친구 방은 문 앞)
+ * - start: 뭉치 처음 자리(내 방은 방 가운데, 친구 방은 문 앞)
  * - paused: 방 꾸미기 중처럼 걷기를 멈출 때(바닥 누르기·방향키 무시, 방 칸을 조금 더 줄임)
  * - blocked: 바닥·가구 말고 더 막을 곳(친구 방의 친구 뭉치 자리)
  */
@@ -158,7 +158,7 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
     raf.current = requestAnimationFrame(tick)
   }
   const run = () => { if (!raf.current) { lastT.current = 0; raf.current = requestAnimationFrame(tick) } }
-  /** 바닥을 누른 곳으로 걸어간다. 곧게 못 가면 러그·발판 한 곳을 거쳐 가고, 그래도 막히면 갈 수 있는 데까지 */
+  /** 바닥을 누른 곳으로 걸어간다. 곧게 못 가면 출발 자리·발판 한 곳을 거쳐 가고, 그래도 막히면 갈 수 있는 데까지 */
   const walkTo = (target: { x: number; z: number }) => {
     const from = posRef.current
     const direct = reach(from, target)

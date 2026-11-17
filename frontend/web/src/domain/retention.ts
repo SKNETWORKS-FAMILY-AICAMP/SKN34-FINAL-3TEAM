@@ -592,6 +592,48 @@ export function readMyPosts(raw: unknown): MyCommunityPost[] {
   })
 }
 
+// ---------- 방 소품 놓은 칸 (core #723 계약안, #705) ----------
+/**
+ * 방 소품은 바닥·뒷벽·왼쪽 벽 칸(격자)에 놓는다(core #723). `col`·`row`는 기준 칸(그 소품이 차지하는 칸 가운데 번호가 가장 작은 칸).
+ * 칸 범위는 PC 화면에 보이는 곳 전체(#723 기준안). 서버는 범위·같은 기준 칸·개수 상한·보유 개수만 보고, 가구 칸·겹침·길은 웹이 본다.
+ * #723이 병합되기 전이라 이 모양은 계약안이다(바뀌면 이 읽기·쓰기와 MSW만 맞춘다).
+ */
+export type DecorSurface = 'FLOOR' | 'WALL_BACK' | 'WALL_LEFT'
+export const DECOR_SURFACES: DecorSurface[] = ['FLOOR', 'WALL_BACK', 'WALL_LEFT']
+export const DECOR_GRID: Record<DecorSurface, { cols: number; rows: number }> = {
+  FLOOR: { cols: 17, rows: 13 },
+  WALL_BACK: { cols: 16, rows: 6 },
+  WALL_LEFT: { cols: 11, rows: 6 },
+}
+/** 한 번에 놓을 수 있는 방 소품 수(#723 기준안 8개) */
+export const DECOR_SPOT_LIMIT = 8
+/** color: 놓은 것마다 고른 색(core #723 계약안, null = 기본 색). 어떤 색이 있는지는 웹 그림 목록 */
+export interface DecorSpot { surface: DecorSurface; col: number; row: number; itemKey: string; color: string | null; name: string; assetKey: string }
+/** 색 키 형식(#723: 영문 소문자·숫자·하이픈 1~20자). 형식이 틀리면 기본 색으로 읽는다 */
+export const DECOR_COLOR_RE = /^[a-z0-9-]{1,20}$/
+const decorColorOf = (v: unknown) => (typeof v === 'string' && DECOR_COLOR_RE.test(v) ? v : null)
+export const isDecorSurface = (v: unknown): v is DecorSurface => typeof v === 'string' && (DECOR_SURFACES as string[]).includes(v)
+export const inDecorGrid = (surface: DecorSurface, col: number, row: number) =>
+  Number.isInteger(col) && Number.isInteger(row) && col >= 0 && row >= 0 && col < DECOR_GRID[surface].cols && row < DECOR_GRID[surface].rows
+function decorContractError(): never {
+  throw new Error('방 소품 자리를 확인하지 못했어요. 다시 확인해 주세요.')
+}
+/** 놓은 칸 목록 읽기(`GET·PUT /students/me/room/decor-spots`). 범위 밖·같은 기준 칸 두 번이면 계약 오류 */
+export function readDecorSpots(raw: unknown): DecorSpot[] {
+  const spots = (raw as { spots?: unknown })?.spots
+  if (!Array.isArray(spots)) return decorContractError()
+  const seen = new Set<string>()
+  return spots.map((x) => {
+    const v = (x ?? {}) as Record<string, unknown>
+    const col = Number(v.col), row = Number(v.row)
+    if (!isDecorSurface(v.surface) || !inDecorGrid(v.surface, col, row) || typeof v.itemKey !== 'string' || !v.itemKey) return decorContractError()
+    const at = `${v.surface}:${col}:${row}`
+    if (seen.has(at)) return decorContractError()
+    seen.add(at)
+    return { surface: v.surface, col, row, itemKey: v.itemKey, color: decorColorOf(v.color), name: text(v.name), assetKey: text(v.assetKey) }
+  })
+}
+
 // ---------- 친구 방 구경 (API 명세 2.9, FN-RET-14, core #708·web #709) ----------
 type WornSlot = 'HAT' | 'OUTFIT' | 'ACCESSORY'
 /** 친구 방(읽기 전용). 착용·벽지·가구 값은 모두 그림 키(서버가 바로 줌, 판매 중단 아이템도 그대로), null이면 기본 모습·기본 스킨 */
@@ -604,6 +646,8 @@ export interface FriendRoom {
   room: { wallpaper: string | null; floor: string | null; desk: string | null; wall: string | null; wardrobe: string | null }
   /** 추억의 벽 액자(번호순). 회차 키가 없어 회차 상세를 열 수 없다 */
   frames: { slotNo: number; title: string; imageUrl: string | null }[]
+  /** 친구가 놓은 방 소품(#723 칸 모양, 그림 키만). 모양이 맞지 않는 칸은 버린다(그리지 않음) */
+  decor: { surface: DecorSurface; col: number; row: number; color: string | null; assetKey: string }[]
 }
 function friendRoomContractError(): never {
   throw new Error('친구 방 정보를 확인하지 못했어요. 다시 확인해 주세요.')
@@ -616,7 +660,7 @@ const assetOrNull = (v: unknown): string | null => {
 }
 /**
  * 친구 방 응답 읽기. 모르는 칸(학생 ID·회차 키 등이 와도)은 화면 상태에 두지 않는다.
- * 방 소품 `decor`는 #723(자리 번호 → 바닥·벽 칸)이 끝나면 읽는다. 지금은 읽지 않아 그리지 않는다.
+ * 방 소품 `decor`는 #723 칸 모양(`surface`·`col`·`row`·`assetKey`)만 읽고, 그 밖(예전 `spotNo` 등)은 버려 그리지 않는다.
  */
 export function readFriendRoom(raw: unknown): FriendRoom {
   const v = (raw ?? {}) as Record<string, unknown>
@@ -651,6 +695,12 @@ export function readFriendRoom(raw: unknown): FriendRoom {
       wardrobe: assetOrNull(furniture.WARDROBE),
     },
     frames,
+    decor: (Array.isArray(room.decor) ? room.decor : []).flatMap((x) => {
+      const d = (x ?? {}) as Record<string, unknown>
+      const col = Number(d.col), row = Number(d.row)
+      return isDecorSurface(d.surface) && inDecorGrid(d.surface, col, row) && typeof d.assetKey === 'string' && d.assetKey
+        ? [{ surface: d.surface, col, row, color: decorColorOf(d.color), assetKey: d.assetKey }] : []
+    }),
   }
 }
 
