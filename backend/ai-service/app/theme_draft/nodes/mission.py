@@ -66,7 +66,13 @@ async def review_mission(
     generated = await ctx.review_llm.generate(
         system=body.MISSION_REVIEW_SYSTEM,
         user=body.mission_review_user(
-            request, draft, ctx.grade, theme.get("target"), knowledge, body.story_brief(theme, day)
+            request,
+            draft,
+            ctx.grade,
+            body.mission_target(theme),  # 시간 탐정은 대상이 '때'라 주지 않음(#634 ④)
+            knowledge,
+            body.story_brief(theme, day),
+            in_hand=body.target_in_hand(theme),
         ),
         output=GeneratedMissionReview,
         call_type=THEME_CALL_TYPE,
