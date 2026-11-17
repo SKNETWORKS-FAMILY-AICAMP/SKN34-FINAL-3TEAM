@@ -219,7 +219,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 
 ## 7. CD 배포 승인·이력·롤백 (#186)
 
-`cd-release.yml`: main 수동 실행 → GitHub Environment `prod` 승인 → 작업자 PC runner에서 Helm 적용 → 경로 확인 → 이력.
+`cd-release.yml`: main 수동 실행 → GitHub Environment `prod` 승인 → 작업자 PC runner에서 (배포만) DB migration Job 완료 → Helm 적용 → 경로 확인 → 이력.
 
 ### 7.1 확정 정책 (담당자 답변)
 
@@ -234,17 +234,19 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 |---|---|---|
 | 적용 위치 | 작업자 PC의 self-hosted runner(`cd-prod`) | EKS API 공개 접근이 작업자 공인 IP로 제한 |
 | 승인 | Environment `prod` 필수 승인자, main만 허용 | 승인자는 GitHub 승인 기록 API로 읽어 이력에 남김. 계획 파일의 승인 표시는 읽지 않음 |
-| 이미지 | publish job이 main SHA를 `main-<12자리>`로 ECR 게시, 있으면 재사용 | ECR 태그 IMMUTABLE. GitHub OIDC 역할은 ECR 쓰기만 |
+| 이미지 | publish job이 main SHA를 `main-<12자리>`로 ECR 게시, 있으면 재사용. core·learning migration 이미지(`*-migrate`)도 같은 태그로 게시, report는 앱 이미지가 Alembic을 포함 | ECR 태그 IMMUTABLE. GitHub OIDC 역할은 ECR 쓰기만 |
+| migration (2026-11-17) | 배포만. 승인 후 migration·앱 server dry-run을 모두 마친 뒤 core → learning → report 순서로 Job 적용·`Complete` 확인, 그다음 앱 적용. 실패·시간 초과면 앱 미적용, DB는 되돌리지 않음. 같은 SHA 재실행은 완료된 Job을 건너뜀. 롤백은 migration 없음 | 11/6 이후 core V29~V51·learning V11~V21·report 3개가 수동 절차에 묶여 있었음. 승인 한 번으로 스키마와 앱을 같은 SHA로 맞추고, 실패 시 앱이 새 스키마 없이 뜨는 것을 막음 |
 | 계획 입력 | 실행 입력 JSON(커밋하지 않음), 원문은 artifact | 계획의 SHA가 그 계획을 담은 커밋을 가리키는 순환 회피 |
 | 실행 게이트 | `scripts/cd_release.py`가 오류·차단 사유가 없을 때만 `executable=true` | 근거·승인자 미비 상태에서 게시·적용 차단 |
 | 적용 | release별 server dry-run 전체 → 순서대로 `redeploy-app.ps1 -ImageDigest -Apply` | 실패하면 다음 release 미적용, 자동 롤백 없음 |
 | 경로 확인 | 학생 PIN 로그인 → 시도 시작 → 답변 → 부모 refresh → 리포트 목록 | 판정(LLM)·결제 미호출. 부모 refresh 쿠키는 회전하므로 새 값을 fixture에 즉시 저장 |
 | 이력 | `history.json` artifact(90일)와 실행 요약 | workflow에 `contents: write`를 주지 않음 |
-| 롤백 | 이전 승인 digest를 같은 workflow·승인으로 적용 | DB downgrade 없음 |
+| 롤백 | 이전 승인 digest를 같은 workflow·승인으로 적용 | DB downgrade 없음, migration 실행 없음 |
 
 - OIDC trust: AWS IAM은 GitHub 토큰의 `job_workflow_ref`를 조건 키로 비교하지 못함. 저장소 OIDC subject에 `job_workflow_ref`를 포함시키고 trust를 `sub` 하나(`StringLike`)로 main의 `cd-release.yml`만 허용
 - deploy job `env`에서 `${{ runner.temp }}`를 쓰면 workflow 파일 오류가 됨 → 첫 step에서 `GITHUB_ENV`로 설정
-- migration과 웹(S3/CloudFront) 배포는 범위 밖. migration은 배포 전 prod README 절차로 적용
+- 웹(S3/CloudFront) 배포는 범위 밖. migration은 2026-11-17부터 workflow 안에서 실행(이전에는 배포 전 prod README 절차로 수동 적용). Job 로그는 공개 Actions 로그에 옮기지 않고 작업자 PC에서 확인
+- migration 게시에는 publish 역할의 ECR 대상에 `core-migrate`·`learning-migrate`가 필요하다. 저장소 정책 파일만 고쳤고 AWS 반영은 재가동 때(그 전에는 publish가 실패해 배포로 넘어가지 않음). AWS 실행 검증은 아직 없음
 - main·develop 브랜치 보호 규칙 없음(2026-11-04). main 직접 push로 workflow를 바꾸면 승인 전 publish job이 ECR 게시 역할을 쓸 수 있음. main 보호는 팀 결정 사항
 
 ### 7.3 DB 호환성 검토 시 포함할 제약
@@ -252,6 +254,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 - #131 `20261030_04`: 기존 report-worker 중지 → migration → 새 worker 순서. 혼합 실행 미지원. downgrade 시 실패·격리·수동 재처리 메타데이터 소실
 - report 삭제 guard 제거는 삭제된 학생의 재생성 차단을 잃을 수 있어 무조건 롤백 금지
 - core·learning 앱 자동 migration은 꺼져 있음. 운영 DB 초기화·Flyway 이력 수정으로 버전을 맞추지 않음
+- migration은 앱보다 먼저 적용되고 롤백해도 남으므로, 현재 앱과 롤백 대상 앱이 새 스키마에서 동작해야 함(추가만, 삭제·이름 변경은 앱이 먼저 안 쓰게 된 뒤 다음 릴리스로). 이 근거를 `compatibility.schema`에 적음
 
 ### 7.4 운영 실행에서 얻은 주의점
 
