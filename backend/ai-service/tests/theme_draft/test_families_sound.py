@@ -235,3 +235,27 @@ def test_when_keeps_its_rules_after_flag_split() -> None:
     assert not families.SOUND.hide_times and families.SOUND.clue_time
     assert not checks.time_word_problems({**sound_theme(), "intro": "밤 9시쯤 소리가 났어요."})
     assert families.SOUNDS.drawable and not families.TIMES.drawable
+
+
+def test_code_picks_candidate_group() -> None:
+    # 작은 실측 4건 모두 같은 동물 4마리 → 범주는 코드가 정함(같은 요청은 같은 범주,
+    # 주·학년마다 섞임)
+    groups = {
+        prompts.candidate_group_for(
+            ThemeDraftRequest.model_validate(request_body(topic=SEED, grade=g))
+        )
+        for g in (3, 4, 5, 6)
+    }
+    assert groups <= {"동물", "물건"}
+    request = ThemeDraftRequest.model_validate(request_body(topic=SEED))
+    assert prompts.candidate_group_for(request) == prompts.candidate_group_for(request)
+    assert "이번 테마 후보 범주:" in prompts.plan_user(request, [])
+    lost = ThemeDraftRequest.model_validate(request_body())
+    assert prompts.candidate_group_for(lost) is None
+    wrong = {**sound_theme(), "candidateGroup": "물건"}
+    assert any("정해진 범주 '물건'" in r for r in checks.fact_table_problems(wrong))
+    assert not [
+        r
+        for r in checks.fact_table_problems({**sound_theme(), "candidateGroup": "동물"})
+        if r.startswith("SAME_KIND")
+    ]

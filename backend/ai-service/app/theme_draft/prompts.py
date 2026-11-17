@@ -353,6 +353,19 @@ def evidence_plan_for(request: ThemeDraftRequest) -> dict[str, dict[str, str | N
     return plan_for_type(evidence_plan(plan_seed(request)), parse_topic(request.topic))
 
 
+def candidate_group_for(request: ThemeDraftRequest) -> str | None:
+    """범주가 있는 사실표 종류(소리 탐정)의 이번 테마 후보 범주(동물·물건). 이름·증거 배정과 같은
+    씨앗이라 다시 생성해도 같고, 주·학년마다 섞인다. 모델에 맡기면 작은 실측 4건 모두 같은 동물
+    4마리를 골라 물건 범주가 나오지 않았음(#634 ⑤). 씨앗 주제가 아니거나 범주가 없으면 None."""
+    import random
+
+    found = parse_topic(request.topic)
+    if found is None or found.facts is None or not found.facts.groups:
+        return None
+    groups = sorted(set(found.facts.groups.values()))
+    return random.Random(f"{plan_seed(request)}-group").choice(groups)
+
+
 def evidence_plan_lines(plan: dict[str, dict[str, str | None]]) -> list[str]:
     lines = ["", "증거 종류 배정(evidence.kind, 코드가 정함. 요일마다 그대로 따른다):"]
     for day, slot in plan.items():
@@ -404,7 +417,14 @@ def story_type_lines(request: ThemeDraftRequest) -> list[str]:
     모델이 고르게 한다(사람을 탓하는 주제여도 이 종류들 안에서)."""
     found = parse_topic(request.topic)
     if found:
-        return [f"storyType: {found.code}(주제가 정함, 그대로 쓴다)", type_rules(found)]
+        lines = [f"storyType: {found.code}(주제가 정함, 그대로 쓴다)", type_rules(found)]
+        if (group := candidate_group_for(request)) and found.facts is not None:
+            names = [c for c in found.facts.rows if found.facts.group(c) == group]
+            lines.append(
+                f"이번 테마 후보 범주: {group}(코드가 정함. candidates는 {'·'.join(names)} 가운데 "
+                "4개, 코드 검사 SAME_KIND)"
+            )
+        return lines
     return [
         "줄거리 종류: 주제에 가장 맞는 종류 하나를 골라 storyType에 쓰고 그 종류 규칙만 따른다.",
         *(type_rules(t) for t in STORY_TYPES.values()),
