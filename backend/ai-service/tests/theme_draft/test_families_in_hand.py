@@ -183,7 +183,7 @@ def test_mission_dialogue_and_review_say_target_is_in_hand() -> None:
 def test_pictures_keep_gift_closed_and_ingredient_food_hidden_until_reveal() -> None:
     gift = gift_theme()
     intro2 = prompts.cut_image_prompt(gift, "INTRO", 2, gift["introCuts"][1], [])
-    assert "closed (do not show what is inside)" in intro2
+    assert "closed (do not show what is inside), with no tag, card or label." in intro2
     assert "Do not draw any of these gift items: 목도리, 머그컵, 고무공, 그림책." in intro2
     outro3 = prompts.cut_image_prompt(gift, "OUTRO", 3, gift["outroCuts"][2], [])
     assert "The answer, 머그컵, may appear" in outro3 and "gift items" not in outro3
@@ -195,7 +195,10 @@ def test_pictures_keep_gift_closed_and_ingredient_food_hidden_until_reveal() -> 
     intro = prompts.cut_image_prompt(food, "INTRO", 2, food["introCuts"][1], [])
     assert "Do not draw 대회에 낸 할머니의 떡" in intro  # 물든 색이 답이라 엔딩 전엔 그리지 않음
     video = prompts.video_prompt(gift, "INTRO", 4, gift["introCuts"][3], [])
-    assert "The gift box stays closed." in video and "Do not show any of these gift items" in video
+    assert (
+        "The gift box stays closed, with no tag, card or label." in video
+        and "Do not show any of these gift items" in video
+    )
     assert prompts.cut_shows_target(gift, "INTRO", 1) and not prompts.cut_shows_target(
         food, "INTRO", 1
     )

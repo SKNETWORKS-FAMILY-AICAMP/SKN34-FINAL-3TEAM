@@ -1430,7 +1430,8 @@ def target_lines(theme: Theme, scene: str, index: int) -> list[str]:
     elif shows and t.code == "GIFT" and (scene, index) not in t.answer_cuts:
         lines.append(
             f"{theme.get('target') or 'The gift box'}: a plain square gift box with a ribbon, the "
-            "same in every picture, closed (do not show what is inside)."
+            "same in every picture, closed (do not show what is inside), with no tag, card or "
+            "label."
         )
     elif shows:
         lines.append(f"{theme.get('target') or 'The missing target'} may appear as the scene says.")
@@ -1507,7 +1508,7 @@ def mission_image_prompt(theme: Theme, day: str, draft: Draft, feedback: list[st
         # 손에 든 것(#634 ②)은 대상이 늘 보이는 종류만 그림(선물 상자는 닫힌 채, 비밀 재료 음식은
         # 물든 색이 답이라 그리지 않음)
         (
-            "The gift box stays closed (do not show what is inside)."
+            "The gift box stays closed (do not show what is inside) and has no tag, card or label."
             if shown and t.code == "GIFT"
             else ""
         )
@@ -1697,7 +1698,7 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         )
     elif shows:
         about_target = (
-            "The gift box stays closed."
+            "The gift box stays closed, with no tag, card or label."
             if t.code == "GIFT" and (scene, index) not in t.answer_cuts
             else ""
         )
