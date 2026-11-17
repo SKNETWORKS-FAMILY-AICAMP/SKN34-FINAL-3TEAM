@@ -523,6 +523,8 @@
 | POST | `/admin/model-versions` | SERVICE_OPS | 버전 등록 (평가 기록 첨부) | ADM-17 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/activate` | SERVICE_OPS | 승인 조건(NFR-AIQ-05) 확인 후 활성화 → `model.version.activated` | ADM-18 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/rollback` | SERVICE_OPS | 이전 승인 버전 복귀, 재분석 여부 기록 | ADM-18 | 우선1 |
+| GET | `/admin/expression-reviews?labeled&source&page&size` | SERVICE_OPS | 표현 검토 대기 목록(글만, 학생 이름·ID 없음), 열람 감사 기록 (#725, 4.1.5) | ADM-24 | 우선2 |
+| PUT | `/admin/expression-reviews/{reviewId}/label` | SERVICE_OPS | `{label: OFFENSIVE\|CLEAN\|SKIP}` 라벨, 감사 기록 (#725) | ADM-24 | 우선2 |
 | GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·지식 임베딩(#467 `KNOWLEDGE_EMBEDDING`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`·영상 `THEME_VIDEO` #436)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
 | GET·POST | `/admin/weekly-themes?grade&weekStart&status` | CONTENT | 테마 목록·작성 `{grade, weekStart, title, intro, days:[{day, missionId}]}`. `grade`는 `G3`·`G4`·`G5`·`G6`(학년별 테마, 에픽 #436) | ADM-22 | core 프록시 #387 |
 | GET·PUT | `/admin/weekly-themes/{themeId}` | CONTENT | 상세·수정(게시 중 수정은 재검토) | ADM-22 | core 프록시 #387 |
@@ -535,6 +537,7 @@
 
 - 테마는 core가 learning `/internal/admin/weekly-themes…`로 프록시(#355 미션 초안과 같은 방식, core #387·learning #385 구현), 테마 초안은 `/internal/admin/theme-drafts…`로 같은 방식(core #439·learning #438), 아이템은 core 소유. 변경은 `audit_log`(`WEEKLY_THEME_*`·`THEME_DRAFT_*`·`LOOK_ITEM_*`). 테마 초안 요청·버리기·다시 생성은 응답 초안(`target_type = THEME_DRAFT`), 채택은 만든 테마(`WEEKLY_THEME`, `detail.draftId`)가 결과 감사 대상 아이템은 같은 트랜잭션에서 `LOOK_ITEM_CREATED`·`LOOK_ITEM_UPDATED`·`LOOK_ITEM_STOPPED`·`LOOK_ITEM_RESUMED`(`target_type = LOOK_ITEM`, 수정은 `detail.before`에 이전 값)
 - 커뮤니티 신고 검토는 기존 `/admin/error-reports`(SERVICE_OPS). 신고 연결 공유물 원문 열람은 감사 기록(P07)
+- 표현 검토(FN-ADM-24, #725): `GET /admin/expression-reviews?labeled&source&page&size`·`PUT /admin/expression-reviews/{reviewId}/label`, SERVICE_OPS. core가 learning `/internal/admin/expression-reviews…`(4.1.5)로 프록시하고 목록 열람 `EXPRESSION_REVIEW_VIEW`·라벨 `EXPRESSION_REVIEW_LABEL` 감사 기록(P07). 응답 모양은 4.1.5와 같음(학생 이름·ID 없음)
 
 
 ### 2.9 커뮤니티 (FN-RET-01~04, P20)
@@ -910,13 +913,13 @@ If-Match: "7"
 
 | 받는 쪽 | 호출자 → 허용 경로 (`*` 한 세그먼트, `**` 하위 전체) |
 |---|---|
-| core | ai·scoring → `/internal/model-versions/active` · learning → `/internal/payment-usage/**`, `/internal/deletion-requests/*/completions`, `/internal/students/*/profile` · report-worker → `/internal/students/*/profile`, `/internal/students/*/report-template`, `/internal/deletion-requests/*/completions` |
-| learning | core → `/internal/**`(프록시) · ai → `/internal/records/students/**` · report-api → `/internal/records/evidence` · report-worker → `/internal/records/**`, `/internal/students/*/weekly-theme/summary` · ops → `/internal/admin/knowledge/**`, `/internal/knowledge/**` |
+| core | ai·scoring → `/internal/model-versions/active` · ops → `/internal/model-versions`, `/internal/model-versions/active`(재학습 작업, #725) · learning → `/internal/payment-usage/**`, `/internal/deletion-requests/*/completions`, `/internal/students/*/profile` · report-worker → `/internal/students/*/profile`, `/internal/students/*/report-template`, `/internal/deletion-requests/*/completions` |
+| learning | core → `/internal/**`(프록시) · ai → `/internal/records/students/**` · report-api → `/internal/records/evidence` · report-worker → `/internal/records/**`, `/internal/students/*/weekly-theme/summary` · ops → `/internal/admin/knowledge/**`, `/internal/knowledge/**`, `/internal/expression-reviews/**`(재학습 작업, #725) |
 | ai | core → `/internal/analysis/**` · learning → `/internal/{judgments,followups,mission-drafts,theme-drafts,embeddings,memory-explanations,memory-queries}`(`memory-queries`는 #681 구현) · report-worker → `/internal/report-narratives`, `/internal/report-explanations` · ops → `/internal/embeddings`, `/internal/judgments`, `/internal/versions` |
 | scoring | ai → `/internal/m1/**`, `/internal/m2/**` · core → `/internal/models/preflight` · ops → `/internal/versions` |
 | report-api | core → `/internal/reports/**`, `/internal/report-jobs/**` |
 
-- ops는 운영 스크립트(`scripts/knowledge`·`evaluation`) 전용 토큰이며 비워 두면 받지 않는다. report-worker는 HTTP를 받지 않는다
+- ops는 운영 스크립트(`scripts/knowledge`·`evaluation`)와 표현 분류 재학습 작업(`ml/tox` CronJob, #725) 전용 토큰이며 비워 두면 받지 않는다. report-worker는 HTTP를 받지 않는다
   - ai는 받은 컨텍스트 헤더를 learning 호출에 그대로 전달
   - 사용자 요청 없는 호출(report-worker): `X-User-Role: SYSTEM`, `X-Student-Scope` = 이벤트 `subject` 학생
 - 외부에 노출하지 않음. NetworkPolicy로 호출 관계만 허용
@@ -976,6 +979,8 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET·POST·PUT | `/internal/admin/weekly-themes…` | core | #385(core #387 프록시): `ADMIN` + `X-User-Id`. 목록 `GET ?grade&weekStart&status&page&size` → `{items, page, size, totalElements}`, 작성 `POST`(201)·수정 `PUT /{id}`(새 버전) 본문 `{grade, weekStart, title, intro, days:[{day, missionId}]}`, 검토 요청·게시·중단 `POST /{id}/review-request`·`/publish`·`/unpublish` `{}` → 모두 `AdminWeeklyTheme` = `{themeId, grade, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt}`. 오류: 형식·월요일 아닌 주·없는 미션 `400`, 상태상 불가 전이·게시 중 학년·주 변경 `409 CONFLICT`, 게시 검사 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]`. #438 학년별 테마: `gradeBand` → `grade`(`G3`~`G6`, 목록·본문·응답 모두, 관리자 경로는 전환 호환 없음). 본문·응답에 선택 칸 추가(기준안, 생략하면 null): `outro`, `introImageUri`·`outroImageUri`·`introVideoUri`·`outroVideoUri`(S3 키), `introMotion`·`outroMotion`, `bigQuestion`·`candidates[]`·`answer`·`answerClue`, `days[]`에 `clue`·`rulesOut[]`·`dialogue[{speaker, text}]`·`hintSpots[{seq, x, y}]`·`videoUri`(요일 문제 전 영상 키. ai는 요일 영상을 만들지 않아 테마 초안 채택 테마에서는 null이고 관리자가 직접 넣을 때만 쓰는 칸, #437 2026-11-11). 응답에는 미리보기용 presigned URL `introImageUrl`·`outroImageUrl`·`introVideoUrl`·`outroVideoUrl`·`days[].videoUrl`·`days[].sceneImageUrl`(그날 미션 현재본 장면)도 담음. 저장 때 정답 논리(정답·`candidates`·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어떤 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐, `rulesOut`은 후보 안)와 `hintSpots`(`x`·`y` 0~100, `seq`가 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음) 위반은 `400`. 게시 검사 코드 `GRADE_BAND_MISMATCH`를 `GRADE_MISMATCH`(미션 학년 범위가 테마 학년을 포함하지 않음)로 바꿈(웹·core는 `errors[].message`만 쓰고 코드를 읽지 않음). #647(기준안): 본문·응답에 후보 특징 표 `features[{name, values:[{candidate, value}]}]`(최대 10개, 이름·값 100자)와 `days[].clueFeature`(그날 단서 특징 이름) 선택 칸 추가. 수정 때 없거나 null이면 이어받되 후보가 바뀌었거나 후보·정답을 비우면 표를 버리고, 그날 `rulesOut`이 바뀌거나 표가 없어지면 그날 `clueFeature`를 이어받지 않음(지금 관리자 웹이 새 칸을 보내지 않아도 저장이 막히지 않게). 저장 때 특징마다 후보 하나에 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지는지 검사(`400`) |
 | GET·POST·DELETE | `/internal/admin/knowledge/datasets…` | 운영 스크립트 | #466 교육과정 지식 판 적재·상태·활성화·제거. `SYSTEM`, core 프록시 없음. 4.1.3 |
 | GET · POST | `/internal/knowledge…` | ai, learning 내부 | 교육과정 지식 근거·검색(#463, 계약 #464 C5, 구현 #469). `SYSTEM` 역할, 학생 범위·학생 정보 없음. 다섯 경로와 응답은 4.1.2 |
+| GET · PUT | `/internal/admin/expression-reviews…` | core | 표현 검토 대기(FN-ADM-24, 설계 #725, 구현 #727). core 프록시, 인증·권한 전달은 관리자 미션과 같음. 4.1.5 |
+| GET | `/internal/expression-reviews/{label-count,export}` | 재학습 작업(ops) | 재학습 새 라벨 수·학습 데이터 내보내기(#725). `SYSTEM`, core 프록시 없음. 4.1.5 |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
 
@@ -1067,6 +1072,21 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
   - 목록 `imageUrl`·상세 `imageUrl`은 액자를 받은 때 테마 버전의 시작 이야기 그림 presigned URL(종료 그림은 엔딩 내용이라 쓰지 않음), 없으면 null(화면이 `ThemeArt`로 그림). 제목도 그 버전 값
   - 상세 `missions[].attemptId`는 그 회차에서 그 문제를 마지막으로 학습 완료한 시도(토·일 다시 풀기 포함, 기존 비교 화면이 이전 시도를 함께 보여 줌). 테마 재게시로 문제가 바뀌었으면 null
   - 상세 `ending`은 그 주 엔딩 상태(#484, 정답 고르기와 금요일 문제 다시 풀기 마무리로 계산)가 `ENDED`일 때만 `seen = true`이고 `outro`·`answer`를 채움. 이번 주 화면(2.11)·종료 이야기 열람과 같은 판정
+
+#### 4.1.5 표현 검토 대기·재학습 데이터 (#688, 설계 #725, 구현 #727)
+
+저장은 [ERD 4.3.2](erd.md). 응답·로그에 학생 ID·답변 ID를 넣지 않는 것은 아래 두 표 모두 같다(검토 목록의 `id`는 `expression_review.id`).
+
+| 메서드 | 경로 | 호출자 | 내용 |
+|---|---|---|---|
+| GET | `/internal/admin/expression-reviews?labeled&source&page&size` | core 프록시(2.8) | `ADMIN` + `X-User-Id`, 빈 학생 범위. `labeled`(기본 `false`)·`source`(`GRAY_ZONE`·`COMMUNITY_REPORT`) 필터, 라벨 없는 것은 오래된 순·라벨 있는 것은 최근 라벨 순 → `{items:[{id, source, text, modelVersion, label, labeledAt, createdAt}], page, size, totalElements}`. `text`는 그 답변의 학생이 쓴 칸(`writtenTexts`)을 줄바꿈으로 이은 글. `page` 0부터·`size` 1~100(기본 20) |
+| PUT | `/internal/admin/expression-reviews/{reviewId}/label` | core 프록시(2.8) | `{label: OFFENSIVE\|CLEAN\|SKIP}` → 갱신된 항목. 같은 값 다시 보내기도 200(시각·라벨한 사람 갱신), 없는 ID 404 `EXPRESSION_REVIEW_NOT_FOUND`, 알 수 없는 값 400 |
+| GET | `/internal/expression-reviews/label-count?since` | 재학습 작업(ops) | `SYSTEM`. `since`(ISO-8601, 생략하면 처음부터) 이후 `labeled_at`이고 `SKIP`이 아닌 행 수 → `{count, latestLabeledAt}` |
+| GET | `/internal/expression-reviews/export?since&until` | 재학습 작업(ops) | `SYSTEM`. 범위 안 라벨(`OFFENSIVE`·`CLEAN`) 행을 `labeled_at` 순으로 → `{items:[{text, label}]}`. `text`는 위와 같이 이은 뒤 api-spec 4.3.4와 같은 앞 1,500자로 자름. 학생·답변 ID·시각 없음. `until`은 응답 시점 이전 값만 허용해 같은 범위를 다시 받으면 같은 결과(삭제된 학생 행 제외) |
+
+- 운영자 라벨은 core가 감사 기록(`EXPRESSION_REVIEW_LABEL`)을 남긴 뒤 learning에 전달한다. 목록 열람도 `EXPRESSION_REVIEW_VIEW`(보여 준 항목 ID 목록)로 남긴다(P07)
+- 신고 공유물 행 추가·자동 라벨은 기존 `PUT /internal/community/posts/{postId}/moderation` 처리 안에서 한다(새 경로 없음). `HIDDEN_REPORT` → 행 추가(라벨 없음), `REMOVED` → `OFFENSIVE`, `VISIBLE` → `CLEAN`. 이 호출은 `SYSTEM`이고 다시 보내질 수 있어(core `CommunityModerationService.apply`) 자동 라벨의 `labeled_by`는 null이며, 운영자가 이미 직접 라벨한 행(`labeled_by` 있음)은 바꾸지 않는다
+- 내보내기 응답은 저장하지 않고 재학습 작업의 임시 디렉터리에서만 쓴다(architecture 4.5 재학습 작업)
 
 ### 4.2 ai-service (호출: learning, core, report)
 
@@ -1241,8 +1261,9 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - `POST /internal/toxicity/checks`: 호출은 learning만(답변 제출, 4.1). 내부 토큰 필수, 다른 호출자는 401
 - 요청 `{texts: string[]}`: 학생이 쓴 칸마다 1개, 1~20개, 모든 칸 합계 1~1,500자. 공백만 있는 칸·상한 초과·알 수 없는 필드는 400. learning은 공백 칸을 빼고 칸 순서대로 앞 20칸, 합계 앞 1,500자까지만 보낸다(걸친 칸은 앞부분만, 그 뒤는 뺌. 넘을 때 건너뛰면 글을 늘려 검사를 피할 수 있어 잘라서 보냄). 보낼 칸이 없으면 부르지 않는다
-- 응답 `{active:true, flagged:boolean, model:{name,version,revision}}`. 활성 `tox-` 모델이 없거나 `answer-filter` 승인 범위가 없으면 200 `{active:false}`. 칸별 결과·점수·걸린 말은 응답에 없다
+- 응답 `{active:true, flagged:boolean, review:boolean, model:{name,version,revision}}`. 활성 `tox-` 모델이 없거나 `answer-filter` 승인 범위가 없으면 200 `{active:false}`. 칸별 결과·점수·걸린 말은 응답에 없다
 - 판정: 칸마다 토큰 창(`train_info.json`의 `max_length`·`stride`, 기준안 128·32)으로 나눠 2분류하고, 한 창이라도 모욕 확률이 `threshold` 이상이면 그 칸이 걸린다. 한 칸이라도 걸리면 `flagged:true`. 임계값은 모델 파일에만 있고 요청으로 바꾸지 않는다
+- 경계 구간(#725, 구현 #726): `flagged:false`이고 한 창이라도 `review_threshold` 이상이면 `review:true`, 그 밖에는 `false`(`flagged:true`면 항상 `false`). `review_threshold`가 없는 모델(#690 첫 모델 등)은 항상 `false`. learning은 `review:true`이고 답변이 저장되면 표현 검토 대기에 올린다(4.1.5). 기준안은 검증용 정상 문장 중 경계 구간에 드는 비율 5% 이하(운영자 라벨 부담 제한), 재학습 때 다시 계산
 - 동시 실행: M2와 따로 tox 전용 게이트 1개(M2 `Semaphore(1)`과 섞지 않음), 1초 안에 차례가 오지 않거나 창 8개 묶음 사이에서 처리 시작부터 1.3초를 넘으면 계산을 멈추고 503. learning이 1.5초에 끊은 뒤에도 scoring이 버려질 계산을 계속해 다음 요청을 막지 않게 하기 위해서다
 - 오류: 토큰 401, 형식·개수·길이 400, 모델 추론 실패·게이트 대기 초과·처리 마감 초과 503 `SCORING_UNAVAILABLE`. 장애를 `active:false`로 바꾸지 않는다
 - 사용량 이벤트는 보내지 않는다(LLM이 아니라 토큰 단가가 없음, core `callType`을 늘리지 않음). 로그·지표에는 원문·점수·학생 ID를 넣지 않고 모델 이름·결과·지연만 남긴다(NFR-SEC-05)
@@ -1269,7 +1290,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 ### 4.5 core-service (호출: ai, scoring, learning, report)
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/internal/model-versions/active` | 기동 시 활성 모델·프롬프트 버전 조회 |
+| GET | `/internal/model-versions/active` | 기동 시 활성 모델·프롬프트 버전 조회. 재학습 작업(ops)도 이어 학습할 활성 `tox-` 모델을 찾는 데 씀(#725) |
+| POST | `/internal/model-versions` | 재학습 작업(ops) 자동 등록(#725, 구현 #728). 5.2 아래 "재학습 자동 등록" |
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 | POST | `/internal/payment-usage/reservations` | learning 피드백 실행 전 프리미엄 사용 예약 `{studentId,sourceId}` → `{reservationId,premium}` (STUDENT+본인 scope, #48) |
 | POST | `/internal/payment-usage/completions` | learning 피드백 DONE 저장 후 사용 확정 `{studentId,reservationId,used}` (#48) |
@@ -1326,7 +1348,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - manifest는 `models[]`의 `name/version/scope/files[{file,bytes,sha256}]`를 대조한다. 최상위 `주의`와 일치 모델의 `주의`를 limitations 후보로 쓰되 명시한 `evaluation.limitations`(빈 목록 포함)가 우선한다. JSON·manifest·해시 목록의 확인은 실제 산출물 해시 대조나 로딩·품질 승인을 의미하지 않는다.
 - #366: 감사 목록의 `MODEL_VERSION`에는 선택 `detail` 객체(name·version·scopes·reason·reanalysisPlanned·previousVersionId)를 반환한다. 다른 대상 및 허용 목록 밖 detail 필드는 공개하지 않는다. 웹에서 펼쳐 본다.
 - 범위 키는 소비자가 동일하게 사용하는 소문자 논리 식별자(예: `judgment/grade-3/narrative`, 최대 200자, `[a-z0-9][a-z0-9._:/-]*`)다. core는 문자열의 정확한 집합 포함 관계만 확인하며 와일드카드·계층 확장을 하지 않는다. 원본 평가 문항·학생 원문은 저장하지 않는다. 검토 기록의 사실성·품질 수치의 적합성은 사람이 판단하며 서버는 자료 자체를 실행·검증했다고 주장하지 않는다.
-- scoring 모델 이름은 `(m1|m2|tox)-…`. `tox-`는 답변 표현 분류(4.3.4)이고 승인 범위는 `answer-filter` 하나다(학년 구분 없음, #688). 로더는 2분류 config(`num_labels=2`)와 `train_info.json`의 `threshold`(0 초과 1 미만)·`max_length`·`stride`를 검사하고, 회귀 모델이거나 `threshold`가 없으면 거부한다
+- scoring 모델 이름은 `(m1|m2|tox)-…`. `tox-`는 답변 표현 분류(4.3.4)이고 승인 범위는 `answer-filter` 하나다(학년 구분 없음, #688). 로더는 2분류 config(`num_labels=2`)와 `train_info.json`의 `threshold`(0 초과 1 미만)·`max_length`·`stride`를 검사하고, 회귀 모델이거나 `threshold`가 없으면 거부한다. 선택 값 `review_threshold`(#725)가 있으면 0 초과·`threshold` 미만이어야 하며 아니면 거부한다(없으면 경계 구간 없음, 4.3.4)
 - POST `/{versionId}/activate`: `{approved:true,scopes,reason,reanalysisPlanned}`. REGISTERED만 최초 승인·활성화할 수 있다. 필수 평가 근거 누락·미승인·평가 외 범위는 422, 이미 활성화 이력이 있는 대상은 409다. 승인자는 요청 값이 아닌 #36 인증 계정 ID다. 기존 ACTIVE는 INACTIVE가 되고 승인·평가 이력은 보존한다.
 - POST `/{versionId}/rollback`: `{scopes,reason,reanalysisPlanned}`. 같은 kind·name의 현재 ACTIVE가 있고, 대상이 과거 승인·활성화된 INACTIVE이며 요청 범위가 당시 승인 범위의 부분 집합일 때만 성공한다. 잘못된 상태는 409, 승인 외 범위는 422다. 원 승인자·승인 범위는 보존하고 복귀 수행자는 감사 이력에 별도 기록한다.
 - `reanalysisPlanned`는 재분석 여부 기록일 뿐 작업을 실행하지 않는다. 기존 관찰·질문·분석·리포트 결과는 수정하지 않는다. 등록·성공 교체는 audit_log에 추가하며 교체의 상태·감사·Outbox는 한 트랜잭션이다.
@@ -1348,10 +1370,18 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 등록 요청의 승인 여부·활성화 범위·사유·재분석 계획·승인자 및 알 수 없는 필드는 400 VALIDATION_FAILED. 유효한 타입의 업무 검증 실패는 기존 422 MODEL_APPROVAL_REJECTED, 중복은 409 MODEL_VERSION_CONFLICT. 공통 Problem Details 형식은 유지한다.
 - 프론트 전달용 예시와 역할 분담: [#367 API 전달 내용](../report/ai.md#11-모델-등록-api-367). 화면·웹 타입은 프론트 담당 범위다.
 
+#### 재학습 자동 등록·추천 태그 (#688, 설계 #725, 구현 #728)
+
+- `evaluation.recommendation?`: `{tag: RECOMMENDED|NOT_RECOMMENDED, comparedTo, reasons:[], metrics:{}}`. `comparedTo`는 비교한 활성 버전(`name:version`, 처음이면 `NONE`), `reasons`는 1~20개·각 1~500자, `metrics`는 이름(최대 50개)→숫자 객체. 모든 종류·출처에서 선택이며 `evalResult.evidence.recommendation`에 그대로 저장한다. 참고 정보라 활성화·복귀 검사에 쓰지 않는다(자동 품질 합격선 없음 유지). 관리자 등록부 화면은 태그를 "추천"·"비추천"으로, 이유·비교 버전·지표는 펼쳐 보인다(없으면 표시 없음)
+- 내부 `POST /internal/model-versions`(ops 토큰, 4장 허용 표): 본문은 관리자 등록과 같다. `kind: MODEL`·`name`이 `tox-`로 시작하는 것만 받고 아니면 422 `MODEL_APPROVAL_REJECTED`. `registration`은 `{source: PIPELINE, datasetSha256, artifactFiles:[{file,bytes,sha256}]}` 필수(다른 source는 400, 반대로 관리자 공개 등록은 `PIPELINE`을 400으로 거부), `evaluation.recommendation` 필수
+- 처리: core가 5.2.1 preflight를 먼저 부르고(같은 20초 제한), `FAIL`이면 422 `MODEL_APPROVAL_REJECTED`(파일별 결과를 `detail`이 아닌 확장 필드 `preflight`로), 연결 실패 503. `PASS`면 관리자 등록과 같은 규칙으로 `REGISTERED` 저장. 활성화하지 않는다
+- 감사: `MODEL_PREFLIGHT`·`MODEL_REGISTER`의 actor는 재학습 계정 `mlops-pipeline`([ERD 3.5](erd.md), 설정 `app.model-registry.pipeline-actor-id`). 이 계정은 로그인·활성화 권한이 없다. detail에 source·`datasetSha256`·파일 목록을 남긴다
+- 같은 `(kind,name,version)` 다시 보내기는 409 `MODEL_VERSION_CONFLICT`. 재학습 작업은 버전 이름을 실행 날짜로 정하므로(`tox-…` / `yyyyMMdd-HHmm`) 409면 이미 등록된 것으로 보고 끝낸다
+
 #### 5.2.1 모델 파일 사전 검사 (#368)
 
 - 관리자 `POST /api/v1/admin/models/preflight`: SERVICE_OPS 권한. core가 내부 토큰을 붙여 scoring `POST /internal/models/preflight`로 동기 중계한다. core HTTP 제한 20초, 자동 재시도 없음.
-- 요청: `name`, `version`, `artifactUri`, manifest의 `files[{file,bytes,sha256}]`. config.json·tokenizer.json·tokenizer_config.json·train_info.json·score_cuts.json·model.safetensors를 각각 한 번씩 받는다. `tox-` 모델은 `score_cuts.json`이 없어 나머지 5개를 받는다(#688). 메타데이터 검사도 이름 접두어별로 한다. 승인 관련 필드·알 수 없는 필드는 거부한다.
+- 요청: `name`, `version`, `artifactUri`, manifest의 `files[{file,bytes,sha256}]`. config.json·tokenizer.json·tokenizer_config.json·train_info.json·score_cuts.json·model.safetensors를 각각 한 번씩 받는다. `tox-` 모델은 `score_cuts.json`이 없어 나머지 5개를 받는다(#688). 메타데이터 검사도 이름 접두어별로 한다(`tox-`의 선택 `review_threshold` 범위 포함, #725). 승인 관련 필드·알 수 없는 필드는 거부한다.
 - 응답: `{status: PASS|FAIL, code, files:[{file,status,code}]}`. 검사 대상 파일이 없거나 불일치해도 검사 결과는 HTTP 200/FAIL이다. 잘못된 요청 400, 권한 401/403, scoring 응답 오류 502, 연결/시간 제한 503은 기존 RFC 9457 형식이다.
 - scoring은 설정된 S3 버킷의 models/ 경로만 검사한다. 각 파일 HEAD로 존재·크기를 확인한다. 세 메타데이터 JSON만 ETag 조건(If-Match)으로 고정하여 최대 1MiB 본문을 읽고 SHA-256을 직접 대조한다. 나머지 파일은 S3가 제공하는 전체 SHA-256을 비교하며 ETag·사용자 메타데이터·COMPOSITE 체크섬을 파일 해시로 사용하지 않는다. 없는 체크섬은 CHECKSUM_UNAVAILABLE이다.
 - `validate_metadata`를 재사용해 학습 입력·점수 경계와 config의 회귀 출력 수를 확인한다. 모델·토크나이저 로딩, 점수 추론, 파일 쓰기는 하지 않는다. scoring은 15초 작업 예산과 개별 S3 연결/읽기 1초·재시도 없음으로 제한한다.

@@ -756,7 +756,7 @@ erDiagram
   model_version {
     uuid id PK
     varchar kind "RUBRIC|MODEL|PROMPT|GENERATION"
-    varchar name "judge, m2-klue-narrative, m2-klue-essay 등"
+    varchar name "judge, m2-klue-narrative, m2-klue-essay, tox-kcelectra 등"
     varchar version
     uuid ref_id "NULL 허용 · RUBRIC이면 learning rubric_version"
     varchar artifact_uri "NULL 허용 · S3 가중치 경로"
@@ -834,6 +834,7 @@ erDiagram
 
 - `model_loading_report`: 운영 관측 전용으로 승인 모델과 FK를 만들지 않는다. 과거 버전·실패·빈 snapshot도 보관한다. 120초 보고 만료, 24시간 보관, Pod 재시작 시 최신 프로세스 보고를 사용한다. PK instance_id, sequence > 0, models는 JSON 배열이며 나머지 컬럼은 모두 NOT NULL이다.
 - `model_version` UK `(kind, name, version)`, 부분 UK `(kind, name) WHERE status = 'ACTIVE'`. 롤백은 이전 버전 재활성화 + `audit_log` 기록 (FN-ADM-18)
+- 재학습 자동 등록 계정(#725): core 마이그레이션이 고정 UUID의 `user_account` 1행(role `ADMIN`, login_id `mlops-pipeline@system.invalid`, display_name `MLOps 파이프라인`)을 시드한다. `admin_credential`·`admin_permission`을 두지 않아 로그인·활성화를 할 수 없고, ops 내부 등록(api-spec 4.5)의 `audit_log.actor_user_id`로만 쓴다. ID는 설정값 `app.model-registry.pipeline-actor-id`
 - #43 `eval_result`는 API 5.2의 불변 평가 근거·최초 승인과 현재 적용 범위·그룹 revision을 저장한다. DDL·기존 ACTIVE 부분 UK는 유지한다. 교체는 동일 그룹 transaction advisory lock 이후 상태·감사·Outbox를 원자적으로 저장한다.
 - 기준표 원본은 learning `rubric_version`, core는 `kind = RUBRIC` 행의 `ref_id`로 연결해 승인·활성 상태만 관리
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
@@ -1484,6 +1485,31 @@ erDiagram
 - `community_visibility`는 core가 공개 전환(`community-visibility`)으로 알린 마지막 값. 신고 숨김을 풀 때·새 공유 때 설정 비공개를 지키려고 둔다(ERD 4.4 설계 표에 없던 추가 표, `docs/report/learning.md` 25장)
 - `community_reaction` PK `(post_id, student_id, reaction)`. `id`는 `UUID.nameUUIDFromBytes("community-reaction:{postId}:{studentId}:{reaction}")`라 취소 뒤 다시 남겨도 같다(core #389 포인트 사건 키로 반복 적립을 막음)
 - 학생 삭제(`student.deleted`, P09): 시도·답변보다 먼저 같은 트랜잭션에서 그 학생 공유물에 달린 반응 → 그 학생이 남긴 반응 → 공유물 → `community_visibility` 순서로 물리 삭제(FK NO ACTION)
+
+### 4.3.2 표현 검토 대기 (#688 재학습 자동화, 설계 #725, 구현 #727)
+
+표현 분류 모델 재학습 자료. 이미 저장되는 답변만 가리키고 원문을 따로 복사하지 않는다. 막힌 답변(저장 안 됨)·모델 점수는 저장하지 않는다(NFR-SEC-05).
+
+구현 전(설계 #725 2026-11-17). Mermaid 표와 6장 인덱스는 `scripts/verify_db_schema.py`가 실제 DB와 자동 대조하므로 learning 마이그레이션(#727)과 같은 PR에서 아래 표를 옮겨 넣는다(#679·#680과 같은 방식).
+
+| 칸 | 형식 | 내용 |
+|---|---|---|
+| `id` | uuid PK | |
+| `answer_id` | uuid FK → `answer` | 검토 대상 답변. UK `(answer_id, source)` |
+| `source` | varchar | `GRAY_ZONE`(경계 구간 답변)·`COMMUNITY_REPORT`(신고 숨김 공유물) CHECK |
+| `model_version` | varchar, NULL 허용 | `GRAY_ZONE`이면 판단한 tox 모델 `name:version` |
+| `label` | varchar, NULL 허용 | `OFFENSIVE`·`CLEAN`·`SKIP` CHECK |
+| `labeled_by` | uuid, NULL 허용 | 직접 라벨한 core 관리자 ID(논리 참조), 자동 라벨은 null |
+| `labeled_at` | timestamptz, NULL 허용 | |
+| `created_at` | timestamptz | |
+
+- 인덱스(6장에 옮길 값): UK `(answer_id, source)`, `(label, created_at)`(라벨 없는 검토 목록), `(labeled_at) WHERE label IS NOT NULL`(재학습 새 라벨 수·내보내기)
+
+- `GRAY_ZONE`: 답변 제출 때 scoring 표현 분류가 `review:true`(api-spec 4.3.4)이고 답변이 저장되면 같은 트랜잭션에서 추가. 같은 키 다시 보내기는 UK로 중복 없음
+- `COMMUNITY_REPORT`: 공유물이 `HIDDEN_REPORT`가 될 때 그 공유물의 `answer_id`로 추가. 운영 처리 결과로 자동 라벨(`REMOVED` → `OFFENSIVE`, `VISIBLE` 복귀 → `CLEAN`, `labeled_by` null). 이미 행이 있으면 라벨만 갱신하되 운영자가 직접 라벨한 행은 바꾸지 않음
+- 운영자 라벨(FN-ADM-24)은 `label`·`labeled_by`·`labeled_at`을 덮어쓴다(마지막 라벨 기준). `SKIP`은 학습 데이터에서 뺀다
+- 학습 데이터 내보내기는 라벨 있는 행만 `labeled_at` 순으로, 학생 ID·답변 ID·시각 없이 글과 라벨만 낸다(api-spec 4.1)
+- 학생 삭제(`student.deleted`, P09): 답변보다 먼저 같은 트랜잭션에서 그 학생 답변의 `expression_review`를 물리 삭제(FK NO ACTION, 4.3.1과 같은 방식)
 
 ### 4.4 2026-11-06 결정 변경 반영 (learning_db)
 
