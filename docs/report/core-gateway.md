@@ -340,6 +340,17 @@ P21·P22의 core `reward` 도메인. 계약은 [API 명세](../design/api-spec.m
 - **사용량**: `THEME_DRAFT`·`THEME_IMAGE`를 이벤트 스키마·core `CallType`·OpenAPI·ERD·ai/scoring 발행 목록에 같은 순서로 추가(V40). 이미지 호출은 토큰이 없어 `cost_usd` null, `unpricedCalls`로 집계
 - 테스트: `AdminOperationsIntegrationTest`, `WeeklyThemeProxyIntegrationTest`, `scripts/tests/test_theme_drafts_contract.py`(learning OpenAPI에 경로가 올라오면 3자 대조가 켜짐)
 
+### 15.1 부분 다시 생성 감사 detail·OpenAPI regenerate 설명 (#537, 2026-11-17)
+
+core 담당(#439) 요청 범위("감사 detail 추가랑 OpenAPI 설명 수정까지 #537 PR에 같이"). 다시 생성 본문 선택 칸 `targets`(14개 값)의 값 검사·409 판정은 learning 소유이고, core는 지금처럼 본문을 그대로 넘기고 learning 오류를 그대로 전달한다.
+
+- **감사 detail**: action 이름(`THEME_DRAFT_REGENERATE_REQUESTED`·`_SUCCEEDED|REJECTED|UNKNOWN`)과 대상 규칙(요청 = 원래 draftId, 결과 = 응답 새 draftId, 실패·UNKNOWN은 원래 draftId)은 그대로. 본문 `targets`가 문자열 목록이면 요청·결과 detail 둘 다에 `targets`(받은 목록 그대로)와 원래 초안 `draftId`를 더한다. 결과 기록은 채택이 쓰던 `MissionAuditService.finished`의 `draftId` 칸을 재사용하고, `targets`는 선택 인자 `extra`(기본 빈 맵)로 더했다. `requested`에도 같은 선택 인자 `extra`를 더했다
+- **detail을 그대로 두는 경우**: 본문 `{}`·`targets` 없음·`null`·목록 아님·문자열 아닌 값이 섞인 목록이면 detail은 예전 전체 다시 생성과 완전히 같다(요청 `operationId`만, 결과 `operationId·outcome·httpStatus·currentVersion·currentRubricVersion`). 이상한 값은 core가 기록하지 않고 그대로 넘기며, learning이 400을 주면 `REJECTED`로 남는다. 다른 감사(미션·채택·버리기 등) 모양은 바뀌지 않는다
+- **새로 정한 값**: 빈 목록 `[]`은 "문자열 목록"이라 `targets: []`로 기록한다(learning이 400, `REJECTED`). 겹친 값도 learning이 처음 한 번만 쓰지만 core 기록은 받은 그대로(겹친 채로) 남긴다
+- **마이그레이션 없음**: `audit_log.detail`은 jsonb, action CHECK 없음
+- **OpenAPI** `contracts/openapi/core-service.yaml` `/admin/theme-drafts/{draftId}/regenerate`: 설명이 "실패·검사 실패 초안을 다시 생성 대기로 돌리고(GENERATING)"로 실제와 달라 "같은 입력으로 새 초안(202, 새 draftId), 원래 초안 그대로"로 고치고 부분 다시 생성·409 조건·감사 detail을 더했다. 본문은 새 스키마 `AdminThemeDraftRegenerateRequest`(선택 칸 `targets: [array, 'null']`, `minItems: 1`, items enum 14개, `additionalProperties: true`라 기존 `{}` 그대로 유효), `409` 응답을 명시했다. 응답 스키마 `AdminThemeDraftDocument`는 칸을 정의하지 않는 불투명 object라 `regenerableTargets`·`input.regenerate`는 더하지 않았다(필드 정의는 api-spec 4.1·learning OpenAPI 소유)
+- 테스트: `AdminOperationsIntegrationTest` `theme draft partial regenerate forwards targets as is and audits targets with the original draft`(본문 그대로 전달, 성공·409·UNKNOWN detail의 targets·draftId, `{}`·null·문자열·숫자 목록이면 detail 예전 그대로)
+
 ## 16. 리포트 고정 대화·참여 포인트·커뮤니티 신고 실서버 확인 (#424, 2026-11-10)
 
 local kind에서 테스트 계정으로 core 공개 API를 실제 호출해 확인. 프리미엄은 결제 완료와 같은 모양의 구독 행을 kind DB에 넣음.

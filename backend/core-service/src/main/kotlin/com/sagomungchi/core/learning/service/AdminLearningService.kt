@@ -99,6 +99,8 @@ class AdminLearningService(private val client: LearningClient,private val json: 
      * 테마 초안 (#439, api-spec 2.8·4.1). learning `/internal/admin/theme-drafts…`(#438)로 미션 초안과 같은 방식으로 넘김.
      * 요청·버리기·다시 생성은 응답 초안 ID(target_type THEME_DRAFT), 채택은 만든 테마 ID(WEEKLY_THEME, detail에 draftId)로 결과 감사.
      * 다시 생성은 learning이 같은 초안을 되살리든 새 초안을 만들든 응답 draftId를 대상으로 남긴다.
+     * 부분 다시 생성(#537): 본문 targets가 문자열 목록이면 요청·결과 감사 detail에 targets(받은 그대로)와 원래 초안 draftId를 더한다.
+     * targets가 없거나 null·목록이 아니면 detail은 전체 다시 생성과 같고, 본문은 어느 쪽이든 그대로 넘긴다(값 검사는 learning).
      */
     fun themeDrafts(method: String,id: UUID?=null,action: String?=null,query: String?=null,body: ByteArray?=null): HttpExchangeResult {
         val path = "/admin/theme-drafts" + (id?.let { "/$it" } ?: "") + (action?.let { "/$it" } ?: "")
@@ -110,12 +112,21 @@ class AdminLearningService(private val client: LearningClient,private val json: 
                 audited(method,path,query,body,actor,"THEME_DRAFT_REQUEST",draft,null,THEME_DRAFT_NOT_FOUND) { node -> themeDraftResult(node,null) }
             method=="POST" && id!=null && action=="discard" ->
                 audited(method,path,query,body,actor,"THEME_DRAFT_DISCARD",draft,id,THEME_DRAFT_NOT_FOUND) { node -> themeDraftResult(node,id) }
-            method=="POST" && id!=null && action=="regenerate" ->
-                audited(method,path,query,body,actor,"THEME_DRAFT_REGENERATE",draft,id,THEME_DRAFT_NOT_FOUND) { node -> themeDraftResult(node,null) }
+            method=="POST" && id!=null && action=="regenerate" -> {
+                val targets=regenerateTargets(body)
+                audited(method,path,query,body,actor,"THEME_DRAFT_REGENERATE",draft,id,THEME_DRAFT_NOT_FOUND,
+                    extraDraft=targets?.let { id },extra=targets?.let { mapOf("targets" to it) } ?: emptyMap()) { node -> themeDraftResult(node,null) }
+            }
             method=="POST" && id!=null && action=="adopt" ->
                 audited(method,path,query,body,actor,"THEME_DRAFT_ADOPT",draft,id,THEME_DRAFT_NOT_FOUND) { node -> themeResult(node,null).copy(draft=id) }
             else -> throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","지원하지 않는 테마 초안 작업입니다.")
         }
+    }
+    /** 다시 생성 본문 targets가 문자열 목록이면 받은 그대로(#537). 없거나 null·목록 아님·문자열 아닌 값이 섞이면 null(감사에 넣지 않음) */
+    private fun regenerateTargets(body: ByteArray?): List<String>? {
+        val targets=body?.let { runCatching { json.readTree(it) }.getOrNull() }?.get("targets") ?: return null
+        if(!targets.isArray || !targets.all { it.isTextual }) return null
+        return targets.map { it.asText() }
     }
     private fun themeDraftResult(node: JsonNode,id: UUID?): AuditTarget {
         val draft=runCatching { UUID.fromString(node.path("draftId").asText()) }.getOrNull()
@@ -147,13 +158,18 @@ class AdminLearningService(private val client: LearningClient,private val json: 
         val actor=if(context?.role=="ADMIN") runCatching { UUID.fromString(context.userId) }.getOrNull() else null
         return actor ?: throw BusinessException(HttpStatus.FORBIDDEN,"FORBIDDEN","검증된 관리자 세션이 필요합니다.")
     }
-    /** 요청 감사 → learning 한 번 → 성공 응답에서 대상 확인 → 결과 감사. 결과를 모르면 UNKNOWN으로 남기고 다시 부르지 않음 */
+    /**
+     * 요청 감사 → learning 한 번 → 성공 응답에서 대상 확인 → 결과 감사. 결과를 모르면 UNKNOWN으로 남기고 다시 부르지 않음.
+     * extraDraft·extra(#537 부분 다시 생성)는 요청·결과 감사 detail 둘 다에 draftId·추가 칸으로 남는다. 기본값이면 detail은 예전과 같음
+     */
     private fun audited(method: String,path: String,query: String?,body: ByteArray?,actor: UUID,auditAction: String,
-                        targetType: String,id: UUID?,notFound: String,result: (JsonNode) -> AuditTarget): HttpExchangeResult {
+                        targetType: String,id: UUID?,notFound: String,extraDraft: UUID?=null,extra: Map<String,Any?> =emptyMap(),
+                        result: (JsonNode) -> AuditTarget): HttpExchangeResult {
         val operation=UUID.randomUUID()
-        try { audit.requested(operation,actor,auditAction,id,targetType) } catch (_: RuntimeException) { auditUnavailable(operation) }
+        val requestExtra=(extraDraft?.let { mapOf("draftId" to it) } ?: emptyMap())+extra
+        try { audit.requested(operation,actor,auditAction,id,targetType,requestExtra) } catch (_: RuntimeException) { auditUnavailable(operation) }
         val response=try { exchange(method,path,query,body) } catch (error: RuntimeException) {
-            try { audit.finished(operation,actor,auditAction,id,"UNKNOWN",null,targetType=targetType) } catch (_: RuntimeException) { auditUnavailable(operation) }
+            try { audit.finished(operation,actor,auditAction,id,"UNKNOWN",null,targetType=targetType,draft=extraDraft,extra=extra) } catch (_: RuntimeException) { auditUnavailable(operation) }
             val business=error as? BusinessException
             throw BusinessException(business?.status ?: HttpStatus.SERVICE_UNAVAILABLE,business?.code ?: "LEARNING_UNAVAILABLE",
                 "미션 요청 결과를 확인하지 못했습니다.","확인 번호: $operation. 다시 요청하기 전에 미션 상태를 확인하세요.")
@@ -164,13 +180,13 @@ class AdminLearningService(private val client: LearningClient,private val json: 
             if(response.status in 200..299) target=result(json.readTree(response.body))
             sanitized
         } catch (error: RuntimeException) {
-            try { audit.finished(operation,actor,auditAction,id,"UNKNOWN",response.status,targetType=targetType) } catch (_: RuntimeException) { auditUnavailable(operation) }
+            try { audit.finished(operation,actor,auditAction,id,"UNKNOWN",response.status,targetType=targetType,draft=extraDraft,extra=extra) } catch (_: RuntimeException) { auditUnavailable(operation) }
             throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,(error as? BusinessException)?.code ?: "LEARNING_INVALID_RESPONSE",
                 "미션 요청 결과를 확인하지 못했습니다.","확인 번호: $operation. 다시 요청하기 전에 미션 상태를 확인하세요.")
         }
         val outcome=when(response.status) { in 200..299 -> "SUCCEEDED"; in 400..499 -> "REJECTED"; else -> "UNKNOWN" }
         try { audit.finished(operation,actor,auditAction,target?.id ?: id,outcome,response.status,target?.version,target?.rubric,
-            target?.type ?: targetType,target?.draft) } catch (_: RuntimeException) { auditUnavailable(operation) }
+            target?.type ?: targetType,target?.draft ?: extraDraft,extra) } catch (_: RuntimeException) { auditUnavailable(operation) }
         return safe.copy(headers=safe.headers + ("X-Admin-Operation-Id" to listOf(operation.toString())))
     }
     private fun auditUnavailable(operation: UUID): Nothing = throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"MISSION_AUDIT_UNAVAILABLE",

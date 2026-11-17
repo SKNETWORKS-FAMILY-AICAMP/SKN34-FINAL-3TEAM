@@ -964,6 +964,11 @@ components:
           items:
             $ref: '#/components/schemas/ThemeFailure'
           type: array
+        regenerate:
+          anyOf:
+          - $ref: '#/components/schemas/ThemeRegenerate'
+          - type: 'null'
+          description: 부분 다시 생성(#537 선택 칸). 없거나 null이면 전체 생성
       type: object
       required:
       - gradeMin
@@ -971,6 +976,71 @@ components:
       - weekStart
       - missions
       description: 학년별 테마라 gradeMin = gradeMax, missions는 생각 유형 5개에 1개씩, 논술은 초5~6. previousFailures[].stage는 THEME·MISSION·REVIEW·IMAGE만(그 밖 400)
+    ThemeRegenTarget:
+      type: string
+      enum:
+      - VIDEO:INTRO
+      - VIDEO:OUTRO
+      - IMAGE:INTRO
+      - IMAGE:OUTRO
+      - IMAGE:MON
+      - IMAGE:TUE
+      - IMAGE:WED
+      - IMAGE:THU
+      - IMAGE:FRI
+      - MISSION:MON
+      - MISSION:TUE
+      - MISSION:WED
+      - MISSION:THU
+      - MISSION:FRI
+      description: 부분 다시 생성 대상(#537). VIDEO는 그 영상·움직임, IMAGE 요일은 그 그림·움직임, IMAGE INTRO·OUTRO는 컷 첫 그림 4장·영상·움직임, MISSION은 그 요일 미션·수사 연결 문장·대화 → 글 검토 → 그 요일 그림 → 움직임을 다시 만듦
+    ThemeRegenerate:
+      properties:
+        targets:
+          items:
+            $ref: '#/components/schemas/ThemeRegenTarget'
+          type: array
+          minItems: 1
+        base:
+          $ref: '#/components/schemas/ThemeRegenBase'
+      type: object
+      required:
+      - targets
+      - base
+      description: 고른 대상만 다시 만들고 나머지는 base 값 그대로 응답. targets가 base.regen.targets 밖이거나 base.regen 형식(version 1·theme)이 다르면 400. 글 검토가 줄거리·단서·대상 밖 요일을 고치라고 하면 failure REVIEW(전체 생성으로 넘어가지 않음)
+    ThemeRegenBase:
+      properties:
+        missions:
+          items:
+            $ref: '#/components/schemas/ThemeMission'
+          type: array
+        dialogues:
+          items:
+            $ref: '#/components/schemas/ThemeDialogue'
+          type: array
+        images:
+          additionalProperties:
+            type: string
+          type: object
+        videos:
+          additionalProperties:
+            type: string
+          type: object
+        motions:
+          additionalProperties:
+            type: object
+          type: object
+        warnings:
+          items:
+            $ref: '#/components/schemas/ThemeWarning'
+          type: array
+        regen:
+          type: object
+          description: 원래 결과 응답의 regen 그대로
+      type: object
+      required:
+      - regen
+      description: 원래 초안 결과(learning이 저장한 output 그대로, theme 등 그 밖 칸은 읽지 않음)
     ThemeMissionInput:
       properties:
         thinkingType:
@@ -1098,6 +1168,23 @@ components:
           - type: 'null'
         versions:
           $ref: '#/components/schemas/LlmVersions'
+        regen:
+          anyOf:
+          - type: object
+            properties:
+              version:
+                type: integer
+                enum:
+                - 1
+              targets:
+                items:
+                  $ref: '#/components/schemas/ThemeRegenTarget'
+                type: array
+            required:
+            - version
+            - targets
+          - type: 'null'
+          description: 부분 다시 생성 재료(#537 선택 칸). targets는 이 결과에서 다시 만들 수 있는 대상(learning이 읽는 유일한 칸). 그 밖 칸(줄거리 내부 칸·재료 그림 S3 키·컷 길이)은 ai 전용이라 learning은 열어 보지 않고 저장해 다시 생성 때 regenerate.base.regen으로 돌려줌. 글 단계(THEME·MISSION·REVIEW)에서 실패하면 null
       type: object
       required:
       - theme

@@ -524,6 +524,50 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         assertEquals(listOf(draft,"THEME_DRAFT","FAILURE"),row("THEME_DRAFT_DISCARD_REJECTED").let { listOf(it["target_id"],it["target_type"],it["result"]) })
         assertEquals(8,rows.size);assertFalse(rows.toString().contains("secret"))
     }
+    @Test fun `theme draft partial regenerate forwards targets as is and audits targets with the original draft`() {
+        val (admin,access)=token("CONTENT");val draft=UUID.randomUUID();val renewed=UUID.randomUUID()
+        fun details(action: String)=jdbc.queryForList("SELECT target_id,result,detail::text AS detail FROM audit_log WHERE actor_user_id=? AND action=? ORDER BY created_at",admin,action)
+            .map { Triple(it["target_id"],it["result"],json.readTree(it["detail"].toString())) }
+        fun keys(node: com.fasterxml.jackson.databind.JsonNode)=node.fieldNames().asSequence().toSet()
+        // #537 부분 다시 생성: 본문은 그대로 넘기고 요청·결과 감사 detail에 targets(받은 그대로)와 원래 초안 draftId
+        val partial="""{"targets":["IMAGE:MON","MISSION:TUE","IMAGE:MON"]}"""
+        missionStatus=202;missionBody="""{"draftId":"$renewed","status":"GENERATING","input":{"regenerate":{"baseDraftId":"$draft","targets":["IMAGE:MON","MISSION:TUE"]}}}"""
+        assertEquals(202,draftCall("POST","/theme-drafts/$draft/regenerate",access,partial).status)
+        assertEquals(partial,requests.last().body)
+        val (requestTarget,_,requested)=details("THEME_DRAFT_REGENERATE_REQUESTED").single()
+        assertEquals(draft,requestTarget);assertEquals(setOf("operationId","draftId","targets"),keys(requested))
+        assertEquals(draft.toString(),requested["draftId"].asText())
+        assertEquals(listOf("IMAGE:MON","MISSION:TUE","IMAGE:MON"),requested["targets"].map { it.asText() })
+        val (resultTarget,result,succeeded)=details("THEME_DRAFT_REGENERATE_SUCCEEDED").single()
+        assertEquals(listOf(renewed,"SUCCESS"),listOf(resultTarget,result));assertEquals(202,succeeded["httpStatus"].asInt())
+        assertEquals(draft.toString(),succeeded["draftId"].asText())
+        assertEquals(listOf("IMAGE:MON","MISSION:TUE","IMAGE:MON"),succeeded["targets"].map { it.asText() })
+        // learning 409(재료 없는 대상)는 그대로 전달하고 거절 감사에도 targets·draftId
+        missionStatus=409;missionBody="""{"status":409,"code":"CONFLICT","detail":"private secret"}"""
+        val conflict=draftCall("POST","/theme-drafts/$draft/regenerate",access,"""{"targets":["VIDEO:INTRO"]}""")
+        assertEquals(409,conflict.status);assertEquals("CONFLICT",json.readTree(conflict.contentAsString)["code"].asText())
+        val (rejectedTarget,rejectedResult,rejected)=details("THEME_DRAFT_REGENERATE_REJECTED").single()
+        assertEquals(listOf(draft,"FAILURE"),listOf(rejectedTarget,rejectedResult))
+        assertEquals(draft.toString(),rejected["draftId"].asText());assertEquals(listOf("VIDEO:INTRO"),rejected["targets"].map { it.asText() })
+        // 응답이 대상을 밝히지 않아 UNKNOWN이어도 targets·draftId
+        missionStatus=202;missionBody="""{"status":"GENERATING"}"""
+        assertEquals(503,draftCall("POST","/theme-drafts/$draft/regenerate",access,"""{"targets":["IMAGE:FRI"]}""").status)
+        val unknown=details("THEME_DRAFT_REGENERATE_UNKNOWN").single().third
+        assertEquals(draft.toString(),unknown["draftId"].asText());assertEquals(listOf("IMAGE:FRI"),unknown["targets"].map { it.asText() })
+        jdbc.update("DELETE FROM audit_log WHERE actor_user_id=?",admin)
+        // {}·targets null·목록 아님·문자열 아닌 값: 본문은 그대로 넘기고 detail은 전체 다시 생성 그대로(draftId·targets 없음)
+        for(body in listOf("{}","""{"targets":null}""","""{"targets":"IMAGE:MON"}""","""{"targets":[1]}""")) {
+            val invalid=body!="{}" && body!="""{"targets":null}"""
+            missionStatus=if(invalid) 400 else 202
+            missionBody=if(invalid) """{"status":400,"code":"VALIDATION_FAILED"}""" else """{"draftId":"$renewed","status":"GENERATING"}"""
+            assertEquals(missionStatus,draftCall("POST","/theme-drafts/$draft/regenerate",access,body).status,body)
+            assertEquals(body,requests.last().body)
+            assertEquals(setOf("operationId"),keys(details("THEME_DRAFT_REGENERATE_REQUESTED").single().third),body)
+            val finished=details(if(invalid) "THEME_DRAFT_REGENERATE_REJECTED" else "THEME_DRAFT_REGENERATE_SUCCEEDED").single().third
+            assertEquals(setOf("operationId","outcome","httpStatus","currentVersion","currentRubricVersion"),keys(finished),body)
+            jdbc.update("DELETE FROM audit_log WHERE actor_user_id=?",admin)
+        }
+    }
     @Test fun `theme draft results that do not name the draft or theme stay unknown and are not retried`() {
         val (admin,access)=token("CONTENT");val draft=UUID.randomUUID()
         for((path,body) in listOf("/theme-drafts/$draft/discard" to """{"draftId":"${UUID.randomUUID()}","status":"DISCARDED"}""",
