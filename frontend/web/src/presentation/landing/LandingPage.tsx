@@ -7,6 +7,7 @@ import type { FriendId } from '../../domain/studentLook.ts'
 import { landingEntryHref } from '../../domain/navigation.ts'
 import { Companion } from '../student/world/Companion.tsx'
 import { ForestRabbit } from './ForestRabbit.tsx'
+import { UsageGuide } from './UsageGuide.tsx'
 import './landing.css'
 
 /** 장면마다 다른 친구를 고르되, 화면을 읽는 동안에는 조합을 유지한다. */
@@ -25,28 +26,45 @@ const learningSteps = [
   { title: '처음 답과 고친 답 비교하기', body: '내 공책에서 두 답을 읽고, 어떤 점이 달라졌는지 살펴봐요.', label: '내 공책', question: '처음 생각에서 무엇이 더해졌나요?', answer: '도서관이 필요하다는 생각에, 누가 어떻게 이용할지 이유를 더했어요.', caption: '처음 답도, 고쳐 쓴 답도 공책에 남아요.' },
 ]
 
-function NotebookSheet({ step }: { step: number }) {
+function NotebookLeaf({ step, side }: { step: number; side: 'left' | 'right' }) {
   const current = learningSteps[step]
-  return <>
-    <div className="lp-notebook-top"><BookOpen size={20} aria-hidden="true" /><span>생각을 담는 공책</span></div>
-    <div className="lp-notebook-content">
+  return side === 'left' ? <div className="lp-book-leaf lp-book-left">
+      <span className="lp-book-running-head">생각을 담는 공책</span>
+      <span className="lp-book-chapter">0{step + 1}</span>
       <span className="lp-example-label">{current.label}</span>
       <h3>{current.question}</h3>
-      <div className="lp-answer-example"><span>{step === 0 ? '처음 남긴 답' : step === 1 ? '덧붙인 답' : '돌아보기'}</span><p>{current.answer}</p></div>
-      <p className="lp-example-caption">{current.caption}</p>
+      <span className="lp-book-page-number">{step * 2 + 1}</span>
+    </div> : <div className="lp-book-leaf lp-book-right">
+      <span className="lp-book-running-head">우리 동네에 필요한 시설</span>
+      <div className="lp-book-writing"><span>{step === 0 ? '처음 남긴 답' : step === 1 ? '덧붙인 답' : '돌아보기'}</span><p>{current.answer}</p></div>
+      <p className="lp-book-caption">{current.caption}</p>
+      <span className="lp-book-page-number">{step * 2 + 2}</span>
     </div>
-    <div className="lp-notebook-bottom"><span>0{step + 1} / 03</span></div>
-  </>
+}
+
+/** 작은 면을 연속 곡면으로 연결해 글씨와 종이가 함께 휘도록 한다. */
+function CurvedLeaf({ step, side }: { step: number; side: 'left' | 'right' }) {
+  return <div className="lp-curved-sheet">{Array.from({ length: 32 }, (_, i) => {
+    const z = Math.sin(Math.PI * i / 32) * 12
+    const dz = Math.sin(Math.PI * (i + 1) / 32) * 12 - z
+    return <div className="lp-paper-band" key={i} style={{ '--band': i, '--depth': `${z}px`, '--rise': `${dz}px` } as CSSProperties}>
+      <div className="lp-paper-band-content"><NotebookLeaf step={step} side={side} /></div>
+    </div>
+  })}</div>
 }
 
 function LearningStory({ friends }: { friends: FriendId[] }) {
   const [step, setStep] = useState(0)
-  const [turn, setTurn] = useState<{ previous: number; direction: 'next' | 'previous'; id: number } | null>(null)
+  const [turn, setTurn] = useState<{ next: number; direction: 'next' | 'previous'; id: number } | null>(null)
   const turnId = useRef(0)
+  const turning = turn !== null
   const changeStep = (next: number) => {
-    if (next === step) return
-    setTurn(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? null : { previous: step, direction: next > step ? 'next' : 'previous', id: ++turnId.current })
-    setStep(next)
+    if (turn || next === step) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setStep(next)
+    } else {
+      setTurn({ next, direction: next > step ? 'next' : 'previous', id: ++turnId.current })
+    }
   }
   return <section className="lp-story lp-learning" id="learning" aria-labelledby="learning-title">
     <div className="lp-width lp-story-grid">
@@ -55,19 +73,28 @@ function LearningStory({ friends }: { friends: FriendId[] }) {
         <h2 id="learning-title">왜 그렇게 생각했는지,<br /><span>한 번 더 써 봐요.</span></h2>
         <p className="lp-story-lead">답을 쓰면 AI가 질문을 건네요.<br />질문을 읽고 내 답에 이유를 더해 봐요.</p>
         <ol className="lp-journey" aria-label="학습 흐름 예시 선택">
-          {learningSteps.map((item, index) => <li key={item.title}><button type="button" aria-pressed={step === index} onClick={() => changeStep(index)} aria-controls="learning-example"><span className="lp-step-number">0{index + 1}</span><span><strong>{item.title}</strong><span>{item.body}</span></span></button></li>)}
+          {learningSteps.map((item, index) => <li key={item.title}><button type="button" aria-pressed={step === index} disabled={turning} onClick={() => changeStep(index)} aria-controls="learning-example"><span className="lp-step-number">0{index + 1}</span><span><strong>{item.title}</strong><span>{item.body}</span></span></button></li>)}
         </ol>
         <Link className="lp-text-link" to={landingEntryHref('/student/login')}>학생으로 시작하기 <ArrowRight size={18} aria-hidden="true" /></Link>
       </div>
       <div className="lp-learning-scene" data-landing-reveal>
         <div className="lp-scene-friend lp-scene-friend-back" aria-hidden="true"><Companion friend={friends[0]} size={142} decorative /></div>
         <div className="lp-example-notebook">
-          <div className="lp-book-pages">
-            <div id="learning-example" aria-live="polite" aria-atomic="true"><NotebookSheet step={step} /></div>
-            {turn && <div key={turn.id} className="lp-turning-page" data-direction={turn.direction} aria-hidden="true" onAnimationEnd={(event) => {
-              if (event.target === event.currentTarget) setTurn((active) => active?.id === turn.id ? null : active)
-            }}><NotebookSheet step={turn.previous} /></div>}
+          <div id="learning-example" className="lp-book-pages" aria-label="학습 흐름 예시 공책" aria-busy={turning} data-step={step}>
+            <div className="lp-book-spread">
+              <NotebookLeaf step={turn?.direction === 'previous' ? turn.next : step} side="left" />
+              <NotebookLeaf step={turn?.direction === 'next' ? turn.next : step} side="right" />
+            </div>
+            {turn && <div key={turn.id} className="lp-turning-leaf" data-direction={turn.direction} aria-hidden="true" onAnimationEnd={event => {
+              if (event.target !== event.currentTarget) return
+              setStep(turn.next)
+              setTurn(null)
+            }}>
+              <div className="lp-leaf-face lp-leaf-front"><CurvedLeaf step={step} side={turn.direction === 'next' ? 'right' : 'left'} /></div>
+              <div className="lp-leaf-face lp-leaf-back"><CurvedLeaf step={turn.next} side={turn.direction === 'next' ? 'left' : 'right'} /></div>
+            </div>}
           </div>
+          <span className="lp-book-announcement" role="status">{learningSteps[step].title}</span>
         </div>
         <div className="lp-scene-friend lp-scene-friend-front" aria-hidden="true"><Companion friend={friends[1]} size={128} decorative /></div>
       </div>
@@ -184,6 +211,7 @@ function MemoryGallery({ friends }: { friends: FriendId[] }) {
 
 /** #724: 공개 소개. 인증과 권한 검사는 기존 역할별 로그인 화면에서 처리한다. */
 export function LandingPage() {
+  const [guideOpen, setGuideOpen] = useState(false)
   const [friends] = useState(chooseLandingFriends)
   const root = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -201,10 +229,11 @@ export function LandingPage() {
     return () => observer.disconnect()
   }, [])
   return <div className="landing-page" ref={root}>
+    {guideOpen && <UsageGuide onClose={() => setGuideOpen(false)} />}
     <a className="lp-skip" href="#landing-main">본문으로 건너뛰기</a>
     <header className="lp-header lp-width">
-      <Link className="lp-brand" to="/" aria-label="사고뭉치 홈"><Companion size={42} decorative /><span>사고뭉치</span></Link>
-      <nav aria-label="서비스 소개 메뉴"><a href="#about">서비스 소개</a><Link to="/login-help">이용 안내</Link><Link className="lp-admin-entry" to={landingEntryHref('/admin/login')}>관리자 로그인 <ArrowRight size={14} aria-hidden="true" /></Link></nav>
+      <Link className="lp-brand" to="/" aria-label="사고뭉치 홈"><img src="/brand-idea-transparent.png" alt="사고뭉치 · 생각을 잇는 배움" /></Link>
+      <nav aria-label="서비스 소개 메뉴"><a href="#about" onClick={event => { event.preventDefault(); document.getElementById('about')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }) }}>서비스 소개</a><button className="lp-guide-trigger" type="button" aria-haspopup="dialog" onClick={() => setGuideOpen(true)}>이용 안내</button><Link className="lp-admin-entry" to={landingEntryHref('/admin/login')}>관리자 로그인 <ArrowRight size={14} aria-hidden="true" /></Link></nav>
     </header>
     <main id="landing-main">
       <div className="lp-hero-wrap"><section className="lp-hero lp-width" aria-labelledby="landing-title">
@@ -222,7 +251,7 @@ export function LandingPage() {
           <div className="lp-art-sun" />
           <span className="lp-art-spark"><Sparkles size={34} /></span>
           <div className="lp-mungchi"><Companion friend="cotton" size={310} decorative /></div>
-          <div className="lp-thought-book"><span>오늘의 생각</span><strong>내 생각은<br />내 말로.</strong><span className="lp-book-line" /><span className="lp-book-line" /></div>
+          <div className="lp-thought-book"><span>오늘의 생각</span><strong>내 생각은<br />내 글로.</strong><span className="lp-book-line" /><span className="lp-book-line" /></div>
           <span className="lp-cloud lp-cloud-one" /><span className="lp-cloud lp-cloud-two" />
         </div>
       </section></div>
