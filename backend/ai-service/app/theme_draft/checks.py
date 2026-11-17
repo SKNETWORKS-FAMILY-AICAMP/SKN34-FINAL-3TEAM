@@ -426,6 +426,17 @@ def target_words(theme: Theme) -> list[str]:
     return words
 
 
+PERSON_OF_TARGET = re.compile(r"^\s*(.+?)(?:이|가) 타고 온")
+
+
+def clue_person(theme: Theme) -> str | None:
+    """탈것 찾기의 온 사람('삼촌이 타고 온 탈것' → '삼촌', 공백 뺀 꼴). 다른 종류·형식 밖은 None."""
+    if story_type(theme).code != "VEHICLE":
+        return None
+    m = PERSON_OF_TARGET.match(str(theme.get("target") or ""))
+    return compact(m.group(1)) if m else None
+
+
 def _adnominal(word: str) -> bool:
     """꾸미는 말(끝 글자 받침이 ㄴ·ㄹ: '숨긴'·'남긴'·'잃어버릴')인지. 대상 낱말에서 뺀다(#634 작은
     실측: '할아버지가 숨긴 타임캡슐'의 '숨긴'이 대상 낱말이 됨). 받침 ㄴ으로 끝나는 명사('도서관')도
@@ -1389,6 +1400,14 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
                 f"CLUE_OWNER {d['day']} clue 흔적 단서에 찾는 대상 낱말"
                 f"({'·'.join(target_words(theme))})이 "
                 "없음(누구의 흔적인지 밝힘)"
+            )
+        # #634 ④ 탈것 찾기: 모든 단서는 온 사람이 탄 탈것의 증거임을 밝힘(작은 실측: '따르릉 소리가
+        # 났다'만 써서 글 검토 CLUE_LOGIC "그 소리가 할머니의 탈것에서 났다는 연결이 없음")
+        person = clue_person(theme)
+        if person and person not in compact(d.get("clue")):
+            bad.append(
+                f"CLUE_OWNER {d['day']} clue 단서에 온 사람('{person}')이 없음(그 사람이 탄 "
+                "탈것의 증거임을 밝힘)"
             )
         if early := early_values(d, d.get("discovery")):
             bad.append(f"CLUE_EARLY {d['day']} discovery에 그날 단서 결론(허용 값 {early})")

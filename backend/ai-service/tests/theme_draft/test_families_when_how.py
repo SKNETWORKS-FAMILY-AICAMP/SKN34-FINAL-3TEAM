@@ -133,7 +133,7 @@ def vehicle_theme() -> dict[str, Any]:
             ),
             day(
                 "WED",
-                "이웃이 부릉 소리나 덜컹덜컹 소리를 들었대.",
+                "이웃이 삼촌 올 때 부릉 소리나 덜컹덜컹 소리를 들었대.",
                 "소리",
                 "HINT",
                 "들린 소리",
@@ -151,7 +151,7 @@ def vehicle_theme() -> dict[str, Any]:
             ),
             day(
                 "FRI",
-                "녹음에 부릉 소리가 담겨 있었어.",
+                "삼촌 올 때 녹음에 부릉 소리가 담겼어.",
                 "시각",
                 "HINT",
                 "들린 소리",
@@ -414,3 +414,19 @@ def test_in_hand_mission_image_review_allows_target() -> None:
     gift = {**valid_theme(), "storyType": "GIFT"}
     assert prompts.mission_shows_target(gift)
     assert not prompts.mission_shows_target({**valid_theme(), "storyType": "SECRET_INGREDIENT"})
+
+
+def test_vehicle_clues_name_the_person() -> None:
+    # 작은 실측: 소리 단서에 온 사람이 없어 글 검토 CLUE_LOGIC → 모든 단서에 온 사람(칸 고쳐 쓰기)
+    theme = vehicle_theme()
+    assert checks.clue_person(theme) == "삼촌"
+    assert checks.clue_person({**theme, "target": "사촌 언니가 타고 온 탈것"}) == "사촌언니"
+    assert checks.clue_person(valid_theme()) is None
+    theme["days"][1]["clue"] = "사진 속 손에 교통카드나 좌석표가 있었어."
+    bad = checks.check_theme(theme, 3)
+    assert bad == [
+        "CLUE_OWNER TUE clue 단서에 온 사람('삼촌')이 없음(그 사람이 탄 탈것의 증거임을 밝힘)"
+    ]
+    assert list(checks.fix_targets(bad)) == ["TUE.clue"]
+    assert any("온 사람('삼촌')" in r for r in prompts.fix_rules(theme, "TUE.clue"))
+    assert "CLUE_OWNER" in families.type_rules(families.VEHICLE)

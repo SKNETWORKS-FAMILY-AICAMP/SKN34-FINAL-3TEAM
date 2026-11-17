@@ -31,6 +31,7 @@ from app.theme_draft.checks import (
     Theme,
     answer_facts,
     candidate_words,
+    clue_person,
     evidence_plan,
     feature_table,
     plan_for_type,
@@ -501,6 +502,11 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
                 ""
                 if story_type(theme).clue_time
                 else "어떤 시각(3시·정오 등)도 쓰지 않는다(그때가 정답, '그 일을 할 때'처럼).",
+                # #634 ④ 탈것 찾기 CLUE_OWNER: 온 사람을 넣고 탈것을 봤다고 쓰지 않음
+                f"온 사람('{person}')을 넣어 그 사람이 탄 탈것의 증거임을 밝히고, 탈것을 봤다고 "
+                "쓰지 않는다(들고 온 것을 봤거나 소리를 들은 것으로)."
+                if (person := clue_person(theme))
+                else "",
             ]
         if key == "discovery":
             return [
