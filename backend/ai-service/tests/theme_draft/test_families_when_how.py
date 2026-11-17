@@ -382,7 +382,7 @@ def test_vehicle_absent_value_clue_and_ferry_place() -> None:
     theme = vehicle_theme()
     theme["days"][0]["condition"] = {
         "kind": "RULE",
-        "feature": "집 앞 바퀴 자국",
+        "feature": "도착한 곳 바퀴 자국",
         "allowed": ["바퀴 자국 없음"],
     }
     assert checks.clue_absent_problems(theme) == [
@@ -430,3 +430,27 @@ def test_vehicle_clues_name_the_person() -> None:
     assert list(checks.fix_targets(bad)) == ["TUE.clue"]
     assert any("온 사람('삼촌')" in r for r in prompts.fix_rules(theme, "TUE.clue"))
     assert "CLUE_OWNER" in families.type_rules(families.VEHICLE)
+
+
+def test_when_outro_must_keep_answer_time() -> None:
+    # 판정 실측: 정답 오전 10시인데 마무리 장면이 '낮 12시라고 확인' → 그 칸만 고쳐 씀
+    theme = {**when_theme(), "outroStory": "관리인 아저씨가 저녁 7시에 물을 줬다고 웃었어요."}
+    assert checks.outro_other_candidates(theme) == []
+    wrong = {**theme, "outroStory": "관리인 아저씨가 밤 9시에 물을 줬다고 웃었어요."}
+    assert checks.outro_other_candidates(wrong) == ["밤 9시"]
+    bad = [r for r in checks.check_theme(wrong, 3) if r.startswith("OUTRO_ANSWER")]
+    assert bad and list(checks.fix_targets(bad)) == ["outro"]
+    # 정답과 머리 낱말이 같은 후보('아침 7시')는 정답을 줄여 쓰면 걸림
+    short = {**theme, "outroStory": "관리인 아저씨가 7시에 물을 줬대요."}
+    assert checks.outro_other_candidates(short) == ["아침 7시"]
+    assert checks.outro_other_candidates({**vehicle_theme(), "outroStory": "기차 아님"}) == []
+    assert any("다른 후보 시각" in r for r in prompts.fix_rules(wrong, "outro"))
+
+
+def test_route_trace_is_only_what_sticks_to_target() -> None:
+    # 판정 실측: 길에서 들린 소리가 흔적 날에 배정돼 CLUE_LOGIC → 길은 대상에 묻은 것만 흔적
+    assert checks.traceable("묻은 흙", families.ROUTE)
+    assert checks.traceable("바닥 재질", families.ROUTE)
+    for name in ("들린 소리", "길 모양", "가로등 빛"):
+        assert not checks.traceable(name, families.ROUTE), name
+    assert checks.traceable("흔들면 나는 소리", families.GIFT)  # ②는 그대로

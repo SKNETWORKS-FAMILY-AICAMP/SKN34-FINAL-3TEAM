@@ -236,6 +236,7 @@ FIX_REASON = (
     # 되풀이됨)
     re.compile(r"^CLUE_TEXT (MON|TUE|WED|THU|FRI) (clue) "),
     re.compile(r"^OUTRO_RECAP (outro) "),
+    re.compile(r"^OUTRO_ANSWER (outro) "),  # #634 ④ 시간 탐정 마무리 장면의 다른 시각
     re.compile(r"^HIDE_SPOT (MON|TUE|WED|THU|FRI) (sceneNote|discovery|clue|missionHook) "),
     re.compile(r"^CLUE_PROOF (MON|TUE|WED|THU|FRI) (clue) "),
     re.compile(r"^TIME_WORD (\S+?)에 "),  # #634 ④ 시간 탐정 엔딩 전 글의 시각
@@ -527,6 +528,28 @@ def fact_table_problems(theme: Theme) -> list[str]:
                 f"없음{note}(후보를 바꾸거나 가를 특징을 features에 넣음)"
             )
     return bad
+
+
+def outro_other_candidates(theme: Theme) -> list[str]:
+    """시간 탐정 마무리 장면(outroStory)에 나온 정답 아닌 후보 시각(OUTRO_ANSWER, 칸 고쳐 쓰기).
+
+    코드 정리는 정답만 남았다고 하는데 모델의 마무리 장면이 다른 시각을 확인해 모순(④ 판정 실측:
+    정답 오전 10시인데 '사서가 낮 12시라고 확인'). 정답 이름을 지운 뒤 다른 후보 이름·머리
+    낱말('7시')을 찾는다(정답 '저녁 7시'와 후보 '아침 7시'처럼 머리 낱말이 같으면 정답을 다 써야
+    통과).
+    """
+    if story_type(theme).clue_time or "outroStory" not in theme:
+        return []
+    answer = compact(theme.get("answer"))
+    text = compact(theme.get("outroStory")).replace(answer, "") if answer else ""
+    found = []
+    for c in theme.get("candidates") or []:
+        if compact(c) == answer:
+            continue
+        words = [compact(c), *[compact(t) for t in str(c).split()[-1:]]]
+        if any(w and w in text for w in words):
+            found.append(str(c).strip())
+    return found
 
 
 def clue_absent_problems(theme: Theme) -> list[str]:
@@ -1332,6 +1355,11 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
                 f"OUTRO_RECAP outro 마무리 장면에 요일 정리('{m.group()}'), "
                 "다섯 단서 정리는 코드가 앞에 "
                 "붙이므로 쓰지 않음"
+            )
+        if others := outro_other_candidates(theme):
+            bad.append(
+                f"OUTRO_ANSWER outro 마무리 장면에 정답이 아닌 후보 {others}(정답 "
+                f"{theme.get('answer')}과 어긋남 — 정답 그대로 씀)"
             )
     cands, answer = theme.get("candidates") or [], theme.get("answer") or ""
     if len(cands) != CANDIDATES[grade] or len(set(cands)) != len(cands):
