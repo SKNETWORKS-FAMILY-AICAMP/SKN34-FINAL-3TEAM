@@ -244,6 +244,31 @@
 | 친구 생각 작성자 | 공유물 응답 `author.look.equipped`(아이템 키)를 읽어 아이템 목록 그림과 맞춰 그림(`StudentCommunity.tsx`). 목록에 없는 아이템(판매 중단 등)은 그 칸만 빠짐. 목업 친구 "하늘별"(도토리 모자)·"초록콩"(노란 비옷·돋보기) |
 | 남은 일 | 실서버 관리자 화면에서 아이템 그림 키 등록, kind에서 해금 → 착용 → 표시 확인(웹 PR #696 병합 뒤) |
 
+#### 3.7.3 바닥·방 소품 그림 키 (#705, 2026-11-17)
+
+웹 인라인 그림(`roomAssets.ts` `FLOORS`·`DECORS`, `decorDraw.ts`)이며 생성형 AI·외부 저작물은 쓰지 않았다. 관리자 아이템 등록(#706) 때 아래 `asset_key`를 그대로 넣는다. 목록에 없는 키는 방에 그리지 않는다. 가격은 목업 기준안이고 실제 값은 등록할 때 정한다. 칸 수·놓는 면 등 화면 결정은 `docs/report/frontend.md` "내 방 바닥·방 소품: 화면 (#705)".
+
+| 칸 | `asset_key` | 이름 | 크기(칸) | 목업 가격 |
+|---|---|---|---|---|
+| `FLOOR` | `room/floor-wood.svg` | 나무 마루 | - | 60 |
+| `FLOOR` | `room/floor-mint.svg` | 민트 타일 | - | 90 |
+| `FLOOR` | `room/floor-carpet.svg` | 초록 카펫 | - | 120 |
+| `DECOR` | `room/decor-plant.svg` | 작은 화분 | 바닥 1 | 30 |
+| `DECOR` | `room/decor-plant-big.svg` | 큰 화분 | 바닥 1 | 50 |
+| `DECOR` | `room/decor-cactus.svg` | 선인장 | 바닥 1 | 30 |
+| `DECOR` | `room/decor-lamp.svg` | 스탠드 조명 | 바닥 1 | 50 |
+| `DECOR` | `room/decor-doll.svg` | 뭉치 인형 | 바닥 1 | 60 |
+| `DECOR` | `room/decor-books.svg` | 쌓은 책 | 바닥 1 | 20 |
+| `DECOR` | `room/decor-beanbag.svg` | 쿠션 소파 | 바닥 2×1 | 70 |
+| `DECOR` | `room/decor-rug.svg` | 동그란 러그 | 바닥 2×2 | 50 |
+| `DECOR` | `room/decor-rug-square.svg` | 네모 러그 | 바닥 3×2 | 60 |
+| `DECOR` | `room/decor-rug-star.svg` | 별 러그 | 바닥 2×2 | 60 |
+| `DECOR` | `room/decor-lights.svg` | 줄 조명 | 벽 3×1 | 40 |
+| `DECOR` | `room/decor-garland.svg` | 깃발 가랜드 | 벽 3×1 | 40 |
+| `DECOR` | `room/decor-clock.svg` | 벽시계 | 벽 1 | 30 |
+| `DECOR` | `room/decor-picture.svg` | 작은 그림 | 벽 1 | 30 |
+| `DECOR` | `room/decor-shelf.svg` | 벽 선반 | 벽 2×1 | 50 |
+
 ## 4. 아키텍처 영향
 
 - 새 서비스·Pod·네트워크 정책 없음. learning→ai, ai→LLM API는 이미 허용됨
@@ -1032,3 +1057,4 @@ AWS 조회·운영 데이터 확인·배포·원격 CI·실제 웹 #705/#709 동
 - core 전체 gradle test bootJar 성공: 678개 중 675개 통과·3개 조건부 제외, 실패 0개. 제외는 MODEL_LOADING_LOCAL·PREFLIGHT_LOCAL·MODEL_BROWSER_LOCAL 전용 환경 검사다. Java 21·Gradle 8.14.6 Docker에서 실행했다.
 - 변경 관련 RewardIntegrationTest 19개·FriendRoomIntegrationTest 6개·RoomDecorMigrationTest 3개·RoomDecorServiceTest 1개·RoomFrameSlotIntegrationTest 7개, 총 36개 모두 통과했다. V51의 기존 배치를 V52로 올려 행 보존·NULL·재실행을 확인했다.
 - 실제 MockMvc 응답 JSON 13개가 OpenAPI와 일치한다(validate_reward_contracts.py·validate_community_contracts.py). 원격 CI와 병합 후 웹 담당자 알림은 아직 수행 전이다.
+- 최종 develop 86b0cc03(PR #759)을 병합했다. core·계약·스크립트에는 추가 변경이 없고, 병합된 웹의 retention·retentionMock·roomDecor 시험 48개가 모두 통과했다. 웹 색 선택 플래그는 담당자 후속 활성화를 위해 그대로 둔다.

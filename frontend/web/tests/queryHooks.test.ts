@@ -403,6 +403,27 @@ test('#389 해금 확정 응답은 선택 자녀의 모든 페이지 잔액·해
   assert.deepEqual(cache.getQueryData(['look-items', child.id]), [{ ...item, unlocked: true }])
 })
 
+test('#705 방 소품 사기 응답은 그 방 소품 보유 개수와 선택 자녀 잔액에만 반영한다', async t => {
+  const { usePurchaseDecor } = await import('../src/data/retention/queries.ts')
+  const cache = client()
+  const points = { balance: 87, items: [], page: 0, size: 20, totalElements: 13 }
+  const decor = { itemKey: 'DECOR_PLANT', name: '화분', slot: 'DECOR', pricePoints: 30, unlocked: false, onSale: true, assetKey: 'room/decor-plant.svg', ownedCount: 0, createdAt: null }
+  const other = { ...decor, itemKey: 'DECOR_RUG', name: '러그' }
+  cache.setQueryData(['points', child.id, 0], points)
+  cache.setQueryData(['points', 'other-child', 0], points)
+  cache.setQueryData(['look-items', child.id], [decor, other])
+  mockFetch(t, (url, init) => {
+    assert.equal(`${init.method} ${url}`, 'POST /api/v1/students/me/look-items/DECOR_PLANT/purchase')
+    assert.equal(new Headers(init.headers).get('Idempotency-Key'), '00000000-0000-4000-8000-000000000005')
+    return Response.json({ itemKey: 'DECOR_PLANT', ownedCount: 1, balance: 57 })
+  })
+  const h = await mount(t, () => usePurchaseDecor(child.id), cache)
+  await act(async () => { await h.get().mutateAsync({ itemKey: 'DECOR_PLANT', key: '00000000-0000-4000-8000-000000000005' }) })
+  assert.equal(cache.getQueryData<typeof points>(['points', child.id, 0])?.balance, 57)
+  assert.equal(cache.getQueryData<typeof points>(['points', 'other-child', 0])?.balance, 87)
+  assert.deepEqual(cache.getQueryData(['look-items', child.id]), [{ ...decor, ownedCount: 1, unlocked: true }, other])
+})
+
 test('#389 다른 항목의 해금 응답은 성공·잔액 변경으로 표시하지 않는다', async t => {
   const { useUnlock } = await import('../src/data/retention/queries.ts')
   const cache = client(), points = { balance: 150, items: [], page: 0, size: 20, totalElements: 0 }

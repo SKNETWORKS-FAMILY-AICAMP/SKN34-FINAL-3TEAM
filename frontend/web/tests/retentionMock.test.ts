@@ -90,6 +90,120 @@ test('포인트 해금: 잔액 부족·판매 중단은 409, 같은 키는 한 �
   assert.equal(equip.data.code, 'LOOK_LOCKED', '해금하지 않은 아이템은 착용 불가')
 })
 
+const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+const post = (path: string, key?: string) => call(path, undefined, 'POST', key ? { 'Idempotency-Key': key } : {})
+type CatalogRow = { itemKey: string; slot: string; unlocked: boolean; onSale: boolean; ownedCount: number | null; createdAt: string | null }
+
+test('#705 해금: 같은 키·다른 항목은 계약대로 422, 방 소품을 해금으로 부르면 422, 바닥은 해금·착용', async () => {
+  const childId = await parent()
+  await student(childId)
+  const items = (await call('/students/me/look-items')).data.items as CatalogRow[]
+  const floor = items.find((i) => i.itemKey === 'FLOOR_WOOD')!
+  assert.deepEqual([floor.slot, floor.unlocked, floor.ownedCount], ['FLOOR', false, null])
+  assert.ok(floor.createdAt && Number.isFinite(Date.parse(floor.createdAt)))
+  assert.equal(items.find((i) => i.itemKey === 'THEME:space')?.createdAt, null, '테마·캐릭터 등록일은 null')
+  assert.equal(items.find((i) => i.itemKey === 'HAT_ACORN')?.ownedCount, null)
+
+  const decorUnlock = await post('/students/me/look-items/DECOR_PLANT/unlock', uuid(10))
+  assert.deepEqual([decorUnlock.status, decorUnlock.data.code], [422, 'VALIDATION_FAILED'])
+
+  const floorUnlock = await post('/students/me/look-items/FLOOR_WOOD/unlock', uuid(11))
+  assert.equal(floorUnlock.status, 200)
+  assert.equal(floorUnlock.data.balance, balanceOf(childId))
+  const reused = await post('/students/me/look-items/HAT_ACORN/unlock', uuid(11))
+  assert.deepEqual([reused.status, reused.data.code], [422, 'IDEMPOTENCY_KEY_REUSED'])
+  // 거절(4xx)된 키도 그 항목에 묶여 다른 항목은 422(core도 처리 전에 요청을 기록)
+  assert.equal((await post('/students/me/look-items/HAT_CROWN/unlock', uuid(12))).data.code, 'LOOK_ITEM_NOT_ON_SALE')
+  assert.equal((await post('/students/me/look-items/HAT_ACORN/unlock', uuid(12))).status, 422)
+
+  const equip = await call('/students/me/preferences', { theme: 'lake', companion: 'mungchi', equipped: { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null, FLOOR: 'FLOOR_WOOD' } }, 'PUT')
+  assert.equal(equip.status, 200)
+  assert.equal(equip.data.equipped.FLOOR, 'FLOOR_WOOD')
+  assert.equal((await call('/students/me/preferences', { theme: 'lake', companion: 'mungchi', equipped: { FLOOR: 'FLOOR_MINT' } }, 'PUT')).data.code, 'LOOK_LOCKED')
+  // 바닥을 보내지 않으면 착용 유지, null이면 벽지 세트의 바닥
+  assert.equal((await call('/students/me/preferences', { theme: 'lake', companion: 'mungchi', equipped: { HAT: null } }, 'PUT')).data.equipped.FLOOR, 'FLOOR_WOOD')
+  assert.equal((await call('/students/me/preferences', { theme: 'lake', companion: 'mungchi', equipped: { FLOOR: null } }, 'PUT')).data.equipped.FLOOR, null)
+})
+
+test('#705 방 소품 사기: 키마다 새 구매, 같은 키는 처음 응답, 8개 넘으면 409, 다른 칸·키 재사용은 422', async () => {
+  const childId = await parent()
+  await student(childId)
+  const start = balanceOf(childId)
+  const plant = async () => ((await call('/students/me/look-items')).data.items as CatalogRow[]).find((i) => i.itemKey === 'DECOR_PLANT')
+  assert.deepEqual(await plant().then((p) => [p?.unlocked, p?.ownedCount]), [false, 0])
+
+  assert.equal((await post('/students/me/look-items/DECOR_PLANT/purchase')).status, 400, '키 없으면 거절')
+  const first = await post('/students/me/look-items/DECOR_PLANT/purchase', uuid(20))
+  assert.deepEqual(first.data, { itemKey: 'DECOR_PLANT', ownedCount: 1, balance: start - 30 })
+  const again = await post('/students/me/look-items/DECOR_PLANT/purchase', uuid(20))
+  assert.deepEqual(again.data, first.data, '같은 키 재요청은 처음 응답, 한 번만 차감')
+  const second = await post('/students/me/look-items/DECOR_PLANT/purchase', uuid(21))
+  assert.deepEqual(second.data, { itemKey: 'DECOR_PLANT', ownedCount: 2, balance: start - 60 }, '키가 다르면 새 구매')
+  assert.equal(balanceOf(childId), start - 60)
+  assert.deepEqual(await plant().then((p) => [p?.unlocked, p?.ownedCount]), [true, 2])
+
+  // 같은 키로 다른 항목·해금 경로에 쓴 키는 422
+  assert.equal((await post('/students/me/look-items/DECOR_RUG/purchase', uuid(20))).data.code, 'IDEMPOTENCY_KEY_REUSED')
+  assert.equal((await post('/students/me/look-items/FLOOR_WOOD/unlock', uuid(21))).data.code, 'IDEMPOTENCY_KEY_REUSED')
+  // 방 소품이 아닌 항목은 422, 없는 항목은 404
+  for (const itemKey of ['FLOOR_WOOD', 'HAT_ACORN', 'THEME%3Aspace']) {
+    const r = await post(`/students/me/look-items/${itemKey}/purchase`, crypto.randomUUID())
+    assert.deepEqual([r.status, r.data.code], [422, 'VALIDATION_FAILED'], itemKey)
+  }
+  assert.equal((await post('/students/me/look-items/NOPE/purchase', crypto.randomUUID())).data.code, 'LOOK_ITEM_NOT_FOUND')
+
+  // 보유 상한 8개
+  retentionState.decor[childId].DECOR_PLANT = 8
+  const limit = await post('/students/me/look-items/DECOR_PLANT/purchase', uuid(22))
+  assert.deepEqual([limit.status, limit.data.code], [409, 'LOOK_DECOR_LIMIT'])
+  assert.equal(balanceOf(childId), start - 60, '상한이면 차감 없음')
+
+  // 잔액 부족은 해금과 같은 코드
+  retentionState.decor[childId].DECOR_PLANT = 2
+  retentionState.ledger[childId].push({ eventType: 'UNLOCK', amount: -(start - 60) + 10, createdAt: '2026-11-17T00:00:00Z', sourceKey: 'drain' })
+  const broke = await post('/students/me/look-items/DECOR_PLANT/purchase', uuid(23))
+  assert.deepEqual([broke.status, broke.data.code], [409, 'INSUFFICIENT_POINTS'])
+
+  // 판매 중단: 새로 살 수 없고 가진 것은 목록에 보유 개수와 남는다. 안 가진 판매 중단 방 소품은 목록에서 빠진다
+  for (const i of retentionState.items) if (i.code === 'DECOR_PLANT' || i.code === 'DECOR_RUG') i.status = 'STOPPED'
+  const stopped = await post('/students/me/look-items/DECOR_PLANT/purchase', uuid(24))
+  assert.deepEqual([stopped.status, stopped.data.code], [409, 'LOOK_ITEM_NOT_ON_SALE'])
+  assert.deepEqual(await plant().then((p) => [p?.onSale, p?.ownedCount]), [false, 2])
+  assert.equal(((await call('/students/me/look-items')).data.items as CatalogRow[]).some((i) => i.itemKey === 'DECOR_RUG'), false)
+})
+
+test('#705 방 소품 놓은 칸(core #723 계약안 + color): 범위·같은 기준 칸·8개·보유·색 형식은 422, 면→row→col 정렬', async () => {
+  const childId = await parent()
+  await student(childId)
+  const put = (spots: unknown) => call('/students/me/room/decor-spots', { spots }, 'PUT')
+  assert.deepEqual((await call('/students/me/room/decor-spots')).data, { spots: [] })
+  retentionState.decor[childId] = { DECOR_PLANT: 2, DECOR_LIGHTS: 1 }
+  const ok = await put([
+    { surface: 'WALL_BACK', col: 3, row: 2, itemKey: 'DECOR_LIGHTS', color: null },
+    { surface: 'FLOOR', col: 12, row: 6, itemKey: 'DECOR_PLANT', color: 'sky' },
+    { surface: 'FLOOR', col: 2, row: 6, itemKey: 'DECOR_PLANT' },
+  ])
+  assert.equal(ok.status, 200)
+  assert.deepEqual(ok.data.spots.map((s: { surface: string; col: number; row: number; color: string | null }) => [s.surface, s.col, s.row, s.color]),
+    [['FLOOR', 2, 6, null], ['FLOOR', 12, 6, 'sky'], ['WALL_BACK', 3, 2, null]], '면 → row → col, 색 없으면 null')
+  assert.equal(ok.data.spots[0].assetKey, 'room/decor-plant.svg')
+  assert.deepEqual((await call('/students/me/room/decor-spots')).data, ok.data, '다시 조회해도 같은 칸·같은 색')
+  const bad = async (spots: unknown, why: string) => {
+    const r = await put(spots)
+    assert.deepEqual([r.status, r.data.code], [422, 'VALIDATION_FAILED'], why)
+  }
+  await bad([{ surface: 'FLOOR', col: 17, row: 0, itemKey: 'DECOR_PLANT' }], '바닥 칸 범위 밖')
+  await bad([{ surface: 'WALL_LEFT', col: 11, row: 0, itemKey: 'DECOR_LIGHTS' }], '왼쪽 벽 칸 범위 밖')
+  await bad([{ surface: 'FLOOR', col: 1, row: 1, itemKey: 'DECOR_PLANT' }, { surface: 'FLOOR', col: 1, row: 1, itemKey: 'DECOR_PLANT' }], '같은 기준 칸 두 번')
+  await bad([1, 2, 3].map((col) => ({ surface: 'FLOOR', col, row: 9, itemKey: 'DECOR_PLANT' })), '보유 2개보다 많이')
+  await bad([{ surface: 'FLOOR', col: 1, row: 1, itemKey: 'DECOR_RUG' }], '가지지 않은 방 소품')
+  await bad([{ surface: 'FLOOR', col: 1, row: 1, itemKey: 'DECOR_PLANT', color: 'Sky Blue' }], '색 형식')
+  retentionState.decor[childId].DECOR_PLANT = 8
+  await bad(Array.from({ length: 9 }, (_, col) => ({ surface: 'FLOOR', col, row: 10, itemKey: 'DECOR_PLANT' })), '9개')
+  assert.deepEqual((await call('/students/me/room/decor-spots')).data, ok.data, '거절되면 저장된 것이 바뀌지 않음')
+  assert.deepEqual((await put([])).data, { spots: [] }, '빈 목록은 모두 치움')
+})
+
 test('커뮤니티: 보호자 COMMUNITY 동의 전에는 켤 수 없고, 철회하면 공개가 꺼진다', async () => {
   const childId = await parent()
   const docs = (await call('/consent-documents')).data.items as { kind: string; documentId: string; version: string }[]
