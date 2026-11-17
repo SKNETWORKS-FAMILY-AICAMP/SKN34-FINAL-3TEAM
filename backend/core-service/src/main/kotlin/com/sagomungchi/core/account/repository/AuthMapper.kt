@@ -13,6 +13,7 @@ import java.util.UUID
 interface AuthMapper {
     fun findAccount(id: UUID): AuthAccount?
     fun findGoogleAccount(subject: String): AuthAccount?
+    fun updateGoogleEmail(@Param("id") id: UUID, @Param("email") email: String, @Param("now") now: OffsetDateTime): Int
     fun insertAccount(@Param("account") account: AuthAccount, @Param("now") now: OffsetDateTime, @Param("demo") demo: Boolean): Int
     fun permissions(userId: UUID): Set<String>
     fun insertSession(session: AuthSession): Int

@@ -53,7 +53,7 @@ export function ParentDashboard({ child, scope, canReadOriginals = false, sharin
           {summary.state !== 'OK' && <span className="pd-chip pd-chip-warn">{stateText[summary.state]}</span>}
           <span>
             {summary.state === 'NO_RECORD'
-              ? '아직 집계할 기록이 없습니다. ‘이 자녀로 학습 시작’에서 첫 활동을 시작해 보세요.'
+              ? '아직 집계할 기록이 없습니다. 기기·PIN에서 학생 기기를 등록한 뒤, 학생 화면에서 PIN으로 로그인해 첫 활동을 시작해 보세요.'
               : summary.state === 'INSUFFICIENT_SAMPLE'
                 ? `이 기간 집계 대상 활동이 ${summary.metrics[0]?.count ?? '확인되지 않음'}건입니다. 비율은 5건 이상일 때부터 보여 드립니다.`
                 : summary.state === 'FAILED' ? '학습 기록 조회에 실패했습니다. 다시 시도해 주세요.'
