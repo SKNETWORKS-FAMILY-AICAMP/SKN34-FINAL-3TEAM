@@ -81,7 +81,6 @@ class Settings(BaseSettings):
     sagomungchi_sllm_serverless_gemma: str | None = None
     sagomungchi_sllm_serverless_key_gemma: str | None = Field(default=None, repr=False)
 
-
     # 미션 초안 생성 (#354, api-spec 4.2). 호출 1번에 생성 1회, 반복은 learning
     # 미션 초안만 P12 예외(#353): 주기 작업이라 기다리는 사람이 없고, 기본 모델 gpt-6-luna가
     # 실제 성취기준으로 15~31.7초 걸림(14건). LLM 60초 1회, 마감 63초(learning 초안 ai 대기 70초 안)
