@@ -35,6 +35,9 @@ export const isDemo = typeof import.meta.env !== 'undefined' && import.meta.env.
 export const displayPeriods = calendarPeriods(
   isDemo ? new Date('2026-10-26T12:00:00+09:00') : new Date(),
 )
+/** 학생 화면 기간 이름(빈 화면 문구에 씀). 두 기간 밖이면 "이 기간". */
+export const periodName = (p: Period) =>
+  p.from === displayPeriods.recentPeriod.from ? '최근 7일' : p.from === displayPeriods.previousWeek.from ? '지난주' : '이 기간'
 export function setDemoScenario(value: DemoScenario) {
   if (isDemo) window.dispatchEvent(new CustomEvent('sagomungchi:mock-scenario', { detail: value }))
 }

@@ -7,6 +7,7 @@ import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.HintSpot
 import com.sagomungchi.learning.theme.domain.ThemeAnswerPick
 import com.sagomungchi.learning.theme.domain.ThemeDayMission
+import com.sagomungchi.learning.theme.domain.ThemeFeature
 import com.sagomungchi.learning.theme.domain.ThemeStory
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
@@ -51,10 +52,11 @@ data class ThemeVersionRow(
     val candidates: List<String>? = null,
     val answer: String? = null,
     val answerClue: String? = null,
+    val features: List<ThemeFeature>? = null,
 ) {
     val story: ThemeStory
         get() = ThemeStory(outro, introImageUri, outroImageUri, introVideoUri, outroVideoUri, introMotion, outroMotion,
-            bigQuestion, candidates, answer, answerClue)
+            bigQuestion, candidates, answer, answerClue, features)
 }
 
 /**
@@ -71,9 +73,11 @@ data class ThemeDayRow(
     val hintSpots: List<HintSpot>? = null,
     val videoUri: String? = null,
     val sceneUri: String? = null,
+    val clueFeature: String? = null,
 ) {
     fun toMission(): ThemeDayMission = ThemeDayMission(
         com.sagomungchi.learning.theme.domain.ThemeDay.ofNumber(dayOfWeek), missionId, clue, rulesOut, dialogue, hintSpots, videoUri,
+        clueFeature,
     )
 }
 

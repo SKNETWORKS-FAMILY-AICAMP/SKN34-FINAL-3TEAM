@@ -1,64 +1,136 @@
-import type { CompanionId } from '../../../domain/studentLook.ts'
+import type { CompanionId, FriendId } from '../../../domain/studentLook.ts'
+import { COMPANIONS, companionToFriend, FRIENDS } from '../../../domain/studentLook.ts'
 import type { FurnitureSlot } from '../../../domain/retention.ts'
+import { frontEdge } from './friendArt.ts'
 
 /**
- * 내 방 그림 리소스 표(#557, P27). 그림은 RoomArt.tsx, 이 파일은 assetKey·가격·위치 상수.
+ * 내 방 그림 리소스 표(#557, P27). 그림은 roomArt.ts, 이 파일은 assetKey·가격·위치 상수.
  * 관리자가 아이템을 등록할 때 아래 assetKey를 `look_item.asset_key`로 그대로 넣는다
  * (docs/report/retention-expansion.md 3.7).
  */
 export const DEFAULT_WALLPAPER = 'room/wall-default.svg'
 
-type Skin = { assetKey: string; name: string; main: string; trim: string; accent: string }
+/**
+ * 가구 스킨. faces는 3D 방의 [윗면, 앞면, 옆면] 색(시안 MyPage 값), swatch는 고르기 칸 색.
+ * set은 같은 칸이 함께 바꾸는 가구 색(사용자 결정 2026-11-16 "세트"): 책상 스킨 → 책장, 옷장 스킨 → 문, 추억의 벽 스킨 → 액자 테두리
+ */
+type Skin = { assetKey: string; name: string; faces: [string, string, string]; swatch: string; set: [string, string, string] }
 export const FURNITURE_SKINS: Record<FurnitureSlot, Skin[]> = {
+  // 책상 + 책장(set: 책장 [윗면, 앞면, 옆면])
   DESK: [
-    { assetKey: 'room/desk-wood.svg', name: '나무 책상', main: '#C98F5A', trim: '#9C6A3E', accent: '#F2C14E' },
-    { assetKey: 'room/desk-mint.svg', name: '민트 책상', main: '#9ED3C4', trim: '#5E9E8E', accent: '#F4ECDC' },
-    { assetKey: 'room/desk-night.svg', name: '밤하늘 책상', main: '#3B4A78', trim: '#26305A', accent: '#FFF3C4' },
+    { assetKey: 'room/desk-wood.svg', name: '나무 책상', faces: ['#E2B07E', '#C98B55', '#A86E3E'], swatch: '#C98B55', set: ['#D9A46F', '#B97C48', '#9C6738'] },
+    { assetKey: 'room/desk-mint.svg', name: '민트 책상', faces: ['#B9DEC2', '#8FBF9A', '#6FA57D'], swatch: '#8FBF9A', set: ['#A9D5B5', '#7FB38C', '#5F9A6E'] },
+    { assetKey: 'room/desk-night.svg', name: '밤하늘 책상', faces: ['#4A42A0', '#2A2070', '#1E1858'], swatch: '#2A2070', set: ['#3E368E', '#2A2070', '#1E1858'] },
+    { assetKey: 'room/desk-cherry.svg', name: '체리 책상', faces: ['#F2A7A0', '#D9776E', '#B85A52'], swatch: '#D9776E', set: ['#E99890', '#CC6A62', '#A84E47'] },
   ],
+  // 추억의 벽(게시판): [판 색, 안쪽 테두리 색, 테두리 색], set: 액자 테두리 [나무 틀, 그림자, 선]
   WALL: [
-    { assetKey: 'room/wall-cork.svg', name: '코르크 벽', main: '#D8B27E', trim: '#A9814F', accent: '#E3533C' },
-    { assetKey: 'room/wall-wood.svg', name: '나무 벽', main: '#B98757', trim: '#7E5733', accent: '#F2C14E' },
-    { assetKey: 'room/wall-pastel.svg', name: '구름 벽', main: '#DCE7F2', trim: '#9DB4CC', accent: '#F2B8A0' },
+    { assetKey: 'room/wall-cork.svg', name: '코르크 벽', faces: ['#D9B98A', '#B48F5E', '#B48F5E'], swatch: '#D9B98A', set: ['#8A5A33', '#3A2A20', '#1F4E6B'] },
+    { assetKey: 'room/wall-wood.svg', name: '나무 벽', faces: ['#C98B55', '#9C6738', '#9C6738'], swatch: '#C98B55', set: ['#5E3B1E', '#3A2A20', '#1F4E6B'] },
+    { assetKey: 'room/wall-pastel.svg', name: '구름 벽', faces: ['#E6F1FA', '#A9CBE6', '#A9CBE6'], swatch: '#E6F1FA', set: ['#FFFFFF', '#7FA6C6', '#1F4E6B'] },
+    { assetKey: 'room/wall-star.svg', name: '별빛 벽', faces: ['#3E368E', '#FFD84D', '#FFD84D'], swatch: '#3E368E', set: ['#FFD84D', '#1E1858', '#1F4E6B'] },
   ],
+  // 옷장 + 문(set: 문 [문틀, 문판, 손잡이])
   WARDROBE: [
-    { assetKey: 'room/wardrobe-wood.svg', name: '나무 옷장', main: '#B07A4C', trim: '#7E5733', accent: '#F2C14E' },
-    { assetKey: 'room/wardrobe-sky.svg', name: '하늘 옷장', main: '#A8CBE8', trim: '#6F97BC', accent: '#FFFDF7' },
-    { assetKey: 'room/wardrobe-berry.svg', name: '딸기 옷장', main: '#E58F95', trim: '#B55C64', accent: '#FFF3C4' },
+    { assetKey: 'room/wardrobe-wood.svg', name: '나무 옷장', faces: ['#F2D9B6', '#E9C79B', '#C9A26F'], swatch: '#E9C79B', set: ['#C9A26F', '#E9C79B', '#3A2A20'] },
+    { assetKey: 'room/wardrobe-sky.svg', name: '하늘 옷장', faces: ['#D4E9F7', '#B8D8EE', '#93BFDF'], swatch: '#B8D8EE', set: ['#93BFDF', '#B8D8EE', '#1F4E6B'] },
+    { assetKey: 'room/wardrobe-berry.svg', name: '딸기 옷장', faces: ['#FBD3DF', '#F7AEC4', '#E28DA8'], swatch: '#F7AEC4', set: ['#E28DA8', '#F7AEC4', '#3A2A20'] },
+    { assetKey: 'room/wardrobe-lemon.svg', name: '레몬 옷장', faces: ['#FFF0A8', '#FFDF6B', '#E8C23F'], swatch: '#FFDF6B', set: ['#E8C23F', '#FFDF6B', '#3A2A20'] },
   ],
 }
 /** 추가 스킨 해금값 기준안: 주간 최대 적립(약 125포인트)의 절반·한 주치 */
 export const FURNITURE_SKIN_PRICES = [0, 60, 120]
-export const skinOf = (slot: FurnitureSlot, assetKey: string | null) =>
+export const skinOf = (slot: FurnitureSlot, assetKey: string | null | undefined) =>
   FURNITURE_SKINS[slot].find((s) => s.assetKey === assetKey) ?? FURNITURE_SKINS[slot][0]
 export const furnitureSkinName = (slot: FurnitureSlot, assetKey: string | null) => skinOf(slot, assetKey).name
 
-/** 추억의 벽 액자 슬롯 6개 위치(벽 그림 안 좌표, 2줄 × 3칸) */
-export const FRAME_POSITIONS: { slotNo: number; x: number; y: number }[] = [1, 2, 3, 4, 5, 6].map((n) => ({
-  slotNo: n,
-  x: 18 + ((n - 1) % 3) * 76,
-  y: 22 + Math.floor((n - 1) / 3) * 78,
-}))
-export const FRAME_SIZE = { w: 64, h: 64 }
-
-// ---------- 착용 위치 기준점 (#557 표, #455 렌더링에서 사용) ----------
+/** 내 방 착용 칸: 벽지(BACKGROUND) + 가구 3칸 */
+export type RoomSlot = 'BACKGROUND' | FurnitureSlot
 /**
- * 캐릭터 5종 × 모자·옷·소품 기준점. 각 캐릭터 SVG(`Companion.tsx`)의 viewBox 좌표이며 `scale`은 아이템 그림
+ * 칸 하나를 바꾸면 함께 바뀌는 것(세트, 사용자 결정 2026-11-16). 꾸미기·방 꾸미기 칸 아래에 그대로 적어
+ * "무엇이 어떻게 바뀌는지" 보이게 한다(사용자 의견 2026-11-16 "가독성이 없어").
+ */
+export const ROOM_SET_PARTS: Record<RoomSlot, string> = {
+  BACKGROUND: '벽지 · 바닥 · 러그 · 커튼',
+  DESK: '책상 · 책장',
+  WALL: '추억의 벽 · 액자 테두리',
+  WARDROBE: '옷장 · 문',
+}
+
+/**
+ * 벽지(BACKGROUND 착용 아이템 = 방 벽지). 시안 MyPage의 CSS 무늬 그대로, 모르는 그림 키는 기본 벽지.
+ * 기존 배경 아이템(별빛 배경)은 같은 assetKey로 "별밤" 벽지를 쓴다.
+ */
+/**
+ * 벽지 세트: 벽 무늬 + 러그 색 + 창문 커튼 색(사용자 결정 2026-11-16 "세트") + 바닥 마루 [판 색, 판 사이 줄 색].
+ * 바닥은 서버 칸이 없어 벽지 세트에 넣었다(사용자 결정 2026-11-16 "바닥 설정도 있어야 해" → 지금은 세트, 바닥만 따로 고르는 칸은 core FLOOR 칸으로)
+ */
+type Wallpaper = { name: string; swatch: string; paint: string; rug: string; curtain: string; floor: [string, string] }
+const dots = 'radial-gradient(circle at 6px 6px, rgba(255,255,255,.65) 2.6px, transparent 3.2px) 0 0 / 26px 26px'
+export const WALLPAPERS: Record<string, Wallpaper> = {
+  [DEFAULT_WALLPAPER]: { name: '민트 물방울', swatch: '#DDF1FF', paint: `${dots}, #DDF1FF`, rug: '#F7AEC4', curtain: '#FFD84D', floor: ['#E9D2A8', '#C9A877'] },
+  'looks/bg-stars.svg': {
+    name: '별밤',
+    swatch: '#2A2070',
+    paint: 'radial-gradient(circle at 22px 22px, #FFE45C 3.4px, transparent 4px) 0 0 / 84px 84px, radial-gradient(circle at 62px 58px, #FFFFFF 2px, transparent 2.6px) 0 0 / 84px 84px, #2A2070',
+    rug: '#FFD84D',
+    curtain: '#7FC8D8',
+    floor: ['#B98A5E', '#8E6440'],
+  },
+  // 시안 MyPage 벽지 무늬(목업 추가 아이템, 2026-11-16)
+  'room/wall-cream.svg': {
+    name: '크림 줄무늬', swatch: '#F6E3C8',
+    paint: 'repeating-linear-gradient(90deg, rgba(255,255,255,.5) 0 14px, transparent 14px 36px), #F6E3C8', rug: '#9CCB8C', curtain: '#F7AEC4', floor: ['#F3E6CF', '#D8C29C'],
+  },
+  'room/wall-sky.svg': {
+    name: '하늘 구름', swatch: '#CFE6FA',
+    paint: 'radial-gradient(ellipse 46px 20px at 60px 46px, rgba(255,255,255,.85) 96%, transparent 100%) 0 0 / 170px 110px, #BFDDF5', rug: '#FFE9A8', curtain: '#FFFFFF', floor: ['#DCE3E8', '#AFBCC6'],
+  },
+}
+export const wallpaperOf = (assetKey: string | null | undefined) => WALLPAPERS[assetKey ?? ''] ?? WALLPAPERS[DEFAULT_WALLPAPER]
+
+// ---------- 착용 위치 기준점 (#557 표, #455 렌더링에서 사용, #648 친구 12종) ----------
+type WearAnchor = { x: number; y: number; scale: number }
+type WearAnchors = Record<'HAT' | 'OUTFIT' | 'ACCESSORY', WearAnchor>
+/**
+ * 설계 캔버스 `Mungchi.dc.html`의 모자 기준점 표(HAT) [x 이동, y 이동, 크기] 그대로. 친구마다 머리 꼭대기 위치와 폭이 다르다.
+ */
+const CANVAS_HAT: Record<FriendId, [number, number, number]> = {
+  cotton: [0, 8, 1], cloud: [0, 2, 1.08], snow: [0, 10, 1], yarn: [0, 8, 1], moss: [0, 10, 1], sand: [0, 12, 0.86],
+  star: [0, 0, 0.9], foam: [0, 10, 1], paper: [0, 8, 1], petal: [0, 6, 1.05], cone: [0, 2, 0.9], ice: [0, 12, 1],
+}
+const round = (n: number) => Math.round(n * 10) / 10
+/**
+ * 캔버스 모자 그림은 (100, 40)을 가운데로 가로 약 110(정사각형 120칸) 안에 그리고, (100, 60)을 기준으로 크기를 바꾼 뒤 옮긴다.
+ * 같은 모자를 가로 60 그림 파일로 만들면 가운데 = (100 + x, 60 - 20 × 크기 + y), 배율 = 2 × 크기에서 캔버스와 같은 자리·크기가 된다.
+ * 옷: 캔버스처럼 몸 폭 전체 띠(가로 -4~204, 위 160 언저리)를 그리고 `Companion`이 친구 몸 윤곽으로 잘라 친구마다 몸에 맞게 입힌다
+ * (2026-11-16 사용자 의견 "옆으로 삐져나온대, 캐릭터마다 잘 맞게"). 그림 파일은 viewBox `-4 96 208 208`(가운데 (100, 200), 가로 208, 위 146 언저리 — 사용자 의견 2026-11-16 "옷을 조금만 더 올렸으면").
+ * 소품: 친구 몸 앞쪽 끝(frontEdge)에 붙여 든 것처럼(예전에는 모든 친구가 x 174 한 자리라 좁은 친구는 떠 보였음). 파일은 가로 60, 가운데가 쥐는 곳.
+ */
+const OUTFIT_SIZE = 208
+const anchorsFromCanvas = (id: FriendId, [x, y, s]: [number, number, number]): WearAnchors => ({
+  HAT: { x: 100 + x, y: round(60 - 20 * s + y), scale: round(2 * s) },
+  OUTFIT: { x: 100, y: 200, scale: OUTFIT_SIZE / 60 },
+  ACCESSORY: { x: frontEdge(id) - 2, y: 152, scale: 1 },
+})
+/**
+ * 친구 12종 × 모자·옷·소품 기준점. 친구 그림(`friendArt.ts`, viewBox 200×220 좌표)의 좌표이며 `scale`은 아이템 그림
  * 기본 크기(가로 60) 대비 배율. `Companion`의 `worn`이 이 표로 착용 그림을 겹쳐 그린다.
  */
-export const WEAR_ANCHORS: Record<CompanionId, Record<'HAT' | 'OUTFIT' | 'ACCESSORY', { x: number; y: number; scale: number }>> = {
-  mungchi: { HAT: { x: 86, y: 26, scale: 0.6 }, OUTFIT: { x: 80, y: 88, scale: 0.7 }, ACCESSORY: { x: 112, y: 80, scale: 0.4 } },
-  tori: { HAT: { x: 100, y: 58, scale: 1 }, OUTFIT: { x: 100, y: 158, scale: 1.05 }, ACCESSORY: { x: 150, y: 138, scale: 0.6 } },
-  mongdol: { HAT: { x: 104, y: 78, scale: 1 }, OUTFIT: { x: 100, y: 152, scale: 1.1 }, ACCESSORY: { x: 160, y: 128, scale: 0.6 } },
-  kongi: { HAT: { x: 104, y: 66, scale: 0.9 }, OUTFIT: { x: 106, y: 152, scale: 1 }, ACCESSORY: { x: 154, y: 120, scale: 0.6 } },
-  monggeul: { HAT: { x: 118, y: 72, scale: 1 }, OUTFIT: { x: 104, y: 152, scale: 1.1 }, ACCESSORY: { x: 174, y: 130, scale: 0.6 } },
-}
+export const FRIEND_WEAR_ANCHORS = Object.fromEntries(
+  FRIENDS.map((f) => [f.id, anchorsFromCanvas(f.id, CANVAS_HAT[f.id])]),
+) as Record<FriendId, WearAnchors>
+/** 서버 값(캐릭터 12종, #697) 기준 기준점: 대응하는 친구의 값(예전 5종은 솜뭉치·솔방울뭉치·모래뭉치·이끼뭉치·구름뭉치, 새 7종은 같은 이름 친구) */
+export const WEAR_ANCHORS = Object.fromEntries(
+  COMPANIONS.map((c) => [c.id, FRIEND_WEAR_ANCHORS[companionToFriend(c.id)]]),
+) as Record<CompanionId, WearAnchors>
 
 // ---------- 착용 아이템 그림 파일 (#455·#557) ----------
 /**
  * 착용 그림은 `frontend/web/public/student-assets/{assetKey}` 파일을 그대로 쓴다.
  * 관리자 아이템 "그림 키"(`look_item.asset_key`) = 이 폴더 안 경로(예 `looks/hat-acorn.svg`).
  * 파일이 아직 없으면 그 칸만 그리지 않아(기본 모습) 그림을 넣기만 하면 보인다.
- * 그림은 가로 60 기준 정사각형 안에 그리고, 기준점(WEAR_ANCHORS)이 그림 한가운데에 온다.
+ * 그림은 가로 60 기준 정사각형 안에 그리고, 기준점(FRIEND_WEAR_ANCHORS)이 그림 한가운데에 온다.
  */
 export const WEAR_ASSET_BASE = '/student-assets/'
 export const WEAR_ITEM_SIZE = 60

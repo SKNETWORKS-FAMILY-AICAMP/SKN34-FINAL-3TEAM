@@ -5,6 +5,8 @@
   지붕(놀이터·텃밭 없음, 창고·정자 있음), 물기(모두 젖음)
 - 월·화 HINT(물기), 수 RULE(지붕 없음 → 창고·정자), 목 RULE(땅 흙 → 놀이터·창고),
   금 HINT(물기) → 수요일까지 놀이터·텃밭 2개 남고, 마지막 틀린 후보(놀이터)는 목요일에 빠짐
+- 증거 종류는 기본 요청(helpers.request_body)의 코드 배정과 같음: 월 흔적·화 목격·수 목격·목 흔적·
+  금 기록(일지)
 - 뭉치는 구조대로 출동한 해결사, 보리의 주인은 지호. 요일마다 증거 발견 줄(discovery)과
   수사 연결 문장(missionHook)은 단서 결론(허용 값)·후보·정답을 말하지 않음
 """
@@ -32,14 +34,14 @@ DISCOVERY = {
     "TUE": "빵집 아저씨가 보리를 봤대! 그때 모습을 물어보자.",
     "WED": "지호 친구가 보리가 가는 걸 봤대! 들어 보자.",
     "THU": "골목에 보리 발자국이 또 있어! 무엇이 묻었는지 살펴보자.",
-    "FRI": "가게 앞 사진에 보리가 찍혔대! 자세히 보자.",
+    "FRI": "가게 주인의 일지를 찾았어! 그때가 적혀 있을지 몰라.",
 }
 HOOK = {  # 증거 발견 줄 다음 뭉치의 수사 연결(대화 마지막 줄, 40자 이내)
     "MON": "발자국을 풀려면 동물이 사는 환경을 알아야 해. 도와줄래?",
     "TUE": "아저씨 말을 따지려면 사실과 의견을 나눠야 해. 도와줄래?",
     "WED": "본 것을 기억하려면 동물의 특징을 알아야 해. 도와줄래?",
     "THU": "발자국 수를 세려면 계산이 필요해. 같이 해 볼래?",
-    "FRI": "사진을 보기 전에 이번 주를 돌아보자. 도와줄래?",
+    "FRI": "일지를 보기 전에 이번 주를 돌아보자. 도와줄래?",
 }
 TYPE_DAY = {t: d for d, t in DAY_TYPES.items()}
 
@@ -125,7 +127,7 @@ def valid_theme() -> dict[str, Any]:
             ),
             day(
                 "FRI",
-                "사진 속 보리가 지나간 길에 젖은 자국이 남았어.",
+                "일지에 보리가 지나간 길이 젖어 있었다고 적혔어.",
                 "냄새",
                 "HINT",
                 "물기",
@@ -284,7 +286,7 @@ def mission_review(verdicts: dict[str, str] | None = None) -> GeneratedMissionRe
     items = [
         # type: ignore[arg-type]
         MissionReviewItem(id=i, verdict=verdicts.get(i, "PASS"), reason=f"{i} 사유")
-        for i in ("EXAMPLE_COMPLETE", "STANDARD_FIT", "MATERIAL")
+        for i in ("EXAMPLE_COMPLETE", "STANDARD_FIT", "MATERIAL", "STORY_LINK")
     ]
     overall = "FAIL" if "FAIL" in verdicts.values() else "PASS"
     return GeneratedMissionReview(verdict=overall, items=items)  # type: ignore[arg-type]

@@ -179,7 +179,15 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("days out of order", edit(lambda t: t["days"].reverse()), ["DAYS"]),
     ("wrong thinking type", on_day("MON", thinkingType="SOLVE"), ["DAYS MON"]),
     ("clue empty", on_day("TUE", clue=""), ["CLUE_TEXT TUE", "REQUIRED"]),
-    ("clue too long", on_day("MON", clue="보리 발자국이 젖어 있었어" + "가" * 30), ["LENGTH"]),
+    # 흔적 날 단서는 대상 낱말을 넣으므로 46자(기준안), 그 밖은 40자(#535 6차)
+    (
+        "trace clue too long",
+        on_day("MON", clue="보리 발자국이 젖어 있었어" + "가" * 33),
+        ["LENGTH"],
+    ),
+    ("trace clue up to 46", on_day("MON", clue="보리 발자국이 젖어 있었어" + "가" * 30), []),
+    ("clue too long", on_day("TUE", clue="보리 털이 비에 젖어 반짝였대" + "가" * 26), ["LENGTH"]),
+    ("trace clue without target", on_day("MON", clue="발자국이 젖어 있었어."), ["CLUE_OWNER MON"]),
     ("place too long", on_day("MON", place="가" * 21), ["LENGTH"]),
     ("clue types repeat", on_day("TUE", clueType="발자국"), ["CLUE_TYPE"]),
     ("answer in title", themed(title="텃밭의 비밀"), ["ANSWER_LEAK"]),
@@ -328,6 +336,17 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         [],
     ),
     (
+        # '모아'는 손 동작이 아닌 말에도 쓰여 목록에서 뺌(#535 7차), 손을 쓰면 '두 손'으로 잡힘
+        "gathering clues is not a hand action",
+        edit(lambda t: t["outroCuts"][0].update(scene="뭉치가 다섯 흔적을 모아 정답을 떠올린다")),
+        [],
+    ),
+    (
+        "mungchi joins both hands",
+        edit(lambda t: t["outroCuts"][0].update(scene="뭉치가 두 손을 모아 기뻐한다")),
+        ["CUT_ACTION"],
+    ),
+    (
         "person gestures while mungchi watches",
         edit(lambda t: t["outroCuts"][2].update(action="뭉치 곁에서 지호가 손을 흔든다")),
         [],
@@ -347,6 +366,17 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         "discovery tells clue value",
         on_day("THU", discovery="골목 발자국에 흙이 묻어 있어!"),
         ["CLUE_EARLY THU"],
+    ),
+    # 장면 메모도 그날 단서 결론을 말하면 CLUE_EARLY(#535 닫기 5차, 칸 고쳐 쓰기)
+    (
+        "scene note tells clue value",
+        on_day("THU", sceneNote="뭉치와 지호가 골목 흙길에 찍힌 발자국을 살펴본다."),
+        ["CLUE_EARLY THU"],
+    ),
+    (
+        "scene note without clue value",
+        on_day("THU", sceneNote="뭉치와 지호가 골목길에서 발자국을 살펴본다."),
+        [],
     ),
     # 수사 연결 문장은 배울 개념을 말하는 자리라 단서 값 낱말이 나와도 코드로 막지 않음(글 검토 몫)
     (
@@ -389,6 +419,7 @@ def test_check_theme_exact_codes(name: str, build: Callable[[], dict], expected:
         ),
         (["LENGTH outroCuts3.caption 33자 > 30"], ["outroCuts3.caption"]),
         (["CLUE_EARLY TUE discovery에 그날 단서 결론(허용 값 ['흙'])"], ["TUE.discovery"]),
+        (["CLUE_EARLY THU sceneNote에 그날 단서 결론(허용 값 ['흙'])"], ["THU.sceneNote"]),
         (["ANSWER_LEAK MON.missionHook에 후보 이름 ['창고']"], ["MON.missionHook"]),
         (["ANSWER_LEAK intro에 정답 이름"], ["intro"]),
         # 이야기 틀·정답 논리·표에 닿는 사유가 하나라도 있으면 칸 고쳐 쓰기 없음
@@ -403,13 +434,27 @@ def test_check_theme_exact_codes(name: str, build: Callable[[], dict], expected:
             ],
             ["outroCuts3.action", "introCuts3.scene"],
         ),
-        (["CLUE_TEXT TUE 단서 문장에 허용 값 낱말 없음"], []),
+        # 단서 문장의 허용 값 낱말 문제도 그 단서만 고쳐 씀(#535 7차)
+        (["CLUE_TEXT TUE clue 단서 문장에 허용 값 낱말 없음"], ["TUE.clue"]),
+        # 정답 논리와 섞이면 줄거리부터 다시
+        (["CLUE_TEXT TUE clue 단서 문장에 허용 값 낱말 없음", "LOGIC TUE 단서가 정답을 뺌"], []),
         # 단서 말투는 그 단서만 고쳐 씀
         (["CLUE_WORDING WED clue 후보를 빼는 단서를 흐리게 씀('수도 있')"], ["WED.clue"]),
         # 증거 종류 불일치도 그 단서만 고쳐 씀(글자 수 초과와 섞여도 줄거리를 다시 만들지 않음)
         (
             ["LENGTH MON.clue 45자 > 40", "CLUE_EVIDENCE FRI clue 증거 종류가 다름"],
             ["MON.clue", "FRI.clue"],
+        ),
+        # 배정과 다른 증거 종류는 그날 단서·증거 발견 줄·수사 연결 문장만 고쳐 씀(#535)
+        (
+            [
+                "CLUE_EVIDENCE WED clue 증거 종류가 배정과 다름(배정 흔적 TRACE, 지금 SIGHTING)",
+                "CLUE_EVIDENCE WED discovery 증거 종류가 배정과 다름(배정 흔적 TRACE, "
+                "지금 SIGHTING)",
+                "CLUE_EVIDENCE WED missionHook 증거 종류가 배정과 다름(배정 흔적 TRACE, 지금 "
+                "SIGHTING)",
+            ],
+            ["WED.clue", "WED.discovery", "WED.missionHook"],
         ),
     ],
 )
@@ -484,6 +529,9 @@ def test_value_in_text(value: str, text: str, found: bool) -> None:
     ("value", "text", "found"),
     [
         ("흙", "흙탕물", True),  # 정확히 일치
+        ("흙", "바닥에 흙이 묻었어", True),
+        ("게", "활동 순서를 설명해 볼게.", False),  # 한 글자 값은 낱말 첫머리만(끝말 오탐 뺌)
+        ("게", "게 발자국이 보여", True),
         ("2:3", "비율이 2대3이었어", True),
         ("미끄러움", "길이 미끄러웠어", True),  # 줄기 '미끄러'(3자) 일치
         ("초록색", "초록 모자를 봤어", True),  # 줄기 '초록'(2자)
@@ -619,7 +667,7 @@ DIALOGUE_CASES: list[tuple[str, str, Callable[[], dict], list[str]]] = [
     (
         "line repeats discovery",
         "FRI",
-        lambda: dlg(lines=say("가게 앞 사진에 보리가 찍혔대")),
+        lambda: dlg(lines=say("가게 주인의 일지를 찾았어! 그때가 적혀")),
         ["DISCOVERY_REPEATED"],
     ),
     # 단서는 미션을 마친 뒤 보여 주므로 대화 줄이 그날 허용 값을 말하면 안 됨
@@ -682,6 +730,131 @@ def test_owner_name_in_target_is_not_target_speaking() -> None:
     assert checks.dialogue_speakers(theme, [{"speaker": "지호"}, {"speaker": "보리"}]) == ["지호"]
 
 
+def test_hook_problems_catch_answer_example_and_clue_conclusion() -> None:
+    """미션 뒤 고쳐 쓴 수사 연결 문장이 문제 답·예시 답·단서 결론을 말하면 잡음(#535 닫기 3차)."""
+    theme, overlap = valid_theme(), get_settings().followup_example_overlap_chars
+    assert checks.hook_problems(theme, "THU", HOOK["THU"], draft_of("ANALYZE"), overlap) == []
+    early = checks.hook_problems(theme, "THU", "흙 자국을 풀려면 도와줄래?", draft_of(), overlap)
+    assert early == ["CLUE_EARLY 그날 단서 결론(허용 값 ['흙'])"]
+    example = "미끄러웠으니 천천히 걸어야 해. 도와줄래?"  # 예시 답과 12자 넘게 겹침
+    assert checks.hook_problems(theme, "THU", example, draft_of(), overlap) == [
+        "LEAK EXAMPLE_ANSWER"
+    ]
+    solve = checks.hook_problems(theme, "THU", "579개를 세어 줄래?", draft_of("SOLVE"), overlap)
+    assert "LEAK ANSWER_KEY" in solve
+
+
+def test_full_speakers_restores_shortened_character_name() -> None:
+    """띄어 쓴 등장인물 이름의 뒷부분만 쓴 화자는 원래 이름으로(한 명에게만 맞을 때, 닫기 3차)."""
+    theme = valid_theme()
+    theme["characters"] = [*theme["characters"], {"name": "캠핑장 관리인", "look": "모자"}]
+    generated = {
+        "discoverySpeaker": "관리인",
+        "lines": [{"speaker": "관리인", "text": "어서 와."}, {"speaker": "선생님", "text": "응."}],
+    }
+    out = checks.full_speakers(theme, generated)
+    assert out["discoverySpeaker"] == "캠핑장 관리인"
+    assert [x["speaker"] for x in out["lines"]] == ["캠핑장 관리인", "선생님"]  # 안 맞으면 그대로
+    assert generated["lines"][0]["speaker"] == "관리인"  # 받은 값은 바꾸지 않음
+
+
+@pytest.mark.parametrize(
+    ("feature", "ok"),
+    [
+        ("바닥 재질", True),
+        ("바닥 물기", True),
+        ("받침 모양", True),
+        ("땅", True),
+        ("빛", False),
+        ("그늘 여부", False),
+        ("주변 소리", False),
+        ("입구까지 거리", False),
+        ("지붕", False),
+    ],
+)
+def test_traceable_feature(feature: str, ok: bool) -> None:
+    """흔적으로 남을 수 있는 특징(기준안, #535 6차)."""
+    assert checks.traceable(feature) is ok
+
+
+def _planned(kinds: dict[str, str], features: dict[str, str]) -> dict:
+    theme = valid_theme()
+    theme["evidencePlan"] = {
+        d: {"kind": k, "medium": "사진" if k == "RECORD" else None} for d, k in kinds.items()
+    }
+    for d in theme["days"]:
+        d["condition"] = {**d["condition"], "feature": features[d["day"]]}
+    return theme
+
+
+def test_fit_evidence_plan_moves_trace_to_traceable_day() -> None:
+    """흔적 날 특징이 흔적에 남지 않으면 흔적이 맞는 목격 날과 배정을 통째로 바꿈."""
+    kinds = {"MON": "TRACE", "TUE": "SIGHTING", "WED": "SIGHTING", "THU": "TRACE", "FRI": "RECORD"}
+    feats = {"MON": "빛", "TUE": "주변 소리", "WED": "바닥 재질", "THU": "땅", "FRI": "물기"}
+    theme = _planned(kinds, feats)
+    assert checks.fit_evidence_plan(theme) == ["MON", "WED"]
+    plan = theme["evidencePlan"]
+    types = {d["day"]: d["clueType"] for d in valid_theme()["days"]}
+    assert theme["days"][0]["clueType"] == types["WED"]  # 단서 종류도 함께 바꿈
+    assert theme["days"][2]["clueType"] == types["MON"]
+    assert [plan[d]["kind"] for d in checks.DAYS] == [
+        "SIGHTING",
+        "SIGHTING",
+        "TRACE",
+        "TRACE",
+        "RECORD",
+    ]
+
+
+def test_fit_evidence_plan_without_traceable_day_becomes_sighting() -> None:
+    """흔적이 맞는 날이 없으면 그 흔적 날을 목격으로 바꿈(기록 매체 배정은 그대로)."""
+    kinds = {"MON": "TRACE", "TUE": "SIGHTING", "WED": "SIGHTING", "THU": "RECORD", "FRI": "RECORD"}
+    feats = {"MON": "빛", "TUE": "주변 소리", "WED": "그늘", "THU": "거리", "FRI": "냄새"}
+    theme = _planned(kinds, feats)
+    assert checks.fit_evidence_plan(theme) == ["MON"]
+    assert theme["evidencePlan"]["MON"] == {"kind": "SIGHTING", "medium": None}
+    assert theme["evidencePlan"]["THU"]["kind"] == "RECORD"
+
+
+def test_fit_evidence_plan_keeps_fitting_plan() -> None:
+    theme = valid_theme()
+    theme["evidencePlan"] = checks.evidence_plan("seed")
+    before = copy.deepcopy(theme["evidencePlan"])
+    feats = {d["day"]: "바닥 재질" for d in theme["days"]}
+    for d in theme["days"]:
+        d["condition"] = {**d["condition"], "feature": feats[d["day"]]}
+    assert checks.fit_evidence_plan(theme) == [] and theme["evidencePlan"] == before
+
+
+def test_repair_logic_changes_fewest_conditions() -> None:
+    """정답 논리가 틀리면 특징 표는 두고 그 요일 조건만 바꿔 맞춤(#535 6차)."""
+    theme = day_with(
+        valid_theme(), "THU", condition={"kind": "HINT", "feature": "땅", "allowed": ["흙"]}
+    )
+    assert any(r.startswith("LOGIC") for r in checks.check_theme(theme, GRADE, CODES))
+    assert checks.repair_logic(theme) == ["THU"]
+    assert theme["days"][3]["condition"] == {"kind": "RULE", "feature": "땅", "allowed": ["흙"]}
+    assert not [r for r in checks.check_theme(theme, GRADE, CODES) if r.startswith("LOGIC")]
+    assert theme["days"][3]["rulesOut"]  # rulesOut도 새 조건으로 채움
+
+
+def test_repair_logic_leaves_valid_or_unfixable_theme() -> None:
+    assert checks.repair_logic(valid_theme()) == []
+    theme = valid_theme()
+    answer = theme["answer"]
+    for f in theme["features"]:  # 정답과 틀린 후보 하나가 모든 특징에서 같으면 조건으로 못 가름
+        vals = {v["candidate"]: v for v in f["values"]}
+        other = next(c for c in theme["candidates"] if c != answer)
+        vals[other]["value"] = vals[answer]["value"]
+    before = copy.deepcopy(theme["days"])
+    assert checks.repair_logic(theme) == [] and theme["days"] == before
+
+
+def test_elimination_summary_follows_table() -> None:
+    text = checks.elimination_summary(valid_theme())
+    assert text.startswith("월요일 ") and text.endswith(f"남은 정답 {valid_theme()['answer']}")
+
+
 def test_dialogue_lines_end_with_discovery_then_hook() -> None:
     """끝 두 줄은 그날 증거 발견 줄(화자 기본 뭉치)과 뭉치의 수사 연결 문장 그대로, 단서·앞 요일
     요약 줄은 없음."""
@@ -718,11 +891,35 @@ def test_check_review_splits_fail_warn_and_shape() -> None:
 
 def test_public_theme_drops_internal_fields() -> None:
     public = checks.public_theme(checks.fill_rules_out(copy.deepcopy(valid_theme())))
-    assert not {"features", "target", "introCuts", "outroCuts"} & set(public)
+    theme = checks.fill_rules_out(copy.deepcopy(valid_theme()))
+    theme["evidencePlan"] = checks.evidence_plan("seed")
+    assert "evidencePlan" not in checks.public_theme(theme)  # 증거 배정도 내부 칸(#535)
+    assert not {"target", "introCuts", "outroCuts"} & set(public)
     assert not {"clueType", "condition", "evidence", "discovery", "missionHook"} & set(
         public["days"][0]
     )
     assert public["days"][2]["rulesOut"] == ["창고", "정자"]
+
+
+def test_public_theme_has_feature_table_and_clue_feature() -> None:
+    """#647: 후보 특징 표는 이름·후보별 값만(standardCode 빼고), 요일은 그날 특징 이름."""
+    public = checks.public_theme(checks.fill_rules_out(copy.deepcopy(valid_theme())))
+    assert [f["name"] for f in public["features"]] == ["땅", "지붕", "물기"]
+    assert public["features"][0] == {
+        "name": "땅",
+        "values": [
+            {"candidate": "놀이터", "value": "모래"},
+            {"candidate": "텃밭", "value": "흙"},
+            {"candidate": "창고", "value": "시멘트"},
+            {"candidate": "정자", "value": "흙"},
+        ],
+    }
+    assert all("standardCode" not in f for f in public["features"])
+    assert [d["clueFeature"] for d in public["days"]] == ["물기", "물기", "지붕", "땅", "물기"]
+    # 특징 표가 없는 줄거리(예전 저장본 등)는 null
+    bare = checks.fill_rules_out(copy.deepcopy(valid_theme()))
+    bare["features"] = []
+    assert checks.public_theme(bare)["features"] is None
 
 
 def test_dialogue_leak_checks_only_llm_lines() -> None:
@@ -769,3 +966,272 @@ def test_example_fix_only_for_written_answers() -> None:
     bad = ["MISSION_REVIEW EXAMPLE_COMPLETE 사유"]
     assert only_example(bad, "NARRATIVE") and only_example(bad, "SOLUTION_STEPS")
     assert not only_example(bad, "CHOICE") and not only_example(bad, "CLASSIFICATION")
+
+
+# --- 증거 종류·기록 매체 코드 배정 (#535) ------------------------------------------------
+def test_evidence_plan_is_fixed_per_seed_and_keeps_mix() -> None:
+    """같은 씨앗이면 같은 배정. 흔적·목격 각 1개 이상·기록 2개 이하, 기록 날마다 서로 다른 매체."""
+    plans = [
+        checks.evidence_plan(f"2026-11-{n:02d}-{g}") for n in range(1, 29) for g in (3, 4, 5, 6)
+    ]
+    for plan in plans:
+        kinds = [slot["kind"] for slot in plan.values()]
+        assert list(plan) == list(checks.DAYS)
+        assert kinds.count("TRACE") >= 1 and kinds.count("SIGHTING") >= 1
+        assert kinds.count("RECORD") <= 2
+        media = [slot["medium"] for slot in plan.values() if slot["kind"] == "RECORD"]
+        assert len(set(media)) == len(media) and set(media) <= set(checks.RECORD_MEDIA)
+        assert all(slot["medium"] is None for slot in plan.values() if slot["kind"] != "RECORD")
+    assert checks.evidence_plan("2026-11-16-3") == checks.evidence_plan("2026-11-16-3")
+    assert len({tuple(s["kind"] for s in p.values()) for p in plans}) > 10  # 요일 배치가 섞임
+    record = sum(s["kind"] == "RECORD" for p in plans for s in p.values())
+    assert record / (5 * len(plans)) < 0.45  # 수정 전 49~53%보다 적게(기대값 33%)
+
+
+def planned(**slots: tuple[str, str | None]) -> dict[str, Any]:
+    """fixture 증거 종류 그대로의 배정에 slots(요일=(종류, 매체))만 바꾼 줄거리."""
+    theme = valid_theme()
+    plan = {
+        d["day"]: {
+            "kind": d["evidence"]["kind"],
+            "medium": "일지" if d["evidence"]["kind"] == "RECORD" else None,
+        }
+        for d in theme["days"]
+    }
+    for day, (kind, medium) in slots.items():
+        plan[day] = {"kind": kind, "medium": medium}
+    theme["evidencePlan"] = plan
+    return theme
+
+
+def test_valid_theme_matches_default_request_plan() -> None:
+    """시험 줄거리의 증거 종류·매체가 기본 요청의 코드 배정과 같음(그래프 시험이 배정 검사를
+    통과)."""
+    from app.theme_draft.prompts import evidence_plan_for
+
+    plan = evidence_plan_for(ThemeDraftRequest.model_validate(request_body()))
+    assert plan == planned()["evidencePlan"]
+    assert checks.check_theme(planned(), GRADE, CODES) == []
+
+
+def test_evidence_kind_against_plan() -> None:
+    """종류가 배정과 다르면 그날 세 칸 사유, 기록 매체 낱말이 없으면 단서·증거 발견 줄 사유."""
+    bad = checks.check_theme(planned(WED=("TRACE", None)), GRADE, CODES)
+    assert [r.split("(")[0] for r in bad] == [
+        "CLUE_EVIDENCE WED clue 증거 종류가 배정과 다름",
+        "CLUE_EVIDENCE WED discovery 증거 종류가 배정과 다름",
+        "CLUE_EVIDENCE WED missionHook 증거 종류가 배정과 다름",
+    ]
+    assert list(checks.fix_targets(bad)) == ["WED.clue", "WED.discovery", "WED.missionHook"]
+    media = checks.check_theme(planned(FRI=("RECORD", "녹음")), GRADE, CODES)
+    assert media == [
+        "CLUE_EVIDENCE FRI clue 기록 매체가 배정과 다름(배정 매체 '녹음' 낱말을 씀)",
+        "CLUE_EVIDENCE FRI discovery 기록 매체가 배정과 다름(배정 매체 '녹음' 낱말을 씀)",
+    ]
+    assert list(checks.fix_targets(media)) == ["FRI.clue", "FRI.discovery"]
+    # 영상은 '녹화'도 같은 매체
+    video = day_with(planned(FRI=("RECORD", "영상")), "FRI", discovery="가게 녹화 영상을 찾았어!")
+    video = day_with(video, "FRI", clue="녹화에 보리가 지나간 길이 젖어 있었다고 남았어.")
+    assert checks.check_theme(video, GRADE, CODES) == []
+
+
+def test_record_clue_reason_not_doubled_with_plan() -> None:
+    """기록 날 단서에 기록 낱말이 아예 없으면 배정 매체 사유 하나만(같은 칸 사유를 두 번 내지
+    않음)."""
+    theme = day_with(planned(), "FRI", clue="보리가 지나간 길이 젖어 있었어.")
+    bad = checks.check_theme(theme, GRADE, CODES)
+    assert codes(bad) == ["CLUE_EVIDENCE FRI"]
+    assert "기록 매체가 배정과 다름" in bad[0]
+    # 배정이 없으면(예전 줄거리) 문장↔종류 검사 그대로
+    assert codes(
+        checks.check_theme(
+            day_with(valid_theme(), "FRI", clue="보리가 지나간 길이 젖어 있었어."), GRADE, CODES
+        )
+    ) == ["CLUE_EVIDENCE FRI"]
+
+
+def test_apply_evidence_plan_sets_kind_keeps_when() -> None:
+    theme = checks.apply_evidence_plan(planned(WED=("RECORD", "메모")))
+    wed = checks.theme_day(theme, "WED")
+    assert wed["evidence"] == {"kind": "RECORD", "when": "보리가 사라진 날 오후"}
+    assert checks.theme_day(theme, "MON")["evidence"]["kind"] == "TRACE"
+    assert checks.apply_evidence_plan(valid_theme()) == valid_theme()  # 배정 없으면 그대로
+
+
+def test_names_target_accepts_one_letter_word_joined_with_target_word() -> None:
+    # #535 7차 auto3d: 대상 '대회에 낼 떡 모양 틀', 단서 '떡틀 자국…'이 CLUE_OWNER 오탐
+    theme = {"target": "대회에 낼 떡 모양 틀"}
+    assert checks.target_words(theme) == ["틀", "모양"]
+    assert checks.names_target(theme, "떡틀 자국이 남은 받침은 나무였어.")
+    assert checks.names_target(theme, "모양틀 자국은 둥글었어.")
+    assert checks.names_target(theme, "틀 자국이 남았어.")
+    assert not checks.names_target(theme, "자국이 남은 받침은 나무였어.")
+    # 대상 이름에 없는 낱말과 붙은 한 글자는 그대로 보지 않음
+    assert not checks.names_target({"target": "바닷가 게"}, "설명해 볼게, 자국은 젖었어.")
+
+
+def test_outro_recap_follows_table_and_compose_puts_it_before_story() -> None:
+    # #535 7차: 종료 이야기 정리는 코드가 특징 표로 계산해 붙임(LLM이 쓰면 표와 다르게 요약).
+    # 같은 틀 다섯 줄은 딱딱해서 세 문장으로 이음(사용자 2026-11-16)
+    theme = checks.fill_rules_out(valid_theme())
+    recap = checks.outro_recap(theme)
+    remaining, outs, hints = list(theme["candidates"]), [], []
+    for d in theme["days"]:
+        out = [c for c in d["rulesOut"] if c in remaining]
+        remaining = [c for c in remaining if c not in out]
+        (outs if out else hints).append((checks.DAY_KO[d["day"]], out))
+    sentences = recap.split(". ")
+    assert sentences[0].startswith(f"{outs[0][0]}요일 단서로 ")
+    positions = [sentences[0].index("·".join(cs)) for _, cs in outs]
+    assert positions == sorted(positions)  # 빠진 날 차례대로 한 문장
+    assert all(f"{day}요일" in sentences[1] for day, _ in hints)
+    assert "남은 후보를 가르지는 못했지만 정답과 딱 맞았어" in sentences[1]
+    assert recap.endswith(f"그래서 {theme['answer']}만 남았어.")
+    assert recap.count("단서로") == 1  # 같은 틀을 되풀이하지 않음
+    theme["outroStory"] = "보리는 텃밭에서 낮잠을 자고 있었어."
+    checks.compose_outro(theme)
+    assert theme["outro"] == f"{recap} 보리는 텃밭에서 낮잠을 자고 있었어."
+    # 마무리 장면이 '…요.'로 끝나면 정리도 같은 말투
+    theme["outroStory"] = "보리는 텃밭에서 낮잠을 자고 있었어요."
+    checks.compose_outro(theme)
+    assert "빠졌어요." in theme["outro"] and "남았어요." in theme["outro"]
+    # 사람이 쓴 테마(outroStory 없음)는 그대로
+    plain = valid_theme()
+    assert checks.compose_outro(plain)["outro"] == valid_theme()["outro"]
+
+
+def test_outro_story_with_weekday_recap_is_fixed_in_place() -> None:
+    theme = checks.fill_rules_out(valid_theme())
+    theme["outroStory"] = "월요일 단서로 먼저 하나를 뺐어. 보리를 찾았어."
+    checks.compose_outro(theme)
+    bad = checks.check_theme(theme, 3, set())
+    recap = [r for r in bad if r.startswith("OUTRO_RECAP")]
+    assert recap and checks.fix_targets(recap) == {"outro": recap}
+    # 칸 고쳐 쓰기는 마무리 장면만 읽고 쓰며, 쓰면 정리를 다시 붙임
+    assert checks.text_at(theme, "outro") == theme["outroStory"]
+    assert checks.text_max("outro", theme) == checks.OUTRO_STORY_MAX
+    checks.set_text_at(theme, "outro", "뭉치는 보리를 예린에게 돌려줬어.")
+    assert theme["outroStory"] == "뭉치는 보리를 예린에게 돌려줬어."
+    assert theme["outro"].startswith(checks.outro_recap(theme)) and theme["outro"].endswith(
+        "돌려줬어."
+    )
+    assert not [r for r in checks.check_theme(theme, 3, set()) if r.startswith("OUTRO_RECAP")]
+
+
+@pytest.mark.parametrize(
+    ("when", "expected"),
+    [
+        ("오후 3시, 편지가 사라지기 직전", "오후 3시"),
+        ("준비를 마친 오전 10시", "오전 10시"),
+        ("10시 반쯤", "10시 반"),
+        ("보리가 사라진 날 오후", None),
+    ],
+)
+def test_clue_time_reads_hour_from_evidence_when(when: str, expected: str | None) -> None:
+    assert checks.clue_time({"evidence": {"kind": "TRACE", "when": when}}) == expected
+
+
+def test_add_clue_time_prefixes_only_clues_without_that_time() -> None:
+    # #535 7차 글 검토 CLUE_LOGIC "흔적·기록이 오후 3시의 것인지 드러나지 않음" → 코드가 시각을 붙임
+    def day(clue: str, when: str = "오후 3시, 떡 대회 준비를 마친 때") -> dict:
+        return {"day": "MON", "clue": clue, "evidence": {"kind": "TRACE", "when": when}}
+
+    theme = {
+        "days": [
+            day("틀 자국이 남은 받침은 나무였어."),
+            day("3시, 틀 자국은 둥근 받침에 남았어."),
+            day("그때 틀 자국이 젖은 바닥에 남았어."),
+            day("틀 자국이 남았어.", when="보리가 사라진 날 오후"),
+        ]
+    }
+    checks.add_clue_time(theme)
+    assert [d["clue"] for d in theme["days"]] == [
+        "오후 3시, 틀 자국이 남은 받침은 나무였어.",
+        "3시, 틀 자국은 둥근 받침에 남았어.",
+        "그때 틀 자국이 젖은 바닥에 남았어.",
+        "틀 자국이 남았어.",
+    ]
+    checks.add_clue_time(theme)  # 두 번 불러도 한 번만 붙음
+    assert theme["days"][0]["clue"] == "오후 3시, 틀 자국이 남은 받침은 나무였어."
+    # 붙인 만큼 글자 수 상한을 늘림(흔적 날 46자 + '오후 3시, ' 7자)
+    assert checks.day_text_max(theme["days"][0], "clue") == checks.TRACE_CLUE_MAX + 7
+    assert checks.day_text_max(theme["days"][3], "clue") == checks.TRACE_CLUE_MAX
+
+
+def test_repair_logic_adds_answer_value_when_many_days_exclude_answer() -> None:
+    # #535 8차 auto4c: 월~목 네 날이 모두 정답을 빼 3일 상한에 걸려 줄거리를 다시 만들었음
+    theme = checks.fill_rules_out(valid_theme())
+    table, _ = checks.feature_table(theme)
+    answer = theme["answer"]
+    broken = copy.deepcopy(theme)
+    for d in broken["days"][:4]:
+        vals = table[d["condition"]["feature"]]
+        others = sorted(set(vals.values()) - {vals[answer]})
+        d["condition"] = {**d["condition"], "allowed": others[:1]}
+    assert [
+        r
+        for r in checks.check_logic(broken, broken["candidates"], answer, broken["days"])
+        if r.startswith("LOGIC")
+    ]
+    changed = checks.repair_logic(broken)
+    assert set(changed) >= {"MON", "TUE", "WED", "THU"}
+    assert not [
+        r
+        for r in checks.check_logic(broken, broken["candidates"], answer, broken["days"])
+        if r.startswith(("LOGIC", "CONDITION"))
+    ]
+    for d in broken["days"]:
+        assert table[d["condition"]["feature"]][answer] in d["condition"]["allowed"]
+
+
+def test_generated_day_with_empty_text_is_invalid_output() -> None:
+    # #535 8차: 빈 칸 응답은 형식 밖(검증 오류 → LLM_INVALID_OUTPUT → 테마 클라이언트가 한 번 더)
+    day = {**valid_theme()["days"][0]}
+    day.pop("rulesOut", None)
+    GeneratedDay.model_validate(day)
+    with pytest.raises(ValueError):
+        GeneratedDay.model_validate({**day, "discovery": " "})
+
+
+@pytest.mark.parametrize(
+    ("text", "grade", "expected"),
+    [
+        ("두 원의 넓이를 구해 비교해 보자.", 4, ["넓이"]),
+        ("두 원의 넓이를 구해 비교해 보자.", 5, []),
+        ("3/5 ÷ 3/4로 확인해.", 5, ["분수의 나눗셈"]),
+        ("3/5 ÷ 3/4로 확인해.", 6, []),
+        ("0.35와 0.40을 비교해.", 3, ["소수 둘째 자리"]),
+        ("0.3과 0.4를 비교해.", 3, []),
+        ("직육면체의 겉넓이를 구해.", 5, ["겉넓이·부피"]),
+        ("원주율 3.14로 원의 넓이를 구해.", 6, []),
+        ("넓이는 36π㎡야.", 6, ["π 기호"]),
+        ("비율로 나타내 봐.", 5, ["비율·백분율"]),
+        ("다른 생각도 있을까?", 3, []),
+        ("기온이 12°C에서 15°C로 올랐어.", 3, []),
+        ("각도기로 각도를 재 봐.", 3, ["각도"]),
+        ("땅의 넓이를 구해 봐.", 4, ["넓이"]),
+    ],
+)
+def test_math_ahead_by_grade(text: str, grade: int, expected: list[str]) -> None:
+    # #535 9차 글 검토 GRADE_VOCAB: 목요일 수학이 학년보다 앞선 개념(기준안 표 MATH_AHEAD)
+    assert checks.math_ahead([text], grade) == expected
+
+
+def test_clue_with_time_inside_sentence_gets_same_length_allowance() -> None:
+    # 모델이 문장 안에 시각을 넣어도('오후 3시쯤 남은') 코드가 붙인 것과 같은 만큼 상한을 늘림
+    day = {
+        "clue": "틀 자국은 오후 3시쯤 둥근 받침에 남았어.",
+        "evidence": {"kind": "TRACE", "when": "오후 3시, 떡 대회 준비를 마친 때"},
+    }
+    assert checks.day_text_max(day, "clue") == checks.TRACE_CLUE_MAX + len("오후 3시") + 2
+    theme = {"days": [{**day, "day": "MON"}]}
+    checks.add_clue_time(theme)
+    assert theme["days"][0]["clue"] == day["clue"]  # 이미 있으면 앞에 붙이지 않음
+
+
+def test_outro_recap_follows_story_register_including_da_style() -> None:
+    theme = checks.fill_rules_out(valid_theme())
+    theme["outroStory"] = "뭉치는 텃밭에서 보리를 찾았다."
+    recap = checks.outro_recap(theme)
+    assert "빠졌다." in recap and "딱 맞았다." in recap and recap.endswith("남았다.")
+    assert "빠졌어" not in recap

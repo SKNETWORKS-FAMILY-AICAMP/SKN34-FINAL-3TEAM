@@ -388,7 +388,7 @@ def create_theme_llms(settings: Settings, recorder: UsageRecorder) -> tuple[LlmC
         )
 
     def make(model: str) -> LlmClient:
-        return OpenAICompatibleLlm(
+        client = OpenAICompatibleLlm(
             api_key=settings.openai_api_key,
             model=model,
             base_url=None,
@@ -398,6 +398,9 @@ def create_theme_llms(settings: Settings, recorder: UsageRecorder) -> tuple[LlmC
             backoff_seconds=settings.llm_retry_backoff,
             recorder=recorder,
         )
+        # 형식 밖 응답만 한 번 더(테마 경로의 미션 생성·칸 고쳐 쓰기·검토 모두 이 클라이언트를 씀)
+        client.invalid_output_retries = settings.theme_llm_invalid_retries
+        return client
 
     return make(settings.theme_generation_model), make(settings.theme_review_model)
 

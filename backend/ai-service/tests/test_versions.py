@@ -29,8 +29,9 @@ def test_versions_returns_active_prompt_versions() -> None:
             "reportTemplate": "analysis-template@1",
             "missionDraft": "mission-draft@1",
             "reportExplanation": "report-explanation@3",
-            "themeDraft": "theme-draft@1",
+            "themeDraft": "theme-draft@2",
             "memoryExplanation": "memory-explanation@1",
+            "memoryQuery": "memory-query@1",
         }
     }
 

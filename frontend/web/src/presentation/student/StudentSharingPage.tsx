@@ -6,13 +6,18 @@ import type { Child } from '../../domain/classroom.ts'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import './learning-settings.css'
 
-/** embedded면 학생 설정(#583) 안의 한 부분으로 그린다(제목 h2, 바깥 main 없음). */
+/**
+ * embedded면 학생 설정(#583) 안의 카드 하나로 그린다(제목 h2 "공개 설정", 바깥 main 없음, #648 시안 Settings).
+ * 학부모 공개(#206)와 친구 공개(P20)를 같은 카드에 두고 요청·동작은 그대로다.
+ */
 export function StudentSharingPage({ child, embedded = false }: { child: Child; embedded?: boolean }) {
   const { query, save } = useStudentSharing(child.id)
   const value = query.error ? undefined : query.data
   const Wrapper = embedded ? 'section' : 'main', Title = embedded ? 'h2' : 'h1'
   return <Wrapper className={embedded ? 'st-sharing st-settings-part' : 'st-paper st-sheet st-sharing'} aria-labelledby="sharing-h">
-    <Title id="sharing-h" tabIndex={embedded ? -1 : undefined}>내 답 공개 설정</Title>
+    <Title id="sharing-h" tabIndex={embedded ? -1 : undefined}>{embedded ? '공개 설정' : '내 답 공개 설정'}</Title>
+    {/* 학부모 공개 묶음. 설정 카드(embedded)에서는 친구 공개와 왼쪽·오른쪽 두 칸으로 놓는다(#648, 한 화면) */}
+    <div className="st-sharing-parent">
     {query.isPending && <p role="status">공개 설정을 읽고 있어요.</p>}
     <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     {value && <fieldset disabled={save.isPending}>
@@ -22,8 +27,9 @@ export function StudentSharingPage({ child, embedded = false }: { child: Child; 
     </fieldset>}
     <ErrorNotice error={save.error} />
     <p role="status">{save.isPending ? '설정을 저장하고 있어요.' : value ? `지금은 ${value.parentSharingEnabled ? '공개' : '비공개'}예요.` : ''}</p>
-    <p>비공개여도 몇 번 했는지는 학부모님이 볼 수 있어요.</p>
-    <CommunitySharing child={child} />
+    <p className={embedded ? 'st-meta' : undefined}>비공개여도 몇 번 했는지는 학부모님이 볼 수 있어요.</p>
+    </div>
+    <CommunitySharing child={child} level={embedded ? 'h3' : 'h2'} />
   </Wrapper>
 }
 
@@ -31,7 +37,7 @@ export function StudentSharingPage({ child, embedded = false }: { child: Child; 
  * 친구들에게 내 답 보여 주기 (P20, API 명세 2.9). 학부모 공개(#206)와 따로인 설정이다.
  * 켠 뒤 마무리한 미션의 마지막 답만 자동으로 공유되고, 끄면 바로 비공개가 된다.
  */
-function CommunitySharing({ child }: { child: Child }) {
+function CommunitySharing({ child, level: Heading }: { child: Child; level: 'h2' | 'h3' }) {
   const [guide, setGuide] = useState(false)
   const query = useCommunitySettings(child.id)
   const save = useSaveCommunitySettings(child.id)
@@ -39,7 +45,7 @@ function CommunitySharing({ child }: { child: Child }) {
   const enabled = save.isPending ? save.variables : value?.enabled
   const needsConsent = save.error instanceof ApiError && save.error.problem.code === 'COMMUNITY_CONSENT_REQUIRED'
   return <section aria-labelledby="community-h">
-    <h2 id="community-h">친구들에게 내 답 보여 주기</h2>
+    <Heading id="community-h">친구들에게 내 답 보여 주기</Heading>
     <p>켜면 같은 미션을 끝낸 친구들에게 내 답이 별명으로 보여요.</p>
     {query.isPending && <p role="status">친구 공개 설정을 읽고 있어요.</p>}
     <ErrorNotice error={query.error} retry={() => void query.refetch()} />

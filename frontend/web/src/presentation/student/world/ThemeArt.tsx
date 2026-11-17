@@ -199,14 +199,10 @@ export function Ride({ id }: { id: ThemeId }) {
   )
 }
 
-/** 테마 고르기 카드의 작은 미리보기 */
+/**
+ * 테마 고르기 카드의 작은 미리보기(#648). 홈 "우리 집" 배경 그림(student-assets/home)에서 섬·집 부분을 잘라 만든 480×276 그림.
+ * 새로 생성하지 않고 잘라 쓴다(자르는 법은 docs/report/frontend.md #648 절).
+ */
 export function ThemeSwatch({ t }: { t: Theme }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 160 92" className="st-swatch">
-      <rect width="160" height="92" rx="12" fill={t.bg} />
-      <circle cx="128" cy="30" r="18" fill={t.light} />
-      <ellipse cx="46" cy="70" rx="30" ry="12" fill={t.side} />
-      <ellipse cx="46" cy="64" rx="30" ry="12" fill={t.top} />
-    </svg>
-  )
+  return <img className="st-swatch" src={`/student-assets/theme-card/${t.id}.jpg`} alt="" width={480} height={276} />
 }

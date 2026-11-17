@@ -107,6 +107,8 @@ class Settings(BaseSettings):
     # 시간 초과가 나서(repo-fair4-4) 300초로 올림. 전체는 theme_draft_deadline이 막음
     theme_llm_timeout: float = 300.0
     theme_llm_retries: int = 0  # 재시도 대신 그래프의 실패 사유 넣은 다시 생성
+    # 형식 밖 응답(LLM_INVALID_OUTPUT)만 한 번 더 부름(#535 7차, 기준안). 시간 초과 등은 그대로 0
+    theme_llm_invalid_retries: int = 1
     theme_max_regen: int = 2  # 단계마다 다시 생성 상한(기준안, 첫 생성 포함 최대 3회)
     # 줄거리 검사가 칸 하나만 고치면 되는 사유로만 실패하면 줄거리 전체 대신 그 칸만 고쳐 쓰는
     # 상한(기준안). 줄거리 다시 생성 횟수와 따로 셈
@@ -181,6 +183,14 @@ class Settings(BaseSettings):
     # 그대로 씀. fake는 개발용 가짜 문장(외부 호출·사용량 없음). 출력 상한은 기준안(2~3문장)
     memory_explanation_provider: Literal["llm", "fake"] = "llm"
     memory_explanation_max_tokens: int = 512
+
+    # 추억 검색 질의 변환 (P27 #681, api-spec 4.2.7). 기본 LLM(llm_provider) 설정을 쓰되 시간은
+    # 호출 7초·재시도 없음으로 덮어씀(learning→ai 8초 안, 결정 기록 16.3). fake는 개발용 공백 분리
+    # 키워드(외부 호출·사용량 없음). gpt-6-luna 실측 지연 2.3~4.0초·출력 140~256토큰(추론 포함)이라
+    # 처음 기준안 4초·256토큰에서 늘림(2026-11-16)
+    memory_query_provider: Literal["llm", "fake"] = "llm"
+    memory_query_max_tokens: int = 512
+    memory_query_llm_timeout: float = 7.0
 
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0

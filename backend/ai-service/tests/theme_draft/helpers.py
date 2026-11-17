@@ -60,7 +60,8 @@ def request_body(grade: int = 3, **overrides) -> dict:
     body = {
         "gradeMin": grade,
         "gradeMax": grade,
-        "weekStart": "2026-11-16",
+        # 이 주·학년의 증거 배정(checks.evidence_plan)이 fixtures.valid_theme 증거 종류와 같음(#535)
+        "weekStart": "2027-01-25",
         "topic": "구조대: 길 잃은 강아지 찾기",
         "missions": [mission_body(t) for t in STANDARDS],
         "previousFailures": [],
@@ -105,5 +106,5 @@ def sample_response() -> ThemeDraftResponse:
         motions={},
         warnings=[],
         failure=None,
-        versions=LlmVersions(model="fake-model", prompt="theme-draft@1"),
+        versions=LlmVersions(model="fake-model", prompt="theme-draft@2"),
     )

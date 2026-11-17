@@ -40,6 +40,8 @@ export interface Mission {
   scene: 'math' | 'science' | 'english' | 'korean'
   sceneUri?: string
   staticSceneUri?: string
+  /** 장면 그림 움직임(learning #438, ai 움직임 형식 v1을 칸 검사 없이 그대로). 문제 화면은 domain/themeMotion.ts로 읽어 effects만 재생(#440) */
+  sceneMotion?: unknown
   choices?: { id: string; label: string }[]
   categories?: { id: string; label: string }[]
   status?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED'
@@ -131,6 +133,8 @@ export interface Attempt {
   reveal?: string
   revealKind?: 'ANSWER' | 'EXAMPLE'
   checklist?: FeedbackElement[]
+  /** 시도 종류(core 공개 계약 #700, 선택 칸). 없으면 내 공책에서 "테마 문제"로 본다(#710 기준안) */
+  context?: import('./retention.ts').AttemptContext
 }
 export interface StudentHome {
   student: Child
@@ -219,10 +223,21 @@ export const thinkingLabels: Record<ThinkingType, string> = {
   SOLVE: '문제 해결하기',
   REFLECT: '돌아보기',
 }
+/**
+ * 학생 화면에서 쓰는 생각 유형 이름(사용자 결정 2026-11-15). 다섯 유형 분류는 기획·평가용이라 초3~초6 학생에게 낯설고,
+ * 유형 "돌아보기"가 미션 끝 소감 "돌아보기"와 겹쳐 학생 화면만 쉬운 말로 쓴다. 학부모·관리자·리포트·API 코드는 thinkingLabels 그대로.
+ */
+export const studentThinkingLabels: Record<ThinkingType, string> = {
+  ANALYZE: '꼼꼼히 살펴보기',
+  EVALUATE: '맞는지 따져 보기',
+  CREATE: '새 생각 만들기',
+  SOLVE: '문제 풀어 보기',
+  REFLECT: '내 생각 되짚기',
+}
 export const inputLabels: Record<InputType, string> = {
   NARRATIVE: '글쓰기',
   SOLUTION_STEPS: '풀이 단계',
-  ESSAY: '주장과 까닭',
+  ESSAY: '주장과 이유',
   CHOICE: '고르기',
   ORDERING: '순서 맞추기',
   CLASSIFICATION: '분류하기',
@@ -262,7 +277,7 @@ export function validateAnswer(a: AnswerContent, mission: Mission): string | nul
     (a.essay.reasons.length !== 2 ||
       ![a.essay.claim, ...a.essay.reasons, a.essay.rebuttal].every((v) => v.trim()))
   )
-    return '주장, 까닭 두 가지, 다른 의견에 대한 답을 채워 주세요.'
+    return '주장, 이유 두 가지, 다른 의견에 대한 답을 채워 주세요.'
   if (a.inputType === 'SOLUTION_STEPS' && (!a.finalAnswer.trim() || !a.steps.some((s) => s.trim())))
     return '답과 풀이 과정을 함께 남겨 주세요.'
   if (a.inputType === 'NARRATIVE' && !a.text.trim()) return '내 생각을 먼저 적어 주세요.'
@@ -323,6 +338,7 @@ export function publicAttempt(a: Attempt): PublicAttempt {
     reveal: a.reveal,
     revealKind: a.revealKind,
     checklist: a.checklist,
+    ...(a.context ? { context: a.context } : {}),
   })
 }
 export function inPeriod(iso: string, p: Period): boolean {

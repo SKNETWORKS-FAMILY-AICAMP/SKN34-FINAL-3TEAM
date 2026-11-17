@@ -1,0 +1,49 @@
+/*
+ * 학생 화면 공통 말풍선 모양(#648 38행, SpeechBubble.tsx). 자리(position)·글꼴·안쪽 배치는 쓰는 화면 CSS가 정한다.
+ * 선택자를 한 단계 높여(.st-bubble.st-bubble) 화면별 CSS 불러오는 순서와 상관없이 모양이 같게 한다.
+ */
+#class-journal .cj-app-student .st-bubble.st-bubble {
+  --st-bubble-bg: #fffbea;
+  border: 2px solid var(--sk-line);
+  border-radius: 22px;
+  background: var(--st-bubble-bg);
+  color: var(--sk-ink);
+  box-shadow: none;
+  filter: drop-shadow(0 4px 0 rgb(31 78 107 / 0.18));
+}
+#class-journal .cj-app-student .st-bubble.st-bubble::before,
+#class-journal .cj-app-student .st-bubble.st-bubble::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  background: none;
+  transform: none;
+}
+/* 아래 가운데 꼬리 */
+#class-journal .cj-app-student .st-bubble.st-bubble-down::before {
+  left: calc(50% - 13px);
+  bottom: -20px;
+  border-width: 20px 13px 0 13px;
+  border-color: var(--sk-line) transparent transparent transparent;
+}
+#class-journal .cj-app-student .st-bubble.st-bubble-down::after {
+  left: calc(50% - 10px);
+  bottom: -15px;
+  border-width: 16px 10px 0 10px;
+  border-color: var(--st-bubble-bg) transparent transparent transparent;
+}
+/* 왼쪽 아래 꼬리 */
+#class-journal .cj-app-student .st-bubble.st-bubble-left::before {
+  left: -21px;
+  bottom: 14px;
+  border-width: 12px 21px 12px 0;
+  border-color: transparent var(--sk-line) transparent transparent;
+}
+#class-journal .cj-app-student .st-bubble.st-bubble-left::after {
+  left: -15px;
+  bottom: 17px;
+  border-width: 9px 16px 9px 0;
+  border-color: transparent var(--st-bubble-bg) transparent transparent;
+}

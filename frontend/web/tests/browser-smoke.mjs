@@ -35,7 +35,9 @@ const login = async () => {
   await page.getByRole('button', { name: '이 자녀로 학습 시작' }).waitFor()
 }
 const start = async (title) => {
-  await page.getByRole('button', { name: '미션 고르기', exact: true }).click()
+  // #648: 미션 고르기는 메뉴에서 빠지고 홈 "더 풀어 보기"로 들어간다
+  await page.getByRole('button', { name: '홈', exact: true }).click()
+  await page.getByRole('button', { name: /더 풀어 보기/ }).click()
   await page
     .locator('.cj-activity')
     .filter({ has: page.getByRole('heading', { name: title, exact: true }) })
@@ -50,14 +52,14 @@ try {
   await noOverflow()
   await shot('01-laptop-parent-journal')
   await page.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
-  await page.getByRole('button', { name: '미션 고르기', exact: true }).waitFor()
+  await page.getByRole('button', { name: '홈', exact: true }).waitFor()
   await start('도서관에 만화책을 더 둘까요?')
-  await page.getByRole('button', { name: '생각 메모', exact: true }).click()
+  await page.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
   await page.getByTestId('private-memo').fill('학부모에게 공유하지 않을 비밀 메모')
   await page.getByText('저장했어요(모의)', { exact: true }).waitFor()
-  await page.getByRole('button', { name: '답변 쓰기', exact: true }).click()
+  await page.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
   await page
-    .getByLabel('내 생각과 까닭')
+    .getByLabel('내 생각과 이유')
     .fill('만화책을 더 두면 좋겠어요. 그림으로 내용을 이해할 수 있기 때문이에요.')
   await page.getByText('저장했어요(모의)', { exact: true }).waitFor()
   await shot('02-laptop-student-editor')
@@ -75,7 +77,7 @@ try {
     '글책도 함께 두고 원하는 책을 고르면 좋겠어요.',
   ].entries()) {
     await page.getByRole('button', { name: '질문에 답하기' }).click()
-    await page.getByLabel('내 생각과 까닭').fill(text)
+    await page.getByLabel('내 생각과 이유').fill(text)
     await page.getByText('저장했어요(모의)', { exact: true }).waitFor()
     await page.getByRole('button', { name: '답변 제출', exact: true }).click()
     await page
@@ -95,7 +97,7 @@ try {
   await page.getByText('이번 활동이 어땠는지 하나 골라 주세요.', { exact: true }).waitFor()
   await page.getByRole('button', { name: '보통이에요' }).click()
   await page.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
-  await page.getByRole('heading', { name: '나의 공책' }).waitFor()
+  await page.getByRole('heading', { name: '내 공책' }).waitFor()
   checked.push('추가 답변 최대 2회 / 마무리 후 잠금 / 필수 난이도 / 공책 복귀')
   // 학생 로그아웃은 설정 안에서(#583)
   await page.getByRole('button', { name: '설정', exact: true }).click()
@@ -137,7 +139,7 @@ try {
   await page.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
   await start('다시 해 본 경험')
   await page.getByLabel('상태 시연').selectOption('draft-conflict')
-  await page.getByLabel('내 생각과 까닭').fill('내 입력은 충돌해도 보존합니다.')
+  await page.getByLabel('내 생각과 이유').fill('내 입력은 충돌해도 보존합니다.')
   const conflict = page.getByRole('dialog', { name: '다른 화면에 더 최신 초안이 있어요.' })
   await conflict.waitFor()
   assert.ok((await conflict.innerText()).includes('내 입력은 충돌해도 보존합니다.'))
@@ -145,13 +147,13 @@ try {
   await page.getByText('저장했어요(모의)', { exact: true }).waitFor()
   await shot('05-tablet-student-editor')
   await page.getByLabel('상태 시연').selectOption('draft-fail')
-  await page.getByLabel('내 생각과 까닭').fill('실패한 입력도 확인 없이 지우지 않습니다.')
+  await page.getByLabel('내 생각과 이유').fill('실패한 입력도 확인 없이 지우지 않습니다.')
   await page.getByText('저장하지 못했어요. 쓴 글은 그대로 있어요.', { exact: true }).waitFor()
   await page.getByRole('button', { name: '공책으로', exact: true }).click()
   await page.getByRole('dialog', { name: '아직 저장하지 못한 입력이 있어요.' }).waitFor()
   await page.getByRole('button', { name: '계속 작성', exact: true }).click()
   assert.equal(
-    await page.getByLabel('내 생각과 까닭').inputValue(),
+    await page.getByLabel('내 생각과 이유').inputValue(),
     '실패한 입력도 확인 없이 지우지 않습니다.',
   )
   await page.getByRole('button', { name: '다시 시도', exact: true }).click()

@@ -11,13 +11,15 @@ object ThemeAnswerRules {
     /**
      * 정답 구조 위반 사유. 후보·정답은 함께 있거나 함께 없음, 후보는 비지 않고 겹치지 않음, 정답은 후보 안,
      * 요일 rulesOut은 후보 안이고 정답은 어느 날에도 빠지지 않음. 다섯 요일이 다 있으면 틀린 후보는 각각 적어도 한 날 빠짐
-     * (작성 중에는 요일이 덜 채워질 수 있음). 구조가 없으면 요일 rulesOut도 없어야 함
+     * (작성 중에는 요일이 덜 채워질 수 있음). 구조가 없으면 요일 rulesOut도 없어야 함.
+     * #647: 특징 표(features)가 있으면 featureErrors도 함께
      */
     fun errors(story: ThemeStory, days: List<ThemeDayMission>): List<String> = buildList {
         val candidates = story.candidates
         val answer = story.answer
         if (candidates == null && answer == null) {
             if (days.any { it.rulesOut != null }) add("후보·정답 없이 요일 rulesOut만 있을 수 없음")
+            if (story.features != null || days.any { it.clueFeature != null }) add("후보·정답 없이 특징 표·clueFeature만 있을 수 없음")
             return@buildList
         }
         if (candidates == null || answer == null) {
@@ -40,6 +42,39 @@ object ThemeAnswerRules {
         if (days.map { it.day }.toSet() == ThemeDay.entries.toSet()) {
             val ruledOut = days.flatMap { it.rulesOut.orEmpty() }.toSet()
             candidates.filter { it != answer && it !in ruledOut }.forEach { add("틀린 후보 '$it'가 어느 날에도 빠지지 않음") }
+        }
+        addAll(featureErrors(candidates, story.features, days))
+    }
+
+    /**
+     * 특징 표 위반 사유 (#647, 기준안). 특징 이름은 비지 않고 겹치지 않음, 특징마다 후보 하나에 비지 않은 값 하나씩,
+     * 요일 clueFeature는 표의 이름. 그날 rulesOut이 비지 않으면(후보를 빼는 단서) 그 특징 값이 같은 후보끼리는 함께 빠지거나 함께 남음
+     * (빠지는 후보 = 허용 값 밖의 후보라 값이 같으면 같은 쪽, ai `fill_rules_out`과 같은 성질). 허용 값은 ai 내부 칸이라 받지 않아
+     * 그 이상은 보지 않음. 빈 rulesOut(힌트 단서)은 이미 빠진 후보만 허용 값 밖일 수 있어 보지 않음
+     */
+    fun featureErrors(candidates: List<String>, features: List<ThemeFeature>?, days: List<ThemeDayMission>): List<String> = buildList {
+        val byName = features.orEmpty().associateBy { it.name }
+        features?.let { table ->
+            if (table.any { it.name.isBlank() } || byName.size != table.size) add("특징 이름은 비지 않은 서로 다른 값")
+            table.forEach { feature ->
+                val named = feature.values.map { it.candidate }
+                if (named.sorted() != candidates.sorted() || feature.values.any { it.value.isBlank() }) {
+                    add("특징 '${feature.name}'은 후보마다 비지 않은 값 하나씩")
+                }
+            }
+        }
+        days.sortedBy { it.day.number }.forEach { day ->
+            val name = day.clueFeature ?: return@forEach
+            val feature = byName[name]
+            if (feature == null) {
+                add("${day.day} clueFeature '$name'은 특징 표의 이름")
+                return@forEach
+            }
+            val out = day.rulesOut.orEmpty().toSet()
+            if (out.isEmpty()) return@forEach
+            val values = feature.valueOf()
+            val split = candidates.groupBy { values[it] }.filterKeys { it != null }.values.any { group -> group.any { it in out } && group.any { it !in out } }
+            if (split) add("${day.day} rulesOut이 특징 '$name' 값과 맞지 않음(값이 같은 후보가 갈림)")
         }
     }
 
@@ -85,18 +120,29 @@ object ThemeCarryOver {
         // 후보·정답을 빈 값으로 비운 수정이면 요일 rulesOut도 함께 비움. 그 밖에 구조 없이 rulesOut만 있으면 검사(400)가 잡음
         val cleared = story.candidates == null && story.answer == null &&
             (asked.candidates?.isEmpty() == true || asked.answer?.isBlank() == true)
+        // #647: 특징 표는 본문에 없으면 이어받되 후보가 바뀌었거나 구조를 비웠으면 버림(이어받은 표가 새 후보와 어긋나 저장이 막히지 않게)
+        val candidatesChanged = story.candidates != before.candidates
+        val features = when {
+            cleared -> null
+            asked.features != null -> asked.features.takeIf { it.isNotEmpty() }
+            candidatesChanged -> null
+            else -> before.features
+        }
         val previousDays = previous?.days.orEmpty().associateBy { it.day }
         val days = requested.days.map { day ->
             val old = previousDays[day.day]
+            val rulesOut = if (cleared) null else day.rulesOut ?: old?.rulesOut
             day.copy(
                 clue = text(day.clue, old?.clue),
-                rulesOut = if (cleared) null else day.rulesOut ?: old?.rulesOut,
+                rulesOut = rulesOut,
                 dialogue = list(day.dialogue, old?.dialogue),
                 hintSpots = list(day.hintSpots, old?.hintSpots?.takeIf { old.missionId == day.missionId }),
                 videoUri = text(day.videoUri, old?.videoUri),
+                // 이어받는 clueFeature는 특징 표가 남고 그날 rulesOut이 그대로일 때만(바뀐 rulesOut과 어긋날 수 있어서)
+                clueFeature = text(day.clueFeature, old?.clueFeature?.takeIf { features != null && rulesOut == old.rulesOut }),
             )
         }
-        return requested.copy(story = story, days = days)
+        return requested.copy(story = story.copy(features = features), days = days)
     }
 
     private fun text(asked: String?, before: String?): String? = when {

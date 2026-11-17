@@ -9,7 +9,7 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
-from app.theme_draft.checks import check_dialogue, dialogue_lines, theme_day
+from app.theme_draft.checks import check_dialogue, dialogue_lines, full_speakers, theme_day
 from app.theme_draft.models import GeneratedDialogue
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState, uniq
 
@@ -35,7 +35,7 @@ async def generate_dialogue(payload: dict[str, Any], runtime: Runtime[ThemeConte
             timeout=ctx.settings.theme_llm_timeout,
             max_retries=ctx.settings.theme_llm_retries,
         )
-        out = generated.data.model_dump()
+        out = full_speakers(theme, generated.data.model_dump())  # 줄여 쓴 등장인물 이름은 원래대로
         bad = check_dialogue(
             theme, day, out, draft, ctx.grade, ctx.settings.followup_example_overlap_chars
         )

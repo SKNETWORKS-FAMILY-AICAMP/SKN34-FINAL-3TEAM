@@ -23,3 +23,10 @@ ai_hub/
 
 # Local UI inspection artifacts
 .taste-skill/
+
+# #568 추억 검색 평가: 환경마다 다른 적재 표, 학생 답이 든 정답 확인 페이지·돌려받은 답·설명 표시지, LLM 변환 캐시
+# (검색 결과 raw·요약 json은 ID·점수·시간만이라 커밋)
+evaluation/results/memory/load-manifest.json
+evaluation/results/memory/answer-check__*
+evaluation/results/memory/*.explain-sheet.csv
+evaluation/results/memory/hybrid-rewrites__*

@@ -279,6 +279,9 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         assertEquals(ThemeDay.entries, theme.days.map { it.day })
         assertTrue(theme.days.all { it.videoUri == null }) // 요일 문제 전 영상 없음
         assertTrue(theme.days.all { it.hintSpots == null })
+        // #647 후보 특징 표·요일 특징 이름을 저장하고 관리자 상세에 그대로
+        assertEquals(ThemeDraftFixtures.FEATURES, theme.features)
+        assertEquals(ThemeDraftFixtures.CLUE_FEATURES.values.toList(), theme.days.map { it.clueFeature })
         val rows = jdbc.queryForList(
             """SELECT m.source, m.status, v.grade_min, v.grade_max, v.thinking_type, v.scene_uri, v.static_scene_uri, v.scene_motion::text AS motion
                FROM mission m JOIN mission_version v ON v.id = m.current_version_id WHERE m.id::text = ANY(?)""",

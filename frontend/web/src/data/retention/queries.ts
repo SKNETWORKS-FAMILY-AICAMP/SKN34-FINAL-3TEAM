@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { retentionApi } from './api.ts'
-import type { FrameSlot, LookItem, Points, Reaction } from '../../domain/retention.ts'
+import type { FrameSlot, LookItem, Points, Reaction, StoryKind } from '../../domain/retention.ts'
 
 // ---------- 내 방 추억의 벽·추억 앨범 (2.12, P27) ----------
 export const useFrameSlots = (childId: string | undefined) =>
@@ -76,6 +76,16 @@ export const useWeeklyTheme = (childId: string | undefined) =>
     ...quiet,
   })
 
+/** 주간 테마를 지금 다시 받는다(캐시도 갱신). 문제를 마무리한 직후 엔딩이 됐는지 볼 때 쓴다(#440). */
+export function useFetchWeeklyTheme(childId: string | undefined) {
+  const cache = useQueryClient()
+  return () => cache.fetchQuery({
+    queryKey: ['weekly-theme', childId],
+    queryFn: ({ signal }) => retentionApi.weeklyTheme(signal),
+    staleTime: 0,
+  })
+}
+
 export function useRecordReviewView(childId: string | undefined) {
   const cache = useQueryClient()
   return useMutation({
@@ -84,6 +94,27 @@ export function useRecordReviewView(childId: string | undefined) {
       void cache.invalidateQueries({ queryKey: ['weekly-theme', childId] })
       void cache.invalidateQueries({ queryKey: ['points', childId] })
     },
+  })
+}
+
+/** 이야기 열람 기록. 실패해도 화면은 닫히고(다시 띄우지 않음) 다음 조회의 `introSeen`·`outroSeen`을 따른다. */
+export function useRecordStoryView(childId: string | undefined) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: (kind: StoryKind) => retentionApi.recordStoryView(kind),
+    onSettled: () => void cache.invalidateQueries({ queryKey: ['weekly-theme', childId] }),
+  })
+}
+
+/** 큰 질문 정답 고르기. 엔딩이 되면 종료 이야기·정답과 잠겼던 커뮤니티가 열리므로 함께 다시 받는다. */
+export function useAnswerPick(childId: string | undefined) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: (pick: string) => retentionApi.pickAnswer(pick),
+    onSettled: () => Promise.all([
+      cache.invalidateQueries({ queryKey: ['weekly-theme', childId] }),
+      cache.invalidateQueries({ queryKey: ['community', 'mission', childId] }),
+    ]),
   })
 }
 

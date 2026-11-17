@@ -55,21 +55,25 @@ test('보호자 동의 → 친구 공개 → 같은 미션 마무리 학생이 �
     await solveNarrative(viewer.page, '저는 반대예요. 쉬는 시간이 길면 하교 시간이 늦어지기 때문이에요.')
     await studentMenu(viewer.page, '친구 생각')
     await expect(viewer.page.getByRole('heading', { name: '친구 생각' })).toBeVisible()
-    await viewer.page.getByLabel('어떤 미션을 볼까요?').selectOption({ label: mission })
+    // #648 친구 생각은 미션 고르기 select 대신 왼쪽 "어떤 미션을 볼까요?" 버튼 목록
+    await viewer.page.getByRole('group', { name: '어떤 미션을 볼까요?' }).getByRole('button', { name: mission }).click()
     const reactions = viewer.page.getByRole('group', { name: `${author.nickname}의 생각에 반응하기`, exact: true })
     const post = viewer.page.locator('li', { has: reactions })
     await expect(post.getByText(answer)).toBeVisible()
-    const clear = reactions.getByRole('button', { name: '까닭이 잘 보여' })
+    // 학생 화면 "까닭" → "이유"(사용자 결정 2026-11-15, REACTION_LABELS.CLEAR_REASON)
+    const clear = reactions.getByRole('button', { name: '이유가 잘 보여' })
     await expect(clear).toHaveAttribute('aria-pressed', 'false')
     await clear.click()
     await expect(clear).toHaveAttribute('aria-pressed', 'true')
 
     // 작성자의 "내가 나눈 생각"에 받은 반응 수가 보인다(FN-RET-03, 순위 없음)
-    const mine = author.page.locator('section', { has: author.page.getByRole('heading', { name: '내가 나눈 생각' }) })
+    // #648: "내가 나눈 생각"은 친구 생각 화면의 "내가 나눈 생각 보기" 버튼으로 오른쪽 칸을 바꿔 보여 준다
+    const mine = author.page.getByRole('region', { name: '내가 나눈 생각' })
     await expect(async () => {
       await studentMenu(author.page, '설정')
       await studentMenu(author.page, '친구 생각')
-      await expect(mine.getByText('받은 반응: 까닭이 잘 보여 1')).toBeVisible({ timeout: 3_000 })
+      await author.page.getByRole('button', { name: '내가 나눈 생각 보기' }).click()
+      await expect(mine.getByText('받은 반응: 이유가 잘 보여 1')).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 30_000 })
   } finally {
     for (const context of contexts) await context.close()

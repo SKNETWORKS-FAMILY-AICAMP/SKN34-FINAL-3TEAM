@@ -50,10 +50,11 @@ async function student(p, grade5 = false) {
   if (grade5) await p.getByRole('group', { name: '자녀 선택', exact: true }).getByRole('button', { name: /도윤/ }).click()
   await p.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
   await p.waitForURL('**/student/home')
-  await p.getByRole('heading', { name: /^학습 홈/ }).waitFor()
+  await p.getByRole('region', { name: /^우리 집/ }).waitFor() // #648 새 홈
 }
 async function open(p, title) {
-  await p.getByRole('button', { name: '미션 고르기', exact: true }).click()
+  await p.getByRole('button', { name: '홈', exact: true }).click() // #648: 미션 고르기는 홈 "더 풀어 보기"로
+  await p.getByRole('button', { name: /더 풀어 보기/ }).click()
   const card = p
     .getByRole('article')
     .filter({ has: p.getByRole('heading', { name: title, exact: true }) })
@@ -110,22 +111,22 @@ try {
       }
     }
     await p.getByLabel('상태 시연').selectOption('normal')
-    await p.getByRole('heading', { name: '생각 지도', exact: true }).waitFor()
+    await p.getByRole('region', { name: /^우리 집/ }).waitFor() // #648 새 홈
   })
   await check('초안만 있는 시도 이어하기·새로고침 복원·학생 메모·브라우저 뒤로가기', async (p) => {
     await student(p)
     await open(p, '도서관에 만화책을 더 둘까요?')
-    await p.getByLabel('내 생각과 까닭').fill('새로고침 후에도 유지할 초안입니다.')
+    await p.getByLabel('내 생각과 이유').fill('새로고침 후에도 유지할 초안입니다.')
     await saved(p)
-    await p.getByRole('button', { name: '생각 메모', exact: true }).click()
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     await p.getByTestId('private-memo').fill('나만 보는 메모')
     await saved(p)
     await p.getByRole('button', { name: '공책으로', exact: true }).click()
-    await p.getByRole('button', { name: '생각 지도', exact: true }).click()
+    await p.getByRole('button', { name: '홈', exact: true }).click() // #648 메뉴 이름 홈
     await p.getByRole('button', { name: '이어서 작성하기' }).click()
-    await p.getByLabel('내 생각과 까닭').waitFor()
+    await p.getByLabel('내 생각과 이유').waitFor()
     assert.equal(
-      await p.getByLabel('내 생각과 까닭').inputValue(),
+      await p.getByLabel('내 생각과 이유').inputValue(),
       '새로고침 후에도 유지할 초안입니다.',
     )
     // 학생은 새로고침하면 다시 로그인한다(#61). 다시 들어와 이어 쓰면 서버의 초안이 그대로 있어야 한다.
@@ -133,14 +134,14 @@ try {
     await p.waitForURL('**/student/login')
     await student(p)
     await p.getByRole('button', { name: '이어서 작성하기' }).click()
-    await p.getByLabel('내 생각과 까닭').waitFor()
+    await p.getByLabel('내 생각과 이유').waitFor()
     assert.equal(
-      await p.getByLabel('내 생각과 까닭').inputValue(),
+      await p.getByLabel('내 생각과 이유').inputValue(),
       '새로고침 후에도 유지할 초안입니다.',
     )
-    await p.getByRole('button', { name: '생각 메모', exact: true }).click()
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     assert.equal(await p.getByTestId('private-memo').inputValue(), '나만 보는 메모')
-    await p.getByRole('button', { name: '답변 쓰기', exact: true }).click()
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     assert.equal(
       await p.evaluate(() =>
         Object.values(sessionStorage).some(
@@ -150,68 +151,68 @@ try {
       false,
     )
     await p.getByLabel('상태 시연').selectOption('draft-fail')
-    await p.getByLabel('내 생각과 까닭').fill('저장 실패 상태의 입력도 보존합니다.')
+    await p.getByLabel('내 생각과 이유').fill('저장 실패 상태의 입력도 보존합니다.')
     await p.getByText('저장하지 못했어요. 쓴 글은 그대로 있어요.', { exact: true }).waitFor()
     await p.goBack()
     await p.getByRole('dialog', { name: '아직 저장하지 못한 입력이 있어요.' }).waitFor()
     await p.getByRole('button', { name: '계속 작성', exact: true }).click()
     assert.equal(
-      await p.getByLabel('내 생각과 까닭').inputValue(),
+      await p.getByLabel('내 생각과 이유').inputValue(),
       '저장 실패 상태의 입력도 보존합니다.',
     )
   })
   for (const [type, title, field, target] of [
-    ['NARRATIVE', '도서관에 만화책을 더 둘까요?', '내 생각과 까닭', 'text'],
+    ['NARRATIVE', '도서관에 만화책을 더 둘까요?', '내 생각과 이유', 'text'],
     ['SOLUTION_STEPS', '같은 수를 다르게 세기', '풀이 2', 'step:1'],
-    ['ESSAY', '도서관에 만화책을 더 둘까요?', '까닭 2', 'reason:1'],
+    ['ESSAY', '도서관에 만화책을 더 둘까요?', '이유 2', 'reason:1'],
   ]) await check(type + ' 메모 대상 선택·기존 답 덧붙이기·원본 보존', async (p) => {
     await student(p, type === 'ESSAY')
     await open(p, title)
     await p.getByLabel(field, { exact: true }).fill('기존에 쓴 답')
     await saved(p)
-    await p.getByRole('button', { name: '생각 메모', exact: true }).click()
-    assert.equal(await p.getByRole('button', { name: '글 메모 전체를 답변으로 옮기기' }).isDisabled(), true)
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
+    assert.equal(await p.getByRole('button', { name: '메모를 답에 옮기기' }).isDisabled(), true)
     await p.getByTestId('private-memo').fill('이 부분을 덧붙입니다.')
     await saved(p)
     await p.getByLabel('옮길 답변 칸', { exact: true }).selectOption(target)
-    await p.getByRole('button', { name: '글 메모 전체를 답변으로 옮기기' }).click()
+    await p.getByRole('button', { name: '메모를 답에 옮기기' }).click()
     assert.equal(await p.getByLabel(field, { exact: true }).inputValue(), '기존에 쓴 답\n이 부분을 덧붙입니다.')
-    if (type === 'ESSAY') assert.equal(await p.getByLabel('까닭 1', { exact: true }).inputValue(), '')
+    if (type === 'ESSAY') assert.equal(await p.getByLabel('이유 1', { exact: true }).inputValue(), '')
     if (type === 'SOLUTION_STEPS') assert.equal(await p.getByLabel('풀이 1', { exact: true }).inputValue(), '')
     await saved(p)
-    await p.getByRole('button', { name: '생각 메모', exact: true }).click()
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     assert.equal(await p.getByTestId('private-memo').inputValue(), '이 부분을 덧붙입니다.')
   })
   await check('메모 길이 초과 거부·빈 답 보존·선택형 자동 변환 없음', async (p) => {
     await student(p)
     await open(p, '같은 수를 다르게 세기')
-    await p.getByRole('button', { name: '생각 메모', exact: true }).click()
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     await p.getByTestId('private-memo').fill('긴 메모입니다.'.repeat(20))
     await saved(p)
     await p.getByLabel('옮길 답변 칸').selectOption('finalAnswer')
-    await p.getByRole('button', { name: '글 메모 전체를 답변으로 옮기기' }).click()
+    await p.getByRole('button', { name: '메모를 답에 옮기기' }).click()
     await p.getByRole('alert').filter({ hasText: '120자까지' }).waitFor()
     assert.equal(await p.getByTestId('private-memo').inputValue(), '긴 메모입니다.'.repeat(20))
-    await p.getByRole('button', { name: '답변 쓰기', exact: true }).click()
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     assert.equal(await p.getByLabel('최종 답', { exact: true }).inputValue(), '')
     await p.getByRole('button', { name: '공책으로', exact: true }).click()
     await open(p, '같은 날 심었는데')
-    await p.getByRole('button', { name: '생각 메모', exact: true }).click()
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     await p.getByText('이 문제는 답 칸에서 직접 골라 주세요.', { exact: false }).waitFor()
-    assert.equal(await p.getByRole('button', { name: '글 메모 전체를 답변으로 옮기기' }).count(), 0)
+    assert.equal(await p.getByRole('button', { name: '메모를 답에 옮기기' }).count(), 0)
   })
   await check('제출 뒤 메모로 제출 답을 변경할 수 없음', async (p) => {
     await student(p)
     await open(p, '도서관에 만화책을 더 둘까요?')
-    await p.getByLabel('내 생각과 까닭').fill('그림과 글을 함께 읽으면 내용을 이해하기 쉬워요.')
-    await p.getByRole('button', { name: '생각 메모', exact: true }).click()
+    await p.getByLabel('내 생각과 이유').fill('그림과 글을 함께 읽으면 내용을 이해하기 쉬워요.')
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     await p.getByTestId('private-memo').fill('아직 제출하지 않은 별도 생각')
     await saved(p)
-    await p.getByRole('button', { name: '답변 쓰기', exact: true }).click()
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     await submit(p)
     await p.getByRole('button', { name: '이대로 돌아보기', exact: true }).waitFor()
-    await p.getByRole('button', { name: '생각 메모', exact: true }).click()
-    assert.equal(await p.getByRole('button', { name: '글 메모 전체를 답변으로 옮기기' }).isDisabled(), true)
+    await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
+    assert.equal(await p.getByRole('button', { name: '메모를 답에 옮기기' }).isDisabled(), true)
   })
   const cases = [
     ['NARRATIVE', '도서관에 만화책을 더 둘까요?'],
@@ -231,7 +232,7 @@ try {
       await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
       await p.getByText('ANSWER_INCOMPLETE', { exact: true }).waitFor()
       if (type === 'NARRATIVE')
-        await p.getByLabel('내 생각과 까닭').fill('그림과 글이 함께 있으면 이해하기 쉬워요.')
+        await p.getByLabel('내 생각과 이유').fill('그림과 글이 함께 있으면 이해하기 쉬워요.')
       if (type === 'SOLUTION_STEPS') {
         await p.getByLabel('최종 답', { exact: true }).fill('6')
         await p.getByLabel('풀이 1', { exact: true }).fill('3+3으로 구했어요.')
@@ -242,17 +243,18 @@ try {
         for (const label of ['씨앗을 심어요', '싹이 나요', '잎이 자라요'])
           await p.getByRole('button', { name: label, exact: true }).click()
       if (type === 'CLASSIFICATION')
+        // #440: 항목마다 무리 이름 단추(시안 InputTypes 분류하기)
         for (const [label, group] of [
-          ['철 못', 'magnetic'],
-          ['종이', 'other'],
-          ['철 클립', 'magnetic'],
+          ['철 못', '자석에 붙어요'],
+          ['종이', '자석에 붙지 않아요'],
+          ['철 클립', '자석에 붙어요'],
         ])
-          await p.getByLabel(label, { exact: true }).selectOption(group)
+          await p.getByRole('group', { name: label, exact: true }).getByRole('button', { name: group, exact: true }).click()
       if (type === 'ESSAY')
         for (const [label, text] of [
           ['내 주장', '만화책을 늘리면 좋겠어요.'],
-          ['까닭 1', '그림으로 이해할 수 있어요.'],
-          ['까닭 2', '책을 좋아하게 될 수 있어요.'],
+          ['이유 1', '그림으로 이해할 수 있어요.'],
+          ['이유 2', '책을 좋아하게 될 수 있어요.'],
           ['다른 의견에 답하기', '글책도 함께 두면 좋겠어요.'],
         ])
           await p.getByLabel(label, { exact: true }).fill(text)
@@ -297,7 +299,7 @@ try {
         if (r.url().endsWith('/answers'))
           calls.push({ key: r.headers()['idempotency-key'], body: r.postData() })
       })
-      await p.getByLabel('내 생각과 까닭').fill('근거를 덧붙여 적은 내 생각입니다.')
+      await p.getByLabel('내 생각과 이유').fill('근거를 덧붙여 적은 내 생각입니다.')
       await submit(p)
       if (scenario === 'submit-fail') {
         await p.getByText('ANSWER_SAVE_FAILED', { exact: true }).waitFor()
@@ -334,7 +336,7 @@ try {
     await student(p)
     await open(p, '도서관에 만화책을 더 둘까요?')
     await p.getByLabel('상태 시연').selectOption('ai-fail-final')
-    await p.getByLabel('내 생각과 까닭').fill('근거를 덧붙여 적은 내 생각입니다.')
+    await p.getByLabel('내 생각과 이유').fill('근거를 덧붙여 적은 내 생각입니다.')
     await submit(p)
     await p.getByText('지금은 피드백을 받을 수 없어요.', { exact: false }).waitFor()
     assert.equal(await p.getByRole('button', { name: '피드백 다시 받기' }).count(), 0)

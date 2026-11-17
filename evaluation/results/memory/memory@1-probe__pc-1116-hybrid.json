@@ -1,0 +1,376 @@
+{
+ "dataset": "memory@1-probe",
+ "label": "pc-1116-hybrid",
+ "at": "2026-11-16T18:48:01+09:00",
+ "note": "learning이 돌려준 그대로(서비스 기준값). 본 평가 숫자와 섞지 않는 참고 시험",
+ "sets": {
+  "typo": {
+   "n": 12,
+   "originalHit@3": 11,
+   "variantHit@3": 8,
+   "lost": [
+    "t068",
+    "t082",
+    "t098",
+    "t111"
+   ],
+   "gained": [
+    "t067"
+   ],
+   "rows": [
+    {
+     "queryId": "t061",
+     "source": "q061",
+     "category": "TITLE",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      7707.3,
+      6404.7
+     ]
+    },
+    {
+     "queryId": "t062",
+     "source": "q062",
+     "category": "TITLE",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      5217.2,
+      6127.2
+     ]
+    },
+    {
+     "queryId": "t067",
+     "source": "q067",
+     "category": "ANSWER",
+     "originalRank": null,
+     "variantRank": 1,
+     "ms": [
+      7230.5,
+      5038.3
+     ]
+    },
+    {
+     "queryId": "t068",
+     "source": "q068",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": null,
+     "ms": [
+      3656.4,
+      5881.0
+     ]
+    },
+    {
+     "queryId": "t077",
+     "source": "q077",
+     "category": "TITLE",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      3866.9,
+      2815.6
+     ]
+    },
+    {
+     "queryId": "t081",
+     "source": "q081",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      2455.5,
+      4140.9
+     ]
+    },
+    {
+     "queryId": "t082",
+     "source": "q082",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": null,
+     "ms": [
+      2888.2,
+      3792.3
+     ]
+    },
+    {
+     "queryId": "t091",
+     "source": "q091",
+     "category": "TITLE",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      2958.9,
+      2973.3
+     ]
+    },
+    {
+     "queryId": "t096",
+     "source": "q096",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      3886.6,
+      3999.8
+     ]
+    },
+    {
+     "queryId": "t098",
+     "source": "q098",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": null,
+     "ms": [
+      3508.8,
+      6037.8
+     ]
+    },
+    {
+     "queryId": "t111",
+     "source": "q111",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": null,
+     "ms": [
+      3831.8,
+      5179.3
+     ]
+    },
+    {
+     "queryId": "t113",
+     "source": "q113",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      4896.6,
+      5225.6
+     ]
+    }
+   ]
+  },
+  "request": {
+   "n": 12,
+   "originalHit@3": 12,
+   "variantHit@3": 12,
+   "lost": [],
+   "gained": [],
+   "rows": [
+    {
+     "queryId": "r061",
+     "source": "q061",
+     "category": "TITLE",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      5220.0,
+      3039.5
+     ]
+    },
+    {
+     "queryId": "r067",
+     "source": "q067",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      2488.8,
+      5563.9
+     ]
+    },
+    {
+     "queryId": "r064",
+     "source": "q064",
+     "category": "PARAPHRASE",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      5723.7,
+      4580.0
+     ]
+    },
+    {
+     "queryId": "r081",
+     "source": "q081",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      7192.0,
+      3871.4
+     ]
+    },
+    {
+     "queryId": "r076",
+     "source": "q076",
+     "category": "TITLE",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      2135.1,
+      3417.3
+     ]
+    },
+    {
+     "queryId": "r082",
+     "source": "q082",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      4488.5,
+      3439.0
+     ]
+    },
+    {
+     "queryId": "r096",
+     "source": "q096",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      3299.5,
+      4019.6
+     ]
+    },
+    {
+     "queryId": "r092",
+     "source": "q092",
+     "category": "TITLE",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      1739.0,
+      4021.2
+     ]
+    },
+    {
+     "queryId": "r098",
+     "source": "q098",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      4477.2,
+      2451.2
+     ]
+    },
+    {
+     "queryId": "r111",
+     "source": "q111",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      3518.8,
+      3704.7
+     ]
+    },
+    {
+     "queryId": "r108",
+     "source": "q108",
+     "category": "PARAPHRASE",
+     "originalRank": 1,
+     "variantRank": 2,
+     "ms": [
+      2642.9,
+      3880.9
+     ]
+    },
+    {
+     "queryId": "r113",
+     "source": "q113",
+     "category": "ANSWER",
+     "originalRank": 1,
+     "variantRank": 1,
+     "ms": [
+      3944.2,
+      3492.7
+     ]
+    }
+   ]
+  },
+  "period": {
+   "n": 8,
+   "ok": 6,
+   "rows": [
+    {
+     "queryId": "p01",
+     "expect": "RESULTS",
+     "state": "NO_RESULTS",
+     "rank": null,
+     "ok": false,
+     "cards": 0,
+     "ms": 5722.6
+    },
+    {
+     "queryId": "p02",
+     "expect": "RESULTS",
+     "state": "RESULTS",
+     "rank": null,
+     "ok": false,
+     "cards": 2,
+     "ms": 5280.8
+    },
+    {
+     "queryId": "p03",
+     "expect": "RESULTS",
+     "state": "RESULTS",
+     "rank": 1,
+     "ok": true,
+     "cards": 2,
+     "ms": 3693.6
+    },
+    {
+     "queryId": "p04",
+     "expect": "RESULTS",
+     "state": "RESULTS",
+     "rank": 2,
+     "ok": true,
+     "cards": 3,
+     "ms": 3545.3
+    },
+    {
+     "queryId": "p05",
+     "expect": "NO_RESULTS",
+     "state": "NO_RESULTS",
+     "rank": null,
+     "ok": true,
+     "cards": 0,
+     "ms": 3825.8
+    },
+    {
+     "queryId": "p06",
+     "expect": "NO_RESULTS",
+     "state": "NO_RESULTS",
+     "rank": null,
+     "ok": true,
+     "cards": 0,
+     "ms": 3927.5
+    },
+    {
+     "queryId": "p07",
+     "expect": "RESULTS",
+     "state": "RESULTS",
+     "rank": 1,
+     "ok": true,
+     "cards": 1,
+     "ms": 2096.1
+    },
+    {
+     "queryId": "p08",
+     "expect": "NO_RESULTS",
+     "state": "NO_RESULTS",
+     "rank": null,
+     "ok": true,
+     "cards": 0,
+     "ms": 2951.1
+    }
+   ],
+   "runWeekMatches": true
+  }
+ }
+}

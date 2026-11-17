@@ -311,6 +311,7 @@ paths:
                     - reportExplanation
                     - themeDraft
                     - memoryExplanation
+                    - memoryQuery
                     properties:
                       judgment:
                         type: string
@@ -329,6 +330,8 @@ paths:
                       themeDraft:
                         type: string
                       memoryExplanation:
+                        type: string
+                      memoryQuery:
                         type: string
         '401':
           description: UNAUTHENTICATED (내부 토큰 불일치)
@@ -566,6 +569,70 @@ paths:
                       type: boolean
         '502':
           description: AI_BAD_RESPONSE (구조화 출력 실패, 문장 수 2~3 밖, 빈 문장). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required:
+                  - retryable
+                  properties:
+                    retryable:
+                      type: boolean
+        '503':
+          description: AI_UNAVAILABLE (LLM 미설정·호출 실패·시간 초과) 또는 AI_PROMPT_VERSION_UNAVAILABLE. `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Problem'
+                - type: object
+                  required:
+                  - retryable
+                  properties:
+                    retryable:
+                      type: boolean
+  /memory-queries:
+    post:
+      summary: >-
+        추억 검색 질의 변환 1회 (api-spec 4.2.7, P27·FN-RET-12, #681). 학생 질문을 핵심 키워드(0~5개)·기간([from, to) 또는 null)·검색용 문장으로 바꾼다.
+        ai 기본 LLM 구조화 출력 1회(출력 512토큰, 호출 7초·재시도 없음, learning→ai 8초 안). 사용량 callType MEMORY_QUERY, 프롬프트 이름 memoryQuery.
+        MEMORY_QUERY_PROVIDER=fake면 개발용 가짜 변환(공백 분리 키워드 앞 5개·기간 null·searchText=원문, fake-memory-query-v1, 사용량 없음)
+      description: >-
+        질문은 learning이 닉네임을 가린 뒤 보내고 학생 이름·ID는 받지 않는다(정의 밖 칸은 400). 질문 안 지시는 따르지 않는다(프롬프트 구분자).
+        질문·변환 결과는 저장·로그하지 않는다(NFR-SEC-03·05). learning은 모든 실패(시간 초과·5xx·서킷 열림)에서 원문 질문으로 검색하고
+        기간은 그대로 믿지 않고 보정한다(이번 주 월요일 이후 자르기).
+      operationId: create_memory_query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemoryQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryQueryResponse'
+        '400':
+          description: VALIDATION_FAILED (질문 빈 글·공백만·200자 초과, today가 yyyy-MM-dd 날짜가 아님, 정의 밖 칸)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED (내부 토큰 불일치)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: >-
+            AI_BAD_RESPONSE (구조화 출력 실패, 키워드 6개 이상·빈 키워드·20자 초과, 기간 날짜 형식 오류·from >= to, 검색용 문장 빈 글·200자 초과).
+            `retryable` 포함
           content:
             application/problem+json:
               schema:
@@ -1042,7 +1109,7 @@ components:
       - warnings
       - failure
       - versions
-      description: 끝내 실패하면 200 + failure(learning CHECK_FAILED). 줄거리 단계에서 끝내 실패하면 theme은 null. 대화·영상·움직임은 끝내 실패해도 그 항목만 빼고 warnings. 정답 논리 검사용 내부 칸(특징 표 등)은 넣지 않음
+      description: 끝내 실패하면 200 + failure(learning CHECK_FAILED). 줄거리 단계에서 끝내 실패하면 theme은 null. 대화·영상·움직임은 끝내 실패해도 그 항목만 빼고 warnings. 정답 논리 검사용 내부 칸(단서 조건·증거·증거 배정·특징의 성취기준 코드 등)은 넣지 않음. 후보 특징 표 theme.features와 days[].clueFeature는 #647 선택 칸
     Theme:
       properties:
         title:
@@ -1073,6 +1140,13 @@ components:
           items:
             $ref: '#/components/schemas/ThemeDay'
           type: array
+        features:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ThemeFeature'
+            type: array
+          - type: 'null'
+          description: '후보 특징 표(#647 선택 칸). 요일 단서 rulesOut을 계산한 근거로 특징마다 이름과 후보별 값. 특징의 성취기준 코드는 내부 칸이라 넣지 않음. 없으면 null(예전 생성 결과와 같이 읽음)'
       type: object
       required:
       - title
@@ -1124,6 +1198,11 @@ components:
           items:
             type: string
           type: array
+        clueFeature:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: 그날 단서가 쓰는 특징 이름(theme.features의 name, #647 선택 칸). 없으면 null
       type: object
       required:
       - day
@@ -1132,6 +1211,29 @@ components:
       - sceneNote
       - clue
       - rulesOut
+    ThemeFeature:
+      description: 후보 특징 표의 특징 하나(#647). values는 후보마다 하나
+      properties:
+        name:
+          type: string
+        values:
+          items:
+            $ref: '#/components/schemas/ThemeFeatureValue'
+          type: array
+      type: object
+      required:
+      - name
+      - values
+    ThemeFeatureValue:
+      properties:
+        candidate:
+          type: string
+        value:
+          type: string
+      type: object
+      required:
+      - candidate
+      - value
     ThemeMission:
       properties:
         day:
@@ -2577,6 +2679,40 @@ components:
           minItems: 1
           items: {type: integer, minimum: 1, maximum: 3}
           description: 본문에 쓴 근거 번호(오름차순, 중복 없음, 요청 번호 안)
+        versions:
+          $ref: '#/components/schemas/LlmVersions'
+    MemoryQueryRequest:
+      type: object
+      additionalProperties: false
+      required: [query, today]
+      properties:
+        query: {type: string, minLength: 1, maxLength: 200, description: 학생 검색 질문(닉네임은 learning이 가림, 공백만이면 400)}
+        today: {type: string, format: date, pattern: '^\d{4}-\d{2}-\d{2}$', description: 'KST 오늘 날짜 yyyy-MM-dd(상대 기간 계산 기준)'}
+    MemoryQueryPeriod:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      description: 반열림 구간 [from, to), from < to
+      properties:
+        from: {type: string, format: date, description: 포함}
+        to: {type: string, format: date, description: 제외}
+    MemoryQueryResponse:
+      type: object
+      additionalProperties: false
+      required: [keywords, period, searchText, versions]
+      properties:
+        keywords:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 20}
+          description: 기록 본문에 들어 있을 만한 핵심 낱말(요청 표현·기간 표현 제외). 비어 있을 수 있음
+        period:
+          description: 질문에 기간 표현이 있을 때만, 없거나 애매하면 null
+          anyOf:
+          - $ref: '#/components/schemas/MemoryQueryPeriod'
+          - type: 'null'
+        searchText: {type: string, minLength: 1, maxLength: 200, description: 요청·기간 표현을 뺀 검색용 문장(learning이 임베딩)}
         versions:
           $ref: '#/components/schemas/LlmVersions'
     KnowledgeThinkingType:

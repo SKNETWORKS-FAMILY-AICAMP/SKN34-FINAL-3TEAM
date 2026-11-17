@@ -21,7 +21,7 @@ enum class RewardEvent {
     THEME_FINISHED,
 }
 
-/** 원장에만 쓰는 사용 사건. 사건 키는 해금 항목 `itemKey` */
+/** 원장에만 쓰는 사용 사건. 사건 키는 해금 항목 `itemKey`, 방 소품 사기(#704)는 `itemKey:Idempotency-Key` */
 const val UNLOCK_EVENT = "UNLOCK"
 
 data class RewardRule(val eventType: String, val amount: Int, val dailyCap: Int?, val active: Boolean)
@@ -38,11 +38,18 @@ data class EarnResult(val outcome: EarnOutcome, val amount: Int, val balance: In
 data class LookItem(val id: UUID, val code: String, val slot: String, val name: String, val pricePoints: Int,
                     val assetKey: String, val status: String, val createdAt: OffsetDateTime, val updatedAt: OffsetDateTime)
 
-/** 학생 꾸미기 목록 한 줄(api-spec 2.10). 테마·캐릭터는 `assetKey`가 없다. */
+/**
+ * 학생 꾸미기 목록 한 줄(api-spec 2.10). 테마·캐릭터는 `assetKey`·`createdAt`이 없다.
+ * `ownedCount`는 방 소품(`DECOR`, #704)의 보유 개수이고 다른 칸은 null, `createdAt`은 관리자 아이템 등록일(#704).
+ */
 data class LookCatalogItem(val itemKey: String, val slot: String, val name: String, val pricePoints: Int,
-                           val unlocked: Boolean, val onSale: Boolean, val assetKey: String?)
+                           val unlocked: Boolean, val onSale: Boolean, val assetKey: String?,
+                           val ownedCount: Int? = null, val createdAt: OffsetDateTime? = null)
 
 data class UnlockResult(val itemKey: String, val unlocked: Boolean, val balance: Int)
+
+/** 방 소품 사기 결과(#704): 산 뒤 보유 개수와 잔액 */
+data class DecorPurchaseResult(val itemKey: String, val ownedCount: Int, val balance: Int)
 
 /**
  * 테마·캐릭터 해금값(P22, 코드 상수). 값 목록은 `guardianship/domain/StudentLook`과 같고
@@ -62,13 +69,29 @@ object LookCatalog {
      * 착용하지 않은 슬롯(null)이 기본 스킨이라 항상 쓸 수 있다(테마 `lake`와 같은 방식)
      */
     val FURNITURE_SLOTS = listOf("DESK", "WALL", "WARDROBE")
-    /** 관리자가 아이템을 등록하고 학생이 착용하는 모든 슬롯(V47 CHECK와 같음) */
-    val ITEM_SLOTS = CHARACTER_SLOTS + FURNITURE_SLOTS
+    /** 내 방 바닥(#704). 착용 슬롯이고 null(착용 행 없음)이면 벽지 세트의 바닥(가구 기본 스킨과 같은 방식) */
+    const val FLOOR_SLOT = "FLOOR"
+    /**
+     * 방 소품(#704, 화면 이름 "방 소품"). 캐릭터 착용 칸 `ACCESSORY`("소품")와 다른 칸이다. 착용 슬롯이 아니라
+     * 같은 아이템을 여러 개 사서(아이템당 [DECOR_MAX_OWNED]개까지) 내 방 자리에 놓는다
+     */
+    const val DECOR_SLOT = "DECOR"
+    /** 방 소품 아이템 하나당 보유 상한(놓을 자리 수와 같음, 사용자 결정 2026-11-16) */
+    const val DECOR_MAX_OWNED = 8
+    /** 학생이 착용하는 슬롯(V50 `student_look_equipment` CHECK와 같음) */
+    val EQUIP_SLOTS = CHARACTER_SLOTS + FURNITURE_SLOTS + FLOOR_SLOT
+    /** 관리자가 아이템을 등록하는 모든 슬롯(V50 `look_item` CHECK와 같음) */
+    val ITEM_SLOTS = EQUIP_SLOTS + DECOR_SLOT
     val THEMES = linkedMapOf("lake" to "호수", "forest" to "숲", "factory" to "공장", "space" to "소행성", "sea" to "바닷속")
-    val COMPANIONS = linkedMapOf("mungchi" to "뭉치", "tori" to "토리", "mongdol" to "몽돌", "kongi" to "콩이", "monggeul" to "몽글")
+    /** 뭉치 친구들 12종(#697). 기존 5종 뒤에 새 7종, 이름은 화면 친구 이름. `mungchi`(솜뭉치)만 무료, 나머지 150 */
+    val COMPANIONS = linkedMapOf("mungchi" to "솜뭉치", "tori" to "솔방울뭉치", "mongdol" to "모래뭉치", "kongi" to "이끼뭉치",
+        "monggeul" to "구름뭉치", "snow" to "눈뭉치", "yarn" to "털실뭉치", "star" to "별뭉치", "foam" to "거품뭉치",
+        "paper" to "종이뭉치", "petal" to "꽃잎뭉치", "ice" to "얼음뭉치")
 
     fun themeKey(code: String) = THEME_PREFIX + code
     fun companionKey(code: String) = COMPANION_PREFIX + code
+    /** 방 소품 구매 원장 사건 키(#704). 구매마다 다른 `Idempotency-Key`라 같은 아이템도 여러 번 들어간다 */
+    fun decorPurchaseKey(code: String, idempotencyKey: UUID) = "$code:$idempotencyKey"
     fun isFree(itemKey: String) = itemKey == themeKey(FREE_THEME) || itemKey == companionKey(FREE_COMPANION)
 
     /** 테마·캐릭터 키면 (슬롯, 이름, 가격), 아니면 null(관리자 아이템 코드로 찾는다) */

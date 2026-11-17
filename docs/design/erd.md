@@ -121,7 +121,7 @@ erDiagram
     boolean community_enabled "NOT NULL DEFAULT false, 커뮤니티 공개 설정 학생 본인만 변경 (P20, #388)"
     timestamptz community_updated_at "NULL 허용, 공개 설정 변경 시각 (#388)"
     varchar(16) look_theme "NULL 허용, CHECK[lake|forest|factory|space|sea], 학생 꾸미기 (#234)"
-    varchar(16) look_companion "NULL 허용, CHECK[mungchi|tori|mongdol|kongi|monggeul], 학생 꾸미기 (#234)"
+    varchar(16) look_companion "NULL 허용, CHECK[mungchi|tori|mongdol|kongi|monggeul|snow|yarn|star|foam|paper|petal|ice], 학생 꾸미기 (#234), 동행 캐릭터 12종 (#697, V49)"
     timestamptz look_updated_at "NULL 허용, 꾸미기 저장 시각 (#234)"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
@@ -867,6 +867,11 @@ erDiagram
   look_item ||--o{ student_look_equipment : equipped
   user_account ||--o{ look_item : creates
   student ||--o{ room_frame_slot : hangs
+  student ||--o{ student_room_decor : buys
+  look_item ||--o{ student_room_decor : bought
+  reward_point_ledger ||--o| student_room_decor : pays
+  student ||--o{ room_decor_spot : places
+  look_item ||--o{ room_decor_spot : placed
 
   reward_rule {
     varchar(32) event_type PK "MISSION_COMPLETED|REVIEW_VIEWED|COMMUNITY_POSTED|REACTION_GIVEN|THEME_COMPLETED|THEME_ON_TIME|THEME_FINISHED"
@@ -891,7 +896,7 @@ erDiagram
   look_item {
     uuid id PK
     varchar(40) code UK "대문자·숫자·밑줄 3~40자, 학생 itemKey"
-    varchar(16) slot "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE"
+    varchar(16) slot "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE|FLOOR|DECOR"
     varchar(40) name
     int price_points "1 이상"
     varchar(200) asset_key "그림 키"
@@ -908,7 +913,7 @@ erDiagram
   }
   student_look_equipment {
     uuid student_id PK,FK
-    varchar(16) slot PK "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE"
+    varchar(16) slot PK "HAT|OUTFIT|ACCESSORY|BACKGROUND|DESK|WALL|WARDROBE|FLOOR"
     uuid look_item_id FK
     timestamptz updated_at
   }
@@ -919,17 +924,32 @@ erDiagram
     date theme_week_start "회차 주, KST 월요일"
     timestamptz saved_at "처음 건 시각, 계속 걸려 있으면 슬롯을 옮겨도 유지"
   }
+  student_room_decor {
+    uuid id PK
+    uuid student_id FK
+    uuid look_item_id FK "방 소품(DECOR) 아이템, 슬롯은 서비스 검사"
+    uuid ledger_id FK,UK "그 구매의 UNLOCK 원장 행"
+    timestamptz purchased_at
+  }
+  room_decor_spot {
+    uuid student_id PK,FK
+    smallint spot_no PK "방 소품 자리 1~8"
+    uuid look_item_id FK "가진 방 소품, 보유 개수만큼 여러 자리(서비스 검사)"
+    timestamptz saved_at
+  }
 ```
 
 - 2026-11-10 개정(#483, core #485 V43 `V43__theme_free_limit_and_daily_points.sql`): 사건 종류에 당일 풀이(`THEME_ON_TIME`, 5)·주간 완주(`THEME_FINISHED`, 10)를 더했다. `reward_rule`·`reward_point_ledger`의 `event_type` CHECK를 V43으로 넓히고(V35는 고치지 않음) `reward_rule` 2행을 추가했다. `THEME_COMPLETED`(30)는 개근(월~금 각 당일 학습 완료)으로 그대로 쓴다. 사건 키는 당일 풀이 `weekStart:day`(예 `2026-11-09:MON`, 요일당 1회), 주간 완주 `weekStart`. 위 Mermaid의 CHECK 목록은 V43 기준이다. 적립 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`(learning #484)
 - `reward_rule` 시드(V35)는 P21 초기값: 학습 완료 10·되돌아보기 10·공유 5·반응 1(하루 5회)·완주 30(`THEME_COMPLETED`, 2026-11-10 개정으로 개근: 월~금 각 당일 학습 완료). V43이 당일 풀이 5·주간 완주 10(토요일까지 5문제 학습 완료)을 더했다. 값·상한·사용 여부는 데이터로 바꾸며 이미 쌓인 원장은 바꾸지 않는다. `daily_cap`은 적립 횟수(포인트 합이 아님)
-- `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·개근·주간 완주 `weekStart`(ISO date, 주 1회), 당일 풀이 `weekStart:day`(요일당 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`. CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
+- `reward_point_ledger` UK `(student_id, event_type, source_key)`로 사건당 1회. 사건 키: 학습 완료 `missionId`(미션당 최초 1회), 되돌아보기·개근·주간 완주 `weekStart`(ISO date, 주 1회), 당일 풀이 `weekStart:day`(요일당 1회), 공유 `postId`, 반응 `postId:reaction`, 해금 `itemKey`, 방 소품 사기 `itemKey:Idempotency-Key`(#704, 구매마다 다른 키라 같은 아이템도 여러 번). CHECK로 `UNLOCK`만 음수, 그 외 양수(0 없음). 인덱스 `(student_id, created_at)`는 내역과 하루 상한 집계용
 - 적립·해금은 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → `reward_point_balance` 행 `FOR UPDATE` 순서로 잠가 학생별로 직렬화한다. 같은 사건 동시 적립, 다른 키로 같은 항목 동시 해금도 한 번만 반영. 잔액 CHECK `>= 0`
 - `look_item`: 관리자(CONTENT) 등록 아이템. 삭제 없이 `STOPPED`로 판매 중단, 이미 해금한 학생은 계속 착용. `code`는 바꾸지 않으며 `:`가 없어 테마·캐릭터 키와 겹치지 않는다. 변경은 같은 트랜잭션에서 `audit_log`(`target_type = LOOK_ITEM`)
 - `student_look_unlock`: 테마·캐릭터 해금값(테마 100·캐릭터 150)은 코드 상수라 테이블이 없다. `THEME:lake`·`COMPANION:mungchi`는 행 없이 항상 해금. V35가 잠금 전 저장된 `student.look_theme`·`look_companion`(무료 제외)을 `ledger_id` NULL 행으로 옮겼다(포인트 차감 없음). 포인트 해금 행은 그 `UNLOCK` 원장 행을 `ledger_id`로 가리킨다(UK)
 - `student_look_equipment`: 학생·슬롯당 아이템 하나. 해금 여부와 아이템 슬롯 일치는 서비스 검증. 판매 중단 아이템도 해금했으면 착용 가능
 - 학생 삭제 확정(P09): `student.look_*` NULL과 같은 트랜잭션에서 착용 → 해금 → 원장 → 잔액 순서로 삭제(FK 순서). #555부터 같은 트랜잭션에서 `room_frame_slot`도 삭제
 - #555(V47 `V47__room_furniture_skins_and_frame_slots.sql`, P22 개정·P27): `look_item.slot`·`student_look_equipment.slot` CHECK에 생활공간 가구 슬롯 `DESK`(책상)·`WALL`(추억의 벽)·`WARDROBE`(옷장)를 더했다(V35는 고치지 않음). 가구 1개 = 착용 슬롯 1개라 PK `(student_id, slot)`로 가구당 스킨 1개. 가구별 기본 스킨은 행 없이 항상 쓸 수 있다: 착용 행이 없는 가구 슬롯이 기본 스킨이다(테마 `lake`·기본 벽지와 같은 방식, 기준안을 2026-11-12 확정). 추가 스킨은 관리자가 `look_item`으로 등록하고 기존 해금(원장 `UNLOCK`·잔액 차감·멱등)·착용 규칙을 그대로 쓴다. 방 벽지는 `BACKGROUND` 착용 아이템이라 테이블 변경 없음
+- #704(V50 `V50__room_floor_and_decor.sql`, P22·P27 개정, 사용자 결정 2026-11-16): `look_item.slot`에 내 방 바닥 `FLOOR`·방 소품 `DECOR`, `student_look_equipment.slot`에 `FLOOR`만 더했다(V35·V47은 고치지 않음). 바닥은 가구 스킨과 같은 1회 해금·착용이고 착용 행이 없으면 벽지 세트의 바닥. 방 소품(`ACCESSORY` "소품"과 다른 칸)은 착용 슬롯이 아니라 구매 1번 = `student_room_decor` 1행(그 구매의 `UNLOCK` 원장 행을 `ledger_id` UK로 가리킴, 원장 `event_type` CHECK 변경 없음)이고 보유 개수는 행 수, 아이템당 8개까지(잔액 행 잠금 아래 서비스 검사). 인덱스 `(student_id, look_item_id)`는 보유 개수 집계용
+- `room_decor_spot`(#704 V50): 방 소품 자리 1~8(기준안 8곳 2026-11-16 확정, CHECK, 자리 종류 구분 없음). 같은 방 소품을 보유 개수만큼 여러 자리에 놓고 보유 개수 초과는 서비스가 막는다. 저장은 `room_frame_slot`처럼 학생 행 `FOR NO KEY UPDATE` 아래 전체 삭제·삽입(방 소품 사기의 학생 행 `FOR SHARE`와 직렬화). 판매 중단 아이템도 보유분·놓은 자리 유지. 학생 삭제 확정 때 `room_decor_spot` → `student_room_decor`(원장보다 먼저) 순서로 같은 트랜잭션에서 삭제. 추가 인덱스 없음(PK 앞 칸 `student_id`)
 - `room_frame_slot`(#555 V47): 추억의 벽 슬롯 1~6(기준안 6개 2026-11-12 확정, CHECK). `theme_id`·`theme_week_start`는 learning `theme_frame` 회차의 논리 참조라 서비스 간 FK가 없고, 저장 전에 learning 내부 API(api-spec 4.1.4 `frames/ownership`)로 보유를 확인한다. UK `(student_id, theme_id, theme_week_start)`로 같은 액자를 두 슬롯에 걸지 못하고, `theme_week_start`는 CHECK로 월요일만. 저장은 학생 행 `FOR NO KEY UPDATE`(삭제 확정·다른 저장과 직렬화) 아래에서 학생의 슬롯 전체를 지우고 다시 넣는다. 추가 인덱스 없음(PK 앞 칸 `student_id`로 조회·삭제)
 
 ### 3.5.2 생활공간·추억 사용량 (P27, 구현 #566·#555)
@@ -938,9 +958,9 @@ erDiagram
 
 | 테이블 | 컬럼 | 제약·규칙 |
 |---|---|---|
-| (없음) | - | 2026-11-12 결정의 core_db 변경은 모두 구현해 위 Mermaid·6장으로 옮겼다(#566 V46, #555 V47) |
+| (없음) | - | 2026-11-12 결정의 core_db 변경은 모두 구현해 위 Mermaid·6장으로 옮겼다(#566 V46, #555 V47). 2026-11-16 바닥·방 소품(#704)도 V50으로 구현해 3.5.1 Mermaid·6장으로 옮겼다 |
 
-- 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`memory_daily_usage`도 삭제
+- 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`room_decor_spot`·`student_room_decor`(#704)·`memory_daily_usage`도 삭제
 - 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
 - `room_frame_slot`과 가구 슬롯 CHECK 확장은 #555 V47로 구현해 3.5.1 Mermaid로 옮겼다(추가 인덱스가 없어 6장 행 없음)
 
@@ -1316,6 +1336,7 @@ erDiagram
     jsonb candidates "NULL 허용 · 후보 이름 배열"
     varchar answer "NULL 허용 · 후보 중 정답"
     text answer_clue "NULL 허용 · 결정적 단서 (공개 시점 뒤)"
+    jsonb features "NULL 허용 · 후보 특징 표 [{name, values:[{candidate, value}]}] (#647)"
     uuid created_by
     timestamptz created_at
   }
@@ -1328,6 +1349,7 @@ erDiagram
     jsonb dialogue "NULL 허용 · 문제 전 대화 [{speaker, text}]"
     jsonb hint_spots "NULL 허용 · 그림 위 생각 열기 위치 [{seq, x, y}]"
     varchar video_uri "NULL 허용 · 문제 전 영상 S3 키(관리자 입력용, ai 테마 초안 채택분은 NULL)"
+    varchar clue_feature "NULL 허용 · 그날 단서가 쓰는 특징 이름 (#647)"
   }
   theme_review_view {
     uuid student_id PK "core 논리 참조"
@@ -1392,6 +1414,7 @@ erDiagram
 - `theme_story_view`는 학생·주·종류(`INTRO`·`OUTRO`)당 1행(`ON CONFLICT DO NOTHING`) 열람 멱등. 학생 삭제 때 함께 물리 삭제(4.3)
 - 큰 질문 정답 고르기(#484, V18, 사용자 결정 2026-11-12): `theme_answer_pick`은 학생·주당 1행(`ON CONFLICT DO NOTHING`, 한 주 한 번). 금요일 문제를 마무리한 뒤 후보 중 하나를 고르며 `mission_id`는 고를 때의 금요일 문제, `correct`는 고를 때 정답과 같았는지. 엔딩 상태(state-diagram 3.2.2)는 저장하지 않고 이 행과 그 문제 `THEME_REVIEW` 시도 마무리 시각(고른 뒤)으로 계산한다. `pick` 길이는 후보 상한 100자. 학생 삭제 때 함께 물리 삭제(4.3)
 - `theme_frame`(#559, P27, FN-RET-10): 회차(학생·테마·주)당 1개(UK). 학습 완료(돌아보기 저장) 트랜잭션에서 시도가 `THEME_DAY`·`THEME_REVIEW`면 회차 잠금(`pg_advisory_xact_lock`, 같은 회차의 다른 문제 완료가 동시에 커밋돼 서로 못 보는 경우 방지) 뒤 `INSERT … SELECT … ON CONFLICT DO NOTHING`. 완료 조건은 그 회차 완료 시도(`completed_at` 있음)를 문제별로 묶어 테마 게시본(없으면 현재본)의 요일 문제 5개와 모두 맞는 것이고, `awarded_at` = 문제별 처음 완료 시각 중 가장 늦은 값(프리미엄 일요일·자정 넘긴 이어하기 포함, 다시 풀기는 이미 있는 액자를 바꾸지 않음). `EXTRA`는 회차 칸이 없어 빠진다. `theme_version_id`는 지급 때 버전으로 고정해 이후 재게시와 무관하게 앨범 제목·그림을 유지하고, 판정 규칙이 바뀌어도 저장된 액자는 지우지 않는다. 도입 전 기록은 learning 기동 때마다 같은 조건으로 소급(`seen_at = awarded_at`, 다시 돌려도 같은 결과, `docs/report/retention-expansion.md` 9.2). 앨범·상세·확인·보유 확인은 `theme_week_start < 이번 주(KST)`만 본다. 학생 삭제 때 같은 트랜잭션에서 물리 삭제(4.3)
+- 단서 근거(#647, V21, 기준안): `weekly_theme_version.features`는 ai 테마 초안의 후보 특징 표(요일 `rules_out`을 계산한 근거), `weekly_theme_day.clue_feature`는 그날 단서가 쓰는 특징 이름. 둘 다 NULL 허용(사람이 쓴 테마·#647 전 채택분은 비어 있음, 기존 행 채움 없음)이고 다른 버전·요일 칸처럼 새 버전 때 복사한다. 학생 응답에는 그날 단서를 얻은 요일의 특징만, 전체 표는 엔딩 뒤만 넣는다(api-spec 2.11). 시연 테마는 채우지 않는다(사용자 결정 2026-11-16: 시연은 배포 환경에서 새로 생성한 테마)
 - `answer_clue`(결정적 단서): ai 응답 계약(api-spec 4.2)에 칸이 없어, 채택 때 learning이 요일 단서에서 마지막 틀린 후보를 빼는 날(`rules_out`이 비지 않은 마지막 요일)의 `clue`로 채우고 관리자가 고칠 수 있다(엔딩 화면의 정답 근거)
 - `theme_draft`(#438, 미션 초안 `mission_draft`와 같은 구조): 검사에 실패한 초안은 테마를 만들지 않아 `weekly_theme`과 따로 둔다. 채택 1회에 테마 1개(`theme_id` UK). 부분 UK `(grade, week_start) WHERE source = 'AUTO'`로 레플리카가 주간 자동 생성을 동시에 돌려도 학년·주당 자동 초안 1개(`ON CONFLICT DO NOTHING`). `input`은 `{topic, missions:[{thinkingType, inputType, standardCodes}]}`(관리자가 고르지 않은 유형은 learning이 채운 값), `check_results`는 시도마다 `{attempt, failures:[{stage, reasons[]}]}`, `output`은 ai 응답(api-spec 4.2 `/internal/theme-drafts`) 그대로. `lease_until`은 `mission_draft.lease_until`과 같은 점유 방식. 학생 ID·학생 답은 없다
 
@@ -1627,7 +1650,7 @@ erDiagram
   weekly_theme ||--o{ memory_search_doc : belongs
 ```
 
-학습 완료 트랜잭션에서 EXTRA를 제외하고 시도당 한 행을 등록한다. 테마 제목·장면 대화·질문·최종 답변을 보존하며 정답 키는 포함하지 않는다. READY는 벡터·모델·생성 시각이 모두 있어야 한다. 재시도 횟수는 0 이상, PROCESSING은 리스가 필수다. 검색은 READY·본인·보유 액자·지난 주 조건과 모델 일치를 먼저 적용한다. 소규모 학생별 정확 검색이므로 HNSW는 추가하지 않는다. 질의 변환·하이브리드 검색(#679 설계, #682 구현 전)은 같은 범위에서 `content_text` ILIKE 키워드 검색과 `theme_week_start` 기간 필터를 더할 뿐이라 테이블·인덱스 변경이 없다(`pg_trgm` 미사용, 학생당 문서가 적어 필터 뒤 정확 탐색). 벡터 저장·검색은 MyBatis에서 문자열을 vector로 형변환하며 드라이버 의존성을 추가하지 않는다.
+학습 완료 트랜잭션에서 EXTRA를 제외하고 시도당 한 행을 등록한다. 테마 제목·장면 대화·질문·최종 답변을 보존하며 정답 키는 포함하지 않는다. READY는 벡터·모델·생성 시각이 모두 있어야 한다. 재시도 횟수는 0 이상, PROCESSING은 리스가 필수다. 검색은 READY·본인·보유 액자·지난 주 조건과 모델 일치를 먼저 적용한다. 소규모 학생별 정확 검색이므로 HNSW는 추가하지 않는다. 질의 변환·하이브리드 검색(#679 설계, #682 구현)은 같은 범위에서 `content_text` ILIKE 키워드 검색과 `theme_week_start` 기간 필터를 더할 뿐이라 테이블·인덱스 변경이 없다(`pg_trgm` 미사용, 학생당 문서가 적어 필터 뒤 정확 탐색). 벡터 저장·검색은 MyBatis에서 문자열을 vector로 형변환하며 드라이버 의존성을 추가하지 않는다.
 
 ## 5. report_db
 
@@ -1787,6 +1810,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `outbox_event` | `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | subject별 선두·발행 순서 및 재시도 대상(#243), 보존 기간 정리 |
 | core | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | core | `reward_point_ledger` | `(student_id, created_at)` | 포인트 내역·반응 하루 상한 집계 (#389) |
+| core | `student_room_decor` | `(student_id, look_item_id)` | 방 소품 아이템별 보유 개수·8개 상한 확인 (#704 V50) |
 | core | `model_loading_report` | `(pod_id, reported_at)`, `(reported_at)` | Pod별 최근 보고(`reported_at DESC`)·보고 만료 판정 (#370, V37) |
 | core | `event_log` | `(received_at)`, `(event_type, event_time)` | 보존 기간 정리, 유형·기간별 추적 |
 | learning | `mission` | `(status, sort_order)`, `mission_version (thinking_type, grade_min, grade_max)` | 학년·유형별 공개 미션 목록 |
@@ -1816,7 +1840,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V20, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 108개 테이블·940개 컬럼(core 61/524, learning 39/350, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V20·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V21, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 108개 테이블·942개 컬럼(core 61/524, learning 39/352, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V21(#647)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

@@ -53,6 +53,8 @@ class ThemeState(TypedDict, total=False):
     drafts: Annotated[dict[str, Draft], merge]
     mission_failures: Annotated[dict[str, list[str]], merge]
     mission_warnings: Annotated[dict[str, list[str]], merge]
+    # 요일 노드가 미션 뒤 고쳐 쓴 수사 연결 문장(빈 값은 그대로 둠, missions_done이 테마에 넣음)
+    hook_fixes: Annotated[dict[str, str], merge]
     dialogues: Annotated[dict[str, list[dict] | None], merge]
     dialogue_omitted: Annotated[dict[str, list[str]], merge]
     review_runs: int

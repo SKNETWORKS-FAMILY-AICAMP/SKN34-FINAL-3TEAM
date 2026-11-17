@@ -32,10 +32,11 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
   await page.getByRole('button', { name: '이 자녀로 학습 시작' }).click()
   await page.waitForURL('**/student/home**')
   const mission = '쉬는 시간을 늘린다면?'
-  await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '미션 고르기' }).click()
+  // #648: 미션 고르기는 메뉴에서 빠지고 홈 "더 풀어 보기"로 들어간다
+  await page.getByRole('button', { name: /더 풀어 보기/ }).click()
   await page.locator('article', { has: page.getByRole('heading', { name: mission }) }).getByRole('button', { name: '미션 열기' }).click()
   await page.getByRole('button', { name: '미션 시작하기' }).click()
-  await page.getByLabel('내 생각과 까닭').fill('저는 찬성이에요. 쉬는 시간이 길면 친구들과 더 오래 놀 수 있기 때문이에요.')
+  await page.getByLabel('내 생각과 이유').fill('저는 찬성이에요. 쉬는 시간이 길면 친구들과 더 오래 놀 수 있기 때문이에요.')
   await page.getByRole('button', { name: '다 썼어요' }).click()
   await expect(page.getByText('정답을 확인했어요.')).toBeVisible({ timeout: 60_000 })
   await page.getByRole('button', { name: '이대로 돌아보기' }).click()

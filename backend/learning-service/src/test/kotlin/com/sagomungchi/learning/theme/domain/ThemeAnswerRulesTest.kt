@@ -8,7 +8,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** 정답 구조·생각 열기 위치 검사, 결정적 단서, 관리자 수정의 이전 버전 복사, 엔딩 자리 (#438) */
+/** 정답 구조·생각 열기 위치 검사, 결정적 단서, 관리자 수정의 이전 버전 복사, 엔딩 자리 (#438), 특징 표 (#647) */
 class ThemeAnswerRulesTest {
     private val missions = ThemeDay.entries.associateWith { UUID.randomUUID() }
     private val story = ThemeStory(candidates = listOf("고양이", "강아지", "토끼", "햄스터"), answer = "강아지")
@@ -118,6 +118,77 @@ class ThemeAnswerRulesTest {
         assertEquals(ThemeEndingState.NOT_ENDED, ThemeEnding.of(wrong, emptyList()))
         assertEquals(ThemeEndingState.NOT_ENDED, ThemeEnding.of(wrong, listOf(picked.minusSeconds(60))))
         assertEquals(ThemeEndingState.ENDED, ThemeEnding.of(wrong, listOf(picked.minusSeconds(60), picked.plusSeconds(60))))
+    }
+
+    /** 화·목·금 단서와 맞는 특징 표 (#647): 털(화 토끼), 울음(목 고양이), 꼬리(금 햄스터), 월·수 힌트는 털 */
+    private val features = listOf(
+        feature("털", "고양이" to "짧은", "강아지" to "짧은", "토끼" to "긴", "햄스터" to "짧은"),
+        feature("울음", "고양이" to "야옹", "강아지" to "멍멍", "토끼" to "조용", "햄스터" to "조용"),
+        feature("꼬리", "고양이" to "긴", "강아지" to "긴", "토끼" to "긴", "햄스터" to "짧은"),
+    )
+    private val clueFeatures = mapOf(ThemeDay.MON to "털", ThemeDay.TUE to "털", ThemeDay.WED to "털", ThemeDay.THU to "울음", ThemeDay.FRI to "꼬리")
+
+    private fun feature(name: String, vararg values: Pair<String, String>) =
+        ThemeFeature(name, values.map { (candidate, value) -> ThemeFeatureValue(candidate, value) })
+
+    private fun featureDays() = days().map { it.copy(clueFeature = clueFeatures.getValue(it.day)) }
+
+    @Test
+    fun `특징 표가 rulesOut과 맞으면 통과, 없으면 지금처럼 (#647)`() {
+        assertEquals(emptyList(), ThemeAnswerRules.errors(story.copy(features = features), featureDays()))
+        assertEquals(emptyList(), ThemeAnswerRules.errors(story, days()))
+    }
+
+    @Test
+    fun `특징 표 형식·clueFeature 이름·rulesOut과 어긋난 값을 잡음 (#647)`() {
+        val broken = listOf(
+            features[0],
+            feature("울음", "고양이" to "야옹", "강아지" to "멍멍", "토끼" to " "), // 햄스터 값 없음·빈 값
+            feature("털", "고양이" to "짧은", "강아지" to "짧은", "토끼" to "긴", "햄스터" to "짧은"), // 이름 겹침
+        )
+        val errors = ThemeAnswerRules.errors(story.copy(features = broken), featureDays())
+        assertTrue("특징 이름은 비지 않은 서로 다른 값" in errors, errors.toString())
+        assertTrue("특징 '울음'은 후보마다 비지 않은 값 하나씩" in errors, errors.toString())
+        assertTrue("FRI clueFeature '꼬리'은 특징 표의 이름" in errors, errors.toString())
+
+        // 금요일 꼬리 값이 햄스터·토끼 모두 짧은데 햄스터만 빠지면 값이 같은 후보가 갈림
+        val split = features.dropLast(1) + feature("꼬리", "고양이" to "긴", "강아지" to "긴", "토끼" to "짧은", "햄스터" to "짧은")
+        assertEquals(
+            listOf("FRI rulesOut이 특징 '꼬리' 값과 맞지 않음(값이 같은 후보가 갈림)"),
+            ThemeAnswerRules.errors(story.copy(features = split), featureDays()),
+        )
+        // 빈 rulesOut(힌트) 날은 값을 보지 않음
+        assertEquals(emptyList(), ThemeAnswerRules.errors(story.copy(features = features), featureDays().map {
+            if (it.day == ThemeDay.MON) it.copy(clueFeature = "꼬리") else it
+        }))
+        assertEquals(
+            listOf("후보·정답 없이 특징 표·clueFeature만 있을 수 없음"),
+            ThemeAnswerRules.errors(ThemeStory(features = features), featureDays().map { it.copy(rulesOut = null) }),
+        )
+    }
+
+    @Test
+    fun `수정 때 특징 표는 이어받되 후보가 바뀌거나 rulesOut이 바뀐 날의 clueFeature는 버림 (#647)`() {
+        val previous = content(story.copy(features = features), featureDays())
+        val bare = ThemeDay.entries.map { ThemeDayMission(it, missions.getValue(it)) }
+
+        val kept = ThemeCarryOver.merge(previous, content(ThemeStory(), bare))
+        assertEquals(features, kept.story.features)
+        assertEquals(clueFeatures.values.toList(), kept.days.map { it.clueFeature })
+
+        // 화요일 rulesOut을 바꾸면 그날 clueFeature는 이어받지 않음(바뀐 rulesOut과 어긋날 수 있음)
+        val tuesday = ThemeCarryOver.merge(previous, content(ThemeStory(), bare.map {
+            if (it.day == ThemeDay.TUE) it.copy(rulesOut = listOf("고양이")) else it
+        }))
+        assertNull(tuesday.days[1].clueFeature)
+        assertEquals("울음", tuesday.days[3].clueFeature)
+
+        // 후보를 바꾸면 이어받은 표와 clueFeature를 모두 버림, 빈 표를 보내면 비움, 새 표를 보내면 그 표
+        val renamed = ThemeCarryOver.merge(previous, content(ThemeStory(candidates = listOf("고양이", "강아지", "토끼", "거북이")), bare))
+        assertNull(renamed.story.features)
+        assertTrue(renamed.days.all { it.clueFeature == null })
+        assertNull(ThemeCarryOver.merge(previous, content(ThemeStory(features = emptyList()), bare)).story.features)
+        assertEquals(features.take(1), ThemeCarryOver.merge(previous, content(ThemeStory(features = features.take(1)), bare)).story.features)
     }
 
     private fun content(story: ThemeStory, days: List<ThemeDayMission>) =

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.core.room.repository.RoomDecorMapper">
+    <!-- #704 자리 교체끼리, 방 소품 사기(학생 행 FOR SHARE), 학생 삭제 확정과 직렬화한다(room_frame_slot과 같은 방식). -->
+    <select id="lockActiveStudent" resultType="java.util.UUID" flushCache="true" useCache="false">
+        SELECT id FROM student WHERE id=#{studentId} AND status='ACTIVE' FOR NO KEY UPDATE
+    </select>
+    <select id="spots" resultType="com.sagomungchi.core.room.domain.DecorSpotView" flushCache="true" useCache="false">
+        SELECT s.spot_no::int AS spot_no,i.code AS item_key,i.name AS name,i.asset_key AS asset_key
+        FROM room_decor_spot s JOIN look_item i ON i.id=s.look_item_id
+        WHERE s.student_id=#{studentId} ORDER BY s.spot_no
+    </select>
+    <select id="owned" resultType="com.sagomungchi.core.room.domain.OwnedDecor" flushCache="true" useCache="false">
+        SELECT i.id AS item_id,i.code AS code,i.name AS name,i.asset_key AS asset_key,count(*)::int AS owned
+        FROM student_room_decor d JOIN look_item i ON i.id=d.look_item_id
+        WHERE d.student_id=#{studentId} GROUP BY i.id,i.code,i.name,i.asset_key
+    </select>
+    <delete id="deleteSpots">DELETE FROM room_decor_spot WHERE student_id=#{studentId}</delete>
+    <insert id="insertSpot">
+        INSERT INTO room_decor_spot(student_id,spot_no,look_item_id,saved_at) VALUES(#{studentId},#{spotNo},#{itemId},#{now})
+    </insert>
+</mapper>

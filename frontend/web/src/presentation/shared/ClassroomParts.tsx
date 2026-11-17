@@ -267,7 +267,7 @@ export function MemoCanvas() {
     <div className="ux-memo-drawing">
       <canvas
         ref={ref}
-        aria-label="나만 보는 그림 연습이에요."
+        aria-label="그림 연습"
       />
       <button
         type="button"
