@@ -11234,6 +11234,7 @@ components:
                     type: object
                     required: [attemptId, answerId, answerVersion, missionTitle, thinkingType, quote, text]
                     properties:
+                      itemId: {type: [string, 'null'], format: uuid, description: 원문 전체 조회에 쓰는 설명 항목 ID}
                       attemptId: {type: string, format: uuid}
                       answerId: {type: string, format: uuid}
                       answerVersion: {type: integer, minimum: 1}

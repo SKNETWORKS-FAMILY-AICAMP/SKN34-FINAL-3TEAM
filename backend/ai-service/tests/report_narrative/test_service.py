@@ -98,7 +98,7 @@ def test_response_has_llm_narrative_and_versions() -> None:
         "narrative": {"text": "서술", "source": "LLM", "modelExplanation": None},
         "eveningQuestion": "질문?",
         "citedQuotes": [],
-        "versions": {"model": "fake-model", "prompt": "report@1"},
+        "versions": {"model": "fake-model", "prompt": "report@2"},
     }
 
 
@@ -135,7 +135,7 @@ def test_usage_call_type_is_report_narrative() -> None:
     llm = FakeLlm(generated([]))
     generate(llm)
     assert [(usage.call_type, usage.prompt_version) for usage in llm.usages] == [
-        ("REPORT_NARRATIVE", "report@1")
+        ("REPORT_NARRATIVE", "report@2")
     ]
 
 

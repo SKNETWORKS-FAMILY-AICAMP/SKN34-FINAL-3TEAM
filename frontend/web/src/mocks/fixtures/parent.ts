@@ -18,6 +18,8 @@ export const conversations = new Map<string, Conversation>()
 export const reports = new Map<string, WeeklyReport[]>()
 export const regenerateCounts = new Map<string, number>()
 export const pendingReports = new Map<string, number>()
+/** Actual cached Gemma outputs for opted-in synthetic attempts; null means no valid output. */
+export const generatedReportDetails = new Map<string, { sourceText: string; answerVersion: number; text: string; model: string; prompt: string } | null>()
 export function scopedRows(c: Child, p: Period): PublicAttempt[] {
   if (workspaceScenario === 'empty') return []
   const rows = eligibleRecords(
@@ -133,11 +135,24 @@ export function makeWeekly(c: Child, p: Period, revision = 1): WeeklyReport {
       (c.grade >= 5 && a.mission.inputType === 'NARRATIVE' || c.grade >= 4 && a.mission.inputType === 'ESSAY'))
       .sort((a, b) => b.answers.at(-1)!.submittedAt.localeCompare(a.answers.at(-1)!.submittedAt))
       .filter(a => { if (used.has(a.mission.thinkingType)) return false; used.add(a.mission.thinkingType); return true }).slice(0, 3)
-    if (candidates.length) report.explanations = { state: 'INCLUDED', items: candidates.map(a => ({
-      attemptId: a.attemptId, answerId: a.answers.at(-1)!.answerId, answerVersion: a.answers.at(-1)!.version,
+    if (candidates.length) {
+      const items = candidates.flatMap(a => {
+        const answer = a.answers.at(-1)!, cached = generatedReportDetails.get(a.attemptId)
+        if (generatedReportDetails.has(a.attemptId) && (!cached || cached.sourceText !== answer.text || cached.answerVersion !== answer.version)) return []
+        return [{
+      itemId: `explanation-${a.attemptId}`, attemptId: a.attemptId, answerId: a.answers.at(-1)!.answerId, answerVersion: a.answers.at(-1)!.version,
       missionTitle: a.mission.title, thinkingType: a.mission.thinkingType, quote: a.answers.at(-1)!.text,
-      text: '답변에 적힌 생각과 그 까닭을 함께 읽어 보세요. 아이에게 어떤 부분을 더 설명하고 싶은지 물어볼 수 있습니다.',
-    })) }
+      text: cached?.text ?? '답변에 적힌 생각과 그 까닭을 함께 읽어 보세요. 아이에게 어떤 부분을 더 설명하고 싶은지 물어볼 수 있습니다.',
+        }]
+      })
+      report.explanations = { state: items.length ? 'INCLUDED' : 'NOT_INCLUDED', items }
+      const actual = items.map(item => generatedReportDetails.get(item.attemptId)).find(item => !!item)
+      if (actual) {
+        report.versions = { prompt: actual.prompt, model: actual.model }
+        report.inclusionRule = '기간 내 학습 기록을 바탕으로 정리한 리포트입니다.'
+        report.generatedAt = report.revisions[0].generatedAt = new Date().toISOString()
+      }
+    }
   }
   return !mockPremium(c.id)
     ? { ...report, thinkingTypes: [], changes: [], reflections: [], quotes: [] }

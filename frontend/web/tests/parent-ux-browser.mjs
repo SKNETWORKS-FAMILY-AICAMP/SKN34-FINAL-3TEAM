@@ -59,7 +59,7 @@ try {
    assert.equal(await page.locator('.ws-parent').evaluate(el => getComputedStyle(el).backgroundColor),'rgb(39, 112, 68)')
    }
    if (path === 'report') {
-    await page.getByRole('button', { name:'리포트 상세 보기', exact:true }).first().click()
+    await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact:true }).first().click()
     const toolbar = page.locator('.parent-report-toolbar')
     await toolbar.waitFor()
     const buttons = await toolbar.locator('button').all()

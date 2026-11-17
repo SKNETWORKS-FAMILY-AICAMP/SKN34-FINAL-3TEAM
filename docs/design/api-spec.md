@@ -1667,6 +1667,10 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 
 `MEMORY_EMBEDDING_ENABLED` 앱 기본 false. #565 연동 확인 뒤 GitOps local·prod learning 값에서 true로 켠다(#591). Compose는 `.env`로 넘겨받고 기본 false다(키 없이 켜면 문서가 5회 실패 뒤 `FAILED`). 이미 등록된 문서는 보존하며 활성화 후 주기 작업이 멱등 소급 등록·만료 리스 회수·선점을 한다. 학생 닉네임 조회 실패 시 AI에 보내지 않으며 알려진 닉네임·UUID를 마스킹한다. 운영 로그에 질문·원문을 기록하지 않는다. 원문은 내부 DB에 저장하고 AI 전송용 문자열만 최대 8,000자로 제한한다.
 
+### 리포트 상세 설명의 원문 전체 표시 (#475, 2026-11-17)
+
+설명 항목에 선택적 `itemId`를 반환한다. 웹은 기존 `/reports/{reportId}/evidence/{itemId}`에서 설명과 같은 `attemptId`·`answerId`·`answerVersion`이며 `available=true`인 답변 원문 전체를 조회해 항상 펼쳐 표시한다. 발췌 `quote`를 원문 전체로 표시하지 않는다. 삭제·비공개·버전 불일치·조회 실패에는 원문을 대체하지 않고 이용 불가 안내를 표시한다. 기존 소유·공개·이용권 검사는 유지한다.
+
 ### Google 이메일 아이디 갱신 (#683, 2026-11-17)
 
 - 같은 Google subject의 PARENT는 로그인할 때 검증된 최신 이메일로 `login_id`를 갱신한다(사용자 결정). 기존 계정도 재로그인 시 복구하며, Google 이메일은 별도 컬럼에 저장하지 않아 오프라인 일괄 추정·변환은 하지 않는다.

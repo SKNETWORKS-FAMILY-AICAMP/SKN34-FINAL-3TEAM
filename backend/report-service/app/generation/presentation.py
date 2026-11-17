@@ -27,7 +27,10 @@ def assemble(metadata: dict, items: list[tuple[str, str | None, dict]]) -> dict:
     for kind, identifier, payload in items:
         if kind == ItemType.EXPLANATION:
             if detail["explanations"] and explanation_state == "INCLUDED":
-                detail["explanations"]["items"].append(deepcopy(payload))
+                value = deepcopy(payload)
+                if identifier is not None:
+                    value["itemId"] = identifier
+                detail["explanations"]["items"].append(value)
             continue
         if kind not in COLLECTIONS:
             raise ValueError("Unknown report item type")
