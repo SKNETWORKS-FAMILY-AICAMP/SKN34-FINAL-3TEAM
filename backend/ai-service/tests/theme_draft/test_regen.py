@@ -272,3 +272,48 @@ def test_asset_keys_and_memory_get() -> None:
     storage = MemoryThemeStorage()
     asyncio.run(storage.put("theme-drafts/x/OUTFIT.png", b"png", "image/png"))
     assert asyncio.run(storage.get("theme-drafts/x/OUTFIT.png")) == b"png"
+
+
+# --- 그림·영상 대역(#716) --------------------------------------------------------------
+
+
+def fake_run(response: Any, storage: MemoryThemeStorage, targets: list[str], review: Any) -> Any:
+    return run(
+        gen_llm(),
+        review,
+        image=FakeImageClient(),
+        video=FakeVideoClient(),
+        storage=storage,
+        settings={"image_provider": "fake", "video_provider": "fake"},
+        regenerate={"targets": targets, "base": base_of(response)},
+    )
+
+
+def fake_warnings(response: Any) -> list[tuple[str, str]]:
+    return [(w.stage, w.item) for w in response.warnings if "대역이라 검토를 건너뜀" in w.reason]
+
+
+def test_partial_with_fake_media_skips_review_and_keeps_one_warning_each() -> None:
+    """부분 다시 생성도 같은 draw·film을 써서 대역이면 검토하지 않고, 대역 경고는 단계마다 한 줄."""
+    response, storage = full()
+    review = review_llm(
+        image=lambda u: {i: "FAIL" for i in u["items"]}, video=lambda u: {"MORPH": "FAIL"}
+    )
+    out = fake_run(response, storage, ["IMAGE:MON", "VIDEO:INTRO"], review)
+    assert out.failure is None
+    assert (
+        sum(
+            1
+            for name, _ in review.image_counts
+            if name in ("GeneratedImageReview", "GeneratedVideoReview")
+        )
+        == 0
+    )
+    assert sorted(fake_warnings(out)) == [("IMAGE", "ALL"), ("VIDEO", "ALL")]
+    # 대역으로 만든 초안을 다시 부분 생성해도 대역 경고가 겹치지 않음
+    # (다시 만든 단계는 새 경고로 바뀜)
+    again = fake_run(out, storage, ["IMAGE:TUE", "VIDEO:OUTRO"], review_llm())
+    assert sorted(fake_warnings(again)) == [("IMAGE", "ALL"), ("VIDEO", "ALL")]
+    # 영상만 다시 만들면 그림 대역 경고는 원래 것 그대로 한 줄
+    video_only = fake_run(out, storage, ["VIDEO:INTRO"], review_llm())
+    assert sorted(fake_warnings(video_only)) == [("IMAGE", "ALL"), ("VIDEO", "ALL")]
