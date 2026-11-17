@@ -22,20 +22,20 @@ class RoomDecorMigrationTest {
         val postgres = PostgreSQLContainer("postgres:17.11-alpine")
     }
 
-    private fun withV50(block: (JdbcTemplate, Flyway) -> Unit) {
+    private fun withSchema(before: String = "50", after: String = "51", block: (JdbcTemplate, Flyway) -> Unit) {
         val schema = "decor_" + UUID.randomUUID().toString().replace("-", "")
         val separator = if ('?' in postgres.jdbcUrl) "&" else "?"
         val dataSource = DriverManagerDataSource(
             "${postgres.jdbcUrl}${separator}currentSchema=$schema", postgres.username, postgres.password)
         fun configuration() = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
             .locations("classpath:db/migration")
-        configuration().target("50").load().migrate()
+        configuration().target(before).load().migrate()
         val jdbc = JdbcTemplate(dataSource)
-        try { block(jdbc, configuration().load()) }
+        try { block(jdbc, configuration().target(after).load()) }
         finally { jdbc.execute("DROP SCHEMA $schema CASCADE") }
     }
 
-    @Test fun `empty V50 upgrades to grid columns and reruns without changes`() = withV50 { jdbc, flyway ->
+    @Test fun `empty V50 upgrades to grid columns and reruns without changes`() = withSchema { jdbc, flyway ->
         assertEquals(1, flyway.migrate().migrationsExecuted)
         assertEquals(0, flyway.migrate().migrationsExecuted)
         assertEquals(setOf("student_id", "surface", "cell_col", "cell_row", "look_item_id", "saved_at"),
@@ -44,7 +44,7 @@ class RoomDecorMigrationTest {
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='room_decor_spot' AND (is_nullable='YES' OR column_default IS NOT NULL)", Int::class.java))
     }
 
-    @Test fun `existing V50 placements stop migration without losing rows or changing old schema`() = withV50 { jdbc, flyway ->
+    @Test fun `existing V50 placements stop migration without losing rows or changing old schema`() = withSchema { jdbc, flyway ->
         val student = child(jdbc, parent(jdbc))
         val admin = account(jdbc, "ADMIN", "CONTENT")
         val item = UUID.randomUUID()
@@ -57,4 +57,24 @@ class RoomDecorMigrationTest {
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='room_decor_spot' AND column_name='surface'", Int::class.java))
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE version='51'", Int::class.java))
     }
+    @Test fun `V52 preserves placements as null and constrains new colors`() = withSchema("51", "52") { jdbc, flyway ->
+        val student = child(jdbc, parent(jdbc))
+        val admin = account(jdbc, "ADMIN", "CONTENT")
+        val item = UUID.randomUUID()
+        jdbc.update("INSERT INTO look_item(id,code,slot,name,price_points,asset_key,status,created_by,created_at,updated_at) VALUES(?,'COLOR_DECOR','DECOR','시험',1,'decor/test','ON_SALE',?,now(),now())", item, admin)
+        jdbc.update("INSERT INTO room_decor_spot(student_id,surface,cell_col,cell_row,look_item_id,saved_at) VALUES(?,'FLOOR',0,0,?,now())", student, item)
+        val before = jdbc.queryForList("SELECT * FROM room_decor_spot")
+        assertEquals(1, flyway.migrate().migrationsExecuted)
+        assertEquals(0, flyway.migrate().migrationsExecuted)
+        val after = jdbc.queryForList("SELECT * FROM room_decor_spot").single()
+        assertNull(after["color"])
+        assertEquals(before.single(), after.filterKeys { it != "color" })
+        for (color in listOf("sky", "a".repeat(20), "custom-9", null)) {
+            jdbc.update("UPDATE room_decor_spot SET color=?", color)
+        }
+        for (color in listOf("", "Sky", "pink blue", "a".repeat(21), "분홍", "sky\n")) {
+            assertFailsWith<org.springframework.dao.DataAccessException> { jdbc.update("UPDATE room_decor_spot SET color=?", color) }
+        }
+    }
+
 }

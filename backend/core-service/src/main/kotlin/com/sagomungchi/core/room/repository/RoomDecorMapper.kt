@@ -16,5 +16,5 @@ interface RoomDecorMapper {
     fun deleteSpots(studentId: UUID): Int
     fun insertSpot(@Param("studentId") studentId: UUID, @Param("surface") surface: String,
                    @Param("col") col: Int, @Param("row") row: Int, @Param("itemId") itemId: UUID,
-                   @Param("now") now: OffsetDateTime): Int
+                   @Param("color") color: String?, @Param("now") now: OffsetDateTime): Int
 }
