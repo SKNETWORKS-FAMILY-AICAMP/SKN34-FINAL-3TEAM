@@ -1145,7 +1145,7 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 
 ## 40. 주간 테마 초안 부분 다시 생성 learning (#537, 2026-11-17)
 
-관리자가 영상 하나·그림 하나·요일 미션 하나만 골라 다시 만들게 한다. 다시 생성 본문에 선택 칸 `targets`를 더했고, 없으면 지금처럼 전체를 새로 만든다. 계약은 사용자 결정(2026-11-17)을 따랐다. api-spec·OpenAPI·state-diagram은 팀 확인 뒤 계약 PR에서 고치고, core·web·ai는 이 절 밖이다.
+관리자가 영상 하나·그림 하나·요일 미션 하나만 골라 다시 만들게 한다. 다시 생성 본문에 선택 칸 `targets`를 더했고, 없으면 지금처럼 전체를 새로 만든다. 계약은 사용자 결정(2026-11-17)을 따랐다. core·web·ai는 이 절 밖이고(같은 PR, [core-gateway 15.1](core-gateway.md)·[frontend](frontend.md)·[ai 21장](ai.md#21-주간-테마-초안-부분-다시-생성-537-2026-11-17)), 계약 문서는 learning OpenAPI regenerate 본문 `ThemeDraftRegenerateRequest`·`ThemeDraft`(`input.regenerate`·`regenerableTargets`, 둘 다 필수 칸이고 값은 null·빈 배열일 수 있음)·`ThemeRegenTarget`, api-spec 2.8·4.1, state-diagram 3.5.1, ERD `theme_draft` 설명.
 
 ### 정한 것
 
@@ -1177,5 +1177,5 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 
 ### 남은 것
 
-- 계약 문서: learning OpenAPI regenerate 본문(`EmptyObject` "본문은 {}")·`ThemeDraft`(`input.regenerate`·`regenerableTargets`), ai OpenAPI 요청 `regenerate`·응답 `regen`, api-spec 2.8·4.1·4.2, state-diagram 3.5.1은 팀 확인 뒤 계약 PR에서
-- core 감사 detail에 대상 표시, 관리자 화면 장면별 버튼, ai IAM `s3:GetObject`(인프라)는 각 담당
+- 실서버(core·learning·ai)에서 부분 다시 생성 → 그 장면만 바뀐 새 초안 확인(AI 비용이 들어 사용자 확인 뒤)
+- ai IAM `s3:GetObject`는 정책 파일만 이 PR에서 고치고 AWS 적용은 #652(담당 확인 2026-11-17)

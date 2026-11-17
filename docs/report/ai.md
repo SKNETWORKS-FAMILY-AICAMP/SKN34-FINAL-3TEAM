@@ -1538,7 +1538,7 @@ P27 추억 검색 보완(멘토 피드백, 설계 #679)의 ai 몫. 계약은 [ap
 
 ## 21. 주간 테마 초안 부분 다시 생성 (#537, 2026-11-17)
 
-관리자가 테마 초안에서 영상·그림·요일 미션만 골라 다시 만들게 하는 ai 몫. 지금까지는 다시 생성하면 같은 입력으로 줄거리부터 전부 다시 만들었다. 계약은 사용자 결정(2026-11-17)을 따랐고, api-spec·OpenAPI는 팀 확인 뒤 계약 PR에서 고친다. learning 몫은 [learning 40장](learning.md#40-주간-테마-초안-부분-다시-생성-learning-537-2026-11-17).
+관리자가 테마 초안에서 영상·그림·요일 미션만 골라 다시 만들게 하는 ai 몫. 지금까지는 다시 생성하면 같은 입력으로 줄거리부터 전부 다시 만들었다. 계약은 사용자 결정(2026-11-17)을 따랐고, core·인프라 몫은 담당 확인(2026-11-17)대로 같은 PR에 넣었다. 계약 문서는 api-spec 4.2 `/internal/theme-drafts`, ai OpenAPI `ThemeDraftRequest.regenerate`·`ThemeRegenerate`·`ThemeRegenBase`·`ThemeRegenTarget`·`ThemeDraftResponse.regen`(선택 칸). learning 몫은 [learning 40장](learning.md#40-주간-테마-초안-부분-다시-생성-learning-537-2026-11-17).
 
 ### 정한 것
 
@@ -1576,3 +1576,19 @@ P27 추억 검색 보완(멘토 피드백, 설계 #679)의 ai 몫. 계약은 [ap
 ### 시험
 
 - `tests/theme_draft/test_regen.py` 16개: 재료 묶음(대상 14개·재료 키·내부 칸), 그림 설정 없음은 미션 대상만, 컷 그림 실패 장면은 영상 대상 빠짐, 글 단계 실패는 regen 없음, 영상만(그림 다시 안 그림·원래 컷 그림으로 찍음·나머지 그대로), 요일 그림만(참조 2장·나머지 그대로), 시작 그림(컷 4장·영상·인물 기준 유지), 시작 컷 실패는 원래 장면 유지, 미션(줄거리 안 만들고 그 요일 글·검토·그림만), 검토가 줄거리·다른 요일을 고치라 하면 실패, 대상 요일은 다시 만듦, 요청 거절, `plan_of`·`keep_warnings`·재료 키·저장소 읽기
+
+### 21.1 실제 모델 확인 (2026-11-17, 로컬, C안: 영상 끔)
+
+실제 OpenAI(생성 `gpt-6-luna`·검토 `gpt-6.1-terra`·그림 `gpt-image-2.6-sunburst`)와 로컬 MinIO(임시 컨테이너, `sagomungchi-local-missions`)로 ai 그래프를 직접 실행했다. 영상은 비용 때문에 껐다(사용자 결정 C안). learning·core·웹은 거치지 않았고, 원래 결과(base)는 learning `ThemeDraftOutput`처럼 응답에서 `failure`·`versions`를 뺀 7칸과 `regen`으로 만들었다. 요청은 시험 자료 초3 5유형(`tests/theme_draft/helpers.request_body`).
+
+| 실행 | 시간 | 결과 | 바뀐 것 | 비용(core 단가) |
+|---|---|---|---|---|
+| 전체 생성 | 377초 | failure IMAGE(`FRI TEXT 사서가 든 종이에 한글 문장이 보인다.`, 다시 그리기 상한까지) | — | 생성 16번·검토 23번·그림 17번 약 $0.97 |
+| `IMAGE:FRI` | 53초 | 통과 | images·motions의 FRI만 | 약 $0.06 |
+| `MISSION:WED` | 134초 | 통과 | 수요일 미션·대화, images·motions의 WED만 | 약 $0.08 |
+
+- 그림 단계 실패도 `regen`이 남아(재료 9장 + `PERSON`, 대상 14개) 실패한 금요일 그림만 다시 그려 살릴 수 있었다. 새 그림은 종이에 글자 대신 줄만 그려 통과(다시 그리기 1번). 전체 생성을 다시 했다면 약 6분·$1이 다시 들었을 것
+- 두 부분 실행 모두 공개 `theme`·다른 요일 미션·대화·그림 키·`regen.assets`가 원래와 같았다. 부분 실행은 바뀐 장면 그림만 새 실행 폴더에 올림(MinIO 객체 15 → 17)
+- `MISSION:WED`는 줄거리를 만들지 않고 그 요일 미션(질문이 바뀜)·수사 연결 문장·대화를 만들고 글 검토를 다시 함. 다시 한 검토가 `CLUE_LOGIC FRI` WARN을 새로 남겨 경고에 더해짐(FAIL이 아니라 통과)
+- 확인하지 않은 것: Veo 영상 다시 찍기(`VIDEO:*`), learning DB 저장·전달 왕복과 관리자 화면 재생. 영상 재료 읽기는 그림과 같은 `ThemeStorage.get`이고 영상 생성 자체는 바꾸지 않음
+- 합계 약 $1.11(예상 $1.2~1.6 안). 스크립트·결과 JSON은 저장소에 남기지 않음
