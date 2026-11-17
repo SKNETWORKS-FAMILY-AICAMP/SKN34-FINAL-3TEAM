@@ -48,7 +48,15 @@ def approvals(repo, run_id, token, opener=urlopen):
     ]
 
 
-def build(plan_record, releases, smoke, env, approved_by):
+MIGRATION_OK = ("complete", "already-complete")
+
+
+def build(plan_record, releases, smoke, env, approved_by, migration_jobs=None):
+    # deploy는 계획의 migration이 모두 끝나야 앱을 적용한다. 계획에 없으면 확인할 것도 없다
+    expected = (plan_record or {}).get("migrations") or {}
+    migrated = len(migration_jobs or []) == len(expected) and all(
+        item.get("status") in MIGRATION_OK for item in migration_jobs or []
+    )
     deployed = bool(releases) and all(
         item.get("status") == "deployed" for item in releases
     )
@@ -62,6 +70,8 @@ def build(plan_record, releases, smoke, env, approved_by):
         "planSha256": (plan_record or {}).get("planSha256"),
         "policySha256": (plan_record or {}).get("policySha256"),
         "images": (plan_record or {}).get("images"),
+        "migrations": expected,
+        "migrationJobs": migration_jobs or [],
         "actor": env.get("GITHUB_ACTOR"),
         "run": {
             "id": env.get("GITHUB_RUN_ID"),
@@ -76,7 +86,7 @@ def build(plan_record, releases, smoke, env, approved_by):
         "releases": releases or [],
         "smoke": smoke,
         # 자동 롤백은 하지 않는다. 실패하면 새 계획·승인으로 복구한다
-        "result": "success" if deployed and smoke_ok else "failure",
+        "result": "success" if migrated and deployed and smoke_ok else "failure",
     }
 
 
@@ -85,6 +95,9 @@ def main():
     parser.add_argument("--plan-record", required=True, type=Path)
     parser.add_argument(
         "--releases", type=Path, help="배포 단계가 남긴 release별 결과 JSON 목록"
+    )
+    parser.add_argument(
+        "--migration-jobs", type=Path, help="migration 단계가 남긴 Job별 결과 JSON 목록"
     )
     parser.add_argument("--smoke", type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -100,6 +113,7 @@ def main():
             env.get("GITHUB_RUN_ID"),
             env.get("GITHUB_TOKEN"),
         ),
+        read_json(args.migration_jobs),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

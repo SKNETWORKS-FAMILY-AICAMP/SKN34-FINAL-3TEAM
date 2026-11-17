@@ -8,7 +8,7 @@
       "Resource": "*"
     },
     {
-      "Sid": "PushAppImages",
+      "Sid": "PushAppAndMigrationImages",
       "Effect": "Allow",
       "Action": [
         "ecr:BatchCheckLayerAvailability",
@@ -22,7 +22,9 @@
       ],
       "Resource": [
         "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/core-service",
+        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/core-migrate",
         "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/learning-service",
+        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/learning-migrate",
         "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/ai-service",
         "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/scoring-service",
         "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/report-service"

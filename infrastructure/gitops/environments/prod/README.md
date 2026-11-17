@@ -37,7 +37,7 @@
 
 `redeploy-app.ps1`은 기존 앱 release 한 개의 재배포 진입점이다. AWS 계정·실제 EKS endpoint·고정 digest·기존 release 상태를 확인하고 기본 실행은 server dry-run만 수행한다. `-Apply`를 지정할 때만 ESO Ready 확인 후 배포한다. 새 클러스터·DB 초기화·Secret 생성·웹 빌드·Ingress 생성은 수행하지 않는다. 현재 노드의 Pod 슬롯과 메모리 여유가 작으므로 preview 성공을 실제 rollout 성공으로 해석하지 않는다. 적용 전에 기존 Pod와 비교할 계획을 검토한다.
 
-승인 절차를 거친 배포·롤백은 [#186 운영 배포](../../../cd/README.md)의 `cd-release` workflow가 이 스크립트를 `-ImageDigest`(저장소 values는 그대로 두고 digest만 바꾼 임시 사본)로 호출한다.
+승인 절차를 거친 배포·롤백은 [#186 운영 배포](../../../cd/README.md)의 `cd-release` workflow가 이 스크립트를 `-ImageDigest`(저장소 values는 그대로 두고 digest만 바꾼 임시 사본)로 호출한다. 배포는 앱보다 먼저 `-Migration`으로 아래 3절의 migration Job을 같은 main SHA 이미지로 실행하고 완료를 확인한다(2026-11-17).
 
 `sllm-server`(#476)도 `-Service`로 받는다. 이 스크립트는 기존 release만 다루므로 첫 설치는 수동 `helm upgrade --install`로 하고, 이미지 digest가 고정되기 전(`pending-475`)에는 스크립트가 거부한다. 저장소에서 빌드하는 이미지가 아니라 `cd-release` 대상이 아니다. KEDA cron 가동 창(일 23:50 ~ 월 02:00 KST)에 적용하면 다음 KEDA 확인까지 0대가 되므로 그 시간에는 실행하지 않는다.
 
@@ -198,7 +198,7 @@ helm template core-service infrastructure/gitops/charts/app-service -n app -f "$
 kubectl --kubeconfig $kubeconfig -n app wait --for=condition=complete job/core-service-migrate-b67d8a462b6b --timeout=600s
 ```
 
-learning-service·report-api도 같은 방식이다. **core-migrate 고정 digest는 V23까지만 포함한다.** 현재 RDS의 V24·V25는 기존 Job이 별도 ConfigMap SQL로 적용했다. 빈 DB 재현에는 배포할 core 이미지와 같은 소스로 core-migrate를 다시 빌드해 digest와 `revision`을 바꿔야 한다(core 이미지의 미커밋 이용권 수정과 같은 소스 재현성 문제). 빈 DB에 앱부터 설치하지 않는다.
+learning-service·report-api도 같은 방식이다. `redeploy-app.ps1 -Service <release> -Migration`이 이 렌더링(NetworkPolicy 먼저)·적용·완료 대기를 한 번에 하며 cd-release도 이것을 쓴다. **core-migrate 고정 digest는 V23까지만 포함한다.** 현재 RDS의 V24·V25는 기존 Job이 별도 ConfigMap SQL로 적용했다. 빈 DB 재현에는 배포할 core 이미지와 같은 소스로 core-migrate를 다시 빌드해 digest와 `revision`을 바꿔야 한다(core 이미지의 미커밋 이용권 수정과 같은 소스 재현성 문제). 빈 DB에 앱부터 설치하지 않는다.
 
 ### 4. 앱 → 초기 운영 데이터 → 외부 진입
 
