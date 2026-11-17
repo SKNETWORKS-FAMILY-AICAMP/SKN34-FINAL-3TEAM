@@ -1,0 +1,58 @@
+{
+  "mode": "fp32",
+  "evaluatedAt": "2026-11-17T12:44:09+09:00",
+  "rule": "꼭 통과할 글 최고 확률 초과 · 단어 목록이 통과시킨 검증 정상 글 추가 오탐 ≤ 0.01 · F1 최대",
+  "mustPassMax": 0.797,
+  "threshold": 0.97,
+  "valid": {
+    "threshold": 0.97,
+    "model": {
+      "threshold": 0.97,
+      "precision": 0.98,
+      "recall": 0.6434,
+      "f1": 0.7768,
+      "falsePositiveRate": 0.0109,
+      "n": 9243
+    },
+    "wordListRecall": 0.2663,
+    "wordListFalsePositiveRate": 0.0234,
+    "extraCatch": 0.5562,
+    "extraFalsePositiveRate": 0.0083,
+    "combinedRecall": 0.6744,
+    "combinedFalsePositiveRate": 0.0315
+  },
+  "test": {
+    "threshold": 0.97,
+    "model": {
+      "threshold": 0.97,
+      "precision": 0.9765,
+      "recall": 0.6893,
+      "f1": 0.8082,
+      "falsePositiveRate": 0.0141,
+      "n": 21900
+    },
+    "wordListRecall": 0.2934,
+    "wordListFalsePositiveRate": 0.024,
+    "extraCatch": 0.6081,
+    "extraFalsePositiveRate": 0.0118,
+    "combinedRecall": 0.7231,
+    "combinedFalsePositiveRate": 0.0355
+  },
+  "apeach": {
+    "threshold": 0.97,
+    "model": {
+      "threshold": 0.97,
+      "precision": 0.9807,
+      "recall": 0.424,
+      "f1": 0.5921,
+      "falsePositiveRate": 0.0087,
+      "n": 3770
+    },
+    "wordListRecall": 0.2591,
+    "wordListFalsePositiveRate": 0.0119,
+    "extraCatch": 0.2739,
+    "extraFalsePositiveRate": 0.0055,
+    "combinedRecall": 0.462,
+    "combinedFalsePositiveRate": 0.0173
+  }
+}

@@ -75,6 +75,24 @@
       }
     },
     {
+      "name": "SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA",
+          "name": "ai-provider-credentials"
+        }
+      }
+    },
+    {
+      "name": "SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA",
+          "name": "ai-provider-credentials"
+        }
+      }
+    },
+    {
       "name": "LLM_PROVIDER",
       "value": "openai"
     },

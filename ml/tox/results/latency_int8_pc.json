@@ -1,0 +1,57 @@
+{
+  "measuredAt": "2026-11-17T11:30:52+09:00",
+  "int8": true,
+  "threads": 1,
+  "machine": "Windows AMD64 Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+  "torch": "2.15.0+cpu",
+  "window": {
+    "max_length": 128,
+    "stride": 32
+  },
+  "repeat": 30,
+  "warmup": 3,
+  "targetP95Ms": 300,
+  "rows": [
+    {
+      "chars": 200,
+      "windows": 1,
+      "medianMs": 86.5,
+      "p95Ms": 103.7,
+      "maxMs": 140.2,
+      "meetsTarget": true
+    },
+    {
+      "chars": 600,
+      "windows": 3,
+      "medianMs": 293.9,
+      "p95Ms": 468.2,
+      "maxMs": 554.7,
+      "meetsTarget": false
+    },
+    {
+      "chars": 1000,
+      "windows": 6,
+      "medianMs": 557.5,
+      "p95Ms": 669.6,
+      "maxMs": 719.5,
+      "meetsTarget": false
+    },
+    {
+      "chars": 1200,
+      "windows": 7,
+      "medianMs": 706.8,
+      "p95Ms": 846.1,
+      "maxMs": 853.8,
+      "meetsTarget": false
+    },
+    {
+      "chars": 1500,
+      "windows": 9,
+      "medianMs": 915.7,
+      "p95Ms": 1067.7,
+      "maxMs": 1085.2,
+      "meetsTarget": null
+    }
+  ],
+  "meetsTarget200to1200": false
+}

@@ -668,7 +668,7 @@ DB 안의 내용(레지스트리 행, 활성 모델·프롬프트, 적용된 mig
 | observability | 경보 규칙 `uid`·`title` 추가, `rabbitmqDlqMetrics`, Tempo(PVC 2Gi) 추가 |
 | core | 내부 토큰·브로커 계정 서비스별 키(9.9), `SCORING_URL`·scoring egress, `namespaceDefaultDeny` false → **true**(#657), report-api ingress 제외 |
 | learning | 서비스별 키, `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`(#652), `MEMORY_EMBEDDING_ENABLED`·`MEMORY_QUERY_REWRITE_*`, Pod Identity agent egress |
-| ai | 서비스별 키, 자산 버킷, Veo(`THEME_VIDEO_*`·`ai-theme-video` Secret·볼륨), `M2_CROSS_CHECK_ENABLED=true`, `EXPLANATION_BASE_URL`(sllm-server), `OPENAI_MODEL` gpt-6.1-terra → gpt-6-luna, 메모리 상한 512Mi → 1Gi |
+| ai | 서비스별 키, 자산 버킷, Veo(`THEME_VIDEO_*`·`ai-theme-video` Secret·볼륨), `M2_CROSS_CHECK_ENABLED=true`, `EXPLANATION_BASE_URL`(sllm-server), `OPENAI_MODEL` gpt-6.1-terra → gpt-6-luna, 메모리 상한 512Mi → 1Gi, 리포트 Gemma RunPod 주소·키(`ai-provider-credentials`, #751) |
 | report-worker | 서비스별 키, 설명 시간 예산 400초·제한 130초, 테마 요약, 종료 유예 180 → 480초 |
 | report-api·scoring | 서비스별 키, scoring ingress에 core 추가 |
 | 이미지 | 앱 values의 `image`는 저장소에 없음(cd-release가 main SHA digest로 채움). migration 이미지는 `migrations/*.json`에 core·learning `main-c6809ddb65ee`, report `b67d8a462b6b`로 고정 |
@@ -805,13 +805,13 @@ python evaluation/load/llm_latency.py judge --secrets <밖>/secrets-630.json --o
 | 3★ | RDS 시작 | `aws rds start-db-instance` → `wait db-instance-available` | endpoint·`rds.force_ssl`·백업 7일. 11/20 자동 시작 뒤라면 이미 available | 10분 |
 | 4★ | 클러스터 | `render-eksctl --operator-cidr <IP>/32 --out <밖>` → `eksctl create cluster -f <파일>` | 노드그룹 2개(2a·2b 1대씩 platform), add-on 7개, Pod Identity 10개, access entry가 백업(`access-entries.json`)과 같은 권한 | 30~40분 |
 | 5★ | RDS SG | `apply --after-eksctl` → 옛 SG `sg-086c7c83b3638da59` 규칙·SG 정리 | 새 SG에서 5432 허용 | 5분 |
-| 6 | 플랫폼 | gp3·namespace·ESO 2.14.0·LB Controller 1.14.1·`rds-ca`·ExternalSecret(현재 파일)·platform-data·Karpenter 1.15.1 + NodePool·EC2NodeClass(`karpenter.json` 대조) | ESO Ready, Secret 키가 서비스별 키, RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분 |
+| 6 | 플랫폼 | gp3·namespace·ESO 2.14.0·LB Controller 1.14.1·`rds-ca`·ExternalSecret(현재 파일)·platform-data·Karpenter 1.15.1 + NodePool·EC2NodeClass(`karpenter.json` 대조) | ESO Ready, Secret 키가 서비스별 키, `ai-provider-credentials`에 `OPENAI_API_KEY`·`SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`·`SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA` 3개(값 미출력), RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분 |
 | 7 | DB 상태 | demo-db-oneoff(core 앱 계정)로 `SHOW max_connections`, `model_version` 행·활성 상태 조회. 앱 계정은 migration 이력 테이블 권한이 없으므로 적용 번호는 8단계 Job 로그로 본다 | 9.11.2 연결 판단, #613 등록 전 기준 | 10분 |
 | 8★ | migration | 기본 거부용 정책 2개 → core·learning·report migration Job(9.11.1 2·3번). cd-release에 migration 단계가 들어갔으면 그 단계로 실행 | Job complete, 로그의 시작·끝 schema 버전(Flyway)·revision(Alembic) | 15분 |
 | 9★ | 앱 배포 | cd-release(plan JSON, 승인 2명), 6개 서비스 | 앱 readiness, `app-default-deny` 1개, 정책 없는 Pod DNS 실패 | 30~40분 |
 | 10 | 관측 | Secrets Manager 백업으로 관측 Secret 2개 생성(값 미출력) → observability | Grafana 로그인·datasource·경보 평가 | 15분 |
 | 11★ | 진입 | `core-alb-network.json` + Ingress(origin 헤더 Git 밖 주입) → 새 ALB DNS로 CloudFront `/api/*` origin 변경 | prefix list 제한, CloudFront 배포 완료 | 20분 |
-| 12 | 흐름 확인 | 로그인 → 학습 제출 → 리포트 조회, 테마 초안 1건(자산 버킷·Veo, #652·#600), 설명 단계 상태 | 걸린 시간·실패 항목을 #601에 기록 | 20분 |
+| 12 | 흐름 확인 | 로그인 → 학습 제출 → 리포트 조회, 테마 초안 1건(자산 버킷·Veo, #652·#600), 설명 단계 상태, 리포트 AI 요약(RunPod Gemma, 503이면 6단계 Secret 키 확인) | 걸린 시간·실패 항목을 #601에 기록 | 20분 |
 | 13 | #613·#493 | 9.11.4 | 사전 검사 PASS, 새 revision | 30분 |
 | 14★ | #384 | 공지 → 계정 4개 → 스텁 → 단계별 k6 → 축소 관찰 → 원복 | Karpenter 노드 0대로 끝남 | 2~3시간 |
 | 15 | #630 | 9.11.4(실제 LLM, 부하 없는 시간) | 표본·비용 기록 | 1.5시간 |

@@ -1,0 +1,49 @@
+{
+  "measuredAt": "2026-11-17T01:58:40+00:00",
+  "int8": true,
+  "threads": 1,
+  "machine": "Linux x86_64 x86_64",
+  "torch": "2.15.0+cu132",
+  "window": {
+    "max_length": 128,
+    "stride": 32
+  },
+  "repeat": 30,
+  "warmup": 3,
+  "targetP95Ms": 300,
+  "rows": [
+    {
+      "chars": 200,
+      "windows": 1,
+      "medianMs": 43.3,
+      "p95Ms": 48.0,
+      "maxMs": 49.8,
+      "meetsTarget": true
+    },
+    {
+      "chars": 600,
+      "windows": 3,
+      "medianMs": 145.9,
+      "p95Ms": 162.6,
+      "maxMs": 169.8,
+      "meetsTarget": true
+    },
+    {
+      "chars": 1200,
+      "windows": 7,
+      "medianMs": 417.7,
+      "p95Ms": 442.6,
+      "maxMs": 449.0,
+      "meetsTarget": false
+    },
+    {
+      "chars": 1500,
+      "windows": 9,
+      "medianMs": 523.7,
+      "p95Ms": 552.9,
+      "maxMs": 561.3,
+      "meetsTarget": null
+    }
+  ],
+  "meetsTarget200to1200": false
+}

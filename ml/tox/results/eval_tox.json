@@ -1,0 +1,141 @@
+{
+  "model": {
+    "baseModel": "beomi/KcELECTRA-base",
+    "baseRevision": "681201a097b8120e6dd2a2e63a3e13d338736f88"
+  },
+  "evaluatedAt": "2026-11-17T01:42:43+00:00",
+  "window": {
+    "max_length": 128,
+    "stride": 32
+  },
+  "int8": false,
+  "rule": "꼭 통과할 글 최고 확률 초과 · 검증 정상 오탐 ≤ 0.01 · F1 최대",
+  "threshold": 0.98,
+  "valid": {
+    "chosen": {
+      "threshold": 0.98,
+      "precision": 0.9841,
+      "recall": 0.6036,
+      "f1": 0.7483,
+      "falsePositiveRate": 0.0081,
+      "n": 9243
+    },
+    "default0.5": {
+      "threshold": 0.5,
+      "precision": 0.8839,
+      "recall": 0.8599,
+      "f1": 0.8718,
+      "falsePositiveRate": 0.094,
+      "n": 9243
+    }
+  },
+  "mustPass": {
+    "counts": {
+      "demo": 241,
+      "web": 97,
+      "trap": 52
+    },
+    "maxProb": 0.797,
+    "flaggedAtChosen": 0,
+    "flaggedAt0.5": 2,
+    "top10": [
+      {
+        "set": "trap",
+        "text": "시바견",
+        "prob": 0.797
+      },
+      {
+        "set": "trap",
+        "text": "일곱 난쟁이",
+        "prob": 0.7831
+      },
+      {
+        "set": "trap",
+        "text": "새끼 고양이가 태어났다",
+        "prob": 0.2652
+      },
+      {
+        "set": "trap",
+        "text": "시발점",
+        "prob": 0.2367
+      },
+      {
+        "set": "trap",
+        "text": "새끼손가락을 걸고 약속",
+        "prob": 0.2029
+      },
+      {
+        "set": "demo",
+        "text": "까닭 잇기",
+        "prob": 0.1567
+      },
+      {
+        "set": "demo",
+        "text": "사다리꼴 화단의 넓이",
+        "prob": 0.1354
+      },
+      {
+        "set": "demo",
+        "text": "원인",
+        "prob": 0.1354
+      },
+      {
+        "set": "web",
+        "text": "과학",
+        "prob": 0.1344
+      },
+      {
+        "set": "demo",
+        "text": "과학",
+        "prob": 0.1344
+      }
+    ],
+    "contextOnly": [
+      {
+        "text": "고양이가 새끼를 다섯 마리 낳았다",
+        "prob": 0.0127
+      },
+      {
+        "text": "틀딱이라고 부르면 할머니가 속상해요",
+        "prob": 0.9914
+      }
+    ]
+  },
+  "test": {
+    "default0.5": {
+      "threshold": 0.5,
+      "precision": 0.8774,
+      "recall": 0.9088,
+      "f1": 0.8928,
+      "falsePositiveRate": 0.1084,
+      "n": 21900
+    },
+    "chosen": {
+      "threshold": 0.98,
+      "precision": 0.9829,
+      "recall": 0.648,
+      "f1": 0.781,
+      "falsePositiveRate": 0.0096,
+      "n": 21900
+    }
+  },
+  "apeach": {
+    "default0.5": {
+      "threshold": 0.5,
+      "precision": 0.9233,
+      "recall": 0.7206,
+      "f1": 0.8095,
+      "falsePositiveRate": 0.0622,
+      "n": 3770
+    },
+    "chosen": {
+      "threshold": 0.98,
+      "precision": 0.9855,
+      "recall": 0.3902,
+      "f1": 0.5591,
+      "falsePositiveRate": 0.006,
+      "n": 3770
+    }
+  },
+  "limit": null
+}
