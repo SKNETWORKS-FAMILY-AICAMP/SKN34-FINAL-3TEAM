@@ -1,7 +1,8 @@
 """generate_images: 미션 그림 5장과 시작·종료 영상 컷 첫 그림 8장을 만들고 그림마다 검토한다.
 
 순서(사용자 결정 2026-11-11):
-1. 테마 옷 뭉치 = 기본 뭉치 그림(assets)을 고쳐 테마 옷만 더한 1장. 이후 모든 그림의 첫 참조
+1. 테마 옷 뭉치 = 기본 뭉치 그림(assets)을 고쳐 테마 옷만 더한 1장. 뭉치가 나오는 그림의 첫 참조이고
+   모든 그림 검토의 비교 그림
 2. 시작 1컷 첫 그림(뭉치·인물 참조 없이 글로만) → 인물 기준 그림
 3. 나머지(미션 5 + 컷 7)를 [테마 옷 뭉치, 인물 기준 그림] 참조로 동시에(asyncio.gather).
    시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음(뭉치 혼자 출동)
@@ -11,6 +12,12 @@ review_images는 별도 노드가 아니라 그림마다 그린 직후 돈다(re
 다시(상한 theme_max_regen, 마감 확인). 미션 그림이 끝내 실패하면 failure IMAGE, 컷 첫 그림이
 끝내 실패하면 그 장면 영상만 빼고 warnings(VIDEO). 응답 images의 INTRO·OUTRO는 4번째 컷 첫
 그림, MON~FRI는 미션 그림이고 S3에 .png로 올린 키를 담는다.
+
+부분 다시 생성 재료(#537): 테마 옷 뭉치(OUTFIT)와 컷 첫 그림 8장(INTRO1~4·OUTRO1~4)도 같은 실행
+폴더에 올리고 키를 assets에 둔다(인물 기준 PERSON = 처음 생성의 INTRO1). 부분 다시 생성은
+redo_images만 다시 그리고 나머지는 원래 키를 그대로 둔다. 시작·종료 컷 그림이 하나라도 끝내 실패하면
+그 장면은 원래 그림·영상·움직임을 그대로 두고 warnings(IMAGE)(장면 단위로 바꿈). 미션 그림이 끝내
+실패하면 처음 생성처럼 failure IMAGE.
 """
 
 import asyncio
@@ -39,6 +46,8 @@ CUT_SCENES = ("INTRO", "OUTRO")
 CUTS_KEY = {"INTRO": "introCuts", "OUTRO": "outroCuts"}
 SCENE_IMAGE = {"INTRO": "INTRO4", "OUTRO": "OUTRO4"}  # 응답 INTRO·OUTRO = 4번째 컷 첫 그림
 NO_SETUP = "그림 설정 없음"
+KEPT_NOTE = "원래 그림·영상 유지"  # 부분 다시 생성에서 컷 그림이 끝내 실패한 장면(#537)
+ASSET_NOTE = "부분 다시 생성 재료"  # 재료 그림 업로드 실패(그 대상만 다시 만들 수 없게 됨)
 
 
 def warning(stage: str, item: str, reason: str) -> dict:
@@ -221,71 +230,127 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
     ctx = runtime.context
     if ctx.image is None or ctx.storage is None:
         return {"media_warnings": [warning("IMAGE", "ALL", NO_SETUP)]}
+    partial = bool(state.get("partial"))
+    redo = set(state.get("redo_images") or [])
+    if partial and not redo:
+        return {}  # 영상만 다시 만듦: 그림은 원래 그대로(#537)
     theme = state["theme"]
     assert theme is not None
-    outfit, bad = await dress_mungchi(ctx, theme)
-    if outfit is None:
-        return {"failure": {"stage": "IMAGE", "reasons": [f"OUTFIT {r}" for r in bad]}}
+    outfit = state.get("outfit_image") if partial else None
+    new_assets: dict[str, bytes] = {}
+    if outfit is None:  # 처음 생성, 또는 원래 결과에 그림이 없던 부분 다시 생성
+        outfit, bad = await dress_mungchi(ctx, theme)
+        if outfit is None:
+            return {"failure": {"stage": "IMAGE", "reasons": [f"OUTFIT {r}" for r in bad]}}
+        new_assets["OUTFIT"] = outfit
 
     image_seed = state.get("image_seed") or {}
 
     def seed_of(key: str) -> list[str]:
         return [*image_seed.get(key, []), *image_seed.get("*", [])]
 
-    first = await draw(
-        ctx, theme, cut_shot(ctx, theme, "INTRO", 1, outfit, None), outfit, seed_of("INTRO1")
-    )
-    person = first.image  # 인물 기준 그림(시작 1컷이 끝내 실패하면 인물 참조 없이)
-    shots = [mission_shot(ctx, theme, d, state["drafts"][d], outfit, person) for d in DAYS]
-    shots += [
-        cut_shot(ctx, theme, scene, i, outfit, person)
-        for scene in CUT_SCENES
-        for i in range(1, len(theme[CUTS_KEY[scene]]) + 1)
-        if (scene, i) != ("INTRO", 1)
-    ]
-    drawn = dict(
-        zip(
-            [s.key for s in shots],
-            await asyncio.gather(*(draw(ctx, theme, s, outfit, seed_of(s.key)) for s in shots)),
-            strict=True,
+    def cut_range(scene: str) -> range:
+        return range(1, len(theme[CUTS_KEY[scene]]) + 1)
+
+    if partial:
+        # 인물 기준은 처음 생성의 시작 1컷 그대로(다른 장면과 인물 모습을 맞춤).
+        # 시작 1컷을 다시 그릴 때는
+        # 처음 생성처럼 참조 없이 글로만 그림
+        person = state.get("person_image")
+        shots = [
+            mission_shot(ctx, theme, d, state["drafts"][d], outfit, person)
+            for d in DAYS
+            if d in redo
+        ]
+        shots += [
+            cut_shot(ctx, theme, scene, i, outfit, None if (scene, i) == ("INTRO", 1) else person)
+            for scene in CUT_SCENES
+            for i in cut_range(scene)
+            if f"{scene}{i}" in redo
+        ]
+        results = await asyncio.gather(
+            *(draw(ctx, theme, s, outfit, seed_of(s.key)) for s in shots)
         )
-    )
-    drawn["INTRO1"] = first
+        drawn = dict(zip([s.key for s in shots], results, strict=True))
+    else:
+        first = await draw(
+            ctx, theme, cut_shot(ctx, theme, "INTRO", 1, outfit, None), outfit, seed_of("INTRO1")
+        )
+        person = first.image  # 인물 기준 그림(시작 1컷이 끝내 실패하면 인물 참조 없이)
+        shots = [mission_shot(ctx, theme, d, state["drafts"][d], outfit, person) for d in DAYS]
+        shots += [
+            cut_shot(ctx, theme, scene, i, outfit, person)
+            for scene in CUT_SCENES
+            for i in cut_range(scene)
+            if (scene, i) != ("INTRO", 1)
+        ]
+        drawn = dict(
+            zip(
+                [s.key for s in shots],
+                await asyncio.gather(*(draw(ctx, theme, s, outfit, seed_of(s.key)) for s in shots)),
+                strict=True,
+            )
+        )
+        drawn["INTRO1"] = first
 
     warnings: list[dict] = []
     failures: list[str] = []
-    video_skip: list[str] = []
+    video_skip: list[str] = []  # 처음 생성: 컷 그림이 끝내 실패한 장면은 영상을 빼고 경고
+    kept: list[
+        str
+    ] = []  # 부분 다시 생성: 컷 그림이 하나라도 실패한 장면은 원래 그림·영상을 그대로 둠
     for key, result in drawn.items():
         warnings += [warning("IMAGE", key, w) for w in result.warns]
         if result.image is not None:
             continue
         if key in DAYS:
             failures += [f"{key} {r}" for r in result.bad]
+            continue
+        scene = key[:-1]
+        if partial:
+            kept += [] if scene in kept else [scene]
+            warnings += [warning("IMAGE", key, f"그림 {r}, {KEPT_NOTE}") for r in result.bad]
         else:
-            scene = key[:-1]
-            if scene not in video_skip:
-                video_skip.append(scene)
+            video_skip += [] if scene in video_skip else [scene]
             warnings += [warning("VIDEO", scene, f"{key} 그림 {r}") for r in result.bad]
 
-    scene_images = {k: r.image for k, r in drawn.items() if r.image is not None}
-    to_upload = {
-        scene: scene_images[image_of(scene)]
-        for scene in ("INTRO", *DAYS, "OUTRO")
-        if image_of(scene) in scene_images
+    new_images = {
+        k: r.image for k, r in drawn.items() if r.image is not None and k[:-1] not in kept
     }
+    scene_images = {**(state.get("scene_images") or {}), **new_images}
+    to_upload = {
+        scene: new_images[image_of(scene)]
+        for scene in ("INTRO", *DAYS, "OUTRO")
+        if image_of(scene) in new_images
+    }
+    # 부분 다시 생성 재료(#537): 새로 만든 테마 옷 뭉치와 컷 첫 그림
+    to_upload |= {k: v for k, v in new_images.items() if k not in DAYS} | new_assets
     keys, errors = await put_images(ctx, to_upload)
-    for scene, error in errors.items():
-        if scene in DAYS:
-            failures.append(f"{scene} {error}")
+    for name, error in errors.items():
+        if name in DAYS:
+            failures.append(f"{name} {error}")
+        elif name in ("INTRO", "OUTRO"):
+            warnings.append(warning("IMAGE", name, error))
         else:
-            warnings.append(warning("IMAGE", scene, error))
+            warnings.append(warning("IMAGE", name, f"{error} ({ASSET_NOTE})"))
+    scene_keys = {k: v for k, v in keys.items() if k in ("INTRO", *DAYS, "OUTRO")}
+    assets = {
+        **(state.get("assets") or {}),
+        **{k: v for k, v in keys.items() if k not in scene_keys},
+    }
+    if not partial and "INTRO1" in assets:
+        assets["PERSON"] = assets["INTRO1"]
     out: ThemeState = {
         "outfit_image": outfit,
         "scene_images": scene_images,
-        "image_keys": keys,
+        "image_keys": {**(state.get("image_keys") or {}), **scene_keys},
+        "assets": assets,
         "video_skip": video_skip,
         "media_warnings": warnings,
     }
+    if partial and kept:
+        out["redo_videos"] = [s for s in state.get("redo_videos") or [] if s not in kept]
+        out["redo_motions"] = [s for s in state.get("redo_motions") or [] if s not in kept]
     if failures:
         out["failure"] = {"stage": "IMAGE", "reasons": failures}
     return out
