@@ -1,0 +1,26 @@
+[project]
+name = "tox"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.14.1",
+    "transformers>=5.20.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.2",
+]
+
+[tool.ruff]
+# ml/m2와 같은 설정
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["scripts"]
+testpaths = ["tests"]
