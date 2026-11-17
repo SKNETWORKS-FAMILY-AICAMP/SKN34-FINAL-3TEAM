@@ -6,6 +6,7 @@ import com.sagomungchi.learning.mission.domain.DraftStatus
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.theme.domain.AdminWeeklyTheme
+import com.sagomungchi.learning.theme.domain.ThemeDraftRules
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeDraftView
 import com.sagomungchi.learning.theme.domain.ThemeDraftViewPage
@@ -41,7 +42,8 @@ data class ThemeDraftMissionRequest(
 
 /**
  * 테마 초안 내부 API (api-spec 2.8·4.1, class-diagram 4.4, #438). core #439가 `/api/v1/admin/theme-drafts…`를
- * 관리자 미션 초안과 같은 방식(CONTENT 확인 후 ADMIN + X-User-Id + 빈 학생 범위)으로 넘김. 채택·버리기·다시 생성 본문은 {}(내용은 쓰지 않음)
+ * 관리자 미션 초안과 같은 방식(CONTENT 확인 후 ADMIN + X-User-Id + 빈 학생 범위)으로 넘김. 채택·버리기 본문은 {}(내용은 쓰지 않음),
+ * 다시 생성 본문은 {} 또는 부분 다시 생성 대상 `targets`(#537)
  */
 @RestController
 @RequestMapping("/internal/admin/theme-drafts")
@@ -97,10 +99,25 @@ class AdminThemeDraftController(
         return service.view(service.discard(draftId))
     }
 
+    /** 본문 `{}`·targets 없음(null 포함)은 전체 다시 생성, `{"targets": [...]}`는 부분 다시 생성(#537) */
     @PostMapping("/{draftId}/regenerate")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    fun regenerate(@PathVariable draftId: UUID, @RequestBody(required = false) body: Map<String, Any?>?): ThemeDraftView =
-        service.view(service.regenerate(draftId, requireAdmin()))
+    fun regenerate(@PathVariable draftId: UUID, @RequestBody(required = false) body: Map<String, Any?>?): ThemeDraftView {
+        val admin = requireAdmin()
+        return service.view(service.regenerate(draftId, admin, targets(body?.get(TARGETS))))
+    }
+
+    /** targets: 1개 이상, 문자열이고 ThemeDraftRules.REGEN_TARGETS 값만, 겹치면 처음 한 번(순서 유지). 형식 밖은 400 */
+    private fun targets(value: Any?): List<String>? {
+        if (value == null) return null
+        val items = value as? List<*> ?: invalid("${TARGETS}는 목록")
+        if (items.isEmpty()) invalid("${TARGETS}는 1개 이상")
+        val texts = items.map { it as? String ?: invalid("${TARGETS} 값은 문자열") }
+        texts.filterNot { it in ThemeDraftRules.REGEN_TARGETS }.takeIf { it.isNotEmpty() }?.let {
+            invalid("${TARGETS}에 모르는 값: ${it.joinToString()}")
+        }
+        return texts.distinct()
+    }
 
     /** ADMIN만. 요청·채택한 관리자 ID(X-User-Id)는 UUID (관리자 테마·미션 초안과 같음) */
     private fun requireAdmin(): UUID {
@@ -116,5 +133,6 @@ class AdminThemeDraftController(
     private companion object {
         const val ADMIN_ROLE = "ADMIN"
         const val MAX_SIZE = 100
+        const val TARGETS = "targets"
     }
 }

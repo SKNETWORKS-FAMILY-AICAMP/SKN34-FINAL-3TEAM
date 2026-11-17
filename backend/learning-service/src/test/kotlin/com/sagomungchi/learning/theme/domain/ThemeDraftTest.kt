@@ -20,9 +20,13 @@ class ThemeDraftTest {
     private val sample = ThemeDraftFixtures.output()
     private val aiVersions = ThemeDraftFixtures.VERSIONS
 
-    private fun draft(status: DraftStatus = DraftStatus.GENERATING, checkResults: List<ThemeAttemptFailures> = emptyList()) =
-        ThemeDraft(UUID.randomUUID(), ThemeGrade.G5, week, ThemeDraftSource.AUTO, null, ThemeDraftFixtures.input(), status, 0, checkResults,
-            null, null, DraftVersions(null, null), now, null, now, now)
+    private fun draft(
+        status: DraftStatus = DraftStatus.GENERATING,
+        checkResults: List<ThemeAttemptFailures> = emptyList(),
+        output: ThemeDraftOutput? = null,
+        input: ThemeDraftInput = ThemeDraftFixtures.input(),
+    ) = ThemeDraft(UUID.randomUUID(), ThemeGrade.G5, week, ThemeDraftSource.AUTO, null, input, status, 0, checkResults,
+        output, null, DraftVersions(null, null), now, null, now, now)
 
     @Test
     fun `통과하면 READY, 검사 실패는 상한까지 GENERATING 뒤 CHECK_FAILED, 마지막이 AI 호출 실패면 FAILED`() {
@@ -97,5 +101,72 @@ class ThemeDraftTest {
         listOf(DraftStatus.GENERATING, DraftStatus.ADOPTED).forEach {
             assertThrows<DomainException>(it.name) { draft(it).regenerate(UUID.randomUUID(), admin, now) }
         }
+    }
+
+    @Test
+    fun `부분 다시 생성은 원래 초안 regen 대상 안에서만, 새 초안 input에 원래 초안·대상을 넣고 밖이거나 재료가 없으면 409`() {
+        val admin = UUID.randomUUID()
+        val withRegen = sample.copy(regen = ThemeDraftFixtures.regen())
+        listOf(DraftStatus.READY, DraftStatus.CHECK_FAILED, DraftStatus.FAILED, DraftStatus.DISCARDED).forEach { status ->
+            val original = draft(status, output = withRegen)
+            assertEquals(listOf("VIDEO:INTRO", "IMAGE:MON", "MISSION:WED"), original.regenerableTargets, status.name)
+
+            val copy = original.regenerate(UUID.randomUUID(), admin, now, listOf("MISSION:WED", "VIDEO:INTRO"))
+
+            assertEquals(ThemeDraftRegenerate(original.id, listOf("MISSION:WED", "VIDEO:INTRO")), copy.input.regenerate)
+            assertEquals(original.input.copy(regenerate = null), copy.input.copy(regenerate = null)) // 주제·미션 입력은 그대로
+            assertEquals(listOf(ThemeDraftSource.ADMIN, admin, DraftStatus.GENERATING, 0, null),
+                listOf(copy.source, copy.requestedBy, copy.status, copy.attempts, copy.output))
+            assertEquals(emptyList(), copy.regenerableTargets) // 생성 중
+            val outside = assertThrows<DomainException> { original.regenerate(UUID.randomUUID(), admin, now, listOf("VIDEO:INTRO", "IMAGE:TUE")) }
+            assertEquals("CONFLICT", outside.code)
+            assertTrue("IMAGE:TUE" in outside.detail.orEmpty(), outside.detail)
+        }
+        // 이 기능 전 초안(regen 없음)·결과 없는 초안: 모든 대상 409, 전체 다시 생성은 그대로
+        listOf(sample, null).forEach { output ->
+            val old = draft(DraftStatus.READY, output = output)
+            assertEquals(emptyList(), old.regenerableTargets)
+            assertThrows<DomainException> { old.regenerate(UUID.randomUUID(), admin, now, listOf("VIDEO:INTRO")) }
+            assertNull(old.regenerate(UUID.randomUUID(), admin, now).input.regenerate)
+        }
+        // 채택·생성 중이면 재료가 있어도 대상 없음·409
+        listOf(DraftStatus.GENERATING, DraftStatus.ADOPTED).forEach {
+            val draft = draft(it, output = withRegen)
+            assertEquals(emptyList(), draft.regenerableTargets, it.name)
+            assertThrows<DomainException>(it.name) { draft.regenerate(UUID.randomUUID(), admin, now, listOf("VIDEO:INTRO")) }
+        }
+    }
+
+    @Test
+    fun `부분 결과를 다시 생성할 때 부분은 그 초안을 원래 초안으로, 전체는 input regenerate를 비워 처음부터`() {
+        val admin = UUID.randomUUID()
+        val partial = draft(DraftStatus.READY, output = sample.copy(regen = ThemeDraftFixtures.regen(listOf("IMAGE:FRI"), run = "run-2")),
+            input = ThemeDraftFixtures.input().copy(regenerate = ThemeDraftRegenerate(UUID.randomUUID(), listOf("VIDEO:INTRO"))))
+
+        assertEquals(ThemeDraftRegenerate(partial.id, listOf("IMAGE:FRI")), partial.regenerate(UUID.randomUUID(), admin, now, listOf("IMAGE:FRI")).input.regenerate)
+        assertNull(partial.regenerate(UUID.randomUUID(), admin, now).input.regenerate)
+    }
+
+    @Test
+    fun `regen targets는 문자열만 읽고, ai를 부르기 전 검사 실패(결과 없음)는 이전 결과·버전을 지우지 않음`() {
+        assertEquals(listOf("VIDEO:INTRO"), sample.copy(regen = mapOf("targets" to listOf("VIDEO:INTRO", 3, null))).regenTargets())
+        assertEquals(emptyList(), sample.copy(regen = mapOf("targets" to "VIDEO:INTRO")).regenTargets())
+        assertEquals(emptyList(), sample.regenTargets())
+
+        val failing = draft(output = sample)
+        val missing = ThemeFailure(ThemeDraft.LEARNING, listOf("${ThemeDraftRules.BASE_MISSING} 원래 초안 없음"))
+        failing.recordAttempt(ThemeDraftAttempt.CheckFailed(null, listOf(missing), null), 1, now)
+        assertEquals(listOf(DraftStatus.CHECK_FAILED, 1, sample, DraftVersions(null, null)),
+            listOf(failing.status, failing.attempts, failing.output, failing.versions))
+        assertEquals(listOf(missing), failing.checkResults.single().failures)
+    }
+
+    @Test
+    fun `부분 다시 생성 대상은 14개(시작·종료 영상, 시작·종료·요일 그림, 요일 미션)`() {
+        assertEquals(
+            listOf("VIDEO:INTRO", "VIDEO:OUTRO", "IMAGE:INTRO", "IMAGE:OUTRO", "IMAGE:MON", "IMAGE:TUE", "IMAGE:WED", "IMAGE:THU", "IMAGE:FRI",
+                "MISSION:MON", "MISSION:TUE", "MISSION:WED", "MISSION:THU", "MISSION:FRI"),
+            ThemeDraftRules.REGEN_TARGETS.toList(),
+        )
     }
 }

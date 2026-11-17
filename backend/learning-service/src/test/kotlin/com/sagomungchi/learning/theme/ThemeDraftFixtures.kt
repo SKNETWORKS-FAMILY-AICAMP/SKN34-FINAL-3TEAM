@@ -130,5 +130,16 @@ object ThemeDraftFixtures {
 
     fun response(output: ThemeDraftOutput = output(), failure: ThemeFailure? = null) = AiThemeDraftResponse(
         output.theme, output.missions, output.dialogues, output.images, output.videos, output.motions, output.warnings, failure, VERSIONS,
+        output.regen,
+    )
+
+    /**
+     * ai 부분 다시 생성 재료 (#537 응답 regen): learning이 읽는 칸은 targets뿐이고 나머지는 ai 전용(열어 보지 않고 그대로 저장·전달).
+     * 컷 첫 그림 키·콘티 같은 값을 흉내 냄
+     */
+    fun regen(targets: List<String> = listOf("VIDEO:INTRO", "IMAGE:MON", "MISSION:WED"), run: String = "run-1"): Map<String, Any?> = mapOf(
+        "targets" to targets,
+        "cutImages" to mapOf("INTRO1" to key("INTRO1", run = run), "OUTFIT" to key("OUTFIT", run = run)),
+        "storyboard" to listOf(mapOf("scene" to "INTRO", "cut" to 1, "note" to "도서관 문 앞")),
     )
 }
