@@ -994,10 +994,9 @@ SKN34-FINAL-3TEAM/
 │     ├─ <service>.yaml          # api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
 │     └─ support-learning-required.yaml  # support↔learning 협의용 계약 (현재 learning 구현 명세와 구분)
 ├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님. 예외: tox 재학습 이미지)
-│  ├─ tox/                       # (예정) 답변 표현 분류 학습·평가(#690), 재학습 진입점·CPU 이미지(#729, CronJob #730)
 │  ├─ m2/
 │  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
-│  ├─ tox/                       # 답변 표현 분류(2분류) 데이터 정리·학습 코드(#690, 본 학습 전)
+│  ├─ tox/                       # 답변 표현 분류 학습·평가(#690), (예정) 재학습 진입점·CPU 이미지(#729, CronJob #730)
 │  └─ sllm/                      # (예정) 설명 sLLM 학습·평가·양자화 (#475)
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
