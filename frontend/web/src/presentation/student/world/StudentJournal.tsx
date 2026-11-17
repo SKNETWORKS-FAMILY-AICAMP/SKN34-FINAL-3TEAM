@@ -7,6 +7,8 @@ import { shortRange, studentThinkingLabels } from '../../../domain/classroom.ts'
 import { comparisonAnswerText } from '../../../domain/learning.ts'
 import type { LearningMission } from '../../../domain/learning.ts'
 import { thinkingHue } from '../../../domain/studentLook.ts'
+import { journalTab } from '../../../domain/retention.ts'
+import type { JournalTab } from '../../../domain/retention.ts'
 import { QueryStateNotice } from '../../common/QueryStateNotice.tsx'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { difficultyLabel, feedbackHeadline, followupLabel } from './missionSteps.ts'
@@ -31,7 +33,12 @@ const statusOf = (r: PublicAttempt) => (r.status === 'COMPLETED' ? '마무리' :
  * 내 공책(/student/journal, SC-02-013, #648 시안 Journal). 내가 쓴 답을 주별로 묶어 한 줄씩 보여 준다.
  * 조회는 예전과 같은 기록 훅(useRecords)과 기간 선택이고, 줄을 누르면 기록 상세, 오른쪽 버튼은 이어 하기·결과 다시 보기.
  * 과목 선택·줄의 과목 표시는 뺐다(팀 결정 기능명세 P15 "집중 과목은 국어 우선"(2026-11-01, #213)이라 거를 것이 없음, 사용자 결정 2026-11-16).
+ * 대신 "테마 문제 / 더 풀어 본 문제" 탭으로 나눈다(#710, core 공개 계약 `context` #700). 칸이 없는 기록은 테마 문제 탭(기준안).
  */
+const TABS: { id: JournalTab; label: string; empty: string }[] = [
+  { id: 'THEME', label: '테마 문제', empty: '푼 테마 문제가 없어요.' },
+  { id: 'EXTRA', label: '더 풀어 본 문제', empty: '더 풀어 본 문제가 없어요.' },
+]
 export function StudentJournal({ child, onDetail, onContinue, onMissions }: {
   child: Child
   onDetail: (record: PublicAttempt) => void
@@ -39,8 +46,22 @@ export function StudentJournal({ child, onDetail, onContinue, onMissions }: {
   onMissions: () => void
 }) {
   const [period, setPeriod] = useState<Period>(recentPeriod)
+  // 처음 여는 탭: 가장 최근에 쓴 기록이 든 탭(없으면 테마 문제). 더 풀어 본 문제를 마치고 공책으로 오면 그 기록이 바로 보이게(#710 기준안). 학생이 고르면 그대로
+  const [picked, setPicked] = useState<JournalTab | null>(null)
+  const tabRefs = useRef<Partial<Record<JournalTab, HTMLButtonElement | null>>>({})
   const records = useRecords(child, 'STUDENT', period)
-  const rows = records.data ?? []
+  const all = records.data ?? []
+  const latest = all.reduce<PublicAttempt | undefined>((m, r) => (!m || lastAt(r) > lastAt(m) ? r : m), undefined)
+  const tab: JournalTab = picked ?? (latest ? journalTab(latest) : 'THEME')
+  const setTab = (t: JournalTab) => setPicked(t)
+  const count = (t: JournalTab) => all.filter((r) => journalTab(r) === t).length
+  const rows = all.filter((r) => journalTab(r) === tab)
+  // 탭은 WAI-ARIA 탭 패턴(좌우 화살표로 이동, 꾸미기 탭과 같음)
+  const move = (dir: number) => {
+    const next = TABS[(TABS.findIndex((t) => t.id === tab) + dir + TABS.length) % TABS.length].id
+    setTab(next)
+    tabRefs.current[next]?.focus()
+  }
   const weeks: { monday: string; rows: PublicAttempt[] }[] = []
   for (const r of [...rows].sort((a, b) => lastAt(b).localeCompare(lastAt(a)))) {
     const monday = lastAt(r) ? mondayOf(lastAt(r)) : ''
@@ -63,10 +84,23 @@ export function StudentJournal({ child, onDetail, onContinue, onMissions }: {
           </select>
         </div>
       </header>
-      <div className="st-scroll st-journal-weeks">
+      <div className="st-journal-tabs" role="tablist" aria-label="공책 기록 종류">
+        {TABS.map((t) => (
+          <button key={t.id} ref={(el) => { tabRefs.current[t.id] = el }} type="button" role="tab" id={`journal-tab-${t.id}`}
+            aria-selected={t.id === tab} aria-controls="journal-panel" tabIndex={t.id === tab ? 0 : -1}
+            onClick={() => setTab(t.id)}
+            onKeyDown={(e) => { if (e.key === 'ArrowRight') move(1); else if (e.key === 'ArrowLeft') move(-1) }}>
+            {t.label}{records.isSuccess && <span className="st-journal-count"> {count(t.id)}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="st-scroll st-journal-weeks" role="tabpanel" id="journal-panel" aria-labelledby={`journal-tab-${tab}`}>
         {records.isPending && <QueryStateNotice state="PROCESSING">기록을 읽는 중입니다.</QueryStateNotice>}
         <ErrorNotice error={records.error} retry={() => void records.refetch()} />
-        {records.isSuccess && rows.length === 0 && (
+        {records.isSuccess && all.length > 0 && rows.length === 0 && (
+          <QueryStateNotice state="NO_RECORD">{periodName(period)} 동안 {TABS.find((t) => t.id === tab)!.empty}</QueryStateNotice>
+        )}
+        {records.isSuccess && all.length === 0 && (
           <QueryStateNotice state="NO_RECORD">
             {periodName(period)} 동안 쓴 답이 없어요.
             <button type="button" className="cj-primary" onClick={onMissions}>

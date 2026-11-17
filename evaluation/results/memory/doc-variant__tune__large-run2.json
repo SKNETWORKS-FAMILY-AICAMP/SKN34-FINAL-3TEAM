@@ -1,0 +1,1123 @@
+{
+ "date": "2026-11-16",
+ "model": "text-embedding-3-large",
+ "dimensions": 1536,
+ "docs": 120,
+ "queries": 56,
+ "embeddingTokens": 60014,
+ "variants": {
+  "지금(제목+대사+질문+답)": {
+   "chosenThreshold": 0.36,
+   "atChosen": {
+    "threshold": 0.36,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.917,
+    "recall@3_ci": [
+     0.782,
+     0.971
+    ],
+    "hit@1": 0.889,
+    "mrr@3": 0.903,
+    "recall@k": {
+     "1": 0.847,
+     "2": 0.917,
+     "3": 0.917
+    },
+    "reject": 0.95,
+    "reject_ci": [
+     0.764,
+     0.991
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.833
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.75
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.875
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 1.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   },
+   "at0.35": {
+    "threshold": 0.35,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.917,
+    "recall@3_ci": [
+     0.782,
+     0.971
+    ],
+    "hit@1": 0.889,
+    "mrr@3": 0.903,
+    "recall@k": {
+     "1": 0.847,
+     "2": 0.917,
+     "3": 0.917
+    },
+    "reject": 0.85,
+    "reject_ci": [
+     0.64,
+     0.948
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.833
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.75
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.875
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 0.875
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.75
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   },
+   "noThreshold": {
+    "threshold": null,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.986,
+    "recall@3_ci": [
+     0.904,
+     1.0
+    ],
+    "hit@1": 0.972,
+    "mrr@3": 0.986,
+    "recall@k": {
+     "1": 0.917,
+     "2": 0.986,
+     "3": 0.986
+    },
+    "reject": 0.0,
+    "reject_ci": [
+     -0.0,
+     0.161
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.875
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   }
+  },
+  "제목+질문+답": {
+   "chosenThreshold": 0.37,
+   "atChosen": {
+    "threshold": 0.37,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.833,
+    "recall@3_ci": [
+     0.681,
+     0.921
+    ],
+    "hit@1": 0.806,
+    "mrr@3": 0.833,
+    "recall@k": {
+     "1": 0.75,
+     "2": 0.833,
+     "3": 0.833
+    },
+    "reject": 1.0,
+    "reject_ci": [
+     0.839,
+     1.0
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.75
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.75
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.917
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 1.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 0.875
+     }
+    }
+   },
+   "at0.35": {
+    "threshold": 0.35,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.861,
+    "recall@3_ci": [
+     0.713,
+     0.939
+    ],
+    "hit@1": 0.833,
+    "mrr@3": 0.861,
+    "recall@k": {
+     "1": 0.778,
+     "2": 0.861,
+     "3": 0.861
+    },
+    "reject": 0.9,
+    "reject_ci": [
+     0.699,
+     0.972
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.833
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.75
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.875
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.917
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.75
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 0.875
+     }
+    }
+   },
+   "noThreshold": {
+    "threshold": null,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.986,
+    "recall@3_ci": [
+     0.904,
+     1.0
+    ],
+    "hit@1": 0.889,
+    "mrr@3": 0.94,
+    "recall@k": {
+     "1": 0.833,
+     "2": 0.958,
+     "3": 0.986
+    },
+    "reject": 0.0,
+    "reject_ci": [
+     -0.0,
+     0.161
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.875
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   }
+  },
+  "질문+답": {
+   "chosenThreshold": 0.28,
+   "atChosen": {
+    "threshold": 0.28,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.833,
+    "recall@3_ci": [
+     0.681,
+     0.921
+    ],
+    "hit@1": 0.639,
+    "mrr@3": 0.736,
+    "recall@k": {
+     "1": 0.583,
+     "2": 0.833,
+     "3": 0.833
+    },
+    "reject": 0.9,
+    "reject_ci": [
+     0.699,
+     0.972
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.917
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 1.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.875
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.833
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.75
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 0.625
+     }
+    }
+   },
+   "at0.35": {
+    "threshold": 0.35,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.583,
+    "recall@3_ci": [
+     0.422,
+     0.729
+    ],
+    "hit@1": 0.5,
+    "mrr@3": 0.556,
+    "recall@k": {
+     "1": 0.444,
+     "2": 0.583,
+     "3": 0.583
+    },
+    "reject": 0.95,
+    "reject_ci": [
+     0.764,
+     0.991
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.833
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.75
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.417
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.75
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 0.375
+     }
+    }
+   },
+   "noThreshold": {
+    "threshold": null,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.889,
+    "recall@3_ci": [
+     0.747,
+     0.956
+    ],
+    "hit@1": 0.667,
+    "mrr@3": 0.773,
+    "recall@k": {
+     "1": 0.611,
+     "2": 0.861,
+     "3": 0.889
+    },
+    "reject": 0.0,
+    "reject_ci": [
+     -0.0,
+     0.161
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.917
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 1.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.917
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 0.75
+     }
+    }
+   }
+  },
+  "제목+답": {
+   "chosenThreshold": 0.41,
+   "atChosen": {
+    "threshold": 0.41,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.847,
+    "recall@3_ci": [
+     0.681,
+     0.921
+    ],
+    "hit@1": 0.806,
+    "mrr@3": 0.829,
+    "recall@k": {
+     "1": 0.75,
+     "2": 0.819,
+     "3": 0.847
+    },
+    "reject": 0.95,
+    "reject_ci": [
+     0.764,
+     0.991
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.875
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.875
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.667
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 1.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 0.875
+     }
+    }
+   },
+   "at0.35": {
+    "threshold": 0.35,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.944,
+    "recall@3_ci": [
+     0.819,
+     0.985
+    ],
+    "hit@1": 0.861,
+    "mrr@3": 0.898,
+    "recall@k": {
+     "1": 0.806,
+     "2": 0.917,
+     "3": 0.944
+    },
+    "reject": 0.75,
+    "reject_ci": [
+     0.531,
+     0.888
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 1.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.5
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.833
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.75
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   },
+   "noThreshold": {
+    "threshold": null,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 1.0,
+    "recall@3_ci": [
+     0.904,
+     1.0
+    ],
+    "hit@1": 0.917,
+    "mrr@3": 0.954,
+    "recall@k": {
+     "1": 0.861,
+     "2": 0.972,
+     "3": 1.0
+    },
+    "reject": 0.0,
+    "reject_ci": [
+     -0.0,
+     0.161
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 1.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   }
+  },
+  "답만": {
+   "chosenThreshold": 0.39,
+   "atChosen": {
+    "threshold": 0.39,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.722,
+    "recall@3_ci": [
+     0.56,
+     0.842
+    ],
+    "hit@1": 0.722,
+    "mrr@3": 0.722,
+    "recall@k": {
+     "1": 0.667,
+     "2": 0.722,
+     "3": 0.722
+    },
+    "reject": 1.0,
+    "reject_ci": [
+     0.839,
+     1.0
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 1.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.5
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 1.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 0.5
+     }
+    }
+   },
+   "at0.35": {
+    "threshold": 0.35,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.75,
+    "recall@3_ci": [
+     0.589,
+     0.862
+    ],
+    "hit@1": 0.75,
+    "mrr@3": 0.75,
+    "recall@k": {
+     "1": 0.694,
+     "2": 0.75,
+     "3": 0.75
+    },
+    "reject": 0.85,
+    "reject_ci": [
+     0.64,
+     0.948
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 1.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.75
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.583
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.75
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 0.5
+     }
+    }
+   },
+   "noThreshold": {
+    "threshold": null,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.972,
+    "recall@3_ci": [
+     0.858,
+     0.995
+    ],
+    "hit@1": 0.861,
+    "mrr@3": 0.912,
+    "recall@k": {
+     "1": 0.806,
+     "2": 0.944,
+     "3": 0.972
+    },
+    "reject": 0.0,
+    "reject_ci": [
+     -0.0,
+     0.161
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 1.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.917
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   }
+  },
+  "제목+대사": {
+   "chosenThreshold": 0.37,
+   "atChosen": {
+    "threshold": 0.37,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.667,
+    "recall@3_ci": [
+     0.503,
+     0.798
+    ],
+    "hit@1": 0.639,
+    "mrr@3": 0.653,
+    "recall@k": {
+     "1": 0.639,
+     "2": 0.667,
+     "3": 0.667
+    },
+    "reject": 1.0,
+    "reject_ci": [
+     0.839,
+     1.0
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.417
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.917
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 1.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   },
+   "at0.35": {
+    "threshold": 0.35,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.722,
+    "recall@3_ci": [
+     0.56,
+     0.842
+    ],
+    "hit@1": 0.694,
+    "mrr@3": 0.708,
+    "recall@k": {
+     "1": 0.694,
+     "2": 0.722,
+     "3": 0.722
+    },
+    "reject": 0.85,
+    "reject_ci": [
+     0.64,
+     0.948
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.5
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.75
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.75
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   },
+   "noThreshold": {
+    "threshold": null,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.861,
+    "recall@3_ci": [
+     0.713,
+     0.939
+    ],
+    "hit@1": 0.861,
+    "mrr@3": 0.875,
+    "recall@k": {
+     "1": 0.833,
+     "2": 0.861,
+     "3": 0.861
+    },
+    "reject": 0.0,
+    "reject_ci": [
+     -0.0,
+     0.161
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.833
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.25
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   }
+  },
+  "나눠 담기 max(제목+대사, 질문+답)": {
+   "chosenThreshold": 0.37,
+   "atChosen": {
+    "threshold": 0.37,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.847,
+    "recall@3_ci": [
+     0.681,
+     0.921
+    ],
+    "hit@1": 0.889,
+    "mrr@3": 0.889,
+    "recall@k": {
+     "1": 0.833,
+     "2": 0.847,
+     "3": 0.847
+    },
+    "reject": 1.0,
+    "reject_ci": [
+     0.839,
+     1.0
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.75
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.625
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 0.917
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 1.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   },
+   "at0.35": {
+    "threshold": 0.35,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 0.944,
+    "recall@3_ci": [
+     0.819,
+     0.985
+    ],
+    "hit@1": 0.944,
+    "mrr@3": 0.958,
+    "recall@k": {
+     "1": 0.889,
+     "2": 0.944,
+     "3": 0.944
+    },
+    "reject": 0.85,
+    "reject_ci": [
+     0.64,
+     0.948
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 0.917
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 0.75
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.75
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 1.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.75
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   },
+   "noThreshold": {
+    "threshold": null,
+    "nResults": 36,
+    "nReject": 20,
+    "recall@3": 1.0,
+    "recall@3_ci": [
+     0.904,
+     1.0
+    ],
+    "hit@1": 0.972,
+    "mrr@3": 0.986,
+    "recall@k": {
+     "1": 0.917,
+     "2": 0.986,
+     "3": 1.0
+    },
+    "reject": 0.0,
+    "reject_ci": [
+     -0.0,
+     0.161
+    ],
+    "byCategory": {
+     "ANSWER": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "MULTI": {
+      "n": 4,
+      "recall": 1.0
+     },
+     "NONE": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "OTHER": {
+      "n": 8,
+      "rejected": 0.0
+     },
+     "PARAPHRASE": {
+      "n": 12,
+      "recall": 1.0
+     },
+     "SCOPE": {
+      "n": 4,
+      "rejected": 0.0
+     },
+     "TITLE": {
+      "n": 8,
+      "recall": 1.0
+     }
+    }
+   }
+  }
+ }
+}

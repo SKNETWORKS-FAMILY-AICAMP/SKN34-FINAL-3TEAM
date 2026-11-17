@@ -29,8 +29,15 @@ interface RewardMapper {
     fun insertUnlock(@Param("studentId") studentId: UUID, @Param("itemKey") itemKey: String,
                      @Param("ledgerId") ledgerId: UUID?, @Param("now") now: OffsetDateTime): Int
 
+    /** 방 소품(#704) 아이템별 보유 개수(code, owned) */
+    fun decorCounts(studentId: UUID): List<Map<String, Any?>>
+    fun decorCount(@Param("studentId") studentId: UUID, @Param("itemId") itemId: UUID): Int
+    fun insertDecor(@Param("id") id: UUID, @Param("studentId") studentId: UUID, @Param("itemId") itemId: UUID,
+                    @Param("ledgerId") ledgerId: UUID, @Param("now") now: OffsetDateTime): Int
+
     fun equipment(studentId: UUID): List<Map<String, Any?>>
     fun equipmentOf(@Param("ids") studentIds: Collection<UUID>): List<Map<String, Any?>>
+    fun equipmentAssets(studentId: UUID): List<Map<String, Any?>>
     fun deleteEquipmentSlot(@Param("studentId") studentId: UUID, @Param("slot") slot: String): Int
     fun insertEquipment(@Param("studentId") studentId: UUID, @Param("slot") slot: String,
                         @Param("itemId") itemId: UUID, @Param("now") now: OffsetDateTime): Int
@@ -48,6 +55,7 @@ interface RewardMapper {
 
     fun deleteEquipment(studentId: UUID): Int
     fun deleteUnlocks(studentId: UUID): Int
+    fun deleteDecor(studentId: UUID): Int
     fun deleteLedger(studentId: UUID): Int
     fun deleteBalance(studentId: UUID): Int
 }

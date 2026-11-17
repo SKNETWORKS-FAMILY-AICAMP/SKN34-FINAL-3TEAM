@@ -1,4 +1,4 @@
-"""Validate actual MockMvc reward JSON (#389 points, look items, preferences, admin items; #555 room frame slots) against OpenAPI."""
+"""Validate actual MockMvc reward JSON (#389 points, look items, preferences, admin items; #555 room frame slots; #704 room decor purchase and spots) against OpenAPI."""
 import json
 from pathlib import Path
 
@@ -14,6 +14,8 @@ for artifact, schema in {
     "reward-preferences-equipped.json": "StudentLook",
     "reward-admin-look-item.json": "AdminLookItem",
     "room-frame-slots.json": "RoomFrameSlots",
+    "reward-decor-purchase.json": "LookDecorPurchaseResult",
+    "reward-decor-spots.json": "RoomDecorSpots",
 }.items():
     data = json.loads((artifacts / artifact).read_text(encoding="utf-8"))
     Draft202012Validator({**spec["components"]["schemas"][schema], "components": spec["components"]},

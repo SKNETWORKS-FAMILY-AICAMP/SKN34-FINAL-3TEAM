@@ -1,0 +1,258 @@
+{
+ "dataset": "memory@1",
+ "label": "pc-1116-hybrid",
+ "collectedAt": "2026-11-16T18:38:04+09:00",
+ "environment": "PC compose(E2E, develop 837ffba2), 하이브리드(#682, 질의 변환 gpt-6-luna), text-embedding-3-small, 기준값 0.35",
+ "today": "2026-11-16",
+ "docStatus": {
+  "READY": 268
+ },
+ "minCheckers": 1,
+ "queriesUsed": 118,
+ "droppedUnchecked": 0,
+ "droppedCurrentMissing": 4,
+ "chosenThreshold": null,
+ "tuneSweep": [],
+ "asServed": true,
+ "tune": {
+  "V@served": {
+   "threshold": null,
+   "nResults": 36,
+   "nReject": 20,
+   "recall@3": 0.889,
+   "recall@3_ci": [
+    0.747,
+    0.956
+   ],
+   "hit@1": 0.833,
+   "mrr@3": 0.856,
+   "recall@k": {
+    "1": 0.778,
+    "2": 0.861,
+    "3": 0.889
+   },
+   "reject": 0.6,
+   "reject_ci": [
+    0.387,
+    0.781
+   ],
+   "byCategory": {
+    "ANSWER": {
+     "n": 12,
+     "recall": 1.0
+    },
+    "MULTI": {
+     "n": 4,
+     "recall": 1.0
+    },
+    "NONE": {
+     "n": 8,
+     "rejected": 0.625
+    },
+    "OTHER": {
+     "n": 8,
+     "rejected": 0.625
+    },
+    "PARAPHRASE": {
+     "n": 12,
+     "recall": 0.667
+    },
+    "SCOPE": {
+     "n": 4,
+     "rejected": 0.5
+    },
+    "TITLE": {
+     "n": 8,
+     "recall": 1.0
+    }
+   }
+  }
+ },
+ "eval": {
+  "V@served": {
+   "threshold": null,
+   "nResults": 36,
+   "nReject": 24,
+   "recall@3": 0.944,
+   "recall@3_ci": [
+    0.819,
+    0.985
+   ],
+   "hit@1": 0.944,
+   "mrr@3": 0.944,
+   "recall@k": {
+    "1": 0.889,
+    "2": 0.944,
+    "3": 0.944
+   },
+   "reject": 0.667,
+   "reject_ci": [
+    0.467,
+    0.82
+   ],
+   "byCategory": {
+    "ANSWER": {
+     "n": 12,
+     "recall": 1.0
+    },
+    "MULTI": {
+     "n": 4,
+     "recall": 1.0
+    },
+    "NONE": {
+     "n": 8,
+     "rejected": 0.625
+    },
+    "OTHER": {
+     "n": 8,
+     "rejected": 0.75
+    },
+    "PARAPHRASE": {
+     "n": 12,
+     "recall": 0.833
+    },
+    "SCOPE": {
+     "n": 8,
+     "rejected": 0.625
+    },
+    "TITLE": {
+     "n": 8,
+     "recall": 1.0
+    }
+   }
+  },
+  "K1": {
+   "threshold": null,
+   "nResults": 36,
+   "nReject": 24,
+   "recall@3": 0.0,
+   "recall@3_ci": [
+    0.0,
+    0.096
+   ],
+   "hit@1": 0.0,
+   "mrr@3": 0.0,
+   "recall@k": {
+    "1": 0.0,
+    "2": 0.0,
+    "3": 0.0
+   },
+   "reject": 1.0,
+   "reject_ci": [
+    0.862,
+    1.0
+   ],
+   "byCategory": {
+    "ANSWER": {
+     "n": 12,
+     "recall": 0.0
+    },
+    "MULTI": {
+     "n": 4,
+     "recall": 0.0
+    },
+    "NONE": {
+     "n": 8,
+     "rejected": 1.0
+    },
+    "OTHER": {
+     "n": 8,
+     "rejected": 1.0
+    },
+    "PARAPHRASE": {
+     "n": 12,
+     "recall": 0.0
+    },
+    "SCOPE": {
+     "n": 8,
+     "rejected": 1.0
+    },
+    "TITLE": {
+     "n": 8,
+     "recall": 0.0
+    }
+   }
+  },
+  "K2": {
+   "threshold": null,
+   "nResults": 36,
+   "nReject": 24,
+   "recall@3": 0.889,
+   "recall@3_ci": [
+    0.747,
+    0.956
+   ],
+   "hit@1": 0.889,
+   "mrr@3": 0.889,
+   "recall@k": {
+    "1": 0.833,
+    "2": 0.889,
+    "3": 0.889
+   },
+   "reject": 0.875,
+   "reject_ci": [
+    0.69,
+    0.957
+   ],
+   "byCategory": {
+    "ANSWER": {
+     "n": 12,
+     "recall": 1.0
+    },
+    "MULTI": {
+     "n": 4,
+     "recall": 1.0
+    },
+    "NONE": {
+     "n": 8,
+     "rejected": 0.875
+    },
+    "OTHER": {
+     "n": 8,
+     "rejected": 1.0
+    },
+    "PARAPHRASE": {
+     "n": 12,
+     "recall": 0.667
+    },
+    "SCOPE": {
+     "n": 8,
+     "rejected": 0.75
+    },
+    "TITLE": {
+     "n": 8,
+     "recall": 1.0
+    }
+   }
+  }
+ },
+ "deleted": {
+  "V": {
+   "DELETED": {
+    "n": 2,
+    "ok": 1.0
+   }
+  }
+ },
+ "violations": {
+  "V": [],
+  "K1": [],
+  "K2": []
+ },
+ "latencyMs": {
+  "n": 118,
+  "p50": 3522.0,
+  "p95": 5594.8,
+  "max": 7160.6,
+  "repeats": 1,
+  "note": "learning 내부 API 순차 호출, 질문 임베딩 포함, core·브라우저 제외"
+ },
+ "criteria": {
+  "recall@3 ≥ 0.80": true,
+  "V − max(K1,K2) ≥ 0.10": false,
+  "reject ≥ 0.80": false,
+  "violations = 0": true,
+  "p95 ≤ 2000ms": false,
+  "explanation (human)": "별도 표시지로 판정"
+ }
+}

@@ -110,6 +110,8 @@ test('#440 이야기의 끝: 정답을 맞히면 끝 장면 → 이야기와 열
   await stage.getByRole('button', { name: '건너뛰기 →' }).click()
   await expect(page.locator('.tw-ending-title')).toBeFocused()
   await expect(page.locator('.tw-answer')).toHaveText('부엉이 선생님')
+  // #715 2: 머리말에 요일을 짐작해 붙이지 않는다(토요일에 맞혀도 "금요일"로 나오던 것)
+  await expect(page.locator('.tw-kicker')).not.toContainText('요일')
   await expect.poll(async () => (await storyViews(page)).filter(v => v.endsWith(':OUTRO')).length).toBe(1)
   await page.getByRole('button', { name: '끝 장면 다시 보기', exact: true }).click()
   await expect(stage).toBeVisible()

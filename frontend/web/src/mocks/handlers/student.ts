@@ -140,10 +140,22 @@ export const mockStudentHome = (c: Child) => store.home(c)
 export const mockLatestAttempt = (studentId: string, missionId: string) =>
   store.snapshot().attempts.filter((a) => a.studentId === studentId && a.mission.id === missionId)
     .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0]?.attemptId ?? null
+/** 시작할 때 받은 시도 종류(목업). 기록 목록의 `context`(#700)로 돌려준다(#710) */
+const startedContexts = new Map<string, AttemptContext>()
+/** 기록 목록 `context`(#700, 선택 칸): 시작 때 받은 값, 없으면(예전 목업 기록) 이번 주 테마 문제면 THEME_DAY, 아니면 EXTRA */
+async function withContexts<T extends { attemptId: string; mission: { id: string } }>(owner: Child, rows: T[]) {
+  const home = await store.home(owner)
+  const week = weeklyThemeFor(owner.id, home.missions, owner.grade, mockPremium(owner.id) ? 'PREMIUM' : 'FREE')
+  const theme = new Set(week.days.map((d) => d.missionId))
+  return rows.map((r) => ({ ...r, context: startedContexts.get(r.attemptId) ?? (theme.has(r.mission.id) ? 'THEME_DAY' : 'EXTRA') }))
+}
+const startContext = async (request: Request) => {
+  const text = await request.clone().text()
+  return (text ? (JSON.parse(text) as { context?: AttemptContext }) : {}).context
+}
 /** 2.11 시작 맥락 검사(목업). 맥락 없이 부르는 기존 화면은 검사하지 않는다. */
 async function checkContext(request: Request, missionId: string) {
-  const text = await request.clone().text()
-  const context = (text ? (JSON.parse(text) as { context?: AttemptContext }) : {}).context
+  const context = await startContext(request)
   if (!context || mockRole !== 'STUDENT' || !child) return
   const home = await store.home(child)
   const existing = home.missions.find((m) => m.id === missionId)?.status === 'IN_PROGRESS'
@@ -425,7 +437,10 @@ export const studentHandlers = [
       guard(request)
       const m = await store.mission(id(params.missionId), child!)
       await checkContext(request, m.id)
-      return wireAttempt(await store.start(m, child!))
+      const started = await store.start(m, child!)
+      const context = await startContext(request)
+      if (context && !startedContexts.has(started.attemptId)) startedContexts.set(started.attemptId, context)
+      return wireAttempt(started)
     }, 201),
   ),
   http.get('/api/v1/attempts/:attemptId', ({ request, params }) =>
@@ -586,7 +601,7 @@ export const studentHandlers = [
       const q = new URL(request.url).searchParams
       const period = { from: q.get('from') ?? '2000-01-01', to: q.get('to') ?? '2099-12-31' }
       const index = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20)
-      const rows = await store.records(child!, 'STUDENT', period)
+      const rows = await withContexts(child!, await store.records(child!, 'STUDENT', period))
       return { items: rows.slice(index * size, (index + 1) * size), page: index, size, totalElements: rows.length,
         studentId: child!.id, state: rows.length ? 'OK' : 'NO_RECORD', period, inclusionRule: 'P08' }
     }),
@@ -610,11 +625,12 @@ export const studentHandlers = [
       guard(request)
       const url = new URL(request.url)
       requireShared(id(params.childId))
+      const owner = await linked(id(params.childId))
       return page(
-        await store.records(await linked(id(params.childId)), 'PARENT', {
+        await withContexts(owner, await store.records(owner, 'PARENT', {
           from: url.searchParams.get('from')!,
           to: url.searchParams.get('to')!,
-        }),
+        })),
       )
     }),
   ),

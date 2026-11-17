@@ -824,3 +824,51 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 
 - `context`가 없는 기록의 표시 기준(웹 기준안: "테마 문제" 탭)은 웹 #648에서 정한다
 - 검증: `DashboardIntegrationTest`가 learning이 준 `context`를 학생·학부모 목록, 학부모 상세, 학생 home `resume`에서 그대로 받는지 확인한다. `scripts/tests`는 core 세 스키마의 정의가 learning `RecordAttempt`와 같고 required가 아님을 확인하고, 기준 지문 비교에서는 이 칸만 빼고 비교한다
+
+## 32. 동행 캐릭터 12종 저장 (#697, 2026-11-16)
+
+학생 화면 새 디자인(#589, 웹 #648·PR #696)의 "뭉치 친구들" 12종을 core가 모두 저장·해금하게 넓혔다. 14절 꾸미기 해금 흐름(`LookUnlockService`, 원장 `UNLOCK`, `Idempotency-Key`)을 그대로 쓰고 새 해금 경로는 없다. 웹 잠금 풀기는 짝 이슈 #698이 이 변경 병합 뒤에 한다.
+
+### 확정한 기준안 (사용자 확인 2026-11-16)
+
+| 화면 친구 | core 값 | 이름(`LookCatalog.COMPANIONS`) | 해금값 |
+|---|---|---|---|
+| 솜뭉치 | `mungchi` | 솜뭉치 | 0(무료 기본) |
+| 솔방울뭉치 | `tori` | 솔방울뭉치 | 150 |
+| 모래뭉치 | `mongdol` | 모래뭉치 | 150 |
+| 이끼뭉치 | `kongi` | 이끼뭉치 | 150 |
+| 구름뭉치 | `monggeul` | 구름뭉치 | 150 |
+| 눈뭉치 | `snow` | 눈뭉치 | 150 |
+| 털실뭉치 | `yarn` | 털실뭉치 | 150 |
+| 별뭉치 | `star` | 별뭉치 | 150 |
+| 거품뭉치 | `foam` | 거품뭉치 | 150 |
+| 종이뭉치 | `paper` | 종이뭉치 | 150 |
+| 꽃잎뭉치 | `petal` | 꽃잎뭉치 | 150 |
+| 얼음뭉치 | `ice` | 얼음뭉치 | 150 |
+
+- **기존 5종 값은 그대로**: 바꾸면 `student.look_companion`·`student_look_unlock.item_key`(`COMPANION:tori` 등)·원장 사건 키까지 옮겨야 하고 원장은 고치지 않는 규칙(ERD 3.5.1)과 부딪힌다. 새 7종만 웹 친구 id를 값으로 쓴다(모두 `varchar(16)` 안)
+- **순서**: 기존 5종 뒤에 새 7종(학생 아이템 목록 순서). 무료는 `mungchi` 하나, `StudentLook.DEFAULT`도 그대로
+- **이름**: 서버 아이템 이름도 화면 친구 이름으로(기존 5종 뭉치 → 솜뭉치 등). 웹은 이미 친구 이름으로 그린다
+
+### 바꾼 곳
+
+| 위치 | 변경 |
+|---|---|
+| `V49__student_look_companions_12.sql` | `student.look_companion` CHECK를 12개 값으로. V23의 이름 없는 CHECK(PostgreSQL 자동 이름 `student_look_companion_check`, kind `core_db`에서 확인)를 지우고 이름 붙은 `ck_student_look_companion`으로 다시 만듦. 허용 목록만 넓혀 기존 행은 항상 통과(V46·V48 방식) |
+| `StudentLook.COMPANIONS`, `LookCatalog.COMPANIONS` | 12종 |
+| OpenAPI `StudentLookCompanion` | 12종(설정 요청·응답과 `CommunityAuthor.look`이 같이 씀) |
+| 기능명세 P22, api-spec 3.12, ERD 3.1 주석 | 캐릭터 11종 해금, 값 목록 12개. api-spec 2.10 `itemKey` 설명은 `COMPANION:tori` 예시라 그대로 |
+| `scripts/tests/test_student_look_contract.py` | 캐릭터 CHECK는 V49에서 읽음. 웹 `type CompanionId`는 #698 전까지 5종이라 "웹 값이 모두 OpenAPI 목록 안"으로 잠시 느슨하게(#698에서 "같음"으로 되돌림) |
+| GitOps local `core-service.yaml` | 마이그레이션 리비전 v49 |
+
+### 호환
+
+- 기존 5종을 고른 학생 설정·해금 행·원장 행은 값이 그대로라 그대로 쓰인다
+- 지금 웹은 학생 아이템 목록에 모르는 `COMPANION:*` 항목이 와도 친구 목록을 웹 12종 기준으로 그려 화면이 깨지지 않는다. 웹은 #698 전까지 새 7종을 보내지 않고, 다른 경로로 새 값이 저장되면 `readLook`이 기본(솜뭉치)으로 보여 준다(코드로 확인, 실서버 확인 전)
+- 커뮤니티 작성자 `look.companion`에도 새 값이 나올 수 있으나 웹 #698 전에는 새 값을 저장할 화면이 없다
+
+### 검증
+
+- `RewardIntegrationTest`: 학생 아이템 목록에 캐릭터 12개·순서·이름·가격, 새 값 `snow` 해금(150 차감)·저장, 해금 전 저장 409 `LOOK_LOCKED`, 잔액 부족 409, 목록 밖 404, 기존 해금 행(`COMPANION:tori`) 그대로 저장
+- `StudentLookIntegrationTest`: 목록 밖 값(`dragon`·웹 id `cotton`) 422, DB가 12종은 받고 목록 밖 값은 거부
+- `scripts/check_db_migrations.py`(일회용 PostgreSQL), `scripts/tests` 전체

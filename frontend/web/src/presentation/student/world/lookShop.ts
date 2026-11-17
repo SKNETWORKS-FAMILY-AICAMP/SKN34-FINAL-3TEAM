@@ -19,7 +19,7 @@ export const unlockMessage = (e: unknown) => {
 }
 /** 서버 아이템 이름 대신 화면 이름을 쓴다: 동행 캐릭터는 뭉치 친구 이름(#648) */
 export const itemName = (item: LookItem) => {
-  const friend = item.slot === 'COMPANION' && FRIENDS.find((f) => f.companion && companionKey(f.companion) === item.itemKey)
+  const friend = item.slot === 'COMPANION' && FRIENDS.find((f) => companionKey(f.companion) === item.itemKey)
   return friend ? friend.name : item.name
 }
 

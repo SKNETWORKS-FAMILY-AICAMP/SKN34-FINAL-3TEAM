@@ -58,6 +58,16 @@ class CommunityClient(private val http: LearningClient, private val json: Object
         Unit
     }
 
+    /**
+     * 친구 방 구경(#708)용 작성자 찾기 + 열람 검사(learning #707). 열람자 본인(STUDENT)으로 부르고 작성자 학생 ID를 돌려준다.
+     * learning 공개 오류(403 잠금·404 없음·409 본인 글)는 그대로 전달한다.
+     */
+    fun postAuthor(postId: UUID, viewer: UUID, viewerUser: UUID): UUID = acting("STUDENT", viewerUser, viewer) {
+        val body = read(checked(http.exchange("GET", "/community/posts/$postId/author", "viewerStudentId=$viewer")))
+        if (uuidOrNull(body.path("postId")) != postId) invalid()
+        uuidOrNull(body.path("studentId")) ?: invalid()
+    }
+
     /** 신고 대상 확인·관리자 원문 열람. 없는(삭제된) 공유물은 null. */
     fun post(postId: UUID): PostDetail? = acting("SYSTEM", null, null) {
         val response = http.exchange("GET", "/community/posts/$postId")

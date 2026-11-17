@@ -87,16 +87,18 @@ test('내 공책 기록 상세는 답 버전 카드와 학생 말로 보이고 �
   await expect(page).toHaveURL(/\/student\/attempts\/new-/)
 })
 
-test('홈 내 포인트 카드는 뭉치 친구들로 가고, 서버 값이 없는 7종은 곧 만나요로 잠근다 @responsive', async ({ page }) => {
+test('홈 내 포인트 카드는 뭉치 친구들로 가고, 12종 모두 만날 수 있다(곧 만나요 없음, #698) @responsive', async ({ page }) => {
   await student(page)
   await page.getByRole('button', { name: /내 포인트/ }).first().click()
   await expect(page).toHaveURL(/\/student\/friends/)
   await expect(page.getByRole('heading', { name: '뭉치 친구들', exact: true })).toBeVisible()
   const cards = page.getByRole('region', { name: '친구 목록' }).getByRole('button')
   await expect(cards).toHaveCount(12)
-  await expect(cards.filter({ hasText: '곧 만나요' })).toHaveCount(7)
+  await expect(cards.filter({ hasText: '곧 만나요' })).toHaveCount(0)
   await cards.filter({ hasText: '눈뭉치' }).click()
-  await expect(page.getByRole('button', { name: '곧 만나요', exact: true })).toBeDisabled()
+  // 새 7종도 다른 친구처럼 포인트로 만나기(잠김이면 "N 포인트로 만나기", 해금했으면 "함께 다니기")
+  await expect(page.getByRole('button', { name: /포인트로 만나기$|^함께 다니기$/ })).toBeVisible()
+  await expect(page.getByText('곧 만나요')).toHaveCount(0)
   await expect(cards.filter({ hasText: '솜뭉치' })).toContainText('함께 다니는 중')
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
@@ -150,5 +152,53 @@ test('#440 문제 푸는 화면은 다섯 단계 칩을 잇고 메모를 답 칸
   await expect(steps.locator('[aria-current="step"]')).toHaveText('3 피드백')
   // 결과 이름에 내부 말 '판정'을 쓰지 않는다(#440 26번)
   await expect(page.getByRole('region', { name: '내가 쓴 답' })).not.toContainText('판정')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+// #710 내 공책 탭: 기록 종류(context, core #700)로 "테마 문제 / 더 풀어 본 문제"를 나눈다. 미션 고르기에서 연 문제는 EXTRA로 시작한다
+test('내 공책은 테마 문제와 더 풀어 본 문제 탭으로 나뉘고 화살표로 옮긴다 @responsive', async ({ page }) => {
+  await student(page)
+  const applied = () => page.evaluate(() => new Promise<void>(resolve =>
+    addEventListener('sagomungchi:mock-theme-state-applied', () => setTimeout(resolve, 50), { once: true })))
+  const done = applied()
+  await page.getByRole('checkbox', { name: '프리미엄' }).setChecked(true)
+  await done
+  // 미션 고르기에서 문제 하나를 열어 시작(웹이 context EXTRA로 시작) → 목업에서 그 시도에 답 하나를 넣어 공책 기간 안에 둠
+  await navigate(page, '/student/missions')
+  await page.getByRole('button', { name: '미션 열기', exact: true }).first().click()
+  await page.getByRole('button', { name: /시작하기/ }).first().click()
+  await page.waitForURL('**/student/attempts/**')
+  const attemptId = page.url().split('/').pop()!
+  await page.evaluate(async (id) => {
+    const { fixtureStore, persistFixtureState } = await import('/src/mocks/fixtures/student.ts' as string)
+    const data = fixtureStore.snapshot()
+    const at = data.session.period?.to ? `${data.session.period.to}T03:00:00Z` : '2026-10-24T05:00:00Z'
+    fixtureStore.restoreSnapshot({ ...data, attempts: data.attempts.map((a: { attemptId: string; mission: { inputType: string } }) => a.attemptId !== id ? a : {
+      ...a, status: 'COMPLETED', finishedAt: at, draft: undefined, reflection: { difficulty: '보통', text: '더 풀어 봤어요.' },
+      answers: [{ answerId: 'j710', version: 1, submittedAt: at, inputType: a.mission.inputType, text: '답', content: null, feedback: null }] }) })
+    persistFixtureState()
+  }, attemptId)
+  await navigate(page, '/student/journal')
+  const tabs = page.getByRole('tablist', { name: '공책 기록 종류' })
+  const theme = tabs.getByRole('tab', { name: /^테마 문제/ })
+  const extra = tabs.getByRole('tab', { name: /^더 풀어 본 문제/ })
+  // 처음 여는 탭은 가장 최근 기록이 든 탭(방금 마무리한 더 풀어 본 문제가 바로 보임)
+  await expect(page.getByRole('tab', { selected: true })).toBeVisible()
+  // 기간마다 한 번씩: 넣은 기록이 든 기간에서 더 풀어 본 문제 칸에 보인다
+  const period = page.getByRole('combobox', { name: '공책 기간' })
+  let found = false
+  for (const value of await period.locator('option').evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))) {
+    await period.selectOption(value)
+    await extra.click()
+    await expect(extra).toHaveAttribute('aria-selected', 'true')
+    if (await page.locator('#journal-panel .st-journal-row').count()) { found = true; break }
+    await theme.click()
+  }
+  expect(found).toBe(true)
+  await expect(extra).toContainText(/[1-9]/)
+  // 테마 문제 탭으로 왼쪽 화살표(WAI-ARIA 탭)
+  await extra.press('ArrowLeft')
+  await expect(theme).toHaveAttribute('aria-selected', 'true')
+  await expect(theme).toBeFocused()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })

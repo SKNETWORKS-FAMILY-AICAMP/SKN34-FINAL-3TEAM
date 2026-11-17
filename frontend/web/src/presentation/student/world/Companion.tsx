@@ -48,8 +48,8 @@ function Worn({ friend, worn, view, uid }: { friend: FriendId; worn: Partial<Rec
 }
 
 /**
- * 동행 캐릭터: 뭉치 친구들 12종 그림(#648, 설계 캔버스 Mungchi). 서버 값(kind, 5종)은 대응하는 친구로 그리고,
- * 꾸미기 목록처럼 서버에 없는 친구까지 그릴 때는 friend로 직접 고른다(friend가 우선).
+ * 동행 캐릭터: 뭉치 친구들 12종 그림(#648, 설계 캔버스 Mungchi). 서버 값(kind, 12종 #697)은 대응하는 친구로 그리고,
+ * 꾸미기 목록처럼 친구를 바로 그릴 때는 friend로 고른다(friend가 우선).
  * decorative면 보조기기에서 숨긴다. worn은 착용 칸 그림 키(#455).
  */
 export function Companion({

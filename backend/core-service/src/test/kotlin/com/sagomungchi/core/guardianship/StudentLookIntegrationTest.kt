@@ -67,12 +67,12 @@ class StudentLookIntegrationTest: IntegrationTestSupport() {
         // 형제 학생은 같은 보호자 계정을 공유해도 자기 설정만 본다.
         assertTrue(call("GET", siblingToken)["updatedAt"].isNull)
         assertEquals(setOf("theme", "companion", "updatedAt", "equipped"), saved.fieldNames().asSequence().toSet())
-        assertEquals(setOf("HAT", "OUTFIT", "ACCESSORY", "BACKGROUND", "DESK", "WALL", "WARDROBE"), saved["equipped"].fieldNames().asSequence().toSet())
+        assertEquals(setOf("HAT", "OUTFIT", "ACCESSORY", "BACKGROUND", "DESK", "WALL", "WARDROBE", "FLOOR"), saved["equipped"].fieldNames().asSequence().toSet())
     }
 
     @Test fun `values outside the list are 422 and keep the previous setting`() {
         call("PUT", studentToken, mapOf("theme" to "forest", "companion" to "tori"))
-        for (body in listOf(mapOf("theme" to "castle", "companion" to "tori"), mapOf("theme" to "forest", "companion" to "dragon"),
+        for (body in listOf(mapOf("theme" to "castle", "companion" to "tori"), mapOf("theme" to "forest", "companion" to "dragon"), mapOf("theme" to "forest", "companion" to "cotton"),
             mapOf("theme" to "forest"), mapOf("theme" to "FOREST", "companion" to "tori")))
             assertEquals("VALIDATION_FAILED", call("PUT", studentToken, body, expected = 422)["code"].asText())
         val current = call("GET", studentToken)
@@ -92,5 +92,10 @@ class StudentLookIntegrationTest: IntegrationTestSupport() {
     @Test fun `database rejects partial or unknown values`() {
         assertFails { jdbc.update("UPDATE student SET look_theme='sea' WHERE id=?", student) }
         assertFails { jdbc.update("UPDATE student SET look_theme='moon',look_companion='kongi',look_updated_at=now() WHERE id=?", student) }
+        // #697 V49: 12종은 저장되고 목록 밖 값(웹 친구 id cotton 등 기존 5종의 화면 id 포함)은 거부
+        for (companion in listOf("mungchi", "monggeul", "snow", "yarn", "star", "foam", "paper", "petal", "ice"))
+            assertEquals(1, jdbc.update("UPDATE student SET look_theme='lake',look_companion=?,look_updated_at=now() WHERE id=?", companion, student))
+        for (companion in listOf("dragon", "cotton", "ICE"))
+            assertFails { jdbc.update("UPDATE student SET look_theme='lake',look_companion=?,look_updated_at=now() WHERE id=?", companion, student) }
     }
 }

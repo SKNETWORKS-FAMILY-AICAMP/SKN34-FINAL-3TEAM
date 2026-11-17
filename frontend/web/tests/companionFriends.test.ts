@@ -1,4 +1,4 @@
-// #648 뭉치 친구들 12종: 화면 친구 ↔ 서버 값(5종) 대응, 친구 그림, 착용 기준점
+// #648·#698 뭉치 친구들 12종: 화면 친구 ↔ 서버 값(12종, #697) 대응, 친구 그림, 착용 기준점
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createElement } from 'react'
@@ -16,8 +16,9 @@ import type { CompanionId, FriendId } from '../src/domain/studentLook.ts'
 import { FRIEND_VIEWBOX, friendArt } from '../src/presentation/student/world/friendArt.ts'
 import { FRIEND_WEAR_ANCHORS, WEAR_ANCHORS, WEAR_SLOTS } from '../src/presentation/student/world/roomAssets.ts'
 
-const MAPPED: Record<CompanionId, FriendId> = { mungchi: 'cotton', monggeul: 'cloud', tori: 'cone', mongdol: 'sand', kongi: 'moss' }
-const SOON: FriendId[] = ['snow', 'yarn', 'star', 'foam', 'paper', 'petal', 'ice']
+// 예전 5종 값은 예전 대응 그대로, 새 7종은 친구 id가 곧 서버 값(#697)
+const MAPPED: Record<CompanionId, FriendId> = { mungchi: 'cotton', monggeul: 'cloud', tori: 'cone', mongdol: 'sand', kongi: 'moss',
+  snow: 'snow', yarn: 'yarn', star: 'star', foam: 'foam', paper: 'paper', petal: 'petal', ice: 'ice' }
 
 test('친구 12종은 설계 캔버스 순서·이름 그대로이고 id가 겹치지 않는다', () => {
   assert.deepEqual(FRIENDS.map((f) => f.name), [
@@ -29,22 +30,23 @@ test('친구 12종은 설계 캔버스 순서·이름 그대로이고 id가 겹�
   assert.equal(isFriendId('tori'), false)
 })
 
-test('서버 값 5종은 정해진 친구와 서로 대응하고, 나머지 7종은 서버 값이 없다', () => {
+test('서버 값 12종은 친구 12종과 하나씩 서로 대응한다(곧 만나요 없음)', () => {
   for (const c of COMPANIONS) {
     assert.equal(companionToFriend(c.id), MAPPED[c.id], c.id)
     assert.equal(friendToCompanion(MAPPED[c.id]), c.id, c.id)
   }
-  assert.deepEqual(FRIENDS.filter((f) => f.companion === null).map((f) => f.id), SOON)
-  for (const id of SOON) assert.equal(friendToCompanion(id), null, id)
+  assert.equal(COMPANIONS.length, 12)
+  assert.equal(new Set(FRIENDS.map((f) => f.companion)).size, 12, '친구마다 서버 값이 하나씩')
   // 기본(무료) 캐릭터 뭉치는 솜뭉치
   assert.equal(companionToFriend('mungchi'), 'cotton')
   assert.equal(companionToFriend('unknown' as CompanionId), 'cotton', '알 수 없는 값은 기본 친구')
 })
 
 test('화면에서 부르는 캐릭터 이름은 대응하는 친구 이름이다', () => {
-  assert.deepEqual(COMPANIONS.map((c) => companionLabel(c.id)), ['솜뭉치', '솔방울뭉치', '모래뭉치', '이끼뭉치', '구름뭉치'])
-  // 서버 아이템 이름(목업 목록 이름)은 그대로 둔다
-  assert.deepEqual(COMPANIONS.map((c) => c.label), ['뭉치', '토리', '몽돌', '콩이', '몽글'])
+  const names = ['솜뭉치', '솔방울뭉치', '모래뭉치', '이끼뭉치', '구름뭉치', '눈뭉치', '털실뭉치', '별뭉치', '거품뭉치', '종이뭉치', '꽃잎뭉치', '얼음뭉치']
+  assert.deepEqual(COMPANIONS.map((c) => companionLabel(c.id)), names)
+  // 서버 아이템 이름도 친구 이름으로 바뀌었다(core LookCatalog.COMPANIONS, #697)
+  assert.deepEqual(COMPANIONS.map((c) => c.label), names)
 })
 
 test('친구 그림: 12종 모두 발·몸·얼굴을 그리고 친구마다 몸 색이 다르다', () => {
@@ -62,7 +64,7 @@ test('친구 그림: 12종 모두 발·몸·얼굴을 그리고 친구마다 몸
   }
 })
 
-test('서버 값 5종은 각각 대응하는 친구 그림으로 그린다', () => {
+test('서버 값 12종은 각각 대응하는 친구 그림으로 그린다', () => {
   for (const c of COMPANIONS) {
     const svg = renderToStaticMarkup(friendArt(companionToFriend(c.id)))
     assert.match(svg, new RegExp(`data-friend="${MAPPED[c.id]}"`), c.id)

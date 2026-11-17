@@ -2136,6 +2136,56 @@ paths:
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
+  /community/posts/{postId}/author:
+    get:
+      operationId: getCommunityPostAuthor
+      summary: 친구 방 구경용 작성자 확인 (#707, core #708)
+      description: >-
+        core가 친구 생각 글 번호로 친구 방을 열 때 부른다. 새 판정 규칙 없이 반응 남기기와 같은 순서·오류:
+        공유물이 없거나 VISIBLE이 아니면 404 COMMUNITY_POST_NOT_FOUND, 작성자가 열람자면 409 COMMUNITY_OWN_POST,
+        열람자가 그 미션을 학습 완료하지 않았으면 403 COMMUNITY_LOCKED, 정답 고르기 문제 엔딩 전이면 403 COMMUNITY_LOCKED_UNTIL_ENDING.
+        답변·미션·상태·반응은 넣지 않는다. 읽기 전용(행 잠금 없음), Cache-Control no-store. studentId는 core 안에서만 쓰고 화면에 내보내지 않는다.
+      parameters:
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+        - $ref: '#/components/parameters/PostId'
+        - name: viewerStudentId
+          in: query
+          required: true
+          description: 열람자. X-Student-Scope 학생과 같아야 함(아니면 403 FORBIDDEN)
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: 작성자 학생 ID
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [postId, studentId]
+                properties:
+                  postId: {type: string, format: uuid}
+                  studentId: {type: string, format: uuid, description: 작성자 학생 ID(core 안에서만 사용)}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403':
+          description: COMMUNITY_LOCKED(미션 미완료), COMMUNITY_LOCKED_UNTIL_ENDING(정답 고르기 문제 엔딩 전, #484) 또는 FORBIDDEN(학생 요청 아님·scope 불일치)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404':
+          description: COMMUNITY_POST_NOT_FOUND(없음·VISIBLE 아님)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409':
+          description: COMMUNITY_OWN_POST(본인 글)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
   /community/missions/{missionId}/posts:
     get:
       operationId: listMissionCommunityPosts

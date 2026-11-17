@@ -8,6 +8,7 @@ import com.sagomungchi.learning.community.domain.CommunityReaction
 import com.sagomungchi.learning.community.domain.VisibilityReason
 import com.sagomungchi.learning.community.service.CommunityService
 import com.sagomungchi.learning.community.service.MissionPostView
+import com.sagomungchi.learning.community.service.PostAuthorView
 import com.sagomungchi.learning.community.service.PostDetailView
 import com.sagomungchi.learning.community.service.StudentPostView
 import com.sagomungchi.learning.community.service.VisibilityResult
@@ -44,6 +45,13 @@ class CommunityController(private val service: CommunityService) {
     fun post(@PathVariable postId: UUID): ResponseEntity<PostDetailView> {
         system()
         return noStore(service.post(postId))
+    }
+
+    /** 친구 방 구경용 작성자 확인 (#707). 호출자 core, STUDENT 본인(viewerStudentId = scope) */
+    @GetMapping("/internal/community/posts/{postId}/author")
+    fun postAuthor(@PathVariable postId: UUID, @RequestParam viewerStudentId: UUID): ResponseEntity<PostAuthorView> {
+        self(viewerStudentId)
+        return noStore(service.postAuthor(postId, viewerStudentId))
     }
 
     @GetMapping("/internal/community/missions/{missionId}/posts")

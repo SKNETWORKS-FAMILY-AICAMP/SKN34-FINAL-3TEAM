@@ -148,7 +148,6 @@ function tabAction(shop: LookShop, picks: Picks, tab: CustomizeTab): Action {
   if (tab === 'friend') {
     const f = friendById(picks.friend)
     const c = f.companion
-    if (!c) return { title: f.name, note: '아직 만날 수 없는 친구예요. 곧 만나요!', label: '곧 만나요', ready: false, using: false }
     if (c === shop.companion) return { title: f.name, note: '함께 다니는 중이에요. 홈과 내 방에 나와요.', label: '함께 다니는 중', ready: false, using: true }
     const key = companionKey(c)
     if (!locked(key)) return { title: f.name, note: '가지고 있어요.', label: '함께 다니기', ready: !choosingBlocked, using: false, run: () => choose({ companion: c }) }
@@ -200,21 +199,21 @@ function TabContent({ shop, picks, tab }: { shop: LookShop; picks: Picks; tab: C
       </div>
     )
   if (tab === 'friend')
-    // 뭉치 친구들 12종(#648). 서버에 저장할 수 있는 5종만 고르고, 나머지는 "곧 만나요"로 잠근다
+    // 뭉치 친구들 12종(#648). core가 12종을 모두 저장해(#697) 모두 고르고 해금한다(#698)
     return (
       <div className="st-pick-grid st-pick-friends">
         {FRIENDS.map((f) => {
           const c = f.companion
           const style = { '--st-friend-tint': f.color } as CSSProperties
-          const own = !!c && !locked(companionKey(c))
-          const kind = !c ? 'soon' : c === companion ? 'using' : own ? 'owned' : 'locked'
+          const own = !locked(companionKey(c))
+          const kind = c === companion ? 'using' : own ? 'owned' : 'locked'
           return (
-            <button key={f.id} type="button" className={`st-pick st-pick-buddy st-pick-friend${c ? '' : ' st-pick-soon'}`} style={style}
-              aria-pressed={!!c && picks.friend === f.id} disabled={!c || (!own && !catalog)} onClick={() => picks.pickFriend(f.id)}>
+            <button key={f.id} type="button" className="st-pick st-pick-buddy st-pick-friend" style={style}
+              aria-pressed={picks.friend === f.id} disabled={!own && !catalog} onClick={() => picks.pickFriend(f.id)}>
               <Companion friend={f.id} size={86} decorative />
               <strong>{f.name}</strong>
               <span className="st-pick-pill" data-kind={kind}>
-                {!c ? '곧 만나요' : c === companion ? '함께 다니는 중' : own ? '가지고 있어요' : lockText(companionKey(c))}
+                {c === companion ? '함께 다니는 중' : own ? '가지고 있어요' : lockText(companionKey(c))}
               </span>
             </button>
           )

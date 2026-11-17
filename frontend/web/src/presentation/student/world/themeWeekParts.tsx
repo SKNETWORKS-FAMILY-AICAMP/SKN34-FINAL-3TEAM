@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { knownFacts } from '../../../domain/retention.ts'
+import { candidateFacts } from '../../../domain/retention.ts'
 import type { WeeklyTheme, WeeklyThemeDay } from '../../../domain/retention.ts'
 import { Companion } from './Companion.tsx'
 import { useLook } from './lookContext.ts'
@@ -24,13 +24,15 @@ export function ClueFacts({ day, compact = false }: { day: WeeklyThemeDay; compa
 
 /** 후보 카드에 붙는 "알아낸 것"(#647). */
 export function CandidateFacts({ theme, candidate }: { theme: WeeklyTheme; candidate: string }) {
-  const facts = knownFacts(theme, candidate)
+  // 엔딩 뒤에는 특징 표 전체(#715 1번): 단서로 못 얻은 특징은 "엔딩 뒤 공개"로 구분
+  const facts = candidateFacts(theme, candidate)
   if (!facts.length) return null
   return (
     <ul className="tw-known" aria-label={`${candidate}에 대해 알아낸 것`}>
       {facts.map((f) => (
-        <li key={f.day}>
+        <li key={f.feature} data-revealed={!f.learned || undefined}>
           {f.feature} · <b>{f.value}</b>
+          {!f.learned && <small className="tw-known-tag"> 엔딩 뒤 공개</small>}
         </li>
       ))}
     </ul>

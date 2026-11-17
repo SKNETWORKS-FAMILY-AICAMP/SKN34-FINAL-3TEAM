@@ -33,6 +33,15 @@ class RewardController(private val rewards: RewardService, private val looks: Lo
         return response.body(result.body)
     }
 
+    /** 방 소품 여러 개 사기(#704). 응답 처리는 해금과 같다 */
+    @PostMapping("/api/v1/students/me/look-items/{itemKey}/purchase")
+    fun purchase(@PathVariable itemKey: String, @RequestHeader("Idempotency-Key", required = false) key: String?): ResponseEntity<ByteArray> {
+        val result = looks.purchase(itemKey, key)
+        val response = ResponseEntity.status(result.status)
+        result.headers.forEach { (name, values) -> response.header(name, *values.toTypedArray()) }
+        return response.body(result.body)
+    }
+
     @GetMapping("/api/v1/admin/look-items")
     fun adminItems(@RequestParam(required = false) status: String?, @RequestParam(required = false) slot: String?,
                    @RequestParam(defaultValue = "0") page: Int, @RequestParam(defaultValue = "50") size: Int) = admin.list(status, slot, page, size)
