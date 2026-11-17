@@ -197,6 +197,16 @@ The initial prompt protocol was frozen before observing those outputs.
 
 사용자 결정에 따라 주간 서술·저녁 질문·대표 답변 상세 설명은 같은 LoRA Gemma RunPod 엔드포인트를 사용한다. 일반 LLM 설정이나 OpenAI 키가 있어도 리포트에 사용하지 않는다. Gemma 주소·키 누락이나 장애는 실패로 처리하며 타 모델로 대체하지 않는다. 수치 리포트·기존 결정적 검증 실패 템플릿 정책은 유지한다. 271~276초 실측을 반영해 모델 300초, 내부 서술 310초, 상세 305/310초와 최대 3건 전체 950초를 적용한다. 상세 출력 한도는 4096토큰이다. `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`와 해당 키를 compose 환경에 공급한다.
 
+### 배포 환경 연결 (#751)
+
+| 환경 | Secret | 설정 위치 |
+|---|---|---|
+| compose | 루트 `.env` | `compose.yaml` ai-service env |
+| kind | `app/app-service-credentials`(루트 `.env`에서 `infrastructure/kind/create-app-secrets.ps1`이 복사, 값이 없으면 넣지 않음) | `infrastructure/gitops/environments/local/ai-service.yaml` env(`optional`) |
+| prod | Secrets Manager `sagomungchi/demo/app/ai` → ExternalSecret `app/ai-provider-credentials` | `prod/external-secret-resources.json`, `prod/ai-service.json` env |
+
+키 이름은 모든 환경에서 `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`(주소)·`SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA`(키)로 같다. 값이 없으면 리포트 요약·상세가 실패(503)한다. ai egress는 기존 공용 443 허용으로 RunPod에 나간다.
+
 ## 원문 전체 표시
 
 발췌문만 보여 전체 글 분석을 환각처럼 오해하는 문제를 수정했다. 설명 항목의 itemId로 기존 근거 API를 호출해 시도·답변·버전이 모두 일치하는 원문을 `학생 글 전체`에 표시한다. 조회 실패·비공개·다른 버전에는 발췌문으로 대체하지 않는다. 이 PR은 #475의 기존 튜닝 모델 활용·비교·화면 적용 범위이며 추가 학습·사람 50표본 평가 완료나 원 이슈의 모든 완료 조건 달성을 주장하지 않는다.
