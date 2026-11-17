@@ -74,7 +74,7 @@ class Shot:
     hints: list[str] | None = None
     discovery: str | None = None  # 미션 그림만: 그날 증거 발견 줄
     evidence: str | None = None  # 미션 그림만: 그날 증거 종류(TRACE·SIGHTING·RECORD)
-    answer_place_allowed: bool = False  # 종료 콘티 컷만 정답 장소 공개 허용
+    answer_allowed: bool = False  # 종료 콘티 컷만 정답(장소·동물) 공개 허용
 
 
 @dataclass
@@ -115,7 +115,7 @@ async def draw(
                     hints=shot.hints,
                     discovery=shot.discovery,
                     evidence=shot.evidence,
-                    answer_place_allowed=shot.answer_place_allowed,
+                    answer_allowed=shot.answer_allowed,
                 ),
                 output=GeneratedImageReview,
                 call_type=THEME_CALL_TYPE,
@@ -178,8 +178,8 @@ def cut_shot(
         refs=refs,
         ids=IMAGE_REVIEW_IDS,
         has_mungchi=has_mungchi,
-        shows_target=body.cut_shows_target(scene, index),
-        answer_place_allowed=body.cut_reveals_answer(scene),
+        shows_target=body.cut_shows_target(theme, scene, index),
+        answer_allowed=body.cut_reveals_answer(scene),
     )
 
 
@@ -195,7 +195,8 @@ def mission_shot(
         refs=[outfit] + ([person] if person is not None else []),
         ids=MISSION_IMAGE_REVIEW_IDS,
         has_mungchi=True,
-        shows_target=False,
+        # 손에 든 것(대상이 늘 보이는 종류)·시간 탐정은 참, 그 밖은 거짓(#634, 그림 지시와 같게)
+        shows_target=body.mission_shows_target(theme),
         question=draft.question,
         hints=[h for h in draft.hints if h.strip()],
         discovery=d.get("discovery"),

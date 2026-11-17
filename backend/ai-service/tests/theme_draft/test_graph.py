@@ -167,7 +167,7 @@ def test_happy_path_assembles_contract_response() -> None:
         assert not any(c in line.text for c in clues for line in dlg_out.lines)
     # 증거 발견 줄·수사 연결 문장은 내부 칸이라 응답 theme에 없음
     assert "discovery" not in response.theme.days[0].model_dump(by_alias=True)
-    assert response.versions.model == "gen-model" and response.versions.prompt == "theme-draft@2"
+    assert response.versions.model == "gen-model" and response.versions.prompt == "theme-draft@3"
     assert response.images == response.videos == response.motions == {}
     # 생성 모델: 줄거리 1·미션 5·대화 5, 검토 모델: 미션 검토 5·글 검토 1
     assert (
@@ -631,7 +631,7 @@ def test_plan_names_and_variety_rules() -> None:
     """이름은 코드가 목록에서 고르고 같은 요청(주·학년)이면 같음, 큰 질문은 '마지막으로 둔 곳'만
     되풀이하지 않고 사람을 탓하는 질문은 금지, 인물은 장면에 맞게(실측: 큰 질문 19/19가 같은 틀,
     민지·준호 반복)."""
-    from app.theme_draft import prompts
+    from app.theme_draft import families, prompts
 
     request = ThemeDraftRequest.model_validate(request_body())
     names = prompts.names_for(request)
@@ -641,7 +641,8 @@ def test_plan_names_and_variety_rules() -> None:
     assert prompts.names_for(other) != names
     user = prompts.plan_user(request, [])
     assert "등장인물 이름 목록" in user and all(n in user for n in names)
-    assert "'마지막으로 둔 곳'만 되풀이하지 않는다" in prompts.PLAN_SYSTEM
+    # #634: 큰 질문 종류는 줄거리 종류 규칙(잃어버린 것 찾기)으로 옮김
+    assert "'마지막으로 둔 곳'만 되풀이하지 않는다" in families.LOST.rules
     assert "사람을 탓하는 질문은 쓰지 않는다" in prompts.PLAN_SYSTEM
     assert "흔한 이름" not in prompts.PLAN_SYSTEM
     extra = prompts.mission_extra(valid_theme(), "MON", 3, [])
