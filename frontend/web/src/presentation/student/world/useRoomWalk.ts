@@ -63,6 +63,8 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
   const path = useRef<{ x: number; z: number }[]>([])
   const drag = useRef<{ x: number; y: number; rx: number; ry: number; moved: boolean } | null>(null)
   const justDragged = useRef(false)
+  /** 손가락 탭으로 막 걸었을 때(뒤따르는 click 무시) */
+  const touchWalked = useRef(0)
   const timers = useRef<number[]>([])
   const viewRef = useRef(view)
   const posRef = useRef(pos)
@@ -275,9 +277,16 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
       const m = metrics.current
       setPan((p) => ({ ...p, x: clamp(from + dx, -m.limX, m.limX) }))
     }
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       justDragged.current = moved
       later(() => { justDragged.current = false }, 0)
+      // 손가락으로 그대로 떼면 바로 걷는다: 밀기(빠른 손놀림) 직후 첫 탭은 브라우저가 click을 만들지 않는 일이 있어 click을 기다리지 않음.
+      // 뒤따라 오는 click은 onFloorClick이 무시(두 번 걷지 않게)
+      const el = ev.target as HTMLElement | null
+      if (!moved && ev.type === 'pointerup' && ev.pointerType === 'touch' && el?.classList.contains('st-room-floor') && !paused) {
+        touchWalked.current = Date.now()
+        walkTo({ x: ev.offsetX - ROOM.W / 2, z: ev.offsetY - ROOM.D / 2 })
+      }
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
@@ -288,7 +297,7 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
   }
   /** 바닥 누르기: 바닥 면 안 좌표 → 방 좌표 */
   const onFloorClick = (e: ReactMouseEvent<HTMLDivElement>) => {
-    if (justDragged.current || paused) return
+    if (justDragged.current || paused || Date.now() - touchWalked.current < 700) return
     const { offsetX, offsetY } = e.nativeEvent
     walkTo({ x: offsetX - ROOM.W / 2, z: offsetY - ROOM.D / 2 })
   }

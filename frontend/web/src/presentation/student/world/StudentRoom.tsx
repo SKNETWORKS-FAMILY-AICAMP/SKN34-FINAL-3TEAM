@@ -214,7 +214,8 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
     }
     if (decorChanged) {
       kinds.push('decor')
-      jobs.push(saveDecor.mutateAsync(draftDecor))
+      // 색 칸은 core 색 후속 전 계약에 없어 보내지 않는다(DECOR_COLOR_PICK을 켤 때 같이 보냄)
+      jobs.push(saveDecor.mutateAsync(DECOR_COLOR_PICK ? draftDecor : draftDecor.map(({ surface, col, row, itemKey }) => ({ surface, col, row, itemKey }))))
     }
     const results = await Promise.allSettled(jobs)
     setSaving(false)

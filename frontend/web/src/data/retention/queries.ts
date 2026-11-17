@@ -11,7 +11,7 @@ export const useDecorSpots = (childId: string | undefined) =>
 export function useSaveDecorSpots(childId: string | undefined) {
   const cache = useQueryClient()
   return useMutation({
-    mutationFn: (spots: { surface: DecorSurface; col: number; row: number; itemKey: string; color: string | null }[]) => retentionApi.saveDecorSpots(spots),
+    mutationFn: (spots: { surface: DecorSurface; col: number; row: number; itemKey: string; color?: string | null }[]) => retentionApi.saveDecorSpots(spots),
     onSuccess: (saved) => cache.setQueryData<DecorSpot[]>(['decor-spots', childId], saved),
   })
 }

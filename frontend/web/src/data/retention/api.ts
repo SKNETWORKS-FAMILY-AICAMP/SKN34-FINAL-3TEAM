@@ -90,7 +90,8 @@ export const retentionApi = {
   /** 방 소품 놓은 칸(core #723 계약안). 전체 교체, 빈 목록은 모두 치움 */
   decorSpots: async (signal?: AbortSignal): Promise<DecorSpot[]> =>
     readDecorSpots(await apiFetch<unknown>('/students/me/room/decor-spots', { signal, cache: 'no-store' })),
-  saveDecorSpots: async (spots: { surface: DecorSurface; col: number; row: number; itemKey: string; color: string | null }[]): Promise<DecorSpot[]> =>
+  /** color는 core 색 후속 전에는 보내지 않는다(지금 계약 RoomDecorSpotInput에 없음, additionalProperties: false) */
+  saveDecorSpots: async (spots: { surface: DecorSurface; col: number; row: number; itemKey: string; color?: string | null }[]): Promise<DecorSpot[]> =>
     readDecorSpots(await apiFetch<unknown>('/students/me/room/decor-spots', json({ spots }, 'PUT'))),
   album: async (signal?: AbortSignal, page = 0, size = 12): Promise<Album> =>
     readAlbum(await apiFetch<unknown>(`/students/me/album?${pageQuery(page, size)}`, { signal, cache: 'no-store' })),

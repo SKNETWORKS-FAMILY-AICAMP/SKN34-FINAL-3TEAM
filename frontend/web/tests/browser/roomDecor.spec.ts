@@ -90,7 +90,11 @@ test('방 소품: 서랍에서 사고 놓고 화살표로 옮기며, 못 놓는 
   await move.getByRole('button', { name: '오른쪽으로 한 칸' }).click()
   await move.getByRole('button', { name: '다 놓았어요' }).click()
   await expect(card).toContainText('놓음 1/1')
+  // 저장 요청에는 계약에 있는 칸만(색은 core 색 후속 전에는 보내지 않음)
+  const put = page.waitForRequest((r) => r.url().includes('/room/decor-spots') && r.method() === 'PUT')
   await page.getByRole('button', { name: '저장', exact: true }).click()
+  const sent = (await put).postDataJSON() as { spots: Record<string, unknown>[] }
+  expect(sent.spots.map((x) => Object.keys(x).sort())).toEqual([['col', 'itemKey', 'row', 'surface']])
   await expect(page.locator('.st-room-note')).toHaveText('내 방을 저장했어요.')
 
   // 다시 열어도 놓인 그대로
@@ -236,4 +240,33 @@ test('방 소품: 취소하면 되돌리고, 저장에 실패하면 놓은 그�
   await expect(page.locator('[data-decor]').first()).toBeAttached()
   await openDrawer(page, '방 소품')
   await expect(card()).toContainText('놓음 1/1')
+})
+
+test.describe('손가락(터치)', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+  test('좁은 화면 손가락으로 좌우 밀기, 위아래는 페이지 스크롤, 밀고 나서 첫 탭도 걷는다', async ({ page }) => {
+    await student(page)
+    await menu(page, '내 방')
+    const cdp = await page.context().newCDPSession(page)
+    type TouchType = 'touchStart' | 'touchMove' | 'touchEnd'
+    const touch = async (pts: [TouchType, number, number][]) => {
+      for (const [type, x, y] of pts) await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] })
+    }
+    const stage = () => page.locator('.st-room-stage').evaluate((e) => e.style.transform)
+    const char = () => page.locator('.st-room-char').evaluate((e) => e.style.transform)
+    const box = (await page.locator('.st-room-holder').boundingBox())!
+    const y = box.y + box.height * 0.85
+    const before = await stage()
+    await touch([['touchStart', 100, y], ...[130, 160, 190, 220].map((x) => ['touchMove', x, y] as [TouchType, number, number]), ['touchEnd', 0, 0]])
+    await expect.poll(stage).not.toBe(before)
+    // 밀고 나서 첫 탭: 걸어간다
+    const at = await char()
+    const b2 = (await page.locator('.st-room-holder').boundingBox())!
+    await page.touchscreen.tap(b2.x + b2.width * 0.3, b2.y + b2.height * 0.85)
+    await expect.poll(char).not.toBe(at)
+    // 위아래는 페이지 스크롤
+    const top = await page.evaluate(() => scrollY)
+    await touch([['touchStart', 200, y], ['touchMove', 200, y - 60], ['touchMove', 200, y - 160], ['touchEnd', 0, 0]])
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(top)
+  })
 })
