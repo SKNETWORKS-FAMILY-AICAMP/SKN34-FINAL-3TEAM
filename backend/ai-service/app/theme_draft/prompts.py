@@ -499,6 +499,9 @@ def evidence_rules(theme: Theme, day: dict, key: str) -> list[str]:
         owner = (
             f"누구의 흔적인지 찾는 대상 낱말({'·'.join(target_words(theme))} 중 하나)을 꼭 넣는다."
             if kind == "TRACE"
+            else f"대상 낱말({'·'.join(target_words(theme))} 중 하나)을 넣어 그 대상의 증거임을 "
+            "밝힌다(장소 모습만 말하지 않음)."
+            if story_type(theme).owner_all
             else ""
         )
         return [EVIDENCE_CLUE_RULE.get(kind, ""), use_medium, owner]
@@ -1025,7 +1028,10 @@ REVIEW_SYSTEM = (
     "대상이 나오는 것과 대상 겉에 묻은 것·대상 자체(무게·소리·맛 등)를 증거로 쓰는 것이 "
     "설계다(결함 "
     "아님). 이 종류의 흔적(TRACE)에는 아이가 대상을 직접 들어 보거나 흔들어 보거나 맛본 관찰도 "
-    "들어간다(흔적이 남지 않았다는 이유로 결함이 아님). 선물 상자는 엔딩 전에 상자를 열거나 안의 "
+    "들어간다(흔적이 남지 않았다는 이유로 결함이 아님). 대상을 준비한(산·만든·보낸) 때의 "
+    "목격·기록과 받은 뒤 살핀 흔적은 같은 대상의 증거라 서로 다른 때를 섞은 것이 아니다. 선물 "
+    "상자는 "
+    "엔딩 전에 상자를 열거나 안의 "
     "선물을 말하면 결함. "
     # #634 ④ 설계 17.8.17
     "시간 탐정(storyType WHEN)은 그 일(예: 화단에 물을 준 일)이 처음부터 알려진 사실이고 모르는 "

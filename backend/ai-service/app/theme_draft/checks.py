@@ -741,20 +741,31 @@ HIDE_SPOT = re.compile(r"숨(?:긴|겨 ?둔|겨 ?놓은) ?(?:자리|곳|장소|�
 # 산 가게 단서는 그 가게에서 '샀다'는 근거가 있어야 함(#634 ② 작은 실측 1~3차: "가게에 간·나온
 # 모습만으로는 거기서 샀다는 근거가 없음"이 되풀이, 프롬프트로 좁혀도 남아 코드 검사로)
 BUY_WORDS = re.compile(r"샀|사는|사 가|사 오|사러|사서|계산|영수증|스티커|구입|주문")
-PROOF_FEATURES = ("산 가게",)
+# 산 가게 특징과 단서에 꼭 있어야 할 산 물건 낱말. 마지막 확인에서 '상자를 산 가게'로 읽혀 글 검토
+# CLUE_LOGIC("상자를 산 가게는 선물을 산 가게를 가르는 근거가 아님") → 특징 이름·단서에 산 물건을
+# 밝힘
+PROOF_FEATURES = {"선물을 산 가게": "선물", "재료를 산 가게": "재료"}
 
 
 def clue_proof_problems(theme: Theme) -> list[str]:
-    """산 가게 단서에 산 근거 말이 없으면(CLUE_PROOF, 칸 고쳐 쓰기)."""
+    """산 가게 단서에 산 근거 말·산 물건 낱말이 없으면(CLUE_PROOF, 칸 고쳐 쓰기)."""
     if story_type(theme).facts is None:
         return []
     bad = []
     for d in theme.get("days") or []:
-        cond = d.get("condition") or {}
-        if cond.get("feature") in PROOF_FEATURES and not BUY_WORDS.search(str(d.get("clue") or "")):
+        feature = (d.get("condition") or {}).get("feature")
+        if feature not in PROOF_FEATURES:
+            continue
+        clue = str(d.get("clue") or "")
+        if not BUY_WORDS.search(clue):
             bad.append(
                 f"CLUE_PROOF {d['day']} clue 산 가게 단서에 그 가게에서 산 근거(샀다·계산·영수증·"
                 "스티커)가 없음(가게에 간·나온 모습만으로는 근거가 안 됨)"
+            )
+        elif (thing := PROOF_FEATURES[feature]) not in clue:
+            bad.append(
+                f"CLUE_PROOF {d['day']} clue 산 가게 단서에 '{thing}' 낱말이 없음(상자·다른 물건이 "
+                f"아니라 {thing}을 산 가게임을 밝힘)"
             )
     return bad
 
@@ -1516,9 +1527,10 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         # 흔적 단서는 누구의 흔적인지 밝힌다(#535 6차: "흔적이 대상의 것인지 드러나지 않음").
         # 칸 고쳐 쓰기 대상
         trace = (d.get("evidence") or {}).get("kind") == "TRACE"
-        if trace and target_words(theme) and not names_target(theme, d.get("clue")):
+        owner_all = story_type(theme).owner_all  # 출처 찾기·길: 모든 단서(마지막 확인)
+        if (trace or owner_all) and target_words(theme) and not names_target(theme, d.get("clue")):
             bad.append(
-                f"CLUE_OWNER {d['day']} clue 흔적 단서에 찾는 대상 낱말"
+                f"CLUE_OWNER {d['day']} clue {'' if owner_all else '흔적 '}단서에 찾는 대상 낱말"
                 f"({'·'.join(target_words(theme))})이 "
                 "없음(누구의 흔적인지 밝힘)"
             )

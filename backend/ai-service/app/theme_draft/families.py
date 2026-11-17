@@ -229,6 +229,9 @@ class StoryType:
     strict_facts: bool = False
     # 모든 단서에 넣을 낱말(CLUE_OWNER, 소리 탐정 '소리'). 탈것의 온 사람은 target에서 뽑음
     clue_word: str | None = None
+    # 모든 단서에 대상 낱말(target)을 넣음(CLUE_OWNER, 출처 찾기·길 — 마지막 확인: '가게 앞 바닥을
+    # 봤다'처럼 장소만 말해 그곳이 대상이 온 곳이라는 연결이 없다고 글 검토 CLUE_LOGIC)
+    owner_all: bool = False
 
     @property
     def animal(self) -> bool:
@@ -367,7 +370,7 @@ ANIMAL_FACTS = ANIMALS.rows
 # 실제 알 수 있는 것만: 무게·소리(상자를 직접 들고 흔든 흔적·기록), 산 가게(목격·기록)
 GIFTS = FactTable(
     name="선물",
-    features=("상자 무게", "흔들면 나는 소리", "산 가게"),
+    features=("상자 무게", "흔들면 나는 소리", "선물을 산 가게"),
     rows={
         "목도리": ("가벼운 상자", "소리 없음", "옷 가게"),
         "고무공": ("가벼운 상자", "통통 소리", "장난감 가게"),
@@ -381,7 +384,7 @@ GIFTS = FactTable(
     kinds={
         "상자 무게": frozenset({"TRACE", "RECORD"}),
         "흔들면 나는 소리": frozenset({"TRACE", "RECORD"}),
-        "산 가게": frozenset({"SIGHTING", "RECORD"}),
+        "선물을 산 가게": frozenset({"SIGHTING", "RECORD"}),
     },
     media={
         "상자 무게": frozenset({"메모", "일지"}),
@@ -394,7 +397,7 @@ GIFTS = FactTable(
 # 넣는 걸 봐도 알 수 없다고 글 검토 CLUE_LOGIC(② 작은 실측) — 산 가게(목격·장보기 기록)로 바꿈
 INGREDIENTS = FactTable(
     name="재료",
-    features=("물드는 색", "맛", "산 가게"),
+    features=("물드는 색", "맛", "재료를 산 가게"),
     rows={
         "딸기": ("분홍빛", "새콤한 맛", "과일 가게"),
         "당근": ("주황빛", "달큰한 맛", "채소 가게"),
@@ -409,7 +412,7 @@ INGREDIENTS = FactTable(
     kinds={
         "물드는 색": ALL_KINDS,
         "맛": frozenset({"TRACE", "RECORD"}),
-        "산 가게": frozenset({"SIGHTING", "RECORD"}),
+        "재료를 산 가게": frozenset({"SIGHTING", "RECORD"}),
     },
     media={"맛": frozenset({"메모", "일지"})},
 )
@@ -521,6 +524,11 @@ IN_HAND_COMMON = (
     "이야기 전까지 찾지 못한 상태'·'대상 몸이나 겉에 남은 자국은 쓰지 않는다'를 쓰지 않는다: "
     "대상은 장면·대화에 나와도 되고, 대상 자체(묻은 것·밴 냄새·무게·소리·만진 느낌·맛)도 흔적 "
     "증거다. 대상이 지금 어디 있는지 묻지 않고, 대상이 온 곳·대상의 정체(지나간 일)를 묻는다.\n"
+    # 마지막 확인: 산 때의 목격과 받은 뒤 들어 본 흔적을 '서로 다른 때의 증거'로 본 글 검토
+    # CLUE_LOGIC
+    "- 증거는 두 때일 수 있다: 대상을 준비한(사거나 만들거나 보내거나 데려온) 때의 목격·기록과, "
+    "받은 뒤 아이가 대상을 직접 살핀 흔적. 둘 다 같은 대상의 증거라 공통 규칙의 '같은 그때'로 "
+    "본다(evidence.when은 각각 '선물을 산 때'·'상자를 받은 뒤'처럼 그 증거가 생긴 때).\n"
 )
 # ②의 흔적 특징: 대상에 묻거나 밴 것, 대상 자체를 살펴 알 수 있는 것(일반 흔적 표에 더함)
 IN_HAND_TRACE = re.compile(r"묻은|가루|꽃가루|흙|밴|냄새|향|무게|소리|느낌|맛|물드는|색|빛")
@@ -558,13 +566,15 @@ ORIGIN = StoryType(
         "- 증거: 대상에 묻거나 밴 것(꽃가루·흙·밀가루·냄새)은 흔적, 대상을 데려오거나 들고 온 "
         "사람을 "
         "본 부분 목격, 그때의 기록. 정답 장소 이름이 적힌 것(주소·영수증·가게 도장)은 쓰지 않는다"
-        "(답이 바로 보임). 흔적·기록 단서에는 대상 낱말(target)을 넣는다. 그날 장소(place)를 정답 "
+        "(답이 바로 보임). 모든 단서에 대상 낱말(target)을 넣어 그 대상이 온 곳의 증거임을 밝힌다"
+        "(코드 검사 CLUE_OWNER, 장소 모습만 말하지 않음). 그날 장소(place)를 정답 "
         "장소로 두지 않는다.\n"
         "- intro: 아이가 대상을 만나거나 받은 데서 시작해 테마 역할의 뭉치가 현장으로 출동해 큰 "
         "질문을 맡는 데까지.\n"
     ),
     target_in_hand=True,
     trace=IN_HAND_TRACE,
+    owner_all=True,
 )
 
 GIFT = StoryType(
@@ -819,7 +829,9 @@ ROUTE = StoryType(
         "맞게).\n"
         "- 증거: 대상에 묻은 것(흙·풀물·물방울·꽃가루)은 흔적, 그 길로 대상을 나르는 사람을 본 "
         "부분 목격, 그때의 기록(배달 기록 일부·사진). 길 이름이 적힌 것(주소·배달 기록의 길 "
-        "이름)은 쓰지 않는다(답이 바로 보임). 흔적·기록 단서에는 대상 낱말(target)을 넣는다. 그날 "
+        "이름)은 쓰지 않는다(답이 바로 보임). 모든 단서에 대상 낱말(target)을 넣어 그 대상이 "
+        "지나온 "
+        "길의 증거임을 밝힌다(코드 검사 CLUE_OWNER). 그날 "
         "장소(place)를 정답 길로 두지 않는다.\n"
         "- intro: 아이가 대상을 받은 데서 시작해 테마 역할의 뭉치가 현장으로 출동해 큰 질문을 "
         "맡는 데까지.\n"
@@ -827,6 +839,7 @@ ROUTE = StoryType(
     target_in_hand=True,
     trace=ROUTE_TRACE,
     trace_only=True,
+    owner_all=True,
 )
 
 VEHICLE_TARGET_CUTS = frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)})

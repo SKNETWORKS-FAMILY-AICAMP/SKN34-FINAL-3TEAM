@@ -47,12 +47,18 @@ def gift_theme() -> dict[str, Any]:
     # 월(흔적) 무게로 목도리·고무공, 금(기록) 소리로 그림책이 빠짐
     for d, clue, kind, feat, allowed in (
         ("MON", "상자를 들어 보니 묵직한 상자였어.", "RULE", "상자 무게", ["묵직한 상자"]),
-        ("TUE", "그릇 가게나 서점에서 사는 걸 봤대.", "HINT", "산 가게", ["그릇 가게", "서점"]),
+        (
+            "TUE",
+            "선물을 그릇 가게나 서점에서 사는 걸 봤대.",
+            "HINT",
+            "선물을 산 가게",
+            ["그릇 가게", "서점"],
+        ),
         (
             "WED",
-            "서점이나 그릇 가게에서 계산하는 걸 봤대.",
+            "서점이나 그릇 가게에서 선물을 계산하는 걸 봤대.",
             "HINT",
-            "산 가게",
+            "선물을 산 가게",
             ["서점", "그릇 가게"],
         ),
         ("THU", "상자를 다시 들어 보니 묵직한 상자였어.", "HINT", "상자 무게", ["묵직한 상자"]),
@@ -207,7 +213,7 @@ def test_evidence_plan_follows_what_each_fact_feature_can_show() -> None:
     목격 날에 둠). 두 날을 바꿔 둘 다 맞으면 맞바꾸고, 짝이 없으면 그 특징으로 알 수 있는 종류로."""
     theme = gift_theme()
     sound = {"kind": "RULE", "feature": "흔들면 나는 소리", "allowed": ["달그락 소리"]}
-    shop = {"kind": "HINT", "feature": "산 가게", "allowed": ["서점", "그릇 가게"]}
+    shop = {"kind": "HINT", "feature": "선물을 산 가게", "allowed": ["서점", "그릇 가게"]}
     checks.theme_day(theme, "MON")["condition"] = sound
     checks.theme_day(theme, "TUE")["condition"] = shop
     theme["evidencePlan"] = {
@@ -220,8 +226,8 @@ def test_evidence_plan_follows_what_each_fact_feature_can_show() -> None:
     assert checks.fit_evidence_plan(theme) == ["MON", "TUE"]
     assert theme["evidencePlan"]["MON"]["kind"] == "TRACE"
     assert theme["evidencePlan"]["TUE"]["kind"] == "SIGHTING"
-    assert not checks.kind_fits(families.GIFT, "산 가게", "TRACE")
-    assert checks.kind_fits(families.GIFT, "산 가게", "RECORD")
+    assert not checks.kind_fits(families.GIFT, "선물을 산 가게", "TRACE")
+    assert checks.kind_fits(families.GIFT, "선물을 산 가게", "RECORD")
     assert not checks.kind_fits(families.SECRET_INGREDIENT, "맛", "SIGHTING")
     assert not checks.kind_fits(families.PRANK, "꼬리 모양", "TRACE")
     assert checks.kind_fits(families.LOST, "냄새", "SIGHTING")  # 사실표 밖은 흔적만 봄
@@ -238,6 +244,20 @@ def test_shop_clue_needs_buying_proof() -> None:
     went = day_with(gift_theme(), "TUE", clue="그릇 가게나 서점에서 나오는 걸 봤대.")
     bad = checks.check_theme(went, 3)
     assert codes(bad) == ["CLUE_PROOF"] and list(checks.fix_targets(bad)) == ["TUE.clue"]
-    bought = day_with(gift_theme(), "TUE", clue="그릇 가게나 서점에서 계산하는 걸 봤대.")
+    bought = day_with(gift_theme(), "TUE", clue="선물을 그릇 가게나 서점에서 계산하는 걸 봤대.")
     assert checks.check_theme(bought, 3) == []
+    no_thing = day_with(gift_theme(), "TUE", clue="그릇 가게나 서점에서 계산하는 걸 봤대.")
+    assert [r.split(" ")[0] for r in checks.check_theme(no_thing, 3)] == ["CLUE_PROOF"]  # 선물 낱말
     assert checks.clue_proof_problems(valid_theme()) == []  # 사실표 종류만
+
+
+def test_origin_route_every_clue_names_target() -> None:
+    # 마지막 확인: '가게 앞 바닥을 봤다'처럼 장소만 말해 대상과 이어지지 않음 → 출처·길은 모든
+    # 단서에 대상 낱말(CLUE_OWNER, 칸 고쳐 쓰기)
+    assert families.ORIGIN.owner_all and families.ROUTE.owner_all and not families.GIFT.owner_all
+    theme = day_with({**valid_theme(), "storyType": "ORIGIN"}, "WED", clue="지붕이 없는 곳이었대.")
+    bad = [r for r in checks.check_theme(theme, 3) if r.startswith("CLUE_OWNER")]
+    assert [r.split(" ")[1] for r in bad] == ["WED"]  # 대상 낱말(보리)이 없는 수요일 단서만
+    assert "CLUE_OWNER" in families.type_rules(families.ORIGIN)
+    assert any("대상 낱말" in r for r in prompts.fix_rules(theme, "WED.clue"))
+    assert "같은 대상의 증거라 서로 다른 때를 섞은 것이 아니다" in prompts.REVIEW_SYSTEM
