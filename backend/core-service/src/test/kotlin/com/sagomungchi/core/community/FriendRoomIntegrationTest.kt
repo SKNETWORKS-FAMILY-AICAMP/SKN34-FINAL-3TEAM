@@ -133,18 +133,18 @@ class FriendRoomIntegrationTest : IntegrationTestSupport() {
         }
         fun wear(slot: String, asset: String, status: String = "ON_SALE") =
             jdbc.update("INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at) VALUES(?,?,?,now())", friend, slot, item(slot, asset, status))
-        fun place(spot: Int, asset: String, status: String = "ON_SALE") {
+        fun place(surface: String, col: Int, row: Int, asset: String, status: String = "ON_SALE") {
             val id = item("DECOR", asset, status)
             val ledger = UUID.randomUUID()
             jdbc.update("INSERT INTO reward_point_ledger(id,student_id,event_type,source_key,amount,created_at) VALUES(?,?,'UNLOCK',?,-10,now())", ledger, friend, "decor:$ledger")
             jdbc.update("INSERT INTO student_room_decor(id,student_id,look_item_id,ledger_id,purchased_at) VALUES(?,?,?,?,now())", UUID.randomUUID(), friend, id, ledger)
-            jdbc.update("INSERT INTO room_decor_spot(student_id,spot_no,look_item_id,saved_at) VALUES(?,?,?,now())", friend, spot, id)
+            jdbc.update("INSERT INTO room_decor_spot(student_id,surface,cell_col,cell_row,look_item_id,saved_at) VALUES(?,?,?,?,?,now())", friend, surface, col, row, id)
         }
         wear("HAT", "look/hat-star.png", status = "STOPPED")
         wear("BACKGROUND", "look/wall-night.png")
         wear("DESK", "room/desk-wood.png")
         wear("FLOOR", "room/floor-grass.png")
-        place(5, "room/decor-plant.png"); place(2, "room/decor-lamp.png", status = "STOPPED")
+        place("WALL_LEFT", 10, 5, "room/decor-plant.png"); place("FLOOR", 16, 12, "room/decor-lamp.png", status = "STOPPED")
     }
 
     private fun hang(no: Int, week: String) = jdbc.update(
@@ -176,9 +176,9 @@ class FriendRoomIntegrationTest : IntegrationTestSupport() {
         assertEquals("room/desk-wood.png", body["room"]["furniture"]["DESK"].asText())
         assertTrue(body["room"]["furniture"]["WALL"].isNull)
         assertEquals("room/floor-grass.png", body["room"]["floor"].asText())
-        assertEquals(listOf(2 to "room/decor-lamp.png", 5 to "room/decor-plant.png"),
-            body["room"]["decor"].map { it["spotNo"].asInt() to it["assetKey"].asText() })
-        assertEquals(setOf("spotNo", "assetKey"), body["room"]["decor"][0].fieldNames().asSequence().toSet())
+        assertEquals(listOf(Triple("FLOOR", 16, 12) to "room/decor-lamp.png", Triple("WALL_LEFT", 10, 5) to "room/decor-plant.png"),
+            body["room"]["decor"].map { Triple(it["surface"].asText(), it["col"].asInt(), it["row"].asInt()) to it["assetKey"].asText() })
+        assertEquals(setOf("surface", "col", "row", "assetKey"), body["room"]["decor"][0].fieldNames().asSequence().toSet())
         val frames = body["room"]["frames"]
         assertEquals(listOf(1, 2), frames.map { it["slotNo"].asInt() })
         assertEquals(listOf("물의 여행", "그림 없는 액자"), frames.map { it["title"].asText() })

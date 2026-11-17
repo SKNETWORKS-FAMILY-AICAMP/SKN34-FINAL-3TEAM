@@ -909,7 +909,7 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 |---|---|
 | 바닥 | 착용 슬롯 `FLOOR`(화면 "바닥"). 지금 해금 규칙 그대로 1회 해금·착용, 착용 행 없음 = 벽지 세트의 바닥(지금 화면 그대로) |
 | 방 소품 | 칸 `DECOR`(화면 "방 소품"). 캐릭터 착용 칸 `ACCESSORY`("소품", 손에 드는 것)와 다른 칸. 착용 슬롯이 아니라 같은 아이템을 여러 개 산다 |
-| 놓을 자리 | 8곳, 자리 종류(바닥·벽·책상 위) 구분 없음. 좌표·그림은 웹이 정함 |
+| 놓을 자리 | #704 당시 8곳. #723에서 바닥·벽 기준 칸과 최대 8개 배치로 개정(21절) |
 | 보유 상한 | 방 소품 아이템당 8개(자리 수와 같음, 넘으면 409 `LOOK_DECOR_LIMIT`) |
 | 원장 | `event_type` `UNLOCK` 그대로(CHECK 변경 없음), 사건 키 `itemKey:Idempotency-Key` |
 | 마이그레이션 | V50 `V50__room_floor_and_decor.sql`(#697 V49 다음) |
@@ -919,7 +919,7 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 - **사기는 해금 흐름 재사용**: `LookUnlockService.purchase`가 해금과 같은 순서(학생 행 `FOR SHARE` → 잔액 행 `FOR UPDATE`, 원장 음수, 잔액 차감, `IdempotencyService`)로 처리하고 새 결제 경로는 없다. 같은 키 재전송은 처음 응답(1회 차감), 키가 다르면 새 구매. 원장 UK `(student, UNLOCK, source_key)`는 사건 키에 멱등 키가 들어가 같은 키 이중 기록도 막는다
 - **경로를 나눔**: 해금(`unlock`)은 "이미 해금이면 차감 없이 200"이 규칙이라 여러 번 사기와 뜻이 부딪힌다. 방 소품은 `POST /students/me/look-items/{itemKey}/purchase`로 따로 두고, `unlock`에 방 소품을 보내거나 `purchase`에 다른 칸을 보내면 422
 - **보유는 구매 행**: `student_room_decor` 1행 = 구매 1번(그 원장 행을 `ledger_id` UK로 가리킴). 개수 칸을 두지 않아 원장과 보유가 1:1로 맞고, 상한 검사는 잔액 행 잠금 아래에서 행 수로 한다
-- **놓은 자리는 전체 교체**: `room_decor_spot` PK `(student_id, spot_no)`, CHECK 1~8. `PUT /students/me/room/decor-spots`가 학생 행 `FOR NO KEY UPDATE`(사기의 `FOR SHARE`·삭제 확정과 직렬화) 뒤 보유 개수를 읽어 넘는 배치를 422로 막고 전체를 지우고 넣는다. 액자 슬롯과 달리 learning을 부르지 않아 트랜잭션 하나로 끝난다
+- **놓은 자리는 전체 교체**: #704 당시 `room_decor_spot` PK `(student_id, spot_no)`, CHECK 1~8. 현재 면·칸 구조는 21절(#723)을 따른다. `PUT /students/me/room/decor-spots`가 학생 행 `FOR NO KEY UPDATE`(사기의 `FOR SHARE`·삭제 확정과 직렬화) 뒤 보유 개수를 읽어 넘는 배치를 422로 막고 전체를 지우고 넣는다. 액자 슬롯과 달리 learning을 부르지 않아 트랜잭션 하나로 끝난다
 - **응답은 칸만 더함**: 학생 아이템 목록에 `ownedCount`(방 소품 보유 개수, 다른 칸 null)와 `createdAt`(관리자 아이템 등록일, 웹 "새로 나왔어요")을 더하고 기존 칸은 그대로. 착용 응답 `equipped`에는 `FLOOR`가 더해진다(기존 일곱 슬롯 그대로)
 - **판매 중단**: 이미 가진 방 소품은 목록(`onSale:false`)·놓은 자리에 남고 새로 살 수만 없다. 바닥은 다른 아이템처럼 해금했으면 계속 착용
 - **학생 삭제 확정**: `StudentLookService.clear`가 놓은 자리 → 착용 → 보유 → 해금 → 원장 → 잔액 순서로 같은 트랜잭션에서 지운다(보유 행이 원장을 가리켜 원장보다 먼저)
@@ -947,8 +947,8 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 | 공개 경로·찾는 방법 | 기준안대로 `GET /api/v1/community-posts/{postId}/room`, 글 번호로만 찾음 | 학생 ID를 내보내지 않는 친구 생각 응답과 같은 방식 |
 | 막는 규칙 | 새 판정 없이 기존 것을 다시 씀: core 신고 숨김(`reportHidden`) → learning 반응 남기기와 같은 순서(VISIBLE 아님·없음 404, 본인 글 409, 열람자 잠금 403) → `CommunityAuthorMapper.toAuthors`(공개 끔·현재 보호자 동의 없음·비활성·별명 없음이면 404) | 친구 생각 목록에서 빠지는 글이면 방도 안 보이게. 왜 못 보는지는 구분하지 않음(공개 끔·동의 철회를 다른 학생이 알 수 없게) |
 | 착용 값 | 그림 키(`look_item.asset_key`) 또는 null, 판매 중단 아이템도 그대로 | 열람자의 `GET /students/me/look-items`에는 남이 해금한 판매 중단 아이템이 없어 아이템 코드로는 웹이 그림을 찾지 못함 |
-| 응답 모양 | 기준안 `{nickname, look:{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY}}, room:{wallpaper, floor, furniture:{DESK, WALL, WARDROBE}, decor:[{spotNo, assetKey}], frames:[{slotNo, title, imageUrl}]}}` | 캐릭터·방을 나눠 웹이 내 방 그리기를 그대로 쓸 수 있게. 벽지(`BACKGROUND`)·바닥(`FLOOR`)은 방 칸으로 둠 |
-| 바닥·방 소품(#704) | 넣는다(담당자 확인 2026-11-16, #704 병합 뒤). `floor`는 그림 키 또는 null(벽지 세트의 바닥), `decor`는 놓은 자리만 자리 번호순 `{spotNo, assetKey}` | 처음 결정의 "보이는 것"에 바닥·방 소품 놓은 자리가 들어 있음. 아이템 코드·이름·보유 개수는 내보내지 않음(포인트·해금 목록과 같은 이유) |
+| 응답 모양 | 기준안 `{nickname, look:{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY}}, room:{wallpaper, floor, furniture:{DESK, WALL, WARDROBE}, decor:[{surface, col, row, assetKey}], frames:[{slotNo, title, imageUrl}]}}` | 캐릭터·방을 나눠 웹이 내 방 그리기를 그대로 쓸 수 있게. 벽지(`BACKGROUND`)·바닥(`FLOOR`)은 방 칸으로 둠 |
+| 바닥·방 소품(#704) | 넣는다(담당자 확인 2026-11-16, #704 병합 뒤). `floor`는 그림 키 또는 null(벽지 세트의 바닥), `decor`는 놓은 칸만 면 → row → col 순 `{surface, col, row, assetKey}`(21절 #723 개정) | 처음 결정의 "보이는 것"에 바닥·방 소품 놓은 자리가 들어 있음. 아이템 코드·이름·보유 개수는 내보내지 않음(포인트·해금 목록과 같은 이유) |
 | 내보내지 않는 칸 | 학생 ID, `postId`, `themeId`, `weekStart`, `attemptId`, 포인트·해금 목록 | 회차 키가 없어 액자를 눌러도 회차 상세(문제·답·정답)를 열 수 없음(정답 누출 방지). 회차 상세 경로는 어차피 본인 회차만 줌 |
 | 가구 스킨 공개 범위 | 친구 방 구경에서는 보임(10.1 "본인 방에서만" 개정). 커뮤니티 목록 `look.equipped`는 캐릭터 네 슬롯 그대로 | 사용자 결정. 목록 응답 모양·웹을 바꾸지 않음 |
 | 방문 기록·횟수 제한·방문 알림·지표 | 모두 없음 | 친구 생각 목록에도 횟수 제한이 없음. 기록하려면 새 테이블·알림 유형이 필요해 범위가 커짐. 리텐션 지표(NFR-OPS-06)에도 넣지 않음 |
@@ -967,3 +967,49 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 
 - 바닥·방 소품(#704, PR #718)이 먼저 병합돼 develop을 합친 뒤 `room`에 `floor`·`decor`를 더했다. 결정 기록 절 번호도 #704(19절)·#568(18절) 뒤라 이 절을 20절로 옮겼다
 - core 시험은 learning을 가짜 서버로 둔다. learning #707(PR #711) 병합 뒤 `scripts/tests/test_friend_room_contract.py`가 가짜 서버가 흉내 내는 경로·질의·응답 칸·오류 코드를 learning OpenAPI·컨트롤러와 대조한다
+
+
+## 21. 방 소품 자유 배치 (#723, 2026-11-17)
+
+정해진 자리 번호 대신 학생이 고른 바닥·벽 격자의 기준 칸을 저장한다. #705 학생 웹과 #709 친구 방 웹의 선행 계약 변경이며 기존 가구·구매·보유 상한·바닥 착용·액자 슬롯은 그대로다. 구현에는 #723의 기준안(아래 값)을 적용하며, 데모 포함 시점은 릴리스 작업에서 결정한다.
+
+### 21.1 계약과 검사 책임
+
+| surface | col | row | 웹 칸 크기·방향 |
+|---|---|---|---|
+| FLOOR | 0~16 | 0~12 | 80×75, 왼쪽 벽·뒷벽에서 시작 |
+| WALL_BACK | 0~15 | 0~5 | 80×86, 왼쪽·위에서 시작 |
+| WALL_LEFT | 0~10 | 0~5 | 75×86, 뒷벽 구석·위에서 시작 |
+
+- 최대 8개, 아이템당 구매 상한도 기존 8개 유지. 큰 소품은 차지한 칸 중 col·row가 가장 작은 기준 칸만 저장한다. 회전·뒤집기는 이번 범위에 없다.
+- 서버: 면·칸 범위, 기준 칸 중복, 8개 상한, 방 소품 보유·개수 검사. 판매 중단 보유품도 배치 가능. 잘못된 요청은 422 `VALIDATION_FAILED`로 전체 거절하며 빈 목록은 모두 치움. 삭제 확정 학생은 409 `STUDENT_UNAVAILABLE`.
+- 웹(#705·#709): 그림별 허용 면·차지하는 크기, 큰 소품 겹침·경계, 고정 가구·발판·러그·문·창·추억의 벽 침범, 캐릭터 이동 경로 검사. 화면에 맞지 않는 저장 소품은 그리지 않고 내 방 편집에서 재배치 안내. 좁은 화면의 이동·확대도 웹 몫.
+- `PUT /students/me/room/decor-spots`: `{spots:[{surface,col,row,itemKey}]}`. GET·PUT 응답은 같은 칸에 `name,assetKey` 추가. 면 `FLOOR → WALL_BACK → WALL_LEFT`, 각 면은 row → col 순.
+- 친구 방 `room.decor`: `[{surface,col,row,assetKey}]`, 같은 정렬. 아이템 코드·이름·보유 개수는 미노출. learning 작성자 확인·액자 조회 계약은 변경 없음.
+
+### 21.2 저장 흐름과 마이그레이션
+
+`RoomController → RoomDecorService.replace → 요청 검사 → 학생 FOR NO KEY UPDATE → 보유 조회 → 전체 삭제·삽입 → 정렬 조회`. 친구 방은 기존 `FriendRoomService → RoomDecorService.friendSpots → RoomDecorMapper.spots`에서 같은 칸을 그림 키와 함께 반환한다.
+
+V51만 추가하고 V50은 수정하지 않는다. 로컬 kind의 migration revision은 v51로 맞추며 prod·AWS 값은 바꾸지 않는다. `spot_no` 대신 `surface varchar(16)`·`cell_col smallint`·`cell_row smallint`(NOT NULL, SQL DEFAULT 없음), PK `(student_id,surface,cell_col,cell_row)`와 면별 CHECK를 사용한다. 학생 삭제 정리는 기존 같은 트랜잭션을 유지한다.
+
+**기존 행 보존:** 이번 요청은 AWS 작업을 제외하므로 운영 행 유무를 확인하지 않는다. 이슈의 무조건 삭제 기준안 대신 V51은 테이블 잠금을 잡은 뒤 기존 행이 하나라도 있으면 명시적 오류로 중단한다. 운영·공유 DB 데이터는 자동 삭제하거나 임의 좌표로 옮기지 않는다. 기존 행이 있으면 담당자가 해당 환경과 데이터를 확인하고 처리 방침을 정한 뒤 재실행해야 한다. 빈 테이블에서만 구조를 바꾼다.
+
+### 21.3 검증 기록
+
+2026-11-17, 구현을 마친 뒤 아래 로컬 검증을 수행했다. 새 production 의존성은 없다.
+
+| 검증 | 실행·환경 | 결과 |
+|---|---|---|
+| core 테스트·빌드 | `gradle test bootJar --no-daemon --max-workers=2`, Gradle 8.14.6·Java 21 Docker 내부 작업 공간, 테스트 fork 2개 | 101개 클래스, 672개 중 669개 통과·3개 조건부 건너뜀, 실행 JAR 생성 성공 |
+| 변경 관련 회귀 | `RewardIntegrationTest` 18개·`FriendRoomIntegrationTest` 6개·`RoomFrameSlotIntegrationTest` 7개·`RoomDecorMigrationTest` 2개·`RoomDecorServiceTest` 1개 | 34개 모두 통과. 면별 경계·정렬·중복·보유 초과·빈 목록·실패 후 원상 유지·학생 삭제·바닥/구매/액자 회귀 포함 |
+| 저장소 계약 | `python -O -m unittest discover -s scripts/tests -v` | 323개 중 322개 통과·1개 원문 자료 조건부 건너뜀. 새 면별 OpenAPI 경계 검사 3개 포함 |
+| 실제 응답 JSON | `python scripts/validate_reward_contracts.py`, `python scripts/validate_community_contracts.py` | MockMvc 생성 응답 13개 모두 OpenAPI 일치. 본인 배치·친구 방의 새 칸과 비공개 식별자 미노출 확인 |
+| DB 스키마 | `python -O scripts/check_db_migrations.py --docker-network codex-723-schema --flyway-host codex-723-schema-db`, 격리된 로컬 PostgreSQL 17·pgvector | core 63테이블/535컬럼 등 3개 DB의 ERD 일치, 제약 거절 158건·CHECK 값 집합 108개·인덱스 62개. 재실행 변경 없음, report downgrade/upgrade, 서비스 역할 6개의 DB 격리 통과 |
+| 변경분 검사 | `git diff --check`, 이전 `spotNo`·`spot_no` 참조 확인 | 공백 오류 없음. 이전 이름은 V50·V51 전환 SQL, 이전 계약 거절 테스트·V50 보존 테스트와 이력 설명에만 남음 |
+
+core 통합 검증은 실제 로컬 PostgreSQL·Redis·RabbitMQ를 사용한다. 친구 방의 learning 작성자 확인·앨범 응답은 기존 가짜 HTTP 서버이며 실제 learning 서비스 통합 검증으로 표현하지 않는다. 학생 상태가 접근 검사 뒤 바뀌는 409 경로는 Mockito로 검증했다. V50 빈 테이블의 V51 전환·재실행과 기존 행이 있는 V50의 오류·행/스키마 보존은 실제 PostgreSQL에서 확인했다.
+
+건너뜀: core의 `MODEL_LOADING_LOCAL`·`PREFLIGHT_LOCAL`·`MODEL_BROWSER_LOCAL` 전용 환경을 켜지 않아 모델 로딩·preflight·등록 브라우저 검사 3개, 원문 HWP(`KNOWLEDGE_SOURCE_DIR`)가 없어 재추출 검사 1개. Windows 공유 경로의 core 검증은 파일 읽기 지연으로 중단하고 같은 소스로 Docker 내부에서 완료했다. Python 첫 실행의 임시 폴더 권한 오류는 실행 환경을 바꾼 재검증에서 해소했다.
+
+AWS 조회·운영 데이터 확인·배포·원격 CI·실제 웹 #705/#709 동작·공유 kind 배포는 실행하지 않았다. 웹의 크기/겹침/이동 경로 구현은 후속 이슈 범위다. 후속 #705·#709 계약 안내는 병합 뒤에 진행한다. 운영 반영 전 기존 `room_decor_spot` 행 확인은 별도 담당 작업으로 남는다.

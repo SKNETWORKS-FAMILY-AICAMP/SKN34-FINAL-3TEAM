@@ -528,7 +528,7 @@ sequenceDiagram
     C->>L: POST /internal/attempts/{id}/answers (Idempotency-Key: k1)
     opt 학생이 쓴 칸이 있음 (#688)
       L->>S: POST /internal/toxicity/checks {texts} (응답 1.5초, 서킷 scoring-toxicity)
-      S-->>L: {active, flagged} / 실패·시간 초과·비활성이면 검사 안 됨으로 기억
+      S-->>L: {active, flagged, review} / 실패·시간 초과·비활성이면 검사 안 됨으로 기억
     end
     rect rgba(128,128,128,0.12)
       L->>DB: attempt 행 잠금(FOR UPDATE)·본인 시도 확인
@@ -539,6 +539,9 @@ sequenceDiagram
       L->>DB: 보완이면 가장 최근 미답 되묻기와 followupId 확인 (아니면 422 ANSWER_INCOMPLETE)
       L->>DB: answer 저장 (version = 이전+1, previous_answer_id·followup_id 연결)
       L->>DB: judgment 저장 (PENDING)
+      opt 미리 받은 모델 결과 review (#725)
+        L->>DB: expression_review 저장 (GRAY_ZONE, 모델 버전만·점수 없음)
+      end
       L->>DB: attempt_draft 답 칸 비움 (memo 유지, version +1)
     end
     L-->>C: 201 answerId·version·feedback.status=PENDING
@@ -551,6 +554,7 @@ sequenceDiagram
 - learning도 시도·키(ERD UK)로 같은 키를 처리. core가 learning 응답을 받기 전에 끊겨 다시 보내도 답변은 1건
 - 표현 검사(#205)는 learning 안의 단어 목록 대조라 외부 호출이 없음. 막힌 요청은 저장하지 않고, core는 그 422(범주별 안내, 원문 없음)를 같은 키의 응답으로 저장. 웹은 답이 바뀌면 새 키를 만들어 고친 답은 새 요청이 됨. 초안 자동 저장은 검사하지 않음 (learning.md #205)
 - 표현 분류 모델(#688)은 learning이 시도 행 잠금 전에 scoring을 불러 결과만 받아 두고, 트랜잭션 안 단어 목록 다음 자리에서 적용한다. 같은 키 다시 보내기는 저장된 답을 돌려주므로 모델 결과와 상관없다. 모델 장애·시간 초과·비활성은 제출을 막지 않는다(architecture 1.3)
+- 경계 구간(#725): 걸리지 않았지만 `review:true`면 답변과 같은 트랜잭션에서 표현 검토 대기 행을 남긴다(ERD 4.3.2). 재학습 흐름은 9.1
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
 - 2026-11-10 개정(#483, core #485 구현): 무료 플랜은 테마 문제(`THEME_DAY`)를 하루 한도 없이 공개된 만큼(주 5개, learning #484 누적 공개) 시작하고, 추가 문제(`EXTRA`)는 프리미엄 전용(403 `PREMIUM_REQUIRED`, 상품 값이 없으면 무료 거부 #506)
 - 무료 상품에서 `EXTRA`를 다시 켠 경우에만 무료 `EXTRA` 신규 시도를 하루 `limits.dailyMissions`개까지 허용한다. 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, #210 결정에 따라 PostgreSQL `mission_daily_usage`). 이전 규칙(무료 `THEME_DAY`·`EXTRA` 합산 하루 1개, #387)은 개정으로 대체
@@ -1584,6 +1588,61 @@ sequenceDiagram
 - ai #68도 Pod별 큐 바인딩·소비 시작 → core snapshot → 조회 중 받은 이벤트의 kind·name별 revision 조정 → readiness 순서다. 재연결 시 snapshot으로 유실 구간을 복구한다. `PROMPT` 일곱 기능(#336 미션 초안, #477 리포트 설명 포함)과 승인 scope만 반영하며, 미보유 버전 본문을 받으면 해당 기능 새 요청은 503, readiness는 false다. 요청이 시작할 때 잡은 본문·버전은 진행 중 교체하지 않는다.
 - scoring 교체·롤백 시 artifact를 다시 내려받아 로딩한 뒤 임시 파일을 정리한다. 로딩 중에는 기존 모델을 사용하며 실패 시 기존 모델을 유지하고 재시도한다. 새 승인 scopes에서 제외된 범위에는 기존 모델도 사용하지 않는다. 최초 준비·재연결 복구가 끝나기 전에는 readiness false다.
 - 기준표(`kind = RUBRIC`) 행은 core 레지스트리의 승인·활성 기록만 담당. learning은 이 이벤트를 소비하지 않으며, `judge_verified`·현재 기준표 버전 반영은 관리자 미션 API(`/admin/missions/...`)로 별도 수행
+
+### 9.1 표현 분류 재학습·자동 등록 (#688 재학습 자동화, 설계 #725)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant AW as Web (관리자)
+  participant C as core
+  participant L as learning
+  participant J as tox-retrain Job
+  participant S3 as S3
+  participant S as scoring
+
+  Note over AW,L: 라벨 모으기 (평소)
+  AW->>C: GET /admin/expression-reviews?labeled=false
+  C->>C: audit_log (EXPRESSION_REVIEW_VIEW)
+  C->>L: GET /internal/admin/expression-reviews
+  L-->>C: 글·출처·모델 버전 (학생 이름·ID 없음)
+  AW->>C: PUT /admin/expression-reviews/{id}/label {OFFENSIVE|CLEAN|SKIP}
+  C->>C: audit_log (EXPRESSION_REVIEW_LABEL)
+  C->>L: PUT /internal/admin/expression-reviews/{id}/label
+  Note over C,L: 신고 공유물은 moderation 반영 때 자동 라벨 (REMOVED → OFFENSIVE, VISIBLE → CLEAN)
+
+  Note over J: CronJob 주 1회 (일 03:00 KST)
+  J->>L: GET /internal/expression-reviews/label-count?since=지난 학습 시각
+  alt 새 라벨 200건 미만 (기준안)
+    J->>J: 성공 종료 (아무것도 바꾸지 않음)
+  else
+    J->>L: GET /internal/expression-reviews/export?since&until
+    L-->>J: {items:[{text, label}]} (ID·시각 없음)
+    J->>C: GET /internal/model-versions/active
+    C-->>J: 활성 tox- 모델 artifactUri
+    J->>S3: 활성 모델·공개 학습 데이터 일부 받기 (emptyDir)
+    J->>J: 이어 학습(CPU) → threshold·review_threshold 재계산
+    J->>J: 후보·활성 같은 평가 세트 비교 → recommendation (RECOMMENDED|NOT_RECOMMENDED)
+    J->>S3: models/tox-… 버전 경로 업로드 + SHA-256 manifest
+    J->>C: POST /internal/model-versions (source PIPELINE, evaluation.recommendation)
+    C->>S: POST /internal/models/preflight
+    alt preflight FAIL
+      C-->>J: 422 MODEL_APPROVAL_REJECTED (Job 실패 → 경보)
+    else PASS
+      C->>C: model_version REGISTERED, audit_log (MODEL_REGISTER, actor mlops-pipeline)
+      C-->>J: 201
+      J->>S3: models/tox-retrain/last.json {labelsUntil, version}
+    end
+  end
+
+  Note over AW,S: 활성화는 사람 (9장 흐름 그대로)
+  AW->>C: GET /admin/model-versions?kind=MODEL (추천 태그·이유 확인)
+  AW->>C: POST /admin/model-versions/{id}/activate
+```
+
+- `since`(지난 학습 시각): 등록에 성공하면 Job이 S3 `models/tox-retrain/last.json`에 `{labelsUntil, version}`을 쓰고 다음 실행이 읽는다(없으면 처음부터). core 내부 snapshot은 평가 근거를 전파하지 않고(api-spec 5.2) DB를 따로 두지 않기 위해 이미 쓰는 S3 경로에 둔다. `labelsUntil`은 내보내기 `until`과 같은 값이며 같은 값은 `evaluation.datasetVersion`에도 적는다
+- 학습 데이터·체크포인트는 Job Pod의 emptyDir에만 있고 Pod와 함께 지워진다. 등록 기록에는 데이터 건수·해시만 남는다
+- 추천 태그는 참고 정보다. 비추천 버전도 등록은 되며, 활성화 여부는 운영자가 정한다(NFR-AIQ-05)
 
 ---
 
