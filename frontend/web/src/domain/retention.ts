@@ -83,14 +83,23 @@ export function readPoints(raw: unknown): Points {
 export type CharacterSlot = 'HAT' | 'OUTFIT' | 'ACCESSORY' | 'BACKGROUND'
 /** 내 방 가구 스킨 칸(P27, API 명세 2.10 2026-11-12). 가구 1개 = 착용 칸 1개 */
 export type FurnitureSlot = 'DESK' | 'WALL' | 'WARDROBE'
+/** 내 방 바닥 칸(#704). 벽지·가구처럼 한 번 해금하고 착용한다. 착용 없음(null·없음) = 벽지 세트의 바닥 */
+export type FloorSlot = 'FLOOR'
+/**
+ * 방 소품 칸(#704). 캐릭터가 손에 드는 착용 칸 `ACCESSORY`("소품")와 다른 칸이고, 착용 칸이 아니라
+ * 같은 아이템을 여러 개 사서(`purchase`) 내 방에 놓는다. 그래서 `Equipped`에는 들어가지 않는다.
+ */
+export type DecorSlot = 'DECOR'
 export type WearableSlot = CharacterSlot | FurnitureSlot
 /** 방 소품은 여러 개 구매·배치하며 착용 칸이 아니다(#704·#706). */
-export type ItemSlot = WearableSlot | 'FLOOR' | 'DECOR'
+export type ItemSlot = WearableSlot | FloorSlot | DecorSlot
 export type LookSlot = 'THEME' | 'COMPANION' | ItemSlot
 export const ITEM_SLOTS: CharacterSlot[] = ['HAT', 'OUTFIT', 'ACCESSORY', 'BACKGROUND']
 export const FURNITURE_SLOTS: FurnitureSlot[] = ['DESK', 'WALL', 'WARDROBE']
-/** 관리자 아이템 등록에서 고르는 칸 전체 */
+/** 관리자 아이템 등록에서 고르는 칸 전체(바닥·방 소품은 관리자 웹 #706이 더함) */
 export const ALL_ITEM_SLOTS: ItemSlot[] = [...ITEM_SLOTS, ...FURNITURE_SLOTS, 'FLOOR', 'DECOR']
+/** 방 소품 아이템당 보유 상한(#704 확정, 넘으면 409 `LOOK_DECOR_LIMIT`). 목록 `ownedCount`의 최댓값과 같다 */
+export const DECOR_MAX_OWNED = 8
 export const SLOT_LABELS: Record<LookSlot, string> = {
   THEME: '테마',
   COMPANION: '캐릭터',
@@ -102,13 +111,15 @@ export const SLOT_LABELS: Record<LookSlot, string> = {
   WALL: '추억의 벽',
   WARDROBE: '옷장',
   FLOOR: '바닥',
+  // 캐릭터 착용 칸 ACCESSORY "소품"과 헷갈리지 않게 "방 소품"(#704)
   DECOR: '방 소품',
 }
 /**
- * 착용 칸. 가구 칸은 서버가 알려 준 때만 둔다: 가구 칸을 모르는 서버(core #555 전)에 보내면
- * 422라 기존 꾸미기 저장이 깨지지 않게 한다. 가구 칸이 비면(null·없음) 기본 스킨.
+ * 착용 칸. 가구 칸·바닥 칸은 서버가 알려 준 때만 둔다: 그 칸을 모르는 서버(가구는 core #555 전, 바닥은 #704 전)에
+ * 보내면 422라 기존 꾸미기 저장이 깨지지 않게 한다. 가구 칸이 비면(null·없음) 기본 스킨, 바닥 칸이 비면 벽지 세트의 바닥.
+ * 방 소품(`DECOR`)은 착용 칸이 아니라 늘 비어 있다(`DECOR?: never`: 꾸미기 화면이 `ItemSlot`으로 착용 값을 찾으면 undefined).
  */
-export type Equipped = Record<CharacterSlot, string | null> & Partial<Record<FurnitureSlot, string | null>>
+export type Equipped = Record<CharacterSlot, string | null> & Partial<Record<FurnitureSlot | FloorSlot, string | null>> & { DECOR?: never }
 export const NO_EQUIPPED: Equipped = { HAT: null, OUTFIT: null, ACCESSORY: null, BACKGROUND: null }
 export const FREE_THEME: ThemeId = 'lake'
 export const FREE_COMPANION: CompanionId = 'mungchi'
@@ -126,8 +137,13 @@ export interface LookItem {
   unlocked: boolean
   onSale: boolean
   assetKey: string | null
+  /** 방 소품(`DECOR`) 보유 개수 0~8(#704). 다른 칸은 null. 0이면 `unlocked` false */
+  ownedCount: number | null
+  /** 관리자 아이템 등록일(#704, 꾸미기 "새로 나왔어요"). 테마·캐릭터와 날짜로 읽지 못한 값은 null */
+  createdAt: string | null
 }
 const isSlot = (v: unknown): v is LookSlot => typeof v === 'string' && v in SLOT_LABELS
+const isOwnedCount = (v: unknown): v is number => nonNegativeInteger(v) && v <= DECOR_MAX_OWNED
 
 export function readLookItems(raw: unknown): LookItem[] {
   const items = (raw as { items?: unknown })?.items
@@ -138,12 +154,17 @@ export function readLookItems(raw: unknown): LookItem[] {
     if (!v.itemKey || typeof v.name !== 'string' || !nonNegativeInteger(v.pricePoints) ||
         typeof v.unlocked !== 'boolean' || typeof v.onSale !== 'boolean' ||
         (v.assetKey !== null && typeof v.assetKey !== 'string')) return rewardContractError()
+    // 방 소품은 보유 개수를 모르면 더 살 수 있는지·몇 개 놓을지 정할 수 없어 그 항목만 버린다(목록 전체는 살림)
+    if (v.slot === 'DECOR' && !isOwnedCount(v.ownedCount)) return []
     return [
       {
         itemKey: v.itemKey,
         slot: v.slot,
         name: v.name, pricePoints: v.pricePoints, unlocked: v.unlocked, onSale: v.onSale,
         assetKey: v.assetKey,
+        // 방 소품이 아닌 칸의 보유 개수는 계약상 null이라 값이 와도 쓰지 않는다
+        ownedCount: v.slot === 'DECOR' ? (v.ownedCount as number) : null,
+        createdAt: typeof v.createdAt === 'string' && Number.isFinite(Date.parse(v.createdAt)) ? v.createdAt : null,
       },
     ]
   })
@@ -154,12 +175,20 @@ export function readUnlockResult(raw: unknown, itemKey: string): UnlockResult {
   if (value.itemKey !== itemKey || value.unlocked !== true || !nonNegativeInteger(value.balance)) return rewardContractError()
   return { itemKey, unlocked: true, balance: value.balance }
 }
+/** 방 소품 사기 응답(#704 `LookDecorPurchaseResult`): 산 뒤 보유 개수 1~8과 잔액 */
+export interface DecorPurchaseResult { itemKey: string; ownedCount: number; balance: number }
+export function readDecorPurchaseResult(raw: unknown, itemKey: string): DecorPurchaseResult {
+  const value = (raw ?? {}) as Partial<Record<keyof DecorPurchaseResult, unknown>>
+  if (value.itemKey !== itemKey || !isOwnedCount(value.ownedCount) || value.ownedCount < 1 || !nonNegativeInteger(value.balance))
+    return rewardContractError()
+  return { itemKey, ownedCount: value.ownedCount, balance: value.balance }
+}
 export function readEquipped(raw: unknown): Equipped {
   const v = (raw ?? {}) as Partial<Record<ItemSlot, unknown>>
   const value = (s: ItemSlot) => (typeof v[s] === 'string' && v[s] ? (v[s] as string) : null)
   return Object.fromEntries([
     ...ITEM_SLOTS.map((s) => [s, value(s)]),
-    ...FURNITURE_SLOTS.filter((s) => s in v).map((s) => [s, value(s)]),
+    ...[...FURNITURE_SLOTS, 'FLOOR' as const].filter((s) => s in v).map((s) => [s, value(s)]),
   ]) as Equipped
 }
 /** 테마·캐릭터는 목록에 없을 때도 무료 항목은 열려 있다고 본다(목록 실패가 기본 모습을 막지 않게). */
@@ -177,6 +206,8 @@ export function baseLookCatalog(): Omit<LookItem, 'unlocked'>[] {
       pricePoints: t.id === FREE_THEME ? 0 : THEME_PRICE,
       onSale: true,
       assetKey: null,
+      ownedCount: null,
+      createdAt: null,
     })),
     ...COMPANIONS.map((c) => ({
       itemKey: companionKey(c.id),
@@ -185,6 +216,8 @@ export function baseLookCatalog(): Omit<LookItem, 'unlocked'>[] {
       pricePoints: c.id === FREE_COMPANION ? 0 : COMPANION_PRICE,
       onSale: true,
       assetKey: null,
+      ownedCount: null,
+      createdAt: null,
     })),
   ]
 }
@@ -556,6 +589,118 @@ export function readMyPosts(raw: unknown): MyCommunityPost[] {
       },
     ]
   })
+}
+
+// ---------- 방 소품 놓은 칸 (core #723 계약안, #705) ----------
+/**
+ * 방 소품은 바닥·뒷벽·왼쪽 벽 칸(격자)에 놓는다(core #723). `col`·`row`는 기준 칸(그 소품이 차지하는 칸 가운데 번호가 가장 작은 칸).
+ * 칸 범위는 PC 화면에 보이는 곳 전체(#723 기준안). 서버는 범위·같은 기준 칸·개수 상한·보유 개수만 보고, 가구 칸·겹침·길은 웹이 본다.
+ * #723이 병합되기 전이라 이 모양은 계약안이다(바뀌면 이 읽기·쓰기와 MSW만 맞춘다).
+ */
+export type DecorSurface = 'FLOOR' | 'WALL_BACK' | 'WALL_LEFT'
+export const DECOR_SURFACES: DecorSurface[] = ['FLOOR', 'WALL_BACK', 'WALL_LEFT']
+export const DECOR_GRID: Record<DecorSurface, { cols: number; rows: number }> = {
+  FLOOR: { cols: 17, rows: 13 },
+  WALL_BACK: { cols: 16, rows: 6 },
+  WALL_LEFT: { cols: 11, rows: 6 },
+}
+/** 한 번에 놓을 수 있는 방 소품 수(#723 기준안 8개) */
+export const DECOR_SPOT_LIMIT = 8
+/** color: 놓은 것마다 고른 색(core #723 계약안, null = 기본 색). 어떤 색이 있는지는 웹 그림 목록 */
+export interface DecorSpot { surface: DecorSurface; col: number; row: number; itemKey: string; color: string | null; name: string; assetKey: string }
+/** 색 키 형식(#723: 영문 소문자·숫자·하이픈 1~20자). 형식이 틀리면 기본 색으로 읽는다 */
+export const DECOR_COLOR_RE = /^[a-z0-9-]{1,20}$/
+const decorColorOf = (v: unknown) => (typeof v === 'string' && DECOR_COLOR_RE.test(v) ? v : null)
+export const isDecorSurface = (v: unknown): v is DecorSurface => typeof v === 'string' && (DECOR_SURFACES as string[]).includes(v)
+export const inDecorGrid = (surface: DecorSurface, col: number, row: number) =>
+  Number.isInteger(col) && Number.isInteger(row) && col >= 0 && row >= 0 && col < DECOR_GRID[surface].cols && row < DECOR_GRID[surface].rows
+function decorContractError(): never {
+  throw new Error('방 소품 자리를 확인하지 못했어요. 다시 확인해 주세요.')
+}
+/** 놓은 칸 목록 읽기(`GET·PUT /students/me/room/decor-spots`). 범위 밖·같은 기준 칸 두 번이면 계약 오류 */
+export function readDecorSpots(raw: unknown): DecorSpot[] {
+  const spots = (raw as { spots?: unknown })?.spots
+  if (!Array.isArray(spots)) return decorContractError()
+  const seen = new Set<string>()
+  return spots.map((x) => {
+    const v = (x ?? {}) as Record<string, unknown>
+    const col = Number(v.col), row = Number(v.row)
+    if (!isDecorSurface(v.surface) || !inDecorGrid(v.surface, col, row) || typeof v.itemKey !== 'string' || !v.itemKey) return decorContractError()
+    const at = `${v.surface}:${col}:${row}`
+    if (seen.has(at)) return decorContractError()
+    seen.add(at)
+    return { surface: v.surface, col, row, itemKey: v.itemKey, color: decorColorOf(v.color), name: text(v.name), assetKey: text(v.assetKey) }
+  })
+}
+
+// ---------- 친구 방 구경 (API 명세 2.9, FN-RET-14, core #708·web #709) ----------
+type WornSlot = 'HAT' | 'OUTFIT' | 'ACCESSORY'
+/** 친구 방(읽기 전용). 착용·벽지·가구 값은 모두 그림 키(서버가 바로 줌, 판매 중단 아이템도 그대로), null이면 기본 모습·기본 스킨 */
+export interface FriendRoom {
+  nickname: string
+  companion: CompanionId
+  /** 친구 뭉치 착용 그림 키(캐릭터 세 칸) */
+  worn: Partial<Record<WornSlot, string>>
+  /** `floor` null = 벽지 세트의 바닥(#704) */
+  room: { wallpaper: string | null; floor: string | null; desk: string | null; wall: string | null; wardrobe: string | null }
+  /** 추억의 벽 액자(번호순). 회차 키가 없어 회차 상세를 열 수 없다 */
+  frames: { slotNo: number; title: string; imageUrl: string | null }[]
+  /** 친구가 놓은 방 소품(#723 칸 모양, 그림 키만). 모양이 맞지 않는 칸은 버린다(그리지 않음) */
+  decor: { surface: DecorSurface; col: number; row: number; color: string | null; assetKey: string }[]
+}
+function friendRoomContractError(): never {
+  throw new Error('친구 방 정보를 확인하지 못했어요. 다시 확인해 주세요.')
+}
+/** 그림 키 칸: 문자열이나 null만 받는다 */
+const assetOrNull = (v: unknown): string | null => {
+  if (v === null || v === undefined) return null
+  if (typeof v !== 'string') return friendRoomContractError()
+  return v || null
+}
+/**
+ * 친구 방 응답 읽기. 모르는 칸(학생 ID·회차 키 등이 와도)은 화면 상태에 두지 않는다.
+ * 방 소품 `decor`는 #723 칸 모양(`surface`·`col`·`row`·`assetKey`)만 읽고, 그 밖(예전 `spotNo` 등)은 버려 그리지 않는다.
+ */
+export function readFriendRoom(raw: unknown): FriendRoom {
+  const v = (raw ?? {}) as Record<string, unknown>
+  const look = v.look as Record<string, unknown> | undefined
+  const room = v.room as Record<string, unknown> | undefined
+  if (typeof v.nickname !== 'string' || !look || typeof look !== 'object' || !room || typeof room !== 'object') return friendRoomContractError()
+  const equipped = (look.equipped ?? {}) as Record<string, unknown>
+  const furniture = (room.furniture ?? {}) as Record<string, unknown>
+  if (typeof equipped !== 'object' || typeof furniture !== 'object' || !Array.isArray(room.frames)) return friendRoomContractError()
+  const worn: Partial<Record<WornSlot, string>> = {}
+  for (const slot of ['HAT', 'OUTFIT', 'ACCESSORY'] as const) {
+    const asset = assetOrNull(equipped[slot])
+    if (asset) worn[slot] = asset
+  }
+  const seen = new Set<number>()
+  const frames = room.frames.map((x) => {
+    const f = (x ?? {}) as Record<string, unknown>
+    const no = Number(f.slotNo)
+    if (!Number.isInteger(f.slotNo) || no < 1 || no > FRAME_SLOT_COUNT || seen.has(no) || typeof f.title !== 'string') return friendRoomContractError()
+    seen.add(no)
+    return { slotNo: no, title: f.title, imageUrl: typeof f.imageUrl === 'string' && f.imageUrl ? f.imageUrl : null }
+  }).sort((a, b) => a.slotNo - b.slotNo)
+  return {
+    nickname: v.nickname || '친구',
+    companion: COMPANIONS.find((c) => c.id === look.companion)?.id ?? FREE_COMPANION,
+    worn,
+    room: {
+      wallpaper: assetOrNull(room.wallpaper),
+      floor: assetOrNull(room.floor),
+      desk: assetOrNull(furniture.DESK),
+      wall: assetOrNull(furniture.WALL),
+      wardrobe: assetOrNull(furniture.WARDROBE),
+    },
+    frames,
+    decor: (Array.isArray(room.decor) ? room.decor : []).flatMap((x) => {
+      const d = (x ?? {}) as Record<string, unknown>
+      const col = Number(d.col), row = Number(d.row)
+      return isDecorSurface(d.surface) && inDecorGrid(d.surface, col, row) && typeof d.assetKey === 'string' && d.assetKey
+        ? [{ surface: d.surface, col, row, color: decorColorOf(d.color), assetKey: d.assetKey }] : []
+    }),
+  }
 }
 
 // ---------- 내 방 추억의 벽·추억 앨범 (API 명세 2.12, P27, FN-RET-09~11) ----------

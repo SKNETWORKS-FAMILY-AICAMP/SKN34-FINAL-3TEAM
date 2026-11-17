@@ -1,10 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { retentionApi } from './api.ts'
-import type { FrameSlot, LookItem, Points, Reaction, StoryKind } from '../../domain/retention.ts'
+import type { DecorSpot, DecorSurface, FrameSlot, LookItem, Points, Reaction, StoryKind } from '../../domain/retention.ts'
 
 // ---------- 내 방 추억의 벽·추억 앨범 (2.12, P27) ----------
 export const useFrameSlots = (childId: string | undefined) =>
   useQuery({ queryKey: ['frame-slots', childId], queryFn: ({ signal }) => retentionApi.frameSlots(signal), enabled: !!childId, retry: false })
+/** 방 소품 놓은 칸(#705, core #723 계약안) */
+export const useDecorSpots = (childId: string | undefined) =>
+  useQuery({ queryKey: ['decor-spots', childId], queryFn: ({ signal }) => retentionApi.decorSpots(signal), enabled: !!childId, retry: false })
+export function useSaveDecorSpots(childId: string | undefined) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: (spots: { surface: DecorSurface; col: number; row: number; itemKey: string; color?: string | null }[]) => retentionApi.saveDecorSpots(spots),
+    onSuccess: (saved) => cache.setQueryData<DecorSpot[]>(['decor-spots', childId], saved),
+  })
+}
 /** 저장이 끝나면 서버가 돌려준 목록으로 바꾸고, 앨범의 전시 여부도 다시 받는다 */
 export function useSaveFrameSlots(childId: string | undefined) {
   const cache = useQueryClient()
@@ -59,6 +69,27 @@ export function useUnlock(childId: string | undefined) {
       cache.setQueriesData<Points>({ queryKey: ['points', childId] }, before => before ? { ...before, balance: result.balance } : before)
       cache.setQueryData<LookItem[]>(['look-items', childId], before => before?.map(item =>
         item.itemKey === result.itemKey ? { ...item, unlocked: true } : item))
+    },
+    onSettled: () => Promise.all([
+      cache.invalidateQueries({ queryKey: ['look-items', childId] }),
+      cache.invalidateQueries({ queryKey: ['points', childId] }),
+      cache.invalidateQueries({ queryKey: ['parent', 'points', childId] }),
+    ]),
+  })
+}
+
+/**
+ * 방 소품 사기(#704). 멱등 키는 부르는 쪽(lookShop)이 사기마다 새로 만든다. 성공하면 서버가 확정한
+ * 보유 개수·잔액을 바로 반영하고(보유 1개 이상 = `unlocked` true), 끝나면 목록·잔액을 다시 받는다.
+ */
+export function usePurchaseDecor(childId: string | undefined) {
+  const cache = useQueryClient()
+  return useMutation({
+    mutationFn: ({ itemKey, key }: { itemKey: string; key: string }) => retentionApi.purchaseDecor(itemKey, key),
+    onSuccess: (result) => {
+      cache.setQueriesData<Points>({ queryKey: ['points', childId] }, before => before ? { ...before, balance: result.balance } : before)
+      cache.setQueryData<LookItem[]>(['look-items', childId], before => before?.map(item =>
+        item.itemKey === result.itemKey ? { ...item, ownedCount: result.ownedCount, unlocked: true } : item))
     },
     onSettled: () => Promise.all([
       cache.invalidateQueries({ queryKey: ['look-items', childId] }),
@@ -145,6 +176,15 @@ export const useMissionPosts = (childId: string | undefined, missionId: string |
     queryKey: ['community', 'mission', childId, missionId, seed],
     queryFn: ({ signal }) => retentionApi.missionPosts(missionId!, seed, signal),
     enabled: !!childId && !!missionId,
+    ...quiet,
+  })
+/** 친구 방(#709). 들어갈 때마다 다시 받는다(친구가 그사이 방을 바꿨을 수 있음, 서버 no-store) */
+export const useFriendRoom = (childId: string | undefined, postId: string | null) =>
+  useQuery({
+    queryKey: ['community', 'room', childId, postId],
+    queryFn: ({ signal }) => retentionApi.friendRoom(postId!, signal),
+    enabled: !!childId && !!postId,
+    gcTime: 0,
     ...quiet,
   })
 export const useMyPosts = (childId: string | undefined) =>

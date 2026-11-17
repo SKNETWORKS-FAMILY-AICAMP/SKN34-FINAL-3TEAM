@@ -108,7 +108,7 @@ test('홈 내 포인트 카드는 뭉치 친구들로 가고, 12종 모두 만�
 test('PC 1440×900에서 시안 맞춘 화면은 칸 안 스크롤이 없고, 내 방은 한 화면 안에 들어온다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'laptop', '1440×900 기준 검사')
   await student(page)
-  for (const path of ['settings', 'points', 'help', 'room', 'missions', 'journal', 'activities', 'community', 'customize?tab=furniture', 'friends', 'album']) {
+  for (const path of ['settings', 'points', 'help', 'room', 'missions', 'journal', 'activities', 'community', 'customize?tab=wear', 'friends', 'album']) {
     await navigate(page, `/student/${path}`)
     await expect(page.getByRole('main')).toBeVisible()
     const inner = await page.evaluate(() => [...document.querySelectorAll('.st-world *')]

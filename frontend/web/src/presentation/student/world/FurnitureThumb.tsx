@@ -1,4 +1,5 @@
-import { skinOf, wallpaperOf } from './roomAssets.ts'
+import { floorPaint, skinOf, wallpaperOf } from './roomAssets.ts'
+import { decorBg } from './decorDraw.ts'
 import type { RoomSlot } from './roomAssets.ts'
 
 const LINE = '#1F4E6B'
@@ -6,9 +7,18 @@ const LINE = '#1F4E6B'
 /**
  * 꾸미기·방 꾸미기 칸 그림(사용자 의견 2026-11-16 "가독성이 없어, 뭐가 어떻게 변하는지 보여야지"): 색 네모 대신
  * 그 칸이 바꾸는 가구를 그 색으로 작게 그린다. 세트(roomAssets ROOM_SET_PARTS)까지 함께 그려 같이 바뀌는 것이 보이게 한다.
- * 벽지: 벽 조각 + 바닥 + 커튼 + 러그 / 책상: 책상 + 책장 / 추억의 벽: 게시판 + 액자 테두리 / 옷장: 옷장 + 문.
+ * 벽지: 벽 조각 + 기본 바닥 + 커튼 / 바닥: 넓은 바닥(벽은 흐리게) / 책상: 책상 + 책장 / 추억의 벽: 게시판 + 액자 테두리 / 옷장: 옷장 + 문.
  */
-export function FurnitureThumb({ slot, assetKey }: { slot: RoomSlot; assetKey: string | null | undefined }) {
+export function FurnitureThumb({ slot, assetKey, wallpaper }: { slot: RoomSlot; assetKey: string | null | undefined; wallpaper?: string | null }) {
+  if (slot === 'FLOOR') {
+    // 바닥 칸: 바닥이 칸 대부분을 차지하게(무엇이 바뀌는지 보이게). 착용 없음 칸은 지금 벽지 세트의 바닥
+    return (
+      <span className="st-fthumb st-fthumb-wall st-fthumb-floorpick" aria-hidden="true">
+        <span className="st-fthumb-paper" style={{ background: wallpaperOf(wallpaper).paint, opacity: 0.55 }} />
+        <span className="st-fthumb-floor" style={{ background: floorPaint(assetKey, wallpaper, true) }} />
+      </span>
+    )
+  }
   if (slot === 'BACKGROUND') {
     const wp = wallpaperOf(assetKey)
     return (
@@ -18,7 +28,6 @@ export function FurnitureThumb({ slot, assetKey }: { slot: RoomSlot; assetKey: s
         <span className="st-fthumb-curtain is-left" style={{ background: wp.curtain }} />
         <span className="st-fthumb-curtain is-right" style={{ background: wp.curtain }} />
         <span className="st-fthumb-floor" style={{ background: `repeating-linear-gradient(90deg, ${wp.floor[0]} 0 10px, ${wp.floor[1]} 10px 11px)` }} />
-        <span className="st-fthumb-rug" style={{ background: wp.rug }} />
       </span>
     )
   }
@@ -71,6 +80,16 @@ export function FurnitureThumb({ slot, assetKey }: { slot: RoomSlot; assetKey: s
           </g>
         )}
       </svg>
+    </span>
+  )
+}
+
+/** 방 소품 칸 그림(#705): 방 안 그림과 같은 그림(decorDraw.ts), 고른 색으로. 그림 목록에 없는 키는 물음표 상자 */
+export function DecorThumb({ assetKey, color }: { assetKey: string | null | undefined; color?: string | null }) {
+  const bg = decorBg(assetKey, color)
+  return (
+    <span className="st-fthumb st-dthumb" aria-hidden="true" style={{ background: bg === 'none' ? undefined : `${bg}, #FFFDF6` }}>
+      {bg === 'none' && <svg viewBox="0 0 100 80" width="100%" height="100%"><rect x="30" y="22" width="40" height="36" rx="4" fill="#F1E6D2" stroke={LINE} strokeWidth="2" /><text x="50" y="47" textAnchor="middle" fontSize="18" fill={LINE}>?</text></svg>}
     </span>
   )
 }

@@ -33,3 +33,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO look_item (id, code, slot, name, price_points, asset_key, status, created_by, created_at, updated_at)
 VALUES ('00000000-0000-4000-8000-0000000e2e11', 'E2E_HAT', 'HAT', 'E2E 모자', 10, '', 'ON_SALE', '00000000-0000-4000-8000-0000000e2ea1', now(), now())
 ON CONFLICT DO NOTHING;
+-- #705 방 소품(core #704·#723): 내 방 "방 꾸미기 › 방 소품" 탭이 보이게(학생 웹 그림 목록의 그림 키)
+INSERT INTO look_item (id, code, slot, name, price_points, asset_key, status, created_by, created_at, updated_at)
+VALUES ('00000000-0000-4000-8000-0000000e2e12', 'E2E_DECOR_PLANT', 'DECOR', 'E2E 작은 화분', 10, 'room/decor-plant.svg', 'ON_SALE', '00000000-0000-4000-8000-0000000e2ea1', now(), now())
+ON CONFLICT DO NOTHING;
