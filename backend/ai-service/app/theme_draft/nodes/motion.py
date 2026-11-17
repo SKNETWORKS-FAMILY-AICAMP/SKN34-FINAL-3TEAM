@@ -6,6 +6,7 @@
 - 움직임 LLM이 실패하면 그 장면 움직임만 빼고 경고
 - 요일 장면은 살펴보기 spots(그림 속 누를 물건 2~3개, 증거 물건 1개)도 같은 호출에서 정하고
   checks.spots가 맞춘다. 맞지 않으면 그 물건이나 그 장면 spots만 빼고 경고(테마 실패 아님)
+- 부분 다시 생성(#537): redo_motions 장면만 다시 정하고 나머지는 원래 움직임 그대로
 """
 
 import asyncio
@@ -112,7 +113,14 @@ async def scene_motion(
 
 async def generate_motion(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeState:
     ctx = runtime.context
-    scenes = [s for s in SCENES if s in (state.get("image_keys") or {})]
+    partial = bool(state.get("partial"))
+    redo = state.get("redo_motions") or []
+    scenes = [
+        s for s in SCENES if s in (state.get("image_keys") or {}) and (not partial or s in redo)
+    ]
     results = await asyncio.gather(*(scene_motion(ctx, state, s) for s in scenes))
     motions = {s: value for s, (value, _) in zip(scenes, results, strict=True) if value}
+    if partial:  # 다시 정한 장면의 옛 움직임은 옛 그림·영상 기준이라 버리고 새 값만(실패하면 빠짐)
+        kept = {k: v for k, v in (state.get("motions") or {}).items() if k not in redo}
+        motions = {**kept, **motions}
     return {"motions": motions, "media_warnings": [w for _, ws in results for w in ws]}

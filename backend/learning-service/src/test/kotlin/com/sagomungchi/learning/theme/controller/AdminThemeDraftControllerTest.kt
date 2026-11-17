@@ -13,6 +13,7 @@ import com.sagomungchi.learning.theme.domain.AdminWeeklyTheme
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDraft
 import com.sagomungchi.learning.theme.domain.ThemeDraftContent
+import com.sagomungchi.learning.theme.domain.ThemeDraftRegenerate
 import com.sagomungchi.learning.theme.domain.ThemeDraftScene
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeDraftView
@@ -22,6 +23,7 @@ import com.sagomungchi.learning.theme.domain.ThemeMissionInput
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
 import com.sagomungchi.learning.theme.service.ThemeDraftCommand
 import com.sagomungchi.learning.theme.service.ThemeDraftService
+import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
 import org.mockito.BDDMockito.willThrow
@@ -155,6 +157,54 @@ class AdminThemeDraftControllerTest(@Autowired private val mockMvc: MockMvc) {
             status { isConflict() }
             jsonPath("$.code") { value("CONFLICT") }
         }
+    }
+
+    @Test
+    fun `부분 다시 생성은 targets를 겹침 없이 넘기고 새 초안 input regenerate·regenerableTargets를 응답, targets null은 전체`() {
+        val targets = listOf("VIDEO:INTRO", "MISSION:WED")
+        val partial = ThemeDraft.requested(UUID.randomUUID(), ThemeGrade.G5, week, ThemeDraftSource.ADMIN, admin,
+            input.copy(regenerate = ThemeDraftRegenerate(draft.id, targets)), now)
+        given(service.regenerate(draft.id, admin, targets)).willReturn(partial)
+        given(service.view(partial)).willReturn(view.copy(draftId = partial.id, status = DraftStatus.GENERATING, input = partial.input))
+
+        mockMvc.post("/internal/admin/theme-drafts/${draft.id}/regenerate") {
+            asAdmin(content = """{"targets":["VIDEO:INTRO","MISSION:WED","VIDEO:INTRO"]}""")
+        }.andExpect {
+            status { isAccepted() }
+            jsonPath("$.draftId") { value(partial.id.toString()) }
+            jsonPath("$.input.regenerate.baseDraftId") { value(draft.id.toString()) }
+            jsonPath("$.input.regenerate.targets[0]") { value("VIDEO:INTRO") }
+            jsonPath("$.input.regenerate.targets[1]") { value("MISSION:WED") }
+            jsonPath("$.regenerableTargets") { isEmpty() }
+        }
+
+        val copy = ThemeDraft.requested(UUID.randomUUID(), ThemeGrade.G5, week, ThemeDraftSource.ADMIN, admin, input, now)
+        given(service.regenerate(draft.id, admin, null)).willReturn(copy)
+        given(service.view(copy)).willReturn(view.copy(draftId = copy.id, regenerableTargets = listOf("IMAGE:MON")))
+        mockMvc.post("/internal/admin/theme-drafts/${draft.id}/regenerate") { asAdmin(content = """{"targets":null}""") }.andExpect {
+            status { isAccepted() }
+            jsonPath("$.draftId") { value(copy.id.toString()) }
+            jsonPath("$.regenerableTargets[0]") { value("IMAGE:MON") }
+            content { string(containsString("\"regenerate\":null")) } // 없으면 칸을 빼지 않고 null
+        }
+    }
+
+    @Test
+    fun `부분 다시 생성 targets가 목록이 아니거나 비었거나 문자열이 아니거나 모르는 값이면 400이고 서비스를 부르지 않음`() {
+        listOf(
+            """{"targets":[]}""",
+            """{"targets":"VIDEO:INTRO"}""",
+            """{"targets":[1]}""",
+            """{"targets":["VIDEO:INTRO",null]}""",
+            """{"targets":["VIDEO:MON"]}""",
+            """{"targets":["video:intro"]}""",
+        ).forEach { content ->
+            mockMvc.post("/internal/admin/theme-drafts/${draft.id}/regenerate") { asAdmin(content = content) }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("VALIDATION_FAILED") }
+            }
+        }
+        verifyNoInteractions(service)
     }
 
     @Test

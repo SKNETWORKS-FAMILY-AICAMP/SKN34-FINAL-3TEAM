@@ -2106,13 +2106,13 @@ classDiagram
     +detail(draftId) ThemeDraftView
     +adopt(draftId) AdminWeeklyTheme
     +discard(draftId) ThemeDraftView
-    +regenerate(draftId) ThemeDraftView
+    +regenerate(draftId, targets?) ThemeDraftView
   }
   class ThemeDraftService {
     <<service>>
     +request(command, author) ThemeDraftView
     +createWeekly(weekStart)
-    +regenerate(draftId, author) ThemeDraftView
+    +regenerate(draftId, author, targets?) ThemeDraftView
     +adopt(draftId, author) AdminWeeklyTheme
     +discard(draftId) ThemeDraftView
     +generateNext(now)

@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.theme.client
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.github.tomakehurst.wiremock.client.WireMock.aResponse
@@ -16,6 +17,7 @@ import com.sagomungchi.learning.judgment.client.AiClient
 import com.sagomungchi.learning.mission.client.MissionDraftAiClient
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.ThinkingType
+import com.sagomungchi.learning.theme.ThemeDraftFixtures
 import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeFailure
@@ -138,6 +140,28 @@ class ThemeDraftAiClientTest {
         assertEquals("AI_BAD_RESPONSE", assertThrows<AiCallException> { client.generate(request) }.failureCode)
         server.stubFor(post(urlEqualTo("/internal/theme-drafts")).willReturn(okJson("""{"theme":null}""")))
         assertEquals("AI_BAD_RESPONSE", assertThrows<AiCallException> { client.generate(request) }.failureCode)
+    }
+
+    @Test
+    fun `부분 다시 생성은 regenerate에 대상과 원래 output(regen 포함)을 그대로 보내고, 응답 regen은 열어 보지 않고 output에 담음`() {
+        val base = ThemeDraftFixtures.output().copy(regen = ThemeDraftFixtures.regen())
+        val regen = """{"targets":["VIDEO:INTRO","IMAGE:FRI"],"cutImages":{"INTRO1":"theme-drafts/r2/INTRO1.png"},"storyboard":[{"cut":1}]}"""
+        server.stubFor(post(urlEqualTo("/internal/theme-drafts")).willReturn(okJson(response.replace("\"failure\":null,", "\"failure\":null,\"regen\":$regen,"))))
+
+        val result = client.generate(request.copy(regenerate = AiThemeRegenerate(listOf("VIDEO:INTRO"), base)))
+
+        val sent = objectMapper.readTree(server.findAll(postRequestedFor(urlEqualTo("/internal/theme-drafts"))).single().bodyAsString)
+        val regenerate = sent.path("regenerate")
+        assertEquals(listOf("VIDEO:INTRO"), regenerate.path("targets").map { it.asText() })
+        assertEquals(objectMapper.valueToTree<JsonNode>(base), regenerate.path("base")) // 원래 output 7칸 + regen 그대로
+        assertEquals(objectMapper.valueToTree<JsonNode>(ThemeDraftFixtures.regen()), regenerate.path("base").path("regen"))
+        assertEquals(objectMapper.readValue(regen, Map::class.java), result.regen)
+        assertEquals(result.regen, result.output().regen)
+        assertEquals(listOf("VIDEO:INTRO", "IMAGE:FRI"), result.output().regenTargets())
+
+        // regen이 없는 응답(이 기능 전 ai·글 단계 전 실패)은 null
+        server.stubFor(post(urlEqualTo("/internal/theme-drafts")).willReturn(okJson(response)))
+        assertNull(client.generate(request).output().regen)
     }
 
     @Test

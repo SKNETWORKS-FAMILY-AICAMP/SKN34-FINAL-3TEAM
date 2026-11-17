@@ -194,6 +194,7 @@ export interface WeeklyReport extends ReportItem {
   versions?: Record<string, string | null>
 }
 export interface ReportExplanation {
+  itemId?: string | null
   attemptId: string
   answerId: string
   answerVersion: number

@@ -830,7 +830,7 @@ python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --d
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
-| 상태·다시 생성 | 미션 초안과 같은 전이. 다시 생성은 같은 입력으로 새 초안(`source = ADMIN`), 원래 초안은 그대로. `GENERATING`·`ADOPTED`는 409 | 자동 초안 부분 UK와 부딪히지 않음 |
+| 상태·다시 생성 | 미션 초안과 같은 전이. 다시 생성은 같은 입력으로 새 초안(`source = ADMIN`), 원래 초안은 그대로. `GENERATING`·`ADOPTED`는 409. 대상을 고르는 부분 다시 생성은 40장(#537) | 자동 초안 부분 UK와 부딪히지 않음 |
 | 자동 생성 성취기준 (기준안) | 그 학년이 속한 학년군 표에서 `SOLVE`는 수학, 나머지는 국어. 같은 학년 최근 4주 초안에 쓴 코드는 빼고 무작위 1개. 초3·초4 따져 보기는 서술. #536에서 후보를 학기 대응표의 그 학년·학기로 거름(35장, RAG 안 씀) | P15 국어 우선, 문제 해결하기 수학 예외 |
 | 빈 유형·빈 주제 | 관리자가 고르지 않은 유형은 자동 규칙으로 채워 `input`에 저장. 주제가 비면 주제 씨앗으로 채움 | ai 요청은 유형 5개가 다 있어야 함 |
 | 주간 자동 | 수요일 03:00 KST(`app.theme-draft.weekly-cron`)에 다음 주 초안. 그 학년·주에 게시 테마가 있으면 만들지 않음. 학년마다 실패 격리 | 쓰지 않을 초안에 ai 비용을 쓰지 않게 |
@@ -1180,3 +1180,40 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 
 - 학생 응답 칸 이름·모양: `clueFeature`·`clueFacts`는 이슈 본문 이름을 따랐고, `clueFacts`의 모양(`[{candidate, value}]`)과 엔딩 뒤 전체 표 칸 이름(`features`, ai·관리자와 같게)은 새로 정한 값(웹 #589·#487이 소비)
 - 관리자 수정 때 이어받기 규칙(후보가 바뀌면 표를 버림)과 정답 논리 검사 범위(같은 값 후보가 갈리지 않음까지)
+
+## 40. 주간 테마 초안 부분 다시 생성 learning (#537, 2026-11-17)
+
+관리자가 영상 하나·그림 하나·요일 미션 하나만 골라 다시 만들게 한다. 다시 생성 본문에 선택 칸 `targets`를 더했고, 없으면 지금처럼 전체를 새로 만든다. 계약은 사용자 결정(2026-11-17)을 따랐다. core·web·ai는 이 절 밖이고(같은 PR, [core-gateway 15.1](core-gateway.md)·[frontend](frontend.md)·[ai 21장](ai.md#21-주간-테마-초안-부분-다시-생성-537-2026-11-17)), 계약 문서는 learning OpenAPI regenerate 본문 `ThemeDraftRegenerateRequest`·`ThemeDraft`(`input.regenerate`·`regenerableTargets`, 둘 다 필수 칸이고 값은 null·빈 배열일 수 있음)·`ThemeRegenTarget`, api-spec 2.8·4.1, state-diagram 3.5.1, ERD `theme_draft` 설명.
+
+### 정한 것
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 결과 | 부분 다시 생성도 새 초안(202, `source = ADMIN`, attempts 0). 원래 초안은 그대로 | 사용자 결정. 같은 초안에 덮으면 `GENERATING`으로 되돌리는 새 전이가 필요하고, 검사 실패 때 멀쩡한 결과를 실패 결과로 덮어 채택할 수 없게 됨. 감사 대상도 지금처럼 새 draftId |
+| 본문 | `{}`·`targets` 없음·`{"targets": null}`은 전체. `{"targets": [...]}`는 부분: 1개 이상, 문자열, 아래 14개 값만, 겹치면 처음 한 번(순서 유지). 그 밖은 `400 VALIDATION_FAILED` | `targets: null`을 전체로 본 것은 이 구현에서 정함(ai 담당 세션 확인) |
+| 대상 값 14개 | `VIDEO:INTRO`·`VIDEO:OUTRO`, `IMAGE:INTRO`·`IMAGE:OUTRO`, `IMAGE:MON`~`IMAGE:FRI`, `MISSION:MON`~`MISSION:FRI` (`ThemeDraftRules.REGEN_TARGETS`) | ai와 같은 값. 같이 바뀌는 범위(움직임·컷 그림·대화·글 검토)는 ai가 정함 |
+| 재료 없음 | 원래 초안 상태가 `GENERATING`·`ADOPTED`면 지금처럼 409. 대상 중 하나라도 원래 초안 `output.regen.targets`에 없으면 `409 CONFLICT`(detail에 그 대상). 이 기능 전 초안은 regen이 없어 모든 대상이 409이고 전체 다시 생성은 됨 | 요청 그 자리에서 거절(사용자 결정) |
+| 원래 초안·대상 위치 | 새 초안 `input.regenerate = {baseDraftId, targets}`(`ThemeDraftRegenerate`, NULL 허용). 칼럼·ERD 변경 없음 | 사용자 결정. `findInputs`·`findWeekInputs`(자동 성취기준·주제 씨앗)는 `input`의 미션 코드·주제만 읽어 영향 없음 |
+| 부분 결과에서 다시 생성 | 부분 결과 초안을 다시 부분 생성하면 `baseDraftId`는 그 부분 결과 초안. 전체 다시 생성(`{}`)이면 새 초안 `input.regenerate`를 비워 처음부터 | 부분 결과 output도 완전한 결과라 다시 재료가 됨 |
+| 재료 저장 | ai 응답 선택 칸 `regen`을 열어 보지 않고 `theme_draft.output.regen`(`Map`)에 그대로 저장. learning은 `regen.targets`(문자열만)만 읽음. 예전 행·글 단계 전 실패는 null | 사용자 결정. 보관 기간은 따로 지우지 않음 |
+| ai 요청 | 생성 작업(`generateNext`)이 `input.regenerate`가 있으면 원래 초안 output을 읽어 `regenerate: {targets, base}`로 넣음. 전체 생성 때는 칸 자체를 보내지 않음(`NON_NULL`, 기존 요청 JSON 그대로). `previousFailures`는 새 초안 자기 실패 그대로 | `base`는 learning이 저장한 `ThemeDraftOutput`을 다시 직렬화한 값이라, 저장할 때 learning 모델에 없던 ai 칸은 빠져 있음. ai 전용 재료는 모두 `regen` 안에 둠(ai 담당 세션 확인) |
+| 원래 초안·재료가 없을 때 | ai를 부르지 않고 learning 검사 실패 1회(stage `LEARNING`, 사유 `BASE_MISSING 원래 초안 {id}의 생성 결과·재료(regen) 없음`). output·버전은 지우지 않고, 상한(3회)이면 `CHECK_FAILED` | 다시 시도해도 결과가 같지만 상태 규칙을 하나로 두려고 그대로 셈. 원래 초안은 지우는 경로가 없어 데이터가 어긋났을 때만 생김 |
+| 응답 | `input.regenerate`(없으면 칸을 빼지 않고 null), `regenerableTargets`(상태가 `READY`·`CHECK_FAILED`·`FAILED`·`DISCARDED`이고 regen.targets가 있으면 그 목록, 아니면 빈 배열). `draft`(theme·missions·dialogues·warnings)에는 regen을 넣지 않음 | 관리자 화면이 장면별 버튼을 켤지 정함 |
+
+### 기존 코드와 다르게 한 것
+
+- `ThemeDraftAttempt.CheckFailed`의 output·versions를 NULL 허용으로 바꿈. null이면 이전 결과·버전을 그대로 둠(`BASE_MISSING`처럼 ai를 부르기 전에 끝난 검사 실패). ai 결과가 있는 검사 실패는 지금처럼 덮어씀
+- 컨트롤러 regenerate는 본문을 읽기만 하고 쓰지 않던 것을 `targets`만 읽게 바꿈. 채택·버리기 본문은 그대로 쓰지 않음
+- 이슈 본문과 다른 점: `target` 하나 → `targets` 목록, 재료 위치는 "ai 응답의 비공개 묶음을 learning이 저장"(`regen`) 쪽, 결과는 새 초안
+
+### 시험
+
+- `ThemeDraftTest`: 부분 다시 생성 새 초안·`input.regenerate`, 상태별 `regenerableTargets`, 대상 밖·regen 없음·결과 없음 409(전체는 됨), 생성 중·채택 409, 부분 결과의 부분·전체 다시 생성, regen targets 문자열만, 결과 없는 검사 실패가 이전 결과·버전 유지, 대상 14개
+- `AdminThemeDraftControllerTest`: 겹친 대상 한 번만 넘김, 응답 `input.regenerate`·`regenerableTargets`, `targets: null` 전체·`"regenerate":null`, 빈 목록·문자열·숫자·null 원소·모르는 값·소문자 400(서비스 안 부름). 기존 `{}` 시험 그대로
+- `ThemeDraftServiceTest`(PostgreSQL): 원래 regen 대상만 받음(밖은 409), 생성 작업이 원래 output(regen 포함)을 `base`로 넘기고 새 regen까지 저장·`regenerableTargets`, 원래 초안 그대로, 부분 결과에서 다시 부분·전체. 원래 초안 없음·regen 없음은 ai를 부르지 않고 `BASE_MISSING` 3회 뒤 `CHECK_FAILED`. 예전 행(`input`에 `regenerate`, `output`에 `regen` 칸 없음) 읽기·부분 409·전체 됨
+- `ThemeDraftAiClientTest`: `regenerate`의 대상·`base`(7칸 + regen) 직렬화, 응답 `regen` 그대로 읽기, regen 없는 응답 null. 기존 요청 JSON 엄격 비교 시험(칸 없음) 그대로 통과
+
+### 남은 것
+
+- 실서버(core·learning·ai)에서 부분 다시 생성 → 그 장면만 바뀐 새 초안 확인(AI 비용이 들어 사용자 확인 뒤)
+- ai IAM `s3:GetObject`는 정책 파일만 이 PR에서 고치고 AWS 적용은 #652(담당 확인 2026-11-17)

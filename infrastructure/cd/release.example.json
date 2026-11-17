@@ -9,7 +9,7 @@
   "reason": "<배포 사유>",
   "databaseAction": "none",
   "compatibility": {
-    "schema": {"status": "unknown", "evidence": "<migration 선행 적용 여부·Job 이름, 이전 앱과의 호환 근거>"},
+    "schema": {"status": "unknown", "evidence": "<이번 SHA의 새 migration 목록(앱 적용 전에 cd-release가 실행), 지금 앱·롤백 대상 앱이 새 스키마에서 동작하는 근거>"},
     "data": {"status": "unknown", "evidence": "<데이터 형식 변경 여부와 근거>"},
     "api": {"status": "unknown", "evidence": "<서비스 간 API 계약 테스트 결과(ci-contracts 등)>"},
     "events": {"status": "unknown", "evidence": "<이벤트 계약 변경 여부>"},

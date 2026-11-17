@@ -1,0 +1,83 @@
+{
+  "date": "2026-11-16",
+  "authorization": "additional maximum 6 calls approved by user",
+  "additional_calls": 6,
+  "completed": 6,
+  "providers": {
+    "gemma": 3,
+    "luna": 3
+  },
+  "survey_case_count": 4,
+  "positions": {
+    "A": "api_direct",
+    "B": "gemma_direct"
+  },
+  "human_review": "PENDING",
+  "semantic_gt": "UNREVIEWED",
+  "characters": [
+    {
+      "case_id": "form-1",
+      "A": 391,
+      "B": 763
+    },
+    {
+      "case_id": "form-2",
+      "A": 504,
+      "B": 735
+    },
+    {
+      "case_id": "form-3",
+      "A": 352,
+      "B": 541
+    },
+    {
+      "case_id": "form-4",
+      "A": 527,
+      "B": 645
+    }
+  ],
+  "limitations": [
+    "Development cases already inspected",
+    "Fixed position bias",
+    "Lengths not matched",
+    "No team ratings yet"
+  ],
+  "new_calls_latency": [
+    {
+      "provider": "api",
+      "elapsed_seconds": 7.107819500000915,
+      "delay_ms": null,
+      "execution_ms": null
+    },
+    {
+      "provider": "gemma",
+      "elapsed_seconds": 5.8357643999988795,
+      "delay_ms": 58,
+      "execution_ms": 4169
+    },
+    {
+      "provider": "gemma",
+      "elapsed_seconds": 4.67705119999664,
+      "delay_ms": 56,
+      "execution_ms": 3885
+    },
+    {
+      "provider": "api",
+      "elapsed_seconds": 4.749265200000082,
+      "delay_ms": null,
+      "execution_ms": null
+    },
+    {
+      "provider": "api",
+      "elapsed_seconds": 7.055091899997933,
+      "delay_ms": null,
+      "execution_ms": null
+    },
+    {
+      "provider": "gemma",
+      "elapsed_seconds": 272.2940129999988,
+      "delay_ms": 265102,
+      "execution_ms": 6185
+    }
+  ]
+}

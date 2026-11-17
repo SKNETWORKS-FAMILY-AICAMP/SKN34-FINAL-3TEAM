@@ -89,6 +89,16 @@ test('#441: 공개 중계 경로·필터·본문·AbortSignal을 전달한다', 
   for (const call of calls.slice(3)) assert.equal(call.init.body, '{}')
 })
 
+test('#537: 부분 다시 생성은 targets만 담아 보내고, 대상이 없으면 지금처럼 {}', async t => {
+  const bodies: unknown[] = []
+  t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => { bodies.push(JSON.parse(String(init.body))); return Response.json({ draftId, status: 'GENERATING' }) })
+  await api.themeDraftAction(draftId, 'regenerate', ['VIDEO:INTRO'])
+  await api.themeDraftAction(draftId, 'regenerate', [])
+  await api.themeDraftAction(draftId, 'regenerate')
+  await api.themeDraftAction(draftId, 'discard', ['VIDEO:INTRO']) // 버리기는 대상을 보내지 않음
+  assert.deepEqual(bodies, [{ targets: ['VIDEO:INTRO'] }, {}, {}, {}])
+})
+
 test('#441: 503·미구현 응답을 성공/빈 목록으로 바꾸거나 쓰기를 자동 재요청하지 않는다', async t => {
   let calls = 0
   t.mock.method(globalThis, 'fetch', async () => { calls++; return Response.json({ status: 503, code: 'LEARNING_UNAVAILABLE', title: '요청 결과를 확인하지 못했습니다.' }, { status: 503 }) })

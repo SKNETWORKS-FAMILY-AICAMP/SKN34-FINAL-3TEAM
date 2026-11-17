@@ -219,7 +219,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 
 ## 7. CD 배포 승인·이력·롤백 (#186)
 
-`cd-release.yml`: main 수동 실행 → GitHub Environment `prod` 승인 → 작업자 PC runner에서 Helm 적용 → 경로 확인 → 이력.
+`cd-release.yml`: main 수동 실행 → GitHub Environment `prod` 승인 → 작업자 PC runner에서 (배포만) DB migration Job 완료 → Helm 적용 → 경로 확인 → 이력.
 
 ### 7.1 확정 정책 (담당자 답변)
 
@@ -234,17 +234,19 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 |---|---|---|
 | 적용 위치 | 작업자 PC의 self-hosted runner(`cd-prod`) | EKS API 공개 접근이 작업자 공인 IP로 제한 |
 | 승인 | Environment `prod` 필수 승인자, main만 허용 | 승인자는 GitHub 승인 기록 API로 읽어 이력에 남김. 계획 파일의 승인 표시는 읽지 않음 |
-| 이미지 | publish job이 main SHA를 `main-<12자리>`로 ECR 게시, 있으면 재사용 | ECR 태그 IMMUTABLE. GitHub OIDC 역할은 ECR 쓰기만 |
+| 이미지 | publish job이 main SHA를 `main-<12자리>`로 ECR 게시, 있으면 재사용. core·learning migration 이미지(`*-migrate`)도 같은 태그로 게시, report는 앱 이미지가 Alembic을 포함 | ECR 태그 IMMUTABLE. GitHub OIDC 역할은 ECR 쓰기만 |
+| migration (2026-11-17) | 배포만. 승인 후 migration·앱 server dry-run을 모두 마친 뒤 core → learning → report 순서로 Job 적용·`Complete` 확인, 그다음 앱 적용. 실패·시간 초과면 앱 미적용, DB는 되돌리지 않음. 같은 SHA 재실행은 완료된 Job을 건너뜀. 롤백은 migration 없음 | 11/6 이후 core V29~V51·learning V11~V21·report 3개가 수동 절차에 묶여 있었음. 승인 한 번으로 스키마와 앱을 같은 SHA로 맞추고, 실패 시 앱이 새 스키마 없이 뜨는 것을 막음 |
 | 계획 입력 | 실행 입력 JSON(커밋하지 않음), 원문은 artifact | 계획의 SHA가 그 계획을 담은 커밋을 가리키는 순환 회피 |
 | 실행 게이트 | `scripts/cd_release.py`가 오류·차단 사유가 없을 때만 `executable=true` | 근거·승인자 미비 상태에서 게시·적용 차단 |
 | 적용 | release별 server dry-run 전체 → 순서대로 `redeploy-app.ps1 -ImageDigest -Apply` | 실패하면 다음 release 미적용, 자동 롤백 없음 |
 | 경로 확인 | 학생 PIN 로그인 → 시도 시작 → 답변 → 부모 refresh → 리포트 목록 | 판정(LLM)·결제 미호출. 부모 refresh 쿠키는 회전하므로 새 값을 fixture에 즉시 저장 |
 | 이력 | `history.json` artifact(90일)와 실행 요약 | workflow에 `contents: write`를 주지 않음 |
-| 롤백 | 이전 승인 digest를 같은 workflow·승인으로 적용 | DB downgrade 없음 |
+| 롤백 | 이전 승인 digest를 같은 workflow·승인으로 적용 | DB downgrade 없음, migration 실행 없음 |
 
 - OIDC trust: AWS IAM은 GitHub 토큰의 `job_workflow_ref`를 조건 키로 비교하지 못함. 저장소 OIDC subject에 `job_workflow_ref`를 포함시키고 trust를 `sub` 하나(`StringLike`)로 main의 `cd-release.yml`만 허용
 - deploy job `env`에서 `${{ runner.temp }}`를 쓰면 workflow 파일 오류가 됨 → 첫 step에서 `GITHUB_ENV`로 설정
-- migration과 웹(S3/CloudFront) 배포는 범위 밖. migration은 배포 전 prod README 절차로 적용
+- 웹(S3/CloudFront) 배포는 범위 밖. migration은 2026-11-17부터 workflow 안에서 실행(이전에는 배포 전 prod README 절차로 수동 적용). Job 로그는 공개 Actions 로그에 옮기지 않고 작업자 PC에서 확인
+- migration 게시에는 publish 역할의 ECR 대상에 `core-migrate`·`learning-migrate`가 필요하다. 저장소 정책 파일만 고쳤고 AWS 반영은 재가동 때(그 전에는 publish가 실패해 배포로 넘어가지 않음). AWS 실행 검증은 아직 없음
 - main·develop 브랜치 보호 규칙 없음(2026-11-04). main 직접 push로 workflow를 바꾸면 승인 전 publish job이 ECR 게시 역할을 쓸 수 있음. main 보호는 팀 결정 사항
 
 ### 7.3 DB 호환성 검토 시 포함할 제약
@@ -252,6 +254,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 - #131 `20261030_04`: 기존 report-worker 중지 → migration → 새 worker 순서. 혼합 실행 미지원. downgrade 시 실패·격리·수동 재처리 메타데이터 소실
 - report 삭제 guard 제거는 삭제된 학생의 재생성 차단을 잃을 수 있어 무조건 롤백 금지
 - core·learning 앱 자동 migration은 꺼져 있음. 운영 DB 초기화·Flyway 이력 수정으로 버전을 맞추지 않음
+- migration은 앱보다 먼저 적용되고 롤백해도 남으므로, 현재 앱과 롤백 대상 앱이 새 스키마에서 동작해야 함(추가만, 삭제·이름 변경은 앱이 먼저 안 쓰게 된 뒤 다음 릴리스로). 이 근거를 `compatibility.schema`에 적음
 
 ### 7.4 운영 실행에서 얻은 주의점
 
@@ -501,6 +504,7 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 - 문제: prod ai·learning 값에 `ASSET_S3_BUCKET`이 없어 ai는 그림·영상 단계를 건너뛰고(`app/theme_draft/storage.py` `create_storage`, `app/llm/media.py` `create_media_clients`), learning은 자산 URL을 null로 준다(`app.assets.bucket`). 오류가 나지 않아 눈에 띄지 않았다.
 - 값: 두 서비스에 `ASSET_S3_BUCKET=sagomungchi-demo-<A 계정>-missions`, `S3_REGION`·`AWS_REGION=ap-northeast-2`. local과 달리 `S3_ENDPOINT_URL`(ai)·`S3_PUBLIC_ENDPOINT_URL`(learning)은 넣지 않는다. 비어 있어야 AWS S3 주소로 올리고 서명한다(local 값은 MinIO 주소).
 - 권한: `infrastructure/aws/iam`에 ai·learning용 역할이 없었다(report·scoring만 있음). 역할 2개(ai `PutObject`, learning `GetObject`, 둘 다 `theme-drafts/*`만)와 trust를 정의하고 `demo-stack.json`(IAM 역할 12개)·`eks/cluster.json`(Pod Identity 10개)에 넣었다. 재가동 절차는 [AWS README 테마 자산 버킷 권한](../../infrastructure/aws/README.md#테마-자산-버킷-권한-652-2026-11-16-정의미적용).
+- #537(2026-11-17): ai 역할 정책에 `s3:GetObject`를 더함(`theme-drafts/*` 그대로). 테마 초안 부분 다시 생성이 S3에 둔 재료 그림(테마 옷 뭉치·컷 첫 그림)을 다시 읽기 때문. 정책 이름 `sagomungchi-demo-ai-asset-s3-write`는 `demo-stack.json`·AWS 역할과 이어져 있어 바꾸지 않음. 역할은 아직 AWS에 없어 #652로 만들 때 같이 들어가고, 그 뒤에 들어오면 정책만 다시 적용(#652 담당 확인)
 - 네트워크: 두 앱은 이미 자기 NetworkPolicy로 egress가 격리돼 있어, 역할만 연결하면 Pod Identity agent(`169.254.170.23:80`)에 못 닿아 자격 증명을 못 받는다. 두 앱 egress에 agent를 더했다(report·scoring·sLLM과 같은 규칙).
 - 한계: presigned URL은 Pod Identity 임시 자격 증명으로 서명하므로, 자격 증명 만료가 1시간(`url-ttl`)보다 가까우면 URL이 더 일찍 만료될 수 있다(`AssetUrls` 주석). 화면에서 그림이 중간에 안 보이면 이것부터 본다.
 - B 계정 이전 때 바꿀 항목: 버킷 이름·IAM 원문·`cluster.json`의 계정 번호(AWS README 같은 절).
@@ -620,6 +624,201 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 - 로컬 kind·동시 1명이라 NAT·ALB·실제 네트워크 지연과 동시 부하에서의 OpenAI 지연·429는 반영되지 않았다
 - AWS 실측은 #601 A 계정 재가동 때 같은 도구(`LOAD_API_BASE`·`LOAD_API_HOST`만 바꿈)로 한다. 동시 사용자를 늘린 실제 LLM 부하는 #384 범위
 - 테마 초안은 그림 대역이라 그림 생성 시간(1장 p50 약 34초, 11/12 기록)이 빠졌다
+
+## 9.11 A 계정 재가동 당일 체크리스트 (#601, 2026-11-17 준비)
+
+재가동 전에 AWS 읽기 전용 조회(describe·list·get, `demo_stack.py plan`)만으로 확인한 결과와, 재가동 당일 순서다. 이 절을 쓰면서 AWS 자원을 만들거나 바꾸지 않았다. 계정 번호는 `<계정>`으로 적는다. 모든 명령에 `--profile sagomungchi-provided --region ap-northeast-2`를 붙인다(아래에서는 생략).
+
+### 9.11.1 0단계 점검 결과 (2026-11-17 읽기 전용)
+
+**`demo_stack.py plan`**: OK 40 · DIFF 2 · MISSING 4
+
+| 상태 | 항목 | 비고 |
+|---|---|---|
+| MISSING | NAT `sagomungchi-demo-nat-2a` | 11/12 삭제(9.5). EIP도 0개 |
+| MISSING | IAM `sagomungchi-demo-ai-asset-s3-role`·`learning-asset-s3-role` | #652 역할 2개. 예상대로 MISSING |
+| MISSING | EKS `sagomungchi-demo-eks` | 노드그룹·add-on·Pod Identity는 클러스터가 없어 검사 생략 |
+| DIFF | private route table 2개의 `0.0.0.0/0` | 지운 NAT를 가리키는 `blackhole`. `apply`는 기존 경로를 바꾸지 않으므로 `replace-route`가 필요 |
+| OK | VPC·IGW·subnet·S3 4개·ECR 7개·Secret 12개·RDS SG·subnet group·RDS(stopped)·IAM 10개 | ECR `llm-stub`(스텁 이미지 1개)·관측 Secret 2개는 plan 대상 밖이며 별도로 있음을 확인 |
+
+- 옛 PVC EBS 4개(9.5 표)는 `available`로 남아 있다. 새 PVC로 시작하므로 재가동이 끝나고 필요 없음을 확인한 뒤 지운다.
+- ECR에 삭제 전 앱 이미지 digest 5개(ai·core·learning·report·scoring)가 모두 남아 있다. lifecycle policy 없음.
+
+**RDS `sagomungchi-demo-db` 메타데이터 (정지 상태, 시작하지 않음)**
+
+| 항목 | 값 |
+|---|---|
+| 엔진 | PostgreSQL 17.11, 자동 마이너 업그레이드 켬, 같은 메이저의 상위 마이너 대상 없음, 대기 중 유지보수 없음 |
+| 사양 | db.t4g.small(2 GiB), gp3 20 GiB(최대 1,000), Single-AZ 2b, 암호화, 비공개, 삭제 보호 꺼짐, Performance Insights 켬 |
+| 백업 | 보존 7일, 백업 창 14:54~15:24 UTC, 유지보수 창 금 13:31~14:01 UTC(금 22:31 KST). 수동 snapshot `sagomungchi-demo-db-pause-20261106-100937` |
+| PITR 범위(현재) | 2026-11-06 03:12 ~ 2026-11-13 03:12 UTC. 정지 중이라 최신 시점이 멈춰 있다 |
+| 파라미터 그룹 | `default.postgres17`(in-sync). `max_connections = LEAST(DBInstanceClassMemory/9531392, 5000)`, `superuser_reserved_connections=3`, `rds.force_ssl=1` |
+| 정지·자동 시작 | 11/13 01:19 UTC 7일 규칙으로 자동 시작 → 03:23 UTC 재정지. **다음 자동 시작은 2026-11-20(금) 12:24 KST 무렵**. 같은 날 22:31 KST가 유지보수 창 |
+| 기타 | 11/13 자동 시작 때 관리 마스터 비밀번호가 재설정됨(앱 계정 Secret과 무관, bootstrap을 다시 하지 않으므로 영향 없음) |
+
+`max_connections` 계산: 2 GiB 전체로 계산하면 2,147,483,648 / 9,531,392 ≈ 225가 상한이고, `DBInstanceClassMemory`는 OS·RDS 예약분을 뺀 값이라 실제 값은 그보다 작다. 재가동 뒤 `SHOW max_connections;`로 확정한다. 앱이 쓸 수 있는 수는 여기서 superuser 예약 3과 `rds_superuser` 예약 2를 더 뺀 값이다.
+
+DB 안의 내용(레지스트리 행, 활성 모델·프롬프트, 적용된 migration 번호)은 클러스터가 없어 보지 못했다. 재가동 4단계에서 확인한다.
+
+**삭제 전 Helm values(저장소 밖 백업)와 현재 develop prod values 차이**
+
+| release | 차이 |
+|---|---|
+| ESO·LB Controller·Karpenter·platform-data | values 차이 0. 단 platform-data chart는 서비스별 브로커 계정 init을 새로 가짐(9.9) |
+| observability | 경보 규칙 `uid`·`title` 추가, `rabbitmqDlqMetrics`, Tempo(PVC 2Gi) 추가 |
+| core | 내부 토큰·브로커 계정 서비스별 키(9.9), `SCORING_URL`·scoring egress, `namespaceDefaultDeny` false → **true**(#657), report-api ingress 제외 |
+| learning | 서비스별 키, `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`(#652), `MEMORY_EMBEDDING_ENABLED`·`MEMORY_QUERY_REWRITE_*`, Pod Identity agent egress |
+| ai | 서비스별 키, 자산 버킷, Veo(`THEME_VIDEO_*`·`ai-theme-video` Secret·볼륨), `M2_CROSS_CHECK_ENABLED=true`, `EXPLANATION_BASE_URL`(sllm-server), `OPENAI_MODEL` gpt-6.1-terra → gpt-6-luna, 메모리 상한 512Mi → 1Gi |
+| report-worker | 서비스별 키, 설명 시간 예산 400초·제한 130초, 테마 요약, 종료 유예 180 → 480초 |
+| report-api·scoring | 서비스별 키, scoring ingress에 core 추가 |
+| 이미지 | 앱 values의 `image`는 저장소에 없음(cd-release가 main SHA digest로 채움). migration 이미지는 `migrations/*.json`에 core·learning `main-c6809ddb65ee`, report `b67d8a462b6b`로 고정 |
+
+**"옛 values로 복구 → 최신 main으로 업그레이드"에서 막히는 곳**
+
+1. **옛 앱 values가 지금 ESO 매니페스트로는 뜨지 않는다.** 옛 values는 `internal-service-credentials/INTERNAL_TOKEN`, `rabbitmq-credentials/RABBITMQ_URL`·`RABBITMQ_USERNAME`·`RABBITMQ_PASSWORD`를 참조한다. 지금 `external-secret-resources.json`은 서비스별 키(`INTERNAL_TOKEN_CORE`…, `RABBITMQ_<SVC>_PASSWORD`·`_URL`)만 만들어서 앱 6개 모두 `CreateContainerConfigError`가 난다. Secrets Manager에는 옛 키(`INTERNAL_TOKEN`, `username`·`password`)가 남아 있으므로, 옛 앱을 올리려면 app 네임스페이스 ExternalSecret을 `e8b89000` 시점 파일로 적용해야 한다. 그 뒤 최신 파일로 바꾸면 옛 키가 Secret에서 빠진다.
+2. **migration 이미지가 main SHA로 자동 빌드되지 않는다.** cd-release는 앱 이미지만 게시하고 migration을 실행하지 않는다(`databaseAction`은 `none`만 허용). 11/6 이후 develop에 core V29~V51·learning V11~V21·report 3개 revision이 들어왔으므로, 새 main SHA로 core-migrate·learning-migrate 이미지를 빌드·푸시하고 `migrations/*.json` digest·revision을 바꿔 **앱 배포 전에** Job으로 적용해야 한다. report는 cd-release가 게시한 report-service 이미지 digest로 바꾼다.
+3. **#657 기본 거부**: core를 새 values로 올리는 순간 정책 없는 Pod는 DNS부터 막힌다. migration NetworkPolicy, `app-oneoff-db-network.json`·`app-check-pods-network.json`을 같이 적용해야 한다. #384 LLM 스텁으로 바꿀 때 ai egress에 `llm-stub:8080`이 없으므로 임시 values에 `networkPolicy.egressToApps`를 더해야 한다.
+4. **IAM 순서**: `cluster.json`의 Pod Identity 10개 중 자산 역할 2개는 역할이 있어야 연결된다. `apply`(역할 생성)를 `eksctl create` 전에 한다. #537이 ai 역할 정책에 `GetObject`를 더하면, 그 전에 만든 역할은 `plan`에서 DIFF가 되고 `apply`는 기존 역할을 고치지 않으므로 `put-role-policy`가 필요하다.
+5. **설명 sLLM 미배포**: prod ai는 `EXPLANATION_BASE_URL`이 sllm-server를 가리키지만 #476은 이번 범위 밖이다. 주간 리포트 설명 단계가 연결 실패·시간 초과로 끝나는지, 리포트 본문은 정상인지 확인하고 #630 리포트 시간에 이 상태를 같이 적는다.
+
+**결정됨(2026-11-17)**: DB는 11/6 이후 바뀌지 않았고 옛 이미지로 확인할 것이 없으므로 **앱은 옛 values 단계를 건너뛰고** 플랫폼(차이 0)만 보관 values로 올린 뒤, 새 main SHA로 migration → cd-release 배포한다. #537 병합 전에 재가동해야 하면 그때만 1번 방식(옛 ExternalSecret)을 쓴다.
+
+migration 이미지는 cd-release에 migration 단계가 들어가면(별도 작업, 브랜치 `feature/cd-release-migrations` 예정) 그 단계로 빌드·적용하고, 재가동 전에 들어가지 못하면 2번처럼 수동으로 빌드한다.
+
+### 9.11.2 #384 준비
+
+**연결 수 (HPA 최대 기준)**
+
+| 대상 | DB 사용 | 최대 Pod | Pod당 풀 | 최대 연결 |
+|---|---|---|---|---|
+| core | core_db, Hikari 기본 10(설정 없음) | 3(HPA) | 10 | 30 |
+| learning | learning_db, Hikari 기본 10 | 3(HPA) | 10 | 30 |
+| ai | **DB 연결 없음** | 3(HPA) | 0 | 0 |
+| report-api | report_db, SQLAlchemy 기본(5 + overflow 10) | 1 | 15 | 15 |
+| report-worker | 〃 | 1 | 15 | 15 |
+| scoring | DB 연결 없음 | 1 | 0 | 0 |
+| 합계 | | | | **90** |
+
+rolling update 중 core·learning이 1개씩 더 뜨면 +20, migration·일회용 Pod 몇 개를 더해도 약 115로, `max_connections`(최대 225에서 예약분을 뺀 값) 안에 든다. 풀 크기를 바꾸지 않는다. 다만 1차 시험의 한계는 연결 수가 아니라 RDS CPU(300명 68%)였고, 연결 100개 안팎이면 2 GiB 인스턴스의 메모리를 차지하므로 시험 중 CloudWatch `FreeableMemory`·`DatabaseConnections`를 같이 본다. 재가동 뒤 실제 `max_connections`가 120 아래로 나오면 이 판단을 다시 한다.
+
+**시험 계정**: `prepare_accounts.py`로 4개(자녀 3명·초5). 같은 IP 10분 5회 가입 한도 때문에 `--wait`로 약 10분.
+
+```powershell
+python evaluation/load/prepare_accounts.py --base-url https://d3jf0rnm6vhd9v.cloudfront.net --count 4 --prefix load2 --wait --secrets 'C:\Users\kds20\sagomungchi-load\secrets-384.json'
+```
+
+분석 시나리오에 쓸 시험 구독은 `infrastructure/aws/add-demo-test-subscription.sql`을 demo-db-oneoff Pod로 넣고 시험 뒤 같은 파일의 원복 SQL로 해지한다(승인 지점).
+
+**LLM 스텁 (1차 #361 방식)**: ECR `sagomungchi/llm-stub@sha256:603dc658…`(11/05)이 남아 있다.
+1. `kubectl apply -f evaluation/load/llm-stub.k8s.yaml` → Ready 확인
+2. ai를 임시 values로 올린다: `OPENAI_BASE_URL=http://llm-stub.app.svc.cluster.local:8080/v1`, `networkPolicy.egressToApps`에 `{name: llm-stub, port: 8080}` 추가. `helm template`로 env·정책을 먼저 확인
+3. 원복: ai를 prod values로 다시 올리고(ReplicaSet 해시가 helm 상태와 같은지), 스텁을 같은 파일로 `delete`
+
+**k6 시나리오**: `core-load.js`·`run-stage.ps1`·`collect_metrics.py`는 재사용한다. 1차와 달리 HPA·Karpenter 관측이 필요하므로 단계마다 아래를 결과 폴더에 같이 남긴다(새 도구는 만들지 않음).
+
+```powershell
+kubectl get hpa -n app -w                          # 별도 창, 확장 시점
+kubectl get nodeclaims,nodes -L karpenter.sh/nodepool -w   # 별도 창, 노드 생성·삭제 시점
+```
+
+단계는 1차와 같은 10 → 50 → 100 → 200 → 300 VU(한 번 약 6분), 부하 종료 뒤 축소(HPA 5분 + consolidateAfter 5분)를 15분 지켜본다.
+
+**팀 공지 문구(초안)**
+
+> [AWS 데모 부하 시험 안내] ○월 ○일 ○○:○○~○○:○○(약 2시간) AWS 데모에서 확장 부하 시험(#384)을 합니다. 이 시간에는 AI 답변이 시험용 문장으로 바뀌고 응답이 느리거나 실패할 수 있으니 데모 주소로 시연·확인하지 말아 주세요. 끝나면 이 스레드에 알리겠습니다.
+
+### 9.11.3 #629 PITR 복구 시험 준비
+
+조건: 재가동 뒤 앱 쓰기가 1시간 이상 이어진 다음 한다. 복원 시점 T는 "지금 − 1시간"으로 정하되, **T 이전 표지 A**(시험 계정의 답변 1건)와 **T 이후 표지 B**(답변 1건)를 미리 만들어 둔다. 복원본에 A는 있고 B는 없어야 한다.
+
+```powershell
+# 1. 요청 직전: 최신 복원 가능 시점(RPO 기준)과 요청 시각 기록
+aws rds describe-db-instances --db-instance-identifier sagomungchi-demo-db --query 'DBInstances[0].LatestRestorableTime'
+# 2. 복원 (승인 지점: 새 인스턴스 비용 발생)
+aws rds restore-db-instance-to-point-in-time --source-db-instance-identifier sagomungchi-demo-db `
+  --target-db-instance-identifier sagomungchi-demo-db-pitr-629 --restore-time <T, UTC ISO> `
+  --db-instance-class db.t4g.small --db-subnet-group-name sagomungchi-demo-db-subnet-group `
+  --vpc-security-group-ids <sagomungchi-demo-rds-sg ID> --no-publicly-accessible --no-multi-az `
+  --no-deletion-protection --tags Key=purpose,Value=pitr-test-629
+aws rds wait db-instance-available --db-instance-identifier sagomungchi-demo-db-pitr-629
+aws rds describe-events --source-type db-instance --source-identifier sagomungchi-demo-db-pitr-629 --duration 120
+```
+
+**정합성 확인**: 원본과 복원본에 같은 쿼리를 돌려 비교한다. 각 DB의 앱 계정(이미 있는 `core-db-credentials`·`learning-db-credentials`·`report-db-credentials`)으로 접속하고, demo-db-oneoff Pod의 `PGHOST`만 복원본 주소로 바꾼다. 원본은 T 이후에도 쓰이므로 T 이전 행만 비교한다.
+
+```sql
+-- learning_db: 원본 답변
+select count(*), md5(string_agg(id::text || ':' || version, ',' order by id)) from answer where submitted_at <= :'t';
+select j.process_status, count(*) from judgment j join answer a on a.id = j.answer_id where a.submitted_at <= :'t' group by 1;
+-- core_db: 분석 대화 근거 연결 · 결제 상태
+select count(*), md5(string_agg(e.answer_id::text || ':' || e.answer_version, ',' order by e.id))
+  from message_evidence e join conversation_message m on m.id = e.message_id where m.created_at <= :'t';
+select status, entitlement_status, count(*) from payment where updated_at <= :'t' group by 1, 2;
+select status, count(*) from subscription where updated_at <= :'t' group by 1;
+-- report_db: 리포트 근거 연결
+select count(*), md5(string_agg(e.answer_id::text || ':' || e.answer_version, ',' order by e.id))
+  from report_item_evidence e join report_item i on i.id = e.item_id join weekly_report r on r.id = i.report_id where r.created_at <= :'t';
+```
+
+- 복원본 안에서 근거가 가리키는 답변이 learning_db에 있는지: core·report에서 `select distinct answer_id`를 뽑아 learning_db `answer`와 대조한다(DB가 나뉘어 있어 한 쿼리로는 못 함). 없는 수가 0이어야 한다.
+- T 무렵 진행 중이던 판정은 원본에서 상태가 바뀌었을 수 있으므로 `process_status` 차이는 건수와 이유를 따로 적는다.
+- 기록: 요청 시각 → `available` 시각 → 확인 끝 시각(RTO 4시간 비교), 요청 시각 − `LatestRestorableTime`(RPO 5분 비교), 복원본 크기·비용 시간. 결과는 4.1 표를 갱신한다.
+
+```powershell
+# 3. 삭제 (승인 지점: 식별자가 -pitr-629인지 다시 확인. 원본에 절대 쓰지 않음)
+aws rds delete-db-instance --db-instance-identifier sagomungchi-demo-db-pitr-629 --skip-final-snapshot --delete-automated-backups
+aws rds wait db-instance-deleted --db-instance-identifier sagomungchi-demo-db-pitr-629
+```
+
+### 9.11.4 #630·#613·#493 당일 절차
+
+**#630 AWS 실측**: 9.10과 같은 도구·표본(판정 30·되묻기 20·분석 20·리포트 5·테마 3)으로, 진입 주소만 바꾼다. #384 부하가 없는 시간대에 실제 OpenAI로 하고 #384 결과를 본 뒤 표본을 조정한다.
+
+```powershell
+$env:LOAD_API_BASE = 'https://d3jf0rnm6vhd9v.cloudfront.net/api/v1'
+$env:LOAD_API_HOST = 'd3jf0rnm6vhd9v.cloudfront.net'
+$env:LOAD_ORIGIN   = 'https://d3jf0rnm6vhd9v.cloudfront.net'
+python evaluation/load/llm_latency.py judge --secrets <밖>/secrets-630.json --out <밖>/aws-630.jsonl --judgments 20 --followups 20
+```
+
+`llm_usage_window.sql`은 core_db에서 돌린다. AWS에는 psql 접속 경로가 demo-db-oneoff Pod뿐이므로, 파일 앞에 `\set from '''<시작 UTC>'''`·`\set to '''<끝 UTC>'''`를 붙인 사본을 ConfigMap으로 넣어 실행한다. 관리자 계정(리포트·테마)과 프리미엄 구독 자녀는 #384와 같은 승인 절차로 만든다.
+
+**#613 모델 새 버전 등록 (운영 관리자 화면, SERVICE_OPS)**
+1. 선행: scoring·ai가 새 main 이미지인지(#588 이후) 확인
+2. `GET /admin/model-versions?kind=MODEL`로 현재 행·`artifactUri`·revision 기록(복귀 기준)
+3. 사전 검사 `POST /admin/models/preflight`: `artifactUri`는 `models/m2-klue-essay/3.1-1112b/`·`models/m2-klue-narrative/3.0-1112b/`, 파일 6개 해시는 `metadata/1112b` manifest 값 → `PASS` 확인
+4. 등록: `(kind,name,version)`이 UNIQUE이고 이미 활성화된 버전은 다시 활성화할 수 없으므로(409) **새 버전 문자열** `3.1-1112b`·`3.0-1112b`로 등록
+5. 승인·활성화: 논술 scope는 초5·초6(11/17 결정), 서술은 기존 scope 그대로
+6. scoring `/internal/versions`에서 새 revision 로딩, 서술·논술 요청 1건씩 새 경계 확인. 복귀는 `rollback`으로 이전 버전
+
+**#493 확인**: 위 3번 사전 검사가 실제 scoring Pod 자격 증명(Pod Identity)으로 활성 경로 `3.1/`·`3.0/`과 새 경로 둘 다 `PASS`이면 남은 AWS 항목이 끝난다. `CHECKSUM_UNAVAILABLE`이 나오면 해당 객체를 `put-object --checksum-sha256` 단일 PUT으로 다시 올린다.
+
+### 9.11.5 당일 순서
+
+예상 시간은 처음 실행하는 절차의 추정이다. 실제 시간을 옆에 적는다. ★는 실행 전 동섭 님 승인 지점이다.
+
+| # | 단계 | 명령·방법 | 확인 | 예상 |
+|---|---|---|---|---|
+| 0 | 선행(전날까지) | #537 병합 → develop→main 병합 SHA 확정. migration 이미지: cd-release에 migration 단계가 들어가면 그것으로, 아니면 새 main으로 core-migrate·learning-migrate 이미지 수동 빌드·ECR 푸시 후 `migrations/*.json` digest·revision PR. 팀 공지 | main SHA·digest 3개 기록 | — |
+| 1 | 읽기 점검 | `demo_stack.py plan` | 9.11.1과 같은지(MISSING 4, DIFF 2) | 2분 |
+| 2★ | NAT·IAM 생성 | `demo_stack.py apply --confirm-account <계정>` → `aws ec2 replace-route --route-table-id <private 2개> --destination-cidr-block 0.0.0.0/0 --nat-gateway-id <새 NAT>` | `plan`에서 nat·route·IAM 2개 OK(EKS만 MISSING) | 10분 |
+| 3★ | RDS 시작 | `aws rds start-db-instance` → `wait db-instance-available` | endpoint·`rds.force_ssl`·백업 7일. 11/20 자동 시작 뒤라면 이미 available | 10분 |
+| 4★ | 클러스터 | `render-eksctl --operator-cidr <IP>/32 --out <밖>` → `eksctl create cluster -f <파일>` | 노드그룹 2개(2a·2b 1대씩 platform), add-on 7개, Pod Identity 10개, access entry가 백업(`access-entries.json`)과 같은 권한 | 30~40분 |
+| 5★ | RDS SG | `apply --after-eksctl` → 옛 SG `sg-086c7c83b3638da59` 규칙·SG 정리 | 새 SG에서 5432 허용 | 5분 |
+| 6 | 플랫폼 | gp3·namespace·ESO 2.14.0·LB Controller 1.14.1·`rds-ca`·ExternalSecret(현재 파일)·platform-data·Karpenter 1.15.1 + NodePool·EC2NodeClass(`karpenter.json` 대조) | ESO Ready, Secret 키가 서비스별 키, RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분 |
+| 7 | DB 상태 | demo-db-oneoff(core 앱 계정)로 `SHOW max_connections`, `model_version` 행·활성 상태 조회. 앱 계정은 migration 이력 테이블 권한이 없으므로 적용 번호는 8단계 Job 로그로 본다 | 9.11.2 연결 판단, #613 등록 전 기준 | 10분 |
+| 8★ | migration | 기본 거부용 정책 2개 → core·learning·report migration Job(9.11.1 2·3번). cd-release에 migration 단계가 들어갔으면 그 단계로 실행 | Job complete, 로그의 시작·끝 schema 버전(Flyway)·revision(Alembic) | 15분 |
+| 9★ | 앱 배포 | cd-release(plan JSON, 승인 2명), 6개 서비스 | 앱 readiness, `app-default-deny` 1개, 정책 없는 Pod DNS 실패 | 30~40분 |
+| 10 | 관측 | Secrets Manager 백업으로 관측 Secret 2개 생성(값 미출력) → observability | Grafana 로그인·datasource·경보 평가 | 15분 |
+| 11★ | 진입 | `core-alb-network.json` + Ingress(origin 헤더 Git 밖 주입) → 새 ALB DNS로 CloudFront `/api/*` origin 변경 | prefix list 제한, CloudFront 배포 완료 | 20분 |
+| 12 | 흐름 확인 | 로그인 → 학습 제출 → 리포트 조회, 테마 초안 1건(자산 버킷·Veo, #652·#600), 설명 단계 상태 | 걸린 시간·실패 항목을 #601에 기록 | 20분 |
+| 13 | #613·#493 | 9.11.4 | 사전 검사 PASS, 새 revision | 30분 |
+| 14★ | #384 | 공지 → 계정 4개 → 스텁 → 단계별 k6 → 축소 관찰 → 원복 | Karpenter 노드 0대로 끝남 | 2~3시간 |
+| 15 | #630 | 9.11.4(실제 LLM, 부하 없는 시간) | 표본·비용 기록 | 1.5시간 |
+| 16★ | #629 | 9.11.3(재가동 1시간 뒤부터 가능) | A 있음·B 없음, RPO·RTO | 1시간 |
+| 17★ | 내리기 | 시험 데이터 정리 범위 확인 → `demo_stack.py pause --execute` 또는 클러스터·NAT 삭제(9.5 방식) | RDS stopped, 실행 중 EC2 0대, 정지 시각과 7일 뒤 자동 시작 기록 | 1시간 |
+
+0~12는 한 번에 약 4시간이다. 13~16은 하루 안에 모두 끝내지 않아도 되지만, 켜 둔 동안 고정비(EKS·NAT·노드 4대·RDS)가 쌓이므로 이틀을 넘기지 않는다.
 
 ## 10. 근거 링크
 

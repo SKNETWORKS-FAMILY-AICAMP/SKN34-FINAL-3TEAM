@@ -14,6 +14,12 @@ START → retrieve(#470 자리) → plan_theme → check_theme
                 / PASS → generate_images
 → generate_images(그림마다 검토 포함): 설정 없음·미션 그림 끝내 실패 → END / 통과 → generate_videos
 → generate_videos(컷마다 검토 포함, 꺼져 있으면 경고만) → generate_motion → END
+
+부분 다시 생성(#537): START → restore(원래 결과·재료 그림 되살림)
+  → 미션 대상이 있으면 generate_mission(그 요일만)부터, 없으면 generate_images부터.
+  노드는 그대로 쓰고
+  그림·영상·움직임 노드는 redo_* 범위만 다시 만든다. 글 검토가 줄거리·단서·대상 밖 요일을 고치라고
+  하면 failure REVIEW로 끝낸다(사용자 결정 2026-11-17).
 """
 
 from functools import lru_cache
@@ -37,6 +43,17 @@ from app.theme_draft.nodes.plan import (
 )
 from app.theme_draft.nodes.review import review_story
 from app.theme_draft.nodes.video import generate_videos
+from app.theme_draft.regen import restore
+
+
+def start(state: ThemeState) -> str:
+    return "restore" if state.get("partial") else "retrieve"
+
+
+def after_restore(state: ThemeState) -> list[Send] | str:
+    if state.get("failure"):
+        return END
+    return mission_sends(state) if state.get("days_todo") else "generate_images"
 
 
 def mission_sends(state: ThemeState) -> list[Send]:
@@ -109,6 +126,7 @@ def after_images(state: ThemeState) -> str:
 @lru_cache
 def build_graph() -> CompiledStateGraph:
     graph = StateGraph(ThemeState, context_schema=ThemeContext)
+    graph.add_node("restore", restore)
     graph.add_node("retrieve", retrieve)
     graph.add_node("plan_theme", plan_theme)
     graph.add_node("check_theme", check_theme_node)
@@ -122,7 +140,10 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("generate_videos", generate_videos)
     graph.add_node("generate_motion", generate_motion)
 
-    graph.add_edge(START, "retrieve")
+    graph.add_conditional_edges(START, start, ["restore", "retrieve"])
+    graph.add_conditional_edges(
+        "restore", after_restore, ["generate_mission", "generate_images", END]
+    )
     graph.add_edge("retrieve", "plan_theme")
     graph.add_edge("plan_theme", "check_theme")
     graph.add_conditional_edges(

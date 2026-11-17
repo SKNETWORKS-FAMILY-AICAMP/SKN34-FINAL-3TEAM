@@ -1,33 +1,47 @@
-"""리포트 설명 흐름 (FN-RPT-09, api-spec 4.2.3, #477).
+"""리포트 상세 설명 흐름 (FN-RPT-09, api-spec 4.2.3, #477, @2 로컬 Gemma 상세 설명).
 
 1. 설명 모델(레지스트리 MODEL report-explanation)이 explanation/grade-{학년}/{입력 유형}에
    활성이 아니면 {active:false}
-2. 항목 최대 2개를 골라 항목마다 설명 전용 sLLM 1회(평문, 재시도 없음, 사용량 REPORT_EXPLANATION)
-3. 규칙 후처리·검사 → 학부모 문장 틀 → 인용 구절
+2. 답변 1개에 설명 전용 sLLM(Gemma LoRA) 호출(JSON 세 칸, 중복 접수 없이 1회 호출,
+   사용량 REPORT_EXPLANATION)
+3. 문장 단위 정리(checks.clean) → 규칙 검사 → "상세 분석 / 보완할 지점 / 개선 방안" 조립 → 인용
 
-LLM 실패·미설정·마감 초과는 503 AI_UNAVAILABLE, 후처리 뒤 남는 문장이 없거나 검사 실패는
-422 AI_EXPLANATION_REJECTED. 어느 쪽이든 report는 그 설명만 빼고 "설명 미포함"으로 둠 (P16).
+로컬 전용: 환경변수 EXPLANATION_LOCAL_SKIP_REGISTRY=1이면 1의 레지스트리 확인을 건너뛰고
+바로 부른다(로컬 Docker 시연용, 2026-11-17 사용자 결정).
+기본은 꺼짐이며 운영에서는 레지스트리 승인 검사를 유지한다.
+이때 versions.model은 "{REPORT_GEMMA_MODEL 설정값}@local-unregistered"로
+남겨 승인 모델과 구분한다.
+
+LLM 실패·미설정·마감 초과는 503 AI_UNAVAILABLE, 검사 실패는 422 AI_EXPLANATION_REJECTED.
+어느 쪽이든 report는 그 설명만 빼고 "설명 미포함"으로 둠 (P16).
 """
 
 import logging
+import os
 import time
 
 from app.config import Settings
 from app.errors import ApiError
 from app.followup.models import LlmVersions
 from app.llm.base import LlmClient, LlmUnavailable
-from app.prompt_versions.models import EXPLANATION_MODEL, PromptChoice
+from app.prompt_versions.models import EXPLANATION_MODEL
 from app.prompt_versions.registry import ActiveVersions
 from app.report_explanation import checks
 from app.report_explanation.models import (
     ActiveExplanationResponse,
     Explanation,
+    ExplanationDetail,
     ExplanationRequest,
     ExplanationResponse,
     InactiveExplanationResponse,
 )
 
 logger = logging.getLogger(__name__)
+LOCAL_SKIP_REGISTRY = "EXPLANATION_LOCAL_SKIP_REGISTRY"
+
+
+def skip_registry() -> bool:
+    return os.environ.get(LOCAL_SKIP_REGISTRY) == "1"
 
 
 def explanation_scope(request: ExplanationRequest) -> str:
@@ -41,46 +55,40 @@ class ExplanationService:
         self._versions = versions
 
     async def explain(self, request: ExplanationRequest) -> ExplanationResponse:
-        model = self._versions.model(EXPLANATION_MODEL, explanation_scope(request))
-        if model is None:
-            return InactiveExplanationResponse()
+        if skip_registry():
+            model_label = f"{self._settings.report_gemma_model}@local-unregistered"
+        else:
+            model = self._versions.model(EXPLANATION_MODEL, explanation_scope(request))
+            if model is None:
+                return InactiveExplanationResponse()
+            model_label = f"{model.name}@{model.version}"
         prompt = self._versions.prompt("reportExplanation")
-        deadline = time.monotonic() + self._settings.explanation_deadline
-        parts: list[tuple[checks.Role, list[str]]] = []
-        for target in checks.select_items(request):
-            lines = checks.clean(await self._generate(prompt, request, target, deadline))
-            if not lines:
-                logger.warning("리포트 설명 후처리 뒤 남는 문장 없음 item=%s", target.key)
-                raise rejected()
-            parts.append((target.role, lines))
-        text = checks.compose(parts)
-        if not checks.allowed(text):  # 후처리를 거쳐 오지만 틀 문구까지 한 번 더 확인
-            raise rejected()
-        quote = checks.pick_quote(request.text, " ".join(" ".join(lines) for _, lines in parts))
-        return ActiveExplanationResponse(
-            explanation=Explanation(text=text, quote=quote),
-            versions=LlmVersions(model=f"{model.name}@{model.version}", prompt=prompt.version),
-        )
-
-    async def _generate(
-        self,
-        prompt: PromptChoice,
-        request: ExplanationRequest,
-        target: checks.Target,
-        deadline: float,
-    ) -> str:
-        stream = self._llm.stream(
-            system=prompt.body.SYSTEM,
-            user=prompt.body.build_user(request.grade, target.label, target.score, request.text),
-            call_type="REPORT_EXPLANATION",
-            prompt_version=prompt.version,
-            max_tokens=self._settings.explanation_max_tokens,
-            deadline=deadline,
-        )
         try:
-            return "".join([chunk async for chunk in stream])
+            result = await self._llm.generate(
+                system=prompt.body.SYSTEM,
+                user=prompt.body.build_user(request.grade, request.topic, request.text),
+                output=ExplanationDetail,
+                call_type="REPORT_EXPLANATION",
+                prompt_version=prompt.version,
+                max_tokens=self._settings.explanation_max_tokens,
+                deadline=time.monotonic() + self._settings.explanation_deadline,
+                # A serverless job is never resubmitted within this request.
+                max_retries=0,
+            )
         except LlmUnavailable as exc:
             raise ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable) from exc
+        sections = checks.parts(result.data, request.text)
+        if not sections or sections[0][0] != "상세 분석":
+            raise rejected()
+        if not all(checks.allowed(body, request.text) for _, body in sections):
+            logger.warning("리포트 상세 설명 검사 실패")
+            raise rejected()
+        text = checks.compose(sections)
+        quote = checks.pick_quote(request.text, " ".join(body for _, body in sections[:2]))
+        return ActiveExplanationResponse(
+            explanation=Explanation(text=text, quote=quote),
+            versions=LlmVersions(model=model_label, prompt=prompt.version),
+        )
 
 
 def rejected() -> ApiError:

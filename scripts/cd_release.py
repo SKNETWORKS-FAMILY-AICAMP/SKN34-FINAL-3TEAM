@@ -20,6 +20,63 @@ SERVICES = {
     "scoring-service",
     "report-service",
 }
+# DB를 가진 서비스의 migration 이미지 저장소. report Alembic은 앱 이미지 안에 있다
+MIGRATION_REPOSITORIES = {
+    "core-service": "core-migrate",
+    "learning-service": "learning-migrate",
+    "report-service": "report-service",
+}
+
+
+def image_pattern(environment):
+    registry = (
+        r"ghcr\.io/[a-z0-9._/-]+"
+        if environment == "local"
+        else r"[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9._/-]+"
+    )
+    return registry + r"@sha256:[0-9a-f]{64}"
+
+
+def validate_migrations(plan, services, images, pending_images):
+    """deploy는 앱 적용 전에 DB를 가진 서비스의 migration을 실행한다. rollback은 DB를 건드리지 않는다."""
+    errors = []
+    migrations = plan.get("migrations")
+    if plan.get("operation") == "rollback":
+        if migrations:
+            errors.append("롤백은 migration을 실행하지 않습니다(DB는 되돌리지 않음)")
+        return errors
+    if plan.get("operation") != "deploy" or services is None:
+        return errors
+    if migrations is None and pending_images:
+        return errors  # publish가 앱 이미지와 같은 SHA로 게시한 뒤 채운다
+    expected = {s for s in services if s in MIGRATION_REPOSITORIES}
+    if not isinstance(migrations, dict):
+        if expected:
+            errors.append("DB를 가진 서비스의 migration 이미지가 필요합니다")
+        return errors
+    if set(migrations) != expected:
+        errors.append(
+            "migrations의 서비스가 services 중 DB를 가진 서비스(core·learning·report)와 다릅니다"
+        )
+    for service, image in migrations.items():
+        if service not in MIGRATION_REPOSITORIES:
+            continue
+        repository = MIGRATION_REPOSITORIES[service]
+        if not isinstance(image, str) or not re.fullmatch(
+            image_pattern(plan.get("environment")), image
+        ):
+            errors.append(f"{service} migration: 불변 digest 이미지가 필요합니다")
+        elif image.split("@")[0].rsplit("/", 1)[-1] != repository:
+            errors.append(f"{service} migration: {repository} 저장소 이미지여야 합니다")
+        elif (
+            service == "report-service"
+            and isinstance(images, dict)
+            and image != images.get(service)
+        ):
+            errors.append(
+                "report-service migration은 같은 배포의 앱 이미지(Alembic 포함)여야 합니다"
+            )
+    return errors
 
 
 def validate(plan, policy, *, pending_images=False):
@@ -82,17 +139,13 @@ def validate(plan, policy, *, pending_images=False):
         for service, image in images.items():
             if service not in SERVICES:
                 errors.append(f"지원하지 않는 서비스: {service}")
-            registry = (
-                r"ghcr\.io/[a-z0-9._/-]+"
-                if plan.get("environment") == "local"
-                else r"[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9._/-]+"
-            )
             if not isinstance(image, str) or not re.fullmatch(
-                registry + r"@sha256:[0-9a-f]{64}", image
+                image_pattern(plan.get("environment")), image
             ):
                 errors.append(
                     f"{service}: 환경에 맞는 레지스트리와 불변 digest가 필요합니다"
                 )
+    errors.extend(validate_migrations(plan, services, images, pending_images))
     for name in CHECKS:
         evidence = compatibility.get(name, {})
         if not isinstance(evidence, dict):
@@ -150,6 +203,11 @@ def main():
         help="publish가 만든 서비스별 이미지 JSON (plan.images 대체)",
     )
     parser.add_argument(
+        "--migrations",
+        type=Path,
+        help="publish가 만든 서비스별 migration 이미지 JSON (plan.migrations 대체)",
+    )
+    parser.add_argument(
         "--expect-commit", help="실행 중인 SHA. deploy 계획의 sourceCommit과 같아야 함"
     )
     parser.add_argument(
@@ -165,8 +223,9 @@ def main():
     )
     args = parser.parse_args()
     inputs = {args.plan.resolve(), args.policy.resolve()}
-    if args.images:
-        inputs.add(args.images.resolve())
+    for extra in (args.images, args.migrations):
+        if extra:
+            inputs.add(extra.resolve())
     if args.output.resolve() in inputs:
         parser.error("출력 파일은 입력 파일과 달라야 합니다")
     raw, policy_raw, plan, policy = b"", b"", {}, {}
@@ -177,6 +236,8 @@ def main():
         policy = json.loads(policy_raw)
         if args.images and isinstance(plan, dict):
             plan["images"] = json.loads(args.images.read_bytes())
+        if args.migrations and isinstance(plan, dict):
+            plan["migrations"] = json.loads(args.migrations.read_bytes())
         result = validate(plan, policy, pending_images=args.pending_images)
         commit = plan.get("sourceCommit") if isinstance(plan, dict) else None
         # 배포는 지금 실행 중인 main SHA만. 롤백은 이전 릴리스 digest를 현재 chart로 되돌린다
@@ -217,6 +278,7 @@ def main():
         "targetRelease": plan.get("targetRelease"),
         "services": plan.get("services"),
         "images": plan.get("images"),
+        "migrations": plan.get("migrations"),
         **result,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
