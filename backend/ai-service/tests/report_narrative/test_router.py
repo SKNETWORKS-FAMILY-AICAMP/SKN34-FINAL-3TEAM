@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.bootstrap import create_app
 from app.llm.base import LlmError
-from app.llm.providers import get_llm
+from app.llm.report import get_report_llm
 from app.report_narrative.prompts import CitedQuote, GeneratedNarrative
 from tests.fakes import FakeLlm
 from tests.report_narrative.test_service import BODY
@@ -12,7 +12,7 @@ HEADERS = {"X-Internal-Token": "test-token"}
 
 def post(llm: FakeLlm, headers: dict[str, str] = HEADERS, body: dict = BODY):
     app = create_app()
-    app.dependency_overrides[get_llm] = lambda: llm
+    app.dependency_overrides[get_report_llm] = lambda: llm
     with TestClient(app) as client:
         return client.post("/internal/report-narratives", json=body, headers=headers)
 
@@ -37,7 +37,7 @@ def test_response_uses_camel_case() -> None:
         "citedQuotes": [
             {"attemptId": "t-9", "answerId": "a-201", "answerVersion": 1, "quote": "나는 반대야."}
         ],
-        "versions": {"model": "fake-model", "prompt": "report@1"},
+        "versions": {"model": "fake-model", "prompt": "report@2"},
     }
 
 

@@ -31,6 +31,7 @@ const fixed = {
     evening_question: '오늘 가장 재미있었던 생각은 무엇이었니?',
     cited_quotes: [],
   }),
+  ExplanationDetail: () => ({ analysis: '글에 자신의 생각과 까닭을 함께 적었습니다.', improvement_points: '다만, 까닭을 더 자세히 풀어 볼 수 있습니다.', next_steps: '앞으로 어떤 경험이 떠오르는지 함께 이야기해 보세요.' }),
   Classification: () => ({ intent: 'COUNT', scopeIssue: 'NONE' }),
   TemplateProposal: () => ({ clarification: '어떤 순서로 보여 드릴까요?' }),
 }

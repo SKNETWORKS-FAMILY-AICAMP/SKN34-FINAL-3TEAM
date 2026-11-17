@@ -506,7 +506,42 @@
 #class-journal .ws-parent .report-highlight-label { display:block; margin:0 0 8px; color:var(--pd-accent-ink); font-size:13px; font-weight:600; }
 #class-journal .ws-parent .report-highlight-summary { color:var(--pd-accent-ink); font-size:14px; }
 /* #508: ai joins "잘한 점"·"함께 이야기해 볼 점" with a newline; keep it as the HTML/PDF files do. */
-#class-journal .ws-parent .report-explanation-text { white-space:pre-line; }
+#class-journal .ws-parent .report-explanation-card { min-width:0; }
+#class-journal .ws-parent .parent-report-groups { display:grid; gap:40px; margin-top:24px; }
+#class-journal .ws-parent .parent-report-group > h2 { margin:0 0 16px; color:#277044; font-size:22px; font-weight:700; }
+#class-journal .ws-parent .parent-report-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:20px; }
+#class-journal .ws-parent .parent-report-grid .ws-card { display:flex; flex-direction:column; align-items:flex-start; gap:12px; min-width:0; }
+#class-journal .ws-parent .parent-report-grid .ws-card h3 { margin:0; font-size:18px; }
+#class-journal .ws-parent .parent-report-grid .ws-card > p { margin:0; }
+#class-journal .ws-parent .parent-report-grid .ws-card > button { margin-top:auto; }
+#class-journal .ws-parent .parent-report-detail-nav { margin:0 0 20px; }
+#class-journal .ws-parent .parent-report-back { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:8px 12px; border:1px solid var(--pd-line); border-radius:10px; color:#277044; background:#fff; font:inherit; font-weight:600; cursor:pointer; }
+#class-journal .ws-parent .parent-report-back:hover { background:var(--pd-accent-soft); }
+#class-journal .ws-parent .parent-report-back:focus-visible { outline:2px solid #277044; outline-offset:3px; }
+#class-journal .ws-parent .report-explanation-evidence { margin:20px 0 24px; padding:16px 20px; background:var(--pd-accent-soft); border-radius:8px; }
+#class-journal .ws-parent .report-explanation-evidence h5 { margin:0 0 8px; color:var(--pd-accent-ink); font-size:14px; font-weight:600; }
+#class-journal .ws-parent .report-explanation-evidence blockquote { margin:0; padding:0; border:0; background:none; color:var(--pd-ink); white-space:pre-line; overflow-wrap:anywhere; }
+/* 구역 제목(상세 분석·보완할 지점·개선 방안)과 본문. 가독성: 본문 18px·줄 간격 2, 문단·구역 사이를 넓힘 */
+#class-journal .ws-parent .report-explanation-sections { display:grid; gap:36px; margin-top:32px; }
+#class-journal .ws-parent .report-explanation-section + .report-explanation-section { padding-top:36px; border-top:1px solid var(--pd-line); }
+#class-journal .ws-parent .report-explanation-section h5 { margin:0 0 14px; color:var(--pd-accent-ink); font-size:18px; font-weight:700; }
+#class-journal .ws-parent .report-explanation-copy { max-width:40em; color:var(--pd-ink); font-size:18px; line-height:2; word-break:keep-all; overflow-wrap:anywhere; }
+#class-journal .ws-parent .report-explanation-copy p { margin:0; white-space:pre-line; }
+#class-journal .ws-parent .report-explanation-copy p + p { margin-top:24px; }
+#class-journal .ws-parent .report-explanation-copy :is(ul,ol) { display:grid; gap:16px; margin:0; padding-left:24px; }
+#class-journal .ws-parent .report-explanation-copy ul { list-style:disc; }
+#class-journal .ws-parent .report-explanation-copy ol { list-style:decimal; }
+#class-journal .ws-parent .report-explanation-copy :is(ul,ol) + p,
+#class-journal .ws-parent .report-explanation-copy p + :is(ul,ol) { margin-top:24px; }
+#class-journal .ws-parent .report-explanation-copy li { padding-left:4px; white-space:pre-line; }
+@media(max-width:640px) {
+  #class-journal .ws-parent .report-explanation-evidence { padding:16px; }
+  #class-journal .ws-parent .report-explanation-sections { gap:28px; margin-top:28px; }
+  #class-journal .ws-parent .report-explanation-section + .report-explanation-section { padding-top:28px; }
+  #class-journal .ws-parent .report-explanation-section h5 { font-size:17px; }
+  #class-journal .ws-parent .report-explanation-copy { font-size:17px; line-height:1.95; }
+  #class-journal .ws-parent .report-explanation-copy p + p { margin-top:20px; }
+}
 @media(max-width:1100px) {
   #class-journal .ws-parent .parent-insights.is-linked .parent-insights-content { grid-template-columns:minmax(0,1fr); }
   #class-journal .ws-parent .parent-insights.is-linked .parent-insights-chat { grid-row:1; }

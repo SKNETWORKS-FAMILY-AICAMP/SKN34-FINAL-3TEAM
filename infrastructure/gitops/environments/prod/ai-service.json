@@ -75,6 +75,24 @@
       }
     },
     {
+      "name": "SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA",
+          "name": "ai-provider-credentials"
+        }
+      }
+    },
+    {
+      "name": "SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA",
+          "name": "ai-provider-credentials"
+        }
+      }
+    },
+    {
       "name": "LLM_PROVIDER",
       "value": "openai"
     },
@@ -121,6 +139,50 @@
     {
       "name": "AWS_REGION",
       "value": "ap-northeast-2"
+    },
+    {
+      "name": "THEME_VIDEO_ENABLED",
+      "value": "true"
+    },
+    {
+      "name": "THEME_VIDEO_MAX_REGEN",
+      "value": "0"
+    },
+    {
+      "name": "GOOGLE_APPLICATION_CREDENTIALS",
+      "value": "/etc/theme-video/credentials.json"
+    },
+    {
+      "name": "VIDEO_PROJECT",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "VIDEO_PROJECT",
+          "name": "ai-theme-video",
+          "optional": true
+        }
+      }
+    }
+  ],
+  "extraVolumeMounts": [
+    {
+      "mountPath": "/etc/theme-video",
+      "name": "theme-video",
+      "readOnly": true
+    }
+  ],
+  "extraVolumes": [
+    {
+      "name": "theme-video",
+      "secret": {
+        "items": [
+          {
+            "key": "credentials.json",
+            "path": "credentials.json"
+          }
+        ],
+        "optional": true,
+        "secretName": "ai-theme-video"
+      }
     }
   ],
   "hpa": {

@@ -8,6 +8,9 @@ FAIL이면 해당 부분만 다시 만들고 다시 검토한다(재검토 상�
 - CLUE_LOGIC(두 번째)·ANSWER_HINT·SAFETY → 이야기 틀·단서 문제라 줄거리부터
 - STANDARD_FIT·GRADE_VOCAB → 그 요일 미션·대화(요일이 없으면 다섯 요일)
 형식만 틀리면 검토만 다시. 끝내 FAIL이면 failure REVIEW. 마지막 검토의 WARN은 warnings.
+부분 다시 생성(#537)에서는 다시 만들 미션 요일만 다시 보낼 수 있고,
+줄거리·단서·대상 밖 요일을 고치라는
+판정이면 failure REVIEW로 끝낸다(사용자 결정 2026-11-17 "줄거리부터 다시면 CHECK_FAILED").
 """
 
 from langgraph.runtime import Runtime
@@ -15,6 +18,7 @@ from langgraph.runtime import Runtime
 from app.theme_draft.checks import DAYS, REVIEW_IDS, check_review
 from app.theme_draft.models import GeneratedStoryReview
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState
+from app.theme_draft.regen import OUTSIDE_REASON, outside_targets
 
 PLAN_ROUTE = {"CLUE_LOGIC", "ANSWER_HINT", "SAFETY"}
 DAY_ROUTE = {"STANDARD_FIT", "GRADE_VOCAB"}
@@ -55,6 +59,21 @@ async def review_story(state: ThemeState, runtime: Runtime[ThemeContext]) -> The
         }
     if shape:  # 형식만 틀리면 검토만 다시
         return {**out, "review_route": "AGAIN"}
+    result = route_fails(state, out, fails, reasons)
+    if outside_targets(state, result["review_route"], result.get("days_todo")):
+        # 부분 다시 생성(#537): 고르지 않은 줄거리·단서·요일은 바꾸지 않고 실패로 끝냄
+        return {
+            **out,
+            "failure": {"stage": "REVIEW", "reasons": [*reasons, OUTSIDE_REASON]},
+            "review_route": "FAIL",
+        }
+    return result
+
+
+def route_fails(
+    state: ThemeState, out: ThemeState, fails: list[dict], reasons: list[str]
+) -> ThemeState:
+    """FAIL 항목 → 다시 만들 곳(CLUE 단서만·PLAN 줄거리부터·DAYS 그 요일)."""
     clue = [x for x in fails if x["id"] == "CLUE_LOGIC"]
     if (
         clue

@@ -61,6 +61,22 @@ def images(*services):
     return {s: f"{ECR}{s}@sha256:" + "d" * 64 for s in services}
 
 
+def migrations(*services):
+    """publish가 만드는 migration 이미지. report는 앱 이미지를 그대로 쓴다."""
+    built = images(*services)
+    return {
+        s: built[s]
+        if s == "report-service"
+        else f"{ECR}{s.removesuffix('-service')}-migrate@sha256:" + "e" * 64
+        for s in services
+        if s in cd.MIGRATION_REPOSITORIES
+    }
+
+
+def built(*services):
+    return {"images": images(*services), "migrations": migrations(*services)}
+
+
 class GateTests(unittest.TestCase):
     def test_deploy_may_wait_for_images_but_is_not_executable(self):
         result = cd.validate(prod_plan(), READY_POLICY, pending_images=True)
@@ -73,7 +89,58 @@ class GateTests(unittest.TestCase):
         self.assertFalse(cd.validate(plan, READY_POLICY, pending_images=True)["valid"])
 
     def test_ready_plan_with_built_images_is_executable(self):
+        plan = prod_plan(**built("learning-service", "report-service"))
+        self.assertTrue(cd.validate(plan, READY_POLICY)["executable"])
+
+    def test_deploy_needs_migration_images_for_services_with_db(self):
         plan = prod_plan(images=images("learning-service", "report-service"))
+        result = cd.validate(plan, READY_POLICY)
+        self.assertFalse(result["valid"])
+        self.assertIn("DB를 가진 서비스의 migration 이미지가 필요합니다", result["errors"])
+
+    def test_services_without_db_need_no_migration(self):
+        plan = prod_plan(
+            services=["ai-service", "scoring-service"],
+            **built("ai-service", "scoring-service"),
+        )
+        self.assertEqual(plan["migrations"], {})
+        self.assertTrue(cd.validate(plan, READY_POLICY)["executable"])
+        del plan["migrations"]
+        self.assertTrue(cd.validate(plan, READY_POLICY)["executable"])
+
+    def test_migrations_must_match_services_with_db(self):
+        plan = prod_plan(
+            images=images("learning-service", "report-service"),
+            migrations=migrations("learning-service"),
+        )
+        self.assertFalse(cd.validate(plan, READY_POLICY)["valid"])
+
+    def test_migration_image_must_be_its_repository_with_digest(self):
+        wrong = {
+            "tag": f"{ECR}learning-migrate:main-abc",
+            "app repository": f"{ECR}learning-service@sha256:" + "e" * 64,
+            "other db": f"{ECR}core-migrate@sha256:" + "e" * 64,
+        }
+        for label, image in wrong.items():
+            with self.subTest(label):
+                plan = prod_plan(**built("learning-service", "report-service"))
+                plan["migrations"]["learning-service"] = image
+                self.assertFalse(cd.validate(plan, READY_POLICY)["valid"])
+
+    def test_report_migration_is_the_same_app_image(self):
+        plan = prod_plan(**built("learning-service", "report-service"))
+        plan["migrations"]["report-service"] = f"{ECR}report-service@sha256:" + "f" * 64
+        result = cd.validate(plan, READY_POLICY)
+        self.assertTrue(any("report-service migration" in e for e in result["errors"]))
+
+    def test_rollback_never_runs_migrations(self):
+        plan = prod_plan(
+            operation="rollback",
+            previousApproval={"release": "main-2222", "record": "runs/41"},
+            **built("learning-service", "report-service"),
+        )
+        self.assertFalse(cd.validate(plan, READY_POLICY)["valid"])
+        del plan["migrations"]
         self.assertTrue(cd.validate(plan, READY_POLICY)["executable"])
 
     def test_images_must_match_services(self):
@@ -127,6 +194,26 @@ class GateCliTests(unittest.TestCase):
                 json.dumps(images("learning-service", "report-service")),
                 encoding="utf-8",
             )
+            (root / "migrations.json").write_text(
+                json.dumps(migrations("learning-service", "report-service")),
+                encoding="utf-8",
+            )
+            code, out = self.run_cli(
+                root,
+                prod_plan(),
+                "--images",
+                str(root / "images.json"),
+                "--migrations",
+                str(root / "migrations.json"),
+                "--require-executable",
+            )
+            self.assertEqual(code, 0)
+            self.assertTrue(out["executable"])
+            self.assertEqual(set(out["images"]), {"learning-service", "report-service"})
+            self.assertEqual(
+                set(out["migrations"]), {"learning-service", "report-service"}
+            )
+            # migration 이미지 없이 앱 이미지만 오면 배포 직전 게이트에서 멈춘다
             code, out = self.run_cli(
                 root,
                 prod_plan(),
@@ -134,9 +221,7 @@ class GateCliTests(unittest.TestCase):
                 str(root / "images.json"),
                 "--require-executable",
             )
-            self.assertEqual(code, 0)
-            self.assertTrue(out["executable"])
-            self.assertEqual(set(out["images"]), {"learning-service", "report-service"})
+            self.assertEqual(code, 2)
 
     def test_require_executable_fails_with_code_3_when_blocked(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -179,17 +264,17 @@ class GateCliTests(unittest.TestCase):
             self.git(root, "checkout", "-q", "-b", "feature")
             self.git(root, "commit", "-q", "--allow-empty", "-m", "not released")
             unreleased = self.git(root, "rev-parse", "HEAD")
-            base = images("learning-service", "report-service")
+            base = built("learning-service", "report-service")
             ok, _ = self.run_cli(
                 root,
-                prod_plan(sourceCommit=released, images=base),
+                prod_plan(sourceCommit=released, **base),
                 "--require-ancestor-of",
                 "main",
             )
             self.assertEqual(ok, 0)
             bad, out = self.run_cli(
                 root,
-                prod_plan(sourceCommit=unreleased, images=base),
+                prod_plan(sourceCommit=unreleased, **base),
                 "--require-ancestor-of",
                 "main",
             )
@@ -570,6 +655,21 @@ class RecordTests(unittest.TestCase):
             record.build(self.PLAN, None, None, self.ENV, None)["result"], "failure"
         )
 
+    def test_success_needs_every_planned_migration_complete(self):
+        plan = {**self.PLAN, "migrations": migrations("core-service", "report-service")}
+        releases = [{"release": "core-service", "status": "deployed"}]
+        jobs = [
+            {"release": "core-service", "job": "core-service-migrate-main-a", "status": "complete"},
+            {"release": "report-api", "job": "report-api-migrate-main-a", "status": "already-complete"},
+        ]
+        ok = record.build(plan, releases, {"ok": True}, self.ENV, [], jobs)
+        self.assertEqual(ok["result"], "success")
+        self.assertEqual(ok["migrationJobs"], jobs)
+        for broken in (jobs[:1], [jobs[0], {**jobs[1], "status": "failed"}], None):
+            with self.subTest(broken=broken):
+                result = record.build(plan, releases, {"ok": True}, self.ENV, [], broken)
+                self.assertEqual(result["result"], "failure")
+
     def test_approvals_come_from_github_api(self):
         class Opener:
             def __call__(self, request, timeout=None):
@@ -651,6 +751,53 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(history["if"], "always()")
         self.assertIn("--require-executable", self.text)
         self.assertNotIn("helm rollback", self.text)
+
+    def test_migrations_are_published_with_the_app_tag(self):
+        publish = self.jobs["publish"]
+        self.assertIn("migrations", publish["outputs"])
+        script = publish["steps"][-1]["run"]
+        self.assertIn('tag="main-${GITHUB_SHA::12}"', script)
+        self.assertIn('sagomungchi/$name-migrate', script)
+        self.assertIn("infrastructure/gitops/migrations/$name.Dockerfile", script)
+        for name in ("core", "learning"):
+            self.assertTrue(
+                (ROOT / f"infrastructure/gitops/migrations/{name}.Dockerfile").is_file()
+            )
+        # ECR 게시 역할이 migration 저장소에도 쓸 수 있어야 한다
+        policy = json.loads(
+            (
+                ROOT
+                / "infrastructure/aws/iam/github-cd-publish-role.inline.ecr-push.json"
+            ).read_text(encoding="utf-8")
+        )
+        resources = policy["Statement"][1]["Resource"]
+        for repository in ("core-migrate", "learning-migrate"):
+            self.assertTrue(any(r.endswith(f"/sagomungchi/{repository}") for r in resources))
+
+    def test_migrations_finish_after_all_previews_and_before_app_apply(self):
+        steps = self.jobs["deploy"]["steps"]
+        names = [step.get("name", step.get("uses")) for step in steps]
+        order = [
+            "최종 실행 게이트 (실제 이미지·정책 실행 스위치)",
+            "migration 미리보기 (server dry-run)",
+            "적용 미리보기 (server dry-run)",
+            "migration 적용·완료 확인",
+            "적용",
+        ]
+        self.assertEqual([n for n in names if n in order], order)
+        apply_step = next(s for s in steps if s.get("name") == "적용")
+        migrate_step = next(s for s in steps if s.get("name") == "migration 적용·완료 확인")
+        # 실패 뒤에도 실행되면 앱이 새 스키마 없이 올라간다
+        self.assertNotIn("if", apply_step)
+        self.assertNotIn("if", migrate_step)
+        self.assertNotIn("continue-on-error", migrate_step)
+        self.assertIn("-Migration", migrate_step["run"])
+        self.assertIn("-Apply", migrate_step["run"])
+        gate = next(s for s in steps if s.get("name", "").startswith("최종 실행 게이트"))
+        self.assertIn("--migrations", gate["run"])
+        self.assertIn("--migration-jobs", self.text)
+        # Job 로그(접속 정보가 섞일 수 있음)를 공개 Actions 로그로 옮기지 않는다
+        self.assertNotIn("kubectl logs", self.text)
 
     def test_job_env_uses_only_contexts_github_allows(self):
         # job env에서 runner 컨텍스트를 쓰면 파일 오류로 모든 push에 실패 run이 생긴다

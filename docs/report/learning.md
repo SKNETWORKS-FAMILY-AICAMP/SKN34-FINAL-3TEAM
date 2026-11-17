@@ -351,13 +351,52 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 | 글 길이 | 모든 칸 합계 1,500자, 넘으면 칸 순서대로 앞 1,500자만 검사 | learning에 답 길이 상한이 없음. 11/16 측정(창 128, CPU 1개): 1,000자 0.77초·1,500자 1.12초·2,000자 1.55초(응답 1.5초 넘음), 운영 scoring CPU limit 1개(`scoring-service.json`). AI Hub 초3~6 글 중 1,500자 넘는 비율 논술형 0.6%(8,023편, 1,000자면 16.9%)·서술형 0%·에세이 0%. 넘을 때 건너뛰면 글을 늘려 검사를 피할 수 있어 잘라서 검사 |
 | 창·마감 | 128토큰 창·겹침 32, scoring은 처리 1.3초 넘으면 멈추고 503 | 학습 데이터(K-MHaS·BEEP!) 95%가 100자 미만이라 학습 길이 128과 창을 맞춤, 창 길이에 따른 속도 차이는 거의 없음. learning이 1.5초에 끊은 뒤 버려질 계산으로 다음 요청이 기다리지 않게 |
 | 사용량 | 이벤트 없음, 지표(호출·flagged·건너뜀 사유·지연)만 | #691 본문(LLM 아님, 토큰 단가 없음). core `callType`은 늘리지 않음 |
-| 임계값 | 데모 문장 491·학생 글 함정 약 80문장 오탐 0, 정상 문장 추가 오탐 1% 이하(단어 목록 대비) | 에픽 기준안, 확정 전 |
+| 임계값 | 꼭 통과할 글(데모 시드·웹 데모·`ExpressionPolicyTest` 통과 문장 390개) 오탐 0, 단어 목록이 통과시킨 검증 정상 글 추가 오탐 1% 이하에서 F1 최대 → int8 0.92(fp32로 쓰면 0.97) | 에픽 기준안, 담당자 확정(#690 지침, 2026-11-17). #205의 "데모 491"은 추출 스크립트가 저장소 밖이라 같은 방식으로 다시 뽑음. 결과 [eval_tox.md](../../ml/tox/results/eval_tox.md) |
 
 - 칸 수·글 길이·창·마감·잠금 전 호출은 이슈·에픽에 없어 담당자가 정한 기준안이다. 길이·창·마감은 11/16 측정(분류 머리 학습 전 `beomi/KcELECTRA-base`, 작업 공간 CPU 1개 스레드)이라 #691에서 실제 Pod로, M2와 CPU를 나눠 쓸 때도 다시 잰다. 메모리는 모델 로딩 약 +300MiB·추론 중 약 +300MiB로 limit 2Gi에 빠듯할 수 있어 같이 확인
 - 학습 데이터 후보(#690): 학습 K-MHaS·Korean HateSpeech(BEEP!)(CC BY-SA 4.0), 평가 APEACH(CC BY-SA 4.0), 기본 모델 `beomi/KcELECTRA-base`(MIT). KOLD(라이선스 표기 없음)·Korean UnSmile(상업 사용 문의 필요)은 제외. BEEP!는 저장소 LICENSE 원문, 나머지는 HF 데이터 카드로 확인(11/16). KOLD 저장소에는 LICENSE 파일이 없음
 - 12/7 데모에 넣는 것으로 진행. CC BY-SA는 에픽 제외 기준(비상업 전용·변경 금지·출처 불명)에 해당하지 않아 쓰며, 출처는 모델 문서에 표시하고 원자료·고친 데이터는 커밋·배포하지 않음
-- 확인 필요(팀장): 임계값 기준 확정(#690 결과와 함께)
+- 학습·평가(#690, 2026-11-17): `beomi/KcELECTRA-base` 3에폭(RunPod 4090, 4분 20초). 시험(K-MHaS)에서 단어 목록만 29.3% → int8 0.92 모델을 붙이면 68.9% 잡음(단어 목록이 놓친 막을 글의 55.9%), 정상 추가 오탐 1.42%(검증 0.97%). APEACH 25.9% → 43.0%. 꼭 통과할 글 390개 오탐 0
+- 지연·int8 결정(#690): CPU 1코어 p95 1,500자 fp32 1.62초(포드)·2.32초(개발 PC)로 처리 마감 1.3초를 넘고 int8은 0.55초·1.07초. 합계 1,500자는 그대로 두고 scoring이 불러올 때 int8로 바꾼다(fp32·0.97보다 시험 재현율 5.2%p 손해, 추가 오탐 기준은 같음). #691에서 운영 Pod로 다시 재서 fp32가 마감 안이면 `train_info.json`만 fp32·0.97로 되돌린다
 - 한계: 학습 데이터가 성인 뉴스 댓글이라 초등 답과 말투가 다르다. 미션 본문에 나온 말을 허용하는 규칙(`HATE`·맥락 단어)이 모델에는 없어 차별을 다루는 미션에서 오탐이 날 수 있다. 합계 1,500자 뒤의 글과 21번째 칸부터는 모델이 보지 않는다. 동시 요청이 몰리면 게이트에서 기다리다 통과될 수 있다. 장애 중에는 단어 목록만 적용된다
+
+### 재학습 자동화 (#688, 설계 #725)
+
+"표현 필터가 최신 비속어를 처리할 수 있나"라는 질문에서 시작. 위 분류 모델은 공개 데이터(성인 뉴스 댓글)로 한 번 학습한 것이라 서비스에서 새로 나오는 비속어·공격적인 글을 따라가지 못한다. 서비스 글을 모아 다시 학습하고 등록까지 자동으로 하는 루프를 둔다. 계약은 [API 명세](../design/api-spec.md) 4.1.5·4.3.4·5.2(재학습 자동 등록), 저장은 [ERD](../design/erd.md) 4.3.2, 흐름은 [시퀀스](../design/sequence-diagram.md) 9.1, 실행은 [아키텍처](../design/architecture.md) 4.4
+
+```
+경계 답변·신고 공유물 → 라벨(자동 + 운영자) → 주 1회 CronJob → 새 라벨 200건 이상이면 이어 학습
+→ 활성 모델과 비교·추천 태그 → S3 업로드 → REGISTERED 자동 등록 → 운영자 승인·활성화 → scoring 교체
+```
+
+| 항목 | 결정·기준안 | 근거 |
+|---|---|---|
+| 데이터 | 이미 저장되는 글만: 경계 구간이라 통과한 답변(`GRAY_ZONE`), 신고 숨김 공유물(`COMMUNITY_REPORT`). 막힌 원문·모델 점수는 저장하지 않음 | 사용자 결정 11/17. #205·#688의 원문·점수 미기록(NFR-SEC-05) 유지 |
+| 라벨 | 신고 공유물은 운영 처리 결과로 자동(`REMOVED` → 막을 글, `VISIBLE` → 정상), 경계 답변은 운영자(FN-ADM-24) | FN-RET-04 처리가 이미 사람 판단이라 다시 라벨하지 않음 |
+| 경계 구간 | `review_threshold`: 검증용 정상 문장 중 경계 구간에 드는 비율 5% 이하(기준안) | 사용자 결정 11/17. 운영자 라벨 부담 제한 |
+| 재학습 조건 | CronJob 주 1회, 지난 학습 뒤 새 라벨 200건 이상(기준안) | 사용자 결정 11/17. 적은 데이터로 자주 학습하면 결과가 흔들림 |
+| 학습 위치 | 클러스터 안 CPU, 현재 활성 모델에서 이어 학습 + 공개 데이터 일부 섞기 | 학생 글은 AWS 밖 반출 불가라 RunPod(M2·M1·설명 sLLM 학습 위치) 불가. 클러스터 안 GPU는 두지 않음(설명 sLLM 결정과 같은 이유: GPU 할당량 대기 위험, [기획 4절](planning.md#4-설명-sllm-데모-범위-재포함-473-1110)) |
+| 자동 범위 | `REGISTERED` 등록까지 자동, 활성화는 사람 | 사용자 결정 11/17, NFR-AIQ-05(자동 품질 합격선 없음) |
+| 추천 태그 | 후보·활성 모델을 같은 평가 세트(APEACH, 꼭 통과할 글 390개(#690 `eval.py`: 데모 시드·웹 데모·`ExpressionPolicyTest` 통과 문장), 최근 라벨 홀드아웃)로 비교. 기준안: 데모·함정 오탐 0 AND 홀드아웃 F1이 활성보다 높음 AND APEACH F1 하락 1%p 이하 → `RECOMMENDED`, 아니면 `NOT_RECOMMENDED`와 걸린 조건 | 사용자 결정 11/17("어떤 모델이 나은지 태그로 추천"). 참고 정보라 활성화 조건이 아님 |
+| 자동 등록 기록자 | 로그인·활성화 권한 없는 시드 계정 `mlops-pipeline` | `audit_log.actor_user_id`가 NOT NULL FK(core V5)라 사람 아닌 등록자를 넣을 계정이 필요. 사용자 결정 11/17 |
+| 학습 데이터 보관 | Job의 emptyDir에만, 끝나면 삭제. 등록 기록에는 건수·해시만 | 탈퇴·삭제 학생 원문이 학습 데이터 사본으로 남지 않게(P09) |
+| 다음 실행 기준 | S3 `models/tox-retrain/last.json`의 `labelsUntil` | core 내부 snapshot은 평가 근거를 전파하지 않음(api-spec 5.2). DB를 늘리지 않음 |
+
+#### 이슈 본문과 달라진 점
+
+- 추천 태그 위치: 이슈는 `evalResult.recommendation`이라 적었으나, 등록 계약상 평가 근거는 `evaluation`으로 받아 `evalResult.evidence`에 저장한다(api-spec 5.2). 그래서 `evaluation.recommendation`으로 받고 `evalResult.evidence.recommendation`에 둔다
+- P07 개정: 운영자가 학생 원문을 볼 수 있는 범위가 "신고·문의 연결 시도"뿐이었다. 경계 답변 라벨을 위해 "표현 검토 대기 답변"을 더하고, 학생 이름·ID 없이 글만 보이며 열람·라벨마다 감사 기록을 남기게 했다(functional-spec 1.1·1.4)
+- 자동 라벨의 라벨한 사람: core의 moderation 반영(`CommunityModerationService.apply`)은 `SYSTEM` 호출이고 다시 보내질 수 있어 운영자 ID가 없다. 자동 라벨은 `labeled_by` null로 두고, 운영자가 직접 라벨한 행은 덮어쓰지 않는다
+- 학생 삭제: learning은 FK를 NO ACTION으로 두고 지우는 순서를 정하는 방식이라(4.3.1) cascade 대신 답변보다 먼저 지운다
+
+#### 한계·확인 필요
+
+- 모델이 경계 구간에도 넣지 않고 신고도 없는 신조어는 모이지 않는다. 단어 목록(`answer-filter`) 갱신은 이 루프 밖이다
+- 이어 학습을 반복하면 예전에 배운 것을 잊을 수 있다. 공개 데이터를 섞고 APEACH 하락 조건으로 확인한다. 섞는 비율(기준안 새 라벨의 3배)은 #729 실측으로 정한다
+- 경계 답변은 운영자 라벨이 쌓여야 쓸 수 있어, 라벨이 없으면 재학습이 돌지 않는다(주기마다 성공 종료)
+- CPU 학습 시간·메모리, CronJob을 둘 노드는 #729·#730에서 실측한다
+- 확인 필요: 학생 답변을 모델 개선에 쓴다는 고지(개인정보 처리방침·동의 문구) 필요 여부 → 후속 이슈. Job 실패 경보의 지표 출처(kube-state-metrics 유무) → #730
+- 구현: scoring `review` #726, learning 검토 대기·내보내기 #727, core·web 라벨링·자동 등록·추천 태그 #728, `ml/tox` 재학습 #729, CronJob·네트워크 #730
 
 ## 17. 고착 RUNNING 판정 1분 주기 탐지 (#241)
 
@@ -792,7 +831,7 @@ python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --d
 
 | 항목 | 정한 내용 | 근거 |
 |---|---|---|
-| 상태·다시 생성 | 미션 초안과 같은 전이. 다시 생성은 같은 입력으로 새 초안(`source = ADMIN`), 원래 초안은 그대로. `GENERATING`·`ADOPTED`는 409 | 자동 초안 부분 UK와 부딪히지 않음 |
+| 상태·다시 생성 | 미션 초안과 같은 전이. 다시 생성은 같은 입력으로 새 초안(`source = ADMIN`), 원래 초안은 그대로. `GENERATING`·`ADOPTED`는 409. 대상을 고르는 부분 다시 생성은 40장(#537) | 자동 초안 부분 UK와 부딪히지 않음 |
 | 자동 생성 성취기준 (기준안) | 그 학년이 속한 학년군 표에서 `SOLVE`는 수학, 나머지는 국어. 같은 학년 최근 4주 초안에 쓴 코드는 빼고 무작위 1개. 초3·초4 따져 보기는 서술. #536에서 후보를 학기 대응표의 그 학년·학기로 거름(35장, RAG 안 씀) | P15 국어 우선, 문제 해결하기 수학 예외 |
 | 빈 유형·빈 주제 | 관리자가 고르지 않은 유형은 자동 규칙으로 채워 `input`에 저장. 주제가 비면 주제 씨앗으로 채움 | ai 요청은 유형 5개가 다 있어야 함 |
 | 주간 자동 | 수요일 03:00 KST(`app.theme-draft.weekly-cron`)에 다음 주 초안. 그 학년·주에 게시 테마가 있으면 만들지 않음. 학년마다 실패 격리 | 쓰지 않을 초안에 ai 비용을 쓰지 않게 |
@@ -1153,3 +1192,40 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 
 - 학생 응답 칸 이름·모양: `clueFeature`·`clueFacts`는 이슈 본문 이름을 따랐고, `clueFacts`의 모양(`[{candidate, value}]`)과 엔딩 뒤 전체 표 칸 이름(`features`, ai·관리자와 같게)은 새로 정한 값(웹 #589·#487이 소비)
 - 관리자 수정 때 이어받기 규칙(후보가 바뀌면 표를 버림)과 정답 논리 검사 범위(같은 값 후보가 갈리지 않음까지)
+
+## 40. 주간 테마 초안 부분 다시 생성 learning (#537, 2026-11-17)
+
+관리자가 영상 하나·그림 하나·요일 미션 하나만 골라 다시 만들게 한다. 다시 생성 본문에 선택 칸 `targets`를 더했고, 없으면 지금처럼 전체를 새로 만든다. 계약은 사용자 결정(2026-11-17)을 따랐다. core·web·ai는 이 절 밖이고(같은 PR, [core-gateway 15.1](core-gateway.md)·[frontend](frontend.md)·[ai 21장](ai.md#21-주간-테마-초안-부분-다시-생성-537-2026-11-17)), 계약 문서는 learning OpenAPI regenerate 본문 `ThemeDraftRegenerateRequest`·`ThemeDraft`(`input.regenerate`·`regenerableTargets`, 둘 다 필수 칸이고 값은 null·빈 배열일 수 있음)·`ThemeRegenTarget`, api-spec 2.8·4.1, state-diagram 3.5.1, ERD `theme_draft` 설명.
+
+### 정한 것
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 결과 | 부분 다시 생성도 새 초안(202, `source = ADMIN`, attempts 0). 원래 초안은 그대로 | 사용자 결정. 같은 초안에 덮으면 `GENERATING`으로 되돌리는 새 전이가 필요하고, 검사 실패 때 멀쩡한 결과를 실패 결과로 덮어 채택할 수 없게 됨. 감사 대상도 지금처럼 새 draftId |
+| 본문 | `{}`·`targets` 없음·`{"targets": null}`은 전체. `{"targets": [...]}`는 부분: 1개 이상, 문자열, 아래 14개 값만, 겹치면 처음 한 번(순서 유지). 그 밖은 `400 VALIDATION_FAILED` | `targets: null`을 전체로 본 것은 이 구현에서 정함(ai 담당 세션 확인) |
+| 대상 값 14개 | `VIDEO:INTRO`·`VIDEO:OUTRO`, `IMAGE:INTRO`·`IMAGE:OUTRO`, `IMAGE:MON`~`IMAGE:FRI`, `MISSION:MON`~`MISSION:FRI` (`ThemeDraftRules.REGEN_TARGETS`) | ai와 같은 값. 같이 바뀌는 범위(움직임·컷 그림·대화·글 검토)는 ai가 정함 |
+| 재료 없음 | 원래 초안 상태가 `GENERATING`·`ADOPTED`면 지금처럼 409. 대상 중 하나라도 원래 초안 `output.regen.targets`에 없으면 `409 CONFLICT`(detail에 그 대상). 이 기능 전 초안은 regen이 없어 모든 대상이 409이고 전체 다시 생성은 됨 | 요청 그 자리에서 거절(사용자 결정) |
+| 원래 초안·대상 위치 | 새 초안 `input.regenerate = {baseDraftId, targets}`(`ThemeDraftRegenerate`, NULL 허용). 칼럼·ERD 변경 없음 | 사용자 결정. `findInputs`·`findWeekInputs`(자동 성취기준·주제 씨앗)는 `input`의 미션 코드·주제만 읽어 영향 없음 |
+| 부분 결과에서 다시 생성 | 부분 결과 초안을 다시 부분 생성하면 `baseDraftId`는 그 부분 결과 초안. 전체 다시 생성(`{}`)이면 새 초안 `input.regenerate`를 비워 처음부터 | 부분 결과 output도 완전한 결과라 다시 재료가 됨 |
+| 재료 저장 | ai 응답 선택 칸 `regen`을 열어 보지 않고 `theme_draft.output.regen`(`Map`)에 그대로 저장. learning은 `regen.targets`(문자열만)만 읽음. 예전 행·글 단계 전 실패는 null | 사용자 결정. 보관 기간은 따로 지우지 않음 |
+| ai 요청 | 생성 작업(`generateNext`)이 `input.regenerate`가 있으면 원래 초안 output을 읽어 `regenerate: {targets, base}`로 넣음. 전체 생성 때는 칸 자체를 보내지 않음(`NON_NULL`, 기존 요청 JSON 그대로). `previousFailures`는 새 초안 자기 실패 그대로 | `base`는 learning이 저장한 `ThemeDraftOutput`을 다시 직렬화한 값이라, 저장할 때 learning 모델에 없던 ai 칸은 빠져 있음. ai 전용 재료는 모두 `regen` 안에 둠(ai 담당 세션 확인) |
+| 원래 초안·재료가 없을 때 | ai를 부르지 않고 learning 검사 실패 1회(stage `LEARNING`, 사유 `BASE_MISSING 원래 초안 {id}의 생성 결과·재료(regen) 없음`). output·버전은 지우지 않고, 상한(3회)이면 `CHECK_FAILED` | 다시 시도해도 결과가 같지만 상태 규칙을 하나로 두려고 그대로 셈. 원래 초안은 지우는 경로가 없어 데이터가 어긋났을 때만 생김 |
+| 응답 | `input.regenerate`(없으면 칸을 빼지 않고 null), `regenerableTargets`(상태가 `READY`·`CHECK_FAILED`·`FAILED`·`DISCARDED`이고 regen.targets가 있으면 그 목록, 아니면 빈 배열). `draft`(theme·missions·dialogues·warnings)에는 regen을 넣지 않음 | 관리자 화면이 장면별 버튼을 켤지 정함 |
+
+### 기존 코드와 다르게 한 것
+
+- `ThemeDraftAttempt.CheckFailed`의 output·versions를 NULL 허용으로 바꿈. null이면 이전 결과·버전을 그대로 둠(`BASE_MISSING`처럼 ai를 부르기 전에 끝난 검사 실패). ai 결과가 있는 검사 실패는 지금처럼 덮어씀
+- 컨트롤러 regenerate는 본문을 읽기만 하고 쓰지 않던 것을 `targets`만 읽게 바꿈. 채택·버리기 본문은 그대로 쓰지 않음
+- 이슈 본문과 다른 점: `target` 하나 → `targets` 목록, 재료 위치는 "ai 응답의 비공개 묶음을 learning이 저장"(`regen`) 쪽, 결과는 새 초안
+
+### 시험
+
+- `ThemeDraftTest`: 부분 다시 생성 새 초안·`input.regenerate`, 상태별 `regenerableTargets`, 대상 밖·regen 없음·결과 없음 409(전체는 됨), 생성 중·채택 409, 부분 결과의 부분·전체 다시 생성, regen targets 문자열만, 결과 없는 검사 실패가 이전 결과·버전 유지, 대상 14개
+- `AdminThemeDraftControllerTest`: 겹친 대상 한 번만 넘김, 응답 `input.regenerate`·`regenerableTargets`, `targets: null` 전체·`"regenerate":null`, 빈 목록·문자열·숫자·null 원소·모르는 값·소문자 400(서비스 안 부름). 기존 `{}` 시험 그대로
+- `ThemeDraftServiceTest`(PostgreSQL): 원래 regen 대상만 받음(밖은 409), 생성 작업이 원래 output(regen 포함)을 `base`로 넘기고 새 regen까지 저장·`regenerableTargets`, 원래 초안 그대로, 부분 결과에서 다시 부분·전체. 원래 초안 없음·regen 없음은 ai를 부르지 않고 `BASE_MISSING` 3회 뒤 `CHECK_FAILED`. 예전 행(`input`에 `regenerate`, `output`에 `regen` 칸 없음) 읽기·부분 409·전체 됨
+- `ThemeDraftAiClientTest`: `regenerate`의 대상·`base`(7칸 + regen) 직렬화, 응답 `regen` 그대로 읽기, regen 없는 응답 null. 기존 요청 JSON 엄격 비교 시험(칸 없음) 그대로 통과
+
+### 남은 것
+
+- 실서버(core·learning·ai)에서 부분 다시 생성 → 그 장면만 바뀐 새 초안 확인(AI 비용이 들어 사용자 확인 뒤)
+- ai IAM `s3:GetObject`는 정책 파일만 이 PR에서 고치고 AWS 적용은 #652(담당 확인 2026-11-17)

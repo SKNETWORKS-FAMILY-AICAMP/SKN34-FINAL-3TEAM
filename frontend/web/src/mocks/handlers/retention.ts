@@ -460,8 +460,15 @@ export const retentionHandlers = [
   http.get('/api/v1/admin/look-items', ({ request }) =>
     respond(async () => {
       allow(request, 'CONTENT')
-      const items = retentionState.items
-      return { items, page: 0, size: items.length, totalElements: items.length }
+      const params = new URL(request.url).searchParams
+      const slot = params.get('slot')
+      if (slot && !(ALL_ITEM_SLOTS as string[]).includes(slot)) fail(422, 'VALIDATION_FAILED', '칸을 확인해 주세요.')
+      const page = Number(params.get('page') ?? 0), size = Number(params.get('size') ?? 20)
+      if (!Number.isSafeInteger(page) || page < 0 || !Number.isSafeInteger(size) || size < 1 || size > 100)
+        fail(400, 'VALIDATION_FAILED', '페이지와 크기를 확인해 주세요.')
+      const items = retentionState.items.filter((i) => !slot || i.slot === slot)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.itemId.localeCompare(b.itemId))
+      return { items: items.slice(page * size, (page + 1) * size), page, size, totalElements: items.length }
     }),
   ),
   http.post('/api/v1/admin/look-items', ({ request }) =>

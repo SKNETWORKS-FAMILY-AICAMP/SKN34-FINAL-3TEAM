@@ -19,7 +19,7 @@ async function openReport(page: Page, kind: '일일 리포트' | '주간 리포�
     await page.reload()
     await expect(card.getByText('생성 완료')).toBeVisible({ timeout: 5_000 })
   }).toPass({ timeout: 180_000, intervals: [3_000] })
-  await card.getByRole('button', { name: '리포트 상세 보기' }).click()
+  await card.getByRole('button', { name: '리포트 보기' }).click()
 }
 
 test('프리미엄 학생 서술 답·되묻기 → 일일 리포트 문제 기록 → 주간 리포트 대표 답변 설명', async ({ browser, context, page, baseURL }) => {

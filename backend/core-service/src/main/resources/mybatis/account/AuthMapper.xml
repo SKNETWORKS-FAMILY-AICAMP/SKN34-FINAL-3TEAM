@@ -50,8 +50,12 @@
     </select>
     <select id="findGoogleAccount" resultMap="account">
         SELECT id, role, login_id, display_name, status, oauth_subject FROM user_account
-        WHERE oauth_provider = 'GOOGLE' AND oauth_subject = #{subject}
+        WHERE oauth_provider = 'GOOGLE' AND oauth_subject = #{subject} FOR UPDATE
     </select>
+    <update id="updateGoogleEmail">
+        UPDATE user_account SET login_id = #{email}, updated_at = #{now}
+        WHERE id = #{id} AND oauth_provider = 'GOOGLE' AND role = 'PARENT'
+    </update>
     <insert id="insertAccount">
         INSERT INTO user_account(id, role, login_id, password_hash, display_name, status, is_demo,
                                  oauth_provider, oauth_subject, created_at, updated_at)

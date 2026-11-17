@@ -14,6 +14,7 @@ import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.theme.client.AiThemeDraftRequest
 import com.sagomungchi.learning.theme.client.AiThemeElementCode
 import com.sagomungchi.learning.theme.client.AiThemeMission
+import com.sagomungchi.learning.theme.client.AiThemeRegenerate
 import com.sagomungchi.learning.theme.client.AiThemeStandard
 import com.sagomungchi.learning.theme.client.ThemeDraftAiClient
 import com.sagomungchi.learning.theme.domain.AdminWeeklyTheme
@@ -129,11 +130,14 @@ class ThemeDraftService(
         }
     }
 
-    /** 다시 생성: 원래 초안을 잠그고 같은 input·학년·주로 새 초안(ADMIN). GENERATING·ADOPTED면 409 */
+    /**
+     * 다시 생성: 원래 초안을 잠그고 같은 input·학년·주로 새 초안(ADMIN). GENERATING·ADOPTED면 409.
+     * targets가 있으면 부분 다시 생성(#537): 원래 초안 regen.targets 밖 대상이 있으면 409, 새 초안 input.regenerate에 원래 초안·대상
+     */
     @Transactional
-    fun regenerate(draftId: UUID, author: UUID): ThemeDraft {
+    fun regenerate(draftId: UUID, author: UUID, targets: List<String>? = null): ThemeDraft {
         val original = repository.findById(draftId, lock = true) ?: notFound()
-        val draft = original.regenerate(UUID.randomUUID(), author, now())
+        val draft = original.regenerate(UUID.randomUUID(), author, now(), targets)
         repository.insert(draft)
         return draft
     }
@@ -215,13 +219,23 @@ class ThemeDraftService(
             requestedBy = draft.requestedBy,
             createdAt = draft.createdAt,
             updatedAt = draft.updatedAt,
+            regenerableTargets = draft.regenerableTargets,
         )
     }
 
-    /** ai 200의 failure는 검사 실패 그대로, failure가 없으면 learning 검사(실패는 LEARNING 한 묶음) */
+    /**
+     * ai 200의 failure는 검사 실패 그대로, failure가 없으면 learning 검사(실패는 LEARNING 한 묶음).
+     * 부분 다시 생성(#537)인데 원래 초안이나 그 output·regen이 없으면 ai를 부르지 않고 LEARNING `BASE_MISSING` 검사 실패
+     */
     private fun attempt(draft: ThemeDraft, standards: Map<String, AchievementStandard>): ThemeDraftAttempt {
+        val regenerate = draft.input.regenerate?.let { spec ->
+            val base = repository.findById(spec.baseDraftId)?.output?.takeIf { it.regen != null }
+                ?: return ThemeDraftAttempt.CheckFailed(null, listOf(ThemeFailure(ThemeDraft.LEARNING,
+                    listOf("${ThemeDraftRules.BASE_MISSING} 원래 초안 ${spec.baseDraftId}의 생성 결과·재료(regen) 없음"))), null)
+            AiThemeRegenerate(spec.targets, base)
+        }
         val response = try {
-            aiClient.generate(aiRequest(draft, standards))
+            aiClient.generate(aiRequest(draft, standards, regenerate))
         } catch (error: AiCallException) {
             log.warn("theme draft {} ai call failed: {}", draft.id, error.failureCode)
             return ThemeDraftAttempt.AiFailed(error.failureCode)
@@ -236,8 +250,11 @@ class ThemeDraftService(
         }
     }
 
-    /** ai 입력: 학년(gradeMin = gradeMax)·적용 주·주제, 유형마다 성취기준 문장·표준 요소·입력 방식, 이전 실패. 학생 정보 없음 */
-    private fun aiRequest(draft: ThemeDraft, standards: Map<String, AchievementStandard>) = AiThemeDraftRequest(
+    /**
+     * ai 입력: 학년(gradeMin = gradeMax)·적용 주·주제, 유형마다 성취기준 문장·표준 요소·입력 방식, 이전 실패. 학생 정보 없음.
+     * 부분 다시 생성이면 대상과 원래 초안 output(#537)
+     */
+    private fun aiRequest(draft: ThemeDraft, standards: Map<String, AchievementStandard>, regenerate: AiThemeRegenerate?) = AiThemeDraftRequest(
         gradeMin = draft.grade.grade,
         gradeMax = draft.grade.grade,
         weekStart = draft.weekStart,
@@ -251,6 +268,7 @@ class ThemeDraftService(
             )
         },
         previousFailures = draft.previousFailures,
+        regenerate = regenerate,
     )
 
     /**

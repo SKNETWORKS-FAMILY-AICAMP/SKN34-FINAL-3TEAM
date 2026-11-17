@@ -76,9 +76,11 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         call("POST", "/api/v1/students/me/look-items/$itemKey/unlock", studentToken, key = key, expected = expected)
     private fun purchase(itemKey: String, key: String = UUID.randomUUID().toString(), expected: Int = 200, snapshot: String? = null) =
         call("POST", "/api/v1/students/me/look-items/$itemKey/purchase", studentToken, key = key, expected = expected, snapshot = snapshot)
-    private fun spots(vararg spots: Pair<Int, String>, expected: Int = 200, snapshot: String? = null) =
+    private fun cell(surface: String, col: Int, row: Int, itemKey: String) =
+        mapOf("surface" to surface, "col" to col, "row" to row, "itemKey" to itemKey)
+    private fun spots(vararg spots: Map<String, Any>, expected: Int = 200, snapshot: String? = null) =
         call("PUT", "/api/v1/students/me/room/decor-spots", studentToken,
-            mapOf("spots" to spots.map { mapOf("spotNo" to it.first, "itemKey" to it.second) }), expected = expected, snapshot = snapshot)
+            mapOf("spots" to spots.toList()), expected = expected, snapshot = snapshot)
     private fun stop(code: String) {
         val id = jdbc.queryForObject("SELECT id FROM look_item WHERE code=?", UUID::class.java, code)
         call("PATCH", "/api/v1/admin/look-items/$id", contentAdmin().second, mapOf("status" to "STOPPED"))
@@ -363,37 +365,60 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM student_room_decor WHERE student_id=?", Int::class.java, student))
     }
 
-    @Test fun `decor spots hold owned room decor only and replace the whole room`() {
+    @Test fun `decor grid holds owned items only and rejects invalid replacements atomically`() {
         val path = "/api/v1/students/me/room/decor-spots"
         assertEquals(0, call("GET", path, studentToken)["spots"].size())
         val pot = item("DECOR", 10); val lamp = item("DECOR", 10); val hat = item("HAT", 10)
+        val unowned = item("DECOR", 10)
         earnMissions(5)
         repeat(2) { purchase(pot) }; purchase(lamp); unlock(hat)
-        val saved = spots(3 to pot, 1 to lamp, 8 to pot, snapshot = "decor-spots")
-        assertEquals(listOf(1, 3, 8), saved["spots"].map { it["spotNo"].asInt() })
+        // 같은 col/row도 면이 다르면 다른 기준 칸이다. 응답은 면 순으로 정렬한다.
+        val saved = spots(cell("WALL_LEFT", 0, 0, pot), cell("FLOOR", 0, 0, lamp), cell("WALL_BACK", 0, 0, pot), snapshot = "decor-spots")
+        assertEquals(listOf("FLOOR", "WALL_BACK", "WALL_LEFT"), saved["spots"].map { it["surface"].asText() })
         assertEquals(listOf(lamp, pot, pot), saved["spots"].map { it["itemKey"].asText() })
+        assertEquals(setOf("surface", "col", "row", "itemKey", "name", "assetKey"), saved["spots"][0].fieldNames().asSequence().toSet())
         assertEquals("검증 모자", saved["spots"][0]["name"].asText()); assertEquals("look/$lamp.png", saved["spots"][0]["assetKey"].asText())
         assertEquals(saved, call("GET", path, studentToken))
-        // 보유보다 많이·없는 자리·같은 자리·방 소품 아님·모르는 코드·9개·빈 칸은 422이고 이전 자리 유지
-        val bad = listOf(
-            mapOf("spots" to listOf(1, 2, 3).map { mapOf("spotNo" to it, "itemKey" to pot) }),
-            mapOf("spots" to listOf(mapOf("spotNo" to 9, "itemKey" to lamp))),
-            mapOf("spots" to listOf(mapOf("spotNo" to 0, "itemKey" to lamp))),
-            mapOf("spots" to listOf(mapOf("spotNo" to 2, "itemKey" to lamp), mapOf("spotNo" to 2, "itemKey" to pot))),
-            mapOf("spots" to listOf(mapOf("spotNo" to 2, "itemKey" to hat))),
-            mapOf("spots" to listOf(mapOf("spotNo" to 2, "itemKey" to "NO_SUCH"))),
-            mapOf("spots" to (1..9).map { mapOf("spotNo" to it, "itemKey" to lamp) }),
-            mapOf("spots" to listOf(mapOf("spotNo" to 2))),
-            mapOf("other" to 1))
-        for (body in bad)
+        val valid = cell("FLOOR", 2, 3, lamp)
+        val bad: List<Any> = listOf(
+            mapOf("spots" to listOf(1, 2, 3).map { cell("FLOOR", it, 0, pot) }),
+            mapOf("spots" to listOf(valid, valid + ("itemKey" to pot))),
+            mapOf("spots" to listOf(valid + ("itemKey" to hat))),
+            mapOf("spots" to listOf(valid + ("itemKey" to unowned))),
+            mapOf("spots" to listOf(valid + ("itemKey" to "NO_SUCH"))),
+            mapOf("spots" to (0..8).map { cell("FLOOR", it, 0, lamp) }),
+            mapOf("spots" to listOf(valid + ("itemKey" to " "))),
+            mapOf("spots" to listOf(valid + ("surface" to "WALL_RIGHT"))),
+            mapOf("spots" to listOf(valid + ("surface" to ""))),
+            mapOf("spots" to listOf(null)), mapOf("spots" to null), mapOf("other" to 1),
+            mapOf("spots" to listOf(mapOf("spotNo" to 1, "itemKey" to lamp)))
+        ) + listOf("surface", "col", "row", "itemKey").flatMap { key ->
+            listOf(mapOf("spots" to listOf(valid - key)), mapOf("spots" to listOf(valid + (key to null))))
+        } + listOf(Triple("FLOOR", 16, 12), Triple("WALL_BACK", 15, 5), Triple("WALL_LEFT", 10, 5)).flatMap { (surface, maxCol, maxRow) ->
+            listOf(-1 to 0, 0 to -1, maxCol + 1 to 0, 0 to maxRow + 1).map { (col, row) ->
+                mapOf("spots" to listOf(cell(surface, col, row, lamp)))
+            }
+        }
+        for (body in bad) {
             assertEquals("VALIDATION_FAILED", call("PUT", path, studentToken, body, expected = 422)["code"].asText(), body.toString())
-        assertEquals(saved, call("GET", path, studentToken))
-        // 판매 중단돼도 가진 방 소품은 놓을 수 있고, 빈 목록은 모두 치운다
+            assertEquals(saved, call("GET", path, studentToken), body.toString())
+        }
+        // 판매 중단돼도 가진 방 소품은 경계 칸에 놓을 수 있고 빈 목록은 모두 치운다.
         stop(pot)
-        assertEquals(listOf(2), spots(2 to pot)["spots"].map { it["spotNo"].asInt() })
+        assertEquals(10, spots(cell("WALL_LEFT", 10, 5, pot))["spots"][0]["col"].asInt())
         assertEquals(0, spots()["spots"].size())
         call("GET", path, parentToken, expected = 403)
         call("PUT", path, parentToken, mapOf("spots" to emptyList<Any>()), expected = 403)
+    }
+
+    @Test fun `eight placements round trip at grid boundaries sorted by surface row then col`() {
+        val decor = item("DECOR", 1)
+        earnMissions(1); repeat(8) { purchase(decor) }
+        val cells = listOf(Triple("FLOOR", 0, 0), Triple("FLOOR", 16, 0), Triple("FLOOR", 0, 1), Triple("FLOOR", 16, 12),
+            Triple("WALL_BACK", 0, 0), Triple("WALL_BACK", 15, 5), Triple("WALL_LEFT", 0, 0), Triple("WALL_LEFT", 10, 5))
+        val saved = spots(*cells.reversed().map { (surface, col, row) -> cell(surface, col, row, decor) }.toTypedArray())
+        assertEquals(cells, saved["spots"].map { Triple(it["surface"].asText(), it["col"].asInt(), it["row"].asInt()) })
+        assertEquals(saved, call("GET", "/api/v1/students/me/room/decor-spots", studentToken))
     }
 
     @Test fun `admin items need CONTENT, validate input, keep codes unique and audit every change`() {
@@ -431,7 +456,7 @@ class RewardIntegrationTest : IntegrationTestSupport() {
 
     @Test fun `student deletion removes ledger, balance, unlocks, equipment and frame slots`() {
         earnMissions(4); val hat = item("HAT", 10); unlock(hat); val desk = item("DESK", 10); unlock(desk)
-        val decor = item("DECOR", 10); purchase(decor); spots(1 to decor)
+        val decor = item("DECOR", 10); purchase(decor); spots(cell("WALL_LEFT", 10, 5, decor))
         call("PUT", "/api/v1/students/me/preferences", studentToken, mapOf("theme" to "lake", "companion" to "mungchi", "equipped" to mapOf("HAT" to hat, "DESK" to desk)))
         jdbc.update("INSERT INTO room_frame_slot(student_id,slot_no,theme_id,theme_week_start,saved_at) VALUES(?,1,?,DATE '2026-11-02',now())", student, UUID.randomUUID())
         TransactionTemplate(manager).executeWithoutResult { looks.clear(student) }
@@ -454,13 +479,23 @@ class RewardIntegrationTest : IntegrationTestSupport() {
                 UUID.randomUUID(), "DB_${slot}_" + UUID.randomUUID().toString().take(8).uppercase(), slot, "ON_SALE", admin)
         assertFails { jdbc.update("INSERT INTO look_item(id,code,slot,name,price_points,asset_key,status,created_by,created_at,updated_at) VALUES(?,'DB_ROOM_X','ROOM','x',1,'','ON_SALE',?,now(),now())",
             UUID.randomUUID(), admin) }
-        // #704 V50: 바닥·방 소품 칸은 아이템에 허용, 방 소품은 착용 슬롯이 아니고 자리는 1~8
+        // #704 V50: 바닥·방 소품 칸은 아이템에 허용, 방 소품은 착용 슬롯이 아니고 면·칸은 V51 제약
         val ids = listOf("FLOOR", "DECOR").associateWith { slot -> UUID.randomUUID().also {
             jdbc.update("INSERT INTO look_item(id,code,slot,name,price_points,asset_key,status,created_by,created_at,updated_at) VALUES(?,?,?,'방',1,'','ON_SALE',?,now(),now())",
                 it, "DB_${slot}_" + UUID.randomUUID().toString().take(8).uppercase(), slot, admin) } }
         assertEquals(1, jdbc.update("INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at) VALUES(?,'FLOOR',?,now())", student, ids["FLOOR"]))
         assertFails { jdbc.update("INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at) VALUES(?,'DECOR',?,now())", student, ids["DECOR"]) }
-        for (no in listOf(0, 9)) assertFails { jdbc.update("INSERT INTO room_decor_spot(student_id,spot_no,look_item_id,saved_at) VALUES(?,?,?,now())", student, no, ids["DECOR"]) }
-        assertEquals(1, jdbc.update("INSERT INTO room_decor_spot(student_id,spot_no,look_item_id,saved_at) VALUES(?,8,?,now())", student, ids["DECOR"]))
+        fun insert(surface: String?, col: Int?, row: Int?) = jdbc.update(
+            "INSERT INTO room_decor_spot(student_id,surface,cell_col,cell_row,look_item_id,saved_at) VALUES(?,?,?,?,?,now())",
+            student, surface, col, row, ids["DECOR"])
+        for ((surface, maxCol, maxRow) in listOf(Triple("FLOOR", 16, 12), Triple("WALL_BACK", 15, 5), Triple("WALL_LEFT", 10, 5))) {
+            assertEquals(1, insert(surface, 0, 0))
+            assertEquals(1, insert(surface, maxCol, maxRow))
+            for ((col, row) in listOf(-1 to 0, 0 to -1, maxCol + 1 to 0, 0 to maxRow + 1))
+                assertFails { insert(surface, col, row) }
+            assertFails { insert(surface, 0, 0) }
+        }
+        assertFails { insert("WALL_RIGHT", 0, 0) }
+        assertFails { insert(null, 0, 0) }; assertFails { insert("FLOOR", null, 0) }; assertFails { insert("FLOOR", 0, null) }
     }
 }

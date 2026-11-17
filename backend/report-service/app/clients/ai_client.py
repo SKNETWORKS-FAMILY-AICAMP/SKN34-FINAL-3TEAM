@@ -7,6 +7,8 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 from pydantic.alias_generators import to_camel
 
+from app.config import get_settings
+
 
 class ResponseModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, extra="forbid")
@@ -59,7 +61,11 @@ class AiClient:
         self._client = client
 
     async def narrative(self, payload: dict) -> NarrativeResponse:
-        response = await self._client.post("/internal/report-narratives", json=payload)
+        response = await self._client.post(
+            "/internal/report-narratives",
+            json=payload,
+            timeout=get_settings().report_narrative_timeout_seconds,
+        )
         response.raise_for_status()
         return NarrativeResponse.model_validate(response.json())
 

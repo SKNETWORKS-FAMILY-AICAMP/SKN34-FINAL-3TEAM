@@ -4,7 +4,7 @@ from app.bootstrap import create_app
 from app.llm.providers import get_explanation_llm, get_llm
 from app.prompt_versions.registry import ActiveVersions
 from tests.fakes import FakeLlm
-from tests.report_explanation.test_service import BODY, active
+from tests.report_explanation.test_service import BODY, active, detail
 
 HEADERS = {"X-Internal-Token": "test-token"}
 
@@ -24,15 +24,25 @@ def post(
 
 
 def test_active_response_uses_camel_case_and_nullable_quote() -> None:
-    response = post(FakeLlm("글자를 바르게 씀.", "문단을 나누지 않음."))
+    llm = FakeLlm(
+        detail(
+            analysis="글자를 바르게 썼습니다.",
+            improvement_points=None,
+            next_steps="앞으로 문단을 나눠 보게 해 주세요.",
+        )
+    )
+    response = post(llm)
     assert response.status_code == 200
     assert response.json() == {
         "active": True,
         "explanation": {
-            "text": "잘한 점: 글자를 바르게 씀.\n함께 이야기해 볼 점: 문단을 나누지 않음.",
+            "text": (
+                "상세 분석\n글자를 바르게 썼습니다.\n\n"
+                "개선 방안\n앞으로 문단을 나눠 보게 해 주세요."
+            ),
             "quote": None,
         },
-        "versions": {"model": "report-explanation@lora-1", "prompt": "report-explanation@1"},
+        "versions": {"model": "report-explanation@lora-1", "prompt": "report-explanation@3"},
     }
 
 
@@ -51,7 +61,7 @@ def test_scores_must_match_input_type_and_range() -> None:
 
 
 def test_rejected_and_unavailable_problems() -> None:
-    rejected = post(FakeLlm("4점.", "끝."))
+    rejected = post(FakeLlm(detail(analysis="4점짜리 글입니다.")))
     assert rejected.status_code == 422
     assert rejected.json()["code"] == "AI_EXPLANATION_REJECTED"
     assert rejected.json()["retryable"] is False

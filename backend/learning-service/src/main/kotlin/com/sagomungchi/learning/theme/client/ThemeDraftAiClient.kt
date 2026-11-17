@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.theme.client
 
 import com.fasterxml.jackson.annotation.JsonFormat
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.config.InternalRestClientFactory
@@ -35,7 +36,13 @@ data class AiThemeDraftRequest(
     val topic: String?,
     val missions: List<AiThemeMission>,
     val previousFailures: List<ThemeFailure>,
+    /** 부분 다시 생성 (#537). 전체 생성은 칸을 보내지 않음(기존 요청 모양 그대로) */
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val regenerate: AiThemeRegenerate? = null,
 )
+
+/** 부분 다시 생성 (#537): 다시 만들 대상과 원래 초안 output 그대로(regen 포함) */
+data class AiThemeRegenerate(val targets: List<String>, val base: ThemeDraftOutput)
 
 data class AiThemeMission(
     val thinkingType: ThinkingType,
@@ -52,7 +59,10 @@ data class AiThemeStandard(val code: String, val statement: String)
 
 data class AiThemeElementCode(val code: String, val label: String, val description: String)
 
-/** ai 응답: 끝내 실패하면 failure(THEME·MISSION·REVIEW·IMAGE)를 담은 200, theme은 그때 null일 수 있음 */
+/**
+ * ai 응답: 끝내 실패하면 failure(THEME·MISSION·REVIEW·IMAGE)를 담은 200, theme은 그때 null일 수 있음.
+ * regen은 부분 다시 생성 재료(#537, 선택 칸): 열어 보지 않고 output에 그대로 저장
+ */
 data class AiThemeDraftResponse(
     val theme: GeneratedTheme?,
     val missions: List<GeneratedThemeMission>,
@@ -63,9 +73,10 @@ data class AiThemeDraftResponse(
     val warnings: List<ThemeWarning>,
     val failure: ThemeFailure?,
     val versions: DraftVersions,
+    val regen: Map<String, Any?>? = null,
 ) {
     /** 저장할 생성 결과 (failure·versions는 check_results·버전 칼럼으로) */
-    fun output() = ThemeDraftOutput(theme, missions, dialogues, images, videos, motions, warnings)
+    fun output() = ThemeDraftOutput(theme, missions, dialogues, images, videos, motions, warnings, regen)
 }
 
 /**

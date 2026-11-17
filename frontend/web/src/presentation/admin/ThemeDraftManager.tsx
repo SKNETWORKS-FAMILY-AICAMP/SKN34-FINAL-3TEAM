@@ -12,13 +12,17 @@ import { covers } from '../../domain/admin/missionStandards.ts'
 import type { AchievementStandard } from '../../domain/admin/missionStandards.ts'
 import {
   failureStageLabels,
+  regenButtonLabels,
+  regenConfirmText,
+  regenKindsOf,
+  regenTargetLabel,
   sceneLabels,
   themeDraftActions,
   themeDraftLabels,
   themeDraftRequestErrors,
   themeDraftSourceLabels,
 } from '../../domain/admin/themeDrafts.ts'
-import type { ThemeDraft, ThemeDraftRequest, ThemeSceneName } from '../../domain/admin/themeDrafts.ts'
+import type { RegenKind, RegenTarget, ThemeDraft, ThemeDraftRequest, ThemeSceneName } from '../../domain/admin/themeDrafts.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ThemeMotionPlayer } from '../common/ThemeMotionPlayer.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
@@ -35,6 +39,10 @@ const nextMonday = () => {
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'short' }) : '—')
 const actionLabels = { adopt: '채택', discard: '버리기', regenerate: '다시 생성' } as const
 type DraftAction = keyof typeof actionLabels
+/** 확인 대기 중인 동작. target이 있으면 부분 다시 생성(#537): 확인 창·결과 안내를 그 장면 칸에 띄운다 */
+type Pending = { action: DraftAction; target?: RegenTarget }
+const sceneOfTarget = (target: RegenTarget | null | undefined) => (target ? (target.split(':')[1] as ThemeSceneName) : null)
+const kindOfTarget = (target: RegenTarget) => target.split(':')[0] as RegenKind
 
 /**
  * 테마 초안 요청·목록·상세(#441, FN-ADM-22, api-spec 2.8). 채택은 게시가 아니다: 미션 5개 `DRAFT`·테마 `DRAFT`를 만들고
@@ -68,7 +76,7 @@ export function ThemeDraftManager() {
       <div className="ad-table-wrap"><table className="ad-table"><thead><tr><th>학년</th><th>적용 주</th><th>출처</th><th>처리 상태</th><th>시도</th><th>요청 시각</th><th>확인</th></tr></thead>
         <tbody>{rows.map(d => <tr key={d.draftId} className={selected === d.draftId ? 'is-selected' : ''}>
           <td>{d.grade ? THEME_GRADE_LABELS[d.grade] : '—'}</td><td>{d.weekStart ?? '—'}</td>
-          <td>{d.source ? themeDraftSourceLabels[d.source] : '—'}</td>
+          <td>{d.source ? themeDraftSourceLabels[d.source] : '—'}{d.input.regenerate ? ' · 부분' : ''}</td>
           <td><Badge active={d.status === 'READY'}>{themeDraftLabels[d.status]}</Badge></td>
           <td>{d.maxAttempts ? `${d.attempts}/${d.maxAttempts}` : d.attempts}</td><td>{when(d.createdAt)}</td>
           <td><button aria-label={`${d.weekStart ?? d.draftId} ${d.grade ? THEME_GRADE_LABELS[d.grade] : ''} 초안 열기`} onClick={() => choose(d.draftId)}>열기</button></td>
@@ -89,20 +97,25 @@ function ThemeDraftDetail({ draftId, onOpen }: { draftId: string; onOpen: (draft
   const detail = useAdminQuery(['theme-draft', draftId], signal => api.themeDraft(draftId, signal), true,
     data => data?.status === 'GENERATING' ? POLL_MS : false)
   const [still, setStill] = useState(false)
-  const [confirm, setConfirm] = useState<DraftAction | null>(null)
+  const [confirm, setConfirm] = useState<Pending | null>(null)
   const [notice, setNotice] = useState('')
-  const act = useAdminMutation(async (action: DraftAction) => {
+  const [lastTarget, setLastTarget] = useState<RegenTarget | null>(null) // 결과 안내를 띄울 장면(없으면 맨 아래)
+  const act = useAdminMutation(async ({ action, target }: Pending) => {
     if (action === 'adopt') return { kind: action, themeId: (await api.adoptThemeDraft(draftId)).themeId }
-    return { kind: action, draft: await api.themeDraftAction(draftId, action) }
+    return { kind: action, draft: await api.themeDraftAction(draftId, action, target ? [target] : undefined) }
   })
   const d = detail.error ? undefined : detail.data
   const conflict = act.error instanceof ApiError && act.error.problem.status === 409
   const uncertain = act.error && (!(act.error instanceof ApiError) || act.error.problem.status >= 500)
-  function run(action: DraftAction) {
-    setNotice(''); setConfirm(null)
-    void act.mutateAsync(action).then(result => {
+  function run(pending: Pending) {
+    setNotice(''); setConfirm(null); setLastTarget(pending.target ?? null)
+    void act.mutateAsync(pending).then(result => {
       if ('themeId' in result && result.themeId) { navigate('/admin/themes?themeId=' + encodeURIComponent(result.themeId)); return }
-      if (result.kind === 'regenerate' && 'draft' in result && result.draft) { setNotice('같은 입력으로 새 초안을 요청했습니다. 새 초안을 엽니다.'); onOpen(result.draft.draftId); return }
+      if (result.kind === 'regenerate' && 'draft' in result && result.draft) {
+        setNotice(pending.target ? `${regenTargetLabel(pending.target)}만 다시 만드는 새 초안을 요청했습니다. 새 초안을 엽니다.`
+          : '같은 입력으로 새 초안을 요청했습니다. 새 초안을 엽니다.')
+        onOpen(result.draft.draftId); return
+      }
       setNotice('초안을 버렸습니다.')
     }).catch(() => {})
   }
@@ -111,11 +124,36 @@ function ThemeDraftDetail({ draftId, onOpen }: { draftId: string; onOpen: (draft
   const theme = d.draft?.theme ?? null
   const sceneOf = (name: ThemeSceneName) => d.scenes.find(s => s.scene === name) ?? null
   const failures = d.checkResults.flatMap(r => r.failures.map(f => ({ attempt: r.attempt, ...f })))
+  const confirmBox = (at: ThemeSceneName | null) => confirm && sceneOfTarget(confirm.target) === at &&
+    <div className="ad-note" role="alertdialog" aria-label={`${confirm.target ? regenTargetLabel(confirm.target) + ' 다시 만들기' : actionLabels[confirm.action]} 확인`}>
+      <p>{confirm.target ? regenConfirmText(confirm.target)
+        : confirm.action === 'adopt' ? '채택하면 미션 5개와 테마가 작성 중으로 만들어집니다. 게시는 각각 검토한 뒤 따로 합니다. 채택할까요?'
+        : confirm.action === 'discard' ? '이 초안을 버릴까요? 버린 초안은 채택할 수 없습니다.' : '같은 입력으로 새 초안을 요청할까요? 지금 초안은 그대로 남습니다.'}</p>
+      <div className="ws-actions"><button onClick={() => setConfirm(null)}>취소</button><button className={confirm.action === 'discard' ? 'ad-danger' : 'cj-primary'} disabled={act.isPending} onClick={() => run(confirm)}>{confirm.target ? '다시 만들기' : actionLabels[confirm.action]}</button></div>
+    </div>
+  const feedback = (at: ThemeSceneName | null) => sceneOfTarget(lastTarget) === at && <>
+    {conflict ? <p role="alert">초안 상태가 바뀌어 처리하지 못했습니다. 다시 확인한 뒤 진행해 주세요.</p> : <ErrorNotice error={act.error} />}
+    {uncertain && <p role="note">처리됐을 수 있습니다. 다시 누르기 전에 목록과 상태를 먼저 확인해 주세요.</p>}
+    {notice && <p role="status">{notice}</p>}
+  </>
+  /** 장면 칸의 부분 다시 생성 버튼(#537): 다시 만들 수 있는 대상만, 생성 중·채택 초안에는 없음 */
+  const sceneActions = (name: ThemeSceneName) => {
+    const targets = allowed.regenerate
+      ? regenKindsOf(name).map(kind => `${kind}:${name}` as RegenTarget).filter(t => d.regenerableTargets.includes(t)) : []
+    return <>
+      {targets.length > 0 && <div className="ad-scene-actions">{targets.map(target => <button key={target} type="button" disabled={act.isPending}
+        aria-label={`${sceneLabels[name]} ${regenButtonLabels[kindOfTarget(target)]}`}
+        onClick={() => setConfirm({ action: 'regenerate', target })}>{regenButtonLabels[kindOfTarget(target)]}</button>)}</div>}
+      {confirmBox(name)}
+      {feedback(name)}
+    </>
+  }
   return <Panel title={theme?.title ? `초안 상세 · ${theme.title}` : '초안 상세'} action={<button disabled={detail.isFetching} onClick={() => void detail.refetch()}>다시 확인</button>}>
     <dl className="ad-draft-meta">
       <dt>처리 상태</dt><dd><Badge active={d.status === 'READY'}>{themeDraftLabels[d.status]}</Badge></dd>
       <dt>학년·적용 주</dt><dd>{d.grade ? THEME_GRADE_LABELS[d.grade] : '—'} · {d.weekStart ?? '—'}</dd>
       <dt>출처</dt><dd>{d.source ? themeDraftSourceLabels[d.source] : '—'}</dd>
+      {d.input.regenerate && <><dt>부분 다시 생성</dt><dd>{d.input.regenerate.targets.map(regenTargetLabel).join(', ')}만 다시 만듦 · <button type="button" className="ad-link-button" onClick={() => onOpen(d.input.regenerate!.baseDraftId)}>원래 초안 열기</button></dd></>}
       <dt>생성 시도</dt><dd>{d.attempts}{d.maxAttempts ? ` / ${d.maxAttempts}` : ''}{d.failureCode ? ` · 마지막 실패 ${d.failureCode}` : ''}</dd>
       <dt>주제</dt><dd>{d.input.topic ?? '자동'}</dd>
       <dt>생성 버전</dt><dd>{[d.versions.prompt, d.versions.model].filter(Boolean).join(' · ') || '—'}</dd>
@@ -139,6 +177,7 @@ function ThemeDraftDetail({ draftId, onOpen }: { draftId: string; onOpen: (draft
             <h3>{sceneLabels[name]}</h3>
             <ThemeMotionPlayer imageUrl={s?.imageUrl ?? null} videoUrl={s?.videoUrl ?? null} motion={s?.motion} label={sceneLabels[name]} still={still} />
             <p className="ad-story-text">{(name === 'INTRO' ? theme?.intro : theme?.outro) || '이야기 없음'}</p>
+            {sceneActions(name)}
           </section>
         })}
       </div>
@@ -156,24 +195,19 @@ function ThemeDraftDetail({ draftId, onOpen }: { draftId: string; onOpen: (draft
             {m ? <><p><b>{m.title || '제목 없음'}</b></p><p>{m.question || '질문 없음'}</p>{m.guide && <p className="ad-muted">{m.guide}</p>}</> : <p role="note">이 요일 문제가 만들어지지 않았습니다.</p>}
             {lines.length > 0 && <details><summary>문제 전 대화 {lines.length}줄</summary><ul>{lines.map((l, i) => <li key={i}><b>{l.speaker}</b> {l.text}</li>)}</ul></details>}
             {plan?.clue && <p className="ad-muted">단서(문제 마무리 뒤): {plan.clue}{plan.rulesOut.length ? ` · 빠지는 후보 ${plan.rulesOut.join(', ')}` : ''}</p>}
+            {sceneActions(day)}
           </section>
         })}
       </div>
     </>}
     {!d.draft && d.status !== 'GENERATING' && <p role="note">생성 결과가 없습니다. 실패 사유를 확인하고 다시 생성해 주세요.</p>}
-    {confirm && <div className="ad-note" role="alertdialog" aria-label={`${actionLabels[confirm]} 확인`}>
-      <p>{confirm === 'adopt' ? '채택하면 미션 5개와 테마가 작성 중으로 만들어집니다. 게시는 각각 검토한 뒤 따로 합니다. 채택할까요?'
-        : confirm === 'discard' ? '이 초안을 버릴까요? 버린 초안은 채택할 수 없습니다.' : '같은 입력으로 새 초안을 요청할까요? 지금 초안은 그대로 남습니다.'}</p>
-      <div className="ws-actions"><button onClick={() => setConfirm(null)}>취소</button><button className={confirm === 'discard' ? 'ad-danger' : 'cj-primary'} disabled={act.isPending} onClick={() => run(confirm)}>{actionLabels[confirm]}</button></div>
-    </div>}
+    {confirmBox(null)}
     <div className="ws-actions">
-      {allowed.adopt && <button className="cj-primary" disabled={act.isPending} onClick={() => setConfirm('adopt')}>채택해서 테마 만들기</button>}
-      {allowed.regenerate && <button disabled={act.isPending} onClick={() => setConfirm('regenerate')}>다시 생성</button>}
-      {allowed.discard && <button className="ad-danger" disabled={act.isPending} onClick={() => setConfirm('discard')}>버리기</button>}
+      {allowed.adopt && <button className="cj-primary" disabled={act.isPending} onClick={() => setConfirm({ action: 'adopt' })}>채택해서 테마 만들기</button>}
+      {allowed.regenerate && <button disabled={act.isPending} onClick={() => setConfirm({ action: 'regenerate' })}>다시 생성</button>}
+      {allowed.discard && <button className="ad-danger" disabled={act.isPending} onClick={() => setConfirm({ action: 'discard' })}>버리기</button>}
     </div>
-    {conflict ? <p role="alert">초안 상태가 바뀌어 처리하지 못했습니다. 다시 확인한 뒤 진행해 주세요.</p> : <ErrorNotice error={act.error} />}
-    {uncertain && <p role="note">처리됐을 수 있습니다. 다시 누르기 전에 목록과 상태를 먼저 확인해 주세요.</p>}
-    {notice && <p role="status">{notice}</p>}
+    {feedback(null)}
   </Panel>
 }
 

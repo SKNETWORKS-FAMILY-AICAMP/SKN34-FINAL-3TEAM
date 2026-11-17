@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-17",
+  "issue": 475,
+  "scope": "Serving metadata and RunPod timings of the fixed explanation model; not a quality benchmark",
+  "base_model": {
+    "repo": "cyankiwi/gemma-4-26B-A4B-it-qat-AWQ-INT4",
+    "repo_match": "served model name equals the repo name; image build record unavailable",
+    "hf_latest_revision": "76373001e106330a6815f237ef00838c7fed9356",
+    "image_revision": null,
+    "weights_gb": 17.19,
+    "license": "apache-2.0",
+    "upstream": "google/gemma-4-26B-A4B-it-qat-q4_0-unquantized"
+  },
+  "adapter": {
+    "storage": "private Hugging Face repository",
+    "served_name": "explain",
+    "peft_type": "LORA",
+    "r": 16,
+    "lora_alpha": 16,
+    "lora_dropout": 0,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "training_base_path": "/workspace/models/gemma-4-26b-qat",
+    "files": {
+      "adapter_model.safetensors": {"bytes": 45991472, "sha256": "a56fe8f458f73a0b195d0108ab1a7b8d3be59d448bb0c4b8ec8b89eb8072fd25"},
+      "adapter_config.json": {"bytes": 1290, "sha256": "4c96bca2eabeae7a787b3b9cb8a3043f31f57a33308a8c6e2a909d0c1e3041b6"}
+    },
+    "hash_source": "local copy on 2026-11-17, not compared with the Hugging Face blob",
+    "merged_model": null
+  },
+  "serving": {
+    "platform": "RunPod Serverless",
+    "engine": "vLLM 0.32 (custom image, base weights under /models/llm)",
+    "served_model": "gemma-4-26b-a4b-it-qat-awq-int4",
+    "max_model_len": 8192,
+    "temperature": 0,
+    "explanation_max_tokens": 4096,
+    "gpu": null,
+    "vram_gib": null,
+    "other_engine_options": null,
+    "cpu_tested": false
+  },
+  "timings_ms": {
+    "source": "RunPod job executionTime/delayTime, synthetic inputs, 2026-11-16",
+    "warm": [{"execution": 4169, "delay": 58}, {"execution": 3885, "delay": 56}, {"execution": 2863, "delay": 62}, {"execution": 2857, "delay": 71}],
+    "cold": [{"execution": 5286, "delay": 222293}, {"execution": 3648, "delay": 191350}, {"execution": 4684, "delay": 284860}, {"execution": 6185, "delay": 265102}, {"execution": 6314, "delay": 314487}],
+    "item_256_tokens": null,
+    "load_memory": null,
+    "server_start": null
+  },
+  "evaluation": {
+    "keyword_proxy_dev_pilot": {"gemma_direct": 0.875, "api_direct": 0.75, "outputs_per_arm": 2},
+    "ab_survey": "built, 4 synthetic cases, human review PENDING",
+    "checks_py_pass_rate": null,
+    "human_review_50": "PENDING",
+    "acceptance_threshold": null
+  },
+  "supported_inputs": {"NARRATIVE": [5, 6], "ESSAY": [4, 5, 6]},
+  "open_items": ["71818 reason-sentence usage terms", "GPU and engine options", "256-token item latency", "checks.py pass rate and acceptance threshold"]
+}

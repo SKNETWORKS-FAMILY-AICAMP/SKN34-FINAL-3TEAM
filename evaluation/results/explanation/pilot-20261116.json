@@ -1,0 +1,357 @@
+{
+  "date": "2026-11-16",
+  "scope": {
+    "cases": 1,
+    "audiences": [
+      "parent"
+    ],
+    "conditions": [
+      "summary",
+      "detail"
+    ],
+    "dataset": "user_form_synthetic_pilot",
+    "gt_status": "DRAFT_UNAPPROVED"
+  },
+  "v1": {
+    "human_review": "PENDING",
+    "semantic_gt": "UNREVIEWED",
+    "arms": {
+      "api_direct": {
+        "attempted": 2,
+        "completed": 2,
+        "failure_codes": {},
+        "mean_keyword_coverage_proxy": 0.75,
+        "length_pass_count": 2,
+        "cases_with_all_four_conditions": 0,
+        "all_four_same_keywords_proxy": 0
+      },
+      "gemma_luna_edit": {
+        "attempted": 2,
+        "completed": 2,
+        "failure_codes": {},
+        "mean_keyword_coverage_proxy": 1.0,
+        "length_pass_count": 2,
+        "cases_with_all_four_conditions": 0,
+        "all_four_same_keywords_proxy": 0
+      },
+      "gemma_two_stage": {
+        "attempted": 2,
+        "completed": 2,
+        "failure_codes": {},
+        "mean_keyword_coverage_proxy": 0.75,
+        "length_pass_count": 2,
+        "cases_with_all_four_conditions": 0,
+        "all_four_same_keywords_proxy": 0
+      },
+      "gemma_direct": {
+        "attempted": 2,
+        "completed": 2,
+        "failure_codes": {},
+        "mean_keyword_coverage_proxy": 0.875,
+        "length_pass_count": 2,
+        "cases_with_all_four_conditions": 0,
+        "all_four_same_keywords_proxy": 0
+      }
+    }
+  },
+  "writer_probe_v2": {
+    "gemma": {
+      "state": "COMPLETED",
+      "proxy": {
+        "characters": 147,
+        "length_ok": true,
+        "keyword_coverage_proxy": 1.0,
+        "matched_concept_ids": [
+          "library",
+          "travel",
+          "homework",
+          "read_news"
+        ],
+        "score_disclosure_flags": [],
+        "banned_phrase_flags": [],
+        "semantic_gt_status": "UNREVIEWED"
+      }
+    },
+    "api": {
+      "state": "COMPLETED",
+      "proxy": {
+        "characters": 156,
+        "length_ok": true,
+        "keyword_coverage_proxy": 1.0,
+        "matched_concept_ids": [
+          "library",
+          "travel",
+          "homework",
+          "read_news"
+        ],
+        "score_disclosure_flags": [],
+        "banned_phrase_flags": [],
+        "semantic_gt_status": "UNREVIEWED"
+      }
+    }
+  },
+  "inference_calls": {
+    "total": 12,
+    "gemma": 7,
+    "api": 5,
+    "approved_max": 12
+  },
+  "calls": [
+    {
+      "provider": "gemma",
+      "stage": "evidence",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 195.88161030000265,
+      "delay_ms": 191350,
+      "execution_ms": 3648,
+      "usage": {
+        "completion_tokens": 243,
+        "completion_tokens_details": null,
+        "prompt_tokens": 443,
+        "prompt_tokens_details": null,
+        "total_tokens": 686
+      }
+    },
+    {
+      "provider": "gemma",
+      "stage": "direct",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 2.0906646999974328,
+      "delay_ms": 65,
+      "execution_ms": 959,
+      "usage": {
+        "completion_tokens": 90,
+        "completion_tokens_details": null,
+        "prompt_tokens": 437,
+        "prompt_tokens_details": null,
+        "total_tokens": 527
+      }
+    },
+    {
+      "provider": "api",
+      "stage": "direct",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 3.7456921999983024,
+      "delay_ms": null,
+      "execution_ms": null,
+      "usage": {
+        "prompt_tokens": 435,
+        "completion_tokens": 201,
+        "total_tokens": 636,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 116,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      }
+    },
+    {
+      "provider": "api",
+      "stage": "direct",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 5.516780399997515,
+      "delay_ms": null,
+      "execution_ms": null,
+      "usage": {
+        "prompt_tokens": 443,
+        "completion_tokens": 407,
+        "total_tokens": 850,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 158,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      }
+    },
+    {
+      "provider": "api",
+      "stage": "edit",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 4.754630899999029,
+      "delay_ms": null,
+      "execution_ms": null,
+      "usage": {
+        "prompt_tokens": 560,
+        "completion_tokens": 357,
+        "total_tokens": 917,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 263,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      }
+    },
+    {
+      "provider": "gemma",
+      "stage": "layered_default_view_probe_v3",
+      "state": "FAILED",
+      "error": "HTTP_500",
+      "elapsed_seconds": 133.3295739999994,
+      "delay_ms": null,
+      "execution_ms": null,
+      "usage": null
+    },
+    {
+      "provider": "gemma",
+      "stage": "grounded_write",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 3.395934500000294,
+      "delay_ms": 65,
+      "execution_ms": 2650,
+      "usage": {
+        "completion_tokens": 320,
+        "completion_tokens_details": null,
+        "prompt_tokens": 670,
+        "prompt_tokens_details": null,
+        "total_tokens": 990
+      }
+    },
+    {
+      "provider": "gemma",
+      "stage": "controlled_writer_probe_v2",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 284.806818699999,
+      "delay_ms": 279014,
+      "execution_ms": 3965,
+      "usage": {
+        "completion_tokens": 82,
+        "completion_tokens_details": null,
+        "prompt_tokens": 827,
+        "prompt_tokens_details": null,
+        "total_tokens": 909
+      }
+    },
+    {
+      "provider": "api",
+      "stage": "edit",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 6.79813749999812,
+      "delay_ms": null,
+      "execution_ms": null,
+      "usage": {
+        "prompt_tokens": 904,
+        "completion_tokens": 516,
+        "total_tokens": 1420,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 203,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      }
+    },
+    {
+      "provider": "api",
+      "stage": "controlled_writer_probe_v2",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 3.6862661999984994,
+      "delay_ms": null,
+      "execution_ms": null,
+      "usage": {
+        "prompt_tokens": 847,
+        "completion_tokens": 343,
+        "total_tokens": 1190,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 231,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      }
+    },
+    {
+      "provider": "gemma",
+      "stage": "grounded_write",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 2.513917799999035,
+      "delay_ms": 65,
+      "execution_ms": 985,
+      "usage": {
+        "completion_tokens": 93,
+        "completion_tokens_details": null,
+        "prompt_tokens": 659,
+        "prompt_tokens_details": null,
+        "total_tokens": 752
+      }
+    },
+    {
+      "provider": "gemma",
+      "stage": "direct",
+      "state": "COMPLETED",
+      "error": null,
+      "elapsed_seconds": 228.92791379999835,
+      "delay_ms": 222293,
+      "execution_ms": 5286,
+      "usage": {
+        "completion_tokens": 412,
+        "completion_tokens_details": null,
+        "prompt_tokens": 448,
+        "prompt_tokens_details": null,
+        "total_tokens": 860
+      }
+    }
+  ],
+  "archived_output_identity_matches": 16,
+  "archived_output_count": 16,
+  "human_review": "PENDING",
+  "superiority_claim": false,
+  "limitations": [
+    "One inspected development case; no held-out inference",
+    "No student audience generated in this pilot",
+    "Keyword hit rate is lexical only, not semantic correctness",
+    "Writer v2 was adjusted after v1 observations; exploratory",
+    "Different pipelines consume different inference budgets",
+    "Actual LoRA checkpoint hash not independently verified"
+  ],
+  "layered_view_v3": {
+    "state": "RECOVERED_COMPLETED",
+    "characters": 247,
+    "length_ok": false,
+    "original_client_error": "HTTP_500",
+    "new_inference_submitted": false,
+    "delay_ms": 284860,
+    "execution_ms": 4684,
+    "human_review": "PENDING",
+    "superiority_claim": false,
+    "existing_detail_characters": 763,
+    "new_inference_after_client_error": false
+  }
+}

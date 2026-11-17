@@ -53,6 +53,7 @@ def test_response_uses_contract_fields_only() -> None:
         "warnings",
         "failure",
         "versions",
+        "regen",  # 부분 다시 생성 재료(#537)
     }
     theme = body["theme"]
     assert set(theme) == {

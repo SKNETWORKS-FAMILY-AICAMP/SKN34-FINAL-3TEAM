@@ -693,6 +693,18 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 - 인프라 확인(담당자와): 인증 방식 확정, GCP 권한·Veo 동시 요청 할당량, ai-service 서비스 계정 생성(지금 `create: false`)과 S3 쓰기 IRSA, 영상 env(`THEME_VIDEO_ENABLED`·`VIDEO_PROJECT`·`VIDEO_LOCATION`·`VIDEO_MODEL`·`ASSET_S3_BUCKET`·`GOOGLE_APPLICATION_CREDENTIALS`), 자원 한도(메모리 512Mi·CPU 500m, 컷 다시 인코딩에 모자랄 수 있음, 측정 안 함)
 - 자격 증명을 못 찾으면 google-auth가 GCE 메타데이터 서버를 확인하는데 네트워크 정책이 `169.254.0.0/16`을 막아 기동이 몇 초 늦어질 수 있음(영상 켜짐 + `VIDEO_PROJECT`일 때만)
 
+**prod 설정 (#734, #600 하위, 2026-11-17)**: 인증은 B안(사용자 결정 2026-11-17, #600 댓글). 기존 서비스 계정 `theme-veo` 키를 그대로 쓰고 비용은 GCP 프로젝트 쪽에서 관리한다. 위 표의 "운영(기준안)" 경로(키 → Secrets Manager → ExternalSecret 파일 마운트)를 prod에 넣었다.
+
+| 위치 | 값 |
+|---|---|
+| Secrets Manager `sagomungchi/demo/app/ai` | property `THEME_VIDEO_CREDENTIALS_JSON`(서비스 계정 키 JSON 문자열)·`VIDEO_PROJECT`. 기존 `OPENAI_API_KEY`와 같은 비밀. 값은 저장소에 두지 않음 |
+| `prod/external-secret-resources.json` | ExternalSecret `ai-theme-video`(app) → Secret `ai-theme-video` 키 `credentials.json`·`VIDEO_PROJECT`. 이름은 kind와 같음 |
+| `prod/ai-service.json` env | `THEME_VIDEO_ENABLED=true`, `THEME_VIDEO_MAX_REGEN=0`(테마 1회 Veo 8번), `GOOGLE_APPLICATION_CREDENTIALS=/etc/theme-video/credentials.json`, `VIDEO_PROJECT`(secretKeyRef). `VIDEO_LOCATION`·`VIDEO_MODEL`은 설정 기본값(`us-central1`·`veo-3.1-fast-generate-001`)이라 넣지 않음 |
+| `prod/ai-service.json` 볼륨 | Secret `ai-theme-video`의 `credentials.json`만 `/etc/theme-video`에 읽기 전용 마운트. env·볼륨 모두 `optional: true`라 Secret 동기화가 실패해도 ai는 뜨고 영상만 건너뜀(kind와 같음) |
+| 그 밖 | ESO 역할의 인라인 정책 `external-secrets-ai-read`가 이미 `sagomungchi/demo/app/ai-??????`를 읽어 IAM 변경 없음. 공용 443 egress·S3 쓰기 Pod Identity(#652)·메모리 상한 1Gi(#586)도 이미 있음 |
+
+- 저장소 검증만 함(helm 렌더링·`scripts/tests`). ExternalSecret 동기화, Pod의 키 파일·`VIDEO_PROJECT` 확인, 실제 영상 생성은 A 계정 재가동(#601) 때 확인한다. 운영 반영은 main SHA 배포(cd-release) 때
+
 ### 17.5 영상 사용량 `THEME_VIDEO` (#546, 2026-11-12)
 
 core가 #543(V45)부터 `THEME_VIDEO`를 받게 되어(이벤트 스키마·`CallType`·`ck_llm_usage_call_type`·관리자 필터) ai도 영상 사용량을 보낸다.
@@ -2085,3 +2097,60 @@ P27 추억 검색 보완(멘토 피드백, 설계 #679)의 ai 몫. 계약은 [ap
 - 지연·토큰: 작은 JSON인데 출력 140~512토큰(추론 토큰 포함으로 보임). 처음 기준안(4초·256토큰)이면 3.98초처럼 경계에 걸려 시간 초과가 잦을 것으로 보여 7초·512토큰·learning 8초로 바꿈(검색 30초 > 8초 + 임베딩 20초 유지). 2차에서도 출력 485토큰이 나와 512토큰 상한이 넉넉하지는 않음 → learning #682 연동 뒤 kind에서 실패율 확인 필요
 - 비용(core 단가 입력 $0.10·출력 $0.50 / 100만 토큰): 1차 입력 3,581·출력 1,013 = 약 $0.00087, 2차 입력 3,976·출력 2,010 = 약 $0.0014, 3차 입력 1,747·출력 442 = 약 $0.0004, 합계 약 $0.0027. 2차 기준 건당 약 $0.0003으로 설계 추정($0.0001)의 약 3배. 하루 한도 20회 기준 학생당 하루 최대 약 $0.006
 - 지연 증가: 검색 1회당 약 3.7~5.5초(설계 추정 1~2초보다 큼). 체감 지연은 learning #682 연동 뒤 실측
+
+## 21. 주간 테마 초안 부분 다시 생성 (#537, 2026-11-17)
+
+관리자가 테마 초안에서 영상·그림·요일 미션만 골라 다시 만들게 하는 ai 몫. 지금까지는 다시 생성하면 같은 입력으로 줄거리부터 전부 다시 만들었다. 계약은 사용자 결정(2026-11-17)을 따랐고, core·인프라 몫은 담당 확인(2026-11-17)대로 같은 PR에 넣었다. 계약 문서는 api-spec 4.2 `/internal/theme-drafts`, ai OpenAPI `ThemeDraftRequest.regenerate`·`ThemeRegenerate`·`ThemeRegenBase`·`ThemeRegenTarget`·`ThemeDraftResponse.regen`(선택 칸). learning 몫은 [learning 40장](learning.md#40-주간-테마-초안-부분-다시-생성-learning-537-2026-11-17).
+
+### 정한 것
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 요청 | 선택 칸 `regenerate: {targets, base}`. 없으면 지금처럼 전체 생성. `base`는 learning이 저장한 원래 초안 output 그대로(공개 `theme`은 쓰지 않고 `regen.theme`을 씀) | 사용자 결정. 기존 칸은 바꾸지 않고 선택 칸만 더함 |
+| 대상 14개 | `VIDEO:INTRO`·`VIDEO:OUTRO`, `IMAGE:INTRO`·`IMAGE:OUTRO`·`IMAGE:MON`~`IMAGE:FRI`, `MISSION:MON`~`MISSION:FRI`(`models.RegenTarget`), 여러 개 한 번에 가능 | 이슈 본문 `target` 하나에서 목록으로 바꿈(사용자 결정: 같은 초안에서 두 개를 고치려면 하나씩은 첫 결과를 기다려야 해서) |
+| 같이 바뀌는 범위 | 영상 → 그 영상·움직임 / 요일 그림 → 그 그림·움직임 / 시작·종료 그림 → 컷 첫 그림 4장·영상·움직임 / 미션 → 그 요일 미션·수사 연결 문장·대화 → 글 검토 → 그 요일 그림 → 움직임 (`regen.plan_of`) | 컷 그림은 영상 첫 장면, 미션 그림은 미션 질문을 그리므로 |
+| 고르지 않은 것 | 원래 값 그대로 응답(키·글·움직임). 경고는 원래 경고 중 다시 만들지 않은 항목 것만 남기고 새 경고를 더함(`regen.keep_warnings`) | 이슈 완료 조건 "영상 하나만 다시 생성하면 글·그림은 그대로" |
+| 응답 `regen` | `{version: 1, targets, theme, assets, videoDurations}`. `targets`는 이 결과에서 다시 만들 수 있는 대상, `theme`은 줄거리 내부 칸 전체(콘티·증거 발견 줄·수사 연결 문장·조건·증거·특징 표 성취기준), `assets`는 재료 그림 S3 키, `videoDurations`는 실제 컷 길이(움직임 문구 시각). 글 단계(THEME·MISSION·REVIEW)에서 실패하면 null, 그림 실패(IMAGE)는 있음 | 사용자 결정 A안: 글 재료는 응답에 넣어 learning이 output에 저장, learning은 `targets`만 읽음 |
+| 재료 그림 | 처음 생성 때 테마 옷 뭉치 `OUTFIT.png`와 컷 첫 그림 `INTRO1~4.png`·`OUTRO1~4.png`를 같은 실행 폴더에 더 올림(`storage.ASSETS`). 인물 기준 `PERSON`은 처음 생성의 `INTRO1` 키. 부분 다시 생성은 `ThemeStorage.get`으로 읽음 | 사용자 결정 A안. ai 역할에 `s3:GetObject`가 필요(인프라 #652 담당 확인 중, 로컬 MinIO는 무관). 보관 기간은 따로 두지 않음 |
+| 다시 만들 수 있는 대상 | 미션 5개는 요일 미션이 다 있고 (옷 뭉치가 있거나 그림을 만들지 않은 결과)일 때. 그림 7개는 옷 뭉치가 있을 때. 영상은 그 장면 컷 첫 그림 4장이 다 있을 때(`regen.regenerable`) | 202 뒤 ai가 거부하면 learning이 3번 다시 불러 FAILED가 되므로, learning이 이 목록으로 요청 그 자리에서 409 |
+| 거절 | 대상이 `base.regen.targets` 밖이거나 `regen` 형식이 다르면(`version` 1·`theme` 없음) 400 `VALIDATION_FAILED`(요청 검증 공통 처리) | learning이 먼저 409로 막으므로 정상 흐름에선 오지 않음 |
+
+### 그래프
+
+- 노드는 그대로 쓰고 시작점만 고름: `START → restore`(부분) / `retrieve`(전체). `restore`가 원래 결과로 상태를 채우고(줄거리 내부 칸·미션·대화·키·움직임·컷 길이) 필요한 재료 그림만 S3에서 읽음(다시 그리면 옷 뭉치·인물 기준, 영상만 다시면 그 장면 컷 첫 그림). 미션 대상이 있으면 `generate_mission`(그 요일만)부터, 없으면 `generate_images`부터
+- 그림·영상·움직임 노드는 `redo_images`·`redo_videos`·`redo_motions` 범위만 다시 만들고 나머지 값과 합침. 전체 생성 흐름은 바뀌지 않음(재료 그림 업로드만 늘어 그림 7장 → 16장)
+- 시작 1컷을 다시 그릴 때는 처음처럼 참조 없이 글로만 그리고, 다른 그림의 인물 참조는 처음 생성의 `INTRO1`을 그대로 씀(사용자 결정)
+- 부분 다시 생성에서 재료 그림 읽기 실패·저장소 없음은 failure IMAGE(`BASE_ASSET …`)
+
+### 이 구현에서 정한 것 (사용자 확인 필요)
+
+- 글 검토: 줄거리부터(PLAN)는 사용자 결정대로 failure REVIEW. 같은 원칙(고르지 않은 것은 바꾸지 않음)으로 단서만 고쳐 쓰기(CLUE)와 대상 밖 요일 다시 보내기(DAYS)도 failure REVIEW(`PARTIAL 글 검토가 다시 만들 대상 밖을 고치라고 해서 멈춤`). 대상 요일만 다시 보내는 판정은 지금처럼 그 요일을 다시 만듦
+- 시작·종료 그림을 다시 그리다 컷 그림이 하나라도 끝내 실패하면 그 장면은 원래 그림·영상·움직임을 그대로 두고 warnings(IMAGE, `원래 그림·영상 유지`). 새 그림과 옛 그림을 섞지 않으려고 장면 단위로 바꿈. 처음 생성에서 컷 그림이 실패하면 영상을 빼는 것과 다름
+- 영상: 컷 그림을 다시 그렸는데 새 영상을 못 만들면 옛 영상(옛 그림으로 찍음)은 뺌. 영상만 다시 만들다 실패하면 원래 영상을 남김
+- 움직임: 다시 정한 장면의 옛 움직임은 버리고 새 값만(실패하면 그 장면 움직임이 빠짐, 처음 생성과 같음)
+
+### 기존 코드와 다르게 한 것
+
+- `generate_images`·`generate_videos`·`generate_motion`이 상태의 기존 키·움직임과 합쳐 돌려줌(전체 생성에서는 기존 값이 없어 결과 같음)
+- `review_story`의 FAIL 갈래 고르기를 `route_fails`로 떼어 냄(부분 다시 생성 확인을 한 곳에서 하려고)
+- 주석 바로잡음: "테마 옷 뭉치는 모든 그림의 첫 참조" → 뭉치가 나오는 그림만 참조하고 모든 그림 검토의 비교 그림(`prompts.cut_has_mungchi`)
+
+### 시험
+
+- `tests/theme_draft/test_regen.py` 16개: 재료 묶음(대상 14개·재료 키·내부 칸), 그림 설정 없음은 미션 대상만, 컷 그림 실패 장면은 영상 대상 빠짐, 글 단계 실패는 regen 없음, 영상만(그림 다시 안 그림·원래 컷 그림으로 찍음·나머지 그대로), 요일 그림만(참조 2장·나머지 그대로), 시작 그림(컷 4장·영상·인물 기준 유지), 시작 컷 실패는 원래 장면 유지, 미션(줄거리 안 만들고 그 요일 글·검토·그림만), 검토가 줄거리·다른 요일을 고치라 하면 실패, 대상 요일은 다시 만듦, 요청 거절, `plan_of`·`keep_warnings`·재료 키·저장소 읽기
+
+### 21.1 실제 모델 확인 (2026-11-17, 로컬, C안: 영상 끔)
+
+실제 OpenAI(생성 `gpt-6-luna`·검토 `gpt-6.1-terra`·그림 `gpt-image-2.6-sunburst`)와 로컬 MinIO(임시 컨테이너, `sagomungchi-local-missions`)로 ai 그래프를 직접 실행했다. 영상은 비용 때문에 껐다(사용자 결정 C안). learning·core·웹은 거치지 않았고, 원래 결과(base)는 learning `ThemeDraftOutput`처럼 응답에서 `failure`·`versions`를 뺀 7칸과 `regen`으로 만들었다. 요청은 시험 자료 초3 5유형(`tests/theme_draft/helpers.request_body`).
+
+| 실행 | 시간 | 결과 | 바뀐 것 | 비용(core 단가) |
+|---|---|---|---|---|
+| 전체 생성 | 377초 | failure IMAGE(`FRI TEXT 사서가 든 종이에 한글 문장이 보인다.`, 다시 그리기 상한까지) | — | 생성 16번·검토 23번·그림 17번 약 $0.97 |
+| `IMAGE:FRI` | 53초 | 통과 | images·motions의 FRI만 | 약 $0.06 |
+| `MISSION:WED` | 134초 | 통과 | 수요일 미션·대화, images·motions의 WED만 | 약 $0.08 |
+
+- 그림 단계 실패도 `regen`이 남아(재료 9장 + `PERSON`, 대상 14개) 실패한 금요일 그림만 다시 그려 살릴 수 있었다. 새 그림은 종이에 글자 대신 줄만 그려 통과(다시 그리기 1번). 전체 생성을 다시 했다면 약 6분·$1이 다시 들었을 것
+- 두 부분 실행 모두 공개 `theme`·다른 요일 미션·대화·그림 키·`regen.assets`가 원래와 같았다. 부분 실행은 바뀐 장면 그림만 새 실행 폴더에 올림(MinIO 객체 15 → 17)
+- `MISSION:WED`는 줄거리를 만들지 않고 그 요일 미션(질문이 바뀜)·수사 연결 문장·대화를 만들고 글 검토를 다시 함. 다시 한 검토가 `CLUE_LOGIC FRI` WARN을 새로 남겨 경고에 더해짐(FAIL이 아니라 통과)
+- 확인하지 않은 것: Veo 영상 다시 찍기(`VIDEO:*`), learning DB 저장·전달 왕복과 관리자 화면 재생. 영상 재료 읽기는 그림과 같은 `ThemeStorage.get`이고 영상 생성 자체는 바꾸지 않음
+- 합계 약 $1.11(예상 $1.2~1.6 안). 스크립트·결과 JSON은 저장소에 남기지 않음

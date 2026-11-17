@@ -110,6 +110,9 @@ export interface MockFrame {
 
 const now = () => new Date().toISOString()
 const seedItems = (): MockLookItem[] => [
+  // 관리자 칸·필터 시연용. 학생 그림 표(#705)와 연결되기 전에는 판매하지 않는다.
+  { itemId: 'look-floor-preview', code: 'FLOOR_PREVIEW', slot: 'FLOOR', name: '바닥 예시', pricePoints: 30, assetKey: 'room/floor-grass.png', status: 'STOPPED', updatedAt: '2026-11-17T00:00:00Z' },
+  { itemId: 'look-decor-preview', code: 'DECOR_PREVIEW', slot: 'DECOR', name: '방 소품 예시', pricePoints: 30, assetKey: 'room/decor-plant.png', status: 'STOPPED', updatedAt: '2026-11-17T00:00:00Z' },
   { itemId: 'look-hat-1', code: 'HAT_ACORN', slot: 'HAT', name: '도토리 모자', pricePoints: 40, assetKey: 'looks/hat-acorn.svg', status: 'ON_SALE', updatedAt: '2026-11-06T00:00:00Z' },
   { itemId: 'look-outfit-1', code: 'OUTFIT_RAIN', slot: 'OUTFIT', name: '노란 비옷', pricePoints: 60, assetKey: 'looks/outfit-rain.svg', status: 'ON_SALE', updatedAt: '2026-11-06T00:00:00Z' },
   { itemId: 'look-acc-1', code: 'ACC_LENS', slot: 'ACCESSORY', name: '돋보기', pricePoints: 30, assetKey: 'looks/acc-lens.svg', status: 'ON_SALE', updatedAt: '2026-11-06T00:00:00Z' },

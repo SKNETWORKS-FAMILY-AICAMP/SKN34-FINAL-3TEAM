@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { themeDraftActions, themeDraftOf } from '../src/domain/admin/themeDrafts.ts'
+import { REGEN_TARGETS, regenConfirmText, regenKindsOf, regenTargetLabel, themeDraftActions, themeDraftOf } from '../src/domain/admin/themeDrafts.ts'
 import { captionAt, readThemeMotion } from '../src/domain/themeMotion.ts'
 
 // #441 테마 초안 상세·움직임 형식 v1 읽기. 가상 값만 쓴다.
@@ -77,4 +77,28 @@ test('움직임 v1: 형식이 다르거나 범위를 벗어나면 null(그림만
     { ...ok, captions: [{ start: 5, end: 4, text: '거꾸로' }] },
     { ...ok, spots: [{ x: 10, y: 10 }] },
   ]) assert.equal(readThemeMotion(bad), null, JSON.stringify(bad).slice(0, 80))
+})
+
+// #537 부분 다시 생성: 다시 만들 수 있는 대상·원래 초안 읽기, 대상 이름·확인 문구(같이 바뀌는 범위)
+test('부분 다시 생성: 알려진 대상만 겹침 없이 읽고, 원래 초안 정보는 ID와 대상이 있을 때만', () => {
+  const d = themeDraftOf({ ...base, regenerableTargets: ['VIDEO:INTRO', 'VIDEO:INTRO', 'IMAGE:SUN', 3, 'MISSION:WED'],
+    input: { topic: null, missions: [], regenerate: { baseDraftId: 'd-0', targets: ['IMAGE:TUE', 'BAD'] } } })
+  assert.deepEqual(d.regenerableTargets, ['VIDEO:INTRO', 'MISSION:WED'])
+  assert.deepEqual(d.input.regenerate, { baseDraftId: 'd-0', targets: ['IMAGE:TUE'] })
+  for (const regenerate of [null, {}, { baseDraftId: '', targets: ['IMAGE:TUE'] }, { baseDraftId: 'd-0', targets: ['BAD'] }])
+    assert.equal(themeDraftOf({ ...base, input: { regenerate } }).input.regenerate, null)
+  assert.deepEqual(themeDraftOf(base).regenerableTargets, []) // 이 기능 전 응답
+})
+
+test('부분 다시 생성 대상은 14개이고, 확인 문구는 같이 바뀌는 범위를 말한다', () => {
+  assert.equal(REGEN_TARGETS.length, 14)
+  assert.deepEqual(regenKindsOf('INTRO'), ['VIDEO', 'IMAGE'])
+  assert.deepEqual(regenKindsOf('MON'), ['IMAGE', 'MISSION'])
+  assert.equal(regenTargetLabel('VIDEO:INTRO'), '시작 영상')
+  assert.equal(regenTargetLabel('MISSION:WED'), '수요일 미션')
+  assert.match(regenConfirmText('VIDEO:OUTRO'), /^종료 영상만 다시 만들까요\? 그림·글은 그대로 둡니다\./)
+  assert.match(regenConfirmText('IMAGE:INTRO'), /시작 컷 그림 4장과 시작 영상을 다시/)
+  assert.match(regenConfirmText('IMAGE:TUE'), /^화요일 그림만 다시/)
+  assert.match(regenConfirmText('MISSION:FRI'), /금요일 미션과 대화, 그림을 다시 만들까요\? 다른 요일은 그대로/)
+  for (const target of REGEN_TARGETS) assert.match(regenConfirmText(target), /새 초안으로 만들고 지금 초안은 그대로 남습니다\.$/)
 })
