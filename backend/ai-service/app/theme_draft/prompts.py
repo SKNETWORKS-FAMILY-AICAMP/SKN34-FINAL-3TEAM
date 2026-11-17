@@ -34,6 +34,7 @@ from app.theme_draft.checks import (
     clue_person,
     evidence_plan,
     feature_table,
+    flat_features,
     plan_for_type,
     plan_slot,
     secret_values,
@@ -437,11 +438,18 @@ def story_type_lines(request: ThemeDraftRequest) -> list[str]:
     found = parse_topic(request.topic)
     if found:
         lines = [f"storyType: {found.code}(주제가 정함, 그대로 쓴다)", type_rules(found)]
-        if plan := candidate_plan_for(request):
+        if (plan := candidate_plan_for(request)) and found.facts is not None:
+            flat = flat_features(found.facts, plan["candidates"])
             lines.append(
                 f"이번 테마 후보(코드가 정함, 범주 {plan['group']}): candidates는 "
                 f"{'·'.join(plan['candidates'])}, answer는 {plan['answer']}(그대로 쓴다, 코드 검사 "
                 "SAME_KIND). 정답 이름은 엔딩 전 글에 쓰지 않는다."
+                + (
+                    f" 이 후보끼리 값이 모두 같은 특징({'·'.join(flat)})은 단서가 될 수 없어 "
+                    "features에 넣지 않는다(코드 검사 FACT_TABLE)."
+                    if flat
+                    else ""
+                )
             )
         return lines
     return [
@@ -545,6 +553,12 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
                 # #634 ④⑤ CLUE_OWNER: 탈것은 온 사람(탈것을 봤다고 쓰지 않음), 소리는 '소리' 낱말
                 (
                     f"'{person}' 낱말을 넣어 그 소리의 증거임을 밝힌다."
+                    + (
+                        " 소리가 난 자리로 쓰고('소리가 ○○에서 났대') 듣는 사람이 있던 곳으로 "
+                        "쓰지 않는다."
+                        if cond.get("feature") == "소리 난 곳"
+                        else ""
+                    )
                     if story_type(theme).clue_word
                     else f"온 사람('{person}')을 넣어 그 사람이 탄 탈것의 증거임을 밝히고, 탈것을 "
                     "봤다고 쓰지 않는다(들고 온 것을 봤거나 소리를 들은 것으로)."

@@ -31,9 +31,11 @@ def sound_theme() -> dict[str, Any]:
         "candidates": list(ANIMALS),
         "answer": "너구리",
         "answerLook": "눈가가 까맣고 꼬리가 굵은 갈색 너구리",
+        # 동물 후보끼리 값이 모두 같은 '소리 나는 밤'은 넣지 않음(FACT_TABLE)
         "features": [
             feature(name, {c: families.SOUNDS.fact(c, name) or "" for c in ANIMALS})
             for name in families.SOUNDS.features
+            if name != "소리 나는 밤"
         ],
         "days": [
             day(
@@ -56,11 +58,11 @@ def sound_theme() -> dict[str, Any]:
             ),
             day(
                 "WED",
-                "할머니가 매일 밤 그 소리를 들었대.",
+                "할머니도 옮겨 다니는 소리를 들었대.",
                 "시각",
                 "HINT",
-                "소리 나는 밤",
-                ["매일 밤"],
+                "소리 움직임",
+                ["옮겨 다니는 소리"],
                 "SIGHTING",
             ),
             day(
@@ -135,10 +137,10 @@ def test_same_kind_and_answer_look_and_owner_word() -> None:
     bad = checks.check_theme({**sound_theme(), "answerLook": ""}, 3)
     assert bad == ["REQUIRED answerLook"] and list(checks.fix_targets(bad)) == ["answerLook"]
     theme = sound_theme()
-    theme["days"][2]["clue"] = "할머니가 매일 밤 들었대."
+    theme["days"][4]["clue"] = "일지에 쓰레기통 둘레라고 적혀 있었어."
     bad = checks.check_theme(theme, 3)
-    assert bad == ["CLUE_OWNER WED clue 단서에 '소리' 낱말이 없음(그 소리의 증거임을 밝힘)"]
-    assert list(checks.fix_targets(bad)) == ["WED.clue"]
+    assert bad == ["CLUE_OWNER FRI clue 단서에 '소리' 낱말이 없음(그 소리의 증거임을 밝힘)"]
+    assert list(checks.fix_targets(bad)) == ["FRI.clue"]
     assert checks.check_theme({**sound_theme(), "world": "귀신이 나온다는 마을"}, 3)[0].startswith(
         "UNSAFE"
     )
@@ -261,3 +263,30 @@ def test_code_picks_candidates_and_answer() -> None:
     assert not [r for r in checks.fact_table_problems(ok) if r.startswith("SAME_KIND")]
     other = {**sound_theme(), "candidatePlan": {**fixed, "answer": "생쥐"}}
     assert any(r.startswith("SAME_KIND 후보·정답이") for r in checks.fact_table_problems(other))
+
+
+def test_flat_features_are_not_clues() -> None:
+    # 판정 실측: 동물 후보는 모두 '매일 밤'이라 그 단서가 시작 이야기의 '밤마다'와 겹침(ANSWER_HINT)
+    assert checks.flat_features(families.SOUNDS, list(ANIMALS)) == ["소리 나는 밤"]
+    assert (
+        checks.flat_features(families.SOUNDS, ["바람개비", "빈 양동이", "현수막", "빈 깡통"]) == []
+    )
+    flat_theme = {
+        **sound_theme(),
+        "features": [
+            *sound_theme()["features"],
+            feature("소리 나는 밤", {c: "매일 밤" for c in ANIMALS}),
+        ],
+    }
+    bad = [r for r in checks.fact_table_problems(flat_theme) if "모두 같아" in r]
+    assert bad and "'소리 나는 밤'" in bad[0]
+    gift = {**valid_theme(), "storyType": "GIFT"}  # 다른 종류는 그대로
+    assert not [r for r in checks.fact_table_problems(gift) if "모두 같아" in r]
+    request = ThemeDraftRequest.model_validate(request_body(topic=SEED))
+    plan = prompts.candidate_plan_for(request)
+    flat = checks.flat_features(families.SOUNDS, plan["candidates"])  # type: ignore[index]
+    user = prompts.plan_user(request, [])
+    assert ("features에 넣지 않는다" in user) == bool(flat)
+    theme = sound_theme()
+    assert any("소리가 난 자리로" in r for r in prompts.fix_rules(theme, "FRI.clue"))
+    assert not any("소리가 난 자리로" in r for r in prompts.fix_rules(theme, "MON.clue"))

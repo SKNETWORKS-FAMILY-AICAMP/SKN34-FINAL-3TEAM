@@ -569,6 +569,16 @@ def fact_table_problems(theme: Theme) -> list[str]:
                 f"SAME_KIND 후보·정답이 정해진 것과 다름(candidates {plan.get('candidates')}, "
                 f"answer {plan.get('answer')} 그대로)"
             )
+    # 소리 탐정(strict_facts): 후보끼리 값이 모두 같은 특징은 단서가 될 수 없고 시작 이야기의
+    # '밤마다'가 그 단서를 앞질러 말함(⑤ 판정 실측 글 검토 ANSWER_HINT: 동물 후보의 '매일 밤')
+    if story_type(theme).strict_facts:
+        cands = [str(c).strip() for c in theme.get("candidates") or []]
+        used = [n for n in names if n in table.features]
+        if flat := [f for f in flat_features(table, cands) if f in used]:
+            bad.append(
+                f"FACT_TABLE 특징 {flat}는 후보 {cands}의 값이 모두 같아 단서가 될 수 없음"
+                "(features에서 뺌)"
+            )
     # 정답을 다른 후보와 있는 값 특징만으로 가를 수 있어야 함(#634 ④: 없는 값은 단서로 못 쓰고,
     # 모든 값이 같은 후보(오전 10시·오후 3시)는 정답을 가릴 수 없음)
     answer = str(theme.get("answer") or "").strip()
@@ -611,6 +621,13 @@ def outro_other_candidates(theme: Theme) -> list[str]:
         if any(w and w in text for w in words):
             found.append(str(c).strip())
     return found
+
+
+def flat_features(table: Any, cands: list[str]) -> list[str]:
+    """그 후보들의 값이 모두 같은 사실표 특징(표 밖 후보가 있으면 빈 목록)."""
+    if not cands or any(c not in table.rows for c in cands):
+        return []
+    return [f for f in table.features if len({table.fact(c, f) for c in cands}) == 1]
 
 
 def clue_absent_problems(theme: Theme) -> list[str]:
