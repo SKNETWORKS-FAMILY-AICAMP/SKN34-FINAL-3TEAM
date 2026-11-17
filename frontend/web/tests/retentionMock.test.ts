@@ -172,6 +172,38 @@ test('#705 방 소품 사기: 키마다 새 구매, 같은 키는 처음 응답,
   assert.equal(((await call('/students/me/look-items')).data.items as CatalogRow[]).some((i) => i.itemKey === 'DECOR_RUG'), false)
 })
 
+test('#705 방 소품 놓은 칸(core #723 계약안 + color): 범위·같은 기준 칸·8개·보유·색 형식은 422, 면→row→col 정렬', async () => {
+  const childId = await parent()
+  await student(childId)
+  const put = (spots: unknown) => call('/students/me/room/decor-spots', { spots }, 'PUT')
+  assert.deepEqual((await call('/students/me/room/decor-spots')).data, { spots: [] })
+  retentionState.decor[childId] = { DECOR_PLANT: 2, DECOR_LIGHTS: 1 }
+  const ok = await put([
+    { surface: 'WALL_BACK', col: 3, row: 2, itemKey: 'DECOR_LIGHTS', color: null },
+    { surface: 'FLOOR', col: 12, row: 6, itemKey: 'DECOR_PLANT', color: 'sky' },
+    { surface: 'FLOOR', col: 2, row: 6, itemKey: 'DECOR_PLANT' },
+  ])
+  assert.equal(ok.status, 200)
+  assert.deepEqual(ok.data.spots.map((s: { surface: string; col: number; row: number; color: string | null }) => [s.surface, s.col, s.row, s.color]),
+    [['FLOOR', 2, 6, null], ['FLOOR', 12, 6, 'sky'], ['WALL_BACK', 3, 2, null]], '면 → row → col, 색 없으면 null')
+  assert.equal(ok.data.spots[0].assetKey, 'room/decor-plant.svg')
+  assert.deepEqual((await call('/students/me/room/decor-spots')).data, ok.data, '다시 조회해도 같은 칸·같은 색')
+  const bad = async (spots: unknown, why: string) => {
+    const r = await put(spots)
+    assert.deepEqual([r.status, r.data.code], [422, 'VALIDATION_FAILED'], why)
+  }
+  await bad([{ surface: 'FLOOR', col: 17, row: 0, itemKey: 'DECOR_PLANT' }], '바닥 칸 범위 밖')
+  await bad([{ surface: 'WALL_LEFT', col: 11, row: 0, itemKey: 'DECOR_LIGHTS' }], '왼쪽 벽 칸 범위 밖')
+  await bad([{ surface: 'FLOOR', col: 1, row: 1, itemKey: 'DECOR_PLANT' }, { surface: 'FLOOR', col: 1, row: 1, itemKey: 'DECOR_PLANT' }], '같은 기준 칸 두 번')
+  await bad([1, 2, 3].map((col) => ({ surface: 'FLOOR', col, row: 9, itemKey: 'DECOR_PLANT' })), '보유 2개보다 많이')
+  await bad([{ surface: 'FLOOR', col: 1, row: 1, itemKey: 'DECOR_RUG' }], '가지지 않은 방 소품')
+  await bad([{ surface: 'FLOOR', col: 1, row: 1, itemKey: 'DECOR_PLANT', color: 'Sky Blue' }], '색 형식')
+  retentionState.decor[childId].DECOR_PLANT = 8
+  await bad(Array.from({ length: 9 }, (_, col) => ({ surface: 'FLOOR', col, row: 10, itemKey: 'DECOR_PLANT' })), '9개')
+  assert.deepEqual((await call('/students/me/room/decor-spots')).data, ok.data, '거절되면 저장된 것이 바뀌지 않음')
+  assert.deepEqual((await put([])).data, { spots: [] }, '빈 목록은 모두 치움')
+})
+
 test('커뮤니티: 보호자 COMMUNITY 동의 전에는 켤 수 없고, 철회하면 공개가 꺼진다', async () => {
   const childId = await parent()
   const docs = (await call('/consent-documents')).data.items as { kind: string; documentId: string; version: string }[]

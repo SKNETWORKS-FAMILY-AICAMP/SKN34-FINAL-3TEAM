@@ -19,6 +19,15 @@ test('내 방 진입 → 추억 앨범(빈 상태) → 내 방으로', async ({ 
     for (const spot of ['추억의 벽 · 액자', '책상 · 오늘 문제', '옷장 · 옷 갈아입기', '창문 · 이번 주 이야기', '문 · 친구 생각', '책장 · 내 공책'])
       await expect(page.getByRole('button', { name: spot, exact: true })).toBeVisible()
 
+    // #705 방 꾸미기 서랍(실서버 core #723·#736): 바닥·방 소품 탭이 있고, 놓은 칸 목록(decor-spots)을 읽어 새 학생은 놓음 0/0.
+    // 포인트가 없는 새 학생이라 사기·놓기·저장은 목업 브라우저 시험(roomDecor.spec)이 맡는다
+    await page.getByRole('button', { name: '방 꾸미기', exact: true }).click()
+    const drawer = page.getByRole('region', { name: '방 꾸미기' })
+    await drawer.getByRole('button', { name: '방 소품', exact: true }).click()
+    await expect(drawer.locator('.st-decor-card').first()).toContainText('놓음 0/0')
+    await expect(drawer.getByRole('alert')).toHaveCount(0)
+    await page.getByRole('button', { name: '취소', exact: true }).click()
+
     await page.getByRole('button', { name: '추억 앨범 열기' }).click()
     await expect(page.getByRole('heading', { name: '추억 앨범', exact: true })).toBeVisible()
     // #648 앨범은 빈 상태에도 액자 목록 칸을 두고 그 안에 안내 한 칸을 넣는다(옛 region '빈 앨범 안내' + 목록 없음 대신).

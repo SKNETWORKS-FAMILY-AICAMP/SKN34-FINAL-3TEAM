@@ -69,6 +69,9 @@ test('친구 생각 → 놀러 가기: 친구가 꾸민 방·방 주인 뭉치·
   await expect(room.locator('.st-room-bubble')).toHaveCount(0)
   // 친구 생각 화면은 숨겨 둘 뿐(돌아오면 그대로)
   await expect(page.getByRole('heading', { name: /친구\s*생각/ })).toBeHidden()
+  // 친구가 놓은 방 소품(#705·#723): 목업 하늘별 방의 큰 화분·러그·쿠션 소파·줄 조명·시계
+  await expect(room.locator('[data-decor]').first()).toBeAttached()
+  expect(await room.locator('[data-decor]').count()).toBeGreaterThan(10)
   // 방 칸이 화면 폭을 넘지 않음
   const holder = await room.locator('.st-room-holder').boundingBox()
   expect(holder!.x + holder!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
