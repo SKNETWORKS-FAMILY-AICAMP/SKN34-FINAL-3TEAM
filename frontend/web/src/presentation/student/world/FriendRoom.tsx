@@ -10,11 +10,12 @@ import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { Companion } from './Companion.tsx'
 import { FrameScene } from './FrameScene.tsx'
 import { SpeechBubble } from './SpeechBubble.tsx'
-import { boardTagTransform, faceStyle, MATS, projectToHolder, roomFaces, RUG, slotTransform, WORLD_TOP } from './roomArt.ts'
+import { boardTagTransform, faceStyle, MATS, roomFaces, RUG, slotTransform, WORLD_TOP } from './roomArt.ts'
 import { skinOf } from './roomAssets.ts'
 import { useLook } from './lookContext.ts'
 import { CAN_WALK, clamp, useRoomWalk } from './useRoomWalk.ts'
-import { blockedByDecor, decorFaces, decorFloorBlocks, drawableDecor } from './decorArt.ts'
+import { blockedByDecor, decorCenter, decorFaces, decorFloorBlocks, drawableDecor } from './decorArt.ts'
+import { RoomPanArrows } from './RoomPanArrows.tsx'
 import './room.css'
 
 /** 방 주인 뭉치는 방 가운데(출발 자리)에 서 있다(사용자 결정 2026-11-17). 내 뭉치는 이 둘레를 지나가지 못한다 */
@@ -96,7 +97,8 @@ function FriendRoomScene({ data }: { data: FriendRoomData }) {
   const decorBlocked = blockedByDecor(decorFloorBlocks(shownDecor))
   const {
     view, pos, facing, pose, moving, jumping, stageRef, holderRef, roomRef,
-    fit, holderH, scale, worldScale, onKeyDown, onKeyUp, onBlur, onPointerDown, onFloorClick, faceCamera, canStand, placeAt,
+    fit, holderH, worldScale, onKeyDown, onKeyUp, onBlur, onPointerDown, onFloorClick, faceCamera, canStand, placeAt,
+    pan, limX, stageTransform, toHolder, panTo,
   } = useRoomWalk({ start: { x: DOOR_MAT.x, z: DOOR_MAT.z }, blocked: (x, z) => near(x, z, FRIEND_RADIUS) || decorBlocked(x, z) })
   const [greeting] = useState(() => GREETINGS[Math.floor(Math.random() * GREETINGS.length)])
   // 크게 보는 액자: 열면 닫기 단추로, 닫으면 누른 액자로 초점을 돌린다
@@ -121,17 +123,18 @@ function FriendRoomScene({ data }: { data: FriendRoomData }) {
     .concat(decorFaces(shownDecor, faceCamera))
   const frameWood = skinOf('WALL', data.room.wall).set[0]
   const greet = !moving && near(pos.x, pos.z, GREET_RADIUS)
-  const bubbleAt = projectToHolder(FRIEND_SPOT.x, -250, FRIEND_SPOT.z, { ...view, ws: worldScale, stageScale: scale, holderW: fit.w })
+  const bubbleAt = toHolder(FRIEND_SPOT.x, -250, FRIEND_SPOT.z)
 
   return (
     <section ref={roomRef} className="st-mini-room" aria-label={`${data.nickname}의 방`}>
       <div ref={holderRef} className="st-room-holder" style={{ height: Math.round(holderH), '--st-frame-wood': frameWood } as CSSProperties}>
-        <div ref={stageRef} className="st-room-stage" style={{ transform: `scale(${scale.toFixed(3)})` }} tabIndex={CAN_WALK ? 0 : undefined} role="group"
+        <div ref={stageRef} className="st-room-stage" style={{ transform: stageTransform }} tabIndex={CAN_WALK ? 0 : undefined} role="group"
           aria-label={`${data.nickname}의 방 그림. 바닥을 누르면 걸어가고, 방을 누른 뒤 방향키로 움직여요. 친구 뭉치에게 가까이 가면 인사해요`}
           onKeyDown={onKeyDown} onKeyUp={onKeyUp} onBlur={onBlur} onPointerDown={onPointerDown}>
           <div className="st-room-world" data-top={WORLD_TOP} style={{ transform: `scale(${worldScale}) rotateX(${view.rx}deg) rotateY(${view.ry}deg)` }}>
             {faces.map((f) => (
-              <div key={f.key} className={`st-f${f.floor && CAN_WALK ? ' st-room-floor' : ''}`} style={faceStyle(f)} onClick={f.floor && CAN_WALK ? onFloorClick : undefined} aria-hidden="true" />
+              <div key={f.key} className={`st-f${f.floor && CAN_WALK ? ' st-room-floor' : ''}`} style={faceStyle(f)} onClick={f.floor && CAN_WALK ? onFloorClick : undefined} aria-hidden="true"
+                data-decor={f.key.startsWith('decor-') || undefined} />
             ))}
             <div className="st-f st-room-boardtag" style={{ transform: boardTagTransform }} aria-hidden="true">추억의 벽</div>
             {Array.from({ length: FRAME_SLOT_COUNT }, (_, i) => {
@@ -167,6 +170,7 @@ function FriendRoomScene({ data }: { data: FriendRoomData }) {
             <p>{greeting}</p>
           </SpeechBubble>
         )}
+        <RoomPanArrows points={shownDecor.map(decorCenter)} toHolder={toHolder} width={fit.w} limX={limX} panX={pan.x} panTo={panTo} />
         {CAN_WALK && <p className="st-room-hint" data-room-ui aria-hidden="true">바닥을 누르면 걸어가요 · {data.nickname}에게 가까이 가 봐요</p>}
       </div>
         {shown && (

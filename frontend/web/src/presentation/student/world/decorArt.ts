@@ -1,6 +1,6 @@
 import { DECOR_GRID, inDecorGrid } from '../../../domain/retention.ts'
 import type { DecorSurface } from '../../../domain/retention.ts'
-import { BOARD, DESK_X, DESK_Z, DOOR, MAT_SIZE, MATS, onFloor, ROOM, RUG, SHELF, WARDROBE, WINDOW_Z } from './roomArt.ts'
+import { BOARD, DESK_X, DESK_Z, DOOR, MAT_SIZE, MATS, onFloor, projectToHolder, ROOM, ROOM_VIEW, RUG, SHELF, WARDROBE, WINDOW_Z } from './roomArt.ts'
 import type { Face } from './roomArt.ts'
 import { decorOf } from './roomAssets.ts'
 import { bigLeavesBg, bookCoverBg, cactusBg, clockFaceBg, decorBg, decorColor, PAGES_BG, pictureBg, plantLeavesBg, soilBg } from './decorDraw.ts'
@@ -57,6 +57,23 @@ const BLOCKED: Record<DecorSurface, Rect[]> = {
   ],
 }
 /** 그 칸이 막혔나. assetKey를 주면 그 소품이 걸 수 있는 곳(추억의 벽·창문 위)은 막힌 칸에서 뺀다 */
+/** 칸 가운데의 방 좌표(바닥은 바닥 면, 벽은 벽 면) */
+const cellPoint = (surface: DecorSurface, col: number, row: number) => {
+  const r = cellRect(surface, col, row)
+  const a = (r[0] + r[1]) / 2, b = (r[2] + r[3]) / 2
+  return surface === 'FLOOR' ? { x: a, y: 0, z: b } : surface === 'WALL_BACK' ? { x: a, y: b, z: -D / 2 } : { x: -W / 2, y: b, z: a }
+}
+/** PC 화면(무대 1400×780)에서 칸 가운데가 가장자리 이만큼 안쪽에 있어야 보이는 칸 */
+const VIEW_MARGIN = 30
+/**
+ * 칸이 PC 화면에 보이나(#705). 칸 범위(#723)는 네모지만 방은 비스듬히 보여 바닥 앞쪽 구석 칸은 PC 화면 밖이다.
+ * 보이지 않는 칸에는 놓지 않는다(좁은 화면은 밀어 보면 PC에서 보이는 끝까지 보임)
+ */
+export function onPcScreen(surface: DecorSurface, col: number, row: number) {
+  const c = cellPoint(surface, col, row)
+  const p = projectToHolder(c.x, c.y, c.z, { ...ROOM_VIEW, ws: 1, stageScale: 1, holderW: 1400 })
+  return p.x >= VIEW_MARGIN && p.x <= 1400 - VIEW_MARGIN && p.y >= VIEW_MARGIN && p.y <= 780 - VIEW_MARGIN
+}
 export const isBlockedCell = (surface: DecorSurface, col: number, row: number, assetKey?: string | null) => {
   const r = cellRect(surface, col, row)
   const drape = !!decorOf(assetKey)?.drape
@@ -89,7 +106,7 @@ export function drawableDecor<T extends Placed>(spots: T[]): T[] {
   return spots.filter((p) => {
     if (!surfacesFor(p.assetKey).includes(p.surface)) return false
     const cells = cellsOf(p)
-    if (cells.some((c) => !inDecorGrid(p.surface, c.col, c.row) || isBlockedCell(p.surface, c.col, c.row, p.assetKey) || taken.has(`${p.surface}:${c.col}:${c.row}`))) return false
+    if (cells.some((c) => !inDecorGrid(p.surface, c.col, c.row) || !onPcScreen(p.surface, c.col, c.row) || isBlockedCell(p.surface, c.col, c.row, p.assetKey) || taken.has(`${p.surface}:${c.col}:${c.row}`))) return false
     cells.forEach((c) => taken.add(`${p.surface}:${c.col}:${c.row}`))
     return true
   })
@@ -194,7 +211,7 @@ function buildSolid(p: Placed & { color?: string | null }, r: Rect): Face[] | nu
         boxZ(out, `${k}-b2`, x + 4, z - 2, 64, 46, 17, -17, bookCoverBg(pal.b2), PAGES_BG, pal.b2)
         boxZ(out, `${k}-b3`, x - 3, z + 1, 70, 48, 17, -34, bookCoverBg(pal.b3), PAGES_BG, pal.b3)
         return out
-      case 'room/decor-beanbag.svg':
+      case 'room/decor-beanbag.svg': // 쿠션 소파
         shadow(150, 70)
         // 앉는 부분 + 뒤에 붙은 등받이(모서리를 작게 둥글려 면이 따로 놀지 않게)
         boxZ(out, `${k}-seat`, x, z + 8, 136, 54, 30, 0, pal.bag, pal.bag2, `radial-gradient(ellipse at 40% 45%, rgba(255,255,255,.5) 0 16%, transparent 17%), ${pal.bag}`, '10px')
@@ -283,7 +300,7 @@ export { DECOR_GRID }
 export function placeProblem(placed: Placed[], skip: number | null, cand: Placed): string | null {
   if (!surfacesFor(cand.assetKey).includes(cand.surface)) return decorOf(cand.assetKey)?.kind === 'WALL' ? '벽에 거는 소품이에요.' : '바닥에 놓는 소품이에요.'
   const cells = cellsOf(cand)
-  if (cells.some((c) => !inDecorGrid(cand.surface, c.col, c.row))) return '방 끝을 넘어가요.'
+  if (cells.some((c) => !inDecorGrid(cand.surface, c.col, c.row) || !onPcScreen(cand.surface, c.col, c.row))) return '방 끝을 넘어가요.'
   if (cells.some((c) => isBlockedCell(cand.surface, c.col, c.row, cand.assetKey))) return '가구나 창문이 있는 자리예요.'
   const taken = new Set(placed.flatMap((p, i) => (i === skip || p.surface !== cand.surface ? [] : cellsOf(p).map((c) => `${c.col}:${c.row}`))))
   if (cells.some((c) => taken.has(`${c.col}:${c.row}`))) return '다른 방 소품과 겹쳐요.'
@@ -306,8 +323,8 @@ export function placeableCells(placed: Placed[], skip: number | null, assetKey: 
   return out
 }
 /** [놓기]를 눌렀을 때 처음 놓을 자리: 바닥은 러그 앞, 벽은 추억의 벽 위쪽에서 가까운 칸 */
-export function firstPlace(placed: Placed[], assetKey: string) {
-  const cells = placeableCells(placed, null, assetKey)
+export function firstPlace(placed: Placed[], assetKey: string, ignore: number | null = null) {
+  const cells = placeableCells(placed, ignore, assetKey)
   if (!cells.length) return null
   const want = decorOf(assetKey)?.kind === 'WALL' ? { surface: 'WALL_BACK' as DecorSurface, x: BOARD.x, y: -430 } : { surface: 'FLOOR' as DecorSurface, x: RUG.x, y: RUG.z + 160 }
   const dist = (c: { surface: DecorSurface; col: number; row: number }) => {
@@ -320,6 +337,24 @@ export function firstPlace(placed: Placed[], assetKey: string) {
 export function stepCell(surface: DecorSurface, dir: 'left' | 'right' | 'up' | 'down') {
   const flip = surface === 'WALL_LEFT' ? -1 : 1
   return { left: { dc: -1 * flip, dr: 0 }, right: { dc: 1 * flip, dr: 0 }, up: { dc: 0, dr: -1 }, down: { dc: 0, dr: 1 } }[dir]
+}
+/** 놓인 소품 가운데의 방 좌표(밀어 보기 화살표·놓기 확대의 가운데) */
+export function decorCenter(p: Placed): { x: number; y: number; z: number } {
+  const [w, h] = decorOf(p.assetKey)?.cells ?? [1, 1]
+  const r = cellRect(p.surface, p.col, p.row, w, h)
+  const a = (r[0] + r[1]) / 2, b = (r[2] + r[3]) / 2
+  if (p.surface === 'FLOOR') return { x: a, y: -30, z: b }
+  if (p.surface === 'WALL_BACK') return { x: a, y: b, z: -D / 2 }
+  return { x: -W / 2, y: b, z: a }
+}
+/** 그 면 가운데 칸의 왼쪽·오른쪽 끝(방 좌표). 화면에서 칸 폭을 재어 놓기 확대 배율을 정한다 */
+export function cellSpan(surface: DecorSurface): [{ x: number; y: number; z: number }, { x: number; y: number; z: number }] {
+  const g = DECOR_GRID[surface]
+  const r = cellRect(surface, Math.floor(g.cols / 2), Math.floor(g.rows / 2))
+  const mid = (r[2] + r[3]) / 2
+  if (surface === 'FLOOR') return [{ x: r[0], y: 0, z: mid }, { x: r[1], y: 0, z: mid }]
+  if (surface === 'WALL_BACK') return [{ x: r[0], y: mid, z: -D / 2 }, { x: r[1], y: mid, z: -D / 2 }]
+  return [{ x: -W / 2, y: mid, z: r[0] }, { x: -W / 2, y: mid, z: r[1] }]
 }
 /** 칸(들)을 덮는 방 그림 면 자리(놓기 칸 표시·고른 소품 테두리용) */
 export function cellPlane(surface: DecorSurface, col: number, row: number, w = 1, h = 1) {

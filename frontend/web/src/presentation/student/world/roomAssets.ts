@@ -143,7 +143,7 @@ export const DECORS: Record<string, Decor> = {
   'room/decor-lamp.svg': { name: '스탠드 조명', kind: 'FLOOR', cells: [1, 1], solid: true, stand: [104, 182] },
   'room/decor-doll.svg': { name: '뭉치 인형', kind: 'FLOOR', cells: [1, 1], solid: true, stand: [100, 100] },
   'room/decor-books.svg': { name: '쌓은 책', kind: 'FLOOR', cells: [1, 1], solid: true, stand: [92, 67] },
-  'room/decor-beanbag.svg': { name: '빈백 소파', kind: 'FLOOR', cells: [2, 1], solid: true, stand: [152, 98] },
+  'room/decor-beanbag.svg': { name: '쿠션 소파', kind: 'FLOOR', cells: [2, 1], solid: true, stand: [152, 98] },
   // 바닥에 까는 것
   'room/decor-rug.svg': { name: '동그란 러그', kind: 'FLOOR', cells: [2, 2], solid: false },
   'room/decor-rug-square.svg': { name: '네모 러그', kind: 'FLOOR', cells: [3, 2], solid: false },

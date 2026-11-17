@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { RotateCcw, RotateCw, X } from 'lucide-react'
 import { useSaveLook, useStudentLook } from '../../../data/studentLook/queries.ts'
 import { useAlbum, useDecorSpots, useFrameSlots, useLookItems, useMarkFramesSeen, useSaveDecorSpots, useSaveFrameSlots, useWeeklyTheme } from '../../../data/retention/queries.ts'
-import { blockedByDecor, cellPlane, cellsOf, decorFaces, decorFloorBlocks, drawableDecor, firstPlace, placeableCells, placeProblem, stepCell } from './decorArt.ts'
+import { blockedByDecor, cellPlane, cellsOf, cellSpan, decorCenter, decorFaces, decorFloorBlocks, drawableDecor, firstPlace, placeableCells, placeProblem, stepCell } from './decorArt.ts'
+import { RoomPanArrows } from './RoomPanArrows.tsx'
 import { ApiError } from '../../../data/apiClient.ts'
 import type { Child } from '../../../domain/classroom.ts'
 import { DECOR_MAX_OWNED, DECOR_SPOT_LIMIT, episodeKey, FRAME_SLOT_COUNT, FURNITURE_SLOTS, NO_EQUIPPED, SLOT_LABELS, weekLabel } from '../../../domain/retention.ts'
@@ -11,7 +12,7 @@ import type { AlbumItem, DecorSurface, FrameSlot, FurnitureSlot, LookItem } from
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { Companion } from './Companion.tsx'
 import { SpeechBubble } from './SpeechBubble.tsx'
-import { boardTagTransform, WORLD_TOP, DESK_X, DESK_Z, DOOR, faceStyle, MAT_RADIUS, MATS, projectToHolder, ROOM, roomFaces, SHELF, slotTransform, WARDROBE, WINDOW_Z } from './roomArt.ts'
+import { boardTagTransform, WORLD_TOP, DESK_X, DESK_Z, DOOR, faceStyle, MAT_RADIUS, MATS, ROOM, roomFaces, SHELF, slotTransform, WARDROBE, WINDOW_Z } from './roomArt.ts'
 import { CAN_ROTATE, CAN_WALK, clamp, useRoomWalk } from './useRoomWalk.ts'
 import type { MatId } from './roomArt.ts'
 import { decorPlaceText, floorName, furnitureSkinName, ROOM_SET_PARTS, skinOf, wallpaperOf } from './roomAssets.ts'
@@ -56,6 +57,11 @@ const LOOK_SAVE_FAILED = '벽지·가구를 바꾸지 못했어요. 고른 그�
 const DECOR_SAVE_FAILED = '방 소품을 놓지 못했어요. 놓은 그대로 두었으니 잠시 뒤에 다시 저장해 주세요.'
 /** 방 소품 초안 한 칸(서버에 보내는 모양, core #723 계약안) */
 type DraftDecor = { surface: DecorSurface; col: number; row: number; itemKey: string; color: string | null }
+/**
+ * 놓은 방 소품 색 고르기를 보일지. core는 #723(PR #736)에 color 칸이 없어 실서버는 color를 저장하지 않는다(모르는 칸으로 버림).
+ * core 색 후속 이슈가 병합되면 true로 켠다. 그때까지 놓으면 기본 색(color null)이고, 받은 색은 그대로 그린다.
+ */
+const DECOR_COLOR_PICK = false
 const decorKey = (list: DraftDecor[]) => JSON.stringify(list.map((d) => `${d.surface}:${d.col}:${d.row}:${d.itemKey}:${d.color ?? ''}`).sort())
 
 /** 액자 속 그림이 없을 때 쓰는 작은 풍경. 회차마다 언덕 색만 달라진다 */
@@ -133,10 +139,19 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
   const decorAsset = (itemKey: string) => catalog?.find((i) => i.itemKey === itemKey)?.assetKey ?? decorSpots.data?.find((s) => s.itemKey === itemKey)?.assetKey ?? ''
   const decorNow = (editing && decorReady ? draftDecor : savedDecor).map((d) => ({ ...d, assetKey: decorAsset(d.itemKey) }))
   const shownDecor = drawableDecor(decorNow)
+  // 옮기는 방 소품: 칸이 손가락 크기(44px)보다 작으면 방을 키우고 그 소품을 화면 가운데로(#705)
+  const movingSpot = editing && tab === 'decor' && decorReady && pickedDecor !== null ? draftDecor[pickedDecor] : undefined
+  const movingPlaced = movingSpot ? { ...movingSpot, assetKey: decorAsset(movingSpot.itemKey) } : undefined
   const {
     view, dragging, pos, facing, pose, moving, jumping, stageRef, holderRef, roomRef, drawerRef,
-    fit, holderH, scale, worldScale, onKeyDown, onKeyUp, onBlur, onPointerDown, onFloorClick, turn, faceCamera,
-  } = useRoomWalk({ paused: editing, blocked: blockedByDecor(decorFloorBlocks(shownDecor)) })
+    fit, holderH, worldScale, onKeyDown, onKeyUp, onBlur, onPointerDown, onFloorClick, turn, faceCamera,
+    pan, limX, stageTransform, toHolder, panTo,
+  } = useRoomWalk({
+    paused: editing,
+    blocked: blockedByDecor(decorFloorBlocks(shownDecor)),
+    fitSpan: movingPlaced ? cellSpan(movingPlaced.surface) : null,
+    focus: movingPlaced ? decorCenter(movingPlaced) : null,
+  })
   const frames = editing ? draftFrames : placed
   const { glow, flash } = useGlow()
   const wearing = (slot: RoomSlot) => (editing && slot in draftLook ? draftLook[slot] ?? null : equipped[slot] ?? null)
@@ -255,7 +270,7 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
     { id: 'shelf', label: '책장 · 내 공책', tag: { x: SHELF.x, y: -285, z: SHELF.z + 60 }, say: '내 공책 볼까?', button: '내 공책 열기', go: onJournal },
   ]
   const bubble = onMat ? SPOTS.find((s) => s.id === onMat) : undefined
-  const bubbleAt = projectToHolder(pos.x, -150, pos.z, { ...view, ws: worldScale, stageScale: scale, holderW: fit.w })
+  const bubbleAt = toHolder(pos.x, -150, pos.z)
 
   // 액자 고르기 창: 열리면 첫 버튼으로, Esc로 닫으면 그 자리 버튼으로 초점을 돌린다
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -294,6 +309,18 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
   const placeCells = useMemo(() => (pickedAsset ? placeableCells(draftPlaced, pickedDecor, pickedAsset) : []),
     [draftSig, pickedDecor, pickedAsset]) // eslint-disable-line react-hooks/exhaustive-deps
   const placedCount = (itemKey: string) => draftDecor.filter((d) => d.itemKey === itemKey).length
+  /** 저장돼 있지만 그릴 수 없는 소품(가구 배치·그림 목록이 바뀐 경우 등, #723): 방에 그리지 않고 "다시 놓아 주세요" */
+  const drawnDraft = new Set(drawableDecor(draftPlaced))
+  const staleOf = (itemKey: string) => draftPlaced.flatMap((p, i) => (p.itemKey === itemKey && !drawnDraft.has(p) ? [i] : []))
+  /** [다시 놓기]: 그릴 수 없는 소품 하나를 가까운 놓을 수 있는 칸으로 옮기고 고른다 */
+  const replaceStale = (i: number) => {
+    setDecorMsg('')
+    const p = draftPlaced[i]
+    const spot = firstPlace(draftPlaced, p.assetKey, i)
+    if (!spot) { setDecorMsg('지금은 놓을 자리가 없어요. 다른 소품을 치우거나 옮겨 보세요.'); return }
+    setDraftDecor((d) => d.map((x, j) => (j === i ? { ...x, ...spot } : x)))
+    setPickedDecor(i)
+  }
   /** [놓기]: 가까운 놓을 수 있는 칸에 하나 놓고 그것을 고른다 */
   const placeNew = (item: LookItem) => {
     setDecorMsg('')
@@ -333,15 +360,22 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
   const decorChoice = (item: LookItem) => {
     const owned = item.ownedCount ?? 0
     const placedN = placedCount(item.itemKey)
+    const stale = staleOf(item.itemKey)
     const price = item.pricePoints.toLocaleString('ko-KR')
     return (
       <div key={item.itemKey} className="st-decor-card">
         <span className="st-decor-thumb"><DecorThumb assetKey={item.assetKey} /></span>
         <b>{item.name}</b>
         <small>{decorPlaceText(item.assetKey)} · 놓음 {placedN}/{owned}</small>
+        {stale.length > 0 && <small className="st-decor-stale">{stale.length}개는 다시 놓아 주세요</small>}
         <span className="st-decor-buttons">
-          <button type="button" className="st-room-btn" disabled={!decorReady || placedN >= owned || saving} onClick={() => placeNew(item)}
-            aria-label={`${item.name} 놓기`}>놓기</button>
+          {stale.length > 0 ? (
+            <button type="button" className="st-room-btn" disabled={!decorReady || saving} onClick={() => replaceStale(stale[0])}
+              aria-label={`${item.name} 다시 놓기`}>다시 놓기</button>
+          ) : (
+            <button type="button" className="st-room-btn" disabled={!decorReady || placedN >= owned || saving} onClick={() => placeNew(item)}
+              aria-label={`${item.name} 놓기`}>놓기</button>
+          )}
           <button type="button" className="st-room-btn" disabled={!canBuyMore(item) || saving || shop.busy} onClick={() => shop.startPurchase(item.itemKey)}
             aria-label={owned >= DECOR_MAX_OWNED ? `${item.name} 더 살 수 없어요` : `${item.name} 1개 사기, ${price}포인트`}>
             {owned >= DECOR_MAX_OWNED ? '다 있어요' : !item.onSale ? '판매 끝' : `+사기 ${price}P`}
@@ -351,6 +385,18 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
     )
   }
   const pickedName = picked ? catalog?.find((i) => i.itemKey === picked.itemKey)?.name ?? '방 소품' : ''
+  // 옮기기 판이 열리면 키보드 초점을 화살표로(목록 카드가 사라져 초점이 없어지지 않게)
+  const padRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (pickedDecor !== null) padRef.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true })
+  }, [pickedDecor === null]) // eslint-disable-line react-hooks/exhaustive-deps
+  /** 옮기기 판에서 방향키로 한 칸씩 */
+  const onMoveKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const dir = ({ ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' } as const)[e.key as 'ArrowUp']
+    if (!dir) return
+    e.preventDefault()
+    nudge(dir)
+  }
   // 옮기기를 시작하면 방이 보이게(좁은 화면은 서랍 아래에서 방이 화면 위로 밀려 있었음)
   useEffect(() => {
     if (pickedDecor === null || fit.w >= 700) return
@@ -384,7 +430,7 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
 
       <section ref={roomRef} className="st-mini-room" aria-label="내 방">
         <div ref={holderRef} className="st-room-holder" style={{ height: Math.round(holderH), '--st-frame-wood': frameWood } as CSSProperties}>
-          <div ref={stageRef} className={CAN_ROTATE || CAN_WALK ? 'st-room-stage' : 'st-room-stage is-fixed'} style={{ transform: `scale(${scale.toFixed(3)})` }} tabIndex={CAN_WALK ? 0 : undefined} role="group"
+          <div ref={stageRef} className={CAN_ROTATE || CAN_WALK ? 'st-room-stage' : 'st-room-stage is-fixed'} style={{ transform: stageTransform }} tabIndex={CAN_WALK ? 0 : undefined} role="group"
             aria-label={CAN_WALK ? '내 방 그림. 바닥을 누르면 걸어가고, 방을 누른 뒤 방향키로 움직여요. 가구 앞 발판에 서면 뭉치가 말을 걸어요' : '내 방 그림'}
             onKeyDown={onKeyDown} onKeyUp={onKeyUp} onBlur={onBlur} onPointerDown={onPointerDown}>
             <div className={`st-room-world${dragging ? ' is-dragging' : ''}`} data-top={WORLD_TOP}
@@ -392,10 +438,12 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
               {faces.map((f) => {
                 // 방 꾸미기에서 칸을 고르면 그 칸이 바꾸는 가구만 잠깐 반짝인다(사용자 의견 2026-11-16 "뭐가 어떻게 변하는지 보여야지")
                 const g = glowClass(f.part, glow)
-                return <div key={f.key + g.suffix} className={`st-f${f.floor && CAN_WALK ? ' st-room-floor' : ''}${g.cls}`} style={faceStyle(f)} onClick={f.floor && CAN_WALK ? onFloorClick : undefined} aria-hidden="true" />
+                return <div key={f.key + g.suffix} className={`st-f${f.floor && CAN_WALK ? ' st-room-floor' : ''}${g.cls}`} style={faceStyle(f)} onClick={f.floor && CAN_WALK ? onFloorClick : undefined} aria-hidden="true"
+                  data-decor={f.key.startsWith('decor-') || undefined} />
               })}
               {/* 방 소품 놓기(#705): 놓인 소품을 눌러 고르고, 고른 소품은 주황 테두리, 놓을 수 있는 칸은 초록(누르면 옮김). 키보드는 서랍의 화살표 */}
               {decoring && draftPlaced.map((p, i) => {
+                if (!drawnDraft.has(p)) return null
                 const [w, h] = (cellsOf(p).reduce((a, c) => [Math.max(a[0], c.col - p.col + 1), Math.max(a[1], c.row - p.row + 1)], [1, 1]))
                 const pl = cellPlane(p.surface, p.col, p.row, w, h)
                 return <button key={`hit${i}`} type="button" tabIndex={-1} aria-hidden="true" className={`st-f st-decor-hit${i === pickedDecor ? ' is-picked' : ''}`}
@@ -460,6 +508,7 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
             <span className="st-room-thumb" aria-hidden="true">{thumb ? <FrameArt frame={thumb} /> : <span className="st-room-scene" />}</span>
             추억 앨범 열기
           </button>}
+          {!editing && <RoomPanArrows points={shownDecor.map(decorCenter)} toHolder={toHolder} width={fit.w} limX={limX} panX={pan.x} panTo={panTo} />}
           {CAN_WALK && !editing && <p className="st-room-hint" data-room-ui aria-hidden="true">바닥을 누르면 걸어가요 · 방향키로 움직여요</p>}
           {CAN_ROTATE && (
             <div className="st-room-controls" data-room-ui>
@@ -552,12 +601,12 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
               {!picked ? (
                 <div className="st-decor-cards">{slotItems('DECOR').map(decorChoice)}</div>
               ) : (
-                <div className="st-decor-move" role="group" aria-label={`${pickedName} 옮기기`}>
+                <div className="st-decor-move" role="group" aria-label={`${pickedName} 옮기기`} onKeyDown={onMoveKey}>
                   <div className="st-decor-move-head">
                     <span className="st-decor-thumb"><DecorThumb assetKey={picked.assetKey} color={picked.color} /></span>
-                    <span><b>{pickedName} 옮기는 중</b><small>방의 초록 칸을 눌러도 옮겨져요.</small></span>
+                    <span><b>{pickedName} 옮기는 중</b><small>방의 초록 칸을 누르거나 화살표·방향키로 옮겨요.</small></span>
                   </div>
-                  {decorColors(picked.assetKey).length > 1 && (
+                  {DECOR_COLOR_PICK && decorColors(picked.assetKey).length > 1 && (
                     <div className="st-decor-colors" role="group" aria-label={`${pickedName} 색`}>
                       {decorColors(picked.assetKey).map((col) => (
                         <button key={col.key} type="button" aria-pressed={(decorColor(picked.assetKey, picked.color)?.key ?? '') === col.key} aria-label={col.label}
@@ -565,7 +614,7 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
                       ))}
                     </div>
                   )}
-                  <div className="st-decor-pad">
+                  <div ref={padRef} className="st-decor-pad">
                     <button type="button" className="st-room-btn is-up" aria-label={picked.surface === 'FLOOR' ? '뒤로 한 칸' : '위로 한 칸'} onClick={() => nudge('up')}>↑</button>
                     <button type="button" className="st-room-btn is-left" aria-label="왼쪽으로 한 칸" onClick={() => nudge('left')}>←</button>
                     <button type="button" className="st-room-btn is-right" aria-label="오른쪽으로 한 칸" onClick={() => nudge('right')}>→</button>

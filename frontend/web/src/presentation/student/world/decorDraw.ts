@@ -13,7 +13,7 @@ const c = (key: string, label: string, swatch: string, pal: Pal): DecorColor => 
 
 /**
  * 공통 8색 팔레트(사용자 결정 2026-11-17 "ㄱ 공통 8색"): [키, 이름, 기본, 진한, 연한]. 방 그림체와 어울리는 색만 둬 어떻게 골라도 방이 지저분하지 않게.
- * 색을 바꿀 수 있는 부분(화분·갓·빈백·러그·시계 테두리·액자 틀·선반·인형)에 모두 쓴다. 섞인 색 소품은 아래 묶음 색.
+ * 색을 바꿀 수 있는 부분(화분·갓·쿠션 소파·러그·시계 테두리·액자 틀·선반·인형)에 모두 쓴다. 섞인 색 소품은 아래 묶음 색.
  */
 const BASE: [string, string, string, string, string][] = [
   ['sky', '하늘', '#9CCBEF', '#6FA8D6', '#DDEEFB'],
@@ -126,7 +126,7 @@ function art(key: string, p: Pal): Art | null {
         `<rect x="10" y="56" width="88" height="18" rx="3" fill="${p.b1}"/><rect x="18" y="38" width="78" height="18" rx="3" fill="${p.b2}"/><rect x="8" y="20" width="84" height="18" rx="3" fill="${p.b3}"/>` +
         `<path d="M20 56 V74 M86 38 V56 M18 20 V38" fill="none" stroke="#FFFDF6" stroke-width="3"/>` +
         `<path d="M30 20 C40 10 50 10 56 16 C62 10 72 10 82 20 Z" fill="#FFFDF6"/>`) }
-    case 'room/decor-beanbag.svg': // 빈백 소파: 말랑한 덩어리 + 눌린 자리
+    case 'room/decor-beanbag.svg': // 쿠션 소파(그림 키는 예전 이름 beanbag 그대로): 말랑한 덩어리 + 눌린 자리
       return { w: 170, h: 110, body: g(st,
         `<path d="M14 92 C4 70 16 40 44 28 C70 16 104 16 128 28 C156 42 168 70 156 92 C140 106 30 106 14 92 Z" fill="${p.bag}"/>` +
         `<path d="M46 60 C64 48 104 48 124 60" fill="none" stroke="${p.bag2}" stroke-width="5"/><ellipse cx="62" cy="40" rx="16" ry="7" fill="#FFFFFF" opacity=".45" stroke="none"/>`) }

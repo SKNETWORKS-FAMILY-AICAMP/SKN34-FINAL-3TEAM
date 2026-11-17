@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { FriendView } from './friendArt.ts'
-import { MATS, onFloor, projectToHolder, ROOM, RUG } from './roomArt.ts'
+import { MATS, onFloor, projectToHolder, ROOM, ROOM_VIEW, RUG } from './roomArt.ts'
 
 /**
  * 캐릭터 걷기(바닥 누르기·방향키·스페이스 점프). 사용자 결정 2026-11-16으로 켬(기능명세 P27 문구도 고침).
@@ -12,7 +12,7 @@ export const CAN_WALK = true
 const SPEED = 380
 /** 방 돌려 보기: 방 안 시점(벽·바닥이 창 밖까지)이라 돌리면 방 끝이 드러나 끔(사용자 의견 2026-11-15 "디오라마 말고") */
 export const CAN_ROTATE = false
-const START: { rx: number; ry: number } = { rx: -24, ry: -30 }
+const START: { rx: number; ry: number } = ROOM_VIEW
 const MOVE_KEYS: Record<string, 'u' | 'd' | 'l' | 'r'> = {
   ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd', ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r',
 }
@@ -23,11 +23,21 @@ export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b
  * - start: 뭉치 처음 자리(내 방은 방 가운데, 친구 방은 문 앞)
  * - paused: 방 꾸미기 중처럼 걷기를 멈출 때(바닥 누르기·방향키 무시, 방 칸을 조금 더 줄임)
  * - blocked: 바닥·가구 말고 더 막을 곳(친구 방의 친구 뭉치 자리)
+ * - fitSpan·focus: 방 좌표 두 점(칸 하나의 양 끝) 사이가 화면에서 44px 이상 되게 방을 키우고 focus(방 좌표)를 화면 가운데로(#705 방 소품 놓기)
+ *
+ * 밀어 보기(#705, 방 소품 칸은 PC 화면 기준 core #723): 좁은 화면은 방 양옆이 잘려 보이므로 손가락(마우스)으로 좌우로 밀어 보고,
+ * 뭉치가 화면 끝으로 걸어가면 방이 따라 움직인다. 처음 화면은 그대로(가운데). 조금(8px) 움직이면 밀기, 그대로 떼면 바닥 누르기(걷기)
  */
-export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, blocked }: {
+type Point3 = { x: number; y: number; z: number }
+/** 방 소품 놓기에서 칸 하나가 화면에서 이만큼은 되게(손가락으로 누르는 크기, #705) */
+export const MIN_CELL_PX = 44
+
+export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, blocked, fitSpan = null, focus = null }: {
   start?: { x: number; z: number }
   paused?: boolean
   blocked?: (x: number, z: number) => boolean
+  fitSpan?: [Point3, Point3] | null
+  focus?: Point3 | null
 } = {}) {
   // ---- 방 보기(돌리기·움직이기) 상태 ----
   const [view, setView] = useState({ rx: START.rx, ry: START.ry })
@@ -43,6 +53,8 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
   }
   const [moving, setMoving] = useState(false)
   const [jumping, setJumping] = useState(false)
+  /** 방 밀기(화면 px, 방 칸 기준). x는 좌우, y는 확대했을 때만 위아래(0 이하) */
+  const [pan, setPan] = useState({ x: 0, y: 0 })
   const stageRef = useRef<HTMLDivElement>(null)
   const holderRef = useRef<HTMLDivElement>(null)
   const keys = useRef<Record<string, boolean>>({})
@@ -55,7 +67,7 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
   const viewRef = useRef(view)
   const posRef = useRef(pos)
   /** 화면 좌표 계산에 쓰는 지금 크기(그릴 때마다 갱신) */
-  const metrics = useRef({ ws: 0.92, stageScale: 0.8, holderW: 1200, holderH: 600 })
+  const metrics = useRef({ ws: 0.92, stageScale: 0.8, holderW: 1200, holderH: 600, panX: 0, panY: 0, limX: 0, yMin: 0 })
   useLayoutEffect(() => { viewRef.current = view; posRef.current = pos }, [view, pos])
   const later = (fn: () => void, ms: number) => { timers.current.push(window.setTimeout(fn, ms)) }
   useEffect(() => () => {
@@ -75,9 +87,12 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
     const k = m.ws * m.stageScale
     const half = 54 * k
     const tall = 140 * k
+    // 화면에 다 보이는 곳: 밀어 볼 수 있으면 밀어서 보이는 끝까지(밀기 전 좌표)
     const box = { l: foot.x - half, r: foot.x + half, t: foot.y - tall, b: foot.y + 6 * k }
-    if (box.l < 6 || box.r > m.holderW - 6 || box.t < 6 || box.b > m.holderH - 4) return false
+    if (box.l < 6 - m.limX || box.r > m.holderW - 6 + m.limX || box.t < 6 || box.b > m.holderH - 4 - m.yMin) return false
     if (ignoreUi) return true
+    // 방 위 단추는 방 칸에 고정이라 지금 밀린 만큼 옮겨 비교
+    box.l += m.panX; box.r += m.panX; box.t += m.panY; box.b += m.panY
     const holder = holderRef.current?.getBoundingClientRect()
     if (!holder) return true
     const ui = holderRef.current?.parentElement?.querySelectorAll<HTMLElement>('[data-room-ui]') ?? []
@@ -110,8 +125,21 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
   const gap = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z)
   /** 그 자리에 설 수 있나(방 위 단추는 빼고 봄). 화면 크기를 잰 뒤에 맞다 */
   const canStand = (p: { x: number; z: number }) => standable(p.x, p.z, true)
+  /** 뭉치가 화면 끝으로 걸어가면 방이 따라 움직임(밀어 볼 수 있을 때만, #705) */
+  const follow = (p: { x: number; z: number }) => {
+    const m = metrics.current
+    if (!m.limX || m.panY) return
+    const foot = projectToHolder(p.x, 0, p.z, { ...viewRef.current, ws: m.ws, stageScale: m.stageScale, holderW: m.holderW })
+    const fx = foot.x + m.panX
+    const margin = Math.min(90, m.holderW * 0.22)
+    let nx = m.panX
+    if (fx < margin) nx += margin - fx
+    else if (fx > m.holderW - margin) nx -= fx - (m.holderW - margin)
+    nx = clamp(nx, -m.limX, m.limX)
+    if (Math.abs(nx - m.panX) > 0.5) { m.panX = nx; setPan({ x: nx, y: 0 }) }
+  }
   /** 걷지 않고 그 자리로 옮김(친구 방: 문 앞이 좁은 화면 밖이면 보이는 곳에서 들어옴) */
-  const placeAt = (p: { x: number; z: number }) => { path.current = []; posRef.current = p; setPos(p) }
+  const placeAt = (p: { x: number; z: number }) => { path.current = []; posRef.current = p; setPos(p); follow(p) }
   const faceTo = (dx: number, dz: number) => {
     const th = (viewRef.current.ry * Math.PI) / 180
     const sx = dx * Math.cos(th) + dz * Math.sin(th)
@@ -154,6 +182,7 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
     }
     posRef.current = { x, z }
     setPos({ x, z })
+    follow({ x, z })
     setMoving(true)
     raf.current = requestAnimationFrame(tick)
   }
@@ -181,6 +210,7 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
       path.current = []
       posRef.current = end
       setPos(end)
+      follow(end)
       return
     }
     path.current = route
@@ -206,7 +236,7 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button, a')) return
     if (CAN_WALK) stageRef.current?.focus({ preventScroll: true })
-    if (!CAN_ROTATE) return
+    if (!CAN_ROTATE) { startSwipe(e); return }
     drag.current = { x: e.clientX, y: e.clientY, rx: viewRef.current.rx, ry: viewRef.current.ry, moved: false }
     const move = (ev: PointerEvent) => {
       const d = drag.current
@@ -222,6 +252,31 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
       justDragged.current = !!drag.current?.moved
       drag.current = null
       setDragging(false)
+      later(() => { justDragged.current = false }, 0)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+  /** 밀어 보기: 좌우로 8px 넘게 움직이면 방을 밀고, 뗀 뒤 바닥 누르기(걷기)는 무시 */
+  const startSwipe = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const m0 = metrics.current
+    if (!m0.limX) return
+    const sx = e.clientX
+    const from = m0.panX
+    let moved = false
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - sx
+      if (!moved && Math.abs(dx) < 8) return
+      moved = true
+      const m = metrics.current
+      setPan((p) => ({ ...p, x: clamp(from + dx, -m.limX, m.limX) }))
+    }
+    const up = () => {
+      justDragged.current = moved
       later(() => { justDragged.current = false }, 0)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
@@ -273,11 +328,36 @@ export function useRoomWalk({ start = { x: RUG.x, z: RUG.z }, paused = false, bl
   // 빈 벽 여백을 줄이게 더 당김(사용자 의견 2026-11-16 "여백이 너무 넓어")
   const worldScale = fit.w < 700 ? 0.92 : 1.0
 
+  // ---- 밀어 보기·확대(#705) ----
+  let zoom = 1
+  if (fitSpan) {
+    const base = (p: Point3) => projectToHolder(p.x, p.y, p.z, { ...view, ws: worldScale, stageScale: scale, holderW: fit.w })
+    const a = base(fitSpan[0]), b = base(fitSpan[1])
+    const d = Math.hypot(a.x - b.x, a.y - b.y)
+    if (d > 0) zoom = clamp(MIN_CELL_PX / d, 1, 3)
+  }
+  const shown = scale * zoom
+  /** 밀 수 있는 한도: 좌우는 무대(1400) 끝까지, 위아래는 확대해 방 칸보다 커진 만큼 */
+  const limX = Math.max(0, (1400 * shown - fit.w) / 2)
+  const yMin = Math.min(0, holderH - 780 * shown)
+  const clampPan = (p: { x: number; y: number }) => ({ x: clamp(p.x, -limX, limX), y: clamp(p.y, yMin, 0) })
+  const project = (x: number, y: number, z: number) => projectToHolder(x, y, z, { ...view, ws: worldScale, stageScale: shown, holderW: fit.w })
+  /** 지금 밀린 만큼: 확대 중이면 focus를 가운데로, 아니면 밀어 둔 값(한도 안으로) */
+  const at = focus ? (() => { const p = project(focus.x, focus.y, focus.z); return clampPan({ x: fit.w / 2 - p.x, y: holderH / 2 - p.y }) })() : clampPan({ x: pan.x, y: 0 })
+  /** 방 좌표 → 방 칸 안 화면 좌표(밀린 만큼 포함) */
+  const toHolder = (x: number, y: number, z: number) => { const p = project(x, y, z); return { x: p.x + at.x, y: p.y + at.y } }
+  const stageTransform = `translate(${at.x.toFixed(1)}px,${at.y.toFixed(1)}px) scale(${shown.toFixed(3)})`
+  /** 화살표 단추 등: 왼쪽(-1)·오른쪽(1) 끝까지 밀기 */
+  const panTo = (side: -1 | 1) => setPan({ x: -side * limX, y: 0 })
+
   // 걷기 경계 계산용 지금 크기
-  useLayoutEffect(() => { metrics.current = { ws: worldScale, stageScale: scale, holderW: fit.w, holderH } }, [worldScale, scale, fit.w, holderH])
+  useLayoutEffect(() => {
+    metrics.current = { ws: worldScale, stageScale: shown, holderW: fit.w, holderH, panX: at.x, panY: at.y, limX, yMin }
+  }, [worldScale, shown, fit.w, holderH, at.x, at.y, limX, yMin])
 
   return {
     view, dragging, pos, facing, pose, moving, jumping, stageRef, holderRef, roomRef, drawerRef,
     fit, holderH, scale, worldScale, onKeyDown, onKeyUp, onBlur, onPointerDown, onFloorClick, turn, faceCamera, walkTo, canStand, placeAt,
+    pan: at, limX, stageTransform, toHolder, panTo, zoom,
   }
 }

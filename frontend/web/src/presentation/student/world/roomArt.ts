@@ -107,6 +107,8 @@ export const boardTagTransform = `translate3d(${BOARD.x}px,${BOARD.y - BOARD.h /
  */
 /** 방(world) 원점의 무대 높이 비율. CSS(.st-room-world top)도 이 값을 쓴다 */
 export const WORLD_TOP = 0.66
+/** 방을 보는 각도(돌려 보기는 끔, useRoomWalk CAN_ROTATE). 방 소품 칸이 PC 화면에 보이는지 계산에도 씀 */
+export const ROOM_VIEW = { rx: -24, ry: -30 } as const
 export function projectToHolder(x: number, y: number, z: number, v: { rx: number; ry: number; ws: number; stageScale: number; holderW: number }) {
   const ry = (v.ry * Math.PI) / 180
   const rx = (v.rx * Math.PI) / 180
