@@ -228,7 +228,7 @@ def test_evidence_plan_follows_what_each_fact_feature_can_show() -> None:
     assert theme["evidencePlan"]["TUE"]["kind"] == "SIGHTING"
     assert not checks.kind_fits(families.GIFT, "선물을 산 가게", "TRACE")
     assert checks.kind_fits(families.GIFT, "선물을 산 가게", "RECORD")
-    assert not checks.kind_fits(families.SECRET_INGREDIENT, "맛", "SIGHTING")
+    assert not checks.kind_fits(families.SECRET_INGREDIENT, "재료 맛", "SIGHTING")
     assert not checks.kind_fits(families.PRANK, "꼬리 모양", "TRACE")
     assert checks.kind_fits(families.LOST, "냄새", "SIGHTING")  # 사실표 밖은 흔적만 봄
     # 짝이 없으면 그 특징으로 알 수 있는 종류로(목격 먼저)
@@ -261,3 +261,15 @@ def test_origin_route_every_clue_names_target() -> None:
     assert "CLUE_OWNER" in families.type_rules(families.ORIGIN)
     assert any("대상 낱말" in r for r in prompts.fix_rules(theme, "WED.clue"))
     assert "같은 대상의 증거라 서로 다른 때를 섞은 것이 아니다" in prompts.REVIEW_SYSTEM
+
+
+def test_in_hand_clues_get_no_clock_time() -> None:
+    # 마지막 확인 2차: 증거의 때가 둘(산 때·받은 뒤)이라 시각을 붙이면 '10시 기록·11시에 샀다' 모순
+    for t in (families.ORIGIN, families.GIFT, families.SECRET_INGREDIENT, families.ROUTE):
+        assert not t.clue_time and not t.hide_times, t.code
+    gift = gift_theme()
+    gift["days"][0]["evidence"]["when"] = "오후 3시"
+    before = gift["days"][0]["clue"]
+    assert checks.add_clue_time(gift)["days"][0]["clue"] == before
+    assert "단서에 시각(3시·10시 반 등)을 쓰지 않고" in families.type_rules(families.GIFT)
+    assert families.INGREDIENTS.features[1] == "재료 맛"
