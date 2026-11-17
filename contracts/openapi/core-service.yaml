@@ -9105,7 +9105,7 @@ components:
               items:
                 type: object
                 additionalProperties: false
-                required: [surface, col, row, assetKey]
+                required: [surface, col, row, assetKey, color]
                 oneOf:
                   - properties:
                       surface: {const: FLOOR}
@@ -9120,6 +9120,7 @@ components:
                       col: {maximum: 10}
                       row: {maximum: 5}
                 properties:
+                  color: {type: [string, 'null'], pattern: '^[a-z0-9-]{1,20}$', not: {type: string, pattern: '[^a-z0-9-]'}, maxLength: 20}
                   surface: {type: string, enum: [FLOOR, WALL_BACK, WALL_LEFT]}
                   col: {type: integer, minimum: 0, maximum: 16}
                   row: {type: integer, minimum: 0, maximum: 12}
@@ -9287,6 +9288,7 @@ components:
             col: {maximum: 10}
             row: {maximum: 5}
       properties:
+        color: {type: [string, 'null'], pattern: '^[a-z0-9-]{1,20}$', not: {type: string, pattern: '[^a-z0-9-]'}, maxLength: 20, description: null은 소품 기본 색}
         surface: {type: string, enum: [FLOOR, WALL_BACK, WALL_LEFT]}
         col: {type: integer, minimum: 0, maximum: 16}
         row: {type: integer, minimum: 0, maximum: 12}
@@ -9294,7 +9296,7 @@ components:
     RoomDecorSpot:
       type: object
       additionalProperties: false
-      required: [surface, col, row, itemKey, name, assetKey]
+      required: [surface, col, row, itemKey, name, assetKey, color]
       oneOf:
         - properties:
             surface: {const: FLOOR}
@@ -9309,6 +9311,7 @@ components:
             col: {maximum: 10}
             row: {maximum: 5}
       properties:
+        color: {type: [string, 'null'], pattern: '^[a-z0-9-]{1,20}$', not: {type: string, pattern: '[^a-z0-9-]'}, maxLength: 20, description: null은 소품 기본 색}
         surface: {type: string, enum: [FLOOR, WALL_BACK, WALL_LEFT]}
         col: {type: integer, minimum: 0, maximum: 16}
         row: {type: integer, minimum: 0, maximum: 12}

@@ -17,9 +17,9 @@ class RoomDecorContractTest(unittest.TestCase):
     def variants(self, cell):
         return [
             (self.schemas["RoomDecorSpotInput"], {**cell, "itemKey": "POT"}),
-            (self.schemas["RoomDecorSpot"], {**cell, "itemKey": "POT", "name": "화분", "assetKey": "room/pot"}),
+            (self.schemas["RoomDecorSpot"], {**cell, "itemKey": "POT", "name": "화분", "assetKey": "room/pot", "color": None}),
             (self.schemas["FriendRoom"]["properties"]["room"]["properties"]["decor"]["items"],
-             {**cell, "assetKey": "room/pot"}),
+             {**cell, "assetKey": "room/pot", "color": None}),
         ]
 
     def test_all_public_shapes_enforce_each_surface_boundary(self):
@@ -52,6 +52,16 @@ class RoomDecorContractTest(unittest.TestCase):
             for count in (0, 8, 9):
                 body = [dict(item, col=i) for i in range(count)]
                 self.assertEqual(count <= 8, validator.is_valid({"spots": body} if wrap else body))
+
+    def test_color_optional_only_in_request_and_validated_in_all_shapes(self):
+        for index, (schema, body) in enumerate(self.variants(dict(surface="FLOOR", col=0, row=0))):
+            validator = Draft202012Validator(schema)
+            without = {k: v for k, v in body.items() if k != "color"}
+            self.assertEqual(index == 0, validator.is_valid(without))
+            for color in [None, "sky", "a", "a" * 20, "custom-9"]:
+                self.assertTrue(validator.is_valid({**body, "color": color}), color)
+            for color in ["", "Sky", "pink blue", "a" * 21, "분홍", "sky\n", 1, True, []]:
+                self.assertFalse(validator.is_valid({**body, "color": color}), color)
 
 
 if __name__ == "__main__":

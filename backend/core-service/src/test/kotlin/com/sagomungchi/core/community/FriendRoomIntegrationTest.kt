@@ -164,7 +164,9 @@ class FriendRoomIntegrationTest : IntegrationTestSupport() {
     private fun learningCalls() = calls.filter { !it.target.endsWith("/community-visibility") }
 
     @Test fun `visible friend room shows decorations and frames by asset key without student ids or round keys`() {
-        dress(); hang(2, "2026-10-19"); hang(1, "2026-11-02")
+        dress()
+        jdbc.update("UPDATE room_decor_spot SET color='pink' WHERE student_id=? AND surface='FLOOR'", friend)
+        hang(2, "2026-10-19"); hang(1, "2026-11-02")
         val body = room(snapshot = "friend-room")
         assertEquals("별빛", body["nickname"].asText())
         assertEquals("space", body["look"]["theme"].asText()); assertEquals("tori", body["look"]["companion"].asText())
@@ -178,7 +180,9 @@ class FriendRoomIntegrationTest : IntegrationTestSupport() {
         assertEquals("room/floor-grass.png", body["room"]["floor"].asText())
         assertEquals(listOf(Triple("FLOOR", 16, 12) to "room/decor-lamp.png", Triple("WALL_LEFT", 10, 5) to "room/decor-plant.png"),
             body["room"]["decor"].map { Triple(it["surface"].asText(), it["col"].asInt(), it["row"].asInt()) to it["assetKey"].asText() })
-        assertEquals(setOf("surface", "col", "row", "assetKey"), body["room"]["decor"][0].fieldNames().asSequence().toSet())
+        assertEquals(setOf("surface", "col", "row", "assetKey", "color"), body["room"]["decor"][0].fieldNames().asSequence().toSet())
+        assertEquals("pink", body["room"]["decor"][0]["color"].asText())
+        assertTrue(body["room"]["decor"][1]["color"].isNull)
         val frames = body["room"]["frames"]
         assertEquals(listOf(1, 2), frames.map { it["slotNo"].asInt() })
         assertEquals(listOf("물의 여행", "그림 없는 액자"), frames.map { it["title"].asText() })
