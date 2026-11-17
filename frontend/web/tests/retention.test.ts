@@ -8,6 +8,7 @@ import {
   onTimeCount,
   remainingCandidates,
   readCommunityPosts,
+  readFriendRoom,
   readLookItems,
   readMyPosts,
   readAnswerPick,
@@ -378,4 +379,50 @@ test('당일 풀이·주간 완주는 learning #484 판정 칸으로 적립되�
     [['THEME_ON_TIME', 5], ['THEME_FINISHED', 10]],
   )
   assert.ok(POINT_RULES.every((r) => !('preparing' in r)))
+})
+
+test('#709 친구 방 응답: 그림 키·기본값·액자 순서를 읽고, 학생 ID·회차 키·방 소품은 화면 상태에 두지 않는다', () => {
+  const room = readFriendRoom({
+    nickname: '하늘별',
+    studentId: 'stu-1',
+    look: { theme: 'lake', companion: 'tori', equipped: { HAT: 'looks/hat-acorn.svg', OUTFIT: null, ACCESSORY: '' } },
+    room: {
+      wallpaper: 'room/wall-sky.svg', floor: null,
+      furniture: { DESK: 'room/desk-cherry.svg', WALL: null, WARDROBE: 'room/wardrobe-berry.svg' },
+      decor: [{ spotNo: 1, assetKey: 'room/decor-plant.svg' }],
+      frames: [
+        { slotNo: 3, title: '별빛 우체국', imageUrl: '/demo/album/past-post.jpg', themeId: 'th-1', weekStart: '2026-11-02' },
+        { slotNo: 1, title: '잃어버린 지도 조각', imageUrl: '' },
+      ],
+    },
+  })
+  assert.deepEqual(room, {
+    nickname: '하늘별',
+    companion: 'tori',
+    worn: { HAT: 'looks/hat-acorn.svg' },
+    room: { wallpaper: 'room/wall-sky.svg', floor: null, desk: 'room/desk-cherry.svg', wall: null, wardrobe: 'room/wardrobe-berry.svg' },
+    frames: [
+      { slotNo: 1, title: '잃어버린 지도 조각', imageUrl: null },
+      { slotNo: 3, title: '별빛 우체국', imageUrl: '/demo/album/past-post.jpg' },
+    ],
+  })
+  // 모르는 캐릭터는 기본 캐릭터, 빈 별명은 "친구"
+  assert.equal(readFriendRoom({ nickname: '', look: { companion: 'nope', equipped: {} }, room: { furniture: {}, frames: [] } }).companion, 'mungchi')
+  assert.equal(readFriendRoom({ nickname: '', look: { equipped: {} }, room: { furniture: {}, frames: [] } }).nickname, '친구')
+})
+
+test('#709 친구 방 응답 모양이 틀리면 계약 오류(화면은 공통 오류·다시 시도)', () => {
+  const ok = { nickname: '초록콩', look: { companion: 'kongi', equipped: {} }, room: { furniture: {}, frames: [] } }
+  assert.doesNotThrow(() => readFriendRoom(ok))
+  for (const bad of [
+    null,
+    { ...ok, nickname: 3 },
+    { ...ok, look: undefined },
+    { ...ok, room: { ...ok.room, frames: 'x' } },
+    { ...ok, room: { ...ok.room, wallpaper: 7 } },
+    { ...ok, look: { equipped: { HAT: 1 } } },
+    { ...ok, room: { ...ok.room, frames: [{ slotNo: 7, title: 'a' }] } },
+    { ...ok, room: { ...ok.room, frames: [{ slotNo: 1, title: 'a' }, { slotNo: 1, title: 'b' }] } },
+    { ...ok, room: { ...ok.room, frames: [{ slotNo: 1 }] } },
+  ]) assert.throws(() => readFriendRoom(bad), /친구 방 정보를 확인하지 못했어요/)
 })
