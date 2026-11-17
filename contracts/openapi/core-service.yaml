@@ -359,6 +359,26 @@ paths:
       responses:
         '204': {description: 반응 취소}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /community-posts/{postId}/room:
+    get:
+      tags: [Community]
+      operationId: getFriendRoom
+      summary: 친구 방 구경 (#708, FN-RET-14). 친구 생각 글 번호로 작성자의 방을 읽기 전용으로. 학생만, Cache-Control no-store
+      description: >-
+        친구 생각 목록과 같은 조건에서만 보인다. 처리 순서: 학생 세션 확인(학생 외 403 FORBIDDEN, learning 미호출) → core 신고 숨김 404 →
+        learning 작성자 확인(#707, 403 COMMUNITY_LOCKED·COMMUNITY_LOCKED_UNTIL_ENDING, 404 COMMUNITY_POST_NOT_FOUND, 409 COMMUNITY_OWN_POST 그대로 전달,
+        그 밖 503 COMMUNITY_UNAVAILABLE) → 작성자 공개 판정(공개 끔·현재 보호자 동의 없음·비활성이면 404 COMMUNITY_POST_NOT_FOUND, 이유 구분 없음) →
+        착용·바닥 그림 키 → 방 소품 놓은 자리 → 걸린 액자가 있으면 작성자 범위로 learning 앨범(실패 502 LEARNING_UNAVAILABLE·LEARNING_CONTRACT_INVALID).
+        학생 ID·postId·themeId·weekStart·attemptId·포인트·해금 목록은 넣지 않는다(회차 상세를 열 수 없음).
+      parameters:
+      - {name: postId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 친구 방
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FriendRoom'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/points:
     get:
       tags: [Students]
@@ -523,7 +543,7 @@ paths:
       tags: [Students]
       operationId: getRoomDecorSpots
       summary: 내 방에 놓은 방 소품 (#704, FN-RET-09, P27 개정). 학생 본인만, 학부모·관리자 403
-      description: 놓은 자리만 번호순(빈 자리 없음). 이름·그림 키는 look_item 값. 보유 개수는 /students/me/look-items의 ownedCount
+      description: 놓은 기준 칸만 면(FLOOR → WALL_BACK → WALL_LEFT) → row → col 순(빈 칸 없음). 이름·그림 키는 look_item 값. 보유 개수는 /students/me/look-items의 ownedCount
       responses:
         '200':
           description: 지금 놓은 방 소품 (Cache-Control no-store)
@@ -536,8 +556,8 @@ paths:
       operationId: replaceRoomDecorSpots
       summary: 방 소품 놓은 자리 전체 교체 (#704). 빈 목록은 모두 치움
       description: >-
-        자리 1~8(종류 구분 없음)에 가진 방 소품을 놓는다. 같은 방 소품은 보유 개수만큼 여러 자리에 놓을 수 있다. 기존 가구는 고정.
-        spots 누락·9개 이상·spotNo 1~8 밖·같은 spotNo 두 번·빈 칸·가지지 않은 방 소품(방 소품이 아닌 아이템 포함)·보유 개수보다 많이 놓기는
+        바닥·뒷벽·왼쪽 벽 기준 칸에 가진 방 소품을 최대 8개 놓는다(#723). 큰 소품의 크기·겹침·허용 면·가구·이동 경로는 웹이 검사한다. 같은 방 소품은 보유 개수만큼 여러 자리에 놓을 수 있다. 기존 가구는 고정.
+        spots 누락·9개 이상·면별 col/row 범위 밖·같은 surface/col/row 두 번·빈 칸·가지지 않은 방 소품(방 소품이 아닌 아이템 포함)·보유 개수보다 많이 놓기는
         422 VALIDATION_FAILED(아무것도 바꾸지 않음). 판매 중단돼도 가진 방 소품은 놓을 수 있다. 한 트랜잭션에서 학생 행을 잠그고 전체를 바꾼다.
         삭제 확정된 학생은 409 STUDENT_UNAVAILABLE
       requestBody:
@@ -9035,6 +9055,81 @@ components:
             theme: {$ref: '#/components/schemas/StudentLookTheme'}
             companion: {$ref: '#/components/schemas/StudentLookCompanion'}
             equipped: {$ref: '#/components/schemas/CharacterLookEquipped'}
+    FriendRoom:
+      type: object
+      additionalProperties: false
+      required: [nickname, look, room]
+      description: 친구 방 구경(#708). 착용 값은 그림 키(look_item.asset_key) 또는 null(기본 모습·기본 스킨·기본 벽지), 판매 중단 아이템도 그대로. 학생 ID·회차 키 없음
+      properties:
+        nickname: {type: string}
+        look:
+          type: object
+          additionalProperties: false
+          required: [theme, companion, equipped]
+          properties:
+            theme: {$ref: '#/components/schemas/StudentLookTheme'}
+            companion: {$ref: '#/components/schemas/StudentLookCompanion'}
+            equipped:
+              type: object
+              additionalProperties: false
+              required: [HAT, OUTFIT, ACCESSORY]
+              properties:
+                HAT: {type: ['string', 'null']}
+                OUTFIT: {type: ['string', 'null']}
+                ACCESSORY: {type: ['string', 'null']}
+        room:
+          type: object
+          additionalProperties: false
+          required: [wallpaper, floor, furniture, decor, frames]
+          properties:
+            wallpaper: {type: ['string', 'null'], description: 벽지(BACKGROUND) 그림 키}
+            floor: {type: ['string', 'null'], description: '바닥(FLOOR) 그림 키(#704). null이면 기본 바닥(벽지 세트의 바닥)'}
+            furniture:
+              type: object
+              additionalProperties: false
+              required: [DESK, WALL, WARDROBE]
+              properties:
+                DESK: {type: ['string', 'null']}
+                WALL: {type: ['string', 'null']}
+                WARDROBE: {type: ['string', 'null']}
+            decor:
+              type: array
+              maxItems: 8
+              description: 방 소품 기준 칸(#723, 면 FLOOR → WALL_BACK → WALL_LEFT → row → col 순, 빈 칸 없음). 아이템 코드·이름·보유 개수 없음
+              items:
+                type: object
+                additionalProperties: false
+                required: [surface, col, row, assetKey]
+                oneOf:
+                  - properties:
+                      surface: {const: FLOOR}
+                      col: {maximum: 16}
+                      row: {maximum: 12}
+                  - properties:
+                      surface: {const: WALL_BACK}
+                      col: {maximum: 15}
+                      row: {maximum: 5}
+                  - properties:
+                      surface: {const: WALL_LEFT}
+                      col: {maximum: 10}
+                      row: {maximum: 5}
+                properties:
+                  surface: {type: string, enum: [FLOOR, WALL_BACK, WALL_LEFT]}
+                  col: {type: integer, minimum: 0, maximum: 16}
+                  row: {type: integer, minimum: 0, maximum: 12}
+                  assetKey: {type: string}
+            frames:
+              type: array
+              maxItems: 6
+              description: 추억의 벽 액자(번호순, 빈 슬롯 없음). 회차 키 없음
+              items:
+                type: object
+                additionalProperties: false
+                required: [slotNo, title, imageUrl]
+                properties:
+                  slotNo: {type: integer, minimum: 1, maximum: 6}
+                  title: {type: string}
+                  imageUrl: {type: ['string', 'null']}
     CommunityPost:
       type: object
       additionalProperties: false
@@ -9171,16 +9266,46 @@ components:
     RoomDecorSpotInput:
       type: object
       additionalProperties: false
-      required: [spotNo, itemKey]
+      required: [surface, col, row, itemKey]
+      oneOf:
+        - properties:
+            surface: {const: FLOOR}
+            col: {maximum: 16}
+            row: {maximum: 12}
+        - properties:
+            surface: {const: WALL_BACK}
+            col: {maximum: 15}
+            row: {maximum: 5}
+        - properties:
+            surface: {const: WALL_LEFT}
+            col: {maximum: 10}
+            row: {maximum: 5}
       properties:
-        spotNo: {type: integer, minimum: 1, maximum: 8}
+        surface: {type: string, enum: [FLOOR, WALL_BACK, WALL_LEFT]}
+        col: {type: integer, minimum: 0, maximum: 16}
+        row: {type: integer, minimum: 0, maximum: 12}
         itemKey: {type: string, description: 방 소품 look_item 코드}
     RoomDecorSpot:
       type: object
       additionalProperties: false
-      required: [spotNo, itemKey, name, assetKey]
+      required: [surface, col, row, itemKey, name, assetKey]
+      oneOf:
+        - properties:
+            surface: {const: FLOOR}
+            col: {maximum: 16}
+            row: {maximum: 12}
+        - properties:
+            surface: {const: WALL_BACK}
+            col: {maximum: 15}
+            row: {maximum: 5}
+        - properties:
+            surface: {const: WALL_LEFT}
+            col: {maximum: 10}
+            row: {maximum: 5}
       properties:
-        spotNo: {type: integer, minimum: 1, maximum: 8}
+        surface: {type: string, enum: [FLOOR, WALL_BACK, WALL_LEFT]}
+        col: {type: integer, minimum: 0, maximum: 16}
+        row: {type: integer, minimum: 0, maximum: 12}
         itemKey: {type: string}
         name: {type: string}
         assetKey: {type: string}
@@ -9192,7 +9317,7 @@ components:
         spots:
           type: array
           maxItems: 8
-          description: 놓은 자리만 번호순 (#704)
+          description: 놓은 기준 칸만 면(FLOOR → WALL_BACK → WALL_LEFT) → row → col 순 (#723)
           items: {$ref: '#/components/schemas/RoomDecorSpot'}
     RoomFrameSlots:
       type: object
@@ -11914,7 +12039,7 @@ components:
           type:
           - string
           - 'null'
-          description: 학부모의 로그인 ID. ID·비밀번호 학부모(#415)는 아이디, Google 학부모(#683)는 login_id로 저장한 Google 이메일. 관리자는 null.
+          description: 학부모의 로그인 ID. ID·비밀번호 학부모(#415)는 아이디, Google 학부모(#683)는 최근 Google 로그인에서 검증해 login_id에 반영한 이메일. 관리자는 null.
         authMethod:
           type: string
           enum:

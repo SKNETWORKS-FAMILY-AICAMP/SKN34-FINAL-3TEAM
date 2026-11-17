@@ -75,6 +75,11 @@
         FROM student_look_equipment e JOIN look_item i ON i.id=e.look_item_id
         WHERE e.student_id IN <foreach collection="ids" item="id" open="(" close=")" separator=",">#{id}</foreach>
     </select>
+    <!-- 친구 방 구경(#708): 한 학생의 착용 칸별 그림 키. 판매 중단 아이템도 그대로 -->
+    <select id="equipmentAssets" resultType="map" flushCache="true" useCache="false">
+        SELECT e.slot AS slot,i.asset_key AS asset_key FROM student_look_equipment e JOIN look_item i ON i.id=e.look_item_id
+        WHERE e.student_id=#{studentId}
+    </select>
     <delete id="deleteEquipmentSlot">DELETE FROM student_look_equipment WHERE student_id=#{studentId} AND slot=#{slot}</delete>
     <insert id="insertEquipment">
         INSERT INTO student_look_equipment(student_id,slot,look_item_id,updated_at) VALUES(#{studentId},#{slot},#{itemId},#{now})

@@ -1,4 +1,5 @@
 import type { ProblemDetail } from '../domain/problem.ts'
+import type { LoginPath } from '../domain/navigation.ts'
 
 export const API_BASE = '/api/v1'
 
@@ -17,9 +18,19 @@ export function parentLoginRequired() {
 }
 export function requireParentLogin() {
   setAccessToken(null)
+  markParentLoginRequired()
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:parent-login-required'))
+}
+function markParentLoginRequired() {
   parentLoginPending = true
   try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(parentLoginKey, 'true') } catch { /* 탭 메모리의 복귀 표시는 유지한다. */ }
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:parent-login-required'))
+}
+/** 루트의 명시적 로그인 선택은 이 탭의 인증만 초기화한다. 쿠키·기기 등록·다른 탭은 건드리지 않는다. */
+export function prepareLoginEntry(path: LoginPath) {
+  setAccessToken(null)
+  markParentLoginRequired()
+  // 학생은 PIN 인증 전 부모 refresh 쿠키를 사용하지 않는다.
+  studentMode = path === '/student/login'
 }
 // 동석 학생 진입으로 학부모 세션이 잠긴 탭 표시. 값은 여부뿐이며 토큰은 저장하지 않는다 (FN-ACC-05).
 const parentLockedKey = 'sagomungchi:parent-session-locked'

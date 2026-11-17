@@ -83,12 +83,14 @@ export function readPoints(raw: unknown): Points {
 export type CharacterSlot = 'HAT' | 'OUTFIT' | 'ACCESSORY' | 'BACKGROUND'
 /** 내 방 가구 스킨 칸(P27, API 명세 2.10 2026-11-12). 가구 1개 = 착용 칸 1개 */
 export type FurnitureSlot = 'DESK' | 'WALL' | 'WARDROBE'
-export type ItemSlot = CharacterSlot | FurnitureSlot
+export type WearableSlot = CharacterSlot | FurnitureSlot
+/** 방 소품은 여러 개 구매·배치하며 착용 칸이 아니다(#704·#706). */
+export type ItemSlot = WearableSlot | 'FLOOR' | 'DECOR'
 export type LookSlot = 'THEME' | 'COMPANION' | ItemSlot
 export const ITEM_SLOTS: CharacterSlot[] = ['HAT', 'OUTFIT', 'ACCESSORY', 'BACKGROUND']
 export const FURNITURE_SLOTS: FurnitureSlot[] = ['DESK', 'WALL', 'WARDROBE']
 /** 관리자 아이템 등록에서 고르는 칸 전체 */
-export const ALL_ITEM_SLOTS: ItemSlot[] = [...ITEM_SLOTS, ...FURNITURE_SLOTS]
+export const ALL_ITEM_SLOTS: ItemSlot[] = [...ITEM_SLOTS, ...FURNITURE_SLOTS, 'FLOOR', 'DECOR']
 export const SLOT_LABELS: Record<LookSlot, string> = {
   THEME: '테마',
   COMPANION: '캐릭터',
@@ -99,6 +101,8 @@ export const SLOT_LABELS: Record<LookSlot, string> = {
   DESK: '학습 책상',
   WALL: '추억의 벽',
   WARDROBE: '옷장',
+  FLOOR: '바닥',
+  DECOR: '방 소품',
 }
 /**
  * 착용 칸. 가구 칸은 서버가 알려 준 때만 둔다: 가구 칸을 모르는 서버(core #555 전)에 보내면
@@ -432,6 +436,22 @@ export function knownFacts(theme: WeeklyTheme, candidate: string) {
     const value = d.clueFeature ? d.clueFacts?.find((f) => f.candidate === candidate)?.value : undefined
     return value ? [{ day: d.day, feature: d.clueFeature!, value }] : []
   })
+}
+/**
+ * 후보 카드에 보일 특징(#715 1번). 엔딩 전에는 푼 요일의 단서만(knownFacts, 정답이 미리 새지 않게).
+ * 엔딩 뒤 특징 표(features)가 오면 표 순서대로 그 후보의 특징을 모두 보이고, 단서로 직접 알아낸 것은 learned.
+ * 건너뛴 요일의 특징도 엔딩 뒤에는 볼 수 있다(kind 확인에서 features를 읽기만 하고 어디에도 안 보이던 것).
+ */
+export function candidateFacts(theme: WeeklyTheme, candidate: string): { feature: string; value: string; learned: boolean }[] {
+  const known = knownFacts(theme, candidate)
+  if (theme.ending !== 'ENDED' || !theme.features?.length) return known.map((f) => ({ feature: f.feature, value: f.value, learned: true }))
+  const all = theme.features.flatMap((f) => {
+    const value = f.values.find((v) => v.candidate === candidate)?.value
+    return value ? [{ feature: f.name, value, learned: known.some((k) => k.feature === f.name) }] : []
+  })
+  // 표에 없는 단서(있으면 안 되지만)도 잃지 않게 뒤에 붙임
+  for (const k of known) if (!all.some((a) => a.feature === k.feature)) all.push({ feature: k.feature, value: k.value, learned: true })
+  return all
 }
 /** 그 후보를 처음 뺀 요일(학생이 본 단서 기준). */
 export const ruledOutOn = (theme: WeeklyTheme, candidate: string) => theme.days.find((d) => d.rulesOut?.includes(candidate))?.day ?? null

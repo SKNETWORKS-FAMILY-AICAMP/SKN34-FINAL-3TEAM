@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router'
 import type { Session, DemoScenario } from '../../domain/classroom.ts'
 import { restoreSession } from '../../data/classroom/useClassroom.ts'
 import { queryClient } from '../../data/queryClient.ts'
-import { ApiError, watchAuthChange, waitForPendingRefresh, hasAccessToken, parentLoginRequired } from '../../data/apiClient.ts'
+import { ApiError, watchAuthChange, waitForPendingRefresh, hasAccessToken, parentLoginRequired, prepareLoginEntry } from '../../data/apiClient.ts'
+import { adultLoginPath, landingLoginEntry } from '../../domain/navigation.ts'
 import { AuthContext } from './sessionContext.ts'
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -24,7 +25,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const clear = () => { setSession(null); setSelected(''); queryClient.clear(); setRestoreError('') }
     const parentEntry = () => {
       setLoginPath('/login'); revision++; clear(); setReady(true); setExpired(false)
-      navigate('/login', { replace: true })
+      const target = adultLoginPath(window.location.pathname)
+      if (window.location.pathname !== target) navigate(target, { replace: true })
     }
     const studentEntry = () => {
       setLoginPath('/student/login')
@@ -41,6 +43,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     const expire = () => { setLoginPath('/login'); revision++; clear(); setReady(true); setExpired(true) }
     const restore = async (fresh: boolean) => {
+      const entry = !fresh && landingLoginEntry(window.location.pathname, window.location.search)
+      if (entry) {
+        // 다른 역할의 이전 세션으로 되돌아가지 않고, 선택한 기존 로그인·가입 폼을 연다 (#724).
+        prepareLoginEntry(entry)
+        revision++; clear(); setLoginPath(entry === '/student/login' ? '/student/login' : '/login')
+        setReady(true); setExpired(false)
+        const params = new URLSearchParams(window.location.search)
+        params.delete('entry')
+        const search = params.toString()
+        navigate(`${entry}${search ? `?${search}` : ''}${window.location.hash}`, { replace: true })
+        return
+      }
       if (parentLoginRequired() && window.location.pathname !== '/oauth/complete' && !window.location.pathname.startsWith('/student/')) {
         parentEntry(); return
       }

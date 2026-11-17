@@ -217,13 +217,21 @@ function ThemeEditor({
 
 /** 꾸미기 아이템 관리 (FN-ADM-23, CONTENT). 새 아이템만 등록하고 삭제 대신 판매 중단한다. */
 export function LookItemManager() {
-  const list = useAdminQuery(['look-items'], (s) => api.items(s))
+  const [slot, setSlot] = useState('')
+  const [page, setPage] = useState(0)
+  const list = useAdminQuery(['look-items', slot, page], (s) => api.items(s, slot, page))
   const [editing, setEditing] = useState<AdminLookItem | 'new' | null>(null)
   const rows = list.error ? [] : (list.data?.items ?? [])
   return (
     <div className="ad-two">
       <Panel title="꾸미기 아이템" action={<button onClick={() => setEditing('new')}>새 아이템</button>}>
         <p>테마·캐릭터 해금값은 코드 상수(테마 100·캐릭터 150)이며 여기서 바꾸지 않습니다.</p>
+        <div className="ad-filters"><label>칸 필터
+          <select aria-label="아이템 칸 필터" value={slot} onChange={(e) => { setSlot(e.target.value); setPage(0) }}>
+            <option value="">전체</option>
+            {ALL_ITEM_SLOTS.map((s) => <option key={s} value={s}>{SLOT_LABELS[s]}</option>)}
+          </select>
+        </label></div>
         <QueryFeedback query={list} />
         <div className="ad-table-wrap">
           <table className="ad-table">
@@ -242,6 +250,11 @@ export function LookItemManager() {
           </table>
         </div>
         {list.data && !list.error && !rows.length && <Empty>등록한 아이템이 없습니다.</Empty>}
+        {list.data && !list.error && list.data.totalElements > list.data.size && <div className="ws-actions" aria-label="아이템 목록 페이지">
+          <button disabled={page === 0} onClick={() => setPage(page - 1)}>이전 아이템</button>
+          <span>{page + 1}페이지</span>
+          <button disabled={(page + 1) * list.data.size >= list.data.totalElements} onClick={() => setPage(page + 1)}>다음 아이템</button>
+        </div>}
       </Panel>
       {editing && (
         <ItemEditor key={editing === 'new' ? 'new' : editing.itemId} item={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} />
@@ -278,7 +291,9 @@ function ItemEditor({ item, onClose }: { item?: AdminLookItem; onClose: () => vo
         <label>필요 포인트<input aria-label="필요 포인트" inputMode="numeric" required value={price} onChange={(e) => setPrice(e.target.value)} /></label>
         {!validPrice && <p role="alert">필요 포인트는 1~10000 사이 정수로 적어 주세요.</p>}
         <label>그림 키<input aria-label="그림 키" required maxLength={200} value={assetKey} aria-describedby="item-asset-help" onChange={(e) => setAssetKey(e.target.value)} /></label>
-        <small id="item-asset-help">모자·옷·소품은 web <code>public/student-assets/</code> 안 파일 경로(예 looks/hat-acorn.svg, 영문 소문자·숫자·-·_, svg·png·webp). 벽지·가구는 내 방 그림 표의 키(room/…). 파일이 없으면 기본 모습으로 보입니다.</small>
+        <small id="item-asset-help">모자·옷·소품은 web <code>public/student-assets/</code> 안 파일 경로(예 looks/hat-acorn.svg, 영문 소문자·숫자·-·_, svg·png·webp). 벽지·가구·바닥·방 소품은 <code>roomAssets.ts</code>의 내 방 그림 표에 등록된 키(room/…)를 사용합니다. 파일이 없으면 기본 모습으로 보입니다.</small>
+        {slot === 'DECOR' && <p>방 소품은 여러 개 구매해서 방에 배치하는 항목이며, 캐릭터가 착용하는 소품과 다릅니다.</p>}
+        {slot === 'FLOOR' && <p>바닥은 한 번 해금한 뒤 방에 적용하는 항목입니다.</p>}
         <div className="ws-actions">
           <button className="cj-primary" disabled={save.isPending || !validPrice}>저장</button>
           {item && (

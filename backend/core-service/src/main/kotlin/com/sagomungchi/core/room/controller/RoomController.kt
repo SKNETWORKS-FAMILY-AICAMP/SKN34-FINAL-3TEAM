@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 class RoomController(private val service: RoomFrameSlotService, private val decor: RoomDecorService) {
     data class Replace(val slots: List<RoomFrameSlotService.SlotInput>?)
-    data class ReplaceDecor(val spots: List<RoomDecorService.SpotInput>?)
+    data class ReplaceDecor(val spots: List<RoomDecorService.SpotInput?>?)
 
     @GetMapping("/api/v1/students/me/room/frame-slots")
     fun slots() = response(service.slots())

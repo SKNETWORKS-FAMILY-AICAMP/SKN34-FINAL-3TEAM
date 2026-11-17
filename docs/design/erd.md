@@ -79,7 +79,7 @@ erDiagram
   user_account {
     uuid id PK
     varchar role "STUDENT|PARENT|ADMIN"
-    varchar login_id UK "로그인 ID(Google·관리자는 이메일, ID·비밀번호 학부모는 영문 소문자·숫자 아이디)"
+    varchar login_id UK "로그인 ID(Google 학부모는 최근 로그인에서 검증한 이메일, 관리자는 이메일, ID·비밀번호 학부모는 영문 소문자·숫자 아이디)"
     varchar password_hash "NULL 허용 · 기존 데이터 보존, 로그인 미사용(비밀번호는 admin_credential·parent_credential)"
     varchar oauth_provider "NULL 허용 · GOOGLE"
     varchar oauth_subject "NULL 허용 · provider와 복합 UK"
@@ -756,7 +756,7 @@ erDiagram
   model_version {
     uuid id PK
     varchar kind "RUBRIC|MODEL|PROMPT|GENERATION"
-    varchar name "judge, m2-klue-narrative, m2-klue-essay 등"
+    varchar name "judge, m2-klue-narrative, m2-klue-essay, tox-kcelectra 등"
     varchar version
     uuid ref_id "NULL 허용 · RUBRIC이면 learning rubric_version"
     varchar artifact_uri "NULL 허용 · S3 가중치 경로"
@@ -834,6 +834,7 @@ erDiagram
 
 - `model_loading_report`: 운영 관측 전용으로 승인 모델과 FK를 만들지 않는다. 과거 버전·실패·빈 snapshot도 보관한다. 120초 보고 만료, 24시간 보관, Pod 재시작 시 최신 프로세스 보고를 사용한다. PK instance_id, sequence > 0, models는 JSON 배열이며 나머지 컬럼은 모두 NOT NULL이다.
 - `model_version` UK `(kind, name, version)`, 부분 UK `(kind, name) WHERE status = 'ACTIVE'`. 롤백은 이전 버전 재활성화 + `audit_log` 기록 (FN-ADM-18)
+- 재학습 자동 등록 계정(#725): core 마이그레이션이 고정 UUID의 `user_account` 1행(role `ADMIN`, login_id `mlops-pipeline@system.invalid`, display_name `MLOps 파이프라인`)을 시드한다. `admin_credential`·`admin_permission`을 두지 않아 로그인·활성화를 할 수 없고, ops 내부 등록(api-spec 4.5)의 `audit_log.actor_user_id`로만 쓴다. ID는 설정값 `app.model-registry.pipeline-actor-id`
 - #43 `eval_result`는 API 5.2의 불변 평가 근거·최초 승인과 현재 적용 범위·그룹 revision을 저장한다. DDL·기존 ACTIVE 부분 UK는 유지한다. 교체는 동일 그룹 transaction advisory lock 이후 상태·감사·Outbox를 원자적으로 저장한다.
 - 기준표 원본은 learning `rubric_version`, core는 `kind = RUBRIC` 행의 `ref_id`로 연결해 승인·활성 상태만 관리
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
@@ -933,7 +934,9 @@ erDiagram
   }
   room_decor_spot {
     uuid student_id PK,FK
-    smallint spot_no PK "방 소품 자리 1~8"
+    varchar surface PK "FLOOR, WALL_BACK, WALL_LEFT"
+    smallint cell_col PK "기준 칸 열, 0부터 면별 최대 16/15/10"
+    smallint cell_row PK "기준 칸 행, 0부터 면별 최대 12/5/5"
     uuid look_item_id FK "가진 방 소품, 보유 개수만큼 여러 자리(서비스 검사)"
     timestamptz saved_at
   }
@@ -949,7 +952,7 @@ erDiagram
 - 학생 삭제 확정(P09): `student.look_*` NULL과 같은 트랜잭션에서 착용 → 해금 → 원장 → 잔액 순서로 삭제(FK 순서). #555부터 같은 트랜잭션에서 `room_frame_slot`도 삭제
 - #555(V47 `V47__room_furniture_skins_and_frame_slots.sql`, P22 개정·P27): `look_item.slot`·`student_look_equipment.slot` CHECK에 생활공간 가구 슬롯 `DESK`(책상)·`WALL`(추억의 벽)·`WARDROBE`(옷장)를 더했다(V35는 고치지 않음). 가구 1개 = 착용 슬롯 1개라 PK `(student_id, slot)`로 가구당 스킨 1개. 가구별 기본 스킨은 행 없이 항상 쓸 수 있다: 착용 행이 없는 가구 슬롯이 기본 스킨이다(테마 `lake`·기본 벽지와 같은 방식, 기준안을 2026-11-12 확정). 추가 스킨은 관리자가 `look_item`으로 등록하고 기존 해금(원장 `UNLOCK`·잔액 차감·멱등)·착용 규칙을 그대로 쓴다. 방 벽지는 `BACKGROUND` 착용 아이템이라 테이블 변경 없음
 - #704(V50 `V50__room_floor_and_decor.sql`, P22·P27 개정, 사용자 결정 2026-11-16): `look_item.slot`에 내 방 바닥 `FLOOR`·방 소품 `DECOR`, `student_look_equipment.slot`에 `FLOOR`만 더했다(V35·V47은 고치지 않음). 바닥은 가구 스킨과 같은 1회 해금·착용이고 착용 행이 없으면 벽지 세트의 바닥. 방 소품(`ACCESSORY` "소품"과 다른 칸)은 착용 슬롯이 아니라 구매 1번 = `student_room_decor` 1행(그 구매의 `UNLOCK` 원장 행을 `ledger_id` UK로 가리킴, 원장 `event_type` CHECK 변경 없음)이고 보유 개수는 행 수, 아이템당 8개까지(잔액 행 잠금 아래 서비스 검사). 인덱스 `(student_id, look_item_id)`는 보유 개수 집계용
-- `room_decor_spot`(#704 V50): 방 소품 자리 1~8(기준안 8곳 2026-11-16 확정, CHECK, 자리 종류 구분 없음). 같은 방 소품을 보유 개수만큼 여러 자리에 놓고 보유 개수 초과는 서비스가 막는다. 저장은 `room_frame_slot`처럼 학생 행 `FOR NO KEY UPDATE` 아래 전체 삭제·삽입(방 소품 사기의 학생 행 `FOR SHARE`와 직렬화). 판매 중단 아이템도 보유분·놓은 자리 유지. 학생 삭제 확정 때 `room_decor_spot` → `student_room_decor`(원장보다 먼저) 순서로 같은 트랜잭션에서 삭제. 추가 인덱스 없음(PK 앞 칸 `student_id`)
+- `room_decor_spot`(#723 V51): 면·기준 칸 PK `(student_id, surface, cell_col, cell_row)`. `surface`는 FLOOR·WALL_BACK·WALL_LEFT, 각각 col/row 0~16/0~12·0~15/0~5·0~10/0~5 CHECK. 최대 8개는 서비스 검사. 기존 행이 있으면 마이그레이션을 중단하고 보존한다(운영 확인 전 삭제 없음, 보고서 21절). 같은 방 소품을 보유 개수만큼 여러 자리에 놓고 보유 개수 초과는 서비스가 막는다. 저장은 `room_frame_slot`처럼 학생 행 `FOR NO KEY UPDATE` 아래 전체 삭제·삽입(방 소품 사기의 학생 행 `FOR SHARE`와 직렬화). 판매 중단 아이템도 보유분·놓은 자리 유지. 학생 삭제 확정 때 `room_decor_spot` → `student_room_decor`(원장보다 먼저) 순서로 같은 트랜잭션에서 삭제. 추가 인덱스 없음(PK 앞 칸 `student_id`)
 - `room_frame_slot`(#555 V47): 추억의 벽 슬롯 1~6(기준안 6개 2026-11-12 확정, CHECK). `theme_id`·`theme_week_start`는 learning `theme_frame` 회차의 논리 참조라 서비스 간 FK가 없고, 저장 전에 learning 내부 API(api-spec 4.1.4 `frames/ownership`)로 보유를 확인한다. UK `(student_id, theme_id, theme_week_start)`로 같은 액자를 두 슬롯에 걸지 못하고, `theme_week_start`는 CHECK로 월요일만. 저장은 학생 행 `FOR NO KEY UPDATE`(삭제 확정·다른 저장과 직렬화) 아래에서 학생의 슬롯 전체를 지우고 다시 넣는다. 추가 인덱스 없음(PK 앞 칸 `student_id`로 조회·삭제)
 
 ### 3.5.2 생활공간·추억 사용량 (P27, 구현 #566·#555)
@@ -958,7 +961,7 @@ erDiagram
 
 | 테이블 | 컬럼 | 제약·규칙 |
 |---|---|---|
-| (없음) | - | 2026-11-12 결정의 core_db 변경은 모두 구현해 위 Mermaid·6장으로 옮겼다(#566 V46, #555 V47). 2026-11-16 바닥·방 소품(#704)도 V50으로 구현해 3.5.1 Mermaid·6장으로 옮겼다 |
+| (없음) | - | #566 V46·#555 V47·#704 V50·#723 V51의 core 변경은 3.5.1 등 Mermaid·6장으로 옮겼다 |
 
 - 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`room_decor_spot`·`student_room_decor`(#704)·`memory_daily_usage`도 삭제
 - 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
@@ -1485,6 +1488,31 @@ erDiagram
 - `community_reaction` PK `(post_id, student_id, reaction)`. `id`는 `UUID.nameUUIDFromBytes("community-reaction:{postId}:{studentId}:{reaction}")`라 취소 뒤 다시 남겨도 같다(core #389 포인트 사건 키로 반복 적립을 막음)
 - 학생 삭제(`student.deleted`, P09): 시도·답변보다 먼저 같은 트랜잭션에서 그 학생 공유물에 달린 반응 → 그 학생이 남긴 반응 → 공유물 → `community_visibility` 순서로 물리 삭제(FK NO ACTION)
 
+### 4.3.2 표현 검토 대기 (#688 재학습 자동화, 설계 #725, 구현 #727)
+
+표현 분류 모델 재학습 자료. 이미 저장되는 답변만 가리키고 원문을 따로 복사하지 않는다. 막힌 답변(저장 안 됨)·모델 점수는 저장하지 않는다(NFR-SEC-05).
+
+구현 전(설계 #725 2026-11-17). Mermaid 표와 6장 인덱스는 `scripts/verify_db_schema.py`가 실제 DB와 자동 대조하므로 learning 마이그레이션(#727)과 같은 PR에서 아래 표를 옮겨 넣는다(#679·#680과 같은 방식).
+
+| 칸 | 형식 | 내용 |
+|---|---|---|
+| `id` | uuid PK | |
+| `answer_id` | uuid FK → `answer` | 검토 대상 답변. UK `(answer_id, source)` |
+| `source` | varchar | `GRAY_ZONE`(경계 구간 답변)·`COMMUNITY_REPORT`(신고 숨김 공유물) CHECK |
+| `model_version` | varchar, NULL 허용 | `GRAY_ZONE`이면 판단한 tox 모델 `name:version` |
+| `label` | varchar, NULL 허용 | `OFFENSIVE`·`CLEAN`·`SKIP` CHECK |
+| `labeled_by` | uuid, NULL 허용 | 직접 라벨한 core 관리자 ID(논리 참조), 자동 라벨은 null |
+| `labeled_at` | timestamptz, NULL 허용 | |
+| `created_at` | timestamptz | |
+
+- 인덱스(6장에 옮길 값): UK `(answer_id, source)`, `(label, created_at)`(라벨 없는 검토 목록), `(labeled_at) WHERE label IS NOT NULL`(재학습 새 라벨 수·내보내기)
+
+- `GRAY_ZONE`: 답변 제출 때 scoring 표현 분류가 `review:true`(api-spec 4.3.4)이고 답변이 저장되면 같은 트랜잭션에서 추가. 같은 키 다시 보내기는 UK로 중복 없음
+- `COMMUNITY_REPORT`: 공유물이 `HIDDEN_REPORT`가 될 때 그 공유물의 `answer_id`로 추가. 운영 처리 결과로 자동 라벨(`REMOVED` → `OFFENSIVE`, `VISIBLE` 복귀 → `CLEAN`, `labeled_by` null). 이미 행이 있으면 라벨만 갱신하되 운영자가 직접 라벨한 행은 바꾸지 않음
+- 운영자 라벨(FN-ADM-24)은 `label`·`labeled_by`·`labeled_at`을 덮어쓴다(마지막 라벨 기준). `SKIP`은 학습 데이터에서 뺀다
+- 학습 데이터 내보내기는 라벨 있는 행만 `labeled_at` 순으로, 학생 ID·답변 ID·시각 없이 글과 라벨만 낸다(api-spec 4.1)
+- 학생 삭제(`student.deleted`, P09): 답변보다 먼저 같은 트랜잭션에서 그 학생 답변의 `expression_review`를 물리 삭제(FK NO ACTION, 4.3.1과 같은 방식)
+
 ### 4.4 2026-11-06 결정 변경 반영 (learning_db)
 
 2026-11-06 서비스 기획 방향 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 저장 구조. 주간 테마(#385)는 V11·V12로 구현해 4.2·4.2.1 Mermaid와 6장으로 옮겼다(설계와 달리 게시 중 수정을 미션처럼 버전으로 두려고 `weekly_theme_version` 테이블과 `weekly_theme.current_·published_·review_version_id`를 더하고, 제목·소개는 버전으로, 요일 문제는 버전 기준 `weekly_theme_day (theme_version_id, …)`로 옮김, [learning 보고서](../report/learning.md)). 커뮤니티 공유물·반응(#386)은 V13으로 구현해 4.3.1 Mermaid와 6장으로 옮겼다. 이로써 learning_db에 남은 설계 표는 없다. 아래 원칙은 이후 변경에도 같다: 컬럼 기본값은 두지 않는다(검증 스크립트 규칙): 기존 행이 있는 테이블의 NOT NULL 컬럼은 준비 버전(nullable 추가)→기존 행 채움→최종 버전(NOT NULL·CHECK)으로 나눈다(8장).
@@ -1810,6 +1838,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `outbox_event` | `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | subject별 선두·발행 순서 및 재시도 대상(#243), 보존 기간 정리 |
 | core | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | core | `reward_point_ledger` | `(student_id, created_at)` | 포인트 내역·반응 하루 상한 집계 (#389) |
+| core | `room_decor_spot` | `(student_id, surface, cell_col, cell_row)` | PK: 학생별 배치 조회·같은 기준 칸 중복 방지 (#723 V51), 추가 인덱스 없음 |
 | core | `student_room_decor` | `(student_id, look_item_id)` | 방 소품 아이템별 보유 개수·8개 상한 확인 (#704 V50) |
 | core | `model_loading_report` | `(pod_id, reported_at)`, `(reported_at)` | Pod별 최근 보고(`reported_at DESC`)·보고 만료 판정 (#370, V37) |
 | core | `event_log` | `(received_at)`, `(event_type, event_time)` | 보존 기간 정리, 유형·기간별 추적 |

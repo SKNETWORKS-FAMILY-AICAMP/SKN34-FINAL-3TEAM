@@ -4,9 +4,11 @@ import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.report.domain.ReportPeriod
 import com.sagomungchi.core.report.domain.ReportPeriodType
 import com.sagomungchi.core.report.scheduler.EARLY_RUN_GRACE
+import com.sagomungchi.core.report.scheduler.WeeklyReportScheduler
 import com.sagomungchi.core.report.service.ReportEntitlementService
 import org.junit.jupiter.api.Test
 import org.springframework.scheduling.support.CronExpression
+import org.springframework.scheduling.annotation.Scheduled
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.util.UUID
@@ -29,7 +31,10 @@ class ReportPeriodTest {
         }
     }
     @Test fun `cron fires only next Monday at 0000 KST`() {
-        val cron = CronExpression.parse("0 0 0 * * MON")
+        val schedule = WeeklyReportScheduler::class.java.getMethod("generate").getAnnotation(Scheduled::class.java)
+        assertEquals("Asia/Seoul", schedule.zone)
+        assertEquals("0 0 0 * * MON", schedule.cron)
+        val cron = CronExpression.parse(schedule.cron)
         val before = ZonedDateTime.parse("2026-10-25T23:59:59+09:00[Asia/Seoul]")
         val first = cron.next(before)!!
         assertEquals("2026-10-26T00:00+09:00[Asia/Seoul]", first.toString())

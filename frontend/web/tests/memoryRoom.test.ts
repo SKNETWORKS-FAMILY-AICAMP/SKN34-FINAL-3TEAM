@@ -29,7 +29,7 @@ test('가구 스킨 아이템은 목록에 남고 관리자 칸 선택에 가구
     { itemKey: 'X', slot: 'SOFA', name: '모르는 칸', pricePoints: 1, unlocked: false, onSale: true, assetKey: null },
   ] })
   assert.deepEqual(items.map((i) => i.slot), ['DESK'])
-  assert.deepEqual(ALL_ITEM_SLOTS.slice(-3), ['DESK', 'WALL', 'WARDROBE'])
+  assert.deepEqual(ALL_ITEM_SLOTS.slice(-5), ['DESK', 'WALL', 'WARDROBE', 'FLOOR', 'DECOR'])
 })
 
 test('추억의 벽 슬롯은 1~6번, 번호가 겹치면 계약 오류로 본다', () => {
