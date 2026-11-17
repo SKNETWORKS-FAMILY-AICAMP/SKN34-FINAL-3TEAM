@@ -934,7 +934,9 @@ erDiagram
   }
   room_decor_spot {
     uuid student_id PK,FK
-    smallint spot_no PK "방 소품 자리 1~8"
+    varchar surface PK "FLOOR, WALL_BACK, WALL_LEFT"
+    smallint cell_col PK "기준 칸 열, 0부터 면별 최대 16/15/10"
+    smallint cell_row PK "기준 칸 행, 0부터 면별 최대 12/5/5"
     uuid look_item_id FK "가진 방 소품, 보유 개수만큼 여러 자리(서비스 검사)"
     timestamptz saved_at
   }
@@ -950,7 +952,7 @@ erDiagram
 - 학생 삭제 확정(P09): `student.look_*` NULL과 같은 트랜잭션에서 착용 → 해금 → 원장 → 잔액 순서로 삭제(FK 순서). #555부터 같은 트랜잭션에서 `room_frame_slot`도 삭제
 - #555(V47 `V47__room_furniture_skins_and_frame_slots.sql`, P22 개정·P27): `look_item.slot`·`student_look_equipment.slot` CHECK에 생활공간 가구 슬롯 `DESK`(책상)·`WALL`(추억의 벽)·`WARDROBE`(옷장)를 더했다(V35는 고치지 않음). 가구 1개 = 착용 슬롯 1개라 PK `(student_id, slot)`로 가구당 스킨 1개. 가구별 기본 스킨은 행 없이 항상 쓸 수 있다: 착용 행이 없는 가구 슬롯이 기본 스킨이다(테마 `lake`·기본 벽지와 같은 방식, 기준안을 2026-11-12 확정). 추가 스킨은 관리자가 `look_item`으로 등록하고 기존 해금(원장 `UNLOCK`·잔액 차감·멱등)·착용 규칙을 그대로 쓴다. 방 벽지는 `BACKGROUND` 착용 아이템이라 테이블 변경 없음
 - #704(V50 `V50__room_floor_and_decor.sql`, P22·P27 개정, 사용자 결정 2026-11-16): `look_item.slot`에 내 방 바닥 `FLOOR`·방 소품 `DECOR`, `student_look_equipment.slot`에 `FLOOR`만 더했다(V35·V47은 고치지 않음). 바닥은 가구 스킨과 같은 1회 해금·착용이고 착용 행이 없으면 벽지 세트의 바닥. 방 소품(`ACCESSORY` "소품"과 다른 칸)은 착용 슬롯이 아니라 구매 1번 = `student_room_decor` 1행(그 구매의 `UNLOCK` 원장 행을 `ledger_id` UK로 가리킴, 원장 `event_type` CHECK 변경 없음)이고 보유 개수는 행 수, 아이템당 8개까지(잔액 행 잠금 아래 서비스 검사). 인덱스 `(student_id, look_item_id)`는 보유 개수 집계용
-- `room_decor_spot`(#704 V50): 방 소품 자리 1~8(기준안 8곳 2026-11-16 확정, CHECK, 자리 종류 구분 없음). 같은 방 소품을 보유 개수만큼 여러 자리에 놓고 보유 개수 초과는 서비스가 막는다. 저장은 `room_frame_slot`처럼 학생 행 `FOR NO KEY UPDATE` 아래 전체 삭제·삽입(방 소품 사기의 학생 행 `FOR SHARE`와 직렬화). 판매 중단 아이템도 보유분·놓은 자리 유지. 학생 삭제 확정 때 `room_decor_spot` → `student_room_decor`(원장보다 먼저) 순서로 같은 트랜잭션에서 삭제. 추가 인덱스 없음(PK 앞 칸 `student_id`)
+- `room_decor_spot`(#723 V51): 면·기준 칸 PK `(student_id, surface, cell_col, cell_row)`. `surface`는 FLOOR·WALL_BACK·WALL_LEFT, 각각 col/row 0~16/0~12·0~15/0~5·0~10/0~5 CHECK. 최대 8개는 서비스 검사. 기존 행이 있으면 마이그레이션을 중단하고 보존한다(운영 확인 전 삭제 없음, 보고서 21절). 같은 방 소품을 보유 개수만큼 여러 자리에 놓고 보유 개수 초과는 서비스가 막는다. 저장은 `room_frame_slot`처럼 학생 행 `FOR NO KEY UPDATE` 아래 전체 삭제·삽입(방 소품 사기의 학생 행 `FOR SHARE`와 직렬화). 판매 중단 아이템도 보유분·놓은 자리 유지. 학생 삭제 확정 때 `room_decor_spot` → `student_room_decor`(원장보다 먼저) 순서로 같은 트랜잭션에서 삭제. 추가 인덱스 없음(PK 앞 칸 `student_id`)
 - `room_frame_slot`(#555 V47): 추억의 벽 슬롯 1~6(기준안 6개 2026-11-12 확정, CHECK). `theme_id`·`theme_week_start`는 learning `theme_frame` 회차의 논리 참조라 서비스 간 FK가 없고, 저장 전에 learning 내부 API(api-spec 4.1.4 `frames/ownership`)로 보유를 확인한다. UK `(student_id, theme_id, theme_week_start)`로 같은 액자를 두 슬롯에 걸지 못하고, `theme_week_start`는 CHECK로 월요일만. 저장은 학생 행 `FOR NO KEY UPDATE`(삭제 확정·다른 저장과 직렬화) 아래에서 학생의 슬롯 전체를 지우고 다시 넣는다. 추가 인덱스 없음(PK 앞 칸 `student_id`로 조회·삭제)
 
 ### 3.5.2 생활공간·추억 사용량 (P27, 구현 #566·#555)
@@ -959,7 +961,7 @@ erDiagram
 
 | 테이블 | 컬럼 | 제약·규칙 |
 |---|---|---|
-| (없음) | - | 2026-11-12 결정의 core_db 변경은 모두 구현해 위 Mermaid·6장으로 옮겼다(#566 V46, #555 V47). 2026-11-16 바닥·방 소품(#704)도 V50으로 구현해 3.5.1 Mermaid·6장으로 옮겼다 |
+| (없음) | - | #566 V46·#555 V47·#704 V50·#723 V51의 core 변경은 3.5.1 등 Mermaid·6장으로 옮겼다 |
 
 - 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`room_decor_spot`·`student_room_decor`(#704)·`memory_daily_usage`도 삭제
 - 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
@@ -1836,6 +1838,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `outbox_event` | `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | subject별 선두·발행 순서 및 재시도 대상(#243), 보존 기간 정리 |
 | core | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | core | `reward_point_ledger` | `(student_id, created_at)` | 포인트 내역·반응 하루 상한 집계 (#389) |
+| core | `room_decor_spot` | `(student_id, surface, cell_col, cell_row)` | PK: 학생별 배치 조회·같은 기준 칸 중복 방지 (#723 V51), 추가 인덱스 없음 |
 | core | `student_room_decor` | `(student_id, look_item_id)` | 방 소품 아이템별 보유 개수·8개 상한 확인 (#704 V50) |
 | core | `model_loading_report` | `(pod_id, reported_at)`, `(reported_at)` | Pod별 최근 보고(`reported_at DESC`)·보고 만료 판정 (#370, V37) |
 | core | `event_log` | `(received_at)`, `(event_type, event_time)` | 보존 기간 정리, 유형·기간별 추적 |
