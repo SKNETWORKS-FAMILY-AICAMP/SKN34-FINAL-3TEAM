@@ -1743,15 +1743,17 @@ MUNGCHI_RUN = (
     "profile). The camera tracks alongside, so Mungchi stays the same size and inside the frame "
     "while the background scrolls past. Mungchi never runs toward or away from the camera."
 )
-# #779: 컷 역할(이야기 흐름)에 맞는 카메라. 사람이 잘리지 않을 만큼만 밀고 들어감
+# #779: 컷 역할(이야기 흐름)에 맞는 카메라. 다가가는(push-in) 카메라는 전체 실행(2026-11-18 초5
+# 보물 쪽지)에서 시작 2컷이 두 번 모두 "확대되며 다리가 잘림"으로 실패하고 종료 1컷도 경고라 쓰지
+# 않고 옆으로 훑기·따라가기만 씀
 CUT_CAMERA = {
     ("INTRO", 1): "a slow sideways pan that shows the everyday scene",
-    ("INTRO", 2): "a gentle push-in toward the surprised character",
+    ("INTRO", 2): "a slow sideways pan across the surprised character",
     ("INTRO", 3): "a side tracking shot that moves along with Mungchi",
     ("INTRO", 4): "a slow pan across everyone gathered together",
-    ("OUTRO", 1): "a gentle push-in toward Mungchi and the clues",
+    ("OUTRO", 1): "a slow sideways pan across Mungchi and the clues",
     ("OUTRO", 2): "a slow pan that reveals the place",
-    ("OUTRO", 3): "a gentle push-in on the moment",
+    ("OUTRO", 3): "a slow sideways pan around the moment",
     ("OUTRO", 4): "a slow sideways pan across everyone celebrating",
 }
 # 앞 시험에서 모든 컷에 '구름이 흐른다'를 넣어 실내 벽에 구름이 생겼음(실내·실외를 나눔)
@@ -1834,8 +1836,9 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         "The people act out the action clearly and naturally, continuously until the end with no "
         "pauses. Nobody moves toward or away from the camera.",
         SCENE_MOTION,
-        f"Camera: {CUT_CAMERA.get((scene, index), 'a slow, smooth move')}, never so close that "
-        "someone is cut off, with no transition effects. No text.",
+        f"Camera: {CUT_CAMERA.get((scene, index), 'a slow, smooth move')}, with no zoom-in: "
+        "everyone's whole body from head to feet stays in view and nobody is cut off. No "
+        "transition effects. No text.",
         about_target,
         *_fixes(feedback),
     ]

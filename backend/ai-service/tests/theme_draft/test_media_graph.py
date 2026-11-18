@@ -843,7 +843,7 @@ def test_video_prompt_and_review_keep_everyone_and_outfit() -> None:
     text = prompts.video_prompt(theme, "OUTRO", 4, OUTRO_CUTS[3], [])
     assert "nobody walks out, disappears, appears or merges" in text
     assert "never arms" in text and "stay exactly as in the first frame" in text  # #779 손 문구
-    assert "never so close that someone is cut off" in text
+    assert "nobody is cut off" in text and "push-in" not in text  # #779 다가가는 카메라 금지
     for word in ("character leaving the frame", "wings", "outfit change", "freeze frame"):
         assert word in VIDEO_NEGATIVE
     assert "CONTINUITY" in VIDEO_REVIEW_IDS and "CONTINUITY:" in prompts.VIDEO_REVIEW_SYSTEM

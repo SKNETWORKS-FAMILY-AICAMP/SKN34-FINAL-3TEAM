@@ -2373,13 +2373,22 @@ P27 추억 검색 보완(멘토 피드백, 설계 #679)의 ai 몫. 계약은 [ap
 | `checks.py` | `MUNGCHI_HAND_WORDS`에 통통·튀어·튀고·튀며·튄다·튀는·깡충. `MUNGCHI_RUN_WORDS`(뛰·달리·달려·달린)는 출동 컷에서만 허용(`cut_action_problems(..., may_run)`, `check_cuts`가 시작 3컷에 켬). 달려오기 등 `APPROACH_WORDS`는 그대로 |
 | `prompts.py` 콘티 규칙(`PLAN_SYSTEM`·칸 고쳐 쓰기) | action은 컷 역할이 한눈에 보이는 분명한 동작, 사람은 손짓·건네기·옆으로 몇 걸음 등, 뭉치는 표정·갸웃·흔들기, 출동 컷만 달리기 |
 | `prompts.py` 그림(`cut_image_prompt`) | 출동 컷 첫 그림에 `RUN_POSE`(정면, 달리는 중, 짧은 갈색 발, 옆모습 금지) |
-| `prompts.py` 영상(`video_prompt`) | 컷 역할 줄("Story beat"), 컷별 카메라(`CUT_CAMERA`: 시작 1 옆으로 훑기 → 2 놀란 인물 쪽으로 다가감 → 3 뭉치를 따라가는 옆 이동 → 4 모인 사람들 훑기, 종료도 역할별), 뭉치 `MUNGCHI_STILL`/`MUNGCHI_RUN` + `MUNGCHI_KEEP`(크림색 동그란 손·짧은 갈색 발·코 없는 얼굴), 사람 머리핀·안경·옷 유지, 배경 움직임 `SCENE_MOTION`(실외 구름·잎·물, 실내는 떠다니는 것 없이 빛·커튼만). "제자리 작은 움직임·카메라 살짝" 줄은 뺌 |
+| `prompts.py` 영상(`video_prompt`) | 컷 역할 줄("Story beat"), 컷별 카메라(`CUT_CAMERA`: 시작 1 옆으로 훑기 → 2 놀란 인물 쪽 훑기 → 3 뭉치를 따라가는 옆 이동 → 4 모인 사람들 훑기, 종료도 역할별. 다가가는 카메라는 쓰지 않고 머리부터 발까지 화면에 남김, 아래 전체 실행), 뭉치 `MUNGCHI_STILL`/`MUNGCHI_RUN` + `MUNGCHI_KEEP`(크림색 동그란 손·짧은 갈색 발·코 없는 얼굴), 사람 머리핀·안경·옷 유지, 배경 움직임 `SCENE_MOTION`(실외 구름·잎·물, 실내는 떠다니는 것 없이 빛·커튼만). "제자리 작은 움직임·카메라 살짝" 줄은 뺌 |
 | `prompts.py` 금지 문구(`VIDEO_NEGATIVE`) | Mungchi legs·white legs·Mungchi jumping·dog nose·animal muzzle·puppy face·brown hands·clouds indoors·leaves indoors·page turn·page curl·transition effect |
 | `prompts.py` 영상 검토(`VIDEO_REVIEW_SYSTEM`) | 마지막 두 장 = 판정 예시. `CONTINUITY`에 위 1의 뭉치 기준과 사람 머리핀·안경·옷 변형(토끼 머리핀 → 토끼 귀). `MORPH` 괄호 문구 맞춤 |
 | `nodes/video.py` | `REVIEW_EXAMPLES`·`review_examples()`: 검토 그림 = [첫 그림, 1초마다 장면…, 허용 예시, 결함 예시] |
 | 시험 | `test_video_quality.py` 새로(7개), `fixtures.py`·`test_media_graph.py`·`test_checks.py`·`test_cut_target.py`·`test_families.py`의 뭉치 통통 문장·문구 단언을 새 규칙에 맞춤 |
 
 프롬프트 버전은 23절처럼 `theme-draft@3` 그대로 둔다(운영 배포 전 가정). 운영에 @3이 이미 나갔다면 @4로 올려야 한다(확인 필요).
+
+### 전체 실행 (2026-11-18, 저장소 코드 그대로, 다시 만들기 1회)
+
+같은 코드로 테마 2개를 글부터 끝까지 돌림(저장소 밖 도구, 메모리 저장소). 컷 문구를 입힌 미리보기를 만들어 0.5초 간격으로 직접 봄.
+
+| 테마 | 결과 |
+|---|---|
+| 초5 보물 쪽지(해적 선장 뭉치, 바닷가 놀이터) | 1차: 시작 2컷이 다시 만들어도 "확대되며 다리가 잘림"으로 두 번 실패, 시작 3컷(출동)도 흰 다리로 두 번 실패 → 두 컷이 확대 그림. 종료 4컷은 모두 영상(보물 상자 열기 반짝임 등). 원인인 다가가는 카메라(`push-in`)를 빼고 시작 영상만 다시: **4컷 모두 첫 시도 통과**, 출동 컷은 정면을 본 채 갈색 발로 달리며 흙먼지·마을이 흘러감 |
+| 초4 잃어버린 것(농부 뭉치, 체험 농장) | 글 단계는 통과, 수요일 미션 그림 글자(`TEXT`)로 다시 그리다 마감에 닿아 `failure IMAGE`(#779와 무관). 저장된 컷 첫 그림으로 영상 단계만 다시: 8컷 중 7컷 영상(2컷은 다시 만들기 1회로 통과), 종료 3컷은 두 번 모두 "뭉치 손이 갈색 덩어리"로 실패해 확대 그림(실패 영상은 할아버지가 걸어와 염소를 쓰다듬는 장면이고 뭉치 옆 작은 갈색 점이 사유) |
 
 ### 남은 것
 
