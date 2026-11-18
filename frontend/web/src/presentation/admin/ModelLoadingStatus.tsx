@@ -1,4 +1,5 @@
 import { useModelLoading } from '../../data/admin/queries.ts'
+import { date } from './adminFormatting.ts'
 
 export function ModelLoadingStatus({ name, version, revision }: { name: string; version: string; revision: number }) {
   const q = useModelLoading()
@@ -12,7 +13,7 @@ export function ModelLoadingStatus({ name, version, revision }: { name: string; 
       const m = p.models.find(m => m.name === name)
       const matches = m?.version === version && m.revision === revision
       const status = p.stale ? '보고 만료' : !matches ? '대상 버전 보고 대기' : m.status === 'LOADED' ? '로딩 완료' : m.status === 'FAILED' ? '로딩 실패' : '로딩 중'
-      return <li key={p.instanceId}><strong>{p.podId}: {status}</strong>{!p.stale && matches && m.status === 'FAILED' && <> · {m.errorType} · {m.previousModelRetained ? `기존 모델 유지 (${m.loadedVersion}, revision ${m.loadedRevision})` : '기존 모델 없음'}</>} · 마지막 보고 {new Date(p.reportedAt).toLocaleString()}</li>
+      return <li key={p.instanceId}><strong>{p.podId}: {status}</strong>{!p.stale && matches && m.status === 'FAILED' && <> · {m.errorType} · {m.previousModelRetained ? `기존 모델 유지 (${m.loadedVersion}, revision ${m.loadedRevision})` : '기존 모델 없음'}</>}<p className="ad-cell-note">마지막 보고 <time dateTime={p.reportedAt}>{date(p.reportedAt)}</time></p></li>
     })}</ul>
     <p>로딩 완료는 품질 승인이나 추론 검증 완료를 뜻하지 않습니다.</p>
   </div>

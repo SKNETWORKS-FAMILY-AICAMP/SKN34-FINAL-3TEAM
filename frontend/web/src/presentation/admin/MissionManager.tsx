@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { BookOpen } from 'lucide-react'
 import { useSearchParams } from 'react-router'
 import type { AdminMission, MissionVersion, Rubric } from '../../domain/admin/operations.ts'
 import { missingFieldLabel, missingMissionFields, rubricSaveErrors } from '../../domain/admin/operations.ts'
@@ -19,6 +20,7 @@ import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from '../student/MissionScene.tsx'
 import { AnswerFields } from '../student/StudentWorkPage.tsx'
+import { date } from './adminFormatting.ts'
 export function MissionManager() {
   const [params, setParams] = useSearchParams(),
     filters = {
@@ -45,8 +47,7 @@ export function MissionManager() {
   }
   return (
     <>
-      <h2>미션 관리</h2>
-      <p>수정하면 새 버전이 생깁니다. 기존 학습은 시작 당시 미션·기준표를 유지합니다.</p>
+      <p className="ad-context-note">수정하면 새 버전이 생깁니다. 기존 학습은 시작 당시 미션·기준표를 유지합니다.</p>
       <div className="ws-toolbar">
         <label>
           운영 상태
@@ -99,15 +100,16 @@ export function MissionManager() {
       {q.data && !q.error && (
         <>
           <p>{q.data.counts.map((c) => `${missionLabels[c.status]} ${c.count}개`).join(' · ')}</p>
-          <div className="ws-stack">
+          <div className="ws-stack ad-resource-list">
             {!q.data.items.length && <p>조건에 맞는 미션이 없습니다.</p>}
             {q.data.items.map((m) => (
               <article className="ws-card" key={m.missionId}>
-                <h3>{m.versions.at(-1)!.title}</h3>
+                <span className="ad-resource-icon"><BookOpen size={21} strokeWidth={1.6} aria-hidden="true" /></span>
+                <div><h3>{m.versions.at(-1)!.title}</h3>
                 <p>
                   {missionLabels[m.status]} · 초{m.versions.at(-1)!.gradeMin}~
                   {m.versions.at(-1)!.gradeMax} · {thinkingLabels[m.versions.at(-1)!.thinkingType]}
-                </p>
+                </p></div>
                 <button className="cj-secondary" onClick={() => setId(m.missionId)}>
                   미션 편집·검토
                 </button>
@@ -397,14 +399,10 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
           <details>
             <summary>미션·기준표 버전 이력</summary>
             {m.versions.map((v) => (
-              <p key={v.version}>
-                미션 v{v.version} · {v.title} · {v.createdAt}
-              </p>
+              <div className="ad-version-history-row" key={v.version}><strong>미션 v{v.version}</strong><span>{v.title}</span><time dateTime={v.createdAt}>{date(v.createdAt)}</time></div>
             ))}
             {m.rubrics.map((r) => (
-              <p key={r.version}>
-                기준표 v{r.version} · 요소 {r.elements.length}개
-              </p>
+              <div className="ad-version-history-row" key={r.version}><strong>기준표 v{r.version}</strong><span>요소 {r.elements.length}개</span></div>
             ))}
           </details>
           <div className="ws-grid">
