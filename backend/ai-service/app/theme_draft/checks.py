@@ -77,15 +77,22 @@ CUT_TEXT_MAX = 80
 # (손전등·놓인·모은 단서 같은 말은 걸리지 않게). '모으·모아·모은다'는 '다섯 흔적을 모아'·
 # '단서를 모아 보자'처럼 손 동작이 아닌 말에 걸려 뺌(#535 7차: 종료 1컷 CUT_ACTION 5번, 초4
 # auto4가 이 사유로 다시 생성하다 마감 실패). 손으로 모으는 말은 '손을·두 손'으로 잡힘
+# #779(실측 2026-11-18): 제자리 통통 튀기도 영상에서 갈색 발이 흰 다리로 바뀌어 뭉치 동작에서 뺌
+# (뭉치는 표정·고개 갸웃·몸 살짝 흔들기만). 출동 컷(시작 3)만 옆으로 달리기를 허용
+# (MUNGCHI_RUN_WORDS)
 MUNGCHI_HAND_WORDS = tuple(
     (
         "손을|손으로|손가락|두 손|한 손|양손|손뼉|박수|만세|팔을|양팔|"
         "가리키며|가리키고|가리킨다|가리켜|짚는|짚고|짚어|짚으|건네|건넨|안아|안고|안는|껴안|"
         "놓는|놓고|놓아|내려놓|들어 올|들어올|집어|줍|쥐고|쥔다|뛰|점프|달리|달려|달린|"
+        "통통|튀어|튀고|튀며|튄다|튀는|깡충|"
         # #634 동물 주인공: 뭉치가 동물을 붙잡는 꼴(붙잡는 건 중립 인물)
         "잡아|잡고|잡는|붙잡"
     ).split("|")
 )
+# 출동 컷(시작 3)에서만 뭉치에게 허용하는 달리기 낱말. 화면 쪽으로 달려오는 말은
+# APPROACH_WORDS가 막음
+MUNGCHI_RUN_WORDS = ("뛰", "달리", "달려", "달린")
 # …이·…가로 끝나도 주어가 아닌 낱말(콘티 마디의 주어를 가를 때)
 NOT_SUBJECT = tuple("같이 많이 높이 깊이 길이 가까이 바닷가 물가 강가 길가 냇가 창가".split())
 # 화면 쪽으로 다가오거나 화면 밖으로 나가면 확대돼 몸이 잘리거나 인물이 사라진다(비교 시험
@@ -93,6 +100,7 @@ NOT_SUBJECT = tuple("같이 많이 높이 깊이 길이 가까이 바닷가 물�
 APPROACH_WORDS = tuple("다가오|다가온|달려오|달려온|걸어오|걸어온|화면 밖|밖으로|들어간".split("|"))
 # 시작 콘티 1 평소 모습·2 사건에는 뭉치가 없고 3 출동·4 현장 도착에는 나옴(사용자 결정 2026-11-11)
 INTRO_MUNGCHI = (False, False, True, True)
+INTRO_GO_CUT = 3  # 시작 3컷 = 뭉치 혼자 출동(families.INTRO_GO)
 CANDIDATE_CHARS = (2, 10)
 FEATURES = (2, 5)
 CHARACTERS = (1, 3)
@@ -1144,10 +1152,14 @@ def mungchi_clauses(text: str) -> list[str]:
     return out
 
 
-def cut_action_problems(text: str, has_mungchi: bool = True) -> list[str]:
-    """뭉치가 손·팔다리를 쓰는 동작(뭉치가 나오는 컷만), 화면 쪽으로 다가오거나 나가는 동작."""
+def cut_action_problems(text: str, has_mungchi: bool = True, may_run: bool = False) -> list[str]:
+    """뭉치가 손·팔다리를 쓰거나 뛰는 동작(뭉치가 나오는 컷만), 화면 쪽으로 다가오거나 나가는 동작.
+
+    may_run(출동 컷)이면 뭉치의 달리기 낱말(MUNGCHI_RUN_WORDS)은 걸지 않는다(#779).
+    """
     clauses = mungchi_clauses(text) if has_mungchi else []
-    hands = [w for w in MUNGCHI_HAND_WORDS if any(w in c for c in clauses)]
+    words = [w for w in MUNGCHI_HAND_WORDS if not (may_run and w in MUNGCHI_RUN_WORDS)]
+    hands = [w for w in words if any(w in c for c in clauses)]
     near = [w for w in APPROACH_WORDS if w in text]
     out = []
     if hands:
@@ -1476,8 +1488,9 @@ def check_cuts(theme: Theme) -> list[str]:
                     f"LENGTH {key}{i}.caption {len(cut.get('caption') or '')}자 > {CAPTION_MAX}"
                 )
             has_mungchi = key == "outroCuts" or (i <= len(INTRO_MUNGCHI) and INTRO_MUNGCHI[i - 1])
+            may_run = key == "introCuts" and i == INTRO_GO_CUT  # 출동 컷은 달리기 허용(#779)
             for k in ("scene", "action"):
-                for problem in cut_action_problems(str(cut.get(k) or ""), has_mungchi):
+                for problem in cut_action_problems(str(cut.get(k) or ""), has_mungchi, may_run):
                     bad.append(f"CUT_ACTION {key}{i}.{k} {problem}")
             mood = cut.get("mungchiMood")
             if mood not in MUNGCHI_MOODS:

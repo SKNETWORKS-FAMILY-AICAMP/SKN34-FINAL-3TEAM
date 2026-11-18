@@ -272,7 +272,7 @@ def test_unsafe_police_words(text: str, hit: list[str]) -> None:
 def test_mungchi_grabbing_is_a_hand_action() -> None:
     assert checks.cut_action_problems("뭉치가 너구리를 붙잡는다")
     assert checks.cut_action_problems("뭉치가 고양이를 잡아 올린다")
-    assert not checks.cut_action_problems("사육사가 너구리를 안아 올리고 뭉치는 통통 튄다")
+    assert not checks.cut_action_problems("사육사가 너구리를 안아 올리고 뭉치는 곁에서 지켜본다")
 
 
 def mission_inputs() -> MissionDraftRequest:

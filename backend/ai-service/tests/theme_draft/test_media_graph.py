@@ -842,10 +842,8 @@ def test_video_prompt_and_review_keep_everyone_and_outfit() -> None:
     theme = valid_theme()
     text = prompts.video_prompt(theme, "OUTRO", 4, OUTRO_CUTS[3], [])
     assert "nobody walks out, disappears, appears or merges" in text
-    assert (
-        "no arms, wings or stretched limbs" in text and "stay exactly as in the first frame" in text
-    )
-    assert "never zoom in so close" in text
+    assert "never arms" in text and "stay exactly as in the first frame" in text  # #779 손 문구
+    assert "never so close that someone is cut off" in text
     for word in ("character leaving the frame", "wings", "outfit change", "freeze frame"):
         assert word in VIDEO_NEGATIVE
     assert "CONTINUITY" in VIDEO_REVIEW_IDS and "CONTINUITY:" in prompts.VIDEO_REVIEW_SYSTEM
@@ -866,7 +864,7 @@ def test_video_prompt_keeps_held_outfit_props_but_blocks_grabbing() -> None:
         in text
     )
     assert "already holds in the first frame (such as a magnifying glass) stays in its hand" in text
-    assert "raises its hands" in text and "no arms, wings or stretched limbs" in text
+    assert "moves its hands" in text and "never arms" in text  # #779 뭉치 거의 정지·손 문구
     assert "holds, hugs or hands over anything" not in text  # 예전 "아무것도 들지 않음" 문구는 없음
     assert "Mungchi grabbing or handing over objects" in VIDEO_NEGATIVE
     assert "Mungchi holding objects" not in VIDEO_NEGATIVE
@@ -875,14 +873,14 @@ def test_video_prompt_keeps_held_outfit_props_but_blocks_grabbing() -> None:
 
 def test_video_review_flags_target_grab_but_not_outfit_props() -> None:
     """영상 검토 CONTINUITY 결함은 뭉치가 사건 대상을 잡거나 건네는 것(사람과 함께 잡기 포함)과
-    팔·날개가 새로 생기는 것만. 차림 소품(돋보기·모자 등)을 쥐거나 지닌 것은 결함이 아님(실측
-    2026-11-11 종료 3컷, 사용자 결정 2026-11-15 B안: 그림 검토 MUNGCHI가 손에 든 물건을 허용해
-    첫 그림 통과·영상 실패로 어긋나지 않게)."""
+    뭉치 팔·다리·얼굴이 원래 모습에서 벗어나는 것(#779 판정 예시 기준). 차림 소품(돋보기·모자 등)을
+    쥐거나 지닌 것은 결함이 아님(실측 2026-11-11 종료 3컷, 사용자 결정 2026-11-15 B안: 그림 검토
+    MUNGCHI가 손에 든 물건을 허용해 첫 그림 통과·영상 실패로 어긋나지 않게)."""
     from app.theme_draft import prompts
 
     system = prompts.VIDEO_REVIEW_SYSTEM
     continuity = system.split("CONTINUITY:")[1].split("MORPH:")[0]
-    assert "뭉치에게 팔·날개가 새로 생기지 않는지" in continuity
+    assert "뭉치의 팔·다리·얼굴이 원래 모습에서 벗어나지 않는지" in continuity
     assert (
         "사건 대상(target, 찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나"
         in continuity

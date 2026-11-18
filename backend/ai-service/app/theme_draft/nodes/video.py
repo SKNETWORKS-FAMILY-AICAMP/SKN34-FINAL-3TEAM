@@ -13,11 +13,15 @@
   300초)가 안 남으면 건너뛰고 경고. 사용량은 영상 클라이언트가 컷 호출마다 THEME_VIDEO로 기록(#546)
 - 부분 다시 생성(#537): redo_videos 장면만 다시 찍고 나머지 영상·컷 길이는 원래 값 그대로
   (kept_videos)
+- #779(사용자 결정 2026-11-18): 검토에 뭉치 팔·다리·얼굴 판정 예시 그림 2장(허용·결함)을 장면 뒤에
+  붙인다(REVIEW_EXAMPLES). 생성 쪽은 뭉치 거의 정지·출동 컷만 옆으로 달리기(prompts.video_prompt)
 """
 
 import asyncio
 import logging
 import subprocess
+from functools import lru_cache
+from pathlib import Path
 
 from langgraph.runtime import Runtime
 
@@ -42,6 +46,17 @@ FRAME_EVERY = 1.0  # 검토 장면 간격(초). 2초 간격 4장으로는 사이
 FRAME_COUNT = 8  # 8초 컷이면 0~7초
 FREEZE_FAIL = 0.5  # 컷 중간에 이보다 오래 멈추면 그 컷을 다시 만듦(초, 기준안)
 MIN_KEEP = 0.6  # 앞뒤 정지 화면을 잘라도 요청 길이의 이 비율은 남아야 함
+# 뭉치 팔·다리·얼굴 판정 예시(#779, 사용자 결정 2026-11-18). 검토 장면 뒤에 허용 모음·결함 모음
+# 순서로 붙임(VIDEO_REVIEW_SYSTEM "마지막 두 장"). 그림은 2026-11-18 Veo 실측 장면에서 자른 것
+REVIEW_EXAMPLES = tuple(
+    Path(__file__).parents[1] / "assets" / name
+    for name in ("video-review-ok.jpg", "video-review-ng.jpg")
+)
+
+
+@lru_cache
+def review_examples() -> tuple[bytes, ...]:
+    return tuple(p.read_bytes() for p in REVIEW_EXAMPLES)
 
 
 def cut_freezes(clip: bytes, seconds: float) -> tuple[bytes, float, list[str]]:
@@ -123,7 +138,7 @@ async def film(
                 deadline=ctx.deadline,
                 timeout=ctx.settings.theme_llm_timeout,
                 max_retries=ctx.settings.theme_llm_retries,
-                images=[first, *frames],
+                images=[first, *frames, *review_examples()],
             )
         except LlmUnavailable as exc:
             bad = [f"VIDEO_CALL {exc.code}"]

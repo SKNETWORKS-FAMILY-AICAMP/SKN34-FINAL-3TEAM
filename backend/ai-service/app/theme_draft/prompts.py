@@ -155,12 +155,16 @@ PLAN_SYSTEM = (
     # #765: 컷 scene은 그 컷 그림 지시·그림 검토에 그대로 들어감(그림에 없는 것을 쓰면 검토가 실패)
     "- scene·action에는 그 컷 그림에 보이는 것만 쓴다. 그림에 나오지 않는 것을 '○○는 보이지 "
     "않는다'처럼 쓰지 않는다.\n"
-    "- action은 그 자리에서 하는 작은 동작 하나. 뭉치는 팔이 없어(아래쪽 작은 손만) 뭉치의 동작은 "
-    "제자리에서 작게 통통 튀기·고개 갸웃·몸 살짝 흔들기·표정 바꾸기만 쓴다. 손 흔들기·손 들기·"
-    "가리키기·짚기·건네기·안기·모으기·놓기·뛰기처럼 손이나 팔다리를 쓰는 동작은 사람만 한다"
-    "(예: '사람들이 손뼉을 치고 뭉치는 제자리에서 통통 튄다'). 인물·뭉치가 화면 쪽으로 다가오거나 "
-    "멀어지지 않고, 걸어서 화면 밖으로 나가거나 새 인물이 들어오지 않는다. 컷 끝까지 scene에 나온 "
-    "인물이 모두 화면 안에 있다.\n"
+    # #779(실측 2026-11-18): 영상 모델은 뭉치가 뛰거나 손을 쓰면 팔·흰 다리를 만들고, 제자리 통통
+    # 튀기도 마찬가지였음. 뭉치가 거의 가만히 있고 사람·배경·카메라가 움직이면 모양이 유지됨
+    "- action은 그 컷 역할이 영상에서 한눈에 보이는 분명한 동작 하나. 사람은 손짓·손뼉·건네기·"
+    "안기·몸 돌리기·화면 안에서 옆으로 몇 걸음 걷기처럼 역할을 보여 주는 동작을 한다. 뭉치는 팔이 "
+    "없어(몸 앞쪽 작은 동그란 손과 짧은 갈색 발만) 뭉치의 동작은 표정 바꾸기·고개 갸웃·몸 살짝 "
+    "흔들기만 쓴다. 단, 시작 3컷(출동)에서는 뭉치가 짧은 갈색 발로 옆으로 힘차게 달려간다. 손 "
+    "흔들기·손 들기·가리키기·짚기·건네기·안기·모으기·놓기·뛰기·통통 튀기는 사람만 한다(예: "
+    "'사람들이 손뼉을 치며 기뻐하고 뭉치는 환하게 웃으며 몸을 살짝 흔든다'). 인물·뭉치가 화면 "
+    "쪽으로 다가오거나 멀어지지 않고, 걸어서 화면 밖으로 나가거나 새 인물이 들어오지 않는다. 컷 "
+    "끝까지 scene에 나온 인물이 모두 화면 안에 있다.\n"
     "- 영상 속에는 글자를 넣지 않으므로 scene·action에 글자·숫자가 보이는 "
     "장면(쓰인 간판 등)을 쓰지 않는다.\n"
     "\n"
@@ -598,8 +602,13 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             f"이 컷의 역할을 지킨다: {cut_roles(theme, head[:-1])[int(head[-1]) - 1]}.",
             "scene은 컷 끝에 보이는 모습(누가 어디서) 한 문장, action은 동작 하나를 한 문장으로, "
             "지금 글 길이와 비슷하게 쓴다. 같은 말을 되풀이하지 않는다.",
-            "뭉치는 제자리에서 작게 통통 튀기·고개 갸웃·몸 살짝 흔들기·표정 바꾸기만 한다. 손짓·"
-            "건네기·안기·뛰기처럼 손이나 팔다리를 쓰는 동작은 사람이 한다.",
+            # #779: 콘티 규칙(PLAN_SYSTEM action)과 같은 뭉치 동작
+            "뭉치는 시작 3컷(출동)에서 짧은 갈색 발로 옆으로 힘차게 달려가고, 다른 컷에서는 표정 "
+            "바꾸기·고개 갸웃·몸 살짝 흔들기만 한다. 손짓·건네기·안기·뛰기·통통 튀기처럼 손이나 "
+            "팔다리를 쓰는 동작은 사람이 한다."
+            if cut == ("INTRO", 3)
+            else "뭉치는 표정 바꾸기·고개 갸웃·몸 살짝 흔들기만 한다. 손짓·건네기·안기·뛰기·통통 "
+            "튀기처럼 손이나 팔다리를 쓰는 동작은 사람이 한다.",
             "누구도 화면 쪽으로 다가오거나 화면 밖으로 나가지 않는다. 인물·장소는 그대로 둔다.",
             # #765 CUT_TARGET: 컷 그림에 나오지 않는 것은 이름도, 없다는 말도 쓰지 않음
             f"이 컷 그림에는 찾는 대상('{theme.get('target') or ''}')이 나오지 않는다: 대상 이름을 "
@@ -1568,6 +1577,22 @@ def cut_has_characters(scene: str, index: int) -> bool:
     return not (scene == "INTRO" and index == 3)
 
 
+def is_go_cut(scene: str, index: int) -> bool:
+    """시작 3컷 = 뭉치 혼자 출동(families.INTRO_GO). 그림·영상이 달리기 자세로(#779)."""
+    return scene == "INTRO" and index == 3
+
+
+# #779(실측 2026-11-18): 서 있는 첫 그림에서 달리기로 바뀌는 0.5~1초에 뭉치가 몸을 틀며 뭉개지고,
+# 방향을 정하지 않으면 테마마다 옆모습·정면이 달라짐. 첫 그림부터 정면을 본 채 달리는 자세로 그림
+RUN_POSE = (
+    "Draw the very moment Mungchi is running: Mungchi faces the viewer (front view, at most a "
+    "slight turn, never a side profile), its round fluffy body unchanged, mid-stride with one "
+    "short brown foot lifted right under its body, small motion lines behind it. Its feet stay "
+    "short and brown (no legs) and its tiny round hands stay small round shapes on the front of "
+    "its body (no arms)."
+)
+
+
 def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list[str]) -> str:
     """시작·종료 영상 컷의 첫 그림(영상이 이 그림에서 시작). mungchiMood는 있으면 쓴다."""
     lines = [IMAGE_STYLE]
@@ -1575,6 +1600,8 @@ def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: 
         lines.append(MUNGCHI_LOOK.format(outfit=theme["outfit"]))
         if mouth := mood_mouth(cut):
             lines.append(f"Mungchi's expression: {mouth}, dot eyes unchanged.")
+        if is_go_cut(scene, index):
+            lines.append(RUN_POSE)
     else:
         lines.append("Mungchi does not appear in this picture.")
     if cut_has_characters(scene, index):
@@ -1683,31 +1710,75 @@ def image_review_user(
 
 
 # 사용자 결정 2026-11-15(생성 쪽도 B안): 첫 그림에 든 차림 소품은 그대로 들어도 되고 새 물건을
-# 집거나 건네는 것만 막음(검토 CONTINUITY와 같은 기준, "들지 말라"면 첫 그림의 돋보기가 사라짐)
+# 집거나 건네는 것만 막음(검토 CONTINUITY와 같은 기준, "들지 말라"면 첫 그림의 돋보기가 사라짐).
+# #779(실측 2026-11-18): 흰 다리·점프, 강아지 얼굴(코·주둥이)·갈색 손, 실내 구름, 종이 넘김 전환이
+# 실제로 나와 더함
 VIDEO_NEGATIVE = (
     "big eyes, eye whites, changing eye shape, body morphing, extra limbs, long arms, wings, "
     "stretched limbs, Mungchi raising hands, Mungchi grabbing or handing over objects, "
+    "Mungchi legs, white legs, Mungchi jumping, dog nose, animal muzzle, puppy face, brown hands, "
     "outfit change, "
     "character leaving the frame, character disappearing, character walking toward the camera, "
     "characters merging, extreme zoom, cropped faces, freeze frame, 3D render, text, "
+    "clouds indoors, leaves indoors, page turn, page curl, transition effect, "
     "flashing lights, scary, sudden cuts"
+)
+# #779: 뭉치 모양 고정. 뭉치는 거의 가만히(표정·갸웃·흔들기), 출동 컷만 정면을 본 채 옆으로 달림.
+# 손·발·얼굴은 실측에서 바뀐 것(팔·흰 다리·갈색 손·강아지 코)을 하나씩 막는 줄
+MUNGCHI_KEEP = [
+    "Mungchi's two tiny round hands are small round shapes on the front of its body, the same "
+    "cream color as its body with a thin dark outline: never arms, never brown or dark blobs.",
+    "Mungchi has no legs: its two short brown feet stay right under its body.",
+    "Keep Mungchi's round fluffy shape and small dot eyes unchanged (no eye whites). Mungchi has "
+    "no nose and no animal muzzle: its face keeps the same simple mouth and pink cheeks as in the "
+    "first frame and never looks like a dog or any other animal.",
+]
+MUNGCHI_STILL = (
+    "Mungchi stays almost still: it only changes its facial expression, blinks, tilts its head "
+    "slightly or sways its body gently. It never jumps, bounces or moves its hands."
+)
+MUNGCHI_RUN = (
+    "Mungchi runs energetically sideways along the path with tiny quick steps of its two short "
+    "brown feet, facing the viewer the whole time (front view, at most a slight turn, never a side "
+    "profile). The camera tracks alongside, so Mungchi stays the same size and inside the frame "
+    "while the background scrolls past. Mungchi never runs toward or away from the camera."
+)
+# #779: 컷 역할(이야기 흐름)에 맞는 카메라. 사람이 잘리지 않을 만큼만 밀고 들어감
+CUT_CAMERA = {
+    ("INTRO", 1): "a slow sideways pan that shows the everyday scene",
+    ("INTRO", 2): "a gentle push-in toward the surprised character",
+    ("INTRO", 3): "a side tracking shot that moves along with Mungchi",
+    ("INTRO", 4): "a slow pan across everyone gathered together",
+    ("OUTRO", 1): "a gentle push-in toward Mungchi and the clues",
+    ("OUTRO", 2): "a slow pan that reveals the place",
+    ("OUTRO", 3): "a gentle push-in on the moment",
+    ("OUTRO", 4): "a slow sideways pan across everyone celebrating",
+}
+# 앞 시험에서 모든 컷에 '구름이 흐른다'를 넣어 실내 벽에 구름이 생겼음(실내·실외를 나눔)
+SCENE_MOTION = (
+    "The background moves in a way that fits the place: outdoors, clouds drift and leaves, grass "
+    "or water move gently; indoors, nothing floats inside the room (no clouds, no leaves), only "
+    "the light shifts softly and plants or curtains sway slightly."
 )
 
 
 def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list[str]) -> str:
-    """컷 동작 + 고정 문구(첫 그림만 고정해 그 그림에서 시작). 뭉치·찾는 대상 규칙은 그림과 같은
-    컷 판정(cut_has_mungchi·cut_has_characters·cut_shows_target)을 따른다."""
+    """컷 역할·동작 + 고정 문구(첫 그림만 고정해 그 그림에서 시작). 뭉치·찾는 대상 규칙은 그림과
+    같은 컷 판정(cut_has_mungchi·cut_has_characters·cut_shows_target)을 따른다.
+
+    #779: 컷 역할(줄거리 종류의 콘티 틀)과 컷별 카메라로 4컷이 이야기로 이어지게 하고, 뭉치는 거의
+    가만히(출동 컷만 옆으로 달림), 사람·배경·카메라가 움직인다.
+    """
     target = theme.get("target") or "the missing target"
     if cut_has_mungchi(scene, index):
         mouth = mood_mouth(cut)
         mungchi = [
-            "Keep Mungchi's round fluffy shape and small dot eyes unchanged (no eye whites).",
-            "Mungchi has only tiny hands at the lower front: no arms, wings or stretched limbs.",
-            "Mungchi only bounces gently in place, tilts its head or changes its mouth: it never "
-            "waves, raises its hands or points, and never picks up, lifts, hugs, hands over or "
-            f"receives anything, especially {target}. An outfit item Mungchi already holds in the "
-            "first frame (such as a magnifying glass) stays in its hand as it is. Any hand "
-            "gestures are done by the people.",
+            MUNGCHI_RUN if is_go_cut(scene, index) else MUNGCHI_STILL,
+            *MUNGCHI_KEEP,
+            f"Mungchi never picks up, lifts, hugs, hands over or receives anything, especially "
+            f"{target}. An outfit item Mungchi already holds in the first frame (such as a "
+            "magnifying glass) stays in its hand as it is, and nothing around its neck is lifted "
+            "or used. Any hand gestures are done by the people.",
             "Mungchi's outfit, hat and items around the neck stay exactly as in the first frame.",
             f"Mungchi's expression: {mouth}." if mouth else "",
         ]
@@ -1751,15 +1822,20 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         about_target = about_target.strip()
     elif t.animal and not shows:
         about_target += " " + _no_candidates(theme).replace("Do not draw", "Do not show")
+    key = "introCuts" if scene == "INTRO" else "outroCuts"
     lines = [
+        f"Story beat of this clip (Korean): {cut_roles(theme, key)[index - 1]}",
         f"Action (Korean): {cut['action']}",
         "Keep the 2D cartoon style of the first frame with thick even outlines.",
         *mungchi,
         "Everyone in the first frame stays fully inside the frame until the end: nobody walks "
-        "out, disappears, appears or merges with another person.",
-        "Small, gentle movements in place, continuous until the end with no pauses. Nobody moves "
-        "toward or away from the camera: everyone keeps the same size as in the first frame.",
-        "Only a slow, slight camera move; never zoom in so close that someone is cut off. No text.",
+        "out, disappears, appears or merges with another person. Everyone keeps the same face, "
+        "hair, glasses, hair clips and clothes as in the first frame.",
+        "The people act out the action clearly and naturally, continuously until the end with no "
+        "pauses. Nobody moves toward or away from the camera.",
+        SCENE_MOTION,
+        f"Camera: {CUT_CAMERA.get((scene, index), 'a slow, smooth move')}, never so close that "
+        "someone is cut off, with no transition effects. No text.",
         about_target,
         *_fixes(feedback),
     ]
@@ -1768,15 +1844,28 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
 
 VIDEO_REVIEW_SYSTEM = (
     "너는 초등학생 학습 서비스의 영상 검토자다. 첫 "
-    "그림은 컷의 첫 장면(기준)이고, 나머지는 영상에서 "
-    "1초마다 뽑은 장면이다. 다섯 항목마다 verdict를 PASS·WARN·FAIL 중 하나로 쓰고 근거 한 문장"
+    "그림은 컷의 첫 장면(기준)이고, 그다음은 영상에서 "
+    "1초마다 뽑은 장면이며, 마지막 두 장은 뭉치 판정 예시(초록 테두리 = 허용 모음, 빨간 테두리 = "
+    "결함 모음)다. 다섯 항목마다 verdict를 PASS·WARN·FAIL 중 하나로 쓰고 근거 한 문장"
     "(reason)을 쓴다. 다섯 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
     "CONTINUITY: 기준 장면의 인물(뭉치 포함)이 끝까지 모두 화면 안에 보이는지(화면 밖으로 나가거나 "
     "사라지거나 둘이 겹쳐 하나가 되거나 얼굴이 크게 "
     "잘리지 않는지), 뭉치의 옷·모자·목에 건 것이 기준 "
-    "장면과 같은지, 뭉치에게 팔·날개가 새로 생기지 않는지. "
+    "장면과 같은지, 사람의 머리핀·안경·옷이 기준 장면과 같은지(토끼 머리핀이 토끼 귀로 자라는 "
+    "것처럼 바뀌거나 새로 생기면 결함). "
+    # #779(사용자 결정 2026-11-18): 뭉치 팔·다리·얼굴 기준을 판정 예시 그림과 함께 줌. 글로만
+    # "팔이 생기면 결함"이라 하면 같은 영상도 판정이 흔들렸고(재검토 12건), 예시를 넣자 두 번
+    # 검토가 15/16 같았음. 실측에서 검토가 놓친 강아지 얼굴·갈색 손·토끼 귀를 항목에 적음
+    "뭉치의 팔·다리·얼굴이 원래 모습에서 벗어나지 않는지: 몸에 붙은 작은 돌기 팔이 살짝 들리거나 "
+    "몸 안쪽에 손 선이 보이는 것, 짧은 갈색 발로 걷거나 달리거나 발을 드는 것은 결함이 아니다. "
+    "몸 밖으로 길게 뻗은 팔, 팔로 물건을 들어 올림, 손가락, 날개, 흰(몸 색) 다리가 생기거나 갈색 "
+    "발이 사라지는 것, 뭉치 얼굴에 코·주둥이가 생기거나 입이 동물처럼 바뀌어 강아지 등 동물처럼 "
+    "보이는 것, 몸 색의 동그란 손이 갈색·어두운 덩어리로 바뀌는 것은 결함. 판정 예시를 기준으로 "
+    "삼는다. "
     # 실측 2026-11-11(초4 종료 3컷): 뭉치가 주인과 함께 로봇을 잡는 영상이 통과함(#535).
-    # 사용자 결정 2026-11-15(B안): 결함은 사건 대상 잡기와 팔·날개 생김만, 차림 소품 쥠은 결함 아님
+    # 사용자 결정 2026-11-15(B안): 결함은 사건 대상 잡기와 팔·날개 생김(#779에서 위 기준으로
+    # 바뀜)만,
+    # 차림 소품 쥠은 결함 아님
     # (그림 검토 MUNGCHI는 손에 든 물건을 허용해 첫 그림이 통과하는데 영상만 실패하지 않게)
     "뭉치가 사건 대상(target, 찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나 "
     "받는지(사람과 함께 잡아도 결함). 뭉치가 차림 소품(목에 걸거나 손에 든 돋보기·모자처럼 기준 "
@@ -1785,7 +1874,8 @@ VIDEO_REVIEW_SYSTEM = (
     "MORPH: 인물·뭉치의 몸·얼굴·눈 모양이 장면 사이에 녹아내리듯 바뀌거나 팔다리가 늘어나는지, "
     "2D 그림체가 3D로 바뀌는지, 뭉치가 나오지 않아야 하는 컷(mungchi 나오지 않아야 함)에 뭉치가 "
     "나타나는지. 사람이 손에 든 물건·자세와 표정, 뭉치가 쥔 차림 소품은 동작에 따라 달라도 된다"
-    "(뭉치가 사건 대상을 잡는 것·팔이나 날개가 생기는 것은 CONTINUITY에서 본다).\n"
+    "(뭉치가 사건 대상을 잡는 것·뭉치 팔·다리·얼굴이 원래 모습에서 벗어나는 것은 CONTINUITY에서 "
+    "판정 예시를 기준으로 본다).\n"
     "ANSWER_HINT: 찾는 대상이 나오면 안 되는 컷(targetAllowed false)에 대상이 보이는지(후보가 "
     "동물이면 후보 동물 가운데 어느 것이라도 보이면 결함), 정답 "
     "공개가 허용되지 않은 컷(answerAllowed false)에서 정답(대상이 있는 곳·정답 동물)을 가리켜 "

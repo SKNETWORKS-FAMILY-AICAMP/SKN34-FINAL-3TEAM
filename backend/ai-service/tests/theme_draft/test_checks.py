@@ -473,8 +473,8 @@ def test_text_at_and_set_text_at_paths() -> None:
     assert theme["outroCuts"][1]["caption"] == "새 문구" and theme["title"] == "새 제목"
     assert checks.text_at(theme, "outroCuts2.caption") == "새 문구"
     assert (checks.text_max("WED.clue"), checks.text_max("introCuts1.caption")) == (40, 30)
-    checks.set_text_at(theme, "outroCuts3.action", "뭉치가 곁에서 통통 튄다")
-    assert theme["outroCuts"][2]["action"] == "뭉치가 곁에서 통통 튄다"
+    checks.set_text_at(theme, "outroCuts3.action", "뭉치가 곁에서 몸을 살짝 흔든다")
+    assert theme["outroCuts"][2]["action"] == "뭉치가 곁에서 몸을 살짝 흔든다"
     assert checks.text_max("outroCuts3.action") == checks.CUT_TEXT_MAX
 
 

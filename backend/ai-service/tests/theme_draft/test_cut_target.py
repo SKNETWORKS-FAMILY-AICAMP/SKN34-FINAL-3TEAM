@@ -54,7 +54,7 @@ def test_prod_outro2_sentence_is_caught_and_field_fixed() -> None:
             "뭉치와 지호가 텃밭 앞에 선다. 보리는 아직 보이지 않는다",
         ),  # 없다고 씀
         ("introCuts", 2, "scene", "지호가 보리가 사라진 걸 알아차린다"),  # 시작 2컷(사건)도
-        ("introCuts", 3, "action", "뭉치가 보리를 찾으러 통통 튀어 간다"),
+        ("introCuts", 3, "action", "뭉치가 보리를 찾으러 옆으로 달려간다"),
         ("introCuts", 4, "scene", "뭉치와 지호가 강아지 보리를 찾을 방법을 생각한다"),  # 전체 이름
         ("outroCuts", 1, "action", "뭉치가 보리의 털 사진을 보며 고개를 갸웃한다"),  # 조사 '의'
     ],
