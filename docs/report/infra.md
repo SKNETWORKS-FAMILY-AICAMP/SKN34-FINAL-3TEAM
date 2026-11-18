@@ -162,7 +162,7 @@ kind values가 `compose.yaml`보다 적어 Google 로그인·토스 결제·LLM 
 
 | 항목 | 현재 | 남은 일 |
 |---|---|---|
-| RDS | 비공개·암호화·자동 백업 7일, Single-AZ, 삭제 보호 off | PITR 실제 복원, RPO 5분·RTO 4시간 미검증 |
+| RDS | 비공개·암호화·자동 백업 7일, Single-AZ, 삭제 보호 off. PITR 복원 1회 성공(#629, 9.12): 요청→available 약 19분(RTO 4시간 안), 요청 시각과 최신 복원 가능 시점 간격 5분 23초 | RPO 5분은 로그 업로드 주기(5분) 경계라 넘을 수 있음(9.12.4). 근거 연결·결제 행이 없어 실데이터 정합성 미확인, 앱 전환 시간 미측정 |
 | 플랫폼 | RabbitMQ·Redis·관측 단일 replica, AZ 고정 PVC(RabbitMQ·Prometheus·Grafana 2a, Redis 2b) | EBS/PVC 삭제·AZ 장애 복구 미검증 |
 | 진입 | CloudFront→ALB HTTP origin | custom domain·ALB TLS 미구성 |
 | Secret | ESO·Secrets Manager 원격 key 참조 | 키 회전·장애 복구 미검증 |
@@ -864,6 +864,68 @@ python evaluation/load/llm_latency.py judge --secrets <밖>/secrets-630.json --o
 | 17★ | 내리기 | 시험 데이터 정리 범위 확인 → `demo_stack.py pause --execute` 또는 클러스터·NAT 삭제(9.5 방식) | RDS stopped, 실행 중 EC2 0대, 정지 시각과 7일 뒤 자동 시작 기록 | 1시간 |
 
 0~12는 한 번에 약 4시간이다. 13~16은 하루 안에 모두 끝내지 않아도 되지만, 켜 둔 동안 고정비(EKS·NAT·노드 4대·RDS)가 쌓이므로 이틀을 넘기지 않는다.
+
+## 9.12 RDS PITR 복구 시험 (#629, 2026-11-18)
+
+NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS에서 처음 실행했다. 원본 `sagomungchi-demo-db`는 수정·재시작하지 않았고, 새 인스턴스로 복원해 확인한 뒤 바로 삭제했다. 절차는 9.11.3을 따랐다.
+
+### 9.12.1 조건
+
+| 항목 | 값 |
+|---|---|
+| 복원 시점 T | 2026-11-18 09:30:00 KST(00:30:00 UTC). 재가동(11/17 15:43) 뒤 17시간이 지난 시점이고, #384 부하 시험 시작(첫 시험 계정 가입 09:37:26) 전이다 |
+| 표지 A(T 이전) | learning `answer` 1건(11/17 18:29:49 KST 제출, ID 앞 8자리 `429717b2`) |
+| 표지 B(T 이후) | core `user_account`의 #384 시험 계정 10개(`load2` 접두사, 09:37:26~09:48:03 KST 가입) |
+| 복원본 | `sagomungchi-demo-db-pitr629`, db.t4g.micro(가장 작은 사양), 원본과 같은 서브넷 그룹·RDS SG, 비공개, Single-AZ(2b), 태그 `purpose=pitr-test-629` |
+| 확인 방법 | 클러스터 안 임시 Pod(`demo-db-oneoff` 정책 라벨, 앱 계정 Secret·RDS CA 사용)로 원본과 복원본에 같은 SQL을 실행. 건수·md5·짧은 ID만 출력하고 학생 원문·개인정보는 출력하지 않음. Pod·ConfigMap은 실행 직후 삭제 |
+
+### 9.12.2 시간 기록 (KST)
+
+| 시각 | 단계 |
+|---|---|
+| 09:46:14 | 요청 직전 원본 `LatestRestorableTime` |
+| 09:51:37 | `restore-db-instance-to-point-in-time` 요청 |
+| 09:54:20 | 인스턴스 생성 시각(`InstanceCreateTime`) |
+| 09:58:31 | RDS 이벤트 "Restored from DB instance sagomungchi-demo-db to 2026-11-18 00:30:00.0" |
+| 09:59:07 | 재시작 |
+| 10:01:00~10:09:43 | 복원본 첫 자동 백업(보존 기간 7일을 원본에서 이어받음) |
+| 10:10:45 | `available`(30초 간격 조회라 ±30초) |
+| 10:11:08 | 표지·행 수·스키마 대조 끝 |
+| 10:11:15 | 삭제 요청(`--skip-final-snapshot --delete-automated-backups`) |
+| 10:12:50 | 삭제 완료(`wait db-instance-deleted`, 이후 `DBInstanceNotFound`) |
+| 10:15:12 | 복원본 자동 스냅샷 `rds:sagomungchi-demo-db-pitr629-…`이 사라짐(삭제 뒤 약 2분 남아 있었음). 남은 자동 백업은 원본 것 1개, `purpose=pitr-test-629` 태그 자원 0개, RDS SG 규칙 변경 없음, 임시 Pod·ConfigMap 0개 |
+
+- **RTO**: 요청→`available` **19분 8초**, 요청→확인 끝 19분 31초. 목표 4시간 안이다. 이 중 약 9분은 복원본 첫 자동 백업이라, 데이터 복원 자체는 요청 뒤 약 7분(09:58:31 이벤트)에 끝났다
+- **RPO**: 요청 시각 − `LatestRestorableTime` = **5분 23초**. 같은 날 09:49:51에 본 값은 3분 37초였다. RDS는 트랜잭션 로그를 약 5분마다 올리므로 이 간격은 0~5분대에서 오르내리고, 이번 측정은 목표 5분을 23초 넘었다(9.12.4)
+
+### 9.12.3 대조 결과
+
+| 대상 | 원본(T 이전으로 거름) | 복원본 | 판정 |
+|---|---|---|---|
+| 표지 A 답변 | 1 | 1 | 있음 |
+| 표지 B 시험 계정 | 10(전체) | 0 | 없음 |
+| 계정(T 이전 / 전체) | 6 / 16 | 6 / 6 | 같음 |
+| 학생 | 36 | 6 | T 이후 생긴 30명 없음 |
+| 답변(T 이전) 건수·md5(`id:version`) | 2,814 · 같음 | 2,814 · 같음 | 같음 |
+| 판정 상태(T 이전 답변) | DONE 2,812·PENDING 2 | 같음 | 같음 |
+| 시도·판정·미션·테마 초안 | 2,812 · 2,814 · 25 · 8 | 같음 | 같음 |
+| 분석 대화 메시지·`llm_usage`(T 이전) | 562 · 7,410 | 같음 | 같음 |
+| 구독(T 이전 상태별) | ACTIVE 1·CANCELED 1 | 같음 | 같음 |
+| 주간 리포트·항목 | 5 · 25 | 같음 | 같음 |
+| 근거 연결(core `message_evidence`, report `report_item_evidence`)·결제 `payment` | 0 · 0 · 0 | 0 · 0 · 0 | 행 없음(9.12.4) |
+| 근거가 가리키는 답변 중 learning에 없는 수 | 0/0 | 0/0 | 행 없음 |
+| 스키마 | core V51 있음·V52 없음, learning V21 있음, report `20261110_08` 제약 있음 | 같음 | 같음 |
+| 열 지문(`information_schema.columns` md5) | core 535·learning 352·report 66열 | 세 DB 모두 같음 | 같음 |
+
+- T 직전 가장 가까운 쓰기는 테마 초안(09:01:52), T 직후 가장 가까운 쓰기는 시험 계정 가입(09:37:26)이다. 경계 정밀도는 이 36분 안에서만 확인했다
+- 앱 계정은 `flyway_schema_history`·`alembic_version` 읽기 권한이 없어(permission denied) Flyway·Alembic 버전 번호는 직접 읽지 못했다. 마지막으로 적용된 migration이 만든 열·제약과 열 지문으로 대신했다
+
+### 9.12.4 한계와 남은 것
+
+- **RPO 5분 경계**: 측정 1회에서 5분 23초였다. PITR만으로는 "최대 약 5분 + 업로드 지연"이 실제 값이라, NFR-DAT-05의 RPO 5분을 지키려면 목표를 "약 5분(로그 업로드 주기)"으로 적거나 별도 수단(읽기 복제본 등)이 필요하다. 설계 문구 변경은 담당자 결정 사항이라 이번에 바꾸지 않았다
+- **근거 연결·결제 정합성**: AWS 데모 DB에 `message_evidence`·`report_item_evidence`·`payment` 행이 0건이라 대조 쿼리는 실행됐지만 실데이터로 확인한 것은 아니다. PG 상태 별도 대조도 결제가 없어 하지 않았다
+- **RTO 범위**: 데이터가 작다(답변 2,814건, gp3 20 GiB). 앱 Secret의 DB 주소를 복원본으로 바꾸고 재배포하는 전환 시간은 재지 않았다
+- 복원본은 가장 작은 사양(t4g.micro)이라 원본(t4g.small)과 사양이 다르다.
 
 ## 10. 근거 링크
 
