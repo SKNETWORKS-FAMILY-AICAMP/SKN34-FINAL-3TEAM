@@ -4,6 +4,8 @@ import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
+import { date, reportStatusLabel } from './adminFormatting.ts'
+import { Badge } from './AdminUi.tsx'
 export { ModelRegistry as ModelManager } from './ModelRegistry.tsx'
 /** 신고 대상 이름. COMMUNITY_POST는 2026-11-06 결정(P20): 접수 즉시 숨김, 처리 결과로 다시 공개 또는 계속 숨김. */
 const targetLabels: Record<string, string> = {
@@ -25,8 +27,9 @@ export function ErrorManager() {
         !q.error &&
         q.data.items.map((r) => (
           <article className="ws-card" key={r.reportId}>
-            <h3>
-              {targetLabels[r.targetType] ?? r.targetType} · {r.status}
+            <h3 className="ad-report-heading">
+              <span>{targetLabels[r.targetType] ?? r.targetType}</span>
+              <Badge active={r.status === 'RESOLVED'}>{reportStatusLabel[r.status] ?? r.status}</Badge>
             </h3>
             {r.targetType === 'COMMUNITY_POST' && (
               <p>처리 결과에 따라 다시 공개하거나 계속 숨깁니다. 공유물 원문 열람은 감사 이력에 남습니다.</p>
@@ -83,7 +86,7 @@ function ErrorDetail({ id }: { id: string }) {
                 onChange={(e) => setStatus(e.target.value)}
               >
                 {['RECEIVED', 'IN_REVIEW', 'RESOLVED'].map((v) => (
-                  <option key={v}>{v}</option>
+                  <option key={v} value={v}>{reportStatusLabel[v] ?? v}</option>
                 ))}
               </select>
             </label>
@@ -122,9 +125,7 @@ function ErrorDetail({ id }: { id: string }) {
           {q.data.corrections.length > 0 && <p>판정 정정과 파생 결과 반영은 별개입니다. 아래 표시는 분석 대화·리포트의 영향 여부와 학습 수치 집계의 반영 여부입니다.</p>}
           {q.data.corrections.map((c, i) => (
             <section className="ws-card" key={i}>
-              <p>
-                {c.createdAt} · {c.reason}
-              </p>
+              <time className="ad-cell-note" dateTime={c.createdAt}>{date(c.createdAt)}</time><p>{c.reason}</p>
               <p>{c.corrected}</p>
               <p>{correctionImpactText(c.impact)}</p>
             </section>

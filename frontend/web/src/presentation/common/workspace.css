@@ -238,6 +238,15 @@
 }
 
 /* 분석 대화 예시 질문 (FN-AGT-12, #240) */
+#class-journal .notification-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  line-height: 1.7;
+}
+#class-journal .notification-meta time { font-size: 13px; }
+
 #class-journal .ws-examples {
   display: grid;
   gap: 8px;

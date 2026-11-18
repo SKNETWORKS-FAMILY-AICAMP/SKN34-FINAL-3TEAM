@@ -17,6 +17,7 @@ test('미션 초안: 성취기준·성취수준 고르기 → 요청 → 검사 
   await expect(failures).toContainText('요소 code')
   await expect(page.getByText('3/3회 (AI 호출 실패 포함)')).toBeVisible()
 
+  await page.getByText('새 초안 요청', { exact: true }).click()
   await page.getByRole('button', { name: '초안 요청', exact: true }).click()
   await expect(page.getByRole('alert').filter({ hasText: '성취기준을 1개 이상' })).toBeVisible()
   await page.getByLabel('성취기준 학년군', { exact: true }).selectOption('초5~6')
