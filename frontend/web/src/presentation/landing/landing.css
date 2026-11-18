@@ -247,7 +247,7 @@
 .lp-photo-mount { position: relative; display: block; border: 1px solid #b7ac973d; box-shadow: 0 2px 8px #725e351a; overflow: hidden; }
 .lp-photo-mount img { display: block; width: 100%; height: auto; background: #fff; }
 .lp-photo-mount:focus-visible { outline: 3px solid #496681; outline-offset: 5px; }
-.lp-play-room { grid-column: 1 / 9; grid-row: 1; padding: 23px; transform: rotate(-2deg); z-index: 1; }
+.lp-play-room { grid-column: 1 / 9; grid-row: 1; padding: 14px; transform: rotate(-2deg); z-index: 1; }
 .lp-play-points { --frame: #829b8c; grid-column: 9 / -1; grid-row: 1 / 3; margin-top: 155px; transform: rotate(4deg); }
 .lp-play-album { --frame: #b6a2c0; grid-column: 3 / 10; grid-row: 3; margin-top: -5px; transform: rotate(-1deg); }
 .lp-album-preview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding: 3px 2px 0; }
@@ -618,7 +618,7 @@
 
 @property --paper-bend { syntax: '<number>'; inherits: true; initial-value: 0; }
 .lp-curved-sheet { position: absolute; inset: 0; container-type: inline-size; transform-style: preserve-3d; animation: lp-sheet-bend 1100ms cubic-bezier(.35,.05,.25,1) both; }
-.lp-paper-band { position: absolute; top: 0; bottom: 0; left: calc(var(--band) * 3.125%); width: calc(3.125% + .15px); overflow: hidden; transform-origin: left center; transform: translateZ(calc(var(--depth) * var(--paper-bend))) rotateY(calc(-1 * atan2(var(--rise) * var(--paper-bend), 3.125cqw))); }
+.lp-paper-band { position: absolute; top: 0; bottom: 0; left: calc(var(--band) * 3.125%); width: calc(3.125% + .8px); overflow: hidden; transform-origin: left center; transform: translateZ(calc(var(--depth) * var(--paper-bend))) rotateY(calc(-1 * atan2(var(--rise) * var(--paper-bend), 3.125cqw))); }
 .lp-paper-band-content { position: absolute; top: 0; bottom: 0; left: calc(var(--band) * -3.125cqw); width: 100cqw; }
 .lp-paper-band-content > .lp-book-leaf { height: 100%; }
 .lp-paper-band::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: #786347; opacity: calc(var(--paper-bend) * .025); }
@@ -633,3 +633,65 @@
 .lp-guide-item[open] .lp-terms-original > summary { padding: 16px 0; font-size: 14px; }
 .lp-guide-item[open] .lp-terms-original:not([open]) > summary svg { transform: none; }
 .lp-terms-original > p { font-size: 13px; line-height: 1.8; }
+
+/* 작은 양장 공책: 표지, 제본 홈, 종이 단면을 분리한다. */
+.lp-thought-book { padding: 0; border: 0; background: none; box-shadow: none; isolation: isolate; }
+.lp-thought-cover { position: relative; z-index: 2; min-height: 238px; padding: 23px 27px 34px 39px; border-radius: 5px 12px 12px 5px; border: 1px solid #397caf; color: #143e5b; background: linear-gradient(90deg, #3678a9 0, #5596c6 9px, #4388b9 15px, #83bde4 19px, #71b2df 25px, #77b9e5 85%, #66a7d5); box-shadow: inset 0 1px 1px #d7efff, inset -2px -2px 3px #3c84b666, 0 3px 5px #23476330; }
+.lp-thought-cover::before { content: ''; position: absolute; inset: 13px 13px 13px 29px; border: 1px solid #e0f1ff55; border-radius: 2px 6px 6px 2px; pointer-events: none; }
+.lp-thought-cover > span:first-child { font-size: 12px; font-weight: 700; letter-spacing: .12em; }
+.lp-thought-cover strong { margin-top: 14px; }
+.lp-cover-pages { position: absolute; z-index: 1; inset: 9px -3px -10px 7px; border-radius: 2px 10px 10px 3px; border: 1px solid #c7bd9e; background: repeating-linear-gradient(0deg, #e0dac8 0 1px, #fff9e9 1px 3px); box-shadow: -4px 4px 0 #347da9, 0 16px 18px #24485824; }
+.lp-cover-ribbon { position: absolute; z-index: 1; bottom: -24px; right: 38px; width: 17px; height: 34px; background: #d7a24d; clip-path: polygon(0 0,100% 0,100% 100%,50% 81%,0 100%); }
+.lp-cover-seal { position: absolute; bottom: 26px; right: 25px; color: #235c8670; }
+/* 종이 하단의 뜬 그림자를 없애고 본문과 종이 단면을 맞춘다. */
+.lp-example-notebook::after { bottom: 4px; height: 5px; left: 7px; right: 7px; }
+.lp-book-pages { z-index: 1; }
+.lp-leaf-face::after { box-shadow: none; }
+.lp-turning-leaf, .lp-curved-sheet, .lp-leaf-face::after { animation-delay: var(--turn-delay, 0ms); }
+.lp-turning-leaf[data-sheets="2"] .lp-paper-band-content > .lp-book-leaf { box-shadow: inset 0 -1px #d6ccb6; }
+/* 바다 먼 곳의 작은 무리. hover가 끝나면 DOM이 사라져 대기 시간도 초기화된다. */
+.lp-fish-depth { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+.lp-fish-school { opacity: 0; animation: lp-school-pass 8s linear 2s both; }
+.lp-distant-fish { fill: #286e8bbd; animation: lp-fish-swim 1.1s ease-in-out infinite alternate; animation-delay: calc(var(--fish) * -160ms); }
+.lp-fish-tail { transform-origin: 13px 10px; animation: lp-tail-swim .42s ease-in-out infinite alternate; }
+.lp-fish-fin { fill: #86b5bf99; }
+@keyframes lp-school-pass { 0% { transform: translate(-150px, 5px); opacity: 0; } 12% { opacity: .75; } 48% { transform: translate(225px, -5px); opacity: .65; } 85% { opacity: .55; } 100% { transform: translate(630px, 9px); opacity: 0; } }
+@keyframes lp-fish-swim { from { translate: 0 -2px; rotate: -3deg; } to { translate: 0 2px; rotate: 3deg; } }
+@keyframes lp-tail-swim { from { transform: scaleX(.65); } to { transform: scaleX(1); } }
+@media (max-width: 1000px) { .lp-thought-book { padding: 0; } .lp-thought-cover { min-height: 200px; padding: 18px 22px 28px 30px; } }
+@media (max-width: 650px) { .lp-thought-book { padding: 0; } .lp-thought-cover { min-height: 186px; padding: 15px 20px 27px 28px; } .lp-cover-seal { bottom: 20px; right: 18px; } }
+@media (prefers-reduced-motion: reduce) { .lp-fish-school { display: none; } }
+
+/* 큰 화면의 책·캐릭터 상대 위치를 한 장면으로 고정한다. */
+.landing-page .lp-thought-book { width: 184px; padding: 0; left: 82px; bottom: 0; transform-origin: 55px 119px; }
+.landing-page .lp-thought-cover { height: 210px; min-height: 210px; padding: 20px 20px 28px 30px; }
+.landing-page .lp-thought-cover strong { font-size: 27px; margin: 14px 0 16px; }
+.landing-page .lp-cover-seal { bottom: 26px; right: 25px; }
+.landing-page .lp-thought-cover > span:first-child { font-size: 12px; }
+.lp-photo-mount { cursor: default; }
+.lp-photo-mount img { pointer-events: none; user-select: none; -webkit-user-drag: none; }
+.lp-section-nav { position: fixed; z-index: 30; right: 16px; top: 50%; transform: translateY(-50%); display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; width: 40px; padding: 12px 4px; }
+.lp-section-nav::before { content: ''; position: absolute; inset: 0; border-radius: 10px; background: #fffffffa; border: 1px solid #e9e9e7; box-shadow: 0 4px 20px #00000012; opacity: 0; transition: opacity .12s; pointer-events: none; }
+.lp-section-nav:hover, .lp-section-nav:has(a:focus-visible) { width: 184px; }
+.lp-section-nav:hover::before, .lp-section-nav:has(a:focus-visible)::before { opacity: 1; }
+.lp-section-nav a { position: relative; display: block; width: 100%; height: 32px; border-radius: 5px; text-decoration: none; }
+.lp-section-nav:hover a:hover, .lp-section-nav:has(a:focus-visible) a:hover { background: #f3f3f1; }
+.lp-section-tick { position: absolute; right: 8px; top: 15px; width: 14px; height: 2px; background: #a3aaa7; border-radius: 2px; }
+.lp-section-nav a:nth-child(2n) .lp-section-tick { width: 10px; }
+.lp-section-nav a[aria-current] .lp-section-tick { width: 18px; background: #4c6258; }
+.lp-section-name { display: block; padding: 0 38px 0 12px; overflow: hidden; white-space: nowrap; font-family: Arial, 'Noto Sans KR', sans-serif; font-size: 12px; line-height: 32px; color: #787774; opacity: 0; visibility: hidden; }
+.lp-section-nav:hover .lp-section-name, .lp-section-nav:has(a:focus-visible) .lp-section-name { opacity: 1; visibility: visible; }
+.lp-section-nav a[aria-current] .lp-section-name { color: #37352f; font-weight: 600; }
+.lp-section-nav a:focus-visible, .lp-back-top:focus-visible { outline: 2px solid #247a70; outline-offset: 3px; }
+.lp-back-top { position: fixed; z-index: 30; right: 22px; bottom: max(24px, env(safe-area-inset-bottom)); display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid #c3d3ca; border-radius: 50%; color: #31594d; background: #fffffff0; box-shadow: 0 4px 15px #284e431c; cursor: pointer; }
+.lp-back-top:hover { background: #eaf3ee; }
+/* 그림의 비율만 함께 줄여 책이 얼굴을 덮는 정도가 바뀌지 않게 한다. */
+.lp-art { container-type: inline-size; height: auto; min-height: 0; aspect-ratio: 500 / 410; }
+.lp-art-layout { position: absolute; top: 0; left: 50%; width: 500px; height: 390px; margin-left: -250px; transform: scale(min(1, calc(100cqw / 500px))); transform-origin: center top; }
+.lp-art-layout .lp-art-sun { width: 335px; height: 335px; top: 30px; right: 15px; }
+.lp-art-layout .lp-mungchi { top: -5px; right: 27px; }
+.lp-art-layout .lp-mungchi .st-companion { width: 310px; height: 310px; }
+.lp-art-layout .lp-art-spark { top: 3px; left: 100px; }
+.lp-art-layout .lp-cloud-one { left: 0; top: 63px; }
+@media (max-width: 650px) { .lp-section-nav { right: 4px; width: 28px; padding-inline: 0; } .lp-section-nav:hover, .lp-section-nav:has(a:focus-visible) { width: 176px; padding-inline: 4px; } .lp-back-top { width: 42px; height: 42px; right: 12px; } }
+@media (prefers-reduced-motion: reduce) { .lp-section-nav::before { transition: none; } }
