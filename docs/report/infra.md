@@ -1183,7 +1183,7 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 
 | 우선 | 제안 | 근거 |
 |---|---|---|
-| 1 | learning 인덱스 3개 추가: `followup(attempt_id, created_at)`, `hint_usage(attempt_id)`, `answer(followup_id)` | DB 부하 약 82%가 이 인덱스가 없는 두 쿼리. 별도 이슈로 migration 후 같은 단계로 다시 잰다 |
+| 1 | learning 인덱스 3개 추가: `followup(attempt_id, created_at)`, `hint_usage(attempt_id)`, `answer(followup_id)` | DB 부하 약 82%가 이 인덱스가 없는 두 쿼리. #775 learning V22로 추가(`hint_usage`는 `(attempt_id, opened_at)`, `answer`는 `followup_id IS NOT NULL` 부분 인덱스). kind 시험 데이터(시도 2만, 학생 1명 1,275개)에서 학습 기록 목록 3,300 → 13ms([learning 41절](learning.md#41-학습-기록되묻기-조회-인덱스-775-2026-11-18)). 같은 부하 단계 재측정은 AWS 재가동 때 |
 | 2 | HPA 기준: CPU 70% 유지, `behavior.scaleUp` 안정화 30~60초 또는 JVM 기동 구간 제외 | 로그인 순간·JVM 기동 CPU로 바로 최대까지 감(9.14.3). 비용이 크지 않아 지금 값도 위험하지 않지만 확장이 실제 부하를 따라가지 않는다 |
 | 3 | 최대 Pod 수: 1이 해결될 때까지 3 유지. 그 뒤 learning 최대를 먼저 올림 | 지금은 DB가 병목이라 늘려도 처리량이 같다. learning이 core보다 먼저 바빠짐 |
 | 4 | Hikari 풀: 지금 10 유지. 1 뒤 learning 풀 대기가 남으면 15까지 | 연결 상한 계산: core 3×10 + learning 3×15 + report 30 = 105(+rolling 25) ≤ 176 |

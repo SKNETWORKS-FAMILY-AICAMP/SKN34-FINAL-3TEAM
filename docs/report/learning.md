@@ -1229,3 +1229,39 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 
 - 실서버(core·learning·ai)에서 부분 다시 생성 → 그 장면만 바뀐 새 초안 확인(AI 비용이 들어 사용자 확인 뒤)
 - ai IAM `s3:GetObject`는 정책 파일만 이 PR에서 고치고 AWS 적용은 #652(담당 확인 2026-11-17)
+
+## 41. 학습 기록·되묻기 조회 인덱스 (#775, 2026-11-18)
+
+#384 2차 부하 시험([infra 9.14.6](infra.md#9146-발견))에서 DB 부하의 약 82%가 learning 쿼리 두 개였다. 두 쿼리가 쓰는 열에 인덱스가 없어 시도 하나마다 `followup`·`hint_usage`·`answer` 전체를 읽었다. learning V22로 인덱스 3개를 더했다.
+
+### 정한 것
+
+| 인덱스 | 쓰는 곳 | 정한 내용 |
+|---|---|---|
+| `ix_followup_attempt_created` `followup (attempt_id, created_at)` | `JudgmentMapper.findUnansweredLatestFollowupId`(시도의 최근 되묻기 1건), `RecordMapper.findEligible`의 `received_followup`, FK `fk_followup_attempt_id` | 이슈 그대로 |
+| `ix_hint_usage_attempt_opened` `hint_usage (attempt_id, opened_at)` | `findEligible`의 `helped_before_first_answer`(`opened_at <` 첫 답변 시각), `RecordMapper.findHintUsages`(`ORDER BY opened_at`), `AttemptMapper` 힌트 조회·삭제 | 이슈의 `(attempt_id)`에 `opened_at`을 더함. 두 조회가 이 열로 거르고 정렬해 인덱스만 읽고 끝남(Index Only Scan). `attempt_id`만 쓰는 조회도 그대로 씀 |
+| `ix_answer_followup` `answer (followup_id) WHERE followup_id IS NOT NULL` | `findUnansweredLatestFollowupId`의 `NOT EXISTS`, FK `fk_answer_followup_id` 검사(되묻기 삭제) | 부분 인덱스. 첫 답변은 `followup_id`가 NULL이라 보완 답변 행만 담는다. `followup_id = ?`는 NULL이 아님을 뜻하므로 두 곳 모두 이 인덱스를 쓴다 |
+
+- 이미 있는 인덱스·제약과 겹치지 않음: `followup`은 `pk_followup`·`uq_followup_judgment_id`, `hint_usage`는 `pk_hint_usage`, `answer`의 `followup_id`는 인덱스 없음(V2~V21 확인). `findEligible`의 `revised`(`answer` `attempt_id` + `followup_id IS NOT NULL`)는 기존 `ix_answer_attempt_submitted`로 충분해 따로 두지 않음
+- `CREATE INDEX CONCURRENTLY`는 쓰지 않음. 운영 learning_db는 시험 데이터 정리 뒤 테이블마다 약 2,800행, 시연 B 계정은 새로 시작한다. 아래 시험 DB(2만~3만 행)에서도 세 인덱스 생성이 7~27ms였다. 일반 `CREATE INDEX`는 그동안 해당 테이블 쓰기만 막는다. CONCURRENTLY는 Flyway가 트랜잭션 밖에서 실행해야 하고, 중간에 실패하면 `INVALID` 인덱스가 남아 손으로 지워야 한다. 테이블이 수십만 행을 넘으면 그때 CONCURRENTLY로 나눈다
+- ERD 6장 인덱스 표에 세 줄 추가(`scripts/verify_db_schema.py` 대조), 8장 learning 버전 V22. kind local values migration revision `v22`. prod는 cd-release가 main SHA의 migration을 적용한다
+
+### 실행 계획 전후 (kind, 2026-11-18)
+
+kind Postgres(PostgreSQL 17, CPU 한도 500m)에 learning_db를 복사한 비교용 DB를 만들고, 완료된 시도 71개와 그 답변·판정·되묻기를 300번 복제했다(학생 ID는 75번 복제마다 바꿈). 생각 열기는 복제 시도마다 1건 넣었다. 결과 행 수는 attempt 21,372 · answer 29,199 · judgment 29,199 · followup 25,286 · hint_usage 21,300이고, 가장 시도가 많은 학생이 1,275개다(#384 운영 실행 계획의 1,198개와 비슷). 같은 DB에서 V22 SQL 적용 전후로 `EXPLAIN (ANALYZE, BUFFERS)`, 적용 뒤 `ANALYZE`.
+
+| 쿼리 | 전 | 후 |
+|---|---|---|
+| `findEligible`(학생 1명, 시도 1,275개) | **3,300ms**, 버퍼 878,068. 시도마다 `hint_usage` Seq Scan(21,300행 제거, 버퍼 283,051)·`followup` Seq Scan(버퍼 575,760) | **13.3ms**, 버퍼 26,912. `hint_usage`·`followup` 모두 Index Only Scan(시도당 2 버퍼) |
+| `findUnansweredLatestFollowupId`(시도 1개) | 7.2ms, 버퍼 2,362. `followup` Seq Scan(25,285행 제거) + `answer` Seq Scan 29,199행을 해시 | 0.058ms, 버퍼 9. `ix_followup_attempt_created` 역순 Index Scan + `ix_answer_followup` Index Only Scan(Nested Loop Anti Join) |
+| `findHintUsages`(시도 50개) | 2.3ms, `hint_usage` Seq Scan 21,300행 | 0.6ms, Index Only Scan(나머지는 시험용 시도 고르기 비용) |
+
+- `findUnansweredLatestFollowupId`의 `ORDER BY created_at DESC, id DESC`는 인덱스 순서 위에 Incremental Sort로 같은 시각만 다시 정렬한다. 시도당 되묻기가 2개 이하라 `id`를 인덱스에 넣지 않음
+- 전에는 비용이 학생 시도 수 × 전체 테이블 크기였고, 후에는 학생 시도 수에만 비례한다. 운영 부하 단계 재측정(#384와 같은 400~1000명)은 AWS 재가동 때 한다
+
+### 검증
+
+- kind(`kind-sagomungchi-local`) learning_db: `learning-migrate:local` 이미지를 다시 빌드해 helm upgrade(revision 21) → Job `learning-service-migrate-v22` Complete, `Successfully applied 1 migration ... now at version v22`(100ms), 세 인덱스 `indisvalid = true`. 앱 Deployment는 바뀌지 않음(values 차이는 revision뿐)
+- kind 학습 기록·되묻기 API(core 호출자 토큰, 학생 헤더): `GET /internal/records/students/{id}/attempts` 200(17건, 60~100ms), `POST /internal/answers/{id}/feedback` 200 `DONE`이고 아직 답하지 않은 최근 되묻기 ID를 그대로 돌려줌. 판정·보완 답변 제출은 실제 LLM 비용이 들어 kind에서는 하지 않고 기존 테스트로 확인
+- learning `./gradlew test bootJar`(JDK 21 컨테이너, Testcontainers): 612건 중 실패 0(건너뜀 3, 기존), bootJar 생성. 기존 테스트가 쓰는 PostgreSQL 컨테이너도 V22까지 적용한 스키마로 돈다
+- DB 스키마 검사(`check_db_migrations.py`, CI와 같은 pgvector 이미지): 세 DB 적용·ERD 대조(인덱스 65개)·재실행 무변경·report 왕복 통과
