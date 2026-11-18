@@ -946,6 +946,8 @@ prod는 core·learning의 Java agent와 Collector egress를 켜야 이 규칙들
   결과 이벤트 발행 시 AMQP `traceparent` 헤더도 붙인다. 실패는 `messaging.outcome`(retry/dlq)·`error.type`만 남기고 예외 메시지는 저장하지 않는다.
 - 업무 ID·학생 ID·메시지 내용(커뮤니티 공유물 내용 포함)은 span attribute에 넣지 않는다(메시지 ID와 큐 이름만). 다만 Java agent의 HTTP span에는 경로 템플릿만 남는다.
 - OTel exporter가 꺼져 있으면 core는 요청 헤더 값만 전달하고 report-worker는 받은 값을 그대로 넘긴다(기존 동작).
+- trace 저장소 장애는 지표·경보로 번지지 않게 한다(#784). Collector traces pipeline은 metrics보다 낮은 자기 메모리 제한을 쓰고,
+  trace exporter 대기열은 바이트 상한·재시도 30초로 묶어 넘치면 trace를 버린다. trace는 최선 노력이고 지표 수집이 우선이다.
 
 #### 남은 경계
 
