@@ -1127,6 +1127,12 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 
 - D2 기준 세 가지 중 JSON 통과율과 `length`는 LoRA가 낫다. 지연은 상세 약 11%, 서술 약 28% 늘어 "지연이 늘지 않음"을 만족하지 못한다. 기준대로면 기반 단독이지만, 기반 단독은 상세 설명이 절반 가까이 빠진다. 팀 결정이 필요하다
 - 표본이 같은 가상 글 1편이고 15회뿐이다. 의미 품질은 보지 않았다
+- 학습 담당(kim-4480) 확인(2026-11-18)
+  - LoRA는 AWQ가 아니라 16비트 QAT 원본 `google/gemma-4-26B-A4B-it-qat-q4_0-unquantized`로 학습했다(`train_lora.py`, `load_in_4bit=False`). 위 비교는 AWQ 위에 얹은 결과라 학습 때와 기반이 다르다. 16비트 원본(약 52GB)은 g6e(48GB)에도 들어가지 않는다
+  - LoRA는 "항목별 이유 한두 문장" 형식으로 학습됐고, 서비스는 3칸 JSON 장문(`report-explanation@3`)을 요청한다
+  - RunPod 워커는 `LORA_MODULES`로 `explain`을 올렸지만, 요청 `model`이 `explain`일 때만 붙는다. 운영은 기반 이름으로 불러 지금까지 리포트에는 LoRA가 쓰이지 않았다. 바꾸려면 `REPORT_GEMMA_MODEL`(SageMaker에서는 호출 IC 이름)을 바꾼다(#747)
+  - LoRA 정상 출력 토큰은 위 측정에서 p50 568토큰(기반 597토큰)이라 상세 `max_tokens` 1536(정상 최대 대비 약 2.2배)은 LoRA에도 맞다. 서술은 1024로 줄여도 된다(15/15 정상 종료)
+- #599 낱말 챗봇은 sLLM이 아니라 외부 API로 구현할 예정이라 이 엔드포인트 범위에 들어가지 않는다
 
 #### 60초 응답 제한 (#746 D3)
 
@@ -1186,7 +1192,7 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 #### 정리와 남은 것
 
 - 기존 `sllm-server` 파일 정리안(팀 확인): `prod/sllm-server.json`·`prod/karpenter-nodepool-explanation.json`·`local/sllm-server.yaml`은 지운다. 함께 정리할 참조는 `prod/ai-service.json`·`local/ai-service.yaml`의 `EXPLANATION_BASE_URL`과 `sllm-server` egress, `argocd/local/apps/applicationset.yaml`, `policies/local/platform.yaml`, `charts/platform-data/values.yaml` 주석, prod·kind·app-service README다. ai 설정 쪽은 #747 호출 전환과 같은 PR에서 바꾸는 편이 안전하다. A 계정 클러스터에는 `sllm-server`가 배포되어 있지 않다
-- A 계정 SageMaker 자원은 11/19 종료 전에 지울지 동섭 님이 정한다. B 계정은 `demo-stack.json`·`iam/`의 계정 번호를 바꾸고 `demo_stack.py apply`(IAM)·SG 생성 → `sagemaker_explanation.py manifest --upload`·`apply`·`schedule` 순서로 만든다
+- A 계정 SageMaker 자원(엔드포인트·설정·모델·IC·Auto Scaling 대상과 예약)은 11/19 A 종료 때 지운다(동섭 결정). S3 `explanation/` 가중치는 남긴다. 이번에는 ECR 이미지를 만들지 않았다(AWS DLC를 그대로 씀). B 계정은 `demo-stack.json`·`iam/`의 계정 번호를 바꾸고 `demo_stack.py apply`(IAM)·SG 생성 → `sagemaker_explanation.py manifest --upload`·`apply`·`schedule` 순서로 만든다
 - 남은 결정: LoRA 사용(D2 결과), 창 밖 요청 처리(#747), 창 시작 시각, 인용 부호 문제(#747 프롬프트), GPU 재고 부족 동작(이번에는 재고 부족이 나지 않아 확인하지 못함)
 
 ## 9.14 AWS 데모 부하 시험 2차: HPA·Karpenter 확장·축소 (#384, 2026-11-18)
