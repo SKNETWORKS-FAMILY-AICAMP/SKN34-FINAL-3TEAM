@@ -360,6 +360,21 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - 지연·int8 결정(#690): CPU 1코어 p95 1,500자 fp32 1.62초(포드)·2.32초(개발 PC)로 처리 마감 1.3초를 넘고 int8은 0.55초·1.07초. 합계 1,500자는 그대로 두고 scoring이 불러올 때 Linear 채널별 int8로 바꾼다(fp32·0.97보다 시험 재현율 0.82%p 손해, 추가 오탐 기준은 같음. 같은 날 오전 층 전체 한 눈금 방식은 5.2%p였고, int8 확률이 같이 계산한 글에 따라 달라져 평가를 scoring처럼 글 하나씩으로 바꿈). #691에서 운영 Pod로 다시 재서 fp32가 마감 안이면 `train_info.json`만 fp32·0.97로 되돌린다
 - 한계: 학습 데이터가 성인 뉴스 댓글이라 초등 답과 말투가 다르다. 미션 본문에 나온 말을 허용하는 규칙(`HATE`·맥락 단어)이 모델에는 없어 차별을 다루는 미션에서 오탐이 날 수 있다. 합계 1,500자 뒤의 글과 21번째 칸부터는 모델이 보지 않는다. 동시 요청이 몰리면 게이트에서 기다리다 통과될 수 있다. 장애 중에는 단어 목록만 적용된다
 
+#### learning 연동 구현 (#692, 2026-11-18)
+
+- `answer/client/ToxicityClient`: `InternalRestClientFactory.create("scoring", 1.5초)`·`aiCircuitBreaker("scoring-toxicity")`를 그대로 쓰고 예외를 밖으로 던지지 않는다. 결과는 `Flagged`·`Clean(review)`·`Skipped(사유)` 셋
+- `AnswerService.submit`: `@Transactional`을 빼고 분류를 먼저 부른 뒤 `TransactionTemplate` 안에서 기존 처리(시도 잠금 → 검사 → 저장)를 한다. 단어 목록이 먼저이고, 통과한 글이 `Flagged`면 `INSULT`로 422
+- 설정: `app.services.scoring`(`SCORING_URL`)·`app.toxicity.read-timeout: 1500ms`·`app.toxicity.enabled`(`TOXICITY_ENABLED`, 기본 true). compose·local·prod 값에 `SCORING_URL`과 learning egress `scoring-service:8001`을 넣었다. scoring ingress는 #691에서 반영
+- 시험: `ToxicityClientTest`(WireMock: 걸림·통과·`active:false`·5xx·4xx·계약 밖 응답·시간 초과·연결 실패·서킷 열림·칸과 글자 자르기), `AnswerServiceTest`(최초·보완 답 걸림, 사유별 통과와 로그, 보내는 칸), `AnswerConcurrencyTest`(느린 분류를 트랜잭션 밖에서 동시에 기다림)
+
+이슈 본문·위 기준과 다른 점:
+
+- `app.toxicity.enabled`를 더했다. 전체 컨텍스트 시험이 없는 scoring 주소로 연결을 시도하지 않게 시험 기본값을 false로 두는 것이 이슈의 "시험 공통 기본값"이다. 운영에서는 모델을 잠시 끌 때도 쓴다. 끈 상태는 사유 `DISABLED`이고 장애가 아니라 제출마다 로그를 남기지 않는다
+- 1,500자는 코드포인트로 센다. scoring(Python `len`)과 같게 하고 이모지가 반쪽으로 잘려 400이 되지 않게 하려는 것이다. 잘린 앞부분이 공백뿐이면 그 칸은 보내지 않는다
+- 지표(호출·flagged·건너뜀 사유·지연)는 따로 만들지 않았다. learning에는 Micrometer 사용자 지표가 없고, 호출 수·지연은 Java agent의 HTTP 클라이언트 지표로 본다. 건너뜀 사유는 로그로만 본다
+- `review`는 읽기만 한다. 표현 검토 대기 등록은 #727
+- 확인 필요: 로컬 compose E2E(욕 없는 무례한 답 422, scoring을 멈춘 채 제출 성공, 보통 답 지연)는 아직 하지 않았다
+
 ### 재학습 자동화 (#688, 설계 #725)
 
 "표현 필터가 최신 비속어를 처리할 수 있나"라는 질문에서 시작. 위 분류 모델은 공개 데이터(성인 뉴스 댓글)로 한 번 학습한 것이라 서비스에서 새로 나오는 비속어·공격적인 글을 따라가지 못한다. 서비스 글을 모아 다시 학습하고 등록까지 자동으로 하는 루프를 둔다. 계약은 [API 명세](../design/api-spec.md) 4.1.5·4.3.4·5.2(재학습 자동 등록), 저장은 [ERD](../design/erd.md) 4.3.2, 흐름은 [시퀀스](../design/sequence-diagram.md) 9.1, 실행은 [아키텍처](../design/architecture.md) 4.4

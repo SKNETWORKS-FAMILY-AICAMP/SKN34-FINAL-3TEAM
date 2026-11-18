@@ -800,7 +800,7 @@ backend/report-service/
 | RabbitMQ | `app` namespace 전체(5672), core·`rabbitmq-init`(관리 API 15672), Prometheus(15692) | - |
 | Redis | core(6379, `redis-allow-core`) | - |
 
-  - #688 learning→scoring(8001) 허용은 설계 값이다. prod·local 값(`learning-service.*`·`scoring-service.*`)은 #691·#692에서 반영하며, 그 전까지는 "표가 prod 값과 같다"는 위 문장의 예외다
+  - #688 learning→scoring(8001) 허용은 prod·local 값에 반영했다(scoring ingress #691, learning egress #692)
   - #725 재학습 작업 `tox-retrain` 행과 core·learning ingress 추가도 설계 값이다. 값 반영은 #730이며 그 전까지 같은 예외다
   - 전 Pod 공통 egress는 kube-dns(53)뿐이다. OTel Collector(4317·4318) egress는 `egressToCollector`를 켠 core·learning·report-worker만 있다. 이 셋만 OTLP를 보낸다(core·learning Java agent 지표·trace, report-worker SDK trace, 4.6). ai·scoring·report-api는 prod에서 OTLP를 보내지 않아(자체 span 없음, ai Langfuse `LANGFUSE_ENABLED=false`) Collector egress가 없다. Langfuse egress(`egressToLangfuse`)는 어느 앱에도 켜지 않았다
   - Prometheus는 앱 지표를 Collector에서 받으므로 앱 Pod ingress에 Prometheus를 허용한 것은 직접 수집하는 설명 sLLM 서버(`--metrics`)뿐이다. platform에서는 RabbitMQ 15692만 허용한다(`observability-platform-network.json`)

@@ -213,6 +213,7 @@ services:
       DB_PASSWORD: ${LEARNING_APP_PASSWORD}
       CORE_URL: http://core-service:8080
       AI_URL: http://ai-service:8000
+      SCORING_URL: http://scoring-service:8001 # #688 답변 표현 분류. scoring이 없거나 느려도 제출은 막지 않음(depends_on 없음)
       # #591: 추억 검색 문서 임베딩 주기 작업. 켜면 ai가 실제 임베딩을 호출하므로 OPENAI_API_KEY(또는 EMBEDDING_PROVIDER=fake)와 함께 켠다.
       # 키 없이 켜면 문서가 5회 실패 뒤 FAILED가 되고 자동으로 되살아나지 않는다.
       MEMORY_EMBEDDING_ENABLED: ${MEMORY_EMBEDDING_ENABLED:-false}
