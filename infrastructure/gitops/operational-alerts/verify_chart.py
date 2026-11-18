@@ -56,6 +56,25 @@ def main():
         # Tempo: Collector pipeline, datasource, policies, and Pod rolls for config that is read only at start.
         collector = yaml.safe_load(prod_rendered["ConfigMap", "otel-collector-config"]["data"]["config.yaml"])
         assert collector["service"]["pipelines"]["traces"]["exporters"] == ["otlp/tempo"]
+        # #784: a dead Tempo must not make the Collector refuse metrics. Traces use their own, lower
+        # memory limiter, and the Tempo exporter holds a byte-capped queue with a bounded retry.
+        pipelines, processors = collector["service"]["pipelines"], collector["processors"]
+        assert pipelines["metrics"]["processors"] == ["memory_limiter", "batch"]
+        assert pipelines["traces"]["processors"] == ["memory_limiter/traces", "batch"]
+        trace_limit = processors["memory_limiter/traces"]["limit_mib"]
+        assert trace_limit < processors["memory_limiter"]["limit_mib"] * 0.8  # below the metrics soft limit
+        tempo_exporter = collector["exporters"]["otlp/tempo"]
+        assert tempo_exporter["sending_queue"]["sizer"] == "bytes"
+        assert tempo_exporter["sending_queue"]["queue_size"] <= trace_limit * 1048576 // 4
+        assert tempo_exporter["retry_on_failure"]["max_elapsed_time"] == "30s"
+        assert "ops784/trace-limits" in prod_rendered["Deployment", "otel-collector"]["spec"]["template"]["metadata"]["annotations"]
+        tempo_config = yaml.safe_load(prod_rendered["ConfigMap", "tempo-config"]["data"]["tempo.yaml"])
+        assert tempo_config["ingester"]["max_block_bytes"] <= 128 * 1048576
+        assert tempo_config["overrides"]["defaults"]["ingestion"]["rate_limit_bytes"] > 0
+        tempo_container = prod_rendered["Deployment", "tempo"]["spec"]["template"]["spec"]["containers"][0]
+        assert tempo_container["resources"]["limits"]["memory"] == "1Gi"
+        assert {e["name"]: e["value"] for e in tempo_container["env"]}["GOMEMLIMIT"] == "800MiB"
+        print("PASS prod Collector isolates trace backpressure from metrics; Tempo memory and intake are bounded", flush=True)
         sources = yaml.safe_load(prod_rendered["ConfigMap", "grafana-datasources"]["data"]["prometheus.yaml"])["datasources"]
         assert [(d["name"], d["uid"]) for d in sources] == [("Prometheus", "prometheus"), ("Tempo", "tempo")]
         assert ("NetworkPolicy", "tempo") in prod_rendered and ("PersistentVolumeClaim", "tempo-data") in prod_rendered

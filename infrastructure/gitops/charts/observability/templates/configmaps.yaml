@@ -15,6 +15,14 @@ data:
       memory_limiter:
         check_interval: 1s
         limit_mib: 192
+    {{- if or .Values.tempo.enabled .Values.collector.traces.enabled }}
+      # #784: traces hit their own, lower limit first, so a dead trace backend
+      # cannot push the process into the metrics limiter (192 MiB).
+      memory_limiter/traces:
+        check_interval: 1s
+        limit_mib: {{ .Values.collector.traceLimits.memoryLimitMiB }}
+        spike_limit_mib: {{ .Values.collector.traceLimits.memorySpikeMiB }}
+    {{- end }}
       batch: {}
     exporters:
       prometheus:
@@ -24,11 +32,16 @@ data:
         endpoint: tempo.observability.svc.cluster.local:4317
         tls:
           insecure: true
+        timeout: 5s
+        # Bounded retry and an in-memory queue capped in bytes: when Tempo is down,
+        # spans are dropped after the cap instead of filling the Collector heap.
         retry_on_failure:
           enabled: true
+          max_elapsed_time: {{ .Values.collector.traceLimits.retryMaxElapsed }}
         sending_queue:
           enabled: true
-          queue_size: 500
+          sizer: bytes
+          queue_size: {{ mul .Values.collector.traceLimits.queueMiB 1048576 }}
     {{- end }}
     {{ if .Values.collector.traces.enabled }}
       otlp_http/langfuse:
@@ -38,9 +51,11 @@ data:
           x-langfuse-ingestion-version: "4"
         retry_on_failure:
           enabled: true
+          max_elapsed_time: {{ .Values.collector.traceLimits.retryMaxElapsed }}
         sending_queue:
           enabled: true
-          queue_size: 500
+          sizer: bytes
+          queue_size: {{ mul .Values.collector.traceLimits.queueMiB 1048576 }}
     {{ end }}
     extensions:
       health_check:
@@ -58,7 +73,7 @@ data:
     {{ if $traceExporters }}
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, batch]
+          processors: [memory_limiter/traces, batch]
           exporters: [{{ join ", " $traceExporters }}]
     {{ end }}
 ---

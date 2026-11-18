@@ -1318,7 +1318,7 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 | 4 | Hikari 풀: 지금 10 유지. 1 뒤 learning 풀 대기가 남으면 15까지 | 연결 상한 계산: core 3×10 + learning 3×15 + report 30 = 105(+rolling 25) ≤ 176 |
 | 5 | RDS 사양: 1을 먼저. 그래도 부족하면 t4g.medium 이상 또는 읽기 복제본 | 지금 효율 그대로 단순 비례하면 k6 1000명에 vCPU 약 7개가 필요(300명에서 2 vCPU의 72%). 1로 이 숫자가 크게 줄 것으로 본다 |
 | 6 | 축소 끊김: D안 대신 최소 2 + PDB, 또는 `controller.kubernetes.io/pod-deletion-cost`로 Karpenter 노드 Pod 우선 삭제 | 9.14.5 |
-| 7 | 관측: Tempo 장애 해결, Collector에서 trace와 지표 파이프라인의 메모리 제한 분리 | 9.14.6-5 |
+| 7 | 관측: Tempo 장애 해결, Collector에서 trace와 지표 파이프라인의 메모리 제한 분리 | 9.14.6-5. #784로 chart에 반영하고 kind에서 확인(9.15). AWS 적용은 B 계정 |
 
 ### 9.14.8 운영 변경과 원복
 
@@ -1345,6 +1345,67 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 - core HPA 최대를 6으로 올려 Karpenter를 띄우려던 계획은 learning 확장으로 자연스럽게 노드가 떠서 하지 않았다. 그래서 HPA 최대가 3보다 클 때의 동작은 재지 않았다.
 - 400명 11:47 이후 JVM·DB 풀 지표가 없다(관측 경로 장애). 1000명 풀 대기는 learning 로그 값이다.
 - 실제 LLM 지연·429는 반영되지 않았다(#630은 동시 1명).
+
+## 9.15 Tempo 장애와 지표 수집 격리 (#784, 2026-11-18)
+
+9.14.6-5의 후속이다. Tempo가 죽어 있으면 Collector가 앱 지표까지 거부하는 문제를 chart에서 고치고 kind에서 수정 전후를 비교했다. AWS(A 계정)에는 적용하지 않았다. B 계정 배포 때 prod values로 들어간다.
+
+### 9.15.1 원인 (chart 코드)
+
+- Collector의 `memory_limiter`(`limit_mib: 192`)는 프로세스 전체 heap을 기준으로 한다. metrics·traces pipeline이 이 limiter 하나를 함께 썼다.
+- `otlp/tempo` exporter의 대기열은 배치 500개, 재시도는 기본값(최대 5분)이었다. batch 처리기 배치 하나가 수 MB라서 Tempo가 응답하지 않으면 대기열이 heap을 soft limit(약 154MiB)까지 채운다.
+- soft limit을 넘으면 limiter가 수신을 거부한다. 같은 limiter를 쓰는 metrics pipeline도 거부되고, 앱 OTLP 전송이 실패한다(A 계정의 `HTTP 503`).
+- Tempo는 limits 512Mi에 ingester 기본값(블록 최대 500MB·30분)을 썼다. A 계정에서는 `completing block` 직후 OOMKilled가 반복됐다.
+
+### 9.15.2 변경
+
+| 대상 | 전 | 후 |
+|---|---|---|
+| traces pipeline limiter | `memory_limiter`(192MiB, metrics와 공유) | 자기 limiter `memory_limiter/traces` 144MiB·spike 32MiB(112MiB부터 trace만 거부). metrics는 기존 192MiB 그대로 |
+| `otlp/tempo`·`otlp_http/langfuse` 대기열 | 배치 500개 | `sizer: bytes` 16MiB, 넘치면 버림 |
+| 재시도 | 최대 5분(기본) | `max_elapsed_time: 30s`, `otlp/tempo` timeout 5s |
+| Collector 재생성 | Tempo 켤 때만 annotation | trace 제한 값 checksum annotation 추가 |
+| Tempo 자원 | requests 128Mi·limits 512Mi | requests 256Mi·limits 1Gi, `GOMEMLIMIT` 800MiB |
+| Tempo ingester | 기본(500MB·30분) | `max_block_bytes` 64MiB, `max_block_duration` 5m, `trace_idle_period` 5s |
+| Tempo 수집 상한 | 기본(15MB/s·burst 20MB, trace당 5MB) | 8MiB/s·burst 12MiB, 살아 있는 trace 5,000개, trace당 2MiB |
+| 보존 | 72h(chart·prod) | 24h. 실패 요청 확인은 당일 조회로 충분하고 2Gi PVC와 compactor 부담을 줄인다 |
+| Tempo 재생성 | 보존 값만 checksum | 설정 전체 checksum |
+
+- 값은 `collector.traceLimits`, `tempo.ingester`·`tempo.limits`·`tempo.goMemLimit`로 바꿀 수 있다. trace를 켜지 않는 기본·local 렌더는 이전과 같다(`verify_chart.py` 기준 비교 통과).
+- 고르지 않은 방법: 별도 trace Collector는 앱의 신호별 endpoint(`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`)·NetworkPolicy 변경과 관측 노드 Pod 추가가 필요하다. 앱 trace 표본 추출은 실패 요청 trace를 잃는다. 디스크 대기열(`file_storage`)은 Collector에 볼륨이 필요하다. 이번 문제는 메모리 대기열 상한만으로 막혀서 넣지 않았다.
+
+### 9.15.3 kind 검증 방법
+
+- `kind-sagomungchi-local`. observability chart에 local values + Tempo 켬 + 경보 3개(`demo-metrics-target-down`, `app-metrics-missing`, `http-auth-errors`, 지속 1m·평가 30s, 시험용 웹훅 Secret)를 올렸다.
+- 앱 지표는 실제 core·learning Java agent(OTLP HTTP, 60초 주기)다. trace 부하는 app 네임스페이스에 `telemetrygen` v0.140.0 Pod(초당 400 trace × 10 span, 4 worker, Collector 4317만 허용하는 시험 NetworkPolicy)로 만들었다.
+- 순서: 부하 시작(Tempo 켬, 2분) → `tempo` replicas 0(9분) → Tempo 1·부하 0(1.5분). 15초마다 Collector 자체 지표(heap, trace 대기열, 받은·거부한 지표 수), Prometheus의 core HTTP 지표 시계열 수와 2분 안에 값이 바뀐 JVM 지표 수, Grafana 규칙 상태·마지막 평가 시각을 기록했다.
+- 수정 전은 이 PR 직전 chart, 수정 후는 이 PR chart로 같은 values를 썼다.
+
+### 9.15.4 결과
+
+| 항목 (Tempo 0 구간) | 수정 전 | 수정 후 |
+|---|---|---|
+| Collector heap | 2분 만에 145Mi, 이후 153~159Mi(soft limit) | 최대 약 90Mi |
+| trace 대기열 | 배치 389~393개에서 멈춤 | 16MiB(상한)에서 넘치는 span 버림(대기열 진입 실패 570,880 span) |
+| 거부한 앱 지표 | 0 → 3,100점(17:18부터), 17:20~17:26 받은 지표 증가 없음 | **0점**, 받은 지표 계속 증가(1,174점) |
+| 받은 trace 거부 | 23,128 span | 0 span(대기열에서 버림) |
+| Prometheus core HTTP 시계열 | 7분 30초 뒤 0(Collector exporter 5분 만료) | 3~4개 유지 |
+| 값이 바뀌는 JVM 지표 | 4분 뒤 0 | 4~11개 유지 |
+| `app-metrics-missing` | pending(7분 30초) → **firing**(8분 30초) | inactive 유지 |
+| 규칙 평가 | 30초마다 계속(health ok). 평가는 됐지만 데이터가 없어 지표 부재 경보가 남 | 30초마다 계속, 세 규칙 모두 inactive/ok |
+| Collector 로그 | soft limit `Refusing data` 5회, GC 강제 21회 | 시나리오 15분 로그 `sending queue is full` 1,000건, `Rejecting data`(trace 재시도 포기) 500건, `Dropping data` 252건, trace limiter GC 강제 13회, soft limit 수신 거부 0회 |
+| 회복(Tempo 1·부하 0) | heap 150Mi대가 이어지다 약 1분 뒤 지표 수신 재개, 시계열 복구 뒤에도 경보는 firing 유지(관찰 종료 시점) | 지표·경보 변화 없음(시계열 4개, 규칙 inactive/ok), Tempo 재시작 0회 |
+
+- 수정 전 kind 재현은 A 계정 현상(9.14.6-5)과 같다. trace 대기열이 heap을 채우고 limiter가 지표를 거부하며, 5분 뒤 시계열이 사라져 지표 부재 경보가 난다.
+- 수정 후 trace는 버려지지만(최선 노력), 지표와 경보는 Tempo 상태와 상관없이 이어졌다.
+- Tempo 새 설정은 `/status/config`에서 `max_block_bytes: 67108864`, `max_block_duration: 5m0s`, `rate_limit_bytes: 8388608`, `max_bytes_per_trace: 2097152`, `block_retention: 24h0m0s`로 적용된 것을 확인했다. 부하 2분과 회복 구간에서 Tempo 재시작은 0회였다.
+
+### 9.15.5 한계와 남은 것
+
+- kind는 노드 1대·Docker 메모리 안에서 telemetrygen 합성 trace로 쟀다. Tempo 1Gi가 #384 단계 부하(실제 Java agent trace)에서 OOM 없이 버티는지는 B 계정에서 확인한다.
+- Tempo 수집 상한(8MiB/s)을 넘으면 trace가 버려진다. 1000명 단계 trace 양은 재지 않았다.
+- trace 대기열이 메모리에 있으므로 Collector가 재시작하면 대기 중인 trace는 사라진다.
+- 시험 자원(telemetrygen Deployment·NetworkPolicy, 웹훅 Secret)은 지우고 observability release는 검증 전 revision 설정(Tempo·경보 끔)으로 되돌렸다.
 
 ## 10. 근거 링크
 

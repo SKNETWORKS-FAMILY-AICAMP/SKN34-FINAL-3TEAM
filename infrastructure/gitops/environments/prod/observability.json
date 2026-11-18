@@ -212,7 +212,7 @@
   },
   "tempo": {
     "enabled": true,
-    "retention": "72h",
+    "retention": "24h",
     "persistence": {
       "enabled": true,
       "storageClassName": "gp3",
