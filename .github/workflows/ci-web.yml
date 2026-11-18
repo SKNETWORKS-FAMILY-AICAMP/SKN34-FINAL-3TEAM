@@ -13,6 +13,10 @@ on:
       - ".github/workflows/ci-web.yml"
       - ".github/workflows/_web.yml"
 
+concurrency:
+  group: web-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     uses: ./.github/workflows/_web.yml
