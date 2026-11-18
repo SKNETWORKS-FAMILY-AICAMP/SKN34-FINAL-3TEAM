@@ -23,6 +23,7 @@ import json
 import pathlib
 import re
 
+from quant import QUANTIZATION, WINDOW_BATCH, quantize_int8
 from train import binary_metrics, check_artifact, read_jsonl
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
@@ -118,13 +119,38 @@ def pick_threshold(
     return best["threshold"], best
 
 
-def score_texts(model, tokenizer, texts, max_length, stride, device, batch_size=64):
-    """글마다 창별 막을 확률의 최댓값(api-spec 4.3.4)."""
+def score_texts(model, tokenizer, texts, max_length, stride, device, batch_size=64, per_text=False):
+    """글마다 창별 막을 확률의 최댓값(api-spec 4.3.4).
+
+    per_text: scoring과 같게 글 하나씩, 창 8개씩. int8은 묶음에 따라 확률이 달라져 이 길로 잰다.
+    fp32는 묶음과 상관없이 같다(11/17 꼭 통과할 글 390개 차이 최대 3e-6).
+    """
     import torch
 
     model.eval()
     out = []
     with torch.no_grad():
+        if per_text:
+            for text in texts:
+                enc = tokenizer(
+                    text,
+                    truncation=True,
+                    max_length=max_length,
+                    stride=stride,
+                    return_overflowing_tokens=True,
+                    padding=True,
+                    return_tensors="pt",
+                )
+                best = 0.0
+                for i in range(0, len(enc["input_ids"]), WINDOW_BATCH):
+                    part = {
+                        k: enc[k][i : i + WINDOW_BATCH].to(device)
+                        for k in ("input_ids", "attention_mask")
+                    }
+                    p = torch.softmax(model(**part).logits.float(), dim=-1)[:, 1]
+                    best = max(best, p.max().item())
+                out.append(best)
+            return out
         for i in range(0, len(texts), batch_size):
             enc = tokenizer(
                 texts[i : i + batch_size],
@@ -158,11 +184,13 @@ def evaluate(args: argparse.Namespace, saved: dict | None = None) -> dict:
     device = "cuda" if torch.cuda.is_available() and not args.int8 else "cpu"
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     model = AutoModelForSequenceClassification.from_pretrained(args.model).to(device)
-    if args.int8:  # latency.py와 같은 동적 양자화(CPU 전용)
-        model = torch.ao.quantization.quantize_dynamic(model, {torch.nn.Linear}, dtype=torch.qint8)
+    if args.int8:  # scoring 로더와 같은 채널별 동적 양자화(CPU 전용, quant.py)
+        model = quantize_int8(model)
 
     def score(texts):
-        return score_texts(model, tokenizer, texts, info["max_length"], info["stride"], device)
+        return score_texts(
+            model, tokenizer, texts, info["max_length"], info["stride"], device, per_text=args.int8
+        )
 
     sets = must_pass(args.repo)
     mp = {name: score(texts) for name, texts in sets.items()}
@@ -196,6 +224,8 @@ def evaluate(args: argparse.Namespace, saved: dict | None = None) -> dict:
         "evaluatedAt": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "window": {"max_length": info["max_length"], "stride": info["stride"]},
         "int8": args.int8,
+        "quantization": QUANTIZATION if args.int8 else "none",
+        "scoring": "글 하나씩·창 8개씩(scoring과 같음)" if args.int8 else "64개씩 묶음",
         "rule": f"꼭 통과할 글 최고 확률 초과 · 검증 정상 오탐 ≤ {args.max_fpr} · F1 최대",
         "threshold": threshold,
         "valid": {"chosen": chosen, "default0.5": binary_metrics(valid_probs, valid_labels, 0.5)},
@@ -251,7 +281,7 @@ def main(argv=None):
         info["threshold"] = result["threshold"]
         mode = "int8" if args.int8 else "fp32"
         info["thresholdSource"] = f"eval.py {result['evaluatedAt'][:10]} {mode}: {result['rule']}"
-        info["quantization"] = "int8-dynamic" if args.int8 else "none"  # api-spec 5.2 로더 기준
+        info["quantization"] = QUANTIZATION if args.int8 else "none"  # api-spec 5.2 로더 기준
         path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"train_info.json threshold → {result['threshold']}")
 

@@ -1,0 +1,73 @@
+{
+ "what": "int8 방식 비교, 검증셋(단어 목록 규칙으로 임계값)",
+ "torch": "2.14.1+cpu",
+ "date": "2026-11-17",
+ "batchDependence": {
+  "note": "같은 int8 모델에서 꼭 통과할 글 390개를 글 하나씩 vs 64개 묶음으로 계산한 차이",
+  "meanAbsDiff": 0.02,
+  "maxAbsDiff": 0.5394,
+  "example": {
+   "text": "시바견",
+   "alone": 0.5653,
+   "batched64": 0.6771
+  }
+ },
+ "variants": {
+  "fp32": {
+   "scoring": "64개 묶음(fp32는 묶음과 상관없음)",
+   "validMeanAbsDiffFromFp32": 0.0,
+   "mustPassMax": 0.797,
+   "threshold": 0.97,
+   "valid": {
+    "precision": 0.98,
+    "recall": 0.6434,
+    "f1": 0.7768,
+    "falsePositiveRate": 0.0109,
+    "extraFalsePositiveRate": 0.0083,
+    "combinedRecall": 0.6744
+   }
+  },
+  "int8 per-tensor (11/17 오전 방식)": {
+   "scoring": "64개 묶음",
+   "validMeanAbsDiffFromFp32": 0.0884,
+   "mustPassMax": 0.8567,
+   "threshold": 0.92,
+   "valid": {
+    "precision": 0.9746,
+    "recall": 0.5858,
+    "f1": 0.7317,
+    "falsePositiveRate": 0.0127,
+    "extraFalsePositiveRate": 0.0097,
+    "combinedRecall": 0.6305
+   }
+  },
+  "int8 per-tensor (11/17 오전 방식) · 서비스 조건": {
+   "scoring": "글 하나씩·창 8개씩",
+   "validMeanAbsDiffFromFp32": 0.0751,
+   "mustPassMax": 0.7275,
+   "threshold": 0.93,
+   "valid": {
+    "precision": 0.9739,
+    "recall": 0.6041,
+    "f1": 0.7457,
+    "falsePositiveRate": 0.0135,
+    "extraFalsePositiveRate": 0.0091,
+    "combinedRecall": 0.6455
+   }
+  },
+  "int8 per-channel (채택) · 서비스 조건": {
+   "scoring": "글 하나씩·창 8개씩",
+   "validMeanAbsDiffFromFp32": 0.0484,
+   "mustPassMax": 0.8669,
+   "threshold": 0.95,
+   "valid": {
+    "precision": 0.9784,
+    "recall": 0.6367,
+    "f1": 0.7714,
+    "falsePositiveRate": 0.0117,
+    "extraFalsePositiveRate": 0.0093,
+    "combinedRecall": 0.6698
+   }
+  }
+ }
+}

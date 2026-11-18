@@ -4,7 +4,8 @@
 scoring 계약(api-spec 4.3.4)과 같은 길로 잰다: 토큰화 → `max_length`·`stride` 창 → 창 8개씩 추론
 → 창별 막을 확률 최댓값. 한 창이 걸려도 멈추지 않고 끝까지(가장 느린 경우).
 글은 데모 미션 시드 문장을 이어 붙여 길이를 맞춘다(우리가 쓴 글, 학생 글 아님).
-`--int8`이면 불러온 뒤 Linear 층만 동적 양자화(파일은 fp32 그대로, 11/16 측정 약 3~5배 빠름).
+`--int8`이면 불러온 뒤 Linear 층만 채널별 동적 양자화(`quant.py`, scoring 로더와 같음).
+파일은 fp32 그대로.
 정확도 차이는 `eval.py --int8`로 따로 잰다.
 
     OMP_NUM_THREADS=1 uv run python scripts/latency.py --model checkpoints/kcelectra-base-s42
@@ -23,10 +24,10 @@ import statistics
 import time
 
 from eval import REPO, must_pass
+from quant import WINDOW_BATCH, quantize_int8
 
 LENGTHS = (200, 600, 1200, 1500)
 TARGET_MS = 300
-WINDOW_BATCH = 8
 
 
 def make_text(sentences: list[str], length: int) -> str:
@@ -57,7 +58,7 @@ def load(model_dir: pathlib.Path, int8: bool):
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
     model = AutoModelForSequenceClassification.from_pretrained(model_dir).eval()
     if int8:
-        model = torch.ao.quantization.quantize_dynamic(model, {torch.nn.Linear}, dtype=torch.qint8)
+        model = quantize_int8(model)
     return model, tokenizer
 
 

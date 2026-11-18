@@ -160,7 +160,7 @@ ai #254(`PromptSync`)와 같은 구조로, 소비자에 있던 세션별 `ModelS
 
 ### 6.2 로컬 준비 (AWS 접속 없음)
 
-모델별로 [ModelPreflightRequest](../../contracts/openapi/scoring-service.yaml) 형식 JSON(`name`·`version`·`artifactUri`·manifest의 6개 `{file, bytes, sha256}`)을 준비한다. 해시를 현재 파일에서 새로 만들어 manifest를 덮어쓰면 원본 대조가 아니므로 하지 않는다. 필수 파일은 `config.json`, `tokenizer.json`, `tokenizer_config.json`, `train_info.json`, `score_cuts.json`, `model.safetensors`.
+모델별로 [ModelPreflightRequest](../../contracts/openapi/scoring-service.yaml) 형식 JSON(`name`·`version`·`artifactUri`·manifest의 6개 `{file, bytes, sha256}`)을 준비한다. 해시를 현재 파일에서 새로 만들어 manifest를 덮어쓰면 원본 대조가 아니므로 하지 않는다. 필수 파일은 `config.json`, `tokenizer.json`, `tokenizer_config.json`, `train_info.json`, `score_cuts.json`, `model.safetensors`. 답변 표현 분류 `tox-` 모델은 `score_cuts.json`이 없어 나머지 5개다(#691).
 
 ```powershell
 $modelDir = (Resolve-Path '<모델 원본 폴더>').Path
@@ -438,7 +438,23 @@ learning 답변 제출에서 단어 목록 다음 단계로 부르는 2분류 �
 | 로더 검사 | `single_label_classification`·`num_labels=2`, `train_info.json`의 `threshold`(0 초과 1 미만)·`max_length`·`stride` 필수 |
 | 판정 | 칸마다 128토큰 창·겹침 32, 창 하나라도 `threshold` 이상이면 그 칸 flagged, 한 칸이라도 flagged면 전체 flagged |
 | 동시 실행·마감 | tox 전용 게이트 1개(M2와 따로), 1초 대기 또는 처리 1.3초(창 8개 묶음 사이에서 확인) 넘으면 503 `SCORING_UNAVAILABLE`, `run_in_threadpool` |
-| 사용량 | 이벤트 없음, 지표(호출·flagged·지연)만 |
+| 사용량 | 이벤트 없음. 요청마다 로그 한 줄(모델 이름·결과·지연 ms), 원문·점수 없음 |
 | readiness | 활성 `tox-` 모델이 없어도 `models=UP`(#85 규칙), 요청에는 `{active:false}` |
 
 - 확인 필요: 같은 Pod에서 M2와 CPU를 나눠 쓸 때의 지연(#691), 필요하면 prod CPU 요청량 조정. 11/16 측정(분류 머리 학습 전 KcELECTRA-base, CPU 1개 스레드): 1,500자 1.12초, 메모리 로딩 약 +300MiB·추론 중 약 +300MiB(limit 2Gi)
+
+### 8.1 구현 결과 (#691, 11/17)
+
+| 항목 | 구현 |
+|---|---|
+| 코드 | `app/toxicity/`(요청·응답 `models.py`, 메타데이터 검사 `metadata.py`, 창 나누기·게이트·마감 `service.py`, `router.py`), 등록부 `active_with_prefix` |
+| 메타데이터 검사 | 로더·사전 검사가 같은 `validate_toxicity` 사용. `threshold` 0 초과 1 미만, 선택 `review_threshold` 0 초과·`threshold` 미만, `max_length` 8~512 정수, `stride` 0 이상 `max_length-2` 미만, `positiveLabel` 0·1(기본 1), `quantization` `none`·`int8-dynamic-channel`. 2분류 아님·회귀면 사전 검사 `OUTPUT_MISMATCH`, 그 밖은 `INVALID_METADATA` |
+| int8 | `train_info.json`의 `quantization: int8-dynamic-channel`이면 불러올 때 `torch.ao.quantization.quantize_dynamic`(Linear, `per_channel_dynamic_qconfig`, qint8). 파일은 fp32 그대로. 오전의 층 전체 한 눈금 방식보다 fp32에 가까워 바꿈(시험 재현율 손해 5.2%p → 0.82%p, `ml/tox/results/eval_tox.md` "int8 방식"). 근거·되돌리기 조건은 [learning 16장](learning.md) |
+| 판정 | 칸마다 HF 토크나이저 `truncation`·`max_length`·`stride`·`return_overflowing_tokens`로 창을 만들고 8개씩 계산, 걸리면 남은 창은 계산하지 않음. 확률은 두 로짓의 softmax(= 차이의 sigmoid). 작은 실제 ELECTRA 모델로 ml/tox 평가와 같은 최댓값·임계값 판정인지 시험 |
+| 활성 모델 | `answer-filter` 범위의 `tox-` 모델이 없으면 `{active:false}`, 2개 이상이면 503(어느 쪽인지 정하지 않음) |
+| 호출자 | `CALLER_PATHS`에 `learning` → `/internal/toxicity/.+`만. 다른 서비스 토큰은 403(공통 규칙), 토큰 없음·틀림 401 |
+| 사전 검사 파일 | scoring·core·관리자 화면·`prepare_model_upload.py`가 이름 접두어로 파일 목록을 고름(`tox-` 5개, `m1`·`m2` 6개). 관리자 화면 알려진 범위에 `answer-filter` 추가 |
+| 배포 설정 | local·prod scoring에 `INTERNAL_TOKEN_LEARNING`, `ingressFromApps`에 learning-service, compose scoring 환경 변수 |
+| 시험 | scoring 288 통과(2 건너뜀, `test_toxicity.py` 39개 포함), 관리자 화면 단위 370 통과·타입 검사·oxlint 통과, core `ModelPreflightFilesTest` 2 통과, scripts 모델 계약 26 통과. core DB 시험(`ModelLoadingTest` 새 tox 경우 포함)은 Postgres가 있는 CI에서 확인 |
+
+- 남은 것: 로컬 MinIO에 #690 모델을 올려 사전 검사·활성화 뒤 실제 `/internal/toxicity/checks` 호출 확인(#690 마지막 체크), 운영 Pod에서 M2와 같이 돌 때 1,500자 지연을 재서 int8 유지 여부 결정(learning 16장 되돌리기 조건). learning 쪽 호출(#692)은 이 PR 범위 밖

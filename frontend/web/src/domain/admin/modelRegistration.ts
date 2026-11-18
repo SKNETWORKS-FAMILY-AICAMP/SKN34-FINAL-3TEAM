@@ -8,6 +8,7 @@ export const EVIDENCE_LABELS = {
 export const KNOWN_MODEL_SCOPES = [
   ...[4, 5, 6].flatMap(grade => ['narrative', 'essay'].map(type => `judgment/grade-${grade}/${type}`)),
   ...['judgment', 'followup', 'analysis', 'report-narrative', 'report-template', 'mission-draft'].map(name => `ai/${name}`),
+  'answer-filter',
 ]
 export const splitScopes = (value: string) => value.split(/[\n,]/).map(s => s.trim()).filter(Boolean)
 export const validModelScopes = (values: string[]) => values.length > 0 && values.length <= 100 &&
@@ -153,7 +154,12 @@ export const preflightMessage = (code: string) => ({
 }[code] ?? '검사 결과를 확인해 주세요')
 
 export const PREFLIGHT_FILES = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'train_info.json', 'score_cuts.json', 'model.safetensors']
-export const supportsPreflight = (files: ManifestModel['files']) => files.length === 6 && new Set(files.map(f => f.file)).size === 6 && files.every(f => PREFLIGHT_FILES.includes(f.file))
+/** 답변 표현 분류(tox-)는 score_cuts.json 없이 다섯 파일 (#691) */
+export const preflightFiles = (name: string) => name.startsWith('tox-') ? PREFLIGHT_FILES.filter(f => f !== 'score_cuts.json') : PREFLIGHT_FILES
+export const supportsPreflight = (name: string, files: ManifestModel['files']) => {
+  const expected = preflightFiles(name)
+  return files.length === expected.length && new Set(files.map(f => f.file)).size === expected.length && files.every(f => expected.includes(f.file))
+}
 
 export type ModelLoadingState = { name: string; version: string; revision: number; status: 'LOADING' | 'LOADED' | 'FAILED'; errorType: string | null; loadedVersion: string | null; loadedRevision: number | null; previousModelRetained: boolean }
 export type LoadingReport = { observedAt: string; staleAfterSeconds: number; populationSource: 'RECENT_REPORTS'; pods: { podId: string; instanceId: string; reportedAt: string; stale: boolean; models: ModelLoadingState[] }[]; summaries: { name: string; version: string; revision: number; observedPods: number; loadedPods: number; failedPods: string[] }[] }

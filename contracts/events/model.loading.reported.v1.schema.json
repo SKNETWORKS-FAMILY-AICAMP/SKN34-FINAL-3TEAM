@@ -42,7 +42,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "pattern": "^(m1|m2)-[A-Za-z0-9._-]{1,96}$"
+            "pattern": "^(m1|m2|tox)-[A-Za-z0-9._-]{1,96}$"
           },
           "version": {
             "type": "string",

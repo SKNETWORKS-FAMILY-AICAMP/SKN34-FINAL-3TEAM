@@ -22,12 +22,21 @@ FILES = frozenset(
     }
 )
 SMALL = frozenset({"config.json", "train_info.json", "score_cuts.json"})
+M2_NAMES = ("m2-klue-narrative", "m2-klue-essay")
+TOXICITY_NAME = r"tox-[A-Za-z0-9._-]{1,96}"
+
+
+def expected_files(name: str) -> frozenset[str]:
+    """tox- models have no score_cuts.json (#688); m2 models need all six."""
+    return FILES - {"score_cuts.json"} if name.startswith("tox-") else FILES
+
+
 # Conservative single-PUT limit in decimal bytes; never fall back to multipart.
 MAX_SINGLE_PUT_BYTES = 5_000_000_000
 
 
 def prepare(request: dict, model_dir: Path, expected_bucket: str) -> dict:
-    """Verify all six local artifacts before returning any upload parameters."""
+    """Verify all local artifacts (m2 six, tox five) before returning upload parameters."""
     if not isinstance(request, dict) or set(request) != {
         "name",
         "version",
@@ -37,8 +46,12 @@ def prepare(request: dict, model_dir: Path, expected_bucket: str) -> dict:
         raise ValueError(
             "Expected a ModelPreflightRequest, not registration or manifest JSON"
         )
-    if request["name"] not in ("m2-klue-narrative", "m2-klue-essay"):
+    if not isinstance(request["name"], str) or (
+        request["name"] not in M2_NAMES
+        and not re.fullmatch(TOXICITY_NAME, request["name"])
+    ):
         raise ValueError("Unsupported model name")
+    expected = expected_files(request["name"])
     if (
         not isinstance(request["version"], str)
         or not 1 <= len(request["version"]) <= 100
@@ -65,14 +78,14 @@ def prepare(request: dict, model_dir: Path, expected_bucket: str) -> dict:
             "artifactUri must use the expected bucket and a safe models/ prefix"
         )
     entries = request["files"]
-    if not isinstance(entries, list) or len(entries) != len(FILES):
-        raise ValueError("Exactly six artifacts are required")
+    if not isinstance(entries, list) or len(entries) != len(expected):
+        raise ValueError(f"Exactly {len(expected)} artifacts are required")
     seen = set()
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != {"file", "bytes", "sha256"}:
             raise ValueError("Each artifact must contain file, bytes and sha256")
         name = entry["file"]
-        if not isinstance(name, str) or name not in FILES or name in seen:
+        if not isinstance(name, str) or name not in expected or name in seen:
             raise ValueError("Duplicate or unsupported artifact name")
         seen.add(name)
         if (
@@ -141,7 +154,10 @@ def main() -> None:
             stream.write("\n")
     except (OSError, ValueError) as exc:
         parser.exit(1, f"Upload preparation failed: {exc}\n")
-    print("Verified 6 local artifacts. Offline plan saved; no AWS operation performed.")
+    print(
+        f"Verified {len(plan['files'])} local artifacts. "
+        "Offline plan saved; no AWS operation performed."
+    )
 
 
 if __name__ == "__main__":

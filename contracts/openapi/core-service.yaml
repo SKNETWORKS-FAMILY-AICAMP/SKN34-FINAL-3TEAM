@@ -8787,12 +8787,12 @@ components:
           maxLength: 2048
         files:
           type: array
-          minItems: 6
+          minItems: 5
           maxItems: 6
           uniqueItems: true
           items:
             $ref: '#/components/schemas/ModelPreflightArtifact'
-          description: 여섯 파일명을 각각 한 번씩 포함한다.
+          description: m1·m2는 여섯 파일명을 각각 한 번씩, tox-는 score_cuts.json을 뺀 다섯 파일명을 각각 한 번씩 포함한다.
     ModelPreflightResult:
       type: object
       additionalProperties: false

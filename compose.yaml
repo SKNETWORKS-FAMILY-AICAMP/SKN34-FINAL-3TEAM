@@ -293,6 +293,7 @@ services:
       INTERNAL_TOKEN_AI: ${INTERNAL_TOKEN_AI:?.env 설정 필요}
       INTERNAL_TOKEN_CORE: ${INTERNAL_TOKEN_CORE:?.env 설정 필요}
       INTERNAL_TOKEN_OPS: ${INTERNAL_TOKEN_OPS:-}
+      INTERNAL_TOKEN_LEARNING: ${INTERNAL_TOKEN_LEARNING:?.env 설정 필요}
       CORE_URL: http://core-service:8080
       S3_BUCKET: ${SCORING_S3_BUCKET:-sagomungchi-local-models}
       S3_REGION: ${SCORING_S3_REGION:-ap-northeast-2}

@@ -44,3 +44,30 @@ def test_pick_threshold_respects_must_pass_and_fpr():
     assert t > 0.7 and m["recall"] < 1.0
     t, m = E.pick_threshold(probs, labels, must_pass_max=0.99)
     assert t is None and "reason" in m
+
+
+def test_per_text_scores_each_text_alone_in_windows_of_eight():
+    """int8은 묶음에 따라 확률이 달라져 scoring처럼 글 하나씩·창 8개씩 계산해야 한다."""
+    torch = __import__("pytest").importorskip("torch")
+    calls = []
+
+    class Tok:
+        def __call__(self, text, **kw):
+            n = len(text)  # 글자 수 = 창 수
+            return {
+                "input_ids": torch.arange(n).unsqueeze(1),
+                "attention_mask": torch.ones(n, 1, dtype=torch.long),
+            }
+
+    class Model:
+        def eval(self):
+            return self
+
+        def __call__(self, input_ids, attention_mask):
+            calls.append(len(input_ids))
+            hit = (input_ids[:, 0] == 9).float() * 10  # 창 9만 막을 글
+            return type("O", (), {"logits": torch.stack([torch.zeros_like(hit), hit], 1)})()
+
+    probs = E.score_texts(Model(), Tok(), ["가" * 10, "나" * 3], 128, 32, "cpu", per_text=True)
+    assert calls == [8, 2, 3]
+    assert probs[0] > 0.99 and abs(probs[1] - 0.5) < 1e-6
