@@ -166,7 +166,7 @@ def test_latest_answer_per_type_max_three_and_existing_report_unchanged():
     for item in explanations:
         assert item.verified and item.evidence[0].answer_version == item.payload["answerVersion"]
     assert set(ai.calls[0][0]) == {"grade", "inputType", "text", "topic", "scores"}
-    assert ai.calls[0][1] == 310
+    assert ai.calls[0][1] == 80
 
 
 @pytest.mark.parametrize("fault", ["inactive", "timeout", RuntimeError("PRIVATE RAW TEXT")])
