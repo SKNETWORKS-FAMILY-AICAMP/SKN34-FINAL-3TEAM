@@ -64,18 +64,19 @@ services:
 
   # 실제 LLM 키가 셸 환경에 있어도 쓰이지 않도록 고정
   ai-service:
-    command: [uvicorn, report_e2e:app, --host, 0.0.0.0, --port, "8000"]
-    volumes:
-      - ./infrastructure/stubs/ai-report-e2e.py:/app/report_e2e.py:ro
     depends_on:
       llm-stub:
         condition: service_healthy
       scoring-stub:
         condition: service_healthy
     environment:
-      SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA: ""
-      SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA: ""
-      SERVICE_NAME: ai-report-e2e
+      # #747: 리포트 서술·설명은 운영과 같은 SageMaker 클라이언트(boto3 InvokeEndpoint)를 llm-stub으로 돌린다.
+      # 서명용 가상 자격 증명만 두고 AWS로는 나가지 않는다.
+      REPORT_LLM_ENDPOINT: e2e-explanation
+      REPORT_LLM_COMPONENT: e2e-explanation-explain
+      REPORT_LLM_ENDPOINT_URL: http://llm-stub:8080
+      AWS_ACCESS_KEY_ID: e2e-synthetic
+      AWS_SECRET_ACCESS_KEY: e2e-synthetic
       LLM_PROVIDER: openai
       OPENAI_BASE_URL: http://llm-stub:8080/v1
       OPENAI_API_KEY: ""
@@ -85,7 +86,6 @@ services:
       # 주간 리포트 대표 답변 설명(FN-RPT-09)은 M2 점수가 있는 답변만 대상이라 교차 확인을 켠다
       SCORING_URL: http://scoring-stub:8080
       M2_CROSS_CHECK_ENABLED: "true"
-      EXPLANATION_BASE_URL: http://llm-stub:8080/v1
 
   learning-service:
     depends_on:

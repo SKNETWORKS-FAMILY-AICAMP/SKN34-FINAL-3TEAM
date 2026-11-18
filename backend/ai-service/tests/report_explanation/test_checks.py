@@ -83,3 +83,16 @@ def test_parts_cleans_each_section_and_drops_empty_ones() -> None:
         ("상세 분석", "근거를 들었습니다."),
         ("개선 방안", "앞으로 물어봐 주세요."),
     ]
+
+
+def test_clean_drops_a_trailing_fragment_cut_by_an_unescaped_quote() -> None:
+    source = "처음에는 아무도 순서를 정하지 않았다."
+    # 모델이 인용 부호를 이스케이프하지 않아 칸이 짧게 끊긴 형태(infra.md 9.13.9)
+    assert checks.clean("처음에는 ", source) == ""
+    assert checks.clean("근거를 들었습니다. 특히 ", source) == "근거를 들었습니다."
+    assert checks.clean("'좋아요?'라고 물어보세요.", source) == "'좋아요?'라고 물어보세요."
+    assert checks.clean('"처음에는 아무도 순서를 정하지 않았다."', source) == (
+        '"처음에는 아무도 순서를 정하지 않았다."'
+    )
+    cut = ExplanationDetail(analysis="처음에는 ", improvement_points=None, next_steps="물어봐 ")
+    assert checks.parts(cut, source) == []

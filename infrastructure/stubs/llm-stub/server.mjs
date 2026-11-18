@@ -1,4 +1,6 @@
 // OpenAI 호환 LLM 대역 (로컬·CI E2E·부하 시험 전용, #246·#361). ai-service의 chat.completions 호출만 받는다.
+// #747: 리포트 Gemma(SageMaker InvokeEndpoint)도 boto3 endpoint_url을 이 대역으로 돌려 받는다.
+// POST /endpoints/<엔드포인트>/invocations 본문은 chat.completions와 같고, 서명·IC 이름은 검사하지 않는다.
 // 응답은 response_format.json_schema.name(ai-service Pydantic 모델 이름)으로 고른다.
 // LLM_STUB_DELAY_MS(기본 0)·LLM_STUB_JITTER_MS(기본 0): 응답 전 대기(기본값 + 0~지터 균등). 부하 시험에서 실제 LLM 지연을 흉내 낸다.
 import { createServer } from 'node:http'
@@ -60,13 +62,14 @@ function stream(res, model) {
 
 createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/health') return json(res, { status: 'UP' })
-  if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+  const sagemaker = req.method === 'POST' && /^\/endpoints\/[A-Za-z0-9-]+\/invocations$/.test(req.url)
+  if (sagemaker || (req.method === 'POST' && req.url === '/v1/chat/completions')) {
     let raw = ''
     for await (const part of req) raw += part
     let body
     try { body = JSON.parse(raw) } catch { return json(res, { error: { message: 'invalid json' } }, 400) }
     await wait()
-    if (body.stream) return stream(res, body.model)
+    if (body.stream && !sagemaker) return stream(res, body.model)
     const result = completion(body)
     return result ? json(res, result) : json(res, { error: { message: 'unsupported response_format' } }, 400)
   }

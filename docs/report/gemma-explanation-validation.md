@@ -207,6 +207,8 @@ The initial prompt protocol was frozen before observing those outputs.
 
 키 이름은 모든 환경에서 `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`(주소)·`SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA`(키)로 같다. 값이 없으면 리포트 요약·상세가 실패(503)한다. ai egress는 기존 공용 443 허용으로 RunPod에 나간다.
 
+> #747(2026-11-18)부터 RunPod 대신 SageMaker 실시간 엔드포인트를 부르고, 위 두 키는 지웠다. 설정은 `REPORT_LLM_ENDPOINT`·`REPORT_LLM_COMPONENT`·`REPORT_LLM_REGION`(values, 비밀값 아님)이다. [AI 보고서 24절](ai.md#24-리포트-gemma-sagemaker-호출-전환-747-2026-11-18)
+
 ## 원문 전체 표시
 
 발췌문만 보여 전체 글 분석을 환각처럼 오해하는 문제를 수정했다. 설명 항목의 itemId로 기존 근거 API를 호출해 시도·답변·버전이 모두 일치하는 원문을 `학생 글 전체`에 표시한다. 조회 실패·비공개·다른 버전에는 발췌문으로 대체하지 않는다. 이 PR은 #475의 기존 튜닝 모델 활용·비교·화면 적용 범위이며 추가 학습·사람 50표본 평가 완료나 원 이슈의 모든 완료 조건 달성을 주장하지 않는다.

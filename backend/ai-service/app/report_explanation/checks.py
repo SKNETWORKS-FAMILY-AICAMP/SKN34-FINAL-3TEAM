@@ -6,6 +6,9 @@
     없으면 작은따옴표로 바꿈(지어낸 문장을 원문 인용처럼 보이지 않게)
   · 금지어(점수·등급·사고력 등, report 검사와 같은 범위)·인사말, 학생 글에 없는 숫자·횟수
     표현이 든 문장은 그 문장만 뺌
+  · 문단 끝이 문장 끝 표시 없이 끝나면 그 조각을 뺌(#747). 모델이 인용 부호를 이스케이프하지
+    않아 칸이 "처음에는 "처럼 짧게 끊긴 JSON도 형식은 맞아서, 이 조각만 남은 칸은 비고
+    상세 분석이 비면 설명 전체가 거절됨(infra.md 9.13.9)
 - 검사(allowed): 정리 뒤에도 남은 금지 요소가 있으면 거절(마지막 안전장치)
 - 조립: "상세 분석 / 보완할 지점 / 개선 방안" 소제목 줄과 본문을 빈 줄로 이어 붙임
 - 인용: 설명과 낱말 앞 두 글자가 가장 많이 겹치는 학생 글 문장(원문 그대로). 2개 미만이면 null
@@ -75,6 +78,11 @@ def _keep(sentence: str, source: str) -> bool:
     return all(match.group(0) in source for match in KOREAN_COUNT.finditer(sentence))
 
 
+def _ended(sentence: str) -> bool:
+    """닫는 따옴표·괄호를 떼고 마침표·물음표·느낌표로 끝나는지"""
+    return sentence.rstrip("\"'”’」』)").endswith(tuple(SENTENCE_END))
+
+
 def clean(text: str | None, source: str) -> str:
     """문장 단위로 고치고 빼서 남은 본문. 남는 문장이 없으면 빈 문자열"""
     if not text:
@@ -86,7 +94,10 @@ def clean(text: str | None, source: str) -> str:
     paragraphs = []
     for paragraph in re.split(r"\n\s*\n", text):
         flat = re.sub(r"\s+", " ", paragraph).strip()
-        kept = [s for s in _split(flat) if _keep(s, source)]
+        parts = _split(flat)
+        if parts and not _ended(parts[-1]):
+            parts.pop()  # 문장 끝 표시 없이 끝난 조각은 잘린 출력으로 봄(#747)
+        kept = [s for s in parts if _keep(s, source)]
         if kept:
             paragraphs.append(" ".join(kept))
     return "\n\n".join(paragraphs)

@@ -48,8 +48,8 @@ class NarrativeService:
                 output=prompts.GeneratedNarrative,
                 call_type="REPORT_NARRATIVE",
                 prompt_version=prompt.version,
-                max_tokens=2048,
-                deadline=time.monotonic() + self._settings.report_gemma_timeout + 3,
+                max_tokens=self._settings.narrative_max_tokens,
+                deadline=time.monotonic() + self._settings.narrative_deadline,
             )
         except LlmUnavailable as exc:
             raise ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable) from exc
