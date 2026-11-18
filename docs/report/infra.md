@@ -928,6 +928,103 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 - **RTO 범위**: 데이터가 작다(답변 2,814건, gp3 20 GiB). 앱 Secret의 DB 주소를 복원본으로 바꾸고 재배포하는 전환 시간은 재지 않았다
 - 복원본은 가장 작은 사양(t4g.micro)이라 원본(t4g.small)과 사양이 다르다.
 
+## 9.13 리포트 Gemma CPU·GPU 서빙 비교와 S3 반입 (#743·#745, 2026-11-18)
+
+에픽 #742에서 리포트 Gemma(26B-A4B QAT + LoRA r16)를 RunPod에서 클러스터 안 `sllm-server`로 옮기기로 했다. 그 전에 CPU와 GPU를 AWS A 계정의 임시 EC2에서 같은 입력으로 쟀다. 수치 원본은 [`ml/sllm/results/serving-compare-20261118.json`](../../ml/sllm/results/serving-compare-20261118.json)에 있고, 측정 스크립트는 [`ml/sllm/scripts/serving/`](../../ml/sllm/scripts/serving/)에 있다.
+
+### 9.13.1 권장안 (팀 확인 필요)
+
+| 항목 | 권장 |
+|---|---|
+| CPU/GPU | **CPU**. GPU(g6.xlarge)는 배치 창이 커지거나 1건 지연이 중요해질 때 쓰는 대안으로 둔다 |
+| 인스턴스 | `c7i.4xlarge`(16 vCPU, 32GiB), On-Demand. 지금 NodePool `explanation-cpu`의 `c7i·c6i.xlarge`(8GiB)에는 모델이 올라가지 않는다 |
+| 서버·모델 형식 | 지금 구조인 llama.cpp `llama-server`를 유지한다. 기반 모델은 Google 공식 QAT Q4_0 GGUF, LoRA는 `convert_lora_to_gguf.py`로 바꾼 GGUF(`--lora`)다. `--jinja --reasoning off`가 꼭 있어야 한다 |
+| 자원 요청 | `--threads 16 --parallel 2`, `-c 16384`(요청당 8192). 측정 RSS는 28GiB(mmap 포함)이고, 실제 사용량은 15GiB였다. Pod 메모리 요청은 약 20Gi, 한도는 노드가 허용하는 만큼 둔다. 정확한 값은 #746에서 정한다 |
+| 가동 창 | KEDA cron 일 23:50~월 02:00(130분)을 그대로 둔다. 30명 배치가 약 70~75분 걸린다 |
+| architecture 7장 | CPU로 가면 "클러스터 안 GPU 두지 않음"(#725)을 바꿀 필요가 없다. GPU를 고르면 개정해야 한다 |
+
+기준(①12/7 준비 가능 ②배치 창 안 완료 ③비용 ④변경량)별 근거는 다음과 같다.
+
+- ① CPU는 기존 `sllm-server` 구조(llama.cpp, S3 initContainer, KEDA cron, 전용 NodePool)를 그대로 쓰고, 인스턴스·자원·모델 키만 바꾸면 된다. GPU는 GPU NodePool·NVIDIA AMI·device plugin, 36GB vLLM 이미지, L4에 맞춘 vLLM 옵션(아래 9.13.3)이 새로 필요하고, 서울 G 계열 On-Demand 용량도 확보해야 한다
+- ② CPU는 30명에 약 70~75분으로 창(130분) 안에 들어온다. 학생이 50명을 넘으면 창이 모자라므로 그때 GPU로 간다. GPU는 30명에 10~15분이다
+- ③ 창 기준 월 컴퓨팅 비용은 CPU 약 $7.6, GPU 약 $9.3이다. 둘 다 작아서 결정 요인은 아니다
+- ④ CPU의 단점은 모델 파일 형식이 RunPod에서 검증한 AWQ와 다르다는 점이다. 그래도 같은 QAT 체크포인트의 공식 Q4_0이고, LoRA는 QAT 16비트 원본으로 학습했다. 가상 글 3건씩은 `checks.py`를 모두 통과했다. 출력 품질이 AWQ와 같은지는 학습 담당(kim-4480)의 확인이 필요하다
+
+### 9.13.2 측정 조건
+
+| 항목 | 값 |
+|---|---|
+| 입력 | ai-service 실제 프롬프트(`report@2` 서술, `report-explanation@3` 상세)에 가상 데이터만 넣음(`gen_prompts.py`). 서술 1,137토큰·최대 2,048, 상세 1,360토큰·최대 4,096, `json_schema` strict, temperature 0 |
+| 자원 | 임시 VPC(기존 EKS VPC 밖)의 퍼블릭 서브넷, EC2 2대(SSH는 측정 PC IP만 허용), S3 `explanation/*`만 쓸 수 있는 임시 IAM 역할 |
+| 시각 | 2026-11-18 09:52~11:10 KST |
+| GPU | g6.xlarge(L4), DLAMI Ubuntu 24.04, vLLM 0.34.0. LoRA는 `explain` 이름으로 붙임 |
+| CPU | c7i.4xlarge(Xeon 8488C, AVX-512·AMX), llama.cpp 52975342 직접 빌드 |
+| 기동 시간 | 페이지 캐시를 비운 뒤 서버 시작부터 `/health` 200까지 |
+
+### 9.13.3 결과
+
+| 항목 | CPU c7i.4xlarge | GPU g6.xlarge |
+|---|---|---|
+| 시간당 요금 | $0.806 | $0.990 |
+| 서버 기동(모델 적재 포함) | 53초 | 224초(가중치 54초 + torch.compile 48초 + CUDA graph 등). 컴파일 캐시가 있으면 148초(업로드와 겹쳐 잰 값) |
+| 그 밖의 콜드 요소 | 모델 14.4GB 받기(HF에서 35초) | vLLM 이미지 36.3GB pull 133초, 모델 17.2GB 받기(HF에서 72초) |
+| 메모리 | RSS 28GiB(mmap 포함), 사용 15GiB | VRAM 20.3GiB / 22.0GiB, 호스트 8GiB |
+| 생성 속도(1건, LoRA) | 18.4 tok/s | 49 tok/s(LoRA 없이 54) |
+| 리포트 서술 1건 | 23.6초(캐시 없음) | 6.2초(30명 배치 p50) |
+| 상세 설명 1건 | 50.2초(캐시 없음) | 16.4초(30명 배치 p50, p95 21.2초) |
+| 30명 배치(120요청) | 약 70~75분(동시 2, 추정) | 10~15분(동시 4·8, 실측 3회) |
+| 최대 토큰까지 반복 생성 | 38건 중 2건(상세) | 120건 중 9·19·19건(모두 상세) |
+| `checks.py` | 상세 3/3 통과, 서술 JSON 3/3 | 상세 3/3 통과, 서술 3건 중 2건이 73자에서 끊김 |
+
+- CPU `llama-bench`(LoRA 없음)의 생성 속도는 4·8·16스레드에서 11.2·20.0·24.1 tok/s다. 8스레드인 `m7i.2xlarge`(32GiB, $0.50)도 후보이지만 서버로는 재지 않았다
+- CPU 동시 2는 처리량이 19.8 tok/s로 동시 1(18.4)과 거의 같고, 슬롯당 속도는 11 tok/s로 떨어진다
+- CPU 30명 배치는 #384 부하 시험에 계정을 넘기려고 22요청에서 멈췄다. 70~75분은 4명 배치(583초)와 22요청 기록으로 추정한 값이다
+
+### 9.13.4 발견
+
+- **반복 생성**: 상세 설명이 `max_tokens` 4096까지 반복하는 경우가 GPU에서 8~21%, CPU에서 약 5% 나왔다. 서비스에서는 `finish_reason=length`가 `LLM_INVALID_OUTPUT`이 되어 설명 없이 발행된다. CPU에서는 이런 1건이 약 400초를 점유해, 지금 상세 마감(305초)을 넘는다. #747에서 상세 `max_tokens`(정상 출력은 520~710토큰)와 마감을 함께 조정해야 한다
+- **L4 메모리 한계**: 17.2GB 단일 safetensors는 16GiB 호스트에서 mmap 실패(ENOMEM)로 vLLM이 기동하지 않았다. 4조각으로 나누자 기동했다. VRAM은 bf16 KV로는 8192 길이 1건분도 남지 않아, `--kv-cache-dtype fp8 --max-num-seqs 8 --max-num-batched-tokens 2560 --gpu-memory-utilization 0.97`와 멀티모달 0개 설정이 필요했다. 그래도 KV는 12,653토큰(8192 기준 1.54건)뿐이다
+- **생각 모드**: llama.cpp `--jinja`의 기본값에서는 Gemma 4가 생각(reasoning)부터 출력해, 서술 1건이 2,048토큰을 모두 쓰고 본문이 비었다. `--reasoning off`로 해결했다. vLLM은 기본값으로도 생각 출력이 없었다
+- **운영 호출 모델 이름**: ai-service `REPORT_GEMMA_MODEL` 기본값과 prod 설정은 기반 이름 `gemma-4-26b-a4b-it-qat-awq-int4`다. vLLM에서 이 이름으로 부르면 LoRA가 붙지 않는다(LoRA는 `explain`). 같은 입력에서 두 이름의 출력이 달랐다. 지금 RunPod 호출에 LoRA가 적용되는지 확인이 필요하다(#747). llama.cpp `--lora`는 모델 이름과 상관없이 모든 요청에 붙는다
+
+### 9.13.5 S3 반입 (#745)
+
+경로는 `s3://sagomungchi-demo-<계정>-models/explanation/gemma4-26b-a4b-lora-20261118/` 아래 18개 객체(31.7GB)다. 파일별 크기·sha256은 결과 JSON의 `s3`에 있다.
+
+| 하위 경로 | 내용 |
+|---|---|
+| `adapter/` | PEFT 원본 `adapter_model.safetensors`·`adapter_config.json`(로컬 사본, `ml/sllm/README.md` 해시와 같음) |
+| `adapter-gguf/` | `explain-lora-f16.gguf`(CPU용 변환본, 230 텐서) |
+| `base-awq/` | AWQ 기반 모델 설정·토크나이저와 `model-0000{1..4}-of-00004.safetensors` + index(GPU용) |
+| `base-gguf/` | 공식 QAT Q4_0 GGUF를 `llama-gguf-split`으로 나눈 4개 파일(CPU용, 1번 파일로 기동) |
+
+- 모든 객체를 `PutObject` 1회 + `ChecksumSHA256`으로 올렸고, HEAD에서 `ChecksumType=FULL_OBJECT`와 값이 일치함을 확인했다(`upload.py`). 덮어쓰기는 `If-None-Match: *`로 막았다
+- **5GB 초과 파일**: S3는 multipart 업로드에 SHA-256 `FULL_OBJECT`를 허용하지 않는다(2026-11-18 실제 요청이 `InvalidRequest`). multipart SHA-256은 COMPOSITE뿐이라 #368·#493 원칙(전체 SHA-256만 인정)에 맞지 않는다. 그래서 형식이 지원하는 방법으로 파일을 나눴다. safetensors는 텐서 바이트를 그대로 옮겨 4조각으로 나누고, 원본과 35,743개 텐서의 dtype·shape·sha256이 같음을 대조했다(`reshard.py`·`verify_shards.py`). GGUF는 `llama-gguf-split`으로 나눴다. 원본 단일 파일의 sha256은 HF LFS 값과 같고(AWQ `c0b6bbe9…`, GGUF `3eca3b8f…`), 이 값도 결과 JSON에 남겼다
+- 대안으로 원본을 바이트 단위로 잘라 올리고 받을 때 이어 붙이는 방법, multipart CRC64 FULL_OBJECT + 메타데이터 sha256 방법도 있었다. 앞의 것은 서버가 그대로 읽지 못하고, 뒤의 것은 #368 원칙(CRC·메타데이터 불인정)에 맞지 않아 쓰지 않았다
+- `sllm-server` initContainer는 지금 `MODEL_KEY` 파일 1개와 `MODEL_SHA256` 1개만 받는다. 여러 파일과 LoRA를 받도록 바꾸는 일은 #746 범위다
+- 결정하지 않은 형식 쪽(CPU를 고르면 `base-awq/`, GPU를 고르면 `base-gguf/`·`adapter-gguf/`)은 결정 뒤 지울지 정한다. 보관 비용은 31.7GB에 월 약 $0.8다
+- core 모델 레지스트리 `report-explanation` 등록은 하지 않았다. 관리자 화면 작업이고, 형식 결정과 #746 서버 변경 뒤에 해야 의미가 있다
+
+### 9.13.6 임시 자원과 정리
+
+| 자원 | 이름·종류 | 상태 |
+|---|---|---|
+| VPC·서브넷·IGW·라우트 테이블 | `sagomungchi-tmp-gemma-bench`, 10.99.0.0/24, 2a | 삭제 |
+| 보안 그룹 | 같은 이름, 22/tcp를 측정 PC IP만 허용 | 삭제 |
+| 키 페어 | 같은 이름, ed25519 | 삭제(로컬 개인 키도 지움) |
+| IAM 역할·인스턴스 프로필 | 같은 이름, S3 `explanation/*` Put·Get만 허용 | 삭제 |
+| EC2 | g6.xlarge·c7i.4xlarge 각 1대(gp3 200·120GB, 종료 시 삭제) | 종료, 볼륨 없음 확인 |
+
+2026-11-18 11:12 KST에 태그 `Purpose=issue-743-745-temp` 기준 인스턴스·볼륨·VPC·IGW와 이름 기준 보안 그룹·키 페어·IAM이 모두 0개이고, `explanation/` 아래 남은 multipart 업로드가 0건임을 확인했다. EKS·RDS 자원은 건드리지 않았다. 측정 비용은 약 $2.5(EC2 2대 약 1.3시간과 EBS)다.
+
+### 9.13.7 한계와 남은 것
+
+- 입력이 고정 가상 글 1편과 서술 1건이라 같은 프롬프트가 반복된다. 그래서 2회째부터는 접두 캐시로 입력 처리 시간이 줄었다. 표의 1건 값은 첫 실행(캐시 없음)이나 배치 p50으로 적었다. 글 길이가 다른 여러 입력과 RunPod 출력 비교(`explanation_eval.py`)는 하지 않았다
+- 품질은 `checks.py` 통과와 JSON 형식만 봤다. CPU(GGUF)와 GPU(AWQ) 출력의 의미 차이는 사람 검토가 필요하다
+- EKS 안 기동 시간(노드 준비, S3 initContainer 내려받기)은 재지 않았다
+- 학습 기준 모델 확인: 어댑터의 `base_model_name_or_path`는 `/workspace/models/gemma-4-26b-qat`(로컬 경로)라 정확한 원본 저장소·revision을 알 수 없다. 구조(30층, hidden 2816, 전역 주의 층의 K=V 공유로 `v_proj` 25개)는 두 기반 모델과 모두 맞는다. kim-4480에게 확인을 요청했다
+- 확정 후 순서: 팀 결정 → #744 문서 → #746 NodePool·`sllm-server`(인스턴스, 여러 파일 받기, `--lora`·`--reasoning off`) → 레지스트리 등록 → #747 호출 전환(모델 이름, `max_tokens`·마감)
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)

@@ -55,9 +55,21 @@ AI Hub 원본·JSONL·생성 결과는 저장소에 넣지 않는다.
 `enable_lora=True`, `max_lora_rank=16`, `max_loras=1`, `max_model_len=4096`, `gpu_memory_utilization=0.88`, `temperature` 0, 최대 800토큰.
 vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-env`)에서 돌린다. 운영 RunPod 엔드포인트는 `max_model_len` 8192다.
 
+### 서빙 비교·반입 (`scripts/serving/`, #743·#745)
+
+임시 EC2에서 돌린 스크립트다. 결과 숫자는 [`results/serving-compare-20261118.json`](results/serving-compare-20261118.json), 결정 근거는 [infra 9.13](../../docs/report/infra.md#913-리포트-gemma-cpugpu-서빙-비교와-s3-반입-743745-2026-11-18).
+
+| 파일 | 내용 |
+|---|---|
+| `gen_prompts.py` | ai-service 실제 프롬프트(서술 `report@2`, 상세 `report-explanation@3`)에 가상 입력을 넣어 OpenAI 호환 요청 본문을 만듦 |
+| `bench.py` | vLLM·llama-server에 스트리밍으로 보내 지연·토큰 수·`finish_reason`을 잼. `--batch N`이면 학생 N명 × (서술 1 + 상세 3) |
+| `check_outputs.py` | 생성 원문을 `report_explanation/checks.py`로 검사해 통과 수만 출력 |
+| `reshard.py`·`verify_shards.py` | 5GB를 넘는 safetensors를 텐서 바이트 그대로 여러 파일로 나누고, 원본과 텐서별 sha256을 대조 |
+| `upload.py` | 파일마다 단일 `PutObject` + `ChecksumSHA256`(FULL_OBJECT), HEAD로 확인, 덮어쓰지 않음 |
+
 ### 없는 것
 
-- 양자화(GGUF 등) 스크립트와 CPU 실측: 없음. AWQ 기반 모델은 공개 양자화본을 그대로 쓴다
+- GGUF 변환 스크립트: 따로 없음. CPU용은 Google 공식 QAT Q4_0 GGUF를 받고, LoRA만 llama.cpp `convert_lora_to_gguf.py --base <QAT 16비트 원본 설정>`으로 바꿨다(infra 9.13)
 - 테스트(가짜 데이터): 없음
 - 평가 결과 숫자: `eval_lora.py`·`vllm_check.py` 실행 결과는 Pod 안에만 남아 `results/`에 없다
 
@@ -71,7 +83,21 @@ vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-e
 | 요청 | `model="explain"`, `temperature` 0, 상세 출력 한도 4096토큰 |
 | `--max-lora-rank` | 어댑터 r=16이라 16 이상 |
 | GPU·VRAM·기타 실행 옵션 | **미확인** (RunPod 엔드포인트 설정 확인 필요) |
-| CPU | 실행하지 않음. AWQ는 GPU 커널 전용이라 CPU llama.cpp로 가려면 GGUF 변환과 재측정이 필요 |
+| CPU | 2026-11-18 c7i.4xlarge에서 측정(공식 QAT Q4_0 GGUF + LoRA GGUF, llama.cpp). 상세 1건 약 50초, 30명 배치 약 70~75분. GPU g6.xlarge(vLLM 0.34)는 상세 1건 p50 16초. [infra 9.13](../../docs/report/infra.md#913-리포트-gemma-cpugpu-서빙-비교와-s3-반입-743745-2026-11-18) |
+| AWS 안 이전 | 에픽 #742. 권장안은 CPU(팀 확인 필요). 전환 전까지는 위 RunPod 경로가 운영 |
+
+## S3 반입 (#745, 2026-11-18)
+
+`s3://sagomungchi-demo-<계정>-models/explanation/gemma4-26b-a4b-lora-20261118/` 아래에 있다. 모든 객체는 단일 PUT이고, `ChecksumSHA256`의 `ChecksumType`은 `FULL_OBJECT`다. 파일별 크기·sha256은 결과 JSON의 `s3`에 있다.
+
+| 하위 경로 | 내용 | 원본 |
+|---|---|---|
+| `adapter/` | PEFT LoRA 2개(위 어댑터 해시와 같음) | 로컬 사본 |
+| `adapter-gguf/` | `explain-lora-f16.gguf` | 위 어댑터를 `convert_lora_to_gguf.py`로 변환 |
+| `base-awq/` | AWQ 기반 모델 4조각 + index·설정·토크나이저 | `cyankiwi/...AWQ-INT4` @`76373001`, 단일 파일 sha256 `c0b6bbe9…`(HF와 같음)을 텐서 바이트 그대로 나눔 |
+| `base-gguf/` | QAT Q4_0 GGUF 4조각 | `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` @`d1c082be`, 단일 파일 sha256 `3eca3b8f…`(HF와 같음)을 `llama-gguf-split`으로 나눔 |
+
+17.2GB·14.4GB 단일 파일은 단일 PUT 한도(5GB)를 넘고, S3는 multipart에 SHA-256 FULL_OBJECT를 허용하지 않아서 나눴다.
 
 ## 실측 (RunPod, 2026-11-16)
 
@@ -105,5 +131,7 @@ report-service `input_scores` 기준: 서술 초5·6, 논술 초4~6. 프리미�
 - [ ] 71818·71819 이유 문장 이용 조건 (#475). 학습에 논술 71819를 썼다(M2 논술 점수는 545 에세이)
 - [ ] `eval_lora.py`·`vllm_check.py` 실행 결과 숫자를 Pod에서 옮겨 `results/`에 기록
 - [ ] GPU 종류·VRAM, vLLM 실행 옵션, 이미지에 들어간 기반 revision
+- [ ] 학습 기준 모델 저장소·revision(`/workspace/models/gemma-4-26b-qat`가 무엇이었는지), CPU용 QAT Q4_0 GGUF와 AWQ 출력 품질 차이 (kim-4480 확인 요청, #745)
+- [ ] 운영 호출 모델 이름이 기반 이름(`gemma-4-26b-a4b-it-qat-awq-int4`)이라 vLLM에서는 LoRA(`explain`)가 붙지 않음. RunPod 호출에 LoRA가 적용되는지 확인 (#747)
 - [ ] 항목 1회(256토큰) 생성 시간, 로딩 메모리, 서버 기동 시간
 - [ ] `checks.py` 통과율·사람 검토·허용 기준
