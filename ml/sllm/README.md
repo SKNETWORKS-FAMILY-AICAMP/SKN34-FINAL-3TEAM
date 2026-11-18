@@ -13,10 +13,10 @@
 
 | 항목 | 값 | 근거 |
 |---|---|---|
-| 기반 모델 | `cyankiwi/gemma-4-26B-A4B-it-qat-AWQ-INT4` (Apache-2.0, 17.2GB `model.safetensors` 1개) | 서빙 이름과 HF 저장소 이름 일치. 이미지 빌드 기록이 없어 실제로 받은 저장소는 **미확인** |
-| 기반 revision | HF 최신 `76373001e106330a6815f237ef00838c7fed9356` (2026-10-19 수정) | 이미지에 들어간 revision은 **미확인** |
+| 기반 모델 | `cyankiwi/gemma-4-26B-A4B-it-qat-AWQ-INT4` (Apache-2.0, 17.2GB `model.safetensors` 1개) | SageMaker는 S3 `base-awq/`를 쓴다. 이 파일은 HF에서 받은 단일 파일(sha256 `c0b6bbe9…`, HF LFS 값과 같음)을 4조각으로 나눈 것이다(#745). RunPod 이미지에 들어간 저장소는 빌드 기록이 없어 **미확인** |
+| 기반 revision | `76373001e106330a6815f237ef00838c7fed9356` (2026-10-19 수정) | S3 `base-awq/`의 원본 revision. RunPod 이미지에 들어간 revision은 **미확인** |
 | 어댑터 | PEFT LoRA, r=16, alpha=16, dropout 0, `q_proj`·`k_proj`·`v_proj`·`o_proj` | `adapter_config.json` |
-| 학습 기준 모델 | `/workspace/models/gemma-4-26b-qat`를 16비트로 학습(`train_lora.py`, `load_in_4bit=False`) | QAT 16비트 원본(`google/gemma-4-26B-A4B-it-qat-q4_0-unquantized`로 보임, 저장소 이름은 **미확인**)으로 학습하고 AWQ 양자화본에 얹어 서빙 |
+| 학습 기준 모델 | `google/gemma-4-26B-A4B-it-qat-q4_0-unquantized`(QAT 16비트 원본). Pod 경로 `/workspace/models/gemma-4-26b-qat`, `train_lora.py` `load_in_4bit=False` | 학습 담당 kim-4480 확인(2026-11-18, #745). revision은 **미확인**. 학습은 16비트 원본으로 했고, 서빙은 AWQ 양자화본에 얹는다(학습 때와 기반이 다름) |
 | merge 버전 | 없음 | AWQ에 합치려면 bf16 원본에 합친 뒤 다시 양자화해야 함 |
 
 ### 어댑터 파일
@@ -75,6 +75,22 @@ vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-e
 
 ## 서빙
 
+### SageMaker (#746 구성, 2026-11-18)
+
+에픽 #742에서 AWS 같은 계정의 SageMaker 실시간 엔드포인트로 옮긴다. ai-service 호출 전환은 #747이고, 전환 전까지는 아래 RunPod 경로가 운영이다. 자세한 검증 결과는 [infra 9.13.9](../../docs/report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)에 있다.
+
+| 항목 | 값 |
+|---|---|
+| 구성 | [`infrastructure/aws/sagemaker_explanation.py`](../../infrastructure/aws/sagemaker_explanation.py) + [`sagemaker/explanation-endpoint.json`](../../infrastructure/aws/sagemaker/explanation-endpoint.json) |
+| 컨테이너·인스턴스 | AWS vLLM SageMaker DLC `vllm:server-sagemaker-cuda-v2.8.2`(vLLM 0.33), `ml.g6e.xlarge`(L40S 48GB) |
+| 모델 데이터 | `ModelDataSource`(S3 경로, 압축 없음)로 `base-awq/`를 받는다. LoRA는 `adapter/`를 어댑터 인퍼런스 컴포넌트(IC)로 붙인다 |
+| 호출 | `InvokeEndpoint`에 `InferenceComponentName`으로 어댑터 IC를 지정한다(D2 LoRA 사용). 요청 본문의 `model` 값으로는 LoRA가 붙지 않는다 |
+| 출력 한도 | 상세 `max_tokens` 1536, 서술 1024(#746 D3, #747에서 적용) |
+| 가동 | 0대 축소. 일 23:30 KST에 1대로 올리고 월 02:00에 내린다. 0대에서 준비까지 약 20.5분 |
+| 승인 파일 | `manifest.json`의 13개 파일만 쓴다. 배포 전에 경로 아래 목록과 FULL_OBJECT SHA-256을 대조한다. 경로 잠금과 적재 때 검사는 #777 |
+
+### RunPod (전환 전 운영)
+
 | 항목 | 값 |
 |---|---|
 | 방식 | RunPod 서버리스, vLLM 0.32 직접 빌드 이미지(기반 모델을 이미지 `/models/llm`에 포함) |
@@ -84,7 +100,7 @@ vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-e
 | `--max-lora-rank` | 어댑터 r=16이라 16 이상 |
 | GPU·VRAM·기타 실행 옵션 | **미확인** (RunPod 엔드포인트 설정 확인 필요) |
 | CPU | 2026-11-18 c7i.4xlarge에서 측정(공식 QAT Q4_0 GGUF + LoRA GGUF, llama.cpp). 상세 1건 약 50초, 30명 배치 약 70~75분. GPU g6.xlarge(vLLM 0.34)는 상세 1건 p50 16초. [infra 9.13](../../docs/report/infra.md#913-리포트-gemma-cpugpu-서빙-비교와-s3-반입-743745-2026-11-18) |
-| AWS 안 이전 | 에픽 #742. 2026-11-18 팀 방향은 SageMaker 실시간 엔드포인트(GPU, 0대 축소)이고, 검증은 새 이슈에서 한다. 전환 전까지는 위 RunPod 경로가 운영 |
+| AWS 안 이전 | 에픽 #742. 위 SageMaker 절. 호출 전환(#747) 전까지는 이 RunPod 경로가 운영 |
 
 ## S3 반입 (#745, 2026-11-18)
 
@@ -98,6 +114,18 @@ vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-e
 | `base-gguf/` | QAT Q4_0 GGUF 4조각 | `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` @`d1c082be`, 단일 파일 sha256 `3eca3b8f…`(HF와 같음)을 `llama-gguf-split`으로 나눔 |
 
 17.2GB·14.4GB 단일 파일은 단일 PUT 한도(5GB)를 넘고, S3는 multipart에 SHA-256 FULL_OBJECT를 허용하지 않아서 나눴다.
+
+### 승인 목록과 레지스트리 등록 (2026-11-18)
+
+- `manifest.json`: 같은 경로에 있다(sha256 `adb264cb6367d77025ed3dab1f418c05bdaf053d7da0e11168c8de65a395cdfe`). `base-awq/` 11개와 `adapter/` 2개, 모두 13개 파일의 key·bytes·sha256이다(#746 D2 LoRA 사용). `If-None-Match`와 FULL_OBJECT SHA-256으로 한 번만 올렸다
+- 쓰지 않는 `base-gguf/`·`adapter-gguf/`는 아직 남아 있다. 정리와 승인 경로 잠금은 #777이다
+- core 모델 레지스트리(A 계정)에 MODEL `report-explanation` 버전 `gemma4-26b-a4b-lora-20261118-r2`를 등록하고 활성화했다
+  - artifactUri: 위 경로
+  - 등록 파일의 `artifactFiles`: 위 13개 파일(관리자 화면 JSON 가져오기, manifest 첨부)
+  - 범위: `explanation/grade-5/narrative`·`grade-6/narrative`·`grade-4/essay`·`grade-5/essay`·`grade-6/essay`. ai-service가 설명 전에 확인하는 키이고, 아래 지원 범위와 같다
+  - 평가 근거: infra 9.13.4·9.13.9의 #743 실측과 #746 D2·D3 비교. 사람 검토는 미실시로 적었다
+- 먼저 등록한 `gemma4-26b-a4b-lora-20261118`은 manifest를 첨부하지 않아 등록 기록에 파일 목록이 없었다. 그래서 같은 내용을 새 버전으로 다시 등록했고, 앞의 버전은 INACTIVE가 됐다
+- B 계정은 A DB 스냅샷을 복원하므로 이 등록이 그대로 넘어간다. artifactUri는 A 버킷을 가리키지만, ai-service는 활성 여부와 범위만 보고 이 주소를 쓰지 않는다. B의 SageMaker는 B 버킷에 올린 같은 `manifest.json`으로 대조한다
 
 ## 실측 (RunPod, 2026-11-16)
 
@@ -118,7 +146,7 @@ RunPod 작업 기록의 `executionTime`(생성)과 `delayTime`(배정·준비 �
 |---|---|
 | 개발 비교(가상 글, 학부모용) | 핵심어 일치 대리지표: Gemma 직접 87.5%, Luna 직접 75% (1개 글, 2개 출력). 의미 정확도·사람 선호가 아님 |
 | 상세 설명 A/B 설문 | 가상 글 4편, Luna(A)·Gemma(B) 위치 고정. 3인 평가 **미실시** |
-| `checks.py` 후처리 통과율 | **미집계** |
+| `checks.py` 후처리 통과율 | SageMaker g6e 가상 글 1편 15회: LoRA 상세 14/15, 기반 단독 8/15. 서술은 둘 다 15/15(#746 D2). 실제 학생 글로는 **미집계** |
 | 사람 검토 50표본(NFR-AIQ-03) | **미실시** |
 | 허용 기준 | **미정** (NFR-AIQ-06 기한 11/22) |
 
@@ -130,8 +158,11 @@ report-service `input_scores` 기준: 서술 초5·6, 논술 초4~6. 프리미�
 
 - [ ] 71818·71819 이유 문장 이용 조건 (#475). 학습에 논술 71819를 썼다(M2 논술 점수는 545 에세이)
 - [ ] `eval_lora.py`·`vllm_check.py` 실행 결과 숫자를 Pod에서 옮겨 `results/`에 기록
-- [ ] GPU 종류·VRAM, vLLM 실행 옵션, 이미지에 들어간 기반 revision
-- [ ] 학습 기준 모델 저장소·revision(`/workspace/models/gemma-4-26b-qat`가 무엇이었는지), CPU용 QAT Q4_0 GGUF와 AWQ 출력 품질 차이 (kim-4480 확인 요청, #745)
-- [ ] 운영 호출 모델 이름이 기반 이름(`gemma-4-26b-a4b-it-qat-awq-int4`)이라 vLLM에서는 LoRA(`explain`)가 붙지 않음. RunPod 호출에 LoRA가 적용되는지 확인 (#747)
+- [ ] RunPod 엔드포인트의 GPU 종류·VRAM, vLLM 실행 옵션, 이미지에 들어간 기반 revision. SageMaker 쪽은 위 SageMaker 절에 있다
+- [x] 학습 기준 모델 저장소: `google/gemma-4-26B-A4B-it-qat-q4_0-unquantized`(kim-4480 확인, 2026-11-18, #745)
+- [ ] 학습 기준 모델 revision
+- [x] S3 경로·manifest: 위 S3 반입 절(`manifest.json` sha256 `adb264cb…`, 13개 파일)
+- [x] SageMaker 서빙 방식: 위 SageMaker 절(#746)
+- [ ] 운영 호출 모델 이름이 기반 이름(`gemma-4-26b-a4b-it-qat-awq-int4`)이라 RunPod 호출에는 LoRA(`explain`)가 붙지 않았다(kim-4480 확인). SageMaker에서는 어댑터 IC를 지정해 부른다 (#747)
 - [ ] 항목 1회(256토큰) 생성 시간, 로딩 메모리, 서버 기동 시간
 - [ ] `checks.py` 통과율·사람 검토·허용 기준

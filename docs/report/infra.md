@@ -1049,7 +1049,7 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 - 대안으로 원본을 바이트 단위로 잘라 올리고 받을 때 이어 붙이는 방법, multipart CRC64 FULL_OBJECT + 메타데이터 sha256 방법도 있었다. 앞의 것은 서버가 그대로 읽지 못하고, 뒤의 것은 #368 원칙(CRC·메타데이터 불인정)에 맞지 않아 쓰지 않았다
 - `sllm-server` initContainer는 지금 `MODEL_KEY` 파일 1개와 `MODEL_SHA256` 1개만 받는다. 여러 파일과 LoRA를 받도록 바꾸는 일은 #746 범위다
 - 결정하지 않은 형식 쪽(CPU를 고르면 `base-awq/`, GPU를 고르면 `base-gguf/`·`adapter-gguf/`)은 결정 뒤 지울지 정한다. 보관 비용은 31.7GB에 월 약 $0.8다
-- core 모델 레지스트리 `report-explanation` 등록은 하지 않았다. 관리자 화면 작업이고, 형식 결정과 #746 서버 변경 뒤에 해야 의미가 있다
+- core 모델 레지스트리 `report-explanation` 등록은 반입 때 하지 않았다. 형식 결정(GPU)과 #746 구성 뒤인 2026-11-18에 A 계정에서 `gemma4-26b-a4b-lora-20261118-r2`로 등록·활성화했다. `artifactFiles`는 `manifest.json`의 13개 파일이고, 범위는 `explanation/grade-{5,6}/narrative`·`grade-{4,5,6}/essay`다. 자세한 내용은 [`ml/sllm/README.md`](../../ml/sllm/README.md#승인-목록과-레지스트리-등록-2026-11-18)에 있다
 
 ### 9.13.7 임시 자원과 정리
 
