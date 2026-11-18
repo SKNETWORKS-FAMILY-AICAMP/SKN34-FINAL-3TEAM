@@ -40,6 +40,20 @@ def codes(reasons: list[str]) -> list[str]:
     return sorted(r.split(" ")[0] for r in reasons)
 
 
+# 보물 쪽지는 시작 1컷에 대상이 나오지 않아(target_cuts 종료 3·4만) valid_theme의 시작 1컷("지호가
+# 보리와 공놀이")을 그대로 쓰면 CUT_TARGET(#765). 대상 없는 시작 1컷으로 바꿈
+TREASURE_INTRO1 = {
+    "scene": "비 그친 마을 길에서 지호가 공놀이를 한다",
+    "action": "지호가 공을 굴린다",
+    "caption": "비가 그친 오후.",
+    "mungchiMood": "none",
+}
+
+
+def treasure_cuts(theme: dict[str, Any]) -> list[dict[str, str]]:
+    return [TREASURE_INTRO1, *theme["introCuts"][1:]]
+
+
 def animal_theme(story_type: str = "PRANK") -> dict[str, Any]:
     """valid_theme의 장소 후보를 동물로 바꾼 동물 주인공 줄거리(check_theme을 통과)."""
     theme = copy.deepcopy(valid_theme())
@@ -127,7 +141,9 @@ def test_plan_user_gets_only_seed_type_rules_or_all_for_free_text() -> None:
 
 def test_seed_story_type_overrides_model_value_in_graph() -> None:
     """씨앗이면 모델이 다른 종류를 써도 코드가 주제의 종류로 덮어씀(검토 user에 그 종류가 감)."""
-    gen = gen_llm(theme=lambda n, d: generated_theme(theme_with(storyType="LOST")))
+    lost = theme_with(storyType="LOST")
+    lost["introCuts"] = treasure_cuts(lost)  # 덮어쓴 종류(보물 쪽지)의 컷 규칙을 지키는 콘티
+    gen = gen_llm(theme=lambda n, d: generated_theme(lost))
     review = review_llm()
     response = run(gen, review, request_body(topic=SEEDS["TREASURE"]))
     assert response.failure is None
@@ -405,6 +421,7 @@ def test_treasure_hide_spot_before_ending_is_field_fixed() -> None:
     """보물 쪽지: 숨긴 곳은 끝까지 모르는 답이라 엔딩 전 글에 '숨긴 자리'를 쓰면 HIDE_SPOT(칸 고쳐
     쓰기). 다른 종류·종료 이야기는 보지 않음."""
     treasure = {**valid_theme(), "storyType": "TREASURE"}
+    treasure["introCuts"] = treasure_cuts(treasure)
     assert checks.check_theme(treasure, 3) == []
     bad = checks.check_theme(day_with(treasure, "MON", discovery="숨긴 자리에서 흔적을 찾았어!"), 3)
     assert codes(bad) == ["HIDE_SPOT"] and list(checks.fix_targets(bad)) == ["MON.discovery"]

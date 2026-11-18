@@ -221,11 +221,14 @@ FIX_PATH = re.compile(
     r"|(?:MON|TUE|WED|THU|FRI)\.(?:place|sceneNote|clue|discovery|missionHook)"
     r"|(?:introCuts|outroCuts)[1-4]\.caption)$"
 )
-# 콘티 scene·action은 뭉치 동작 검사(CUT_ACTION)일 때만 그 칸을 고쳐 쓴다(정답 유출은 다시 생성)
+# 콘티 scene·action은 뭉치 동작 검사(CUT_ACTION)·그림에 나오면 안 되는 이름(CUT_TARGET, #765)일
+# 때만 그 칸을 고쳐 쓴다(정답 유출은 다시 생성)
 CUT_FIX_PATH = re.compile(r"^(?:introCuts|outroCuts)[1-4]\.(?:scene|action)$")
 FIX_REASON = (
     re.compile(r"^LENGTH (\S+) \d+자 > \d+$"),
     re.compile(r"^CUT_ACTION ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
+    # #765 그림에 나오면 안 되는 대상·후보 이름이 컷 설명에 있으면 그 칸만 고쳐 씀
+    re.compile(r"^CUT_TARGET ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery|sceneNote)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
     re.compile(r"^CANDIDATE_NAME (\S+?)에 "),  # #634 엔딩 전 글의 후보 이름(사실표 종류)
@@ -845,6 +848,65 @@ def candidate_names(theme: Theme, text: str | None) -> list[str]:
     return found
 
 
+# 낱말 뒤에 붙어도 같은 낱말로 보는 조사(#765 cut_names_target). 길게 붙는 것부터 시도함
+JOSA = (
+    r"(?:에서|에게|한테|처럼|까지|부터|이랑|으로|이나"
+    r"|이|가|은|는|을|를|도|의|와|과|랑|만|에|로|나)?"
+)
+
+
+def cut_target_word(theme: Theme, text: str | None) -> str | None:
+    """콘티 컷 설명에 나온 찾는 대상 이름·낱말(#765 CUT_TARGET), 없으면 None.
+
+    대상 전체 이름(공백 무시), 대상 마지막 낱말이 한 낱말로 쓰인 것(뒤에 조사만 허용), 그 앞
+    낱말(target_words, 꾸미는 말 빼고 — '강아지 보리'의 '강아지')은 뒤에 조사가 붙은 것만 본다.
+    흔적 단서용 names_target처럼 공백을 뺀 글 안을 찾으면 '체험 배지'의 '체험'이 '체험관'에, '관찰
+    통'의 '통'이 '통통'에 걸렸고, 앞 낱말을 조사 없이도 보면 '나무 이름표'의 '나무'가 수목원 장면
+    '나무 사이의 빈 길'에, '전시 그림'의 '전시'가 '전시 담당 선생님'에 걸렸다(#535 실측 줄거리).
+    """
+    target = str(theme.get("target") or "").strip()
+    if not target or not text:
+        return None
+    if compact(target) in compact(text):
+        return target
+    head, *front = target_words(theme)
+    josa = JOSA.removesuffix("?")  # 앞 낱말은 조사가 꼭 붙어야
+    for w, after in ((head, JOSA), *((w, josa) for w in front)):
+        if re.search(rf"(?<![가-힣]){re.escape(w)}{after}(?![가-힣])", text):
+            return w
+    return None
+
+
+def cut_names_target(theme: Theme, text: str | None) -> bool:
+    return cut_target_word(theme, text) is not None
+
+
+def cut_target_problems(theme: Theme) -> list[str]:
+    """그림에 나오면 안 되는 대상·후보 이름이 콘티 scene·action에 있는지(#765, 칸 고쳐 쓰기).
+
+    컷 설명은 그 컷 첫 그림·영상 지시와 그림 검토 SCENE_FIT에 그대로 들어가, 대상이 나오면 안 되는
+    컷에 '강아지가 … 서 있다'고 쓰면 그리면 ANSWER_HINT, 안 그리면 SCENE_FIT으로 어느 쪽도 통과하지
+    못한다(운영 2026-11-18 OUTRO2). 대상: 잃어버린 것·보물 쪽지는 target_cuts 밖 컷의 대상 이름,
+    사실표 종류는 answer_cuts 밖 종료 컷의 후보 이름(families.StoryType.hidden_*_cuts).
+    """
+    t = story_type(theme)
+    bad = []
+    for scene, key in (("INTRO", "introCuts"), ("OUTRO", "outroCuts")):
+        for i, cut in enumerate(theme.get(key) or [], 1):
+            for k in ("scene", "action"):
+                text = str(cut.get(k) or "")
+                if (scene, i) in t.hidden_target_cuts and (word := cut_target_word(theme, text)):
+                    bad.append(
+                        f"CUT_TARGET {key}{i}.{k} 대상이 나오지 않는 컷에 찾는 대상 낱말 "
+                        f"'{word}'(없다는 말도 쓰지 않음)"
+                    )
+                if (scene, i) in t.hidden_candidate_cuts and (
+                    names := candidate_names(theme, text)
+                ):
+                    bad.append(f"CUT_TARGET {key}{i}.{k} 후보가 나오지 않는 컷에 후보 이름 {names}")
+    return bad
+
+
 def candidate_name_fields(theme: Theme) -> list[tuple[str, str]]:
     """동물 주인공 가족에서 엔딩 전에 보이는 글 칸 [(경로, 글)](종료 이야기·종료 콘티·단서 빼고).
 
@@ -1006,7 +1068,9 @@ def fix_targets(bad: list[str]) -> dict[str, list[str]]:
             if m := pattern.match(reason):
                 path = ".".join(m.groups())
                 break
-        cut_fix = reason.startswith("CUT_ACTION ") and CUT_FIX_PATH.match(path or "")
+        cut_fix = reason.startswith(("CUT_ACTION ", "CUT_TARGET ")) and CUT_FIX_PATH.match(
+            path or ""
+        )
         if path is None or not (FIX_PATH.match(path) or cut_fix):
             return {}
         targets.setdefault(path, []).append(reason)
@@ -1396,7 +1460,7 @@ def check_cuts(theme: Theme) -> list[str]:
     """시작·종료 영상 콘티: 정확히 4컷, 칸 비지 않음, 문구 길이, 뭉치 표정.
 
     시작 콘티 1·2(평소 모습·사건)는 뭉치가 나오지 않아 mungchiMood가 none이고, 3·4(출동·현장
-    도착)는 뭉치가 나와 none이 아니다.
+    도착)는 뭉치가 나와 none이 아니다. 그림에 나오면 안 되는 대상·후보 이름은 CUT_TARGET(#765).
     """
     bad = []
     for key in ("introCuts", "outroCuts"):
@@ -1425,7 +1489,7 @@ def check_cuts(theme: Theme) -> list[str]:
                     bad.append(f"CUT_MOOD {key}{i} 뭉치가 나오는 컷이라 none이 아님")
                 elif not INTRO_MUNGCHI[i - 1] and mood != "none":
                     bad.append(f"CUT_MOOD {key}{i} 뭉치가 나오지 않는 컷이라 none")
-    return bad
+    return bad + cut_target_problems(theme)
 
 
 def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None) -> list[str]:
