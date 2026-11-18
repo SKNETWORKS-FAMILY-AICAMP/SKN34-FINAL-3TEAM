@@ -347,9 +347,10 @@ def test_all_candidates_failing_regenerates_with_their_reasons() -> None:
 
 
 def test_captions_one_narrator_in_polite_present_tense() -> None:
-    """자막 8줄이 해요체·반말·명사형·인물 대사·과거형으로 섞였음(3테마 실행, 사용자 결정 A안)."""
+    """자막 8줄이 해요체·반말·명사형·인물 대사·과거형으로 섞였음(3테마 실행). 사용자 결정
+    2026-11-18: 반말 내레이터 한 사람(처음 해요체에서 바꿈)."""
     rule = prompts.PLAN_SYSTEM.split("- caption 말투:")[1].split("\n")[0]
-    for text in ("내레이터 한 사람이 해요체 현재형", "과거형", "인물 대사", "반말은 쓰지", "출동!"):
+    for text in ("친구에게 들려주듯 반말", "과거형", "인물 대사", "해요체는 쓰지", "출동!"):
         assert text in rule
     assert "학년에 맞는 말투). mungchiMood" not in prompts.PLAN_SYSTEM
 
