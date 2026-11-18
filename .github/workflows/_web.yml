@@ -26,7 +26,37 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # 개발 서버 화면 테스트: 3개 러너로 나눠 동시 실행
   browser:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        working-directory: ${{ inputs.app-path }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser -- --shard=${{ matrix.shard }}/3
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: web-playwright-failure-${{ matrix.shard }}
+          path: |
+            ${{ inputs.app-path }}/playwright-report/
+            ${{ inputs.app-path }}/test-results/
+          retention-days: 7
+
+  # 운영 빌드(preview) 화면 테스트: 개발 서버 테스트와 동시 실행
+  browser-prod:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -40,7 +70,6 @@ jobs:
           cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser
       - run: npm run build
       - run: npm run test:rewards
       - run: npm run test:auth
@@ -48,7 +77,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: web-playwright-failure
+          name: web-playwright-prod-failure
           path: |
             ${{ inputs.app-path }}/playwright-report/
             ${{ inputs.app-path }}/test-results/
