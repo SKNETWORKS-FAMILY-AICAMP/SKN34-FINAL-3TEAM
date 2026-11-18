@@ -1125,7 +1125,11 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 | 서술 통과 | 15/15 | 15/15 |
 | 서술 지연 p50 | 2.23초 | 2.85초 |
 
-- D2 기준 세 가지 중 JSON 통과율과 `length`는 LoRA가 낫다. 지연은 상세 약 11%, 서술 약 28% 늘어 "지연이 늘지 않음"을 만족하지 못한다. 기준대로면 기반 단독이지만, 기반 단독은 상세 설명이 절반 가까이 빠진다. 팀 결정이 필요하다
+- D2 기준 세 가지 중 JSON 통과율과 `length`는 LoRA가 낫다. 지연은 상세 약 11%, 서술 약 28% 늘어 "지연이 늘지 않음"을 만족하지 못한다
+- **결정(2026-11-18, 동섭): LoRA(`explain`)를 쓴다.** 팀장이 #746 D2에 정한 기준(세 가지를 모두 만족할 때만 LoRA, 기본값은 기반 단독)과 다르게 정했다. 이유는 다음과 같다
+  - 기반 단독은 상세 설명 15건 중 7건이 `max_tokens`까지 반복 생성되어 잘린다. 서비스에서는 이런 건이 설명 없이 발행된다(재시도 0회). LoRA는 14/15건이 규칙을 통과한다
+  - 늘어난 지연은 상세 p50 기준 약 0.5초(5.14초 → 5.69초)다. 리포트는 배치 작업이라 사용자가 기다리지 않는다. 최악 경우(동시 8건, 1536토큰)도 23.4초로 60초 제한 안이다
+  - 따라서 호출 대상은 어댑터 IC `sagomungchi-demo-explanation-explain`이다(#747). 승인 목록과 레지스트리에는 `adapter/`를 포함한다(#745)
 - 표본이 같은 가상 글 1편이고 15회뿐이다. 의미 품질은 보지 않았다
 - 학습 담당(kim-4480) 확인(2026-11-18)
   - LoRA는 AWQ가 아니라 16비트 QAT 원본 `google/gemma-4-26B-A4B-it-qat-q4_0-unquantized`로 학습했다(`train_lora.py`, `load_in_4bit=False`). 위 비교는 AWQ 위에 얹은 결과라 학습 때와 기반이 다르다. 16비트 원본(약 52GB)은 g6e(48GB)에도 들어가지 않는다
@@ -1187,13 +1191,13 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 
 - `sagemaker_explanation.py manifest`가 결과 JSON의 `s3`에서 SageMaker가 읽는 경로(`base-awq/`, LoRA를 쓰면 `adapter/`)의 key·bytes·sha256을 `manifest.json`으로 만든다. `--upload`를 주면 `explanation/<버전>/manifest.json`에 `If-None-Match: *`와 SHA-256으로 한 번만 올린다
 - `verify`(그리고 `apply` 직전)는 S3의 `manifest.json` 자체 FULL_OBJECT SHA-256을 확인한다. 그다음 경로 아래 객체 목록이 manifest와 정확히 같은지, 객체마다 FULL_OBJECT SHA-256·크기가 같은지 본다. 하나라도 다르면 모델을 만들지 않는다
-- LoRA 사용 여부(D2)가 정해지지 않아 `manifest.json`은 아직 올리지 않았다. 이번 구성은 같은 내용의 로컬 manifest(`base-awq/` 11개 + `adapter/` 2개)로 대조했다. 13개 모두 일치했다
+- D2(LoRA 사용)에 따라 `manifest.json`(`base-awq/` 11개 + `adapter/` 2개, sha256 `adb264cb…`)을 `explanation/gemma4-26b-a4b-lora-20261118/manifest.json`에 올렸다(2026-11-18). HEAD의 FULL_OBJECT SHA-256이 본문 값과 같고, `verify`에서 13개 모두 일치했다. 같은 키에 다시 올리면 `PreconditionFailed`로 거부되는 것도 확인했다. 그 전 구성은 같은 내용의 로컬 manifest로 대조했다
 
 #### 정리와 남은 것
 
 - 기존 `sllm-server` 파일 정리안(팀 확인): `prod/sllm-server.json`·`prod/karpenter-nodepool-explanation.json`·`local/sllm-server.yaml`은 지운다. 함께 정리할 참조는 `prod/ai-service.json`·`local/ai-service.yaml`의 `EXPLANATION_BASE_URL`과 `sllm-server` egress, `argocd/local/apps/applicationset.yaml`, `policies/local/platform.yaml`, `charts/platform-data/values.yaml` 주석, prod·kind·app-service README다. ai 설정 쪽은 #747 호출 전환과 같은 PR에서 바꾸는 편이 안전하다. A 계정 클러스터에는 `sllm-server`가 배포되어 있지 않다
 - A 계정 SageMaker 자원(엔드포인트·설정·모델·IC·Auto Scaling 대상과 예약)은 11/19 A 종료 때 지운다(동섭 결정). S3 `explanation/` 가중치는 남긴다. 이번에는 ECR 이미지를 만들지 않았다(AWS DLC를 그대로 씀). B 계정은 `demo-stack.json`·`iam/`의 계정 번호를 바꾸고 `demo_stack.py apply`(IAM)·SG 생성 → `sagemaker_explanation.py manifest --upload`·`apply`·`schedule` 순서로 만든다
-- 남은 결정: LoRA 사용(D2 결과), 창 밖 요청 처리(#747), 창 시작 시각, 인용 부호 문제(#747 프롬프트), GPU 재고 부족 동작(이번에는 재고 부족이 나지 않아 확인하지 못함)
+- 남은 결정: 창 밖 요청 처리(#747), 창 끝 시각(g6e 30명 배치 실측 뒤), 인용 부호 문제(#747 프롬프트), GPU 재고 부족 동작(이번에는 재고 부족이 나지 않아 확인하지 못함)
 
 ## 9.14 AWS 데모 부하 시험 2차: HPA·Karpenter 확장·축소 (#384, 2026-11-18)
 
