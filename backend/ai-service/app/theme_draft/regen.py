@@ -19,13 +19,13 @@ from dataclasses import dataclass, field
 from langgraph.runtime import Runtime
 
 from app.theme_draft.checks import DAYS
+from app.theme_draft.cuts import NEW_CUTS
 from app.theme_draft.models import REGEN_VERSION, ThemeWarning
 from app.theme_draft.nodes import ThemeContext, ThemeState
 
 logger = logging.getLogger(__name__)
 
 CUT_SCENES = ("INTRO", "OUTRO")
-CUTS = (1, 2, 3, 4)
 SCENE_ORDER = ("INTRO", *DAYS, "OUTRO")
 TARGET_ORDER = (
     *(f"VIDEO:{s}" for s in CUT_SCENES),
@@ -35,19 +35,31 @@ TARGET_ORDER = (
 OUTSIDE_REASON = "PARTIAL 글 검토가 다시 만들 대상 밖을 고치라고 해서 멈춤"
 
 
-def cut_keys(scene: str) -> list[str]:
-    return [f"{scene}{i}" for i in CUTS]
+def cut_keys(scene: str, n: int) -> list[str]:
+    """그 장면 컷 첫 그림 이름(#779: 새 테마 6컷, 예전 초안 4컷)."""
+    return [f"{scene}{i}" for i in range(1, n + 1)]
+
+
+def cut_counts(theme: dict | None) -> dict[str, int]:
+    """원래 테마의 장면별 컷 수(콘티가 없으면 새 틀)."""
+    theme = theme or {}
+    return {
+        s: len(theme.get("introCuts" if s == "INTRO" else "outroCuts") or []) or NEW_CUTS
+        for s in CUT_SCENES
+    }
 
 
 @dataclass
 class Plan:
     mission_days: list[str] = field(default_factory=list)
-    images: list[str] = field(default_factory=list)  # MON~FRI, INTRO1~4·OUTRO1~4
+    images: list[str] = field(default_factory=list)  # MON~FRI, INTRO1~n·OUTRO1~n
     videos: list[str] = field(default_factory=list)
     motions: list[str] = field(default_factory=list)
+    counts: dict[str, int] = field(default_factory=lambda: cut_counts(None))  # 장면별 컷 수
 
 
-def plan_of(targets: list[str]) -> Plan:
+def plan_of(targets: list[str], counts: dict[str, int] | None = None) -> Plan:
+    counts = counts or cut_counts(None)
     days: set[str] = set()
     images: set[str] = set()
     videos: set[str] = set()
@@ -61,23 +73,24 @@ def plan_of(targets: list[str]) -> Plan:
         elif kind == "IMAGE" and scene in DAYS:
             images.add(scene)
         elif kind == "IMAGE":
-            images.update(cut_keys(scene))
+            images.update(cut_keys(scene, counts[scene]))
             videos.add(scene)
         else:  # VIDEO
             videos.add(scene)
-    image_order = [*DAYS, *(k for s in CUT_SCENES for k in cut_keys(s))]
+    image_order = [*DAYS, *(k for s in CUT_SCENES for k in cut_keys(s, counts[s]))]
     return Plan(
         mission_days=[d for d in DAYS if d in days],
         images=[k for k in image_order if k in images],
         videos=[s for s in CUT_SCENES if s in videos],
         motions=[s for s in SCENE_ORDER if s in motions],
+        counts=dict(counts),
     )
 
 
 def keep_warnings(warnings: list[ThemeWarning], plan: Plan) -> list[dict]:
     """원래 경고 중 다시 만들지 않는 항목 것만 남긴다(다시 만든 항목은 새 경고로 바뀜)."""
     redrawn_scenes = {k for k in plan.images if k in DAYS} | {
-        s for s in CUT_SCENES if f"{s}4" in plan.images
+        s for s in CUT_SCENES if f"{s}{plan.counts[s]}" in plan.images
     }
 
     def redone(w: ThemeWarning) -> bool:
@@ -106,7 +119,7 @@ def needed_assets(plan: Plan, assets: dict[str, str]) -> dict[str, str]:
         need += ["OUTFIT", *(["PERSON"] if "PERSON" in assets else [])]
     for scene in plan.videos:
         if f"{scene}1" not in plan.images:  # 영상만 다시: 원래 컷 첫 그림으로 다시 찍음
-            need += cut_keys(scene)
+            need += cut_keys(scene, plan.counts[scene])
     return {name: assets[name] for name in dict.fromkeys(need)}
 
 
@@ -116,7 +129,7 @@ async def restore(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeSta
     regenerate = ctx.request.regenerate
     assert regenerate is not None
     base, regen = regenerate.base, regenerate.base.regen
-    plan = plan_of(list(regenerate.targets))
+    plan = plan_of(list(regenerate.targets), cut_counts(regen.get("theme")))
     assets = dict(regen.get("assets") or {})
     out: ThemeState = {
         "partial": True,
@@ -184,7 +197,10 @@ def regenerable(state: ThemeState) -> list[str]:
         out += [f"MISSION:{d}" for d in DAYS]
     if "OUTFIT" in assets:
         out += [f"IMAGE:{s}" for s in SCENE_ORDER]
-        out += [f"VIDEO:{s}" for s in CUT_SCENES if all(k in assets for k in cut_keys(s))]
+        counts = cut_counts(state.get("theme"))
+        out += [
+            f"VIDEO:{s}" for s in CUT_SCENES if all(k in assets for k in cut_keys(s, counts[s]))
+        ]
     return [t for t in TARGET_ORDER if t in out]
 
 

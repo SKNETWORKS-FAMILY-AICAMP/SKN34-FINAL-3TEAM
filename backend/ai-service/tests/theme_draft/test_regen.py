@@ -21,7 +21,7 @@ from tests.theme_draft.helpers import request_body
 from tests.theme_draft.test_media_graph import gen_llm, review_llm, run, scene_is
 
 SCENES = ("INTRO", "MON", "TUE", "WED", "THU", "FRI", "OUTRO")
-CUT_ASSETS = {f"{s}{i}" for s in ("INTRO", "OUTRO") for i in range(1, 5)}
+CUT_ASSETS = {f"{s}{i}" for s in ("INTRO", "OUTRO") for i in range(1, 7)}  # #779 6컷 틀
 RUN_ID = "0123456789abcdef0123456789abcdef"
 
 
@@ -72,7 +72,7 @@ def test_full_run_keeps_regen_materials() -> None:
     assert regen["assets"]["PERSON"] == regen["assets"]["CHARS"]  # 인물 기준 = 인물만 그린 그림
     assert all(key in storage.objects for key in regen["assets"].values())
     # 응답 theme에 없는 내부 칸(콘티·수사 연결 문장)이 regen.theme에 있음
-    assert len(regen["theme"]["introCuts"]) == 4 and regen["theme"]["days"][0]["missionHook"]
+    assert len(regen["theme"]["introCuts"]) == 6 and regen["theme"]["days"][0]["missionHook"]
     assert set(regen["videoDurations"]) == {"INTRO", "OUTRO"}
 
 
@@ -110,8 +110,8 @@ def test_video_only_refilms_that_video_from_kept_cut_images() -> None:
     out, gen, review, image, video = partial(response, storage, ["VIDEO:INTRO"])
     assert out.failure is None
     assert image.calls == []  # 그림은 다시 그리지 않음
-    assert len(video.calls) == 4  # 시작 영상 컷 4개만
-    kept = {storage.objects[response.regen["assets"][f"INTRO{i}"]][0] for i in range(1, 5)}
+    assert len(video.calls) == 6  # 시작 영상 컷 6개만
+    kept = {storage.objects[response.regen["assets"][f"INTRO{i}"]][0] for i in range(1, 7)}
     assert {c[1] for c in video.calls} == kept  # 원래 컷 첫 그림에서 다시 찍음
     assert out.videos["INTRO"] != response.videos["INTRO"]
     assert out.videos["OUTRO"] == response.videos["OUTRO"]
@@ -147,9 +147,9 @@ def test_intro_image_redraws_cuts_and_refilms_intro() -> None:
     response, storage = full()
     out, _, _, image, video = partial(response, storage, ["IMAGE:INTRO"])
     assert out.failure is None
-    assert len(image.calls) == 4  # 시작 컷 첫 그림 4장
+    assert len(image.calls) == 6  # 시작 컷 첫 그림 6장
     assert image.calls[0][1] == 1  # 시작 1컷도 인물만 그린 기준 그림(#779, 처음 생성과 같게)
-    assert len(video.calls) == 4
+    assert len(video.calls) == 6
     assert out.images["INTRO"] != response.images["INTRO"]
     assert out.videos["INTRO"] != response.videos["INTRO"]
     assert out.videos["OUTRO"] == response.videos["OUTRO"]
@@ -243,7 +243,9 @@ def test_request_rejects_target_without_material() -> None:
 def test_plan_of_targets() -> None:
     plan = plan_of(["VIDEO:OUTRO", "IMAGE:INTRO", "MISSION:FRI", "IMAGE:FRI"])
     assert plan.mission_days == ["FRI"]
-    assert plan.images == ["FRI", "INTRO1", "INTRO2", "INTRO3", "INTRO4"]
+    assert plan.images == ["FRI", *(f"INTRO{i}" for i in range(1, 7))]  # 새 테마 6컷
+    legacy = plan_of(["IMAGE:INTRO"], {"INTRO": 4, "OUTRO": 4})  # 예전 4컷 초안
+    assert legacy.images == ["INTRO1", "INTRO2", "INTRO3", "INTRO4"]
     assert plan.videos == ["INTRO", "OUTRO"]
     assert plan.motions == ["INTRO", "FRI", "OUTRO"]
 
@@ -267,8 +269,9 @@ def test_asset_keys_and_memory_get() -> None:
     assert scene_key(RUN_ID, "INTRO3", "png").endswith("/INTRO3.png")
     with pytest.raises(ValueError):
         scene_key(RUN_ID, "INTRO3", "mp4")  # 재료는 그림만
+    assert scene_key(RUN_ID, "INTRO6", "png").endswith("/INTRO6.png")  # #779 6컷 틀
     with pytest.raises(ValueError):
-        scene_key(RUN_ID, "INTRO5", "png")
+        scene_key(RUN_ID, "INTRO7", "png")
     storage = MemoryThemeStorage()
     asyncio.run(storage.put("theme-drafts/x/OUTFIT.png", b"png", "image/png"))
     assert asyncio.run(storage.get("theme-drafts/x/OUTFIT.png")) == b"png"
@@ -317,3 +320,26 @@ def test_partial_with_fake_media_skips_review_and_keeps_one_warning_each() -> No
     # 영상만 다시 만들면 그림 대역 경고는 원래 것 그대로 한 줄
     video_only = fake_run(out, storage, ["VIDEO:INTRO"], review_llm())
     assert sorted(fake_warnings(video_only)) == [("IMAGE", "ALL"), ("VIDEO", "ALL")]
+
+
+def test_legacy_four_cut_draft_refilms_with_old_cut_lengths() -> None:
+    """#779 전에 저장된 4컷 초안(4·6·8·6초)도 영상만 다시 만들기가 예전 틀 그대로 돔."""
+    response, storage = full()
+    base = base_of(response)
+    theme = base["regen"]["theme"]
+    for key in ("introCuts", "outroCuts"):
+        theme[key] = theme[key][:4]
+    for name in ("INTRO5", "INTRO6", "OUTRO5", "OUTRO6"):
+        base["regen"]["assets"].pop(name)
+    image, video = FakeImageClient(), FakeVideoClient()
+    out = run(
+        gen_llm(),
+        review_llm(),
+        image=image,
+        video=video,
+        storage=storage,
+        regenerate={"targets": ["VIDEO:INTRO"], "base": base},
+    )
+    assert out.failure is None and image.calls == []
+    assert [c[3] for c in video.calls] == [4, 6, 8, 6]  # 예전 컷 길이
+    assert out.videos["INTRO"] != response.videos["INTRO"]

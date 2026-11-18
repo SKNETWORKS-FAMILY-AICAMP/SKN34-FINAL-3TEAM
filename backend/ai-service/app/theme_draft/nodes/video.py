@@ -1,7 +1,8 @@
 """generate_videos: 시작·종료 영상(각 4컷)을 만들고 컷마다 검토한 뒤 녹아드는 전환으로 잇는다.
 
 사용자 결정 2026-11-11:
-- 컷 길이 4·6·8·6초(theme_video_cut_seconds), 첫 그림(컷 첫 그림)만 고정. 끝 그림까지 고정하면
+- 컷 길이 4·6·8·6초(#779 2026-11-19부터 새 테마 6컷 4초씩, 예전 4컷 초안은 4·6·8·6초,
+  cuts.seconds), 첫 그림(컷 첫 그림)만 고정. 끝 그림까지 고정하면
   비슷한 두 그림 사이를 억지로 이어 움직임이 흐물거리고 배경이 같아짐(실측)
 - 컷은 동시에 만들고, 검토 모델이 1초마다 뽑은 장면을 보고 판정(MORPH·ANSWER_HINT·TEXT·SAFETY·
   CONTINUITY). 실패한 컷만 사유를 넣어 다시(상한 theme_video_max_regen, 마감 확인). 끝내 실패한
@@ -32,6 +33,7 @@ from langgraph.runtime import Runtime
 from app.llm.base import LlmUnavailable
 from app.llm.media import freeze_spans, join_xfade, still_clip, trim_clip, video_frames
 from app.theme_draft.checks import VIDEO_REVIEW_IDS, Theme, check_review
+from app.theme_draft.cuts import seconds as cut_seconds
 from app.theme_draft.models import GeneratedVideoReview
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState, uniq
 from app.theme_draft.nodes.images import CUT_SCENES, CUTS_KEY, warning
@@ -115,7 +117,7 @@ async def check_clip(
                 theme,
                 cut,
                 body.cut_shows_target(theme, scene, index),
-                body.cut_has_mungchi(scene, index),
+                body.cut_has_mungchi(scene, index, len(theme[CUTS_KEY[scene]])),
                 body.cut_reveals_answer(scene),
             ),
             output=GeneratedVideoReview,
@@ -224,20 +226,27 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
         }
     theme = state["theme"]
     assert theme is not None
-    durations = list(ctx.settings.theme_video_cut_seconds)
+    # #779: 컷 길이는 그 장면 컷 수에 맞춤(새 테마 6컷 4초씩, 예전 4컷 초안 4·6·8·6초)
+    lengths_of = {
+        s: [
+            int(x)
+            for x in cut_seconds(len(theme[CUTS_KEY[s]]), ctx.settings.theme_video_cut_seconds)
+        ]
+        for s in CUT_SCENES
+    }
     images = state.get("scene_images") or {}
     warnings: list[dict] = []
     scenes = []
     for scene in CUT_SCENES:
         if scene in (state.get("video_skip") or []) or (partial and scene not in redo):
             continue  # 컷 그림 실패 경고는 generate_images가 남김
-        if len(theme[CUTS_KEY[scene]]) != len(durations):
-            warnings.append(warning("VIDEO", scene, "컷 수와 THEME_VIDEO_CUT_SECONDS 길이가 다름"))
-            continue
         scenes.append(scene)
-    jobs = [(scene, i) for scene in scenes for i in range(1, len(durations) + 1)]
+    jobs = [(scene, i) for scene in scenes for i in range(1, len(lengths_of[scene]) + 1)]
     results = await asyncio.gather(
-        *(film(ctx, theme, scene, i, images[f"{scene}{i}"], durations[i - 1]) for scene, i in jobs)
+        *(
+            film(ctx, theme, scene, i, images[f"{scene}{i}"], lengths_of[scene][i - 1])
+            for scene, i in jobs
+        )
     )
     filmed = dict(zip(jobs, results, strict=True))
     if jobs and ctx.settings.video_provider == "fake":
@@ -245,6 +254,7 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
     keys: dict[str, str] = {}
     lengths: dict[str, list[float]] = {}
     for scene in scenes:
+        durations = lengths_of[scene]
         cuts = [filmed[(scene, i)] for i in range(1, len(durations) + 1)]
         clips: list[bytes] = []
         actual: list[float] = []

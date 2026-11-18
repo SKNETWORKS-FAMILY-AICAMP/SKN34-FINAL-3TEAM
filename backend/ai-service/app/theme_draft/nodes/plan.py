@@ -16,6 +16,7 @@ from app.theme_draft.checks import (
     apply_evidence_plan,
     apply_facts,
     check_theme,
+    clear_off_captions,
     evidence_plan_problems,
     fill_rules_out,
     finalize_texts,
@@ -54,6 +55,7 @@ async def plan_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> Theme
         max_retries=ctx.settings.theme_llm_retries,
     )
     theme = fill_rules_out(generated.data.model_dump())
+    clear_off_captions(theme)  # #779: 자막 없는 컷(6컷 틀)은 코드가 비움
     # 줄거리 종류(#634): 주제가 learning 씨앗이면 코드가 주제에서 읽은 값(모델이 다른 종류를
     # 고르지 못하게), 관리자 자유 글이면 모델 값. 검사·칸 고쳐 쓰기·그림이 이 값으로 규칙을 고름
     if seeded := ctx.prompt.body.seed_story_type(ctx.request):

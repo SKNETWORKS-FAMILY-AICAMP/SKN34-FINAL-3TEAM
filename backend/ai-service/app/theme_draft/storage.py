@@ -19,8 +19,9 @@ from app.config import Settings
 
 SCENES = ("INTRO", "MON", "TUE", "WED", "THU", "FRI", "OUTRO")
 # 부분 다시 생성 재료 그림(#537): 테마 옷 뭉치와 시작·종료 컷 첫 그림, 인물만 그린 인물 기준
-# 그림(CHARS, #779). regen.assets는 ai 전용 칸이라 learning은 이름을 보지 않음
-ASSETS = ("OUTFIT", "CHARS", *(f"{s}{i}" for s in ("INTRO", "OUTRO") for i in range(1, 5)))
+# 그림(CHARS, #779). regen.assets는 ai 전용 칸이라 learning은 이름을 보지 않음. 컷은 6컷 틀까지
+# (#779 2026-11-19, 예전 초안은 1~4)
+ASSETS = ("OUTFIT", "CHARS", *(f"{s}{i}" for s in ("INTRO", "OUTRO") for i in range(1, 7)))
 CONTENT_TYPE = {"png": "image/png", "mp4": "video/mp4"}
 PREFIX = "theme-drafts"
 

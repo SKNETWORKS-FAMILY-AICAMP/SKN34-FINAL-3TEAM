@@ -18,6 +18,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from app.theme_draft.cuts import NEW_CUTS, all_cuts, layout, mapped
+
 StoryTypeCode = Literal[
     "LOST",
     "TREASURE",
@@ -33,8 +35,13 @@ StoryTypeCode = Literal[
 ]
 FamilyCode = Literal["HIDDEN", "ANIMAL", "IN_HAND", "WHEN_HOW", "SOUND"]
 
-# 종료 콘티 1컷(단서 정리)은 모든 종류가 같다
-OUTRO_THINK = "뭉치가 바닥·탁자에 놓인 단서들 앞에서 생각을 정리함"
+# 종료 콘티 1컷(단서 정리)은 모든 종류가 같다. #779(2026-11-19): 단서를 뭉치 앞 바닥·탁자에 두면
+# 영상 모델이 뭉치가 집으려는 팔을 만들어 뒤쪽 판·벽으로 옮김. 컷 역할 문구의 "(뭉치는 곁에서
+# 지켜봄)"도 뺌(6컷 틀은 정답 공개 컷에 뭉치가 없고, 뭉치가 사람 곁에 붙으면 사람 팔이 옮겨 붙음)
+OUTRO_THINK = (
+    "뭉치가 뒤쪽 판·벽에 붙은 단서 그림들을 올려다보다 정답을 알아챔(단서 물건을 뭉치 앞 "
+    "바닥·탁자에 두지 않음)"
+)
 # #779: 통통 튀기는 영상에서 흰 다리가 생겨 실패, 정면을 본 채 짧은 갈색 발로 옆으로 달리고 카메라가
 # 따라가면 갈색 발이 유지되고 배경이 흘러 출동처럼 보임(실측 2026-11-18)
 INTRO_GO = (
@@ -48,6 +55,16 @@ OUTRO_ARRIVE_HIDDEN = (
 )
 INTRO_ARRIVE = "현장 도착(뭉치와 인물들이 모여 큰 질문을 마주함)"
 ALL_CUTS = frozenset((s, i) for s in ("INTRO", "OUTRO") for i in range(1, 5))
+
+
+@dataclass(frozen=True)
+class TypeCuts:
+    """컷 수에 맞춘 대상·정답 컷 묶음(#779 6컷 틀은 cuts.mapped로 4컷 번호를 옮김)."""
+
+    target: frozenset[tuple[str, int]]  # 대상이 그림·영상에 나와도 되는 컷
+    answer: frozenset[tuple[str, int]]  # 사실표 종류: 정답 후보가 나와도 되는 컷
+    hidden_target: frozenset[tuple[str, int]]  # scene·action에 대상 이름을 쓰면 안 되는 컷
+    hidden_candidate: frozenset[tuple[str, int]]  # scene·action에 후보 이름을 쓰면 안 되는 종료 컷
 
 
 KIND_ORDER = ("TRACE", "SIGHTING", "RECORD")
@@ -312,7 +329,7 @@ LOST = StoryType(
     outro_cuts=(
         OUTRO_THINK,
         OUTRO_ARRIVE_HIDDEN,
-        "정답 장소에서 찾은 대상을 주인이 받아 듦(뭉치는 곁에서 지켜봄)",
+        "정답 장소에서 찾은 대상을 주인이 받아 듦",
         "함께 기뻐함",
     ),
     target_cuts=frozenset({("INTRO", 1), ("OUTRO", 3), ("OUTRO", 4)}),
@@ -343,7 +360,7 @@ TREASURE = StoryType(
     outro_cuts=(
         OUTRO_THINK,
         OUTRO_ARRIVE_HIDDEN,
-        "정답 장소에서 찾은 보물을 아이가 열어 봄(뭉치는 곁에서 지켜봄)",
+        "정답 장소에서 찾은 보물을 아이가 열어 봄",
         "보물 속 편지를 함께 읽으며 기뻐함(편지 글자는 보이지 않음)",
     ),
     target_cuts=frozenset({("OUTRO", 3), ("OUTRO", 4)}),
@@ -499,7 +516,7 @@ ANIMAL_INTRO_CUTS = (
 ANIMAL_OUTRO_CUTS = (
     OUTRO_THINK,
     "정답 동물이 있는 곳에 도착해 그 동물(answerLook 모습)을 바라봄",
-    "중립 인물이 정답 동물을 제자리에서 부드럽게 안아 올림(뭉치는 곁에서 지켜봄)",
+    "중립 인물이 정답 동물을 제자리에서 부드럽게 안아 올림",
     "함께 웃으며 기뻐함",
 )
 ANIMAL_TARGET_CUTS = frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)})
@@ -585,7 +602,7 @@ ORIGIN = StoryType(
     outro_cuts=(
         OUTRO_THINK,
         "정답 장소 앞에 도착해 바라봄",
-        "정답 장소의 사람이 대상을 반갑게 맞음(뭉치는 곁에서 지켜봄)",
+        "정답 장소의 사람이 대상을 반갑게 맞음",
         "함께 기뻐함",
     ),
     target_cuts=ALL_CUTS,
@@ -629,7 +646,7 @@ GIFT = StoryType(
     outro_cuts=(
         OUTRO_THINK,
         "닫힌 선물 상자 앞에 모두 모여 바라봄",
-        "아이가 상자를 열어 선물을 꺼냄(뭉치는 곁에서 지켜봄)",
+        "아이가 상자를 열어 선물을 꺼냄",
         "함께 기뻐함",
     ),
     target_cuts=ALL_CUTS,  # 상자는 늘 보이고, 상자 안 선물은 answer_cuts에서만
@@ -676,8 +693,8 @@ SECRET_INGREDIENT = StoryType(
     outro_cuts=(
         OUTRO_THINK,
         "만든 사람과 함께 덮인 음식 앞에 모임",
-        "만든 사람이 비밀 재료를 꺼내 보여 줌(뭉치는 곁에서 지켜봄)",
-        "모두 함께 음식을 나눠 먹으며 기뻐함(뭉치는 곁에서 웃으며 몸을 살짝 흔듦)",
+        "만든 사람이 비밀 재료를 꺼내 보여 줌",
+        "모두 함께 음식을 나눠 먹으며 기뻐함",
     ),
     # 음식에 물든 색이 그림에 보이면 답이 되어, 음식은 비밀 재료를 밝힌 뒤 컷에서만 그림
     target_cuts=frozenset({("OUTRO", 3), ("OUTRO", 4)}),
@@ -806,7 +823,7 @@ WHEN = StoryType(
     outro_cuts=(
         OUTRO_THINK,
         "그 일을 한 사람 앞에 도착해 바라봄",
-        "그 사람이 그때 한 일을 웃으며 이야기함(뭉치는 곁에서 지켜봄)",
+        "그 사람이 그때 한 일을 웃으며 이야기함",
         "함께 기뻐함",
     ),
     target_cuts=ALL_CUTS,  # 대상이 '때'라 그릴 것이 없음(target_visual)
@@ -863,7 +880,7 @@ ROUTE = StoryType(
     outro_cuts=(
         OUTRO_THINK,
         "정답 길에 도착해 바라봄",
-        "그 길에서 대상을 나른 사람을 만나 반갑게 인사함(뭉치는 곁에서 지켜봄)",
+        "그 길에서 대상을 나른 사람을 만나 반갑게 인사함",
         "함께 기뻐함",
     ),
     target_cuts=ALL_CUTS,
@@ -910,7 +927,7 @@ VEHICLE = StoryType(
     outro_cuts=(
         OUTRO_THINK,
         "정답 탈것이 있는 곳(도착한 곳 앞·정류장·역·나루터)에 도착해 바라봄",
-        "온 사람이 탈것 곁에서 웃음(뭉치는 곁에서 지켜봄)",
+        "온 사람이 탈것 곁에서 웃음",
         "함께 기뻐함",
     ),
     target_cuts=VEHICLE_TARGET_CUTS,  # 대상 = 타고 온 탈것(엔딩에서만)
@@ -1004,7 +1021,7 @@ SOUND = StoryType(
         OUTRO_THINK,
         "정답(answerLook 모습)이 있는 곳에 도착해 바라봄",
         "동물이면 모두 조금 떨어져서 함께 바라봄(만지지 않음), 물건이면 사람이 소리가 나지 않게 "
-        "손봄(뭉치는 곁에서 지켜봄)",
+        "손봄",
         "함께 웃으며 기뻐함",
     ),
     target_cuts=ALL_CUTS,  # 대상이 '소리'라 그릴 것이 없음(target_visual)
@@ -1103,6 +1120,20 @@ def is_animal(theme: dict[str, Any]) -> bool:
     return story_type(theme).animal
 
 
+def type_cuts(t: StoryType, n: int) -> TypeCuts:
+    """n컷 틀의 대상·정답 컷(#779). 4컷이면 종류 정의 그대로(예전 초안), 6컷이면 같은 역할 컷으로
+    옮기고 뭉치 혼자 나오는 컷은 뺌(cuts.mapped)."""
+    if n == 4:
+        return TypeCuts(t.target_cuts, t.answer_cuts, t.hidden_target_cuts, t.hidden_candidate_cuts)
+    target, answer = mapped(t.target_cuts, n), mapped(t.answer_cuts, n)
+    hidden_target = (
+        frozenset() if t.facts is not None or not t.target_visual else all_cuts(n) - target
+    )
+    outro = frozenset(("OUTRO", i) for i in range(1, len(layout(n)["OUTRO"]) + 1))
+    hidden_candidate = frozenset() if t.facts is None else outro - answer
+    return TypeCuts(target, answer, hidden_target, hidden_candidate)
+
+
 def cut_list(cuts: frozenset[tuple[str, int]]) -> str:
     """컷 묶음을 줄거리 프롬프트 말로('introCuts 1, outroCuts 3·4')."""
     parts = []
@@ -1120,17 +1151,18 @@ def hidden_cut_rules(t: StoryType) -> str:
     나오면 안 되는 것을 쓰면 그리면 ANSWER_HINT, 안 그리면 SCENE_FIT으로 어느 쪽도 통과하지 못한다.
     """
     lines = []
-    if t.hidden_target_cuts:
+    c = type_cuts(t, NEW_CUTS)  # 줄거리 프롬프트는 새 테마(6컷) 번호
+    if c.hidden_target:
         lines.append(
-            f"- 찾는 대상(target)이 그림에 나오는 컷은 {cut_list(t.target_cuts)}뿐이다. 그 밖의 컷"
-            f"({cut_list(t.hidden_target_cuts)})의 scene·action에는 대상 이름을 쓰지 않고, "
+            f"- 찾는 대상(target)이 그림에 나오는 컷은 {cut_list(c.target)}뿐이다. 그 밖의 컷"
+            f"({cut_list(c.hidden_target)})의 scene·action에는 대상 이름을 쓰지 않고, "
             "'○○는 보이지 않는다'처럼 없다는 말도 쓰지 않는다(컷 그림은 scene을 그대로 그림). "
             "없어진 것은 빈손·빈자리처럼 보이는 것으로 쓴다.\n"
         )
-    if t.hidden_candidate_cuts:
+    if c.hidden_candidate:
         lines.append(
-            f"- 후보({t.candidate_kind}) 이름은 정답을 포함해 {cut_list(t.answer_cuts)}의 "
-            f"scene·action에만 쓴다. {cut_list(t.hidden_candidate_cuts)}에는 쓰지 않는다(그 컷 "
+            f"- 후보({t.candidate_kind}) 이름은 정답을 포함해 {cut_list(c.answer)}의 "
+            f"scene·action에만 쓴다. {cut_list(c.hidden_candidate)}에는 쓰지 않는다(그 컷 "
             "그림에는 후보가 나오지 않음).\n"
         )
     return "".join(lines)
@@ -1138,12 +1170,12 @@ def hidden_cut_rules(t: StoryType) -> str:
 
 def type_rules(t: StoryType) -> str:
     """줄거리 프롬프트에 붙이는 그 종류 규칙 묶음(콘티 틀·결말 포함)."""
-    intro = ", ".join(f"{i} {role}" for i, role in enumerate(t.intro_cuts, 1))
-    outro = ", ".join(f"{i} {role}" for i, role in enumerate(t.outro_cuts, 1))
+    intro = ", ".join(f"역할 {i} {role}" for i, role in enumerate(t.intro_cuts, 1))
+    outro = ", ".join(f"역할 {i} {role}" for i, role in enumerate(t.outro_cuts, 1))
     return (
         f"줄거리 종류: {t.label}(storyType {t.code}, 후보는 {t.candidate_kind})\n"
         + t.rules
         + f"- outro(마무리 장면): {t.outro_rule}\n"
-        f"- introCuts 순서: {intro}.\n"
-        f"- outroCuts 순서: {outro}.\n" + hidden_cut_rules(t)
+        f"- 시작 콘티 역할(컷 틀의 '역할 n'에 넣을 내용): {intro}.\n"
+        f"- 종료 콘티 역할(컷 틀의 '역할 n'에 넣을 내용): {outro}.\n" + hidden_cut_rules(t)
     )

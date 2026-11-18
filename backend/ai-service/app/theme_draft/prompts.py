@@ -21,6 +21,7 @@ from typing import Any
 from app.followup.prompts import grade_style
 from app.mission_draft.models import Draft, MissionDraftRequest
 from app.mission_draft.prompts import THINKING_LABEL
+from app.theme_draft import cuts as cut_layout
 from app.theme_draft.checks import (
     CANDIDATES,
     CLUE_TYPES,
@@ -43,8 +44,52 @@ from app.theme_draft.checks import (
     text_max,
     theme_day,
 )
-from app.theme_draft.families import ALL_CUTS, STORY_TYPES, parse_topic, story_type, type_rules
+from app.theme_draft.families import (
+    ALL_CUTS,
+    OUTRO_ARRIVE_HIDDEN,
+    STORY_TYPES,
+    parse_topic,
+    story_type,
+    type_cuts,
+    type_rules,
+)
 from app.theme_draft.models import ThemeDraftRequest
+
+WHO_KO = {
+    "PEOPLE": "사람만",
+    "OBJECT": "사건 물건 클로즈업(사람 손)",
+    "MUNGCHI": "뭉치 혼자",
+    "RUN": "뭉치 혼자 달림",
+    "GROUP": "함께(뭉치는 떨어져)",
+}
+SCENE_KO = {"INTRO": "시작", "OUTRO": "종료"}
+
+
+def cut_layout_lines(n: int = cut_layout.NEW_CUTS) -> list[str]:
+    """줄거리 프롬프트의 컷 틀 줄(#779 6컷 틀, cuts.LAYOUTS 한 곳에서 만듦)."""
+    out = []
+    for scene, specs in cut_layout.layout(n).items():
+        for i, s in enumerate(specs, 1):
+            caption = f"자막: {s.speaker}" if s.caption else "자막 없음('')"
+            out.append(
+                f"{SCENE_KO[scene]} {i} [{WHO_KO[s.who]}] 역할 {s.role}: {s.beat}. {caption}"
+            )
+    return out
+
+
+# #779(사용자 결정 2026-11-19): 자막 = 중요한 순간 컷에만, 그 컷에 보이는 인물의 "이름: 대사"(시작
+# 1컷만 이름 없는 장면 소개). 꼴 검사는 checks.caption_problems(CUT_SPEAKER, 그 칸만 고쳐 씀).
+# 대사 꼴을 내레이터 꼴로 되돌리려면 이 글과 caption_problems만 바꾼다
+CAPTION_RULE = (
+    "자막 있는 컷에만 쓰고 자막 없는 컷은 빈 글('')로 둔다. 꼴은 '이름: 대사'이고 말하는 사람은 "
+    "그 컷 화면에 보이는 한 명이다: 뭉치 혼자 나오는 컷은 '뭉치', 사람만 나오는 컷은 그 컷 scene에 "
+    "나오는 인물(characters의 name 그대로), 함께 나오는 컷은 뭉치나 그 컷 scene에 나오는 인물. "
+    "시작 1컷만 이름 없이 장면을 소개하는 짧은 말이다. 반말로 짧게(이름 포함 "
+    f"{cut_layout.CAPTION_MAX[cut_layout.NEW_CUTS]}자 이내), 감탄·질문·구호처럼 그 순간의 말로 "
+    "쓰고, 지난 일을 늘어놓는 일기 말투나 해요체 설명은 쓰지 않는다. 대사가 가리키는 것은 그 컷 "
+    "화면에 보여야 한다('짜잔' 자막은 정답이 보이는 컷). '범인'이라는 말은 쓰지 않는다. 시작 콘티 "
+    "자막에는 정답 이름·정답 장소를 쓰지 않고, 종료 1컷은 뭉치가 정답을 말한다."
+)
 
 PROMPT_VERSION = "theme-draft@3"
 # 글로 대신하는 활동 원칙(사용자 결정 2026-11-11). 미션 생성·미션 검토·글 검토·예시 답 고쳐
@@ -107,9 +152,10 @@ PLAN_SYSTEM = (
     # 약했음
     "뭉치 역할은 사건을 해결하거나 찾아 주는 해결사 직업(탐정·경찰관·구조대·순찰대 등)으로 "
     "고르고, 주제가 아래 씨앗 형식이면 씨앗의 역할을 그대로 쓴다. "
-    "그 역할을 한눈에 알아보게 머리에 쓰거나 몸·목에 "
-    "거는 것 1~2개를 꼭 넣는다. 손에 드는 "
-    "물건은 넣지 않는다. 경찰관·소방관 같은 제복 모양은 되지만 실제 기관 휘장·글자는 쓰지 "
+    "그 역할을 한눈에 알아보게 머리에 쓰는 것(모자·헬멧·헤드폰)이나 몸통에 두르는 소매 없는 "
+    "조끼·목에 거는 것 1~2개를 꼭 넣는다. 옷은 소매 없는 조끼로만 쓴다(소매 달린 옷·가운·제복은 "
+    "'○○ 조끼'로, 뭉치 몸 옆이 소매처럼 그려지면 팔이 넷처럼 보임). 손에 드는 "
+    "물건은 넣지 않는다. 경찰관·소방관 같은 제복 느낌은 되지만 실제 기관 휘장·글자는 쓰지 "
     "않는다. "
     "styleNote는 이 "
     "테마 그림의 색·분위기 메모.\n"
@@ -143,56 +189,39 @@ PLAN_SYSTEM = (
     "후보를 쓰지 않음).\n"
     "- intro·outro·콘티의 때와 상황은 단서 evidence.when이 가리키는 그때와 맞춘다(증거가 '준비를 "
     "마친 때'면 이야기에서도 그때 준비가 끝나 있음).\n"
-    "- introCuts·outroCuts는 시작·종료 영상 콘티로 각각 정확히 4컷"
-    "(무음 영상, 길이는 차례로 4·6·8·6초라 "
-    "가장 긴 3번째 컷에 가장 큰 동작을 둔다). "
+    "- introCuts·outroCuts는 시작·종료 영상 콘티로 각각 정확히 6컷(무음 영상, 컷마다 4초). "
+    "컷마다 누가 나오고 무엇을 보여 주는지는 아래 컷 틀을 지키고, 내용은 줄거리 종류 규칙의 콘티 "
+    "역할(역할 1~4)에서 가져온다. "
     # #779: scene은 컷 첫 그림으로 그려지고 영상이 그 그림에서 시작함(예전 문구 "컷 끝에 보이는
     # 장면"은 첫 그림과 어긋나 이동 컷이 거꾸로 움직였음)
     "scene은 그 컷이 시작하는 첫 장면(누가 어디서, 무엇이 보이는지, 영상이 이 그림에서 시작), "
-    "action은 그 컷의 동작 하나, caption은 "
-    "영상 위에 띄울 짧은 문구(30자 이내, 아래 caption 말투). mungchiMood는 그 컷 끝 뭉치 표정으로 "
+    "action은 그 컷의 동작 하나, caption은 영상 위에 띄울 짧은 대사(아래 caption 규칙, 자막 없는 "
+    "컷은 빈 글 ''). mungchiMood는 그 컷 끝 뭉치 표정으로 "
     "입 모양으로만 나타낸다: smile(웃는 입), surprised(작은 o 입), determined(다문 일자 입). "
-    "뭉치가 나오지 않는 컷은 none. camera는 그 컷 카메라 하나: FOLLOW_BEHIND(앞으로 걸어가는 "
-    "인물을 뒤에서 따라감), TRACK_SIDE(옆으로 이동하는 인물을 옆에서 따라감, 시작 3컷 출동은 늘 "
-    "이것), PAN_SIDE(넓은 장면·여럿이 모인 장면을 천천히 옆으로 훑음), HOLD_CLOSE(가까운 장면을 "
-    "그대로 유지).\n"
-    # #779(만화 연출 시제품 2026-11-18): 컷마다 같은 장소·구도면 그림 위에서 인물만 움직이는 영상이
-    # 되고, 문구가 화면과 따로 놀면 이야기가 전해지지 않음(무음이라 화면과 문구가 이야기를 다 전함)
-    "- 4컷은 만화의 한 장면처럼 이어진다: 컷마다 장소의 다른 곳·다른 구도·다른 장면 크기(넓은 "
-    "장면, 인물이 크게 보이는 장면, 가까운 장면)로 쓰고, 앞 컷의 동작이 다음 컷으로 이어진다. "
-    # #779(3테마 실행 2026-11-18): 시작 1컷이 가까운 장면이면 어디서 일어나는 이야기인지 안 보임
-    "시작 1컷은 장소가 한눈에 보이는 넓은 장면이다(camera는 HOLD_CLOSE가 아님). "
+    "뭉치가 나오지 않는 컷은 none, 뭉치가 나오는 컷은 none이 아니다. camera는 PAN_SIDE로 둔다"
+    "(카메라는 코드가 컷 틀대로 정함).\n"
+    # #779(2026-11-19 만화 예고편 컷 문법): 사람이 손으로 하는 동작 곁에 뭉치가 있으면 영상 모델이
+    # 사람 팔을 뭉치에게 옮겨 붙임(3테마 실행 실패 5컷 모두). 사람 컷과 뭉치 컷을 나눔
+    "컷 틀(각 줄: 컷 [누가 나오는지] 역할 번호: 할 일. 자막)\n"
+    + "".join(f"  {line}\n" for line in cut_layout_lines())
+    + "- 컷마다 장소의 다른 곳·다른 구도로 쓰고 앞 컷의 동작이 다음 컷으로 이어진다. "
     # #779: 인물이 카메라를 보고 한 줄로 서면 영상 모델이 얼굴을 바꾸고 단체 사진처럼 멈춤
     "인물들은 카메라를 보고 한 줄로 서지 않고, 서로 다른 거리에서 서로를 보거나 하는 일을 본다. "
-    "시작 2컷(사건)은 사건이 한눈에 보이는 가까운 장면이다: 사건 물건이나 빈자리(빈손·빈 줄·파헤친 "
-    "자리 등)를 크게 보여 주고 인물은 어깨 위쪽과 몸에 맞는 크기의 손만, camera는 HOLD_CLOSE.\n"
+    "사람만 나오는 컷에는 뭉치가 나오지 않고, 뭉치 혼자 나오는 컷에는 사람·동물·찾는 대상이 "
+    "나오지 않는다. 함께 나오는 컷에서 뭉치는 사람들과 조금 떨어져 있고 누구와도 닿지 않는다.\n"
     "- 인물이 이동하는 컷은 scene에서 그 인물이 가는 쪽을 보고(뒷모습·옆모습) 가는 길이 그쪽으로 "
     "열려 있게 쓰고, action에서 길·바닥·열린 문으로만 이동한다(담·울타리·화단·물건 위로 오르거나 "
     "통과하지 않음).\n"
     "- 하나뿐인 물건(쪽지·상자·편지 등)은 그 컷에서 드는 사람을 한 명만 쓴다('새봄이 쪽지를 들고 "
     "아저씨는 곁에서 본다'). 글자가 들어갈 물건(쪽지·편지·지도·안내판)은 글자 없이 그림·기호(점선 "
     "길, X 표시 등)로 쓰고, 그 그림에 숨긴 물건·찾는 대상·후보 장소는 그리지 않는다.\n"
-    "- caption 4줄만 읽어도 이야기가 이어진다: caption은 그 컷 영상에 보이는 일만 말하고(이동을 "
-    "말하면 그 컷 action이 실제로 이동), 시작 2컷 caption에는 사건 물건·사건을, 시작 3컷 "
-    "caption에는 "
-    "뭉치 역할과 사건을 잇는 말을 이번 역할 이름으로 넣는다(예: '○○ 사건이라면 △△ 뭉치!').\n"
-    # #779(사용자 결정 2026-11-18): 8줄이 해요체·반말·명사형·인물 대사·과거형으로 섞여 누가 말하는지
-    # 모르고 종료 영상이 일기처럼 읽혔음(3테마 실행). 처음 해요체(A안)로 정했다가 "반말이 더
-    # 재미있다"로 반말(B안)
-    "- caption 말투: 8줄 모두 이야기를 들려주는 내레이터 한 사람이 친구에게 들려주듯 반말 "
-    "현재형으로 말한다(예: '아린이 아기 염소 털을 빗어 줘.', '그런데 아기 염소가 사라졌어!'). "
-    "종료 콘티도 과거형('찾았어', '도착했어')이 아니라 지금 보이는 일로 쓴다('아린이 아기 "
-    "염소를 꼭 안아.'). 인물 대사('어? ~'), 명사형으로 끝나는 제목('놀이터에 온 새봄'), "
-    "해요체는 쓰지 않는다. 시작 3컷은 뭉치 역할 구호('농부 뭉치, 출동!')로, 시작 4컷은 큰 질문을 "
-    "학생에게 묻는 말('~일까?')로 쓴다. 종료 1컷은 '단서를 차근차근 살펴봐'처럼 뭉뚱그리지 않고 "
-    "이번 주 단서들이 함께 가리키는 정답의 특징 한두 가지를 자연스러운 한 줄로 말한다(숫자·단위·"
-    "단서 목록 없이, 예: '단서는 모두 그늘진 쉼터를 가리켜.').\n"
-    "- introCuts·outroCuts 순서는 줄거리 종류 규칙의 콘티 틀을 따른다. 시작 1·2컷에는 뭉치가 "
-    "나오지 않고 3(뭉치 출동)·4(현장 도착)에는 나온다: 1·2컷의 mungchiMood는 none, 3·4컷은 "
-    "none이 아니다. "
-    "시작 콘티에는 정답 이름·정답 장소를 쓰지 않는다. 종료 4컷에는 모두 뭉치가 나온다"
-    "(mungchiMood는 none이 아님). 종료 콘티는 정답 공개 뒤라 정답 이름·정답 장소를 써도 된다"
-    "(단, 대상·후보가 그림에 나오지 않는 컷은 줄거리 종류 규칙대로 그 이름을 쓰지 않음).\n"
+    # #779(사용자 결정 2026-11-19): 자막은 중요한 순간 컷에만, 그 컷에 보이는 인물이 말하는 대사
+    # 꼴. 컷마다 내레이터 해설(2026-11-18 반말 내레이션)은 해설 영상처럼 보이고 누가 말하는지
+    # 헷갈렸음(애니매틱 비교). 말하는 사람이 화면에 보이게 함
+    "- caption(자막): " + CAPTION_RULE + "\n"
+    "- 시작 콘티에는 정답 이름·정답 장소를 쓰지 않는다. 종료 콘티는 정답 공개 뒤라 정답 이름·정답 "
+    "장소를 써도 된다(단, 대상·후보가 그림에 나오지 않는 컷은 줄거리 종류 규칙대로 그 이름을 "
+    "scene·action에 쓰지 않음).\n"
     # #765: 컷 scene은 그 컷 그림 지시·그림 검토에 그대로 들어감(그림에 없는 것을 쓰면 검토가 실패)
     "- scene·action에는 그 컷 그림에 보이는 것만 쓴다. 그림에 나오지 않는 것을 '○○는 보이지 "
     "않는다'처럼 쓰지 않는다.\n"
@@ -201,9 +230,11 @@ PLAN_SYSTEM = (
     "- action은 그 컷 역할이 영상에서 한눈에 보이는 분명한 동작 하나. 사람은 만화처럼 크고 "
     "분명하게 움직인다(걸어 들어가기·펄쩍 놀라기·손 흔들기·건네기·안기 등). 뭉치는 팔이 "
     "없어(몸 앞쪽 작은 동그란 손과 짧은 갈색 발만) 뭉치의 동작은 표정 바꾸기·고개 갸웃·몸 살짝 "
-    "흔들기만 쓴다. 단, 시작 3컷(출동)에서는 뭉치가 짧은 갈색 발로 옆으로 힘차게 달려간다. 손 "
-    "흔들기·손 들기·가리키기·짚기·건네기·안기·모으기·놓기·뛰기·통통 튀기는 사람만 한다(예: "
-    "'사람들이 손뼉을 치며 기뻐하고 뭉치는 환하게 웃으며 몸을 살짝 흔든다'). 인물·뭉치가 화면 "
+    "흔들기만 쓴다. 단, 뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 옆으로 "
+    "힘차게 달려간다. 손 "
+    "흔들기·손 들기·가리키기·짚기·건네기·안기·모으기·놓기·뛰기·통통 튀기는 사람만 한다(예: 사람 "
+    "컷 '사람들이 손뼉을 치며 폴짝 뛴다', 뭉치 컷 '뭉치가 환하게 웃으며 몸을 살짝 흔든다'). "
+    "인물·뭉치가 화면 "
     "쪽으로 다가오지 않고, 걸어서 화면 밖으로 나가거나 새 인물이 들어오지 않는다(카메라가 인물을 "
     "따라가며 다른 인물이 화면 밖으로 빠지는 것은 된다).\n"
     "- 영상 속에는 글자를 넣지 않으므로 scene·action에 글자·숫자가 보이는 "
@@ -515,6 +546,33 @@ def cut_roles(theme: Theme, key: str) -> tuple[str, str, str, str]:
     return t.intro_cuts if key == "introCuts" else t.outro_cuts
 
 
+CUTS_KEY = {"INTRO": "introCuts", "OUTRO": "outroCuts"}
+
+
+def cut_count(theme: Theme, scene: str) -> int:
+    """그 장면 콘티의 컷 수(#779: 새 테마 6컷, 예전 초안 4컷). 콘티가 없으면 새 틀."""
+    return len(theme.get(CUTS_KEY[scene]) or []) or cut_layout.NEW_CUTS
+
+
+def cut_spec(theme: Theme, scene: str, index: int) -> cut_layout.CutSpec:
+    return cut_layout.spec(scene, index, cut_count(theme, scene))
+
+
+def cut_beat(theme: Theme, scene: str, index: int) -> str:
+    """컷 할 일(칸 고쳐 쓰기·영상 지시 "Story beat"). 예전 4컷은 종류 콘티 역할 그대로, 6컷은
+    컷 틀의 할 일 + 사람이 나오는 컷이면 그 역할 내용(종료 3컷은 도착 장면 역할도, #779)."""
+    roles = cut_roles(theme, CUTS_KEY[scene])
+    if cut_count(theme, scene) == 4:
+        return roles[index - 1]
+    s = cut_spec(theme, scene, index)
+    if not s.has_people:
+        return s.beat
+    content = roles[s.role - 1]
+    if (scene, index) == ("OUTRO", 3) and roles[1] != OUTRO_ARRIVE_HIDDEN:
+        content = f"{roles[1]} → {content}"
+    return f"{s.beat}. 내용: {content}"
+
+
 FIX_SYSTEM = (
     "너는 초등학생용 주간 테마 글에서 검사에 걸린 칸 몇 개만 고쳐 쓰는 편집자다.\n"
     "- 받은 칸만 다시 쓴다. 다른 칸과 이야기 속 사실은 바꾸지 않는다.\n"
@@ -638,9 +696,21 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
         ]
     if key in ("scene", "action"):
         t = story_type(theme)
-        cut = ("OUTRO" if head.startswith("outroCuts") else "INTRO", int(head[-1]))
+        scene = "OUTRO" if head.startswith("outroCuts") else "INTRO"
+        cut = (scene, int(head[-1]))
+        spec = cut_spec(theme, *cut)
+        hidden = type_cuts(t, cut_count(theme, scene))
+        who = {
+            "PEOPLE": "이 컷에는 사람만 나오고 뭉치는 나오지 않는다.",
+            "OBJECT": "이 컷은 사건 물건·빈자리 클로즈업이고 사람은 어깨 위와 손만, 뭉치는 나오지 "
+            "않는다.",
+            "MUNGCHI": "이 컷에는 뭉치 혼자 나온다(사람·동물·찾는 대상 없음).",
+            "RUN": "이 컷에는 뭉치 혼자 나온다(사람·동물·찾는 대상 없음).",
+            "GROUP": "이 컷에는 사람들과 뭉치가 함께 나오고 뭉치는 사람들과 조금 떨어져 있다.",
+        }[spec.who]
         return [
-            f"이 컷의 역할을 지킨다: {cut_roles(theme, head[:-1])[int(head[-1]) - 1]}.",
+            f"이 컷의 역할을 지킨다: {cut_beat(theme, *cut)}.",
+            who if cut_count(theme, scene) != 4 else "",
             # #779: scene은 컷 첫 그림(영상이 이 그림에서 시작), 콘티 규칙(PLAN_SYSTEM)과 같게
             "scene은 컷이 시작하는 첫 모습(누가 어디서) 한 문장, action은 동작 하나를 한 문장으로, "
             "지금 글 길이와 비슷하게 쓴다. 같은 말을 되풀이하지 않는다.",
@@ -648,10 +718,9 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             "열린 문으로만 이동한다. 하나뿐인 물건은 드는 사람을 한 명만 쓰고, 글자가 들어갈 "
             "물건은 글자 없이 그림·기호로 쓴다(숨긴 물건·찾는 대상·후보 장소는 그리지 않음).",
             # #779: 콘티 규칙(PLAN_SYSTEM action)과 같은 뭉치 동작
-            "뭉치는 시작 3컷(출동)에서 짧은 갈색 발로 옆으로 힘차게 달려가고, 다른 컷에서는 표정 "
-            "바꾸기·고개 갸웃·몸 살짝 흔들기만 한다. 손짓·건네기·안기·뛰기·통통 튀기처럼 손이나 "
-            "팔다리를 쓰는 동작은 사람이 한다."
-            if cut == ("INTRO", 3)
+            "뭉치는 이 컷에서 짧은 갈색 발로 옆으로 힘차게 달려간다. 손짓·건네기·안기·뛰기·통통 "
+            "튀기처럼 손이나 팔다리를 쓰는 동작은 사람이 한다."
+            if spec.who == "RUN"
             else "뭉치는 표정 바꾸기·고개 갸웃·몸 살짝 흔들기만 한다. 손짓·건네기·안기·뛰기·통통 "
             "튀기처럼 손이나 팔다리를 쓰는 동작은 사람이 한다.",
             "누구도 화면 쪽으로 다가오거나 걸어서 화면 밖으로 나가지 않는다. 인물·장소는 그대로 "
@@ -660,24 +729,26 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             f"이 컷 그림에는 찾는 대상('{theme.get('target') or ''}')이 나오지 않는다: 대상 이름을 "
             "쓰지 않고 '보이지 않는다'처럼 없다는 말도 쓰지 않는다. 없어진 것은 빈손·빈자리처럼 "
             "보이는 것으로 쓴다."
-            if cut in t.hidden_target_cuts
+            if cut in hidden.hidden_target
             else "",
             f"이 컷 그림에는 후보가 나오지 않는다: 정답을 포함해 후보 이름"
             f"({', '.join(candidate_words(theme))})을 쓰지 않는다."
-            if cut in t.hidden_candidate_cuts
+            if cut in hidden.hidden_candidate
             else "종료 콘티라 정답 이름을 써도 된다."
             if cut[0] == "OUTRO"
             else "정답 이름·정답 장소를 쓰지 않는다.",
         ]
     if key == "caption":
-        # #779: 문구는 그 컷 영상에 보이는 일만(콘티 규칙과 같게)
-        seen = (
-            "영상 위에 띄우는 짧은 문구로 그 컷 영상에 보이는 일만 말한다. 내레이터 한 사람이 "
-            "친구에게 들려주듯 반말 현재형으로 말하고(과거형·인물 대사·명사형 제목·해요체 없음), "
-            "시작 3컷은 뭉치 "
-            "역할 구호, 시작 4컷은 학생에게 묻는 큰 질문으로 쓴다(#779)."
-        )
-        if head.startswith("outroCuts"):
+        scene = "OUTRO" if head.startswith("outroCuts") else "INTRO"
+        spec = cut_spec(theme, scene, int(head[-1]))
+        if cut_count(theme, scene) == 4:  # 예전 4컷 초안(내레이터 자막)
+            seen = (
+                "영상 위에 띄우는 짧은 문구로 그 컷 영상에 보이는 일만 말한다. 내레이터 한 사람이 "
+                "친구에게 들려주듯 반말 현재형으로 말한다."
+            )
+        else:  # #779 6컷: 그 컷에 보이는 인물의 '이름: 대사'(시작 1컷만 장면 소개)
+            seen = f"{CAPTION_RULE} 이 컷 자막: {spec.speaker}."
+        if scene == "OUTRO":
             return [f"{seen} 종료 콘티라 정답 이름을 써도 된다."]
         return [f"{seen} 정답 이름·정답 장소를 쓰지 않는다."]
     if path == "incident":  # #634 ③ 내부 칸이 비었을 때
@@ -1390,8 +1461,21 @@ MUNGCHI_LOOK = (
     "round bumps, the face low in the center of the body, small dot eyes with a tiny highlight "
     "(no eye whites), pink cheeks, small hands at the lower front on the left and right, short "
     "brown feet, no arms (only the tiny hands). Mungchi wears the theme outfit: {outfit}. "
+    # #779(사용자 결정 2026-11-19): 셔츠·가운처럼 몸을 감싸는 옷을 입히자 몸 옆 울퉁불퉁한 곳이
+    # 소매로 그려져 손 두 개와 합쳐 팔이 넷처럼 보였음(옷 입힌 뭉치 그림 실측, 앞치마만 입힌
+    # 농부는 괜찮음). 옷은 소매 없는 조끼(몸통 앞뒤를 두름)로만
+    "Any clothing is a sleeveless vest worn around the torso (front and back): no sleeves, the "
+    "cloud-shaped bumps on its sides stay cream-colored outside the vest (never sleeves or "
+    "arms), and the only hands are the two tiny round hands on the front. "
     "Keep Mungchi exactly like the "
     "reference picture."
+)
+OUTFIT_VEST = (
+    "Any clothing is a sleeveless vest worn around Mungchi's torso, covering the front and the "
+    "back; there are no sleeves, the cloud-shaped bumps on its sides stay cream-colored outside "
+    "the vest (never sleeves or arms), and the only hands are the two tiny round hands on the "
+    "front. Hats, helmets or headphones go on the head; whistles, necklaces or a simple shape "
+    "badge (star, paw) go on the chest."
 )
 IMAGE_RULES = (
     "Rules: no thought bubbles or speech bubbles. No letters, words or numbers anywhere "
@@ -1406,8 +1490,8 @@ def outfit_prompt(theme: Theme) -> str:
         "Edit this picture. Keep the picture exactly as it is: Mungchi's body, face, eyes, "
         "cheeks, feet, hand positions, size, position, colors and the background stay "
         f"identical. Only add the theme outfit: {theme['outfit']}. Nothing in the hands. "
-        "Hats and items worn around the neck are part of the outfit. "
-        "No letters, numbers, badges or emblems on the outfit. "
+        f"{OUTFIT_VEST} "
+        "No letters, numbers or real emblems on the outfit. "
         f"{IMAGE_STYLE}"
     )
 
@@ -1501,6 +1585,8 @@ def mission_shows_target(theme: Theme) -> bool:
 def target_lines(theme: Theme, scene: str, index: int) -> list[str]:
     """시작·종료 컷 그림의 대상·후보 규칙(종류별 target_cuts·answer_cuts, #634)."""
     t = story_type(theme)
+    n = cut_count(theme, scene)
+    answer_cuts = type_cuts(t, n).answer
     shows = cut_shows_target(theme, scene, index)
     if t.animal:  # 대상 = 정답 동물
         if shows:
@@ -1509,15 +1595,17 @@ def target_lines(theme: Theme, scene: str, index: int) -> list[str]:
     lines = []
     if not t.target_visual:  # #634 ④ 시간 탐정: 대상 지시 없음(시계 금지는 아래 후보 줄)
         pass
-    elif shows and t.target_in_hand and not cut_has_characters(scene, index):
+    elif cut_layout.spec(scene, index, n).mungchi_alone and (
+        n != 4 or (shows and t.target_in_hand)
+    ):
         # 뭉치 혼자 출동하는 컷: 대상을 들 사람이 없어 뭉치가 들게 그려짐(그림·영상 실측 선물 상자
         # 시작 3컷, 영상 검토 CONTINUITY "뭉치가 사건 대상을 들고 있음"). 이 컷에는 대상을 그리지
-        # 않음
+        # 않음. #779 6컷 틀의 뭉치 혼자 컷(시작 4·5, 종료 1·2·4)도 모두
         lines.append(
             f"Do not draw {theme.get('target') or 'the target'} in this picture; Mungchi holds "
             "nothing."
         )
-    elif shows and t.code == "GIFT" and (scene, index) not in t.answer_cuts:
+    elif shows and t.code == "GIFT" and (scene, index) not in answer_cuts:
         lines.append(
             f"{theme.get('target') or 'The gift box'}: a plain square gift box with a ribbon, the "
             "same in every picture, closed (do not show what is inside), with no tag, card or "
@@ -1528,7 +1616,7 @@ def target_lines(theme: Theme, scene: str, index: int) -> list[str]:
     else:
         lines.append(_no_target(theme))
     if t.facts is not None:
-        if (scene, index) not in t.answer_cuts:
+        if (scene, index) not in answer_cuts:
             lines.append(_no_candidates(theme))
         elif t.facts.drawable and t.needs_answer_look:  # #634 ⑤ 정답 모습 고정
             lines.append(f"{_answer_look(theme)} Draw it the same in every picture.")
@@ -1614,25 +1702,26 @@ def mission_image_prompt(theme: Theme, day: str, draft: Draft, feedback: list[st
 def cut_shows_target(theme: Theme, scene: str, index: int) -> bool:
     """찾는 대상(③은 정답 동물)이 나와도 되는 컷(#634 종류별 families.target_cuts).
 
-    잃어버린 것: 시작 1컷(주인이 지닌 모습)·종료 3·4컷, 보물 쪽지: 종료 3·4컷,
-    동물 주인공: 종료 2~4컷.
+    예전 4컷 — 잃어버린 것: 시작 1컷(주인이 지닌 모습)·종료 3·4컷, 보물 쪽지: 종료 3·4컷,
+    동물 주인공: 종료 2~4컷. 6컷은 같은 역할 컷으로 옮기고 뭉치 혼자 나오는 컷은 뺌(#779
+    families.type_cuts).
     """
-    return (scene, index) in story_type(theme).target_cuts
+    return (scene, index) in type_cuts(story_type(theme), cut_count(theme, scene)).target
 
 
-def cut_has_mungchi(scene: str, index: int) -> bool:
-    """시작 1·2컷에는 뭉치가 나오지 않는다(뭉치 참조도 넣지 않음)."""
-    return not (scene == "INTRO" and index in (1, 2))
+def cut_has_mungchi(scene: str, index: int, n: int) -> bool:
+    """뭉치가 나오는 컷(뭉치 참조를 넣음). 4컷: 시작 1·2컷 빼고, 6컷: 컷 틀(cuts.LAYOUTS)."""
+    return cut_layout.spec(scene, index, n).has_mungchi
 
 
-def cut_has_characters(scene: str, index: int) -> bool:
-    """시작 3컷은 뭉치 혼자 출동(인물 참조를 넣지 않음)."""
-    return not (scene == "INTRO" and index == 3)
+def cut_has_characters(scene: str, index: int, n: int) -> bool:
+    """사람이 나오는 컷(인물 참조를 넣음). 4컷: 시작 3컷(뭉치 혼자 출동) 빼고."""
+    return cut_layout.spec(scene, index, n).has_people
 
 
-def is_go_cut(scene: str, index: int) -> bool:
-    """시작 3컷 = 뭉치 혼자 출동(families.INTRO_GO). 그림·영상이 달리기 자세로(#779)."""
-    return scene == "INTRO" and index == 3
+def is_go_cut(scene: str, index: int, n: int) -> bool:
+    """뭉치 혼자 달리는 컷(4컷 시작 3, 6컷 시작 4·종료 2). 그림·영상이 달리기 자세로(#779)."""
+    return cut_layout.spec(scene, index, n).who == "RUN"
 
 
 # #779(실측 2026-11-18): 서 있는 첫 그림에서 달리기로 바뀌는 0.5~1초에 뭉치가 몸을 틀며 뭉개지고,
@@ -1689,33 +1778,61 @@ WRITTEN_THINGS = (
 )
 
 
+# #779(사용자 결정 2026-11-19): 뭉치 혼자 나오는 가까운 장면(6컷 틀). 위쪽은 자막 자리로 비움
+MUNGCHI_CLOSE_SHOT = (
+    "Close shot of Mungchi alone from the chest up, its face large and clearly visible, with "
+    "empty space above its head for a caption; the place shows softly behind it."
+)
+# #779: 뭉치가 사람 곁에 붙으면 영상 모델이 사람 팔·손을 뭉치에게 옮겨 붙임(3테마 실행 실패 5컷)
+MUNGCHI_SEPARATE = (
+    "Mungchi is its own small separate figure: it does not touch, overlap or merge with anyone "
+    "and never takes on a person's arms, hands, legs, hair or clothes."
+)
+# #779(사용자 결정 2026-11-19, 수수께끼 모험물 컷신 느낌): 사건 컷만 살짝 신비롭게, 무섭지 않게
+MYSTERY_LIGHT = (
+    "A touch of mystery: soft long shadows and slightly cooler tones, still in bright afternoon "
+    "daylight, never dark or scary."
+)
+
+
 def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list[str]) -> str:
-    """시작·종료 영상 컷의 첫 그림(영상이 이 그림에서 시작). mungchiMood는 있으면 쓴다."""
+    """시작·종료 영상 컷의 첫 그림(영상이 이 그림에서 시작). mungchiMood는 있으면 쓴다.
+
+    누가 나오는지·장면 크기·사건 색감은 컷 틀(cuts.LAYOUTS, #779)을 따른다. 예전 4컷은 콘티
+    camera(HOLD_CLOSE면 가까운 장면)와 시작 1컷 넓은 장면 규칙 그대로."""
+    n = cut_count(theme, scene)
+    spec = cut_layout.spec(scene, index, n)
     lines = [IMAGE_STYLE]
-    if cut_has_mungchi(scene, index):
+    if spec.has_mungchi:
         lines.append(MUNGCHI_LOOK.format(outfit=theme["outfit"]))
         if mouth := mood_mouth(cut):
             lines.append(f"Mungchi's expression: {mouth}, dot eyes unchanged.")
-        if is_go_cut(scene, index):
+        if spec.who == "RUN":
             lines.append(RUN_POSE)
+        lines.append(MUNGCHI_SEPARATE)
     else:
         lines.append("Mungchi does not appear in this picture.")
-    if cut_has_characters(scene, index):
+    if spec.has_people:
         lines.append(_characters(theme))
     else:
         lines.append("Only Mungchi is in this picture (no other characters).")
     lines.append(f"Scene (Korean): {cut['scene']}")
     lines.append(CUT_FRAMING)
-    if cut_camera(scene, index, cut) == "HOLD_CLOSE":
-        lines.append(CLOSE_SHOT)
-    elif (scene, index) == ("INTRO", 1):
-        lines.append(WIDE_SHOT)
-    if cut_has_mungchi(scene, index):
+    if n == 4:
+        if cut_camera(scene, index, cut, n) == "HOLD_CLOSE":
+            lines.append(CLOSE_SHOT)
+        elif (scene, index) == ("INTRO", 1):
+            lines.append(WIDE_SHOT)
+    else:
+        shot = {"WIDE": WIDE_SHOT, "CLOSE": CLOSE_SHOT, "MUNGCHI_CLOSE": MUNGCHI_CLOSE_SHOT}
+        lines.append(shot.get(spec.shot, ""))
+        lines.append(MYSTERY_LIGHT if spec.mystery else "")
+    if spec.has_mungchi:
         lines.append(APART_FROM_ANIMALS)
     lines.append(WRITTEN_THINGS)
     lines += [x for x in target_lines(theme, scene, index) if x]
     lines += [IMAGE_RULES, *_fixes(feedback)]
-    return "\n".join(lines)
+    return "\n".join(x for x in lines if x)
 
 
 # #765 비밀 재료: 엔딩 전 음식은 덮개·도시락 안으로 나오는 틀(그림·영상 지시 _covered_target과 같게)
@@ -1744,7 +1861,11 @@ IMAGE_REVIEW_SYSTEM = (
     "MUNGCHI: 뭉치가 나와야 하는 그림이면 기준 모습과 같은지(크림색 몽글몽글한 몸, 몸 아래쪽 "
     "가운데 얼굴, 흰자 없는 점 눈, 분홍 볼, 작은 손, "
     "갈색 짧은 발, 테마 옷). 손에 든 물건·자세·표정은 "
-    "장면에 따라 달라도 된다. 뭉치가 나오지 않아야 하는 그림이면 나오지 않는지.\n"
+    "장면에 따라 달라도 된다. "
+    # #779(2026-11-19): 옷 소매가 팔처럼 그려지고, 뭉치가 사람 곁에 붙으면 영상에서 팔이 옮겨 붙음
+    "옷에 소매가 있거나 몸 옆 울퉁불퉁한 곳이 소매·팔처럼 보여 팔이 넷처럼 보이면 결함(옷은 소매 "
+    "없는 조끼), 뭉치가 사람과 겹치거나 맞닿아 한 몸처럼 보이면 결함. "
+    "뭉치가 나오지 않아야 하는 그림이면 나오지 않는지.\n"
     "ANSWER_HINT: 찾는 대상이 나오면 안 되는 "
     "그림(targetAllowed false)에 찾는 대상이 보이는지(후보가 동물이면 후보 동물 가운데 어느 "
     "것이라도 보이면 결함). 정답 "
@@ -1829,6 +1950,9 @@ VIDEO_NEGATIVE = (
     "walking on walls, walking through bushes, passing through objects, duplicated objects, "
     "added glasses, added mustache, added beard, face accessories, animal tail, striped fur, "
     "Mungchi turning into an animal, "
+    # #779(2026-11-19): 뭉치가 사람과 합쳐지거나 옷 소매가 팔이 됨, 자막 대사는 입 모양 없이(립싱크
+    # 하지 않음)
+    "Mungchi merging with a person, sleeves on Mungchi, talking, lip sync, "
     "flashing lights, bright flash, light burst, glowing rays, lens flare, scary, sudden cuts"
 )
 # #779: 뭉치 모양 고정. 뭉치는 거의 가만히(표정·갸웃·흔들기), 출동 컷만 정면을 본 채 옆으로 달림.
@@ -1869,6 +1993,9 @@ CAMERA_TEXT = {
     "PAN_SIDE": "a slow sideways pan across the scene",
     "HOLD_CLOSE": "the camera stays close and steady at the same distance and never pulls back; "
     "the people react in place",
+    # #779(2026-11-19 6컷 틀): 가까운 장면에서만(전신이 필요 없는 얼굴 클로즈업), 천천히 조금만
+    "PUSH_SLOW": "a slow gentle push-in toward the face, at most about 10% closer over the whole "
+    "clip, no fast zoom",
 }
 # 콘티에 camera가 없을 때(#779 전에 저장된 테마의 부분 다시 생성) 컷 역할별 기본값
 DEFAULT_CAMERA = {
@@ -1883,10 +2010,13 @@ DEFAULT_CAMERA = {
 }
 
 
-def cut_camera(scene: str, index: int, cut: dict) -> str:
-    """컷 카메라: 출동 컷은 늘 옆에서 따라감, 시작 1컷은 가까운 장면이 아님(넓은 장면, #779),
+def cut_camera(scene: str, index: int, cut: dict, n: int) -> str:
+    """컷 카메라. 6컷 틀은 컷 역할마다 코드가 정함(cuts.LAYOUTS, 콘티 camera 칸은 보지 않음, #779
+    2026-11-19). 예전 4컷: 출동 컷은 늘 옆에서 따라감, 시작 1컷은 가까운 장면이 아님(넓은 장면),
     그 밖은 콘티 값(없거나 목록 밖이면 역할별 기본값)."""
-    if is_go_cut(scene, index):
+    if (fixed := cut_layout.spec(scene, index, n).camera) is not None:
+        return fixed
+    if is_go_cut(scene, index, n):
         return "TRACK_SIDE"
     camera = cut.get("camera")
     if camera not in CAMERA_TEXT or ((scene, index) == ("INTRO", 1) and camera == "HOLD_CLOSE"):
@@ -1914,14 +2044,20 @@ def video_prompt(
     정지 그림 대신 한 번 더 찍는 안전한 버전(뭉치·사람 움직임을 줄이고 카메라만 천천히 훑음).
     """
     target = theme.get("target") or "the missing target"
-    camera = cut_camera(scene, index, cut)
-    if safe and camera not in ("HOLD_CLOSE", "TRACK_SIDE"):  # 출동 컷 안전판도 옆으로 따라감
+    n = cut_count(theme, scene)
+    spec = cut_layout.spec(scene, index, n)
+    answer_cuts = type_cuts(story_type(theme), n).answer
+    camera = cut_camera(scene, index, cut, n)
+    if safe and camera == "PUSH_SLOW":  # 안전판은 다가가지 않음
+        camera = "HOLD_CLOSE"
+    elif safe and camera not in ("HOLD_CLOSE", "TRACK_SIDE"):  # 출동 컷 안전판도 옆으로 따라감
         camera = "PAN_SIDE"
-    if cut_has_mungchi(scene, index):
+    if spec.has_mungchi:
         mouth = mood_mouth(cut)
         go = MUNGCHI_GO_SAFE if safe else MUNGCHI_RUN
         mungchi = [
-            go if is_go_cut(scene, index) else MUNGCHI_STILL,
+            go if spec.who == "RUN" else MUNGCHI_STILL,
+            spec.motion if not safe else "",
             *MUNGCHI_KEEP,
             f"Mungchi never picks up, lifts, hugs, hands over or receives anything, especially "
             f"{target}. An outfit item Mungchi already holds in the first frame (such as a "
@@ -1929,17 +2065,18 @@ def video_prompt(
             "or used. Any hand gestures are done by the people.",
             "Mungchi's outfit, hat and items around the neck stay exactly as in the first frame.",
             APART_FROM_ANIMALS,
+            MUNGCHI_SEPARATE,
             f"Mungchi's expression: {mouth}." if mouth else "",
         ]
     else:
         mungchi = ["Mungchi does not appear in this clip."]
-    if not cut_has_characters(scene, index):
+    if not spec.has_people:
         mungchi.append("Only Mungchi is in this clip (no other characters).")
     t = story_type(theme)
     shows = cut_shows_target(theme, scene, index)
     if not t.target_visual:  # #634 ④⑤ 대상(때·소리)은 그릴 것이 없음(후보 감추기는 아래)
         about_target = ""
-        if t.facts is not None and t.facts.drawable and (scene, index) in t.answer_cuts:
+        if t.facts is not None and t.facts.drawable and (scene, index) in answer_cuts:
             about_target = f"{_answer_look(theme)} Keep it looking the same."
             if t.facts.group(str(theme.get("answer") or "")) == "동물":
                 about_target += " Nobody touches, lifts or holds the animal; everyone watches it."
@@ -1952,28 +2089,27 @@ def video_prompt(
         )
     elif scene == "INTRO" and shows and not t.target_in_hand:  # 잃어버린 것 시작 1컷
         about_target = f"{target} may be held or used, but do not show where it is put or hidden."
-    elif shows and t.target_in_hand and not cut_has_characters(scene, index):
+    elif spec.mungchi_alone and (n != 4 or (shows and t.target_in_hand)):
         about_target = (
             f"Do not show {target}; Mungchi holds nothing."  # 뭉치 혼자 출동 컷(그림과 같게)
         )
     elif shows:
         about_target = (
             "The gift box stays closed, with no tag, card or label."
-            if t.code == "GIFT" and (scene, index) not in t.answer_cuts
+            if t.code == "GIFT" and (scene, index) not in answer_cuts
             else ""
         )
     elif t.target_covered:  # #765 비밀 재료 엔딩 전 컷: 덮인 채로(그림 지시와 같게)
         about_target = _covered_target(theme)
     else:
         about_target = f"Do not show {target}."
-    if t.facts is not None and not t.animal and (scene, index) not in t.answer_cuts:
+    if t.facts is not None and not t.animal and (scene, index) not in answer_cuts:
         about_target += " " + _no_candidates(theme).replace("Do not draw", "Do not show")
         about_target = about_target.strip()
     elif t.animal and not shows:
         about_target += " " + _no_candidates(theme).replace("Do not draw", "Do not show")
-    key = "introCuts" if scene == "INTRO" else "outroCuts"
     lines = [
-        f"Story beat of this clip (Korean): {cut_roles(theme, key)[index - 1]}",
+        f"Story beat of this clip (Korean): {cut_beat(theme, scene, index)}",
         f"Action (Korean): {cut['action']}",
         "Keep the 2D cartoon style of the first frame with thick even outlines.",
         *mungchi,
@@ -1982,7 +2118,9 @@ def video_prompt(
         "the camera follows someone, others may leave the view only because the camera moves "
         "away. Everyone keeps exactly the same face, hair and clothes as in the first frame, with "
         "nothing added to anyone's face.",
-        "The people make small, gentle movements, continuously until the end."
+        ""
+        if not spec.has_people
+        else "The people make small, gentle movements, continuously until the end."
         if safe
         else "The people act it out like a lively cartoon: big, clear, expressive movements "
         "(walking, jumping in surprise, waving), continuously until the end with no pauses. "
@@ -1992,7 +2130,9 @@ def video_prompt(
         "through walls, fences, flower beds, benches or other objects. A single object (a note, a "
         "box, a letter) stays one object.",
         SCENE_MOTION,
-        f"Camera: {CAMERA_TEXT[camera]}, with no zoom-in, so nobody is cut off by zooming. No "
+        f"Camera: {CAMERA_TEXT[camera]}. No transition effects. No text."
+        if camera == "PUSH_SLOW"
+        else f"Camera: {CAMERA_TEXT[camera]}, with no zoom-in, so nobody is cut off by zooming. No "
         "transition effects. No text.",
         about_target,
         *_fixes(feedback),
@@ -2025,7 +2165,8 @@ VIDEO_REVIEW_SYSTEM = (
     "몸 안쪽에 손 선이 보이는 것, 짧은 갈색 발로 걷거나 달리거나 발을 드는 것은 결함이 아니다. "
     "몸 밖으로 길게 뻗은 팔, 팔로 물건을 들어 올림, 손가락, 날개, 흰(몸 색) 다리가 생기거나 갈색 "
     "발이 사라지는 것, 뭉치 얼굴에 코·주둥이가 생기거나 입이 동물처럼 바뀌어 강아지 등 동물처럼 "
-    "보이는 것, 몸 색의 동그란 손이 갈색·어두운 덩어리로 바뀌는 것은 결함. 판정 예시를 기준으로 "
+    "보이는 것, 몸 색의 동그란 손이 갈색·어두운 덩어리로 바뀌는 것, 옷 소매나 몸 옆 울퉁불퉁한 "
+    "곳이 팔처럼 보이는 것, 뭉치가 사람과 합쳐지는 것은 결함. 판정 예시를 기준으로 "
     "삼는다. "
     # 실측 2026-11-11(초4 종료 3컷): 뭉치가 주인과 함께 로봇을 잡는 영상이 통과함(#535).
     # 사용자 결정 2026-11-15(B안): 결함은 사건 대상 잡기와 팔·날개 생김(#779에서 위 기준으로

@@ -22,7 +22,8 @@ from typing import Any
 from app.followup.leak_guard import find_text_leaks
 from app.mission_draft import checks as mission_checks
 from app.mission_draft.models import Draft, MissionDraftRequest
-from app.theme_draft.families import StoryType, is_animal, story_type
+from app.theme_draft import cuts as cut_layout
+from app.theme_draft.families import StoryType, is_animal, story_type, type_cuts
 
 DAYS = ("MON", "TUE", "WED", "THU", "FRI")
 DAY_KO = dict(zip(DAYS, ("월", "화", "수", "목", "금"), strict=True))
@@ -66,8 +67,10 @@ TEXT_MAX = {
     "missionHook": LINE_MAX,  # 대화 한 줄로 나감(증거 발견 줄 다음, 뭉치)
 }
 DAY_TEXTS = ("place", "sceneNote", "clue", "discovery", "missionHook")
-CUTS = 4  # 시작·종료 영상 콘티 컷 수(4·6·8·6초, theme_video_cut_seconds, 사용자 결정 2026-11-11)
-CAPTION_MAX = 30  # 컷 문구(움직임 captions로 웹이 띄움) 글자 상한(기준안)
+# 새 테마 시작·종료 영상 콘티 컷 수(#779 2026-11-19 6컷 × 4초). 예전 4컷(4·6·8·6초) 초안은 부분
+# 다시 생성에서만 쓰이고 이 검사는 새 줄거리만 봄
+CUTS = cut_layout.NEW_CUTS
+CAPTION_MAX = 30  # 움직임 captions(웹이 띄움) 글자 상한(기준안). 컷 자막 상한은 cuts.CAPTION_MAX
 MUNGCHI_MOODS = ("none", "smile", "surprised", "determined")
 # 콘티 scene·action을 칸 하나만 고쳐 쓸 때 알려 주는 글자 상한(기준안, 길이 검사는 하지 않음)
 CUT_TEXT_MAX = 80
@@ -100,9 +103,7 @@ NOT_SUBJECT = tuple("같이 많이 높이 깊이 길이 가까이 바닷가 물�
 # #779: '들어간'은 뺌. 카메라가 뒤에서 따라가며 문 안으로 걸어 들어가는 컷이 이야기 이동을 보여
 # 주는 연출이라(만화 연출 시제품 2026-11-18), 인물이 사라지는 것은 영상 검토 CONTINUITY가 봄
 APPROACH_WORDS = tuple("다가오|다가온|달려오|달려온|걸어오|걸어온|화면 밖|밖으로".split("|"))
-# 시작 콘티 1 평소 모습·2 사건에는 뭉치가 없고 3 출동·4 현장 도착에는 나옴(사용자 결정 2026-11-11)
-INTRO_MUNGCHI = (False, False, True, True)
-INTRO_GO_CUT = 3  # 시작 3컷 = 뭉치 혼자 출동(families.INTRO_GO)
+# 컷마다 뭉치가 나오는지·달리기를 허용하는지는 컷 틀(cuts.LAYOUTS, #779)
 CANDIDATE_CHARS = (2, 10)
 FEATURES = (2, 5)
 CHARACTERS = (1, 3)
@@ -229,16 +230,19 @@ def theme_day(theme: Theme, day: str) -> dict:
 FIX_PATH = re.compile(
     r"^(?:title|bigQuestion|intro|outro|incident|answerLook"
     r"|(?:MON|TUE|WED|THU|FRI)\.(?:place|sceneNote|clue|discovery|missionHook)"
-    r"|(?:introCuts|outroCuts)[1-4]\.caption)$"
+    r"|(?:introCuts|outroCuts)[1-6]\.caption)$"
 )
 # 콘티 scene·action은 뭉치 동작 검사(CUT_ACTION)·그림에 나오면 안 되는 이름(CUT_TARGET, #765)일
 # 때만 그 칸을 고쳐 쓴다(정답 유출은 다시 생성)
-CUT_FIX_PATH = re.compile(r"^(?:introCuts|outroCuts)[1-4]\.(?:scene|action)$")
+CUT_FIX_PATH = re.compile(r"^(?:introCuts|outroCuts)[1-6]\.(?:scene|action)$")
 FIX_REASON = (
     re.compile(r"^LENGTH (\S+) \d+자 > \d+$"),
-    re.compile(r"^CUT_ACTION ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
+    re.compile(r"^CUT_ACTION ((?:introCuts|outroCuts)[1-6])\.(scene|action) "),
     # #765 그림에 나오면 안 되는 대상·후보 이름이 컷 설명에 있으면 그 칸만 고쳐 씀
-    re.compile(r"^CUT_TARGET ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
+    re.compile(r"^CUT_TARGET ((?:introCuts|outroCuts)[1-6])\.(scene|action) "),
+    # #779 자막 꼴('이름: 대사', 말하는 사람이 그 컷에 보임)·자막 있는 컷이 비면 그 자막만 고쳐 씀
+    re.compile(r"^CUT_SPEAKER ((?:introCuts|outroCuts)[1-6])\.(caption) "),
+    re.compile(r"^REQUIRED ((?:introCuts|outroCuts)[1-6])\.(caption)$"),
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery|sceneNote)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
     re.compile(r"^CANDIDATE_NAME (\S+?)에 "),  # #634 엔딩 전 글의 후보 이름(사실표 종류)
@@ -902,15 +906,16 @@ def cut_target_problems(theme: Theme) -> list[str]:
     t = story_type(theme)
     bad = []
     for scene, key in (("INTRO", "introCuts"), ("OUTRO", "outroCuts")):
+        hidden = type_cuts(t, len(theme.get(key) or []) or CUTS)  # #779 컷 수에 맞춘 컷 번호
         for i, cut in enumerate(theme.get(key) or [], 1):
             for k in ("scene", "action"):
                 text = str(cut.get(k) or "")
-                if (scene, i) in t.hidden_target_cuts and (word := cut_target_word(theme, text)):
+                if (scene, i) in hidden.hidden_target and (word := cut_target_word(theme, text)):
                     bad.append(
                         f"CUT_TARGET {key}{i}.{k} 대상이 나오지 않는 컷에 찾는 대상 낱말 "
                         f"'{word}'(없다는 말도 쓰지 않음)"
                     )
-                if (scene, i) in t.hidden_candidate_cuts and (
+                if (scene, i) in hidden.hidden_candidate and (
                     names := candidate_names(theme, text)
                 ):
                     bad.append(f"CUT_TARGET {key}{i}.{k} 후보가 나오지 않는 컷에 후보 이름 {names}")
@@ -1119,6 +1124,8 @@ def set_text_at(theme: Theme, path: str, text: str) -> None:
 def text_max(path: str, theme: Theme | None = None) -> int:
     key = path.rpartition(".")[2]
     if key == "caption":
+        if theme is not None and (m := re.match(r"(introCuts|outroCuts)", path)):
+            return cut_layout.CAPTION_MAX.get(len(theme.get(m.group(1)) or []), CAPTION_MAX)
         return CAPTION_MAX
     if key in ("scene", "action"):
         return CUT_TEXT_MAX
@@ -1470,40 +1477,97 @@ def elimination_summary(theme: Theme) -> str:
     return ", ".join(parts) + f" → 남은 정답 {theme.get('answer')}"
 
 
-def check_cuts(theme: Theme) -> list[str]:
-    """시작·종료 영상 콘티: 정확히 4컷, 칸 비지 않음, 문구 길이, 뭉치 표정.
+def clear_off_captions(theme: Theme) -> None:
+    """자막 없는 컷의 caption을 비운다(#779 6컷 틀 B안: 자막은 중요한 순간 컷에만, 다시 생성 없이
+    코드가 비움). 예전 4컷은 모든 컷이 자막 컷이라 그대로."""
+    for scene, key in (("INTRO", "introCuts"), ("OUTRO", "outroCuts")):
+        cuts = theme.get(key) or []
+        specs = cut_layout.layout(len(cuts))[scene]
+        for i, cut in enumerate(cuts, 1):
+            if i <= len(specs) and not specs[i - 1].caption:
+                cut["caption"] = ""
 
-    시작 콘티 1·2(평소 모습·사건)는 뭉치가 나오지 않아 mungchiMood가 none이고, 3·4(출동·현장
-    도착)는 뭉치가 나와 none이 아니다. 그림에 나오면 안 되는 대상·후보 이름은 CUT_TARGET(#765).
+
+def caption_speaker(text: str) -> str | None:
+    """'이름: 대사' 꼴 자막의 이름(꼴이 아니면 None)."""
+    m = re.match(r"^\s*([^:：\s][^:：]{0,14}?)\s*[:：]\s*\S", text)
+    return m.group(1).strip() if m else None
+
+
+def caption_problems(theme: Theme, scene: str, i: int) -> list[str]:
+    """자막 있는 컷의 자막 꼴(#779 사용자 결정 2026-11-19): 비지 않음, 글자 상한, 6컷은 '이름: 대사'
+    이고 말하는 사람이 그 컷에 보임(뭉치 혼자 컷은 뭉치, 사람 컷은 그 컷 scene·action에 나오는
+    인물, 함께 컷은 뭉치나 인물). 시작 1컷은 이름 없는 장면 소개. 자막 없는 컷은 보지 않음."""
+    key = "introCuts" if scene == "INTRO" else "outroCuts"
+    n = len(theme.get(key) or [])
+    cut = theme[key][i - 1]
+    spec = cut_layout.spec(scene, i, n)
+    text = str(cut.get("caption") or "").strip()
+    if not spec.caption:
+        return []
+    if not text:
+        return [f"REQUIRED {key}{i}.caption"]
+    bad = []
+    limit = cut_layout.CAPTION_MAX.get(n, CAPTION_MAX)
+    if len(text) > limit:
+        bad.append(f"LENGTH {key}{i}.caption {len(text)}자 > {limit}")
+    if n == 4 or spec.narrator:  # 예전 4컷(내레이터 자막)·시작 1컷 장면 소개
+        return bad
+    name = caption_speaker(text)
+    people = [str(c.get("name") or "") for c in theme.get("characters") or [] if c.get("name")]
+    matched = [p for p in people if name and (p == name or name in p or p in name)]
+    where = f"{cut.get('scene') or ''} {cut.get('action') or ''}"
+    if name is None:
+        bad.append(f"CUT_SPEAKER {key}{i}.caption '이름: 대사' 꼴이 아님")
+    elif spec.mungchi_alone and name != "뭉치":
+        bad.append(f"CUT_SPEAKER {key}{i}.caption 뭉치 혼자 나오는 컷이라 말하는 사람은 '뭉치'")
+    elif spec.who in ("PEOPLE", "OBJECT") and not matched:
+        bad.append(
+            f"CUT_SPEAKER {key}{i}.caption 사람만 나오는 컷이라 말하는 사람은 그 컷에 보이는 인물"
+            f"({', '.join(people)}) 중 한 명('{name}' 아님)"
+        )
+    elif spec.who == "GROUP" and name != "뭉치" and not matched:
+        bad.append(
+            f"CUT_SPEAKER {key}{i}.caption 말하는 사람은 뭉치나 그 컷에 보이는 인물"
+            f"({', '.join(people)}) 중 한 명('{name}' 아님)"
+        )
+    elif matched and not any(p in where or name in where for p in matched):
+        bad.append(f"CUT_SPEAKER {key}{i}.caption '{name}'이(가) 그 컷 scene·action에 나오지 않음")
+    return bad
+
+
+def check_cuts(theme: Theme) -> list[str]:
+    """시작·종료 영상 콘티: 정확히 6컷(#779), 칸 비지 않음, 자막 꼴·길이, 뭉치 표정.
+
+    누가 나오는지는 컷 틀(cuts.LAYOUTS): 뭉치가 나오지 않는 컷(사람만·사건 물건)은 mungchiMood가
+    none, 뭉치가 나오는 컷은 none이 아니다. 뭉치 혼자 달리는 컷만 달리기 낱말을 허용한다. 그림에
+    나오면 안 되는 대상·후보 이름은 CUT_TARGET(#765).
     """
     bad = []
-    for key in ("introCuts", "outroCuts"):
+    for scene, key in (("INTRO", "introCuts"), ("OUTRO", "outroCuts")):
         cuts = theme.get(key) or []
         if len(cuts) != CUTS:
             bad.append(f"CUTS {key} {CUTS}컷 필요(지금 {len(cuts)}컷)")
+            continue
         for i, cut in enumerate(cuts, 1):
-            for k in ("scene", "action", "caption"):
+            spec = cut_layout.spec(scene, i, CUTS)
+            for k in ("scene", "action"):
                 if not str(cut.get(k) or "").strip():
                     bad.append(f"REQUIRED {key}{i}.{k}")
-            if len(cut.get("caption") or "") > CAPTION_MAX:
-                bad.append(
-                    f"LENGTH {key}{i}.caption {len(cut.get('caption') or '')}자 > {CAPTION_MAX}"
-                )
-            has_mungchi = key == "outroCuts" or (i <= len(INTRO_MUNGCHI) and INTRO_MUNGCHI[i - 1])
-            may_run = key == "introCuts" and i == INTRO_GO_CUT  # 출동 컷은 달리기 허용(#779)
+            bad += caption_problems(theme, scene, i)
+            may_run = spec.who == "RUN"  # 뭉치 혼자 달리는 컷(#779)
             for k in ("scene", "action"):
-                for problem in cut_action_problems(str(cut.get(k) or ""), has_mungchi, may_run):
+                for problem in cut_action_problems(
+                    str(cut.get(k) or ""), spec.has_mungchi, may_run
+                ):
                     bad.append(f"CUT_ACTION {key}{i}.{k} {problem}")
             mood = cut.get("mungchiMood")
             if mood not in MUNGCHI_MOODS:
                 bad.append(f"CUT_MOOD {key}{i} mungchiMood는 {list(MUNGCHI_MOODS)} 중 하나")
-            elif key == "outroCuts" and mood == "none":
-                bad.append(f"CUT_MOOD {key}{i} 종료 콘티는 모두 뭉치가 나와 none이 아님")
-            elif key == "introCuts" and i <= len(INTRO_MUNGCHI):
-                if INTRO_MUNGCHI[i - 1] and mood == "none":
-                    bad.append(f"CUT_MOOD {key}{i} 뭉치가 나오는 컷이라 none이 아님")
-                elif not INTRO_MUNGCHI[i - 1] and mood != "none":
-                    bad.append(f"CUT_MOOD {key}{i} 뭉치가 나오지 않는 컷이라 none")
+            elif spec.has_mungchi and mood == "none":
+                bad.append(f"CUT_MOOD {key}{i} 뭉치가 나오는 컷이라 none이 아님")
+            elif not spec.has_mungchi and mood != "none":
+                bad.append(f"CUT_MOOD {key}{i} 뭉치가 나오지 않는 컷이라 none")
     return bad + cut_target_problems(theme)
 
 

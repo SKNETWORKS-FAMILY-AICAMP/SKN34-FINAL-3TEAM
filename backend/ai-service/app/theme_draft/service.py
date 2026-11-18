@@ -36,7 +36,7 @@ from app.theme_draft.regen import bundle
 from app.theme_draft.storage import ThemeStorage, new_run_id
 
 DAY_PREFIX = re.compile(r"^(MON|TUE|WED|THU|FRI)\s+(.+)$")
-IMAGE_PREFIX = re.compile(r"^(MON|TUE|WED|THU|FRI|INTRO[1-4]|OUTRO[1-4])\s+(.+)$")
+IMAGE_PREFIX = re.compile(r"^(MON|TUE|WED|THU|FRI|INTRO[1-6]|OUTRO[1-6])\s+(.+)$")
 # 기본 뭉치 그림(기준안, 앱 원본 솜뭉치 그림이 저장되면 바꿈)
 MUNGCHI_IMAGE = Path(__file__).parent / "assets" / "mungchi-2d.png"
 

@@ -49,7 +49,6 @@ logger = logging.getLogger(__name__)
 
 CUT_SCENES = ("INTRO", "OUTRO")
 CUTS_KEY = {"INTRO": "introCuts", "OUTRO": "outroCuts"}
-SCENE_IMAGE = {"INTRO": "INTRO4", "OUTRO": "OUTRO4"}  # 응답 INTRO·OUTRO = 4번째 컷 첫 그림
 NO_SETUP = "그림 설정 없음"
 # 그림 대역(IMAGE_PROVIDER=fake)은 시험·측정용 단색 그림이라 검토 모델에 보내지 않는다(#716).
 # 보내면 결함이 아닌 대역 모양("단색이라 뭉치가 안 보임") 때문에 실패·다시 그리기가 생겨
@@ -63,16 +62,19 @@ def warning(stage: str, item: str, reason: str) -> dict:
     return {"stage": stage, "item": item, "reason": reason}
 
 
-def image_of(scene: str) -> str:
-    """응답 장면(MON·INTRO…) → scene_images 키(MON·INTRO4…)."""
-    return SCENE_IMAGE.get(scene, scene)
+def image_of(scene: str, theme: Theme) -> str:
+    """응답 장면(MON·INTRO…) → scene_images 키. INTRO·OUTRO는 마지막 컷 첫 그림(예전 4컷 INTRO4,
+    #779 6컷 INTRO6)."""
+    if scene not in CUTS_KEY:
+        return scene
+    return f"{scene}{len(theme.get(CUTS_KEY[scene]) or []) or 4}"
 
 
 @dataclass
 class Shot:
     """그림 1장 일감."""
 
-    key: str  # MON~FRI, INTRO1~4, OUTRO1~4
+    key: str  # MON~FRI, INTRO1~n, OUTRO1~n(#779 새 테마 6컷)
     scene_text: str  # 검토 모델에 주는 장면 글
     prompt: Callable[[list[str]], str]  # 사유 목록 → 지시문
     refs: list[bytes]
@@ -201,9 +203,10 @@ def cut_shot(
 ) -> Shot:
     body = ctx.prompt.body
     cut = theme[CUTS_KEY[scene]][index - 1]
-    has_mungchi = body.cut_has_mungchi(scene, index)
+    n = len(theme[CUTS_KEY[scene]])
+    has_mungchi = body.cut_has_mungchi(scene, index, n)
     refs = [outfit] if has_mungchi else []
-    if person is not None and body.cut_has_characters(scene, index):
+    if person is not None and body.cut_has_characters(scene, index, n):
         refs.append(person)
     return Shot(
         key=f"{scene}{index}",
@@ -377,9 +380,9 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
     }
     scene_images = {**(state.get("scene_images") or {}), **new_images}
     to_upload = {
-        scene: new_images[image_of(scene)]
+        scene: new_images[image_of(scene, theme)]
         for scene in ("INTRO", *DAYS, "OUTRO")
-        if image_of(scene) in new_images
+        if image_of(scene, theme) in new_images
     }
     # 부분 다시 생성 재료(#537): 새로 만든 테마 옷 뭉치와 컷 첫 그림
     to_upload |= {k: v for k, v in new_images.items() if k not in DAYS} | new_assets

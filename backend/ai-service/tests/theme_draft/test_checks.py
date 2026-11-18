@@ -166,14 +166,19 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("target empty", themed(target=""), ["REQUIRED"]),
     ("title too long", themed(title="가" * 21), ["LENGTH"]),
     ("intro too long", themed(intro="가" * 201), ["LENGTH"]),
-    ("no characters", themed(characters=[]), ["CHARACTERS"]),
+    # #779: 자막 말하는 사람(시작 2·종료 3컷 지호)이 인물 목록에 없어 CUT_SPEAKER도 나옴
+    ("no characters", themed(characters=[]), ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER"]),
     (
         "four characters",
         themed(characters=[{"name": f"아이{i}", "look": "모습"} for i in range(4)]),
-        ["CHARACTERS"],
+        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER"],
     ),
     ("character without look", themed(characters=[{"name": "지호", "look": ""}]), ["CHARACTERS"]),
-    ("mungchi as character", themed(characters=[{"name": "뭉치", "look": "솜"}]), ["CHARACTERS"]),
+    (
+        "mungchi as character",
+        themed(characters=[{"name": "뭉치", "look": "솜"}]),
+        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER"],
+    ),
     ("candidate color word", edit(lambda t: _rename(t, "창고", "빨간창고")), ["CANDIDATES"]),
     ("candidate one char", edit(lambda t: _rename(t, "창고", "샘")), ["CANDIDATES"]),
     ("days out of order", edit(lambda t: t["days"].reverse()), ["DAYS"]),
@@ -272,7 +277,7 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("cut action empty", edit(lambda t: t["outroCuts"][1].update(action=" ")), ["REQUIRED"]),
     (
         "answer in intro caption",
-        edit(lambda t: t["introCuts"][3].update(caption="텃밭에 있을까?")),
+        edit(lambda t: t["introCuts"][5].update(caption="뭉치: 텃밭에 있을까?")),
         ["ANSWER_LEAK"],
     ),
     (
@@ -282,18 +287,19 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ),
     (
         "answer in outro cut is fine",
-        edit(lambda t: t["outroCuts"][2].update(caption="텃밭이었어!")),
+        edit(lambda t: t["outroCuts"][2].update(caption="지호: 텃밭이었어!")),
         [],
     ),
-    # 시작 콘티 뭉치 표정: 1·2(평소 모습·사건)는 뭉치가 없어 none, 3·4(출동·도착)는 none이 아님
+    # 뭉치 표정: 뭉치가 나오지 않는 컷(#779 6컷 틀 시작 1·2·3, 종료 3·5)은 none, 나오는 컷은 none이
+    # 아님
     (
         "mungchi in intro cut 1",
         edit(lambda t: t["introCuts"][0].update(mungchiMood="smile")),
         ["CUT_MOOD"],
     ),
     (
-        "mungchi missing in intro cut 3",
-        edit(lambda t: t["introCuts"][2].update(mungchiMood="none")),
+        "mungchi missing in intro cut 4",
+        edit(lambda t: t["introCuts"][3].update(mungchiMood="none")),
         ["CUT_MOOD"],
     ),
     (
@@ -302,7 +308,7 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         ["CUT_MOOD"],
     ),
     (
-        # 종료 콘티는 4컷 모두 뭉치가 나옴(그림이 항상 뭉치를 그려서, 점검 C9)
+        # 뭉치가 나오는 종료 컷(#779 6컷 틀 2 = 뭉치 혼자 달림)은 none이 아님
         "outro cut without mungchi",
         edit(lambda t: t["outroCuts"][1].update(mungchiMood="none")),
         ["CUT_MOOD"],
@@ -311,7 +317,7 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     # (실측 2026-11-11: 그런 컷에서 영상에 팔·다리가 생기거나 확대돼 잘림)
     (
         "mungchi hands over target",
-        edit(lambda t: t["outroCuts"][2].update(action="뭉치가 지호에게 보리를 건넨다")),
+        edit(lambda t: t["outroCuts"][5].update(action="뭉치가 지호에게 보리를 건넨다")),
         ["CUT_ACTION"],
     ),
     (
@@ -321,7 +327,7 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ),
     (
         "mungchi jumps in scene",
-        edit(lambda t: t["introCuts"][3].update(scene="뭉치가 길모퉁이에서 뛰며 웃는다")),
+        edit(lambda t: t["introCuts"][4].update(scene="뭉치가 길모퉁이에서 뛰며 웃는다")),
         ["CUT_ACTION"],
     ),
     (

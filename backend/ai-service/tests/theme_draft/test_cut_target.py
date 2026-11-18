@@ -65,11 +65,11 @@ def test_target_name_in_hidden_cut_of_lost(key: str, index: int, field: str, tex
 
 
 def test_target_name_is_allowed_in_target_cuts_and_captions() -> None:
-    """valid_theme은 시작 1컷·종료 3·4컷 scene·action에 보리가 나오고 시작 4컷 문구(caption)에도
-    나오지만 통과(문구는 영상 위 글이라 그리지 않음)."""
+    """valid_theme은 시작 1컷·종료 3·5·6컷(#779 6컷 틀) scene·action에 보리가 나오고, 대상이
+    나오지 않는 시작 6컷 자막(caption)에 보리를 써도 통과(자막은 영상 위 글이라 그리지 않음)."""
     theme = valid_theme()
     assert "보리" in theme["introCuts"][0]["scene"] and "보리" in theme["outroCuts"][2]["scene"]
-    assert "보리" in theme["introCuts"][3]["caption"]
+    theme["introCuts"][5]["caption"] = "뭉치: 보리는 어디에?"
     assert cut_target(theme) == []
 
 
@@ -118,7 +118,7 @@ def test_treasure_hides_target_from_intro1() -> None:
 
 
 # ---------------------------------------------------------------- 사실표 종류: 후보 이름
-def test_animal_candidate_in_outro1_but_answer_allowed_from_outro2() -> None:
+def test_animal_candidate_in_outro1_but_answer_allowed_from_outro3() -> None:
     theme = animal_theme()
     assert cut_target(theme) == []
     bad = cut_target(
@@ -126,8 +126,10 @@ def test_animal_candidate_in_outro1_but_answer_allowed_from_outro2() -> None:
     )
     assert bad == ["CUT_TARGET outroCuts1.scene 후보가 나오지 않는 컷에 후보 이름 ['고양이']"]
     answer = theme["answer"]
-    shown = cuts_with(theme, "outroCuts", 2, scene=f"뭉치가 창고 앞에서 {answer}를 바라본다")
-    assert cut_target(shown) == []  # 종료 2컷은 정답 동물이 나오는 컷(answer_cuts)
+    shown = cuts_with(theme, "outroCuts", 3, scene=f"사육사가 창고 앞에서 {answer}를 바라본다")
+    assert cut_target(shown) == []  # 종료 3컷은 정답 동물이 나오는 컷(6컷 틀 answer_cuts)
+    run = cuts_with(theme, "outroCuts", 2, scene=f"뭉치가 {answer}가 있는 창고로 달려간다")
+    assert [r.split(" ")[1] for r in cut_target(run)] == ["outroCuts2.scene"]  # 뭉치 혼자 컷
 
 
 def test_gift_candidate_hidden_in_outro2_and_secret_food_not_checked() -> None:
@@ -169,15 +171,16 @@ def test_hidden_cut_scope_by_story_type() -> None:
 def test_plan_rules_list_cuts_where_target_or_candidates_appear() -> None:
     lost = families.type_rules(families.LOST)
     assert (
-        "찾는 대상(target)이 그림에 나오는 컷은 introCuts 1, outroCuts 3·4뿐이다. 그 밖의 컷"
-        "(introCuts 2·3·4, outroCuts 1·2)" in lost
+        "찾는 대상(target)이 그림에 나오는 컷은 introCuts 1, outroCuts 3·5·6뿐이다. 그 밖의 컷"
+        "(introCuts 2·3·4·5·6, outroCuts 1·2·4)" in lost
     )
     assert "없다는 말도 쓰지 않는다" in lost
     assert "찾는 대상은 아직 나오지 않아 scene·action에 쓰지 않음" in lost  # 종료 2컷 틀
     prank = families.type_rules(families.PRANK)
-    assert "후보(동물) 이름은 정답을 포함해 outroCuts 2·3·4의 scene·action에만 쓴다" in prank
-    assert "outroCuts 1에는 쓰지 않는다" in prank
-    assert families.hidden_cut_rules(families.ORIGIN) == ""
+    assert "후보(동물) 이름은 정답을 포함해 outroCuts 3·5·6의 scene·action에만 쓴다" in prank
+    assert "outroCuts 1·2·4에는 쓰지 않는다" in prank
+    # 손에 든 것도 뭉치 혼자 나오는 컷(6컷 틀)에는 그리지 않아 그 컷만 숨김(#779)
+    assert "(introCuts 4·5, outroCuts 1·2·4)" in families.hidden_cut_rules(families.ORIGIN)
     assert "그림에 나오지 않는 것을 '○○는 보이지 않는다'처럼 쓰지 않는다" in prompts.PLAN_SYSTEM
 
 
@@ -186,7 +189,7 @@ def test_fix_rules_for_hidden_cut() -> None:
     assert any("찾는 대상('반려 강아지')이 나오지 않는다" in r for r in lost)
     assert "종료 콘티라 정답 이름을 써도 된다." in lost  # 정답(장소) 이름은 그대로 됨
     shown = prompts.fix_rules(valid_theme(), "outroCuts3.scene")
-    assert not any("나오지 않는다" in r for r in shown)
+    assert not any("찾는 대상(" in r for r in shown)
     animal = prompts.fix_rules(animal_theme(), "outroCuts1.action")
     assert any(r.startswith("이 컷 그림에는 후보가 나오지 않는다: 정답을 포함해") for r in animal)
     assert "종료 콘티라 정답 이름을 써도 된다." not in animal
@@ -201,11 +204,14 @@ def test_review_and_covered_food_prompts() -> None:
     gift = gift_theme()
     food = {**gift, "storyType": "SECRET_INGREDIENT", "target": "대회에 낸 할머니의 떡"}
     covered = "대회에 낸 할머니의 떡 stays covered: only a covered dish or a closed lunchbox"
-    assert covered in prompts.video_prompt(food, "OUTRO", 2, food["outroCuts"][1], [])
+    assert covered in prompts.video_prompt(food, "INTRO", 6, food["introCuts"][5], [])
     assert covered not in prompts.video_prompt(food, "OUTRO", 3, food["outroCuts"][2], [])
+    # 뭉치 혼자 나오는 컷(#779 6컷 틀)은 덮인 그릇도 없이 아예 보이지 않음
+    run_cut = prompts.video_prompt(food, "OUTRO", 2, food["outroCuts"][1], [])
+    assert covered not in run_cut and "Mungchi holds nothing" in run_cut
     lost = valid_theme()  # 다른 종류는 그대로 '그리지 마라'
     assert "Do not draw 강아지 보리 anywhere" in prompts.cut_image_prompt(
-        lost, "OUTRO", 2, lost["outroCuts"][1], []
+        lost, "INTRO", 3, lost["introCuts"][2], []
     )
 
 
@@ -224,3 +230,19 @@ def test_graph_rewrites_only_the_hidden_cut_field() -> None:
     assert gen.count("GeneratedTheme") == 1 and gen.count("GeneratedFixes") == 1
     user = gen.users("GeneratedFixes")[0]
     assert "path: outroCuts2.scene" in user and "찾는 대상('강아지 보리')이 나오지 않는다" in user
+
+
+def test_six_cut_hidden_scope_by_story_type() -> None:
+    """#779 6컷 틀: 4컷 번호를 같은 역할 컷으로 옮기고 뭉치 혼자 나오는 컷(시작 4·5, 종료 1·2·4)은
+    대상·후보를 그리지 않아 숨김."""
+    alone = {("INTRO", 4), ("INTRO", 5), ("OUTRO", 1), ("OUTRO", 2), ("OUTRO", 4)}
+    lost = families.type_cuts(families.LOST, 6)
+    assert lost.target == {("INTRO", 1), ("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}
+    assert alone <= lost.hidden_target
+    prank = families.type_cuts(families.PRANK, 6)
+    assert prank.answer == {("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}
+    assert prank.hidden_candidate == {("OUTRO", 1), ("OUTRO", 2), ("OUTRO", 4)}
+    gift = families.type_cuts(families.GIFT, 6)
+    assert not (gift.target & alone)  # 손에 든 선물 상자도 뭉치 혼자 컷에는 그리지 않음
+    legacy = families.type_cuts(families.LOST, 4)  # 예전 4컷 초안은 종류 정의 그대로
+    assert legacy.target == families.LOST.target_cuts

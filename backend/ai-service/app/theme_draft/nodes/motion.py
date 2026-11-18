@@ -1,7 +1,8 @@
 """generate_motion: 그림이 있는 장면마다 생성 모델이 그림을 보고 움직임 값을 정한다.
 
 - speakers는 그 요일 대화 화자(뭉치·등장인물, 찾는 대상 제외)만. 시작·종료는 대화가 없어 비움
-- 시작·종료 captions는 영상이 있을 때만(컷 문구, 녹아드는 전환 경계 기준 시각)
+- 시작·종료 captions는 영상이 있을 때만(컷 문구, 녹아드는 전환 경계 기준 시각). 자막 없는
+  컷(#779 6컷 틀, 빈 caption)은 넣지 않음
 - 상한 밖 숫자는 checks.motion이 맞추고 맞춘 항목마다 warnings(MOTION)
 - 움직임 LLM이 실패하면 그 장면 움직임만 빼고 경고
 - 요일 장면은 살펴보기 spots(그림 속 누를 물건 2~3개, 증거 물건 1개)도 같은 호출에서 정하고
@@ -17,6 +18,7 @@ from pydantic import ValidationError
 from app.llm.base import LlmUnavailable
 from app.llm.media import xfade_caption_times
 from app.theme_draft.checks import DAYS, Theme, dialogue_speakers, motion, spots, theme_day
+from app.theme_draft.cuts import seconds
 from app.theme_draft.models import GeneratedMotion, ThemeMotion
 from app.theme_draft.nodes import THEME_CALL_TYPE, ThemeContext, ThemeState
 from app.theme_draft.nodes.images import CUTS_KEY, image_of, warning
@@ -41,9 +43,11 @@ def captions_of(
     if scene in DAYS or not has_video:
         return []
     cuts = theme[CUTS_KEY[scene]]
-    times = xfade_caption_times(lengths or ctx.settings.theme_video_cut_seconds)
+    times = xfade_caption_times(lengths or seconds(len(cuts), ctx.settings.theme_video_cut_seconds))
     return [
-        {"start": s, "end": e, "text": c["caption"]} for (s, e), c in zip(times, cuts, strict=False)
+        {"start": s, "end": e, "text": c["caption"]}
+        for (s, e), c in zip(times, cuts, strict=False)
+        if str(c.get("caption") or "").strip()
     ]
 
 
@@ -54,7 +58,7 @@ async def scene_motion(
     assert theme is not None
     lines = (state.get("dialogues") or {}).get(scene) if scene in DAYS else None
     speakers = dialogue_speakers(theme, lines)
-    image = (state.get("scene_images") or {})[image_of(scene)]
+    image = (state.get("scene_images") or {})[image_of(scene, state["theme"])]
     day_info = None
     draft = (state.get("drafts") or {}).get(scene) if scene in DAYS else None
     if draft is not None:

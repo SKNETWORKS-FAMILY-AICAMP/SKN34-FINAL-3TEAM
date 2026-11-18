@@ -199,7 +199,7 @@ def test_pictures_keep_gift_closed_and_ingredient_food_hidden_until_reveal() -> 
         "Never show the food itself or its color." in intro
     )
     assert "Do not draw 대회에 낸 할머니의 떡" not in intro
-    video = prompts.video_prompt(gift, "INTRO", 4, gift["introCuts"][3], [])
+    video = prompts.video_prompt(gift, "INTRO", 6, gift["introCuts"][5], [])
     assert (
         "The gift box stays closed, with no tag, card or label." in video
         and "Do not show any of these gift items" in video
@@ -301,12 +301,15 @@ def test_in_hand_sighting_clue_must_not_be_trace() -> None:
 
 
 def test_mungchi_alone_cut_does_not_draw_in_hand_target() -> None:
-    # 그림·영상 실측: 선물 상자 시작 3컷(뭉치 혼자 출동)에서 뭉치가 상자를 들고 그려짐
+    # 그림·영상 실측: 선물 상자 시작 3컷(뭉치 혼자 출동)에서 뭉치가 상자를 들고 그려짐. #779 6컷
+    # 틀은 뭉치 혼자 컷(시작 4·5, 종료 1·2·4) 모두
     gift = gift_theme()
-    cut3 = prompts.cut_image_prompt(gift, "INTRO", 3, gift["introCuts"][2], [])
-    assert "Do not draw 생일에 받은 리본 상자 in this picture; Mungchi holds nothing." in cut3
-    assert "closed (do not show what is inside)" not in cut3
-    cut4 = prompts.cut_image_prompt(gift, "INTRO", 4, gift["introCuts"][3], [])
-    assert "closed (do not show what is inside)" in cut4  # 사람이 있는 컷은 그대로
-    video3 = prompts.video_prompt(gift, "INTRO", 3, gift["introCuts"][2], [])
-    assert "Do not show 생일에 받은 리본 상자; Mungchi holds nothing." in video3
+    for scene, i in (("INTRO", 4), ("INTRO", 5), ("OUTRO", 1), ("OUTRO", 4)):
+        key = "introCuts" if scene == "INTRO" else "outroCuts"
+        alone = prompts.cut_image_prompt(gift, scene, i, gift[key][i - 1], [])
+        assert "Do not draw 생일에 받은 리본 상자 in this picture; Mungchi holds nothing." in alone
+        assert "closed (do not show what is inside)" not in alone
+    cut6 = prompts.cut_image_prompt(gift, "INTRO", 6, gift["introCuts"][5], [])
+    assert "closed (do not show what is inside)" in cut6  # 사람이 있는 컷은 그대로
+    video4 = prompts.video_prompt(gift, "INTRO", 4, gift["introCuts"][3], [])
+    assert "Do not show 생일에 받은 리본 상자; Mungchi holds nothing." in video4

@@ -245,28 +245,32 @@ def test_images_motion_and_video_off_warning() -> None:
     assert set(storage.objects) == set(response.images.values()) | set(
         response.regen["assets"].values()
     )
-    assert len(storage.objects) == 17  # 장면 7 + 재료 10(테마 옷 뭉치·인물 그림·컷 8)
+    assert len(storage.objects) == 21  # 장면 7 + 재료 14(테마 옷 뭉치·인물 그림·컷 12, #779 6컷)
     assert {ct for _, ct in storage.objects.values()} == {"image/png"}
-    # 테마 옷 뭉치(기본 그림 1장 참조) → 인물만 그린 기준 그림(참조 없음, #779) → 13장 동시에
+    # 테마 옷 뭉치(기본 그림 1장 참조) → 인물만 그린 기준 그림(참조 없음, #779) → 17장 동시에
     assert (
         image.calls[0][1] == 1
         and "Only add the theme outfit: 구조대 주황 조끼" in image.calls[0][0]
     )
     assert image.calls[1][1] == 0 and "Draw only these people" in image.calls[1][0]
-    assert len(image.calls) == 15
+    assert len(image.calls) == 19  # 테마 옷 뭉치 + 인물 그림 + 미션 5 + 컷 12(#779 6컷)
     refs = {c[0].split("Scene (Korean): ")[1].split("\n")[0]: c[1] for c in image.calls[2:]}
     assert refs[INTRO_CUTS[0]["scene"]] == 1  # 시작 1컷: 인물 그림만(#779, 예전엔 참조 없음)
     assert refs[INTRO_CUTS[1]["scene"]] == 1  # 시작 2컷: 뭉치 없이 인물 기준 그림만
-    assert refs[INTRO_CUTS[2]["scene"]] == 1  # 시작 3컷: 테마 옷 뭉치만(뭉치 혼자)
-    assert refs[OUTRO_CUTS[0]["scene"]] == 2
+    assert refs[INTRO_CUTS[2]["scene"]] == 1  # 시작 3컷: 사람 리액션(인물 기준 그림만, #779)
+    assert refs[INTRO_CUTS[3]["scene"]] == 1  # 시작 4컷: 테마 옷 뭉치만(뭉치 혼자 달림)
+    assert refs[OUTRO_CUTS[0]["scene"]] == 1  # 종료 1컷: 뭉치 혼자 클로즈업
+    assert refs[OUTRO_CUTS[5]["scene"]] == 2  # 종료 6컷: 함께(테마 옷 뭉치, 인물 기준 그림)
     mon = prompts_with(image, "장소 마을 mon 길")
     assert len(mon) == 1 and mon[0][1] == 2  # [테마 옷 뭉치, 인물 기준 그림]
     assert "Do not draw 강아지 보리" in mon[0][0]
     assert mission_draft("ANALYZE").question in mon[0][0]  # 미션 질문 한국어 그대로
     assert "무엇을 보았는지 떠올려 볼까?" in mon[0][0]  # 생각 열기 질문
     assert DISCOVERY["MON"] in mon[0][0]  # 그날 증거 발견 줄(증거 물건이 보이게)
-    intro3 = prompts_with(image, INTRO_CUTS[2]["scene"])[0][0]
-    assert "a closed straight-line mouth" in intro3  # determined → 입 모양
+    intro4 = prompts_with(image, INTRO_CUTS[3]["scene"])[0][0]  # 뭉치 혼자 달림(#779 6컷)
+    assert "a closed straight-line mouth" in intro4  # determined → 입 모양
+    intro3 = prompts_with(image, INTRO_CUTS[2]["scene"])[0][0]  # 사람 리액션: 수수께끼 빛
+    assert "Mungchi does not appear" in intro3 and "A touch of mystery" in intro3
     intro1 = prompts_with(image, INTRO_CUTS[0]["scene"])[0][0]
     assert "expression" not in intro1  # 시작 1컷은 뭉치 없음(none)
     intro2 = prompts_with(image, INTRO_CUTS[1]["scene"])[0][0]
@@ -277,7 +281,7 @@ def test_images_motion_and_video_off_warning() -> None:
     assert {c for c in review.image_counts if c[0] == "GeneratedImageReview"} == {
         ("GeneratedImageReview", 2)
     }
-    assert review.count("GeneratedImageReview") == 13
+    assert review.count("GeneratedImageReview") == 17
     mon_review = [json.loads(u) for u in review.users("GeneratedImageReview")]
     assert {tuple(u["items"]) for u in mon_review if "missionQuestion" in u} == {
         ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT", "MISSION_FIT")
@@ -372,7 +376,7 @@ def test_fake_image_provider_skips_image_review_with_one_warning() -> None:
     )
     assert response.failure is None
     assert set(response.images) == set(SCENES)
-    assert len(image.calls) == 15  # 테마 옷 뭉치 + 인물 그림 + 13장, 다시 그리기 없음
+    assert len(image.calls) == 19  # 테마 옷 뭉치 + 인물 그림 + 17장, 다시 그리기 없음
     assert reviewed(review, GeneratedImageReview) == 0
     assert reviewed(review, GeneratedStoryReview) == 1  # 글 검토는 그대로
     fake = [w for w in response.warnings if w.reason == image_node.FAKE_REVIEW_SKIPPED]
@@ -384,7 +388,7 @@ def test_real_image_provider_still_reviews_every_image() -> None:
     review = review_llm()
     response = run(gen_llm(), review, image=FakeImageClient(), storage=MemoryThemeStorage())
     assert response.failure is None
-    assert reviewed(review, GeneratedImageReview) == 13
+    assert reviewed(review, GeneratedImageReview) == 17
     assert all(w.reason != image_node.FAKE_REVIEW_SKIPPED for w in response.warnings)
 
 
@@ -442,27 +446,28 @@ def test_video_success_joins_cuts_with_captions() -> None:
         assert KEY.fullmatch(key) and key.endswith(f"/{scene}.mp4")
         body, content_type = storage.objects[key]
         assert content_type == "video/mp4"
-        assert mp4_seconds(body) == pytest.approx(4 + 6 + 8 + 6 - 3 * 0.5, abs=0.15)
-    assert len(video.calls) == 9  # 8컷 + 다시 만든 1컷
+        assert mp4_seconds(body) == pytest.approx(6 * 4 - 5 * 0.5, abs=0.15)  # #779 6컷 × 4초
+    assert len(video.calls) == 13  # 12컷 + 다시 만든 1컷
     assert {c[2] for c in video.calls} == {None}  # 첫 그림만 고정
     assert set(video.negatives) == {VIDEO_NEGATIVE}
-    assert sorted(c[3] for c in video.calls) == sorted([4, 6, 8, 6] * 2 + [6])
-    smile = [c[0] for c in video.calls if OUTRO_CUTS[3]["action"] in c[0]]
-    # 종료 4컷은 대상을 보여 줘도 되는 컷이라 숨기라는 문구가 없음(점검 C5)
+    assert sorted(c[3] for c in video.calls) == [4] * 13  # #779 6컷 × 4초
+    smile = [c[0] for c in video.calls if OUTRO_CUTS[5]["action"] in c[0]]
+    # 종료 6컷은 대상을 보여 줘도 되는 컷이라 숨기라는 문구가 없음(점검 C5)
     assert "a small smiling mouth" in smile[0] and "Do not show" not in smile[0]
     first = [c[0] for c in video.calls if INTRO_CUTS[0]["action"] in c[0]][0]
     assert "may be held or used, but do not show where it is put" in first
     assert "Mungchi does not appear in this clip." in first  # 시작 1컷은 뭉치 없음(점검 C6)
-    run_cut = [c[0] for c in video.calls if INTRO_CUTS[2]["action"] in c[0]][0]
-    assert "Only Mungchi is in this clip" in run_cut and "Do not show 강아지 보리." in run_cut
+    run_cut = [c[0] for c in video.calls if INTRO_CUTS[3]["action"] in c[0]][0]
+    assert "Only Mungchi is in this clip" in run_cut and "Do not show 강아지 보리" in run_cut
     again = [c[0] for c in video.calls if INTRO_CUTS[1]["action"] in c[0]]
     assert len(again) == 2 and "MORPH MORPH 사유" in again[1]
     intro = response.motions["INTRO"]
+    # #779 자막은 자막 있는 컷(시작 1·2·4·6)만, 시각은 6컷 × 4초 녹아드는 전환 경계
     assert [(c.start, c.end, c.text) for c in intro.captions] == [
         (0.0, 3.75, INTRO_CUTS[0]["caption"]),
-        (3.75, 9.25, INTRO_CUTS[1]["caption"]),
-        (9.25, 16.75, INTRO_CUTS[2]["caption"]),
-        (16.75, 22.5, INTRO_CUTS[3]["caption"]),
+        (3.75, 7.25, INTRO_CUTS[1]["caption"]),
+        (10.75, 14.25, INTRO_CUTS[3]["caption"]),
+        (17.75, 21.5, INTRO_CUTS[5]["caption"]),
     ]
     assert response.motions["MON"].captions == []
 
@@ -482,9 +487,9 @@ def test_fake_video_provider_skips_video_review_with_one_warning() -> None:
     )
     assert response.failure is None
     assert set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 8  # 다시 만들기 없음
+    assert len(video.calls) == 12  # 다시 만들기 없음
     assert reviewed(review, GeneratedVideoReview) == 0
-    assert reviewed(review, GeneratedImageReview) == 13  # 그림은 실제 설정이라 그대로 검토
+    assert reviewed(review, GeneratedImageReview) == 17  # 그림은 실제 설정이라 그대로 검토
     assert all(STILL_NOTE not in w.reason for w in response.warnings)  # 대신한 컷 없음
     fake = [w for w in response.warnings if w.reason == video_node.FAKE_REVIEW_SKIPPED]
     assert [(w.stage, w.item) for w in fake] == [("VIDEO", "ALL")]
@@ -517,7 +522,7 @@ def test_fake_video_provider_still_checks_freezes() -> None:
         settings={"video_provider": "fake"},
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 9  # 멈춘 1컷을 다시 만듦
+    assert len(video.calls) == 13  # 멈춘 1컷을 다시 만듦
 
 
 def test_failed_video_cut_becomes_still_cut() -> None:
@@ -533,14 +538,15 @@ def test_failed_video_cut_becomes_still_cut() -> None:
         gen_llm(), review_llm(video=verdicts), image=FakeImageClient(), video=video, storage=storage
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 8 + 1 + 1  # 종료 4컷만 다시 1번(max_regen 1) + 안전한 버전 1번
-    assert "The people make small, gentle movements" in video.calls[-1][0]  # 안전한 버전
+    assert len(video.calls) == 12 + 1 + 1  # 그 컷만 다시 1번(max_regen 1) + 안전한 버전 1번
+    safe = video.calls[-1][0]  # 안전한 버전: 뭉치 클로즈업은 다가가지 않고 그대로(#779)
+    assert "stays close and steady" in safe and "push-in" not in safe
     assert [(w.stage, w.item) for w in response.warnings] == [("VIDEO", "OUTRO")]
     assert response.warnings[0].reason == "OUTRO4 영상 CONTINUITY CONTINUITY 사유, " + STILL_NOTE
     body, _ = storage.objects[response.videos["OUTRO"]]
-    assert mp4_seconds(body) == pytest.approx(4 + 6 + 8 + 6 - 3 * 0.5, abs=0.15)
+    assert mp4_seconds(body) == pytest.approx(6 * 4 - 5 * 0.5, abs=0.15)
     outro = response.motions["OUTRO"]
-    assert [c.end for c in outro.captions][-1] == pytest.approx(22.5)
+    assert [c.end for c in outro.captions][-1] == pytest.approx(21.5)
 
 
 def test_still_clip_length_and_size() -> None:
@@ -561,7 +567,7 @@ def test_cut_image_failure_omits_only_that_video() -> None:
         storage=MemoryThemeStorage(),
     )
     assert response.failure is None
-    assert set(response.videos) == {"INTRO"} and len(video.calls) == 4
+    assert set(response.videos) == {"INTRO"} and len(video.calls) == 6
     assert {(w.stage, w.item) for w in response.warnings} == {("VIDEO", "OUTRO")}
     assert all(w.reason.startswith("OUTRO2 그림 TEXT") for w in response.warnings)
     assert "OUTRO" in response.images  # 4번째 컷 그림은 통과
@@ -597,7 +603,7 @@ def test_video_runs_when_min_seconds_left() -> None:
         deadline_in=400,
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 8
+    assert len(video.calls) == 12
 
 
 # --- 움직임 ---------------------------------------------------------------------------
@@ -678,7 +684,8 @@ def test_image_prompts_and_review_follow_drawing_rules() -> None:
     from app.theme_draft import prompts
 
     theme = valid_theme()
-    assert "No letters, numbers, badges or emblems" in prompts.outfit_prompt(theme)
+    assert "No letters, numbers or real emblems" in prompts.outfit_prompt(theme)
+    assert "sleeveless vest worn around Mungchi's torso" in prompts.outfit_prompt(theme)  # #779
     mon = prompts.mission_image_prompt(theme, "MON", mission_draft("ANALYZE"), [])
     assert "the place or object where the trace was left" in mon
     assert "itself is not the evidence; do not draw it" in mon
@@ -817,7 +824,7 @@ def test_route_uses_media_clients_from_app_state(monkeypatch: pytest.MonkeyPatch
     body = response.json()
     assert response.status_code == 200 and body["failure"] is None
     # 장면 그림 7장 + 재료 그림 10장(테마 옷 뭉치·인물 그림·컷 첫 그림 8장, #537·#779)
-    assert set(body["images"]) == set(SCENES) and len(storage.objects) == 17
+    assert set(body["images"]) == set(SCENES) and len(storage.objects) == 21
     assert set(body["motions"]["MON"]["camera"]) == {"from", "to", "seconds"}
     assert DAYS[0] in body["motions"]
 
@@ -850,10 +857,12 @@ def test_video_prompt_and_review_keep_everyone_and_outfit() -> None:
     from app.theme_draft import prompts
 
     theme = valid_theme()
-    text = prompts.video_prompt(theme, "OUTRO", 4, OUTRO_CUTS[3], [])
+    text = prompts.video_prompt(theme, "OUTRO", 6, OUTRO_CUTS[5], [])  # 함께 나오는 컷
     assert "Nobody walks out of the frame, disappears, appears or merges" in text
     assert "never arms" in text and "stay exactly as in the first frame" in text  # #779 손 문구
-    assert "nobody is cut off" in text and "push-in" not in text  # #779 다가가는 카메라 금지
+    assert "nobody is cut off" in text and "push-in" not in text  # 넓은 장면은 다가가지 않음
+    close = prompts.video_prompt(theme, "OUTRO", 4, OUTRO_CUTS[3], [])  # #779 뭉치 클로즈업만
+    assert "slow gentle push-in toward the face" in close
     for word in ("character leaving the frame", "wings", "outfit change", "freeze frame"):
         assert word in VIDEO_NEGATIVE
     assert "CONTINUITY" in VIDEO_REVIEW_IDS and "CONTINUITY:" in prompts.VIDEO_REVIEW_SYSTEM
@@ -868,7 +877,7 @@ def test_video_prompt_keeps_held_outfit_props_but_blocks_grabbing() -> None:
     from app.theme_draft import prompts
 
     theme = valid_theme()
-    text = prompts.video_prompt(theme, "OUTRO", 3, OUTRO_CUTS[2], [])
+    text = prompts.video_prompt(theme, "OUTRO", 6, OUTRO_CUTS[5], [])  # 뭉치가 나오는 컷
     assert (
         "never picks up, lifts, hugs, hands over or receives anything, especially 강아지 보리"
         in text

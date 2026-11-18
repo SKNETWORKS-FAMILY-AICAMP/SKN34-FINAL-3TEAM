@@ -375,7 +375,7 @@ def test_vehicle_theme_passes_and_hides_vehicles() -> None:
     assert bad == ["CANDIDATE_NAME TUE.sceneNote에 후보 탈것 이름 ['기차'](엔딩 전 글)"]
     cut = prompts.cut_image_prompt(theme, "INTRO", 2, theme["introCuts"][1], [])
     assert "Do not draw any of these vehicles: 자전거, 킥보드, 버스, 기차." in cut
-    outro = prompts.cut_image_prompt(theme, "OUTRO", 2, theme["outroCuts"][1], [])
+    outro = prompts.cut_image_prompt(theme, "OUTRO", 3, theme["outroCuts"][2], [])
     assert "The answer, 버스, may appear" in outro
     assert not prompts.mission_shows_target(theme)
 

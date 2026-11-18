@@ -135,7 +135,7 @@ def test_plan_user_gets_only_seed_type_rules_or_all_for_free_text() -> None:
     assert "주제에 가장 맞는 종류 하나를 골라" in free
     assert all(f"줄거리 종류: {t.label}" in free for t in families.STORY_TYPES.values())
     # 공통 규칙: 제복 모양은 되고 휘장·글자는 안 됨, 큰 질문 종류는 종류 규칙으로
-    assert "제복 모양은 되지만 실제 기관 휘장·글자는 쓰지" in prompts.PLAN_SYSTEM
+    assert "제복 느낌은 되지만 실제 기관 휘장·글자는 쓰지" in prompts.PLAN_SYSTEM
     assert "누구에게(누구에게 맡겼나)" not in prompts.PLAN_SYSTEM
 
 
@@ -319,10 +319,11 @@ def test_mission_dialogue_and_hook_with_candidate_animal_are_flagged() -> None:
 @pytest.mark.parametrize(
     ("code", "allowed"),
     [
-        ("LOST", {("INTRO", 1), ("OUTRO", 3), ("OUTRO", 4)}),
-        ("TREASURE", {("OUTRO", 3), ("OUTRO", 4)}),
-        ("PRANK", {("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)}),
-        ("FOOTPRINT", {("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)}),
+        # #779 6컷 틀(콘티가 없으면 새 틀): 4컷 번호를 같은 역할 컷으로, 뭉치 혼자 컷은 뺌
+        ("LOST", {("INTRO", 1), ("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
+        ("TREASURE", {("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
+        ("PRANK", {("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
+        ("FOOTPRINT", {("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
     ],
 )
 def test_target_cuts_by_story_type(code: str, allowed: set[tuple[str, int]]) -> None:
@@ -330,7 +331,7 @@ def test_target_cuts_by_story_type(code: str, allowed: set[tuple[str, int]]) -> 
     shown = {
         (s, i)
         for s in ("INTRO", "OUTRO")
-        for i in range(1, 5)
+        for i in range(1, 7)
         if prompts.cut_shows_target(theme, s, i)
     }
     assert shown == allowed
@@ -341,12 +342,12 @@ def test_animal_pictures_hide_candidates_and_keep_answer_look() -> None:
     cut = theme["introCuts"][3]
     intro = prompts.cut_image_prompt(theme, "INTRO", 4, cut, [])
     assert "Do not draw any of these animals: 고양이, 너구리, 까치, 다람쥐." in intro
-    outro = prompts.cut_image_prompt(theme, "OUTRO", 2, theme["outroCuts"][1], [])
+    outro = prompts.cut_image_prompt(theme, "OUTRO", 3, theme["outroCuts"][2], [])
     assert "귀 끝이 까맣고 꼬리가 굵은 갈색 너구리" in outro and "Do not draw" not in outro
     video = prompts.video_prompt(theme, "OUTRO", 3, theme["outroCuts"][2], [])
     assert "gently lift it in place" in video and "귀 끝이 까맣고" in video
     lost_video = prompts.video_prompt(valid_theme(), "OUTRO", 2, valid_theme()["outroCuts"][1], [])
-    assert "Do not show 강아지 보리." in lost_video and "these animals" not in lost_video
+    assert "Do not show 강아지 보리" in lost_video and "these animals" not in lost_video
 
 
 def test_review_users_use_answer_keys_and_story_type() -> None:
@@ -387,7 +388,7 @@ def test_fix_rules_follow_story_type() -> None:
     )
     treasure = {**valid_theme(), "storyType": "TREASURE"}
     assert "쪽지를 받아 들고 놀람" in prompts.fix_rules(treasure, "introCuts2.scene")[0]
-    assert "보물 속 편지" in prompts.fix_rules(treasure, "outroCuts4.action")[0]
+    assert "보물 속 편지" in prompts.fix_rules(treasure, "outroCuts5.action")[0]
     assert "고양이" in prompts.fix_rules(animal, "TUE.sceneNote")[1]  # 머리 낱말까지 쓰지 말 낱말
 
 

@@ -156,8 +156,10 @@ class Settings(BaseSettings):
     theme_video_safe_retry: bool = True
     # #779(사용자 결정 2026-11-18): 컷마다 Veo 한 번 호출로 후보 여러 개(sampleCount)를 만들고
     # 검사를 처음 통과한 후보를 씀. 3테마 실행에서 첫 시도 통과가 1/3뿐이라 후보 2개면 정지 그림
-    # 대체가 약 37% → 14%(어림). Veo 비용은 후보 수만큼 늘고 시간은 거의 그대로. Veo 상한 4
-    theme_video_candidates: int = Field(default=2, ge=1, le=4)
+    # 대체가 약 37% → 14%(어림). Veo 비용은 후보 수만큼 늘고 시간은 거의 그대로. Veo 상한 4.
+    # 기본 1(사용자 결정 2026-11-19: 관리자 검수가 있어 후보 2개는 과함, 필요하면
+    # THEME_VIDEO_CANDIDATES로 올림)
+    theme_video_candidates: int = Field(default=1, ge=1, le=4)
     # 영상 단계를 시작할 최소 남은 시간(초, 기준안). 컷은 동시에 만들어 실측 컷 1개 약 115초,
     # 다시 만들기 1번까지 약 230초 + 이어 붙이기·움직임. 컷 1개 상한(theme_video_timeout 400)
     # + 60초를 기준으로 하면 글 단계에서 줄거리를 한 번만 다시 만들어도 영상이 빠졌음
@@ -166,7 +168,9 @@ class Settings(BaseSettings):
     theme_video_min_seconds: float = 300.0
     # 시작·종료 영상 컷 길이(초, 컷 4개). 첫 그림만 고정하고 0.5초씩 겹쳐 녹아들게 이음
     # (사용자 결정 2026-11-11, 4+6+8+6-1.5 = 22.5초)
-    theme_video_cut_seconds: list[int] = [4, 6, 8, 6]
+    # #779(사용자 결정 2026-11-19): 새 테마 6컷 × 4초(기준안). 예전 4컷 초안은 컷 수에 맞춰
+    # 4·6·8·6초(cuts.seconds)
+    theme_video_cut_seconds: list[int] = [4, 4, 4, 4, 4, 4]
     theme_motion_max_tokens: int = 8000  # 움직임 출력(기준안, 대화와 같은 값)
     asset_s3_bucket: str | None = None
     s3_endpoint_url: str | None = None  # 로컬 MinIO만, 비면 AWS S3

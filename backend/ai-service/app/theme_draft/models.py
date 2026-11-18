@@ -402,11 +402,14 @@ MungchiMood = Literal["none", "smile", "surprised", "determined"]
 # #779(기준안 2026-11-18): 컷 카메라. 실측에서 문제없던 것만(다가가기 push-in은 발이 잘려 뺌).
 # FOLLOW_BEHIND 앞으로 걸어가는 인물을 뒤에서 따라감, TRACK_SIDE 옆으로 이동하는 인물을 옆에서
 # 따라감, PAN_SIDE 넓은 장면·모인 장면을 천천히 옆으로 훑음, HOLD_CLOSE 가까운 장면을 그대로 유지
-CameraMove = Literal["FOLLOW_BEHIND", "TRACK_SIDE", "PAN_SIDE", "HOLD_CLOSE"]
+# #779(2026-11-19): PUSH_SLOW 얼굴 클로즈업에서만 천천히 조금 다가감(6컷 틀은 카메라를 코드가 정함)
+CameraMove = Literal["FOLLOW_BEHIND", "TRACK_SIDE", "PAN_SIDE", "HOLD_CLOSE", "PUSH_SLOW"]
 
 
 class GeneratedCut(BaseModel):
-    """시작·종료 영상 콘티의 한 컷(길이는 theme_video_cut_seconds, 기본 4·6·8·6초).
+    """시작·종료 영상 콘티의 한 컷(#779 새 테마 6컷 × 4초, 예전 초안 4컷 4·6·8·6초).
+
+    caption은 자막 있는 컷만(그 밖은 코드가 빈 글로, cuts.LAYOUTS).
 
     내부 칸이라 응답 theme에는 넣지 않는다. camera는 #779 칸이라 그 전에 저장된 테마(부분 다시
     생성)·시험 자료에는 없을 수 있어 기본값을 둔다(LLM 스키마는 strict라 필수).
