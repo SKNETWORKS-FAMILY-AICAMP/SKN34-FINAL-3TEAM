@@ -84,7 +84,7 @@ vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-e
 | `--max-lora-rank` | 어댑터 r=16이라 16 이상 |
 | GPU·VRAM·기타 실행 옵션 | **미확인** (RunPod 엔드포인트 설정 확인 필요) |
 | CPU | 2026-11-18 c7i.4xlarge에서 측정(공식 QAT Q4_0 GGUF + LoRA GGUF, llama.cpp). 상세 1건 약 50초, 30명 배치 약 70~75분. GPU g6.xlarge(vLLM 0.34)는 상세 1건 p50 16초. [infra 9.13](../../docs/report/infra.md#913-리포트-gemma-cpugpu-서빙-비교와-s3-반입-743745-2026-11-18) |
-| AWS 안 이전 | 에픽 #742. 권장안은 CPU(팀 확인 필요). 전환 전까지는 위 RunPod 경로가 운영 |
+| AWS 안 이전 | 에픽 #742. 2026-11-18 팀 방향은 SageMaker 실시간 엔드포인트(GPU, 0대 축소)이고, 검증은 새 이슈에서 한다. 전환 전까지는 위 RunPod 경로가 운영 |
 
 ## S3 반입 (#745, 2026-11-18)
 

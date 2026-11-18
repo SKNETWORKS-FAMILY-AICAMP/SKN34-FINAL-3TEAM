@@ -932,25 +932,39 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 
 에픽 #742에서 리포트 Gemma(26B-A4B QAT + LoRA r16)를 RunPod에서 클러스터 안 `sllm-server`로 옮기기로 했다. 그 전에 CPU와 GPU를 AWS A 계정의 임시 EC2에서 같은 입력으로 쟀다. 수치 원본은 [`ml/sllm/results/serving-compare-20261118.json`](../../ml/sllm/results/serving-compare-20261118.json)에 있고, 측정 스크립트는 [`ml/sllm/scripts/serving/`](../../ml/sllm/scripts/serving/)에 있다.
 
-### 9.13.1 권장안 (팀 확인 필요)
+### 9.13.1 결정 (2026-11-18 팀 방향)
 
-| 항목 | 권장 |
+**SageMaker 실시간 엔드포인트(GPU) + 0대 축소**로 간다. 아래 측정에서는 CPU가 변경량이 가장 적었다. 그래도 GPU 생성 속도(상세 1건 약 16초)를 쓰면서, 노드·드라이버·이미지를 EKS 안에서 직접 관리하지 않는 쪽을 골랐다. 실제로 되는지는 새 이슈에서 검증한다.
+
+| 항목 | 내용 |
 |---|---|
-| CPU/GPU | **CPU**. GPU(g6.xlarge)는 배치 창이 커지거나 1건 지연이 중요해질 때 쓰는 대안으로 둔다 |
+| 위치 | 같은 AWS 계정의 SageMaker 엔드포인트(VPC 안). 학생 글이 AWS 밖으로 나가지 않는 원칙(#473)을 유지한다. 클러스터 밖이라 architecture 7장 "클러스터 안 GPU 두지 않음"(#725)은 바꾸지 않아도 된다. 대신 4.4의 `sllm-server`(클러스터 안 llama.cpp) 구조는 바뀐다(#744) |
+| 모델 | S3 `base-awq/` + `adapter/`(9.13.6) 그대로. vLLM 계열 컨테이너(SageMaker LMI)에 LoRA를 붙인다 |
+| 할당량 (2026-11-18 조회) | 서울 `ml.g6.xlarge for endpoint usage` 2, `ml.g5.xlarge` 4, `ml.g6e.xlarge` 2. 증설 요청은 필요 없다 |
+| 요금 (서울, 시간당) | `ml.g6.xlarge` $1.385(같은 EC2 $0.990보다 약 40% 비쌈), `ml.g5.xlarge` $1.732, `ml.g6e.xlarge` $3.200. 창(130분) 기준 월 약 $13(`ml.g6.xlarge`) |
+| 콜드 스타트 | 0대에서 깨어나면 인스턴스 준비 + 모델 17GB 적재(EC2 실측 기동 224초 + 이미지)로 몇 분 걸린다. RunPod의 191~315초 문제가 그대로 남으므로, 창 시작 전 예약 확장으로 1대를 미리 켜는 방식을 검증한다 |
+| 확인할 것 | Gemma 4를 지원하는 LMI·vLLM 버전, `ml.g6.xlarge`(L4, 호스트 16GiB)에서 9.13.5의 메모리 옵션이 그대로 통하는지(안 되면 `ml.g6e.xlarge`), 실제 콜드 시간, GPU 재고 부족 때의 동작, ai 호출 방식(`InvokeEndpoint`·SigV4) |
+| 하위 이슈 영향 | #744 문서(4.4·7장 결정 줄), #745 레지스트리 등록과 쓰지 않을 `base-gguf/`·`adapter-gguf/` 정리, #746 범위를 EKS NodePool에서 SageMaker 엔드포인트·예약 확장·IAM으로 변경, #747 ai 클라이언트를 RunPod에서 SageMaker로 변경 |
+
+### 9.13.2 측정 기준 검토안 (참고, 채택하지 않음)
+
+| 항목 | 검토안 |
+|---|---|
+| CPU/GPU | CPU. GPU(g6.xlarge)는 배치 창이 커지거나 1건 지연이 중요해질 때 쓰는 대안으로 둔다 |
 | 인스턴스 | `c7i.4xlarge`(16 vCPU, 32GiB), On-Demand. 지금 NodePool `explanation-cpu`의 `c7i·c6i.xlarge`(8GiB)에는 모델이 올라가지 않는다 |
 | 서버·모델 형식 | 지금 구조인 llama.cpp `llama-server`를 유지한다. 기반 모델은 Google 공식 QAT Q4_0 GGUF, LoRA는 `convert_lora_to_gguf.py`로 바꾼 GGUF(`--lora`)다. `--jinja --reasoning off`가 꼭 있어야 한다 |
 | 자원 요청 | `--threads 16 --parallel 2`, `-c 16384`(요청당 8192). 측정 RSS는 28GiB(mmap 포함)이고, 실제 사용량은 15GiB였다. Pod 메모리 요청은 약 20Gi, 한도는 노드가 허용하는 만큼 둔다. 정확한 값은 #746에서 정한다 |
 | 가동 창 | KEDA cron 일 23:50~월 02:00(130분)을 그대로 둔다. 30명 배치가 약 70~75분 걸린다 |
 | architecture 7장 | CPU로 가면 "클러스터 안 GPU 두지 않음"(#725)을 바꿀 필요가 없다. GPU를 고르면 개정해야 한다 |
 
-기준(①12/7 준비 가능 ②배치 창 안 완료 ③비용 ④변경량)별 근거는 다음과 같다.
+측정만 놓고 본 기준(①12/7 준비 가능 ②배치 창 안 완료 ③비용 ④변경량)별 근거는 다음과 같다.
 
-- ① CPU는 기존 `sllm-server` 구조(llama.cpp, S3 initContainer, KEDA cron, 전용 NodePool)를 그대로 쓰고, 인스턴스·자원·모델 키만 바꾸면 된다. GPU는 GPU NodePool·NVIDIA AMI·device plugin, 36GB vLLM 이미지, L4에 맞춘 vLLM 옵션(아래 9.13.3)이 새로 필요하고, 서울 G 계열 On-Demand 용량도 확보해야 한다
+- ① CPU는 기존 `sllm-server` 구조(llama.cpp, S3 initContainer, KEDA cron, 전용 NodePool)를 그대로 쓰고, 인스턴스·자원·모델 키만 바꾸면 된다. GPU는 GPU NodePool·NVIDIA AMI·device plugin, 36GB vLLM 이미지, L4에 맞춘 vLLM 옵션(아래 9.13.4)이 새로 필요하고, 서울 G 계열 On-Demand 용량도 확보해야 한다
 - ② CPU는 30명에 약 70~75분으로 창(130분) 안에 들어온다. 학생이 50명을 넘으면 창이 모자라므로 그때 GPU로 간다. GPU는 30명에 10~15분이다
 - ③ 창 기준 월 컴퓨팅 비용은 CPU 약 $7.6, GPU 약 $9.3이다. 둘 다 작아서 결정 요인은 아니다
 - ④ CPU의 단점은 모델 파일 형식이 RunPod에서 검증한 AWQ와 다르다는 점이다. 그래도 같은 QAT 체크포인트의 공식 Q4_0이고, LoRA는 QAT 16비트 원본으로 학습했다. 가상 글 3건씩은 `checks.py`를 모두 통과했다. 출력 품질이 AWQ와 같은지는 학습 담당(kim-4480)의 확인이 필요하다
 
-### 9.13.2 측정 조건
+### 9.13.3 측정 조건
 
 | 항목 | 값 |
 |---|---|
@@ -961,7 +975,7 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 | CPU | c7i.4xlarge(Xeon 8488C, AVX-512·AMX), llama.cpp 52975342 직접 빌드 |
 | 기동 시간 | 페이지 캐시를 비운 뒤 서버 시작부터 `/health` 200까지 |
 
-### 9.13.3 결과
+### 9.13.4 결과
 
 | 항목 | CPU c7i.4xlarge | GPU g6.xlarge |
 |---|---|---|
@@ -980,14 +994,14 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 - CPU 동시 2는 처리량이 19.8 tok/s로 동시 1(18.4)과 거의 같고, 슬롯당 속도는 11 tok/s로 떨어진다
 - CPU 30명 배치는 #384 부하 시험에 계정을 넘기려고 22요청에서 멈췄다. 70~75분은 4명 배치(583초)와 22요청 기록으로 추정한 값이다
 
-### 9.13.4 발견
+### 9.13.5 발견
 
 - **반복 생성**: 상세 설명이 `max_tokens` 4096까지 반복하는 경우가 GPU에서 8~21%, CPU에서 약 5% 나왔다. 서비스에서는 `finish_reason=length`가 `LLM_INVALID_OUTPUT`이 되어 설명 없이 발행된다. CPU에서는 이런 1건이 약 400초를 점유해, 지금 상세 마감(305초)을 넘는다. #747에서 상세 `max_tokens`(정상 출력은 520~710토큰)와 마감을 함께 조정해야 한다
 - **L4 메모리 한계**: 17.2GB 단일 safetensors는 16GiB 호스트에서 mmap 실패(ENOMEM)로 vLLM이 기동하지 않았다. 4조각으로 나누자 기동했다. VRAM은 bf16 KV로는 8192 길이 1건분도 남지 않아, `--kv-cache-dtype fp8 --max-num-seqs 8 --max-num-batched-tokens 2560 --gpu-memory-utilization 0.97`와 멀티모달 0개 설정이 필요했다. 그래도 KV는 12,653토큰(8192 기준 1.54건)뿐이다
 - **생각 모드**: llama.cpp `--jinja`의 기본값에서는 Gemma 4가 생각(reasoning)부터 출력해, 서술 1건이 2,048토큰을 모두 쓰고 본문이 비었다. `--reasoning off`로 해결했다. vLLM은 기본값으로도 생각 출력이 없었다
 - **운영 호출 모델 이름**: ai-service `REPORT_GEMMA_MODEL` 기본값과 prod 설정은 기반 이름 `gemma-4-26b-a4b-it-qat-awq-int4`다. vLLM에서 이 이름으로 부르면 LoRA가 붙지 않는다(LoRA는 `explain`). 같은 입력에서 두 이름의 출력이 달랐다. 지금 RunPod 호출에 LoRA가 적용되는지 확인이 필요하다(#747). llama.cpp `--lora`는 모델 이름과 상관없이 모든 요청에 붙는다
 
-### 9.13.5 S3 반입 (#745)
+### 9.13.6 S3 반입 (#745)
 
 경로는 `s3://sagomungchi-demo-<계정>-models/explanation/gemma4-26b-a4b-lora-20261118/` 아래 18개 객체(31.7GB)다. 파일별 크기·sha256은 결과 JSON의 `s3`에 있다.
 
@@ -1005,7 +1019,7 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 - 결정하지 않은 형식 쪽(CPU를 고르면 `base-awq/`, GPU를 고르면 `base-gguf/`·`adapter-gguf/`)은 결정 뒤 지울지 정한다. 보관 비용은 31.7GB에 월 약 $0.8다
 - core 모델 레지스트리 `report-explanation` 등록은 하지 않았다. 관리자 화면 작업이고, 형식 결정과 #746 서버 변경 뒤에 해야 의미가 있다
 
-### 9.13.6 임시 자원과 정리
+### 9.13.7 임시 자원과 정리
 
 | 자원 | 이름·종류 | 상태 |
 |---|---|---|
@@ -1017,13 +1031,13 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 
 2026-11-18 11:12 KST에 태그 `Purpose=issue-743-745-temp` 기준 인스턴스·볼륨·VPC·IGW와 이름 기준 보안 그룹·키 페어·IAM이 모두 0개이고, `explanation/` 아래 남은 multipart 업로드가 0건임을 확인했다. EKS·RDS 자원은 건드리지 않았다. 측정 비용은 약 $2.5(EC2 2대 약 1.3시간과 EBS)다.
 
-### 9.13.7 한계와 남은 것
+### 9.13.8 한계와 남은 것
 
 - 입력이 고정 가상 글 1편과 서술 1건이라 같은 프롬프트가 반복된다. 그래서 2회째부터는 접두 캐시로 입력 처리 시간이 줄었다. 표의 1건 값은 첫 실행(캐시 없음)이나 배치 p50으로 적었다. 글 길이가 다른 여러 입력과 RunPod 출력 비교(`explanation_eval.py`)는 하지 않았다
 - 품질은 `checks.py` 통과와 JSON 형식만 봤다. CPU(GGUF)와 GPU(AWQ) 출력의 의미 차이는 사람 검토가 필요하다
 - EKS 안 기동 시간(노드 준비, S3 initContainer 내려받기)은 재지 않았다
 - 학습 기준 모델 확인: 어댑터의 `base_model_name_or_path`는 `/workspace/models/gemma-4-26b-qat`(로컬 경로)라 정확한 원본 저장소·revision을 알 수 없다. 구조(30층, hidden 2816, 전역 주의 층의 K=V 공유로 `v_proj` 25개)는 두 기반 모델과 모두 맞는다. kim-4480에게 확인을 요청했다
-- 확정 후 순서: 팀 결정 → #744 문서 → #746 NodePool·`sllm-server`(인스턴스, 여러 파일 받기, `--lora`·`--reasoning off`) → 레지스트리 등록 → #747 호출 전환(모델 이름, `max_tokens`·마감)
+- 다음 순서: SageMaker 검증 이슈(LMI 버전, LoRA, 콜드 스타트, 예약 확장, 재고 부족 동작) → #744 문서 → #746 SageMaker 엔드포인트·IAM → 레지스트리 등록 → #747 호출 전환(SageMaker 클라이언트, 모델 이름, `max_tokens`·마감)
 
 ## 10. 근거 링크
 
