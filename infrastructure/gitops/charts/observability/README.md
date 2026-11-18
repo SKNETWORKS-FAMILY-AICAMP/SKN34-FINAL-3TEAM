@@ -39,7 +39,21 @@ prod values에는 #187 규칙 13개(DLQ, 월 비용 80%·미산정 호출, core�
 `tempo.enabled`(기본 false)를 켜면 Tempo 2.10.10 단일 바이너리(OTLP gRPC 4317, HTTP API 3200)를 배치한다.
 Collector에 `otlp/tempo` exporter와 traces pipeline이 생기고, Grafana에 datasource `Tempo`(uid `tempo`)가 추가된다.
 NetworkPolicy는 Collector→Tempo 4317, Grafana→Tempo 3200만 연다. Collector·Grafana는 설정을 시작 시에만 읽으므로
-Tempo를 켜고 끌 때 Pod template annotation으로 재생성된다. 보존은 `tempo.retention`(기본 72h), prod는 gp3 2Gi PVC(Helm keep)다.
+Tempo를 켜고 끌 때 Pod template annotation으로 재생성된다. 보존은 `tempo.retention`(기본 24h, #784 전 72h), prod는 gp3 2Gi PVC(Helm keep)다.
+
+### trace 장애 격리 (#784)
+
+#384 부하 시험에서 Tempo가 OOM으로 재시작을 반복하자 Collector가 지표까지 거부했다. `otlp/tempo` 대기열(배치 500개)과 기본 재시도(최대 5분)가
+trace를 메모리에 쌓아 프로세스 전체 기준인 `memory_limiter`(192MiB)에 닿았고, 같은 limiter를 쓰는 metrics pipeline도 수신을 거부했다.
+그래서 trace 경로를 다음처럼 묶었다(Tempo 또는 Langfuse trace를 켤 때만 렌더되고, 기본·local 렌더는 바뀌지 않는다).
+
+- traces pipeline은 자기 limiter `memory_limiter/traces`(`collector.traceLimits.memoryLimitMiB` 144, spike 32 → 112MiB부터 거부)를 쓴다.
+  metrics의 192MiB(soft 약 154MiB)보다 먼저 trace만 거부해 지표 수신이 남는다.
+- trace exporter 대기열은 바이트 단위 `queueMiB`(16MiB)로 막고, 재시도는 `retryMaxElapsed`(30s) 뒤 버린다. 값을 바꾸면 annotation으로 Collector가 재생성된다.
+- Tempo는 limits 1Gi·requests 256Mi와 `GOMEMLIMIT` 800MiB, ingester 블록 64MiB·5분, 수집 속도 8MiB/s(burst 12MiB)·살아 있는 trace 5,000개·trace당 2MiB로 묶는다.
+  설정 내용 checksum으로 Pod가 재생성된다.
+- 별도 trace Collector는 앱의 신호별 endpoint·NetworkPolicy 변경과 관측 노드 Pod 추가가 필요해 쓰지 않았다. 앱 trace 표본 추출(sampler)도 실패 요청 trace를 잃어 넣지 않았다.
+  kind 검증은 [infra 9.15](../../../../docs/report/infra.md#915-tempo-장애와-지표-수집-격리-784-2026-11-18)를 따른다.
 앱 쪽은 app-service chart의 `tracing.enabled`와 `networkPolicy.egressToCollector`를 켠다. Langfuse 경로(`collector.traces`)와 함께 켜면 두 곳에 모두 보낸다.
 Tempo 3.x는 설정 형식 차이를 확인하지 않아 쓰지 않았다.
 

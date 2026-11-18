@@ -10,9 +10,14 @@ spec:
   template:
     metadata:
       labels: {app.kubernetes.io/name: otel-collector}
-      {{- if .Values.tempo.enabled }}
-      # The Collector does not reload its ConfigMap; toggling the Tempo pipeline must roll the Pod.
-      annotations: {ops187/tempo-traces: enabled}
+      {{- if or .Values.tempo.enabled .Values.collector.traces.enabled }}
+      # The Collector does not reload its ConfigMap; toggling the Tempo pipeline or
+      # changing trace limits (#784) must roll the Pod.
+      annotations:
+        {{- if .Values.tempo.enabled }}
+        ops187/tempo-traces: enabled
+        {{- end }}
+        ops784/trace-limits: {{ toJson .Values.collector.traceLimits | sha256sum | trunc 16 | quote }}
       {{- end }}
     spec:
       automountServiceAccountToken: false

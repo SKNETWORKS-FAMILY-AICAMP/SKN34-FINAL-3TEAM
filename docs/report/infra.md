@@ -882,13 +882,13 @@ python evaluation/load/llm_latency.py judge --secrets <밖>/secrets-630.json --o
 | 3★ | RDS 시작 | `aws rds start-db-instance` → `wait db-instance-available` | endpoint·`rds.force_ssl`·백업 7일. 11/20 자동 시작 뒤라면 이미 available | 10분 |
 | 4★ | 클러스터 | `render-eksctl --operator-cidr <IP>/32 --out <밖>` → `eksctl create cluster -f <파일>` | 노드그룹 2개(2a·2b 1대씩 platform), add-on 7개, Pod Identity 10개, access entry가 백업(`access-entries.json`)과 같은 권한 | 30~40분 |
 | 5★ | RDS SG | `apply --after-eksctl` → 옛 SG `sg-086c7c83b3638da59` 규칙·SG 정리 | 새 SG에서 5432 허용 | 5분 |
-| 6 | 플랫폼 | gp3·namespace·ESO 2.14.0·LB Controller 1.14.1·`rds-ca`·ExternalSecret(현재 파일)·platform-data·Karpenter 1.15.1 + NodePool·EC2NodeClass(`karpenter.json` 대조) | ESO Ready, Secret 키가 서비스별 키, `ai-provider-credentials`에 `OPENAI_API_KEY`·`SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`·`SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA` 3개(값 미출력), RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분 |
+| 6 | 플랫폼 | gp3·namespace·ESO 2.14.0·LB Controller 1.14.1·`rds-ca`·ExternalSecret(현재 파일)·platform-data·Karpenter 1.15.1 + NodePool·EC2NodeClass(`karpenter.json` 대조) | ESO Ready, Secret 키가 서비스별 키, `ai-provider-credentials`에 `OPENAI_API_KEY`(값 미출력. #747 뒤 RunPod 키 2개는 빠짐), RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분 |
 | 7 | DB 상태 | demo-db-oneoff(core 앱 계정)로 `SHOW max_connections`, `model_version` 행·활성 상태 조회. 앱 계정은 migration 이력 테이블 권한이 없으므로 적용 번호는 8단계 Job 로그로 본다 | 9.11.2 연결 판단, #613 등록 전 기준 | 10분 |
 | 8★ | migration | 기본 거부용 정책 2개 → core·learning·report migration Job(9.11.1 2·3번). cd-release에 migration 단계가 들어갔으면 그 단계로 실행 | Job complete, 로그의 시작·끝 schema 버전(Flyway)·revision(Alembic) | 15분 |
 | 9★ | 앱 배포 | cd-release(plan JSON, 승인 2명), 6개 서비스 | 앱 readiness, `app-default-deny` 1개, 정책 없는 Pod DNS 실패 | 30~40분 |
 | 10 | 관측 | Secrets Manager 백업으로 관측 Secret 2개 생성(값 미출력) → observability | Grafana 로그인·datasource·경보 평가 | 15분 |
 | 11★ | 진입 | `core-alb-network.json` + Ingress(origin 헤더 Git 밖 주입) → 새 ALB DNS로 CloudFront `/api/*` origin 변경 | prefix list 제한, CloudFront 배포 완료 | 20분 |
-| 12 | 흐름 확인 | 로그인 → 학습 제출 → 리포트 조회, 테마 초안 1건(자산 버킷·Veo, #652·#600), 설명 단계 상태, 리포트 AI 요약(RunPod Gemma, 503이면 6단계 Secret 키 확인) | 걸린 시간·실패 항목을 #601에 기록 | 20분 |
+| 12 | 흐름 확인 | 로그인 → 학습 제출 → 리포트 조회, 테마 초안 1건(자산 버킷·Veo, #652·#600), 설명 단계 상태, 리포트 AI 요약(#747부터 SageMaker IC. 창 밖이면 사본 0이라 503이 정상, 창 안 503이면 IC 상태·ai `REPORT_LLM_*` env 확인) | 걸린 시간·실패 항목을 #601에 기록 | 20분 |
 | 13 | #613·#493 | 9.11.4 | 사전 검사 PASS, 새 revision | 30분 |
 | 14★ | #384 | 공지 → 계정 4개 → 스텁 → 단계별 k6 → 축소 관찰 → 원복 | Karpenter 노드 0대로 끝남 | 2~3시간 |
 | 15 | #630 | 9.11.4(실제 LLM, 부하 없는 시간) | 표본·비용 기록 | 1.5시간 |
@@ -1049,7 +1049,7 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 - 대안으로 원본을 바이트 단위로 잘라 올리고 받을 때 이어 붙이는 방법, multipart CRC64 FULL_OBJECT + 메타데이터 sha256 방법도 있었다. 앞의 것은 서버가 그대로 읽지 못하고, 뒤의 것은 #368 원칙(CRC·메타데이터 불인정)에 맞지 않아 쓰지 않았다
 - `sllm-server` initContainer는 지금 `MODEL_KEY` 파일 1개와 `MODEL_SHA256` 1개만 받는다. 여러 파일과 LoRA를 받도록 바꾸는 일은 #746 범위다
 - 결정하지 않은 형식 쪽(CPU를 고르면 `base-awq/`, GPU를 고르면 `base-gguf/`·`adapter-gguf/`)은 결정 뒤 지울지 정한다. 보관 비용은 31.7GB에 월 약 $0.8다
-- core 모델 레지스트리 `report-explanation` 등록은 하지 않았다. 관리자 화면 작업이고, 형식 결정과 #746 서버 변경 뒤에 해야 의미가 있다
+- core 모델 레지스트리 `report-explanation` 등록은 반입 때 하지 않았다. 형식 결정(GPU)과 #746 구성 뒤인 2026-11-18에 A 계정에서 `gemma4-26b-a4b-lora-20261118-r2`로 등록·활성화했다. `artifactFiles`는 `manifest.json`의 13개 파일이고, 범위는 `explanation/grade-{5,6}/narrative`·`grade-{4,5,6}/essay`다. 자세한 내용은 [`ml/sllm/README.md`](../../ml/sllm/README.md#승인-목록과-레지스트리-등록-2026-11-18)에 있다
 
 ### 9.13.7 임시 자원과 정리
 
@@ -1197,7 +1197,7 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 
 - 기존 `sllm-server` 파일 정리안(팀 확인): `prod/sllm-server.json`·`prod/karpenter-nodepool-explanation.json`·`local/sllm-server.yaml`은 지운다. 함께 정리할 참조는 `prod/ai-service.json`·`local/ai-service.yaml`의 `EXPLANATION_BASE_URL`과 `sllm-server` egress, `argocd/local/apps/applicationset.yaml`, `policies/local/platform.yaml`, `charts/platform-data/values.yaml` 주석, prod·kind·app-service README다. ai 설정 쪽은 #747 호출 전환과 같은 PR에서 바꾸는 편이 안전하다. A 계정 클러스터에는 `sllm-server`가 배포되어 있지 않다
 - A 계정 SageMaker 자원(엔드포인트·설정·모델·IC·Auto Scaling 대상과 예약)은 11/19 A 종료 때 지운다(동섭 결정). S3 `explanation/` 가중치는 남긴다. 이번에는 ECR 이미지를 만들지 않았다(AWS DLC를 그대로 씀). B 계정은 `demo-stack.json`·`iam/`의 계정 번호를 바꾸고 `demo_stack.py apply`(IAM)·SG 생성 → `sagemaker_explanation.py manifest --upload`·`apply`·`schedule` 순서로 만든다
-- 남은 결정: 창 밖 요청 처리(#747), 창 끝 시각(g6e 30명 배치 실측 뒤), 인용 부호 문제(#747 프롬프트), GPU 재고 부족 동작(이번에는 재고 부족이 나지 않아 확인하지 못함)
+- 남은 결정: 창 밖 요청 처리(#747 구현 뒤 [ai 24.5](ai.md#245-창-밖-요청-남은-결정)에 후보 정리), 창 끝 시각(g6e 30명 배치 실측 뒤), 인용 부호 문제(#747 프롬프트), GPU 재고 부족 동작(이번에는 재고 부족이 나지 않아 확인하지 못함)
 
 ## 9.14 AWS 데모 부하 시험 2차: HPA·Karpenter 확장·축소 (#384, 2026-11-18)
 
@@ -1318,7 +1318,7 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 | 4 | Hikari 풀: 지금 10 유지. 1 뒤 learning 풀 대기가 남으면 15까지 | 연결 상한 계산: core 3×10 + learning 3×15 + report 30 = 105(+rolling 25) ≤ 176 |
 | 5 | RDS 사양: 1을 먼저. 그래도 부족하면 t4g.medium 이상 또는 읽기 복제본 | 지금 효율 그대로 단순 비례하면 k6 1000명에 vCPU 약 7개가 필요(300명에서 2 vCPU의 72%). 1로 이 숫자가 크게 줄 것으로 본다 |
 | 6 | 축소 끊김: D안 대신 최소 2 + PDB, 또는 `controller.kubernetes.io/pod-deletion-cost`로 Karpenter 노드 Pod 우선 삭제 | 9.14.5 |
-| 7 | 관측: Tempo 장애 해결, Collector에서 trace와 지표 파이프라인의 메모리 제한 분리 | 9.14.6-5 |
+| 7 | 관측: Tempo 장애 해결, Collector에서 trace와 지표 파이프라인의 메모리 제한 분리 | 9.14.6-5. #784로 chart에 반영하고 kind에서 확인(9.15). AWS 적용은 B 계정 |
 
 ### 9.14.8 운영 변경과 원복
 
@@ -1345,6 +1345,67 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 - core HPA 최대를 6으로 올려 Karpenter를 띄우려던 계획은 learning 확장으로 자연스럽게 노드가 떠서 하지 않았다. 그래서 HPA 최대가 3보다 클 때의 동작은 재지 않았다.
 - 400명 11:47 이후 JVM·DB 풀 지표가 없다(관측 경로 장애). 1000명 풀 대기는 learning 로그 값이다.
 - 실제 LLM 지연·429는 반영되지 않았다(#630은 동시 1명).
+
+## 9.15 Tempo 장애와 지표 수집 격리 (#784, 2026-11-18)
+
+9.14.6-5의 후속이다. Tempo가 죽어 있으면 Collector가 앱 지표까지 거부하는 문제를 chart에서 고치고 kind에서 수정 전후를 비교했다. AWS(A 계정)에는 적용하지 않았다. B 계정 배포 때 prod values로 들어간다.
+
+### 9.15.1 원인 (chart 코드)
+
+- Collector의 `memory_limiter`(`limit_mib: 192`)는 프로세스 전체 heap을 기준으로 한다. metrics·traces pipeline이 이 limiter 하나를 함께 썼다.
+- `otlp/tempo` exporter의 대기열은 배치 500개, 재시도는 기본값(최대 5분)이었다. batch 처리기 배치 하나가 수 MB라서 Tempo가 응답하지 않으면 대기열이 heap을 soft limit(약 154MiB)까지 채운다.
+- soft limit을 넘으면 limiter가 수신을 거부한다. 같은 limiter를 쓰는 metrics pipeline도 거부되고, 앱 OTLP 전송이 실패한다(A 계정의 `HTTP 503`).
+- Tempo는 limits 512Mi에 ingester 기본값(블록 최대 500MB·30분)을 썼다. A 계정에서는 `completing block` 직후 OOMKilled가 반복됐다.
+
+### 9.15.2 변경
+
+| 대상 | 전 | 후 |
+|---|---|---|
+| traces pipeline limiter | `memory_limiter`(192MiB, metrics와 공유) | 자기 limiter `memory_limiter/traces` 144MiB·spike 32MiB(112MiB부터 trace만 거부). metrics는 기존 192MiB 그대로 |
+| `otlp/tempo`·`otlp_http/langfuse` 대기열 | 배치 500개 | `sizer: bytes` 16MiB, 넘치면 버림 |
+| 재시도 | 최대 5분(기본) | `max_elapsed_time: 30s`, `otlp/tempo` timeout 5s |
+| Collector 재생성 | Tempo 켤 때만 annotation | trace 제한 값 checksum annotation 추가 |
+| Tempo 자원 | requests 128Mi·limits 512Mi | requests 256Mi·limits 1Gi, `GOMEMLIMIT` 800MiB |
+| Tempo ingester | 기본(500MB·30분) | `max_block_bytes` 64MiB, `max_block_duration` 5m, `trace_idle_period` 5s |
+| Tempo 수집 상한 | 기본(15MB/s·burst 20MB, trace당 5MB) | 8MiB/s·burst 12MiB, 살아 있는 trace 5,000개, trace당 2MiB |
+| 보존 | 72h(chart·prod) | 24h. 실패 요청 확인은 당일 조회로 충분하고 2Gi PVC와 compactor 부담을 줄인다 |
+| Tempo 재생성 | 보존 값만 checksum | 설정 전체 checksum |
+
+- 값은 `collector.traceLimits`, `tempo.ingester`·`tempo.limits`·`tempo.goMemLimit`로 바꿀 수 있다. trace를 켜지 않는 기본·local 렌더는 이전과 같다(`verify_chart.py` 기준 비교 통과).
+- 고르지 않은 방법: 별도 trace Collector는 앱의 신호별 endpoint(`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`)·NetworkPolicy 변경과 관측 노드 Pod 추가가 필요하다. 앱 trace 표본 추출은 실패 요청 trace를 잃는다. 디스크 대기열(`file_storage`)은 Collector에 볼륨이 필요하다. 이번 문제는 메모리 대기열 상한만으로 막혀서 넣지 않았다.
+
+### 9.15.3 kind 검증 방법
+
+- `kind-sagomungchi-local`. observability chart에 local values + Tempo 켬 + 경보 3개(`demo-metrics-target-down`, `app-metrics-missing`, `http-auth-errors`, 지속 1m·평가 30s, 시험용 웹훅 Secret)를 올렸다.
+- 앱 지표는 실제 core·learning Java agent(OTLP HTTP, 60초 주기)다. trace 부하는 app 네임스페이스에 `telemetrygen` v0.140.0 Pod(초당 400 trace × 10 span, 4 worker, Collector 4317만 허용하는 시험 NetworkPolicy)로 만들었다.
+- 순서: 부하 시작(Tempo 켬, 2분) → `tempo` replicas 0(9분) → Tempo 1·부하 0(1.5분). 15초마다 Collector 자체 지표(heap, trace 대기열, 받은·거부한 지표 수), Prometheus의 core HTTP 지표 시계열 수와 2분 안에 값이 바뀐 JVM 지표 수, Grafana 규칙 상태·마지막 평가 시각을 기록했다.
+- 수정 전은 이 PR 직전 chart, 수정 후는 이 PR chart로 같은 values를 썼다.
+
+### 9.15.4 결과
+
+| 항목 (Tempo 0 구간) | 수정 전 | 수정 후 |
+|---|---|---|
+| Collector heap | 2분 만에 145Mi, 이후 153~159Mi(soft limit) | 최대 약 90Mi |
+| trace 대기열 | 배치 389~393개에서 멈춤 | 16MiB(상한)에서 넘치는 span 버림(대기열 진입 실패 570,880 span) |
+| 거부한 앱 지표 | 0 → 3,100점(17:18부터), 17:20~17:26 받은 지표 증가 없음 | **0점**, 받은 지표 계속 증가(1,174점) |
+| 받은 trace 거부 | 23,128 span | 0 span(대기열에서 버림) |
+| Prometheus core HTTP 시계열 | 7분 30초 뒤 0(Collector exporter 5분 만료) | 3~4개 유지 |
+| 값이 바뀌는 JVM 지표 | 4분 뒤 0 | 4~11개 유지 |
+| `app-metrics-missing` | pending(7분 30초) → **firing**(8분 30초) | inactive 유지 |
+| 규칙 평가 | 30초마다 계속(health ok). 평가는 됐지만 데이터가 없어 지표 부재 경보가 남 | 30초마다 계속, 세 규칙 모두 inactive/ok |
+| Collector 로그 | soft limit `Refusing data` 5회, GC 강제 21회 | 시나리오 15분 로그 `sending queue is full` 1,000건, `Rejecting data`(trace 재시도 포기) 500건, `Dropping data` 252건, trace limiter GC 강제 13회, soft limit 수신 거부 0회 |
+| 회복(Tempo 1·부하 0) | heap 150Mi대가 이어지다 약 1분 뒤 지표 수신 재개, 시계열 복구 뒤에도 경보는 firing 유지(관찰 종료 시점) | 지표·경보 변화 없음(시계열 4개, 규칙 inactive/ok), Tempo 재시작 0회 |
+
+- 수정 전 kind 재현은 A 계정 현상(9.14.6-5)과 같다. trace 대기열이 heap을 채우고 limiter가 지표를 거부하며, 5분 뒤 시계열이 사라져 지표 부재 경보가 난다.
+- 수정 후 trace는 버려지지만(최선 노력), 지표와 경보는 Tempo 상태와 상관없이 이어졌다.
+- Tempo 새 설정은 `/status/config`에서 `max_block_bytes: 67108864`, `max_block_duration: 5m0s`, `rate_limit_bytes: 8388608`, `max_bytes_per_trace: 2097152`, `block_retention: 24h0m0s`로 적용된 것을 확인했다. 부하 2분과 회복 구간에서 Tempo 재시작은 0회였다.
+
+### 9.15.5 한계와 남은 것
+
+- kind는 노드 1대·Docker 메모리 안에서 telemetrygen 합성 trace로 쟀다. Tempo 1Gi가 #384 단계 부하(실제 Java agent trace)에서 OOM 없이 버티는지는 B 계정에서 확인한다.
+- Tempo 수집 상한(8MiB/s)을 넘으면 trace가 버려진다. 1000명 단계 trace 양은 재지 않았다.
+- trace 대기열이 메모리에 있으므로 Collector가 재시작하면 대기 중인 trace는 사라진다.
+- 시험 자원(telemetrygen Deployment·NetworkPolicy, 웹훅 Secret)은 지우고 observability release는 검증 전 revision 설정(Tempo·경보 끔)으로 되돌렸다.
 
 ## 10. 근거 링크
 

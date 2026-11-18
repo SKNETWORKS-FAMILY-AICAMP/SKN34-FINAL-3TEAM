@@ -349,7 +349,7 @@ uv run --frozen python ../../scripts/verify_scoring_m2.py --archive <m2_models.t
 |---|---|---|
 | 서술 | 학부모 대상 해요체 3~5문장, 600자 이내(프롬프트 지시, 코드 검사 없음) | 리포트 한 화면 분량 |
 | 저녁 질문 | 1개, 아이에게 읽어 줄 친근한 반말 한 문장. 이번 주 미션·답에서 출발, 정답·평가·능력 암시 금지 | 기획서 저녁 식탁 대화 |
-| 전체 마감 `NARRATIVE_DEADLINE` | 28초. LLM 1회 15초 + 대기 1초, 재시도는 남은 시간 안에서만 | report→ai 읽기 타임아웃 30초(report `http_read_timeout`)보다 짧게 |
+| 전체 마감 `NARRATIVE_DEADLINE` | 28초. LLM 1회 15초 + 대기 1초, 재시도는 남은 시간 안에서만. **#747부터 75초**(SageMaker 호출 1회, [24절](#24-리포트-gemma-sagemaker-호출-전환-747-2026-11-18)) | report→ai 읽기 타임아웃 30초(report `http_read_timeout`)보다 짧게 |
 | 돌아보기 난이도 | `EASY·NORMAL·HARD` 코드를 프롬프트에서 "쉬웠어·보통·어려웠어"로, 표시값이 오면 그대로 | report 저장 payload는 코드 유지 |
 | 빈 서술·빈 저녁 질문 | 503 `AI_UNAVAILABLE`(`retryable: true`) | report는 AI 실패를 `FAILED`로 처리 |
 
@@ -570,11 +570,11 @@ scoring의 `model.loading.reported` 전체 상태 이벤트와 30초 heartbeat�
 | 설명 항목 | 가장 높은 항목(잘한 점) 1개 + 가장 낮은 항목(함께 이야기해 볼 점) 1개. 서술 총점 `hol` 제외 | 학습 데이터 이유 문장이 항목당 1문장. 9항목 전부는 CPU에서 느림 |
 | 인용 구절 | 설명과 낱말 앞 두 글자가 2개 이상 겹치는 학생 글 문장 중 가장 많이 겹치는 것, 없으면 null | 모델에게 구절까지 만들게 하면 틀리기 쉬움. 원문 문장을 잘라 써 부분 문자열 조건을 항상 만족 |
 | 활성 확인 | 레지스트리 `MODEL` `report-explanation`, scope `explanation/grade-{학년}/{narrative\|essay}`. `ActiveVersions`가 PROMPT와 함께 보관 | 기존 활성 목록·이벤트 수신 재사용 |
-| 클라이언트 | `OpenAICompatibleLlm` 두 번째 인스턴스(`EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`), 재시도 0. 주소가 없으면 설명만 503 | 다른 호출의 `LLM_PROVIDER`는 그대로 |
+| 클라이언트 | `OpenAICompatibleLlm` 두 번째 인스턴스(`EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`), 재시도 0. 주소가 없으면 설명만 503. **#747부터 SageMaker 리포트 클라이언트(24절), `EXPLANATION_*` 주소 설정은 지움** | 다른 호출의 `LLM_PROVIDER`는 그대로 |
 | 생성 방식 | 평문 스트림을 모음(JSON 구조화 출력 안 씀), `callType = REPORT_EXPLANATION` | LoRA가 평문으로 학습 |
 | 후처리 | 숫자나 금지어(레벨·등급·점수·사고력·IQ·상위·하위·뒤처·영재)가 있는 문장을 버리고 항목당 앞 2문장. 남는 문장이 없으면 422 | 전문가 문장에 점수 표현이 섞임. 생성형 AI로 말투를 바꾸지 않음(NFR-DAT-03) |
 | 문장 틀 | `잘한 점: …` / `함께 이야기해 볼 점: …` | |
-| 시간 | 항목 1회 60초, 요청 마감 125초, 최대 256토큰(설정값) | CPU 실측(#475) 전 임시값 |
+| 시간 | 항목 1회 60초, 요청 마감 125초, 최대 256토큰(설정값). **#747부터 호출 1회 70초, 마감 75초, 1536토큰**(24절) | CPU 실측(#475) 전 임시값 |
 
 학습 입력 형식(#475와 고정, 문구를 바꾸면 `PROMPT_VERSION`과 학습 쌍을 같이 바꿈):
 
@@ -649,8 +649,8 @@ target: 그 항목의 전문가 이유 문장(71818 score.personal.*.feedback �
 | 그림 | OpenAI `gpt-image-2.6-sunburst`, 1536×864, 14장(테마 옷 뭉치 1 + 미션 그림 5 + 시작·종료 컷 첫 그림 8, 테마당 약 $0.7). 테마 옷 뭉치와 인물 기준 그림을 참조로 넣어 얼굴·비율 유지. 검토 모델이 뭉치 모양·정답 노출·글자·안전·장면 일치·미션 맞음을 확인해 실패한 그림만 다시. 생각 풍선은 그리지 않음(정답이 드러날 뻔함) | |
 | 그림체·뭉치 | 2D 만화풍. 기본 뭉치 그림(`assets/`, 기준안)을 고쳐 테마 옷만 더한 그림을 모든 그림의 첫 참조로 | 차림마다 따로 그리면 크기·얼굴 위치가 달라짐 |
 | 영상 | Google `veo-3.1-fast-generate-001`, 720p·무음, **시작·종료만**(요일 영상 없음). 컷 4개(4·6·8·6초)를 첫 그림만 고정해 만들고 0.5초 겹쳐 22.5초 한 파일(ffmpeg). 기본 `THEME_VIDEO_ENABLED=false` | 매일 영상은 문제 앞 기다림이 됨. 시작·끝 모두 고정하면 움직임이 흐물거림 |
-| 영상 검사 | 검토 모델이 1초마다 뽑은 장면으로 `MORPH`·`CONTINUITY`(뭉치가 사건 대상을 잡거나 건네면 결함, 차림 소품 쥠은 허용, #535·사용자 결정 2026-11-15 B안. 뭉치 팔·다리·얼굴은 판정 예시 그림 2장 기준, 사람 머리핀·안경·옷 변형도 결함, #779 24절) 등 확인, 멈춤은 코드 검사(`FREEZE`). 실패한 컷만 다시, 끝내 실패하면 첫 그림을 천천히 확대하는 컷으로 대신하고 경고 | |
-| 콘티 동작 | 사람은 컷 역할이 영상에서 보이는 분명한 동작(손짓·건네기·옆으로 몇 걸음 등), 뭉치는 표정·고개 갸웃·몸 살짝 흔들기만(손짓·건네기·뛰기·통통 튀기는 사람만), **출동 컷(시작 3)만 뭉치가 정면을 본 채 짧은 갈색 발로 옆으로 달림**. 누구도 화면 쪽으로 다가오거나 나가지 않음(`CUT_ACTION`, #779 24절) | 영상 모델이 뭉치에게 팔·흰 다리를 만들거나 인물이 사라짐. 제자리 통통 튀기도 흰 다리가 생겨 뺌(2026-11-18) |
+| 영상 검사 | 검토 모델이 1초마다 뽑은 장면으로 `MORPH`·`CONTINUITY`(뭉치가 사건 대상을 잡거나 건네면 결함, 차림 소품 쥠은 허용, #535·사용자 결정 2026-11-15 B안. 뭉치 팔·다리·얼굴은 판정 예시 그림 2장 기준, 사람 머리핀·안경·옷 변형도 결함, #779 25절) 등 확인, 멈춤은 코드 검사(`FREEZE`). 실패한 컷만 다시, 끝내 실패하면 첫 그림을 천천히 확대하는 컷으로 대신하고 경고 | |
+| 콘티 동작 | 사람은 컷 역할이 영상에서 보이는 분명한 동작(손짓·건네기·옆으로 몇 걸음 등), 뭉치는 표정·고개 갸웃·몸 살짝 흔들기만(손짓·건네기·뛰기·통통 튀기는 사람만), **출동 컷(시작 3)만 뭉치가 정면을 본 채 짧은 갈색 발로 옆으로 달림**. 누구도 화면 쪽으로 다가오거나 나가지 않음(`CUT_ACTION`, #779 25절) | 영상 모델이 뭉치에게 팔·흰 다리를 만들거나 인물이 사라짐. 제자리 통통 튀기도 흰 다리가 생겨 뺌(2026-11-18) |
 | 움직임 | 장면마다 JSON 형식 v1(`transition`·`camera`·`speakers`·`effects`·`captions`·`spots`). 상한 밖 숫자는 코드가 맞추고 경고. 영상 속 글자 없이 문구는 `captions`로 웹이 표시 | 관리자가 이야기 글을 고치면 영상 글자와 달라짐 |
 | 살펴보기 `spots` | 요일 그림 속 누를 물건 2~3개(증거 물건 1개). 한마디가 단서 결론·후보·정답을 말하면 그 물건을 뺌 | 미션 전이라 증거 발견 줄과 같은 기준 |
 | 사용량 | `THEME_DRAFT`·`THEME_IMAGE`·`THEME_VIDEO`. `THEME_VIDEO`는 core #543(V45)에 들어간 뒤 #546부터 발행(17.5) | core enum보다 먼저 보내면 DLQ(`MISSION_DRAFT` 선례) |
@@ -733,7 +733,7 @@ core가 #543(V45)부터 `THEME_VIDEO`를 받게 되어(이벤트 스키마·`Cal
 | 줄거리 프롬프트 | evidence 규칙을 "배정 그대로, 기록 날은 배정 매체 낱말을 clue·discovery에 그대로"로 바꿈. clueType '목격'·'기록'·'발자국'은 각각 목격·기록·흔적 날에만. 칸 고쳐 쓰기 지킬 점(`fix_rules`)에 종류·매체 규칙(`evidence_rules`) | 배정과 모델 규칙이 서로 다른 말을 하지 않게 |
 | 미션 소재 | 미션 이야기 조각(`story_text`)에 "문제 소재는 오늘 장소·찾는 대상·오늘 찾은 증거에서, 수사 연결 문장이 말한 것을 그대로 소재로(받침대 무게면 받침대 무게), 읽을 글도 이 장소·증거·인물에 관한 글로, 사건 현장의 오늘 단서 특징 값은 정하지 않음, 장소의 물건·인물이 만든 자료도 소재, 학생 자신의 경험은 줄이지 말고 그대로 묻기". 줄거리 `missionHook` 규칙에 "<찾은 증거> 자리에는 증거(물건·본 사람·기록)를 쓰고 그날 단서 특징 값을 풀 대상으로 말하지 않음" | #437 초4 실측: 화요일 그림책 소개, 목요일 '받침대 무게' ↔ '모래 무게'. 1차 글 실측에서 단서 특징 값을 못 정해 다른 물건으로 바꾸거나 돌아보기의 자기 경험을 선택으로 돌려 실패해서 2차에 더함 |
 | 미션 소재 검사 | **미션 검토(LLM) 항목 `STORY_LINK`로 봄(사용자 결정 2026-11-16: 미션 소재 검사는 `STORY_LINK` 경고만으로 확정)**. **사용자 결정 2026-11-15: `STORY_LINK`는 경고만, 사람 확인**(FAIL이어도 미션을 다시 만들지 않고 응답 `warnings`에 `stage = MISSION`·`item = 요일`·`reason = MISSION_REVIEW STORY_LINK …`로 남김, 아래 17.6.2). `mission_review_user`에 그날 `story`(장소·찾는 대상·증거 발견 줄·수사 연결 문장, 정답·단서 없음)를 주고 FAIL이면 그 요일 미션만 사유를 넣어 다시 생성(기존 미션 검토 경로). `MissionReviewId`·`MISSION_REVIEW_IDS`에 `STORY_LINK` 추가(내부 형식, 계약 밖) | 저장된 #437 미션 50개를 직접 판정(불일치 11개, 판정자 1명)해 비교: 코드 검사 시제품(수사 연결 문장의 앞 명사가 질문에 있는지)은 맞힘 5/10·찾음 5/11, 검토 항목(1차 문구) 9/11·9/11, 최종 문구(자기 경험·장소 자료 허용) 7/7·7/11. 수사 연결 문장이 자유 문장이라 코드로는 소재를 못 뽑음. 최종 문구는 #437 원래 예(받침대↔모래)를 2번 중 2번 FAIL |
-| 영상 검토 | `VIDEO_REVIEW_SYSTEM` `CONTINUITY` 결함은 둘만: ① 뭉치가 사건 대상(`target`, 찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나 받음(사람과 함께 잡아도), ② 뭉치에게 팔·날개가 새로 생김. 뭉치가 차림 소품(목에 걸거나 손에 든 돋보기·모자 등 기준 장면의 테마 차림)을 쥐거나 지닌 것은 결함이 아님. `MORPH`의 "손에 든 물건은 달라도 됨"은 사람과 뭉치의 차림 소품. 실패 컷만 다시·끝내 실패하면 움직이는 그림 대체는 그대로. 검토 항목 id는 그대로. **사용자 결정 2026-11-15(B안)**: 처음 문구(커밋 08eb4f5b "뭉치 손이 물건을 쥐고 있어도 결함")에서 좁힘. 영상 생성 문구(`video_prompt`·`VIDEO_NEGATIVE`)도 같은 기준으로 좁힘(생성 쪽도 B안, 17.6.3). **#779(사용자 결정 2026-11-18)**: ②를 "뭉치 팔·다리·얼굴이 원래 모습에서 벗어남"(판정 예시 그림 2장 기준)으로 바꾸고 사람 머리핀·안경·옷 변형을 더함(24절) | 종료 3컷 규칙(주인이 받아 듦, 뭉치는 곁에서 지켜봄)과 다른 영상이 통과했음. 그림 검토 `MUNGCHI`는 손에 든 물건을 허용해, 영상이 컷 첫 그림에서 시작하므로 소품을 쥔 첫 그림이면 그림은 통과·영상만 실패로 어긋났음 |
+| 영상 검토 | `VIDEO_REVIEW_SYSTEM` `CONTINUITY` 결함은 둘만: ① 뭉치가 사건 대상(`target`, 찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나 받음(사람과 함께 잡아도), ② 뭉치에게 팔·날개가 새로 생김. 뭉치가 차림 소품(목에 걸거나 손에 든 돋보기·모자 등 기준 장면의 테마 차림)을 쥐거나 지닌 것은 결함이 아님. `MORPH`의 "손에 든 물건은 달라도 됨"은 사람과 뭉치의 차림 소품. 실패 컷만 다시·끝내 실패하면 움직이는 그림 대체는 그대로. 검토 항목 id는 그대로. **사용자 결정 2026-11-15(B안)**: 처음 문구(커밋 08eb4f5b "뭉치 손이 물건을 쥐고 있어도 결함")에서 좁힘. 영상 생성 문구(`video_prompt`·`VIDEO_NEGATIVE`)도 같은 기준으로 좁힘(생성 쪽도 B안, 17.6.3). **#779(사용자 결정 2026-11-18)**: ②를 "뭉치 팔·다리·얼굴이 원래 모습에서 벗어남"(판정 예시 그림 2장 기준)으로 바꾸고 사람 머리핀·안경·옷 변형을 더함(25절) | 종료 3컷 규칙(주인이 받아 듦, 뭉치는 곁에서 지켜봄)과 다른 영상이 통과했음. 그림 검토 `MUNGCHI`는 손에 든 물건을 허용해, 영상이 컷 첫 그림에서 시작하므로 소품을 쥔 첫 그림이면 그림은 통과·영상만 실패로 어긋났음 |
 | 프롬프트 버전 | `theme-draft@1` → `theme-draft@2`(2026-11-14 후속에서 올림). **배포 주의**: 어떤 환경에서 core 모델 레지스트리에 `themeDraft` 활성 항목을 `theme-draft@1`로 지정해 두었다면 새 이미지는 그 본문이 없어 테마 경로와 `/internal/versions`가 `503 AI_PROMPT_VERSION_UNAVAILABLE`이므로 배포 때 활성 항목을 `theme-draft@2`로 바꾸거나 지움(7장). 지정하지 않은 환경은 기본 버전(@2)을 씀 | api-spec "프롬프트 문구가 바뀌면 프롬프트 버전을 올린다"·`prompts.py` 머리말·NFR-DAT-02. ai 시험 5곳(`test_versions`·`helpers`·`test_graph`·`test_router`·`test_wiring`)·ai.md 7장 표·class-diagram 5.5를 함께 바꿈. learning·core 시험의 `theme-draft@1`은 고정 예시 값이라 그대로 |
 | 시험 기본 요청 | `tests/theme_draft/helpers.request_body`의 `weekStart`를 `2026-11-16` → `2027-01-25`로 바꿈(이 주·초3 배정이 시험 줄거리의 증거 종류와 같음). 시험 줄거리 금요일 기록 매체를 사진 → 일지로 | 그래프 시험이 배정 검사를 통과하게. 바뀐 배정은 `test_valid_theme_matches_default_request_plan`이 잡음 |
 
@@ -2325,7 +2325,78 @@ P27 추억 검색 보완(멘토 피드백, 설계 #679)의 ai 몫. 계약은 [ap
 - 비밀 재료 덮인 음식 지시로 그린 그림이 검토를 통과하는지(그림 실측 없음)
 - 운영 `9f6a7e20` 주 초안은 전체 다시 생성이 필요(부분 다시 생성은 같은 문장을 씀)
 
-## 24. 시작·종료 영상 품질 — 뭉치 모양 유지·출동 달리기·이야기 흐름 (#779, 2026-11-18)
+## 24. 리포트 Gemma SageMaker 호출 전환 (#747, 2026-11-18)
+
+에픽 #742. 리포트 서술·저녁 질문(`REPORT_NARRATIVE`)과 대표 답변 상세 설명(`REPORT_EXPLANATION`)을 RunPod 서버리스에서 같은 AWS 계정의 SageMaker 실시간 엔드포인트로 옮겼다. 엔드포인트 구성·측정은 [infra 9.13.9](infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)다.
+
+### 24.1 정한 내용
+
+| 항목 | 정한 내용 | 근거 |
+|---|---|---|
+| 클라이언트 | `app/llm/report.py` `SageMakerReportLlm`. boto3 `sagemaker-runtime` `invoke_endpoint`(SigV4, Pod Identity 자격 증명) 동기 1회. RunPod `/run`·`/status`·`/cancel` 접수·조회·취소 로직은 지움 | 실시간 엔드포인트는 HTTP 주소로 부르는 서버가 아님(9.13.1) |
+| 호출 대상 | `EndpointName`=`REPORT_LLM_ENDPOINT`, `InferenceComponentName`=`REPORT_LLM_COMPONENT`(LoRA 어댑터 IC `sagomungchi-demo-explanation-explain`). 둘 중 하나라도 비면 리포트 서술·설명만 503 | 요청 본문 `model`로는 LoRA가 붙지 않음(#746 D2·9.13.9). 다른 모델로 대체하지 않음(#733) |
+| 요청 본문 | RunPod `openai_input`과 같은 chat.completions 본문(`messages`·`max_tokens`·`temperature 0`·`json_schema` strict). `model`에는 IC 이름을 넣음(응답 이름용) | #746 측정과 같은 형식 |
+| 모델 이름 기록 | 응답 `model`(IC 이름) 대신 `REPORT_GEMMA_MODEL`(기본 `gemma-4-26b-a4b-it-qat-awq-int4`)을 사용량·서술 `versions.model`에 남김 | core 별도 청구 목록(`app.llm-billed-externally`)과 같은 이름. 인프라 자원 이름이 리포트 버전에 들어가지 않게 |
+| 설정 | `REPORT_LLM_ENDPOINT`·`REPORT_LLM_COMPONENT`·`REPORT_LLM_REGION`(기본 `ap-northeast-2`, Pod에서 기본 리전이 안 잡혀 명시)·`REPORT_LLM_ENDPOINT_URL`(대역 전용)·`REPORT_LLM_TIMEOUT`. `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`·`..._KEY_GEMMA`(RunPod 주소·키)와 쓰지 않던 `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`·`EXPLANATION_API_KEY`·`EXPLANATION_LLM_TIMEOUT`, `REPORT_GEMMA_TIMEOUT`은 지움 | 엔드포인트·IC 이름은 비밀값이 아니라 values에 둠. RunPod 키가 필요 없어 Secret 항목도 뺌 |
+| 시간 | 호출 1회 = boto3 읽기 타임아웃 70초(`REPORT_LLM_TIMEOUT`), 연결 5초, botocore 재시도 없음(`total_max_attempts` 1). 서술 마감 `NARRATIVE_DEADLINE` 75초, 설명 마감 `EXPLANATION_DEADLINE` 75초. report→ai 대기는 80초(24.2) | SageMaker 실시간 호출은 60초에 끊김. AWS 권고대로 읽기 타임아웃은 그보다 길게. 콜드 대기(모델 300초, 내부 310초)는 예약 확장으로 창 전에 켜 두므로 필요 없음 |
+| 출력 상한 | 상세 설명 `EXPLANATION_MAX_TOKENS` 1536, 서술 `NARRATIVE_MAX_TOKENS` 1024 | #746 D3. LoRA 정상 출력 p50 568토큰의 약 2.2배. g6e 동시 8건 1536토큰 최악 23.4초 |
+| 재시도 | 없음(서술·설명 모두 호출 1회) | 같은 요청을 다시 보내면 추론이 겹침. 설명은 기존과 같이 재시도 0 |
+| 가동 창 밖 | IC 사본 0이면 `ValidationError`("…no capacity…")가 바로 옴 → `LLM_NO_CAPACITY`(`retryable: false`) → 503 `AI_UNAVAILABLE`. 다른 모델로 대체하지 않음. report에서 설명은 그 설명만 빼고(`NOT_INCLUDED`) 발행. **서술 503은 기존 동작대로 주간 리포트 생성 실패(`FAILED`, `GENERATION_FAILED`, api-spec 4.2.1)**. 그래서 창 밖의 주간 리포트 생성(관리자 다시 생성 등)은 실패한다(24.5) | #733: 일반 LLM으로 대체 금지. 서술 실패 처리는 이번에 바꾸지 않음 |
+| 오류 분류 | `ModelError` → 컨테이너 원래 상태 코드로(`LLM_SERVER_ERROR`·`LLM_BAD_REQUEST` 등), `ThrottlingException`·`ModelNotReadyException` → `LLM_RATE_LIMITED`, `AccessDeniedException` → `LLM_AUTH_FAILED`, 읽기·연결 시간 초과 → `LLM_TIMEOUT`, 연결 실패 → `LLM_CONNECTION`, 자격 증명 없음 → `LLM_AUTH_FAILED`(사용량 기록 안 함). 응답 본문·오류 메시지 원문은 로그·예외에 남기지 않음 | 기존 제공자 공통 코드(`status_error`)와 같은 기준 |
+| 잘린 출력 | `finish_reason=length` → `LLM_INVALID_OUTPUT`(설명 빠짐). 인용 부호를 이스케이프하지 않아 칸이 짧게 끊긴 JSON(9.13.9)은 형식이 맞아 그대로 통과했으므로, `checks.clean`에서 문단 끝이 마침표·물음표·느낌표 없이 끝나면 그 조각을 뺌. 상세 분석 칸이 비면 설명 전체가 `422 AI_EXPLANATION_REJECTED` | 끊긴 설명이 학부모에게 그대로 나가지 않게. 프롬프트 쪽 수정(인용은 「」 등)은 하지 않음 |
+| 대역 | local·kind·E2E는 `REPORT_LLM_ENDPOINT_URL`로 boto3 주소를 llm-stub으로 바꿈. llm-stub에 `POST /endpoints/<이름>/invocations`(본문·응답은 chat.completions와 같음) 추가. E2E의 리포트 의존성 바꿔 끼우기(`ai-report-e2e.py`)는 지우고 운영과 같은 클라이언트를 탐. 서명은 가상 자격 증명(E2E)·MinIO 자격 증명(kind)으로 하고 AWS로는 나가지 않음 | 운영 코드 경로를 그대로 시험 |
+
+### 24.2 report 쪽 시간
+
+| 설정 | 이전 | #747 | 근거 |
+|---|---|---|---|
+| `REPORT_NARRATIVE_TIMEOUT_SECONDS` | 310초(코드 기본값, 운영 미지정) | 80초 | ai 서술 마감 75초보다 길게 |
+| `REPORT_EXPLANATION_TIMEOUT_SECONDS` | 310초(운영·kind 130초) | 80초 | ai 설명 마감 75초보다 길게 |
+| `REPORT_EXPLANATION_BUDGET_SECONDS` | 950초(운영·kind 400초) | 300초 | 설명 최대 3건 순차 × 80초 + learning 조회 여유 |
+
+운영(`prod/report-worker.json`)·kind(`local/report-worker.yaml`)·Compose·`.env.example` 모두 같은 값이다. 종료 유예(`terminationGracePeriodSeconds` 480초)는 그대로 둔다.
+
+### 24.3 시험
+
+- `tests/llm/test_report.py`(다시 씀): 가짜 `sagemaker-runtime`으로 엔드포인트·IC 이름·본문(`max_tokens` 1536 전달)과 사용량, 설정 누락 시 503(일반 LLM 대체 없음), 서술·설명 공장이 같은 IC와 대역 주소·리전·읽기 70초·재시도 없음을 쓰는지, 사본 0 `ValidationError` → `LLM_NO_CAPACITY` 1회(재시도·원문 노출 없음), 오류 8종 분류, 마감 초과 시간 초과, `length`·JSON 아님·빈 출력·형식 밖 → `LLM_INVALID_OUTPUT`, 거절은 재시도 없음
+- `tests/report_explanation/test_checks.py`: 인용 부호로 끊긴 조각 제거, 끝까지 끊긴 칸만 있으면 `parts`가 빈 목록
+- 지운 시험: `tests/test_report_e2e_config.py`(E2E 의존성 바꿔 끼우기를 지움)
+- ai 전체 `uv run pytest` 1057 통과, ruff·형식 통과. report 단위 시험은 로컬에 Playwright 브라우저가 없어 PDF를 그리는 16건만 실패(이번 변경과 무관, CI에서 확인)
+
+### 24.4 kind 확인 (2026-11-18, llm-stub)
+
+같은 kind 클러스터를 다른 작업과 함께 쓰고 있어, 이 브랜치 이미지를 잠시 올렸다가 되돌렸다.
+
+- `sllm-server`(llm-stub 대역, 이 브랜치 이미지)를 1대로 임시 설치하고 ai-service를 이 브랜치 이미지 + `REPORT_LLM_*`(대역 주소 `http://sllm-server.app.svc.cluster.local:8080`)로 바꿨다. 레지스트리 활성 없이 부르려고 `EXPLANATION_LOCAL_SKIP_REGISTRY=1`을 함께 줬다
+- ai Pod 안에서 report-worker 토큰으로 `POST /internal/report-narratives` → 200(서술·저녁 질문, `versions.model` `gemma-4-26b-a4b-it-qat-awq-int4`), `POST /internal/report-explanations` → 200(`active:true`, 상세 분석·보완할 지점·개선 방안 3칸). ai → `sllm-server` NetworkPolicy를 지나 boto3 서명 요청이 대역에 닿았다
+- 대역을 0대로 내리면 두 경로 모두 약 5초(연결 타임아웃) 뒤 503 `AI_UNAVAILABLE`
+- 확인 뒤 ai-service는 원래 이미지(`sagomungchi/ai-service:local`, 리비전 45)로 되돌리고 `sllm-server`는 지웠다
+- report-worker 전체 생성(주간 리포트 1건 생성까지)은 kind에서 돌리지 않았다
+
+### 24.5 창 밖 요청: 남은 결정
+
+- 지금 동작: 일 23:30~월 02:00(KST) 창 밖에서 주간 리포트를 만들면 서술 호출이 0.2초 안팎에 `LLM_NO_CAPACITY`로 실패하고, report는 그 리포트를 `FAILED`로 끝낸다(재시도 없음). 설명만 빠지는 것이 아니라 리포트 전체가 실패한다. 일일 리포트는 서술·설명을 부르지 않아 영향이 없다
+- 후보(결정 필요, 이번 PR에서는 구현하지 않음)
+  1. 서술 실패를 템플릿 요약으로 발행: 서술 503도 대조 실패처럼 `source: TEMPLATE`로 두고 설명은 빼고 발행. report 변경과 api-spec 4.2.1 정책 변경이 필요
+  2. 깨운 뒤 다시 생성: `NoCapacityInvocationFailures` 경보 + 단계 확장 정책으로 사본을 1로 올리고(콜드 약 20분), 그 뒤 관리자가 다시 생성. #746에서 경보·단계 확장은 만들지 않았음
+  3. 지금처럼 둠: 창 밖 다시 생성은 하지 않는 것으로 운영 규칙을 정함
+
+### 24.6 A 계정 실제 엔드포인트 확인 (2026-11-18, 가상 입력)
+
+운영 ai에 이 브랜치를 배포하지 않고, 이 브랜치의 ai 코드(`create_report_llm` → `NarrativeService`·`ExplanationService`)를 임시 스크립트로 직접 불렀다. 입력은 시험용 가상 서술 데이터(`tests/report_narrative/test_service.py`의 `BODY`)와 가상 글 한 편이다. 레지스트리 없이 부르려고 `EXPLANATION_LOCAL_SKIP_REGISTRY=1`을 줬다. 생성 원문은 저장하지 않고 길이·상태만 기록했다.
+
+| 단계 | 결과 |
+|---|---|
+| 사본 0일 때(확장 전, 로컬) | 서술 0.25초·설명 0.02초 만에 503 `AI_UNAVAILABLE`(`retryable:false`), 사용량 `errorCode` `LLM_NO_CAPACITY`. 다른 모델 호출 없음 |
+| 1대로 확장 | 17:34:17 `copies 1` → 17:42:15 IC InService·인스턴스 1(474초) |
+| 로컬(관리자 프로필 자격 증명), 각 3회 | 서술 3/3 성공(6.0·2.9·2.3초, 출력 249~250토큰, 329자), 상세 설명 3/3 성공(7.3·6.4·6.1초, 출력 643~673토큰, 3칸·인용 있음) |
+| A 계정 ai Pod(Pod Identity 역할 `sagomungchi-demo-ai-asset-s3-role`), 각 1회 | 서술 성공 2.4초(250토큰), 상세 설명 성공 5.3초(583토큰, 3칸·인용 있음). 운영 NetworkPolicy·IC ARN 권한으로 어댑터 IC 호출이 됨 |
+| 확인 뒤 | 바로 `copies 0`으로 사본·인스턴스 0대로 내림 |
+
+- 사용량·`versions.model`은 설정한 이름(`gemma-4-26b-a4b-it-qat-awq-int4`)으로 남았다. 상세 설명은 모두 `finish_reason=stop`이었다(`length`면 실패로 처리되므로 성공 = 정상 종료)
+- 확인하지 못한 것: 운영 report-worker를 거친 주간 리포트 1건 생성(이 브랜치는 운영에 배포하지 않음), 동시 호출 부하(#746 측정으로 갈음)
+
+## 25. 시작·종료 영상 품질 — 뭉치 모양 유지·출동 달리기·이야기 흐름 (#779, 2026-11-18)
 
 운영 시작·종료 영상이 "그림 여러 장을 천천히 옮기는 것"처럼 보이고, 영상으로 나온 컷도 뭉치에게 팔·흰 다리가 생기거나 얼굴이 바뀌었다. 원인을 실측으로 가리고 생성·검토 규칙을 바꿨다.
 

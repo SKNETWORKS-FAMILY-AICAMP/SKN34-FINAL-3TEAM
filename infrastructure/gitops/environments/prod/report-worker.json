@@ -62,12 +62,16 @@
     }
 ,
     {
+      "name": "REPORT_NARRATIVE_TIMEOUT_SECONDS",
+      "value": "80"
+    },
+    {
       "name": "REPORT_EXPLANATION_TIMEOUT_SECONDS",
-      "value": "130"
+      "value": "80"
     },
     {
       "name": "REPORT_EXPLANATION_BUDGET_SECONDS",
-      "value": "400"
+      "value": "300"
     },
     {
       "name": "REPORT_THEME_SUMMARY_ENABLED",

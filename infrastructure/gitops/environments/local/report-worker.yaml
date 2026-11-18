@@ -12,8 +12,10 @@ resources:
   requests: {cpu: 100m, memory: 256Mi}
   limits: {cpu: 500m, memory: 768Mi}
 env:
-  - {name: REPORT_EXPLANATION_TIMEOUT_SECONDS, value: "130"}
-  - {name: REPORT_EXPLANATION_BUDGET_SECONDS, value: "400"}
+  # #747: ai SageMaker 호출 1회(60초 제한) 기준. 설명 주당 최대 3건
+  - {name: REPORT_NARRATIVE_TIMEOUT_SECONDS, value: "80"}
+  - {name: REPORT_EXPLANATION_TIMEOUT_SECONDS, value: "80"}
+  - {name: REPORT_EXPLANATION_BUDGET_SECONDS, value: "300"}
   - {name: REPORT_THEME_SUMMARY_ENABLED, value: "true"}
   - {name: INTERNAL_TOKEN, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_REPORT_WORKER}}}
   - {name: RABBITMQ_URL, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_REPORT_URL}}}

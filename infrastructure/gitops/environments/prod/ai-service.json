@@ -75,22 +75,16 @@
       }
     },
     {
-      "name": "SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA",
-      "valueFrom": {
-        "secretKeyRef": {
-          "key": "SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA",
-          "name": "ai-provider-credentials"
-        }
-      }
+      "name": "REPORT_LLM_ENDPOINT",
+      "value": "sagomungchi-demo-explanation"
     },
     {
-      "name": "SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA",
-      "valueFrom": {
-        "secretKeyRef": {
-          "key": "SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA",
-          "name": "ai-provider-credentials"
-        }
-      }
+      "name": "REPORT_LLM_COMPONENT",
+      "value": "sagomungchi-demo-explanation-explain"
+    },
+    {
+      "name": "REPORT_LLM_REGION",
+      "value": "ap-northeast-2"
     },
     {
       "name": "LLM_PROVIDER",
@@ -115,14 +109,6 @@
     {
       "name": "LANGFUSE_ENABLED",
       "value": "false"
-    },
-    {
-      "name": "EXPLANATION_BASE_URL",
-      "value": "http://sllm-server.app.svc.cluster.local:8080/v1"
-    },
-    {
-      "name": "EXPLANATION_MODEL",
-      "value": "report-explanation"
     },
     {
       "name": "M2_CROSS_CHECK_ENABLED",

@@ -1129,7 +1129,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - ai는 인용을 후보 번호와 원문 구절로 고르고, 구절이 그 후보 `text`의 부분 문자열이 아니면 `citedQuotes`에서 제외한다. `attemptId`·`answerId`·`answerVersion`은 후보 입력값을 쓴다. LLM 실패·키 미설정·빈 서술이나 빈 저녁 질문은 503 `AI_UNAVAILABLE`(+`retryable`)이다.
 - 응답은 `{narrative:{text,source:"LLM",modelExplanation:null},eveningQuestion,citedQuotes:[{attemptId,answerId,answerVersion,quote}],versions:{prompt,model}}`로 정의한다. 원문 인용은 citedQuotes에 명시하며 답변 버전과 연결한다. ai는 숫자를 새로 계산하거나 수치 레벨·등급·사고력 향상을 단정하지 않는다.
 - report는 learning evidence의 같은 answer ID·version·원문과 인용을 대조하고, 서술·저녁 질문의 숫자가 계산 결과에 포함되는지 검사한다. 지원하지 않는 한글 수사 표현은 검증 통과로 간주하지 않는다. 검증 메타데이터는 `numbersMatched`, `quotesMatched`, `contentAllowed`다.
-- 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다. 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.
+- 대조 실패만 코드 기반 템플릿 요약으로 전환한다. AI 시간 초과·5xx·응답 스키마 오류·learning 원문 조회 실패는 `FAILED`로 처리한다.
+- #747 시간·모델: ai는 SageMaker 실시간 엔드포인트의 LoRA 인퍼런스 컴포넌트를 1회 부른다(읽기 70초, 서술 마감 `NARRATIVE_DEADLINE` 75초, `max_tokens` 1024, 재시도 없음). report→ai 대기는 `REPORT_NARRATIVE_TIMEOUT_SECONDS` 80초. 가동 창(일 23:30~월 02:00 KST) 밖이면 엔드포인트 사본이 0이라 바로 503 `AI_UNAVAILABLE`(`retryable:false`)이고, 위 규칙대로 리포트는 `FAILED`다([AI 보고서 24절](../report/ai.md#24-리포트-gemma-sagemaker-호출-전환-747-2026-11-18)). 학생 이름·닉네임 필드는 요청에 넣지 않으며, 알려진 닉네임이 본문에 포함된 경우 전송 전에 가린다.
 - LLM 요청에는 학생 이름·식별정보를 넣지 않음. 학생·시도·답변 ID도 넣지 않으므로 가명 토큰이 필요 없음(원문은 요청 안 번호로만 지칭) (NFR-SEC-03)
 
 #### 4.2.3 report 설명 요청·응답 (FN-RPT-09, #477)
@@ -1143,6 +1144,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 응답 `{active:true, explanation:{text, quote}, versions:{model, prompt}}`. `text`는 `잘한 점: …`·`함께 이야기해 볼 점: …` 줄(1~2줄), `quote`는 설명과 낱말(앞 두 글자 기준)이 2개 이상 겹치는 학생 글 문장 중 가장 많이 겹치는 문장(원문 부분 문자열), 없으면 null이다. `versions.model`은 레지스트리 `이름@버전`
 - 오류: 설명 sLLM 주소 미설정·호출 실패·마감 초과는 `503 AI_UNAVAILABLE`(+`retryable`). 시간 초과·5xx·422는 리포트 생성 실패로 바꾸지 않는다. report는 해당 설명만 빼고 `explanations.state = NOT_INCLUDED`로 저장한다(P16)
 - 시간 기준안(#475 CPU 실측 전 임시값, P12 예외: 주 1회 배치라 기다리는 사람이 없음): 항목 1회 `EXPLANATION_LLM_TIMEOUT=60`초, 요청 전체 마감 `EXPLANATION_DEADLINE=125`초. report→ai 대기는 아래 #479 시간 기준안(호출당 130초·단계 400초)을 따른다
+- #747 시간·오류(현재 값, P12 예외): SageMaker 실시간 엔드포인트의 LoRA 인퍼런스 컴포넌트 호출 1회(60초 응답 제한, boto3 읽기 70초), 요청 마감 `EXPLANATION_DEADLINE=75`초, `EXPLANATION_MAX_TOKENS=1536`, 재시도 없음. report→ai 대기 `REPORT_EXPLANATION_TIMEOUT_SECONDS=80`초, 설명 단계 전체 `REPORT_EXPLANATION_BUDGET_SECONDS=300`초. 가동 창 밖(사본 0)·출력 잘림(`finish_reason=length`)·시간 초과는 `503 AI_UNAVAILABLE`, 문장이 끊긴 칸만 남아 상세 분석이 비면 `422 AI_EXPLANATION_REJECTED`. 어느 쪽이든 그 설명만 빠진다(`NOT_INCLUDED`). 다른 모델로 대체하지 않는다(#733)
 
 - #479 연동 기준(PR #489·#491): report는 SYSTEM 범위로 기록 목록에 `includeModelScores=true`를 붙이고 `modelScores.m2.scores`를 설명 요청의 `scores`로 전달한다. core의 기존 SYSTEM 전용 학생 프로필에 `grade`(저장 학년 3~9)를 추가한다. 학년 누락·지원 범위 밖이면 설명만 제외하며 임의 학년을 만들지 않는다.
 - #479의 인용은 PR #491과 같이 nullable이다. `quote=null`이면 인용 영역을 생략하고, 값이 있으면 해당 답변·버전의 실제 원문 부분 문자열인지 다시 검사한다. 설명 문장에 숫자·점수·등급·금지 표현이 있으면 그 설명만 제외한다. 상세 `explanations.items[].quote`도 null을 허용한다.

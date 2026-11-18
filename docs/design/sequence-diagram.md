@@ -1105,7 +1105,7 @@ sequenceDiagram
   participant RDB as report_db
   participant L as learning
   participant A as ai
-  participant X as 설명 sLLM 서버
+  participant X as SageMaker 설명 엔드포인트(LoRA IC, #742)
   participant S3 as S3
 
   SCH->>SCH: 매주 월 00:00 KST(일요일 자정), @SchedulerLock 획득 (ShedLock, 1개 레플리카만) (P06)
@@ -1165,7 +1165,7 @@ sequenceDiagram
         RW->>RW: 자격 확인 (정정·빈 답변·학년·입력 유형·M2 점수 형식)
         RW->>L: GET /internal/records/evidence?answerIds= (원문·버전 대조)
         RW->>A: POST /internal/report-explanations {grade, inputType, text, scores} (호출당 130초, 유형당 1회)
-        A->>X: OpenAI 호환 생성 요청 (일 23:50~월 02:00 KEDA cron으로 1대 기동, #476)
+        A->>X: InvokeEndpoint(LoRA IC 지정, 본문은 OpenAI 호환 형식, 일 23:30~월 02:00 예약 확장으로 1대 기동, #742·#746)
         X-->>A: 설명 초안
         A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 선택
         A-->>RW: {active, explanation, versions} 또는 실패
@@ -1173,7 +1173,7 @@ sequenceDiagram
       end
       alt 하나라도 통과
         RW->>RW: 통과분만 EXPLANATION 항목, explanations.state = INCLUDED
-      else 모두 실패·시간 초과·설명 모델 미활성·sLLM 가동 창 밖 (P16)
+      else 모두 실패·시간 초과·설명 모델 미활성·엔드포인트 0대(예약 확장 창 밖) (P16)
         RW->>RW: explanations.state = NOT_INCLUDED (리포트 status·state 유지)
       end
     end

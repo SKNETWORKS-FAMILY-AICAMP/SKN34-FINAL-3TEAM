@@ -315,6 +315,7 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - 상태: 하나 이상 검증되면 `INCLUDED`, 대상은 있지만 미활성·실패·검사 탈락이면 `NOT_INCLUDED`, 대상 없음·원문 비공개면 `NO_TARGET`. `weekly_report.verification.explanationState`에 저장, 본문은 `report_item.EXPLANATION`(Alembic `20261110_08`, 항목 CHECK만 확장). 기존 `narrative.modelExplanation`은 계속 null
 - 상세·HTML·PDF·Markdown에 같은 상태와 검증된 설명 표시. 무료 다운로드 변형에는 넣지 않음. core도 현재 이용권·공개 상태로 다시 가림
 - 대기 상한(CPU 실측 전 기준안): `REPORT_EXPLANATION_TIMEOUT_SECONDS=130`(ai 125초 마감보다 길게), `REPORT_EXPLANATION_BUDGET_SECONDS=400`. 최대 3건 순차, 재시도 없음. 상한 초과 시 이미 검증한 항목은 보존
+  - #747부터 `REPORT_NARRATIVE_TIMEOUT_SECONDS=80`, `REPORT_EXPLANATION_TIMEOUT_SECONDS=80`, `REPORT_EXPLANATION_BUDGET_SECONDS=300`(ai가 SageMaker 실시간 호출 1회·마감 75초). 이전 RunPod 콜드 대기값(310·310·950초)은 지움. 근거와 창 밖 동작은 [AI 보고서 24절](ai.md#24-리포트-gemma-sagemaker-호출-전환-747-2026-11-18)
 - 배포 순서: core 사용량(#490) → ai API(#491), learning 점수 공급(#489)과 함께. 공급자가 구버전이면 설명 미포함으로 기존 리포트 유지
 - 미실시: 실제 CPU 모델의 품질·지연 측정(#475), sLLM 서버(#476), 운영 배포
 
