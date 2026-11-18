@@ -75,19 +75,23 @@ B 계정(시연, 11/30 무렵)으로 옮길 때 바꿀 항목: 버킷 이름의 
 | 파일 | 내용 |
 |---|---|
 | `sagemaker/explanation-endpoint.json` | 원하는 상태: 이미지, S3 경로, 인스턴스, 메모리 예약, vLLM 환경 변수, LoRA 사용 여부, 예약 창 |
-| `sagemaker_explanation.py` | `status`·`manifest`·`verify`·`apply`·`schedule`·`copies`·`invoke`·`delete`. aws CLI만 쓴다 |
-| `iam/sagemaker-explanation-role.*` | SageMaker 실행 역할(S3 `explanation/*` 읽기, DLC 이미지 받기, 로그·지표, VPC ENI) |
+| `sagemaker_explanation.py` | `status`·`manifest`·`verify`·`lock`·`apply`·`schedule`·`copies`·`invoke`·`delete`. aws CLI만 쓴다 |
+| `sagemaker/model-check/` | 서빙 이미지(#777): vLLM DLC + 시작 때 `/opt/ml/model` 해시 검사 + `POST /adapters` LoRA 검사. 수동 빌드·게시, digest 고정 |
+| `iam/sagemaker-explanation-role.*` | SageMaker 실행 역할(S3 `explanation/*` 읽기, DLC·검사 이미지 받기, 로그·지표, VPC ENI) |
 | `iam/ai-asset-s3-role.inline.ai-sagemaker-explanation-invoke.json` | ai Pod Identity 역할의 `sagemaker:InvokeEndpoint`(엔드포인트와 IC ARN 모두 필요) |
 
 새 계정 순서:
 
 1. `demo_stack.py apply --confirm-account <계정>`으로 실행 역할을 만든다. 역할이 이미 있으면 inline 정책은 `aws iam put-role-policy`로 넣는다(ai 역할 추가분 포함). Pod 재시작은 필요 없다.
 2. 보안 그룹 `sagomungchi-demo-sagemaker-explanation-sg`를 VPC에 만든다. ingress는 없고 egress는 tcp 443만 둔다.
-3. `sagemaker_explanation.py manifest --upload`로 승인 목록을 한 번만 올린다. 이때 LoRA 사용 여부(`useAdapter`)를 먼저 정한다.
-4. `apply --confirm-account <계정>`을 실행한다. manifest 대조 → 모델 → 설정 → 엔드포인트 → IC(어댑터 포함) → Auto Scaling 대상 순서다. 인스턴스가 이미 떠 있어도 IC가 InService가 되기까지 약 9분 걸린다.
-5. `schedule`로 주간 창(일 23:30·월 02:00 KST, 0대에서 켜지는 데 약 21분)을 건다. 시험은 `--test-start/--test-end`(UTC)로 시각을 당겨 확인한다.
+3. `sagemaker_explanation.py manifest --upload`로 승인 목록을 한 번만 올린다. 이때 LoRA 사용 여부(`useAdapter`)를 먼저 정한다. 버전 경로(`explanation/<버전>/`)에는 manifest.json과 manifest에 적힌 파일만 둔다(`base-gguf/`·`adapter-gguf/` 등은 지운다). SageMaker가 버전 경로 전체를 받고, 컨테이너가 남는 파일을 거부하기 때문이다.
+4. 검사 이미지를 빌드해 그 계정 ECR `sagomungchi/sagemaker-explanation`(IMMUTABLE)에 올리고, 받은 digest를 `explanation-endpoint.json` `imageDigest`에 적는다(#777, 절차는 [infra 9.17](../../docs/report/infra.md#917-리포트-gemma-sagemaker-경로-잠금과-적재-때-해시-검사-777-2026-11-18)).
+5. `lock --confirm-account <계정>`(먼저 `--dry-run`)으로 버전 경로의 쓰기·삭제를 버킷 정책으로 막는다. `verify`가 통과해야 잠근다.
+6. `apply --confirm-account <계정>`을 실행한다. manifest 대조 → 모델 → 설정 → 엔드포인트 → IC(어댑터 포함) → Auto Scaling 대상 순서다. 인스턴스가 이미 떠 있어도 IC가 InService가 되기까지 약 9분 걸린다.
+7. `schedule`로 주간 창(일 23:30·월 02:00 KST, 0대에서 켜지는 데 약 21분)을 건다. 시험은 `--test-start/--test-end`(UTC)로 시각을 당겨 확인한다.
 
-- 계정 번호가 들어간 곳: `iam/sagemaker-explanation-role.*`, `iam/ai-asset-s3-role.inline.ai-sagemaker-explanation-invoke.json`. 버킷 이름은 스크립트가 sts로 채운다.
+- 계정 번호가 들어간 곳: `iam/sagemaker-explanation-role.*`, `iam/ai-asset-s3-role.inline.ai-sagemaker-explanation-invoke.json`. 버킷 이름과 이미지 레지스트리는 스크립트가 sts로 채운다. `imageDigest`는 계정마다 게시한 값으로 바꾼다.
+- 시험 엔드포인트는 `--spec <다른 JSON>`으로 이름·경로를 바꿔 같은 명령으로 만들고 지운다(#777 시험).
 - 지울 때: `delete --confirm-account <계정>`(예약·Auto Scaling 대상·IC·엔드포인트·설정·모델). IAM·SG·S3 모델 파일은 남는다.
 
 ## 배포·복구 유의 사항

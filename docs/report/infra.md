@@ -970,7 +970,7 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 | 메모리 옵션 | 9.13.5의 fp8 KV 등 | g6.xlarge에서는 컨테이너가 뜨기 전에 실패해 확인하지 못했다. g6e에서는 fp8 KV 없이(bf16) 기동한다. `--max-num-batched-tokens 2560`도 필요 없다 |
 | 모델 데이터 | `base-awq/` + `adapter/` | `ModelDataSource`(S3 경로, 압축 없음)로 `base-awq/`를 `/opt/ml/model`에 받는다. LoRA는 어댑터 IC(`BaseInferenceComponentName`)로 붙인다 |
 | 호출 이름 | 미정 | 기반: IC `sagomungchi-demo-explanation-ic`. LoRA: 어댑터 IC `sagomungchi-demo-explanation-explain`. **요청 본문의 `model` 값으로는 LoRA가 붙지 않는다**(아래) |
-| 해시 확인 | #745 방안 | 배포 전 대조만 함(#746 D1). 경로 잠금·적재 때 검사는 #777 |
+| 해시 확인 | #745 방안 | 배포 전 대조만 함(#746 D1). 경로 잠금·적재 때 검사는 #777(9.17, A 계정 검증 완료·B 적용 예정) |
 
 #### 인퍼런스 컴포넌트 배치 (메모리 예약)
 
@@ -1365,6 +1365,125 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 - AWS에서 첫 배포 경로를 실행하지 않았다. 실제 확인은 11/25 A 재가동(9.16.2의 6단계)과 B 구축 때 한다.
 - 첫 설치 중 한 release가 `failed`가 되면 다시 실행해도 자동으로 고치지 않는다. 원인을 고친 뒤 승인을 받아 `helm uninstall <release> -n app`으로 지우고 같은 계획을 다시 실행한다. 이미 설치된 release는 `upgrade`로 이어진다.
 - 웹 배포 자동화는 B 범위로 남겼다.
+## 9.17 리포트 Gemma SageMaker 경로 잠금과 적재 때 해시 검사 (#777, 2026-11-18)
+
+SageMaker는 0대에서 켜질 때마다 S3에서 모델을 다시 받는데, 받은 파일의 sha256을 확인하지 않는다(#368·#493 원칙과 다름). #746에서는 배포 전 대조(`verify`)만 했다. 이 절은 남은 두 가지, 즉 승인 경로 잠금과 적재 때 검사를 구현하고 A 계정에서 미리 확인한 결과다. 운영 엔드포인트 `sagomungchi-demo-explanation`은 건드리지 않고 별도 시험 엔드포인트를 썼다. 실제 승인 경로 잠금과 gguf 정리, 운영 이미지 교체는 B 계정에서 한다(9.17.7). A에서 다시 확인하는 절차는 9.17.6이다.
+
+### 9.17.1 결정
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 검사 위치 | 기반 모델: 컨테이너 시작 스크립트. LoRA: vLLM 미들웨어(`POST /adapters`) | 기반은 `/opt/ml/model`로 받은 뒤 서버가 뜨기 전에 볼 수 있다. LoRA는 어댑터 IC가 따로 받아 `POST /adapters?src=/opt/ml/models/<어댑터 IC>/model`로 넘기므로 시작 스크립트로는 볼 수 없다 |
+| 이미지 | [`sagemaker/model-check/`](../../infrastructure/aws/sagemaker/model-check/): #746 DLC(`vllm:server-sagemaker-cuda-v2.8.2`, digest `d084c1bf…`로 고정) 위에 `model_check.py`와 시작 스크립트만 더함. 원래 진입점(`sagemaker_entrypoint.sh`)을 그대로 이어 부른다 | AWS는 같은 태그로 보안 패치판을 다시 올린다(이미지 기록 `CACHE_REFRESH=2026-11-16`). 그래서 기반도 digest로 고정했다 |
+| ECR | `sagomungchi/sagemaker-explanation`(IMMUTABLE, AES256, `demo-stack.json`). 수동 빌드·게시, `cd-release` 대상 아님. 모델은 `imageDigest`로 고정한다 | 이슈 범위 |
+| 모델 데이터 | `base-awq/` → **버전 경로 전체** `explanation/<버전>/`(manifest.json + `base-awq/` + `adapter/`). vLLM에는 `SM_VLLM_MODEL=/opt/ml/model/base-awq`를 준다 | 컨테이너가 manifest.json을 같은 다운로드 안에서 받아야 대조할 수 있다. 대가로 어댑터(46MB)를 두 번 받는다 |
+| 고정 값 | `MODEL_MANIFEST_SHA256` = manifest.json의 S3 FULL_OBJECT SHA-256. `apply`가 `verify` 통과 뒤 모델 환경 변수에 넣는다 | manifest를 바꿔치기해도 시작이 거부된다 |
+| 검사 순서 | `MODEL_MANIFEST_SHA256` 형식 → manifest.json sha256 → `/opt/ml/model` 파일 전부(누락·추가·크기·sha256). 하나라도 다르면 vLLM을 띄우지 않고 종료 | 이슈 범위. 크기를 먼저 봐서 다른 파일이면 해시 전에 끝난다. 해시는 4스레드로 병렬 계산 |
+| LoRA 우회 경로 | 미들웨어가 vLLM `/v1/load_lora_adapter`를 직접 경로와 `/invocations` + `route=` 사용자 속성 모두 403으로 막는다 | 런타임 LoRA(`VLLM_ALLOW_RUNTIME_LORA_UPDATING=true`)가 켜져 있어 호출 권한만 있으면 임의 경로 LoRA를 올릴 수 있었다 |
+| `verify` 범위 | 버전 경로 아래 모든 객체 = manifest.json + manifest 목록. `base-gguf/`·`adapter-gguf/`가 남아 있으면 `apply`·`lock`이 멈춘다 | SageMaker가 버전 경로를 통째로 받고, 컨테이너도 남는 파일을 거부한다 |
+| 경로 잠금 | 모델 버킷 정책에 `Deny`, `Principal: *`, `s3:PutObject`·`s3:DeleteObject`·`s3:DeleteObjectVersion`, 대상 `explanation/<버전>/*`. `sagemaker_explanation.py lock`이 `verify` 통과 뒤 넣고, 다른 문장은 그대로 둔다(같은 Sid는 교체). `--dry-run`, 시험용 `--prefix`·`--remove`가 있다 | 이슈 범위. `apply`(생성 전용)에 넣지 않은 것은 가중치를 올리기 전에 잠그면 업로드가 막히기 때문이다 |
+| 실행 역할 | `PullModelCheckImage`(새 ECR 저장소 받기) 추가 | 새 이미지를 받으려면 필요 |
+| 기동 제한 | `ContainerStartupHealthCheckTimeoutInSeconds`·`ModelDataDownloadTimeoutInSeconds`는 **1200초 유지** | 컨테이너 시작부터 InService까지 실측 약 5분(해시 45초 포함, 9.17.3)이라 여유가 4배 가깝다. 늘리면 실패한 IC를 지우기까지 기다리는 시간만 길어진다(9.13.9) |
+
+### 9.17.2 A 계정 검증 결과 (2026-11-18 19:00~20:12 KST)
+
+시험 엔드포인트 `sagomungchi-test777-explanation`(`ml.g6e.xlarge`, 설정·IC 이름도 `test777`)을 따로 만들었다. 가중치는 실제 승인본(`explanation/gemma4-26b-a4b-lora-20261118/`)의 `base-awq/`·`adapter/` 13개 파일을 S3 안에서 `CopyObject`(SHA-256)로 시험 경로에 복사해 썼다. A의 승인 경로에는 gguf가 아직 있어서 그대로는 새 방식의 `verify`를 통과하지 못하기 때문이다(B에서 정리한 뒤의 모습을 시험 경로로 재현). 시험 경로마다 manifest는 `manifest --upload`로 따로 올렸다.
+
+| 시험 | 방법 | 결과 |
+|---|---|---|
+| 정상 모델 | 시험 경로 `test777-good/` + 검사 이미지(`sha256:3e5aacfc…`)로 `apply` | 컨테이너 안 검사 `13 files 16.09 GiB sha256 in 44.6s` 통과 → vLLM 기동 → 기반 IC InService. 어댑터 적재 때 `adapter … check OK: 2 files`. 기반·LoRA 호출 모두 200(LoRA 응답 `model`이 어댑터 IC 이름). 미들웨어 2개(`model_check`, DLC `sagemaker_serve`)가 함께 올라갔다 |
+| 기반 파일 1개 변경 | `test777-bad/`의 `base-awq/generation_config.json` 1바이트(공백→탭, 크기 같음)를 바꾸고, 배포 전 대조를 일부러 건너뛰어 IC 생성 | 다운로드 뒤 검사에서 `FAIL SHA256 base-awq/generation_config.json cbe400ee… != b69207f9…`로 vLLM 전에 종료(`refusing to start`). SageMaker가 컨테이너를 다시 띄울 때마다 같은 이유로 18회 거부했고, IC는 기동 제한(이 시험만 600초)이 지난 뒤 Failed("did not pass the ping health check")가 됐다(생성 19:53:27 → Failed 20:09:00, 15.5분) |
+| 배포 전 대조 | 같은 변경 경로에 `verify` | `DIFF base-awq/generation_config.json`, `MISMATCH`로 `apply`가 멈춤 |
+| LoRA 파일 변경 | `adapter_config.json` 1바이트를 바꾼 경로로 어댑터 IC 생성 | IC는 InService로 표시되지만, 첫 호출 때 SageMaker의 `POST /adapters`를 미들웨어가 400으로 거부했다(`FAIL SHA256 adapter_config.json`). 호출은 `ModelError: adapter files do not match manifest.json`으로 실패하고, 이후 호출도 매번 다시 거부됐다. 같은 엔드포인트의 정상 LoRA 호출은 계속 성공 |
+| 경로 잠금 | 시험 접두어 `explanation/test777-lock/`에 가상 객체 1개를 두고 `lock --prefix`로 잠금 | 새 키 쓰기, 덮어쓰기, `CopyObject`로 넣기, multipart 시작, 삭제(삭제 마커), 버전 삭제가 모두 `AccessDenied`. 읽기와 잠금 밖 경로 쓰기는 허용. `--remove`로 원복하자 버킷 정책이 원래대로(정책 없음) 돌아갔다 |
+| 이미지 내용 | 저장소 파일과 게시 이미지 안 파일의 sha256 비교 | `model_check.py`·`entrypoint.sh` 모두 같음. 로컬 Docker에서 정상 가짜 모델은 검사 뒤 vLLM 진입(GPU 없어 거기서 종료), 잘못된 `MODEL_MANIFEST_SHA256`은 vLLM 전 종료(코드 1) |
+
+- 단위 테스트(`scripts/tests/test_sagemaker_model_check.py`)는 가짜 파일로 누락·추가·크기·sha256·symlink·manifest 변조·형식 오류, 미들웨어의 통과·거부·우회 경로 차단, `lock` 정책 병합·원복·거부 조건, `verify`의 gguf 잔여 거부를 확인한다.
+
+### 9.17.3 시간
+
+| 구간 | #746(검사 없음) | #777(검사 이미지) |
+|---|---|---|
+| 해시 계산(16.09GiB, 13개 파일) | — | 44.6초 |
+| 인스턴스가 있을 때 IC 생성 → InService | 약 9분(534~535초) | 9분 32초(19:11:09 → 19:20:41) |
+| 0대 → 1대 콜드(Auto Scaling 반영 → 기반 IC InService) | 20.5분 | **13분 7초**(19:35:01 → 19:48:08). 인스턴스 1대 2.7분, 이미지·모델 받기 약 5.5분, 해시 44.8초, vLLM 기동 4.2분 |
+
+- 이미지 크기는 DLC와 사실상 같다(압축 10.68GB, 더한 층은 수십 KB).
+- 해시는 `/opt/ml/model`에 받은 뒤 vLLM 기동 전에 한 번 돈다. 어댑터 검사는 0.04GiB라 0초대다.
+- **예약 확장 시각**: 바꿀 필요 없다. 해시는 콜드에 약 45초를 더한다. #746의 20.5분(인스턴스 확보 10분)에 더해도 약 21.3분이라, 일 23:30 확장이면 배치 시작(월 00:00) 전에 약 8분 남는다. 이번 13.1분은 인스턴스가 2.7분 만에 잡혀 짧았고, 인스턴스 확보 시간이 콜드 차이의 대부분이다
+
+### 9.17.4 발견
+
+- **어댑터는 첫 호출 때 적재된다**: 어댑터 IC가 InService가 되어도 `POST /adapters`는 그 IC로 첫 호출이 올 때 일어났다(정상 어댑터도 같음). 그래서 LoRA 파일이 바뀌어도 IC 상태로는 알 수 없고 호출마다 실패한다. 실패는 닫힌 쪽(설명 없이 발행)이라 안전하지만, 바뀐 것을 알아차리려면 창 시작 뒤 LoRA 호출 1건으로 확인하거나 IC 로그의 `[model-check] … FAILED`에 경보를 거는 편이 좋다
+- 기반 파일이 바뀌면 컨테이너가 시작 직후 종료를 반복하고, IC는 기동 제한이 지나야 Failed가 된다(9.17.2). 그동안 IC를 지울 수 없다(9.13.9와 같음)
+- vLLM이 `Found duplicate keys --middleware`를 출력하지만 두 미들웨어 모두 등록된다(인자 목록에 2개)
+- `copies 1`은 Auto Scaling 대상 최소값을 먼저 1로 바꾸므로, Auto Scaling이 바로 사본 수를 바꾸기 시작하면 이어지는 `update-inference-component-runtime-config`가 `UPDATE_RC_IN_PROGRESS`로 실패한다(#746 스크립트의 경합). 확장 자체는 Auto Scaling이 진행한다. 이번에는 상태를 직접 따라가며 쟀다
+- Windows Docker Desktop은 ECR 토큰을 자격 증명 저장소(wincred)에 넣지 못한다(`The stub received bad data`). 임시 `DOCKER_CONFIG`에 `auths`를 직접 쓰는 방식으로 우회했다
+- 게시는 `docker buildx build --provenance=false --sbom=false --output type=image,name=…,oci-mediatypes=false,push=true`로 Docker v2 단일 manifest로 올렸다. 기본값(attestation 포함 OCI index)이 SageMaker에서 받아지는지는 확인하지 않았다
+
+### 9.17.5 한계
+
+- 버킷 정책 `Deny`는 루트 사용자를 포함한 모든 주체에 적용되지만, `s3:PutBucketPolicy` 권한이 있는 관리자는 정책을 지운 뒤 쓸 수 있다. 잠금은 실수와 다른 서비스 주체를 막는 장치이고, 관리자 변경은 CloudTrail로 추적한다. 모델 버킷에는 수명 주기 규칙이 없다(2026-11-18 확인). 규칙을 추가하면 만료 삭제는 버킷 정책과 상관없이 일어나므로 `explanation/`을 제외해야 한다
+- 검사 이미지와 승인 목록은 같은 계정 안에서 고친 사람이 함께 바꿀 수 있다. `MODEL_MANIFEST_SHA256`은 SageMaker 모델에 고정되고 모델은 수정할 수 없으므로, 바꾸려면 새 모델을 만들어야 한다
+- 해시 시간은 `ml.g6e.xlarge` 1회 측정이다
+
+### 9.17.6 머지 뒤 영향과 11/25 A 확인 절차 (2026-11-20 정리)
+
+결정(2026-11-20): 실제 적용 확인은 11/25 A 재가동 때 하고, B 적용 단계는 #809 B 런북에 넣는다.
+
+**머지 뒤 영향**: `explanation-endpoint.json`이 검사 이미지(`imageDigest`)와 버전 경로 전체를 가리킨다. 그래서 이미지를 그 계정에 게시하기 전이나 버전 경로에 `base-gguf/`·`adapter-gguf/`가 남아 있으면 `verify`·`apply`·`lock`이 멈춘다. 지금 적힌 digest `sha256:3e5aacfc…`는 11/18 A 시험 이미지이고 시험 뒤 지웠으므로, 11/25에 다시 게시한 값으로 바꿔야 한다. 이미 떠 있는 엔드포인트와 IC는 바뀌지 않는다.
+
+**#760 11/25 순서(9.16.2)와의 관계**: 어긋나지 않는다. 8단계 "SageMaker 예약 재개"는 11/19에 일시정지한 기존 IC(모델 `…-r4`, DLC 이미지, `base-awq/`)를 그대로 다시 켜는 것이라 이 변경과 상관없다. #777 확인은 8단계 뒤, 10단계(경로 확인) 전에 SageMaker만 따로 한다. EKS·RDS 단계와 서로 기다리지 않는다. 11/25(수)는 배치 창(일 23:30~월 02:00) 밖이다.
+
+**11/25 A 확인 절차**
+
+| # | 단계 | 확인 |
+|---|---|---|
+| 1 | 이미지 빌드·게시: `demo_stack.py plan`에서 ECR `sagomungchi/sagemaker-explanation`이 MISSING이면 `apply`(9.16.2의 3단계)가 만든다. 실행 역할이 남아 있으면 inline 정책(`PullModelCheckImage` 포함)은 `put-role-policy`로 넣는다. 9.17.7의 3번 명령으로 게시하고 digest를 `imageDigest`에 적는다(별도 커밋) | `describe-images`의 `imageManifestMediaType`이 `…docker.distribution.manifest.v2+json` |
+| 2 | gguf 정리: 승인 경로의 `base-gguf/`(4개)·`adapter-gguf/`(1개)의 모든 버전 삭제 | `verify`가 `all objects match`(13개) |
+| 3 | apply: `apply`는 없는 것만 만들고 **이미 있는 IC의 모델(`…-r4`)은 바꾸지 않는다**. 그래서 어댑터 IC → 기반 IC 순서로 지운 뒤 `apply --confirm-account <A>` → `schedule`을 다시 건다 | 새 모델 `…-r5`, IC 로그 `[model-check] model check OK: 13 files` |
+| 4 | lock: `lock --dry-run` → `lock` | `status`에 `path lock …: locked`, 잠근 경로 쓰기 1건 `AccessDenied` |
+| 5 | 콜드·LoRA 호출 1건: `copies 0 --wait` → `copies 1`(경합으로 실패하면 상태만 따라감, 9.17.4) → 기반·어댑터 IC 호출 각 1건 | 콜드 시간 기록, 어댑터 첫 호출 뒤 `adapter … check OK` |
+
+- 결과와 걸린 시간은 이 절 아래에 덧붙인다.
+- **B**: #809 B 런북(AWS README 13단계)에 같은 단계를 넣는다. 런북 파일 수정은 이번 범위가 아니다. 지금 런북의 "ECR 7개"는 이 변경으로 8개가 된다.
+
+### 9.17.7 B 계정 적용 절차
+
+순서는 [aws README](../../infrastructure/aws/README.md#리포트-gemma-sagemaker-엔드포인트-746-2026-11-18)의 "새 계정 순서"와 같다. #777 때문에 더해진 부분만 적는다.
+
+1. 가중치: 버전 경로에는 `base-awq/`·`adapter/`만 올리고(`base-gguf/`·`adapter-gguf/`는 올리지 않거나 지운다), `manifest --upload`로 manifest.json을 한 번 올린다. `verify`가 `all objects match`여야 한다
+2. `demo_stack.py apply --confirm-account <B>`로 ECR `sagomungchi/sagemaker-explanation`(IMMUTABLE)과 실행 역할을 만든다. 역할이 이미 있으면 inline 정책(`PullModelCheckImage` 포함)을 `put-role-policy`로 넣는다. `iam/` JSON과 `demo-stack.json`의 계정 번호를 B로 바꾼 뒤 실행한다
+3. 이미지: DLC 레지스트리(`763104351884`)와 B ECR에 로그인하고 저장소 루트에서
+   `docker buildx build --provenance=false --sbom=false --output type=image,name=<B 계정>.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/sagemaker-explanation:<태그>,oci-mediatypes=false,push=true infrastructure/aws/sagemaker/model-check`
+   (A에서 기반 10.7GB 받기 약 15분, 게시 약 5분). `aws ecr describe-images`로 digest를 확인해 `explanation-endpoint.json` `imageDigest`에 적는다(같은 파일이면 A와 digest가 같을 수 있지만 B 값으로 확인한다)
+4. `lock --confirm-account <B> --dry-run`으로 정책을 확인하고 `lock --confirm-account <B>`로 잠근다. `status`에 `path lock …: locked`가 나와야 한다. 잠근 뒤 쓰기 1건이 `AccessDenied`인지 확인한다(시험 키는 잠근 경로 밖에)
+5. `apply --confirm-account <B>` → `schedule`. IC 로그(`/aws/sagemaker/InferenceComponents/sagomungchi-demo-explanation-ic`)에서 `[model-check] model check OK: 13 files`와 첫 LoRA 호출 뒤 `adapter … check OK`를 확인한다
+
+- 새 모델 버전을 올릴 때는 항상 새 버전 경로에 올리고 그 경로를 다시 쓰지 않는다. 옛 경로 잠금은 남겨 둔다
+
+### 9.17.8 12/7 데모 전 적용 판단 근거 (결정은 팀)
+
+| 관점 | 내용 |
+|---|---|
+| 콜드 시간 | 해시로 콜드가 약 45초 늘어난다. 예약 창(일 23:30)은 그대로 둬도 된다(9.17.3) |
+| 추가 작업(B) | 이미지 빌드·게시(약 20분, 로컬 업로드), `lock` 1회, gguf를 올리지 않기. 나머지 `apply`·`schedule`은 어차피 B에서 새로 한다 |
+| 새로 생기는 실패 | 버전 경로에 남는 파일이 있으면 시작 거부(`verify`가 먼저 막음). LoRA 파일이 바뀌면 설명 호출이 매번 실패(닫힌 쪽). 기반이 바뀌면 IC가 Failed가 될 때까지 최대 20분 넘게 걸림 |
+| 적용하지 않을 때 | 배포 전 `verify`에만 기대고, 버전 경로는 쓰기 권한이 있는 주체가 덮어쓸 수 있다. 0대에서 켜질 때 받은 파일은 검사하지 않는다 |
+| 되돌리기 | `imageDigest` 대신 DLC 이미지·`base-awq/` 경로로 새 모델을 만들고 IC를 다시 만들면 된다(약 9분 + 콜드). 버킷 정책은 `lock --remove` |
+
+### 9.17.9 시험 자원과 정리
+
+| 자원 | 이름 | 상태 |
+|---|---|---|
+| SageMaker 엔드포인트·설정·모델·IC | `sagomungchi-test777-explanation`(설정 `…-g6e-xlarge`), 모델 `…-good`·`…-bad`, IC `…-ic`·`…-explain`·`…-badadapter`·`…-badic`, Auto Scaling 대상 | 삭제(20:10) |
+| CloudWatch 로그 그룹 | `/aws/sagemaker/InferenceComponents/sagomungchi-test777-explanation-{ic,badic}` | 삭제 |
+| ECR 이미지 | `sagomungchi/sagemaker-explanation@sha256:3e5aacfc…`(태그 `777-trial-1`) | 삭제. 저장소는 `demo-stack.json` 정의라 빈 채로 둠(A 종료 때 함께 지움) |
+| S3 | `explanation/test777-{good,bad,badadapter,lock,unlocked}/`의 모든 버전·삭제 마커 | 삭제(0개 확인), 남은 multipart 0건 |
+| 버킷 정책 | 시험 잠금 | `--remove`로 원복, 정책 없음 확인 |
+| 실행 역할 inline | `PullModelCheckImage` 문장 추가 | 저장소 정의(`iam/`)와 같아 그대로 둠 |
+
+20:12 KST에 SageMaker 엔드포인트·IC·Auto Scaling 대상·로그 그룹이 운영 것(`sagomungchi-demo-explanation`, 사본 0, 마지막 변경 17:46)만 남았고 승인 경로(`explanation/gemma4-26b-a4b-lora-20261118/`, 31.7GB)는 바뀌지 않았음을 확인했다. 비용은 `ml.g6e.xlarge` 약 1시간(약 $3.2)과 S3 복사·요청이다.
 
 ## 10. 근거 링크
 

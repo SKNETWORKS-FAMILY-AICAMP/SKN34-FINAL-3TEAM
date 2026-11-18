@@ -59,7 +59,8 @@
     "sagomungchi/learning-migrate",
     "sagomungchi/ai-service",
     "sagomungchi/scoring-service",
-    "sagomungchi/report-service"
+    "sagomungchi/report-service",
+    "sagomungchi/sagemaker-explanation"
   ],
   "secrets": [
     "sagomungchi/demo/app/ai",
