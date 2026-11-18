@@ -355,6 +355,15 @@ def test_captions_one_narrator_in_polite_present_tense() -> None:
     assert "학년에 맞는 말투). mungchiMood" not in prompts.PLAN_SYSTEM
 
 
+def test_mungchi_role_is_a_case_solver_and_caption_example_has_no_fixed_role() -> None:
+    """뭉치 역할은 사건을 풀거나 찾아 주는 해결사 직업(사용자 결정 2026-11-18). 자막 예시에 특정
+    역할(해적 선장)을 쓰면 다른 테마 자막에도 끌려 들어감."""
+    assert "해적" not in prompts.PLAN_SYSTEM
+    assert "사건을 해결하거나 찾아 주는 해결사 직업" in prompts.PLAN_SYSTEM
+    assert "씨앗의 역할을 그대로" in prompts.PLAN_SYSTEM
+    assert "'○○ 사건이라면 △△ 뭉치!'" in prompts.PLAN_SYSTEM
+
+
 def test_still_clip_zooms_smoothly_with_perspective() -> None:
     """정지 그림 컷은 원근 필터로 확대(zoompan은 정수 픽셀 반올림으로 1px씩 떨림)."""
     import inspect
