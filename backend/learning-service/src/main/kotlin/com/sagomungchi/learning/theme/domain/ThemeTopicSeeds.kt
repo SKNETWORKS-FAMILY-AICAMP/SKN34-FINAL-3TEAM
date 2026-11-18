@@ -74,7 +74,9 @@ data class ParsedTopic(val type: StoryType, val role: String, val place: String,
  * 뭉치 역할은 사건을 해결하거나 찾아 주는 해결사 직업만 쓴다(사용자 결정 2026-11-18, #779: 해적 선장·농부·화가처럼 장소에 맞춘
  * 의상 역할은 왜 사건을 푸는지가 약했음). 테마 느낌은 장소·사건이 맡고, 역할은 장소에 맞는 해결사로 고른다(바닷가·갯벌·섬은 바다
  * 구조대, 숲·캠핑장은 숲 순찰대, 동물 사건은 동물 구조대 등). 역할 16가지(탐정·경찰관·교통 경찰·소방관·바다 구조대·산악 구조대·
- * 눈 순찰대·숲 순찰대·동물 구조대·과학 수사대·보물 탐험대·비밀 요원·마을 지킴이·시간 탐정·소리 탐정·맛 탐정)는 기준안
+ * 눈 순찰대·숲 순찰대·동물 구조대·과학 수사대·보물 탐험대·비밀 요원·마을 지킴이·시간 탐정·소리 탐정·맛 탐정)는 기준안.
+ * 차림의 옷은 소매 없는 조끼로만(사용자 결정 2026-11-19, #779: 제복·방화복·실험 가운처럼 몸을 감싸는 옷을 입히자 뭉치 몸 옆이 소매로
+ * 그려져 팔이 넷처럼 보였음 → 경찰 배지 조끼·반사띠 조끼·하얀 가운 조끼)
  */
 object ThemeTopicSeeds {
     private val LOST = StoryType.LOST
@@ -93,23 +95,23 @@ object ThemeTopicSeeds {
         ThemeTopicSeed(LOST, "탐정(탐정 모자·돋보기 목걸이)", "동네 시장", "가게 주인 아이의 반려 고양이"),
         ThemeTopicSeed(LOST, "숲 순찰대(순찰 모자·나뭇잎 배지)", "수목원", "아이가 만든 나무 이름표"),
         ThemeTopicSeed(LOST, "바다 구조대(구명조끼·호루라기 목걸이)", "바닷가 모래사장", "아이의 연", setOf(Season.SUMMER)),
-        ThemeTopicSeed(LOST, "경찰관(경찰 제복·경찰 모자)", "마을 축제", "축제에서 받은 풍선 인형"),
-        ThemeTopicSeed(LOST, "과학 수사대(실험 가운·고글)", "어린이 박물관 체험실", "체험용 모형 화석"),
+        ThemeTopicSeed(LOST, "경찰관(경찰 모자·경찰 배지 조끼)", "마을 축제", "축제에서 받은 풍선 인형"),
+        ThemeTopicSeed(LOST, "과학 수사대(고글·하얀 가운 조끼)", "어린이 박물관 체험실", "체험용 모형 화석"),
         ThemeTopicSeed(LOST, "동물 구조대(구조 조끼·발바닥 배지)", "체험 농장", "아이가 돌보던 아기 염소"),
         ThemeTopicSeed(LOST, "숲 순찰대(순찰 모자·나뭇잎 배지)", "캠핑장", "아이의 별자리 손전등"),
-        ThemeTopicSeed(LOST, "경찰관(경찰 제복·경찰 모자)", "작은 기차역", "아이의 기차표 지갑"),
+        ThemeTopicSeed(LOST, "경찰관(경찰 모자·경찰 배지 조끼)", "작은 기차역", "아이의 기차표 지갑"),
         ThemeTopicSeed(LOST, "마을 지킴이(형광 조끼·호루라기 목걸이)", "동네 골목", "할머니께 보낼 편지"),
-        ThemeTopicSeed(LOST, "과학 수사대(실험 가운·고글)", "과학관", "아이가 만든 작은 로봇"),
+        ThemeTopicSeed(LOST, "과학 수사대(고글·하얀 가운 조끼)", "과학관", "아이가 만든 작은 로봇"),
         ThemeTopicSeed(LOST, "바다 구조대(구명조끼·호루라기 목걸이)", "갯벌 체험장", "아이의 관찰 통", setOf(Season.SUMMER)),
         ThemeTopicSeed(LOST, "동물 구조대(구조 조끼·발바닥 배지)", "동네 공원", "아이의 반려 강아지"),
-        ThemeTopicSeed(LOST, "경찰관(경찰 제복·경찰 모자)", "마을 떡집", "대회에 낼 떡 모양 틀"),
+        ThemeTopicSeed(LOST, "경찰관(경찰 모자·경찰 배지 조끼)", "마을 떡집", "대회에 낼 떡 모양 틀"),
         ThemeTopicSeed(LOST, "마을 지킴이(형광 조끼·호루라기 목걸이)", "꽃 축제 정원", "아이가 찍은 사진 앨범"),
         ThemeTopicSeed(LOST, "바다 구조대(구명조끼·호루라기 목걸이)", "바닷가 등대 마을", "아이의 종이배"),
         ThemeTopicSeed(LOST, "숲 순찰대(순찰 모자·나뭇잎 배지)", "숲속 생태 연못", "아이가 기르던 장수풍뎅이"),
-        ThemeTopicSeed(LOST, "소방관(방화복·소방 헬멧)", "마을 소방 체험관", "체험 때 받은 배지"),
+        ThemeTopicSeed(LOST, "소방관(소방 헬멧·반사띠 조끼)", "마을 소방 체험관", "체험 때 받은 배지"),
         ThemeTopicSeed(LOST, "탐정(탐정 모자·돋보기 목걸이)", "마을 작은 도서관", "반납할 그림책"),
         ThemeTopicSeed(LOST, "마을 지킴이(형광 조끼·호루라기 목걸이)", "학교 강당 공연 준비실", "아이의 작은 북"),
-        ThemeTopicSeed(LOST, "경찰관(경찰 제복·경찰 모자)", "마을 미술관", "전시할 그림"),
+        ThemeTopicSeed(LOST, "경찰관(경찰 모자·경찰 배지 조끼)", "마을 미술관", "전시할 그림"),
         ThemeTopicSeed(LOST, "눈 순찰대(털모자·고글)", "눈썰매장", "아이의 눈썰매 장갑", setOf(Season.WINTER)),
         ThemeTopicSeed(LOST, "동물 구조대(구조 조끼·발바닥 배지)", "어린이 동물원", "먹이 주기 바구니"),
         ThemeTopicSeed(LOST, "탐정(탐정 모자·돋보기 목걸이)", "할머니 댁 꽃밭", "아이가 심은 해바라기 씨앗 봉투", setOf(Season.SPRING, Season.SUMMER)),
@@ -120,34 +122,34 @@ object ThemeTopicSeeds {
         ThemeTopicSeed(TREASURE, "탐정(탐정 모자·돋보기 목걸이)", "학교 도서관", "선생님이 숨긴 수수께끼 상자"),
         ThemeTopicSeed(TREASURE, "비밀 요원(선글라스·검은 조끼)", "마을 박물관 정원", "관장님이 숨긴 기념 메달"),
         // ③ 동물 장난꾸러기 찾기(#634 1차): 대상은 정답 동물 이름 없이, 붙잡는 건 중립 인물이 제자리에서 부드럽게
-        ThemeTopicSeed(PRANK, "경찰관(경찰 제복·경찰 모자)", "마을 떡집", "떡을 몰래 먹은 동물"),
+        ThemeTopicSeed(PRANK, "경찰관(경찰 모자·경찰 배지 조끼)", "마을 떡집", "떡을 몰래 먹은 동물"),
         ThemeTopicSeed(PRANK, "동물 구조대(구조 조끼·발바닥 배지)", "아파트 화단", "꽃밭을 파헤친 동물"),
         ThemeTopicSeed(PRANK, "숲 순찰대(순찰 모자·나뭇잎 배지)", "캠핑장 쉼터", "간식 봉지를 뜯어 놓은 동물"),
-        ThemeTopicSeed(PRANK, "과학 수사대(실험 가운·고글)", "사과 과수원", "사과를 갉아 먹은 동물", setOf(Season.AUTUMN)),
+        ThemeTopicSeed(PRANK, "과학 수사대(고글·하얀 가운 조끼)", "사과 과수원", "사과를 갉아 먹은 동물", setOf(Season.AUTUMN)),
         // ③ 발자국 주인 찾기(#634 1차)
-        ThemeTopicSeed(FOOTPRINT, "경찰관(경찰 제복·경찰 모자)", "학교 운동장", "모래밭에 발자국을 남긴 동물"),
-        ThemeTopicSeed(FOOTPRINT, "소방관(방화복·소방 헬멧)", "마을 소방서 앞마당", "진흙길에 발자국을 남긴 동물"),
+        ThemeTopicSeed(FOOTPRINT, "경찰관(경찰 모자·경찰 배지 조끼)", "학교 운동장", "모래밭에 발자국을 남긴 동물"),
+        ThemeTopicSeed(FOOTPRINT, "소방관(소방 헬멧·반사띠 조끼)", "마을 소방서 앞마당", "진흙길에 발자국을 남긴 동물"),
         ThemeTopicSeed(FOOTPRINT, "동물 구조대(구조 조끼·발바닥 배지)", "강가 갈대밭", "젖은 모래에 발자국을 남긴 동물"),
         ThemeTopicSeed(FOOTPRINT, "눈 순찰대(털모자·고글)", "뒷산 산책로", "눈길에 발자국을 남긴 동물", setOf(Season.WINTER)),
         // ② 출처 찾기(#634, ai.md 17.8.13): 손에 든 것이 온 곳(장소)을 밝힘, 잃은 사람·보낸 사람을 탓하지 않음
         ThemeTopicSeed(ORIGIN, "동물 구조대(구조 조끼·발바닥 배지)", "아파트 놀이터", "놀이터에서 만난 길 잃은 강아지"),
         ThemeTopicSeed(ORIGIN, "탐정(탐정 모자·돋보기 목걸이)", "마을 상가 거리", "주소가 지워진 택배 상자"),
-        ThemeTopicSeed(ORIGIN, "경찰관(경찰 제복·경찰 모자)", "학교 앞 문방구 거리", "운동장에 떨어져 있던 털장갑"),
+        ThemeTopicSeed(ORIGIN, "경찰관(경찰 모자·경찰 배지 조끼)", "학교 앞 문방구 거리", "운동장에 떨어져 있던 털장갑"),
         ThemeTopicSeed(ORIGIN, "마을 지킴이(형광 조끼·호루라기 목걸이)", "바닷가 마을", "우체통에 들어 있던 보낸 곳 없는 편지"),
         // ② 선물 상자 수수께끼: 상자 안 선물(물건)을 밝힘, 대상 글에 선물 이름을 쓰지 않음
         ThemeTopicSeed(GIFT, "탐정(탐정 모자·돋보기 목걸이)", "아이의 생일 파티", "생일에 받은 리본 상자"),
         ThemeTopicSeed(GIFT, "마을 지킴이(형광 조끼·호루라기 목걸이)", "아파트 현관", "할머니가 보낸 선물 상자"),
         ThemeTopicSeed(GIFT, "비밀 요원(선글라스·검은 조끼)", "학교 교실", "선생님이 준비한 선물 상자"),
-        ThemeTopicSeed(GIFT, "과학 수사대(실험 가운·고글)", "마을 도서관", "친구가 남긴 수수께끼 선물 상자"),
+        ThemeTopicSeed(GIFT, "과학 수사대(고글·하얀 가운 조끼)", "마을 도서관", "친구가 남긴 수수께끼 선물 상자"),
         // ② 비밀 재료 찾기: 음식에 넣은 재료를 밝힘, 대상 글에 재료 이름·색을 쓰지 않음
         ThemeTopicSeed(INGREDIENT, "맛 탐정(요리사 모자·돋보기 배지)", "마을 떡집", "대회에 낸 할머니의 떡"),
         ThemeTopicSeed(INGREDIENT, "맛 탐정(요리사 모자·돋보기 배지)", "동네 빵집", "빵집 사장님의 새 빵"),
-        ThemeTopicSeed(INGREDIENT, "과학 수사대(실험 가운·고글)", "어린이 요리 교실", "친구가 만든 주스"),
+        ThemeTopicSeed(INGREDIENT, "과학 수사대(고글·하얀 가운 조끼)", "어린이 요리 교실", "친구가 만든 주스"),
         ThemeTopicSeed(INGREDIENT, "탐정(탐정 모자·돋보기 목걸이)", "체험 농장", "농장 카페의 비밀 케이크"),
         // ④ 시간 탐정(#634, ai.md 17.8.17): 그 일을 한 때(후보 시각)를 밝힘, 대상 글에 시각을 쓰지 않음
         ThemeTopicSeed(WHEN, "시간 탐정(체크무늬 모자·나비넥타이)", "아파트 화단", "화단에 물을 준 때"),
         ThemeTopicSeed(WHEN, "시간 탐정(체크무늬 모자·나비넥타이)", "마을 작은 도서관", "반납함에 그림책을 넣은 때"),
-        ThemeTopicSeed(WHEN, "과학 수사대(실험 가운·고글)", "학교 연못", "연못 물고기에게 먹이를 준 때"),
+        ThemeTopicSeed(WHEN, "과학 수사대(고글·하얀 가운 조끼)", "학교 연못", "연못 물고기에게 먹이를 준 때"),
         ThemeTopicSeed(WHEN, "마을 지킴이(형광 조끼·호루라기 목걸이)", "동네 놀이터", "놀이터에 눈사람을 만든 때", setOf(Season.WINTER)),
         // ④ 어느 길로 왔을까: 손에 든 것이 지나온 길을 밝힘, 나른 사람을 탓하지 않음
         ThemeTopicSeed(ROUTE, "탐정(탐정 모자·돋보기 목걸이)", "골목 동네", "할머니가 보낸 택배 상자"),
