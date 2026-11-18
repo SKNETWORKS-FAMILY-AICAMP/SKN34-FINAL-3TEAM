@@ -7,6 +7,9 @@ import com.sagomungchi.learning._common.exception.errorInfoOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning.answer.client.ToxicityClient
+import com.sagomungchi.learning.answer.client.ToxicitySkipReason
+import com.sagomungchi.learning.answer.client.ToxicityVerdict
 import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.domain.Assignment
 import com.sagomungchi.learning.answer.domain.Essay
@@ -22,12 +25,16 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyList
+import org.mockito.BDDMockito.given
+import org.mockito.Mockito.verify
 import org.mybatis.spring.SqlSessionTemplate
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -42,6 +49,9 @@ class AnswerServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var sqlSession: SqlSessionTemplate
     @Autowired lateinit var answerRepository: AnswerRepository
 
+    /** scoring 표현 분류 (#692). 기본은 통과, 시험마다 결과를 바꿈. HTTP 계약은 ToxicityClientTest */
+    @MockitoBean lateinit var toxicity: ToxicityClient
+
     private lateinit var rows: TestRows
     private val student = UUID.randomUUID()
 
@@ -49,6 +59,7 @@ class AnswerServiceTest : PostgresRepositoryTest() {
     fun prepare() {
         rows = TestRows(jdbc)
         actAs(student)
+        modelSays(ToxicityVerdict.Clean(review = false))
     }
 
     @AfterEach
@@ -77,6 +88,8 @@ class AnswerServiceTest : PostgresRepositoryTest() {
         SubmitCommand(InputType.NARRATIVE, AnswerContent(text = text), dictatedByGuardian = false, followupId = followupId)
 
     private fun count(sql: String, id: UUID) = jdbc.queryForObject(sql, Int::class.java, id)
+
+    private fun modelSays(verdict: ToxicityVerdict) = given(toxicity.check(anyList())).willReturn(verdict)
 
     @Test
     fun `첫 답변은 버전 1, 판정 PENDING을 시도의 기준표 버전으로 만들고 시도 상세에 보임`() {
@@ -156,6 +169,71 @@ class AnswerServiceTest : PostgresRepositoryTest() {
         assertEquals(listOf(1), attemptService.get(attempt.id).answers.map { it.version })
         assertEquals(1, count("SELECT count(*) FROM judgment j JOIN answer a ON a.id = j.answer_id WHERE a.attempt_id = ?", attempt.id))
         assertEquals(2, service.submit(attempt.id, UUID.randomUUID(), narrative("고운 말로 고친 보완", followupId = followup)).version)
+    }
+
+    @Test
+    fun `단어 목록을 통과해도 분류 모델이 걸면 저장·판정 없이 같은 422와 안내, 로그에는 INSULT만`(output: CapturedOutput) {
+        val attempt = start()
+        val saved = attemptService.saveDraft(attempt.id, ifMatch = 0, content = DraftContent(mapOf("text" to "쓰던 답"), "메모"))
+        modelSays(ToxicityVerdict.Flagged)
+
+        val error = assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
+            service.submit(attempt.id, UUID.randomUUID(), narrative("너는 머리가 텅 비었구나"))
+        }
+
+        assertEquals("고쳐야 할 말이 있어요" to "고운 말로 바꿔서 다시 적어 주세요.", error.title to error.detail)
+        assertEquals(0, count("SELECT count(*) FROM answer WHERE attempt_id = ?", attempt.id))
+        assertEquals(0, count("SELECT count(*) FROM judgment j JOIN answer a ON a.id = j.answer_id WHERE a.attempt_id = ?", attempt.id))
+        assertEquals(saved, attemptService.get(attempt.id).draft)
+        assertTrue("attemptId=${attempt.id} category=INSULT" in output.out)
+        assertFalse("텅 비었" in output.out)
+        verify(toxicity).check(listOf("너는 머리가 텅 비었구나"))
+    }
+
+    @Test
+    fun `분류 모델이 검사하지 못하면 막지 않고 저장, 로그에는 사유만`(output: CapturedOutput) {
+        for (reason in ToxicitySkipReason.entries) {
+            val attempt = start()
+            modelSays(ToxicityVerdict.Skipped(reason))
+
+            val answer = service.submit(attempt.id, UUID.randomUUID(), narrative("모델이 쉬는 동안 낸 답"))
+
+            assertEquals(1, answer.version)
+            val logged = "답변 표현 분류 건너뜀 attemptId=${attempt.id} reason=$reason" in output.out
+            assertEquals(reason != ToxicitySkipReason.DISABLED, logged, reason.name)
+        }
+        assertFalse("모델이 쉬는 동안" in output.out)
+    }
+
+    @Test
+    fun `보완 답변도 분류 모델이 걸면 422, 단어 목록에 먼저 걸리면 그 범주`(output: CapturedOutput) {
+        val attempt = start()
+        val first = service.submit(attempt.id, UUID.randomUUID(), narrative("처음"))
+        val followup = followup(attempt.id, first.id)
+        modelSays(ToxicityVerdict.Flagged)
+
+        assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
+            service.submit(attempt.id, UUID.randomUUID(), narrative("비꼬는 보완", followupId = followup))
+        }
+        assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
+            service.submit(attempt.id, UUID.randomUUID(), narrative("씨발", followupId = followup))
+        }
+
+        assertEquals(listOf(1), attemptService.get(attempt.id).answers.map { it.version })
+        assertTrue("attemptId=${attempt.id} category=INSULT" in output.out)
+        assertTrue("attemptId=${attempt.id} category=PROFANITY" in output.out)
+        modelSays(ToxicityVerdict.Clean(review = true))
+        assertEquals(2, service.submit(attempt.id, UUID.randomUUID(), narrative("고운 말로 고친 보완", followupId = followup)).version)
+    }
+
+    @Test
+    fun `분류 모델에는 입력 방식의 학생이 쓴 칸만 보냄`() {
+        val attempt = start(inputType = "ESSAY", grade = 5)
+        val essay = SubmitCommand(InputType.ESSAY, AnswerContent(text = "안 쓰는 칸", essay = Essay("주장", listOf("근거1", "근거2"), "반박")), false, null)
+
+        runCatching { service.submit(attempt.id, UUID.randomUUID(), essay) }
+
+        verify(toxicity).check(listOf("주장", "근거1", "근거2", "반박"))
     }
 
     @Test

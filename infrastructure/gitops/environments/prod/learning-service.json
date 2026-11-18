@@ -113,6 +113,10 @@
       "value": "http://ai-service.app.svc.cluster.local:8000"
     },
     {
+      "name": "SCORING_URL",
+      "value": "http://scoring-service.app.svc.cluster.local:8001"
+    },
+    {
       "name": "CORE_URL",
       "value": "http://core-service.app.svc.cluster.local:8080"
     },
@@ -225,6 +229,10 @@
       {
         "name": "ai-service",
         "port": 8000
+      },
+      {
+        "name": "scoring-service",
+        "port": 8001
       }
     ],
     "egressToPlatform": [

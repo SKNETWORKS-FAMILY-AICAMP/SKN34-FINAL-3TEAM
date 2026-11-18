@@ -5,23 +5,32 @@ import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.persistence.TEST_POSTGRES_IMAGE
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning.answer.client.ToxicityClient
+import com.sagomungchi.learning.answer.client.ToxicityVerdict
 import com.sagomungchi.learning.answer.domain.Answer
 import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.mission.domain.InputType
 import org.flywaydb.core.Flyway
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.anyList
+import org.mockito.BDDMockito.given
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.testcontainers.containers.PostgreSQLContainer
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * 동시 제출 (이슈 #24 완료 조건): 시도 행 잠금으로 같은 시도의 제출이 한 줄로 서서
@@ -37,8 +46,40 @@ class AnswerConcurrencyTest {
     @Autowired lateinit var service: AnswerService
     @Autowired lateinit var attemptService: AttemptService
     @Autowired lateinit var jdbc: JdbcTemplate
+    @MockitoBean lateinit var toxicity: ToxicityClient
 
     private val command = SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "동시에 보낸 답"), false, null)
+
+    @BeforeEach
+    fun modelPasses() {
+        given(toxicity.check(anyList())).willReturn(ToxicityVerdict.Clean(review = false))
+    }
+
+    /**
+     * #692: 표현 분류는 시도 잠금·트랜잭션 전에 부름(learning.md 16장). 안에서 부르면 느린 분류 동안
+     * 시도 행 잠금을 쥐어 요청 8개가 한 줄로 기다리게 됨(8 × 400ms)
+     */
+    @Test
+    fun `느린 표현 분류는 트랜잭션 밖에서 동시에 기다리고 결과는 그대로`() {
+        val (student, attemptId) = startAttempt()
+        val key = UUID.randomUUID()
+        val insideTransaction = AtomicInteger()
+        given(toxicity.check(anyList())).willAnswer {
+            if (TransactionSynchronizationManager.isActualTransactionActive()) insideTransaction.incrementAndGet()
+            Thread.sleep(400)
+            ToxicityVerdict.Clean(review = false)
+        }
+
+        val started = System.nanoTime()
+        val outcomes = concurrently(student) { service.submit(attemptId, key, command) }
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+
+        assertEquals(0, insideTransaction.get())
+        assertEquals(1, outcomes.filterIsInstance<Answer>().map { it.id }.toSet().size)
+        assertEquals(outcomes.size, outcomes.filterIsInstance<Answer>().size)
+        assertEquals(1, count("SELECT count(*) FROM answer WHERE attempt_id = ?", attemptId))
+        assertTrue(elapsedMs < 8 * 400, "분류 대기가 잠금 안에서 줄을 섬: ${elapsedMs}ms")
+    }
 
     @Test
     fun `같은 키로 동시에 보내면 답변·판정 1건이고 모두 같은 답변`() {
