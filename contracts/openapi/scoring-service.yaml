@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: scoring 내부 API
   version: 1.0.0
-  description: 실제 모델 버전 조회, 서술 3.0·논술 3.1 정수/원점수 채점(#228), M1 비활성 계약.
+  description: 실제 모델 버전 조회, 서술 3.0·논술 3.1 정수/원점수 채점(#228), M1 비활성 계약, 답변 표현 분류(#691).
 servers:
 - url: /internal
 security:
@@ -115,6 +115,41 @@ paths:
                 $ref: '#/components/schemas/M1Inactive'
         '400': *id001
         '401': *id002
+  /toxicity/checks:
+    post:
+      summary: Check
+      description: 호출은 learning만(api-spec 4.3.4). 다른 호출자 토큰은 403. 원문·점수·걸린 말은 응답·로그에 없다.
+      operationId: check_internal_toxicity_checks_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToxicityRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/ToxicityActive'
+                - $ref: '#/components/schemas/ToxicityInactive'
+                title: Response Check Internal Toxicity Checks Post
+        '400': *id001
+        '401': *id002
+        '403':
+          description: FORBIDDEN (learning 외 호출자)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: 'SCORING_UNAVAILABLE: 추론 실패·게이트 1초 대기 초과·처리 1.3초 마감 초과. active:false로 바꾸지 않음'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     InternalToken:
@@ -168,12 +203,12 @@ components:
           maxLength: 2048
         files:
           type: array
-          minItems: 6
+          minItems: 5
           maxItems: 6
           uniqueItems: true
           items:
             $ref: '#/components/schemas/ModelPreflightArtifact'
-          description: 여섯 파일명을 각각 한 번씩 포함한다.
+          description: m1·m2는 여섯 파일명을 각각 한 번씩, tox-는 score_cuts.json을 뺀 다섯 파일명을 각각 한 번씩 포함한다.
     ModelPreflightResult:
       type: object
       additionalProperties: false
@@ -708,3 +743,53 @@ components:
       - labelsRemoved
       - short
       title: Preparation
+    ToxicityRequest:
+      properties:
+        texts:
+          items:
+            type: string
+            maxLength: 1500
+            minLength: 1
+            pattern: \S
+          type: array
+          maxItems: 20
+          minItems: 1
+          title: Texts
+          description: 학생이 쓴 칸마다 1개, 칸 순서대로. 모든 칸 합계 1~1,500자
+      additionalProperties: false
+      type: object
+      required:
+      - texts
+      title: ToxicityRequest
+    ToxicityActive:
+      properties:
+        active:
+          type: boolean
+          const: true
+          title: Active
+          default: true
+        flagged:
+          type: boolean
+          title: Flagged
+        review:
+          type: boolean
+          title: Review
+          description: flagged가 아니고 한 창이라도 review_threshold 이상이면 true(#725). review_threshold가
+            없는 모델은 항상 false
+        model:
+          $ref: '#/components/schemas/ModelIdentity'
+      type: object
+      required:
+      - flagged
+      - review
+      - model
+      title: ToxicityActive
+    ToxicityInactive:
+      properties:
+        active:
+          type: boolean
+          const: false
+          title: Active
+          default: false
+      type: object
+      title: ToxicityInactive

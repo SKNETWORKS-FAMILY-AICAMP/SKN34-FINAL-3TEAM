@@ -13,7 +13,7 @@ class ActiveModelVersion(BaseModel):
 
     id: UUID
     kind: Literal["MODEL"]
-    name: str = Field(pattern=r"^(m2|m1)-.+$")
+    name: str = Field(pattern=r"^(m2|m1|tox)-.+$")
     version: str = Field(min_length=1)
     ref_id: None = Field(alias="refId")
     artifact_uri: str = Field(alias="artifactUri", min_length=1)
@@ -47,7 +47,7 @@ def scoring_versions(payload: object) -> list[ActiveModelVersion]:
             raise ValueError("invalid snapshot identity")
         if item.get("kind") != "MODEL":
             continue
-        if not name.startswith(("m2-", "m1-")):
+        if not name.startswith(("m2-", "m1-", "tox-")):
             continue
         version = ActiveModelVersion.model_validate(item)
         if name in names:

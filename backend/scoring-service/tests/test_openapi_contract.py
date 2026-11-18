@@ -28,6 +28,7 @@ def test_documented_operations_and_response_models_match_runtime():
             ("post", "/m2/scores"),
             ("post", "/m1/checks"),
             ("post", "/models/preflight"),
+            ("post", "/toxicity/checks"),
         }
     )
     for name in (
@@ -46,6 +47,9 @@ def test_documented_operations_and_response_models_match_runtime():
         "M1Request",
         "M1Inactive",
         "StudentSolution",
+        "ToxicityRequest",
+        "ToxicityActive",
+        "ToxicityInactive",
     ):
         assert spec["components"]["schemas"][name] == runtime["components"]["schemas"][name]
     assert (
@@ -55,6 +59,10 @@ def test_documented_operations_and_response_models_match_runtime():
     assert (
         spec["paths"]["/m2/scores"]["post"]["responses"]["200"]["content"]
         == runtime["paths"]["/internal/m2/scores"]["post"]["responses"]["200"]["content"]
+    )
+    assert (
+        spec["paths"]["/toxicity/checks"]["post"]["responses"]["200"]["content"]
+        == runtime["paths"]["/internal/toxicity/checks"]["post"]["responses"]["200"]["content"]
     )
 
 

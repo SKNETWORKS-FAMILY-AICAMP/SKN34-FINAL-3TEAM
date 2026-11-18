@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     internal_token_ai: str = ""
     internal_token_core: str = ""
     internal_token_ops: str = ""
+    internal_token_learning: str = ""  # 답변 표현 분류 호출자 (#688)
     rabbitmq_url: str = "amqp://localhost:5672/"
     http_connect_timeout: float = 2.0
     http_read_timeout: float = 30.0  # 내부 호출 기본값 (P12 목록 밖)

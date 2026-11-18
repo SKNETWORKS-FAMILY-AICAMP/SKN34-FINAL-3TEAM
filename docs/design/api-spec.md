@@ -1247,7 +1247,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 |---|---|---|
 | POST | `/internal/m2/scores` | 위 #228 계약. 서술 9항목·논술 3영역의 정수/소수 점수와 실제 모델 버전 반환 |
 | POST | `/internal/m1/checks` | `{problem, answerKey, solution:{steps,finalAnswer}}` → 현재 미학습이므로 `{active:false}`. 활성 추론·확신도 처리는 후속 범위(P15) |
-| POST | `/internal/toxicity/checks` | 아래 4.3.4. 학생이 쓴 칸별 글 → `{active, flagged, model}`. 호출은 learning만 (#688) |
+| POST | `/internal/toxicity/checks` | 아래 4.3.4. 학생이 쓴 칸별 글 → `{active, flagged, review, model}`. 호출은 learning만 (#688) |
 | GET | `/internal/versions` | 로딩 완료한 활성 모델 `{items:[{name,version,revision}]}`. name 순 정렬, 없으면 `{items:[]}`. 내부 토큰 필수 |
 
 #### 4.3.3 #85 scoring 모델 조회·로딩 기준 (2026-10-28)
@@ -1261,13 +1261,13 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.3.4 답변 표현 분류 (#688, 계약 #689, 구현 #691)
 
-- `POST /internal/toxicity/checks`: 호출은 learning만(답변 제출, 4.1). 내부 토큰 필수, 다른 호출자는 401
+- `POST /internal/toxicity/checks`: 호출은 learning만(답변 제출, 4.1). 내부 토큰 필수, 토큰이 없거나 틀리면 401, 다른 서비스 토큰이면 403(공통 호출자별 경로 규칙, #691)
 - 요청 `{texts: string[]}`: 학생이 쓴 칸마다 1개, 1~20개, 모든 칸 합계 1~1,500자. 공백만 있는 칸·상한 초과·알 수 없는 필드는 400. learning은 공백 칸을 빼고 칸 순서대로 앞 20칸, 합계 앞 1,500자까지만 보낸다(걸친 칸은 앞부분만, 그 뒤는 뺌. 넘을 때 건너뛰면 글을 늘려 검사를 피할 수 있어 잘라서 보냄). 보낼 칸이 없으면 부르지 않는다
 - 응답 `{active:true, flagged:boolean, review:boolean, model:{name,version,revision}}`. 활성 `tox-` 모델이 없거나 `answer-filter` 승인 범위가 없으면 200 `{active:false}`. 칸별 결과·점수·걸린 말은 응답에 없다
 - 판정: 칸마다 토큰 창(`train_info.json`의 `max_length`·`stride`, 기준안 128·32)으로 나눠 2분류하고, 한 창이라도 모욕 확률이 `threshold` 이상이면 그 칸이 걸린다. 한 칸이라도 걸리면 `flagged:true`. 임계값은 모델 파일에만 있고 요청으로 바꾸지 않는다
 - 경계 구간(#725, 구현 #726): `flagged:false`이고 한 창이라도 `review_threshold` 이상이면 `review:true`, 그 밖에는 `false`(`flagged:true`면 항상 `false`). `review_threshold`가 없는 모델(#690 첫 모델 등)은 항상 `false`. learning은 `review:true`이고 답변이 저장되면 표현 검토 대기에 올린다(4.1.5). 기준안은 검증용 정상 문장 중 경계 구간에 드는 비율 5% 이하(운영자 라벨 부담 제한), 재학습 때 다시 계산
 - 동시 실행: M2와 따로 tox 전용 게이트 1개(M2 `Semaphore(1)`과 섞지 않음), 1초 안에 차례가 오지 않거나 창 8개 묶음 사이에서 처리 시작부터 1.3초를 넘으면 계산을 멈추고 503. learning이 1.5초에 끊은 뒤에도 scoring이 버려질 계산을 계속해 다음 요청을 막지 않게 하기 위해서다
-- 오류: 토큰 401, 형식·개수·길이 400, 모델 추론 실패·게이트 대기 초과·처리 마감 초과 503 `SCORING_UNAVAILABLE`. 장애를 `active:false`로 바꾸지 않는다
+- 오류: 토큰 401, 다른 호출자 403, 형식·개수·길이 400, 모델 추론 실패·게이트 대기 초과·처리 마감 초과 503 `SCORING_UNAVAILABLE`. 장애를 `active:false`로 바꾸지 않는다
 - 사용량 이벤트는 보내지 않는다(LLM이 아니라 토큰 단가가 없음, core `callType`을 늘리지 않음). 로그·지표에는 원문·점수·학생 ID를 넣지 않고 모델 이름·결과·지연만 남긴다(NFR-SEC-05)
 - 소비 측(learning)은 시간 초과·5xx·4xx·계약 밖 응답·서킷 열림·`active:false`를 모두 "검사 안 됨"으로 보고 제출을 진행한다(architecture 1.3)
 - 모델 이름·범위·파일은 5.2·5.2.1. 값(칸 20개·합계 1,500자·창 128/32·게이트 1초·마감 1.3초)은 11/16 CPU 측정으로 정한 기준안이다(운영 scoring CPU limit 1개 기준 1,500자 약 1.1초, 근거는 learning.md 16장). #691에서 실제 Pod로 다시 잰다
@@ -1350,7 +1350,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - manifest는 `models[]`의 `name/version/scope/files[{file,bytes,sha256}]`를 대조한다. 최상위 `주의`와 일치 모델의 `주의`를 limitations 후보로 쓰되 명시한 `evaluation.limitations`(빈 목록 포함)가 우선한다. JSON·manifest·해시 목록의 확인은 실제 산출물 해시 대조나 로딩·품질 승인을 의미하지 않는다.
 - #366: 감사 목록의 `MODEL_VERSION`에는 선택 `detail` 객체(name·version·scopes·reason·reanalysisPlanned·previousVersionId)를 반환한다. 다른 대상 및 허용 목록 밖 detail 필드는 공개하지 않는다. 웹에서 펼쳐 본다.
 - 범위 키는 소비자가 동일하게 사용하는 소문자 논리 식별자(예: `judgment/grade-3/narrative`, 최대 200자, `[a-z0-9][a-z0-9._:/-]*`)다. core는 문자열의 정확한 집합 포함 관계만 확인하며 와일드카드·계층 확장을 하지 않는다. 원본 평가 문항·학생 원문은 저장하지 않는다. 검토 기록의 사실성·품질 수치의 적합성은 사람이 판단하며 서버는 자료 자체를 실행·검증했다고 주장하지 않는다.
-- scoring 모델 이름은 `(m1|m2|tox)-…`. `tox-`는 답변 표현 분류(4.3.4)이고 승인 범위는 `answer-filter` 하나다(학년 구분 없음, #688). 로더는 2분류 config(`num_labels=2`)와 `train_info.json`의 `threshold`(0 초과 1 미만)·`max_length`·`stride`를 검사하고, 회귀 모델이거나 `threshold`가 없으면 거부한다. 선택 값 `review_threshold`(#725)가 있으면 0 초과·`threshold` 미만이어야 하며 아니면 거부한다(없으면 경계 구간 없음, 4.3.4). `quantization`이 `int8-dynamic`이면 불러온 뒤 Linear 층을 int8 동적 양자화해 추론하고, 없거나 `none`이면 fp32 그대로 쓴다. `threshold`·`review_threshold`는 그 방식으로 고른 값이다(#690: 합계 1,500자를 처리 마감 1.3초 안에 끝내려고 int8, `ml/tox/results/eval_tox.md`)
+- scoring 모델 이름은 `(m1|m2|tox)-…`. `tox-`는 답변 표현 분류(4.3.4)이고 승인 범위는 `answer-filter` 하나다(학년 구분 없음, #688). 로더는 2분류 config(`num_labels=2`)와 `train_info.json`의 `threshold`(0 초과 1 미만)·`max_length`·`stride`를 검사하고, 회귀 모델이거나 `threshold`가 없으면 거부한다. 선택 값 `review_threshold`(#725)가 있으면 0 초과·`threshold` 미만이어야 하며 아니면 거부한다(없으면 경계 구간 없음, 4.3.4). `quantization`이 `int8-dynamic-channel`이면 불러온 뒤 Linear 층을 출력 채널별 int8 동적 양자화해 추론하고(그 밖의 값은 거부, #691), 없거나 `none`이면 fp32 그대로 쓴다. `threshold`·`review_threshold`는 그 방식으로 고른 값이다(#690: 합계 1,500자를 처리 마감 1.3초 안에 끝내려고 int8, `ml/tox/results/eval_tox.md`)
 - POST `/{versionId}/activate`: `{approved:true,scopes,reason,reanalysisPlanned}`. REGISTERED만 최초 승인·활성화할 수 있다. 필수 평가 근거 누락·미승인·평가 외 범위는 422, 이미 활성화 이력이 있는 대상은 409다. 승인자는 요청 값이 아닌 #36 인증 계정 ID다. 기존 ACTIVE는 INACTIVE가 되고 승인·평가 이력은 보존한다.
 - POST `/{versionId}/rollback`: `{scopes,reason,reanalysisPlanned}`. 같은 kind·name의 현재 ACTIVE가 있고, 대상이 과거 승인·활성화된 INACTIVE이며 요청 범위가 당시 승인 범위의 부분 집합일 때만 성공한다. 잘못된 상태는 409, 승인 외 범위는 422다. 원 승인자·승인 범위는 보존하고 복귀 수행자는 감사 이력에 별도 기록한다.
 - `reanalysisPlanned`는 재분석 여부 기록일 뿐 작업을 실행하지 않는다. 기존 관찰·질문·분석·리포트 결과는 수정하지 않는다. 등록·성공 교체는 audit_log에 추가하며 교체의 상태·감사·Outbox는 한 트랜잭션이다.

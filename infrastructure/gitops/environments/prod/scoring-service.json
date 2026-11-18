@@ -64,6 +64,15 @@
       }
     },
     {
+      "name": "INTERNAL_TOKEN_LEARNING",
+      "valueFrom": {
+        "secretKeyRef": {
+          "key": "INTERNAL_TOKEN_LEARNING",
+          "name": "internal-service-credentials"
+        }
+      }
+    },
+    {
       "name": "RABBITMQ_URL",
       "valueFrom": {
         "secretKeyRef": {
@@ -185,7 +194,8 @@
     ],
     "ingressFromApps": [
       "ai-service",
-      "core-service"
+      "core-service",
+      "learning-service"
     ]
   },
   "probes": {

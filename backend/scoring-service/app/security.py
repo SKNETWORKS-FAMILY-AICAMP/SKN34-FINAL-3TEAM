@@ -26,6 +26,7 @@ CALLER_PATHS: dict[str, tuple[str, ...]] = {
     "ai": (r"/internal/(m1|m2)/.+",),
     "core": (r"/internal/models/preflight",),
     "ops": (r"/internal/versions",),
+    "learning": (r"/internal/toxicity/.+",),
 }
 _CALLER_PATTERNS = {
     caller: tuple(re.compile(pattern) for pattern in patterns)

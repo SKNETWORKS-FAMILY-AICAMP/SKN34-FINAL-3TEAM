@@ -1,0 +1,76 @@
+{
+  "what": "#691 서비스 버전(scoring uv.lock) int8 재확인",
+  "checkedAt": "2026-11-17T16:39:10+09:00",
+  "env": {
+    "torch": "2.14.1+cpu",
+    "transformers": "5.21.0",
+    "tokenizers": "0.23.3",
+    "cpu": "작업 공간 2코어(x86_64)"
+  },
+  "compare": {
+    "torch": "2.15.0+cpu",
+    "transformers": "5.23.0"
+  },
+  "data": "prepare_data.py로 공개 원본에서 다시 만듦. 글 수·라벨 순서가 원래와 같음(valid 9243·test 21900·apeach 3770)",
+  "probsMaxAbsDiff": {
+    "valid": 0.0,
+    "test": 0.0,
+    "apeach": 0.0
+  },
+  "wordlistThreshold": 0.92,
+  "mustPassMax": 0.8839,
+  "mustPassMaxSameCpuTorch215": 0.8839,
+  "mustPassMaxPod": 0.8828,
+  "mustPassFlaggedAt0.92": 0,
+  "test": {
+    "threshold": 0.92,
+    "model": {
+      "threshold": 0.92,
+      "precision": 0.9706,
+      "recall": 0.6375,
+      "f1": 0.7696,
+      "falsePositiveRate": 0.0165,
+      "n": 21900
+    },
+    "wordListRecall": 0.2934,
+    "wordListFalsePositiveRate": 0.024,
+    "extraCatch": 0.5592,
+    "extraFalsePositiveRate": 0.0142,
+    "combinedRecall": 0.6885,
+    "combinedFalsePositiveRate": 0.0378
+  },
+  "apeach": {
+    "threshold": 0.92,
+    "model": {
+      "threshold": 0.92,
+      "precision": 0.9828,
+      "recall": 0.3861,
+      "f1": 0.5544,
+      "falsePositiveRate": 0.007,
+      "n": 3770
+    },
+    "wordListRecall": 0.2591,
+    "wordListFalsePositiveRate": 0.0119,
+    "extraCatch": 0.2303,
+    "extraFalsePositiveRate": 0.0044,
+    "combinedRecall": 0.4298,
+    "combinedFalsePositiveRate": 0.0162
+  },
+  "valid": {
+    "threshold": 0.92,
+    "model": {
+      "threshold": 0.92,
+      "precision": 0.9746,
+      "recall": 0.5858,
+      "f1": 0.7317,
+      "falsePositiveRate": 0.0127,
+      "n": 9243
+    },
+    "wordListRecall": 0.2663,
+    "wordListFalsePositiveRate": 0.0234,
+    "extraCatch": 0.4964,
+    "extraFalsePositiveRate": 0.0097,
+    "combinedRecall": 0.6305,
+    "combinedFalsePositiveRate": 0.0329
+  }
+}

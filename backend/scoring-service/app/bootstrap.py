@@ -26,6 +26,8 @@ from app.model_registry import ModelRegistry
 from app.model_sync import ModelSync
 from app.preflight import router as preflight_router
 from app.security import InternalAuthMiddleware
+from app.toxicity.router import router as toxicity_router
+from app.toxicity.service import ToxicityService
 from app.versions import router as versions_router
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             RULE_VERSION,
         )
         app.state.m1_service = M1Service()
+        app.state.toxicity_service = ToxicityService(registry)
         app.state.readiness_checks = {"rabbitmq": rabbitmq_ready, "models": consumer.is_ready}
         reporter = ModelLoadingReporter(registry, EventPublisher(amqp))
         reporter.start()
@@ -78,4 +81,5 @@ def create_app() -> FastAPI:
     app.include_router(preflight_router)
     app.include_router(m2_router)
     app.include_router(m1_router)
+    app.include_router(toxicity_router)
     return app
