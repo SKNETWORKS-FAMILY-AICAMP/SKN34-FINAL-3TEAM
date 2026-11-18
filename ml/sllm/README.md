@@ -66,6 +66,7 @@ vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-e
 | `check_outputs.py` | 생성 원문을 `report_explanation/checks.py`로 검사해 통과 수만 출력 |
 | `reshard.py`·`verify_shards.py` | 5GB를 넘는 safetensors를 텐서 바이트 그대로 여러 파일로 나누고, 원본과 텐서별 sha256을 대조 |
 | `upload.py` | 파일마다 단일 `PutObject` + `ChecksumSHA256`(FULL_OBJECT), HEAD로 확인, 덮어쓰지 않음 |
+| `sagemaker_bench.py` | SageMaker 기반 IC와 LoRA IC에 같은 가상 입력을 보내 비교(`compare`)하고, `ignore_eos`로 최악 경우 지연을 동시 요청 수별로 잼(`worst`, 60초 제한 확인). #746 |
 
 ### 없는 것
 
@@ -75,32 +76,49 @@ vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-e
 
 ## 서빙
 
-### SageMaker (#746 구성, 2026-11-18)
+### SageMaker 실시간 엔드포인트 (2026-11-18 결정, #742·#746)
 
-에픽 #742에서 AWS 같은 계정의 SageMaker 실시간 엔드포인트로 옮긴다. ai-service 호출 전환은 #747이고, 전환 전까지는 아래 RunPod 경로가 운영이다. 자세한 검증 결과는 [infra 9.13.9](../../docs/report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)에 있다.
+리포트 Gemma 3종(주간 서술·저녁 질문·대표 답변 상세 설명)은 같은 계정·VPC의 SageMaker 실시간 엔드포인트에서 생성한다. 학생 글이 AWS 밖으로 나가지 않는다(#473).
+구성은 [`infrastructure/aws/sagemaker/explanation-endpoint.json`](../../infrastructure/aws/sagemaker/explanation-endpoint.json)과 [`sagemaker_explanation.py`](../../infrastructure/aws/sagemaker_explanation.py), 근거는 [infra 9.13.9](../../docs/report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18), 설계는 [architecture 4.4](../../docs/design/architecture.md#44-확장)다.
 
 | 항목 | 값 |
 |---|---|
-| 구성 | [`infrastructure/aws/sagemaker_explanation.py`](../../infrastructure/aws/sagemaker_explanation.py) + [`sagemaker/explanation-endpoint.json`](../../infrastructure/aws/sagemaker/explanation-endpoint.json) |
-| 컨테이너·인스턴스 | AWS vLLM SageMaker DLC `vllm:server-sagemaker-cuda-v2.8.2`(vLLM 0.33), `ml.g6e.xlarge`(L40S 48GB) |
-| 모델 데이터 | `ModelDataSource`(S3 경로, 압축 없음)로 `base-awq/`를 받는다. LoRA는 `adapter/`를 어댑터 인퍼런스 컴포넌트(IC)로 붙인다 |
-| 호출 | `InvokeEndpoint`에 `InferenceComponentName`으로 어댑터 IC를 지정한다(D2 LoRA 사용). 요청 본문의 `model` 값으로는 LoRA가 붙지 않는다 |
-| 출력 한도 | 상세 `max_tokens` 1536, 서술 1024(#746 D3, #747에서 적용) |
-| 가동 | 0대 축소. 일 23:30 KST에 1대로 올리고 월 02:00에 내린다. 0대에서 준비까지 약 20.5분 |
-| 승인 파일 | `manifest.json`의 13개 파일만 쓴다. 배포 전에 경로 아래 목록과 FULL_OBJECT SHA-256을 대조한다. 경로 잠금과 적재 때 검사는 #777 |
+| 컨테이너 | AWS vLLM SageMaker DLC `vllm:server-sagemaker-cuda-v2.8.2`(vLLM 0.33.0). LMI(DJL)는 쓰지 않음. `SM_VLLM_*` 환경 변수가 vLLM 인자가 됨 |
+| 인스턴스 | `ml.g6e.xlarge`(L40S 48GB, 호스트 32GiB). `ml.g6.xlarge`는 호스트 메모리 부족으로 IC 배치 실패 |
+| 모델 데이터 | S3 `base-awq/`(아래 S3 반입)를 `ModelDataSource`로 `/opt/ml/model`에 받음 |
+| 인퍼런스 컴포넌트(IC) | 기반 `…-ic`(GPU 1, 메모리 예약 4096MB), LoRA 어댑터 `…-explain`(`BaseInferenceComponentName`으로 기반 위에 `adapter/`를 붙임, `VLLM_ALLOW_RUNTIME_LORA_UPDATING=true` 필요) |
+| 호출 | **LoRA IC(`…-explain`)를 `InvokeEndpoint`의 `InferenceComponentName`으로 지정**(#746 D2). 요청 본문 `model` 값으로는 LoRA가 붙지 않음. 호출 전환은 #747 |
+| `max_tokens` | 상세 설명 1536, 서술 1024. LoRA 정상 상세 출력 p50 568토큰 |
+| 응답 제한 | 실시간 호출 60초. 최악(동시 8건, 1536토큰 끝까지)도 LoRA 23.4초 |
+| 가동 | 평소 0대. 예약 확장 일 23:30 1대, 월 02:00 0대(`Asia/Seoul`). 0대에서 호출 가능까지 약 20.5분 |
+| 0대일 때 | 호출이 즉시 `ValidationError`로 실패하고 설명 없이 발행(#733, 다른 모델로 대체하지 않음) |
+| 승인 파일·해시 | `manifest.json`(`base-awq/` 11개 + `adapter/` 2개, 아래 승인 목록)의 13개 파일만 쓴다. 배포 전에 경로 아래 목록과 FULL_OBJECT SHA-256을 대조한다(#746 D1). 경로 잠금·적재 때 검사는 #777 |
 
-### RunPod (전환 전 운영)
+#### 기반 단독과 LoRA 비교 (#746 D2, g6e, 가상 입력, 각 15회)
+
+| 항목 | 기반 단독 | LoRA (`explain`) |
+|---|---|---|
+| 상세 `finish_reason=length` | 7/15 | 1/15 |
+| 상세 규칙 통과 | 8/15 | 14/15 |
+| 상세 지연 p50 | 5.14초 | 5.69초 |
+| 서술 지연 p50 | 2.23초 | 2.85초 |
+
+LoRA를 쓴다(2026-11-18). 지연이 약 0.5초 늘지만 배치 작업이고, 기반 단독은 상세 설명 절반이 잘려 설명 없이 발행된다. AWQ 위에 얹은 결과(학습은 16비트 QAT 원본)이고, 표본은 가상 글 1편이라 의미 품질은 따로 봐야 한다.
+
+### RunPod 서버리스 (#747 전환 전까지 현재 운영)
 
 | 항목 | 값 |
 |---|---|
 | 방식 | RunPod 서버리스, vLLM 0.32 직접 빌드 이미지(기반 모델을 이미지 `/models/llm`에 포함) |
 | `/v1/models` 응답 (2026-11-17 조회) | `gemma-4-26b-a4b-it-qat-awq-int4`(`max_model_len` 8192), LoRA `explain`(부모 위 모델) |
 | LoRA 설정 | 워커 환경 `LORA_MODULES={"name":"explain","path":"<HF 저장소>"}`(리스트가 아닌 객체 하나), 비공개 저장소라 `HF_HUB_OFFLINE=0` 필요 |
-| 요청 | `model="explain"`, `temperature` 0, 상세 출력 한도 4096토큰 |
+| 요청 | 운영은 기반 이름으로 불러 LoRA가 붙지 않음(`model="explain"`일 때만 붙음). `temperature` 0, 상세 출력 한도 4096토큰 |
 | `--max-lora-rank` | 어댑터 r=16이라 16 이상 |
 | GPU·VRAM·기타 실행 옵션 | **미확인** (RunPod 엔드포인트 설정 확인 필요) |
-| CPU | 2026-11-18 c7i.4xlarge에서 측정(공식 QAT Q4_0 GGUF + LoRA GGUF, llama.cpp). 상세 1건 약 50초, 30명 배치 약 70~75분. GPU g6.xlarge(vLLM 0.34)는 상세 1건 p50 16초. [infra 9.13](../../docs/report/infra.md#913-리포트-gemma-cpugpu-서빙-비교와-s3-반입-743745-2026-11-18) |
-| AWS 안 이전 | 에픽 #742. 위 SageMaker 절. 호출 전환(#747) 전까지는 이 RunPod 경로가 운영 |
+
+### CPU 비교 (채택하지 않음)
+
+2026-11-18 c7i.4xlarge에서 측정(공식 QAT Q4_0 GGUF + LoRA GGUF, llama.cpp). 상세 1건 약 50초, 30명 배치 약 70~75분. GPU g6.xlarge(vLLM 0.34)는 상세 1건 p50 16초. [infra 9.13](../../docs/report/infra.md#913-리포트-gemma-cpugpu-서빙-비교와-s3-반입-743745-2026-11-18)
 
 ## S3 반입 (#745, 2026-11-18)
 
@@ -112,6 +130,8 @@ vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-e
 | `adapter-gguf/` | `explain-lora-f16.gguf` | 위 어댑터를 `convert_lora_to_gguf.py`로 변환 |
 | `base-awq/` | AWQ 기반 모델 4조각 + index·설정·토크나이저 | `cyankiwi/...AWQ-INT4` @`76373001`, 단일 파일 sha256 `c0b6bbe9…`(HF와 같음)을 텐서 바이트 그대로 나눔 |
 | `base-gguf/` | QAT Q4_0 GGUF 4조각 | `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` @`d1c082be`, 단일 파일 sha256 `3eca3b8f…`(HF와 같음)을 `llama-gguf-split`으로 나눔 |
+
+SageMaker는 `base-awq/`·`adapter/`만 읽는다. GPU로 정해져 `base-gguf/`·`adapter-gguf/`는 쓰지 않는다(정리는 #777, 아래 승인 목록).
 
 17.2GB·14.4GB 단일 파일은 단일 PUT 한도(5GB)를 넘고, S3는 multipart에 SHA-256 FULL_OBJECT를 허용하지 않아서 나눴다.
 
@@ -138,7 +158,7 @@ RunPod 작업 기록의 `executionTime`(생성)과 `delayTime`(배정·준비 �
 
 - 항목 1회(최대 256토큰) 단위 실측은 **없다**. 위 값은 문단 단위 상세 설명이다.
 - 로딩 VRAM·RAM과 서버 기동 시간은 **미측정**이다. 대기 시간에는 GPU 배정·이미지 받기·모델 적재가 섞여 있어 기동 시간으로 쓰지 않는다.
-- 콜드 대기에 맞춰 서비스 타임아웃은 모델 300초, 상세 305/310초, 리포트당 최대 3건 전체 950초다.
+- 콜드 대기에 맞춰 서비스 타임아웃은 모델 300초, 상세 305/310초, 리포트당 최대 3건 전체 950초다. SageMaker 전환 때 60초 응답 제한 기준으로 다시 정한다(#747).
 
 ## 평가
 
@@ -163,6 +183,7 @@ report-service `input_scores` 기준: 서술 초5·6, 논술 초4~6. 프리미�
 - [ ] 학습 기준 모델 revision
 - [x] S3 경로·manifest: 위 S3 반입 절(`manifest.json` sha256 `adb264cb…`, 13개 파일)
 - [x] SageMaker 서빙 방식: 위 SageMaker 절(#746)
-- [ ] 운영 호출 모델 이름이 기반 이름(`gemma-4-26b-a4b-it-qat-awq-int4`)이라 RunPod 호출에는 LoRA(`explain`)가 붙지 않았다(kim-4480 확인). SageMaker에서는 어댑터 IC를 지정해 부른다 (#747)
-- [ ] 항목 1회(256토큰) 생성 시간, 로딩 메모리, 서버 기동 시간
+- [x] 운영 RunPod 호출에는 LoRA(`explain`)가 붙지 않았다(기반 이름으로 호출, kim-4480 확인). SageMaker에서는 LoRA IC를 지정해 부른다 (#746 D2, 전환은 #747)
+- [ ] 항목 1회(256토큰) 생성 시간 (SageMaker 기동 약 20.5분·로딩 가용 RAM 23.25GiB는 infra 9.13.9)
+- [ ] g6e에서 30명 배치 실측(예약 확장 창 끝 시각 조정)
 - [ ] `checks.py` 통과율·사람 검토·허용 기준
