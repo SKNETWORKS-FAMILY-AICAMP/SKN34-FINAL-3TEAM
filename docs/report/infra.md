@@ -671,6 +671,37 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 - AWS 실측은 #601 A 계정 재가동 때 같은 도구(`LOAD_API_BASE`·`LOAD_API_HOST`만 바꿈)로 한다. 동시 사용자를 늘린 실제 LLM 부하는 #384 범위
 - 테마 초안은 그림 대역이라 그림 생성 시간(1장 p50 약 34초, 11/12 기록)이 빠졌다
 
+### 9.10.6 AWS 운영 데모 실측 (2026-11-18)
+
+9.11.4 절차대로 A 계정 운영 데모에서 같은 도구로 다시 쟀다. 결과 수치·kind 비교·원가는 [ai 19.5](ai.md#195-aws-운영-데모-실측과-kind-비교-2026-11-18).
+
+| 항목 | 값 |
+|---|---|
+| 환경 | AWS A 계정 운영 데모, main `e3cb5084`. 측정 PC → CloudFront → ALB → core(외부 인터넷 경유) |
+| ai | 실제 OpenAI(`LLM_PROVIDER=openai`, `OPENAI_MODEL=gpt-6-luna`, `OPENAI_BASE_URL` 없음), `M2_CROSS_CHECK_ENABLED=true`, `THEME_VIDEO_ENABLED=true`. 측정 전 ReplicaSet이 helm 것(`ai-service-d4888b47`)이고 #384 스텁이 원복된 것을 확인 |
+| 시각 | 2026-11-18 13:54:46~14:01:29 KST(판정 13:54~13:58, 분석 13:59~14:00, 추억 검색 14:01). #384 부하 시험이 끝난 뒤, 다른 부하 없음 |
+| 동시 사용자 | 1명 |
+| 재시작 | 측정 동안 ai·learning·scoring·report Pod 재시작·교체 없음. core는 측정 시작 때 2개(HPA)였다가 끝난 뒤 1개로 줄어 있었다(실패 0) |
+| 표본 | 판정 SSE 30건(되묻기 20, 초5 서술 미션 10개 시도), 분석 대화 20건, 추억 검색 9건. 테마 초안은 11/18 03:00 스케줄러 실행분 4건(`llm_usage`·관리자 초안 목록 조회) |
+| 측정하지 않은 것 | 주간 리포트(서술이 있는 주간 리포트가 운영에 없고, 다음 주간 생성이 11/23), 추억 설명(시험 자녀에게 보유 액자 없음). 이유는 ai 19.5 |
+
+도구 변경
+- `llm_latency.py`: 학생·학부모 access(15분, refresh 없음)가 만료되면 같은 자격 증명으로 다시 로그인한다(관리자는 9.10.2에서 이미 그렇게 고침). 추억 검색 → 설명 `memory` 명령을 더했다
+- `llm_usage_window.sql`은 그대로 쓰고, 파일 앞에 `\set from`·`\set to`를 붙인 사본을 일회성 DB Pod로 실행했다
+
+만든 시험 데이터와 정리
+
+| 대상 | 만든 것 | 정리 | 정리 뒤 확인 |
+|---|---|---|---|
+| 학부모 1개(ID·비밀번호, `is_demo=true`) | `prepare_accounts.py --count 1 --children 3 --grade 5`, 자녀 3명·학생 기기 1대·PIN | 비밀번호 재확인 → `POST /me/withdrawal`(202) | core 로그인 ID 0건, 자녀 3명 `DELETED`, learning 시도 0건 |
+| 시험 구독 3건(결제 없음, PREMIUM 상품 행의 `limits` 그대로, 7일) | 일회성 DB Pod로 `subscription` INSERT | `CANCELED` → 이용 기간을 당일로 끝냄(#384 정리 때와 같이 기간이 남으면 탈퇴가 `WITHDRAWAL_BLOCKED`) | 활성 0 |
+| 관리자 | 새로 만들지 않음(재가동 때 만든 공용 관리자 계정으로 목록 조회만) | — | — |
+| 일회성 DB Pod·ConfigMap | `demo-db-oneoff.k8s.yaml` 사본(이름만 바꿈, 같은 라벨·정책), core·report·learning DB | 실행마다 delete | app 네임스페이스에 남은 것 없음 |
+| 비밀 파일(작업자 PC, 저장소 밖) | 비밀번호·PIN·기기 쿠키 | 삭제 | — |
+
+- 남긴 것: 측정 구간 `llm_usage` 78행(판정 26·되묻기 20·분석 32, $0.0153). 클러스터 설정(HPA·스텁·ai env)은 바꾸지 않았고 앱 재시작·배포도 하지 않았다
+- 한계: 동시 1명. 실제 LLM에서 동시 사용자를 늘린 지연·429는 재지 않았다. 판정·분석 표본 수는 kind와 같지만 10~20건이라 p95는 거친 값이다
+
 ## 9.11 A 계정 재가동 당일 체크리스트 (#601, 2026-11-17 준비)
 
 재가동 전에 AWS 읽기 전용 조회(describe·list·get, `demo_stack.py plan`)만으로 확인한 결과와, 재가동 당일 순서다. 이 절을 쓰면서 AWS 자원을 만들거나 바꾸지 않았다. 계정 번호는 `<계정>`으로 적는다. 모든 명령에 `--profile sagomungchi-provided --region ap-northeast-2`를 붙인다(아래에서는 생략).
@@ -1152,7 +1183,7 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 
 | 우선 | 제안 | 근거 |
 |---|---|---|
-| 1 | learning 인덱스 3개 추가: `followup(attempt_id, created_at)`, `hint_usage(attempt_id)`, `answer(followup_id)` | DB 부하 약 82%가 이 인덱스가 없는 두 쿼리. 별도 이슈로 migration 후 같은 단계로 다시 잰다 |
+| 1 | learning 인덱스 3개 추가: `followup(attempt_id, created_at)`, `hint_usage(attempt_id)`, `answer(followup_id)` | DB 부하 약 82%가 이 인덱스가 없는 두 쿼리. #775 learning V22로 추가(`hint_usage`는 `(attempt_id, opened_at)`, `answer`는 `followup_id IS NOT NULL` 부분 인덱스). kind 시험 데이터(시도 2만, 학생 1명 1,275개)에서 학습 기록 목록 3,300 → 13ms([learning 41절](learning.md#41-학습-기록되묻기-조회-인덱스-775-2026-11-18)). 같은 부하 단계 재측정은 AWS 재가동 때 |
 | 2 | HPA 기준: CPU 70% 유지, `behavior.scaleUp` 안정화 30~60초 또는 JVM 기동 구간 제외 | 로그인 순간·JVM 기동 CPU로 바로 최대까지 감(9.14.3). 비용이 크지 않아 지금 값도 위험하지 않지만 확장이 실제 부하를 따라가지 않는다 |
 | 3 | 최대 Pod 수: 1이 해결될 때까지 3 유지. 그 뒤 learning 최대를 먼저 올림 | 지금은 DB가 병목이라 늘려도 처리량이 같다. learning이 core보다 먼저 바빠짐 |
 | 4 | Hikari 풀: 지금 10 유지. 1 뒤 learning 풀 대기가 남으면 15까지 | 연결 상한 계산: core 3×10 + learning 3×15 + report 30 = 105(+rolling 25) ≤ 176 |
