@@ -685,7 +685,7 @@ def test_image_prompts_and_review_follow_drawing_rules() -> None:
 
     theme = valid_theme()
     assert "No letters, numbers or real emblems" in prompts.outfit_prompt(theme)
-    assert "sleeveless vest worn around Mungchi's torso" in prompts.outfit_prompt(theme)  # #779
+    assert "fits Mungchi tightly over the lower half" in prompts.outfit_prompt(theme)  # #779
     mon = prompts.mission_image_prompt(theme, "MON", mission_draft("ANALYZE"), [])
     assert "the place or object where the trace was left" in mon
     assert "itself is not the evidence; do not draw it" in mon

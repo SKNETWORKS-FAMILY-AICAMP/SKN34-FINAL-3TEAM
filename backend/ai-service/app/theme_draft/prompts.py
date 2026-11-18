@@ -16,6 +16,7 @@ PLAN_SYSTEM에 두고 종류 규칙 묶음(families.type_rules)을 plan_user가 
 """
 
 import json
+import re
 from typing import Any
 
 from app.followup.prompts import grade_style
@@ -152,9 +153,10 @@ PLAN_SYSTEM = (
     # 약했음
     "뭉치 역할은 사건을 해결하거나 찾아 주는 해결사 직업(탐정·경찰관·구조대·순찰대 등)으로 "
     "고르고, 주제가 아래 씨앗 형식이면 씨앗의 역할을 그대로 쓴다. "
-    "그 역할을 한눈에 알아보게 머리에 쓰는 것(모자·헬멧·헤드폰)이나 몸통에 두르는 소매 없는 "
-    "조끼·목에 거는 것 1~2개를 꼭 넣는다. 옷은 소매 없는 조끼로만 쓴다(소매 달린 옷·가운·제복은 "
-    "'○○ 조끼'로, 뭉치 몸 옆이 소매처럼 그려지면 팔이 넷처럼 보임). 손에 드는 "
+    "그 역할을 한눈에 알아보게 머리에 쓰는 것(모자·헬멧·헤드폰)이나 몸 아래쪽에 꽉 끼는 조끼·"
+    "목에 거는 것 1~2개를 꼭 넣는다. 옷은 몸 아래쪽을 꽉 끼게 감싸는 조끼로만 쓴다(소매 달린 옷·"
+    "가운·제복은 '○○ 조끼'로, 옷 입은 부분은 매끈하게 눌린 둥근 몸통이 되고 소매·옆으로 삐져나온 "
+    "돌기가 없음. 몸 옆이 소매나 팔처럼 그려지면 팔이 넷처럼 보임). 손에 드는 "
     "물건은 넣지 않는다. 경찰관·소방관 같은 제복 느낌은 되지만 실제 기관 휘장·글자는 쓰지 "
     "않는다. "
     "styleNote는 이 "
@@ -1147,8 +1149,8 @@ def dialogue_user(theme: Theme, day: str, draft: Draft, grade: int, feedback: li
 # 글·그림·영상 검토 SAFETY에 같은 글(#634: 동물 장난꾸러기·경찰관 역할이 안전 검토에 걸리지 않게,
 # 설계 17.8.5)
 SAFETY_STORY = (
-    "동물의 습성·장난은 범죄가 아니고, 사람이 동물을 제자리에서 부드럽게 안아 올리는 것은 "
-    "폭력·위험이 아니다. 경찰관·소방관 차림은 해결사 역할일 뿐이다(체포·수갑·벌주기가 나오면 "
+    "동물의 습성·장난은 범죄가 아니고, 동물이 제 갈 곳으로 걸어가는 것을 배웅하는 것은 쫓아내기가 "
+    "아니다. 경찰관·소방관 차림은 해결사 역할일 뿐이다(체포·수갑·벌주기가 나오면 "
     "결함). 밤에 들린 궁금한 소리 이야기(소리 탐정)는 무섭지 않은 궁금증이다(귀신·괴물·유령이 "
     "나오면 결함). 사람이 동물 먹이를 먹거나 동물에게 사람 음식을 먹이면 결함."
 )
@@ -1462,20 +1464,24 @@ MUNGCHI_LOOK = (
     "(no eye whites), pink cheeks, small hands at the lower front on the left and right, short "
     "brown feet, no arms (only the tiny hands). Mungchi wears the theme outfit: {outfit}. "
     # #779(사용자 결정 2026-11-19): 셔츠·가운처럼 몸을 감싸는 옷을 입히자 몸 옆 울퉁불퉁한 곳이
-    # 소매로 그려져 손 두 개와 합쳐 팔이 넷처럼 보였음(옷 입힌 뭉치 그림 실측, 앞치마만 입힌
-    # 농부는 괜찮음). 옷은 소매 없는 조끼(몸통 앞뒤를 두름)로만
-    "Any clothing is a sleeveless vest worn around the torso (front and back): no sleeves, the "
-    "cloud-shaped bumps on its sides stay cream-colored outside the vest (never sleeves or "
-    "arms), and the only hands are the two tiny round hands on the front. "
+    # 소매로 그려져 손 두 개와 합쳐 팔이 넷처럼 보였고, 소매 없는 조끼도 조끼 가장자리가 옆
+    # 돌기를 잘라 내 크림색 팔처럼 보였음(경찰관 실측). 옷은 아래쪽을 꽉 끼게 감싸 매끈하게 눌린
+    # 둥근 몸통으로("찌부", A안)
+    "Any clothing fits Mungchi tightly over the lower half of its body, covering the front and "
+    "the back: the clothed part is squeezed into one smooth round shape with no bumps poking "
+    "out at its sides, no sleeves and nothing that looks like arms, while the cream "
+    "cloud-shaped upper part stays bumpy. The only hands are the two tiny round hands on the "
+    "front of the clothing. "
     "Keep Mungchi exactly like the "
     "reference picture."
 )
 OUTFIT_VEST = (
-    "Any clothing is a sleeveless vest worn around Mungchi's torso, covering the front and the "
-    "back; there are no sleeves, the cloud-shaped bumps on its sides stay cream-colored outside "
-    "the vest (never sleeves or arms), and the only hands are the two tiny round hands on the "
-    "front. Hats, helmets or headphones go on the head; whistles, necklaces or a simple shape "
-    "badge (star, paw) go on the chest."
+    "Any clothing fits Mungchi tightly over the lower half of its body, covering the front and "
+    "the back: the clothed part is squeezed into one smooth round shape with no bumps poking "
+    "out at its sides, no sleeves and nothing that looks like arms, while the cream "
+    "cloud-shaped upper part stays bumpy. The only hands are the two tiny round hands on the "
+    "front of the clothing. Hats, helmets or headphones go on the head; whistles, necklaces or "
+    "a simple shape badge (star, paw) go on the chest."
 )
 IMAGE_RULES = (
     "Rules: no thought bubbles or speech bubbles. No letters, words or numbers anywhere "
@@ -1772,6 +1778,9 @@ CLOSE_SHOT = (
     "Close shot: the people are seen from the shoulders up with hands in natural size; anything "
     "held is at chest height and does not cover their faces."
 )
+# #779(경찰관 떡집 콘티 2026-11-19): 쪽지가 없는 리액션 컷에도 예시(점선 길·X 표시)를 따라 보물
+# 지도를 그렸음. 장면·동작에 글자가 들어갈 물건이 있을 때만 넣는다
+WRITTEN_WORDS = re.compile(r"쪽지|편지|지도|안내판|표지판|메모|종이|카드|간판|책|공책|수첩|사진")
 WRITTEN_THINGS = (
     "Notes, letters, maps or signs show simple pictures or symbols (a dotted path, an X mark) "
     "instead of letters, and never show the hidden target or any candidate place."
@@ -1829,7 +1838,9 @@ def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: 
         lines.append(MYSTERY_LIGHT if spec.mystery else "")
     if spec.has_mungchi:
         lines.append(APART_FROM_ANIMALS)
-    lines.append(WRITTEN_THINGS)
+    if WRITTEN_WORDS.search(f"{cut.get('scene', '')} {cut.get('action', '')}"):
+        lines.append(WRITTEN_THINGS)
+    lines.append(spec.look)  # 첫 그림 표정(리액션 컷은 놀란 얼굴, #779)
     lines += [x for x in target_lines(theme, scene, index) if x]
     lines += [IMAGE_RULES, *_fixes(feedback)]
     return "\n".join(x for x in lines if x)
@@ -1863,8 +1874,9 @@ IMAGE_REVIEW_SYSTEM = (
     "갈색 짧은 발, 테마 옷). 손에 든 물건·자세·표정은 "
     "장면에 따라 달라도 된다. "
     # #779(2026-11-19): 옷 소매가 팔처럼 그려지고, 뭉치가 사람 곁에 붙으면 영상에서 팔이 옮겨 붙음
-    "옷에 소매가 있거나 몸 옆 울퉁불퉁한 곳이 소매·팔처럼 보여 팔이 넷처럼 보이면 결함(옷은 소매 "
-    "없는 조끼), 뭉치가 사람과 겹치거나 맞닿아 한 몸처럼 보이면 결함. "
+    "옷에 소매가 있거나 옷 입은 부분 옆으로 울퉁불퉁한 돌기가 삐져나와 소매·팔처럼 보여 팔이 "
+    "넷처럼 보이면 결함(옷은 아래쪽을 꽉 끼게 감싸 매끈한 둥근 몸통), 뭉치가 사람과 겹치거나 "
+    "맞닿아 한 몸처럼 보이면 결함. "
     "뭉치가 나오지 않아야 하는 그림이면 나오지 않는지.\n"
     "ANSWER_HINT: 찾는 대상이 나오면 안 되는 "
     "그림(targetAllowed false)에 찾는 대상이 보이는지(후보가 동물이면 후보 동물 가운데 어느 "
@@ -2081,11 +2093,12 @@ def video_prompt(
             if t.facts.group(str(theme.get("answer") or "")) == "동물":
                 about_target += " Nobody touches, lifts or holds the animal; everyone watches it."
     elif t.animal and shows:
-        # #634 ③: 정답 동물은 같은 모습, 사람이 제자리에서 부드럽게 안아 올리는 것은 됨
-        # (뭉치는 안 됨)
+        # #634 ③: 정답 동물은 같은 모습. #779(사용자 결정 2026-11-19): 아무도 만지지 않고 떨어져
+        # 바라봄(예전: 사람이 제자리에서 안아 올림), 엔딩은 제 갈 곳으로 천천히 걸어가며 화면 안
         about_target = (
-            f"{_answer_animal(theme)} Keep it looking the same. A person may gently lift it in "
-            "place; it does not run away."
+            f"{_answer_animal(theme)} Keep it looking the same. Nobody touches, lifts or holds the "
+            "animal; people watch it from a little distance. It may move a little in place or walk "
+            "slowly away toward the bushes or woods, staying inside the frame."
         )
     elif scene == "INTRO" and shows and not t.target_in_hand:  # 잃어버린 것 시작 1컷
         about_target = f"{target} may be held or used, but do not show where it is put or hidden."
@@ -2175,8 +2188,9 @@ VIDEO_REVIEW_SYSTEM = (
     # (그림 검토 MUNGCHI는 손에 든 물건을 허용해 첫 그림이 통과하는데 영상만 실패하지 않게)
     "뭉치가 사건 대상(target, 찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나 "
     "받는지(사람과 함께 잡아도 결함). 뭉치가 차림 소품(목에 걸거나 손에 든 돋보기·모자처럼 기준 "
-    "장면의 테마 차림)을 쥐거나 지니고 있는 것은 결함이 아니다. 사람이 동물을 제자리에서 "
-    "부드럽게 안아 올리는 것은 결함이 아니다(#634 동물 주인공 결말).\n"
+    "장면의 테마 차림)을 쥐거나 지니고 있는 것은 결함이 아니다. 동물 주인공 결말에서 사람이나 "
+    "뭉치가 정답 동물을 만지거나 안으면 결함이고(#779: 떨어져 바라보고 배웅), 동물이 천천히 "
+    "걸어가며 화면 안에 남는 것은 결함이 아니다.\n"
     "MORPH: 인물·뭉치의 몸·얼굴·눈 모양이 장면 사이에 녹아내리듯 바뀌거나 팔다리가 늘어나는지, "
     "2D 그림체가 3D로 바뀌는지, 뭉치가 나오지 않아야 하는 컷(mungchi 나오지 않아야 함)에 뭉치가 "
     "나타나는지. 사람이 손에 든 물건·자세와 표정, 뭉치가 쥔 차림 소품은 동작에 따라 달라도 된다"

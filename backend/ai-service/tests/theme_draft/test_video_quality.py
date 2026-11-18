@@ -205,7 +205,11 @@ def test_cut_images_use_own_framing_shots_mystery_and_pictures_instead_of_letter
     assert prompts.MYSTERY_LIGHT in close and prompts.MYSTERY_LIGHT not in wide
     assert "never dark or scary" in prompts.MYSTERY_LIGHT
     for text in (close, wide):
-        assert prompts.CUT_FRAMING in text and prompts.WRITTEN_THINGS in text
+        assert prompts.CUT_FRAMING in text
+    # 쪽지·지도 지시는 장면에 그런 물건이 있을 때만(#779 경찰관 떡집 콘티)
+    for cut, text in ((INTRO_CUTS[1], close), (INTRO_CUTS[0], wide)):
+        has_note = bool(prompts.WRITTEN_WORDS.search(f"{cut['scene']} {cut['action']}"))
+        assert (prompts.WRITTEN_THINGS in text) == has_note
     sheet = prompts.characters_prompt(theme)
     assert "Draw only these people" in sheet and "No Mungchi" in sheet
     assert all(c["name"] in sheet for c in theme["characters"])
@@ -488,9 +492,33 @@ def test_caption_rules_dialogue_with_visible_speaker() -> None:
     assert any("뭉치가 정답을 말함" in r for r in fix)
 
 
-def test_outfit_is_a_sleeveless_vest() -> None:
-    """셔츠·가운처럼 몸을 감싸는 옷은 몸 옆이 소매로 그려져 팔이 넷처럼 보였음(2026-11-19)."""
+def test_outfit_fits_tightly_and_squashes_the_lower_body() -> None:
+    """셔츠·가운은 몸 옆이 소매로, 소매 없는 조끼는 조끼 가장자리가 옆 돌기를 잘라 크림색 팔처럼
+    보였음(2026-11-19). 옷은 아래쪽을 꽉 끼게 감싸 매끈한 둥근 몸통으로(사용자 결정 A안)."""
     for text in (prompts.MUNGCHI_LOOK, prompts.OUTFIT_VEST):
-        assert "sleeveless vest" in text and "never sleeves or arms" in text
-    assert "소매 없는 조끼" in prompts.PLAN_SYSTEM
+        assert "fits Mungchi tightly" in text and "no bumps poking out at its sides" in text
+        assert "no sleeves" in text and "sleeveless vest" not in text
+    assert (
+        "꽉 끼게 감싸는 조끼" in prompts.PLAN_SYSTEM
+        and "소매 없는 조끼로만" not in prompts.PLAN_SYSTEM
+    )
     assert "팔이 넷처럼 보이면 결함" in prompts.IMAGE_REVIEW_SYSTEM
+
+
+def test_note_hint_only_when_the_cut_has_a_note_and_reaction_cut_is_surprised() -> None:
+    """쪽지가 없는 리액션 컷에 점선·X 예시를 따라 보물 지도를 그리고 웃는 얼굴로 그렸음
+    (경찰관 떡집 콘티 2026-11-19)."""
+    theme = valid_theme()
+    plain = {
+        "scene": "떡집 안 두 사람의 얼굴",
+        "action": "펄쩍 놀란다",
+        "caption": "",
+        "mungchiMood": "none",
+    }
+    note = {**plain, "scene": "아린이 쪽지를 펼쳐 든다"}
+    six = {**theme, "introCuts": [plain] * 6, "outroCuts": [plain] * 6}
+    reaction = prompts.cut_image_prompt(six, "INTRO", 3, plain, [])
+    assert prompts.WRITTEN_THINGS not in reaction
+    assert "big surprised face" in reaction and "not smiling" in reaction
+    assert prompts.WRITTEN_THINGS in prompts.cut_image_prompt(six, "INTRO", 3, note, [])
+    assert "big surprised face" not in prompts.cut_image_prompt(six, "INTRO", 1, plain, [])

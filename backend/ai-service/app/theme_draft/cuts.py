@@ -38,6 +38,9 @@ class CutSpec:
     speaker: str = ""  # 자막 말하는 사람과 할 말(줄거리 콘티 규칙)
     narrator: bool = False  # 자막이 이름 없는 장면 소개(시작 1컷)
     mystery: bool = False  # 사건 컷 색감(긴 그림자·조금 차가운 빛, 밝은 낮 그대로)
+    # 첫 그림 표정(영어). 그림 지시에는 장면(scene)만 들어가 리액션 컷이 웃는 얼굴로 그려졌음
+    # (경찰관 떡집 콘티 2026-11-19)
+    look: str = ""
 
     @property
     def has_mungchi(self) -> bool:
@@ -93,6 +96,8 @@ _NEW = {
             "CLOSE",
             "인물 리액션: 사건을 본 인물들이 펄쩍 놀라는 얼굴(어깨 위, 뭉치 없음)",
             mystery=True,
+            look="Everyone shows a big surprised face: wide eyes, raised eyebrows and open "
+            "mouths, not smiling.",
         ),
         CutSpec(
             "RUN",

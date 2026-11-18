@@ -345,7 +345,13 @@ def test_animal_pictures_hide_candidates_and_keep_answer_look() -> None:
     outro = prompts.cut_image_prompt(theme, "OUTRO", 3, theme["outroCuts"][2], [])
     assert "귀 끝이 까맣고 꼬리가 굵은 갈색 너구리" in outro and "Do not draw" not in outro
     video = prompts.video_prompt(theme, "OUTRO", 3, theme["outroCuts"][2], [])
-    assert "gently lift it in place" in video and "귀 끝이 까맣고" in video
+    # #779(사용자 결정 2026-11-19): 아무도 동물을 만지지 않고 떨어져 바라보고, 엔딩은 배웅
+    assert "Nobody touches, lifts or holds the animal" in video and "귀 끝이 까맣고" in video
+    assert "gently lift" not in video
+    for code in ("PRANK", "FOOTPRINT"):
+        t = families.STORY_TYPES[code]
+        assert "안아 올" not in " ".join(t.outro_cuts) and "배웅" in t.outro_cuts[3]
+        assert "만지거나 안거나 붙잡지 않고" in t.outro_rule
     lost_video = prompts.video_prompt(valid_theme(), "OUTRO", 2, valid_theme()["outroCuts"][1], [])
     assert "Do not show 강아지 보리" in lost_video and "these animals" not in lost_video
 
