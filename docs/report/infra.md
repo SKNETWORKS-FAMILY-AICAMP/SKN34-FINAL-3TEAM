@@ -271,7 +271,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 | 경보 경로 | Grafana Alerting → 팀 디스코드 `aws-alerts`(webhook은 Secret `discord-alert-webhook`). SNS→Lambda 중계안은 채택하지 않음 |
 | chart 구조 | #185의 observability chart 구조(values `rules`, 조직 notification policy, datasource UID `prometheus`)가 기준. #187 독립 생성기는 제거 |
 | DLQ 수집 | opt-in `rabbitmq-dlq` job(`<큐>.dlq`만). DLQ 규칙이 있는데 수집이 꺼져 있으면 렌더 실패 |
-| 월 LLM 비용 | 예산 300 USD, 80%(240 USD) 경보, KST 달력 월. core `LlmCostMetrics` gauge(단가 있는 비용·미산정 호출 수 분리) |
+| 월 LLM 비용 | 예산 300 USD, 80%(240 USD) 경보, KST 달력 월. core `LlmCostMetrics` gauge(단가 있는 비용·미산정 호출 수 분리). 미산정 경보는 최근 1시간에 새로 생긴 미산정만(#764) |
 | 담당 | 동섭 1명, `aws-alerts` 한 채널 |
 | trace 저장소 | Tempo(observability chart 선택 구성, 72h). Langfuse는 LLM 계측용으로 별도 |
 
@@ -282,6 +282,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 - app-service chart가 env의 `JAVA_TOOL_OPTIONS`를 agent 옵션 뒤에 합침. 이전에는 prod의 `-XX:MaxRAMPercentage`가 agent 플래그를 덮어써 agent가 빠져 있었음
 - `app-metrics-missing`은 `absent() or absent()`로 쓰면 정상일 때 NoData가 됨 → `max(... or vector(0))`
 - 기존 `summarize`는 미산정 호출이 섞인 call type의 비용을 null로 내므로 예산용 `monthToDate`를 따로 둠
+- `llm-unpriced-calls`(#764): 처음엔 월 누적 `max(...unpriced_calls) > 0`이라 11/17 재가동 뒤 단가 등록(#651) 전 11/03~05 기록 6,748건 때문에 계속 켜져 4시간마다 Discord 알림이 반복됨. `max(delta(...[1h])) > 0`으로 바꿔 새 누락만 보고, 새 누락이 1시간 없으면 해제, 월초 0 초기화는 음수라 울리지 않음. 설계상 비용이 없는 M2는 단가 0, Veo·RunPod Gemma는 별도 청구로 미산정에서 뺌([core-gateway 33장](core-gateway.md#33-llm-미산정-경보-정리-764-2026-11-18)). model 라벨은 붙이지 않음(새 모델의 첫 시계열은 delta가 0이라 오히려 놓침)
 - trace: core `OutboxWriter`가 봉투 `traceparent`를 넣고 `OutboxRelay`가 그 context에서 발행. report-worker는 `app/tracing.py`(OTel SDK)로 소비 span을 봉투 값에 연결
 - span 상태는 재시도 처리기·업무 실패가 예외를 밖으로 내지 않아 ERROR가 아니라 재시도 발행·DLQ 이동으로 드러남
 

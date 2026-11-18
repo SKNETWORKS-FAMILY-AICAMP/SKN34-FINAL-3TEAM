@@ -123,7 +123,7 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
         provider.close()
     }
 
-    @Test fun `shipped application yml prices dotted model names and leaves Veo unpriced`() {
+    @Test fun `shipped application yml prices dotted model names and bills Veo externally`() {
         // application.yml 기본 단가(#651)가 '.'·'-' 모델명 키 그대로 읽히는지, 테스트 단가와 합쳐지는지
         usage.record(event("2026-11-12T01:00:00Z", "JUDGMENT", model = "gpt-6-luna"))
         usage.record(event("2026-11-12T01:00:00Z", "THEME_DRAFT", model = "gpt-6.1-terra"))
@@ -137,11 +137,48 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
         assertEquals(0, BigDecimal("0.011").compareTo(byType.getValue("THEME_DRAFT").costUsd))
         assertEquals(0, BigDecimal("0.00002").compareTo(byType.getValue("KNOWLEDGE_EMBEDDING").costUsd))
         assertEquals(0, BigDecimal("0.068").compareTo(byType.getValue("THEME_IMAGE").costUsd))
-        assertNull(byType.getValue("THEME_VIDEO").costUsd)
-        assertEquals(1L, byType.getValue("THEME_VIDEO").unpricedCalls)
+        // #764: Veo는 단가 대신 GCP 별도 청구라 비용 합계·미산정에서 빠지고 따로 센다
+        assertEquals(0, BigDecimal.ZERO.compareTo(byType.getValue("THEME_VIDEO").costUsd))
+        assertEquals(0L, byType.getValue("THEME_VIDEO").unpricedCalls)
+        assertEquals(1L, byType.getValue("THEME_VIDEO").externallyBilledCalls)
         val month = usage.monthToDate(Instant.parse("2026-11-12T02:00:00Z"))
         assertEquals(0, BigDecimal("0.08012").compareTo(month.pricedUsd))
+        assertEquals(0L, month.unpricedCalls)
+    }
+
+    @Test fun `zero priced in-cluster models store zero cost without tokens for any registry version (#764)`() {
+        // scoring M2는 토큰 null, 모델명은 레지스트리 이름@버전. application.yml은 이름만 0 단가로 등록
+        usage.record(event("2026-11-12T01:00:00Z", "M2", model = "m2-klue-essay@3.1-1112b", input = null, output = null))
+        usage.record(event("2026-11-12T01:00:00Z", "M2", model = "m2-klue-narrative@9.9-new", input = null, output = null))
+        val row = usage.summarize(day, day, CallType.M2).single()
+        assertEquals(0, BigDecimal.ZERO.compareTo(row.costUsd))
+        assertEquals(0L, row.unpricedCalls)
+        assertEquals(0L, row.externallyBilledCalls)
+        assertEquals(0L, usage.monthToDate(Instant.parse("2026-11-12T02:00:00Z")).unpricedCalls)
+    }
+
+    @Test fun `externally billed models are separated from unpriced calls while unknown models still count (#764)`() {
+        // RunPod Gemma(정확한 이름·@버전 둘 다)는 별도 청구, 같은 call type의 미등록 모델은 여전히 미산정
+        usage.record(event("2026-11-12T01:00:00Z", "REPORT_EXPLANATION", model = "gemma-4-26b-a4b-it-qat-awq-int4"))
+        usage.record(event("2026-11-12T01:00:00Z", "REPORT_EXPLANATION", model = "gemma-4-26b-a4b-it-qat-awq-int4@local"))
+        usage.record(event("2026-11-12T01:00:00Z", "REPORT_EXPLANATION", model = "unregistered-sllm"))
+        val row = usage.summarize(day, day, CallType.REPORT_EXPLANATION).single()
+        assertEquals(3L, row.calls)
+        assertNull(row.costUsd)
+        assertEquals(1L, row.unpricedCalls)
+        assertEquals(2L, row.externallyBilledCalls)
+        val month = usage.monthToDate(Instant.parse("2026-11-12T02:00:00Z"))
+        assertEquals(0, BigDecimal.ZERO.compareTo(month.pricedUsd))
         assertEquals(1L, month.unpricedCalls)
+    }
+
+    @Test fun `versioned model names fall back to the registered name price`() {
+        // 단가 표에 없는 이름@버전은 @ 앞 이름의 단가로 계산
+        usage.record(event("2026-11-12T01:00:00Z", model = "query-model@2"))
+        usage.record(event("2026-11-12T01:00:00Z", "FOLLOWUP", model = "gpt-6-luna@x"))
+        val byType = usage.summarize(day, day, null).associateBy { it.callType }
+        assertEquals(0, BigDecimal("0.033").compareTo(byType.getValue("JUDGMENT").costUsd))
+        assertEquals(0, BigDecimal("0.0011").compareTo(byType.getValue("FOLLOWUP").costUsd))
     }
 
     @Test fun `memory query rewrite usage is stored and priced with the default ai model`() {

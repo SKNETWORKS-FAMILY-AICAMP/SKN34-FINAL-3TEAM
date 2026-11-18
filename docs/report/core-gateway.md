@@ -793,7 +793,7 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 - **그림 근사치**: `llm_usage`에 글 입력·이미지 입력·이미지 출력 토큰이 나뉘지 않아 입력 토큰 전체에 이미지 입력 단가(8.00)를 매긴다. 글 입력 토큰 단가가 더 낮으면 실제보다 조금 크게 잡힌다
 - **캐시 입력 단가 미반영**: 사용량 이벤트에 캐시 토큰 칸이 없어 캐시 할인 없이 일반 입력 단가로 계산한다(실제보다 크거나 같음)
 - **영상(Veo `veo-3.1-fast-generate-001`) 미등록**: 초 단위 과금이고 ai가 토큰을 null로 보내므로 `cost_usd` null, `unpricedCalls`로 센다. 예산 합산에 영상 비용이 빠진다. 클러스터 안 sLLM(리포트 설명·채점 M1/M2)도 토큰 단가가 없어 같은 처리
-- 위 미산정 호출이 생기면 `llm-unpriced-calls`(> 0) 경보가 함께 울린다. 설계상 미산정인 호출 종류를 경보에서 뺄지는 따로 정한다
+- 위 미산정 호출이 생기면 `llm-unpriced-calls`(> 0) 경보가 함께 울린다. 설계상 미산정인 호출 종류를 경보에서 뺄지는 따로 정한다 → [33장](#33-llm-미산정-경보-정리-764-2026-11-18)에서 정함(M2 단가 0, Veo·RunPod Gemma 별도 청구, 경보는 새 누락만)
 - 예산 금액(300 USD) 변경과 실제 원가 산식(#630)은 범위 밖
 
 ### 검증
@@ -883,3 +883,45 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 - `RewardIntegrationTest`: 학생 아이템 목록에 캐릭터 12개·순서·이름·가격, 새 값 `snow` 해금(150 차감)·저장, 해금 전 저장 409 `LOOK_LOCKED`, 잔액 부족 409, 목록 밖 404, 기존 해금 행(`COMPANION:tori`) 그대로 저장
 - `StudentLookIntegrationTest`: 목록 밖 값(`dragon`·웹 id `cotton`) 422, DB가 12종은 받고 목록 밖 값은 거부
 - `scripts/check_db_migrations.py`(일회용 PostgreSQL), `scripts/tests` 전체
+
+## 33. LLM 미산정 경보 정리 (#764, 2026-11-18)
+
+운영 `llm-unpriced-calls`(`max(llm_usage_month_to_date_unpriced_calls) > 0`)가 11/17 A 계정 재가동 직후부터 계속 켜져 Discord 알림이 4시간마다 반복됐다. 월 누적값을 보므로 한 건만 생겨도 월말까지 꺼지지 않는다.
+
+### 운영 기록 (11/18, A 계정 읽기 전용 집계)
+
+- 11월 `llm_usage` 7,398건 중 `cost_usd` null 6,803건. 그중 6,748건은 #651 단가 등록 전 11/03~05의 `gpt-6.1-terra`(JUDGMENT·FOLLOWUP·ANALYSIS) 기록이다. 과거 값 유지 원칙상 다시 계산하지 않는다
+- 재가동 뒤 새 미산정은 Veo 40건(THEME_VIDEO)·M2 5건(`m2-klue-essay@3.1-1112b`·`m2-klue-narrative@3.0-1112b`, 토큰 null)뿐이었다. 실제 단가 누락은 없었다
+
+### 정한 것
+
+| 경우 | 저장 | 미산정(`unpricedCalls`·월 누적 지표) | 관리자 화면(FN-ADM-19) |
+|---|---|---|---|
+| 단가 등록 모델, 토큰 있음 | 단가로 계산 | 아님 | 비용 합계 |
+| 단가 0 모델(클러스터 안 M2 등) | 토큰이 없어도 `cost_usd` 0 | 아님 | 비용 0 |
+| 별도 청구 모델(Veo GCP 초 단위, RunPod Gemma 시간 단위) | `cost_usd` null, `billed_externally` true | 아님 | "별도 청구 N건"(`externallyBilledCalls`) |
+| 미등록 모델, 또는 단가가 있는데 토큰 null | `cost_usd` null | 미산정 | 비용 null, "비용 미산정 N건" |
+
+- **단가 0**: `app.llm-pricing`에 `{input: 0, output: 0}`으로 `m2-klue-essay`·`m2-klue-narrative`를 넣었다. 입력·출력이 모두 0이면 토큰이 없어도 0으로 저장한다. 출력만 0인 임베딩은 그대로 토큰이 있어야 계산한다
+- **레지스트리 이름**: 정확한 모델명이 표에 없으면 `이름@버전`의 `이름`으로 찾는다. scoring은 `name@version`으로 보내므로(`m2-klue-essay@3.1-1112b`) 새 모델 버전을 올릴 때마다 단가를 다시 넣지 않아도 된다. 정확한 이름이 있으면 그쪽이 우선이다
+- **별도 청구**: 새 설정 `app.llm-billed-externally`(모델 이름 목록, 같은 이름 규칙)와 V53 `llm_usage.billed_externally`(기존 행은 false로 채우고 기본값은 두지 않음, core가 매번 넣음). `cost_usd`처럼 소비 시점에 정해 저장하므로 목록을 바꿔도 과거 행은 바뀌지 않는다. 단가가 있으면 단가가 우선이다. 테이블에 표시를 남긴 이유: 조회 때 설정 목록으로 나누면 목록 변경이 과거 집계를 바꾸기 때문이다
+- **Gemma 전환**: 리포트 Gemma가 EKS 안 sLLM으로 옮기면(#742·#747) `gemma-4-26b-a4b-it-qat-awq-int4`를 별도 청구 목록에서 빼고 단가 0으로 넣는다
+- **API**: `UsageSummary.externallyBilledCalls`(필수, 0 이상)를 더했다. `costUsd`는 미산정이 없으면 별도 청구를 뺀 저장 비용 합계(그 종류가 모두 별도 청구면 0)이고, 미산정이 있으면 지금처럼 null이다. 웹은 별도 청구가 있을 때만 "· 별도 청구 N건"을 붙인다
+- **경보**: `max(delta(llm_usage_month_to_date_unpriced_calls[1h])) > 0`, for 1m. 최근 1시간에 새 미산정이 생기면 울리고 1시간 동안 더 생기지 않으면 해제된다. 월초에 누적이 0으로 돌아가면 delta가 음수라 울리지 않는다. gauge는 core가 DB에서 다시 읽은 값이라 core 재시작으로 값이 튀지 않는다
+- **model 라벨은 붙이지 않음**: 모델별 시계열로 나누면 처음 미산정이 생긴 모델의 시계열은 첫 값부터 1이라 그 시계열 안의 delta가 0이 되어 오히려 놓친다. 경보가 울리면 `llm_usage`에서 최근 1시간 `cost_usd IS NULL AND NOT billed_externally` 행의 model을 본다
+- 11월 운영 누적 6,803건은 그대로 남는다. 새 규칙은 누적값과 무관해 배포 직후 해제된다
+
+### 검증
+
+- `LlmUsageQueryTest`: 단가 0 M2(토큰 null, 레지스트리 버전 두 개) → 비용 0·미산정 0, Gemma(정확한 이름·`@버전`) → 별도 청구 2·미산정 0, 같은 종류의 미등록 sLLM → 미산정 1·비용 null, Veo → 별도 청구 1·비용 0·월 누적 미산정 0, `이름@버전`이 등록 이름 단가로 계산, 기존 토큰 null(단가 있음) → 미산정 그대로
+- `ModelVersionHttpTest`: 응답에 `externallyBilledCalls` 0
+- `scripts/tests`: `test_admin_operations_contract`에 추가 칸·설명을 걷어낸 기존 지문 유지 확인
+- 운영 경보 검증기(`verify_chart.py` → `verify.py`): 가속 사본은 `[1h]`를 `[1m]`로 줄여 새 미산정 발생 → 누적이 그대로여도 해제 → 월초 0 초기화에 발생하지 않음
+- `scripts/check_db_migrations.py`(일회용 PostgreSQL): V53 적용·ERD 대조 통과. 저장소 규칙상 기본값을 두지 않아(V18과 같음) 기존 행을 false로 채운 뒤 DEFAULT를 지운다
+- local kind(2026-11-18): 이 브랜치 core·V53 적용 뒤 scoring M2 실제 채점 1회 → `llm_usage` `M2`·`m2-klue-narrative@3.0`·토큰 null·`cost_usd` 0·`billed_externally` false, 미산정 지표 그대로. 같은 식의 확인용 Grafana 규칙(for 1m)을 잠시 넣고 미등록 모델 `issue764-unregistered-model` 사용량 1건을 브로커로 보냄 → `cost_usd` null 저장, delta 약 1.05, 약 1분 26초 뒤 Pending, 약 2분 22초 뒤 Alerting. 해제는 아래 한계 참고
+
+### 한계
+
+- core Pod가 다시 뜨면 지표 시계열의 `exported_instance`가 바뀌어 새 시계열이 생긴다. 새 시계열의 첫 값은 delta에 들어가지 않으므로, core가 재시작되는 사이에 생긴 미산정은 경보에 잡히지 않을 수 있다(그 뒤 새로 생기는 것은 잡힘)
+- 해제는 마지막 새 미산정 뒤 1시간이 지나야 한다. 운영 A 계정에는 배포하지 않았다(11/18 밤 종료). 운영 Grafana 무음 처리 여부는 따로 정한다
+- 별도 청구 비용(Veo·RunPod)은 여전히 월 예산 합산에 들어가지 않는다. 그 금액은 GCP·RunPod 청구서로 본다
