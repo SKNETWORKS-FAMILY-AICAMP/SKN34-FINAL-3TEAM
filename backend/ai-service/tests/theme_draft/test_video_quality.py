@@ -64,7 +64,9 @@ def test_video_prompt_story_beat_camera_and_mungchi_rules() -> None:
     assert prompts.MUNGCHI_STILL in happy and prompts.MUNGCHI_RUN not in happy
     assert all(line in happy for line in prompts.MUNGCHI_KEEP)
     assert "indoors, nothing floats inside the room (no clouds, no leaves)" in happy
-    assert "hair clips and clothes as in the first frame" in happy  # 토끼 머리핀 → 토끼 귀
+    assert "same face, hair and clothes as in the first frame" in happy  # 토끼 머리핀 → 토끼 귀
+    # 3테마 실행: 영상 지시에 안경·머리핀을 쓰자 없던 안경·콧수염이 생김(6건) → 금지 목록으로만
+    assert "nothing added to anyone's face" in happy and "glasses" not in happy
     assert "Small, gentle movements in place" not in happy  # 예전 움직임 제한 문구는 없음
     first = prompts.video_prompt(theme, "INTRO", 1, INTRO_CUTS[0], [])
     assert "Mungchi does not appear in this clip." in first
@@ -181,7 +183,11 @@ def test_safe_video_prompt_reduces_motion_and_keeps_close_shot() -> None:
     go = prompts.video_prompt(theme, "INTRO", 3, INTRO_CUTS[2], [], safe=True)
     assert prompts.MUNGCHI_GO_SAFE in go and prompts.MUNGCHI_RUN not in go
     assert "The people make small, gentle movements" in go
-    assert f"Camera: {prompts.CAMERA_TEXT['PAN_SIDE']}" in go
+    # 첫 그림이 달리는 자세라 안전판도 달리는 자세 그대로, 카메라는 옆으로 따라감(3테마 실행)
+    assert "keeps the running pose of the first frame" in prompts.MUNGCHI_GO_SAFE
+    assert f"Camera: {prompts.CAMERA_TEXT['TRACK_SIDE']}" in go
+    happy = prompts.video_prompt(theme, "OUTRO", 4, OUTRO_CUTS[3], [], safe=True)
+    assert f"Camera: {prompts.CAMERA_TEXT['PAN_SIDE']}" in happy
     close = prompts.video_prompt(theme, "INTRO", 2, INTRO_CUTS[1], [], safe=True)
     assert f"Camera: {prompts.CAMERA_TEXT['HOLD_CLOSE']}" in close  # 가까운 장면은 그대로
 
@@ -246,3 +252,95 @@ def test_characters_sheet_failure_falls_back_to_intro1_as_person() -> None:
     assert response.failure is None and response.regen is not None
     assert "CHARS" not in response.regen["assets"]
     assert response.regen["assets"]["PERSON"] == response.regen["assets"]["INTRO1"]
+
+
+# --- 3테마 실행(2026-11-18) 뒤 고친 것: 고칠 점 1~8·후보 여러 개(사용자 결정 2026-11-18) ---
+
+
+def test_video_negative_blocks_added_faces_animal_features_and_flashes() -> None:
+    for word in (
+        "added glasses",
+        "added mustache",
+        "animal tail",
+        "Mungchi turning into an animal",
+    ):
+        assert word in prompts.VIDEO_NEGATIVE
+    for word in ("bright flash", "light burst", "lens flare"):
+        assert word in prompts.VIDEO_NEGATIVE
+    assert "never a flash or bright burst" in prompts.SCENE_MOTION
+    assert "the light shifts softly" not in prompts.SCENE_MOTION  # 실내 빛 흔들림 → 번쩍임
+
+
+def test_mungchi_stays_apart_from_animals_in_image_and_video() -> None:
+    """뭉치가 동물 곁에 붙어 있으면 영상에서 그 동물(너구리)로 바뀜(2건)."""
+    theme = valid_theme()
+    image = prompts.cut_image_prompt(theme, "OUTRO", 3, OUTRO_CUTS[2], [])
+    video = prompts.video_prompt(theme, "OUTRO", 3, OUTRO_CUTS[2], [])
+    assert prompts.APART_FROM_ANIMALS in image and prompts.APART_FROM_ANIMALS in video
+    no_mungchi = prompts.cut_image_prompt(theme, "INTRO", 1, INTRO_CUTS[0], [])
+    assert prompts.APART_FROM_ANIMALS not in no_mungchi
+
+
+def test_first_intro_cut_is_wide_and_people_do_not_line_up() -> None:
+    theme = valid_theme()
+    assert "시작 1컷은 장소가 한눈에 보이는 넓은 장면이다(camera는 HOLD_CLOSE가 아님)" in (
+        prompts.PLAN_SYSTEM
+    )
+    assert "카메라를 보고 한 줄로 서지 않고" in prompts.PLAN_SYSTEM
+    close_first = {**INTRO_CUTS[0], "camera": "HOLD_CLOSE"}
+    assert prompts.cut_camera("INTRO", 1, close_first) == "PAN_SIDE"  # 콘티가 골라도 넓은 장면
+    assert prompts.cut_camera("OUTRO", 1, {**OUTRO_CUTS[0], "camera": "HOLD_CLOSE"}) == "HOLD_CLOSE"
+    first = prompts.cut_image_prompt(theme, "INTRO", 1, close_first, [])
+    assert prompts.WIDE_SHOT in first and prompts.CLOSE_SHOT not in first
+    assert prompts.WIDE_SHOT not in prompts.cut_image_prompt(theme, "INTRO", 4, INTRO_CUTS[3], [])
+    assert "do not stand in a row facing the viewer" in prompts.CUT_FRAMING
+
+
+def test_cut_uses_first_passing_candidate_without_regenerating() -> None:
+    """Veo 한 번 호출로 후보 2개, 한 후보가 실패해도 다른 후보가 통과하면 다시 만들지 않음."""
+    seen: dict[str, int] = {}
+
+    def verdicts(user: dict) -> dict[str, str]:
+        if user["scene"] != OUTRO_CUTS[3]["scene"]:
+            return {}
+        seen["n"] = seen.get("n", 0) + 1
+        return {"CONTINUITY": "FAIL"} if seen["n"] == 1 else {}  # 두 후보 중 하나만 실패
+
+    video = FakeVideoClient()
+    response = run(
+        gen_llm(),
+        review_llm(video=verdicts),
+        image=FakeImageClient(),
+        video=video,
+        storage=MemoryThemeStorage(),
+        settings={"theme_video_candidates": 2},
+    )
+    assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
+    assert video.counts == [2] * 8 and len(video.calls) == 16  # 컷 8개 × 후보 2, 다시 없음
+    assert seen["n"] == 2 and response.warnings == []
+
+
+def test_all_candidates_failing_regenerates_with_their_reasons() -> None:
+    from app.theme_draft.nodes.video import STILL_NOTE
+
+    seen: dict[str, int] = {}
+
+    def verdicts(user: dict) -> dict[str, str]:
+        if user["scene"] != OUTRO_CUTS[3]["scene"]:
+            return {}
+        seen["n"] = seen.get("n", 0) + 1
+        return {"MORPH": "FAIL"} if seen["n"] <= 2 else {}  # 첫 시도 후보 2개 모두 실패
+
+    video = FakeVideoClient()
+    response = run(
+        gen_llm(),
+        review_llm(video=verdicts),
+        image=FakeImageClient(),
+        video=video,
+        storage=MemoryThemeStorage(),
+        settings={"theme_video_candidates": 2},
+    )
+    assert response.failure is None and len(video.calls) == 16 + 2  # 그 컷만 후보 2개로 다시
+    assert not any(STILL_NOTE in w.reason for w in response.warnings)
+    regen = [c[0] for c in video.calls if "MORPH" in c[0]]
+    assert len(regen) == 2  # 다시 만들기 지시에 실패 사유가 들어감

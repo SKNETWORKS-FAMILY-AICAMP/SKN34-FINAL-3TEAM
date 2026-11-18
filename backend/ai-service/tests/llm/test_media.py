@@ -201,6 +201,31 @@ def test_veo_fixes_first_frame_only_with_negative_prompt() -> None:
     assert auth == ["Bearer t", "Bearer t"]  # 시작·대기 요청마다 토큰 공급자에서 받음
 
 
+def test_veo_generate_many_asks_sample_count_and_returns_every_video() -> None:
+    """#779: 후보 여러 개는 sampleCount 한 번 호출, 안전 필터로 빈 후보는 빼고 돌려줌."""
+    seen: list[dict] = []
+    usages: list[LlmUsage] = []
+    videos = [
+        {"bytesBase64Encoded": base64.b64encode(b"a").decode()},
+        {"raiFilteredReason": "x"},
+        {"bytesBase64Encoded": base64.b64encode(b"b").decode()},
+    ]
+    clips = asyncio.run(
+        veo_client(
+            seen, usages=usages, done={"done": True, "response": {"videos": videos}}
+        ).generate_many(
+            "동작",
+            tiny_png(1),
+            count=3,
+            seconds=6,
+            prompt_version="v",
+            deadline=time.monotonic() + 30,
+        )
+    )
+    assert clips == [b"a", b"b"]
+    assert seen[0]["parameters"]["sampleCount"] == 3 and len(usages) == 1  # 사용량은 호출 1건
+
+
 def test_veo_sends_last_frame_only_when_given() -> None:
     seen: list[dict] = []
     asyncio.run(

@@ -73,6 +73,21 @@ class VideoClient(Protocol):
         """첫 그림(first)을 고정한 무음 영상 1개(MP4 바이트). last가 있을 때만 끝 그림도 고정."""
         ...
 
+    async def generate_many(
+        self,
+        prompt: str,
+        first: bytes,
+        *,
+        count: int,
+        seconds: int,
+        prompt_version: str,
+        deadline: float,
+        negative: str | None = None,
+    ) -> list[bytes]:
+        """같은 지시·첫 그림으로 후보 영상 최대 count개(한 번 호출, #779). 안전 필터로 일부가
+        빠지면 count보다 적을 수 있고, 하나도 없으면 LlmUnavailable."""
+        ...
+
 
 def _remaining(deadline: float, cap: float) -> float:
     left = min(cap, deadline - time.monotonic())
@@ -219,6 +234,8 @@ class VeoVideoClient:
     억지로 이어 움직임이 흐물거리고 배경이 같아짐(실측). last를 주면 lastFrame도 보낸다.
     토큰은 요청마다 tokens에서 받는다(대기 중에 만료돼도 갱신됨).
     사용량은 컷 1개(시작부터 결과 또는 실패까지)마다 THEME_VIDEO 1건(그림과 같은 방식).
+    #779: generate_many는 sampleCount로 후보 여러 개를 한 번에 받는다(사용량도 호출 1건, Veo 비용은
+    후보 수 × 초).
     """
 
     def __init__(
@@ -267,15 +284,46 @@ class VeoVideoClient:
         deadline: float,
         negative: str | None = None,
     ) -> bytes:
+        clips = await self._call(
+            prompt, first, last, 1, seconds, prompt_version, deadline, negative
+        )
+        return clips[0]
+
+    async def generate_many(
+        self,
+        prompt: str,
+        first: bytes,
+        *,
+        count: int,
+        seconds: int,
+        prompt_version: str,
+        deadline: float,
+        negative: str | None = None,
+    ) -> list[bytes]:
+        return await self._call(
+            prompt, first, None, count, seconds, prompt_version, deadline, negative
+        )
+
+    async def _call(
+        self,
+        prompt: str,
+        first: bytes,
+        last: bytes | None,
+        count: int,
+        seconds: int,
+        prompt_version: str,
+        deadline: float,
+        negative: str | None,
+    ) -> list[bytes]:
         began = time.monotonic()
         limit = began + _remaining(deadline, self._timeout)
         try:
-            clip = await self._generate(prompt, first, last, seconds, limit, negative)
+            clips = await self._generate(prompt, first, last, count, seconds, limit, negative)
         except LlmUnavailable as exc:
             self._record(prompt_version, began, exc.code)
             raise
         self._record(prompt_version, began, None)
-        return clip
+        return clips
 
     def _record(self, version: str, started: float, error: str | None) -> None:
         self._recorder(
@@ -296,10 +344,11 @@ class VeoVideoClient:
         prompt: str,
         first: bytes,
         last: bytes | None,
+        count: int,
         seconds: int,
         limit: float,
         negative: str | None,
-    ) -> bytes:
+    ) -> list[bytes]:
         began = time.monotonic()
 
         def frame(data: bytes) -> dict:
@@ -314,7 +363,7 @@ class VeoVideoClient:
         parameters: dict = {
             "aspectRatio": "16:9",
             "durationSeconds": seconds,
-            "sampleCount": 1,
+            "sampleCount": count,
             "resolution": "720p",
             "generateAudio": False,
         }
@@ -329,13 +378,22 @@ class VeoVideoClient:
             )
             if not state.get("done"):
                 continue
-            videos = (state.get("response") or {}).get("videos") or []
+            videos = [
+                v
+                for v in (state.get("response") or {}).get("videos") or []
+                if v.get("bytesBase64Encoded")
+            ]
             if "error" in state or not videos:
                 raise LlmUnavailable("LLM_INVALID_OUTPUT", retryable=True)
             logger.info(
-                "theme video %ss model=%s in %.0fs", seconds, self.model, time.monotonic() - began
+                "theme video %ss x%d/%d model=%s in %.0fs",
+                seconds,
+                len(videos),
+                count,
+                self.model,
+                time.monotonic() - began,
             )
-            return base64.b64decode(videos[0]["bytesBase64Encoded"])
+            return [base64.b64decode(v["bytesBase64Encoded"]) for v in videos]
         raise LlmUnavailable("LLM_TIMEOUT", retryable=True)
 
 
@@ -382,6 +440,7 @@ class FakeVideoClient:
         self.size = (64, 36)  # color_clip 크기
         self.calls: list[tuple[str, bytes, bytes | None, int]] = []  # (지시문, 첫, 끝, 초)
         self.negatives: list[str | None] = []
+        self.counts: list[int] = []  # generate_many 호출마다 후보 수(#779)
 
     async def generate(
         self,
@@ -398,6 +457,32 @@ class FakeVideoClient:
         self.calls.append((prompt, first, last, seconds))
         self.negatives.append(negative)
         return await asyncio.to_thread(color_clip, len(self.calls), seconds)
+
+    async def generate_many(
+        self,
+        prompt: str,
+        first: bytes,
+        *,
+        count: int,
+        seconds: int,
+        prompt_version: str,
+        deadline: float,
+        negative: str | None = None,
+    ) -> list[bytes]:
+        """후보 count개를 generate로 하나씩(calls에 후보마다 1건, 시험이 generate를 바꿔 끼우면
+        후보에도 그대로 적용, #779). counts에는 호출마다 후보 수."""
+        self.counts.append(count)
+        return [
+            await self.generate(
+                prompt,
+                first,
+                seconds=seconds,
+                prompt_version=prompt_version,
+                deadline=deadline,
+                negative=negative,
+            )
+            for _ in range(count)
+        ]
 
 
 # --- ffmpeg -------------------------------------------------------------------------

@@ -15,6 +15,10 @@
   (kept_videos)
 - #779(사용자 결정 2026-11-18): 검토에 뭉치 팔·다리·얼굴 판정 예시 그림 2장(허용·결함)을 장면 뒤에
   붙인다(REVIEW_EXAMPLES). 생성 쪽은 뭉치 거의 정지·출동 컷만 옆으로 달리기(prompts.video_prompt)
+- #779(사용자 결정 2026-11-18, Veo만 쓸 수 있어서): 시도마다 Veo 한 번 호출로 후보
+  theme_video_candidates개를 받아 동시에 검사하고, 처음 통과한 후보(후보 순서대로)를 쓴다. 모두
+  실패하면 후보들의 실패 사유를 모아 다시 만들기·안전판으로. 중간 멈춤은 FREEZE_WARN~FREEZE_FAIL초면
+  WARN(3테마 실행에서 0.5~0.6초 멈춤 3건이 컷을 떨어뜨림)
 """
 
 import asyncio
@@ -45,7 +49,8 @@ SAFE_NOTE = "안전한 영상으로 대신함"  # #779 다시 만들기까지 �
 FAKE_REVIEW_SKIPPED = "영상 대역이라 검토를 건너뜀"
 FRAME_EVERY = 1.0  # 검토 장면 간격(초). 2초 간격 4장으로는 사이의 사라짐·변형을 놓쳤음(실측)
 FRAME_COUNT = 8  # 8초 컷이면 0~7초
-FREEZE_FAIL = 0.5  # 컷 중간에 이보다 오래 멈추면 그 컷을 다시 만듦(초, 기준안)
+FREEZE_FAIL = 0.7  # 컷 중간에 이보다 오래 멈추면 그 컷을 다시 만듦(초, 기준안, #779 0.5에서 올림)
+FREEZE_WARN = 0.5  # 이보다 길고 FREEZE_FAIL보다 짧은 중간 멈춤은 WARN(#779, 사람이 볼 것)
 MIN_KEEP = 0.6  # 앞뒤 정지 화면을 잘라도 요청 길이의 이 비율은 남아야 함
 # 뭉치 팔·다리·얼굴 판정 예시(#779, 사용자 결정 2026-11-18). 검토 장면 뒤에 허용 모음·결함 모음
 # 순서로 붙임(VIDEO_REVIEW_SYSTEM "마지막 두 장"). 그림은 2026-11-18 Veo 실측 장면에서 자른 것
@@ -60,13 +65,14 @@ def review_examples() -> tuple[bytes, ...]:
     return tuple(p.read_bytes() for p in REVIEW_EXAMPLES)
 
 
-def cut_freezes(clip: bytes, seconds: float) -> tuple[bytes, float, list[str]]:
-    """(앞뒤 정지 화면을 잘라 낸 컷, 실제 길이, 실패 사유). 중간 멈춤이 FREEZE_FAIL초를 넘거나
-    잘라 낸 뒤 너무 짧으면 FREEZE 사유(그 컷을 다시 만듦)."""
+def cut_freezes(clip: bytes, seconds: float) -> tuple[bytes, float, list[str], list[str]]:
+    """(앞뒤 정지 화면을 잘라 낸 컷, 실제 길이, 실패 사유, WARN 사유). 중간 멈춤이 FREEZE_FAIL초
+    이상이거나 잘라 낸 뒤 너무 짧으면 FREEZE 실패(그 컷을 다시 만듦), FREEZE_WARN초 이상이면
+    WARN."""
     duration, spans = freeze_spans(clip)
     duration = duration or float(seconds)
     start, end = 0.0, duration
-    middle = []
+    middle, short = [], []
     for s, e in spans:
         if s <= 0.05:
             start = max(start, e)
@@ -74,32 +80,78 @@ def cut_freezes(clip: bytes, seconds: float) -> tuple[bytes, float, list[str]]:
             end = min(end, s)
         elif e - s >= FREEZE_FAIL:
             middle.append((s, e))
+        elif e - s >= FREEZE_WARN:
+            short.append((s, e))
+
+    def said(spans: list[tuple[float, float]]) -> str:
+        return "FREEZE " + ", ".join(f"{s:.1f}~{e:.1f}초에 화면이 멈춤" for s, e in spans)
+
+    warns = [said(short)] if short else []
     if middle:
-        return (
-            clip,
-            duration,
-            ["FREEZE " + ", ".join(f"{s:.1f}~{e:.1f}초에 화면이 멈춤" for s, e in middle)],
-        )
+        return clip, duration, [said(middle)], []
     if end - start < MIN_KEEP * seconds:
-        return clip, duration, [f"FREEZE 움직이는 부분이 {end - start:.1f}초뿐"]
+        return clip, duration, [f"FREEZE 움직이는 부분이 {end - start:.1f}초뿐"], []
     if start > 0 or end < duration:
-        return trim_clip(clip, start, end), round(end - start, 3), []
-    return clip, duration, []
+        return trim_clip(clip, start, end), round(end - start, 3), [], warns
+    return clip, duration, [], warns
+
+
+async def check_clip(
+    ctx: ThemeContext, theme: Theme, scene: str, index: int, first: bytes, clip: bytes, seconds: int
+) -> tuple[bytes, float, list[str], list[str]]:
+    """후보 1개: 멈춤 확인(앞뒤 정지 화면 잘라 냄) → 장면 뽑기 → 검토.
+    (영상, 실제 길이, 실패 사유, WARN 사유). 영상 대역(VIDEO_PROVIDER=fake)이면 멈춤 확인까지(#716).
+    """
+    body = ctx.prompt.body
+    cut = theme[CUTS_KEY[scene]][index - 1]
+    try:
+        clip, length, frozen, freeze_warns = await asyncio.to_thread(cut_freezes, clip, seconds)
+        if frozen or ctx.settings.video_provider == "fake":
+            return clip, length, frozen, freeze_warns  # 대역 영상은 장면 뽑기·검토를 하지 않음
+        frames = await asyncio.to_thread(video_frames, clip, FRAME_EVERY, FRAME_COUNT)
+        review = await ctx.review_llm.generate(
+            system=body.VIDEO_REVIEW_SYSTEM,
+            user=body.video_review_user(
+                theme,
+                cut,
+                body.cut_shows_target(theme, scene, index),
+                body.cut_has_mungchi(scene, index),
+                body.cut_reveals_answer(scene),
+            ),
+            output=GeneratedVideoReview,
+            call_type=THEME_CALL_TYPE,
+            prompt_version=ctx.prompt.version,
+            max_tokens=ctx.settings.theme_review_max_tokens,
+            deadline=ctx.deadline,
+            timeout=ctx.settings.theme_llm_timeout,
+            max_retries=ctx.settings.theme_llm_retries,
+            images=[first, *frames, *review_examples()],
+        )
+    except LlmUnavailable as exc:
+        return clip, 0.0, [f"VIDEO_CALL {exc.code}"], []
+    except (RuntimeError, subprocess.SubprocessError) as exc:  # 장면 뽑기(ffmpeg) 실패
+        return clip, 0.0, [f"VIDEO_FRAMES {type(exc).__name__}"], []
+    fails, warns, shape = check_review(review.data.model_dump(), VIDEO_REVIEW_IDS)
+    return (
+        clip,
+        length,
+        shape + [f"{x['id']} {x['reason']}" for x in fails],
+        freeze_warns + [f"{x['id']} {x['reason']}" for x in warns],
+    )
 
 
 async def film(
     ctx: ThemeContext, theme: Theme, scene: str, index: int, first: bytes, seconds: int
 ) -> tuple[bytes | None, list[str], list[str], float]:
-    """컷 1개: 생성 → 멈춤 확인(앞뒤 정지 화면 잘라 냄) → 장면 뽑기 → 검토 → FAIL이면 사유를 넣어
-    다시(상한·마감).
+    """컷 1개: 후보 생성(Veo 한 번에 theme_video_candidates개) → 후보마다 검사(check_clip, 동시) →
+    처음 통과한 후보를 씀. 모두 실패하면 사유를 넣어 다시(상한·마감), 그다음 안전판.
 
     (영상, 끝내 실패한 사유, 통과한 검토의 WARN 사유, 실제 길이).
-    영상 대역(VIDEO_PROVIDER=fake)이면 멈춤 확인까지만 하고 장면 뽑기·검토 없이 통과(#716).
     """
     assert ctx.video is not None
     body = ctx.prompt.body
     cut = theme[CUTS_KEY[scene]][index - 1]
-    shows_target = body.cut_shows_target(theme, scene, index)
+    count = ctx.settings.theme_video_candidates
     feedback: list[str] = []
     bad: list[str] = []
     # #779(사용자 결정 2026-11-18): 다시 만들기까지 실패하면 정지 그림 전에 안전한 버전으로 한 번 더
@@ -110,39 +162,14 @@ async def film(
             bad = [*bad, DEADLINE_REASON]
             break
         try:
-            clip = await ctx.video.generate(
+            clips = await ctx.video.generate_many(
                 body.video_prompt(theme, scene, index, cut, feedback, safe=safe),
                 first,
+                count=count,
                 seconds=seconds,
                 prompt_version=ctx.prompt.version,
                 deadline=ctx.deadline,
                 negative=body.VIDEO_NEGATIVE,
-            )
-            clip, length, frozen = await asyncio.to_thread(cut_freezes, clip, seconds)
-            if frozen:
-                bad = frozen
-                feedback = uniq([*feedback, *bad])
-                continue
-            if ctx.settings.video_provider == "fake":
-                return clip, [], [], length  # 대역 영상은 장면 뽑기·검토를 하지 않음(#716)
-            frames = await asyncio.to_thread(video_frames, clip, FRAME_EVERY, FRAME_COUNT)
-            review = await ctx.review_llm.generate(
-                system=body.VIDEO_REVIEW_SYSTEM,
-                user=body.video_review_user(
-                    theme,
-                    cut,
-                    shows_target,
-                    body.cut_has_mungchi(scene, index),
-                    body.cut_reveals_answer(scene),
-                ),
-                output=GeneratedVideoReview,
-                call_type=THEME_CALL_TYPE,
-                prompt_version=ctx.prompt.version,
-                max_tokens=ctx.settings.theme_review_max_tokens,
-                deadline=ctx.deadline,
-                timeout=ctx.settings.theme_llm_timeout,
-                max_retries=ctx.settings.theme_llm_retries,
-                images=[first, *frames, *review_examples()],
             )
         except LlmUnavailable as exc:
             bad = [f"VIDEO_CALL {exc.code}"]
@@ -150,17 +177,18 @@ async def film(
                 break
             feedback = uniq([*feedback, *bad])
             continue
-        except (RuntimeError, subprocess.SubprocessError) as exc:  # 장면 뽑기(ffmpeg) 실패
-            bad = [f"VIDEO_FRAMES {type(exc).__name__}"]
-            continue
-        fails, warns, shape = check_review(review.data.model_dump(), VIDEO_REVIEW_IDS)
-        passed_bad, bad = bad, shape + [f"{x['id']} {x['reason']}" for x in fails]
-        if not bad:
-            notes = [f"{x['id']} {x['reason']}" for x in warns]
-            if safe:  # 앞 시도의 실패 사유와 함께 안전한 버전으로 대신했다고 남김
-                notes += [f"{SAFE_NOTE}: {r}" for r in passed_bad or ["?"]]
-            return clip, [], notes, length
-        feedback = uniq([*feedback, *bad])
+        checked = await asyncio.gather(
+            *(check_clip(ctx, theme, scene, index, first, clip, seconds) for clip in clips)
+        )
+        for clip, length, fails, warns in checked:  # 후보 순서대로 처음 통과한 것
+            if not fails:
+                if safe:  # 앞 시도의 실패 사유와 함께 안전한 버전으로 대신했다고 남김
+                    warns = [*warns, *(f"{SAFE_NOTE}: {r}" for r in bad or ["?"])]
+                return clip, [], warns, length
+        bad = uniq([r for _, _, fails, _ in checked for r in fails])
+        if any("LLM_DEADLINE_EXCEEDED" in r for r in bad):
+            break
+        feedback = uniq([*feedback, *(r for r in bad if not r.startswith("VIDEO_FRAMES"))])
     return None, bad, [], 0.0
 
 

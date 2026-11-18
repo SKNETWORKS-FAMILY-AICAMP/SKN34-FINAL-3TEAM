@@ -177,12 +177,13 @@ def run(
     settings: dict[str, Any] | None = None,
     **body: Any,
 ) -> ThemeDraftResponse:
-    """settings: 설정 덮어쓰기(예: 그림·영상 대역 {"image_provider": "fake"}, #716)."""
+    """settings: 설정 덮어쓰기(예: 그림·영상 대역 {"image_provider": "fake"}, #716). 영상 후보는
+    기본 1개(호출 수를 세는 시험이 컷마다 1번을 전제, 후보 여러 개는 test_video_quality, #779)."""
     request = ThemeDraftRequest.model_validate(request_body(**body))
     runner = ThemeDraftGraphRunner(
         gen,
         review,
-        get_settings().model_copy(update=settings or {}),
+        get_settings().model_copy(update={"theme_video_candidates": 1, **(settings or {})}),
         ActiveVersions(),
         image=image,
         video=video,
@@ -822,20 +823,24 @@ def test_route_uses_media_clients_from_app_state(monkeypatch: pytest.MonkeyPatch
 
 
 def test_cut_freezes_trims_ends_and_fails_middle() -> None:
-    """앞뒤 정지 화면은 잘라 내고 실제 길이를 돌려줌, 중간에 0.5초 넘게 멈추면 FREEZE(그 컷을
-    다시 만듦). 실측에서 컷 안 0.4~0.9초 멈춤이 재생 중 끊김으로 보였음."""
+    """앞뒤 정지 화면은 잘라 내고 실제 길이를 돌려줌, 중간에 0.7초 이상 멈추면 FREEZE(그 컷을
+    다시 만듦), 0.5~0.7초는 WARN(#779: 3테마 실행에서 0.5~0.6초 멈춤 3건이 컷을 떨어뜨림). 처음
+    실측에서는 컷 안 0.4~0.9초 멈춤이 재생 중 끊김으로 보였음."""
     from app.llm.media import color_clip, concat_mp4
     from app.theme_draft.nodes.video import cut_freezes
 
     ends = concat_mp4(
         [color_clip(1, 1, still=True), color_clip(2, 3), color_clip(3, 1, still=True)]
     )
-    trimmed, length, bad = cut_freezes(ends, 5)
-    assert bad == [] and length == pytest.approx(3, abs=0.4) and trimmed != ends
+    trimmed, length, bad, warns = cut_freezes(ends, 5)
+    assert bad == [] == warns and length == pytest.approx(3, abs=0.4) and trimmed != ends
     middle = concat_mp4([color_clip(4, 2), color_clip(5, 1, still=True), color_clip(6, 2)])
-    _, _, bad = cut_freezes(middle, 5)
-    assert len(bad) == 1 and bad[0].startswith("FREEZE ")
-    _, _, bad = cut_freezes(color_clip(7, 4, still=True), 4)
+    _, _, bad, warns = cut_freezes(middle, 5)
+    assert len(bad) == 1 and bad[0].startswith("FREEZE ") and warns == []
+    short = concat_mp4([color_clip(4, 2), color_clip(5, 0.6, still=True), color_clip(6, 2)])
+    _, _, bad, warns = cut_freezes(short, 4)
+    assert bad == [] and len(warns) == 1 and warns[0].startswith("FREEZE 2.0~2.7초")
+    _, _, bad, _ = cut_freezes(color_clip(7, 4, still=True), 4)
     assert len(bad) == 1 and bad[0].startswith("FREEZE ")
 
 

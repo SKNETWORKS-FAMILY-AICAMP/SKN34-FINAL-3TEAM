@@ -156,6 +156,10 @@ PLAN_SYSTEM = (
     # 되고, 문구가 화면과 따로 놀면 이야기가 전해지지 않음(무음이라 화면과 문구가 이야기를 다 전함)
     "- 4컷은 만화의 한 장면처럼 이어진다: 컷마다 장소의 다른 곳·다른 구도·다른 장면 크기(넓은 "
     "장면, 인물이 크게 보이는 장면, 가까운 장면)로 쓰고, 앞 컷의 동작이 다음 컷으로 이어진다. "
+    # #779(3테마 실행 2026-11-18): 시작 1컷이 가까운 장면이면 어디서 일어나는 이야기인지 안 보임
+    "시작 1컷은 장소가 한눈에 보이는 넓은 장면이다(camera는 HOLD_CLOSE가 아님). "
+    # #779: 인물이 카메라를 보고 한 줄로 서면 영상 모델이 얼굴을 바꾸고 단체 사진처럼 멈춤
+    "인물들은 카메라를 보고 한 줄로 서지 않고, 서로 다른 거리에서 서로를 보거나 하는 일을 본다. "
     "시작 2컷(사건)은 사건이 한눈에 보이는 가까운 장면이다: 사건 물건이나 빈자리(빈손·빈 줄·파헤친 "
     "자리 등)를 크게 보여 주고 인물은 어깨 위쪽과 몸에 맞는 크기의 손만, camera는 HOLD_CLOSE.\n"
     "- 인물이 이동하는 컷은 scene에서 그 인물이 가는 쪽을 보고(뒷모습·옆모습) 가는 길이 그쪽으로 "
@@ -1640,7 +1644,20 @@ def characters_prompt(theme: Theme) -> str:
 # 장소는 그리지 않음
 CUT_FRAMING = (
     "Use the reference pictures only for how Mungchi and the people look; draw this scene's own "
-    "place, framing and camera angle as the scene says."
+    "place, framing and camera angle as the scene says. The people do not stand in a row facing "
+    "the viewer: they are at different distances, turned toward each other or toward what they "
+    "are doing."
+)
+# #779(3테마 실행 2026-11-18): 시작 1컷이 가까운 장면이면 장소가 안 보임. 넓은 장면으로 고정
+WIDE_SHOT = (
+    "Wide establishing shot: the whole place is visible and the people are seen full body, "
+    "smaller in the scene."
+)
+# #779(3테마 실행 2026-11-18): 뭉치와 동물이 붙어 있으면 영상에서 뭉치가 그 동물(너구리)로 바뀜
+APART_FROM_ANIMALS = (
+    "If an animal appears, it stays apart from Mungchi with clear space between them and keeps "
+    "its own look; Mungchi never takes on any animal's features (no tail, no striped fur, no "
+    "animal ears or muzzle)."
 )
 CLOSE_SHOT = (
     "Close shot: the people are seen from the shoulders up with hands in natural size; anything "
@@ -1671,6 +1688,10 @@ def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: 
     lines.append(CUT_FRAMING)
     if cut_camera(scene, index, cut) == "HOLD_CLOSE":
         lines.append(CLOSE_SHOT)
+    elif (scene, index) == ("INTRO", 1):
+        lines.append(WIDE_SHOT)
+    if cut_has_mungchi(scene, index):
+        lines.append(APART_FROM_ANIMALS)
     lines.append(WRITTEN_THINGS)
     lines += [x for x in target_lines(theme, scene, index) if x]
     lines += [IMAGE_RULES, *_fixes(feedback)]
@@ -1775,7 +1796,8 @@ def image_review_user(
 # 사용자 결정 2026-11-15(생성 쪽도 B안): 첫 그림에 든 차림 소품은 그대로 들어도 되고 새 물건을
 # 집거나 건네는 것만 막음(검토 CONTINUITY와 같은 기준, "들지 말라"면 첫 그림의 돋보기가 사라짐).
 # #779(실측 2026-11-18): 흰 다리·점프, 강아지 얼굴(코·주둥이)·갈색 손, 실내 구름, 종이 넘김 전환이
-# 실제로 나와 더함
+# 실제로 나와 더함. 3테마 실행에서 사람에게 안경·콧수염이 생기고(6건) 뭉치가 너구리로 바뀌고(2건)
+# 상자가 열릴 때 빛이 번쩍여(SAFETY) 더함
 VIDEO_NEGATIVE = (
     "big eyes, eye whites, changing eye shape, body morphing, extra limbs, long arms, wings, "
     "stretched limbs, Mungchi raising hands, Mungchi grabbing or handing over objects, "
@@ -1785,7 +1807,9 @@ VIDEO_NEGATIVE = (
     "characters merging, extreme zoom, cropped faces, freeze frame, 3D render, text, "
     "clouds indoors, leaves indoors, page turn, page curl, transition effect, "
     "walking on walls, walking through bushes, passing through objects, duplicated objects, "
-    "flashing lights, scary, sudden cuts"
+    "added glasses, added mustache, added beard, face accessories, animal tail, striped fur, "
+    "Mungchi turning into an animal, "
+    "flashing lights, bright flash, light burst, glowing rays, lens flare, scary, sudden cuts"
 )
 # #779: 뭉치 모양 고정. 뭉치는 거의 가만히(표정·갸웃·흔들기), 출동 컷만 정면을 본 채 옆으로 달림.
 # 손·발·얼굴은 실측에서 바뀐 것(팔·흰 다리·갈색 손·강아지 코)을 하나씩 막는 줄
@@ -1807,11 +1831,13 @@ MUNGCHI_RUN = (
     "profile). The camera tracks alongside, so Mungchi stays the same size and inside the frame "
     "while the background scrolls past. Mungchi never runs toward or away from the camera."
 )
-# #779 출동 컷이 끝내 실패하면 한 번 더 찍는 안전한 버전(뭉치는 서 있고 카메라만 움직여 배경이
-# 흐름, 실측에서 두 테마 모두 통과)
+# #779 출동 컷이 끝내 실패하면 한 번 더 찍는 안전한 버전. 첫 그림이 달리는 자세라 "서 있음"이면
+# 영상이 첫 그림과 어긋남(3테마 실행 2026-11-18). 달리는 자세 그대로 발만 작게 움직이고 카메라가
+# 옆으로 따라가 배경이 흐름
 MUNGCHI_GO_SAFE = (
-    "Mungchi stands with a determined face and sways its body gently without moving its hands or "
-    "feet, while the camera moves sideways so the background flows past behind it."
+    "Mungchi keeps the running pose of the first frame, facing the viewer, and only moves its two "
+    "short brown feet in small quick steps; its body and hands do not change. The camera tracks "
+    "sideways along with it so the background flows past behind it."
 )
 # #779(기준안 2026-11-18, 사용자 결정: 정해 둔 카메라 중 콘티가 컷마다 고름). 다가가기(push-in)는
 # 전체 실행(초5 보물 쪽지)에서 시작 2컷이 두 번 모두 "확대되며 다리가 잘림"이라 목록에 없음
@@ -1838,18 +1864,22 @@ DEFAULT_CAMERA = {
 
 
 def cut_camera(scene: str, index: int, cut: dict) -> str:
-    """컷 카메라: 출동 컷은 늘 옆에서 따라감, 그 밖은 콘티 값(없거나 목록 밖이면 역할별 기본값)."""
+    """컷 카메라: 출동 컷은 늘 옆에서 따라감, 시작 1컷은 가까운 장면이 아님(넓은 장면, #779),
+    그 밖은 콘티 값(없거나 목록 밖이면 역할별 기본값)."""
     if is_go_cut(scene, index):
         return "TRACK_SIDE"
     camera = cut.get("camera")
-    return camera if camera in CAMERA_TEXT else DEFAULT_CAMERA.get((scene, index), "PAN_SIDE")
+    if camera not in CAMERA_TEXT or ((scene, index) == ("INTRO", 1) and camera == "HOLD_CLOSE"):
+        return DEFAULT_CAMERA.get((scene, index), "PAN_SIDE")
+    return camera
 
 
 # 앞 시험에서 모든 컷에 '구름이 흐른다'를 넣어 실내 벽에 구름이 생겼음(실내·실외를 나눔)
 SCENE_MOTION = (
     "The background moves in a way that fits the place: outdoors, clouds drift and leaves, grass "
     "or water move gently; indoors, nothing floats inside the room (no clouds, no leaves), only "
-    "the light shifts softly and plants or curtains sway slightly."
+    "plants or curtains sway slightly. Light stays soft and steady everywhere: when something "
+    "opens or is found there is at most a gentle glow, never a flash or bright burst."
 )
 
 
@@ -1864,11 +1894,9 @@ def video_prompt(
     정지 그림 대신 한 번 더 찍는 안전한 버전(뭉치·사람 움직임을 줄이고 카메라만 천천히 훑음).
     """
     target = theme.get("target") or "the missing target"
-    camera = (
-        "HOLD_CLOSE"
-        if safe and cut_camera(scene, index, cut) == "HOLD_CLOSE"
-        else ("PAN_SIDE" if safe else cut_camera(scene, index, cut))
-    )
+    camera = cut_camera(scene, index, cut)
+    if safe and camera not in ("HOLD_CLOSE", "TRACK_SIDE"):  # 출동 컷 안전판도 옆으로 따라감
+        camera = "PAN_SIDE"
     if cut_has_mungchi(scene, index):
         mouth = mood_mouth(cut)
         go = MUNGCHI_GO_SAFE if safe else MUNGCHI_RUN
@@ -1880,6 +1908,7 @@ def video_prompt(
             "magnifying glass) stays in its hand as it is, and nothing around its neck is lifted "
             "or used. Any hand gestures are done by the people.",
             "Mungchi's outfit, hat and items around the neck stay exactly as in the first frame.",
+            APART_FROM_ANIMALS,
             f"Mungchi's expression: {mouth}." if mouth else "",
         ]
     else:
@@ -1931,8 +1960,8 @@ def video_prompt(
         # #779: 카메라가 따라가며 다른 인물이 화면 밖으로 빠지는 것은 됨(만화 연출 시제품 1컷)
         "Nobody walks out of the frame, disappears, appears or merges with another person; when "
         "the camera follows someone, others may leave the view only because the camera moves "
-        "away. Everyone keeps the same face, hair, glasses, hair clips and clothes as in the first "
-        "frame.",
+        "away. Everyone keeps exactly the same face, hair and clothes as in the first frame, with "
+        "nothing added to anyone's face.",
         "The people make small, gentle movements, continuously until the end."
         if safe
         else "The people act it out like a lively cartoon: big, clear, expressive movements "
