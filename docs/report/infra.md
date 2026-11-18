@@ -214,7 +214,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 - replica 1에서 노드를 정리하면 eviction이 Pod를 먼저 지워 새 Pod가 Ready가 될 때까지 끊긴다. 기본 Pod를 관리형 노드에 두고 늘어난 Pod만 Karpenter 노드에 올려, 축소 때 최근 Pod부터 지워지게 했다. 부하 중 재배포로 Pod 나이 순서가 바뀌면 한 번 끊길 수 있다. 최소 2 + PDB 안은 상시 노드 1대(약 $38/월)가 뜰 수 있어 보류
 - 적용(2026-11-05): metrics-server add-on, IAM 역할·Pod Identity, Karpenter, NodePool `application-burst`, 세 앱 HPA. 이미지 digest는 바꾸지 않음
 - t3.medium은 노드당 Pod 17개 제한이라 CPU·메모리보다 Pod 수로 먼저 Pending이 날 수 있음
-- 미실측: 부하 시 노드 확장·축소, 삭제 순서, ai의 CPU 기반 확장(2차 부하 시험 #384)
+- 실측(#384, 2026-11-18 → 9.14): 노드 확장 Pending→Ready 41초, 상한(CPU 4)에서 세 번째 노드 거부, 축소는 부하 종료 10분 46초~11분 20초 뒤 노드 0대. ai도 CPU 기준으로 확장됨. **D안 삭제 순서는 보장되지 않음**(2회 중 1회 기본 Pod가 함께 지워짐, 9.14.5)
 - 후속: scoring HPA, report-worker KEDA, Spot 혼합(replica 2·PDB 이후)
 
 ## 7. CD 배포 승인·이력·롤백 (#186)
@@ -296,7 +296,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 
 ## 9. AWS 데모 부하 시험 1차 (#361)
 
-2026-11-05, k6로 CloudFront → ALB → core에 단계별 부하. Karpenter·HPA 적용 전. 2차는 #384.
+2026-11-05, k6로 CloudFront → ALB → core에 단계별 부하. Karpenter·HPA 적용 전. 2차(#384)는 [9.14](#914-aws-데모-부하-시험-2차-hpakarpenter-확장축소-384-2026-11-18).
 
 조건: core replica 1(CPU limit 1, Hikari 풀 10), RDS db.t4g.small, LLM은 클러스터 안 스텁(지연 2.5~4초), 시험 계정 1개(자녀 3명). 시나리오 `evaluation/load/core-load.js`(browse 55%·learn 20%·notify 15%·analyze 10%).
 
@@ -1038,6 +1038,153 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 - EKS 안 기동 시간(노드 준비, S3 initContainer 내려받기)은 재지 않았다
 - 학습 기준 모델 확인: 어댑터의 `base_model_name_or_path`는 `/workspace/models/gemma-4-26b-qat`(로컬 경로)라 정확한 원본 저장소·revision을 알 수 없다. 구조(30층, hidden 2816, 전역 주의 층의 K=V 공유로 `v_proj` 25개)는 두 기반 모델과 모두 맞는다. kim-4480에게 확인을 요청했다
 - 다음 순서: SageMaker 검증 이슈(LMI 버전, LoRA, 콜드 스타트, 예약 확장, 재고 부족 동작) → #744 문서 → #746 SageMaker 엔드포인트·IAM → 레지스트리 등록 → #747 호출 전환(SageMaker 클라이언트, 모델 이름, `max_tokens`·마감)
+
+## 9.14 AWS 데모 부하 시험 2차: HPA·Karpenter 확장·축소 (#384, 2026-11-18)
+
+1차(9장)와 같은 도구(`evaluation/load/`)로 CloudFront → ALB → core에 단계별 부하를 주고, #211·#372로 켠 HPA·Karpenter가 실제로 늘고 주는지 쟀다. 운영 쓰기(계정·구독·LLM 스텁·pause Pod·정리)는 시작 전에 묶어서 담당자 승인을 받았다.
+
+### 9.14.1 조건
+
+| 항목 | 1차(11-05) | 2차(11-18) |
+|---|---|---|
+| 앱 | core replica 1, HPA·Karpenter 없음 | main `e3cb5084`. HPA core·learning·ai 최소 1·최대 3·CPU 70%(요청 대비), NodePool `application-burst`(t3.medium·t3.large, CPU 4·메모리 16Gi 상한, `consolidateAfter 5m`) |
+| 노드 | — | 관리형 `application` t3.medium 2대 + `platform-observability` 2대(taint) |
+| LLM | 클러스터 안 스텁(2.5~4초) | 같은 스텁 이미지. ai `OPENAI_BASE_URL`만 스텁으로 바꿈(임베딩은 이 값을 따르지 않아 실제 OpenAI 호출, 비용 무시할 수준) |
+| 시험 계정 | 1개(자녀 3명, 학습 칸 15) | `prepare_accounts.py`로 14개(초5 자녀 3명씩 42명, 학습 칸 420). 자녀마다 결제 없는 시험 구독·보호자 공유 켬 |
+| RDS | db.t4g.small | 같음. `max_connections` 181 → 앱이 쓸 수 있는 수 176(예약 5 제외) |
+| 단계 | 50·100·200·300명 | 50~300명은 1차와 같은 중단 기준(API 오류 1%·p95 1초). 400~1000명은 한계 찾기로 기준을 p95 10초(1000명은 60초)·오류 5%로 올림(`P95_API_MS`·`MAX_API_ERROR_RATE`) |
+| 범위 밖 | — | KEDA(AWS 미설치), NAT 실측(스텁이라 외부 호출이 거의 없음) |
+
+연결 수(시작 전 계산): core 3×10 + learning 3×10 + report-api·worker 15+15 = 90, rolling update 여유 +20 → 110 ≤ 176. 풀 크기는 바꾸지 않았다. 시험 중 RDS 연결은 최대 68개였다.
+
+### 9.14.2 단계별 결과
+
+| 항목 | 50 | 100 | 200 | 300 | 400 | 600 | 800 | 1000 |
+|---|---|---|---|---|---|---|---|---|
+| API 오류 | 0/5,619 | 0/11,201 | 2/22,173 | 15/28,574 | 28/38,015 | 68/38,128 | 9/6,526 | 648/11,998 (5.4%) |
+| API p95 (ms) | 109 | 136 | 238 | 1,042 | 1,984 | 4,935 | 10,674 | 15,123 |
+| 판정 SSE p95 (초) | 7.8 | 7.6 | 7.7 | 9.6 | 13.2 | 22.7 | 33.8 | 50.7 |
+| 학습 성공 | 297/297 | 596/596 | 1,196/1,197 | 1,513/1,513 | 1,980/1,981 | 1,519/1,521 | 203/203 | 274/428 |
+| core 처리량 (req/s) | 28.7 | 55.3 | 107.9 | 160.0 | 151.7 | — | — | — |
+| RDS CPU 최대 (%) | 13 | 24 | 58 | 72 | 98 | 98 | 90 | 97 |
+| learning DB 풀 대기 최대 | 0 | 0 | 0 | 18 | 36 | — | — | 178(로그) |
+| Pod 최대 core/learning/ai | 3/1/1 | 3/3/1 | 3/3/2 | 3/3/3 | 3/3/3 | 3/3/3 | 3/3/3 | 3/3/3 |
+| Karpenter 노드 | 0 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| 결과 | | | | p95 1초 넘어 끝 무렵 중단 | | | 1분 54초에 p95 10초 넘어 중단 | 2분 46초에 오류 5% 넘어 중단 |
+
+- 요청 수는 400명(약 3.8만)과 600명(약 3.8만)이 같다. 400명부터 처리량이 늘지 않고 지연만 늘었다.
+- 1000명 오류 대부분은 learning Hikari 풀 대기 30초 초과다(`Connection is not available, request timed out after 30000ms (total=10, active=10, waiting=178)`). 그래서 API p99가 30초 근처에 몰렸다. CloudFront 원본 읽기 제한(60초)·k6 제한(60초)에는 닿지 않았다.
+- 400명 11:47 이후 JVM·DB 풀 지표는 수집되지 않았다(9.14.6). 표의 "—"는 그 때문이다. Pod 수·HPA CPU는 metrics-server 기준이라 끝까지 있다.
+- Pod 재시작은 전 단계 0회, RabbitMQ 적체(ready)는 0, ALB ELB 5xx는 0이었다.
+
+### 9.14.3 HPA 확장
+
+| 시각(KST) | 사건 |
+|---|---|
+| 09:37 | 부하 전, 시험 계정 가입 중 core 1→3. 가입 비밀번호 해시 CPU에 새로 뜬 JVM의 기동 CPU(Pod당 0.6~1코어)가 평균에 더해져 바로 최대까지 감 |
+| 11:13:03 | 50명 시작 27초 만에 core 1→3(181%). k6 `setup()`의 보호자 14·학생 42명 로그인(비밀번호·PIN 해시)이 몰린 순간이다. 정상 부하는 core 3개 합계 0.36~0.85코어였다 |
+| 11:23:14 | 100명, learning 1→2(81%) |
+| 11:24:59 | learning 2→3(136%) |
+| 11:29:26 | 200명, ai 1→2(121%), 300명에서 3 |
+
+- 먼저 바빠진 것은 core가 아니라 learning이었다. 1차는 core만 봤고 learning은 1개 고정이었다.
+- ai는 LLM을 기다리는 서비스지만 스텁 지연 동안에도 요청 처리 CPU로 70%를 넘어 늘었다. CPU 기준 확장이 ai에도 걸린다는 것은 확인했지만, 늘어난 ai가 병목을 풀지는 않았다(병목은 DB).
+- HPA 확장 중 오류는 늘지 않았다(100명 0건, 200명 2건).
+
+### 9.14.4 Karpenter 확장·상한
+
+자연 부하(100명, learning 2→3):
+
+| 시각 | 사건 | 경과 |
+|---|---|---|
+| 11:24:59 | learning Pod Pending(`1 Too many pods, 2 Insufficient memory`) | 0 |
+| 11:25:00 | NodeClaim `application-burst-…` 배정 | 1초 |
+| 11:25:03 | 인스턴스 Launched(t3.medium, 2a) | 4초 |
+| 11:25:21 | 노드 Registered | 22초 |
+| 11:25:36 | Pod 배치 | 37초 |
+| 11:25:40 | 노드 Ready | **41초** |
+| 약 11:26:55 | learning Pod Ready(JVM 기동 포함) | **약 1분 55초** |
+
+- 새 노드의 learning Pod는 400~1000명 동안 RDS·RabbitMQ로 정상 처리했다(학습 성공률 유지, 그 Pod 재시작 0). CloudFront → ALB → core → learning(새 노드) 경로가 그대로 동작했다.
+- 관리형 노드 2대의 여유는 CPU보다 Pod 수(t3.medium 17개)와 메모리가 먼저 찼다. 6.의 예상과 같다.
+- 600·800·1000명에서도 Karpenter 노드는 1대였다. HPA 최대 3에 막혀 더 늘 Pod가 없었기 때문이다.
+
+상한(12:15, pause Pod 900m×5개를 Karpenter 노드에만 띄움):
+
+- NodeClaim 2개를 동시에 만들고 39초 뒤 둘 다 Ready. DaemonSet 요청 때문에 t3.medium 한 대에 900m Pod가 1개씩만 들어갔다.
+- 남은 3개는 Pending으로 남고 Karpenter는 `all available instance types exceed limits for nodepool`을 기록했다. 세 번째 노드는 만들지 않았다. 상한에서 멈추고 Pod가 기다리는 동작을 확인했다.
+- pause Pod 삭제 뒤 두 노드도 빈 노드 정리로 사라졌다(9.14.5).
+
+### 9.14.5 축소와 D안 삭제 순서
+
+두 번 관찰했다. 두 번 모두 부하를 끝낸 뒤 10명 저부하(알림 SSE 유지)를 걸어 둔 채 Pod·노드가 줄어드는 것을 봤다.
+
+| | 1회(1000명 중단 12:02:17 뒤) | 2회(200명 종료 12:29:47 뒤) |
+|---|---|---|
+| HPA 축소 | ai 12:07:04(3→2, Karpenter 노드 Pod)·12:07:49(→1), learning 12:07:49(3→1), core 12:08:50(3→1) | ai 12:31:52(3→2, Karpenter 노드 Pod)·12:34:22(→1), core 12:34:22(3→2)·12:34:37(→1), learning 12:34:22(3→2)·12:34:52(→1) |
+| 지워진 learning Pod | Karpenter 노드 Pod + **가장 오래된 기본 Pod(관리형 노드, 18시간)** | Karpenter 노드 Pod → 관리형 노드 Pod(같은 노드에 core 2개와 함께 있던 것) |
+| Karpenter 노드 빈 시각 → 정리 시작 → 삭제 | 12:07:50 → 12:13:10 → 12:13:37 | 12:34:22 → 12:39:54 → 12:40:33 |
+| 부하 종료 → 노드 0대 | **11분 20초** | **10분 46초** |
+
+- HPA 축소는 부하 종료 뒤 약 5분(기본 축소 안정화 5분)에 시작했다. 노드는 빈 뒤 `consolidateAfter 5m` + 약 20~30초에 정리가 시작돼 30초 안팎에 사라졌다.
+- **D안 삭제 순서는 보장되지 않는다.** 2회는 의도대로 Karpenter 노드 Pod가 먼저 지워졌지만, 1회는 learning 3→1에서 가장 오래된 기본 Pod도 함께 지워지고 39분 된 Pod가 남았다. core는 세 번(09:37 확장 뒤 포함) 모두 같은 노드에 몰린 두 Pod가 지워졌다. ReplicaSet 축소는 생성 순서보다 "같은 노드에 같은 ReplicaSet Pod가 몇 개 있는지"를 먼저 보기 때문이다.
+- 노드 정리 때 실행 중인 Pod를 내보내는 일은 없었다. HPA가 Pod를 먼저 줄여 Karpenter 노드가 빈 다음에 지웠다(`Disrupting Node: Empty`).
+- **축소 중 끊김(2회, DEBUG 기록)**: 축소 구간 12:34~12:37에 API 오류는 0건이었다. 알림 SSE 1건이 core Pod 삭제(12:34:37) 33초 뒤인 12:35:10에 `stream error: INTERNAL_ERROR; received from peer`로 끊겼다. 지워진 Pod에 붙어 있던 SSE가 종료 유예가 끝날 때 끊긴 것이다(웹 EventSource는 다시 연결한다). 판정 2건은 learning Pod 삭제 즈음 `PENDING` 상태로 다시 받아 끝났다(k6 경합 처리). 12:37:09 이후 401 `TOKEN_EXPIRED`는 k6가 시작 때 받은 학생 토큰(15분)이 25분 실행 중 만료된 것이라 축소와 무관하다.
+- 1회 관찰의 오류(API 1.11%)는 1000명 단계에서 밀린 요청이 남은 첫 1분(ALB 대상 5xx 636건, learning 풀 시간 초과 로그가 모두 12:02)에 몰려 있어 축소 영향과 가를 수 없었다. 그래서 2회를 다시 쟀다.
+
+### 9.14.6 발견
+
+1. **한계는 RDS CPU이고, 원인은 learning 쿼리 두 개다.** 400~1000명 구간 Performance Insights(평균 활성 세션)는 `learning_app` 5.30, `core_app` 0.63이었다. 상위 두 쿼리가 전체의 약 82%다.
+   - 학생 학습 기록 목록(`learning-service` `RecordMapper.xml`, 3.49): 시도마다 `hint_usage`·`followup`·`answer.followup_id`를 상관 서브쿼리로 찾는다
+   - 최근 되묻기 조회(`JudgmentMapper.xml`, 1.56): `followup`을 `attempt_id`로 찾는다
+   - learning migration에는 `answer(attempt_id, submitted_at)` 인덱스만 있다. **`followup(attempt_id)`·`hint_usage(attempt_id)`·`answer(followup_id)` 인덱스가 없어** 시도 하나마다 테이블 전체를 읽는다. 시험으로 시도가 쌓일수록 느려졌다
+   - 쌓인 데이터의 영향: 11:20 100명 학습 기록 p95 287ms·RDS CPU 24% → 12:20 10명(시험 데이터가 쌓인 뒤) 학습 기록 p95 1,014ms·RDS CPU 13~15%. 같은 200명도 11:27에는 API p95 238ms, 12:20에는 1분 만에 1초를 넘었다(바로 앞 축소 관찰 중이라 시작이 느렸고, 12:22 재시도는 423ms)
+2. **앱 확장은 DB 앞에서 멈췄다.** core CPU는 3개 합계 0.75~0.85코어로 여유가 있었고 DB 연결은 68/176이었다. 병목이 DB인 동안에는 HPA 최대 수·노드를 늘려도 처리량이 늘지 않는다.
+3. **HPA가 로그인 순간에 최대까지 간다.** 비밀번호·PIN 해시(로그인·가입)가 몰리면 core가 수십 초 안에 1→3이 된다. 새 JVM 기동 CPU가 평균을 더 올린다.
+4. **D안 삭제 순서는 보장되지 않는다**(9.14.5).
+5. **관측 경로가 부하에 같이 무너졌다.** Tempo가 CrashLoopBackOff(재시작 57회)인 상태에서 trace가 늘자 OTel Collector가 재시도 대기로 메모리 상한(soft limit)에 닿았고, 받는 데이터를 거부하면서 JVM·DB 풀 지표까지 버렸다(400명 11:47부터, 시험 뒤에도 앱 쪽 `HTTP 503`). trace 경로 장애가 지표 수집까지 막는다.
+
+1차와 비교(300명): API p95 374 → 1,042ms, RDS CPU 68 → 72%. 1차는 학습 칸이 15개라 300명 API의 약 35%가 가벼운 경합 호출이었고, 2차는 칸 420개로 학습·판정이 실제로 돌았다. 그래서 같은 300명이라도 2차가 DB에 더 무겁다. "DB가 먼저 한계"라는 1차 결론은 계정을 늘린 2차에서도 맞았고, 그 DB 부하의 대부분이 learning이라는 것이 새로 드러났다.
+
+해석 주의: k6 사용자 하나는 1~3초마다 요청을 보낸다. 실제 아이는 답을 쓰고 읽느라 훨씬 드물게 보내므로 k6 300명은 실제 동시 사용자 300명보다 무겁다. 또 시험 자녀 한 명이 한 시간에 수십~수백 번 시도해 학습 기록 쿼리(기간 안 시도 수에 비례) 비용이 실제보다 크다.
+
+### 9.14.7 개선안
+
+| 우선 | 제안 | 근거 |
+|---|---|---|
+| 1 | learning 인덱스 3개 추가: `followup(attempt_id, created_at)`, `hint_usage(attempt_id)`, `answer(followup_id)` | DB 부하 약 82%가 이 인덱스가 없는 두 쿼리. 별도 이슈로 migration 후 같은 단계로 다시 잰다 |
+| 2 | HPA 기준: CPU 70% 유지, `behavior.scaleUp` 안정화 30~60초 또는 JVM 기동 구간 제외 | 로그인 순간·JVM 기동 CPU로 바로 최대까지 감(9.14.3). 비용이 크지 않아 지금 값도 위험하지 않지만 확장이 실제 부하를 따라가지 않는다 |
+| 3 | 최대 Pod 수: 1이 해결될 때까지 3 유지. 그 뒤 learning 최대를 먼저 올림 | 지금은 DB가 병목이라 늘려도 처리량이 같다. learning이 core보다 먼저 바빠짐 |
+| 4 | Hikari 풀: 지금 10 유지. 1 뒤 learning 풀 대기가 남으면 15까지 | 연결 상한 계산: core 3×10 + learning 3×15 + report 30 = 105(+rolling 25) ≤ 176 |
+| 5 | RDS 사양: 1을 먼저. 그래도 부족하면 t4g.medium 이상 또는 읽기 복제본 | 지금 효율 그대로 단순 비례하면 k6 1000명에 vCPU 약 7개가 필요(300명에서 2 vCPU의 72%). 1로 이 숫자가 크게 줄 것으로 본다 |
+| 6 | 축소 끊김: D안 대신 최소 2 + PDB, 또는 `controller.kubernetes.io/pod-deletion-cost`로 Karpenter 노드 Pod 우선 삭제 | 9.14.5 |
+| 7 | 관측: Tempo 장애 해결, Collector에서 trace와 지표 파이프라인의 메모리 제한 분리 | 9.14.6-5 |
+
+### 9.14.8 운영 변경과 원복
+
+| 변경 | 원복·정리 | 확인 |
+|---|---|---|
+| LLM 스텁 Deployment·Service·NetworkPolicy 2개(`llm-stub.k8s.yaml`) | 같은 파일로 delete(12:50) | app 네임스페이스에 `llm-stub` 자원 0 |
+| ai `OPENAI_BASE_URL`=스텁(`kubectl set env`, 09:36) | `OPENAI_BASE_URL-`(12:49) | 시험 전 ReplicaSet `ai-service-d4888b47`로 복귀, helm 매니페스트와 `kubectl diff` 차이 없음 |
+| 시험 계정 `load21`~`load214`(자녀 42명, 기기 14대) | 비밀번호 재확인 → `POST /me/withdrawal` 14건(202) | core `load2` 계정 0·연결 자녀 0, learning 11/18 시도·답변·되묻기 0, 분석 대화 0 |
+| 시험 구독 42건(결제 없음, 1차 SQL과 같은 형식) | 해지 → 이용 기간을 당일로 끝냄 | 활성 0. 탈퇴 사전 확인은 해지만 해도 이용 기간이 남은 구독을 "진행 중"으로 세서 기간을 끝내야 탈퇴됐다 |
+| pause Deployment `karpenter-limit-probe` | delete(12:15:59) | 노드 2대 빈 노드 정리 |
+| 일회용 DB Pod·ConfigMap(`-384`) | 실행마다 delete | 0 |
+| 비밀 파일(작업자 PC, 저장소 밖) | 삭제 | — |
+
+- 시험 뒤 상태(12:55): 노드 4대(관리형 2 + 관측 2), NodeClaim 0, EC2 4대. HPA 설정은 시험 전과 같다(최소 1·최대 3·70%). 탈퇴 처리의 로그인·재확인 해시로 core가 잠시 3개가 됐다가(12:50:53) 12:57:54에 1개로 돌아왔다. core·learning·ai 모두 1개.
+- 바꾸지 않은 것: HPA·Hikari·NodePool 값, 모델 레지스트리, scoring. core HPA 임시 상한 6은 필요 없어 쓰지 않았다(9.14.9).
+- 남긴 것: 스텁 호출 `llm_usage` 21,629행(판정 9,289·되묻기 9,282·분석 3,058, 합계 $0.013). 스텁인데 모델명이 `gpt-6-luna`로 기록돼 호출 수 집계에서 실제 호출과 구분되지 않는다. 금액이 작아 지우지 않았다
+- 1차(11-05) 시험 데이터(Google 시험 계정 자녀, 시도 약 2,800건)는 Google 재인증이 필요해 이번에 지우지 못했다. 보호자 화면의 자녀 삭제로 담당자가 정리한다
+- app 네임스페이스에 11/17 재가동 때 만든 `demo-db-oneoff-sql` ConfigMap이 남아 있다(이 시험과 무관, 손대지 않음)
+
+### 9.14.9 한계
+
+- KEDA·report-worker 큐 확장은 AWS에 없어 재지 않았다.
+- NAT는 스텁이라 외부 호출이 거의 없어 재지 않았다(최대 활성 연결 30, 포트 할당 오류 0은 임베딩·OAuth 등 기본 호출).
+- core HPA 최대를 6으로 올려 Karpenter를 띄우려던 계획은 learning 확장으로 자연스럽게 노드가 떠서 하지 않았다. 그래서 HPA 최대가 3보다 클 때의 동작은 재지 않았다.
+- 400명 11:47 이후 JVM·DB 풀 지표가 없다(관측 경로 장애). 1000명 풀 대기는 learning 로그 값이다.
+- 실제 LLM 지연·429는 반영되지 않았다(#630은 동시 1명).
 
 ## 10. 근거 링크
 
