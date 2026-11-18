@@ -150,7 +150,11 @@ PLAN_SYSTEM = (
     "나오지 않고 3(뭉치 출동)·4(현장 도착)에는 나온다: 1·2컷의 mungchiMood는 none, 3·4컷은 "
     "none이 아니다. "
     "시작 콘티에는 정답 이름·정답 장소를 쓰지 않는다. 종료 4컷에는 모두 뭉치가 나온다"
-    "(mungchiMood는 none이 아님). 종료 콘티는 정답 공개 뒤라 정답 이름·정답 장소를 써도 된다.\n"
+    "(mungchiMood는 none이 아님). 종료 콘티는 정답 공개 뒤라 정답 이름·정답 장소를 써도 된다"
+    "(단, 대상·후보가 그림에 나오지 않는 컷은 줄거리 종류 규칙대로 그 이름을 쓰지 않음).\n"
+    # #765: 컷 scene은 그 컷 그림 지시·그림 검토에 그대로 들어감(그림에 없는 것을 쓰면 검토가 실패)
+    "- scene·action에는 그 컷 그림에 보이는 것만 쓴다. 그림에 나오지 않는 것을 '○○는 보이지 "
+    "않는다'처럼 쓰지 않는다.\n"
     "- action은 그 자리에서 하는 작은 동작 하나. 뭉치는 팔이 없어(아래쪽 작은 손만) 뭉치의 동작은 "
     "제자리에서 작게 통통 튀기·고개 갸웃·몸 살짝 흔들기·표정 바꾸기만 쓴다. 손 흔들기·손 들기·"
     "가리키기·짚기·건네기·안기·모으기·놓기·뛰기처럼 손이나 팔다리를 쓰는 동작은 사람만 한다"
@@ -588,6 +592,8 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             names,
         ]
     if key in ("scene", "action"):
+        t = story_type(theme)
+        cut = ("OUTRO" if head.startswith("outroCuts") else "INTRO", int(head[-1]))
         return [
             f"이 컷의 역할을 지킨다: {cut_roles(theme, head[:-1])[int(head[-1]) - 1]}.",
             "scene은 컷 끝에 보이는 모습(누가 어디서) 한 문장, action은 동작 하나를 한 문장으로, "
@@ -595,8 +601,17 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             "뭉치는 제자리에서 작게 통통 튀기·고개 갸웃·몸 살짝 흔들기·표정 바꾸기만 한다. 손짓·"
             "건네기·안기·뛰기처럼 손이나 팔다리를 쓰는 동작은 사람이 한다.",
             "누구도 화면 쪽으로 다가오거나 화면 밖으로 나가지 않는다. 인물·장소는 그대로 둔다.",
-            "종료 콘티라 정답 이름을 써도 된다."
-            if head.startswith("outroCuts")
+            # #765 CUT_TARGET: 컷 그림에 나오지 않는 것은 이름도, 없다는 말도 쓰지 않음
+            f"이 컷 그림에는 찾는 대상('{theme.get('target') or ''}')이 나오지 않는다: 대상 이름을 "
+            "쓰지 않고 '보이지 않는다'처럼 없다는 말도 쓰지 않는다. 없어진 것은 빈손·빈자리처럼 "
+            "보이는 것으로 쓴다."
+            if cut in t.hidden_target_cuts
+            else "",
+            f"이 컷 그림에는 후보가 나오지 않는다: 정답을 포함해 후보 이름"
+            f"({', '.join(candidate_words(theme))})을 쓰지 않는다."
+            if cut in t.hidden_candidate_cuts
+            else "종료 콘티라 정답 이름을 써도 된다."
+            if cut[0] == "OUTRO"
             else "정답 이름·정답 장소를 쓰지 않는다.",
         ]
     if key == "caption":
@@ -1359,9 +1374,22 @@ def mood_mouth(cut: dict) -> str | None:
 
 
 def _no_target(theme: Theme) -> str:
-    if not story_type(theme).target_visual:  # #634 ④ 시간 탐정: 대상이 '때'라 그릴 것이 없음
+    t = story_type(theme)
+    if not t.target_visual:  # #634 ④ 시간 탐정: 대상이 '때'라 그릴 것이 없음
         return ""
+    if (
+        t.target_covered
+    ):  # #765 비밀 재료: 엔딩 전 음식은 덮개·도시락 안(콘티 틀 '덮인 음식'과 같게)
+        return _covered_target(theme)
     return f"Do not draw {theme.get('target') or 'the missing target'} anywhere in this picture."
+
+
+def _covered_target(theme: Theme) -> str:
+    """비밀 재료 음식(엔딩 전): 덮인 그릇·닫힌 도시락은 보여도 되고 음식 자체·색은 안 보임(#765)."""
+    return (
+        f"{theme.get('target') or 'The food'} stays covered: only a covered dish or a closed "
+        "lunchbox may appear. Never show the food itself or its color."
+    )
 
 
 # 사실표 종류의 후보 이름(영어 지시문용)
@@ -1559,6 +1587,13 @@ def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: 
     return "\n".join(lines)
 
 
+# #765 비밀 재료: 엔딩 전 음식은 덮개·도시락 안으로 나오는 틀(그림·영상 지시 _covered_target과 같게)
+COVERED_REVIEW = (
+    "storyType이 비밀 재료(SECRET_INGREDIENT)면 targetAllowed false인 그림에서 덮개를 덮은 "
+    "접시·닫힌 도시락만 보이는 것은 찾는 대상이 보이는 것이 아니다(음식 자체나 그 색이 보이면 "
+    "결함)."
+)
+
 IMAGE_REVIEW_SYSTEM = (
     "너는 초등학생 학습 서비스의 그림 검토자다. 첫 그림이 검토할 그림이고, 두 번째 그림은 "
     "주인공 뭉치의 기준 모습(테마 옷)이다. 주어진 항목(items)마다 verdict를 PASS(문제 없음)·"
@@ -1584,11 +1619,16 @@ IMAGE_REVIEW_SYSTEM = (
     "것이라도 보이면 결함). 정답 "
     "공개가 허용되지 않은 그림(answerAllowed "
     "false)에 생각 풍선·화살표처럼 정답(대상이 있는 곳·정답 동물)을 "
-    "가리키는 표시가 있는지(장소가 비슷해 보인다는 이유만으로는 결함이 아님).\n"
+    "가리키는 표시가 있는지(장소가 비슷해 보인다는 이유만으로는 결함이 아님). "
+    + COVERED_REVIEW
+    + "\n"
     "TEXT: 글자·숫자 같은 글이 보이는지(간판·책·표지에 쓴 글 포함).\n"
     "SAFETY: 무섭거나 위험한 모습, 폭력, 실존 인물·상표가 있는지. " + SAFETY_STORY + "\n"
     "SCENE_FIT: 주어진 장면의 장소·인물·하는 일이 그림에 보이는지. 장면 글에 없는 등장인물이 함께 "
-    "있는 것은 결함이 아니다.\n"
+    "있는 것은 결함이 아니다. "
+    # #765: 대상이 나오면 안 되는 그림은 일부러 대상을 그리지 않음(ANSWER_HINT와 반대로 걸리지 않게)
+    "찾는 대상이 나오면 안 되는 그림(targetAllowed false)에서 찾는 대상이나 후보가 보이지 않는 "
+    "것은 장면 글에 나와도 결함이 아니다(그 그림에는 일부러 그리지 않음).\n"
     "MISSION_FIT(items에 있을 때만): 미션 질문과 생각 열기 질문이 가리키는 물건·장소와 그날 증거"
     "(evidenceKind가 TRACE면 흔적이 남은 자리·물건, "
     "RECORD면 사진·기록 물건, SIGHTING이면 그것을 본 "
@@ -1702,6 +1742,8 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
             if t.code == "GIFT" and (scene, index) not in t.answer_cuts
             else ""
         )
+    elif t.target_covered:  # #765 비밀 재료 엔딩 전 컷: 덮인 채로(그림 지시와 같게)
+        about_target = _covered_target(theme)
     else:
         about_target = f"Do not show {target}."
     if t.facts is not None and not t.animal and (scene, index) not in t.answer_cuts:
@@ -1748,7 +1790,7 @@ VIDEO_REVIEW_SYSTEM = (
     "동물이면 후보 동물 가운데 어느 것이라도 보이면 결함), 정답 "
     "공개가 허용되지 않은 컷(answerAllowed false)에서 정답(대상이 있는 곳·정답 동물)을 가리켜 "
     "보여 주는지"
-    "(장소가 비슷해 보인다는 이유만으로는 결함이 아님).\n"
+    "(장소가 비슷해 보인다는 이유만으로는 결함이 아님). " + COVERED_REVIEW + "\n"
     "TEXT: 글자·숫자가 보이는지.\n"
     "SAFETY: 무섭거나 위험한 모습, 번쩍이는 빛, 폭력이 있는지. " + SAFETY_STORY + "\n"
 )

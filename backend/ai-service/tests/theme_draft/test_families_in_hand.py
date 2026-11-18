@@ -193,7 +193,12 @@ def test_pictures_keep_gift_closed_and_ingredient_food_hidden_until_reveal() -> 
     assert "may appear in the characters' hands" in mission and "gift box stays closed" in mission
     food = {**gift, "storyType": "SECRET_INGREDIENT", "target": "대회에 낸 할머니의 떡"}
     intro = prompts.cut_image_prompt(food, "INTRO", 2, food["introCuts"][1], [])
-    assert "Do not draw 대회에 낸 할머니의 떡" in intro  # 물든 색이 답이라 엔딩 전엔 그리지 않음
+    # 물든 색이 답이라 엔딩 전엔 덮인 채로만(#765: 콘티 틀 '덮인 음식'과 같게, 전에는 '그리지 마라')
+    assert (
+        "대회에 낸 할머니의 떡 stays covered: only a covered dish or a closed lunchbox may appear. "
+        "Never show the food itself or its color." in intro
+    )
+    assert "Do not draw 대회에 낸 할머니의 떡" not in intro
     video = prompts.video_prompt(gift, "INTRO", 4, gift["introCuts"][3], [])
     assert (
         "The gift box stays closed, with no tag, card or label." in video
