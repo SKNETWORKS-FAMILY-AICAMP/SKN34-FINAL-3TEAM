@@ -497,7 +497,7 @@ AWS에서 남은 확인(#601 재가동 뒤 B 계정)
 
 ## 9.8 prod 테마 자산 버킷과 네임스페이스 기본 거부 준비 (#652·#657, 2026-11-16)
 
-AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고쳤다. AWS 호출은 읽기도 하지 않았고, 적용·확인은 A 계정 재가동(#601) 때 한다.
+AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고쳤다. AWS 호출은 읽기도 하지 않았고, 적용·확인은 A 계정 재가동(#601) 때 한다. 2026-11-17 재가동 때 실제로 적용·확인한 결과는 9.8.3에 있다.
 
 ### 9.8.1 테마 자산 버킷 (#652)
 
@@ -532,6 +532,51 @@ AWS가 내려가 있어(EKS 삭제, RDS 정지) 저장소 값과 문서만 고�
 
 - `app-default-deny`는 core release만 만든다. 두 release에 켜면 같은 이름 객체로 Helm 소유권 충돌이 난다.
 - 재가동 때 확인할 것: core 재배포 뒤 `kubectl -n app get networkpolicy app-default-deny`, 앱 7개 readiness, migration Job 1회 성공, `demo-db-oneoff`로 `select 1`, 정책 없는 `kubectl run` Pod의 DNS 조회가 실패하는지. 되돌리기는 prod README NetworkPolicy 절.
+
+### 9.8.3 A 계정 재가동 확인 결과 (2026-11-17)
+
+운영 기준 main `e3cb5084`로 재가동하며 실제로 실행한 결과다. 순서는 9.11.5를 따랐다.
+
+#### 테마 자산 버킷 (#652)
+
+실행:
+
+- `demo_stack.py apply`로 역할 `sagomungchi-demo-ai-asset-s3-role`·`sagomungchi-demo-learning-asset-s3-role` 생성(15:45 KST). 원문은 `e3cb5084` 기준이라 ai 정책에 #537 `s3:GetObject`가 이미 들어 있다
+- 새 클러스터 `eksctl create cluster`로 Pod Identity 연결 `app/ai-service`·`app/learning-service` 생성(16:18)
+- ai·learning을 main prod values(`ASSET_S3_BUCKET` 포함)로 설치
+- 관리자 화면에서 테마 초안 1건 요청(초5, 2026-11-16 주, 18:03)
+
+결과:
+
+| 확인 | 결과 |
+|---|---|
+| 초안 생성 | READY(18:17, 1회 시도) |
+| 그림 저장 | 그림 16장이 missions 버킷 `theme-drafts/<초안 ID>/`에 저장됨(18:10:53, PNG 1.1~1.7MiB). 초안 출력 `images`에 S3 키가 연결됨 |
+| 사용량 | `THEME_IMAGE` 15건(18:08~18:10) |
+| 학생 자산 URL | 채택·미션 5개·테마 게시 뒤 학생 `GET /students/me/weekly-theme`에서 `introImageUrl`·`introVideoUrl`이 서명 URL(유효 3600초)로 내려옴 |
+| 서명 URL 열기 | 두 URL에 실제 GET → 206(`image/png`, `video/mp4`) |
+
+- `outroImageUrl`·`outroVideoUrl`은 null이었다. 주 마감 전이라 정상인지는 확인하지 않았다
+- 영상(Veo) 저장은 #600에서 따로 확인했다(mp4 2개)
+
+#### app 네임스페이스 기본 거부 (#657)
+
+실행:
+
+- core를 prod values(`namespaceDefaultDeny: true`)로 설치 → `app-default-deny`(podSelector 전체, Ingress·Egress) 생성
+- 기본 거부 아래에서 필요한 정책을 함께 적용: migration 정책 3개(chart 렌더링), `app-oneoff-db`, `app-deployment-checks`, `core-demo-alb-ingress`
+
+결과:
+
+| 확인 | 결과 |
+|---|---|
+| 앱 | 6개 서비스 정상 기동, ALB → core 경로 정상 |
+| migration Job | core·learning·report 3개 모두 성공. learning은 첫 실행이 pgvector 권한(DB 권한, 네트워크 아님)으로 실패해 `rds-bootstrap` 뒤 다시 실행 |
+| 일회성 DB Pod | `rds-bootstrap`·`demo-db-oneoff` 정상 동작 |
+| 정책 없는 Pod | app namespace에 busybox 시험 Pod: 기동 직후 DNS 조회 성공, 약 20초 뒤 같은 조회 실패 → 기본 거부 적용 확인 |
+
+- 기동 직후 허용 구간: VPC CNI 기본(표준) 모드의 NetworkPolicy는 새 Pod에 정책이 적용되기 전까지 짧게 통신을 허용한다. 이번 확인에서 약 20초였다. 정책 없는 임시 Pod도 이 구간에는 통신할 수 있으므로, 기본 거부를 "기동 순간부터 차단"으로 설명하지 않는다
+- KEDA는 prod에 설치돼 있지 않아 영향 확인 대상이 아니다. observability·platform은 별도 namespace라 대상이 아니다
 
 ## 9.9 서비스별 내부 토큰·브로커 계정 분리 (2026-11-16)
 

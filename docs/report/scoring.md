@@ -11,7 +11,8 @@
 | #140 | 브로커 연결 복구·readiness·종료, 이벤트 봉투 스키마, 내부 헤더·학생 scope·trace 전파, 설정 로딩 테스트 보강 |
 | #228 | 서술 3.0(9출력)·논술 3.1(14출력 중 앞 3개) 호환, 논술 4~6학년([ai 4.1](ai.md#41-서술-30논술-31-서비스-호환-228)) |
 | #263 | M1 학습·평가 코드를 `ml/m1`로 이관 |
-| #493 | 모델 산출물 전체 SHA-256 업로드 절차, 기존 12개 객체 보완 |
+| #493 | 모델 산출물 전체 SHA-256 업로드 절차, 기존 12개 객체 보완, 실제 scoring Pod 경로 사전 검사(6.5) |
+| #613 | M2 b판 경계 운영 적용: 새 버전 `3.1-1112b`·`3.0-1112b` 등록·활성화·실제 채점 확인(7.8) |
 | #688 | 답변 표현 분류 API `POST /internal/toxicity/checks`, 모델 이름 `tox-`·범위 `answer-filter` (계약 #689, 구현 #691) |
 
 ## 1. 모델 레지스트리·S3 로딩 (#85)
@@ -232,13 +233,20 @@ $repairJson = & aws s3api put-object --cli-input-json ("file://" + $repairInput)
 if ($LASTEXITCODE -ne 0) { throw '기존 객체 보완 실패. 후속 작업 중단.' }
 ```
 
-### 6.5 실행 결과와 남은 검증 (2026-11-10)
+### 6.5 실행 결과 (2026-11-10, Pod 경로 확인 2026-11-17)
 
 - 서술 `m2-klue-narrative@3.0`·논술 `m2-klue-essay@3.1`의 12개 객체를 동일 원본으로 보완. 모두 `FULL_OBJECT` SHA-256과 manifest 일치, 기존 속성·이전 버전 보존. 키별 이전/새 VersionId는 [실행 증빙 JSON](evidence/issue493-s3-sha256-20261110.json)
 - 버킷 상태: Versioning Enabled, BucketOwnerEnforced, AES256, 객체 잠금 없음
 - CloudShell 운영자 자격 증명으로 `PreflightService.check`를 직접 실행해 두 모델 모두 `PASS / FILES_AND_METADATA_VERIFIED`(모델별 HEAD 6회·작은 JSON GET 3회). 배포 이미지·Pod 실행 결과가 아님
 - EKS·RDS 재가동, IAM·버킷 정책 변경, 모델 등록·활성화는 하지 않음
-- **남은 검증**(AWS 재가동 후): 실제 `app/scoring-service` Pod Identity로 읽기, 관리자 → core → scoring 경로의 사전 검사 PASS와 감사 기록
+- 11/10에 남은 검증으로 둔 실제 Pod Identity 경로 사전 검사는 2026-11-17 A 계정 재가동(main `e3cb5084`) 때 확인했다(아래)
+
+**실제 scoring Pod 경로 사전 검사 (2026-11-17 18:54 KST)**
+
+- 경로: 관리자 화면 → core → scoring. scoring은 `app/scoring-service` Pod Identity 자격 증명으로 S3를 읽었다
+- 대상: #613의 새 경로 `models/m2-klue-essay/3.1-1112b/`·`models/m2-klue-narrative/3.0-1112b/`. 6.3과 같은 `put-object --checksum-sha256` 단일 PUT으로 올린 객체이고, 등록 전 읽기 확인에서 12개 모두 `FULL_OBJECT`, `ChecksumSHA256`(hex 변환)이 manifest SHA-256과 같았다
+- 결과: 두 모델 `FILES_AND_METADATA_VERIFIED`, 파일 6개(config·tokenizer·tokenizer_config·train_info·score_cuts·model.safetensors) 모두 `OK`, `CHECKSUM_UNAVAILABLE` 없음. core 감사 기록 `MODEL_PREFLIGHT` SUCCESS 2건
+- 범위: 11/10 결과(CloudShell 운영자 자격 증명 직접 실행)와 11/17 결과(Pod 경로)는 실행 주체가 다르다. 활성 경로였던 `3.1/`·`3.0/`은 11/17에 Pod 경로로 다시 검사하지 않았다(11/10 보완 상태 그대로, 7.8 복귀 경로 참고)
 
 ### 6.6 로컬 검증 방법
 
@@ -263,7 +271,7 @@ MinIO의 체크섬 오류 코드는 `XAmzContentChecksumMismatch`로 AWS의 `Bad
 
 논술 3.1·서술 3.0에 c판 규칙과 앞+끝 토큰화를 적용한다. 논술은 정리 후 100자 미만, 서술은 10자 미만이면 추론하지 않는다. 서술 10~99자는 채점하며 짧은 답 안내를 전달한다. 원문·승인 학년·활성화 정책은 유지하고 8:2 혼합은 최종 미채택이다.
 
-실제 모델·HTTP 검증, 조정된 체크리스트, 파일 해시, 적용·복귀 절차는 7.1~7.7에 기록했다(이전 `issue-549-m2-guards.md`를 합침, #663). b판 경계는 로컬 복사본에서 재로딩·복귀를 검증했으며 운영 S3 업로드·모델 활성화는 수행하지 않았다.
+실제 모델·HTTP 검증, 조정된 체크리스트, 파일 해시, 적용·복귀 절차는 7.1~7.7에 기록했다(이전 `issue-549-m2-guards.md`를 합침, #663). b판 경계는 로컬 복사본에서 재로딩·복귀를 검증했으며 운영 S3 업로드·모델 활성화는 수행하지 않았다(11/12 기준). 운영 적용은 2026-11-17 #613으로 했고 7.8에 기록했다.
 
 ### 7.1 확정 범위
 
@@ -363,6 +371,60 @@ learning은 미션 inputTemplate의 네 칸 이름을 essayLabels로 전달한�
 - [x] 최신 develop 반영·로컬 검증과 운영 적용 상태 구분
 
 혼합 관련 기존 체크박스는 미채택으로 범위에서 제외한다. 운영 S3 반영·모델 활성화·운영 품질 승인은 이 로컬 구현 검증 결과로 대신하지 않는다.
+
+### 7.8 운영 적용 (#613, 2026-11-17)
+
+AWS A 계정 재가동 때 b판 경계를 운영 S3·모델 레지스트리에 반영했다. 운영 기준은 main `e3cb5084`이고, scoring·ai 이미지 태그는 `main-e3cb5084c9f6`(PR #588 머지 커밋 `b091ed0e` 포함)이다. 아래는 모두 실제 실행한 결과다.
+
+#### 적용 내용
+
+| 모델 | 이전(복귀 기준) | 새 버전 | 새 경로 | `score_cuts.json` |
+|---|---|---|---|---|
+| 논술 `m2-klue-essay` | `3.1`, `models/m2-klue-essay/3.1/` | `3.1-1112b` | `models/m2-klue-essay/3.1-1112b/` | b판 122B `48f6195d…` (이전 `5c19781c…`) |
+| 서술 `m2-klue-narrative` | `3.0`, `models/m2-klue-narrative/3.0/` | `3.0-1112b` | `models/m2-klue-narrative/3.0-1112b/` | b판 492B `8df5d045…` (이전 `87d54702…`) |
+
+- 새 경로의 나머지 5개 파일(가중치·tokenizer·tokenizer_config·config·train_info)은 활성 경로와 같은 파일이다(가중치 논술 `2ea2c0f5…`, 서술 `0b965a41…`). 가중치는 바꾸지 않았다
+- 활성 경로는 덮어쓰지 않았다. 적용 전 활성 artifact 12개는 같은 버킷 `backup/2026-11-17/models/{name}/{version}/`에 복사해 두었다
+- 업로드는 6.3 방식(파일마다 `put-object --checksum-sha256` 단일 PUT)이다
+- 버전 문자열: core `model_version`에 `UNIQUE(kind, name, version)`가 있어 같은 `3.1`·`3.0`을 새 경로로 다시 등록할 수 없다. 그래서 새 버전 문자열로 등록했다
+- 등록 JSON은 11/3 원본에서 version·artifactUri·논술 평가 범위만 바꿨다. manifest는 `score_cuts.json` 항목만 b판으로 바꾸고 나머지 5개 파일 값은 원본 그대로다
+- 활성 범위: 논술·서술 모두 초5·초6. 논술 초4는 넣지 않았다(2026-11-17 결정. learning이 논술 미션을 초5부터 준다, `MissionView.ESSAY_MIN_GRADE = 5`)
+
+#### 진행 (관리자 화면, JSON 가져오기)
+
+| 시각(KST) | 단계 | 결과 |
+|---|---|---|
+| 18:54 | 사전 검사 | 두 모델 `FILES_AND_METADATA_VERIFIED`, 파일 6개 모두 `OK`(6.5) |
+| 18:55 | 등록 | `3.1-1112b`·`3.0-1112b` 등록(JSON_IMPORT) |
+| 18:56 | 승인·활성화 | 범위 초5·초6. 두 새 버전 ACTIVE, revision 2. 이전 `3.1`·`3.0`은 INACTIVE |
+| 18:58 | scoring 로딩 | core 로딩 보고에서 두 모델 `LOADED`, loadedVersion `3.1-1112b`·`3.0-1112b`, loadedRevision 2 |
+
+- 재분석 표시: 활성화 때 '재분석을 계획합니다'가 두 카드 모두 실수로 체크됐다(감사 기록 `reanalysisPlanned: true`). 재채점은 하지 않았다
+- 로딩 확인 방법: scoring `/internal/versions`는 ops 토큰(`INTERNAL_TOKEN_OPS`)이 prod에 설정돼 있지 않아 401이었다. 그래서 core 로딩 보고와 아래 채점 응답의 `model`로 확인했다
+
+#### 실제 채점 5건
+
+scoring `/internal/m2/scores`를 ai 호출자 인증으로 직접 불렀다. 응답의 소수 원점수를 b판·이전 경계로 각각 다시 정수로 바꿔 응답 정수와 비교했다.
+
+| 요청 | 응답 `model` | 결과 |
+|---|---|---|
+| 서술 초5 1건 | `m2-klue-narrative` `3.0-1112b` rev 2 | 9개 항목 모두 b판 계산과 같음. content_1·content_2·organization_2·expression_1은 이전 경계였다면 3, 실제 4 |
+| 논술 초6 1건(높은 점수) | `m2-klue-essay` `3.1-1112b` rev 2 | 3개 항목 모두 3. 두 경계 결과가 같아 이 글로는 구분되지 않음 |
+| 논술 초6 3건 | 같음 | 모두 b판 계산과 같음. 2건에서 organization(원점수 1.81·1.84)과 content(1.95)가 이전 경계였다면 1, 실제 2 |
+
+5건 모두 b판 계산과 같았고, 이전 경계와 결과가 다른 항목이 서술·논술 양쪽에서 나와 새 경계가 실제로 적용됐음을 확인했다.
+
+#### 복귀 기준과 방법
+
+- 복귀 기준: 등록 직전 레지스트리에서 `m2-klue-essay` `3.1`·`m2-klue-narrative` `3.0`이 ACTIVE, revision 1, 승인·활성 범위 초5·초6이었다
+- 방법: 이전 `3.1`·`3.0` 행은 INACTIVE이고 원 승인(초5·초6)이 남아 있어, 관리자 화면 레지스트리 카드의 '이 버전으로 되돌리기'(원 승인 범위 안)로 되돌릴 수 있다. 되돌리면 scoring은 활성 이벤트를 받아 이전 경로 `models/{name}/3.1/`·`3.0/`을 다시 로딩한다(2절 롤백)
+- artifact: 이전 경로는 그대로 남아 있고, 별도 백업은 `backup/2026-11-17/models/`다
+- 실제 되돌리기는 실행하지 않았다
+
+#### 남은 것
+
+- scoring ops 토큰이 prod에 없어 `/internal/versions`로 직접 확인할 경로가 없다. 설정할지는 별도 결정이다
+- B 계정 이전 때는 새 경로·백업을 B 계정 버킷으로 옮기고 같은 순서(사전 검사 → 등록 → 승인·활성화)로 다시 등록해야 한다
 
 ## 8. 답변 표현 분류 API (#688, 계약 #689, 구현 #691)
 
