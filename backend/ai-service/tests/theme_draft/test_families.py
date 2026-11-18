@@ -89,6 +89,7 @@ def animal_theme(story_type: str = "PRANK") -> dict[str, Any]:
         day = checks.theme_day(theme, d)
         day["clue"] = clue
         day["condition"] = {"kind": kind, "feature": feat, "allowed": allowed}
+    theme["outroCuts"][0]["caption"] = f"뭉치: 알았다! {theme['answer']}!"  # #779 종료 1컷은 정답
     return theme
 
 
@@ -350,7 +351,7 @@ def test_animal_pictures_hide_candidates_and_keep_answer_look() -> None:
     assert "gently lift" not in video
     for code in ("PRANK", "FOOTPRINT"):
         t = families.STORY_TYPES[code]
-        assert "안아 올" not in " ".join(t.outro_cuts) and "배웅" in t.outro_cuts[3]
+        assert "안아 올" not in " ".join(t.outro_cuts) and "배웅" in t.outro_ending
         assert "만지거나 안거나 붙잡지 않고" in t.outro_rule
     lost_video = prompts.video_prompt(valid_theme(), "OUTRO", 2, valid_theme()["outroCuts"][1], [])
     assert "Do not show 강아지 보리" in lost_video and "these animals" not in lost_video

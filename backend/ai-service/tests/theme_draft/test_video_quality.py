@@ -522,3 +522,30 @@ def test_note_hint_only_when_the_cut_has_a_note_and_reaction_cut_is_surprised() 
     assert "big surprised face" in reaction and "not smiling" in reaction
     assert prompts.WRITTEN_THINGS in prompts.cut_image_prompt(six, "INTRO", 3, note, [])
     assert "big surprised face" not in prompts.cut_image_prompt(six, "INTRO", 1, plain, [])
+
+
+def test_outro_first_caption_must_say_the_answer() -> None:
+    """종료 1컷 자막은 뭉치가 정답을 말함(경찰관 떡집 콘티: "장난꾸러기 찾았다!"로 정답이 빠짐)."""
+    theme = valid_theme()
+    cut = {"scene": "뭉치가 단서 판 앞에 있다", "action": "뭉치가 웃는다", "mungchiMood": "smile"}
+    six = {**theme, "introCuts": [dict(cut)] * 6, "outroCuts": [dict(cut) for _ in range(6)]}
+    six["outroCuts"][0]["caption"] = "뭉치: 장난꾸러기 찾았다!"
+    bad = checks.caption_problems(six, "OUTRO", 1)
+    assert any(r.startswith("CUT_ANSWER outroCuts1.caption") for r in bad)
+    assert any(p.match(bad[-1]) for p in checks.FIX_REASON)  # 그 자막 칸만 고쳐 씀
+    six["outroCuts"][0]["caption"] = f"뭉치: 알았다! {theme['answer']}!"
+    assert not any(r.startswith("CUT_ANSWER") for r in checks.caption_problems(six, "OUTRO", 1))
+
+
+def test_animal_ending_cut_is_a_farewell_everyone_looks_at() -> None:
+    """종료 5·6컷이 같은 장면이 되고 아무도 동물을 보지 않아 어색했음(경찰관 떡집 콘티 2026-11-19).
+    5컷은 물건을 덮고 서로 웃음, 6컷(엔딩)은 모두 동물 쪽을 보고 배웅."""
+    from app.theme_draft import families
+
+    for code in ("PRANK", "FOOTPRINT"):
+        t = families.STORY_TYPES[code]
+        assert "모두(뭉치 포함)" in t.outro_ending and "뒤돌아본 뒤" in t.outro_ending
+        assert "종료 6컷(엔딩)은 역할 4 대신" in families.type_rules(t)
+        assert "배웅" not in t.outro_cuts[3]
+    assert families.STORY_TYPES["LOST"].outro_ending == ""
+    assert "종료 6컷(엔딩)" not in families.type_rules(families.STORY_TYPES["LOST"])

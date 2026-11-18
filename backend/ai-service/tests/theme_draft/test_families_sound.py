@@ -87,6 +87,7 @@ def sound_theme() -> dict[str, Any]:
     }
     for d in theme["days"]:
         d["evidence"]["when"] = "소리가 나던 밤"
+    theme["outroCuts"][0]["caption"] = f"뭉치: 알았다! {theme['answer']}!"  # #779 종료 1컷은 정답
     return theme
 
 

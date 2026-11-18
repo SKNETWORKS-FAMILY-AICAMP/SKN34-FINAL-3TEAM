@@ -242,6 +242,8 @@ FIX_REASON = (
     re.compile(r"^CUT_TARGET ((?:introCuts|outroCuts)[1-6])\.(scene|action) "),
     # #779 자막 꼴('이름: 대사', 말하는 사람이 그 컷에 보임)·자막 있는 컷이 비면 그 자막만 고쳐 씀
     re.compile(r"^CUT_SPEAKER ((?:introCuts|outroCuts)[1-6])\.(caption) "),
+    # #779 종료 1컷 자막은 뭉치가 정답을 말함(경찰관 떡집 콘티: "장난꾸러기 찾았다!"로 정답이 빠짐)
+    re.compile(r"^CUT_ANSWER ((?:introCuts|outroCuts)[1-6])\.(caption) "),
     re.compile(r"^REQUIRED ((?:introCuts|outroCuts)[1-6])\.(caption)$"),
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery|sceneNote)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
@@ -1533,6 +1535,9 @@ def caption_problems(theme: Theme, scene: str, i: int) -> list[str]:
         )
     elif matched and not any(p in where or name in where for p in matched):
         bad.append(f"CUT_SPEAKER {key}{i}.caption '{name}'이(가) 그 컷 scene·action에 나오지 않음")
+    answer = str(theme.get("answer") or "").strip()
+    if (scene, i) == ("OUTRO", 1) and answer and not mentions_value(answer, text):
+        bad.append(f"CUT_ANSWER {key}{i}.caption 뭉치가 정답({answer})을 말해야 함")
     return bad
 
 

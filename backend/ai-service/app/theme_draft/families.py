@@ -225,6 +225,9 @@ class StoryType:
     facts: FactTable | None = None
     target_in_hand: bool = False  # ②: 대상이 처음부터 손에 있음(못 찾았다는 전제 13곳을 뒤집음)
     answer_cuts: frozenset[tuple[str, int]] = frozenset()  # 사실표 종류: 정답 후보가 나와도 되는 컷
+    # 6컷 종료 6컷(엔딩)에 넣을 내용. 비면 역할 4(종료 5컷과 같은 내용). 동물 배웅처럼 5컷과 엔딩이
+    # 달라야 하는 종류만(#779: 5·6컷이 같은 장면이 되고 아무도 동물을 보지 않아 어색했음)
+    outro_ending: str = ""
     trace: re.Pattern[str] | None = None  # 종류별 흔적 특징(있으면 checks.traceable이 더해 봄)
     trace_only: bool = (
         False  # True면 일반 흔적 표 대신 이 표만(동물: '꼬리 모양'의 '모양'을 빼려고)
@@ -523,8 +526,16 @@ ANIMAL_OUTRO_CUTS = (
     "정답 동물이 있는 곳에 도착해 그 동물(answerLook 모습)을 바라봄",
     "정답 동물이 드러남(장난꾸러기 찾기면 장난 흔적을 묻힌 채 들켜 멈칫하는 귀여운 모습), "
     "사람들은 조금 떨어져서 놀라며 바라봄(아무도 동물을 만지지 않음)",
-    "장난꾸러기 찾기면 사람이 장난당한 물건을 덮거나 치워 다시 안 생기게 하고 웃음, 동물이 제 갈 "
-    "곳으로 천천히 걸어가는 것을 모두 손 흔들어 배웅(동물은 끝까지 화면 안, 아무도 만지지 않음)",
+    "장난꾸러기 찾기면 사람이 장난당한 물건을 덮거나 치워 다시 안 생기게 하며 서로 보고 "
+    "웃고, 발자국 주인 찾기면 사람들이 동물이 있던 쪽을 보며 웃음(동물은 나오지 않거나 멀리, "
+    "아무도 만지지 않음)",
+)
+# #779(사용자 결정 2026-11-19): 배웅 엔딩. 모두가 동물 쪽을 봐야 "잘 가" 장면이 됨(경찰관 떡집
+# 콘티에서 뭉치는 정면, 사람들은 딴 데를 보고 동물만 덤불 곁에 있어 어색했음)
+ANIMAL_ENDING = (
+    "배웅: 넓은 장면에서 모두(뭉치 포함) 숲·덤불 쪽의 정답 동물을 바라봄. 동물은 숲 가장자리에서 "
+    "한 번 뒤돌아본 뒤 천천히 걸어가고(끝까지 화면 안), 사람들은 그쪽으로 손을 흔들고, 뭉치는 "
+    "사람들과 떨어져 그쪽으로 고개를 살짝 돌리고 웃으며 몸을 흔듦(아무도 동물을 만지지 않음)"
 )
 ANIMAL_TARGET_CUTS = frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)})
 # 동물 흔적 특징: 동물 몸이 남기는 것(몸을 덮은 것·발자국 발 수·발자국의 발톱). 꼬리 모양은 흔적에
@@ -539,6 +550,7 @@ PRANK = StoryType(
     candidate_kind="동물",
     intro_cuts=ANIMAL_INTRO_CUTS,
     outro_cuts=ANIMAL_OUTRO_CUTS,
+    outro_ending=ANIMAL_ENDING,
     target_cuts=ANIMAL_TARGET_CUTS,
     outro_rule=ANIMAL_OUTRO,
     rules=(
@@ -561,6 +573,7 @@ FOOTPRINT = StoryType(
     candidate_kind="동물",
     intro_cuts=ANIMAL_INTRO_CUTS,
     outro_cuts=ANIMAL_OUTRO_CUTS,
+    outro_ending=ANIMAL_ENDING,
     target_cuts=ANIMAL_TARGET_CUTS,
     outro_rule=ANIMAL_OUTRO,
     rules=(
@@ -1184,5 +1197,7 @@ def type_rules(t: StoryType) -> str:
         + t.rules
         + f"- outro(마무리 장면): {t.outro_rule}\n"
         f"- 시작 콘티 역할(컷 틀의 '역할 n'에 넣을 내용): {intro}.\n"
-        f"- 종료 콘티 역할(컷 틀의 '역할 n'에 넣을 내용): {outro}.\n" + hidden_cut_rules(t)
+        f"- 종료 콘티 역할(컷 틀의 '역할 n'에 넣을 내용): {outro}.\n"
+        + (f"- 종료 6컷(엔딩)은 역할 4 대신 이 내용: {t.outro_ending}.\n" if t.outro_ending else "")
+        + hidden_cut_rules(t)
     )

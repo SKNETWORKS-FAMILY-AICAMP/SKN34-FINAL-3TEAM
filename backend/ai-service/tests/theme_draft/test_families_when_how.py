@@ -98,6 +98,7 @@ def when_theme() -> dict[str, Any]:
     for d in theme["days"]:
         d["evidence"]["when"] = "화단에 물을 준 그때"
     theme["introStory"] = theme["intro"]
+    theme["outroCuts"][0]["caption"] = f"뭉치: 알았다! {theme['answer']}!"  # #779 종료 1컷은 정답
     return checks.compose_intro(theme)
 
 
@@ -160,6 +161,7 @@ def vehicle_theme() -> dict[str, Any]:
             ),
         ],
     }
+    theme["outroCuts"][0]["caption"] = f"뭉치: 알았다! {theme['answer']}!"  # #779 종료 1컷은 정답
     return theme
 
 

@@ -73,6 +73,7 @@ def gift_theme() -> dict[str, Any]:
         day = checks.theme_day(theme, d)
         day["clue"] = clue
         day["condition"] = {"kind": kind, "feature": feat, "allowed": allowed}
+    theme["outroCuts"][0]["caption"] = f"뭉치: 알았다! {theme['answer']}!"  # #779 종료 1컷은 정답
     return theme
 
 

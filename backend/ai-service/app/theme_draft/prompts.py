@@ -572,6 +572,9 @@ def cut_beat(theme: Theme, scene: str, index: int) -> str:
     content = roles[s.role - 1]
     if (scene, index) == ("OUTRO", 3) and roles[1] != OUTRO_ARRIVE_HIDDEN:
         content = f"{roles[1]} → {content}"
+    ending = story_type(theme).outro_ending
+    if (scene, index) == ("OUTRO", 6) and ending:  # 동물 배웅 엔딩(#779)
+        content = ending
     return f"{s.beat}. 내용: {content}"
 
 
