@@ -115,7 +115,7 @@ export function UsageGuide({ onClose }: { onClose: () => void }) {
       <div className="lp-guide-faq">
       <h3>자주 묻는 질문</h3>
       {sections.map(section => <details className="lp-guide-category lp-guide-section" key={section.title}>
-        <summary><span>{section.title}<small>{section.items.length}개 질문</small></span><ChevronDown size={18} aria-hidden="true" /></summary>
+        <summary><span>{section.title}</span><ChevronDown size={18} aria-hidden="true" /></summary>
         <div className="lp-guide-questions">
         {section.items.map(([question, answer]) => <details className="lp-guide-item" key={question}>
           <summary><span>{question}</span><ChevronDown size={18} aria-hidden="true" /></summary><div className="lp-guide-answer"><p>{answer}</p></div>
