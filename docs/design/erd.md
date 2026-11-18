@@ -1850,6 +1850,9 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `weekly_theme` | `(grade, week_start) WHERE status = 'PUBLISHED'`, `(grade, status, week_start)` | 학년·주당 게시 1개(UNIQUE), 이번 주 테마 해석·관리자 목록 (#385, 학년 기준 #438 V16) |
 | learning | `theme_draft` | `(grade, week_start) WHERE source = 'AUTO'`, `(status, created_at)` | 학년·주당 자동 초안 1개(UNIQUE, 레플리카 중복 방지), 초안 목록·생성 작업 점유 (#438) |
 | learning | `answer` | `(attempt_id, submitted_at)` | 시도 타임라인 |
+| learning | `answer` | `(followup_id) WHERE followup_id IS NOT NULL` | 최근 되묻기에 이미 답했는지 확인·되묻기 삭제 때 FK 검사 (#775 V22) |
+| learning | `followup` | `(attempt_id, created_at)` | 시도의 최근 되묻기·학습 기록 목록의 되묻기 받음 여부 (#775 V22). 판정당 1개는 UK `(judgment_id)` |
+| learning | `hint_usage` | `(attempt_id, opened_at)` | 학습 기록 목록의 첫 답변 전 생각 열기 여부·리포트용 열람 시각 (#775 V22) |
 | learning | `judgment` | `(process_status, lease_until)` | 고착 `RUNNING` 탐지 |
 | learning | `mission_draft` | `(status, created_at)` | 초안 목록(상태 필터·최근 요청 순)·생성 작업 점유 (#353) |
 | learning | `community_post` | `(mission_id, status)` | 미션별 공개 공유물 목록 (#386, V13) |
@@ -1872,7 +1875,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V21, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 108개 테이블·942개 컬럼(core 61/524, learning 39/352, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V21(#647)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V22, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 108개 테이블·942개 컬럼(core 61/524, learning 39/352, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V22(#775, 인덱스만)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT
