@@ -12,7 +12,7 @@
 |---|---|---|---|
 | `rabbitmq-dlq-depth` | 큐별 `rabbitmq_detailed_queue_messages` > 0 | 5m | NoData |
 | `llm-budget-80` | `max(llm_usage_month_to_date_priced_cost)` > 240 (월 300 USD의 80%) | 1m | NoData |
-| `llm-unpriced-calls` | `max(llm_usage_month_to_date_unpriced_calls)` > 0 | 1m | NoData |
+| `llm-unpriced-calls` | `max(delta(llm_usage_month_to_date_unpriced_calls[1h]))` > 0 (최근 1시간에 새로 생긴 미산정, #764) | 1m | NoData |
 | `app-metrics-missing` | core 또는 learning HTTP 지표 부재 | 10m | NoData |
 | `http-<영역>-errors` | 5xx 비율 > 5%, 5분 10건 이상 | 5m | OK |
 | `http-<영역>-latency` | p95 > 인증 1s·학생 학습 2s·리포트 3s·결제 5s, 5분 10건 이상 | 5m | OK |
@@ -20,6 +20,8 @@
 영역은 core 공개 API의 `http_route`로 나눈다: 인증 `/api/v1/auth/.+`, 학생 학습 `/api/v1/(attempts/.+|missions/.+/(attempts|community-posts)|students/me/.+|community-posts/.+)`(풀이 저장·학생 본인 경로·커뮤니티, #504),
 AI 처리 `/api/v1/(conversations.*|answers/.+/feedback)`, 리포트 `/api/v1/reports/.+`, 결제 `/api/v1/(payments.*|subscriptions.*|orders|webhooks/tosspayments)`.
 AI 처리는 SSE 스트림이 섞여 지연 규칙을 두지 않는다. 비용 지표는 단가가 있는 호출만 합산하므로 미산정 호출이 있으면 합계는 하한값이고 별도 경고가 난다.
+미산정 경보는 누적값이 아니라 1시간 증가분을 봐서 새 누락이 없으면 1시간 뒤 해제되고, 월초 누적 초기화(감소)에는 울리지 않는다(#764).
+외부 비용이 없는 클러스터 안 모델은 core 단가 0, Veo·RunPod Gemma는 별도 청구로 저장되어 미산정에 들어가지 않는다.
 core가 여러 replica면 같은 값을 각각 보고하므로 `max`로 본다. 값은 core의 metric export 주기(기본 60초)마다 DB에서 다시 읽는다.
 Python 표준 라이브러리 검증기만 두며 운영에 Python 서비스를 추가하지 않는다.
 
@@ -73,7 +75,7 @@ git diff --check
 - 이 실제 출력을 로컬 대역이 제공해 Prometheus relabel 결과가 DLQ 총 메시지 지표뿐인지 확인한다.
 - Grafana rule engine에서 적체 정상→pending→발생→유지(반복 억제)→회복, 로컬 Discord protocol 대역의 발생·회복 수신을 확인한다.
 - 한 DLQ만 값을 올려 그 큐만 발생·회복·수신하는지 확인한다.
-- 대역 지표로 월 비용 80% 발생·회복, 미산정 호출 발생·회복, 인증 5xx 비율·p95 지연 발생, HTTP 지표 부재 발생을 확인한다.
+- 대역 지표로 월 비용 80% 발생·회복, 미산정 호출 증가 발생·누적 유지 중 회복·월초 초기화 미발생(가속 사본은 `[1h]` 창을 `[1m]`로 줄임), 인증 5xx 비율·p95 지연 발생, HTTP 지표 부재 발생을 확인한다.
   5xx·지연 규칙은 5분 rate 창 때문에 회복을 기다리지 않는다.
 - NoData, 잘못된 query, 없는 datasource UID, 재provision 중복 방지, 수집 실패 발생을 확인한다.
   #185의 target 규칙은 `min(up)`이라 scrape job 자체가 사라지면 발생이 아니라 NoData가 된다.

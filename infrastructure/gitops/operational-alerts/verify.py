@@ -272,10 +272,15 @@ def integration(chart_bundle, faults_only=False, scrape_only=False):
                 eventually(lambda: rule("budget")["state"] == "firing", "month-to-date cost over 80% of budget fires")
                 local_request(fixture_url + "/control", {"cost": 1.0})
                 eventually(lambda: rule("budget")["state"] == "inactive", "budget alert recovers")
+                # #764: the rule watches newly added unpriced calls, not the month-to-date total.
                 local_request(fixture_url + "/control", {"unpriced": 3})
-                eventually(lambda: rule("unpriced")["state"] == "firing", "unpriced LLM calls fire separately")
+                eventually(lambda: rule("unpriced")["state"] == "firing", "new unpriced LLM calls fire separately")
+                eventually(lambda: rule("unpriced")["state"] == "inactive",
+                           "unpriced alert recovers while the month-to-date total stays above zero", 150)
                 local_request(fixture_url + "/control", {"unpriced": 0})
-                eventually(lambda: rule("unpriced")["state"] == "inactive", "unpriced alert recovers")
+                time.sleep(30)
+                assert rule("unpriced")["state"] == "inactive", "month start reset to zero must not fire"
+                print("PASS month start reset of the unpriced total does not fire", flush=True)
                 # The 5-minute rate window keeps these firing for minutes; recovery is not awaited here.
                 local_request(fixture_url + "/control", {"errors": True})
                 eventually(lambda: rule("auth_errors")["state"] == "firing", "authentication 5xx ratio fires", 150)

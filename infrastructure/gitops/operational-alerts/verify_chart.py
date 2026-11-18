@@ -78,6 +78,10 @@ def main():
         # Accelerated copy of the prod rules; not operating thresholds.
         alerting = json.loads(prod.read_text(encoding="utf-8"))["grafana"]["alerting"]
         rules = [dict(rule, **{"for": "10s"}) for rule in alerting["rules"]]
+        unpriced = next(rule for rule in rules if rule["uid"] == "llm-unpriced-calls")
+        # #764: only newly added unpriced calls fire; a 1h window would keep the test firing for an hour.
+        assert unpriced["expr"] == "max(delta(llm_usage_month_to_date_unpriced_calls[1h]))"
+        unpriced["expr"] = unpriced["expr"].replace("[1h]", "[1m]")
         backlog = next(rule for rule in rules if "rabbitmq_queue_messages_ready" in rule["expr"])
         backlog["threshold"] = 10
         values = {"prometheus": {"rabbitmqDlqMetrics": {"enabled": True}},

@@ -215,6 +215,7 @@ export interface Usage {
     outputTokens: number | null
     costUsd: number | null
     unpricedCalls: number
+    externallyBilledCalls: number
   }[]
 }
 export const hasPermission = (permissions: Permission[] | undefined, p: Permission) =>

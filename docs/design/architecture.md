@@ -874,7 +874,7 @@ backend/report-service/
 - #171 local 관측 chart: Collector·Prometheus·Grafana, 공통 앱 chart Java agent로 core·learning JVM/HTTP metrics. AI는 기본 비활성 Langfuse v4 LLM 계측. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없음. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량(큐별 `<큐>.dlq`, #187), 판정·피드백·리포트 처리 지연
-- 경보(#185·#187): Grafana Alerting → 팀 디스코드 웹훅(`aws-alerts`). 수집 장애·작업 적체·DLQ 적재·RabbitMQ 메모리, core 공개 API 영역별(인증·학생 학습·AI 처리·리포트·결제) 5xx 비율과 p95 지연(AI 처리는 SSE 스트림이 섞여 5xx 비율만), 월 LLM 비용 300 USD의 80%와 미산정 호출. 담당은 인프라 1명(동섭)이 전체를 받는다 (P10, P13). 임계값은 초기 기준이며 [경보 검증](../../infrastructure/gitops/operational-alerts/README.md)을 따른다
+- 경보(#185·#187): Grafana Alerting → 팀 디스코드 웹훅(`aws-alerts`). 수집 장애·작업 적체·DLQ 적재·RabbitMQ 메모리, core 공개 API 영역별(인증·학생 학습·AI 처리·리포트·결제) 5xx 비율과 p95 지연(AI 처리는 SSE 스트림이 섞여 5xx 비율만), 월 LLM 비용 300 USD의 80%와 최근 1시간에 새로 생긴 미산정 호출(#764). 담당은 인프라 1명(동섭)이 전체를 받는다 (P10, P13). 임계값은 초기 기준이며 [경보 검증](../../infrastructure/gitops/operational-alerts/README.md)을 따른다
 - trace 저장(#187): Collector → Tempo(observability chart 선택 구성) → Grafana. core·learning은 Java agent trace, report-worker는 OTel SDK 소비 span. ai·scoring·report-api의 자체 span은 아직 없음
 - 백업: RDS 자동 백업(일 1회) + PITR, 보관 7일, RPO 5분·RTO 4시간 (P12)
 - `traceparent`를 HTTP 헤더와 이벤트 봉투 양쪽에 전파 → 동기·비동기 구간 단일 trace. core outbox는 저장 시점 span을 봉투에 담고 relay가 그 context 아래에서 발행해 AMQP 헤더로 잇는다. report-worker는 봉투 값을 부모로 소비 span을 열고 결과 이벤트에 AMQP 헤더를 붙인다 (#187, kind 검증)
@@ -913,10 +913,13 @@ DLQ 적재는 별도 opt-in scrape job `rabbitmq-dlq`로 본다. 같은 RabbitMQ
 core `LlmCostMetrics`가 OTel API gauge 두 개(`llm.usage.month_to_date.priced_cost`, `...unpriced_calls`)를 낸다.
 OTel Java agent가 켜진 경우에만 export되고 없으면 no-op이다. export 주기마다 `llm_usage`에서 KST 달력 월 1일 00:00부터 현재까지를 한 번 조회한다.
 단가가 있는 호출만 합산하고 미산정 호출 수는 따로 낸다(0으로 치환하지 않음). 조회 실패 주기에는 값을 내지 않아 경보는 NoData가 된다.
+미산정은 단가 미등록 모델이나 토큰 미기록으로 비용이 빈 호출만이다(#764). 외부 비용이 없는 클러스터 안 모델(M2 등)은 단가 0으로 등록해 비용 0으로 저장하고,
+서비스 밖에서 따로 청구되는 모델(Veo GCP 초 단위, RunPod Gemma 시간 단위)은 `llm_usage.billed_externally`로 표시해 미산정과 예산 합산에서 모두 뺀다(관리자 화면에는 별도 청구 건수로 보임).
+미산정 경보는 월 누적값이 아니라 `delta(...[1h])`로 최근 1시간에 새로 생긴 미산정만 본다. 누적값을 보면 한 건만 생겨도 월말까지 꺼지지 않고(11/18 운영에서 단가 등록 전 기록 6,748건으로 계속 켜짐), 새 누락과 구분할 수 없다. 월초에 누적이 0으로 돌아가면 delta가 음수라 울리지 않는다.
 예산 300 USD와 80%(240 USD) 판정은 Grafana 규칙 임계값이다. 새 exporter·주기 실행 계층·DB 계정은 추가하지 않았다.
 이벤트 발행 유실(best-effort)은 반영되지 않으므로 실제 비용보다 작을 수 있다.
 일일 리포트는 템플릿만 써 `llm_usage`가 늘지 않고, 일일 리포트 대화는 기존 분석 대화 호출 종류로 집계되어 예산 규칙에 포함된다.
-리포트 설명(FN-RPT-09, #473)은 클러스터 안 sLLM이라 토큰 단가가 없어 미산정 호출로 집계되고 예산 합산에는 들어가지 않는다. 비용은 sLLM 서버 노드 시간(EC2)으로 나타난다.
+리포트 서술·설명(FN-RPT-09, #473)의 Gemma는 지금 RunPod에서 따로 청구되어 별도 청구 호출로 집계되고 예산 합산에는 들어가지 않는다(#764). EKS 안 sLLM으로 옮기면(#742) 단가 0으로 등록하고 비용은 sLLM 서버 노드 시간(EC2)으로 나타난다.
 
 #### 업무별 오류율·지연
 

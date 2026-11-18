@@ -1697,7 +1697,7 @@ sequenceDiagram
   A->>A: LLM 호출(ai LlmClient)·모델 추론(scoring) 완료 (토큰·지연·성공 여부)
   A-)MQ: events.topic / llm.usage.recorded (학생 ID·원문 없음, best-effort)
   MQ-)C: core.llm.usage.recorded
-  C->>DB: llm_usage INSERT (event_id UK, 중복 무시), cost_usd = 설정 단가로 계산
+  C->>DB: llm_usage INSERT (event_id UK, 중복 무시), cost_usd = 설정 단가로 계산, 별도 청구 모델은 billed_externally (#764)
 ```
 
 ---

@@ -108,7 +108,7 @@ class ModelVersionHttpTest : PostgresRepositoryTest() {
             status { isOk() }; jsonPath("$.period.from") { value("2040-01-01") }; jsonPath("$.period.to") { value("2040-01-01") }
             jsonPath("$.items[0].calls") { value(1) }; jsonPath("$.items[0].failures") { value(1) }
             jsonPath("$.items[0].latencyMs") { value(300.0) }; jsonPath("$.items[0].inputTokens") { value(10) }
-            jsonPath("$.items[0].outputTokens") { value(20) }; jsonPath("$.items[0].unpricedCalls") { value(1) }
+            jsonPath("$.items[0].outputTokens") { value(20) }; jsonPath("$.items[0].unpricedCalls") { value(1) }; jsonPath("$.items[0].externallyBilledCalls") { value(0) }
             jsonPath("$.items[0].costUsd") { value(org.hamcrest.Matchers.nullValue()) }
         }
     }

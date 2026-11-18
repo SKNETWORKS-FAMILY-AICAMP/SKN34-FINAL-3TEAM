@@ -20,6 +20,8 @@ data class LlmUsage(
     val outputTokens: Int?,
     val latencyMs: Int,
     val costUsd: BigDecimal?,
+    /** 단가 없이 서비스 밖에서 청구되는 호출 (#764). costUsd는 null이고 미산정으로 세지 않는다 */
+    val billedExternally: Boolean,
     val success: Boolean,
     val errorCode: String?,
     val occurredAt: OffsetDateTime,

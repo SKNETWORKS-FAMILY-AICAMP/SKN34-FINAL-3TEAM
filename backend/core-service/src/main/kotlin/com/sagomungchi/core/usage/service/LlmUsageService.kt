@@ -56,6 +56,7 @@ class LlmUsageService(
                 outputTokens = data.outputTokens,
                 latencyMs = data.latencyMs,
                 costUsd = cost(data),
+                billedExternally = price(data.model) == null && data.model.matches(properties.llmBilledExternally),
                 success = data.success,
                 errorCode = data.errorCode,
                 occurredAt = data.occurredAt,
@@ -63,13 +64,23 @@ class LlmUsageService(
         )
     }
 
-    /** 소비 시점 단가로 계산해 저장, 단가 변경 후에도 과거 값 유지 (FN-ADM-19). 단가 미등록 모델·토큰 미기록 호출은 null */
+    /**
+     * 소비 시점 단가로 계산해 저장, 단가 변경 후에도 과거 값 유지 (FN-ADM-19).
+     * 단가가 입력·출력 모두 0인 모델(클러스터 안 모델)은 토큰이 없어도 0 (#764).
+     * 단가 미등록 모델·토큰 미기록 호출은 null
+     */
     private fun cost(data: LlmUsageRecorded): BigDecimal? {
-        val price = properties.llmPricing[data.model] ?: return null
+        val price = price(data.model) ?: return null
+        if (price.input.signum() == 0 && price.output.signum() == 0) return BigDecimal.ZERO
         val input = price.input * BigDecimal(data.inputTokens ?: return null)
         val output = price.output * BigDecimal(data.outputTokens ?: return null)
         return (input + output).divide(TOKENS_PER_PRICE_UNIT)
     }
+
+    /** 정확한 모델명 우선, 없으면 모델 레지스트리 `이름@버전`의 이름 (새 버전마다 단가를 다시 넣지 않음, #764) */
+    private fun price(model: String) = properties.llmPricing[model] ?: properties.llmPricing[model.substringBefore('@')]
+
+    private fun String.matches(models: List<String>) = this in models || substringBefore('@') in models
 
     companion object {
         private const val MAX_QUERY_DAYS = 366L
