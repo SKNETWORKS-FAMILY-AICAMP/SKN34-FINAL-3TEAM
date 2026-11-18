@@ -528,21 +528,30 @@ def still_clip(image: bytes, seconds: float, size: tuple[int, int]) -> bytes:
     """움직이는 그림 컷: 그림 1장을 seconds초 동안 가운데로 천천히 확대(24fps·yuv420p, size 크기).
 
     영상 컷이 끝내 검토를 통과하지 못하면 이 컷으로 대신한다(첫 그림은 그림 검토를 통과한 것).
-    확대 떨림을 줄이려고 두 배로 키운 뒤 잘라 낸다.
+    확대는 원근 필터(perspective)로 원본 위 네 점을 픽셀 아래 단위로 옮겨 보간한다. 예전
+    zoompan은 자를 위치를 정수 픽셀로 반올림해 그림 전체가 1초에 6번 약 1px씩 앞뒤로 튀었음
+    (#779 실측 2026-11-18: 프레임 사이 가운데 이동 +0.2·+0.1·+0.1·-0.4px(640px 기준) 되풀이 → 0).
     """
     width, height = size
     frames = max(1, round(seconds * 24))
-    zoom = f"1+{STILL_ZOOM - 1:.3f}*on/{frames}"
+    edge = f"(1-1/(1+{STILL_ZOOM - 1:.3f}*on/{frames}))/2"  # 가장자리에서 잘라 낼 비율
+    left, top, right, bottom = f"W*{edge}", f"H*{edge}", f"W-W*{edge}", f"H-H*{edge}"
     with tempfile.TemporaryDirectory() as tmp:
         src, out = Path(tmp) / "in.img", Path(tmp) / "c.mp4"
         src.write_bytes(image)
         _ffmpeg(
             [
+                "-loop",
+                "1",
+                "-framerate",
+                "24",
                 "-i",
                 str(src),
                 "-vf",
-                f"scale={width * 2}:{height * 2},zoompan=z='{zoom}':d={frames}"
-                f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=24",
+                f"scale={width}:{height}:flags=lanczos,perspective="
+                f"x0='{left}':y0='{top}':x1='{right}':y1='{top}':"
+                f"x2='{left}':y2='{bottom}':x3='{right}':y3='{bottom}':"
+                "interpolation=cubic:eval=frame",
                 "-frames:v",
                 str(frames),
                 "-c:v",

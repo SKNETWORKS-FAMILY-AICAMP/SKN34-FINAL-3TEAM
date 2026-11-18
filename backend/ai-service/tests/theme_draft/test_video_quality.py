@@ -344,3 +344,21 @@ def test_all_candidates_failing_regenerates_with_their_reasons() -> None:
     assert not any(STILL_NOTE in w.reason for w in response.warnings)
     regen = [c[0] for c in video.calls if "MORPH" in c[0]]
     assert len(regen) == 2  # 다시 만들기 지시에 실패 사유가 들어감
+
+
+def test_captions_one_narrator_in_polite_present_tense() -> None:
+    """자막 8줄이 해요체·반말·명사형·인물 대사·과거형으로 섞였음(3테마 실행, 사용자 결정 A안)."""
+    rule = prompts.PLAN_SYSTEM.split("- caption 말투:")[1].split("\n")[0]
+    for text in ("내레이터 한 사람이 해요체 현재형", "과거형", "인물 대사", "반말은 쓰지", "출동!"):
+        assert text in rule
+    assert "학년에 맞는 말투). mungchiMood" not in prompts.PLAN_SYSTEM
+
+
+def test_still_clip_zooms_smoothly_with_perspective() -> None:
+    """정지 그림 컷은 원근 필터로 확대(zoompan은 정수 픽셀 반올림으로 1px씩 떨림)."""
+    import inspect
+
+    from app.llm.media import still_clip
+
+    source = inspect.getsource(still_clip)
+    assert "perspective=" in source and "zoompan" not in source.split('"""')[2]
