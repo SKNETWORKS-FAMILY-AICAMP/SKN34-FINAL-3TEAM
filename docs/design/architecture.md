@@ -18,13 +18,14 @@
 |---|---|---|---|
 | core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증·동의, 학부모-자녀 연결(권한 기준), 분석 대화 세션·이력, 주간·일일 리포트 작업·일정, 알림(SSE·인앱), 신고·문의·공지, 결제·구독(토스페이먼츠 테스트), 관리자 운영·모델 버전 레지스트리, LLM 사용량 집계 | core_db, Redis |
 | learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재), 교육과정 지식 저장소(판 적재·활성화, 성취기준·생각 유형 코드 조회용, #466; 벡터 검색·임베딩 없음), 기념 액자·추억 앨범·추억 검색(학생 기록 pgvector 검색·임베딩은 ai 호출, P27, 1.1.2) | learning_db (미션 장면 이미지는 웹 정적 파일과 함께 CloudFront→S3로 서빙, learning은 S3를 쓰지 않음) |
-| ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 리포트 설명 생성 요청·검사(설명 sLLM 호출, #477), 미션 초안·주간 테마 초안 생성(#354·#437), 프롬프트 버전 | 없음 (상태 없음). 테마 초안 이미지·영상은 S3 `theme-drafts/`에 쓰고 키만 반환(#437) |
+| ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 리포트 설명 생성 요청·검사(SageMaker 설명 엔드포인트 호출, #477·#742), 미션 초안·주간 테마 초안 생성(#354·#437), 프롬프트 버전 | 없음 (상태 없음). 테마 초안 이미지·영상은 S3 `theme-drafts/`에 쓰고 키만 반환(#437) |
 | scoring-service | FastAPI | M2 항목 점수(klue/roberta, 국어 우선), M1 수학 풀이 점검(후순위, 활성 범위만) 추론, CPU 추론, 관리자 모델 파일 사전 검사(#368), Pod별 모델 로딩 상태 보고(#370) | 없음 (S3 가중치 읽기) |
 | report-service | FastAPI | 주간·일일 리포트 기간·포함 기록 확정, 수치·전후 변화 코드 계산, 숫자·인용 대조, 렌더링(HTML/PDF/Markdown)·저장 | report_db, S3 |
 
 - 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
 - scoring 분리 근거: PyTorch 이미지·메모리 요구가 ai-service와 달라 배포·확장 단위 분리, 모델 미활성 시 ai-service 영향 없음
-- 설명 sLLM 서버(FN-RPT-09, #476): 업무 서비스가 아니라 ai만 호출하는 OpenAI 호환 내부 추론 서버(llama.cpp 등). 상태·DB 없음, S3의 승인된 양자화 모델을 CPU로 추론하며 평소 0대이고 주간 리포트 생성 시간대만 켬(4.4). 학생 글은 클러스터 밖으로 나가지 않음
+- 리포트 Gemma 설명 엔드포인트(FN-RPT-09, #742·#746): 업무 서비스가 아니라 ai만 호출하는 같은 계정·VPC의 SageMaker 실시간 엔드포인트(GPU `ml.g6e.xlarge`, vLLM SageMaker DLC). 상태·DB 없음, S3의 승인된 AWQ 기반 모델에 LoRA 어댑터를 붙여 추론한다. 평소 0대이고 주간 리포트 배치 전 예약 확장으로 1대를 켜며(일 23:30 ~ 월 02:00), ai는 LoRA 인퍼런스 컴포넌트를 `InvokeEndpoint`로 부른다(4.4). 학생 글은 AWS 밖으로 나가지 않음
+  - 변경(2026-11-18, #742): 이전 설계는 클러스터 안 `sllm-server`(llama.cpp CPU Pod, KEDA cron 0→1→0, #476)였다. 남은 chart 값·local 대역 파일 정리는 4.4 끝에 적었다
 - 다른 서비스 DB 직접 접근 금지, API 또는 이벤트로만 연동 (참고 레포 원칙 동일)
 - DB 권한으로 강제(#230): 인스턴스 1개(로컬 PostgreSQL·운영 RDS)에 DB별 migrate(DDL)·app(DML) 계정을 두고 각 DB의 PUBLIC CONNECT 회수 → 다른 서비스 DB 접속 불가. 로컬·운영 모두 `charts/platform-data/files/postgres/rds-bootstrap.sql`로 생성, 관리자 계정은 초기화 전용 ([결정](../report/db-dev-guide.md#8-서비스별-db-계정-230))
 - 권한 기준: 학부모-자녀 연결은 core만 소유. core가 요청마다 권한 확인 후 내부 호출에 사용자 컨텍스트·허용 학생 범위 전달 (2.3)
@@ -73,6 +74,7 @@
 
 저장소: RDS PostgreSQL(서비스별 DB) · S3(미션 장면·테마 초안 이미지·영상·리포트 파일·모델 가중치) · Redis
 외부: LLM API(ai) · 토스페이먼츠 테스트(core)
+AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 계정·VPC, #742)
 ```
 
 - core→scoring 동기 HTTP는 관리자 모델 파일 사전 검사 중계 `POST /internal/models/preflight`(#368, 20초·재시도 없음)뿐이다. 판정 교차 확인(M2·M1)은 ai→scoring이다
@@ -93,6 +95,7 @@
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
 - 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353. 주간 테마 초안은 호출 1번에 그래프를 끝까지 돌리는 주기 작업이라 ai LLM 호출당 300초·재시도 없음·전체 마감 900초, learning→ai 읽기 16분·생성 리스 18분, #437·#438. 값은 ai `theme_llm_timeout`·`theme_draft_deadline`, learning `app.theme-draft.ai-read-timeout`·`lease`), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ(예외: 주간 리포트 설명은 주 1회 배치라 report→ai 호출당 130초·설명 단계 400초, 리포트 작업 복구 후보 4시간, #479·#508). 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
+  - 리포트 Gemma SageMaker 호출(#742·#746): 실시간 `InvokeEndpoint`는 컨테이너가 60초 안에 응답해야 한다(AWS 제한). 이를 지키려고 `max_tokens`를 상세 설명 1536·서술 1024로 둔다. 최악 경우(동시 8건, 1536토큰 끝까지 생성)도 LoRA 23.4초로 제한 안이다([infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)). 위의 report→ai 130초·설명 단계 400초는 RunPod 콜드 대기용 값이라, ai·report 타임아웃과 SDK 읽기 타임아웃은 60초 제한 기준으로 #747에서 다시 정한다. 엔드포인트가 0대이면 호출이 즉시 `ValidationError`로 실패하고 다른 모델로 대체하지 않고 설명 없이 발행한다(#733)
   - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`·`learning-memory`), learning→ai(판정·되묻기 `ai`, 미션 초안 `ai-mission-draft`, 주간 테마 초안 `ai-theme-draft`, 추억 검색 임베딩 `ai-memory-embedding`, 추억 설명 `ai-memory-explanation`, 추억 검색 질의 변환 `ai-memory-query`(#679 설계, #682 구현). 기준은 아래와 같고, 기능마다 서킷을 나눠 한 기능의 ai 장애가 다른 호출을 막지 않게 한다, #305·#353·#438·#563·#564), learning→scoring(답변 표현 분류 `scoring-toxicity`, #688), core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 결제 환불의 learning 사용 증빙 조회(`payment/client/PremiumUsageClient`)는 `learning-json`을 함께 쓰고 응답 시간만 5초다(`LearningClient.withReadTimeout`, #654). 서킷 차단도 시간 초과·전송 실패와 같이 503 `REFUND_USAGE_UNAVAILABLE`(사용 여부 확인 불가, 환불 요청·승인 진행 안 함)이다. 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
 - #305 learning→ai 판정·되묻기는 서킷 `ai` 하나를 함께 쓰므로, 그 뒤 ai→scoring 실패가 이 서킷으로 번지지 않게 ai에서 끊는다. ai→scoring(M2·M1)은 교차 확인 플래그(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`, 기본 꺼짐)가 켜진 경우에만 부르고, scoring 장애·시간 초과·5xx·4xx(입력 한도 초과 등)·계약 밖 응답은 503으로 바꾸지 않는다. ai는 교차 확인을 생략한 LLM 판정을 200으로 돌려주고 `modelScores.skipped`(`SCORING_UNAVAILABLE`·`SCORING_REJECTED`)에 사유를 남긴다(api-spec 4.2.2). 따라서 scoring 장애는 learning `ai` 서킷의 실패로 집계되지 않고 scoring과 무관한 판정·되묻기를 막지 않는다. 대신 교차 확인 없이 확정된 판정은 다시 판정하지 않는다. ai→scoring에는 서킷·재시도를 따로 두지 않는다(요청마다 남은 판정 시간 안의 timeout만).
 - #688 learning→scoring 답변 표현 분류(`POST /internal/toxicity/checks`, api-spec 4.3.4)는 연결 공통값(`app.internal.connect-timeout` 2초, `InternalRestClientFactory` 그대로)·응답 1.5초, 서킷 `scoring-toxicity`(공통 기준: 최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·전송 오류·시간 초과·5xx 실패), 재시도 없음. 시간 초과·전송 오류·5xx·4xx·계약 밖 응답·서킷 열림·`{active:false}`는 모두 모델 검사만 건너뛰고 제출을 진행한다(fail-open, 로그는 `attemptId`·건너뜀 사유만). learning은 시도 행 잠금·트랜잭션 전에 결과를 받아 둔다(DB 연결과 잠금을 쥔 채 기다리지 않음). 답변 제출 core→learning 30초 안이다
@@ -151,7 +154,7 @@
 5. **자동 리포트**
    - core 스케줄러(ShedLock)가 자녀별 report_job + Outbox → `report.generate`
    - report가 learning 기록 조회 → 코드 계산 → ai 서술·저녁 질문 → 숫자·인용 대조 → 렌더링·S3 저장
-   - 주간 리포트의 프리미엄·원문 공개 자녀는 서술 뒤 M2 점수가 있는 대표 답변 최대 3개를 ai에 설명 요청(ai → 설명 sLLM 서버, 검사 통과분만 `EXPLANATION` 항목). 실패·시간 초과·모델 미활성은 설명 없이 진행 (FN-RPT-09, P16, #479). M2 점수는 ai `M2_CROSS_CHECK_ENABLED=true`(기본 false)와 기준표 M2 입력(`keywords`·`essayType`)이 있을 때만 생기므로, 둘 중 하나라도 없으면 설명 대상이 없음(FN-RPT-09 설명 조건, #661)
+   - 주간 리포트의 프리미엄·원문 공개 자녀는 서술 뒤 M2 점수가 있는 대표 답변 최대 3개를 ai에 설명 요청(ai → SageMaker 설명 엔드포인트, 검사 통과분만 `EXPLANATION` 항목). 실패·시간 초과·모델 미활성·엔드포인트 0대(창 밖)는 설명 없이 진행 (FN-RPT-09, P16, #479). M2 점수는 ai `M2_CROSS_CHECK_ENABLED=true`(기본 false)와 기준표 M2 입력(`keywords`·`essayType`)이 있을 때만 생기므로, 둘 중 하나라도 없으면 설명 대상이 없음(FN-RPT-09 설명 조건, #661)
    - `report.completed` → core 알림
 
 2026-11-06 결정(6~9 구현):
@@ -263,7 +266,7 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 - 범위 검사: learning은 조회 대상 학생이 `X-Student-Scope`에 없으면 403. ai 에이전트 도구도 실행 전 같은 검사 (FN-AGT-02)
 - 대화 상태: ai-service는 상태 없음, core가 요청마다 대화 이력·허용 범위 전달
 - 버전 연결: 판정·되묻기·분석·리포트 결과에 미션·기준표·모델·프롬프트 버전 저장 (NFR-DAT-02)
-- 개인정보: LLM 요청에 학생 이름·식별정보 미포함, 운영 로그에 학생 원문·비밀 키·결제 정보 미기록 (NFR-SEC-03, 05). 추억 검색 임베딩·추억 설명(P27)은 판정처럼 외부 LLM API로 학생 답변을 보내며 같은 기준(ID 미전송·닉네임 마스킹)을 따른다. "학생 글이 클러스터 밖으로 나가지 않음"은 리포트 설명 sLLM(#473)에 한정된 결정
+- 개인정보: LLM 요청에 학생 이름·식별정보 미포함, 운영 로그에 학생 원문·비밀 키·결제 정보 미기록 (NFR-SEC-03, 05). 추억 검색 임베딩·추억 설명(P27)은 판정처럼 외부 LLM API로 학생 답변을 보내며 같은 기준(ID 미전송·닉네임 마스킹)을 따른다. "학생 글이 AWS 밖으로 나가지 않음"은 리포트 설명 생성(#473, 2026-11-18부터 같은 계정·VPC의 SageMaker 엔드포인트 #742)에 한정된 결정
 - 테스트: Domain 단위 테스트, Application은 Infrastructure 대역, Repository는 Testcontainers(PostgreSQL), core 메시징 통합은 Testcontainers(PostgreSQL·RabbitMQ·Redis), 메시지는 `contracts/events` 스키마 계약 테스트
   - 테스트 베이스(`PostgresRepositoryTest`·`IntegrationTestSupport`)는 [DB 개발 가이드](../report/db-dev-guide.md) 5장
 
@@ -749,7 +752,7 @@ backend/report-service/
 | CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
 | 외부 연동 | stub (LLM·토스·Google OAuth, E2E 오버레이) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
 
-- stub(`infrastructure/stubs`)은 실서버 E2E 오버레이 `compose.e2e.yaml`에서만 연결한다(google·llm·toss-stub, 합성 값 `infrastructure/stubs/e2e.env`). scoring-stub은 S3 모델 아티팩트 없이 M2 점수(`/internal/m2/scores`)를 돌려주는 대역이고, E2E의 리포트 설명 sLLM도 llm-stub이 맡는다(#625). 기본 Docker Compose의 ai-service는 그대로 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자). kind에는 이 E2E용 `<target>-stub` Service가 없다. 예외로 local `sllm-server` release가 llm-stub 이미지(`sagomungchi/llm-stub:local`)를 설명 sLLM 대역으로 쓴다(4.4). [이슈 #246 보고서](../report/testing-ci.md#2-실서버-브라우저-e2e와-외부-스텁-246)
+- stub(`infrastructure/stubs`)은 실서버 E2E 오버레이 `compose.e2e.yaml`에서만 연결한다(google·llm·toss-stub, 합성 값 `infrastructure/stubs/e2e.env`). scoring-stub은 S3 모델 아티팩트 없이 M2 점수(`/internal/m2/scores`)를 돌려주는 대역이고, E2E의 리포트 설명 sLLM도 llm-stub이 맡는다(#625). 기본 Docker Compose의 ai-service는 그대로 `.env`의 `LLM_PROVIDER`·API 키로 실제 LLM을 호출하고, 키가 없으면 판정·되묻기가 `AI_UNAVAILABLE`로 실패한다(6장 LLM 제공자). kind에는 이 E2E용 `<target>-stub` Service가 없다. 예외로 local `sllm-server` release가 llm-stub 이미지(`sagomungchi/llm-stub:local`)를 설명 sLLM 대역으로 쓴다(4.4). SageMaker 전환(#742)으로 이 대역은 정리 대상이고, SageMaker 호출을 대신할 local·E2E 대역은 #747에서 정한다. [이슈 #246 보고서](../report/testing-ci.md#2-실서버-브라우저-e2e와-외부-스텁-246)
 
 - PostgreSQL은 pgvector 포함 이미지(PG 17.11 Debian)를 쓴다. 생성에 벡터 검색을 쓰지 않기로 해(에픽 #463, 2026-11-11) learning V17이 임베딩 칸을 지웠지만, V14가 `vector` 타입을 만들었다가 지우므로 빈 DB에 처음부터 마이그레이션하려면 확장이 계속 필요하다. P27(2026-11-12, #563 구현) 추억 검색은 learning_db `memory_search_doc`에서 `vector(1536)`을 실제로 쓴다([ERD 4.6](erd.md)). `vector`는 trusted 확장이 아니어서 서비스 migrate 계정의 Flyway가 만들 수 없고, 관리자 계정 bootstrap(`rds-bootstrap.sql`)이 learning_db에 만든다. 기존 볼륨 1회 적용은 [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466). alpine(musl)에서 초기화한 기존 데이터 디렉터리는 glibc와 text 정렬이 달라 이미지 교체 뒤 DB마다 `REINDEX DATABASE`를 한 번 실행하거나 볼륨을 새로 만든다
 
@@ -774,13 +777,13 @@ backend/report-service/
   - `/api/*` 동작: 캐시 비활성, `Authorization`·`Idempotency-Key`·`If-Match`·`X-Reauth-Token`·`Origin`·`X-Requested-With`(쿠키 API 검사, API 5.1) 헤더와 쿠키 전달, 압축 비활성(SSE 버퍼링 방지)
   - 타임아웃: CloudFront origin 응답 60초, ALB idle 120초 (SSE heartbeat 15초, 1.3)
   - 클라이언트 IP(기기 등록 IP별 한도, API 3.11): CloudFront가 X-Forwarded-For 끝에 viewer IP를 붙이고, ALB는 `routing.http.xff_header_processing.mode=preserve`(Ingress annotation `alb.ingress.kubernetes.io/load-balancer-attributes`)로 CloudFront 엣지 IP를 덧붙이지 않음. ALB 보안그룹 inbound는 `com.amazonaws.global.cloudfront.origin-facing` prefix list만 허용해 XFF 위조 경로 차단. core는 `server.forward-headers-strategy: native`로 사설 대역 직전 연결만 신뢰(Tomcat 기본 internal-proxies). 운영 적용은 #185
-- 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW. Secrets Manager·STS·ECR API·공개 레지스트리 이미지도 NAT 경유(Interface endpoint 없음)
+- 외부 호출(LLM API·토스페이먼츠): Pod → NAT GW → Internet GW. ai의 SageMaker runtime 호출(`InvokeEndpoint`, #746)도 공인 엔드포인트로 NAT를 거친다. Secrets Manager·STS·ECR API·공개 레지스트리 이미지도 NAT 경유(Interface endpoint 없음)
 - S3: private 라우팅 테이블 2개에 S3 Gateway 엔드포인트(prefix list 경로)를 연결해 Pod의 S3 읽기·쓰기와 ECR layer 다운로드는 NAT를 거치지 않는다. 엔드포인트 정책은 기본 전체 허용, 버킷 접근은 Pod Identity 역할 정책으로 제한(#212)
 - Namespace: `app`(core·learning·ai·scoring·report), `platform`(RabbitMQ·Redis), `observability`, `argocd`
 - 노드그룹: `application`, `platform-observability` 분리 (참고 레포 2그룹 구성 계승)
   - `application`: t3.medium 2대(최대 3), 앱·ESO·LB Controller·CoreDNS·Karpenter 컨트롤러·metrics-server 등. 관리형 노드그룹은 자동 확장하지 않는다
   - Karpenter NodePool `application-burst`: 평소 0대. 기존 노드에 자리가 없는 Pending Pod가 생길 때만 t3.medium·t3.large On-Demand(2a·2b)를 만들고 비면 정리한다(4.4). taint가 없어 platform Pod는 배치되지 않는다
-  - Karpenter NodePool `explanation-cpu`(#476): 설명 sLLM 전용. 평소 0대이고 KEDA cron이 sLLM Pod를 1대로 올릴 때만 연산형 On-Demand(기준안 c7i·c6i.xlarge, 4 vCPU·8GiB)를 만든다. label·taint `workload=explanation-sllm:NoSchedule`로 앱 Pod와 섞이지 않고, sLLM Pod는 t3 노드(`application`·`application-burst`)에 놓이지 않는다. 비면 5분 뒤 정리(`WhenEmpty`), 상한 CPU 4·메모리 8Gi(1대). EC2NodeClass는 `application`을 같이 쓴다
+  - Karpenter NodePool `explanation-cpu`(#476, **변경**: SageMaker 전환(#742)으로 쓰지 않음. 4.4 끝의 정리 대상): 설명 sLLM 전용. 평소 0대이고 KEDA cron이 sLLM Pod를 1대로 올릴 때만 연산형 On-Demand(기준안 c7i·c6i.xlarge, 4 vCPU·8GiB)를 만든다. label·taint `workload=explanation-sllm:NoSchedule`로 앱 Pod와 섞이지 않고, sLLM Pod는 t3 노드(`application`·`application-burst`)에 놓이지 않는다. 비면 5분 뒤 정리(`WhenEmpty`), 상한 CPU 4·메모리 8Gi(1대). EC2NodeClass는 `application`을 같이 쓴다
   - `platform-observability`: t3.medium 2대(2a·2b 1대씩, EBS PVC가 AZ별로 있음), label·taint `workload=platform:NoSchedule`. `platform-data`·`observability` chart의 `scheduling` 값으로 RabbitMQ·Redis·Prometheus·Grafana·Collector만 배치
 - Pod AWS 권한: EKS Pod Identity(서비스별 IAM 역할, trust는 클러스터·namespace·ServiceAccount 조건). IRSA(OIDC provider·SA annotation)는 쓰지 않음
 - NetworkPolicy: 기본 거부 + 아래 허용만 (호출 관계는 [API 명세서](api-spec.md) 4장). 공통 앱 chart·local Ingress·app/platform/observability NetworkPolicy 정의는 #171, 검증 범위는 [로컬 플랫폼](../report/infra.md#24-검증에서-얻은-교훈) 10장
@@ -791,21 +794,21 @@ backend/report-service/
 |---|---|---|
 | core | ALB(public 서브넷 ipBlock, `core-alb-network.json`), learning, ai, scoring, report-worker, 재학습 작업(`tox-retrain`, #725), 배포 점검 Pod(`deployment-check: core-learning-health`) | learning, ai, scoring(모델 사전 검사 #368), report-api, RabbitMQ(5672·15672), Redis, RDS, 공인 IPv4 443(NAT: 토스·Google OAuth), Collector |
 | learning | core, ai, report-api, report-worker, 재학습 작업(`tox-retrain`, #725), 배포 점검 Pod(`core-learning-health`) | core, ai, scoring(답변 표현 분류 #688), RabbitMQ(5672), RDS, Pod Identity agent(테마 자산 URL 서명, #652), Collector |
-| ai | core, learning, report-worker | core, learning, scoring, 설명 sLLM 서버(#476), RabbitMQ(5672), 공인 IPv4 443(NAT: LLM API·이미지 생성 API·Google Cloud 영상 API, S3 테마 초안 이미지·영상 쓰기, #437), Pod Identity agent(#652) |
+| ai | core, learning, report-worker | core, learning, scoring, RabbitMQ(5672), 공인 IPv4 443(NAT: LLM API·이미지 생성 API·Google Cloud 영상 API, S3 테마 초안 이미지·영상 쓰기 #437, SageMaker runtime `InvokeEndpoint` #742), Pod Identity agent(#652·#746) |
 | scoring | ai, core(모델 사전 검사 #368), learning(답변 표현 분류 #688), 배포 점검 Pod(`deployment-check: scoring-check`) | core, RabbitMQ(5672), S3(443, 리전 S3 IP 대역)·Pod Identity agent |
 | report-api | core | learning(근거 조회), RDS, S3·Pod Identity agent |
 | report-worker | 없음 | core, learning, ai, RabbitMQ(5672), RDS, S3·Pod Identity agent, Collector |
 | 표현 분류 재학습 작업 `tox-retrain`(#725) | 없음 | core, learning, S3(443, 리전 S3 IP 대역)·Pod Identity agent / local: MinIO |
-| 설명 sLLM 서버(#476) | ai, Prometheus | S3(모델 로딩, initContainer)·Pod Identity agent / local: MinIO |
 | RabbitMQ | `app` namespace 전체(5672), core·`rabbitmq-init`(관리 API 15672), Prometheus(15692) | - |
 | Redis | core(6379, `redis-allow-core`) | - |
 
   - #688 learning→scoring(8001) 허용은 prod·local 값에 반영했다(scoring ingress #691, learning egress #692)
   - #725 재학습 작업 `tox-retrain` 행과 core·learning ingress 추가도 설계 값이다. 값 반영은 #730이며 그 전까지 같은 예외다
+  - SageMaker 전환(#742)으로 ai egress의 설명 sLLM 서버 허용과 `sllm-server` 행을 뺐다. 설계 값이며, prod·local 값(`ai-service`의 `sllm-server` egress, `prod/sllm-server.json`, `local/sllm-server.yaml`)은 #747 호출 전환과 함께 지우기 전까지 남아 있는 예외다. SageMaker 엔드포인트는 클러스터 밖이라 NetworkPolicy 대상이 아니고, 전용 보안 그룹(ingress 없음, egress 443만)으로 막는다. 모델은 S3 Gateway 엔드포인트로 받는다. ai→SageMaker는 기존 공인 443 허용으로 나간다. SageMaker runtime 인터페이스 VPC 엔드포인트를 쓰면 사설 IP라 ai 정책의 공인 대역(사설 대역 제외)에 막히므로 정책도 함께 고쳐야 한다([infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18))
   - 전 Pod 공통 egress는 kube-dns(53)뿐이다. OTel Collector(4317·4318) egress는 `egressToCollector`를 켠 core·learning·report-worker만 있다. 이 셋만 OTLP를 보낸다(core·learning Java agent 지표·trace, report-worker SDK trace, 4.6). ai·scoring·report-api는 prod에서 OTLP를 보내지 않아(자체 span 없음, ai Langfuse `LANGFUSE_ENABLED=false`) Collector egress가 없다. Langfuse egress(`egressToLangfuse`)는 어느 앱에도 켜지 않았다
-  - Prometheus는 앱 지표를 Collector에서 받으므로 앱 Pod ingress에 Prometheus를 허용한 것은 직접 수집하는 설명 sLLM 서버(`--metrics`)뿐이다. platform에서는 RabbitMQ 15692만 허용한다(`observability-platform-network.json`)
+  - Prometheus는 앱 지표를 Collector에서 받으므로 앱 Pod ingress에는 Prometheus를 허용하지 않는다. 예전에 직접 수집하던 설명 sLLM 서버(`--metrics`)는 SageMaker 전환으로 빠졌고, SageMaker 지표는 CloudWatch에서 본다(4.7). platform에서는 RabbitMQ 15692만 허용한다(`observability-platform-network.json`)
   - 공인 IPv4 443은 사설·CGNAT·link-local·loopback 대역을 뺀 `0.0.0.0/0` ipBlock이다. EKS VPC CNI NetworkPolicy(`enableNetworkPolicy`)는 FQDN으로 좁힐 수 없어 core·ai는 목적지 도메인이 아닌 포트로만 제한된다
-  - AWS 권한을 쓰는 Pod(scoring·report·설명 sLLM, 테마 자산 ai·learning #652)는 Pod Identity agent(`169.254.170.23:80`) egress를 둔다. 자기 정책으로 egress가 격리돼 있어 이것이 없으면 자격 증명을 못 받는다
+  - AWS 권한을 쓰는 Pod(scoring·report, 테마 자산 ai·learning #652, SageMaker 호출 ai #746)는 Pod Identity agent(`169.254.170.23:80`) egress를 둔다. 자기 정책으로 egress가 격리돼 있어 이것이 없으면 자격 증명을 못 받는다
   - 기본 거부는 namespace 단위 정책이다. app은 core release가 만드는 `app-default-deny` 하나(release 둘에 켜면 Helm 소유권 충돌, #657). 앱·migration Job은 chart 정책으로 이미 격리돼 영향이 없고, 자기 정책이 없는 일회성 Pod만 막힌다. 일회성 DB Pod·배포 확인 Pod는 전용 정책을 둔다(prod `app-oneoff-db-network.json`·`app-check-pods-network.json`, [infra 보고서 9.8](../report/infra.md#98-prod-테마-자산-버킷과-네임스페이스-기본-거부-준비-652657-2026-11-16))
   - report-api·report-worker는 라벨이 달라 허용 대상에 각각 명시
   - core 내부 API 호출(위 core ingress 허용의 근거, 경로는 [API 명세서](api-spec.md) 4장)
@@ -839,17 +842,17 @@ backend/report-service/
 - 일일 리포트 부하(P24, #390)
   - 월요일 00:00에 주간·일일 리포트 작업이 함께 생긴다(자녀당 2건). 일일은 LLM을 부르지 않아 비용 경보(P13 80%)에는 영향이 없고, report-worker(KEDA) 적체·DLQ 경보는 기존 기준으로 함께 본다([운영 경보](#47-운영-경보-구성-경계-187))
   - 자녀 수만큼 매일 작업이 생겨 report_db·S3 파일이 주간 대비 약 7배로 늘어난다. 보관 기간은 기존(P09 이용 중 보관)과 같음
-- 설명 sLLM 서버(FN-RPT-09·NFR-PRF-03, #476)
-  - 공통 앱 chart(`app-service`)의 release `sllm-server`(Service `sllm-server:8080`, OpenAI 호환 `/v1/chat/completions`, 모델 이름 `report-explanation`). ai는 `EXPLANATION_BASE_URL=http://sllm-server.app.svc.cluster.local:8080/v1`로 부른다(#477)
-  - 평소 replica 0. KEDA cron 트리거(`Asia/Seoul`, 일 23:50 ~ 월 02:00) 동안만 1대, 창이 끝나면 `cooldownPeriod` 300초 뒤 0대. 첫 설치도 0대로 시작한다(`keda.renderReplicaCount`). 창 안에서 helm upgrade를 하면 다음 KEDA 확인(30초)까지 0대가 되므로 배치 시간에는 배포하지 않는다
-  - 시작할 때 initContainer(`amazon/aws-cli`)가 승인된 양자화 모델을 emptyDir `/models`에 받고, `MODEL_SHA256`이 있으면 대조한다. 서버 컨테이너는 읽기 전용으로 마운트한다. prod는 S3(Pod Identity), local은 MinIO `sagomungchi-local-models`
-  - readiness·startup은 `/health`(llama.cpp는 모델 적재 중 503). 모델을 다 올려야 Ready라 ai 요청이 적재 중 Pod로 가지 않는다
-  - 3B급 양자화 모델 CPU 추론은 t3 계열에 맞지 않아 Karpenter NodePool `explanation-cpu`(4.3)에만 놓는다(nodeSelector·toleration). Pod 요청 CPU 3·메모리 5Gi, llama.cpp `--threads 3 --parallel 1`
-  - local(kind)은 실제 모델 대신 OpenAI 호환 대역(`infrastructure/stubs/llm-stub`)으로 내려받기·readiness·NetworkPolicy·cron 0→1→0만 확인한다. 추론 속도·메모리는 #475 실측 대상
-  - local이 내려받는 `sagomungchi-local-models/explanation/stub/model.gguf`는 platform-data의 MinIO 초기화 Job이 `minio.placeholderObjects`로 없을 때만 만드는 고정 문구 파일이다(#509). 새 kind에서도 platform-data 동기화 뒤 가동 창에 Init이 성공한다. 대역은 파일 내용을 읽지 않는다
-  - AWS 데모는 KEDA 미설치(4.4 AWS 데모 적용)라 KEDA 설치·Pod Identity 연결·NodePool 적용·서버 이미지 ECR 게시가 남아 있다(AWS 작업 보류, `environments/prod/sllm-server.json`·`karpenter-nodepool-explanation.json`은 파일만 작성). 두 파일은 ci-gitops가 렌더링·스키마 검사한다(#509)
-  - 첫 설치는 `redeploy-app.ps1`이 기존 release만 다루므로 수동 `helm upgrade --install`로 한다. 그 뒤 값 변경은 `redeploy-app.ps1 -Service sllm-server`로 재배포한다(이미지 digest가 고정돼야 통과). 저장소에서 빌드하는 이미지가 아니라 `cd-release` 대상이 아니다
-  - 생성 시간은 건당 20~30초 가정(30명 × 3건 약 40분), #475 실측 후 시간대·대기 상한·인스턴스 유형 조정. report의 설명 단계 상한(리포트당 400초)으로는 최악 30명 × 400초 = 200분이라 창(약 2시간)을 넘을 수 있으며, 창 밖 호출은 설명만 빠지고 리포트는 완료된다(P16, #508)
+- 리포트 Gemma SageMaker 엔드포인트(FN-RPT-09·NFR-PRF-03, #742·#746)
+  - 같은 계정·VPC의 SageMaker 실시간 엔드포인트 하나에 인퍼런스 컴포넌트(IC) 두 개를 둔다. 기반 IC `…-ic`(GPU 1, 메모리 예약 4096MB, 사본 0~1)가 S3 `base-awq/`(AWQ INT4 기반 모델)를 `ModelDataSource`로 받아 `/opt/ml/model`에 올리고, 어댑터 IC `…-explain`이 `BaseInferenceComponentName`으로 기반 IC 위에 S3 `adapter/`(LoRA r16)를 붙인다. **ai는 어댑터 IC를 부른다**(#746 D2, 2026-11-18 LoRA 사용 결정). 요청 본문의 `model` 값으로는 LoRA가 붙지 않아 `InvokeEndpoint`의 `InferenceComponentName`으로 고른다
+  - 컨테이너는 AWS vLLM SageMaker DLC(vLLM 0.33.0)다. LMI(DJL)는 쓰지 않는다. 인스턴스는 `ml.g6e.xlarge`(L40S 48GB, 호스트 32GiB)다. `ml.g6.xlarge`는 호스트 메모리가 부족해 IC 배치가 실패했다. 엔드포인트 설정은 `ManagedInstanceScaling` 0~1, 라우팅 `LEAST_OUTSTANDING_REQUESTS`, private 서브넷 2개와 전용 보안 그룹(4.3)이다
+  - 평소 0대. Application Auto Scaling 예약 작업(`Asia/Seoul`)이 기반 IC 사본을 일 23:30에 최소·최대 1로, 월 02:00에 0으로 바꾼다. 사본이 0이 되면 관리형 인스턴스 축소로 인스턴스도 0대가 된다. 0대에서 호출 가능까지 약 20.5분(인스턴스 준비·이미지 10.6GB·모델 17GB 받기·vLLM 기동)이 걸려, 월 00:00 배치에 맞추려고 확장을 기존 23:50에서 23:30으로 당겼다. 어댑터 IC는 기반이 다시 뜨면 SageMaker가 다시 붙인다
+  - 0대(창 밖)일 때 들어온 요청은 즉시 `ValidationError`로 실패한다. 이때 다른 모델로 대체하지 않고 설명 없이 발행한다(#733). 경보·단계 확장으로 깨우는 정책은 두지 않았다
+  - 응답 제한·생성 길이: 실시간 호출 60초 제한 안에서 `max_tokens`는 상세 1536·서술 1024다. 정상 상세 1건 약 5.7초(LoRA p50), 최악(동시 8건, 1536토큰)은 23.4초였다(1.3)
+  - 권한(IAM): SageMaker 실행 역할(S3 `models/explanation/*` 읽기, DLC 이미지 받기, 로그·지표, VPC ENI)과 ai Pod Identity 역할의 `sagemaker:InvokeEndpoint`다. IC를 지정한 호출은 `inference-component/<이름>` ARN으로 권한을 검사하므로 엔드포인트 ARN과 IC ARN을 모두 허용한다. ai 클라이언트는 boto3 리전을 설정으로 명시한다(#747)
+  - 모델 무결성: 배포 전 `sagemaker_explanation.py verify`(그리고 `apply` 직전)가 S3 `manifest.json`(`base-awq/` + `adapter/`)과 객체 목록·크기·FULL_OBJECT SHA-256을 대조하고, 다르면 모델을 만들지 않는다(#746 D1). 승인 경로 잠금과 적재 때 검사는 #777이다
+  - 구성 정의는 `infrastructure/aws/sagemaker/explanation-endpoint.json`과 `sagemaker_explanation.py`(aws CLI)다. Argo CD·Helm 대상이 아니고, 저장소에서 빌드하는 이미지도 없어 `cd-release` 대상이 아니다. 절차는 [AWS README](../../infrastructure/aws/README.md#리포트-gemma-sagemaker-엔드포인트-746-2026-11-18), 근거는 [infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)
+  - 남은 것: 30명 배치 실측 뒤 창 끝 시각(지금 월 02:00) 조정, GPU 재고 부족 때 동작(이번 시험에서는 재고 부족이 나지 않음), 창 시작 뒤 IC가 InService가 아닐 때 경보(4.7)
+  - 변경(2026-11-18, #742): 이전 설계는 공통 앱 chart release `sllm-server`(llama.cpp CPU 추론, Service `sllm-server:8080`, KEDA cron 일 23:50 ~ 월 02:00, Karpenter NodePool `explanation-cpu`, initContainer의 S3 모델 받기와 `MODEL_SHA256` 대조, local은 llm-stub 대역)였다(#476·#509). AWS 데모에는 배포한 적이 없다. 정리 대상 파일은 `environments/prod/sllm-server.json`·`karpenter-nodepool-explanation.json`, `environments/local/sllm-server.yaml`, `ai-service`의 `EXPLANATION_BASE_URL`과 `sllm-server` egress, local ApplicationSet·platform 정책·`platform-data` MinIO 자리 표시 객체 주석, prod·kind·app-service README다. ai 설정은 #747 호출 전환과 같은 PR에서 바꾼다
 - 표현 분류 재학습 작업(#688 재학습 자동화, 설계 #725, 이미지 #729, 배포 #730)
   - app namespace CronJob `tox-retrain`, 주 1회(기준안 일요일 03:00 `Asia/Seoul`), `concurrencyPolicy: Forbid`, `backoffLimit` 0(실패하면 다음 주기), 실행 시간 상한(`activeDeadlineSeconds`, #729 실측으로 정함). 수동 실행은 `kubectl create job --from=cronjob/tox-retrain`
   - 순서: learning 새 라벨 수(`label-count`) → 기준안 200건 미만이면 성공 종료 → 내보내기 + S3 비공개 경로의 공개 학습 데이터 일부 → core 활성 snapshot의 `tox-` 모델을 S3에서 받아 이어 학습(CPU) → 같은 평가 세트로 후보·활성 비교·추천 태그 → `scripts/prepare_model_upload.py` 방식으로 S3 `models/` 업로드 → core 내부 등록(api-spec 5.2 재학습 자동 등록) → S3 `models/tox-retrain/last.json`에 이번 라벨 범위 기록(다음 실행의 기준, 시퀀스 9.1). 활성화는 사람(FN-ADM-18)
@@ -919,7 +922,7 @@ OTel Java agent가 켜진 경우에만 export되고 없으면 no-op이다. expor
 예산 300 USD와 80%(240 USD) 판정은 Grafana 규칙 임계값이다. 새 exporter·주기 실행 계층·DB 계정은 추가하지 않았다.
 이벤트 발행 유실(best-effort)은 반영되지 않으므로 실제 비용보다 작을 수 있다.
 일일 리포트는 템플릿만 써 `llm_usage`가 늘지 않고, 일일 리포트 대화는 기존 분석 대화 호출 종류로 집계되어 예산 규칙에 포함된다.
-리포트 서술·설명(FN-RPT-09, #473)의 Gemma는 지금 RunPod에서 따로 청구되어 별도 청구 호출로 집계되고 예산 합산에는 들어가지 않는다(#764). EKS 안 sLLM으로 옮기면(#742) 단가 0으로 등록하고 비용은 sLLM 서버 노드 시간(EC2)으로 나타난다.
+리포트 서술·설명(FN-RPT-09, #473)의 Gemma는 지금 RunPod에서 따로 청구되어 별도 청구 호출로 집계되고 예산 합산에는 들어가지 않는다(#764). SageMaker 엔드포인트로 옮기면(#742) 비용은 토큰이 아니라 엔드포인트 인스턴스 시간(`ml.g6e.xlarge` 시간당 약 $3.2, 창 기준 월 약 $35)으로 AWS 청구서에 나타난다. `llm_usage`에 어떻게 기록할지(단가 0 또는 별도 청구 표시)는 #747 호출 전환에서 정한다.
 
 #### 업무별 오류율·지연
 
@@ -951,7 +954,7 @@ prod는 core·learning의 Java agent와 Collector egress를 켜야 이 규칙들
 - ai·scoring·report-api는 자체 span이 없다. ai 호출 구간은 호출한 쪽 span으로만 보인다.
 - local values는 Tempo·trace를 켜지 않는다. 검증 시 opt-in으로 켠다.
 - 임계값은 초기 기준이다. 실측 부하 기반 조정과 서비스별 담당 라우팅은 후속이다.
-- 리포트 설명(#476·#479): 배치 시간대 설명 sLLM 서버 기동 실패와 설명 `NOT_INCLUDED` 비율 경보는 아직 없다. 설명이 빠져도 리포트는 `COMPLETED`로 끝나 기존 DLQ·오류율 규칙에 잡히지 않는다. 지표는 report DB `weekly_report.verification` JSONB의 `explanationState`(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`, #479)로 정한다(#508): 월요일 배치 주간 리포트 중 `NO_TARGET`을 뺀 대상에서 `NOT_INCLUDED` 비율과, sLLM 가동 창 안에서 `INCLUDED`가 0건인지를 본다. 상태가 없는 이전 리포트는 집계에서 뺀다. report-worker는 아직 지표를 내보내지 않으므로 지금은 report DB 조회로 확인하고, 지표 내보내기·Grafana 규칙·임계값은 #475 실측 뒤 정한다.
+- 리포트 설명(#476·#479, SageMaker 전환 #742): 배치 시간대 SageMaker 엔드포인트 기동 실패(예약 확장 창 시작 뒤 기반·어댑터 IC가 InService가 아님, 0대 호출 실패 `NoCapacityInvocationFailures`)와 설명 `NOT_INCLUDED` 비율 경보는 아직 없다. 엔드포인트 상태·호출 지표는 Prometheus가 아니라 CloudWatch(`AWS/SageMaker`)에 있어, Grafana에 CloudWatch 데이터 소스를 붙일지 report DB 지표만 볼지는 남은 결정이다. 설명이 빠져도 리포트는 `COMPLETED`로 끝나 기존 DLQ·오류율 규칙에 잡히지 않는다. 지표는 report DB `weekly_report.verification` JSONB의 `explanationState`(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`, #479)로 정한다(#508): 월요일 배치 주간 리포트 중 `NO_TARGET`을 뺀 대상에서 `NOT_INCLUDED` 비율과, 예약 확장 창(일 23:30 ~ 월 02:00) 안에서 `INCLUDED`가 0건인지를 본다. 상태가 없는 이전 리포트는 집계에서 뺀다. report-worker는 아직 지표를 내보내지 않으므로 지금은 report DB 조회로 확인하고, 지표 내보내기·Grafana 규칙·임계값은 30명 배치 실측 뒤 정한다.
 - 표현 분류 재학습(#725): `tox-retrain` Job 실패를 기존 Grafana → Discord 경로로 알린다. Job 상태 지표 출처(kube-state-metrics 유무)는 #730에서 확인하고, 그 전까지는 관리자 모델 등록부에 새 버전이 없는 것과 `kubectl get jobs`로 확인한다.
 
 ## 5. 디렉토리 구조
@@ -1000,7 +1003,7 @@ SKN34-FINAL-3TEAM/
 │  ├─ m2/
 │  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
 │  ├─ tox/                       # 답변 표현 분류 학습·평가(#690), (예정) 재학습 진입점·CPU 이미지(#729, CronJob #730)
-│  └─ sllm/                      # (예정) 설명 sLLM 학습·평가·양자화 (#475)
+│  └─ sllm/                      # 설명 sLLM(리포트 Gemma LoRA) 학습·평가, 서빙 비교·SageMaker 측정 스크립트 (#475·#743·#746)
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
 │  ├─ runners/                   # 서비스 호출·채점 스크립트 (judgment_eval.py, 테스트는 ai-service tests)
@@ -1048,7 +1051,7 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  ├─ scoring-service.yaml
 │  │  │  │  ├─ report-api.yaml
 │  │  │  │  ├─ report-worker.yaml
-│  │  │  │  ├─ sllm-server.yaml      # 설명 sLLM 대역(llm-stub), KEDA cron 0→1→0 (#476)
+│  │  │  │  ├─ sllm-server.yaml      # 설명 sLLM 대역(llm-stub), KEDA cron 0→1→0 (#476). SageMaker 전환(#742)으로 정리 대상
 │  │  │  │  ├─ platform-data.yaml
 │  │  │  │  └─ observability.yaml     # local metrics 기반, Langfuse 제외
 │  │  │  └─ prod/                # AWS 데모 Helm values·ExternalSecret 참조·NetworkPolicy
@@ -1075,8 +1078,8 @@ SKN34-FINAL-3TEAM/
 │  │  ├─ create-app-secrets.ps1  # .env → app·observability namespace Secret
 │  │  └─ hpa-check-values.yaml   # #171 HPA 검증 전용 values
 │  ├─ eks/                       # eksctl ClusterConfig(cluster.json)·관측 인벤토리·gp3
-│  ├─ aws/                       # AWS CLI IaC(demo_stack.py·demo-stack.json·iam/), RDS bootstrap 실행(SQL은 platform-data chart 공용), CloudFront·ALB redacted 설정
-│  └─ stubs/                     # compose.e2e.yaml 대역(google·llm·toss·scoring), e2e.env(합성 값). llm-stub는 kind sllm-server 대역으로도 사용
+│  ├─ aws/                       # AWS CLI IaC(demo_stack.py·demo-stack.json·iam/, 리포트 Gemma SageMaker sagemaker_explanation.py·sagemaker/ #746), RDS bootstrap 실행(SQL은 platform-data chart 공용), CloudFront·ALB redacted 설정
+│  └─ stubs/                     # compose.e2e.yaml 대역(google·llm·toss·scoring), e2e.env(합성 값). llm-stub는 kind sllm-server 대역으로도 사용(SageMaker 전환 뒤 정리 대상, #747)
 │     └─ <target>-stub/          # google·llm·toss-stub: Google OAuth·LLM·토스페이먼츠 대역 (로컬·CI E2E)
 │        └─ Dockerfile
 ├─ .github/
@@ -1125,7 +1128,7 @@ SKN34-FINAL-3TEAM/
 - 공통 코드: 공통 라이브러리 없이 서비스별 보유(이벤트 봉투·Outbox·AMQP 연결), `contracts/events` 스키마로 계약 테스트. 중복이 문제 될 때 `libs/` 검토
 - Docker 빌드 컨텍스트는 서비스 폴더, `contracts/` 계약 테스트는 CI에서만 실행
 - report PDF 실행 환경 설치(#539): report 전용 설치 스크립트를 CI와 이미지 빌드에서 재사용한다. OS 의존성·한글 글꼴·Chromium 다운로드를 분리해 실패한 단계만 최대 3회 실행하며, APT 파일 재시도 3회·HTTP/HTTPS 대기 30초를 적용한다. 계속 실패하면 CI/빌드를 실패로 종료하고 다른 Python 서비스 단계는 유지한다.
-- 모델 학습 코드(M2·M1·sLLM)는 `ml/`에서 관리, scoring·설명 sLLM 서버는 승인된 가중치(S3)만 로딩
+- 모델 학습 코드(M2·M1·sLLM)는 `ml/`에서 관리, scoring·SageMaker 설명 엔드포인트는 승인된 가중치(S3)만 로딩(SageMaker는 배포 전 `manifest.json` 해시 대조, #746)
 - 참고 레포 대비 추가: `contracts/`, `ml/`, `infrastructure/aws/` / 제외: `mobile/`, `ops-service`(LLMOps는 Langfuse + `evaluation/`로 시작, 필요 시 추가)
 
 ---
@@ -1153,6 +1156,8 @@ SKN34-FINAL-3TEAM/
 
 ## 7. 확인 필요 가정
 - 학습(M2·M1·설명 sLLM)은 클러스터 밖 RunPod GPU에서 AI Hub 데이터만으로 수행하고 결과(가중치)만 S3로 반입. 설명 문장 생성은 클러스터 안 CPU sLLM 서버에서 수행해 학생 글이 AWS 밖으로 나가지 않음 (2026-11-10 결정, #473). 리포트 설명에 한정하며 추억 검색·설명(P27)은 외부 LLM API 사용
+  - **변경(2026-11-18, #742)**: 생성 위치를 아래 줄로 바꿨다. 학습은 위와 같다
+- 리포트 Gemma 생성(주간 서술·저녁 질문·대표 답변 상세 설명 3종, FN-RPT-09)은 같은 계정·VPC의 SageMaker GPU 실시간 엔드포인트(`ml.g6e.xlarge`, vLLM SageMaker DLC, AWQ 기반 + LoRA 어댑터 IC)에서 수행해 학생 글이 AWS 밖으로 나가지 않음 (2026-11-18 결정, #742·#746). RunPod 서버리스는 콜드 대기(191~315초)와 워커 배정이 불안정하고 학생 글이 AWS 밖으로 나가 쓰지 않는다. 클러스터 안 CPU(llama.cpp)는 상세 1건 약 50초로 느리다([infra 9.13](../report/infra.md#913-리포트-gemma-cpugpu-서빙-비교와-s3-반입-743745-2026-11-18)). 평소 0대이고 배치 전 예약 확장으로 1대를 켠다(4.4). 장애 때 다른 모델로 대체하지 않고(#733), 추억 검색·설명(P27)은 그대로 외부 LLM API 사용
 - 예외: 답변 표현 분류(`tox-`) 재학습은 학생 답변이 학습 데이터에 들어가 RunPod을 쓰지 않고 클러스터 안 CPU CronJob에서 현재 활성 모델을 이어 학습한다. 클러스터 안 GPU는 두지 않는다(설명 sLLM과 같은 이유: GPU 할당량 대기 위험). 첫 모델(#690)은 공개 데이터만이라 기존처럼 클러스터 밖에서 학습할 수 있다 (2026-11-17 결정, #725)
 - AWS 계정 EKS 생성 권한·예산 한도: 권한 없으면 EC2 1대 + k3s로 대체 (HA·Cluster Autoscaler·Pod Identity 제외)
 
