@@ -399,18 +399,24 @@ class GeneratedDay(BaseModel):
 # 그 컷 끝 뭉치 표정(입 모양으로만: smile 웃는 입, surprised 작은 o 입, determined 다문 일자 입).
 # 뭉치가 나오지 않는 컷은 none
 MungchiMood = Literal["none", "smile", "surprised", "determined"]
+# #779(기준안 2026-11-18): 컷 카메라. 실측에서 문제없던 것만(다가가기 push-in은 발이 잘려 뺌).
+# FOLLOW_BEHIND 앞으로 걸어가는 인물을 뒤에서 따라감, TRACK_SIDE 옆으로 이동하는 인물을 옆에서
+# 따라감, PAN_SIDE 넓은 장면·모인 장면을 천천히 옆으로 훑음, HOLD_CLOSE 가까운 장면을 그대로 유지
+CameraMove = Literal["FOLLOW_BEHIND", "TRACK_SIDE", "PAN_SIDE", "HOLD_CLOSE"]
 
 
 class GeneratedCut(BaseModel):
     """시작·종료 영상 콘티의 한 컷(길이는 theme_video_cut_seconds, 기본 4·6·8·6초).
 
-    내부 칸이라 응답 theme에는 넣지 않는다.
+    내부 칸이라 응답 theme에는 넣지 않는다. camera는 #779 칸이라 그 전에 저장된 테마(부분 다시
+    생성)·시험 자료에는 없을 수 있어 기본값을 둔다(LLM 스키마는 strict라 필수).
     """
 
     scene: str
     action: str
     caption: str
     mungchiMood: MungchiMood
+    camera: CameraMove = "PAN_SIDE"
 
 
 class GeneratedTheme(BaseModel):

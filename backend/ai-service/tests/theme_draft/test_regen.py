@@ -68,8 +68,8 @@ def test_full_run_keeps_regen_materials() -> None:
     regen = response.regen
     assert regen is not None and regen["version"] == 1
     assert regen["targets"] == list(TARGET_ORDER)  # 재료가 다 있으면 14개 모두
-    assert set(regen["assets"]) == {"OUTFIT", "PERSON", *CUT_ASSETS}
-    assert regen["assets"]["PERSON"] == regen["assets"]["INTRO1"]  # 인물 기준 = 시작 1컷
+    assert set(regen["assets"]) == {"OUTFIT", "CHARS", "PERSON", *CUT_ASSETS}
+    assert regen["assets"]["PERSON"] == regen["assets"]["CHARS"]  # 인물 기준 = 인물만 그린 그림
     assert all(key in storage.objects for key in regen["assets"].values())
     # 응답 theme에 없는 내부 칸(콘티·수사 연결 문장)이 regen.theme에 있음
     assert len(regen["theme"]["introCuts"]) == 4 and regen["theme"]["days"][0]["missionHook"]
@@ -148,7 +148,7 @@ def test_intro_image_redraws_cuts_and_refilms_intro() -> None:
     out, _, _, image, video = partial(response, storage, ["IMAGE:INTRO"])
     assert out.failure is None
     assert len(image.calls) == 4  # 시작 컷 첫 그림 4장
-    assert image.calls[0][1] == 0  # 시작 1컷은 처음처럼 참조 없이
+    assert image.calls[0][1] == 1  # 시작 1컷도 인물만 그린 기준 그림(#779, 처음 생성과 같게)
     assert len(video.calls) == 4
     assert out.images["INTRO"] != response.images["INTRO"]
     assert out.videos["INTRO"] != response.videos["INTRO"]

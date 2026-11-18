@@ -1,10 +1,12 @@
 """generate_images: 미션 그림 5장과 시작·종료 영상 컷 첫 그림 8장을 만들고 그림마다 검토한다.
 
-순서(사용자 결정 2026-11-11):
+순서(사용자 결정 2026-11-11, #779에서 2를 바꿈):
 1. 테마 옷 뭉치 = 기본 뭉치 그림(assets)을 고쳐 테마 옷만 더한 1장. 뭉치가 나오는 그림의 첫 참조이고
    모든 그림 검토의 비교 그림
-2. 시작 1컷 첫 그림(뭉치·인물 참조 없이 글로만) → 인물 기준 그림
-3. 나머지(미션 5 + 컷 7)를 [테마 옷 뭉치, 인물 기준 그림] 참조로 동시에(asyncio.gather).
+2. 인물 기준 그림 = 등장인물만 민무늬 배경에 그린 1장(#779, 호출 실패만 다시, 검토 없음). 예전에는
+   시작 1컷 장면을 인물 기준으로 써서 그림 모델이 배경·구도까지 따라 그려 컷마다 같은 장면이 됐음.
+   끝내 못 그리면 예전처럼 시작 1컷을 먼저 그려 인물 기준으로 씀
+3. 미션 5 + 컷 8을 [테마 옷 뭉치, 인물 기준 그림] 참조로 동시에(asyncio.gather).
    시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음(뭉치 혼자 출동)
 
 그림 대역(IMAGE_PROVIDER=fake)이면 검토를 부르지 않고 통과로 보며 warnings에 IMAGE ALL 한 줄(#716).
@@ -16,7 +18,8 @@ review_images는 별도 노드가 아니라 그림마다 그린 직후 돈다(re
 그림, MON~FRI는 미션 그림이고 S3에 .png로 올린 키를 담는다.
 
 부분 다시 생성 재료(#537): 테마 옷 뭉치(OUTFIT)와 컷 첫 그림 8장(INTRO1~4·OUTRO1~4)도 같은 실행
-폴더에 올리고 키를 assets에 둔다(인물 기준 PERSON = 처음 생성의 INTRO1). 부분 다시 생성은
+폴더에 올리고 키를 assets에 둔다(인물 기준 PERSON = 인물만 그린 그림 CHARS, 없으면 예전처럼 처음
+생성의 INTRO1). 부분 다시 생성은
 redo_images만 다시 그리고 나머지는 원래 키를 그대로 둔다. 시작·종료 컷 그림이 하나라도 끝내 실패하면
 그 장면은 원래 그림·영상·움직임을 그대로 두고 warnings(IMAGE)(장면 단위로 바꿈). 미션 그림이 끝내
 실패하면 처음 생성처럼 failure IMAGE.
@@ -170,6 +173,29 @@ async def dress_mungchi(ctx: ThemeContext, theme: Theme) -> tuple[bytes | None, 
     return None, bad
 
 
+async def draw_characters(ctx: ThemeContext, theme: Theme) -> bytes | None:
+    """인물 기준 그림(#779): 등장인물만 민무늬 배경에(호출 실패만 다시, 검토 없음).
+
+    못 그리면 None(예전처럼 시작 1컷을 인물 기준으로).
+    """
+    assert ctx.image is not None
+    for attempt in range(ctx.settings.theme_max_regen + 1):
+        if attempt and not ctx.can_regenerate():
+            return None
+        try:
+            return await ctx.image.edit(
+                ctx.prompt.body.characters_prompt(theme),
+                [],
+                prompt_version=ctx.prompt.version,
+                deadline=ctx.deadline,
+            )
+        except LlmUnavailable as exc:
+            logger.warning("theme characters image failed %s", exc.code)
+            if exc.code == "LLM_DEADLINE_EXCEEDED":
+                break
+    return None
+
+
 def cut_shot(
     ctx: ThemeContext, theme: Theme, scene: str, index: int, outfit: bytes, person: bytes | None
 ) -> Shot:
@@ -262,17 +288,25 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
         return range(1, len(theme[CUTS_KEY[scene]]) + 1)
 
     if partial:
-        # 인물 기준은 처음 생성의 시작 1컷 그대로(다른 장면과 인물 모습을 맞춤).
-        # 시작 1컷을 다시 그릴 때는
-        # 처음 생성처럼 참조 없이 글로만 그림
+        # 인물 기준은 처음 생성의 것 그대로(다른 장면과 인물 모습을 맞춤). 인물만 그린 그림(CHARS,
+        # #779)이면 시작 1컷도 그 그림을 참조, 예전 결과(인물 기준 = 시작 1컷)면 시작 1컷은 처음
+        # 생성처럼 참조 없이 글로만 그림
         person = state.get("person_image")
+        chars_person = "CHARS" in (state.get("assets") or {})
         shots = [
             mission_shot(ctx, theme, d, state["drafts"][d], outfit, person)
             for d in DAYS
             if d in redo
         ]
         shots += [
-            cut_shot(ctx, theme, scene, i, outfit, None if (scene, i) == ("INTRO", 1) else person)
+            cut_shot(
+                ctx,
+                theme,
+                scene,
+                i,
+                outfit,
+                None if (scene, i) == ("INTRO", 1) and not chars_person else person,
+            )
             for scene in CUT_SCENES
             for i in cut_range(scene)
             if f"{scene}{i}" in redo
@@ -282,16 +316,26 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
         )
         drawn = dict(zip([s.key for s in shots], results, strict=True))
     else:
-        first = await draw(
-            ctx, theme, cut_shot(ctx, theme, "INTRO", 1, outfit, None), outfit, seed_of("INTRO1")
-        )
-        person = first.image  # 인물 기준 그림(시작 1컷이 끝내 실패하면 인물 참조 없이)
+        chars = await draw_characters(ctx, theme)
+        first: Drawn | None = None
+        if chars is not None:
+            new_assets["CHARS"] = chars
+            person: bytes | None = chars
+        else:  # 예전 방식: 시작 1컷(글로만)을 먼저 그려 인물 기준으로
+            first = await draw(
+                ctx,
+                theme,
+                cut_shot(ctx, theme, "INTRO", 1, outfit, None),
+                outfit,
+                seed_of("INTRO1"),
+            )
+            person = first.image  # 시작 1컷이 끝내 실패하면 인물 참조 없이
         shots = [mission_shot(ctx, theme, d, state["drafts"][d], outfit, person) for d in DAYS]
         shots += [
             cut_shot(ctx, theme, scene, i, outfit, person)
             for scene in CUT_SCENES
             for i in cut_range(scene)
-            if (scene, i) != ("INTRO", 1)
+            if first is None or (scene, i) != ("INTRO", 1)
         ]
         drawn = dict(
             zip(
@@ -300,7 +344,8 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
                 strict=True,
             )
         )
-        drawn["INTRO1"] = first
+        if first is not None:
+            drawn["INTRO1"] = first
 
     warnings: list[dict] = (
         [warning("IMAGE", "ALL", FAKE_REVIEW_SKIPPED)]
@@ -351,7 +396,9 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
         **(state.get("assets") or {}),
         **{k: v for k, v in keys.items() if k not in scene_keys},
     }
-    if not partial and "INTRO1" in assets:
+    if not partial and "CHARS" in assets:  # #779 인물만 그린 그림
+        assets["PERSON"] = assets["CHARS"]
+    elif not partial and "INTRO1" in assets:
         assets["PERSON"] = assets["INTRO1"]
     out: ThemeState = {
         "outfit_image": outfit,

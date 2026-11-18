@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 VIDEO_OFF = "영상 설정 꺼짐"
 VIDEO_DEADLINE = "마감까지 남은 시간이 부족해 영상을 건너뜀"
 STILL_NOTE = "움직이는 그림으로 대신함"
+SAFE_NOTE = "안전한 영상으로 대신함"  # #779 다시 만들기까지 실패해 안전한 버전으로 찍어 통과
 # 영상 대역(VIDEO_PROVIDER=fake)은 시험용 잡음 영상이라 검토 모델에 보내지 않는다
 # (#716, 그림 대역과 같은 규칙).
 # 멈춤 확인(ffmpeg)은 모델을 쓰지 않아 그대로 한다
@@ -101,13 +102,16 @@ async def film(
     shows_target = body.cut_shows_target(theme, scene, index)
     feedback: list[str] = []
     bad: list[str] = []
-    for attempt in range(ctx.settings.theme_video_max_regen + 1):
+    # #779(사용자 결정 2026-11-18): 다시 만들기까지 실패하면 정지 그림 전에 안전한 버전으로 한 번 더
+    tries = [False] * (ctx.settings.theme_video_max_regen + 1)
+    tries += [True] if ctx.settings.theme_video_safe_retry else []
+    for attempt, safe in enumerate(tries):
         if attempt and not ctx.can_regenerate():
             bad = [*bad, DEADLINE_REASON]
             break
         try:
             clip = await ctx.video.generate(
-                body.video_prompt(theme, scene, index, cut, feedback),
+                body.video_prompt(theme, scene, index, cut, feedback, safe=safe),
                 first,
                 seconds=seconds,
                 prompt_version=ctx.prompt.version,
@@ -150,9 +154,12 @@ async def film(
             bad = [f"VIDEO_FRAMES {type(exc).__name__}"]
             continue
         fails, warns, shape = check_review(review.data.model_dump(), VIDEO_REVIEW_IDS)
-        bad = shape + [f"{x['id']} {x['reason']}" for x in fails]
+        passed_bad, bad = bad, shape + [f"{x['id']} {x['reason']}" for x in fails]
         if not bad:
-            return clip, [], [f"{x['id']} {x['reason']}" for x in warns], length
+            notes = [f"{x['id']} {x['reason']}" for x in warns]
+            if safe:  # 앞 시도의 실패 사유와 함께 안전한 버전으로 대신했다고 남김
+                notes += [f"{SAFE_NOTE}: {r}" for r in passed_bad or ["?"]]
+            return clip, [], notes, length
         feedback = uniq([*feedback, *bad])
     return None, bad, [], 0.0
 

@@ -141,11 +141,33 @@ PLAN_SYSTEM = (
     "마친 때'면 이야기에서도 그때 준비가 끝나 있음).\n"
     "- introCuts·outroCuts는 시작·종료 영상 콘티로 각각 정확히 4컷"
     "(무음 영상, 길이는 차례로 4·6·8·6초라 "
-    "가장 긴 3번째 컷에 가장 큰 동작을 둔다). scene은 "
-    "그 컷 끝에 보이는 장면(누가 어디서, 무엇이 보이는지), action은 그 컷의 동작 하나, caption은 "
+    "가장 긴 3번째 컷에 가장 큰 동작을 둔다). "
+    # #779: scene은 컷 첫 그림으로 그려지고 영상이 그 그림에서 시작함(예전 문구 "컷 끝에 보이는
+    # 장면"은 첫 그림과 어긋나 이동 컷이 거꾸로 움직였음)
+    "scene은 그 컷이 시작하는 첫 장면(누가 어디서, 무엇이 보이는지, 영상이 이 그림에서 시작), "
+    "action은 그 컷의 동작 하나, caption은 "
     "영상 위에 띄울 짧은 문구(30자 이내, 학년에 맞는 말투). mungchiMood는 그 컷 끝 뭉치 표정으로 "
     "입 모양으로만 나타낸다: smile(웃는 입), surprised(작은 o 입), determined(다문 일자 입). "
-    "뭉치가 나오지 않는 컷은 none.\n"
+    "뭉치가 나오지 않는 컷은 none. camera는 그 컷 카메라 하나: FOLLOW_BEHIND(앞으로 걸어가는 "
+    "인물을 뒤에서 따라감), TRACK_SIDE(옆으로 이동하는 인물을 옆에서 따라감, 시작 3컷 출동은 늘 "
+    "이것), PAN_SIDE(넓은 장면·여럿이 모인 장면을 천천히 옆으로 훑음), HOLD_CLOSE(가까운 장면을 "
+    "그대로 유지).\n"
+    # #779(만화 연출 시제품 2026-11-18): 컷마다 같은 장소·구도면 그림 위에서 인물만 움직이는 영상이
+    # 되고, 문구가 화면과 따로 놀면 이야기가 전해지지 않음(무음이라 화면과 문구가 이야기를 다 전함)
+    "- 4컷은 만화의 한 장면처럼 이어진다: 컷마다 장소의 다른 곳·다른 구도·다른 장면 크기(넓은 "
+    "장면, 인물이 크게 보이는 장면, 가까운 장면)로 쓰고, 앞 컷의 동작이 다음 컷으로 이어진다. "
+    "시작 2컷(사건)은 사건이 한눈에 보이는 가까운 장면이다: 사건 물건이나 빈자리(빈손·빈 줄·파헤친 "
+    "자리 등)를 크게 보여 주고 인물은 어깨 위쪽과 몸에 맞는 크기의 손만, camera는 HOLD_CLOSE.\n"
+    "- 인물이 이동하는 컷은 scene에서 그 인물이 가는 쪽을 보고(뒷모습·옆모습) 가는 길이 그쪽으로 "
+    "열려 있게 쓰고, action에서 길·바닥·열린 문으로만 이동한다(담·울타리·화단·물건 위로 오르거나 "
+    "통과하지 않음).\n"
+    "- 하나뿐인 물건(쪽지·상자·편지 등)은 그 컷에서 드는 사람을 한 명만 쓴다('새봄이 쪽지를 들고 "
+    "아저씨는 곁에서 본다'). 글자가 들어갈 물건(쪽지·편지·지도·안내판)은 글자 없이 그림·기호(점선 "
+    "길, X 표시 등)로 쓰고, 그 그림에 숨긴 물건·찾는 대상·후보 장소는 그리지 않는다.\n"
+    "- caption 4줄만 읽어도 이야기가 이어진다: caption은 그 컷 영상에 보이는 일만 말하고(이동을 "
+    "말하면 그 컷 action이 실제로 이동), 시작 2컷 caption에는 사건 물건·사건을, 시작 3컷 "
+    "caption에는 "
+    "뭉치 역할과 사건을 잇는 말을 넣는다(예: '보물 찾기라면 해적 선장 뭉치!').\n"
     "- introCuts·outroCuts 순서는 줄거리 종류 규칙의 콘티 틀을 따른다. 시작 1·2컷에는 뭉치가 "
     "나오지 않고 3(뭉치 출동)·4(현장 도착)에는 나온다: 1·2컷의 mungchiMood는 none, 3·4컷은 "
     "none이 아니다. "
@@ -157,14 +179,14 @@ PLAN_SYSTEM = (
     "않는다'처럼 쓰지 않는다.\n"
     # #779(실측 2026-11-18): 영상 모델은 뭉치가 뛰거나 손을 쓰면 팔·흰 다리를 만들고, 제자리 통통
     # 튀기도 마찬가지였음. 뭉치가 거의 가만히 있고 사람·배경·카메라가 움직이면 모양이 유지됨
-    "- action은 그 컷 역할이 영상에서 한눈에 보이는 분명한 동작 하나. 사람은 손짓·손뼉·건네기·"
-    "안기·몸 돌리기·화면 안에서 옆으로 몇 걸음 걷기처럼 역할을 보여 주는 동작을 한다. 뭉치는 팔이 "
+    "- action은 그 컷 역할이 영상에서 한눈에 보이는 분명한 동작 하나. 사람은 만화처럼 크고 "
+    "분명하게 움직인다(걸어 들어가기·펄쩍 놀라기·손 흔들기·건네기·안기 등). 뭉치는 팔이 "
     "없어(몸 앞쪽 작은 동그란 손과 짧은 갈색 발만) 뭉치의 동작은 표정 바꾸기·고개 갸웃·몸 살짝 "
     "흔들기만 쓴다. 단, 시작 3컷(출동)에서는 뭉치가 짧은 갈색 발로 옆으로 힘차게 달려간다. 손 "
     "흔들기·손 들기·가리키기·짚기·건네기·안기·모으기·놓기·뛰기·통통 튀기는 사람만 한다(예: "
     "'사람들이 손뼉을 치며 기뻐하고 뭉치는 환하게 웃으며 몸을 살짝 흔든다'). 인물·뭉치가 화면 "
-    "쪽으로 다가오거나 멀어지지 않고, 걸어서 화면 밖으로 나가거나 새 인물이 들어오지 않는다. 컷 "
-    "끝까지 scene에 나온 인물이 모두 화면 안에 있다.\n"
+    "쪽으로 다가오지 않고, 걸어서 화면 밖으로 나가거나 새 인물이 들어오지 않는다(카메라가 인물을 "
+    "따라가며 다른 인물이 화면 밖으로 빠지는 것은 된다).\n"
     "- 영상 속에는 글자를 넣지 않으므로 scene·action에 글자·숫자가 보이는 "
     "장면(쓰인 간판 등)을 쓰지 않는다.\n"
     "\n"
@@ -600,8 +622,12 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
         cut = ("OUTRO" if head.startswith("outroCuts") else "INTRO", int(head[-1]))
         return [
             f"이 컷의 역할을 지킨다: {cut_roles(theme, head[:-1])[int(head[-1]) - 1]}.",
-            "scene은 컷 끝에 보이는 모습(누가 어디서) 한 문장, action은 동작 하나를 한 문장으로, "
+            # #779: scene은 컷 첫 그림(영상이 이 그림에서 시작), 콘티 규칙(PLAN_SYSTEM)과 같게
+            "scene은 컷이 시작하는 첫 모습(누가 어디서) 한 문장, action은 동작 하나를 한 문장으로, "
             "지금 글 길이와 비슷하게 쓴다. 같은 말을 되풀이하지 않는다.",
+            "인물이 이동하면 scene에서 가는 쪽을 보고 길이 그쪽으로 열려 있게, action에서 길·바닥·"
+            "열린 문으로만 이동한다. 하나뿐인 물건은 드는 사람을 한 명만 쓰고, 글자가 들어갈 "
+            "물건은 글자 없이 그림·기호로 쓴다(숨긴 물건·찾는 대상·후보 장소는 그리지 않음).",
             # #779: 콘티 규칙(PLAN_SYSTEM action)과 같은 뭉치 동작
             "뭉치는 시작 3컷(출동)에서 짧은 갈색 발로 옆으로 힘차게 달려가고, 다른 컷에서는 표정 "
             "바꾸기·고개 갸웃·몸 살짝 흔들기만 한다. 손짓·건네기·안기·뛰기·통통 튀기처럼 손이나 "
@@ -609,7 +635,8 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             if cut == ("INTRO", 3)
             else "뭉치는 표정 바꾸기·고개 갸웃·몸 살짝 흔들기만 한다. 손짓·건네기·안기·뛰기·통통 "
             "튀기처럼 손이나 팔다리를 쓰는 동작은 사람이 한다.",
-            "누구도 화면 쪽으로 다가오거나 화면 밖으로 나가지 않는다. 인물·장소는 그대로 둔다.",
+            "누구도 화면 쪽으로 다가오거나 걸어서 화면 밖으로 나가지 않는다. 인물·장소는 그대로 "
+            "둔다.",
             # #765 CUT_TARGET: 컷 그림에 나오지 않는 것은 이름도, 없다는 말도 쓰지 않음
             f"이 컷 그림에는 찾는 대상('{theme.get('target') or ''}')이 나오지 않는다: 대상 이름을 "
             "쓰지 않고 '보이지 않는다'처럼 없다는 말도 쓰지 않는다. 없어진 것은 빈손·빈자리처럼 "
@@ -624,9 +651,11 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             else "정답 이름·정답 장소를 쓰지 않는다.",
         ]
     if key == "caption":
+        # #779: 문구는 그 컷 영상에 보이는 일만(콘티 규칙과 같게)
+        seen = "영상 위에 띄우는 짧은 문구로 그 컷 영상에 보이는 일만 말한다."
         if head.startswith("outroCuts"):
-            return ["영상 위에 띄우는 짧은 문구. 종료 콘티라 정답 이름을 써도 된다."]
-        return ["영상 위에 띄우는 짧은 문구. 정답 이름·정답 장소를 쓰지 않는다."]
+            return [f"{seen} 종료 콘티라 정답 이름을 써도 된다."]
+        return [f"{seen} 정답 이름·정답 장소를 쓰지 않는다."]
     if path == "incident":  # #634 ③ 내부 칸이 비었을 때
         return [
             f"이번 주 사건 물건·일 한 줄(찾는 것: {theme.get('target') or ''}). 엔딩 전에 보여도 "
@@ -1593,6 +1622,36 @@ RUN_POSE = (
 )
 
 
+# #779(만화 연출 시제품 2026-11-18): 인물 기준 그림이 시작 1컷 장면이면 그림 모델이 배경·구도까지
+# 따라 그려 컷마다 같은 장면이 됐음. 인물만 민무늬 배경에 그린 그림을 기준으로 씀
+def characters_prompt(theme: Theme) -> str:
+    """인물 기준 그림: 등장인물만 나란히(모든 컷 그림·미션 그림의 인물 참조)."""
+    looks = "; ".join(f"{c['name']}: {c['look']}" for c in theme["characters"])
+    return (
+        "Draw only these people standing side by side, full body, facing the viewer, on a plain "
+        f"light cream background (Korean): {looks}. No Mungchi, no animals, no objects, no "
+        "background, no letters. Style: 2D cartoon illustration for children, thick even "
+        "dark-brown outlines, flat colors with simple soft shading, not 3D."
+    )
+
+
+# 컷 그림 공통(#779): 참조는 모습만, 구도는 장면대로. 가까운 장면은 어깨 위·손은 몸에 맞게
+# (시제품에서 주먹이 얼굴보다 크게 그려짐). 글자가 들어갈 물건은 그림·기호로, 숨긴 것·후보
+# 장소는 그리지 않음
+CUT_FRAMING = (
+    "Use the reference pictures only for how Mungchi and the people look; draw this scene's own "
+    "place, framing and camera angle as the scene says."
+)
+CLOSE_SHOT = (
+    "Close shot: the people are seen from the shoulders up with hands in natural size; anything "
+    "held is at chest height and does not cover their faces."
+)
+WRITTEN_THINGS = (
+    "Notes, letters, maps or signs show simple pictures or symbols (a dotted path, an X mark) "
+    "instead of letters, and never show the hidden target or any candidate place."
+)
+
+
 def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list[str]) -> str:
     """시작·종료 영상 컷의 첫 그림(영상이 이 그림에서 시작). mungchiMood는 있으면 쓴다."""
     lines = [IMAGE_STYLE]
@@ -1609,6 +1668,10 @@ def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: 
     else:
         lines.append("Only Mungchi is in this picture (no other characters).")
     lines.append(f"Scene (Korean): {cut['scene']}")
+    lines.append(CUT_FRAMING)
+    if cut_camera(scene, index, cut) == "HOLD_CLOSE":
+        lines.append(CLOSE_SHOT)
+    lines.append(WRITTEN_THINGS)
     lines += [x for x in target_lines(theme, scene, index) if x]
     lines += [IMAGE_RULES, *_fixes(feedback)]
     return "\n".join(lines)
@@ -1721,6 +1784,7 @@ VIDEO_NEGATIVE = (
     "character leaving the frame, character disappearing, character walking toward the camera, "
     "characters merging, extreme zoom, cropped faces, freeze frame, 3D render, text, "
     "clouds indoors, leaves indoors, page turn, page curl, transition effect, "
+    "walking on walls, walking through bushes, passing through objects, duplicated objects, "
     "flashing lights, scary, sudden cuts"
 )
 # #779: 뭉치 모양 고정. 뭉치는 거의 가만히(표정·갸웃·흔들기), 출동 컷만 정면을 본 채 옆으로 달림.
@@ -1743,19 +1807,44 @@ MUNGCHI_RUN = (
     "profile). The camera tracks alongside, so Mungchi stays the same size and inside the frame "
     "while the background scrolls past. Mungchi never runs toward or away from the camera."
 )
-# #779: 컷 역할(이야기 흐름)에 맞는 카메라. 다가가는(push-in) 카메라는 전체 실행(2026-11-18 초5
-# 보물 쪽지)에서 시작 2컷이 두 번 모두 "확대되며 다리가 잘림"으로 실패하고 종료 1컷도 경고라 쓰지
-# 않고 옆으로 훑기·따라가기만 씀
-CUT_CAMERA = {
-    ("INTRO", 1): "a slow sideways pan that shows the everyday scene",
-    ("INTRO", 2): "a slow sideways pan across the surprised character",
-    ("INTRO", 3): "a side tracking shot that moves along with Mungchi",
-    ("INTRO", 4): "a slow pan across everyone gathered together",
-    ("OUTRO", 1): "a slow sideways pan across Mungchi and the clues",
-    ("OUTRO", 2): "a slow pan that reveals the place",
-    ("OUTRO", 3): "a slow sideways pan around the moment",
-    ("OUTRO", 4): "a slow sideways pan across everyone celebrating",
+# #779 출동 컷이 끝내 실패하면 한 번 더 찍는 안전한 버전(뭉치는 서 있고 카메라만 움직여 배경이
+# 흐름, 실측에서 두 테마 모두 통과)
+MUNGCHI_GO_SAFE = (
+    "Mungchi stands with a determined face and sways its body gently without moving its hands or "
+    "feet, while the camera moves sideways so the background flows past behind it."
+)
+# #779(기준안 2026-11-18, 사용자 결정: 정해 둔 카메라 중 콘티가 컷마다 고름). 다가가기(push-in)는
+# 전체 실행(초5 보물 쪽지)에서 시작 2컷이 두 번 모두 "확대되며 다리가 잘림"이라 목록에 없음
+CAMERA_TEXT = {
+    "FOLLOW_BEHIND": "the camera follows behind the moving character at the same distance as they "
+    "walk forward along the path, so the place changes around them",
+    "TRACK_SIDE": "a side tracking shot that moves along with the moving character at the same "
+    "distance, so the background scrolls past",
+    "PAN_SIDE": "a slow sideways pan across the scene",
+    "HOLD_CLOSE": "the camera stays close and steady at the same distance and never pulls back; "
+    "the people react in place",
 }
+# 콘티에 camera가 없을 때(#779 전에 저장된 테마의 부분 다시 생성) 컷 역할별 기본값
+DEFAULT_CAMERA = {
+    ("INTRO", 1): "PAN_SIDE",
+    ("INTRO", 2): "HOLD_CLOSE",
+    ("INTRO", 3): "TRACK_SIDE",
+    ("INTRO", 4): "PAN_SIDE",
+    ("OUTRO", 1): "PAN_SIDE",
+    ("OUTRO", 2): "PAN_SIDE",
+    ("OUTRO", 3): "PAN_SIDE",
+    ("OUTRO", 4): "PAN_SIDE",
+}
+
+
+def cut_camera(scene: str, index: int, cut: dict) -> str:
+    """컷 카메라: 출동 컷은 늘 옆에서 따라감, 그 밖은 콘티 값(없거나 목록 밖이면 역할별 기본값)."""
+    if is_go_cut(scene, index):
+        return "TRACK_SIDE"
+    camera = cut.get("camera")
+    return camera if camera in CAMERA_TEXT else DEFAULT_CAMERA.get((scene, index), "PAN_SIDE")
+
+
 # 앞 시험에서 모든 컷에 '구름이 흐른다'를 넣어 실내 벽에 구름이 생겼음(실내·실외를 나눔)
 SCENE_MOTION = (
     "The background moves in a way that fits the place: outdoors, clouds drift and leaves, grass "
@@ -1764,18 +1853,27 @@ SCENE_MOTION = (
 )
 
 
-def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list[str]) -> str:
+def video_prompt(
+    theme: Theme, scene: str, index: int, cut: dict, feedback: list[str], safe: bool = False
+) -> str:
     """컷 역할·동작 + 고정 문구(첫 그림만 고정해 그 그림에서 시작). 뭉치·찾는 대상 규칙은 그림과
     같은 컷 판정(cut_has_mungchi·cut_has_characters·cut_shows_target)을 따른다.
 
-    #779: 컷 역할(줄거리 종류의 콘티 틀)과 컷별 카메라로 4컷이 이야기로 이어지게 하고, 뭉치는 거의
-    가만히(출동 컷만 옆으로 달림), 사람·배경·카메라가 움직인다.
+    #779: 컷 역할(줄거리 종류의 콘티 틀)과 콘티가 고른 카메라로 4컷이 만화 한 장면처럼 이어지게
+    하고, 뭉치는 거의 가만히(출동 컷만 옆으로 달림), 사람은 크게 움직인다. safe는 끝내 실패한 컷을
+    정지 그림 대신 한 번 더 찍는 안전한 버전(뭉치·사람 움직임을 줄이고 카메라만 천천히 훑음).
     """
     target = theme.get("target") or "the missing target"
+    camera = (
+        "HOLD_CLOSE"
+        if safe and cut_camera(scene, index, cut) == "HOLD_CLOSE"
+        else ("PAN_SIDE" if safe else cut_camera(scene, index, cut))
+    )
     if cut_has_mungchi(scene, index):
         mouth = mood_mouth(cut)
+        go = MUNGCHI_GO_SAFE if safe else MUNGCHI_RUN
         mungchi = [
-            MUNGCHI_RUN if is_go_cut(scene, index) else MUNGCHI_STILL,
+            go if is_go_cut(scene, index) else MUNGCHI_STILL,
             *MUNGCHI_KEEP,
             f"Mungchi never picks up, lifts, hugs, hands over or receives anything, especially "
             f"{target}. An outfit item Mungchi already holds in the first frame (such as a "
@@ -1830,14 +1928,22 @@ def video_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list
         f"Action (Korean): {cut['action']}",
         "Keep the 2D cartoon style of the first frame with thick even outlines.",
         *mungchi,
-        "Everyone in the first frame stays fully inside the frame until the end: nobody walks "
-        "out, disappears, appears or merges with another person. Everyone keeps the same face, "
-        "hair, glasses, hair clips and clothes as in the first frame.",
-        "The people act out the action clearly and naturally, continuously until the end with no "
-        "pauses. Nobody moves toward or away from the camera.",
+        # #779: 카메라가 따라가며 다른 인물이 화면 밖으로 빠지는 것은 됨(만화 연출 시제품 1컷)
+        "Nobody walks out of the frame, disappears, appears or merges with another person; when "
+        "the camera follows someone, others may leave the view only because the camera moves "
+        "away. Everyone keeps the same face, hair, glasses, hair clips and clothes as in the first "
+        "frame.",
+        "The people make small, gentle movements, continuously until the end."
+        if safe
+        else "The people act it out like a lively cartoon: big, clear, expressive movements "
+        "(walking, jumping in surprise, waving), continuously until the end with no pauses. "
+        "Nobody walks toward the camera.",
+        # #779: 시제품에서 화단·담 위를 걷고, 쪽지가 두 장이 됨
+        "Everyone moves only along paths, floors and open doors or gates: nobody walks on or "
+        "through walls, fences, flower beds, benches or other objects. A single object (a note, a "
+        "box, a letter) stays one object.",
         SCENE_MOTION,
-        f"Camera: {CUT_CAMERA.get((scene, index), 'a slow, smooth move')}, with no zoom-in: "
-        "everyone's whole body from head to feet stays in view and nobody is cut off. No "
+        f"Camera: {CAMERA_TEXT[camera]}, with no zoom-in, so nobody is cut off by zooming. No "
         "transition effects. No text.",
         about_target,
         *_fixes(feedback),
@@ -1850,10 +1956,17 @@ VIDEO_REVIEW_SYSTEM = (
     "그림은 컷의 첫 장면(기준)이고, 그다음은 영상에서 "
     "1초마다 뽑은 장면이며, 마지막 두 장은 뭉치 판정 예시(초록 테두리 = 허용 모음, 빨간 테두리 = "
     "결함 모음)다. 다섯 항목마다 verdict를 PASS·WARN·FAIL 중 하나로 쓰고 근거 한 문장"
-    "(reason)을 쓴다. 다섯 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
-    "CONTINUITY: 기준 장면의 인물(뭉치 포함)이 끝까지 모두 화면 안에 보이는지(화면 밖으로 나가거나 "
-    "사라지거나 둘이 겹쳐 하나가 되거나 얼굴이 크게 "
-    "잘리지 않는지), 뭉치의 옷·모자·목에 건 것이 기준 "
+    "(reason)을 쓴다. 다섯 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다. "
+    # #779(사용자 결정 2026-11-18): 작은 흠 하나로 컷 전체가 정지 그림이 되지 않게(초4 종료 3컷이
+    # 뭉치 옆 작은 갈색 점 하나로 두 번 실패해 7.5초 정지 그림)
+    "1초 안팎 잠깐 보이는 작은 흠(손의 작은 점, 작은 무늬 변화)은 WARN, 팔·다리·얼굴이 바뀌거나 "
+    "인물이 사라지는 것처럼 눈에 띄는 결함은 FAIL.\n"
+    "CONTINUITY: 기준 장면의 인물(뭉치 포함)이 끝까지 화면 안에 보이는지(걸어서 화면 밖으로 "
+    "나가거나 사라지거나 둘이 겹쳐 하나가 되거나 얼굴이 크게 잘리면 결함. 카메라가 다른 인물을 "
+    "따라가 움직여서 화면 밖으로 빠지는 것, 기준 장면부터 가까운 장면이라 몸 일부가 화면 밖인 것은 "
+    "결함이 아니다), 인물이 장면 공간에 맞게 움직이는지(길·바닥·열린 문이 아니라 담·울타리·화단·"
+    "의자·물건 위나 속으로 걷거나 통과하면 결함), 하나뿐인 물건(쪽지·상자 등)이 둘로 늘어나지 "
+    "않는지, 뭉치의 옷·모자·목에 건 것이 기준 "
     "장면과 같은지, 사람의 머리핀·안경·옷이 기준 장면과 같은지(토끼 머리핀이 토끼 귀로 자라는 "
     "것처럼 바뀌거나 새로 생기면 결함). "
     # #779(사용자 결정 2026-11-18): 뭉치 팔·다리·얼굴 기준을 판정 예시 그림과 함께 줌. 글로만
@@ -1880,11 +1993,12 @@ VIDEO_REVIEW_SYSTEM = (
     "(뭉치가 사건 대상을 잡는 것·뭉치 팔·다리·얼굴이 원래 모습에서 벗어나는 것은 CONTINUITY에서 "
     "판정 예시를 기준으로 본다).\n"
     "ANSWER_HINT: 찾는 대상이 나오면 안 되는 컷(targetAllowed false)에 대상이 보이는지(후보가 "
-    "동물이면 후보 동물 가운데 어느 것이라도 보이면 결함), 정답 "
+    "동물이면 후보 동물 가운데 어느 것이라도 보이면 결함. #779: 쪽지·지도·사진 속 그림으로 그려진 "
+    "것도 보이는 것), 정답 "
     "공개가 허용되지 않은 컷(answerAllowed false)에서 정답(대상이 있는 곳·정답 동물)을 가리켜 "
     "보여 주는지"
     "(장소가 비슷해 보인다는 이유만으로는 결함이 아님). " + COVERED_REVIEW + "\n"
-    "TEXT: 글자·숫자가 보이는지.\n"
+    "TEXT: 글자·숫자가 보이는지(점선·X 표시 같은 그림 기호는 글자가 아니다).\n"
     "SAFETY: 무섭거나 위험한 모습, 번쩍이는 빛, 폭력이 있는지. " + SAFETY_STORY + "\n"
 )
 

@@ -244,16 +244,17 @@ def test_images_motion_and_video_off_warning() -> None:
     assert set(storage.objects) == set(response.images.values()) | set(
         response.regen["assets"].values()
     )
-    assert len(storage.objects) == 16
+    assert len(storage.objects) == 17  # 장면 7 + 재료 10(테마 옷 뭉치·인물 그림·컷 8)
     assert {ct for _, ct in storage.objects.values()} == {"image/png"}
-    # 테마 옷 뭉치(기본 그림 1장 참조) → 시작 1컷(참조 없음) → 나머지 12장
+    # 테마 옷 뭉치(기본 그림 1장 참조) → 인물만 그린 기준 그림(참조 없음, #779) → 13장 동시에
     assert (
         image.calls[0][1] == 1
         and "Only add the theme outfit: 구조대 주황 조끼" in image.calls[0][0]
     )
-    assert image.calls[1][1] == 0 and INTRO_CUTS[0]["scene"] in image.calls[1][0]
-    assert len(image.calls) == 14
-    refs = {c[0].split("Scene (Korean): ")[1].split("\n")[0]: c[1] for c in image.calls[1:]}
+    assert image.calls[1][1] == 0 and "Draw only these people" in image.calls[1][0]
+    assert len(image.calls) == 15
+    refs = {c[0].split("Scene (Korean): ")[1].split("\n")[0]: c[1] for c in image.calls[2:]}
+    assert refs[INTRO_CUTS[0]["scene"]] == 1  # 시작 1컷: 인물 그림만(#779, 예전엔 참조 없음)
     assert refs[INTRO_CUTS[1]["scene"]] == 1  # 시작 2컷: 뭉치 없이 인물 기준 그림만
     assert refs[INTRO_CUTS[2]["scene"]] == 1  # 시작 3컷: 테마 옷 뭉치만(뭉치 혼자)
     assert refs[OUTRO_CUTS[0]["scene"]] == 2
@@ -265,10 +266,11 @@ def test_images_motion_and_video_off_warning() -> None:
     assert DISCOVERY["MON"] in mon[0][0]  # 그날 증거 발견 줄(증거 물건이 보이게)
     intro3 = prompts_with(image, INTRO_CUTS[2]["scene"])[0][0]
     assert "a closed straight-line mouth" in intro3  # determined → 입 모양
-    assert "expression" not in image.calls[1][0]  # 시작 1컷은 뭉치 없음(none)
+    intro1 = prompts_with(image, INTRO_CUTS[0]["scene"])[0][0]
+    assert "expression" not in intro1  # 시작 1컷은 뭉치 없음(none)
     intro2 = prompts_with(image, INTRO_CUTS[1]["scene"])[0][0]
     assert "Mungchi does not appear" in intro2 and "Do not draw 강아지 보리" in intro2
-    assert "may appear" in image.calls[1][0]  # 시작 1컷은 찾는 대상 허용
+    assert "may appear" in intro1  # 시작 1컷은 찾는 대상 허용
     assert "may appear" in prompts_with(image, OUTRO_CUTS[2]["scene"])[0][0]
     # 검토는 [그림, 테마 옷 뭉치], 움직임은 그 장면 그림 1장
     assert {c for c in review.image_counts if c[0] == "GeneratedImageReview"} == {
@@ -369,7 +371,7 @@ def test_fake_image_provider_skips_image_review_with_one_warning() -> None:
     )
     assert response.failure is None
     assert set(response.images) == set(SCENES)
-    assert len(image.calls) == 14  # 테마 옷 뭉치 + 13장, 다시 그리기 없음
+    assert len(image.calls) == 15  # 테마 옷 뭉치 + 인물 그림 + 13장, 다시 그리기 없음
     assert reviewed(review, GeneratedImageReview) == 0
     assert reviewed(review, GeneratedStoryReview) == 1  # 글 검토는 그대로
     fake = [w for w in response.warnings if w.reason == image_node.FAKE_REVIEW_SKIPPED]
@@ -387,7 +389,7 @@ def test_real_image_provider_still_reviews_every_image() -> None:
 
 def test_request_image_failures_seed_image_prompts() -> None:
     """요청 previousFailures의 IMAGE 사유: 그림 이름이 붙으면 그 그림, 없으면 모든 그림의 첫
-    그리기부터 들어감(테마 옷 뭉치는 제외)."""
+    그리기부터 들어감(테마 옷 뭉치·인물만 그린 기준 그림은 제외)."""
     failures = [{"stage": "IMAGE", "reasons": ["TUE MISSION_FIT 녹음기 안 보임", "TEXT 글자 있음"]}]
     image = FakeImageClient()
     response = run(
@@ -404,7 +406,8 @@ def test_request_image_failures_seed_image_prompts() -> None:
     assert len(tue) == 1 and "MISSION_FIT 녹음기 안 보임" in tue[0][0]
     assert "TUE MISSION_FIT" not in tue[0][0]  # 그림 이름은 떼고 넣음
     assert "MISSION_FIT 녹음기 안 보임" not in prompts_with(image, "장소 마을 wed 길")[0][0]
-    assert all("TEXT 글자 있음" in c[0] for c in image.calls[1:])
+    assert "TEXT 글자 있음" not in image.calls[1][0]  # 인물만 그린 기준 그림(#779)
+    assert all("TEXT 글자 있음" in c[0] for c in image.calls[2:])
 
 
 def test_mission_image_failure_is_image_failure_with_text() -> None:
@@ -518,7 +521,8 @@ def test_fake_video_provider_still_checks_freezes() -> None:
 
 def test_failed_video_cut_becomes_still_cut() -> None:
     """끝내 검토를 못 넘은 컷은 첫 그림을 천천히 확대하는 움직이는 그림 컷으로 대신하고 장면 영상은
-    남김(2026-11-11: 뭉치 컷은 영상 모델이 작은 손을 팔로 키워 거의 다 실패). 다시 만들기는 1번."""
+    남김(2026-11-11: 뭉치 컷은 영상 모델이 작은 손을 팔로 키워 거의 다 실패). 다시 만들기는 1번,
+    그다음 안전한 버전 1번(#779)까지 실패할 때만."""
 
     def verdicts(user: dict) -> dict[str, str]:
         return {"CONTINUITY": "FAIL"} if user["scene"] == OUTRO_CUTS[3]["scene"] else {}
@@ -528,7 +532,8 @@ def test_failed_video_cut_becomes_still_cut() -> None:
         gen_llm(), review_llm(video=verdicts), image=FakeImageClient(), video=video, storage=storage
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 8 + 1  # 종료 4컷만 한 번 더(theme_video_max_regen 1)
+    assert len(video.calls) == 8 + 1 + 1  # 종료 4컷만 다시 1번(max_regen 1) + 안전한 버전 1번
+    assert "The people make small, gentle movements" in video.calls[-1][0]  # 안전한 버전
     assert [(w.stage, w.item) for w in response.warnings] == [("VIDEO", "OUTRO")]
     assert response.warnings[0].reason == "OUTRO4 영상 CONTINUITY CONTINUITY 사유, " + STILL_NOTE
     body, _ = storage.objects[response.videos["OUTRO"]]
@@ -810,8 +815,8 @@ def test_route_uses_media_clients_from_app_state(monkeypatch: pytest.MonkeyPatch
         get_settings.cache_clear()
     body = response.json()
     assert response.status_code == 200 and body["failure"] is None
-    # 장면 그림 7장 + 재료 그림 9장(테마 옷 뭉치·컷 첫 그림 8장, #537)
-    assert set(body["images"]) == set(SCENES) and len(storage.objects) == 16
+    # 장면 그림 7장 + 재료 그림 10장(테마 옷 뭉치·인물 그림·컷 첫 그림 8장, #537·#779)
+    assert set(body["images"]) == set(SCENES) and len(storage.objects) == 17
     assert set(body["motions"]["MON"]["camera"]) == {"from", "to", "seconds"}
     assert DAYS[0] in body["motions"]
 
@@ -841,7 +846,7 @@ def test_video_prompt_and_review_keep_everyone_and_outfit() -> None:
 
     theme = valid_theme()
     text = prompts.video_prompt(theme, "OUTRO", 4, OUTRO_CUTS[3], [])
-    assert "nobody walks out, disappears, appears or merges" in text
+    assert "Nobody walks out of the frame, disappears, appears or merges" in text
     assert "never arms" in text and "stay exactly as in the first frame" in text  # #779 손 문구
     assert "nobody is cut off" in text and "push-in" not in text  # #779 다가가는 카메라 금지
     for word in ("character leaving the frame", "wings", "outfit change", "freeze frame"):
