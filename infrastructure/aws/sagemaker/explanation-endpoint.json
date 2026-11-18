@@ -1,0 +1,44 @@
+{
+  "comment": "리포트 Gemma 상세 설명 SageMaker 실시간 엔드포인트(#746). 계정 번호는 실행 시 sts로 채운다.",
+  "region": "ap-northeast-2",
+  "tags": {"Project": "sagomungchi", "Environment": "demo", "Purpose": "report-explanation"},
+  "modelVersion": "gemma4-26b-a4b-lora-20261118",
+  "bucket": "sagomungchi-demo-{account}-models",
+  "baseModelPrefix": "explanation/{modelVersion}/base-awq/",
+  "adapterPrefix": "explanation/{modelVersion}/adapter/",
+  "manifestKey": "explanation/{modelVersion}/manifest.json",
+  "useAdapter": true,
+  "executionRole": "sagomungchi-demo-sagemaker-explanation-role",
+  "image": "763104351884.dkr.ecr.{region}.amazonaws.com/vllm:server-sagemaker-cuda-v2.8.2",
+  "subnetNames": ["sagomungchi-demo-subnet-private1-ap-northeast-2a", "sagomungchi-demo-subnet-private2-ap-northeast-2b"],
+  "securityGroup": "sagomungchi-demo-sagemaker-explanation-sg",
+  "model": "sagomungchi-demo-explanation-{modelVersion}-r4",
+  "endpointConfig": "sagomungchi-demo-explanation-{instanceSlug}-v1",
+  "endpoint": "sagomungchi-demo-explanation",
+  "inferenceComponent": "sagomungchi-demo-explanation-ic",
+  "adapterComponent": "sagomungchi-demo-explanation-explain",
+  "instanceType": "ml.g6e.xlarge",
+  "maxInstances": 1,
+  "minMemoryMb": 4096,
+  "startupTimeoutSeconds": 1200,
+  "environment": {
+    "SM_VLLM_SERVED_MODEL_NAME": "gemma-4-26b-a4b-it-qat-awq-int4",
+    "SM_VLLM_MAX_MODEL_LEN": "8192",
+    "SM_VLLM_GPU_MEMORY_UTILIZATION": "0.92",
+    "SM_VLLM_MAX_NUM_SEQS": "8",
+    "SM_VLLM_LIMIT_MM_PER_PROMPT": "{\"image\":0,\"audio\":0}",
+    "HF_HUB_OFFLINE": "1"
+  },
+  "adapterEnvironment": {
+    "SM_VLLM_ENABLE_LORA": "",
+    "SM_VLLM_MAX_LORA_RANK": "16",
+    "SM_VLLM_MAX_LORAS": "1",
+    "VLLM_ALLOW_RUNTIME_LORA_UPDATING": "true"
+  },
+  "schedule": {
+    "timezone": "Asia/Seoul",
+    "comment": "월 00:00 배치(#390). 0대에서 켜지는 데 약 21분(2026-11-18 실측)이라 일 23:30에 1대로 올린다. 축소는 30명 g6e 배치 실측 전까지 기존 창 끝(월 02:00)을 유지한다",
+    "scaleOut": "cron(30 23 ? * SUN *)",
+    "scaleIn": "cron(0 2 ? * MON *)"
+  }
+}

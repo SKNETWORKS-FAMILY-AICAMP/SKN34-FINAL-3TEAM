@@ -190,7 +190,8 @@
       "name": "sagomungchi-demo-ai-asset-s3-role",
       "trust": "iam/ai-asset-s3-role.trust.json",
       "inline": {
-        "sagomungchi-demo-ai-asset-s3-write": "iam/ai-asset-s3-role.inline.ai-asset-s3-write.json"
+        "sagomungchi-demo-ai-asset-s3-write": "iam/ai-asset-s3-role.inline.ai-asset-s3-write.json",
+        "sagomungchi-demo-ai-sagemaker-explanation-invoke": "iam/ai-asset-s3-role.inline.ai-sagemaker-explanation-invoke.json"
       }
     },
     {
@@ -198,6 +199,13 @@
       "trust": "iam/learning-asset-s3-role.trust.json",
       "inline": {
         "sagomungchi-demo-learning-asset-s3-read": "iam/learning-asset-s3-role.inline.learning-asset-s3-read.json"
+      }
+    },
+    {
+      "name": "sagomungchi-demo-sagemaker-explanation-role",
+      "trust": "iam/sagemaker-explanation-role.trust.json",
+      "inline": {
+        "sagomungchi-demo-sagemaker-explanation-run": "iam/sagemaker-explanation-role.inline.sagemaker-explanation-run.json"
       }
     }
   ],

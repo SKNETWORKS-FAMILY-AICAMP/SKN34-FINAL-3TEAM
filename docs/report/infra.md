@@ -976,6 +976,7 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 | 콜드 스타트 | 0대에서 깨어나면 인스턴스 준비 + 모델 17GB 적재(EC2 실측 기동 224초 + 이미지)로 몇 분 걸린다. RunPod의 191~315초 문제가 그대로 남으므로, 창 시작 전 예약 확장으로 1대를 미리 켜는 방식을 검증한다 |
 | 확인할 것 | Gemma 4를 지원하는 LMI·vLLM 버전, `ml.g6.xlarge`(L4, 호스트 16GiB)에서 9.13.5의 메모리 옵션이 그대로 통하는지(안 되면 `ml.g6e.xlarge`), 실제 콜드 시간, GPU 재고 부족 때의 동작, ai 호출 방식(`InvokeEndpoint`·SigV4) |
 | 하위 이슈 영향 | #744 문서(4.4·7장 결정 줄), #745 레지스트리 등록과 쓰지 않을 `base-gguf/`·`adapter-gguf/` 정리, #746 범위를 EKS NodePool에서 SageMaker 엔드포인트·예약 확장·IAM으로 변경, #747 ai 클라이언트를 RunPod에서 SageMaker로 변경 |
+| 검증 결과 (#746) | 9.13.9. 컨테이너는 vLLM SageMaker DLC, 인스턴스는 `ml.g6e.xlarge`로 바뀌었다 |
 
 ### 9.13.2 측정 기준 검토안 (참고, 채택하지 않음)
 
@@ -1069,6 +1070,134 @@ NFR-DAT-05(RPO 5분·RTO 4시간, 복구 시험 기록)를 A 계정 운영 RDS�
 - EKS 안 기동 시간(노드 준비, S3 initContainer 내려받기)은 재지 않았다
 - 학습 기준 모델 확인: 어댑터의 `base_model_name_or_path`는 `/workspace/models/gemma-4-26b-qat`(로컬 경로)라 정확한 원본 저장소·revision을 알 수 없다. 구조(30층, hidden 2816, 전역 주의 층의 K=V 공유로 `v_proj` 25개)는 두 기반 모델과 모두 맞는다. kim-4480에게 확인을 요청했다
 - 다음 순서: SageMaker 검증 이슈(LMI 버전, LoRA, 콜드 스타트, 예약 확장, 재고 부족 동작) → #744 문서 → #746 SageMaker 엔드포인트·IAM → 레지스트리 등록 → #747 호출 전환(SageMaker 클라이언트, 모델 이름, `max_tokens`·마감)
+
+### 9.13.9 SageMaker 검증과 엔드포인트 구성 (#746, 2026-11-18)
+
+9.13.1 결정의 "확인할 것"을 AWS A 계정에서 실제로 실행해 확인했다. 입력은 9.13.3과 같은 가상 글·가상 서술 데이터만 썼다(`gen_prompts.py`). 생성 원문은 저장소에 넣지 않았다. 구성은 [`infrastructure/aws/sagemaker_explanation.py`](../../infrastructure/aws/sagemaker_explanation.py)와 [`sagemaker/explanation-endpoint.json`](../../infrastructure/aws/sagemaker/explanation-endpoint.json)으로 다시 만들 수 있다(B 계정 재현용). 측정 스크립트는 [`ml/sllm/scripts/serving/sagemaker_bench.py`](../../ml/sllm/scripts/serving/sagemaker_bench.py)다.
+
+#### 결정과 바뀐 점
+
+| 항목 | 9.13.1 계획 | 실행 결과·결정 |
+|---|---|---|
+| 컨테이너 | SageMaker LMI(DJL) | AWS vLLM SageMaker DLC `vllm:server-sagemaker-cuda-v2.8.2`(vLLM 0.33.0+amzn2023, `Gemma4ForConditionalGeneration` 인식). LMI 최신(`0.38.0-lmi30`)은 쓰지 않았다. `SM_VLLM_*` 환경 변수가 vLLM 인자가 된다(#746 D4 승인) |
+| 인스턴스 | `ml.g6.xlarge`(L4), 안 되면 `ml.g6e.xlarge` | **`ml.g6e.xlarge`**(L40S 48GB, 호스트 32GiB). g6.xlarge에서는 인퍼런스 컴포넌트(IC) 배치가 실패했다(아래). 시간당 $3.2, 창 기준 월 약 $30(#746 D5 승인) |
+| 메모리 옵션 | 9.13.5의 fp8 KV 등 | g6.xlarge에서는 컨테이너가 뜨기 전에 실패해 확인하지 못했다. g6e에서는 fp8 KV 없이(bf16) 기동한다. `--max-num-batched-tokens 2560`도 필요 없다 |
+| 모델 데이터 | `base-awq/` + `adapter/` | `ModelDataSource`(S3 경로, 압축 없음)로 `base-awq/`를 `/opt/ml/model`에 받는다. LoRA는 어댑터 IC(`BaseInferenceComponentName`)로 붙인다 |
+| 호출 이름 | 미정 | 기반: IC `sagomungchi-demo-explanation-ic`. LoRA: 어댑터 IC `sagomungchi-demo-explanation-explain`. **요청 본문의 `model` 값으로는 LoRA가 붙지 않는다**(아래) |
+| 해시 확인 | #745 방안 | 배포 전 대조만 함(#746 D1). 경로 잠금·적재 때 검사는 #777 |
+
+#### 인퍼런스 컴포넌트 배치 (메모리 예약)
+
+IC의 `ComputeResourceRequirements.MinMemoryRequiredInMb`에 따라 결과가 갈렸다(가속기 1개 공통).
+
+| 인스턴스 | 예약 | 결과 |
+|---|---|---|
+| ml.g6.xlarge (16GiB) | 10240·8192MB | 32초 만에 Failed: "not enough hardware resources" |
+| ml.g6.xlarge | 2048MB | 47초 만에 Failed: "not enough memory available". 컨테이너 로그가 생기지 않았다(뜨기 전 실패) |
+| ml.g6e.xlarge (32GiB) | 16384·8192MB | "not enough hardware resources" |
+| ml.g6e.xlarge | **4096MB** | 배치 성공, InService |
+
+- 호스트 메모리에서 SageMaker가 남기는 몫이 커서 예약 가능한 값이 작다. g6e에서 vLLM이 본 가용 RAM은 23.25GiB, 체크포인트는 16.01GiB였다. g6.xlarge에서 2048MB도 실패한 것은 체크포인트(16GiB)가 호스트에 들어가지 않기 때문으로 보인다. 원인을 AWS 문서로 확인하지는 못했다
+- IC가 붙을 엔드포인트는 인스턴스 종류를 `UpdateEndpoint`로 바꿀 수 없다(ValidationException "Cannot update endpoint with a different instance type…"). 엔드포인트를 지우고 다시 만들어야 하며, 스크립트가 그렇게 처리한다
+- 생성 중(Creating)인 IC는 지울 수 없다. 서버 인자 오류로 재시작을 반복한 IC가 Failed가 되기까지 36분 걸렸다(기동 제한 1800초 설정). 그래서 제한을 1200초로 줄였다
+
+#### LoRA 부착
+
+- 정적 `--lora-modules explain=…`로 올린 LoRA는 요청 본문에 `"model": "explain"`을 넣어도 쓰이지 않았다. 응답 `model`은 기반 이름이었고 출력도 기반과 같았다. SageMaker 경로에서는 본문의 모델 이름이 아니라 어댑터 IC 이름으로 고른다
+- 어댑터 IC를 만들면 SageMaker가 컨테이너의 `POST /adapters?name=…&src=…`를 부른다. 이 경로는 `VLLM_ALLOW_RUNTIME_LORA_UPDATING=true`일 때만 열린다. 없으면 404이고 호출이 실패한다. 설정 뒤에는 어댑터 IC가 몇 초 만에 InService가 되고, 응답 `model`이 어댑터 IC 이름으로 바뀌었다
+- 빈 값 환경 변수(`SM_VLLM_ENABLE_LORA=""`)는 `__MAEVE_EMPTY_STRING_PLACEHOLDER__`로 바뀌어 위치 인자로 들어간다. `--enable-lora`는 켜지고 동작에는 지장이 없었다
+
+#### 출력 문제: JSON 문자열 안 인용 부호
+
+- `json_schema` 응답에서 모델이 글을 인용할 때 `\"` 대신 `"`를 쓰면 문자열이 거기서 닫힌다. 그 뒤 문법이 허용하는 공백(탭)을 `max_tokens`까지 반복한다(`finish_reason=length`). 같은 입력을 다시 보내 접두 캐시가 맞으면, 대신 각 칸이 "처음에는 "처럼 짧게 끊긴 채 끝났다(125토큰). 9.13.4의 반복 생성과 서술이 73자에서 끊긴 현상도 같은 원인으로 보인다
+- vLLM `--structured-outputs-config '{"backend":"xgrammar","disable_any_whitespace":true}'`로 공백을 막아 보았다. 그러자 상세 설명이 20토큰 안팎의 빈 값이 되고 값 앞에 `": "`가 붙어 더 나빠졌다. 그래서 쓰지 않는다(`backend`를 빼면 서버가 기동하지 않는다)
+- 해결은 프롬프트나 출력 형식 쪽이다(예: 인용은 「」로 쓰게 함). 이 부분은 #747 범위다
+
+#### 기반 단독과 LoRA 비교 (#746 D2)
+
+g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 붙여 접두 캐시를 피했다. 상세 `max_tokens` 1536, 서술 1024, 각 15회 순차 호출이다. 통과는 ai-service `checks.py` 규칙과 본문 200자 이상이다.
+
+| 항목 | 기반 단독 | LoRA (`explain`) |
+|---|---|---|
+| 상세 `finish_reason=length` | **7/15** | 1/15 |
+| 상세 JSON·규칙 통과 | 8/15 | 14/15 |
+| 상세 지연 p50(정상 종료분) | 5.14초(597토큰) | 5.69초(568토큰) |
+| 서술 통과 | 15/15 | 15/15 |
+| 서술 지연 p50 | 2.23초 | 2.85초 |
+
+- D2 기준 세 가지 중 JSON 통과율과 `length`는 LoRA가 낫다. 지연은 상세 약 11%, 서술 약 28% 늘어 "지연이 늘지 않음"을 만족하지 못한다
+- **결정(2026-11-18, 동섭): LoRA(`explain`)를 쓴다.** 팀장이 #746 D2에 정한 기준(세 가지를 모두 만족할 때만 LoRA, 기본값은 기반 단독)과 다르게 정했다. 이유는 다음과 같다
+  - 기반 단독은 상세 설명 15건 중 7건이 `max_tokens`까지 반복 생성되어 잘린다. 서비스에서는 이런 건이 설명 없이 발행된다(재시도 0회). LoRA는 14/15건이 규칙을 통과한다
+  - 늘어난 지연은 상세 p50 기준 약 0.5초(5.14초 → 5.69초)다. 리포트는 배치 작업이라 사용자가 기다리지 않는다. 최악 경우(동시 8건, 1536토큰)도 23.4초로 60초 제한 안이다
+  - 따라서 호출 대상은 어댑터 IC `sagomungchi-demo-explanation-explain`이다(#747). 승인 목록과 레지스트리에는 `adapter/`를 포함한다(#745)
+- 표본이 같은 가상 글 1편이고 15회뿐이다. 의미 품질은 보지 않았다
+- 학습 담당(kim-4480) 확인(2026-11-18)
+  - LoRA는 AWQ가 아니라 16비트 QAT 원본 `google/gemma-4-26B-A4B-it-qat-q4_0-unquantized`로 학습했다(`train_lora.py`, `load_in_4bit=False`). 위 비교는 AWQ 위에 얹은 결과라 학습 때와 기반이 다르다. 16비트 원본(약 52GB)은 g6e(48GB)에도 들어가지 않는다
+  - LoRA는 "항목별 이유 한두 문장" 형식으로 학습됐고, 서비스는 3칸 JSON 장문(`report-explanation@3`)을 요청한다
+  - RunPod 워커는 `LORA_MODULES`로 `explain`을 올렸지만, 요청 `model`이 `explain`일 때만 붙는다. 운영은 기반 이름으로 불러 지금까지 리포트에는 LoRA가 쓰이지 않았다. 바꾸려면 `REPORT_GEMMA_MODEL`(SageMaker에서는 호출 IC 이름)을 바꾼다(#747)
+  - LoRA 정상 출력 토큰은 위 측정에서 p50 568토큰(기반 597토큰)이라 상세 `max_tokens` 1536(정상 최대 대비 약 2.2배)은 LoRA에도 맞다. 서술은 1024로 줄여도 된다(15/15 정상 종료)
+- #599 낱말 챗봇은 sLLM이 아니라 외부 API로 구현할 예정이라 이 엔드포인트 범위에 들어가지 않는다
+
+#### 60초 응답 제한 (#746 D3)
+
+최악의 경우를 흉내 내려고 `response_format` 없이 `ignore_eos`로 1536토큰을 끝까지 생성하게 했다.
+
+| 동시 요청 | 기반 최대 | LoRA 최대 |
+|---|---|---|
+| 1 | 12.3초 | 14.4초 |
+| 4 | 17.8초 | — |
+| 8(`--max-num-seqs` 상한) | 21.9초 | 23.4초 |
+
+상세 `max_tokens` 1536은 동시 8건에서도 60초 안에 들어온다. 정상 상세 1건은 약 5초다(L4 EC2의 16.4초보다 빠름).
+
+#### 콜드 시간과 예약 확장
+
+시각을 당긴 시험 일정(Application Auto Scaling 예약 작업 `at(...)`, UTC)으로 축소와 확장을 한 번씩 확인했다(2026-11-18 KST).
+
+| 단계 | 시각 | 경과 |
+|---|---|---|
+| 축소 예약(최소·최대 0) | 15:47 | — |
+| IC 사본 0, 호출 즉시 실패 | 15:50 | +3분 |
+| 관리형 인스턴스 축소로 인스턴스 0대 | 16:01 | +14분 |
+| 확장 예약(최소·최대 1) | 16:10 | — |
+| Auto Scaling 반영(사본 목표 1, 인스턴스 목표 1) | 16:11 | +1분 |
+| 인스턴스 InService | 16:19:54 | +10분 |
+| 컨테이너 시작(이미지 10.6GB·모델 17GB 받기 뒤) | 16:26:06 | +16분 |
+| vLLM 준비(가중치 45초, torch.compile 44초, 엔진 초기화 102초) | 16:29:46 | +20분 |
+| 기반 IC InService, 어댑터 적재(`POST /adapters` 200) | 16:30:23~31 | **+20.5분** |
+
+- 깨어난 직후 기반·어댑터 IC 호출이 모두 성공했다. 어댑터 IC는 기반이 다시 뜨면 SageMaker가 자동으로 다시 적재한다
+- 인스턴스가 이미 있을 때 IC만 새로 만드는 데는 약 9분(534~535초) 걸렸다
+- 배치는 월 00:00에 시작한다(architecture 4.4). 23:50에 켜면 00:10에야 준비되므로 **확장을 일 23:30으로 당겼다**. 축소는 g6e에서 30명 배치를 재기 전까지 기존 창 끝(월 02:00)을 유지한다. 과금 구간은 약 23:31~02:14(축소 뒤 인스턴스 정리까지)로 주 약 2.7시간, 월 약 $35다. 30명 배치 실측 뒤 창 끝을 당기면 줄어든다
+- GPU 재고 부족: 이번 시험에서는 `ml.g6e.xlarge` 확보가 바로 됐다(재고 부족 없음). 재고가 없을 때의 동작(확장이 계속 대기하는지, 오류가 나는지)은 확인하지 못했다. 창 시작 뒤 IC가 InService가 아니면 알리는 경보가 필요하다(#747과 함께)
+
+#### 구성
+
+| 자원 | 내용 |
+|---|---|
+| SageMaker 모델 | `sagomungchi-demo-explanation-<모델 버전>-r4`. 이미지는 위 DLC, `ModelDataSource` `base-awq/`, `VpcConfig` private 서브넷 2개 + 전용 SG. 환경 변수는 설정 JSON의 `environment`(LoRA를 쓰면 `adapterEnvironment` 추가) |
+| 엔드포인트 설정 | `ml.g6e.xlarge`, `InitialInstanceCount` 1, `ManagedInstanceScaling` 0~1, `LEAST_OUTSTANDING_REQUESTS`, 실행 역할, `VpcConfig` |
+| 엔드포인트 | `sagomungchi-demo-explanation` |
+| IC | 기반 `sagomungchi-demo-explanation-ic`(GPU 1, 메모리 4096MB, 사본 1), 어댑터 `sagomungchi-demo-explanation-explain` |
+| Auto Scaling | 대상 `inference-component/sagomungchi-demo-explanation-ic`, `DesiredCopyCount` 0~1. 예약: 일 23:30 KST 최소·최대 1, 월 02:00 최소·최대 0(`Asia/Seoul`). 시험 뒤 A 계정에 주간 일정으로 걸고, 비용을 줄이려고 사본을 0으로 내렸다 |
+| IAM | 실행 역할 `sagomungchi-demo-sagemaker-explanation-role`: S3 `models/explanation/*` 읽기, `763104351884` `vllm` 이미지 받기, 로그·지표, VPC ENI. ai Pod Identity 역할(`sagomungchi-demo-ai-asset-s3-role`)에 inline `sagemaker:InvokeEndpoint`를 더했다(`demo-stack.json`·`iam/`) |
+| 네트워크 | 엔드포인트 SG `sagomungchi-demo-sagemaker-explanation-sg`: ingress 없음, egress 443만. 모델은 S3 Gateway endpoint로 받는다. ai egress는 기존 공인 443 허용으로 `runtime.sagemaker` 공인 엔드포인트(NAT)에 나간다. NetworkPolicy는 바꾸지 않았다. 인터페이스 VPC 엔드포인트를 쓰면 사설 IP라 지금 ai 정책의 `except 10.0.0.0/8`에 막히므로 정책도 함께 고쳐야 한다 |
+
+- **IC 단위 권한**: IC를 지정한 `InvokeEndpoint`는 엔드포인트 ARN이 아니라 `inference-component/<이름>` ARN으로 권한을 검사한다. 엔드포인트 ARN만 허용했을 때 ai Pod 호출이 AccessDenied였고, IC ARN 2개를 더하자 성공했다
+- **ai Pod에서 호출**: 2026-11-18 15:43 KST, 실행 중인 ai Pod에서 `kubectl exec`로 boto3 `invoke_endpoint`를 불렀다. 기반·어댑터 IC 모두 200이었고, 호출 주체는 Pod Identity 역할이었다. Pod 재시작은 없었다(inline 정책 추가는 재시작 없이 반영). boto3 기본 리전이 잡히지 않아 `region_name`을 명시해야 했다(#747 클라이언트에서 설정으로 둘 것)
+- **0대일 때 요청**: 사본이 0이면 `InvokeEndpoint`가 0.6초 만에 `ValidationError`("Inference Component has no capacity to process this request…")로 실패한다. 창 밖 요청을 어떻게 처리할지(설명 없이 발행, 또는 `NoCapacityInvocationFailures` 경보 + 단계 확장으로 깨운 뒤 재시도)는 #747과 함께 정한다. 이번에는 경보·단계 확장 정책을 만들지 않았다
+
+#### 해시 대조 (#746 D1)
+
+- `sagemaker_explanation.py manifest`가 결과 JSON의 `s3`에서 SageMaker가 읽는 경로(`base-awq/`, LoRA를 쓰면 `adapter/`)의 key·bytes·sha256을 `manifest.json`으로 만든다. `--upload`를 주면 `explanation/<버전>/manifest.json`에 `If-None-Match: *`와 SHA-256으로 한 번만 올린다
+- `verify`(그리고 `apply` 직전)는 S3의 `manifest.json` 자체 FULL_OBJECT SHA-256을 확인한다. 그다음 경로 아래 객체 목록이 manifest와 정확히 같은지, 객체마다 FULL_OBJECT SHA-256·크기가 같은지 본다. 하나라도 다르면 모델을 만들지 않는다
+- D2(LoRA 사용)에 따라 `manifest.json`(`base-awq/` 11개 + `adapter/` 2개, sha256 `adb264cb…`)을 `explanation/gemma4-26b-a4b-lora-20261118/manifest.json`에 올렸다(2026-11-18). HEAD의 FULL_OBJECT SHA-256이 본문 값과 같고, `verify`에서 13개 모두 일치했다. 같은 키에 다시 올리면 `PreconditionFailed`로 거부되는 것도 확인했다. 그 전 구성은 같은 내용의 로컬 manifest로 대조했다
+
+#### 정리와 남은 것
+
+- 기존 `sllm-server` 파일 정리안(팀 확인): `prod/sllm-server.json`·`prod/karpenter-nodepool-explanation.json`·`local/sllm-server.yaml`은 지운다. 함께 정리할 참조는 `prod/ai-service.json`·`local/ai-service.yaml`의 `EXPLANATION_BASE_URL`과 `sllm-server` egress, `argocd/local/apps/applicationset.yaml`, `policies/local/platform.yaml`, `charts/platform-data/values.yaml` 주석, prod·kind·app-service README다. ai 설정 쪽은 #747 호출 전환과 같은 PR에서 바꾸는 편이 안전하다. A 계정 클러스터에는 `sllm-server`가 배포되어 있지 않다
+- A 계정 SageMaker 자원(엔드포인트·설정·모델·IC·Auto Scaling 대상과 예약)은 11/19 A 종료 때 지운다(동섭 결정). S3 `explanation/` 가중치는 남긴다. 이번에는 ECR 이미지를 만들지 않았다(AWS DLC를 그대로 씀). B 계정은 `demo-stack.json`·`iam/`의 계정 번호를 바꾸고 `demo_stack.py apply`(IAM)·SG 생성 → `sagemaker_explanation.py manifest --upload`·`apply`·`schedule` 순서로 만든다
+- 남은 결정: 창 밖 요청 처리(#747), 창 끝 시각(g6e 30명 배치 실측 뒤), 인용 부호 문제(#747 프롬프트), GPU 재고 부족 동작(이번에는 재고 부족이 나지 않아 확인하지 못함)
 
 ## 9.14 AWS 데모 부하 시험 2차: HPA·Karpenter 확장·축소 (#384, 2026-11-18)
 
