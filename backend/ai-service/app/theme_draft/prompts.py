@@ -1557,7 +1557,6 @@ def outfit_prompt(theme: Theme) -> str:
         "cheeks, feet, hand positions, size, position, colors and the background stay "
         f"identical. Only add the theme outfit: {theme['outfit']}. Nothing in the hands. "
         f"{OUTFIT_VEST} "
-        f"{common_rules.BY_ID['EYES_VISIBLE'].image} "
         "No letters, numbers or real emblems on the outfit. "
         f"{IMAGE_STYLE}"
     )
@@ -2029,10 +2028,13 @@ IMAGE_REVIEW_SYSTEM = (
     # #779(사용자 결정 B안): 잇는 컷은 앞 컷 그림을 세 번째 그림으로 함께 봄
     # #779 설계 C표 등급: 5차 콘티에서 찜기 뚜껑 차이로 시작 3컷이 끝내 실패해 시작 영상이 빠졌음
     "FLOW(items에 있을 때만): PREVIOUS 그림은 같은 영상의 앞 컷 첫 그림이고 previousScene은 그 "
-    "장면 글이다. FAIL은 두 가지뿐이다: 같은 장소인데 다른 장소처럼 보임(벽·담·큰 가구의 배치나 "
-    "모양이 바뀜, 돌담이 나무 울타리로 바뀜), 장면 글·할 일이 말한 물건 상태가 앞 컷과 어긋남"
-    "(앞 컷에서 덮은 것이 벗겨짐 등). 뚜껑·컵·작은 소품의 차이와 사람 위치 차이는 WARN이거나 "
-    "PASS다. 이 컷 장면 글이 지금 바뀐다고 한 것(빈 접시가 됨 등)과 구도·카메라·인물 동작이 다른 "
+    # 설계 C표 원래 뜻대로 FAIL은 '다른 장소처럼 보임'만: 엔딩 구도가 바뀌어 카메라 각도가 달라지자
+    # 같은 거실의 긴 소파가 둘로 보인 것을 세 번 FAIL해 종료 영상이 빠질 뻔했음(2026-11-19)
+    "장면 글이다. FAIL은 두 가지뿐이다: 같은 장소인데 다른 장소처럼 보임(벽·바닥·건물의 종류가 "
+    "바뀜, 실내가 실외로 바뀜, 돌담이 나무 울타리로 바뀜), 장면 글·할 일이 말한 물건 상태가 앞 "
+    "컷과 어긋남(앞 컷에서 덮은 것이 벗겨짐 등). 가구의 배치·모양·개수 차이(카메라 각도가 달라져 "
+    "다르게 보이는 것 포함), 뚜껑·컵·작은 소품의 차이, 사람 위치 차이는 WARN이거나 PASS다. "
+    "이 컷 장면 글이 지금 바뀐다고 한 것(빈 접시가 됨 등)과 구도·카메라·인물 동작이 다른 "
     "것은 결함이 아니고, 이 컷이 다른 장소면 PASS다.\n"
     # #779 설계 H: 구도 틀의 검토 핵심을 따로 판정(SCENE_FIT 안에 묻혀 엔딩에서 인물들이 카메라
     # 쪽을 봐도 통과했음, 틀 확인 2026-11-19 엔딩 3장)

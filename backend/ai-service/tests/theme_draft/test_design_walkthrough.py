@@ -245,19 +245,20 @@ def test_frames_do_not_conflict_with_face_rules_and_variants_are_stable() -> Non
     assert {f.id for f in prompts.FRAMES.values() if f.mystery} == {"OBJECT_CLOSE", "REACTION"}
 
 
-def test_frame_core_is_judged_as_its_own_item_and_eyes_stay_visible() -> None:
+def test_frame_core_is_judged_as_its_own_item_and_flow_fails_only_other_place() -> None:
     """구도 핵심은 그림 검토의 별도 항목(FRAME)으로 판정(SCENE_FIT 안에 묻혀 엔딩 3장이 통과했음),
-    엔딩 틀은 멈춤 규칙대로 앞쪽 뒷모습 방식, 눈가림 소품은 뭉치 눈을 가리지 않음(틀 확인
-    2026-11-19)."""
+    엔딩 틀은 멈춤 규칙대로 앞쪽 뒷모습 방식(틀 확인 2026-11-19)."""
     from app.theme_draft import checks, rules
 
     assert "FRAME(items에 있을 때만)" in prompts.IMAGE_REVIEW_SYSTEM
     assert checks.image_review_ids(checks.IMAGE_REVIEW_IDS, True, False, True)[-1] == "FRAME"
     assert prompts.FRAMES["FACING_MUNGCHI"].faces == "back"
     assert "from behind" in prompts.FRAMES["FACING_MUNGCHI"].image
-    eyes = rules.BY_ID["EYES_VISIBLE"]
-    assert eyes.image in prompts.outfit_prompt(valid_theme())
-    assert eyes.review in prompts.IMAGE_REVIEW_SYSTEM
+    # 눈가림 소품(선글라스·고글)은 뭉치 눈을 가려도 됨(사용자 결정 2026-11-19, 표정은 입으로)
+    assert "EYES_VISIBLE" not in rules.BY_ID
+    assert "눈가림" not in prompts.IMAGE_REVIEW_SYSTEM
+    # FLOW는 다른 장소처럼 보일 때만 FAIL, 가구 배치·모양은 WARN(카메라 각도로 달라 보임)
+    assert "가구의 배치·모양·개수 차이" in prompts.IMAGE_REVIEW_SYSTEM
     # 시작 2컷 문구는 물건·자리 중심(사건 클로즈업 틀과 맞춤)
     assert "빈자리" in families.LOST.intro_cuts[1]
     assert "짐" in families.STORY_TYPES["VEHICLE"].intro_cuts[1]
