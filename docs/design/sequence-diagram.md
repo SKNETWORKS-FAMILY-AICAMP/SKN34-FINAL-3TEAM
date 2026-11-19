@@ -518,7 +518,7 @@ sequenceDiagram
     C-->>W: 200
   end
 
-  W->>C: POST /attempts/{id}/answers (Idempotency-Key: k1)
+  W->>C: POST /attempts/{id}/answers (Idempotency-Key: k1) {…, thinkingSeconds, writingSeconds}
   C->>C: IdempotencyService (user, k1) 조회
   alt 같은 키·같은 본문 기록 있음
     C-->>W: 저장된 최초 응답 그대로
@@ -537,7 +537,7 @@ sequenceDiagram
       L->>L: 학생이 쓴 글 표현 검사(ExpressionPolicy) 걸리면 422 ANSWER_INAPPROPRIATE (저장·판정 없음)
       L->>L: 단어 목록 통과 + 미리 받은 모델 결과 flagged면 422 ANSWER_INAPPROPRIATE (같은 문구, 저장·판정 없음, #688)
       L->>DB: 보완이면 가장 최근 미답 되묻기와 followupId 확인 (아니면 422 ANSWER_INCOMPLETE)
-      L->>DB: answer 저장 (version = 이전+1, previous_answer_id·followup_id 연결)
+      L->>DB: answer 저장 (version = 이전+1, previous_answer_id·followup_id 연결, 생각·작성 시간 P28)
       L->>DB: judgment 저장 (PENDING)
       opt 미리 받은 모델 결과 review (#725)
         L->>DB: expression_review 저장 (GRAY_ZONE, 모델 버전만·점수 없음)
@@ -556,6 +556,7 @@ sequenceDiagram
 - 표현 분류 모델(#688)은 learning이 시도 행 잠금 전에 scoring을 불러 결과만 받아 두고, 트랜잭션 안 단어 목록 다음 자리에서 적용한다. 같은 키 다시 보내기는 저장된 답을 돌려주므로 모델 결과와 상관없다. 모델 장애·시간 초과·비활성은 제출을 막지 않는다(architecture 1.3)
 - 경계 구간(#725): 걸리지 않았지만 `review:true`면 답변과 같은 트랜잭션에서 표현 검토 대기 행을 남긴다(ERD 4.3.2). 재학습 흐름은 9.1
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
+- 생각·작성 시간(P28, 설계 #800): 웹이 화면 안 경과 시간으로 재서 보낸다. 같은 키로 다시 보낼 때는 처음 잰 값을 그대로 보낸다(core가 본문 전체로 비교). learning은 고르기·받아쓰기·범위 밖 값을 null로 저장하고 같은 요청 비교에서 두 칸을 뺀다(API 3.1)
 - 2026-11-10 개정(#483, core #485 구현): 무료 플랜은 테마 문제(`THEME_DAY`)를 하루 한도 없이 공개된 만큼(주 5개, learning #484 누적 공개) 시작하고, 추가 문제(`EXTRA`)는 프리미엄 전용(403 `PREMIUM_REQUIRED`, 상품 값이 없으면 무료 거부 #506)
 - 무료 상품에서 `EXTRA`를 다시 켠 경우에만 무료 `EXTRA` 신규 시도를 하루 `limits.dailyMissions`개까지 허용한다. 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, #210 결정에 따라 PostgreSQL `mission_daily_usage`). 이전 규칙(무료 `THEME_DAY`·`EXTRA` 합산 하루 1개, #387)은 개정으로 대체
 
