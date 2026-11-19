@@ -1,3 +1,4 @@
+import type { AnswerTiming } from '../../domain/answerTiming.ts'
 import type {
   AnswerContent,
   AnalysisResult,
@@ -33,7 +34,8 @@ export interface ClassroomGateway {
   attempt: (id: string) => Promise<Attempt>
   saveDraft: (id: string, draft: Draft) => Promise<Draft>
   hint: (id: string) => Promise<string>
-  submit: (id: string, answer: AnswerContent, key: string, followupId?: string) => Promise<Attempt>
+  /** timing: 생각·작성 시간(P28). 생략하면 두 칸을 보내지 않는다 */
+  submit: (id: string, answer: AnswerContent, key: string, followupId?: string, timing?: AnswerTiming) => Promise<Attempt>
   feedback: (
     id: string,
     answerId: string,

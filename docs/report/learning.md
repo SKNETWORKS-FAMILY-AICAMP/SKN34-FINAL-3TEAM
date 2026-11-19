@@ -1317,3 +1317,22 @@ kind Postgres(PostgreSQL 17, CPU 한도 500m)에 learning_db를 복사한 비교
 - learning #801: V23 `answer` 두 칸·CHECK 2개(≥ 0, 쌍), 저장·null 규칙, 같은 요청 비교 제외, 조회·4.1.1 노출, ERD 표 → Mermaid
 - web #802: 답변 칸 붙여넣기·끌어다 놓기 막기(안내 없음), 시간 측정·전송, 같은 키 재전송 때 처음 값 유지
 - report #803: `answerTimes[]` 생성과 HTML·Markdown·PDF 표시, 학부모 웹 일일 리포트 화면(`ParentReports.tsx`) 표시(웹 화면이 report 상세를 직접 그리므로 #803에 더함)
+
+### 42.2 web 구현 (#802, 2026-11-19)
+
+learning #801이 병합되기 전이라 api-spec 3.1 기준으로 `demoGateway`·MSW 목을 맞춰 개발했다. 위 확정 값을 그대로 따랐고 아래는 웹에서 정한 세부다.
+
+| 항목 | 정한 것 | 근거 |
+|---|---|---|
+| 막는 곳 | `AnswerFields`의 학생 답변 textarea(서술·풀이 단계·논술 4칸)와 최종 답 input에서 `onPaste`·`onDrop` 기본 동작 취소. 학생 화면만 넘기는 `guide` prop으로 구분해 관리자 미리보기(`MissionManager.tsx`)와 메모·돌아보기 칸은 그대로 | 위 표 "붙여넣기 막기", 안내 문구 없음 |
+| 답변 차례 | 최초 답은 화면을 연 때, 보완 답은 되묻기 질문이 화면에 처음 나온 때(피드백 상자)를 표시 시각으로 둔다. 차례 구분값은 되묻기 `followupId`(없으면 답 개수) | P28 "되묻기 질문 표시" |
+| 첫 입력 | 답변 칸 글(`text`·`finalAnswer`·`steps`·`essay`)이 처음 바뀐 때. '시작 문장'·'메모를 답에 넣기'도 같은 `change()`를 거쳐 인정되고, 보호자 받아쓰기 표시만 바꾼 것은 넣지 않음 | 위 표 "버튼 입력" |
+| 초 계산 | `performance.now()` 밀리초 차이를 반올림한 정수 초. 0 미만·86400 초과거나 하나라도 없으면 두 칸 모두 null(반쪽 값 없음) | 범위 밖 값·쌍 규칙 |
+| null 보냄 | 고르기 방식(선택·순서·분류)·보호자 받아쓰기·이어하기는 두 칸을 null로 실어 보냄(칸 생략 대신 명시) | api-spec 3.1 "빼거나 null" |
+| 이어하기 판정 | 한 화면(`StudentEditor`)을 연 뒤 첫 답변 차례에서 답 칸에 복원된 글이 있으면 그 차례는 null. 초안 충돌 창에서 "다른 곳에서 쓴 글 쓰기"를 고른 차례도 null | 첫 입력 시각을 모름 |
+| 같은 키 재전송 | `submission.current`에 멱등 키와 처음 잰 두 값을 함께 두고, 답 내용·`followupId`가 같으면 같은 값을 다시 보냄(멱등 키를 정하는 비교에는 시간을 넣지 않음) | 위 표 "같은 키 재전송" |
+| 저장 대기 뒤 제출 | 자동 저장 중 누른 "다 썼어요"는 저장이 끝난 뒤 보내며, 작성 시간은 그 보낸 시각까지(1초 안팎 차이, 단순화) | - |
+| 시연 저장 | `demoGateway`는 learning 규칙(글 입력 방식만, 범위 안 쌍만)으로 `Answer.thinkingSeconds`·`writingSeconds`를 저장. MSW는 정수가 아니면 `400 VALIDATION_FAILED`, 본문 전체 비교로 같은 키 다른 본문은 `422`(core와 같음) | api-spec 3.1 |
+
+- 확인 필요: 휴대폰·태블릿에서 길게 눌러 붙여넣기도 `paste` 이벤트로 막히는지 실기기 확인(데스크톱 Chromium에서 Ctrl+V·끌어다 놓기만 시험)
+- 시험: `tests/answerTiming.test.ts`(계산·null 규칙·`payload()`·시연 저장), `tests/browser/answerTime.spec.ts`(1440·1024·390px, 따로 768px에서 답 칸 붙여넣기 막힘·메모 칸 붙여넣기 됨, 최초·보완 제출 본문 두 칸, 이어하기·받아쓰기 null, 실패 뒤 같은 키 재전송 본문 동일)
