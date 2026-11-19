@@ -100,6 +100,9 @@ data class AnswerItem<F>(
     val followupId: UUID?,
     val content: Map<String, Any?>,
     val feedback: F,
+    /** 생각·작성 시간(초, P28, api-spec 3.1·4.1.1). 없으면 둘 다 null. 학생 화면은 쓰지 않음 */
+    val thinkingSeconds: Int?,
+    val writingSeconds: Int?,
 ) {
     companion object
 }
