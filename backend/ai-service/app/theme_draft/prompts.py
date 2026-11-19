@@ -207,6 +207,10 @@ PLAN_SYSTEM = (
     "컷 틀(각 줄: 컷 [누가 나오는지] 역할 번호: 할 일. 자막)\n"
     + "".join(f"  {line}\n" for line in cut_layout_lines())
     + "- 컷마다 장소의 다른 곳·다른 구도로 쓰고 앞 컷의 동작이 다음 컷으로 이어진다. "
+    # #779(경찰관 떡집 콘티 2026-11-19): 종료 5컷에서 덮은 떡 접시가 6컷 scene에 없어 그림에서
+    # 사라짐
+    "같은 장소가 이어지면 앞 컷에서 바뀐 물건 상태(덮개를 씌운 접시·연 문·치운 물건)를 다음 컷 "
+    "scene에도 그대로 쓴다. "
     # #779: 인물이 카메라를 보고 한 줄로 서면 영상 모델이 얼굴을 바꾸고 단체 사진처럼 멈춤
     "인물들은 카메라를 보고 한 줄로 서지 않고, 서로 다른 거리에서 서로를 보거나 하는 일을 본다. "
     "사람만 나오는 컷에는 뭉치가 나오지 않고, 뭉치 혼자 나오는 컷에는 사람·동물·찾는 대상이 "
@@ -1729,6 +1733,11 @@ def cut_has_characters(scene: str, index: int, n: int) -> bool:
     return cut_layout.spec(scene, index, n).has_people
 
 
+def cut_follows(scene: str, index: int, n: int) -> int:
+    """이 컷이 그림을 잇는 앞 컷 번호(0이면 없음, #779 B안, cuts.CutSpec.follows)."""
+    return cut_layout.spec(scene, index, n).follows
+
+
 def is_go_cut(scene: str, index: int, n: int) -> bool:
     """뭉치 혼자 달리는 컷(4컷 시작 3, 6컷 시작 4·종료 2). 그림·영상이 달리기 자세로(#779)."""
     return cut_layout.spec(scene, index, n).who == "RUN"
@@ -1761,11 +1770,27 @@ def characters_prompt(theme: Theme) -> str:
 # 컷 그림 공통(#779): 참조는 모습만, 구도는 장면대로. 가까운 장면은 어깨 위·손은 몸에 맞게
 # (시제품에서 주먹이 얼굴보다 크게 그려짐). 글자가 들어갈 물건은 그림·기호로, 숨긴 것·후보
 # 장소는 그리지 않음
+NOT_IN_A_ROW = (
+    "The people do not stand in a row facing the viewer: they are at different distances, turned "
+    "toward each other or toward what they are doing."
+)
 CUT_FRAMING = (
     "Use the reference pictures only for how Mungchi and the people look; draw this scene's own "
-    "place, framing and camera angle as the scene says. The people do not stand in a row facing "
-    "the viewer: they are at different distances, turned toward each other or toward what they "
-    "are doing."
+    "place, framing and camera angle as the scene says. " + NOT_IN_A_ROW
+)
+# #779(경찰관 떡집 콘티 2026-11-19, 사용자 결정 B안): 컷 그림을 따로 그려 같은 뒤뜰인데 탁자·담이
+# 바뀌고 앞 컷에서 덮은 떡이 다음 컷에서 벗겨졌음. 잇는 컷(cuts.CutSpec.follows)은 앞 컷 그림을
+# 마지막 참고 그림으로 받는다
+FOLLOW_FRAMING = (
+    "Use the Mungchi and people reference pictures only for how they look. " + NOT_IN_A_ROW
+)
+FOLLOW_CUT = (
+    "The last reference picture is an earlier cut of this same video (its scene, in Korean: "
+    "{prev}). This cut continues from it: keep the same place, background, furniture and objects "
+    "(the same tables, walls, fences and plants), and keep every object in the state the story "
+    "left it (something covered stays covered, something moved stays moved) unless this scene "
+    "says it changes now. Change the framing, camera angle and what the characters do as this "
+    "scene says; do not copy the earlier picture's composition."
 )
 # #779(3테마 실행 2026-11-18): 시작 1컷이 가까운 장면이면 장소가 안 보임. 넓은 장면으로 고정
 WIDE_SHOT = (
@@ -1808,8 +1833,17 @@ MYSTERY_LIGHT = (
 )
 
 
-def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: list[str]) -> str:
+def cut_image_prompt(
+    theme: Theme,
+    scene: str,
+    index: int,
+    cut: dict,
+    feedback: list[str],
+    prev_scene: str | None = None,
+) -> str:
     """시작·종료 영상 컷의 첫 그림(영상이 이 그림에서 시작). mungchiMood는 있으면 쓴다.
+
+    prev_scene이 있으면 잇는 앞 컷 그림이 마지막 참고 그림으로 함께 간다(#779 B안, FOLLOW_CUT).
 
     누가 나오는지·장면 크기·사건 색감은 컷 틀(cuts.LAYOUTS, #779)을 따른다. 예전 4컷은 콘티
     camera(HOLD_CLOSE면 가까운 장면)와 시작 1컷 넓은 장면 규칙 그대로."""
@@ -1830,7 +1864,10 @@ def cut_image_prompt(theme: Theme, scene: str, index: int, cut: dict, feedback: 
     else:
         lines.append("Only Mungchi is in this picture (no other characters).")
     lines.append(f"Scene (Korean): {cut['scene']}")
-    lines.append(CUT_FRAMING)
+    if prev_scene is None:
+        lines.append(CUT_FRAMING)
+    else:
+        lines += [FOLLOW_FRAMING, FOLLOW_CUT.format(prev=prev_scene)]
     if n == 4:
         if cut_camera(scene, index, cut, n) == "HOLD_CLOSE":
             lines.append(CLOSE_SHOT)
@@ -1859,7 +1896,8 @@ COVERED_REVIEW = (
 
 IMAGE_REVIEW_SYSTEM = (
     "너는 초등학생 학습 서비스의 그림 검토자다. 첫 그림이 검토할 그림이고, 두 번째 그림은 "
-    "주인공 뭉치의 기준 모습(테마 옷)이다. 주어진 항목(items)마다 verdict를 PASS(문제 없음)·"
+    "주인공 뭉치의 기준 모습(테마 옷)이다(세 번째 그림은 FLOW 항목에서만 씀). 주어진 "
+    "항목(items)마다 verdict를 PASS(문제 없음)·"
     "WARN(애매해서 사람이 볼 것)·FAIL(분명한 결함, 다시 그려야 함) 중 하나로 쓰고 근거 한 "
     "문장(reason)을 쓴다. 주어진 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
     "그림에는 글자·숫자를 그리지 않는다(그림 규칙). "
@@ -1897,6 +1935,12 @@ IMAGE_REVIEW_SYSTEM = (
     # #765: 대상이 나오면 안 되는 그림은 일부러 대상을 그리지 않음(ANSWER_HINT와 반대로 걸리지 않게)
     "찾는 대상이 나오면 안 되는 그림(targetAllowed false)에서 찾는 대상이나 후보가 보이지 않는 "
     "것은 장면 글에 나와도 결함이 아니다(그 그림에는 일부러 그리지 않음).\n"
+    # #779(사용자 결정 B안): 잇는 컷은 앞 컷 그림을 세 번째 그림으로 함께 봄
+    "FLOW(items에 있을 때만): 세 번째 그림은 같은 영상의 앞 컷 첫 그림이고 previousScene은 그 "
+    "장면 글이다. 같은 장소면 장소·배경·가구·물건이 같고 물건 상태가 이어지는지(앞 컷에서 덮은 "
+    "것이 벗겨짐, 탁자 모양이 바뀜, 돌담이 나무 울타리로 바뀜은 결함). 이 컷 장면 글이 지금 "
+    "바뀐다고 한 것(빈 접시가 됨 등)과 구도·카메라·인물 동작이 다른 것은 결함이 아니고, 이 "
+    "컷이 다른 장소면 PASS다.\n"
     "MISSION_FIT(items에 있을 때만): 미션 질문과 생각 열기 질문이 가리키는 물건·장소와 그날 증거"
     "(evidenceKind가 TRACE면 흔적이 남은 자리·물건, "
     "RECORD면 사진·기록 물건, SIGHTING이면 그것을 본 "
@@ -1930,6 +1974,7 @@ def image_review_user(
     discovery: str | None = None,
     evidence: str | None = None,
     answer_allowed: bool = False,
+    previous_scene: str | None = None,
 ) -> str:
     body: dict = {
         "items": list(ids),
@@ -1940,6 +1985,8 @@ def image_review_user(
         "targetAllowed": shows_target,
         "answerAllowed": answer_allowed,
     }
+    if previous_scene is not None:
+        body["previousScene"] = previous_scene
     if question is not None:
         body |= {
             "missionQuestion": question,

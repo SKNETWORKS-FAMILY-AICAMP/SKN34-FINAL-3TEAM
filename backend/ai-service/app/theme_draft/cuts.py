@@ -41,6 +41,10 @@ class CutSpec:
     # 첫 그림 표정(영어). 그림 지시에는 장면(scene)만 들어가 리액션 컷이 웃는 얼굴로 그려졌음
     # (경찰관 떡집 콘티 2026-11-19)
     look: str = ""
+    # 이 컷이 잇는 앞 컷 번호(0이면 없음). 컷 그림을 따로 그려 같은 뒤뜰인데 탁자·담이 바뀌고 앞
+    # 컷에서 덮은 떡이 다음 컷에서 벗겨졌음(경찰관 떡집 콘티 2026-11-19, 사용자 결정 B안): 그 앞
+    # 컷 그림을 참고 그림으로 받아 장소·가구·물건 상태를 잇는다
+    follows: int = 0
 
     @property
     def has_mungchi(self) -> bool:
@@ -87,6 +91,7 @@ _NEW = {
             "위쪽과 몸에 맞는 크기의 손만(뭉치 없음)",
             speaker="그 컷에 보이는 인물이 사건을 알아채는 감탄(예: '아린: 어라? 떡이 없어졌어!')",
             mystery=True,
+            follows=1,
         ),
         CutSpec(
             "PEOPLE",
@@ -98,6 +103,7 @@ _NEW = {
             mystery=True,
             look="Everyone shows a big surprised face: wide eyes, raised eyebrows and open "
             "mouths, not smiling.",
+            follows=1,
         ),
         CutSpec(
             "RUN",
@@ -126,6 +132,7 @@ _NEW = {
             "모두 모여 큰 질문: 인물들과 뭉치가 사건 현장에 모임(뭉치는 사람들과 조금 떨어져 섬)",
             "Mungchi stays apart from the people, tilts its head and sways slightly.",
             speaker="뭉치가 이번 주 큰 질문을 묻는 말(예: '뭉치: 장난꾸러기는 누구일까?')",
+            follows=1,
         ),
     ),
     "OUTRO": (
@@ -175,6 +182,7 @@ _NEW = {
             "PAN_SIDE",
             "",
             "기쁨: 사람들과 대상이 함께 기뻐함(손뼉·폴짝 뛰기, 뭉치 없음)",
+            follows=3,
         ),
         CutSpec(
             "GROUP",
@@ -187,6 +195,7 @@ _NEW = {
             "Mungchi stays apart in front of the people, smiles widely and sways; flags or "
             "balloons flutter in the wind if outdoors.",
             speaker="뭉치나 그 컷에 보이는 인물의 마무리 말(예: '뭉치: 사건 해결!')",
+            follows=5,
         ),
     ),
 }

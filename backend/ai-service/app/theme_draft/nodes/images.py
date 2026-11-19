@@ -7,7 +7,9 @@
    시작 1컷 장면을 인물 기준으로 써서 그림 모델이 배경·구도까지 따라 그려 컷마다 같은 장면이 됐음.
    끝내 못 그리면 예전처럼 시작 1컷을 먼저 그려 인물 기준으로 씀
 3. 미션 5 + 컷 8을 [테마 옷 뭉치, 인물 기준 그림] 참조로 동시에(asyncio.gather).
-   시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음(뭉치 혼자 출동)
+   시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음(뭉치 혼자 출동).
+   #779 6컷(B안): 앞 컷을 잇는 컷(시작 2·3·6 ← 1, 종료 5 ← 3, 6 ← 5)은 그 앞 컷이 끝난 뒤 그
+   그림을 마지막 참고 그림으로 받아 장소·가구·물건 상태를 잇고, 검토도 그 그림을 보며 FLOW를 더함
 
 그림 대역(IMAGE_PROVIDER=fake)이면 검토를 부르지 않고 통과로 보며 warnings에 IMAGE ALL 한 줄(#716).
 
@@ -36,6 +38,7 @@ from app.llm.base import LlmUnavailable
 from app.mission_draft.models import Draft
 from app.theme_draft.checks import (
     DAYS,
+    FLOW_IMAGE_REVIEW_IDS,
     IMAGE_REVIEW_IDS,
     MISSION_IMAGE_REVIEW_IDS,
     Theme,
@@ -86,6 +89,10 @@ class Shot:
     discovery: str | None = None  # 미션 그림만: 그날 증거 발견 줄
     evidence: str | None = None  # 미션 그림만: 그날 증거 종류(TRACE·SIGHTING·RECORD)
     answer_allowed: bool = False  # 종료 콘티 컷만 정답(장소·동물) 공개 허용
+    # 잇는 앞 컷(#779 B안): 그 컷 키(INTRO1 등)·장면 글·앞 컷 그림을 받을 때의 지시문
+    follows: str | None = None
+    follow_scene: str | None = None
+    follow_prompt: Callable[[list[str]], str] | None = None
 
 
 @dataclass
@@ -96,11 +103,25 @@ class Drawn:
 
 
 async def draw(
-    ctx: ThemeContext, theme: Theme, shot: Shot, outfit: bytes, seed: list[str] | None = None
+    ctx: ThemeContext,
+    theme: Theme,
+    shot: Shot,
+    outfit: bytes,
+    seed: list[str] | None = None,
+    prev: bytes | None = None,
 ) -> Drawn:
-    """그리기 → 검토 → FAIL이면 사유를 넣어 다시(상한·마감). 그림 호출 실패도 사유로 다시."""
+    """그리기 → 검토 → FAIL이면 사유를 넣어 다시(상한·마감). 그림 호출 실패도 사유로 다시.
+
+    prev(잇는 앞 컷 그림, #779 B안)가 있으면 마지막 참고 그림으로 넣고 검토도 세 번째 그림으로
+    보며 FLOW 항목을 더한다. 앞 컷 그림이 없으면(끝내 실패) 예전처럼 따로 그린다.
+    """
     assert ctx.image is not None
     body = ctx.prompt.body
+    follow = prev is not None and shot.follow_prompt is not None
+    prompt = shot.follow_prompt if follow and shot.follow_prompt else shot.prompt
+    refs = [*shot.refs, prev] if follow and prev is not None else shot.refs
+    ids = FLOW_IMAGE_REVIEW_IDS if follow else shot.ids
+    review_images = [outfit, prev] if follow and prev is not None else [outfit]
     feedback: list[str] = list(seed or [])  # 요청 previousFailures의 IMAGE 사유(처음부터)
     bad: list[str] = []
     for attempt in range(ctx.settings.theme_max_regen + 1):
@@ -109,8 +130,8 @@ async def draw(
             break
         try:
             image = await ctx.image.edit(
-                shot.prompt(feedback),
-                shot.refs,
+                prompt(feedback),
+                refs,
                 prompt_version=ctx.prompt.version,
                 deadline=ctx.deadline,
             )
@@ -121,7 +142,7 @@ async def draw(
                 user=body.image_review_user(
                     theme,
                     shot.scene_text,
-                    ids=shot.ids,
+                    ids=ids,
                     has_mungchi=shot.has_mungchi,
                     shows_target=shot.shows_target,
                     question=shot.question,
@@ -129,6 +150,7 @@ async def draw(
                     discovery=shot.discovery,
                     evidence=shot.evidence,
                     answer_allowed=shot.answer_allowed,
+                    previous_scene=shot.follow_scene if follow else None,
                 ),
                 output=GeneratedImageReview,
                 call_type=THEME_CALL_TYPE,
@@ -137,7 +159,7 @@ async def draw(
                 deadline=ctx.deadline,
                 timeout=ctx.settings.theme_llm_timeout,
                 max_retries=ctx.settings.theme_llm_retries,
-                images=[image, outfit],
+                images=[image, *review_images],
             )
         except LlmUnavailable as exc:  # 안전 정책 거절(400) 등. 사유를 넣어 다시
             bad = [f"IMAGE_CALL {exc.code}"]
@@ -145,7 +167,7 @@ async def draw(
                 break
             feedback = uniq([*feedback, *bad])
             continue
-        fails, warns, shape = check_review(review.data.model_dump(), shot.ids)
+        fails, warns, shape = check_review(review.data.model_dump(), ids)
         bad = shape + [f"{x['id']} {x['reason']}" for x in fails]
         if not bad:
             return Drawn(image, [], [f"{x['id']} {x['reason']}" for x in warns])
@@ -208,6 +230,8 @@ def cut_shot(
     refs = [outfit] if has_mungchi else []
     if person is not None and body.cut_has_characters(scene, index, n):
         refs.append(person)
+    k = body.cut_follows(scene, index, n)
+    prev_scene = theme[CUTS_KEY[scene]][k - 1]["scene"] if k else None
     return Shot(
         key=f"{scene}{index}",
         scene_text=cut["scene"],
@@ -217,7 +241,41 @@ def cut_shot(
         has_mungchi=has_mungchi,
         shows_target=body.cut_shows_target(theme, scene, index),
         answer_allowed=body.cut_reveals_answer(scene),
+        follows=f"{scene}{k}" if k else None,
+        follow_scene=prev_scene,
+        follow_prompt=(
+            (lambda fb: body.cut_image_prompt(theme, scene, index, cut, fb, prev_scene))
+            if prev_scene is not None
+            else None
+        ),
     )
+
+
+async def draw_all(
+    ctx: ThemeContext,
+    theme: Theme,
+    shots: list[Shot],
+    outfit: bytes,
+    seed_of: Callable[[str], list[str]],
+    ready: dict[str, bytes] | None = None,
+) -> dict[str, Drawn]:
+    """그림 일감을 동시에 그린다. 앞 컷을 잇는 컷(#779 B안)은 그 컷 일감이 끝날 때까지 기다려 그
+    그림을 참고 그림으로 받는다(일감에 없으면 ready의 그림). 앞 컷이 끝내 실패하면 따로 그린다."""
+    tasks: dict[str, asyncio.Task[Drawn]] = {}
+    have = ready or {}
+
+    async def one(shot: Shot) -> Drawn:
+        prev: bytes | None = None
+        if shot.follows in tasks:
+            prev = (await tasks[shot.follows]).image
+        elif shot.follows:
+            prev = have.get(shot.follows)
+        return await draw(ctx, theme, shot, outfit, seed_of(shot.key), prev)
+
+    for shot in shots:  # 일감을 모두 만든 뒤에 돌기 시작해 잇는 컷이 앞 컷 일감을 찾음
+        tasks[shot.key] = asyncio.create_task(one(shot))
+    results = await asyncio.gather(*tasks.values())
+    return dict(zip(tasks, results, strict=True))
 
 
 def mission_shot(
@@ -314,10 +372,7 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             for i in cut_range(scene)
             if f"{scene}{i}" in redo
         ]
-        results = await asyncio.gather(
-            *(draw(ctx, theme, s, outfit, seed_of(s.key)) for s in shots)
-        )
-        drawn = dict(zip([s.key for s in shots], results, strict=True))
+        drawn = await draw_all(ctx, theme, shots, outfit, seed_of, state.get("scene_images") or {})
     else:
         chars = await draw_characters(ctx, theme)
         first: Drawn | None = None
@@ -340,12 +395,13 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             for i in cut_range(scene)
             if first is None or (scene, i) != ("INTRO", 1)
         ]
-        drawn = dict(
-            zip(
-                [s.key for s in shots],
-                await asyncio.gather(*(draw(ctx, theme, s, outfit, seed_of(s.key)) for s in shots)),
-                strict=True,
-            )
+        drawn = await draw_all(
+            ctx,
+            theme,
+            shots,
+            outfit,
+            seed_of,
+            {"INTRO1": first.image} if first is not None and first.image is not None else None,
         )
         if first is not None:
             drawn["INTRO1"] = first

@@ -549,3 +549,31 @@ def test_animal_ending_cut_is_a_farewell_everyone_looks_at() -> None:
         assert "배웅" not in t.outro_cuts[3]
     assert families.STORY_TYPES["LOST"].outro_ending == ""
     assert "종료 6컷(엔딩)" not in families.type_rules(families.STORY_TYPES["LOST"])
+
+
+def test_follow_cuts_point_to_earlier_people_cut() -> None:
+    """앞 컷 잇기(#779 B안): 잇는 컷은 같은 영상의 앞쪽 사람 컷을 잇고, 뭉치 혼자 컷은 잇지 않는다.
+
+    경찰관 떡집 콘티(2026-11-19)에서 종료 5컷에 덮은 떡이 6컷에서 벗겨지고 탁자·담이 바뀌었음."""
+    six = cuts.layout(6)
+    follows = {(s, i): spec.follows for s, specs in six.items() for i, spec in enumerate(specs, 1)}
+    assert {k: v for k, v in follows.items() if v} == {
+        ("INTRO", 2): 1,
+        ("INTRO", 3): 1,
+        ("INTRO", 6): 1,
+        ("OUTRO", 5): 3,
+        ("OUTRO", 6): 5,
+    }
+    for (scene, i), k in follows.items():
+        if k:
+            assert k < i and six[scene][k - 1].has_people and not six[scene][i - 1].mungchi_alone
+    assert all(spec.follows == 0 for specs in cuts.layout(4).values() for spec in specs)
+    # 장면 글도 앞 컷에서 바뀐 물건 상태를 다음 컷에 그대로 씀
+    assert "앞 컷에서 바뀐 물건 상태(덮개를 씌운 접시" in prompts.PLAN_SYSTEM
+    theme = valid_theme()
+    plain = prompts.cut_image_prompt(theme, "OUTRO", 6, theme["outroCuts"][5], [])
+    follow = prompts.cut_image_prompt(
+        theme, "OUTRO", 6, theme["outroCuts"][5], [], theme["outroCuts"][4]["scene"]
+    )
+    assert "earlier cut" not in plain and prompts.CUT_FRAMING in plain
+    assert "something covered stays covered" in follow and prompts.CUT_FRAMING not in follow

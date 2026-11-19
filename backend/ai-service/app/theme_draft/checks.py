@@ -2057,6 +2057,7 @@ def public_theme(theme: Theme) -> dict:
 # --- 그림·영상·움직임 (#437 그림 단계) ------------------------------------------------
 IMAGE_REVIEW_IDS = ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT")
 MISSION_IMAGE_REVIEW_IDS = (*IMAGE_REVIEW_IDS, "MISSION_FIT")
+FLOW_IMAGE_REVIEW_IDS = (*IMAGE_REVIEW_IDS, "FLOW")  # 앞 컷을 잇는 컷 그림(#779 B안)
 VIDEO_REVIEW_IDS = ("MORPH", "ANSWER_HINT", "TEXT", "SAFETY", "CONTINUITY")
 
 # 움직임 상한(기준안, ai.md 17.1 움직임 행)
