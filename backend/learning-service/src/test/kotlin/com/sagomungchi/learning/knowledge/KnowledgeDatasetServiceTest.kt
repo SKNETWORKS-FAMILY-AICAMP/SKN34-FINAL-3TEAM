@@ -3,6 +3,7 @@ package com.sagomungchi.learning.knowledge
 import com.sagomungchi.learning.knowledge.controller.knowledgeObject
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning.knowledge.domain.DatasetStatus
@@ -54,6 +55,11 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
         assertEquals(semesterCount, dataset.relationCount)
         assertEquals(1, result.documents)
         assertNull(dataset.source["previousVersion"]?.takeUnless { it.isNull })
+        // #816: 저장 jsonb는 입력 출처 + previousVersion(null), 조회 값은 저장 값 그대로
+        val stored = json.readTree(jdbc.queryForObject("SELECT source::text FROM knowledge_dataset WHERE version = ?", String::class.java, dataset.version))
+        assertEquals((source as ObjectNode).deepCopy().putNull("previousVersion"), stored)
+        assertEquals(stored, dataset.source)
+        assertEquals(stored, service.get(dataset.version).source)
     }
 
     @Test
@@ -65,6 +71,7 @@ class KnowledgeDatasetServiceTest : PostgresRepositoryTest() {
         assertEquals(first.dataset.relations, second.dataset.relations)
         assertEquals(first.dataset.relationCount, second.dataset.relationCount)
         assertEquals(first.dataset.version, second.previousVersion)
+        assertEquals(first.dataset.version, second.dataset.source["previousVersion"].asText())
         assertTrue(second.recheck.isEmpty())
 
         val activated = service.activate(second.dataset.version)

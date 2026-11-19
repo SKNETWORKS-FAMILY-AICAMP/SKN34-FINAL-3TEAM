@@ -1,15 +1,16 @@
 package com.sagomungchi.learning.knowledge.repository
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.sagomungchi.learning.knowledge.domain.DatasetStatus
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 import java.time.Instant
 
-/** `knowledge_dataset` 행. source는 JSON 글 */
+/** `knowledge_dataset` 행. source jsonb는 `JsonNode`(변환은 MyBatis 타입 핸들러, #816) */
 data class DatasetRow(
     val version: String,
     val status: DatasetStatus,
-    val source: String,
+    val source: JsonNode,
     val chunkCount: Int,
     val relationCount: Int,
     val createdAt: Instant,
