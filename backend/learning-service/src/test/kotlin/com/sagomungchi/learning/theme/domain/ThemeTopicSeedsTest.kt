@@ -123,7 +123,7 @@ class ThemeTopicSeedsTest {
         val prank = fitting(autumn, StoryType.PRANK)
         val police = prank.first { "경찰관(" in it }
         val recent = lost.take(10) + treasure.first()
-        val sameWeek = (lost.drop(10).take(3) + prank.first { "동물 구조대(" in it }).toSet()
+        val sameWeek = (lost.drop(10).take(3) + prank.first { "수의사(" in it }).toSet()
 
         repeat(60) { seed ->
             val chosen = ThemeTopicSeeds.choose(autumn, recent, sameWeek, Random(seed), roleTopics = listOf(police))
