@@ -296,6 +296,20 @@ test('커뮤니티 응답은 반응 수·학생 ID 없이 읽고, 내 글만 반
   assert.deepEqual(mine.reactions, { NEW_IDEA: 0, CLEAR_REASON: 2, DIFFERENT_VIEW: 0, WANT_MORE: 0 })
 })
 
+test('#825 공유 답변은 입력 방식과 관계없이 text(칸 이름을 붙인 원문)를 보인다', () => {
+  const answers = [
+    { inputType: 'NARRATIVE', text: '내 생각', content: { text: '내 생각' } },
+    { inputType: 'SOLUTION_STEPS', text: '식: 3+4\n최종 답: 7 개', content: { finalAnswer: '7', steps: ['3+4'] } },
+    { inputType: 'ESSAY', text: '주장: 가\n까닭 1: 나', content: { essay: { claim: '가', reasons: ['나', '다'], rebuttal: '라' } } },
+    { inputType: 'CHOICE', text: '사과', content: { choiceIds: ['c1'] } },
+    { inputType: 'CLASSIFICATION', text: '사과: 과일', content: { assignments: [{ choiceId: 'c1', categoryId: 'g1' }] } },
+  ]
+  const posts = readCommunityPosts({ items: answers.map((answer, i) => ({ postId: `p${i}`, author: { nickname: '하늘' }, answer })) })
+  assert.deepEqual(posts.map((p) => p.answer), answers.map((a) => a.text))
+  const mine = readMyPosts({ items: answers.map((answer, i) => ({ postId: `m${i}`, answer })) })
+  assert.deepEqual(mine.map((p) => p.answer), answers.map((a) => a.text))
+})
+
 test('#635 친구 생각 작성자 착용은 아이템 키로 읽고, 아이템 목록과 맞춰 그림 주소로 바꾼다(목록에 없는 아이템은 빠짐)', () => {
   const [post] = readCommunityPosts({
     items: [{ postId: 'p1', author: { nickname: '초록콩', look: { companion: 'kongi', equipped: { HAT: 'HAT_GONE', OUTFIT: 'OUTFIT_RAIN', ACCESSORY: '', BACKGROUND: null } } }, answer: '답' }],

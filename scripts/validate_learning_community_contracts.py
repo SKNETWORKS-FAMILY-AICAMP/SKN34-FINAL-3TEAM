@@ -44,3 +44,14 @@ assert {"postId", "studentId", "status"} <= set(load("post-detail"))
 # 친구 방 구경(#707·#708): 작성자 확인은 postId·studentId만(답변·미션·상태·반응 없음)
 assert set(load("post-author")) == {"postId", "studentId"}, "post author check must expose only postId and studentId"
 print("community: fields read by core CommunityClient are present; no reaction counts in mission list")
+
+# #825: core 공개 계약 CommunityAnswer(입력 방식별 content oneOf)는 learning 실제 공유 답변을 그대로 받아야 한다.
+core_spec = yaml.safe_load((root / "contracts/openapi/core-service.yaml").read_text(encoding="utf-8"))
+core_answer = Draft202012Validator({**core_spec["components"]["schemas"]["CommunityAnswer"], "components": core_spec["components"]},
+                                   format_checker=FormatChecker())
+answers = [item["answer"] for item in items] + [load("post-detail")["answer"]]
+answers += [item["answer"] for name in ("student-posts-student", "student-posts-parent") for item in load(name)["items"]]
+for answer in answers:
+    core_answer.validate(answer)
+print(f"community: {len(answers)} learning shared answers match core CommunityAnswer "
+      f"({', '.join(sorted({a['inputType'] for a in answers}))})")

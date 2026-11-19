@@ -17,7 +17,7 @@ import type { LearningMission } from '../../domain/learning.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { validPeriod } from '../../domain/parent.ts'
 import { workspaceScenario as mode } from '../fixtures/accounts.ts'
-import { communityOf, consentOf, persistRetention, retentionState } from '../fixtures/retention.ts'
+import { communityOf, consentOf, persistRetention, retentionState, sharedAnswer } from '../fixtures/retention.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import {
   jobs,
@@ -667,7 +667,7 @@ export const adminHandlers = [
           available: true,
           missionId: post.missionId,
           status: post.status,
-          answer: { inputType: 'ESSAY', text: post.answer, content: {} },
+          answer: sharedAnswer(post.answer),
           authorStudentId: post.studentId,
         } : { postId: r!.targetId, available: false }
         return { ...r!, linkedPost }

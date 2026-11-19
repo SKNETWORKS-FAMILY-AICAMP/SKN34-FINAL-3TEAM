@@ -3,6 +3,7 @@ package com.sagomungchi.core.reward
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.IntegrationTestSupport
+import com.sagomungchi.core.community.NARRATIVE_ANSWER
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.account.service.TokenService
 import com.sagomungchi.core.admin.account
@@ -106,7 +107,7 @@ class RewardEarnIntegrationTest : IntegrationTestSupport() {
             path.endsWith("/weekly-theme") -> LearningHttpStub.Reply(body = themeBody)
             path.endsWith("/weekly-theme/review-views") -> ok(mapOf("firstViewThisWeek" to true, "completed" to reviewCompleted))
             path.startsWith("/internal/community/missions/") -> ok(mapOf("items" to listOf(mapOf("postId" to ownPost, "studentId" to student,
-                "answer" to mapOf("text" to "내 생각"), "myReactions" to emptyList<String>(), "createdAt" to "2026-11-09T01:00:00Z"))))
+                "answer" to NARRATIVE_ANSWER, "myReactions" to emptyList<String>(), "createdAt" to "2026-11-09T01:00:00Z"))))
             else -> LearningHttpStub.Reply(404, "{}")
         }
     }

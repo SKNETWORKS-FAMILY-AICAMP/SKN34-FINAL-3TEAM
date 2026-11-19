@@ -1397,6 +1397,7 @@ classDiagram
     +setVisibility(studentId, visible, reason)
     +moderate(postId, status, errorReportId)
     +postAuthor(postId, viewerId, viewerUser) UUID
+    +post(postId) PostDetail
   }
   class RewardController {
     <<controller>>
@@ -1470,7 +1471,7 @@ classDiagram
 - 친구 방 구경(#708): `FriendRoomService.room`이 학생 세션 확인 → `CommunityRepository.reportHidden`(404) → `CommunityClient.postAuthor`(learning #707, 오류 그대로 전달) → `CommunityAuthorMapper.toAuthors`(없으면 404) → `LookUnlockService.equipmentAssets`(착용 여덟 칸 그림 키, 바닥 포함·판매 중단 포함) → `RoomDecorService.friendSpots`(방 소품 놓은 자리, 그림 키만, #704) → `RoomFrameSlotService.friendFrames`(작성자 범위로 learning 앨범) 순서로 조합한다. 트랜잭션 없이 읽기만 해 learning을 기다리는 동안 DB 잠금이 없다. 응답에 학생 ID·회차 키를 넣지 않는다. 커뮤니티 목록 `look.equipped`(`equipmentOf`, 캐릭터 네 슬롯 아이템 코드)는 그대로다
 - #704 바닥·방 소품: 바닥 `FLOOR`는 `LookCatalog.EQUIP_SLOTS`(착용 슬롯)에 들어가 해금·착용 클래스가 그대로다. 방 소품 `DECOR`는 `ITEM_SLOTS`(관리자 등록)에만 있고 `LookUnlockService.purchase`가 해금과 같은 잠금·원장·멱등으로 여러 번 산다(`unlock`은 방 소품을 422로 거절). 목록 `catalog`가 보유 개수 `ownedCount`·등록일 `createdAt`을 채운다. `RewardService.deleteStudent`가 원장보다 먼저 보유 행을 지운다
 - `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
-- 공유물 목록 해석(#792·#814): `CommunityClient.missionPosts`·`studentPosts`가 learning `items[]`를 `MissionPost`·`StudentPost`로 바꾼다(공유물·작성자 ID UUID, 상태는 `Community.POST_STATUSES`, 반응 수는 `Community.REACTIONS` 전부를 0 이상 정수로 채움(빠진 종류는 0, 음수·문자열·소수·null은 오류), 내 반응은 알려진 종류만, 미션 ID는 UUID|null·미션 제목은 문자열|null, 작성 시각은 date-time|null이며 learning 문자열 그대로). 답변만 원문 그대로 넘긴다. 틀리면 502 `COMMUNITY_INVALID_RESPONSE`. `CommunityService`는 작성자 표시·신고 숨김·공개 설정으로 거르고 상태를 덮어쓰는 업무 판단만 한다
+- 공유물 목록 해석(#792·#814): `CommunityClient.missionPosts`·`studentPosts`가 learning `items[]`를 `MissionPost`·`StudentPost`로 바꾼다(공유물·작성자 ID UUID, 상태는 `Community.POST_STATUSES`, 반응 수는 `Community.REACTIONS` 전부를 0 이상 정수로 채움(빠진 종류는 0, 음수·문자열·소수·null은 오류), 내 반응은 알려진 종류만, 미션 ID는 UUID|null·미션 제목은 문자열|null, 작성 시각은 date-time|null이며 learning 문자열 그대로). 답변은 `post`(신고 대상·관리자 원문)까지 세 읽기 모두 공개 계약 `CommunityAnswer`(`{inputType, text, content}`, 입력 방식별 `content` 칸만, #825) 모양을 검사한 learning 원문을 넘긴다. 틀리면 502 `COMMUNITY_INVALID_RESPONSE`. `CommunityService`는 작성자 표시·신고 숨김·공개 설정으로 거르고 상태를 덮어쓰는 업무 판단만 한다
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
 - 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningProxyService.reflection` 돌아보기 저장 성공(또는 `409 ATTEMPT_CLOSED` 재요청) 뒤 `CommunityService.shareCompleted`, 결과 `postId`로 공유 포인트 적립(#389)
 - 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. #387 때는 무료 `THEME_DAY`·`EXTRA`를 셌고, 2026-11-10 개정(core #485)부터 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다
