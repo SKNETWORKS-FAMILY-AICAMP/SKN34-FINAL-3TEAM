@@ -14,6 +14,7 @@ h3 { font-size:12px; break-after:avoid; } p,li { white-space:pre-wrap; overflow-
 {% for problem in report.problems %}<section class="record">
 <h2>{{ problem.title }}</h2>
 <p>활동: {{ {'THEME_DAY':'오늘의 테마', 'THEME_REVIEW':'되돌아보기', 'EXTRA':'추가 문제'}.get(problem.context, '학습') }} · 판정: {{ {'CORRECT':'확인', 'PARTIAL':'일부 확인', 'RETHINK':'다시 생각하기', 'HELD':'판정 보류'}.get(problem.judgment, '판정 대기') }}</p>
+{% for time in problem.get('answerTimes', []) %}<p class="meta">{{ answer_time_line(time) }}</p>{% endfor %}
 <h3>되묻기와 보완 답변</h3>
 {% for followup in problem.followups %}<p>{{ followup.question }}</p><p>{{ followup.answer or '보완 답변 없음' }}</p>{% else %}<p>제공할 되묻기 기록이 없습니다.</p>{% endfor %}
 <h3>마지막 답변</h3><p>{{ problem.finalAnswer or '원문 비공개 또는 답변 없음' }}</p>

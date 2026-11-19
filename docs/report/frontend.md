@@ -1171,4 +1171,4 @@ NFR-UX-02(주요 기능 키보드·터치 조작, 오류·진행 상태를 색�
 
 ## 답변 칸 붙여넣기 막기·생각·작성 시간 (설계 #800, 2026-11-19, 구현 전)
 
-- [learning.md 42절](learning.md#42-답변-생각작성-시간과-붙여넣기-막기-설계-800-2026-11-19): 학생 답변 칸 `paste`·`drop` 막기(안내 문구 없음, 메모·돌아보기·관리자 미리보기 제외)와 `performance.now()` 생각·작성 시간 전송, 같은 멱등 키 재전송 때 처음 잰 값 유지는 #802. 학부모 일일 리포트 화면의 답변별 시간 줄(`problems[].answerTimes`)은 #803
+- [learning.md 42절](learning.md#42-답변-생각작성-시간과-붙여넣기-막기-설계-800-2026-11-19): 학생 답변 칸 `paste`·`drop` 막기(안내 문구 없음, 메모·돌아보기·관리자 미리보기 제외)와 `performance.now()` 생각·작성 시간 전송, 같은 멱등 키 재전송 때 처음 잰 값 유지는 #802. 학부모 일일 리포트 화면의 답변별 시간 줄(`problems[].answerTimes`)은 #803에서 구현(`ParentReports.tsx`, 문구는 `domain/parent.ts` `answerTimeLine`, [learning.md 42.3](learning.md#423-report-일일-리포트-표시-803-2026-11-19))

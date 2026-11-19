@@ -351,6 +351,7 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - 검증: report pytest 전체 통과(새 10개: 매일·몰아 푼 학생·엔딩 못 본 학생 표시, 이전 입력·옛 저장본 동일 표시, 검증 오류 5종, 일일 몰아 푼 문제), Ruff·OpenAPI 일치 통과. learning `AttemptComparisonIntegrationTest`의 실제 요약을 `validate_theme_summary_contracts.py`로 learning·report OpenAPI와 대조해 PASS
 - 남은 일: #484 병합 뒤 새 칸을 채운 실제 응답 대조와 kind 한 주 흐름 확인
 
-## 29. 일일 리포트 답변별 생각·작성 시간 (설계 #800, 2026-11-19, 구현 전)
+## 29. 일일 리포트 답변별 생각·작성 시간 (설계 #800, 구현 #803, 2026-11-19)
 
 - [learning.md 42절](learning.md#42-답변-생각작성-시간과-붙여넣기-막기-설계-800-2026-11-19): learning `answers[].thinkingSeconds`·`writingSeconds`로 일일 `problems[].answerTimes` 생성, "처음 답/되묻기 뒤 답/두 번째 되묻기 뒤 답: 생각 N분 · 작성 N분"(60초 미만 "1분 미만", 시간 없는 답 생략, 원문 비공개여도 표시), HTML·Markdown·PDF·웹 화면 같은 문구는 #803. 주간 리포트·지표는 범위 밖
+- report 구현(#803, [learning.md 42.3](learning.md#423-report-일일-리포트-표시-803-2026-11-19)): `AnswerInput` 선택 칸(없으면 None, 하나만 있거나 0~86400 밖이면 입력 오류) → `AnswerRecord` → `DailyReportBuilder`가 `answerTimes` 저장(공유 여부 무관). 문구는 `renderer.answer_time_line`을 HTML·PDF·Markdown이 함께 씀. 이전 저장본은 `presentation.assemble`에서 `[]`. learning #801 병합 계약과 일치, 실제 서버 관리자 재생성 확인은 남음. core 원문 비공개 경로(`ReportDocument.withoutProblemOriginals`)는 `answerTimes`를 남기도록 고쳤고 웹 `ParentReports.tsx`도 같은 문구로 표시

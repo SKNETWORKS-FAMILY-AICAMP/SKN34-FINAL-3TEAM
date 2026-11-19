@@ -509,3 +509,158 @@ def test_daily_reader_uses_completion_endpoint_and_keeps_existing_mission_fields
     assert len(calls) == 1
     assert actual.attempts[0].mission_id == attempt.mission_id
     assert actual.attempts[0].answers[0].followup == "원문 되묻기"
+
+
+def timed_fixture(times):
+    """P28 (#803): learning #801 전 목 입력. times는 버전별 (생각, 작성) 초 또는 None."""
+    command, records, learning = daily_fixture()
+    attempt = records.attempts[0]
+    answers = tuple(
+        replace(a, thinking_seconds=t[0], writing_seconds=t[1]) if t else a
+        for a, t in zip(attempt.answers, times, strict=True)
+    )
+    return command, replace(records, attempts=(replace(attempt, answers=answers),)), learning
+
+
+def daily_detail(command, records, learning, db_session, sharing=True):
+    repo = ReportRepository()
+    report, _ = repo.get_or_create(db_session, replace(command, parent_sharing_enabled=sharing))
+    result = asyncio.run(DailyReportBuilder().build(records, sharing, learning))
+    repo.finish(db_session, report.id, result=result)
+    detail = from_result(report, result)
+    ReportDetail.model_validate(detail)
+    return detail
+
+
+def test_answer_times_follow_versions_and_render_same_line_everywhere(db_session):
+    command, records, learning = timed_fixture(((45, 130), (600, 59)))
+    detail = daily_detail(command, records, learning, db_session)
+    problem = detail["problems"][0]
+    assert problem["answerTimes"] == [
+        {"version": 1, "thinkingSeconds": 45, "writingSeconds": 130},
+        {"version": 2, "thinkingSeconds": 600, "writingSeconds": 59},
+    ]
+    rendered = ReportRenderer().render(detail, "합성학생")
+    first = "처음 답: 생각 1분 미만 · 작성 2분"
+    second = "되묻기 뒤 답: 생각 10분 · 작성 1분 미만"
+    html, markdown = rendered["HTML"].decode(), rendered["MD"].decode()
+    assert first in html and second in html
+    assert first in markdown and second in markdown
+    assert b"%PDF" in rendered["PDF"][:10]
+
+
+def test_answer_without_time_is_omitted_and_private_daily_keeps_times(db_session):
+    command, records, learning = timed_fixture((None, (0, 60)))
+    detail = daily_detail(command, records, learning, db_session, sharing=False)
+    problem = detail["problems"][0]
+    assert problem["finalAnswer"] is None  # #206 원문 비공개
+    assert problem["answerTimes"] == [{"version": 2, "thinkingSeconds": 0, "writingSeconds": 60}]
+    markdown = ReportRenderer.markdown(detail, "합성학생")
+    assert "처음 답:" not in markdown
+    assert "되묻기 뒤 답: 생각 1분 미만 · 작성 1분" in markdown
+
+
+def test_no_times_mean_empty_list_and_no_time_lines(db_session):
+    command, records, learning = timed_fixture((None, None))
+    detail = daily_detail(command, records, learning, db_session)
+    assert detail["problems"][0]["answerTimes"] == []
+    rendered = ReportRenderer().render(detail, "합성학생")
+    for kind in ("HTML", "MD"):
+        assert (
+            "답: 생각" not in rendered[kind].decode() and " · 작성 " not in rendered[kind].decode()
+        )
+
+
+def test_stored_daily_problem_without_answer_times_reads_as_empty():
+    from app.generation.presentation import assemble
+
+    _, records, learning = daily_fixture()
+    result = asyncio.run(DailyReportBuilder().build(records, True, learning))
+    old = [
+        (item.type, None, {k: v for k, v in item.payload.items() if k != "answerTimes"})
+        for item in result.items
+    ]
+    metadata = {
+        "reportId": str(uuid4()),
+        "childId": str(records.student_id),
+        "status": "COMPLETED",
+        "state": "OK",
+        "period": records.period.payload(),
+        "revision": 1,
+        "revisions": [{"revision": 1, "generatedAt": None}],
+        "inclusionRule": result.inclusion_rule,
+        "narrative": None,
+        "periodType": "DAILY",
+        "themeSummary": None,
+        "verification": result.verification,
+        "versions": {"prompt": None, "model": None},
+        "eveningQuestion": None,
+        "generatedAt": None,
+    }
+    detail = assemble(metadata, old)
+    assert detail["problems"][0]["answerTimes"] == []
+    ReportDetail.model_validate(detail)
+    assert "처음 답:" not in ReportRenderer.markdown(detail, "합성학생")
+
+
+@pytest.mark.parametrize(
+    ("wire", "expected"),
+    [
+        ({}, (None, None)),  # learning #801 배포 전: 칸 없음
+        ({"thinkingSeconds": None, "writingSeconds": None}, (None, None)),
+        ({"thinkingSeconds": 75, "writingSeconds": 0}, (75, 0)),
+        ({"thinkingSeconds": 86400, "writingSeconds": 86400}, (86400, 86400)),
+    ],
+)
+def test_daily_reader_accepts_answer_times_or_their_absence(wire, expected):
+    actual = asyncio.run(read_daily_with(wire))
+    answer = actual.attempts[0].answers[0]
+    assert (answer.thinking_seconds, answer.writing_seconds) == expected
+
+
+@pytest.mark.parametrize(
+    "wire",
+    [
+        {"thinkingSeconds": 30},
+        {"thinkingSeconds": 30, "writingSeconds": None},
+        {"thinkingSeconds": -1, "writingSeconds": 5},
+        {"thinkingSeconds": 5, "writingSeconds": 86401},
+        {"thinkingSeconds": "30", "writingSeconds": 5},
+        {"thinkingSeconds": 1.5, "writingSeconds": 5},
+    ],
+)
+def test_daily_reader_rejects_half_or_invalid_answer_times(wire):
+    from pydantic import ValidationError
+
+    # Same as other malformed learning input: the job fails, never a guessed time.
+    with pytest.raises((RecordContractError, ValidationError)):
+        asyncio.run(read_daily_with(wire))
+
+
+async def read_daily_with(extra):
+    import httpx
+
+    from app.clients.base import internal_client
+    from app.clients.learning_client import LearningClient
+    from app.security import UserContext, bind_user_context, reset_user_context
+    from tests.record_helpers import page, wire_attempt
+
+    command, records, _ = daily_fixture()
+    attempt = records.attempts[0]
+
+    def handler(request):
+        row = wire_attempt(attempt)
+        row["mission"]["id"] = str(attempt.mission_id)
+        row["answers"][0].update(extra)
+        data = page(command.student_id, [row])
+        data["period"] = records.period.payload()
+        return httpx.Response(200, json=data)
+
+    token = bind_user_context(UserContext(None, "SYSTEM", frozenset({str(command.student_id)})))
+    try:
+        async with internal_client(
+            "http://learning.test", transport=httpx.MockTransport(handler)
+        ) as client:
+            return await LearningClient(client).daily_records(command.student_id, records.period)
+    finally:
+        reset_user_context(token)

@@ -91,6 +91,16 @@ class DailyReportBuilder:
                     "text": reflection.text if reflection and sharing else None,
                 },
                 "quotes": quotes,
+                # P28: timing is a number, not original text, so #206 sharing does not hide it.
+                "answerTimes": [
+                    {
+                        "version": a.version,
+                        "thinkingSeconds": a.thinking_seconds,
+                        "writingSeconds": a.writing_seconds,
+                    }
+                    for a in answers
+                    if a.thinking_seconds is not None and a.writing_seconds is not None
+                ],
             }
             problems.append(
                 ReportItem(

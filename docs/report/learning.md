@@ -1353,3 +1353,21 @@ learning #801이 병합되기 전이라 api-spec 3.1 기준으로 `demoGateway`�
 
 - 확인 필요: 휴대폰·태블릿에서 길게 눌러 붙여넣기도 `paste` 이벤트로 막히는지 실기기 확인(데스크톱 Chromium에서 Ctrl+V·끌어다 놓기만 시험)
 - 시험: `tests/answerTiming.test.ts`(계산·null 규칙·`payload()`·시연 저장), `tests/browser/answerTime.spec.ts`(1440·1024·390px, 따로 768px에서 답 칸 붙여넣기 막힘·메모 칸 붙여넣기 됨, 최초·보완 제출 본문 두 칸, 이어하기·받아쓰기 null, 실패 뒤 같은 키 재전송 본문 동일)
+
+### 42.3 report 일일 리포트 표시 (#803, 2026-11-19)
+
+learning #801 병합 전에 목 입력으로 개발했고, 병합된 learning OpenAPI `AnswerItem`(정수·null, 0~86400, 쌍)과 읽는 규칙이 같음을 확인했다. 실제 서버에서 관리자 재생성으로 표시를 확인하는 일은 남았다.
+
+| 항목 | 정한 값 | 근거 |
+|---|---|---|
+| 보완 답변 시간 | 처음 답만이 아니라 답변마다 표시("처음 답"·"되묻기 뒤 답"·"두 번째 되묻기 뒤 답") | #803 "확인 필요" 기준안(처음 답만)보다 뒤에 확정된 #800(위 표·P28)을 따름 |
+| 원문 비공개(#206) | 시간은 넣고 표시 | #800 확정 값. report는 공유 여부와 관계없이 `answerTimes`를 저장 |
+| 입력 읽기 | `answers[].thinkingSeconds`·`writingSeconds` 선택 칸, 없거나 null이면 None. 정수 0~86400만, 둘 중 하나만 있으면 입력 오류로 생성 실패 | learning CHECK(≥ 0, 쌍)와 같은 규칙. 다른 learning 입력 위반과 같이 추측 값을 만들지 않음 |
+| 생성 | `problems[].answerTimes`는 그날 마무리 전 답변 중 두 값이 있는 것만 버전 순 | api-spec 4.1 일일 `answerTimes` |
+| 문구 | 60초 미만 "1분 미만", 그 밖 분 단위 내림. HTML·PDF(같은 HTML)·Markdown이 `renderer.answer_time_line` 하나를 씀. 4번째 답 이후는 "N번째 되묻기 뒤 답"(되묻기 최대 2회라 지금은 생기지 않음) | 세 형식 문구 일치 |
+| 이전 저장본 | `answerTimes` 없는 일일 항목은 조회·파일 조립(`presentation.assemble`)에서 `[]`로 채움. DB 마이그레이션 없음(항목 본문은 JSON) | 기존 리포트 조회 호환 |
+
+- OpenAPI: `contracts/openapi/report-service.yaml`에 `DailyAnswerTime`·`DailyProblem.answerTimes` 추가(앱 생성 결과와 일치 시험)
+- core: 원문 비공개(#206)·일일 상세 전환 때 쓰는 `ReportDocument.withoutProblemOriginals`가 정해진 칸만 남겨 `answerTimes`까지 지우고 있었다. 남길 칸에 `answerTimes`를 더하고, core OpenAPI `DailyReportProblem`에 선택 칸 `answerTimes`(항목 `additionalProperties: false`)를 넣었다. report가 구버전일 때를 위해 필수로 두지 않았다. 리포트 고정 대화(`ConversationService`)는 분석 대화 근거가 범위 밖이라 그대로
+- web: `DailyProblem.answerTimes?`와 `answerTimeLine`·`durationLabel`(`domain/parent.ts`, report와 같은 문구), `ParentReports.tsx` 문제 카드의 판정 줄 아래에 답변마다 한 줄. 원문 비공개여도 보이고 칸이 없으면 줄 없음. 시연 목은 시연 저장소 답변의 두 시간으로 `answerTimes`를 만들고 비공개 변환도 칸을 유지
+- 검증: core `./gradlew test`(JDK 21 컨테이너), web `npm test`·`test:types`·`lint`·`build`, `tests/browser/dailyAnswerTimes.spec.ts`(1440·1024·390px, 원문 비공개 상태에서 처음 답·두 번째 되묻기 뒤 답 줄 표시, 시간 없는 답 줄 없음)

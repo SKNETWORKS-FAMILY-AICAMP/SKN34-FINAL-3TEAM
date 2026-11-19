@@ -50,6 +50,24 @@ def theme_status_lines(theme: dict) -> list[str]:
     return lines
 
 
+ANSWER_LABELS = {1: "처음 답", 2: "되묻기 뒤 답", 3: "두 번째 되묻기 뒤 답"}
+
+
+def duration_label(seconds: int) -> str:
+    """P28: 60초 미만은 "1분 미만", 그 밖은 분 단위 내림."""
+    return "1분 미만" if seconds < 60 else f"{seconds // 60}분"
+
+
+def answer_time_line(time: dict) -> str:
+    """P28 (#803): "처음 답: 생각 N분 · 작성 N분". 보완 답변은 되묻기 순서로 이름을 붙인다."""
+    version = time["version"]
+    label = ANSWER_LABELS.get(version, f"{version - 1}번째 되묻기 뒤 답")
+    return (
+        f"{label}: 생각 {duration_label(time['thinkingSeconds'])}"
+        f" · 작성 {duration_label(time['writingSeconds'])}"
+    )
+
+
 class ReportRenderer:
     def __init__(self) -> None:
         self._templates = Environment(
@@ -66,6 +84,7 @@ class ReportRenderer:
             difficulty_labels=DIFFICULTY_LABELS,
             theme_day_label=theme_day_label,
             theme_status_lines=theme_status_lines,
+            answer_time_line=answer_time_line,
         )
 
     def render(self, report: dict, display_name: str) -> dict[str, bytes]:
@@ -124,6 +143,7 @@ class ReportRenderer:
                         "판정: " + safe(problem["judgment"] or "판정 대기"),
                     ]
                 )
+                lines.extend(safe(answer_time_line(t)) for t in problem.get("answerTimes", []))
                 for followup in problem["followups"]:
                     lines.extend(
                         [safe(followup["question"]), safe(followup["answer"] or "보완 답변 없음")]
