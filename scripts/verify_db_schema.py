@@ -422,6 +422,23 @@ SELECT pg_temp.expect_sqlstate($$
            dictated_by_guardian, idempotency_key, submitted_at
     FROM answer WHERE id = '00000000-0000-4000-8000-000000000108'
 $$, '23505');
+-- #801 V23 생각·작성 시간: 0 이상, 둘이 함께 있거나 함께 NULL
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE answer SET thinking_seconds = -1, writing_seconds = 10
+    WHERE id = '00000000-0000-4000-8000-000000000108'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE answer SET thinking_seconds = 10, writing_seconds = -1
+    WHERE id = '00000000-0000-4000-8000-000000000108'
+$$, '23514');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE answer SET thinking_seconds = 10
+    WHERE id = '00000000-0000-4000-8000-000000000108'
+$$, '23514');
+UPDATE answer SET thinking_seconds = 0, writing_seconds = 86400
+WHERE id = '00000000-0000-4000-8000-000000000108';
+UPDATE answer SET thinking_seconds = NULL, writing_seconds = NULL
+WHERE id = '00000000-0000-4000-8000-000000000108';
 INSERT INTO judgment (id, answer_id, process_status, rubric_version_id, retry_count, created_at)
 VALUES ('00000000-0000-4000-8000-000000000113', '00000000-0000-4000-8000-000000000108',
         'PENDING', '00000000-0000-4000-8000-000000000103', 0, now());
