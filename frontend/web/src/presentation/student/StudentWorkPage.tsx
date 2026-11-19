@@ -323,7 +323,9 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
   const feedbackFinal = error instanceof ApiError && error.problem.retryable === false
   const f = latestFeedback(a),
     writing = !a.finishedAt && (a.answers.length === 0 || more) && canAddAnswer(a),
-    guide = writing && draft ? writingGuide(draft.answer, more) : null
+    guide = writing && draft ? writingGuide(draft.answer, more, a.mission.choices?.length ?? 0) : null,
+    // 테마 문제의 그날 대화 마지막 줄(뭉치의 수사 연결 문장, #807). 대화가 없거나 EXTRA면 없음
+    hook = a.themeScene?.dialogue.at(-1) ?? null
   useEffect(() => {
     if (!focusAnswerId || writing || !result.current) return
     result.current.focus()
@@ -538,61 +540,27 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
         </ol>
       </header>
       {writing && draft ? (
-        // 답 쓰기(시안 MissionWrite): 왼쪽 그림·질문·생각 열기·도우미, 오른쪽 답 칸
+        // 답 쓰기(시안 MissionWrite → #807 설계 캔버스 MissionWriteTalk): 왼쪽 그림·'오늘의 문제' 상자, 오른쪽 답 칸·도우미 말풍선
         <div className="sw-body sw-body-write">
           <section className="sw-side" aria-label="질문">
             <MissionScene mission={a.mission} />
-            <h2 className="sw-question">
-              <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>
-              {a.mission.question}
-            </h2>
-            <div className="sw-tools">
-              <button type="button" className="mg-read" onClick={read}>
+            <div className="sw-qbox">
+              <span className="sw-qtag" aria-hidden="true">{a.themeScene ? '오늘의 문제' : '문제'}</span>
+              {/* 테마 문제는 그날 대화 마지막 줄(뭉치의 수사 연결 문장)을 함께: 문제 글은 대화에 나온 사건 맥락을 빼고 만들어진다(#807) */}
+              {hook && <p className="sw-hook">{hook.speaker} · {hook.text}</p>}
+              <h2 className="sw-question">
+                <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>
+                {a.mission.question}
+              </h2>
+              <button type="button" className="sw-read" onClick={read}>
                 질문 읽어 주기
               </button>
-              <button
-                type="button"
-                className="sw-hint"
-                onClick={() => {
-                  void actions.hint.mutateAsync(a.attemptId).then(setHint).catch(setError)
-                }}
-              >
-                생각 열기
-              </button>
-            </div>
-            <div className="sw-helper">
-              <span className="sw-helper-face" aria-hidden="true">
-                <Companion kind={companion} size={72} worn={worn} decorative />
-              </span>
-              <SpeechBubble tail="left" className="sw-bubble" role="status">
-                {hint ? (
-                  <>
-                    <span className="sw-chip">생각 열기</span>
-                    <p>{hint}</p>
-                  </>
-                ) : guide ? (
-                  <>
-                    <p>{guide.line}</p>
-                    {guide.starters.length > 0 && (
-                      <div className="sw-starters" role="group" aria-label="이렇게 시작해 봐">
-                        {guide.starters.map((s) => (
-                          <button type="button" key={s.text} className="sw-starter" data-optional={s.optional || undefined}
-                            onClick={() => change(s.apply(draft.answer))}>
-                            {s.text}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p>막히면 ‘생각 열기’를 눌러 봐!</p>
-                )}
-              </SpeechBubble>
             </div>
           </section>
+          <div className="sw-write">
           <section className="sw-panel" aria-labelledby="sw-panel-title">
             <div className="sw-panel-head">
-              <h2 id="sw-panel-title">{more ? '더 말해 보기' : '내 생각 쓰기'}</h2>
+              <h2 id="sw-panel-title">{more ? '더 말해 보기' : panelTitle[a.mission.inputType]}</h2>
               <div className="sw-toolbar" role="group" aria-label="작성 도구">
                 {saveLine}
                 {memoToggle}
@@ -623,13 +591,53 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                   else void submit()
                 }}
               >
-                {submitQueued ? '저장하고 보내는 중이에요' : a.answers.length ? '더해서 보내기' : '다 썼어요'}
+                {submitQueued ? '저장하고 보내는 중이에요' : a.answers.length ? '더해서 보내기' : doneLabel[a.mission.inputType]}
                 <span aria-hidden="true"> →</span>
               </button>
             </div>
             {alerts}
             {memoPanel}
           </section>
+            <div className="sw-helper">
+              <span className="sw-helper-face" aria-hidden="true">
+                <Companion kind={companion} size={72} worn={worn} decorative />
+              </span>
+              <SpeechBubble tail="left" className="sw-bubble" role="status">
+                {hint ? (
+                  <>
+                    <span className="sw-chip">생각 열기</span>
+                    <p>{hint}</p>
+                  </>
+                ) : guide ? (
+                  <p>{guide.line}</p>
+                ) : (
+                  <p>막히면 ‘생각 열기’를 눌러 봐!</p>
+                )}
+                {/* 시작 문장과 생각 열기를 한 줄에(말풍선이 길어져 1440×900 한 화면을 넘지 않게) */}
+                <div className="sw-bubble-row">
+                  {!hint && guide && guide.starters.length > 0 && (
+                    <div className="sw-starters" role="group" aria-label="이렇게 시작해 봐">
+                      {guide.starters.map((s) => (
+                        <button type="button" key={s.text} className="sw-starter" data-optional={s.optional || undefined}
+                          onClick={() => change(s.apply(draft.answer))}>
+                          {s.text}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="sw-hint"
+                    onClick={() => {
+                      void actions.hint.mutateAsync(a.attemptId).then(setHint).catch(setError)
+                    }}
+                  >
+                    생각 열기
+                  </button>
+                </div>
+              </SpeechBubble>
+            </div>
+          </div>
         </div>
       ) : !a.finishedAt ? (
         // 피드백(시안 Feedback): 왼쪽 내가 쓴 답, 오른쪽 피드백 상자와 되묻기
@@ -944,9 +952,25 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
  * 낱말은 권유 기준일 뿐 판정이 아니다.
  */
 type Starter = { text: string; optional?: boolean; apply: (a: AnswerContent) => AnswerContent }
+/** 입력 방식마다 답 칸 제목과 끝 버튼(사용자 결정 2026-11-19 #807): 고르는 문제에 "쓰기·다 썼어요"가 나오지 않게 */
+const panelTitle: Record<AnswerContent['inputType'], string> = {
+  NARRATIVE: '내 생각 쓰기', SOLUTION_STEPS: '풀이 쓰기', ESSAY: '내 생각 쓰기',
+  CHOICE: '답 고르기', ORDERING: '순서 정하기', CLASSIFICATION: '나누기',
+}
+const doneLabel: Record<AnswerContent['inputType'], string> = {
+  NARRATIVE: '다 썼어요', SOLUTION_STEPS: '다 썼어요', ESSAY: '다 썼어요',
+  CHOICE: '이걸로 할래요', ORDERING: '이 순서로 할래요', CLASSIFICATION: '다 나눴어요',
+}
 const plain = (s: string) => s.replace(/\s/g, '').length
 const append = (prev: string, add: string) => (prev.trim() ? prev.replace(/\s*$/, ' ') : '') + add
-function writingGuide(v: AnswerContent, more: boolean): { line: string; starters: Starter[] } | null {
+function writingGuide(v: AnswerContent, more: boolean, choices = 0): { line: string; starters: Starter[] } | null {
+  // 고르기·순서·분류: 시작 문장 없이 할 일만(사용자 의견 2026-11-19 "고르기 문제면 처음에 시작할 때 어려울 것 같아", #807)
+  if (v.inputType === 'CHOICE')
+    return { line: v.choiceIds.length ? '왜 그게 맞는지 한 번 더 생각해 보고 보내 줘!' : '보기를 하나씩 읽어 보고 맞는 것을 골라 봐.', starters: [] }
+  if (v.inputType === 'ORDERING')
+    return { line: !v.choiceIds.length ? '먼저인 것부터 차례로 눌러 봐.' : v.choiceIds.length < choices ? '다음은 무엇일까? 이어서 눌러 봐.' : '순서가 맞는지 처음부터 읽어 보고 보내 줘!', starters: [] }
+  if (v.inputType === 'CLASSIFICATION')
+    return { line: !v.assignments.length ? '하나씩 보고 어느 쪽인지 눌러 봐.' : v.assignments.length < choices ? '아직 안 나눈 것이 있어.' : '다 나눴어! 맞는지 한 번 더 보고 보내 줘.', starters: [] }
   if (v.inputType === 'NARRATIVE') {
     const n = plain(v.text)
     const add = (text: string, optional = false): Starter => ({ text, optional, apply: (a) => ({ ...a, text: append(a.text, text) }) })

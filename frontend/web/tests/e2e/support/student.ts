@@ -45,6 +45,19 @@ export async function startExtraMission(page: Page, mission: string) {
 }
 
 /**
+ * 테마 문제를 연 뒤 답변 작성까지(#807): 테마 문제는 미션 안내 대신 오늘 장면을 거친다. 그날 대화가 있으면 대화 상자를
+ * 마지막 대사까지 눌러 넘기고, 대화가 없는 테마(관리자가 직접 만든 E2E 테마 등)는 장면 없이 바로 답변 작성으로 간다
+ */
+export async function throughTodayScene(page: Page) {
+  await expect(async () => {
+    if (page.url().includes('/student/attempts/')) return
+    const box = page.locator('.ts-box')
+    if (await box.isVisible()) await box.click()
+    expect(page.url()).toContain('/student/attempts/')
+  }).toPass({ timeout: 30_000, intervals: [300] })
+}
+
+/**
  * 답 칸을 채우고 자동 저장(입력 600ms 뒤 초안 저장)이 끝날 때까지 기다린다. 예전에는 저장 중 보내기 버튼이 잠겨
  * 그 사이 누른 클릭이 사라졌다(2026-11-16 로컬 실서버 실행에서 발견). 지금은 저장 중에 누르면 저장 뒤 보내지만(StudentWorkPage),
  * 시험은 저장 완료를 기다려 요청 순서를 고정한다

@@ -1,0 +1,168 @@
+import { throughTodayScene, waitForStudentHome } from './studentFixture.ts'
+import { test, expect } from '@playwright/test'
+import type { Page } from '@playwright/test'
+
+// #807 오늘 장면(user-flow 3.2, 사용자 결정 2026-11-19, 설계 캔버스 TodaySceneTalk): 테마 문제는 미션 안내 대신 오늘 장면을 거친다.
+// 그림 위 대화를 한 줄씩 넘기고 마지막 대사를 누르면 바로 답변 작성. 대화가 없거나 이미 답을 쓴 시도는 장면 없이 바로 답변 작성.
+// MSW 가상 테마(이야기 마을의 수수께끼)의 요일 대화(MOCK_STORY.dialogues)와 시연 미션만 쓴다(실서버·외부 호출 없음).
+test.beforeEach(async ({ page }) => {
+  test.slow()
+  await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort())
+})
+
+async function student(page: Page) {
+  await page.goto('/student/login')
+  await page.getByRole('button', { name: '가상 학생으로 PIN 로그인 준비', exact: true }).click()
+  await expect(page.getByRole('button', { name: '5', exact: true })).toBeVisible()
+  for (const digit of ['5', '0', '9', '0']) await page.getByRole('button', { name: digit, exact: true }).click()
+  await page.getByRole('button', { name: /확인|들어가기/ }).click()
+  await waitForStudentHome(page)
+}
+/** 목업 요일·풀이 상황(applyMockWeek): 요일 월=0 … 일=6, 월~금 D 그날 풂 · P 푸는 중 · - 안 풂 */
+async function week(page: Page, plan: { weekday: number; days: string; pick?: 'correct' | 'wrong' }, premium = false) {
+  await page.evaluate(async ({ plan, premium }) => {
+    const { mockStudent } = await import('/src/mocks/handlers/student.ts' as string)
+    const { applyMockWeek } = await import('/src/mocks/fixtures/themeState.ts' as string)
+    const { queryClient } = await import('/src/data/queryClient.ts' as string)
+    await applyMockWeek(mockStudent(), plan, premium)
+    await queryClient.invalidateQueries()
+  }, { plan, premium })
+  await expect(page.locator('.sh-title')).toBeVisible()
+}
+const go = (page: Page, path: string) =>
+  page.evaluate(path => { history.pushState({}, '', path); dispatchEvent(new PopStateEvent('popstate')) }, path)
+const chips = (page: Page) => page.getByRole('list', { name: '이번 주 진행' })
+const scene = (page: Page) => page.getByRole('main', { name: '오늘 장면' })
+
+test('홈에서 문제를 열면 오늘 장면: 대사를 한 줄씩 넘기고 마지막 대사를 누르면 바로 답변 작성, 문제 상자에 그날 마지막 대사', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 3, days: 'DDD--' })
+  await chips(page).getByRole('button', { name: '목요일 문제 풀기' }).click()
+  await expect(page).toHaveURL(/\/student\/theme\/scene\/THU$/)
+  // 메뉴 없음(집중), 미션 안내 없음
+  await expect(page.getByRole('navigation', { name: '학생 메뉴' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '미션 시작하기' })).toHaveCount(0)
+  const box = scene(page).locator('.ts-box')
+  await expect(scene(page).locator('.ts-name')).toHaveText('뭉치')
+  await expect(box).toContainText('연못가 정원도 살펴보자.')
+  await expect(box).toContainText('1 / 3 · 다음 ▼')
+  await box.click()
+  await expect(scene(page).locator('.ts-name')).toHaveText('이장님')
+  await expect(box).toContainText('물뿌리개 옆에 물 준 시간을 적은 표가 있어.')
+  // 그림을 눌러도 다음 줄
+  await scene(page).getByRole('button', { name: '다음 대사' }).click()
+  await expect(box).toContainText('3 / 3 · 문제로 →')
+  await box.click()
+  await expect(page).toHaveURL(/\/student\/attempts\//)
+  // 답변 작성: 왼쪽 '오늘의 문제' 상자에 그날 대화 마지막 줄(뭉치의 수사 연결 문장)
+  await expect(page.locator('.sw-qtag')).toHaveText('오늘의 문제')
+  await expect(page.locator('.sw-hook')).toHaveText('뭉치 · 표에 적힌 수로 같이 문제를 풀어 볼래?')
+  // 장면은 주소를 바꿔치기해서 뒤로 가기는 홈으로
+  await page.goBack()
+  await waitForStudentHome(page)
+})
+
+test('말꼬리는 그 화자 위치가 있을 때만(미션 움직임 speakers), 없으면 이름표만', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 4, days: '-----' })
+  // 월요일 시연 미션 움직임은 speakers에 뭉치만(x 30%)
+  await go(page, '/student/theme/scene/MON')
+  const box = scene(page).locator('.ts-box')
+  await expect(box).toContainText('어젯밤에도 열두 시에 시계탑 종이 울렸단다.')
+  await expect(scene(page).locator('.ts-name')).toHaveText('이장님')
+  await expect(scene(page).locator('.ts-tail')).toHaveCount(0)
+  await box.click()
+  await box.click()
+  await expect(scene(page).locator('.ts-name')).toHaveText('뭉치')
+  await expect(scene(page).locator('.ts-tail')).toHaveAttribute('style', /left: 30%/)
+})
+
+test('장면에서 홈으로 돌아가도 답을 안 쓴 시도는 이어서 풀 때 장면부터, 답을 쓰면 바로 답변 작성', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 3, days: 'DDD--' })
+  await chips(page).getByRole('button', { name: '목요일 문제 풀기' }).click()
+  await expect(scene(page).locator('.ts-box')).toBeVisible()
+  await scene(page).getByRole('button', { name: '← 홈' }).click()
+  await waitForStudentHome(page)
+  // 장면에 들어오면 시도가 시작되어 '푸는 중'
+  await chips(page).getByRole('button', { name: '목요일 문제 이어서 풀기' }).click()
+  await throughTodayScene(page)
+  await page.getByRole('textbox').first().fill('남은 무게를 구해요')
+  await expect(page.getByText('저장했어요')).toBeVisible({ timeout: 10_000 })
+  await go(page, '/student/home')
+  await waitForStudentHome(page)
+  await chips(page).getByRole('button', { name: '목요일 문제 이어서 풀기' }).click()
+  await expect(page).toHaveURL(/\/student\/attempts\//)
+  await expect(page.locator('.ts-box')).toHaveCount(0)
+})
+
+test('대화가 없는 날(관리자가 만든 테마 등)은 장면 없이 바로 답변 작성, 문제 상자에 대사 줄 없음', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 3, days: 'DDD--' })
+  // 이번 주 게시 테마(요일 대화 없음)를 둔다
+  await page.evaluate(async () => {
+    const retention = await import('/src/mocks/fixtures/retention.ts' as string)
+    const { fixtureStore } = await import('/src/mocks/fixtures/student.ts' as string)
+    const { queryClient } = await import('/src/data/queryClient.ts' as string)
+    const child = fixtureStore.snapshot().session.child
+    const days = retention.themeMissions((await fixtureStore.home(child)).missions, child.grade).days
+    retention.retentionState.themes = [{
+      themeId: 'theme-807-fixture', grade: `G${Math.min(child.grade, 6)}`, weekStart: retention.weekStart(), title: '대화 없는 테마',
+      intro: '관리자가 직접 만든 테마예요.', status: 'PUBLISHED', updatedAt: new Date().toISOString(),
+      days: days.map((d: { day: string; mission: { id: string } }) => ({ day: d.day, missionId: d.mission.id })),
+    }]
+    retention.persistRetention()
+    await queryClient.invalidateQueries()
+  })
+  await expect(page.locator('.sh-title')).toHaveText('대화 없는 테마')
+  await chips(page).getByRole('button', { name: '목요일 문제 풀기' }).click()
+  await expect(page).toHaveURL(/\/student\/attempts\//)
+  await expect(page.locator('.sw-qtag')).toHaveText('오늘의 문제')
+  await expect(page.locator('.sw-hook')).toHaveCount(0)
+})
+
+test('주말 되돌아보기의 다시 풀기도 오늘 장면을 거친다(마무리한 요일은 THEME_REVIEW로 시작)', async ({ page }) => {
+  await student(page)
+  // 정답을 틀린 토요일: 큰 단추가 주말 되돌아보기(정답을 안 골랐으면 정답 고르기)
+  await week(page, { weekday: 5, days: 'DDDDD', pick: 'wrong' })
+  await page.getByRole('button', { name: /주말 되돌아보기/ }).click()
+  await page.getByRole('article').filter({ hasText: '금요일' }).getByRole('button', { name: '다시 풀기' }).click()
+  // 목업은 THEME_REVIEW가 아니면(또는 주말이 아니면) 시작을 거부하므로 장면 대화가 나오면 종류가 맞다
+  await expect(page).toHaveURL(/\/student\/theme\/scene\/FRI$/)
+  await expect(scene(page).locator('.ts-box')).toContainText('종 옆 난간에서 이걸 발견했단다.')
+  await throughTodayScene(page)
+})
+
+test('아직 안 열린 요일 주소는 시작하지 않고 안내와 홈으로', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 1, days: 'D----' })
+  await go(page, '/student/theme/scene/FRI')
+  await expect(page.getByText('아직 열리지 않은 문제예요.')).toBeVisible()
+  await page.getByRole('button', { name: '홈으로' }).click()
+  await waitForStudentHome(page)
+})
+
+test('오늘 장면은 PC 1440×900에서 스크롤 없이 한 화면, 휴대전화는 가로 스크롤 없이 대화 상자가 그림 아래 @responsive', async ({ page }, testInfo) => {
+  await student(page)
+  await week(page, { weekday: 3, days: 'DDD--' })
+  await go(page, '/student/theme/scene/THU')
+  const box = scene(page).locator('.ts-box')
+  await expect(box).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  // 홈과 같은 기준: 학생 틀이 한 화면 안(목업 띠 제외)
+  if (testInfo.project.name === 'laptop')
+    expect(await page.locator('.st-world').evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(900)
+  const frame = await scene(page).locator('.ts-frame').boundingBox()
+  const talk = await box.boundingBox()
+  if (testInfo.project.name === 'compact') expect(talk!.y).toBeGreaterThanOrEqual(frame!.y + frame!.height)
+  else expect(talk!.y + talk!.height).toBeLessThanOrEqual(frame!.y + frame!.height)
+})
+
+test('더 풀어 보기(프리미엄 추가 문제)는 그대로 미션 안내', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 3, days: 'DDD--' }, true)
+  await go(page, '/student/missions')
+  await page.locator('[data-open-mission]').first().click()
+  await expect(page.getByRole('button', { name: '미션 시작하기' })).toBeVisible()
+  await expect(page).not.toHaveURL(/\/student\/theme\/scene\//)
+})

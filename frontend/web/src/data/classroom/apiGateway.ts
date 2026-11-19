@@ -6,6 +6,7 @@ import type { AnswerTiming } from '../../domain/answerTiming.ts'
 import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
 import { isStoredGrade } from '../../domain/grade.ts'
 import { isAttemptContext } from '../../domain/retention.ts'
+import { readThemeScene } from '../../domain/themeScene.ts'
 import type {
   AnswerContent,
   AnalysisResult,
@@ -82,6 +83,8 @@ function attemptDto(raw: unknown): Attempt {
   // 시도 종류(#700 선택 칸): 계약 값만 받고 모르는 값은 없는 것으로(#710)
   if (isAttemptContext(data.context)) a.context = data.context
   else delete a.context
+  // 오늘 장면(#807): 모양이 틀린 줄은 빼고 읽는다. 장면이 없어도 문제는 그대로 풀 수 있어야 해서 계약 오류로 막지 않는다
+  a.themeScene = readThemeScene(data.themeScene)
   return a
 }
 function feedbackDto(raw: unknown): Feedback {

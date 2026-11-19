@@ -542,7 +542,10 @@ export const retentionHandlers = [
       const t = themeById(String(params.themeId))
       if (t.status === 'REVIEW_REQUIRED') fail(409, 'WEEKLY_THEME_IN_REVIEW', '검토 중인 테마는 수정할 수 없습니다.')
       // 게시 중 수정은 재검토: 작성 상태로 돌린다.
-      Object.assign(t, themeInput(await request.json()), { status: 'DRAFT', updatedAt: new Date().toISOString() })
+      const next = themeInput(await request.json())
+      // 요일 대화는 관리자 수정 본문에 없으면 이전 값을 이어받는다(learning ThemeAnswerRules, 오늘 장면 #807)
+      next.days = next.days.map((d) => ({ ...d, dialogue: t.days.find((o) => o.day === d.day)?.dialogue ?? null }))
+      Object.assign(t, next, { status: 'DRAFT', updatedAt: new Date().toISOString() })
       return saved(t)
     }),
   ),

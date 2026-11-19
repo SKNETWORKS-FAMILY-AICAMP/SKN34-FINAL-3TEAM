@@ -21,19 +21,19 @@ export const josa = {
 export const list = (xs: string[]) => xs.join(', ')
 export const dayName = (d: ThemeDay) => `${DAY_LABELS[d]}요일`
 
-/** 요일 문제 열기(홈과 같은 규칙): 진행 중이면 이어하기, 아니면 맥락을 붙여 새로 시작. 미션 그림도 여기서 찾는다. */
+/**
+ * 요일 문제 열기(홈과 같은 규칙): 맥락을 붙여 연다. 푸는 중인 문제도 같은 길로 보내 오늘 장면이 이어하기를 판단한다
+ * (답을 안 쓴 시도는 장면부터, 쓴 게 있으면 바로 답변 작성, #807). 미션 그림도 여기서 찾는다.
+ */
 export function useThemeMissions(
   child: Child,
-  onResume: (attemptId: string) => void,
   onStartTheme: (mission: Mission, context: AttemptContext) => void,
 ) {
   const home = useStudentHome(child)
   const byId = new Map((home.data?.missions ?? []).map((m) => [m.id, m]))
   const open = (missionId: string, context: AttemptContext) => {
     const m = byId.get(missionId)
-    if (!m) return
-    if (m.status === 'IN_PROGRESS' && m.attemptId) onResume(m.attemptId)
-    else onStartTheme(m, context)
+    if (m) onStartTheme(m, context)
   }
   const image = (missionId: string) => {
     const m = byId.get(missionId)

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { newParent, useGoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
-import { expectJournalDone, loginStudent, solveNarrative, studentMenu } from './support/student.ts'
+import { expectJournalDone, loginStudent, solveNarrative, studentMenu, throughTodayScene } from './support/student.ts'
 import { ensureWeeklyTheme, kstWeekday, MONDAY_MISSION, THEME_INTRO } from './support/theme.ts'
 
 // 서버 날짜를 고정할 수 없어(learning ClockConfig = 시스템 KST) 무료 일요일 THEME_DAY_CLOSED(FN-RET-07)인 날은 건너뛴다.
@@ -36,10 +36,9 @@ test('주간 테마 시작 이야기 → 월요일 문제·되묻기 → 마무�
     await expect(page.getByRole('heading', { level: 1, name: theme.title, exact: true })).toBeVisible()
     await expect(page.getByRole('region', { name: '시작 이야기' }).getByText(THEME_INTRO)).toBeVisible()
     await page.getByRole('button', { name: /이번 주 시작하기 · 오늘 문제로/ }).click()
-    // 시작 이야기를 닫으면 누른 그 문제의 안내로 이어진다
+    // 시작 이야기를 닫으면 누른 그 문제로 이어진다: 오늘 장면(대화가 있으면)을 지나 답변 작성(미션 안내 없음, #807)
+    await throughTodayScene(page)
     await expect(page.getByRole('heading', { level: 1, name: MONDAY_MISSION })).toBeVisible()
-    await page.getByRole('button', { name: '미션 시작하기' }).click()
-    await page.waitForURL('**/student/attempts/**')
 
     await solveNarrative(page, '저는 반대예요. 쉬는 시간이 길어지면 수업이 늦게 끝나서 집에 늦게 가기 때문이에요.', {
       followup: '그리고 쉬는 시간이 길면 다음 수업에 집중하기까지 시간이 더 걸릴 것 같아요.',
