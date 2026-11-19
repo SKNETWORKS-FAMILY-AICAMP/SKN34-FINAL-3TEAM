@@ -1,3 +1,4 @@
+import type { ErrorReport } from '../../domain/admin/operations.ts'
 import type { ThemeGrade } from '../../domain/admin/retention.ts'
 import type { Child, Mission } from '../../domain/classroom.ts'
 import {
@@ -92,6 +93,7 @@ interface State {
   community:Record<string, { enabled: boolean; updatedAt: string | null }>
   consent: Record<string, boolean>
   posts: MockPost[]
+  communityReports: { reporterId: string; key: string; report: ErrorReport }[]
   /** postId → studentId → 반응 */
   reactions: Record<string, Record<string, Reaction[]>>
   reviewViews: string[]
@@ -183,7 +185,22 @@ const empty = (): State => ({
   purchaseResults: {},
   community: {},
   consent: {},
-  posts: [],
+  posts: import.meta.env?.VITE_DEMO_COMMUNITY_REVIEW === 'true' ? [{
+    postId: 'demo-review-post', studentId: 'friend-review-demo', nickname: '하늘별', companion: 'tori',
+    missionId: 'demo-review-mission', missionTitle: '쉬는 시간을 늘린다면?',
+    answer: '저는 쉬는 시간을 늘리는 데 찬성해요. 몸을 움직이고 나면 다음 수업에 더 집중할 수 있기 때문이에요.',
+    status: 'HIDDEN_REPORT', createdAt: '2026-11-19T01:00:00Z',
+  }] : [],
+  communityReports: import.meta.env?.VITE_DEMO_COMMUNITY_REVIEW === 'true' ? [
+    { reporterId: 'demo-review-student', key: 'demo-review', report: {
+      reportId: 'demo-review', status: 'IN_REVIEW', targetType: 'COMMUNITY_POST', targetId: 'demo-review-post',
+      category: 'INAPPROPRIATE', comment: '시연용 · 공유물 원문을 검토해 주세요.', corrections: [],
+    } },
+    { reporterId: 'demo-review-student', key: 'demo-review-destroyed', report: {
+      reportId: 'demo-review-destroyed', status: 'RECEIVED', targetType: 'COMMUNITY_POST', targetId: 'demo-review-missing-post',
+      category: 'INAPPROPRIATE', comment: '시연용 · 파기된 공유물 신고', corrections: [],
+    } },
+  ] : [],
   reactions: {},
   reviewViews: [],
   items: seedItems(),
