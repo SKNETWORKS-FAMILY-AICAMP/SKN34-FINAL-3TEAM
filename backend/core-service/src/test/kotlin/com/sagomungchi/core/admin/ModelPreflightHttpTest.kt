@@ -29,6 +29,12 @@ class ModelPreflightHttpTest : PostgresRepositoryTest() {
     private fun body() = ModelPreflightRequest("m2-klue-narrative", "3.0", "s3://models/models/test/3.0/",
         PREFLIGHT_FILES.map { RegistrationArtifactRequest(it, 1, "a".repeat(64)) })
     private fun success() = ModelPreflightResult("PASS", "FILES_AND_METADATA_VERIFIED", PREFLIGHT_FILES.map { PreflightFileResult(it, "PASS", "OK") })
+    /** 감사 detail(jsonb) 저장 값 고정(#816): 요청 이름·버전·URI·manifest 파일과 결과 code·파일별 결과 */
+    private fun details(result: String) = jdbc.queryForList("SELECT detail::text FROM audit_log WHERE action='MODEL_PREFLIGHT' AND result=?",
+        String::class.java, result).map { json.readTree(it) }
+    private fun expectedDetail(code: String, files: String) = json.readTree("""{"name":"m2-klue-narrative","version":"3.0",
+        "artifactUri":"s3://models/models/test/3.0/","artifactFiles":${PREFLIGHT_FILES.joinToString(",", "[", "]") {
+            """{"file":"$it","bytes":1,"sha256":"${"a".repeat(64)}"}""" }},"code":"$code","files":$files}""")
     @BeforeEach fun setup() { response = json.writeValueAsString(success()); upstreamStatus = 200; received = ""; internalToken = "" }
     private fun call(body: Any, permission: String? = "SERVICE_OPS") = mvc.post("/api/v1/admin/models/preflight") {
         val actor = account(jdbc, permission = permission)
@@ -41,12 +47,16 @@ class ModelPreflightHttpTest : PostgresRepositoryTest() {
         assertEquals(6, json.readTree(received)["files"].size())
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='MODEL_PREFLIGHT' AND result='SUCCESS'", Int::class.java))
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM model_version", Int::class.java))
+        assertEquals(listOf(expectedDetail("FILES_AND_METADATA_VERIFIED", PREFLIGHT_FILES.joinToString(",", "[", "]") {
+            """{"file":"$it","status":"PASS","code":"OK"}""" })), details("SUCCESS"))
     }
     @Test fun `file failure is recorded as FAILURE and is not an activation`() {
         response = json.writeValueAsString(ModelPreflightResult("FAIL", "FILE_CHECK_FAILED", listOf(PreflightFileResult("model.safetensors", "FAIL", "HASH_MISMATCH"))))
         call(body()).andExpect { status { isOk() }; jsonPath("$.status") { value("FAIL") } }
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='MODEL_PREFLIGHT' AND result='FAILURE'", Int::class.java))
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM outbox_event WHERE event_type='model.version.activated'", Int::class.java))
+        assertEquals(listOf(expectedDetail("FILE_CHECK_FAILED", """[{"file":"model.safetensors","status":"FAIL","code":"HASH_MISMATCH"}]""")),
+            details("FAILURE"))
     }
     @Test fun `upstream error and invalid success are safe and audited`() {
         upstreamStatus = 500; response = "provider private detail"
@@ -54,6 +64,7 @@ class ModelPreflightHttpTest : PostgresRepositoryTest() {
         upstreamStatus = 200; response = """{"status":"PASS","code":"FILES_AND_METADATA_VERIFIED","files":[]}"""
         call(body()).andExpect { status { isBadGateway() } }
         assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='MODEL_PREFLIGHT' AND result='FAILURE'", Int::class.java))
+        assertEquals(List(2) { expectedDetail("SCORING_UNAVAILABLE", "[]") }, details("FAILURE"))
     }
     @Test fun `SERVICE_OPS permission and strict file contract are required`() {
         call(body(), null).andExpect { status { isForbidden() } }

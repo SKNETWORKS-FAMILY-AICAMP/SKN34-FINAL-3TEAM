@@ -265,7 +265,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
             invocation.callRealMethod()
         }.`when`(missionAudits).insert(org.mockito.ArgumentMatchers.any(UUID::class.java) ?: UUID(0,0),org.mockito.ArgumentMatchers.eq(admin) ?: admin,
             org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.nullable(UUID::class.java),
-            org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())
+            org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyMap<String,Any?>() ?: emptyMap())
         fun request()=mvc.post("/api/v1/admin/missions") { header("Authorization","Bearer $access");contentType=MediaType.APPLICATION_JSON;content="{}" }
             .andExpect { status { isServiceUnavailable() };jsonPath("$.code") { value("MISSION_AUDIT_UNAVAILABLE") } }
         request();assertTrue(requests.isEmpty())

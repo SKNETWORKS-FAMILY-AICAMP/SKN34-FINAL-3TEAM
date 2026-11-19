@@ -156,4 +156,33 @@ class ReportTemplateHttpIntegrationTest : IntegrationTestSupport() {
         assertEquals(502,call(path()+"/proposals",mapOf("question" to "원문을 보여 주세요")).statusCode())
         assertEquals(0,current()["revision"].asInt())
     }
+    /** #824: 템플릿 응답 해석을 client로 옮기기 전 공개 응답 모양과 502 코드를 고정한다. */
+    @Test fun `변경안 응답 모양과 계약 위반 코드는 그대로다`() {
+        val sections = ReportTemplateSettings.SECTIONS.reversed()
+        ai.respond={ LearningHttpStub.Reply(body=json.writeValueAsString(mapOf("settings" to mapOf("sectionOrder" to sections,
+            "highlightMetrics" to listOf("COMPLETED"),"tone" to "CONCISE")))) }
+        val proposed=json.readTree(call(path()+"/proposals",mapOf("question" to "짧게")).body())
+        assertEquals(listOf("proposalId","settings","expiresAt"),proposed.fieldNames().asSequence().toList())
+        assertEquals(json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(mapOf("sectionOrder" to sections,"highlightMetrics" to listOf("COMPLETED"),
+            "tone" to "CONCISE")),proposed["settings"])
+        ai.respond={ LearningHttpStub.Reply(body="""{"settings":null,"clarification":"어떤 순서를 원하나요?"}""") }
+        val asked=call(path()+"/proposals",mapOf("question" to "바꿔 주세요"))
+        assertEquals(200,asked.statusCode(),asked.body()); assertEquals("""{"clarification":"어떤 순서를 원하나요?"}""",asked.body())
+        ai.respond={ LearningHttpStub.Reply(body="""{"clarification":"설정 칸 없이"}""") }
+        assertEquals("""{"clarification":"설정 칸 없이"}""",call(path()+"/proposals",mapOf("question" to "바꿔 주세요")).body())
+        val valid="""{"sectionOrder":${json.writeValueAsString(sections)},"highlightMetrics":[],"tone":"EASY"}"""
+        val broken=listOf("[]","""{"settings":$valid,"extra":1}""","""{"clarification":1}""","""{"clarification":" "}""",
+            """{"clarification":"${"가".repeat(401)}"}""","""{"settings":$valid,"clarification":"둘 다"}""","{}","""{"settings":null}""",
+            """{"settings":[]}""","""{"settings":{"sectionOrder":[],"highlightMetrics":[]}}""",
+            """{"settings":{"sectionOrder":["changes"],"highlightMetrics":[],"tone":"EASY"}}""",
+            """{"settings":{"sectionOrder":${json.writeValueAsString(sections)},"highlightMetrics":["X"],"tone":"EASY"}}""",
+            """{"settings":{"sectionOrder":${json.writeValueAsString(sections)},"highlightMetrics":[],"tone":"LOUD"}}""",
+            """{"settings":{"sectionOrder":${json.writeValueAsString(sections)},"highlightMetrics":[],"tone":1}}""")
+        for(body in broken) {
+            ai.respond={ LearningHttpStub.Reply(body=body) }
+            val response=call(path()+"/proposals",mapOf("question" to "바꿔 주세요"))
+            assertEquals(502,response.statusCode(),body); assertEquals("AI_INVALID_RESPONSE",json.readTree(response.body())["code"].asText(),body)
+        }
+        assertEquals(0,current()["revision"].asInt())
+    }
 }

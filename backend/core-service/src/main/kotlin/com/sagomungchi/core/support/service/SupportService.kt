@@ -10,6 +10,7 @@ import com.sagomungchi.core.support.domain.*
 import com.sagomungchi.core.support.repository.SupportRepository
 import com.sagomungchi.core.support.client.LearningSupportClient
 import com.sagomungchi.core.conversation.service.ConversationSupportService
+import com.sagomungchi.core.report.domain.ReportPeriodType
 import com.sagomungchi.core.report.service.ReportSupportService
 import com.sagomungchi.core.notification.service.NotificationService
 import com.sagomungchi.core.community.domain.Community
@@ -184,7 +185,7 @@ class SupportService(private val repository: SupportRepository,private val acces
   val messages=try {
    conversations.citing(learning.judgedAnswer(attempt,student,judgment))
   } catch(_: RuntimeException) { null }
-  val pinned=try { affected.orEmpty().filter { it.periodType=="DAILY" }.flatMap { conversations.pinned(student,it.periodFrom,it.revision) }.distinct() } catch(_: RuntimeException) { null }
+  val pinned=try { affected.orEmpty().filter { it.periodType==ReportPeriodType.DAILY }.flatMap { conversations.pinned(student,it.periodFrom,it.revision) }.distinct() } catch(_: RuntimeException) { null }
   val result=supplied.deepCopy<JsonNode>() as com.fasterxml.jackson.databind.node.ObjectNode
   result.put("report",when { affected==null -> "UNKNOWN"; affected.isEmpty() -> "NOT_AFFECTED"; else -> "AFFECTED" })
   result.put("conversation",when { messages?.isNotEmpty()==true || pinned?.isNotEmpty()==true -> "AFFECTED"; affected==null || messages==null || pinned==null -> "UNKNOWN"; else -> "NOT_AFFECTED" })
