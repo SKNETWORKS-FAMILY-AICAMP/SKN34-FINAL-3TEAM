@@ -50,16 +50,12 @@ class SupportService(private val repository: SupportRepository,private val acces
    }
    "JUDGMENT","FOLLOWUP","ATTEMPT" -> {
     val value=learning.target(type,id)
-    val student=uuid(value,"studentId");val attempt=uuid(value,"attemptId")
-    student to attempt
+    value.studentId to value.attemptId
    }
    else -> invalid()
   }
   access.student(actor,resolved.first)
   return resolved
- }
- private fun uuid(value: JsonNode,field: String): UUID = try { UUID.fromString(value.path(field).asText()) } catch(_: Exception) {
-  throw BusinessException(HttpStatus.BAD_GATEWAY,"SUPPORT_INVALID_RESPONSE","학습 지원 식별자가 올바르지 않습니다.")
  }
  fun submitReport(actor: AuthenticatedAccount,key: UUID,raw: ByteArray): HttpExchangeResult {
   access.user(actor)
@@ -142,7 +138,7 @@ class SupportService(private val repository: SupportRepository,private val acces
   if(value.targetType!="JUDGMENT") throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,"CORRECTION_TARGET_UNSUPPORTED","판정 정정만 지원합니다.")
   val existing=db.correction(id)
   val target=if(existing==null) learning.target("JUDGMENT",value.targetId,value.studentId) else null
-  if(target!=null && (uuid(target,"studentId")!=value.studentId || uuid(target,"attemptId")!=value.attemptId || target.path("previousResult").asText() !in results)) conflict()
+  if(target!=null && (target.studentId!=value.studentId || target.attemptId!=value.attemptId || target.previousResult !in results)) conflict()
   val intent=tx.execute {
    val locked=db.lockReport(id) ?: missing()
    val prior=db.correction(id)
@@ -151,7 +147,7 @@ class SupportService(private val repository: SupportRepository,private val acces
     prior
    } else {
     if(locked.status!="IN_REVIEW") conflict()
-    val row=Correction(UUID.randomUUID(),id,value.targetType,value.targetId,key,command.reason,command.corrected,target!!["previousResult"].asText(),"PENDING",null,null,actor.account.id,now(),null)
+    val row=Correction(UUID.randomUUID(),id,value.targetType,value.targetId,key,command.reason,command.corrected,target!!.previousResult,"PENDING",null,null,actor.account.id,now(),null)
     check(db.insertCorrection(row)==1);repository.audit(actor.account.id,"CORRECTION_REQUESTED","ERROR_REPORT",id);row
    }
   }!!
@@ -165,12 +161,12 @@ class SupportService(private val repository: SupportRepository,private val acces
    }
    throw ex
   }
-  val impact=derivedImpact(value.studentId,value.attemptId,value.targetId,response["impact"])
+  val impact=derivedImpact(value.studentId,value.attemptId,value.targetId,response.impact)
   return tx.execute {
    val locked=db.lockReport(id) ?: missing();val current=db.correction(id) ?: missing()
    if(current.processingStatus!="COMPLETED") {
-    if(response["previousResult"].asText()!=current.previousResult) conflict()
-    val completed=current.copy(processingStatus="COMPLETED",providerResult=json.writeValueAsString(response),impact=json.writeValueAsString(impact),completedAt=now())
+    if(response.previousResult!=current.previousResult) conflict()
+    val completed=current.copy(processingStatus="COMPLETED",providerResult=json.writeValueAsString(response.body),impact=json.writeValueAsString(impact),completedAt=now())
     check(db.updateCorrection(completed)==1)
     val updated=locked.copy(status="RESOLVED",reviewResult=command.corrected,resolutionReason=command.reason,reviewedBy=actor.account.id,resolvedAt=completed.completedAt)
     check(db.updateReport(updated)==1);repository.audit(actor.account.id,"CORRECTION_COMPLETED","ERROR_REPORT",id);notifyReport(updated)
@@ -186,8 +182,7 @@ class SupportService(private val repository: SupportRepository,private val acces
   if(student==null || attempt==null) return supplied
   val affected=try { reports.affected(student,attempt) } catch(_: RuntimeException) { null }
   val messages=try {
-   val answer=learning.original(attempt,student)["answers"].first { it.path("feedback").path("judgment").path("judgmentId").asText()==judgment.toString() }
-   conversations.citing(UUID.fromString(answer["answerId"].asText()))
+   conversations.citing(learning.judgedAnswer(attempt,student,judgment))
   } catch(_: RuntimeException) { null }
   val pinned=try { affected.orEmpty().filter { it.periodType=="DAILY" }.flatMap { conversations.pinned(student,it.periodFrom,it.revision) }.distinct() } catch(_: RuntimeException) { null }
   val result=supplied.deepCopy<JsonNode>() as com.fasterxml.jackson.databind.node.ObjectNode

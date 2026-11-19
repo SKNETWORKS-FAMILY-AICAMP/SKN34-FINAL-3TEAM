@@ -2,6 +2,7 @@ import { http } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
 import type {
   Permission,
+  ErrorReport,
   AdminMission,
   MissionVersion,
   Rubric,
@@ -16,6 +17,7 @@ import type { LearningMission } from '../../domain/learning.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { validPeriod } from '../../domain/parent.ts'
 import { workspaceScenario as mode } from '../fixtures/accounts.ts'
+import { communityOf, consentOf, persistRetention, retentionState } from '../fixtures/retention.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import {
   jobs,
@@ -32,6 +34,7 @@ import {
 } from '../fixtures/admin/operations.ts'
 import { guard, respond } from './student.ts'
 import { fail, page } from './parent.ts'
+const reports = () => [...retentionState.communityReports.map(({ report }) => report), ...errorReports]
 const unpublishedChanges = (m: AdminMission) => m.currentVersion !== m.publishedVersion || m.currentRubricVersion !== m.publishedRubricVersion
 const reviewable = (m: AdminMission) => m.status === 'REVIEW_REQUIRED' || m.status === 'PUBLISHED' && unpublishedChanges(m)
 export function allow(request: Request, permission?: Permission) {
@@ -648,14 +651,27 @@ export const adminHandlers = [
     respond(async () => {
       allow(request, 'SERVICE_OPS')
       queryFault()
-      return page(errorReports)
+      return page(reports())
     }),
   ),
   http.get('/api/v1/admin/error-reports/:reportId', ({ request, params }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
-      const r = errorReports.find((r) => r.reportId === params.reportId)
+      const r = reports().find((r) => r.reportId === params.reportId)
       if (!r) fail('NOT_FOUND', '신고가 없습니다.', 404)
+      if (r!.targetType === 'COMMUNITY_POST') {
+        const post = retentionState.posts.find((p) => p.postId === r!.targetId)
+        audit('SUPPORT_ORIGINAL_VIEW', 'ERROR_REPORT', r!.reportId, 'SUCCESS', '신고된 공유물 원문 열람')
+        const linkedPost = post ? {
+          postId: post.postId,
+          available: true,
+          missionId: post.missionId,
+          status: post.status,
+          answer: { inputType: 'ESSAY', text: post.answer, content: {} },
+          authorStudentId: post.studentId,
+        } : { postId: r!.targetId, available: false }
+        return { ...r!, linkedPost }
+      }
       audit('ERROR_REPORT_VIEW', 'ERROR_REPORT', r!.reportId, 'SUCCESS', '신고 연결 시도 원문 열람')
       const a = store
         .snapshot()
@@ -668,14 +684,37 @@ export const adminHandlers = [
   http.patch('/api/v1/admin/error-reports/:reportId', ({ request, params }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
-      const r = errorReports.find((r) => r.reportId === params.reportId)
+      const r = reports().find((r) => r.reportId === params.reportId)
       if (!r) fail('NOT_FOUND', '신고가 없습니다.', 404)
       const d = (await request.json()) as {
-        status: 'RECEIVED' | 'IN_REVIEW' | 'RESOLVED'
+        status: ErrorReport['status']
         reviewReason: string
+        reviewResult?: string
       }
       if (!d.reviewReason?.trim() || !['RECEIVED', 'IN_REVIEW', 'RESOLVED'].includes(d.status))
         fail('VALIDATION_FAILED', '검토 사유·상태를 확인해 주세요.')
+      if (r!.targetType === 'COMMUNITY_POST') {
+        const result = d.status === 'RESOLVED' ? d.reviewResult ?? 'REMOVED' : d.reviewReason
+        if (d.status === 'RESOLVED' && result !== 'VISIBLE' && result !== 'REMOVED')
+          fail('VALIDATION_FAILED', '공유물 처리 결과를 확인해 주세요.', 400)
+        const replay = r!.status === d.status && r!.reviewReason === d.reviewReason && r!.reviewResult === result
+        if (!replay) {
+          if (!(r!.status === 'RECEIVED' && d.status === 'IN_REVIEW') && !(r!.status === 'IN_REVIEW' && d.status === 'RESOLVED'))
+            fail('SUPPORT_STATE_CONFLICT', '현재 신고 상태에서 처리 결과를 변경할 수 없습니다.', 409)
+          Object.assign(r!, { status: d.status, reviewReason: d.reviewReason, reviewResult: result })
+          audit('ERROR_REPORT_REVIEW', 'ERROR_REPORT', r!.reportId, 'SUCCESS', d.reviewReason)
+        }
+        const related = retentionState.communityReports.filter(({ report }) => report.targetId === r!.targetId)
+        const post = retentionState.posts.find((p) => p.postId === r!.targetId)
+        if (post && post.status !== 'REMOVED') {
+          if (related.some(({ report }) => report.status === 'RESOLVED' && report.reviewResult === 'REMOVED')) post.status = 'REMOVED'
+          else if (related.some(({ report }) => report.status !== 'RESOLVED')) post.status = 'HIDDEN_REPORT'
+          else if (post.studentId.startsWith('friend-') || (communityOf(post.studentId).enabled && consentOf(post.studentId))) post.status = 'VISIBLE'
+          else post.status = 'HIDDEN_SETTING'
+        }
+        persistRetention()
+        return r
+      }
       Object.assign(r!, d)
       audit('ERROR_REPORT_REVIEW', 'ERROR_REPORT', r!.reportId, 'SUCCESS', d.reviewReason)
       return r
@@ -684,8 +723,9 @@ export const adminHandlers = [
   http.post('/api/v1/admin/error-reports/:reportId/corrections', ({ request, params }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
-      const r = errorReports.find((r) => r.reportId === params.reportId)
+      const r = reports().find((r) => r.reportId === params.reportId)
       if (!r) fail('NOT_FOUND', '신고가 없습니다.', 404)
+      if (r!.targetType === 'COMMUNITY_POST') fail('CORRECTION_TARGET_UNSUPPORTED', '판정 정정만 지원합니다.', 422)
       const d = (await request.json()) as { reason: string; corrected: string }
       if (!d.reason?.trim() || !d.corrected?.trim())
         fail('VALIDATION_FAILED', '정정 사유와 결과를 입력해 주세요.')

@@ -94,8 +94,8 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 | 주간·일일 리포트 생성 | **명령** → `cmd.direct` 작업 큐 | 일괄 처리, 재시도, 워커 단독 확장 |
 | 상태 변화 전파 | **이벤트** → `events.topic` | 생산자가 소비자를 모름, 소비자 추가 시 생산자 무변경 |
 
-- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353. 주간 테마 초안은 호출 1번에 그래프를 끝까지 돌리는 주기 작업이라 ai LLM 호출당 300초·재시도 없음·전체 마감 900초, learning→ai 읽기 16분·생성 리스 18분, #437·#438. 값은 ai `theme_llm_timeout`·`theme_draft_deadline`, learning `app.theme-draft.ai-read-timeout`·`lease`), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ(예외: 주간 리포트 설명은 주 1회 배치라 report→ai 호출당 130초·설명 단계 400초, 리포트 작업 복구 후보 4시간, #479·#508). 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
-  - 리포트 Gemma SageMaker 호출(#742·#746): 실시간 `InvokeEndpoint`는 컨테이너가 60초 안에 응답해야 한다(AWS 제한). 이를 지키려고 `max_tokens`를 상세 설명 1536·서술 1024로 둔다. 최악 경우(동시 8건, 1536토큰 끝까지 생성)도 LoRA 23.4초로 제한 안이다([infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)). 위의 report→ai 130초·설명 단계 400초는 RunPod 콜드 대기용 값이라, ai·report 타임아웃과 SDK 읽기 타임아웃은 60초 제한 기준으로 #747에서 다시 정한다. 엔드포인트가 0대이면 호출이 즉시 `ValidationError`로 실패하고 다른 모델로 대체하지 않고 설명 없이 발행한다(#733)
+- 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353. 주간 테마 초안은 호출 1번에 그래프를 끝까지 돌리는 주기 작업이라 ai LLM 호출당 300초·재시도 없음·전체 마감 900초, learning→ai 읽기 16분·생성 리스 18분, #437·#438. 값은 ai `theme_llm_timeout`·`theme_draft_deadline`, learning `app.theme-draft.ai-read-timeout`·`lease`), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ(예외: 주간 리포트는 주 1회 배치라 report→ai 서술 대기 80초·설명 호출당 80초·설명 단계 300초, 리포트 작업 복구 후보 4시간, #479·#508·#747). 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
+  - 리포트 Gemma SageMaker 호출(#742·#746): 실시간 `InvokeEndpoint`는 컨테이너가 60초 안에 응답해야 한다(AWS 제한). 이를 지키려고 `max_tokens`를 상세 설명 1536·서술 1024로 둔다. 최악 경우(동시 8건, 1536토큰 끝까지 생성)도 LoRA 23.4초로 제한 안이다([infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)). #747에서 이 60초 제한 기준으로 시간을 다시 정했다: ai는 boto3 읽기 타임아웃 70초·서술·설명 마감 각 75초, report→ai는 서술 80초·설명 호출당 80초·설명 단계 300초(이전 RunPod 콜드 대기값 130·400초, 코드 기본값 310·950초는 지움). 엔드포인트가 0대이면 호출이 즉시 `ValidationError`로 실패하고 다른 모델로 대체하지 않고 설명 없이 발행한다(#733)
   - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`·`learning-memory`), learning→ai(판정·되묻기 `ai`, 미션 초안 `ai-mission-draft`, 주간 테마 초안 `ai-theme-draft`, 추억 검색 임베딩 `ai-memory-embedding`, 추억 설명 `ai-memory-explanation`, 추억 검색 질의 변환 `ai-memory-query`(#679 설계, #682 구현). 기준은 아래와 같고, 기능마다 서킷을 나눠 한 기능의 ai 장애가 다른 호출을 막지 않게 한다, #305·#353·#438·#563·#564), learning→scoring(답변 표현 분류 `scoring-toxicity`, #688), core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 결제 환불의 learning 사용 증빙 조회(`payment/client/PremiumUsageClient`)는 `learning-json`을 함께 쓰고 응답 시간만 5초다(`LearningClient.withReadTimeout`, #654). 서킷 차단도 시간 초과·전송 실패와 같이 503 `REFUND_USAGE_UNAVAILABLE`(사용 여부 확인 불가, 환불 요청·승인 진행 안 함)이다. 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
 - #305 learning→ai 판정·되묻기는 서킷 `ai` 하나를 함께 쓰므로, 그 뒤 ai→scoring 실패가 이 서킷으로 번지지 않게 ai에서 끊는다. ai→scoring(M2·M1)은 교차 확인 플래그(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`, 기본 꺼짐)가 켜진 경우에만 부르고, scoring 장애·시간 초과·5xx·4xx(입력 한도 초과 등)·계약 밖 응답은 503으로 바꾸지 않는다. ai는 교차 확인을 생략한 LLM 판정을 200으로 돌려주고 `modelScores.skipped`(`SCORING_UNAVAILABLE`·`SCORING_REJECTED`)에 사유를 남긴다(api-spec 4.2.2). 따라서 scoring 장애는 learning `ai` 서킷의 실패로 집계되지 않고 scoring과 무관한 판정·되묻기를 막지 않는다. 대신 교차 확인 없이 확정된 판정은 다시 판정하지 않는다. ai→scoring에는 서킷·재시도를 따로 두지 않는다(요청마다 남은 판정 시간 안의 timeout만).
 - #688 learning→scoring 답변 표현 분류(`POST /internal/toxicity/checks`, api-spec 4.3.4)는 연결 공통값(`app.internal.connect-timeout` 2초, `InternalRestClientFactory` 그대로)·응답 1.5초, 서킷 `scoring-toxicity`(공통 기준: 최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·전송 오류·시간 초과·5xx 실패), 재시도 없음. 시간 초과·전송 오류·5xx·4xx·계약 밖 응답·서킷 열림·`{active:false}`는 모두 모델 검사만 건너뛰고 제출을 진행한다(fail-open, 로그는 `attemptId`·건너뜀 사유만). learning은 시도 행 잠금·트랜잭션 전에 결과를 받아 둔다(DB 연결과 잠금을 쥔 채 기다리지 않음). 답변 제출 core→learning 30초 안이다
@@ -235,13 +235,14 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 - 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
   - `_common`은 기능 패키지를 참조하지 않는다. 기능에 의존하는 공통 처리는 그 기능에 둔다(예: `PublicAuthFilter` → account, #251)
   - 여러 기능 client가 같은 하위 서비스 연결을 쓰면 전송은 `_common/client`에 둔다(core `LearningClient`: learning 내부 API, 서킷·타임아웃 공유). 기능별 요청·응답 해석은 각 기능 `client`(learning `LearningRecordClient`, community `CommunityClient`, support `LearningSupportClient`)가 맡고, 다른 기능의 client를 참조하지 않는다(#422)
+  - 하위 서비스 응답 해석은 기능 `client`가 원본 JSON·SSE를 core 타입(DTO·도메인 객체)으로 바꾸고, 모양이 틀리면 client에서 계약 오류(502)로 막는다. service는 타입 값으로 업무 판단만 하고 하위 서비스 JSON 칸 이름을 알지 않는다. #608 예외 목록 밖에 남아 있던 4곳을 원칙대로 옮겼다(#792, 2026-11-19): `CommunityService` 공유물 목록 → `CommunityClient.missionPosts`·`studentPosts`(`MissionPost`·`StudentPost`, 502 `COMMUNITY_INVALID_RESPONSE`), `SupportService` 지원 대상·정정 응답 → `LearningSupportClient.target`·`judgedAnswer`·`correct`(`SupportTarget`·`CorrectionResult`, 502 `SUPPORT_INVALID_RESPONSE`), `ReportQueryService` 목록·상세·다운로드 계약 검사 → `ReportClient.reports`·`report`·`file`(502 `REPORT_CONTRACT_INVALID`), `AnalysisStreamService` ai SSE 이벤트 모양 → `AiClient.stream`의 `AnalysisEvent`(502 `AI_INVALID_RESPONSE`). 리포트 서술·원문 거르기는 공개 설정·상품 권한에 따른 업무 규칙이라 언제 거를지는 `ReportQueryService`가 정하고, 어느 칸을 거를지는 client 응답 타입 `ReportDocument`가 안다. 분석 이벤트 순서 검사도 실행 상태와 묶인 흐름이라 service에 둔다
   - 프록시 service 응답 해석 예외(#608, 2026-11-13 결정): 아래 core service는 learning 응답 본문을 service에서 `ObjectMapper.readTree`로 직접 읽는다. 발표 전 위험을 줄이려 코드를 옮기지 않고 예외로 둔다
     - 허용 이유: 공용 `LearningClient.exchange`가 돌려준 `HttpExchangeResult`를 controller까지 거의 그대로 넘기는 프록시라, 해석을 client로 옮기면 원문 응답 전달과 몇 칸 추출을 함께 돌려주는 client를 새로 만들어야 한다. service가 읽는 칸은 뒤따르는 업무 처리(사용량·포인트 적립·감사·액자 표시)를 정하는 데 필요한 것뿐이고, 읽기에 실패하면 응답을 바꾸지 않고 그 처리만 건너뛰거나(로그) 계약 오류로 막는다
     - 응답을 그대로 넘기며 후속 처리용 칸만 읽음: `LearningProxyService`(`startAttempt` 201의 `attemptId` → 사용량 기록, `reflection`의 409 `code`(`ATTEMPT_CLOSED`), `completedMission`·`inProgress`의 시도 `status`·`mission.id`), `ParticipationRewardService`(`reviewViewed`·`weeklyThemeViewed`가 받은 응답의 완료 칸으로 포인트 적립, 실패해도 응답 불변), `MemoryProxyService.album`(200 항목에 `displayed`만 더함, 모양이 다르면 502 `LEARNING_CONTRACT_INVALID`)
     - 관리자 응답 허용 목록·감사: `AdminLearningService`(`stats`·`missionCounts`는 허용한 칸만 골라 반환, `sanitize`는 오류 응답을 허용 `code`만 남긴 problem으로 다시 만듦, `audited`는 성공 응답에서 감사 대상 ID·버전을 읽음). 해석 범위가 이 묶음에서 가장 크지만 요청 감사 → learning 호출 → 결과 감사 순서와 묶여 있어 결과를 모르면 `UNKNOWN`으로 남기는 흐름을 한 service에 둔다
     - 응답 값을 업무 상태와 대조: `ConversationService`(`requirePeriodAttempts`·`reflection`). 응답은 `LearningRecordService` → `LearningRecordClient`로 받고, service는 그 값이 이번 분석 요청의 자녀·기간·페이지·근거 시도와 맞는지 확인한다. 업무 판단이라 Application 책임에 맞는다
     - 요청 본문 다시 만들기(하위 서비스 응답 아님): `LearningProxyService.storyViewed`·`answerPicked`, `MemoryProxyService.search`·`explanation`(`objectWith`)은 프록시가 원문 바이트로 받은 학생 요청 본문에서 허용 칸만 꺼내 새 본문을 만든다
-    - 적용 범위: 위 service의 위 메서드에서 `LearningClient`·`LearningRecordService`·`LearningMemoryClient` 응답이나 요청 본문을 읽는 경우만. DB JSON 칸 읽기(`SupportService`)·결제 웹훅 본문(`PaymentWebhookService`)은 이 예외와 관계없다
+    - 적용 범위: 위 service의 위 메서드에서 `LearningClient`·`LearningRecordService`·`LearningMemoryClient` 응답이나 요청 본문을 읽는 경우만. 결제 웹훅 본문(`PaymentWebhookService`)과 `SupportService`의 DB JSON 칸 읽기(정정 영향·공지 대상 역할)는 이 예외와 관계없다. `SupportService`는 learning 지원 응답도 읽고 있었으나(#792 점검) 이 목록에 넣지 않고 `LearningSupportClient`로 옮겼다(위 #792 항목)
     - 새 프록시나 새 하위 서비스 호출을 만들 때는 원칙대로 응답 해석을 기능 `client`에 둔다(선례: `LearningMemoryClient`, `LearningRecordClient`). 위 service에 새 해석 칸을 더해야 하면 먼저 client로 옮길 수 있는지 본다
   - 여러 기능 controller가 쓰는 기능 타입 없는 요청 검사는 `_common/web`(예: 관리자 목록 페이지 범위 `operationPage`, #422)
   - 응답 DTO(Spring): 여러 기능 응답이 같은 OpenAPI component를 공유하면 `_common/web`(예: learning `MissionResponse`·`MissionListItemResponse`·`AnswerItem`), 스키마가 다르면 기능별 controller DTO. `_common/web` DTO는 기능 타입 없이 열거값은 이름 문자열, 값 객체는 같은 모양의 DTO, 기능 타입이 필요한 칸은 타입 인자로 두고, domain → DTO 변환은 쓰는 기능의 controller에 둔다(데이터 표현이라 매핑 중복 허용, 업무 로직은 service 재사용) (#251)
@@ -278,6 +279,7 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 | ai | Presentation · Application · Infrastructure | DB 없음. LangGraph 그래프·노드, 판정 대조 로직이 Application, LLM·서비스 클라이언트가 Infrastructure |
 | scoring | Presentation · Application · Infrastructure | 상태 없음. 모델 로딩·추론이 Infrastructure |
 
+- report 복구 조립·잠금 SQL(#792, 2026-11-19 결정, 코드 이동 없음): `app/generation/router.py`의 `reconcile`은 요청마다 `ReconciliationService(app.state.session_factory, JobLocks(app.state.engine))`를 직접 만든다. FastAPI에서 lifespan이 만든 공유 연결을 router가 service에 넘기는 조립 지점이고, router는 `ReconciliationService.reconcile`만 불러 업무 판단이 없다. `app/generation/locking.py`의 advisory lock SQL(`pg_try_advisory_lock`·`pg_advisory_unlock`, 공유 잠금 포함, `worker.py`도 같은 `JobLocks`를 씀)은 `repository.py` 밖이지만 작업·학생 단위 세션 잠금을 생성·HTTP 동안 트랜잭션 없이 전용 연결로 쥐는 Infrastructure 부품이다(잠금 해제에 실패한 연결은 풀에 돌려주지 않음). 트랜잭션 단위로 행을 다루는 `ReportRepository`와 연결 수명이 달라 한 파일로 합치지 않는다. 같은 조립이 여러 router로 늘거나 잠금 대상이 작업·학생 밖으로 늘면 FastAPI 의존성 함수로 조립을 옮기고 잠금을 repository 계층 이름으로 정리한다
 - scoring 모델 사전 검사 파일 구성(#608, 2026-11-13 결정): `app/preflight.py`는 router(`preflight`)·service(`PreflightService`)·요청/응답 모델(`PreflightRequest`·`PreflightResult` 등)을 한 파일에 두는 현 구성을 유지한다. core 중계 전용 내부 엔드포인트 1개이고, 계층은 이미 함수·클래스로 나뉘어 router는 `PreflightService.check`만 부르며 S3 접근은 `S3ModelArtifacts`(clients)가 맡는다. 모델은 이 엔드포인트에서만 쓰여 나눠도 얻는 것이 적고 `bootstrap.py`·테스트의 import 경로만 바뀐다(`versions.py`도 같은 한 파일 구성). 엔드포인트가 늘거나 다른 모듈이 모델을 쓰게 되면 `m2/`처럼 `router.py`·`service.py`·`models.py`로 나눈다
 
 ### 2.5 요청 처리 예시 (learning 답변 제출)
@@ -618,11 +620,20 @@ backend/scoring-service/
 │  │  ├─ service.py
 │  │  ├─ models.py
 │  │  ├─ metadata.py             # 학습 산출물 입력·출력·경계 검증 (로딩·추론 공통)
-│  │  └─ content3_rule.py        # 서술 핵심어 포함 비율 결합 보정 규칙
+│  │  ├─ content3_rule.py        # 서술 핵심어 포함 비율 결합 보정 규칙
+│  │  ├─ m2_text_guard.py        # 글 정리 순서(칸 이름·지시문 복사·반복 제거, 길이 계산)
+│  │  ├─ prompt_guard.py         # 지시문 복사 문장 제거
+│  │  ├─ repeat_guard.py         # 반복 문장 제거
+│  │  └─ m2_long_input.py        # 입력 한도 초과 글의 앞+끝 토큰화
 │  ├─ m1/
 │  │  ├─ router.py
 │  │  ├─ service.py
 │  │  └─ models.py
+│  ├─ toxicity/                  # 답변 표현 분류 POST /internal/toxicity/checks (api-spec 4.3.4, #691)
+│  │  ├─ router.py
+│  │  ├─ service.py              # 활성 tox- 모델로 칸별 글 창 단위 2분류
+│  │  ├─ models.py
+│  │  └─ metadata.py             # tox- 학습 산출물 검사 (로더·사전 검사 공통)
 │  ├─ model_registry.py          # 모델별 revision·승인 범위·로딩 완료 후 교체
 │  ├─ model_versions.py          # core snapshot·이벤트의 scoring 대상 계약
 │  ├─ model_startup.py           # 기동 시 snapshot 조회·최초 로딩 재시도
@@ -734,6 +745,7 @@ backend/report-service/
 - 스트리밍: 피드백·분석 대화·알림 SSE를 fetch 스트림으로 수신(인증 헤더 필요), 수신 결과로 쿼리 캐시 갱신
 - 인증: access token 메모리 보관, refresh token httpOnly 쿠키
 - 결제: 토스페이먼츠 결제위젯 SDK (테스트 키)
+  - 주문 상태는 주문별 TanStack Query 한 곳에서 조회한다(#815). 결제 화면과 위젯이 같은 결과를 사용하고, 진입 또는 복귀 후 조회가 성공해 상태가 `PENDING`일 때만 결제수단을 연다. 결제 화면을 벗어나거나 결제 가능 상태가 아니면 위젯을 정리한다.
 - 접근성: 움직임 줄이기 설정 시 정적 장면, 상태를 색상 외 글로 표시 (NFR-UX-02)
 
 ---
@@ -970,10 +982,15 @@ SKN34-FINAL-3TEAM/
 │     ├─ src/                    # 3장 참고
 │     ├─ scripts/                # 시연용 Vite 플러그인·QR 기기 시연·결제 테스트 서버
 │     ├─ tests/
+│     │  ├─ browser/             # 목업 API 브라우저 시나리오 (playwright.config.ts)
+│     │  ├─ auth-browser/        # 운영 빌드 + 합성 HttpOnly 쿠키 로그인 유지·복구 (playwright.auth.config.ts)
+│     │  ├─ model-browser/       # 관리자 모델 등록부 운영 빌드 시나리오 (playwright.model.config.ts)
+│     │  ├─ reward-browser/      # #389 운영 빌드 MSW 없이 꾸미기·포인트 응답 검증 (playwright.reward.config.ts)
 │     │  ├─ e2e/                 # 실서버 Playwright 대표 시나리오 (NFR-QA-01, playwright.e2e.config.ts·seed/, #246)
 │     │  ├─ transfer-local/      # #289 이관 격리 로컬 실서버 시나리오 (playwright.transfer-local.config.ts)
 │     │  └─ transfer-mock/       # #289 이관 MSW 시나리오 (playwright.transfer-mock.config.ts)
 │     ├─ playwright.config.ts    # 목업 API(VITE_API_MOCK) 브라우저 시나리오 tests/browser 기본 설정
+│     ├─ playwright.<auth|model|reward|e2e|transfer-*>.config.ts  # 위 tests/ 폴더별 설정
 │     ├─ package.json
 │     ├─ vite.config.ts
 │     └─ tsconfig.json
@@ -1009,7 +1026,9 @@ SKN34-FINAL-3TEAM/
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
 │  ├─ runners/                   # 서비스 호출·채점 스크립트 (judgment_eval.py, 테스트는 ai-service tests)
-│  └─ results/                   # (예정) 실행 결과 요약
+│  ├─ results/                   # 실행 결과 요약 (judgment·memory·explanation)
+│  ├─ load/                      # AWS 데모 k6 부하 시험·LLM 응답 시간 측정 스크립트 (#361·#630)
+│  └─ tests/                     # 평가 스크립트 테스트
 ├─ infrastructure/
 │  ├─ cd/                        # #186 운영 배포 계획·정책 예시와 절차 (cd-release.yml)
 │  ├─ gitops/

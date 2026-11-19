@@ -156,7 +156,7 @@ kind values가 `compose.yaml`보다 적어 Google 로그인·토스 결제·LLM 
 | 배포 기준 | develop → main 릴리스 PR 병합 후 그 SHA만 배포(ECR 태그 `main-<sha>`) |
 | 시연 계정 | `AUTH_NEW_ACCOUNT_DEMO=true`로 새 Google 부모를 `is_demo=true` 저장 |
 | 결제 | 공용 문서 테스트 키를 `sagomungchi/demo/app/payment` Secret으로 ESO 연결. 일반 결제 승인만 시연 가능 |
-| 비밀 스캔 | Gitleaks 8.30.1, 루트 `.gitleaks.toml`. 재실행 도구 `infrastructure/aws/scan-repository-secrets.py` |
+| 비밀 스캔 | Gitleaks 8.30.1, 루트 `.gitleaks.toml`. 재실행 도구 `infrastructure/aws/scan-repository-secrets.py`. CI `ci-secrets.yml`이 모든 PR·develop/main push를 검사(#810, [4.3](#43-비밀-정보-스캔-ci-810)). develop `8b23de1f` 전체 스캔(11/19, 이력 1006 커밋·현재 파일 2350개): 합성 값 3건 검토 후 예외 추가([4.3](#43-비밀-정보-스캔-ci-810)), 이후 발견 0 |
 
 ### 4.1 설계와 남은 차이
 
@@ -175,6 +175,32 @@ kind values가 `compose.yaml`보다 적어 Google 로그인·토스 결제·LLM 
 - CloudFront URL에서 학부모 Google 로그인·답변 제출·AI 피드백·돌아보기, 주간 리포트 생성과 PDF·Markdown 다운로드
 - 클라이언트 IP 판정([검증 스크립트](../../infrastructure/aws/verify-viewer-ip.ps1)): viewer IP 제한 카운터 증가, 위조 XFF 무시
 - 미실행: 신규 Google 가입 실계정, 공용 테스트 키 결제 승인, 새 클러스터 복원
+
+### 4.3 비밀 정보 스캔 CI (#810)
+
+NFR-SEC-04 검증(저장소 비밀 정보 스캔)을 손 도구에서 PR 단계로 옮긴다. 워크플로 구성은 [testing-ci 8절](testing-ci.md#8-비밀-정보-스캔-ci-810).
+
+| 결정 | 내용 |
+|---|---|
+| 실행 방식 | 공식 릴리스 `gitleaks_8.30.1_linux_x64.tar.gz`를 SHA256 대조 후 실행. `gitleaks-action`은 조직 저장소에 유료 라이선스가 필요해 쓰지 않음 |
+| 검사 범위 | PR은 PR 커밋(`base..head`), push는 push된 커밋(`before..after`, 이전 커밋이 없으면 머리 커밋까지 전체), 수동 실행은 선택한 ref 전체 이력. 작업 트리 미커밋 파일·Git 무시 파일은 범위 밖(손 도구 `scan-repository-secrets.py`가 담당) |
+| 출력 | `--redact=100`. 로그에는 파일·줄·커밋·규칙 이름만, 값은 `REDACTED` |
+| 경로 필터 | 없음. 문서만 바꾼 PR도 검사 |
+
+도입 전 전체 스캔(2026-11-19, `scan-repository-secrets.py`, 로컬 모든 ref): `generic-api-key` 3건. 담당자 승인 후 값을 확인했고 모두 합성 값이라 `.gitleaks.toml`에 파일·값 단위 예외를 추가했다. 재실행 결과 이력·현재 파일 모두 발견 0.
+
+| 위치 | 판단 |
+|---|---|
+| `scripts/tests/test_admin_account_sql.py:56` | 출력에 비밀번호가 안 나오는지 확인하는 시험용 비밀번호 |
+| `backend/core-service/.../admin/ModelVersionBrowserIntegrationTest.kt:23` | 다른 테스트에서 이미 예외로 둔 합성 JWT 비밀(`test-auth-secret-...` base64) |
+| `scripts/tests/test_sagemaker_model_check.py:115` | 잘못된 manifest 시험의 S3 객체 key. develop에는 없고 미병합 `feature/sagemaker-model-lock`(#777)에만 있어, 그 PR이 막히지 않도록 미리 예외 |
+
+걸렸을 때 대응:
+
+1. 로그나 보고서에서 값을 열어 보거나 PR 댓글·이슈·메신저에 붙여 넣지 않는다. 위치(파일·줄·커밋·규칙 이름)만 공유한다.
+2. 실제 비밀이면 먼저 발급처에서 회수·교체한다(커밋을 지워도 push된 값은 노출된 것으로 본다). 그다음 해당 커밋을 PR에서 빼고 값은 환경 변수·GitHub Secrets·AWS Secrets Manager로 옮긴다. 이미 develop·main에 들어간 이력 재작성은 #810 범위 밖이며 팀장과 따로 정한다.
+3. 합성 값(시험 fixture, 문서용 예시, 계약 해시 등)이면 `.gitleaks.toml`에 기존 형식대로 예외를 추가한다: `targetRules`는 걸린 규칙 하나, `condition = "AND"`, `paths`는 그 파일 하나, `regexes`는 그 값 전체(`^…$`), `description`에 합성 근거. 규칙 전체·폴더 단위·값 일부 패턴 예외는 두지 않는다. 예외 추가 PR은 리뷰어가 값이 합성인지 직접 확인한다.
+4. 오탐이 규칙 자체 문제로 반복되면 규칙 끄기 대신 이슈로 올려 정한다.
 
 ## 5. S3 Gateway 엔드포인트와 NAT 점검 (#212)
 
@@ -746,7 +772,7 @@ DB 안의 내용(레지스트리 행, 활성 모델·프롬프트, 적용된 mig
 | core | 내부 토큰·브로커 계정 서비스별 키(9.9), `SCORING_URL`·scoring egress, `namespaceDefaultDeny` false → **true**(#657), report-api ingress 제외 |
 | learning | 서비스별 키, `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`(#652), `MEMORY_EMBEDDING_ENABLED`·`MEMORY_QUERY_REWRITE_*`, Pod Identity agent egress |
 | ai | 서비스별 키, 자산 버킷, Veo(`THEME_VIDEO_*`·`ai-theme-video` Secret·볼륨), `M2_CROSS_CHECK_ENABLED=true`, `EXPLANATION_BASE_URL`(sllm-server), `OPENAI_MODEL` gpt-6.1-terra → gpt-6-luna, 메모리 상한 512Mi → 1Gi, 리포트 Gemma RunPod 주소·키(`ai-provider-credentials`, #751) |
-| report-worker | 서비스별 키, 설명 시간 예산 400초·제한 130초, 테마 요약, 종료 유예 180 → 480초 |
+| report-worker | 서비스별 키, 설명 시간 예산 400초·제한 130초(#747에서 300초·80초, 서술 80초로 바뀜), 테마 요약, 종료 유예 180 → 480초 |
 | report-api·scoring | 서비스별 키, scoring ingress에 core 추가 |
 | 이미지 | 앱 values의 `image`는 저장소에 없음(cd-release가 main SHA digest로 채움). migration 이미지는 `migrations/*.json`에 core·learning `main-c6809ddb65ee`, report `b67d8a462b6b`로 고정 |
 

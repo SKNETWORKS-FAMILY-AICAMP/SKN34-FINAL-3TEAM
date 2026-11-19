@@ -26,8 +26,9 @@ import type { RegenKind, RegenTarget, ThemeDraft, ThemeDraftRequest, ThemeSceneN
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ThemeMotionPlayer } from '../common/ThemeMotionPlayer.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
-import { Badge, Empty, Panel } from './AdminUi.tsx'
+import { Badge, DraftWorkflow, Empty, Panel, RequestPanel } from './AdminUi.tsx'
 import { StandardPicker } from './StandardPicker.tsx'
+import { date as when } from './adminFormatting.ts'
 
 const POLL_MS = 5_000
 const PAGE_SIZE = 20
@@ -36,7 +37,6 @@ const nextMonday = () => {
   day.setUTCDate(day.getUTCDate() + ((8 - day.getUTCDay()) % 7 || 7))
   return day.toISOString().slice(0, 10)
 }
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'short' }) : '—')
 const actionLabels = { adopt: '채택', discard: '버리기', regenerate: '다시 생성' } as const
 type DraftAction = keyof typeof actionLabels
 /** 확인 대기 중인 동작. target이 있으면 부분 다시 생성(#537): 확인 창·결과 안내를 그 장면 칸에 띄운다 */
@@ -61,7 +61,7 @@ export function ThemeDraftManager() {
     const next = new URLSearchParams(params); next.set('draftId', draftId); setParams(next)
   }
   return <div className="ad-theme-drafts">
-    <p>주간 테마 생성을 요청하고 결과를 확인합니다. 검사 통과는 게시 승인이 아니며, 채택하면 미션 5개와 테마가 작성 중으로 만들어지고 각각 검토·게시합니다.</p>
+    <DraftWorkflow>검사 통과는 게시 승인이 아닙니다. 채택하면 미션 5개와 테마가 작성 중으로 만들어지고 각각 검토·게시합니다.</DraftWorkflow>
     <ThemeRequest onRequested={draft => { setPage(0); setStatus(''); setSource(''); choose(draft.draftId) }} />
     <Panel title="테마 초안 목록" action={<button onClick={() => void list.refetch()}>목록 다시 확인</button>}>
       <div className="ad-toolbar">
@@ -77,7 +77,7 @@ export function ThemeDraftManager() {
         <tbody>{rows.map(d => <tr key={d.draftId} className={selected === d.draftId ? 'is-selected' : ''}>
           <td>{d.grade ? THEME_GRADE_LABELS[d.grade] : '—'}</td><td>{d.weekStart ?? '—'}</td>
           <td>{d.source ? themeDraftSourceLabels[d.source] : '—'}{d.input.regenerate ? ' · 부분' : ''}</td>
-          <td><Badge active={d.status === 'READY'}>{themeDraftLabels[d.status]}</Badge></td>
+          <td><Badge active={d.status === 'READY'} tone={d.status === 'FAILED' || d.status === 'CHECK_FAILED' ? 'danger' : undefined}>{themeDraftLabels[d.status]}</Badge></td>
           <td>{d.maxAttempts ? `${d.attempts}/${d.maxAttempts}` : d.attempts}</td><td>{when(d.createdAt)}</td>
           <td><button aria-label={`${d.weekStart ?? d.draftId} ${d.grade ? THEME_GRADE_LABELS[d.grade] : ''} 초안 열기`} onClick={() => choose(d.draftId)}>열기</button></td>
         </tr>)}</tbody></table></div>
@@ -87,8 +87,7 @@ export function ThemeDraftManager() {
         <button disabled={!hasNext || list.isFetching} onClick={() => setPage(page + 1)}>다음 페이지</button>
       </nav>}
     </Panel>
-    {selected ? <ThemeDraftDetail key={selected} draftId={selected} onOpen={choose} />
-      : <Panel title="초안 상세"><Empty>목록에서 초안을 열어 주세요.</Empty></Panel>}
+    {selected && <ThemeDraftDetail key={selected} draftId={selected} onOpen={choose} />}
   </div>
 }
 
@@ -224,7 +223,7 @@ function ThemeRequest({ onRequested }: { onRequested: (draft: ThemeDraft) => voi
     else setOverrides(before => { const next = { ...before }; delete next[type]; return next })
   }
   function update(type: ThinkingType, value: Partial<Override>) { setOverrides(before => ({ ...before, [type]: { ...before[type]!, ...value } })) }
-  return <Panel title="새 테마 초안 요청">
+  return <RequestPanel title="새 테마 초안 요청">
     <form className="ws-form" aria-label="테마 초안 생성 요청" onSubmit={event => {
       event.preventDefault(); setNotice('')
       const entries = Object.entries(overrides) as [ThinkingType, Override][]
@@ -263,5 +262,5 @@ function ThemeRequest({ onRequested }: { onRequested: (draft: ThemeDraft) => voi
       {notice && <p role="status">{notice}</p>}
       <div className="ws-actions"><button className="cj-primary" disabled={request.isPending}>{request.isPending ? '요청 중…' : '테마 초안 생성 요청'}</button></div>
     </form>
-  </Panel>
+  </RequestPanel>
 }

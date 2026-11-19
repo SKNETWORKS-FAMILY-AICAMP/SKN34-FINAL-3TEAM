@@ -32,6 +32,7 @@ import org.mybatis.spring.SqlSessionTemplate
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -265,6 +266,100 @@ class AnswerServiceTest : PostgresRepositoryTest() {
         assertEquals(first, again)
         assertEquals(1, count("SELECT count(*) FROM answer WHERE attempt_id = ?", attempt.id))
         assertEquals(1, count("SELECT count(*) FROM judgment WHERE answer_id = ?", first.id))
+    }
+
+    private fun timeOf(answerId: UUID) = jdbc.queryForMap("SELECT thinking_seconds, writing_seconds FROM answer WHERE id = ?", answerId)
+        .let { it["thinking_seconds"] to it["writing_seconds"] }
+
+    @Test
+    fun `생각·작성 시간은 답변마다 저장해 시도 상세에 보이고, 칸 없는 제출은 둘 다 null (#801)`() {
+        val attempt = start()
+
+        val first = service.submit(attempt.id, UUID.randomUUID(), narrative("처음").copy(thinkingSeconds = 95, writingSeconds = 240))
+        val followup = followup(attempt.id, first.id)
+        val second = service.submit(attempt.id, UUID.randomUUID(), narrative("보완", followupId = followup))
+
+        assertEquals(95 to 240, first.thinkingSeconds to first.writingSeconds)
+        assertEquals(95 to 240, timeOf(first.id))
+        assertEquals(null to null, timeOf(second.id))
+        assertEquals(
+            listOf(95 to 240, null to null),
+            attemptService.get(attempt.id).answers.map { it.thinkingSeconds to it.writingSeconds },
+        )
+    }
+
+    @Test
+    fun `0초·24시간은 저장하고, 하나만 오거나 음수·24시간 초과면 제출은 받고 둘 다 null`() {
+        val stored = mapOf((0L to 0L) to (0 to 0), (86_400L to 86_400L) to (86_400 to 86_400))
+        val dropped = listOf(95L to null, null to 240L, -1L to 240L, 95L to -5L, 86_401L to 240L, 95L to Long.MAX_VALUE)
+        (stored.keys + dropped).forEach { (thinking, writing) ->
+            val attempt = start()
+            val answer = service.submit(attempt.id, UUID.randomUUID(), narrative("답").copy(thinkingSeconds = thinking, writingSeconds = writing))
+            assertEquals(stored[thinking to writing] ?: (null to null), timeOf(answer.id), "$thinking, $writing")
+        }
+    }
+
+    @Test
+    fun `고르기 방식과 보호자 받아쓰기는 값이 와도 null, 풀이 단계·논술은 저장`() {
+        val choices = """[{"id": "a", "label": "물"}, {"id": "b", "label": "얼음"}]"""
+        val categories = """[{"id": "액체", "label": "액체"}, {"id": "고체", "label": "고체"}]"""
+        val cases = listOf(
+            Triple("CHOICE" to 3, SubmitCommand(InputType.CHOICE, AnswerContent(choiceIds = listOf("b")), false, null), false),
+            Triple("ORDERING" to 3, SubmitCommand(InputType.ORDERING, AnswerContent(choiceIds = listOf("b", "a")), false, null), false),
+            Triple(
+                "CLASSIFICATION" to 3,
+                SubmitCommand(InputType.CLASSIFICATION, AnswerContent(assignments = listOf(Assignment("a", "액체"), Assignment("b", "고체"))), false, null),
+                false,
+            ),
+            Triple("NARRATIVE" to 3, SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "엄마가 받아 씀"), true, null), false),
+            Triple("SOLUTION_STEPS" to 3, SubmitCommand(InputType.SOLUTION_STEPS, AnswerContent(finalAnswer = "6", steps = listOf("2씩 3묶음")), false, null), true),
+            Triple("ESSAY" to 5, SubmitCommand(InputType.ESSAY, AnswerContent(essay = Essay("찬성", listOf("안전", "편리"), "그래도 필요")), false, null), true),
+        )
+        cases.forEach { (type, command, measured) ->
+            val mission = rows.mission(inputType = type.first, grade = type.second, choices = choices, categories = categories)
+            val attempt = attemptService.start(student, mission.id, type.second, demo = false).attempt
+            val answer = service.submit(attempt.id, UUID.randomUUID(), command.copy(thinkingSeconds = 30, writingSeconds = 60))
+            assertEquals(if (measured) 30 to 60 else null to null, timeOf(answer.id), "${type.first} 받아쓰기=${command.dictatedByGuardian}")
+        }
+    }
+
+    @Test
+    fun `같은 키 재요청은 시간만 달라도 같은 요청, 처음 저장한 시간을 그대로 돌려줌`() {
+        val attempt = start()
+        val key = UUID.randomUUID()
+
+        val first = service.submit(attempt.id, key, narrative("처음").copy(thinkingSeconds = 95, writingSeconds = 240))
+        val again = service.submit(attempt.id, key, narrative("처음").copy(thinkingSeconds = 100, writingSeconds = 250))
+        val withoutTime = service.submit(attempt.id, key, narrative("처음"))
+
+        assertEquals(first, again)
+        assertEquals(first, withoutTime)
+        assertEquals(95 to 240, timeOf(first.id))
+        assertEquals(1, count("SELECT count(*) FROM answer WHERE attempt_id = ?", attempt.id))
+        assertError(HttpStatus.UNPROCESSABLE_ENTITY, "IDEMPOTENCY_KEY_REUSED") {
+            service.submit(attempt.id, key, narrative("바꿈").copy(thinkingSeconds = 95, writingSeconds = 240))
+        }
+    }
+
+    @Test
+    fun `DB도 음수와 한쪽만 있는 시간을 막음 (V23 CHECK)`() {
+        // 위반 하나로 시험 트랜잭션이 중단되므로 위반은 한 번만 내고, 나머지는 CHECK 정의로 확인
+        val checks = jdbc.queryForList(
+            "SELECT conname || ' ' || pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'answer'::regclass AND (conname LIKE 'ck_answer_%seconds' OR conname = 'ck_answer_time_pair') ORDER BY conname",
+            String::class.java,
+        )
+        assertEquals(
+            listOf(
+                "ck_answer_thinking_seconds CHECK ((thinking_seconds >= 0))",
+                "ck_answer_time_pair CHECK (((thinking_seconds IS NULL) = (writing_seconds IS NULL)))",
+                "ck_answer_writing_seconds CHECK ((writing_seconds >= 0))",
+            ),
+            checks,
+        )
+        val answer = service.submit(start().id, UUID.randomUUID(), narrative("답"))
+        assertThrows<DataIntegrityViolationException> {
+            jdbc.update("UPDATE answer SET thinking_seconds = 1 WHERE id = ?", answer.id)
+        }
     }
 
     @Test

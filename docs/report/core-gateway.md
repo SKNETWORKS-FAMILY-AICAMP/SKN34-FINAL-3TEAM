@@ -522,11 +522,12 @@ core 통합 테스트(실제 JWT/MVC/PostgreSQL·Redis·RabbitMQ)로 권한·기
 - 접수: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId`(유형 5종 그대로). 학생 세션만 받고 학부모는 400. learning `GET /internal/community/posts/{postId}`로 대상을 확인해 본인 글 409 `COMMUNITY_OWN_POST`, 없거나 볼 수 없는 글(설정·검토 숨김, 작성자 비공개) 404 `COMMUNITY_POST_NOT_FOUND`
 - 신고 행: `student_id`·`requester_student_id`는 신고한 학생, `attempt_id`는 NULL. 작성자 학생 ID를 core 신고 행에 남기지 않아 기존 본인 목록·상세 권한 검사(`student_id ∈ scope`)를 그대로 쓰고, 작성자 삭제로 신고 이력이 깨지지 않음
 - 숨김: 신고 행 저장 뒤 트랜잭션 밖에서 learning `moderation {status: HIDDEN_REPORT, errorReportId}`. 실패해도 접수는 201로 두고 기록만 남김. 같은 멱등 키 재전송·검토 처리 때 다시 보냄. 그 사이에도 core 목록·반응은 신고 행(접수·처리 중, 또는 처리 결과가 `VISIBLE`이 아님)으로 그 공유물을 바로 숨김
-- 처리: 기존 `PATCH /admin/error-reports/{id}`(SERVICE_OPS). `RESOLVED`로 바꿀 때 `reviewResult`는 `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김)만, 생략하면 `REMOVED`(현재 관리자 화면 #395는 결과를 보내지 않아 계속 숨김이 기본). 같은 공유물에 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`, 모두 다시 공개일 때만 `VISIBLE`을 보냄. 정정(`corrections`)은 판정만이라 422 그대로
+- 처리: 기존 `PATCH /admin/error-reports/{id}`(SERVICE_OPS). `RESOLVED`로 바꿀 때 `reviewResult`는 `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김)만, 생략하면 `REMOVED`. 같은 공유물에 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`, 모두 다시 공개일 때만 `VISIBLE`을 보냄. 정정(`corrections`)은 판정만이라 422 그대로
 - 원문 열람: 관리자 상세에 `linkedPost {postId, available, missionId, status, answer, authorStudentId}`. 열람마다 `SUPPORT_ORIGINAL_VIEW`(`ERROR_REPORT`, detail `postId`·`available`) 감사. 파기된 공유물은 `available: false`만
 - 학생 결과 알림은 기존처럼 보호자 계정에 보내지 않음(학생 본인 목록에서 확인)
-- 검증: core `CommunityIntegrationTest`(실제 JWT·MVC·PostgreSQL, learning만 내부 계약 가짜 서버)로 접수 즉시 숨김·같은 키 재전송·learning 반영 지연 중 core 숨김·다시 공개·계속 숨김·복수 신고·원문 열람 감사를 확인. 실제 learning #386과의 연동은 미검증
-- 후속: 관리자 화면(#395)에 다시 공개·계속 숨김 선택과 `linkedPost` 표시 추가 필요. learning #386 `moderation`·`GET posts/{id}` 구현과 응답 모양 대조 필요
+- 검증: core `CommunityIntegrationTest`(실제 JWT·MVC·PostgreSQL, learning만 내부 계약 가짜 서버)로 접수 즉시 숨김·같은 키 재전송·learning 반영 지연 중 core 숨김·다시 공개·계속 숨김·복수 신고·원문 열람 감사를 확인. 당시 learning #386 연동은 목업으로 확인했다.
+- 웹 #806: 신고 상세에서 원문과 현재 공개 상태를 보고 다시 공개·계속 숨김(기본)을 선택한다. 완료 후 저장된 사유와 결과로만 다시 적용할 수 있다. 기존 core·learning API 계약을 사용한다.
+- #806 실서버 검증: 로컬 Compose E2E의 실제 core·learning을 대상으로 `frontend/web/tests/e2e/community.spec.ts`가 통과했다. 학생 신고 직후 learning 상태 `HIDDEN_REPORT`와 학생 목록에서 제거를 확인했고, 관리자 재공개 후 learning 상태 `VISIBLE`과 학생 목록에서 재노출을 확인했다. 이 PC의 kind 클러스터에서는 실행하지 않았다.
 
 ## 24. 결제·구독과 상품 권한 (#48·#184·#419)
 

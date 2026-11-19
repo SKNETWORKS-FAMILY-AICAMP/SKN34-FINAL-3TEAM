@@ -18,6 +18,9 @@ data class TimelineAnswer(
     val followupQuestion: String?,
     val content: Map<String, Any?>,
     val processStatus: ProcessStatus,
+    /** 생각·작성 시간(초, P28). 없으면 둘 다 null */
+    val thinkingSeconds: Int? = null,
+    val writingSeconds: Int? = null,
 )
 
 /** 판정 처리 상태 (api-spec 1.5). 보류(HELD)는 결과, 실패(FAILED)는 처리 상태로 구분 */

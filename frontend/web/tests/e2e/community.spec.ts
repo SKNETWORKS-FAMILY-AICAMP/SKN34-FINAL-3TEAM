@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 // useGoogleIdentity는 React 훅이 아니라 이름만 바꿔 쓴다(oxlint rules-of-hooks)
-import { newParent, useGoogleIdentity as signInWithGoogle } from './support/google.ts'
+import { admin, newParent, useGoogleIdentity as signInWithGoogle } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { loginStudent, solveNarrative, startExtraMission, studentMenu } from './support/student.ts'
 
@@ -29,7 +29,7 @@ async function newStudent(browser: Browser, prefix: string, consent: boolean) {
   return { nickname, ...student }
 }
 
-test('보호자 동의 → 친구 공개 → 같은 미션 마무리 학생이 열람·반응', async ({ browser }) => {
+test('친구 공개·열람 → 신고로 숨김 → 관리자 재공개 → 학생 열람·반응', async ({ browser }) => {
   const contexts: BrowserContext[] = []
   try {
     const author = await newStudent(browser, '작성', true)
@@ -60,6 +60,52 @@ test('보호자 동의 → 친구 공개 → 같은 미션 마무리 학생이 �
     const reactions = viewer.page.getByRole('group', { name: `${author.nickname}의 생각에 반응하기`, exact: true })
     const post = viewer.page.locator('li', { has: reactions })
     await expect(post.getByText(answer)).toBeVisible()
+    const comment = `공유물 신고 시연 ${viewer.nickname}`
+    await post.getByRole('button', { name: '이상한 글 신고' }).click()
+    await post.getByRole('textbox').fill(comment)
+    const submitted = viewer.page.waitForResponse((response) =>
+      new URL(response.url()).pathname === '/api/v1/error-reports' && response.request().method() === 'POST')
+    await post.getByRole('button', { name: '신고하기', exact: true }).click()
+    const submission = await submitted
+    expect(submission.status()).toBe(201)
+    const { reportId } = await submission.json() as { reportId: string }
+    await expect(post).toHaveCount(0)
+
+    const adminContext = await browser.newContext()
+    contexts.push(adminContext)
+    await signInWithGoogle(adminContext, admin)
+    const adminPage = await adminContext.newPage()
+    await adminPage.goto('/admin/login')
+    await adminPage.getByRole('link', { name: 'Google 계정으로 계속하기' }).click()
+    await adminPage.waitForURL('**/admin/home**')
+    await adminPage.getByRole('link', { name: '오류 신고', exact: true }).click()
+    const waitForOriginal = () => adminPage.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/v1/admin/error-reports/${reportId}` && response.request().method() === 'GET')
+    const hidden = waitForOriginal()
+    await adminPage.locator('article', { hasText: comment }).getByRole('button', { name: '신고 상세·연결 기록 열람' }).click()
+    expect((await (await hidden).json()).linkedPost.status).toBe('HIDDEN_REPORT')
+    const report = adminPage.getByRole('dialog', { name: '신고 연결 기록 검토' })
+    await expect(report.getByText(answer, { exact: true })).toBeVisible()
+    await report.getByRole('textbox', { name: '검토 사유' }).fill('공유물 원문 확인')
+    await report.getByRole('button', { name: '검토 시작' }).click()
+    const decision = report.getByLabel('공유물 처리 결과')
+    await expect(decision).toHaveValue('REMOVED')
+    await decision.selectOption('VISIBLE')
+    await report.getByRole('textbox', { name: '검토 사유' }).fill('다시 공개할 수 있는 답변입니다.')
+    const save = report.getByRole('button', { name: '검토 결과 저장' })
+    await expect(save).toBeEnabled()
+    const restored = waitForOriginal()
+    await save.click()
+    expect((await (await restored).json()).linkedPost.status).toBe('VISIBLE')
+    await expect(report.getByRole('heading', { name: '검토 완료 · 다시 공개' })).toBeVisible()
+    await expect(decision).toHaveCount(0)
+
+    // 학습 서비스까지 반영된 공유물을 새로 조회한다.
+    await studentMenu(viewer.page, '홈')
+    await studentMenu(viewer.page, '친구 생각')
+    await viewer.page.getByRole('group', { name: '어떤 미션을 볼까요?' }).getByRole('button', { name: mission }).click()
+    await expect(post.getByText(answer)).toBeVisible()
+
     // 학생 화면 "까닭" → "이유"(사용자 결정 2026-11-15, REACTION_LABELS.CLEAR_REASON)
     const clear = reactions.getByRole('button', { name: '이유가 잘 보여' })
     await expect(clear).toHaveAttribute('aria-pressed', 'false')

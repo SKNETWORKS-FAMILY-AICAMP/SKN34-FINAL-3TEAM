@@ -408,7 +408,7 @@ class SupportIntegrationTest: IntegrationTestSupport() {
   try {
    for(status in listOf(403,404)) {
     stub.respond={ lookupProblem(status) }
-    for(action in listOf<()->JsonNode>({ supportClient.target("JUDGMENT",judgment,student) },{ supportClient.original(attempt,student) })) {
+    for(action in listOf<()->Any>({ supportClient.target("JUDGMENT",judgment,student) },{ supportClient.original(attempt,student) })) {
      assertFailsWith<com.sagomungchi.core._common.exception.BusinessException> { action() }
      assertEquals(previous,UserContextHolder.currentOrNull());assertEquals(student.toString(),stub.requests.last().header("X-Student-Scope"))
     }

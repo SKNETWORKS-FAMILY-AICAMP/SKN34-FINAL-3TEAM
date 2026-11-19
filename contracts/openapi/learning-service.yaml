@@ -3415,7 +3415,7 @@ components:
     AnswerItem:
       type: object
       additionalProperties: false
-      required: [answerId, version, submittedAt, inputType, text, followupId, content, feedback]
+      required: [answerId, version, submittedAt, inputType, text, followupId, content, feedback, thinkingSeconds, writingSeconds]
       properties:
         answerId: {type: string, format: uuid}
         version: {type: integer, minimum: 1}
@@ -3425,6 +3425,8 @@ components:
         followupId: {type: [string, 'null'], format: uuid}
         content: {type: object, description: 입력 방식에 쓰는 필드만}
         feedback: {$ref: '#/components/schemas/FeedbackResult'}
+        thinkingSeconds: {type: [integer, 'null'], minimum: 0, maximum: 86400, description: '생각 시간(초, P28 #801). writingSeconds와 함께 있거나 함께 null'}
+        writingSeconds: {type: [integer, 'null'], minimum: 0, maximum: 86400, description: '작성 시간(초, P28 #801). thinkingSeconds와 함께 있거나 함께 null'}
     Essay:
       type: object
       additionalProperties: false
@@ -3471,6 +3473,15 @@ components:
           items: {$ref: '#/components/schemas/Assignment'}
         dictatedByGuardian: {type: boolean, default: false}
         followupId: {type: [string, 'null'], format: uuid, description: 보완 답변이 답하는 되묻기}
+        thinkingSeconds:
+          type: [integer, 'null']
+          description: >-
+            선택. 생각 시간(문제 화면·되묻기 질문 표시 → 답변 칸 첫 입력) 정수 초(P28 #801). 정수가 아니면 400.
+            고르기 방식·dictatedByGuardian true·둘 중 하나 없음·0 미만·86400 초과면 제출은 받고 두 칸 모두 null로 저장.
+            같은 Idempotency-Key 재요청 비교에서 제외
+        writingSeconds:
+          type: [integer, 'null']
+          description: 선택. 작성 시간(첫 입력 → 제출) 정수 초(P28 #801). 저장 규칙은 thinkingSeconds와 같음
     AnswerCreated:
       type: object
       additionalProperties: false

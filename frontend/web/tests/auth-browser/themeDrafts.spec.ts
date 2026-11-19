@@ -36,6 +36,7 @@ test('테마 요청·생성 중 상태·필터 연결: 생성 중에는 채택·
   const calls = await confirmedResponses(context)
   await page.goto('/admin/theme-drafts')
   await expect(page.getByRole('heading', { name: '테마 초안 요청·상태', exact: true })).toBeVisible()
+  await page.getByText('새 테마 초안 요청', { exact: true }).click()
   await page.getByLabel('생성 학년').selectOption('G6')
   await page.getByLabel('생성 적용 주').fill('2026-11-16')
   await page.getByLabel('테마 주제 키워드').fill('도서관')
@@ -104,6 +105,7 @@ test('완료 초안 상세: 이야기·요일 문제·실패를 보이고 채택
 test('유형별 선택은 기존 성취기준 표를 사용하고 요청에 지정한 필드만 보낸다', async ({ page, context }) => {
   const calls = await confirmedResponses(context)
   await page.goto('/admin/theme-drafts')
+  await page.getByText('새 테마 초안 요청', { exact: true }).click()
   await page.getByLabel('생성 적용 주').fill('2026-11-16')
   await page.getByText('생각 유형별 성취기준·입력 방식 직접 지정', { exact: true }).click()
   await page.getByRole('checkbox', { name: '분석하기 직접 지정', exact: true }).check()
@@ -117,6 +119,7 @@ test('유형별 선택은 기존 성취기준 표를 사용하고 요청에 지�
 test('접수 결과가 불명확한 503은 성공 처리와 자동 재요청 없이 목록 확인을 안내한다', async ({ page, context }) => {
   const calls = await confirmedResponses(context, true, true)
   await page.goto('/admin/theme-drafts')
+  await page.getByText('새 테마 초안 요청', { exact: true }).click()
   await page.getByLabel('생성 적용 주').fill('2026-11-16')
   await page.getByRole('button', { name: '테마 초안 생성 요청', exact: true }).click()
   await expect(page.getByRole('note').filter({ hasText: '새로 요청하기 전에 목록을 먼저 확인' })).toBeVisible()
@@ -146,6 +149,7 @@ test('기존 테마 식별자 링크로 편집기를 열고 연결된 미션 5�
 test('학년 네 개로 요청하고 논술 선택은 초5·초6에서만 제공하며 성취기준은 학년군으로 조회한다', async ({ page, context }) => {
   const calls = await confirmedResponses(context)
   await page.goto('/admin/theme-drafts')
+  await page.getByText('새 테마 초안 요청', { exact: true }).click()
   const grade = page.getByLabel('생성 학년', { exact: true })
   await expect(grade.locator('option')).toHaveText(['초3', '초4', '초5', '초6'])
   await page.getByLabel('생성 적용 주').fill('2026-11-16')

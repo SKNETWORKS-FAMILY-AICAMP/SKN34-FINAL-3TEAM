@@ -1,4 +1,5 @@
 import type { Mission, Period, ThinkingType, InputType, PublicAttempt } from '../classroom.ts'
+import type { PostStatus } from '../retention.ts'
 import type { AchievementStandard } from './missionStandards.ts'
 import { allowsLevel, covers, elementCodesFit, isAnswerCode, isLevelShape, isValidElementCode } from './missionStandards.ts'
 export type Permission = 'CONTENT' | 'PAYMENT_VIEW' | 'PAYMENT_REFUND' | 'SERVICE_OPS'
@@ -169,6 +170,8 @@ export interface ModelVersion {
   activatedAt?: string
   createdAt: string
 }
+export type CommunityReviewResult = 'VISIBLE' | 'REMOVED'
+
 export interface ErrorReport {
   reportId: string
   status: 'RECEIVED' | 'IN_REVIEW' | 'RESOLVED'
@@ -176,7 +179,18 @@ export interface ErrorReport {
   targetId: string
   category: string
   comment: string
-  reviewReason?: string
+  reviewReason?: string | null
+  reviewResult?: string | null
+  linkedPost?:
+    | { postId: string; available: false }
+    | {
+      postId: string
+      available: true
+      missionId: string | null
+      status: PostStatus
+      answer: { inputType: string; text: string; content: Record<string, unknown> } | string | null
+      authorStudentId: string
+    }
   linkedAttempt?: PublicAttempt
   corrections: { reason: string; corrected: string; createdAt: string; impact: string | Record<string, string | string[]> | null }[]
 }

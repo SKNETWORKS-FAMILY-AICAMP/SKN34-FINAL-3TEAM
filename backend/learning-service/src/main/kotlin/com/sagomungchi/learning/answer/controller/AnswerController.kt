@@ -1,5 +1,10 @@
 package com.sagomungchi.learning.answer.controller
 
+import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.core.JsonToken
+import com.fasterxml.jackson.databind.DeserializationContext
+import com.fasterxml.jackson.databind.JsonDeserializer
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.answer.domain.Answer
@@ -31,13 +36,31 @@ data class SubmitRequest(
     val assignments: List<Assignment>? = null,
     val dictatedByGuardian: Boolean = false,
     val followupId: UUID? = null,
+    /** 선택 칸, 정수 초 (P28). 없거나 null이면 시간 없음, 정수가 아니면 400 */
+    @JsonDeserialize(using = WholeSecondsDeserializer::class) val thinkingSeconds: Long? = null,
+    @JsonDeserialize(using = WholeSecondsDeserializer::class) val writingSeconds: Long? = null,
 ) {
     fun toCommand() = SubmitCommand(
         inputType = inputType,
         content = AnswerContent(text, finalAnswer, steps, essay, choiceIds, assignments),
         dictatedByGuardian = dictatedByGuardian,
         followupId = followupId,
+        thinkingSeconds = thinkingSeconds,
+        writingSeconds = writingSeconds,
     )
+}
+
+/**
+ * 생각·작성 시간 칸은 JSON 정수만 받는다 (api-spec 3.1). Jackson 기본값은 1.5·"95"도 정수로 바꿔 받으므로 직접 읽는다.
+ * Long을 넘는 큰 정수는 범위 밖 값으로 남겨 AnswerTime이 null로 저장하게 함(제출은 막지 않음)
+ */
+class WholeSecondsDeserializer : JsonDeserializer<Long?>() {
+    override fun deserialize(parser: JsonParser, context: DeserializationContext): Long? {
+        if (parser.currentToken != JsonToken.VALUE_NUMBER_INT) {
+            return context.handleUnexpectedToken(Long::class.java, parser) as Long?
+        }
+        return if (parser.numberType == JsonParser.NumberType.BIG_INTEGER) Long.MAX_VALUE else parser.longValue
+    }
 }
 
 /** 201 응답 (api-spec 3.1). 판정은 피드백 요청 전이라 PENDING */

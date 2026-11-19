@@ -12667,6 +12667,20 @@ components:
           description: 입력 방식에 쓰는 필드만
         feedback:
           $ref: '#/components/schemas/DashboardFeedbackResult'
+        thinkingSeconds:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 86400
+          description: 생각 시간(초, P28 #801). learning 값을 그대로 전달, writingSeconds와 함께 있거나 함께 null. 학생 화면은 표시하지 않음
+        writingSeconds:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 86400
+          description: 작성 시간(초, P28 #801). learning 값을 그대로 전달
     DashboardFeedbackResult:
       type: object
       additionalProperties: false

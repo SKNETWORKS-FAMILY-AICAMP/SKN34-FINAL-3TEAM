@@ -1,3 +1,4 @@
+import type { ErrorReport } from '../../domain/admin/operations.ts'
 import type { ThemeGrade } from '../../domain/admin/retention.ts'
 import type { Child, Mission } from '../../domain/classroom.ts'
 import {
@@ -92,6 +93,7 @@ interface State {
   community:Record<string, { enabled: boolean; updatedAt: string | null }>
   consent: Record<string, boolean>
   posts: MockPost[]
+  communityReports: { reporterId: string; key: string; report: ErrorReport }[]
   /** postId → studentId → 반응 */
   reactions: Record<string, Record<string, Reaction[]>>
   reviewViews: string[]
@@ -184,6 +186,7 @@ const empty = (): State => ({
   community: {},
   consent: {},
   posts: [],
+  communityReports: [],
   reactions: {},
   reviewViews: [],
   items: seedItems(),

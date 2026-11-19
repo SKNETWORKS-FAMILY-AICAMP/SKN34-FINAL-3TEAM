@@ -3,7 +3,7 @@
 - 근거: [아키텍처 설계](architecture.md) 2장(레이어·의존 규칙·폴더), [API 명세서](api-spec.md), [ERD](erd.md), [기능명세서](functional-spec.md)
 - 범위: 5개 서비스의 기능별 Presentation · Application · Domain · Infrastructure 클래스와 의존 관계, 공개 메서드 시그니처
 - 상태 전이 규칙은 [상태 다이어그램](state-diagram.md), 호출 순서는 [시퀀스 다이어그램](sequence-diagram.md)
-- 클래스명은 구현 기준 이름. 필드는 ERD 컬럼과 같아 생략하고 상태 전이·검증 메서드만 표기
+- 클래스명은 설계 단위 이름. 구현 이름이 다른 곳은 각 절의 '구현 이름'·'구현 메모'에 적음. 필드는 ERD 컬럼과 같아 생략하고 상태 전이·검증 메서드만 표기
 - `(P04)` 형태는 확정 정책 번호, 내용은 [기능명세서 1.4](functional-spec.md#14-확정-정책)
 
 ---
@@ -758,8 +758,8 @@ classDiagram
   }
   class AiClient {
     <<client>>
-    +streamAnalysis(request) Flow~AnalysisEvent~
-    +cancel(streamId)
+    +stream(request, call, onEvent)
+    +reportTemplate(request) JsonNode
   }
   class ChildAuthorizationService { <<service>> }
   class SseEmitters { <<web>> }
@@ -792,7 +792,7 @@ classDiagram
 - `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`, `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
 - `DashboardController`(학생 3개·학부모 4개 조회) → `LearningRecordService` → `LearningRecordClient` → `LearningClient`. 집계·home·상세는 learning 기록 API가 계산하고 core는 수치를 계산하지 않음 ([core 보고서](../report/core-gateway.md))
 - `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
-- `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
+- `AnalysisStreamService`(그림의 `ConversationService.stream`): `AiClient.stream`이 ai SSE 프레임을 `AnalysisEvent`(`Status`·`Delta`·`Result`·`Clarification`·`Error`·`Done`)로 바꿔 넘긴다. 이벤트 모양(`status`의 `state = RUNNING`·`message`, `delta`의 `text`, `error`의 공개 형식 `code`, 모르는 이벤트 이름)이 틀리면 client가 502 `AI_INVALID_RESPONSE`로 막고, service는 이벤트 순서(첫 `status` 전 `delta`·`result` 금지, 종료 뒤 `done`만)와 `result`·`clarification` 업무 검증(`ConversationService.validateResult`·`validateClarification`)만 한다(#792). `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AnalysisCall.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
 - 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2)
 - SSE 처리를 별도 스레드(executor)에서 실행하면 `UserContextHolder`(ThreadLocal) 값이 전달되지 않음 → `SseEmitters.open(context, …)`이 요청 스레드에서 캡처한 컨텍스트를 작업 스레드에서 설정·해제 (#39)
 
@@ -861,7 +861,18 @@ classDiagram
   class ReportClient {
     <<client>>
     +get(studentId, path, query, narrativeEnabled) JsonNode
+    +reports(childId, status, periodType) ArrayNode
+    +report(job, reportId, revision, narrativeEnabled) ReportDocument
+    +file(job, reportId, format, narrativeEnabled) Pair
+    +evidence(job, reportId, itemId) JsonNode
     +reconcile(job) ReportReconciliation
+  }
+  class ReportDocument {
+    <<client DTO>>
+    +reportId UUID
+    +withoutNarrative()
+    +withoutOriginals()
+    +withoutProblemOriginals()
   }
   class NotificationController {
     <<controller>>
@@ -923,6 +934,7 @@ classDiagram
   ReportNotificationListener --> NotificationService
   ReportCommandWriter --> OutboxWriter
   ReportQueryService --> ReportClient
+  ReportClient ..> ReportDocument
   ReportQueryService --> ReportViewRepository
   ReportJobService ..> ReportJob
   NotificationController --> NotificationService
@@ -940,6 +952,7 @@ classDiagram
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
 - 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
+- report 응답 계약 검사는 `ReportClient`(#792): 목록 `reports`는 모든 쪽을 모으며 항목마다 자녀·식별자·회차·기간·요청한 기간 종류를 검사하고 빠진 `periodType`을 `WEEKLY`로 채운다. 상세 `report`는 작업의 자녀·기간 종류·기간·요청 회차와 맞을 때만 `ReportDocument`를 만들고, 다운로드 `file`은 서술 칸 존재와 링크(http(s) 절대 주소·사용자 정보 없음·만료 시각)를 검사한다. 틀리면 502 `REPORT_CONTRACT_INVALID`. 어느 칸이 서술·원문인지는 `ReportDocument`가 알고, 언제 거를지(서술 권한 `narrativeEnabled`, 학부모 공유 `parentSharingEnabled`, 일일 상세 권한)는 공개 설정·상품 권한 업무 규칙이라 `ReportQueryService`가 정한다
 - 리포트 인가는 controller가 아니라 service 안에서 한다. `ReportQueryService`·`ReportViewService`는 `reportId`로 소유 작업(`ReportJobRepository.byReport`)을 찾은 뒤 `ReportAccessService.parent`(학부모 역할 + `StudentAccessService.requireLinked`)로 확인하고, `ReportClient.get`이 `studentScope`를 그 학생 한 명으로 좁혀 report에 전달한다. 재생성은 `ReportJobService.regenerate` → `ReportAccessService.regeneration`(학부모는 연결 확인, 관리자는 `SERVICE_OPS`) (3.1)
 - 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler`·`DailyReportScheduler`(P24, #390) + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
 
@@ -1123,7 +1136,10 @@ classDiagram
   }
   class SupportLearningClient {
     <<client>>
-    +correctJudgment(judgmentId, command, idempotencyKey)
+    +target(type, id, studentId) SupportTarget
+    +original(attemptId, studentId) JsonNode
+    +judgedAnswer(attemptId, studentId, judgmentId) UUID
+    +correctJudgment(judgmentId, command, idempotencyKey) CorrectionResult
   }
   class LlmUsageConsumer {
     <<consumer>>
@@ -1316,7 +1332,7 @@ classDiagram
 ```
 
 - 정정 영향(#244): `SupportService` → `ReportSupportService.affected`·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
-- `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
+- `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). learning 지원 응답 해석은 client가 맡는다(#792): `target`은 `SupportTarget(studentId, attemptId, previousResult)`(학생·시도 ID가 UUID가 아니면 502 `SUPPORT_INVALID_RESPONSE`), `judgedAnswer`는 시도 원문에서 정정한 판정의 답변 ID, `correct`는 검사한 `CorrectionResult(previousResult, impact, body)`. `SupportService`는 그 값을 신고 기록과 대조(다르면 409)하고 정정 영향을 조합한다. `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
 - 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), 큐 현황 = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
 - #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. `AiUsageController`는 자기 기능 service만 부르도록 `usage/controller`에 둔다(#422, 경로 `GET /api/v1/admin/ai-usage` 동일). 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. 나머지 운영 기능은 #47에서 구현됨(위 구현 이름).
@@ -1325,7 +1341,7 @@ classDiagram
 - `OperationsQueueService` → `QueueManagementClient`: RabbitMQ 관리 API(15672) 조회, `definitions.json`의 고정 35개 큐(기본 큐 7개 × 기본·재시도 3·DLQ) 길이·DLQ 적재량 (참고 레포 `QueueOperations*`, api-spec 2.8.1)
 - 모델 파일 사전 검사(#368): `ModelPreflightController`(`POST /api/v1/admin/models/preflight`, SERVICE_OPS) → `ModelPreflightService` → `admin/client/ScoringPreflightClient`(`InternalRestClientFactory` 20초·재시도 없음) → scoring `POST /internal/models/preflight`. 결과·오류는 `MissionAuditRepository`(MyBatis `audit_log`, `target_type = MODEL_VERSION`, 대상 ID 없음)로 감사 기록. 검사 대상·결과 값 객체는 `admin/domain/ModelPreflight.kt`, 모르는 칸 거부는 controller DTO `ModelPreflightRequest`·`RegistrationArtifactRequest`가 맡고 domain은 Jackson에 의존하지 않는다(#422, api-spec 5.2.1, scoring 6장 `preflight.py`)
 - 모델 로딩 상태(#370): scoring `ModelLoadingReporter`가 발행한 `model.loading.reported`를 `admin/consumer/ModelLoadingConsumer`(큐 `core.model.loading.reported`, `RetryingConsumer`)가 받아 `ModelLoadingService.record`로 `model_loading_report`에 Pod·인스턴스별 최신 상태를 저장한다. `ModelLoadingController`(`GET /api/v1/admin/model-loading`)가 `list`로 조회 (아키텍처 1.4). 저장·조회·삭제 SQL은 `ModelLoadingRepository`(MyBatis `ModelLoadingMapper`), 1일 지난 보고 정리는 `admin/scheduler/ModelLoadingCleanupScheduler`가 1시간마다 `ModelLoadingService.cleanup` 호출(#422)
-- 재학습 자동 등록·표현 검토(#725, 구현 #728): `InternalModelVersionController.registerFromPipeline`(`POST /internal/model-versions`, ops 토큰)은 `ModelVersionService.registerFromPipeline` → `ModelPreflightService.check`(actor = 재학습 계정 `app.model-registry.pipeline-actor-id`) → PASS면 기존 `register`와 같은 저장·감사(actor 같음). `tox-` MODEL·`registration.source = PIPELINE`·`evaluation.recommendation` 필수 검사는 service에서. 관리자 표현 검토는 `learning/controller/AdminExpressionReviewsController`가 관리자 미션처럼 learning `/internal/admin/expression-reviews…`로 넘기고 `EXPRESSION_REVIEW_VIEW`·`EXPRESSION_REVIEW_LABEL` 감사 기록(api-spec 2.8·4.1.5)
+- 재학습 자동 등록·표현 검토(#725, 구현 전 #728): `InternalModelVersionController.registerFromPipeline`(`POST /internal/model-versions`, ops 토큰)은 `ModelVersionService.registerFromPipeline` → `ModelPreflightService.check`(actor = 재학습 계정 `app.model-registry.pipeline-actor-id`) → PASS면 기존 `register`와 같은 저장·감사(actor 같음). `tox-` MODEL·`registration.source = PIPELINE`·`evaluation.recommendation` 필수 검사는 service에서. 관리자 표현 검토는 `learning/controller/AdminExpressionReviewController`가 관리자 미션처럼 learning `/internal/admin/expression-reviews…`로 넘기고 `EXPRESSION_REVIEW_VIEW`·`EXPRESSION_REVIEW_LABEL` 감사 기록(api-spec 2.8·4.1.5)
 - #336 구현(#355): `learning/controller/AdminMissionDraftsController`가 성취기준 표·미션 초안 경로를 같은 방식으로 learning에 넘기고 초안 요청·채택·버리기를 감사 기록한다(api-spec 2.8). 사용량 호출 종류(`usage/domain/UsageSummary.CallType`)에 `MISSION_DRAFT`
 
 ### 3.6 커뮤니티·포인트·꾸미기 (community #388 · reward #389 구현)
@@ -1364,7 +1380,8 @@ classDiagram
   class CommunityClient {
     <<client>>
     +createPost(studentId, attemptId) PostResult
-    +missionPosts(missionId, viewerId, seed, page) Page
+    +missionPosts(missionId, viewerId, seed, page) List~MissionPost~
+    +studentPosts(studentId, role, user) List~StudentPost~
     +react(postId, studentId, reaction) ReactionResult
     +setVisibility(studentId, visible, reason)
     +moderate(postId, status, errorReportId)
@@ -1442,6 +1459,7 @@ classDiagram
 - 친구 방 구경(#708): `FriendRoomService.room`이 학생 세션 확인 → `CommunityRepository.reportHidden`(404) → `CommunityClient.postAuthor`(learning #707, 오류 그대로 전달) → `CommunityAuthorMapper.toAuthors`(없으면 404) → `LookUnlockService.equipmentAssets`(착용 여덟 칸 그림 키, 바닥 포함·판매 중단 포함) → `RoomDecorService.friendSpots`(방 소품 놓은 자리, 그림 키만, #704) → `RoomFrameSlotService.friendFrames`(작성자 범위로 learning 앨범) 순서로 조합한다. 트랜잭션 없이 읽기만 해 learning을 기다리는 동안 DB 잠금이 없다. 응답에 학생 ID·회차 키를 넣지 않는다. 커뮤니티 목록 `look.equipped`(`equipmentOf`, 캐릭터 네 슬롯 아이템 코드)는 그대로다
 - #704 바닥·방 소품: 바닥 `FLOOR`는 `LookCatalog.EQUIP_SLOTS`(착용 슬롯)에 들어가 해금·착용 클래스가 그대로다. 방 소품 `DECOR`는 `ITEM_SLOTS`(관리자 등록)에만 있고 `LookUnlockService.purchase`가 해금과 같은 잠금·원장·멱등으로 여러 번 산다(`unlock`은 방 소품을 422로 거절). 목록 `catalog`가 보유 개수 `ownedCount`·등록일 `createdAt`을 채운다. `RewardService.deleteStudent`가 원장보다 먼저 보유 행을 지운다
 - `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
+- 공유물 목록 해석(#792): `CommunityClient.missionPosts`·`studentPosts`가 learning `items[]`를 `MissionPost`·`StudentPost`로 바꾼다(공유물·작성자 ID UUID, 상태는 `Community.POST_STATUSES`, 반응 수는 `Community.REACTIONS` 전부를 0으로 채움, 내 반응은 알려진 종류만). 틀리면 502 `COMMUNITY_INVALID_RESPONSE`. `CommunityService`는 작성자 표시·신고 숨김·공개 설정으로 거르고 상태를 덮어쓰는 업무 판단만 한다
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
 - 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningProxyService.reflection` 돌아보기 저장 성공(또는 `409 ATTEMPT_CLOSED` 재요청) 뒤 `CommunityService.shareCompleted`, 결과 `postId`로 공유 포인트 적립(#389)
 - 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. #387 때는 무료 `THEME_DAY`·`EXTRA`를 셌고, 2026-11-10 개정(core #485)부터 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다
@@ -1736,7 +1754,7 @@ classDiagram
 - 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
 - 답변 표현 검사 (#205): `AnswerService.submit`이 누락 검사 다음·되묻기 연결 검사 전에 `ExpressionPolicy.blockedCategory(AnswerContent.writtenTexts(), mission)`를 부름. 학생이 쓴 칸(서술 글·풀이 최종 답과 단계·논술 4칸)을 칸마다 검사하고 고르기·분류·초안·메모는 검사하지 않음. 범주(`ExpressionCategory`: `PROFANITY`·`SEXUAL`·`HATE`·`THREAT`·`PERSONAL_INFO`)가 나오면 저장·판정 없이 `422 ANSWER_INAPPROPRIATE`(`detail`은 범주별 고정 문구), 로그는 `attemptId`·`category`만. 목록은 `resources/answer-filter`(korcen·우리말샘·팀 조정)를 `answer/repository/ExpressionPolicyConfig`가 읽어 빈으로 만들고, domain은 Kotlin 정규식만 씀. `HATE`와 맥락 단어(`새끼`)는 미션 본문(제목·질문·안내·선택지·그룹)에 나오면 허용
 - 표현 분류 모델 단계 (#688): `AnswerService.submit`이 시도 행 잠금 전에 `ToxicityClient.check(writtenTexts)`로 scoring 결과를 받아 둠(공백 칸 제외, 칸 순서대로 앞 20칸·합계 앞 1,500자까지만). 단어 목록을 통과한 뒤 그 결과가 flagged면 `ExpressionCategory.INSULT`로 같은 422(표현 문구). 결과가 없거나(시간 초과·장애·서킷 열림·`active:false`·계약 밖 응답·생략) flagged가 아니면 진행. 로그는 `attemptId`·`category`·건너뜀 사유만
-- 표현 검토 대기 (#725, 구현 #727): `ToxicityResult.review`가 참이고 답변을 저장하면 같은 트랜잭션에서 `ExpressionReviewService.recordGrayZone(answerId, modelVersion)`(UK `(answer_id, source)`라 다시 보내기 중복 없음). 패키지는 `answer/` 아래(`answer/service/ExpressionReviewService`, `answer/controller/AdminExpressionReviewController`·`ExpressionReviewExportController`, `answer/repository/ExpressionReviewRepository`). 커뮤니티 운영 반영(`CommunityService`의 moderation 처리)이 `recordReported`·`autoLabel`을 부른다(`HIDDEN_REPORT` → 행 추가, `REMOVED`·`VISIBLE` → 자동 라벨, 직접 라벨한 행은 그대로). 학생 삭제는 답변보다 먼저 이 학생 답변의 행을 지움(ERD 4.3.2). `export`는 학생이 쓴 칸을 이어 1,500자로 자른 글과 라벨만 반환
+- 표현 검토 대기 (#725, 구현 전 #727): `ToxicityResult.review`가 참이고 답변을 저장하면 같은 트랜잭션에서 `ExpressionReviewService.recordGrayZone(answerId, modelVersion)`(UK `(answer_id, source)`라 다시 보내기 중복 없음). 패키지는 `answer/` 아래(`answer/service/ExpressionReviewService`, `answer/controller/AdminExpressionReviewController`·`ExpressionReviewExportController`, `answer/repository/ExpressionReviewRepository`). 커뮤니티 운영 반영(`CommunityService`의 moderation 처리)이 `recordReported`·`autoLabel`을 부른다(`HIDDEN_REPORT` → 행 추가, `REMOVED`·`VISIBLE` → 자동 라벨, 직접 라벨한 행은 그대로). 학생 삭제는 답변보다 먼저 이 학생 답변의 행을 지움(ERD 4.3.2). `export`는 학생이 쓴 칸을 이어 1,500자로 자른 글과 라벨만 반환
 - `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
 - `AttemptService.finish`: 시도 행을 잠그고(`AttemptRepository.lockById`, 답변 제출·판정 저장과 같은 행) 본인 확인 → 이미 마무리했으면 기록 없이 같은 결과 → 타임라인으로 `FinishPolicy.canFinish`(sequence-diagram 3.3 순서) → `Attempt.finish(now)` → `AttemptRepository.finish`(`WHERE status = 'IN_PROGRESS' AND finished_at IS NULL`) → `FinishResult{finishedAt, reveal, revealKind, checklist}`. `Attempt.finish(now)`는 타임라인을 받지 않아 `canFinish`는 서비스가 먼저 부름
 - 공개 내용(FN-LRN-11): `reveal`은 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설), `revealKind`는 고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`. 체크리스트는 기준표 요소 전체, 이 시도의 처리 완료 판정(`JudgmentService.results`) 중 원문 구절과 함께 충족된 적 있는 요소만 체크하고 가장 최근 구절 표시. 시도 상세도 마무리 뒤에 같은 값
