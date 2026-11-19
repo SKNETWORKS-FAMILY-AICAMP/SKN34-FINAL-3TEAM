@@ -1312,8 +1312,21 @@ def type_rules(t: StoryType, branch: str | None = None) -> str:
     """줄거리 프롬프트에 붙이는 그 종류 규칙 묶음(콘티 틀·결말 포함). branch는 갈래(#779 기준안,
     씨앗이 갈래를 보내기 전에는 None)."""
     roles_in, roles_out = branch_roles(t, "INTRO", branch), branch_roles(t, "OUTRO", branch)
-    intro = ", ".join(f"역할 {i} {role}" for i, role in enumerate(roles_in, 1))
-    outro = ", ".join(f"역할 {i} {role}" for i, role in enumerate(roles_out, 1))
+    # 6컷 틀의 사람 컷이 쓰는 역할만 줌. 뭉치 혼자 컷·엔딩(own)이 맡는 역할(시작 3 출동, 종료 1
+    # 깨달음·2 도착)을 주면 글 모델이 그 내용을 사람 컷에 섞음(종료 3컷 "닫힌 선물 상자 앞에 모여",
+    # 대표 5종 2차 2026-11-19)
+    used = {
+        (scene, s.role)
+        for scene, specs in layout(NEW_CUTS).items()
+        for s in specs
+        if s.has_people and not s.own
+    }
+    intro = ", ".join(
+        f"역할 {i} {role}" for i, role in enumerate(roles_in, 1) if ("INTRO", i) in used
+    )
+    outro = ", ".join(
+        f"역할 {i} {role}" for i, role in enumerate(roles_out, 1) if ("OUTRO", i) in used
+    )
     return (
         f"줄거리 종류: {t.label}(storyType {t.code}, 후보는 {t.candidate_kind})\n"
         + t.rules

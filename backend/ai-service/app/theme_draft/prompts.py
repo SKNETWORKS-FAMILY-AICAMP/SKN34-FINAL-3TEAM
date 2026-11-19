@@ -48,7 +48,6 @@ from app.theme_draft.checks import (
 )
 from app.theme_draft.families import (
     ALL_CUTS,
-    OUTRO_ARRIVE_HIDDEN,
     STORY_TYPES,
     branch_roles,
     parse_topic,
@@ -611,10 +610,9 @@ def cut_beat(theme: Theme, scene: str, index: int) -> str:
     s = cut_spec(theme, scene, index)
     if not s.has_people or s.own:  # 뭉치 혼자 컷·모든 종류가 같은 엔딩(종료 6컷)은 할 일 그대로
         return s.beat
-    content = roles[s.role - 1]
-    if (scene, index) == ("OUTRO", 3) and roles[1] != OUTRO_ARRIVE_HIDDEN:
-        content = f"{roles[1]} → {content}"
-    return f"{s.beat}. 내용: {content}"
+    # 종료 3컷에 역할 2(도착)를 합치지 않음: 6컷에서는 도착을 뭉치 달리기 컷이 맡고, 공개 틀은
+    # "드러난 순간"이라 도착 역할("닫힌 선물 상자 앞에 모여")과 부딪혔음(대표 5종 2차 선물 상자)
+    return f"{s.beat}. 내용: {roles[s.role - 1]}"
 
 
 FIX_SYSTEM = (

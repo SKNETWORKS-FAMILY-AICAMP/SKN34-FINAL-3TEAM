@@ -263,3 +263,26 @@ def test_frame_core_is_judged_as_its_own_item_and_flow_fails_only_other_place() 
     assert "빈자리" in families.LOST.intro_cuts[1]
     assert "짐" in families.STORY_TYPES["VEHICLE"].intro_cuts[1]
     assert "소리가 난 쪽" in families.STORY_TYPES["SOUND"].intro_cuts[1]
+
+
+def test_reveal_cut_has_no_arrival_role_and_plan_gives_only_used_roles() -> None:
+    """종료 3컷(공개)에 역할 2(도착)를 합치지 않고, 줄거리 지시에는 6컷 사람 컷이 쓰는 역할만 줌
+    (대표 5종 2차: 선물 공개 컷 글이 도착 역할 '닫힌 선물 상자 앞에 모여'로 시작해 공개 틀과
+    부딪힘). 앞 컷 잇기는 두 단(그림 단계 시간)."""
+    for code, branch in CASES:
+        theme = theme_of(code) | ({"branch": branch} if branch else {})
+        t = families.STORY_TYPES[code]
+        beat = prompts.cut_beat(theme, "OUTRO", 3)
+        arrival = families.branch_roles(t, "OUTRO", branch)[1]
+        assert arrival not in beat, (code, branch)
+        rules_text = families.type_rules(t, branch)
+        assert arrival not in rules_text, (code, branch)  # 종료 역할 2는 주지 않음
+        assert (
+            families.branch_roles(t, "INTRO", branch)[2]
+            not in rules_text.split("시작 콘티 역할")[1].split("\n")[0]
+        )
+    # 앞 컷 잇기 깊이: 잇는 컷의 앞 컷은 잇지 않는 컷(두 단)
+    for specs in cuts.layout(6).values():
+        for s in specs:
+            if s.follows:
+                assert specs[s.follows - 1].follows == 0, s.beat

@@ -234,7 +234,10 @@ _NEW = {
             "고마워하는 말",
             own=True,
             look="The people smile warmly and thankfully at Mungchi.",
-            follows=5,
+            # 종료 5컷이 아니라 3컷을 이음: 3 → 5 → 6으로 줄 서면 다시 그리기가 쌓여 그림 단계가
+            # 300~460초가 됐음(대표 5종 2차 2026-11-19). 3 → (5, 6) 두 단으로. 5 → 6 물건 상태는
+            # 할 일 글("종료 5컷에서 든 물건은 그대로 듦")로 이음
+            follows=3,
             place="ANSWER",
             act="The people turn toward Mungchi and smile warmly from a little distance.",
             frame="FACING_MUNGCHI",

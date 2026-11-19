@@ -265,16 +265,16 @@ def test_images_motion_and_video_off_warning() -> None:
     assert refs[OUTRO_CUTS[0]["scene"]] == 1  # 종료 1컷: 뭉치 혼자 클로즈업
     assert refs[OUTRO_CUTS[2]["scene"]] == 1  # 종료 3컷: 정답 공개(잇는 기준 컷)
     assert refs[OUTRO_CUTS[4]["scene"]] == 2  # 종료 5컷: 인물 기준 그림 + 종료 3컷 그림
-    assert refs[OUTRO_CUTS[5]["scene"]] == 3  # 종료 6컷: 테마 옷 뭉치, 인물 기준 그림 + 종료 5컷
+    assert refs[OUTRO_CUTS[5]["scene"]] == 3  # 종료 6컷: 테마 옷 뭉치, 인물 기준 그림 + 종료 3컷
     outro6 = prompts_with(image, OUTRO_CUTS[5]["scene"])[0][0]
-    assert f"its scene, in Korean: {OUTRO_CUTS[4]['scene']}" in outro6
+    assert f"its scene, in Korean: {OUTRO_CUTS[2]['scene']}" in outro6  # 종료 6컷 ← 3컷(#779)
     assert "something covered stays covered" in outro6
     assert "Use the reference pictures only" not in outro6  # 잇는 컷은 장소도 앞 컷을 따름
     assert "earlier cut" not in prompts_with(image, OUTRO_CUTS[2]["scene"])[0][0]
-    # 앞 컷 그림이 다 그려진 뒤에 잇는 컷을 그림(종료 3 → 5 → 6, 시작 1 → 2·3·6)
+    # 앞 컷 그림이 다 그려진 뒤에 잇는 컷을 그림(종료 3 → 5·6, 시작 1 → 2·3·6, 두 단)
     order = [c[0].split("Scene (Korean): ")[1].split("\n")[0] for c in image.calls[2:]]
     at = order.index
-    assert at(OUTRO_CUTS[2]["scene"]) < at(OUTRO_CUTS[4]["scene"]) < at(OUTRO_CUTS[5]["scene"])
+    assert at(OUTRO_CUTS[2]["scene"]) < min(at(OUTRO_CUTS[4]["scene"]), at(OUTRO_CUTS[5]["scene"]))
     assert all(at(INTRO_CUTS[0]["scene"]) < at(INTRO_CUTS[i]["scene"]) for i in (1, 2, 5))
     mon = prompts_with(image, "장소 마을 mon 길")
     assert len(mon) == 1 and mon[0][1] == 2  # [테마 옷 뭉치, 인물 기준 그림]
@@ -305,7 +305,7 @@ def test_images_motion_and_video_off_warning() -> None:
         INTRO_CUTS[2]["scene"]: INTRO_CUTS[0]["scene"],
         INTRO_CUTS[5]["scene"]: INTRO_CUTS[0]["scene"],
         OUTRO_CUTS[4]["scene"]: OUTRO_CUTS[2]["scene"],
-        OUTRO_CUTS[5]["scene"]: OUTRO_CUTS[4]["scene"],
+        OUTRO_CUTS[5]["scene"]: OUTRO_CUTS[2]["scene"],
     }
     assert all("previousScene" not in u for u in mon_review if "FLOW" not in u["items"])
     assert {tuple(u["items"]) for u in mon_review if "missionQuestion" in u} == {

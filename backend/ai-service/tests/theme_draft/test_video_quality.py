@@ -588,7 +588,7 @@ def test_follow_cuts_point_to_earlier_people_cut() -> None:
         ("INTRO", 3): 1,
         ("INTRO", 6): 1,
         ("OUTRO", 5): 3,
-        ("OUTRO", 6): 5,
+        ("OUTRO", 6): 3,  # 두 단(3 → 5·6), 대표 5종 2차에서 3 → 5 → 6이 그림 시간을 늘림
     }
     for (scene, i), k in follows.items():
         if k:

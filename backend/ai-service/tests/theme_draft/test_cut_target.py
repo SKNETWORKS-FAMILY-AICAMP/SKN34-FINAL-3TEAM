@@ -175,7 +175,8 @@ def test_plan_rules_list_cuts_where_target_or_candidates_appear() -> None:
         "(introCuts 2·3·4·5·6, outroCuts 1·2·4)" in lost
     )
     assert "없다는 말도 쓰지 않는다" in lost
-    assert "찾는 대상은 아직 나오지 않아 scene·action에 쓰지 않음" in lost  # 종료 2컷 틀
+    # 종료 역할 2(도착)는 6컷에서 뭉치 달리기 컷이 맡아 줄거리 지시에 주지 않음(#779)
+    assert "찾는 대상은 아직 나오지 않아 scene·action에 쓰지 않음" not in lost
     prank = families.type_rules(families.PRANK)
     # #779: 동물 종류는 종료 6컷(뭉치에게 고마워함)에 동물이 이미 떠남(target_off_cuts)
     assert "후보(동물) 이름은 정답을 포함해 outroCuts 3·5의 scene·action에만 쓴다" in prank
