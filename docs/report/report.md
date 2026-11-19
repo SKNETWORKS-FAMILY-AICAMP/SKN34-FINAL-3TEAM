@@ -314,7 +314,7 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - 받은 설명의 숫자·점수·등급·금지 표현과 인용을 다시 검사. 인용은 같은 답변·버전 원문과 요청 글 양쪽의 부분 문자열이어야 함. `quote=null`은 정상(인용 영역만 생략)
 - 상태: 하나 이상 검증되면 `INCLUDED`, 대상은 있지만 미활성·실패·검사 탈락이면 `NOT_INCLUDED`, 대상 없음·원문 비공개면 `NO_TARGET`. `weekly_report.verification.explanationState`에 저장, 본문은 `report_item.EXPLANATION`(Alembic `20261110_08`, 항목 CHECK만 확장). 기존 `narrative.modelExplanation`은 계속 null
 - 상세·HTML·PDF·Markdown에 같은 상태와 검증된 설명 표시. 무료 다운로드 변형에는 넣지 않음. core도 현재 이용권·공개 상태로 다시 가림
-- 대기 상한(CPU 실측 전 기준안): `REPORT_EXPLANATION_TIMEOUT_SECONDS=130`(ai 125초 마감보다 길게), `REPORT_EXPLANATION_BUDGET_SECONDS=400`. 최대 3건 순차, 재시도 없음. 상한 초과 시 이미 검증한 항목은 보존
+- 대기 상한: 설명 호출당 `REPORT_EXPLANATION_TIMEOUT_SECONDS`, 설명 단계 전체 `REPORT_EXPLANATION_BUDGET_SECONDS`. 최대 3건 순차, 재시도 없음. 상한 초과 시 이미 검증한 항목은 보존. 이 절 당시 값(CPU 실측 전 기준안 130·400초)은 아래 #747 값으로 바뀜
   - #747부터 `REPORT_NARRATIVE_TIMEOUT_SECONDS=80`, `REPORT_EXPLANATION_TIMEOUT_SECONDS=80`, `REPORT_EXPLANATION_BUDGET_SECONDS=300`(ai가 SageMaker 실시간 호출 1회·마감 75초). 이전 RunPod 콜드 대기값(310·310·950초)은 지움. 근거와 창 밖 동작은 [AI 보고서 24절](ai.md#24-리포트-gemma-sagemaker-호출-전환-747-2026-11-18)
 - 배포 순서: core 사용량(#490) → ai API(#491), learning 점수 공급(#489)과 함께. 공급자가 구버전이면 설명 미포함으로 기존 리포트 유지
 - 미실시: 실제 CPU 모델의 품질·지연 측정(#475), sLLM 서버(#476), 운영 배포
@@ -329,10 +329,10 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 
 ## 27. 설명 후속: 대기·종료 시간, 검사 오탐, 후보 대체 (#508, 2026-11-11)
 
-- **복구 후보 기준 60분 → 4시간**(`app.report.recovery.stale-after` 기본 `PT4H`): 월 00:00에 주간·일일 작업이 함께 생기고 report-worker 1대·prefetch 1로 차례로 처리되어, 60분 기준에서는 설명이 켜진 뒤 약 9건 이후 대기 작업이 `REPORT_NOT_CREATED`로 실패할 수 있었음. 기준 > 주간 설명 대상 수 × (400초 + 기본 생성 시간) + 일일 처리 시간. 데모 30명 기준 약 215분. 학생 수나 설명 시간이 바뀌면 다시 계산. 진짜 유실 작업의 발견은 최대 4시간으로 늦어짐
+- **복구 후보 기준 60분 → 4시간**(`app.report.recovery.stale-after` 기본 `PT4H`): 월 00:00에 주간·일일 작업이 함께 생기고 report-worker 1대·prefetch 1로 차례로 처리되어, 60분 기준에서는 설명이 켜진 뒤 약 9건 이후 대기 작업이 `REPORT_NOT_CREATED`로 실패할 수 있었음. 기준 > 주간 설명 대상 수 × (설명 단계 + 기본 생성 시간) + 일일 처리 시간. 당시 설명 단계 400초로 데모 30명 기준 약 215분, #747 뒤 300초로 약 165분. 학생 수나 설명 시간이 바뀌면 다시 계산. 진짜 유실 작업의 발견은 최대 4시간으로 늦어짐
 - sLLM 가동 창(일 23:50~월 02:00)은 그대로. 창 밖 호출은 설명만 빠지고(`NOT_INCLUDED`) 리포트는 완료
 - 설명 지표는 `explanationState` 비율로 정함([아키텍처 4.7](../design/architecture.md#47-운영-경보-구성-경계-187)). 규칙·임계값은 실측 뒤
-- 종료 유예: report-worker `terminationGracePeriodSeconds` 480초(설명 단계 400초 + 여유 80초). prod에 설명·테마 요약 환경 변수 명시
+- 종료 유예: report-worker `terminationGracePeriodSeconds` 480초(당시 설명 단계 400초 + 여유 80초. #747 뒤 설명 단계 300초 + 기본 생성·렌더·업로드 여유로 값은 유지). prod에 설명·테마 요약 환경 변수 명시
 - 수량 검사 오탐: `KOREAN_COUNT` 앞에 한글 음절이 오면 수 관형사로 보지 않음("정확한 문장" 통과, "한 문장"·"두번" 거부). 요약 검증의 같은 오탐도 해소
 - 후보 선정: 생각 유형마다 최신 답변부터 시도. ai 호출 전 제외(정정·빈 답변·학년·입력 유형·점수 형식·원문 대조 실패)는 같은 유형의 다음 답변으로. ai를 한 번 부른 유형은 결과와 관계없이 다시 부르지 않음(유형당 1회, 최대 3유형)
 - web 설명 본문 `white-space: pre-line`

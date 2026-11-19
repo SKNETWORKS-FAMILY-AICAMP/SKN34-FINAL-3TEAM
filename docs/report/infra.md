@@ -746,7 +746,7 @@ DB 안의 내용(레지스트리 행, 활성 모델·프롬프트, 적용된 mig
 | core | 내부 토큰·브로커 계정 서비스별 키(9.9), `SCORING_URL`·scoring egress, `namespaceDefaultDeny` false → **true**(#657), report-api ingress 제외 |
 | learning | 서비스별 키, `ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`(#652), `MEMORY_EMBEDDING_ENABLED`·`MEMORY_QUERY_REWRITE_*`, Pod Identity agent egress |
 | ai | 서비스별 키, 자산 버킷, Veo(`THEME_VIDEO_*`·`ai-theme-video` Secret·볼륨), `M2_CROSS_CHECK_ENABLED=true`, `EXPLANATION_BASE_URL`(sllm-server), `OPENAI_MODEL` gpt-6.1-terra → gpt-6-luna, 메모리 상한 512Mi → 1Gi, 리포트 Gemma RunPod 주소·키(`ai-provider-credentials`, #751) |
-| report-worker | 서비스별 키, 설명 시간 예산 400초·제한 130초, 테마 요약, 종료 유예 180 → 480초 |
+| report-worker | 서비스별 키, 설명 시간 예산 400초·제한 130초(#747에서 300초·80초, 서술 80초로 바뀜), 테마 요약, 종료 유예 180 → 480초 |
 | report-api·scoring | 서비스별 키, scoring ingress에 core 추가 |
 | 이미지 | 앱 values의 `image`는 저장소에 없음(cd-release가 main SHA digest로 채움). migration 이미지는 `migrations/*.json`에 core·learning `main-c6809ddb65ee`, report `b67d8a462b6b`로 고정 |
 
