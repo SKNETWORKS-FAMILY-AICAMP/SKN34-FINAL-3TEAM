@@ -1154,7 +1154,7 @@ sequenceDiagram
       RW->>RW: 템플릿 요약으로 교체 (narrative.source = TEMPLATE)
     end
   end
-  opt 주간, narrativeEnabled, 원문 공개 (FN-RPT-09, #479·#508, 단계 전체 400초 예산)
+  opt 주간, narrativeEnabled, 원문 공개 (FN-RPT-09, #479·#508·#747, 단계 전체 300초 예산)
     RW->>L: GET /internal/records/students/{id}/attempts?includeModelScores=true (SYSTEM)
     L-->>RW: 기간 내 기록 + modelScores.m2
     alt M2 점수가 있는 답변 없음
@@ -1164,7 +1164,7 @@ sequenceDiagram
       loop 유형별 후보 (ai 호출 전 제외 시 같은 유형 다음 답변)
         RW->>RW: 자격 확인 (정정·빈 답변·학년·입력 유형·M2 점수 형식)
         RW->>L: GET /internal/records/evidence?answerIds= (원문·버전 대조)
-        RW->>A: POST /internal/report-explanations {grade, inputType, text, scores} (호출당 130초, 유형당 1회)
+        RW->>A: POST /internal/report-explanations {grade, inputType, text, scores} (호출당 80초, 유형당 1회)
         A->>X: InvokeEndpoint(LoRA IC 지정, 본문은 OpenAI 호환 형식, 일 23:30~월 02:00 예약 확장으로 1대 기동, #742·#746)
         X-->>A: 설명 초안
         A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 선택
