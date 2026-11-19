@@ -149,6 +149,15 @@ body:has(.admin-shell){margin:0;background:#fff}
 #class-journal .admin-shell .ad-main .ad-tabs button[aria-pressed]{min-height:33px;padding:6px 15px;font-size:12px;border:1px solid transparent;box-shadow:none;background:transparent;color:#748075}
 #class-journal .admin-shell .ad-main .ad-tabs button[aria-pressed=true]{background:#fff;border-color:#dce5dc;color:#315e3b;box-shadow:0 1px 3px #23472a0c}
 #class-journal .ad-mission-tabs{gap:24px;border-bottom-color:#e2e8e2;margin:20px 0;flex-wrap:wrap}
+#class-journal .ad-mission-editor-heading{justify-content:space-between}
+#class-journal .admin-shell .ad-mission-editor-title{font-size:21px;margin:16px 0 6px}
+#class-journal .ad-mission-review{margin:18px 0;padding:16px;background:var(--cj-bg);border:1px solid var(--cj-line);border-radius:8px}
+#class-journal .ad-mission-review h3{margin-top:0}
+#class-journal .ad-mission-review-comment,#class-journal .ad-mission-review-history p{white-space:pre-wrap;overflow-wrap:anywhere}
+#class-journal .ad-mission-review [role=status]:empty{margin:0}
+#class-journal .ad-mission-editor>.ws-grid{margin-block:18px}
+#class-journal .ad-mission-review-history{margin:0;padding-inline-start:20px}
+#class-journal .ad-mission-review-history li+li{margin-top:10px}
 #class-journal .admin-shell .ad-main .ad-mission-tabs button[aria-pressed]{padding:10px 0;background:none;border:0;border-bottom:2px solid transparent;border-radius:0;box-shadow:none;color:#829085}
 #class-journal .admin-shell .ad-main .ad-mission-tabs button[aria-pressed=true]{color:var(--cj-accent);border-bottom-color:var(--cj-accent);font-weight:700}
 /* Content review: separate the request form from the resulting draft. */
@@ -379,17 +388,20 @@ body:has(.admin-shell),#class-journal:has(>.admin-shell){background:#f3f5f7}
 #class-journal .ad-queue-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
 #class-journal .ad-queue-card{min-width:0;background:#fff;border:1px solid #dfe7e0;border-radius:12px;padding:24px}
 #class-journal .ad-queue-card header{display:flex;align-items:center;gap:12px}
-#class-journal .ad-queue-card header>div{min-width:0;flex:1}
-#class-journal .ad-queue-card header>div>span{font-size:11px;color:#8a998c}
-#class-journal .ad-queue-card h2{font:600 15px/1.6 Consolas,monospace;overflow-wrap:anywhere;margin:4px 0 0}
+#class-journal .ad-queue-card h2{min-width:0;flex:1;font-size:17px;line-height:1.5;font-weight:700;overflow-wrap:anywhere;margin:0}
 #class-journal .ad-queue-icon{display:grid;place-items:center;width:42px;height:42px;flex-shrink:0;border-radius:10px;background:#edf5ef;color:#528765}
 #class-journal .ad-queue-card.is-dlq .ad-queue-icon{background:#fff2e8;color:#af794c}
-#class-journal .ad-queue-volume{display:flex;align-items:baseline;gap:12px;margin:30px 0 25px}
+#class-journal .ad-queue-volume{display:flex;align-items:baseline;gap:12px;margin:24px 0 18px}
 #class-journal .ad-queue-volume strong{font:600 40px/1 Arial,sans-serif;color:#284b34}
-#class-journal .ad-queue-volume>span{font-size:12px;color:#8a9686}
-#class-journal .ad-queue-card dl{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;border-top:1px solid #e8eee6;padding-top:16px;margin:0}
-#class-journal .ad-queue-card dt{font-size:11px;color:#85947e}
-#class-journal .ad-queue-card dd{margin:6px 0 0;font-size:19px;font-weight:600;color:#4b6545}
+#class-journal .ad-queue-volume>span,#class-journal .ad-queue-note{font-size:13px;color:#506453}
+#class-journal .ad-queue-breakdown{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;border-top:1px solid #e8eee6;padding-top:14px;margin:0}
+#class-journal .ad-queue-breakdown dt{font-size:13px;color:#506453}
+#class-journal .ad-queue-breakdown dd{margin:4px 0 0;font-size:18px;font-weight:600;color:#284b34}
+#class-journal .ad-queue-technical{border-top:1px solid #e8eee6;margin-top:16px;padding-top:10px;color:#506453;font-size:13px}
+#class-journal .ad-queue-technical summary{width:fit-content;min-height:36px;cursor:pointer}
+#class-journal .ad-queue-technical dl{display:grid;gap:6px;margin:0}
+#class-journal .ad-queue-technical dl>div{display:grid;grid-template-columns:7em minmax(0,1fr);gap:8px}
+#class-journal .ad-queue-technical dd{margin:0;overflow-wrap:anywhere}
 #class-journal .admin-shell .ad-version-record{padding:0;border-radius:10px}
 #class-journal .ad-version-disclosure>summary{display:flex;align-items:center;gap:17px;padding:22px 24px;cursor:pointer;list-style:none}
 #class-journal .ad-version-disclosure>summary::-webkit-details-marker{display:none}

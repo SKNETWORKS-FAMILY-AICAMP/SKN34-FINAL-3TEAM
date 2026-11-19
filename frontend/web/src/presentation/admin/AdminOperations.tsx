@@ -3,12 +3,12 @@ import { ArrowUpRight, BookOpen, CalendarDays, CheckCheck, FilePenLine, Notebook
 import { Link, useSearchParams } from 'react-router'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
-import type { Permission } from '../../domain/admin/operations.ts'
+import type { Audit, Permission } from '../../domain/admin/operations.ts'
 import { auditTargetLabels, callTypeLabels, hasPermission, jobLabels, jobTypeLabels, jobRetryMessage, labelOf, missionLabels } from '../../domain/admin/operations.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { Badge, Empty, Inspector } from './AdminUi.tsx'
-import { date, number } from './adminFormatting.ts'
+import { auditActionLabel, date, modelScopeLabel, number, queueHeading } from './adminFormatting.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 export function AdminOperations({
   page,
@@ -179,29 +179,83 @@ function JobDetail({ id }: { id: string }) {
 }
 function Queues() {
   const q = useAdminQuery(['queues'], signal => adminApi.queues(signal))
+  const totalLabels = { WORK: '대기 또는 처리 중', RETRY: '재시도 대기', DLQ: '실패 보관' }
   return <><QueryFeedback query={q} />{q.data && !q.error && <div className="ad-queue-grid">
-    {q.data.items.map(c => <article className={`ad-queue-card${c.kind === 'DLQ' ? ' is-dlq' : ''}`} key={c.name}>
-      <header><span className="ad-queue-icon"><Server size={21} aria-hidden="true" /></span><div><span>{c.kind === 'DLQ' ? '실패 보관' : c.kind === 'RETRY' ? '재시도 대기열' : '작업 대기열'}</span><h2>{c.name}</h2></div><Badge>{c.state}</Badge></header>
-      <div className="ad-queue-volume"><strong>{number(c.messages)}</strong><span>전체 메시지</span></div>
-      <dl><div><dt>대기</dt><dd>{number(c.messagesReady)}</dd></div><div><dt>처리 중</dt><dd>{number(c.messagesUnacknowledged)}</dd></div><div><dt>소비자</dt><dd>{number(c.consumers)}</dd></div></dl>
-    </article>)}{!q.data.items.length && <Empty>조회된 큐가 없습니다.</Empty>}
+    {q.data.items.map(c => {
+      const unavailable = ['down', 'stopped', 'crashed'].includes(c.state)
+      const attention = unavailable ? '대기열 상태 확인'
+        : c.kind === 'DLQ' && c.messages > 0 ? '실패 원인 확인'
+        : c.kind === 'WORK' && c.messages > 0 && c.consumers === 0 ? '처리 연결 없음' : null
+      return <article className={`ad-queue-card${c.kind === 'DLQ' ? ' is-dlq' : ''}`} key={c.name}>
+        <header>
+          <span className="ad-queue-icon"><Server size={21} aria-hidden="true" /></span>
+          <h2>{queueHeading(c)}</h2>
+          {attention && <Badge tone="danger">{attention}</Badge>}
+        </header>
+        <div className="ad-queue-volume"><strong>{number(c.messages)}건</strong><span>{totalLabels[c.kind]}</span></div>
+        {c.kind === 'WORK' && <dl className="ad-queue-breakdown">
+          <div><dt>처리 대기</dt><dd>{number(c.messagesReady)}건</dd></div>
+          <div><dt>처리 중</dt><dd>{number(c.messagesUnacknowledged)}건</dd></div>
+        </dl>}
+        {c.kind === 'DLQ' && <p className="ad-queue-note">자동 처리에서 제외된 작업입니다.</p>}
+        <details className="ad-queue-technical">
+          <summary>기술 정보</summary>
+          <dl>
+            <div><dt>큐 이름</dt><dd><code>{c.name}</code></dd></div>
+            <div><dt>시스템 상태</dt><dd><code>{c.state}</code></dd></div>
+            <div><dt>처리 구독 수</dt><dd>{number(c.consumers)}</dd></div>
+            {c.kind !== 'WORK' && <>
+              <div><dt>대기 메시지</dt><dd>{number(c.messagesReady)}</dd></div>
+              <div><dt>처리 중 메시지</dt><dd>{number(c.messagesUnacknowledged)}</dd></div>
+            </>}
+          </dl>
+        </details>
+      </article>
+    })}{!q.data.items.length && <Empty>조회된 작업 대기열이 없습니다.</Empty>}
   </div>}</>
 }
 function AuditLog({ period }: { period: Period }) {
   const [target, setTarget] = useState(''), [result, setResult] = useState(''), [search, setSearch] = useState('')
   const q = useAdminQuery(['audit', period, target], signal => adminApi.audits(period, target, signal))
-  const rows = (q.error ? [] : q.data?.items ?? []).filter(a => (!result || a.result === result) && `${a.action} ${a.actorUserId} ${a.targetId ?? ''} ${labelOf(auditTargetLabels,a.targetType)}`.toLowerCase().includes(search.trim().toLowerCase()))
+  const term = search.trim().toLowerCase()
+  const rows = (q.error ? [] : q.data?.items ?? []).map(a => ({
+    ...a,
+    actionLabel: auditActionLabel(a.action),
+    targetLabel: a.targetType === 'JOB' ? '작업' : labelOf(auditTargetLabels, a.targetType),
+  })).filter(a => (!result || a.result === result) &&
+    [a.actionLabel, a.action, a.targetLabel, a.targetType, a.targetId, a.actorUserId].join(' ').toLowerCase().includes(term))
   return <section className="ad-data-surface ad-audit-ledger">
     <div className="ad-data-toolbar"><div><h2>활동 기록</h2></div></div>
     <div className="ad-list-filters"><label className="ad-inline-search"><Search size={16} aria-hidden="true" /><input aria-label="조회된 감사 이력 검색" placeholder="작업·대상·처리자 검색" value={search} onChange={e => setSearch(e.target.value)} /></label><label>대상 유형<select aria-label="감사 대상 유형" value={target} onChange={e => setTarget(e.target.value)}><option value="">전체</option>{Object.entries(auditTargetLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
     <div className="ad-result-tabs" aria-label="감사 결과 필터">{[['','전체 결과'],['SUCCESS','성공'],['FAILURE','실패']].map(([v,l]) => <button key={v} aria-pressed={result === v} onClick={() => setResult(v)}>{l}</button>)}<span>조회된 이력 내 검색</span></div>
     <QueryFeedback query={q} />
-    {q.data && !q.error && <><div className="ad-table-wrap"><table className="ad-table"><thead><tr><th>시각</th><th>작업</th><th>대상</th><th>처리자</th><th>결과</th></tr></thead><tbody>{rows.map(a => <tr key={a.id}>
+    {q.data && !q.error && <><div className="ad-table-wrap"><table className="ad-table"><thead><tr><th>시각</th><th>작업</th><th>대상</th><th>처리자 ID</th><th>결과</th></tr></thead><tbody>{rows.map(a => <tr key={a.id}>
       <td className="ad-time-cell"><time dateTime={a.createdAt}>{date(a.createdAt)}</time></td>
-      <td><strong className="ad-audit-action">{a.action}</strong>{a.targetType === 'MODEL_VERSION' && <details className="ad-audit-detail"><summary>모델 버전 조치 상세</summary>{a.detail ? <dl>{Object.entries({name:'모델 이름',version:'버전',scopes:'적용 범위',reason:'변경 사유',reanalysisPlanned:'재분석 계획 (실행 아님)',previousVersionId:'이전 버전 ID'}).map(([key,label]) => <div key={key}><dt>{label}</dt><dd>{a.detail![key] == null ? '기록 없음' : typeof a.detail![key] === 'boolean' ? (a.detail![key] ? '있음' : '없음') : Array.isArray(a.detail![key]) ? (a.detail![key] as unknown[]).map(String).join(', ') : String(a.detail![key])}</dd></div>)}</dl> : <p>이 기록에는 조회 가능한 상세 정보가 없습니다.</p>}</details>}</td>
-      <td>{labelOf(auditTargetLabels,a.targetType)}<small className="ad-record-id" title={a.targetId ?? undefined}>{a.targetId ?? '—'}</small></td><td><span className="ad-record-id" title={a.actorUserId}>{a.actorUserId}</span></td><td><Badge tone={a.result === 'SUCCESS' ? 'success' : 'danger'}>{a.result === 'SUCCESS' ? '성공' : '실패'}</Badge></td>
+      <td>
+        <strong className="ad-audit-action" title={a.action}>{a.actionLabel}</strong>
+        {a.actionLabel === '기타 작업' && <small className="ad-record-id">{a.action}</small>}
+        {a.targetType === 'MODEL_VERSION' && <AuditModelDetail detail={a.detail} />}
+      </td>
+      <td>{a.targetLabel}<small className="ad-record-id" title={a.targetId ?? undefined}>{a.targetId ?? '—'}</small></td><td><span className="ad-record-id" title={a.actorUserId}>{a.actorUserId}</span></td><td><Badge tone={a.result === 'SUCCESS' ? 'success' : 'danger'}>{a.result === 'SUCCESS' ? '성공' : '실패'}</Badge></td>
     </tr>)}</tbody></table></div>{!rows.length && <Empty>{search || result ? '검색 조건에 맞는 이력이 없습니다.' : '조회 기간의 조치 이력이 없습니다.'}</Empty>}<div className="ad-list-footer"><span>{rows.length}건 표시</span>{(search || result) && <button onClick={() => {setSearch(''); setResult('')}}>검색 초기화</button>}</div></>}
   </section>
+}
+const auditModelFields = {
+  name: '모델 이름', version: '버전', scopes: '적용 범위', reason: '변경 사유',
+  reanalysisPlanned: '재분석 계획 (실행 아님)', previousVersionId: '이전 버전 ID',
+}
+function AuditModelDetail({ detail }: { detail: Audit['detail'] }) {
+  return <details className="ad-audit-detail">
+    <summary>모델 버전 조치 상세</summary>
+    {detail ? <dl>{Object.entries(auditModelFields).map(([key, label]) => {
+      const raw = detail[key]
+      let value = raw == null ? '기록 없음' : String(raw)
+      if (typeof raw === 'boolean') value = raw ? '있음' : '없음'
+      if (key === 'scopes' && Array.isArray(raw)) value = raw.map(scope => modelScopeLabel(String(scope))).join(', ') || '없음'
+      if (key === 'name' && raw === 'judge') value = '판정'
+      return <div key={key}><dt>{label}</dt><dd title={value !== String(raw) && raw != null && typeof raw !== 'boolean' ? String(raw) : undefined}>{value}</dd></div>
+    })}</dl> : <p>이 기록에는 조회 가능한 상세 정보가 없습니다.</p>}
+  </details>
 }
 function Usage({ period }: { period: Period }) {
   const [type, setType] = useState(''), q = useAdminQuery(['usage', period, type], signal => adminApi.usage(period, type, signal))

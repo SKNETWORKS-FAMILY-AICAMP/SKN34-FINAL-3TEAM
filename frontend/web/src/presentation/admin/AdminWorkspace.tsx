@@ -28,7 +28,7 @@ import './admin-design.css'
 import './period-picker.css'
 
 const permissionLabel: Record<Permission, string> = { CONTENT: '콘텐츠', SERVICE_OPS: '서비스 운영', PAYMENT_VIEW: '결제 조회', PAYMENT_REFUND: '환불 승인' }
-const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '큐·DLQ 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '모델·프롬프트 버전', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', 'mission-drafts': '미션 초안 요청·검사', themes: '주간 테마', 'theme-drafts': '테마 초안 요청·상태', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
+const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '작업 대기열 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '모델·프롬프트 버전', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', 'mission-drafts': '미션 초안 요청·검사', themes: '주간 테마', 'theme-drafts': '테마 초안 요청·상태', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
 const icons: Record<string, LucideIcon> = { home: LayoutDashboard, audit: History, jobs: RotateCcw, queues: Workflow, errors: TriangleAlert, support: MessagesSquare, models: Layers, usage: Activity, missions: BookOpen, 'mission-drafts': FilePenLine, themes: CalendarDays, 'theme-drafts': SlidersHorizontal, looks: Palette, payments: CreditCard }
 export function AdminWorkspace() {
   const { session, setSession, setExpired } = useSession(), location = useLocation(), navigate = useNavigate()
@@ -48,7 +48,7 @@ export function AdminWorkspace() {
     { group: '콘텐츠', path: 'themes', label: '주간 테마', visible: can('CONTENT') },
     { group: '콘텐츠', path: 'theme-drafts', label: '테마 초안', visible: can('CONTENT') },
     { group: '콘텐츠', path: 'looks', label: '꾸미기 아이템', visible: can('CONTENT') },
-    ...[['jobs', '작업 재처리'], ['queues', '큐·DLQ'], ['errors', '오류 신고'], ['support', '문의·공지'], ['models', '모델·프롬프트'], ['usage', 'AI 사용량']].map(([path, label]) => ({ group: '서비스 운영', path, label, visible: can('SERVICE_OPS') })),
+    ...[['jobs', '작업 재처리'], ['queues', '작업 대기열'], ['errors', '오류 신고'], ['support', '문의·공지'], ['models', '모델·프롬프트'], ['usage', 'AI 사용량']].map(([path, label]) => ({ group: '서비스 운영', path, label, visible: can('SERVICE_OPS') })),
     { group: '결제', path: 'payments', label: '결제·환불', visible: can('PAYMENT_VIEW') || can('PAYMENT_REFUND') },
   ].filter((n) => n.visible)
   const allowed = nav.some((n) => n.path === page) || page === 'queues' && can('SERVICE_OPS')

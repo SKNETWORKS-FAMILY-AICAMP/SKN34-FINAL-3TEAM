@@ -92,10 +92,31 @@ test('환불 검토는 상세 패널에서 확인하고 명시적 확정 전에�
 
 test('감사 이력 검색과 결과 필터를 초기화하면 원래 목록이 유지된다 @responsive', async ({ page }) => {
   await login(page)
+  await page.evaluate(async () => {
+    const path = '/src/mocks/fixtures/admin/operations.ts'
+    const { audits } = await import(path)
+    const createdAt = new Date().toISOString()
+    audits.push(
+      { id: 'test-audit-model', actorUserId: 'test-ops', action: 'MODEL_ACTIVATE', targetType: 'MODEL_VERSION', targetId: 'prompt-1', result: 'SUCCESS', createdAt, detail: { scopes: ['judgment/grade-3/narrative'] } },
+      { id: 'test-audit-job', actorUserId: 'test-ops', action: 'JOB_RETRY', targetType: 'REPORT', targetId: 'job-1', result: 'FAILURE', createdAt },
+      { id: 'test-audit-mission', actorUserId: 'test-ops', action: 'MISSION_PUBLISH', targetType: 'MISSION', targetId: 'mission-1', result: 'SUCCESS', createdAt },
+    )
+  })
   await navigate(page, '감사 이력')
   const search = page.getByLabel('조회된 감사 이력 검색')
-  await expect(page.getByRole('table')).toBeVisible()
-  const count = await page.locator('.ad-audit-ledger tbody tr').count()
+  const table = page.getByRole('table')
+  const modelRow = table.getByRole('row').filter({ hasText: '모델 버전 활성화' })
+  await expect(modelRow).toBeVisible()
+  const count = await table.locator('tbody tr').count()
+  await search.fill('모델 버전 활성화')
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  await search.fill('MODEL_ACTIVATE')
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  await modelRow.getByText('모델 버전 조치 상세', { exact: true }).click()
+  await expect(modelRow.getByText('초등 3학년 · 서술형 판정', { exact: true })).toBeVisible()
+  await search.clear()
+  await expect(table.getByText('작업 재처리', { exact: true })).toBeVisible()
+  await expect(table.getByText('미션 게시', { exact: true })).toBeVisible()
   await search.fill('존재하지않는-감사기록')
   await expect(page.getByText('검색 조건에 맞는 이력이 없습니다.', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '검색 초기화', exact: true }).click()
@@ -139,6 +160,22 @@ test('알림은 한국 시각과 읽음 상태를 구분하고 화면 안에 표
   expect(box!.y).toBeGreaterThanOrEqual(0)
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1)
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1)
+  await page.setViewportSize({ ...viewport, height: 560 })
+  await dialog.getByRole('button', { name: '수신 설정', exact: true }).click()
+  const body = dialog.getByRole('region', { name: '알림 내용' })
+  const thumb = dialog.locator('.cj-modal-scroll-marker')
+  await expect.poll(() => body.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+  await expect(thumb).toHaveCSS('opacity', '0')
+  const close = dialog.getByRole('button', { name: '창 닫기' })
+  const headerY = (await close.boundingBox())!.y
+  await body.hover()
+  await page.mouse.wheel(0, 250)
+  await expect(thumb).toHaveAttribute('data-visible', 'true')
+  await expect.poll(() => body.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+  expect((await close.boundingBox())!.y).toBe(headerY)
+  await expect(thumb).toHaveCSS('opacity', '0')
+  await body.press('End')
+  await expect(dialog.getByRole('button', { name: '설정 저장', exact: true })).toBeInViewport()
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(bell).toBeFocused()
@@ -173,7 +210,7 @@ test('관리자 메뉴의 정보 영역은 화면 폭 안에 유지된다 @respo
   for (const [label, path] of [
     ['운영 현황', 'home'], ['감사 이력', 'audit'], ['미션 관리', 'missions'], ['미션 초안', 'mission-drafts'],
     ['주간 테마', 'themes'], ['테마 초안', 'theme-drafts'], ['꾸미기 아이템', 'looks'],
-    ['작업 재처리', 'jobs'], ['큐·DLQ', 'queues'], ['오류 신고', 'errors'], ['문의·공지', 'support'],
+    ['작업 재처리', 'jobs'], ['작업 대기열', 'queues'], ['오류 신고', 'errors'], ['문의·공지', 'support'],
     ['모델·프롬프트', 'models'], ['AI 사용량', 'usage'], ['결제·환불', 'payments'],
   ]) {
     await navigate(page, label)
