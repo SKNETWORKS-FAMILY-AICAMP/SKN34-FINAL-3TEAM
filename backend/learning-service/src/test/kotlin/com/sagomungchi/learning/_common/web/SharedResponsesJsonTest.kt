@@ -33,7 +33,8 @@ import org.junit.jupiter.api.Test
 /**
  * #251 공유 응답 DTO를 _common/web으로 옮기며 기능 타입을 빼도(열거값은 이름, 선택지·분류는 같은 모양 DTO, 피드백은 타입 인자)
  * 응답 JSON이 옮기기 전과 같음. 기대값은 옮기기 전 DTO(domain 타입 필드)로 직렬화한 결과.
- * 변환은 쓰는 기능마다 있으므로(mission·attempt·record) 모두 같은 JSON인지 확인
+ * 변환은 쓰는 기능마다 있으므로(mission·attempt·record) 모두 같은 JSON인지 확인.
+ * 답변의 생각·작성 시간(#801)은 옮긴 뒤 더한 칸이라 기대값 끝에 붙임
  */
 class SharedResponsesJsonTest {
     private val json = jacksonObjectMapper().findAndRegisterModules().disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
@@ -45,6 +46,7 @@ class SharedResponsesJsonTest {
     private val answer = TimelineAnswer(
         UUID.fromString("00000000-0000-0000-0000-000000000002"), 2, Instant.parse("2026-11-02T01:02:03.456Z"), InputType.NARRATIVE,
         "답", UUID.fromString("00000000-0000-0000-0000-000000000003"), "되묻기", mapOf("text" to "답"), ProcessStatus.DONE,
+        thinkingSeconds = 95, writingSeconds = 240,
     )
     private val feedback = FeedbackResult(
         ProcessStatus.DONE,
@@ -71,6 +73,6 @@ class SharedResponsesJsonTest {
     private companion object {
         const val MISSION = """{"id":"00000000-0000-0000-0000-000000000001","title":"미션","subject":"국어","grade":5,"gradeMax":6,"thinkingType":"ANALYZE","inputType":"CLASSIFICATION","question":"질문","hint":"안내","sceneUri":"scene.webp","staticSceneUri":"scene.png","choices":[{"id":"c1","label":"햇빛"}],"inputTemplate":["칸"],"categories":[{"id":"g1","label":"하늘"}],"answerUnit":"개","sceneMotion":null}"""
         const val MISSION_ITEM = """{"id":"00000000-0000-0000-0000-000000000001","title":"미션","subject":"국어","grade":5,"gradeMax":6,"thinkingType":"ANALYZE","inputType":"CLASSIFICATION","question":"질문","hint":"안내","sceneUri":"scene.webp","staticSceneUri":"scene.png","choices":[{"id":"c1","label":"햇빛"}],"inputTemplate":["칸"],"categories":[{"id":"g1","label":"하늘"}],"answerUnit":"개","sceneMotion":null,"status":"IN_PROGRESS","attemptId":"00000000-0000-0000-0000-000000000007","position":2,"total":5}"""
-        const val ANSWER = """{"answerId":"00000000-0000-0000-0000-000000000002","version":2,"submittedAt":"2026-11-02T01:02:03.456Z","inputType":"NARRATIVE","text":"답","followupId":"00000000-0000-0000-0000-000000000003","content":{"text":"답"},"feedback":{"status":"DONE","judgment":{"judgmentId":"00000000-0000-0000-0000-000000000004","result":"PARTIAL","trial":true,"elements":[{"elementId":"00000000-0000-0000-0000-000000000005","label":"까닭","code":"ANALYZE_REASON","goodThought":false,"satisfied":true,"quote":"구절","sourceType":"AI_OBSERVATION"}],"heldReason":null,"corrected":false},"followup":{"followupId":"00000000-0000-0000-0000-000000000006","type":"TELL_MORE","question":"더 말해 줄래요?","source":"LLM"},"nextActions":["ANSWER_FOLLOWUP","FINISH"],"versions":{"mission":"M1@1","rubric":"M1@1","model":"m","prompt":"p"}}}"""
+        const val ANSWER = """{"answerId":"00000000-0000-0000-0000-000000000002","version":2,"submittedAt":"2026-11-02T01:02:03.456Z","inputType":"NARRATIVE","text":"답","followupId":"00000000-0000-0000-0000-000000000003","content":{"text":"답"},"feedback":{"status":"DONE","judgment":{"judgmentId":"00000000-0000-0000-0000-000000000004","result":"PARTIAL","trial":true,"elements":[{"elementId":"00000000-0000-0000-0000-000000000005","label":"까닭","code":"ANALYZE_REASON","goodThought":false,"satisfied":true,"quote":"구절","sourceType":"AI_OBSERVATION"}],"heldReason":null,"corrected":false},"followup":{"followupId":"00000000-0000-0000-0000-000000000006","type":"TELL_MORE","question":"더 말해 줄래요?","source":"LLM"},"nextActions":["ANSWER_FOLLOWUP","FINISH"],"versions":{"mission":"M1@1","rubric":"M1@1","model":"m","prompt":"p"}},"thinkingSeconds":95,"writingSeconds":240}"""
     }
 }

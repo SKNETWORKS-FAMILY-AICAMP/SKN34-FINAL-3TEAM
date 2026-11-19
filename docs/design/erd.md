@@ -1201,6 +1201,8 @@ erDiagram
     boolean dictated_by_guardian
     uuid idempotency_key
     timestamptz submitted_at
+    int thinking_seconds "NULL 허용 · 생각 시간(초), 표시→첫 입력, CHECK >= 0 (P28 #801 V23)"
+    int writing_seconds "NULL 허용 · 작성 시간(초), 첫 입력→제출, CHECK >= 0 (P28 #801 V23)"
   }
   judgment {
     uuid id PK
@@ -1295,16 +1297,11 @@ erDiagram
 - 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
 - `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 2026-11-10 개정(#483) 뒤 뜻: `THEME_DAY`는 공개된 테마 문제 신규 시도(월~토, 프리미엄 일요일), `THEME_REVIEW`는 토요일(프리미엄 일요일) 다시 풀기. 값·CHECK는 그대로이며, 당일 풀이는 `completed_at`과 문제 요일로 계산하고 큰 질문 정답 고르기 결과는 `theme_answer_pick`(4.2.1, #484)에 둔다. 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
 
-**`answer` 생각·작성 시간 (P28, 설계 #800, 구현 #801)**: 구현 전. Mermaid 표와 6장은 `scripts/verify_db_schema.py`가 실제 DB와 자동 대조하므로 learning 마이그레이션(#801)과 같은 PR에서 아래 칸을 4.2 Mermaid `answer`로 옮긴다(4.3.2와 같은 방식).
+**`answer` 생각·작성 시간 (P28, 설계 #800, 구현 #801 V23)**: 위 Mermaid `answer`의 `thinking_seconds`(문제 화면, 보완 답변은 되묻기 질문 표시 → 답변 칸 첫 입력)·`writing_seconds`(첫 입력 → 제출), 정수 초.
 
-| 칸 | 형식 | 내용 |
-|---|---|---|
-| `thinking_seconds` | int, NULL 허용 | 문제 화면(보완 답변은 되묻기 질문) 표시 → 답변 칸 첫 입력, 초. CHECK `>= 0` |
-| `writing_seconds` | int, NULL 허용 | 첫 입력 → 제출, 초. CHECK `>= 0` |
-
-- CHECK: 두 칸은 함께 NULL이거나 함께 값(`(thinking_seconds IS NULL) = (writing_seconds IS NULL)`). 24시간(86400초) 초과는 learning이 NULL로 저장해 DB에 들어오지 않는다(api-spec 3.1)
+- CHECK `ck_answer_thinking_seconds`·`ck_answer_writing_seconds`(`>= 0`), `ck_answer_time_pair`(`(thinking_seconds IS NULL) = (writing_seconds IS NULL)`, 두 칸은 함께 NULL이거나 함께 값). 24시간(86400초) 초과·고르기 방식·보호자 받아쓰기는 learning이 NULL로 저장해 DB에 들어오지 않는다(api-spec 3.1)
 - 기존 행은 NULL 그대로(채우지 않음), 기본값 없음. 인덱스 없음(조회는 답변 행과 함께)
-- 같은 시도·키 재전송 비교(`(attempt_id, idempotency_key)`)에서 두 칸은 빼고 본다
+- 같은 시도·키 재전송 비교(`(attempt_id, idempotency_key)`)에서 두 칸은 빼고 본다. 처음 저장한 값이 남는다
 
 ### 4.2.1 주간 테마 (P23, #385 V11·V12)
 
@@ -1886,7 +1883,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V53(V10·V11 결번), learning Flyway V1~V22, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 110개 테이블·955개 컬럼(core 63/537, learning 39/352, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V53(#704 V50 `student_room_decor`·`room_decor_spot`, #723·#758 V51·V52, #764 V53)·learning V22(#775, 인덱스만)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V53(V10·V11 결번), learning Flyway V1~V23, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 110개 테이블·957개 컬럼(core 63/537, learning 39/354, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V53(#704 V50 `student_room_decor`·`room_decor_spot`, #723·#758 V51·V52, #764 V53)·learning V23(#801 `answer` 생각·작성 시간)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

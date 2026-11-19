@@ -6,6 +6,7 @@ import com.sagomungchi.learning.answer.client.ToxicitySkipReason
 import com.sagomungchi.learning.answer.client.ToxicityVerdict
 import com.sagomungchi.learning.answer.domain.Answer
 import com.sagomungchi.learning.answer.domain.AnswerContent
+import com.sagomungchi.learning.answer.domain.AnswerTime
 import com.sagomungchi.learning.answer.domain.ExpressionCategory
 import com.sagomungchi.learning.answer.domain.ExpressionPolicy
 import com.sagomungchi.learning.answer.repository.AnswerRepository
@@ -28,6 +29,9 @@ data class SubmitCommand(
     val content: AnswerContent,
     val dictatedByGuardian: Boolean,
     val followupId: UUID?,
+    /** 웹이 보낸 생각·작성 시간(초, P28). 저장 여부는 AnswerTime.of가 정함 */
+    val thinkingSeconds: Long? = null,
+    val writingSeconds: Long? = null,
 )
 
 @Service
@@ -57,6 +61,7 @@ class AnswerService(
         val mission = missionService.getVersion(attempt.missionVersionId)
         val content = command.content.only(command.inputType)
 
+        // 생각·작성 시간은 같은 요청 비교에서 뺀다(Answer.sameRequestAs). 처음 저장한 시간을 그대로 돌려줌
         answerRepository.findByIdempotencyKey(attemptId, idempotencyKey)?.let { existing ->
             val again = existing.copy(
                 inputType = command.inputType, content = content,
@@ -88,6 +93,7 @@ class AnswerService(
             dictatedByGuardian = command.dictatedByGuardian,
             idempotencyKey = idempotencyKey,
             now = now,
+            time = AnswerTime.of(command.thinkingSeconds, command.writingSeconds, command.inputType, command.dictatedByGuardian),
         )
         answerRepository.insert(answer)
         judgmentService.createPending(answer.id, attempt.rubricVersionId, now)

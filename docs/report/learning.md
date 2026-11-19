@@ -1317,3 +1317,20 @@ kind Postgres(PostgreSQL 17, CPU 한도 500m)에 learning_db를 복사한 비교
 - learning #801: V23 `answer` 두 칸·CHECK 2개(≥ 0, 쌍), 저장·null 규칙, 같은 요청 비교 제외, 조회·4.1.1 노출, ERD 표 → Mermaid
 - web #802: 답변 칸 붙여넣기·끌어다 놓기 막기(안내 없음), 시간 측정·전송, 같은 키 재전송 때 처음 값 유지
 - report #803: `answerTimes[]` 생성과 HTML·Markdown·PDF 표시, 학부모 웹 일일 리포트 화면(`ParentReports.tsx`) 표시(웹 화면이 report 상세를 직접 그리므로 #803에 더함)
+
+### 42.1 learning 저장·조회 구현 (#801, 2026-11-19)
+
+42절 확정 값을 learning에 구현했다. 웹(#802)·report(#803)는 각 소절에서 다룬다.
+
+| 항목 | 구현 | 근거 |
+|---|---|---|
+| 스키마 | V23 `answer.thinking_seconds`·`writing_seconds` int NULL 허용. CHECK `ck_answer_thinking_seconds`·`ck_answer_writing_seconds`(≥ 0), `ck_answer_time_pair`(함께 NULL·함께 값). 기존 행 NULL, 기본값·인덱스 없음. 로컬 `migration.revision` v23 | ERD 4.2. CHECK를 칸별로 나눠 위반 때 어느 칸인지 이름으로 보이게 함 |
+| 요청 칸 | `SubmitRequest`에 선택 `thinkingSeconds`·`writingSeconds`. JSON 정수만 받고 소수·문자열·불리언·배열·객체는 기존 형식 오류 `400 VALIDATION_FAILED` | Jackson 기본값은 `1.5`를 1로, `"95"`를 95로 바꿔 받으므로 전용 역직렬화기(`WholeSecondsDeserializer`)로 막음(api-spec 3.1 "정수가 아니면 400") |
+| 저장 규칙 | `AnswerTime.of`: 고르기 방식(`CHOICE`·`ORDERING`·`CLASSIFICATION`)·`dictatedByGuardian: true`는 null, 둘 중 하나라도 없거나 0 미만·86400 초과면 둘 다 null. 0초와 86400초는 저장 | 측정 오류로 제출을 막지 않음(FN-LRN-10). `Long`을 넘는 큰 정수도 400이 아니라 범위 밖으로 보고 null |
+| 같은 키 재전송 | `sameRequestAs`는 시간을 비교하지 않음. 같은 답이면 시간만 달라도(또는 칸이 없어도) 처음 답변을 201로 돌려주고 처음 저장한 시간을 유지 | core를 거치지 않은 재전송 대비(api-spec 3.1). core는 본문 전체로 비교 |
+| 조회 | 시도 타임라인(`findTimeline`)에서 두 칸을 읽어 학생 시도 상세·기록 조회 `answers[]`와 report 입력(4.1.1) `answers[]`에 `thinkingSeconds`·`writingSeconds`(없으면 null) | 세 응답이 같은 `AnswerItem`을 씀. core는 learning 응답을 그대로 넘기므로 학부모 시도 상세(core `DashboardAnswerItem`)에도 실림 |
+| 계약 | OpenAPI learning `SubmitAnswer`·`AnswerItem`, core `DashboardAnswerItem`에 두 칸. `scripts/verify_db_schema.py` learning 음수·반쪽 CHECK 거부 3건과 0·86400·NULL 허용 | `DashboardAnswerItem`은 `additionalProperties: false`라 칸을 더하지 않으면 실제 응답이 계약과 어긋남 |
+
+- 칸 없는 기존 요청(웹 #802 배포 전)은 그대로 201이고 두 칸 모두 null로 저장된다
+- 학생 화면 표시 여부는 웹이 정한다(표시 안 함, P28). learning은 학생 본인 조회에도 값을 그대로 싣는다(api-spec 3.1 "학생 시도 상세에는 그대로 실린다")
+- 검증(로컬): learning `./gradlew test`(JDK 21 컨테이너, Testcontainers) 635건 실패 0(건너뜀 3, 기존). `scripts/check_db_migrations.py`(일회용 PostgreSQL 17) PASS, learning 39 테이블/354 컬럼 ERD 일치

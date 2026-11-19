@@ -29,6 +29,11 @@ class AdminOperationsContracts(unittest.TestCase):
                 if section=='schemas' and name in ('DashboardAttempt','DashboardPublicAttempt','DashboardAttemptDetail'):
                     self.assertEqual(reviewed['properties'].pop('context')['enum'],['THEME_DAY','THEME_REVIEW','EXTRA'])
                     self.assertNotIn('context',reviewed['required'])
+                # #801 documents the optional answer times core already forwards from learning AnswerItem.
+                if section=='schemas' and name=='DashboardAnswerItem':
+                    for field in ('thinkingSeconds','writingSeconds'):
+                        self.assertEqual(reviewed['properties'].pop(field)['type'],['integer','null'])
+                        self.assertNotIn(field,reviewed['required'])
                 # #367 extends registration only; retain all prior fields in the fingerprint.
                 if section=='schemas' and name=='RegisterModelVersion':
                     reviewed['properties'].pop('registration',None)
