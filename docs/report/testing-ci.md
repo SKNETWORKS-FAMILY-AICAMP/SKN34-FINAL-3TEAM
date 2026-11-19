@@ -355,3 +355,15 @@ report CI의 `Prepare report PDF runtime`에서 Ubuntu 패키지 미러 DNS 일�
 
 develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 이미지 캐시, 작업별 15분 제한과 report 설치 단계 5분 제한을 유지했다. report 설치 명령만 재시도 스크립트 호출로 대체한다.
 병합 후 Linux 설치 장애 테스트 8개와 report 렌더링 테스트 11개가 통과했다. YAML 구조 비교로 최신 develop 대비 report 설치 명령 외 변경이 없음을 확인했다.
+
+## 8. 비밀 정보 스캔 CI (#810)
+
+`.github/workflows/ci-secrets.yml`. NFR-SEC-04 검증. 경로 필터 없이 모든 PR, `develop`·`main` push, 수동 실행에서 돈다. 결정과 걸렸을 때 대응은 [infra 4.3](infra.md#43-비밀-정보-스캔-ci-810).
+
+| job | 검사 | 실패 조건 |
+|---|---|---|
+| gitleaks | Gitleaks 8.30.1 linux x64 공식 배포본을 받아 SHA256·버전 대조 | 체크섬·버전 불일치 |
+| gitleaks | 루트 `.gitleaks.toml`(기본 규칙 + 검토한 합성 값 예외)로 `gitleaks git`. PR은 `base..head`, push는 `before..after`, 수동 실행은 전체 이력. `--redact=100` | 비밀 후보 1건 이상 |
+
+- 체크아웃은 `fetch-depth: 0`, PR은 병합 커밋이 아닌 PR 머리 커밋 기준
+- 실행 요약(`GITHUB_STEP_SUMMARY`)에 검사 범위와 커밋 수를 남긴다
