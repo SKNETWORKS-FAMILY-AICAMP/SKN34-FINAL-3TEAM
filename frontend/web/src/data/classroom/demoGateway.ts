@@ -1,4 +1,5 @@
 import { ApiError } from '../apiClient.ts'
+import type { AnswerTiming } from '../../domain/answerTiming.ts'
 import {
   answerText,
   blankAnswer,
@@ -13,6 +14,7 @@ import {
 } from '../../domain/classroom.ts'
 import type {
   Answer,
+  AnswerContent,
   Attempt,
   Child,
   DemoScenario,
@@ -24,6 +26,7 @@ import type {
   Session,
 } from '../../domain/classroom.ts'
 import type { ClassroomGateway } from './gateway.ts'
+import { MAX_TIMING_SECONDS, isTimedInput } from '../../domain/answerTiming.ts'
 import { DraftConflictError } from './errors.ts'
 export { DraftConflictError } from './errors.ts'
 
@@ -558,7 +561,7 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
       a.helped = true
       return a.mission.hint
     },
-    async submit(id, answer, key, followupId) {
+    async submit(id, answer, key, followupId, timing) {
       const a = own(id)
       const used = keys.get(id + ':' + key)
       if (used) return copy(db.get(used)!)
@@ -595,6 +598,7 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
         followupId,
         feedback: { status: 'PENDING', nextActions: [] },
         content: copy(answer),
+        ...storedTiming(answer, timing),
       }
       a.answers.push(v)
       if (a.draft)
@@ -729,4 +733,12 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
       }
     },
   }
+}
+
+/** learning 저장 규칙(api-spec 3.1·P28)과 같게: 글 입력 방식만, 범위 밖·반쪽 값은 둘 다 null */
+export function storedTiming(answer: AnswerContent, timing?: AnswerTiming): AnswerTiming {
+  const ok = (s: unknown): s is number => Number.isInteger(s) && (s as number) >= 0 && (s as number) <= MAX_TIMING_SECONDS
+  if (!timing || !isTimedInput(answer.inputType) || !ok(timing.thinkingSeconds) || !ok(timing.writingSeconds))
+    return { thinkingSeconds: null, writingSeconds: null }
+  return { thinkingSeconds: timing.thinkingSeconds, writingSeconds: timing.writingSeconds }
 }

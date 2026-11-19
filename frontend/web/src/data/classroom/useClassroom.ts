@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
+import type { AnswerTiming } from '../../domain/answerTiming.ts'
 import type {
   AnswerContent,
   Attempt,
@@ -223,12 +224,14 @@ export function useLearningActions() {
       answer,
       key,
       followupId,
+      timing,
     }: {
       id: string
       answer: AnswerContent
       key: string
       followupId?: string
-    }) => gateway.submit(id, answer, key, followupId),
+      timing?: AnswerTiming
+    }) => gateway.submit(id, answer, key, followupId, timing),
     onSuccess: update,
   })
   const feedback = useMutation({
