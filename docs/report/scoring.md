@@ -1,6 +1,6 @@
 # scoring 모델 서비스·M1 학습 코드·모델 업로드
 
-계약은 [API 명세 4.3](../design/api-spec.md#43-scoring-service-호출-ai)과 [scoring OpenAPI](../../contracts/openapi/scoring-service.yaml). 서술 3.0·논술 3.1 모델 호환과 content_3 보정은 [ai](ai.md) 4장.
+계약은 [API 명세 4.3](../design/api-spec.md#43-scoring-service-호출-ai-learning)과 [scoring OpenAPI](../../contracts/openapi/scoring-service.yaml). 서술 3.0·논술 3.1 모델 호환과 content_3 보정은 [ai](ai.md) 4장.
 
 | 이슈 | 구현 |
 |---|---|

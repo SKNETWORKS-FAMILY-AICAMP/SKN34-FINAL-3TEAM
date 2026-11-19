@@ -618,11 +618,20 @@ backend/scoring-service/
 │  │  ├─ service.py
 │  │  ├─ models.py
 │  │  ├─ metadata.py             # 학습 산출물 입력·출력·경계 검증 (로딩·추론 공통)
-│  │  └─ content3_rule.py        # 서술 핵심어 포함 비율 결합 보정 규칙
+│  │  ├─ content3_rule.py        # 서술 핵심어 포함 비율 결합 보정 규칙
+│  │  ├─ m2_text_guard.py        # 글 정리 순서(칸 이름·지시문 복사·반복 제거, 길이 계산)
+│  │  ├─ prompt_guard.py         # 지시문 복사 문장 제거
+│  │  ├─ repeat_guard.py         # 반복 문장 제거
+│  │  └─ m2_long_input.py        # 입력 한도 초과 글의 앞+끝 토큰화
 │  ├─ m1/
 │  │  ├─ router.py
 │  │  ├─ service.py
 │  │  └─ models.py
+│  ├─ toxicity/                  # 답변 표현 분류 POST /internal/toxicity/checks (api-spec 4.3.4, #691)
+│  │  ├─ router.py
+│  │  ├─ service.py              # 활성 tox- 모델로 칸별 글 창 단위 2분류
+│  │  ├─ models.py
+│  │  └─ metadata.py             # tox- 학습 산출물 검사 (로더·사전 검사 공통)
 │  ├─ model_registry.py          # 모델별 revision·승인 범위·로딩 완료 후 교체
 │  ├─ model_versions.py          # core snapshot·이벤트의 scoring 대상 계약
 │  ├─ model_startup.py           # 기동 시 snapshot 조회·최초 로딩 재시도
@@ -970,10 +979,15 @@ SKN34-FINAL-3TEAM/
 │     ├─ src/                    # 3장 참고
 │     ├─ scripts/                # 시연용 Vite 플러그인·QR 기기 시연·결제 테스트 서버
 │     ├─ tests/
+│     │  ├─ browser/             # 목업 API 브라우저 시나리오 (playwright.config.ts)
+│     │  ├─ auth-browser/        # 운영 빌드 + 합성 HttpOnly 쿠키 로그인 유지·복구 (playwright.auth.config.ts)
+│     │  ├─ model-browser/       # 관리자 모델 등록부 운영 빌드 시나리오 (playwright.model.config.ts)
+│     │  ├─ reward-browser/      # #389 운영 빌드 MSW 없이 꾸미기·포인트 응답 검증 (playwright.reward.config.ts)
 │     │  ├─ e2e/                 # 실서버 Playwright 대표 시나리오 (NFR-QA-01, playwright.e2e.config.ts·seed/, #246)
 │     │  ├─ transfer-local/      # #289 이관 격리 로컬 실서버 시나리오 (playwright.transfer-local.config.ts)
 │     │  └─ transfer-mock/       # #289 이관 MSW 시나리오 (playwright.transfer-mock.config.ts)
 │     ├─ playwright.config.ts    # 목업 API(VITE_API_MOCK) 브라우저 시나리오 tests/browser 기본 설정
+│     ├─ playwright.<auth|model|reward|e2e|transfer-*>.config.ts  # 위 tests/ 폴더별 설정
 │     ├─ package.json
 │     ├─ vite.config.ts
 │     └─ tsconfig.json
@@ -1009,7 +1023,9 @@ SKN34-FINAL-3TEAM/
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
 │  ├─ runners/                   # 서비스 호출·채점 스크립트 (judgment_eval.py, 테스트는 ai-service tests)
-│  └─ results/                   # (예정) 실행 결과 요약
+│  ├─ results/                   # 실행 결과 요약 (judgment·memory·explanation)
+│  ├─ load/                      # AWS 데모 k6 부하 시험·LLM 응답 시간 측정 스크립트 (#361·#630)
+│  └─ tests/                     # 평가 스크립트 테스트
 ├─ infrastructure/
 │  ├─ cd/                        # #186 운영 배포 계획·정책 예시와 절차 (cd-release.yml)
 │  ├─ gitops/
