@@ -8,6 +8,7 @@ import com.sagomungchi.core._common.security.UserContext
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core._common.web.HttpExchangeResult
 import com.sagomungchi.core._common.client.LearningClient
+import com.sagomungchi.core.community.domain.Community
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import java.net.URLEncoder
@@ -22,6 +23,13 @@ class CommunityClient(private val http: LearningClient, private val json: Object
     data class SharedPost(val postId: UUID, val created: Boolean)
     data class PostDetail(val postId: UUID, val studentId: UUID, val missionId: UUID?, val status: String, val answer: JsonNode?)
 
+    /** 미션 공유물 목록 한 항목. 학생 ID는 service가 작성자 표시로 바꾼 뒤 버린다. 답변·작성 시각은 원문 그대로 넘긴다. */
+    data class MissionPost(val postId: UUID, val studentId: UUID, val answer: JsonNode?, val myReactions: List<String>, val createdAt: JsonNode?)
+
+    /** 내 공유물·자녀 공유물 한 항목. [status]는 learning 상태(`Community.POST_STATUSES`), 반응 수는 `Community.REACTIONS` 전부를 채운다. */
+    data class StudentPost(val postId: UUID, val missionId: JsonNode?, val missionTitle: JsonNode?, val answer: JsonNode?,
+        val status: String, val reactions: Map<String, Int>, val createdAt: JsonNode?)
+
     /** 학습 완료 시도 공유. 201 새로 공유, 200 이미 있음(학생·미션당 1개). 그 밖의 응답은 공유하지 않은 것으로 본다. */
     fun createPost(studentId: UUID, attemptId: UUID): SharedPost? = acting("SYSTEM", null, studentId) {
         val response = http.exchange("POST", "/community/posts", body = json.writeValueAsBytes(mapOf("studentId" to studentId, "attemptId" to attemptId)))
@@ -30,14 +38,25 @@ class CommunityClient(private val http: LearningClient, private val json: Object
         SharedPost(postId, response.status == 201)
     }
 
-    fun missionPosts(missionId: UUID, viewer: UUID, viewerUser: UUID, seed: String, page: Int, size: Int): JsonNode =
+    /** `items[]`의 공유물·작성자 ID가 UUID가 아니면 502 `COMMUNITY_INVALID_RESPONSE`. 내 반응은 알려진 종류만 남긴다. */
+    fun missionPosts(missionId: UUID, viewer: UUID, viewerUser: UUID, seed: String, page: Int, size: Int): List<MissionPost> =
         acting("STUDENT", viewerUser, viewer) {
             val query = "viewerStudentId=$viewer&seed=${URLEncoder.encode(seed, Charsets.UTF_8)}&page=$page&size=$size"
-            read(checked(http.exchange("GET", "/community/missions/$missionId/posts", query)))
+            items(read(checked(http.exchange("GET", "/community/missions/$missionId/posts", query)))).map { item ->
+                MissionPost(uuid(item.path("postId")), uuid(item.path("studentId")), item.get("answer"),
+                    reactions(item.path("myReactions")), item.get("createdAt"))
+            }
         }
 
-    fun studentPosts(studentId: UUID, role: String, user: UUID): JsonNode = acting(role, user, studentId) {
-        read(checked(http.exchange("GET", "/community/students/$studentId/posts")))
+    /** `items[]`의 공유물 ID가 UUID가 아니거나 상태가 알려진 값이 아니면 502 `COMMUNITY_INVALID_RESPONSE`. 빠진 반응 수는 0. */
+    fun studentPosts(studentId: UUID, role: String, user: UUID): List<StudentPost> = acting(role, user, studentId) {
+        items(read(checked(http.exchange("GET", "/community/students/$studentId/posts")))).map { item ->
+            val status = item.path("status").asText()
+            if (status !in Community.POST_STATUSES) invalid()
+            val counts = item.path("reactions")
+            StudentPost(uuid(item.path("postId")), item.get("missionId"), item.get("missionTitle"), item.get("answer"), status,
+                Community.REACTIONS.associateWith { counts.path(it).asInt(0) }, item.get("createdAt"))
+        }
     }
 
     /** 반응 생성(true)·이미 있음(false). 취소는 결과 없음. */
@@ -74,7 +93,7 @@ class CommunityClient(private val http: LearningClient, private val json: Object
         if (response.status == 404) return@acting null
         val body = read(checked(response))
         val status = body.path("status").asText()
-        if (uuidOrNull(body.path("postId")) != postId || status !in com.sagomungchi.core.community.domain.Community.POST_STATUSES) invalid()
+        if (uuidOrNull(body.path("postId")) != postId || status !in Community.POST_STATUSES) invalid()
         PostDetail(postId, uuidOrNull(body.path("studentId")) ?: invalid(), uuidOrNull(body.path("missionId")), status,
             body.get("answer")?.takeUnless { it.isNull })
     }
@@ -95,6 +114,9 @@ class CommunityClient(private val http: LearningClient, private val json: Object
         json.readTree(response.body)?.takeIf { it.isObject } ?: invalid()
     } catch (_: JsonProcessingException) { invalid() }
 
+    private fun items(body: JsonNode): List<JsonNode> = body.path("items").takeIf { it.isArray }?.toList() ?: invalid()
+    private fun uuid(node: JsonNode): UUID = try { UUID.fromString(node.asText()) } catch (_: IllegalArgumentException) { invalid() }
+    private fun reactions(node: JsonNode) = if (node.isArray) node.map { it.asText() }.filter { it in Community.REACTIONS } else emptyList()
     private fun uuidOrNull(node: JsonNode): UUID? = if (!node.isTextual) null else try { UUID.fromString(node.asText()) } catch (_: IllegalArgumentException) { null }
 
     private fun <T> acting(role: String, user: UUID?, student: UUID?, block: () -> T): T {

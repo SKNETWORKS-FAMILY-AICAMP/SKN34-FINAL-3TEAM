@@ -5,6 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContextHolder
+import com.fasterxml.jackson.databind.node.ArrayNode
+import com.fasterxml.jackson.databind.node.JsonNodeFactory
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.sagomungchi.core.report.domain.ReportJob
+import com.sagomungchi.core.report.domain.ReportJobStatus
+import com.sagomungchi.core.report.domain.ReportPeriod
+import com.sagomungchi.core.report.domain.ReportPeriodType
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClientException
@@ -13,6 +20,9 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import org.springframework.web.client.ResourceAccessException
+import java.net.URI
+import java.time.LocalDate
+import java.time.OffsetDateTime
 import java.util.UUID
 
 @Component
@@ -69,6 +79,66 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
         } finally { UserContextHolder.set(context) }
     }
 
+    /**
+     * [periodType] null lists daily and weekly together (P24 FN-RPT-15). report-api pages its list (default 20) but the
+     * public `{items}` has no page, so every page is gathered until a short one (#500). Each item must belong to the child,
+     * carry a valid identity and match the requested period type; a missing `periodType` is filled as WEEKLY.
+     */
+    fun reports(childId: UUID, status: ReportJobStatus?, periodType: ReportPeriodType?): ArrayNode {
+        val query = mutableMapOf("studentId" to childId.toString())
+        status?.let { query["status"] = it.name }
+        periodType?.let { query["periodType"] = it.name }
+        val items = JsonNodeFactory.instance.arrayNode()
+        for (page in 0 until LIST_MAX_PAGES) {
+            val body = get(childId, "/internal/reports", query + mapOf("page" to "$page", "size" to "$LIST_PAGE_SIZE"))
+            contract {
+                require(body["items"]?.isArray == true)
+                body["items"].forEach { item ->
+                    require(UUID.fromString(item["childId"]?.textValue()) == childId)
+                    val type = validateIdentity(item)
+                    require(periodType == null || type == periodType)
+                    (item as ObjectNode).put("periodType", type.name)
+                }
+            }
+            items.addAll(body["items"] as ArrayNode)
+            if (body["items"].size() < LIST_PAGE_SIZE) return items
+        }
+        // Over 5000 generated reports for one child is not a real history; refuse rather than loop without end.
+        throw invalid()
+    }
+
+    /** One revision (latest when null) of [reportId], the job's report, checked against the job's child, period type and period. */
+    fun report(job: ReportJob, reportId: UUID, revision: Int?, narrativeEnabled: Boolean): ReportDocument {
+        val query = revision?.let { mapOf("revision" to it.toString()) } ?: emptyMap()
+        val body = get(job.studentId, "/internal/reports/$reportId", query, narrativeEnabled)
+        validateDetail(job, body, revision)
+        return ReportDocument(body as ObjectNode, UUID.fromString(body["reportId"].textValue()))
+    }
+
+    /**
+     * Download link of the job's latest report. The metadata must match the job and carry the narrative fields; the link
+     * must be an absolute http(s) URL without user info with a parseable expiry. Returns the actual report ID and the body.
+     */
+    fun file(job: ReportJob, reportId: UUID, format: String, narrativeEnabled: Boolean): Pair<UUID, JsonNode> {
+        val metadata = get(job.studentId, "/internal/reports/$reportId", narrativeEnabled = narrativeEnabled)
+        contract {
+            require(validateIdentity(metadata) == job.periodType)
+            require(UUID.fromString(metadata["childId"]?.textValue())==job.studentId)
+            require(metadata["period"]["from"].textValue()==job.periodFrom.toString() && metadata["period"]["to"].textValue()==job.periodTo.toString())
+            require(metadata.has("narrative") && metadata.has("eveningQuestion"))
+        }
+        val actual = UUID.fromString(metadata["reportId"].textValue())
+        val body = get(job.studentId, "/internal/reports/$actual/files/$format", narrativeEnabled = narrativeEnabled)
+        contract {
+            val uri = URI(body["url"]?.textValue())
+            require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null)
+            OffsetDateTime.parse(body["expiresAt"]?.textValue())
+        }
+        return actual to body
+    }
+
+    fun evidence(job: ReportJob, reportId: UUID, itemId: UUID): JsonNode = get(job.studentId, "/internal/reports/$reportId/evidence/$itemId")
+
     fun reconcile(job: com.sagomungchi.core.report.domain.ReportJob): com.sagomungchi.core.report.domain.ReportReconciliation {
         val previous = UserContextHolder.currentOrNull()
         UserContextHolder.set(com.sagomungchi.core._common.security.UserContext(null, "SYSTEM", setOf(job.studentId.toString()), null))
@@ -101,6 +171,30 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
         }
     }
 
+    /** Returns the period type; a report-api without P24 omits it, which means WEEKLY. */
+    private fun validateIdentity(body: JsonNode): ReportPeriodType {
+        UUID.fromString(body["reportId"]?.textValue())
+        ReportJobStatus.valueOf(body["status"]?.textValue() ?: "")
+        require(body["revision"]?.isIntegralNumber == true && body["revision"].asLong() in 1..Int.MAX_VALUE.toLong())
+        val type = body["periodType"]?.takeUnless { it.isNull }?.let { ReportPeriodType.valueOf(it.textValue()) } ?: ReportPeriodType.WEEKLY
+        ReportPeriod(LocalDate.parse(body["period"]?.get("from")?.textValue()), LocalDate.parse(body["period"]?.get("to")?.textValue()), type)
+        return type
+    }
+    private fun validateDetail(job: ReportJob, body: JsonNode, revision: Int?) = contract {
+        require(validateIdentity(body) == job.periodType)
+        require(UUID.fromString(body["childId"]?.textValue()) == job.studentId)
+        require(body["period"]["from"].textValue() == job.periodFrom.toString() && body["period"]["to"].textValue() == job.periodTo.toString())
+        if (revision != null) require(body["revision"].intValue() == revision)
+    }
+    private fun contract(validate: () -> Unit) {
+        try { validate() } catch (_: Exception) { throw invalid() }
+    }
     private fun unavailable() = BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "REPORT_UNAVAILABLE", "리포트 서비스에 연결할 수 없습니다.")
     private fun invalid() = BusinessException(HttpStatus.BAD_GATEWAY, "REPORT_CONTRACT_INVALID", "리포트 서비스 응답 형식을 확인할 수 없습니다.")
+
+    private companion object {
+        /** report-api's maximum page size (api-spec 1.1). */
+        const val LIST_PAGE_SIZE = 100
+        const val LIST_MAX_PAGES = 50
+    }
 }

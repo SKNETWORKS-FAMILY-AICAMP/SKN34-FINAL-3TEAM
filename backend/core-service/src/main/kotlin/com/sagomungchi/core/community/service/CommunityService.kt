@@ -1,6 +1,5 @@
 package com.sagomungchi.core.community.service
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core.community.client.CommunityClient
@@ -69,16 +68,14 @@ class CommunityService(private val repository: CommunityRepository, private val 
     fun missionPosts(missionId: UUID, seed: String, page: Int, size: Int): Map<String, Any?> {
         if (seed.length !in 1..100 || page < 0 || size !in 1..100) invalid()
         val actor = student()
-        val items = client.missionPosts(missionId, actor.student, actor.user, seed, page, size).path("items")
-        if (!items.isArray) invalidResponse()
-        val rows = items.map { item -> Triple(item, uuid(item.path("postId")), uuid(item.path("studentId"))) }
-        val shown = authors.toAuthors(rows.map { it.third }.toSet())
-        val hidden = repository.reportHidden(rows.map { it.second }.toSet())
+        val rows = client.missionPosts(missionId, actor.student, actor.user, seed, page, size)
+        val shown = authors.toAuthors(rows.map { it.studentId }.toSet())
+        val hidden = repository.reportHidden(rows.map { it.postId }.toSet())
         // 학생 ID는 여기서 버린다. 반응 수도 learning이 주더라도 내보내지 않는다(작성자·학부모만).
-        val visible = rows.filter { (_, post, author) -> author != actor.student && post !in hidden && shown[author] != null }
-            .map { (item, post, author) ->
-                mapOf("postId" to post, "author" to shown.getValue(author), "answer" to item.get("answer"),
-                    "myReactions" to reactions(item.path("myReactions")), "createdAt" to item.get("createdAt"))
+        val visible = rows.filter { it.studentId != actor.student && it.postId !in hidden && shown[it.studentId] != null }
+            .map { post ->
+                mapOf("postId" to post.postId, "author" to shown.getValue(post.studentId), "answer" to post.answer,
+                    "myReactions" to post.myReactions, "createdAt" to post.createdAt)
             }
         return mapOf("items" to visible, "page" to page, "size" to size)
     }
@@ -112,29 +109,20 @@ class CommunityService(private val repository: CommunityRepository, private val 
     }
 
     /** 내 공유물·자녀 공유물. core가 아는 비공개(설정·동의·신고)를 상태에 덮어써 learning 반영 지연을 숨기지 않는다. */
-    private fun ownPosts(studentId: UUID, body: JsonNode): List<Map<String, Any?>> {
-        val items = body.path("items")
-        if (!items.isArray) invalidResponse()
+    private fun ownPosts(studentId: UUID, posts: List<CommunityClient.StudentPost>): List<Map<String, Any?>> {
         val visible = repository.state(studentId)?.visible == true
-        val hidden = repository.reportHidden(items.map { uuid(it.path("postId")) }.toSet())
-        return items.map { item ->
-            val post = uuid(item.path("postId"))
-            val reported = item.path("status").asText()
-            if (reported !in Community.POST_STATUSES) invalidResponse()
+        val hidden = repository.reportHidden(posts.map { it.postId }.toSet())
+        return posts.map { post ->
             val status = when {
-                reported == "REMOVED" -> reported
-                post in hidden -> "HIDDEN_REPORT"
-                reported == "VISIBLE" && !visible -> "HIDDEN_SETTING"
-                else -> reported
+                post.status == "REMOVED" -> post.status
+                post.postId in hidden -> "HIDDEN_REPORT"
+                post.status == "VISIBLE" && !visible -> "HIDDEN_SETTING"
+                else -> post.status
             }
-            val counts = item.path("reactions")
-            mapOf("postId" to post, "missionId" to item.get("missionId"), "missionTitle" to item.get("missionTitle"),
-                "answer" to item.get("answer"), "status" to status,
-                "reactions" to Community.REACTIONS.associateWith { counts.path(it).asInt(0) }, "createdAt" to item.get("createdAt"))
+            mapOf("postId" to post.postId, "missionId" to post.missionId, "missionTitle" to post.missionTitle,
+                "answer" to post.answer, "status" to status, "reactions" to post.reactions, "createdAt" to post.createdAt)
         }
     }
-
-    private fun reactions(node: JsonNode) = if (node.isArray) node.map { it.asText() }.filter { it in Community.REACTIONS } else emptyList()
 
     private fun student(): Actor {
         val context = UserContextHolder.currentOrNull()
@@ -144,10 +132,8 @@ class CommunityService(private val repository: CommunityRepository, private val 
         return actor
     }
 
-    private fun uuid(node: JsonNode): UUID = try { UUID.fromString(node.asText()) } catch (_: IllegalArgumentException) { invalidResponse() }
     private fun now() = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS)
     private fun forbidden(): Nothing = throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "검증된 학생 세션이 필요합니다.")
     private fun unavailable(): Nothing = throw BusinessException(HttpStatus.CONFLICT, "STUDENT_UNAVAILABLE", "학생 상태를 다시 확인해 주세요.")
     private fun invalid(): Nothing = throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "입력값을 확인해 주세요.")
-    private fun invalidResponse(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "COMMUNITY_INVALID_RESPONSE", "커뮤니티 응답 계약이 올바르지 않습니다.")
 }
