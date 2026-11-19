@@ -334,7 +334,7 @@ classDiagram
   }
   class SignupRateLimiter {
     <<repository>>
-    +acquire(clientIp)
+    +increment(clientIp) Long?
   }
   class ReauthenticationService {
     <<service>>
@@ -647,7 +647,7 @@ classDiagram
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증·인가용 읽기 확인(학생 행 잠금 포함). 쓰기는 자녀 등록 `GuardianshipService`, 정보 수정·해제·삭제 `ChildManagementService`, 동의 저장 `ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
-- ID·비밀번호 로그인은 관리자(#369, 가입 없음, `AuthService.adminLogin`, `admin_credential`)와 학부모(#415, `AuthService.parentSignup`·`parentLogin`, `parent_credential`) 두 가지다. 둘 다 `PasswordCredentialService`(`PinHasher` PBKDF2 해시·5회 실패 15분 잠금·없는 ID 더미 해시 검사)와 값 객체 `PasswordCredential`(옛 `AdminCredential`)을 공유하고, 실패는 커밋 뒤 던진다. 학부모 가입은 `SignupRateLimiter`(Redis 고정 창, IP당 기본 10분 5회)를 거친다. 로그인 수단 변경·연결과 비밀번호 찾기·변경은 없다. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
+- ID·비밀번호 로그인은 관리자(#369, 가입 없음, `AuthService.adminLogin`, `admin_credential`)와 학부모(#415, `AuthService.parentSignup`·`parentLogin`, `parent_credential`) 두 가지다. 둘 다 `PasswordCredentialService`(`PinHasher` PBKDF2 해시·5회 실패 15분 잠금·없는 ID 더미 해시 검사)와 값 객체 `PasswordCredential`(옛 `AdminCredential`)을 공유하고, 실패는 커밋 뒤 던진다. 학부모 가입은 `SignupRateLimiter`(Redis 고정 창)가 IP별 가입 횟수만 세고(Redis 장애·빈 응답은 `null`), `AuthService`가 한도(IP당 기본 10분 5회) 초과면 429, `null`이면 503으로 정한다(#816). 로그인 수단 변경·연결과 비밀번호 찾기·변경은 없다. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
 - 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장. 비밀번호 학부모는 `ReauthenticationService.withPassword`(`POST /me/reauth/password`, #415)가 로그인 비밀번호를 확인하고 검증·발급을 마친 challenge·grant를 한 번에 만들어 `consume`은 그대로다. 실패는 로그인과 같은 `parent_credential` 횟수를 쓴다
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer 세션 행을 잠그고 연결·활성 자녀·필수·법정대리인 동의 확인 → 학부모 세션 `locked_at`·version 증가, `parent_session_id`를 가진 학생 세션 생성 → `STUDENT` access만 발급, 학부모 refresh 쿠키는 유지(잠김) (P01, 학부모 동석). 학생 계정·시연 링크 없음
 - `AuthService.unlockParent` (`POST /auth/parent-unlock`): 잠긴 학부모 refresh + `GuardianPasswordService.attempt`(PIN과 같은 해시·5회 잠금) → 잠금 해제·학생 세션 폐기·refresh 회전. `GuardianPasswordService.set`은 `GUARDIAN_PASSWORD` 재인증 grant를 1회 소비 (FN-ACC-05, 2026-11-03)

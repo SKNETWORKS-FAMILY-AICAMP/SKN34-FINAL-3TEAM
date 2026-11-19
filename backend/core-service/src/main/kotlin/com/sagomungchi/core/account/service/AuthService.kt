@@ -106,7 +106,7 @@ class AuthService(
         val display = name?.trim().orEmpty()
         if (display.isEmpty() || display.length > 80) throw validation("이름을 확인해 주세요.")
         if (repository.loginIdExists(id)) throw loginIdTaken()
-        signupLimiter.acquire(clientIp)
+        checkSignupLimit(clientIp)
         val hash = credentials.hash(secret)
         return requireNotNull(transactions.execute {
             val now = now()
@@ -117,6 +117,14 @@ class AuthService(
             accounts.audit(userId, "PARENT_PASSWORD_SIGNUP", userId)
             startSession(account, previousRefresh, now)
         })
+    }
+
+    /** 같은 IP 가입 한도(#415). 셀 수 없으면(Redis 장애·빈 응답) 503, 한도를 넘으면 429 (#816) */
+    private fun checkSignupLimit(clientIp: String) {
+        val count = signupLimiter.increment(clientIp)
+            ?: throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "SIGNUP_UNAVAILABLE", "지금은 가입을 처리할 수 없습니다. 잠시 뒤 다시 시도해 주세요.")
+        if (count > properties.signupLimitPerIp)
+            throw BusinessException(HttpStatus.TOO_MANY_REQUESTS, "SIGNUP_RATE_LIMITED", "가입 요청이 많습니다. 잠시 뒤 다시 시도해 주세요.")
     }
 
     private fun passwordLogin(realm: Realm, secret: String, previousRefresh: String?, find: () -> PasswordCredential?): IssuedAuth {

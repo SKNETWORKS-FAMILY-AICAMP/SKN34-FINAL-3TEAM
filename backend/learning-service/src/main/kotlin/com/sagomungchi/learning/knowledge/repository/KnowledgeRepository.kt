@@ -22,7 +22,9 @@ class KnowledgeRepository(
 
     fun findVersionsWithPrefix(prefix: String): List<String> = mapper.findVersionsWithPrefix(prefix)
 
-    fun insertDataset(row: DatasetRow) = check(mapper.insertDataset(row) == 1)
+    /** 새 판(건수 0, 활성 시각 없음). source 출처 Map → jsonb 변환은 여기서만(#816) */
+    fun insertDataset(version: String, status: DatasetStatus, source: Map<String, Any?>, createdAt: Instant) =
+        check(mapper.insertDataset(DatasetRow(version, status, objectMapper.valueToTree(source), 0, 0, createdAt, null)) == 1)
 
     fun updateCounts(version: String, chunkCount: Int, relationCount: Int) = check(mapper.updateCounts(version, chunkCount, relationCount) == 1)
 

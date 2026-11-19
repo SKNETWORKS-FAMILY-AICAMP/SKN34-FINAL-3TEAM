@@ -1,6 +1,5 @@
 package com.sagomungchi.core.admin.service
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.admin.repository.MissionAuditRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -8,13 +7,13 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 @Service
-class MissionAuditService(private val repository: MissionAuditRepository, private val json: ObjectMapper) {
+class MissionAuditService(private val repository: MissionAuditRepository) {
     /** extra는 요청 detail에 더할 칸(테마 초안 부분 다시 생성 #537의 draftId·targets). 비면 detail은 operationId만 */
     @Transactional(propagation=Propagation.REQUIRES_NEW)
     fun requested(operation: UUID, actor: UUID, action: String, target: UUID?, targetType: String=MISSION,
                   extra: Map<String,Any?> =emptyMap()) {
         repository.insert(operation,actor,"${action}_REQUESTED",targetType,target,"SUCCESS",
-            json.writeValueAsString(linkedMapOf<String,Any?>("operationId" to operation) + extra))
+            linkedMapOf<String,Any?>("operationId" to operation) + extra)
     }
 
     /**
@@ -30,7 +29,7 @@ class MissionAuditService(private val repository: MissionAuditRepository, privat
         if(draft!=null) detail["draftId"]=draft
         detail.putAll(extra)
         repository.insert(UUID.randomUUID(),actor,"${action}_$outcome",targetType,target,if(outcome=="SUCCEEDED") "SUCCESS" else "FAILURE",
-            json.writeValueAsString(detail))
+            detail)
     }
 
     companion object {
