@@ -43,7 +43,7 @@
 | ai-service | 리포트 고정 대화의 범위(그날)와 core가 넣어 주는 리포트 요약 입력 처리(report 직접 호출 없음). 일일 리포트 서술은 없음 | 기존 분석 에이전트 |
 | scoring-service | 변경 없음 | - |
 
-#### 1.1.2 2026-11-12 리텐션 확장 추가 책임 (P27, 백엔드 구현 #555·#559·#560·#563~#566, 웹 검색·설명 화면 #567 구현 전)
+#### 1.1.2 2026-11-12 리텐션 확장 추가 책임 (P27, 백엔드 구현 #555·#559·#560·#563~#566, 웹 검색·설명 화면 #567 구현 PR #696)
 
 생활공간·기념 액자·추억 앨범·추억 검색·설명([기능명세 P27](functional-spec.md#14-확정-정책), [결정 기록](../report/retention-expansion.md)). 새 서비스·Pod·네트워크 정책은 없고 서비스 경계와 1.3 통신 원칙은 그대로다. API는 [API 명세](api-spec.md) 2.12·4.1.4·4.2.6, 저장은 [ERD](erd.md) 3.5.2·4.6.
 
@@ -103,7 +103,7 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 - #167 분석 서킷은 헤더/첫 이벤트가 아닌 스트림 종료 결과를 집계한다. 중간 EOF·잘못된 스트림·시간 초과·error 이벤트는 실패, 정상 done/clarification 및 기존 TEMPLATE 결과는 성공이다. 사용자 취소·core 권한/저장/전송 처리 오류는 AI 실패 집계에서 제외하고 half-open 허가를 반환한다. OPEN은 기존 AI_UNAVAILABLE로 실패하며, 이미 접수한 분석 시도의 한도/사용 이력 차감은 보존한다. HTTP/1.1과 기존 body 종료·timer 취소를 유지한다.
 - 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning 피드백 80초 > learning→core 결제 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초. learning→core는 `app.internal.core-read-timeout` 4초로 ai 35초와 따로 둔다, #501). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
 - 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
-- P27 추억 설명은 learning→ai LLM 호출(15초·재시도 1회)을 기다리므로 learning→ai 35초가 필요해 일반 프록시 30초를 넘는다. core→learning 설명 경로는 별도 서킷 `learning-memory`(응답 45초 > learning→ai 35초, 2026-11-12 확정, core #566)를 쓴다. 추억 검색도 같은 `learning-memory` 서킷을 쓰되 응답은 30초다(임베딩 1회). 검색의 임베딩 장애(learning 503 `AI_UNAVAILABLE`)가 일반 `learning-json`의 5xx 실패로 쌓여 주간 테마·시도 같은 일반 경로까지 막지 않게 하려는 것이다(2026-11-12 결정). 서킷 기준(최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·5xx 실패)은 `learning-json`과 같고, 값은 `app.learning.memory-search-timeout`·`memory-explanation-timeout`. 타임아웃 예산: 설명 45초 > learning→ai 설명 35초 + learning 내부 처리, 검색 30초 > learning→ai 임베딩 1회(20초). learning 쪽은 임베딩·설명이 각각 서킷 `ai-memory-embedding`·`ai-memory-explanation`을 쓴다. 질의 변환(#679 설계, ai #681 구현·learning #682 구현 전)을 더하면 검색 30초 > learning→ai 변환 8초(재시도 없음, 서킷 `ai-memory-query`, ai LLM 호출 7초·재시도 없음, 실측으로 5초·4초에서 변경 #681) + 임베딩 20초다. 변환 실패는 검색 실패가 아니라 원문 질문으로 진행하므로 core `learning-memory` 서킷 실패로 세지 않는다
+- P27 추억 설명은 learning→ai LLM 호출(15초·재시도 1회)을 기다리므로 learning→ai 35초가 필요해 일반 프록시 30초를 넘는다. core→learning 설명 경로는 별도 서킷 `learning-memory`(응답 45초 > learning→ai 35초, 2026-11-12 확정, core #566)를 쓴다. 추억 검색도 같은 `learning-memory` 서킷을 쓰되 응답은 30초다(임베딩 1회). 검색의 임베딩 장애(learning 503 `AI_UNAVAILABLE`)가 일반 `learning-json`의 5xx 실패로 쌓여 주간 테마·시도 같은 일반 경로까지 막지 않게 하려는 것이다(2026-11-12 결정). 서킷 기준(최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·5xx 실패)은 `learning-json`과 같고, 값은 `app.learning.memory-search-timeout`·`memory-explanation-timeout`. 타임아웃 예산: 설명 45초 > learning→ai 설명 35초 + learning 내부 처리, 검색 30초 > learning→ai 임베딩 1회(20초). learning 쪽은 임베딩·설명이 각각 서킷 `ai-memory-embedding`·`ai-memory-explanation`을 쓴다. 질의 변환(#679 설계, ai #681·learning #682 구현)을 더하면 검색 30초 > learning→ai 변환 8초(재시도 없음, 서킷 `ai-memory-query`, ai LLM 호출 7초·재시도 없음, 실측으로 5초·4초에서 변경 #681) + 임베딩 20초다. 변환 실패는 검색 실패가 아니라 원문 질문으로 진행하므로 core `learning-memory` 서킷 실패로 세지 않는다
 - #38 일반 core→learning JSON 프록시는 연결 2초·응답 30초를 사용한다(피드백의 80초 예산은 #39). Resilience4j count window 20·최소 20건·실패율 50%·차단 30초·half-open 1건으로 복구를 확인한다. 전송 오류·5xx를 실패로 집계하고 4xx는 정상 HTTP 결과로 센다.
 - SSE heartbeat: 모든 SSE는 15초마다 주석 줄(`: ping`) 전송. 피드백은 learning 동기 응답 대기 중 전송할 데이터가 없어 필수
 - SSE 연결 종료
@@ -479,7 +479,7 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ controller/
 │  ├─ service/
 │  ├─ scheduler/                 # MemoryEmbeddingScheduler: 검색 문서 임베딩 선점·재시도·리스 복구, ThemeFrameBackfillRunner: 기동 시 액자 소급
-│  ├─ client/                    # MemoryEmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient, MemoryQueryAiClient(ai /internal/memory-queries, #682 구현 전), StudentProfileClient(core 닉네임)
+│  ├─ client/                    # MemoryEmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient, MemoryQueryAiClient(ai /internal/memory-queries, #682 구현), StudentProfileClient(core 닉네임)
 │  ├─ domain/
 │  └─ repository/
 └─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
