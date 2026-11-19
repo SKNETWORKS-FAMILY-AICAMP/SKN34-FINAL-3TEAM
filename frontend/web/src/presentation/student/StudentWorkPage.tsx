@@ -21,6 +21,7 @@ import type { AnswerContent, Attempt, Draft, Reflection } from '../../domain/cla
 import { ActivityPaper, ErrorNotice, MemoCanvas, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from './MissionScene.tsx'
 import { Companion } from './world/Companion.tsx'
+import { MissionDone } from './world/MissionDone.tsx'
 import { SpeechBubble } from './world/SpeechBubble.tsx'
 import { useLook } from './world/lookContext.ts'
 import { companionLabel } from '../../domain/studentLook.ts'
@@ -87,6 +88,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
   const [conflict, setConflict] = useState<Draft | null>(null),
     [backup, setBackup] = useState<Draft | null>(null)
   const [reflectOpen, setReflectOpen] = useState(false),
+    // 돌아보기를 막 저장함: 미션 완료 화면(#807, 시안 SC-02-012)을 띄운다
+    [doneNow, setDoneNow] = useState(false),
     [difficulty, setDifficulty] = useState<Reflection['difficulty'] | ''>(''),
     [reflection, setReflection] = useState('')
   const editVersion = useRef(0),
@@ -310,7 +313,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
         reflection: { difficulty, text: reflection },
       })
       setReflectOpen(false)
-      onCompleted()
+      // 바로 공책으로 가지 않고 미션 완료 화면(엔딩이 됐으면 그 화면이 onCompleted로 이야기의 끝으로 보냄, #807)
+      setDoneNow(true)
     } catch (e) {
       setRetryAction(() => complete)
       setError(e)
@@ -941,6 +945,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
           </div>
         </Modal>
       )}
+      {doneNow && <MissionDone attempt={a} childId={session?.child?.id} onEnding={onCompleted} />}
     </section>
   )
 }

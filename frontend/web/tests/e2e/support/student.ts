@@ -93,6 +93,8 @@ export async function solveNarrative(page: Page, answer: string, { followup }: {
   await page.getByRole('button', { name: '돌아보기 남기기' }).click()
   await page.getByRole('button', { name: '보통이에요' }).click()
   await page.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
+  // 미션 완료 화면(#807)에서 내 공책으로
+  await page.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '내 공책 보기' }).click()
   await page.waitForURL('**/student/journal**')
 }
 

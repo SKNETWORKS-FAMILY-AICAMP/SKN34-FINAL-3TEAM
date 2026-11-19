@@ -93,6 +93,7 @@ export function ClassroomApp() {
   const [, , , episodeTheme, episodeWeek] = location.pathname.split('/').map((s) => { try { return decodeURIComponent(s) } catch { return s } })
   const episode = studentPage === 'album' && episodeTheme && episodeWeek ? { themeId: episodeTheme, weekStart: episodeWeek } : null
   const typeFilter = new URLSearchParams(location.search).get('type')
+  const communityMission = new URLSearchParams(location.search).get('mission')
   const setPage = (page: Page) => navigate(`/${session?.role.toLowerCase() ?? 'parent'}/${page}`)
   const setWork = (id: string | null) =>
     navigate(id ? `/student/attempts/${encodeURIComponent(id)}` : '/student/journal')
@@ -477,7 +478,8 @@ export function ClassroomApp() {
             ) : studentPage === 'friends' ? (
               <StudentFriends child={child} />
             ) : studentPage === 'community' ? (
-              <StudentCommunity key={child.id} child={child} onSettings={() => setPage('settings')} />
+              // ?mission=: 미션 완료 화면 "같은 미션 친구 생각 보기"로 그 미션을 골라 연다(#807)
+              <StudentCommunity key={`${child.id}:${communityMission ?? ''}`} child={child} initialMission={communityMission} onSettings={() => setPage('settings')} />
             ) : studentPage === 'room' ? (
               <StudentRoom
                 key={child.id}

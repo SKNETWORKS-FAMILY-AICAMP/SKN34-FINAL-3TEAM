@@ -186,3 +186,59 @@ test('더 풀어 보기(프리미엄 추가 문제)는 그대로 미션 안내',
   await expect(page.getByRole('button', { name: '미션 시작하기' })).toBeVisible()
   await expect(page).not.toHaveURL(/\/student\/theme\/scene\//)
 })
+
+/** 문제를 마무리하고 돌아보기까지 저장한다(되묻기는 받지 않고 '이대로 돌아보기') */
+async function finishAndReflect(page: Page) {
+  await page.getByRole('button', { name: /^(다 썼어요|이걸로 할래요)/ }).click()
+  await page.getByRole('button', { name: '이대로 돌아보기' }).click({ timeout: 20_000 })
+  await page.getByRole('button', { name: '돌아보기 남기기' }).click()
+  await page.getByRole('button', { name: '보통이에요' }).click()
+  await page.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
+}
+
+test('문제를 마치면 미션 완료 화면: 그 요일 단서가 열렸다고 알리고 단서 모음으로 잇는다(시안 SC-02-012)', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 4, days: '-----' })
+  await go(page, '/student/theme/scene/MON')
+  await throughTodayScene(page)
+  await page.getByRole('button', { name: /잎의 색과 크기/ }).click()
+  await finishAndReflect(page)
+  const done = page.getByRole('dialog', { name: '미션 완료!' })
+  await expect(done).toBeVisible()
+  await expect(done.getByRole('heading', { name: '미션 완료!' })).toBeFocused()
+  await expect(done).toContainText('미션 학습 완료')
+  await expect(done).toContainText('월요일 단서가 열렸어요!')
+  await expect(done).toContainText('종 아래에 도토리 껍질이 하나도 없었어요.')
+  await expect(done.getByRole('button', { name: '같은 미션 친구 생각 보기' })).toBeVisible()
+  await done.getByRole('button', { name: /단서 모음 보기/ }).click()
+  await expect(page).toHaveURL(/\/student\/theme\/clues$/)
+})
+
+test('금요일 문제를 마치면 마지막 단서와 정답 고르기, 금요일 친구 생각은 엔딩 전이라 없다', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 4, days: 'DDDD-' })
+  await go(page, '/student/theme/scene/FRI')
+  await throughTodayScene(page)
+  await page.getByRole('textbox').first().fill('처음에는 어려웠지만 단서를 모으니 이유가 보였어요.')
+  await expect(page.getByText('저장했어요')).toBeVisible({ timeout: 10_000 })
+  await finishAndReflect(page)
+  const done = page.getByRole('dialog', { name: '미션 완료!' })
+  await expect(done).toContainText('마지막 단서가 열렸어요!')
+  await expect(done.getByRole('button', { name: '같은 미션 친구 생각 보기' })).toHaveCount(0)
+  await done.getByRole('button', { name: /정답 고르러 가기/ }).click()
+  await expect(page).toHaveURL(/\/student\/theme\/pick$/)
+})
+
+test('미션 완료 화면의 같은 미션 친구 생각 보기는 그 미션을 골라 연다', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 4, days: '-----' })
+  await go(page, '/student/theme/scene/MON')
+  await throughTodayScene(page)
+  await expect(page.locator('.sw-qbox')).toBeVisible()
+  const title = (await page.locator('.sw-work h1').first().textContent())?.trim() ?? ''
+  await page.getByRole('button', { name: /잎의 색과 크기/ }).click()
+  await finishAndReflect(page)
+  await page.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '같은 미션 친구 생각 보기' }).click()
+  await expect(page).toHaveURL(/\/student\/community\?mission=/)
+  await expect(page.getByRole('button', { name: new RegExp(title) }).first()).toHaveAttribute('aria-pressed', 'true')
+})

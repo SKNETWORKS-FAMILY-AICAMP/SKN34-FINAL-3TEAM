@@ -43,6 +43,8 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
   await page.getByRole('button', { name: '돌아보기 남기기' }).click()
   await page.getByRole('button', { name: '보통이에요' }).click()
   await page.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
+  // 미션 완료 화면(#807)에서 내 공책으로
+  await page.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '내 공책 보기' }).click()
   await expect(page.locator('article', { hasText: `국어 · ${mission}` })).toBeVisible()
   await page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '설정', exact: true }).click()
   await page.getByRole('radio', { name: '학부모님께 공개할게요' }).click()
