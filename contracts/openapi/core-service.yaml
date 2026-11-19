@@ -11297,7 +11297,7 @@ components:
           versions:
             type: object
           problems:
-            description: 'DAILY만(P24, FN-RPT-14). 이용권과 관계없이 전체 제공한다. 보호자 공개(#206)가 꺼지면 core가 followups·quotes를 비우고 finalAnswer·reflection을 null로 바꾼다. 일일은 eveningQuestion·narrative가 항상 null이다.'
+            description: 'DAILY만(P24, FN-RPT-14). 이용권과 관계없이 전체 제공한다. 보호자 공개(#206)가 꺼지면 core가 followups·quotes를 비우고 finalAnswer·reflection을 null로 바꾼다(answerTimes는 유지). 일일은 eveningQuestion·narrative가 항상 null이다.'
             type: array
             items:
               $ref: '#/components/schemas/DailyReportProblem'
@@ -11354,6 +11354,26 @@ components:
           type: array
           items:
             type: object
+        answerTimes:
+          description: '답변별 생각·작성 시간(P28, #803). 시간이 있는 답만 버전 순, 없으면 []. 원문이 아닌 수치라 보호자 공개(#206)가 꺼져도 core가 지우지 않는다. 이전 저장본은 report가 []로 준다.'
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - version
+            - thinkingSeconds
+            - writingSeconds
+            properties:
+              version:
+                type: integer
+                minimum: 1
+              thinkingSeconds:
+                type: integer
+                minimum: 0
+              writingSeconds:
+                type: integer
+                minimum: 0
     ReportEvidence:
       type: object
       additionalProperties: false

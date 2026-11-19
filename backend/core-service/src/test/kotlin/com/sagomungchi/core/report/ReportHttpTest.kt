@@ -191,7 +191,8 @@ class ReportHttpTest : IntegrationTestSupport() {
             "judgment" to "PARTIAL", "followups" to listOf(mapOf("question" to "합성비밀 되묻기", "answer" to "합성비밀 보완")),
             "finalAnswer" to "합성비밀 최종 답", "elements" to listOf(mapOf("label" to "근거", "satisfied" to true)),
             "reflection" to mapOf("difficulty" to "NORMAL", "text" to "합성비밀 돌아보기", "written" to true),
-            "quotes" to listOf(mapOf("answerId" to UUID.randomUUID().toString(), "text" to "합성비밀 인용", "verified" to true)))
+            "quotes" to listOf(mapOf("answerId" to UUID.randomUUID().toString(), "text" to "합성비밀 인용", "verified" to true)),
+            "answerTimes" to listOf(mapOf("version" to 1, "thinkingSeconds" to 45, "writingSeconds" to 130)))
         response = json.writeValueAsString(detail(daily, period = day) + mapOf("periodType" to "DAILY", "problems" to listOf(problem)))
         `when`(entitlement.dailyDetailEnabled(student)).thenReturn(true)
         val result = mvc.get("/api/v1/reports/$daily") { header("Authorization", "Bearer $token") }
@@ -213,7 +214,10 @@ class ReportHttpTest : IntegrationTestSupport() {
             .andExpect { status { isOk() }; jsonPath("$.problems[0].judgment") { value("PARTIAL") }
                 jsonPath("$.problems[0].elements[0].label") { value("근거") }; jsonPath("$.problems[0].finalAnswer") { value(null) }
                 jsonPath("$.problems[0].reflection") { value(null) }; jsonPath("$.problems[0].followups.length()") { value(0) }
-                jsonPath("$.problems[0].quotes.length()") { value(0) } }
+                jsonPath("$.problems[0].quotes.length()") { value(0) }
+                // P28 (#803): answer times are numbers, not originals, so they stay when sharing is off.
+                jsonPath("$.problems[0].answerTimes[0].thinkingSeconds") { value(45) }
+                jsonPath("$.problems[0].answerTimes[0].writingSeconds") { value(130) } }
             .andReturn().response.contentAsString
         assertFalse(hidden.contains("합성비밀"))
         // The job says DAILY; a report-api body claiming a week for it is a contract violation.
