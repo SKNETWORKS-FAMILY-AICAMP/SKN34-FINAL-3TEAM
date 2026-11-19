@@ -225,9 +225,6 @@ class StoryType:
     facts: FactTable | None = None
     target_in_hand: bool = False  # ②: 대상이 처음부터 손에 있음(못 찾았다는 전제 13곳을 뒤집음)
     answer_cuts: frozenset[tuple[str, int]] = frozenset()  # 사실표 종류: 정답 후보가 나와도 되는 컷
-    # 6컷 종료 6컷(엔딩)에 넣을 내용. 비면 역할 4(종료 5컷과 같은 내용). 동물 배웅처럼 5컷과 엔딩이
-    # 달라야 하는 종류만(#779: 5·6컷이 같은 장면이 되고 아무도 동물을 보지 않아 어색했음)
-    outro_ending: str = ""
     # 6컷 틀에서 역할로는 대상이 나와도 되지만 그 컷만 대상을 빼는 컷(6컷 번호, #779 사용자 결정
     # 2026-11-19). 종료 5·6컷이 같은 역할(4)이라 "5컷엔 동물 없음, 6컷엔 있음"을 역할로 나눌 수
     # 없어 5컷에 동물이 나왔음(경찰관 떡집 콘티 3차). type_cuts가 빼고 계산해 줄거리 규칙·그림
@@ -531,22 +528,18 @@ ANIMAL_INTRO_CUTS = (
 ANIMAL_OUTRO_CUTS = (
     OUTRO_THINK,
     "정답 동물이 있는 곳에 도착해 그 동물(answerLook 모습)을 바라봄",
-    "정답 동물이 드러남(장난꾸러기 찾기면 장난 흔적을 묻힌 채 들켜 멈칫하는 귀여운 모습), "
-    "사람들은 조금 떨어져서 놀라며 바라봄(아무도 동물을 만지지 않음)",
-    "장난꾸러기 찾기면 사람이 장난당한 물건을 덮거나 치워 다시 안 생기게 하며 서로 보고 "
-    "웃고, 발자국 주인 찾기면 사람들이 동물이 있던 쪽을 보며 웃음(동물은 나오지 않음, 아무도 "
-    "만지지 않음)",
-)
-# #779(사용자 결정 2026-11-19): 배웅 엔딩. 모두가 동물 쪽을 봐야 "잘 가" 장면이 됨(경찰관 떡집
-# 콘티에서 뭉치는 정면, 사람들은 딴 데를 보고 동물만 덤불 곁에 있어 어색했음)
-ANIMAL_ENDING = (
-    "배웅: 넓은 장면에서 모두(뭉치 포함) 숲·덤불 쪽의 정답 동물을 바라봄. 동물은 숲 가장자리에서 "
-    "한 번 뒤돌아본 뒤 천천히 걸어가고(끝까지 화면 안), 사람들은 그쪽으로 손을 흔들고, 뭉치는 "
-    "사람들과 떨어져 그쪽으로 고개를 살짝 돌리고 웃으며 몸을 흔듦(아무도 동물을 만지지 않음)"
+    # #779(사용자 결정 2026-11-19): 붙잡지 않고 '딱 걸림(현장 포착)'으로 잡는 맛
+    "정답 동물이 드러남: 장난꾸러기 찾기면 장난한 물건을 입에 물거나 든 채 딱 걸려 멈칫하는 "
+    "귀여운 모습(현장 포착), 발자국 주인 찾기면 발자국이 끝나는 곳에서 그 동물을 발견함. "
+    "사람들은 조금 떨어져서 그 동물을 가리키며 놀람(아무도 동물을 만지지 않음)",
+    # 엔딩(종료 6컷)은 모든 종류가 뭉치에게 고마워함이라 배웅은 이 역할(종료 5컷)에서
+    "배웅: 장난꾸러기 찾기면 앞쪽 탁자에 장난당한 물건이 덮개로 덮여 있음. 동물은 숲으로 난 "
+    "출구 쪽으로 천천히 걸어가며 한 번 뒤돌아보고, 사람들은 그쪽을 보며 손을 흔듦(동물은 끝까지 "
+    "화면 안, 아무도 만지지 않음)",
 )
 ANIMAL_TARGET_CUTS = frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)})
-# 6컷 종료 5컷(덮거나 치우며 서로 보고 웃음)은 동물이 나오지 않음, 6컷(배웅)에만 다시 나옴
-ANIMAL_OFF_CUTS = frozenset({("OUTRO", 5)})
+# 6컷 종료 6컷(뭉치에게 고마워함)은 동물이 이미 떠나 나오지 않음(배웅은 종료 5컷)
+ANIMAL_OFF_CUTS = frozenset({("OUTRO", 6)})
 # 동물 흔적 특징: 동물 몸이 남기는 것(몸을 덮은 것·발자국 발 수·발자국의 발톱). 꼬리 모양은 흔적에
 # 남지 않아 목격·기록 날로(일반 흔적 표의 '모양'에 걸리지 않게 이 표만 봄)
 ANIMAL_TRACE = re.compile(r"발자국|발가락|발톱|덮은|털|깃털|가시")
@@ -559,11 +552,11 @@ PRANK = StoryType(
     candidate_kind="동물",
     intro_cuts=ANIMAL_INTRO_CUTS,
     outro_cuts=ANIMAL_OUTRO_CUTS,
-    outro_ending=ANIMAL_ENDING,
     target_off_cuts=ANIMAL_OFF_CUTS,
-    # 장난당한 물건을 정답 장소에서 덮거나 치우므로 그 물건이 있는 사건 장소 바로 바깥
-    outro_place="사건 장소 바로 바깥의 덤불이 가까운 뒤뜰·마당 가장자리(장난당한 물건이 놓인 "
-    "탁자가 있어 그 자리에서 덮거나 치움)",
+    # 장난당한 물건을 정답 장소에서 덮어 두고, 동물이 숲으로 걸어 나갈 출구가 있어야 함(3차 콘티:
+    # 돌담으로 막힌 뒤뜰이라 너구리가 갈 곳이 없었음)
+    outro_place="사건 장소 바로 바깥의 뒤뜰·마당 가장자리: 장난당한 물건이 놓인 탁자가 있고, 한쪽 "
+    "끝에 숲·덤불로 이어지는 열린 곳(담이 끊긴 곳·낮은 울타리 문)이 있음",
     target_cuts=ANIMAL_TARGET_CUTS,
     outro_rule=ANIMAL_OUTRO,
     rules=(
@@ -586,9 +579,8 @@ FOOTPRINT = StoryType(
     candidate_kind="동물",
     intro_cuts=ANIMAL_INTRO_CUTS,
     outro_cuts=ANIMAL_OUTRO_CUTS,
-    outro_ending=ANIMAL_ENDING,
     target_off_cuts=ANIMAL_OFF_CUTS,
-    outro_place="발자국이 이어진 끝의 숲·덤불 가장자리",
+    outro_place="발자국이 이어진 끝의 숲·덤불 가장자리(동물이 걸어 들어갈 숲길이 보임)",
     target_cuts=ANIMAL_TARGET_CUTS,
     outro_rule=ANIMAL_OUTRO,
     rules=(
@@ -1214,7 +1206,6 @@ def type_rules(t: StoryType) -> str:
         + f"- outro(마무리 장면): {t.outro_rule}\n"
         f"- 시작 콘티 역할(컷 틀의 '역할 n'에 넣을 내용): {intro}.\n"
         f"- 종료 콘티 역할(컷 틀의 '역할 n'에 넣을 내용): {outro}.\n"
-        + (f"- 종료 6컷(엔딩)은 역할 4 대신 이 내용: {t.outro_ending}.\n" if t.outro_ending else "")
         + (f"- outroPlace(종료 3~6컷 장소): {t.outro_place}.\n" if t.outro_place else "")
         + hidden_cut_rules(t)
     )

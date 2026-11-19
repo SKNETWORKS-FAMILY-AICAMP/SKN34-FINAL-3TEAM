@@ -91,6 +91,7 @@ class Shot:
     answer_allowed: bool = False  # 종료 콘티 컷만 정답(장소·동물) 공개 허용
     # 잇는 앞 컷(#779 B안): 그 컷 키(INTRO1 등)·장면 글·앞 컷 그림을 받을 때의 지시문
     follows: str | None = None
+    action: str | None = None  # 컷 그림만: 그 컷 동작(그림은 동작의 첫 순간, 검토 SCENE_FIT)
     follow_scene: str | None = None
     follow_prompt: Callable[[list[str]], str] | None = None
 
@@ -151,6 +152,7 @@ async def draw(
                     evidence=shot.evidence,
                     answer_allowed=shot.answer_allowed,
                     previous_scene=shot.follow_scene if follow else None,
+                    action=shot.action,
                 ),
                 output=GeneratedImageReview,
                 call_type=THEME_CALL_TYPE,
@@ -242,6 +244,7 @@ def cut_shot(
         shows_target=body.cut_shows_target(theme, scene, index),
         answer_allowed=body.cut_reveals_answer(scene),
         follows=f"{scene}{k}" if k else None,
+        action=cut.get("action") or None,
         follow_scene=prev_scene,
         follow_prompt=(
             (lambda fb: body.cut_image_prompt(theme, scene, index, cut, fb, prev_scene))

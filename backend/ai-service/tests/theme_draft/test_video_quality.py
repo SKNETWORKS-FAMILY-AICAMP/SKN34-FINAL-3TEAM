@@ -76,7 +76,7 @@ def test_video_prompt_story_beat_camera_and_mungchi_rules() -> None:
     assert "same face, hair and clothes as in the first frame" in end  # 토끼 머리핀 → 토끼 귀
     # 3테마 실행: 영상 지시에 안경·머리핀을 쓰자 없던 안경·콧수염이 생김(6건) → 금지 목록으로만
     assert "nothing added to anyone's face" in end and "glasses" not in end
-    assert "flags or balloons flutter" in end  # 엔딩 컷 움직임(컷 틀)
+    assert "clap for it" in end  # 엔딩 컷 움직임(컷 틀, #779 뭉치에게 고마워함)
     first = prompts.video_prompt(theme, "INTRO", 1, INTRO_CUTS[0], [])
     assert "Mungchi does not appear in this clip." in first
     assert f"Camera: {prompts.CAMERA_TEXT['PAN_SIDE']}" in first
@@ -537,18 +537,36 @@ def test_outro_first_caption_must_say_the_answer() -> None:
     assert not any(r.startswith("CUT_ANSWER") for r in checks.caption_problems(six, "OUTRO", 1))
 
 
-def test_animal_ending_cut_is_a_farewell_everyone_looks_at() -> None:
-    """종료 5·6컷이 같은 장면이 되고 아무도 동물을 보지 않아 어색했음(경찰관 떡집 콘티 2026-11-19).
-    5컷은 물건을 덮고 서로 웃음, 6컷(엔딩)은 모두 동물 쪽을 보고 배웅."""
+def test_outro_ending_thanks_mungchi_and_animal_farewell_in_cut5() -> None:
+    """종료 흐름(#779 사용자 결정 2026-11-19): 동물 종류는 3컷 딱 걸림(현장 포착, 아무도 안 만짐),
+    5컷 덮어 두기 + 배웅, 6컷(엔딩)은 모든 종류가 같은 '뭉치에게 고마워함'(종료 6컷이 반만 바뀌어
+    공통 할 일·뭉치 동작과 배웅이 부딪혔던 4차 콘티)."""
     from app.theme_draft import families
 
+    ending = cuts.layout(6)["OUTRO"][5]
+    assert ending.own and "뭉치에게 고마워함" in ending.beat and "clap" in ending.motion
     for code in ("PRANK", "FOOTPRINT"):
         t = families.STORY_TYPES[code]
-        assert "모두(뭉치 포함)" in t.outro_ending and "뒤돌아본 뒤" in t.outro_ending
-        assert "종료 6컷(엔딩)은 역할 4 대신" in families.type_rules(t)
-        assert "배웅" not in t.outro_cuts[3]
-    assert families.STORY_TYPES["LOST"].outro_ending == ""
-    assert "종료 6컷(엔딩)" not in families.type_rules(families.STORY_TYPES["LOST"])
+        assert "딱 걸려" in t.outro_cuts[2] and "만지지 않음" in t.outro_cuts[2]
+        assert "배웅" in t.outro_cuts[3] and "숲으로 난 출구" in t.outro_cuts[3]
+        c = families.type_cuts(t, 6)
+        assert c.target == {("OUTRO", 3), ("OUTRO", 5)}  # 6컷엔 동물이 이미 떠남
+    theme = valid_theme()
+    for code in ("LOST", "PRANK"):  # 엔딩 할 일은 종류와 상관없이 같음(종류 역할을 붙이지 않음)
+        assert prompts.cut_beat({**theme, "storyType": code}, "OUTRO", 6) == ending.beat
+    assert "종료 6 [함께(뭉치는 떨어져)·정답 장소]: 엔딩" in prompts.PLAN_SYSTEM
+    # 엔딩 자막: 그 컷에 보이는 인물이 뭉치에게 고마워함(CUT_THANKS, 그 자막만 고쳐 씀)
+    six = valid_theme()
+    assert not checks.caption_problems(six, "OUTRO", 6)
+    for bad_caption in ("지호: 사건 해결!", "뭉치: 고마워, 지호!", "지호: 고마워!"):
+        six["outroCuts"][5]["caption"] = bad_caption
+        bad = checks.caption_problems(six, "OUTRO", 6)
+        assert any(r.startswith("CUT_THANKS outroCuts6.caption") for r in bad), bad_caption
+        assert any(p.match(bad[-1]) for p in checks.FIX_REASON)
+    # 그림은 그 컷 할 일·동작의 첫 순간(4차 콘티: 5컷에 덮을 떡이 없고 6컷에서 아무도 안 봄)
+    img = prompts.cut_image_prompt(theme, "OUTRO", 6, theme["outroCuts"][5], [])
+    assert f"This cut's story beat (Korean): {ending.beat}" in img
+    assert theme["outroCuts"][5]["action"] in img and prompts.FIRST_MOMENT in img
 
 
 def test_follow_cuts_point_to_earlier_people_cut() -> None:

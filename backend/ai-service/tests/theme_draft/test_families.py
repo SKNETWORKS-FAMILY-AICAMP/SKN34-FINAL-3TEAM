@@ -323,9 +323,9 @@ def test_mission_dialogue_and_hook_with_candidate_animal_are_flagged() -> None:
         # #779 6컷 틀(콘티가 없으면 새 틀): 4컷 번호를 같은 역할 컷으로, 뭉치 혼자 컷은 뺌
         ("LOST", {("INTRO", 1), ("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
         ("TREASURE", {("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
-        # 동물 종류는 종료 5컷(덮으며 서로 보고 웃음)에서 동물을 뺌(target_off_cuts)
-        ("PRANK", {("OUTRO", 3), ("OUTRO", 6)}),
-        ("FOOTPRINT", {("OUTRO", 3), ("OUTRO", 6)}),
+        # 동물 종류는 종료 6컷(뭉치에게 고마워함)에서 동물을 뺌(target_off_cuts)
+        ("PRANK", {("OUTRO", 3), ("OUTRO", 5)}),
+        ("FOOTPRINT", {("OUTRO", 3), ("OUTRO", 5)}),
     ],
 )
 def test_target_cuts_by_story_type(code: str, allowed: set[tuple[str, int]]) -> None:
@@ -352,7 +352,7 @@ def test_animal_pictures_hide_candidates_and_keep_answer_look() -> None:
     assert "gently lift" not in video
     for code in ("PRANK", "FOOTPRINT"):
         t = families.STORY_TYPES[code]
-        assert "안아 올" not in " ".join(t.outro_cuts) and "배웅" in t.outro_ending
+        assert "안아 올" not in " ".join(t.outro_cuts) and "배웅" in t.outro_cuts[3]
         assert "만지거나 안거나 붙잡지 않고" in t.outro_rule
     lost_video = prompts.video_prompt(valid_theme(), "OUTRO", 2, valid_theme()["outroCuts"][1], [])
     assert "Do not show 강아지 보리" in lost_video and "these animals" not in lost_video

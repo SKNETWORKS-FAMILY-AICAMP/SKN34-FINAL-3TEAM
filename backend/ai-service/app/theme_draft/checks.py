@@ -246,6 +246,8 @@ FIX_REASON = (
     re.compile(r"^CUT_SPEAKER ((?:introCuts|outroCuts)[1-6])\.(caption) "),
     # #779 종료 1컷 자막은 뭉치가 정답을 말함(경찰관 떡집 콘티: "장난꾸러기 찾았다!"로 정답이 빠짐)
     re.compile(r"^CUT_ANSWER ((?:introCuts|outroCuts)[1-6])\.(caption) "),
+    # #779 종료 6컷(엔딩)은 그 컷에 보이는 인물이 뭉치에게 고마워함(사용자 결정 2026-11-19)
+    re.compile(r"^CUT_THANKS ((?:introCuts|outroCuts)[1-6])\.(caption) "),
     re.compile(r"^REQUIRED ((?:introCuts|outroCuts)[1-6])\.(caption)$"),
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery|sceneNote)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
@@ -1501,6 +1503,9 @@ def clear_off_captions(theme: Theme) -> None:
                 cut["caption"] = ""
 
 
+THANKS = re.compile(r"고마|고맙|감사")  # 종료 6컷 감사 말(#779 CUT_THANKS)
+
+
 def caption_speaker(text: str) -> str | None:
     """'이름: 대사' 꼴 자막의 이름(꼴이 아니면 None)."""
     m = re.match(r"^\s*([^:：\s][^:：]{0,14}?)\s*[:：]\s*\S", text)
@@ -1549,6 +1554,13 @@ def caption_problems(theme: Theme, scene: str, i: int) -> list[str]:
     answer = str(theme.get("answer") or "").strip()
     if (scene, i) == ("OUTRO", 1) and answer and not mentions_value(answer, text):
         bad.append(f"CUT_ANSWER {key}{i}.caption 뭉치가 정답({answer})을 말해야 함")
+    if (scene, i) == ("OUTRO", 6) and (
+        name == "뭉치" or not THANKS.search(text) or "뭉치" not in text
+    ):
+        bad.append(
+            f"CUT_THANKS {key}{i}.caption 그 컷에 보이는 인물이 뭉치에게 고마워하는 말"
+            "(예: '아린: 고마워, 뭉치!')"
+        )
     return bad
 
 

@@ -79,7 +79,7 @@ def cut_layout_lines(n: int = cut_layout.NEW_CUTS) -> list[str]:
             # 뭉치 혼자 컷은 할 일 그대로(종류 역할을 붙이지 않음, 영상 지시 cut_beat와 같게).
             # 역할을 붙이면 시작 5컷(결심 클로즈업)에 '출동', 종료 4컷(뭉치 리액션)에 '주인이 대상을
             # 받아 듦'처럼 그 컷과 어긋난 내용이 붙었음(#779 종류 11 × 컷 12 대조 2026-11-19)
-            role = f" 역할 {s.role}" if s.has_people else ""
+            role = f" 역할 {s.role}" if s.has_people and not s.own else ""
             out.append(f"{SCENE_KO[scene]} {i} [{who}]{role}: {s.beat}. {caption}")
     return out
 
@@ -205,7 +205,7 @@ PLAN_SYSTEM = (
     "마친 때'면 이야기에서도 그때 준비가 끝나 있음).\n"
     "- introCuts·outroCuts는 시작·종료 영상 콘티로 각각 정확히 6컷(무음 영상, 컷마다 4초). "
     "컷마다 누가 나오고 무엇을 보여 주는지는 아래 컷 틀을 지키고, 내용은 줄거리 종류 규칙의 콘티 "
-    "역할(역할 1~4)에서 가져온다(역할 번호가 없는 뭉치 혼자 컷은 적힌 할 일 그대로). "
+    "역할(역할 1~4)에서 가져온다(역할 번호가 없는 컷은 적힌 할 일 그대로). "
     # #779: scene은 컷 첫 그림으로 그려지고 영상이 그 그림에서 시작함(예전 문구 "컷 끝에 보이는
     # 장면"은 첫 그림과 어긋나 이동 컷이 거꾸로 움직였음)
     "scene은 그 컷이 시작하는 첫 장면(누가 어디서, 무엇이 보이는지, 영상이 이 그림에서 시작), "
@@ -586,14 +586,11 @@ def cut_beat(theme: Theme, scene: str, index: int) -> str:
     if cut_count(theme, scene) == 4:
         return roles[index - 1]
     s = cut_spec(theme, scene, index)
-    if not s.has_people:
+    if not s.has_people or s.own:  # 뭉치 혼자 컷·모든 종류가 같은 엔딩(종료 6컷)은 할 일 그대로
         return s.beat
     content = roles[s.role - 1]
     if (scene, index) == ("OUTRO", 3) and roles[1] != OUTRO_ARRIVE_HIDDEN:
         content = f"{roles[1]} → {content}"
-    ending = story_type(theme).outro_ending
-    if (scene, index) == ("OUTRO", 6) and ending:  # 동물 배웅 엔딩(#779)
-        content = ending
     return f"{s.beat}. 내용: {content}"
 
 
@@ -1837,8 +1834,13 @@ CLOSE_SHOT = (
 # 지도를 그렸음. 장면·동작에 글자가 들어갈 물건이 있을 때만 넣는다
 WRITTEN_WORDS = re.compile(r"쪽지|편지|지도|안내판|표지판|메모|종이|카드|간판|책|공책|수첩|사진")
 WRITTEN_THINGS = (
-    "Notes, letters, maps or signs show simple pictures or symbols (a dotted path, an X mark) "
-    "instead of letters, and never show the hidden target or any candidate place."
+    "Books, notes, letters and signs show no letters or numbers (blank or simple shapes only) "
+    "and never show the hidden target or any candidate place."
+)
+# 점선 길·X 표시 예시는 보물 쪽지 종류만(4차 콘티: 장면 글의 '책' 때문에 붙은 이 예시를 따라 떡집
+# 벽에 X 표시 지도가 그려지고 앞 컷 잇기로 다음 컷들에도 이어졌음)
+TREASURE_NOTE = (
+    "A treasure note or map may show a simple dotted path or an X mark instead of words."
 )
 
 
@@ -1856,6 +1858,12 @@ MUNGCHI_SEPARATE = (
 MYSTERY_LIGHT = (
     "A touch of mystery: soft long shadows and slightly cooler tones, still in bright afternoon "
     "daylight, never dark or scary."
+)
+
+
+FIRST_MOMENT = (
+    "This picture is the very first moment of this cut's action, so everything the action needs "
+    "is already in view and the characters already face where they will look, wave or clap"
 )
 
 
@@ -1908,6 +1916,11 @@ def cut_image_prompt(
         lines.append("Only Mungchi is in this picture (no other characters).")
     lines.append(cut_place(theme, scene, spec))
     lines.append(f"Scene (Korean): {cut['scene']}")
+    # #779(4차 콘티 2026-11-19): 그림이 장면 글만 받아 종료 5컷에 덮을 떡이 없고 6컷에서 아무도
+    # 너구리를 보지 않았음. 영상 지시와 같은 할 일·동작을 받아 첫 순간에 필요한 것을 그림
+    lines.append(f"This cut's story beat (Korean): {cut_beat(theme, scene, index)}")
+    if action := str(cut.get("action") or "").strip():
+        lines.append(f"{FIRST_MOMENT} (Korean): {action}")
     if prev_scene is None:
         lines.append(CUT_FRAMING)
     else:
@@ -1925,6 +1938,7 @@ def cut_image_prompt(
         lines.append(APART_FROM_ANIMALS)
     if WRITTEN_WORDS.search(f"{cut.get('scene', '')} {cut.get('action', '')}"):
         lines.append(WRITTEN_THINGS)
+        lines.append(TREASURE_NOTE if story_type(theme).code == "TREASURE" else "")
     lines.append(spec.look)  # 첫 그림 표정(리액션 컷은 놀란 얼굴, #779)
     lines += [x for x in target_lines(theme, scene, index) if x]
     lines += [IMAGE_RULES, *_fixes(feedback)]
@@ -1974,7 +1988,10 @@ IMAGE_REVIEW_SYSTEM = (
     + "\n"
     "TEXT: 글자·숫자 같은 글이 보이는지(간판·책·표지에 쓴 글 포함).\n"
     "SAFETY: 무섭거나 위험한 모습, 폭력, 실존 인물·상표가 있는지. " + SAFETY_STORY + "\n"
-    "SCENE_FIT: 주어진 장면의 장소·인물·하는 일이 그림에 보이는지. 장면 글에 없는 등장인물이 함께 "
+    # #779: 컷 그림은 동작(action)의 첫 순간(그림 지시 FIRST_MOMENT와 같게)
+    "SCENE_FIT: 주어진 장면의 장소·인물·하는 일이 그림에 보이는지. action이 있으면 그림은 그 "
+    "동작의 첫 순간이라, 동작에 쓰이는 물건·대상과 인물이 바라보거나 손을 흔들거나 손뼉 치는 쪽이 "
+    "그림에 있는지도 본다(동작이 끝나 있을 필요는 없음). 장면 글에 없는 등장인물이 함께 "
     "있는 것은 결함이 아니다. "
     # #765: 대상이 나오면 안 되는 그림은 일부러 대상을 그리지 않음(ANSWER_HINT와 반대로 걸리지 않게)
     "찾는 대상이 나오면 안 되는 그림(targetAllowed false)에서 찾는 대상이나 후보가 보이지 않는 "
@@ -2019,6 +2036,7 @@ def image_review_user(
     evidence: str | None = None,
     answer_allowed: bool = False,
     previous_scene: str | None = None,
+    action: str | None = None,
 ) -> str:
     body: dict = {
         "items": list(ids),
@@ -2031,6 +2049,8 @@ def image_review_user(
     }
     if previous_scene is not None:
         body["previousScene"] = previous_scene
+    if action:
+        body["action"] = action
     if question is not None:
         body |= {
             "missionQuestion": question,

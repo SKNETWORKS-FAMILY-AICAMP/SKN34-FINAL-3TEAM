@@ -166,18 +166,22 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("target empty", themed(target=""), ["REQUIRED"]),
     ("title too long", themed(title="가" * 21), ["LENGTH"]),
     ("intro too long", themed(intro="가" * 201), ["LENGTH"]),
-    # #779: 자막 말하는 사람(시작 2·종료 3컷 지호)이 인물 목록에 없어 CUT_SPEAKER도 나옴
-    ("no characters", themed(characters=[]), ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER"]),
+    # #779: 자막 말하는 사람(시작 2·종료 3·6컷 지호)이 인물 목록에 없어 CUT_SPEAKER도 나옴
+    (
+        "no characters",
+        themed(characters=[]),
+        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER", "CUT_SPEAKER"],
+    ),
     (
         "four characters",
         themed(characters=[{"name": f"아이{i}", "look": "모습"} for i in range(4)]),
-        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER"],
+        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER", "CUT_SPEAKER"],
     ),
     ("character without look", themed(characters=[{"name": "지호", "look": ""}]), ["CHARACTERS"]),
     (
         "mungchi as character",
         themed(characters=[{"name": "뭉치", "look": "솜"}]),
-        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER"],
+        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER", "CUT_SPEAKER"],
     ),
     ("candidate color word", edit(lambda t: _rename(t, "창고", "빨간창고")), ["CANDIDATES"]),
     ("candidate one char", edit(lambda t: _rename(t, "창고", "샘")), ["CANDIDATES"]),

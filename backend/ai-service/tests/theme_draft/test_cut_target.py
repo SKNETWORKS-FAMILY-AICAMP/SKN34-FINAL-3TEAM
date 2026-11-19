@@ -177,9 +177,9 @@ def test_plan_rules_list_cuts_where_target_or_candidates_appear() -> None:
     assert "없다는 말도 쓰지 않는다" in lost
     assert "찾는 대상은 아직 나오지 않아 scene·action에 쓰지 않음" in lost  # 종료 2컷 틀
     prank = families.type_rules(families.PRANK)
-    # #779: 동물 종류는 종료 5컷(덮으며 서로 보고 웃음)에 동물이 나오지 않음(target_off_cuts)
-    assert "후보(동물) 이름은 정답을 포함해 outroCuts 3·6의 scene·action에만 쓴다" in prank
-    assert "outroCuts 1·2·4·5에는 쓰지 않는다" in prank
+    # #779: 동물 종류는 종료 6컷(뭉치에게 고마워함)에 동물이 이미 떠남(target_off_cuts)
+    assert "후보(동물) 이름은 정답을 포함해 outroCuts 3·5의 scene·action에만 쓴다" in prank
+    assert "outroCuts 1·2·4·6에는 쓰지 않는다" in prank
     # 손에 든 것도 뭉치 혼자 나오는 컷(6컷 틀)에는 그리지 않아 그 컷만 숨김(#779)
     assert "(introCuts 4·5, outroCuts 1·2·4)" in families.hidden_cut_rules(families.ORIGIN)
     assert "그림에 나오지 않는 것을 '○○는 보이지 않는다'처럼 쓰지 않는다" in prompts.PLAN_SYSTEM
@@ -241,9 +241,9 @@ def test_six_cut_hidden_scope_by_story_type() -> None:
     assert lost.target == {("INTRO", 1), ("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}
     assert alone <= lost.hidden_target
     prank = families.type_cuts(families.PRANK, 6)
-    # #779: 동물 종류는 종료 5컷(덮으며 서로 보고 웃음)에서 동물을 뺌(target_off_cuts)
-    assert prank.answer == prank.target == {("OUTRO", 3), ("OUTRO", 6)}
-    assert prank.hidden_candidate == {("OUTRO", 1), ("OUTRO", 2), ("OUTRO", 4), ("OUTRO", 5)}
+    # #779: 동물 종류는 종료 6컷(뭉치에게 고마워함)에서 동물을 뺌(target_off_cuts)
+    assert prank.answer == prank.target == {("OUTRO", 3), ("OUTRO", 5)}
+    assert prank.hidden_candidate == {("OUTRO", 1), ("OUTRO", 2), ("OUTRO", 4), ("OUTRO", 6)}
     gift = families.type_cuts(families.GIFT, 6)
     assert not (gift.target & alone)  # 손에 든 선물 상자도 뭉치 혼자 컷에는 그리지 않음
     legacy = families.type_cuts(families.LOST, 4)  # 예전 4컷 초안은 종류 정의 그대로
