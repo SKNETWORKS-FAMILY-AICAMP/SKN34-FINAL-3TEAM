@@ -154,6 +154,7 @@
 | `INTERNAL_ERROR` | 500 | 예상하지 못한 서버 오류 (SSE `error` 이벤트는 `retryable: true`) |
 
 - 피드백 SSE `error` 이벤트: core가 만든 오류는 `type: "about:blank"`·`title`·`status`·`code`·`retryable`만 포함하고 `instance`·`traceId`는 없음. learning이 보낸 Problem Details는 그대로 전달하고 빠진 `type`·`title`·`status`·`code`·`retryable`만 보충 (3.2)
+- learning→ai 호출 실패 코드 `AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`(learning 서킷 차단: ai를 부르지 않고 실패 횟수에 넣지 않음, `retryable` true)은 learning 내부 기록 값이며 **HTTP 응답 `code`가 아니다**. 판정 `failure_code`, 미션·테마 초안 `failureCode`와 `checkResults`의 `AI_CALL` 사유에 남는다. 학생 피드백 응답은 어느 경우든 `503 AI_UNAVAILABLE`(+`retryable`)이다(4.1)
 
 ### 1.4 멱등성·동시성
 - `Idempotency-Key`(UUID) 필수 대상
@@ -278,6 +279,8 @@
 | POST | `/children` | 학부모 | 자녀 프로필 등록 `{nickname, grade(3~6), birthYear}` + 법정대리인 동의(전원 만 14세 미만 간주). 3명 초과 시 409 (P01, P02, P03) | ACC-06, ACC-02 | 제안 |
 | PATCH | `/children/{childId}` | 학부모 | 닉네임·학년(3~9, 7~9는 중1~3) 수정 (학년은 이후 제공 문제에만 적용, 학년이 바뀌면 `grade_changed_at` 기록해 그 해 자동 진급 판단에 씀, P26 #432) | ACC-09 | 우선1 |
 | PUT | `/children/{childId}/pin` | 학부모 | PIN 설정·변경 `{pin}`. 활성 학부모 세션·현재 연결 자녀 권한 검사, 추가 재인증 없음. 숫자 4~6자리·반복/연속 거부(422), 잠금·실패 횟수 초기화·감사 | ACC-14 | 구현 |
+| GET · PUT | `/students/me/sharing-preferences` | 학생 | 학부모 원문 공개 설정 조회·변경. PUT `{parentSharingEnabled}`(누락·null 400) → `{studentId, parentSharingEnabled}`, 기본 false (#206, 5.15) | - | 구현 |
+| GET | `/children/{childId}/sharing-preferences` | 학부모 | 연결 자녀의 원문 공개 설정 조회 `{studentId, parentSharingEnabled}` (#206, 5.15) | - | 구현 |
 | POST | `/student-devices/pairings` | 학부모 | 1회용 페어링 코드 발급 `{childIds[]}` → `{pairingCode, expiresAt}` (10분, QR은 클라이언트가 코드로 생성) (P01) | ACC-14 | 제안 |
 | GET | `/student-devices` | 학부모 | 등록 기기 목록 `{deviceId, label, children[], createdAt, lastUsedAt, expiresAt}` | ACC-14 | 제안 |
 | DELETE | `/student-devices/{deviceId}` | 학부모 | 기기 등록 해제 → 이후 해당 기기 PIN 로그인 거부 | ACC-14 | 제안 |
@@ -523,6 +526,8 @@
 | POST | `/admin/model-versions` | SERVICE_OPS | 버전 등록 (평가 기록 첨부) | ADM-17 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/activate` | SERVICE_OPS | 승인 조건(NFR-AIQ-05) 확인 후 활성화 → `model.version.activated` | ADM-18 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/rollback` | SERVICE_OPS | 이전 승인 버전 복귀, 재분석 여부 기록 | ADM-18 | 우선1 |
+| POST | `/admin/models/preflight` | SERVICE_OPS | 모델 등록 전 파일 사전 검사, core가 scoring `/internal/models/preflight`로 동기 중계 (#368, 5.2.1) | ADM-17 | 우선1 |
+| GET | `/admin/model-loading` | SERVICE_OPS | scoring Pod별 모델 로딩 상태 `pods[]`·활성 버전별 요약 `summaries[]` (#370, [scoring Pod별 모델 로딩 확인](#scoring-pod별-모델-로딩-확인-370)) | ADM-18 | 우선1 |
 | GET | `/admin/expression-reviews?labeled&source&page&size` | SERVICE_OPS | 표현 검토 대기 목록(글만, 학생 이름·ID 없음), 열람 감사 기록 (#725, 4.1.5) | ADM-24 | 우선2 |
 | PUT | `/admin/expression-reviews/{reviewId}/label` | SERVICE_OPS | `{label: OFFENSIVE\|CLEAN\|SKIP}` 라벨, 감사 기록 (#725) | ADM-24 | 우선2 |
 | GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·지식 임베딩(#467 `KNOWLEDGE_EMBEDDING`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`·영상 `THEME_VIDEO` #436)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
@@ -955,6 +960,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/records/students/{studentId}/summary?from&to` | core, ai | 건수·상태 `Metric[]` → `{studentId, state, period, inclusionRule, metrics}`(1.6). 지표: 학습한 활동(집계 대상 시도 수), 완료한 활동(완료 / 집계 대상), 도움 없이 시작한 활동(최초 답변 전 생각 열기 열람 없는 시도 / 집계 대상, P08), 되묻기 후 생각을 더한 활동(보완 답변 제출 시도 / 되묻기 받은 시도, 1.6) |
 | GET | `/internal/records/students/{studentId}/thinking-types?from&to` | core, ai, report | 유형별 미션·기록 → `{studentId, state, period, items:[{type, state, missions:[{attemptId, title}]}]}`, 다섯 유형 모두, 기록 없는 유형은 `NO_RECORD`(FN-DSH-08 미관찰) |
 | GET | `/internal/records/students/{studentId}/attempts?from&to&status&page&size` | core, ai, report | 시도 목록·상세(답변 버전·되묻기·도움·돌아보기 원문) → 1.1 봉투 + `{studentId, state, period, inclusionRule}`, 최근 답변 순, `status`(`IN_PROGRESS`·`COMPLETED`, 생략하면 전체)는 지금 그 상태인 시도만. `items`는 4.1 시도 상세에서 초안(`draft`, 메모 포함)을 뺀 모양 + `completedAt`·`hintUsages:[{openedAt}]`·`reflection{difficulty, text, createdAt}`. `finishedAt`은 마무리(정답·예시 답 공개) 시각, `completedAt`은 돌아보기를 내 `COMPLETED`가 된 시각(각각 그 전에는 `null`), 돌아보기가 있으면 `createdAt`은 항상 값(= `completedAt`). `answers`·`hintUsages`는 1번·처음부터 조회 종료일까지(시작일 이전 포함, 지난 기간을 조회해도 그 뒤가 섞이지 않음, FN-RPT-02), `reflection`은 기간 안에 쓴 것만(아니면 `null`) |
+| GET | `/internal/records/students/{studentId}/daily-attempts?from&to&page&size` | report | 일일 리포트용. 같은 KST 날짜의 **완료 시각**으로 조회(전날 제출·오늘 완료 포함), 응답은 위 시도 목록과 같은 RecordPage (#391, [#391 소비 계약](#391-report-일일-생성주간-테마-소비-계약)) |
 | GET | `/internal/records/students/{studentId}/attempts/{attemptId}?from&to` | core | 학부모 2.3 시도 상세용. 목록 `items`와 같은 모양 + `state: OK`·`period`. 기간은 화면이 유지할 정보라 검증·기본값만 적용하고 이력(답변·되묻기·도움·돌아보기)은 자르지 않음. 다른 학생의 시도·집계 대상이 아닌 시도는 `404` |
 | GET | `/internal/records/students/{studentId}/home?from&to&grade&demo` | core | 학생 2.3 홈용(FN-DSH-01·02) → `{studentId, state, period, resume, missions}`. 학생 본인 요청만(`STUDENT`, 범위에 본인 1명, 4.1 미션 목록과 같은 기준). `resume`은 진행 중 시도 중 가장 최근에 손댄 것(시작·답변 제출·초안 저장 중 가장 늦은 시각) 하나, 기간과 무관하고 초안만 있는 시도·마무리 뒤 돌아보기 전 시도도 포함(FN-LRN-16), 목록 `items`와 같은 모양(초안·메모 없음, 본인 초안은 core가 학생 시도 상세로 붙임), 없으면 `null`. `missions`는 4.1 미션 목록 항목 전체(`grade` 3~6 필수, `demo` 기본 `false`, 같은 노출 범위). `state`는 기간 안 집계 대상 시도 수 |
 | GET | `/internal/records/students/{studentId}/thinking-activities?from&to` | core, ai | 학생 2.3 생각 활동용(FN-DSH-04), ai 분석 대화의 돌아보기·전후 변화 근거 미션 제목 → `{studentId, state, period, items:[{attemptId, thinkingType, missionTitle, reflection{difficulty, text}}]}`. 집계 대상 시도를 최근 답변 순으로, `reflection`은 기간 안에 쓴 것만(아니면 `null`, 목록과 같음). 수치·등급·순위 없음 |
@@ -1202,7 +1208,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 가짜 구현(개발용): `MEMORY_QUERY_PROVIDER=fake`면 LLM 없이 질문을 공백으로 나눈 앞 5개(1~20자로 자름, 중복 제거)를 `keywords`로, `period = null`, `searchText` = 원문. 모델 `fake-memory-query-v1`, 사용량 없음
 
 
-### 4.3 scoring-service (호출: ai, learning)
+### 4.3 scoring-service (호출: ai, learning, core)
 
 #### #549 채점 전 글 정리 (11/12 확정)
 
@@ -1250,6 +1256,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | POST | `/internal/m2/scores` | 위 #228 계약. 서술 9항목·논술 3영역의 정수/소수 점수와 실제 모델 버전 반환 |
 | POST | `/internal/m1/checks` | `{problem, answerKey, solution:{steps,finalAnswer}}` → 현재 미학습이므로 `{active:false}`. 활성 추론·확신도 처리는 후속 범위(P15) |
 | POST | `/internal/toxicity/checks` | 아래 4.3.4. 학생이 쓴 칸별 글 → `{active, flagged, review, model}`. 호출은 learning만 (#688) |
+| POST | `/internal/models/preflight` | 모델 파일 사전 검사. 호출은 core 관리자 중계만 (#368, 5.2.1) |
 | GET | `/internal/versions` | 로딩 완료한 활성 모델 `{items:[{name,version,revision}]}`. name 순 정렬, 없으면 `{items:[]}`. 내부 토큰 필수 |
 
 #### 4.3.3 #85 scoring 모델 조회·로딩 기준 (2026-10-28)
