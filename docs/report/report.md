@@ -350,3 +350,7 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - 기간: 일일은 완료 시각 기준(22절)이라 몰아 푼 날 그날 마무리한 테마 문제가 모두 잡힘. 주간 생성 시각(월 00:00) 불변, learning 요약은 `theme_week_start`로 모아 일요일 풀이도 포함. 한계: 일요일 시작·월 00:00 뒤 마무리한 시도는 재생성 때만 반영
 - 검증: report pytest 전체 통과(새 10개: 매일·몰아 푼 학생·엔딩 못 본 학생 표시, 이전 입력·옛 저장본 동일 표시, 검증 오류 5종, 일일 몰아 푼 문제), Ruff·OpenAPI 일치 통과. learning `AttemptComparisonIntegrationTest`의 실제 요약을 `validate_theme_summary_contracts.py`로 learning·report OpenAPI와 대조해 PASS
 - 남은 일: #484 병합 뒤 새 칸을 채운 실제 응답 대조와 kind 한 주 흐름 확인
+
+## 29. 일일 리포트 답변별 생각·작성 시간 (설계 #800, 2026-11-19, 구현 전)
+
+- [learning.md 42절](learning.md#42-답변-생각작성-시간과-붙여넣기-막기-설계-800-2026-11-19): learning `answers[].thinkingSeconds`·`writingSeconds`로 일일 `problems[].answerTimes` 생성, "처음 답/되묻기 뒤 답/두 번째 되묻기 뒤 답: 생각 N분 · 작성 N분"(60초 미만 "1분 미만", 시간 없는 답 생략, 원문 비공개여도 표시), HTML·Markdown·PDF·웹 화면 같은 문구는 #803. 주간 리포트·지표는 범위 밖

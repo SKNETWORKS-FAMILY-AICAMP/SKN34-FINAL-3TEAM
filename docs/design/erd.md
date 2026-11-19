@@ -1295,6 +1295,17 @@ erDiagram
 - 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
 - `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 2026-11-10 개정(#483) 뒤 뜻: `THEME_DAY`는 공개된 테마 문제 신규 시도(월~토, 프리미엄 일요일), `THEME_REVIEW`는 토요일(프리미엄 일요일) 다시 풀기. 값·CHECK는 그대로이며, 당일 풀이는 `completed_at`과 문제 요일로 계산하고 큰 질문 정답 고르기 결과는 `theme_answer_pick`(4.2.1, #484)에 둔다. 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
 
+**`answer` 생각·작성 시간 (P28, 설계 #800, 구현 #801)**: 구현 전. Mermaid 표와 6장은 `scripts/verify_db_schema.py`가 실제 DB와 자동 대조하므로 learning 마이그레이션(#801)과 같은 PR에서 아래 칸을 4.2 Mermaid `answer`로 옮긴다(4.3.2와 같은 방식).
+
+| 칸 | 형식 | 내용 |
+|---|---|---|
+| `thinking_seconds` | int, NULL 허용 | 문제 화면(보완 답변은 되묻기 질문) 표시 → 답변 칸 첫 입력, 초. CHECK `>= 0` |
+| `writing_seconds` | int, NULL 허용 | 첫 입력 → 제출, 초. CHECK `>= 0` |
+
+- CHECK: 두 칸은 함께 NULL이거나 함께 값(`(thinking_seconds IS NULL) = (writing_seconds IS NULL)`). 24시간(86400초) 초과는 learning이 NULL로 저장해 DB에 들어오지 않는다(api-spec 3.1)
+- 기존 행은 NULL 그대로(채우지 않음), 기본값 없음. 인덱스 없음(조회는 답변 행과 함께)
+- 같은 시도·키 재전송 비교(`(attempt_id, idempotency_key)`)에서 두 칸은 빼고 본다
+
 ### 4.2.1 주간 테마 (P23, #385 V11·V12)
 
 #438이 V15·V16으로 학년별 테마·이야기·이미지·영상·정답 구조·테마 초안·이야기 열람을 더했다(아래 Mermaid와 끝 항목). #559가 V19로 기념 액자(`theme_frame`, P27, 4.6 설계 표에서 옮김)를 더했다.

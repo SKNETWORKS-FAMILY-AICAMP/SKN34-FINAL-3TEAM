@@ -1280,3 +1280,40 @@ kind Postgres(PostgreSQL 17, CPU 한도 500m)에 learning_db를 복사한 비교
 - kind 학습 기록·되묻기 API(core 호출자 토큰, 학생 헤더): `GET /internal/records/students/{id}/attempts` 200(17건, 60~100ms), `POST /internal/answers/{id}/feedback` 200 `DONE`이고 아직 답하지 않은 최근 되묻기 ID를 그대로 돌려줌. 판정·보완 답변 제출은 실제 LLM 비용이 들어 kind에서는 하지 않고 기존 테스트로 확인
 - learning `./gradlew test bootJar`(JDK 21 컨테이너, Testcontainers): 612건 중 실패 0(건너뜀 3, 기존), bootJar 생성. 기존 테스트가 쓰는 PostgreSQL 컨테이너도 V22까지 적용한 스키마로 돈다
 - DB 스키마 검사(`check_db_migrations.py`, CI와 같은 pgvector 이미지): 세 DB 적용·ERD 대조(인덱스 65개)·재실행 무변경·report 왕복 통과
+
+## 42. 답변 생각·작성 시간과 붙여넣기 막기 설계 (#800, 2026-11-19)
+
+#231 코멘트(학생이 얼마나 생각했는지 시간으로 확인, 붙여넣기 막기)가 2026-11-19 12/7 데모 범위로 결정됐다(에픽 #799). 지금은 시도 시작(`attempt.started_at`)과 제출(`answer.submitted_at`)만 있어 언제 쓰기 시작했는지 모르고, 답변 칸 붙여넣기 처리도 없다. 문서 이슈 #800에서 기준안을 확정해 [기능명세 P28](../design/functional-spec.md#14-확정-정책)·FN-LRN-05·08·FN-RPT-14, [API 3.1·3.8·4.1·4.1.1·2.5](../design/api-spec.md#31-답변-제출--post-attemptsattemptidanswers), [ERD 4.2](../design/erd.md#42-학습-시도답변판정-fn-lrn-fn-jdg) 구현 전 표, UC-08·시퀀스 3.1에 반영했다.
+
+### 정한 것
+
+| 항목 | 확정 값 | 근거 |
+|---|---|---|
+| 생각 시간 | 문제 화면(보완 답변은 되묻기 질문) 표시 → 답변 칸 첫 입력 | 사용자 결정 2026-11-19 |
+| 작성 시간 | 첫 입력 → 제출 | 사용자 결정 2026-11-19 |
+| 저장 | 답변(버전)마다 `answer.thinking_seconds`·`writing_seconds` int NULL 허용, CHECK ≥ 0, **두 칸은 함께 NULL이거나 함께 값** | 쌍 규칙은 #800에서 더함: 반쪽 표시를 없애 리포트 규칙이 단순해짐 |
+| 요청 칸 | `POST /attempts/{id}/answers` 선택 `thinkingSeconds`·`writingSeconds`(정수 초). 웹이 기기 시계 대신 `performance.now()` 경과 시간으로 잼 | 기기 시계 변경·시간대 영향 없음 |
+| 재는 대상 | 서술·풀이 단계·논술. 고르기 방식·보호자 받아쓰기·새로고침 뒤 이어하기(화면을 열 때 답 칸에 복원된 글이 있음)는 null | 고르기는 첫 입력 개념이 없고, 받아쓰기는 아이가 쓴 시간이 아니며, 이어하기는 첫 입력 시각을 모름 |
+| 범위 밖 값 | 정수 아님 기존 `400`. 0 미만·86400초(24시간) 초과는 둘 다 null로 저장, 제출은 막지 않음 | 측정 오류로 답이 막히면 안 됨(FN-LRN-10) |
+| 탭 전환 | 화면이 가려진 동안도 시간에 넣음 | 단순화 |
+| 버튼 입력 | '시작 문장'·'메모를 답에 넣기' 버튼 입력은 붙여넣기가 아니며 첫 입력으로 인정 | FN-LRN-05·07 |
+| 같은 키 재전송 | 웹은 처음 잰 값을 그대로 다시 보냄. learning은 같은 요청 비교에서 두 칸을 뺌 | core `IdempotencyService`가 본문 전체 해시로 비교해 값이 바뀌면 `422 IDEMPOTENCY_KEY_REUSED`(코드 확인) |
+| 표시 | 학생 화면 없음. 학부모 일일 리포트 문제별 답변마다 "처음 답"·"되묻기 뒤 답"·"두 번째 되묻기 뒤 답" + "생각 N분 · 작성 N분", 60초 미만 "1분 미만", 그 밖 분 단위 내림, 시간 없는 답은 줄 생략 | 사용자 결정 2026-11-19: 답변별로 저장되므로 보완 답변까지 표시(에픽 기준안은 처음 답만) |
+| 원문 비공개(#206) | 시간은 표시 | 사용자 결정 2026-11-19: 원문이 아닌 수치(판정·요소 수치 유지와 같음) |
+| 붙여넣기 막기 | 학생 답변 칸(서술·풀이 단계·논술 4칸·최종 답, 최초·보완)에서 `paste`·`drop` 기본 동작 취소, **안내 문구 없음**, 입력 내용 유지. 메모·돌아보기·관리자 미리보기 제외 | 사용자 결정 2026-11-19: 에픽 기준안 "직접 써 볼까?" 대신 막기만 |
+| 무료·유료 | 동일 | P13 |
+
+- 범위 밖(에픽 #799): 학생 화면 시간 표시, 주간 리포트 지표, 분석 대화 근거, 붙여넣기 시도 횟수 기록, 시간·붙여넣기로 부정행위 판정, `attempt.started_at` 의미 변경
+
+### API 변경
+
+- 공개 `POST /attempts/{id}/answers`: 선택 칸 `thinkingSeconds`·`writingSeconds` 추가(core는 본문을 그대로 넘겨 변경 없음). 칸 없는 기존 요청은 그대로 성공
+- learning 내부: 시도 상세·기록 조회 `answers[]`와 report 입력(4.1.1) `answers[]`에 두 칸(없으면 null)
+- report 일일 상세: `problems[].answerTimes:[{version, thinkingSeconds, writingSeconds}]`(시간 있는 답만 버전 순, 없으면 `[]`, 이전 저장본은 `[]`로 읽음)
+- OpenAPI(learning·report)는 각 구현 이슈에서 고친다
+
+### 구현 나눔
+
+- learning #801: V23 `answer` 두 칸·CHECK 2개(≥ 0, 쌍), 저장·null 규칙, 같은 요청 비교 제외, 조회·4.1.1 노출, ERD 표 → Mermaid
+- web #802: 답변 칸 붙여넣기·끌어다 놓기 막기(안내 없음), 시간 측정·전송, 같은 키 재전송 때 처음 값 유지
+- report #803: `answerTimes[]` 생성과 HTML·Markdown·PDF 표시, 학부모 웹 일일 리포트 화면(`ParentReports.tsx`) 표시(웹 화면이 report 상세를 직접 그리므로 #803에 더함)
