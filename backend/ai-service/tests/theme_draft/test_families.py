@@ -396,7 +396,8 @@ def test_fix_rules_follow_story_type() -> None:
     )
     treasure = {**valid_theme(), "storyType": "TREASURE"}
     assert "쪽지를 받아 들고 놀람" in prompts.fix_rules(treasure, "introCuts2.scene")[0]
-    assert "보물 속 편지" in prompts.fix_rules(treasure, "outroCuts5.action")[0]
+    # #779 설계 B표: 보물이 늘 상자·편지는 아님(씨앗 "기념 메달")
+    assert "보물을 함께 들여다봄" in prompts.fix_rules(treasure, "outroCuts5.action")[0]
     assert "고양이" in prompts.fix_rules(animal, "TUE.sceneNote")[1]  # 머리 낱말까지 쓰지 말 낱말
 
 

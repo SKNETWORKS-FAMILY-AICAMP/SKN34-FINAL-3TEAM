@@ -45,7 +45,7 @@ from app.theme_draft.models import (
 from app.theme_draft.nodes import images as image_node
 from app.theme_draft.nodes import video as video_node
 from app.theme_draft.nodes.video import STILL_NOTE
-from app.theme_draft.prompts import VIDEO_NEGATIVE
+from app.theme_draft.prompts import VIDEO_NEGATIVE, video_negative
 from app.theme_draft.service import ThemeDraftGraphRunner
 from app.theme_draft.storage import MemoryThemeStorage
 from tests.theme_draft.fixtures import (
@@ -294,7 +294,9 @@ def test_images_motion_and_video_off_warning() -> None:
     assert "may appear" in prompts_with(image, OUTRO_CUTS[2]["scene"])[0][0]
     # 검토는 [그림, 테마 옷 뭉치](잇는 컷 5장은 앞 컷 그림을 더해 3장), 움직임은 그 장면 그림 1장
     counts = [c[1] for c in review.image_counts if c[0] == "GeneratedImageReview"]
-    assert sorted(counts) == [2] * 12 + [3] * 5
+    # #779 설계 C표: 사람이 나오는 그림은 인물 기준 그림도 봄(PEOPLE). 뭉치 혼자 5장 = 2, 미션 5·
+    # 시작 1·종료 3 = 3(+인물), 잇는 사람 컷 5장 = 4(+인물·앞 컷)
+    assert sorted(counts) == [2] * 5 + [3] * 7 + [4] * 5
     assert review.count("GeneratedImageReview") == 17
     mon_review = [json.loads(u) for u in review.users("GeneratedImageReview")]
     flow = [u for u in mon_review if "FLOW" in u["items"]]
@@ -307,7 +309,7 @@ def test_images_motion_and_video_off_warning() -> None:
     }
     assert all("previousScene" not in u for u in mon_review if "FLOW" not in u["items"])
     assert {tuple(u["items"]) for u in mon_review if "missionQuestion" in u} == {
-        ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT", "MISSION_FIT")
+        ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT", "MISSION_FIT", "PEOPLE")
     }
     assert {u["discovery"] for u in mon_review if "missionQuestion" in u} == set(DISCOVERY.values())
     assert {c for c in gen.image_counts if c[0] == "GeneratedMotion"} == {("GeneratedMotion", 1)}
@@ -472,7 +474,10 @@ def test_video_success_joins_cuts_with_captions() -> None:
         assert mp4_seconds(body) == pytest.approx(6 * 4 - 5 * 0.5, abs=0.15)  # #779 6컷 × 4초
     assert len(video.calls) == 13  # 12컷 + 다시 만든 1컷
     assert {c[2] for c in video.calls} == {None}  # 첫 그림만 고정
-    assert set(video.negatives) == {VIDEO_NEGATIVE}
+    # #779 설계 C표: 공통 + 공중 손짓·한 줄 서기(잃어버린 것은 돌보는 사람이 안아도 돼 만지기 없음)
+    assert set(video.negatives) == {video_negative(valid_theme())}
+    assert "waving, clapping" in video_negative(valid_theme())
+    assert "touching the animal" not in video_negative(valid_theme())
     assert sorted(c[3] for c in video.calls) == [4] * 13  # #779 6컷 × 4초
     smile = [c[0] for c in video.calls if OUTRO_CUTS[5]["action"] in c[0]]
     # 종료 6컷은 대상을 보여 줘도 되는 컷이라 숨기라는 문구가 없음(점검 C5)

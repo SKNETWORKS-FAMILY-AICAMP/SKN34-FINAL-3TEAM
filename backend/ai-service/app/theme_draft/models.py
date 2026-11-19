@@ -517,8 +517,9 @@ class GeneratedMissionReview(BaseModel):
 
 # MISSION_FIT(미션 그림만: 질문·생각 열기가 가리키는 것이 다 보이는지)·SCENE_FIT(장면 일치)
 # FLOW: 잇는 컷이 앞 컷 그림과 장소·물건 상태가 이어지는지(#779 B안)
+# PEOPLE: 등장인물 기준 그림과 같은 사람인지(#779 설계 C표)
 ImageReviewId = Literal[
-    "MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "MISSION_FIT", "SCENE_FIT", "FLOW"
+    "MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "MISSION_FIT", "SCENE_FIT", "FLOW", "PEOPLE"
 ]
 VideoReviewId = Literal["MORPH", "ANSWER_HINT", "TEXT", "SAFETY", "CONTINUITY"]
 

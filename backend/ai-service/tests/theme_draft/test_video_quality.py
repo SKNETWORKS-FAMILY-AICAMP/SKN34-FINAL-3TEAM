@@ -76,7 +76,8 @@ def test_video_prompt_story_beat_camera_and_mungchi_rules() -> None:
     assert "same face, hair and clothes as in the first frame" in end  # 토끼 머리핀 → 토끼 귀
     # 3테마 실행: 영상 지시에 안경·머리핀을 쓰자 없던 안경·콧수염이 생김(6건) → 금지 목록으로만
     assert "nothing added to anyone's face" in end and "glasses" not in end
-    assert "clap for it" in end  # 엔딩 컷 움직임(컷 틀, #779 뭉치에게 고마워함)
+    # 엔딩 컷 움직임(컷 표, #779 뭉치에게 고마워함, 손뼉 없음)
+    assert "turn toward Mungchi and smile warmly" in end and prompts.HAND_RULE in end
     first = prompts.video_prompt(theme, "INTRO", 1, INTRO_CUTS[0], [])
     assert "Mungchi does not appear in this clip." in first
     assert f"Camera: {prompts.CAMERA_TEXT['PAN_SIDE']}" in first
@@ -544,11 +545,12 @@ def test_outro_ending_thanks_mungchi_and_animal_farewell_in_cut5() -> None:
     from app.theme_draft import families
 
     ending = cuts.layout(6)["OUTRO"][5]
-    assert ending.own and "뭉치에게 고마워함" in ending.beat and "clap" in ending.motion
+    assert ending.own and "뭉치에게 고마워함" in ending.beat and "shyly" in ending.motion
+    assert "clap" not in ending.motion + ending.act and "손뼉" not in ending.beat
     for code in ("PRANK", "FOOTPRINT"):
         t = families.STORY_TYPES[code]
         assert "딱 걸려" in t.outro_cuts[2] and "만지지 않음" in t.outro_cuts[2]
-        assert "배웅" in t.outro_cuts[3] and "숲으로 난 출구" in t.outro_cuts[3]
+        assert "배웅" in t.outro_cuts[3] and "제가 사는 쪽" in t.outro_cuts[3]
         c = families.type_cuts(t, 6)
         assert c.target == {("OUTRO", 3), ("OUTRO", 5)}  # 6컷엔 동물이 이미 떠남
     theme = valid_theme()

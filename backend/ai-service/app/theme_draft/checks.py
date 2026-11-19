@@ -925,6 +925,14 @@ def cut_target_problems(theme: Theme) -> list[str]:
                     names := candidate_names(theme, text)
                 ):
                     bad.append(f"CUT_TARGET {key}{i}.{k} 후보가 나오지 않는 컷에 후보 이름 {names}")
+                # #779: 동물을 뺀 종료 컷(target_off_cuts)에 '동물'로 쓰면 이름 검사를 지나가 그
+                # 컷 그림에 동물이 나왔음(5차 콘티 종료 6컷 "동물이 길을 향한다")
+                elif (scene, i) in t.target_off_cuts and (
+                    word := next((w for w in t.owner_words if w in text), None)
+                ):
+                    bad.append(
+                        f"CUT_TARGET {key}{i}.{k} 동물이 나오지 않는 컷에 '{word}'(이미 떠남)"
+                    )
     return bad
 
 
@@ -2083,6 +2091,13 @@ def public_theme(theme: Theme) -> dict:
 IMAGE_REVIEW_IDS = ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT")
 MISSION_IMAGE_REVIEW_IDS = (*IMAGE_REVIEW_IDS, "MISSION_FIT")
 FLOW_IMAGE_REVIEW_IDS = (*IMAGE_REVIEW_IDS, "FLOW")  # 앞 컷을 잇는 컷 그림(#779 B안)
+
+
+def image_review_ids(base: tuple[str, ...], person: bool, follow: bool) -> tuple[str, ...]:
+    """그림 검토 항목: 기본 + 인물 기준 그림이 있으면 PEOPLE + 앞 컷을 이으면 FLOW(#779)."""
+    return (*base, *(["PEOPLE"] if person else []), *(["FLOW"] if follow else []))
+
+
 VIDEO_REVIEW_IDS = ("MORPH", "ANSWER_HINT", "TEXT", "SAFETY", "CONTINUITY")
 
 # 움직임 상한(기준안, ai.md 17.1 움직임 행)

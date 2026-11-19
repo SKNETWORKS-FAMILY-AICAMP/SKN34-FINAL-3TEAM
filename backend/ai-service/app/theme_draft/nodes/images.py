@@ -38,11 +38,11 @@ from app.llm.base import LlmUnavailable
 from app.mission_draft.models import Draft
 from app.theme_draft.checks import (
     DAYS,
-    FLOW_IMAGE_REVIEW_IDS,
     IMAGE_REVIEW_IDS,
     MISSION_IMAGE_REVIEW_IDS,
     Theme,
     check_review,
+    image_review_ids,
 )
 from app.theme_draft.models import GeneratedImageReview
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState, uniq
@@ -92,6 +92,8 @@ class Shot:
     # 잇는 앞 컷(#779 B안): 그 컷 키(INTRO1 등)·장면 글·앞 컷 그림을 받을 때의 지시문
     follows: str | None = None
     action: str | None = None  # 컷 그림만: 그 컷 동작(그림은 동작의 첫 순간, 검토 SCENE_FIT)
+    # 등장인물 기준 그림(검토 PEOPLE, #779 설계 C표). 사람이 나오는 그림만
+    person: bytes | None = None
     follow_scene: str | None = None
     follow_prompt: Callable[[list[str]], str] | None = None
 
@@ -121,8 +123,16 @@ async def draw(
     follow = prev is not None and shot.follow_prompt is not None
     prompt = shot.follow_prompt if follow and shot.follow_prompt else shot.prompt
     refs = [*shot.refs, prev] if follow and prev is not None else shot.refs
-    ids = FLOW_IMAGE_REVIEW_IDS if follow else shot.ids
-    review_images = [outfit, prev] if follow and prev is not None else [outfit]
+    ids = image_review_ids(shot.ids, shot.person is not None, follow)
+    refs_order = [
+        *(["PERSON"] if shot.person is not None else []),
+        *(["PREVIOUS"] if follow else []),
+    ]
+    review_images = [
+        outfit,
+        *([shot.person] if shot.person is not None else []),
+        *([prev] if follow and prev is not None else []),
+    ]
     feedback: list[str] = list(seed or [])  # 요청 previousFailures의 IMAGE 사유(처음부터)
     bad: list[str] = []
     for attempt in range(ctx.settings.theme_max_regen + 1):
@@ -153,6 +163,7 @@ async def draw(
                     answer_allowed=shot.answer_allowed,
                     previous_scene=shot.follow_scene if follow else None,
                     action=shot.action,
+                    refs=refs_order,
                 ),
                 output=GeneratedImageReview,
                 call_type=THEME_CALL_TYPE,
@@ -245,6 +256,7 @@ def cut_shot(
         answer_allowed=body.cut_reveals_answer(scene),
         follows=f"{scene}{k}" if k else None,
         action=cut.get("action") or None,
+        person=person if body.cut_has_characters(scene, index, n) else None,
         follow_scene=prev_scene,
         follow_prompt=(
             (lambda fb: body.cut_image_prompt(theme, scene, index, cut, fb, prev_scene))
@@ -299,6 +311,7 @@ def mission_shot(
         hints=[h for h in draft.hints if h.strip()],
         discovery=d.get("discovery"),
         evidence=body.evidence_kind(d),
+        person=person,
     )
 
 

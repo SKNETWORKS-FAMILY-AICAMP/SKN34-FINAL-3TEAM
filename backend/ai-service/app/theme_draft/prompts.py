@@ -49,6 +49,7 @@ from app.theme_draft.families import (
     ALL_CUTS,
     OUTRO_ARRIVE_HIDDEN,
     STORY_TYPES,
+    branch_roles,
     parse_topic,
     story_type,
     type_cuts,
@@ -564,7 +565,7 @@ def cut_roles(theme: Theme, key: str) -> tuple[str, str, str, str]:
     """그 줄거리 종류의 콘티 컷 역할(줄거리 규칙의 introCuts·outroCuts 순서와 같게). 칸 하나만 고쳐
     쓸 때 역할을 잃지 않게."""
     t = story_type(theme)
-    return t.intro_cuts if key == "introCuts" else t.outro_cuts
+    return branch_roles(t, "INTRO" if key == "introCuts" else "OUTRO", theme.get("branch"))
 
 
 CUTS_KEY = {"INTRO": "introCuts", "OUTRO": "outroCuts"}
@@ -1180,7 +1181,9 @@ def dialogue_user(theme: Theme, day: str, draft: Draft, grade: int, feedback: li
 # 설계 17.8.5)
 SAFETY_STORY = (
     "동물의 습성·장난은 범죄가 아니고, 동물이 제 갈 곳으로 걸어가는 것을 배웅하는 것은 쫓아내기가 "
-    "아니며, 잃어버린 반려동물을 찾은 주인이 안아 주는 것은 위험이 아니다. "
+    "아니며, 그 동물을 돌보거나 데리고 있는 사람(주인·돌보던 아이·길 잃은 동물을 데려가는 "
+    "아이)이 안거나 목줄을 잡거나 쓰다듬는 것은 위험이 아니다. 그 밖의 사람·뭉치가 동물을 만지거나 "
+    "안거나 붙잡으면 결함이다. "
     "경찰관·소방관 차림은 해결사 역할일 뿐이다(체포·수갑·벌주기가 나오면 "
     "결함). 밤에 들린 궁금한 소리 이야기(소리 탐정)는 무섭지 않은 궁금증이다(귀신·괴물·유령이 "
     "나오면 결함). 사람이 동물 먹이를 먹거나 동물에게 사람 음식을 먹이면 결함."
@@ -1854,6 +1857,31 @@ MUNGCHI_SEPARATE = (
     "Mungchi is its own small separate figure: it does not touch, overlap or merge with anyone "
     "and never takes on a person's arms, hands, legs, hair or clothes."
 )
+# #779 설계 C표 공통 규칙(2026-11-19). "뭉치는 물건을 들지 않음"은 대상을 감추는 줄에 얹혀 잃어버린
+# 것은 뭉치 혼자 컷에만, 동물 장난꾸러기는 어디에도 없었음(2종류 × 12컷 대조). 공통 규칙은 다른
+# 줄에 얹지 않고 뭉치·사람 컷 전부에 넣는다(rules.COMMON_RULES가 다섯 곳에 들어갔는지 시험으로 봄)
+MUNGCHI_HOLDS_NOTHING = (
+    "Mungchi holds nothing in its hands except outfit items it already wears; it never holds a "
+    "story object."
+)
+# 만지기 예외: 그 동물을 돌보거나 데리고 있는 사람(주인·돌보던 아이·길 잃은 동물을 데려가는
+# 아이). 씨앗 "체험 농장 / 아이가 돌보던 아기 염소", "아파트 놀이터 / 길 잃은 강아지"
+NO_TOUCH = (
+    "Nobody touches Mungchi, and nobody touches, lifts or holds an animal, except that the person "
+    "who looks after that animal (its owner or carer) may hold it gently."
+)
+# 사람 손(사용자 결정 2026-11-19): 공중 손짓 없음. 물건을 다루는 손은 컷 할 일에 적힌 것만
+HAND_RULE = (
+    "No waving and no clapping: the people's hands only hold, open or point at things as the "
+    "story beat says."
+)
+NO_ROW_VIDEO = (
+    "The people never line up in a row facing the camera; they keep facing each other or what "
+    "they are doing."
+)
+# 동물을 만지면 안 되는 종류(야생 동물, 금지 목록에만. 잃어버린 것·출처 찾기는 돌보는 사람이 안음)
+TOUCH_NEGATIVE = "people touching the animal, holding the animal"
+VIDEO_NEGATIVE_EXTRA = "waving, clapping, people standing in a row facing the camera"
 # #779(사용자 결정 2026-11-19, 수수께끼 모험물 컷신 느낌): 사건 컷만 살짝 신비롭게, 무섭지 않게
 MYSTERY_LIGHT = (
     "A touch of mystery: soft long shadows and slightly cooler tones, still in bright afternoon "
@@ -1908,6 +1936,7 @@ def cut_image_prompt(
         if spec.who == "RUN":
             lines.append(RUN_POSE)
         lines.append(MUNGCHI_SEPARATE)
+        lines.append(MUNGCHI_HOLDS_NOTHING)
     else:
         lines.append("Mungchi does not appear in this picture.")
     if spec.has_people:
@@ -1939,7 +1968,8 @@ def cut_image_prompt(
     if WRITTEN_WORDS.search(f"{cut.get('scene', '')} {cut.get('action', '')}"):
         lines.append(WRITTEN_THINGS)
         lines.append(TREASURE_NOTE if story_type(theme).code == "TREASURE" else "")
-    lines.append(spec.look)  # 첫 그림 표정(리액션 컷은 놀란 얼굴, #779)
+    lines.append(spec.look)  # 첫 그림 표정(컷 표 A, #779)
+    lines.append(NO_TOUCH if spec.has_people else "")
     lines += [x for x in target_lines(theme, scene, index) if x]
     lines += [IMAGE_RULES, *_fixes(feedback)]
     return "\n".join(x for x in lines if x)
@@ -1954,7 +1984,8 @@ COVERED_REVIEW = (
 
 IMAGE_REVIEW_SYSTEM = (
     "너는 초등학생 학습 서비스의 그림 검토자다. 첫 그림이 검토할 그림이고, 두 번째 그림은 "
-    "주인공 뭉치의 기준 모습(테마 옷)이다(세 번째 그림은 FLOW 항목에서만 씀). 주어진 "
+    "주인공 뭉치의 기준 모습(테마 옷)이다. 그다음 그림은 refs 순서대로다(PERSON = 등장인물 기준 "
+    "그림, PEOPLE 항목에서 씀. PREVIOUS = 같은 영상의 앞 컷 첫 그림, FLOW 항목에서 씀). 주어진 "
     "항목(items)마다 verdict를 PASS(문제 없음)·"
     "WARN(애매해서 사람이 볼 것)·FAIL(분명한 결함, 다시 그려야 함) 중 하나로 쓰고 근거 한 "
     "문장(reason)을 쓴다. 주어진 항목을 모두 한 번씩 쓴다. 분명한 결함만 FAIL로 한다.\n"
@@ -1977,6 +2008,9 @@ IMAGE_REVIEW_SYSTEM = (
     "옷에 소매가 있거나 옷 입은 부분 옆으로 울퉁불퉁한 돌기가 삐져나와 소매·팔처럼 보여 팔이 "
     "넷처럼 보이면 결함(옷은 아래쪽을 꽉 끼게 감싸 매끈한 둥근 몸통), 뭉치가 사람과 겹치거나 "
     "맞닿아 한 몸처럼 보이면 결함. "
+    # #779 설계 C표: 영상에서만 막던 것을 첫 그림에서도(첫 그림에 들고 있으면 영상도 따라감)
+    "뭉치가 차림 소품(목에 걸거나 머리에 쓴 것)이 아닌 물건, 특히 사건 물건이나 찾는 대상을 "
+    "들고 있으면 결함. "
     "뭉치가 나오지 않아야 하는 그림이면 나오지 않는지.\n"
     "ANSWER_HINT: 찾는 대상이 나오면 안 되는 "
     "그림(targetAllowed false)에 찾는 대상이 보이는지(후보가 동물이면 후보 동물 가운데 어느 "
@@ -1993,15 +2027,24 @@ IMAGE_REVIEW_SYSTEM = (
     "동작의 첫 순간이라, 동작에 쓰이는 물건·대상과 인물이 바라보거나 손을 흔들거나 손뼉 치는 쪽이 "
     "그림에 있는지도 본다(동작이 끝나 있을 필요는 없음). 장면 글에 없는 등장인물이 함께 "
     "있는 것은 결함이 아니다. "
+    # #779 설계 C표 등급(사용자 결정 2026-11-19): 핵심이 빠지면 FAIL, 세부 구도·한 줄 서기는 WARN
+    "그 컷의 핵심(나와야 할 인물·대상, 인물이 바라보는 쪽, 장면 글이 말한 물건 상태)이 빠지면 "
+    "FAIL(예: 배웅인데 아무도 동물 쪽을 보지 않음)이고, 세부 구도 차이나 인물들이 한 줄로 서서 "
+    "카메라를 보는 것은 WARN이다. "
     # #765: 대상이 나오면 안 되는 그림은 일부러 대상을 그리지 않음(ANSWER_HINT와 반대로 걸리지 않게)
     "찾는 대상이 나오면 안 되는 그림(targetAllowed false)에서 찾는 대상이나 후보가 보이지 않는 "
     "것은 장면 글에 나와도 결함이 아니다(그 그림에는 일부러 그리지 않음).\n"
     # #779(사용자 결정 B안): 잇는 컷은 앞 컷 그림을 세 번째 그림으로 함께 봄
-    "FLOW(items에 있을 때만): 세 번째 그림은 같은 영상의 앞 컷 첫 그림이고 previousScene은 그 "
-    "장면 글이다. 같은 장소면 장소·배경·가구·물건이 같고 물건 상태가 이어지는지(앞 컷에서 덮은 "
-    "것이 벗겨짐, 탁자 모양이 바뀜, 돌담이 나무 울타리로 바뀜은 결함). 이 컷 장면 글이 지금 "
-    "바뀐다고 한 것(빈 접시가 됨 등)과 구도·카메라·인물 동작이 다른 것은 결함이 아니고, 이 "
-    "컷이 다른 장소면 PASS다.\n"
+    # #779 설계 C표 등급: 5차 콘티에서 찜기 뚜껑 차이로 시작 3컷이 끝내 실패해 시작 영상이 빠졌음
+    "FLOW(items에 있을 때만): PREVIOUS 그림은 같은 영상의 앞 컷 첫 그림이고 previousScene은 그 "
+    "장면 글이다. FAIL은 두 가지뿐이다: 같은 장소인데 다른 장소처럼 보임(벽·담·큰 가구의 배치나 "
+    "모양이 바뀜, 돌담이 나무 울타리로 바뀜), 장면 글·할 일이 말한 물건 상태가 앞 컷과 어긋남"
+    "(앞 컷에서 덮은 것이 벗겨짐 등). 뚜껑·컵·작은 소품의 차이와 사람 위치 차이는 WARN이거나 "
+    "PASS다. 이 컷 장면 글이 지금 바뀐다고 한 것(빈 접시가 됨 등)과 구도·카메라·인물 동작이 다른 "
+    "것은 결함이 아니고, 이 컷이 다른 장소면 PASS다.\n"
+    # #779 설계 C표: 그림 검토가 뭉치 기준만 보고 인물 기준 그림은 보지 않았음
+    "PEOPLE(items에 있을 때만): PERSON 그림의 등장인물과 같은 사람(얼굴·머리 모양·옷)으로 "
+    "보이는지. 다른 사람처럼 보이면 FAIL, 작은 소품·옷 무늬 차이는 WARN.\n"
     "MISSION_FIT(items에 있을 때만): 미션 질문과 생각 열기 질문이 가리키는 물건·장소와 그날 증거"
     "(evidenceKind가 TRACE면 흔적이 남은 자리·물건, "
     "RECORD면 사진·기록 물건, SIGHTING이면 그것을 본 "
@@ -2037,6 +2080,7 @@ def image_review_user(
     answer_allowed: bool = False,
     previous_scene: str | None = None,
     action: str | None = None,
+    refs: list[str] | None = None,
 ) -> str:
     body: dict = {
         "items": list(ids),
@@ -2051,6 +2095,8 @@ def image_review_user(
         body["previousScene"] = previous_scene
     if action:
         body["action"] = action
+    if refs:
+        body["refs"] = refs
     if question is not None:
         body |= {
             "missionQuestion": question,
@@ -2246,13 +2292,19 @@ def video_prompt(
         "the camera follows someone, others may leave the view only because the camera moves "
         "away. Everyone keeps exactly the same face, hair and clothes as in the first frame, with "
         "nothing added to anyone's face.",
+        # #779 설계 C표: 공통 "걷기·펄쩍·손 흔들기 같은 큰 동작"이 컷 표의 동작(배웅은 바라보기
+        # 등)·손 규칙과 부딪혀 컷 표의 4초 움직임(CutSpec.act)으로 바꿈
         ""
         if not spec.has_people
         else "The people make small, gentle movements, continuously until the end."
         if safe
-        else "The people act it out like a lively cartoon: big, clear, expressive movements "
-        "(walking, jumping in surprise, waving), continuously until the end with no pauses. "
-        "Nobody walks toward the camera.",
+        else LEGACY_PEOPLE_MOTION
+        if n == 4  # 예전 4컷 초안은 예전 동작 그대로(cuts.py 머리말)
+        else f"{spec.act or 'The people act out the story beat with clear, natural movements.'} "
+        "They keep moving naturally until the end with no pauses. Nobody walks toward the camera.",
+        HAND_RULE if spec.has_people and n != 4 else "",
+        NO_ROW_VIDEO if spec.has_people and n != 4 else "",
+        NO_TOUCH if spec.has_people and n != 4 else "",
         # #779: 시제품에서 화단·담 위를 걷고, 쪽지가 두 장이 됨
         "Everyone moves only along paths, floors and open doors or gates: nobody walks on or "
         "through walls, fences, flower beds, benches or other objects. A single object (a note, a "
@@ -2266,6 +2318,27 @@ def video_prompt(
         *_fixes(feedback),
     ]
     return "\n".join(x for x in lines if x)
+
+
+# 예전 4컷 초안의 사람 움직임(#779 전, 6컷은 컷 표 CutSpec.act)
+LEGACY_PEOPLE_MOTION = (
+    "The people act it out like a lively cartoon: big, clear, expressive movements (walking, "
+    "jumping in surprise, waving), continuously until the end with no pauses. Nobody walks toward "
+    "the camera."
+)
+
+
+def video_negative(theme: Theme) -> str:
+    """영상 금지 목록(#779 설계 C표): 공통 + 공중 손짓·한 줄 서기 + 야생 동물 만지기(동물
+    장난꾸러기·발자국 주인·소리의 동물). 잃어버린 것·출처 찾기는 돌보는 사람이 동물을 안아도 돼서
+    빼지 않음."""
+    t = story_type(theme)
+    wild = t.animal or (
+        t.facts is not None and t.facts.group(str(theme.get("answer") or "")) == "동물"
+    )
+    return ", ".join(
+        x for x in (VIDEO_NEGATIVE, VIDEO_NEGATIVE_EXTRA, TOUCH_NEGATIVE if wild else "") if x
+    )
 
 
 VIDEO_REVIEW_SYSTEM = (
@@ -2305,8 +2378,8 @@ VIDEO_REVIEW_SYSTEM = (
     "받는지(사람과 함께 잡아도 결함). 뭉치가 차림 소품(목에 걸거나 손에 든 돋보기·모자처럼 기준 "
     "장면의 테마 차림)을 쥐거나 지니고 있는 것은 결함이 아니다. storyType이 동물 장난꾸러기·발자국 "
     "주인(PRANK·FOOTPRINT)이면 사람이나 뭉치가 정답 동물을 만지거나 안으면 결함이고(#779: 떨어져 "
-    "바라보고 배웅), 동물이 천천히 걸어가며 화면 안에 남는 것은 결함이 아니다. 잃어버린 것 "
-    "찾기에서 주인이 찾은 반려동물을 안는 것은 결함이 아니다.\n"
+    "바라보고 배웅), 동물이 천천히 걸어가며 화면 안에 남는 것은 결함이 아니다. 잃어버린 것·출처 "
+    "찾기에서 그 동물을 돌보거나 데리고 있는 사람(주인·돌보던 아이)이 안는 것은 결함이 아니다.\n"
     "MORPH: 인물·뭉치의 몸·얼굴·눈 모양이 장면 사이에 녹아내리듯 바뀌거나 팔다리가 늘어나는지, "
     "2D 그림체가 3D로 바뀌는지, 뭉치가 나오지 않아야 하는 컷(mungchi 나오지 않아야 함)에 뭉치가 "
     "나타나는지. 사람이 손에 든 물건·자세와 표정, 뭉치가 쥔 차림 소품은 동작에 따라 달라도 된다"

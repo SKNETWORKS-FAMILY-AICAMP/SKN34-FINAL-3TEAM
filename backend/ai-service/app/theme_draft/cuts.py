@@ -54,6 +54,10 @@ class CutSpec:
     # 은 모든 종류가 같은 엔딩(#779 사용자 결정 2026-11-19)
     own: bool = False
     place: Place = ""
+    # 사람이 나오는 컷의 4초 움직임(영어, 영상 지시). 예전에는 모든 사람 컷에 공통 "걷기·펄쩍·손
+    # 흔들기 같은 큰 동작"이 붙어 컷마다 정한 동작(배웅은 바라보기 등)과 부딪혔음(#779 설계 C표,
+    # 2종류 × 12컷 대조 2026-11-19). 공중 손짓(흔들기·손뼉)은 쓰지 않음(사용자 결정 2026-11-19)
+    act: str = ""
 
     @property
     def has_mungchi(self) -> bool:
@@ -89,7 +93,9 @@ _NEW = {
             "장소 소개: 장소가 한눈에 보이는 넓은 장면에서 인물들의 평소 모습(뭉치 없음)",
             speaker="이름 없이 장면을 소개하는 짧은 말(예: '평화로운 마을 떡집…')",
             narrator=True,
+            look="Everyone looks relaxed and calm, busy with their usual tasks.",
             place="INCIDENT",
+            act="The people keep doing their usual tasks with small, natural movements.",
         ),
         CutSpec(
             "OBJECT",
@@ -104,8 +110,10 @@ _NEW = {
             "없음)",
             speaker="그 컷에 보이는 인물이 사건을 알아채는 감탄(예: '아린: 어라? 떡이 없어졌어!')",
             mystery=True,
+            look="The person just noticed something: eyes a little wide, mouth in a small 'oh'.",
             follows=1,
             place="INCIDENT",
+            act="The person's hand stops and they lean in a little, surprised.",
         ),
         CutSpec(
             "PEOPLE",
@@ -119,6 +127,7 @@ _NEW = {
             "mouths, not smiling.",
             follows=1,
             place="INCIDENT",
+            act="The people jump back a little in surprise and keep looking at the same spot.",
         ),
         CutSpec(
             "RUN",
@@ -136,7 +145,8 @@ _NEW = {
             False,
             "PUSH_SLOW",
             "MUNGCHI_CLOSE",
-            "뭉치 결심: 사건 현장 앞에 선 뭉치 혼자 가슴 위 클로즈업, 다문 입으로 결심한 얼굴",
+            # 장소는 사건 장소 안(5차 콘티: 장면 글 "떡집 앞"이 장소 칸 "떡집 안"과 부딪혔음)
+            "뭉치 결심: 사건 장소 안에 선 뭉치 혼자 가슴 위 클로즈업, 다문 입으로 결심한 얼굴",
             "Mungchi's face turns determined (a firm closed mouth) and it sways slightly.",
             place="INCIDENT",
         ),
@@ -149,8 +159,10 @@ _NEW = {
             "모두 모여 큰 질문: 인물들과 뭉치가 사건 현장에 모임(뭉치는 사람들과 조금 떨어져 섬)",
             "Mungchi stays apart from the people, tilts its head and sways slightly.",
             speaker="뭉치가 이번 주 큰 질문을 묻는 말(예: '뭉치: 장난꾸러기는 누구일까?')",
+            look="The people look puzzled and curious, looking at the spot, not smiling widely.",
             follows=1,
             place="INCIDENT",
+            act="The people tilt their heads, puzzled, still looking at the spot.",
         ),
     ),
     "OUTRO": (
@@ -185,6 +197,8 @@ _NEW = {
             "정답 공개: 정답 장소에서 사람들과 대상(뭉치 없음)",
             speaker="그 컷에 보이는 인물이 공개에 놀람(예: '새봄: 짜잔! 보물이다!')",
             place="ANSWER",
+            act="The people react as the story beat says with clear, natural movements (pointing "
+            "or picking something up is fine).",
         ),
         CutSpec(
             "MUNGCHI",
@@ -209,6 +223,7 @@ _NEW = {
             "나오는 컷일 때만)",
             follows=3,
             place="ANSWER",
+            act="The people act out the story beat calmly with small, natural movements.",
         ),
         CutSpec(
             "GROUP",
@@ -218,14 +233,17 @@ _NEW = {
             "WIDE",
             # #779(사용자 결정 2026-11-19): 사건을 푼 뭉치에게 고마워하는 엔딩(모든 종류). 사람은
             # 뭉치를 만지지 않고 떨어져서(사람 팔이 뭉치에게 옮겨 붙지 않게)
-            "엔딩 — 뭉치에게 고마워함: 넓은 장면에서 사람들이 뭉치 쪽으로 몸을 돌려 웃으며 손뼉을 "
-            "치고, 뭉치는 사람들과 떨어져 쑥스럽게 웃으며 몸을 흔듦(아무도 뭉치를 만지지 않음)",
-            "The people turn toward Mungchi, smile and clap for it from a little distance; "
-            "Mungchi stays apart, smiles shyly and sways happily.",
+            # 손뼉은 공중 손짓이라 뺌(사용자 결정 2026-11-19). 든 물건은 그대로 듦
+            "엔딩 — 뭉치에게 고마워함: 넓은 장면에서 사람들이 뭉치 쪽으로 몸을 돌려 고마워하며 "
+            "웃고(종료 5컷에서 든 물건은 그대로 듦), 뭉치는 사람들과 떨어져 쑥스럽게 웃으며 몸을 "
+            "흔듦(아무도 뭉치를 만지지 않음)",
+            "Mungchi stays apart from the people, smiles shyly and sways happily.",
             speaker="그 컷에 보이는 인물이 뭉치에게 고마워하는 말(예: '아린: 고마워, 뭉치!')",
             own=True,
+            look="The people smile warmly and thankfully at Mungchi.",
             follows=5,
             place="ANSWER",
+            act="The people turn toward Mungchi and smile warmly from a little distance.",
         ),
     ),
 }
