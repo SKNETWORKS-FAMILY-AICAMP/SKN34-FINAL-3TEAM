@@ -32,6 +32,17 @@ export function paymentPollDelay(state: PaymentState | undefined, updates: numbe
   return waiting ? 3000 : false
 }
 
+/** 결제수단 화면에서 돌아온 주문도 같은 쿼리로 다시 대조한다. */
+export function useCheckoutState(orderId: string) {
+  return useQuery({
+    queryKey: ['parent', 'checkout-state', orderId],
+    // Core may reconcile with the PG during this read. Keep it in flight across a React remount.
+    queryFn: () => paymentApi.state(orderId),
+    enabled: !!orderId,
+    retry: false,
+  })
+}
+
 /** 결제 결과 화면의 주문 상태. 승인 응답을 받은 경우 그 값으로 시작해 같은 상태를 바로 다시 묻지 않는다. */
 export function usePaymentResult(orderId: string, enabled: boolean) {
   return useQuery({
