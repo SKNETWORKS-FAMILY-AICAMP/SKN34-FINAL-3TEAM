@@ -1371,3 +1371,48 @@ learning #801 병합 전에 목 입력으로 개발했고, 병합된 learning Op
 - core: 원문 비공개(#206)·일일 상세 전환 때 쓰는 `ReportDocument.withoutProblemOriginals`가 정해진 칸만 남겨 `answerTimes`까지 지우고 있었다. 남길 칸에 `answerTimes`를 더하고, core OpenAPI `DailyReportProblem`에 선택 칸 `answerTimes`(항목 `additionalProperties: false`)를 넣었다. report가 구버전일 때를 위해 필수로 두지 않았다. 리포트 고정 대화(`ConversationService`)는 분석 대화 근거가 범위 밖이라 그대로
 - web: `DailyProblem.answerTimes?`와 `answerTimeLine`·`durationLabel`(`domain/parent.ts`, report와 같은 문구), `ParentReports.tsx` 문제 카드의 판정 줄 아래에 답변마다 한 줄. 원문 비공개여도 보이고 칸이 없으면 줄 없음. 시연 목은 시연 저장소 답변의 두 시간으로 `answerTimes`를 만들고 비공개 변환도 칸을 유지
 - 검증: core `./gradlew test`(JDK 21 컨테이너), web `npm test`·`test:types`·`lint`·`build`, `tests/browser/dailyAnswerTimes.spec.ts`(1440·1024·390px, 원문 비공개 상태에서 처음 답·두 번째 되묻기 뒤 답 줄 표시, 시간 없는 답 줄 없음)
+
+### 42.4 kind 확인 (2026-11-19)
+
+#801·#802·#803이 병합된 `develop`(a27acf30)을 공유 kind(`kind-sagomungchi-local`)에 배포하고, 학생 화면 → learning 저장 → report 일일 리포트(관리자 재생성) → 학부모 화면·파일까지 실제 서비스 사이를 이어 확인했다(실제 13:59~14:45 KST). 화면 캡처는 [evidence/issue803-kind-20261119](evidence/issue803-kind-20261119/)에 있다.
+
+배포
+
+- `learning-service`·`learning-migrate`·`core-service`·`report-service` 이미지를 최신 `develop`으로 다시 빌드해 kind에 적재. learning helm rev 22(migration v23 Job 완료, `answer.thinking_seconds`·`writing_seconds`와 CHECK 3개 확인), core rev 17·report-api·report-worker rev 11 뒤 `rollout restart`. ai·scoring은 이번 변경이 없어 그대로
+- 웹은 호스트 Vite(`CORE_PROXY_TARGET=http://127.0.0.1`, `CORE_PROXY_HOST=api.sagomungchi.local`)
+- 일일 리포트는 다음 날 00:00 KST 스케줄러로만 생기므로, 학생 제출을 마친 뒤 **core에만** 시험 시계(libfaketime, `FAKETIME=@2026-11-19 14:56:00` UTC = 23:56 KST)를 걸어 00:00 일일 생성을 돌리고 바로 원래 이미지·환경으로 되돌렸다. learning·report는 실제 시각 그대로
+
+| 확인 | 방법 | 결과 |
+|---|---|---|
+| 답 칸 붙여넣기·끌어다 놓기 막힘 | 학생 화면(1024px), 풀이 4칸·최종 답(초5 목, 최초·보완)과 서술 칸(초3 월)에 `paste`·`drop` 이벤트 | 답 칸 모두 `defaultPrevented: true`, 글 그대로 |
+| 메모 칸은 막지 않음 | 같은 방식으로 생각 메모 칸 | `defaultPrevented: false` |
+| 최초 답 전송 | 초5 목 테마 문제(풀이 단계), 화면 표시 → 첫 입력 약 85초, 작성 약 84초 뒤 제출 | 요청 본문 `"thinkingSeconds":85,"writingSeconds":84`, 201 |
+| 보완 답(되묻기 뒤) 전송 | 되묻기 질문 표시 뒤 첫 입력 약 25초, 작성 약 79초 | 본문 `followupId` + `"thinkingSeconds":25,"writingSeconds":79`, 201 |
+| 이어하기 | 두 번째 되묻기 답을 조금 쓰고 자동 저장 → 화면 다시 열기(PIN 재로그인) → 홈 "이어서 풀기" → 복원된 글에 이어 써서 제출 | 본문 `null`·`null`, DB도 둘 다 NULL |
+| 보호자 받아쓰기(웹) | 초3 월 서술 문제, "보호자가 아이의 말을 그대로 적었어요" 켜고 제출 | 본문 `dictatedByGuardian:true`·`null`·`null`, DB NULL |
+| 보호자 받아쓰기(서버 규칙) | 초3 화 서술 문제를 학생 API로 `dictatedByGuardian:true`·`thinkingSeconds:30`·`writingSeconds:40` 제출 | 201 응답·DB 모두 NULL |
+| learning DB | `answer` 조회 | 초5 시도 v1 85/84, v2 25/79, v3 NULL/NULL. 초3 받아쓰기 2건 NULL |
+| 학생 시도 상세 | `GET /attempts/{id}`(학생) | `answers[]` v1·v2 값, v3 null |
+| 일일 생성 → 관리자 재생성 | 00:00 스케줄러 15건 `COMPLETED` → `SERVICE_OPS` 관리자 `POST /reports/{id}/regenerate` | 초5 2판·초3 2판 `COMPLETED`(초3은 완료 시도가 없어 빈 리포트였음 → 받아쓰기 시도를 마무리·돌아보기한 뒤 다시 재생성해 3판) |
+| report 입력(4.1.1)·리포트 응답 | 재생성 판 `GET /reports/{id}`(학부모) | 초5 문제 `answerTimes: [{1, 85, 84}, {2, 25, 79}]`(이어하기 v3 없음), 초3 받아쓰기 문제 `answerTimes: []` |
+| 학부모 웹 화면, 원문 비공개(#206) | 학생 공개 설정 기본값(끔)으로 일일 리포트 상세 | "처음 답: 생각 1분 · 작성 1분", "되묻기 뒤 답: 생각 1분 미만 · 작성 1분", 두 번째 되묻기 뒤 답 줄 없음 |
+| 학부모 웹 화면, 원문 공개 | 학생 설정을 켠 뒤 같은 화면 | 같은 두 줄 + 원문 근거 버튼 |
+| Markdown·PDF | 공개 상태에서 `GET /reports/{id}/download?format=md·pdf` | 두 파일 모두 같은 두 줄(PDF는 글자 추출로 확인). 비공개 상태 다운로드는 기존 규칙대로 `403 STUDENT_RECORDS_PRIVATE` |
+| 받아쓰기 답 줄 생략 | 초3 일일 리포트 웹 화면 | 문제 카드에 시간 줄 없음 |
+
+확인하지 못한 것
+
+- **고르기 방식 null**: 이번 주 kind 공개 테마(초3·초5) 요일 미션이 모두 서술·풀이·논술이고, 시드 고르기 미션은 추가 문제라 무료 시험 자녀는 `403 PREMIUM_REQUIRED`. kind 프리미엄 시험 자녀는 있으나 그 보호자 자격 정보를 이 확인에서 쓸 수 없었다. learning `AnswerServiceTest`·웹 `answerTiming.test.ts`의 고르기 null 시험으로만 확인된 상태
+- **실제 클립보드 Ctrl+V**: 이 확인에 쓴 브라우저 창은 키보드 단축키로 클립보드 복사·붙여넣기가 동작하지 않아(메모 칸에도 붙지 않음) 실제 `paste`·`drop` 이벤트를 화면 요소에 보내 막힘 여부를 비교했다. 실제 Ctrl+V·끌어다 놓기는 #802의 Playwright 시험(`tests/browser/answerTime.spec.ts`)에서 확인됨. 휴대폰 길게 눌러 붙여넣기는 여전히 실기기 확인 필요(42.2)
+- report 내부 입력 경로(`/internal/records/students/{id}/daily-attempts`)는 report-api 토큰이 허용 범위 밖(`403`, 생성은 report-worker 몫)이라 직접 조회하지 않고 생성 결과 `answerTimes`로 확인했다
+
+발견(이번 범위 밖, 고치지 않음)
+
+- 학부모 일일 리포트 문제 카드의 "돌아보기" 줄이 원문 공개 상태에서 난이도 코드를 그대로 `돌아보기 · NORMAL`로 보인다(비공개 상태는 `쓰지 않음`). Markdown도 `### 돌아보기` 아래 `NORMAL`. 난이도 코드를 화면 문구(쉬웠어요·보통이에요·어려웠어요)로 바꾸는 처리가 없는 것으로 추정
+- Markdown·PDF 파일은 생성 때의 공개 설정으로 만들어져, 비공개 때 생성한 판은 나중에 공개로 바꿔도 "원문 비공개 또는 답변 없음"으로 남는다(기존 동작, 이번 기능과 무관)
+
+kind에 남긴 것
+
+- 학부모 `kindcheck436`의 자녀 `kind확인5학년`·`kind확인3학년` PIN 설정, 기기 "kind답변시간" 등록. 초5 11/19 시도 1건(완료, 답 3판), 초3 시도 2건(월 완료·화 진행 중, 받아쓰기)
+- 11/19 일일 리포트: 스케줄러 생성 15건(시험 시계 때문에 `created_at`이 실제보다 약 9시간 늦은 15:00 UTC), 관리자 재생성 판(초5 2판, 초3 2·3판). 오늘 밤 실제 00:00 스케줄러는 같은 날짜·학생 `SCHEDULE` 작업이 이미 있어 건너뛴다(`ReportJobService.scheduled`)
+- 이미지 `sagomungchi/core-service:clock803`(시험 시계용, 배포에서는 내림), 초5 학생 공개 설정은 원래대로 끔
