@@ -8,6 +8,7 @@ import com.sagomungchi.core._common.exception.httpStatusOf
 import com.sagomungchi.core._common.web.SseEmitters
 import com.sagomungchi.core.conversation.client.AiClient
 import com.sagomungchi.core.conversation.client.AnalysisCall
+import com.sagomungchi.core.conversation.client.AnalysisEvent
 import org.springframework.stereotype.Service
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.time.Duration
@@ -60,33 +61,27 @@ class AnalysisStreamService(private val conversations: ConversationService, priv
             // P25 (#392): re-read the pinned report revision for every message; ai never calls report directly.
             val report = conversations.report(ticket)
             call.checkActive()
-            ai.stream(conversations.request(ticket, report), call) { name, data ->
+            ai.stream(conversations.request(ticket, report), call) { event ->
                 call.checkActive()
                 conversations.guard(ticket)
                 run {
                     if (!connected()) call.cancel("STREAM_INTERRUPTED")
                     call.checkActive()
-                    if (terminal && name != "done") invalid()
-                    when (name) {
-                        "status" -> {
-                            if (data.path("state").asText() != "RUNNING" || !data.path("message").isTextual) invalid()
+                    if (terminal && event != AnalysisEvent.Done) invalid()
+                    when (event) {
+                        is AnalysisEvent.Status -> {
                             sawStatus = true
-                            emit("status", mapOf("state" to "RUNNING", "messageId" to ticket.message.id, "message" to data.path("message").asText()))
+                            emit("status", mapOf("state" to "RUNNING", "messageId" to ticket.message.id, "message" to event.message))
                         }
-                        "delta" -> {
-                            if (!sawStatus || !data.path("text").isTextual) invalid()
-                            emit("delta", mapOf("text" to data.path("text").asText()))
+                        is AnalysisEvent.Delta -> {
+                            if (!sawStatus) invalid()
+                            emit("delta", mapOf("text" to event.text))
                         }
-                        "result" -> { if (!sawStatus) invalid(); result = conversations.validateResult(ticket, data); terminal = true }
-                        "clarification" -> { clarification = conversations.validateClarification(ticket, data); terminal = true }
-                        "error" -> {
-                            // Only a bounded public code/title crosses this boundary. No raw upstream body or exception text.
-                            val code = data.path("code").asText()
-                            if (!code.matches(Regex("[A-Z][A-Z0-9_]{0,79}"))) invalid()
-                            throw BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY, code, "분석 처리를 완료하지 못했습니다.")
-                        }
-                        "done" -> { if (!terminal) invalid() }
-                        else -> invalid()
+                        is AnalysisEvent.Result -> { if (!sawStatus) invalid(); result = conversations.validateResult(ticket, event.body); terminal = true }
+                        is AnalysisEvent.Clarification -> { clarification = conversations.validateClarification(ticket, event.body); terminal = true }
+                        // AiClient already bounded the code to a public form.
+                        is AnalysisEvent.Error -> throw BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY, event.code, "분석 처리를 완료하지 못했습니다.")
+                        AnalysisEvent.Done -> { if (!terminal) invalid() }
                     }
                 }
             }

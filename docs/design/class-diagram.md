@@ -758,8 +758,8 @@ classDiagram
   }
   class AiClient {
     <<client>>
-    +streamAnalysis(request) Flow~AnalysisEvent~
-    +cancel(streamId)
+    +stream(request, call, onEvent)
+    +reportTemplate(request) JsonNode
   }
   class ChildAuthorizationService { <<service>> }
   class SseEmitters { <<web>> }
@@ -792,7 +792,7 @@ classDiagram
 - `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`, `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
 - `DashboardController`(학생 3개·학부모 4개 조회) → `LearningRecordService` → `LearningRecordClient` → `LearningClient`. 집계·home·상세는 learning 기록 API가 계산하고 core는 수치를 계산하지 않음 ([core 보고서](../report/core-gateway.md))
 - `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
-- `ConversationService.stream`: ai SSE 이벤트를 그대로 중계, `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AiClient.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
+- `AnalysisStreamService`(그림의 `ConversationService.stream`): `AiClient.stream`이 ai SSE 프레임을 `AnalysisEvent`(`Status`·`Delta`·`Result`·`Clarification`·`Error`·`Done`)로 바꿔 넘긴다. 이벤트 모양(`status`의 `state = RUNNING`·`message`, `delta`의 `text`, `error`의 공개 형식 `code`, 모르는 이벤트 이름)이 틀리면 client가 502 `AI_INVALID_RESPONSE`로 막고, service는 이벤트 순서(첫 `status` 전 `delta`·`result` 금지, 종료 뒤 `done`만)와 `result`·`clarification` 업무 검증(`ConversationService.validateResult`·`validateClarification`)만 한다(#792). `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AnalysisCall.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
 - 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2)
 - SSE 처리를 별도 스레드(executor)에서 실행하면 `UserContextHolder`(ThreadLocal) 값이 전달되지 않음 → `SseEmitters.open(context, …)`이 요청 스레드에서 캡처한 컨텍스트를 작업 스레드에서 설정·해제 (#39)
 
@@ -861,7 +861,18 @@ classDiagram
   class ReportClient {
     <<client>>
     +get(studentId, path, query, narrativeEnabled) JsonNode
+    +reports(childId, status, periodType) ArrayNode
+    +report(job, reportId, revision, narrativeEnabled) ReportDocument
+    +file(job, reportId, format, narrativeEnabled) Pair
+    +evidence(job, reportId, itemId) JsonNode
     +reconcile(job) ReportReconciliation
+  }
+  class ReportDocument {
+    <<client DTO>>
+    +reportId UUID
+    +withoutNarrative()
+    +withoutOriginals()
+    +withoutProblemOriginals()
   }
   class NotificationController {
     <<controller>>
@@ -923,6 +934,7 @@ classDiagram
   ReportNotificationListener --> NotificationService
   ReportCommandWriter --> OutboxWriter
   ReportQueryService --> ReportClient
+  ReportClient ..> ReportDocument
   ReportQueryService --> ReportViewRepository
   ReportJobService ..> ReportJob
   NotificationController --> NotificationService
@@ -940,6 +952,7 @@ classDiagram
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
 - 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
+- report 응답 계약 검사는 `ReportClient`(#792): 목록 `reports`는 모든 쪽을 모으며 항목마다 자녀·식별자·회차·기간·요청한 기간 종류를 검사하고 빠진 `periodType`을 `WEEKLY`로 채운다. 상세 `report`는 작업의 자녀·기간 종류·기간·요청 회차와 맞을 때만 `ReportDocument`를 만들고, 다운로드 `file`은 서술 칸 존재와 링크(http(s) 절대 주소·사용자 정보 없음·만료 시각)를 검사한다. 틀리면 502 `REPORT_CONTRACT_INVALID`. 어느 칸이 서술·원문인지는 `ReportDocument`가 알고, 언제 거를지(서술 권한 `narrativeEnabled`, 학부모 공유 `parentSharingEnabled`, 일일 상세 권한)는 공개 설정·상품 권한 업무 규칙이라 `ReportQueryService`가 정한다
 - 리포트 인가는 controller가 아니라 service 안에서 한다. `ReportQueryService`·`ReportViewService`는 `reportId`로 소유 작업(`ReportJobRepository.byReport`)을 찾은 뒤 `ReportAccessService.parent`(학부모 역할 + `StudentAccessService.requireLinked`)로 확인하고, `ReportClient.get`이 `studentScope`를 그 학생 한 명으로 좁혀 report에 전달한다. 재생성은 `ReportJobService.regenerate` → `ReportAccessService.regeneration`(학부모는 연결 확인, 관리자는 `SERVICE_OPS`) (3.1)
 - 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler`·`DailyReportScheduler`(P24, #390) + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
 
@@ -1123,7 +1136,10 @@ classDiagram
   }
   class SupportLearningClient {
     <<client>>
-    +correctJudgment(judgmentId, command, idempotencyKey)
+    +target(type, id, studentId) SupportTarget
+    +original(attemptId, studentId) JsonNode
+    +judgedAnswer(attemptId, studentId, judgmentId) UUID
+    +correctJudgment(judgmentId, command, idempotencyKey) CorrectionResult
   }
   class LlmUsageConsumer {
     <<consumer>>
@@ -1316,7 +1332,7 @@ classDiagram
 ```
 
 - 정정 영향(#244): `SupportService` → `ReportSupportService.affected`·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
-- `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
+- `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). learning 지원 응답 해석은 client가 맡는다(#792): `target`은 `SupportTarget(studentId, attemptId, previousResult)`(학생·시도 ID가 UUID가 아니면 502 `SUPPORT_INVALID_RESPONSE`), `judgedAnswer`는 시도 원문에서 정정한 판정의 답변 ID, `correct`는 검사한 `CorrectionResult(previousResult, impact, body)`. `SupportService`는 그 값을 신고 기록과 대조(다르면 409)하고 정정 영향을 조합한다. `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
 - 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), 큐 현황 = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
 - #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. `AiUsageController`는 자기 기능 service만 부르도록 `usage/controller`에 둔다(#422, 경로 `GET /api/v1/admin/ai-usage` 동일). 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. 나머지 운영 기능은 #47에서 구현됨(위 구현 이름).
@@ -1364,7 +1380,8 @@ classDiagram
   class CommunityClient {
     <<client>>
     +createPost(studentId, attemptId) PostResult
-    +missionPosts(missionId, viewerId, seed, page) Page
+    +missionPosts(missionId, viewerId, seed, page) List~MissionPost~
+    +studentPosts(studentId, role, user) List~StudentPost~
     +react(postId, studentId, reaction) ReactionResult
     +setVisibility(studentId, visible, reason)
     +moderate(postId, status, errorReportId)
@@ -1442,6 +1459,7 @@ classDiagram
 - 친구 방 구경(#708): `FriendRoomService.room`이 학생 세션 확인 → `CommunityRepository.reportHidden`(404) → `CommunityClient.postAuthor`(learning #707, 오류 그대로 전달) → `CommunityAuthorMapper.toAuthors`(없으면 404) → `LookUnlockService.equipmentAssets`(착용 여덟 칸 그림 키, 바닥 포함·판매 중단 포함) → `RoomDecorService.friendSpots`(방 소품 놓은 자리, 그림 키만, #704) → `RoomFrameSlotService.friendFrames`(작성자 범위로 learning 앨범) 순서로 조합한다. 트랜잭션 없이 읽기만 해 learning을 기다리는 동안 DB 잠금이 없다. 응답에 학생 ID·회차 키를 넣지 않는다. 커뮤니티 목록 `look.equipped`(`equipmentOf`, 캐릭터 네 슬롯 아이템 코드)는 그대로다
 - #704 바닥·방 소품: 바닥 `FLOOR`는 `LookCatalog.EQUIP_SLOTS`(착용 슬롯)에 들어가 해금·착용 클래스가 그대로다. 방 소품 `DECOR`는 `ITEM_SLOTS`(관리자 등록)에만 있고 `LookUnlockService.purchase`가 해금과 같은 잠금·원장·멱등으로 여러 번 산다(`unlock`은 방 소품을 422로 거절). 목록 `catalog`가 보유 개수 `ownedCount`·등록일 `createdAt`을 채운다. `RewardService.deleteStudent`가 원장보다 먼저 보유 행을 지운다
 - `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
+- 공유물 목록 해석(#792): `CommunityClient.missionPosts`·`studentPosts`가 learning `items[]`를 `MissionPost`·`StudentPost`로 바꾼다(공유물·작성자 ID UUID, 상태는 `Community.POST_STATUSES`, 반응 수는 `Community.REACTIONS` 전부를 0으로 채움, 내 반응은 알려진 종류만). 틀리면 502 `COMMUNITY_INVALID_RESPONSE`. `CommunityService`는 작성자 표시·신고 숨김·공개 설정으로 거르고 상태를 덮어쓰는 업무 판단만 한다
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
 - 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningProxyService.reflection` 돌아보기 저장 성공(또는 `409 ATTEMPT_CLOSED` 재요청) 뒤 `CommunityService.shareCompleted`, 결과 `postId`로 공유 포인트 적립(#389)
 - 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. #387 때는 무료 `THEME_DAY`·`EXTRA`를 셌고, 2026-11-10 개정(core #485)부터 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다

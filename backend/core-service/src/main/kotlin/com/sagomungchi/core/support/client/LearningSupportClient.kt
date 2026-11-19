@@ -13,8 +13,16 @@ import java.util.UUID
 /** Missing supplier endpoints fail explicitly. No synthetic originals or successful corrections. */
 @Component
 class LearningSupportClient(private val http: LearningClient, private val json: ObjectMapper) {
- fun target(type: String, id: UUID, student: UUID?=null): JsonNode =
-  if(student==null) exchange("GET", "/support/targets/$type/$id") else scoped(student) { exchange("GET", "/support/targets/$type/$id") }
+ /** Support target owner. [previousResult] is the judgment result for JUDGMENT targets and empty text when the supplier omits it. */
+ data class SupportTarget(val studentId: UUID, val attemptId: UUID, val previousResult: String)
+ /** Validated correction response. [body] is kept whole as the provider result record. */
+ data class CorrectionResult(val previousResult: String, val impact: JsonNode, val body: JsonNode)
+
+ /** Malformed student/attempt IDs are 502 `SUPPORT_INVALID_RESPONSE`. */
+ fun target(type: String, id: UUID, student: UUID?=null): SupportTarget {
+  val value=if(student==null) exchange("GET", "/support/targets/$type/$id") else scoped(student) { exchange("GET", "/support/targets/$type/$id") }
+  return SupportTarget(identifier(value,"studentId"),identifier(value,"attemptId"),value.path("previousResult").asText())
+ }
  fun original(attempt: UUID, student: UUID): JsonNode = scoped(student) {
   val value = exchange("GET", "/support/attempts/$attempt")
   if (value.path("attemptId").asText()!=attempt.toString() || value.path("studentId").asText()!=student.toString() || !value.path("answers").isArray) invalid()
@@ -26,14 +34,19 @@ class LearningSupportClient(private val http: LearningClient, private val json: 
   }
   json.valueToTree(mapOf("attemptId" to attempt,"studentId" to student,"answers" to answers))
  }
- fun correct(judgment: UUID, student: UUID, requestId: UUID, report: UUID, reason: String, corrected: String): JsonNode = scoped(student) {
+ /** The answer judged by [judgment] in the attempt original (#244). Throws when the attempt has no such answer. */
+ fun judgedAnswer(attempt: UUID, student: UUID, judgment: UUID): UUID {
+  val answer=original(attempt,student)["answers"].first { it.path("feedback").path("judgment").path("judgmentId").asText()==judgment.toString() }
+  return UUID.fromString(answer["answerId"].asText())
+ }
+ fun correct(judgment: UUID, student: UUID, requestId: UUID, report: UUID, reason: String, corrected: String): CorrectionResult = scoped(student) {
   val value=exchange("POST","/judgments/$judgment/corrections",json.writeValueAsBytes(mapOf("reportId" to report,"reason" to reason,"corrected" to corrected)),requestId,correction=true)
   if (!value.path("correctionId").isTextual || value.path("corrected").asText()!=corrected ||
       !value.path("previousResult").isTextual || !value.path("createdAt").isTextual || !value.path("impact").isObject) invalid()
   try { UUID.fromString(value["correctionId"].asText()); java.time.OffsetDateTime.parse(value["createdAt"].asText()) } catch (_: Exception) { invalid() }
   if (value["previousResult"].asText() !in setOf("CORRECT","PARTIAL","RETHINK","HELD") ||
       listOf("conversation","aggregation","report").any { value["impact"].path(it).asText() !in setOf("APPLIED","NOT_APPLIED","UNKNOWN") }) invalid()
-  value
+  CorrectionResult(value["previousResult"].asText(),value["impact"],value)
  }
  private fun exchange(method: String, path: String, body: ByteArray?=null, key: UUID?=null, correction: Boolean=false): JsonNode {
   check(!TransactionSynchronizationManager.isActualTransactionActive())
@@ -61,6 +74,9 @@ class LearningSupportClient(private val http: LearningClient, private val json: 
    ?: throw BusinessException(HttpStatus.UNAUTHORIZED,"UNAUTHENTICATED","검증된 내부 호출 컨텍스트가 필요합니다.")
   UserContextHolder.set(previous.copy(studentScope=setOf(student.toString())))
   return try { block() } finally { UserContextHolder.set(previous) }
+ }
+ private fun identifier(value: JsonNode,field: String): UUID = try { UUID.fromString(value.path(field).asText()) } catch(_: Exception) {
+  throw BusinessException(HttpStatus.BAD_GATEWAY,"SUPPORT_INVALID_RESPONSE","학습 지원 식별자가 올바르지 않습니다.")
  }
  private fun invalid(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY,"SUPPORT_INVALID_RESPONSE","학습 지원 응답 계약이 올바르지 않습니다.")
 }
