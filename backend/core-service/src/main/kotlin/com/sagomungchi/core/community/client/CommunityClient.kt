@@ -23,19 +23,20 @@ import java.util.UUID
 @Component
 class CommunityClient(private val http: LearningClient, private val json: ObjectMapper) {
     data class SharedPost(val postId: UUID, val created: Boolean)
-    data class PostDetail(val postId: UUID, val studentId: UUID, val missionId: UUID?, val status: String, val answer: JsonNode?)
+    /** 신고 대상 확인·관리자 원문. [answer]는 [sharedAnswer]로 모양을 확인한 learning 원문이다(#825). */
+    data class PostDetail(val postId: UUID, val studentId: UUID, val missionId: UUID?, val status: String, val answer: JsonNode)
 
     /**
-     * 미션 공유물 목록 한 항목. 학생 ID는 service가 작성자 표시로 바꾼 뒤 버린다. 답변은 원문 그대로 넘긴다.
-     * [createdAt]은 date-time으로 읽히는 것을 확인한 learning 문자열 그대로다(#814).
+     * 미션 공유물 목록 한 항목. 학생 ID는 service가 작성자 표시로 바꾼 뒤 버린다. 답변은 모양(공개 계약 `CommunityAnswer`)을
+     * 확인한 learning 원문 그대로다(#825). [createdAt]은 date-time으로 읽히는 것을 확인한 learning 문자열 그대로다(#814).
      */
-    data class MissionPost(val postId: UUID, val studentId: UUID, val answer: JsonNode?, val myReactions: List<String>, val createdAt: String?)
+    data class MissionPost(val postId: UUID, val studentId: UUID, val answer: JsonNode, val myReactions: List<String>, val createdAt: String?)
 
     /**
      * 내 공유물·자녀 공유물 한 항목. [status]는 learning 상태(`Community.POST_STATUSES`), 반응 수는 `Community.REACTIONS` 전부를
-     * 0 이상 정수로 채운다. 미션 ID·제목·작성 시각은 client가 형식을 확인한 값만 담는다(#814). 답변은 원문 그대로다.
+     * 0 이상 정수로 채운다. 미션 ID·제목·작성 시각은 client가 형식을 확인한 값만 담는다(#814). 답변은 모양을 확인한 원문이다(#825).
      */
-    data class StudentPost(val postId: UUID, val missionId: UUID?, val missionTitle: String?, val answer: JsonNode?,
+    data class StudentPost(val postId: UUID, val missionId: UUID?, val missionTitle: String?, val answer: JsonNode,
         val status: String, val reactions: Map<String, Int>, val createdAt: String?)
 
     /** 학습 완료 시도 공유. 201 새로 공유, 200 이미 있음(학생·미션당 1개). 그 밖의 응답은 공유하지 않은 것으로 본다. */
@@ -46,26 +47,30 @@ class CommunityClient(private val http: LearningClient, private val json: Object
         SharedPost(postId, response.status == 201)
     }
 
-    /** `items[]`의 공유물·작성자 ID가 UUID가 아니거나 작성 시각이 date-time·null이 아니면 502 `COMMUNITY_INVALID_RESPONSE`. 내 반응은 알려진 종류만 남긴다. */
+    /**
+     * `items[]`의 공유물·작성자 ID가 UUID가 아니거나, 답변이 [sharedAnswer] 모양이 아니거나, 작성 시각이 date-time·null이 아니면
+     * 502 `COMMUNITY_INVALID_RESPONSE`. 내 반응은 알려진 종류만 남긴다.
+     */
     fun missionPosts(missionId: UUID, viewer: UUID, viewerUser: UUID, seed: String, page: Int, size: Int): List<MissionPost> =
         acting("STUDENT", viewerUser, viewer) {
             val query = "viewerStudentId=$viewer&seed=${URLEncoder.encode(seed, Charsets.UTF_8)}&page=$page&size=$size"
             items(read(checked(http.exchange("GET", "/community/missions/$missionId/posts", query)))).map { item ->
-                MissionPost(uuid(item.path("postId")), uuid(item.path("studentId")), item.get("answer"),
+                MissionPost(uuid(item.path("postId")), uuid(item.path("studentId")), sharedAnswer(item.path("answer")),
                     reactions(item.path("myReactions")), dateTimeOrNull(item.path("createdAt")))
             }
         }
 
     /**
      * `items[]`의 공유물 ID가 UUID가 아니거나, 상태가 알려진 값이 아니거나, 미션 ID(UUID|null)·미션 제목(문자열|null)·
-     * 작성 시각(date-time|null)·반응 수(0 이상 정수)가 형식에 맞지 않으면 502 `COMMUNITY_INVALID_RESPONSE`(#814). 빠진 반응 수는 0.
+     * 작성 시각(date-time|null)·반응 수(0 이상 정수)·답변([sharedAnswer])이 형식에 맞지 않으면 502 `COMMUNITY_INVALID_RESPONSE`
+     * (#814·#825). 빠진 반응 수는 0.
      */
     fun studentPosts(studentId: UUID, role: String, user: UUID): List<StudentPost> = acting(role, user, studentId) {
         items(read(checked(http.exchange("GET", "/community/students/$studentId/posts")))).map { item ->
             val status = item.path("status").asText()
             if (status !in Community.POST_STATUSES) invalid()
             StudentPost(uuid(item.path("postId")), nullable(item.path("missionId")) { uuid(it) },
-                nullable(item.path("missionTitle")) { if (it.isTextual) it.textValue() else invalid() }, item.get("answer"), status,
+                nullable(item.path("missionTitle")) { if (it.isTextual) it.textValue() else invalid() }, sharedAnswer(item.path("answer")), status,
                 reactionCounts(item.path("reactions")), dateTimeOrNull(item.path("createdAt")))
         }
     }
@@ -98,7 +103,7 @@ class CommunityClient(private val http: LearningClient, private val json: Object
         uuidOrNull(body.path("studentId")) ?: invalid()
     }
 
-    /** 신고 대상 확인·관리자 원문 열람. 없는(삭제된) 공유물은 null. */
+    /** 신고 대상 확인·관리자 원문 열람. 없는(삭제된) 공유물은 null. 답변이 [sharedAnswer] 모양이 아니면 502(#825). */
     fun post(postId: UUID): PostDetail? = acting("SYSTEM", null, null) {
         val response = http.exchange("GET", "/community/posts/$postId")
         if (response.status == 404) return@acting null
@@ -106,7 +111,7 @@ class CommunityClient(private val http: LearningClient, private val json: Object
         val status = body.path("status").asText()
         if (uuidOrNull(body.path("postId")) != postId || status !in Community.POST_STATUSES) invalid()
         PostDetail(postId, uuidOrNull(body.path("studentId")) ?: invalid(), uuidOrNull(body.path("missionId")), status,
-            body.get("answer")?.takeUnless { it.isNull })
+            sharedAnswer(body.path("answer")))
     }
 
     private fun checked(response: HttpExchangeResult): HttpExchangeResult {
@@ -146,6 +151,18 @@ class CommunityClient(private val http: LearningClient, private val json: Object
             }
         }
     }
+    /**
+     * 공유 답변(공개 계약 `CommunityAnswer`, api-spec 2.9, #825). `{inputType, text, content}` 세 칸만 있고, `text`는 문자열,
+     * `content`는 그 입력 방식에 쓰는 칸만(learning `AnswerContent.only`) 있어야 한다. 확인한 learning 원문을 그대로 돌려준다.
+     * 빠짐·null·모르는 입력 방식·다른 입력 방식 칸·타입 오류는 502. 빈 글·목록 개수는 learning 제출 검사가 맡는다.
+     */
+    private fun sharedAnswer(node: JsonNode): JsonNode {
+        if (!node.isObject || node.size() != 3 || !node.path("text").isTextual) invalid()
+        val content = node.path("content")
+        val fields = CONTENT_FIELDS[node.path("inputType").takeIf { it.isTextual }?.textValue()] ?: invalid()
+        if (!content.isObject || fieldNames(content) != fields.keys || fields.any { (name, valid) -> !valid(content.path(name)) }) invalid()
+        return node
+    }
     private fun reactions(node: JsonNode) = if (node.isArray) node.map { it.asText() }.filter { it in Community.REACTIONS } else emptyList()
     private fun uuidOrNull(node: JsonNode): UUID? = if (!node.isTextual) null else try { UUID.fromString(node.asText()) } catch (_: IllegalArgumentException) { null }
 
@@ -158,6 +175,27 @@ class CommunityClient(private val http: LearningClient, private val json: Object
     private fun invalid(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "COMMUNITY_INVALID_RESPONSE", "커뮤니티 응답 계약이 올바르지 않습니다.")
 
     companion object {
+        private fun fieldNames(node: JsonNode) = node.fieldNames().asSequence().toSet()
+        private val text: (JsonNode) -> Boolean = { it.isTextual }
+        private val texts: (JsonNode) -> Boolean = { it.isArray && it.all(text) }
+        /** 논술 4칸: 주장·까닭 정확히 2개·반대 의견에 답하기 */
+        private val essay: (JsonNode) -> Boolean = {
+            it.isObject && fieldNames(it) == setOf("claim", "reasons", "rebuttal") && text(it.path("claim")) &&
+                texts(it.path("reasons")) && it.path("reasons").size() == 2 && text(it.path("rebuttal"))
+        }
+        private val assignments: (JsonNode) -> Boolean = { list ->
+            list.isArray && list.all { fieldNames(it) == setOf("choiceId", "categoryId") && text(it.path("choiceId")) && text(it.path("categoryId")) }
+        }
+
+        /** 입력 방식별 `content` 칸과 검사(api-spec 3.8). 고르기·순서는 같은 모양이다. */
+        private val CONTENT_FIELDS: Map<String, Map<String, (JsonNode) -> Boolean>> = mapOf(
+            "NARRATIVE" to mapOf("text" to text),
+            "SOLUTION_STEPS" to mapOf("finalAnswer" to text, "steps" to texts),
+            "ESSAY" to mapOf("essay" to essay),
+            "CHOICE" to mapOf("choiceIds" to texts),
+            "ORDERING" to mapOf("choiceIds" to texts),
+            "CLASSIFICATION" to mapOf("assignments" to assignments),
+        )
         private val PUBLIC_ERRORS = mapOf(
             (403 to "COMMUNITY_LOCKED") to "이 미션을 마무리하면 친구들 생각을 볼 수 있어요.",
             // #550: 큰 질문 정답 고르기 문제는 그 주 엔딩을 본 학생만 열람(learning #484)

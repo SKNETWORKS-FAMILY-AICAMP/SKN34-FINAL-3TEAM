@@ -29,6 +29,7 @@ import {
   weeklyThemeFor,
   frameImageOf,
   FRIEND_ROOMS,
+  sharedAnswer,
 } from '../fixtures/retention.ts'
 import { guard, mockLatestAttempt, mockStudent, mockStudentHome, respond } from './student.ts'
 import { mockThemeNone } from '../fixtures/themeState.ts'
@@ -88,7 +89,7 @@ const postView = (p: (typeof retentionState.posts)[number]) => ({
   postId: p.postId,
   missionId: p.missionId,
   missionTitle: p.missionTitle,
-  answer: p.answer,
+  answer: sharedAnswer(p.answer),
   status: p.status,
   reactions: reactionCounts(p.postId),
   createdAt: p.createdAt,
@@ -370,7 +371,7 @@ export const retentionHandlers = [
           .map((x) => ({
             postId: x.postId,
             author: { nickname: x.nickname, look: { theme: 'lake', companion: x.companion, equipped: { HAT: x.equipped?.HAT ?? null, OUTFIT: x.equipped?.OUTFIT ?? null, ACCESSORY: x.equipped?.ACCESSORY ?? null, BACKGROUND: null } } },
-            answer: x.answer,
+            answer: sharedAnswer(x.answer),
             myReactions: retentionState.reactions[x.postId]?.[me.id] ?? [],
             createdAt: x.createdAt,
           })),

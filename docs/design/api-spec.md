@@ -562,6 +562,17 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 | GET | `/community-posts/{postId}/room` | 학생 | 친구 방 구경(읽기 전용, #708) `{nickname, look:{theme, companion, equipped:{HAT, OUTFIT, ACCESSORY}}, room:{wallpaper, floor, furniture:{DESK, WALL, WARDROBE}, decor:[{surface, col, row, assetKey, color}], frames:[{slotNo, title, imageUrl}]}}`. 착용 값은 그림 키(`look_item.asset_key`) 또는 null(기본 모습·기본 스킨·기본 벽지, `floor` null은 벽지 세트의 바닥 #704), 판매 중단 아이템도 그대로. `decor`는 놓은 방 소품 자리만(면(FLOOR → WALL_BACK → WALL_LEFT) → row → col 순, 아이템 코드·이름·보유 개수 없음, #723). 친구 생각 목록과 같은 조건에서만 보인다: 작성자 공개 끔·현재 보호자 동의 없음·비활성·신고 숨김·없는 글 404 `COMMUNITY_POST_NOT_FOUND`(이유 구분 없음), 열람자 잠금 403 `COMMUNITY_LOCKED`·`COMMUNITY_LOCKED_UNTIL_ENDING`, 본인 글 409 `COMMUNITY_OWN_POST`. 학생 외 403 `FORBIDDEN`. `Cache-Control: no-store` | RET-14 | 구현(#708) |
 
 - 공유물 생성 API는 없다. 커뮤니티 공개가 켜진 학생의 돌아보기 저장(`POST /attempts/{id}/reflection`, 학습 완료) 성공 후 core가 learning에 공유를 요청한다. 학생·미션당 1개로 그 미션을 처음 마무리한 시도의 마지막 답변만 공유하고(다시 풀기는 공유하지 않음) 메모·판정·되묻기는 넣지 않는다. `answer`는 learning `{inputType, text(입력 틀 칸 이름을 붙인 원문), content(입력 방식별 제출 내용)}`를 그대로 전달한다(#386)
+- 공유 답변 `answer` 모양(공개 계약 `CommunityAnswer`, #825): 미션 공유물 목록·내 공유물·자녀 공유물·관리자 신고 상세 `linkedPost`(열람 가능할 때) 모두 같다. 세 칸 모두 필수이고 다른 칸은 없다. `text`는 문자열(learning `answer.plain_text`, 화면은 이 칸만 보여 준다). `content`는 `inputType`에 따라 그 입력 방식에 쓰는 칸만 있다(3.8, learning `AnswerContent.only`·비어 있는 칸은 저장하지 않음)
+
+  | `inputType` | `content` |
+  |---|---|
+  | `NARRATIVE` | `{text: 문자열}` |
+  | `SOLUTION_STEPS` | `{finalAnswer: 문자열, steps: [문자열]}` |
+  | `ESSAY` | `{essay: {claim: 문자열, reasons: [문자열 2개], rebuttal: 문자열}}`(논술 4칸) |
+  | `CHOICE`·`ORDERING` | `{choiceIds: [문자열]}`(고르기 1개, 순서는 학생이 정한 순서) |
+  | `CLASSIFICATION` | `{assignments: [{choiceId: 문자열, categoryId: 문자열}]}` |
+
+  core `CommunityClient`가 learning 응답을 이 모양으로 확인한 뒤에만 내보낸다. `answer`가 없거나 null, 알 수 없는 `inputType`, `content`가 그 입력 방식 모양과 다르거나(빠진 칸·다른 입력 방식 칸·타입 오류) 모르는 칸이 있으면 502 `COMMUNITY_INVALID_RESPONSE`. 통과한 값은 learning 원문 그대로(칸 순서 포함) 전달해 정상 응답은 바뀌지 않는다. 논술 까닭은 정확히 2개인지 core도 본다. 빈 문자열·목록 개수(고르기 1개, 모든 항목 배정 등)는 learning 제출 검사(422 `ANSWER_INCOMPLETE`)가 맡고 core는 다시 보지 않는다
 - 작성자 표시: learning은 학생 ID를 돌려주고 core가 별명·꾸미기(`look`: 테마·캐릭터·착용 아이템 네 슬롯, #389)로 바꾼 뒤 학생 ID를 지워 응답한다. 반응 수는 learning이 주더라도 목록에서 뺀다
 - core 재확인(#388): learning 공개 전환·검토 호출이 실패하거나 늦어도, core는 지금 공개할 수 없는 작성자(설정 끔·현재 보호자 동의 없음·비활성)와 접수·처리 중이거나 계속 숨김으로 처리된 신고가 걸린 공유물을 목록에서 빼고 반응을 404로 막는다. 내 공유물·자녀 공유물 상태도 core가 아는 비공개(`HIDDEN_SETTING`·`HIDDEN_REPORT`)로 덮어 보여 준다
 - 신고: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId` 추가(유형 5종 그대로). 접수 즉시 공유물 `HIDDEN_REPORT`, 관리자는 기존 `/admin/error-reports`에서 `RESOLVED` + `reviewResult: VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 처리. 같은 공유물의 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`. 신고 행은 신고한 학생의 것(`student_id` = 신고 학생, 작성자 ID는 learning에만), 관리자 상세 `linkedPost`(원문, 열람마다 `SUPPORT_ORIGINAL_VIEW` 감사)

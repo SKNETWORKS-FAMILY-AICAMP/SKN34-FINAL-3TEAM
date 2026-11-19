@@ -100,7 +100,7 @@ test('공유물 신고 목업은 원문과 처리 결과를 연결하고 완료 
   const list = async () => {
     const result = await call('/missions/' + mission.id + '/community-posts')
     assert.equal(result.status, 200)
-    return result.data.items as { postId: string; answer: string }[]
+    return result.data.items as { postId: string; answer: { text: string } }[]
   }
   const submit = async (postId: string) => {
     const result = await call('/error-reports', 'POST',
@@ -123,7 +123,7 @@ test('공유물 신고 목업은 원문과 처리 결과를 연결하고 완료 
   assert.equal(before.status, 200)
   assert.equal(before.data.linkedPost.available, true)
   assert.equal(before.data.linkedPost.status, 'HIDDEN_REPORT')
-  assert.equal(before.data.linkedPost.answer.text, publish.answer)
+  assert.deepEqual(before.data.linkedPost.answer, publish.answer, '#825 신고 원문은 목록과 같은 CommunityAnswer 모양')
   const summaries = await call('/admin/error-reports')
   assert.ok(summaries.data.items.some(({ reportId }: { reportId: string }) => reportId === before.data.reportId))
   assert.equal(summaries.data.items.some((row: object) => 'linkedPost' in row), false)

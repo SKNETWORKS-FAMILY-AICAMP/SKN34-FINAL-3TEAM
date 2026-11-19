@@ -173,6 +173,38 @@ P20의 core 몫(공개 설정·보호자 선택 동의·작성자 표시·신고
 - 학생 삭제 확정 시 `community_enabled` false. 공유물·반응 파기는 learning이 `student.deleted`로 처리
 - 한계: learning 반영 실패 시 learning 저장 상태는 다음 설정 저장·재처리 때까지 늦을 수 있음(자동 재시도 없음). COMMUNITY 문서를 개정하면 옛 판 동의는 바로 무효가 되지만 learning 공유물은 다음 반영 때까지 `VISIBLE`(core 응답에서는 빠짐)
 
+### 10.1 공유 답변 공개 계약과 client 검증 (#825, 2026-11-19)
+
+#814 뒤에도 공유 답변 `answer`만 공개 계약에 모양이 없어(`answer: {}`, 설명은 "learning 마지막 답변 content 그대로") core가 원본을 검사 없이 넘겼다. 모양을 정하고 `CommunityClient`가 검사하게 했다.
+
+확인한 실제 모양(learning 코드는 바꾸지 않음)
+
+| 출처 | 확인한 내용 |
+|---|---|
+| learning `CommunityService.answer`·`SharedAnswer` | 공유 답변은 `{inputType, text, content}` 세 칸. `text`는 `answer.plain_text`(없으면 빈 문자열), `content`는 저장된 `answer.content` |
+| learning `AnswerContent.only`·`AnswerContentTypeHandler` | 제출(`AnswerService`) 때 그 입력 방식에 쓰는 칸만 남기고 null 칸은 저장하지 않는다(답변 API가 생긴 10/27부터, 커뮤니티 11/09보다 먼저). 공유 시 `AnswerContent`로 다시 읽어 표현 검사를 한다 |
+| learning OpenAPI `SubmitAnswer`·`Essay`·`Assignment`, api-spec 3.1·3.8 | 서술 `text`, 풀이 단계 `finalAnswer`·`steps[]`, 논술 `essay{claim, reasons[2], rebuttal}`(4칸), 고르기·순서 `choiceIds[]`, 분류 `assignments[{choiceId, categoryId}]` |
+| learning OpenAPI `CommunitySharedAnswer` | `{inputType(6종), text: string, content: object}`. core 설명의 "content 그대로"는 실제와 달랐다(전체 공유 답변 객체가 나감) |
+| ERD 4.3 `answer.content` | `text, essay, choiceIds, finalAnswer, steps, assignments` |
+| web `answerText`(학생 친구 생각·내 공유물, 학부모 자녀 공유물, 관리자 신고 원문) | 객체의 `text`만 보여 준다. `content`는 어느 화면도 읽지 않는다 |
+
+결정(이슈 "확인 필요": oneOf로 둘지, 표시용 공통 모양으로 줄일지)
+
+- **기준안: learning 모양 그대로 두고 입력 방식별 `content`를 `oneOf`로 정의**(`CommunityAnswer`, 갈래는 `inputType`: 서술·풀이 단계·논술·고르기와 순서(같은 모양)·분류 5개). 세 공개 스키마(`CommunityPost`·`CommunityOwnPost`·`CommunityLinkedPost`)가 이 스키마를 쓴다
+- 근거: ① 정상 응답이 그대로다. client는 확인만 하고 learning 원문 노드를 넘기므로 칸·순서·값이 바뀌지 않고, 화면은 계속 `text`만 쓴다(표시 변화 없음). ② 표시용 공통 모양(`{inputType, text}`)으로 줄이면 공개 응답에서 `content`가 빠지는 모양 변경이라 시연(12/7) 직전 바꿀 이유가 약하고, 원문 내용은 `text`와 같아 줄여도 노출이 줄지 않는다. ③ learning 소유 모델(`AnswerContent`·`SubmitAnswer`)과 같은 갈래라 learning 계약이 바뀌면 같은 곳만 맞추면 된다
+- 검사 범위: 세 칸 필수·다른 칸 없음, `text` 문자열, `inputType` 6종, `content`는 그 입력 방식 칸만(빠진 칸·다른 입력 방식 칸·모르는 칸·타입 오류는 위반), 논술 까닭 정확히 2개. 빈 글·목록 개수(고르기 1개·모든 항목 배정)는 learning 제출 검사(422 `ANSWER_INCOMPLETE`) 몫이라 core는 다시 보지 않는다(풀이 단계 빈 칸 `""`은 learning이 저장할 수 있어 허용)
+- 위반·`answer` 빠짐·null은 미션 공유물 목록·내 공유물·자녀 공유물·신고 대상 확인·관리자 원문 열람 모두 502 `COMMUNITY_INVALID_RESPONSE`. 전에는 null·임의 값이 공개 응답으로 나갔다(learning 계약은 `answer` 필수)
+
+검증 위치
+
+- `CommunityClientTest`: 6가지 입력 방식이 원문 그대로 나가는지, 위반 28가지 × 세 읽기 경로가 502인지
+- `CommunityIntegrationTest`: HTTP 대역을 learning 실제 모양(서술·논술·풀이 단계)으로 바꾸고 공개 응답 `answer`가 대역 값과 같은지 확인. 이 응답 스냅샷을 `validate_community_contracts.py`가 새 스키마로 검사
+- `validate_learning_community_contracts.py`: learning 실제 응답(MockMvc)의 공유 답변이 core `CommunityAnswer`에도 맞는지 교차 검사
+- `scripts/tests/test_community_answer_contract.py`: 입력 방식별 정상·위반 예, learning `CommunitySharedAnswer` 입력 방식 목록과 같은지, 세 공개 스키마 연결
+- web: MSW 목이 문자열·빈 `content`를 돌려주던 것을 `CommunityAnswer` 모양(서술)으로 맞추고, 입력 방식별 `text` 표시 단위 테스트 추가
+
+한계: learning `CommunityTest` 산출물은 서술 답변만 만들어 다른 입력 방식의 learning 실제 응답 교차 검사는 합성 예(`CommunityClientTest`·scripts 테스트)에 기댄다. learning 테스트를 늘리는 일은 learning 범위라 하지 않았다
+
 ## 11. 관리자 ID·비밀번호 로그인 (#369)
 
 Google 로그인만 있어 관리자 계정을 만들 방법이 SQL 손작업뿐이었다. 계약은 api-spec 2.1·5.1, 저장은 ERD 3.1.1 `admin_credential`.
