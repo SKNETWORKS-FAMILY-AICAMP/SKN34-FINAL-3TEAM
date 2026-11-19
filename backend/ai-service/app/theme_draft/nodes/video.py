@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 VIDEO_OFF = "영상 설정 꺼짐"
 VIDEO_DEADLINE = "마감까지 남은 시간이 부족해 영상을 건너뜀"
 STILL_NOTE = "움직이는 그림으로 대신함"
+# 영상 대역(VIDEO_PROVIDER=fake)은 시험용 잡음 영상이라 검토 모델에 보내지 않는다
+# (#716, 그림 대역과 같은 규칙).
+# 멈춤 확인(ffmpeg)은 모델을 쓰지 않아 그대로 한다
+FAKE_REVIEW_SKIPPED = "영상 대역이라 검토를 건너뜀"
 FRAME_EVERY = 1.0  # 검토 장면 간격(초). 2초 간격 4장으로는 사이의 사라짐·변형을 놓쳤음(실측)
 FRAME_COUNT = 8  # 8초 컷이면 0~7초
 FREEZE_FAIL = 0.5  # 컷 중간에 이보다 오래 멈추면 그 컷을 다시 만듦(초, 기준안)
@@ -74,11 +78,12 @@ async def film(
     다시(상한·마감).
 
     (영상, 끝내 실패한 사유, 통과한 검토의 WARN 사유, 실제 길이).
+    영상 대역(VIDEO_PROVIDER=fake)이면 멈춤 확인까지만 하고 장면 뽑기·검토 없이 통과(#716).
     """
     assert ctx.video is not None
     body = ctx.prompt.body
     cut = theme[CUTS_KEY[scene]][index - 1]
-    shows_target = body.cut_shows_target(scene, index)
+    shows_target = body.cut_shows_target(theme, scene, index)
     feedback: list[str] = []
     bad: list[str] = []
     for attempt in range(ctx.settings.theme_video_max_regen + 1):
@@ -99,6 +104,8 @@ async def film(
                 bad = frozen
                 feedback = uniq([*feedback, *bad])
                 continue
+            if ctx.settings.video_provider == "fake":
+                return clip, [], [], length  # 대역 영상은 장면 뽑기·검토를 하지 않음(#716)
             frames = await asyncio.to_thread(video_frames, clip, FRAME_EVERY, FRAME_COUNT)
             review = await ctx.review_llm.generate(
                 system=body.VIDEO_REVIEW_SYSTEM,
@@ -183,6 +190,8 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
         *(film(ctx, theme, scene, i, images[f"{scene}{i}"], durations[i - 1]) for scene, i in jobs)
     )
     filmed = dict(zip(jobs, results, strict=True))
+    if jobs and ctx.settings.video_provider == "fake":
+        warnings.append(warning("VIDEO", "ALL", FAKE_REVIEW_SKIPPED))
     keys: dict[str, str] = {}
     lengths: dict[str, list[float]] = {}
     for scene in scenes:

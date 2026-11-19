@@ -787,6 +787,7 @@ erDiagram
     int output_tokens "NULL 허용"
     int latency_ms
     numeric cost_usd "NULL 허용 · 소비 시점 단가 기준"
+    boolean billed_externally "서비스 밖 별도 청구 (#764) · 기존 행 false"
     boolean success
     varchar error_code "NULL 허용"
     timestamptz occurred_at
@@ -839,6 +840,7 @@ erDiagram
 - 기준표 원본은 learning `rubric_version`, core는 `kind = RUBRIC` 행의 `ref_id`로 연결해 승인·활성 상태만 관리
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
 - `cost_usd`는 core 설정의 모델별 토큰 단가(기획서 3.9)로 소비 시 계산, 단가 변경 후에도 과거 값 유지 (FN-ADM-19)
+- #764(V53): `billed_externally`는 단가 대신 서비스 밖 청구서로 비용을 보는 모델(Veo GCP·RunPod Gemma, `app.llm-billed-externally`) 호출을 소비 시점에 표시한다. 이 행은 `cost_usd`가 null이어도 미산정으로 세지 않는다. 기존 행은 false 그대로라 과거 미산정 기록은 바뀌지 않는다. 클러스터 안 모델(M2 등)은 단가 0으로 등록해 토큰이 없어도 `cost_usd` 0으로 저장한다. 아래 항목의 "미산정 호출로 셈"은 각 이슈 당시 기준이다
 - #355: ai 미션 초안 호출(FN-ADM-20)의 `call_type` `MISSION_DRAFT`를 V28에서 CHECK에 더함. 호출 종류 목록은 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·core OpenAPI `CallType`과 ai·scoring 발행 목록이 같음(Mermaid 주석 값은 CHECK와 자동 대조, 1장)
 - #439: ai 주간 테마 생성(에픽 #436, ai #437)의 텍스트 호출 `THEME_DRAFT`·이미지 호출 `THEME_IMAGE`를 V40에서 CHECK에 더함(V28과 같은 방식, 허용 목록만 넓힘). 이미지 호출은 토큰이 없어 `cost_usd`가 null(미산정 호출로 셈)
 - #480(에픽 #473): 리포트 설명(FN-RPT-09)의 ai 호출 종류 `REPORT_EXPLANATION`(설명 항목 1개당 클러스터 안 sLLM 1회, ai #477)을 V42에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V28·V40과 같은 방식, 허용 목록만 넓힘). 토큰은 기록하지만 sLLM 단가를 설정하지 않아 `cost_usd`는 null(미산정 호출로 셈, #439 이미지와 같음)
@@ -939,6 +941,7 @@ erDiagram
     smallint cell_row PK "기준 칸 행, 0부터 면별 최대 12/5/5"
     uuid look_item_id FK "가진 방 소품, 보유 개수만큼 여러 자리(서비스 검사)"
     timestamptz saved_at
+    varchar color "NULL 허용 · 기본 색, 소문자·숫자·하이픈 1~20자 (#758 V52)"
   }
 ```
 
@@ -952,7 +955,7 @@ erDiagram
 - 학생 삭제 확정(P09): `student.look_*` NULL과 같은 트랜잭션에서 착용 → 해금 → 원장 → 잔액 순서로 삭제(FK 순서). #555부터 같은 트랜잭션에서 `room_frame_slot`도 삭제
 - #555(V47 `V47__room_furniture_skins_and_frame_slots.sql`, P22 개정·P27): `look_item.slot`·`student_look_equipment.slot` CHECK에 생활공간 가구 슬롯 `DESK`(책상)·`WALL`(추억의 벽)·`WARDROBE`(옷장)를 더했다(V35는 고치지 않음). 가구 1개 = 착용 슬롯 1개라 PK `(student_id, slot)`로 가구당 스킨 1개. 가구별 기본 스킨은 행 없이 항상 쓸 수 있다: 착용 행이 없는 가구 슬롯이 기본 스킨이다(테마 `lake`·기본 벽지와 같은 방식, 기준안을 2026-11-12 확정). 추가 스킨은 관리자가 `look_item`으로 등록하고 기존 해금(원장 `UNLOCK`·잔액 차감·멱등)·착용 규칙을 그대로 쓴다. 방 벽지는 `BACKGROUND` 착용 아이템이라 테이블 변경 없음
 - #704(V50 `V50__room_floor_and_decor.sql`, P22·P27 개정, 사용자 결정 2026-11-16): `look_item.slot`에 내 방 바닥 `FLOOR`·방 소품 `DECOR`, `student_look_equipment.slot`에 `FLOOR`만 더했다(V35·V47은 고치지 않음). 바닥은 가구 스킨과 같은 1회 해금·착용이고 착용 행이 없으면 벽지 세트의 바닥. 방 소품(`ACCESSORY` "소품"과 다른 칸)은 착용 슬롯이 아니라 구매 1번 = `student_room_decor` 1행(그 구매의 `UNLOCK` 원장 행을 `ledger_id` UK로 가리킴, 원장 `event_type` CHECK 변경 없음)이고 보유 개수는 행 수, 아이템당 8개까지(잔액 행 잠금 아래 서비스 검사). 인덱스 `(student_id, look_item_id)`는 보유 개수 집계용
-- `room_decor_spot`(#723 V51): 면·기준 칸 PK `(student_id, surface, cell_col, cell_row)`. `surface`는 FLOOR·WALL_BACK·WALL_LEFT, 각각 col/row 0~16/0~12·0~15/0~5·0~10/0~5 CHECK. 최대 8개는 서비스 검사. 기존 행이 있으면 마이그레이션을 중단하고 보존한다(운영 확인 전 삭제 없음, 보고서 21절). 같은 방 소품을 보유 개수만큼 여러 자리에 놓고 보유 개수 초과는 서비스가 막는다. 저장은 `room_frame_slot`처럼 학생 행 `FOR NO KEY UPDATE` 아래 전체 삭제·삽입(방 소품 사기의 학생 행 `FOR SHARE`와 직렬화). 판매 중단 아이템도 보유분·놓은 자리 유지. 학생 삭제 확정 때 `room_decor_spot` → `student_room_decor`(원장보다 먼저) 순서로 같은 트랜잭션에서 삭제. 추가 인덱스 없음(PK 앞 칸 `student_id`)
+- `room_decor_spot`(#723 V51, #758 V52): `color varchar(20)`는 nullable이며 `^[a-z0-9-]{1,20}$` CHECK. 기존 행은 NULL(기본 색), 색 목록은 웹에서 해석한다. 면·기준 칸 PK `(student_id, surface, cell_col, cell_row)`. `surface`는 FLOOR·WALL_BACK·WALL_LEFT, 각각 col/row 0~16/0~12·0~15/0~5·0~10/0~5 CHECK. 최대 8개는 서비스 검사. V51은 기존 행이 있으면 마이그레이션을 중단하고 보존한다(운영 확인 전 삭제 없음, 보고서 21절). 같은 방 소품을 보유 개수만큼 여러 자리에 놓고 보유 개수 초과는 서비스가 막는다. 저장은 `room_frame_slot`처럼 학생 행 `FOR NO KEY UPDATE` 아래 전체 삭제·삽입(방 소품 사기의 학생 행 `FOR SHARE`와 직렬화). 판매 중단 아이템도 보유분·놓은 자리 유지. 학생 삭제 확정 때 `room_decor_spot` → `student_room_decor`(원장보다 먼저) 순서로 같은 트랜잭션에서 삭제. 추가 인덱스 없음(PK 앞 칸 `student_id`)
 - `room_frame_slot`(#555 V47): 추억의 벽 슬롯 1~6(기준안 6개 2026-11-12 확정, CHECK). `theme_id`·`theme_week_start`는 learning `theme_frame` 회차의 논리 참조라 서비스 간 FK가 없고, 저장 전에 learning 내부 API(api-spec 4.1.4 `frames/ownership`)로 보유를 확인한다. UK `(student_id, theme_id, theme_week_start)`로 같은 액자를 두 슬롯에 걸지 못하고, `theme_week_start`는 CHECK로 월요일만. 저장은 학생 행 `FOR NO KEY UPDATE`(삭제 확정·다른 저장과 직렬화) 아래에서 학생의 슬롯 전체를 지우고 다시 넣는다. 추가 인덱스 없음(PK 앞 칸 `student_id`로 조회·삭제)
 
 ### 3.5.2 생활공간·추억 사용량 (P27, 구현 #566·#555)
@@ -1488,7 +1491,7 @@ erDiagram
 - `community_reaction` PK `(post_id, student_id, reaction)`. `id`는 `UUID.nameUUIDFromBytes("community-reaction:{postId}:{studentId}:{reaction}")`라 취소 뒤 다시 남겨도 같다(core #389 포인트 사건 키로 반복 적립을 막음)
 - 학생 삭제(`student.deleted`, P09): 시도·답변보다 먼저 같은 트랜잭션에서 그 학생 공유물에 달린 반응 → 그 학생이 남긴 반응 → 공유물 → `community_visibility` 순서로 물리 삭제(FK NO ACTION)
 
-### 4.3.2 표현 검토 대기 (#688 재학습 자동화, 설계 #725, 구현 #727)
+### 4.3.2 표현 검토 대기 (#688 재학습 자동화, 설계 #725, 구현 전 #727)
 
 표현 분류 모델 재학습 자료. 이미 저장되는 답변만 가리키고 원문을 따로 복사하지 않는다. 막힌 답변(저장 안 됨)·모델 점수는 저장하지 않는다(NFR-SEC-05).
 
@@ -1838,7 +1841,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `outbox_event` | `(subject, created_at, id) WHERE published_at IS NULL`, `(published_at) WHERE published_at IS NOT NULL` | subject별 선두·발행 순서 및 재시도 대상(#243), 보존 기간 정리 |
 | core | `processed_event` | `(processed_at)` | 보존 기간 정리 |
 | core | `reward_point_ledger` | `(student_id, created_at)` | 포인트 내역·반응 하루 상한 집계 (#389) |
-| core | `room_decor_spot` | `(student_id, surface, cell_col, cell_row)` | PK: 학생별 배치 조회·같은 기준 칸 중복 방지 (#723 V51), 추가 인덱스 없음 |
+| core | `room_decor_spot` | `(student_id, surface, cell_col, cell_row)` | PK: 학생별 배치 조회·같은 기준 칸 중복 방지 (#723 V51), color NULL 또는 형식 CHECK (#758 V52), 추가 인덱스 없음 |
 | core | `student_room_decor` | `(student_id, look_item_id)` | 방 소품 아이템별 보유 개수·8개 상한 확인 (#704 V50) |
 | core | `model_loading_report` | `(pod_id, reported_at)`, `(reported_at)` | Pod별 최근 보고(`reported_at DESC`)·보고 만료 판정 (#370, V37) |
 | core | `event_log` | `(received_at)`, `(event_type, event_time)` | 보존 기간 정리, 유형·기간별 추적 |
@@ -1847,6 +1850,9 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `weekly_theme` | `(grade, week_start) WHERE status = 'PUBLISHED'`, `(grade, status, week_start)` | 학년·주당 게시 1개(UNIQUE), 이번 주 테마 해석·관리자 목록 (#385, 학년 기준 #438 V16) |
 | learning | `theme_draft` | `(grade, week_start) WHERE source = 'AUTO'`, `(status, created_at)` | 학년·주당 자동 초안 1개(UNIQUE, 레플리카 중복 방지), 초안 목록·생성 작업 점유 (#438) |
 | learning | `answer` | `(attempt_id, submitted_at)` | 시도 타임라인 |
+| learning | `answer` | `(followup_id) WHERE followup_id IS NOT NULL` | 최근 되묻기에 이미 답했는지 확인·되묻기 삭제 때 FK 검사 (#775 V22) |
+| learning | `followup` | `(attempt_id, created_at)` | 시도의 최근 되묻기·학습 기록 목록의 되묻기 받음 여부 (#775 V22). 판정당 1개는 UK `(judgment_id)` |
+| learning | `hint_usage` | `(attempt_id, opened_at)` | 학습 기록 목록의 첫 답변 전 생각 열기 여부·리포트용 열람 시각 (#775 V22) |
 | learning | `judgment` | `(process_status, lease_until)` | 고착 `RUNNING` 탐지 |
 | learning | `mission_draft` | `(status, created_at)` | 초안 목록(상태 필터·최근 요청 순)·생성 작업 점유 (#353) |
 | learning | `community_post` | `(mission_id, status)` | 미션별 공개 공유물 목록 (#386, V13) |
@@ -1869,7 +1875,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V21, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 108개 테이블·942개 컬럼(core 61/524, learning 39/352, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V21(#647)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V53(V10·V11 결번), learning Flyway V1~V22, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 110개 테이블·955개 컬럼(core 63/537, learning 39/352, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V53(#704 V50 `student_room_decor`·`room_decor_spot`, #723·#758 V51·V52, #764 V53)·learning V22(#775, 인덱스만)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

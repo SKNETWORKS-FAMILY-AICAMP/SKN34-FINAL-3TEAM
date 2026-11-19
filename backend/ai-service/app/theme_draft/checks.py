@@ -22,6 +22,7 @@ from typing import Any
 from app.followup.leak_guard import find_text_leaks
 from app.mission_draft import checks as mission_checks
 from app.mission_draft.models import Draft, MissionDraftRequest
+from app.theme_draft.families import StoryType, is_animal, story_type
 
 DAYS = ("MON", "TUE", "WED", "THU", "FRI")
 DAY_KO = dict(zip(DAYS, ("월", "화", "수", "목", "금"), strict=True))
@@ -53,6 +54,8 @@ LAST_ELIMINATION_MIN = DAYS.index("THU")  # 마지막 틀린 후보는 목요일
 # 증거 발견 줄은 대화 한 줄로 그대로 나가 LINE_MAX와 같음
 TEXT_MAX = {
     "title": 20,
+    "incident": 60,  # #634 ③ 내부 칸(기준안)
+    "answerLook": 60,
     "bigQuestion": 40,
     "intro": 200,
     "outro": 300,
@@ -78,7 +81,9 @@ MUNGCHI_HAND_WORDS = tuple(
     (
         "손을|손으로|손가락|두 손|한 손|양손|손뼉|박수|만세|팔을|양팔|"
         "가리키며|가리키고|가리킨다|가리켜|짚는|짚고|짚어|짚으|건네|건넨|안아|안고|안는|껴안|"
-        "놓는|놓고|놓아|내려놓|들어 올|들어올|집어|줍|쥐고|쥔다|뛰|점프|달리|달려|달린"
+        "놓는|놓고|놓아|내려놓|들어 올|들어올|집어|줍|쥐고|쥔다|뛰|점프|달리|달려|달린|"
+        # #634 동물 주인공: 뭉치가 동물을 붙잡는 꼴(붙잡는 건 중립 인물)
+        "잡아|잡고|잡는|붙잡"
     ).split("|")
 )
 # …이·…가로 끝나도 주어가 아닌 낱말(콘티 마디의 주어를 가를 때)
@@ -145,7 +150,13 @@ COLOR = re.compile(
     r"빨간|빨강|파란|파랑|노란|노랑|초록|하얀|하양|흰|검은|검정|까만|분홍|주황|보라|갈색|회색|푸른|붉은"
 )
 FOREIGN = re.compile(r"[぀-ヿ㐀-䶿一-鿿]")  # 가나·한자(일본어로 샌 사례)
-UNSAFE = re.compile(r"살인|납치|유괴|폭력|담배|흉기|피투성이|자살")  # 나머지는 검토 모델
+# 나머지는 검토 모델. #634 경찰관 역할·동물 장난꾸러기: 체포·수갑·연행·처벌·훔치기·범인(사용자 결정
+# 2026-11-16 '범인' 넣음), '도둑'은 '도둑고양이'·'도둑게'·'도둑갈매기'(동물 이름)만 통과
+UNSAFE = re.compile(
+    r"살인|납치|유괴|폭력|담배|흉기|피투성이|자살|체포|수갑|연행|처벌|훔치|훔쳐|훔친|범인|"
+    r"귀신|괴물|유령|"  # #634 ⑤ 밤 소리 이야기가 무서워지지 않게
+    r"도둑(?!고양이|게|갈매기)"
+)
 SPEAKER_PREFIX = re.compile(r"\s*[가-힣A-Za-z]{1,6}\s*:")
 NOMINAL_ENDINGS = "음함림름움색"  # 표 값의 명사형 끝(좁음·열림…). 문장에서는 좁았어·열린처럼 활용
 
@@ -206,17 +217,22 @@ def theme_day(theme: Theme, day: str) -> dict:
 
 # 칸 하나만 고쳐 쓰면 되는 줄거리 검사 사유(fix_theme). 이야기 틀·정답 논리·표에 닿지 않는 글 칸만
 FIX_PATH = re.compile(
-    r"^(?:title|bigQuestion|intro|outro"
+    r"^(?:title|bigQuestion|intro|outro|incident|answerLook"
     r"|(?:MON|TUE|WED|THU|FRI)\.(?:place|sceneNote|clue|discovery|missionHook)"
     r"|(?:introCuts|outroCuts)[1-4]\.caption)$"
 )
-# 콘티 scene·action은 뭉치 동작 검사(CUT_ACTION)일 때만 그 칸을 고쳐 쓴다(정답 유출은 다시 생성)
+# 콘티 scene·action은 뭉치 동작 검사(CUT_ACTION)·그림에 나오면 안 되는 이름(CUT_TARGET, #765)일
+# 때만 그 칸을 고쳐 쓴다(정답 유출은 다시 생성)
 CUT_FIX_PATH = re.compile(r"^(?:introCuts|outroCuts)[1-4]\.(?:scene|action)$")
 FIX_REASON = (
     re.compile(r"^LENGTH (\S+) \d+자 > \d+$"),
     re.compile(r"^CUT_ACTION ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
+    # #765 그림에 나오면 안 되는 대상·후보 이름이 컷 설명에 있으면 그 칸만 고쳐 씀
+    re.compile(r"^CUT_TARGET ((?:introCuts|outroCuts)[1-4])\.(scene|action) "),
     re.compile(r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) (discovery|sceneNote)에 "),
     re.compile(r"^ANSWER_LEAK (\S+?)에 "),
+    re.compile(r"^CANDIDATE_NAME (\S+?)에 "),  # #634 엔딩 전 글의 후보 이름(사실표 종류)
+    re.compile(r"^ANSWER_FACT (\S+?)에 "),  # #634 ② 엔딩 전 글의 정답만의 표 값
     re.compile(r"^CLUE_WORDING (MON|TUE|WED|THU|FRI) (clue) "),
     re.compile(r"^CLUE_OWNER (MON|TUE|WED|THU|FRI) (clue) "),
     # 단서 문장의 허용 값 낱말이 빠지거나 허용 밖 값이 들어가면 그 단서만 고쳐 씀(#535 7차: 흔적
@@ -224,6 +240,13 @@ FIX_REASON = (
     # 되풀이됨)
     re.compile(r"^CLUE_TEXT (MON|TUE|WED|THU|FRI) (clue) "),
     re.compile(r"^OUTRO_RECAP (outro) "),
+    re.compile(r"^OUTRO_ANSWER (outro) "),  # #634 ④ 시간 탐정 마무리 장면의 다른 시각
+    re.compile(r"^HIDE_SPOT (MON|TUE|WED|THU|FRI) (sceneNote|discovery|clue|missionHook) "),
+    re.compile(r"^CLUE_PROOF (MON|TUE|WED|THU|FRI) (clue) "),
+    re.compile(r"^TIME_WORD (\S+?)에 "),  # #634 ④ 시간 탐정 엔딩 전 글의 시각
+    # #634 ③: 사건(incident)·정답 동물 모습(answerLook)이 비면 그 칸만 써 넣음(판정 실측 3건이
+    # 이 사유로 줄거리를 다시 만듦)
+    re.compile(r"^REQUIRED (incident|answerLook)$"),
     # 증거 종류(evidence.kind)는 그대로 두고 단서 문장만 그 종류에 맞게 고쳐 씀(실측 2026-11-11:
     # 단서 글자 수 초과와 섞이면 줄거리 전체를 다시 만들어 상한까지 실패, 글 20건 1건·전체 실측
     # 1건). 배정(evidencePlan)과 종류가 다르면 fix_theme이 종류를 배정대로 바꾸고 그날 단서·증거
@@ -247,6 +270,10 @@ def clue_wording_problems(day: dict) -> list[str]:
         out.append(f"허용 값 여럿을 모두 있었던 것처럼 씀('{m.group()}', 그중 한 곳·하나로 씀)")
     if cond.get("kind") == "RULE" and (m := HEDGE_WORDS.search(clue)):
         out.append(f"후보를 빼는 단서를 흐리게 씀('{m.group()}', 단정해서 씀)")
+    # 쪽지 꼴('오후 3시 목격: 짧은 꼬리.')은 학생이 읽는 한 줄 글로 딱딱함(#634 작은 실측 2차).
+    # 비율 '2:3'·시각 '3:30'은 빼고 칸 고쳐 쓰기로 문장으로
+    if re.search(r"(?<!\d)\s*[:：](?!\d)", clue):
+        out.append("단서를 '목격:'처럼 쪽지 꼴로 씀(누가 무엇을 봤는지 한 문장으로)")
     return out
 
 
@@ -260,6 +287,20 @@ def clue_evidence_mismatch(day: dict) -> bool:
     kind = (day.get("evidence") or {}).get("kind")
     has_record = any(w in clue for w in RECORD_WORDS)
     return (has_record and kind != "RECORD") or (kind == "RECORD" and not has_record)
+
+
+# 손에 든 것 종류의 목격 날 단서가 대상에 남은 것을 말하는 꼴(마지막 확인 3차: 길 종류에서 '상자에
+# 묻은 먼지 색'을 목격 날에 써서 글 검토 CLUE_LOGIC 3건 "흔적인데 목격으로 표시")
+SIGHTING_TRACE_WORDS = re.compile(r"흔적|자국|묻은|묻어|묻었|얼룩|남아 있|남은")
+
+
+def sighting_names_trace(theme: Theme, day: dict) -> bool:
+    """손에 든 것 종류에서 목격 날 단서가 흔적을 말하는지(CLUE_EVIDENCE, 칸 고쳐 쓰기)."""
+    if not story_type(theme).target_in_hand:
+        return False
+    if (day.get("evidence") or {}).get("kind") != "SIGHTING":
+        return False
+    return bool(SIGHTING_TRACE_WORDS.search(str(day.get("clue") or "")))
 
 
 def evidence_plan(seed: str) -> dict[str, dict[str, str | None]]:
@@ -277,10 +318,56 @@ def evidence_plan(seed: str) -> dict[str, dict[str, str | None]]:
     }
 
 
-def traceable(feature: str | None) -> bool:
-    """그날 특징이 흔적(TRACE)으로 남을 수 있는지(TRACE_FEATURE 기준안)."""
+def plan_for_type(
+    plan: dict[str, dict[str, str | None]], kind: StoryType | None
+) -> dict[str, dict[str, str | None]]:
+    """흔적으로 알 수 있는 특징이 없는 종류(시간 탐정)는 배정의 흔적을 목격으로 바꿔 모델에 준다.
+
+    줄거리 뒤 fit_evidence_plan도 같은 쪽으로 바꾸지만, 모델이 흔적 배정을 받으면 흔적 단서를 지어
+    CLUE_EVIDENCE 칸 고쳐 쓰기가 늘어서 미리 맞춤(#634 ④, 흔적 0개 — 사용자 확인 2026-11-17).
+    """
+    if kind is None:
+        return plan
+    out = {d: dict(slot) for d, slot in plan.items()}
+    if kind.no_trace:
+        for slot in out.values():
+            if slot.get("kind") == "TRACE":
+                slot.update(kind="SIGHTING", medium=None)
+    # 표의 어느 특징도 쓰지 않는 매체(소리 탐정의 사진)는 미리 다른 매체로(#634 ⑤ 틈 5)
+    table = kind.facts
+    if table is not None and table.media and set(table.media) == set(table.features):
+        usable = [m for m in RECORD_MEDIA if any(m in ms for ms in table.media.values())]
+        used = {slot.get("medium") for slot in out.values()}
+        for slot in out.values():
+            if slot.get("kind") == "RECORD" and slot.get("medium") not in usable:
+                new = next((m for m in usable if m not in used), usable[0])
+                slot["medium"] = new
+                used.add(new)
+    return out if out != plan else plan
+
+
+def traceable(feature: str | None, kind: StoryType | None = None) -> bool:
+    """그날 특징이 흔적(TRACE)으로 남을 수 있는지(TRACE_FEATURE 기준안).
+
+    종류별 흔적 특징(families: 동물은 몸 흔적만, 손에 든 것은 대상에 묻거나 밴 것·대상 자체를 더함).
+    """
     f = feature or ""
+    if kind is not None and kind.trace is not None:
+        if kind.trace.search(f):
+            return True
+        if kind.trace_only:
+            return False
     return bool(TRACE_FEATURE.search(f)) and not NOT_TRACE_FEATURE.search(f)
+
+
+def kind_fits(kind: StoryType, feature: str | None, evidence: str | None) -> bool:
+    """그날 특징을 그 증거 종류로 알 수 있는지. 사실표 특징은 표의 kinds, 그 밖은 흔적만 본다
+    (TRACE면 traceable, 목격·기록은 어떤 특징이든 됨 — #535부터의 규칙 그대로)."""
+    table = kind.facts
+    allowed = table.kinds_of(feature or "") if table is not None else None
+    if allowed is not None:
+        return evidence in allowed
+    return evidence != "TRACE" or traceable(feature, kind)
 
 
 def fit_evidence_plan(theme: Theme) -> list[str]:
@@ -297,15 +384,30 @@ def fit_evidence_plan(theme: Theme) -> list[str]:
     feat = {
         d.get("day"): (d.get("condition") or {}).get("feature") for d in theme.get("days") or []
     }
+    kind = story_type(theme)
     changed: list[str] = []
     for day in DAYS:
         slot = plan.get(day) or {}
-        if slot.get("kind") != "TRACE" or traceable(feat.get(day)):
+        if kind_fits(kind, feat.get(day), slot.get("kind")):
             continue
+        mine = slot.get("kind")
+        # 바꿔도 두 날 모두 맞는 날(목격 날 먼저, 다음 기록·흔적 날). 사실표 특징이면 목격·기록 날도
+        # 바뀔 수 있음(#634 ②: 소리를 목격 날에 둔 경우)
         order = [
-            o for k in ("SIGHTING", "RECORD") for o in DAYS if (plan.get(o) or {}).get("kind") == k
+            o
+            for k in ("SIGHTING", "RECORD", "TRACE")
+            for o in DAYS
+            if o != day and (plan.get(o) or {}).get("kind") == k and k != mine
         ]
-        swap = next((o for o in order if traceable(feat.get(o))), None)
+        swap = next(
+            (
+                o
+                for o in order
+                if kind_fits(kind, feat.get(day), (plan.get(o) or {}).get("kind"))
+                and kind_fits(kind, feat.get(o), mine)
+            ),
+            None,
+        )
         if swap:
             plan[day], plan[swap] = plan[swap], plan[day]
             # 단서 종류('발자국'은 흔적 날, '목격'·'기록'은 그 날)도 배정을 따라 함께 바꿈
@@ -313,18 +415,59 @@ def fit_evidence_plan(theme: Theme) -> list[str]:
             a["clueType"], b["clueType"] = b.get("clueType"), a.get("clueType")
             changed += [day, swap]
         else:
-            plan[day] = {"kind": "SIGHTING", "medium": None}
+            # 맞는 짝이 없으면 그 특징으로 알 수 있는 종류로 바꿈(흔적이 아니면 목격 먼저, 기록이면
+            # 아직 안 쓴 매체). 요일마다 증거가 섞이는 목표는 유지(구성이 조금 바뀔 수 있음)
+            new = next(
+                (k for k in ("SIGHTING", "RECORD", "TRACE") if kind_fits(kind, feat.get(day), k)),
+                "SIGHTING",
+            )
+            used_media = {(plan.get(o) or {}).get("medium") for o in DAYS}
+            medium = next((m for m in RECORD_MEDIA if m not in used_media), RECORD_MEDIA[0])
+            plan[day] = {"kind": new, "medium": medium if new == "RECORD" else None}
             d = theme_day(theme, day)
             used = {x.get("clueType") for x in theme.get("days") or []}
-            if d.get("clueType") == "발자국" and "목격" not in used:
-                d["clueType"] = "목격"
+            want = {"SIGHTING": "목격", "RECORD": "기록", "TRACE": "발자국"}[new]
+            if d.get("clueType") in ("발자국", "목격", "기록") and want not in used:
+                d["clueType"] = want
             changed.append(day)
     theme["evidencePlan"] = plan
     return list(dict.fromkeys(changed))
 
 
+def fit_media(theme: Theme) -> list[str]:
+    """기록 날 매체를 그날 특징에 맞춘다(사실표 media, #634 ⑤ 설계 17.8.18 틈 5).
+
+    배정은 줄거리보다 먼저 정해져 소리 특징 날에 사진이 올 수 있음. 맞지 않으면 다른 날이 쓰지
+    않는 맞는 매체로 바꾸고(없으면 맞는 매체 첫째) 바뀐 요일을 돌려준다(그날 단서·증거 발견 줄은
+    CLUE_EVIDENCE 칸 고쳐 쓰기).
+    """
+    plan = theme.get("evidencePlan") or {}
+    table = story_type(theme).facts
+    if not plan or table is None or not table.media:
+        return []
+    changed = []
+    for d in theme.get("days") or []:
+        slot = plan.get(d.get("day")) or {}
+        allowed = table.media_of(str((d.get("condition") or {}).get("feature") or ""))
+        if slot.get("kind") != "RECORD" or allowed is None or slot.get("medium") in allowed:
+            continue
+        used = {(plan.get(o) or {}).get("medium") for o in DAYS if o != d.get("day")}
+        ordered = [m for m in RECORD_MEDIA if m in allowed]
+        slot["medium"] = next((m for m in ordered if m not in used), ordered[0])
+        changed.append(d["day"])
+    theme["evidencePlan"] = plan
+    return changed
+
+
 def target_words(theme: Theme) -> list[str]:
-    """흔적 단서가 누구의 흔적인지 밝힐 때 쓸 찾는 대상 낱말(마지막 낱말과, 이름이면 그 앞 명사)."""
+    """흔적 단서가 누구의 흔적인지 밝힐 때 쓸 찾는 대상 낱말(마지막 낱말과, 이름이면 그 앞 명사).
+
+    동물 주인공 가족은 '동물'로 고정(#634: target이 '눈길에 발자국을 남긴 동물'처럼 설명 글이라
+    앞 낱말 '남긴'이 대상 낱말로 뽑혔음, 설계 17.8.5).
+    탈것 찾기는 '탈것'·'바퀴'(#634 ④, families.owner_words).
+    """
+    if owner := story_type(theme).owner_words:
+        return list(owner)
     toks = [t for t in re.split(r"\s+", str(theme.get("target") or "").strip()) if t]
     if not toks:
         return []
@@ -333,9 +476,328 @@ def target_words(theme: Theme) -> list[str]:
         len(toks) >= 2
         and len(toks[-2]) >= 2
         and not re.search(r"(의|께|은|는|한|된|운|던|든|난|큰|작은)$", toks[-2])
+        and not _adnominal(toks[-2])
     ):
         words.append(toks[-2])
     return words
+
+
+PERSON_OF_TARGET = re.compile(r"^\s*(.+?)(?:이|가) 타고 온")
+
+
+def clue_person(theme: Theme) -> str | None:
+    """모든 단서에 넣을 낱말(CLUE_OWNER, 공백 뺀 꼴): 탈것 찾기의 온 사람('삼촌이 타고 온 탈것' →
+    '삼촌'), 소리 탐정의 '소리'(families.clue_word). 그 밖·형식 밖은 None."""
+    t = story_type(theme)
+    if t.clue_word:
+        return t.clue_word
+    if t.code != "VEHICLE":
+        return None
+    m = PERSON_OF_TARGET.match(str(theme.get("target") or ""))
+    return compact(m.group(1)) if m else None
+
+
+def _adnominal(word: str) -> bool:
+    """꾸미는 말(끝 글자 받침이 ㄴ·ㄹ: '숨긴'·'남긴'·'잃어버릴')인지. 대상 낱말에서 뺀다(#634 작은
+    실측: '할아버지가 숨긴 타임캡슐'의 '숨긴'이 대상 낱말이 됨). 받침 ㄴ으로 끝나는 명사('도서관')도
+    빠지지만 마지막 낱말이 남아 흔적 단서 검사는 그대로 됨."""
+    last = word[-1]
+    if not "가" <= last <= "힣":
+        return False
+    return (ord(last) - 0xAC00) % 28 in (4, 8)  # 받침 ㄴ(4)·ㄹ(8)
+
+
+def apply_facts(theme: Theme) -> list[str]:
+    """사실표 종류(동물·선물·재료)의 특징 표 값을 사실표 값으로 맞춘다(#634, 사실표는 families).
+
+    모델이 지은 동물 특징이 틀려 글 검토 CLUE_LOGIC으로 줄거리를 되풀이했음(1차 작은 실측). 표 밖
+    후보·특징은 그대로 두고 check_theme이 FACT_TABLE로 다시 만들게 한다. 값을 바꾼 특징 이름을
+    돌려준다(그 특징을 쓰는 날 단서는 칸 고쳐 쓰기).
+    """
+    table = story_type(theme).facts
+    if table is None:
+        return []
+    changed = []
+    for f in theme.get("features") or []:
+        name = str(f.get("name") or "")
+        old = {str(v.get("candidate")): v.get("value") for v in f.get("values") or []}
+        for v in f.get("values") or []:
+            fact = table.fact(str(v.get("candidate") or ""), name)
+            if fact is not None and v.get("value") != fact:
+                v["value"] = fact
+                changed.append(name)
+        if name not in changed:
+            continue
+        new = {str(v.get("candidate")): v.get("value") for v in f.get("values") or []}
+        # 그 특징을 쓰는 날 허용 값은 '허용하던 후보'의 새 값으로 옮김(빼려던 후보를 그대로 두는
+        # 뜻). 겹쳐서 논리가 깨지면 뒤의 repair_logic·check_logic이 봄
+        for d in theme.get("days") or []:
+            cond = d.get("condition") or {}
+            if cond.get("feature") != name:
+                continue
+            kept = [c for c, val in old.items() if val in (cond.get("allowed") or [])]
+            cond["allowed"] = list(dict.fromkeys(str(new[c]) for c in kept if c in new))
+    return list(dict.fromkeys(changed))
+
+
+def fact_table_problems(theme: Theme) -> list[str]:
+    """후보·특징이 사실표 안인지, 값이 표 값인지(FACT_TABLE, 줄거리 다시 생성)."""
+    table = story_type(theme).facts
+    if table is None:
+        return []
+    bad = []
+    outside = [c for c in theme.get("candidates") or [] if c.strip() not in table.rows]
+    if outside:
+        bad.append(
+            f"FACT_TABLE 후보 {outside}는 {table.name} 사실표 밖(표 이름 그대로: "
+            f"{list(table.rows)})"
+        )
+    names = [f.get("name") for f in theme.get("features") or []]
+    if odd := [n for n in names if n not in table.features]:
+        bad.append(
+            f"FACT_TABLE 특징 {odd}는 {table.name} 사실표 밖"
+            f"(표 특징 이름 그대로: {list(table.features)})"
+        )
+    wrong = [
+        f"{f.get('name')}·{v.get('candidate')}"
+        for f in theme.get("features") or []
+        for v in f.get("values") or []
+        if (fact := table.fact(str(v.get("candidate") or ""), str(f.get("name") or "")))
+        and v.get("value") != fact
+    ]
+    if wrong:
+        bad.append(f"FACT_TABLE 특징 값이 사실표와 다름 {wrong}")
+    # 한 범주(#634 ⑤ 이슈 결정: 소리 탐정 후보는 동물만 또는 물건만)
+    if table.groups:
+        kinds = {table.group(c) for c in theme.get("candidates") or [] if table.group(str(c))}
+        # 코드가 정한 후보 4개·정답(plan_theme 내부 칸 candidatePlan, 같은 씨앗)
+        plan = theme.get("candidatePlan") or {}
+        if len(kinds) > 1:
+            bad.append(
+                f"SAME_KIND 후보 {theme.get('candidates')}가 여러 범주({sorted(kinds)})에 걸침(한 "
+                "범주에서만 4개)"
+            )
+        elif plan and (
+            sorted(str(c).strip() for c in theme.get("candidates") or [])
+            != sorted(plan.get("candidates") or [])
+            or str(theme.get("answer") or "").strip() != plan.get("answer")
+        ):
+            bad.append(
+                f"SAME_KIND 후보·정답이 정해진 것과 다름(candidates {plan.get('candidates')}, "
+                f"answer {plan.get('answer')} 그대로)"
+            )
+    # 소리 탐정(strict_facts): 후보끼리 값이 모두 같은 특징은 단서가 될 수 없고 시작 이야기의
+    # '밤마다'가 그 단서를 앞질러 말함(⑤ 판정 실측 글 검토 ANSWER_HINT: 동물 후보의 '매일 밤')
+    if story_type(theme).strict_facts:
+        cands = [str(c).strip() for c in theme.get("candidates") or []]
+        used = [n for n in names if n in table.features]
+        if flat := [f for f in flat_features(table, cands) if f in used]:
+            bad.append(
+                f"FACT_TABLE 특징 {flat}는 후보 {cands}의 값이 모두 같아 단서가 될 수 없음"
+                "(features에서 뺌)"
+            )
+    # 정답을 다른 후보와 있는 값 특징만으로 가를 수 있어야 함(#634 ④: 없는 값은 단서로 못 쓰고,
+    # 모든 값이 같은 후보(오전 10시·오후 3시)는 정답을 가릴 수 없음)
+    answer = str(theme.get("answer") or "").strip()
+    used = [n for n in names if n in table.features]
+    if answer in table.rows and used:
+        stuck = [
+            c.strip()
+            for c in theme.get("candidates") or []
+            if c.strip() != answer
+            and c.strip() in table.rows
+            and not table.separable(answer, c.strip(), used)
+        ]
+        if stuck:
+            note = f", 없는 값 {sorted(table.absent)}은 단서로 못 씀" if table.absent else ""
+            bad.append(
+                f"FACT_TABLE 정답 {answer}을 후보 {stuck}와 features {used}의 있는 값만으로 가를 "
+                "수 "
+                f"없음{note}(후보를 바꾸거나 가를 특징을 features에 넣음)"
+            )
+    return bad
+
+
+def outro_other_candidates(theme: Theme) -> list[str]:
+    """시간 탐정 마무리 장면(outroStory)에 나온 정답 아닌 후보 시각(OUTRO_ANSWER, 칸 고쳐 쓰기).
+
+    코드 정리는 정답만 남았다고 하는데 모델의 마무리 장면이 다른 시각을 확인해 모순(④ 판정 실측:
+    정답 오전 10시인데 '사서가 낮 12시라고 확인'). 정답 이름을 지운 뒤 다른 후보 이름·머리
+    낱말('7시')을 찾는다(정답 '저녁 7시'와 후보 '아침 7시'처럼 머리 낱말이 같으면 정답을 다 써야
+    통과).
+    """
+    if not story_type(theme).outro_check or "outroStory" not in theme:
+        return []
+    answer = compact(theme.get("answer"))
+    text = compact(theme.get("outroStory")).replace(answer, "") if answer else ""
+    found = []
+    for c in theme.get("candidates") or []:
+        if compact(c) == answer:
+            continue
+        words = [compact(c), *[compact(t) for t in str(c).split()[-1:]]]
+        if any(w and w in text for w in words):
+            found.append(str(c).strip())
+    return found
+
+
+def flat_features(table: Any, cands: list[str]) -> list[str]:
+    """그 후보들의 값이 모두 같은 사실표 특징(표 밖 후보가 있으면 빈 목록)."""
+    if not cands or any(c not in table.rows for c in cands):
+        return []
+    return [f for f in table.features if len({table.fact(c, f) for c in cands}) == 1]
+
+
+def clue_absent_problems(theme: Theme) -> list[str]:
+    """단서 조건에 '없는 값'(CLUE_ABSENT, 줄거리 다시 생성). 그날 특징을 바꿔야 해서 문장만 고쳐
+    쓰는 것으로는 못 고침(#634 ④ 설계 17.8.17)."""
+    table = story_type(theme).facts
+    if table is None or not table.absent:
+        return []
+    bad = []
+    for d in theme.get("days") or []:
+        cond = d.get("condition") or {}
+        if hits := [a for a in cond.get("allowed") or [] if a in table.absent]:
+            bad.append(
+                f"CLUE_ABSENT {d['day']} 단서 조건에 없는 값 {hits}(무엇이 없다는 말은 근거가 "
+                "약함 — 정답의 값이 있는 값인 특징으로 단서를 씀)"
+            )
+    return bad
+
+
+def place_problems(theme: Theme) -> list[str]:
+    """장소가 맞아야 둘 수 있는 후보(VEHICLE_PLACE: 여객선은 물가에서만, 줄거리 다시 생성)."""
+    t = story_type(theme)
+    if not t.place_needs:
+        return []
+    text = " ".join(
+        [
+            str(theme.get("world") or ""),
+            intro_story(theme),
+            *(str(d.get("place") or "") for d in theme.get("days") or []),
+        ]
+    )
+    cands = [str(c).strip() for c in theme.get("candidates") or []]
+    return [
+        f"VEHICLE_PLACE 후보 {name}은 물가 장소에서만(world·intro에 바다·강가·항구 같은 물가 말이 "
+        "없음 — 후보를 바꾸거나 물가 장소로)"
+        for name, need in t.place_needs
+        if name in cands and not need.search(text)
+    ]
+
+
+# 시간 탐정(#634 ④): 그때가 곧 정답이라 엔딩 전 글의 어떤 시각도 답을 흘림(후보 시각이 아니어도
+# '오전 9시 수업'처럼 시각을 쓰면 후보와 견주게 됨). 숫자 시각, 우리말 시각('세 시'), 정오·자정.
+# '2시간'·'두 시장'처럼 시각이 아닌 말은 뒤 글자로 뺌
+TIME_WORD = re.compile(
+    r"\d{1,2}\s?시(?![가-힣])|\d{1,2}\s?시(?=[에쯤부까였반의엔가이도])"
+    r"|(?<![가-힣])(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|열한|열두)\s?시"
+    r"(?=\s|$|[에쯤부까였반의엔가이도,.!?])"
+    r"|정오|자정"
+)
+
+
+def time_word_problems(theme: Theme) -> list[str]:
+    """시각을 감추는 종류(시간 탐정)의 엔딩 전 글·단서에 시각(TIME_WORD, 칸 고쳐 쓰기)."""
+    if not story_type(theme).hide_times:
+        return []
+    fields = [*candidate_name_fields(theme)]
+    fields += [(f"{d['day']}.clue", str(d.get("clue") or "")) for d in theme.get("days") or []]
+    bad = []
+    for path, text in fields:
+        if m := TIME_WORD.search(text):
+            bad.append(
+                f"TIME_WORD {path}에 시각 '{m.group()}'(그때가 정답이라 엔딩 전 글에 시각을 "
+                "쓰지 않음 — '그 일을 할 때'·'아침에'처럼)"
+            )
+    return bad
+
+
+def answer_facts(theme: Theme) -> list[str]:
+    """정답만 가진 사실표 값(다른 후보 누구도 같은 특징에서 그 값을 갖지 않음). 엔딩 전 글에 나오면
+    단서 없이 정답이 보인다(#634 ② 설계: '분홍빛 떡'이면 딸기, ANSWER_FACT)."""
+    table = story_type(theme).facts
+    answer = str(theme.get("answer") or "").strip()
+    cands = [str(c).strip() for c in theme.get("candidates") or []]
+    if table is None or answer not in table.rows:
+        return []
+    out = []
+    for feature in table.features:
+        mine = table.fact(answer, feature)
+        others = {table.fact(c, feature) for c in cands if c != answer}
+        if mine and mine not in others:
+            out.append(mine)
+    return out
+
+
+def secret_values(theme: Theme) -> list[str]:
+    """엔딩 전 글·미션·대화에 쓰지 않는 표 값. 보통은 정답만의 값(answer_facts), 소리 탐정처럼
+    strict_facts인 종류는 그 테마 후보끼리 값이 갈리는 표 값 전부(후보 모두 같은 값은 정보가 없어
+    허용, #634 ⑤ 설계 17.8.18 틈 4)."""
+    t = story_type(theme)
+    table = t.facts
+    if table is None or not t.strict_facts:
+        return answer_facts(theme)
+    cands = [str(c).strip() for c in theme.get("candidates") or [] if str(c).strip() in table.rows]
+    out: list[str] = []
+    for feature in table.features:
+        vals = [table.fact(c, feature) for c in cands]
+        if len(set(vals)) > 1:
+            out += [v for v in dict.fromkeys(vals) if v]
+    return out
+
+
+def answer_fact_hits(theme: Theme, text: str | None) -> list[str]:
+    return [v for v in secret_values(theme) if compact(v) in compact(text)]
+
+
+# 보물 쪽지(#634 ①): 숨긴 곳은 끝까지 모르는 답인데 엔딩 전 글이 '숨긴 자리에서 흔적을 찾았다'처럼
+# 이미 아는 듯이 써서 글 검토 CLUE_LOGIC(1차 판정 2회 8번 중 7번이 보물 쪽지)
+HIDE_SPOT = re.compile(r"숨(?:긴|겨 ?둔|겨 ?놓은) ?(?:자리|곳|장소|위치)")
+
+
+# 산 가게 단서는 그 가게에서 '샀다'는 근거가 있어야 함(#634 ② 작은 실측 1~3차: "가게에 간·나온
+# 모습만으로는 거기서 샀다는 근거가 없음"이 되풀이, 프롬프트로 좁혀도 남아 코드 검사로)
+BUY_WORDS = re.compile(r"샀|사는|사 가|사 오|사러|사서|계산|영수증|스티커|구입|주문")
+# 산 가게 특징과 단서에 꼭 있어야 할 산 물건 낱말. 마지막 확인에서 '상자를 산 가게'로 읽혀 글 검토
+# CLUE_LOGIC("상자를 산 가게는 선물을 산 가게를 가르는 근거가 아님") → 특징 이름·단서에 산 물건을
+# 밝힘
+PROOF_FEATURES = {"선물을 산 가게": "선물", "재료를 산 가게": "재료"}
+
+
+def clue_proof_problems(theme: Theme) -> list[str]:
+    """산 가게 단서에 산 근거 말·산 물건 낱말이 없으면(CLUE_PROOF, 칸 고쳐 쓰기)."""
+    if story_type(theme).facts is None:
+        return []
+    bad = []
+    for d in theme.get("days") or []:
+        feature = (d.get("condition") or {}).get("feature")
+        if feature not in PROOF_FEATURES:
+            continue
+        clue = str(d.get("clue") or "")
+        if not BUY_WORDS.search(clue):
+            bad.append(
+                f"CLUE_PROOF {d['day']} clue 산 가게 단서에 그 가게에서 산 근거(샀다·계산·영수증·"
+                "스티커)가 없음(가게에 간·나온 모습만으로는 근거가 안 됨)"
+            )
+        elif (thing := PROOF_FEATURES[feature]) not in clue:
+            bad.append(
+                f"CLUE_PROOF {d['day']} clue 산 가게 단서에 '{thing}' 낱말이 없음(상자·다른 물건이 "
+                f"아니라 {thing}을 산 가게임을 밝힘)"
+            )
+    return bad
+
+
+def hide_spot_problems(theme: Theme) -> list[str]:
+    """보물 쪽지 엔딩 전 글에 '숨긴 자리·숨긴 곳'(HIDE_SPOT, 칸 고쳐 쓰기)."""
+    bad = []
+    for d in theme.get("days") or []:
+        for k in ("sceneNote", "discovery", "clue", "missionHook"):
+            if m := HIDE_SPOT.search(str(d.get(k) or "")):
+                bad.append(
+                    f"HIDE_SPOT {d['day']} {k} 숨긴 곳은 아직 모르는데 '{m.group()}'이라고 씀"
+                    "(보물을 들고 지나간 길·잠시 내려놓은 자리로)"
+                )
+    return bad
 
 
 def names_target(theme: Theme, text: str | None) -> bool:
@@ -357,7 +819,121 @@ def names_target(theme: Theme, text: str | None) -> bool:
     return False
 
 
-def day_text_max(day: dict, key: str) -> int:
+def candidate_words(theme: Theme) -> list[str]:
+    """후보 이름과 머리 낱말('옆집 고양이' → '옆집 고양이'·'고양이'). 동물 주인공 가족 검사용."""
+    words: list[str] = []
+    for c in theme.get("candidates") or []:
+        toks = [t for t in re.split(r"\s+", str(c).strip()) if t]
+        words += [str(c).strip(), *toks[-1:]]
+    return list(dict.fromkeys(w for w in words if w))
+
+
+def candidate_names(theme: Theme, text: str | None) -> list[str]:
+    """글에 나온 후보 이름·머리 낱말(#634 ③: 엔딩 전 글에 후보 동물을 내지 않음).
+
+    두 글자 이상은 공백을 뺀 글에서 찾고, 한 글자 낱말('쥐'·'새')은 앞뒤가 다른 글자와 붙지 않은
+    꼴(조사는 허용)만 본다('개울'·'소리'의 '개'·'소'는 빼려고).
+    """
+    found = []
+    for w in candidate_words(theme):
+        if len(compact(w)) == 1:
+            pattern = (
+                rf"(?<![가-힣]){re.escape(w)}(?:이|가|은|는|을|를|도|의|와|과|랑|야)?(?![가-힣])"
+            )
+            hit = re.search(pattern, text or "") is not None
+        else:
+            hit = compact(w) in compact(text)
+        if hit:
+            found.append(w)
+    return found
+
+
+# 낱말 뒤에 붙어도 같은 낱말로 보는 조사(#765 cut_names_target). 길게 붙는 것부터 시도함
+JOSA = (
+    r"(?:에서|에게|한테|처럼|까지|부터|이랑|으로|이나"
+    r"|이|가|은|는|을|를|도|의|와|과|랑|만|에|로|나)?"
+)
+
+
+def cut_target_word(theme: Theme, text: str | None) -> str | None:
+    """콘티 컷 설명에 나온 찾는 대상 이름·낱말(#765 CUT_TARGET), 없으면 None.
+
+    대상 전체 이름(공백 무시), 대상 마지막 낱말이 한 낱말로 쓰인 것(뒤에 조사만 허용), 그 앞
+    낱말(target_words, 꾸미는 말 빼고 — '강아지 보리'의 '강아지')은 뒤에 조사가 붙은 것만 본다.
+    흔적 단서용 names_target처럼 공백을 뺀 글 안을 찾으면 '체험 배지'의 '체험'이 '체험관'에, '관찰
+    통'의 '통'이 '통통'에 걸렸고, 앞 낱말을 조사 없이도 보면 '나무 이름표'의 '나무'가 수목원 장면
+    '나무 사이의 빈 길'에, '전시 그림'의 '전시'가 '전시 담당 선생님'에 걸렸다(#535 실측 줄거리).
+    """
+    target = str(theme.get("target") or "").strip()
+    if not target or not text:
+        return None
+    if compact(target) in compact(text):
+        return target
+    head, *front = target_words(theme)
+    josa = JOSA.removesuffix("?")  # 앞 낱말은 조사가 꼭 붙어야
+    for w, after in ((head, JOSA), *((w, josa) for w in front)):
+        if re.search(rf"(?<![가-힣]){re.escape(w)}{after}(?![가-힣])", text):
+            return w
+    return None
+
+
+def cut_names_target(theme: Theme, text: str | None) -> bool:
+    return cut_target_word(theme, text) is not None
+
+
+def cut_target_problems(theme: Theme) -> list[str]:
+    """그림에 나오면 안 되는 대상·후보 이름이 콘티 scene·action에 있는지(#765, 칸 고쳐 쓰기).
+
+    컷 설명은 그 컷 첫 그림·영상 지시와 그림 검토 SCENE_FIT에 그대로 들어가, 대상이 나오면 안 되는
+    컷에 '강아지가 … 서 있다'고 쓰면 그리면 ANSWER_HINT, 안 그리면 SCENE_FIT으로 어느 쪽도 통과하지
+    못한다(운영 2026-11-18 OUTRO2). 대상: 잃어버린 것·보물 쪽지는 target_cuts 밖 컷의 대상 이름,
+    사실표 종류는 answer_cuts 밖 종료 컷의 후보 이름(families.StoryType.hidden_*_cuts).
+    """
+    t = story_type(theme)
+    bad = []
+    for scene, key in (("INTRO", "introCuts"), ("OUTRO", "outroCuts")):
+        for i, cut in enumerate(theme.get(key) or [], 1):
+            for k in ("scene", "action"):
+                text = str(cut.get(k) or "")
+                if (scene, i) in t.hidden_target_cuts and (word := cut_target_word(theme, text)):
+                    bad.append(
+                        f"CUT_TARGET {key}{i}.{k} 대상이 나오지 않는 컷에 찾는 대상 낱말 "
+                        f"'{word}'(없다는 말도 쓰지 않음)"
+                    )
+                if (scene, i) in t.hidden_candidate_cuts and (
+                    names := candidate_names(theme, text)
+                ):
+                    bad.append(f"CUT_TARGET {key}{i}.{k} 후보가 나오지 않는 컷에 후보 이름 {names}")
+    return bad
+
+
+def candidate_name_fields(theme: Theme) -> list[tuple[str, str]]:
+    """동물 주인공 가족에서 엔딩 전에 보이는 글 칸 [(경로, 글)](종료 이야기·종료 콘티·단서 빼고).
+
+    단서는 학생이 그날 미션을 마친 뒤 보고 후보 목록과 함께 나오므로 뺀다(설계 17.8.5).
+    """
+    fields = [
+        (k, intro_story(theme) if k == "intro" else str(theme.get(k) or ""))
+        for k in ("title", "world", "intro", "bigQuestion", "styleNote", "outfit", "incident")
+    ]
+    fields += [
+        (f"{d['day']}.{k}", str(d.get(k) or ""))
+        for d in theme.get("days") or []
+        for k in ("place", "sceneNote", "discovery", "missionHook")
+    ]
+    fields += [
+        (f"characters.{c.get('name')}", f"{c.get('name') or ''} {c.get('look') or ''}")
+        for c in theme.get("characters") or []
+    ]
+    fields += [
+        (f"introCuts{i + 1}.{k}", str(c.get(k) or ""))
+        for i, c in enumerate(theme.get("introCuts") or [])
+        for k in ("scene", "action", "caption")
+    ]
+    return fields
+
+
+def day_text_max(day: dict, key: str, with_time: bool = True) -> int:
     """요일 글 칸 상한. 흔적 날 단서는 대상 낱말을 넣으므로 TRACE_CLUE_MAX(기준안).
 
     단서 앞에 그때 시각("오후 3시, ")이 있으면 그만큼 더(코드가 붙이는 몫, add_clue_time).
@@ -365,7 +941,15 @@ def day_text_max(day: dict, key: str) -> int:
     base = TEXT_MAX[key]
     if key == "clue" and (day.get("evidence") or {}).get("kind") == "TRACE":
         base = TRACE_CLUE_MAX
-    if key == "clue" and (t := clue_time(day)) and _has_time(t, str(day.get("clue") or "")):
+    # 시각을 붙이지 않는 종류(#634 시간 탐정)는 시각 몫을 더하지 않음(단서에 시각이 있으면
+    # TIME_WORD가
+    # 따로 걸림)
+    if (
+        key == "clue"
+        and with_time
+        and (t := clue_time(day))
+        and _has_time(t, str(day.get("clue") or ""))
+    ):
         base += len(t) + 2
     return base
 
@@ -389,8 +973,11 @@ def _has_time(time_text: str, clue: str) -> bool:
 def add_clue_time(theme: Theme) -> Theme:
     """단서가 그때를 말하지 않으면 앞에 시각을 붙인다.
 
-    그 시각 숫자나 '그때'가 이미 있으면 그대로 둔다.
+    그 시각 숫자나 '그때'가 이미 있으면 그대로 둔다. 시간 탐정(#634 ④)은 그때가 곧 정답이라 붙이지
+    않는다(families.clue_time).
     """
+    if not story_type(theme).clue_time:
+        return theme
     for d in theme.get("days") or []:
         t, clue = clue_time(d), str(d.get("clue") or "").strip()
         if not t or not clue or "그때" in clue:
@@ -401,12 +988,41 @@ def add_clue_time(theme: Theme) -> Theme:
     return theme
 
 
+def intro_story(theme: Theme) -> str:
+    """시작 이야기의 모델 몫(코드가 끝에 붙이는 규칙 문장 빼고). 엔딩 전 글 검사는 이것을 본다(마을
+    규칙의 '낮 12시'·'오전 9시'가 후보 시각·정답 이름 검사에 걸리지 않게)."""
+    return str(theme.get("introStory", theme.get("intro")) or "")
+
+
+def compose_intro(theme: Theme) -> Theme:
+    """시작 이야기 = 모델 몫 + 종류 규칙 문장(#634 ④ 시간 탐정 마을 규칙, families.intro_notes).
+
+    규칙 문장의 말투는 모델 몫 끝에 맞춘다('…요.'면 '켜져요.', '…다.'면 '켜진다.', 그 밖은 '켜져.',
+    종료 이야기 정리와 같은 방식). introStory가 없으면(사람이 쓴 테마·규칙 없는 종류) 그대로 둔다.
+    """
+    notes = story_type(theme).intro_notes
+    if not notes or "introStory" not in theme:
+        return theme
+    story = str(theme.get("introStory") or "").strip()
+    for note in notes:  # 모델이 규칙을 옮겨 써도 한 번만 붙게
+        story = story.replace(note, "").strip()
+    theme["introStory"] = story
+    if re.search(r"요[.!?]?$", story):
+        note = notes[0]
+    elif re.search(r"다[.!?]?$", story):
+        note = notes[1]
+    else:
+        note = notes[2]
+    theme["intro"] = f"{story} {note}".strip()
+    return theme
+
+
 def finalize_texts(theme: Theme) -> Theme:
-    """코드가 맞추는 글: 단서 앞 그때 시각, 종료 이야기 앞 다섯 단서 정리.
+    """코드가 맞추는 글: 단서 앞 그때 시각, 시작 이야기 끝 규칙 문장, 종료 이야기 앞 다섯 단서 정리.
 
     줄거리·칸 고쳐 쓰기 뒤마다 부른다.
     """
-    return compose_outro(add_clue_time(theme))
+    return compose_outro(compose_intro(add_clue_time(theme)))
 
 
 def plan_slot(theme: Theme, day: str) -> dict[str, str | None] | None:
@@ -452,7 +1068,9 @@ def fix_targets(bad: list[str]) -> dict[str, list[str]]:
             if m := pattern.match(reason):
                 path = ".".join(m.groups())
                 break
-        cut_fix = reason.startswith("CUT_ACTION ") and CUT_FIX_PATH.match(path or "")
+        cut_fix = reason.startswith(("CUT_ACTION ", "CUT_TARGET ")) and CUT_FIX_PATH.match(
+            path or ""
+        )
         if path is None or not (FIX_PATH.match(path) or cut_fix):
             return {}
         targets.setdefault(path, []).append(reason)
@@ -462,8 +1080,13 @@ def fix_targets(bad: list[str]) -> dict[str, list[str]]:
 def _cut_or_day(theme: Theme, path: str) -> tuple[dict, str]:
     head, _, key = path.partition(".")
     if not key:
-        # 종료 이야기를 고쳐 쓸 때는 LLM 몫(마무리 장면)만 고친다. 정리는 코드가 붙임
-        return theme, "outroStory" if head == "outro" and "outroStory" in theme else head
+        # 종료 이야기를 고쳐 쓸 때는 LLM 몫(마무리 장면)만 고친다. 정리는 코드가 붙임. 시작 이야기도
+        # 규칙 문장을 코드가 붙이는 종류면 모델 몫만(#634 ④)
+        if head == "outro" and "outroStory" in theme:
+            return theme, "outroStory"
+        if head == "intro" and "introStory" in theme:
+            return theme, "introStory"
+        return theme, head
     if m := re.fullmatch(r"(introCuts|outroCuts)(\d)", head):
         return theme[m.group(1)][int(m.group(2)) - 1], key
     return theme_day(theme, head), key
@@ -479,6 +1102,8 @@ def set_text_at(theme: Theme, path: str, text: str) -> None:
     where[key] = text
     if key == "outroStory":
         compose_outro(theme)
+    if key == "introStory":
+        compose_intro(theme)
 
 
 def text_max(path: str, theme: Theme | None = None) -> int:
@@ -491,7 +1116,7 @@ def text_max(path: str, theme: Theme | None = None) -> int:
         return OUTRO_STORY_MAX
     head = path.partition(".")[0]
     if theme is not None and key == "clue" and head in DAYS:
-        return day_text_max(theme_day(theme, head), key)
+        return day_text_max(theme_day(theme, head), key, story_type(theme).clue_time)
     return TEXT_MAX[key]
 
 
@@ -510,7 +1135,8 @@ def mungchi_clauses(text: str) -> list[str]:
         ):
             mungchi = True
         elif re.match(r"\S+(?:는|들은|도)\s", part) or any(
-            not w.endswith(NOT_SUBJECT) for w in re.findall(r"(?:^|\s)(\S+(?:이|가))\s", part)
+            not w.endswith(NOT_SUBJECT)
+            for w in re.findall(r"(?:^|(?<=\s))(\S+(?:이|가))(?=\s)", part)
         ):
             mungchi = False
         if mungchi:
@@ -699,11 +1325,15 @@ def _search_logic_fix(
 ) -> tuple[list[dict], tuple[int, ...]] | None:
     """요일 LOGIC_FIX_MAX_DAYS개 이하의 조건만 바꿔 정답 논리가 맞는 가장 작은 조합."""
     answer = theme.get("answer") or ""
+    # 없는 값은 허용 값으로 더하지 않음(#634 ④ CLUE_ABSENT를 수리가 새로 만들지 않게)
+    facts = story_type(theme).facts
+    absent = facts.absent if facts is not None else frozenset()
     options: list[list[dict]] = []
     for d in days:
         cond = d.get("condition") or {}
         vals = table[cond.get("feature")]
-        keep, others = vals[answer], sorted(set(vals.values()) - {vals[answer]})
+        keep = vals[answer]
+        others = sorted(set(vals.values()) - {keep} - absent)
         sets = [
             sorted({keep, *combo})
             for r in range(len(others) + 1)
@@ -830,7 +1460,7 @@ def check_cuts(theme: Theme) -> list[str]:
     """시작·종료 영상 콘티: 정확히 4컷, 칸 비지 않음, 문구 길이, 뭉치 표정.
 
     시작 콘티 1·2(평소 모습·사건)는 뭉치가 나오지 않아 mungchiMood가 none이고, 3·4(출동·현장
-    도착)는 뭉치가 나와 none이 아니다.
+    도착)는 뭉치가 나와 none이 아니다. 그림에 나오면 안 되는 대상·후보 이름은 CUT_TARGET(#765).
     """
     bad = []
     for key in ("introCuts", "outroCuts"):
@@ -859,7 +1489,7 @@ def check_cuts(theme: Theme) -> list[str]:
                     bad.append(f"CUT_MOOD {key}{i} 뭉치가 나오는 컷이라 none이 아님")
                 elif not INTRO_MUNGCHI[i - 1] and mood != "none":
                     bad.append(f"CUT_MOOD {key}{i} 뭉치가 나오지 않는 컷이라 none")
-    return bad
+    return bad + cut_target_problems(theme)
 
 
 def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None) -> list[str]:
@@ -878,6 +1508,12 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
     ):
         if not str(theme.get(k) or "").strip():
             bad.append(f"REQUIRED {k}")
+    # 동물 주인공 가족(#634 ③)의 사건 물건·일(미션 소재), 정답 모습(종료 그림, ③·⑤
+    # needs_answer_look)
+    required = ["incident"] if is_animal(theme) else []
+    if story_type(theme).needs_answer_look:
+        required.append("answerLook")
+    bad += [f"REQUIRED {k}" for k in required if not str(theme.get(k) or "").strip()]
     chars = theme.get("characters") or []
     if not CHARACTERS[0] <= len(chars) <= CHARACTERS[1] or any(
         not (c.get("name") or "").strip() or not (c.get("look") or "").strip() for c in chars
@@ -886,8 +1522,11 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
     if any("뭉치" in (c.get("name") or "") for c in chars):
         bad.append("CHARACTERS 주인공 뭉치는 등장인물에 넣지 않음(뭉치 모습은 고정)")
     for k in ("title", "bigQuestion", "intro", "outro"):
-        if len(theme.get(k) or "") > TEXT_MAX[k]:
-            bad.append(f"LENGTH {k} {len(theme.get(k) or '')}자 > {TEXT_MAX[k]}")
+        # 시작 이야기는 모델 몫만 센다(코드가 붙이는 규칙 문장은 상한 밖, #634 ④ — learning 상한
+        # 2000자 안)
+        text = intro_story(theme) if k == "intro" else str(theme.get(k) or "")
+        if len(text) > TEXT_MAX[k]:
+            bad.append(f"LENGTH {k} {len(text)}자 > {TEXT_MAX[k]}")
     if "outroStory" in theme:  # 마무리 장면(LLM 몫)만 보는 검사. 정리는 코드가 붙임(#535 7차)
         story = str(theme.get("outroStory") or "")
         if len(story) > OUTRO_STORY_MAX:
@@ -898,6 +1537,11 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
                 "다섯 단서 정리는 코드가 앞에 "
                 "붙이므로 쓰지 않음"
             )
+        if others := outro_other_candidates(theme):
+            bad.append(
+                f"OUTRO_ANSWER outro 마무리 장면에 정답이 아닌 후보 {others}(정답 "
+                f"{theme.get('answer')}과 어긋남 — 정답 그대로 씀)"
+            )
     cands, answer = theme.get("candidates") or [], theme.get("answer") or ""
     if len(cands) != CANDIDATES[grade] or len(set(cands)) != len(cands):
         bad.append(f"CANDIDATES 서로 다른 후보 {CANDIDATES[grade]}개 필요(지금 {cands})")
@@ -907,9 +1551,32 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
         bad.append(f"CANDIDATES 후보는 {CANDIDATE_CHARS[0]}~{CANDIDATE_CHARS[1]}자")
     if any(COLOR.search(c) for c in cands):
         bad.append("CANDIDATES 후보 이름에 색 낱말(색으로 빼면 이름과 모순)")
+    if story_type(theme).code == "TREASURE":
+        bad += hide_spot_problems(theme)
+    bad += clue_proof_problems(theme)
+    bad += clue_absent_problems(theme)  # #634 ④ 없는 값 단서(다시 생성)
+    bad += place_problems(theme)  # #634 ④ 여객선은 물가에서만(다시 생성)
+    bad += time_word_problems(theme)  # #634 ④ 시간 탐정 엔딩 전 시각(칸 고쳐 쓰기)
+    if (table := story_type(theme).facts) is not None:  # 사실표 종류(동물·선물·재료, #634)
+        bad += fact_table_problems(theme)
+        # target은 미션·대화·그림 모델에 그대로 넘어가 정답 유출 검사 밖이라 후보 이름·정답만의
+        # 표 값이 없어야 함(설계 17.8.5·17.8.13)
+        if named := candidate_names(theme, theme.get("target")) + answer_fact_hits(
+            theme, theme.get("target")
+        ):
+            bad.append(
+                f"TARGET_NAMES target에 후보 {table.name} 이름 {named}(정답을 드러내지 않는 말로)"
+            )
+        for path, text in candidate_name_fields(theme):
+            if named := candidate_names(theme, text):
+                bad.append(f"CANDIDATE_NAME {path}에 후보 {table.name} 이름 {named}(엔딩 전 글)")
+            if hits := answer_fact_hits(theme, text):
+                which = "후보를 가르는" if story_type(theme).strict_facts else "정답만의"
+                bad.append(f"ANSWER_FACT {path}에 {which} {table.name} 값 {hits}(엔딩 전 글)")
     days = theme.get("days") or []
     if tuple(d.get("day") for d in days) != DAYS:
         return bad + [f"DAYS 요일은 {list(DAYS)} 순서(지금 {[d.get('day') for d in days]})"]
+    with_time = story_type(theme).clue_time  # 단서 앞 시각 몫(#634 시간 탐정은 없음)
     for d in days:
         if d.get("thinkingType") != DAY_TYPE[d["day"]]:
             bad.append(f"DAYS {d['day']} 유형은 {DAY_TYPE[d['day']]}")
@@ -917,8 +1584,8 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
             v = d.get(k) or ""
             if not v.strip():
                 bad.append(f"REQUIRED {d['day']}.{k}")
-            elif len(v) > day_text_max(d, k):
-                bad.append(f"LENGTH {d['day']}.{k} {len(v)}자 > {day_text_max(d, k)}")
+            elif len(v) > day_text_max(d, k, with_time):
+                bad.append(f"LENGTH {d['day']}.{k} {len(v)}자 > {day_text_max(d, k, with_time)}")
         # 단서는 그날 미션을 마친 뒤 보여 주므로 증거 발견 줄은 단서 결론을 말하지 않는다. 수사 연결
         # 문장은 그날 배울 개념을 말하는 자리라 개념 낱말이 단서 값과 같을 수밖에 없어
         # (특징을 성취기준
@@ -933,17 +1600,34 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
                 "증거와 evidence 종류가 다름(사진·영상·녹음·기록·"
                 "일지·메모를 말하면 RECORD, RECORD면 그 기록을 말함)"
             )
+        elif not clue_planned and sighting_names_trace(theme, d):
+            bad.append(
+                f"CLUE_EVIDENCE {d['day']} clue 목격 날 단서가 대상에 남은 흔적을 말함(그 "
+                "길·가게에서 "
+                "대상을 나르거나 든 사람을 본 목격으로 씀)"
+            )
         for problem in clue_wording_problems(d):
             bad.append(f"CLUE_WORDING {d['day']} clue {problem}")
         # 흔적 단서는 누구의 흔적인지 밝힌다(#535 6차: "흔적이 대상의 것인지 드러나지 않음").
         # 칸 고쳐 쓰기 대상
         trace = (d.get("evidence") or {}).get("kind") == "TRACE"
-        if trace and target_words(theme) and not names_target(theme, d.get("clue")):
+        owner_all = story_type(theme).owner_all  # 출처 찾기·길: 모든 단서(마지막 확인)
+        if (trace or owner_all) and target_words(theme) and not names_target(theme, d.get("clue")):
             bad.append(
-                f"CLUE_OWNER {d['day']} clue 흔적 단서에 찾는 대상 낱말"
+                f"CLUE_OWNER {d['day']} clue {'' if owner_all else '흔적 '}단서에 찾는 대상 낱말"
                 f"({'·'.join(target_words(theme))})이 "
                 "없음(누구의 흔적인지 밝힘)"
             )
+        # #634 ④ 탈것 찾기: 모든 단서는 온 사람이 탄 탈것의 증거임을 밝힘(작은 실측: '따르릉 소리가
+        # 났다'만 써서 글 검토 CLUE_LOGIC "그 소리가 할머니의 탈것에서 났다는 연결이 없음")
+        person = clue_person(theme)
+        if person and person not in compact(d.get("clue")):
+            why = (
+                f"'{person}' 낱말이 없음(그 소리의 증거임을 밝힘)"
+                if story_type(theme).clue_word
+                else f"온 사람('{person}')이 없음(그 사람이 탄 탈것의 증거임을 밝힘)"
+            )
+            bad.append(f"CLUE_OWNER {d['day']} clue 단서에 {why}")
         if early := early_values(d, d.get("discovery")):
             bad.append(f"CLUE_EARLY {d['day']} discovery에 그날 단서 결론(허용 값 {early})")
         # 장면 메모가 증거가 남은 자리의 특징 값을 말하면 대화·그림이 문제 전에 단서를 알려 줌
@@ -967,7 +1651,7 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
     if answer:  # 정답 이름은 종료 이야기에만
         key = compact(answer)
         fields = [
-            (k, theme.get(k))
+            (k, intro_story(theme) if k == "intro" else theme.get(k))
             for k in ("title", "world", "intro", "bigQuestion", "styleNote", "outfit")
         ]
         fields += [(f"{d['day']}.{k}", d.get(k)) for d in days for k in DAY_TEXTS]
@@ -1065,6 +1749,16 @@ def check_mission(
         )
     if any(FOREIGN.search(x) for x in [*texts, draft.title]):
         bad.append("LANGUAGE 한국어 밖 글자(가나·한자)")
+    # 동물 주인공 가족(#634 ③): 미션이 후보 동물을 말하면 정해진 단서보다 먼저 근거가 샘(설계 17.8.5
+    # 남은 위험, 프롬프트로 먼저 막고 새면 그 미션만 다시)
+    joined = "\n".join([draft.title, *texts])
+    if story_type(theme).hide_candidates and (
+        named := candidate_names(theme, joined) + answer_fact_hits(theme, joined)
+    ):
+        name = story_type(theme).facts.name  # type: ignore[union-attr]
+        bad.append(
+            f"CANDIDATE_NAME 문제·안내·생각 열기 질문·예시 답에 후보 {name} 이름·정답 값 {named}"
+        )
     if any("수" in st.code for st in request.standards):  # 수학 미션만(성취기준 코드 4수·6수)
         final = draft.answer_key.final_answer if draft.answer_key else None
         if ahead := math_ahead([*texts, final or ""], grade):
@@ -1099,6 +1793,10 @@ def hook_problems(theme: Theme, day: str, hook: str, draft: Draft, overlap: int)
     key = compact(theme.get("answer"))
     if key and key in compact(hook):
         bad.append("THEME_ANSWER_LEAK")
+    if story_type(theme).hide_candidates and (
+        candidate_names(theme, hook) or answer_fact_hits(theme, hook)
+    ):
+        bad.append("CANDIDATE_NAME")
     return bad
 
 
@@ -1209,6 +1907,11 @@ def check_dialogue(
             bad.append("LEAK ANSWER_KEY")
         if key and key in compact(text):
             bad.append(f"THEME_ANSWER_LEAK 대화에 테마 정답 낱말 '{theme['answer']}'")
+    if story_type(theme).hide_candidates:  # #634: 후보는 엔딩 전 대화에 말하지도 나오지도 않음
+        said = "\n".join(f"{x.get('speaker') or ''} {x.get('text') or ''}" for x in llm_lines)
+        if named := candidate_names(theme, said) + answer_fact_hits(theme, said):
+            name = story_type(theme).facts.name  # type: ignore[union-attr]
+            bad.append(f"CANDIDATE_NAME 대화 줄에 후보 {name} 이름 {named}")
     return list(dict.fromkeys(bad))
 
 

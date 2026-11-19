@@ -21,6 +21,8 @@ const ANALYZE_RATIO = Number(__ENV.ANALYZE_RATIO ?? 0.1)
 const NOTIFY_HOLD_S = Number(__ENV.NOTIFY_HOLD_S || 120)
 const RESULT_DIR = __ENV.RESULT_DIR || ''
 const P95_API_MS = Number(__ENV.P95_API_MS || 1000)
+// 한계 찾기 단계(#384)는 오류율 중단 기준을 올려 어디서 깨지는지 본다. 기본은 1%.
+const MAX_API_ERROR_RATE = Number(__ENV.MAX_API_ERROR_RATE || 0.01)
 const P95_JUDGMENT_MS = Number(__ENV.P95_JUDGMENT_MS || 30000)
 const P95_ANALYSIS_MS = Number(__ENV.P95_ANALYSIS_MS || 60000)
 
@@ -51,8 +53,8 @@ export const options = {
   summaryTrendStats: ['avg', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
   thresholds: {
     ...observe,
-    // 중단 기준: API 오류율 1% 초과, API p95 목표 초과. Pod 재시작·RDS CPU 80%는 README 절차로 사람이 본다.
-    'http_req_failed{kind:api}': [abort('rate<0.01')],
+    // 중단 기준: API 오류율 MAX_API_ERROR_RATE(기본 1%) 초과, API p95 목표 초과. Pod 재시작·RDS CPU 80%는 README 절차로 사람이 본다.
+    'http_req_failed{kind:api}': [abort(`rate<${MAX_API_ERROR_RATE}`)],
     'http_req_duration{kind:api}': [abort(`p(95)<${P95_API_MS}`)],
     judgment_duration: [`p(95)<${P95_JUDGMENT_MS}`],
     analysis_duration: [`p(95)<${P95_ANALYSIS_MS}`],

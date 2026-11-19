@@ -15,7 +15,7 @@ test('그림 키는 public/student-assets 안 경로만 파일 주소가 된다'
 
 test('착용한 캐릭터 칸만 목록의 그림 키로 바꾸고, 목록이 없거나 칸이 다르면 비운다', () => {
   const item = (itemKey: string, slot: LookItem['slot'], assetKey: string | null): LookItem =>
-    ({ itemKey, slot, name: itemKey, pricePoints: 10, unlocked: true, onSale: true, assetKey })
+    ({ itemKey, slot, name: itemKey, pricePoints: 10, unlocked: true, onSale: true, assetKey, ownedCount: null, createdAt: null })
   const items = [item('HAT_ACORN', 'HAT', 'looks/hat-acorn.svg'), item('OUTFIT_RAIN', 'OUTFIT', null), item('BG_STARS', 'BACKGROUND', 'looks/bg-stars.svg')]
   const equipped = { ...NO_EQUIPPED, HAT: 'HAT_ACORN', OUTFIT: 'OUTFIT_RAIN', ACCESSORY: 'HAT_ACORN', BACKGROUND: 'BG_STARS' }
   assert.deepEqual(wornAssets(equipped, items), { HAT: 'looks/hat-acorn.svg' })

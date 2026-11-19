@@ -6,6 +6,7 @@ ai `llm_usage`(LLM 호출 1회 지연·토큰·비용)는 `llm_usage_window.sql`
 
     python evaluation/load/llm_latency.py judge   --secrets <밖>/secrets.json --out <밖>/samples.jsonl --judgments 20 --followups 20
     python evaluation/load/llm_latency.py analyze --secrets <밖>/secrets.json --out <밖>/samples.jsonl --count 20
+    python evaluation/load/llm_latency.py memory  --secrets <밖>/secrets.json --out <밖>/samples.jsonl --per-child 3
     python evaluation/load/llm_latency.py report  --admin-env <밖>/admin.env --out <밖>/samples.jsonl --report-id <리포트 ID> --count 5
     python evaluation/load/llm_latency.py theme   --admin-env <밖>/admin.env --out <밖>/samples.jsonl --week-start 2027-01-04 --discard
     python evaluation/load/llm_latency.py summary --out <밖>/samples.jsonl
@@ -156,6 +157,28 @@ def student_token(api, account, child):
     return api.ok("학생 로그인", s, p, (200,))["accessToken"]
 
 
+class TokenSession:
+    """학생·학부모 access는 15분이면 만료되고 refresh를 쓰지 않는다. 401이면 같은 자격 증명으로 다시 로그인한다."""
+
+    def __init__(self, api, login):
+        self.api, self.login = api, login
+        self.token = login()
+
+    def call(self, method, path, body=None, headers=None):
+        s, p = self.api.call(method, path, body, token=self.token, headers=headers)
+        if s == 401:
+            self.token = self.login()
+            s, p = self.api.call(method, path, body, token=self.token, headers=headers)
+        return s, p
+
+    def sse(self, path, body=None):
+        result = self.api.sse(path, self.token, body)
+        if result["status"] == 401:
+            self.token = self.login()
+            result = self.api.sse(path, self.token, body)
+        return result
+
+
 def write(out, row):
     with open(out, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -171,17 +194,17 @@ def judge(args):
     account = load_account(args.secrets)
     judgments = followups = 0
     for index, child in enumerate(account["children"]):
-        token = student_token(api, account, child)
+        session = TokenSession(api, lambda child=child: student_token(api, account, child))
         # 분석 대화·주간 리포트 서술은 학생이 보호자 공유를 켜야 기록을 쓴다(학생 설정 화면과 같은 API)
-        s, shared = api.call("PUT", "/students/me/sharing-preferences", {"parentSharingEnabled": True}, token=token)
+        s, shared = session.call("PUT", "/students/me/sharing-preferences", {"parentSharingEnabled": True})
         api.ok("보호자 공유 켜기", s, shared, (200,))
-        s, listed = api.call("GET", "/missions", token=token)
+        s, listed = session.call("GET", "/missions")
         missions = [m for m in api.ok("미션 목록", s, listed, (200,)).get("items", []) if m.get("inputType") in args.input_types]
         for mission in missions:
             if judgments >= args.judgments and followups >= args.followups:
                 return report_counts(judgments, followups)
             mission_id = mission.get("missionId") or mission.get("id")
-            s, attempt = api.call("POST", f"/missions/{mission_id}/attempts", {}, token=token)
+            s, attempt = session.call("POST", f"/missions/{mission_id}/attempts", {})
             if s not in (200, 201) or (attempt or {}).get("answers"):
                 print(f"child{index} mission skip: HTTP {s} {(attempt or {}).get('code', '') if isinstance(attempt, dict) else ''}")
                 continue
@@ -191,13 +214,13 @@ def judge(args):
                 body = {"inputType": "NARRATIVE", "text": text, "dictatedByGuardian": False}
                 if followup_id:
                     body["followupId"] = followup_id
-                s, answer = api.call("POST", f"/attempts/{attempt['attemptId']}/answers", body, token=token,
-                                     headers={"Idempotency-Key": str(uuid.uuid4())})
+                s, answer = session.call("POST", f"/attempts/{attempt['attemptId']}/answers", body,
+                                         headers={"Idempotency-Key": str(uuid.uuid4())})
                 if s != 201:
                     print(f"child{index} answer turn{turn}: HTTP {s} {(answer or {}).get('code', '') if isinstance(answer, dict) else ''}")
                     break
                 started = now_iso()
-                result = api.sse(f"/answers/{answer['answerId']}/feedback", token)
+                result = session.sse(f"/answers/{answer['answerId']}/feedback")
                 done = event(result, "result") or {}
                 judgment = done.get("judgment") or {}
                 followup = done.get("followup") or {}
@@ -218,8 +241,8 @@ def judge(args):
                 if "ANSWER_FOLLOWUP" not in (done.get("nextActions") or []):
                     break
                 followup_id = followup.get("followupId")
-            api.call("POST", f"/attempts/{attempt['attemptId']}/finish", {}, token=token)
-            api.call("POST", f"/attempts/{attempt['attemptId']}/reflection", {"difficulty": "NORMAL"}, token=token)
+            session.call("POST", f"/attempts/{attempt['attemptId']}/finish", {})
+            session.call("POST", f"/attempts/{attempt['attemptId']}/reflection", {"difficulty": "NORMAL"})
     return report_counts(judgments, followups)
 
 
@@ -232,15 +255,14 @@ def analyze(args):
     """프리미엄 자녀로 대화 하나를 만들고 질문 SSE를 count번 보낸다(동시 1명, 질문 사이 args.pause초)."""
     api = Api()
     account = load_account(args.secrets)
-    token = parent_token(api, account)
+    session = TokenSession(api, lambda: parent_token(api, account))
     child = account["children"][args.child]
     today = dt.datetime.now(KST).date()
-    s, created = api.call("POST", "/conversations", {"childId": child["childId"], "from": str(today - dt.timedelta(days=6)), "to": str(today)},
-                          token=token)
+    s, created = session.call("POST", "/conversations", {"childId": child["childId"], "from": str(today - dt.timedelta(days=6)), "to": str(today)})
     conversation = api.ok("대화 생성", s, created)["conversationId"]
     for n in range(args.count):
         started = now_iso()
-        result = api.sse(f"/conversations/{conversation}/messages", token, {"question": QUESTIONS[n % len(QUESTIONS)]})
+        result = session.sse(f"/conversations/{conversation}/messages", {"question": QUESTIONS[n % len(QUESTIONS)]})
         names = [name for name, _ in result["events"]]
         write(args.out, {
             "kind": "analysis", "startedAt": started, "endedAt": now_iso(), "ms": result["ms"],
@@ -251,6 +273,42 @@ def analyze(args):
         })
         print(f"analysis #{n + 1} {result['ms']}ms first={result['firstEventMs']}ms {sorted(set(names))}", flush=True)
         time.sleep(args.pause)
+    return 0
+
+
+MEMORY_QUERIES = ["친구와 함께 한 미션", "차례를 지키는 이야기", "이유를 쓴 답", "정리한 일", "기분 좋았던 일"]
+
+
+def memory(args):
+    """자녀마다 추억 검색 → 결과 카드의 시도(최대 3개)로 추억 설명. 검색은 임베딩, 설명은 LLM 1회다(하루 한도 검색 20·설명 10)."""
+    api = Api()
+    account = load_account(args.secrets)
+    n = 0
+    for index, child in enumerate(account["children"]):
+        session = TokenSession(api, lambda child=child: student_token(api, account, child))
+        for k in range(args.per_child):
+            query = MEMORY_QUERIES[(index + k) % len(MEMORY_QUERIES)]
+            started, t0 = now_iso(), time.perf_counter()
+            s, found = session.call("POST", "/students/me/memories/search", {"query": query})
+            search_ms = round((time.perf_counter() - t0) * 1000)
+            found = found if isinstance(found, dict) else {}
+            write(args.out, {"kind": "memory_search", "startedAt": started, "endedAt": now_iso(), "ms": search_ms, "httpStatus": s,
+                             "state": found.get("state"), "cards": len(found.get("cards") or []),
+                             "error": None if s == 200 else found.get("code")})
+            attempts = [m["attemptId"] for c in found.get("cards") or [] for m in c.get("missions") or [] if m.get("attemptId")]
+            print(f"memory search child{index} {search_ms}ms HTTP {s} {found.get('state')} attempts={len(attempts)}", flush=True)
+            if not attempts:
+                continue
+            started, t0 = now_iso(), time.perf_counter()
+            s, explained = session.call("POST", "/students/me/memories/explanations", {"query": query, "attemptIds": list(dict.fromkeys(attempts))[:3]})
+            ms = round((time.perf_counter() - t0) * 1000)
+            explained = explained if isinstance(explained, dict) else {}
+            write(args.out, {"kind": "memory_explanation", "startedAt": started, "endedAt": now_iso(), "ms": ms, "httpStatus": s,
+                             "state": explained.get("state"),
+                             "error": None if s == 200 and explained.get("state") == "GENERATED" else explained.get("code") or explained.get("state")})
+            n += 1
+            print(f"memory explanation #{n} child{index} {ms}ms HTTP {s} {explained.get('state')}", flush=True)
+            time.sleep(args.pause)
     return 0
 
 
@@ -397,6 +455,11 @@ def main(argv=None):
     t.add_argument("--interval", type=float, default=5.0)
     t.add_argument("--limit", type=float, default=3600)
     t.add_argument("--discard", action="store_true", help="끝난 초안을 버림 처리해 게시 후보에 남기지 않음")
+    m = sub.add_parser("memory")
+    m.add_argument("--secrets", required=True)
+    m.add_argument("--out", required=True)
+    m.add_argument("--per-child", type=int, default=3, help="자녀마다 검색·설명 횟수(하루 한도 설명 10)")
+    m.add_argument("--pause", type=float, default=2.0)
     s = sub.add_parser("summary")
     s.add_argument("--out", required=True)
     s.add_argument("--since", help="이 UTC ISO 시각 이후 표본만(재시작 구간을 버릴 때)")
@@ -405,7 +468,7 @@ def main(argv=None):
         resolved = Path(args.out).resolve()
         if resolved == ROOT or ROOT in resolved.parents:
             raise SystemExit("--out은 저장소 밖이어야 합니다.")
-    return {"judge": judge, "analyze": analyze, "report": report, "theme": theme, "summary": summary}[args.cmd](args)
+    return {"judge": judge, "analyze": analyze, "memory": memory, "report": report, "theme": theme, "summary": summary}[args.cmd](args)
 
 
 if __name__ == "__main__":

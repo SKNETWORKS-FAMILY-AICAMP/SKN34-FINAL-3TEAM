@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import urllib.parse
 from datetime import datetime
@@ -19,13 +20,16 @@ from datetime import datetime
 PROFILE = "sagomungchi-provided"
 REGION = "ap-northeast-2"
 RDS_ID = "sagomungchi-demo-db"
-ALB_DIM = "app/sagomungchi-demo-core/1eda1209ceafe116"
-NAT_ID = "nat-0e2085c827c381d79"
+# ALB·NAT는 데모를 다시 만들 때마다 ID가 바뀐다. 기본값은 2026-11-17 재가동 값이고, 다르면 환경 변수로 준다.
+ALB_DIM = os.environ.get("LOAD_ALB_DIM", "app/sagomungchi-demo-core/ea68d74763b0dea4")
+NAT_ID = os.environ.get("LOAD_NAT_ID", "nat-0f55ab9efd30c47c8")
 
 # (이름, PromQL, 집계). 집계는 시간대 안의 max 또는 avg.
 PROM = [
     ("JVM CPU 사용률 최대(1코어=1.0)", 'max by (exported_job) (jvm_cpu_recent_utilization_ratio{exported_job=~"core-service|learning-service"})', "max"),
     ("JVM CPU 사용률 평균", 'max by (exported_job) (jvm_cpu_recent_utilization_ratio{exported_job=~"core-service|learning-service"})', "avg"),
+    # HPA로 Pod가 여러 개면 위 두 줄은 가장 바쁜 Pod 값이다. 합계는 서비스 전체가 쓴 코어 수(#384).
+    ("JVM CPU 합계 최대(코어, Pod 합)", 'sum by (exported_job) (jvm_cpu_recent_utilization_ratio{exported_job=~"core-service|learning-service"})', "max"),
     ("JVM 스레드 수", 'max by (exported_job) (sum by (exported_job, exported_instance) (jvm_thread_count{exported_job=~"core-service|learning-service"}))', "max"),
     ("JVM 힙 사용(MiB)", 'max by (exported_job) (sum by (exported_job, exported_instance) (jvm_memory_used_bytes{exported_job=~"core-service|learning-service",jvm_memory_type="heap"})) / 1048576', "max"),
     ("DB 풀 최대 크기", 'max by (exported_job) (db_client_connections_max{exported_job=~"core-service|learning-service"})', "max"),

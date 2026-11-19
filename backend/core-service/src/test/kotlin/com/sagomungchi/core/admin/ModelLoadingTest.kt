@@ -56,6 +56,12 @@ class ModelLoadingTest : PostgresRepositoryTest() {
         jdbc.update("UPDATE model_loading_report SET reported_at=CURRENT_TIMESTAMP - INTERVAL '2 days'")
         service.cleanup(); assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM model_loading_report",Int::class.java))
     }
+    @Test fun `answer filter tox models are reported and unknown prefixes rejected`() {
+        service.record(event("pod-tox",state().copy(name="tox-kcelectra-base")))
+        val pods = service.list()["pods"] as List<*>
+        assertTrue(pods.any { (it as ModelLoadingPod).models.any { m -> m.name == "tox-kcelectra-base" } })
+        assertFailsWith<IllegalArgumentException> { service.record(event("pod-x",state().copy(name="m3-test"))) }
+    }
     @Test fun `invalid source error detail and future report are rejected`() {
         assertFailsWith<IllegalArgumentException> { service.record(event("pod",state()).copy(source="other")) }
         assertFailsWith<IllegalArgumentException> { service.record(event("pod",state().copy(status="FAILED",errorType="s3://secret",previousModelRetained=true))) }

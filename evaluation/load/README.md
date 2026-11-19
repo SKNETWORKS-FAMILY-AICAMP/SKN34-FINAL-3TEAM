@@ -7,14 +7,14 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 | `core-load.js` | k6 시나리오. 한 번 실행이 VU 단계 하나다 |
 | `prepare_accounts.py` | ID·비밀번호 시험 계정 준비(가입·동의·자녀·기기·PIN)와 비밀 파일 작성 (#415) |
 | `run-stage.ps1` | 한 단계 실행: k6 → 같은 시간대 서버 지표 수집. 로그·결과를 결과 폴더에 남긴다 |
-| `collect_metrics.py` | Prometheus(core·learning JVM, DB 풀, HTTP, RabbitMQ)·CloudWatch(RDS, ALB, NAT)·Pod 재시작 수집 |
+| `collect_metrics.py` | Prometheus(core·learning JVM, DB 풀, HTTP, RabbitMQ)·CloudWatch(RDS, ALB, NAT)·Pod 재시작 수집. ALB·NAT는 데모를 다시 만들면 ID가 바뀌므로 `LOAD_ALB_DIM`·`LOAD_NAT_ID`로 덮어쓴다 |
 | `llm-stub.k8s.yaml` | 데모 `app` 네임스페이스용 LLM 스텁 Deployment·Service·NetworkPolicy |
-| `llm_latency.py` | 실제 LLM 조건 응답 시간 실측(#630). 동시 1명으로 판정·되묻기·분석 대화·주간 리포트 재생성·테마 초안을 core 경로로 한 건씩 보내 완료까지 시간을 JSONL에 남기고 `summary`로 p50·p95·최대를 낸다 |
+| `llm_latency.py` | 실제 LLM 조건 응답 시간 실측(#630). 동시 1명으로 판정·되묻기·분석 대화·추억 검색·설명·주간 리포트 재생성·테마 초안을 core 경로로 한 건씩 보내 완료까지 시간을 JSONL에 남기고 `summary`로 p50·p95·최대를 낸다. access 토큰이 만료되면 다시 로그인한다. AWS는 `LOAD_API_BASE`·`LOAD_API_HOST`·`LOAD_ORIGIN`을 CloudFront 주소로 준다 |
 | `llm_usage_window.sql` | 측정 구간 `core_db.llm_usage`의 호출 종류별 LLM 1회 지연·토큰·비용(대역 제외, 단가 등록 전 행은 #651 단가로 다시 계산) |
 
 실제 LLM 조건 실측(#630) 절차·결과는 [`docs/report/infra.md` 9.10](../../docs/report/infra.md#910-실제-llm-조건-로컬-응답-시간-실측-630-2026-11-16)와 [`docs/report/ai.md` 19절](../../docs/report/ai.md#19-실제-llm-조건-응답-시간원가-산식-630-2026-11-16)에 있다. 비밀 파일은 `prepare_accounts.py` 형식이고 kind는 `--host api.sagomungchi.local --origin http://localhost:5173`을 준다.
 
-1차 결과와 해석은 [`docs/report/infra.md#9-aws-데모-부하-시험-1차-361`](../../docs/report/infra.md#9-aws-데모-부하-시험-1차-361)에 있다.
+1차 결과와 해석은 [`docs/report/infra.md#9-aws-데모-부하-시험-1차-361`](../../docs/report/infra.md#9-aws-데모-부하-시험-1차-361), HPA·Karpenter 확장·축소를 본 2차(#384)는 [`docs/report/infra.md#914-aws-데모-부하-시험-2차-hpakarpenter-확장축소-384-2026-11-18`](../../docs/report/infra.md#914-aws-데모-부하-시험-2차-hpakarpenter-확장축소-384-2026-11-18)에 있다.
 
 ## 시나리오
 
@@ -100,6 +100,7 @@ pwsh -NoProfile -File evaluation/load/run-stage.ps1 -Vus 10 `
 | `VUS` | 10 | 이번 단계의 총 VU (55/20/15/10으로 나눔) |
 | `HOLD` / `RAMP` | `5m` / `30s` | 유지 시간 / 올리는 시간 |
 | `P95_API_MS` | 1000 | 일반 API p95 목표. 넘으면 자동 중단 |
+| `MAX_API_ERROR_RATE` | 0.01 | API 오류율 중단 기준. 한계 찾기 단계에서만 올린다(#384는 0.05) |
 | `P95_JUDGMENT_MS` | 30000 | 판정 SSE 완료 p95 목표. 넘어도 보고만 하고 중단하지 않음 |
 | `ANALYZE_RATIO` | 0.1 | 분석 대화 VU 비율. 0이면 분석 시나리오 끔 |
 | `P95_ANALYSIS_MS` | 60000 | 분석 SSE 완료 p95 목표. 넘어도 보고만 함 |

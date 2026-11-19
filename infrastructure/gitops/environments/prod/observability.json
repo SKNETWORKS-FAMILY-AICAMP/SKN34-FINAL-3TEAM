@@ -88,11 +88,11 @@
         {
           "uid": "llm-unpriced-calls",
           "title": "LLM calls without a stored cost",
-          "expr": "max(llm_usage_month_to_date_unpriced_calls)",
+          "expr": "max(delta(llm_usage_month_to_date_unpriced_calls[1h]))",
           "operator": "gt",
           "threshold": 0,
           "for": "1m",
-          "summary": "Some LLM calls this month have no stored cost, so the budget total is a lower bound. Register model pricing."
+          "summary": "New LLM calls without a stored cost appeared in the last hour (unregistered model or missing tokens), so the budget total is a lower bound. Find the model in llm_usage and register its price or external billing."
         },
         {
           "uid": "app-metrics-missing",
@@ -212,7 +212,7 @@
   },
   "tempo": {
     "enabled": true,
-    "retention": "72h",
+    "retention": "24h",
     "persistence": {
       "enabled": true,
       "storageClassName": "gp3",

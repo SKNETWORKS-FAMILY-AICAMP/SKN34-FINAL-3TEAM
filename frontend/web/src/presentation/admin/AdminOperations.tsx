@@ -336,6 +336,7 @@ function Usage({ period }: { period: Period }) {
                 <p>
                   입력 토큰 {u.inputTokens ?? '미측정'} · 출력 토큰 {u.outputTokens ?? '미측정'} ·
                   비용 {u.costUsd ?? '미측정'} · 비용 미산정 {u.unpricedCalls}건
+                  {u.externallyBilledCalls > 0 && ` · 별도 청구 ${u.externallyBilledCalls}건`}
                 </p>
               </article>
             ))}

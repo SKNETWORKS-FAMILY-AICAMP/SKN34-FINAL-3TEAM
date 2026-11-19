@@ -7,6 +7,8 @@
 3. 나머지(미션 5 + 컷 7)를 [테마 옷 뭉치, 인물 기준 그림] 참조로 동시에(asyncio.gather).
    시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음(뭉치 혼자 출동)
 
+그림 대역(IMAGE_PROVIDER=fake)이면 검토를 부르지 않고 통과로 보며 warnings에 IMAGE ALL 한 줄(#716).
+
 review_images는 별도 노드가 아니라 그림마다 그린 직후 돈다(review_missions와 같은 이유: 그림마다
 다시 그리기 루프가 독립). 검토 모델이 [그림, 테마 옷 뭉치]를 보고 FAIL이면 그 그림만 사유를 넣어
 다시(상한 theme_max_regen, 마감 확인). 미션 그림이 끝내 실패하면 failure IMAGE, 컷 첫 그림이
@@ -46,6 +48,10 @@ CUT_SCENES = ("INTRO", "OUTRO")
 CUTS_KEY = {"INTRO": "introCuts", "OUTRO": "outroCuts"}
 SCENE_IMAGE = {"INTRO": "INTRO4", "OUTRO": "OUTRO4"}  # 응답 INTRO·OUTRO = 4번째 컷 첫 그림
 NO_SETUP = "그림 설정 없음"
+# 그림 대역(IMAGE_PROVIDER=fake)은 시험·측정용 단색 그림이라 검토 모델에 보내지 않는다(#716).
+# 보내면 결함이 아닌 대역 모양("단색이라 뭉치가 안 보임") 때문에 실패·다시 그리기가 생겨
+# 비용·시간·결과가 왜곡됨
+FAKE_REVIEW_SKIPPED = "그림 대역이라 검토를 건너뜀"
 KEPT_NOTE = "원래 그림·영상 유지"  # 부분 다시 생성에서 컷 그림이 끝내 실패한 장면(#537)
 ASSET_NOTE = "부분 다시 생성 재료"  # 재료 그림 업로드 실패(그 대상만 다시 만들 수 없게 됨)
 
@@ -74,7 +80,7 @@ class Shot:
     hints: list[str] | None = None
     discovery: str | None = None  # 미션 그림만: 그날 증거 발견 줄
     evidence: str | None = None  # 미션 그림만: 그날 증거 종류(TRACE·SIGHTING·RECORD)
-    answer_place_allowed: bool = False  # 종료 콘티 컷만 정답 장소 공개 허용
+    answer_allowed: bool = False  # 종료 콘티 컷만 정답(장소·동물) 공개 허용
 
 
 @dataclass
@@ -103,6 +109,8 @@ async def draw(
                 prompt_version=ctx.prompt.version,
                 deadline=ctx.deadline,
             )
+            if ctx.settings.image_provider == "fake":
+                return Drawn(image)  # 대역 그림은 검토하지 않음(#716)
             review = await ctx.review_llm.generate(
                 system=body.IMAGE_REVIEW_SYSTEM,
                 user=body.image_review_user(
@@ -115,7 +123,7 @@ async def draw(
                     hints=shot.hints,
                     discovery=shot.discovery,
                     evidence=shot.evidence,
-                    answer_place_allowed=shot.answer_place_allowed,
+                    answer_allowed=shot.answer_allowed,
                 ),
                 output=GeneratedImageReview,
                 call_type=THEME_CALL_TYPE,
@@ -178,8 +186,8 @@ def cut_shot(
         refs=refs,
         ids=IMAGE_REVIEW_IDS,
         has_mungchi=has_mungchi,
-        shows_target=body.cut_shows_target(scene, index),
-        answer_place_allowed=body.cut_reveals_answer(scene),
+        shows_target=body.cut_shows_target(theme, scene, index),
+        answer_allowed=body.cut_reveals_answer(scene),
     )
 
 
@@ -195,7 +203,8 @@ def mission_shot(
         refs=[outfit] + ([person] if person is not None else []),
         ids=MISSION_IMAGE_REVIEW_IDS,
         has_mungchi=True,
-        shows_target=False,
+        # 손에 든 것(대상이 늘 보이는 종류)·시간 탐정은 참, 그 밖은 거짓(#634, 그림 지시와 같게)
+        shows_target=body.mission_shows_target(theme),
         question=draft.question,
         hints=[h for h in draft.hints if h.strip()],
         discovery=d.get("discovery"),
@@ -293,7 +302,11 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
         )
         drawn["INTRO1"] = first
 
-    warnings: list[dict] = []
+    warnings: list[dict] = (
+        [warning("IMAGE", "ALL", FAKE_REVIEW_SKIPPED)]
+        if ctx.settings.image_provider == "fake"
+        else []
+    )
     failures: list[str] = []
     video_skip: list[str] = []  # 처음 생성: 컷 그림이 끝내 실패한 장면은 영상을 빼고 경고
     kept: list[

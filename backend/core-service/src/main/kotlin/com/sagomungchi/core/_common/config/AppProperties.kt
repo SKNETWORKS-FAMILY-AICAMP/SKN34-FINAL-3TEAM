@@ -10,6 +10,8 @@ data class AppProperties(
     val services: Map<String, String> = emptyMap(),
     val messaging: Messaging = Messaging(),
     val llmPricing: Map<String, LlmPrice> = emptyMap(),
+    /** 단가 대신 서비스 밖 청구서로 비용을 보는 모델. 미산정이 아니라 별도 청구로 센다 (#764) */
+    val llmBilledExternally: List<String> = emptyList(),
 ) {
     data class Internal(
         /** 이 서비스가 내부 호출에 보내는 자기 토큰 */

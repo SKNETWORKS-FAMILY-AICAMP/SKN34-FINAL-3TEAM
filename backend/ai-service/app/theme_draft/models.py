@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.followup.models import LlmVersions, ThinkingType
 from app.judgment.models import ApiModel
 from app.mission_draft.models import ESSAY_MIN_GRADE, Draft, ElementCode, InputType, Standard
+from app.theme_draft.families import StoryTypeCode
 
 Day = Literal["MON", "TUE", "WED", "THU", "FRI"]
 Scene = Literal["INTRO", "MON", "TUE", "WED", "THU", "FRI", "OUTRO"]
@@ -413,6 +414,13 @@ class GeneratedCut(BaseModel):
 
 
 class GeneratedTheme(BaseModel):
+    """줄거리 출력. storyType·incident·answerLook은 #634 내부 칸(응답 theme에 넣지 않음).
+
+    기본값은 #634 전 테마·시험 고정 자료용이고, LLM 스키마는 strict라 모두 필수(기본값 제거).
+    storyType은 주제가 learning 씨앗이면 코드가 주제에서 읽은 값으로 덮어쓴다(plan_theme).
+    """
+
+    storyType: StoryTypeCode = "LOST"
     title: str
     world: str
     characters: list[GeneratedCharacter]
@@ -422,8 +430,12 @@ class GeneratedTheme(BaseModel):
     outro: str
     bigQuestion: str
     target: str
+    # 동물 주인공 가족(③)만: 사건 물건·일 한 줄(미션 소재), 정답 동물 겉모습 한 줄(종료
+    # 그림). 그 밖 종류는 null
+    incident: str | None = None
     candidates: list[str]
     answer: str
+    answerLook: str | None = None
     features: list[GeneratedFeature]
     days: list[GeneratedDay]
     introCuts: list[GeneratedCut]

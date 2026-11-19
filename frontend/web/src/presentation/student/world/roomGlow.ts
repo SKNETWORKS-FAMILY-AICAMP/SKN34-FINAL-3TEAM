@@ -19,7 +19,7 @@ export function useGlow() {
 
 /**
  * 방 그림의 면 목록. 반짝이는 칸의 면은 key에 n을 붙여 다시 그려 애니메이션이 처음부터 돈다.
- * 내 방(StudentRoom)과 꾸미기 미리 보기(RoomScene)가 같이 쓴다.
+ * 내 방(StudentRoom) 방 꾸미기 서랍에서 쓴다.
  */
 export function glowClass(part: RoomSlot | undefined, glow: { slot: RoomSlot; n: number } | null) {
   return part && glow?.slot === part ? { cls: ' is-glow', suffix: `-g${glow.n}` } : { cls: '', suffix: '' }

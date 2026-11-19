@@ -5,26 +5,7 @@ metadata:
   name: tempo-config
 data:
   tempo.yaml: |
-    server:
-      http_listen_port: 3200
-    distributor:
-      receivers:
-        otlp:
-          protocols:
-            grpc:
-              endpoint: 0.0.0.0:4317
-    storage:
-      trace:
-        backend: local
-        wal:
-          path: /var/tempo/wal
-        local:
-          path: /var/tempo/blocks
-    compactor:
-      compaction:
-        block_retention: {{ .Values.tempo.retention }}
-    usage_report:
-      reporting_enabled: false
+    {{- include "observability.tempoConfig" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -40,7 +21,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: tempo}
       annotations:
-        checksum/config: {{ .Values.tempo.retention | sha256sum | trunc 16 }}
+        checksum/config: {{ include "observability.tempoConfig" . | sha256sum | trunc 16 }}
     spec:
       automountServiceAccountToken: false
       {{- with .Values.scheduling.nodeSelector }}
@@ -61,6 +42,11 @@ spec:
         - name: tempo
           image: {{ .Values.tempo.image | quote }}
           args: ["-config.file=/conf/tempo.yaml"]
+          {{- with .Values.tempo.goMemLimit }}
+          # Go GC works harder before the container limit instead of being OOMKilled (#784).
+          env:
+            - {name: GOMEMLIMIT, value: {{ . | quote }}}
+          {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

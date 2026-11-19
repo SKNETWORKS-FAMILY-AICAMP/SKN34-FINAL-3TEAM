@@ -300,11 +300,17 @@ class ThemeDraftService(
         return ThemeDraftRules.autoStandards(grade, requested, recent, pools, Random.Default)?.let { ThemeDraftInput(chosenTopic, it) }
     }
 
-    /** 같은 학년 최근(씨앗 개수만큼의 주, 초안 상태 무관) 씨앗과 같은 주 다른 초안 씨앗을 빼고 고름 */
+    /**
+     * 같은 학년 직전 주 초안 줄거리 종류를 빼고 종류를 고른 뒤, 같은 학년 최근(씨앗 개수만큼의 주) 씨앗·같은 주 다른 초안 씨앗·
+     * 같은 학년 최근 4주 역할을 빼고 씨앗을 고름(#634, 초안 상태 무관)
+     */
     private fun seedTopic(grade: ThemeGrade, weekStart: LocalDate): String {
-        val recent = repository.findInputs(grade, weekStart.minusWeeks(ThemeTopicSeeds.RECENT_WEEKS), weekStart).mapNotNull { it.topic }
+        fun topics(weeks: Long) = repository.findInputs(grade, weekStart.minusWeeks(weeks), weekStart).mapNotNull { it.topic }
         val sameWeek = repository.findWeekInputs(weekStart).mapNotNull { it.topic }.toSet()
-        return ThemeTopicSeeds.choose(weekStart, recent, sameWeek, Random.Default)
+        return ThemeTopicSeeds.choose(
+            weekStart, topics(ThemeTopicSeeds.RECENT_WEEKS), sameWeek, Random.Default,
+            lastWeekTopics = topics(1), roleTopics = topics(ThemeTopicSeeds.ROLE_WEEKS),
+        )
     }
 
     /** 적용 주는 월요일이고 이번 주(KST) 이후 */

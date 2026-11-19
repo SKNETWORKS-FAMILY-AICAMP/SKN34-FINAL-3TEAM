@@ -37,6 +37,11 @@ class ModelRegistry:
             return None
         return model
 
+    def active_with_prefix(self, prefix: str, scope: str) -> list[LoadedModel]:
+        """이름 접두어(예: tox-)로 찾는 소비자용. 승인 범위 검사는 get과 같다."""
+        found = (self.get(name, scope) for name in sorted(self._models) if name.startswith(prefix))
+        return [model for model in found if model is not None]
+
     def is_active(self, name: str, scope: str) -> bool:
         return self.get(name, scope) is not None
 

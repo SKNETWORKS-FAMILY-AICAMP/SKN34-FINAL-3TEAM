@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 import time
 from typing import Literal
 from urllib.parse import unquote
@@ -12,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.clients.model_artifacts import ArtifactError, S3ModelArtifacts
 from app.config import get_settings
 from app.m2.metadata import validate_metadata
+from app.toxicity.metadata import ClassifierShapeError, validate_toxicity
 
 FILES = {
     "config.json",
@@ -23,6 +25,13 @@ FILES = {
 }
 SMALL = {"config.json", "train_info.json", "score_cuts.json"}
 MAX_JSON = 1024 * 1024
+M2_NAMES = {"m2-klue-narrative", "m2-klue-essay"}
+TOXICITY_NAME = r"^tox-[A-Za-z0-9._-]{1,96}$"
+
+
+def expected_files(name: str) -> set[str]:
+    """tox-는 score_cuts.json이 없는 5개(#688), 나머지는 6개."""
+    return FILES - {"score_cuts.json"} if name.startswith("tox-") else FILES
 
 
 class Artifact(BaseModel):
@@ -37,12 +46,15 @@ class PreflightRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     version: str = Field(min_length=1, max_length=100)
     artifact_uri: str = Field(alias="artifactUri", min_length=1, max_length=2048)
-    files: list[Artifact] = Field(min_length=6, max_length=6)
+    files: list[Artifact] = Field(
+        min_length=5, max_length=6, description="m2- 6개, tox- 5개(score_cuts.json 없음)"
+    )
 
     @model_validator(mode="after")
     def validate_files(self):
-        if {f.file for f in self.files} != FILES:
-            raise ValueError("manifest must contain the six supported files exactly once")
+        expected = expected_files(self.name)
+        if len(self.files) != len(expected) or {f.file for f in self.files} != expected:
+            raise ValueError("manifest must contain each supported file exactly once")
         return self
 
 
@@ -78,7 +90,8 @@ class PreflightService:
                 return failed("INVALID_ARTIFACT_URI")
         except ValueError:
             return failed("INVALID_ARTIFACT_URI")
-        if request.name not in {"m2-klue-narrative", "m2-klue-essay"}:
+        toxicity = re.fullmatch(TOXICITY_NAME, request.name) is not None
+        if request.name not in M2_NAMES and not toxicity:
             return failed("UNSUPPORTED_MODEL")
         deadline = time.monotonic() + 15
         checks, documents = [], {}
@@ -121,6 +134,14 @@ class PreflightService:
             return failed("PREFLIGHT_TIMEOUT", checks)
         if any(c.status == "FAIL" for c in checks):
             return failed("FILE_CHECK_FAILED", checks)
+        if toxicity:
+            try:
+                validate_toxicity(documents["train_info.json"], documents["config.json"])
+            except ClassifierShapeError:
+                return failed("OUTPUT_MISMATCH", checks)
+            except (ValueError, KeyError, TypeError, OverflowError):
+                return failed("INVALID_METADATA", checks)
+            return PreflightResult(status="PASS", code="FILES_AND_METADATA_VERIFIED", files=checks)
         try:
             _, width, _, _ = validate_metadata(
                 request.name, documents["train_info.json"], documents["score_cuts.json"]

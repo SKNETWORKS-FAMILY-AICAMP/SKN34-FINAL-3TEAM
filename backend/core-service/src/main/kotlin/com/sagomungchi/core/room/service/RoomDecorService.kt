@@ -19,14 +19,14 @@ import java.util.UUID
  */
 @Service
 class RoomDecorService(private val mapper: RoomDecorMapper, private val access: RewardAccessService) {
-    data class SpotInput(val surface: String?, val col: Int?, val row: Int?, val itemKey: String?)
+    data class SpotInput(val surface: String?, val col: Int?, val row: Int?, val itemKey: String?, val color: String? = null)
 
     @Transactional(readOnly = true)
     fun spots(): DecorSpots = DecorSpots(mapper.spots(access.currentStudent()))
 
     /** 다른 학생(친구 방 구경, #708)이 놓은 방 소품. 면 → row → col 순, 판매 중단 아이템도 그대로. 보유 개수는 내보내지 않는다 */
     @Transactional(readOnly = true)
-    fun friendSpots(studentId: UUID): List<FriendDecorView> = mapper.spots(studentId).map { FriendDecorView(it.surface, it.col, it.row, it.assetKey) }
+    fun friendSpots(studentId: UUID): List<FriendDecorView> = mapper.spots(studentId).map { FriendDecorView(it.surface, it.col, it.row, it.assetKey, it.color) }
 
     /**
      * 전체 교체(한 트랜잭션, 학생 행 `FOR NO KEY UPDATE`). 목록 누락·9개 이상·면·칸 범위 밖·같은 기준 칸 두 번·빈 칸·
@@ -43,7 +43,7 @@ class RoomDecorService(private val mapper: RoomDecorMapper, private val access: 
             val row = it?.row
             val key = it?.itemKey
             if (surface == null || col == null || row == null || key.isNullOrBlank() ||
-                !DecorSpotRules.validCell(surface, col, row)) throw invalid()
+                !DecorSpotRules.validCell(surface, col, row) || !DecorSpotRules.validColor(it.color)) throw invalid()
             Triple(surface, col, row) to key
         }
         if (spots.map { it.first }.toSet().size != spots.size) throw invalid()
@@ -56,8 +56,8 @@ class RoomDecorService(private val mapper: RoomDecorMapper, private val access: 
         }
         mapper.deleteSpots(studentId)
         val now = RewardService.now()
-        spots.forEach { (cell, code) ->
-            check(mapper.insertSpot(studentId, cell.first, cell.second, cell.third, owned.getValue(code).itemId, now) == 1)
+        spots.forEachIndexed { index, (cell, code) ->
+            check(mapper.insertSpot(studentId, cell.first, cell.second, cell.third, owned.getValue(code).itemId, input[index]!!.color, now) == 1)
         }
         return DecorSpots(mapper.spots(studentId))
     }

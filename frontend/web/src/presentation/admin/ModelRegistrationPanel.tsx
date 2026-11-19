@@ -53,13 +53,13 @@ function RegistrationForm({ value, onChange, existing, listReady, manifest, sibl
       <label>한계·주의 (줄마다 한 항목)<textarea value={(value.evaluation.limitations ?? []).join('\n')} onChange={e => evidence('limitations', e.target.value ? e.target.value.split('\n') : [])} />{field('evaluation.limitations')}</label>
     </fieldset>
     <section aria-label="모델 사전 검사">
-      <button type="button" disabled={locked || !listReady || value.kind !== 'MODEL' || !candidate || !supportsPreflight(candidate.files) || !!validation.errors.length} onClick={() => {
+      <button type="button" disabled={locked || !listReady || value.kind !== 'MODEL' || !candidate || !supportsPreflight(value.name, candidate.files) || !!validation.errors.length} onClick={() => {
         const key = preflightKey
         setChecked(undefined); onBusy?.(true)
         void preflight.mutateAsync(preflightBody).then(result => setChecked({ key, result }))
           .catch(error => setChecked({ key, error })).finally(() => onBusy?.(false))
       }}>{preflight.isPending ? '사전 검사 중' : '사전 검사'}</button>
-      <p>manifest의 필수 여섯 파일이 필요합니다. 파일·형식 확인이며 품질 승인·활성화·추론 확인이 아닙니다.</p>
+      <p>manifest의 필수 파일(m1·m2 여섯, tox- 다섯)이 필요합니다. 파일·형식 확인이며 품질 승인·활성화·추론 확인이 아닙니다.</p>
       {checked && checked.key !== preflightKey && <p role="status">입력이 변경되었습니다. 사전 검사를 다시 실행해 주세요.</p>}
       {checked?.key === preflightKey && <><ErrorNotice error={checked.error} />{checked.result && <div role="status">
         <strong>{preflightMessage(checked.result.code)}</strong>

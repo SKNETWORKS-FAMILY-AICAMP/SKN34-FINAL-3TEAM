@@ -106,5 +106,5 @@ def sample_response() -> ThemeDraftResponse:
         motions={},
         warnings=[],
         failure=None,
-        versions=LlmVersions(model="fake-model", prompt="theme-draft@2"),
+        versions=LlmVersions(model="fake-model", prompt="theme-draft@3"),
     )

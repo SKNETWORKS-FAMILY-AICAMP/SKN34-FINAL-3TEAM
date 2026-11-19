@@ -72,7 +72,7 @@ class ExplanationService:
                 prompt_version=prompt.version,
                 max_tokens=self._settings.explanation_max_tokens,
                 deadline=time.monotonic() + self._settings.explanation_deadline,
-                # A serverless job is never resubmitted within this request.
+                # One synchronous SageMaker call; never resubmitted within this request.
                 max_retries=0,
             )
         except LlmUnavailable as exc:

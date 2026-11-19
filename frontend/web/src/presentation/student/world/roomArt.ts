@@ -1,13 +1,13 @@
 import type { CSSProperties } from 'react'
-import { skinOf, wallpaperOf } from './roomAssets.ts'
+import { floorOf, floorPaint, skinOf, wallpaperOf } from './roomAssets.ts'
 import type { RoomSlot } from './roomAssets.ts'
 
 /**
  * 내 방 그림(#648, 시안 MyPage의 그림체를 방 안 시점으로). CSS 3D 면(div)으로 방·가구를 세운다.
  * 바닥 가운데가 원점이고 y는 아래로 +. 벽지는 착용 배경(BACKGROUND), 가구 색은 착용 가구 스킨(DESK·WALL·WARDROBE).
- * 2026-11-16(사용자 결정): 러그(뭉치 출발 자리)를 둘러싸고 갈 곳 6개 — 뒷벽 추억의 벽(가운데)·옷장(오른쪽)·문(더 오른쪽),
- * 왼쪽 벽 창문과 그 앞 책상, 앞 왼쪽 책장, 앞 오른쪽 화분(장식). 갈 곳 앞에는 둥근 발판이 있다.
- * 세트: 벽지 → 벽·바닥·러그·커튼, 책상 스킨 → 책상·책장, 옷장 스킨 → 옷장·문, 추억의 벽 스킨 → 게시판·액자 테두리.
+ * 2026-11-16(사용자 결정): 방 가운데(뭉치 출발 자리)를 둘러싸고 갈 곳 6개 — 뒷벽 추억의 벽(가운데)·옷장(오른쪽)·문(더 오른쪽),
+ * 왼쪽 벽 창문과 그 앞 책상, 앞 왼쪽 책장. 갈 곳 앞에는 둥근 발판이 있다. 장식 화분은 뺐다(사용자 결정 2026-11-17, 화분은 방 소품으로 사서 놓음 #705).
+ * 세트: 벽지 → 벽·기본 바닥·커튼, 책상 스킨 → 책상·책장, 옷장 스킨 → 옷장·문, 추억의 벽 스킨 → 게시판·액자 테두리. 원래 러그 그림은 뺐다(사용자 결정 2026-11-17, 러그는 방 소품으로 사서 깖 #705).
  */
 export const ROOM = { W: 1120, D: 600, H: 430, T: 26 } as const
 const { W, D, H, T } = ROOM
@@ -48,7 +48,7 @@ export const faceStyle = (f: Face): CSSProperties => ({
 /** 추억의 벽 게시판 가운데(뒷벽) */
 /*
  * 배치(사용자 의견 2026-11-16 "방 구조가 이게 맞아?": 책장이 창문을 막고 가구가 왼쪽 뒤에 몰려 오른쪽이 비었음 → 다시 잡음)
- * 뒷벽 왼쪽부터 책장 · 추억의 벽 · 옷장 · 화분 · 문, 왼쪽 벽은 창문과 그 아래 책상만. 러그는 가운데.
+ * 뒷벽 왼쪽부터 책장 · 추억의 벽 · 옷장 · 문, 왼쪽 벽은 창문과 그 아래 책상만. 가운데는 뭉치 출발 자리.
  */
 export const BOARD = { x: -70, y: -215, z: -D / 2 + 2, w: 520, h: 290 } as const
 /** 책상(왼쪽 벽, 창문 아래에 붙임) */
@@ -58,13 +58,11 @@ export const DESK_Z = 140
 export const WINDOW_Z = 140
 /** 옷장(뒷벽 오른쪽) */
 export const WARDROBE = { x: 300, z: -D / 2 + 66 } as const
-/** 문(뒷벽, 옷장·화분보다 더 오른쪽 빈 벽) */
+/** 문(뒷벽, 옷장보다 더 오른쪽 빈 벽) */
 export const DOOR = { x: 560, w: 140, h: 290 } as const
 /** 책장(뒷벽 왼쪽 구석, 칸이 앞(+z)을 본다) */
 export const SHELF = { x: -440, z: -D / 2 + 58, w: 200, d: 110, h: 250 } as const
-/** 화분(옷장과 문 사이 뒷벽 앞, 장식) */
-export const PLANT = { x: 455, z: -D / 2 + 70 } as const
-/** 러그 = 뭉치 출발 자리 */
+/** 뭉치 출발 자리(방 가운데). 이름은 예전 러그 자리라서 RUG. 원래 러그 그림은 뺐다(사용자 결정 2026-11-17, 러그는 방 소품으로 사서 깖 #705) */
 export const RUG = { x: 110, z: 130 } as const
 
 /** 갈 곳 앞 발판: 뭉치가 올라서면 말풍선 */
@@ -82,12 +80,11 @@ export const MAT_SIZE = { w: 130, d: 84 } as const
 /** 발판 가운데에서 이만큼 안이면 그 가구 앞에 왔다고 본다(작은 발판 위에 꼭 서지 않아도 가까이 오면 말풍선, 사용자 의견 2026-11-16) */
 export const MAT_RADIUS = 140
 
-/** 캐릭터가 지나가지 못하는 가구: [x1, x2, z1, z2] 책상·옷장·책장·화분 */
+/** 캐릭터가 지나가지 못하는 가구: [x1, x2, z1, z2] 책상·옷장·책장 */
 const BLOCKS = [
   [-W / 2, -W / 2 + 205, DESK_Z - 125, DESK_Z + 125],
   [WARDROBE.x - 120, WARDROBE.x + 120, -D / 2, WARDROBE.z + 65],
   [SHELF.x - SHELF.w / 2 - 10, SHELF.x + SHELF.w / 2 + 10, SHELF.z - SHELF.d / 2 - 10, SHELF.z + SHELF.d / 2 + 10],
-  [PLANT.x - 50, PLANT.x + 50, PLANT.z - 50, PLANT.z + 50],
 ]
 const R = 40
 /** 바닥 안쪽(벽에서 떨어짐)이고 가구에 겹치지 않는지. 화면 밖·단추 자리는 StudentRoom이 따로 본다 */
@@ -110,6 +107,8 @@ export const boardTagTransform = `translate3d(${BOARD.x}px,${BOARD.y - BOARD.h /
  */
 /** 방(world) 원점의 무대 높이 비율. CSS(.st-room-world top)도 이 값을 쓴다 */
 export const WORLD_TOP = 0.66
+/** 방을 보는 각도(돌려 보기는 끔, useRoomWalk CAN_ROTATE). 방 소품 칸이 PC 화면에 보이는지 계산에도 씀 */
+export const ROOM_VIEW = { rx: -24, ry: -30 } as const
 export function projectToHolder(x: number, y: number, z: number, v: { rx: number; ry: number; ws: number; stageScale: number; holderW: number }) {
   const ry = (v.ry * Math.PI) / 180
   const rx = (v.rx * Math.PI) / 180
@@ -125,7 +124,8 @@ export function projectToHolder(x: number, y: number, z: number, v: { rx: number
   return { x: v.holderW / 2 + (sx - 700) * v.stageScale, y: sy * v.stageScale }
 }
 
-export type RoomLook = { wallpaper: string | null; desk: string | null; wall: string | null; wardrobe: string | null }
+/** floor: 바닥 그림 키(#705), 없거나 null이면 벽지 세트의 바닥 */
+export type RoomLook = { wallpaper: string | null; floor?: string | null; desk: string | null; wall: string | null; wardrobe: string | null }
 export function roomFaces(look: RoomLook, activeMat: MatId | null = null): Face[] {
   const wp = wallpaperOf(look.wallpaper)
   const desk = skinOf('DESK', look.desk)
@@ -143,9 +143,9 @@ export function roomFaces(look: RoomLook, activeMat: MatId | null = null): Face[
     plane(`${key}-side`, d, h, `translate3d(${x + w / 2}px,${y0 - h / 2}px,${z}px) rotateY(90deg)`, c[2], ex)
   }
   const shade = 'linear-gradient(rgba(15,59,54,.13), rgba(15,59,54,.13)), '
-  // 바닥(나무 마루, 누르면 걸어감, 벽지 세트 색): 뒤·왼쪽 벽에서 시작해 앞·오른쪽은 창 밖까지
+  // 바닥(누르면 걸어감): 고른 바닥(#705), 없으면 벽지 세트의 마루. 뒤·왼쪽 벽에서 시작해 앞·오른쪽은 창 밖까지
   const FW = W + EXT.right, FD = D + EXT.front, WH = H + EXT.up
-  plane('floor', FW, FD, `translate3d(${EXT.right / 2}px,0px,${EXT.front / 2}px) rotateX(90deg)`, `repeating-linear-gradient(90deg, ${wp.floor[0]} 0 108px, ${wp.floor[1]} 108px 111px)`, { floor: true, border: 'none', part: 'BACKGROUND' })
+  plane('floor', FW, FD, `translate3d(${EXT.right / 2}px,0px,${EXT.front / 2}px) rotateX(90deg)`, floorPaint(look.floor, look.wallpaper), { floor: true, border: 'none', part: floorOf(look.floor) ? 'FLOOR' : 'BACKGROUND' })
   // 벽(뒷벽·왼쪽 벽)도 위·앞·오른쪽으로 창 밖까지, 두 벽이 만나는 모서리 선만 남김
   plane('wall-back', FW + T, WH, `translate3d(${EXT.right / 2 - T / 2}px,${-WH / 2}px,${-D / 2}px)`, wp.paint, { border: 'none', part: 'BACKGROUND' })
   plane('wall-left', FD, WH, `translate3d(${-W / 2}px,${-WH / 2}px,${EXT.front / 2}px) rotateY(90deg)`, shade + wp.paint, { border: 'none', shadow: 'inset -2px 0 0 #1F4E6B', part: 'BACKGROUND' })
@@ -169,10 +169,7 @@ export function roomFaces(look: RoomLook, activeMat: MatId | null = null): Face[
   plane('door', DOOR.w, DOOR.h, `translate3d(${DOOR.x}px,${-DOOR.h / 2}px,${-D / 2 + 3}px)`,
     `radial-gradient(circle at 84% 54%, ${knob} 7px, transparent 8px), linear-gradient(transparent 10%, rgba(15,59,54,.12) 10% 44%, transparent 44% 52%, rgba(15,59,54,.12) 52% 90%, transparent 90%) 18px 0 / calc(100% - 36px) 100% no-repeat, ${doorPanel}`,
     { radius: '6px 6px 0 0', part: 'WARDROBE' })
-  // 러그(출발 자리, 벽지 세트 색)
-  plane('rug', 400, 200, `translate3d(${RUG.x}px,-1px,${RUG.z}px) rotateX(90deg)`, wp.rug,
-    { radius: '50%', shadow: 'inset 0 0 0 18px rgba(255,255,255,0), inset 0 0 0 21px rgba(255,253,246,.9)', part: 'BACKGROUND' })
-  // 갈 곳 앞 발판: 평소에는 보이지 않고(러그가 여러 개처럼 보여서, 사용자 의견 2026-11-16) 뭉치가 올라선 발판만 은은하게 빛남
+  // 갈 곳 앞 발판: 평소에는 보이지 않고(발판이 러그 여러 개처럼 보여서, 사용자 의견 2026-11-16) 뭉치가 올라선 발판만 은은하게 빛남
   for (const m of MATS)
     if (m.id === activeMat)
       plane(`mat-${m.id}`, MAT_SIZE.w, MAT_SIZE.d, `translate3d(${m.x}px,-1.5px,${m.z}px) rotateX(90deg)`, 'radial-gradient(closest-side, rgba(255,216,77,.75), rgba(255,216,77,0))',
@@ -195,8 +192,5 @@ export function roomFaces(look: RoomLook, activeMat: MatId | null = null): Face[
     'repeating-linear-gradient(90deg, #E3533C 0 14px, #FFD84D 14px 26px, #7FC8D8 26px 40px, transparent 40px 50px, #9CCB8C 50px 62px, #F7AEC4 62px 74px, transparent 74px 96px)'
   box('shelf', SHELF.x, SHELF.z, SHELF.w, SHELF.h, SHELF.d, sh, 0,
     `linear-gradient(${sh[1]}, ${sh[1]}) 0 0 / 100% 10px no-repeat, ${shelves}, ${sh[1]}`, undefined, 'DESK')
-  // 화분(장식): 작은 화분 위에 둥근 잎 덤불
-  box('pot', PLANT.x, PLANT.z, 60, 54, 60, ['#E9A27A', '#E28D5B', '#C9744A'], 0, undefined, '6px')
-  box('plant', PLANT.x, PLANT.z, 78, 86, 78, ['#8FCB7C', '#7DBE6B', '#5E9E4E'], -54, undefined, '45%')
   return faces
 }

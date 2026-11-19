@@ -16,6 +16,14 @@ collector:
       app.kubernetes.io/instance: langfuse
       app.kubernetes.io/component: web
     langfusePort: 3000
+  # Trace-path limits (#784). Used only when Tempo or Langfuse export is on. Metrics keep
+  # the process-wide 192 MiB limiter; traces are refused earlier, and each trace exporter
+  # holds at most queueMiB of spans and gives up after retryMaxElapsed.
+  traceLimits:
+    memoryLimitMiB: 144
+    memorySpikeMiB: 32
+    queueMiB: 16
+    retryMaxElapsed: 30s
   resources:
     requests: {cpu: 50m, memory: 96Mi}
     limits: {cpu: 250m, memory: 256Mi}
@@ -34,11 +42,22 @@ prometheus:
 tempo:
   enabled: false
   image: grafana/tempo:2.10.10
-  retention: 72h
+  retention: 24h
   persistence: {enabled: false, storageClassName: gp3, size: 2Gi}
+  # #784: 512Mi was OOMKilled while completing blocks under load; GOMEMLIMIT sits below the limit.
   resources:
-    requests: {cpu: 50m, memory: 128Mi}
-    limits: {cpu: 500m, memory: 512Mi}
+    requests: {cpu: 50m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 1Gi}
+  goMemLimit: 800MiB
+  ingester:
+    maxBlockBytes: 67108864     # 64 MiB (Tempo default 500 MB)
+    maxBlockDuration: 5m        # default 30m
+    traceIdlePeriod: 5s
+  limits:
+    rateLimitBytes: 8388608     # 8 MiB/s
+    burstSizeBytes: 12582912    # 12 MiB
+    maxLiveTraces: 5000
+    maxBytesPerTrace: 2097152   # 2 MiB
 grafana:
   image: grafana/grafana:13.3.0
   persistence: {enabled: false, storageClassName: gp3, size: 1Gi}

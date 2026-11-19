@@ -34,6 +34,20 @@ class AnalysisCall {
     fun release() { body.set(null) }
     fun finish() { body.set(null); thread.set(null) }
 }
+/**
+ * ai `/internal/analysis/stream` SSE event (#792). [AiClient] checks each event's shape; the order (status first, nothing but
+ * `done` after a terminal event) is checked by the consuming service. `result`·`clarification` bodies are validated against
+ * the analysis request by `ConversationService`.
+ */
+sealed interface AnalysisEvent {
+    data class Status(val message: String) : AnalysisEvent
+    data class Delta(val text: String) : AnalysisEvent
+    data class Result(val body: JsonNode) : AnalysisEvent
+    data class Clarification(val body: JsonNode) : AnalysisEvent
+    /** Only a bounded public code crosses this boundary. No raw upstream body or exception text. */
+    data class Error(val code: String) : AnalysisEvent
+    data object Done : AnalysisEvent
+}
 @Component
 class AiClient internal constructor(factory: InternalRestClientFactory, private val json: ObjectMapper,
     private val firstResponse: Duration, private val total: Duration) {
@@ -75,7 +89,7 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
     private fun templateUnavailable(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "AI_UNAVAILABLE", "설정 변경안을 만들지 못했습니다.")
     private val factoryClient = factory.create("ai", Duration.ofSeconds(25), java.net.http.HttpClient.Version.HTTP_1_1)
 
-    fun stream(request: Any, call: AnalysisCall, event: (String, JsonNode) -> Unit) {
+    fun stream(request: Any, call: AnalysisCall, event: (AnalysisEvent) -> Unit) {
         call.attachThread()
         if (!circuit.tryAcquirePermission()) throw BusinessException(HttpStatus.BAD_GATEWAY,
             "AI_UNAVAILABLE", "AI 분석 서비스를 사용할 수 없습니다.")
@@ -119,7 +133,8 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
                                 first.cancel(false)
                                 val parsed = try { json.readTree(data.toString()) } catch (_: Exception) { invalid() }
                                 if (parsed == null || !parsed.isObject) invalid()
-                                try { event(name, parsed) } catch (ex: Exception) {
+                                val typed = analysisEvent(name, parsed)
+                                try { event(typed) } catch (ex: Exception) {
                                     // Consumer authorization/DB/browser failures are not AI availability failures.
                                     downstreamFailure = name == "error" || (ex is BusinessException && ex.code == "AI_INVALID_RESPONSE")
                                     throw ex
@@ -156,6 +171,24 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
             }
         }
     }
+    /** Event shape (api-spec 4.3): `status` RUNNING with a message, `delta` text, `error` an upper-case code; unknown names fail. */
+    private fun analysisEvent(name: String, data: JsonNode): AnalysisEvent = when (name) {
+        "status" -> {
+            if (data.path("state").asText() != "RUNNING" || !data.path("message").isTextual) invalid()
+            AnalysisEvent.Status(data.path("message").asText())
+        }
+        "delta" -> { if (!data.path("text").isTextual) invalid(); AnalysisEvent.Delta(data.path("text").asText()) }
+        "result" -> AnalysisEvent.Result(data)
+        "clarification" -> AnalysisEvent.Clarification(data)
+        "error" -> {
+            val code = data.path("code").asText()
+            if (!code.matches(ERROR_CODE)) invalid()
+            AnalysisEvent.Error(code)
+        }
+        "done" -> AnalysisEvent.Done
+        else -> invalid()
+    }
     private fun invalid(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "AI_INVALID_RESPONSE", "AI 분석 응답 형식이 올바르지 않습니다.")
+    private companion object { val ERROR_CODE = Regex("[A-Z][A-Z0-9_]{0,79}") }
     @PreDestroy fun close() { timer.shutdownNow() }
 }

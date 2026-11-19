@@ -21,7 +21,7 @@ class ModelLoadingService(private val reports: ModelLoadingRepository, private v
         require(report.podId.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,252}")) && report.sequence > 0)
         require(report.models.size <= 100 && report.models.map { it.name }.distinct().size == report.models.size)
         report.models.forEach {
-            require(it.name.matches(Regex("(m1|m2)-[A-Za-z0-9._-]{1,96}")) && it.version.length in 1..100 && it.revision > 0)
+            require(it.name.matches(Regex("(m1|m2|tox)-[A-Za-z0-9._-]{1,96}")) && it.version.length in 1..100 && it.revision > 0)
             require(it.status in setOf("LOADING", "LOADED", "FAILED"))
             require(it.errorType == null || it.errorType.matches(Regex("[A-Za-z_][A-Za-z0-9_]{0,99}")))
             require((it.status == "FAILED") == (it.errorType != null))

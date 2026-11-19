@@ -22,6 +22,7 @@ import json
 import pathlib
 
 from eval import GRID, MAX_FPR
+from quant import QUANTIZATION
 from train import binary_metrics
 
 SETS = ("valid", "test", "apeach")
@@ -121,7 +122,7 @@ def main(argv=None):
         info = json.loads(path.read_text(encoding="utf-8"))
         info["threshold"] = threshold
         info["thresholdSource"] = f"wordlist.py {result['evaluatedAt'][:10]} {mode}: {rule}"
-        info["quantization"] = "int8-dynamic" if mode == "int8" else "none"
+        info["quantization"] = QUANTIZATION if mode == "int8" else "none"
         path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"train_info.json threshold → {threshold}")
 

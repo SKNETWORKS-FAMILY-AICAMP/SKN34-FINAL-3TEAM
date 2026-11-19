@@ -78,7 +78,7 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         call("POST", "/api/v1/students/me/look-items/$itemKey/purchase", studentToken, key = key, expected = expected, snapshot = snapshot)
     private fun cell(surface: String, col: Int, row: Int, itemKey: String) =
         mapOf("surface" to surface, "col" to col, "row" to row, "itemKey" to itemKey)
-    private fun spots(vararg spots: Map<String, Any>, expected: Int = 200, snapshot: String? = null) =
+    private fun spots(vararg spots: Map<String, Any?>, expected: Int = 200, snapshot: String? = null) =
         call("PUT", "/api/v1/students/me/room/decor-spots", studentToken,
             mapOf("spots" to spots.toList()), expected = expected, snapshot = snapshot)
     private fun stop(code: String) {
@@ -376,7 +376,7 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         val saved = spots(cell("WALL_LEFT", 0, 0, pot), cell("FLOOR", 0, 0, lamp), cell("WALL_BACK", 0, 0, pot), snapshot = "decor-spots")
         assertEquals(listOf("FLOOR", "WALL_BACK", "WALL_LEFT"), saved["spots"].map { it["surface"].asText() })
         assertEquals(listOf(lamp, pot, pot), saved["spots"].map { it["itemKey"].asText() })
-        assertEquals(setOf("surface", "col", "row", "itemKey", "name", "assetKey"), saved["spots"][0].fieldNames().asSequence().toSet())
+        assertEquals(setOf("surface", "col", "row", "itemKey", "name", "assetKey", "color"), saved["spots"][0].fieldNames().asSequence().toSet())
         assertEquals("검증 모자", saved["spots"][0]["name"].asText()); assertEquals("look/$lamp.png", saved["spots"][0]["assetKey"].asText())
         assertEquals(saved, call("GET", path, studentToken))
         val valid = cell("FLOOR", 2, 3, lamp)
@@ -409,6 +409,29 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         assertEquals(0, spots()["spots"].size())
         call("GET", path, parentToken, expected = 403)
         call("PUT", path, parentToken, mapOf("spots" to emptyList<Any>()), expected = 403)
+    }
+
+    @Test fun `placement color round trips and invalid replacement leaves all placements intact`() {
+        val path = "/api/v1/students/me/room/decor-spots"
+        val decor = item("DECOR", 1)
+        earnMissions(1); repeat(2) { purchase(decor) }
+        val first = cell("FLOOR", 0, 0, decor)
+        val second = cell("FLOOR", 1, 0, decor)
+        val saved = spots(first + ("color" to "pink"), second + ("color" to "sky"), snapshot = "decor-spots")
+        assertEquals(listOf("pink", "sky"), saved["spots"].map { it["color"].asText() })
+        assertEquals(saved, call("GET", path, studentToken))
+        for (color in listOf("", "Sky", "pink blue", "a".repeat(21), "분홍", "sky\n")) {
+            val body = mapOf("spots" to listOf(first + ("color" to "green"), second + ("color" to color)))
+            assertEquals("VALIDATION_FAILED", call("PUT", path, studentToken, body, expected = 422)["code"].asText())
+            assertEquals(saved, call("GET", path, studentToken))
+        }
+        val replaced = spots(first + ("color" to "custom-9"), second + ("color" to "a".repeat(20)))
+        assertEquals("custom-9", replaced["spots"][0]["color"].asText())
+        assertEquals("a".repeat(20), replaced["spots"][1]["color"].asText())
+        val defaults = spots(first, second + ("color" to null))
+        assertTrue(defaults["spots"].all { it.has("color") && it["color"].isNull })
+        assertEquals(defaults, call("GET", path, studentToken))
+        assertEquals(0, spots()["spots"].size())
     }
 
     @Test fun `eight placements round trip at grid boundaries sorted by surface row then col`() {

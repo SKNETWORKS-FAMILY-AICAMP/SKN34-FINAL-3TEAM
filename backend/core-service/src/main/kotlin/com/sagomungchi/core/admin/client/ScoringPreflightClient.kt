@@ -4,6 +4,7 @@ import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.admin.domain.ModelPreflightCheck
 import com.sagomungchi.core.admin.domain.ModelPreflightResult
+import com.sagomungchi.core.admin.domain.preflightFiles
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.web.client.ResourceAccessException
@@ -23,7 +24,7 @@ class ScoringPreflightClient(factory: InternalRestClientFactory) {
         } catch (_: RestClientException) {
             throw BusinessException(HttpStatus.BAD_GATEWAY, "MODEL_PREFLIGHT_INVALID_RESPONSE", "사전 검사 서버 응답을 확인하지 못했습니다.")
         }
-        if (result == null || !runCatching { result.valid() }.getOrDefault(false)) throw BusinessException(HttpStatus.BAD_GATEWAY,
+        if (result == null || !runCatching { result.valid(preflightFiles(request.name)) }.getOrDefault(false)) throw BusinessException(HttpStatus.BAD_GATEWAY,
             "MODEL_PREFLIGHT_INVALID_RESPONSE", "사전 검사 서버 응답 형식이 유효하지 않습니다.")
         return result
     }

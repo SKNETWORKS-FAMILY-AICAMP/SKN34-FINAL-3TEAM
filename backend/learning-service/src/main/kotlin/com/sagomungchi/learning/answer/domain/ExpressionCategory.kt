@@ -19,6 +19,12 @@ enum class ExpressionCategory(val contextual: Boolean, val detail: String) {
 
     /** 연락처(전화번호·이메일): 아동 서비스의 연락처 공유 금지(Roblox·Scratch), 이슈 "금지 표현" */
     PERSONAL_INFO(false, "전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요."),
+
+    /**
+     * 욕 없는 모욕·비꼼: scoring 표현 분류 모델이 걸러 냄(#688, api-spec 4.3.4). 단어 목록에서는 나오지 않음.
+     * 미션 본문 허용 규칙이 모델에 없어 contextual 아님 (learning.md 16장 한계)
+     */
+    INSULT(false, KIND_WORDS),
 }
 
 private const val KIND_WORDS = "고운 말로 바꿔서 다시 적어 주세요."

@@ -66,7 +66,7 @@ class StudentSharingBoundaryTest {
             "quotes":[{"text":"합성비밀 인용"}],"thinkingTypes":[{"type":"ANALYZE","state":"OK","missions":[],"summary":"합성비밀 요약"}],
             "changes":[{"first":{"text":"합성비밀 첫 답"},"revised":{"text":"합성비밀 새 답"},"followup":"합성비밀 질문","counts":{"chars":[1,2]}}],
             "reflections":[{"written":true,"difficulty":"NORMAL","text":"합성비밀 돌아보기"}]}""")
-        `when`(client.get(student, "/internal/reports/$report", emptyMap(), false)).thenReturn(body)
+        `when`(client.report(job, report, null, false)).thenReturn(com.sagomungchi.core.report.client.ReportDocument(body as com.fasterxml.jackson.databind.node.ObjectNode, report))
         `when`(views.recordWithSharing(report, student, parent, false)).thenReturn(ReportViewAccess(false, false))
         val service = ReportQueryService(repository, access, client, views, entitlement, privacy, mock(com.sagomungchi.core.support.service.CorrectionNoticeService::class.java))
         val result = service.detail(report, null)

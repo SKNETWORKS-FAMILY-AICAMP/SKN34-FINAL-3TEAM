@@ -15,7 +15,7 @@ import java.util.UUID
 class ModelPreflightService(private val client: ScoringPreflightClient, private val audits: MissionAuditRepository,
     private val json: ObjectMapper) {
     fun check(request: ModelPreflightCheck, actor: UUID): ModelPreflightResult {
-        if (!runCatching { request.valid() }.getOrDefault(false)) throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "모델 식별값과 manifest의 여섯 파일·크기·해시를 확인해 주세요.")
+        if (!runCatching { request.valid() }.getOrDefault(false)) throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "모델 식별값과 manifest의 파일 목록·크기·해시를 확인해 주세요.")
         val result = try { client.check(request) } catch (e: BusinessException) {
             audit(actor, request, null, "SCORING_UNAVAILABLE")
             throw e

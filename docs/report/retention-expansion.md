@@ -244,6 +244,31 @@
 | 친구 생각 작성자 | 공유물 응답 `author.look.equipped`(아이템 키)를 읽어 아이템 목록 그림과 맞춰 그림(`StudentCommunity.tsx`). 목록에 없는 아이템(판매 중단 등)은 그 칸만 빠짐. 목업 친구 "하늘별"(도토리 모자)·"초록콩"(노란 비옷·돋보기) |
 | 남은 일 | 실서버 관리자 화면에서 아이템 그림 키 등록, kind에서 해금 → 착용 → 표시 확인(웹 PR #696 병합 뒤) |
 
+#### 3.7.3 바닥·방 소품 그림 키 (#705, 2026-11-17)
+
+웹 인라인 그림(`roomAssets.ts` `FLOORS`·`DECORS`, `decorDraw.ts`)이며 생성형 AI·외부 저작물은 쓰지 않았다. 관리자 아이템 등록(#706) 때 아래 `asset_key`를 그대로 넣는다. 목록에 없는 키는 방에 그리지 않는다. 가격은 목업 기준안이고 실제 값은 등록할 때 정한다. 칸 수·놓는 면 등 화면 결정은 `docs/report/frontend.md` "내 방 바닥·방 소품: 화면 (#705)".
+
+| 칸 | `asset_key` | 이름 | 크기(칸) | 목업 가격 |
+|---|---|---|---|---|
+| `FLOOR` | `room/floor-wood.svg` | 나무 마루 | - | 60 |
+| `FLOOR` | `room/floor-mint.svg` | 민트 타일 | - | 90 |
+| `FLOOR` | `room/floor-carpet.svg` | 초록 카펫 | - | 120 |
+| `DECOR` | `room/decor-plant.svg` | 작은 화분 | 바닥 1 | 30 |
+| `DECOR` | `room/decor-plant-big.svg` | 큰 화분 | 바닥 1 | 50 |
+| `DECOR` | `room/decor-cactus.svg` | 선인장 | 바닥 1 | 30 |
+| `DECOR` | `room/decor-lamp.svg` | 스탠드 조명 | 바닥 1 | 50 |
+| `DECOR` | `room/decor-doll.svg` | 뭉치 인형 | 바닥 1 | 60 |
+| `DECOR` | `room/decor-books.svg` | 쌓은 책 | 바닥 1 | 20 |
+| `DECOR` | `room/decor-beanbag.svg` | 쿠션 소파 | 바닥 2×1 | 70 |
+| `DECOR` | `room/decor-rug.svg` | 동그란 러그 | 바닥 2×2 | 50 |
+| `DECOR` | `room/decor-rug-square.svg` | 네모 러그 | 바닥 3×2 | 60 |
+| `DECOR` | `room/decor-rug-star.svg` | 별 러그 | 바닥 2×2 | 60 |
+| `DECOR` | `room/decor-lights.svg` | 줄 조명 | 벽 3×1 | 40 |
+| `DECOR` | `room/decor-garland.svg` | 깃발 가랜드 | 벽 3×1 | 40 |
+| `DECOR` | `room/decor-clock.svg` | 벽시계 | 벽 1 | 30 |
+| `DECOR` | `room/decor-picture.svg` | 작은 그림 | 벽 1 | 30 |
+| `DECOR` | `room/decor-shelf.svg` | 벽 선반 | 벽 2×1 | 50 |
+
 ## 4. 아키텍처 영향
 
 - 새 서비스·Pod·네트워크 정책 없음. learning→ai, ai→LLM API는 이미 허용됨
@@ -895,7 +920,7 @@ kind 확인 D(에픽 #562)에서 ai 0대일 때 learning이 질의 임베딩 실
 - 기간 표현 질문("지난달에 쓴 거")이 평가셋에 없어 16장 기간 필터 효과는 재지 않는다
 - 미션을 시드로 고정해 한 학생의 6회차 문서에 같은 미션 질문이 들어간다. 주마다 미션이 다른 실제 서비스보다 회차 구분이 어려운 조건이다
 - 정답표 다른 확인자는 평가용만이고, 조정용·삭제 질문과 설명 표시는 담당자 1명이다
-- H는 LLM 변환이 매번 조금 다를 수 있고 질문마다 1회만 잰다. 조정용 오프라인 실험에서는 같은 설정을 다시 돌리면 결과가 조금씩 달랐다(임베딩만 다시 해도 V large Recall@3 0.912~0.933)
+- H는 LLM 변환이 매번 조금 다를 수 있고 질문마다 1회만 잰다. 조정용 오프라인 실험에서는 같은 설정을 다시 돌리면 결과가 조금씩 달랐다(임베딩만 다시 해도 조정용 V large에서 고른 기준값이 0.36~0.37로 바뀌고 Recall@3이 0.875~0.917, 기준값 0.35로 고정하면 7번 모두 0.917)
 - 응답 시간은 PC 한 대·순차 호출 값이다. AWS·동시 요청 성능이 아니다
 - 판정 LLM은 대역이라 판정 결과는 평가 대상이 아니다. 검색 문서에는 판정이 들어가지 않아 검색 결과에는 영향이 없다
 - 학습 효과·리텐션 인과는 주장하지 않는다(NFR-OPS-06)
@@ -1013,3 +1038,23 @@ core 통합 검증은 실제 로컬 PostgreSQL·Redis·RabbitMQ를 사용한다.
 건너뜀: core의 `MODEL_LOADING_LOCAL`·`PREFLIGHT_LOCAL`·`MODEL_BROWSER_LOCAL` 전용 환경을 켜지 않아 모델 로딩·preflight·등록 브라우저 검사 3개, 원문 HWP(`KNOWLEDGE_SOURCE_DIR`)가 없어 재추출 검사 1개. Windows 공유 경로의 core 검증은 파일 읽기 지연으로 중단하고 같은 소스로 Docker 내부에서 완료했다. Python 첫 실행의 임시 폴더 권한 오류는 실행 환경을 바꾼 재검증에서 해소했다.
 
 AWS 조회·운영 데이터 확인·배포·원격 CI·실제 웹 #705/#709 동작·공유 kind 배포는 실행하지 않았다. 웹의 크기/겹침/이동 경로 구현은 후속 이슈 범위다. 후속 #705·#709 계약 안내는 병합 뒤에 진행한다. 운영 반영 전 기존 `room_decor_spot` 행 확인은 별도 담당 작업으로 남는다.
+
+
+## 22. 놓은 방 소품 색 저장 (#758, 2026-11-17)
+
+- 이슈 기준안을 적용한다. 색은 아이템 등록값이 아니라 놓은 자리의 `room_decor_spot.color varchar(20) NULL`에 저장한다. V52는 컬럼·CHECK만 추가하며 기존 배치·보유 데이터는 변경하지 않는다.
+- 요청은 생략·null을 허용하고 둘 다 기본 색(NULL)으로 저장한다. 응답은 내 방 GET·PUT과 친구 방 모두 `color`를 항상 포함한다.
+- 소문자·숫자·하이픈 1~20자만 허용한다. 대문자·공백·개행·빈 문자열·21자 이상은 422 `VALIDATION_FAILED`이며 일부 배치도 저장하지 않는다. 서버는 색 목록을 제한하지 않는다. 모르는 색의 표현은 웹 기본 색으로 처리한다.
+- 기존 전체 교체·학생 행 잠금·소유권·보유 개수·좌표 검사는 유지한다. 색 생략은 이전 색 유지가 아니라 NULL로 교체한다.
+- 프론트 #705·#709(PR #759)의 `DECOR_COLOR_PICK` 활성화는 이 변경 병합 이후 담당자가 수행한다. 본 변경은 관리자 아이템 API나 색 목록을 바꾸지 않는다.
+
+### 검증
+
+- 실제 격리 PostgreSQL에서 CI의 `check_db_migrations.py` 통과: core 63테이블·536컬럼, learning 39테이블·352컬럼, report 8테이블·66컬럼이 ERD와 일치한다. 부정 제약 158건, CHECK 값 집합 108개, 인덱스 62개, 재실행 변경 없음, report downgrade/upgrade, 서비스 역할 6개의 DB 격리를 확인했다.
+- 색 계약은 요청에서만 생략 가능하며 응답에서는 null이어도 필수다. 정규식의 끝 개행 허용 차이를 막기 위해 OpenAPI에는 허용 문자 밖 문자를 거절하는 조건도 함께 둔다.
+- 실제 AWS 배포 및 웹 색 선택 활성화는 수행하지 않는다. 친구 방의 learning 호출은 기존 HTTP 대역을 쓰며, core의 저장·조회는 실제 PostgreSQL로 검증한다.
+- 로컬 GitOps migration revision도 v52로 갱신했다. 저장소 계약·스크립트 시험은 340개 중 332개 통과, 환경 조건에 따른 8개 제외다(pwsh·helm 필요 7개, 원문 HWP 필요 1개).
+- core 전체 gradle test bootJar 성공: 678개 중 675개 통과·3개 조건부 제외, 실패 0개. 제외는 MODEL_LOADING_LOCAL·PREFLIGHT_LOCAL·MODEL_BROWSER_LOCAL 전용 환경 검사다. Java 21·Gradle 8.14.6 Docker에서 실행했다.
+- 변경 관련 RewardIntegrationTest 19개·FriendRoomIntegrationTest 6개·RoomDecorMigrationTest 3개·RoomDecorServiceTest 1개·RoomFrameSlotIntegrationTest 7개, 총 36개 모두 통과했다. V51의 기존 배치를 V52로 올려 행 보존·NULL·재실행을 확인했다.
+- 실제 MockMvc 응답 JSON 13개가 OpenAPI와 일치한다(validate_reward_contracts.py·validate_community_contracts.py). 원격 CI와 병합 후 웹 담당자 알림은 아직 수행 전이다.
+- 최종 develop 86b0cc03(PR #759)을 병합했다. core·계약·스크립트에는 추가 변경이 없고, 병합된 웹의 retention·retentionMock·roomDecor 시험 48개가 모두 통과했다. 웹 색 선택 플래그는 담당자 후속 활성화를 위해 그대로 둔다.

@@ -27,6 +27,7 @@ import com.sagomungchi.learning.theme.domain.ThemeFailure
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.Season
 import com.sagomungchi.learning.theme.domain.StandardSemesters
+import com.sagomungchi.learning.theme.domain.StoryType
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
 import com.sagomungchi.learning.theme.domain.ThemeSemester
 import com.sagomungchi.learning.theme.domain.ThemeTopicSeeds
@@ -51,6 +52,7 @@ import java.time.LocalDate
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -183,17 +185,38 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     @Test
     fun `주제 씨앗은 같은 학년 최근 씨앗을 피하고(다른 학년·기간 밖은 상관없음) 관리자가 쓴 주제는 그대로`() {
         val week = nextWeek
-        val fitting = ThemeTopicSeeds.ALL.filter { it.fits(Season.of(week)) }.map { it.topic }
-        val (recent, rest) = fitting.dropLast(1) to fitting.last()
-        recent.forEachIndexed { index, topic -> seedTopic(ThemeGrade.G4, week.minusWeeks(index % 20 + 1L), topic) }
-        seedTopic(ThemeGrade.G4, week.minusWeeks(ThemeTopicSeeds.RECENT_WEEKS + 1), rest) // 기간 밖
-        seedTopic(ThemeGrade.G5, week.minusWeeks(1), rest) // 다른 학년
+        val fitting = ThemeTopicSeeds.ALL.filter { it.fits(Season.of(week)) }
+        val rest = fitting.groupBy { it.type }.values.map { it.last().topic } // 종류마다 하나씩 남김(종류는 무작위)
+        val recent = fitting.map { it.topic } - rest.toSet()
+        // 4주 역할 금지에 걸리지 않게 5주 전부터
+        recent.forEachIndexed { index, topic -> seedTopic(ThemeGrade.G4, week.minusWeeks(index % 20 + 5L), topic) }
+        rest.forEach {
+            seedTopic(ThemeGrade.G4, week.minusWeeks(ThemeTopicSeeds.RECENT_WEEKS + 1), it) // 기간 밖
+            seedTopic(ThemeGrade.G5, week.minusWeeks(1), it) // 다른 학년
+        }
 
         val draft = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = null, missions = emptyList()))
         val written = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = "우리 반 텃밭", missions = emptyList()))
 
-        assertEquals(rest, draft.input.topic)
+        assertTrue(draft.input.topic in rest, draft.input.topic)
         assertEquals("우리 반 텃밭", written.input.topic)
+    }
+
+    @Test
+    fun `주제 씨앗은 같은 학년 직전 주 줄거리 종류와 최근 4주 역할을 피함 (#634)`() {
+        val week = nextWeek
+        val fitting = ThemeTopicSeeds.ALL.filter { it.fits(Season.of(week)) }
+        listOf(StoryType.LOST, StoryType.TREASURE).forEach { type ->
+            seedTopic(ThemeGrade.G4, week.minusWeeks(1), fitting.first { it.type == type }.topic) // 직전 주 초안 두 개
+        }
+        val police = fitting.first { it.type == StoryType.FOOTPRINT && it.role.startsWith("경찰관(") }
+        seedTopic(ThemeGrade.G4, week.minusWeeks(2), police.topic)
+
+        val topic = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = null, missions = emptyList())).input.topic
+
+        val parsed = ThemeTopicSeeds.parse(topic)!!
+        assertTrue(parsed.type !in setOf(StoryType.LOST, StoryType.TREASURE), topic)
+        assertNotEquals("경찰관", parsed.roleName) // 장난꾸러기 찾기 경찰관 씨앗도 역할로 빠짐
     }
 
     @Test

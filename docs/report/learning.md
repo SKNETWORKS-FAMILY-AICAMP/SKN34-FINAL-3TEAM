@@ -351,14 +351,29 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 | 글 길이 | 모든 칸 합계 1,500자, 넘으면 칸 순서대로 앞 1,500자만 검사 | learning에 답 길이 상한이 없음. 11/16 측정(창 128, CPU 1개): 1,000자 0.77초·1,500자 1.12초·2,000자 1.55초(응답 1.5초 넘음), 운영 scoring CPU limit 1개(`scoring-service.json`). AI Hub 초3~6 글 중 1,500자 넘는 비율 논술형 0.6%(8,023편, 1,000자면 16.9%)·서술형 0%·에세이 0%. 넘을 때 건너뛰면 글을 늘려 검사를 피할 수 있어 잘라서 검사 |
 | 창·마감 | 128토큰 창·겹침 32, scoring은 처리 1.3초 넘으면 멈추고 503 | 학습 데이터(K-MHaS·BEEP!) 95%가 100자 미만이라 학습 길이 128과 창을 맞춤, 창 길이에 따른 속도 차이는 거의 없음. learning이 1.5초에 끊은 뒤 버려질 계산으로 다음 요청이 기다리지 않게 |
 | 사용량 | 이벤트 없음, 지표(호출·flagged·건너뜀 사유·지연)만 | #691 본문(LLM 아님, 토큰 단가 없음). core `callType`은 늘리지 않음 |
-| 임계값 | 꼭 통과할 글(데모 시드·웹 데모·`ExpressionPolicyTest` 통과 문장 390개) 오탐 0, 단어 목록이 통과시킨 검증 정상 글 추가 오탐 1% 이하에서 F1 최대 → int8 0.92(fp32로 쓰면 0.97) | 에픽 기준안, 담당자 확정(#690 지침, 2026-11-17). #205의 "데모 491"은 추출 스크립트가 저장소 밖이라 같은 방식으로 다시 뽑음. 결과 [eval_tox.md](../../ml/tox/results/eval_tox.md) |
+| 임계값 | 꼭 통과할 글(데모 시드·웹 데모·`ExpressionPolicyTest` 통과 문장 390개) 오탐 0, 단어 목록이 통과시킨 검증 정상 글 추가 오탐 1% 이하에서 F1 최대 → int8 0.95(채널별, scoring처럼 글 하나씩 잼. fp32로 쓰면 0.97) | 에픽 기준안, 담당자 확정(#690 지침, 2026-11-17). #205의 "데모 491"은 추출 스크립트가 저장소 밖이라 같은 방식으로 다시 뽑음. 결과 [eval_tox.md](../../ml/tox/results/eval_tox.md) |
 
 - 칸 수·글 길이·창·마감·잠금 전 호출은 이슈·에픽에 없어 담당자가 정한 기준안이다. 길이·창·마감은 11/16 측정(분류 머리 학습 전 `beomi/KcELECTRA-base`, 작업 공간 CPU 1개 스레드)이라 #691에서 실제 Pod로, M2와 CPU를 나눠 쓸 때도 다시 잰다. 메모리는 모델 로딩 약 +300MiB·추론 중 약 +300MiB로 limit 2Gi에 빠듯할 수 있어 같이 확인
 - 학습 데이터 후보(#690): 학습 K-MHaS·Korean HateSpeech(BEEP!)(CC BY-SA 4.0), 평가 APEACH(CC BY-SA 4.0), 기본 모델 `beomi/KcELECTRA-base`(MIT). KOLD(라이선스 표기 없음)·Korean UnSmile(상업 사용 문의 필요)은 제외. BEEP!는 저장소 LICENSE 원문, 나머지는 HF 데이터 카드로 확인(11/16). KOLD 저장소에는 LICENSE 파일이 없음
 - 12/7 데모에 넣는 것으로 진행. CC BY-SA는 에픽 제외 기준(비상업 전용·변경 금지·출처 불명)에 해당하지 않아 쓰며, 출처는 모델 문서에 표시하고 원자료·고친 데이터는 커밋·배포하지 않음
-- 학습·평가(#690, 2026-11-17): `beomi/KcELECTRA-base` 3에폭(RunPod 4090, 4분 20초). 시험(K-MHaS)에서 단어 목록만 29.3% → int8 0.92 모델을 붙이면 68.9% 잡음(단어 목록이 놓친 막을 글의 55.9%), 정상 추가 오탐 1.42%(검증 0.97%). APEACH 25.9% → 43.0%. 꼭 통과할 글 390개 오탐 0
-- 지연·int8 결정(#690): CPU 1코어 p95 1,500자 fp32 1.62초(포드)·2.32초(개발 PC)로 처리 마감 1.3초를 넘고 int8은 0.55초·1.07초. 합계 1,500자는 그대로 두고 scoring이 불러올 때 int8로 바꾼다(fp32·0.97보다 시험 재현율 5.2%p 손해, 추가 오탐 기준은 같음). #691에서 운영 Pod로 다시 재서 fp32가 마감 안이면 `train_info.json`만 fp32·0.97로 되돌린다
+- 학습·평가(#690, 2026-11-17): `beomi/KcELECTRA-base` 3에폭(RunPod 4090, 4분 20초). 시험(K-MHaS)에서 단어 목록만 29.3% → int8 0.95 모델을 붙이면 71.7% 잡음(단어 목록이 놓친 막을 글의 59.9%), 정상 추가 오탐 1.33%(검증 0.93%). APEACH 25.9% → 45.1%. 꼭 통과할 글 390개 오탐 0, 직접 지은 아이 말투 정상 문장 40개 오탐 0·욕 없는 모욕 10개 중 4개 잡음
+- 지연·int8 결정(#690): CPU 1코어 p95 1,500자 fp32 1.62초(포드)·2.32초(개발 PC)로 처리 마감 1.3초를 넘고 int8은 0.55초·1.07초. 합계 1,500자는 그대로 두고 scoring이 불러올 때 Linear 채널별 int8로 바꾼다(fp32·0.97보다 시험 재현율 0.82%p 손해, 추가 오탐 기준은 같음. 같은 날 오전 층 전체 한 눈금 방식은 5.2%p였고, int8 확률이 같이 계산한 글에 따라 달라져 평가를 scoring처럼 글 하나씩으로 바꿈). #691에서 운영 Pod로 다시 재서 fp32가 마감 안이면 `train_info.json`만 fp32·0.97로 되돌린다
 - 한계: 학습 데이터가 성인 뉴스 댓글이라 초등 답과 말투가 다르다. 미션 본문에 나온 말을 허용하는 규칙(`HATE`·맥락 단어)이 모델에는 없어 차별을 다루는 미션에서 오탐이 날 수 있다. 합계 1,500자 뒤의 글과 21번째 칸부터는 모델이 보지 않는다. 동시 요청이 몰리면 게이트에서 기다리다 통과될 수 있다. 장애 중에는 단어 목록만 적용된다
+
+#### learning 연동 구현 (#692, 2026-11-18)
+
+- `answer/client/ToxicityClient`: `InternalRestClientFactory.create("scoring", 1.5초)`·`aiCircuitBreaker("scoring-toxicity")`를 그대로 쓰고 예외를 밖으로 던지지 않는다. 결과는 `Flagged`·`Clean(review)`·`Skipped(사유)` 셋
+- `AnswerService.submit`: `@Transactional`을 빼고 분류를 먼저 부른 뒤 `TransactionTemplate` 안에서 기존 처리(시도 잠금 → 검사 → 저장)를 한다. 단어 목록이 먼저이고, 통과한 글이 `Flagged`면 `INSULT`로 422
+- 설정: `app.services.scoring`(`SCORING_URL`)·`app.toxicity.read-timeout: 1500ms`·`app.toxicity.enabled`(`TOXICITY_ENABLED`, 기본 true). compose·local·prod 값에 `SCORING_URL`과 learning egress `scoring-service:8001`을 넣었다. scoring ingress는 #691에서 반영
+- 시험: `ToxicityClientTest`(WireMock: 걸림·통과·`active:false`·5xx·4xx·계약 밖 응답·시간 초과·연결 실패·서킷 열림·칸과 글자 자르기), `AnswerServiceTest`(최초·보완 답 걸림, 사유별 통과와 로그, 보내는 칸), `AnswerConcurrencyTest`(느린 분류를 트랜잭션 밖에서 동시에 기다림)
+
+이슈 본문·위 기준과 다른 점:
+
+- `app.toxicity.enabled`를 더했다. 전체 컨텍스트 시험이 없는 scoring 주소로 연결을 시도하지 않게 시험 기본값을 false로 두는 것이 이슈의 "시험 공통 기본값"이다. 운영에서는 모델을 잠시 끌 때도 쓴다. 끈 상태는 사유 `DISABLED`이고 장애가 아니라 제출마다 로그를 남기지 않는다
+- 1,500자는 코드포인트로 센다. scoring(Python `len`)과 같게 하고 이모지가 반쪽으로 잘려 400이 되지 않게 하려는 것이다. 잘린 앞부분이 공백뿐이면 그 칸은 보내지 않는다
+- 지표(호출·flagged·건너뜀 사유·지연)는 따로 만들지 않았다. learning에는 Micrometer 사용자 지표가 없고, 호출 수·지연은 Java agent의 HTTP 클라이언트 지표로 본다. 건너뜀 사유는 로그로만 본다
+- `review`는 읽기만 한다. 표현 검토 대기 등록은 #727
+- 확인 필요: 로컬 compose E2E(욕 없는 무례한 답 422, scoring을 멈춘 채 제출 성공, 보통 답 지연)는 아직 하지 않았다
 
 ### 재학습 자동화 (#688, 설계 #725)
 
@@ -854,6 +869,17 @@ python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --d
 - 주간 자동은 항상, 관리자 요청은 `topic`을 비웠을 때. 관리자가 쓴 주제와 다시 생성은 그대로
 - 같은 학년에서 쓴 씨앗은 목록 개수만큼의 주 동안 제외(초안 상태 무관). 같은 주 다른 초안의 씨앗도 제외. 남는 게 없으면 가장 오래전에 쓴 것
 - 계절(기준안): 봄 3~5월·여름 6~8월·가을 9~11월·겨울 12~2월. 계절이 맞지 않는 씨앗 4개는 그때만
+- **#634 줄거리 종류(2026-11-16 설계 확정·learning 구현)**: 씨앗에 종류(`StoryType`)를 붙임. 위 11-11 기록 중 형식·목록 개수·제외 기간·계절 씨앗 수는 아래로 바뀜
+  - 형식 `줄거리: <종류> / 뭉치 역할: <역할(차림)> / 장소: <장소> / <라벨>: <대상>`. 라벨은 잃어버린 것 찾기·보물 쪽지 따라가기 `찾는 대상`, 동물 장난꾸러기 찾기·발자국 주인 찾기 `밝힐 것`(대상에 정답 동물 이름을 쓰지 않고 `…동물`로 끝냄. ai가 대상 글을 미션·대화·그림에 그대로 넘겨서). 가장 긴 씨앗 86자(주제 상한 100자 안, 시험으로 확인)
+  - 목록 36개(기준안): 잃어버린 것 24개 그대로 + 보물 쪽지 4·동물 장난꾸러기 4·발자국 주인 4. 경찰관 2(장난꾸러기·발자국)·소방관 1 포함. 계절 씨앗 6개(사과 과수원 가을·뒷산 눈길 겨울 추가), 어느 계절이든 종류마다 씨앗 3개 이상. ②④⑤ 가족은 1차 실측 통과 뒤 씨앗을 더해 켬(씨앗이 없는 종류는 고르지 않음)
+  - 고르기(`ThemeTopicSeeds.choose`): ① 종류 — 계절에 맞는 씨앗이 있는 종류 중 같은 학년 직전 주 초안(그 주 초안 모두, 상태 무관) 종류를 빼고 무작위, 모두 빠지면 빼지 않음(설계 17.8.3 "종류 금지는 풀지 않음"과 다른 점: 직전 주 초안이 여러 개면 네 종류가 모두 빠질 수 있어 그때만 풂) ② 씨앗 — 그 종류 안에서 같은 학년 최근 씨앗(목록 개수 = 36주)·같은 주 다른 초안 씨앗·같은 학년 최근 4주 역할(`ROLE_WEEKS`, 기준안, 종류를 넘어 셈)을 빼고 무작위 ③ 남는 게 없으면 최근 씨앗을 풀고(역할 지킴) → 역할도 풂, 풀 때는 가장 오래전에 쓴 것. 같은 주 씨앗은 마지막까지 빼고, 종류는 끝까지 지킴
+  - 비교: `ThemeTopicSeeds.parse`로 읽어 (역할 이름(괄호 앞), 장소, 대상) 묶음으로 비교 — 옛 형식 주제는 잃어버린 것 찾기로 읽어 같은 씨앗으로 셈. 관리자가 쓴 자유 글·모르는 종류 이름·라벨이 종류와 안 맞는 글은 null(셈에서 빠짐, 예외 없음 — 예외면 그 학년 주간 자동 초안이 조용히 빠짐)
+  - **② 출처·정체 켬(2026-11-16, ai.md 17.8.13)**: `StoryType`에 `ORIGIN`(출처 찾기)·`GIFT`(선물 상자 수수께끼)·`SECRET_INGREDIENT`(비밀 재료 찾기), 넷째 칸 라벨 `손에 든 것`(읽기 정규식에도), 씨앗 4개씩(역할: 수의사·택배 기사·탐정·우체부·마술사·사진가·요리사·제빵사·식품 연구원·농부, 대상 글에 선물·재료 이름과 색을 쓰지 않음) → 목록 48개, 다시 쓰지 않는 기간 48주(위 36은 1차 값)
+  - **④ 때·길·방법 켬(2026-11-17, ai.md 17.8.17)**: `StoryType`에 `WHEN`(시간 탐정, 라벨 `밝힐 것`, 대상 글은 '…때'로 끝나고 시각을 쓰지 않음)·`ROUTE`(어느 길로 왔을까, `손에 든 것`)·`VEHICLE`(무엇을 타고 왔을까, `밝힐 것`, 대상 글은 '…탈것'으로 끝나고 역할·장소·대상에 후보 탈것 이름을 쓰지 않음 — ai가 엔딩 전 글의 후보 이름을 막음), 씨앗 4개씩(시간 탐정 '놀이터에 눈사람을 만든 때'는 겨울 씨앗, 여객선 후보가 나올 수 있게 탈것 씨앗 둘은 바닷가·섬마을) → 목록 60개, 다시 쓰지 않는 기간 60주, 가을 주 고를 수 있는 씨앗 54개. 시험 `ThemeTopicSeedsTest`에 ④ 대상 글 규칙을 더함(건수 9 그대로)
+  - **⑤ 소리 켬(2026-11-17, ai.md 17.8.18)**: `StoryType`에 `SOUND`(소리 탐정, `밝힐 것`, 대상 글은 '…밤마다 들린 소리'로 끝나고 장소·대상에 후보 동물·물건 이름과 ai 소리 사실표의 소리 난 곳 값을 쓰지 않음), 씨앗 4개(할머니 댁 시골집·숲속 캠핑장·시골 학교·바닷가 민박집, 계절 없음) → 목록 64개, 다시 쓰지 않는 기간 64주, 가을 주 고를 수 있는 씨앗 58개. 다섯 가족 모두 켬
+  - 서비스(`ThemeDraftService.seedTopic`): `findInputs`를 기간만 달리해 세 번(목록 개수만큼의 주·1주·4주) + `findWeekInputs`. DB·OpenAPI 모양 그대로(설명 문구만)
+  - 시험: `ThemeTopicSeedsTest` 9건(목록·라벨·계절·읽기·종류 금지와 풀기·씨앗 제외·단계적 풀기·옛 형식), `ThemeDraftServiceTest` 주제 씨앗 2건(종류마다 하나 남긴 최근 씨앗 제외, 직전 주 종류·4주 역할 제외)
+  - 상세는 [ai.md 17.8](ai.md)·이슈 #634. 웹 목업(`frontend/web/src/mocks/handlers/adminThemeDrafts.ts`)의 예시 주제는 옛 형식 그대로 둠(웹 브랜치는 다른 작업 중, 화면 동작과 무관)
 
 ### 자동 성취기준의 한계와 다음 설계
 
@@ -1218,3 +1244,39 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 
 - 실서버(core·learning·ai)에서 부분 다시 생성 → 그 장면만 바뀐 새 초안 확인(AI 비용이 들어 사용자 확인 뒤)
 - ai IAM `s3:GetObject`는 정책 파일만 이 PR에서 고치고 AWS 적용은 #652(담당 확인 2026-11-17)
+
+## 41. 학습 기록·되묻기 조회 인덱스 (#775, 2026-11-18)
+
+#384 2차 부하 시험([infra 9.14.6](infra.md#9146-발견))에서 DB 부하의 약 82%가 learning 쿼리 두 개였다. 두 쿼리가 쓰는 열에 인덱스가 없어 시도 하나마다 `followup`·`hint_usage`·`answer` 전체를 읽었다. learning V22로 인덱스 3개를 더했다.
+
+### 정한 것
+
+| 인덱스 | 쓰는 곳 | 정한 내용 |
+|---|---|---|
+| `ix_followup_attempt_created` `followup (attempt_id, created_at)` | `JudgmentMapper.findUnansweredLatestFollowupId`(시도의 최근 되묻기 1건), `RecordMapper.findEligible`의 `received_followup`, FK `fk_followup_attempt_id` | 이슈 그대로 |
+| `ix_hint_usage_attempt_opened` `hint_usage (attempt_id, opened_at)` | `findEligible`의 `helped_before_first_answer`(`opened_at <` 첫 답변 시각), `RecordMapper.findHintUsages`(`ORDER BY opened_at`), `AttemptMapper` 힌트 조회·삭제 | 이슈의 `(attempt_id)`에 `opened_at`을 더함. 두 조회가 이 열로 거르고 정렬해 인덱스만 읽고 끝남(Index Only Scan). `attempt_id`만 쓰는 조회도 그대로 씀 |
+| `ix_answer_followup` `answer (followup_id) WHERE followup_id IS NOT NULL` | `findUnansweredLatestFollowupId`의 `NOT EXISTS`, FK `fk_answer_followup_id` 검사(되묻기 삭제) | 부분 인덱스. 첫 답변은 `followup_id`가 NULL이라 보완 답변 행만 담는다. `followup_id = ?`는 NULL이 아님을 뜻하므로 두 곳 모두 이 인덱스를 쓴다 |
+
+- 이미 있는 인덱스·제약과 겹치지 않음: `followup`은 `pk_followup`·`uq_followup_judgment_id`, `hint_usage`는 `pk_hint_usage`, `answer`의 `followup_id`는 인덱스 없음(V2~V21 확인). `findEligible`의 `revised`(`answer` `attempt_id` + `followup_id IS NOT NULL`)는 기존 `ix_answer_attempt_submitted`로 충분해 따로 두지 않음
+- `CREATE INDEX CONCURRENTLY`는 쓰지 않음. 운영 learning_db는 시험 데이터 정리 뒤 테이블마다 약 2,800행, 시연 B 계정은 새로 시작한다. 아래 시험 DB(2만~3만 행)에서도 세 인덱스 생성이 7~27ms였다. 일반 `CREATE INDEX`는 그동안 해당 테이블 쓰기만 막는다. CONCURRENTLY는 Flyway가 트랜잭션 밖에서 실행해야 하고, 중간에 실패하면 `INVALID` 인덱스가 남아 손으로 지워야 한다. 테이블이 수십만 행을 넘으면 그때 CONCURRENTLY로 나눈다
+- ERD 6장 인덱스 표에 세 줄 추가(`scripts/verify_db_schema.py` 대조), 8장 learning 버전 V22. kind local values migration revision `v22`. prod는 cd-release가 main SHA의 migration을 적용한다
+
+### 실행 계획 전후 (kind, 2026-11-18)
+
+kind Postgres(PostgreSQL 17, CPU 한도 500m)에 learning_db를 복사한 비교용 DB를 만들고, 완료된 시도 71개와 그 답변·판정·되묻기를 300번 복제했다(학생 ID는 75번 복제마다 바꿈). 생각 열기는 복제 시도마다 1건 넣었다. 결과 행 수는 attempt 21,372 · answer 29,199 · judgment 29,199 · followup 25,286 · hint_usage 21,300이고, 가장 시도가 많은 학생이 1,275개다(#384 운영 실행 계획의 1,198개와 비슷). 같은 DB에서 V22 SQL 적용 전후로 `EXPLAIN (ANALYZE, BUFFERS)`, 적용 뒤 `ANALYZE`.
+
+| 쿼리 | 전 | 후 |
+|---|---|---|
+| `findEligible`(학생 1명, 시도 1,275개) | **3,300ms**, 버퍼 878,068. 시도마다 `hint_usage` Seq Scan(21,300행 제거, 버퍼 283,051)·`followup` Seq Scan(버퍼 575,760) | **13.3ms**, 버퍼 26,912. `hint_usage`·`followup` 모두 Index Only Scan(시도당 2 버퍼) |
+| `findUnansweredLatestFollowupId`(시도 1개) | 7.2ms, 버퍼 2,362. `followup` Seq Scan(25,285행 제거) + `answer` Seq Scan 29,199행을 해시 | 0.058ms, 버퍼 9. `ix_followup_attempt_created` 역순 Index Scan + `ix_answer_followup` Index Only Scan(Nested Loop Anti Join) |
+| `findHintUsages`(시도 50개) | 2.3ms, `hint_usage` Seq Scan 21,300행 | 0.6ms, Index Only Scan(나머지는 시험용 시도 고르기 비용) |
+
+- `findUnansweredLatestFollowupId`의 `ORDER BY created_at DESC, id DESC`는 인덱스 순서 위에 Incremental Sort로 같은 시각만 다시 정렬한다. 시도당 되묻기가 2개 이하라 `id`를 인덱스에 넣지 않음
+- 전에는 비용이 학생 시도 수 × 전체 테이블 크기였고, 후에는 학생 시도 수에만 비례한다. 운영 부하 단계 재측정(#384와 같은 400~1000명)은 AWS 재가동 때 한다
+
+### 검증
+
+- kind(`kind-sagomungchi-local`) learning_db: `learning-migrate:local` 이미지를 다시 빌드해 helm upgrade(revision 21) → Job `learning-service-migrate-v22` Complete, `Successfully applied 1 migration ... now at version v22`(100ms), 세 인덱스 `indisvalid = true`. 앱 Deployment는 바뀌지 않음(values 차이는 revision뿐)
+- kind 학습 기록·되묻기 API(core 호출자 토큰, 학생 헤더): `GET /internal/records/students/{id}/attempts` 200(17건, 60~100ms), `POST /internal/answers/{id}/feedback` 200 `DONE`이고 아직 답하지 않은 최근 되묻기 ID를 그대로 돌려줌. 판정·보완 답변 제출은 실제 LLM 비용이 들어 kind에서는 하지 않고 기존 테스트로 확인
+- learning `./gradlew test bootJar`(JDK 21 컨테이너, Testcontainers): 612건 중 실패 0(건너뜀 3, 기존), bootJar 생성. 기존 테스트가 쓰는 PostgreSQL 컨테이너도 V22까지 적용한 스키마로 돈다
+- DB 스키마 검사(`check_db_migrations.py`, CI와 같은 pgvector 이미지): 세 DB 적용·ERD 대조(인덱스 65개)·재실행 무변경·report 왕복 통과

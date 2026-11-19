@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeExplanationEndpoint",
+      "Effect": "Allow",
+      "Action": "sagemaker:InvokeEndpoint",
+      "Resource": [
+        "arn:aws:sagemaker:ap-northeast-2:347161580747:endpoint/sagomungchi-demo-explanation",
+        "arn:aws:sagemaker:ap-northeast-2:347161580747:inference-component/sagomungchi-demo-explanation-ic",
+        "arn:aws:sagemaker:ap-northeast-2:347161580747:inference-component/sagomungchi-demo-explanation-explain"
+      ]
+    }
+  ]
+}

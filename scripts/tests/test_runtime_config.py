@@ -169,6 +169,7 @@ class RuntimeConfigTests(unittest.TestCase):
     def test_report_worker_explanation_settings_and_grace_period(self):
         # #508: local·prod report-worker가 같은 설명 시간 값을 쓰고, 종료 유예가 설명 단계보다 김
         keys = (
+            "REPORT_NARRATIVE_TIMEOUT_SECONDS",
             "REPORT_EXPLANATION_TIMEOUT_SECONDS",
             "REPORT_EXPLANATION_BUDGET_SECONDS",
             "REPORT_THEME_SUMMARY_ENABLED",
@@ -185,7 +186,8 @@ class RuntimeConfigTests(unittest.TestCase):
             with self.subTest(env=name):
                 self.assertEqual(
                     {key: env.get(key) for key in keys},
-                    dict(zip(keys, ("130", "400", "true"))),
+                    # #747: ai SageMaker 호출 1회(마감 75초) 기준
+                    dict(zip(keys, ("80", "80", "300", "true"))),
                 )
                 self.assertGreater(
                     values["terminationGracePeriodSeconds"],

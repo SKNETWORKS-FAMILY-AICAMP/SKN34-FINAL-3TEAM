@@ -1,0 +1,131 @@
+{
+  "date": "2026-11-18",
+  "issues": [743, 745],
+  "scope": "CPU vs GPU serving of the fixed report Gemma (26B-A4B QAT + LoRA r16) on temporary EC2 in the AWS A account; synthetic inputs only; numbers only, no generated text",
+  "inputs": {
+    "source": "ml/sllm/scripts/serving/gen_prompts.py renders the real ai-service prompts (report@2 narrative, report-explanation@3 detail) with synthetic data",
+    "narrative": {"prompt_tokens": 1137, "max_tokens": 2048, "response_format": "json_schema strict"},
+    "explanation": {"prompt_tokens": 1360, "max_tokens": 4096, "response_format": "json_schema strict", "student_text_chars": 352},
+    "temperature": 0,
+    "note": "Identical prompts are repeated, so prefix caching shortens time-to-first-token after the first run; run 0 is the uncached value"
+  },
+  "gpu": {
+    "instance": "g6.xlarge (NVIDIA L4 22.04 GiB usable, 4 vCPU, 16 GiB RAM)",
+    "price_usd_per_hour": 0.9896,
+    "ami": "Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04) 20261117, driver 595.112.07",
+    "engine": "vLLM 0.34.0 (pip, torch 2.14.0+cu130), OpenAI-compatible server",
+    "model": "cyankiwi/gemma-4-26B-A4B-it-qat-AWQ-INT4 @76373001 resharded to 4 safetensors files (<=4.71 GB each, tensors byte-identical) + PEFT LoRA as served name 'explain'",
+    "working_options": "--max-model-len 8192 --enable-lora --max-lora-rank 16 --max-loras 1 --gpu-memory-utilization 0.97 --kv-cache-dtype fp8 --max-num-seqs 8 --max-num-batched-tokens 2560 --limit-mm-per-prompt {image:0,audio:0}",
+    "failed_attempts": [
+      {"options": "original single 17.19 GB model.safetensors", "error": "mmap ENOMEM on the 16 GiB host"},
+      {"options": "util 0.92, bf16 KV", "error": "KV 1.28 GiB < 1.32 GiB needed for 8192"},
+      {"options": "util 0.95, bf16 KV, mm limit", "error": "no memory for KV blocks after CUDA graphs 1.69 GiB"},
+      {"options": "util 0.97, bf16 KV, max-num-seqs 8", "error": "KV 1.02 GiB < 1.34 GiB"}
+    ],
+    "memory": {"weights_gib": 17.97, "vram_used_mib": 20276, "kv_cache_tokens": 12653, "max_concurrency_8192": 1.54, "host_used_mib": 8022},
+    "startup_s": {
+      "ready_first_boot_no_compile_cache": 224.1,
+      "ready_with_compile_cache": 148.5,
+      "ready_with_compile_cache_note": "measured while an S3 upload was reading the same disk; not a clean value",
+      "weights_load_s": 54.2,
+      "torch_compile_s": 48.1,
+      "page_cache": "dropped before each start",
+      "docker_pull_vllm_openai_v0_34_0_s": 132.5,
+      "docker_image_bytes": 36285547831,
+      "hf_download_17gb_s": 72.0,
+      "not_measured": "EKS node provisioning, S3 initContainer download"
+    },
+    "single_lora": {
+      "narrative_s": [6.22, 3.58, 4.36],
+      "narrative_completion_tokens": [128, 128, 209],
+      "explanation_s": [15.21, 14.58, 11.89],
+      "explanation_completion_tokens": [676, 674, 574],
+      "explanation_ttft_uncached_s": 1.43,
+      "decode_tok_s": 49.0
+    },
+    "single_base_no_lora": {"narrative_s": [3.80, 3.69], "explanation_s": [10.61, 10.56], "decode_tok_s": 53.9},
+    "batch_30_students_lora": [
+      {"concurrency": 4, "requests": 120, "wall_s": 661.9, "completion_tokens": 93384, "agg_tok_s": 141.1, "max_latency_s": 115.8, "finish_length": 9},
+      {"concurrency": 8, "requests": 120, "wall_s": 607.4, "completion_tokens": 128000, "agg_tok_s": 210.7, "max_latency_s": 143.3, "finish_length": 19},
+      {"concurrency": 4, "requests": 120, "wall_s": 925.5, "completion_tokens": 126418, "agg_tok_s": 136.6, "max_latency_s": 116.6, "finish_length": 19,
+       "finish_length_by_kind": {"narrative": 0, "explanation": 19},
+       "stop_latency_s": {"narrative": {"n": 30, "p50": 6.2, "p95": 7.0, "max": 7.1}, "explanation": {"n": 71, "p50": 16.4, "p95": 21.2, "max": 25.0}}}
+    ],
+    "checks_py": {"explanation_pass": "3/3 (LoRA), 2/2 (base)", "narrative_json": "3/3; 2 of 3 LoRA narratives were cut short (73 chars)"}
+  },
+  "cpu": {
+    "instance": "c7i.4xlarge (Xeon Platinum 8488C, 16 vCPU, AVX-512/AMX, 32 GiB RAM)",
+    "price_usd_per_hour": 0.8064,
+    "engine": "llama.cpp 52975342 (2026-11-18, GGML_NATIVE build) llama-server --jinja --reasoning off",
+    "model": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf gemma-4-26B_q4_0-it.gguf (14,439,363,584 bytes, sha256 matches HF) + LoRA converted with convert_lora_to_gguf.py (base config: google/gemma-4-26B-A4B-it-qat-q4_0-unquantized, 230 tensors, f16)",
+    "reasoning_note": "without --reasoning off the chat template thinks and the first narrative spent all 2048 tokens on reasoning",
+    "memory": {"rss_mib": 28091, "host_used_mib": 15118, "note": "RSS includes the mmapped 14.4 GB model"},
+    "startup_s": {"ready_page_cache_dropped": 53.4, "ready_from_split_gguf": 53.3, "hf_download_14gb_s": 35.3},
+    "llama_bench_no_lora": [
+      {"threads": 4, "prefill_tok_s": 66.0, "decode_tok_s": 11.2},
+      {"threads": 8, "prefill_tok_s": 128.7, "decode_tok_s": 20.0},
+      {"threads": 16, "prefill_tok_s": 138.5, "decode_tok_s": 24.1}
+    ],
+    "single_lora_t16_np1": {
+      "narrative_s": [23.56, 13.17, 13.16],
+      "narrative_completion_tokens": [252, 240, 240],
+      "narrative_prefill_uncached_s": 10.1,
+      "explanation_s": [50.22, 32.50, 32.06],
+      "explanation_completion_tokens": [690, 577, 577],
+      "explanation_prefill_uncached_s": 12.2,
+      "decode_tok_s": 18.4
+    },
+    "batch_lora_t16_np2": [
+      {"students": 4, "requests": 16, "concurrency": 2, "wall_s": 582.6, "completion_tokens": 11540, "agg_tok_s": 19.8, "max_latency_s": 390.5, "finish_length": 1},
+      {"students": 30, "requests_completed": 22, "stopped_after_s": 756, "completion_tokens": 14437, "per_slot_decode_tok_s": 11.1, "finish_length": 1,
+       "note": "stopped early to release the account for #384; values from llama-server timings"}
+    ],
+    "checks_py": {"explanation_pass": "3/3", "narrative_json": "3/3, 336-348 chars"}
+  },
+  "estimates": {
+    "batch_window": "Sun 23:50 - Mon 02:00 KST = 130 min",
+    "students_30_wall_min": {"gpu_g6_xlarge_c4_c8": "10-15 (measured)", "cpu_c7i_4xlarge_np2": "70-75 (from 4-student batch and 22 completed requests)"},
+    "monthly_compute_usd_window_4_35_weeks": {"gpu_g6_xlarge": 9.33, "cpu_c7i_4xlarge": 7.60},
+    "measurement_cost_usd_approx": 2.5
+  },
+  "s3": {
+    "prefix": "s3://<models bucket>/explanation/gemma4-26b-a4b-lora-20261118/",
+    "rule": "every object single PutObject with ChecksumSHA256, ChecksumType FULL_OBJECT, If-None-Match *; multipart FULL_OBJECT with SHA256 rejected by S3 (InvalidRequest) on 2026-11-18",
+    "objects": 18,
+    "total_bytes": 31735752277,
+    "adapter/": {
+      "adapter_model.safetensors": {"bytes": 45991472, "sha256": "a56fe8f458f73a0b195d0108ab1a7b8d3be59d448bb0c4b8ec8b89eb8072fd25"},
+      "adapter_config.json": {"bytes": 1290, "sha256": "4c96bca2eabeae7a787b3b9cb8a3043f31f57a33308a8c6e2a909d0c1e3041b6"}
+    },
+    "base-awq/": {
+      "source": "cyankiwi/gemma-4-26B-A4B-it-qat-AWQ-INT4 revision 76373001e106330a6815f237ef00838c7fed9356, model.safetensors sha256 c0b6bbe9bacded55f45cd600c703ca299ebfb79efb2ec25023bc6bb563deb201 (= HF LFS oid)",
+      "reshard": "35,743 tensors, dtype/shape/bytes identical, __metadata__ kept (verify_shards.py)",
+      "files": {
+        "model-00001-of-00004.safetensors": {"bytes": 4701248040, "sha256": "2e41b87d0ce7f026e3f5e8734c2255598cbfc16919cb354c09a8cc133a9cef46"},
+        "model-00002-of-00004.safetensors": {"bytes": 4700069096, "sha256": "9186f7914b5be5cf23f2631b1ce2e0cd27a805fa545e3eecb3ab206e9f3f5398"},
+        "model-00003-of-00004.safetensors": {"bytes": 4700759862, "sha256": "b27bddbf837bf8c41f51d73a27106cda2cc12ac899f8b44136655932c92aad6e"},
+        "model-00004-of-00004.safetensors": {"bytes": 3089272278, "sha256": "f667bd5a7a22f4dea71829b0a1bf9cec5e94a88db5571063aa95c52137685c0b"},
+        "model.safetensors.index.json": {"bytes": 3836516, "sha256": "b1d0e183cda19c6c21b686aba0c153b3cb35c58cd4af9923ffc6cc1f3906cf4c"},
+        "config.json": {"bytes": 24033, "sha256": "8b82e08dc8a4f3a0e7002f88b94d6d3b30d8f136295a30fc5c3144da7bc6d93d"},
+        "generation_config.json": {"bytes": 203, "sha256": "b69207f9be617e982d13cc273cce6fd88c98dda99a4bdc5e2d52ffe0a0d9f0a9"},
+        "chat_template.jinja": {"bytes": 16934, "sha256": "94899c0f917d93f6fe81c95744d1e8ddab2d21d39228d2e4aec1fb2a25bff413"},
+        "processor_config.json": {"bytes": 1689, "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"},
+        "tokenizer.json": {"bytes": 32169626, "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"},
+        "tokenizer_config.json": {"bytes": 2742, "sha256": "a1bab8c81ed15fa6ce912ec993c66cb49392e0487fb1ea5f5f11ea3618683627"}
+      }
+    },
+    "base-gguf/": {
+      "source": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf revision d1c082be9cf3c8a514acf63b8761f4b41935842e, gemma-4-26B_q4_0-it.gguf sha256 3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d (= HF LFS oid)",
+      "split": "llama-gguf-split --split-max-size 4500M, 658 tensors; llama-server loads from part 1",
+      "files": {
+        "gemma-4-26B_q4_0-it-00001-of-00004.gguf": {"bytes": 4473808704, "sha256": "1bb6b42dcd8f2a3fc7556d4c2db057fbcf9e594a513f8125a29c99eac6aea9cd"},
+        "gemma-4-26B_q4_0-it-00002-of-00004.gguf": {"bytes": 4461173024, "sha256": "975887d86e86b6ebfea04b40261c2ecb661665c2a08817033afe4f24682386ed"},
+        "gemma-4-26B_q4_0-it-00003-of-00004.gguf": {"bytes": 4288884736, "sha256": "a37498cfab24b78d6dd68d6cb975b4b725d0155dc4f130e01e9e2030b76d6d8a"},
+        "gemma-4-26B_q4_0-it-00004-of-00004.gguf": {"bytes": 1215497568, "sha256": "ad1b327d9868bda2e4888a23db48200e61a8ccba14876b46ab16c3d979e69357"}
+      }
+    },
+    "adapter-gguf/": {
+      "explain-lora-f16.gguf": {"bytes": 22994464, "sha256": "766ca627a77f339af202f3be82ba5982c02afd0595d804b839913d0d63cde70f"}
+    }
+  }
+}

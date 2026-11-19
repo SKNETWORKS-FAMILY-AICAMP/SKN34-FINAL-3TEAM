@@ -230,6 +230,16 @@ class AdminOperationsContracts(unittest.TestCase):
                         content=reviewed[method]['responses'][status]['content']['application/json']
                         self.assertEqual(content['schema'],{'$ref':'#/components/schemas/'+ref})
                         content['schema']={'type':'object'}
+                # #764 separates externally billed calls from unpriced ones; retain the original usage fingerprints.
+                if section=='paths' and name=='/admin/ai-usage':
+                    original,added=reviewed['get']['description'].split(' 서비스 밖에서 따로 청구되는')
+                    self.assertIn('externallyBilledCalls',added)
+                    reviewed['get']['description']=original
+                if section=='schemas' and name=='UsageSummary':
+                    self.assertEqual(reviewed['properties'].pop('externallyBilledCalls')['minimum'],0)
+                    reviewed['required'].remove('externallyBilledCalls')
+                    reviewed['properties']['costUsd']['description']='미산정 호출이 있으면 null'
+                    self.assertIn('별도 청구 제외',reviewed['properties']['unpricedCalls'].pop('description'))
                 if section=='schemas' and name=='ReportEvidence':
                     self.assertIn('EvidencePage',reviewed['description'])
                     reviewed={'type':'object','description':'report-api 근거 JSON을 보존. 삭제 근거는 available=false. 구체적인 필드는 #54에서 확정한다.'}
