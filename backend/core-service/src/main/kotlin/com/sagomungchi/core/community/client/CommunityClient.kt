@@ -12,6 +12,8 @@ import com.sagomungchi.core.community.domain.Community
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import java.net.URLEncoder
+import java.time.OffsetDateTime
+import java.time.format.DateTimeParseException
 import java.util.UUID
 
 /**
@@ -23,12 +25,18 @@ class CommunityClient(private val http: LearningClient, private val json: Object
     data class SharedPost(val postId: UUID, val created: Boolean)
     data class PostDetail(val postId: UUID, val studentId: UUID, val missionId: UUID?, val status: String, val answer: JsonNode?)
 
-    /** 미션 공유물 목록 한 항목. 학생 ID는 service가 작성자 표시로 바꾼 뒤 버린다. 답변·작성 시각은 원문 그대로 넘긴다. */
-    data class MissionPost(val postId: UUID, val studentId: UUID, val answer: JsonNode?, val myReactions: List<String>, val createdAt: JsonNode?)
+    /**
+     * 미션 공유물 목록 한 항목. 학생 ID는 service가 작성자 표시로 바꾼 뒤 버린다. 답변은 원문 그대로 넘긴다.
+     * [createdAt]은 date-time으로 읽히는 것을 확인한 learning 문자열 그대로다(#814).
+     */
+    data class MissionPost(val postId: UUID, val studentId: UUID, val answer: JsonNode?, val myReactions: List<String>, val createdAt: String?)
 
-    /** 내 공유물·자녀 공유물 한 항목. [status]는 learning 상태(`Community.POST_STATUSES`), 반응 수는 `Community.REACTIONS` 전부를 채운다. */
-    data class StudentPost(val postId: UUID, val missionId: JsonNode?, val missionTitle: JsonNode?, val answer: JsonNode?,
-        val status: String, val reactions: Map<String, Int>, val createdAt: JsonNode?)
+    /**
+     * 내 공유물·자녀 공유물 한 항목. [status]는 learning 상태(`Community.POST_STATUSES`), 반응 수는 `Community.REACTIONS` 전부를
+     * 0 이상 정수로 채운다. 미션 ID·제목·작성 시각은 client가 형식을 확인한 값만 담는다(#814). 답변은 원문 그대로다.
+     */
+    data class StudentPost(val postId: UUID, val missionId: UUID?, val missionTitle: String?, val answer: JsonNode?,
+        val status: String, val reactions: Map<String, Int>, val createdAt: String?)
 
     /** 학습 완료 시도 공유. 201 새로 공유, 200 이미 있음(학생·미션당 1개). 그 밖의 응답은 공유하지 않은 것으로 본다. */
     fun createPost(studentId: UUID, attemptId: UUID): SharedPost? = acting("SYSTEM", null, studentId) {
@@ -38,24 +46,27 @@ class CommunityClient(private val http: LearningClient, private val json: Object
         SharedPost(postId, response.status == 201)
     }
 
-    /** `items[]`의 공유물·작성자 ID가 UUID가 아니면 502 `COMMUNITY_INVALID_RESPONSE`. 내 반응은 알려진 종류만 남긴다. */
+    /** `items[]`의 공유물·작성자 ID가 UUID가 아니거나 작성 시각이 date-time·null이 아니면 502 `COMMUNITY_INVALID_RESPONSE`. 내 반응은 알려진 종류만 남긴다. */
     fun missionPosts(missionId: UUID, viewer: UUID, viewerUser: UUID, seed: String, page: Int, size: Int): List<MissionPost> =
         acting("STUDENT", viewerUser, viewer) {
             val query = "viewerStudentId=$viewer&seed=${URLEncoder.encode(seed, Charsets.UTF_8)}&page=$page&size=$size"
             items(read(checked(http.exchange("GET", "/community/missions/$missionId/posts", query)))).map { item ->
                 MissionPost(uuid(item.path("postId")), uuid(item.path("studentId")), item.get("answer"),
-                    reactions(item.path("myReactions")), item.get("createdAt"))
+                    reactions(item.path("myReactions")), dateTimeOrNull(item.path("createdAt")))
             }
         }
 
-    /** `items[]`의 공유물 ID가 UUID가 아니거나 상태가 알려진 값이 아니면 502 `COMMUNITY_INVALID_RESPONSE`. 빠진 반응 수는 0. */
+    /**
+     * `items[]`의 공유물 ID가 UUID가 아니거나, 상태가 알려진 값이 아니거나, 미션 ID(UUID|null)·미션 제목(문자열|null)·
+     * 작성 시각(date-time|null)·반응 수(0 이상 정수)가 형식에 맞지 않으면 502 `COMMUNITY_INVALID_RESPONSE`(#814). 빠진 반응 수는 0.
+     */
     fun studentPosts(studentId: UUID, role: String, user: UUID): List<StudentPost> = acting(role, user, studentId) {
         items(read(checked(http.exchange("GET", "/community/students/$studentId/posts")))).map { item ->
             val status = item.path("status").asText()
             if (status !in Community.POST_STATUSES) invalid()
-            val counts = item.path("reactions")
-            StudentPost(uuid(item.path("postId")), item.get("missionId"), item.get("missionTitle"), item.get("answer"), status,
-                Community.REACTIONS.associateWith { counts.path(it).asInt(0) }, item.get("createdAt"))
+            StudentPost(uuid(item.path("postId")), nullable(item.path("missionId")) { uuid(it) },
+                nullable(item.path("missionTitle")) { if (it.isTextual) it.textValue() else invalid() }, item.get("answer"), status,
+                reactionCounts(item.path("reactions")), dateTimeOrNull(item.path("createdAt")))
         }
     }
 
@@ -116,6 +127,25 @@ class CommunityClient(private val http: LearningClient, private val json: Object
 
     private fun items(body: JsonNode): List<JsonNode> = body.path("items").takeIf { it.isArray }?.toList() ?: invalid()
     private fun uuid(node: JsonNode): UUID = try { UUID.fromString(node.asText()) } catch (_: IllegalArgumentException) { invalid() }
+    /** 빠지거나 null이면 null, 있으면 [parse]로 읽는다(형식이 틀리면 [parse]가 502). */
+    private fun <T> nullable(node: JsonNode, parse: (JsonNode) -> T): T? = if (node.isMissingNode || node.isNull) null else parse(node)
+    /** date-time 문자열은 learning 값 그대로 돌려준다. 문자열이 아니거나 읽히지 않으면 502. */
+    private fun dateTimeOrNull(node: JsonNode): String? = nullable(node) {
+        if (!it.isTextual) invalid()
+        try { OffsetDateTime.parse(it.textValue()); it.textValue() } catch (_: DateTimeParseException) { invalid() }
+    }
+    /** 반응 수 객체. 빠진 객체·빠진 종류는 0이고, 있는 값은 0 이상 int 정수만 받는다(null·음수·문자열·소수는 502). */
+    private fun reactionCounts(node: JsonNode): Map<String, Int> {
+        if (!node.isMissingNode && !node.isObject) invalid()
+        return Community.REACTIONS.associateWith { reaction ->
+            val count = node.path(reaction)
+            when {
+                count.isMissingNode -> 0
+                count.isIntegralNumber && count.canConvertToInt() && count.intValue() >= 0 -> count.intValue()
+                else -> invalid()
+            }
+        }
+    }
     private fun reactions(node: JsonNode) = if (node.isArray) node.map { it.asText() }.filter { it in Community.REACTIONS } else emptyList()
     private fun uuidOrNull(node: JsonNode): UUID? = if (!node.isTextual) null else try { UUID.fromString(node.asText()) } catch (_: IllegalArgumentException) { null }
 

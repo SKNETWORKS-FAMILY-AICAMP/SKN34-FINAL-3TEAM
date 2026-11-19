@@ -60,8 +60,8 @@ class ConversationService(private val repository: ConversationRepository, privat
         val job = reports.job(reportId)
         if (job == null || job.studentId != child || job.periodType != com.sagomungchi.core.report.domain.ReportPeriodType.DAILY) reportInvalid()
         val report = reports.pinned(reportId, null)
-        if (report["status"].textValue() != "COMPLETED") reportInvalid()
-        val revision = report["revision"].intValue()
+        if (report.status != com.sagomungchi.core.report.domain.ReportJobStatus.COMPLETED) reportInvalid()
+        val revision = report.revision
         return tx.execute {
             access(parent, child); usage.requireEntitlement(parent, child)
             val now = OffsetDateTime.now()
@@ -69,18 +69,17 @@ class ConversationService(private val repository: ConversationRepository, privat
             repository.insert(row); view(row, emptyList())
         }!!
     }
-    /** The pinned revision as a whitelist of counts and judgments for ai (#392). Quotes stay learning-sourced. Call outside transactions. */
+    /**
+     * The pinned revision as a whitelist of counts and judgments for ai (#392). Quotes stay learning-sourced. Call outside
+     * transactions. The report contract is checked by [com.sagomungchi.core.report.client.ReportClient.pinned] (502 on violation, #814).
+     */
     fun report(ticket: AnalysisTicket): Map<String, Any?>? {
         val reportId = ticket.conversation.reportId ?: return null
-        val body = reports.pinned(reportId, ticket.conversation.reportRevision)
-        return mapOf("reportId" to reportId, "revision" to body["revision"].intValue(), "date" to body["period"]["from"].textValue(),
-            "metrics" to body.path("metrics").filter { it.path("label").isTextual && it.path("count").isIntegralNumber }
-                .map { mapOf("label" to it["label"].textValue(), "count" to it["count"].intValue()) },
-            "problems" to body.path("problems").filter { it.path("title").isTextual }.map { problem -> mapOf(
-                "title" to problem["title"].textValue(), "context" to problem.path("context").textValue(),
-                "judgment" to problem.path("judgment").textValue(),
-                "elements" to problem.path("elements").filter { it.path("label").isTextual }
-                    .map { mapOf("label" to it["label"].textValue(), "satisfied" to it.path("satisfied").asBoolean()) }) })
+        val report = reports.pinned(reportId, ticket.conversation.reportRevision)
+        return mapOf("reportId" to reportId, "revision" to report.revision, "date" to report.date.toString(),
+            "metrics" to report.metrics.map { mapOf("label" to it.label, "count" to it.count) },
+            "problems" to report.problems.map { problem -> mapOf("title" to problem.title, "context" to problem.context,
+                "judgment" to problem.judgment, "elements" to problem.elements.map { mapOf("label" to it.label, "satisfied" to it.satisfied) }) })
     }
     private fun reportInvalid(): Nothing = throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "CONVERSATION_REPORT_INVALID",
         "이 자녀의 일일 리포트로만 리포트 대화를 만들 수 있습니다.")
