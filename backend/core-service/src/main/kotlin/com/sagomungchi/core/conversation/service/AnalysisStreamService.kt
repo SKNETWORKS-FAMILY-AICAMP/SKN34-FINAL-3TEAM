@@ -1,7 +1,6 @@
 package com.sagomungchi.core.conversation.service
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.node.ObjectNode
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.exception.errorCodeOf
 import com.sagomungchi.core._common.exception.httpStatusOf
@@ -9,6 +8,7 @@ import com.sagomungchi.core._common.web.SseEmitters
 import com.sagomungchi.core.conversation.client.AiClient
 import com.sagomungchi.core.conversation.client.AnalysisCall
 import com.sagomungchi.core.conversation.client.AnalysisEvent
+import com.sagomungchi.core.conversation.client.AnalysisResult
 import org.springframework.stereotype.Service
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.time.Duration
@@ -51,7 +51,7 @@ class AnalysisStreamService(private val conversations: ConversationService, priv
     private fun execute(ticket: AnalysisTicket,call: AnalysisCall,connected: () -> Boolean,emit: (String,Any) -> Unit,committed: () -> Unit) {
         call.attachThread()
         val deadline = timer.schedule({ call.cancel("ANALYSIS_TIMEOUT") }, 120, TimeUnit.SECONDS)
-        var result: ObjectNode? = null
+        var result: AnalysisResult? = null
         var clarification: JsonNode? = null
         var terminal = false
         var sawStatus = false
@@ -91,7 +91,7 @@ class AnalysisStreamService(private val conversations: ConversationService, priv
             call.checkActive()
             conversations.complete(ticket, result, clarification)
             committed()
-            result?.let { emit("result", it) }
+            result?.let { emit("result", it.body) }
             clarification?.let { emit("clarification", it) }
         } catch (ex: Exception) {
             Thread.interrupted()

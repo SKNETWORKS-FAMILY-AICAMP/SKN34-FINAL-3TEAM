@@ -14,7 +14,7 @@ import java.util.UUID
 class LearningRecordService(private val client: LearningRecordClient, private val students: StudentAccessService,
                             private val learningContext: StudentLearningContextService) {
     /** Caller supplies only evidence IDs owned by its feature and a freshly authorized single-student context. */
-    fun evidence(studentId: UUID, answerIds: List<UUID>): com.fasterxml.jackson.databind.JsonNode {
+    fun evidence(studentId: UUID, answerIds: List<UUID>): List<com.sagomungchi.core.learning.client.EvidenceRecord> {
         val context = UserContextHolder.current()
         if (context.role != "PARENT" || context.userId == null || context.studentScope != setOf(studentId.toString()))
             throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "단일 자녀의 검증된 범위가 필요합니다.")

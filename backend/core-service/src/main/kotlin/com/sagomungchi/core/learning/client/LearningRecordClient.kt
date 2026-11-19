@@ -16,12 +16,28 @@ import java.util.UUID
 /** Typed records transport uses the same learning client/circuit as the student proxy. */
 @Component
 class LearningRecordClient(private val client: LearningClient, private val json: ObjectMapper) {
-    fun evidence(answerIds: List<UUID>): com.fasterxml.jackson.databind.JsonNode {
+    /**
+     * EvidenceList (#824): `items[]` of a UUID `answerId`, a UUID or null `attemptId`, an integer or null `answerVersion`, a
+     * date-time or null `submittedAt`, text or null `quote`·`missionTitle`, and a boolean `available`. Anything else is 502
+     * LEARNING_INVALID_RESPONSE. Text values are kept as learning sent them.
+     */
+    fun evidence(answerIds: List<UUID>): List<EvidenceRecord> {
         val response = client.exchange("GET", "/records/evidence", "answerIds=" + answerIds.joinToString(","))
         if (response.status !in 200..299) throw BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY,
             "LEARNING_UNAVAILABLE", "근거 기록 조회에 실패했습니다.")
-        return try { json.readTree(response.body) ?: throw IllegalArgumentException() }
-        catch (_: Exception) { throw BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY,
+        return try {
+            val body = json.readTree(response.body) ?: throw IllegalArgumentException()
+            fun text(node: JsonNode): String? = if (node.isNull) null else node.also { require(it.isTextual) }.textValue()
+            body.path("items").also { require(it.isArray) }.map { item ->
+                require(item.isObject)
+                val version = item.path("answerVersion")
+                require(version.isNull || (version.isIntegralNumber && version.canConvertToInt()))
+                val available = item.path("available").also { require(it.isBoolean) }.booleanValue()
+                EvidenceRecord(UUID.fromString(text(item.path("answerId"))), text(item.path("attemptId"))?.let(UUID::fromString),
+                    text(item.path("missionTitle")), if (version.isNull) null else version.intValue(),
+                    text(item.path("submittedAt"))?.also { java.time.Instant.parse(it) }, text(item.path("quote")), available)
+            }
+        } catch (_: Exception) { throw BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY,
             "LEARNING_INVALID_RESPONSE", "근거 기록 응답 형식이 올바르지 않습니다.") }
     }
     /** Record queries are not existence checks: failures must remain failures. */
