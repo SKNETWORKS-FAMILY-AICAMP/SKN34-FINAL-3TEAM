@@ -57,6 +57,8 @@ TEXT_MAX = {
     "title": 20,
     "incident": 60,  # #634 ③ 내부 칸(기준안)
     "answerLook": 60,
+    "introPlace": 60,  # #779 컷 장소(기준안, 칸 고쳐 쓰기 상한)
+    "outroPlace": 60,
     "bigQuestion": 40,
     "intro": 200,
     "outro": 300,
@@ -228,7 +230,7 @@ def theme_day(theme: Theme, day: str) -> dict:
 
 # 칸 하나만 고쳐 쓰면 되는 줄거리 검사 사유(fix_theme). 이야기 틀·정답 논리·표에 닿지 않는 글 칸만
 FIX_PATH = re.compile(
-    r"^(?:title|bigQuestion|intro|outro|incident|answerLook"
+    r"^(?:title|bigQuestion|intro|outro|incident|answerLook|introPlace|outroPlace"
     r"|(?:MON|TUE|WED|THU|FRI)\.(?:place|sceneNote|clue|discovery|missionHook)"
     r"|(?:introCuts|outroCuts)[1-6]\.caption)$"
 )
@@ -262,7 +264,7 @@ FIX_REASON = (
     re.compile(r"^TIME_WORD (\S+?)에 "),  # #634 ④ 시간 탐정 엔딩 전 글의 시각
     # #634 ③: 사건(incident)·정답 동물 모습(answerLook)이 비면 그 칸만 써 넣음(판정 실측 3건이
     # 이 사유로 줄거리를 다시 만듦)
-    re.compile(r"^REQUIRED (incident|answerLook)$"),
+    re.compile(r"^REQUIRED (incident|answerLook|introPlace|outroPlace)$"),  # 장소는 #779
     # 증거 종류(evidence.kind)는 그대로 두고 단서 문장만 그 종류에 맞게 고쳐 씀(실측 2026-11-11:
     # 단서 글자 수 초과와 섞이면 줄거리 전체를 다시 만들어 상한까지 실패, 글 20건 1건·전체 실측
     # 1건). 배정(evidencePlan)과 종류가 다르면 fix_theme이 종류를 배정대로 바꾸고 그날 단서·증거
@@ -931,7 +933,16 @@ def candidate_name_fields(theme: Theme) -> list[tuple[str, str]]:
     """
     fields = [
         (k, intro_story(theme) if k == "intro" else str(theme.get(k) or ""))
-        for k in ("title", "world", "intro", "bigQuestion", "styleNote", "outfit", "incident")
+        for k in (
+            "title",
+            "world",
+            "intro",
+            "bigQuestion",
+            "styleNote",
+            "outfit",
+            "incident",
+            "introPlace",
+        )
     ]
     fields += [
         (f"{d['day']}.{k}", str(d.get(k) or ""))
@@ -1597,6 +1608,8 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
     required = ["incident"] if is_animal(theme) else []
     if story_type(theme).needs_answer_look:
         required.append("answerLook")
+    if len(theme.get("introCuts") or []) == cut_layout.NEW_CUTS:  # #779 6컷 컷 장소
+        required += list(cut_layout.PLACE_KEY.values())
     bad += [f"REQUIRED {k}" for k in required if not str(theme.get(k) or "").strip()]
     chars = theme.get("characters") or []
     if not CHARACTERS[0] <= len(chars) <= CHARACTERS[1] or any(

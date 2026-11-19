@@ -66,15 +66,21 @@ WHO_KO = {
 SCENE_KO = {"INTRO": "시작", "OUTRO": "종료"}
 
 
+PLACE_KO = {"INCIDENT": "사건 장소", "ROAD": "가는 길", "ANSWER": "정답 장소"}
+
+
 def cut_layout_lines(n: int = cut_layout.NEW_CUTS) -> list[str]:
     """줄거리 프롬프트의 컷 틀 줄(#779 6컷 틀, cuts.LAYOUTS 한 곳에서 만듦)."""
     out = []
     for scene, specs in cut_layout.layout(n).items():
         for i, s in enumerate(specs, 1):
             caption = f"자막: {s.speaker}" if s.caption else "자막 없음('')"
-            out.append(
-                f"{SCENE_KO[scene]} {i} [{WHO_KO[s.who]}] 역할 {s.role}: {s.beat}. {caption}"
-            )
+            who = f"{WHO_KO[s.who]}·{PLACE_KO[s.place]}" if s.place else WHO_KO[s.who]
+            # 뭉치 혼자 컷은 할 일 그대로(종류 역할을 붙이지 않음, 영상 지시 cut_beat와 같게).
+            # 역할을 붙이면 시작 5컷(결심 클로즈업)에 '출동', 종료 4컷(뭉치 리액션)에 '주인이 대상을
+            # 받아 듦'처럼 그 컷과 어긋난 내용이 붙었음(#779 종류 11 × 컷 12 대조 2026-11-19)
+            role = f" 역할 {s.role}" if s.has_people else ""
+            out.append(f"{SCENE_KO[scene]} {i} [{who}]{role}: {s.beat}. {caption}")
     return out
 
 
@@ -169,6 +175,12 @@ PLAN_SYSTEM = (
     "- storyType은 줄거리 종류 코드(아래 줄거리 종류 규칙). 동물 주인공 종류(PRANK·FOOTPRINT)는 "
     "incident·answerLook을, 소리 탐정(SOUND)은 answerLook을 반드시 채운다(비우면 코드 검사 "
     "REQUIRED). 그 밖은 null.\n"
+    # #779(사용자 결정 2026-11-19): 컷 장소는 컷 틀(cuts.CutSpec.place)이 정하고 장소 모습은 한 번만
+    # (컷마다 장소를 정해 종료 3컷 숲 → 5컷 떡집 문가처럼 바뀌었음)
+    "- introPlace는 사건 장소(시작 콘티와 종료 1컷의 장소), outroPlace는 정답이 밝혀지는 곳(종료 "
+    "3~6컷의 장소: 정답이 장소면 그 장소, 줄거리 종류 규칙에 outroPlace가 있으면 그대로)의 모습 "
+    "한 줄씩(60자 이내, 실내·실외와 눈에 띄는 가구·물건, 예: '나무 진열장과 찜기가 있는 떡집 "
+    "안'). 두 곳이 같아도 된다. introPlace에는 정답·후보 이름을 쓰지 않는다.\n"
     "- 학생이 집·학교·마을에서 직접 보는 사물과 일만. 범죄·폭력·위험·무서운 일 금지. 사람이 "
     "동물 먹이(사료·동물 간식)를 먹거나 동물에게 사람 음식을 먹이는 장면도 쓰지 않는다. 시각은 "
     "오전·오후를 붙인 12시간제로 쓰고 이야기에 맞는 때를 고른다.\n"
@@ -193,7 +205,7 @@ PLAN_SYSTEM = (
     "마친 때'면 이야기에서도 그때 준비가 끝나 있음).\n"
     "- introCuts·outroCuts는 시작·종료 영상 콘티로 각각 정확히 6컷(무음 영상, 컷마다 4초). "
     "컷마다 누가 나오고 무엇을 보여 주는지는 아래 컷 틀을 지키고, 내용은 줄거리 종류 규칙의 콘티 "
-    "역할(역할 1~4)에서 가져온다. "
+    "역할(역할 1~4)에서 가져온다(역할 번호가 없는 뭉치 혼자 컷은 적힌 할 일 그대로). "
     # #779: scene은 컷 첫 그림으로 그려지고 영상이 그 그림에서 시작함(예전 문구 "컷 끝에 보이는
     # 장면"은 첫 그림과 어긋나 이동 컷이 거꾸로 움직였음)
     "scene은 그 컷이 시작하는 첫 장면(누가 어디서, 무엇이 보이는지, 영상이 이 그림에서 시작), "
@@ -204,9 +216,12 @@ PLAN_SYSTEM = (
     "(카메라는 코드가 컷 틀대로 정함).\n"
     # #779(2026-11-19 만화 예고편 컷 문법): 사람이 손으로 하는 동작 곁에 뭉치가 있으면 영상 모델이
     # 사람 팔을 뭉치에게 옮겨 붙임(3테마 실행 실패 5컷 모두). 사람 컷과 뭉치 컷을 나눔
-    "컷 틀(각 줄: 컷 [누가 나오는지] 역할 번호: 할 일. 자막)\n"
+    "컷 틀(각 줄: 컷 [누가 나오는지·장소] 역할 번호: 할 일. 자막)\n"
     + "".join(f"  {line}\n" for line in cut_layout_lines())
-    + "- 컷마다 장소의 다른 곳·다른 구도로 쓰고 앞 컷의 동작이 다음 컷으로 이어진다. "
+    + "- 컷 장소는 컷 틀대로다(사건 장소 = introPlace, 정답 장소 = outroPlace, 가는 길 = 그 "
+    "장소로 가는 길). scene은 그 장소 안의 자리(진열장 앞, 덤불 곁 등)와 구도만 쓰고 다른 장소로 "
+    "옮기지 않는다(장소 모습은 코드가 그림 지시에 넣음). 같은 장소 컷끼리는 다른 자리·다른 "
+    "구도로 쓰고 앞 컷의 동작이 다음 컷으로 이어진다. "
     # #779(경찰관 떡집 콘티 2026-11-19): 종료 5컷에서 덮은 떡 접시가 6컷 scene에 없어 그림에서
     # 사라짐
     "같은 장소가 이어지면 앞 컷에서 바뀐 물건 상태(덮개를 씌운 접시·연 문·치운 물건)를 다음 컷 "
@@ -766,6 +781,17 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             "되는 사실이고 그 주 문제의 소재가 된다(예: '떡 접시가 비어 있고 떡 부스러기가 "
             "흩어짐').",
             names,
+        ]
+    if path in cut_layout.PLACE_KEY.values():  # #779 컷 장소가 비었을 때
+        which = (
+            "사건 장소(시작 콘티와 종료 1컷)"
+            if path == "introPlace"
+            else "정답이 밝혀지는 곳(종료 3~6컷)"
+        )
+        return [
+            f"{which}의 모습 한 줄(60자 이내, 실내·실외와 눈에 띄는 가구·물건). 콘티 scene과 같은 "
+            "장소로 쓴다.",
+            *([story_type(theme).outro_place] if path == "outroPlace" else []),
         ]
     if path == "answerLook":
         return [
@@ -1833,6 +1859,23 @@ MYSTERY_LIGHT = (
 )
 
 
+def cut_place(theme: Theme, scene: str, spec: cut_layout.CutSpec) -> str:
+    """컷 장소 줄(#779 cuts.CutSpec.place). 장소 칸이 없는 예전 테마·4컷은 빈 글."""
+    if spec.place == "ROAD":
+        key = cut_layout.PLACE_KEY["INCIDENT" if scene == "INTRO" else "ANSWER"]
+        goal = str(theme.get(key) or "").strip()
+        return (
+            f"Place: a village path or road leading to this place (Korean): {goal}." if goal else ""
+        )
+    desc = str(theme.get(cut_layout.PLACE_KEY.get(spec.place, "")) or "").strip()
+    if not desc:
+        return ""
+    return (
+        f"Place (Korean): {desc}. Every cut set here shows this same place with the same layout, "
+        "furniture and objects, seen from this cut's own camera angle."
+    )
+
+
 def cut_image_prompt(
     theme: Theme,
     scene: str,
@@ -1863,6 +1906,7 @@ def cut_image_prompt(
         lines.append(_characters(theme))
     else:
         lines.append("Only Mungchi is in this picture (no other characters).")
+    lines.append(cut_place(theme, scene, spec))
     lines.append(f"Scene (Korean): {cut['scene']}")
     if prev_scene is None:
         lines.append(CUT_FRAMING)

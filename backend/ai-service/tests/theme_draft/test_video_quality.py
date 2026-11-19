@@ -138,7 +138,7 @@ def test_storyboard_rules_scene_is_first_frame_cartoon_staging() -> None:
     plan = prompts.PLAN_SYSTEM
     assert "scene은 그 컷이 시작하는 첫 장면" in plan and "그 컷 끝에 보이는 장면" not in plan
     for text in (
-        "컷마다 장소의 다른 곳·다른 구도",
+        "같은 장소 컷끼리는 다른 자리·다른 구도로",  # 장소는 컷 틀(#779 place)
         "그 인물이 가는 쪽을 보고(뒷모습·옆모습)",
         "드는 사람을 한 명만",
         "글자 없이 그림·기호",
@@ -577,3 +577,55 @@ def test_follow_cuts_point_to_earlier_people_cut() -> None:
     )
     assert "earlier cut" not in plain and prompts.CUT_FRAMING in plain
     assert "something covered stays covered" in follow and prompts.CUT_FRAMING not in follow
+
+
+def test_cut_place_is_fixed_by_layout() -> None:
+    """컷 장소(#779 사용자 결정 2026-11-19): 장소는 컷 틀이 정하고 모습은 테마에 한 번만.
+
+    경찰관 떡집 콘티 3차에서 컷마다 글 모델이 장소를 정해 종료 3컷 숲 → 5컷 떡집 문가로 바뀌었음."""
+    six = cuts.layout(6)
+    places = {(s, i): spec.place for s, specs in six.items() for i, spec in enumerate(specs, 1)}
+    assert [places["INTRO", i] for i in range(1, 7)] == [
+        "INCIDENT",
+        "INCIDENT",
+        "INCIDENT",
+        "ROAD",
+        "INCIDENT",
+        "INCIDENT",
+    ]
+    assert [places["OUTRO", i] for i in range(1, 7)] == [
+        "INCIDENT",
+        "ROAD",
+        "ANSWER",
+        "ANSWER",
+        "ANSWER",
+        "ANSWER",
+    ]
+    # 잇는 컷은 같은 장소의 앞 컷만(장소가 바뀌면 앞 컷 그림을 따라 그리지 않음)
+    for specs in six.values():
+        for spec in specs:
+            if spec.follows:
+                assert specs[spec.follows - 1].place == spec.place
+    assert all(spec.place == "" for specs in cuts.layout(4).values() for spec in specs)
+    # 줄거리 지시: 컷 틀 줄에 장소, 장소 모습 칸 설명, 다른 장소로 옮기지 않음
+    plan = prompts.PLAN_SYSTEM
+    assert "종료 3 [사람만·정답 장소]" in plan and "시작 4 [뭉치 혼자 달림·가는 길]" in plan
+    assert "introPlace는 사건 장소" in plan and "다른 장소로 옮기지 않는다" in plan
+    # 그림 지시: 장소 모습을 코드가 넣음(가는 길은 그 장소로 가는 길)
+    theme = valid_theme()
+    outro5 = prompts.cut_image_prompt(theme, "OUTRO", 5, theme["outroCuts"][4], [])
+    assert f"Place (Korean): {theme['outroPlace']}." in outro5
+    intro4 = prompts.cut_image_prompt(theme, "INTRO", 4, theme["introCuts"][3], [])
+    assert f"leading to this place (Korean): {theme['introPlace']}." in intro4
+    outro1 = prompts.cut_image_prompt(theme, "OUTRO", 1, theme["outroCuts"][0], [])
+    assert f"Place (Korean): {theme['introPlace']}." in outro1  # 단서판은 사건 장소
+    old = {k: v for k, v in theme.items() if k not in ("introPlace", "outroPlace")}
+    assert "Place" not in prompts.cut_image_prompt(old, "OUTRO", 5, theme["outroCuts"][4], [])
+    # 6컷 테마는 장소 칸 필수(빈 칸은 그 칸만 써 넣음), 예전 4컷 테마는 아님
+    bad = checks.check_theme({**theme, "introPlace": " ", "outroPlace": None}, 3)
+    assert {"REQUIRED introPlace", "REQUIRED outroPlace"} <= set(bad)
+    assert set(checks.fix_targets(["REQUIRED introPlace", "REQUIRED outroPlace"])) == {
+        "introPlace",
+        "outroPlace",
+    }
+    assert prompts.fix_rules(theme, "outroPlace")

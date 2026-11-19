@@ -92,6 +92,9 @@ def valid_theme() -> dict[str, Any]:
         "target": "강아지 보리",
         "candidates": list(CANDIDATES),
         "answer": ANSWER,
+        # #779 컷 장소(6컷 테마 필수): 사건 장소·정답 장소 모습
+        "introPlace": "그네와 미끄럼틀이 있는 비 온 뒤 마을 놀이터",
+        "outroPlace": "고랑마다 상추가 자라는 마을 텃밭",
         "features": [
             feature("땅", {"놀이터": "모래", "텃밭": "흙", "창고": "시멘트", "정자": "흙"}),
             feature("지붕", {"놀이터": "없음", "텃밭": "없음", "창고": "있음", "정자": "있음"}),

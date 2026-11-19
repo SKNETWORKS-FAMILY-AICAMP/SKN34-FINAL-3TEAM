@@ -445,6 +445,10 @@ class GeneratedTheme(BaseModel):
     candidates: list[str]
     answer: str
     answerLook: str | None = None
+    # #779 컷 장소(cuts.PLACE_KEY): 사건 장소(시작 콘티·종료 1컷)와 정답 장소(종료 3~6컷)의 모습 한
+    # 줄씩. 컷 그림 지시에 코드가 넣음. 6컷 테마는 필수(REQUIRED), 예전 테마는 없음
+    introPlace: str | None = None
+    outroPlace: str | None = None
     features: list[GeneratedFeature]
     days: list[GeneratedDay]
     introCuts: list[GeneratedCut]

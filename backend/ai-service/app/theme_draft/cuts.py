@@ -18,6 +18,11 @@ from typing import Literal
 
 Who = Literal["PEOPLE", "OBJECT", "MUNGCHI", "RUN", "GROUP"]
 Shot = Literal["", "WIDE", "CLOSE", "MUNGCHI_CLOSE"]
+# 컷 장소(#779 사용자 결정 2026-11-19): 사건 장소(introPlace)·가는 길·정답 장소(outroPlace). 장소
+# 모습은 글 모델이 테마에 한 번만 쓰고(PLACE_KEY 칸) 컷 그림 지시에 코드가 넣는다. 컷마다 글
+# 모델이 장소를 정해 종료 3컷 숲 → 5컷 떡집 문가처럼 바뀌었음(경찰관 떡집 콘티 3차). 예전 4컷은 ""
+Place = Literal["", "INCIDENT", "ROAD", "ANSWER"]
+PLACE_KEY = {"INCIDENT": "introPlace", "ANSWER": "outroPlace"}
 
 NEW_CUTS = 6  # 새 테마 컷 수(기준안)
 LEGACY_SECONDS = (4, 6, 8, 6)  # 예전 4컷 초안 컷 길이(사용자 결정 2026-11-11)
@@ -44,7 +49,8 @@ class CutSpec:
     # 이 컷이 잇는 앞 컷 번호(0이면 없음). 컷 그림을 따로 그려 같은 뒤뜰인데 탁자·담이 바뀌고 앞
     # 컷에서 덮은 떡이 다음 컷에서 벗겨졌음(경찰관 떡집 콘티 2026-11-19, 사용자 결정 B안): 그 앞
     # 컷 그림을 참고 그림으로 받아 장소·가구·물건 상태를 잇는다
-    follows: int = 0
+    follows: int = 0  # 같은 장소(place)의 앞 사람 컷만
+    place: Place = ""
 
     @property
     def has_mungchi(self) -> bool:
@@ -80,6 +86,7 @@ _NEW = {
             "장소 소개: 장소가 한눈에 보이는 넓은 장면에서 인물들의 평소 모습(뭉치 없음)",
             speaker="이름 없이 장면을 소개하는 짧은 말(예: '평화로운 마을 떡집…')",
             narrator=True,
+            place="INCIDENT",
         ),
         CutSpec(
             "OBJECT",
@@ -87,11 +94,14 @@ _NEW = {
             True,
             "PUSH_SLOW",
             "CLOSE",
-            "사건 클로즈업: 사건 물건이나 빈자리(빈 접시·빈손·파헤친 자리 등)를 크게, 인물은 어깨 "
-            "위쪽과 몸에 맞는 크기의 손만(뭉치 없음)",
+            # 소리 탐정(소리를 듣고 귀 기울임)·탈것(온 사람과 인사함)처럼 물건이 없는 종류도 있어
+            # '역할 2의 사건을 알 수 있는 것'으로 씀(#779 종류 11 × 컷 12 대조 2026-11-19)
+            "사건 클로즈업: 역할 2의 사건을 알 수 있는 물건이나 자리(빈 접시·빈손·파헤친 자리·소리가 "
+            "난 쪽·온 사람의 짐 등)를 크게, 인물은 어깨 위쪽과 몸에 맞는 크기의 손만(뭉치 없음)",
             speaker="그 컷에 보이는 인물이 사건을 알아채는 감탄(예: '아린: 어라? 떡이 없어졌어!')",
             mystery=True,
             follows=1,
+            place="INCIDENT",
         ),
         CutSpec(
             "PEOPLE",
@@ -104,6 +114,7 @@ _NEW = {
             look="Everyone shows a big surprised face: wide eyes, raised eyebrows and open "
             "mouths, not smiling.",
             follows=1,
+            place="INCIDENT",
         ),
         CutSpec(
             "RUN",
@@ -113,6 +124,7 @@ _NEW = {
             "",
             "뭉치 출동: 뭉치 혼자 정면을 본 채 짧은 갈색 발로 옆으로 힘차게 달리고 배경이 흘러감",
             speaker="뭉치의 역할 구호(예: '뭉치: 경찰관 뭉치, 출동!')",
+            place="ROAD",
         ),
         CutSpec(
             "MUNGCHI",
@@ -122,6 +134,7 @@ _NEW = {
             "MUNGCHI_CLOSE",
             "뭉치 결심: 사건 현장 앞에 선 뭉치 혼자 가슴 위 클로즈업, 다문 입으로 결심한 얼굴",
             "Mungchi's face turns determined (a firm closed mouth) and it sways slightly.",
+            place="INCIDENT",
         ),
         CutSpec(
             "GROUP",
@@ -133,6 +146,7 @@ _NEW = {
             "Mungchi stays apart from the people, tilts its head and sways slightly.",
             speaker="뭉치가 이번 주 큰 질문을 묻는 말(예: '뭉치: 장난꾸러기는 누구일까?')",
             follows=1,
+            place="INCIDENT",
         ),
     ),
     "OUTRO": (
@@ -147,6 +161,7 @@ _NEW = {
             "Mungchi tilts its head, then its mouth opens in a small surprised o, then it breaks "
             "into a big smile.",
             speaker="뭉치가 정답을 말함(예: '뭉치: 알았다! 장난꾸러기는 너구리야!')",
+            place="INCIDENT",
         ),
         CutSpec(
             "RUN",
@@ -155,6 +170,7 @@ _NEW = {
             "TRACK_SIDE",
             "",
             "뭉치 혼자 정답 장소로 짧은 갈색 발로 옆으로 달려감(대상은 아직 보이지 않음)",
+            place="ROAD",
         ),
         CutSpec(
             "PEOPLE",
@@ -164,6 +180,7 @@ _NEW = {
             "CLOSE",
             "정답 공개: 정답 장소에서 사람들과 대상(뭉치 없음)",
             speaker="그 컷에 보이는 인물이 공개에 놀람(예: '새봄: 짜잔! 보물이다!')",
+            place="ANSWER",
         ),
         CutSpec(
             "MUNGCHI",
@@ -174,6 +191,7 @@ _NEW = {
             "뭉치 리액션: 정답 장소 앞 뭉치 혼자 가슴 위 클로즈업, 놀란 입에서 활짝 웃음",
             "Mungchi's mouth opens in a small surprised o, then it breaks into a big smile and "
             "sways happily.",
+            place="ANSWER",
         ),
         CutSpec(
             "PEOPLE",
@@ -181,8 +199,12 @@ _NEW = {
             False,
             "PAN_SIDE",
             "",
-            "기쁨: 사람들과 대상이 함께 기뻐함(손뼉·폴짝 뛰기, 뭉치 없음)",
+            # 대상은 줄거리 종류의 대상 컷일 때만(동물 종류는 이 컷에 동물 없음, target_off_cuts).
+            # 예전 "사람들과 대상이 함께"는 동물 종류 역할 4(동물 안 나옴)와 어긋났음
+            "기쁨: 사람들이 함께 기뻐함(손뼉·폴짝 뛰기, 뭉치 없음, 대상은 줄거리 종류 규칙에서 "
+            "대상이 나오는 컷일 때만)",
             follows=3,
+            place="ANSWER",
         ),
         CutSpec(
             "GROUP",
@@ -196,6 +218,7 @@ _NEW = {
             "balloons flutter in the wind if outdoors.",
             speaker="뭉치나 그 컷에 보이는 인물의 마무리 말(예: '뭉치: 사건 해결!')",
             follows=5,
+            place="ANSWER",
         ),
     ),
 }

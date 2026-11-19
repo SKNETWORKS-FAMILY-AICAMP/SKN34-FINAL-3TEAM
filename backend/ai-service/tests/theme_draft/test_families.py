@@ -323,8 +323,9 @@ def test_mission_dialogue_and_hook_with_candidate_animal_are_flagged() -> None:
         # #779 6컷 틀(콘티가 없으면 새 틀): 4컷 번호를 같은 역할 컷으로, 뭉치 혼자 컷은 뺌
         ("LOST", {("INTRO", 1), ("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
         ("TREASURE", {("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
-        ("PRANK", {("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
-        ("FOOTPRINT", {("OUTRO", 3), ("OUTRO", 5), ("OUTRO", 6)}),
+        # 동물 종류는 종료 5컷(덮으며 서로 보고 웃음)에서 동물을 뺌(target_off_cuts)
+        ("PRANK", {("OUTRO", 3), ("OUTRO", 6)}),
+        ("FOOTPRINT", {("OUTRO", 3), ("OUTRO", 6)}),
     ],
 )
 def test_target_cuts_by_story_type(code: str, allowed: set[tuple[str, int]]) -> None:
