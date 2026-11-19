@@ -192,7 +192,10 @@ def test_six_cut_camera_is_fixed_by_layout() -> None:
     for scene, cams in expect.items():
         for i, cam in enumerate(cams, 1):
             assert prompts.cut_camera(scene, i, {"camera": "FOLLOW_BEHIND"}, 6) == cam
-            assert cam != "PUSH_SLOW" or cuts.spec(scene, i, 6).shot in ("CLOSE", "MUNGCHI_CLOSE")
+            # 카메라는 구도 틀이 정함(#779 설계 H). 천천히 다가가기는 클로즈업 틀에서만
+            frame = cuts.spec(scene, i, 6).frame
+            assert prompts.FRAMES[frame].camera == cam
+            assert cam != "PUSH_SLOW" or frame in ("OBJECT_CLOSE", "MUNGCHI_CLOSE")
 
 
 def test_cut_images_use_own_framing_shots_mystery_and_pictures_instead_of_letters() -> None:
@@ -200,7 +203,10 @@ def test_cut_images_use_own_framing_shots_mystery_and_pictures_instead_of_letter
     close = prompts.cut_image_prompt(theme, "INTRO", 2, INTRO_CUTS[1], [])  # 사건 클로즈업
     wide = prompts.cut_image_prompt(theme, "INTRO", 1, INTRO_CUTS[0], [])
     alone = prompts.cut_image_prompt(theme, "OUTRO", 4, OUTRO_CUTS[3], [])
-    assert prompts.CLOSE_SHOT in close and prompts.CLOSE_SHOT not in wide
+    react = prompts.cut_image_prompt(theme, "INTRO", 3, INTRO_CUTS[2], [])  # 리액션 틀
+    # 장면 크기·조명은 구도 틀(#779 설계 H): 사건 클로즈업 틀은 물건을 크게, 리액션은 어깨 위
+    assert prompts.FRAMES["OBJECT_CLOSE"].image in close
+    assert prompts.CLOSE_SHOT in react and prompts.CLOSE_SHOT not in wide
     assert prompts.WIDE_SHOT in wide and prompts.MUNGCHI_CLOSE_SHOT in alone
     assert "empty space above its head" in prompts.MUNGCHI_CLOSE_SHOT  # 자막 자리
     assert prompts.MYSTERY_LIGHT in close and prompts.MYSTERY_LIGHT not in wide
@@ -423,7 +429,7 @@ def test_layout_table_separates_people_and_mungchi_cuts() -> None:
     assert roles == {"INTRO": [1, 2, 2, 3, 3, 4], "OUTRO": [1, 2, 3, 3, 4, 4]}
     legacy = cuts.layout(4)
     assert [c.who for c in legacy["INTRO"]] == ["PEOPLE", "PEOPLE", "RUN", "GROUP"]
-    assert all(c.who == "GROUP" and c.caption and c.camera is None for c in legacy["OUTRO"])
+    assert all(c.who == "GROUP" and c.caption and not c.frame for c in legacy["OUTRO"])
     assert cuts.seconds(6, [4, 4, 4, 4, 4, 4]) == [4.0] * 6
     assert cuts.seconds(4, [4, 4, 4, 4, 4, 4]) == [4.0, 6.0, 8.0, 6.0]  # 예전 초안
     assert "6컷(무음 영상, 컷마다 4초)" in prompts.PLAN_SYSTEM

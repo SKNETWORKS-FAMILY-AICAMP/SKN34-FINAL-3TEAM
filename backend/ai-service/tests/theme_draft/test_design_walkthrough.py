@@ -179,10 +179,66 @@ def test_road_and_direction_frames_are_in_image_prompts() -> None:
         image = prompts.cut_image_prompt(theme, scene, i, theme[KEY[scene]][i - 1], [])
         assert "hallway or corridor if the place is indoors" in image, (scene, i)
     ending = prompts.cut_image_prompt(theme, "OUTRO", 6, theme["outroCuts"][5], [])
-    assert cuts.spec("OUTRO", 6, 6).frame in ending and "turned toward" in ending
+    assert prompts.FRAMES[cuts.spec("OUTRO", 6, 6).frame].image in ending  # 구도 틀(설계 H)
+    assert prompts.FACE_TEXT["side"] in ending and prompts.IMAGE_RULES not in ending
     for code in ("PRANK", "FOOTPRINT"):
         animal = theme_of(code)
         farewell = prompts.cut_image_prompt(animal, "OUTRO", 5, animal["outroCuts"][4], [])
-        assert families.ANIMAL_FAREWELL_FRAME in farewell, code
+        assert prompts.FRAMES["FAREWELL"].image in farewell, code
     lost5 = prompts.cut_image_prompt(theme, "OUTRO", 5, theme["outroCuts"][4], [])
-    assert families.ANIMAL_FAREWELL_FRAME not in lost5
+    assert prompts.FRAMES["FAREWELL"].image not in lost5
+
+
+@pytest.mark.parametrize(("code", "branch"), CASES, ids=IDS)
+def test_common_rules_land_exactly_where_their_scope_says(code: str, branch: str | None) -> None:
+    """공통 규칙 목록(#779 설계 H): 항목마다 적용 조건의 컷에만 그림·영상 지시가 들어가고, 금지
+    낱말·검토 문장도 한 곳(목록)에서 나온다. 규칙을 고칠 때 항목 하나만 고치면 되는지 확인."""
+    from app.theme_draft import rules
+
+    theme = theme_of(code) | ({"branch": branch} if branch else {})
+    negative = prompts.video_negative(theme)
+    for scene, i, cut, _spec in all_cuts(theme):
+        flags = prompts.cut_flags(theme, scene, i)
+        image = prompts.cut_image_prompt(theme, scene, i, cut, [])
+        video = prompts.video_prompt(theme, scene, i, cut, [])
+        for r in rules.RULES:
+            if r.image:
+                assert (r.image in image) == (r.image_when in flags), (r.id, scene, i)
+            if r.video:
+                assert (r.video in video) == (r.video_when in flags), (r.id, scene, i)
+    for r in rules.RULES:
+        if r.negative:
+            assert (r.negative in negative) == (
+                r.negative_when in {"all", *(["wild"] if prompts.wild_answer(theme) else [])}
+            ), r.id
+        if r.review:
+            assert r.review in prompts.IMAGE_REVIEW_SYSTEM, r.id
+
+
+def test_frames_do_not_conflict_with_face_rules_and_variants_are_stable() -> None:
+    """구도 틀(#779 설계 H): 옆모습·등을 시키는 틀은 얼굴 규칙도 그 예외를 따름(공통 '모든 얼굴이
+    잘 보이게'가 엔딩 '옆모습으로 뭉치를 봄'과 부딪혀 인물이 카메라 쪽을 봤음). 변형은 같은 테마·
+    컷이면 늘 같고, 테마가 다르면 달라질 수 있음."""
+    for f in prompts.FRAMES.values():
+        if "from behind" in f.image:
+            assert f.faces == "back", f.id
+        elif "in profile" in f.image or "turned toward" in f.image:
+            assert f.faces in ("side", "back"), f.id
+        assert f.core and f.variants and f.camera in prompts.CAMERA_TEXT, f.id
+        assert f.camera != "PUSH_SLOW" or f.id in ("OBJECT_CLOSE", "MUNGCHI_CLOSE"), f.id
+    for code, branch in CASES:
+        theme = theme_of(code) | ({"branch": branch} if branch else {})
+        for scene, i, cut, _spec in all_cuts(theme):
+            frame = prompts.cut_frame(theme, scene, i)
+            image = prompts.cut_image_prompt(theme, scene, i, cut, [])
+            assert prompts.FACE_TEXT[frame.faces] in image, (code, scene, i)
+            if frame.faces != "front":
+                assert prompts.IMAGE_RULES not in image, (code, scene, i)
+            assert image == prompts.cut_image_prompt(theme, scene, i, cut, [])  # 같은 변형
+    chosen = {
+        prompts.frame_lines({**valid_theme(), "title": f"테마 {k}"}, "OUTRO", 6)[1]
+        for k in range(12)
+    }
+    assert len(chosen) > 1  # 테마마다 엔딩 변형이 달라질 수 있음
+    # 사건 컷 수수께끼 조명·클로즈업만 천천히 다가감(수수께끼 모험물 컷신 느낌)은 틀이 정함
+    assert {f.id for f in prompts.FRAMES.values() if f.mystery} == {"OBJECT_CLOSE", "REACTION"}

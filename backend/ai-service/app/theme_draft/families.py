@@ -306,8 +306,8 @@ class StoryType:
     # 지시·CUT_TARGET·그림 검토가 함께 따름
     target_off_cuts: frozenset[tuple[str, int]] = frozenset()
     # 갈래별로 바꿔 쓰는 콘티 역할(LOST_BRANCHES 등, #779 기준안). 비면 갈래 없음
-    # 종료 5컷 첫 그림 구도(영어, 배웅처럼 방향이 핵심인 종류만). 동물 쪽을 보지 않고 서로를 봤음
-    # (대표 5종 콘티 장난꾸러기)
+    # 종료 5컷 구도 틀 이름(frames.FRAMES, 비면 컷 표의 틀 JOY). 동물 배웅은 인물들이 동물 쪽을
+    # 보지 않고 서로를 봤음(대표 5종 콘티 장난꾸러기) → FAREWELL
     outro5_frame: str = ""
     branch_cuts: Branches = field(default_factory=dict)
     # 종료 3~6컷 장소(outroPlace)를 고르는 법. 비면 공통 규칙(정답이 밝혀지는 곳, cuts.PLACE_KEY)
@@ -629,10 +629,6 @@ ANIMAL_OUTRO_CUTS = (
 ANIMAL_TARGET_CUTS = frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)})
 # 6컷 종료 6컷(뭉치에게 고마워함)은 동물이 이미 떠나 나오지 않음(배웅은 종료 5컷)
 ANIMAL_OFF_CUTS = frozenset({("OUTRO", 6)})
-ANIMAL_FAREWELL_FRAME = (
-    "The people are in the foreground, seen from the side or from behind, all looking toward the "
-    "animal; the animal is in the background near the bushes, walking away and glancing back."
-)
 # 동물 흔적 특징: 동물 몸이 남기는 것(몸을 덮은 것·발자국 발 수·발자국의 발톱). 꼬리 모양은 흔적에
 # 남지 않아 목격·기록 날로(일반 흔적 표의 '모양'에 걸리지 않게 이 표만 봄)
 ANIMAL_TRACE = re.compile(r"발자국|발가락|발톱|덮은|털|깃털|가시")
@@ -647,7 +643,7 @@ PRANK = StoryType(
     outro_cuts=ANIMAL_OUTRO_CUTS,
     target_off_cuts=ANIMAL_OFF_CUTS,
     branch_cuts=PRANK_BRANCHES,
-    outro5_frame=ANIMAL_FAREWELL_FRAME,
+    outro5_frame="FAREWELL",
     # 장난당한 물건을 정답 장소에서 덮어 두고, 동물이 숲으로 걸어 나갈 출구가 있어야 함(3차 콘티:
     # 돌담으로 막힌 뒤뜰이라 너구리가 갈 곳이 없었음)
     outro_place="사건 장소 바로 바깥의 뒤뜰·마당 가장자리: 장난당한 물건이 놓인 탁자가 있고, 한쪽 "
@@ -674,7 +670,7 @@ FOOTPRINT = StoryType(
     candidate_kind="동물",
     intro_cuts=ANIMAL_INTRO_CUTS,
     outro_cuts=ANIMAL_OUTRO_CUTS,
-    outro5_frame=ANIMAL_FAREWELL_FRAME,
+    outro5_frame="FAREWELL",
     target_off_cuts=ANIMAL_OFF_CUTS,
     outro_place="발자국이 이어진 끝의 숲·덤불 가장자리(동물이 걸어 들어갈 숲길이 보임)",
     target_cuts=ANIMAL_TARGET_CUTS,

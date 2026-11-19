@@ -94,6 +94,7 @@ class Shot:
     action: str | None = None  # 컷 그림만: 그 컷 동작(그림은 동작의 첫 순간, 검토 SCENE_FIT)
     # 등장인물 기준 그림(검토 PEOPLE, #779 설계 C표). 사람이 나오는 그림만
     person: bytes | None = None
+    core: str | None = None  # 컷 그림만: 구도 틀의 검토 핵심(빠지면 SCENE_FIT FAIL, #779 설계 H)
     follow_scene: str | None = None
     follow_prompt: Callable[[list[str]], str] | None = None
 
@@ -164,6 +165,7 @@ async def draw(
                     previous_scene=shot.follow_scene if follow else None,
                     action=shot.action,
                     refs=refs_order,
+                    core=shot.core,
                 ),
                 output=GeneratedImageReview,
                 call_type=THEME_CALL_TYPE,
@@ -257,6 +259,7 @@ def cut_shot(
         follows=f"{scene}{k}" if k else None,
         action=cut.get("action") or None,
         person=person if body.cut_has_characters(scene, index, n) else None,
+        core=frame.core if (frame := body.cut_frame(theme, scene, index)) else None,
         follow_scene=prev_scene,
         follow_prompt=(
             (lambda fb: body.cut_image_prompt(theme, scene, index, cut, fb, prev_scene))

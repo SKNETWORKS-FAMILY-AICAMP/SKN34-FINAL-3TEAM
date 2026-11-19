@@ -23,6 +23,7 @@ from app.followup.prompts import grade_style
 from app.mission_draft.models import Draft, MissionDraftRequest
 from app.mission_draft.prompts import THINKING_LABEL
 from app.theme_draft import cuts as cut_layout
+from app.theme_draft import rules as common_rules
 from app.theme_draft.checks import (
     CANDIDATES,
     CLUE_TYPES,
@@ -55,7 +56,27 @@ from app.theme_draft.families import (
     type_cuts,
     type_rules,
 )
+from app.theme_draft.frames import (  # noqa: F401  (예전 4컷·시험이 같은 이름을 씀)
+    CLOSE_SHOT,
+    FACE_TEXT,
+    FRAMES,
+    MUNGCHI_CLOSE_SHOT,
+    MYSTERY_LIGHT,
+    WIDE_SHOT,
+    Frame,
+)
+from app.theme_draft.frames import variant as frame_variant
 from app.theme_draft.models import ThemeDraftRequest
+
+# 공통 규칙 목록(rules.RULES)의 글을 예전 이름으로도 씀(#779 설계 H)
+MUNGCHI_SEPARATE = common_rules.BY_ID["MUNGCHI_SEPARATE"].image
+MUNGCHI_HOLDS_NOTHING = common_rules.BY_ID["MUNGCHI_HOLDS_NOTHING"].image
+APART_FROM_ANIMALS = common_rules.BY_ID["APART_FROM_ANIMALS"].image
+NO_TOUCH = common_rules.BY_ID["NO_TOUCH"].image
+HAND_RULE = common_rules.BY_ID["HAND"].video
+NO_ROW_VIDEO = common_rules.BY_ID["NO_ROW"].video
+TOUCH_NEGATIVE = common_rules.BY_ID["NO_TOUCH"].negative
+VIDEO_NEGATIVE_EXTRA = ", ".join(common_rules.lines("negative", {"all"}))
 
 WHO_KO = {
     "PEOPLE": "사람만",
@@ -1182,9 +1203,7 @@ def dialogue_user(theme: Theme, day: str, draft: Draft, grade: int, feedback: li
 # 설계 17.8.5)
 SAFETY_STORY = (
     "동물의 습성·장난은 범죄가 아니고, 동물이 제 갈 곳으로 걸어가는 것을 배웅하는 것은 쫓아내기가 "
-    "아니며, 그 동물을 돌보거나 데리고 있는 사람(주인·돌보던 아이·길 잃은 동물을 데려가는 "
-    "아이)이 안거나 목줄을 잡거나 쓰다듬는 것은 위험이 아니다. 그 밖의 사람·뭉치가 동물을 만지거나 "
-    "안거나 붙잡으면 결함이다. "
+    "아니며, " + common_rules.review("SAFETY") + " "
     "경찰관·소방관 차림은 해결사 역할일 뿐이다(체포·수갑·벌주기가 나오면 "
     "결함). 밤에 들린 궁금한 소리 이야기(소리 탐정)는 무섭지 않은 궁금증이다(귀신·괴물·유령이 "
     "나오면 결함). 사람이 동물 먹이를 먹거나 동물에게 사람 음식을 먹이면 결함."
@@ -1523,6 +1542,12 @@ IMAGE_RULES = (
     "(signs, books and labels stay blank). Every face is clearly visible. Leave some empty "
     "space at the top of the picture."
 )
+# 6컷 컷 그림의 그림 규칙: 얼굴 규칙은 구도 틀이 정함(frames.FACE_TEXT, #779 설계 H — 공통 "모든
+# 얼굴이 잘 보이게"가 엔딩 구도 "옆모습으로 뭉치를 봄"과 부딪혔음)
+CUT_IMAGE_RULES = (
+    "Rules: no thought bubbles or speech bubbles. No letters, words or numbers anywhere "
+    "(signs, books and labels stay blank). Leave some empty space at the top of the picture."
+)
 
 
 def outfit_prompt(theme: Theme) -> str:
@@ -1819,21 +1844,6 @@ FOLLOW_CUT = (
     "says it changes now. Change the framing, camera angle and what the characters do as this "
     "scene says; do not copy the earlier picture's composition."
 )
-# #779(3테마 실행 2026-11-18): 시작 1컷이 가까운 장면이면 장소가 안 보임. 넓은 장면으로 고정
-WIDE_SHOT = (
-    "Wide establishing shot: the whole place is visible and the people are seen full body, "
-    "smaller in the scene."
-)
-# #779(3테마 실행 2026-11-18): 뭉치와 동물이 붙어 있으면 영상에서 뭉치가 그 동물(너구리)로 바뀜
-APART_FROM_ANIMALS = (
-    "If an animal appears, it stays apart from Mungchi with clear space between them and keeps "
-    "its own look; Mungchi never takes on any animal's features (no tail, no striped fur, no "
-    "animal ears or muzzle)."
-)
-CLOSE_SHOT = (
-    "Close shot: the people are seen from the shoulders up with hands in natural size; anything "
-    "held is at chest height and does not cover their faces."
-)
 # #779(경찰관 떡집 콘티 2026-11-19): 쪽지가 없는 리액션 컷에도 예시(점선 길·X 표시)를 따라 보물
 # 지도를 그렸음. 장면·동작에 글자가 들어갈 물건이 있을 때만 넣는다
 WRITTEN_WORDS = re.compile(r"쪽지|편지|지도|안내판|표지판|메모|종이|카드|간판|책|공책|수첩|사진")
@@ -1848,52 +1858,30 @@ TREASURE_NOTE = (
 )
 
 
-# #779(사용자 결정 2026-11-19): 뭉치 혼자 나오는 가까운 장면(6컷 틀). 위쪽은 자막 자리로 비움
-MUNGCHI_CLOSE_SHOT = (
-    "Close shot of Mungchi alone from the chest up, its face large and clearly visible, with "
-    "empty space above its head for a caption; the place shows softly behind it."
-)
-# #779: 뭉치가 사람 곁에 붙으면 영상 모델이 사람 팔·손을 뭉치에게 옮겨 붙임(3테마 실행 실패 5컷)
-MUNGCHI_SEPARATE = (
-    "Mungchi is its own small separate figure: it does not touch, overlap or merge with anyone "
-    "and never takes on a person's arms, hands, legs, hair or clothes."
-)
-# #779 설계 C표 공통 규칙(2026-11-19). "뭉치는 물건을 들지 않음"은 대상을 감추는 줄에 얹혀 잃어버린
-# 것은 뭉치 혼자 컷에만, 동물 장난꾸러기는 어디에도 없었음(2종류 × 12컷 대조). 공통 규칙은 다른
-# 줄에 얹지 않고 뭉치·사람 컷 전부에 넣는다(rules.COMMON_RULES가 다섯 곳에 들어갔는지 시험으로 봄)
-MUNGCHI_HOLDS_NOTHING = (
-    "Mungchi holds nothing in its hands except outfit items it already wears; it never holds a "
-    "story object."
-)
-# 만지기 예외: 그 동물을 돌보거나 데리고 있는 사람(주인·돌보던 아이·길 잃은 동물을 데려가는
-# 아이). 씨앗 "체험 농장 / 아이가 돌보던 아기 염소", "아파트 놀이터 / 길 잃은 강아지"
-NO_TOUCH = (
-    "Nobody touches Mungchi, and nobody touches, lifts or holds an animal, except that the person "
-    "who looks after that animal (its owner or carer) may hold it gently."
-)
-# 사람 손(사용자 결정 2026-11-19): 공중 손짓 없음. 물건을 다루는 손은 컷 할 일에 적힌 것만
-HAND_RULE = (
-    "No waving and no clapping: the people's hands only hold, open or point at things as the "
-    "story beat says."
-)
-NO_ROW_VIDEO = (
-    "The people never line up in a row facing the camera; they keep facing each other or what "
-    "they are doing."
-)
-# 동물을 만지면 안 되는 종류(야생 동물, 금지 목록에만. 잃어버린 것·출처 찾기는 돌보는 사람이 안음)
-TOUCH_NEGATIVE = "people touching the animal, holding the animal"
-VIDEO_NEGATIVE_EXTRA = "waving, clapping, people standing in a row facing the camera"
-# #779(사용자 결정 2026-11-19, 수수께끼 모험물 컷신 느낌): 사건 컷만 살짝 신비롭게, 무섭지 않게
-MYSTERY_LIGHT = (
-    "A touch of mystery: soft long shadows and slightly cooler tones, still in bright afternoon "
-    "daylight, never dark or scary."
-)
-
-
 FIRST_MOMENT = (
     "This picture is the very first moment of this cut's action, so everything the action needs "
     "is already in view and the characters already face where they will look, wave or clap"
 )
+
+
+def cut_frame(theme: Theme, scene: str, index: int) -> Frame | None:
+    """그 컷의 구도 틀(#779 설계 H). 종료 5컷은 줄거리 종류가 바꿀 수 있음(동물 배웅). 예전 4컷은
+    None(예전 장면 크기 규칙)."""
+    spec = cut_spec(theme, scene, index)
+    if not spec.frame:
+        return None
+    if (scene, index) == ("OUTRO", 5) and story_type(theme).outro5_frame:
+        return FRAMES[story_type(theme).outro5_frame]
+    return FRAMES[spec.frame]
+
+
+def frame_lines(theme: Theme, scene: str, index: int) -> list[str]:
+    """그림 지시의 구도 줄: 꼭 지킬 구도 + 이 테마의 변형 + (사건 컷) 수수께끼 조명."""
+    frame = cut_frame(theme, scene, index)
+    if frame is None:
+        return []
+    key = f"{theme.get('title') or ''}|{scene}{index}"
+    return [frame.image, frame_variant(frame, key), MYSTERY_LIGHT if frame.mystery else ""]
 
 
 def cut_place(theme: Theme, scene: str, spec: cut_layout.CutSpec) -> str:
@@ -1941,8 +1929,6 @@ def cut_image_prompt(
             lines.append(f"Mungchi's expression: {mouth}, dot eyes unchanged.")
         if spec.who == "RUN":
             lines.append(RUN_POSE)
-        lines.append(MUNGCHI_SEPARATE)
-        lines.append(MUNGCHI_HOLDS_NOTHING)
     else:
         lines.append("Mungchi does not appear in this picture.")
     if spec.has_people:
@@ -1966,21 +1952,17 @@ def cut_image_prompt(
         elif (scene, index) == ("INTRO", 1):
             lines.append(WIDE_SHOT)
     else:
-        shot = {"WIDE": WIDE_SHOT, "CLOSE": CLOSE_SHOT, "MUNGCHI_CLOSE": MUNGCHI_CLOSE_SHOT}
-        lines.append(shot.get(spec.shot, ""))
-        lines.append(MYSTERY_LIGHT if spec.mystery else "")
-    if spec.has_mungchi:
-        lines.append(APART_FROM_ANIMALS)
+        lines += frame_lines(theme, scene, index)  # 구도 틀(#779 설계 H)
     if WRITTEN_WORDS.search(f"{cut.get('scene', '')} {cut.get('action', '')}"):
         lines.append(WRITTEN_THINGS)
         lines.append(TREASURE_NOTE if story_type(theme).code == "TREASURE" else "")
     lines.append(spec.look)  # 첫 그림 표정(컷 표 A, #779)
-    lines.append(spec.frame)  # 첫 그림 구도(엔딩: 뭉치 쪽으로 몸을 돌림)
-    if (scene, index) == ("OUTRO", 5) and n != 4:
-        lines.append(story_type(theme).outro5_frame)  # 배웅: 인물들이 동물 쪽을 봄
-    lines.append(NO_TOUCH if spec.has_people else "")
+    # 공통 규칙 목록(rules.RULES, #779 설계 H): 뭉치 컷·사람 컷에 붙는 규칙을 한 곳에서
+    lines += common_rules.lines("image", cut_flags(theme, scene, index))
     lines += [x for x in target_lines(theme, scene, index) if x]
-    lines += [IMAGE_RULES, *_fixes(feedback)]
+    frame = cut_frame(theme, scene, index)
+    rules = [CUT_IMAGE_RULES, FACE_TEXT[frame.faces]] if frame else [IMAGE_RULES]
+    lines += [*rules, *_fixes(feedback)]
     return "\n".join(x for x in lines if x)
 
 
@@ -2015,11 +1997,9 @@ IMAGE_REVIEW_SYSTEM = (
     "장면에 따라 달라도 된다. "
     # #779(2026-11-19): 옷 소매가 팔처럼 그려지고, 뭉치가 사람 곁에 붙으면 영상에서 팔이 옮겨 붙음
     "옷에 소매가 있거나 옷 입은 부분 옆으로 울퉁불퉁한 돌기가 삐져나와 소매·팔처럼 보여 팔이 "
-    "넷처럼 보이면 결함(옷은 아래쪽을 꽉 끼게 감싸 매끈한 둥근 몸통), 뭉치가 사람과 겹치거나 "
-    "맞닿아 한 몸처럼 보이면 결함. "
-    # #779 설계 C표: 영상에서만 막던 것을 첫 그림에서도(첫 그림에 들고 있으면 영상도 따라감)
-    "뭉치가 차림 소품(목에 걸거나 머리에 쓴 것)이 아닌 물건, 특히 사건 물건이나 찾는 대상을 "
-    "들고 있으면 결함. "
+    "넷처럼 보이면 결함(옷은 아래쪽을 꽉 끼게 감싸 매끈한 둥근 몸통). "
+    + common_rules.review("MUNGCHI")  # 공통 규칙 목록(분리·물건 안 듦, #779 설계 H)
+    + " "
     "뭉치가 나오지 않아야 하는 그림이면 나오지 않는지.\n"
     "ANSWER_HINT: 찾는 대상이 나오면 안 되는 "
     "그림(targetAllowed false)에 찾는 대상이 보이는지(후보가 동물이면 후보 동물 가운데 어느 "
@@ -2036,10 +2016,13 @@ IMAGE_REVIEW_SYSTEM = (
     "동작의 첫 순간이라, 동작에 쓰이는 물건·대상과 인물이 바라보거나 가리키는 쪽이 "
     "그림에 있는지도 본다(동작이 끝나 있을 필요는 없음). 장면 글에 없는 등장인물이 함께 "
     "있는 것은 결함이 아니다. "
-    # #779 설계 C표 등급(사용자 결정 2026-11-19): 핵심이 빠지면 FAIL, 세부 구도·한 줄 서기는 WARN
+    # #779 설계 C표 등급(사용자 결정 2026-11-19): 핵심이 빠지면 FAIL, 세부 구도·한 줄 서기는 WARN.
+    # core는 그 컷 구도 틀의 검토 핵심(설계 H, 엔딩에서 인물들이 카메라 쪽을 봐도 WARN만 받았음)
+    "core가 있으면 그것이 이 컷 구도의 핵심이라 그림에 없으면 FAIL이다. "
     "그 컷의 핵심(나와야 할 인물·대상, 인물이 바라보는 쪽, 장면 글이 말한 물건 상태)이 빠지면 "
-    "FAIL(예: 배웅인데 아무도 동물 쪽을 보지 않음)이고, 세부 구도 차이나 인물들이 한 줄로 서서 "
-    "카메라를 보는 것은 WARN이다. "
+    "FAIL(예: 배웅인데 아무도 동물 쪽을 보지 않음)이고, 세부 구도 차이는 WARN이다. "
+    + common_rules.review("SCENE_FIT")
+    + " "
     # #765: 대상이 나오면 안 되는 그림은 일부러 대상을 그리지 않음(ANSWER_HINT와 반대로 걸리지 않게)
     "찾는 대상이 나오면 안 되는 그림(targetAllowed false)에서 찾는 대상이나 후보가 보이지 않는 "
     "것은 장면 글에 나와도 결함이 아니다(그 그림에는 일부러 그리지 않음).\n"
@@ -2090,6 +2073,7 @@ def image_review_user(
     previous_scene: str | None = None,
     action: str | None = None,
     refs: list[str] | None = None,
+    core: str | None = None,
 ) -> str:
     body: dict = {
         "items": list(ids),
@@ -2106,6 +2090,8 @@ def image_review_user(
         body["action"] = action
     if refs:
         body["refs"] = refs
+    if core:
+        body["core"] = core
     if question is not None:
         body |= {
             "missionQuestion": question,
@@ -2196,8 +2182,8 @@ def cut_camera(scene: str, index: int, cut: dict, n: int) -> str:
     """컷 카메라. 6컷 틀은 컷 역할마다 코드가 정함(cuts.LAYOUTS, 콘티 camera 칸은 보지 않음, #779
     2026-11-19). 예전 4컷: 출동 컷은 늘 옆에서 따라감, 시작 1컷은 가까운 장면이 아님(넓은 장면),
     그 밖은 콘티 값(없거나 목록 밖이면 역할별 기본값)."""
-    if (fixed := cut_layout.spec(scene, index, n).camera) is not None:
-        return fixed
+    if frame := cut_layout.spec(scene, index, n).frame:  # 6컷: 구도 틀의 카메라(#779 설계 H)
+        return FRAMES[frame].camera
     if is_go_cut(scene, index, n):
         return "TRACK_SIDE"
     camera = cut.get("camera")
@@ -2246,8 +2232,6 @@ def video_prompt(
             "magnifying glass) stays in its hand as it is, and nothing around its neck is lifted "
             "or used. Any hand gestures are done by the people.",
             "Mungchi's outfit, hat and items around the neck stay exactly as in the first frame.",
-            APART_FROM_ANIMALS,
-            MUNGCHI_SEPARATE,
             f"Mungchi's expression: {mouth}." if mouth else "",
         ]
     else:
@@ -2311,9 +2295,7 @@ def video_prompt(
         if n == 4  # 예전 4컷 초안은 예전 동작 그대로(cuts.py 머리말)
         else f"{spec.act or 'The people act out the story beat with clear, natural movements.'} "
         "They keep moving naturally until the end with no pauses. Nobody walks toward the camera.",
-        HAND_RULE if spec.has_people and n != 4 else "",
-        NO_ROW_VIDEO if spec.has_people and n != 4 else "",
-        NO_TOUCH if spec.has_people and n != 4 else "",
+        *common_rules.lines("video", cut_flags(theme, scene, index)),  # 공통 규칙 목록
         # #779: 시제품에서 화단·담 위를 걷고, 쪽지가 두 장이 됨
         "Everyone moves only along paths, floors and open doors or gates: nobody walks on or "
         "through walls, fences, flower beds, benches or other objects. A single object (a note, a "
@@ -2338,16 +2320,31 @@ LEGACY_PEOPLE_MOTION = (
 
 
 def video_negative(theme: Theme) -> str:
-    """영상 금지 목록(#779 설계 C표): 공통 + 공중 손짓·한 줄 서기 + 야생 동물 만지기(동물
-    장난꾸러기·발자국 주인·소리의 동물). 잃어버린 것·출처 찾기는 돌보는 사람이 동물을 안아도 돼서
-    빼지 않음."""
+    """영상 금지 목록: 고정 목록(VIDEO_NEGATIVE) + 공통 규칙 목록의 금지 낱말(공중 손짓·한 줄 서기,
+    야생 동물 종류면 동물 만지기 — 잃어버린 것·출처 찾기는 돌보는 사람이 동물을 안아도 돼서 빼지
+    않음, #779 설계 C·H)."""
+    flags = {"wild"} if wild_answer(theme) else set()
+    return ", ".join([VIDEO_NEGATIVE, *common_rules.lines("negative", flags)])
+
+
+def wild_answer(theme: Theme) -> bool:
+    """정답이 야생 동물인 종류(동물 장난꾸러기·발자국 주인·소리의 동물)."""
     t = story_type(theme)
-    wild = t.animal or (
+    return t.animal or (
         t.facts is not None and t.facts.group(str(theme.get("answer") or "")) == "동물"
     )
-    return ", ".join(
-        x for x in (VIDEO_NEGATIVE, VIDEO_NEGATIVE_EXTRA, TOUCH_NEGATIVE if wild else "") if x
-    )
+
+
+def cut_flags(theme: Theme, scene: str, index: int) -> set[str]:
+    """공통 규칙 목록의 적용 조건(rules.When)."""
+    n = cut_count(theme, scene)
+    spec = cut_layout.spec(scene, index, n)
+    flags = {"all"}
+    flags |= {"mungchi"} if spec.has_mungchi else set()
+    flags |= {"people"} if spec.has_people else set()
+    flags |= {"people6"} if spec.has_people and n != 4 else set()
+    flags |= {"wild"} if wild_answer(theme) else set()
+    return flags
 
 
 VIDEO_REVIEW_SYSTEM = (
