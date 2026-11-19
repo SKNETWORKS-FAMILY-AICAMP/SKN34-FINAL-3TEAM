@@ -155,6 +155,38 @@ class ReportClientTest {
         }
     }
 
+    private val impactItem = """{"reportId":"$reportId","periodType":"DAILY","periodFrom":"$from","revision":2}"""
+
+    /** #814 후속: 정정 영향 조회는 client가 `CorrectionImpactItem`을 타입으로 바꾸고, service는 JSON 칸 이름을 모른다. */
+    @Test fun `correction impact returns typed revisions`() {
+        val attempt = UUID.randomUUID()
+        respond = { """{"items":[$impactItem,{"reportId":"${UUID.randomUUID()}","periodType":"WEEKLY","periodFrom":"2026-11-02","revision":1}]}""" }
+        val items = client.correctionImpact(student, attempt)
+        assertTrue(paths.single().startsWith("/internal/reports/correction-impact?"))
+        assertTrue("studentId=$student" in paths.single() && "attemptId=$attempt" in paths.single())
+        assertEquals(com.sagomungchi.core.report.client.AffectedReport(reportId, ReportPeriodType.DAILY, from, 2), items.first())
+        assertEquals(listOf(ReportPeriodType.DAILY, ReportPeriodType.WEEKLY), items.map { it.periodType })
+        respond = { """{"items":[]}""" }
+        assertTrue(client.correctionImpact(student, attempt).isEmpty())
+    }
+
+    @Test fun `correction impact outside the contract is 502`() {
+        fun item(field: String, value: String?) = json.readTree(impactItem).let { node ->
+            (node as ObjectNode).apply { if (value == null) remove(field) else set<ObjectNode>(field, json.readTree(value)) }.toString()
+        }
+        val broken = listOf("{}", """{"items":null}""", """{"items":{}}""", """{"items":["x"]}""",
+            item("reportId", null), item("reportId", "\"not-uuid\""), item("reportId", "1"),
+            item("periodType", null), item("periodType", "\"MONTHLY\""), item("periodType", "null"),
+            item("periodFrom", null), item("periodFrom", "\"2026-13-01\""),
+            item("revision", null), item("revision", "0"), item("revision", "\"2\""), item("revision", "1.5"), item("revision", "4294967296"))
+            .map { if (it.startsWith("{\"items\"") || it == "{}") it else """{"items":[$it]}""" }
+        for (body in broken) {
+            respond = { body }
+            val error = assertFailsWith<BusinessException>(body) { client.correctionImpact(student, UUID.randomUUID()) }
+            assertEquals("REPORT_CONTRACT_INVALID", error.code, body); assertEquals(502, error.status.value())
+        }
+    }
+
     @Test fun `document filters keep only numeric summaries and identities`() {
         val body = json.readTree("""{"explanations":[{"text":"합성"}],"narrative":{"text":"합성"},"eveningQuestion":"합성","quotes":[{"text":"합성"}],
             "thinkingTypes":[{"type":"A","state":"OK","missions":[],"itemId":"i","summary":"합성"}],
