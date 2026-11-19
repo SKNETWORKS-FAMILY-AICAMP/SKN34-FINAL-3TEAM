@@ -131,3 +131,58 @@ def test_plan_and_review_texts_have_no_old_ending_or_air_gestures() -> None:
         for branch in [None, *t.branch_cuts]:
             texts[f"type_rules {code}/{branch}"] = families.type_rules(t, branch)
     assert [(k, m.group(0)) for k, v in texts.items() for m in old.finditer(v)] == []
+
+
+def test_role_texts_pass_existing_checks_and_examples_carry_no_content() -> None:
+    """대표 5종 콘티(2026-11-19)에서 걸어 보기가 못 잡은 것: 콘티 문구가 기존 검사를 부름('다가가'
+    → 다가오기 금지), 엔딩에서 든 것을 '예린은 … 안고'가 뭉치 손 동작으로 오탐, 자막 예시의 이름·
+    정답('아린'·'너구리')을 글 모델이 그대로 씀, 뭉치에게 그릴 수 없는 시선(늘 정면)을 시킴."""
+    from app.theme_draft import checks
+
+    beats = [s.beat for specs in cuts.layout(6).values() for s in specs]
+    roles = [
+        role
+        for t in families.STORY_TYPES.values()
+        for b in [None, *t.branch_cuts]
+        for scene in SCENES
+        for role in families.branch_roles(t, scene, b)
+    ]
+    # 다가오기 금지 검사(APPROACH_WORDS)의 줄기를 콘티 문구가 부르지 않음
+    near = (*checks.APPROACH_WORDS, "다가가", "다가와", "다가간")  # '놀랐다가'는 아님
+    for text in beats + roles:
+        assert not any(w in text for w in near), text
+    # 엔딩에서 인물이 든 것을 안은 채 뭉치 쪽으로 돌아도 뭉치 손 동작이 아님
+    for line in (
+        "예린은 아기 염소를 안고 뭉치 쪽으로 몸을 돌린다",
+        "사장님은 바구니를 안고 웃는다",
+    ):
+        assert not [
+            p for p in checks.cut_action_problems(line, True, False, ["예린"]) if "손·팔다리" in p
+        ], line
+    assert checks.cut_action_problems("뭉치는 작은 상자를 안고 웃는다", True, False, ["예린"])
+    # 자막 예시에 인물 이름·후보·장소를 박지 않음
+    words = [*prompts.NAME_POOL, *families.ANIMALS.rows, *families.GIFTS.rows, "떡"]
+    speakers = [s.speaker for specs in cuts.layout(6).values() for s in specs]
+    for text in [*speakers, prompts.CAPTION_RULE]:
+        assert not [w for w in words if w in text], text
+    # 뭉치는 늘 정면: 뭉치 컷·함께 컷 할 일에 뭉치가 다른 곳을 보라는 말이 없음
+    for s in (x for specs in cuts.layout(6).values() for x in specs if x.has_mungchi):
+        assert "올려다" not in s.beat and "뭉치도" not in s.beat, s.beat
+    assert "정면" in cuts.spec("INTRO", 6, 6).beat and "정면" in cuts.spec("OUTRO", 1, 6).beat
+
+
+def test_road_and_direction_frames_are_in_image_prompts() -> None:
+    """가는 길은 실내면 복도(과학관에 마을 길을 그려 실패), 엔딩·배웅은 방향을 못박음(인물들이
+    카메라 쪽을 보고 나란히 섬, 대표 5종 콘티 3/3)."""
+    theme = valid_theme()
+    for scene, i in (("INTRO", 4), ("OUTRO", 2)):
+        image = prompts.cut_image_prompt(theme, scene, i, theme[KEY[scene]][i - 1], [])
+        assert "hallway or corridor if the place is indoors" in image, (scene, i)
+    ending = prompts.cut_image_prompt(theme, "OUTRO", 6, theme["outroCuts"][5], [])
+    assert cuts.spec("OUTRO", 6, 6).frame in ending and "turned toward" in ending
+    for code in ("PRANK", "FOOTPRINT"):
+        animal = theme_of(code)
+        farewell = prompts.cut_image_prompt(animal, "OUTRO", 5, animal["outroCuts"][4], [])
+        assert families.ANIMAL_FAREWELL_FRAME in farewell, code
+    lost5 = prompts.cut_image_prompt(theme, "OUTRO", 5, theme["outroCuts"][4], [])
+    assert families.ANIMAL_FAREWELL_FRAME not in lost5

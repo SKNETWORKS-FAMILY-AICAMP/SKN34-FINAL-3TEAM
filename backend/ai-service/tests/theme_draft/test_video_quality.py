@@ -490,7 +490,7 @@ def test_caption_rules_dialogue_with_visible_speaker() -> None:
     assert "'범인'이라는 말은 쓰지 않는다" in rule and "종료 1컷은 뭉치가 정답을 말한다" in rule
     assert rule in prompts.PLAN_SYSTEM
     fix = prompts.fix_rules(valid_theme(), "outroCuts1.caption")
-    assert any("뭉치가 정답을 말함" in r for r in fix)
+    assert any("뭉치가 '알았다!' 뒤에 이번 정답을 말함" in r for r in fix)
 
 
 def test_outfit_fits_tightly_and_squashes_the_lower_body() -> None:
@@ -636,7 +636,7 @@ def test_cut_place_is_fixed_by_layout() -> None:
     outro5 = prompts.cut_image_prompt(theme, "OUTRO", 5, theme["outroCuts"][4], [])
     assert f"Place (Korean): {theme['outroPlace']}." in outro5
     intro4 = prompts.cut_image_prompt(theme, "INTRO", 4, theme["introCuts"][3], [])
-    assert f"leading to this place (Korean): {theme['introPlace']}." in intro4
+    assert f"if it is outdoors (Korean): {theme['introPlace']}." in intro4 and "hallway" in intro4
     outro1 = prompts.cut_image_prompt(theme, "OUTRO", 1, theme["outroCuts"][0], [])
     assert f"Place (Korean): {theme['introPlace']}." in outro1  # 단서판은 사건 장소
     old = {k: v for k, v in theme.items() if k not in ("introPlace", "outroPlace")}

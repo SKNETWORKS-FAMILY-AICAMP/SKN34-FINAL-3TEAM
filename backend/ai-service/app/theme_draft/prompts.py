@@ -1901,8 +1901,13 @@ def cut_place(theme: Theme, scene: str, spec: cut_layout.CutSpec) -> str:
     if spec.place == "ROAD":
         key = cut_layout.PLACE_KEY["INCIDENT" if scene == "INTRO" else "ANSWER"]
         goal = str(theme.get(key) or "").strip()
+        # 실내 장소(과학관)인데 마을 길로 그려 그림 검토가 실패했음(대표 5종 콘티). 실내·실외는
+        # 장소 글을 보고 그림 모델이 고름
         return (
-            f"Place: a village path or road leading to this place (Korean): {goal}." if goal else ""
+            "Place: the way leading to this place — a hallway or corridor if the place is indoors, "
+            f"a path or road if it is outdoors (Korean): {goal}."
+            if goal
+            else ""
         )
     desc = str(theme.get(cut_layout.PLACE_KEY.get(spec.place, "")) or "").strip()
     if not desc:
@@ -1970,6 +1975,9 @@ def cut_image_prompt(
         lines.append(WRITTEN_THINGS)
         lines.append(TREASURE_NOTE if story_type(theme).code == "TREASURE" else "")
     lines.append(spec.look)  # 첫 그림 표정(컷 표 A, #779)
+    lines.append(spec.frame)  # 첫 그림 구도(엔딩: 뭉치 쪽으로 몸을 돌림)
+    if (scene, index) == ("OUTRO", 5) and n != 4:
+        lines.append(story_type(theme).outro5_frame)  # 배웅: 인물들이 동물 쪽을 봄
     lines.append(NO_TOUCH if spec.has_people else "")
     lines += [x for x in target_lines(theme, scene, index) if x]
     lines += [IMAGE_RULES, *_fixes(feedback)]

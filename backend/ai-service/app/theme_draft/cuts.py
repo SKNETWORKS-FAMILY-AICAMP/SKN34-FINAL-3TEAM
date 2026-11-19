@@ -58,6 +58,9 @@ class CutSpec:
     # 흔들기 같은 큰 동작"이 붙어 컷마다 정한 동작(배웅은 바라보기 등)과 부딪혔음(#779 설계 C표,
     # 2종류 × 12컷 대조 2026-11-19). 공중 손짓(흔들기·손뼉)은 쓰지 않음(사용자 결정 2026-11-19)
     act: str = ""
+    # 첫 그림 구도(영어). 엔딩에서 인물들이 카메라 쪽을 보고 나란히 서 뭉치 쪽으로 몸을 돌리지
+    # 않았음(대표 5종 콘티 3/3) — 방향을 못박음
+    frame: str = ""
 
     @property
     def has_mungchi(self) -> bool:
@@ -91,7 +94,9 @@ _NEW = {
             "PAN_SIDE",
             "WIDE",
             "장소 소개: 장소가 한눈에 보이는 넓은 장면에서 인물들의 평소 모습(뭉치 없음)",
-            speaker="이름 없이 장면을 소개하는 짧은 말(예: '평화로운 마을 떡집…')",
+            # 자막 예시에 장소·이름·정답을 박지 않음(#779 대표 5종 콘티: 예시의 이름을 그대로 쓰고,
+            # 떡집 테마 정답이 매번 예시의 동물이었음)
+            speaker="이름 없이 이 테마 장소의 평소 모습을 소개하는 짧은 말(말줄임표로 끝냄)",
             narrator=True,
             look="Everyone looks relaxed and calm, busy with their usual tasks.",
             place="INCIDENT",
@@ -108,7 +113,8 @@ _NEW = {
             "사건 클로즈업: 역할 2의 사건을 알 수 있는 물건이나 자리(빈 접시·빈손·파헤친 자리·"
             "소리가 난 쪽·온 사람의 짐 등)를 크게, 인물은 어깨 위쪽과 몸에 맞는 크기의 손만(뭉치 "
             "없음)",
-            speaker="그 컷에 보이는 인물이 사건을 알아채는 감탄(예: '아린: 어라? 떡이 없어졌어!')",
+            speaker="그 컷에 보이는 인물(characters의 이름)이 사건을 알아채는 감탄('어라?'·'앗!' "
+            "같은 말로 시작)",
             mystery=True,
             look="The person just noticed something: eyes a little wide, mouth in a small 'oh'.",
             follows=1,
@@ -156,7 +162,10 @@ _NEW = {
             True,
             "PAN_SIDE",
             "WIDE",
-            "모두 모여 큰 질문: 인물들과 뭉치가 사건 현장에 모임(뭉치는 사람들과 조금 떨어져 섬)",
+            # 뭉치는 늘 정면을 보게 그려짐(대표 5종 콘티 경고 "뭉치는 상자보다 정면") — 뭉치에게
+            # 다른 곳을 보라고 하지 않음
+            "모두 모여 큰 질문: 인물들은 사건 자리를 보고, 뭉치는 사람들과 조금 떨어져 정면에서 "
+            "갸웃함",
             "Mungchi stays apart from the people, tilts its head and sways slightly.",
             speaker="뭉치가 이번 주 큰 질문을 묻는 말(예: '뭉치: 장난꾸러기는 누구일까?')",
             look="The people look puzzled and curious, looking at the spot, not smiling widely.",
@@ -172,11 +181,12 @@ _NEW = {
             True,
             "PUSH_SLOW",
             "MUNGCHI_CLOSE",
-            "뭉치 깨달음: 뒤쪽 판·벽에 붙은 단서 그림들 앞에서 뭉치 혼자 가슴 위 클로즈업(단서 "
-            "물건을 뭉치 앞 바닥·탁자에 두지 않음), 갸웃하다 놀란 입, 활짝 웃음",
+            "뭉치 깨달음: 뒤쪽 판·벽에 단서 그림들이 붙어 있고 그 앞에서 뭉치 혼자 정면을 보는 "
+            "가슴 위 클로즈업(단서 물건을 뭉치 앞 바닥·탁자에 두지 않음), 갸웃하다 놀란 입, 활짝 "
+            "웃음",
             "Mungchi tilts its head, then its mouth opens in a small surprised o, then it breaks "
             "into a big smile.",
-            speaker="뭉치가 정답을 말함(예: '뭉치: 알았다! 장난꾸러기는 너구리야!')",
+            speaker="뭉치가 '알았다!' 뒤에 이번 정답을 말함",
             place="INCIDENT",
         ),
         CutSpec(
@@ -195,7 +205,8 @@ _NEW = {
             "HOLD_CLOSE",
             "CLOSE",
             "정답 공개: 정답 장소에서 사람들과 대상(뭉치 없음)",
-            speaker="그 컷에 보이는 인물이 공개에 놀람(예: '새봄: 짜잔! 보물이다!')",
+            speaker="그 컷에 보이는 인물(characters의 이름)이 공개에 놀라는 말('짜잔!'·'와!' 같은 "
+            "말로 시작)",
             place="ANSWER",
             act="The people react as the story beat says with clear, natural movements (pointing "
             "or picking something up is fine).",
@@ -238,9 +249,13 @@ _NEW = {
             "웃고(종료 5컷에서 든 물건은 그대로 듦), 뭉치는 사람들과 떨어져 쑥스럽게 웃으며 몸을 "
             "흔듦(아무도 뭉치를 만지지 않음)",
             "Mungchi stays apart from the people, smiles shyly and sways happily.",
-            speaker="그 컷에 보이는 인물이 뭉치에게 고마워하는 말(예: '아린: 고마워, 뭉치!')",
+            speaker="그 컷에 보이는 인물(characters의 이름)이 뭉치에게 '고마워, 뭉치!'처럼 "
+            "고마워하는 말",
             own=True,
             look="The people smile warmly and thankfully at Mungchi.",
+            frame="Mungchi stands on one side of the picture, facing the viewer; the people stand "
+            "together on the other side, shown in side or three-quarter view, turned toward "
+            "Mungchi (not facing the viewer and not standing in a row).",
             follows=5,
             place="ANSWER",
             act="The people turn toward Mungchi and smile warmly from a little distance.",

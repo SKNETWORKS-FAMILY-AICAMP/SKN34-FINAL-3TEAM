@@ -1160,23 +1160,36 @@ def text_max(path: str, theme: Theme | None = None) -> int:
     return TEXT_MAX[key]
 
 
-def mungchi_clauses(text: str) -> list[str]:
+def mungchi_clauses(text: str, names: list[str] | tuple[str, ...] = ()) -> list[str]:
     """콘티 문장에서 뭉치가 주어인 마디. 뭉치가 나오는 컷에만 쓴다.
 
     '…고 '·'…며 '·'…가운데 '·'…동안 '·쉼표로 마디를 나눈다. '뭉치와 민지가'·'모두'처럼 함께 하는
     주어도 뭉치 마디이고 '뭉치를'·'뭉치 곁에서'는 아니다. 다른 사람이 주어(…이·…가, 마디 첫 낱말
-    …는·…들은)인 마디는 빼고, 주어가 없는 마디는 앞 마디의 주어를 잇는다(첫 마디는 뭉치).
+    …는·…들은, 인물 이름·'…님' 뒤 은·는)인 마디는 빼고, 주어가 없는 마디는 앞 마디의 주어를
+    잇는다(첫 마디는 뭉치).
+
+    #779(대표 5종 콘티 2026-11-19): 받침 있는 이름 뒤 '은'('예린은 염소를 안고')을 다른 사람 주어로
+    못 봐 엔딩 컷(찾은 염소를 안은 채 뭉치에게 고마워함)이 뭉치 손 동작으로 걸렸음. 받침 뒤 '은'을
+    모두 주어로 보면 '작은 상자'의 '작은'도 걸려 진짜 뭉치 동작을 놓치므로 인물 이름과 '…님'만.
     """
     out: list[str] = []
     mungchi = True
+    people = "|".join(re.escape(n) for n in names if n and n != "뭉치")
+    other = re.compile(
+        rf"(?:^|\s)(?:{people})(?:은|는)\s|^\S+님(?:은|는)\s" if people else r"^\S+님(?:은|는)\s"
+    )
     for part in re.split(r"(?<=[고며]) |(?<=가운데) |(?<=동안) |[,.] ", text):
         if re.search(r"뭉치(?:가|는|도|와|과|랑|하고)(?:\s|$)", part) or re.match(
             r"(?:모두|다 ?같이|다 ?함께|함께)", part
         ):
             mungchi = True
-        elif re.match(r"\S+(?:는|들은|도)\s", part) or any(
-            not w.endswith(NOT_SUBJECT)
-            for w in re.findall(r"(?:^|(?<=\s))(\S+(?:이|가))(?=\s)", part)
+        elif (
+            re.match(r"\S+(?:는|들은|도)\s", part)
+            or other.search(part)
+            or any(
+                not w.endswith(NOT_SUBJECT)
+                for w in re.findall(r"(?:^|(?<=\s))(\S+(?:이|가))(?=\s)", part)
+            )
         ):
             mungchi = False
         if mungchi:
@@ -1184,12 +1197,17 @@ def mungchi_clauses(text: str) -> list[str]:
     return out
 
 
-def cut_action_problems(text: str, has_mungchi: bool = True, may_run: bool = False) -> list[str]:
+def cut_action_problems(
+    text: str,
+    has_mungchi: bool = True,
+    may_run: bool = False,
+    names: list[str] | tuple[str, ...] = (),
+) -> list[str]:
     """뭉치가 손·팔다리를 쓰거나 뛰는 동작(뭉치가 나오는 컷만), 화면 쪽으로 다가오거나 나가는 동작.
 
     may_run(출동 컷)이면 뭉치의 달리기 낱말(MUNGCHI_RUN_WORDS)은 걸지 않는다(#779).
     """
-    clauses = mungchi_clauses(text) if has_mungchi else []
+    clauses = mungchi_clauses(text, names) if has_mungchi else []
     words = [w for w in MUNGCHI_HAND_WORDS if not (may_run and w in MUNGCHI_RUN_WORDS)]
     hands = [w for w in words if any(w in c for c in clauses)]
     near = [w for w in APPROACH_WORDS if w in text]
@@ -1585,6 +1603,7 @@ def check_cuts(theme: Theme) -> list[str]:
         if len(cuts) != CUTS:
             bad.append(f"CUTS {key} {CUTS}컷 필요(지금 {len(cuts)}컷)")
             continue
+        names = [str(c.get("name") or "") for c in theme.get("characters") or []]
         for i, cut in enumerate(cuts, 1):
             spec = cut_layout.spec(scene, i, CUTS)
             for k in ("scene", "action"):
@@ -1594,7 +1613,7 @@ def check_cuts(theme: Theme) -> list[str]:
             may_run = spec.who == "RUN"  # 뭉치 혼자 달리는 컷(#779)
             for k in ("scene", "action"):
                 for problem in cut_action_problems(
-                    str(cut.get(k) or ""), spec.has_mungchi, may_run
+                    str(cut.get(k) or ""), spec.has_mungchi, may_run, names
                 ):
                     bad.append(f"CUT_ACTION {key}{i}.{k} {problem}")
             mood = cut.get("mungchiMood")
