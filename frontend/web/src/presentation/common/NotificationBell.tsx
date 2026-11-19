@@ -18,6 +18,6 @@ export function NotificationBell() {
       aria-description={count ? `읽지 않은 알림 ${count}${unread.data?.hasNext ? '개 이상' : '개'}` : undefined} onClick={() => setOpen(true)}>
       <Bell size={22} aria-hidden="true" />{count > 0 && <span className="notification-count" aria-hidden="true">{count}{unread.data?.hasNext ? '+' : ''}</span>}
     </button>
-    {open && <Modal title="알림" onClose={() => setOpen(false)}><Suspense fallback={<p role="status">알림을 불러오고 있습니다.</p>}><Center role={session.role} embedded onNavigate={() => setOpen(false)} /></Suspense></Modal>}
+    {open && <Modal title="알림" scrollIndicator={session.role === 'ADMIN'} onClose={() => setOpen(false)}><Suspense fallback={<p role="status">알림을 불러오고 있습니다.</p>}><Center role={session.role} embedded onNavigate={() => setOpen(false)} /></Suspense></Modal>}
   </div>
 }

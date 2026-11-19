@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { BookOpen } from 'lucide-react'
 import { useSearchParams } from 'react-router'
 import type { AdminMission, MissionVersion, Rubric } from '../../domain/admin/operations.ts'
 import { missingFieldLabel, missingMissionFields, rubricSaveErrors } from '../../domain/admin/operations.ts'
@@ -19,6 +20,7 @@ import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from '../student/MissionScene.tsx'
 import { AnswerFields } from '../student/StudentWorkPage.tsx'
+import { date } from './adminFormatting.ts'
 export function MissionManager() {
   const [params, setParams] = useSearchParams(),
     filters = {
@@ -27,9 +29,9 @@ export function MissionManager() {
       thinkingType: params.get('thinkingType') ?? '',
       page: params.get('page') ?? '0',
     },
-    q = useAdminQuery(['missions', filters], (signal) => adminApi.missions(filters, signal)),
     // 열린 미션은 URL에 둠: 초안 채택 뒤 /admin/missions?missionId=… 로 바로 편집 화면을 엶 (#356)
     id = params.get('missionId'),
+    q = useAdminQuery(['missions', filters], (signal) => adminApi.missions(filters, signal), !id),
     [creating, setCreating] = useState(false)
   function setId(missionId: string | null) {
     const next = new URLSearchParams(params)
@@ -43,10 +45,10 @@ export function MissionManager() {
     if (key !== 'page') next.set('page', '0')
     setParams(next)
   }
+  if (id) return <MissionDetail key={id} id={id} onClose={() => setId(null)} />
   return (
     <>
-      <h2>미션 관리</h2>
-      <p>수정하면 새 버전이 생깁니다. 기존 학습은 시작 당시 미션·기준표를 유지합니다.</p>
+      <p className="ad-context-note">수정하면 새 버전이 생깁니다. 기존 학습은 시작 당시 미션·기준표를 유지합니다.</p>
       <div className="ws-toolbar">
         <label>
           운영 상태
@@ -99,15 +101,16 @@ export function MissionManager() {
       {q.data && !q.error && (
         <>
           <p>{q.data.counts.map((c) => `${missionLabels[c.status]} ${c.count}개`).join(' · ')}</p>
-          <div className="ws-stack">
+          <div className="ws-stack ad-resource-list">
             {!q.data.items.length && <p>조건에 맞는 미션이 없습니다.</p>}
             {q.data.items.map((m) => (
               <article className="ws-card" key={m.missionId}>
-                <h3>{m.versions.at(-1)!.title}</h3>
+                <span className="ad-resource-icon"><BookOpen size={21} strokeWidth={1.6} aria-hidden="true" /></span>
+                <div><h3>{m.versions.at(-1)!.title}</h3>
                 <p>
                   {missionLabels[m.status]} · 초{m.versions.at(-1)!.gradeMin}~
                   {m.versions.at(-1)!.gradeMax} · {thinkingLabels[m.versions.at(-1)!.thinkingType]}
-                </p>
+                </p></div>
                 <button className="cj-secondary" onClick={() => setId(m.missionId)}>
                   미션 편집·검토
                 </button>
@@ -133,7 +136,6 @@ export function MissionManager() {
           />
         </Modal>
       )}
-      {id && <MissionDetail id={id} onClose={() => setId(null)} />}
     </>
   )
 }
@@ -358,176 +360,183 @@ function parseOptions(text: string) {
       return { id: id.trim(), label: label.join('|').trim() }
     })
 }
+type MissionReviewResult = AdminMission['reviews'][number]['result']
+type MissionAction = 'review-request' | 'review' | 'publish' | 'unpublish'
+type ReviewDraft = {
+  missionVersion: number
+  rubricVersion: number
+  result: MissionReviewResult
+  comment: string
+}
+const reviewLabels: Record<MissionReviewResult, string> = {
+  APPROVED: '승인',
+  CHANGES_REQUESTED: '보완 요청',
+}
+const reviewCommentLimit = 1000
+
 function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const q = useAdminQuery(['mission', id], (signal) => adminApi.mission(id, signal)),
-    [preview, setPreview] = useState(false),
-    [notice, setNotice] = useState(''),
-    action = useAdminMutation((v: { action: string; data?: unknown }) =>
-      adminApi.action(id, v.action, v.data),
-    )
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => { heading.current?.focus() }, [])
+  const q = useAdminQuery(['mission', id], (signal) => adminApi.mission(id, signal))
+  const [preview, setPreview] = useState(false)
+  const [review, setReview] = useState<ReviewDraft | null>(null)
+  const [notice, setNotice] = useState('')
+  const action = useAdminMutation((v: { action: MissionAction; data?: unknown }) =>
+    adminApi.action(id, v.action, v.data),
+  )
   const m = q.error ? undefined : q.data
   const current = m?.versions.find((v) => v.version === m.currentVersion)
   const standards = useStandardsByCodes(current?.achievementStandards ?? [])
-  // 표 조회가 끝나야 표·학년군·단계 수까지 확인. 실패하면 서버 게시 검사(422)에 맡김
+  // 표 데이터가 없으면 서버가 게시 요청에서 성취기준을 확인한다.
   const missing = m ? missingMissionFields(m, standards.error || standards.isFetching ? undefined : standards.data ?? {}) : []
-  function run(a: string, data: unknown = {}) {
-    void action
-      .mutateAsync({ action: a, data })
-      .then((r) => setNotice(`서버 응답 · ${missionLabels[r.status]}`))
-      .catch(() => {})
+  const versionPair = m?.currentRubricVersion != null
+    ? { missionVersion: m.currentVersion, rubricVersion: m.currentRubricVersion }
+    : null
+  const latestReview = versionPair && m?.reviews.filter(r =>
+    r.missionVersion === versionPair.missionVersion && r.rubricVersion === versionPair.rubricVersion,
+  ).at(-1)
+  const publishedChanges = m?.status === 'PUBLISHED' &&
+    (m.currentVersion !== m.publishedVersion || m.currentRubricVersion !== m.publishedRubricVersion)
+  const canRequest = !!versionPair && (m?.status === 'DRAFT' || m?.status === 'UNPUBLISHED' || publishedChanges)
+  const canReview = !!versionPair && (m?.status === 'REVIEW_REQUIRED' || publishedChanges)
+  const busy = action.isPending || q.isFetching
+  const reviewIsCurrent = canReview && review?.missionVersion === versionPair?.missionVersion &&
+    review?.rubricVersion === versionPair?.rubricVersion
+
+  function run(next: MissionAction, data?: unknown) {
+    setNotice('')
+    void action.mutateAsync({ action: next, data }).then(result => {
+      if (next === 'review') {
+        setNotice(review?.result === 'APPROVED' ? '현재 버전을 승인했습니다.' : '보완 요청을 기록했습니다.')
+        setReview(null)
+      } else {
+        setNotice(next === 'review-request' ? '검토를 요청했습니다.' : '서버 응답 · ' + missionLabels[result.status])
+      }
+    }).catch(error => {
+      if (error instanceof ApiError && error.problem.status === 409) void q.refetch()
+    })
   }
+  function openReview(result: MissionReviewResult) {
+    if (!versionPair) return
+    action.reset()
+    setReview({ ...versionPair, result, comment: '' })
+  }
+  function closeReview() {
+    if (action.isPending) return
+    action.reset()
+    setReview(null)
+  }
+
   return (
-    <section className="ws-card">
-      <div className="ws-actions">
-        <h2>미션 상세·버전</h2>
-        <button className="cj-secondary" onClick={onClose}>
-          편집 닫기
-        </button>
+    <section className="ws-card ad-mission-editor" aria-labelledby="mission-editor-title">
+      <div className="ws-actions ad-mission-editor-heading">
+        <h2 id="mission-editor-title" ref={heading} tabIndex={-1}>미션 상세·버전</h2>
+        <button className="cj-secondary" onClick={onClose}>미션 목록으로</button>
       </div>
       <QueryFeedback query={q} />
       {m && (
         <>
+          {current && <h3 className="ad-mission-editor-title">{current.title}</h3>}
           <p>
-            {m.source === 'LLM_DRAFT' ? 'LLM 초안 채택' : m.source === 'LLM_THEME' ? '테마 초안 채택' : '사람 작성'} · {missionLabels[m.status]} · 편집본 v{m.currentVersion} · 기준표 v
-            {m.currentRubricVersion ?? '미등록'} · 학생 공개본 {m.publishedVersion ? `v${m.publishedVersion} / 기준표 v${m.publishedRubricVersion ?? '미등록'}` : '없음'}
+            {m.source === 'LLM_DRAFT' ? 'LLM 초안 채택' : m.source === 'LLM_THEME' ? '테마 초안 채택' : '사람 작성'} · {missionLabels[m.status]} · 편집본 v{m.currentVersion} · 기준표 {m.currentRubricVersion ? 'v' + m.currentRubricVersion : '미등록'} · 학생 공개본 {m.publishedVersion ? 'v' + m.publishedVersion + ' / 기준표 v' + (m.publishedRubricVersion ?? '미등록') : '없음'}
           </p>
-          {m.status === 'PUBLISHED' && <p role="note">
-            학생에게는 미션 v{m.publishedVersion}·기준표 v{m.publishedRubricVersion ?? '미등록'} 공개본이 제공됩니다. 편집본·기준표 수정은 검토 요청 → 검토 → 게시 후 새 시도부터 적용됩니다.
-          </p>}
-          <details>
-            <summary>미션·기준표 버전 이력</summary>
-            {m.versions.map((v) => (
-              <p key={v.version}>
-                미션 v{v.version} · {v.title} · {v.createdAt}
-              </p>
-            ))}
-            {m.rubrics.map((r) => (
-              <p key={r.version}>
-                기준표 v{r.version} · 요소 {r.elements.length}개
-              </p>
-            ))}
-          </details>
-          <div className="ws-grid">
-            <section>
-              <h3>내용 수정</h3>
-              <MissionForm
-                key={`v${m.currentVersion}`}
-                mission={m}
-                onSaved={() =>
-                  setNotice('새 버전을 저장했습니다. 재검토·재게시 후 신규 시도부터 적용됩니다.')
-                }
-              />
-            </section>
-            <section>
-              <h3>판정 기준표</h3>
-              <RubricForm key={`v${m.currentVersion}-r${m.currentRubricVersion}`} mission={m} onSaved={() => setNotice('새 기준표 버전을 저장했습니다.')} />
-            </section>
-          </div>
+          {publishedChanges && <p className="ad-note">편집본을 게시하기 전까지 학생에게는 기존 공개본이 제공됩니다.</p>}
+          <section className="ad-mission-review" aria-labelledby="mission-review-title">
+            <h3 id="mission-review-title">검토 및 게시</h3>
+            <p>{latestReview ? '현재 버전 검토 결과 · ' + reviewLabels[latestReview.result]
+              : canReview ? '현재 버전의 검토 결과를 기록해 주세요.'
+              : m.status === 'PUBLISHED' ? '현재 버전이 학생에게 공개되어 있습니다.'
+              : '미션과 기준표를 저장한 뒤 검토를 요청해 주세요.'}</p>
+            {latestReview?.comment && <p className="ad-mission-review-comment">{latestReview.comment}</p>}
+            <div className="ws-actions">
+              <button className="cj-secondary" onClick={() => setPreview(true)}>학생 화면 미리보기</button>
+              <button className="cj-secondary" disabled={busy || !canRequest}
+                onClick={() => run('review-request', versionPair)}>검토 요청</button>
+              {canReview && <>
+                <button className="cj-secondary" disabled={busy} onClick={() => openReview('APPROVED')}>현재 버전 검토 승인</button>
+                <button className="cj-secondary" disabled={busy} onClick={() => openReview('CHANGES_REQUESTED')}>보완 요청</button>
+              </>}
+              <button className="cj-primary" disabled={busy || !canReview || missing.length > 0}
+                onClick={() => run('publish')}>게시</button>
+              {m.status === 'PUBLISHED' &&
+                <button className="cj-secondary ad-danger" disabled={busy} onClick={() => run('unpublish')}>신규 제공 중단</button>}
+            </div>
+            {(m.status !== 'PUBLISHED' || publishedChanges) && missing.length > 0 && <div><h4>게시 전 확인할 항목</h4>
+              <ul aria-label="게시 전 확인">{missing.map(code => <li key={code}>{missingFieldLabel(code)}</li>)}</ul>
+            </div>}
+            <p role="status">{notice}</p>
+            {!review && <ErrorNotice error={action.error instanceof ApiError && action.error.problem.missingFields ?
+              new ApiError({ ...action.error.problem, missingFields: action.error.problem.missingFields.map(missingFieldLabel) }) : action.error} />}
+          </section>
           <section role="note" aria-label="검토 안내">
             <h3>검토 때 확인할 것</h3>
-            <p>
-              학년(미션 학년과 성취기준 학년군)·내용·행동(성취기준 문장의 동사)이 미션 질문과 맞는지 확인하세요.
-              초안 자동 검사 통과만으로 공개하지 않습니다.
-            </p>
+            <p>학년·질문·판정 기준이 성취기준과 맞는지 확인하고, 학생 화면 미리보기에서 정답이나 예시 답이 노출되지 않는지 확인하세요.</p>
             <ul>
-              {current?.achievementStandards.map((code) => {
-                const s = standards.data?.[code]
-                return (
-                  <li key={code}>
-                    {code} · {s ? `${s.gradeBand} · ${s.statement}` : '성취기준 표에서 확인하지 못함'} · 성취수준{' '}
-                    {current.achievementLevels?.[code] ?? '고르지 않음'}
-                  </li>
-                )
+              {current?.achievementStandards.map(code => {
+                const standard = standards.data?.[code]
+                return <li key={code}>
+                  {code} · {standard ? standard.gradeBand + ' · ' + standard.statement : '성취기준 표에서 확인하지 못함'} · 성취수준 {current.achievementLevels?.[code] ?? '고르지 않음'}
+                </li>
               })}
             </ul>
           </section>
-          <div className="ws-actions">
-            <button className="cj-secondary" onClick={() => setPreview(true)}>
-              학생 화면 미리보기
-            </button>
-            <button
-              className="cj-secondary"
-              disabled={action.isPending || !m.currentRubricVersion}
-              onClick={() =>
-                run('review-request', {
-                  missionVersion: m.currentVersion,
-                  rubricVersion: m.currentRubricVersion,
-                })
-              }
-            >
-              검토 요청
-            </button>
-            {(m.status === 'REVIEW_REQUIRED' || m.status === 'PUBLISHED') && (
-              <>
-                <button
-                  className="cj-secondary"
-                  disabled={action.isPending}
-                  onClick={() =>
-                    run('review', {
-                      missionVersion: m.currentVersion,
-                      rubricVersion: m.currentRubricVersion,
-                      result: 'APPROVED',
-                      comment: '학년·내용·행동(성취기준 동사)·기준표·정답 공개 조건 확인',
-                    })
-                  }
-                >
-                  현재 버전 검토 승인
-                </button>
-                <button
-                  className="cj-secondary"
-                  disabled={action.isPending}
-                  onClick={() =>
-                    run('review', {
-                      missionVersion: m.currentVersion,
-                      rubricVersion: m.currentRubricVersion,
-                      result: 'CHANGES_REQUESTED',
-                      comment: '콘텐츠 보완 후 재검토 요청',
-                    })
-                  }
-                >
-                  보완 요청
-                </button>
-              </>
-            )}
-            <button
-              className="cj-primary"
-              disabled={action.isPending}
-              onClick={() => run('publish')}
-            >
-              게시
-            </button>
-            {m.status === 'PUBLISHED' && (
-              <button
-                className="cj-secondary ad-danger"
-                disabled={action.isPending}
-                onClick={() => run('unpublish')}
-              >
-                신규 제공 중단
-              </button>
-            )}
+          <div className="ws-grid">
+            <section>
+              <h3>내용 수정</h3>
+              <MissionForm key={m.currentVersion} mission={m}
+                onSaved={() => setNotice('새 버전을 저장했습니다. 재검토·재게시 후 신규 시도부터 적용됩니다.')} />
+            </section>
+            <section>
+              <h3>판정 기준표</h3>
+              <RubricForm key={m.currentVersion + ':' + m.currentRubricVersion} mission={m}
+                onSaved={() => setNotice('새 기준표 버전을 저장했습니다.')} />
+            </section>
           </div>
-          {missing.length > 0 && <div><h3>게시 전 확인할 항목</h3>
-            <ul aria-label="게시 전 확인">{missing.map((code) => <li key={code}>{missingFieldLabel(code)}</li>)}</ul>
-          </div>}
-          <p>
-            검토·게시는 CONTENT 권한 1인도 가능합니다. 제공 중단 후에도 진행 중 학습은 시작 당시
-            버전으로 계속됩니다.
-          </p>
-          {m.reviews.map((r, i) => (
-            <p key={i}>
-              검토 · 미션 v{r.missionVersion} / 기준표 v{r.rubricVersion} · {r.result} · {r.comment}
-            </p>
-          ))}
+          <details>
+            <summary>미션·기준표 버전 이력</summary>
+            {m.versions.map(v => (
+              <div className="ad-version-history-row" key={v.version}><strong>미션 v{v.version}</strong><span>{v.title}</span><time dateTime={v.createdAt}>{date(v.createdAt)}</time></div>
+            ))}
+            {m.rubrics.map(r => (
+              <div className="ad-version-history-row" key={r.version}><strong>기준표 v{r.version}</strong><span>요소 {r.elements.length}개</span></div>
+            ))}
+          </details>
+          <section aria-labelledby="mission-review-history">
+            <h3 id="mission-review-history">검토 이력</h3>
+            {m.reviews.length ? <ol className="ad-mission-review-history">
+              {m.reviews.slice().reverse().map((r, i) => <li key={r.createdAt + ':' + i}>
+                <strong>{reviewLabels[r.result]}</strong> · 미션 v{r.missionVersion} / 기준표 v{r.rubricVersion} · <time dateTime={r.createdAt}>{date(r.createdAt)}</time>
+                {r.comment && <p>{r.comment}</p>}
+              </li>)}
+            </ol> : <p>아직 검토 이력이 없습니다.</p>}
+          </section>
         </>
       )}
-      <p role="status">{notice}</p>
-      <ErrorNotice error={action.error instanceof ApiError && action.error.problem.missingFields ?
-        new ApiError({ ...action.error.problem, missingFields: action.error.problem.missingFields.map(missingFieldLabel) }) : action.error} />
-      {preview && (
-        <Modal title="학생 화면 미리보기" onClose={() => setPreview(false)}>
-          <MissionPreview id={id} />
-        </Modal>
-      )}
+      {preview && <Modal title="학생 화면 미리보기" onClose={() => setPreview(false)}><MissionPreview id={id} /></Modal>}
+      {review && <Modal title={review.result === 'APPROVED' ? '현재 버전 검토 승인' : '보완 요청'} onClose={closeReview}>
+        <form className="ws-form" onSubmit={event => {
+          event.preventDefault()
+          const comment = review.comment.trim()
+          if (busy || !reviewIsCurrent || (review.result === 'CHANGES_REQUESTED' && !comment)) return
+          run('review', { ...review, comment })
+        }}>
+          <p>미션 v{review.missionVersion} · 기준표 v{review.rubricVersion}</p>
+          {!reviewIsCurrent && <p role="alert">편집 버전 또는 상태가 바뀌었습니다. 창을 닫고 현재 버전을 확인해 주세요.</p>}
+          <label>검토 의견 {review.result === 'CHANGES_REQUESTED' ? '(필수)' : '(선택)'}
+            <textarea aria-label="검토 의견" value={review.comment} maxLength={reviewCommentLimit}
+              required={review.result === 'CHANGES_REQUESTED'} disabled={action.isPending}
+              onChange={event => setReview({ ...review, comment: event.target.value })} />
+          </label>
+          <ErrorNotice error={action.error} />
+          <div className="ws-actions">
+            <button type="submit" className="cj-primary"
+              disabled={busy || !reviewIsCurrent || (review.result === 'CHANGES_REQUESTED' && !review.comment.trim())}>
+              {review.result === 'APPROVED' ? '승인 기록' : '보완 요청 기록'}
+            </button>
+            <button type="button" className="cj-secondary" disabled={action.isPending} onClick={closeReview}>취소</button>
+          </div>
+        </form>
+      </Modal>}
     </section>
   )
 }

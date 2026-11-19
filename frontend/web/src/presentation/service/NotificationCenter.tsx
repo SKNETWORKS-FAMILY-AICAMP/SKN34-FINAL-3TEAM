@@ -6,6 +6,7 @@ import { serviceApi } from '../../data/serviceApi.ts'
 import { notificationLabels, notificationPath } from '../../domain/service.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { formatKoreanDateTime } from '../common/dateTime.ts'
 
 export function NotificationCenter({ role, embedded = false, onNavigate }: { role: string; embedded?: boolean; onNavigate?: () => void }) {
   const cache = useQueryClient()
@@ -29,7 +30,7 @@ export function NotificationCenter({ role, embedded = false, onNavigate }: { rol
       {!q.error && q.data && !q.data.items.length && <p>표시할 알림이 없습니다.</p>}
       {!q.error && q.data?.items.map(n => {
         const path = notificationPath(n.link, role, location.origin)
-        return <article className="ws-card" key={n.id}><h3>{n.title}</h3><p>{n.readAt ? '읽음' : '읽지 않음'} · {n.createdAt}</p>
+        return <article className="ws-card notification-item" key={n.id}><h3>{n.title}</h3><p className="notification-meta"><span className={`notification-read-state${n.readAt ? ' is-read' : ''}`}>{n.readAt ? '읽음' : '읽지 않음'}</span><time dateTime={n.createdAt}>{formatKoreanDateTime(n.createdAt)}</time></p>
           <div className="ws-actions">{!n.readAt && <button disabled={read.isPending} onClick={() => void read.mutateAsync(n.id).then(reload).catch(() => {})}>읽음으로 표시</button>}
             {path ? <Link to={path} onClick={onNavigate}>관련 내용 열기</Link> : <p>관련 화면 주소를 확인할 수 없습니다.</p>}</div></article>
       })}
