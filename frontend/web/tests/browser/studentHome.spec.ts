@@ -7,6 +7,8 @@ import type { Page } from '@playwright/test'
 // - 무료와 프리미엄은 평일 규칙이 같다(무료는 테마 문제 주 5개, 하루 상한 없음). 일요일만 다르다: 무료는 닫힘, 프리미엄은 토요일과 같음
 // - 아이 화면에는 결제 유도 문구가 없다
 test.beforeEach(async ({ page }) => {
+  // 문제를 여는 시험은 오늘 장면 대화 상자가 올라오기(약 3초)를 기다려 지나간다(#807). 기본 30초의 세 배
+  test.slow()
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort())
 })
 

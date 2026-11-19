@@ -324,7 +324,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
   const f = latestFeedback(a),
     writing = !a.finishedAt && (a.answers.length === 0 || more) && canAddAnswer(a),
     guide = writing && draft ? writingGuide(draft.answer, more, a.mission.choices?.length ?? 0) : null,
-    // 테마 문제의 그날 대화 마지막 줄(뭉치의 수사 연결 문장, #807). 대화가 없거나 EXTRA면 없음
+    // 테마 문제의 그날 대화 마지막 줄(뭉치가 오늘 문제로 잇는 말, 마지막 줄은 늘 뭉치 — #782·#807). 대화가 없거나 EXTRA면 없음
     hook = a.themeScene?.dialogue.at(-1) ?? null
   useEffect(() => {
     if (!focusAnswerId || writing || !result.current) return
@@ -546,7 +546,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
             <MissionScene mission={a.mission} />
             <div className="sw-qbox">
               <span className="sw-qtag" aria-hidden="true">{a.themeScene ? '오늘의 문제' : '문제'}</span>
-              {/* 테마 문제는 그날 대화 마지막 줄(뭉치의 수사 연결 문장)을 함께: 문제 글은 대화에 나온 사건 맥락을 빼고 만들어진다(#807) */}
+              {/* 테마 문제는 그날 대화 마지막 줄(뭉치가 오늘 문제로 잇는 말)을 함께: 문제 글은 대화에 나온 사건 맥락을 빼고 만들어진다(#807) */}
               {hook && <p className="sw-hook">{hook.speaker} · {hook.text}</p>}
               <h2 className="sw-question">
                 <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>

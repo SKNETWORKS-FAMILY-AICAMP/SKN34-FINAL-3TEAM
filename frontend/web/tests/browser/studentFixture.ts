@@ -37,7 +37,8 @@ export async function waitForStudentHome(page: Page) {
 export async function throughTodayScene(page: Page) {
   await expect(page).toHaveURL(/\/student\/theme\/scene\/(MON|TUE|WED|THU|FRI)$/)
   const box = page.locator('.ts-box')
-  await expect(box).toBeVisible({ timeout: 10_000 })
+  // 대화 상자가 다 올라온 뒤에만 누르기를 받는다(제목 연출 중 누르면 보지 못한 첫 대사를 넘기지 않게)
+  await expect(box).toHaveAttribute('data-ready', 'true', { timeout: 10_000 })
   const total = Number((await page.locator('.ts-pos').textContent())?.match(/\/\s*(\d+)/)?.[1] ?? 1)
   for (let i = 0; i < total; i++) await box.click()
   await page.waitForURL('**/student/attempts/**')

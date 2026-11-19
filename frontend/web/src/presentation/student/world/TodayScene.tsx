@@ -54,6 +54,15 @@ export function TodayScene({ child, day, onHome, onProblem }: {
   }, [open, mission, attempt]) // eslint-disable-line react-hooks/exhaustive-deps
   const lines = attempt?.themeScene?.dialogue ?? []
   const skip = !!attempt && (lines.length === 0 || attemptStarted(attempt))
+  // 대화 상자가 올라오기 전(제목 연출 2.4초 + 올라오기 0.45초)에는 누르기를 받지 않는다(보지 못한 첫 대사를 넘기지 않게). 움직임 줄이기면 바로
+  const showing = !!attempt && !skip
+  const [risen, setRisen] = useState(false)
+  useEffect(() => {
+    if (!showing || reduce) return
+    const timer = window.setTimeout(() => setRisen(true), 2850)
+    return () => window.clearTimeout(timer)
+  }, [showing, reduce])
+  const ready = reduce || risen
   // 대화가 없거나 이미 답을 쓴 시도는 장면 없이 바로 문제(부모가 다시 그려도 한 번만 넘김)
   const left = useRef(false)
   useEffect(() => {
@@ -95,7 +104,11 @@ export function TodayScene({ child, day, onHome, onProblem }: {
   const at = motion?.speakers[current.speaker]
   const tail = at ? Math.max(6, Math.min(94, at.x)) : null
   const title = today?.title ?? m.title
-  const next = () => (step < last ? setStep(step + 1) : onProblem(attempt.attemptId))
+  const next = () => {
+    if (!ready) return
+    if (step < last) setStep(step + 1)
+    else onProblem(attempt.attemptId)
+  }
   const label = `${DAY_LABELS[day]}요일`
 
   return (
@@ -129,7 +142,7 @@ export function TodayScene({ child, day, onHome, onProblem }: {
         <div className={reduce ? 'ts-talk' : 'ts-talk ts-rise'}>
           {tail !== null && <span className="ts-tail" aria-hidden="true" style={{ left: `${tail}%` }} />}
           <span className="ts-name">{current.speaker}</span>
-          <button type="button" className="ts-box" onClick={next}>
+          <button type="button" className="ts-box" onClick={next} data-ready={ready}>
             <span className="ts-line" aria-live="polite">{current.text}</span>
             <span className="ts-pos">{Math.min(step, last) + 1} / {lines.length} · {step < last ? '다음 ▼' : '문제로 →'}</span>
           </button>

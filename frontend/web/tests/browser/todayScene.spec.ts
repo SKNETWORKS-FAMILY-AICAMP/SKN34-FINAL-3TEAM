@@ -43,6 +43,7 @@ test('홈에서 문제를 열면 오늘 장면: 대사를 한 줄씩 넘기고 �
   await expect(page.getByRole('navigation', { name: '학생 메뉴' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '미션 시작하기' })).toHaveCount(0)
   const box = scene(page).locator('.ts-box')
+  await expect(box).toHaveAttribute('data-ready', 'true')
   await expect(scene(page).locator('.ts-name')).toHaveText('뭉치')
   await expect(box).toContainText('연못가 정원도 살펴보자.')
   await expect(box).toContainText('1 / 3 · 다음 ▼')
@@ -54,12 +55,30 @@ test('홈에서 문제를 열면 오늘 장면: 대사를 한 줄씩 넘기고 �
   await expect(box).toContainText('3 / 3 · 문제로 →')
   await box.click()
   await expect(page).toHaveURL(/\/student\/attempts\//)
-  // 답변 작성: 왼쪽 '오늘의 문제' 상자에 그날 대화 마지막 줄(뭉치의 수사 연결 문장)
+  // 답변 작성: 왼쪽 '오늘의 문제' 상자에 그날 대화 마지막 줄(뭉치가 오늘 문제로 잇는 말)
   await expect(page.locator('.sw-qtag')).toHaveText('오늘의 문제')
   await expect(page.locator('.sw-hook')).toHaveText('뭉치 · 표에 적힌 수로 같이 문제를 풀어 볼래?')
   // 장면은 주소를 바꿔치기해서 뒤로 가기는 홈으로
   await page.goBack()
   await waitForStudentHome(page)
+})
+
+test('제목 연출 중(대화 상자가 올라오기 전)에 그림을 눌러도 첫 대사를 넘기지 않는다', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 3, days: 'DDD--' })
+  await go(page, '/student/theme/scene/THU')
+  const box = scene(page).locator('.ts-box')
+  await expect(box).toContainText('1 / 3 · 다음 ▼')
+  // 준비 상태를 읽는 것과 누르기를 한 번에 한다(느린 환경에서 이미 상자가 올라왔으면 넘어가는 것이 맞아 이 확인을 건너뜀)
+  const early = await page.evaluate(() => {
+    const ready = document.querySelector<HTMLElement>('.ts-box')?.dataset.ready
+    document.querySelector<HTMLElement>('.ts-advance')?.click()
+    return ready === 'false'
+  })
+  test.skip(!early, '이미 대화 상자가 올라와 연출 중 누르기를 확인할 수 없음(느린 환경)')
+  await expect(box).toContainText('1 / 3 · 다음 ▼')
+  await expect(box).toHaveAttribute('data-ready', 'true')
+  await expect(box).toContainText('1 / 3 · 다음 ▼')
 })
 
 test('말꼬리는 그 화자 위치가 있을 때만(미션 움직임 speakers), 없으면 이름표만', async ({ page }) => {
@@ -71,6 +90,7 @@ test('말꼬리는 그 화자 위치가 있을 때만(미션 움직임 speakers)
   await expect(box).toContainText('어젯밤에도 열두 시에 시계탑 종이 울렸단다.')
   await expect(scene(page).locator('.ts-name')).toHaveText('이장님')
   await expect(scene(page).locator('.ts-tail')).toHaveCount(0)
+  await expect(box).toHaveAttribute('data-ready', 'true')
   await box.click()
   await box.click()
   await expect(scene(page).locator('.ts-name')).toHaveText('뭉치')

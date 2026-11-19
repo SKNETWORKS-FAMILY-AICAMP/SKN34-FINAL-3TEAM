@@ -5,7 +5,7 @@
  */
 export interface DialogueLine { speaker: string; text: string }
 export interface ThemeScene {
-  /** 그날 등장인물 대화(ai 테마: 초3·초4 3~4줄, 초5·초6 2~3줄, 끝 두 줄은 증거 발견 줄과 뭉치의 수사 연결 문장). 없으면 빈 배열 */
+  /** 그날 등장인물 대화(ai 테마는 "오늘 온 까닭 → 증거를 찾음 → 오늘 문제로 이어짐" 순서, 마지막 줄은 늘 뭉치, 줄 수는 ai가 정함 — #782). 없으면 빈 배열 */
   dialogue: DialogueLine[]
   /** 관리자가 넣은 요일 영상(presigned URL). ai 테마 초안 채택 테마는 요일 영상이 없어 null(#437 2026-11-11) */
   videoUrl: string | null
