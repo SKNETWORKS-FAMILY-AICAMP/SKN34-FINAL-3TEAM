@@ -180,7 +180,8 @@ def test_road_and_direction_frames_are_in_image_prompts() -> None:
         assert "hallway or corridor if the place is indoors" in image, (scene, i)
     ending = prompts.cut_image_prompt(theme, "OUTRO", 6, theme["outroCuts"][5], [])
     assert prompts.FRAMES[cuts.spec("OUTRO", 6, 6).frame].image in ending  # 구도 틀(설계 H)
-    assert prompts.FACE_TEXT["side"] in ending and prompts.IMAGE_RULES not in ending
+    face = prompts.FACE_TEXT[prompts.FRAMES["FACING_MUNGCHI"].faces]
+    assert face in ending and prompts.IMAGE_RULES not in ending
     for code in ("PRANK", "FOOTPRINT"):
         animal = theme_of(code)
         farewell = prompts.cut_image_prompt(animal, "OUTRO", 5, animal["outroCuts"][4], [])
@@ -242,3 +243,22 @@ def test_frames_do_not_conflict_with_face_rules_and_variants_are_stable() -> Non
     assert len(chosen) > 1  # 테마마다 엔딩 변형이 달라질 수 있음
     # 사건 컷 수수께끼 조명·클로즈업만 천천히 다가감(수수께끼 모험물 컷신 느낌)은 틀이 정함
     assert {f.id for f in prompts.FRAMES.values() if f.mystery} == {"OBJECT_CLOSE", "REACTION"}
+
+
+def test_frame_core_is_judged_as_its_own_item_and_eyes_stay_visible() -> None:
+    """구도 핵심은 그림 검토의 별도 항목(FRAME)으로 판정(SCENE_FIT 안에 묻혀 엔딩 3장이 통과했음),
+    엔딩 틀은 멈춤 규칙대로 앞쪽 뒷모습 방식, 눈가림 소품은 뭉치 눈을 가리지 않음(틀 확인
+    2026-11-19)."""
+    from app.theme_draft import checks, rules
+
+    assert "FRAME(items에 있을 때만)" in prompts.IMAGE_REVIEW_SYSTEM
+    assert checks.image_review_ids(checks.IMAGE_REVIEW_IDS, True, False, True)[-1] == "FRAME"
+    assert prompts.FRAMES["FACING_MUNGCHI"].faces == "back"
+    assert "from behind" in prompts.FRAMES["FACING_MUNGCHI"].image
+    eyes = rules.BY_ID["EYES_VISIBLE"]
+    assert eyes.image in prompts.outfit_prompt(valid_theme())
+    assert eyes.review in prompts.IMAGE_REVIEW_SYSTEM
+    # 시작 2컷 문구는 물건·자리 중심(사건 클로즈업 틀과 맞춤)
+    assert "빈자리" in families.LOST.intro_cuts[1]
+    assert "짐" in families.STORY_TYPES["VEHICLE"].intro_cuts[1]
+    assert "소리가 난 쪽" in families.STORY_TYPES["SOUND"].intro_cuts[1]

@@ -2112,9 +2112,17 @@ MISSION_IMAGE_REVIEW_IDS = (*IMAGE_REVIEW_IDS, "MISSION_FIT")
 FLOW_IMAGE_REVIEW_IDS = (*IMAGE_REVIEW_IDS, "FLOW")  # 앞 컷을 잇는 컷 그림(#779 B안)
 
 
-def image_review_ids(base: tuple[str, ...], person: bool, follow: bool) -> tuple[str, ...]:
-    """그림 검토 항목: 기본 + 인물 기준 그림이 있으면 PEOPLE + 앞 컷을 이으면 FLOW(#779)."""
-    return (*base, *(["PEOPLE"] if person else []), *(["FLOW"] if follow else []))
+def image_review_ids(
+    base: tuple[str, ...], person: bool, follow: bool, frame: bool = False
+) -> tuple[str, ...]:
+    """그림 검토 항목: 기본 + 인물 기준 그림이 있으면 PEOPLE + 앞 컷을 이으면 FLOW + 구도 틀의
+    검토 핵심이 있으면 FRAME(#779)."""
+    return (
+        *base,
+        *(["PEOPLE"] if person else []),
+        *(["FLOW"] if follow else []),
+        *(["FRAME"] if frame else []),
+    )
 
 
 VIDEO_REVIEW_IDS = ("MORPH", "ANSWER_HINT", "TEXT", "SAFETY", "CONTINUITY")

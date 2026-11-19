@@ -175,19 +175,21 @@ FRAMES: dict[str, Frame] = {
             "PAN_SIDE",
             "인물들이 기쁜 얼굴로 서로를 봄",
         ),
-        # 엔딩(종료 6컷). 인물들이 카메라 쪽을 보고 나란히 섰음(대표 5종 콘티 3/3)
+        # 엔딩(종료 6컷). 옆모습으로 마주보게 한 두 번(대표 5종 콘티 3/3, 틀 확인 1/4) 모두
+        # 인물들이 카메라 쪽이나 서로를 봐서, 멈춤 규칙대로 배웅(FAREWELL)에서 잘 나온 앞쪽 뒷모습
+        # 방식으로 바꿈 — 얼굴 방향을 구도 자체로 정함(2026-11-19)
         Frame(
             "FACING_MUNGCHI",
-            f"{WIDE_SHOT} Mungchi stands on one side facing the viewer; the people stand together "
-            "on the other side in profile, looking at Mungchi (not facing the viewer and not "
-            "standing in a row).",
+            f"{WIDE_SHOT} The people are in the foreground, seen from behind or at a "
+            "three-quarter back angle, all looking at Mungchi; Mungchi stands a little further "
+            "back, apart from them, facing the viewer.",
             (
-                "Mungchi is on the left and the people on the right.",
-                "Mungchi is on the right and the people on the left.",
-                "Mungchi is a little further back in the middle and the people are in the "
-                "foreground at both sides, seen in profile, turned toward Mungchi.",
+                "Mungchi is on the left side, a little further back.",
+                "Mungchi is on the right side, a little further back.",
+                "Mungchi is in the middle, a little further back, with the people on both sides "
+                "in the foreground.",
             ),
-            "side",
+            "back",
             "PAN_SIDE",
             "인물들이 뭉치 쪽을 봄",
         ),

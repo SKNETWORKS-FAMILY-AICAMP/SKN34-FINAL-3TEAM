@@ -1557,6 +1557,7 @@ def outfit_prompt(theme: Theme) -> str:
         "cheeks, feet, hand positions, size, position, colors and the background stay "
         f"identical. Only add the theme outfit: {theme['outfit']}. Nothing in the hands. "
         f"{OUTFIT_VEST} "
+        f"{common_rules.BY_ID['EYES_VISIBLE'].image} "
         "No letters, numbers or real emblems on the outfit. "
         f"{IMAGE_STYLE}"
     )
@@ -2018,7 +2019,6 @@ IMAGE_REVIEW_SYSTEM = (
     "있는 것은 결함이 아니다. "
     # #779 설계 C표 등급(사용자 결정 2026-11-19): 핵심이 빠지면 FAIL, 세부 구도·한 줄 서기는 WARN.
     # core는 그 컷 구도 틀의 검토 핵심(설계 H, 엔딩에서 인물들이 카메라 쪽을 봐도 WARN만 받았음)
-    "core가 있으면 그것이 이 컷 구도의 핵심이라 그림에 없으면 FAIL이다. "
     "그 컷의 핵심(나와야 할 인물·대상, 인물이 바라보는 쪽, 장면 글이 말한 물건 상태)이 빠지면 "
     "FAIL(예: 배웅인데 아무도 동물 쪽을 보지 않음)이고, 세부 구도 차이는 WARN이다. "
     + common_rules.review("SCENE_FIT")
@@ -2034,6 +2034,10 @@ IMAGE_REVIEW_SYSTEM = (
     "(앞 컷에서 덮은 것이 벗겨짐 등). 뚜껑·컵·작은 소품의 차이와 사람 위치 차이는 WARN이거나 "
     "PASS다. 이 컷 장면 글이 지금 바뀐다고 한 것(빈 접시가 됨 등)과 구도·카메라·인물 동작이 다른 "
     "것은 결함이 아니고, 이 컷이 다른 장소면 PASS다.\n"
+    # #779 설계 H: 구도 틀의 검토 핵심을 따로 판정(SCENE_FIT 안에 묻혀 엔딩에서 인물들이 카메라
+    # 쪽을 봐도 통과했음, 틀 확인 2026-11-19 엔딩 3장)
+    "FRAME(items에 있을 때만): core(이 컷 구도의 핵심)가 그림에 그대로 있는지만 본다. 없으면 "
+    "FAIL이다(예: core가 '인물들이 뭉치 쪽을 봄'인데 인물들이 카메라 쪽이나 서로를 보면 FAIL).\n"
     # #779 설계 C표: 그림 검토가 뭉치 기준만 보고 인물 기준 그림은 보지 않았음
     "PEOPLE(items에 있을 때만): PERSON 그림의 등장인물과 같은 사람(얼굴·머리 모양·옷)으로 "
     "보이는지. 다른 사람처럼 보이면 FAIL, 작은 소품·옷 무늬 차이는 WARN.\n"

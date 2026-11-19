@@ -64,6 +64,17 @@ RULES: tuple[Rule, ...] = (
         "대상을 들고 있으면 결함.",
         fail="사건 물건·대상을 듦",
     ),
+    # #779(대표 5종·틀 확인 2026-11-19): 비밀 요원 선글라스·과학 수사대 고글이 뭉치 점 눈을 가려
+    # 표정이 안 보였음. 옷 입히기(prompts.outfit_prompt)에도 같은 글
+    Rule(
+        "EYES_VISIBLE",
+        image="Goggles or sunglasses sit up on Mungchi's hat or forehead, never over its eyes; its "
+        "small dot eyes always show.",
+        image_when="mungchi",
+        review_item="MUNGCHI",
+        review="고글·선글라스 같은 눈가림 소품이 뭉치 점 눈을 가리면 결함.",
+        fail="눈이 안 보임",
+    ),
     # #779(3테마 실행 2026-11-18): 뭉치와 동물이 붙어 있으면 영상에서 뭉치가 그 동물(너구리)로 바뀜
     Rule(
         "APART_FROM_ANIMALS",

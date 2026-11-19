@@ -124,7 +124,7 @@ async def draw(
     follow = prev is not None and shot.follow_prompt is not None
     prompt = shot.follow_prompt if follow and shot.follow_prompt else shot.prompt
     refs = [*shot.refs, prev] if follow and prev is not None else shot.refs
-    ids = image_review_ids(shot.ids, shot.person is not None, follow)
+    ids = image_review_ids(shot.ids, shot.person is not None, follow, bool(shot.core))
     refs_order = [
         *(["PERSON"] if shot.person is not None else []),
         *(["PREVIOUS"] if follow else []),
