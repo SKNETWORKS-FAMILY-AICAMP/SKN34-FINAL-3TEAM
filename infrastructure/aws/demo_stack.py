@@ -387,8 +387,10 @@ def tag_spec(spec, kind, name):
     return json.dumps([{'ResourceType': kind, 'Tags': tags}])
 
 
-def apply_missing(aws, spec, wait=time.sleep):
-    """Create resources reported MISSING. Existing resources are never changed or deleted."""
+def apply_missing(aws, spec, wait=time.sleep, create_rds=True):
+    """Create resources reported MISSING. Existing resources are never changed or deleted.
+    create_rds=False stops before the DB instance (its SG and subnet group are still made), so the DB can be
+    restored from a snapshot under the same identifier (#809 B account)."""
     net, created = spec['vpc'], []
     ids = discover(aws, spec)
     if 'vpc' not in ids:
@@ -491,7 +493,7 @@ def apply_missing(aws, spec, wait=time.sleep):
             '--db-subnet-group-description', rds['subnetGroup']['description'], '--subnet-ids',
             *[ids['subnets'][n]['SubnetId'] for n in rds['subnetGroup']['subnets']])
         created.append(('db-subnet-group', rds['subnetGroup']['name']))
-    if not aws('rds', 'describe-db-instances', '--db-instance-identifier', rds['id'], check=False):
+    if create_rds and not aws('rds', 'describe-db-instances', '--db-instance-identifier', rds['id'], check=False):
         aws('rds', 'create-db-instance', '--db-instance-identifier', rds['id'], '--engine', rds['engine'],
             '--engine-version', rds['version'], '--db-instance-class', rds['class'],
             '--allocated-storage', str(rds['storageGiB']), '--max-allocated-storage', str(rds['maxStorageGiB']),
@@ -812,6 +814,8 @@ def main(argv=None):
     apply_cmd = sub.add_parser('apply', help='create missing resources only')
     apply_cmd.add_argument('--confirm-account', required=True)
     apply_cmd.add_argument('--after-eksctl', action='store_true', help='add RDS ingress from the EKS cluster SG')
+    apply_cmd.add_argument('--without-rds', action='store_true',
+                           help='do not create the DB instance (restore it from a snapshot instead)')
     render = sub.add_parser('render-eksctl', help='write eksctl config with current subnet IDs')
     render.add_argument('--operator-cidr', action='append', required=True)
     render.add_argument('--out', required=True, type=Path)
@@ -845,7 +849,7 @@ def main(argv=None):
         report.print()
         return 0 if report.ok else 1
     if args.command == 'apply':
-        for kind, name in apply_missing(aws, spec) + create_missing_nodegroups(aws, spec):
+        for kind, name in apply_missing(aws, spec, create_rds=not args.without_rds) + create_missing_nodegroups(aws, spec):
             print('created', kind, name)
         if args.after_eksctl and allow_rds_from_cluster(aws, spec, discover(aws, spec)):
             print('created rds ingress from EKS cluster security group')

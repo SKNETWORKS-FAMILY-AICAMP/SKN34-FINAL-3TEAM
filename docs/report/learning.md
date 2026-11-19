@@ -1258,7 +1258,7 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 | `ix_answer_followup` `answer (followup_id) WHERE followup_id IS NOT NULL` | `findUnansweredLatestFollowupId`의 `NOT EXISTS`, FK `fk_answer_followup_id` 검사(되묻기 삭제) | 부분 인덱스. 첫 답변은 `followup_id`가 NULL이라 보완 답변 행만 담는다. `followup_id = ?`는 NULL이 아님을 뜻하므로 두 곳 모두 이 인덱스를 쓴다 |
 
 - 이미 있는 인덱스·제약과 겹치지 않음: `followup`은 `pk_followup`·`uq_followup_judgment_id`, `hint_usage`는 `pk_hint_usage`, `answer`의 `followup_id`는 인덱스 없음(V2~V21 확인). `findEligible`의 `revised`(`answer` `attempt_id` + `followup_id IS NOT NULL`)는 기존 `ix_answer_attempt_submitted`로 충분해 따로 두지 않음
-- `CREATE INDEX CONCURRENTLY`는 쓰지 않음. 운영 learning_db는 시험 데이터 정리 뒤 테이블마다 약 2,800행, 시연 B 계정은 새로 시작한다. 아래 시험 DB(2만~3만 행)에서도 세 인덱스 생성이 7~27ms였다. 일반 `CREATE INDEX`는 그동안 해당 테이블 쓰기만 막는다. CONCURRENTLY는 Flyway가 트랜잭션 밖에서 실행해야 하고, 중간에 실패하면 `INVALID` 인덱스가 남아 손으로 지워야 한다. 테이블이 수십만 행을 넘으면 그때 CONCURRENTLY로 나눈다
+- `CREATE INDEX CONCURRENTLY`는 쓰지 않음. 운영 learning_db는 시험 데이터 정리 뒤 테이블마다 약 2,800행이고, 시연 B 계정은 A 최종 스냅샷을 복원하므로 같은 규모로 시작한다(2026-11-18 결정, [AWS README B 계정 전환 런북](../../infrastructure/aws/README.md#b-계정-전환-런북-809)). V22는 A에서 이미 적용돼 B에서는 다시 실행되지 않는다. 아래 시험 DB(2만~3만 행)에서도 세 인덱스 생성이 7~27ms였다. 일반 `CREATE INDEX`는 그동안 해당 테이블 쓰기만 막는다. CONCURRENTLY는 Flyway가 트랜잭션 밖에서 실행해야 하고, 중간에 실패하면 `INVALID` 인덱스가 남아 손으로 지워야 한다. 테이블이 수십만 행을 넘으면 그때 CONCURRENTLY로 나눈다
 - ERD 6장 인덱스 표에 세 줄 추가(`scripts/verify_db_schema.py` 대조), 8장 learning 버전 V22. kind local values migration revision `v22`. prod는 cd-release가 main SHA의 migration을 적용한다
 
 ### 실행 계획 전후 (kind, 2026-11-18)
