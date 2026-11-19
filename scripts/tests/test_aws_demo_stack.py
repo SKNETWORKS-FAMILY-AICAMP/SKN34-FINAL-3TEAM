@@ -302,6 +302,17 @@ class DemoStackTest(unittest.TestCase):
         # The cluster belongs to eksctl; secret values are entered by their owners.
         self.assertEqual(missing, {('eks', 'MISSING'), ('secret', 'MISSING')}, report.rows)
 
+    def test_apply_without_rds_leaves_only_the_db_instance_for_a_snapshot_restore(self):
+        aws = FakeAws(self.spec)
+        created = demo_stack.apply_missing(aws, self.spec, wait=lambda _: None, create_rds=False)
+        self.assertNotIn('rds', [kind for kind, _ in created])
+        self.assertIn(('db-subnet-group', self.spec['rds']['subnetGroup']['name']), created)
+        self.assertIn(('security-group', self.spec['rds']['securityGroup']['name']), created)
+        self.assertFalse(any(c[1] == 'create-db-instance' for c in aws.calls))
+        report = demo_stack.plan(aws, self.spec)
+        missing = {(kind, status) for kind, _, status, _ in report.rows if status != 'OK'}
+        self.assertEqual(missing, {('eks', 'MISSING'), ('secret', 'MISSING'), ('rds', 'MISSING')}, report.rows)
+
     def test_apply_on_complete_account_changes_nothing(self):
         aws = FakeAws(self.spec)
         demo_stack.apply_missing(aws, self.spec, wait=lambda _: None)
