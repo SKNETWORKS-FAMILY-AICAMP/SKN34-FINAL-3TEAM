@@ -1491,7 +1491,7 @@ erDiagram
 - `community_reaction` PK `(post_id, student_id, reaction)`. `id`는 `UUID.nameUUIDFromBytes("community-reaction:{postId}:{studentId}:{reaction}")`라 취소 뒤 다시 남겨도 같다(core #389 포인트 사건 키로 반복 적립을 막음)
 - 학생 삭제(`student.deleted`, P09): 시도·답변보다 먼저 같은 트랜잭션에서 그 학생 공유물에 달린 반응 → 그 학생이 남긴 반응 → 공유물 → `community_visibility` 순서로 물리 삭제(FK NO ACTION)
 
-### 4.3.2 표현 검토 대기 (#688 재학습 자동화, 설계 #725, 구현 #727)
+### 4.3.2 표현 검토 대기 (#688 재학습 자동화, 설계 #725, 구현 전 #727)
 
 표현 분류 모델 재학습 자료. 이미 저장되는 답변만 가리키고 원문을 따로 복사하지 않는다. 막힌 답변(저장 안 됨)·모델 점수는 저장하지 않는다(NFR-SEC-05).
 
@@ -1875,7 +1875,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V47(V10·V11 결번), learning Flyway V1~V22, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 108개 테이블·942개 컬럼(core 61/524, learning 39/352, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V47(#566 V46·#555 V47)·learning V22(#775, 인덱스만)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V53(V10·V11 결번), learning Flyway V1~V22, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 110개 테이블·955개 컬럼(core 63/537, learning 39/352, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조, core V53(#704 V50 `student_room_decor`·`room_decor_spot`, #723·#758 V51·V52, #764 V53)·learning V22(#775, 인덱스만)·report `20261110_08` 기준). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

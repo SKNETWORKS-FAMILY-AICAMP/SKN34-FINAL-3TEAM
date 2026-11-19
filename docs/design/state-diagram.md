@@ -403,6 +403,8 @@ stateDiagram-v2
   HIDDEN_REPORT --> VISIBLE: 검토 결과 다시 공개
   HIDDEN_REPORT --> HIDDEN_SETTING: 다시 공개 + 지금 공개 끔
   HIDDEN_REPORT --> REMOVED: 검토 결과 계속 숨김
+  VISIBLE --> REMOVED: 계속 숨김(신고 접수 반영 지연 중)
+  HIDDEN_SETTING --> REMOVED: 계속 숨김(신고 접수 반영 지연 중)
   REMOVED --> [*]
 ```
 
@@ -411,6 +413,7 @@ stateDiagram-v2
 | `VISIBLE ↔ HIDDEN_SETTING` | core `community-visibility` 호출(설정·동의·이관) | learning `CommunityService.setVisibility` |
 | `VISIBLE·HIDDEN_SETTING → HIDDEN_REPORT` | `error_report(targetType = COMMUNITY_POST)` 접수 | core `CommunityModerationService` → learning `moderation`(`CommunityRules.moderate`) |
 | `HIDDEN_REPORT → VISIBLE·HIDDEN_SETTING·REMOVED` | 신고 처리 완료(SERVICE_OPS). 다시 공개는 learning `community_visibility`가 끔이면 `HIDDEN_SETTING` | 같은 경로 |
+| `VISIBLE·HIDDEN_SETTING → REMOVED` | 신고 접수 때 learning `moderation` 반영이 실패·지연된 채 신고 처리 결과 "계속 숨김"이 먼저 도착 | 같은 경로(`CommunityRules.moderate`는 `REMOVED` 요청을 현재 상태와 무관하게 수용) |
 
 - `HIDDEN_REPORT`·`REMOVED`는 공개 설정을 다시 켜도 `VISIBLE`이 되지 않음. `REMOVED`는 끝 상태라 검토 요청을 다시 받아도 그대로(멱등)
 - 학생·미션당 1행(UK `(student_id, mission_id)`). 다시 풀기 시도는 공유하지 않아 새 행·전이 없음
@@ -539,7 +542,7 @@ stateDiagram-v2
 | `QUEUED → RUNNING` | ai 호출 직전 | `ConversationMessage.start()` | `WHERE status='QUEUED'` + `job_execution(RUNNING)` |
 | `RUNNING → COMPLETED` | `result`·`clarification` 이벤트 | `complete(...)`·`clarify(...)` | `WHERE status='RUNNING'`, 확정 답변·`message_evidence` 같은 트랜잭션 |
 | `RUNNING → FAILED` | `error` 이벤트·예외·단절 | `fail(code)` | `failure_code` (`AI_UNAVAILABLE`·`STREAM_INTERRUPTED` 등). 대조 실패·LLM 장애는 규칙 응답으로 `COMPLETED` (P16) |
-| `FAILED → RUNNING` | `/messages/{id}/retry` | `retry()` | `WHERE status='FAILED'`, `retry_count`는 선점 시 증가(첫 시도 포함 5회) |
+| `FAILED → RUNNING` | `/messages/{id}/retry` | `retry()` | `WHERE status='FAILED'`, `retry_count`는 선점 시 1 증가(실행 세대 fencing, 횟수 상한 없음. 재시도마다 분석 대화 사용량 1회 차감) |
 | `FAILED → RUNNING` (관리자, #47) | `/admin/jobs/{id}/retry` | `ConversationService.prepareAdminRetry` | 접수 트랜잭션에서 새 세대(`retry_count + 1`)로 선점하고 `conversation_job_retry`에 `QUEUED` 요청 저장. 실행은 `ConversationRetryWorker`가 같은 세대만 이어받고, 늦은 세대 결과는 현재 실행을 덮어쓰지 않음 |
 
 #### `conversation_job_retry.status` (관리자 대화 재처리 요청, V19)
