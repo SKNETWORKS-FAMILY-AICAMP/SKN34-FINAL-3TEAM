@@ -71,7 +71,11 @@ data class ReportJob(
 
 /** #44 can persist idempotent notifications in a BEFORE_COMMIT listener. No transport here. */
 data class ReportJobFinished(val sourceEventId: UUID, val jobId: UUID, val studentId: UUID,
-    val reportId: UUID, val status: ReportJobStatus, val periodType: ReportPeriodType = ReportPeriodType.WEEKLY)
+    val reportId: UUID, val status: ReportJobStatus, val periodType: ReportPeriodType = ReportPeriodType.WEEKLY,
+    /** #846: report said the completed report has no records; the day is the job's target day. */
+    val noRecord: Boolean = false, val periodFrom: LocalDate? = null) {
+    init { require(!noRecord || status == ReportJobStatus.COMPLETED) }
+}
 
 /** Every committed terminal transition, including recovery/deletion without a report ID. */
 data class ReportJobOutcomeRecorded(val sourceEventId: UUID, val jobId: UUID, val status: ReportJobStatus) {
@@ -80,9 +84,12 @@ data class ReportJobOutcomeRecorded(val sourceEventId: UUID, val jobId: UUID, va
 
 /** Validated lifecycle command. Transport envelopes/JSON remain in the consumer. */
 data class ReportLifecycleEvent(val eventId: UUID, val jobId: UUID, val studentId: UUID,
-    val reportId: UUID, val status: ReportJobStatus, val failureReason: String? = null) {
+    val reportId: UUID, val status: ReportJobStatus, val failureReason: String? = null,
+    /** #846 optional `report.completed` field; omitted by older report-workers, which means false. */
+    val noRecord: Boolean = false) {
     init {
         require(status != ReportJobStatus.QUEUED)
+        require(!noRecord || status == ReportJobStatus.COMPLETED)
         require(if (status == ReportJobStatus.FAILED) failureReason?.matches(Regex("[A-Z][A-Z0-9_]{0,99}")) == true
             else failureReason == null)
     }
@@ -101,8 +108,9 @@ data class ReportJobAccepted(val jobId: UUID, val childId: UUID, val period: Rep
 
 /** Validated internal recovery result; never contains report contents or URLs. */
 data class ReportReconciliation(val jobId: UUID, val studentId: UUID, val period: ReportPeriod,
-    val status: String, val reportId: UUID?, val failureReason: String?) {
+    val status: String, val reportId: UUID?, val failureReason: String?, val noRecord: Boolean = false) {
     init {
+        require(!noRecord || status == "COMPLETED")
         require(status in setOf("BUSY", "COMPLETED", "FAILED"))
         require(if (status == "FAILED") failureReason?.matches(Regex("[A-Z][A-Z0-9_]{0,99}")) == true else failureReason == null)
         require(status != "COMPLETED" || reportId != null)

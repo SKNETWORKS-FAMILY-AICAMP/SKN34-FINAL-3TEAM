@@ -41,11 +41,14 @@ class ReportLifecycleConsumer(private val retrying: RetryingConsumer, private va
         require(envelope["dataschema"].textValue() == "${envelope["type"].textValue()}.v1")
         val data = envelope["data"]
         val fields = setOf("jobId", "studentId", "reportId") + if (status == ReportJobStatus.FAILED) setOf("failureReason") else emptySet()
-        require(data.isObject && data.fieldNames().asSequence().toSet() == fields)
+        // #846: completed may add an optional boolean noRecord; omitted (pre-#846 report-worker) means false.
+        val optional = if (status == ReportJobStatus.COMPLETED) setOf("noRecord") else emptySet()
+        require(data.isObject && data.fieldNames().asSequence().toSet().let { it.containsAll(fields) && (it - fields - optional).isEmpty() })
+        val noRecord = data["noRecord"]?.also { require(it.isBoolean) }?.booleanValue() ?: false
         val student = uuid(data["studentId"])
         require(uuid(envelope["subject"]) == student)
         return ReportLifecycleEvent(uuid(envelope["id"]), uuid(data["jobId"]), student, uuid(data["reportId"]),
-            status, data["failureReason"]?.textValue())
+            status, data["failureReason"]?.textValue(), noRecord)
     }
 
     private fun uuid(node: JsonNode): UUID {

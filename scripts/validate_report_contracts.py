@@ -22,6 +22,15 @@ def main():
         if message["subject"] != message["data"]["studentId"] or message["dataschema"] != f"report.{name}.v1":
             raise ValueError("Envelope/data identity mismatch")
         print(f"PASS actual report.{name} envelope/data")
+    # #846: a no-record completion carries noRecord=true; ordinary completions keep the pre-#846 shape.
+    no_record = json.loads((args.runtime_dir / "report-completed-no-record.json").read_text(encoding="utf-8"))
+    Draft202012Validator(envelope, format_checker=FormatChecker()).validate(no_record)
+    completed = json.loads((ROOT / "contracts/events/report.completed.v1.schema.json").read_text(encoding="utf-8"))
+    Draft202012Validator(completed, format_checker=FormatChecker()).validate(no_record["data"])
+    ordinary = json.loads((args.runtime_dir / "report-completed.json").read_text(encoding="utf-8"))
+    if no_record["data"].get("noRecord") is not True or "noRecord" in ordinary["data"]:
+        raise ValueError("report.completed noRecord: true must be explicit and an ordinary completion omits it")
+    print("PASS actual no-record report.completed envelope/data")
     # P24 #390: the daily command carries periodType; the weekly command keeps the pre-P24 format.
     daily = json.loads((args.runtime_dir / "report-generate-daily.json").read_text(encoding="utf-8"))
     Draft202012Validator(envelope, format_checker=FormatChecker()).validate(daily)

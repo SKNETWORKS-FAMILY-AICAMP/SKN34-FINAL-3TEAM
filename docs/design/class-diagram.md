@@ -943,7 +943,7 @@ classDiagram
   }
   class NotificationService {
     <<service>>
-    +report(userId, childId, sourceEventId, reportId, failed)
+    +report(userId, childId, sourceEventId, reportId, failed, daily, noRecordDay)
     +list(identity, unreadOnly, page, size) List
     +read(identity, notificationId)
     +settings(identity) List
@@ -1020,6 +1020,7 @@ classDiagram
 
 - `ReportRecoveryScheduler` → `ReportRecoveryService`(후보 조회·오류 격리) → `ReportClient.reconcile`(SYSTEM/단일 scope, DTO 검증) → report generation router → `ReconciliationService` → `ReportRepository`/`JobLocks`.
 - 응답 반영은 별도 `ReportLifecycleService.reconcile` 트랜잭션. 이벤트 apply와 삭제 종료도 기존 lifecycle service에 둔다. HTTP 전후의 트랜잭션을 분리한다.
+- 기록 없음(#846): 완료 이벤트·복구 응답의 선택 `noRecord`를 `ReportLifecycleEvent`·`ReportReconciliation` → `ReportJobFinished(noRecord, periodFrom)` → `ReportNotificationListener` → `NotificationService.report(noRecordDay)`로 넘긴다. 일일 완료일 때만 제목을 바꾼다(api-spec 2.7).
 - `ReportJobService` → `StudentAccessService.lockActive` → 학생 행 잠금, 이후 주 잠금/권한/이용권/Outbox. 관리자도 ACTIVE 검사를 우회하지 않는다.
 - `ChildManagementService.confirm` → `ReportLifecycleService.failForDeletion` (기존 삭제 트랜잭션 필수). 알림 이벤트의 non-null reportId 계약은 유지하고 ID 없는 종료는 실행 이력에만 남긴다.
 

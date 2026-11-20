@@ -37,11 +37,14 @@ class ReconcileResponse(BaseModel):
     status: Literal["BUSY", "COMPLETED", "FAILED"]
     report_id: UUID | None = Field(alias="reportId")
     failure_reason: str | None = Field(alias="failureReason", pattern=r"^[A-Z][A-Z0-9_]{0,99}$")
+    # #846: present (true) only for a COMPLETED NO_RECORD report; omitted means false.
+    no_record: bool = Field(default=False, alias="noRecord")
 
 
 @router.post(
     "/{job_id}/reconcile",
     response_model=ReconcileResponse,
+    response_model_exclude_unset=True,
     responses=problem_responses(400, 401, 403)
     | {409: problem_responses(409)[409] | {"description": "REPORT_JOB_IDENTITY_MISMATCH"}},
 )
@@ -57,4 +60,6 @@ async def reconcile(job_id: UUID, body: ReconcileRequest, request: Request, resp
     response.headers["Cache-Control"] = "no-store"
     payload = asdict(result)
     payload.pop("period_type", None)
+    if not payload["no_record"]:
+        del payload["no_record"]  # unset, so exclude_unset keeps the pre-#846 shape
     return payload

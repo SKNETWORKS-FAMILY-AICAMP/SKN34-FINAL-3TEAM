@@ -18,7 +18,7 @@ class ReportNotificationListener(private val students: StudentAccessService, pri
     fun finished(event: ReportJobFinished) {
         students.notificationParents(event.studentId).forEach {
             notifications.report(it, event.studentId, event.sourceEventId, event.reportId, event.status == ReportJobStatus.FAILED,
-                event.periodType == ReportPeriodType.DAILY)
+                event.periodType == ReportPeriodType.DAILY, event.periodFrom.takeIf { event.noRecord })
         }
     }
 }

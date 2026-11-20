@@ -21,6 +21,10 @@
     "reportId": {
       "type": "string",
       "format": "uuid"
+    },
+    "noRecord": {
+      "type": "boolean",
+      "description": "#846 선택 필드. 리포트가 기록 없음(NO_RECORD)이면 true. 생략 = false이며 report는 true일 때만 넣는다."
     }
   },
   "additionalProperties": false
