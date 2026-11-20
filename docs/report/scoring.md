@@ -439,4 +439,5 @@ learning 답변 제출에서 단어 목록 다음 단계로 부르는 2분류 �
 | 배포 설정 | local·prod scoring에 `INTERNAL_TOKEN_LEARNING`, `ingressFromApps`에 learning-service, compose scoring 환경 변수 |
 | 시험 | scoring 288 통과(2 건너뜀, `test_toxicity.py` 39개 포함), 관리자 화면 단위 370 통과·타입 검사·oxlint 통과, core `ModelPreflightFilesTest` 2 통과, scripts 모델 계약 26 통과. core DB 시험(`ModelLoadingTest` 새 tox 경우 포함)은 Postgres가 있는 CI에서 확인 |
 
-- 남은 것: 로컬 MinIO에 #690 모델을 올려 사전 검사·활성화 뒤 실제 `/internal/toxicity/checks` 호출 확인(#690 마지막 체크), 운영 Pod에서 M2와 같이 돌 때 1,500자 지연을 재서 int8 유지 여부 결정(learning 16장 되돌리기 조건). learning 쪽 호출(#692)은 이 PR 범위 밖
+- 로컬 확인(2026-11-19, develop 7d9d7751, compose `e2e.env`): #690 모델 `tox-koelectra-small` 1.0-1119(KoELECTRA-small 증류, int8 0.99)를 로컬 MinIO에 파일 5개 전체 SHA-256과 올림 → 사전 검사 `FILES_AND_METADATA_VERIFIED` → 등록·승인·활성화(`answer-filter`) → `/internal/toxicity/checks` 정상 `flagged:false`·모욕 `true`, 1,501자 400·다른 서비스 토큰 403·토큰 없음 401. M2 서술 3.0-1112b·논술 3.1-1112b를 같이 켜도 M2 채점 정상(점수 값 비교는 안 함)
+- 남은 것: 운영 Pod에서 M2와 같이 돌 때 1,500자 지연·메모리(limit 2Gi) 확인. PC 참고값은 1,200자 요청 p95 혼자 375ms·M2 채점과 같이 569ms(HTTP 포함, 20회)로 마감 1.3초 안. 모델 숫자·한계는 [eval_tox.md](../../ml/tox/results/eval_tox.md) "11/19 모델 교체"
