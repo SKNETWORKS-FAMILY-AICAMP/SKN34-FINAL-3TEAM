@@ -1538,6 +1538,11 @@
               }
             ],
             "title": "Failurereason"
+          },
+          "noRecord": {
+            "type": "boolean",
+            "title": "Norecord",
+            "default": false
           }
         },
         "additionalProperties": false,

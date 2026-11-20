@@ -406,7 +406,7 @@
 - 주간 테마 요약(FN-RPT-17, #391 구현): 주간 상세에 `themeSummary:{themeId, title, days[], completed, reviewRetries[], finished, ending}`. 테마 미참여 주는 `state: NO_RECORD` 요약. #486: `days[].completed`(당일 풀이)·`days[].completedInWeek`(그 주 안에 학습 완료)로 요일별 "그날 풀었어요·나중에 풀었어요·못 풀었어요", `completed`(개근)·`finished`(주간 완주)·`ending`(`NOT_ENDED`·`ENDED`)을 표시. 새 칸은 learning이 주지 않으면 `null`이며 이전처럼 표시
 - 다운로드·근거·재생성 경로는 2.5 그대로이며 일일에도 같은 규칙(학부모 리포트당 1회, 관리자 무제한)
 - 일일 리포트는 이용권과 관계없이 전체 제공(서술이 없어 `X-Report-Narrative-Enabled`와 무관). 주간 무료 규칙은 그대로
-- 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~9개, #390)
+- 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~9개, #390). 기록 없는 날 완료 알림 문구는 2.7(#846)
 - 리포트 고정 대화의 질문은 그 대상일 밖으로 범위를 바꾸지 않는다. 다른 날 질문은 범위 확인에서 새 대화 안내
 
 ### 2.6 결제·구독 (FN-PAY) — 토스페이먼츠 테스트 환경만
@@ -452,7 +452,8 @@
 - #44 권한: 학생 세션의 account.id는 보호자 ID를 공유하므로 학생은 모든 알림/설정 API에서 403이다. PARENT·ADMIN은 인증된 본인 계정만 사용하며 userId 입력을 받지 않는다. 학생 전용 알림함은 현재 제공하지 않는다.
 - 목록: `GET /notifications?unreadOnly=false&page=0&size=20` → `{items:[{id,childId,type,title,link,readAt,createdAt}],page,size,hasNext}`. size 1~100, 최신 createdAt·id 내림차순. 읽음 PATCH와 전체 읽음 POST는 204, 반복해도 최초 readAt 유지, 타인/없는 ID는 404.
 - 설정: GET → `{items:[{type,enabled}]}`, PUT도 동일한 객체(1~9개 중복 없는 유형)로 지정 유형만 갱신하고 전체 유효 설정을 반환. 미저장 유형 기본 true, 채널은 IN_APP 고정. 유형은 REPORT_COMPLETED, REPORT_FAILED, ERROR_REPORT_RESOLVED, INQUIRY_ANSWERED, PAYMENT_CHANGED, SUBSCRIPTION_CHANGED, DAILY_REPORT_COMPLETED, DAILY_REPORT_FAILED, GRADE_PROMOTED. `GRADE_PROMOTED`는 3월 학년 자동 진급 안내(P26, #432): 제목 "{별명}의 학년이 {새 학년}으로 올라갔어요. 다르면 정보 관리에서 고쳐 주세요.", 링크 `/parent/settings`, 원천 ID는 학생·학년도로 정해 같은 진급을 두 번 알리지 않는다. 수신 거부는 이후 알림 생성을 막으며 기존 알림은 보존한다.
-- 리포트 실패는 REPORT_FAILED로 독립 설정한다. 일일 리포트(P24)는 DAILY_REPORT_COMPLETED·DAILY_REPORT_FAILED로 주간과 따로 설정한다(#390). 완료·실패 모두 현재 연결·동의가 유효한 보호자에게 생성한다. 상세 링크 권한은 이동 시 다시 검사한다. 실패 링크는 리포트 목록으로 이동한다.
+- 리포트 실패는 REPORT_FAILED로 독립 설정한다. 일일 리포트(P24)는 DAILY_REPORT_COMPLETED·DAILY_REPORT_FAILED로 주간과 따로 설정한다(#390).
+- 리포트 알림 제목: 주간 완료 "주간 리포트가 완성되었습니다.", 일일 완료 "일일 리포트가 완성되었습니다.", 실패 "{주간|일일} 리포트 생성에 실패했습니다.". 기록 없는 날(report `COMPLETED` + `NO_RECORD`)의 일일 완료 알림만 "어제는 학습 기록이 없어요. 일일 리포트를 확인해 주세요."(2026-11-20 결정, #846). 대상일이 알림 생성일(KST)의 전날이 아니면(늦은 재생성·재처리·복구) "어제는" 대신 "{M}월 {d}일은"을 쓴다. 유형(`DAILY_REPORT_COMPLETED`)·수신 설정·링크(리포트 상세)는 같다. core는 `report.completed` v1의 선택 `noRecord`(생략 = false)와 복구 응답의 같은 칸으로 기록 없음을 안다([report-messages](../../contracts/events/report-messages.md)). 주간 문구는 바꾸지 않는다. 완료·실패 모두 현재 연결·동의가 유효한 보호자에게 생성한다. 상세 링크 권한은 이동 시 다시 검사한다. 실패 링크는 리포트 목록으로 이동한다.
 - SSE는 `event: notification`에 목록 항목과 같은 데이터를 전송한다. 15초 `: ping`, 최대 5분 후 재연결. 각 전송·heartbeat에서 세션/동의를 재검사하고 만료·폐기 시 연결을 닫는다. 학생으로 역할을 바꾸면 기존 보호자 구독도 폐기된 세션 검사로 닫힌다.
 - 구독 준비 후 `event: ready`를 받으면 목록 API를 첫 페이지부터 재조회해 id로 병합한다. 연결 중에도 주기적으로 목록을 동기화한다. Last-Event-ID 재생은 제공하지 않는다. Redis Pub/Sub은 유실 가능하며 SSE를 영구 전달 보장으로 사용하지 않는다.
 - DB 저장이 원본이다. 커밋 이후 Redis에 발행하며 발행 실패는 DB 전달 상태 FAILED/REDIS_PUBLISH_FAILED와 로그로 기록한다. COMPLETED는 Redis 발행 성공이며 브라우저 수신 확인이 아니다(구독자 0명도 발행 성공). 프로세스가 커밋 직후 종료되면 QUEUED로 남아도 목록에서 조회된다. 발행 실패 때문에 리포트 상태를 되돌리지 않는다.
@@ -1556,7 +1557,7 @@ core 자체의 권한·상태·본문 충돌 오류는 기존 계약을 유지�
 
 `POST /internal/report-jobs/{jobId}/reconcile` (core → report). 내부 토큰 + SYSTEM + 정확히 한 학생 scope가 필요하다. 요청 `{studentId,periodFrom,periodTo,periodType?}`는 core 작업의 학생·기간·기간 종류다. periodType 생략은 WEEKLY(월~일), DAILY는 periodFrom=periodTo 하루만 허용한다(#391). report는 기존 행/차단 기록과 이 값들을 대조하며 불일치는 409 `REPORT_JOB_IDENTITY_MISMATCH`로 거부한다.
 
-200 응답은 `{jobId,studentId,periodFrom,periodTo,status,reportId,failureReason}`이다. status는 BUSY·COMPLETED·FAILED. BUSY는 reportId/failureReason null, COMPLETED는 실제 reportId 필수·사유 null, FAILED는 실제 ID가 있을 때만 reportId 및 원문 없는 대문자 사유 코드다. 원문·서술·파일 URL은 반환하지 않는다. `Cache-Control: no-store`. DB/통신 실패는 오류이며 종료로 간주하지 않는다.
+200 응답은 `{jobId,studentId,periodFrom,periodTo,status,reportId,failureReason}`이다. status는 BUSY·COMPLETED·FAILED. BUSY는 reportId/failureReason null, COMPLETED는 실제 reportId 필수·사유 null, FAILED는 실제 ID가 있을 때만 reportId 및 원문 없는 대문자 사유 코드다. 원문·서술·파일 URL은 반환하지 않는다. COMPLETED 리포트가 기록 없음(`NO_RECORD`)이면 선택 `noRecord: true`를 더한다(#846). 그 밖에는 칸을 생략하며 생략 = false다. core는 이 값으로 일일 기록 없음 알림 문구를 고른다(2.7). `Cache-Control: no-store`. DB/통신 실패는 오류이며 종료로 간주하지 않는다.
 
 기존 학생 shared/job exclusive session advisory lock 획득 실패는 BUSY다. 잠금 획득 후 저장된 종료 결과를 반환하거나 소유자 없는 RUNNING을 `REPORT_EXECUTION_ABANDONED`로 종료한다. 행이 없으면 `report_job_guard`에 `REPORT_NOT_CREATED`를 원자 저장한다. 삭제 표식 PENDING은 BUSY, COMPLETED는 `STUDENT_DELETED` 실패다. 동일 호출/응답 유실 재호출은 같은 저장 결과를 사용한다. 삭제 완료 후에는 삭제 결과가 우선한다. v1 이벤트의 reportId 필수 계약은 유지한다.
 
@@ -1683,7 +1684,7 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 - 일일 항목은 PROBLEM으로 저장한다. `mission.id`, `feedback.followup.question`, 판정·요소와 제출 답변을 기존 learning 응답에서 읽는다. `context`는 learning 기록 응답 값을 그대로 쓰며 임의로 추정하지 않는다. 원문 비공개면 finalAnswer=null, followups/quotes=[], reflection.text=null, evidence 없음. 일일은 비율·서술·저녁 질문을 생성하지 않는다.
 - learning `GET /internal/records/students/{studentId}/daily-attempts?from&to&page&size`는 같은 KST 날짜의 **완료 시각**으로 조회한다. 기존 P08의 제출일 조회와 분리하며 응답은 RecordPage와 같다. 전날 제출·오늘 완료도 포함한다. 학생 scope·삭제 검사와 페이지 제한은 기존 기록 조회와 같다. `scheduledDay`는 선택·nullable 칸(MON~FRI)이며 THEME_DAY·THEME_REVIEW의 시도에 저장된 테마·주·미션에 해당하는 예정 요일이다. EXTRA·값 없는 이전 응답/저장본은 null. 완료일 기준 집계는 유지하고 다른 요일에 풀었으면 상세·PDF·Markdown에 "화요일 문제 · 목요일에 풀었어요"를 표시한다. 당일 풀이는 기존 표시를 유지한다(#845).
 - learning 주간 테마 summary API는 #385에서 구현했다(내부 API 표 `GET /internal/students/{studentId}/weekly-theme/summary`). report 소비 계약은 `{studentId,weekStart,state,themeId,title,days:[{day(MON~FRI),missionId,title?,completed,completedInWeek?}],completed,reviewRetries:[{missionId,title?,comparison?{state,elements:[{label,previousSatisfied,currentSatisfied}]}}],finished?,ending?}`이다(`?` 칸은 #486 선택 칸). 날짜·학생 범위를 검증하며 NO_RECORD는 themeId/title=null, 배열=[], completed=false다. HTTP 오류·형식 오류를 NO_RECORD로 숨기지 않는다.
-- 복구 요청 `POST /internal/report-jobs/{jobId}/reconcile`도 periodType을 받는다. 미지정 WEEKLY, DAILY는 하루만 허용한다. 응답은 기존 7개 필드를 유지하며 periodType을 추가하지 않는다.
+- 복구 요청 `POST /internal/report-jobs/{jobId}/reconcile`도 periodType을 받는다. 미지정 WEEKLY, DAILY는 하루만 허용한다. 응답은 기존 7개 필드를 유지하며 periodType을 추가하지 않는다. #846에서 선택 `noRecord`(기록 없는 COMPLETED만 `true`, 그 밖은 생략)를 더했다(5.9).
 
 - #391 learning 기록 목록·상세·일일 완료 목록은 `context: THEME_DAY|THEME_REVIEW|EXTRA`를 실제 시도에서 반환한다. 주간 요약은 기존 #207 비교 규칙의 상태·요소만 포함하며 답변 원문·인용은 반환하지 않는다.
 

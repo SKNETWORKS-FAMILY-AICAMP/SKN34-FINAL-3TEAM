@@ -16,7 +16,8 @@ internal val WEEK = ReportPeriod(LocalDate.parse("2026-10-19"), LocalDate.parse(
 
 /** Test-only report producer payload, validated against the shared schemas after actual broker transport. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-internal data class ReportLifecyclePayload(val jobId: UUID, val studentId: UUID, val reportId: UUID, val failureReason: String? = null)
+internal data class ReportLifecyclePayload(val jobId: UUID, val studentId: UUID, val reportId: UUID, val failureReason: String? = null,
+    val noRecord: Boolean? = null)
 
 internal fun parent(jdbc: JdbcTemplate): UUID = account(jdbc, "PARENT", null).also { consents(jdbc, it) }
 internal fun child(jdbc: JdbcTemplate, parent: UUID): UUID {

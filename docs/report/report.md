@@ -363,3 +363,25 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - 리포트 집계 날짜는 계속 KST 완료일이다. 다른 요일에 완료한 문제는 상세·PDF·Markdown에 `화요일 문제 · 목요일에 풀었어요`처럼 표시한다. 당일 풀이·추가 문제·예정 요일 없는 이전 저장본은 기존 표시를 유지한다. 이전 저장본은 재생성 없이 null로 읽는다.
 - 원문 비공개에서도 예정 요일은 유지한다. 판정·점수·권한·주간 리포트의 기존 동작은 변경하지 않는다.
 - 검증: learning 기록 테스트 59개·core ReportClientTest 8개와 양쪽 bootJar 통과. report 일일·조회 테스트 79개, 입력·일일 테스트 99개 통과(중복 포함), Ruff 통과. API 계약 검사 9개·web 단위 400개·타입/린트/빌드·PC/태블릿/모바일 표시 3개 통과. 테스트용 DB와 합성 입력을 사용했고 운영 배포 검증과 구분한다.
+
+## 30. 안 푼 날 일일 리포트 알림 문구 구분 (#846, 2026-11-20)
+
+2026-11-20 결정: 기록 없는 날도 "기록 없음" 일일 리포트와 알림을 만드는 구성은 유지하고, 알림 문구만 구분한다. 알림 유형(`DAILY_REPORT_COMPLETED`)·수신 설정·링크·DB는 바꾸지 않는다.
+
+- 계약: `report.completed` v1 data에 선택 `noRecord`(boolean, 생략 = false), 복구 응답 `POST /internal/report-jobs/{jobId}/reconcile`에도 같은 선택 칸([report-messages #846](../../contracts/events/report-messages.md#846-기록-없음-표시norecord), [api-spec 5.9](../design/api-spec.md#59-리포트-작업-복구-132)). 새 메시지 종류·버전·알림 유형 없음
+- report: `ReportV1Codec.encode`가 저장 상태 `NO_RECORD`인 완료 이벤트에만 `noRecord: true`를 넣는다. 복구는 COMPLETED + `NO_RECORD`일 때만 `noRecord: true`, 나머지는 칸 생략(`response_model_exclude_unset`). OpenAPI `ReconcileResponse`에 선택 `noRecord` 추가
+- core: `ReportLifecycleConsumer`·`ReportClient.reconcile`이 선택 boolean `noRecord`를 받는다(완료가 아닌 이벤트·boolean이 아닌 값은 계약 위반). `ReportJobFinished(noRecord, periodFrom)` → `NotificationService.report(noRecordDay)`. 일일 완료 + 기록 없음이면 제목 "어제는 학습 기록이 없어요. 일일 리포트를 확인해 주세요."
+- 문구 조정: 대상일이 알림 생성일(KST)의 전날이 아니면(늦은 재생성·관리자 재처리·4시간 뒤 복구) "어제는"이 틀리므로 "{M}월 {d}일은 학습 기록이 없어요. …"로 쓴다
+- 바뀌지 않는 것: 푼 날 일일("일일 리포트가 완성되었습니다.")·주간·실패 문구, 주간 리포트가 `noRecord`여도 주간 문구
+- 호환: 필드가 없는 이전 report-worker 이벤트·이전 report-api 복구 응답은 false로 읽어 기존 문구. 반대로 core와 report 소비자가 필드 목록을 정확히 검사하므로 **core를 먼저 배포**한다. 이전 core는 기록 없는 날의 완료 이벤트만 거부한다(재시도 뒤 DLQ)
+
+kind 확인(2026-11-20 11:42~11:46 KST, 공유 `kind-sagomungchi-local`): 이 브랜치 core·report 이미지를 `:issue846` 태그로 적재해 `core-service`·`report-api`·`report-worker`에 걸고(worker 0 → 1대), core DB에 11/19 일일 `ADMIN_RETRY` 작업 2건과 `report.generate` Outbox 행을 넣어 실제 relay → report-worker → `report.completed` → core 소비 → 알림 경로를 탔다. 관리자 API 대신 DB로 작업을 만든 것은 kind 관리자 자격 정보를 쓰지 않기 위해서다. 확인 뒤 세 배포를 원래 `:local` 이미지·worker 0대로 되돌렸다(core rev 67, report-api rev 12, report-worker rev 18).
+
+| 작업 | report 상태 | report Outbox `report.completed` data | 복구 응답(report-api 직접) | core 알림 |
+|---|---|---|---|---|
+| `84600000-…-0001`(그날 기록 없는 자녀) | `NO_RECORD`, 2판 | `noRecord: true` 포함 | 8칸 + `noRecord: true` | `DAILY_REPORT_COMPLETED` "어제는 학습 기록이 없어요. 일일 리포트를 확인해 주세요.", 링크 리포트 상세 |
+| `84600000-…-0002`(그날 기록 있는 자녀) | `OK`, 3판 | 칸 없음(기존 3칸) | 기존 7칸 | `DAILY_REPORT_COMPLETED` "일일 리포트가 완성되었습니다." |
+
+같은 시간 core 로그에 lifecycle 계약 오류 없음. 남긴 시험 데이터: core `report_job` 2건(id `84600000-0000-4000-8000-00000000000{1,2}`)·Outbox 2건·알림 2건, report 일일 새 판 2개
+
+테스트: report `test_report_codec.py`(상태별 `noRecord` 유무·스키마, 실제 codec 파이프라인의 Outbox 완료 이벤트), `test_report_reconciliation.py`(상태별 HTTP 복구 응답, 실패 복구). core `DailyReportScheduleTest`(어제·지난 날짜·푼 날·필드 생략·주간 문구), `ReportMessagingTest`(실제 브로커 기록 없음 완료 → 알림, 잘못된 `noRecord` → DLQ, 계약 산출물 `report-completed-no-record.json`), `ReportRecoveryTest`(복구 기록 없음 문구, 잘못된 값 거부, 필드 생략 기존 문구). `scripts/validate_report_contracts.py`가 기록 없음 완료 산출물을 스키마로 검사하고 일반 완료에는 칸이 없음을 확인
