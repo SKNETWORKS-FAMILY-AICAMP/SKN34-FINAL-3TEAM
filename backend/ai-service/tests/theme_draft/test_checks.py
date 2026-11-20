@@ -357,14 +357,21 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         ["CUT_ACTION"],
     ),
     (
+        # 사람이 손을 쓰는 것은 되지만 공중 손짓(손 흔들기·손뼉)은 사람도 안 됨(#779 사용자 결정
+        # 2026-11-19, 코드 검사는 재검토 2026-11-20)
         "person gestures while mungchi watches",
-        edit(lambda t: t["outroCuts"][2].update(action="뭉치 곁에서 지호가 손을 흔든다")),
+        edit(lambda t: t["outroCuts"][2].update(action="뭉치 곁에서 지호가 상자를 가리킨다")),
         [],
+    ),
+    (
+        "person air gesture",
+        edit(lambda t: t["outroCuts"][2].update(action="뭉치 곁에서 지호가 손을 흔든다")),
+        ["CUT_ACTION"],
     ),
     (
         # 시작 1·2컷은 뭉치가 없어 손 동작은 보지 않음(다가오기만 봄)
         "hands fine in intro cut without mungchi",
-        edit(lambda t: t["introCuts"][0].update(action="모두 함께 손을 흔든다")),
+        edit(lambda t: t["introCuts"][0].update(action="모두 함께 상자를 들어 올린다")),
         [],
     ),
     # 증거 발견 줄·수사 연결 문장: 필수·길이, 단서 결론(허용 값)·후보·정답 금지

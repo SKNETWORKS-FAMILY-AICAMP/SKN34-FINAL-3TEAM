@@ -105,6 +105,12 @@ NOT_SUBJECT = tuple("같이 많이 높이 깊이 길이 가까이 바닷가 물�
 # #779: '들어간'은 뺌. 카메라가 뒤에서 따라가며 문 안으로 걸어 들어가는 컷이 이야기 이동을 보여
 # 주는 연출이라(만화 연출 시제품 2026-11-18), 인물이 사라지는 것은 영상 검토 CONTINUITY가 봄
 APPROACH_WORDS = tuple("다가오|다가온|달려오|달려온|걸어오|걸어온|화면 밖|밖으로".split("|"))
+# 사람도 공중 손짓(손뼉·손 흔들기·만세)은 쓰지 않음(#779 사용자 결정 2026-11-19). 줄거리 지시로만
+# 막고 코드 검사가 없어, 글 모델이 쓰면 그림 지시엔 손뼉·영상 금지 목록엔 clapping이 함께 들어갔음
+# (재검토 2026-11-20, 시험 데이터 "지호가 손뼉을 치며 폴짝 뛴다"가 통과). 종류 역할 글의 "손뼉 없이"
+# 같은 부정은 걸지 않음(AIR_HAND_NOT)
+AIR_HAND_WORDS = ("손뼉", "박수", "손을 흔", "손 흔들", "만세")
+AIR_HAND_NOT = ("손뼉 없이", "박수 없이")
 # 컷마다 뭉치가 나오는지·달리기를 허용하는지는 컷 틀(cuts.LAYOUTS, #779)
 CANDIDATE_CHARS = (2, 10)
 FEATURES = (2, 5)
@@ -1211,9 +1217,15 @@ def cut_action_problems(
     words = [w for w in MUNGCHI_HAND_WORDS if not (may_run and w in MUNGCHI_RUN_WORDS)]
     hands = [w for w in words if any(w in c for c in clauses)]
     near = [w for w in APPROACH_WORDS if w in text]
+    plain = text
+    for neg in AIR_HAND_NOT:
+        plain = plain.replace(neg, "")
+    air = [w for w in AIR_HAND_WORDS if w in plain]
     out = []
     if hands:
         out.append(f"뭉치가 손·팔다리를 쓰는 동작({', '.join(hands)}), 손짓은 사람만")
+    if air:  # 사람·뭉치 모두(#779 공중 손짓 없음)
+        out.append(f"공중 손짓({', '.join(air)})은 사람도 쓰지 않음(폴짝 뛰거나 웃는 것으로)")
     if near:
         out.append(f"화면 쪽으로 다가오거나 화면 밖으로 나가는 동작({', '.join(near)})")
     return out

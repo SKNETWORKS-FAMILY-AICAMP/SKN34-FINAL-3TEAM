@@ -160,6 +160,22 @@ def test_role_texts_pass_existing_checks_and_examples_carry_no_content() -> None
             p for p in checks.cut_action_problems(line, True, False, ["예린"]) if "손·팔다리" in p
         ], line
     assert checks.cut_action_problems("뭉치는 작은 상자를 안고 웃는다", True, False, ["예린"])
+    # 사람도 공중 손짓은 코드 검사가 막음(재검토 2026-11-20). 종류 역할의 "손뼉 없이"는 걸지 않음
+    for line in ("지호가 손뼉을 치며 폴짝 뛴다", "예린이 손을 흔들며 배웅한다", "모두 박수를 친다"):
+        assert any("공중 손짓" in p for p in checks.cut_action_problems(line, False)), line
+    assert not checks.cut_action_problems("함께 기뻐함(손뼉 없이 폴짝 뛰거나 웃음)", False)
+    bad = checks.check_cuts(
+        {
+            **valid_theme(),
+            "outroCuts": [
+                *valid_theme()["outroCuts"][:4],
+                {**valid_theme()["outroCuts"][4], "action": "지호가 손뼉을 치며 폴짝 뛴다"},
+                valid_theme()["outroCuts"][5],
+            ],
+        }
+    )
+    assert any(r.startswith("CUT_ACTION outroCuts5.action 공중 손짓") for r in bad), bad
+    assert checks.fix_targets([r for r in bad if "공중 손짓" in r])  # 그 칸만 고쳐 씀
     # 자막 예시에 인물 이름·후보·장소를 박지 않음
     words = [*prompts.NAME_POOL, *families.ANIMALS.rows, *families.GIFTS.rows, "떡"]
     speakers = [s.speaker for specs in cuts.layout(6).values() for s in specs]

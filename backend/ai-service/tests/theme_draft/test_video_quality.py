@@ -29,7 +29,9 @@ def test_mungchi_bouncing_is_a_cut_action_but_running_is_allowed_in_go_cut() -> 
     assert not checks.cut_action_problems("뭉치가 옆으로 힘차게 달려간다", may_run=True)
     assert checks.cut_action_problems("뭉치가 통통 튀어 간다", may_run=True)  # 튀기는 출동도 안 됨
     assert checks.cut_action_problems("뭉치가 화면 쪽으로 달려온다", may_run=True)
-    assert not checks.cut_action_problems("지호가 손뼉을 치고 뭉치는 몸을 살짝 흔든다")
+    assert not checks.cut_action_problems("지호가 폴짝 뛰고 뭉치는 몸을 살짝 흔든다")
+    # 사람의 공중 손짓은 따로 걸림(#779 재검토 2026-11-20)
+    assert checks.cut_action_problems("지호가 손뼉을 치고 뭉치는 몸을 살짝 흔든다")
 
 
 def test_check_cuts_allows_running_only_in_run_cuts() -> None:
