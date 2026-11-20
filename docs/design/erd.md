@@ -1489,24 +1489,26 @@ erDiagram
 - `community_reaction` PK `(post_id, student_id, reaction)`. `id`는 `UUID.nameUUIDFromBytes("community-reaction:{postId}:{studentId}:{reaction}")`라 취소 뒤 다시 남겨도 같다(core #389 포인트 사건 키로 반복 적립을 막음)
 - 학생 삭제(`student.deleted`, P09): 시도·답변보다 먼저 같은 트랜잭션에서 그 학생 공유물에 달린 반응 → 그 학생이 남긴 반응 → 공유물 → `community_visibility` 순서로 물리 삭제(FK NO ACTION)
 
-### 4.3.2 표현 검토 대기 (#688 재학습 자동화, 설계 #725, 구현 전 #727)
+### 4.3.2 표현 검토 대기 (#688 재학습 자동화, 설계 #725, 구현 #727)
 
 표현 분류 모델 재학습 자료. 이미 저장되는 답변만 가리키고 원문을 따로 복사하지 않는다. 막힌 답변(저장 안 됨)·모델 점수는 저장하지 않는다(NFR-SEC-05).
 
-구현 전(설계 #725 2026-11-17). Mermaid 표와 6장 인덱스는 `scripts/verify_db_schema.py`가 실제 DB와 자동 대조하므로 learning 마이그레이션(#727)과 같은 PR에서 아래 표를 옮겨 넣는다(#679·#680과 같은 방식).
+learning V24(#727). 인덱스는 6장.
 
-| 칸 | 형식 | 내용 |
-|---|---|---|
-| `id` | uuid PK | |
-| `answer_id` | uuid FK → `answer` | 검토 대상 답변. UK `(answer_id, source)` |
-| `source` | varchar | `GRAY_ZONE`(경계 구간 답변)·`COMMUNITY_REPORT`(신고 숨김 공유물) CHECK |
-| `model_version` | varchar, NULL 허용 | `GRAY_ZONE`이면 판단한 tox 모델 `name:version` |
-| `label` | varchar, NULL 허용 | `OFFENSIVE`·`CLEAN`·`SKIP` CHECK |
-| `labeled_by` | uuid, NULL 허용 | 직접 라벨한 core 관리자 ID(논리 참조), 자동 라벨은 null |
-| `labeled_at` | timestamptz, NULL 허용 | |
-| `created_at` | timestamptz | |
-
-- 인덱스(6장에 옮길 값): UK `(answer_id, source)`, `(label, created_at)`(라벨 없는 검토 목록), `(labeled_at) WHERE label IS NOT NULL`(재학습 새 라벨 수·내보내기)
+```mermaid
+erDiagram
+  answer ||--o{ expression_review : "검토 대상 답변"
+  expression_review {
+    uuid id PK
+    uuid answer_id FK "검토 대상 답변, UK (answer_id, source)"
+    varchar source "GRAY_ZONE|COMMUNITY_REPORT"
+    varchar model_version "NULL 허용 · GRAY_ZONE이면 판단한 tox 모델 name:version"
+    varchar label "NULL 허용 · OFFENSIVE|CLEAN|SKIP"
+    uuid labeled_by "NULL 허용 · 직접 라벨한 core 관리자 ID(논리 참조), 자동 라벨은 null"
+    timestamptz labeled_at "NULL 허용"
+    timestamptz created_at
+  }
+```
 
 - `GRAY_ZONE`: 답변 제출 때 scoring 표현 분류가 `review:true`(api-spec 4.3.4)이고 답변이 저장되면 같은 트랜잭션에서 추가. 같은 키 다시 보내기는 UK로 중복 없음
 - `COMMUNITY_REPORT`: 공유물이 `HIDDEN_REPORT`가 될 때 그 공유물의 `answer_id`로 추가. 운영 처리 결과로 자동 라벨(`REMOVED` → `OFFENSIVE`, `VISIBLE` 복귀 → `CLEAN`, `labeled_by` null). 이미 행이 있으면 라벨만 갱신하되 운영자가 직접 라벨한 행은 바꾸지 않음
@@ -1854,6 +1856,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `judgment` | `(process_status, lease_until)` | 고착 `RUNNING` 탐지 |
 | learning | `mission_draft` | `(status, created_at)` | 초안 목록(상태 필터·최근 요청 순)·생성 작업 점유 (#353) |
 | learning | `community_post` | `(mission_id, status)` | 미션별 공개 공유물 목록 (#386, V13) |
+| learning | `expression_review` | `(answer_id, source)`, `(label, created_at)`, `(labeled_at) WHERE label IS NOT NULL` | 답변·출처당 1행(UK), 라벨 없는 검토 목록(오래된 순), 재학습 새 라벨 수·내보내기 (#727, V24) |
 | learning | `memory_search_doc` | `(status, lease_until)` | 선점·리스 복구 (#563) |
 | learning | `memory_search_doc` | `(student_id, theme_week_start)` | 학생별 회차 검색 (#563) |
 | learning | `theme_frame` | `(student_id, theme_week_start)` | 앨범 목록(최근 회차순)·보유 확인 (#559, V19). 회차당 1개는 UK `(student_id, theme_id, theme_week_start)` |
@@ -1873,7 +1876,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V53(V10·V11 결번), learning Flyway V1~V23, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 110개 테이블·957개 컬럼(core 63/537, learning 39/354, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V53(V10·V11 결번), learning Flyway V1~V24, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 111개 테이블·965개 컬럼(core 63/537, learning 40/362, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

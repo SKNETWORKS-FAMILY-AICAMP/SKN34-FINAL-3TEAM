@@ -34,6 +34,8 @@ import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 /**
  * 커뮤니티 내부 API (#386, P20): core #388 CommunityClient가 부르는 경로·응답 모양 그대로.
@@ -298,6 +300,50 @@ class CommunityTest : PostgresRepositoryTest() {
         }
         mvc.get("/internal/community/posts/$post") { internal("STUDENT", author) }.andExpect { status { isForbidden() } }
         moderate(post, "VISIBLE", role = "STUDENT").andExpect { status { isForbidden() } }
+    }
+
+    @Test
+    fun `신고 숨김은 표현 검토 대기에 올리고 처리 결과로 자동 라벨, 반복·직접 라벨한 행은 그대로`() {
+        val post = shareCompleted(UUID.randomUUID(), "신고될 합성 답")
+        val answer = jdbc.queryForObject("SELECT answer_id FROM community_post WHERE id = ?", UUID::class.java, post)!!
+        val review = {
+            jdbc.queryForList(
+                "SELECT label, labeled_by, labeled_at FROM expression_review WHERE answer_id = ? AND source = 'COMMUNITY_REPORT'", answer,
+            ).single()
+        }
+
+        moderate(post, "HIDDEN_REPORT")
+        moderate(post, "HIDDEN_REPORT")
+        assertEquals(listOf<Any?>(null, null, null), review().values.toList())
+
+        moderate(post, "VISIBLE")
+        val clean = review()
+        assertEquals("CLEAN", clean["label"])
+        assertNull(clean["labeled_by"])
+        assertNotNull(clean["labeled_at"])
+        moderate(post, "VISIBLE")
+        moderate(post, "HIDDEN_REPORT")
+        assertEquals(clean, review())
+
+        moderate(post, "REMOVED")
+        val offensive = review()
+        assertEquals(listOf<Any?>("OFFENSIVE", null), listOf(offensive["label"], offensive["labeled_by"]))
+        moderate(post, "REMOVED")
+        moderate(post, "VISIBLE")
+        assertEquals(offensive, review())
+
+        val labeled = shareCompleted(UUID.randomUUID(), "직접 라벨한 합성 답")
+        val labeledAnswer = jdbc.queryForObject("SELECT answer_id FROM community_post WHERE id = ?", UUID::class.java, labeled)!!
+        moderate(labeled, "HIDDEN_REPORT")
+        val operator = UUID.randomUUID()
+        jdbc.update(
+            "UPDATE expression_review SET label = 'CLEAN', labeled_by = ?, labeled_at = now() WHERE answer_id = ?", operator, labeledAnswer,
+        )
+        moderate(labeled, "REMOVED")
+        assertEquals(
+            listOf<Any?>("CLEAN", operator),
+            jdbc.queryForList("SELECT label, labeled_by FROM expression_review WHERE answer_id = ?", labeledAnswer).single().values.toList(),
+        )
     }
 
     // ---------- 준비 ----------

@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.record.service
 
+import com.sagomungchi.learning.answer.service.ExpressionReviewService
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.community.service.CommunityService
 import com.sagomungchi.learning.memory.service.MemorySearchService
@@ -29,6 +30,7 @@ class StudentDeletionService(
     private val weeklyThemeService: WeeklyThemeService,
     private val themeFrameService: ThemeFrameService,
     private val memorySearchService: MemorySearchService,
+    private val expressionReviewService: ExpressionReviewService,
     private val coreClient: CoreClient,
     private val transactionTemplate: TransactionTemplate,
 ) {
@@ -39,6 +41,8 @@ class StudentDeletionService(
                 // 공유물(달린 반응 포함)·남긴 반응이 시도·답변을 참조하므로 먼저 (#386, P09)
                 communityService.deleteByStudent(studentId)
                 memorySearchService.deleteByStudent(studentId)
+                // 표현 검토 대기(#727, ERD 4.3.2)가 답변을 참조하므로 시도·답변보다 먼저
+                expressionReviewService.deleteByStudent(studentId)
                 attemptService.deleteByStudent(studentId)
                 // 되돌아보기 열람 기록(#385, ERD 4.4)도 같은 트랜잭션에서 물리 삭제
                 weeklyThemeService.deleteByStudent(studentId)
