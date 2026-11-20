@@ -374,7 +374,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - `app.toxicity.enabled`를 더했다. 전체 컨텍스트 시험이 없는 scoring 주소로 연결을 시도하지 않게 시험 기본값을 false로 두는 것이 이슈의 "시험 공통 기본값"이다. 운영에서는 모델을 잠시 끌 때도 쓴다. 끈 상태는 사유 `DISABLED`이고 장애가 아니라 제출마다 로그를 남기지 않는다
 - 1,500자는 코드포인트로 센다. scoring(Python `len`)과 같게 하고 이모지가 반쪽으로 잘려 400이 되지 않게 하려는 것이다. 잘린 앞부분이 공백뿐이면 그 칸은 보내지 않는다
 - 지표(호출·flagged·건너뜀 사유·지연)는 따로 만들지 않았다. learning에는 Micrometer 사용자 지표가 없고, 호출 수·지연은 Java agent의 HTTP 클라이언트 지표로 본다. 건너뜀 사유는 로그로만 본다
-- `review`는 읽기만 한다. 표현 검토 대기 등록은 #727
+- `review`는 읽기만 한다. 표현 검토 대기 등록은 #727(아래 재학습 자동화 절)
 - 로컬 compose E2E(2026-11-19, 모델 `tox-koelectra-small` 1.0-1119): learning 답 제출 API에 core가 넘기는 헤더로 보냄(학생 로그인·core 게이트웨이는 거치지 않음). 욕 없는 모욕 답 422(로그 `category=INSULT`) 48ms, 보통 답 201 59ms, scoring을 멈춘 채 모욕 답 201(1,555ms, 응답 마감 근처까지 기다림)
 
 ### 재학습 자동화 (#688, 설계 #725)
@@ -414,6 +414,24 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - CPU 학습 시간·메모리, CronJob을 둘 노드는 #729·#730에서 실측한다
 - 확인 필요: 학생 답변을 모델 개선에 쓴다는 고지(개인정보 처리방침·동의 문구) 필요 여부 → 후속 이슈. Job 실패 경보의 지표 출처(kube-state-metrics 유무) → #730
 - 구현: scoring `review` #726, learning 검토 대기·내보내기 #727, core·web 라벨링·자동 등록·추천 태그 #728, `ml/tox` 재학습 #729, CronJob·네트워크 #730
+
+#### learning 표현 검토 대기 구현 (#727, 2026-11-20)
+
+- 저장: learning V24 `expression_review`(ERD 4.3.2·6장). 답변 원문은 복사하지 않고 `answer`를 가리킨다. 막힌 답변·모델 점수는 저장하지 않는다
+- 코드(class-diagram 4.1 이름 그대로): `answer/service/ExpressionReviewService`(`recordGrayZone`·`recordReported`·`autoLabel`·`list`·`label`·`labelCount`·`export`·`deleteByStudent`), `answer/repository/ExpressionReviewRepository`·`ExpressionReviewMapper`(+ XML), 컨트롤러 `AdminExpressionReviewController`(ADMIN + `X-User-Id`, core #728 프록시)·`ExpressionReviewExportController`(ops 토큰 `SYSTEM`, `InternalCallerPolicy` ops에 `/internal/expression-reviews/**`)
+- 경계 구간: `ToxicityClient`가 scoring 응답 모델을 `name:version`으로 받아 `ToxicityVerdict.Clean(review, modelVersion)`에 담는다. `AnswerService.submit`이 답변·판정을 저장한 뒤 같은 트랜잭션에서 `review:true`이면 `GRAY_ZONE` 행을 넣는다(sequence 3.1). 같은 키 다시 보내기는 저장된 답을 돌려줘 행이 늘지 않고, UK `(answer_id, source)`도 막는다
+- 신고 공유물: 기존 `CommunityService.moderate` 안에서 `HIDDEN_REPORT`가 되면 행 추가, 처음 `REMOVED`가 되면 `OFFENSIVE`, `HIDDEN_REPORT`에서 다시 공개되면 `CLEAN`. 자동 라벨은 `labeled_by` null이고, 운영자가 직접 라벨한 행과 이미 같은 라벨인 행은 그대로 둔다
+- 학생 삭제: `StudentDeletionService`가 시도·답변보다 먼저 `deleteByStudent`(FK NO ACTION)
+- 로그: 출처·라벨·건수만(`표현 검토 대기 추가 source=…`, `표현 검토 자동 라벨 …`, `표현 검토 라벨 label=…`, `표현 검토 내보내기 count=…`). learning에는 사용자 지표가 없어(#692와 같음) 건수는 로그로 본다
+- 계약: `contracts/openapi/learning-service.yaml` 1.5.0에 4개 경로. `ExpressionReviewApiTest`가 실제 응답을 남기고 `scripts/validate_learning_expression_review_contracts.py`가 스키마와 학생·답변 ID가 없는지 확인(ci-contracts learning-contracts)
+- 시험: `ExpressionReviewApiTest`(목록 순서·필터·글 잇기·400·403, 라벨 덮어쓰기·404·400, 새 라벨 수·내보내기 since 초과·until 이하·SKIP 제외·1,500자 자름·400·403), `AnswerServiceTest`(경계 구간만 한 번, 보통·검사 안 됨·막힘은 없음, 로그에 ID 없음), `CommunityTest`(신고 숨김·자동 라벨·반복·직접 라벨 유지), `StudentDeletionTest`(표 목록에 추가), `ToxicityClientTest`(모델 `name:version`)
+
+이슈 본문과 다른 점:
+
+- 자동 라벨의 `labeled_by`: 이슈는 "처리한 운영자"였으나 설계(api-spec 4.1.5)·이슈 댓글대로 null. core 반영 호출이 `SYSTEM`이라 운영자 ID가 없다
+- "답변 파기 시 함께 삭제": cascade가 아니라 답변보다 먼저 같은 트랜잭션에서 지운다(ERD 4.3.1과 같은 방식, 이슈 댓글)
+- 설계에 없어 정한 것(사용자 확인 2026-11-20): 같은 신고 처리 반영이 다시 와도 라벨 시각을 바꾸지 않음(재학습 새 라벨로 다시 세지 않게), 내보내기 `until`은 필수(같은 범위면 같은 결과). `since`는 "이후"를 초과로 읽음
+- 이미 신고로 숨겨져 있던 공유물(V24 전)은 행이 없다가, 처리되면 라벨과 함께 행이 생긴다
 
 ## 17. 고착 RUNNING 판정 1분 주기 탐지 (#241)
 
