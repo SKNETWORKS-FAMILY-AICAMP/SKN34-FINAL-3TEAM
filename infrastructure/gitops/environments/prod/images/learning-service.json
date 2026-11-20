@@ -1,0 +1,13 @@
+{
+  "image": {
+    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-service",
+    "digest": "sha256:deef0fc1b721f8f79446ec7d1a8e5cfe9a3e3b836854984b1854b29f23a69f61"
+  },
+  "migration": {
+    "image": {
+      "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-migrate",
+      "digest": "sha256:ad66d684afc0920ab552fa3704ee8af3366ec5dfba3f73040c62cfda7039eaaa"
+    },
+    "revision": "main-c6809ddb65ee"
+  }
+}

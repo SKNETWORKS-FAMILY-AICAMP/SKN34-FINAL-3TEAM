@@ -70,7 +70,7 @@ class AccountSwitchTest(unittest.TestCase):
     def test_patterns_do_not_reach_deeper_folders(self):
         self.assertEqual(switch.classify('infrastructure/aws/iam/a.json'), 'change')
         self.assertEqual(switch.classify('infrastructure/aws/iam/old/a.json'), 'unknown')
-        self.assertEqual(switch.classify('infrastructure/gitops/environments/prod/migrations/core-service.json'), 'change')
+        self.assertEqual(switch.classify('infrastructure/gitops/environments/prod/images/core-service.json'), 'change')
         self.assertEqual(switch.classify('docs/report/evidence/a.json'), 'record')
         self.assertEqual(switch.classify('docs/report/scoring.md'), 'change')
 
