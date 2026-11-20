@@ -239,10 +239,6 @@
       {
         "name": "scoring-service",
         "port": 8001
-      },
-      {
-        "name": "sllm-server",
-        "port": 8080
       }
     ],
     "egressToPlatform": [

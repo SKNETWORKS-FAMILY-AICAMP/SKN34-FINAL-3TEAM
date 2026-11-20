@@ -155,7 +155,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
    - `docker build -f infrastructure/aws/demo-clock.Dockerfile --build-arg BASE=<배포 중인 core 이미지> -t <같은 ECR 저장소>:<태그>-demo-clock .`(learning도 같게) → ECR push
    - core·learning Deployment를 그 이미지로 바꾸고 `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1`, `FAKETIME=@2026-11-21 05:00:00`(UTC, 토요일 14:00 KST), `FAKETIME_FORCE_MONOTONIC_FIX=1`, `FAKETIME_DONT_RESET=1`을 넣는다. monotonic을 위조하지 않으면(`FAKETIME_DONT_FAKE_MONOTONIC=1`) JVM 대기 스레드가 CPU 1코어를 계속 쓴다
    - 롤아웃이 끝나면 `solve --child <초3>`, `solve --child <초5>`. 이어서 `FAKETIME=@2026-11-28 05:00:00`으로 바꿔 두 번 더 `solve`
-   - 앞선 주의 주간 리포트까지 원하면 그 주 일요일 23:56 KST로 옮겨 월요일 00:00 스케줄을 기다린다(sLLM KEDA cron은 실제 시각 기준이라 이때만 1대로 직접 올린다). 시연에 필요한 것은 지난 주 리포트뿐이라 생략할 수 있다
+   - 앞선 주의 주간 리포트까지 원하면 그 주 일요일 23:56 KST로 옮겨 월요일 00:00 스케줄을 기다린다(리포트 Gemma SageMaker 예약 확장은 실제 시각 기준이라 이때만 기반 IC 사본을 1로 직접 올린다). 시연에 필요한 것은 지난 주 리포트뿐이라 생략할 수 있다
    - 원래 이미지·환경 변수로 되돌리고(`kubectl set image`·`kubectl set env ...-`), Pod 시각이 실제 시각인지 확인한다. 이 동안 가짜 시각으로 서명한 S3 그림 URL은 403이고, 다른 사용자가 쓰지 않는 시간에만 한다
 5. 지난 주(실제 시각): 12/4(금)~12/5(토)에 `solve` 두 번. 무료도 금·토에는 다섯 요일이 모두 열린다(#483). 12/6 00:00 일일, 12/7 00:00 주간 리포트가 정기 스케줄로 만들어진다
 6. 12/7 00:00 이후: `decorate --child <닉네임> --min-frames 3 --keep-newest-unseen --furniture <DESK 코드>,<WALL 코드>`(가장 최근 회차는 "새 액자"로 남김) → `verify --child <닉네임> --query "<답변 소재 질문>"` → 세 DB에 `audit-demo-data.sql`
@@ -287,13 +287,13 @@ scoring은 기동할 때 core의 활성 모델 목록을 받아 각 `artifactUri
 
 ### A 계정 값 교체
 
-B 계정 번호를 받으면 한 번에 바꾼다. 분류 기준은 [`scripts/aws_account_switch.py`](../../scripts/aws_account_switch.py)의 `CHANGE`·`RECORD`이고, 분류되지 않은 파일에 A 번호가 있으면 스크립트가 멈춘다(새로 생긴 파일을 먼저 분류한다). 바꿀 파일 안에서도 `A 계정 347161580747`처럼 A 계정임을 밝힌 줄은 남긴다. 2026-11-19 기준 A 번호가 있는 파일은 53개였다(이 스크립트와 시험 2개 제외).
+B 계정 번호를 받으면 한 번에 바꾼다. 분류 기준은 [`scripts/aws_account_switch.py`](../../scripts/aws_account_switch.py)의 `CHANGE`·`RECORD`이고, 분류되지 않은 파일에 A 번호가 있으면 스크립트가 멈춘다(새로 생긴 파일을 먼저 분류한다). 바꿀 파일 안에서도 `A 계정 347161580747`처럼 A 계정임을 밝힌 줄은 남긴다. 2026-11-19 기준 A 번호가 있는 파일은 53개였고, #835에서 `sllm-server.json`을 지워 52개다(이 스크립트와 시험 2개 제외).
 
 | 분류 | 파일 | 수 |
 |---|---|---|
 | 바꿈: IAM 원문 | `infrastructure/aws/iam/*.json` | 25 |
 | 바꿈: IaC | `infrastructure/aws/demo-stack.json`, `infrastructure/eks/cluster.json`, `infrastructure/aws/cloudfront-config.redacted.json` | 3 |
-| 바꿈: 배포 값 | `infrastructure/gitops/environments/prod/`의 앱 values 7개(`sllm-server.json` 포함)·`migrations/` 3개·`redeploy-app.ps1` | 11 |
+| 바꿈: 배포 값 | `infrastructure/gitops/environments/prod/`의 앱 values 6개·`migrations/` 3개·`redeploy-app.ps1` | 10 |
 | 바꿈: 시험 | `scripts/tests/test_cd_migration_runner.py`(가짜 `sts`가 돌려주는 번호가 `redeploy-app.ps1`과 같아야 함) | 1 |
 | 바꿈: 절차 문서 | 이 README, `infrastructure/eks/README.md`, `infrastructure/cd/README.md`, prod README, `docs/report/scoring.md`(6.2·6.3 업로드 명령) | 5 |
 | 남김: 기록·근거 | `docs/report/**`(scoring.md 빼고: `infra.md` 4절, `evidence/issue493-…json`), `infrastructure/aws/demo-observed.json`, `infrastructure/eks/demo-observed.json` | 4 |
@@ -308,7 +308,7 @@ git grep -n 347161580747    # A 계정 347161580747이 남은 곳이 위 '남김
 python -m unittest discover -s scripts/tests
 ```
 
-`sllm-server.json`은 infra 9.13.9 정리안에서 지우기로 한 파일이다. 교체 전에 지웠으면 목록에서 빠진다. 버킷 이름(`sagomungchi-demo-<계정>-{web,missions,reports,models}`)은 계정 번호가 들어 있어 같이 바뀐다.
+`sllm-server.json`은 infra 9.13.9 정리안대로 #835에서 지웠다. 버킷 이름(`sagomungchi-demo-<계정>-{web,missions,reports,models}`)은 계정 번호가 들어 있어 같이 바뀐다.
 
 #### B 자원을 만든 뒤 바꿀 값
 

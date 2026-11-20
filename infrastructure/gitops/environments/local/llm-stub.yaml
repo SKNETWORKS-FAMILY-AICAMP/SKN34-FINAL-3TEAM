@@ -1,0 +1,26 @@
+# 리포트 Gemma SageMaker 엔드포인트(#742·#747) local 대역. ai가 REPORT_LLM_ENDPOINT_URL로
+# boto3 InvokeEndpoint(/endpoints/<이름>/invocations)를 여기로 돌려 운영과 같은 클라이언트 경로를 탄다.
+# 이미지는 compose E2E와 같은 infrastructure/stubs/llm-stub(고정 응답, 서명·IC 이름 미검사).
+# 운영 엔드포인트의 예약 확장(0→1→0)은 Application Auto Scaling 몫이라 local은 1대로 둔다.
+nameOverride: llm-stub
+image:
+  repository: sagomungchi/llm-stub
+  tag: local
+replicaCount: 1
+service:
+  port: 8080
+  targetPort: 8080
+probes:
+  startup: {enabled: true, path: /health, periodSeconds: 5, failureThreshold: 60}
+  liveness: {enabled: true, path: /health, periodSeconds: 10, timeoutSeconds: 5}
+  readiness: {enabled: true, path: /health, periodSeconds: 5, timeoutSeconds: 3}
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {cpu: 250m, memory: 128Mi}
+hpa:
+  enabled: false
+pdb:
+  enabled: false
+networkPolicy:
+  enabled: true
+  ingressFromApps: [ai-service]
