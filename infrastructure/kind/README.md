@@ -23,21 +23,9 @@
 
 버전 표는 공식 문서의 호환 범위를 대조한 결과이며 이 조합의 실제 기동 성공을 의미하지 않는다. ingress-nginx를 유지한다는 사용자 결정을 반영했다. chart를 고정하면 기본 controller·admission 이미지와 digest도 해당 chart 버전의 정의를 사용한다. 고정 버전은 의도적인 업데이트 때 함께 검토한다.
 
-## 2026-10-26 기준 PC의 사전 확인
+## 설치 전 네트워크 확인
 
-| 조사 대상 | 확인한 대역·상태 |
-|---|---|
-| Windows Wi-Fi | `192.168.0.0/24` |
-| WSL 인터페이스와 Docker Desktop Linux 경로 | `172.17.16.0/20` |
-| Docker bridge | `172.17.0.0/16` |
-| 기존 Docker 프로젝트 네트워크 | `172.18.0.0/16`, `172.19.0.0/16` |
-| 후보 Pod / Service 대역 | 서로 및 위 대역과 중복 없음 |
-| Windows 활성 IPv4 경로 | 두 후보 대역으로 향하는 별도 VPN 경로는 관찰되지 않음 |
-| TCP 80·443·6443 | LISTEN 없음, Windows 예약 범위에도 포함되지 않음 |
-
-기본 경로 `0.0.0.0/0`는 모든 주소를 포함하므로 중복 판정 대상에서 제외한다. loopback·link-local·multicast 등은 Pod·Service 대역 후보와 구분한다. 기존 WSL·Docker 대역 자체의 관계를 수정하는 작업은 수행하지 않았다.
-
-이 결과는 현재 연결된 네트워크 기준이다. 같은 PC 사양이어도 다른 Wi-Fi·VPN·Docker 네트워크를 사용하면 다시 확인한다. kind가 새로 만드는 Docker `kind` 네트워크의 subnet도 생성 후 확인한다. 기존 Docker 네트워크를 삭제하거나 새 대역으로 강제 재생성하지 않는다.
+Pod·Service 대역이 PC의 Wi-Fi·WSL·Docker bridge·기존 Docker 네트워크·VPN 경로와 겹치지 않는지, TCP 80·443·6443이 비어 있는지 확인한다(2026-10-26 첫 PC에서 확인한 대역 표는 git 이력). 다른 Wi-Fi·VPN·Docker 네트워크를 쓰면 다시 확인한다.
 
 Windows에서 다시 확인할 명령:
 
@@ -136,18 +124,6 @@ kubectl --context kind-sagomungchi-local -n platform get pods,jobs,pvc
 ```
 
 Compose를 중단할 때 업무 데이터를 유지하려면 `docker compose down`을 사용하고 `--volumes`를 붙이지 않는다. 선택 MinIO도 실행했다면 `docker compose -f compose.yaml -f compose.minio.yaml down`으로 중단한다. 기존 데이터 볼륨의 삭제와 클러스터 삭제는 별도의 작업으로 다룬다.
-
-## 이후 구현이 맞춰야 할 항목
-
-| 구현 대상 | 맞춰야 하는 기준 |
-|---|---|
-| Calico | kind의 Pod CIDR과 동일한 IP pool |
-| Ingress controller | 노드 라벨·hostPort·loopback 포트 매핑·class·자원 예산 |
-| platform-data | `platform` namespace, replica 1, 기존 Secret 참조, 자원·PVC 예산 |
-| RabbitMQ 초기화 | 기존 definitions 파일과 Service·Secret 연결 |
-| MinIO 초기화 | 단일 MinIO 볼륨 안의 확정 버킷 세 개 |
-| 후속 앱 chart | `app` namespace, `*.platform` Service DNS, 로컬 class `nginx` |
-| 최종 검증 | 명시적 context 사용, 다른 프로젝트의 클러스터·Docker 데이터 보존 |
 
 ## 근거
 

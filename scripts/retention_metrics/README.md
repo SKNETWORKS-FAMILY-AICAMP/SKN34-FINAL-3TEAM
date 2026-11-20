@@ -39,7 +39,7 @@ kind에서는 `platform/postgres-0`에 `kubectl exec -i … psql -U <POSTGRES_US
 ## 대상 학생
 
 - core `student.status = 'ACTIVE'`(삭제 요청 중·삭제 확정 제외)
-- 시연 학생 제외: `student.is_demo = true`(AWS 시연 DB는 #185 `mark-confirmed-demo-data.sql`로 표시). 표식이 없는 시험 계정은 `exclude_students`로 뺀다
+- 시연 학생 제외: `student.is_demo = true`(AWS 시연 DB는 #185 `mark-confirmed-demo-data.sql`로 표시, 새 가입은 core `AUTH_NEW_ACCOUNT_DEMO=true`). 표식이 없는 시험 계정은 `exclude_students`로 뺀다
 - 출력 첫 표에 대상 수와 제외 사유별 수(시연·목록·비활성)를 함께 낸다
 
 ## 지표
