@@ -22,7 +22,7 @@
 | `scripts/knowledge/semester_map.csv` | 성취기준 코드 → 학기(431행 = 초3~6 331 + 초1·초2 100, 초1·초2는 #536에서 더함, 6절). 칸: `code, subject, noticeGradeBand, semesters, seoul, gyeonggi, seoulFocus, basis`. 문장 없이 코드·학기만. 고시 원문 추출(JSONL)은 초3~6 행만 씀 |
 | `scripts/knowledge/thinking_types.md` | 생각 유형 근거와 출제 지침(#262 기준). "레코드" 절을 추출기가 읽어 생각 유형 레코드 5개로 옮김 |
 | `scripts/knowledge/data/curriculum-v1.jsonl`, `.summary.json` | 추출 결과와 요약 |
-| `scripts/tests/test_knowledge_extract.py` | 추출 시험 22개(초1·초2 학기 대응 1개는 #536) |
+| `scripts/tests/test_knowledge_extract.py` | 추출 시험 23개(2026-11-20 기준, 초1·초2 학기 대응은 #536) |
 
 ```bash
 # 원문은 별도 폴더에 복사해 두고(신뢰하지 않는 입력) python -I로 실행
@@ -143,16 +143,16 @@ KNOWLEDGE_SOURCE_DIR=<별책 HWP 폴더> python -m unittest scripts.tests.test_k
 
 ## 9. 확인 필요(사용자 결정)
 
-- [ ] 추출 JSONL 보관 위치: 기준안 `scripts/knowledge/data/`(약 1.2MB)
+- [x] 추출 JSONL 보관 위치: `scripts/knowledge/data/`(약 1.2MB, 저장소에 둠)
 - [ ] 경기·서울이 다른 15개 코드의 학기(6절 표). 지금은 `출처.md` 기준안대로 경기
 - [ ] 학기 뜻: 단원이 있는 학기 모두(지금) / 서울 중점 학기만
 - [x] 초5·초6 도덕 학기(서울 5~6학년 연결표) 사용 여부: 채워 둠(사용자 결정 2026-11-11)
 - [ ] 사회·과학 경기 자료 대조: PDF 읽기에 외부 라이브러리가 필요하면 의존성 승인, 아니면 팀 정리본처럼 표를 사람이 옮긴 xlsx 확보
-- [ ] `docs/README.md` 보고서 목록에 이 문서 추가(작업 위치 밖이라 하지 않음)
+- [x] `docs/README.md` 보고서 목록에 이 문서 추가
 
 ## 10. 검증
 
-- `python -O -m unittest scripts/tests/test_knowledge_extract.py`: 21개 통과(재추출 시험 1개는 원문 폴더가 없으면 건너뜀, `KNOWLEDGE_SOURCE_DIR`를 주고 따로 돌려 통과)
+- `python -O -m unittest scripts/tests/test_knowledge_extract.py`: 통과(2026-11-20 기준 23개, 재추출 시험 1개는 원문 폴더가 없으면 건너뜀, `KNOWLEDGE_SOURCE_DIR`를 주고 따로 돌려 통과)
 - 시험 내용: C1 스키마 통과, learning 적재 규칙(#466 칸 종류·조각 ID 겹침·학기가 학년 안·문장이 표와 같음) 통과, 코드 집합 = 성취기준 표(빠진·남는 코드 0), 문장 = 성취기준 표(공백·기호 차이 목록), 해설 수 = 원문 (가) 항목이 가리키는 코드 수(교과·학년군별 출력), 영역마다 고려 사항·내용 체계 있음, 교과 지침 5개, 내용 요소 ID 해시 규칙, 기호·분수·단위, 학기 = `semester_map.csv`·학기 없는 성취기준 목록 출력·다른 코드 15개, 요약 수 = 레코드, 차례 쪽수 대조, 제외 출처 없음, 생각 유형 5개 = `thinking_types.md`·영어 문장 없음·출처 표기, 합성 HWP5(문단·표·합친 칸·수식·대리 쌍 글자·쪽 나눔·PUA) 읽기
 - `python -O -m unittest discover -s scripts/tests`(CI `ci-contracts`와 같은 명령): 293개 통과(건너뜀 2)
 - `ruff check --isolated --select E,F,I,B --line-length 120`(ruff 0.17.2): 새 파일 통과. `scripts/`에는 ruff 설정이 없어 서비스 규칙(E·F·I·B)에 기존 scripts 시험의 줄 길이(120)를 씀

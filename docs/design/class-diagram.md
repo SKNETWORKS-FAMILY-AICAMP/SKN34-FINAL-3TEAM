@@ -1395,7 +1395,7 @@ classDiagram
 
 ### 3.6 커뮤니티·포인트·꾸미기 (community #388 · reward #389 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 core 클래스. 커뮤니티는 #388, 포인트·꾸미기는 #389로 구현했고 `RewardService.earn` 호출 연결(학습 완료·공유·반응·되돌아보기 열람)도 `ParticipationRewardService`로 구현했다(아래 연결 절). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 core 클래스(커뮤니티 #388, 포인트·꾸미기 #389). `RewardService.earn` 호출 연결(학습 완료·공유·반응·되돌아보기 열람)은 `ParticipationRewardService`(아래 연결 절). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
@@ -1512,8 +1512,8 @@ classDiagram
 - 공유물 목록 해석(#792·#814): `CommunityClient.missionPosts`·`studentPosts`가 learning `items[]`를 `MissionPost`·`StudentPost`로 바꾼다(공유물·작성자 ID UUID, 상태는 `Community.POST_STATUSES`, 반응 수는 `Community.REACTIONS` 전부를 0 이상 정수로 채움(빠진 종류는 0, 음수·문자열·소수·null은 오류), 내 반응은 알려진 종류만, 미션 ID는 UUID|null·미션 제목은 문자열|null, 작성 시각은 date-time|null이며 learning 문자열 그대로). 답변은 `post`(신고 대상·관리자 원문)까지 세 읽기 모두 공개 계약 `CommunityAnswer`(`{inputType, text, content}`, 입력 방식별 `content` 칸만, #825) 모양을 검사한 learning 원문을 넘긴다. 틀리면 502 `COMMUNITY_INVALID_RESPONSE`. `CommunityService`는 작성자 표시·신고 숨김·공개 설정으로 거르고 상태를 덮어쓰는 업무 판단만 한다
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
 - 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningProxyService.reflection` 돌아보기 저장 성공(또는 `409 ATTEMPT_CLOSED` 재요청) 뒤 `CommunityService.shareCompleted`, 결과 `postId`로 공유 포인트 적립(#389)
-- 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. #387 때는 무료 `THEME_DAY`·`EXTRA`를 셌고, 2026-11-10 개정(core #485)부터 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다
-- 2026-11-10 개정(#483, core #485 구현): `ProductEntitlementService.missionStart`는 `THEME_DAY`·`THEME_REVIEW`를 상품 조회 없이 통과시키고, `EXTRA`는 상품 `features.extraMissions`(값이 없으면 무료 거부·구독 중 허용, #506)로 판정한다. `ProductEntitlementService.sundayTheme(student, date)`가 KST 일요일에만 상품 `features.sundayTheme`을 읽어 learning 쿼리 `sundayTheme`을 정한다(`LearningProxyService`가 시도 시작·주간 테마 조회·열람 기록 2종에 붙임). `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 응답의 `days[].completedOnDay`(당일 풀이 `THEME_ON_TIME`)·`completed`(개근 `THEME_COMPLETED`, #506)·`finished`(주간 완주 `THEME_FINISHED`)로 적립을 보충한다. 사건 종류는 `RewardEvent` 8개(`UNLOCK` 포함)
+- 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다(#485)
+- 주간 테마 이용 규칙(#483, core #485): `ProductEntitlementService.missionStart`는 `THEME_DAY`·`THEME_REVIEW`를 상품 조회 없이 통과시키고, `EXTRA`는 상품 `features.extraMissions`(값이 없으면 무료 거부·구독 중 허용, #506)로 판정한다. `ProductEntitlementService.sundayTheme(student, date)`가 KST 일요일에만 상품 `features.sundayTheme`을 읽어 learning 쿼리 `sundayTheme`을 정한다(`LearningProxyService`가 시도 시작·주간 테마 조회·열람 기록 2종에 붙임). `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 응답의 `days[].completedOnDay`(당일 풀이 `THEME_ON_TIME`)·`completed`(개근 `THEME_COMPLETED`, #506)·`finished`(주간 완주 `THEME_FINISHED`)로 적립을 보충한다. 사건 종류는 `RewardEvent` 8개(`UNLOCK` 포함)
 
 ### 3.7 생활공간·추억 프록시 (P27, 구현 #555·#560·#566)
 
@@ -2102,7 +2102,7 @@ classDiagram
 
 ### 4.4 주간 테마·커뮤니티 (theme #385 · community #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385, 커뮤니티(`community`)는 #386으로 구현한 이름·시그니처. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스(주간 테마 `theme` #385, 커뮤니티 `community` #386, 구현 이름·시그니처). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
@@ -2276,8 +2276,8 @@ classDiagram
 - 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
 - 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
 
-#438 추가(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
-- 학년: `GradeBand`(`G3_4`·`G5_6`)를 `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`)로 바꾼다. `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
+#438(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
+- 학년: `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`). `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
 - 이야기·정답 구조: 버전·요일 새 칸은 테마 새 버전 때 함께 복사. `ThemeAnswerRules`가 관리자 저장 때 정답 논리(정답·후보·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어느 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐)와 `hintSpots`(0~100, 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음)를 검사(400). 결정적 단서 `decisiveClue`는 마지막 틀린 후보를 빼는 날의 단서
 - 학생 응답: 요일 단서는 그 문제를 그 주에 학습 완료한 뒤에만(#484), 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 엔딩(`ThemeEnding.of`가 `ENDED`)일 때만. 엔딩은 저장하지 않고 정답 고르기(`theme_answer_pick`)와 고른 뒤 금요일 문제 `THEME_REVIEW` 마무리 시각으로 계산한다(state-diagram 3.2.2, #484). 요일 상태는 `ThemeWeek.stateOf(day, today, sundayTheme)`(누적 공개, 일요일은 core 허용 값). 커뮤니티 `CommunityService`는 `lockedUntilEnding`으로 정답 고르기 문제를 엔딩 전에 잠근다(`COMMUNITY_LOCKED_UNTIL_ENDING`). INTRO는 월~토 언제든 받음(웹은 그 주 처음 '오늘 문제 풀기'를 누를 때 보여 주고 기록, #589), `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
 - 단서 근거(#647, 기준안): `ThemeStory.features`(`ThemeFeature(name, values: List<ThemeFeatureValue(candidate, value)>)`, `weekly_theme_version.features`)와 `ThemeDayMission.clueFeature`(`weekly_theme_day.clue_feature`)를 저장·복사한다. 테마 초안 채택은 ai 응답 `theme.features`·`days[].clueFeature`를 그대로 옮기고, `ThemeAnswerRules.featureErrors`가 특징마다 후보 하나에 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지는지 검사한다(테마 초안 learning 검사 `LOGIC`·관리자 저장 `400` 공통, 허용 값은 ai 내부 칸이라 그 이상은 보지 않음). `ThemeCarryOver`는 표를 이어받되 후보가 바뀌면 버리고 그날 `rulesOut`이 바뀌면 그날 `clueFeature`를 버린다. 학생 `ThemeDayView.clueFeature`·`clueFacts`는 그날 단서와 같은 조건(그 주 학습 완료), `WeeklyThemeView.features`는 엔딩 뒤만. 관리자 응답 `AdminWeeklyTheme.features`·`AdminThemeDay.clueFeature`
@@ -3054,7 +3054,7 @@ classDiagram
 
 ### 7.1 리포트 기간 종류 (report #391 구현 · core #390 연동)
 
-2026-11-06 결정의 report 부분은 #391에서 구현했다. core 스케줄·알림(#390)은 구현했고 대화(#392)도 구현했으며 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정의 report 부분(#391). core 스케줄·알림은 #390, 리포트 대화는 #392. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
@@ -3103,5 +3103,5 @@ classDiagram
 - 테마 소비는 코드(`app/config.py` `report_theme_summary_enabled`)·kind `report-worker` 값 모두 `REPORT_THEME_SUMMARY_ENABLED=true`가 기본이다. 단, Docker Compose(`compose.yaml`)는 `${REPORT_THEME_SUMMARY_ENABLED:-false}`로 꺼 두므로 로컬 Compose에서 주간 테마 요약을 보려면 `.env`에서 켠다(기본값 통일은 별도 정리 이슈). #385/#391 learning을 먼저 배포한다. false는 새 주간 요약만 생략하는 복귀 설정이며 조회 오류를 참여 없음으로 바꾸지 않는다.
 
 ## 8. 확인 필요 가정
-- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작 한도는 #387에서 `ProductEntitlementService.missionStart`·`usage/MissionUsageService`·`mission_daily_usage`(#210 PostgreSQL 결정)로 구현했다(당시 무료 `THEME_DAY`·`EXTRA` 합쳐 하루 1개). 2026-11-10 개정(core #485)부터 무료 테마 문제는 한도가 없고 무료 `EXTRA`는 403 `PREMIUM_REQUIRED`라, 이 한도는 무료 상품에서 `EXTRA`를 다시 켠 경우에만 쓰인다. 피드백 한도는 미구현. 생각 유형별 미션 고르기(`EXTRA`)는 무료 상품에서 꺼진 동안 프리미엄 사용(`EXTRA_MISSION`) 기록
+- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작 한도는 `ProductEntitlementService.missionStart`·`usage/MissionUsageService`·`mission_daily_usage`(#387, #210 PostgreSQL 결정). 무료 테마 문제는 한도가 없고 무료 `EXTRA`는 403 `PREMIUM_REQUIRED`라(#485), 이 한도는 무료 상품에서 `EXTRA`를 다시 켠 경우에만 쓰인다. 피드백 한도는 미구현. 생각 유형별 미션 고르기(`EXTRA`)는 무료 상품에서 꺼진 동안 프리미엄 사용(`EXTRA_MISSION`) 기록
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정

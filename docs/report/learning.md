@@ -634,14 +634,14 @@ P23의 learning 몫. 2026-11-10 개정(#483: 누적 공개·토요일까지 풀�
 | 학년군·주 위치 | 테마 행(버전 밖). 게시 중 변경은 409 | 게시 부분 UK `(grade_band, week_start)` |
 | 검토·승인 | 별도 `/review` 경로 없음. 검토 요청한 버전이 현재본일 때의 게시가 승인. 검토 중 수정은 `DRAFT` | core가 7경로만 프록시 |
 | 학년군 검사 | 미션 게시본이 학년군 전체를 덮어야 함. 초3~4는 논술 불가, 시연 전용 제외 | 학년군 안 어느 학생에게나 문제가 열려야 함 |
-| 오류 코드 | 전이 불가 409 `CONFLICT`, 게시 검사 422 `WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]`(6종: `DAYS_INCOMPLETE`·`MISSION_NOT_PUBLISHED`·`MISSION_DEMO_ONLY`·`GRADE_BAND_MISMATCH`·`THINKING_TYPES`·`WEEK_ALREADY_PUBLISHED`) | 웹이 `errors[].message`를 그대로 표시 |
-| 이번 주 테마 | 그 주 게시본, 없으면 이전 최근 게시본(`reused`). 학년군에 게시 테마가 없으면 404 | P23 |
+| 오류 코드 | 전이 불가 409 `CONFLICT`, 게시 검사 422 `WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]`(6종: `DAYS_INCOMPLETE`·`MISSION_NOT_PUBLISHED`·`MISSION_DEMO_ONLY`·`GRADE_MISMATCH`(#438)·`THINKING_TYPES`·`WEEK_ALREADY_PUBLISHED`) | 웹이 `errors[].message`를 그대로 표시 |
+| 이번 주 테마 | 그 주 게시본, 없으면 이전 최근 게시본(`reused`). 그 학년에 게시 테마가 없으면 404(학년별 테마 #438) | P23 |
 | 시작 순서 | 진행 중 시도 반환(검사 없음) → 미션 공개·범위 → 테마 검사 | 자정이 지나도 이어하기 |
-| `THEME_DAY` | ~~이번 주 테마의 오늘(KST) 요일 문제만~~ → #484: 공개된(`OPEN`) 문제를 토요일까지, 그 주 이미 마무리한 문제는 거부. 아니면 409 `THEME_DAY_CLOSED` | 누적 공개(34장) |
-| `THEME_REVIEW` | 그 주 그 문제 `THEME_DAY` 시도를 마무리했을 때만, ~~토·일~~ → #484: 토요일·프리미엄 일요일. 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | |
+| `THEME_DAY` | 공개된(`OPEN`) 문제를 토요일까지, 그 주 이미 마무리한 문제는 거부(#484). 아니면 409 `THEME_DAY_CLOSED` | 누적 공개(34장) |
+| `THEME_REVIEW` | 그 주 그 문제 `THEME_DAY` 시도를 마무리했을 때만, 토요일·프리미엄 일요일(#484). 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | |
 | 개근(칸 `completed`) | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료 | 금요일 문제를 토요일 01시에 끝내면 개근 아님. 주간 완주(`finished`)는 34장 |
 | 열람 기록 | `theme_review_view` 학생·주당 1행, 다시 보내도 200(`firstViewThisWeek`만 false) | 포인트 멱등 근거 |
-| 주간 요약 | `GET …/weekly-theme/summary?weekStart`. 테마는 그 주 학생 테마 시도에서 정하고 없으면 `NO_RECORD` | report는 학년군을 모름 |
+| 주간 요약 | `GET …/weekly-theme/summary?weekStart`. 테마는 그 주 학생 테마 시도에서 정하고 없으면 `NO_RECORD` | report는 학년을 모름 |
 | 날짜 기준 | 조회·열람은 core가 넘긴 `date`, 시작 검사는 learning `Clock` | 둘 다 KST 오늘 |
 
 - ERD 설계와 달리 `weekly_theme_version` 테이블을 더하고 제목·소개·요일 문제를 버전으로 옮김. 순환 FK는 `DEFERRABLE INITIALLY IMMEDIATE`
@@ -883,22 +883,13 @@ python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --d
 
 ### 자동 성취기준의 한계와 다음 설계
 
-아래는 #438 때 기록이고, #536에서 해결·변경했다(35장).
-
-- 학년군 표에서 고르므로 초3 테마에 4학년 내용이 뽑힐 수 있음(#437 실측에서 초3 통과율이 가장 낮았던 원인 중 하나). 성취기준 표에는 학년·학기 칸이 없어 지금은 거를 수 없고, 관리자가 성취기준을 지정하면 피할 수 있음 → #536: 학기 대응표로 그 학년·학기만 거름
-- 후보 풀 설계(기준안): 지식 RAG 적재 뒤 learning 지식 서비스(#469)에서 그 학년·학기(`knowledge_standard_semester`)와 유형(`knowledge_fits`) 성취기준을 받고, 없거나 장애면 학년군 표로 대체. ai 요청 계약은 그대로 → #536: RAG를 쓰지 않기로 해(팀 결정 2026-11-11) 지식 서비스 단계 없이 이번 학기 → 같은 학년군 지난 학기 → 학년군 표
-- 학기 규칙(기준안): `weekStart`가 3월 1일~8월 15일이면 1학기, 그 밖은 2학기 → #536에서 기준안대로 확정(사용자 결정 2026-11-12)하고 후보 풀에 씀(`ThemeSemester`)
-- 국어는 두 학년 공통 코드가 많아 코드로는 학년 수준을 거를 수 없음 → ai 검토(학년 어휘 `GRADE_VOCAB`)가 맡음. 처음 기록의 `learned`(#469)는 RAG를 쓰지 않기로 해 뺌
-- 확인 필요(#536에서 닫음): 주제와 가까운 성취기준을 고르려면 C5 `theme-candidates`를 부르는 쪽이 ai에서 learning으로 바뀜(#469 담당과 확인) → 주제가 있는 관리자 요청도 같은 학기 대응표 규칙으로 고르고, 벡터로 고르는 안은 하지 않음
+#438 때 적은 한계(학년군 표에서 골라 초3에 4학년 내용이 뽑힘, 학기 규칙 기준안, RAG 후보 풀 설계)는 #536에서 학년·학기 후보 풀로 해결·변경했다(35장). 학기 규칙은 `weekStart`가 3월 1일~8월 15일이면 1학기, 그 밖은 2학기(사용자 결정 2026-11-12). 국어처럼 두 학년 공통 코드는 ai 검토 `GRADE_VOCAB`이 학년 수준을 본다.
 
 ### 남은 확인
 
-- 정답 고르기 위치·저장·엔딩 판정은 #484(34장에서 구현). `sundayTheme`도 #484부터 읽음
-- 인프라: learning에 S3 역할이 없음. `theme-drafts/*` 읽기 역할(presign 서명용)과 버킷 이름(ai 쓰기 버킷과 같아야 함), 로컬은 브라우저가 닿는 MinIO 주소
-- presigned URL 한계: 응답마다 주소가 바뀌어 브라우저 캐시가 맞지 않음. 임시 자격 증명으로 서명하면 1시간보다 일찍 만료될 수 있음. 만료 403은 웹이 이번 주 테마를 다시 받아 처리(#440)
+- presigned URL 한계: 응답마다 주소가 바뀌어 브라우저 캐시가 맞지 않음. 임시 자격 증명으로 서명하면 1시간보다 일찍 만료될 수 있음
 - 주간 자동 시각에 learning이 모두 내려가 있으면 그 주 자동 초안이 생기지 않음(관리자 요청으로 대신)
-- api-spec 2.8·2.11 공개 줄 문구(학년, 새 응답 칸, INTRO 월~토·OUTRO 엔딩)는 core PR에서 맞춤
-- #437 그래프와 실제로 붙인 확인은 병합 뒤 kind에서 core와 함께
+- 처리된 것: 정답 고르기·엔딩·`sundayTheme`은 34장(#484), learning S3 읽기 역할은 infra 9.8(#652)
 
 테스트: `ThemeGradeMigrationTest`, `ThemeAnswerRulesTest`, `AssetUrlsTest`, `ThemeDraftServiceTest`, `ThemeDraftConcurrencyTest`(레플리카 4곳, 느린 ai 대기 중 내부 API 즉시 응답), `ThemeDraftAiStubFlowTest`, `ThemeTopicSeedsTest`, `scripts/tests/test_theme_drafts_contract.py`.
 
@@ -1410,9 +1401,3 @@ learning #801 병합 전에 목 입력으로 개발했고, 병합된 learning Op
 
 - 학부모 일일 리포트 문제 카드의 "돌아보기" 줄이 원문 공개 상태에서 난이도 코드를 그대로 `돌아보기 · NORMAL`로 보인다(비공개 상태는 `쓰지 않음`). Markdown도 `### 돌아보기` 아래 `NORMAL`. 난이도 코드를 화면 문구(쉬웠어요·보통이에요·어려웠어요)로 바꾸는 처리가 없는 것으로 추정
 - Markdown·PDF 파일은 생성 때의 공개 설정으로 만들어져, 비공개 때 생성한 판은 나중에 공개로 바꿔도 "원문 비공개 또는 답변 없음"으로 남는다(기존 동작, 이번 기능과 무관)
-
-kind에 남긴 것
-
-- 학부모 `kindcheck436`의 자녀 `kind확인5학년`·`kind확인3학년` PIN 설정, 기기 "kind답변시간" 등록. 초5 11/19 시도 1건(완료, 답 3판), 초3 시도 2건(월 완료·화 진행 중, 받아쓰기)
-- 11/19 일일 리포트: 스케줄러 생성 15건(시험 시계 때문에 `created_at`이 실제보다 약 9시간 늦은 15:00 UTC), 관리자 재생성 판(초5 2판, 초3 2·3판). 오늘 밤 실제 00:00 스케줄러는 같은 날짜·학생 `SCHEDULE` 작업이 이미 있어 건너뛴다(`ReportJobService.scheduled`)
-- 이미지 `sagomungchi/core-service:clock803`(시험 시계용, 배포에서는 내림), 초5 학생 공개 설정은 원래대로 끔

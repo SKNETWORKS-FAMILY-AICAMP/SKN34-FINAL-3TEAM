@@ -41,12 +41,12 @@ python infrastructure/aws/demo_stack.py --profile sagomungchi-provided plan
 
 ## RDS·S3
 
-- RDS `sagomungchi-demo-db`: PostgreSQL 17.11, db.t4g.small, Single-AZ, 비공개, 암호화, 백업 7일. 삭제 보호 false. PITR 복원 시각은 JSON에 기록했지만 실제 복원 시간·RPO/RTO 달성은 미검증이다.
+- RDS `sagomungchi-demo-db`: PostgreSQL 17.11, db.t4g.small, Single-AZ, 비공개, 암호화, 백업 7일. 삭제 보호 false. PITR 복구 시험은 2026-11-18에 실행해 RPO·RTO를 확인했다([infra 9.12](../../docs/report/infra.md#912-rds-pitr-복구-시험-629-2026-11-18)).
 - `sagomungchi-demo-347161580747-{web,missions,reports,models}`: 버전 관리·Public Access Block 상태는 JSON 참고. 웹만 CloudFront OAC로 제공하며 reports/models는 앱 IAM 및 서비스 권한 검사를 통한다.
 - VPC의 available NAT GW는 1개이며 JSON에 ID·subnet을 기록했다. AZ 장애 시 외부 호출 복구 검증은 하지 않았다. 2026-11-12 데모 정지 중 비용 축소로 NAT와 EIP, core ALB를 지웠다. 같은 날 EKS 클러스터도 지웠다(RDS·S3·ECR·Secret·IAM·VPC는 유지). 다시 켤 때는 [EKS 재생성 순서](../eks/README.md#재생성-순서-2026-11-12-eks-삭제-이후)를 따른다.
 - RDS·S3·IAM 생성은 위 `demo_stack.py apply`로 정의했다. 웹 버킷 policy(CloudFront 배포 ID 필요)와 lifecycle은 정의하지 않았다. 관측 파일을 재생성 완료 근거로 사용하지 않는다.
 
-## 테마 자산 버킷 권한 (#652, 2026-11-16 정의·미적용)
+## 테마 자산 버킷 권한 (#652, 2026-11-16 정의, 2026-11-17 적용)
 
 ai는 테마 초안 그림·영상을 `missions` 버킷의 `theme-drafts/{실행 ID}/{장면}`에 올리고, learning은 같은 키를 1시간짜리 presigned GET URL로 바꿔 학생 화면에 준다(#437·#438). 지금까지 prod 값에는 두 서비스의 `ASSET_S3_BUCKET`도 S3 권한 역할도 없어서, 그림·영상 단계와 자산 URL이 오류 없이 꺼져 있었다. 저장소에만 아래를 정의했고 AWS에는 만들지 않았다(조회도 하지 않음).
 
@@ -100,16 +100,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 ## 생성·관리 범위 추가 확인 (2026-11-03)
 
-기존 프로필로 A 계정 347161580747을 확인한 뒤 AWS API를 읽기 전용으로 조회했다. 서울 리전 `cloudformation describe-stacks` 결과는 빈 목록이다. 이것만으로 모든 리소스가 수동 생성되었다고 단정하지 않는다. Terraform state·최초 생성 기록·담당자는 아직 확인하지 않았으며, 기존 자원의 IaC import나 재생성은 수행하지 않았다.
-
-| 범위 | 추가 관측 | 재현·관리 시 남은 일 |
-|---|---|---|
-| VPC | `vpc-0f4d9134097830b4b`, 10.20.0.0/16. public 10.20.0.0/20(2a)·10.20.16.0/20(2b)는 IGW, private 10.20.128.0/20(2a)·10.20.144.0/20(2b)는 동일 NAT로 기본 경로 연결 | 생성 주체·SG·NACL·endpoint policy 전체 보존 및 관리 책임 확정 |
-| S3 경로 | private route table 두 개에 S3 Gateway endpoint `vpce-0dab53d8da86d39c8` 연결, available | S3 통신을 모두 NAT 경유로 설명하지 않는다. 2026-11-04 #212에서 endpoint policy(기본 전체 허용 유지)·IAM·NAT 우회를 점검했다(아래 절) |
-| RDS 네트워크 | 위 private subnet 두 개를 사용하는 `sagomungchi-demo-db-subnet-group`. SG `sg-022d3c9a8cf111b47`의 5432 ingress는 EKS SG `sg-086c7c83b3638da59`만 참조 | 복원 DB의 subnet group·SG를 원본과 대조. public 접근을 새로 허용하지 않음 |
-| RDS 저장·설정 | gp3 20GiB, 최대 자동확장 1000GiB, `default.postgres17` in-sync, TagList 빈 목록 | 최대 용량·비용 한도 검토. KMS key 접근과 DB별 계정·migration·데이터 초기화 절차 확인 |
-| S3 | 네 버킷 모두 기본 암호화 AES256, lifecycle 없음(`NoSuchLifecycleConfiguration`) | 현재/이전 버전 보존 기간과 삭제 정책 확정 후 lifecycle 검토. 버전 관리만으로 별도 백업·복구 성공을 주장하지 않음 |
-| S3 policy | web은 CloudFront 서비스의 GetObject를 배포 `EW2QD9OAPEVRK` SourceArn으로 제한, IsPublic=false. 나머지 세 버킷은 bucket policy 없음(`NoSuchBucketPolicy`) | bucket policy 부재를 공개 접근이나 IAM 접근 불가로 해석하지 않는다. 기존 Public Access Block·IAM과 함께 평가 |
+초기 읽기 전용 조회로 VPC·S3 Gateway endpoint·RDS 네트워크·S3 암호화·bucket policy를 확인했다(CloudFormation stack 없음). 이후 생성은 위 `demo_stack.py apply`로 정의했고, 조회 결과 원문은 `demo-observed.json`과 git 이력에 있다. S3 lifecycle·bucket policy(web 외)는 정의하지 않았다.
 
 ## S3 endpoint·NAT 점검 (#212, 2026-11-04)
 
@@ -122,14 +113,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 ## 관측·복구 우선순위
 
-아래는 초기 점검 당시의 후속 후보 목록이며 #185의 완료 조건 전체를 뜻하지 않는다. 2026-11-03 제안(CloudWatch 경보 6개 + SNS→Lambda→Discord 중계, EKS 로그 14일 보존)은 채택하지 않았다. 경보 조건은 [미적용 경보 JSON](alarms.proposed.json)에 검토용으로만 남아 있고(`ActionsEnabled=false`, action 없음) AWS에 만들지 않았다. 당시 추정은 경보·secret 고정비 월 약 $1, 기존 EKS 로그 수집 약 1.2GiB/일(월 약 $28)이며 로그 그룹 보존 기간은 정하지 않았다. 이후 기존 설계의 Grafana→Discord 연결과 최소 경보를 배포했다. 전체 경보·추적은 #187, 자동 배포는 #186, 노드 자동확장은 #211에서 다룬다. 실제 완료 근거는 [#185 보고서](../../docs/report/infra.md#4-aws-데모-구성-185)의 후속 배포 절을 따른다.
-
-1. **경보와 로그 보존:** 서울 리전 `cloudwatch describe-alarms`의 metric/composite 목록이 모두 비어 있다. EKS `/aws/eks/sagomungchi-demo-eks/cluster` 로그 그룹은 retentionInDays 미설정이다. RDS는 Enhanced Monitoring interval=0, Performance Insights=true, CloudWatch log export 없음이다. 먼저 ALB unhealthy target·5xx, RDS 여유 저장공간·연결·CPU, 앱 readiness 및 큐 적체의 수집 가능 지표와 알림 수신 담당을 정한다. 임계값은 실측 후 정하고 로그 보관 기간·알림 채널·비용을 정한 뒤 구성한다. 이번 조회는 CloudFront용 us-east-1 경보나 외부 알림 도구까지 조사한 것은 아니다.
-2. **RDS 격리 복원:** 자동 스냅샷 두 개가 available이며, 자동 백업 API의 복원 범위는 2026-11-02 17:55:20.511~2026-11-03 19:32:50 KST였다. 백업 보존은 7일, backup window는 14:54–15:24 UTC(23:54–다음 날 00:24 KST), maintenance window는 금요일 13:31–14:01 UTC다. 이 범위는 조회 시점 값이므로 복원 직전에 다시 조회한다. 복원 대상 ID·시각·기간·비용·정리 담당을 확정한 뒤 별도 DB에 복원하고 TLS 접속, 서비스별 스키마·migration·건수·표본 정합성, 소요 시간을 기록한다. 원본 endpoint나 앱 Secret을 시험 DB로 변경하지 않는다. 복원 자원 생성·삭제는 이번에 실행하지 않았다.
-3. **PVC·S3 복구:** 서울 리전 AWS Backup plan 목록은 비어 있다. 이것만으로 별도 EBS snapshot·DLM·외부 백업이 없다고 단정하지 않는다. RabbitMQ/Redis PVC의 volume ID·AZ·snapshot/일관성 확보 방법을 먼저 확인한다. gp3 reclaimPolicy가 Delete이므로 복구 근거 없이 PVC를 삭제하지 않는다. S3 복구 시험은 합성 객체의 version ID·내용 비교로 진행할 범위를 정하며 실제 보고서·학습 데이터의 삭제나 부모 재생성 한도 소비를 하지 않는다.
-4. **확장·자동 배포:** 위 관측과 복구 기준을 정한 다음 노드그룹 분리·자동확장·Argo CD 도입 범위를 결정한다. 현재 인벤토리만으로 전체 환경 복원이 가능하다고 판단하지 않는다.
-
-조회 근거: EC2 `describe-subnets`, `describe-route-tables`, `describe-vpc-endpoints`, `describe-security-groups`; RDS `describe-db-instances`, `describe-db-snapshots`, `describe-db-instance-automated-backups`; S3 `get-bucket-encryption`, `get-bucket-lifecycle-configuration`, `get-bucket-policy-status`, 웹 `get-bucket-policy`; CloudWatch `describe-alarms`; Logs `describe-log-groups`; Backup `list-backup-plans`. Secret 값·S3 객체 본문은 조회하지 않았다.
+2026-11-03 초기 점검의 후속 후보(경보·로그 보존, RDS 격리 복원, PVC·S3 복구, 확장·자동 배포)는 각각 Grafana → Discord 경보(#185·#187, [infra 8장](../../docs/report/infra.md#8-운영-경보와-trace-185187)), PITR 복구 시험(infra 9.12), Karpenter·HPA(infra 6장·9.14)로 진행했다. CloudWatch 경보 + SNS→Lambda 중계안은 채택하지 않았다. 점검 당시 AWS Backup plan은 없었고, EKS 제어 평면 로그 보존 기간·PVC 스냅샷 방법은 따로 기록된 결정이 없다.
 
 ## #185 검증 도구
 

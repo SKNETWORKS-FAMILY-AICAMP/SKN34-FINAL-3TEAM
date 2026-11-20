@@ -29,7 +29,8 @@ ml/tox/
 │  ├─ train.py          # KcELECTRA 파인튜닝, 등록부 모델 폴더 저장 (checkpoints/)
 │  ├─ eval.py           # 모델만 지표·글별 점수 저장 (results/eval_tox*.json)
 │  ├─ wordlist.py       # 단어 목록과 함께 쓸 때 지표·임계값 (results/wordlist_*.json)
-│  └─ latency.py        # CPU 1코어 지연 (results/latency_*.json)
+│  ├─ latency.py        # CPU 1코어 지연 (results/latency_*.json)
+│  └─ quant.py          # int8 동적 양자화(채널별, scoring 로더와 같은 방식)
 ├─ tests/               # 데이터 정리·임계값 계산·저장 형식 시험
 ├─ results/eval_tox.md  # 지표·임계값·지연·한계
 ├─ data/                # (커밋 안 함) 원자료·분할

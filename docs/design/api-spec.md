@@ -92,7 +92,7 @@
 | `CHILD_LIMIT_REACHED` | 409 | 학부모당 자녀 3명 초과 등록 (FN-ACC-06, P02) |
 | `REPORT_REGENERATION_LIMIT` / `REPORT_GENERATION_IN_PROGRESS` | 409 / 409 | 학부모의 같은 자녀·주 리포트 재생성 1회 초과 (FN-RPT-12, P06) / 같은 주 생성 작업 진행 중 (5.5) |
 | `WITHDRAWAL_BLOCKED` | 409 | 진행 중 구독·미처리 환불이 있어 탈퇴 불가, 정리 대상 포함 (FN-ACC-12, P09) |
-| `USAGE_LIMIT_REACHED` | 429 | 요금제 사용 한도 도달(무료: 분석 대화 없음, 무료 상품에서 추가 문제를 다시 켠 경우의 무료 `EXTRA` 하루 `limits.dailyMissions`개. 2026-11-10 개정 #483·core #485 뒤 무료 테마 문제는 하루 한도 없이 주 5개(learning 공개 규칙), 무료 추가 문제는 403 `PREMIUM_REQUIRED`. 프리미엄: 하루 피드백 50회(미구현, 집계 단위 결정 대기 #233)·분석 대화 30회). 추억 검색·설명 하루 한도(`limits.dailyMemorySearches`·`dailyMemoryExplanations`, 2026-11-12 확정 20·10, 2.12, core #566)도 같은 코드이며 `detail`에 하루 횟수와 "내일 0시(KST)에 초기화"를 넣는다(새 칸 없음). 가능 범위·사유·초기화 시점 포함 (FN-ADM-19, P13, P27) |
+| `USAGE_LIMIT_REACHED` | 429 | 요금제 사용 한도 도달(무료: 분석 대화 없음, 무료 상품에서 추가 문제를 다시 켠 경우의 무료 `EXTRA` 하루 `limits.dailyMissions`개. 무료 테마 문제는 하루 한도 없이 주 5개(learning 공개 규칙, #483·core #485), 무료 추가 문제는 403 `PREMIUM_REQUIRED`. 프리미엄: 하루 피드백 50회(미구현, 집계 단위 결정 대기 #233)·분석 대화 30회). 추억 검색·설명 하루 한도(`limits.dailyMemorySearches`·`dailyMemoryExplanations`, 20·10, 2.12, core #566)도 같은 코드이며 `detail`에 하루 횟수와 "내일 0시(KST)에 초기화"를 넣는다(새 칸 없음). 가능 범위·사유·초기화 시점 포함 (FN-ADM-19, P13, P27) |
 | `AI_UNAVAILABLE` | 503 / 502 | AI 처리 실패, `retryable` 포함 (처리 실패 상태, 보류와 구분). ai·learning 피드백은 503, core 분석 대화의 ai 연결 실패·서킷 차단·스트림 중단은 502 (#167) |
 | `SESSION_CHANGED` | 401 | 다른 탭에서 역할·세션이 바뀌어 access의 세션 version 불일치 (5.1) |
 | `REFRESH_REUSED` | 401 | 이미 사용된 refresh 재사용 → 해당 세션 전체 폐기 (5.1) |
@@ -125,12 +125,12 @@
 | `ANALYSIS_IN_PROGRESS` / `EVIDENCE_UNAVAILABLE` / `AI_INVALID_RESPONSE` | 409 / 410 / 502 | 같은 대화에서 분석 생성 중 / 삭제된 분석 근거 / ai 응답 형식 오류 (2.4) |
 | `ANALYSIS_FIRST_RESPONSE_TIMEOUT` / `ANALYSIS_TIMEOUT` / `ANALYSIS_FAILED` | 504 / 504 / 502 | 분석 대화 SSE `error` 이벤트 전용: ai 첫 이벤트 20초 안에 없음 / 전체 120초 초과 / 원인 코드가 없는 처리 실패(원래 오류 상태가 있으면 그 상태). `retryable: true`, 메시지는 FAILED로 저장 (3.3) |
 | `REPORT_PREMIUM_REQUIRED` / `REPORT_JOB_IDENTITY_MISMATCH` | 403 / 409 | 무료 이용권에서 프리미엄 리포트 항목 요청 / report 복구 응답의 작업 식별자 불일치 (5.9) |
-| `COMMUNITY_CONSENT_REQUIRED` / `COMMUNITY_LOCKED` / `COMMUNITY_OWN_POST` / `COMMUNITY_POST_NOT_FOUND` | 409 / 403 / 409 / 404 | 보호자 `COMMUNITY` 동의 없이 공개 켜기 / 미션 미마무리 학생의 커뮤니티 열람·반응(learning 판정 전달). 2026-11-10 개정 #483 뒤 큰 질문 정답 고르기 문제를 마무리했지만 그 주 엔딩 전인 학생은 `403 COMMUNITY_LOCKED_UNTIL_ENDING`("이번 주 테마 엔딩을 보면 친구들 생각을 볼 수 있어요.", learning #484 코드, core 공개 문구 #550) / 본인 공유물 반응·신고 / 숨김·파기·없는 공유물 반응·신고 (2.9, #388) |
+| `COMMUNITY_CONSENT_REQUIRED` / `COMMUNITY_LOCKED` / `COMMUNITY_OWN_POST` / `COMMUNITY_POST_NOT_FOUND` | 409 / 403 / 409 / 404 | 보호자 `COMMUNITY` 동의 없이 공개 켜기 / 미션 미마무리 학생의 커뮤니티 열람·반응(learning 판정 전달). 큰 질문 정답 고르기 문제를 마무리했지만 그 주 엔딩 전인 학생은 `403 COMMUNITY_LOCKED_UNTIL_ENDING`("이번 주 테마 엔딩을 보면 친구들 생각을 볼 수 있어요.", learning #484 코드, core 공개 문구 #550) / 본인 공유물 반응·신고 / 숨김·파기·없는 공유물 반응·신고 (2.9, #388) |
 | `COMMUNITY_NOT_SHAREABLE` | 409 | learning 내부 공유 요청 거절: 학습 완료 전·다시 푼 시도·답변 없음·지금 표현 필터(#205)에 걸림. core는 공유 안 함으로 보고 학생 응답에 내보내지 않음 (4.1, #386) |
 | `COMMUNITY_UNAVAILABLE` / `COMMUNITY_INVALID_RESPONSE` | 503 / 502 | learning 커뮤니티 내부 호출이 공개 오류 코드 외의 실패로 응답 / 잘못된 2xx 성공 응답 (2.9) |
 | `INSUFFICIENT_POINTS` / `LOOK_ITEM_NOT_ON_SALE` / `LOOK_LOCKED` | 409 | 해금 포인트 부족 / 판매 중단 아이템 해금 / 해금하지 않은 테마·캐릭터·아이템 선택 (2.10, 3.12, #389) |
 | `LOOK_ITEM_NOT_FOUND` / `LOOK_ITEM_CODE_DUPLICATE` | 404 / 409 | 없는 꾸미기 항목 해금 / 관리자 아이템 코드 중복 (2.8, 2.10, #389) |
-| `THEME_DAY_CLOSED` / `THEME_REVIEW_NOT_ALLOWED` / `PREMIUM_REQUIRED` | 409 / 409 / 403 | 공개 전(`LOCKED`) 문제·일요일(허용 값 없는 무료) 신규 시도, 그 주 이미 마무리한 문제의 새 `THEME_DAY` 시도(#506·#484) / 토요일(프리미엄은 일요일도) 외 다시 풀기·되돌아보기 열람 또는 마무리하지 않은 문제 다시 풀기(두 코드는 learning #385·#484 판정, core는 그대로 전달) / 추가 문제(`EXTRA`)를 끈 상품(`features.extraMissions = false`)의 시도(core #387. V43부터 무료 상품은 `false`, 값이 없으면 무료 거부·구독 중 허용 #506. 일요일 전용 코드는 새로 만들지 않음, #484 확정) (2.11). 2026-11-10 개정(#483, learning #484·core #485) 기준이며, 개정 전 뜻은 `THEME_DAY_CLOSED` 오늘 요일이 아닌 테마 문제 신규 시도, `THEME_REVIEW_NOT_ALLOWED` 토·일 외 다시 풀기·평일 되돌아보기 열람 |
+| `THEME_DAY_CLOSED` / `THEME_REVIEW_NOT_ALLOWED` / `PREMIUM_REQUIRED` | 409 / 409 / 403 | 공개 전(`LOCKED`) 문제·일요일(허용 값 없는 무료) 신규 시도, 그 주 이미 마무리한 문제의 새 `THEME_DAY` 시도(#506·#484) / 토요일(프리미엄은 일요일도) 외 다시 풀기·되돌아보기 열람 또는 마무리하지 않은 문제 다시 풀기(두 코드는 learning #385·#484 판정, core는 그대로 전달) / 추가 문제(`EXTRA`)를 끈 상품(`features.extraMissions = false`)의 시도(core #387. V43부터 무료 상품은 `false`, 값이 없으면 무료 거부·구독 중 허용 #506. 일요일 전용 코드는 새로 만들지 않음, #484 확정) (2.11, #483) |
 | `THEME_STORY_NOT_ALLOWED` | 409 | 시작 이야기(INTRO)를 무료 일요일에, 종료 이야기(OUTRO)를 엔딩 상태가 아닐 때·무료 일요일에 열람 기록(learning #438·#484, core는 그대로 전달 #439) (2.11) |
 | `THEME_PICK_NOT_ALLOWED` | 409 | 큰 질문 정답을 지금 고를 수 없음(큰 질문 없는 테마·금요일 문제 마무리 전·그 주 이미 고름·무료 일요일. learning #484 판정, core는 그대로 전달 #550) (2.11) |
 | `CONVERSATION_REPORT_INVALID` / `WEEKLY_THEME_PUBLISH_INCOMPLETE` | 422 | 이 자녀의 완료된 일일 리포트가 아닌 리포트로 대화 생성 (2.4, #392) / 테마 게시 검사 실패 + `errors:[{code, message}]`(learning #385, core는 그대로 전달 #387) (2.8) |
@@ -184,7 +184,7 @@
 | 미션 생성 방식 (#353) | `MANUAL` 사람 작성 · `LLM_DRAFT` LLM 초안 채택 |
 | 미션 초안 (#353) | `GENERATING` 생성 중 · `READY` 검사 통과 · `CHECK_FAILED` 검사 실패(상한) · `FAILED` 생성 실패(AI 호출) · `ADOPTED` 채택 · `DISCARDED` 버림 |
 | 주간 테마 운영 (#385) | `DRAFT` 작성 중 · `REVIEW_REQUIRED` 검토 필요 · `PUBLISHED` 게시 · `UNPUBLISHED` 게시 중단 |
-| 테마 요일 문제 (#385, #483 개정) | `LOCKED` 잠김 · `OPEN` 열림 · `CLOSED` 닫힘 (저장하지 않고 KST 날짜로 계산). 개정 뒤: 그 요일 00:00 공개 후 토요일까지 `OPEN`, 일요일 `CLOSED`(프리미엄 일요일은 `OPEN`) |
+| 테마 요일 문제 (#385·#483) | `LOCKED` 잠김 · `OPEN` 열림 · `CLOSED` 닫힘 (저장하지 않고 KST 날짜로 계산). 그 요일 00:00 공개 후 토요일까지 `OPEN`, 일요일 `CLOSED`(프리미엄 일요일은 `OPEN`) |
 | 주간 테마 엔딩 (#483, learning #484) | `NOT_ENDED` 엔딩 전 · `ENDED` 엔딩 (큰 질문 정답 즉시, 오답이면 고른 뒤 토요일(프리미엄 일요일) 금요일 문제 다시 풀기 마무리 뒤, state-diagram 3.2.2) |
 | 커뮤니티 공유물 (#386) | `VISIBLE` 공개 · `HIDDEN_SETTING` 설정 비공개 · `HIDDEN_REPORT` 신고 숨김 · `REMOVED` 운영 숨김 |
 | 꾸미기 아이템 (#389) | `ON_SALE` 판매 중 · `STOPPED` 판매 중단 |
@@ -329,7 +329,7 @@
   - 되묻기는 시도당 최대 2회, 2회째 답변 후 `nextActions: ["FINISH"]`
   - 고르기 `CORRECT`면 되묻기 없이 `nextActions: ["FINISH"]`
   - 되묻기에 답하지 않고 `FINISH` 가능("이대로 돌아보기")
-- 2026-11-10 개정(#483, core #485 구현): 무료 테마 문제(`THEME_DAY`·`THEME_REVIEW`)는 core 하루 한도 집계 없이 통과하고, 무료 주 5개는 learning 누적 공개 규칙으로 정한다(learning #484). 추가 문제(`EXTRA`)는 무료 403 `PREMIUM_REQUIRED`(V43이 무료 상품 `features.extraMissions = false`, 값이 없으면 무료 거부 #506). `mission_daily_usage`·`limits.dailyMissions`는 유지하되 무료 상품에서 `EXTRA`를 다시 켤 때의 무료 `EXTRA` 하루 한도로만 쓴다([core 보고서 18절](../report/core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10))
+- 무료 테마 문제(`THEME_DAY`·`THEME_REVIEW`)는 core 하루 한도 집계 없이 통과하고, 무료 주 5개는 learning 누적 공개 규칙으로 정한다(#483, learning #484·core #485). 추가 문제(`EXTRA`)는 무료 403 `PREMIUM_REQUIRED`(V43이 무료 상품 `features.extraMissions = false`, 값이 없으면 무료 거부 #506). `mission_daily_usage`·`limits.dailyMissions`는 유지하되 무료 상품에서 `EXTRA`를 다시 켤 때의 무료 `EXTRA` 하루 한도로만 쓴다([core 보고서 18절](../report/core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10))
 - 무료 추가 문제 하루 한도(무료 상품에서 `EXTRA`를 다시 켠 경우만, P13): 한도 수는 무료 상품 `limits.dailyMissions`, 집계는 #210 결정대로 core `mission_daily_usage`([ERD 3.4](erd.md#34-결제구독-fn-pay--토스페이먼츠-테스트), KST 일자)이며 무료 `EXTRA` 신규 생성 `201`만 집계하고 이어하기 `200`·테마 문제(`THEME_DAY`·`THEME_REVIEW`)는 집계하지 않음. 한도 도달 시 신규 생성만 `429 USAGE_LIMIT_REACHED`(같은 미션의 진행 중 시도는 learning에 확인한 뒤 이어하기 허용). 상품 `limits.dailyMissions`가 없거나 음수면 무료 `EXTRA`만 503 `PAYMENT_PRODUCT_UNAVAILABLE`(임의 값으로 대체하지 않음). 2026-11-08 결정(무료 `THEME_DAY`·`EXTRA` 합산 하루 1개)은 위 개정으로 대체
 - 목록 접기·펼치기(FN-LRN-20): 프론트 전용, API 없음
 - 판정 규칙 (FN-JDG-01~05)
@@ -528,7 +528,7 @@
 | POST | `/admin/model-versions/{versionId}/activate` | SERVICE_OPS | 승인 조건(NFR-AIQ-05) 확인 후 활성화 → `model.version.activated` | ADM-18 | 우선1 |
 | POST | `/admin/model-versions/{versionId}/rollback` | SERVICE_OPS | 이전 승인 버전 복귀, 재분석 여부 기록 | ADM-18 | 우선1 |
 | POST | `/admin/models/preflight` | SERVICE_OPS | 모델 등록 전 파일 사전 검사, core가 scoring `/internal/models/preflight`로 동기 중계 (#368, 5.2.1) | ADM-17 | 우선1 |
-| GET | `/admin/model-loading` | SERVICE_OPS | scoring Pod별 모델 로딩 상태 `pods[]`·활성 버전별 요약 `summaries[]` (#370, [scoring Pod별 모델 로딩 확인](#scoring-pod별-모델-로딩-확인-370)) | ADM-18 | 우선1 |
+| GET | `/admin/model-loading` | SERVICE_OPS | scoring Pod별 모델 로딩 상태 `pods[]`·활성 버전별 요약 `summaries[]` (#370, [scoring Pod별 모델 로딩 확인](#519-scoring-pod별-모델-로딩-확인-370)) | ADM-18 | 우선1 |
 | GET | `/admin/expression-reviews?labeled&source&page&size` | SERVICE_OPS | 표현 검토 대기 목록(글만, 학생 이름·ID 없음), 열람 감사 기록 (#725, 4.1.5) | ADM-24 | 우선2 |
 | PUT | `/admin/expression-reviews/{reviewId}/label` | SERVICE_OPS | `{label: OFFENSIVE\|CLEAN\|SKIP}` 라벨, 감사 기록 (#725) | ADM-24 | 우선2 |
 | GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·지식 임베딩(#467 `KNOWLEDGE_EMBEDDING`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`·영상 `THEME_VIDEO` #436)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
@@ -545,6 +545,13 @@
 - 커뮤니티 신고 검토는 기존 `/admin/error-reports`(SERVICE_OPS). 신고 연결 공유물 원문 열람은 감사 기록(P07)
 - 표현 검토(FN-ADM-24, #725): `GET /admin/expression-reviews?labeled&source&page&size`·`PUT /admin/expression-reviews/{reviewId}/label`, SERVICE_OPS. core가 learning `/internal/admin/expression-reviews…`(4.1.5)로 프록시하고 목록 열람 `EXPRESSION_REVIEW_VIEW`·라벨 `EXPRESSION_REVIEW_LABEL` 감사 기록(P07). 응답 모양은 4.1.5와 같음(학생 이름·ID 없음)
 
+#### 2.8.2 AI 사용량 조회 (#43)
+
+- `GET /api/v1/admin/ai-usage`: 기존 #36 Bearer·`SERVICE_OPS` 검사를 사용한다. 필수 `from`, `to`는 0001~9999 연도의 ISO 날짜이며 KST 기준 양 끝 날짜를 포함한다. 조회 기간은 양 끝 포함 최대 366일이다. `from > to`, 366일 초과 또는 허용 연도 밖의 날짜는 DB 조회 전에 400 `VALIDATION_FAILED`로 거부한다. 선택 `callType`은 사용량 이벤트의 12개 호출 종류 중 하나다(#355에서 `MISSION_DRAFT`, #439에서 주간 테마 생성 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`, #480에서 `REPORT_EXPLANATION`, #467에서 지식 임베딩 `KNOWLEDGE_EMBEDDING`, 에픽 #436에서 영상 `THEME_VIDEO` 추가). 이미지 호출은 이미지 토큰 단가(#651)로 계산한다. 영상(Veo)·리포트 Gemma처럼 서비스 밖에서 따로 청구되는 모델은 `externallyBilledCalls`로 따로 센다(#764).
+- 응답은 `{period:{from,to},items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd,unpricedCalls,externallyBilledCalls}]}`다. 기간에 실제 호출이 있는 종류만 반환한다. `latencyMs`는 성공·실패를 포함한 호출당 평균 지연(ms)이다. 토큰은 합계이며 하나라도 미기록이면 해당 합계는 null이다.
+- `costUsd`는 저장된 소비 시점 비용의 합계다. 단가 미등록 등 null 비용이 하나라도 있으면 합계도 null이며 `unpricedCalls`로 미산정 호출 수를 공개한다. 별도 청구 호출(`externallyBilledCalls`, #764)은 미산정이 아니며 합계에 들어가지 않는다(그 종류가 모두 별도 청구면 `costUsd`는 0). 클러스터 안 모델(M2 등)은 단가 0이라 비용 0이다. 빈 결과는 `items:[]`이고 null을 0으로 치환하지 않는다. 수집·멱등 처리·과거 단가 계산은 변경하지 않는다.
+- 요금제 한도, 월 예산 알림, 결제·구독 구현은 #43 조회 범위에 포함하지 않는다.
+- #467: 지식 임베딩(4.2.4) 사용량 `callType = KNOWLEDGE_EMBEDDING`을 V44에서 추가했다. 입력 토큰만 있어 출력 토큰은 0이고, 단가(`app.llm-pricing`)가 다른 모델처럼 비어 있어 `costUsd`는 null(`unpricedCalls`로 셈)이다.
 
 ### 2.9 커뮤니티 (FN-RET-01~04, P20)
 
@@ -578,7 +585,7 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 - 신고: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId` 추가(유형 5종 그대로). 접수 즉시 공유물 `HIDDEN_REPORT`, 관리자는 기존 `/admin/error-reports`에서 `RESOLVED` + `reviewResult: VISIBLE`(다시 공개)·`REMOVED`(계속 숨김, 생략 시 기본)로 처리. 같은 공유물의 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`. 신고 행은 신고한 학생의 것(`student_id` = 신고 학생, 작성자 ID는 learning에만), 관리자 상세 `linkedPost`(원문, 열람마다 `SUPPORT_ORIGINAL_VIEW` 감사)
 - 보호자 동의: 기존 `/me/consents`에 문서 종류 `COMMUNITY`(선택, 자녀 단위 `childId`) 추가. 자녀 동의 요청은 `GUARDIAN`·`COMMUNITY` 중 보낼 문서만 담을 수 있고, `COMMUNITY`만 보낼 때는 그 자녀의 현재 법정대리인 동의가 있어야 한다(없으면 400). 거부·철회 시 core가 설정을 끄고 공유물을 비공개로 바꾼다(P09 선택 동의). 이관 전 보호자의 옛 동의 철회는 지금 보호자의 설정을 바꾸지 않는다
 - 공개 설정을 끄면 공유물 `HIDDEN_SETTING`, 다시 켜면 `HIDDEN_SETTING`만 `VISIBLE`로 복원(`HIDDEN_REPORT`·`REMOVED` 유지). #289 이관 수락 시 `HIDDEN_SETTING`, 새 보호자가 `COMMUNITY` 동의하고 설정이 켜져 있으면 다시 공개
-- 친구 방 구경(#708, 사용자 결정 2026-11-16) 처리 순서: ① 학생 세션 확인(열람자 = 세션 학생, 학생 외 403, learning 미호출) ② core 신고 숨김이면 404(learning 미호출) ③ learning `GET /internal/community/posts/{postId}/author`(4.1, #707)로 작성자 찾기 + 열람 검사, 오류 코드는 그대로 전달 ④ `CommunityAuthorMapper.toAuthors`에 없으면(공개 끔·현재 보호자 동의 없음·비활성·별명 없음) 404 ⑤ 작성자 착용 여덟 칸(캐릭터 네 칸·가구 세 칸·바닥) 그림 키와 방 소품 놓은 자리(#704) ⑥ 걸린 액자가 있으면 learning 앨범 목록(4.1.4)을 **작성자 범위**로 불러 제목·그림을 채움(걸린 액자가 없으면 learning 앨범 미호출, 앨범에 없는 회차는 뺌). learning 앨범 실패는 내 방과 같게 502 `LEARNING_UNAVAILABLE`·`LEARNING_CONTRACT_INVALID`, 작성자 확인 단계의 learning 장애는 503 `COMMUNITY_UNAVAILABLE`. learning을 기다리는 동안 DB 트랜잭션·잠금을 잡지 않는다
+- 친구 방 구경(#708) 처리 순서: ① 학생 세션 확인(열람자 = 세션 학생, 학생 외 403, learning 미호출) ② core 신고 숨김이면 404(learning 미호출) ③ learning `GET /internal/community/posts/{postId}/author`(4.1, #707)로 작성자 찾기 + 열람 검사, 오류 코드는 그대로 전달 ④ `CommunityAuthorMapper.toAuthors`에 없으면(공개 끔·현재 보호자 동의 없음·비활성·별명 없음) 404 ⑤ 작성자 착용 여덟 칸(캐릭터 네 칸·가구 세 칸·바닥) 그림 키와 방 소품 놓은 자리(#704) ⑥ 걸린 액자가 있으면 learning 앨범 목록(4.1.4)을 **작성자 범위**로 불러 제목·그림을 채움(걸린 액자가 없으면 learning 앨범 미호출, 앨범에 없는 회차는 뺌). learning 앨범 실패는 내 방과 같게 502 `LEARNING_UNAVAILABLE`·`LEARNING_CONTRACT_INVALID`, 작성자 확인 단계의 learning 장애는 503 `COMMUNITY_UNAVAILABLE`. learning을 기다리는 동안 DB 트랜잭션·잠금을 잡지 않는다
 - 친구 방 응답에 넣지 않는 칸: 학생 ID, `postId`, `themeId`, `weekStart`, `attemptId`, 포인트·해금 목록, 방 소품 아이템 코드·이름·보유 개수. 회차 키가 없어 액자를 눌러도 회차 상세(2.12 `/students/me/album/{themeId}/{weekStart}`, 본인 회차만)를 열 수 없다. 방문 기록·횟수 제한·방문 알림·방 신고는 없다(DB 변경 없음). 커뮤니티 목록 `look.equipped`(아이템 코드, 캐릭터 네 슬롯)는 그대로다
 
 ### 2.10 포인트·꾸미기 (FN-RET-05·06, P21·P22)
@@ -595,14 +602,14 @@ core 경로는 #388에서 구현해 OpenAPI(`contracts/openapi/core-service.yaml
 | PUT | `/students/me/preferences` | 학생 | 3.12 확장: `{theme, companion, equipped?:{HAT, OUTFIT, ACCESSORY, BACKGROUND, DESK, WALL, WARDROBE, FLOOR}}`(슬롯별 아이템 `itemKey` 또는 null, `equipped` 생략하면 착용 유지). #555부터 보낸 슬롯만 바꾸고 보내지 않은 슬롯은 유지, 응답은 모든 착용 슬롯(#704부터 바닥 `FLOOR`까지 여덟 슬롯). 잠긴 항목 409 `LOOK_LOCKED`, 모르는 슬롯·코드·다른 슬롯 아이템 422(하나라도 걸리면 아무 슬롯도 바꾸지 않음) | RET-06 | 핵심(#389·#555) |
 
 - `eventType`: `MISSION_COMPLETED`·`REVIEW_VIEWED`·`COMMUNITY_POSTED`·`REACTION_GIVEN`·`THEME_COMPLETED`(개근)·`THEME_ON_TIME`(당일 풀이)·`THEME_FINISHED`(주간 완주)(적립), `UNLOCK`(사용, 음수)
-- 2026-11-10 개정(#483, core #485 구현·V43): 적립 사건에 당일 풀이(`THEME_ON_TIME`, 5, 사건 키 `weekStart:day` 예 `2026-11-09:MON`)·주간 완주(`THEME_FINISHED`, 10, 사건 키 `weekStart`)를 더했다. `THEME_COMPLETED`(30)는 이름·키 그대로 개근(월~금 각 당일 학습 완료)으로 표시한다. 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`(2.11). 개근은 주간 테마 조회 보충과 되돌아보기 열람 응답 `completed`로, 당일 풀이·주간 완주는 주간 테마 조회 보충으로만 적립하며 사건 키로 1회(3.4·3.6 시퀀스, #506). learning #484가 `completedOnDay`·`finished`를 내보내고 같은 PR에서 web 학생 포인트 화면의 "준비 중" 표시를 뺐다(#506). 학생·학부모 포인트 내역 화면은 세 사건 이름(당일 풀이·개근·주간 완주)을 보여 준다(web #487)
+- 주간 테마 적립 사건(#483, core #485 V43): 당일 풀이(`THEME_ON_TIME`, 5, 사건 키 `weekStart:day` 예 `2026-11-09:MON`)·주간 완주(`THEME_FINISHED`, 10, 사건 키 `weekStart`). `THEME_COMPLETED`(30)는 이름·키 그대로 개근(월~금 각 당일 학습 완료)으로 표시한다. 근거는 learning 주간 테마 조회 응답의 `days[].completedOnDay`·`completed`(개근)·`finished`(2.11). 개근은 주간 테마 조회 보충과 되돌아보기 열람 응답 `completed`로, 당일 풀이·주간 완주는 주간 테마 조회 보충으로만 적립하며 사건 키로 1회(3.4·3.6 시퀀스, #506). 학생·학부모 포인트 내역 화면은 세 사건 이름(당일 풀이·개근·주간 완주)을 보여 준다(web #487)
 - 적립은 별도 API가 없다. core `RewardService.earn(studentId, event, sourceKey)` 한 곳에서 처리하고(#389 구현, 자체 트랜잭션·예외 없이 결과 반환), core가 learning 응답을 프록시하는 경로에서 부른다(#389 구현): 돌아보기 저장 성공(학습 완료·미션당 최초 1회, 미션은 core가 learning 시도 상세로 확인), 공유 생성 성공(이미 있는 공유물 200 포함), 반응 남기기 성공(하루 상한, 취소는 적립 없음), 되돌아보기 열람(주 1회), 열람 응답 `completed`면 개근, 주간 테마 조회 응답의 개근·당일 풀이·주간 완주 칸(#485). 사건 키는 학습 완료 `missionId`, 공유 `postId`, 반응 `postId:reaction`, 되돌아보기·개근·주간 완주 그 주 월요일(KST), 당일 풀이 `weekStart:day`. 값·상한은 `reward_rule` 데이터(P21 초기값). 원장 사건 키 `source_key`로 멱등, 학습 응답 후 적립 저장이 실패하면 응답은 그대로 두고 같은 사건 재요청(돌아보기 재요청 `409 ATTEMPT_CLOSED` 포함, 같은 반응·열람 재요청)·`/students/me/weekly-theme` 조회(이번 주 학습 완료한 요일 문제) 때 보충. 적립 결과는 응답에 넣지 않고 `/students/me/points`로 조회
 - `itemKey`: 테마·캐릭터는 `THEME:forest`·`COMPANION:tori` 형식(해금값은 코드 상수), 아이템은 관리자가 등록한 `look_item.code`. `THEME:lake`·`COMPANION:mungchi`는 항상 해금, 나머지 테마 100·캐릭터 150 포인트(코드 상수). 잠금 적용 전 저장된 `look_theme`·`look_companion`은 마이그레이션에서 해금 행으로 옮긴다
-- 2026-11-12 결정(P22 개정·P27, #555 구현 core V47): 생활공간 가구 스킨은 슬롯 `DESK`(책상)·`WALL`(추억의 벽)·`WARDROBE`(옷장)의 `look_item`으로 등록하고(관리자 `POST /admin/look-items`의 `slot`, 목록 `slot` 거르기도 같음) 위 목록·해금 API와 `PUT /students/me/preferences`의 `equipped`(슬롯 키 추가)를 그대로 쓴다. 해금은 같은 원장 `UNLOCK`·잔액 차감·`Idempotency-Key`·잔액 행 잠금이라 차감·멱등·잠금 규칙이 캐릭터 아이템과 같다. 새 경로 없음
+- 생활공간 가구 스킨(P22·P27, core #555 V47)은 슬롯 `DESK`(책상)·`WALL`(추억의 벽)·`WARDROBE`(옷장)의 `look_item`으로 등록하고(관리자 `POST /admin/look-items`의 `slot`, 목록 `slot` 거르기도 같음) 위 목록·해금 API와 `PUT /students/me/preferences`의 `equipped`(슬롯 키 추가)를 그대로 쓴다. 해금은 같은 원장 `UNLOCK`·잔액 차감·`Idempotency-Key`·잔액 행 잠금이라 차감·멱등·잠금 규칙이 캐릭터 아이템과 같다. 새 경로 없음
   - 가구별 기본 스킨은 아이템·해금 행이 없다: `equipped`의 가구 슬롯 null이 기본 스킨이고 항상 고를 수 있다(테마 `lake`·기본 벽지와 같은 방식, 기준안 2026-11-12 확정). 관리자는 추가 스킨만 등록한다(가격 1 이상 그대로)
   - `equipped`는 보낸 슬롯만 바꾼다(2026-11-12 결정): 기존 꾸미기 화면처럼 캐릭터 네 슬롯만 보내면 가구 스킨이 그대로 남고, 옷장 화면은 가구 슬롯만 보낼 수 있다. 기존 계약이 네 슬롯을 모두 요구했으므로 캐릭터 슬롯 동작은 바뀌지 않는다(OpenAPI 요청 `LookEquippedUpdate`, 응답 `LookEquipped` 일곱 슬롯)
   - 커뮤니티 작성자 `look.equipped`(2.9)는 캐릭터 네 슬롯만 담는다(가구는 본인 방에서만, OpenAPI `CharacterLookEquipped`)
-- 2026-11-16 결정(P22·P27 개정, #704 구현 core V50): 내 방 **바닥**은 슬롯 `FLOOR`의 `look_item`으로 등록하고 해금·착용 규칙이 가구 스킨과 같다(1회 해금, `equipped.FLOOR`, null이면 벽지 세트의 바닥이라 지금 화면이 바뀌지 않음). **방 소품**(화면 이름 "방 소품", 슬롯 `DECOR`)은 캐릭터 착용 칸 `ACCESSORY`("소품", 손에 드는 것)와 다른 칸이다. 착용 슬롯이 아니라 `purchase`로 여러 개 사고(아이템당 8개, 배치 개수 상한과 같음, #723에서도 유지) 2.12 `decor-spots`로 바닥·벽 기준 칸에 놓는다(#723). 사기는 해금과 같은 잠금 순서(학생 행 공유 → 잔액 행 배타)·원장 `UNLOCK`(CHECK 변경 없음)·`IdempotencyService`를 쓰고, 원장 사건 키만 `itemKey:Idempotency-Key`로 구매마다 다르다
+- 내 방 **바닥**(P22·P27, core #704 V50)은 슬롯 `FLOOR`의 `look_item`으로 등록하고 해금·착용 규칙이 가구 스킨과 같다(1회 해금, `equipped.FLOOR`, null이면 벽지 세트의 바닥이라 지금 화면이 바뀌지 않음). **방 소품**(화면 이름 "방 소품", 슬롯 `DECOR`)은 캐릭터 착용 칸 `ACCESSORY`("소품", 손에 드는 것)와 다른 칸이다. 착용 슬롯이 아니라 `purchase`로 여러 개 사고(아이템당 8개, 배치 개수 상한과 같음, #723에서도 유지) 2.12 `decor-spots`로 바닥·벽 기준 칸에 놓는다(#723). 사기는 해금과 같은 잠금 순서(학생 행 공유 → 잔액 행 배타)·원장 `UNLOCK`(CHECK 변경 없음)·`IdempotencyService`를 쓰고, 원장 사건 키만 `itemKey:Idempotency-Key`로 구매마다 다르다
 - 다른 학생 잔액·순위 API는 없다(1.3)
 
 ### 2.11 주간 테마·되돌아보기 (FN-RET-07·08, P23)
@@ -617,16 +624,16 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 | POST | `/students/me/weekly-theme/answer-picks` | 학생 | 큰 질문 정답 고르기 body `{pick}`(고른 후보 하나, 빈 값·문자열 아님·다른 필드는 core가 `400 VALIDATION_FAILED`). 학년·KST 날짜·`sundayTheme`은 core가 정해 learning `answer-picks`로 넘김. 응답 `{correct, ending(NOT_ENDED\|ENDED), answer(엔딩일 때만)}`. 후보 안의 값인지·고를 수 있는 때(아니면 `409 THEME_PICK_NOT_ALLOWED`)·정답 판정·엔딩 상태는 learning #484, core는 응답·오류 그대로 전달. 포인트 적립 없음 | RET-07, RET-08 | core #550 |
 | POST | `/missions/{missionId}/attempts` | 학생 | 2.2 확장: body `{context}`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`, 생략·`null` 시 `EXTRA`, 다른 필드·값은 400) | RET-07, RET-08 | core #387 |
 
-- 2026-11-10 개정(#483, 구현 learning #484·core #485, 화면 web #487)
+- 이용 규칙(#483, learning #484·core #485·web #487)
   - `THEME_DAY`: 그 미션이 이번 주 테마에서 공개된(`OPEN`) 요일 문제면 월~토 언제든 신규 시도(금요일에는 5개 모두 공개). 공개 전 문제·일요일은 409 `THEME_DAY_CLOSED`, 프리미엄 일요일(기준안 `features.sundayTheme = true`, core가 판단해 learning에 전달)은 토요일과 같이 허용. 무료도 하루 한도 집계 없음
   - `THEME_REVIEW`: 토요일(프리미엄은 일요일도)에 그 주 마무리한 테마 문제만. 아니면 409 `THEME_REVIEW_NOT_ALLOWED`. 토요일에는 안 푼 문제를 `THEME_DAY`로 새로 시작할 수 있다
-  - 큰 질문 정답 고르기(금요일 문제를 마무리한 뒤 한 주 한 번, #437·#484): 정답이면 `ending = ENDED`, 오답이면 고른 뒤 토요일(프리미엄 일요일) 금요일 문제 `THEME_REVIEW` 마무리 뒤 `ENDED`(다시 고르지 않음, 정답 공개). 고른 값은 learning `theme_answer_pick`, 엔딩은 저장하지 않고 계산(사용자 결정 2026-11-12)
+  - 큰 질문 정답 고르기(금요일 문제를 마무리한 뒤 한 주 한 번, #437·#484): 정답이면 `ending = ENDED`, 오답이면 고른 뒤 토요일(프리미엄 일요일) 금요일 문제 `THEME_REVIEW` 마무리 뒤 `ENDED`(다시 고르지 않음, 정답 공개). 고른 값은 learning `theme_answer_pick`, 엔딩은 저장하지 않고 계산
   - `review.missions[].missed`는 "공개됐지만 아직 마무리하지 않음"으로 읽는다(토요일에는 새로 풀 수 있음, 일요일엔 표시만). 칸 이름은 core·report 호환을 위해 유지
   - `EXTRA`: 무료 상품 `features.extraMissions = false`로 바꿔 프리미엄 전용(무료 403 `PREMIUM_REQUIRED`)
   - 커뮤니티: 정답 고르기 문제 공유물은 그 문제로 고른 주에 `ENDED`인 학생만 열람(2.9, 문제를 마무리했지만 엔딩 전이면 `403 COMMUNITY_LOCKED_UNTIL_ENDING`, #484·#550)
   - 진행 중 시도 이어하기는 요일과 무관(일요일 포함). core 한도 집계 없음(#485). 다시 풀기는 #207 비교 규칙 그대로
-- 이미 마무리한 문제의 새 `THEME_DAY` 시도는 409 `THEME_DAY_CLOSED`(#506·#484, 전에는 무료 하루 1개 429가 부수적으로 막았음). 마무리한 문제 다시 풀기는 `THEME_REVIEW`
-- `EXTRA`: 생각 유형별 미션 고르기(2.2 `/missions`). 프리미엄 전용(2026-11-10 개정 #483, core #485 V43): 무료 403 `PREMIUM_REQUIRED`, 프리미엄 신규 시도는 `EXTRA_MISSION` 사용 기록. 상품 `features.extraMissions`로 정하며 값이 없으면 무료 거부·구독 중 허용(#506). 무료 상품에서 `true`로 다시 켜면 무료 `EXTRA`만 하루 `limits.dailyMissions`개(2.2). 2026-11-08 결정(무료도 허용·하루 1개 합산)은 개정으로 대체. 전환 방법은 [core 보고서 13절](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387)·18절
+- 이미 마무리한 문제의 새 `THEME_DAY` 시도는 409 `THEME_DAY_CLOSED`(#506·#484). 마무리한 문제 다시 풀기는 `THEME_REVIEW`
+- `EXTRA`: 생각 유형별 미션 고르기(2.2 `/missions`). 프리미엄 전용(#483, core #485 V43): 무료 403 `PREMIUM_REQUIRED`, 프리미엄 신규 시도는 `EXTRA_MISSION` 사용 기록. 상품 `features.extraMissions`로 정하며 값이 없으면 무료 거부·구독 중 허용(#506). 무료 상품에서 `true`로 다시 켜면 무료 `EXTRA`만 하루 `limits.dailyMissions`개(2.2). 전환 경위는 [core 보고서 13절](../report/core-gateway.md#13-주간-테마-프록시무료-하루-1개추가-문제-프리미엄-387)·18절
 - 무료 `EXTRA`를 다시 켰을 때의 하루 한도는 #210 결정대로 core `mission_daily_usage` 집계(2.2). 테마 학년(`G3`~`G6`, 중학생은 `G6` P26 #432, 학년별 테마 에픽 #436)과 KST 날짜는 core가 정해 learning에 넘긴다(클라이언트 값 미사용). 응답은 `Cache-Control: no-store`
 - 진행 중인 시도의 이어하기(`200`)는 요일 검사를 하지 않는다. 재사용 테마의 이미 푼 문제도 그 주 `OPEN` 요일에는 `THEME_DAY` 신규 시도 가능(그 주에 마무리한 시도만 기준, core 한도 집계 없음)
 - 에픽 #436(learning #438) 주간 테마 응답 추가 칸: 큰 질문 `bigQuestion`·후보 `candidates`·요일 `days[].clue`·`rulesOut`, 시작·종료 장면 영상 `introVideoUrl`·`outroVideoUrl`과 움직임 `introMotion`·`outroMotion`, 엔딩 뒤 정답 `answer`·`answerClue`, 학생이 고른 큰 질문 정답 `answerPick: {pick, correct} | null`(#590, 고르지 않았으면 null, 엔딩 전에도 채움: 고른 후보가 맞았는지만 알 수 있고 정답은 엔딩 뒤 `answer`로만. 틀린 뒤 토요일 다시 풀기 안내와 종료 화면의 정답 공개 구분에 씀). 요일 장면 영상은 없다(ai 채택 테마의 미션 `themeScene.videoUrl`은 null). core는 응답을 그대로 전달하고 포인트 적립에 `weekStart`·`completed`·`finished`·`days[].missionId`·`attemptStatus`·`day`·`completedOnDay`만 읽는다. 정답·종료 이야기는 learning이 엔딩 전에 비운다
@@ -950,15 +957,9 @@ If-Match: "7"
 - 외부에 노출하지 않음. NetworkPolicy로 호출 관계만 허용
 - 범위 밖 학생 요청은 403
 
-### 4.0 core 학생 별명 조회 (#119, 호출: report-worker)
+### 4.0 core 학생 별명 조회
 
-`GET /internal/students/{studentId}/profile` → `200 {studentId, nickname, parentSharingEnabled, grade}`. core OpenAPI의 이 operation은 `servers: /`로 공개 API prefix와 구분한다. 응답은 `Cache-Control: no-store`이며 이 네 필드만 제공한다(`parentSharingEnabled`는 학생 공유 설정, #206).
-
-실제 `InternalAuthFilter`가 내부 토큰을 검사한 뒤 guardianship Controller → Application Service → 기존 `ChildManagementRepository.profile`을 호출한다. Service는 `SYSTEM` 역할과 대상 학생의 `X-Student-Scope` 포함 여부를 DB 조회 전에 확인한다. 학부모 Bearer만으로 호출할 수 없다.
-
-2026-10-29 사용자 확정: 잘못된 UUID는 `400 VALIDATION_FAILED`, 토큰 누락·불일치는 `401 UNAUTHENTICATED`, 역할 누락·SYSTEM 외 역할·scope 누락/불일치는 `403 FORBIDDEN`, 미존재·ACTIVE 외 상태(DELETION_REQUESTED·DELETED 포함)는 `404 NOT_FOUND`. DB 등 예상하지 못한 조회 실패는 기존 `500 INTERNAL_ERROR` Problem Details로 반환한다. 현재 student CHECK의 상태는 ACTIVE·DELETION_REQUESTED·DELETED이며 별도 INACTIVE 상태를 추가하지 않는다. 기존 SQL·스키마·공개 API는 유지한다.
-
-report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의 내부 `display_name`으로 보관해 제목에 사용하고, NarrativeGenerator에서 AI 요청 전에 가린다. `report.generate.v1`에 별명을 추가하지 않는다. 403·404를 가짜 별명·기록 없음으로 처리하지 않고 생성 실패로 취급한다. 통신 장애는 기존 작업 실패/재시도 경계를 따르며 서비스 간 HTTP 재시도를 추가하지 않는다. 실제 worker 연결·최종 AI payload 검증은 [#119 보고서](../report/core-gateway.md#8-리포트용-학생-별명-내부-조회-119)의 후속 조건을 따른다.
+→ [4.5.1](#451-학생-별명-조회-119-호출-report-worker-learning)로 이동
 
 ### 4.1 learning-service (호출: core, ai, report)
 
@@ -978,7 +979,7 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 | GET | `/internal/records/students/{studentId}/summary?from&to` | core, ai | 건수·상태 `Metric[]` → `{studentId, state, period, inclusionRule, metrics}`(1.6). 지표: 학습한 활동(집계 대상 시도 수), 완료한 활동(완료 / 집계 대상), 도움 없이 시작한 활동(최초 답변 전 생각 열기 열람 없는 시도 / 집계 대상, P08), 되묻기 후 생각을 더한 활동(보완 답변 제출 시도 / 되묻기 받은 시도, 1.6) |
 | GET | `/internal/records/students/{studentId}/thinking-types?from&to` | core, ai, report | 유형별 미션·기록 → `{studentId, state, period, items:[{type, state, missions:[{attemptId, title}]}]}`, 다섯 유형 모두, 기록 없는 유형은 `NO_RECORD`(FN-DSH-08 미관찰) |
 | GET | `/internal/records/students/{studentId}/attempts?from&to&status&page&size` | core, ai, report | 시도 목록·상세(답변 버전·되묻기·도움·돌아보기 원문) → 1.1 봉투 + `{studentId, state, period, inclusionRule}`, 최근 답변 순, `status`(`IN_PROGRESS`·`COMPLETED`, 생략하면 전체)는 지금 그 상태인 시도만. `items`는 4.1 시도 상세에서 초안(`draft`, 메모 포함)을 뺀 모양 + `completedAt`·`hintUsages:[{openedAt}]`·`reflection{difficulty, text, createdAt}`. `finishedAt`은 마무리(정답·예시 답 공개) 시각, `completedAt`은 돌아보기를 내 `COMPLETED`가 된 시각(각각 그 전에는 `null`), 돌아보기가 있으면 `createdAt`은 항상 값(= `completedAt`). `answers`·`hintUsages`는 1번·처음부터 조회 종료일까지(시작일 이전 포함, 지난 기간을 조회해도 그 뒤가 섞이지 않음, FN-RPT-02), `reflection`은 기간 안에 쓴 것만(아니면 `null`) |
-| GET | `/internal/records/students/{studentId}/daily-attempts?from&to&page&size` | report | 일일 리포트용. 같은 KST 날짜의 **완료 시각**으로 조회(전날 제출·오늘 완료 포함), 응답은 위 시도 목록과 같은 RecordPage (#391, [#391 소비 계약](#391-report-일일-생성주간-테마-소비-계약)) |
+| GET | `/internal/records/students/{studentId}/daily-attempts?from&to&page&size` | report | 일일 리포트용. 같은 KST 날짜의 **완료 시각**으로 조회(전날 제출·오늘 완료 포함), 응답은 위 시도 목록과 같은 RecordPage (#391, [#391 소비 계약](#518-391-report-일일-생성주간-테마-소비-계약)) |
 | GET | `/internal/records/students/{studentId}/attempts/{attemptId}?from&to` | core | 학부모 2.3 시도 상세용. 목록 `items`와 같은 모양 + `state: OK`·`period`. 기간은 화면이 유지할 정보라 검증·기본값만 적용하고 이력(답변·되묻기·도움·돌아보기)은 자르지 않음. 다른 학생의 시도·집계 대상이 아닌 시도는 `404` |
 | GET | `/internal/records/students/{studentId}/home?from&to&grade&demo` | core | 학생 2.3 홈용(FN-DSH-01·02) → `{studentId, state, period, resume, missions}`. 학생 본인 요청만(`STUDENT`, 범위에 본인 1명, 4.1 미션 목록과 같은 기준). `resume`은 진행 중 시도 중 가장 최근에 손댄 것(시작·답변 제출·초안 저장 중 가장 늦은 시각) 하나, 기간과 무관하고 초안만 있는 시도·마무리 뒤 돌아보기 전 시도도 포함(FN-LRN-16), 목록 `items`와 같은 모양(초안·메모 없음, 본인 초안은 core가 학생 시도 상세로 붙임), 없으면 `null`. `missions`는 4.1 미션 목록 항목 전체(`grade` 3~6 필수, `demo` 기본 `false`, 같은 노출 범위). `state`는 기간 안 집계 대상 시도 수 |
 | GET | `/internal/records/students/{studentId}/thinking-activities?from&to` | core, ai | 학생 2.3 생각 활동용(FN-DSH-04), ai 분석 대화의 돌아보기·전후 변화 근거 미션 제목 → `{studentId, state, period, items:[{attemptId, thinkingType, missionTitle, reflection{difficulty, text}}]}`. 집계 대상 시도를 최근 답변 순으로, `reflection`은 기간 안에 쓴 것만(아니면 `null`, 목록과 같음). 수치·등급·순위 없음 |
@@ -1177,7 +1178,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 #### 4.2.4 지식 임베딩 (#463, 계약 #464 C6, 구현 #467)
 
-**#467에서 구현**. ai OpenAPI `/embeddings`, 모델 `contracts.py` `EmbeddingRequest`·`EmbeddingResponse`, 라우터 `app/embedding/`, 제공자 `app/llm/embeddings.py`.
+**#467에서 구현**. 교육과정 지식 적재는 에픽 #463 중단(2026-11-12)으로 쓰지 않으며, 지금 호출처는 learning 추억 검색(`purpose=MEMORY`, 4.1.4·5.20)뿐이다. ai OpenAPI `/embeddings`, 모델 `contracts.py` `EmbeddingRequest`·`EmbeddingResponse`, 라우터 `app/embedding/`, 제공자 `app/llm/embeddings.py`.
 
 - `POST /internal/embeddings` `{texts:[string], purpose?}` → `200 {model, dimensions, vectors:[[number]]}`. `vectors`는 `texts`와 같은 순서·같은 개수. 내부 토큰만 확인한다(4.2 다른 경로와 같음)
 - 입력은 교육과정 지식 본문(C2 조각 본문)과 검색 질의 문장만. 학생 정보·학생 답은 받지 않는다(FN-ADM-20 원칙)
@@ -1186,10 +1187,10 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 모델·차원(기준안, 에픽 #463): OpenAI `text-embedding-3-small`, 1536차원. 설정값(`EMBEDDING_MODEL`·`EMBEDDING_DIMENSIONS`, OpenAI 요청에 `dimensions`로 보냄)이며 응답에 함께 돌려줘 learning이 판(`knowledge_dataset.embedding_model`·`embedding_dimensions`, C2)과 다른 벡터를 넣지 않게 한다
 - 오류: 제공자 응답의 벡터 개수·차원이 맞지 않음 `502 AI_BAD_RESPONSE`, 제공자 미설정·호출 실패·시간 초과 `503 AI_UNAVAILABLE`(둘 다 `retryable`, 기존 `AI_*` 실패 코드와 같은 방식)
 - 제공자(#467 결정): `EMBEDDING_PROVIDER=openai`(기본)|`fake`. openai는 `OPENAI_API_KEY`를 쓰고 `OPENAI_BASE_URL`(sLLM 대화용)은 쓰지 않아 항상 OpenAI 기본 주소로 보낸다. 키가 없으면 임베딩만 `503`(`retryable=false`). 제공자 요청 1회 타임아웃·재시도·대기는 LLM 공통 값(P12 15초·1회·1초)을 그대로 쓰고, 재시도 대상은 시간 초과·연결·429·5xx·개수/차원 불일치다. 한 요청의 `texts`는 OpenAI에 한 번에 보낸다
-- 사용량: 기존 `llm.usage.recorded`로 제공자 요청 1회마다(재시도 포함) 1건, `callType`은 `KNOWLEDGE_EMBEDDING`(4.6, core V44), `purpose = MEMORY`면 `MEMORY_EMBEDDING`(#565, core V46). 입력 토큰만 있고 출력 토큰은 `0`, `promptVersion`은 null. `fake`는 외부 호출이 없어 기록하지 않는다
+- 사용량: 기존 `llm.usage.recorded`로 제공자 요청 1회마다(재시도 포함) 1건, `callType`은 `KNOWLEDGE_EMBEDDING`(2.8.2, core V44), `purpose = MEMORY`면 `MEMORY_EMBEDDING`(#565, core V46). 입력 토큰만 있고 출력 토큰은 `0`, `promptVersion`은 null. `fake`는 외부 호출이 없어 기록하지 않는다
 - 가짜 구현(개발용, `app/knowledge/fake.py` `FakeEmbedder`): 모델 이름 `fake-bigram-v1`. 벡터 = NFC·소문자·공백 제거 → 글자 2개씩(한 글자면 그 글자) → 조각마다 SHA-256 앞 4바이트(big endian) % 차원 위치에 5번째 바이트가 짝수면 +1·홀수면 −1 → 길이 1로 맞춤(모두 0이면 0번 위치 1.0). 같은 글은 언제나 같은 벡터라 learning 시험 대역(#466)이 같은 규칙으로 만들 수 있다
 
-#### 4.2.5 미션 초안 근거 칸 (#463, 계약 #464 C7, 구현 #470)
+#### 4.2.5 미션 초안 근거 칸 (#463, 계약 #464 C7, 보류 #470)
 
 **구현 전 계약(기준안, 팀 확인 전)**. 2026-11-12 팀 회의로 에픽 #463을 중단해 #470을 진행하지 않으므로 연결하지 않은 보류 계약이다(미션 초안·테마 생성은 근거 칸을 비운 채 유지). 미션 초안 요청·응답(4.2 `/internal/mission-drafts`)에 칸을 더한다. ai OpenAPI `MissionDraftRequest.knowledge`·`MissionDraftResponse.sources`(`x-implementation-status: planned-issue-470`).
 
@@ -1227,18 +1228,6 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 
 ### 4.3 scoring-service (호출: ai, learning, core)
-
-#### #549 채점 전 글 정리 (11/12 확정)
-
-- 논술 3.1·서술 3.0에 c판 규칙을 적용한다. 논술은 칸 이름→지시문 복사→반복 제거, 서술은 복사→반복 제거 순서다. 원문은 변경하지 않는다.
-- `essayLabels?: string[]`는 learning 미션 inputTemplate의 네 칸 이름이다. AI는 그대로 scoring에 전달하며, 생략 시 기본 칸 이름을 사용한다.
-- 공백 제외 정리 후 서술 10자 미만, 논술 100자 미만은 `active:true, scored:false, reason:"TEXT_TOO_SHORT"`와 모델·preparation만 반환한다. scores/rawScores는 없다. 기존 `active:false` 및 503과 구분한다.
-- preparation: `{ruleVersion:"1112c",copied,repeated,chars,labelsRemoved,short,truncated,notices}`. notices는 `COPIED_REMOVED`, `REPEATED_REMOVED`, `SHORT_ANSWER`, `EMPTY_AFTER_CLEANING`, `ESSAY_TOO_SHORT`, `ESSAY_ORIGINALLY_SHORT` 코드다. 서술 10~99자는 채점+SHORT_ANSWER, 100자 이상은 정상 채점이다.
-- 512토큰 초과 시 앞+끝을 읽고 짧은 입력은 기존 토큰화를 유지한다. 정수 변환은 b판 score_cuts이며 서술 content3 선택 보정은 정리한 글을 사용한다.
-- AI 저장값 `modelScores.m2Preparation`에 안내를 보존한다. 길이 미달이면 m2는 null이므로 평균·불일치 판단과 report 설명 후보에서 제외한다. 기존 생각 판정을 바꾸지 않는다.
-- 공개 피드백 `judgment.m2Notices?: string[]`는 허용된 한국어 안내만 제공한다. modelScores/숫자는 학생에게 노출하지 않는다.
-- 8:2 혼합은 미채택이다. 가중치·학년 승인·활성화 설정은 유지한다.
-
 
 #### 4.3.1 #228 M2 확정 계약 (2026-11-02 담당자 답변 반영)
 
@@ -1299,6 +1288,17 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 소비 측(learning)은 시간 초과·5xx·4xx·계약 밖 응답·서킷 열림·`active:false`를 모두 "검사 안 됨"으로 보고 제출을 진행한다(architecture 1.3)
 - 모델 이름·범위·파일은 5.2·5.2.1. 값(칸 20개·합계 1,500자·창 128/32·게이트 1초·마감 1.3초)은 11/16 CPU 측정으로 정한 기준안이다(운영 scoring CPU limit 1개 기준 1,500자 약 1.1초, 근거는 learning.md 16장). #691에서 실제 Pod로 다시 잰다
 
+#### 4.3.5 #549 채점 전 글 정리
+
+- 논술 3.1·서술 3.0에 c판 규칙을 적용한다. 논술은 칸 이름→지시문 복사→반복 제거, 서술은 복사→반복 제거 순서다. 원문은 변경하지 않는다.
+- `essayLabels?: string[]`는 learning 미션 inputTemplate의 네 칸 이름이다. AI는 그대로 scoring에 전달하며, 생략 시 기본 칸 이름을 사용한다.
+- 공백 제외 정리 후 서술 10자 미만, 논술 100자 미만은 `active:true, scored:false, reason:"TEXT_TOO_SHORT"`와 모델·preparation만 반환한다. scores/rawScores는 없다. 기존 `active:false` 및 503과 구분한다.
+- preparation: `{ruleVersion:"1112c",copied,repeated,chars,labelsRemoved,short,truncated,notices}`. notices는 `COPIED_REMOVED`, `REPEATED_REMOVED`, `SHORT_ANSWER`, `EMPTY_AFTER_CLEANING`, `ESSAY_TOO_SHORT`, `ESSAY_ORIGINALLY_SHORT` 코드다. 서술 10~99자는 채점+SHORT_ANSWER, 100자 이상은 정상 채점이다.
+- 512토큰 초과 시 앞+끝을 읽고 짧은 입력은 기존 토큰화를 유지한다. 정수 변환은 b판 score_cuts이며 서술 content3 선택 보정은 정리한 글을 사용한다.
+- AI 저장값 `modelScores.m2Preparation`에 안내를 보존한다. 길이 미달이면 m2는 null이므로 평균·불일치 판단과 report 설명 후보에서 제외한다. 기존 생각 판정을 바꾸지 않는다.
+- 공개 피드백 `judgment.m2Notices?: string[]`는 허용된 한국어 안내만 제공한다. modelScores/숫자는 학생에게 노출하지 않는다.
+- 8:2 혼합은 미채택이다. 가중치·학년 승인·활성화 설정은 유지한다.
+
 ### 4.4 report-service (호출: core)
 - 호출 대상은 `report-api` Deployment (KEDA로 0까지 줄어드는 `report-worker`와 분리, [아키텍처 4.4](architecture.md#44-확장))
 
@@ -1320,24 +1320,30 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/internal/model-versions/active` | 기동 시 활성 모델·프롬프트 버전 조회. 재학습 작업(ops)도 이어 학습할 활성 `tox-` 모델을 찾는 데 씀(#725) |
-| POST | `/internal/model-versions` | 재학습 작업(ops) 자동 등록(#725, 구현 전 #728). 5.2 아래 "재학습 자동 등록" |
+| POST | `/internal/model-versions` | 재학습 작업(ops) 자동 등록(#725, 구현 전 #728). 5.2.3 |
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 | POST | `/internal/payment-usage/reservations` | learning 피드백 실행 전 프리미엄 사용 예약 `{studentId,sourceId}` → `{reservationId,premium}` (STUDENT+본인 scope, #48) |
 | POST | `/internal/payment-usage/completions` | learning 피드백 DONE 저장 후 사용 확정 `{studentId,reservationId,used}` (#48) |
-| GET | `/internal/students/{studentId}/profile` | report-worker: 학생 별명·`parentSharingEnabled` (4.0, #206). learning: 추억 검색·설명 글에서 학생 별명을 가리기 위한 별명 조회(`memory/client/StudentProfileClient.kt`, P27 #563·#564) |
+| GET | `/internal/students/{studentId}/profile` | report-worker: 학생 별명·`parentSharingEnabled` (4.5.1, #206). learning: 추억 검색·설명 글에서 학생 별명을 가리기 위한 별명 조회(`memory/client/StudentProfileClient.kt`, P27 #563·#564) |
 | GET | `/internal/students/{studentId}/report-template` | report-worker: 현재 연결 학부모의 리포트 표시 설정 `{settings, revision}`. 학생 삭제 진행·비활성 409 `STUDENT_UNAVAILABLE` (#209) |
 
 - 비동기 메시지(`report.generate` 등)는 [아키텍처 1.4](architecture.md#14-메시지-목록) 참고
 - report 삭제: PROFILE·RECORDS 모두 리포트 내용·파일을 물리 삭제하고 `report_deletion_guard`에 식별 UUID·범위·기준 시각·상태만 남김. core가 RECORDS 후에도 학습을 자동 재개하지 않으므로 두 scope 모두 이후 생성을 차단(재개는 별도 계약 필요)
 - 삭제 학생의 미종료 job은 core 삭제 확정 트랜잭션에서 `FAILED(STUDENT_DELETED)`로 종료하고, 이후 도착한 상태 이벤트·복구 결과도 학생이 `ACTIVE`가 아니면 같은 사유로 종료한다(#132, `ReportLifecycleService`). report 삭제 장벽이 core job 상태를 대신 정리하지 않음
 
+#### 4.5.1 학생 별명 조회 (#119, 호출: report-worker, learning)
+
+`GET /internal/students/{studentId}/profile` → `200 {studentId, nickname, parentSharingEnabled, grade}`. core OpenAPI의 이 operation은 `servers: /`로 공개 API prefix와 구분한다. 응답은 `Cache-Control: no-store`이며 이 네 필드만 제공한다(`parentSharingEnabled`는 학생 공유 설정, #206).
+
+실제 `InternalAuthFilter`가 내부 토큰을 검사한 뒤 guardianship Controller → Application Service → 기존 `ChildManagementRepository.profile`을 호출한다. Service는 `SYSTEM` 역할과 대상 학생의 `X-Student-Scope` 포함 여부를 DB 조회 전에 확인한다. 학부모 Bearer만으로 호출할 수 없다.
+
+잘못된 UUID는 `400 VALIDATION_FAILED`, 토큰 누락·불일치는 `401 UNAUTHENTICATED`, 역할 누락·SYSTEM 외 역할·scope 누락/불일치는 `403 FORBIDDEN`, 미존재·ACTIVE 외 상태(DELETION_REQUESTED·DELETED 포함)는 `404 NOT_FOUND`. DB 등 예상하지 못한 조회 실패는 기존 `500 INTERNAL_ERROR` Problem Details로 반환한다. 현재 student CHECK의 상태는 ACTIVE·DELETION_REQUESTED·DELETED이며 별도 INACTIVE 상태를 추가하지 않는다. 기존 SQL·스키마·공개 API는 유지한다.
+
+report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의 내부 `display_name`으로 보관해 제목에 사용하고, NarrativeGenerator에서 AI 요청 전에 가린다. `report.generate.v1`에 별명을 추가하지 않는다. 403·404를 가짜 별명·기록 없음으로 처리하지 않고 생성 실패로 취급한다. 통신 장애는 기존 작업 실패/재시도 경계를 따르며 서비스 간 HTTP 재시도를 추가하지 않는다. 실제 worker 연결·최종 AI payload 검증은 [#119 보고서](../report/core-gateway.md#8-리포트용-학생-별명-내부-조회-119)의 후속 조건을 따른다.
+
 ### 4.6 #43 AI 사용량 조회 계약
 
-- `GET /api/v1/admin/ai-usage`: 기존 #36 Bearer·`SERVICE_OPS` 검사를 사용한다. 필수 `from`, `to`는 0001~9999 연도의 ISO 날짜이며 KST 기준 양 끝 날짜를 포함한다. 조회 기간은 양 끝 포함 최대 366일이다. `from > to`, 366일 초과 또는 허용 연도 밖의 날짜는 DB 조회 전에 400 `VALIDATION_FAILED`로 거부한다. 선택 `callType`은 사용량 이벤트의 12개 호출 종류 중 하나다(#355에서 `MISSION_DRAFT`, #439에서 주간 테마 생성 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`, #480에서 `REPORT_EXPLANATION`, #467에서 지식 임베딩 `KNOWLEDGE_EMBEDDING`, 에픽 #436에서 영상 `THEME_VIDEO` 추가). 이미지 호출은 이미지 토큰 단가(#651)로 계산한다. 영상(Veo)·리포트 Gemma처럼 서비스 밖에서 따로 청구되는 모델은 `externallyBilledCalls`로 따로 센다(#764).
-- 응답은 `{period:{from,to},items:[{callType,calls,failures,latencyMs,inputTokens,outputTokens,costUsd,unpricedCalls,externallyBilledCalls}]}`다. 기간에 실제 호출이 있는 종류만 반환한다. `latencyMs`는 성공·실패를 포함한 호출당 평균 지연(ms)이다. 토큰은 합계이며 하나라도 미기록이면 해당 합계는 null이다.
-- `costUsd`는 저장된 소비 시점 비용의 합계다. 단가 미등록 등 null 비용이 하나라도 있으면 합계도 null이며 `unpricedCalls`로 미산정 호출 수를 공개한다. 별도 청구 호출(`externallyBilledCalls`, #764)은 미산정이 아니며 합계에 들어가지 않는다(그 종류가 모두 별도 청구면 `costUsd`는 0). 클러스터 안 모델(M2 등)은 단가 0이라 비용 0이다. 빈 결과는 `items:[]`이고 null을 0으로 치환하지 않는다. 수집·멱등 처리·과거 단가 계산은 변경하지 않는다.
-- 요금제 한도, 월 예산 알림, 결제·구독 구현은 #43 조회 범위에 포함하지 않는다.
-- #467: 지식 임베딩(4.2.4) 사용량 `callType = KNOWLEDGE_EMBEDDING`을 V44에서 추가했다. 입력 토큰만 있어 출력 토큰은 0이고, 단가(`app.llm-pricing`)가 다른 모델처럼 비어 있어 `costUsd`는 null(`unpricedCalls`로 셈)이다.
+→ [2.8.2](#282-ai-사용량-조회-43)로 이동
 
 ## 5. 구현 계약
 
@@ -1388,7 +1394,17 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - #43 기존 SQL NULL 평가 행은 목록에서 evalResult:null로 보존하고 활성화/복귀 시 422로 거부한다. 승인 근거·적용 범위가 불완전한 기존 ACTIVE 행이 있으면 내부 snapshot은 MODEL_VERSION_STATE_INVALID(503)로 명시적으로 실패하며 임의 기본 버전을 반환하지 않는다. 신규 등록은 계속 완전한 평가 기록을 요구한다.
 
-#### #367 등록 확장 (백엔드 구현)
+#### 5.2.1 모델 파일 사전 검사 (#368)
+
+- 관리자 `POST /api/v1/admin/models/preflight`: SERVICE_OPS 권한. core가 내부 토큰을 붙여 scoring `POST /internal/models/preflight`로 동기 중계한다. core HTTP 제한 20초, 자동 재시도 없음.
+- 요청: `name`, `version`, `artifactUri`, manifest의 `files[{file,bytes,sha256}]`. config.json·tokenizer.json·tokenizer_config.json·train_info.json·score_cuts.json·model.safetensors를 각각 한 번씩 받는다. `tox-` 모델은 `score_cuts.json`이 없어 나머지 5개를 받는다(#688). 메타데이터 검사도 이름 접두어별로 한다(`tox-`의 선택 `review_threshold` 범위 포함, #725). 승인 관련 필드·알 수 없는 필드는 거부한다.
+- 응답: `{status: PASS|FAIL, code, files:[{file,status,code}]}`. 검사 대상 파일이 없거나 불일치해도 검사 결과는 HTTP 200/FAIL이다. 잘못된 요청 400, 권한 401/403, scoring 응답 오류 502, 연결/시간 제한 503은 기존 RFC 9457 형식이다.
+- scoring은 설정된 S3 버킷의 models/ 경로만 검사한다. 각 파일 HEAD로 존재·크기를 확인한다. 세 메타데이터 JSON만 ETag 조건(If-Match)으로 고정하여 최대 1MiB 본문을 읽고 SHA-256을 직접 대조한다. 나머지 파일은 S3가 제공하는 전체 SHA-256을 비교하며 ETag·사용자 메타데이터·COMPOSITE 체크섬을 파일 해시로 사용하지 않는다. 없는 체크섬은 CHECKSUM_UNAVAILABLE이다.
+- `validate_metadata`를 재사용해 학습 입력·점수 경계와 config의 회귀 출력 수를 확인한다. 모델·토크나이저 로딩, 점수 추론, 파일 쓰기는 하지 않는다. scoring은 15초 작업 예산과 개별 S3 연결/읽기 1초·재시도 없음으로 제한한다.
+- 결과는 `MODEL_PREFLIGHT` 감사 action의 SUCCESS/FAILURE에 남긴다. 등록 전 검사여서 target_id는 null이며 이름·버전·경로·manifest 파일·결과를 detail에 저장한다. evaluation/evidence와 기존 모델 레코드는 변경하지 않는다.
+- 화면 결과는 해당 입력 스냅샷에만 유효하다. 입력 변경 시 재검사를 안내한다. 검사 통과는 파일·형식 확인일 뿐 품질 승인·활성화·추론 성공이 아니며 자동 등록/활성화하지 않는다.
+
+#### 5.2.2 #367 등록 확장 (백엔드 구현)
 
 - `MODEL` 등록은 비어 있지 않은 `artifactUri`가 필수(422 `MODEL_APPROVAL_REJECTED`). 다른 종류의 기존 규칙은 유지한다.
 - `evaluation.limitations`는 선택 문자열 배열, 생략/기존 행은 `[]`. 최대 100개, 각 1~4,000자이며 공백뿐인 문자열·null 항목은 거부한다. 반환 위치는 `evalResult.evidence.limitations`다.
@@ -1399,23 +1415,13 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 등록 요청의 승인 여부·활성화 범위·사유·재분석 계획·승인자 및 알 수 없는 필드는 400 VALIDATION_FAILED. 유효한 타입의 업무 검증 실패는 기존 422 MODEL_APPROVAL_REJECTED, 중복은 409 MODEL_VERSION_CONFLICT. 공통 Problem Details 형식은 유지한다.
 - 프론트 전달용 예시와 역할 분담: [#367 API 전달 내용](../report/ai.md#11-모델-등록-api-367). 화면·웹 타입은 프론트 담당 범위다.
 
-#### 재학습 자동 등록·추천 태그 (#688, 설계 #725, 구현 전 #728)
+#### 5.2.3 재학습 자동 등록·추천 태그 (#688, 설계 #725, 구현 전 #728)
 
 - `evaluation.recommendation?`: `{tag: RECOMMENDED|NOT_RECOMMENDED, comparedTo, reasons:[], metrics:{}}`. `comparedTo`는 비교한 활성 버전(`name:version`, 처음이면 `NONE`), `reasons`는 1~20개·각 1~500자, `metrics`는 이름(최대 50개)→숫자 객체. 모든 종류·출처에서 선택이며 `evalResult.evidence.recommendation`에 그대로 저장한다. 참고 정보라 활성화·복귀 검사에 쓰지 않는다(자동 품질 합격선 없음 유지). 관리자 등록부 화면은 태그를 "추천"·"비추천"으로, 이유·비교 버전·지표는 펼쳐 보인다(없으면 표시 없음)
 - 내부 `POST /internal/model-versions`(ops 토큰, 4장 허용 표): 본문은 관리자 등록과 같다. `kind: MODEL`·`name`이 `tox-`로 시작하는 것만 받고 아니면 422 `MODEL_APPROVAL_REJECTED`. `registration`은 `{source: PIPELINE, datasetSha256, artifactFiles:[{file,bytes,sha256}]}` 필수(다른 source는 400, 반대로 관리자 공개 등록은 `PIPELINE`을 400으로 거부), `evaluation.recommendation` 필수
 - 처리: core가 5.2.1 preflight를 먼저 부르고(같은 20초 제한), `FAIL`이면 422 `MODEL_APPROVAL_REJECTED`(파일별 결과를 `detail`이 아닌 확장 필드 `preflight`로), 연결 실패 503. `PASS`면 관리자 등록과 같은 규칙으로 `REGISTERED` 저장. 활성화하지 않는다
 - 감사: `MODEL_PREFLIGHT`·`MODEL_REGISTER`의 actor는 재학습 계정 `mlops-pipeline`([ERD 3.5](erd.md), 설정 `app.model-registry.pipeline-actor-id`). 이 계정은 로그인·활성화 권한이 없다. detail에 source·`datasetSha256`·파일 목록을 남긴다
 - 같은 `(kind,name,version)` 다시 보내기는 409 `MODEL_VERSION_CONFLICT`. 재학습 작업은 버전 이름을 실행 날짜로 정하므로(`tox-…` / `yyyyMMdd-HHmm`) 409면 이미 등록된 것으로 보고 끝낸다
-
-#### 5.2.1 모델 파일 사전 검사 (#368)
-
-- 관리자 `POST /api/v1/admin/models/preflight`: SERVICE_OPS 권한. core가 내부 토큰을 붙여 scoring `POST /internal/models/preflight`로 동기 중계한다. core HTTP 제한 20초, 자동 재시도 없음.
-- 요청: `name`, `version`, `artifactUri`, manifest의 `files[{file,bytes,sha256}]`. config.json·tokenizer.json·tokenizer_config.json·train_info.json·score_cuts.json·model.safetensors를 각각 한 번씩 받는다. `tox-` 모델은 `score_cuts.json`이 없어 나머지 5개를 받는다(#688). 메타데이터 검사도 이름 접두어별로 한다(`tox-`의 선택 `review_threshold` 범위 포함, #725). 승인 관련 필드·알 수 없는 필드는 거부한다.
-- 응답: `{status: PASS|FAIL, code, files:[{file,status,code}]}`. 검사 대상 파일이 없거나 불일치해도 검사 결과는 HTTP 200/FAIL이다. 잘못된 요청 400, 권한 401/403, scoring 응답 오류 502, 연결/시간 제한 503은 기존 RFC 9457 형식이다.
-- scoring은 설정된 S3 버킷의 models/ 경로만 검사한다. 각 파일 HEAD로 존재·크기를 확인한다. 세 메타데이터 JSON만 ETag 조건(If-Match)으로 고정하여 최대 1MiB 본문을 읽고 SHA-256을 직접 대조한다. 나머지 파일은 S3가 제공하는 전체 SHA-256을 비교하며 ETag·사용자 메타데이터·COMPOSITE 체크섬을 파일 해시로 사용하지 않는다. 없는 체크섬은 CHECKSUM_UNAVAILABLE이다.
-- `validate_metadata`를 재사용해 학습 입력·점수 경계와 config의 회귀 출력 수를 확인한다. 모델·토크나이저 로딩, 점수 추론, 파일 쓰기는 하지 않는다. scoring은 15초 작업 예산과 개별 S3 연결/읽기 1초·재시도 없음으로 제한한다.
-- 결과는 `MODEL_PREFLIGHT` 감사 action의 SUCCESS/FAILURE에 남긴다. 등록 전 검사여서 target_id는 null이며 이름·버전·경로·manifest 파일·결과를 detail에 저장한다. evaluation/evidence와 기존 모델 레코드는 변경하지 않는다.
-- 화면 결과는 해당 입력 스냅샷에만 유효하다. 입력 변경 시 재검사를 안내한다. 검사 통과는 파일·형식 확인일 뿐 품질 승인·활성화·추론 성공이 아니며 자동 등록/활성화하지 않는다.
 
 ### 5.3 #37 동의·자녀 구현 계약
 
@@ -1461,7 +1467,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - Google redirect URI는 web origin + `/api/v1/auth/google/reauth/callback`이다. 기존 GoogleOAuthClient의 code·PKCE·서명·iss·aud·exp·nonce 검증을 재사용한다. callback은 현재 계정의 Google sub와 일치할 때만 challenge를 VERIFIED로 바꾸며 로그인/refresh를 발급하지 않는다. 계정 선택은 비밀번호/MFA 재입력을 보장하지 않는다. 클라이언트는 원래 로그인 세션을 유지한 상태에서 `POST /me/reauth`에 `{challengeId}`를 보내 `{reauthToken,expiresAt}`를 한 번 수령한다. 아직 callback 전이면 409 REAUTH_PENDING이다. callback 응답은 작은 안내 HTML이다(#425). 성공하면 같은 출처 `BroadcastChannel('sagomungchi-reauth')`로 `{type:"REAUTH_VERIFIED",challengeId}`만 알리고 `window.close()`를 호출하며, 닫히지 않으면 "확인이 끝났습니다. 이 창을 닫고 원래 화면으로 돌아가 주세요."를 보인다. 원래 탭은 자기 challengeId 알림을 받으면 위 수령 요청을 자동으로 보내고, 수동 "완료 확인"은 대체 수단으로 남긴다. 팝업은 `opener=null`이라 postMessage 대신 BroadcastChannel을 쓴다. 응답 헤더는 `Content-Security-Policy`(script-src·style-src nonce, default-src 'none'), `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`다. 실패(403 REAUTH_REQUIRED 조건)도 스크립트 없는 안내 HTML로 응답한다.
 - 비밀번호 재확인(#415): ID·비밀번호 학부모는 Google 대신 `POST /me/reauth/password {purpose, childId?, scope?, password}`로 로그인 비밀번호를 다시 입력해 `{reauthToken,expiresAt}`를 바로 받는다. 목적·자녀·범위 규칙과 소유권 검사는 `/me/reauth`와 같다. 비밀번호가 맞으면 검증·발급을 마친 `reauth_challenge`와 `reauth_grant`를 한 트랜잭션에 만들어, 재인증 사용처(탈퇴·보호자 비밀번호·자녀 해제·자녀 삭제·자녀 이관·이관 수락)의 consume 검사는 바뀌지 않는다. 틀리면 403 `REAUTH_PASSWORD_INVALID`이고 로그인과 실패 횟수를 함께 세어 5회째부터 15분간 423 `LOGIN_LOCKED`이다(횟수는 오류 응답 전에 커밋). Google 계정(또는 `parent_credential` 행이 없는 계정)은 409 `REAUTH_METHOD_MISMATCH`. 성공 감사는 `PASSWORD_REAUTHENTICATED`. 필수 동의 누락 상태에서도 `/me/reauth`와 같은 동의 복구 목록으로 허용한다. 웹은 `/me`의 `authMethod`가 `PASSWORD`면 Google 새 탭 대신 비밀번호 입력을 보인다.
 - challenge 10분, reauthToken 5분(설정값, 세션 만료 이내). 토큰은 256비트 난수, DB에는 SHA-256 해시만 저장한다. 프론트는 메모리에만 보관한다. 사용자·세션 ID/version·purpose·childId·삭제 scope에 결합하며 변경 트랜잭션에서 정확히 1회 소비한다. 일반 access/로그인 상태는 재인증 증명이 아니다. 잘못된 계정·만료·위조·다른 범위·중복 사용은 403 REAUTH_REQUIRED다.
-- 2026-11-10 사용자 동선 변경: 학생 PIN 저장은 활성 학부모 세션과 현재 자녀 권한만 요구한다. PIN 해시 변경·잠금 해제·감사는 같은 트랜잭션이며 추가 Google/로그인 비밀번호 재인증을 요구하지 않는다. 보호자 비밀번호·자녀 삭제·탈퇴 등 다른 재인증 작업은 유지한다.
+- 학생 PIN 저장은 활성 학부모 세션과 현재 자녀 권한만 요구한다. PIN 해시 변경·잠금 해제·감사는 같은 트랜잭션이며 추가 Google/로그인 비밀번호 재인증을 요구하지 않는다. 보호자 비밀번호·자녀 삭제·탈퇴 등 다른 재인증 작업은 유지한다.
 - PATCH /me `{name}` → `{userId,name}`; PATCH /children/{id} `{nickname?,grade?}` → 현재 자녀. 공백·범위 밖 입력 거부. 기존 기록/학년을 변경하지 않는다. 학생 역할 금지, 계정·자녀의 현재 동의를 검사한다.
 - deletion-impact → `{childId,actions:[{scope,effect}],retainedTransactionsYears:5,deviceCleanupPending:false}`. 연결 해제는 UNLINKED 이력을 남기고 학생 세션을 폐기한다. 삭제 확정은 `X-Reauth-Token`, `{scope}` 필수, 202 `{deletionRequestId,childId,scope,status,completedServices}`. 동시에 진행 중인 다른 삭제는 409 DELETION_IN_PROGRESS다. 재확인이 유효한 요청을 즉시 CONFIRMED로 저장한다.
 - PROFILE은 연결 해제·학생 이용 차단 후 두 서비스 완료 시 프로필 필드를 지우고 DELETED 표식을 남긴다(FK/거래 보존용 ID 유지). RECORDS는 프로필을 유지하되 CONFIRMED부터 이용을 차단한다. 완료 후에도 자동 학습 재개는 하지 않는다. learning의 삭제 표식 이후 새 기록 허용 계약은 후속 통합 사항이다. 두 scope 모두 core 분석 대화·근거와 learning/report 기록을 삭제한다. 삭제 확정 때 `student_device_child`를 제거하고 PIN 해시·잠금을 지운다(ERD 3.1).
@@ -1671,7 +1677,7 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 - 같은 대상·수신자·대화 선택의 대기 요청 재전송과 같은 종료 상태 재전송은 멱등 처리한다. 다른 종료 상태로 바꾸면 `409 TRANSFER_ALREADY_RESOLVED`다.
 
 
-#### #391 report 일일 생성·주간 테마 소비 계약
+### 5.18 #391 report 일일 생성·주간 테마 소비 계약
 
 - report 내부 목록 `GET /internal/reports`는 선택 `periodType=DAILY|WEEKLY`를 받는다. 미지정은 두 종류 모두이며 `(studentId,periodType,periodFrom)`별 최신 판이다. 상세·목록에 periodType을 반환하고 상세 problems는 일일, themeSummary는 주간에 사용한다. 구체적인 중첩 필드는 report OpenAPI를 따른다. core 공개 프록시는 #390에서 연결한다.
 - 일일 항목은 PROBLEM으로 저장한다. `mission.id`, `feedback.followup.question`, 판정·요소와 제출 답변을 기존 learning 응답에서 읽는다. `context`는 learning 기록 응답 값을 그대로 쓰며 임의로 추정하지 않는다. 원문 비공개면 finalAnswer=null, followups/quotes=[], reflection.text=null, evidence 없음. 일일은 비율·서술·저녁 질문을 생성하지 않는다.
@@ -1681,12 +1687,12 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 
 - #391 learning 기록 목록·상세·일일 완료 목록은 `context: THEME_DAY|THEME_REVIEW|EXTRA`를 실제 시도에서 반환한다. 주간 요약은 기존 #207 비교 규칙의 상태·요소만 포함하며 답변 원문·인용은 반환하지 않는다.
 
-### scoring Pod별 모델 로딩 확인 (#370)
+### 5.19 scoring Pod별 모델 로딩 확인 (#370)
 
 `GET /api/v1/admin/model-loading` (SERVICE_OPS): `pods[]`의 Pod·프로세스·보고 시각·stale·모델 상태와 `summaries[]`의 활성 name/version/revision별 observedPods·loadedPods·failedPods를 반환한다. 분모는 최근 120초 안에 보고한 Pod이며 Kubernetes 전체 replica 수가 아니다. 0개는 미확인이다. 품질 승인·추론 확인과 분리한다. 이벤트 `model.loading.reported.v1`로 30초마다 전체 상태를 재보고하며 상태 보관·배포 순서는 [#370 설계](../report/ai.md#13-pod별-모델-로딩-보고-370)를 따른다.
 
 
-### 추억 검색 구현 기준 (#563, 2026-11-12)
+### 5.20 추억 검색 구현 기준 (#563)
 
 아래는 #563의 벡터 단독 경로이며, #682의 변환 비활성·장애 대체 시에도 유지한다. 4.1.4 검색 계약의 질문은 trim 후 1~200자이며 저장하지 않는다. 본인 scope 확인 후 지난 주 이전 보유 액자를 검사하고, 없으면 AI 호출 없이 NO_RECORDS다. 질문 임베딩과 모델이 일치하는 READY 문서에서 코사인 유사도 0.35 이상을 회차별 최고 점수로 묶어 3개까지 반환한다. 카드마다 같은 문제는 최고 점수 시도 1개, 최대 5개이며 인용은 최종 답변 앞 500자다. 없으면 NO_RESULTS, 프로필·임베딩 실패는 503 AI_UNAVAILABLE이다. 임계값은 #568 평가 전 초기 운영값으로 정확도 보증값이 아니다.
 
@@ -1696,11 +1702,11 @@ report-worker는 생성 시작 시 한 번 조회하여 command에 고정한다.
 
 `MEMORY_EMBEDDING_ENABLED` 앱 기본 false. #565 연동 확인 뒤 GitOps local·prod learning 값에서 true로 켠다(#591). Compose는 `.env`로 넘겨받고 기본 false다(키 없이 켜면 문서가 5회 실패 뒤 `FAILED`). 이미 등록된 문서는 보존하며 활성화 후 주기 작업이 멱등 소급 등록·만료 리스 회수·선점을 한다. 학생 닉네임 조회 실패 시 AI에 보내지 않으며 알려진 닉네임·UUID를 마스킹한다. 운영 로그에 질문·원문을 기록하지 않는다. 원문은 내부 DB에 저장하고 AI 전송용 문자열만 최대 8,000자로 제한한다.
 
-### 리포트 상세 설명의 원문 전체 표시 (#475, 2026-11-17)
+### 5.21 리포트 상세 설명의 원문 전체 표시 (#475)
 
 설명 항목에 선택적 `itemId`를 반환한다. 웹은 기존 `/reports/{reportId}/evidence/{itemId}`에서 설명과 같은 `attemptId`·`answerId`·`answerVersion`이며 `available=true`인 답변 원문 전체를 조회해 항상 펼쳐 표시한다. 발췌 `quote`를 원문 전체로 표시하지 않는다. 삭제·비공개·버전 불일치·조회 실패에는 원문을 대체하지 않고 이용 불가 안내를 표시한다. 기존 소유·공개·이용권 검사는 유지한다.
 
-### Google 이메일 아이디 갱신 (#683, 2026-11-17)
+### 5.22 Google 이메일 아이디 갱신 (#683)
 
 - 같은 Google subject의 PARENT는 로그인할 때 검증된 최신 이메일로 `login_id`를 갱신한다(사용자 결정). 기존 계정도 재로그인 시 복구하며, Google 이메일은 별도 컬럼에 저장하지 않아 오프라인 일괄 추정·변환은 하지 않는다.
 - 활성 상태·역할 검사 뒤 계정 행을 잠그고 갱신한다. 이메일 중복(고유 제약 포함)은 409 `ACCOUNT_EXISTS`로 거절하고 아이디·세션·refresh 교체를 모두 롤백한다. 이메일을 오류·로그에 싣거나 계정을 자동 연결하지 않는다.

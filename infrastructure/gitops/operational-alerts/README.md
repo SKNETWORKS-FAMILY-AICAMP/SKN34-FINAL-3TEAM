@@ -43,7 +43,7 @@ DLQ 규칙은 `prometheus.rabbitmqDlqMetrics.enabled=true`와 함께 `grafana.al
 }
 ```
 
-Helm은 `rules` 배열을 values 파일 사이에서 합치지 않고 통째로 바꾼다. 기존 규칙(prod의 3개)을 함께 적은 목록으로 전달한다.
+Helm은 `rules` 배열을 values 파일 사이에서 합치지 않고 통째로 바꾼다. 기존 규칙을 모두 함께 적은 목록으로 전달한다(prod `observability.json`은 #185 3개 + #187 13개).
 수집을 켜고 끄면 Prometheus Pod가 다시 만들어진다(설정 reload 장치가 없음). `emptyDir`이면 수집 이력이 초기화된다.
 
 `grafana.alerting.interval`·`groupWait`·`groupInterval`·`repeatInterval`의 기본값은 #185 운영값(1m·30s·5m·4h)과 같다.

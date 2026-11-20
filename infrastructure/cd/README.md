@@ -153,7 +153,7 @@ pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service cor
 
 ## 한계
 
-- 실제 승인·게시·적용·롤백은 아직 실행하지 않았다(main 반영·D 전).
+- 실제 승인·게시·적용과 scoring 롤백 리허설은 2026-11-04·05에 실행했다([infra 7.4](../../docs/report/infra.md#74-운영-실행에서-얻은-주의점)).
 - migration 단계(2026-11-17)는 AWS에서 아직 실행하지 않았다. 로컬 확인은 시험(`scripts/tests/test_cd_*.py`, 가짜 aws·kubectl과 실제 helm 렌더링)과 kind의 server dry-run·Job 상태 읽기까지다. 첫 실행은 재가동 때 publish 역할 정책 갱신(위 A) 뒤에 한다.
 - 적용 단계는 작업자 PC가 켜져 있어야 한다. 노드 여유가 작으므로 dry-run의 Pod 변경을 보고 승인한다(#185 노드그룹 분리 기록).
 - 웹(S3/CloudFront) 배포와 운영 데이터 seed(성취기준 표 등 일회성 Job)는 이 workflow 범위 밖이다.
