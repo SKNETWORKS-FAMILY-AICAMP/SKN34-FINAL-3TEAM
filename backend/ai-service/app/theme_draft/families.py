@@ -349,6 +349,10 @@ class StoryType:
     # 모든 단서에 대상 낱말(target)을 넣음(CLUE_OWNER, 출처 찾기·길 — 마지막 확인: '가게 앞 바닥을
     # 봤다'처럼 장소만 말해 그곳이 대상이 온 곳이라는 연결이 없다고 글 검토 CLUE_LOGIC)
     owner_all: bool = False
+    # 밤 이야기(소리 탐정). 6컷 그림·영상 지시 모든 컷에 밤 줄(prompts.NIGHT_SCENE). 밤은 종류
+    # 역할 글("밤이라도 밝고 포근한 색")로만 전해져 사람 컷만 밤이고, 역할 글을 받지 않고 앞 컷도
+    # 잇지 않는 뭉치 혼자 컷(시작 4·5, 종료 1·2·4)은 낮으로 그려졌음(7종류 확인 2026-11-20)
+    night: bool = False
 
     @property
     def animal(self) -> bool:
@@ -1136,6 +1140,7 @@ SOUND_TARGET_CUTS = frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)})
 SOUND = StoryType(
     code="SOUND",
     label="소리 탐정",
+    night=True,
     target_label="밝힐 것",
     family="SOUND",
     candidate_kind="동물·물건",

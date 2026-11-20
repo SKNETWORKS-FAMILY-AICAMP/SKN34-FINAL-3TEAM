@@ -295,6 +295,27 @@ def test_no_cut_carries_lines_that_fight_each_other(code: str, branch: str | Non
     assert cuts.spec("OUTRO", 4, 6).mouth == "surprised"
 
 
+@pytest.mark.parametrize(("code", "branch"), CASES, ids=IDS)
+def test_story_wide_facts_reach_every_cut_not_only_people_cuts(
+    code: str, branch: str | None
+) -> None:
+    """테마 전체에 걸친 사실(밤 이야기)은 사람 컷뿐 아니라 뭉치 혼자 컷에도 들어감(7종류 확인
+    2026-11-20: 소리 탐정 뭉치 혼자 컷 5장이 낮). 뭉치 컷은 동작 글을 받아도 첫 그림은 시작
+    표정만."""
+    theme = theme_of(code) | ({"branch": branch} if branch else {})
+    night = families.STORY_TYPES[code].night
+    assert night == (code == "SOUND")
+    for scene, i, cut, spec in all_cuts(theme):
+        image = prompts.cut_image_prompt(theme, scene, i, cut, [])
+        video = prompts.video_prompt(theme, scene, i, cut, [])
+        assert (prompts.NIGHT_SCENE in image) == night, (code, scene, i)
+        assert (prompts.NIGHT_SCENE in video) == night, (code, scene, i)
+        start = prompts.MOUTH_AT_START.format(mouth=prompts.MOOD_MOUTH.get(spec.mouth))
+        assert (start in image) == bool(spec.has_mungchi and spec.motion), (code, scene, i)
+        if start in image:  # 동작 줄 뒤(그림 모델이 동작 글의 끝 표정을 그리지 않게)
+            assert image.index(start) > image.index(prompts.FIRST_MOMENT_NEW), (code, scene, i)
+
+
 def test_review_cores_say_what_is_visible_and_plan_has_no_air_gesture_example() -> None:
     """검토 핵심은 '그림에 보이는 것'으로만(재검토 2026-11-20). '~를 봄'은 구도가 방향을 정하는
     배웅·엔딩 틀만, 한 줄 서기는 WARN이라 핵심에 없음. 방향은 몸·얼굴로 판정."""

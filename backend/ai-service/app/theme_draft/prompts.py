@@ -1872,6 +1872,18 @@ FIRST_MOMENT = (
 )
 # 6컷: 공중 손짓(흔들기·손뼉)은 쓰지 않아(사용자 결정 2026-11-19) 그 낱말을 뺀 글. 예전 글이 모든
 # 6컷 그림 지시에 남아 있었음(재검토 2026-11-20). 예전 4컷 초안은 예전 글 그대로
+# 밤 이야기 종류(StoryType.night)의 6컷 모든 컷(#779 7종류 확인 2026-11-20: 뭉치 혼자 컷이 낮으로
+# 그려졌음). 무섭지 않게 밝고 포근하게(종류 역할 "밤이라도 밝고 포근한 색"과 같게)
+NIGHT_SCENE = (
+    "It is night: a deep blue night sky with soft warm lights (lanterns, lamps or moonlight). The "
+    "picture stays bright, cozy and gentle, never dark or scary."
+)
+# 뭉치 컷의 첫 그림은 시작 표정만(7종류 확인 2026-11-20: 동작 글 "갸웃하다 … 환하게 웃는다"를 받아
+# 종료 1컷 5개 중 2개가 처음부터 웃는 입으로 그려졌음). 표정 변화는 영상(CutSpec.motion)
+MOUTH_AT_START = (
+    "In this picture Mungchi's mouth is still {mouth}: any later change of expression in the "
+    "action happens only in the video, not in this picture."
+)
 FIRST_MOMENT_NEW = (
     "This picture is the very first moment of this cut's action, so everything the action needs "
     "is already in view and the characters already face where they will look or point"
@@ -1957,6 +1969,10 @@ def cut_image_prompt(
     lines.append(f"This cut's story beat (Korean): {cut_beat(theme, scene, index)}")
     if action := str(cut.get("action") or "").strip():
         lines.append(f"{FIRST_MOMENT if n == 4 else FIRST_MOMENT_NEW} (Korean): {action}")
+    if n != 4 and spec.has_mungchi and spec.motion and (mouth := first_mouth(spec, cut)):
+        lines.append(MOUTH_AT_START.format(mouth=mouth))  # 동작 줄 뒤에서 다시(#779)
+    if n != 4 and story_type(theme).night:
+        lines.append(NIGHT_SCENE)
     if prev_scene is None:
         lines.append(CUT_FRAMING)
     else:
@@ -2339,6 +2355,7 @@ def video_prompt(
         "through walls, fences, flower beds, benches or other objects. A single object (a note, a "
         "box, a letter) stays one object.",
         SCENE_MOTION,
+        NIGHT_SCENE if n != 4 and t.night else "",  # 밤 이야기(#779 7종류 확인 2026-11-20)
         f"Camera: {CAMERA_TEXT[camera]}. No transition effects. No text."
         if camera == "PUSH_SLOW"
         else f"Camera: {CAMERA_TEXT[camera]}, with no zoom-in, so nobody is cut off by zooming. No "
