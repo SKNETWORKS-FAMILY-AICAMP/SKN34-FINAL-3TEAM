@@ -39,6 +39,14 @@ DATA_SOURCES = [
     {"name": "K-MHaS", "license": "CC BY-SA 4.0", "use": "학습·검증·시험"},
     {"name": "Korean HateSpeech (BEEP!)", "license": "CC BY-SA 4.0", "use": "학습·검증"},
 ]
+KID_SOURCE_NAME = "kid-written"  # scripts/kid_data.py
+KID_SOURCE = [
+    {
+        "name": "아이 말투 직접 작성(eval_sets/kid_train.json)",
+        "license": "팀 작성",
+        "use": "학습만(시험 문장 eval_sets/kid_test.json과 겹침 검사)",
+    }
+]
 
 
 def read_jsonl(path: pathlib.Path, limit: int | None = None) -> list[dict]:
@@ -49,7 +57,10 @@ def read_jsonl(path: pathlib.Path, limit: int | None = None) -> list[dict]:
                 x = json.loads(line)
                 if x.get("label") not in (0, 1) or not str(x.get("text", "")).strip():
                     raise ValueError(f"{path.name}: 라벨 0·1과 글이 있어야 함")
-                rows.append({"text": x["text"], "label": int(x["label"])})
+                row = {"text": x["text"], "label": int(x["label"])}
+                if "source" in x:  # kid_data.py가 더한 줄 수를 train_info.json에 남기려고
+                    row["source"] = x["source"]
+                rows.append(row)
     if limit:
         random.Random(42).shuffle(rows)
         rows = rows[:limit]
@@ -96,7 +107,7 @@ def build_train_info(
         "thresholdSource": "기본값 0.5, eval.py가 검증셋 기준으로 다시 정함",
         "baseModel": args.model,
         "baseRevision": base_revision,
-        "data": DATA_SOURCES,
+        "data": DATA_SOURCES + (KID_SOURCE if sizes.get("kidWritten") else []),
         "sizes": sizes,
         "train": {
             "epochs": args.epochs,
@@ -104,6 +115,7 @@ def build_train_info(
             "batchSize": args.batch_size,
             "warmupRatio": 0.1,
             "seed": args.seed,
+            "deterministic": True,
             "bestEpoch": best_epoch,
         },
         "valid": valid,
@@ -131,6 +143,9 @@ def check_artifact(folder: pathlib.Path) -> list[str]:
 
 
 def train(args: argparse.Namespace) -> pathlib.Path:
+    import os
+
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")  # torch import 전에(결정적 cuBLAS)
     import numpy as np
     import torch
     from transformers import (
@@ -142,10 +157,26 @@ def train(args: argparse.Namespace) -> pathlib.Path:
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    # 같은 시드·GPU 종류·라이브러리면 같은 가중치가 나오게 GPU 계산 순서도 고정(11/19, 조금 느려짐)
+    torch.use_deterministic_algorithms(True)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_rows = read_jsonl(args.data / "train.jsonl", args.limit)
     valid_rows = read_jsonl(args.data / "valid.jsonl", args.limit)
     print(f"학습 {len(train_rows)} · 검증 {len(valid_rows)} · 장치 {device}")
+    teacher = None
+    if args.teacher:  # 증류: 글 순서가 같은지 sha256으로 확인
+        from teacher_probs import texts_digest
+
+        t = np.load(args.teacher)
+        if args.limit or len(t["probs"]) != len(train_rows):
+            raise ValueError("선생님 확률 수가 학습 글 수와 다름(--limit 같이 못 씀)")
+        if str(t["digest"]) != texts_digest([r["text"] for r in train_rows]):
+            raise ValueError("선생님 확률의 글 순서가 학습 글과 다름")
+        teacher = np.clip(t["probs"].astype(np.float64), 1e-6, 1 - 1e-6)
+        print(f"증류: 선생님 {list(t['models'])} · alpha {args.alpha} · T {args.temperature}")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, revision=args.revision, use_fast=True)
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -172,7 +203,7 @@ def train(args: argparse.Namespace) -> pathlib.Path:
                 return_tensors="pt",
             )
             y = torch.tensor([x["label"] for x in part], device=device)
-            yield {k: v.to(device) for k, v in enc.items()}, y
+            yield {k: v.to(device) for k, v in enc.items()}, y, order[i : i + args.batch_size]
 
     steps = math.ceil(len(train_rows) / args.batch_size) * args.epochs
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
@@ -184,10 +215,21 @@ def train(args: argparse.Namespace) -> pathlib.Path:
     for epoch in range(1, args.epochs + 1):
         model.train()
         total, n = 0.0, 0
-        for enc, y in batches(train_rows, True):
+        for enc, y, idx in batches(train_rows, True):
             n += 1
             with torch.autocast(device.type, enabled=use_amp):
-                loss = torch.nn.functional.cross_entropy(model(**enc).logits, y)
+                logits = model(**enc).logits
+                loss = torch.nn.functional.cross_entropy(logits, y)
+            if teacher is not None:
+                # 선생님 확률 p → 로짓 log(p/(1-p))를 온도 T로 부드럽게, 학생도 T로 나눠 KL·T²
+                tp = teacher[idx]
+                t_logit = torch.tensor(np.log(tp / (1 - tp)) / args.temperature, device=device)
+                soft = torch.stack(
+                    [torch.sigmoid(-t_logit), torch.sigmoid(t_logit)], dim=-1
+                ).float()
+                s_logp = torch.log_softmax(logits.float() / args.temperature, dim=-1)
+                kd = torch.nn.functional.kl_div(s_logp, soft, reduction="batchmean")
+                loss = args.alpha * loss.float() + (1 - args.alpha) * kd * args.temperature**2
             optimizer.zero_grad()
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
@@ -199,7 +241,7 @@ def train(args: argparse.Namespace) -> pathlib.Path:
         model.eval()
         probs, labels = [], []
         with torch.no_grad():
-            for enc, y in batches(valid_rows, False):
+            for enc, y, _ in batches(valid_rows, False):
                 p = torch.softmax(model(**enc).logits.float(), dim=-1)[:, 1]
                 probs += p.cpu().tolist()
                 labels += y.cpu().tolist()
@@ -219,6 +261,9 @@ def train(args: argparse.Namespace) -> pathlib.Path:
                 labels=np.array(labels, dtype=np.int8),
             )
     sizes = {"train": len(train_rows), "valid": len(valid_rows)}
+    kid = sum(1 for r in train_rows if r.get("source") == KID_SOURCE_NAME)
+    if kid:
+        sizes["kidWritten"] = kid  # 반복 포함 줄 수(kid_data.py)
     info = build_train_info(
         base_revision=base_revision,
         args=args,
@@ -226,6 +271,22 @@ def train(args: argparse.Namespace) -> pathlib.Path:
         best_epoch=best["epoch"],
         valid={k: v for k, v in best.items() if k != "epoch"},
     )
+    if teacher is not None:
+        t = np.load(args.teacher)
+        info["distill"] = {
+            "teachers": [str(x) for x in t["models"]],
+            "alpha": args.alpha,
+            "temperature": args.temperature,
+        }
+    parent_info = pathlib.Path(args.model) / "train_info.json"
+    if parent_info.is_file():  # 로컬 모델에서 이어 학습: 원래 기본 모델·출처를 이어받음
+        parent = json.loads(parent_info.read_text(encoding="utf-8"))
+        info["baseModel"] = parent["baseModel"]
+        info["baseRevision"] = parent["baseRevision"]
+        info["initFrom"] = {
+            "model": pathlib.Path(args.model).name,
+            "trainedAt": parent.get("trainedAt"),
+        }
     text = json.dumps(info, ensure_ascii=False, indent=2)
     (args.out / "train_info.json").write_text(text, encoding="utf-8")
     problems = check_artifact(args.out)
@@ -246,6 +307,11 @@ def main(argv=None):
     ap.add_argument("--batch-size", default=32, type=int)
     ap.add_argument("--seed", default=42, type=int)
     ap.add_argument("--limit", default=None, type=int, help="동작 확인용: 학습·검증을 앞에서 N개만")
+    ap.add_argument(
+        "--teacher", default=None, type=pathlib.Path, help="증류: teacher_probs.py 출력 npz"
+    )
+    ap.add_argument("--alpha", default=0.5, type=float, help="증류: 정답 라벨 손실 비중")
+    ap.add_argument("--temperature", default=2.0, type=float, help="증류: 온도")
     train(ap.parse_args(argv))
 
 

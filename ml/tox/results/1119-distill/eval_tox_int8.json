@@ -1,0 +1,143 @@
+{
+  "model": {
+    "baseModel": "monologg/koelectra-small-v3-discriminator",
+    "baseRevision": "7488f8db0f208beff4a1f3f9bb3ed04650a89ed7"
+  },
+  "evaluatedAt": "2026-11-19T02:59:19+00:00",
+  "window": {
+    "max_length": 128,
+    "stride": 32
+  },
+  "int8": true,
+  "quantization": "int8-dynamic-channel",
+  "scoring": "글 하나씩·창 8개씩(scoring과 같음)",
+  "rule": "꼭 통과할 글 최고 확률 초과 · 검증 정상 오탐 ≤ 0.01 · F1 최대",
+  "threshold": 0.99,
+  "valid": {
+    "chosen": {
+      "threshold": 0.99,
+      "precision": 0.9798,
+      "recall": 0.5674,
+      "f1": 0.7187,
+      "falsePositiveRate": 0.0097,
+      "n": 9243
+    },
+    "default0.5": {
+      "threshold": 0.5,
+      "precision": 0.8574,
+      "recall": 0.8352,
+      "f1": 0.8461,
+      "falsePositiveRate": 0.1156,
+      "n": 9243
+    }
+  },
+  "mustPass": {
+    "counts": {
+      "demo": 241,
+      "web": 97,
+      "trap": 51
+    },
+    "maxProb": 0.7551,
+    "flaggedAtChosen": 0,
+    "flaggedAt0.5": 1,
+    "top10": [
+      {
+        "set": "trap",
+        "text": "팔등신",
+        "prob": 0.7551
+      },
+      {
+        "set": "trap",
+        "text": "아이돌 등신대",
+        "prob": 0.338
+      },
+      {
+        "set": "demo",
+        "text": "[{\"id\": \"i1\", \"label\": \"빨강\"}, {\"id\": \"i2\", \"label\": \"노랑\"}, {\"id\": \"i3\", \"label\": \"파랑\"}]",
+        "prob": 0.2754
+      },
+      {
+        "set": "demo",
+        "text": "지우의 까닭 중 타당하지 않은 것(다른 학교 친구들도 쓰니까)을 찾고 왜 타당하지 않은지 말함",
+        "prob": 0.1868
+      },
+      {
+        "set": "web",
+        "text": "철 못",
+        "prob": 0.1734
+      },
+      {
+        "set": "demo",
+        "text": "같은 색 구슬은 몇 개마다 다시 나오나요?",
+        "prob": 0.1592
+      },
+      {
+        "set": "trap",
+        "text": "@ 기호",
+        "prob": 0.1001
+      },
+      {
+        "set": "web",
+        "text": "보통",
+        "prob": 0.0899
+      },
+      {
+        "set": "trap",
+        "text": "시바견",
+        "prob": 0.0876
+      },
+      {
+        "set": "demo",
+        "text": "근거",
+        "prob": 0.0814
+      }
+    ],
+    "contextOnly": [
+      {
+        "text": "고양이가 새끼를 다섯 마리 낳았다",
+        "prob": 0.0036
+      },
+      {
+        "text": "틀딱이라고 부르면 할머니가 속상해요",
+        "prob": 0.5017
+      }
+    ]
+  },
+  "test": {
+    "default0.5": {
+      "threshold": 0.5,
+      "precision": 0.8622,
+      "recall": 0.8864,
+      "f1": 0.8741,
+      "falsePositiveRate": 0.1209,
+      "n": 21900
+    },
+    "chosen": {
+      "threshold": 0.99,
+      "precision": 0.9757,
+      "recall": 0.6168,
+      "f1": 0.7558,
+      "falsePositiveRate": 0.0131,
+      "n": 21900
+    }
+  },
+  "apeach": {
+    "default0.5": {
+      "threshold": 0.5,
+      "precision": 0.9152,
+      "recall": 0.64,
+      "f1": 0.7532,
+      "falsePositiveRate": 0.0617,
+      "n": 3770
+    },
+    "chosen": {
+      "threshold": 0.99,
+      "precision": 0.9749,
+      "recall": 0.3429,
+      "f1": 0.5073,
+      "falsePositiveRate": 0.0092,
+      "n": 3770
+    }
+  },
+  "limit": null
+}
