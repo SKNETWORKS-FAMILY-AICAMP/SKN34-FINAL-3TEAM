@@ -1,23 +1,30 @@
-# 운영 배포·롤백 (#186)
+# 운영 배포·롤백 (#186, #858)
 
-`.github/workflows/cd-release.yml`은 main 릴리스 SHA만 운영(AWS 데모 EKS)에 배포한다. 승인은 GitHub Environment `prod`가 맡고, 실제 Helm 적용은 EKS API 접근이 허용된 작업자 PC의 전용 self-hosted runner(`cd-prod`)에서 한다. 배포(deploy)는 앱보다 먼저 같은 SHA의 DB migration Job을 실행하고 완료를 확인한다. 앱 release가 없는 빈 클러스터는 계획의 `currentRelease`를 `"none"`으로 두면 같은 흐름으로 처음 설치한다(아래 빈 클러스터 첫 배포 절). 실패해도 자동 롤백하지 않는다.
+`.github/workflows/cd-release.yml`은 main 릴리스 SHA만 운영(AWS 데모 EKS)에 배포한다. 2026-11-20 결정(에픽 #859)으로 기본 방식이 **digest PR**로 바뀌었다(#858). workflow가 이미지를 ECR에 게시한 뒤 main 대상으로 `infrastructure/gitops/environments/prod/images/<release>.json`만 고친 PR을 만들고, **그 PR의 승인·병합이 배포 승인**이다. 병합되면 Argo CD가 main을 읽어 자동 동기화하고(#855~#857), migration은 앱보다 먼저 PreSync Job으로 돈다. 되돌리기는 그 PR의 revert다. 실패해도 자동 롤백하지 않는다.
+
+예전 방식(GitHub Environment `prod` 승인 → 작업자 PC self-hosted runner `cd-prod`에서 migration Job → Helm 적용 → 경로 확인 → 이력)은 실행 입력 `delivery: helm-emergency`로 고르는 **비상용**으로 12/7 시연까지 남긴다([비상용 Helm 경로](#비상용-helm-경로-helm-emergency)). 앱 release가 없는 빈 클러스터의 `currentRelease: "none"`(#760)은 이 비상용 경로에서만 의미가 있다.
 
 ```
-수동 실행(main, 계획 JSON 입력)
-  → validate  : main 확인, 계획 검증, SHA가 main 이력인지 확인          (GitHub 호스팅)
+수동 실행(main, 계획 JSON, delivery)
+  → validate  : main 확인, 계획 검증, SHA가 main 이력인지, (digest PR) images 파일 구조 확인     (GitHub 호스팅)
   → publish   : deploy만. main-<SHA 12자리> 앱·migration 이미지를 ECR에 게시(이미 있으면 재사용) (GitHub 호스팅, OIDC)
-  → deploy    : prod 승인 대기 → 최종 게이트 → migration·앱 server dry-run → migration Job 완료 → 앱 적용
+  → digest-pr : (기본) 최종 게이트 → 지금 main HEAD에서 images 파일 갱신 → PR 생성 → PR 브랜치에 ci-gitops 실행
+                → 승인자 1명(CODEOWNERS) 승인·병합 → Argo CD 동기화(PreSync migration → 앱)
+                → 작업자 PC에서 경로 확인, 결과를 PR 댓글로                                       (사람)
+  → deploy    : (비상용) prod 승인 대기 → 최종 게이트 → migration·앱 server dry-run → migration Job 완료 → 앱 적용
                 → 경로 확인 → 이력 기록 (작업자 PC)
 ```
 
 | 파일 | 역할 |
 |---|---|
-| `policy.json` | 승인자, 릴리스 브랜치(main), 실행 스위치·환경 보호·인프라 준비 선언 |
+| `policy.json` | 승인자, 릴리스 브랜치(main), 실행 스위치·환경 보호·인프라 준비 선언. `delivery`: digest PR이 고치는 폴더(`imagesDir`), 서비스 → release 파일(`imageFiles`, 서비스 5개 → 파일 6개), migration 값을 가진 파일(`migrationFiles`, core·learning·report-api) |
 | `release.example.json` | 운영 배포 계획 형식 |
 | `plan.example.json` | 후보 CI가 쓰는 합성 계획(local) |
-| `scripts/cd_release.py` | 계획 검증과 실행 게이트(`--require-executable`) |
+| `scripts/cd_release.py` | 계획 검증과 실행 게이트(`--require-executable`). `--check-images`로 images 파일 구조 확인, `--write-images`로 images 파일 갱신과 PR 본문(`--pr-body`) 생성 |
+| `infrastructure/gitops/environments/prod/images/<release>.json` | #857이 만든 prod 이미지 값. 키 `image.repository`·`image.digest`, core·learning·report-api는 `migration.image.repository`·`migration.image.digest`·`migration.revision`. digest PR만 고친다 |
+| `.github/CODEOWNERS` | images 폴더 승인자(김동섭·김태윤) |
 | `scripts/verify_cd_deployment.py` | 배포 후 로그인 → 학습 제출 → 리포트 조회 |
-| `scripts/cd_record.py` | 수행자·승인·시점·버전·결과 이력 |
+| `scripts/cd_record.py` | (비상용 Helm 경로) 수행자·승인·시점·버전·결과 이력 |
 | `infrastructure/gitops/environments/prod/redeploy-app.ps1` | release 하나 dry-run/적용. `-ImageDigest`로 저장소 values를 바꾸지 않고 digest만 교체. `-Migration`이면 앱 대신 `migrations/<release>.json`의 Job만 다룬다(아래 DB migration 절). `-AllowInstall`이면 release가 없을 때 처음 설치한다(아래 빈 클러스터 첫 배포 절) |
 | `infrastructure/gitops/migrations/{core,learning}.Dockerfile` | core·learning Flyway migration 이미지. report는 앱 이미지의 Alembic을 쓴다 |
 
@@ -57,11 +64,35 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 | Settings → Actions → General | Fork pull request workflows: 외부 기여자 승인 필요 |
 | OIDC subject (API) | `gh api -X PUT repos/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/oidc/customization/sub -F use_default=false -f "include_claim_keys[]=repo" -f "include_claim_keys[]=context" -f "include_claim_keys[]=job_workflow_ref"` |
 
-2026-11-04 적용 완료(위 표 그대로, 외부 기여자 승인은 `all_external_contributors`). `policy.json`의 `environmentProtectionVerified`를 true로 바꿨다.
+2026-11-04 적용 완료(위 표 그대로, 외부 기여자 승인은 `all_external_contributors`). `policy.json`의 `environmentProtectionVerified`를 true로 바꿨다. Environment `prod`는 digest PR 방식에서는 쓰지 않지만 비상용 Helm 경로가 쓰므로 12/7까지 그대로 둔다.
 
-### C. 작업자 PC self-hosted runner
+### B2. digest PR 저장소 설정 (#858, 관리자 손 작업, 11/24 예정)
 
-EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 PC에서만 된다. 공개 저장소이므로 runner는 **배포할 때만 켜고 끝나면 끈다.**
+**아직 적용하지 않았다.** 저장소 관리자 권한이 필요해 이 PR에서는 바꾸지 않고 절차만 적는다. 11/24 develop → main 릴리스(#623)가 병합된 **뒤에** 적용한다(먼저 켜면 릴리스 PR에도 승인 규칙이 걸린다. 아래 표 참고). 화면 이름은 2026-11 GitHub 기준이다.
+
+| 순서 | 위치 | 값 | 이유 |
+|---|---|---|---|
+| 1 | Settings → Actions → General → Workflow permissions | "Allow GitHub Actions to create and approve pull requests" 켬. 기본 권한(Read repository contents)은 그대로 | `GITHUB_TOKEN`으로 digest PR을 만든다. 이 workflow는 PR을 승인하지 않는다(승인은 사람) |
+| 2 | Settings → Branches → Add branch ruleset(또는 classic branch protection) → 대상 `main` | Require a pull request before merging: 켬 / Required approvals: **1** / Require review from Code Owners: 켬 / Dismiss stale approvals when new commits are pushed: 켬 / Require status checks: 끔(아래) / Block force pushes·Restrict deletions: 켬 / Bypass list: 비움(관리자 우회 없음) | digest PR 승인 = 배포 승인. 승인자 수는 #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같다. 바뀌면 이 값만 고친다 |
+| 3 | 저장소 파일 `.github/CODEOWNERS` | `/infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001` (이 PR에 포함, 11/24 릴리스로 main에 들어감) | 2의 Code Owners 설정이 있어야 강제된다 |
+| 4 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 아래 A 계정 확인 1단계의 digest PR에 "Review required"·Code owner 표시가 뜨는지 | |
+
+- status check를 필수로 두지 않는 이유: `ci-gitops` 등은 경로 필터가 있어 develop → main 릴리스 PR에 항상 돌지 않는다. 필수로 걸면 경로가 맞지 않는 PR이 영원히 대기한다. digest PR에는 workflow가 `ci-gitops`를 `workflow_dispatch`로 실행하고, 승인자가 그 결과(Actions 목록, PR 커밋 check)를 보고 승인한다.
+- 승인 규칙은 develop → main 릴리스 PR에도 걸린다. 릴리스 PR 작성자는 자기 PR을 승인할 수 없으므로 다른 한 명(동섭 ↔ 태윤)이 승인한다. CODEOWNERS는 images 폴더만 지정하므로 릴리스 PR은 쓰기 권한이 있는 팀원 누구든 1명이 승인하면 된다.
+- digest PR 작성자는 `github-actions[bot]`이라 cd-release를 실행한 사람도 승인할 수 있다(Environment `prod`도 같았음). 운영 규칙으로 실행한 사람과 다른 사람이 승인하는 것을 권장하고, 시연 일정상 혼자 처리할 때는 PR 댓글에 사유를 남긴다.
+- 되돌릴 때(설정 해제): 1·2를 끄면 예전과 같다. CODEOWNERS 파일은 2가 꺼져 있으면 리뷰 요청만 보낸다.
+
+#### PR 생성 토큰 (2026-11-20 결정)
+
+| 방식 | 내용 | 채택 |
+|---|---|---|
+| `GITHUB_TOKEN` + `ci-gitops` `workflow_dispatch` | job 권한 `contents: write`·`pull-requests: write`·`actions: write`. `GITHUB_TOKEN`으로 만든 push·PR은 다른 workflow를 깨우지 않지만 `workflow_dispatch`는 예외라, PR 브랜치에 `ci-gitops`를 직접 실행해 같은 커밋에 결과를 붙인다 | **채택**. 새 앱·비밀 값이 필요 없어 승인 없이 된다 |
+| GitHub App 설치 토큰 | 조직에 앱을 만들고(`contents`·`pull_requests` 쓰기) `actions/create-github-app-token`으로 토큰 발급. 앱이 만든 PR에는 `pull_request` CI가 평소처럼 돈다 | 선택지. 새 GitHub App은 조직 승인이 필요해 이번에는 하지 않음. 바꾸려면 digest-pr job의 `GH_TOKEN`·push 자격만 앱 토큰으로 교체하고 dispatch 단계를 지운다 |
+| CI 생략 | PR만 만들고 CI 없음 | 채택하지 않음(렌더링 오류를 병합 뒤 Argo CD에서야 발견) |
+
+### C. 작업자 PC self-hosted runner (비상용 Helm 경로)
+
+digest PR 방식에는 필요 없다(Argo CD가 클러스터 안에서 동기화). 비상용 Helm 경로(`delivery: helm-emergency`)를 쓸 때만 켠다. EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 PC에서만 된다. 공개 저장소이므로 runner는 **배포할 때만 켜고 끝나면 끈다.** 12/7 시연 뒤 등록을 지운다.
 
 1. Settings → Actions → Runners → New self-hosted runner(Windows x64)의 안내대로 내려받아 등록한다. 라벨에 `cd-prod`를 추가한다. 가능하면 조직 runner group에 넣고 이 저장소·`cd-release.yml@refs/heads/main`만 허용한다.
 2. 서비스로 설치하지 않고 작업자 계정으로 `run.cmd`를 실행한다(기존 AWS 프로필·kubeconfig 사용).
@@ -93,7 +124,67 @@ EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 P
 
 2026-11-04 A~C 적용 후 `policy.json`의 `environmentProtectionVerified`·`infrastructureReady`·`executionEnabled`를 true로 바꿨다. main에 반영돼야 실행된다. D(fixture)는 플래그와 무관하며 배포 직전에 채운다. 비우면 적용 후 경로 확인 단계가 실패로 기록된다. 배포를 멈춰야 할 때는 `executionEnabled`를 false로 되돌리는 PR을 main에 반영한다.
 
-## 배포
+## digest PR 배포 (기본, #858)
+
+1. develop → main 릴리스 PR을 병합하고 main CI가 통과했는지 본다.
+2. `release.example.json`을 복사해 main SHA·서비스·근거를 채운다. 여섯 항목을 모두 `compatible`과 근거로 채워야 진행된다. `compatibility.schema`에는 이번 SHA의 새 migration 목록과 지금 떠 있는 앱·revert 대상 앱이 새 스키마에서 동작하는 근거를 적는다(PreSync migration이 앱보다 먼저 돌고, revert해도 DB는 그대로). `operation`은 `deploy`만 받는다.
+3. 실행한다. 작업자 PC runner는 필요 없다.
+
+```powershell
+gh workflow run cd-release.yml --ref main -f delivery=pull-request -f plan="$(Get-Content release.json -Raw | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 10)"
+```
+
+4. 결과: 실행 요약에 digest PR 링크. PR 브랜치는 `cd/prod-images-main-<SHA 12자리>-<run id>`(자동 브랜치라 `feature/*` 규칙 밖), 바뀐 파일은 `images/<release>.json`뿐이다(workflow가 다른 경로 변경이 있으면 PR을 만들지 않음). 본문에 원본 main SHA, PR 기준 main HEAD, release별 digest 전후, migration revision, 호환성 근거, 계획 기록 JSON, 되돌리기 방법이 들어간다. artifact `cd-digest-pr-<run id>`(90일)에 `plan.json`·`plan-record.json`·`pr-body.md`.
+5. PR 브랜치의 `ci-gitops`(prod 렌더링·kubeconform) 결과를 확인한다. workflow가 실행을 요청하므로 Actions 목록에 `ci-gitops`(workflow_dispatch, 그 브랜치)가 뜬다.
+6. 승인자 1명(CODEOWNERS: 김동섭·김태윤)이 승인하고 **Squash and merge**로 병합한다. 병합 = 배포 승인.
+7. Argo CD가 main을 읽어 동기화한다(PreSync migration Job → 앱). Discord 알림(#855)이나 `argocd app list`/UI에서 앱 Application이 Synced/Healthy인지 본다. migration Job 실패면 Application이 Degraded로 멈추고 앱은 바뀌지 않는다(Job 로그는 작업자 PC에서 `kubectl -n app logs job/<Job 이름>`, 공개 로그에 옮기지 않음).
+8. 경로 확인: 작업자 PC에서(fixture가 이 PC에만 있음, 위 D) 실행하고 결과를 그 digest PR 댓글로 남긴다.
+
+```powershell
+python scripts/verify_cd_deployment.py --base-url '<CloudFront https origin>' --fixture $env:CD_SMOKE_FIXTURE_FILE --output smoke.json
+$s = Get-Content smoke.json -Raw | ConvertFrom-Json
+gh pr comment <PR 번호> --body "경로 확인: ok=$($s.ok), $(($s.steps | ForEach-Object { $_.step + ':' + $(if ($_.ok) {'ok'} else {'fail'}) }) -join ', ')"
+```
+
+댓글에는 단계 이름과 성공 여부만 남긴다(쿠키·응답 본문은 옮기지 않음).
+
+- 열린 digest PR은 하나만 둔다. 같은 파일을 고치므로 앞 PR이 병합되면 뒤 PR은 충돌한다. 새로 실행했으면 이전 PR은 병합하지 말고 닫는다(병합하면 더 오래된 digest로 되돌아감). cd-release는 `concurrency: cd-prod`로 실행만 한 번에 하나다.
+- 이력(결정): digest PR(누가·언제 승인·병합, 본문의 digest·계획)과 Argo CD sync 이력이 배포 이력이다. `cd_record.py`의 `history.json` artifact는 비상용 Helm 경로에서만 남기고, 스크립트는 12/7 시연 뒤 정리한다.
+- 계정 전환(B 첫 배포): images 파일의 저장소 주소가 A 레지스트리면 게이트가 "게시한 저장소가 images 파일 저장소와 다릅니다"로 멈춘다. 선행 변수(`CD_ECR_REGISTRY` 등)를 B로 바꾼 뒤, 서비스 5개 전부를 넣은 계획으로 `-f allowRepositoryChange=true`를 주고 실행한다. 저장소 주소와 digest를 함께 바꾸며 PR 본문에 "저장소 변경(계정 전환)"이 표시된다. 서비스 일부만이면 계정이 섞이므로 거부한다.
+
+## digest PR 되돌리기 (#858)
+
+1. 되돌릴 digest PR 화면에서 **Revert** → 만들어진 revert PR을 같은 승인 규칙(CODEOWNERS 1명)으로 병합한다. Argo CD가 이전 digest로 동기화한다.
+2. Argo CD UI의 rollback·수동 sync로 이전 revision을 띄우지 않는다(Git과 어긋나 다음 자동 동기화가 되돌림).
+3. revert는 앱 이미지·migration 값만 되돌리고 DB는 그대로다. 이전 앱이 새 스키마에서 동작한다는 근거가 그 PR의 schema 근거에 있어야 한다. migration revision도 이전 값으로 돌아가지만 이미 끝난 Job 이름이 같으면 다시 실행해도 Flyway·Alembic은 할 일이 없다.
+4. 그 뒤 다른 digest PR이 병합돼 revert가 충돌하면, 되돌릴 digest를 넣은 PR을 손으로 만든다(`images/**`만, 같은 승인 규칙). 경로 확인은 위 8단계와 같다.
+
+## 11/25 A 계정 확인 절차 (#858)
+
+A 재가동(11/25)에서 Argo CD 설치·플랫폼·앱(#855~#857)이 Synced/Healthy가 된 뒤 한 번 확인한다. 11/24 저장소 설정(B2)과 develop → main 릴리스가 먼저다. 결과는 #858 댓글과 infra 9.18.4에 남긴다.
+
+| # | 할 일 | 확인 |
+|---|---|---|
+| 1 | 위 "digest PR 배포" 2~3단계로 cd-release 실행(서비스는 바뀐 것만, 처음이면 5개) | validate·publish 통과, digest PR 생성, 본문 digest가 ECR `main-<SHA 12자리>` 태그와 같음, 바뀐 파일이 `images/**`뿐 |
+| 2 | PR 브랜치 `ci-gitops` 결과 | 성공. 실패면 원인 수정 전 병합하지 않음 |
+| 3 | 승인·Squash and merge | "Review required"·Code owner 표시, 승인 1명 뒤 병합 가능 |
+| 4 | Argo CD 동기화 | 앱 Application Synced/Healthy, migration PreSync Job Complete, Pod 이미지 digest가 PR 값과 같음(`kubectl -n app get pod -o jsonpath='{..image}'`), Discord 알림 |
+| 5 | `verify_cd_deployment.py` → PR 댓글 | 6단계 ok |
+| 6 | digest PR Revert → 승인·병합 | Argo CD가 이전 digest로 Synced/Healthy, 경로 확인 다시 ok. 확인 뒤 같은 계획으로 다시 실행해 최신 digest로 돌려놓는다 |
+
+- 대체안(에픽 #859): 11/24까지 이 PR이 준비되지 않으면 A에서는 `images/<svc>.json`을 손으로 PR해 동기화만 확인하고, digest PR 자동 생성은 B에서 처음 한다. 11/24 저장소 설정(B2)만 늦어지면 1·2·4·5·6은 그대로 하고 3은 승인 없이 병합되는 것만 기록한다.
+- 막히면: 비상용 Helm 경로(아래)로 배포하고 Argo CD로 넘긴다.
+
+## 비상용 Helm 경로 (helm-emergency)
+
+12/7 시연까지만 유지한다. Argo CD 경로가 막혔을 때(동기화 실패를 바로 고칠 수 없음, Argo CD 자체 장애) 쓴다. 쓰는 순서:
+
+1. 대상 앱 Application의 자동 동기화를 끈다(`argocd app set <app> --sync-policy none` 또는 UI). 끄지 않으면 Argo CD가 Helm 적용 결과를 main 값으로 되돌린다.
+2. 아래 절차로 `-f delivery=helm-emergency` 실행 → `prod` 승인 → 작업자 PC에서 migration·Helm 적용·경로 확인·이력.
+3. 적용한 digest를 Git에 맞춘다: `images/**`만 고친 PR을 main에 낸다(같은 승인 규칙).
+4. Git과 클러스터가 같은지(`argocd app diff <app>` 차이 없음) 본 뒤 자동 동기화를 다시 켠다.
+
+Argo CD로 넘어가기 전(Argo CD가 없는 클러스터)에는 1·4가 없다.
 
 1. develop → main 릴리스 PR을 병합하고 main CI가 통과했는지 본다.
 2. DB migration은 이 workflow가 앱보다 먼저 실행한다(아래 DB migration 절). `compatibility.schema` 근거에는 이번 main SHA의 새 migration 목록과 **지금 떠 있는 앱이 새 스키마에서 계속 동작한다는 근거**(추가만인지, 컬럼·제약 삭제·이름 변경이 없는지)를 적는다. migration과 앱 적용 사이, 그리고 이후 롤백 때 이전 앱이 새 스키마 위에서 돈다.
@@ -101,13 +192,13 @@ EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 P
 4. 작업자 PC에서 runner를 켜고 실행한다.
 
 ```powershell
-gh workflow run cd-release.yml --ref main -f plan="$(Get-Content release.json -Raw | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 10)"
+gh workflow run cd-release.yml --ref main -f delivery=helm-emergency -f plan="$(Get-Content release.json -Raw | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 10)"
 ```
 
-`gh`가 없으면 Actions 화면에서 `cd-release` → Run workflow(main)에 한 줄 JSON을 붙여 넣는다.
+`gh`가 없으면 Actions 화면에서 `cd-release` → Run workflow(main)에 한 줄 JSON을 붙여 넣고 delivery를 고른다.
 
 5. 승인자 한 명이 Actions 화면에서 `prod` 배포를 승인한다. 승인 전에는 deploy job이 시작되지 않는다.
-6. 결과: 실행 요약과 artifact `cd-history-<run id>`(90일)에 `history.json`(승인자·migration Job 결과·release 전후 revision·경로 확인), `plan.json`, `plan-record.json`, `migrations.json`이 남는다. 배포가 끝나면 앱 values의 digest와 `migrations/*.json`의 `migration.image.digest`·`migration.revision`을 실제 배포값으로 맞추는 PR을 올린다.
+6. 결과: 실행 요약과 artifact `cd-history-<run id>`(90일)에 `history.json`(승인자·migration Job 결과·release 전후 revision·경로 확인), `plan.json`, `plan-record.json`, `migrations.json`이 남는다. 배포가 끝나면 실제 배포값(앱 digest, `migration.image.digest`·`migration.revision`)을 Git에 맞추는 PR을 올린다. #857 뒤에는 이 값이 `images/<release>.json`에 있으므로 그 파일만 고친 PR을 main에 낸다(위 3단계).
 
 ## DB migration (2026-11-17)
 
@@ -149,7 +240,9 @@ pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service cor
 
 이 workflow가 하지 않는 것(빈 클러스터·빈 DB에서는 앞뒤에 직접): RDS 초기화 `demo_stack.py rds-bootstrap --execute`(migration 전, 그리고 뒤에 한 번 더), 웹 S3 업로드·CloudFront 무효화, 관리자·동의 문서·시연 계정·주간 테마 같은 운영 데이터. 빈 DB면 fixture 계정이 아직 없고, 스냅샷을 복원해도 부모 refresh 쿠키(7일)와 학생 기기 쿠키(도메인별)를 새로 받아야 해서 첫 실행의 경로 확인은 실패로 남을 수 있다. 쿠키를 갱신한 뒤 같은 계획을 다시 실행한다. 순서와 이유는 [infra 9.16](../../docs/report/infra.md#916-빈-클러스터-첫-배포와-b-계정-부트스트랩-보완-760-2026-11-18).
 
-## 롤백
+## 롤백 (비상용 Helm 경로)
+
+digest PR 방식의 되돌리기는 위 "digest PR 되돌리기"(revert)다. 아래 rollback 계획은 `delivery: helm-emergency`에서만 받는다(digest PR 방식에 rollback 계획을 넣으면 validate가 거부).
 
 이전에 승인·배포된 digest로 되돌리는 것도 같은 workflow·승인을 거친다. DB downgrade·백업 복원은 하지 않고, rollback 계획은 migration을 실행하지 않는다(`migrations`를 넣으면 거부).
 
@@ -176,3 +269,5 @@ pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service cor
 - 웹(S3/CloudFront) 배포, RDS 초기화(`rds-bootstrap`), 운영 데이터 seed(성취기준 표 등 일회성 Job)는 이 workflow 범위 밖이다.
 - 빈 클러스터 첫 배포(2026-11-18)는 AWS에서 아직 실행하지 않았다. 확인은 시험(가짜 aws·kubectl·helm)과 일회용 kind 빈 클러스터의 migration·앱 server dry-run까지다.
 - 계정 `347161580747`·클러스터 `sagomungchi-demo-eks`가 `redeploy-app.ps1`·values·IAM 정책에 고정돼 있다. B 계정(시연용)에서 쓰려면 이 값들을 함께 바꿔야 한다.
+- digest PR 방식(2026-11-20)은 GitHub·AWS에서 아직 실행하지 않았다. 확인은 시험(`scripts/tests/test_cd_digest_pr.py`, images 파일 계약 fixture)과 digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 원격·가짜 `gh`)까지다. 실제 PR 생성·ci-gitops dispatch·승인 규칙·Argo CD 동기화는 11/25 A에서 처음 확인한다(위 절차).
+- `GITHUB_TOKEN`으로 만든 PR이라 `pull_request` CI(ci-secrets 등)는 돌지 않는다. ci-gitops만 dispatch로 실행한다. images 파일은 digest 문자열만 바뀌어 다른 CI 대상이 아니다.
