@@ -1,0 +1,141 @@
+{
+  "recordedAt": "2026-11-19T01:31:12.022072+00:00",
+  "environment": "prod",
+  "operation": "deploy",
+  "sourceCommit": "82e7589912389c34657b31bd88e1a26e534f55eb",
+  "targetRelease": "main-82e758991238",
+  "planSha256": "aa9d005c31c277ec88c6fc0f5c6daf654af481d81d1f1543c1e2ede4044bd735",
+  "policySha256": "4d784f5164ae86a227f2ebdbe2a399f2ba7066b139b98242942764dad135e129",
+  "images": {
+    "core-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-service@sha256:0502681659c59cb19d4674696461ed84f8de86cc3d005c3da99f51f5aa5b4b44",
+    "learning-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-service@sha256:abb5c40e3f77e7ec9a6c6640daad9db1e0500311922035a44494235823c4ca14",
+    "ai-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/ai-service@sha256:6a1dd2e5c7cf4ab3e7b7a55b31b642cc7406db4d6ae30ff1b213648870d3a812",
+    "scoring-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/scoring-service@sha256:7ca61be689158201f82ccd7561b14dacd586bd222b6a5a541e5938d00a88207e",
+    "report-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service@sha256:8026766bd4b641a521dbe29d2c30414be6e4f45fbb2ec518e11658e6c5e39f2f"
+  },
+  "migrations": {
+    "core-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-migrate@sha256:898bd804163c14eed21b48d8c8adc517c6d32a860bb0bd2d6999d165f414d066",
+    "learning-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-migrate@sha256:34abb78536e8115df86196e421b7439299a5412081fe51d3954db3d3cd057b8e",
+    "report-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service@sha256:8026766bd4b641a521dbe29d2c30414be6e4f45fbb2ec518e11658e6c5e39f2f"
+  },
+  "migrationJobs": [
+    {
+      "release": "core-service",
+      "job": "core-service-migrate-main-82e758991238",
+      "revision": "main-82e758991238",
+      "image": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-migrate@sha256:898bd804163c14eed21b48d8c8adc517c6d32a860bb0bd2d6999d165f414d066",
+      "status": "complete"
+    },
+    {
+      "release": "learning-service",
+      "job": "learning-service-migrate-main-82e758991238",
+      "revision": "main-82e758991238",
+      "image": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-migrate@sha256:34abb78536e8115df86196e421b7439299a5412081fe51d3954db3d3cd057b8e",
+      "status": "complete"
+    },
+    {
+      "release": "report-api",
+      "job": "report-api-migrate-main-82e758991238",
+      "revision": "main-82e758991238",
+      "image": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service@sha256:8026766bd4b641a521dbe29d2c30414be6e4f45fbb2ec518e11658e6c5e39f2f",
+      "status": "complete"
+    }
+  ],
+  "actor": "20220348-kim",
+  "run": {
+    "id": "44435484318",
+    "attempt": "1",
+    "url": "https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/44435484318"
+  },
+  "approvals": [
+    {
+      "user": "20220348-kim",
+      "state": "approved",
+      "environments": [
+        "prod"
+      ],
+      "comment": false
+    }
+  ],
+  "releases": [
+    {
+      "release": "core-service",
+      "digest": "sha256:0502681659c59cb19d4674696461ed84f8de86cc3d005c3da99f51f5aa5b4b44",
+      "previousRevision": 1,
+      "revision": 2,
+      "status": "deployed"
+    },
+    {
+      "release": "learning-service",
+      "digest": "sha256:abb5c40e3f77e7ec9a6c6640daad9db1e0500311922035a44494235823c4ca14",
+      "previousRevision": 1,
+      "revision": 2,
+      "status": "deployed"
+    },
+    {
+      "release": "ai-service",
+      "digest": "sha256:6a1dd2e5c7cf4ab3e7b7a55b31b642cc7406db4d6ae30ff1b213648870d3a812",
+      "previousRevision": 1,
+      "revision": 2,
+      "status": "deployed"
+    },
+    {
+      "release": "scoring-service",
+      "digest": "sha256:7ca61be689158201f82ccd7561b14dacd586bd222b6a5a541e5938d00a88207e",
+      "previousRevision": 1,
+      "revision": 2,
+      "status": "deployed"
+    },
+    {
+      "release": "report-api",
+      "digest": "sha256:8026766bd4b641a521dbe29d2c30414be6e4f45fbb2ec518e11658e6c5e39f2f",
+      "previousRevision": 1,
+      "revision": 2,
+      "status": "deployed"
+    },
+    {
+      "release": "report-worker",
+      "digest": "sha256:8026766bd4b641a521dbe29d2c30414be6e4f45fbb2ec518e11658e6c5e39f2f",
+      "previousRevision": 1,
+      "revision": 2,
+      "status": "deployed"
+    }
+  ],
+  "smoke": {
+    "checkedAt": "2026-11-19T01:31:11.211147+00:00",
+    "ok": true,
+    "steps": [
+      {
+        "step": "student-login",
+        "ok": true,
+        "ms": 1406
+      },
+      {
+        "step": "pick-mission",
+        "ok": true,
+        "ms": 2577
+      },
+      {
+        "step": "start-attempt",
+        "ok": true,
+        "ms": 1828
+      },
+      {
+        "step": "read-answer",
+        "ok": true,
+        "ms": 125
+      },
+      {
+        "step": "parent-refresh",
+        "ok": true,
+        "ms": 281
+      },
+      {
+        "step": "list-reports",
+        "ok": true,
+        "ms": 172
+      }
+    ]
+  },
+  "result": "success"
+}

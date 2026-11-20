@@ -1,0 +1,41 @@
+{
+  "recordedAt": "2026-11-17T07:49:17.080003+00:00",
+  "environment": "prod",
+  "operation": "deploy",
+  "sourceCommit": "e3cb5084c9f620c2d6d18baaf0fddc26afd9c025",
+  "targetRelease": "main-e3cb5084c9f6",
+  "planSha256": "f6f85212f65b64fb35b672385bc6dcdd5bac07173946e4bdb3ae1aa0a2074b71",
+  "policySha256": "4d784f5164ae86a227f2ebdbe2a399f2ba7066b139b98242942764dad135e129",
+  "images": {
+    "core-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-service@sha256:d3499e67bfd370e9be2e7c40020ed84144bbc275cab787e43d6af2b71e64e88b",
+    "learning-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-service@sha256:329230d6197a0f3e0deed16f05c8d62ceb0c838bea4f5e93c704eeccd8c60e84",
+    "ai-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/ai-service@sha256:a2275cbd2d2b1e9ca82d46a2baf0d82ce6f0eeff23bda5c8a7aaa88ad208dabc",
+    "scoring-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/scoring-service@sha256:65ce22f8b95883b834104dd1b31ded9f6de9750b9daf808acc726e40301430bb",
+    "report-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service@sha256:1c1a71698018e7da4590a62500acae5c7e817a41dc57cbe699e8ab1e0eaf5642"
+  },
+  "migrations": {
+    "core-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-migrate@sha256:94539b975c20d7e32839a27a73e397e71e48d278aebb29e3def6580937c1777d",
+    "learning-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-migrate@sha256:f13281023295284489ddfaf7b6d7fe7854d07dc6404000fb18600af2125f7603",
+    "report-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service@sha256:1c1a71698018e7da4590a62500acae5c7e817a41dc57cbe699e8ab1e0eaf5642"
+  },
+  "migrationJobs": [],
+  "actor": "20220348-kim",
+  "run": {
+    "id": "44038487015",
+    "attempt": "1",
+    "url": "https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/44038487015"
+  },
+  "approvals": [
+    {
+      "user": "20220348-kim",
+      "state": "approved",
+      "environments": [
+        "prod"
+      ],
+      "comment": false
+    }
+  ],
+  "releases": [],
+  "smoke": null,
+  "result": "failure"
+}
