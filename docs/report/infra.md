@@ -259,12 +259,12 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 | 결정 | 내용 | 근거 |
 |---|---|---|
 | 적용 위치 | 작업자 PC의 self-hosted runner(`cd-prod`) | EKS API 공개 접근이 작업자 공인 IP로 제한 |
-| 승인 | Environment `prod` 필수 승인자, main만 허용 | 승인자는 GitHub 승인 기록 API로 읽어 이력에 남김. 계획 파일의 승인 표시는 읽지 않음 |
+| 승인 | Environment `prod` Required reviewers(2명 중 1명 승인으로 시작), main만 허용 | 승인자는 GitHub 승인 기록 API로 읽어 이력에 남김. 계획 파일의 승인 표시는 읽지 않음 |
 | 이미지 | publish job이 main SHA를 `main-<12자리>`로 ECR 게시, 있으면 재사용. core·learning migration 이미지(`*-migrate`)도 같은 태그로 게시, report는 앱 이미지가 Alembic을 포함 | ECR 태그 IMMUTABLE. GitHub OIDC 역할은 ECR 쓰기만 |
 | migration (2026-11-17) | 배포만. 승인 후 migration·앱 server dry-run을 모두 마친 뒤 core → learning → report 순서로 Job 적용·`Complete` 확인, 그다음 앱 적용. 실패·시간 초과면 앱 미적용, DB는 되돌리지 않음. 같은 SHA 재실행은 완료된 Job을 건너뜀. 롤백은 migration 없음 | 11/6 이후 core V29~V51·learning V11~V21·report 3개가 수동 절차에 묶여 있었음. 승인 한 번으로 스키마와 앱을 같은 SHA로 맞추고, 실패 시 앱이 새 스키마 없이 뜨는 것을 막음 |
 | 계획 입력 | 실행 입력 JSON(커밋하지 않음), 원문은 artifact | 계획의 SHA가 그 계획을 담은 커밋을 가리키는 순환 회피 |
 | 실행 게이트 | `scripts/cd_release.py`가 오류·차단 사유가 없을 때만 `executable=true` | 근거·승인자 미비 상태에서 게시·적용 차단 |
-| 적용 | release별 server dry-run 전체 → 순서대로 `redeploy-app.ps1 -ImageDigest -Apply` | 실패하면 다음 release 미적용, 자동 롤백 없음 |
+| 적용 | release별 server dry-run 전체 → 순서대로 `redeploy-app.ps1 -ImageDigest -Apply`. 빈 클러스터 첫 배포는 계획 `currentRelease: "none"`일 때만 release 없는 앱을 install(2026-11-18, 9.16) | 실패하면 다음 release 미적용, 자동 롤백 없음 |
 | 경로 확인 | 학생 PIN 로그인 → 시도 시작 → 답변 → 부모 refresh → 리포트 목록 | 판정(LLM)·결제 미호출. 부모 refresh 쿠키는 회전하므로 새 값을 fixture에 즉시 저장 |
 | 이력 | `history.json` artifact(90일)와 실행 요약 | workflow에 `contents: write`를 주지 않음 |
 | 롤백 | 이전 승인 digest를 같은 workflow·승인으로 적용 | DB downgrade 없음, migration 실행 없음 |
@@ -784,7 +784,7 @@ python evaluation/load/llm_latency.py judge --secrets <밖>/secrets-630.json --o
 | 5★ | RDS SG | `apply --after-eksctl` → 옛 SG `sg-086c7c83b3638da59` 규칙·SG 정리 | 새 SG에서 5432 허용 | 5분 |
 | 6 | 플랫폼 | gp3·namespace·ESO 2.14.0·LB Controller 1.14.1·`rds-ca`·ExternalSecret(현재 파일)·platform-data·Karpenter 1.15.1 + NodePool·EC2NodeClass(`karpenter.json` 대조) | ESO Ready, Secret 키가 서비스별 키, `ai-provider-credentials`에 `OPENAI_API_KEY`(값 미출력. #747 뒤 RunPod 키 2개는 빠짐), RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분 |
 | 7 | DB 상태 | demo-db-oneoff(core 앱 계정)로 `SHOW max_connections`, `model_version` 행·활성 상태 조회. 앱 계정은 migration 이력 테이블 권한이 없으므로 적용 번호는 8단계 Job 로그로 본다 | 9.11.2 연결 판단, #613 등록 전 기준 | 10분 |
-| 8★ | migration | 기본 거부용 정책 2개 → core·learning·report migration Job(9.11.1 2·3번). cd-release에 migration 단계가 들어갔으면 그 단계로 실행 | Job complete, 로그의 시작·끝 schema 버전(Flyway)·revision(Alembic) | 15분 |
+| 8★ | migration | 기본 거부용 정책 2개 → core·learning·report migration Job(9.11.1 2·3번). cd-release에 migration 단계가 들어갔으면 그 단계로 실행. **11/17 실행에서 빠짐: 그 전에 `demo_stack.py rds-bootstrap --execute`(learning V14 `vector` 확장), 뒤에 한 번 더(9.16)** | Job complete, 로그의 시작·끝 schema 버전(Flyway)·revision(Alembic) | 15분 |
 | 9★ | 앱 배포 | cd-release(plan JSON, 승인 2명), 6개 서비스 | 앱 readiness, `app-default-deny` 1개, 정책 없는 Pod DNS 실패 | 30~40분 |
 | 10 | 관측 | Secrets Manager 백업으로 관측 Secret 2개 생성(값 미출력) → observability | Grafana 로그인·datasource·경보 평가 | 15분 |
 | 11★ | 진입 | `core-alb-network.json` + Ingress(origin 헤더 Git 밖 주입) → 새 ALB DNS로 CloudFront `/api/*` origin 변경 | prefix list 제한, CloudFront 배포 완료 | 20분 |
@@ -1292,6 +1292,79 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 - Tempo 수집 상한(8MiB/s)을 넘으면 trace가 버려진다. 1000명 단계 trace 양은 재지 않았다.
 - trace 대기열이 메모리에 있으므로 Collector가 재시작하면 대기 중인 trace는 사라진다.
 - 시험 자원(telemetrygen Deployment·NetworkPolicy, 웹훅 Secret)은 지우고 observability release는 검증 전 revision 설정(Tempo·경보 끔)으로 되돌렸다.
+
+## 9.16 빈 클러스터 첫 배포와 B 계정 부트스트랩 보완 (#760, 2026-11-18)
+
+11/17 A 계정 재가동(9.11)에서 새 EKS에 cd-release를 처음 실행했더니 앱 server dry-run이 `release: not found`로 멈췄다(run 44038487015). 그 밖에도 손으로 메운 빈틈이 7개 더 있었다. 11/25 A 재가동과 B 계정(시연) 구축 때 반복하지 않도록 코드와 절차에 반영했다. 이 작업에서 AWS에는 아무것도 만들거나 바꾸지 않았다.
+
+### 9.16.1 빈틈 분류
+
+| # | 11/17 빈틈 | 처리 | 반영 |
+|---|---|---|---|
+| 1 | 빈 클러스터에서 cd-release 실패: 앱 dry-run이 기존 release를 요구, migration 전에 멈춤 | 코드 | 계획 `currentRelease: "none"`이면 plan-record에 `firstInstall: true` → `redeploy-app.ps1 -AllowInstall`. release가 없을 때만 미리보기는 `helm install --dry-run=server`, 적용은 `helm upgrade --install`. 기존 `deployed` release는 지금처럼 `helm upgrade`. `none`이 아닌데 release가 없으면 "first install needs -AllowInstall"로 멈춤. 결과 JSON·이력에 `install`/`upgrade`와 전후 revision(첫 설치는 `null`, 요약은 "첫 설치→r1"). rollback 계획에는 `none`을 쓸 수 없음 ([CD README](../../infrastructure/cd/README.md#빈-클러스터-첫-배포-2026-11-18-760)) |
+| 2 | learning V14 `CREATE EXTENSION vector`가 migrate 계정으로 실패 | 절차 | cd-release 앞뒤로 `demo_stack.py rds-bootstrap --execute`. RDS master secret을 쓰므로 workflow에 넣지 않음 |
+| 3 | scoring·report-api·report-worker ServiceAccount가 없어 Pod 생성 실패 | 코드 | 세 values의 `serviceAccount.create`를 true로(ai·learning과 같은 방식). Pod Identity 연결은 SA보다 먼저 있어도 됨. `app` 네임스페이스 Pod Identity SA는 같은 이름 release values가 만든다는 것을 시험으로 고정 |
+| 4 | 웹(S3)이 11/4 빌드로 남음. cd-release는 웹을 배포하지 않음 | 절차(자동화는 B 범위) | 9.16.2. cd-release에 넣으려면 publish 역할에 S3·CloudFront 권한을 더해야 하고 버킷·배포 ID가 계정마다 다름 |
+| 5 | core V39 약관·개인정보 1.1 재동의 전 학부모는 자녀 학생 로그인 `CHILD_NOT_LINKED`, fixture refresh 쿠키 7일 만료 | 절차 | [CD README D](../../infrastructure/cd/README.md#d-배포-후-경로-확인-fixture-작업자-pc에만) |
+| 6 | 작업자 PC에 eksctl 없음 | 절차 | 도구 버전: AWS CLI v2, **eksctl v0.231.0**(공식 릴리스, 체크섬 확인), kubectl 1.35, Helm 4.3.1(ci-gitops와 같음), PowerShell 7, Python 3.12, Node.js·npm, gh |
+| 7 | 주간 테마 0건이라 학생이 풀 문제 없음 | 절차 | CD README D. 시연 주차마다 관리자 화면에서 테마 게시(11/17 A에서 초안 READY까지 14분) |
+| 8 | `demo_stack.py plan`이 eksctl 노드그룹을 DIFF로 표시 | 코드 | 디스크는 `describe-nodegroup`의 `diskSize`가 비면 그 launch template 버전의 루트 볼륨 크기(`ec2:DescribeLaunchTemplateVersions`)로 비교, 라벨은 eksctl이 붙이는 `alpha.eksctl.io/*`를 빼고 비교. 크기가 다르거나 template을 못 읽으면 그대로 DIFF |
+| — | 승인자 수(이슈 본문): 정책·문서는 2명, 실제로는 1명 승인으로 deploy 시작 | 문서 | GitHub Environment의 Required reviewers는 **목록 중 1명** 승인으로 job이 시작되고, 필요 승인 수를 정하는 설정이 없다. `policy.json`의 `approvers`는 승인 가능자 목록(2명)이므로 문서를 "2명 중 1명 승인"으로 맞췄다(7.1과 같음) |
+
+3번과 A 계정: 11/17에 손으로 만든 SA 3개는 11/19 EKS 삭제와 함께 사라졌다. 11/25 재가동은 새 클러스터라 Helm 소유권 충돌이 없다. 손으로 만든 SA가 남은 클러스터에 적용해야 하면, 승인 후 그 SA에 Helm 소유 표시(`meta.helm.sh/release-name`·`meta.helm.sh/release-namespace` 주석, `app.kubernetes.io/managed-by=Helm` 라벨)를 붙여 넘긴다.
+
+### 9.16.2 계정별 순서
+
+**A 계정 11/25 재가동**(11/17 방식, 9.11.5 기준). 11/19 종료(EKS·NAT·ALB 삭제, RDS는 최종 스냅샷 `sagomungchi-demo-db-final-20261119` 뒤 정지, SageMaker는 예약 확장만 일시정지) 상태에서 다시 올린다. 계정 번호는 그대로이고 스냅샷 복원이 아니다.
+
+| # | 단계 | 11/17과 다른 점 |
+|---|---|---|
+| 1 | `demo_stack.py plan` | MISSING은 NAT·route·EKS 예상 |
+| 2★ | RDS `start-db-instance` → `wait db-instance-available` | 정지 7일 뒤 자동 시작(11/26 22:48 KST 무렵) 전에 켠다. 데이터는 11/19 22:38 상태 |
+| 3★ | `apply --confirm-account <계정>`(NAT) → private route table 2개 `replace-route` | RDS가 있으므로 `--without-rds`는 필요 없음 |
+| 4★ | `render-eksctl --operator-cidr <작업자 IP>/32` → `eksctl create cluster` → `apply --after-eksctl` → `plan` | 노드그룹이 OK로 나와야 한다(9.16.1의 8번) |
+| 5 | 플랫폼·관측 | 같음 |
+| 6★ | `rds-bootstrap --execute` → cd-release(계획 `currentRelease: "none"`) → `rds-bootstrap --execute` | **#760이 main에 있어야 한다.** 없으면 11/17처럼 `release: not found`. SA는 chart가 만든다 |
+| 7★ | ALB Ingress → CloudFront `/api/*` origin을 새 ALB로 | 같음 |
+| 8 | SageMaker 예약 재개(`ScheduledScalingSuspended=false`) | 11/19에 일시정지 |
+| 9 | 웹 | 11/19에 올린 빌드보다 새 main이면 다시 올린다(assets 먼저, `index.html` 마지막, 무효화) |
+| 10 | fixture 재로그인·갱신 → 경로 확인 | refresh 쿠키 7일 만료. 첫 실행 경로 확인이 실패했으면 갱신 뒤 같은 계획을 다시 실행하거나 `verify_cd_deployment.py`만 실행 |
+
+**B 계정**: 전체 순서는 [AWS README의 B 계정 전환 런북](../../infrastructure/aws/README.md#b-계정-전환-런북-809)이다(#809). 이 작업이 그 런북에서 맡는 것은 9단계 첫 배포(`currentRelease: "none"`)와 8·10단계 `rds-bootstrap` 앞뒤, 15단계 fixture·테마다.
+
+**B DB용 A 쪽 스냅샷 단계**(2026-11-18 결정: B DB는 A 최종 RDS 스냅샷 복원):
+
+| # | 단계 | 방법·상태 |
+|---|---|---|
+| A-1★ | 시험 데이터 정리 범위 | 부하 시험 계정(`load2*`)·스텁 `llm_usage` 행·경로 확인용 임시 계정 등 시연에 남기지 않을 데이터를 정한다. A에서 지운 뒤 스냅샷을 뜨거나 B 복원 뒤 지운다 |
+| A-2★ | 공유용 스냅샷 | 11/19 최종 스냅샷은 AWS 관리 키(`aws/rds`)로 암호화돼 다른 계정과 공유할 수 없다. B 직전 A를 다시 내릴 때(11/26 전) 새 최종 스냅샷을 뜨고, A의 고객 관리 KMS 키로 `copy-db-snapshot --kms-key-id <키>` → **B 계정 번호가 정해진 뒤** 키 정책에 B 허용 → `modify-db-snapshot-attribute --attribute-name restore --values-to-add <B 계정>` |
+| A-3 | 보존 | 공유 스냅샷·KMS 키(삭제 대기 기간 포함)·A Secrets Manager의 DB 계정 값 6개·`PAYMENT_BILLING_ENCRYPTION_KEY`는 B 복원이 끝날 때까지 지우지 않는다. B 쪽 복원·비밀번호·S3 경로는 런북 3·5·8단계 |
+
+스냅샷을 복원해도 cd-release 한 번으로 경로 확인까지 끝나는 것은 보장되지 않는다. 학생 PIN·자녀 연결·약관 동의·테마는 스냅샷에 있지만, 부모 refresh 쿠키는 최초 로그인부터 7일이고 학생 기기 쿠키는 새 도메인에서 다시 받아야 한다. 첫 실행의 경로 확인이 실패하면 쿠키를 갱신한 뒤 같은 계획을 다시 실행해 성공 이력을 남긴다.
+
+### 9.16.3 확인 (2026-11-18·11-20, AWS 실행 없음)
+
+- 시험: `scripts/tests/test_cd_migration_runner.py`에 앱 경로 8개를 더했다.
+  - release가 없고 스위치도 없으면 거부한다.
+  - 첫 설치는 미리보기와 적용 모두 확인했다.
+  - 기존 release는 스위치가 있어도 `upgrade`로 처리한다.
+  - `failed` release는 덮어쓰지 않는다.
+  - 첫 설치 실패는 결과에 기록한다.
+  - migration에 스위치를 주면 거부한다.
+- 그 밖에 `test_cd_release.py` 2개(rollback의 `none` 거부, `firstInstall` 기록)와 `test_aws_demo_stack.py` 2개(노드그룹 비교, SA 생성 규칙)를 더했다.
+- 일회용 kind 클러스터(`app` 네임스페이스만 있는 빈 클러스터, 확인 뒤 삭제)에 cd-release deploy job의 "migration 미리보기"·"적용 미리보기" step 스크립트를 그대로 실행했다. aws만 계정·endpoint를 돌려주는 가짜로 두고 helm·kubectl은 실제로 썼다.
+  - 기존 형식 계획: 첫 release에서 "first install needs -AllowInstall"로 멈췄다. 11/17과 같은 지점이고 메시지만 명확해졌다.
+  - `currentRelease: "none"` 계획: migration Job·NetworkPolicy 3쌍과 앱 6개의 `helm install --dry-run=server`가 모두 통과했고, 클러스터에는 아무것도 생기지 않았다.
+- 실제 Helm 4.3.1에는 `helm list -a`가 없어(가짜 helm 시험은 통과했음) release 조회를 Helm 3·4 공통 상태 필터(`--deployed --failed --pending --uninstalling`)로 고쳤다.
+- "migration 적용·완료 확인"·"적용"·"배포 이력 기록" step은 가짜 helm·kubectl로 실행했다.
+  - 첫 배포: 앱 6개가 `upgrade --install`, 이력 요약은 "첫 설치→r1 deployed"였다.
+  - 기존 release 계획: `upgrade`, 요약은 "r4→r5"였다.
+
+### 9.16.4 한계
+
+- AWS에서 첫 배포 경로를 실행하지 않았다. 실제 확인은 11/25 A 재가동(9.16.2의 6단계)과 B 구축 때 한다.
+- 첫 설치 중 한 release가 `failed`가 되면 다시 실행해도 자동으로 고치지 않는다. 원인을 고친 뒤 승인을 받아 `helm uninstall <release> -n app`으로 지우고 같은 계획을 다시 실행한다. 이미 설치된 release는 `upgrade`로 이어진다.
+- 웹 배포 자동화는 B 범위로 남겼다.
 
 ## 10. 근거 링크
 

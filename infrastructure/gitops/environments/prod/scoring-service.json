@@ -238,6 +238,6 @@
   },
   "serviceAccount": {
     "automountToken": false,
-    "create": false
+    "create": true
   }
 }

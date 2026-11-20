@@ -19,7 +19,7 @@ EKS는 [eksctl 설정](../eks/cluster.json), 나머지는 `demo-stack.json`(원�
 python infrastructure/aws/demo_stack.py --profile sagomungchi-provided plan
 ```
 
-새 환경 순서: `apply` → 비밀 값 입력(Secrets Manager, 담당자) → `render-eksctl` → `eksctl create cluster` → `apply --after-eksctl` → [prod 초기 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185)(ESO·LB Controller·`rds-bootstrap`·migration·앱). CloudFront 배포·OAC·Function, ALB Ingress의 origin 헤더, 웹 업로드, Google OAuth 등록은 이 스크립트 범위 밖이며 아래 redacted 설정과 절차로 수동 구성한다. 계정 ID와 이름이 고정이므로 다른 계정에는 `demo-stack.json`·`iam/`·`cluster.json`을 먼저 바꾼다.
+새 환경 순서: `apply` → 비밀 값 입력(Secrets Manager, 담당자) → `render-eksctl` → `eksctl create cluster` → `apply --after-eksctl` → [prod 초기 배포 절차](../gitops/environments/prod/README.md#초기-배포-재현-절차-185)(ESO·LB Controller·`rds-bootstrap`·migration·앱). CloudFront 배포·OAC·Function, ALB Ingress의 origin 헤더, 웹 업로드, Google OAuth 등록은 이 스크립트 범위 밖이며 아래 redacted 설정과 절차로 수동 구성한다. 계정 ID와 이름이 고정이므로 다른 계정에는 `demo-stack.json`·`iam/`·`cluster.json`을 먼저 바꾼다. B 계정처럼 처음부터 올리는 순서는 아래 [B 계정 전환 런북](#b-계정-전환-런북-809), 11/17 재가동에서 빠졌던 단계와 11/25 A 재가동 순서는 [infra 보고서 9.16](../../docs/report/infra.md#916-빈-클러스터-첫-배포와-b-계정-부트스트랩-보완-760-2026-11-18)이다.
 
 [`rds-bootstrap.sql`](../gitops/charts/platform-data/files/postgres/rds-bootstrap.sql)은 로컬 PostgreSQL init과 같은 파일(#230)이며 DB 3개, DB별 migration(DDL)·app(DML) 계정, PUBLIC CONNECT 회수, migration 계정 소유 객체의 default privileges를 멱등으로 만든다. learning_db에는 지식 저장소용 `vector` 확장도 만든다(#466). AWS 재가동 때 RDS 엔진의 pgvector 버전과 `rds.allowed_extensions` 허용 여부를 먼저 확인한다. 계정 이름·비밀번호는 ESO Secret에서 환경변수로만 받고, 이미 있는 계정의 비밀번호는 바꾸지 않는다. migration 후 한 번 더 실행하면 기존 테이블 권한을 맞추고 `flyway_schema_history`·`alembic_version`의 app 권한을 회수한다.
 
@@ -166,7 +166,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 2026-11-19 작성, **아직 실행하지 않은 절차**다. 시연용 B 계정을 11/26~27에 부트스트랩하고 11/28에 배포한다(#783). B의 DB는 A 최종 RDS 스냅샷을 복원한다(2026-11-18 결정). 이 문서 작업에서 AWS는 조회도 변경도 하지 않았다.
 
-- 위치: 실행 절차는 쓰는 스크립트(`demo_stack.py`·`sagemaker_explanation.py`) 옆인 이 README에 둔다. `docs/report/infra.md`는 A에서 한 일의 기록이라 계정 번호를 바꿀 때도 A 값을 그대로 둔다. 또 9.15가 develop(#784 Tempo)과 #760 브랜치(빈 클러스터 첫 배포·스냅샷 복원 A-1~B-3)에서 겹쳐 있어 새 절을 더하지 않았다. #760의 9.15.2 표는 이 런북의 5·8~10·15단계와 같은 내용이다. 실행 결과와 실제 걸린 시간은 끝난 뒤 infra 보고서에 절로 남긴다.
+- 위치: 실행 절차는 쓰는 스크립트(`demo_stack.py`·`sagemaker_explanation.py`) 옆인 이 README에 둔다. `docs/report/infra.md`는 A에서 한 일의 기록이라 계정 번호를 바꿀 때도 A 값을 그대로 둔다. #760의 빈 클러스터 첫 배포와 B DB용 A 쪽 스냅샷 단계(A-1~A-3)는 [infra 보고서 9.16](../../docs/report/infra.md#916-빈-클러스터-첫-배포와-b-계정-부트스트랩-보완-760-2026-11-18)에 있고, B 순서는 이 런북 하나로 둔다. 실행 결과와 실제 걸린 시간은 끝난 뒤 infra 보고서에 절로 남긴다.
 - 배포 방식: 지금 방식(cd-release가 앱 5종을 배포하고 나머지는 손으로 적용)을 기준으로 썼다. 팀이 B에 Argo CD 도입을 검토 중이며(미결정), 도입하면 달라지는 단계를 표의 "Argo CD면" 열에 적었다.
 - ★는 실행 전 동섭 승인 지점이다. 예상 시간은 11/17·11/19 A 실측(infra 9.11, #601 기록)을 바탕으로 한 추정이다. 명령의 `<B>`는 B 프로필, `<B 계정>`은 12자리 번호다.
 
@@ -231,7 +231,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 #### RDS 복원
 
-A 쪽(#760 A-2: A 고객 관리 KMS 키로 스냅샷 복사, 키 정책에 B 허용, 스냅샷 `restore` 속성에 B 추가)이 끝났다는 전제다(확인 필요).
+A 쪽(infra 9.16.2 A-2: A 고객 관리 KMS 키로 스냅샷 복사, 키 정책에 B 허용, 스냅샷 `restore` 속성에 B 추가)이 끝났다는 전제다. 11/19 최종 스냅샷 `sagomungchi-demo-db-final-20261119`은 `aws/rds` 키라 공유할 수 없으므로, B 직전 A를 다시 내릴 때 새 스냅샷으로 하고 B 계정 번호가 정해진 뒤 공유한다.
 
 ```powershell
 $p = '<B>'
@@ -248,8 +248,8 @@ aws rds modify-db-instance --db-instance-identifier sagomungchi-demo-db --backup
 
 - 값은 `demo-stack.json` `rds`와 같게 둔다. `--manage-master-user-password`는 B Secrets Manager에 새 master 비밀번호를 만든다(`rds-bootstrap`이 쓰는 값). A의 master 비밀번호는 넘어오지 않는다.
 - 복원 DB의 app·migrate 계정 6개는 A 비밀번호를 그대로 가진다(3단계에서 A와 같은 값). 다른 값으로 바꾸려면 master로 `ALTER ROLE`을 먼저 한다.
-- 시험 데이터 정리(부하 시험 계정·스텁 `llm_usage`·경로 확인용 임시 계정)를 A에서 못 했으면 여기서 정한다(#760 A-1).
-- 끝나면 공유 스냅샷 복사본과 A 키 공유를 정리해도 되는지 동섭에게 묻는다(#760 A-3: B 복원이 끝날 때까지 보존).
+- 시험 데이터 정리(부하 시험 계정·스텁 `llm_usage`·경로 확인용 임시 계정)를 A에서 못 했으면 여기서 정한다(infra 9.16.2 A-1).
+- 끝나면 공유 스냅샷 복사본과 A 키 공유를 정리해도 되는지 동섭에게 묻는다(infra 9.16.2 A-3: B 복원이 끝날 때까지 보존).
 
 #### scoring 모델 경로 전환 (결정 필요)
 

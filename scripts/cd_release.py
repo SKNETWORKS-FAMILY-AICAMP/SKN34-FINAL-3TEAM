@@ -26,6 +26,8 @@ MIGRATION_REPOSITORIES = {
     "learning-service": "learning-migrate",
     "report-service": "report-service",
 }
+# 앱 release가 하나도 없는 빈 클러스터의 첫 배포(#760). 이 값일 때만 실행기가 release 없는 앱을 설치한다
+FIRST_INSTALL = "none"
 
 
 def image_pattern(environment):
@@ -119,6 +121,8 @@ def validate(plan, policy, *, pending_images=False):
         )
     if plan.get("currentRelease") == plan.get("targetRelease"):
         errors.append("현재 버전과 대상 버전이 같습니다")
+    if plan.get("currentRelease") == FIRST_INSTALL and plan.get("operation") != "deploy":
+        errors.append("첫 배포(currentRelease none)는 deploy만 가능합니다. 되돌릴 이전 버전이 없습니다")
     services = plan.get("services")
     if (
         not isinstance(services, list)
@@ -275,7 +279,10 @@ def main():
         "environment": plan.get("environment"),
         "operation": plan.get("operation"),
         "sourceCommit": plan.get("sourceCommit"),
+        "currentRelease": plan.get("currentRelease"),
         "targetRelease": plan.get("targetRelease"),
+        # 실행기는 이 값이 true일 때만 release가 없는 앱을 helm install로 올린다
+        "firstInstall": plan.get("currentRelease") == FIRST_INSTALL,
         "services": plan.get("services"),
         "images": plan.get("images"),
         "migrations": plan.get("migrations"),
