@@ -8,7 +8,14 @@ from app.database import transaction
 from app.deletion.service import ensure_generation_allowed
 from app.errors import ApiError
 from app.generation.codec import ReportV1Codec
-from app.generation.models import GenerationBusy, JobConflict, PeriodType, ReportEvent, ReportStatus
+from app.generation.models import (
+    GenerationBusy,
+    JobConflict,
+    PeriodType,
+    ReportEvent,
+    ReportState,
+    ReportStatus,
+)
 from app.generation.repository import ReportRepository
 from app.outbox import service as outbox_service
 from app.security import current_user_context
@@ -24,6 +31,7 @@ class ReconciledJob:
     report_id: UUID | None = None
     failure_reason: str | None = None
     period_type: PeriodType = PeriodType.WEEKLY
+    no_record: bool = False
 
 
 class ReconciliationService:
@@ -47,9 +55,17 @@ class ReconciliationService:
                 400, "VALIDATION_FAILED", "일일은 하루, 주간은 월요일부터 일요일이어야 합니다"
             )
 
-        def result(status, report_id=None, reason=None):
+        def result(status, report_id=None, reason=None, no_record=False):
             return ReconciledJob(
-                job_id, student_id, period_from, period_to, status, report_id, reason, period_type
+                job_id,
+                student_id,
+                period_from,
+                period_to,
+                status,
+                report_id,
+                reason,
+                period_type,
+                no_record,
             )
 
         try:
@@ -89,7 +105,11 @@ class ReconciliationService:
                         )
                     # Return stored terminal state even if outbox delivery was lost.
                     reason = self._repository.failure_reason(session, report.id)
-                    return result(report.status, report.id, reason)
+                    no_record = (
+                        report.status == ReportStatus.COMPLETED
+                        and report.state == ReportState.NO_RECORD
+                    )
+                    return result(report.status, report.id, reason, no_record)
                 if guard is None:
                     self._repository.block(
                         session, job_id, student_id, period_from, period_to, period_type

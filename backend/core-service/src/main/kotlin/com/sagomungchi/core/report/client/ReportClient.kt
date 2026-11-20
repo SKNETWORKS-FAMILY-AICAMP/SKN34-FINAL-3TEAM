@@ -211,14 +211,16 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
             } catch (_: RestClientException) { throw unavailable() }
             return try {
                 val node = json.readTree(body)
-                require(node.isObject && node.fieldNames().asSequence().toSet() == setOf(
-                    "jobId", "studentId", "periodFrom", "periodTo", "status", "reportId", "failureReason"))
+                val fields = setOf("jobId", "studentId", "periodFrom", "periodTo", "status", "reportId", "failureReason")
+                // #846: optional noRecord (omitted by older report-api = false).
+                require(node.isObject && node.fieldNames().asSequence().toSet().let { it.containsAll(fields) && (it - fields - "noRecord").isEmpty() })
                 fun text(field: String): String = node[field].also { require(it.isTextual) }.textValue()
                 val result = com.sagomungchi.core.report.domain.ReportReconciliation(
                     UUID.fromString(text("jobId")), UUID.fromString(text("studentId")),
                     com.sagomungchi.core.report.domain.ReportPeriod(java.time.LocalDate.parse(text("periodFrom")), java.time.LocalDate.parse(text("periodTo")), job.periodType),
                     text("status"), if (node["reportId"].isNull) null else UUID.fromString(text("reportId")),
-                    if (node["failureReason"].isNull) null else text("failureReason"))
+                    if (node["failureReason"].isNull) null else text("failureReason"),
+                    node["noRecord"]?.also { require(it.isBoolean) }?.booleanValue() ?: false)
                 require(result.jobId == job.id && result.studentId == job.studentId && result.period.from == job.periodFrom && result.period.to == job.periodTo)
                 result
             } catch (_: Exception) { throw invalid() }

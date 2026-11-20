@@ -112,6 +112,35 @@ class ReportMessagingTest : IntegrationTestSupport() {
         artifact("report-failed.json", json.valueToTree(failed))
     }
 
+    /** #846: a daily completion with noRecord crosses the real broker and stores the no-record title. */
+    @Test fun `daily no-record completion through the real broker stores the no-record notification`() {
+        val user = parent(jdbc); val student = child(jdbc, user)
+        val day = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).minusDays(1)
+        val accepted = jobs.scheduled(user, student, ReportPeriod(day, day, ReportPeriodType.DAILY))!!
+        val complete = event(accepted.jobId, student, UUID.randomUUID(), "completed", noRecord = true)
+        publish(complete)
+        await { repository.find(accepted.jobId)!!.status == ReportJobStatus.COMPLETED }
+        val stored = jdbc.queryForMap("SELECT type,title FROM notification WHERE user_id=?", user)
+        assertEquals("DAILY_REPORT_COMPLETED", stored["type"])
+        assertEquals("어제는 학습 기록이 없어요. 일일 리포트를 확인해 주세요.", stored["title"])
+        artifact("report-completed-no-record.json", json.valueToTree(complete))
+    }
+
+    @Test fun `noRecord outside completion or not a boolean is a contract error sent directly to DLQ`() {
+        val user = parent(jdbc); val student = child(jdbc, user); val accepted = jobs.scheduled(user, student, WEEK)!!
+        listOf("failed" to json.nodeFactory.booleanNode(true), "started" to json.nodeFactory.booleanNode(false),
+            "completed" to json.nodeFactory.textNode("true"), "completed" to json.nodeFactory.nullNode()).forEach { (state, value) ->
+            val tree = json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(event(accepted.jobId, student, UUID.randomUUID(), state))
+            (tree["data"] as com.fasterxml.jackson.databind.node.ObjectNode).set<JsonNode>("noRecord", value)
+            val body = json.writeValueAsBytes(tree)
+            rabbit.send("events.topic", "report.$state", Message(body, MessageProperties().apply { contentType = "application/json" }))
+            val dead = receive("core.report.events.dlq") { it.body.contentEquals(body) }
+            assertNull(dead.messageProperties.headers[RetryingConsumer.RETRY_COUNT_HEADER])
+        }
+        assertEquals(ReportJobStatus.QUEUED, repository.find(accepted.jobId)!!.status)
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM notification WHERE user_id=?", Int::class.java, user))
+    }
+
     @Test fun `missing job or mismatched student rolls back processed marker and follows real retries to DLQ`() {
         val user = parent(jdbc); val student = child(jdbc, user); val accepted = jobs.scheduled(user, student, WEEK)!!
         val invalid = event(accepted.jobId, UUID.randomUUID(), UUID.randomUUID(), "completed")
@@ -162,9 +191,9 @@ class ReportMessagingTest : IntegrationTestSupport() {
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM job_execution WHERE job_id=?", Int::class.java, accepted.jobId))
     }
 
-    private fun event(job: UUID, student: UUID, report: UUID, state: String) = EventEnvelope(type = "report.$state",
+    private fun event(job: UUID, student: UUID, report: UUID, state: String, noRecord: Boolean? = null) = EventEnvelope(type = "report.$state",
         source = "report-service", subject = student.toString(), dataschema = "report.$state.v1",
-        data = ReportLifecyclePayload(job, student, report, if (state == "failed") "RENDER_FAILED" else null))
+        data = ReportLifecyclePayload(job, student, report, if (state == "failed") "RENDER_FAILED" else null, noRecord))
     private fun publish(event: EventEnvelope<ReportLifecyclePayload>) {
         rabbit.send("events.topic", event.type, Message(json.writeValueAsBytes(event), MessageProperties().apply { contentType = "application/json" }))
     }

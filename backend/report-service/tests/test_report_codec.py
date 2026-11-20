@@ -8,7 +8,13 @@ from jsonschema import Draft202012Validator, FormatChecker
 from app.generation.codec import ReportV1Codec
 from app.generation.consumer import GenerationConsumer
 from app.generation.locking import JobLocks
-from app.generation.models import ReportEvent, ReportStatus, WeeklyReport
+from app.generation.models import (
+    PeriodType,
+    ReportEvent,
+    ReportState,
+    ReportStatus,
+    WeeklyReport,
+)
 from app.generation.service import GenerationService
 from app.generation.unconfigured import UnconfiguredGenerator
 from app.messaging.contracts import InvalidEvent, ReceivedEnvelope
@@ -179,6 +185,49 @@ def test_shared_codec_pipeline_is_idempotent_and_unconfigured_is_not_success(
         assert reports[0]["failure_reason"] == "GENERATOR_NOT_CONFIGURED"
     for event in events:
         validate_contract(event["payload"])
+    # #846: the stored NO_RECORD completion reaches the outbox with noRecord=true.
+    terminal = events[-1]["payload"]["data"]
+    assert ("noRecord" in terminal) == configured
+    if configured:
+        assert terminal["noRecord"] is True
+
+
+@pytest.mark.parametrize(
+    "status,state,expected",
+    [
+        (ReportStatus.COMPLETED, ReportState.NO_RECORD, True),
+        (ReportStatus.COMPLETED, ReportState.OK, None),
+        (ReportStatus.COMPLETED, ReportState.INSUFFICIENT_SAMPLE, None),
+        (ReportStatus.RUNNING, None, None),
+        (ReportStatus.FAILED, None, None),
+    ],
+)
+def test_completed_event_carries_no_record_only_when_true(status, state, expected):
+    """#846: optional noRecord, omitted (= false) so pre-#846 strict consumers see the old shape."""
+    command = command_for(uuid4())
+    report = WeeklyReport(
+        uuid4(),
+        command.job_id,
+        command.student_id,
+        command.period_from,
+        command.period_from,
+        1,
+        status,
+        state,
+        PeriodType.DAILY,
+    )
+    event_type = {
+        ReportStatus.RUNNING: "report.started",
+        ReportStatus.COMPLETED: "report.completed",
+        ReportStatus.FAILED: "report.failed",
+    }[status]
+    reason = "GENERATION_FAILED" if status == ReportStatus.FAILED else None
+    body = ReportV1Codec().encode(ReportEvent(event_type, report, reason), None)
+    validate_contract(body.model_dump(mode="json"))
+    assert body.data.get("noRecord") is expected
+    assert set(body.data) - {"jobId", "studentId", "reportId", "failureReason"} == (
+        {"noRecord"} if expected else set()
+    )
 
 
 def test_failure_event_rejects_exception_text():
