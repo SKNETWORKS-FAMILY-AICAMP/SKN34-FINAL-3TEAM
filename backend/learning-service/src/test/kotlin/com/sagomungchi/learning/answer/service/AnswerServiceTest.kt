@@ -228,6 +228,48 @@ class AnswerServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `경계 구간 review이고 저장된 답변만 표현 검토 대기에 한 번 올림, 로그에 ID 없음`(output: CapturedOutput) {
+        val model = "tox-koelectra-small:1.0-1119"
+        val reviewsOf = { attemptId: UUID ->
+            count("SELECT count(*) FROM expression_review r JOIN answer a ON a.id = r.answer_id WHERE a.attempt_id = ?", attemptId)
+        }
+        val gray = start()
+        val key = UUID.randomUUID()
+        modelSays(ToxicityVerdict.Clean(review = true, modelVersion = model))
+
+        val answer = service.submit(gray.id, key, narrative("애매한 합성 답"))
+        service.submit(gray.id, key, narrative("애매한 합성 답"))
+
+        val row = jdbc.queryForMap(
+            "SELECT source, model_version, label, labeled_by, labeled_at FROM expression_review WHERE answer_id = ?", answer.id,
+        )
+        assertEquals(
+            listOf<Any?>("GRAY_ZONE", model, null, null, null),
+            listOf(row["source"], row["model_version"], row["label"], row["labeled_by"], row["labeled_at"]),
+        )
+        assertEquals(1, reviewsOf(gray.id))
+        val logLines = output.out.lines().filter { "표현 검토 대기 추가" in it }
+        assertEquals(1, logLines.size)
+        assertTrue("source=GRAY_ZONE" in logLines.single())
+        assertFalse(answer.id.toString() in logLines.single() || student.toString() in logLines.single())
+
+        val plain = start()
+        modelSays(ToxicityVerdict.Clean(review = false, modelVersion = model))
+        service.submit(plain.id, UUID.randomUUID(), narrative("보통 합성 답"))
+        val skipped = start()
+        modelSays(ToxicityVerdict.Skipped(ToxicitySkipReason.TIMEOUT))
+        service.submit(skipped.id, UUID.randomUUID(), narrative("검사 안 된 합성 답"))
+        assertEquals(listOf(0, 0), listOf(reviewsOf(plain.id), reviewsOf(skipped.id)))
+
+        val blocked = start()
+        modelSays(ToxicityVerdict.Flagged)
+        assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
+            service.submit(blocked.id, UUID.randomUUID(), narrative("막힐 합성 답"))
+        }
+        assertEquals(0, reviewsOf(blocked.id))
+    }
+
+    @Test
     fun `분류 모델에는 입력 방식의 학생이 쓴 칸만 보냄`() {
         val attempt = start(inputType = "ESSAY", grade = 5)
         val essay = SubmitCommand(InputType.ESSAY, AnswerContent(text = "안 쓰는 칸", essay = Essay("주장", listOf("근거1", "근거2"), "반박")), false, null)

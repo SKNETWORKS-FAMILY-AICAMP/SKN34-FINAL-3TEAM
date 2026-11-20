@@ -1008,7 +1008,7 @@ If-Match: "7"
 | GET·POST·PUT | `/internal/admin/weekly-themes…` | core | #385(core #387 프록시): `ADMIN` + `X-User-Id`. 목록 `GET ?grade&weekStart&status&page&size` → `{items, page, size, totalElements}`, 작성 `POST`(201)·수정 `PUT /{id}`(새 버전) 본문 `{grade, weekStart, title, intro, days:[{day, missionId}]}`, 검토 요청·게시·중단 `POST /{id}/review-request`·`/publish`·`/unpublish` `{}` → 모두 `AdminWeeklyTheme` = `{themeId, grade, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt}`. 오류: 형식·월요일 아닌 주·없는 미션 `400`, 상태상 불가 전이·게시 중 학년·주 변경 `409 CONFLICT`, 게시 검사 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]`. #438 학년별 테마: `gradeBand` → `grade`(`G3`~`G6`, 목록·본문·응답 모두, 관리자 경로는 전환 호환 없음). 본문·응답에 선택 칸 추가(기준안, 생략하면 null): `outro`, `introImageUri`·`outroImageUri`·`introVideoUri`·`outroVideoUri`(S3 키), `introMotion`·`outroMotion`, `bigQuestion`·`candidates[]`·`answer`·`answerClue`, `days[]`에 `clue`·`rulesOut[]`·`dialogue[{speaker, text}]`·`hintSpots[{seq, x, y}]`·`videoUri`(요일 문제 전 영상 키. ai는 요일 영상을 만들지 않아 테마 초안 채택 테마에서는 null이고 관리자가 직접 넣을 때만 쓰는 칸, #437 2026-11-11). 응답에는 미리보기용 presigned URL `introImageUrl`·`outroImageUrl`·`introVideoUrl`·`outroVideoUrl`·`days[].videoUrl`·`days[].sceneImageUrl`(그날 미션 현재본 장면)도 담음. 저장 때 정답 논리(정답·`candidates`·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어떤 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐, `rulesOut`은 후보 안)와 `hintSpots`(`x`·`y` 0~100, `seq`가 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음) 위반은 `400`. 게시 검사 코드 `GRADE_BAND_MISMATCH`를 `GRADE_MISMATCH`(미션 학년 범위가 테마 학년을 포함하지 않음)로 바꿈(웹·core는 `errors[].message`만 쓰고 코드를 읽지 않음). #647(기준안): 본문·응답에 후보 특징 표 `features[{name, values:[{candidate, value}]}]`(최대 10개, 이름·값 100자)와 `days[].clueFeature`(그날 단서 특징 이름) 선택 칸 추가. 수정 때 없거나 null이면 이어받되 후보가 바뀌었거나 후보·정답을 비우면 표를 버리고, 그날 `rulesOut`이 바뀌거나 표가 없어지면 그날 `clueFeature`를 이어받지 않음(지금 관리자 웹이 새 칸을 보내지 않아도 저장이 막히지 않게). 저장 때 특징마다 후보 하나에 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지는지 검사(`400`) |
 | GET·POST·DELETE | `/internal/admin/knowledge/datasets…` | 운영 스크립트 | #466 교육과정 지식 판 적재·상태·활성화·제거. `SYSTEM`, core 프록시 없음. 4.1.3 |
 | GET · POST | `/internal/knowledge…` | 호출처 없음(허용 목록상 ops만, #470 진행 안 함) | 교육과정 지식 근거·검색(#463, 계약 #464 C5, 구현 #469). `SYSTEM` 역할, 학생 범위·학생 정보 없음. 다섯 경로와 응답은 4.1.2 |
-| GET · PUT | `/internal/admin/expression-reviews…` | core | 표현 검토 대기(FN-ADM-24, 설계 #725, 구현 전 #727). core 프록시, 인증·권한 전달은 관리자 미션과 같음. 4.1.5 |
+| GET · PUT | `/internal/admin/expression-reviews…` | core | 표현 검토 대기(FN-ADM-24, 설계 #725, 구현 #727, core 프록시 #728). core 프록시, 인증·권한 전달은 관리자 미션과 같음. 4.1.5 |
 | GET | `/internal/expression-reviews/{label-count,export}` | 재학습 작업(ops) | 재학습 새 라벨 수·학습 데이터 내보내기(#725). `SYSTEM`, core 프록시 없음. 4.1.5 |
 
 - 기록 조회 공통 (#27): 학생 경로는 역할 `PARENT`·`STUDENT`·`SYSTEM`(`home`은 학생 본인 `STUDENT`만)이고 `X-Student-Scope`에 대상 학생이 없으면 `403`. `from`·`to`는 KST 날짜(양 끝 포함), 둘 다 주거나 둘 다 생략(생략하면 오늘 포함 최근 7일, P06), 한쪽만 주거나 `from > to`면 `400`. 응답 `period`는 실제 조회 기간. 집계 대상은 P08(기간 안에 답변 제출이 있는 시도, 미완료 포함·판정 상태 무관. 조회 종료일까지의 답변이 모두 처리 실패인 시도와 삭제 기록은 제외). 시도별 사실(완료·되묻기 받음·보완 답변·최근 답변)은 조회 종료일까지 일어난 것만. `state`는 집계 대상(비율은 분모) 0건 `NO_RECORD`, 1~4건 `INSUFFICIENT_SAMPLE`(비율 `value: null`), 5건 이상 `OK`. 메모·초안은 반환하지 않음(P05). 최상위 학생 식별자는 호출 역할과 무관하게 `studentId`(학부모 공개 응답의 `childId`는 core가 바꿈, core #40·report #51과 합의). 조회 장애는 `state`가 아니라 HTTP 오류(Problem Details)로 반환. 까닭을 잇는 말은 `왜냐하면`·`때문`·`그래서`·`따라서`(report와 확정)
@@ -1102,7 +1102,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
   - 상세 `missions[].attemptId`는 그 회차에서 그 문제를 마지막으로 학습 완료한 시도(토·일 다시 풀기 포함, 기존 비교 화면이 이전 시도를 함께 보여 줌). 테마 재게시로 문제가 바뀌었으면 null
   - 상세 `ending`은 그 주 엔딩 상태(#484, 정답 고르기와 금요일 문제 다시 풀기 마무리로 계산)가 `ENDED`일 때만 `seen = true`이고 `outro`·`answer`를 채움. 이번 주 화면(2.11)·종료 이야기 열람과 같은 판정
 
-#### 4.1.5 표현 검토 대기·재학습 데이터 (#688, 설계 #725, 구현 전 #727)
+#### 4.1.5 표현 검토 대기·재학습 데이터 (#688, 설계 #725, 구현 #727)
 
 저장은 [ERD 4.3.2](erd.md). 응답·로그에 학생 ID·답변 ID를 넣지 않는 것은 아래 두 표 모두 같다(검토 목록의 `id`는 `expression_review.id`).
 
@@ -1116,6 +1116,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 운영자 라벨은 core가 감사 기록(`EXPRESSION_REVIEW_LABEL`)을 남긴 뒤 learning에 전달한다. 목록 열람도 `EXPRESSION_REVIEW_VIEW`(보여 준 항목 ID 목록)로 남긴다(P07)
 - 신고 공유물 행 추가·자동 라벨은 기존 `PUT /internal/community/posts/{postId}/moderation` 처리 안에서 한다(새 경로 없음). `HIDDEN_REPORT` → 행 추가(라벨 없음), `REMOVED` → `OFFENSIVE`, `VISIBLE` → `CLEAN`. 이 호출은 `SYSTEM`이고 다시 보내질 수 있어(core `CommunityModerationService.apply`) 자동 라벨의 `labeled_by`는 null이며, 운영자가 이미 직접 라벨한 행(`labeled_by` 있음)은 바꾸지 않는다
 - 내보내기 응답은 저장하지 않고 재학습 작업의 임시 디렉터리에서만 쓴다(architecture 4.5 재학습 작업)
+- 구현(#727) 세부: `since`는 그 시각 초과(지난 실행의 `labelsUntil`을 다시 세지 않게), `until`은 필수이고 지금 이전이며 그 시각 이하, 둘 다 오프셋을 포함한 ISO-8601이고 틀리면 400. 신고 처리 자동 라벨은 라벨이 실제로 바뀔 때만 `labeled_at`을 고친다(같은 반영이 다시 와도 새 라벨로 세지 않게). 계약은 `contracts/openapi/learning-service.yaml`(1.5.0)
 
 ### 4.2 ai-service (호출: learning, core, report)
 

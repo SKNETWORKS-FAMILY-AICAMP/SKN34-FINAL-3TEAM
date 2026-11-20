@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowUpRight, Files } from 'lucide-react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ReportExplanations } from './ReportExplanations.tsx'
 import type { Child, Metric } from '../../domain/classroom.ts'
-import { scheduledDayLine, answerTimeLine, type DailyProblem, type WeeklyReport, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
+import { scheduledDayLine, answerTimeLine, difficultyText, type DailyProblem, type WeeklyReport, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
 import type { ReportContext, ReportHighlight, ReportTargets } from '../../domain/reportHighlight.ts'
 import { emptyReportTargets, reportTargets } from '../../domain/reportHighlight.ts'
@@ -17,16 +17,6 @@ import { QueryFeedback } from '../common/Workspace.tsx'
 import { QueryStateNotice } from '../common/QueryStateNotice.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { EvidenceQuery } from './ParentConversation.tsx'
-
-/** Keep the parent-facing labels aligned with the report downloads. */
-function reflectionDifficultyLabel(difficulty: string | null) {
-  switch (difficulty) {
-    case 'EASY': case '쉬웠어요': return '쉬웠어요'
-    case 'NORMAL': case '보통': return '보통'
-    case 'HARD': case '어려웠어요': return '어려웠어요'
-    default: return ''
-  }
-}
 
 export function ParentReports({
   child,
@@ -428,8 +418,8 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
           )}
           <section className="report-reflection-note">
             <h4>돌아보기</h4>
-            {p.reflection?.written && p.reflection.difficulty && <span className="report-difficulty">{reflectionDifficultyLabel(p.reflection.difficulty)}</span>}
-            <p>{p.reflection?.written ? p.reflection.text : '쓰지 않음'}</p>
+            {p.reflection?.written && p.reflection.difficulty && <span className="report-difficulty">{difficultyText(p.reflection.difficulty)}</span>}
+            <p>{p.reflection?.written ? p.reflection.text || '작성함' : '쓰지 않음'}</p>
           </section>
           {p.attemptId && canReadOriginals && (
             <button className="cj-secondary" onClick={() => onProof(p.attemptId!)}>
@@ -502,7 +492,7 @@ function WeeklyActivityRecords({report:r, targets, onProof}: {report:WeeklyRepor
       <label className="weekly-activity-picker">활동 선택<select aria-label="주간 리포트 활동 선택" value={id} onChange={e=>setSelection({id:e.target.value,highlightedId})}>{visibleActivities.map((a,i)=><option key={a.id} value={a.id}>{i+1}. {a.title}{a.type ? ` · ${thinkingLabels[a.type]}` : ''}</option>)}</select></label>
       <header className="weekly-activity-heading"><h4>{activity?.title}</h4><span>{activity?.type && thinkingLabels[activity.type]} · {visibleActivities.findIndex(a=>a.id===id)+1} / {visibleActivities.length}</span></header>
       {changes.map(({value:c,index:i})=><details className="report-answer-comparison report-highlight-target" open={targets.changes.includes(i) || undefined} data-answer-highlight={targets.changes.includes(i) ? 'true' : undefined} tabIndex={-1} key={c.attemptId}><summary>처음 답변과 보완 답변</summary><HighlightLabel active={targets.changes.includes(i)}/>{c.followup && <p>되묻기 · {c.followup}</p>}<div className="ws-grid report-change-pair"><div><h4>처음 답변</h4><blockquote>{c.first.text ?? '원문 없음'}</blockquote></div><div><h4>보완 답변</h4><blockquote>{c.revised.text ?? '원문 없음'}</blockquote></div></div><p>글자 수 {c.counts.chars.join(' → ')} · 문장 수 {c.counts.sentences.join(' → ')}</p><details><summary>변화 집계 상세</summary><p>까닭 연결어 수 {c.counts.reasonConnectives.join(' → ')}</p><small>실제로 센 글의 변화이며 사고력 향상으로 단정하지 않습니다.</small></details><button className="cj-secondary" onClick={()=>onProof(c.itemId ?? c.attemptId)}>전후 변화 근거</button></details>)}
-      <div className="weekly-activity-pair"><section><h4>돌아보기</h4>{!reflections.length && <p className="weekly-record-empty">이 활동의 돌아보기가 리포트에 포함되지 않았습니다.</p>}{reflections.map(({value:f,index:i})=><div className="report-highlight-target" key={i} data-answer-highlight={targets.reflections.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.reflections.includes(i)}/>{f.written ? <><span className="weekly-reflection-difficulty">{reflectionDifficultyLabel(f.difficulty) || '난이도 미응답'}</span><p>{f.text || '달라진 점 미작성'}</p></> : <p>돌아보기 미작성</p>}</div>)}</section>
+      <div className="weekly-activity-pair"><section><h4>돌아보기</h4>{!reflections.length && <p className="weekly-record-empty">이 활동의 돌아보기가 리포트에 포함되지 않았습니다.</p>}{reflections.map(({value:f,index:i})=><div className="report-highlight-target" key={i} data-answer-highlight={targets.reflections.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.reflections.includes(i)}/>{f.written ? <><span className="weekly-reflection-difficulty">{difficultyText(f.difficulty) || '난이도 미응답'}</span><p>{f.text || '달라진 점 미작성'}</p></> : <p>돌아보기 미작성</p>}</div>)}</section>
       <section><h4>아이의 말</h4>{!quotes.length && <p className="weekly-record-empty">이 활동의 확인된 인용이 리포트에 포함되지 않았습니다.</p>}{quotes.map(({value:v,index:i})=><blockquote className="report-highlight-target" key={`${v.answerId}-${i}`} data-answer-highlight={targets.quotes.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.quotes.includes(i)}/>{v.text}</blockquote>)}</section></div>
     </>}
     <details className="weekly-thinking-summary" open={targets.thinking.length ? true : undefined}><summary>생각 유형별 활동 전체 보기</summary>{r.thinkingTypes.map((t,i)=><p className="report-highlight-target" data-answer-highlight={targets.thinking.includes(i) ? 'true' : undefined} tabIndex={-1} key={t.type}><HighlightLabel active={targets.thinking.includes(i)}/>{thinkingLabels[t.type]} · {t.state==='NO_RECORD' ? '미관찰 · 확인된 기록 없음' : t.summary ?? `${t.missions.length}개 미션`}</p>)}</details>

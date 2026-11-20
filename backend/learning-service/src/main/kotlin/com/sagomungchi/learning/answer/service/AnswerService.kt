@@ -42,6 +42,7 @@ class AnswerService(
     private val judgmentService: JudgmentService,
     private val expressionPolicy: ExpressionPolicy,
     private val toxicityClient: ToxicityClient,
+    private val expressionReviewService: ExpressionReviewService,
     private val tx: TransactionTemplate,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -97,6 +98,10 @@ class AnswerService(
         )
         answerRepository.insert(answer)
         judgmentService.createPending(answer.id, attempt.rubricVersionId, now)
+        // 경계 구간 답변은 같은 트랜잭션에서 표현 검토 대기에 올림 (#727, ERD 4.3.2, sequence 3.1). 막힌 답변은 위에서 끝나 여기 오지 않음
+        if (toxicity is ToxicityVerdict.Clean && toxicity.review && !toxicity.modelVersion.isNullOrBlank()) {
+            expressionReviewService.recordGrayZone(answer.id, toxicity.modelVersion, now)
+        }
         attemptService.clearSubmittedDraft(attemptId, now)
         return answer
     }
