@@ -7,7 +7,7 @@
                CASE d.day_of_week WHEN 1 THEN 'MON' WHEN 2 THEN 'TUE' WHEN 3 THEN 'WED'
                     WHEN 4 THEN 'THU' WHEN 5 THEN 'FRI' END AS day
         FROM attempt a
-        JOIN weekly_theme t ON t.id = a.theme_id AND t.week_start = a.theme_week_start
+        JOIN weekly_theme t ON t.id = a.theme_id AND t.week_start &lt;= a.theme_week_start
         JOIN weekly_theme_day d ON d.theme_version_id = COALESCE(t.published_version_id, t.current_version_id)
                                AND d.mission_id = a.mission_id
         WHERE a.context IN ('THEME_DAY', 'THEME_REVIEW') AND a.id IN
