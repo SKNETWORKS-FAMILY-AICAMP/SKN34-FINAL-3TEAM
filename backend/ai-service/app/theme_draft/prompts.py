@@ -1584,6 +1584,20 @@ def mood_mouth(cut: dict) -> str | None:
     return MOOD_MOUTH.get(cut.get("mungchiMood") or "none")
 
 
+# 그림 검토에 주는 시작 입 모양(한국어). 그림 지시 MOUTH_AT_START와 같은 컷(움직임이 있는 6컷 뭉치
+# 컷)에만 — 검토가 동작 글의 뒤 표정("놀란 입 → 웃음")을 보고 "입이 일자"라고 경고했음(갈래 확인
+# 2026-11-20, 두 테마 모두)
+MOUTH_KO = {"smile": "웃는 입", "surprised": "작은 동그란 o 입", "determined": "다문 일자 입"}
+
+
+def start_mouth_ko(theme: Theme, scene: str, index: int) -> str | None:
+    """그림 지시가 시작 표정만 그리라고 한 컷의 시작 입 모양(검토용). 그 밖은 None."""
+    spec = cut_spec(theme, scene, index)
+    if not spec.frame or not spec.has_mungchi or not spec.motion:
+        return None
+    return MOUTH_KO.get(spec.mouth)
+
+
 def first_mouth(spec: cut_layout.CutSpec, cut: dict) -> str | None:
     """컷 첫 그림의 뭉치 입 모양. 6컷은 컷 표(CutSpec.mouth)가 정하고 콘티 mungchiMood(컷 끝 표정)는
     쓰지 않는다 — 끝 표정을 첫 그림에 그려 종료 1·4컷이 처음부터 웃고 있었음(재검토 2026-11-20).
@@ -2051,6 +2065,9 @@ IMAGE_REVIEW_SYSTEM = (
     # core는 그 컷 구도 틀의 검토 핵심(설계 H, 엔딩에서 인물들이 카메라 쪽을 봐도 WARN만 받았음)
     # 인물이 바라보는 쪽은 여기서 FAIL로 보지 않음: 공통 줄 "시선은 판단하지 않는다"와 부딪혔고,
     # 방향은 구도 틀 핵심(FRAME)이 몸·얼굴로 판정함(재검토 2026-11-20, 사용자 결정)
+    # 그림 지시 MOUTH_AT_START와 같게(갈래 확인 2026-11-20)
+    "mungchiMouth가 있으면 그 그림은 뭉치 표정 변화의 시작이라 뭉치 입이 mungchiMouth면 맞고, "
+    "action이 말하는 뒤 표정(놀란 입·활짝 웃음 등)이 아니어도 결함이 아니다. "
     "그 컷의 핵심(나와야 할 인물·대상, 장면 글이 말한 물건 상태)이 빠지면 FAIL이고, 세부 구도 "
     "차이와 인물이 향한 방향의 차이는 WARN이다(방향은 FRAME 항목이 본다). "
     + common_rules.review("SCENE_FIT")
@@ -2116,6 +2133,7 @@ def image_review_user(
     action: str | None = None,
     refs: list[str] | None = None,
     core: str | None = None,
+    mungchi_mouth: str | None = None,
 ) -> str:
     body: dict = {
         "items": list(ids),
@@ -2134,6 +2152,8 @@ def image_review_user(
         body["refs"] = refs
     if core:
         body["core"] = core
+    if mungchi_mouth:
+        body["mungchiMouth"] = mungchi_mouth
     if question is not None:
         body |= {
             "missionQuestion": question,

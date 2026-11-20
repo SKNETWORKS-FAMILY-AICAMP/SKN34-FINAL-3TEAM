@@ -5,6 +5,7 @@
 씨앗(떡집)으로만 확인했기 때문이라, 모든 종류·갈래·컷을 한 번에 본다(한 예시로 일반화하지 않음).
 """
 
+import json
 from typing import Any
 
 import pytest
@@ -312,6 +313,21 @@ def test_story_wide_facts_reach_every_cut_not_only_people_cuts(
         assert (prompts.NIGHT_SCENE in video) == night, (code, scene, i)
         start = prompts.MOUTH_AT_START.format(mouth=prompts.MOOD_MOUTH.get(spec.mouth))
         assert (start in image) == bool(spec.has_mungchi and spec.motion), (code, scene, i)
+        # 그림 검토도 같은 컷에 시작 입 모양을 받음(검토가 동작 글의 뒤 표정으로 경고하지 않게)
+        mouth = prompts.start_mouth_ko(theme, scene, i)
+        assert bool(mouth) == (start in image), (code, scene, i)
+        if mouth:
+            review = json.loads(
+                prompts.image_review_user(
+                    theme,
+                    cut["scene"],
+                    ids=(),
+                    has_mungchi=True,
+                    shows_target=False,
+                    mungchi_mouth=mouth,
+                )
+            )
+            assert review["mungchiMouth"] == mouth
         if start in image:  # 동작 줄 뒤(그림 모델이 동작 글의 끝 표정을 그리지 않게)
             assert image.index(start) > image.index(prompts.FIRST_MOMENT_NEW), (code, scene, i)
 

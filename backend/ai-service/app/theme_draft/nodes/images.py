@@ -107,6 +107,9 @@ class Shot:
     person: bytes | None = None
     core: str | None = None  # 컷 그림만: 구도 틀의 검토 핵심(빠지면 FRAME FAIL, #779 설계 H)
     keep_soft: bool = False  # 6컷 컷 그림만: SOFT_IDS에서만 끝내 떨어지면 마지막 그림을 씀
+    mouth: str | None = (
+        None  # 6컷 뭉치 컷만: 시작 입 모양(검토 mungchiMouth, prompts.start_mouth_ko)
+    )
     follow_scene: str | None = None
     follow_prompt: Callable[[list[str]], str] | None = None
 
@@ -179,6 +182,7 @@ async def draw(
                     action=shot.action,
                     refs=refs_order,
                     core=shot.core,
+                    mungchi_mouth=shot.mouth,
                 ),
                 output=GeneratedImageReview,
                 call_type=THEME_CALL_TYPE,
@@ -290,6 +294,7 @@ def cut_shot(
         person=person if body.cut_has_characters(scene, index, n) else None,
         core=frame.core if (frame := body.cut_frame(theme, scene, index)) else None,
         keep_soft=soft and n != 4,
+        mouth=body.start_mouth_ko(theme, scene, index),
         follow_scene=prev_scene,
         follow_prompt=(
             (lambda fb: body.cut_image_prompt(theme, scene, index, cut, fb, prev_scene))

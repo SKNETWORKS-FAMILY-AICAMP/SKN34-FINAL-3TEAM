@@ -630,6 +630,24 @@ def test_cut_image_failing_only_soft_items_is_kept_with_warning(item: str) -> No
     assert len(prompts_with(image, OUTRO_CUTS[4]["scene"])) >= get_settings().theme_max_regen + 1
 
 
+def test_image_review_gets_start_mouth_only_for_moving_mungchi_cuts() -> None:
+    """그림 검토가 시작 입 모양(mungchiMouth)을 받는 컷: 움직임이 있는 6컷 뭉치 컷(시작 5·6, 종료
+    1·4·6). 종료 1컷은 다문 일자 입(갈래 확인 2026-11-20: 검토가 동작 글의 뒤 표정으로 경고)."""
+    seen: dict[str, str | None] = {}
+
+    def verdicts(user: dict) -> dict[str, str]:
+        seen[user["scene"]] = user.get("mungchiMouth")
+        return {}
+
+    run(
+        gen_llm(), review_llm(image=verdicts), image=FakeImageClient(), storage=MemoryThemeStorage()
+    )
+    assert seen[OUTRO_CUTS[0]["scene"]] == "다문 일자 입"
+    assert seen[OUTRO_CUTS[3]["scene"]] == "작은 동그란 o 입"
+    assert seen[INTRO_CUTS[3]["scene"]] is None  # 달리기 컷(움직임 줄 없음)
+    assert seen[OUTRO_CUTS[2]["scene"]] is None  # 사람 컷
+
+
 def test_cut_image_failing_a_hard_item_is_still_dropped_even_with_soft_fails() -> None:
     """장면 맞음(SCENE_FIT) 같은 다른 항목이 함께 떨어진 그림은 쓰지 않음. 미션 그림은 구도·인물
     항목만 떨어져도 예전처럼 실패(IMAGE)."""
