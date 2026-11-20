@@ -9,6 +9,7 @@
 | 파일 | namespace / release | chart |
 |---|---|---|
 | `core-service.json`, `learning-service.json`, `ai-service.json`, `scoring-service.json`, `report-api.json`, `report-worker.json` | app / 파일명 | `../../charts/app-service`. 2026-11-17 재가동 때 이 값으로 적용([infra 9.8.3](../../../../docs/report/infra.md#983-a-계정-재가동-확인-결과-2026-11-17)). `ai-service.json`의 리포트 Gemma는 SageMaker 엔드포인트(`REPORT_LLM_*`, #747)이고 클러스터 밖이라 공인 443 허용으로 나간다 |
+| `images/<앱>.json` (앱 6개) | 위 앱과 같음 | 이미지만 담는 파일(#857). `image.repository`·`image.digest`, migration이 있는 core·learning·report-api는 `migration.image.repository`·`migration.image.digest`·`migration.revision`. 설정 파일(`<앱>.json`)에는 이 키를 두지 않는다. main에서는 cd-release의 digest 갱신 PR(#858)이 바꾸고 develop은 건드리지 않는다(아래 "Argo CD 배포") |
 | `platform-data.json` | platform / platform-data | `../../charts/platform-data` |
 | `external-secrets.json` | external-secrets / external-secrets | external-secrets/external-secrets 2.14.0 |
 | `aws-load-balancer-controller.json` | kube-system / aws-load-balancer-controller | eks/aws-load-balancer-controller 1.14.1 |
@@ -32,9 +33,24 @@
 5. RDS 서비스별 DB·app/migrate 계정·권한과 migration을 먼저 준비한다. 이 values 적용은 DB 초기화·관리자 등록·동의 문서·FREE 상품·모델 활성화를 재현하지 않는다. DB 데이터 준비는 별도 작업이다. 계정·권한은 `demo_stack.py rds-bootstrap`, migration은 아래 3절을 따른다.
 6. [AWS 진입 구성](../../../aws/README.md)의 ALB와 CloudFront를 준비한다. Google OAuth 클라이언트에는 해당 CloudFront origin과 callback/reauth callback을 등록한다.
 
+## Argo CD 배포 (#857, 2026-11-20)
+
+운영 앱 6개는 [`argocd/prod/apps/applicationset.yaml`](../../argocd/prod/apps/applicationset.yaml)이 Application `prod-<앱>`(project `sagomungchi-prod`, `targetRevision: main`, root app sync-wave `"10"`)으로 만든다. 값은 `<앱>.json` + `images/<앱>.json` 순서로 넘긴다. 자동 동기화(`prune`·`selfHeal` 켬)이고 retry는 두지 않는다. 같은 커밋에서 실패한 자동 동기화는 다시 시도되지 않으므로 실패한 migration이 저절로 반복되지 않는다.
+
+- **digest 파일 분리 까닭**: develop → main 릴리스 병합 때 develop이 `images/`를 건드리지 않으면 main의 digest가 그대로 남는다(3-way merge). digest가 설정 파일에 섞여 있으면 develop의 옛 digest가 main을 덮어 옛 이미지가 배포될 수 있다.
+- **migration**: core·learning·report-api는 설정 파일에 `migration.enabled: true`와 env·자원·`rds-ca` 볼륨·`networkPolicy.migrationEgress`가 있다(전에는 `migrations/` 덮어쓰기 파일). Argo CD는 PreSync 훅으로 NetworkPolicy `<앱>-migration`(wave -2) → Job `<앱>-migrate-<revision>`(wave -1)을 앱보다 먼저 돌린다. Job은 성공 뒤 남고(`HookFailed`만 삭제) 이름이 revision마다 하나라, `migration.revision`이 바뀔 때만 다시 돈다. revision은 새 migration이 있을 때만 바꾼다(cd-release의 `main-<SHA 12자리>` 규칙, #858). 실패하면 동기화가 멈추고 앱은 바뀌지 않는다. DB는 되돌리지 않는다.
+- **순서**: 앱 NetworkPolicy·ExternalSecret·`app` namespace는 플랫폼 Application(#856, wave 10보다 앞)이 먼저 만든다. scoring이 모델 경로 문제로 Ready가 안 돼도 앱마다 Application이 따로라 다른 앱 동기화는 막히지 않는다(그 Application만 Degraded).
+- **`rds-bootstrap`**: RDS master secret을 쓰므로 훅으로 옮기지 않고 손으로 migration 앞뒤에 실행한다(B 런북 8·10단계).
+- **비상용 Helm 경로**: 아래 `redeploy-app.ps1`·cd-release deploy job은 12/7 시연까지 남긴다. 쓰기 전에 해당 Application의 자동 동기화를 끈다(`argocd app set prod-<앱> --sync-policy none`, 끝나면 되돌림). 그렇지 않으면 selfHeal이 Helm 적용을 main 값으로 되돌린다.
+
+```powershell
+kubectl --kubeconfig $kubeconfig -n argocd get applications
+kubectl --kubeconfig $kubeconfig -n app get jobs   # <앱>-migrate-<revision> 3개 Complete
+```
+
 ## 렌더링과 기존 클러스터 적용
 
-`redeploy-app.ps1`은 앱 release 한 개의 재배포 진입점이다. AWS 계정·실제 EKS endpoint·고정 digest·기존 release 상태를 확인하고 기본 실행은 server dry-run만 수행한다. release가 없으면 멈추며, `-AllowInstall`을 줄 때만 처음 설치한다(미리보기 `helm install --dry-run=server`, 적용 `helm upgrade --install`, 2026-11-18 #760). `-Apply`를 지정할 때만 ESO Ready 확인 후 배포한다. 새 클러스터·DB 초기화·Secret 생성·웹 빌드·Ingress 생성은 수행하지 않는다. 현재 노드의 Pod 슬롯과 메모리 여유가 작으므로 preview 성공을 실제 rollout 성공으로 해석하지 않는다. 적용 전에 기존 Pod와 비교할 계획을 검토한다.
+`redeploy-app.ps1`은 앱 release 한 개의 비상용 재배포 진입점이다(Argo CD 전환 뒤, 위 절). 값은 Argo CD와 같은 `<앱>.json` + `images/<앱>.json`이고, 앱 release에는 `migration.enabled=false`를 덧붙여 Job을 넣지 않는다(Helm은 PreSync 훅을 일반 리소스로 만든다). AWS 계정·실제 EKS endpoint·고정 digest·기존 release 상태를 확인하고 기본 실행은 server dry-run만 수행한다. release가 없으면 멈추며, `-AllowInstall`을 줄 때만 처음 설치한다(미리보기 `helm install --dry-run=server`, 적용 `helm upgrade --install`, 2026-11-18 #760). `-Apply`를 지정할 때만 ESO Ready 확인 후 배포한다. 새 클러스터·DB 초기화·Secret 생성·웹 빌드·Ingress 생성은 수행하지 않는다. 현재 노드의 Pod 슬롯과 메모리 여유가 작으므로 preview 성공을 실제 rollout 성공으로 해석하지 않는다. 적용 전에 기존 Pod와 비교할 계획을 검토한다.
 
 승인 절차를 거친 배포·롤백은 [#186 운영 배포](../../../cd/README.md)의 `cd-release` workflow가 이 스크립트를 `-ImageDigest`(저장소 values는 그대로 두고 digest만 바꾼 임시 사본)로 호출한다. 배포는 앱보다 먼저 `-Migration`으로 아래 3절의 migration Job을 같은 main SHA 이미지로 실행하고 완료를 확인한다(2026-11-17).
 
@@ -48,10 +64,11 @@ pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service cor
 ```powershell
 $kubeconfig = '<AWS kubeconfig 절대 경로>'
 $envDir = 'infrastructure/gitops/environments/prod'
-helm lint infrastructure/gitops/charts/app-service -f "$envDir/core-service.json"
-helm template core-service infrastructure/gitops/charts/app-service -n app -f "$envDir/core-service.json"
-# 렌더링 결과·이미지·환경 참조를 검토한 뒤 필요한 release만 적용한다.
-helm upgrade --install core-service infrastructure/gitops/charts/app-service -n app --kubeconfig $kubeconfig -f "$envDir/core-service.json" --wait --timeout 10m
+$values = @('-f', "$envDir/core-service.json", '-f', "$envDir/images/core-service.json")
+helm lint infrastructure/gitops/charts/app-service @values
+helm template core-service infrastructure/gitops/charts/app-service -n app @values   # Argo CD가 그리는 것과 같음(migration 훅 포함)
+# 렌더링 결과·이미지·환경 참조를 검토한 뒤 필요한 release만 적용한다(비상용. Job은 아래 3절로 먼저).
+helm upgrade --install core-service infrastructure/gitops/charts/app-service -n app --kubeconfig $kubeconfig @values --set migration.enabled=false --wait --timeout 10m
 ```
 
 다른 앱도 같은 방식으로 release와 파일명을 일치시킨다. platform은 `platform-data` chart와 namespace `platform`을 사용한다. 무조건 전체 재배포하지 않는다. Helm 밖에서 생성한 ServiceAccount가 있으면 소유권을 먼저 확인하고, 기존 객체를 삭제하거나 강제로 소유권을 이전하지 않는다.
@@ -172,18 +189,18 @@ helm upgrade --install platform-data infrastructure/gitops/charts/platform-data 
 
 core/learning migration 이미지는 [core.Dockerfile](../../migrations/core.Dockerfile)·[learning.Dockerfile](../../migrations/learning.Dockerfile)로 같은 소스 revision에서 빌드한다. 현재 develop의 migration을 과거 배포 digest와 임의 조합하지 않는다. Flyway validate/migrate와 report Alembic upgrade head는 각 DB migration 계정·TLS로 별도 Job에서 실행하고 성공 이력을 확인한 후 앱을 올린다.
 
-prod 앱 values는 `migration.enabled=false`를 유지한다(실제 release와 일치). migration 입력은 [`migrations/`](migrations/)의 덮어쓰기 values이며, 공통 chart의 `migration.extraVolumes`·`extraVolumeMounts`로 `rds-ca`를 마운트하고 migrate Secret·고정 digest를 사용한다. Argo PreSync는 수동 Helm에서 선행을 보장하지 않으므로 Job과 그 NetworkPolicy(`<앱>-migration`, DNS·RDS 5432 egress, `migrations/`의 `networkPolicy.migrationEgress`)만 렌더링해 먼저 적용한다. app 기본 거부(#657) 아래에서는 정책 없이 Job만 적용하면 DNS부터 막힌다.
+2026-11-20(#857)부터 migration 값은 core·learning·report-api 설정 파일에 들어 있고(`migration.enabled: true`, 전에는 `migrations/` 덮어쓰기 파일), 이미지·revision은 `images/<앱>.json`에 있다. 공통 chart의 `migration.extraVolumes`·`extraVolumeMounts`로 `rds-ca`를 마운트하고 migrate Secret·고정 digest를 사용한다. Argo CD에서는 PreSync 훅으로 돈다(위 "Argo CD 배포"). 비상용 Helm 경로에서는 PreSync가 선행을 보장하지 않으므로 Job과 그 NetworkPolicy(`<앱>-migration`, DNS·RDS 5432 egress, `networkPolicy.migrationEgress`)만 렌더링해 먼저 적용한다. app 기본 거부(#657) 아래에서는 정책 없이 Job만 적용하면 DNS부터 막힌다.
 
 ```powershell
-helm template core-service infrastructure/gitops/charts/app-service -n app -f "$envDir/core-service.json" -f "$envDir/migrations/core-service.json" --show-only templates/migration-job.yaml --show-only templates/migration-networkpolicy.yaml | kubectl --kubeconfig $kubeconfig apply -f -
-kubectl --kubeconfig $kubeconfig -n app wait --for=condition=complete job/core-service-migrate-b67d8a462b6b --timeout=600s
+helm template core-service infrastructure/gitops/charts/app-service -n app -f "$envDir/core-service.json" -f "$envDir/images/core-service.json" --show-only templates/migration-job.yaml --show-only templates/migration-networkpolicy.yaml | kubectl --kubeconfig $kubeconfig apply -f -
+kubectl --kubeconfig $kubeconfig -n app wait --for=condition=complete job/core-service-migrate-<images/core-service.json의 migration.revision> --timeout=600s
 ```
 
 learning-service·report-api도 같은 방식이다. `redeploy-app.ps1 -Service <release> -Migration`이 이 렌더링(NetworkPolicy 먼저)·적용·완료 대기를 한 번에 하며 cd-release도 이것을 쓴다. **core-migrate 고정 digest는 V23까지만 포함한다.** 현재 RDS의 V24·V25는 기존 Job이 별도 ConfigMap SQL로 적용했다. 빈 DB 재현에는 배포할 core 이미지와 같은 소스로 core-migrate를 다시 빌드해 digest와 `revision`을 바꿔야 한다(core 이미지의 미커밋 이용권 수정과 같은 소스 재현성 문제). 빈 DB에 앱부터 설치하지 않는다.
 
 ### 4. 앱 → 초기 운영 데이터 → 외부 진입
 
-1. DB migration 성공 후 core, learning, report-api, scoring, ai, report-worker 순으로 설치 입력을 준비한다. cd-release 첫 배포(`currentRelease: "none"`)는 migration 완료 뒤 계획 순서대로 설치한다. core/learning/report-api를 먼저 기동하고, scoring/ai의 활성 설정 조회를 위한 core 운영 데이터를 준비한다. 서로 의존하는 서비스는 모두 배포한 뒤 readiness를 확인하며 초기 NotReady를 임의 성공 처리하지 않는다. prod JSON의 digest·Secret·CA·자원·NetworkPolicy를 사용한다.
+1. DB migration 성공 후 core, learning, report-api, scoring, ai, report-worker 순으로 설치 입력을 준비한다. Argo CD에서는 앱마다 Application이 migration(PreSync) → 앱 순으로 동기화하고 앱 사이 순서는 두지 않는다(서로 의존하는 서비스는 모두 뜬 뒤 readiness를 본다). 비상용 cd-release 첫 배포(`currentRelease: "none"`)는 migration 완료 뒤 계획 순서대로 설치한다. core/learning/report-api를 먼저 기동하고, scoring/ai의 활성 설정 조회를 위한 core 운영 데이터를 준비한다. 서로 의존하는 서비스는 모두 배포한 뒤 readiness를 확인하며 초기 NotReady를 임의 성공 처리하지 않는다. prod JSON의 digest·Secret·CA·자원·NetworkPolicy를 사용한다.
 2. 운영 데이터는 별도 승인된 절차로 준비한다: 관리자와 필요한 permission, 현행 동의 문서, 무료 상품과 PAYMENT_FREE_PRODUCT_ID, 시연 미션, 프롬프트·모델 버전 및 승인·활성화 상태. S3 모델 파일 존재·무결성과 활성 버전의 연결을 확인한다. 로컬/E2E seed 전체를 운영에 복사하지 않는다. 등록 성공과 사람의 승인·실제 모델 로딩 성공을 구분한다.
 3. Google 신규 가입의 데모 표시(`is_demo`)는 core `AUTH_NEW_ACCOUNT_DEMO`(prod `true`)로 정한다. 실사용 데이터를 섞지 않는다. mark-confirmed-demo-data.sql은 2026-11-03 특정 건수용이므로 일반 seed로 사용하지 않는다. 토스 키가 없으면 테스트 결제 완료로 표시하지 않는다.
 4. core-alb-network.json과 검토한 ALB Ingress를 적용한다. core-service.json의 ingress.enabled=false이므로 앱 설치만으로 ALB가 만들어지지 않는다. core-ingress.redacted.json의 치환 문자열은 절대 그대로 적용하지 않는다. origin 검증 헤더는 Git 밖에서 안전하게 주입하고 CloudFront와 일치시킨다.

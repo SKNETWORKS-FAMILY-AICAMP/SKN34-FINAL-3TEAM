@@ -17,7 +17,7 @@
 | 서비스 | 언어 | 책임 | 소유 저장소 |
 |---|---|---|---|
 | core-service | Spring Boot (Kotlin) | **유일한 공개 API**. 계정·인증·동의, 학부모-자녀 연결(권한 기준), 분석 대화 세션·이력, 주간·일일 리포트 작업·일정, 알림(SSE·인앱), 신고·문의·공지, 결제·구독(토스페이먼츠 테스트), 관리자 운영·모델 버전 레지스트리, LLM 사용량 집계 | core_db, Redis |
-| learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재), 교육과정 지식 저장소(판 적재·활성화, 성취기준·생각 유형 코드 조회용, #466; 벡터 검색·임베딩 없음), 기념 액자·추억 앨범·추억 검색(학생 기록 pgvector 검색·임베딩은 ai 호출, P27, 1.1.2) | learning_db (미션 장면 이미지는 웹 정적 파일과 함께 CloudFront→S3로 서빙, learning은 S3를 쓰지 않음) |
+| learning-service | Spring Boot (Kotlin) | 미션·기준표·예시 답·생각 열기 질문(버전 관리), 학습 시도·답변 버전·초안·도움 이용·돌아보기·자기 평가, 규칙 판정(고르기·수학 동치), 판정·되묻기 저장, 학습 기록 조회 API(대시보드·에이전트 도구·리포트 소재), 교육과정 지식 저장소(판 적재·활성화, 성취기준·생각 유형 코드 조회용, #466; 벡터 검색·임베딩 없음), 기념 액자·추억 앨범·추억 검색(학생 기록 pgvector 검색·임베딩은 ai 호출, P27, 1.1.2) | learning_db (미션 장면 이미지는 웹 정적 파일과 함께 CloudFront→S3로 서빙, learning은 S3에 쓰지 않고 테마 그림·영상의 presigned URL만 발급(#438, `_common/storage/AssetUrls`)) |
 | ai-service | FastAPI | 서술 근거 구절 추출(LLM) + 원문 대조 판정(코드), 되묻기 생성·정답/금지어 유출 검사, LangGraph 분석 에이전트, 리포트 서술·저녁 질문 생성, 리포트 설명 생성 요청·검사(SageMaker 설명 엔드포인트 호출, #477·#742), 미션 초안·주간 테마 초안 생성(#354·#437), 프롬프트 버전 | 없음 (상태 없음). 테마 초안 이미지·영상은 S3 `theme-drafts/`에 쓰고 키만 반환(#437) |
 | scoring-service | FastAPI | M2 항목 점수(klue/roberta, 국어 우선), M1 수학 풀이 점검(후순위, 활성 범위만) 추론, CPU 추론, 관리자 모델 파일 사전 검사(#368), Pod별 모델 로딩 상태 보고(#370) | 없음 (S3 가중치 읽기) |
 | report-service | FastAPI | 주간·일일 리포트 기간·포함 기록 확정, 수치·전후 변화 코드 계산, 숫자·인용 대조, 렌더링(HTML/PDF/Markdown)·저장 | report_db, S3 |
@@ -78,6 +78,7 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 
 - core→scoring 동기 HTTP는 관리자 모델 파일 사전 검사 중계 `POST /internal/models/preflight`(#368, 20초·재시도 없음)뿐이다. 판정 교차 확인(M2·M1)은 ai→scoring이다
 - `model.*`는 `model.version.activated`(core→ai·scoring)와 `model.loading.reported`(scoring→core, #370) 두 메시지다(1.4)
+- 그림에 없는 동기 HTTP: learning→core(피드백 안 결제 사용 예약·완료 `/internal/payment-usage/*`, 삭제 완료 보고 `/internal/deletion-requests/{id}/completions`, 추억 설명용 학생 프로필 `/internal/students/{id}/profile`), learning→scoring(답변 표현 분류, #688), core→report-api(리포트·파일·근거 조회, 정정 영향 조회, 작업 복구 `reconcile`). 서비스 간 허용 관계 전체는 4.3 NetworkPolicy 표
 
 ### 1.3 통신 원칙
 | 구간 | 방식 | 근거 |
@@ -86,6 +87,7 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 | 답변 표현 분류 (learning→scoring, #688) | 동기 HTTP, 장애 시 통과 | 답변 제출 안에서 학생이 기다림. 단어 목록 다음 단계라 모델이 없어도 제출은 막지 않음 |
 | 표현 분류 재학습 (CronJob `tox-retrain`→learning·core, #725) | 동기 HTTP, ops 토큰, 재시도 없음 | 주 1회 일괄 작업. 실패하면 다음 주기에 다시 하므로 재시도·서킷을 두지 않음(4.4) |
 | 피드백: 판정·되묻기 (Web→core→learning→ai→scoring) | 동기 HTTP + core에서 SSE 전달 | 학생 실시간 대기. 답변 저장과 분리된 별도 요청이라 AI 실패 시 저장 결과 보존, 같은 요청 재호출로 재시도 |
+| learning→core (결제 사용 예약·완료, 삭제 완료 보고, 학생 프로필) | 동기 HTTP, `app.internal.core-read-timeout` 4초, 재시도 없음 | 결제 사용은 core→learning 피드백 요청 안에서 learning이 core를 다시 부르는 동기 왕복이라 짧게 끊어 바깥 80초 예산을 지킴(아래 타임아웃 예산) |
 | 분석 대화 (Web→core→ai, 도구→learning) | 동기 HTTP + SSE 스트리밍 | 학부모 실시간 대기 |
 | 대시보드·리포트 조회 (Web→core→learning/report) | 동기 HTTP | 단순 조회 |
 | 추억 검색 (Web→core→learning→ai 임베딩, P27, 구현 #563·#566) | 동기 HTTP | 학생 실시간 대기, 임베딩 1회 |
@@ -288,7 +290,7 @@ AnswerController (Presentation)      요청 검증 → DTO 변환, Idempotency-K
     → Answer (Domain)                버전 번호 증가 규칙, 이전 버전 덮어쓰기 금지
     → AnswerRepository (Infra)       MyBatis → PostgreSQL
 FeedbackFacade (Application)         판정 상태 PENDING→RUNNING → 규칙 판정 또는 AiClient 호출(트랜잭션 밖)
-                                     → @Transactional: judgment·followup 저장, 상태 DONE/HELD/FAILED
+                                     → @Transactional: judgment·followup 저장, process_status DONE/FAILED (보류 result = HELD도 DONE, NFR-REL-04)
 ```
 
 ### 2.6 서비스 폴더 예시

@@ -14,7 +14,10 @@ on:
       - 'scripts/tests/test_cd_*.py'
       - 'infrastructure/cd/**'
       - 'infrastructure/gitops/environments/prod/redeploy-app.ps1'
-      - 'infrastructure/gitops/environments/prod/migrations/**'
+      - 'infrastructure/gitops/environments/prod/images/**'
+      - 'infrastructure/gitops/environments/prod/core-service.json'
+      - 'infrastructure/gitops/environments/prod/learning-service.json'
+      - 'infrastructure/gitops/environments/prod/report-api.json'
       - 'infrastructure/gitops/migrations/**'
       - 'infrastructure/aws/iam/github-cd-publish-role.*'
 

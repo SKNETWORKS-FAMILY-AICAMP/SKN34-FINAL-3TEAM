@@ -254,6 +254,14 @@ class AppReleaseTests(unittest.TestCase):
         self.assertIn("--dry-run=server", helm[0])
         self.assertEqual(saved["status"], "preview-upgrade")
 
+    def test_app_release_uses_both_value_files_without_migration_hooks(self):
+        # #857 설정 파일 + images 파일(Argo CD와 같은 조합). Helm은 PreSync 훅을 일반 리소스로 만들므로 앱 release에서 뺀다
+        run, helm, _ = self.run_script("core-service", "deployed:2", "-Apply")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("core-service.json", helm[0])
+        self.assertIn("-images-", helm[0])  # -ImageDigest로 바꾼 images 임시 사본
+        self.assertIn("--set migration.enabled=false", helm[0])
+
     def test_failed_release_is_not_overwritten(self):
         run, helm, _ = self.run_script("core-service", "failed:1", "-AllowInstall", "-Apply")
         self.assertNotEqual(run.returncode, 0)
