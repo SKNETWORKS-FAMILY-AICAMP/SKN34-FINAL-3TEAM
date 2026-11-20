@@ -115,3 +115,5 @@ feature/* → develop → main
 - `feature/*`는 `develop`으로만 병합
 - `main`은 `develop`에서만 병합
 - 순서를 건너뛴 병합(`feature/*` → `main`) 금지
+- 예외(2026-11-20, #858): `infrastructure/gitops/environments/prod/images/**`**만** 바꾸는 prod digest PR은 `main`에 직접 병합한다. cd-release가 만드는 `cd/prod-images-*` 브랜치 PR, 그 PR의 revert, 비상용 Helm 배포 뒤 값 맞춤 PR이 해당한다. 승인은 CODEOWNERS(김동섭·김태윤) 1명, 절차는 [CD README](../infrastructure/cd/README.md#digest-pr-배포-기본-858)
+  - `develop`은 images 파일을 고치지 않는다(#857이 처음 만든 뒤). 그래서 main에 digest 커밋이 쌓여도 `develop` → `main` 릴리스 병합과 충돌하지 않고, main의 배포 값이 유지된다. `develop`의 images 파일은 처음 값으로 남으며 Argo CD는 main만 읽는다

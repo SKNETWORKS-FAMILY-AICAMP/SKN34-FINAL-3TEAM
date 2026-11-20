@@ -194,7 +194,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 1. #760(계획 `currentRelease: "none"`, `redeploy-app.ps1 -AllowInstall`, scoring·report SA를 chart가 만듦)이 develop에 병합돼 있다. 없으면 11/17처럼 첫 배포가 `release: not found`로 멈춘다.
 2. 계정 번호 교체 PR(아래 "A 계정 값 교체")을 develop에 병합한다. cd-release는 main SHA만 배포하고 `redeploy-app.ps1`이 계정 번호를 확인하므로, 이 교체와 6a단계 값 교체가 main에 들어가야 B에 배포된다(develop → main 릴리스, #623 시연 고정 버전).
-3. GitHub 변수(손으로, A 종료 뒤): Repository `CD_AWS_ROLE_ARN`·`CD_ECR_REGISTRY`·`CD_AWS_REGION`, Environment `prod` `CD_BASE_URL`([CD README](../cd/README.md)). OIDC subject 설정은 저장소 단위라 바꾸지 않는다.
+3. GitHub 변수(손으로, A 종료 뒤): Repository `CD_AWS_ROLE_ARN`·`CD_ECR_REGISTRY`·`CD_AWS_REGION`, Environment `prod` `CD_BASE_URL`([CD README](../cd/README.md)). OIDC subject 설정은 저장소 단위라 바꾸지 않는다. Argo CD(#858) 방식이면 `CD_BASE_URL`은 비상용 Helm 경로만 쓰고, 경로 확인은 작업자 PC에서 B 도메인을 직접 준다. digest PR 저장소 설정(Actions PR 생성 허용·main 보호·CODEOWNERS, [CD README B2](../cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정))은 11/24에 이미 적용돼 있어야 하며 계정과 무관해 다시 하지 않는다. main의 `images/<release>.json` 저장소 주소는 A 레지스트리로 남아 있으므로 B 첫 digest PR은 서비스 5개 전부와 `allowRepositoryChange=true`로 실행한다(16단계).
 
 ### 순서
 
@@ -218,7 +218,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 | 13★ | SageMaker | [위 절](#리포트-gemma-sagemaker-엔드포인트-746-2026-11-18)의 새 계정 순서: SG `sagomungchi-demo-sagemaker-explanation-sg`(ingress 없음, egress 443) → `sagemaker_explanation.py --profile <B> verify` → `apply --confirm-account <B 계정>` → `schedule` → 확인 뒤 `copies 0`. `manifest.json`은 2단계에서 같은 sha256으로 복사했으므로 `manifest --upload`는 하지 않는다(같은 키면 `PreconditionFailed`). #777 검사 이미지는 미정: 쓰기로 하면 ECR 저장소 추가·이미지 게시 뒤 apply, 아니면 지금처럼 AWS DLC | 엔드포인트 InService, ai Pod에서 호출 200(infra 9.13.9), IC 0대로 내림 | 40분(IC 9분 + 인스턴스) | 같음 |
 | 14 | 운영 데이터 | 스냅샷에 관리자·동의 문서·FREE 상품·모델 버전·성취기준 표·시연 학부모가 있다. 관리자 로그인, 모델 활성 상태·로딩(관리자 화면), 테마 그림 URL(learning presigned, B 버킷), 리포트 다운로드 | 모두 B 버킷에서 열림 | 20분 | 같음 |
 | 15 | fixture·테마 | B 도메인에서 fixture 학부모 Google 로그인(refresh 쿠키 7일)·학생 기기 등록(`student_device`, 도메인별)으로 fixture 파일 갱신. 시연 주차 테마 초안 생성 → 채택 → 미션 검토·게시(11/17 A에서 READY까지 14분). 11/30~12/8은 두 주라 주마다 | 학생 로그인이 `CHILD_NOT_LINKED`가 아님, 학생 주간 테마에 시연 주차 문제 | 1시간 | 같음 |
-| 16 | 확인 | 같은 계획을 다시 승인받아 실행(migration `already-complete`, 앱 `upgrade`) 또는 `python scripts/verify_cd_deployment.py --base-url <B 도메인> --fixture <파일> --output <파일>` → 리포트 설명(SageMaker 창 안에서만) → #624 시연 데이터·#668 M2 입력은 각 절차대로 | 6단계 통과, 결과를 #783에 기록 | 30분 | 동기화 상태 Healthy를 함께 본다 |
+| 16 | 확인 | 같은 계획을 다시 승인받아 실행(migration `already-complete`, 앱 `upgrade`) 또는 `python scripts/verify_cd_deployment.py --base-url <B 도메인> --fixture <파일> --output <파일>` → 리포트 설명(SageMaker 창 안에서만) → #624 시연 데이터·#668 M2 입력은 각 절차대로 | 6단계 통과, 결과를 #783에 기록 | 30분 | 동기화 상태 Healthy를 함께 본다. 배포는 cd-release `delivery=pull-request`(B 첫 실행은 서비스 5개·`allowRepositoryChange=true`) → digest PR 승인·병합 → Synced/Healthy → `verify_cd_deployment.py` 결과를 PR 댓글로 → (시연 일정에 지장 없는 시점에) digest PR revert 복구 1회와 재배포([CD README](../cd/README.md#digest-pr-배포-기본-858)). 막히면 비상용 Helm(`delivery=helm-emergency`, 자동 동기화 끄고) |
 
 0~16은 합쳐 약 8~10시간이다. 11/26에 0~8(6a PR 포함), 11/27~28에 9~16을 하면 #783 일정과 맞는다.
 

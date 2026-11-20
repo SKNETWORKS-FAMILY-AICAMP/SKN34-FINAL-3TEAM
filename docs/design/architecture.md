@@ -759,7 +759,7 @@ backend/report-service/
 | 상태 저장소 | 컨테이너 | `platform-data` Helm chart (StatefulSet) | RDS PostgreSQL, S3 / RabbitMQ·Redis는 StatefulSet + EBS gp3 |
 | PostgreSQL 이미지 | `pgvector/pgvector:0.8.7-pg17-trixie` | 같은 이미지 | RDS PostgreSQL 17 (`vector` 확장 허용 확인 필요) |
 | 이미지 | 로컬 빌드 | GHCR | ECR |
-| 배포 | `docker compose up` | Argo CD (local env) | 현재 데모: 수동 Helm / 목표: Argo CD (prod env) |
+| 배포 | `docker compose up` | Argo CD (local env) | Argo CD (prod env, main 자동 동기화). 이미지는 cd-release의 digest PR 승인·병합으로 바꿈(#858, B 첫 배포 11/28부터, A 11/25 선행 확인). 비상용 수동 Helm은 12/7까지 유지 |
 | Ingress | - | ingress-nginx | AWS LB Controller (ALB) |
 | CNI (NetworkPolicy) | - | Calico (기본 CNI 정책 지원 버전별 상이) | VPC CNI `enableNetworkPolicy: "true"` |
 | 외부 연동 | stub (LLM·토스·Google OAuth, E2E 오버레이) | stub 또는 테스트 키 | LLM API, 토스페이먼츠 테스트 키 |
@@ -878,9 +878,10 @@ backend/report-service/
 
 ### 4.5 CI/CD
 - GitHub Actions CI: 경로 필터로 변경 서비스만 테스트·빌드. 운영 이미지 ECR 게시(OIDC로 AWS 인증)는 아래 `cd-release.yml`이 한다
-- `infrastructure/gitops/environments/<env>/` 이미지 태그 갱신 커밋 → Argo CD 자동 동기화
-- #171로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의. 이미지 게시·승인 흐름은 #186 범위다
-- #186 운영 배포: `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 이미지 ECR 게시(GitHub OIDC) → GitHub Environment `prod` 승인(김동섭·김태윤) → 작업자 PC self-hosted runner에서 Helm 적용(`redeploy-app.ps1 -ImageDigest`) → 로그인·학습 제출·리포트 조회 확인 → 배포 이력 artifact 순으로 진행한다. prod는 Argo CD 없이 수동 Helm이다(#185). 자동 롤백은 없고 롤백도 같은 승인을 거친다. 운영 설정(AWS OIDC 역할·`prod` Environment·runner) 적용 후 실행 스위치를 켰다(2026-11-04). [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/infra.md#7-cd-배포-승인이력롤백-186)
+- `infrastructure/gitops/environments/<env>/` 이미지 값 갱신 커밋 → Argo CD 자동 동기화. prod 이미지 값은 `environments/prod/images/<release>.json`(#857)에만 두고, 그 파일만 바꾸는 digest PR이 main에 병합되면 동기화된다
+- #171로 local 앱·KEDA·NetworkPolicy·관측 Application 등록 정의. 이미지 게시·승인 흐름은 #186·#858 범위다
+- 운영 배포(2026-11-20 결정, 에픽 #859·#858): `cd-release.yml`(main에서 수동 실행)이 계획 검증 → main SHA 앱·migration 이미지 ECR 게시(GitHub OIDC) → main 대상 digest PR 생성(`images/**`만 수정, `GITHUB_TOKEN`, 만든 뒤 PR 브랜치에 `ci-gitops` `workflow_dispatch`) 순으로 진행한다. **PR 승인·병합이 배포 승인**이다(main 보호 규칙 필수 리뷰 1명, CODEOWNERS 김동섭·김태윤). 병합되면 Argo CD가 main을 자동 동기화하고 migration은 PreSync Job으로 앱보다 먼저 돈다. 배포 후 경로 확인(로그인·학습 제출·리포트 조회)은 작업자 PC에서 실행해 PR 댓글로 남긴다. 이력은 digest PR과 Argo CD sync 이력, 되돌리기는 digest PR revert(같은 승인 규칙, Argo CD UI rollback 미사용, DB는 되돌리지 않음). 브랜치 규칙 예외는 [docs/README](../README.md#병합-흐름)
+- 비상용(12/7 시연까지): 같은 workflow의 `delivery: helm-emergency`가 예전 #186 흐름(GitHub Environment `prod` 승인 → 작업자 PC self-hosted runner에서 migration Job·Helm 적용 `redeploy-app.ps1 -ImageDigest` → 경로 확인 → 이력 artifact)을 그대로 실행한다. 쓸 때는 해당 Application 자동 동기화를 끄고, 적용 뒤 images 값을 PR로 맞춘 다음 다시 켠다. 자동 롤백은 없다. [설정·절차](../../infrastructure/cd/README.md), [결정 근거](../report/infra.md#7-cd-배포-승인이력롤백-186)·[9.18.4](../report/infra.md#9184-cd-release-digest-pr-전환-858-2026-11-20)
 - Secret: 운영 AWS Secrets Manager + External Secrets Operator / 로컬 `.env` → K8s Secret (LLM·토스 키는 저장소에 미포함, NFR-SEC-04). DB는 서비스별 app·migrate 계정 Secret만 앱·migration-job에 주입하고 관리자 계정은 넣지 않음(#230)
   - RabbitMQ도 서비스별 계정(`core`·`learning`·`ai`·`scoring`·`report`, 이름 고정)만 앱에 주입하고 관리자 계정(`RABBITMQ_USER`)은 init·운영자 전용. 계정·권한은 `rabbitmq-init`(`import-definitions.sh`)이 관리 API로 생성
   - 권한: 앱은 큐·exchange를 선언하지 않으므로 configure 없음(ai·scoring만 Pod별 임시 큐: aio_pika robust 채널이 붙이는 `amq_<uuid hex>` 또는 서버 생성 `amq.gen-*`). write는 자기 발행 exchange·재시도 exchange, read는 자기 소비 큐, `events.topic` 토픽 권한으로 자기 발행 라우팅 키만 허용. core 계정은 큐 현황 조회용 `monitoring` 태그, KEDA는 report 계정 URL 사용

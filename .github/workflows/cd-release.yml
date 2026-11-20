@@ -1,9 +1,11 @@
-# #186 운영 배포·롤백: main 릴리스 SHA → 계획 검증 → (배포) ECR 앱·migration 이미지 게시 → prod 승인
-# → (배포) DB migration Job 완료 → Helm 적용 → 경로 확인 → 이력 기록.
-# EKS API는 작업자 공인 IP로만 열려 있어 적용 단계는 그 PC의 전용 self-hosted runner(cd-prod)에서 실행한다.
+# #186 운영 배포·롤백, #858 digest PR 전환(2026-11-20).
+# 기본(pull-request): main 릴리스 SHA → 계획 검증 → ECR 앱·migration 이미지 게시
+# → main 대상 digest 갱신 PR 생성(environments/prod/images/**만 수정). PR 승인·병합이 배포 승인이고
+# 병합되면 Argo CD가 자동 동기화한다(migration은 PreSync Job). 되돌리기는 그 PR의 revert다.
+# 비상용(helm-emergency, 12/7 시연까지 유지): 예전 흐름 그대로 prod 승인 → 작업자 PC self-hosted runner(cd-prod)
+# 에서 migration Job 완료 → Helm 적용 → 경로 확인 → 이력 기록. 쓰기 전에 해당 Argo CD Application 자동 동기화를 끈다.
 # 실패해도 자동 롤백하지 않는다. migration 실패면 앱을 적용하지 않고, DB는 되돌리지 않는다.
-# 복구는 rollback 계획(앱 이미지만, migration 없음)으로 다시 승인받는다.
-# 빈 클러스터 첫 배포(#760)는 계획 currentRelease를 "none"으로 둔다. 그때만 release가 없는 앱을 설치한다.
+# 빈 클러스터 첫 배포(#760)의 계획 currentRelease "none"은 비상용 Helm 경로에서만 의미가 있다.
 name: cd-release
 
 on:
@@ -13,6 +15,19 @@ on:
         description: "배포 계획 JSON 본문 (infrastructure/cd/release.example.json 형식, 한 줄)"
         required: true
         type: string
+      delivery:
+        description: "배포 방식: pull-request(digest PR, 기본) / helm-emergency(비상용 Helm, prod 승인 후 작업자 PC)"
+        required: true
+        default: pull-request
+        type: choice
+        options:
+          - pull-request
+          - helm-emergency
+      allowRepositoryChange:
+        description: "digest PR에서 images 파일 저장소 주소도 바꿈(계정 전환 첫 배포만, 서비스 5개 전부)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -27,6 +42,7 @@ jobs:
     outputs:
       operation: ${{ steps.plan.outputs.operation }}
       services: ${{ steps.plan.outputs.services }}
+      delivery: ${{ inputs.delivery }}
     steps:
       - name: main에서만 실행
         if: github.ref != 'refs/heads/main'
@@ -42,12 +58,16 @@ jobs:
       - name: 계획 검증 (이미지 빌드 전)
         env:
           PLAN_JSON: ${{ inputs.plan }}
+          DELIVERY: ${{ inputs.delivery }}
         run: |
           # 계획은 커밋하지 않고 실행 입력으로 받는다(계획 안의 SHA가 자기 커밋을 가리키는 순환 방지)
           printf '%s' "$PLAN_JSON" > "$RUNNER_TEMP/plan.json"
+          # digest PR은 deploy만 받고, images 파일(#857) 구조가 맞는지 이미지 빌드 전에 본다
+          check=()
+          if [ "$DELIVERY" = "pull-request" ]; then check=(--check-images); fi
           python scripts/cd_release.py --plan "$RUNNER_TEMP/plan.json" --policy infrastructure/cd/policy.json \
             --output "$RUNNER_TEMP/plan-record.json" --expect-commit "$GITHUB_SHA" \
-            --require-ancestor-of origin/main --pending-images
+            --require-ancestor-of origin/main --pending-images "${check[@]}"
       - name: 이미지 빌드 전에 다른 차단 사유가 없어야 함 (실행 스위치·근거·승인자)
         run: |
           python - <<'EOF'
@@ -124,9 +144,97 @@ jobs:
           echo "images=$images" >> "$GITHUB_OUTPUT"
           echo "migrations=$migrations" >> "$GITHUB_OUTPUT"
 
+  digest-pr:
+    needs: [validate, publish]
+    if: needs.validate.outputs.delivery == 'pull-request' && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    # 승인은 이 job이 아니라 만든 PR에서 받는다(main 보호 규칙·CODEOWNERS, infrastructure/cd/README.md)
+    permissions:
+      contents: write        # PR 브랜치 push
+      pull-requests: write   # PR 생성
+      actions: write         # 만든 PR 브랜치에 ci-gitops 실행(GITHUB_TOKEN push는 다른 workflow를 깨우지 않음)
+    env:
+      PLAN_JSON: ${{ inputs.plan }}
+      IMAGES: ${{ needs.publish.outputs.images }}
+      MIGRATIONS: ${{ needs.publish.outputs.migrations }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # images 파일은 지금 main HEAD 기준으로 고친다(다른 digest PR이 먼저 병합됐을 수 있음)
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: 최종 게이트와 images 파일 갱신
+        id: gate
+        env:
+          ALLOW_REPOSITORY_CHANGE: ${{ inputs.allowRepositoryChange }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/cd"
+          mkdir -p "$work"
+          printf '%s' "$PLAN_JSON" > "$work/plan.json"
+          printf '%s' "$IMAGES" > "$work/images.json"
+          printf '%s' "$MIGRATIONS" > "$work/migration-images.json"
+          base=$(git rev-parse HEAD)
+          move=()
+          if [ "$ALLOW_REPOSITORY_CHANGE" = "true" ]; then move=(--allow-repository-change); fi
+          python scripts/cd_release.py --plan "$work/plan.json" --policy infrastructure/cd/policy.json \
+            --output "$work/plan-record.json" --expect-commit "$GITHUB_SHA" --require-ancestor-of origin/main \
+            --images "$work/images.json" --migrations "$work/migration-images.json" \
+            --require-executable --write-images --pr-body "$work/pr-body.md" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --base-sha "$base" "${move[@]}"
+          # images/** 밖이 바뀌었으면 PR을 만들지 않는다(브랜치 규칙 예외는 이 경로만)
+          images_dir=$(jq -r '.delivery.imagesDir' infrastructure/cd/policy.json)
+          outside=$(git status --porcelain --untracked-files=all | cut -c4- | grep -v "^$images_dir/" || true)
+          if [ -n "$outside" ]; then
+            echo "images 밖 파일이 바뀌었습니다: $outside" >&2
+            exit 1
+          fi
+          echo "work=$work" >> "$GITHUB_OUTPUT"
+          echo "images_dir=$images_dir" >> "$GITHUB_OUTPUT"
+      - name: digest PR 생성
+        id: pr
+        env:
+          WORK: ${{ steps.gate.outputs.work }}
+          IMAGES_DIR: ${{ steps.gate.outputs.images_dir }}
+        run: |
+          set -euo pipefail
+          tag="main-${GITHUB_SHA::12}"
+          branch="cd/prod-images-$tag-$GITHUB_RUN_ID"
+          releases=$(jq -r '[.imageFileChanges[].release] | join(", ")' "$WORK/plan-record.json")
+          title="chore: prod 이미지 digest $tag ($releases)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -A -- "$IMAGES_DIR"
+          git commit -m "$title"
+          git push origin "$branch"
+          url=$(gh pr create --base main --head "$branch" --title "$title" --body-file "$WORK/pr-body.md")
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "- digest PR: $url" >> "$GITHUB_STEP_SUMMARY"
+      - name: PR 브랜치에 ci-gitops 실행
+        # GITHUB_TOKEN으로 만든 push·PR은 다른 workflow를 시작하지 않는다. workflow_dispatch는 예외라
+        # 같은 커밋에 ci-gitops(prod 렌더링·kubeconform) 결과가 붙는다. 실패해도 PR은 남기고 승인자가 결과를 본다
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          gh workflow run ci-gitops.yml --ref "$BRANCH"
+          echo "- ci-gitops: $BRANCH 에서 실행 요청(Actions 목록에서 확인)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cd-digest-pr-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/cd/plan.json
+            ${{ runner.temp }}/cd/plan-record.json
+            ${{ runner.temp }}/cd/pr-body.md
+          retention-days: 90
+          if-no-files-found: warn
+
   deploy:
     needs: [validate, publish]
-    if: always() && needs.validate.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    # 비상용(helm-emergency)만. 12/7 시연까지 유지하고 그 뒤 정리한다(#858)
+    if: always() && needs.validate.result == 'success' && needs.validate.outputs.delivery == 'helm-emergency' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: [self-hosted, cd-prod]
     # Required reviewers(김동섭·김태윤) 중 한 명이 승인하기 전에는 이 job이 시작되지 않는다(GitHub는 목록 중 1명 승인)
     environment: prod
