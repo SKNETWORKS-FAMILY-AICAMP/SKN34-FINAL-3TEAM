@@ -151,7 +151,10 @@ FRAMES: dict[str, Frame] = {
         ),
         Frame(
             "REVEAL",
-            f"{CLOSE_SHOT} The revealed answer is in the same picture and the people look at it.",
+            # 드러나는 것이 사람(어느 길: 나른 사람, 시간 탐정: 그 일을 한 사람)인 종류도 있어
+            # "대상을 봄"만으로 쓰지 않음(재검토 2026-11-20)
+            f"{CLOSE_SHOT} What this cut reveals (the found target or answer, or the person the "
+            "story beat names) is in the same picture, and the people turn toward it.",
             (
                 "The revealed answer is in the center between the people.",
                 "The revealed answer is at one side and the people turn toward it.",
@@ -177,9 +180,12 @@ FRAMES: dict[str, Frame] = {
         ),
         Frame(
             "JOY",
-            "The people face each other and celebrate together.",
+            # 예방(재검토 2026-11-20): "서로 마주 보고"만 쓰면 '함께 들여다봄'(보물 쪽지·작은 생물)
+            # 컷에서 무엇을 우선할지 흐려질 수 있어 하는 일은 할 일 글대로
+            "The people are together close to each other, sharing the moment as the story beat "
+            "says (celebrating, or looking at something together).",
             (
-                "Two people stand on one side and the others on the other side, facing each other.",
+                "Two people are on one side and the others on the other side.",
                 "The people stand close together in a small circle.",
             ),
             "side",

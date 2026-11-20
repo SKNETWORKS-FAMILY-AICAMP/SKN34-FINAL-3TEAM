@@ -287,6 +287,14 @@ def test_review_cores_say_what_is_visible_and_plan_has_no_air_gesture_example() 
     assert all(prompts.FRAMES[k].faces == "back" for k in gaze)
     assert not any("나란히" in f.core or "한 줄" in f.core for f in prompts.FRAMES.values())
     assert "몸과 얼굴이 향한 쪽으로 판정" in prompts.IMAGE_REVIEW_SYSTEM
+    # 장면 맞음(SCENE_FIT, 떨어지면 영상이 빠지는 항목)은 시선을 FAIL로 보지 않음 — 방향은 FRAME만
+    assert "인물이 바라보는 쪽" not in prompts.IMAGE_REVIEW_SYSTEM
+    assert "인물이 향한 방향의 차이는 WARN" in prompts.IMAGE_REVIEW_SYSTEM
+    # 공개·마무리 틀의 그림 지시도 종류 역할(나른 사람에게 인사·함께 들여다봄)과 부딪히지 않게
+    assert "face each other" not in prompts.FRAMES["JOY"].image + " ".join(
+        prompts.FRAMES["JOY"].variants
+    )
+    assert "the person the story beat names" in prompts.FRAMES["REVEAL"].image
     # 사건 클로즈업: 틀 글이 얼굴 규칙·컷 표 표정(눈·입)과 같게 인물 어깨 위
     assert "from the shoulders up" in prompts.FRAMES["OBJECT_CLOSE"].image
     assert "only a person's shoulder" not in prompts.FRAMES["OBJECT_CLOSE"].image
