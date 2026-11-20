@@ -1,0 +1,36 @@
+# wave 0: namespace 4개와 gp3 StorageClass. 다른 플랫폼·앱 Application보다 먼저(#856).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prod-cluster-base
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: sagomungchi-prod
+  sources:
+    - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+      targetRevision: main
+      path: infrastructure/gitops/environments/prod
+      directory:
+        include: 'namespaces.json'
+    - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+      targetRevision: main
+      path: infrastructure/eks
+      directory:
+        include: 'gp3.json'
+  destination:
+    server: https://kubernetes.default.svc
+    # 클러스터 범위 자원뿐이지만 AppProject가 namespace 없는 destination을 거부하므로 허용 목록의 값을 둔다
+    namespace: kube-system
+  # 플랫폼은 prune 끔(상태 저장 자원·CRD·NodePool 보호), selfHeal 켬. finalizer가 없어 Application을 지워도 자원은 남는다.
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
