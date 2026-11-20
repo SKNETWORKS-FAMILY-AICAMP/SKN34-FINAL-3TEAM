@@ -1,0 +1,721 @@
+{
+ "dataset": "memory@2",
+ "label": "pc-1121",
+ "collectedAt": "2026-11-21T02:29:46+09:00",
+ "environment": "PC compose(E2E), 벡터만, 기준일 2026-11-18",
+ "today": "2026-11-18",
+ "docStatus": {
+  "READY": 780
+ },
+ "minCheckers": 1,
+ "queriesUsed": 120,
+ "droppedUnchecked": 0,
+ "droppedCurrentMissing": 0,
+ "chosenThreshold": 0.35,
+ "tuneSweep": [],
+ "asServed": false,
+ "tune": {},
+ "eval": {
+  "V@0.35": {
+   "threshold": 0.35,
+   "nResults": 82,
+   "nReject": 38,
+   "recall@3": 0.366,
+   "recall@3_ci": [
+    0.27,
+    0.474
+   ],
+   "hit@1": 0.28,
+   "mrr@3": 0.321,
+   "recall@k": {
+    "1": 0.28,
+    "2": 0.354,
+    "3": 0.366
+   },
+   "reject": 0.658,
+   "reject_ci": [
+    0.499,
+    0.788
+   ],
+   "byCategory": {
+    "PERIOD_EMPTY": {
+     "n": 24,
+     "rejected": 0.667
+    },
+    "PERIOD_ONLY": {
+     "n": 36,
+     "recall": 0.0,
+     "rejected": 1.0
+    },
+    "PERIOD_TOPIC": {
+     "n": 60,
+     "recall": 0.6,
+     "rejected": 0.5
+    }
+   }
+  },
+  "K1": {
+   "threshold": null,
+   "nResults": 82,
+   "nReject": 38,
+   "recall@3": 0.0,
+   "recall@3_ci": [
+    0.0,
+    0.045
+   ],
+   "hit@1": 0.0,
+   "mrr@3": 0.0,
+   "recall@k": {
+    "1": 0.0,
+    "2": 0.0,
+    "3": 0.0
+   },
+   "reject": 1.0,
+   "reject_ci": [
+    0.908,
+    1.0
+   ],
+   "byCategory": {
+    "PERIOD_EMPTY": {
+     "n": 24,
+     "rejected": 1.0
+    },
+    "PERIOD_ONLY": {
+     "n": 36,
+     "recall": 0.0,
+     "rejected": 1.0
+    },
+    "PERIOD_TOPIC": {
+     "n": 60,
+     "recall": 0.0,
+     "rejected": 1.0
+    }
+   }
+  },
+  "K2": {
+   "threshold": null,
+   "nResults": 82,
+   "nReject": 38,
+   "recall@3": 0.695,
+   "recall@3_ci": [
+    0.589,
+    0.784
+   ],
+   "hit@1": 0.476,
+   "mrr@3": 0.579,
+   "recall@k": {
+    "1": 0.476,
+    "2": 0.561,
+    "3": 0.695
+   },
+   "reject": 0.421,
+   "reject_ci": [
+    0.279,
+    0.578
+   ],
+   "byCategory": {
+    "PERIOD_EMPTY": {
+     "n": 24,
+     "rejected": 0.417
+    },
+    "PERIOD_ONLY": {
+     "n": 36,
+     "recall": 0.25,
+     "rejected": 1.0
+    },
+    "PERIOD_TOPIC": {
+     "n": 60,
+     "recall": 0.98,
+     "rejected": 0.2
+    }
+   }
+  }
+ },
+ "deleted": {
+  "V": {}
+ },
+ "violations": {
+  "V": [],
+  "K1": [],
+  "K2": []
+ },
+ "latencyMs": {
+  "n": 360,
+  "p50": 198.4,
+  "p95": 235.5,
+  "max": 1031.6,
+  "repeats": 3,
+  "note": "learning 내부 API 순차 호출, 질문 임베딩 포함, core·브라우저 제외"
+ },
+ "criteria": {
+  "recall@3 ≥ 0.80": false,
+  "V − max(K1,K2) ≥ 0.10": false,
+  "reject ≥ 0.80": false,
+  "violations = 0": true,
+  "p95 ≤ 2000ms": true,
+  "explanation (human)": "별도 표시지로 판정"
+ },
+ "mixing": {
+  "V@0.35": {
+   "nQueries": 120,
+   "cards": 138,
+   "cardMixRate": 0.761,
+   "queryMixRate": 0.483,
+   "queryMixRate_ci": [
+    0.396,
+    0.572
+   ],
+   "boundaryCardRate": 0.007,
+   "mixedQueries": 58,
+   "mixedCards": 105,
+   "boundaryCards": 1,
+   "causes": {
+    "기간 미사용(벡터 유사·키워드 일치)": 105
+   },
+   "mixedByQuery": {
+    "p106": 1,
+    "p108": 2,
+    "p110": 1,
+    "p111": 2,
+    "p120": 1,
+    "p202": 1,
+    "p203": 2,
+    "p204": 1,
+    "p206": 2,
+    "p207": 1,
+    "p208": 2,
+    "p210": 2,
+    "p211": 3,
+    "p212": 1,
+    "p214": 1,
+    "p220": 2,
+    "p302": 3,
+    "p303": 2,
+    "p304": 3,
+    "p305": 2,
+    "p306": 2,
+    "p307": 2,
+    "p308": 2,
+    "p310": 3,
+    "p311": 3,
+    "p312": 1,
+    "p314": 1,
+    "p318": 1,
+    "p320": 3,
+    "p405": 1,
+    "p406": 1,
+    "p408": 2,
+    "p410": 1,
+    "p411": 1,
+    "p420": 1,
+    "p502": 2,
+    "p503": 2,
+    "p504": 1,
+    "p505": 1,
+    "p506": 2,
+    "p507": 1,
+    "p508": 2,
+    "p510": 2,
+    "p511": 3,
+    "p514": 1,
+    "p520": 2,
+    "p602": 3,
+    "p603": 3,
+    "p604": 2,
+    "p605": 1,
+    "p606": 2,
+    "p607": 2,
+    "p608": 2,
+    "p610": 3,
+    "p611": 3,
+    "p614": 1,
+    "p618": 1,
+    "p620": 3
+   }
+  },
+  "K1": {
+   "nQueries": 120,
+   "cards": 0,
+   "cardMixRate": null,
+   "queryMixRate": 0.0,
+   "queryMixRate_ci": [
+    -0.0,
+    0.031
+   ],
+   "boundaryCardRate": null,
+   "mixedQueries": 0,
+   "mixedCards": 0,
+   "boundaryCards": 0,
+   "causes": {},
+   "mixedByQuery": {}
+  },
+  "K2": {
+   "nQueries": 120,
+   "cards": 225,
+   "cardMixRate": 0.689,
+   "queryMixRate": 0.692,
+   "queryMixRate_ci": [
+    0.604,
+    0.767
+   ],
+   "boundaryCardRate": 0.0,
+   "mixedQueries": 83,
+   "mixedCards": 155,
+   "boundaryCards": 0,
+   "causes": {
+    "기간 미사용(벡터 유사·키워드 일치)": 155
+   },
+   "mixedByQuery": {
+    "p101": 2,
+    "p103": 1,
+    "p105": 1,
+    "p106": 2,
+    "p107": 1,
+    "p110": 1,
+    "p111": 2,
+    "p112": 2,
+    "p117": 3,
+    "p120": 2,
+    "p201": 2,
+    "p202": 1,
+    "p203": 1,
+    "p204": 1,
+    "p205": 2,
+    "p206": 2,
+    "p207": 2,
+    "p208": 2,
+    "p209": 2,
+    "p210": 2,
+    "p211": 2,
+    "p212": 2,
+    "p217": 3,
+    "p220": 3,
+    "p301": 2,
+    "p302": 1,
+    "p303": 2,
+    "p304": 2,
+    "p305": 2,
+    "p306": 2,
+    "p307": 2,
+    "p308": 2,
+    "p309": 2,
+    "p310": 2,
+    "p311": 2,
+    "p312": 2,
+    "p317": 3,
+    "p320": 3,
+    "p401": 2,
+    "p403": 1,
+    "p405": 2,
+    "p406": 2,
+    "p407": 2,
+    "p408": 1,
+    "p410": 1,
+    "p411": 2,
+    "p412": 2,
+    "p417": 3,
+    "p420": 1,
+    "p501": 2,
+    "p502": 1,
+    "p503": 1,
+    "p504": 2,
+    "p505": 2,
+    "p506": 2,
+    "p507": 2,
+    "p508": 2,
+    "p509": 1,
+    "p510": 2,
+    "p511": 2,
+    "p512": 2,
+    "p513": 1,
+    "p515": 1,
+    "p517": 3,
+    "p519": 1,
+    "p520": 3,
+    "p601": 2,
+    "p602": 2,
+    "p603": 2,
+    "p604": 2,
+    "p605": 2,
+    "p606": 2,
+    "p607": 2,
+    "p608": 2,
+    "p609": 2,
+    "p610": 2,
+    "p611": 2,
+    "p612": 2,
+    "p613": 1,
+    "p615": 1,
+    "p617": 3,
+    "p619": 1,
+    "p620": 3
+   }
+  }
+ },
+ "bySize": {
+  "30": {
+   "V@0.35": {
+    "recall@3": 0.5,
+    "reject": 0.75,
+    "nResults": 20,
+    "nReject": 20,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 26,
+     "cardMixRate": 0.538,
+     "queryMixRate": 0.275,
+     "queryMixRate_ci": [
+      0.161,
+      0.428
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 11,
+     "mixedCards": 14,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 미사용(벡터 유사·키워드 일치)": 14
+     },
+     "mixedByQuery": {
+      "p106": 1,
+      "p108": 2,
+      "p110": 1,
+      "p111": 2,
+      "p120": 1,
+      "p405": 1,
+      "p406": 1,
+      "p408": 2,
+      "p410": 1,
+      "p411": 1,
+      "p420": 1
+     }
+    }
+   },
+   "K1": {
+    "recall@3": 0.0,
+    "reject": 1.0,
+    "nResults": 20,
+    "nReject": 20,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 0,
+     "cardMixRate": null,
+     "queryMixRate": 0.0,
+     "queryMixRate_ci": [
+      -0.0,
+      0.088
+     ],
+     "boundaryCardRate": null,
+     "mixedQueries": 0,
+     "mixedCards": 0,
+     "boundaryCards": 0,
+     "causes": {},
+     "mixedByQuery": {}
+    }
+   },
+   "K2": {
+    "recall@3": 0.733,
+    "reject": 0.5,
+    "nResults": 20,
+    "nReject": 20,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 55,
+     "cardMixRate": 0.655,
+     "queryMixRate": 0.525,
+     "queryMixRate_ci": [
+      0.375,
+      0.671
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 21,
+     "mixedCards": 36,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 미사용(벡터 유사·키워드 일치)": 36
+     },
+     "mixedByQuery": {
+      "p101": 2,
+      "p103": 1,
+      "p105": 1,
+      "p106": 2,
+      "p107": 1,
+      "p110": 1,
+      "p111": 2,
+      "p112": 2,
+      "p117": 3,
+      "p120": 2,
+      "p401": 2,
+      "p403": 1,
+      "p405": 2,
+      "p406": 2,
+      "p407": 2,
+      "p408": 1,
+      "p410": 1,
+      "p411": 2,
+      "p412": 2,
+      "p417": 3,
+      "p420": 1
+     }
+    }
+   }
+  },
+  "100": {
+   "V@0.35": {
+    "recall@3": 0.4,
+    "reject": 0.6,
+    "nResults": 30,
+    "nReject": 10,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 50,
+     "cardMixRate": 0.74,
+     "queryMixRate": 0.55,
+     "queryMixRate_ci": [
+      0.398,
+      0.693
+     ],
+     "boundaryCardRate": 0.02,
+     "mixedQueries": 22,
+     "mixedCards": 37,
+     "boundaryCards": 1,
+     "causes": {
+      "기간 미사용(벡터 유사·키워드 일치)": 37
+     },
+     "mixedByQuery": {
+      "p202": 1,
+      "p203": 2,
+      "p204": 1,
+      "p206": 2,
+      "p207": 1,
+      "p208": 2,
+      "p210": 2,
+      "p211": 3,
+      "p212": 1,
+      "p214": 1,
+      "p220": 2,
+      "p502": 2,
+      "p503": 2,
+      "p504": 1,
+      "p505": 1,
+      "p506": 2,
+      "p507": 1,
+      "p508": 2,
+      "p510": 2,
+      "p511": 3,
+      "p514": 1,
+      "p520": 2
+     }
+    }
+   },
+   "K1": {
+    "recall@3": 0.0,
+    "reject": 1.0,
+    "nResults": 30,
+    "nReject": 10,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 0,
+     "cardMixRate": null,
+     "queryMixRate": 0.0,
+     "queryMixRate_ci": [
+      -0.0,
+      0.088
+     ],
+     "boundaryCardRate": null,
+     "mixedQueries": 0,
+     "mixedCards": 0,
+     "boundaryCards": 0,
+     "causes": {},
+     "mixedByQuery": {}
+    }
+   },
+   "K2": {
+    "recall@3": 0.689,
+    "reject": 0.3,
+    "nResults": 30,
+    "nReject": 10,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 83,
+     "cardMixRate": 0.687,
+     "queryMixRate": 0.775,
+     "queryMixRate_ci": [
+      0.625,
+      0.877
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 31,
+     "mixedCards": 57,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 미사용(벡터 유사·키워드 일치)": 57
+     },
+     "mixedByQuery": {
+      "p201": 2,
+      "p202": 1,
+      "p203": 1,
+      "p204": 1,
+      "p205": 2,
+      "p206": 2,
+      "p207": 2,
+      "p208": 2,
+      "p209": 2,
+      "p210": 2,
+      "p211": 2,
+      "p212": 2,
+      "p217": 3,
+      "p220": 3,
+      "p501": 2,
+      "p502": 1,
+      "p503": 1,
+      "p504": 2,
+      "p505": 2,
+      "p506": 2,
+      "p507": 2,
+      "p508": 2,
+      "p509": 1,
+      "p510": 2,
+      "p511": 2,
+      "p512": 2,
+      "p513": 1,
+      "p515": 1,
+      "p517": 3,
+      "p519": 1,
+      "p520": 3
+     }
+    }
+   }
+  },
+  "260": {
+   "V@0.35": {
+    "recall@3": 0.25,
+    "reject": 0.5,
+    "nResults": 32,
+    "nReject": 8,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 62,
+     "cardMixRate": 0.871,
+     "queryMixRate": 0.625,
+     "queryMixRate_ci": [
+      0.47,
+      0.758
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 25,
+     "mixedCards": 54,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 미사용(벡터 유사·키워드 일치)": 54
+     },
+     "mixedByQuery": {
+      "p302": 3,
+      "p303": 2,
+      "p304": 3,
+      "p305": 2,
+      "p306": 2,
+      "p307": 2,
+      "p308": 2,
+      "p310": 3,
+      "p311": 3,
+      "p312": 1,
+      "p314": 1,
+      "p318": 1,
+      "p320": 3,
+      "p602": 3,
+      "p603": 3,
+      "p604": 2,
+      "p605": 1,
+      "p606": 2,
+      "p607": 2,
+      "p608": 2,
+      "p610": 3,
+      "p611": 3,
+      "p614": 1,
+      "p618": 1,
+      "p620": 3
+     }
+    }
+   },
+   "K1": {
+    "recall@3": 0.0,
+    "reject": 1.0,
+    "nResults": 32,
+    "nReject": 8,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 0,
+     "cardMixRate": null,
+     "queryMixRate": 0.0,
+     "queryMixRate_ci": [
+      -0.0,
+      0.088
+     ],
+     "boundaryCardRate": null,
+     "mixedQueries": 0,
+     "mixedCards": 0,
+     "boundaryCards": 0,
+     "causes": {},
+     "mixedByQuery": {}
+    }
+   },
+   "K2": {
+    "recall@3": 0.677,
+    "reject": 0.375,
+    "nResults": 32,
+    "nReject": 8,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 87,
+     "cardMixRate": 0.713,
+     "queryMixRate": 0.775,
+     "queryMixRate_ci": [
+      0.625,
+      0.877
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 31,
+     "mixedCards": 62,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 미사용(벡터 유사·키워드 일치)": 62
+     },
+     "mixedByQuery": {
+      "p301": 2,
+      "p302": 1,
+      "p303": 2,
+      "p304": 2,
+      "p305": 2,
+      "p306": 2,
+      "p307": 2,
+      "p308": 2,
+      "p309": 2,
+      "p310": 2,
+      "p311": 2,
+      "p312": 2,
+      "p317": 3,
+      "p320": 3,
+      "p601": 2,
+      "p602": 2,
+      "p603": 2,
+      "p604": 2,
+      "p605": 2,
+      "p606": 2,
+      "p607": 2,
+      "p608": 2,
+      "p609": 2,
+      "p610": 2,
+      "p611": 2,
+      "p612": 2,
+      "p613": 1,
+      "p615": 1,
+      "p617": 3,
+      "p619": 1,
+      "p620": 3
+     }
+    }
+   }
+  }
+ },
+ "periodAccuracy": null
+}
