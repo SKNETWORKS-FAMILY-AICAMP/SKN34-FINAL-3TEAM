@@ -57,6 +57,19 @@ SCORE_RANGES = {
 }
 
 
+STORED_GRADES = range(3, 10)  # core stored grade: elementary 3 (3) to middle 3 (9), P26
+# Middle schoolers get grade-6 content until middle school is supported (P03), the same cap as
+# core StudentGrade.learning.
+EXPLANATION_GRADE_MAX = 6
+
+
+def explanation_grade(grade):
+    """Stored grade (3~9) to the grade used for explanations; None when untrusted (#830)."""
+    if type(grade) is not int or grade not in STORED_GRADES:
+        return None
+    return min(grade, EXPLANATION_GRADE_MAX)
+
+
 def input_scores(answer, grade):
     """m2 scores when present (validated), otherwise None. Scope and text are always checked."""
     if type(grade) is not int or not (
@@ -135,9 +148,10 @@ class ExplanationGenerator:
                 if any(attempt.student_id != command.student_id for attempt in attempts):
                     raise RecordContractError("Explanation records are outside the student scope")
                 rows = candidates(attempts, period)
+                grade = explanation_grade(command.grade)
                 if not rows:
                     state = "NO_TARGET"
-                elif type(command.grade) is not int:
+                elif grade is None:
                     # A missing grade excludes every answer; skip per-answer fallback.
                     raise RecordContractError("Explanation requires a trusted grade")
                 called = set()
@@ -147,7 +161,7 @@ class ExplanationGenerator:
                     if attempt.thinking_type in called:
                         continue
                     try:
-                        scores = input_scores(answer, command.grade)
+                        scores = input_scores(answer, grade)
                         link = EvidenceLink(attempt.id, answer.id, answer.version)
                         evidence = await self._learning.evidence(command.student_id, (link,))
                         if len(evidence) != 1:
@@ -177,7 +191,7 @@ class ExplanationGenerator:
                         response = await asyncio.wait_for(
                             self._ai.explanation(
                                 {
-                                    "grade": command.grade,
+                                    "grade": grade,
                                     "inputType": answer.input_type,
                                     "text": text,
                                     "topic": attempt.mission_title,
