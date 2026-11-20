@@ -1,0 +1,386 @@
+/* Shared parent identity; each content type gets its own reading structure. */
+#class-journal .ws-parent .parent-setting-context{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 22px;margin:20px 0;background:#e8efe5;border-radius:10px;color:#2b4e36}
+#class-journal .ws-parent .parent-setting-context strong{font-size:18px}
+#class-journal .ws-parent .parent-setting-context span{font-size:13px}
+#class-journal .ws-parent .parent-settings-panel>.ws-grid{gap:24px;align-items:start}
+#class-journal .ws-parent .parent-settings-panel>.ws-grid>.ws-card{padding:26px;border:1px solid #dbe5dc;border-radius:12px;background:#fff;box-shadow:none}
+#class-journal .ws-parent .parent-settings-panel .ws-card>h2{font-size:20px;margin:0 0 12px}
+#class-journal .ws-parent .parent-settings-panel .ws-form{gap:18px}
+#class-journal .ws-parent .parent-settings-panel .ws-form>label{display:grid;gap:8px;font-size:13px;color:#435c4c}
+#class-journal .ws-parent .parent-profile-guidance{border-top:1px solid #e1e8df;padding-top:16px;margin-top:22px;font-size:13px;line-height:1.8}
+#class-journal .ws-parent .parent-add-child{border-top:1px solid #d9e3d8;padding:22px 0;background:transparent;border-radius:0}
+#class-journal .ws-parent .parent-device-grid{gap:24px;align-items:start}
+#class-journal .ws-parent .parent-device-grid>.ws-card{background:#fff;border:1px solid #dbe5dc;border-radius:12px;box-shadow:none;padding:24px}
+#class-journal .ws-parent .device-purpose{display:block;font-size:12px;color:#506755;margin:-4px 0 18px}
+#class-journal .ws-parent .device-setup-steps{list-style:none;counter-reset:setup;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:0;margin:20px 0;gap:18px}
+#class-journal .ws-parent .device-setup-steps li{counter-increment:setup;display:grid;gap:8px;align-content:start;position:relative;padding-top:32px}
+#class-journal .ws-parent .device-setup-steps li::before{content:counter(setup);position:absolute;top:0;left:0;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#e5eee2;color:#31543a;font-size:12px;font-weight:700}
+#class-journal .ws-parent .device-setup-steps strong{font-size:14px}
+#class-journal .ws-parent .device-setup-steps span{font-size:12px;line-height:1.8;color:#576d5c}
+#class-journal .ws-parent .parent-devices .ws-table th{background:#f1f5ee;font-size:12px;color:#526550;white-space:nowrap}
+#class-journal .ws-parent .parent-devices .ws-table td{padding:18px 14px;line-height:1.7}
+#class-journal .ws-parent .parent-devices .ws-table td:first-child{font-weight:600}
+#class-journal .ws-parent .payment-page>#current-subscriptions,#class-journal .ws-parent .payment-management>section{margin:24px 0}
+#class-journal .ws-parent .payment-management h2{font-size:20px;margin:0 0 18px}
+#class-journal .ws-parent .subscription-current{padding:26px;border:1px solid #cbdccb;background:#fff;border-radius:14px;margin-bottom:16px}
+#class-journal .ws-parent .subscription-current>h3{font-size:21px;margin:0 0 24px;color:#284b33}
+#class-journal .ws-parent .subscription-current>dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px 28px;margin:0}
+#class-journal .ws-parent .subscription-current>dl>div{display:block;padding:0;border:0}
+#class-journal .ws-parent .subscription-current dt{font-size:12px;color:#5b6c5b;margin-bottom:7px}
+#class-journal .ws-parent .subscription-current dd{margin:0;font-size:15px;font-weight:600;line-height:1.7;overflow-wrap:anywhere}
+#class-journal .ws-parent .subscription-controls{margin-top:24px;padding-top:18px;border-top:1px solid #e0e7dc}
+#class-journal .ws-parent .subscription-controls>summary{font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px}
+#class-journal .ws-parent .payment-history{display:grid;grid-template-columns:1fr;gap:12px}
+#class-journal .ws-parent .payment-history>.payment-panel{background:#fff;border:1px solid #dde5da;border-radius:10px;padding:20px 24px}
+#class-journal .ws-parent .payment-history-heading{display:flex;justify-content:space-between;gap:20px;align-items:baseline}
+#class-journal .ws-parent .payment-history-heading h3{font-size:15px;margin:0}
+#class-journal .ws-parent .payment-history-heading strong{font-size:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+#class-journal .ws-parent .parent-free-plan{background:#f0f4ed;border:0;border-radius:10px;padding:22px;margin:24px 0}
+#class-journal .ws-parent .parent-free-plan h2{font-size:17px}
+#class-journal .ws-parent .service-reading-list{border-top:1px solid #cfdccd;margin-top:24px}
+#class-journal .ws-parent .service-reading-list>details{margin:0;border:0;border-bottom:1px solid #dfe7dd;border-radius:0;background:transparent;padding:0}
+#class-journal .ws-parent .service-reading-list>details>summary{display:flex;align-items:baseline;gap:14px;cursor:pointer;list-style:none;padding:22px 8px;font-size:16px;line-height:1.7}
+#class-journal .ws-parent .service-reading-list>details>summary::-webkit-details-marker{display:none}
+#class-journal .ws-parent .service-reading-list>details>summary::after{content:'+';margin-left:auto;color:#55755b;font-size:20px;font-weight:400;flex-shrink:0}
+#class-journal .ws-parent .service-reading-list>details[open]>summary::after{content:'−'}
+#class-journal .ws-parent .service-reading-list>details>summary>strong{font-size:15px;font-weight:500;flex:1;overflow-wrap:anywhere}
+#class-journal .ws-parent .service-reading-list time{font-size:12px;color:#607061;font-variant-numeric:tabular-nums;white-space:nowrap}
+#class-journal .ws-parent .service-reading-body{padding:22px 28px 28px;background:#fff;border-radius:8px;margin:0 0 16px;line-height:1.9;font-size:15px}
+#class-journal .ws-parent .service-reading-body>p{white-space:pre-wrap;margin:0;overflow-wrap:anywhere;max-width:80ch}
+#class-journal .ws-parent .service-reading-body h3{font-size:14px;margin:12px 0;color:#3e5946}
+#class-journal .ws-parent .service-reading-body small{display:block;font-size:12px;color:#647164;margin-top:16px}
+#class-journal .ws-parent .service-kind{display:inline-block;flex-shrink:0;font-size:12px;font-weight:500;color:#426147;background:#e8efe3;padding:3px 9px;border-radius:5px}
+#class-journal .ws-parent .service-kind[data-kind=MAINTENANCE]{color:#71531c;background:#f3ecd8}
+#class-journal .ws-parent .service-list-tools{display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+#class-journal .ws-parent .service-list-tools>input{max-width:260px;font-size:14px;background:white}
+#class-journal .ws-parent .service-filter-tabs{display:flex;gap:6px}
+#class-journal .ws-parent .service-filter-tabs button{border:0;background:transparent;color:#556954;font-size:14px;padding:10px 16px;border-radius:8px}
+#class-journal .ws-parent .service-filter-tabs button[aria-pressed=true]{background:#e2ebdf;color:#244b31;font-weight:650}
+#class-journal .ws-parent .service-empty{padding:44px 24px;text-align:center;border-block:1px solid #dee5db;color:#596d59;font-size:14px}
+#class-journal .ws-parent .service-help-footer{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-top:40px;padding:24px 0;border-top:1px solid #d7e1d5}
+#class-journal .ws-parent .service-help-footer h2{font-size:17px;margin:0 0 8px}
+#class-journal .ws-parent .service-help-footer p{font-size:13px;margin:0;color:#596d5b}
+#class-journal .ws-parent .service-help-footer>div:last-child{display:flex;gap:20px;flex-wrap:wrap;font-size:14px}
+#class-journal .ws-parent .service-pagination{display:flex;justify-content:flex-end;gap:16px;align-items:center;margin-top:20px;font-size:13px}
+#class-journal .ws-parent .support-kind-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:24px 0;max-width:760px}
+#class-journal .ws-parent .support-kind-tabs button{background:#fff;border:1px solid #d5dfd0;border-radius:10px;padding:18px;font-size:15px;text-align:left}
+#class-journal .ws-parent .support-kind-tabs button[aria-pressed=true]{border-color:#4d7954;background:#eaf1e4;color:#284c32}
+#class-journal .ws-parent .support-compose{max-width:760px;padding:26px;background:#fff;border:1px solid #dbe3d7;border-radius:12px;gap:20px}
+#class-journal .ws-parent .support-compose label{display:grid;gap:8px;font-size:13px;color:#47604a}
+#class-journal .ws-parent .support-compose textarea{min-height:160px;line-height:1.8}
+#class-journal .ws-parent .support-compose>button{justify-self:start;min-width:120px}
+#class-journal .ws-parent .support-answer{border-top:1px solid #e2e8df;margin-top:24px;padding-top:12px}
+#class-journal .ws-parent .support-answer p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:700px){#class-journal .ws-parent .subscription-current>dl{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}#class-journal .ws-parent .device-setup-steps{grid-template-columns:1fr;gap:18px}#class-journal .ws-parent .device-setup-steps li{padding:0 0 0 36px;gap:4px}#class-journal .ws-parent .service-reading-list>details>summary{flex-wrap:wrap;gap:8px 10px}#class-journal .ws-parent .service-reading-list time{flex-basis:100%;order:3}#class-journal .ws-parent .service-reading-body{padding:18px}#class-journal .ws-parent .service-help-footer{flex-direction:column;align-items:flex-start}#class-journal .ws-parent .support-kind-tabs{grid-template-columns:1fr}#class-journal .ws-parent .support-compose{padding:18px}#class-journal .ws-parent .parent-setting-context{align-items:flex-start;flex-direction:column;gap:8px}}
+
+#class-journal .ws-parent .report-explorer .report-section{background:#f4f6f2;padding:20px;border:1px solid #e1e7dd;border-radius:12px}
+#class-journal .ws-parent .report-explorer .report-section>.report-chapter-title{margin:0 0 20px}
+#class-journal .ws-parent .report-data-group{background:#fff;border:1px solid #dde5d9;border-radius:10px;padding:22px;margin:0 0 20px}
+#class-journal .ws-parent .report-data-group>h3,#class-journal .ws-parent .report-data-group>h4{font-size:17px;font-weight:650;margin:0 0 18px;padding-bottom:12px;border-bottom:1px solid #e6ebe2;color:#294333}
+#class-journal .ws-parent .report-data-group>p{font-size:14px;line-height:1.9;padding:10px 0;margin:0;overflow-wrap:anywhere}
+#class-journal .ws-parent .report-data-group>blockquote{padding:16px 18px;background:#f4f7f0;border:0;border-radius:8px;font-size:15px;line-height:1.9;margin:12px 0;white-space:pre-wrap}
+#class-journal .ws-parent .report-narrative-panel .report-narrative-text{margin:0 0 14px;font-size:15px}
+#class-journal .ws-parent .report-stat-panel .ws-metrics{margin:0;gap:0;background:none}
+#class-journal .ws-parent .report-stat-panel .ws-metrics>.ws-card{padding:16px;border:0;border-radius:0;background:#fff}
+#class-journal .ws-parent .report-stat-panel .ws-metrics h3{font-size:13px;line-height:1.7}
+#class-journal .ws-parent .report-stat-panel .ws-metrics strong{font-size:26px}
+#class-journal .ws-parent .report-change-pair>div{border:1px solid #e0e7da;border-radius:8px;overflow:hidden;background:#fff}
+#class-journal .ws-parent .report-change-pair h4{font-size:13px;padding:12px 16px;background:#eff4e9;border-bottom:1px solid #e1e9dc;margin:0}
+#class-journal .ws-parent .report-change-pair blockquote{margin:0;border:0;padding:18px;background:transparent;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.9}
+#class-journal .ws-parent .parent-consent-entry{padding:22px;border:1px solid #dbe5d5;border-radius:10px;background:white;margin:16px 0}
+#class-journal .ws-parent .parent-consent-entry>header{display:flex;justify-content:space-between;gap:16px;align-items:baseline}
+#class-journal .ws-parent .parent-consent-entry h3{margin:0;font-size:16px}
+#class-journal .ws-parent .consent-state{background:#e9f0e3;color:#315a39;font-size:12px;padding:4px 10px;border-radius:5px;white-space:nowrap}
+#class-journal .ws-parent .parent-consent-entry>p{font-size:13px;color:#566b56;margin:10px 0 16px}
+#class-journal .ws-parent .parent-consent-document{padding:16px 0;border-top:1px solid #e2e8de;font-size:13px;line-height:1.8}
+@media(max-width:640px){#class-journal .ws-parent .report-explorer .report-section{padding:12px}#class-journal .ws-parent .report-data-group{padding:16px}#class-journal .ws-parent .report-change-pair{grid-template-columns:1fr}#class-journal .ws-parent .parent-consent-entry{padding:16px}}
+
+#class-journal .ws-parent .parent-settings .parent-add-child{background:#fff;border:1px solid #dbe5dc;border-radius:12px;padding:22px 26px;margin-top:24px}
+#class-journal .ws-parent .parent-devices .parent-device-grid>.ws-card[aria-labelledby=pairing-h],#class-journal .ws-parent .parent-devices .parent-device-grid>.ws-card[aria-labelledby=devices-h]{grid-column:1/-1}
+#class-journal .ws-parent .payment-page .subscription-current dd{text-align:left}
+#class-journal .ws-parent .report-document-header{display:flex;justify-content:space-between;gap:20px;align-items:center;padding:20px 22px;background:#f0f4ed;border:1px solid #dfe7d9;border-radius:10px}
+#class-journal .ws-parent .report-document-header h2{font-size:22px;margin:0 0 8px}
+#class-journal .ws-parent .report-document-header p{font-size:13px;margin:0;line-height:1.8;color:#526653;font-variant-numeric:tabular-nums}
+#class-journal .ws-parent .report-header-actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+#class-journal .ws-parent .report-header-actions .parent-report-question{margin:0;padding:0}
+#class-journal .ws-parent .report-header-actions button{font-size:12px;padding:8px 12px}
+#class-journal .ws-parent .report-detail>.report-version-control{padding:14px 0 0;margin:0;font-size:13px;justify-content:flex-end}
+@media(max-width:640px){#class-journal .ws-parent .payment-page .subscription-current>dl>div:first-child{grid-column:1/-1}#class-journal .ws-parent .report-document-header{padding:16px;flex-direction:column;align-items:flex-start;gap:12px}#class-journal .ws-parent .report-header-actions{align-items:flex-start}#class-journal .ws-parent .parent-settings .parent-add-child{padding:20px}}
+
+/* Reference-led management surfaces: family settings, billing portal, reading lists.
+   Keep the shared parent shell; only the seven management/read surfaces opt in. */
+#class-journal .ws-parent :is(.parent-settings,.parent-devices,.payment-page,.service-help,.service-notices,.service-support){--management-ink:#203b30;--management-muted:#53685d;--management-line:#e1e7e2;--management-paper:#fff;color:var(--management-ink)}
+#class-journal .ws-parent :is(.parent-settings,.parent-devices,.payment-page,.service-help,.service-notices,.service-support) :is(input,select,textarea){border:1px solid #d4ded7;border-radius:8px;background:#fff;min-height:44px;font-size:14px;box-shadow:none;caret-color:#226c45}
+#class-journal .ws-parent :is(.parent-settings,.parent-devices,.payment-page,.service-help,.service-notices,.service-support) :is(button,a,input,select,textarea,summary):focus-visible{outline:2px solid #26744b;outline-offset:3px}
+#class-journal .ws-parent :is(.parent-settings,.parent-devices,.payment-page,.service-help,.service-notices,.service-support) ::selection{background:#dcebdc;color:#163923}
+
+/* Family Link: one named person, a quiet navigation rail, a focused settings sheet. */
+#class-journal .ws-parent .parent-settings .parent-setting-context{background:#fff;border:1px solid var(--management-line);padding:20px 24px;justify-content:flex-start;border-radius:14px;margin:24px 0}
+#class-journal .ws-parent .parent-setting-context .settings-avatar{display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:50%;background:#e5efe7;color:#2e6544}
+#class-journal .ws-parent .parent-setting-context>span:last-child{margin-left:auto;color:#53685d}
+#class-journal .ws-parent .settings-workspace{display:grid;grid-template-columns:188px minmax(0,1fr);gap:28px;align-items:start}
+#class-journal .ws-parent .settings-workspace>.parent-tabs{display:flex;flex-direction:column;border:0;padding:8px 0;gap:6px;position:sticky;top:20px;margin:0;background:none}
+#class-journal .ws-parent .settings-workspace>.parent-tabs>button{display:flex;align-items:center;gap:12px;min-height:48px;text-align:left;justify-content:flex-start;border:0;border-radius:8px;background:transparent;color:#53685d;font-size:14px;padding:12px 16px;white-space:nowrap}
+#class-journal .ws-parent .settings-workspace>.parent-tabs>button[aria-selected=true]{color:#215b3a;background:#e2ece1;font-weight:700;box-shadow:none}
+#class-journal .ws-parent .settings-workspace>.parent-tabs>button::after{display:none}
+#class-journal .ws-parent .parent-settings-panel{min-width:0}
+#class-journal .ws-parent .parent-settings-panel>.ws-grid{display:flex;flex-direction:column;gap:0;background:#fff;border:1px solid var(--management-line);border-radius:14px;overflow:hidden}
+#class-journal .ws-parent .parent-settings-panel>.ws-grid>.ws-card{width:100%;border:0;border-bottom:1px solid var(--management-line);border-radius:0;padding:28px 32px}
+#class-journal .ws-parent .parent-settings-panel>.ws-grid>.ws-card:last-child{border-bottom:0}
+#class-journal .ws-parent .parent-settings-panel .ws-form{max-width:540px;gap:20px}
+#class-journal .ws-parent .parent-settings-panel .ws-form>button{justify-self:start;min-width:96px}
+#class-journal .ws-parent .parent-settings .parent-add-child{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:24px 28px}
+#class-journal .ws-parent .parent-settings .parent-add-child p{font-size:13px;line-height:1.7;margin-bottom:0}
+#class-journal .ws-parent .parent-consent-entry{padding:24px 28px;border-radius:12px}
+
+/* Nintendo setup: a visible ordered connection path, then the actual controls. */
+#class-journal .ws-parent .parent-devices .parent-device-grid{gap:20px}
+#class-journal .ws-parent .parent-devices .parent-device-grid>.ws-card{padding:28px;border-radius:14px}
+#class-journal .ws-parent .parent-devices .parent-device-grid h2{font-size:20px;margin:0 0 12px}
+#class-journal .ws-parent .parent-devices .device-purpose{margin:0 0 24px;line-height:1.7}
+#class-journal .ws-parent .parent-devices .device-setup-steps{gap:0;margin:24px 0 32px;background:#f4f7f3;border-radius:12px;padding:24px 12px}
+#class-journal .ws-parent .device-setup-steps li{padding:0 24px 0 60px;gap:8px;border-right:1px solid #dce5dc}
+#class-journal .ws-parent .device-setup-steps li:last-child{border-right:0}
+#class-journal .ws-parent .device-setup-steps li::before{left:24px;top:0;background:#235e3c;color:#fff}
+#class-journal .ws-parent .device-setup-steps li>svg{margin:0 0 8px;color:#3a6f4e}
+#class-journal .ws-parent .parent-devices .ws-card[aria-labelledby=pairing-h]>.ws-form{max-width:600px}
+#class-journal .ws-parent .parent-devices .ws-table td{padding:20px 16px;border-bottom:1px solid #e8ede7}
+#class-journal .ws-parent .parent-devices .ws-table th{padding:14px 16px;background:#f6f8f5}
+
+/* Stripe portal: a compact current subscription, aligned facts, restrained controls. */
+#class-journal .ws-parent .payment-page .subscription-current{padding:30px 32px;border:1px solid #d9e3db;border-radius:14px;background:#fff}
+#class-journal .ws-parent .payment-page .subscription-current>h3{font-size:24px;letter-spacing:-.025em;padding-bottom:20px;margin-bottom:24px;border-bottom:1px solid #e7ece7}
+#class-journal .ws-parent .payment-page .subscription-current>dl{grid-template-columns:repeat(3,minmax(0,1fr));gap:28px}
+#class-journal .ws-parent .payment-page .subscription-current dt{font-size:13px;margin-bottom:8px}
+#class-journal .ws-parent .payment-page .subscription-current dd{font-size:16px;text-align:left;font-weight:600;font-variant-numeric:tabular-nums}
+#class-journal .ws-parent .payment-page .subscription-controls{background:#f6f8f5;border:0;border-radius:8px;padding:16px 20px;margin-top:28px}
+#class-journal .ws-parent .payment-page .subscription-controls:not([open])>summary{margin:0}
+#class-journal .ws-parent .payment-page .parent-free-plan{padding:24px 28px;background:#e9f0e5;border:0;border-radius:12px}
+#class-journal .ws-parent .payment-page .payment-history{gap:0;background:#fff;border:1px solid #dfe6df;border-radius:12px;overflow:hidden}
+#class-journal .ws-parent .payment-page .payment-history>.payment-panel{margin:0;border:0;border-bottom:1px solid #e4e9e3;border-radius:0;padding:24px 28px}
+#class-journal .ws-parent .payment-page .payment-history>.payment-panel:last-child{border-bottom:0}
+
+/* Toss / GOV.UK: readable width, strong question rows, inset answer surfaces. */
+#class-journal .ws-parent :is(.service-help,.service-notices,.service-support){max-width:1040px;margin:0 auto;padding:32px 40px;background:#fff;border:1px solid var(--management-line);border-radius:16px}
+#class-journal .ws-parent :is(.service-help,.service-notices,.service-support) h1{font-size:28px;line-height:1.4;letter-spacing:-.025em;margin:0 0 16px}
+#class-journal .ws-parent :is(.service-help,.service-notices,.service-support)>.parent-page-head{margin-bottom:36px}
+#class-journal .ws-parent :is(.service-help,.service-support)>.parent-page-head p,#class-journal .ws-parent .service-support>p{max-width:65ch;font-size:14px;line-height:1.8;color:#53685d}
+#class-journal .ws-parent .service-reading-list{margin-top:24px;border-top:1px solid #dfe6df}
+#class-journal .ws-parent .service-reading-list>details>summary{padding:24px 8px;font-size:17px;font-weight:600;align-items:center;gap:16px}
+#class-journal .ws-parent .service-reading-list>details>summary:hover{background:#f7f9f6}
+#class-journal .ws-parent .service-reading-list>details>summary::after{content:'';width:8px;height:8px;border-right:1.5px solid #62776a;border-bottom:1.5px solid #62776a;transform:rotate(45deg);margin-right:8px;transition:transform .15s ease}
+#class-journal .ws-parent .service-reading-list>details[open]>summary::after{transform:rotate(225deg)}
+#class-journal .ws-parent .service-reading-list>details[open]>summary{color:#235e3c}
+#class-journal .ws-parent .service-reading-list>details>summary>strong{font-size:16px;font-weight:600}
+#class-journal .ws-parent .service-reading-body{background:#f4f7f3;padding:24px 28px;margin:0 0 20px;border:0;border-radius:8px;line-height:1.9}
+#class-journal .ws-parent .service-reading-body>p{max-width:72ch}
+#class-journal .ws-parent .service-list-tools{padding-bottom:16px;border-bottom:0}
+#class-journal .ws-parent .service-filter-tabs{gap:4px;background:#f2f5f1;border-radius:8px;padding:4px}
+#class-journal .ws-parent .service-filter-tabs button{padding:9px 16px;border-radius:6px;min-height:40px}
+#class-journal .ws-parent .service-filter-tabs button[aria-pressed=true]{background:#fff;color:#244d33;box-shadow:0 2px 5px #213c2c12}
+#class-journal .ws-parent .service-help-footer{padding:24px;background:#f4f7f2;border:0;border-radius:10px;margin-top:32px}
+#class-journal .ws-parent .service-help-footer a{text-underline-offset:4px;font-weight:600}
+#class-journal .ws-parent .service-support .support-kind-tabs{max-width:none;gap:8px;padding:6px;background:#f0f4ee;border-radius:10px;margin:28px 0 8px}
+#class-journal .ws-parent .service-support .support-kind-tabs button{border:0;background:none;border-radius:7px;min-height:48px;padding:14px 18px;text-align:center;color:#53685d}
+#class-journal .ws-parent .service-support .support-kind-tabs button[aria-pressed=true]{background:#fff;color:#235b3a;font-weight:700;box-shadow:0 2px 6px #263c2b12}
+#class-journal .ws-parent .service-support .support-compose{max-width:720px;border:0;background:transparent;padding:28px 0 40px;border-radius:0;margin:0;gap:24px;box-shadow:none}
+#class-journal .ws-parent .service-support .support-compose label{font-size:14px;font-weight:600;gap:10px}
+#class-journal .ws-parent .service-support .support-compose textarea{min-height:190px}
+#class-journal .ws-parent .service-support .support-compose small{font-size:12px;color:#5a6c60}
+#class-journal .ws-parent .service-support .support-compose>button{justify-self:end;min-width:140px;min-height:44px}
+#class-journal .ws-parent .service-support>h2{border-top:1px solid #e2e8e0;padding-top:32px;margin-top:0;font-size:21px}
+
+/* Report remains a reader inside its modal. Quiet chapters, distinct data/answer blocks. */
+#class-journal .ws-parent .parent-insights .report-explorer .report-detail>.report-sections{background:#f1f5ef;padding:10px;border-radius:10px;gap:4px}
+#class-journal .ws-parent .report-explorer .report-sections button{color:#526653;border-radius:7px;padding:14px 12px;font-size:14px;min-height:44px}
+#class-journal .ws-parent .report-explorer .report-sections button[aria-pressed=true]{background:#245f3d;color:#fff;font-weight:600}
+#class-journal .ws-parent .report-explorer .report-sections button:focus-visible{outline:2px solid #286b44;outline-offset:2px}
+#class-journal .ws-parent .report-explorer .report-document-header{background:#eef4e8;border:0;padding:24px 28px;border-radius:12px}
+#class-journal .ws-parent .report-explorer .report-document-header h2{font-size:26px;letter-spacing:-.025em}
+#class-journal .ws-parent .report-explorer .report-section{background:#f6f8f4;border:1px solid #e4eadd;padding:24px;border-radius:12px}
+#class-journal .ws-parent .report-explorer .report-data-group{border:0;border-radius:8px;padding:24px;margin-bottom:20px}
+#class-journal .ws-parent .report-explorer .report-data-group:last-child{margin-bottom:0}
+#class-journal .ws-parent .report-explorer .report-data-group>h3{font-size:18px;padding-bottom:16px;margin-bottom:16px}
+#class-journal .ws-parent .report-explorer .report-change-pair h4{font-weight:650;padding:14px 18px}
+#class-journal .ws-parent .report-explorer .report-change-pair>div:last-child h4{background:#e5f0e3;color:#245338}
+#class-journal .ws-parent .parent-insights .pc-layout{border-color:#dce5da;border-radius:14px}
+#class-journal .ws-parent .parent-insights .pc-layout>aside{background:#f6f8f4}
+#class-journal .ws-parent .parent-insights .pc-layout>section>form.pc-composer{box-shadow:none;background:#f8faf6;border-color:#d9e4d5}
+
+@media(max-width:1000px){
+ #class-journal .ws-parent .settings-workspace{grid-template-columns:156px minmax(0,1fr);gap:20px}
+ #class-journal .ws-parent .device-setup-steps li{padding-left:44px;padding-right:12px}
+ #class-journal .ws-parent .device-setup-steps li::before{left:12px}
+ #class-journal .ws-parent :is(.service-help,.service-notices,.service-support){padding:28px}
+}
+@media(max-width:700px){
+ #class-journal .ws-parent .settings-workspace{display:block}
+ #class-journal .ws-parent .settings-workspace>.parent-tabs{position:static;flex-direction:row;overflow:auto;gap:4px;margin-bottom:16px;padding:0 0 4px}
+ #class-journal .ws-parent .settings-workspace>.parent-tabs>button{padding:10px 12px;gap:8px;flex:1;font-size:13px}
+ #class-journal .ws-parent .parent-settings .parent-setting-context{flex-direction:row;align-items:center;flex-wrap:wrap;padding:16px;gap:12px}
+ #class-journal .ws-parent .parent-setting-context>span:last-child{flex-basis:100%;margin-left:60px}
+ #class-journal .ws-parent .parent-settings-panel>.ws-grid>.ws-card{padding:22px}
+ #class-journal .ws-parent .parent-settings .parent-add-child{flex-direction:column;align-items:flex-start;padding:22px}
+ #class-journal .ws-parent .parent-devices .parent-device-grid>.ws-card{padding:22px}
+ #class-journal .ws-parent .parent-devices .device-setup-steps{padding:20px;gap:20px}
+ #class-journal .ws-parent .device-setup-steps li{padding:0 0 0 40px;border:0}
+ #class-journal .ws-parent .device-setup-steps li::before{left:0}
+ #class-journal .ws-parent .device-setup-steps li>svg{display:none}
+ #class-journal .ws-parent .payment-page .subscription-current{padding:22px}
+ #class-journal .ws-parent .payment-page .subscription-current>dl{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 16px}
+ #class-journal .ws-parent .payment-page .subscription-current>dl>div:first-child{grid-column:1/-1}
+ #class-journal .ws-parent :is(.service-help,.service-notices,.service-support){padding:24px 20px;border-radius:12px}
+ #class-journal .ws-parent :is(.service-help,.service-notices,.service-support) h1{font-size:24px}
+ #class-journal .ws-parent .service-reading-list>details>summary{padding:20px 0;gap:10px;flex-wrap:wrap}
+ #class-journal .ws-parent .service-reading-body{padding:20px 16px}
+ #class-journal .ws-parent .service-list-tools>input{max-width:none;width:100%}
+ #class-journal .ws-parent .service-support .support-kind-tabs{grid-template-columns:1fr}
+ #class-journal .ws-parent .service-help-footer{padding:20px}
+ #class-journal .ws-parent .report-explorer .report-document-header{padding:20px}
+ #class-journal .ws-parent .report-explorer .report-section{padding:12px}
+ #class-journal .ws-parent .report-explorer .report-data-group{padding:18px}
+ #class-journal .ws-parent .parent-insights .report-explorer .report-detail>.report-sections{flex-direction:row;padding:6px;overflow:auto}
+ #class-journal .ws-parent .report-explorer .report-sections button{padding:12px 10px;white-space:nowrap;font-size:12px}
+}
+@media(prefers-reduced-motion:reduce){#class-journal .ws-parent .service-reading-list>details>summary::after{transition:none}}
+/* Stretch reading sheets independently of their current data length. */
+#class-journal .ws-parent :is(.service-help,.service-notices,.service-support){width:100%;box-sizing:border-box}
+#class-journal .ws-parent .service-reading-list>details>summary::before{display:none;content:none}
+#class-journal .ws-parent .service-reading-list>details>summary::after{border-top:0;border-left:0;flex:0 0 8px;width:8px;height:8px;position:static;background:none}
+#class-journal .ws-parent .service-reading-list>details[open]>summary::after{content:""}
+
+/* Keep frequent tasks within reach without shrinking controls or hiding status. */
+@media(min-width:1200px){
+ #class-journal .ws-parent .parent-settings-panel>.ws-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+ #class-journal .ws-parent .parent-settings-panel>.ws-grid>.ws-card{border-bottom:0;padding:24px}
+ #class-journal .ws-parent .parent-settings-panel>.ws-grid>.ws-card+section{border-left:1px solid #e1e7e2}
+}
+#class-journal .ws-parent .parent-devices .parent-device-grid>.ws-card{padding:22px}
+#class-journal .ws-parent .parent-devices .parent-device-grid .ws-form{gap:14px}
+#class-journal .ws-parent .parent-devices .parent-device-grid .ws-form label{display:grid;gap:8px}
+#class-journal .ws-parent .parent-devices .parent-device-grid .ws-form label.ws-check{display:flex;align-items:center}
+#class-journal .ws-parent .parent-devices .parent-device-grid .ws-card>p{margin:12px 0;line-height:1.7}
+#class-journal .ws-parent .parent-devices .parent-device-grid .ws-form>p{margin:4px 0;line-height:1.7}
+#class-journal .ws-parent .parent-devices .device-purpose{margin-bottom:12px}
+#class-journal .ws-parent .parent-devices .device-setup-steps{margin:16px 0 20px;padding:20px 12px}
+#class-journal .ws-parent .parent-settings .parent-add-child{margin-top:16px;padding:20px 24px}
+#class-journal .ws-parent .payment-page .subscription-current{padding:24px}
+#class-journal .ws-parent .payment-page .subscription-current>h3{margin-bottom:18px;padding-bottom:16px}
+#class-journal .ws-parent .payment-page .subscription-current>dl{gap:18px 24px}
+#class-journal .ws-parent .payment-page .parent-free-plan{padding:18px 24px;margin:18px 0}
+#class-journal .ws-parent .payment-page .parent-free-plan p{margin:8px 0;line-height:1.7}
+#class-journal .ws-parent .parent-devices .parent-device-grid .ws-form label:has(input[type=checkbox]){display:flex;align-items:center;gap:10px}
+
+/* Consent: separate document reading from actions and make community choices scannable. */
+#class-journal .ws-parent .parent-consent-settings{padding:24px;background:#fff;border:1px solid #dfe6dc;border-radius:12px}
+#class-journal .ws-parent .parent-consent-settings>h2{margin:0 0 12px;font-size:21px}
+#class-journal .ws-parent .parent-consent-settings>p{font-size:14px;line-height:1.8;color:#53685d;max-width:70ch;margin:0 0 24px}
+#class-journal .ws-parent .parent-consent-settings .parent-consent-entry{margin:0 0 20px;padding:20px 24px}
+#class-journal .ws-parent .parent-consent-settings .parent-consent-document{padding:14px 0 0}
+#class-journal .ws-parent .consent-entry-actions{display:flex;justify-content:flex-end;padding-top:18px;margin-top:18px;border-top:1px solid #e5eae2}
+#class-journal .ws-parent .consent-entry-actions button{min-height:40px;margin:0;font-size:13px;white-space:normal;text-align:left;line-height:1.6}
+#class-journal .ws-parent .community-consent-panel{margin-top:28px;padding:24px;background:#f5f8f2;border:1px solid #dde7d7;border-radius:12px;scroll-margin-top:24px}
+#class-journal .ws-parent .community-consent-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+#class-journal .ws-parent .community-consent-heading h3{margin:0;font-size:19px;line-height:1.5}
+#class-journal .ws-parent .community-consent-heading p{margin:6px 0 0;font-size:13px;color:#53685d}
+#class-journal .ws-parent .consent-optional{flex-shrink:0;padding:5px 9px;border:1px solid #d2dfcd;border-radius:5px;font-size:12px;color:#49613e;background:#fff}
+#class-journal .ws-parent .community-consent-status{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 0;margin-top:12px;border-bottom:1px solid #dce5d6;font-size:14px}
+#class-journal .ws-parent .community-consent-status>span{color:#53685d}
+#class-journal .ws-parent .community-consent-status strong{font-size:14px;color:#285239}
+#class-journal .ws-parent .community-consent-guide{margin:4px 0 20px;display:grid;gap:0}
+#class-journal .ws-parent .community-consent-guide>div{display:grid;grid-template-columns:88px minmax(0,1fr);gap:16px;padding:14px 0;border-bottom:1px solid #e3eadf;line-height:1.8;font-size:13px}
+#class-journal .ws-parent .community-consent-guide dt{font-weight:600;color:#304f3a}
+#class-journal .ws-parent .community-consent-guide dd{margin:0;color:#4d6253}
+#class-journal .ws-parent .community-consent-document{border:1px solid #dfe6da;border-radius:8px;background:#fff;padding:14px 16px;font-size:13px;line-height:1.8}
+#class-journal .ws-parent .community-consent-document summary{cursor:pointer;font-weight:600}
+#class-journal .ws-parent .community-consent-document summary span{margin-left:8px;font-weight:400;font-size:12px;color:#5a6b5a}
+#class-journal .ws-parent .parent-consent-settings .parent-document-body{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.9;padding-top:16px;max-width:72ch}
+#class-journal .ws-parent .community-consent-actions{display:flex;justify-content:flex-end;margin-top:20px}
+#class-journal .ws-parent .community-consent-actions button{margin:0;min-height:44px}
+@media(max-width:700px){
+ #class-journal .ws-parent .parent-consent-settings{padding:18px}
+ #class-journal .ws-parent .parent-consent-settings .parent-consent-entry{padding:18px}
+ #class-journal .ws-parent .parent-consent-entry>header{align-items:flex-start;flex-wrap:wrap;gap:10px}
+ #class-journal .ws-parent .community-consent-panel{padding:18px;margin-top:24px}
+ #class-journal .ws-parent .community-consent-heading{flex-wrap:wrap;gap:10px}
+ #class-journal .ws-parent .community-consent-guide>div{grid-template-columns:1fr;gap:4px;padding:12px 0}
+ #class-journal .ws-parent .community-consent-actions button{width:100%}
+}
+/* Dedicated document reader: one outer scroll, no nested scrollbar in the text. */
+#class-journal .ws-parent .parent-consent-settings .consent-document-trigger{display:flex;align-items:center;gap:12px;width:100%;min-height:48px;box-sizing:border-box;margin:0;padding:12px 16px;background:#f3f6f0;border:1px solid #dce5d6;border-radius:8px;font-size:14px;font-weight:500;line-height:1.6;color:#35533e;text-align:left}
+#class-journal .ws-parent .consent-document-trigger>span{flex:1}
+#class-journal .ws-parent .consent-document-trigger>svg{flex-shrink:0}
+#class-journal .ws-parent .parent-consent-settings .consent-document-trigger:hover{background:#e9f0e4;border-color:#afc6a9}
+#class-journal .ws-parent .consent-document-reader{padding:4px 8px 20px;max-width:76ch;margin:0 auto}
+#class-journal .ws-parent .consent-document-reader>dl{margin:0 0 24px;padding:16px 20px;background:#f3f6ef;border-radius:8px;display:grid;gap:12px}
+#class-journal .ws-parent .consent-document-reader>dl>div{display:grid;grid-template-columns:88px minmax(0,1fr);gap:16px;font-size:13px;line-height:1.7}
+#class-journal .ws-parent .consent-document-reader dt{color:#53685d}
+#class-journal .ws-parent .consent-document-reader dd{margin:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+#class-journal .ws-parent .consent-document-reader>h3{font-size:18px;margin:0 0 16px}
+#class-journal .ws-parent .consent-document-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.95;max-height:none;overflow:visible;padding:0}
+@media(max-width:640px){#class-journal .ws-parent .consent-document-reader{padding:0 0 16px}#class-journal .ws-parent .consent-document-reader>dl{padding:16px}#class-journal .ws-parent .consent-document-reader>dl>div{grid-template-columns:1fr;gap:4px}}
+#class-journal .ws-parent .report-count-list{margin:0;display:grid}
+#class-journal .ws-parent .report-count-list>div{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:16px 0;border-bottom:1px solid #e5ebe1}
+#class-journal .ws-parent .report-count-list>div:last-child{border:0}
+#class-journal .ws-parent .report-count-list dt{font-size:14px;font-weight:500}
+#class-journal .ws-parent .report-count-list dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:#53685d}
+#class-journal .ws-parent .report-count-list strong{font-size:20px;color:#284d35;margin-left:8px;white-space:nowrap}
+#class-journal .ws-parent .report-count-list small{display:block;margin-top:6px}
+#class-journal .ws-parent .weekly-activity-picker{display:grid;gap:8px;font-size:13px;color:#52664e}
+#class-journal .ws-parent .weekly-activity-picker select{width:100%;min-width:0;max-width:100%;min-height:46px;font-size:14px;text-overflow:ellipsis}
+#class-journal .ws-parent .weekly-activity-heading{display:flex;justify-content:space-between;gap:16px;align-items:baseline;margin:24px 0 16px}
+#class-journal .ws-parent .weekly-activity-heading h4{font-size:17px;margin:0;line-height:1.6}
+#class-journal .ws-parent .weekly-activity-heading span{font-size:12px;white-space:nowrap;color:#566a56}
+#class-journal .ws-parent .weekly-activity-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid #dfe7d8;border-radius:10px;overflow:hidden;margin:20px 0}
+#class-journal .ws-parent .weekly-activity-pair>section{padding:20px;min-width:0;background:#fafbf8}
+#class-journal .ws-parent .weekly-activity-pair>section+section{border-left:1px solid #dfe7d8;background:#fff}
+#class-journal .ws-parent .weekly-activity-pair h4{font-size:14px;margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid #e5ebe0}
+#class-journal .ws-parent .weekly-activity-pair p,#class-journal .ws-parent .weekly-activity-pair blockquote{margin:12px 0 0;padding:0;border:0;background:none;font-size:14px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere}
+#class-journal .ws-parent .weekly-reflection-difficulty{font-size:12px;color:#4f6948}
+#class-journal .ws-parent .weekly-record-empty{color:#657361}
+#class-journal .ws-parent .weekly-thinking-summary{font-size:13px;padding-top:16px;border-top:1px solid #e5ebe1}
+@media(max-width:700px){#class-journal .ws-parent .weekly-activity-pair{grid-template-columns:1fr}#class-journal .ws-parent .weekly-activity-pair>section+section{border-left:0;border-top:1px solid #dfe7d8}#class-journal .ws-parent .weekly-activity-heading{flex-direction:column;gap:6px}#class-journal .ws-parent .report-count-list>div{align-items:flex-start;gap:12px}#class-journal .ws-parent .report-count-list dd>span{display:block}#class-journal .ws-parent .report-count-list strong{margin-left:0}}
+#class-journal .ws-parent .report-metric-pages{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:16px;font-size:12px;color:#586c51}
+#class-journal .ws-parent .report-metric-pages>span:first-child{margin-right:auto}
+#class-journal .ws-parent .report-metric-pages button{min-height:40px;padding:8px 12px}
+#class-journal .ws-parent .report-theme-disclosure{padding:14px 18px;background:#fff;border-radius:8px;margin:0 0 16px;font-size:14px}
+#class-journal .ws-parent .report-theme-disclosure>summary{cursor:pointer;font-weight:600;line-height:1.7}
+/* One persistent child selector, immediately before notifications in the header. */
+#class-journal .ws-parent .ws-header-actions:has(.parent-header-child-picker){margin-left:auto;display:flex;align-items:center;min-width:0}
+#class-journal .ws-parent .parent-header-child-picker{position:relative;max-width:240px;min-width:140px}
+#class-journal .ws-parent .parent-header-child-picker select{appearance:none;width:100%;min-height:44px;border:1px solid #cddccf;border-radius:9px;background:#fff;padding:10px 36px 10px 14px;font-size:14px;font-weight:600;color:#254c33;line-height:1.5;cursor:pointer;text-overflow:ellipsis;white-space:nowrap}
+#class-journal .ws-parent .parent-header-child-picker select:disabled{cursor:default;color:#657367;background:#f2f5f0}
+#class-journal .ws-parent .parent-header-child-picker select:focus-visible{outline:2px solid #26744b;outline-offset:3px}
+#class-journal .ws-parent .parent-header-child-picker>svg{position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:#4c6c51}
+@media(max-width:700px){
+ #class-journal .ws-parent .ws-topbar-card .ws-header{display:grid;grid-template-columns:minmax(70px,1fr) minmax(90px,150px) 40px auto;gap:6px}
+ #class-journal .ws-parent .ws-header .ws-top-brand{grid-column:1;grid-row:1}
+ #class-journal .ws-parent .ws-header .ws-top-brand .app-brand{--brand-width:96px;width:96px;max-width:100%}
+ #class-journal .ws-parent .ws-header>.ws-header-actions:has(.parent-header-child-picker){grid-column:2;grid-row:1;margin:0;justify-self:stretch}
+ #class-journal .ws-parent .parent-header-child-picker{width:100%;min-width:0;max-width:none}
+ #class-journal .ws-parent .ws-header-actions .parent-header-child-picker select{font-size:12px;min-height:40px;padding:8px 27px 8px 10px}
+ #class-journal .ws-parent .parent-header-child-picker>svg{right:8px;width:14px}
+ #class-journal .ws-parent .ws-header>.notification-bell{grid-column:3;grid-row:1}
+ #class-journal .ws-parent .ws-header>.ws-menu-toggle{grid-column:4;grid-row:1}
+ #class-journal .ws-parent .ws-header>.ws-logout{display:none}
+}
+
+/* Report selectors share the existing activity calendar and reading surface. */
+#class-journal .ws-parent .report-inline-calendar { position: relative; inset: auto; display: block; margin: 12px 0 20px; width: min(340px, 100%); max-width: 100%; box-sizing: border-box; }
+#class-journal .ws-parent .report-date-controls { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin:12px 0 20px; }
+#class-journal .ws-parent .report-date-controls span { font-size:13px; color:#52665e; }
+#class-journal .ws-parent .report-evidence-selector { margin-top:28px; padding-top:24px; border-top:1px solid #dce5df; }
+#class-journal .ws-parent .report-evidence-selector>div { display:flex; gap:16px; align-items:end; flex-wrap:wrap; }
+#class-journal .ws-parent .report-evidence-selector label, #class-journal .ws-parent .report-explanation-reader>label { display:grid; gap:8px; max-width:100%; min-width:0; }
+#class-journal .ws-parent .report-evidence-selector select, #class-journal .ws-parent .report-explanation-reader select { width:100%; max-width:100%; min-width:0; padding:12px; }
+#class-journal .ws-parent .report-explanation-card { border:0; background:transparent; padding:20px 0; box-shadow:none; }
+#class-journal .ws-parent .report-explanation-sections { display:block; }
+#class-journal .ws-parent .report-explanation-section { border:0; border-radius:0; background:transparent; padding:16px 0; border-bottom:1px solid #e3e9e5; }
+#class-journal .ws-parent .report-original-disclosure { margin:18px 0; padding:12px 0; border-top:1px solid #e3e9e5; border-bottom:1px solid #e3e9e5; }
+#class-journal .ws-parent .weekly-activity-picker { margin-bottom:16px; }
+#class-journal .ws-parent .report-inline-calendar .pd-calendar-grid { grid-template-columns:repeat(7,minmax(0,1fr)); gap:3px; }
+#class-journal .ws-parent .report-inline-calendar .pd-calendar-grid button { min-width:0; width:100%; padding:6px 0; min-height:36px; }
+#class-journal .ws-parent .report-inline-calendar .pd-date-inputs { min-width:0; }
+#class-journal .ws-parent .report-inline-calendar .pd-date-inputs input { min-width:0; width:100%; padding:8px 4px; }
+#class-journal .ws-parent .report-inline-calendar .pd-calendar-grid button[aria-pressed="true"] { background:#e3efe6; color:#205e3d; }
+#class-journal .ws-parent .report-inline-calendar .pd-calendar-grid button[data-edge="true"], #class-journal .ws-parent .report-inline-calendar .pd-date-confirm { background:#24633f; color:white; }

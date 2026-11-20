@@ -75,6 +75,8 @@ export function Modal({
     panel.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true })
     panel.current?.scrollIntoView({ block: 'nearest' })
     const keydown = (e: KeyboardEvent) => {
+      // Nested evidence dialogs own Escape and focus until they close.
+      if (panel.current?.querySelector('[role="dialog"][aria-modal="true"]')) return
       if (e.key === 'Escape') close.current()
       if (e.key !== 'Tab') return
       const elements = [

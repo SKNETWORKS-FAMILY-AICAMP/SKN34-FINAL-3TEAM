@@ -49,10 +49,10 @@ const quiet = { retry: false } as const
 
 export const useMyPoints = (childId: string | undefined, page = 0) =>
   useQuery({ queryKey: ['points', childId, page], queryFn: ({ signal }) => retentionApi.myPoints(signal, page), enabled: !!childId, ...quiet })
-export const useChildPoints = (childId: string | undefined) =>
+export const useChildPoints = (childId: string | undefined, page = 0) =>
   useQuery({
-    queryKey: ['parent', 'points', childId],
-    queryFn: ({ signal }) => retentionApi.childPoints(childId!, signal),
+    queryKey: ['parent', 'points', childId, page],
+    queryFn: ({ signal }) => retentionApi.childPoints(childId!, signal, page),
     enabled: !!childId,
     ...quiet,
   })

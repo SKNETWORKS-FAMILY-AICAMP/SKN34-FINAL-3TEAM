@@ -15,11 +15,17 @@ export function PeriodPicker({ period, onApply }: { period: Period; onApply: (p:
   const [from, setFrom] = useState(period.from), [to, setTo] = useState(period.to)
   const [error, setError] = useState(''), [open, setOpen] = useState(false)
   const [source, setSource] = useState(period)
+  const [submitted, setSubmitted] = useState<Period | null>(null)
   if (source.from !== period.from || source.to !== period.to) {
-    setSource(period); setFrom(period.from); setTo(period.to); setError('')
+    setSource(period); setSubmitted(null)
+    // 방금 적용한 기간의 늦은 반영은 그 뒤에 작성한 입력·오류를 덮어쓰지 않는다.
+    if (submitted?.from !== period.from || submitted?.to !== period.to) {
+      setFrom(period.from); setTo(period.to); setError('')
+    }
   }
   function apply(next: Period) {
     if (!validPeriod(next)) { setError('날짜를 YYYY-MM-DD로 입력하고 시작일과 종료일의 순서를 확인해 주세요.'); return }
+    setSubmitted(next.from === period.from && next.to === period.to ? null : next)
     setFrom(next.from); setTo(next.to); setError(''); setOpen(false); onApply(next)
   }
   const initial = validPeriod({ from, to }) ? { from, to } : validPeriod(period) ? period : calendarPeriods().recentPeriod
