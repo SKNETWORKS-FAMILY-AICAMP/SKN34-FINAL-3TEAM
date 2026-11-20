@@ -36,7 +36,7 @@ data class ThinkingTypes(val state: QueryState, val items: List<ThinkingTypeReco
  * 기록 시도: 학생 시도 상세에 생각 열기 열람 시각과 돌아보기 작성 시각을 붙임 (report #51).
  * 목록에서는 답변·열람을 조회 종료일까지로, 돌아보기는 기간 안에 쓴 것만 남김
  */
-data class RecordAttempt(val detail: AttemptDetail, val hintUsages: List<Instant>, val reflectionCreatedAt: Instant?)
+data class RecordAttempt(val detail: AttemptDetail, val hintUsages: List<Instant>, val reflectionCreatedAt: Instant?, val scheduledDay: com.sagomungchi.learning.theme.domain.ThemeDay? = null)
 
 data class RecordPage(val state: QueryState, val items: List<RecordAttempt>, val page: Int, val size: Int, val totalElements: Int)
 
@@ -150,7 +150,9 @@ class RecordService(
     @Transactional(readOnly = true)
     fun dailyAttempts(studentId: UUID, period: Period, page: Int, size: Int): RecordPage {
         val ids = repository.findCompleted(studentId, period)
-        val items = ids.drop(page * size).take(size).map(::fullRecord)
+        val slice = ids.drop(page * size).take(size)
+        val scheduledDays = repository.findScheduledDays(slice)
+        val items = slice.map { fullRecord(it).copy(scheduledDay = scheduledDays[it]) }
         return RecordPage(QueryState.of(ids.size), items, page, size, ids.size)
     }
 

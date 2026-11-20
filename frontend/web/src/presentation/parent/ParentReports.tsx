@@ -4,7 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ReportExplanations } from './ReportExplanations.tsx'
 import type { Child } from '../../domain/classroom.ts'
-import { answerTimeLine, type DailyProblem, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
+import { scheduledDayLine, answerTimeLine, type DailyProblem, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
 import type { ReportContext, ReportHighlight } from '../../domain/reportHighlight.ts'
 import { emptyReportTargets, reportTargets } from '../../domain/reportHighlight.ts'
@@ -239,7 +239,7 @@ function ReportDetail({
               <p>{r.inclusionRule}</p>
               <QueryStateNotice state={r.state} />
               {daily ? (
-                <DailyProblems highlighted={targets.problems} problems={r.problems ?? []} canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />
+                <DailyProblems completedDate={r.period.from} highlighted={targets.problems} problems={r.problems ?? []} canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />
               ) : r.narrative ? (
                 <>
                   <p>{r.narrative.text}</p>
@@ -393,7 +393,7 @@ const contextLabels: Record<NonNullable<DailyProblem['context']>, string> = {
 }
 
 /** 일일 리포트(P24): 그날 문제별 기록만 보여 준다. 서술·저녁 질문은 없다. */
-function DailyProblems({ problems, onProof, canReadOriginals, highlighted }: { problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void; highlighted: number[] }) {
+function DailyProblems({ completedDate, problems, onProof, canReadOriginals, highlighted }: { completedDate: string; problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void; highlighted: number[] }) {
   if (!problems.length) return <p>이날은 기록이 없습니다.</p>
   return (
     <>
@@ -402,6 +402,7 @@ function DailyProblems({ problems, onProof, canReadOriginals, highlighted }: { p
         <article className="ws-card report-highlight-target" data-answer-highlight={highlighted.includes(i) ? 'true' : undefined} tabIndex={-1} key={`${p.missionId}-${p.attemptId ?? i}`}>
           <HighlightLabel active={highlighted.includes(i)} />
           <h4>{p.title}</h4>
+          {scheduledDayLine(p, completedDate) && <p>{scheduledDayLine(p, completedDate)}</p>}
           <p>
             {p.context ? `${contextLabels[p.context]} · ` : ''}
             {p.judgment ? `판정 ${judgmentLabels[p.judgment]}` : '판정 없음'}

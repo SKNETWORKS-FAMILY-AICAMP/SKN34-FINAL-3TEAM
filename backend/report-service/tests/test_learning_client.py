@@ -445,3 +445,25 @@ def test_duplicate_element_in_one_judgment_is_a_contract_error():
         asyncio.run(
             read(student, handler_for(student, [attempt_for(student)], [], with_judgment(judgment)))
         )
+
+
+@pytest.mark.parametrize(
+    "context,day,expected",
+    [
+        ("THEME_DAY", "TUE", "TUE"),
+        ("THEME_REVIEW", "FRI", "FRI"),
+        ("EXTRA", "TUE", None),
+        ("THEME_DAY", None, None),
+    ],
+)
+def test_scheduled_day_input_contract(context, day, expected):
+    from app.clients.learning_client import AttemptInput
+
+    raw = wire_attempt(attempt_for(uuid4()))
+    raw.update(context=context, scheduledDay=day)
+    assert AttemptInput.model_validate(raw).record().scheduled_day == expected
+    raw.pop("scheduledDay")
+    assert AttemptInput.model_validate(raw).record().scheduled_day is None
+    raw["scheduledDay"] = "SAT"
+    with pytest.raises(ValidationError):
+        AttemptInput.model_validate(raw)
