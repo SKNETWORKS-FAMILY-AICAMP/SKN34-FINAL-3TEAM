@@ -25,7 +25,9 @@
 
 ## 2. 공통 모듈
 
-### 2.1 Spring 공통 (`_common/`, core·learning 동일)
+### 2.1 Spring 공통 (`_common/`, core·learning 공통 골격)
+
+두 서비스가 같은 구성을 따르지만 내용이 같지는 않다. 한쪽에만 있는 클래스는 아래 표 상태 칸에 "core만" 등으로 적는다. 패키지도 core만 `json`·`scheduler`, learning만 `storage`(S3 presigned URL `AssetUrls`)가 있고, `_common/web`은 core가 `IdempotencyService`·`PageQuery`·`SseEmitters` 등, learning이 응답 DTO(`SharedResponses`·`FeedbackResponses`)다.
 
 ```mermaid
 classDiagram
