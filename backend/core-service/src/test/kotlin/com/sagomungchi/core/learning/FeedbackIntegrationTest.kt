@@ -172,6 +172,35 @@ class FeedbackIntegrationTest : PostgresRepositoryTest() {
         assertTrue(body.contains("\"retryable\":false")); assertTrue(body.contains("\"extra\":\"scope\""))
     }
 
+    /** #834: 해석을 client·service로 옮겨도 공개 SSE 이벤트 순서·오류 코드·retryable·보정 기본값이 그대로인지 고정한다. */
+    @Test fun `feedback SSE contract stays the same for problem defaults and contract violations`() {
+        fun error(body: String): Map<String, Any?> {
+            assertEquals(listOf("status", "error", "done"), events(body))
+            val data = Regex("(?m)^event:error\\r?\\ndata:(.*)$").find(body)!!.groupValues[1]
+            return com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().readValue(data, Map::class.java)
+                .entries.associate { it.key.toString() to it.value }
+        }
+        // learning 오류 응답의 빈 칸은 core 기본값으로 채우고 있는 칸·확장 칸은 그대로 둔다.
+        listOf(429 to true, 500 to true, 404 to false).forEach { (status, retryable) ->
+            learning.respond = { LearningHttpStub.Reply(status, """{"detail":"합성"}""") }
+            assertEquals(mapOf("detail" to "합성", "type" to "about:blank", "title" to "피드백 처리 실패", "status" to status,
+                "code" to "LEARNING_UNAVAILABLE", "retryable" to retryable), error(call().body()))
+        }
+        learning.respond = { LearningHttpStub.Reply(409, """{"type":"t","title":"제목","status":"문자","code":"C","retryable":"x"}""") }
+        assertEquals(mapOf("type" to "t", "title" to "제목", "status" to "문자", "code" to "C", "retryable" to "x"), error(call().body()))
+        // 객체가 아닌 응답·모르는 status는 성공·실패 응답 모두 502 LEARNING_INVALID_RESPONSE(재시도 가능)다.
+        listOf(200 to "", 200 to "{\"status\":1}", 200 to "{\"status\":\"done\"}", 200 to "\"DONE\"",
+            503 to "[]", 500 to "gateway failure", 400 to "null").forEach { (status, payload) ->
+            learning.respond = { LearningHttpStub.Reply(status, payload) }
+            assertEquals(mapOf("type" to "about:blank", "title" to "학습 서비스 응답 형식이 올바르지 않습니다.", "status" to 502,
+                "code" to "LEARNING_INVALID_RESPONSE", "retryable" to true), error(call().body()), "$status $payload")
+        }
+        // RUNNING은 본문과 상관없이 같은 진행 이벤트를 다시 보낸다.
+        learning.respond = { LearningHttpStub.Reply(202, """{"status":"RUNNING","extra":"숨김"}""") }
+        val running = call().body()
+        assertEquals(listOf("status", "status", "done"), events(running)); assertFalse(running.contains("숨김"))
+    }
+
     @Test fun `actual auth rejects invalid token parent admin invalid id and revoked student before HTTP`() {
         assertEquals(401, call("invalid").statusCode())
         assertEquals(400, call(id = "not-a-uuid").statusCode())
