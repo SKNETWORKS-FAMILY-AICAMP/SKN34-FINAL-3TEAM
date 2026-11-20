@@ -68,7 +68,7 @@ export function StandardPicker({ codes, levels, gradeMin, gradeMax, subject, onC
           )
         })}
       </ul>
-      <div className="ws-grid">
+      <div className="ad-standard-filters">
         <label>
           교과
           <input aria-label="성취기준 교과" value={draft.subject} onKeyDown={enter} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} />
@@ -84,8 +84,8 @@ export function StandardPicker({ codes, levels, gradeMin, gradeMax, subject, onC
           코드·문장 검색
           <input aria-label="성취기준 검색어" maxLength={100} value={draft.q} onKeyDown={enter} onChange={(e) => setDraft({ ...draft, q: e.target.value })} />
         </label>
+        <button type="button" className="cj-secondary" onClick={apply}>성취기준 조회</button>
       </div>
-      <button type="button" className="cj-secondary" onClick={apply}>성취기준 조회</button>
       <QueryFeedback query={search} />
       {search.data && !search.error && (
         <>

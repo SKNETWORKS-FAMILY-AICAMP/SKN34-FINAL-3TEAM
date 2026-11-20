@@ -24,6 +24,7 @@ test('Pod 2개 보고 결과와 실패 Pod를 화면에서 구분한다', async 
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
   })
   await page.goto('/admin/models')
+  await page.locator('.ad-version-disclosure > summary').click()
   await page.getByText('운영 단계와 확인 방법', { exact: true }).click()
   const panel = page.getByLabel(`${version.name} Pod 로딩 상태`, { exact: true })
   await expect(panel.getByText('최근 보고 Pod 2개 중 로딩 완료 1개', { exact: true })).toBeVisible()

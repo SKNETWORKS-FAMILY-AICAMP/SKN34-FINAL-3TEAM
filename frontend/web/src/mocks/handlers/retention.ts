@@ -29,6 +29,7 @@ import {
   weeklyThemeFor,
   frameImageOf,
   FRIEND_ROOMS,
+  sharedAnswer,
 } from '../fixtures/retention.ts'
 import { guard, mockLatestAttempt, mockStudent, mockStudentHome, respond } from './student.ts'
 import { mockThemeNone } from '../fixtures/themeState.ts'
@@ -88,7 +89,7 @@ const postView = (p: (typeof retentionState.posts)[number]) => ({
   postId: p.postId,
   missionId: p.missionId,
   missionTitle: p.missionTitle,
-  answer: p.answer,
+  answer: sharedAnswer(p.answer),
   status: p.status,
   reactions: reactionCounts(p.postId),
   createdAt: p.createdAt,
@@ -370,7 +371,7 @@ export const retentionHandlers = [
           .map((x) => ({
             postId: x.postId,
             author: { nickname: x.nickname, look: { theme: 'lake', companion: x.companion, equipped: { HAT: x.equipped?.HAT ?? null, OUTFIT: x.equipped?.OUTFIT ?? null, ACCESSORY: x.equipped?.ACCESSORY ?? null, BACKGROUND: null } } },
-            answer: x.answer,
+            answer: sharedAnswer(x.answer),
             myReactions: retentionState.reactions[x.postId]?.[me.id] ?? [],
             createdAt: x.createdAt,
           })),
@@ -438,15 +439,37 @@ export const retentionHandlers = [
   ),
   // 커뮤니티 신고만 여기서 받는다. 다른 신고 대상은 기존 지원 목업으로 넘긴다.
   http.post('/api/v1/error-reports', async ({ request }) => {
-    const body = (await request.clone().json().catch(() => null)) as { targetType?: string; targetId?: string } | null
+    const body = (await request.clone().json().catch(() => null)) as { targetType?: string; targetId?: string; category?: string; comment?: string } | null
     if (body?.targetType !== 'COMMUNITY_POST') return undefined
     return respond(async () => {
       guard(request)
-      mockStudent()
+      const reporter = mockStudent()
+      const key = request.headers.get('Idempotency-Key')
+      const category = body.category ?? ''
+      const comment = body.comment ?? ''
+      if (!key || !['WRONG_JUDGMENT', 'ODD_QUESTION', 'MISMATCH', 'INAPPROPRIATE', 'OTHER'].includes(category) || comment.length > 10000)
+        fail(400, 'VALIDATION_FAILED', '신고 내용을 확인해 주세요.')
+      const replay = retentionState.communityReports.find((item) => item.reporterId === reporter.id && item.key === key)
+      if (replay) {
+        if (replay.report.targetId !== body.targetId || replay.report.category !== category || replay.report.comment !== comment)
+          fail(409, 'SUPPORT_STATE_CONFLICT', '같은 접수 번호의 신고 내용이 다릅니다.')
+        return { ...replay.report, status: 'RECEIVED', reviewReason: null, reviewResult: null }
+      }
       const post = retentionState.posts.find((p) => p.postId === body.targetId)
-      if (!post) fail(404, 'COMMUNITY_POST_NOT_FOUND', '볼 수 없는 글이에요.')
+      if (!post || !['VISIBLE', 'HIDDEN_REPORT'].includes(post.status)) fail(404, 'COMMUNITY_POST_NOT_FOUND', '볼 수 없는 글이에요.')
+      if (post!.studentId === reporter.id) fail(409, 'COMMUNITY_OWN_POST', '내 공유물은 신고할 수 없어요.')
+      const report = {
+        reportId: crypto.randomUUID(),
+        status: 'RECEIVED' as const,
+        targetType: 'COMMUNITY_POST',
+        targetId: post!.postId,
+        category,
+        comment,
+        corrections: [],
+      }
       post!.status = 'HIDDEN_REPORT'
-      return saved({ reportId: `report-${post!.postId}`, status: 'RECEIVED', targetType: 'COMMUNITY_POST', targetId: post!.postId })
+      retentionState.communityReports.unshift({ reporterId: reporter.id, key: key!, report })
+      return saved(report)
     }, 201)
   }),
   // 현재 동의 문서에 선택 문서 COMMUNITY를 더한다(가입 화면은 이용 안내·개인정보만 고른다).

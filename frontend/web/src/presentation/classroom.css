@@ -1450,6 +1450,44 @@ body {
   overflow: auto;
   flex: none;
 }
+#class-journal .cj-modal.cj-modal-inner-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#class-journal .cj-modal-inner-scroll .cj-modal-head { flex: none; }
+#class-journal .cj-modal-scroll-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#class-journal .cj-modal-scroll-frame > .cj-modal-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+#class-journal .cj-modal-scroll-frame > .cj-modal-body:focus-visible { outline-offset: -3px; }
+#class-journal .cj-modal-scroll-marker {
+  position: absolute;
+  top: 4px;
+  inset-inline-end: 4px;
+  width: 4px;
+  border-radius: 100px;
+  background: #596761ad;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+#class-journal .cj-modal-scroll-marker[data-visible] { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  #class-journal .cj-modal-scroll-marker { transition: none; }
+}
+@media (forced-colors: active) {
+  #class-journal .cj-modal-scroll-frame > .cj-modal-body { scrollbar-width: auto; }
+  #class-journal .cj-modal-scroll-marker { display: none; }
+}
 @media (max-width: 1100px) {
   #class-journal {
     padding: 12px;

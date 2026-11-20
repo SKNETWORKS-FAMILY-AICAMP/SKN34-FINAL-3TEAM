@@ -636,14 +636,14 @@ P23의 learning 몫. 2026-11-10 개정(#483: 누적 공개·토요일까지 풀�
 | 학년군·주 위치 | 테마 행(버전 밖). 게시 중 변경은 409 | 게시 부분 UK `(grade_band, week_start)` |
 | 검토·승인 | 별도 `/review` 경로 없음. 검토 요청한 버전이 현재본일 때의 게시가 승인. 검토 중 수정은 `DRAFT` | core가 7경로만 프록시 |
 | 학년군 검사 | 미션 게시본이 학년군 전체를 덮어야 함. 초3~4는 논술 불가, 시연 전용 제외 | 학년군 안 어느 학생에게나 문제가 열려야 함 |
-| 오류 코드 | 전이 불가 409 `CONFLICT`, 게시 검사 422 `WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]`(6종: `DAYS_INCOMPLETE`·`MISSION_NOT_PUBLISHED`·`MISSION_DEMO_ONLY`·`GRADE_BAND_MISMATCH`·`THINKING_TYPES`·`WEEK_ALREADY_PUBLISHED`) | 웹이 `errors[].message`를 그대로 표시 |
-| 이번 주 테마 | 그 주 게시본, 없으면 이전 최근 게시본(`reused`). 학년군에 게시 테마가 없으면 404 | P23 |
+| 오류 코드 | 전이 불가 409 `CONFLICT`, 게시 검사 422 `WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors:[{code, message}]`(6종: `DAYS_INCOMPLETE`·`MISSION_NOT_PUBLISHED`·`MISSION_DEMO_ONLY`·`GRADE_MISMATCH`(#438)·`THINKING_TYPES`·`WEEK_ALREADY_PUBLISHED`) | 웹이 `errors[].message`를 그대로 표시 |
+| 이번 주 테마 | 그 주 게시본, 없으면 이전 최근 게시본(`reused`). 그 학년에 게시 테마가 없으면 404(학년별 테마 #438) | P23 |
 | 시작 순서 | 진행 중 시도 반환(검사 없음) → 미션 공개·범위 → 테마 검사 | 자정이 지나도 이어하기 |
-| `THEME_DAY` | ~~이번 주 테마의 오늘(KST) 요일 문제만~~ → #484: 공개된(`OPEN`) 문제를 토요일까지, 그 주 이미 마무리한 문제는 거부. 아니면 409 `THEME_DAY_CLOSED` | 누적 공개(34장) |
-| `THEME_REVIEW` | 그 주 그 문제 `THEME_DAY` 시도를 마무리했을 때만, ~~토·일~~ → #484: 토요일·프리미엄 일요일. 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | |
+| `THEME_DAY` | 공개된(`OPEN`) 문제를 토요일까지, 그 주 이미 마무리한 문제는 거부(#484). 아니면 409 `THEME_DAY_CLOSED` | 누적 공개(34장) |
+| `THEME_REVIEW` | 그 주 그 문제 `THEME_DAY` 시도를 마무리했을 때만, 토요일·프리미엄 일요일(#484). 아니면 409 `THEME_REVIEW_NOT_ALLOWED` | |
 | 개근(칸 `completed`) | 월~금 다섯 문제 각각 그 요일(KST) 안에 학습 완료 | 금요일 문제를 토요일 01시에 끝내면 개근 아님. 주간 완주(`finished`)는 34장 |
 | 열람 기록 | `theme_review_view` 학생·주당 1행, 다시 보내도 200(`firstViewThisWeek`만 false) | 포인트 멱등 근거 |
-| 주간 요약 | `GET …/weekly-theme/summary?weekStart`. 테마는 그 주 학생 테마 시도에서 정하고 없으면 `NO_RECORD` | report는 학년군을 모름 |
+| 주간 요약 | `GET …/weekly-theme/summary?weekStart`. 테마는 그 주 학생 테마 시도에서 정하고 없으면 `NO_RECORD` | report는 학년을 모름 |
 | 날짜 기준 | 조회·열람은 core가 넘긴 `date`, 시작 검사는 learning `Clock` | 둘 다 KST 오늘 |
 
 - ERD 설계와 달리 `weekly_theme_version` 테이블을 더하고 제목·소개·요일 문제를 버전으로 옮김. 순환 FK는 `DEFERRABLE INITIALLY IMMEDIATE`
@@ -885,22 +885,13 @@ python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --d
 
 ### 자동 성취기준의 한계와 다음 설계
 
-아래는 #438 때 기록이고, #536에서 해결·변경했다(35장).
-
-- 학년군 표에서 고르므로 초3 테마에 4학년 내용이 뽑힐 수 있음(#437 실측에서 초3 통과율이 가장 낮았던 원인 중 하나). 성취기준 표에는 학년·학기 칸이 없어 지금은 거를 수 없고, 관리자가 성취기준을 지정하면 피할 수 있음 → #536: 학기 대응표로 그 학년·학기만 거름
-- 후보 풀 설계(기준안): 지식 RAG 적재 뒤 learning 지식 서비스(#469)에서 그 학년·학기(`knowledge_standard_semester`)와 유형(`knowledge_fits`) 성취기준을 받고, 없거나 장애면 학년군 표로 대체. ai 요청 계약은 그대로 → #536: RAG를 쓰지 않기로 해(팀 결정 2026-11-11) 지식 서비스 단계 없이 이번 학기 → 같은 학년군 지난 학기 → 학년군 표
-- 학기 규칙(기준안): `weekStart`가 3월 1일~8월 15일이면 1학기, 그 밖은 2학기 → #536에서 기준안대로 확정(사용자 결정 2026-11-12)하고 후보 풀에 씀(`ThemeSemester`)
-- 국어는 두 학년 공통 코드가 많아 코드로는 학년 수준을 거를 수 없음 → ai 검토(학년 어휘 `GRADE_VOCAB`)가 맡음. 처음 기록의 `learned`(#469)는 RAG를 쓰지 않기로 해 뺌
-- 확인 필요(#536에서 닫음): 주제와 가까운 성취기준을 고르려면 C5 `theme-candidates`를 부르는 쪽이 ai에서 learning으로 바뀜(#469 담당과 확인) → 주제가 있는 관리자 요청도 같은 학기 대응표 규칙으로 고르고, 벡터로 고르는 안은 하지 않음
+#438 때 적은 한계(학년군 표에서 골라 초3에 4학년 내용이 뽑힘, 학기 규칙 기준안, RAG 후보 풀 설계)는 #536에서 학년·학기 후보 풀로 해결·변경했다(35장). 학기 규칙은 `weekStart`가 3월 1일~8월 15일이면 1학기, 그 밖은 2학기(사용자 결정 2026-11-12). 국어처럼 두 학년 공통 코드는 ai 검토 `GRADE_VOCAB`이 학년 수준을 본다.
 
 ### 남은 확인
 
-- 정답 고르기 위치·저장·엔딩 판정은 #484(34장에서 구현). `sundayTheme`도 #484부터 읽음
-- 인프라: learning에 S3 역할이 없음. `theme-drafts/*` 읽기 역할(presign 서명용)과 버킷 이름(ai 쓰기 버킷과 같아야 함), 로컬은 브라우저가 닿는 MinIO 주소
-- presigned URL 한계: 응답마다 주소가 바뀌어 브라우저 캐시가 맞지 않음. 임시 자격 증명으로 서명하면 1시간보다 일찍 만료될 수 있음. 만료 403은 웹이 이번 주 테마를 다시 받아 처리(#440)
+- presigned URL 한계: 응답마다 주소가 바뀌어 브라우저 캐시가 맞지 않음. 임시 자격 증명으로 서명하면 1시간보다 일찍 만료될 수 있음
 - 주간 자동 시각에 learning이 모두 내려가 있으면 그 주 자동 초안이 생기지 않음(관리자 요청으로 대신)
-- api-spec 2.8·2.11 공개 줄 문구(학년, 새 응답 칸, INTRO 월~토·OUTRO 엔딩)는 core PR에서 맞춤
-- #437 그래프와 실제로 붙인 확인은 병합 뒤 kind에서 core와 함께
+- 처리된 것: 정답 고르기·엔딩·`sundayTheme`은 34장(#484), learning S3 읽기 역할은 infra 9.8(#652)
 
 테스트: `ThemeGradeMigrationTest`, `ThemeAnswerRulesTest`, `AssetUrlsTest`, `ThemeDraftServiceTest`, `ThemeDraftConcurrencyTest`(레플리카 4곳, 느린 ai 대기 중 내부 API 즉시 응답), `ThemeDraftAiStubFlowTest`, `ThemeTopicSeedsTest`, `scripts/tests/test_theme_drafts_contract.py`.
 
@@ -1260,7 +1251,7 @@ P23·P20·P21 개정(#483)의 learning 몫. core #485(`sundayTheme` 전달·포�
 | `ix_answer_followup` `answer (followup_id) WHERE followup_id IS NOT NULL` | `findUnansweredLatestFollowupId`의 `NOT EXISTS`, FK `fk_answer_followup_id` 검사(되묻기 삭제) | 부분 인덱스. 첫 답변은 `followup_id`가 NULL이라 보완 답변 행만 담는다. `followup_id = ?`는 NULL이 아님을 뜻하므로 두 곳 모두 이 인덱스를 쓴다 |
 
 - 이미 있는 인덱스·제약과 겹치지 않음: `followup`은 `pk_followup`·`uq_followup_judgment_id`, `hint_usage`는 `pk_hint_usage`, `answer`의 `followup_id`는 인덱스 없음(V2~V21 확인). `findEligible`의 `revised`(`answer` `attempt_id` + `followup_id IS NOT NULL`)는 기존 `ix_answer_attempt_submitted`로 충분해 따로 두지 않음
-- `CREATE INDEX CONCURRENTLY`는 쓰지 않음. 운영 learning_db는 시험 데이터 정리 뒤 테이블마다 약 2,800행, 시연 B 계정은 새로 시작한다. 아래 시험 DB(2만~3만 행)에서도 세 인덱스 생성이 7~27ms였다. 일반 `CREATE INDEX`는 그동안 해당 테이블 쓰기만 막는다. CONCURRENTLY는 Flyway가 트랜잭션 밖에서 실행해야 하고, 중간에 실패하면 `INVALID` 인덱스가 남아 손으로 지워야 한다. 테이블이 수십만 행을 넘으면 그때 CONCURRENTLY로 나눈다
+- `CREATE INDEX CONCURRENTLY`는 쓰지 않음. 운영 learning_db는 시험 데이터 정리 뒤 테이블마다 약 2,800행이고, 시연 B 계정은 A 최종 스냅샷을 복원하므로 같은 규모로 시작한다(2026-11-18 결정, [AWS README B 계정 전환 런북](../../infrastructure/aws/README.md#b-계정-전환-런북-809)). V22는 A에서 이미 적용돼 B에서는 다시 실행되지 않는다. 아래 시험 DB(2만~3만 행)에서도 세 인덱스 생성이 7~27ms였다. 일반 `CREATE INDEX`는 그동안 해당 테이블 쓰기만 막는다. CONCURRENTLY는 Flyway가 트랜잭션 밖에서 실행해야 하고, 중간에 실패하면 `INVALID` 인덱스가 남아 손으로 지워야 한다. 테이블이 수십만 행을 넘으면 그때 CONCURRENTLY로 나눈다
 - ERD 6장 인덱스 표에 세 줄 추가(`scripts/verify_db_schema.py` 대조), 8장 learning 버전 V22. kind local values migration revision `v22`. prod는 cd-release가 main SHA의 migration을 적용한다
 
 ### 실행 계획 전후 (kind, 2026-11-18)
@@ -1282,3 +1273,133 @@ kind Postgres(PostgreSQL 17, CPU 한도 500m)에 learning_db를 복사한 비교
 - kind 학습 기록·되묻기 API(core 호출자 토큰, 학생 헤더): `GET /internal/records/students/{id}/attempts` 200(17건, 60~100ms), `POST /internal/answers/{id}/feedback` 200 `DONE`이고 아직 답하지 않은 최근 되묻기 ID를 그대로 돌려줌. 판정·보완 답변 제출은 실제 LLM 비용이 들어 kind에서는 하지 않고 기존 테스트로 확인
 - learning `./gradlew test bootJar`(JDK 21 컨테이너, Testcontainers): 612건 중 실패 0(건너뜀 3, 기존), bootJar 생성. 기존 테스트가 쓰는 PostgreSQL 컨테이너도 V22까지 적용한 스키마로 돈다
 - DB 스키마 검사(`check_db_migrations.py`, CI와 같은 pgvector 이미지): 세 DB 적용·ERD 대조(인덱스 65개)·재실행 무변경·report 왕복 통과
+
+## 42. 답변 생각·작성 시간과 붙여넣기 막기 설계 (#800, 2026-11-19)
+
+#231 코멘트(학생이 얼마나 생각했는지 시간으로 확인, 붙여넣기 막기)가 2026-11-19 12/7 데모 범위로 결정됐다(에픽 #799). 지금은 시도 시작(`attempt.started_at`)과 제출(`answer.submitted_at`)만 있어 언제 쓰기 시작했는지 모르고, 답변 칸 붙여넣기 처리도 없다. 문서 이슈 #800에서 기준안을 확정해 [기능명세 P28](../design/functional-spec.md#14-확정-정책)·FN-LRN-05·08·FN-RPT-14, [API 3.1·3.8·4.1·4.1.1·2.5](../design/api-spec.md#31-답변-제출--post-attemptsattemptidanswers), [ERD 4.2](../design/erd.md#42-학습-시도답변판정-fn-lrn-fn-jdg) 구현 전 표, UC-08·시퀀스 3.1에 반영했다.
+
+### 정한 것
+
+| 항목 | 확정 값 | 근거 |
+|---|---|---|
+| 생각 시간 | 문제 화면(보완 답변은 되묻기 질문) 표시 → 답변 칸 첫 입력 | 사용자 결정 2026-11-19 |
+| 작성 시간 | 첫 입력 → 제출 | 사용자 결정 2026-11-19 |
+| 저장 | 답변(버전)마다 `answer.thinking_seconds`·`writing_seconds` int NULL 허용, CHECK ≥ 0, **두 칸은 함께 NULL이거나 함께 값** | 쌍 규칙은 #800에서 더함: 반쪽 표시를 없애 리포트 규칙이 단순해짐 |
+| 요청 칸 | `POST /attempts/{id}/answers` 선택 `thinkingSeconds`·`writingSeconds`(정수 초). 웹이 기기 시계 대신 `performance.now()` 경과 시간으로 잼 | 기기 시계 변경·시간대 영향 없음 |
+| 재는 대상 | 서술·풀이 단계·논술. 고르기 방식·보호자 받아쓰기·새로고침 뒤 이어하기(화면을 열 때 답 칸에 복원된 글이 있음)는 null | 고르기는 첫 입력 개념이 없고, 받아쓰기는 아이가 쓴 시간이 아니며, 이어하기는 첫 입력 시각을 모름 |
+| 범위 밖 값 | 정수 아님 기존 `400`. 0 미만·86400초(24시간) 초과는 둘 다 null로 저장, 제출은 막지 않음 | 측정 오류로 답이 막히면 안 됨(FN-LRN-10) |
+| 탭 전환 | 화면이 가려진 동안도 시간에 넣음 | 단순화 |
+| 버튼 입력 | '시작 문장'·'메모를 답에 넣기' 버튼 입력은 붙여넣기가 아니며 첫 입력으로 인정 | FN-LRN-05·07 |
+| 같은 키 재전송 | 웹은 처음 잰 값을 그대로 다시 보냄. learning은 같은 요청 비교에서 두 칸을 뺌 | core `IdempotencyService`가 본문 전체 해시로 비교해 값이 바뀌면 `422 IDEMPOTENCY_KEY_REUSED`(코드 확인) |
+| 표시 | 학생 화면 없음. 학부모 일일 리포트 문제별 답변마다 "처음 답"·"되묻기 뒤 답"·"두 번째 되묻기 뒤 답" + "생각 N분 · 작성 N분", 60초 미만 "1분 미만", 그 밖 분 단위 내림, 시간 없는 답은 줄 생략 | 사용자 결정 2026-11-19: 답변별로 저장되므로 보완 답변까지 표시(에픽 기준안은 처음 답만) |
+| 원문 비공개(#206) | 시간은 표시 | 사용자 결정 2026-11-19: 원문이 아닌 수치(판정·요소 수치 유지와 같음) |
+| 붙여넣기 막기 | 학생 답변 칸(서술·풀이 단계·논술 4칸·최종 답, 최초·보완)에서 `paste`·`drop` 기본 동작 취소, **안내 문구 없음**, 입력 내용 유지. 메모·돌아보기·관리자 미리보기 제외 | 사용자 결정 2026-11-19: 에픽 기준안 "직접 써 볼까?" 대신 막기만 |
+| 무료·유료 | 동일 | P13 |
+
+- 범위 밖(에픽 #799): 학생 화면 시간 표시, 주간 리포트 지표, 분석 대화 근거, 붙여넣기 시도 횟수 기록, 시간·붙여넣기로 부정행위 판정, `attempt.started_at` 의미 변경
+
+### API 변경
+
+- 공개 `POST /attempts/{id}/answers`: 선택 칸 `thinkingSeconds`·`writingSeconds` 추가(core는 본문을 그대로 넘겨 변경 없음). 칸 없는 기존 요청은 그대로 성공
+- learning 내부: 시도 상세·기록 조회 `answers[]`와 report 입력(4.1.1) `answers[]`에 두 칸(없으면 null)
+- report 일일 상세: `problems[].answerTimes:[{version, thinkingSeconds, writingSeconds}]`(시간 있는 답만 버전 순, 없으면 `[]`, 이전 저장본은 `[]`로 읽음)
+- OpenAPI(learning·report)는 각 구현 이슈에서 고친다
+
+### 구현 나눔
+
+- learning #801: V23 `answer` 두 칸·CHECK 2개(≥ 0, 쌍), 저장·null 규칙, 같은 요청 비교 제외, 조회·4.1.1 노출, ERD 표 → Mermaid
+- web #802: 답변 칸 붙여넣기·끌어다 놓기 막기(안내 없음), 시간 측정·전송, 같은 키 재전송 때 처음 값 유지
+- report #803: `answerTimes[]` 생성과 HTML·Markdown·PDF 표시, 학부모 웹 일일 리포트 화면(`ParentReports.tsx`) 표시(웹 화면이 report 상세를 직접 그리므로 #803에 더함)
+
+### 42.1 learning 저장·조회 구현 (#801, 2026-11-19)
+
+42절 확정 값을 learning에 구현했다. 웹(#802)·report(#803)는 각 소절에서 다룬다.
+
+| 항목 | 구현 | 근거 |
+|---|---|---|
+| 스키마 | V23 `answer.thinking_seconds`·`writing_seconds` int NULL 허용. CHECK `ck_answer_thinking_seconds`·`ck_answer_writing_seconds`(≥ 0), `ck_answer_time_pair`(함께 NULL·함께 값). 기존 행 NULL, 기본값·인덱스 없음. 로컬 `migration.revision` v23 | ERD 4.2. CHECK를 칸별로 나눠 위반 때 어느 칸인지 이름으로 보이게 함 |
+| 요청 칸 | `SubmitRequest`에 선택 `thinkingSeconds`·`writingSeconds`. JSON 정수만 받고 소수·문자열·불리언·배열·객체는 기존 형식 오류 `400 VALIDATION_FAILED` | Jackson 기본값은 `1.5`를 1로, `"95"`를 95로 바꿔 받으므로 전용 역직렬화기(`WholeSecondsDeserializer`)로 막음(api-spec 3.1 "정수가 아니면 400") |
+| 저장 규칙 | `AnswerTime.of`: 고르기 방식(`CHOICE`·`ORDERING`·`CLASSIFICATION`)·`dictatedByGuardian: true`는 null, 둘 중 하나라도 없거나 0 미만·86400 초과면 둘 다 null. 0초와 86400초는 저장 | 측정 오류로 제출을 막지 않음(FN-LRN-10). `Long`을 넘는 큰 정수도 400이 아니라 범위 밖으로 보고 null |
+| 같은 키 재전송 | `sameRequestAs`는 시간을 비교하지 않음. 같은 답이면 시간만 달라도(또는 칸이 없어도) 처음 답변을 201로 돌려주고 처음 저장한 시간을 유지 | core를 거치지 않은 재전송 대비(api-spec 3.1). core는 본문 전체로 비교 |
+| 조회 | 시도 타임라인(`findTimeline`)에서 두 칸을 읽어 학생 시도 상세·기록 조회 `answers[]`와 report 입력(4.1.1) `answers[]`에 `thinkingSeconds`·`writingSeconds`(없으면 null) | 세 응답이 같은 `AnswerItem`을 씀. core는 learning 응답을 그대로 넘기므로 학부모 시도 상세(core `DashboardAnswerItem`)에도 실림 |
+| 계약 | OpenAPI learning `SubmitAnswer`·`AnswerItem`, core `DashboardAnswerItem`에 두 칸. `scripts/verify_db_schema.py` learning 음수·반쪽 CHECK 거부 3건과 0·86400·NULL 허용 | `DashboardAnswerItem`은 `additionalProperties: false`라 칸을 더하지 않으면 실제 응답이 계약과 어긋남 |
+
+- 칸 없는 기존 요청(웹 #802 배포 전)은 그대로 201이고 두 칸 모두 null로 저장된다
+- 학생 화면 표시 여부는 웹이 정한다(표시 안 함, P28). learning은 학생 본인 조회에도 값을 그대로 싣는다(api-spec 3.1 "학생 시도 상세에는 그대로 실린다")
+- 검증(로컬): learning `./gradlew test`(JDK 21 컨테이너, Testcontainers) 635건 실패 0(건너뜀 3, 기존). `scripts/check_db_migrations.py`(일회용 PostgreSQL 17) PASS, learning 39 테이블/354 컬럼 ERD 일치
+
+### 42.2 web 구현 (#802, 2026-11-19)
+
+learning #801이 병합되기 전이라 api-spec 3.1 기준으로 `demoGateway`·MSW 목을 맞춰 개발했다. 위 확정 값을 그대로 따랐고 아래는 웹에서 정한 세부다.
+
+| 항목 | 정한 것 | 근거 |
+|---|---|---|
+| 막는 곳 | `AnswerFields`의 학생 답변 textarea(서술·풀이 단계·논술 4칸)와 최종 답 input에서 `onPaste`·`onDrop` 기본 동작 취소. 학생 화면만 넘기는 `guide` prop으로 구분해 관리자 미리보기(`MissionManager.tsx`)와 메모·돌아보기 칸은 그대로 | 위 표 "붙여넣기 막기", 안내 문구 없음 |
+| 답변 차례 | 최초 답은 화면을 연 때, 보완 답은 되묻기 질문이 화면에 처음 나온 때(피드백 상자)를 표시 시각으로 둔다. 차례 구분값은 되묻기 `followupId`(없으면 답 개수) | P28 "되묻기 질문 표시" |
+| 첫 입력 | 답변 칸 글(`text`·`finalAnswer`·`steps`·`essay`)이 처음 바뀐 때. '시작 문장'·'메모를 답에 넣기'도 같은 `change()`를 거쳐 인정되고, 보호자 받아쓰기 표시만 바꾼 것은 넣지 않음 | 위 표 "버튼 입력" |
+| 초 계산 | `performance.now()` 밀리초 차이를 반올림한 정수 초. 0 미만·86400 초과거나 하나라도 없으면 두 칸 모두 null(반쪽 값 없음) | 범위 밖 값·쌍 규칙 |
+| null 보냄 | 고르기 방식(선택·순서·분류)·보호자 받아쓰기·이어하기는 두 칸을 null로 실어 보냄(칸 생략 대신 명시) | api-spec 3.1 "빼거나 null" |
+| 이어하기 판정 | 한 화면(`StudentEditor`)을 연 뒤 첫 답변 차례에서 답 칸에 복원된 글이 있으면 그 차례는 null. 초안 충돌 창에서 "다른 곳에서 쓴 글 쓰기"를 고른 차례도 null | 첫 입력 시각을 모름 |
+| 같은 키 재전송 | `submission.current`에 멱등 키와 처음 잰 두 값을 함께 두고, 답 내용·`followupId`가 같으면 같은 값을 다시 보냄(멱등 키를 정하는 비교에는 시간을 넣지 않음) | 위 표 "같은 키 재전송" |
+| 저장 대기 뒤 제출 | 자동 저장 중 누른 "다 썼어요"는 저장이 끝난 뒤 보내며, 작성 시간은 그 보낸 시각까지(1초 안팎 차이, 단순화) | - |
+| 시연 저장 | `demoGateway`는 learning 규칙(글 입력 방식만, 범위 안 쌍만)으로 `Answer.thinkingSeconds`·`writingSeconds`를 저장. MSW는 정수가 아니면 `400 VALIDATION_FAILED`, 본문 전체 비교로 같은 키 다른 본문은 `422`(core와 같음) | api-spec 3.1 |
+
+- 확인 필요: 휴대폰·태블릿에서 길게 눌러 붙여넣기도 `paste` 이벤트로 막히는지 실기기 확인(데스크톱 Chromium에서 Ctrl+V·끌어다 놓기만 시험)
+- 시험: `tests/answerTiming.test.ts`(계산·null 규칙·`payload()`·시연 저장), `tests/browser/answerTime.spec.ts`(1440·1024·390px, 따로 768px에서 답 칸 붙여넣기 막힘·메모 칸 붙여넣기 됨, 최초·보완 제출 본문 두 칸, 이어하기·받아쓰기 null, 실패 뒤 같은 키 재전송 본문 동일)
+
+### 42.3 report 일일 리포트 표시 (#803, 2026-11-19)
+
+learning #801 병합 전에 목 입력으로 개발했고, 병합된 learning OpenAPI `AnswerItem`(정수·null, 0~86400, 쌍)과 읽는 규칙이 같음을 확인했다. 실제 서버에서 관리자 재생성으로 표시를 확인하는 일은 남았다.
+
+| 항목 | 정한 값 | 근거 |
+|---|---|---|
+| 보완 답변 시간 | 처음 답만이 아니라 답변마다 표시("처음 답"·"되묻기 뒤 답"·"두 번째 되묻기 뒤 답") | #803 "확인 필요" 기준안(처음 답만)보다 뒤에 확정된 #800(위 표·P28)을 따름 |
+| 원문 비공개(#206) | 시간은 넣고 표시 | #800 확정 값. report는 공유 여부와 관계없이 `answerTimes`를 저장 |
+| 입력 읽기 | `answers[].thinkingSeconds`·`writingSeconds` 선택 칸, 없거나 null이면 None. 정수 0~86400만, 둘 중 하나만 있으면 입력 오류로 생성 실패 | learning CHECK(≥ 0, 쌍)와 같은 규칙. 다른 learning 입력 위반과 같이 추측 값을 만들지 않음 |
+| 생성 | `problems[].answerTimes`는 그날 마무리 전 답변 중 두 값이 있는 것만 버전 순 | api-spec 4.1 일일 `answerTimes` |
+| 문구 | 60초 미만 "1분 미만", 그 밖 분 단위 내림. HTML·PDF(같은 HTML)·Markdown이 `renderer.answer_time_line` 하나를 씀. 4번째 답 이후는 "N번째 되묻기 뒤 답"(되묻기 최대 2회라 지금은 생기지 않음) | 세 형식 문구 일치 |
+| 이전 저장본 | `answerTimes` 없는 일일 항목은 조회·파일 조립(`presentation.assemble`)에서 `[]`로 채움. DB 마이그레이션 없음(항목 본문은 JSON) | 기존 리포트 조회 호환 |
+
+- OpenAPI: `contracts/openapi/report-service.yaml`에 `DailyAnswerTime`·`DailyProblem.answerTimes` 추가(앱 생성 결과와 일치 시험)
+- core: 원문 비공개(#206)·일일 상세 전환 때 쓰는 `ReportDocument.withoutProblemOriginals`가 정해진 칸만 남겨 `answerTimes`까지 지우고 있었다. 남길 칸에 `answerTimes`를 더하고, core OpenAPI `DailyReportProblem`에 선택 칸 `answerTimes`(항목 `additionalProperties: false`)를 넣었다. report가 구버전일 때를 위해 필수로 두지 않았다. 리포트 고정 대화(`ConversationService`)는 분석 대화 근거가 범위 밖이라 그대로
+- web: `DailyProblem.answerTimes?`와 `answerTimeLine`·`durationLabel`(`domain/parent.ts`, report와 같은 문구), `ParentReports.tsx` 문제 카드의 판정 줄 아래에 답변마다 한 줄. 원문 비공개여도 보이고 칸이 없으면 줄 없음. 시연 목은 시연 저장소 답변의 두 시간으로 `answerTimes`를 만들고 비공개 변환도 칸을 유지
+- 검증: core `./gradlew test`(JDK 21 컨테이너), web `npm test`·`test:types`·`lint`·`build`, `tests/browser/dailyAnswerTimes.spec.ts`(1440·1024·390px, 원문 비공개 상태에서 처음 답·두 번째 되묻기 뒤 답 줄 표시, 시간 없는 답 줄 없음)
+
+### 42.4 kind 확인 (2026-11-19)
+
+#801·#802·#803이 병합된 `develop`(a27acf30)을 공유 kind(`kind-sagomungchi-local`)에 배포하고, 학생 화면 → learning 저장 → report 일일 리포트(관리자 재생성) → 학부모 화면·파일까지 실제 서비스 사이를 이어 확인했다(실제 13:59~14:45 KST). 화면 캡처는 [evidence/issue803-kind-20261119](evidence/issue803-kind-20261119/)에 있다.
+
+배포
+
+- `learning-service`·`learning-migrate`·`core-service`·`report-service` 이미지를 최신 `develop`으로 다시 빌드해 kind에 적재. learning helm rev 22(migration v23 Job 완료, `answer.thinking_seconds`·`writing_seconds`와 CHECK 3개 확인), core rev 17·report-api·report-worker rev 11 뒤 `rollout restart`. ai·scoring은 이번 변경이 없어 그대로
+- 웹은 호스트 Vite(`CORE_PROXY_TARGET=http://127.0.0.1`, `CORE_PROXY_HOST=api.sagomungchi.local`)
+- 일일 리포트는 다음 날 00:00 KST 스케줄러로만 생기므로, 학생 제출을 마친 뒤 **core에만** 시험 시계(libfaketime, `FAKETIME=@2026-11-19 14:56:00` UTC = 23:56 KST)를 걸어 00:00 일일 생성을 돌리고 바로 원래 이미지·환경으로 되돌렸다. learning·report는 실제 시각 그대로
+
+| 확인 | 방법 | 결과 |
+|---|---|---|
+| 답 칸 붙여넣기·끌어다 놓기 막힘 | 학생 화면(1024px), 풀이 4칸·최종 답(초5 목, 최초·보완)과 서술 칸(초3 월)에 `paste`·`drop` 이벤트 | 답 칸 모두 `defaultPrevented: true`, 글 그대로 |
+| 메모 칸은 막지 않음 | 같은 방식으로 생각 메모 칸 | `defaultPrevented: false` |
+| 최초 답 전송 | 초5 목 테마 문제(풀이 단계), 화면 표시 → 첫 입력 약 85초, 작성 약 84초 뒤 제출 | 요청 본문 `"thinkingSeconds":85,"writingSeconds":84`, 201 |
+| 보완 답(되묻기 뒤) 전송 | 되묻기 질문 표시 뒤 첫 입력 약 25초, 작성 약 79초 | 본문 `followupId` + `"thinkingSeconds":25,"writingSeconds":79`, 201 |
+| 이어하기 | 두 번째 되묻기 답을 조금 쓰고 자동 저장 → 화면 다시 열기(PIN 재로그인) → 홈 "이어서 풀기" → 복원된 글에 이어 써서 제출 | 본문 `null`·`null`, DB도 둘 다 NULL |
+| 보호자 받아쓰기(웹) | 초3 월 서술 문제, "보호자가 아이의 말을 그대로 적었어요" 켜고 제출 | 본문 `dictatedByGuardian:true`·`null`·`null`, DB NULL |
+| 보호자 받아쓰기(서버 규칙) | 초3 화 서술 문제를 학생 API로 `dictatedByGuardian:true`·`thinkingSeconds:30`·`writingSeconds:40` 제출 | 201 응답·DB 모두 NULL |
+| learning DB | `answer` 조회 | 초5 시도 v1 85/84, v2 25/79, v3 NULL/NULL. 초3 받아쓰기 2건 NULL |
+| 학생 시도 상세 | `GET /attempts/{id}`(학생) | `answers[]` v1·v2 값, v3 null |
+| 일일 생성 → 관리자 재생성 | 00:00 스케줄러 15건 `COMPLETED` → `SERVICE_OPS` 관리자 `POST /reports/{id}/regenerate` | 초5 2판·초3 2판 `COMPLETED`(초3은 완료 시도가 없어 빈 리포트였음 → 받아쓰기 시도를 마무리·돌아보기한 뒤 다시 재생성해 3판) |
+| report 입력(4.1.1)·리포트 응답 | 재생성 판 `GET /reports/{id}`(학부모) | 초5 문제 `answerTimes: [{1, 85, 84}, {2, 25, 79}]`(이어하기 v3 없음), 초3 받아쓰기 문제 `answerTimes: []` |
+| 학부모 웹 화면, 원문 비공개(#206) | 학생 공개 설정 기본값(끔)으로 일일 리포트 상세 | "처음 답: 생각 1분 · 작성 1분", "되묻기 뒤 답: 생각 1분 미만 · 작성 1분", 두 번째 되묻기 뒤 답 줄 없음 |
+| 학부모 웹 화면, 원문 공개 | 학생 설정을 켠 뒤 같은 화면 | 같은 두 줄 + 원문 근거 버튼 |
+| Markdown·PDF | 공개 상태에서 `GET /reports/{id}/download?format=md·pdf` | 두 파일 모두 같은 두 줄(PDF는 글자 추출로 확인). 비공개 상태 다운로드는 기존 규칙대로 `403 STUDENT_RECORDS_PRIVATE` |
+| 받아쓰기 답 줄 생략 | 초3 일일 리포트 웹 화면 | 문제 카드에 시간 줄 없음 |
+
+확인하지 못한 것
+
+- **고르기 방식 null**: 이번 주 kind 공개 테마(초3·초5) 요일 미션이 모두 서술·풀이·논술이고, 시드 고르기 미션은 추가 문제라 무료 시험 자녀는 `403 PREMIUM_REQUIRED`. kind 프리미엄 시험 자녀는 있으나 그 보호자 자격 정보를 이 확인에서 쓸 수 없었다. learning `AnswerServiceTest`·웹 `answerTiming.test.ts`의 고르기 null 시험으로만 확인된 상태
+- **실제 클립보드 Ctrl+V**: 이 확인에 쓴 브라우저 창은 키보드 단축키로 클립보드 복사·붙여넣기가 동작하지 않아(메모 칸에도 붙지 않음) 실제 `paste`·`drop` 이벤트를 화면 요소에 보내 막힘 여부를 비교했다. 실제 Ctrl+V·끌어다 놓기는 #802의 Playwright 시험(`tests/browser/answerTime.spec.ts`)에서 확인됨. 휴대폰 길게 눌러 붙여넣기는 여전히 실기기 확인 필요(42.2)
+- report 내부 입력 경로(`/internal/records/students/{id}/daily-attempts`)는 report-api 토큰이 허용 범위 밖(`403`, 생성은 report-worker 몫)이라 직접 조회하지 않고 생성 결과 `answerTimes`로 확인했다
+
+발견(이번 범위 밖, 고치지 않음)
+
+- 학부모 일일 리포트 문제 카드의 "돌아보기" 줄이 원문 공개 상태에서 난이도 코드를 그대로 `돌아보기 · NORMAL`로 보인다(비공개 상태는 `쓰지 않음`). Markdown도 `### 돌아보기` 아래 `NORMAL`. 난이도 코드를 화면 문구(쉬웠어요·보통이에요·어려웠어요)로 바꾸는 처리가 없는 것으로 추정
+- Markdown·PDF 파일은 생성 때의 공개 설정으로 만들어져, 비공개 때 생성한 판은 나중에 공개로 바꿔도 "원문 비공개 또는 답변 없음"으로 남는다(기존 동작, 이번 기능과 무관)

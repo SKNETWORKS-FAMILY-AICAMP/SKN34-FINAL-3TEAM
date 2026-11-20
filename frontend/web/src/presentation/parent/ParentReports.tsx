@@ -4,7 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ReportExplanations } from './ReportExplanations.tsx'
 import type { Child } from '../../domain/classroom.ts'
-import type { DailyProblem, ReportPeriodType, ThemeSummary } from '../../domain/parent.ts'
+import { answerTimeLine, type DailyProblem, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
 import type { ReportContext, ReportHighlight } from '../../domain/reportHighlight.ts'
 import { emptyReportTargets, reportTargets } from '../../domain/reportHighlight.ts'
@@ -406,6 +406,10 @@ function DailyProblems({ problems, onProof, canReadOriginals, highlighted }: { p
             {p.context ? `${contextLabels[p.context]} · ` : ''}
             {p.judgment ? `판정 ${judgmentLabels[p.judgment]}` : '판정 없음'}
           </p>
+          {/* P28: 생각·작성 시간은 원문이 아니라 원문 비공개여도 보인다. 시간 없는 답은 줄을 생략 */}
+          {(p.answerTimes ?? []).map((t) => (
+            <p key={t.version}>{answerTimeLine(t)}</p>
+          ))}
           {p.followups.map((f, j) => (
             <div key={j}>
               <p>되묻기 {j + 1} · {f.question}</p>

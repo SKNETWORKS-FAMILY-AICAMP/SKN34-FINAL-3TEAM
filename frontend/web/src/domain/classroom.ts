@@ -111,6 +111,9 @@ export interface Answer {
   followupId?: string
   feedback: Feedback
   content?: AnswerContent
+  /** 생각·작성 시간(P28). 학생 화면에는 쓰지 않고, 시연 저장소가 받은 값을 확인하는 데만 둔다 */
+  thinkingSeconds?: number | null
+  writingSeconds?: number | null
 }
 export interface Reflection {
   difficulty: '쉬웠어' | '보통' | '어려웠어'

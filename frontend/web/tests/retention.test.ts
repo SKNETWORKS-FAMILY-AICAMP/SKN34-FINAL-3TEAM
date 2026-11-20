@@ -36,7 +36,8 @@ import { readLook } from '../src/domain/studentLook.ts'
 import { canBuyMore, createIdempotencyKeys, keepIdempotencyKey, unlockMessage } from '../src/presentation/student/world/lookShop.ts'
 // 움직임 읽기는 domain/themeMotion.ts 하나(#440에서 retention.ts 중복 정리)
 import { readThemeMotion } from '../src/domain/themeMotion.ts'
-import { isAccountDocument, reportPeriodType } from '../src/domain/parent.ts'
+import { answerTimeLine, durationLabel, isAccountDocument, reportPeriodType } from '../src/domain/parent.ts'
+import { privateReport } from '../src/mocks/fixtures/sharing.ts'
 import { retentionApi } from '../src/data/retention/api.ts'
 import { studentLookApi } from '../src/data/studentLook/api.ts'
 import { ApiError, setAccessToken } from '../src/data/apiClient.ts'
@@ -295,6 +296,20 @@ test('커뮤니티 응답은 반응 수·학생 ID 없이 읽고, 내 글만 반
   assert.deepEqual(mine.reactions, { NEW_IDEA: 0, CLEAR_REASON: 2, DIFFERENT_VIEW: 0, WANT_MORE: 0 })
 })
 
+test('#825 공유 답변은 입력 방식과 관계없이 text(칸 이름을 붙인 원문)를 보인다', () => {
+  const answers = [
+    { inputType: 'NARRATIVE', text: '내 생각', content: { text: '내 생각' } },
+    { inputType: 'SOLUTION_STEPS', text: '식: 3+4\n최종 답: 7 개', content: { finalAnswer: '7', steps: ['3+4'] } },
+    { inputType: 'ESSAY', text: '주장: 가\n까닭 1: 나', content: { essay: { claim: '가', reasons: ['나', '다'], rebuttal: '라' } } },
+    { inputType: 'CHOICE', text: '사과', content: { choiceIds: ['c1'] } },
+    { inputType: 'CLASSIFICATION', text: '사과: 과일', content: { assignments: [{ choiceId: 'c1', categoryId: 'g1' }] } },
+  ]
+  const posts = readCommunityPosts({ items: answers.map((answer, i) => ({ postId: `p${i}`, author: { nickname: '하늘' }, answer })) })
+  assert.deepEqual(posts.map((p) => p.answer), answers.map((a) => a.text))
+  const mine = readMyPosts({ items: answers.map((answer, i) => ({ postId: `m${i}`, answer })) })
+  assert.deepEqual(mine.map((p) => p.answer), answers.map((a) => a.text))
+})
+
 test('#635 친구 생각 작성자 착용은 아이템 키로 읽고, 아이템 목록과 맞춰 그림 주소로 바꾼다(목록에 없는 아이템은 빠짐)', () => {
   const [post] = readCommunityPosts({
     items: [{ postId: 'p1', author: { nickname: '초록콩', look: { companion: 'kongi', equipped: { HAT: 'HAT_GONE', OUTFIT: 'OUTFIT_RAIN', ACCESSORY: '', BACKGROUND: null } } }, answer: '답' }],
@@ -551,4 +566,16 @@ test('#709 친구 방 응답 모양이 틀리면 계약 오류(화면은 공통 
     { ...ok, room: { ...ok.room, frames: [{ slotNo: 1, title: 'a' }, { slotNo: 1, title: 'b' }] } },
     { ...ok, room: { ...ok.room, frames: [{ slotNo: 1 }] } },
   ]) assert.throws(() => readFriendRoom(bad), /친구 방 정보를 확인하지 못했어요/)
+})
+
+test('#803 일일 리포트 생각·작성 시간 문구는 report 파일과 같고 원문 비공개에도 남는다', () => {
+  assert.deepEqual([0, 59, 60, 119, 600].map(durationLabel), ['1분 미만', '1분 미만', '1분', '1분', '10분'])
+  assert.equal(answerTimeLine({ version: 1, thinkingSeconds: 45, writingSeconds: 130 }), '처음 답: 생각 1분 미만 · 작성 2분')
+  assert.equal(answerTimeLine({ version: 2, thinkingSeconds: 600, writingSeconds: 59 }), '되묻기 뒤 답: 생각 10분 · 작성 1분 미만')
+  assert.equal(answerTimeLine({ version: 3, thinkingSeconds: 60, writingSeconds: 60 }), '두 번째 되묻기 뒤 답: 생각 1분 · 작성 1분')
+  const times = [{ version: 1, thinkingSeconds: 45, writingSeconds: 130 }]
+  const hidden = privateReport({ problems: [{ finalAnswer: '합성 답', followups: [], quotes: [], reflection: null, answerTimes: times }] })
+  const problem = hidden.problems![0] as unknown as { finalAnswer: unknown; answerTimes: unknown }
+  assert.equal(problem.finalAnswer, null, '원문은 숨김')
+  assert.deepEqual(problem.answerTimes, times, '시간은 수치라 그대로(P28)')
 })

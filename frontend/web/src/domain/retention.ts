@@ -542,7 +542,10 @@ export function readCommunitySettings(raw: unknown): CommunitySettings {
   const v = (raw ?? {}) as Record<string, unknown>
   return { enabled: v.enabled === true, consentGranted: v.consentGranted === true, updatedAt: typeof v.updatedAt === 'string' ? v.updatedAt : null }
 }
-/** 커뮤니티 답 원문은 서버가 `content`를 그대로 줄 수 있어 글로 읽을 수 있는 부분만 보인다. */
+/**
+ * 커뮤니티 공유 답변(core `CommunityAnswer` `{inputType, text, content}`, #825)은 입력 방식과 관계없이 `text`(입력 틀 칸 이름을
+ * 붙인 원문)만 보인다. 모양이 다른 값은 글로 읽을 수 있는 부분만 보인다.
+ */
 export function answerText(answer: unknown): string {
   if (typeof answer === 'string') return answer
   const v = (answer ?? {}) as Record<string, unknown>

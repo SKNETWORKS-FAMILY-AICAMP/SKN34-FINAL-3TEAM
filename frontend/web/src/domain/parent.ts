@@ -132,7 +132,16 @@ export interface DailyProblem {
   elements: { label: string; satisfied: boolean }[]
   reflection: { difficulty: string | null; text: string | null; written: boolean } | null
   quotes: { answerId: string; text: string; verified: boolean }[]
+  /** 답변별 생각·작성 시간(P28, #803). 시간 있는 답만 버전 순, 이전 응답에는 없을 수 있다. 원문 비공개여도 온다 */
+  answerTimes?: AnswerTime[]
 }
+export interface AnswerTime { version: number; thinkingSeconds: number; writingSeconds: number }
+const answerLabels: Record<number, string> = { 1: '처음 답', 2: '되묻기 뒤 답', 3: '두 번째 되묻기 뒤 답' }
+/** P28: 60초 미만은 "1분 미만", 그 밖은 분 단위 내림(report 파일과 같은 문구) */
+export const durationLabel = (seconds: number) => (seconds < 60 ? '1분 미만' : `${Math.floor(seconds / 60)}분`)
+/** "처음 답: 생각 N분 · 작성 N분". report `answer_time_line`과 같은 문구 */
+export const answerTimeLine = (t: AnswerTime) =>
+  `${answerLabels[t.version] ?? `${t.version - 1}번째 되묻기 뒤 답`}: 생각 ${durationLabel(t.thinkingSeconds)} · 작성 ${durationLabel(t.writingSeconds)}`
 /** 주간 리포트의 주간 테마 요약(FN-RPT-17, 구현 예정). */
 export interface ThemeSummary {
   state?: QueryState

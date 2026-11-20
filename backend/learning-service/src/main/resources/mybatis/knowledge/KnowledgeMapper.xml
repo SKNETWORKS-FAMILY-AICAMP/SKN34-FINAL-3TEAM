@@ -6,7 +6,7 @@
         <constructor>
             <idArg column="version" javaType="java.lang.String"/>
             <arg column="status" javaType="com.sagomungchi.learning.knowledge.domain.DatasetStatus"/>
-            <arg column="source" javaType="java.lang.String"/>
+            <arg column="source" javaType="com.fasterxml.jackson.databind.JsonNode"/>
             <arg column="chunk_count" javaType="_int"/>
             <arg column="relation_count" javaType="_int"/>
             <arg column="created_at" javaType="java.time.Instant"/>
@@ -48,7 +48,7 @@
     </resultMap>
 
     <sql id="datasetColumns">
-        version, status, source::text AS source, chunk_count, relation_count,
+        version, status, source, chunk_count, relation_count,
         created_at, activated_at
     </sql>
 
@@ -73,7 +73,7 @@
     <insert id="insertDataset">
         INSERT INTO knowledge_dataset
             (version, status, source, chunk_count, relation_count, created_at, activated_at)
-        VALUES (#{row.version}, #{row.status}, #{row.source}::jsonb, #{row.chunkCount}, #{row.relationCount}, #{row.createdAt}, #{row.activatedAt})
+        VALUES (#{row.version}, #{row.status}, #{row.source}, #{row.chunkCount}, #{row.relationCount}, #{row.createdAt}, #{row.activatedAt})
     </insert>
 
     <update id="updateCounts">

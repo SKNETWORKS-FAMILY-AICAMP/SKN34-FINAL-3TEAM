@@ -152,13 +152,20 @@ test('관리자 로그인은 사용자 화면에 링크가 없고, 학부모 계
   }
 })
 
-test('관리자 큐·DLQ와 작업 재처리의 선택 상태를 분리한다', async ({ page }) => {
+test('관리자 작업 대기열은 작업명을 먼저 보여주고 큐 이름은 기술 정보에 둔다', async ({ page }) => {
   await login(page, 'admin')
-  await page.getByRole('link', { name: '큐·DLQ', exact: true }).click()
+  await page.getByRole('link', { name: '작업 대기열', exact: true }).click()
   await expect(page).toHaveURL(/\/admin\/queues/)
-  await expect(page.getByRole('link', { name: '큐·DLQ', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('link', { name: '작업 대기열', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('link', { name: '작업 재처리', exact: true })).not.toHaveAttribute('aria-current', 'page')
-  await expect(page.getByRole('heading', { name: /큐.*DLQ/ }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '작업 대기열 현황' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '주간 리포트 생성 · 1차 재시도' })).toBeVisible()
+  const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: '주간 리포트 생성 · 실패 보관' }) })
+  await expect(card.getByText('실패 원인 확인', { exact: true })).toHaveCount(0)
+  const rawName = card.getByText('report.report.generate.dlq', { exact: true })
+  await expect(rawName).toBeHidden()
+  await card.getByText('기술 정보', { exact: true }).click()
+  await expect(rawName).toBeVisible()
 })
 
 test('운영 전용 관리자는 결제 메뉴가 없고 모델 운영 화면을 사용할 수 있다', async ({ page }) => {

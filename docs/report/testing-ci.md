@@ -224,88 +224,19 @@ develop 종합 검증 회차별 결함 원장. 회차별 실행 결과 표와 �
 
 ### 5.1 코드 결함·설정 (B)
 
-| # | 내용 | 처리 |
-|---|---|---|
-| B1·B2 | 역할·내부 토큰 판정을 디코딩하지 않은 `requestURI` 접두사로 해 `;매개변수`·`%xx` 경로가 우회 | 해결(1회차, `MatchedPath` 정규화) |
-| B3 | learning `student.deleted` 소비자 없음 → 삭제 COMPLETED 불가 | 해결(#128) |
-| B4 | `ReportEntitlementService` 항상 503, 스케줄러가 자녀별 실패 미격리 | 해결(#48·#129) |
-| B5 | report-worker 기본 생성기 미연결 | 해결(#56·#64) |
-| B6·B7 | 리포트 목록 `status=QUEUED` 전달, `ReportClient`가 409·503 구분 없이 503 | 해결(1회차) |
-| B8 | report Outbox 영구 실패 이벤트가 뒤 이벤트를 막음 | 해결(#131) |
-| B9 | 종료 이벤트 없이 core 작업이 QUEUED/RUNNING에 남는 경로 | 해결(#132) |
-| B10 | 기기 등록 rate limit 키가 `remoteAddr`(프록시 뒤 한 버킷) | 해결(#133) |
-| B11·B13 | 웹이 `/children`의 `plan`·재생성 코드·목록 봉투를 잘못 가정 | 해결(#134) |
-| B12 | 웹 관리자 모델 요청 모양·`/auth/login` 잔존 호출 | 해결(#93·#97) |
-| B14 | `saveDraft`가 잠금 없이 저장해 닫힌 시도에 초안 저장 가능 | 해결(1회차, `lockOwned`) |
-| B15 | readiness가 쓰지 않는 RabbitMQ에 의존 | 해결(1회차) |
-| B16 | 처리한 삭제 이벤트 재전달 시 DLQ | 해결(1회차) |
-| B17 | 미사용 설정 주입·요청별 클라이언트 생성 | 해결(#135) |
-| B18·B19 | core가 learning 404·403을 503으로 변환 | 해결(#163) |
-| B20·B21 | 정책 마이그레이션 검사 버전 고정, `verify_feedback_learning.py`의 `CORE_URL` 누락 | 해결(#164) |
-| B22 | 웹 `answerInquiry`가 core에 없는 경로 호출 | 해결(4회차, 도달 불가 화면 제거) |
-| B23 | `AdminOperations.tsx` oxlint immutability 경고 | 해결(#306) |
-| B24 | compose core에 RabbitMQ 관리 API 환경 변수 없음 | 해결(4회차) |
-| B25·B26 | `ConversationRetryWorker` stale 예외, ai 소비자 ACK 범위 | 결함 아님 |
-| B27 | core 통합 테스트 `too many clients` | 재현 안 됨(#218 이후) |
-| B28 | 웹 support·help·notices 경로가 실제 API 미사용 | 해결(5회차) |
-| B29·B30 | GitOps local migration revision·RabbitMQ 관리 API 값 낡음 | 해결(5회차, `test_core_migration_versions.py`) |
-| B31 | `ReportTemplateService.forStudent` 오류 코드 | 해결(5회차, `STUDENT_UNAVAILABLE`) |
-| B32 | #275 다중 보호자 전제가 P02와 불일치 | 해결(#289) |
-| B33 | 리포트 설정 제안의 사용량 차감 | 결함 아님(api-spec에 명시) |
-| B34·B35 | learning이 core 409를 모두 `REFUND_IN_PROGRESS`로 변환, 공지 목록 입력 검사가 권한 검사보다 먼저 | 해결(#276·#277) |
-| B36 (A20) | scoring 장애·400을 ai가 모두 503으로 바꿔 learning의 `ai` 서킷이 LLM 단독 판정·되묻기까지 차단. 플래그가 꺼져도 scoring 호출 | 해결(#305): 플래그가 꺼지면 M2 미호출, scoring 실패는 LLM 판정만 200 + `modelScores.skipped`([ai 4.3.1](ai.md#431-scoring-실패-격리-305-2026-11-04)) |
-| B37 | 웹 관리자 기준표 저장이 `keywords`·`essayType`을 보내지 않아 M2 교차 확인이 조용히 중단 | 해결(#306): 편집 UI 없이 불러온 값을 그대로 보존해 전송 |
-| B38 | 동의가 빠진 학부모가 이관 취소(403 `CONSENT_REQUIRED`)와 탈퇴(409 `TRANSFER_PENDING`) 사이에서 막힘 | 해결(#307): 본인 목록·거절·취소만 동의 회복 경로로 허용 |
-| B39 | 이관 플래그를 끄면 남은 PENDING이 탈퇴·삭제를 막고 취소 API는 404 | 해결(#307): 관리 경로는 항상 등록, 신규 요청·수락만 플래그로 제한 |
-| B40 | `PUT /me/guardian-password`가 규칙 검사(422)를 역할 확인(403)보다 먼저 | 해결(#310) |
-| B41 | #69 교차 확인 설정·이관·content_3 플래그가 compose·GitOps에 전달되지 않음 | 해결(#312, [infra 3.3](infra.md#33-교차-확인이관content_3-설정-전달-312)) |
-| B42 | 평가 러너 `evaluatedScopes`가 M2 모델 scope라 PROMPT 활성화 시 `evidence.covers` 실패 | 해결(#313): `["ai/judgment"]` |
-| B43 | `requirements-browser.mjs`가 목업과 같은 별명을 입력해 저장 성공 문구를 못 받음 | 해결(#318) |
+B1~B43 모두 처리: 해결(1·4·5회차 직접 수정, #93·#97·#128·#129·#131~#135·#163·#164·#276·#277·#289·#305~#307·#310·#312·#313·#318 등), 결함 아님(B25·B26·B33), 재현 안 됨(B27, #218 이후). 항목별 내용·처리는 git 이력(이 절의 2026-11-20 이전 판).
 
 ### 5.2 코드↔문서 (C)
 
-| # | 내용 | 처리 |
-|---|---|---|
-| C1~C15 | report·ai OpenAPI 누락, 오류 코드, ERD 수치·결번, `SPEECH` CHECK, 미구현 표기, 환경 변수 | 해결(1회차) |
-| C16~C21 | class-diagram 구현 이름·상태, #132·#47 구현 상태 | 해결(3회차) |
-| C22~C34 | ai OpenAPI, 재처리 응답 선언, 오류 코드, 누락 경로, SSE 수명, ERD 수치, architecture 트리 | 해결(4회차) |
-| C35~C44 | api-spec 1.3 누락 오류 코드·경로, 옛 목업, ERD 수치, class-diagram 파일 위치, user-flow 누락 흐름 | 해결(5회차) |
-| C45~C48 | #289 이관 오류 코드 6종·경로 7개·재인증 purpose 2종이 api-spec에 없음, MSW 이관 핸들러 없음 | 해결(#308) |
-| C49 | #289·V24가 state·class·sequence·usecase·user-flow에 없음 | 해결(#309) |
-| C50 | OpenAPI "학생 전환은 refresh 쿠키 만료"(V24 이후 유지), `PARENT_SESSION_LOCKED` 미기재 | 해결(#310) |
-| C51~C53 | ai OpenAPI `heldReason` enum 4종(코드 6종), class-diagram `ScoringClient` 시그니처, ERD 수치 | 해결(#311) |
-| C54~C57 | architecture 2.6·4.3·5장 트리와 내부 호출 서술, class-diagram `AnalysisService` 모순 | 해결(#315) |
-| C58 | README 동의 문서 503·Deployment 서술, 환경 변수 표 | 해결(#316) |
-| C59 | `STUDENT_RECORDS_PRIVATE`(403)가 core OpenAPI에 없음 | 해결(#317): 학부모 경로 13개 연산에 기재 |
+C1~C59 모두 해결(1·3·4·5회차, #308~#311·#315~#317).
 
 ### 5.3 문서 간 (D)
 
-| # | 내용 | 처리 |
-|---|---|---|
-| D1~D14 | (1회차) 미구현 잔존 문장, 알림 상태·채널, SSE 연결 시간, 재인증 흐름, 클래스 이름 | 해결 |
-| D1~D11 | (2회차 결정) Google 계정 복구 위임, 삭제 1단계 + `X-Reauth-Token`, `pinLocked` 통일, 용도별 SSE 시간, Problem `traceId` 필수, 내부 API OpenAPI 추가, 이벤트 스키마 선행 | 반영 |
-| D15·D17·D22·D28 | `docs/README.md` 보고서 색인 누락 | 해결(문서 정리로 색인 재작성) |
-| D16·D26 | 이슈별 절이 번호 체계 밖 | 해결(#165·#245·#308) |
-| D18·D21 | 종료된 임시 통합 규칙, 루트 병합 메모 | 삭제(4회차) |
-| D19·D20 | 알림 `RUNNING`·`conversation_job_retry.status` 상태 표 누락 | 해결(4회차) |
-| D23~D25 | ml/m2 앵커, 낡은 상태, Redis 사용처 표 기준 | 해결(5회차) |
-| D27 | FN-ACC-11 "다른 연결 계정 권한 영향"이 P02(보호자 1명)와 모순 | 해결(#309) |
+D1~D29 모두 해결·반영·삭제(1·2회차 결정 반영, #165·#245·#308·#309). D16·D26 "이슈별 절이 번호 체계 밖"은 2026-11-20 문서 정리에서 다시 맞춤.
 
 ### 5.4 아키텍처 (A)·테스트 공백 (T)
 
-| # | 내용 | 처리 |
-|---|---|---|
-| A1 | `OutboxRelay.relay`가 트랜잭션 안에서 AMQP 발행 | 해결(#166) |
-| A2 | 서킷 브레이커가 core→learning에만 | 해결(#167·#192) |
-| A3·A4·A8·A16 | domain의 `HttpStatus`·Jackson·`BusinessException(ErrorKind)` 의존, 레이어 역참조 | 해결(#168·#169·#249) |
-| A5·A14 | 웹 컴포넌트의 API 직접 호출 | 해결(#170·#255) |
-| A6 | ai→scoring 교차 확인 호출자 없음 | 해결(#69) |
-| A7 | 앱 배포 chart·NetworkPolicy·관측 미구현 | 해결(#171·#204) |
-| A9~A12·A15 | 알림 Redis 발행자의 Application 호출, 기능 간 controller·config 참조, report 기능 간 DB 접근, ai router 계층 건너뜀, learning 삭제 소비 위치 | 해결(#250~#253·#256) |
-| A13 | ai·scoring 소비자에 revision 조정 로직 | 해결(ai #254, scoring #632: 세션별 `ModelStartup` 생성·대상 필터를 `ModelSync`로 이동, [scoring](scoring.md) 2절) |
-| A17~A19 | 이벤트 기록 위치, 기능 간 client·repository 직접 참조, ai 리포트 설정 제안 프롬프트 등록 | 해결(#278~#280) |
-| A21 | `IdempotencyCleanup`의 `@Scheduled`가 scheduler 패키지 밖 | 해결(#314) |
-| T1 | core HTTP 테스트 없음: 비교 프록시, sharing-preferences | 해결(#317). 대상 차이는 학생 전용 유지로 결정(#632, 2026-11-13): api-spec 2.3은 11/09에 정정됐고 1절 오류 표의 `STUDENT_RECORDS_PRIVATE` 설명에서 비교를 뺌 |
+A1~A21 모두 해결(#69·#166~#171·#192·#204·#249~#256·#278~#280·#314·#632), T1 해결(#317, 대상 차이는 학생 전용 유지로 결정 #632).
 
 ### 5.5 남은 공백
 
@@ -355,3 +286,15 @@ report CI의 `Prepare report PDF runtime`에서 Ubuntu 패키지 미러 DNS 일�
 
 develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 이미지 캐시, 작업별 15분 제한과 report 설치 단계 5분 제한을 유지했다. report 설치 명령만 재시도 스크립트 호출로 대체한다.
 병합 후 Linux 설치 장애 테스트 8개와 report 렌더링 테스트 11개가 통과했다. YAML 구조 비교로 최신 develop 대비 report 설치 명령 외 변경이 없음을 확인했다.
+
+## 8. 비밀 정보 스캔 CI (#810)
+
+`.github/workflows/ci-secrets.yml`. NFR-SEC-04 검증. 경로 필터 없이 모든 PR, `develop`·`main` push, 수동 실행에서 돈다. 결정과 걸렸을 때 대응은 [infra 4.3](infra.md#43-비밀-정보-스캔-ci-810).
+
+| job | 검사 | 실패 조건 |
+|---|---|---|
+| gitleaks | Gitleaks 8.30.1 linux x64 공식 배포본을 받아 SHA256·버전 대조 | 체크섬·버전 불일치 |
+| gitleaks | 루트 `.gitleaks.toml`(기본 규칙 + 검토한 합성 값 예외)로 `gitleaks git`. PR은 `base..head`, push는 `before..after`, 수동 실행은 전체 이력. `--redact=100` | 비밀 후보 1건 이상 |
+
+- 체크아웃은 `fetch-depth: 0`, PR은 병합 커밋이 아닌 PR 머리 커밋 기준
+- 실행 요약(`GITHUB_STEP_SUMMARY`)에 검사 범위와 커밋 수를 남긴다

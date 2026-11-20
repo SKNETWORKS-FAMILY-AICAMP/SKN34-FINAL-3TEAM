@@ -3,6 +3,7 @@ package com.sagomungchi.core.report.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core.report.client.PinnedReport
 import com.sagomungchi.core.report.client.ReportClient
 import com.sagomungchi.core.report.domain.ReportJob
 import com.sagomungchi.core.report.domain.ReportJobStatus
@@ -52,12 +53,12 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
 
     /**
      * P25 pinned conversation (#392): the same ownership and contract checks as [detail] for one revision (latest when
-     * null), without view accounting or narrative. The caller turns it into counts and judgments only.
+     * null), without view accounting or narrative. [ReportClient.pinned] returns counts and judgments only (#814).
      */
-    fun pinned(reportId: UUID, revision: Int?): JsonNode {
+    fun pinned(reportId: UUID, revision: Int?): PinnedReport {
         val job = owned(reportId)
         learningContext.requireShared(job.studentId)
-        return client.report(job, reportId, revision, false).body
+        return client.pinned(job, reportId, revision)
     }
 
     fun evidence(reportId: UUID, itemId: UUID): JsonNode {

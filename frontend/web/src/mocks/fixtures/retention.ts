@@ -1,3 +1,4 @@
+import type { ErrorReport } from '../../domain/admin/operations.ts'
 import type { ThemeGrade } from '../../domain/admin/retention.ts'
 import type { Child, Mission } from '../../domain/classroom.ts'
 import {
@@ -92,6 +93,7 @@ interface State {
   community:Record<string, { enabled: boolean; updatedAt: string | null }>
   consent: Record<string, boolean>
   posts: MockPost[]
+  communityReports: { reporterId: string; key: string; report: ErrorReport }[]
   /** postId → studentId → 반응 */
   reactions: Record<string, Record<string, Reaction[]>>
   reviewViews: string[]
@@ -184,6 +186,7 @@ const empty = (): State => ({
   community: {},
   consent: {},
   posts: [],
+  communityReports: [],
   reactions: {},
   reviewViews: [],
   items: seedItems(),
@@ -542,6 +545,13 @@ export function onMissionCompleted(student: Child, mission: Pick<Mission, 'id' |
     createdAt: now(),
   })
   earn(student.id, 'COMMUNITY_POSTED', `${student.id}:${mission.id}`)
+}
+/**
+ * 공유 답변 응답 모양(core `CommunityAnswer`, api-spec 2.9, #825). 목업 공유물은 글 답변만 남기므로 서술(NARRATIVE)로 내보낸다.
+ * 화면은 `text`만 보여 준다(`answerText`).
+ */
+export function sharedAnswer(text: string) {
+  return { inputType: 'NARRATIVE' as const, text, content: { text } }
 }
 export function reactionCounts(postId: string) {
   const byStudent = retentionState.reactions[postId] ?? {}

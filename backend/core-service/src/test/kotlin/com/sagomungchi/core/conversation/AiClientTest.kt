@@ -6,7 +6,10 @@ import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.conversation.client.AiClient
 import com.sagomungchi.core.conversation.client.AnalysisCall
+import com.sagomungchi.core.conversation.client.AnalysisClarification
 import com.sagomungchi.core.conversation.client.AnalysisEvent
+import com.sagomungchi.core.conversation.client.AnalysisResult
+import com.sagomungchi.core.conversation.client.TemplateProposal
 import org.junit.jupiter.api.Test
 import org.springframework.web.client.RestClient
 import java.time.Duration
@@ -35,14 +38,16 @@ class AiClientTest {
     @Test fun `typed events carry only checked fields and result bodies pass through`() = AnalysisHttpStub().use { stub ->
         stub.respond = { e, _ ->
             e.event("status", STATUS); e.event("delta", """{"text":"부분"}""")
-            e.event("result", """{"answer":"합성"}"""); e.event("done", "{}")
+            e.event("result", RESULT); e.event("done", "{}")
         }
         val ai = client(stub)
         try {
             val events = mutableListOf<AnalysisEvent>()
             ai.stream(emptyMap<String, String>(), AnalysisCall()) { events.add(it) }
             assertEquals(listOf(AnalysisEvent.Status("조회 중"), AnalysisEvent.Delta("부분")), events.take(2))
-            assertEquals("합성", (events[2] as AnalysisEvent.Result).body["answer"].asText())
+            val result = (events[2] as AnalysisEvent.Result).body
+            assertEquals("합성", result.answer); assertEquals(AnalysisResult.Scope(CHILD, "2026-11-13", "2026-11-19"), result.scope)
+            assertEquals(listOf("ANSWER"), result.evidence.map { it.kind }); assertNull(result.evidence.single().answerVersion)
             assertEquals(AnalysisEvent.Done, events[3])
             stub.respond = { e, _ -> e.event("error", """{"code":"ANALYSIS_FAILED","detail":"공급자 원문"}""") }
             events.clear()
@@ -132,7 +137,7 @@ class AiClientTest {
             stub.respond = { e, _ -> e.event("error", """{"code":"ANALYSIS_FAILED"}""") }
             ai.stream(emptyMap<String, String>(), AnalysisCall()) { _ -> }
             assertEquals(1, ai.circuit.metrics.numberOfFailedCalls)
-            stub.respond = { e, _ -> e.event("result", "{}"); e.event("done", "{}") }
+            stub.respond = { e, _ -> e.event("result", RESULT); e.event("done", "{}") }
             ai.stream(emptyMap<String, String>(), AnalysisCall()) { _ -> }
             assertEquals(1, ai.circuit.metrics.numberOfSuccessfulCalls)
         } finally { ai.close() }
@@ -148,7 +153,7 @@ class AiClientTest {
                 }
             }
             assertEquals(0, ai.circuit.metrics.numberOfBufferedCalls)
-            stub.respond = { e, _ -> e.event("clarification", "{}") }
+            stub.respond = { e, _ -> e.event("clarification", """{"question":"확인","options":[]}""") }
             ai.stream(emptyMap<String, String>(), AnalysisCall()) { _ -> }
             assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, ai.circuit.state)
         } finally { ai.close() }
@@ -165,7 +170,7 @@ class AiClientTest {
             assertEquals(10, stub.requests.size)
             ai.templateCircuit.transitionToHalfOpenState()
             stub.status = 200
-            assertEquals("확인", ai.reportTemplate(emptyMap<String, String>()).get("clarification").asText())
+            assertEquals(TemplateProposal.Clarification("확인"), ai.reportTemplate(emptyMap<String, String>()))
             assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, ai.templateCircuit.state)
         } finally { ai.close() }
     }
@@ -179,5 +184,59 @@ class AiClientTest {
         } finally { ai.close() }
     }
 
-    private companion object { const val STATUS = """{"state":"RUNNING","message":"조회 중"}""" }
+    private companion object {
+        const val STATUS = """{"state":"RUNNING","message":"조회 중"}"""
+        const val CHILD = "11111111-1111-4111-8111-111111111111"
+        val RESULT = """{"answer":"합성","scope":{"studentId":"$CHILD","from":"2026-11-13","to":"2026-11-19"},"metrics":[],
+            "evidence":[{"attemptId":"22222222-2222-4222-8222-222222222222","answerId":"33333333-3333-4333-8333-333333333333","quote":"근거"}],
+            "verification":{"numbersMatched":true,"quotesMatched":true,"contentAllowed":true},"recordCount":2,"source":"LLM","fallback":null}"""
+            .replace("\n", "").replace("            ", "")
+    }
+
+    /** #824: result·clarification 본문 모양도 client가 검사해, 틀리면 소비자에게 닿기 전에 502로 막는다. */
+    @Test fun `malformed result and clarification bodies fail before reaching the consumer`() = AnalysisHttpStub().use { stub ->
+        val ai = client(stub)
+        try {
+            val broken = listOf("result" to RESULT.replace("\"answer\":\"합성\"", "\"answer\":\" \""),
+                "result" to RESULT.replace("\"recordCount\":2", "\"recordCount\":-1"),
+                "result" to RESULT.replace("\"source\":\"LLM\"", "\"source\":\"OTHER\""),
+                "result" to RESULT.replace("\"quote\":\"근거\"", "\"quote\":1"),
+                "result" to RESULT.replace("\"contentAllowed\":true", "\"contentAllowed\":\"true\""),
+                "clarification" to """{"question":"확인","options":[{"label":1,"scope":{"childId":"$CHILD","from":"2026-11-13","to":"2026-11-19"}}]}""",
+                "clarification" to """{"question":"확인","options":[{"label":"a","scope":{"childId":"$CHILD","from":"2026-11-20","to":"2026-11-19"}}]}""",
+                "clarification" to """{"reason":"OTHER","message":"확인","current":{}}""")
+            for ((name, data) in broken) {
+                stub.respond = { e, _ -> e.event("status", STATUS); e.event(name, data) }
+                val seen = mutableListOf<AnalysisEvent>()
+                assertEquals("AI_INVALID_RESPONSE", assertFailsWith<BusinessException> {
+                    ai.stream(emptyMap<String, String>(), AnalysisCall()) { seen.add(it) }
+                }.code, data)
+                assertEquals(listOf<AnalysisEvent>(AnalysisEvent.Status("조회 중")), seen, data)
+            }
+            stub.respond = { e, _ -> e.event("clarification", """{"reason":"UNCLEAR","message":"확인","current":{"childId":"$CHILD","from":"2026-11-13","to":"2026-11-19"}}""") }
+            val notice = mutableListOf<AnalysisEvent>()
+            ai.stream(emptyMap<String, String>(), AnalysisCall()) { notice.add(it) }
+            assertEquals(AnalysisClarification.ScopeNotice("UNCLEAR", "확인", AnalysisResult.Scope(CHILD, "2026-11-13", "2026-11-19")),
+                (notice.single() as AnalysisEvent.Clarification).body)
+        } finally { ai.close() }
+    }
+
+    @Test fun `report template proposal is typed and outside the contract is 502`() = AnalysisHttpStub().use { stub ->
+        val ai = client(stub)
+        try {
+            val sections = """["thinkingTypes","changes","reflections","quotes","narrative","eveningQuestion"]"""
+            stub.templateBody = """{"settings":{"sectionOrder":$sections,"highlightMetrics":["ATTEMPTS"],"tone":"EASY"},"clarification":null}"""
+            val settings = (ai.reportTemplate(emptyMap<String, String>()) as TemplateProposal.Settings).settings
+            assertEquals(com.sagomungchi.core.report.domain.ReportTemplateSettings(highlightMetrics = listOf("ATTEMPTS"), tone = "EASY"), settings)
+            for (body in listOf("[]", """{"settings":null}""", """{"clarification":"${"가".repeat(401)}"}""", """{"clarification":1}""",
+                    """{"settings":{"sectionOrder":$sections,"highlightMetrics":[],"tone":"EASY","extra":1}}""",
+                    """{"settings":{"sectionOrder":"x","highlightMetrics":[],"tone":"EASY"}}""", """{"other":1}""")) {
+                stub.templateBody = body
+                val error = assertFailsWith<BusinessException>(body) { ai.reportTemplate(emptyMap<String, String>()) }
+                assertEquals("AI_INVALID_RESPONSE", error.code, body); assertEquals(502, error.status.value())
+            }
+            assertEquals(0, ai.templateCircuit.metrics.numberOfFailedCalls)
+        } finally { ai.close() }
+    }
+
 }

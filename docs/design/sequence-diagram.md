@@ -257,7 +257,7 @@ sequenceDiagram
 
 ### 2.4 학생 진입 (P01)
 
-진입 경로는 학부모 동석(아래 첫 다이어그램)과 등록 기기 + PIN 단독 진입(기기 등록·PIN 로그인 다이어그램) 두 가지다 (2026-10-27 개정, API 명세 3.11).
+진입 경로는 학부모 동석(아래 첫 다이어그램)과 등록 기기 + PIN 단독 진입(기기 등록·PIN 로그인 다이어그램) 두 가지다 (API 명세 3.11).
 
 ```mermaid
 sequenceDiagram
@@ -449,7 +449,7 @@ sequenceDiagram
 
 ### 2.6 꾸미기 해금·착용 (P22, #389)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25), #389 구현. 1장 공통 규칙을 따른다. 잠금 순서는 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → 잔액 행 `FOR UPDATE`.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25), #389. 1장 공통 규칙을 따른다. 잠금 순서는 학생 행 `FOR SHARE`(삭제 확정과 직렬화) → 잔액 행 `FOR UPDATE`.
 
 ```mermaid
 sequenceDiagram
@@ -518,7 +518,7 @@ sequenceDiagram
     C-->>W: 200
   end
 
-  W->>C: POST /attempts/{id}/answers (Idempotency-Key: k1)
+  W->>C: POST /attempts/{id}/answers (Idempotency-Key: k1) {…, thinkingSeconds, writingSeconds}
   C->>C: IdempotencyService (user, k1) 조회
   alt 같은 키·같은 본문 기록 있음
     C-->>W: 저장된 최초 응답 그대로
@@ -537,7 +537,7 @@ sequenceDiagram
       L->>L: 학생이 쓴 글 표현 검사(ExpressionPolicy) 걸리면 422 ANSWER_INAPPROPRIATE (저장·판정 없음)
       L->>L: 단어 목록 통과 + 미리 받은 모델 결과 flagged면 422 ANSWER_INAPPROPRIATE (같은 문구, 저장·판정 없음, #688)
       L->>DB: 보완이면 가장 최근 미답 되묻기와 followupId 확인 (아니면 422 ANSWER_INCOMPLETE)
-      L->>DB: answer 저장 (version = 이전+1, previous_answer_id·followup_id 연결)
+      L->>DB: answer 저장 (version = 이전+1, previous_answer_id·followup_id 연결, 생각·작성 시간 P28)
       L->>DB: judgment 저장 (PENDING)
       opt 미리 받은 모델 결과 review (#725)
         L->>DB: expression_review 저장 (GRAY_ZONE, 모델 버전만·점수 없음)
@@ -556,7 +556,8 @@ sequenceDiagram
 - 표현 분류 모델(#688)은 learning이 시도 행 잠금 전에 scoring을 불러 결과만 받아 두고, 트랜잭션 안 단어 목록 다음 자리에서 적용한다. 같은 키 다시 보내기는 저장된 답을 돌려주므로 모델 결과와 상관없다. 모델 장애·시간 초과·비활성은 제출을 막지 않는다(architecture 1.3)
 - 경계 구간(#725): 걸리지 않았지만 `review:true`면 답변과 같은 트랜잭션에서 표현 검토 대기 행을 남긴다(ERD 4.3.2). 재학습 흐름은 9.1
 - 메모는 초안 `content.memo`로 함께 저장, 학생 본인 조회에만 포함 (P05)
-- 2026-11-10 개정(#483, core #485 구현): 무료 플랜은 테마 문제(`THEME_DAY`)를 하루 한도 없이 공개된 만큼(주 5개, learning #484 누적 공개) 시작하고, 추가 문제(`EXTRA`)는 프리미엄 전용(403 `PREMIUM_REQUIRED`, 상품 값이 없으면 무료 거부 #506)
+- 생각·작성 시간(P28, 설계 #800): 웹이 화면 안 경과 시간으로 재서 보낸다. 같은 키로 다시 보낼 때는 처음 잰 값을 그대로 보낸다(core가 본문 전체로 비교). learning은 고르기·받아쓰기·범위 밖 값을 null로 저장하고 같은 요청 비교에서 두 칸을 뺀다(API 3.1)
+- 무료 플랜은 테마 문제(`THEME_DAY`)를 하루 한도 없이 공개된 만큼(주 5개, learning #484 누적 공개) 시작하고, 추가 문제(`EXTRA`)는 프리미엄 전용(403 `PREMIUM_REQUIRED`, 상품 값이 없으면 무료 거부 #506, #483·core #485)
 - 무료 상품에서 `EXTRA`를 다시 켠 경우에만 무료 `EXTRA` 신규 시도를 하루 `limits.dailyMissions`개까지 허용한다. 신규 생성 `201`만 집계하고 이어하기 `200`은 항상 허용, 한도 초과 신규 생성만 `429 USAGE_LIMIT_REACHED` (API 2.2, #210 결정에 따라 PostgreSQL `mission_daily_usage`). 이전 규칙(무료 `THEME_DAY`·`EXTRA` 합산 하루 1개, #387)은 개정으로 대체
 
 ### 3.2 피드백 SSE (판정·되묻기)
@@ -684,11 +685,11 @@ sequenceDiagram
   end
 ```
 
-### 3.4 주간 테마 문제 시작 (P23·P13, learning #385·core #387 → 2026-11-10 개정 #483)
+### 3.4 주간 테마 문제 시작 (P23·P13, learning #385·#484, core #387·#485)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning #385·core #387 구현. 포인트 보충(마지막 항목)은 #389 적립 연결로 구현. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 포인트 보충(마지막 항목)은 #389 적립 연결. 1장 공통 규칙을 따른다.
 
-2026-11-10 개정(#483): 아래 그림은 바뀐 규칙(누적 공개·무료 테마 하루 한도 없음·프리미엄 일요일·당일 풀이/개근/주간 완주 보충)이다. core 몫은 #485(PR #498, V43)로 구현했다(무료 테마 문제 한도 집계 없음·`sundayTheme` 전달·적립 사건). learning 몫(누적 공개·`sundayTheme` 읽기·마무리한 문제 409·`days[].completedOnDay`·`finished`·`ending`)은 #484로 구현했다.
+이용 규칙(#483): 누적 공개·무료 테마 하루 한도 없음·프리미엄 일요일·당일 풀이/개근/주간 완주 보충. core 몫(무료 테마 문제 한도 집계 없음·`sundayTheme` 전달·적립 사건)은 #485 V43, learning 몫(누적 공개·`sundayTheme` 읽기·마무리한 문제 409·`days[].completedOnDay`·`finished`·`ending`)은 #484.
 
 ```mermaid
 sequenceDiagram
@@ -735,7 +736,7 @@ sequenceDiagram
 
 ### 3.5 학습 완료 → 포인트 적립·자동 공유 (P20·P21, core #388·#389·learning #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 공유 요청(core #388), learning 공유 저장(#386), 포인트 적립 연결(#389) 구현. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 공유 요청(core #388), learning 공유 저장(#386), 포인트 적립 연결(#389). 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -768,11 +769,11 @@ sequenceDiagram
 - 공유·적립 저장 실패는 학습 완료 응답을 바꾸지 않는다(적립은 `RewardService.earn` 자체 트랜잭션, 실패는 로그만). 원장은 사건 키 UK로 멱등이라 같은 돌아보기 재요청(`409 ATTEMPT_CLOSED`)·주간 테마 조회(3.4) 때 보충
 - 응답에 적립 결과를 넣지 않는다. 웹은 `GET /students/me/points`로 잔액을 본다
 
-### 3.6 되돌아보기 열람·개근·주간 완주 (P21·P23, learning #385·core #389 구현 → 2026-11-10 개정 #483)
+### 3.6 되돌아보기 열람·개근·주간 완주 (P21·P23, learning #385·core #389·#485)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385, core 열람 응답 뒤 적립 연결은 #389 구현. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). learning 열람 기록·완주 판정은 #385, core 열람 응답 뒤 적립 연결은 #389. 1장 공통 규칙을 따른다.
 
-2026-11-10 개정(#483): 열람은 토요일(프리미엄은 일요일도)만 허용하고 무료 일요일은 `409 THEME_REVIEW_NOT_ALLOWED`. 이전 "완주 보너스"(`THEME_COMPLETED`, 월~금 각 당일 학습 완료)는 이름만 개근으로 바꿔 그대로 두고 열람 응답 `completed`로 적립한다. 주간 완주(`THEME_FINISHED`)는 열람 응답이 아니라 3.4 주간 테마 조회 응답 `finished`로 적립한다(core #485 `ParticipationRewardService`, #506). 일요일이 닫히므로 토요일에 열람하지 않은 학생도 3.4 주간 테마 조회 보충으로 빠지지 않게 한다(core #485).
+열람은 토요일(프리미엄은 일요일도)만 허용하고 무료 일요일은 `409 THEME_REVIEW_NOT_ALLOWED`(#483). 개근(`THEME_COMPLETED`, 월~금 각 당일 학습 완료)은 열람 응답 `completed`로 적립한다. 주간 완주(`THEME_FINISHED`)는 열람 응답이 아니라 3.4 주간 테마 조회 응답 `finished`로 적립한다(core #485 `ParticipationRewardService`, #506). 일요일이 닫히므로 토요일에 열람하지 않은 학생도 3.4 주간 테마 조회 보충으로 빠지지 않게 한다(core #485).
 
 ```mermaid
 sequenceDiagram
@@ -815,13 +816,13 @@ sequenceDiagram
   C-->>W: 200 (learning 응답 그대로, 포인트 적립 없음)
 ```
 
-- 시작 이야기는 온보딩 영상처럼 그 주에 처음 들어왔을 때 한 번 보여 준다(요일 무관, 일요일 제외, 2026-11-10 사용자 결정). 그래서 이번 주 테마 응답의 `intro`(글)는 #385의 '월요일만'에서 매일 채움으로 바꾼다
+- 시작 이야기는 그 주 처음 '오늘 문제 풀기'를 누를 때 한 번 보여 준다(요일 무관, 일요일 제외, #589). 그래서 이번 주 테마 응답의 `intro`(글)는 매일 채운다
 - 날짜·학년은 core가 정한다(되돌아보기 열람과 같음). 기존 되돌아보기 열람(`review-views`, 포인트·완주)은 그대로이고 이야기 열람과 따로 기록한다
 - 종료 이야기·정답·결정적 단서·종료 장면은 엔딩 상태일 때만 이번 주 테마 응답에 들어간다. 엔딩 조건(큰 질문 정답 맞힘 즉시, 틀리면 고른 뒤 토요일 금요일 문제 다시 풀기 마무리)과 정답 고르기는 learning #484(state-diagram 3.2.2)
 
 ### 3.7 커뮤니티 열람·반응·신고 (P20, core #388·learning #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 반응 포인트 적립·작성자 착용 아이템 표시는 #389 구현. 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). 반응 포인트 적립·작성자 착용 아이템 표시는 #389. 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -834,7 +835,7 @@ sequenceDiagram
 
   W->>C: GET /missions/{missionId}/community-posts?seed
   C->>L: GET /internal/community/missions/{missionId}/posts?viewerStudentId&seed
-  alt viewer가 이 미션을 학습 완료하지 않음, 또는 큰 질문 정답 고르기 문제인데 viewer의 그 주 엔딩 전(2026-11-10 개정 #483, learning #484)
+  alt viewer가 이 미션을 학습 완료하지 않음, 또는 큰 질문 정답 고르기 문제인데 viewer의 그 주 엔딩 전(#483, learning #484)
     L-->>C: 403 COMMUNITY_LOCKED (엔딩 전은 COMMUNITY_LOCKED_UNTIL_ENDING, core 공개 문구 #550)
     C-->>W: 403
   else 마무리함
@@ -886,7 +887,7 @@ sequenceDiagram
 - 도입 전 기록은 기동·주기 작업의 멱등 소급이 같은 조건으로 `theme_frame`(`seen_at` 채움)·`memory_search_doc`(`PENDING`)을 만든다
 - #559 구현(learning V19): `theme_frame` 지급은 회차 잠금(`pg_advisory_xact_lock`) 뒤 판정해 같은 회차 두 문제가 동시에 완료돼도 한쪽이 지급한다. 소급은 learning 기동 때마다 같은 SQL로 실행(`seen_at = awarded_at`, 멱등). `memory_search_doc`은 #563 V20에서 같은 완료 트랜잭션에 등록([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 
-### 3.9 추억 검색·설명 (P27, 구현 #563·#564·#565·#566, 웹 화면 #567 구현 전, 질의 변환·하이브리드 #679 설계·#680~#682 구현)
+### 3.9 추억 검색·설명 (P27, 구현 #563·#564·#565·#566, 웹 화면 #567 구현, 질의 변환·하이브리드 #679 설계·#680~#682 구현)
 
 ```mermaid
 sequenceDiagram
@@ -942,7 +943,7 @@ sequenceDiagram
   end
 ```
 
-- 임베딩 장애는 `503 AI_UNAVAILABLE`로 검색 실패. 질의 변환 실패는 검색 실패가 아니며 원문 질문으로 벡터 단독 검색(변경 전 동작, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16)). 설명의 질의 임베딩은 변환 없이 원문 질문을 쓴다. 설명 생성·검사 실패는 `200 {state: FAILED}`로 돌려 화면이 검색 결과를 유지
+- 임베딩 장애는 `503 AI_UNAVAILABLE`로 검색 실패. 질의 변환 실패는 검색 실패가 아니며 원문 질문으로 벡터 단독 검색([결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16)). 설명의 질의 임베딩은 변환 없이 원문 질문을 쓴다. 설명 생성·검사 실패는 `200 {state: FAILED}`로 돌려 화면이 검색 결과를 유지
 - ai 요청에 학생·시도·답변 ID·이름을 넣지 않고 닉네임은 마스킹(NFR-SEC-03). 질문·설명은 저장하지 않음
 
 ### 3.10 검색 문서 임베딩 주기 작업 (P27, #563 구현)
@@ -1056,7 +1057,7 @@ sequenceDiagram
 
 ### 5.1 일일 리포트 대화 (P25)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). core·ai 몫은 #392로 구현했다(report 일일 상세 생성은 #391). 1장 공통 규칙을 따른다.
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25). core·ai 몫은 #392(report 일일 상세 생성은 #391). 1장 공통 규칙을 따른다.
 
 ```mermaid
 sequenceDiagram
@@ -1589,7 +1590,7 @@ sequenceDiagram
 - scoring 교체·롤백 시 artifact를 다시 내려받아 로딩한 뒤 임시 파일을 정리한다. 로딩 중에는 기존 모델을 사용하며 실패 시 기존 모델을 유지하고 재시도한다. 새 승인 scopes에서 제외된 범위에는 기존 모델도 사용하지 않는다. 최초 준비·재연결 복구가 끝나기 전에는 readiness false다.
 - 기준표(`kind = RUBRIC`) 행은 core 레지스트리의 승인·활성 기록만 담당. learning은 이 이벤트를 소비하지 않으며, `judge_verified`·현재 기준표 버전 반영은 관리자 미션 API(`/admin/missions/...`)로 별도 수행
 
-### 9.1 표현 분류 재학습·자동 등록 (#688 재학습 자동화, 설계 #725)
+### 9.1 표현 분류 재학습·자동 등록 (#688 재학습 자동화, 설계 #725, 구현 전 #727~#730)
 
 ```mermaid
 sequenceDiagram

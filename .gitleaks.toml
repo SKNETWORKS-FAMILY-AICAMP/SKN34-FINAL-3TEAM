@@ -105,3 +105,27 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''infrastructure[/\\]stubs[/\\]e2e\.env$''']
 regexes = ['''^e2e-synthetic-billing-aes-key-32$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Synthetic admin password fixture, asserted absent from script output (#810 review)"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''scripts[/\\]tests[/\\]test_admin_account_sql\.py$''']
+regexes = ['''^plain-secret-369$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Explicit synthetic test fixture (#810 review)"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''backend[/\\]core-service[/\\]src[/\\]test[/\\]kotlin[/\\]com[/\\]sagomungchi[/\\]core[/\\]admin[/\\]ModelVersionBrowserIntegrationTest\.kt$''']
+regexes = ['''^dGVzdC1hdXRoLXNlY3JldC0zMi1ieXRlcy1sb25nLWtleSE=$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "S3 object key in a malformed-manifest test case, not a credential (#810 review)"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''scripts[/\\]tests[/\\]test_sagemaker_model_check\.py$''']
+regexes = ['''^explanation/other/x$''']

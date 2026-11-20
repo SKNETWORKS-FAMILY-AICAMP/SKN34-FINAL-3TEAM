@@ -13,6 +13,8 @@
             <arg column="content" javaType="java.util.Map"
                  typeHandler="com.sagomungchi.learning.judgment.repository.ContentMapTypeHandler"/>
             <arg column="process_status" javaType="com.sagomungchi.learning.judgment.domain.ProcessStatus"/>
+            <arg column="thinking_seconds" javaType="java.lang.Integer"/>
+            <arg column="writing_seconds" javaType="java.lang.Integer"/>
         </constructor>
     </resultMap>
     <resultMap id="target" type="com.sagomungchi.learning.judgment.domain.FeedbackTarget">
@@ -90,7 +92,7 @@
     <!-- 각 답변이 답한 되묻기 질문도 함께 (되묻기 요청의 타임라인) -->
     <select id="findTimeline" resultMap="timeline">
         SELECT a.id AS answer_id, a.version, a.submitted_at, a.input_type, a.plain_text, a.followup_id,
-               f.question AS followup_question, a.content, j.process_status
+               f.question AS followup_question, a.content, j.process_status, a.thinking_seconds, a.writing_seconds
         FROM answer a
         JOIN judgment j ON j.answer_id = a.id
         LEFT JOIN followup f ON f.id = a.followup_id

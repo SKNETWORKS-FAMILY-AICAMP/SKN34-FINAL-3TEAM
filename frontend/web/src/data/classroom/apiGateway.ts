@@ -2,6 +2,7 @@ import { assertVerifiedAnalysis } from '../../domain/parent.ts'
 import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin, markParentSessionLocked } from '../apiClient.ts'
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
+import type { AnswerTiming } from '../../domain/answerTiming.ts'
 import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
 import { isStoredGrade } from '../../domain/grade.ts'
 import { isAttemptContext } from '../../domain/retention.ts'
@@ -104,8 +105,13 @@ function feedbackDto(raw: unknown): Feedback {
   }
   return f as unknown as Feedback
 }
-function payload(a: AnswerContent, followupId?: string): object {
-  const extra = { dictatedByGuardian: a.dictatedByGuardian, ...(followupId ? { followupId } : {}) }
+function payload(a: AnswerContent, followupId?: string, timing?: AnswerTiming): object {
+  // 생각·작성 시간(3.1·P28): 같은 Idempotency-Key 재전송 때는 화면이 처음 잰 값을 그대로 넘긴다
+  const extra = {
+    dictatedByGuardian: a.dictatedByGuardian,
+    ...(followupId ? { followupId } : {}),
+    ...(timing ? { thinkingSeconds: timing.thinkingSeconds, writingSeconds: timing.writingSeconds } : {}),
+  }
   if (a.inputType === 'NARRATIVE')
     return {
       inputType: a.inputType,
@@ -308,9 +314,9 @@ export function createApiGateway(): ClassroomGateway {
       const raw = object(await apiFetch<unknown>(`/attempts/${id}/hints`, body({})))
       return text(raw.question, 'question')
     },
-    async submit(id, answer, key, followupId) {
+    async submit(id, answer, key, followupId, timing) {
       await apiFetch<unknown>(`/attempts/${id}/answers`, {
-        ...body(payload(answer, followupId)),
+        ...body(payload(answer, followupId, timing)),
         headers: { 'Idempotency-Key': key },
       })
       return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))

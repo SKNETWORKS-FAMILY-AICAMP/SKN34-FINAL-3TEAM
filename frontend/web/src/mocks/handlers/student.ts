@@ -175,6 +175,17 @@ function studentOnly() {
     throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생만 바꿀 수 있는 설정입니다.' })
   return child
 }
+/** 답변 제출 본문의 thinkingSeconds·writingSeconds(api-spec 3.1). 없으면 null, 정수가 아니면 400 */
+function timingOf(data: Record<string, unknown>) {
+  const read = (name: 'thinkingSeconds' | 'writingSeconds') => {
+    const value = data[name]
+    if (value == null) return null
+    if (!Number.isInteger(value))
+      throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: `${name}는 정수 초여야 합니다.` })
+    return value as number
+  }
+  return { thinkingSeconds: read('thinkingSeconds'), writingSeconds: read('writingSeconds') }
+}
 const id = (value: string | readonly string[] | undefined) => {
   if (!value) throw new Error('경로 식별값이 없습니다.')
   return String(value)
@@ -526,6 +537,8 @@ export const studentHandlers = [
         normalizeAnswer(data, a.mission),
         key,
         typeof data.followupId === 'string' ? data.followupId : undefined,
+        // 생각·작성 시간(3.1·P28). 정수가 아니면 실제 서버처럼 400
+        timingOf(data),
       )
       const answer = saved.answers.at(-1)!
       const response = {

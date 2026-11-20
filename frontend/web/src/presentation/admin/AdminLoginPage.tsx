@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { BookOpen, CheckCheck, Layers, ShieldCheck } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { isDemo, useAuthentication } from '../../data/classroom/useClassroom.ts'
 import { roleStart } from '../../domain/navigation.ts'
@@ -22,9 +23,20 @@ export function AdminLoginPage() {
   }
   return <div className="admin-login-page">
     <header><Link to="/login" className="admin-login-brand" aria-label="사고뭉치 로그인"><Brand linked={false} /><span className="admin-login-context">운영 관리</span></Link></header>
+    <div className="admin-login-layout">
+    <aside className="admin-login-intro" aria-label="관리자 업무 소개">
+      <span className="admin-login-eyebrow">SAGOMUNGCHI WORKSPACE</span>
+      <h2>사고뭉치<br />운영 관리</h2>
+      <div className="admin-login-features">
+        <div><BookOpen size={20} aria-hidden="true" /><span><strong>콘텐츠 관리</strong><small>미션과 주간 테마의 작성·검토·공개</small></span></div>
+        <div><Layers size={20} aria-hidden="true" /><span><strong>서비스 운영</strong><small>처리 상태, 모델 버전과 문의 확인</small></span></div>
+        <div><CheckCheck size={20} aria-hidden="true" /><span><strong>운영 기록</strong><small>권한에 따른 조치와 감사 이력</small></span></div>
+      </div>
+      <span className="admin-login-security"><ShieldCheck size={16} aria-hidden="true" />승인된 운영 계정만 접근할 수 있습니다.</span>
+    </aside>
     <main>
       <div className="admin-login-heading"><p>관리자 전용</p><h1>관리자 로그인</h1>
-        <p>등록된 운영 계정으로 로그인해 주세요.<br />로그인 후 부여된 권한에 맞는 메뉴가 열립니다.</p></div>
+        </div>
       <form onSubmit={(e) => { e.preventDefault(); void login() }}>
         {isDemo && <p className="admin-login-demo">개발 목업 · 실제 계정 정보를 입력하지 마세요.</p>}
         <label>로그인 ID<input aria-label="로그인 ID" autoComplete="username" value={loginId} onChange={(e) => setLoginId(e.target.value)} maxLength={254} required /></label>
@@ -42,5 +54,6 @@ export function AdminLoginPage() {
       </section>}
       <footer><Link to="/login">학부모·학생 로그인으로 돌아가기</Link></footer>
     </main>
+    </div>
   </div>
 }

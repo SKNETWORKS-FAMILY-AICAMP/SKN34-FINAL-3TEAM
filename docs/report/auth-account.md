@@ -173,6 +173,38 @@ P20의 core 몫(공개 설정·보호자 선택 동의·작성자 표시·신고
 - 학생 삭제 확정 시 `community_enabled` false. 공유물·반응 파기는 learning이 `student.deleted`로 처리
 - 한계: learning 반영 실패 시 learning 저장 상태는 다음 설정 저장·재처리 때까지 늦을 수 있음(자동 재시도 없음). COMMUNITY 문서를 개정하면 옛 판 동의는 바로 무효가 되지만 learning 공유물은 다음 반영 때까지 `VISIBLE`(core 응답에서는 빠짐)
 
+### 10.1 공유 답변 공개 계약과 client 검증 (#825, 2026-11-19)
+
+#814 뒤에도 공유 답변 `answer`만 공개 계약에 모양이 없어(`answer: {}`, 설명은 "learning 마지막 답변 content 그대로") core가 원본을 검사 없이 넘겼다. 모양을 정하고 `CommunityClient`가 검사하게 했다.
+
+확인한 실제 모양(learning 코드는 바꾸지 않음)
+
+| 출처 | 확인한 내용 |
+|---|---|
+| learning `CommunityService.answer`·`SharedAnswer` | 공유 답변은 `{inputType, text, content}` 세 칸. `text`는 `answer.plain_text`(없으면 빈 문자열), `content`는 저장된 `answer.content` |
+| learning `AnswerContent.only`·`AnswerContentTypeHandler` | 제출(`AnswerService`) 때 그 입력 방식에 쓰는 칸만 남기고 null 칸은 저장하지 않는다(답변 API가 생긴 10/27부터, 커뮤니티 11/09보다 먼저). 공유 시 `AnswerContent`로 다시 읽어 표현 검사를 한다 |
+| learning OpenAPI `SubmitAnswer`·`Essay`·`Assignment`, api-spec 3.1·3.8 | 서술 `text`, 풀이 단계 `finalAnswer`·`steps[]`, 논술 `essay{claim, reasons[2], rebuttal}`(4칸), 고르기·순서 `choiceIds[]`, 분류 `assignments[{choiceId, categoryId}]` |
+| learning OpenAPI `CommunitySharedAnswer` | `{inputType(6종), text: string, content: object}`. core 설명의 "content 그대로"는 실제와 달랐다(전체 공유 답변 객체가 나감) |
+| ERD 4.3 `answer.content` | `text, essay, choiceIds, finalAnswer, steps, assignments` |
+| web `answerText`(학생 친구 생각·내 공유물, 학부모 자녀 공유물, 관리자 신고 원문) | 객체의 `text`만 보여 준다. `content`는 어느 화면도 읽지 않는다 |
+
+결정(이슈 "확인 필요": oneOf로 둘지, 표시용 공통 모양으로 줄일지)
+
+- **기준안: learning 모양 그대로 두고 입력 방식별 `content`를 `oneOf`로 정의**(`CommunityAnswer`, 갈래는 `inputType`: 서술·풀이 단계·논술·고르기와 순서(같은 모양)·분류 5개). 세 공개 스키마(`CommunityPost`·`CommunityOwnPost`·`CommunityLinkedPost`)가 이 스키마를 쓴다
+- 근거: ① 정상 응답이 그대로다. client는 확인만 하고 learning 원문 노드를 넘기므로 칸·순서·값이 바뀌지 않고, 화면은 계속 `text`만 쓴다(표시 변화 없음). ② 표시용 공통 모양(`{inputType, text}`)으로 줄이면 공개 응답에서 `content`가 빠지는 모양 변경이라 시연(12/7) 직전 바꿀 이유가 약하고, 원문 내용은 `text`와 같아 줄여도 노출이 줄지 않는다. ③ learning 소유 모델(`AnswerContent`·`SubmitAnswer`)과 같은 갈래라 learning 계약이 바뀌면 같은 곳만 맞추면 된다
+- 검사 범위: 세 칸 필수·다른 칸 없음, `text` 문자열, `inputType` 6종, `content`는 그 입력 방식 칸만(빠진 칸·다른 입력 방식 칸·모르는 칸·타입 오류는 위반), 논술 까닭 정확히 2개. 빈 글·목록 개수(고르기 1개·모든 항목 배정)는 learning 제출 검사(422 `ANSWER_INCOMPLETE`) 몫이라 core는 다시 보지 않는다(풀이 단계 빈 칸 `""`은 learning이 저장할 수 있어 허용)
+- 위반·`answer` 빠짐·null은 미션 공유물 목록·내 공유물·자녀 공유물·신고 대상 확인·관리자 원문 열람 모두 502 `COMMUNITY_INVALID_RESPONSE`. 전에는 null·임의 값이 공개 응답으로 나갔다(learning 계약은 `answer` 필수)
+
+검증 위치
+
+- `CommunityClientTest`: 6가지 입력 방식이 원문 그대로 나가는지, 위반 28가지 × 세 읽기 경로가 502인지
+- `CommunityIntegrationTest`: HTTP 대역을 learning 실제 모양(서술·논술·풀이 단계)으로 바꾸고 공개 응답 `answer`가 대역 값과 같은지 확인. 이 응답 스냅샷을 `validate_community_contracts.py`가 새 스키마로 검사
+- `validate_learning_community_contracts.py`: learning 실제 응답(MockMvc)의 공유 답변이 core `CommunityAnswer`에도 맞는지 교차 검사
+- `scripts/tests/test_community_answer_contract.py`: 입력 방식별 정상·위반 예, learning `CommunitySharedAnswer` 입력 방식 목록과 같은지, 세 공개 스키마 연결
+- web: MSW 목이 문자열·빈 `content`를 돌려주던 것을 `CommunityAnswer` 모양(서술)으로 맞추고, 입력 방식별 `text` 표시 단위 테스트 추가
+
+한계: learning `CommunityTest` 산출물은 서술 답변만 만들어 다른 입력 방식의 learning 실제 응답 교차 검사는 합성 예(`CommunityClientTest`·scripts 테스트)에 기댄다. learning 테스트를 늘리는 일은 learning 범위라 하지 않았다
+
 ## 11. 관리자 ID·비밀번호 로그인 (#369)
 
 Google 로그인만 있어 관리자 계정을 만들 방법이 SQL 손작업뿐이었다. 계약은 api-spec 2.1·5.1, 저장은 ERD 3.1.1 `admin_credential`.
@@ -286,6 +318,21 @@ Google 계정이 없는 사용자는 가입할 수 없었고 부하 시험 계�
 - 잔재 정리(#516): 부하 시험 계정 준비의 PIN_CHANGE grant 발급·`X-Reauth-Token` 전송 제거, 웹 `finishPinReauth`를 `finishGuardianReauth`로 이름 변경
 - UI 범위는 [frontend 16절](frontend.md#16-리포트챗봇과-학부모-설정-동선-통합-2026-11-10)
 
-## Google 이메일을 로그인 아이디로 유지 (#683, 2026-11-17)
+## 16. Google 이메일을 로그인 아이디로 유지 (#683, 2026-11-17)
 
 사용자 승인에 따라 동일 Google subject의 학부모는 재로그인 시 검증된 최신 이메일로 login_id를 갱신한다. 별도 Google 이메일 컬럼이 없어 오프라인 추정 변환 대신 로그인 시 기존 값을 복구한다. 활성 여부·역할 확인 후 행 잠금 안에서 갱신하며 고유 제약 충돌은 ACCOUNT_EXISTS로 로그인 트랜잭션 전체를 롤백한다. 기존 아이디·세션을 보존하고 계정을 자동 연결하지 않으며 오류 문구에 이메일을 포함하지 않는다. 신규·반복 로그인·기존 ID 복구·이메일 변경·중복·동시성·me 응답을 검증한다.
+
+## 17. 로그인 진단에서 찾은 후속 항목 (2026-11-18, 고치지 않음)
+
+관리자 화면 개선([frontend 46절](frontend.md)) 중 확인한 것. 인증 유지 시간·갱신·권한 정책은 바꾸지 않았다.
+
+| 확인 항목 | 관찰 결과 및 후속 판단 |
+|---|---|
+| 목업 시간 만료 | 브라우저 시각을 16분 앞으로 바꿔도 학생 홈 요청이 200. 목업은 가짜 토큰 일치만 보고 실제 15분 만료를 모사하지 않음 |
+| 수동 만료 시연 | 학생 화면 '토큰 만료' → 401 `TOKEN_EXPIRED` → 학생 로그인. 새로고침 없이 PIN을 다시 넣으면 학습 화면으로 복귀 |
+| 가상 학생 새로고침 오류 | '가상 학생으로 PIN 로그인 준비' → PIN 로그인 → 새로고침 시 '이 기기에 등록된 친구가 없어요'로 PIN 재로그인이 막힘. `pin-demo@example.test`의 자녀 목록이 `mockAccountChildren` 메모리에만 있어 복원되지 않음(`mocks/handlers/studentDevice.ts`·`mocks/fixtures/accounts.ts`) |
+| 다른 탭의 로그인 | 같은 출처에서 학부모 로그인은 기존 학생 탭을 유지, 관리자 로그인은 학생 탭을 학생 로그인으로 보냄(공통 `watchAuthChange`). 실서버 변경 전 정책 확인 필요 |
+| 다른 탭의 로그아웃 | 학부모·관리자 로그아웃 알림을 받으면 다른 학생·관리자 탭도 `/login`으로. 관리자 인증이 풀렸을 때 관리자 로그인으로 안내할지 후속 검토 |
+| 목업 새 탭 복원 | 관리자 로그인 뒤 기존 탭 새로고침은 유지, 새 탭에서는 복원 안 됨(목업 로그인 상태는 탭별 `sessionStorage`) |
+
+실서버 계약은 학생 access 기본 15분·refresh 미발급, 학부모·관리자 access 기본 15분·최초 로그인부터 최대 7일 세션이다. 학생 자동 갱신 도입은 위 목업 오류 수정과 별개의 정책 변경이다.

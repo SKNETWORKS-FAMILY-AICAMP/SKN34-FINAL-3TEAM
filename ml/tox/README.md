@@ -38,9 +38,9 @@ ml/tox/
 │  ├─ mustpass_probs.py  # 꼭 통과할 글 389개 전부의 확률
 │  ├─ aihub_probs.py     # 실제 초등 답 확률(원문 저장 안 함)
 │  ├─ quant.py           # scoring 로더와 같은 채널별 int8
-│  └─ latency.py         # CPU 1코어 지연
+│  └─ latency.py         # CPU 1코어 지연 (results/…/latency_*.json)
 ├─ eval_sets/            # 직접 지은 아이 말투 문장(kid_test.json 시험 250 · kid_train.json 학습 691 · kid_test_variants.json 모양 바꾼 시험) · user_probe.json 팀원 문장 13
-├─ tests/
+├─ tests/                # 데이터 정리·임계값 계산·저장 형식·아이 문장 시험
 ├─ results/eval_tox.md   # 지표·임계값·지연·한계, results/1119-distill/ 지금 모델 숫자 원본
 ├─ data/                 # (커밋 안 함) 원자료·분할·선생님 확률·글별 확률
 ├─ checkpoints/          # (커밋 안 함) 학습한 모델 폴더

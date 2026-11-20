@@ -53,7 +53,7 @@ AI Hub 원본·JSONL·생성 결과는 저장소에 넣지 않는다.
 ### vLLM 확인 설정 (`vllm_check.py` 기본값)
 
 `enable_lora=True`, `max_lora_rank=16`, `max_loras=1`, `max_model_len=4096`, `gpu_memory_utilization=0.88`, `temperature` 0, 최대 800토큰.
-vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-env`)에서 돌린다. 운영 RunPod 엔드포인트는 `max_model_len` 8192다.
+vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-env`)에서 돌린다. 이전 운영 RunPod 엔드포인트는 `max_model_len` 8192였다.
 
 ### 서빙 비교·반입 (`scripts/serving/`, #743·#745)
 
@@ -105,16 +105,9 @@ vLLM은 Unsloth와 패키지가 충돌해 별도 가상환경(`/workspace/vllm-e
 
 LoRA를 쓴다(2026-11-18). 지연이 약 0.5초 늘지만 배치 작업이고, 기반 단독은 상세 설명 절반이 잘려 설명 없이 발행된다. AWQ 위에 얹은 결과(학습은 16비트 QAT 원본)이고, 표본은 가상 글 1편이라 의미 품질은 따로 봐야 한다.
 
-### RunPod 서버리스 (#747 전환 전까지 현재 운영)
+### RunPod 서버리스 (이전 운영, #747로 대체)
 
-| 항목 | 값 |
-|---|---|
-| 방식 | RunPod 서버리스, vLLM 0.32 직접 빌드 이미지(기반 모델을 이미지 `/models/llm`에 포함) |
-| `/v1/models` 응답 (2026-11-17 조회) | `gemma-4-26b-a4b-it-qat-awq-int4`(`max_model_len` 8192), LoRA `explain`(부모 위 모델) |
-| LoRA 설정 | 워커 환경 `LORA_MODULES={"name":"explain","path":"<HF 저장소>"}`(리스트가 아닌 객체 하나), 비공개 저장소라 `HF_HUB_OFFLINE=0` 필요 |
-| 요청 | 운영은 기반 이름으로 불러 LoRA가 붙지 않음(`model="explain"`일 때만 붙음). `temperature` 0, 상세 출력 한도 4096토큰 |
-| `--max-lora-rank` | 어댑터 r=16이라 16 이상 |
-| GPU·VRAM·기타 실행 옵션 | **미확인** (RunPod 엔드포인트 설정 확인 필요) |
+#747(2026-11-18) 전까지 vLLM 0.32 직접 빌드 이미지(기반 모델 포함)의 RunPod 서버리스 엔드포인트를 썼다. 운영은 기반 이름으로 불러 LoRA `explain`이 붙지 않았고(`model="explain"`일 때만 붙음), 콜드 대기 191~315초가 문제였다(아래 실측). GPU 종류·VRAM·이미지 속 기반 revision은 확인하지 않은 채 대체됐다.
 
 ### CPU 비교 (채택하지 않음)
 
@@ -147,7 +140,7 @@ SageMaker는 `base-awq/`·`adapter/`만 읽는다. GPU로 정해져 `base-gguf/`
 - 먼저 등록한 `gemma4-26b-a4b-lora-20261118`은 manifest를 첨부하지 않아 등록 기록에 파일 목록이 없었다. 그래서 같은 내용을 새 버전으로 다시 등록했고, 앞의 버전은 INACTIVE가 됐다
 - B 계정은 A DB 스냅샷을 복원하므로 이 등록이 그대로 넘어간다. artifactUri는 A 버킷을 가리키지만, ai-service는 활성 여부와 범위만 보고 이 주소를 쓰지 않는다. B의 SageMaker는 B 버킷에 올린 같은 `manifest.json`으로 대조한다
 
-## 실측 (RunPod, 2026-11-16)
+## 실측 (RunPod, 2026-11-16, 이전 운영)
 
 RunPod 작업 기록의 `executionTime`(생성)과 `delayTime`(배정·준비 대기)을 나눠 적는다. 입력은 가상 글이다.
 
@@ -178,7 +171,6 @@ report-service `input_scores` 기준: 서술 초5·6, 논술 초4~6. 프리미�
 
 - [ ] 71818·71819 이유 문장 이용 조건 (#475). 학습에 논술 71819를 썼다(M2 논술 점수는 545 에세이)
 - [ ] `eval_lora.py`·`vllm_check.py` 실행 결과 숫자를 Pod에서 옮겨 `results/`에 기록
-- [ ] RunPod 엔드포인트의 GPU 종류·VRAM, vLLM 실행 옵션, 이미지에 들어간 기반 revision. SageMaker 쪽은 위 SageMaker 절에 있다
 - [x] 학습 기준 모델 저장소: `google/gemma-4-26B-A4B-it-qat-q4_0-unquantized`(kim-4480 확인, 2026-11-18, #745)
 - [ ] 학습 기준 모델 revision
 - [x] S3 경로·manifest: 위 S3 반입 절(`manifest.json` sha256 `adb264cb…`, 13개 파일)

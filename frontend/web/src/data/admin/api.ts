@@ -15,6 +15,7 @@ import type {
   Rubric,
   MissionVersion,
   ErrorReport,
+  CommunityReviewResult,
   Usage,
   EvaluationEvidence,
 } from '../../domain/admin/operations.ts'
@@ -120,8 +121,8 @@ export const adminApi = {
   errors: (signal?: AbortSignal) => apiFetch<Page<ErrorReport>>('/admin/error-reports', { signal }),
   error: (id: string, signal?: AbortSignal) =>
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, { signal }),
-  reviewError: (id: string, status: string, reviewReason: string) =>
-    apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, json({ status, reviewReason }, 'PATCH')),
+  reviewError: (id: string, status: ErrorReport['status'], reviewReason: string, reviewResult?: CommunityReviewResult) =>
+    apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, json({ status, reviewReason, reviewResult }, 'PATCH')),
   correction: (id: string, reason: string, corrected: string, key: string) =>
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}/corrections`, { ...json({ reason, corrected }), headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key } }),
 }

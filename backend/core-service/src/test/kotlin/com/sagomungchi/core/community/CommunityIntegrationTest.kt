@@ -102,11 +102,11 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
             path == "/internal/community/missions/$mission/posts" ->
                 if (req.header("X-Student-Scope") != student.toString()) problem(403, lockCode)
                 else ok(mapOf("items" to author.filterValues { true }.filter { statuses[it.key] == "VISIBLE" }.map { (post, who) ->
-                    mapOf("postId" to post, "studentId" to who, "answer" to mapOf("text" to "내 생각은 이래"), "myReactions" to listOf("NEW_IDEA", "BOGUS"),
+                    mapOf("postId" to post, "studentId" to who, "answer" to NARRATIVE_ANSWER, "myReactions" to listOf("NEW_IDEA", "BOGUS"),
                         "reactionCounts" to mapOf("NEW_IDEA" to 9), "createdAt" to "2026-11-08T01:00:00Z")
                 }))
             path.startsWith("/internal/community/students/") -> ok(mapOf("items" to listOf(mapOf("postId" to ownPost, "studentId" to student,
-                "missionId" to mission, "missionTitle" to "물의 순환", "answer" to "내 답", "status" to statuses[ownPost],
+                "missionId" to mission, "missionTitle" to "물의 순환", "answer" to ESSAY_ANSWER, "status" to statuses[ownPost],
                 "reactions" to mapOf("NEW_IDEA" to 2, "WANT_MORE" to 1), "createdAt" to "2026-11-08T01:00:00Z"))))
             path.startsWith("/internal/community/posts/") && path.contains("/reactions/") ->
                 if (path.contains(ownPost.toString())) problem(409, "COMMUNITY_OWN_POST") else ok(mapOf("created" to true))
@@ -117,7 +117,7 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
             req.method == "GET" && path.startsWith("/internal/community/posts/") -> {
                 val post = UUID.fromString(path.substringAfterLast('/'))
                 val who = author[post] ?: return problem(404, "COMMUNITY_POST_NOT_FOUND")
-                ok(mapOf("postId" to post, "studentId" to who, "missionId" to mission, "status" to statuses[post], "answer" to mapOf("text" to "원문")))
+                ok(mapOf("postId" to post, "studentId" to who, "missionId" to mission, "status" to statuses[post], "answer" to STEPS_ANSWER))
             }
             path.endsWith("/community-visibility") -> ok(mapOf("updated" to 1))
             else -> LearningHttpStub.Reply(404, "{}")
@@ -192,6 +192,7 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
         assertTrue(item["author"]["look"]["equipped"].all { it.isNull })
         assertEquals(listOf("NEW_IDEA"), item["myReactions"].map { it.asText() })
         assertEquals(setOf("postId", "author", "answer", "myReactions", "createdAt"), item.fieldNames().asSequence().toSet())
+        assertEquals(json.valueToTree<JsonNode>(NARRATIVE_ANSWER), item["answer"])
         assertFalse(body.toString().contains(friend.toString())); assertFalse(body.toString().contains(quiet.toString()))
         val forwarded = requests("/internal/community/missions/$mission/posts").single()
         assertTrue(forwarded.target.contains("viewerStudentId=$student")); assertTrue(forwarded.target.contains("seed=abc"))
@@ -249,7 +250,8 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
         call("POST", "/error-reports", studentToken, mapOf("targetType" to "COMMUNITY_POST", "targetId" to UUID.randomUUID(), "category" to "OTHER"), 404, UUID.randomUUID())
 
         val detail = call("GET", "/admin/error-reports/$id", adminToken, snapshot = "admin-report")
-        assertEquals("원문", detail["linkedPost"]["answer"]["text"].asText())
+        // #825: 확인한 공유 답변은 learning 원문 그대로(칸 순서 포함) 나간다.
+        assertEquals(json.valueToTree<JsonNode>(STEPS_ANSWER), detail["linkedPost"]["answer"])
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='SUPPORT_ORIGINAL_VIEW' AND target_id=?", Int::class.java, id))
         call("PATCH", "/admin/error-reports/$id", adminToken, mapOf("status" to "IN_REVIEW", "reviewReason" to "검토 시작"))
         call("PATCH", "/admin/error-reports/$id", adminToken, mapOf("status" to "RESOLVED", "reviewReason" to "문제 없음", "reviewResult" to "SHOW"), 400)
@@ -273,6 +275,7 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
         val mine = call("GET", "/students/me/community-posts", studentToken, snapshot = "my-posts")["items"].single()
         assertEquals("VISIBLE", mine["status"].asText()); assertEquals(2, mine["reactions"]["NEW_IDEA"].asInt()); assertEquals(0, mine["reactions"]["CLEAR_REASON"].asInt())
         assertNull(mine["studentId"])
+        assertEquals(json.valueToTree<JsonNode>(ESSAY_ANSWER), mine["answer"])
         val withdrawn = jdbc.queryForObject("SELECT id FROM consent WHERE subject_user_id=? AND student_id=? AND document_id=?", UUID::class.java,
             parentUser, student, currentCommunityDocument())
         call("POST", "/me/consents/$withdrawn/withdrawal", parentToken)

@@ -116,6 +116,41 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
     }
 
     /**
+     * P25 pinned conversation (#392, #814): one revision (latest when null) of the job's report, without narrative, checked like
+     * [report] and narrowed to counts and judgments. Every `metrics[]` item needs a text label and a non-negative integer count;
+     * `problems[]` (absent means none) needs a text title, a known or null context and judgment, and `elements[]` of a text label
+     * and a boolean. Anything else is 502 REPORT_CONTRACT_INVALID, so no required metric silently disappears.
+     */
+    fun pinned(job: ReportJob, reportId: UUID, revision: Int?): PinnedReport {
+        val query = revision?.let { mapOf("revision" to it.toString()) } ?: emptyMap()
+        val body = get(job.studentId, "/internal/reports/$reportId", query, false)
+        validateDetail(job, body, revision)
+        return try {
+            fun text(node: JsonNode): String = node.also { require(it.isTextual) }.textValue()
+            fun known(node: JsonNode, values: Set<String>): String? {
+                require(!node.isMissingNode)
+                return if (node.isNull) null else text(node).also { require(it in values) }
+            }
+            fun array(node: JsonNode): JsonNode = node.also { require(it.isArray) }
+            val metrics = array(body.path("metrics")).map { metric ->
+                val count = metric.path("count")
+                require(count.isIntegralNumber && count.canConvertToInt() && count.intValue() >= 0)
+                PinnedReport.Metric(text(metric.path("label")), count.intValue())
+            }
+            val problems = body.path("problems").takeUnless { it.isMissingNode }?.let(::array)?.map { problem ->
+                PinnedReport.Problem(text(problem.path("title")), known(problem.path("context"), PinnedReport.CONTEXTS),
+                    known(problem.path("judgment"), PinnedReport.JUDGMENTS), array(problem.path("elements")).map { element ->
+                        val satisfied = element.path("satisfied")
+                        require(satisfied.isBoolean)
+                        PinnedReport.Element(text(element.path("label")), satisfied.booleanValue())
+                    })
+            }.orEmpty()
+            PinnedReport(UUID.fromString(body["reportId"].textValue()), body["revision"].intValue(),
+                ReportJobStatus.valueOf(body["status"].textValue()), LocalDate.parse(body["period"]["from"].textValue()), metrics, problems)
+        } catch (_: Exception) { throw invalid() }
+    }
+
+    /**
      * Download link of the job's latest report. The metadata must match the job and carry the narrative fields; the link
      * must be an absolute http(s) URL without user info with a parseable expiry. Returns the actual report ID and the body.
      */
@@ -135,6 +170,27 @@ class ReportClient(factory: InternalRestClientFactory, private val json: ObjectM
             OffsetDateTime.parse(body["expiresAt"]?.textValue())
         }
         return actual to body
+    }
+
+    /**
+     * #244 correction impact: completed revisions of [studentId] built from [attemptId]. `items` must be an array of
+     * `CorrectionImpactItem` (UUID `reportId`, known `periodType`, date `periodFrom`, integer `revision` of 1 or more);
+     * anything else is 502 REPORT_CONTRACT_INVALID (#814 follow-up).
+     */
+    fun correctionImpact(studentId: UUID, attemptId: UUID): List<AffectedReport> {
+        val body = get(studentId, "/internal/reports/correction-impact",
+            mapOf("studentId" to studentId.toString(), "attemptId" to attemptId.toString()))
+        return try {
+            fun text(node: JsonNode): String = node.also { require(it.isTextual) }.textValue()
+            val items = body.path("items").also { require(it.isArray) }
+            items.map { item ->
+                require(item.isObject)
+                val revision = item.path("revision")
+                require(revision.isIntegralNumber && revision.canConvertToInt() && revision.intValue() >= 1)
+                AffectedReport(UUID.fromString(text(item.path("reportId"))), ReportPeriodType.valueOf(text(item.path("periodType"))),
+                    LocalDate.parse(text(item.path("periodFrom"))), revision.intValue())
+            }
+        } catch (_: Exception) { throw invalid() }
     }
 
     fun evidence(job: ReportJob, reportId: UUID, itemId: UUID): JsonNode = get(job.studentId, "/internal/reports/$reportId/evidence/$itemId")

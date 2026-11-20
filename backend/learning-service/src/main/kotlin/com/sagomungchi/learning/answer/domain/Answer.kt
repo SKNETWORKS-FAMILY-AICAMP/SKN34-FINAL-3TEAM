@@ -20,8 +20,14 @@ data class Answer(
     val dictatedByGuardian: Boolean,
     val idempotencyKey: UUID,
     val submittedAt: Instant,
+    /** 생각·작성 시간(초, P28). 재지 못했거나 저장하지 않는 답은 둘 다 null (AnswerTime) */
+    val thinkingSeconds: Int? = null,
+    val writingSeconds: Int? = null,
 ) {
-    /** 같은 Idempotency-Key의 재요청이 최초 요청과 같은 내용인지 */
+    /**
+     * 같은 Idempotency-Key의 재요청이 최초 요청과 같은 내용인지.
+     * 생각·작성 시간은 비교하지 않는다: 다시 보낸 답이 같으면 시간만 달라도 같은 요청이고 처음 저장한 시간을 그대로 둔다 (#801)
+     */
     fun sameRequestAs(other: Answer) =
         inputType == other.inputType && content == other.content &&
             followupId == other.followupId && dictatedByGuardian == other.dictatedByGuardian
@@ -38,6 +44,7 @@ data class Answer(
             dictatedByGuardian: Boolean,
             idempotencyKey: UUID,
             now: Instant,
+            time: AnswerTime? = null,
         ) = Answer(
             id = UUID.randomUUID(),
             attemptId = attemptId,
@@ -50,6 +57,8 @@ data class Answer(
             dictatedByGuardian = dictatedByGuardian,
             idempotencyKey = idempotencyKey,
             submittedAt = now,
+            thinkingSeconds = time?.thinkingSeconds,
+            writingSeconds = time?.writingSeconds,
         )
     }
 }

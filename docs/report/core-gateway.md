@@ -357,7 +357,7 @@ local kind에서 테스트 계정으로 core 공개 API를 실제 호출해 확�
 
 - 리포트 고정 대화: 학부모 원문 공개 전에는 403 `STUDENT_RECORDS_PRIVATE`, 켠 뒤 201·그날 범위 고정. "오늘 …" 질문이 같은 날짜인데도 `DIFFERENT_PERIOD` 되묻기 → #454
 - 사용량: 질문마다 `CONVERSATION` 1건(되묻기 포함)
-- 포인트: 미션 완료 +10, 공유 +5, 반응 +1, 해금 차감·착용 저장. 착용 아이템이 캐릭터에 그려지지 않는 것은 웹 미구현 → #455
+- 포인트: 미션 완료 +10, 공유 +5, 반응 +1, 해금 차감·착용 저장. 착용 아이템을 캐릭터에 그리는 것은 웹 #455
 - 커뮤니티 신고: 접수 → `IN_REVIEW` → `RESOLVED`. `RECEIVED`에서 바로 `RESOLVED`는 409 `SUPPORT_STATE_CONFLICT`
 - 미확인: 되돌아보기 열람·개근 적립(주말·5일 연속 학습 필요)
 
@@ -366,7 +366,7 @@ local kind에서 테스트 계정으로 core 공개 API를 실제 호출해 확�
 에픽 #473(설명 sLLM)의 core 몫.
 
 - `GET /admin/ai-usage?callType`과 `llm.usage.recorded` 이벤트에 `REPORT_EXPLANATION` 추가(V42). 설명 항목 1개당 sLLM 1회라 답변 하나에 최대 2건
-- 클러스터 안 CPU sLLM이라 토큰 단가 없음. `cost_usd` null, `unpricedCalls`로 집계
+- 리포트 Gemma(SageMaker, #747)는 서비스 밖 별도 청구라 `billed_externally`로 표시해 미산정·예산 합산에서 뺀다(#764, 33장)
 - **모델 레지스트리 코드 변경 없음**: 이름·scope가 자유 형식이라 `MODEL` `report-explanation`, scope `explanation/grade-{학년}/{narrative|essay}`를 그대로 등록·승인·복귀 가능
 - 호출 종류를 더할 때는 이벤트 스키마·core `CallType`·core OpenAPI·ERD Mermaid 주석·ai/scoring 발행 목록·`ck_llm_usage_call_type` 마이그레이션·web `callTypeLabel`·MSW 필터를 함께 고침(`test_admin_mission_drafts_contract.py`가 목록 7곳 대조)
 
@@ -522,11 +522,12 @@ core 통합 테스트(실제 JWT/MVC/PostgreSQL·Redis·RabbitMQ)로 권한·기
 - 접수: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId`(유형 5종 그대로). 학생 세션만 받고 학부모는 400. learning `GET /internal/community/posts/{postId}`로 대상을 확인해 본인 글 409 `COMMUNITY_OWN_POST`, 없거나 볼 수 없는 글(설정·검토 숨김, 작성자 비공개) 404 `COMMUNITY_POST_NOT_FOUND`
 - 신고 행: `student_id`·`requester_student_id`는 신고한 학생, `attempt_id`는 NULL. 작성자 학생 ID를 core 신고 행에 남기지 않아 기존 본인 목록·상세 권한 검사(`student_id ∈ scope`)를 그대로 쓰고, 작성자 삭제로 신고 이력이 깨지지 않음
 - 숨김: 신고 행 저장 뒤 트랜잭션 밖에서 learning `moderation {status: HIDDEN_REPORT, errorReportId}`. 실패해도 접수는 201로 두고 기록만 남김. 같은 멱등 키 재전송·검토 처리 때 다시 보냄. 그 사이에도 core 목록·반응은 신고 행(접수·처리 중, 또는 처리 결과가 `VISIBLE`이 아님)으로 그 공유물을 바로 숨김
-- 처리: 기존 `PATCH /admin/error-reports/{id}`(SERVICE_OPS). `RESOLVED`로 바꿀 때 `reviewResult`는 `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김)만, 생략하면 `REMOVED`(현재 관리자 화면 #395는 결과를 보내지 않아 계속 숨김이 기본). 같은 공유물에 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`, 모두 다시 공개일 때만 `VISIBLE`을 보냄. 정정(`corrections`)은 판정만이라 422 그대로
+- 처리: 기존 `PATCH /admin/error-reports/{id}`(SERVICE_OPS). `RESOLVED`로 바꿀 때 `reviewResult`는 `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김)만, 생략하면 `REMOVED`. 같은 공유물에 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`, 모두 다시 공개일 때만 `VISIBLE`을 보냄. 정정(`corrections`)은 판정만이라 422 그대로
 - 원문 열람: 관리자 상세에 `linkedPost {postId, available, missionId, status, answer, authorStudentId}`. 열람마다 `SUPPORT_ORIGINAL_VIEW`(`ERROR_REPORT`, detail `postId`·`available`) 감사. 파기된 공유물은 `available: false`만
 - 학생 결과 알림은 기존처럼 보호자 계정에 보내지 않음(학생 본인 목록에서 확인)
-- 검증: core `CommunityIntegrationTest`(실제 JWT·MVC·PostgreSQL, learning만 내부 계약 가짜 서버)로 접수 즉시 숨김·같은 키 재전송·learning 반영 지연 중 core 숨김·다시 공개·계속 숨김·복수 신고·원문 열람 감사를 확인. 실제 learning #386과의 연동은 미검증
-- 후속: 관리자 화면(#395)에 다시 공개·계속 숨김 선택과 `linkedPost` 표시 추가 필요. learning #386 `moderation`·`GET posts/{id}` 구현과 응답 모양 대조 필요
+- 검증: core `CommunityIntegrationTest`(실제 JWT·MVC·PostgreSQL, learning만 내부 계약 가짜 서버)로 접수 즉시 숨김·같은 키 재전송·learning 반영 지연 중 core 숨김·다시 공개·계속 숨김·복수 신고·원문 열람 감사를 확인. 당시 learning #386 연동은 목업으로 확인했다.
+- 웹 #806: 신고 상세에서 원문과 현재 공개 상태를 보고 다시 공개·계속 숨김(기본)을 선택한다. 완료 후 저장된 사유와 결과로만 다시 적용할 수 있다. 기존 core·learning API 계약을 사용한다.
+- #806 실서버 검증: 로컬 Compose E2E의 실제 core·learning을 대상으로 `frontend/web/tests/e2e/community.spec.ts`가 통과했다. 학생 신고 직후 learning 상태 `HIDDEN_REPORT`와 학생 목록에서 제거를 확인했고, 관리자 재공개 후 learning 상태 `VISIBLE`과 학생 목록에서 재노출을 확인했다. 이 PC의 kind 클러스터에서는 실행하지 않았다.
 
 ## 24. 결제·구독과 상품 권한 (#48·#184·#419)
 
@@ -606,20 +607,7 @@ core 통합 테스트(실제 JWT/MVC/PostgreSQL·Redis·RabbitMQ)로 권한·기
 
 ### 24.7 학부모 결제·구독 화면 (#184)
 
-- 서버 상품의 가격·월 청구 주기·자녀 수·이용 기능·한도·기간 표시. 무료 조건 별도 표시, 임의로 무료 상품을 선택하지 않음
-- 연결 자녀를 선택해 주문 생성, 같은 자녀의 ACTIVE·RENEWAL_FAILED 구독이 있으면 구매 제한(최종 검사는 core)
-- 주문 생성·승인은 UUID 멱등 키 유지. 저장한 주문과 성공 URL의 주문번호·금액을 대조한 뒤 core 승인 API 호출, `APPROVED`와 `APPLIED`가 모두 확인되어야 이용권 적용 완료 표시
-- `CONFIRMING`·`RECOVERY_REQUIRED`는 GET 상태 조회로 확인(자동 새 주문·재결제 없음). 실패 URL에서는 승인하지 않음
-- 빌링 GET의 customerKey로 SDK 인증을 시작하고 등록·변경 전 자동 갱신 동의 확인. 콜백 고객 범위·만료 검사 후 authKey를 core에 전달. 카드 원문·paymentKey·authKey·시크릿 키는 브라우저 저장소에 남기지 않음
-- 구독 상태·기간·다음 청구일·갱신 금액·빌링 등록 여부, 갱신 실패 유예 종료·재시도 횟수·예정일은 서버 응답 그대로. 해지·철회는 확인 후 서버 응답 재조회
-- 본인 거래의 결제·취소·환불 이력과 전액 환불 요청. REQUESTED·APPROVED·FAILED·COMPLETED 구분 표시, 검토 중 결제수단 변경·갱신 철회 제한
-- 동의 철회·자녀 연결 해제 상태에서도 본인 거래 조회·자동 갱신 해지·환불 복구 접근 유지
-
-실행 모드:
-
-1. 실제 core: `npm run dev`(목업 비활성). DB·core·상품·학부모·연결 자녀와 테스트 상점 설정 필요
-2. 화면·모의 검증: `VITE_API_MOCK=true npm run dev`. 외부 PG 미호출, 상단 상태 선택기로 결제 확인 중·갱신 실패·환불 실패 시연. 고정 데이터는 `src/mocks/handlers/payments.ts`
-3. 실제 PG 단건 연결 확인: `npm run dev:payment -- --port 5251`. 결제창과 서버 승인은 실제 토스 테스트 API, 주문은 메모리에만 보관하고 SANDBOX_ONLY 표시, 이용권 미부여. production 미포함. 테스트 상품 14,900원은 `scripts/payment-test-server.ts`
+→ [frontend 47절](frontend.md#47-학부모-결제구독-화면-184)로 이동
 
 ### 24.8 검증 범위와 한계
 
@@ -668,7 +656,7 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 - 영상 호출은 토큰이 없어 이미지처럼 `cost_usd` null, `unpricedCalls`로 집계
 - 요일 장면 영상은 없다(시작·종료만, learning `ThemeScene.videoUrl`은 ai 채택 테마에서 null). 사용량은 테마 하나에 최대 2건
 - 이번 주 테마 응답은 core가 바꾸지 않고 전달하고 OpenAPI·api-spec 설명만 맞춤. core가 읽는 값은 포인트 적립용 `weekStart`·`completed`·`finished`·`days[].missionId`·`attemptStatus`·`day`·`completedOnDay`뿐(#389·#485). 정답·종료 이야기는 learning이 엔딩 전에 비움
-- ai `app/llm/media.py`는 아직 `THEME_VIDEO`를 발행하지 않고 로그만 남긴다. 이 PR 머지 뒤 ai 발행을 켜고 관리자 사용량 집계를 확인
+- ai 발행은 #546에서 켬([ai 17.5](ai.md#175-영상-사용량-theme_video-546-2026-11-12))
 - 테스트: `ModelVersionHttpTest`(V45 CHECK 저장·조회·미산정), `WeeklyThemeProxyIntegrationTest`(`grade=G5&date=…&sundayTheme=…`), `scripts/tests/test_admin_mission_drafts_contract.py`·`test_admin_operations_contract.py`·`test_core_migration_versions.py`·`test_weekly_theme_contract.py`
 
 ## 26. 큰 질문 정답 고르기 프록시·엔딩 전 커뮤니티 잠김 문구 (#550, 2026-11-12)
@@ -735,11 +723,9 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 - `AccountManagementTest`: 삭제 확정 때 대상 학생 사용량만 삭제
 - 계약: `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 일치)·`test_admin_operations_contract.py`·`test_core_migration_versions.py`
 
-### 남은 일
+### 후속 연결
 
-- learning #563·#564가 내부 경로를 만들기 전에는 learning 404를 그대로 전달한다. 머지 뒤 실제 연동 확인
-- ai #565는 이 변경이 병합된 뒤에 새 `callType`을 발행
-- web 관리자 사용량 화면의 호출 종류 이름표(`adminFormatting.ts`)·목 필터(`mocks/handlers/admin.ts`)에는 새 값이 없다(기존 `THEME_*`도 없음). web #567 범위
+- learning 내부 경로 #563·#564([리텐션 확장 12·13장](retention-expansion.md)), ai 새 `callType` 발행 #565([ai 18절](ai.md)), web 관리자 호출 종류 이름표 #655([frontend 39절](frontend.md))
 
 ## 28. 추억 앨범 공개 프록시 (#560, 2026-11-12)
 
@@ -763,9 +749,9 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 
 - `AlbumProxyIntegrationTest`: 걸린 회차만 `displayed:true`·나머지 칸 유지·`page`·`size`만 전달·학생 범위 헤더·쿼리 생략, learning 400·500 전달, 깨진 200 본문 4종 502, `learning-json` 서킷 사용, 상세 바이트 그대로·seen 204·404 `THEME_FRAME_NOT_FOUND` 전달, 학부모 403·형식 오류 400(learning 미호출)
 
-### 남은 일
+### 후속 연결
 
-- learning #559(PR #571)는 병합됨. 배포 환경에서 실제 연동 확인. web #561이 이 경로를 쓴다
+- learning #559(PR #571), web #561([frontend 23절](frontend.md))
 
 ## 29. LLM 단가 등록·월 예산 경보 합산 (#651, 2026-11-16)
 

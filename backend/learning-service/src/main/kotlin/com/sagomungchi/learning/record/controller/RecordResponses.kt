@@ -237,6 +237,8 @@ internal fun AnswerItem.Companion.from(answer: TimelineAnswer, feedback: Feedbac
     followupId = answer.followupId,
     content = answer.content,
     feedback = feedback.toResponse(),
+    thinkingSeconds = answer.thinkingSeconds,
+    writingSeconds = answer.writingSeconds,
 )
 
 internal fun FeedbackResult.toResponse() = FeedbackResponse(
