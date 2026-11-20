@@ -691,7 +691,16 @@ classDiagram
   }
   class FeedbackService {
     <<service>>
-    +feedback(answerId) HttpExchangeResult
+    +started() FeedbackEvent
+    +feedback(answerId) FeedbackEvent
+  }
+  class FeedbackClient {
+    <<client>>
+    +feedback(answerId) FeedbackOutcome
+  }
+  class FeedbackOutcome {
+    <<client DTO>>
+    Done(document) · Running · Failed(problem)
   }
   class LearningRecordService {
     <<service>>
@@ -795,7 +804,9 @@ classDiagram
   LearningProxyService --> LearningClient
   FeedbackController --> FeedbackService
   FeedbackController --> SseEmitters
-  FeedbackService --> LearningProxyService
+  FeedbackService --> FeedbackClient
+  FeedbackClient --> LearningClient : learning-feedback 서킷
+  FeedbackClient ..> FeedbackOutcome
   LearningRecordService --> LearningRecordClient
   LearningRecordClient --> LearningClient
   LearningRecordClient ..> EvidenceRecord
@@ -817,10 +828,10 @@ classDiagram
 ```
 
 - `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/core-gateway.md))
-- 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). 분석 대화(#41)는 `ConversationController`·`ConversationService`(`prepare`·`transport`·`complete`·`fail`·`evidence`·`examples`)·`AnalysisStreamService`(SSE 실행)·`ConversationRepository`·`AiClient.stream`으로 구현됨. 그림의 `ConversationMessageRepository`는 `ConversationRepository`에, `Conversation`·`ConversationMessage` 엔티티 메서드는 서비스 검증에 포함되고, `JobExecutionService` 없이 `conversation_message` 상태·`retry_count`로 실행을 기록한다. `LearningClient.evidence`는 `LearningRecordClient.evidence`, `correctJudgment`는 `support/client/LearningSupportClient.correct`(3.5)
-- `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`, `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
+- 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`FeedbackClient`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). 분석 대화(#41)는 `ConversationController`·`ConversationService`(`prepare`·`transport`·`complete`·`fail`·`evidence`·`examples`)·`AnalysisStreamService`(SSE 실행)·`ConversationRepository`·`AiClient.stream`으로 구현됨. 그림의 `ConversationMessageRepository`는 `ConversationRepository`에, `Conversation`·`ConversationMessage` 엔티티 메서드는 서비스 검증에 포함되고, `JobExecutionService` 없이 `conversation_message` 상태·`retry_count`로 실행을 기록한다. `LearningClient.evidence`는 `LearningRecordClient.evidence`, `correctJudgment`는 `support/client/LearningSupportClient.correct`(3.5)
+- `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`·`FeedbackClient`(피드백 전용 `learning-feedback` 서킷), `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
 - `DashboardController`(학생 3개·학부모 4개 조회) → `LearningRecordService` → `LearningRecordClient` → `LearningClient`. 집계·home·상세는 learning 기록 API가 계산하고 core는 수치를 계산하지 않음 ([core 보고서](../report/core-gateway.md))
-- `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
+- `FeedbackController`: SSE를 열고 `FeedbackService`가 정한 이벤트만 보낸다(learning 동기 응답을 기다리는 동안은 heartbeat만). 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3). `FeedbackClient.feedback`이 learning 응답을 `FeedbackOutcome`으로 바꾼다: 2xx `status` `DONE`은 본문 그대로 `Done`, `RUNNING`은 `Running`, 2xx 밖은 빈 Problem 칸(`type`·`title`·`status`·`code` `LEARNING_UNAVAILABLE`·`retryable` 5xx·429)을 채운 `Failed`, 객체가 아니거나 모르는 `status`는 502 `LEARNING_INVALID_RESPONSE`. `FeedbackService`는 `Done` → `result`, `Running` → `status`(진행 중), `Failed`·업무 예외 → `error` 이벤트를 정한다(#834)
 - `AnalysisStreamService`(그림의 `ConversationService.stream`): `AiClient.stream`이 ai SSE 프레임을 `AnalysisEvent`(`Status`·`Delta`·`Result`·`Clarification`·`Error`·`Done`)로 바꿔 넘긴다. 이벤트 모양(`status`의 `state = RUNNING`·`message`, `delta`의 `text`, `error`의 공개 형식 `code`, 모르는 이벤트 이름)이 틀리면 client가 502 `AI_INVALID_RESPONSE`로 막는다(#792). `result`·`clarification` 본문 모양도 client가 검사해 `AnalysisResult`(답변·검증·출처와 대체·알림 짝·근거 100개 이하·기록 수, 공개 칸 이름과 `publish`)·`AnalysisClarification`(`ScopeNotice`·`Options`)으로 넘긴다(#824). service는 이벤트 순서(첫 `status` 전 `delta`·`result` 금지, 종료 뒤 `done`만), 결과·되묻기 범위가 요청 범위와 같은지, 선택지 자녀의 연결·동의(`ConversationService.validateResult`·`validateClarification`), 근거가 learning 기록과 맞는지(`verifyEvidence`: `LearningRecordClient.evidence`가 검사한 `EvidenceRecord`의 공개 여부·시도·판·원문·제출일)만 판단한다. `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AnalysisCall.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
 - 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2). 응답 모양(EvidenceList)은 `LearningRecordClient.evidence`가 `EvidenceRecord`로 바꾸고 틀리면 502 `LEARNING_INVALID_RESPONSE`(#824). `ConversationService.evidence`는 저장한 참조와 시도·판이 맞는지만 보고, learning 원문 문자열(미션 제목·제출 시각)을 그대로 내보낸다
 - SSE 처리를 별도 스레드(executor)에서 실행하면 `UserContextHolder`(ThreadLocal) 값이 전달되지 않음 → `SseEmitters.open(context, …)`이 요청 스레드에서 캡처한 컨텍스트를 작업 스레드에서 설정·해제 (#39)
