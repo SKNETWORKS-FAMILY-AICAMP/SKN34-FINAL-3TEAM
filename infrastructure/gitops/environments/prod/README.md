@@ -35,7 +35,7 @@
 
 ## 렌더링과 기존 클러스터 적용
 
-`redeploy-app.ps1`은 기존 앱 release 한 개의 재배포 진입점이다. AWS 계정·실제 EKS endpoint·고정 digest·기존 release 상태를 확인하고 기본 실행은 server dry-run만 수행한다. `-Apply`를 지정할 때만 ESO Ready 확인 후 배포한다. 새 클러스터·DB 초기화·Secret 생성·웹 빌드·Ingress 생성은 수행하지 않는다. 현재 노드의 Pod 슬롯과 메모리 여유가 작으므로 preview 성공을 실제 rollout 성공으로 해석하지 않는다. 적용 전에 기존 Pod와 비교할 계획을 검토한다.
+`redeploy-app.ps1`은 앱 release 한 개의 재배포 진입점이다. AWS 계정·실제 EKS endpoint·고정 digest·기존 release 상태를 확인하고 기본 실행은 server dry-run만 수행한다. release가 없으면 멈추며, `-AllowInstall`을 줄 때만 처음 설치한다(미리보기 `helm install --dry-run=server`, 적용 `helm upgrade --install`, 2026-11-18 #760). `-Apply`를 지정할 때만 ESO Ready 확인 후 배포한다. 새 클러스터·DB 초기화·Secret 생성·웹 빌드·Ingress 생성은 수행하지 않는다. 현재 노드의 Pod 슬롯과 메모리 여유가 작으므로 preview 성공을 실제 rollout 성공으로 해석하지 않는다. 적용 전에 기존 Pod와 비교할 계획을 검토한다.
 
 승인 절차를 거친 배포·롤백은 [#186 운영 배포](../../../cd/README.md)의 `cd-release` workflow가 이 스크립트를 `-ImageDigest`(저장소 values는 그대로 두고 digest만 바꾼 임시 사본)로 호출한다. 배포는 앱보다 먼저 `-Migration`으로 아래 3절의 migration Job을 같은 main SHA 이미지로 실행하고 완료를 확인한다(2026-11-17).
 
@@ -58,6 +58,8 @@ helm upgrade --install core-service infrastructure/gitops/charts/app-service -n 
 ```
 
 다른 앱도 같은 방식으로 release와 파일명을 일치시킨다. platform은 `platform-data` chart와 namespace `platform`을 사용한다. 무조건 전체 재배포하지 않는다. Helm 밖에서 생성한 ServiceAccount가 있으면 소유권을 먼저 확인하고, 기존 객체를 삭제하거나 강제로 소유권을 이전하지 않는다.
+
+ServiceAccount(2026-11-18 #760): Pod Identity를 쓰는 app SA 5개(core 제외)는 모두 같은 이름 release의 chart가 만든다(`serviceAccount.create` true). 전에는 scoring·report-api·report-worker가 false라 새 클러스터에서 Pod가 생성되지 않았고 11/17 A 재가동 때 손으로 만들었다. 손으로 만든 SA가 남은 클러스터에 이 values를 적용하면 Helm 소유권 충돌로 실패하므로, 승인 후 그 SA에 Helm 소유 표시를 붙이고 적용한다([infra 9.16.1](../../../../docs/report/infra.md#9161-빈틈-분류)).
 
 ```powershell
 kubectl --kubeconfig $kubeconfig apply -f "$envDir/external-secret-resources.json"
@@ -108,7 +110,7 @@ app namespace 기본 거부(#657): `core-service.json`의 `namespaceDefaultDeny=
 
 ## 초기 배포 재현 절차 (#185)
 
-2026-11-03 기준 실행 순서다. **절차 작성과 새 환경 재현 성공은 구분한다.** 현재 노드그룹·권한 방식은 유지하며 해당 설계 결정과 #186 자동 배포는 이 절에서 변경하지 않는다. `redeploy-app.ps1`은 기존 release 전용이므로 빈 클러스터 초기 설치 도구로 사용하지 않는다.
+2026-11-03 기준 실행 순서다. **절차 작성과 새 환경 재현 성공은 구분한다.** 현재 노드그룹·권한 방식은 유지하며 해당 설계 결정과 #186 자동 배포는 이 절에서 변경하지 않는다. 빈 클러스터의 앱 첫 설치는 2026-11-18(#760)부터 cd-release 계획 `currentRelease: "none"`(또는 `redeploy-app.ps1 -AllowInstall`)으로 한다. B 계정처럼 처음부터 올릴 때의 전체 순서(RDS 초기화 앞뒤, 웹, 동의·fixture, 주간 테마 포함)는 [AWS README의 B 계정 전환 런북](../../../aws/README.md#b-계정-전환-런북-809)을 따른다.
 
 ### 1. 실행 대상과 입력 확정
 
@@ -182,7 +184,7 @@ learning-service·report-api도 같은 방식이다. `redeploy-app.ps1 -Service 
 
 ### 4. 앱 → 초기 운영 데이터 → 외부 진입
 
-1. DB migration 성공 후 core, learning, report-api, scoring, ai, report-worker 순으로 설치 입력을 준비한다. core/learning/report-api를 먼저 기동하고, scoring/ai의 활성 설정 조회를 위한 core 운영 데이터를 준비한다. 서로 의존하는 서비스는 모두 배포한 뒤 readiness를 확인하며 초기 NotReady를 임의 성공 처리하지 않는다. prod JSON의 digest·Secret·CA·자원·NetworkPolicy를 사용한다.
+1. DB migration 성공 후 core, learning, report-api, scoring, ai, report-worker 순으로 설치 입력을 준비한다. cd-release 첫 배포(`currentRelease: "none"`)는 migration 완료 뒤 계획 순서대로 설치한다. core/learning/report-api를 먼저 기동하고, scoring/ai의 활성 설정 조회를 위한 core 운영 데이터를 준비한다. 서로 의존하는 서비스는 모두 배포한 뒤 readiness를 확인하며 초기 NotReady를 임의 성공 처리하지 않는다. prod JSON의 digest·Secret·CA·자원·NetworkPolicy를 사용한다.
 2. 운영 데이터는 별도 승인된 절차로 준비한다: 관리자와 필요한 permission, 현행 동의 문서, 무료 상품과 PAYMENT_FREE_PRODUCT_ID, 시연 미션, 프롬프트·모델 버전 및 승인·활성화 상태. S3 모델 파일 존재·무결성과 활성 버전의 연결을 확인한다. 로컬/E2E seed 전체를 운영에 복사하지 않는다. 등록 성공과 사람의 승인·실제 모델 로딩 성공을 구분한다.
 3. Google 신규 가입의 데모 표시(`is_demo`)는 core `AUTH_NEW_ACCOUNT_DEMO`(prod `true`)로 정한다. 실사용 데이터를 섞지 않는다. mark-confirmed-demo-data.sql은 2026-11-03 특정 건수용이므로 일반 seed로 사용하지 않는다. 토스 키가 없으면 테스트 결제 완료로 표시하지 않는다.
 4. core-alb-network.json과 검토한 ALB Ingress를 적용한다. core-service.json의 ingress.enabled=false이므로 앱 설치만으로 ALB가 만들어지지 않는다. core-ingress.redacted.json의 치환 문자열은 절대 그대로 적용하지 않는다. origin 검증 헤더는 Git 밖에서 안전하게 주입하고 CloudFront와 일치시킨다.

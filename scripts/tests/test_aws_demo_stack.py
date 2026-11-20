@@ -365,6 +365,48 @@ class DemoStackTest(unittest.TestCase):
                           values['scheduling']['tolerations'])
         self.assertEqual(self.spec['eks']['nodegroups'], [g['name'] for g in config['managedNodeGroups']])
 
+    def test_eksctl_nodegroup_is_ok_with_launch_template_disk_and_eksctl_labels(self):
+        # #760 11/17 재가동: eksctl 노드그룹은 diskSize가 비고(launch template) eksctl 라벨이 붙어 DIFF로 보였다
+        config = json.loads((demo_stack.HERE / self.spec['eks']['config']).read_text(encoding='utf-8'))
+        group = next(g for g in config['managedNodeGroups'] if g['name'] == 'platform-observability')
+        node = {
+            'instanceTypes': [group['instanceType']],
+            'scalingConfig': {'minSize': group['minSize'], 'desiredSize': group['desiredCapacity'], 'maxSize': group['maxSize']},
+            'diskSize': None, 'launchTemplate': {'id': 'lt-0abc', 'name': 'eksctl-lt', 'version': '1'},
+            'nodeRole': group['iam']['instanceRoleARN'],
+            'labels': {**group['labels'], 'alpha.eksctl.io/cluster-name': 'sagomungchi-demo-eks',
+                       'alpha.eksctl.io/nodegroup-name': group['name']},
+            'taints': demo_stack.eks_taints(group),
+        }
+        calls = []
+
+        def aws(service, operation, *args, check=True):
+            calls.append((service, operation, *args))
+            if operation == 'describe-launch-template-versions':
+                return {'LaunchTemplateVersions': [{'LaunchTemplateData': {'BlockDeviceMappings': [
+                    {'DeviceName': '/dev/xvda', 'Ebs': {'VolumeSize': group['volumeSize'], 'VolumeType': 'gp3'}}]}}]}
+            return None
+
+        self.assertEqual(demo_stack.nodegroup_disk(aws, node), group['volumeSize'])
+        self.assertIn(('ec2', 'describe-launch-template-versions', '--launch-template-id', 'lt-0abc', '--versions', '1'), calls)
+        self.assertEqual(demo_stack.nodegroup_labels(node), group['labels'])
+        # 크기가 다르거나 template을 읽지 못하면 여전히 차이다
+        self.assertIsNone(demo_stack.nodegroup_disk(lambda *a, **k: None, node))
+        self.assertEqual(demo_stack.nodegroup_disk(aws, {'diskSize': 50}), 50)
+        self.assertEqual(demo_stack.nodegroup_labels({'labels': {'workload': 'other'}}), {'workload': 'other'})
+
+    def test_app_pod_identity_service_accounts_are_created_by_their_release(self):
+        # #760 빈 클러스터: scoring·report SA를 chart가 만들지 않아 Pod 생성이 막혔다. Pod Identity가 붙는
+        # app SA는 같은 이름 release의 values가 만든다(연결은 SA가 없어도 먼저 만들 수 있다)
+        config = json.loads((demo_stack.HERE / self.spec['eks']['config']).read_text(encoding='utf-8'))
+        for association in config['iam']['podIdentityAssociations']:
+            if association['namespace'] != 'app':
+                continue
+            name = association['serviceAccountName']
+            with self.subTest(name=name):
+                values = json.loads((ROOT / f'infrastructure/gitops/environments/prod/{name}.json').read_text(encoding='utf-8'))
+                self.assertIsNot(values.get('serviceAccount', {}).get('create', True), False)
+
     def test_iam_documents_compare_without_order_or_string_list_difference(self):
         a = {'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Action': 's3:GetObject', 'Resource': ['b', 'a']}]}
         b = {'Statement': [{'Resource': ['a', 'b'], 'Action': ['s3:GetObject'], 'Effect': 'Allow'}], 'Version': '2012-10-17'}

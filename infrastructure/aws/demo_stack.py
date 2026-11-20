@@ -305,6 +305,30 @@ def eks_taints(group):
                   key=json.dumps)
 
 
+# eksctl이 managed nodegroup에 스스로 붙이는 라벨. cluster.json에 없으므로 비교에서 뺀다(#760)
+EKSCTL_LABEL_PREFIX = 'alpha.eksctl.io/'
+
+
+def nodegroup_labels(node):
+    return {k: v for k, v in (node.get('labels') or {}).items() if not k.startswith(EKSCTL_LABEL_PREFIX)}
+
+
+def nodegroup_disk(aws, node):
+    """Root volume GiB. eksctl은 launch template으로 노드그룹을 만들어 describe-nodegroup의 diskSize가 비므로
+    그때는 그 template 버전의 블록 장치에서 읽는다(#760). 읽지 못하면 None(DIFF로 남긴다)."""
+    if node.get('diskSize') is not None:
+        return node['diskSize']
+    template = node.get('launchTemplate') or {}
+    if not template.get('id'):
+        return None
+    found = aws('ec2', 'describe-launch-template-versions', '--launch-template-id', template['id'],
+                '--versions', str(template.get('version') or '$Default'), check=False)
+    versions = (found or {}).get('LaunchTemplateVersions') or []
+    mappings = (versions[0].get('LaunchTemplateData') or {}).get('BlockDeviceMappings') or [] if versions else []
+    sizes = [m['Ebs']['VolumeSize'] for m in mappings if (m.get('Ebs') or {}).get('VolumeSize') is not None]
+    return sizes[0] if sizes else None
+
+
 def plan_eks(aws, spec, report):
     config = json.loads((HERE / spec['eks']['config']).read_text(encoding='utf-8'))
     name = config['metadata']['name']
@@ -331,9 +355,9 @@ def plan_eks(aws, spec, report):
         good &= report.check('nodegroup', group['name'],
                              {'minSize': group['minSize'], 'desiredSize': group['desiredCapacity'], 'maxSize': group['maxSize']},
                              node['scalingConfig'], 'scaling')
-        good &= report.check('nodegroup', group['name'], group['volumeSize'], node.get('diskSize'), 'disk')
+        good &= report.check('nodegroup', group['name'], group['volumeSize'], nodegroup_disk(aws, node), 'disk')
         good &= report.check('nodegroup', group['name'], group['iam']['instanceRoleARN'], node['nodeRole'], 'node role')
-        good &= report.check('nodegroup', group['name'], group.get('labels', {}), node.get('labels') or {}, 'labels')
+        good &= report.check('nodegroup', group['name'], group.get('labels', {}), nodegroup_labels(node), 'labels')
         good &= report.check('nodegroup', group['name'], eks_taints(group),
                              sorted(node.get('taints') or [], key=json.dumps), 'taints')
         if good:

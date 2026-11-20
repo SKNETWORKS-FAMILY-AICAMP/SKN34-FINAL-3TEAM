@@ -168,6 +168,45 @@ class ReleasePolicyTests(unittest.TestCase):
         )
         self.assertTrue(cd.validate(self.plan, ready)["executable"])
 
+    def test_first_install_is_deploy_only(self):
+        # #760 빈 클러스터: currentRelease "none"은 되돌릴 버전이 없으므로 rollback에 쓸 수 없다
+        self.plan["currentRelease"] = cd.FIRST_INSTALL
+        self.assertFalse(cd.validate(self.plan, self.policy)["valid"])
+        deploy = {
+            **self.plan,
+            "operation": "deploy",
+            "migrations": {"report-service": self.plan["images"]["report-service"]},
+        }
+        deploy.pop("previousApproval")
+        self.assertTrue(cd.validate(deploy, self.policy)["valid"])
+
+    def test_cli_records_first_install_flag(self):
+        for current, expected in ((cd.FIRST_INSTALL, True), ("release-2", False)):
+            with self.subTest(current=current), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                plan = {
+                    **self.plan,
+                    "operation": "deploy",
+                    "currentRelease": current,
+                    "migrations": {"report-service": self.plan["images"]["report-service"]},
+                }
+                for name, data in (("plan", plan), ("policy", self.policy)):
+                    (root / f"{name}.json").write_text(json.dumps(data), encoding="utf-8")
+                run = subprocess.run(
+                    [
+                        sys.executable, str(Path(cd.__file__)),
+                        "--plan", str(root / "plan.json"),
+                        "--policy", str(root / "policy.json"),
+                        "--output", str(root / "record.json"),
+                    ],
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(run.returncode, 0, run.stderr)
+                record = json.loads((root / "record.json").read_text(encoding="utf-8"))
+                self.assertIs(record["firstInstall"], expected)
+                self.assertEqual(record["currentRelease"], current)
+
     def test_null_evidence_fails_closed(self):
         self.plan["compatibility"] = None
         self.plan["previousApproval"] = None

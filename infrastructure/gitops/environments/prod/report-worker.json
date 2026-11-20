@@ -245,7 +245,7 @@
   },
   "serviceAccount": {
     "automountToken": false,
-    "create": false
+    "create": true
   },
   "terminationGracePeriodSeconds": 480,
   "tracing": {
