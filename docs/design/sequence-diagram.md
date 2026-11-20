@@ -576,6 +576,8 @@ sequenceDiagram
   W->>C: POST /answers/{answerId}/feedback (SSE)
   C-->>W: event status {RUNNING}
   C->>L: POST /internal/answers/{answerId}/feedback (동기)
+  L->>C: POST /internal/payment-usage/reservations {studentId, sourceId: answerId} (4초)
+  C-->>L: reservationId (프리미엄 사용 대상 아니면 null)
   L->>DB: judgment 조건부 전이 PENDING·FAILED·리스 만료 RUNNING → RUNNING
   alt 이미 DONE
     L-->>C: 저장된 결과
@@ -625,6 +627,9 @@ sequenceDiagram
       L-->>C: 200 FeedbackResult
     end
   end
+  opt 돌려줄 결과가 DONE + reservationId 있음 (이미 DONE·다른 요청 결과·이번 저장 모두, 실제로는 위 응답을 보내기 전에 호출)
+    L->>C: POST /internal/payment-usage/completions {studentId, reservationId, used: true} (4초)
+  end
   alt status RUNNING 수신
     C-->>W: event status → done (클라이언트가 잠시 후 재요청)
   else 503 수신
@@ -635,7 +640,8 @@ sequenceDiagram
 ```
 
 - 클라이언트가 끊겨도 core→learning 호출은 끝까지 진행·저장, 재요청 시 저장 결과 반환 (API 3.2)
-- 타임아웃 예산: core→learning 80초 > learning→ai(judgments 35초 + followups 35초), 판정 리스 90초 (P12, 아키텍처 1.3)
+- 타임아웃 예산: core→learning 80초 > learning→core 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초, 판정 리스 90초 (P12, 아키텍처 1.3)
+- 결제 사용 예약·완료는 core→learning 요청 안에서 learning이 core를 다시 부르는 동기 왕복(`FeedbackFacade`·`PaymentUsageClient`). 예약·완료 호출이 실패하면 `503 PAYMENT_USAGE_UNAVAILABLE`, core가 거절한 409는 그 코드로 응답
 - `nextActions`: 되묻기 생성 시 `[ANSWER_FOLLOWUP, FINISH]`(FINISH = "이대로 돌아보기"), 되묻기 2회 소진·고르기 CORRECT면 `[FINISH]` (P04)
 - 판정 보류(`result = HELD`)는 정상 처리(`DONE`), 처리 실패(`process_status = FAILED`)와 구분 (NFR-REL-04)
 - 보류 사유 결정은 모두 ai 담당, learning은 `judge_verified`·학년을 포함한 기준표 전달 (상태 다이어그램 3.3)
