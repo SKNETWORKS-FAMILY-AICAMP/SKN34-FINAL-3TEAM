@@ -719,3 +719,45 @@ def test_old_daily_problem_has_null_schedule():
 
     detail = assemble({}, [(ItemType.PROBLEM, None, {"title": "이전 저장본"})])
     assert detail["problems"][0]["scheduledDay"] is None
+
+
+@pytest.mark.parametrize(
+    ("difficulty", "written", "label"),
+    [
+        ("EASY", True, "쉬웠어요"),
+        ("NORMAL", True, "보통"),
+        ("HARD", True, "어려웠어요"),
+        ("UNKNOWN_LEVEL", True, ""),
+        (None, False, "미작성"),
+    ],
+)
+def test_daily_markdown_localizes_reflection(difficulty, written, label):
+    reflection = {
+        "difficulty": difficulty,
+        "written": written,
+        "text": "생각을 덧붙였어요." if written else None,
+    }
+    report = {
+        "periodType": "DAILY",
+        "period": {"from": "2026-11-19", "to": "2026-11-19"},
+        "revision": 1,
+        "state": "OK",
+        "metrics": [],
+        "problems": [
+            {
+                "title": "미션",
+                "judgment": None,
+                "followups": [],
+                "finalAnswer": None,
+                "elements": [],
+                "reflection": reflection,
+                "quotes": [],
+            },
+        ],
+    }
+
+    markdown = ReportRenderer.markdown(report, "합성학생")
+
+    assert f"### 돌아보기\n{label}\n{reflection['text'] or ''}" in markdown
+    assert difficulty is None or difficulty not in markdown
+    assert reflection["difficulty"] == difficulty

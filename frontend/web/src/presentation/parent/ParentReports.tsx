@@ -16,6 +16,17 @@ import { QueryFeedback, MetricCards } from '../common/Workspace.tsx'
 import { QueryStateNotice } from '../common/QueryStateNotice.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { EvidenceQuery } from './ParentConversation.tsx'
+
+/** Keep the parent-facing labels aligned with the report downloads. */
+function reflectionDifficultyLabel(difficulty: string | null) {
+  switch (difficulty) {
+    case 'EASY': case '쉬웠어요': return '쉬웠어요'
+    case 'NORMAL': case '보통': return '보통'
+    case 'HARD': case '어려웠어요': return '어려웠어요'
+    default: return ''
+  }
+}
+
 export function ParentReports({
   child,
   onAskReport, preview, highlight, revealToken = 0, onReportChange,
@@ -309,7 +320,9 @@ function ReportDetail({
                   {r.reflections.map((f, i) => (
                     <p className="report-highlight-target" data-answer-highlight={targets.reflections.includes(i) ? 'true' : undefined} tabIndex={-1} key={i}>
                       <HighlightLabel active={targets.reflections.includes(i)} />
-                      {f.written ? `${f.difficulty} · ${f.text || '달라진 점 미작성'}` : '미작성'}
+                      {f.written
+                        ? [reflectionDifficultyLabel(f.difficulty), f.text || '달라진 점 미작성'].filter(Boolean).join(' · ')
+                        : '미작성'}
                     </p>
                   ))}
                   <h3>아이의 말</h3>
@@ -430,7 +443,9 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
           )}
           <p>
             돌아보기 ·{' '}
-            {p.reflection?.written ? `${p.reflection.difficulty ?? ''} ${p.reflection.text ?? ''}`.trim() : '쓰지 않음'}
+            {p.reflection?.written
+              ? [reflectionDifficultyLabel(p.reflection.difficulty), p.reflection.text].filter(Boolean).join(' ') || '작성함'
+              : '쓰지 않음'}
           </p>
           {p.attemptId && canReadOriginals && (
             <button className="cj-secondary" onClick={() => onProof(p.attemptId!)}>
