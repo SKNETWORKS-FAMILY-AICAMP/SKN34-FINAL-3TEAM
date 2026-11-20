@@ -334,7 +334,7 @@ classDiagram
   }
   class SignupRateLimiter {
     <<repository>>
-    +acquire(clientIp)
+    +increment(clientIp) Long?
   }
   class ReauthenticationService {
     <<service>>
@@ -647,7 +647,7 @@ classDiagram
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증·인가용 읽기 확인(학생 행 잠금 포함). 쓰기는 자녀 등록 `GuardianshipService`, 정보 수정·해제·삭제 `ChildManagementService`, 동의 저장 `ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
-- ID·비밀번호 로그인은 관리자(#369, 가입 없음, `AuthService.adminLogin`, `admin_credential`)와 학부모(#415, `AuthService.parentSignup`·`parentLogin`, `parent_credential`) 두 가지다. 둘 다 `PasswordCredentialService`(`PinHasher` PBKDF2 해시·5회 실패 15분 잠금·없는 ID 더미 해시 검사)와 값 객체 `PasswordCredential`(옛 `AdminCredential`)을 공유하고, 실패는 커밋 뒤 던진다. 학부모 가입은 `SignupRateLimiter`(Redis 고정 창, IP당 기본 10분 5회)를 거친다. 로그인 수단 변경·연결과 비밀번호 찾기·변경은 없다. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
+- ID·비밀번호 로그인은 관리자(#369, 가입 없음, `AuthService.adminLogin`, `admin_credential`)와 학부모(#415, `AuthService.parentSignup`·`parentLogin`, `parent_credential`) 두 가지다. 둘 다 `PasswordCredentialService`(`PinHasher` PBKDF2 해시·5회 실패 15분 잠금·없는 ID 더미 해시 검사)와 값 객체 `PasswordCredential`(옛 `AdminCredential`)을 공유하고, 실패는 커밋 뒤 던진다. 학부모 가입은 `SignupRateLimiter`(Redis 고정 창)가 IP별 가입 횟수만 세고(Redis 장애·빈 응답은 `null`), `AuthService`가 한도(IP당 기본 10분 5회) 초과면 429, `null`이면 503으로 정한다(#816). 로그인 수단 변경·연결과 비밀번호 찾기·변경은 없다. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
 - 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장. 비밀번호 학부모는 `ReauthenticationService.withPassword`(`POST /me/reauth/password`, #415)가 로그인 비밀번호를 확인하고 검증·발급을 마친 challenge·grant를 한 번에 만들어 `consume`은 그대로다. 실패는 로그인과 같은 `parent_credential` 횟수를 쓴다
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer 세션 행을 잠그고 연결·활성 자녀·필수·법정대리인 동의 확인 → 학부모 세션 `locked_at`·version 증가, `parent_session_id`를 가진 학생 세션 생성 → `STUDENT` access만 발급, 학부모 refresh 쿠키는 유지(잠김) (P01, 학부모 동석). 학생 계정·시연 링크 없음
 - `AuthService.unlockParent` (`POST /auth/parent-unlock`): 잠긴 학부모 refresh + `GuardianPasswordService.attempt`(PIN과 같은 해시·5회 잠금) → 잠금 해제·학생 세션 폐기·refresh 회전. `GuardianPasswordService.set`은 `GUARDIAN_PASSWORD` 재인증 grant를 1회 소비 (FN-ACC-05, 2026-11-03)
@@ -691,7 +691,16 @@ classDiagram
   }
   class FeedbackService {
     <<service>>
-    +feedback(answerId) HttpExchangeResult
+    +started() FeedbackEvent
+    +feedback(answerId) FeedbackEvent
+  }
+  class FeedbackClient {
+    <<client>>
+    +feedback(answerId) FeedbackOutcome
+  }
+  class FeedbackOutcome {
+    <<client DTO>>
+    Done(document) · Running · Failed(problem)
   }
   class LearningRecordService {
     <<service>>
@@ -703,6 +712,16 @@ classDiagram
     <<client>>
     +exists(studentId) Boolean
     +dashboard(studentId, resource, query, parent, child) HttpExchangeResult
+    +evidence(answerIds) List~EvidenceRecord~
+  }
+  class EvidenceRecord {
+    <<client DTO>>
+    +answerId UUID
+    +attemptId UUID?
+    +answerVersion Int?
+    +submittedAt String?
+    +quote String?
+    +available Boolean
   }
   class DashboardController {
     <<controller>>
@@ -759,7 +778,22 @@ classDiagram
   class AiClient {
     <<client>>
     +stream(request, call, onEvent)
-    +reportTemplate(request) JsonNode
+    +reportTemplate(request) TemplateProposal
+  }
+  class AnalysisResult {
+    <<client DTO>>
+    +scope Scope
+    +evidence List~Evidence~
+    +body JsonNode
+    +publish(messageId, scope)
+  }
+  class AnalysisClarification {
+    <<client DTO>>
+    ScopeNotice | Options
+  }
+  class TemplateProposal {
+    <<client DTO>>
+    Clarification | Settings
   }
   class ChildAuthorizationService { <<service>> }
   class SseEmitters { <<web>> }
@@ -770,9 +804,15 @@ classDiagram
   LearningProxyService --> LearningClient
   FeedbackController --> FeedbackService
   FeedbackController --> SseEmitters
-  FeedbackService --> LearningProxyService
+  FeedbackService --> FeedbackClient
+  FeedbackClient --> LearningClient : learning-feedback 서킷
+  FeedbackClient ..> FeedbackOutcome
   LearningRecordService --> LearningRecordClient
   LearningRecordClient --> LearningClient
+  LearningRecordClient ..> EvidenceRecord
+  AiClient ..> AnalysisResult
+  AiClient ..> AnalysisClarification
+  AiClient ..> TemplateProposal
   DashboardController --> LearningRecordService
   LearningRecordService --> StudentAccessService : 현재 연결·ACTIVE·동의
   LearningRecordService --> StudentLearningContextService : home 학년·demo
@@ -788,12 +828,12 @@ classDiagram
 ```
 
 - `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/core-gateway.md))
-- 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). 분석 대화(#41)는 `ConversationController`·`ConversationService`(`prepare`·`transport`·`complete`·`fail`·`evidence`·`examples`)·`AnalysisStreamService`(SSE 실행)·`ConversationRepository`·`AiClient.stream`으로 구현됨. 그림의 `ConversationMessageRepository`는 `ConversationRepository`에, `Conversation`·`ConversationMessage` 엔티티 메서드는 서비스 검증에 포함되고, `JobExecutionService` 없이 `conversation_message` 상태·`retry_count`로 실행을 기록한다. `LearningClient.evidence`는 `LearningRecordClient.evidence`, `correctJudgment`는 `support/client/LearningSupportClient.correct`(3.5)
-- `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`, `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
+- 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`FeedbackClient`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). 분석 대화(#41)는 `ConversationController`·`ConversationService`(`prepare`·`transport`·`complete`·`fail`·`evidence`·`examples`)·`AnalysisStreamService`(SSE 실행)·`ConversationRepository`·`AiClient.stream`으로 구현됨. 그림의 `ConversationMessageRepository`는 `ConversationRepository`에, `Conversation`·`ConversationMessage` 엔티티 메서드는 서비스 검증에 포함되고, `JobExecutionService` 없이 `conversation_message` 상태·`retry_count`로 실행을 기록한다. `LearningClient.evidence`는 `LearningRecordClient.evidence`, `correctJudgment`는 `support/client/LearningSupportClient.correct`(3.5)
+- `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`·`FeedbackClient`(피드백 전용 `learning-feedback` 서킷), `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
 - `DashboardController`(학생 3개·학부모 4개 조회) → `LearningRecordService` → `LearningRecordClient` → `LearningClient`. 집계·home·상세는 learning 기록 API가 계산하고 core는 수치를 계산하지 않음 ([core 보고서](../report/core-gateway.md))
-- `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
-- `AnalysisStreamService`(그림의 `ConversationService.stream`): `AiClient.stream`이 ai SSE 프레임을 `AnalysisEvent`(`Status`·`Delta`·`Result`·`Clarification`·`Error`·`Done`)로 바꿔 넘긴다. 이벤트 모양(`status`의 `state = RUNNING`·`message`, `delta`의 `text`, `error`의 공개 형식 `code`, 모르는 이벤트 이름)이 틀리면 client가 502 `AI_INVALID_RESPONSE`로 막고, service는 이벤트 순서(첫 `status` 전 `delta`·`result` 금지, 종료 뒤 `done`만)와 `result`·`clarification` 업무 검증(`ConversationService.validateResult`·`validateClarification`)만 한다(#792). `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AnalysisCall.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
-- 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2)
+- `FeedbackController`: SSE를 열고 `FeedbackService`가 정한 이벤트만 보낸다(learning 동기 응답을 기다리는 동안은 heartbeat만). 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3). `FeedbackClient.feedback`이 learning 응답을 `FeedbackOutcome`으로 바꾼다: 2xx `status` `DONE`은 본문 그대로 `Done`, `RUNNING`은 `Running`, 2xx 밖은 빈 Problem 칸(`type`·`title`·`status`·`code` `LEARNING_UNAVAILABLE`·`retryable` 5xx·429)을 채운 `Failed`, 객체가 아니거나 모르는 `status`는 502 `LEARNING_INVALID_RESPONSE`. `FeedbackService`는 `Done` → `result`, `Running` → `status`(진행 중), `Failed`·업무 예외 → `error` 이벤트를 정한다(#834)
+- `AnalysisStreamService`(그림의 `ConversationService.stream`): `AiClient.stream`이 ai SSE 프레임을 `AnalysisEvent`(`Status`·`Delta`·`Result`·`Clarification`·`Error`·`Done`)로 바꿔 넘긴다. 이벤트 모양(`status`의 `state = RUNNING`·`message`, `delta`의 `text`, `error`의 공개 형식 `code`, 모르는 이벤트 이름)이 틀리면 client가 502 `AI_INVALID_RESPONSE`로 막는다(#792). `result`·`clarification` 본문 모양도 client가 검사해 `AnalysisResult`(답변·검증·출처와 대체·알림 짝·근거 100개 이하·기록 수, 공개 칸 이름과 `publish`)·`AnalysisClarification`(`ScopeNotice`·`Options`)으로 넘긴다(#824). service는 이벤트 순서(첫 `status` 전 `delta`·`result` 금지, 종료 뒤 `done`만), 결과·되묻기 범위가 요청 범위와 같은지, 선택지 자녀의 연결·동의(`ConversationService.validateResult`·`validateClarification`), 근거가 learning 기록과 맞는지(`verifyEvidence`: `LearningRecordClient.evidence`가 검사한 `EvidenceRecord`의 공개 여부·시도·판·원문·제출일)만 판단한다. `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AnalysisCall.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
+- 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2). 응답 모양(EvidenceList)은 `LearningRecordClient.evidence`가 `EvidenceRecord`로 바꾸고 틀리면 502 `LEARNING_INVALID_RESPONSE`(#824). `ConversationService.evidence`는 저장한 참조와 시도·판이 맞는지만 보고, learning 원문 문자열(미션 제목·제출 시각)을 그대로 내보낸다
 - SSE 처리를 별도 스레드(executor)에서 실행하면 `UserContextHolder`(ThreadLocal) 값이 전달되지 않음 → `SseEmitters.open(context, …)`이 요청 스레드에서 캡처한 컨텍스트를 작업 스레드에서 설정·해제 (#39)
 
 ### 3.3 리포트 작업·알림 (report · notification)
@@ -839,7 +879,7 @@ classDiagram
     <<service>>
     +list(childId, status, periodType) JsonNode
     +detail(reportId, revision) JsonNode
-    +pinned(reportId, revision) JsonNode
+    +pinned(reportId, revision) PinnedReport
     +evidence(reportId, itemId) JsonNode
     +download(reportId, format) JsonNode
   }
@@ -863,6 +903,8 @@ classDiagram
     +get(studentId, path, query, narrativeEnabled) JsonNode
     +reports(childId, status, periodType) ArrayNode
     +report(job, reportId, revision, narrativeEnabled) ReportDocument
+    +pinned(job, reportId, revision) PinnedReport
+    +correctionImpact(studentId, attemptId) List~AffectedReport~
     +file(job, reportId, format, narrativeEnabled) Pair
     +evidence(job, reportId, itemId) JsonNode
     +reconcile(job) ReportReconciliation
@@ -873,6 +915,22 @@ classDiagram
     +withoutNarrative()
     +withoutOriginals()
     +withoutProblemOriginals()
+  }
+  class PinnedReport {
+    <<client DTO>>
+    +reportId UUID
+    +revision Int
+    +status ReportJobStatus
+    +date LocalDate
+    +metrics List~Metric~
+    +problems List~Problem~
+  }
+  class AffectedReport {
+    <<client DTO>>
+    +reportId UUID
+    +periodType ReportPeriodType
+    +periodFrom LocalDate
+    +revision Int
   }
   class NotificationController {
     <<controller>>
@@ -885,7 +943,7 @@ classDiagram
   }
   class NotificationService {
     <<service>>
-    +report(userId, childId, sourceEventId, reportId, failed)
+    +report(userId, childId, sourceEventId, reportId, failed, daily, noRecordDay)
     +list(identity, unreadOnly, page, size) List
     +read(identity, notificationId)
     +settings(identity) List
@@ -935,6 +993,8 @@ classDiagram
   ReportCommandWriter --> OutboxWriter
   ReportQueryService --> ReportClient
   ReportClient ..> ReportDocument
+  ReportClient ..> PinnedReport
+  ReportClient ..> AffectedReport
   ReportQueryService --> ReportViewRepository
   ReportJobService ..> ReportJob
   NotificationController --> NotificationService
@@ -952,14 +1012,15 @@ classDiagram
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
 - 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
-- report 응답 계약 검사는 `ReportClient`(#792): 목록 `reports`는 모든 쪽을 모으며 항목마다 자녀·식별자·회차·기간·요청한 기간 종류를 검사하고 빠진 `periodType`을 `WEEKLY`로 채운다. 상세 `report`는 작업의 자녀·기간 종류·기간·요청 회차와 맞을 때만 `ReportDocument`를 만들고, 다운로드 `file`은 서술 칸 존재와 링크(http(s) 절대 주소·사용자 정보 없음·만료 시각)를 검사한다. 틀리면 502 `REPORT_CONTRACT_INVALID`. 어느 칸이 서술·원문인지는 `ReportDocument`가 알고, 언제 거를지(서술 권한 `narrativeEnabled`, 학부모 공유 `parentSharingEnabled`, 일일 상세 권한)는 공개 설정·상품 권한 업무 규칙이라 `ReportQueryService`가 정한다
+- report 응답 계약 검사는 `ReportClient`(#792): 목록 `reports`는 모든 쪽을 모으며 항목마다 자녀·식별자·회차·기간·요청한 기간 종류를 검사하고 빠진 `periodType`을 `WEEKLY`로 채운다. 상세 `report`는 작업의 자녀·기간 종류·기간·요청 회차와 맞을 때만 `ReportDocument`를 만들고, 고정 대화 `pinned`(#814)는 같은 검사 뒤 서술 없이 받은 판을 `PinnedReport`(회차·상태·날짜, `metrics[]`의 이름·0 이상 개수, `problems[]`의 제목·맥락·판정·판정 요소 이름과 충족 여부)로만 바꾼다. 지표·문제·요소 하나라도 모양이 틀리면 거르지 않고 502로 막아 필수 지표가 조용히 빠진 요약이 ai로 가지 않는다. 정정 영향 `correctionImpact`(#824)는 `items[]`를 `AffectedReport`(UUID `reportId`, 열거값 `periodType`, 날짜 `periodFrom`, 1 이상 `revision`)로만 바꾼다. 다운로드 `file`은 서술 칸 존재와 링크(http(s) 절대 주소·사용자 정보 없음·만료 시각)를 검사한다. 틀리면 502 `REPORT_CONTRACT_INVALID`. 어느 칸이 서술·원문인지는 `ReportDocument`가 알고, 언제 거를지(서술 권한 `narrativeEnabled`, 학부모 공유 `parentSharingEnabled`, 일일 상세 권한)는 공개 설정·상품 권한 업무 규칙이라 `ReportQueryService`가 정한다
 - 리포트 인가는 controller가 아니라 service 안에서 한다. `ReportQueryService`·`ReportViewService`는 `reportId`로 소유 작업(`ReportJobRepository.byReport`)을 찾은 뒤 `ReportAccessService.parent`(학부모 역할 + `StudentAccessService.requireLinked`)로 확인하고, `ReportClient.get`이 `studentScope`를 그 학생 한 명으로 좁혀 report에 전달한다. 재생성은 `ReportJobService.regenerate` → `ReportAccessService.regeneration`(학부모는 연결 확인, 관리자는 `SERVICE_OPS`) (3.1)
-- 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler`·`DailyReportScheduler`(P24, #390) + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
+- 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler`·`DailyReportScheduler`(P24, #390) + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 응답 칸 모양은 client가 `TemplateProposal`로 검사하고 허용 값은 `ReportTemplateSettings.validate`, #824, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
 
 #### 3.3.1 리포트 복구 호출 구조 (#132)
 
 - `ReportRecoveryScheduler` → `ReportRecoveryService`(후보 조회·오류 격리) → `ReportClient.reconcile`(SYSTEM/단일 scope, DTO 검증) → report generation router → `ReconciliationService` → `ReportRepository`/`JobLocks`.
 - 응답 반영은 별도 `ReportLifecycleService.reconcile` 트랜잭션. 이벤트 apply와 삭제 종료도 기존 lifecycle service에 둔다. HTTP 전후의 트랜잭션을 분리한다.
+- 기록 없음(#846): 완료 이벤트·복구 응답의 선택 `noRecord`를 `ReportLifecycleEvent`·`ReportReconciliation` → `ReportJobFinished(noRecord, periodFrom)` → `ReportNotificationListener` → `NotificationService.report(noRecordDay)`로 넘긴다. 일일 완료일 때만 제목을 바꾼다(api-spec 2.7).
 - `ReportJobService` → `StudentAccessService.lockActive` → 학생 행 잠금, 이후 주 잠금/권한/이용권/Outbox. 관리자도 ACTIVE 검사를 우회하지 않는다.
 - `ChildManagementService.confirm` → `ReportLifecycleService.failForDeletion` (기존 삭제 트랜잭션 필수). 알림 이벤트의 non-null reportId 계약은 유지하고 ID 없는 종료는 실행 이력에만 남긴다.
 
@@ -1331,7 +1392,7 @@ classDiagram
   class OutboxWriter { <<messaging>> }
 ```
 
-- 정정 영향(#244): `SupportService` → `ReportSupportService.affected`·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
+- 정정 영향(#244): `SupportService` → `ReportSupportService.affected`(→ `ReportClient.correctionImpact`가 검사한 `AffectedReport` 목록, 계약 위반 502 `REPORT_CONTRACT_INVALID`도 호출부에서 `UNKNOWN`으로 기록, #824)·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
 - `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). learning 지원 응답 해석은 client가 맡는다(#792): `target`은 `SupportTarget(studentId, attemptId, previousResult)`(학생·시도 ID가 UUID가 아니면 502 `SUPPORT_INVALID_RESPONSE`), `judgedAnswer`는 시도 원문에서 정정한 판정의 답변 ID, `correct`는 검사한 `CorrectionResult(previousResult, impact, body)`. `SupportService`는 그 값을 신고 기록과 대조(다르면 409)하고 정정 영향을 조합한다. `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
 - 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), 큐 현황 = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
@@ -1346,7 +1407,7 @@ classDiagram
 
 ### 3.6 커뮤니티·포인트·꾸미기 (community #388 · reward #389 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 core 클래스. 커뮤니티는 #388, 포인트·꾸미기는 #389로 구현했고 `RewardService.earn` 호출 연결(학습 완료·공유·반응·되돌아보기 열람)도 `ParticipationRewardService`로 구현했다(아래 연결 절). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 core 클래스(커뮤니티 #388, 포인트·꾸미기 #389). `RewardService.earn` 호출 연결(학습 완료·공유·반응·되돌아보기 열람)은 `ParticipationRewardService`(아래 연결 절). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
@@ -1386,6 +1447,7 @@ classDiagram
     +setVisibility(studentId, visible, reason)
     +moderate(postId, status, errorReportId)
     +postAuthor(postId, viewerId, viewerUser) UUID
+    +post(postId) PostDetail
   }
   class RewardController {
     <<controller>>
@@ -1459,11 +1521,11 @@ classDiagram
 - 친구 방 구경(#708): `FriendRoomService.room`이 학생 세션 확인 → `CommunityRepository.reportHidden`(404) → `CommunityClient.postAuthor`(learning #707, 오류 그대로 전달) → `CommunityAuthorMapper.toAuthors`(없으면 404) → `LookUnlockService.equipmentAssets`(착용 여덟 칸 그림 키, 바닥 포함·판매 중단 포함) → `RoomDecorService.friendSpots`(방 소품 놓은 자리, 그림 키만, #704) → `RoomFrameSlotService.friendFrames`(작성자 범위로 learning 앨범) 순서로 조합한다. 트랜잭션 없이 읽기만 해 learning을 기다리는 동안 DB 잠금이 없다. 응답에 학생 ID·회차 키를 넣지 않는다. 커뮤니티 목록 `look.equipped`(`equipmentOf`, 캐릭터 네 슬롯 아이템 코드)는 그대로다
 - #704 바닥·방 소품: 바닥 `FLOOR`는 `LookCatalog.EQUIP_SLOTS`(착용 슬롯)에 들어가 해금·착용 클래스가 그대로다. 방 소품 `DECOR`는 `ITEM_SLOTS`(관리자 등록)에만 있고 `LookUnlockService.purchase`가 해금과 같은 잠금·원장·멱등으로 여러 번 산다(`unlock`은 방 소품을 422로 거절). 목록 `catalog`가 보유 개수 `ownedCount`·등록일 `createdAt`을 채운다. `RewardService.deleteStudent`가 원장보다 먼저 보유 행을 지운다
 - `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
-- 공유물 목록 해석(#792): `CommunityClient.missionPosts`·`studentPosts`가 learning `items[]`를 `MissionPost`·`StudentPost`로 바꾼다(공유물·작성자 ID UUID, 상태는 `Community.POST_STATUSES`, 반응 수는 `Community.REACTIONS` 전부를 0으로 채움, 내 반응은 알려진 종류만). 틀리면 502 `COMMUNITY_INVALID_RESPONSE`. `CommunityService`는 작성자 표시·신고 숨김·공개 설정으로 거르고 상태를 덮어쓰는 업무 판단만 한다
+- 공유물 목록 해석(#792·#814): `CommunityClient.missionPosts`·`studentPosts`가 learning `items[]`를 `MissionPost`·`StudentPost`로 바꾼다(공유물·작성자 ID UUID, 상태는 `Community.POST_STATUSES`, 반응 수는 `Community.REACTIONS` 전부를 0 이상 정수로 채움(빠진 종류는 0, 음수·문자열·소수·null은 오류), 내 반응은 알려진 종류만, 미션 ID는 UUID|null·미션 제목은 문자열|null, 작성 시각은 date-time|null이며 learning 문자열 그대로). 답변은 `post`(신고 대상·관리자 원문)까지 세 읽기 모두 공개 계약 `CommunityAnswer`(`{inputType, text, content}`, 입력 방식별 `content` 칸만, #825) 모양을 검사한 learning 원문을 넘긴다. 틀리면 502 `COMMUNITY_INVALID_RESPONSE`. `CommunityService`는 작성자 표시·신고 숨김·공개 설정으로 거르고 상태를 덮어쓰는 업무 판단만 한다
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
 - 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningProxyService.reflection` 돌아보기 저장 성공(또는 `409 ATTEMPT_CLOSED` 재요청) 뒤 `CommunityService.shareCompleted`, 결과 `postId`로 공유 포인트 적립(#389)
-- 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. #387 때는 무료 `THEME_DAY`·`EXTRA`를 셌고, 2026-11-10 개정(core #485)부터 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다
-- 2026-11-10 개정(#483, core #485 구현): `ProductEntitlementService.missionStart`는 `THEME_DAY`·`THEME_REVIEW`를 상품 조회 없이 통과시키고, `EXTRA`는 상품 `features.extraMissions`(값이 없으면 무료 거부·구독 중 허용, #506)로 판정한다. `ProductEntitlementService.sundayTheme(student, date)`가 KST 일요일에만 상품 `features.sundayTheme`을 읽어 learning 쿼리 `sundayTheme`을 정한다(`LearningProxyService`가 시도 시작·주간 테마 조회·열람 기록 2종에 붙임). `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 응답의 `days[].completedOnDay`(당일 풀이 `THEME_ON_TIME`)·`completed`(개근 `THEME_COMPLETED`, #506)·`finished`(주간 완주 `THEME_FINISHED`)로 적립을 보충한다. 사건 종류는 `RewardEvent` 8개(`UNLOCK` 포함)
+- 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다(#485)
+- 주간 테마 이용 규칙(#483, core #485): `ProductEntitlementService.missionStart`는 `THEME_DAY`·`THEME_REVIEW`를 상품 조회 없이 통과시키고, `EXTRA`는 상품 `features.extraMissions`(값이 없으면 무료 거부·구독 중 허용, #506)로 판정한다. `ProductEntitlementService.sundayTheme(student, date)`가 KST 일요일에만 상품 `features.sundayTheme`을 읽어 learning 쿼리 `sundayTheme`을 정한다(`LearningProxyService`가 시도 시작·주간 테마 조회·열람 기록 2종에 붙임). `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 응답의 `days[].completedOnDay`(당일 풀이 `THEME_ON_TIME`)·`completed`(개근 `THEME_COMPLETED`, #506)·`finished`(주간 완주 `THEME_FINISHED`)로 적립을 보충한다. 사건 종류는 `RewardEvent` 8개(`UNLOCK` 포함)
 
 ### 3.7 생활공간·추억 프록시 (P27, 구현 #555·#560·#566)
 
@@ -2052,7 +2114,7 @@ classDiagram
 
 ### 4.4 주간 테마·커뮤니티 (theme #385 · community #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385, 커뮤니티(`community`)는 #386으로 구현한 이름·시그니처. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스(주간 테마 `theme` #385, 커뮤니티 `community` #386, 구현 이름·시그니처). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
@@ -2226,8 +2288,8 @@ classDiagram
 - 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
 - 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
 
-#438 추가(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
-- 학년: `GradeBand`(`G3_4`·`G5_6`)를 `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`)로 바꾼다. `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
+#438(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
+- 학년: `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`). `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
 - 이야기·정답 구조: 버전·요일 새 칸은 테마 새 버전 때 함께 복사. `ThemeAnswerRules`가 관리자 저장 때 정답 논리(정답·후보·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어느 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐)와 `hintSpots`(0~100, 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음)를 검사(400). 결정적 단서 `decisiveClue`는 마지막 틀린 후보를 빼는 날의 단서
 - 학생 응답: 요일 단서는 그 문제를 그 주에 학습 완료한 뒤에만(#484), 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 엔딩(`ThemeEnding.of`가 `ENDED`)일 때만. 엔딩은 저장하지 않고 정답 고르기(`theme_answer_pick`)와 고른 뒤 금요일 문제 `THEME_REVIEW` 마무리 시각으로 계산한다(state-diagram 3.2.2, #484). 요일 상태는 `ThemeWeek.stateOf(day, today, sundayTheme)`(누적 공개, 일요일은 core 허용 값). 커뮤니티 `CommunityService`는 `lockedUntilEnding`으로 정답 고르기 문제를 엔딩 전에 잠근다(`COMMUNITY_LOCKED_UNTIL_ENDING`). INTRO는 월~토 언제든 받음(웹은 그 주 처음 '오늘 문제 풀기'를 누를 때 보여 주고 기록, #589), `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
 - 단서 근거(#647, 기준안): `ThemeStory.features`(`ThemeFeature(name, values: List<ThemeFeatureValue(candidate, value)>)`, `weekly_theme_version.features`)와 `ThemeDayMission.clueFeature`(`weekly_theme_day.clue_feature`)를 저장·복사한다. 테마 초안 채택은 ai 응답 `theme.features`·`days[].clueFeature`를 그대로 옮기고, `ThemeAnswerRules.featureErrors`가 특징마다 후보 하나에 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지는지 검사한다(테마 초안 learning 검사 `LOGIC`·관리자 저장 `400` 공통, 허용 값은 ai 내부 칸이라 그 이상은 보지 않음). `ThemeCarryOver`는 표를 이어받되 후보가 바뀌면 버리고 그날 `rulesOut`이 바뀌면 그날 `clueFeature`를 버린다. 학생 `ThemeDayView.clueFeature`·`clueFacts`는 그날 단서와 같은 조건(그 주 학습 완료), `WeeklyThemeView.features`는 엔딩 뒤만. 관리자 응답 `AdminWeeklyTheme.features`·`AdminThemeDay.clueFeature`
@@ -3004,7 +3066,7 @@ classDiagram
 
 ### 7.1 리포트 기간 종류 (report #391 구현 · core #390 연동)
 
-2026-11-06 결정의 report 부분은 #391에서 구현했다. core 스케줄·알림(#390)은 구현했고 대화(#392)도 구현했으며 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정의 report 부분(#391). core 스케줄·알림은 #390, 리포트 대화는 #392. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
@@ -3044,7 +3106,7 @@ classDiagram
 
 - core(#390 구현): `WeeklyReportScheduler`·`DailyReportScheduler`가 각자 ShedLock으로 `ReportScheduleService.generate(at, periodType)`을 부르고, `ReportJobService.scheduled(parent, child, ReportPeriod)`가 보호자가 연결된 자녀별 작업 + Outbox를 저장한다(정기 부분 UK `(student_id, period_type, period_from)`). 기간 종류는 domain `ReportPeriodType`(`DAILY`·`WEEKLY`)과 `ReportPeriod(from, to, type)`이며 일일은 서술 없음(`narrative = false`)이라 상품 권한을 조회하지 않는다. 일일 상세 원문 제공 여부는 `ReportEntitlementService.dailyDetailEnabled` 한 곳에서 정한다
 - report-service `GenerationService`(7장)는 `periodType`으로 분기. `DailyReportBuilder`는 ai 서술 호출 없이 템플릿만 구성하고 기존 대조·렌더링을 재사용
-- core(#392 구현): `ConversationService.createForReport`는 `ReportJobRepository.byReport`로 일일·같은 자녀를 확인하고 `ReportQueryService.pinned`(최신 판)로 완료 여부를 본 뒤 기존 `create`와 같은 대화를 만들고 기간을 그날로 고정, `conversation.report_id`·`report_revision` 저장. 메시지마다 `ConversationService.report`가 `ReportQueryService.pinned(reportId, revision)`(열람 기록 없음)으로 그 판을 읽어 ai 요청 `report`에 개수·판정 요약으로 전달. ai는 `AnalysisRequest.report`(`ReportSummary`)를 답변 프롬프트 `[고정 리포트]`와 숫자 대조 허용값에 넣는다
+- core(#392 구현): `ConversationService.createForReport`는 `ReportJobRepository.byReport`로 일일·같은 자녀를 확인하고 `ReportQueryService.pinned`(최신 판)로 완료 여부를 본 뒤 기존 `create`와 같은 대화를 만들고 기간을 그날로 고정, `conversation.report_id`·`report_revision` 저장. 메시지마다 `ConversationService.report`가 `ReportQueryService.pinned(reportId, revision)`(열람 기록 없음)으로 그 판을 읽어 ai 요청 `report`에 개수·판정 요약으로 전달. 응답 모양 검사와 칸 선택은 `ReportClient.pinned`가 `PinnedReport`로 하고(#814, 틀리면 502 `REPORT_CONTRACT_INVALID`), `ConversationService`는 그 타입에서 ai로 보낼 항목만 고른다. ai는 `AnalysisRequest.report`(`ReportSummary`)를 답변 프롬프트 `[고정 리포트]`와 숫자 대조 허용값에 넣는다
 - report `ReportRepository`의 revision 잠금·UK 단위는 `(student_id, period_type, period_from)`
 
 ---
@@ -3053,5 +3115,5 @@ classDiagram
 - 테마 소비는 코드(`app/config.py` `report_theme_summary_enabled`)·kind `report-worker` 값 모두 `REPORT_THEME_SUMMARY_ENABLED=true`가 기본이다. 단, Docker Compose(`compose.yaml`)는 `${REPORT_THEME_SUMMARY_ENABLED:-false}`로 꺼 두므로 로컬 Compose에서 주간 테마 요약을 보려면 `.env`에서 켠다(기본값 통일은 별도 정리 이슈). #385/#391 learning을 먼저 배포한다. false는 새 주간 요약만 생략하는 복귀 설정이며 조회 오류를 참여 없음으로 바꾸지 않는다.
 
 ## 8. 확인 필요 가정
-- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작 한도는 #387에서 `ProductEntitlementService.missionStart`·`usage/MissionUsageService`·`mission_daily_usage`(#210 PostgreSQL 결정)로 구현했다(당시 무료 `THEME_DAY`·`EXTRA` 합쳐 하루 1개). 2026-11-10 개정(core #485)부터 무료 테마 문제는 한도가 없고 무료 `EXTRA`는 403 `PREMIUM_REQUIRED`라, 이 한도는 무료 상품에서 `EXTRA`를 다시 켠 경우에만 쓰인다. 피드백 한도는 미구현. 생각 유형별 미션 고르기(`EXTRA`)는 무료 상품에서 꺼진 동안 프리미엄 사용(`EXTRA_MISSION`) 기록
+- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작 한도는 `ProductEntitlementService.missionStart`·`usage/MissionUsageService`·`mission_daily_usage`(#387, #210 PostgreSQL 결정). 무료 테마 문제는 한도가 없고 무료 `EXTRA`는 403 `PREMIUM_REQUIRED`라(#485), 이 한도는 무료 상품에서 `EXTRA`를 다시 켠 경우에만 쓰인다. 피드백 한도는 미구현. 생각 유형별 미션 고르기(`EXTRA`)는 무료 상품에서 꺼진 동안 프리미엄 사용(`EXTRA_MISSION`) 기록
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정

@@ -125,11 +125,11 @@ class RoomFrameSlotIntegrationTest : IntegrationTestSupport() {
         assertEquals(listOf(Triple(2, sea.first, sea.second), Triple(5, fox.first, fox.second)), saved())
         // 다시 들어오면 마지막 저장 배치
         assertEquals(response, call("GET", studentToken))
-        // 전체 교체: 다른 배치로 바꾸면 이전 슬롯은 남지 않는다. 계속 걸린 액자는 슬롯을 옮겨도 처음 건 시각 유지
-        jdbc.update("UPDATE room_frame_slot SET saved_at=TIMESTAMPTZ '2026-11-09 09:00:00+09' WHERE student_id=?", student)
+        // 전체 교체: 다른 배치로 바꾸면 이전 슬롯은 남지 않는다. 계속 걸린 액자는 슬롯을 옮겨도 처음 건 시각 유지(마이크로초까지, #816)
+        jdbc.update("UPDATE room_frame_slot SET saved_at=TIMESTAMPTZ '2026-11-09 09:00:00.123456+09' WHERE student_id=?", student)
         put(slot(1, fox))
         assertEquals(listOf(Triple(1, fox.first, fox.second)), saved())
-        assertEquals(java.time.Instant.parse("2026-11-09T00:00:00Z"), jdbc.queryForObject(
+        assertEquals(java.time.Instant.parse("2026-11-09T00:00:00.123456Z"), jdbc.queryForObject(
             "SELECT saved_at FROM room_frame_slot WHERE student_id=?", java.time.OffsetDateTime::class.java, student)!!.toInstant())
         put(slot(1, sea))
         assertTrue(jdbc.queryForObject("SELECT saved_at FROM room_frame_slot WHERE student_id=?", java.time.OffsetDateTime::class.java, student)!!

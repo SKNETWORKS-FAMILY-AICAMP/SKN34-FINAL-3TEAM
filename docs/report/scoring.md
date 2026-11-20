@@ -1,6 +1,6 @@
 # scoring 모델 서비스·M1 학습 코드·모델 업로드
 
-계약은 [API 명세 4.3](../design/api-spec.md#43-scoring-service-호출-ai-learning)과 [scoring OpenAPI](../../contracts/openapi/scoring-service.yaml). 서술 3.0·논술 3.1 모델 호환과 content_3 보정은 [ai](ai.md) 4장.
+계약은 [API 명세 4.3](../design/api-spec.md#43-scoring-service-호출-ai-learning-core)과 [scoring OpenAPI](../../contracts/openapi/scoring-service.yaml). 서술 3.0·논술 3.1 모델 호환과 content_3 보정은 [ai](ai.md) 4장.
 
 | 이슈 | 구현 |
 |---|---|
@@ -348,29 +348,11 @@ learning은 미션 inputTemplate의 네 칸 이름을 essayLabels로 전달한�
 
 ### 7.6 조정된 해야 할 일
 
-- [x] c판 규칙 패키지 추가·논술 칸 이름/복사/반복 제거·서술 복사/반복 제거
-- [x] 논술 100자·서술 10자 하한 및 서술 10~99자 안내
-- [x] 두 유형 앞+끝 토큰화, 정리한 글로 content3 선택 보정
-- [x] 점수 생략을 미활성·장애와 구분하는 scoring·AI 계약
-- [x] 맞춤 칸 이름 전달, 안내 저장·조회·학생 화면 표시
-- [x] b판 경계 파일·해시 기록 및 실제 모델 재로딩·복귀
-- [x] 원문·AI 판정·승인 범위·점수 비노출 유지
-- [x] 점수 없는 결과의 평균·불일치·리포트 설명 제외
-- [x] 테스트·API 명세·OpenAPI·검증 보고서 갱신
+c판 규칙(논술 칸 이름·복사·반복 제거, 서술 복사·반복 제거), 길이 하한·안내, 앞+끝 토큰화, 점수 생략 계약, 칸 이름 전달·안내 표시, b판 경계·해시, 점수 없는 결과 제외, 테스트·명세 갱신 모두 반영. 혼합 관련 항목은 미채택으로 제외.
 
 ### 7.7 조정된 완료 조건
 
-- [x] 변경 없는 글은 줄바꿈을 포함해 유지하고, 복사 제거가 반복 제거보다 먼저 실행됨
-- [x] 5자 미만 조각·복사/반복/혼합·맞춤 칸 이름 테스트 통과
-- [x] 정리 후 0/9/10/99/100자 경계와 추론·사용량 생략 테스트 통과
-- [x] 원래 짧은 논술과 제거 후 짧아진 논술 안내 구분
-- [x] 새 경계 직전·동일·직후 변환과 실제 재로딩·복귀 검증
-- [x] 실제 두 서비스 모델에서 짧은 입력 동일 토큰·긴 글 앞+끝 검증
-- [x] 학생 화면 안내가 유지되고 원문·숫자 점수가 노출되지 않음
-- [x] 서술 content3 설정·미활성·승인 범위·기존 판정·리포트 회귀 통과
-- [x] 최신 develop 반영·로컬 검증과 운영 적용 상태 구분
-
-혼합 관련 기존 체크박스는 미채택으로 범위에서 제외한다. 운영 S3 반영·모델 활성화·운영 품질 승인은 이 로컬 구현 검증 결과로 대신하지 않는다.
+경계 길이(0/9/10/99/100자)·복사/반복 처리 순서·짧은 논술 안내 구분·새 경계 재로딩·복귀·실제 두 모델 토큰화·학생 화면 비노출·회귀 모두 충족(로컬 검증). 운영 S3 반영·활성화는 7.8.
 
 ### 7.8 운영 적용 (#613, 2026-11-17)
 
@@ -424,7 +406,7 @@ scoring `/internal/m2/scores`를 ai 호출자 인증으로 직접 불렀다. 응
 #### 남은 것
 
 - scoring ops 토큰이 prod에 없어 `/internal/versions`로 직접 확인할 경로가 없다. 설정할지는 별도 결정이다
-- B 계정 이전 때는 새 경로·백업을 B 계정 버킷으로 옮기고 같은 순서(사전 검사 → 등록 → 승인·활성화)로 다시 등록해야 한다
+- B 계정 이전 때는 새 경로·백업을 B 계정 버킷으로 옮기고 같은 순서(사전 검사 → 등록 → 승인·활성화)로 다시 등록해야 한다. B DB는 A 스냅샷 복원이라 활성 행이 A 버킷을 가리키고, 그대로면 scoring이 Ready가 되지 않는다. 전환 방법 3가지와 복사 방법은 [AWS README B 계정 전환 런북](../../infrastructure/aws/README.md#b-계정-전환-런북-809)
 
 ## 8. 답변 표현 분류 API (#688, 계약 #689, 구현 #691)
 
@@ -457,4 +439,5 @@ learning 답변 제출에서 단어 목록 다음 단계로 부르는 2분류 �
 | 배포 설정 | local·prod scoring에 `INTERNAL_TOKEN_LEARNING`, `ingressFromApps`에 learning-service, compose scoring 환경 변수 |
 | 시험 | scoring 288 통과(2 건너뜀, `test_toxicity.py` 39개 포함), 관리자 화면 단위 370 통과·타입 검사·oxlint 통과, core `ModelPreflightFilesTest` 2 통과, scripts 모델 계약 26 통과. core DB 시험(`ModelLoadingTest` 새 tox 경우 포함)은 Postgres가 있는 CI에서 확인 |
 
-- 남은 것: 로컬 MinIO에 #690 모델을 올려 사전 검사·활성화 뒤 실제 `/internal/toxicity/checks` 호출 확인(#690 마지막 체크), 운영 Pod에서 M2와 같이 돌 때 1,500자 지연을 재서 int8 유지 여부 결정(learning 16장 되돌리기 조건). learning 쪽 호출(#692)은 이 PR 범위 밖
+- 로컬 확인(2026-11-19, develop 7d9d7751, compose `e2e.env`): #690 모델 `tox-koelectra-small` 1.0-1119(KoELECTRA-small 증류, int8 0.99)를 로컬 MinIO에 파일 5개 전체 SHA-256과 올림 → 사전 검사 `FILES_AND_METADATA_VERIFIED` → 등록·승인·활성화(`answer-filter`) → `/internal/toxicity/checks` 정상 `flagged:false`·모욕 `true`, 1,501자 400·다른 서비스 토큰 403·토큰 없음 401. M2 서술 3.0-1112b·논술 3.1-1112b를 같이 켜도 M2 채점 정상(점수 값 비교는 안 함)
+- 남은 것: 운영 Pod에서 M2와 같이 돌 때 1,500자 지연·메모리(limit 2Gi) 확인. PC 참고값은 1,200자 요청 p95 혼자 375ms·M2 채점과 같이 569ms(HTTP 포함, 20회)로 마감 1.3초 안. 모델 숫자·한계는 [eval_tox.md](../../ml/tox/results/eval_tox.md) "11/19 모델 교체"

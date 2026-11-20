@@ -86,12 +86,18 @@ def kotlin_context_sentences(text: str) -> list[str]:
     return re.findall(r'assertEquals\(\s*null\s*,\s*check\("((?:[^"\\]|\\.)*)"\s*,', text)
 
 
+# 단어 목록은 통과시키지만 모델은 막아도 되는 글(2026-11-18 정책: 남을 향한 놀림말은 막음).
+# ExpressionPolicyTest의 "막지 않음"은 단어 목록 시험이라 그대로 두고, 꼭 통과할 글에서만 뺀다.
+MODEL_MAY_BLOCK = {"바보야"}
+
+
 def must_pass(repo: pathlib.Path = REPO) -> dict[str, list[str]]:
     """꼭 통과할 글. #205의 "데모 문장 491"은 learning 데모 시드 + 웹 데모 데이터(11/02 기준,
     추출 스크립트 저장소 밖)라 지금 파일에서 같은 방식으로 다시 뽑는다."""
     demo = sql_sentences((repo / DEMO_SQL).read_text(encoding="utf-8"))
     web = ts_sentences((repo / WEB_DEMO).read_text(encoding="utf-8"))
     trap = kotlin_pass_sentences((repo / TRAP_TEST).read_text(encoding="utf-8"))
+    trap = [t for t in trap if t not in MODEL_MAY_BLOCK]
     return {
         "demo": list(dict.fromkeys(demo)),
         "web": list(dict.fromkeys(web)),

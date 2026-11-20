@@ -878,6 +878,32 @@
         ],
         "title": "CorrectionImpactItem"
       },
+      "DailyAnswerTime": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "thinkingSeconds": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Thinkingseconds"
+          },
+          "writingSeconds": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Writingseconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "thinkingSeconds",
+          "writingSeconds"
+        ],
+        "title": "DailyAnswerTime"
+      },
       "DailyElement": {
         "properties": {
           "label": {
@@ -965,6 +991,24 @@
             ],
             "title": "Context"
           },
+          "scheduledDay": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "MON",
+                  "TUE",
+                  "WED",
+                  "THU",
+                  "FRI"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduledday"
+          },
           "judgment": {
             "anyOf": [
               {
@@ -1016,6 +1060,14 @@
             },
             "type": "array",
             "title": "Quotes"
+          },
+          "answerTimes": {
+            "items": {
+              "$ref": "#/components/schemas/DailyAnswerTime"
+            },
+            "type": "array",
+            "title": "Answertimes",
+            "description": "답변별 생각·작성 시간(P28). 시간이 있는 답만 버전 순, 원문 비공개(#206)여도 넣음. #803 이전 저장본은 []로 읽음."
           }
         },
         "type": "object",
@@ -1486,6 +1538,11 @@
               }
             ],
             "title": "Failurereason"
+          },
+          "noRecord": {
+            "type": "boolean",
+            "title": "Norecord",
+            "default": false
           }
         },
         "additionalProperties": false,

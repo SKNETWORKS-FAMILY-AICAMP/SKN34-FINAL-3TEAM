@@ -333,6 +333,7 @@ test('학부모 리포트: 일일·주간 구분, 일일 리포트로만 고정 
 
   const detail = (await call(`/reports/${daily[0].reportId}`)).data
   assert.ok(Array.isArray(detail.problems))
+  assert.ok(detail.problems.every((p: { answerTimes?: unknown }) => Array.isArray(p.answerTimes)), '#803 문제별 answerTimes(없으면 [])')
   assert.equal(detail.narrative, null, '일일 리포트는 서술 없음')
   assert.ok(!detail.eveningQuestion, '저녁 질문은 주간에만')
   if (detail.parentSharingEnabled === false)

@@ -38,6 +38,10 @@ def assemble(metadata: dict, items: list[tuple[str, str | None, dict]]) -> dict:
         if kind == ItemType.REFLECTION:
             difficulty = value.get("difficulty")
             value["difficulty"] = DIFFICULTY_LABELS.get(difficulty, difficulty)
+        if kind == ItemType.PROBLEM:
+            # Daily items stored before #803 have no answerTimes; read them as [].
+            value.setdefault("answerTimes", [])
+            value.setdefault("scheduledDay", None)
         if kind == ItemType.QUOTE and not value.get("verified", False):
             value["text"] = None
         if identifier is not None:

@@ -226,11 +226,35 @@ def test_daily_free_private_make_no_explanation_calls(changes, state):
     assert not ai.calls and learning.calls == 0
 
 
-@pytest.mark.parametrize("grade", [None, True, 3, 4, 7, 9])
+@pytest.mark.parametrize("grade", [None, True, 2, 3, 4, 10])
 def test_missing_or_unsupported_grade_does_not_invent_a_grade(grade):
     command, report, _, _, ai, generator = setup_case()
     result = asyncio.run(generator.generate(replace(command, grade=grade), report))
     assert result.explanation_state == "NOT_INCLUDED" and not ai.calls
+
+
+def essay(student):
+    attempt = scored(student)
+    answer = replace(
+        attempt.answers[0],
+        input_type="ESSAY",
+        judgment=JudgmentRecord(
+            "PARTIAL", False, (), model_scores={"m2": {"scores": {"org": 2, "cont": 3, "exp": 1}}}
+        ),
+    )
+    return replace(attempt, answers=(answer,))
+
+
+@pytest.mark.parametrize("input_type", ["NARRATIVE", "ESSAY"])
+@pytest.mark.parametrize("stored, sent", [(6, 6), (7, 6), (8, 6), (9, 6)])
+def test_middle_school_grades_use_the_grade_six_scope(input_type, stored, sent):
+    # #830: stored grades 7~9 get grade-6 missions (P03·P26), so explanations use grade 6 too.
+    student = fixed_result()[0].student_id
+    attempt = scored(student) if input_type == "NARRATIVE" else essay(student)
+    command, report, _, _, ai, generator = setup_case([attempt])
+    result = asyncio.run(generator.generate(replace(command, grade=stored), report))
+    assert result.explanation_state == "INCLUDED"
+    assert [(call["grade"], call["inputType"]) for call, _ in ai.calls] == [(sent, input_type)]
 
 
 def unsupported_input(student):

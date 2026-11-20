@@ -111,6 +111,9 @@ export interface Answer {
   followupId?: string
   feedback: Feedback
   content?: AnswerContent
+  /** 생각·작성 시간(P28). 학생 화면에는 쓰지 않고, 시연 저장소가 받은 값을 확인하는 데만 둔다 */
+  thinkingSeconds?: number | null
+  writingSeconds?: number | null
 }
 export interface Reflection {
   difficulty: '쉬웠어' | '보통' | '어려웠어'
@@ -158,20 +161,6 @@ export interface Metric {
   period: Period
   sourceType: 'RECORD' | 'RULE' | 'ANSWER_KEY' | 'AI_OBSERVATION'
   state: 'OK' | 'NO_RECORD' | 'INSUFFICIENT_SAMPLE'
-}
-export interface Report {
-  reportId: string
-  childId: string
-  period: Period
-  revision: number
-  revisions: number[]
-  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
-  state: 'OK' | 'NO_RECORD' | 'INSUFFICIENT_SAMPLE'
-  metrics: Metric[]
-  records: PublicAttempt[]
-  narrative: string | null
-  eveningQuestion?: string
-  regenerations: number
 }
 export interface AnalysisVerification {
   numbersMatched: boolean

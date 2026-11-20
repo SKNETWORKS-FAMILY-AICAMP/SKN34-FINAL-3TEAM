@@ -1,6 +1,6 @@
 # 운영 배포·롤백 (#186)
 
-`.github/workflows/cd-release.yml`은 main 릴리스 SHA만 운영(AWS 데모 EKS)에 배포한다. 승인은 GitHub Environment `prod`가 맡고, 실제 Helm 적용은 EKS API 접근이 허용된 작업자 PC의 전용 self-hosted runner(`cd-prod`)에서 한다. 배포(deploy)는 앱보다 먼저 같은 SHA의 DB migration Job을 실행하고 완료를 확인한다. 실패해도 자동 롤백하지 않는다.
+`.github/workflows/cd-release.yml`은 main 릴리스 SHA만 운영(AWS 데모 EKS)에 배포한다. 승인은 GitHub Environment `prod`가 맡고, 실제 Helm 적용은 EKS API 접근이 허용된 작업자 PC의 전용 self-hosted runner(`cd-prod`)에서 한다. 배포(deploy)는 앱보다 먼저 같은 SHA의 DB migration Job을 실행하고 완료를 확인한다. 앱 release가 없는 빈 클러스터는 계획의 `currentRelease`를 `"none"`으로 두면 같은 흐름으로 처음 설치한다(아래 빈 클러스터 첫 배포 절). 실패해도 자동 롤백하지 않는다.
 
 ```
 수동 실행(main, 계획 JSON 입력)
@@ -18,7 +18,7 @@
 | `scripts/cd_release.py` | 계획 검증과 실행 게이트(`--require-executable`) |
 | `scripts/verify_cd_deployment.py` | 배포 후 로그인 → 학습 제출 → 리포트 조회 |
 | `scripts/cd_record.py` | 수행자·승인·시점·버전·결과 이력 |
-| `infrastructure/gitops/environments/prod/redeploy-app.ps1` | release 하나 dry-run/적용. `-ImageDigest`로 저장소 values를 바꾸지 않고 digest만 교체. `-Migration`이면 앱 대신 `migrations/<release>.json`의 Job만 다룬다(아래 DB migration 절) |
+| `infrastructure/gitops/environments/prod/redeploy-app.ps1` | release 하나 dry-run/적용. `-ImageDigest`로 저장소 values를 바꾸지 않고 digest만 교체. `-Migration`이면 앱 대신 `migrations/<release>.json`의 Job만 다룬다(아래 DB migration 절). `-AllowInstall`이면 release가 없을 때 처음 설치한다(아래 빈 클러스터 첫 배포 절) |
 | `infrastructure/gitops/migrations/{core,learning}.Dockerfile` | core·learning Flyway migration 이미지. report는 앱 이미지의 Alembic을 쓴다 |
 
 ## 1회 설정
@@ -51,7 +51,7 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 
 | 위치 | 값 |
 |---|---|
-| Settings → Environments → `prod` | Required reviewers: `20220348-kim`, `kty2001` / Deployment branches: `main`만 / Allow administrators to bypass: 끔 |
+| Settings → Environments → `prod` | Required reviewers: `20220348-kim`, `kty2001`(GitHub는 이 목록 중 **1명**이 승인하면 job을 시작한다. 필요 승인 수 설정은 없다) / Deployment branches: `main`만 / Allow administrators to bypass: 끔 |
 | Environment `prod` 변수 | `CD_BASE_URL` = 데모 CloudFront https origin(경로 없음) |
 | Repository 변수 | `CD_AWS_ROLE_ARN` = `arn:aws:iam::347161580747:role/sagomungchi-demo-github-cd-publish`, `CD_AWS_REGION` = `ap-northeast-2`, `CD_ECR_REGISTRY` = `347161580747.dkr.ecr.ap-northeast-2.amazonaws.com` |
 | Settings → Actions → General | Fork pull request workflows: 외부 기여자 승인 필요 |
@@ -74,7 +74,7 @@ EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 P
 | `CD_HELM` | helm 실행 파일(생략 시 PATH의 helm) |
 | `CD_SMOKE_FIXTURE_FILE` | 아래 D의 fixture 절대 경로 |
 
-필요 도구: PowerShell 7, Python 3.12, AWS CLI, kubectl, helm, git.
+필요 도구: PowerShell 7, Python 3.12, AWS CLI v2, kubectl, Helm 3 또는 4(ci-gitops는 4.3.1), git. 클러스터를 새로 만들 때는 eksctl도 필요하다(11/17 v0.231.0, [AWS README B 계정 전환 런북](../aws/README.md#b-계정-전환-런북-809) 0단계).
 
 ### D. 배포 후 경로 확인 fixture (작업자 PC에만)
 
@@ -86,6 +86,8 @@ EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 P
 - `missionId`: 토·일 되돌아보기에서 먼저 고를 테마 미션(마무리한 문제 중 없으면 첫 마무리 문제). 평일에는 쓰지 않는다.
 - `answer`·`answers`: 시작 응답 `mission.inputType`에 맞는 답변을 쓴다. 기본 `answer`(예: `NARRATIVE`) 외 입력 방식 테마 문제가 있으면 `answers` 목록에 입력 방식별 답변을 더한다. 맞는 답변이 없으면 `start-attempt` 단계에서 실패하고 답변을 내지 않는다.
 - `parentRefreshCookie`: 같은 학부모로 Google 로그인한 브라우저의 `sagomungchi_refresh` 쿠키. **최초 로그인부터 최대 7일**이고 쓸 때마다 회전한다. 스크립트가 새 값을 파일에 바로 저장한다. 배포 전에 7일이 지났으면 다시 로그인해 넣는다. 같은 값을 브라우저와 동시에 쓰면 세션이 폐기되므로 fixture용 로그인은 따로 한다.
+- 현행 동의(2026-11-18 #760): 약관·개인정보가 새 버전(core V39, #415의 1.1)이 되면 그 학부모가 다시 동의하기 전까지 자녀 학생 로그인이 `CHILD_NOT_LINKED`로 막힌다. 재가동·새 계정 배포 전에 fixture 학부모로 로그인해 현행 문서에 동의하고, 그 로그인으로 refresh 쿠키를 새로 받는다. B 계정은 A 최종 스냅샷을 복원하므로 계정·자녀는 그대로지만, 새 CloudFront 도메인에서 부모 로그인(refresh 쿠키)과 학생 기기 등록(`student_device` 쿠키)을 다시 해 이 파일을 갱신한다([B 계정 전환 런북](../aws/README.md#b-계정-전환-런북-809) 15단계).
+- 주간 테마: 그 주 테마가 게시돼 있어야 `pick-mission`이 문제를 고른다(없으면 learning이 지난 테마를 재사용). 테마가 0건인 새 DB나 시연 주차는 관리자 화면에서 먼저 게시한다(같은 런북 15단계).
 
 ### E. 실행 스위치
 
@@ -95,7 +97,7 @@ EKS API 공개 접근이 작업자 공인 IP로 제한돼 있어 적용은 이 P
 
 1. develop → main 릴리스 PR을 병합하고 main CI가 통과했는지 본다.
 2. DB migration은 이 workflow가 앱보다 먼저 실행한다(아래 DB migration 절). `compatibility.schema` 근거에는 이번 main SHA의 새 migration 목록과 **지금 떠 있는 앱이 새 스키마에서 계속 동작한다는 근거**(추가만인지, 컬럼·제약 삭제·이름 변경이 없는지)를 적는다. migration과 앱 적용 사이, 그리고 이후 롤백 때 이전 앱이 새 스키마 위에서 돈다.
-3. `release.example.json`을 복사해 main SHA·서비스·근거를 채운다. 여섯 항목을 모두 `compatible`과 근거로 채워야 실행된다.
+3. `release.example.json`을 복사해 main SHA·서비스·근거를 채운다. 여섯 항목을 모두 `compatible`과 근거로 채워야 실행된다. 앱 release가 없는 빈 클러스터면 `currentRelease`를 `"none"`으로 둔다(아래 빈 클러스터 첫 배포 절).
 4. 작업자 PC에서 runner를 켜고 실행한다.
 
 ```powershell
@@ -104,7 +106,7 @@ gh workflow run cd-release.yml --ref main -f plan="$(Get-Content release.json -R
 
 `gh`가 없으면 Actions 화면에서 `cd-release` → Run workflow(main)에 한 줄 JSON을 붙여 넣는다.
 
-5. 승인자가 Actions 화면에서 `prod` 배포를 승인한다. 승인 전에는 deploy job이 시작되지 않는다.
+5. 승인자 한 명이 Actions 화면에서 `prod` 배포를 승인한다. 승인 전에는 deploy job이 시작되지 않는다.
 6. 결과: 실행 요약과 artifact `cd-history-<run id>`(90일)에 `history.json`(승인자·migration Job 결과·release 전후 revision·경로 확인), `plan.json`, `plan-record.json`, `migrations.json`이 남는다. 배포가 끝나면 앱 values의 digest와 `migrations/*.json`의 `migration.image.digest`·`migration.revision`을 실제 배포값으로 맞추는 PR을 올린다.
 
 ## DB migration (2026-11-17)
@@ -132,6 +134,21 @@ pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service cor
   -ImageDigest 'sha256:<core-migrate digest>' -Revision 'main-<SHA 12자리>'   # 미리보기. -Apply면 적용·완료 대기
 ```
 
+## 빈 클러스터 첫 배포 (2026-11-18, #760)
+
+11/17 A 계정 재가동에서 새 클러스터에 cd-release를 실행했을 때 "적용 미리보기"가 `release: not found`로 실패해 migration도 돌지 않았다. 앱 경로가 기존 `deployed` release만 받았기 때문이다. 이제 계획이 첫 배포임을 밝히면 같은 흐름(migration → 앱 → 경로 확인)으로 처음 설치한다.
+
+| 항목 | 정한 것 |
+|---|---|
+| 계획 표시 | `currentRelease: "none"`. `cd_release.py`가 plan-record에 `firstInstall: true`를 남긴다. deploy만 가능(rollback에 `none`이면 계획 오류) |
+| 실행기 | deploy job이 `firstInstall`일 때만 `redeploy-app.ps1`에 `-AllowInstall`을 준다. 스크립트는 `helm list`로 그 release를 찾고, **없을 때만** 미리보기 `helm install --dry-run=server`, 적용 `helm upgrade --install --wait`. 있으면(`deployed`) 지금과 같은 `helm upgrade` |
+| 안전장치 | `none`이 아닌 계획에서 release가 없으면 "first install needs -AllowInstall"로 미리보기에서 멈춘다(실수로 빈 namespace에 설치하지 않음). `failed`·`pending` release는 계획과 관계없이 덮어쓰지 않는다 |
+| 일부만 있을 때 | `none` 계획이면 있는 release는 `upgrade`, 없는 release만 `install`. 11/17처럼 손으로 일부를 올린 뒤에도 같은 계획으로 이어 갈 수 있다 |
+| 이력 | 미리보기 요약에 release별 `install`/`upgrade`, `releases.json`·`history.json`에 `action`과 전후 revision(첫 설치는 `previousRevision: null`), 요약에는 "첫 설치→r1" |
+| 같은 계획 재실행 | migration은 `already-complete`, 이미 설치된 앱은 같은 digest로 `upgrade`. 첫 설치 중 `failed`가 된 release는 원인을 고친 뒤 승인을 받아 `helm uninstall <release> -n app`으로 지우고 다시 실행한다 |
+
+이 workflow가 하지 않는 것(빈 클러스터·빈 DB에서는 앞뒤에 직접): RDS 초기화 `demo_stack.py rds-bootstrap --execute`(migration 전, 그리고 뒤에 한 번 더), 웹 S3 업로드·CloudFront 무효화, 관리자·동의 문서·시연 계정·주간 테마 같은 운영 데이터. 빈 DB면 fixture 계정이 아직 없고, 스냅샷을 복원해도 부모 refresh 쿠키(7일)와 학생 기기 쿠키(도메인별)를 새로 받아야 해서 첫 실행의 경로 확인은 실패로 남을 수 있다. 쿠키를 갱신한 뒤 같은 계획을 다시 실행한다. 순서와 이유는 [infra 9.16](../../docs/report/infra.md#916-빈-클러스터-첫-배포와-b-계정-부트스트랩-보완-760-2026-11-18).
+
 ## 롤백
 
 이전에 승인·배포된 digest로 되돌리는 것도 같은 workflow·승인을 거친다. DB downgrade·백업 복원은 하지 않고, rollback 계획은 migration을 실행하지 않는다(`migrations`를 넣으면 거부).
@@ -153,8 +170,9 @@ pwsh -File infrastructure/gitops/environments/prod/redeploy-app.ps1 -Service cor
 
 ## 한계
 
-- 실제 승인·게시·적용·롤백은 아직 실행하지 않았다(main 반영·D 전).
+- 실제 승인·게시·적용과 scoring 롤백 리허설은 2026-11-04·05에 실행했다([infra 7.4](../../docs/report/infra.md#74-운영-실행에서-얻은-주의점)).
 - migration 단계(2026-11-17)는 AWS에서 아직 실행하지 않았다. 로컬 확인은 시험(`scripts/tests/test_cd_*.py`, 가짜 aws·kubectl과 실제 helm 렌더링)과 kind의 server dry-run·Job 상태 읽기까지다. 첫 실행은 재가동 때 publish 역할 정책 갱신(위 A) 뒤에 한다.
 - 적용 단계는 작업자 PC가 켜져 있어야 한다. 노드 여유가 작으므로 dry-run의 Pod 변경을 보고 승인한다(#185 노드그룹 분리 기록).
-- 웹(S3/CloudFront) 배포와 운영 데이터 seed(성취기준 표 등 일회성 Job)는 이 workflow 범위 밖이다.
+- 웹(S3/CloudFront) 배포, RDS 초기화(`rds-bootstrap`), 운영 데이터 seed(성취기준 표 등 일회성 Job)는 이 workflow 범위 밖이다.
+- 빈 클러스터 첫 배포(2026-11-18)는 AWS에서 아직 실행하지 않았다. 확인은 시험(가짜 aws·kubectl·helm)과 일회용 kind 빈 클러스터의 migration·앱 server dry-run까지다.
 - 계정 `347161580747`·클러스터 `sagomungchi-demo-eks`가 `redeploy-app.ps1`·values·IAM 정책에 고정돼 있다. B 계정(시연용)에서 쓰려면 이 값들을 함께 바꿔야 한다.

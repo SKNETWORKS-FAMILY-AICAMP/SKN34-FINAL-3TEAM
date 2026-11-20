@@ -2,6 +2,8 @@ package com.sagomungchi.core.conversation.client
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.sagomungchi.core.conversation.domain.AnalysisScope
 import com.sagomungchi.core._common.config.InternalRestClientFactory
 import com.sagomungchi.core._common.exception.BusinessException
 import jakarta.annotation.PreDestroy
@@ -35,15 +37,15 @@ class AnalysisCall {
     fun finish() { body.set(null); thread.set(null) }
 }
 /**
- * ai `/internal/analysis/stream` SSE event (#792). [AiClient] checks each event's shape; the order (status first, nothing but
- * `done` after a terminal event) is checked by the consuming service. `result`·`clarification` bodies are validated against
- * the analysis request by `ConversationService`.
+ * ai `/internal/analysis/stream` SSE event (#792). [AiClient] checks each event's shape, including the `result`·`clarification`
+ * bodies (#824); the order (status first, nothing but `done` after a terminal event) and the match with the analysis request
+ * (scope, child authorization, learning evidence) are checked by the consuming service.
  */
 sealed interface AnalysisEvent {
     data class Status(val message: String) : AnalysisEvent
     data class Delta(val text: String) : AnalysisEvent
-    data class Result(val body: JsonNode) : AnalysisEvent
-    data class Clarification(val body: JsonNode) : AnalysisEvent
+    data class Result(val body: AnalysisResult) : AnalysisEvent
+    data class Clarification(val body: AnalysisClarification) : AnalysisEvent
     /** Only a bounded public code crosses this boundary. No raw upstream body or exception text. */
     data class Error(val code: String) : AnalysisEvent
     data object Done : AnalysisEvent
@@ -67,7 +69,27 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
         .slidingWindowSize(10).minimumNumberOfCalls(10).failureRateThreshold(50f)
         .waitDurationInOpenState(Duration.ofSeconds(30)).permittedNumberOfCallsInHalfOpenState(1).build())
 
-    fun reportTemplate(request: Any): JsonNode {
+    /**
+     * TemplateProposal (#824): only `settings`·`clarification`. A non-null clarification is 1–400 non-blank characters with no
+     * settings; otherwise `settings` is an object of exactly `sectionOrder`·`highlightMetrics`·`tone`. Anything else is 502
+     * AI_INVALID_RESPONSE. Allowed values are checked by the caller with [com.sagomungchi.core.report.domain.ReportTemplateSettings.validate].
+     */
+    fun reportTemplate(request: Any): TemplateProposal {
+        val result = templateBody(request)
+        if (!result.isObject || result.fieldNames().asSequence().any { it !in setOf("settings", "clarification") }) invalidTemplate()
+        val clarification = result.get("clarification")
+        if (clarification != null && !clarification.isNull) {
+            if (!clarification.isTextual || clarification.asText().isBlank() || clarification.asText().length>400 ||
+                (result.get("settings")?.isNull == false)) invalidTemplate()
+            return TemplateProposal.Clarification(clarification.asText())
+        }
+        val node = result.get("settings") ?: invalidTemplate()
+        if (!node.isObject || node.fieldNames().asSequence().toSet() != setOf("sectionOrder","highlightMetrics","tone")) invalidTemplate()
+        return TemplateProposal.Settings(try { json.treeToValue(node, com.sagomungchi.core.report.domain.ReportTemplateSettings::class.java) }
+            catch (_: Exception) { invalidTemplate() })
+    }
+    private fun invalidTemplate(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY,"AI_INVALID_RESPONSE","설정 변경안 형식이 올바르지 않습니다.")
+    private fun templateBody(request: Any): JsonNode {
         if (!templateCircuit.tryAcquirePermission()) templateUnavailable()
         val started = System.nanoTime()
         try {
@@ -178,8 +200,8 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
             AnalysisEvent.Status(data.path("message").asText())
         }
         "delta" -> { if (!data.path("text").isTextual) invalid(); AnalysisEvent.Delta(data.path("text").asText()) }
-        "result" -> AnalysisEvent.Result(data)
-        "clarification" -> AnalysisEvent.Clarification(data)
+        "result" -> AnalysisEvent.Result(analysisResult(data as ObjectNode))
+        "clarification" -> AnalysisEvent.Clarification(clarification(data))
         "error" -> {
             val code = data.path("code").asText()
             if (!code.matches(ERROR_CODE)) invalid()
@@ -188,6 +210,101 @@ class AiClient internal constructor(factory: InternalRestClientFactory, private 
         "done" -> AnalysisEvent.Done
         else -> invalid()
     }
+    /**
+     * `result` body (api-spec 4.3, #824): a non-blank answer, all-passed verification, array metrics and evidence, a non-negative
+     * integer record count, and a source whose fallback/notice metadata agree (TEMPLATE carries exactly one of them). Evidence is
+     * at most 100 distinct items: `ANSWER` with a UUID answer and an optional positive version, or `REFLECTION` with no answer
+     * and a text `submittedAt`; each with a UUID attempt and a non-blank quote. The scope is returned as text for the service.
+     */
+    private fun analysisResult(data: ObjectNode): AnalysisResult {
+        val scope = data.path("scope")
+        val resultScope = AnalysisResult.Scope(scope.path("studentId").asText(scope.path("childId").asText()),
+            scope.path("from").asText(), scope.path("to").asText())
+        if (data.path("answer").isTextual.not() || data.path("answer").asText().isBlank() ||
+            data.path("verification").path("numbersMatched").isBoolean.not() ||
+            data.path("verification").path("numbersMatched").booleanValue().not() ||
+            data.path("verification").path("quotesMatched").isBoolean.not() ||
+            data.path("verification").path("quotesMatched").booleanValue().not() ||
+            !data.path("metrics").isArray || !data.path("evidence").isArray ||
+            !data.path("recordCount").isIntegralNumber || data.path("recordCount").asInt(-1) < 0) invalidResult()
+        if (!AnalysisResult.verification(data.path("verification"), requirePassed = true)) invalidResult()
+        val source = data.path("source").asText("LLM")
+        if (source !in AnalysisResult.SOURCES) invalidResult()
+        val fallback = data.path("fallback")
+        val notice = data.path("notice")
+        val hasFallback = !fallback.isNull && !fallback.isMissingNode
+        val hasNotice = !notice.isNull && !notice.isMissingNode
+        if (source == "TEMPLATE") {
+            if (hasFallback == hasNotice) invalidResult()
+        } else if (hasFallback || hasNotice) invalidResult()
+        if (hasFallback) {
+            if (!fallback.isObject || fallback.fieldNames().asSequence().toSet() != setOf("reason", "draftVerification")) invalidResult()
+            when (fallback.path("reason").asText()) {
+                "VERIFICATION_FAILED" -> {
+                    val draft = fallback.path("draftVerification")
+                    if (!AnalysisResult.verification(draft, requirePassed = false) || AnalysisResult.verification(draft, requirePassed = true)) invalidResult()
+                }
+                "AI_UNAVAILABLE" -> if (!fallback.path("draftVerification").isNull) invalidResult()
+                else -> invalidResult()
+            }
+        }
+        if (hasNotice && (!notice.isObject || notice.fieldNames().asSequence().toSet() != setOf("reason") ||
+            notice.path("reason").asText() !in AnalysisResult.NOTICES)) invalidResult()
+        if (hasNotice && notice.path("reason").asText() == "NO_RECORD" && data.path("recordCount").asInt() != 0) invalidResult()
+        if (data.path("evidence").size() > 100) invalidResult()
+        val identities = mutableSetOf<String>()
+        val evidence = data.path("evidence").map {
+            val attempt = uuid(it, "attemptId")
+            val kind = it.path("kind").asText("ANSWER")
+            var answer: java.util.UUID? = null
+            var version: Int? = null
+            val identity = when (kind) {
+                "ANSWER" -> {
+                    answer = uuid(it, "answerId")
+                    val value = it.path("answerVersion")
+                    if (!value.isMissingNode && !value.isNull && (!value.isIntegralNumber || value.asInt() <= 0)) invalidResult()
+                    if (value.isIntegralNumber) version = value.asInt()
+                    "ANSWER:$answer"
+                }
+                "REFLECTION" -> {
+                    if (!it.path("answerId").isNull || !it.path("answerVersion").isNull || !it.path("submittedAt").isTextual) invalidResult()
+                    "REFLECTION:$attempt"
+                }
+                else -> invalidResult()
+            }
+            if (!identities.add(identity)) invalidResult()
+            if (!it.path("quote").isTextual || it.path("quote").asText().isBlank()) invalidResult()
+            val item = it as? ObjectNode ?: invalidResult()
+            item.put("kind", kind)
+            AnalysisResult.Evidence(item, kind, attempt, answer, version, it.path("quote").asText(),
+                it.path("submittedAt").takeIf { value -> value.isTextual }?.asText())
+        }
+        return AnalysisResult(data, resultScope, source, evidence)
+    }
+    /**
+     * `clarification` body (#824): either the current-scope notice (known `reason`, non-blank `message`, `current` scope as text),
+     * or a non-blank `question` with `options[]` of a text label and a parseable child/period scope, sent on unchanged.
+     */
+    private fun clarification(input: JsonNode): AnalysisClarification {
+        if (input.has("current")) {
+            val current = input.path("current")
+            if (input.path("reason").asText() !in AnalysisClarification.REASONS ||
+                !input.path("message").isTextual || input.path("message").asText().isBlank()) invalidResult()
+            return AnalysisClarification.ScopeNotice(input.path("reason").asText(), input.path("message").asText(),
+                AnalysisResult.Scope(current.path("childId").asText(), current.path("from").asText(), current.path("to").asText()))
+        }
+        if (!input.path("question").isTextual || input.path("question").asText().isBlank() || !input.path("options").isArray) invalidResult()
+        val options = input.path("options").map {
+            if (!it.path("label").isTextual) invalidResult()
+            val scope = it.path("scope")
+            val child = uuid(scope, "childId")
+            try { AnalysisScope(child, java.time.LocalDate.parse(scope.path("from").asText()), java.time.LocalDate.parse(scope.path("to").asText())) }
+            catch (_: Exception) { invalidResult() }
+        }
+        return AnalysisClarification.Options(input, options)
+    }
+    private fun uuid(node: JsonNode, field: String): java.util.UUID = try { java.util.UUID.fromString(node.path(field).asText()) } catch (_: Exception) { invalidResult() }
+    private fun invalidResult(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "AI_INVALID_RESPONSE", "AI 분석 결과가 계약과 다릅니다.")
     private fun invalid(): Nothing = throw BusinessException(HttpStatus.BAD_GATEWAY, "AI_INVALID_RESPONSE", "AI 분석 응답 형식이 올바르지 않습니다.")
     private companion object { val ERROR_CODE = Regex("[A-Z][A-Z0-9_]{0,79}") }
     @PreDestroy fun close() { timer.shutdownNow() }

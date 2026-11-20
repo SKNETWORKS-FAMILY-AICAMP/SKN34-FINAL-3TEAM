@@ -3,7 +3,7 @@ import { isShared, saveSharing, requireShared } from '../fixtures/sharing.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
 import type { Child, DemoScenario, Feedback, Period } from '../../domain/classroom.ts'
-import { previousWeek, thisWeek } from '../../domain/classroom.ts'
+import { thisWeek } from '../../domain/classroom.ts'
 import {
   mockAccounts,
   mockIdentity,
@@ -36,7 +36,6 @@ let child: Child | undefined = store.snapshot().session?.child,
   scenario: DemoScenario = 'normal'
 let mockRole = store.snapshot().session?.role
 const usedKeys = mockSubmissionReceipts
-const reports = new Map<string, { child: Child; period: Period }>()
 const conversations = new Map<string, { child: Child; period: Period }>()
 const selfChecks = new Map<string, Map<string, boolean>>()
 mockAccountChildren.set('parent@example.test', structuredClone(store.snapshot().children ?? []))
@@ -174,6 +173,17 @@ function studentOnly() {
   if (mockRole !== 'STUDENT' || !child)
     throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생만 바꿀 수 있는 설정입니다.' })
   return child
+}
+/** 답변 제출 본문의 thinkingSeconds·writingSeconds(api-spec 3.1). 없으면 null, 정수가 아니면 400 */
+function timingOf(data: Record<string, unknown>) {
+  const read = (name: 'thinkingSeconds' | 'writingSeconds') => {
+    const value = data[name]
+    if (value == null) return null
+    if (!Number.isInteger(value))
+      throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: `${name}는 정수 초여야 합니다.` })
+    return value as number
+  }
+  return { thinkingSeconds: read('thinkingSeconds'), writingSeconds: read('writingSeconds') }
 }
 const id = (value: string | readonly string[] | undefined) => {
   if (!value) throw new Error('경로 식별값이 없습니다.')
@@ -526,6 +536,8 @@ export const studentHandlers = [
         normalizeAnswer(data, a.mission),
         key,
         typeof data.followupId === 'string' ? data.followupId : undefined,
+        // 생각·작성 시간(3.1·P28). 정수가 아니면 실제 서버처럼 400
+        timingOf(data),
       )
       const answer = saved.answers.at(-1)!
       const response = {
@@ -642,46 +654,6 @@ export const studentHandlers = [
       requireShared(selected.id)
       return store.record(selected, id(params.attemptId))
     }),
-  ),
-  http.get('/api/v1/children/:childId/reports', ({ request, params }) =>
-    respond(async () => {
-      guard(request)
-      const c = await linked(id(params.childId))
-      const rows = []
-      for (const p of [previousWeek, thisWeek, { from: '2026-10-12', to: '2026-10-18' }]) {
-        const r = await store.report(c, p)
-        reports.set(r.reportId, { child: c, period: p })
-        rows.push(r)
-      }
-      return page(rows)
-    }),
-  ),
-  http.get('/api/v1/reports/:reportId', ({ request, params }) =>
-    respond(async () => {
-      guard(request)
-      const context = reports.get(id(params.reportId))
-      if (!context) throw new Error('목 리포트 없음')
-      const revision = new URL(request.url).searchParams.get('revision')
-      const r = await store.report(
-        context.child,
-        context.period,
-        revision ? Number(revision) : undefined,
-      )
-      return {
-        ...(isShared(context.child.id) ? r : { ...r, records: [], narrative: null, eveningQuestion: null }),
-        revisions: r.revisions.map((revision) => ({ revision })),
-        narrative: isShared(context.child.id) && r.narrative ? { text: r.narrative, source: 'TEMPLATE' } : null,
-        verification: { numbersMatched: true, quotesMatched: true },
-      }
-    }),
-  ),
-  http.post('/api/v1/reports/:reportId/regenerate', ({ request, params }) =>
-    respond(async () => {
-      guard(request)
-      const context = reports.get(id(params.reportId))!
-      await store.regenerate(await store.report(context.child, context.period))
-      return {}
-    }, 202),
   ),
   http.post('/api/v1/conversations', ({ request }) =>
     respond(async () => {

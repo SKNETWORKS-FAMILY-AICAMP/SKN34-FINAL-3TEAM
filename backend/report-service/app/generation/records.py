@@ -72,6 +72,9 @@ class AnswerRecord:
     # Present only for DONE judgments (API 4.1.1); None while pending/running/failed.
     judgment: JudgmentRecord | None = None
     followup: str | None = None
+    # P28: thinking (shown → first input) and writing (first input → submit) seconds.
+    thinking_seconds: int | None = None
+    writing_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +97,7 @@ class AttemptRecord:
     reflection: ReflectionRecord | None = None
     mission_id: UUID | None = None
     context: str | None = None
+    scheduled_day: str | None = None
 
 
 @dataclass(frozen=True)

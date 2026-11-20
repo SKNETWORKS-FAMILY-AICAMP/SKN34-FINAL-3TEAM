@@ -305,6 +305,30 @@ def eks_taints(group):
                   key=json.dumps)
 
 
+# eksctl이 managed nodegroup에 스스로 붙이는 라벨. cluster.json에 없으므로 비교에서 뺀다(#760)
+EKSCTL_LABEL_PREFIX = 'alpha.eksctl.io/'
+
+
+def nodegroup_labels(node):
+    return {k: v for k, v in (node.get('labels') or {}).items() if not k.startswith(EKSCTL_LABEL_PREFIX)}
+
+
+def nodegroup_disk(aws, node):
+    """Root volume GiB. eksctl은 launch template으로 노드그룹을 만들어 describe-nodegroup의 diskSize가 비므로
+    그때는 그 template 버전의 블록 장치에서 읽는다(#760). 읽지 못하면 None(DIFF로 남긴다)."""
+    if node.get('diskSize') is not None:
+        return node['diskSize']
+    template = node.get('launchTemplate') or {}
+    if not template.get('id'):
+        return None
+    found = aws('ec2', 'describe-launch-template-versions', '--launch-template-id', template['id'],
+                '--versions', str(template.get('version') or '$Default'), check=False)
+    versions = (found or {}).get('LaunchTemplateVersions') or []
+    mappings = (versions[0].get('LaunchTemplateData') or {}).get('BlockDeviceMappings') or [] if versions else []
+    sizes = [m['Ebs']['VolumeSize'] for m in mappings if (m.get('Ebs') or {}).get('VolumeSize') is not None]
+    return sizes[0] if sizes else None
+
+
 def plan_eks(aws, spec, report):
     config = json.loads((HERE / spec['eks']['config']).read_text(encoding='utf-8'))
     name = config['metadata']['name']
@@ -331,9 +355,9 @@ def plan_eks(aws, spec, report):
         good &= report.check('nodegroup', group['name'],
                              {'minSize': group['minSize'], 'desiredSize': group['desiredCapacity'], 'maxSize': group['maxSize']},
                              node['scalingConfig'], 'scaling')
-        good &= report.check('nodegroup', group['name'], group['volumeSize'], node.get('diskSize'), 'disk')
+        good &= report.check('nodegroup', group['name'], group['volumeSize'], nodegroup_disk(aws, node), 'disk')
         good &= report.check('nodegroup', group['name'], group['iam']['instanceRoleARN'], node['nodeRole'], 'node role')
-        good &= report.check('nodegroup', group['name'], group.get('labels', {}), node.get('labels') or {}, 'labels')
+        good &= report.check('nodegroup', group['name'], group.get('labels', {}), nodegroup_labels(node), 'labels')
         good &= report.check('nodegroup', group['name'], eks_taints(group),
                              sorted(node.get('taints') or [], key=json.dumps), 'taints')
         if good:
@@ -387,8 +411,10 @@ def tag_spec(spec, kind, name):
     return json.dumps([{'ResourceType': kind, 'Tags': tags}])
 
 
-def apply_missing(aws, spec, wait=time.sleep):
-    """Create resources reported MISSING. Existing resources are never changed or deleted."""
+def apply_missing(aws, spec, wait=time.sleep, create_rds=True):
+    """Create resources reported MISSING. Existing resources are never changed or deleted.
+    create_rds=False stops before the DB instance (its SG and subnet group are still made), so the DB can be
+    restored from a snapshot under the same identifier (#809 B account)."""
     net, created = spec['vpc'], []
     ids = discover(aws, spec)
     if 'vpc' not in ids:
@@ -491,7 +517,7 @@ def apply_missing(aws, spec, wait=time.sleep):
             '--db-subnet-group-description', rds['subnetGroup']['description'], '--subnet-ids',
             *[ids['subnets'][n]['SubnetId'] for n in rds['subnetGroup']['subnets']])
         created.append(('db-subnet-group', rds['subnetGroup']['name']))
-    if not aws('rds', 'describe-db-instances', '--db-instance-identifier', rds['id'], check=False):
+    if create_rds and not aws('rds', 'describe-db-instances', '--db-instance-identifier', rds['id'], check=False):
         aws('rds', 'create-db-instance', '--db-instance-identifier', rds['id'], '--engine', rds['engine'],
             '--engine-version', rds['version'], '--db-instance-class', rds['class'],
             '--allocated-storage', str(rds['storageGiB']), '--max-allocated-storage', str(rds['maxStorageGiB']),
@@ -812,6 +838,8 @@ def main(argv=None):
     apply_cmd = sub.add_parser('apply', help='create missing resources only')
     apply_cmd.add_argument('--confirm-account', required=True)
     apply_cmd.add_argument('--after-eksctl', action='store_true', help='add RDS ingress from the EKS cluster SG')
+    apply_cmd.add_argument('--without-rds', action='store_true',
+                           help='do not create the DB instance (restore it from a snapshot instead)')
     render = sub.add_parser('render-eksctl', help='write eksctl config with current subnet IDs')
     render.add_argument('--operator-cidr', action='append', required=True)
     render.add_argument('--out', required=True, type=Path)
@@ -845,7 +873,7 @@ def main(argv=None):
         report.print()
         return 0 if report.ok else 1
     if args.command == 'apply':
-        for kind, name in apply_missing(aws, spec) + create_missing_nodegroups(aws, spec):
+        for kind, name in apply_missing(aws, spec, create_rds=not args.without_rds) + create_missing_nodegroups(aws, spec):
             print('created', kind, name)
         if args.after_eksctl and allow_rds_from_cluster(aws, spec, discover(aws, spec)):
             print('created rds ingress from EKS cluster security group')

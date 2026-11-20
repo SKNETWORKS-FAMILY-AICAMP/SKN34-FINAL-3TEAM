@@ -23,21 +23,9 @@
 
 버전 표는 공식 문서의 호환 범위를 대조한 결과이며 이 조합의 실제 기동 성공을 의미하지 않는다. ingress-nginx를 유지한다는 사용자 결정을 반영했다. chart를 고정하면 기본 controller·admission 이미지와 digest도 해당 chart 버전의 정의를 사용한다. 고정 버전은 의도적인 업데이트 때 함께 검토한다.
 
-## 2026-10-26 기준 PC의 사전 확인
+## 설치 전 네트워크 확인
 
-| 조사 대상 | 확인한 대역·상태 |
-|---|---|
-| Windows Wi-Fi | `192.168.0.0/24` |
-| WSL 인터페이스와 Docker Desktop Linux 경로 | `172.17.16.0/20` |
-| Docker bridge | `172.17.0.0/16` |
-| 기존 Docker 프로젝트 네트워크 | `172.18.0.0/16`, `172.19.0.0/16` |
-| 후보 Pod / Service 대역 | 서로 및 위 대역과 중복 없음 |
-| Windows 활성 IPv4 경로 | 두 후보 대역으로 향하는 별도 VPN 경로는 관찰되지 않음 |
-| TCP 80·443·6443 | LISTEN 없음, Windows 예약 범위에도 포함되지 않음 |
-
-기본 경로 `0.0.0.0/0`는 모든 주소를 포함하므로 중복 판정 대상에서 제외한다. loopback·link-local·multicast 등은 Pod·Service 대역 후보와 구분한다. 기존 WSL·Docker 대역 자체의 관계를 수정하는 작업은 수행하지 않았다.
-
-이 결과는 현재 연결된 네트워크 기준이다. 같은 PC 사양이어도 다른 Wi-Fi·VPN·Docker 네트워크를 사용하면 다시 확인한다. kind가 새로 만드는 Docker `kind` 네트워크의 subnet도 생성 후 확인한다. 기존 Docker 네트워크를 삭제하거나 새 대역으로 강제 재생성하지 않는다.
+Pod·Service 대역이 PC의 Wi-Fi·WSL·Docker bridge·기존 Docker 네트워크·VPN 경로와 겹치지 않는지, TCP 80·443·6443이 비어 있는지 확인한다(2026-10-26 첫 PC에서 확인한 대역 표는 git 이력). 다른 Wi-Fi·VPN·Docker 네트워크를 쓰면 다시 확인한다.
 
 Windows에서 다시 확인할 명령:
 
@@ -103,14 +91,14 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --version 4.15.
 
 ### 5. 앱 배포
 
-앱 6종과 설명 sLLM 대역(`sllm-server`, #476)·관측도 같은 `sagomungchi-local` 클러스터에 배포한다. 별도 검증 클러스터를 두지 않는다. Secret 원본은 Compose와 같은 루트 `.env` 하나다.
+앱 6종과 리포트 Gemma SageMaker 엔드포인트 대역(`llm-stub`, #747·#835)·관측도 같은 `sagomungchi-local` 클러스터에 배포한다. 별도 검증 클러스터를 두지 않는다. Secret 원본은 Compose와 같은 루트 `.env` 하나다.
 
 ```powershell
 pwsh -File infrastructure/kind/create-app-secrets.ps1
 ```
 
 - 스크립트는 context·노드 이름을 검사한 뒤 `app/app-service-credentials`를 만든다. `.env`에 `GRAFANA_ADMIN_USER`·`GRAFANA_ADMIN_PASSWORD`가 있으면 `observability/observability-credentials`도 만든다. 값은 kubectl의 UTF-8 stdin으로만 전달하고, 같은 이름의 Secret이 이미 있으면 값을 대조해 다르면 아무것도 바꾸지 않고 멈춘다.
-- 앱 이미지는 `environments/local/*.yaml`의 `sagomungchi/*:local` 이름으로 빌드한다. `sllm-server`는 `docker build -t sagomungchi/llm-stub:local infrastructure/stubs/llm-stub`으로 만든 대역 이미지를 쓰고, 내려받을 MinIO 객체는 platform-data 초기화 Job이 만든다(#509). Docker의 다중 플랫폼 캐시 이미지는 `kind load docker-image`가 누락 digest로 실패할 수 있으므로 `docker image save --platform linux/amd64 -o <임시 archive> <이미지:local>` 뒤 `kind load image-archive <임시 archive> --name sagomungchi-local`로 로드하고 archive를 지운다.
+- 앱 이미지는 `environments/local/*.yaml`의 `sagomungchi/*:local` 이름으로 빌드한다. `llm-stub`은 `docker build -t sagomungchi/llm-stub:local infrastructure/stubs/llm-stub`으로 만든 대역 이미지를 쓴다. Docker의 다중 플랫폼 캐시 이미지는 `kind load docker-image`가 누락 digest로 실패할 수 있으므로 `docker image save --platform linux/amd64 -o <임시 archive> <이미지:local>` 뒤 `kind load image-archive <임시 archive> --name sagomungchi-local`로 로드하고 archive를 지운다.
 - Helm·kubectl 명령은 모든 호출에 `--kube-context kind-sagomungchi-local` 또는 `--context kind-sagomungchi-local`을 명시한다. 동기화 순서는 [local Argo CD 안내](../gitops/argocd/local/README.md)를 따른다.
 - 전체 앱·모델·관측을 한 번에 기동할 메모리 예산은 검증되지 않았다. platform → migration·core·learning → 나머지 API → worker·KEDA → 관측 순으로 자원을 확인하며 올린다.
 - 외부 연동 키(#236): `.env`에 값이 있는 Google·OpenAI/Anthropic·토스 테스트 키·`PAYMENT_*`만 앱 Secret에 넣는다. 토스는 `test_` 키만 허용하며 `live_` 키는 스크립트가 거부한다. 키를 바꾸면 기존 Secret과 값이 달라 스크립트가 멈추므로, 저장된 데이터와 무관한 앱 Secret만 `kubectl --context kind-sagomungchi-local -n app delete secret app-service-credentials`로 지운 뒤 다시 만들고 core·ai를 재시작한다. platform Secret은 지우지 않는다.
@@ -136,18 +124,6 @@ kubectl --context kind-sagomungchi-local -n platform get pods,jobs,pvc
 ```
 
 Compose를 중단할 때 업무 데이터를 유지하려면 `docker compose down`을 사용하고 `--volumes`를 붙이지 않는다. 선택 MinIO도 실행했다면 `docker compose -f compose.yaml -f compose.minio.yaml down`으로 중단한다. 기존 데이터 볼륨의 삭제와 클러스터 삭제는 별도의 작업으로 다룬다.
-
-## 이후 구현이 맞춰야 할 항목
-
-| 구현 대상 | 맞춰야 하는 기준 |
-|---|---|
-| Calico | kind의 Pod CIDR과 동일한 IP pool |
-| Ingress controller | 노드 라벨·hostPort·loopback 포트 매핑·class·자원 예산 |
-| platform-data | `platform` namespace, replica 1, 기존 Secret 참조, 자원·PVC 예산 |
-| RabbitMQ 초기화 | 기존 definitions 파일과 Service·Secret 연결 |
-| MinIO 초기화 | 단일 MinIO 볼륨 안의 확정 버킷 세 개 |
-| 후속 앱 chart | `app` namespace, `*.platform` Service DNS, 로컬 class `nginx` |
-| 최종 검증 | 명시적 context 사용, 다른 프로젝트의 클러스터·Docker 데이터 보존 |
 
 ## 근거
 

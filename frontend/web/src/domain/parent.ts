@@ -126,13 +126,23 @@ export interface DailyProblem {
   attemptId?: string
   title: string
   context: 'THEME_DAY' | 'THEME_REVIEW' | 'EXTRA' | null
+  scheduledDay?: 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | null
   judgment: 'CORRECT' | 'PARTIAL' | 'RETHINK' | 'HELD' | null
   followups: { question: string; answer: string | null }[]
   finalAnswer: string | null
   elements: { label: string; satisfied: boolean }[]
   reflection: { difficulty: string | null; text: string | null; written: boolean } | null
   quotes: { answerId: string; text: string; verified: boolean }[]
+  /** 답변별 생각·작성 시간(P28, #803). 시간 있는 답만 버전 순, 이전 응답에는 없을 수 있다. 원문 비공개여도 온다 */
+  answerTimes?: AnswerTime[]
 }
+export interface AnswerTime { version: number; thinkingSeconds: number; writingSeconds: number }
+const answerLabels: Record<number, string> = { 1: '처음 답', 2: '되묻기 뒤 답', 3: '두 번째 되묻기 뒤 답' }
+/** P28: 60초 미만은 "1분 미만", 그 밖은 분 단위 내림(report 파일과 같은 문구) */
+export const durationLabel = (seconds: number) => (seconds < 60 ? '1분 미만' : `${Math.floor(seconds / 60)}분`)
+/** "처음 답: 생각 N분 · 작성 N분". report `answer_time_line`과 같은 문구 */
+export const answerTimeLine = (t: AnswerTime) =>
+  `${answerLabels[t.version] ?? `${t.version - 1}번째 되묻기 뒤 답`}: 생각 ${durationLabel(t.thinkingSeconds)} · 작성 ${durationLabel(t.writingSeconds)}`
 /** 주간 리포트의 주간 테마 요약(FN-RPT-17, 구현 예정). */
 export interface ThemeSummary {
   state?: QueryState
@@ -291,4 +301,15 @@ export function analysisResultLabel(r: { source?: string; fallback?: AnalysisFal
   if (r.fallback?.reason === 'AI_UNAVAILABLE') return 'AI 응답 불가 · 확인된 기록으로 만든 규칙 응답'
   if (r.fallback?.reason === 'VERIFICATION_FAILED') return 'AI 초안 대조 실패 · 확인된 기록으로 만든 규칙 응답'
   return r.source === 'TEMPLATE' ? '확인된 기록으로 만든 규칙 응답' : '숫자·인용 대조 완료'
+}
+
+/** 일일 리포트 날짜는 KST 완료일. 기기 시간대와 무관하게 달력 날짜를 읽는다. */
+export function scheduledDayLine(problem: Pick<DailyProblem, 'context' | 'scheduledDay'>, completedDate: string): string | null {
+  if (problem.context !== 'THEME_DAY' && problem.context !== 'THEME_REVIEW') return null
+  const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+  const labels = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일']
+  const scheduled = days.indexOf(problem.scheduledDay ?? '')
+  const actual = new Date(`${completedDate}T00:00:00Z`).getUTCDay()
+  if (scheduled < 1 || scheduled > 5 || !Number.isInteger(actual) || actual === scheduled) return null
+  return `${labels[scheduled]} 문제 · ${labels[actual]}에 풀었어요`
 }

@@ -212,6 +212,12 @@ class OpenAICompatibleLlm(LlmClient):
                 response_format=response_format,  # type: ignore[arg-type]
                 max_completion_tokens=request.max_tokens,
                 timeout=request.timeout,
+                # vLLM 등 sLLM 서버 확장 파라미터. 지정한 요청에만 보냄
+                extra_body=(
+                    {"repetition_penalty": request.repetition_penalty}
+                    if request.repetition_penalty is not None
+                    else None
+                ),
             )
         except openai.APIConnectionError as exc:
             code = "LLM_TIMEOUT" if isinstance(exc, openai.APITimeoutError) else "LLM_CONNECTION"

@@ -9137,15 +9137,85 @@ components:
                   slotNo: {type: integer, minimum: 1, maximum: 6}
                   title: {type: string}
                   imageUrl: {type: ['string', 'null']}
+    CommunityAnswer:
+      type: object
+      additionalProperties: false
+      required: [inputType, text, content]
+      description: >-
+        공유한 마지막 답변(#825, api-spec 2.9). learning CommunitySharedAnswer를 core CommunityClient가 이 모양으로 확인한 뒤
+        원문 그대로 전달한다(위반은 502 COMMUNITY_INVALID_RESPONSE). text는 입력 틀 칸 이름을 붙인 원문(화면 표시용),
+        content는 inputType에 쓰는 칸만(api-spec 3.8). 메모·판정·되묻기 없음
+      properties:
+        inputType: {type: string, enum: [CHOICE, ORDERING, CLASSIFICATION, NARRATIVE, SOLUTION_STEPS, ESSAY]}
+        text: {type: string}
+        content: {type: object}
+      oneOf:
+        - properties:
+            inputType: {const: NARRATIVE}
+            content:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties:
+                text: {type: string}
+        - properties:
+            inputType: {const: SOLUTION_STEPS}
+            content:
+              type: object
+              additionalProperties: false
+              required: [finalAnswer, steps]
+              properties:
+                finalAnswer: {type: string}
+                steps: {type: array, items: {type: string}}
+        - properties:
+            inputType: {const: ESSAY}
+            content:
+              type: object
+              additionalProperties: false
+              required: [essay]
+              properties:
+                essay:
+                  type: object
+                  additionalProperties: false
+                  required: [claim, reasons, rebuttal]
+                  description: 논술 4칸(주장·까닭 2개·반대 의견에 답하기)
+                  properties:
+                    claim: {type: string}
+                    reasons: {type: array, minItems: 2, maxItems: 2, items: {type: string}}
+                    rebuttal: {type: string}
+        - properties:
+            inputType: {enum: [CHOICE, ORDERING]}
+            content:
+              type: object
+              additionalProperties: false
+              required: [choiceIds]
+              properties:
+                choiceIds: {type: array, items: {type: string}, description: 고르기는 1개, 순서는 학생이 정한 순서}
+        - properties:
+            inputType: {const: CLASSIFICATION}
+            content:
+              type: object
+              additionalProperties: false
+              required: [assignments]
+              properties:
+                assignments:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [choiceId, categoryId]
+                    properties:
+                      choiceId: {type: string}
+                      categoryId: {type: string}
     CommunityPost:
       type: object
       additionalProperties: false
       required: [postId, author, answer, myReactions, createdAt]
-      description: 학생 ID·반응 수 없음. answer는 learning 마지막 답변 content 그대로
+      description: 학생 ID·반응 수 없음. answer는 공유한 마지막 답변(CommunityAnswer)
       properties:
         postId: {type: string, format: uuid}
         author: {$ref: '#/components/schemas/CommunityAuthor'}
-        answer: {}
+        answer: {$ref: '#/components/schemas/CommunityAnswer'}
         myReactions: {type: array, items: {$ref: '#/components/schemas/CommunityReaction'}}
         createdAt: {type: ['string', 'null'], format: date-time}
     CommunityPostPage:
@@ -9164,7 +9234,7 @@ components:
         postId: {type: string, format: uuid}
         missionId: {type: ['string', 'null'], format: uuid}
         missionTitle: {type: ['string', 'null']}
-        answer: {}
+        answer: {$ref: '#/components/schemas/CommunityAnswer'}
         status: {$ref: '#/components/schemas/CommunityPostStatus'}
         reactions:
           type: object
@@ -9191,7 +9261,7 @@ components:
         available: {type: boolean}
         missionId: {type: ['string', 'null'], format: uuid}
         status: {$ref: '#/components/schemas/CommunityPostStatus'}
-        answer: {}
+        answer: {$ref: '#/components/schemas/CommunityAnswer'}
         authorStudentId: {type: string, format: uuid}
     StudentLookTheme: {type: string, enum: [lake, forest, factory, space, sea]}
     StudentLookCompanion: {type: string, enum: [mungchi, tori, mongdol, kongi, monggeul, snow, yarn, star, foam, paper, petal, ice], description: '동행 캐릭터 뭉치 친구들 12종(#697). 앞 5종은 기존 값, 뒤 7종은 웹 친구 id'}
@@ -11297,7 +11367,7 @@ components:
           versions:
             type: object
           problems:
-            description: 'DAILY만(P24, FN-RPT-14). 이용권과 관계없이 전체 제공한다. 보호자 공개(#206)가 꺼지면 core가 followups·quotes를 비우고 finalAnswer·reflection을 null로 바꾼다. 일일은 eveningQuestion·narrative가 항상 null이다.'
+            description: 'DAILY만(P24, FN-RPT-14). 이용권과 관계없이 전체 제공한다. 보호자 공개(#206)가 꺼지면 core가 followups·quotes를 비우고 finalAnswer·reflection을 null로 바꾼다(answerTimes는 유지). 일일은 eveningQuestion·narrative가 항상 null이다.'
             type: array
             items:
               $ref: '#/components/schemas/DailyReportProblem'
@@ -11324,6 +11394,10 @@ components:
           type: string
         title:
           type: string
+        scheduledDay:
+          type: [string, "null"]
+          enum: [MON, TUE, WED, THU, FRI, null]
+          description: "원래 예정 요일. EXTRA·이전 리포트는 null (#845)"
         context:
           enum:
           - THEME_DAY
@@ -11354,6 +11428,26 @@ components:
           type: array
           items:
             type: object
+        answerTimes:
+          description: '답변별 생각·작성 시간(P28, #803). 시간이 있는 답만 버전 순, 없으면 []. 원문이 아닌 수치라 보호자 공개(#206)가 꺼져도 core가 지우지 않는다. 이전 저장본은 report가 []로 준다.'
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - version
+            - thinkingSeconds
+            - writingSeconds
+            properties:
+              version:
+                type: integer
+                minimum: 1
+              thinkingSeconds:
+                type: integer
+                minimum: 0
+              writingSeconds:
+                type: integer
+                minimum: 0
     ReportEvidence:
       type: object
       additionalProperties: false

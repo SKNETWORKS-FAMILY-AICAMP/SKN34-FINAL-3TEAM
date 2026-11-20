@@ -200,6 +200,8 @@ export function makeDaily(c: Child, date: string, revision = 1): WeeklyReport {
         attemptId: a.attemptId,
         title: a.mission.title,
         context: 'THEME_DAY' as const,
+        // 목업 테마는 분석·평가·창의·해결·성찰 순서로 월~금 배치.
+        scheduledDay: ({ ANALYZE: 'MON', EVALUATE: 'TUE', CREATE: 'WED', SOLVE: 'THU', REFLECT: 'FRI' } as const)[a.mission.thinkingType],
         judgment: judged?.result ?? null,
         followups: a.answers.slice(1).map((v, i) => ({
           question: a.answers[i].feedback.followup?.question ?? '추가 생각을 적어 보세요.',
@@ -209,6 +211,11 @@ export function makeDaily(c: Child, date: string, revision = 1): WeeklyReport {
         elements: (judged?.elements ?? []).map((e) => ({ label: e.label, satisfied: e.satisfied })),
         reflection: a.reflection ? { difficulty: a.reflection.difficulty, text: a.reflection.text || null, written: true } : { difficulty: null, text: null, written: false },
         quotes: last ? [{ answerId: last.answerId, text: last.text, verified: true }] : [],
+        // P28: report처럼 두 시간이 있는 답만 버전 순(시연 저장소가 받은 값)
+        answerTimes: a.answers.flatMap((v) =>
+          v.thinkingSeconds != null && v.writingSeconds != null
+            ? [{ version: v.version, thinkingSeconds: v.thinkingSeconds, writingSeconds: v.writingSeconds }]
+            : []),
       }
     }),
     narrative: null,

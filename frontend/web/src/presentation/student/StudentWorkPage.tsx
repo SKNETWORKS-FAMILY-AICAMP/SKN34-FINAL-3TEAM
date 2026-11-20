@@ -29,6 +29,8 @@ import './world/mission-guide.css'
 import './world/work.css'
 import { ApiError } from '../../data/apiClient.ts'
 import { appendMemo, memoTargets } from '../../domain/memoTransfer.ts'
+import { hasTypedText, markInput, measureTiming, startRound } from '../../domain/answerTiming.ts'
+import type { AnswerTiming, TimingRound } from '../../domain/answerTiming.ts'
 
 /** onCompleted: 돌아보기까지 저장해 학습을 마무리한 직후(없으면 onBack). 엔딩이 되면 이야기의 끝으로 보내는 데 쓴다(#440). */
 export function StudentWorkPage({ attemptId, onBack, onHome, onCompleted }: { attemptId: string; onBack: () => void; onHome?: () => void; onCompleted?: () => void }) {
@@ -88,7 +90,19 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     [difficulty, setDifficulty] = useState<Reflection['difficulty'] | ''>(''),
     [reflection, setReflection] = useState('')
   const editVersion = useRef(0),
-    submission = useRef<{ signature: string; key: string } | null>(null)
+    // 같은 키로 다시 보낼 때 처음 잰 시간을 그대로 보낸다(core 멱등 비교가 본문 전체라 값이 바뀌면 422, P28)
+    submission = useRef<{ signature: string; key: string; timing: AnswerTiming } | null>(null)
+  // 생각·작성 시간 측정(P28): 답변 차례(최초·되묻기마다)의 표시 시각과 첫 입력 시각
+  const timing = useRef<TimingRound | null>(null)
+  const timingRound = latestFeedback(a)?.followup?.followupId ?? `v${a.answers.length}`
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  useEffect(() => {
+    if (timing.current?.round === timingRound) return
+    // 화면을 열 때 답 칸에 복원된 글이 있으면 새로고침 뒤 이어하기라 첫 입력 시각을 모른다(null)
+    const resumed = !timing.current && !!draftRef.current && hasTypedText(draftRef.current.answer)
+    timing.current = startRound(timingRound, performance.now(), resumed)
+  }, [timingRound])
   const resumedFeedback = useRef<string | null>(null)
   const title = useRef<HTMLHeadingElement>(null)
   const result = useRef<HTMLDivElement>(null)
@@ -187,6 +201,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     // 저장 요청의 내부 상태가 아니라 입력과 명시적인 저장 상태로 제어합니다.
   }, [dirty, draft, a, saveState, actions.submit.isPending, store])
   const change = (answer: AnswerContent) => {
+    // 직접 입력·'시작 문장'·'메모를 답에 넣기' 모두 첫 입력으로 본다(보호자 받아쓰기 표시·고르기는 글이 아니라 제외)
+    if (timing.current && draft) timing.current = markInput(timing.current, draft.answer, answer, performance.now())
     editVersion.current++
     setDraft((current) => (current ? { ...current, answer } : current))
     setDirty(true)
@@ -228,7 +244,11 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
       followupId: latestFeedback(a)?.followup?.followupId,
     })
     if (submission.current?.signature !== signature)
-      submission.current = { signature, key: crypto.randomUUID() }
+      submission.current = {
+        signature,
+        key: crypto.randomUUID(),
+        timing: measureTiming(timing.current, draft.answer, performance.now()),
+      }
     setError(null)
     setNotice('')
     try {
@@ -237,6 +257,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
         answer: draft.answer,
         key: submission.current!.key,
         followupId: latestFeedback(a)?.followup?.followupId,
+        timing: submission.current!.timing,
       })
       resumedFeedback.current = saved.answers.at(-1)!.answerId
       setFocusAnswerId(saved.answers.at(-1)!.answerId)
@@ -841,6 +862,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
               className="cj-secondary"
               onClick={() => {
                 setBackup(structuredClone(draft))
+                // 다른 곳에서 쓴 글로 바꾸면 이 화면의 첫 입력 시각이 맞지 않으므로 이번 답은 시간 없음(P28)
+                if (timing.current && hasTypedText(conflict.answer)) timing.current = { ...timing.current, resumed: true }
                 setDraft(conflict)
                 setConflict(null)
                 setDirty(false)
@@ -967,9 +990,13 @@ export function AnswerFields({
   answer: AnswerContent
   mission: LearningMission
   onChange: (a: AnswerContent) => void
-  /** 학생 답 쓰기: 빈 칸 안내와 글자 수(시안 MissionWrite "한두 문장이면 충분해요"). 관리자 미리보기는 그대로 */
+  /** 학생 답 쓰기: 빈 칸 안내와 글자 수(시안 MissionWrite "한두 문장이면 충분해요"), 붙여넣기 막기(P28). 관리자 미리보기는 그대로 */
   guide?: boolean
 }) {
+  // 학생 답변 칸만 붙여넣기·끌어다 놓기 막기(P28, 안내 문구 없음·입력 내용 유지). 관리자 미리보기(guide 없음)와 메모·돌아보기는 그대로
+  const noPaste = guide
+    ? { onPaste: (e: { preventDefault: () => void }) => e.preventDefault(), onDrop: (e: { preventDefault: () => void }) => e.preventDefault() }
+    : {}
   const field = (label: string, value: string, setter: (value: string) => void, placeholder?: string) => (
     <label className="cj-field">
       {label}
@@ -979,6 +1006,7 @@ export function AnswerFields({
         placeholder={guide ? placeholder : undefined}
         onChange={(e) => setter(e.target.value)}
         maxLength={2400}
+        {...noPaste}
       />
     </label>
   )
@@ -1005,7 +1033,7 @@ export function AnswerFields({
             최종 답
             <span className="ux-answer-unit">
               <input aria-label="최종 답" inputMode="decimal" value={v.finalAnswer}
-                maxLength={120} onChange={(e) => onChange({ ...v, finalAnswer: e.target.value })} />
+                maxLength={120} onChange={(e) => onChange({ ...v, finalAnswer: e.target.value })} {...noPaste} />
               {mission.answerUnit && <span aria-label="답 단위">{mission.answerUnit}</span>}
             </span>
             {mission.answerUnit && <small>숫자만 써 주세요.</small>}

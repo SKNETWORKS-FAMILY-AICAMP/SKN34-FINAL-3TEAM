@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
+import type { AnswerTiming } from '../../domain/answerTiming.ts'
 import type {
   AnswerContent,
   Attempt,
@@ -9,7 +10,6 @@ import type {
   Feedback,
   Period,
   Reflection,
-  Report,
 } from '../../domain/classroom.ts'
 import { apiFetch, notifyAuthChange, setAccessToken, unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
@@ -223,12 +223,14 @@ export function useLearningActions() {
       answer,
       key,
       followupId,
+      timing,
     }: {
       id: string
       answer: AnswerContent
       key: string
       followupId?: string
-    }) => gateway.submit(id, answer, key, followupId),
+      timing?: AnswerTiming
+    }) => gateway.submit(id, answer, key, followupId, timing),
     onSuccess: update,
   })
   const feedback = useMutation({
@@ -280,30 +282,12 @@ export function useLearningActions() {
   })
   return { start, save, hint, submit, feedback, finish, reflect }
 }
-export function useReport(child: Child | undefined, period: Period, revision?: number) {
-  return useQuery({
-    queryKey: ['report', child?.id, period.from, period.to, revision ?? 'latest'],
-    queryFn: () => gateway.report(child!, period, revision),
-    enabled: !!child,
-    retry: false,
-  })
-}
 export function useParentActions() {
-  const cache = useQueryClient()
-  const regenerate = useMutation({
-    mutationFn: (report: Report) => gateway.regenerate(report),
-    onSuccess: (report) => {
-      cache.setQueryData(
-        ['report', report.childId, report.period.from, report.period.to, 'latest'],
-        report,
-      )
-    },
-  })
   const analyze = useMutation({
     mutationFn: ({ child, period, question }: { child: Child; period: Period; question: string }) =>
       gateway.analyze(child, period, question),
   })
-  return { regenerate, analyze }
+  return { analyze }
 }
 
 /** 마무리한 시도의 이전·이번 답 비교(학생). 마무리 전에는 묻지 않는다. */
