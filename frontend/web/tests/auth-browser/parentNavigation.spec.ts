@@ -81,9 +81,19 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
 async function openReport(page: Page) {
   await page.getByRole('button', { name: '리포트 자세히 보기 일일·주간 리포트' }).click()
   await page.locator('.parent-report-grid').getByRole('button', { name: '자세히 보기', exact: true }).first().click()
+  await expect(page.getByRole('dialog').getByRole('region', { name: '리포트 내용', exact: true })).toBeVisible()
 }
 async function closeReport(page: Page) {
   await page.getByRole('dialog').getByRole('button', { name: /닫기$/ }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.locator('#parent-ai-conversation')).toHaveJSProperty('inert', false)
+}
+async function startReportConversation(page: Page) {
+  await page.getByRole('button', { name: '이 리포트로 질문하기', exact: true }).click()
+  // URL 전환과 모달 정리가 끝나기 전에는 배경 입력창에 포커스를 줄 수 없다.
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.locator('#parent-ai-conversation')).toHaveJSProperty('inert', false)
+  await expect(page.getByRole('button', { name: '전체 기록으로 질문하기', exact: true })).toBeVisible()
 }
 async function revealReport(page: Page) {
   await page.getByRole('button', { name: '리포트 근거 위치 보기', exact: true }).last().click()
@@ -186,15 +196,17 @@ for (const periodType of ['DAILY', 'WEEKLY'] as const) test(`${periodType} 리�
   await page.goto(`/parent/report?childId=${childId}`)
   await expect(page.getByRole('link', { name: 'AI 챗봇', exact: true })).toHaveCount(0)
   await openReport(page)
-  await page.getByRole('button', { name: '이 리포트로 질문하기', exact: true }).click()
+  await startReportConversation(page)
   await expect(page.getByLabel('기록에 대한 질문', { exact: true })).toBeVisible()
   await page.getByLabel('기록에 대한 질문', { exact: true }).fill('어떤 활동을 했나요?')
+  await expect(page.getByLabel('기록에 대한 질문', { exact: true })).toHaveValue('어떤 활동을 했나요?')
   await page.getByRole('button', { name: '질문 보내기', exact: true }).click()
   await expect(page.getByText('합성 기록으로 확인한 답변입니다.', { exact: true })).toBeVisible()
   const request = state.calls.find(call => call.path === '/conversations' && call.method === 'POST')!
   expect(request.body).toEqual(periodType === 'DAILY' ? { childId, reportId: 'report-1' } : { childId, ...state.period })
   await openReport(page)
-  await expect(page.getByRole('heading', { name: /^(일일|주간) 리포트$/ })).toBeVisible()
+  await expect(page.getByRole('region', { name: '리포트 내용', exact: true })
+    .getByRole('heading', { name: periodType === 'DAILY' ? '일일 리포트' : '주간 리포트', exact: true })).toBeVisible()
   if (periodType === 'DAILY') {
     await capture(page, 'report')
     await closeReport(page)
@@ -207,9 +219,11 @@ for (const periodType of ['DAILY', 'WEEKLY'] as const) test(`${periodType} 리�
 async function askReport(page: Page) {
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
-  await page.getByRole('button', { name: '이 리포트로 질문하기', exact: true }).click()
+  await startReportConversation(page)
   await page.getByLabel('기록에 대한 질문', { exact: true }).fill('어떤 활동을 했나요?')
+  await expect(page.getByLabel('기록에 대한 질문', { exact: true })).toHaveValue('어떤 활동을 했나요?')
   await page.getByRole('button', { name: '질문 보내기', exact: true }).click()
+  await expect(page.getByText('합성 기록으로 확인한 답변입니다.', { exact: true })).toBeVisible()
   await revealReport(page)
 }
 
@@ -260,7 +274,7 @@ test('일일 대화가 고정한 최신 판을 열고 선택 당시의 옛 판�
   const { controls, calls } = await parentServer(context, 'DAILY', true)
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
-  await page.getByRole('button', { name: '이 리포트로 질문하기', exact: true }).click()
+  await startReportConversation(page)
   controls.latestRevision = 2
   await page.getByLabel('기록에 대한 질문', { exact: true }).fill('기록을 알려 주세요')
   await page.getByRole('button', { name: '질문 보내기', exact: true }).click()

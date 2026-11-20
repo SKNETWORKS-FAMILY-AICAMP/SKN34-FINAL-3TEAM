@@ -23,8 +23,13 @@ test('header child selection persists across parent categories @responsive',asyn
  const picker=page.locator('.ws-header').getByRole('combobox',{name:'현재 자녀 선택'})
  await expect(picker).toBeVisible();await picker.selectOption('demo-doyun')
  await expect(page).toHaveURL(/childId=demo-doyun/)
- const selected=await picker.boundingBox(),bell=await page.getByRole('button',{name:'알림 열기'}).boundingBox()
- expect(selected && bell && selected.x+selected.width<=bell.x+1).toBeTruthy()
+ const notification=page.getByRole('button',{name:'알림 열기'})
+ await expect(notification).toBeVisible()
+ await expect.poll(async()=>{
+  const selected=await picker.boundingBox(),bell=await notification.boundingBox()
+  // 넓은 화면에서는 알림 왼쪽, 좁은 화면에서는 다음 줄에 표시하며 서로 겹치지 않는다.
+  return !!selected && !!bell && (selected.x+selected.width<=bell.x+1 || selected.y>=bell.y+bell.height-1)
+ }).toBe(true)
  await page.goto('/parent/settings');await expect(picker).toHaveValue('demo-doyun');await expect(page.getByRole('heading',{name:'도윤의 프로필'})).toBeVisible()
  await page.goto('/parent/notices');await expect(picker).toHaveValue('demo-doyun')
  await page.screenshot({path:info.outputPath('header-child-picker.png')})

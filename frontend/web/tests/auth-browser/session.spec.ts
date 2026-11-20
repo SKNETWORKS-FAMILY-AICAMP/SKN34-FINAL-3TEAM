@@ -48,7 +48,7 @@ async function authServer(context: BrowserContext) {
 
 async function profile(page: Page) {
   await expect(page).toHaveURL(/\/parent\/settings/)
-  await expect(page.getByRole('heading', { name: '본인 정보', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '보호자 정보', exact: true })).toBeVisible()
 }
 
 test('Google 복귀는 한 번 확인하고 15분 접근 토큰 갱신·새로고침 뒤에도 로그인한다', async ({ page, context }) => {
