@@ -586,7 +586,14 @@
 #class-journal .ws-parent .parent-consent-document { padding: 16px; background: var(--pd-bg); border-radius: 8px; }
 #class-journal .ws-parent summary { cursor: pointer; }
 #class-journal .ws-parent .parent-document-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; padding-top: 16px; max-height: 360px; overflow-y: auto; }
-#class-journal .ws-parent .parent-settings-panel .ws-grid { align-items: stretch; }
+#class-journal .ws-parent .parent-settings-panel .ws-grid { align-items: start; }
+#class-journal .ws-parent .parent-profile-guidance { margin-top: 24px; border-top: 1px solid var(--pd-line); padding-top: 16px; }
+#class-journal .ws-parent .parent-profile-guidance p { color: var(--pd-muted); font-size: 14px; }
+#class-journal .ws-parent .parent-account-effects { margin: 0; display: grid; gap: 0; }
+#class-journal .ws-parent .parent-account-effects > div { padding: 16px 0; border-bottom: 1px solid var(--pd-line); }
+#class-journal .ws-parent .parent-account-effects dt { font-weight: 600; margin-bottom: 6px; }
+#class-journal .ws-parent .parent-account-effects dd { margin: 0; color: var(--pd-muted); overflow-wrap: anywhere; }
+#class-journal .notification-child { margin: 0 0 8px; font-weight: 600; }
 #class-journal .ws-parent .parent-tabs { margin: 24px 0; gap: 24px; overflow-x: auto; }
 #class-journal .ws-parent .parent-report-downloads { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 16px; }
 #class-journal .ws-parent .parent-report-downloads button { width: 100%; }

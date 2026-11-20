@@ -11,7 +11,7 @@ async function parentLogin(page: Page) {
   await page.goto('/login')
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
-  await expect(page.getByRole('group', { name: '자녀 선택' }).locator('button[aria-pressed=true]')).toHaveCount(1)
+  await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toHaveCount(1)
 }
 
 async function studentLogin(page: Page) {
@@ -38,6 +38,8 @@ test('동의 없음: 친구 공개 선택지 옆에 보호자 동의가 필요�
 
 test('동의 후 공개 켜기: 대시보드 링크로 동의하고 자녀 화면에서 친구 공개를 켠다', async ({ page }) => {
   await parentLogin(page)
+  await page.getByRole('button', { name: '생각 활동 전체 보기', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '참여 기록', exact: true }).click()
   const card = page.getByRole('region', { name: /참여 기록/ })
   await expect(card.getByRole('note')).toContainText('아직 동의하지 않아')
   await card.getByRole('link', { name: '커뮤니티 동의하기' }).click()

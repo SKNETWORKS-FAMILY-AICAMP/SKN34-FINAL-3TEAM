@@ -78,8 +78,23 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
   return { calls, period, controls, report, children, entitlement }
 }
 
+async function openReport(page: Page) {
+  await page.getByRole('button', { name: '리포트 자세히 보기 일일·주간 리포트' }).click()
+  await page.locator('.parent-report-grid').getByRole('button', { name: '자세히 보기', exact: true }).first().click()
+}
+async function closeReport(page: Page) {
+  await page.getByRole('dialog').getByRole('button', { name: /닫기$/ }).click()
+}
+async function revealReport(page: Page) {
+  await page.getByRole('button', { name: '리포트 근거 위치 보기', exact: true }).last().click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+}
+async function showExplanation(page: Page) {
+  await page.getByRole('button', { name: '설명과 근거', exact: true }).click()
+}
+
 async function capture(page: Page, name: string) {
-  const out = '.taste-skill/parent-navigation'
+  const out = 'test-results/parent-navigation'
   await mkdir(out, { recursive: true })
   await page.evaluate(async () => Promise.all([...document.images].filter(img => new URL(img.src).origin === location.origin).map(async img => {
     const blob = await (await fetch(img.src)).blob()
@@ -118,14 +133,14 @@ test('로고는 홈으로 연결하고 자녀 추가는 계정·자녀 설정에
   expect(new URL(page.url()).searchParams.get('from')).toBe('2026-11-01')
 })
 
-test('PIN 자녀는 알약으로 한 명만 고르고 Google 없이 선택한 자녀에게 저장한다', async ({ page, context }) => {
+test('PIN 자녀는 상단 선택기로 한 명만 고르고 Google 없이 선택한 자녀에게 저장한다', async ({ page, context }) => {
   const state = await parentServer(context)
   await page.goto(`/parent/devices?childId=${childId}`)
-  const picker = page.getByRole('tablist', { name: 'PIN 설정할 자녀' })
+  const picker = page.getByRole('combobox', { name: '현재 자녀' })
   await expect(page.getByRole('group', { name: '자녀 선택' })).toHaveCount(0)
   await expect(page.getByRole('form', { name: / PIN$/ })).toHaveCount(1)
   await page.getByLabel('별빛 새 PIN', { exact: true }).fill('5090')
-  await picker.getByRole('tab', { name: '달빛' }).click()
+  await picker.selectOption(otherId)
   await expect(page.getByLabel('달빛 새 PIN', { exact: true })).toHaveValue('')
   const form = page.getByRole('form', { name: '달빛 PIN', exact: true })
   await form.getByLabel('달빛 새 PIN', { exact: true }).fill('4831')
@@ -146,7 +161,8 @@ test('상단 오른쪽 알림과 로그아웃 순서를 유지하고 수신 설�
     await page.setViewportSize({ width, height: 900 })
     const box = await bell.boundingBox()
     const logout = await page.locator('.ws-header .ws-logout').boundingBox()
-    expect(box!.x + box!.width).toBeLessThanOrEqual(logout!.x)
+    if (width > 600) expect(box!.x + box!.width).toBeLessThanOrEqual(logout!.x)
+    else { await expect(page.locator('.ws-header .ws-logout')).toBeHidden(); expect(box!.x + box!.width).toBeLessThanOrEqual(width) }
   }
   await bell.click()
   const dialog = page.getByRole('dialog', { name: '알림', exact: true })
@@ -169,19 +185,19 @@ for (const periodType of ['DAILY', 'WEEKLY'] as const) test(`${periodType} 리�
   const state = await parentServer(context, periodType)
   await page.goto(`/parent/report?childId=${childId}`)
   await expect(page.getByRole('link', { name: 'AI 챗봇', exact: true })).toHaveCount(0)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await openReport(page)
   await page.getByRole('button', { name: '이 리포트로 질문하기', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'AI에게 질문하기', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByLabel('기록에 대한 질문', { exact: true })).toBeVisible()
   await page.getByLabel('기록에 대한 질문', { exact: true }).fill('어떤 활동을 했나요?')
   await page.getByRole('button', { name: '질문 보내기', exact: true }).click()
   await expect(page.getByText('합성 기록으로 확인한 답변입니다.', { exact: true })).toBeVisible()
   const request = state.calls.find(call => call.path === '/conversations' && call.method === 'POST')!
   expect(request.body).toEqual(periodType === 'DAILY' ? { childId, reportId: 'report-1' } : { childId, ...state.period })
-  await page.getByRole('navigation', { name: '리포트·챗봇 보기' }).getByRole('button', { name: '리포트 보기', exact: true }).click()
-  await expect(page.getByRole('heading', { name: /리포트 상세$/ })).toBeVisible()
+  await openReport(page)
+  await expect(page.getByRole('heading', { name: /^(일일|주간) 리포트$/ })).toBeVisible()
   if (periodType === 'DAILY') {
     await capture(page, 'report')
-    await page.getByRole('button', { name: 'AI에게 질문하기', exact: true }).click()
+    await closeReport(page)
     await expect(page.getByText(/^질문할 기간 ·/)).not.toBeVisible()
     await page.getByRole('button', { name: '전체 기록으로 질문하기', exact: true }).click()
     await expect(page.getByText(/^질문할 기간 ·/)).toBeVisible()
@@ -190,10 +206,11 @@ for (const periodType of ['DAILY', 'WEEKLY'] as const) test(`${periodType} 리�
 
 async function askReport(page: Page) {
   await page.goto(`/parent/report?childId=${childId}`)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await openReport(page)
   await page.getByRole('button', { name: '이 리포트로 질문하기', exact: true }).click()
   await page.getByLabel('기록에 대한 질문', { exact: true }).fill('어떤 활동을 했나요?')
   await page.getByRole('button', { name: '질문 보내기', exact: true }).click()
+  await revealReport(page)
 }
 
 for (const periodType of ['DAILY', 'WEEKLY'] as const) test(`${periodType} 답변의 지표와 현재 열람 가능한 원문 위치만 초록 테두리로 연결한다`, async ({ page, context }) => {
@@ -207,6 +224,7 @@ for (const periodType of ['DAILY', 'WEEKLY'] as const) test(`${periodType} 답�
   await expect(marked.first()).toHaveCSS('outline-color', 'rgb(39, 112, 68)')
   expect(state.calls.some(call => call.path.endsWith('/message-1/evidence'))).toBe(true)
   if (periodType === 'DAILY') await capture(page, 'report-highlight')
+  await closeReport(page)
   await page.getByRole('button', { name: '새 대화', exact: true }).click()
   await expect(marked).toHaveCount(0)
 })
@@ -216,19 +234,24 @@ test('새 질문 처리 중 강조를 지우고 이전 답변 선택 시 그 근
   await askReport(page)
   const marked = page.locator('[data-answer-highlight=true]')
   await expect(marked).toHaveCount(2)
+  await closeReport(page)
   let release!: () => void
   controls.waitForReply = new Promise<void>(resolve => { release = resolve }); controls.omitSources = true
   await page.getByLabel('기록에 대한 질문', { exact: true }).fill('그밖에 확인할 내용은?')
   await page.getByRole('button', { name: '질문 보내기', exact: true }).click()
   await expect(marked).toHaveCount(0)
   release()
+  await expect(page.getByRole('button', { name: '리포트 근거 위치 보기', exact: true })).toHaveCount(2)
+  await revealReport(page)
   await expect(page.getByText('이 답변과 직접 연결된 항목이 현재 리포트 판에는 없습니다.')).toBeVisible()
+  await closeReport(page)
   const buttons = page.getByRole('button', { name: '리포트 근거 위치 보기', exact: true })
   await expect(buttons).toHaveCount(2)
   await page.setViewportSize({ width: 390, height: 900 })
   await buttons.first().click()
   await expect(marked).toHaveCount(2)
   await expect(marked.first()).toBeFocused()
+  await closeReport(page)
   await buttons.last().click()
   await expect(marked).toHaveCount(0)
 })
@@ -236,13 +259,14 @@ test('새 질문 처리 중 강조를 지우고 이전 답변 선택 시 그 근
 test('일일 대화가 고정한 최신 판을 열고 선택 당시의 옛 판에는 강조하지 않는다', async ({ page, context }) => {
   const { controls, calls } = await parentServer(context, 'DAILY', true)
   await page.goto(`/parent/report?childId=${childId}`)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await openReport(page)
   await page.getByRole('button', { name: '이 리포트로 질문하기', exact: true }).click()
   controls.latestRevision = 2
   await page.getByLabel('기록에 대한 질문', { exact: true }).fill('기록을 알려 주세요')
   await page.getByRole('button', { name: '질문 보내기', exact: true }).click()
+  await revealReport(page)
   await expect(page.locator('[data-answer-highlight=true]')).toHaveCount(2)
-  await expect(page.getByText(/실제 리포트 기간.*2판/)).toBeVisible()
+  await expect(page.getByText(/2026-11-09 ~ 2026-11-09 · 2판/)).toBeVisible()
   expect(calls.filter(call => call.path === '/conversations' && call.method === 'POST')).toHaveLength(1)
 })
 
@@ -253,6 +277,7 @@ test('현재 열람 불가한 원문은 표시하지 않고 근거 조회 실패
   const marked = page.locator('[data-answer-highlight=true]')
   await expect(marked).toHaveCount(1)
   await expect(marked.first()).toContainText('답변 제출 시도 수')
+  await closeReport(page)
   controls.evidenceFails = true
   await page.getByRole('button', { name: '리포트 근거 위치 보기', exact: true }).click()
   await expect(page.getByText('현재 답변 근거를 불러오지 못했습니다.', { exact: true })).toBeVisible()
@@ -266,7 +291,8 @@ test('다른 자녀를 고르면 답변 선택과 연결한 리포트를 함께 
   await parentServer(context, 'DAILY', true)
   await askReport(page)
   await expect(page.locator('[data-answer-highlight=true]')).toHaveCount(2)
-  await page.getByRole('group', { name: '자녀 선택' }).getByRole('button', { name: /달빛/ }).click()
+  await closeReport(page)
+  await page.getByRole('combobox', { name: '현재 자녀' }).selectOption(otherId)
   await expect(page.locator('[data-answer-highlight=true]')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '질문에 연결한 리포트', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '리포트 근거 위치 보기', exact: true })).toHaveCount(0)
@@ -279,27 +305,28 @@ test('전체 리포트도 주간·일일 그리드를 분리하고 목록과 상
   const { report, controls } = await parentServer(context, 'WEEKLY')
   controls.extraReports.push({ ...report, reportId: 'daily-report', periodType: 'DAILY', period: { from: '2026-11-09', to: '2026-11-09' } })
   await page.goto(`/parent/report?childId=${childId}`)
+  await page.getByRole('button', { name: '리포트 자세히 보기 일일·주간 리포트' }).click()
   const weekly = page.getByRole('region', { name: '주간 리포트', exact: true })
   const daily = page.getByRole('region', { name: '일일 리포트', exact: true })
   await expect(weekly.getByRole('article')).toHaveCount(1)
   await expect(daily.getByRole('article')).toHaveCount(1)
   await expect(weekly.getByRole('heading', { name: '주간 리포트' })).toHaveCSS('color', 'rgb(39, 112, 68)')
   await capture(page, 'report-list-groups')
-  await weekly.getByRole('button', { name: '리포트 보기', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '리포트 상세', exact: true })).toBeVisible()
+  await weekly.getByRole('button', { name: '자세히 보기', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '주간 리포트', exact: true })).toBeVisible()
   await expect(weekly).toHaveCount(0)
   await expect(daily).toHaveCount(0)
   await capture(page, 'report-main-detail')
   await page.goBack()
   await expect(weekly).toBeVisible()
   await page.goForward()
-  await expect(page.getByRole('heading', { name: '리포트 상세', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '주간 리포트', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '리포트 목록으로 돌아가기', exact: true }).click()
   await expect(weekly).toBeVisible()
   await expect(daily).toBeVisible()
   expect(new URL(page.url()).searchParams.has('reportId')).toBe(false)
-  await daily.getByRole('button', { name: '리포트 보기', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '일일 리포트 상세', exact: true })).toBeVisible()
+  await daily.getByRole('button', { name: '자세히 보기', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '일일 리포트', exact: true })).toBeVisible()
   // 상세에서 메뉴로 리포트를 다시 누르면 목록으로 돌아가야 한다 (메뉴 링크가 reportId를 이어가지 않음)
   const reportMenu = page.getByRole('link', { name: '리포트·AI 챗봇', exact: true })
   for (const href of await reportMenu.evaluateAll(links => links.map(link => link.getAttribute('href') ?? ''))) {
@@ -307,11 +334,13 @@ test('전체 리포트도 주간·일일 그리드를 분리하고 목록과 상
     expect(query.has('reportId')).toBe(false)
     expect(query.get('childId')).toBe(childId)
   }
+  await closeReport(page)
   await reportMenu.filter({ visible: true }).first().click()
+  await page.getByRole('button', { name: '리포트 자세히 보기 일일·주간 리포트' }).click()
   await expect(weekly).toBeVisible()
   await expect(daily).toBeVisible()
   expect(new URL(page.url()).searchParams.has('reportId')).toBe(false)
-  await daily.getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await daily.getByRole('button', { name: '자세히 보기', exact: true }).click()
   await page.getByRole('button', { name: '리포트 목록으로 돌아가기', exact: true }).click()
   await page.getByLabel('리포트 종류', { exact: true }).selectOption('WEEKLY')
   await expect(weekly).toBeVisible()
@@ -331,15 +360,20 @@ test('일일·주간 리포트에서 돌아보기 난이도를 화면 문구로 
       { ...reflection, difficulty: '쉬웠어요', text: '이유가 떠올랐어요.', attemptId: 'weekly-2' }] })
 
   await page.goto(`/parent/report?childId=${childId}&view=reports&reportId=report-1`)
-  await expect(page.getByText('돌아보기 · 보통 까닭을 한 문장 더 적었어요.', { exact: true })).toBeVisible()
-  await expect(page.getByText('돌아보기 · 다시 생각했어요.', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '활동 기록', exact: true }).click()
+  for (const item of await page.locator('details.report-answer-comparison > summary').all()) await item.click()
+  await expect(page.getByText('보통', { exact: true })).toBeVisible()
+  await expect(page.getByText('까닭을 한 문장 더 적었어요.', { exact: true })).toBeVisible()
+  await expect(page.getByText('다시 생각했어요.', { exact: true })).toBeVisible()
   await expect(page.getByText(/NORMAL|UNKNOWN_LEVEL/)).toHaveCount(0)
-
   await page.getByRole('button', { name: '리포트 목록으로 돌아가기' }).click()
-  await page.getByRole('region', { name: '주간 리포트', exact: true })
-    .getByRole('button', { name: '리포트 보기', exact: true }).click()
-  await expect(page.getByText('보통 · 까닭을 한 문장 더 적었어요.', { exact: true })).toBeVisible()
-  await expect(page.getByText('쉬웠어요 · 이유가 떠올랐어요.', { exact: true })).toBeVisible()
+  await page.getByRole('region', { name: '주간 리포트', exact: true }).getByRole('button', { name: '자세히 보기', exact: true }).click()
+  await page.getByRole('button', { name: '활동 기록', exact: true }).click()
+  await expect(page.getByText('보통', { exact: true })).toBeVisible()
+  await expect(page.getByText('까닭을 한 문장 더 적었어요.', { exact: true })).toBeVisible()
+  await page.getByLabel('주간 리포트 활동 선택').selectOption('weekly-2')
+  await expect(page.getByText('쉬웠어요', { exact: true })).toBeVisible()
+  await expect(page.getByText('이유가 떠올랐어요.', { exact: true })).toBeVisible()
   await expect(page.getByText(/NORMAL/)).toHaveCount(0)
 })
 
@@ -351,7 +385,8 @@ test('상세 설명 구역과 개선 목록을 화면 폭에 맞춰 읽고 보�
   report.explanations = { state: 'INCLUDED', items: [{ ...explanation, text: JSON.stringify(content) },
     { ...explanation, answerId: 'no-difficulty', missionTitle: '이유를 연결한 글', text: JSON.stringify({ ...content, improvement_points: null }) }] }
   await page.goto(`/parent/report?childId=${childId}`)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await openReport(page)
+  await showExplanation(page)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   const first = area.getByRole('article').first()
   await expect(first.getByRole('heading', { name: '상세 분석', exact: true })).toBeVisible()
@@ -359,10 +394,13 @@ test('상세 설명 구역과 개선 목록을 화면 폭에 맞춰 읽고 보�
   await expect(first.getByRole('heading', { name: '개선 방안', exact: true })).toBeVisible()
   await expect(first.getByRole('listitem')).toHaveText(content.next_steps)
   await expect(first.getByRole('list')).toHaveCSS('list-style-type', 'disc')
-  await expect(first.locator('blockquote')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await first.locator('summary').click()
+  await expect(first.locator('blockquote')).toBeVisible()
   await expect(first.locator('.report-explanation-section').first().locator('p')).toHaveCount(2)
-  await expect(first.locator('.report-explanation-copy').first()).toHaveCSS('font-size', '18px')
-  await expect(area.getByRole('article').nth(1).getByRole('heading', { name: '보완할 지점', exact: true })).toHaveCount(0)
+  expect(parseFloat(await first.locator('.report-explanation-copy').first().evaluate(el => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16)
+  await page.getByLabel('설명할 답변 선택').selectOption('no-difficulty')
+  await expect(area.getByRole('heading', { name: '보완할 지점', exact: true })).toHaveCount(0)
+  await page.getByLabel('설명할 답변 선택').selectOption(explanation.answerId)
   for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 900 })
     await first.scrollIntoViewIfNeeded()
@@ -370,7 +408,7 @@ test('상세 설명 구역과 개선 목록을 화면 폭에 맞춰 읽고 보�
     expect(await first.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
   }
   await capture(page, 'report-explanation-sections')
-  await first.screenshot({ path: '.taste-skill/parent-navigation/report-explanation-card.png' })
+  await first.screenshot({ path: 'test-results/parent-navigation/report-explanation-card.png' })
 })
 
 test('#479: 인용 없는 검증 설명은 요약 검증 실패와 독립적으로 표시한다', async ({ page, context }) => {
@@ -378,9 +416,11 @@ test('#479: 인용 없는 검증 설명은 요약 검증 실패와 독립적으�
   report.explanations = { state: 'INCLUDED', items: [{ ...explanation, quote: null }] }
   report.verification = { numbersMatched: false, quotesMatched: false }
   await page.goto(`/parent/report?childId=${childId}`)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await openReport(page)
+  await showExplanation(page)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   await expect(area.getByRole('article')).toHaveCount(1)
+  await area.locator('summary').click()
   await expect(area.locator('blockquote')).toHaveText('나무는 그늘을 만들어 줍니다. 더운 날 그늘에서 쉬면 시원합니다. 그래서 나무를 보호해야 합니다.')
   await expect(area.getByText(explanation.text, { exact: true })).toBeVisible()
 })
@@ -390,15 +430,20 @@ test('#481: 주간 설명 카드의 미션·유형·인용·설명과 AI 관찰�
   children[0].grade = 5
   report.explanations = { state: 'INCLUDED', items: [explanation, { ...explanation, answerId: 'answer-two', thinkingType: 'CREATE', missionTitle: '새로운 나무집' }] }
   await page.goto(`/parent/report?childId=${childId}`)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await openReport(page)
+  await showExplanation(page)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
-  await expect(area.getByRole('article')).toHaveCount(2)
+  await expect(page.getByLabel('설명할 답변 선택').locator('option')).toHaveCount(2)
+  await expect(area.getByRole('article')).toHaveCount(1)
   await expect(area.getByRole('heading', { name: explanation.missionTitle, exact: true })).toBeVisible()
-  await expect(area.getByText('AI 관찰', { exact: true })).toHaveCount(2)
+  await expect(area.getByText('AI 관찰', { exact: true })).toHaveCount(1)
   await expect(area.getByText('분석하기 ·', { exact: false })).toBeVisible()
-  await expect(area.getByRole('heading', { name: '학생 글 전체', exact: true })).toHaveCount(2)
+  await area.locator('summary').click()
+  await expect(area.getByRole('heading', { name: '학생 글 전체', exact: true })).toHaveCount(1)
   await expect(area.locator('blockquote').first()).toHaveText('나무는 그늘을 만들어 줍니다. 더운 날 그늘에서 쉬면 시원합니다. 그래서 나무를 보호해야 합니다.')
-  await expect(area.getByText(explanation.text, { exact: true })).toHaveCount(2)
+  await expect(area.getByText(explanation.text, { exact: true })).toHaveCount(1)
+  await page.getByLabel('설명할 답변 선택').selectOption('answer-two')
+  await expect(area.getByRole('heading', { name: '새로운 나무집', exact: true })).toBeVisible()
   await capture(page, 'report-explanations')
 })
 
@@ -408,11 +453,13 @@ for (const [state, notice] of [
   const { report } = await parentServer(context, 'WEEKLY', true)
   report.explanations = state == null ? state : { state, items: [] }
   await page.goto(`/parent/report?childId=${childId}`)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await openReport(page)
+  await showExplanation(page)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   await expect(area.getByRole('note')).toContainText(notice)
   await expect(area.getByRole('article')).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: '답변 제출 시도 수', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '요약', exact: true }).click()
+  await expect(page.locator('.report-count-list').getByText('답변 제출 시도 수', { exact: true })).toBeVisible()
   await expect(page.getByText('리포트 생성에 실패했습니다. 기록 없음과는 다릅니다.')).toHaveCount(0)
 })
 
@@ -427,9 +474,10 @@ for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481:
   if (kind === 'PRIVATE') report.parentSharingEnabled = false
   if (kind === 'INVALID') report.explanations.items = []
   await page.goto(`/parent/report?childId=${childId}`)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await openReport(page)
   await expect(page.getByText(explanation.quote, { exact: true })).toHaveCount(0)
   await expect(page.getByText(explanation.text, { exact: true })).toHaveCount(0)
+  await showExplanation(page)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   if (kind === 'DAILY') await expect(area).toHaveCount(0)
   else await expect(area.getByRole('note')).toContainText(kind === 'FREE' ? '프리미엄' : kind === 'PRIVATE' ? '비공개' : '확인하지 못했습니다.')
@@ -442,8 +490,10 @@ for (const mode of ['unavailable', 'version', 'failure'] as const) test(`원문 
   if (mode === 'version') controls.originalVersion = 99
   if (mode === 'failure') await context.route('**/reports/report-1/evidence/explanation-original', route => route.fulfill({ status: 503, json: { code: 'UNAVAILABLE', title: '원문 조회 실패' } }))
   await page.goto(`/parent/report?childId=${childId}`)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await openReport(page)
+  await showExplanation(page)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
+  await area.locator('summary').click()
   await expect(area.getByText('이 설명에 연결된 원문 전체를 확인할 수 없습니다.')).toBeVisible()
   await expect(area.locator('blockquote')).toHaveCount(0)
   await expect(area.getByText(explanation.text, { exact: true })).toBeVisible()
