@@ -1609,9 +1609,6 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 - 11/25 A 확인 순서: digest PR 생성 → ci-gitops → 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
 - 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push, `gh pr create --base main`, `gh workflow run ci-gitops.yml --ref <브랜치>` 호출까지.
 - 한계: digest PR 작성자가 봇이라 실행한 사람도 승인할 수 있다(Environment `prod`와 같음, 운영 규칙으로 다른 사람 승인 권장). `GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않는다. 실제 images 파일(#857)은 아직 develop에 없어 #857 병합 뒤 실제 파일로 시험을 다시 돌린다(`RealImagesFileTests`).
-## 9.18 prod Argo CD 전환 (#859, 2026-11-20)
-
-운영(EKS) 배포를 B 계정 첫 배포(11/28)부터 Argo CD로 하기로 결정했다(에픽 #859). 11/25 A 재가동에서 먼저 확인한다. 하위 절: 9.18.1 설치 값과 root app(#855), 9.18.2 플랫폼 Application(#856), 9.18.3 앱 ApplicationSet과 migration(#857), 9.18.4 digest 갱신 PR(#858).
 
 ## 10. 근거 링크
 

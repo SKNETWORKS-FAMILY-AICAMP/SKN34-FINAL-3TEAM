@@ -722,16 +722,42 @@ def test_old_daily_problem_has_null_schedule():
 
 
 @pytest.mark.parametrize(
-    ("code", "label"),
-    [("EASY", "쉬웠어요"), ("NORMAL", "보통"), ("HARD", "어려웠어요"), ("UNKNOWN", "UNKNOWN")],
+    ("difficulty", "written", "label"),
+    [
+        ("EASY", True, "쉬웠어요"),
+        ("NORMAL", True, "보통"),
+        ("HARD", True, "어려웠어요"),
+        ("UNKNOWN_LEVEL", True, ""),
+        (None, False, "미작성"),
+    ],
 )
-def test_daily_markdown_reflection_shows_difficulty_label(db_session, code, label):
-    """#860: 일일 Markdown 돌아보기는 HTML·주간 Markdown처럼 화면 문구로, 모르는 코드는 그대로."""
-    command, records, learning = daily_fixture()
-    detail = daily_detail(command, records, learning, db_session)
-    detail["problems"][0]["reflection"]["difficulty"] = code
-    markdown = ReportRenderer.markdown(detail, "합성학생")
-    reflection = markdown[markdown.index("### 돌아보기") :].splitlines()
-    assert reflection[1] == label
-    if code != label:
-        assert code not in markdown
+def test_daily_markdown_localizes_reflection(difficulty, written, label):
+    reflection = {
+        "difficulty": difficulty,
+        "written": written,
+        "text": "생각을 덧붙였어요." if written else None,
+    }
+    report = {
+        "periodType": "DAILY",
+        "period": {"from": "2026-11-19", "to": "2026-11-19"},
+        "revision": 1,
+        "state": "OK",
+        "metrics": [],
+        "problems": [
+            {
+                "title": "미션",
+                "judgment": None,
+                "followups": [],
+                "finalAnswer": None,
+                "elements": [],
+                "reflection": reflection,
+                "quotes": [],
+            },
+        ],
+    }
+
+    markdown = ReportRenderer.markdown(report, "합성학생")
+
+    assert f"### 돌아보기\n{label}\n{reflection['text'] or ''}" in markdown
+    assert difficulty is None or difficulty not in markdown
+    assert reflection["difficulty"] == difficulty

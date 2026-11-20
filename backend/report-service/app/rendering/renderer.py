@@ -178,11 +178,11 @@ class ReportRenderer:
                         safe(element["label"]) + (": 확인" if element["satisfied"] else ": 미확인")
                     )
                 reflection = problem["reflection"]
-                difficulty = reflection["difficulty"]
+                difficulty = DIFFICULTY_LABELS.get(reflection["difficulty"], "")
                 lines.extend(
                     [
                         "### 돌아보기",
-                        safe(DIFFICULTY_LABELS.get(difficulty, difficulty) or "미작성"),
+                        safe(difficulty) if reflection["written"] else "미작성",
                         safe(reflection["text"] or ""),
                     ]
                 )
