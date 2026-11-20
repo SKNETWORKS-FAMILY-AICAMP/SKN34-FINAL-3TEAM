@@ -28,7 +28,7 @@ def test_versions_returns_active_prompt_versions() -> None:
             "reportNarrative": "report@2",
             "reportTemplate": "analysis-template@1",
             "missionDraft": "mission-draft@1",
-            "reportExplanation": "report-explanation@3",
+            "reportExplanation": "report-explanation@4",
             "themeDraft": "theme-draft@3",
             "memoryExplanation": "memory-explanation@1",
             "memoryQuery": "memory-query@1",

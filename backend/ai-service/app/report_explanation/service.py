@@ -14,6 +14,12 @@
 
 LLM 실패·미설정·마감 초과는 503 AI_UNAVAILABLE, 검사 실패는 422 AI_EXPLANATION_REJECTED.
 어느 쪽이든 report는 그 설명만 빼고 "설명 미포함"으로 둠 (P16).
+
+재생성 (2026-11-20, LoRA 반복 대응): 첫 출력이 출력 한도까지 같은 말을 되풀이했거나
+(LLM_INVALID_OUTPUT), 정리·반복 제거 뒤 부족하면(상세 분석이 없음, 문장 셋 중 하나 이상이
+반복, 쓴 개선 방안이 통째로 빠짐) 같은 마감 안에서 반복 억제(repetition_penalty)를 켜고
+한 번만 다시 만든다. 같은 요청을 그대로 다시 보내는 중복 접수가 아니라 설정을 바꾼 새 요청이다.
+다시 만든 출력도 부족하면 422로 설명 미포함.
 """
 
 import logging
@@ -38,6 +44,8 @@ from app.report_explanation.models import (
 
 logger = logging.getLogger(__name__)
 LOCAL_SKIP_REGISTRY = "EXPLANATION_LOCAL_SKIP_REGISTRY"
+REGENERATE_PENALTY = 1.1
+REPEATED_SHARE = 1 / 3
 
 
 def skip_registry() -> bool:
@@ -63,7 +71,9 @@ class ExplanationService:
                 return InactiveExplanationResponse()
             model_label = f"{model.name}@{model.version}"
         prompt = self._versions.prompt("reportExplanation")
-        try:
+        deadline = time.monotonic() + self._settings.explanation_deadline
+
+        async def generate(penalty: float | None) -> ExplanationDetail:
             result = await self._llm.generate(
                 system=prompt.body.SYSTEM,
                 user=prompt.body.build_user(request.grade, request.topic, request.text),
@@ -71,13 +81,30 @@ class ExplanationService:
                 call_type="REPORT_EXPLANATION",
                 prompt_version=prompt.version,
                 max_tokens=self._settings.explanation_max_tokens,
-                deadline=time.monotonic() + self._settings.explanation_deadline,
-                # One synchronous SageMaker call; never resubmitted within this request.
+                deadline=deadline,
+                # 한 번의 동기 SageMaker 호출을 그대로 재접수하지 않는다. 재생성은 아래에서 한 번만.
                 max_retries=0,
+                repetition_penalty=penalty,
             )
+            return result.data
+
+        try:
+            try:
+                detail: ExplanationDetail | None = await generate(None)
+            except LlmUnavailable as exc:
+                if exc.code != "LLM_INVALID_OUTPUT":
+                    raise
+                detail = None  # 출력 한도까지 반복했거나 형식이 깨짐
+            report = checks.cleaned(detail, request.text) if detail else None
+            if detail is None or report is None or insufficient(detail, report):
+                logger.info("리포트 상세 설명 재생성(반복 억제)")
+                detail = await generate(REGENERATE_PENALTY)
+                report = checks.cleaned(detail, request.text)
+                if insufficient(detail, report):
+                    raise rejected()
         except LlmUnavailable as exc:
             raise ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable) from exc
-        sections = checks.parts(result.data, request.text)
+        sections = report.sections
         if not sections or sections[0][0] != "상세 분석":
             raise rejected()
         if not all(checks.allowed(body, request.text) for _, body in sections):
@@ -89,6 +116,16 @@ class ExplanationService:
             explanation=Explanation(text=text, quote=quote),
             versions=LlmVersions(model=model_label, prompt=prompt.version),
         )
+
+
+def insufficient(detail: ExplanationDetail, report: checks.Cleaned) -> bool:
+    """정리·반복 제거 뒤 쓸 만한 설명이 남지 않았는지"""
+    if not report.sections or report.sections[0][0] != "상세 분석":
+        return True
+    if report.repeated and report.repeated >= report.sentences * REPEATED_SHARE:
+        return True
+    wrote_next_steps = bool(detail.next_steps and detail.next_steps.strip())
+    return wrote_next_steps and all(title != "개선 방안" for title, _ in report.sections)
 
 
 def rejected() -> ApiError:

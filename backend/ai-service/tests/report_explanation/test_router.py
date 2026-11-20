@@ -42,7 +42,7 @@ def test_active_response_uses_camel_case_and_nullable_quote() -> None:
             ),
             "quote": None,
         },
-        "versions": {"model": "report-explanation@lora-1", "prompt": "report-explanation@3"},
+        "versions": {"model": "report-explanation@lora-1", "prompt": "report-explanation@4"},
     }
 
 
@@ -61,7 +61,8 @@ def test_scores_must_match_input_type_and_range() -> None:
 
 
 def test_rejected_and_unavailable_problems() -> None:
-    rejected = post(FakeLlm(detail(analysis="4점짜리 글입니다.")))
+    bad = detail(analysis="4점짜리 글입니다.")
+    rejected = post(FakeLlm(bad, bad))  # 한 번 다시 만들어도 검사에 걸리면 422
     assert rejected.status_code == 422
     assert rejected.json()["code"] == "AI_EXPLANATION_REJECTED"
     assert rejected.json()["retryable"] is False

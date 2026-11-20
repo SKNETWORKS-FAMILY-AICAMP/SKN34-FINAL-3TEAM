@@ -77,7 +77,7 @@ def test_one_call_becomes_titled_detail_with_quote_and_registry_version() -> Non
     assert result.explanation.quote == "왜냐하면 강아지는 산책을 좋아해서 운동이 된다."
     assert result.versions.model_dump() == {
         "model": "report-explanation@lora-1",
-        "prompt": "report-explanation@3",
+        "prompt": "report-explanation@4",
     }
     [request] = llm.requests
     assert request.user.splitlines()[:3] == [
@@ -116,12 +116,54 @@ def test_prompt_with_same_name_does_not_activate_model() -> None:
     assert isinstance(explain(FakeLlm(), versions=versions), InactiveExplanationResponse)
 
 
-def test_analysis_left_empty_after_cleaning_is_422_not_retryable() -> None:
-    llm = FakeLlm(detail(analysis="점수가 낮은 글입니다. 등급은 보통입니다."))
+def test_analysis_left_empty_after_cleaning_is_422_after_one_regeneration() -> None:
+    bad = detail(analysis="점수가 낮은 글입니다. 등급은 보통입니다.")
+    llm = FakeLlm(bad, bad)
     with pytest.raises(ApiError) as error:
         explain(llm)
     assert (error.value.status, error.value.code) == (422, "AI_EXPLANATION_REJECTED")
     assert error.value.extra == {"retryable": False}
+    assert [request.repetition_penalty for request in llm.requests] == [None, 1.1]
+
+
+def test_repeated_sentences_trigger_one_regeneration_with_repetition_penalty() -> None:
+    same = "필통의 색과 그림은 썼지만 그 물건이 왜 소중한지는 아직 드러나지 않습니다."
+    looping = detail(analysis=same, improvement_points=same, next_steps=same)
+    llm = FakeLlm(looping, detail())
+    result = explain(llm)
+    assert isinstance(result, ActiveExplanationResponse)
+    assert "강아지가 산책을 좋아해서" in result.explanation.text
+    assert [request.repetition_penalty for request in llm.requests] == [None, 1.1]
+
+
+def test_a_single_repeat_is_dropped_without_regeneration() -> None:
+    analysis = (
+        "강아지가 산책을 좋아해서 운동이 된다는 까닭을 들어 주장을 펼쳤습니다. "
+        "주장과 까닭이 바로 이어져 읽기 쉽습니다. 산책 이야기로 생활과 연결했습니다."
+    )
+    llm = FakeLlm(
+        detail(
+            analysis=analysis,
+            improvement_points=(
+                "다만, 키우고 싶은 까닭과 운동 이야기의 연결이 짧습니다. "
+                "주장과 까닭이 바로 이어져 읽기 쉽습니다."
+            ),
+        )
+    )
+    result = explain(llm)
+    assert isinstance(result, ActiveExplanationResponse)
+    assert result.explanation.text.count("주장과 까닭이 바로 이어져 읽기 쉽습니다.") == 1
+    assert len(llm.requests) == 1
+
+
+def test_still_insufficient_after_regeneration_is_422() -> None:
+    same = "필통의 색과 그림은 썼지만 그 물건이 왜 소중한지는 아직 드러나지 않습니다."
+    looping = detail(analysis=same, improvement_points=same, next_steps=same)
+    llm = FakeLlm(looping, looping)
+    with pytest.raises(ApiError) as error:
+        explain(llm)
+    assert error.value.code == "AI_EXPLANATION_REJECTED"
+    assert len(llm.requests) == 2
 
 
 def test_bad_sentence_is_dropped_not_the_whole_explanation() -> None:
@@ -132,8 +174,24 @@ def test_bad_sentence_is_dropped_not_the_whole_explanation() -> None:
     assert "점수" not in result.explanation.text
 
 
-def test_invalid_output_does_not_submit_a_second_serverless_job() -> None:
+def test_invalid_output_regenerates_once_with_repetition_penalty() -> None:
+    # 출력 한도까지 반복(LLM_INVALID_OUTPUT)이면 같은 작업 재접수가 아니라 설정을 바꿔 한 번만
     llm = FakeLlm(LlmError("LLM_INVALID_OUTPUT", retryable=True), detail())
+    assert isinstance(explain(llm), ActiveExplanationResponse)
+    assert [request.repetition_penalty for request in llm.requests] == [None, 1.1]
+
+
+def test_invalid_output_twice_is_503_after_two_requests() -> None:
+    error_step = LlmError("LLM_INVALID_OUTPUT", retryable=True)
+    llm = FakeLlm(error_step, error_step)
+    with pytest.raises(ApiError) as error:
+        explain(llm)
+    assert error.value.code == "AI_UNAVAILABLE"
+    assert len(llm.requests) == 2
+
+
+def test_timeout_is_not_regenerated() -> None:
+    llm = FakeLlm(LlmError("LLM_TIMEOUT", retryable=True), detail())
     with pytest.raises(ApiError) as error:
         explain(llm)
     assert error.value.code == "AI_UNAVAILABLE"
