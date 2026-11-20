@@ -719,3 +719,19 @@ def test_old_daily_problem_has_null_schedule():
 
     detail = assemble({}, [(ItemType.PROBLEM, None, {"title": "이전 저장본"})])
     assert detail["problems"][0]["scheduledDay"] is None
+
+
+@pytest.mark.parametrize(
+    ("code", "label"),
+    [("EASY", "쉬웠어요"), ("NORMAL", "보통"), ("HARD", "어려웠어요"), ("UNKNOWN", "UNKNOWN")],
+)
+def test_daily_markdown_reflection_shows_difficulty_label(db_session, code, label):
+    """#860: 일일 Markdown 돌아보기는 HTML·주간 Markdown처럼 화면 문구로, 모르는 코드는 그대로."""
+    command, records, learning = daily_fixture()
+    detail = daily_detail(command, records, learning, db_session)
+    detail["problems"][0]["reflection"]["difficulty"] = code
+    markdown = ReportRenderer.markdown(detail, "합성학생")
+    reflection = markdown[markdown.index("### 돌아보기") :].splitlines()
+    assert reflection[1] == label
+    if code != label:
+        assert code not in markdown

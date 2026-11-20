@@ -143,6 +143,10 @@ export const durationLabel = (seconds: number) => (seconds < 60 ? '1분 미만' 
 /** "처음 답: 생각 N분 · 작성 N분". report `answer_time_line`과 같은 문구 */
 export const answerTimeLine = (t: AnswerTime) =>
   `${answerLabels[t.version] ?? `${t.version - 1}번째 되묻기 뒤 답`}: 생각 ${durationLabel(t.thinkingSeconds)} · 작성 ${durationLabel(t.writingSeconds)}`
+/** 돌아보기 난이도 코드를 report `DIFFICULTY_LABELS`와 같은 문구로(#860). 이미 문구로 온 값·모르는 코드는 그대로 */
+const difficultyLabels: Record<string, string> = { EASY: '쉬웠어요', NORMAL: '보통', HARD: '어려웠어요' }
+export const difficultyText = (difficulty: string | null | undefined) =>
+  difficulty ? (Object.hasOwn(difficultyLabels, difficulty) ? difficultyLabels[difficulty] : difficulty) : ''
 /** 주간 리포트의 주간 테마 요약(FN-RPT-17, 구현 예정). */
 export interface ThemeSummary {
   state?: QueryState

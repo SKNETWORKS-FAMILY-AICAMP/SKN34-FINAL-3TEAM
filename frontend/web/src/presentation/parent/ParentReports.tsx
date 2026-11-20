@@ -4,7 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ReportExplanations } from './ReportExplanations.tsx'
 import type { Child } from '../../domain/classroom.ts'
-import { scheduledDayLine, answerTimeLine, type DailyProblem, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
+import { scheduledDayLine, answerTimeLine, difficultyText, type DailyProblem, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
 import type { ReportContext, ReportHighlight } from '../../domain/reportHighlight.ts'
 import { emptyReportTargets, reportTargets } from '../../domain/reportHighlight.ts'
@@ -309,7 +309,7 @@ function ReportDetail({
                   {r.reflections.map((f, i) => (
                     <p className="report-highlight-target" data-answer-highlight={targets.reflections.includes(i) ? 'true' : undefined} tabIndex={-1} key={i}>
                       <HighlightLabel active={targets.reflections.includes(i)} />
-                      {f.written ? `${f.difficulty} · ${f.text || '달라진 점 미작성'}` : '미작성'}
+                      {f.written ? `${difficultyText(f.difficulty)} · ${f.text || '달라진 점 미작성'}` : '미작성'}
                     </p>
                   ))}
                   <h3>아이의 말</h3>
@@ -430,7 +430,7 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
           )}
           <p>
             돌아보기 ·{' '}
-            {p.reflection?.written ? `${p.reflection.difficulty ?? ''} ${p.reflection.text ?? ''}`.trim() : '쓰지 않음'}
+            {p.reflection?.written ? `${difficultyText(p.reflection.difficulty)} ${p.reflection.text ?? ''}`.trim() : '쓰지 않음'}
           </p>
           {p.attemptId && canReadOriginals && (
             <button className="cj-secondary" onClick={() => onProof(p.attemptId!)}>
