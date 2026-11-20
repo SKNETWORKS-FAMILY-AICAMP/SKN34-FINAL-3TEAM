@@ -837,7 +837,7 @@ erDiagram
 
 - `model_loading_report`: 운영 관측 전용으로 승인 모델과 FK를 만들지 않는다. 과거 버전·실패·빈 snapshot도 보관한다. 120초 보고 만료, 24시간 보관, Pod 재시작 시 최신 프로세스 보고를 사용한다. PK instance_id, sequence > 0, models는 JSON 배열이며 나머지 컬럼은 모두 NOT NULL이다.
 - `model_version` UK `(kind, name, version)`, 부분 UK `(kind, name) WHERE status = 'ACTIVE'`. 롤백은 이전 버전 재활성화 + `audit_log` 기록 (FN-ADM-18)
-- 재학습 자동 등록 계정(#725): core 마이그레이션이 고정 UUID의 `user_account` 1행(role `ADMIN`, login_id `mlops-pipeline@system.invalid`, display_name `MLOps 파이프라인`)을 시드한다. `admin_credential`·`admin_permission`을 두지 않아 로그인·활성화를 할 수 없고, ops 내부 등록(api-spec 4.5)의 `audit_log.actor_user_id`로만 쓴다. ID는 설정값 `app.model-registry.pipeline-actor-id`
+- 재학습 자동 등록 계정(#725, 구현 #728 V55 `00000000-0000-4000-8000-0000000f0725`): core 마이그레이션이 고정 UUID의 `user_account` 1행(role `ADMIN`, login_id `mlops-pipeline@system.invalid`, display_name `MLOps 파이프라인`)을 시드한다. `admin_credential`·`admin_permission`을 두지 않아 로그인·활성화를 할 수 없고, ops 내부 등록(api-spec 4.5)의 `audit_log.actor_user_id`로만 쓴다. ID는 설정값 `app.model-registry.pipeline-actor-id`
 - #43 `eval_result`는 API 5.2의 불변 평가 근거·최초 승인과 현재 적용 범위·그룹 revision을 저장한다. DDL·기존 ACTIVE 부분 UK는 유지한다. 교체는 동일 그룹 transaction advisory lock 이후 상태·감사·Outbox를 원자적으로 저장한다.
 - 기준표 원본은 learning `rubric_version`, core는 `kind = RUBRIC` 행의 `ref_id`로 연결해 승인·활성 상태만 관리
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
@@ -1907,7 +1907,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V53(V10·V11 결번), learning Flyway V1~V26, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 113개 테이블·979개 컬럼(core 63/537, learning 42/376, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V55(V10·V11 결번), learning Flyway V1~V26, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 113개 테이블·979개 컬럼(core 63/537, learning 42/376, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

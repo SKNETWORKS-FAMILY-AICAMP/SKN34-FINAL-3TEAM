@@ -33,6 +33,8 @@ class ModelVersionService(private val repository: ModelVersionRepository, privat
         if (command.kind == ModelKind.MODEL && command.artifactUri.isNullOrBlank()) invalid("MODEL 등록에는 artifactUri가 필요합니다.")
         if (command.evaluation.limitations.size > 100 || command.evaluation.limitations.any { it.isNullOrBlank() || it.length > 4000 })
             invalid("limitations는 4,000자 이하의 비어 있지 않은 문자열을 최대 100개까지 받습니다.")
+        if (command.evaluation.recommendation?.valid() == false)
+            invalid("recommendation은 comparedTo, 1~20개·각 500자 이하 reasons, 최대 50개 숫자 metrics가 필요합니다.")
         if (!command.registration.valid()) invalid("등록 출처·파일 해시·수정 필드 정보가 유효하지 않습니다.")
         val version = ModelVersion(UUID.randomUUID(), command.kind, command.name, command.version, command.refId,
             command.artifactUri, EvaluationRecord(command.evaluation), VersionStatus.REGISTERED, null, null, now())

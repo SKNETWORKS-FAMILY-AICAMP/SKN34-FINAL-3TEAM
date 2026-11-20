@@ -60,6 +60,9 @@ management:
           include: readinessState,db,rabbit
 
 app:
+  model-registry:
+    # 재학습 자동 등록(#728, api-spec 5.2.3)의 감사 기록자. V55가 시드한 로그인·활성화 권한 없는 계정 (ERD 3.5)
+    pipeline-actor-id: ${MODEL_REGISTRY_PIPELINE_ACTOR_ID:00000000-0000-4000-8000-0000000f0725}
   report:
     recovery:
       interval: ${REPORT_RECOVERY_INTERVAL:PT1M}

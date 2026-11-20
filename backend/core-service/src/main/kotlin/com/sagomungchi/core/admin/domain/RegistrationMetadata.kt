@@ -33,4 +33,4 @@ private val SHA256 = Regex("[a-f0-9]{64}")
 private val EDITABLE_FIELDS = setOf("kind", "name", "version", "refId", "artifactUri",
     "evaluation.datasetId", "evaluation.datasetVersion", "evaluation.baselineVersion",
     "evaluation.comparisonReport", "evaluation.trainingEvaluationSeparation", "evaluation.quoteAccuracy",
-    "evaluation.calculationAccuracy", "evaluation.humanReview", "evaluation.evaluatedScopes", "evaluation.limitations")
+    "evaluation.calculationAccuracy", "evaluation.humanReview", "evaluation.evaluatedScopes", "evaluation.limitations", "evaluation.recommendation")
