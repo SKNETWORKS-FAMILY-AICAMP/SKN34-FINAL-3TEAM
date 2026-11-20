@@ -1489,6 +1489,36 @@ SageMaker는 0대에서 켜질 때마다 S3에서 모델을 다시 받는데, �
 
 2026-11-20 결정으로 운영(EKS) 배포를 B 계정 첫 배포(11/28)부터 Argo CD로 하고, 11/25 A 재가동에서 먼저 확인한다. 이미지는 cd-release가 만드는 digest PR의 승인·병합으로 바꾸고, 병합되면 Argo CD가 main을 자동 동기화한다. 하위 절은 이슈별로 9.18.1 #855(설치·root app·알림), 9.18.2 #856(플랫폼 Application), 9.18.3 #857(앱 ApplicationSet·images 파일·migration PreSync), 9.18.4 #858(cd-release digest PR)이다. 네 이슈는 에픽 본문의 "병렬 진행 계약"을 기준으로 동시에 작업했다.
 
+### 9.18.3 앱 ApplicationSet과 migration PreSync (#857)
+
+#### 결정
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| ApplicationSet | [`argocd/prod/apps/applicationset.yaml`](../../infrastructure/gitops/argocd/prod/apps/applicationset.yaml): list generator 6개(core·learning·ai·scoring·report-api·report-worker, `sllm-server` 제외), Application `prod-<앱>`, project `sagomungchi-prod`, chart·values 모두 `targetRevision: main`(multi-source `$values`), namespace `app`, root app sync-wave `"10"` | 로컬 ApplicationSet과 같은 구조. main이 운영 값의 기준이다 |
+| 값 파일 | `environments/prod/<앱>.json`(설정) + `images/<앱>.json`(이미지) 순서. 이미지 파일 키는 `image.repository`·`image.digest`, core·learning·report-api는 `migration.image.repository`·`migration.image.digest`·`migration.revision`. 설정 파일에서는 같은 키를 지웠다. 값은 develop(A 계정)의 것을 그대로 옮겼다 | develop이 `images/`를 건드리지 않으면 develop → main 릴리스 병합(3-way merge)에서 main의 digest(#858 PR이 갱신)가 남는다. 서비스마다 파일을 둬 digest PR diff가 서비스 단위로 보인다 |
+| migration | `migrations/*.json` 덮어쓰기 파일을 없애고 env·자원·`rds-ca` 볼륨·`networkPolicy.migrationEgress`를 설정 파일에 합쳐 `migration.enabled: true`. chart의 PreSync 훅(NetworkPolicy wave -2 → Job wave -1)이 앱보다 먼저 돈다. report-api는 앱 이미지 안의 Alembic(`alembic upgrade head`) | Argo CD가 그리는 조합 하나로 Job·앱을 함께 관리한다 |
+| revision·훅 정책 | Job 이름 `<앱>-migrate-<revision>`, `hook-delete-policy: HookFailed`(chart 그대로). 성공한 Job은 남아 같은 revision이면 다시 돌지 않고, 실패한 Job은 지워져 다음 동기화 때 다시 만들어진다. revision은 새 migration이 있을 때만 바꾼다 | named 훅은 한 번만 만들어진다. 실패 이력은 Argo CD 동기화 결과에 남는다 |
+| 동기화 정책 | automated, `prune: true`, `selfHeal: true`, retry 없음. ApplicationSet `preserveResourcesOnDeletion: true` | 같은 커밋에서 실패한 자동 동기화는 다시 시도되지 않으므로 실패한 migration이 저절로 반복되지 않는다. selfHeal은 손 변경을 main 값으로 돌린다(비상용 Helm 경로는 먼저 자동 동기화를 끔) |
+| 순서 | 앱 NetworkPolicy·ExternalSecret·`app` namespace는 플랫폼 Application(#856)이 wave 10보다 먼저. 앱 사이 순서는 두지 않음 | 앱마다 Application이라 scoring이 모델 경로 문제(#809)로 Degraded여도 다른 앱 동기화는 막히지 않는다 |
+| `rds-bootstrap` | 훅으로 옮기지 않고 B 런북 8·10단계에서 손으로 | RDS master secret을 쓴다 |
+| 비상용 경로 | `redeploy-app.ps1`은 두 파일을 함께 넘기고 앱 release에는 `--set migration.enabled=false`를 덧붙인다(Helm은 PreSync 훅을 일반 리소스로 만든다). `-Migration`·`-ImageDigest`·`-Revision`은 이미지 파일의 임시 사본을 바꾼다. 매개변수는 그대로라 cd-release deploy job도 그대로 동작한다 | 12/7 시연까지 비상용으로 남긴다 |
+| CI | `ci-gitops` prod 렌더링이 앱마다 두 파일을 넘기고(전체 렌더링에 migration 훅 포함), ApplicationSet 목록과 `images/` 파일 이름이 같은지 본다. `cd-candidate`는 `images/**`와 migration을 가진 설정 파일 3개 변경에서도 돈다 | ApplicationSet과 같은 조합을 검사한다 |
+
+#### 확인 (2026-11-20, AWS·클러스터 실행 없음)
+
+- `helm template`: 앱 6개를 develop(설정 파일 하나)과 이 변경(두 파일)으로 그려 비교했다. 앱 리소스는 같고, 차이는 migration 3개 서비스에 PreSync NetworkPolicy·Job이 더해진 것뿐이다. 그 둘은 develop의 `<앱>.json` + `migrations/<앱>.json` 렌더링과 같다(이미지 digest·revision·env·볼륨). `redeploy-app.ps1` 앱 경로 조합(`migration.enabled=false`)은 develop 앱 렌더링과 같다.
+- kubeconform 0.8.0(ci-gitops와 같은 버전·스키마 커밋, Kubernetes 1.35.8): 6개 렌더링과 `argocd/`(새 ApplicationSet 포함) 40개 리소스 모두 valid.
+- 로컬 kind(`sagomungchi-local`, Kubernetes 1.35)에 migration NetworkPolicy·Job 3쌍을 `kubectl apply --dry-run=server`로만 넘겨 API 서버가 받는 것을 확인했다(클러스터 변경 없음). 이 클러스터에는 지금 Argo CD가 없어 ApplicationSet 생성은 보지 못했다.
+- `scripts/tests/test_cd_migration_runner.py`(실제 helm·pwsh로 `redeploy-app.ps1` 렌더링·순서·멱등·실패 처리, 앱 release에 두 파일과 `migration.enabled=false`가 넘어가는 시험 추가) 16개, `test_cd_*` 전체, `test_aws_account_switch.py`·`test_aws_demo_stack.py` 통과.
+- 실제 Argo CD 동기화(PreSync 순서·훅 보존·자동 동기화 1회)는 11/25 A 재가동에서 확인한다.
+
+#### 한계와 11/25 A에서 볼 것
+
+- ApplicationSet 자체의 health를 root app wave가 기다리는지는 #855의 Argo CD 설정에 달려 있다.
+- A 첫 동기화에서 migration Job 3개(`core-service-migrate-main-c6809ddb65ee`, `learning-service-migrate-main-c6809ddb65ee`, `report-api-migrate-b67d8a462b6b`)가 Complete인지, 그 뒤 앱 6개 Synced/Healthy, 로그인 → 학습 제출.
+- `images/`는 main에서 #858 digest PR이 바꾼다. B 계정 번호 교체(런북 선행 2)는 `images/`도 바꾸므로 develop과 main 양쪽 값을 맞춰야 한다.
+
 ### 9.18.4 cd-release digest PR 전환 (#858, 2026-11-20)
 
 | 결정 | 내용 | 근거 |
@@ -1508,6 +1538,9 @@ SageMaker는 0대에서 켜질 때마다 S3에서 모델을 다시 받는데, �
 - 11/25 A 확인 순서: digest PR 생성 → ci-gitops → 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
 - 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push, `gh pr create --base main`, `gh workflow run ci-gitops.yml --ref <브랜치>` 호출까지.
 - 한계: digest PR 작성자가 봇이라 실행한 사람도 승인할 수 있다(Environment `prod`와 같음, 운영 규칙으로 다른 사람 승인 권장). `GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않는다. 실제 images 파일(#857)은 아직 develop에 없어 #857 병합 뒤 실제 파일로 시험을 다시 돌린다(`RealImagesFileTests`).
+## 9.18 prod Argo CD 전환 (#859, 2026-11-20)
+
+운영(EKS) 배포를 B 계정 첫 배포(11/28)부터 Argo CD로 하기로 결정했다(에픽 #859). 11/25 A 재가동에서 먼저 확인한다. 하위 절: 9.18.1 설치 값과 root app(#855), 9.18.2 플랫폼 Application(#856), 9.18.3 앱 ApplicationSet과 migration(#857), 9.18.4 digest 갱신 PR(#858).
 
 ## 10. 근거 링크
 

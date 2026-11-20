@@ -1,0 +1,13 @@
+{
+  "image": {
+    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service",
+    "digest": "sha256:6f151ca992e4bc3bcfeeb6ea9d2e014ef63845d34783e328a74266540fa8d586"
+  },
+  "migration": {
+    "image": {
+      "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service",
+      "digest": "sha256:87cb1d57edb3acd8b70dcdb17b1d2d587b1a92fd2040070a1178a61c6eb33eee"
+    },
+    "revision": "b67d8a462b6b"
+  }
+}
