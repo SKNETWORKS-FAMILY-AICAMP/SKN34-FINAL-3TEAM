@@ -5,10 +5,8 @@ import {
   blankAnswer,
   canAddAnswer,
   canFinish,
-  counts,
   eligibleRecords,
   inPeriod,
-  previousWeek,
   publicAttempt,
   validateAnswer,
 } from '../../domain/classroom.ts'
@@ -22,7 +20,6 @@ import type {
   Mission,
   Period,
   Reflection,
-  Report,
   Session,
 } from '../../domain/classroom.ts'
 import type { ClassroomGateway } from './gateway.ts'
@@ -135,7 +132,6 @@ export interface DemoSnapshot {
   session: Session | null
   serial: number
   keys: [string, string][]
-  reports: [string, Report[]][]
 }
 /** premium: 목업 이용권 판정(MSW는 결제 목업 구독을 넘긴다). 자녀 정보에는 이용권이 없다(api-spec 3.7). */
 export function createDemoGateway({ premium = (childId: string) => childId === 'demo-seoyun' }: { premium?: (childId: string) => boolean } = {}): ClassroomGateway & {
@@ -150,8 +146,7 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
     { id: 'demo-doyun', nickname: '도윤', grade: 5, birthYear: 2015 },
   ]
   const db = new Map<string, Attempt>(),
-    keys = new Map<string, string>(),
-    reportVersions = new Map<string, Report[]>()
+    keys = new Map<string, string>()
   const catalog = new Map<string, Mission>()
   let session: Session | null = null,
     scenario: DemoScenario = 'normal',
@@ -375,26 +370,6 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
       .map(publicAttempt)
       .reverse()
   }
-  function makeReport(child: Child, period: Period, revision = 1): Report {
-    const rows = eligibleRecords(records(child, period), period),
-      metrics = counts(rows, period)
-    return {
-      reportId: `${child.id}-${period.from}`,
-      childId: child.id,
-      period: copy(period),
-      revision,
-      revisions: [1],
-      status: 'COMPLETED',
-      state: metrics[0].state,
-      metrics,
-      records: rows,
-      narrative:
-        premium(child.id)
-          ? '이 화면의 기록에서 계산한 개수와 아이의 원문을 함께 읽어 보세요. 사고력 수준을 진단하는 결과가 아닙니다.'
-          : null,
-      regenerations: 0,
-    }
-  }
   return {
     snapshot() {
       return copy({
@@ -404,7 +379,6 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
         session,
         serial,
         keys: [...keys.entries()],
-        reports: [...reportVersions.entries()],
       })
     },
     restoreSnapshot(data) {
@@ -419,8 +393,6 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
       serial = data.serial
       keys.clear()
       for (const [k, v] of data.keys) keys.set(k, v)
-      reportVersions.clear()
-      for (const [k, v] of data.reports) reportVersions.set(k, copy(v))
     },
     replaceChildren(items) {
       children.splice(0, children.length, ...copy(items))
@@ -675,43 +647,6 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
       a.reflection = copy(reflection)
       a.status = 'COMPLETED'
       return copy(a)
-    },
-    async report(child, period, revision) {
-      requireParent(child)
-      const key = child.id + period.from
-      let list = reportVersions.get(key)
-      if (!list) {
-        const r = makeReport(child, period)
-        list = [r]
-        reportVersions.set(key, list)
-      }
-      const r = copy(list.find((v) => v.revision === revision) ?? list.at(-1)!)
-      r.revisions = list.map((v) => v.revision)
-      r.regenerations = list.length - 1
-      if (scenario === 'report-fail') {
-        r.status = 'FAILED'
-        r.metrics = []
-        r.records = []
-      }
-      if (period.from > previousWeek.to) {
-        r.status = 'QUEUED'
-        r.metrics = []
-        r.records = []
-      }
-      return r
-    },
-    async regenerate(report) {
-      requireParent()
-      const child = children.find((c) => c.id === report.childId)!
-      requireParent(child)
-      const key = child.id + report.period.from,
-        list = reportVersions.get(key) ?? [report]
-      if (list.length > 1)
-        fail('REPORT_REGENERATION_LIMIT', '같은 리포트는 한 번만 다시 만들 수 있어요.')
-      const next = makeReport(child, report.period, 2)
-      list.push(next)
-      reportVersions.set(key, list)
-      return copy({ ...next, revisions: [1, 2], regenerations: 1 })
     },
     async analyze(child, period, question) {
       requireParent(child)

@@ -125,11 +125,13 @@ test('#639·#640 학부모 본문 랜드마크·보조 메뉴·본문 건너뛰�
   await page.goto('/login')
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
+  await expect(page).toHaveURL(/childId=/)
+  const scope = new URL(page.url()).search
   for (const path of ['journal', 'report', 'settings', 'devices']) {
-    await navigate(page, `/parent/${path}`)
+    await navigate(page, `/parent/${path}${scope}`)
     await landmarks(page)
   }
-  await navigate(page, '/parent/journal')
+  await navigate(page, `/parent/journal${scope}`)
   await expect(page.getByRole('region', { name: '학생 답변 공개 상태' })).toBeVisible()
   for (const link of await page.locator('.ws-side .ws-support a').all()) if (await link.isVisible()) await target44(link)
   const skip = page.getByRole('link', { name: '본문으로 건너뛰기' })

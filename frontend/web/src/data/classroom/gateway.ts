@@ -11,7 +11,6 @@ import type {
   Period,
   PublicAttempt,
   Reflection,
-  Report,
   Session,
   StudentHome,
 } from '../../domain/classroom.ts'
@@ -44,7 +43,5 @@ export interface ClassroomGateway {
   ) => Promise<Feedback>
   finish: (id: string) => Promise<Attempt>
   reflect: (id: string, reflection: Reflection) => Promise<Attempt>
-  report: (child: Child, period: Period, revision?: number) => Promise<Report>
-  regenerate: (report: Report) => Promise<Report>
   analyze: (child: Child, period: Period, question: string) => Promise<AnalysisResult>
 }
