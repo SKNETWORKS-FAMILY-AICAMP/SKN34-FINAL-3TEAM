@@ -57,6 +57,12 @@ class CutSpec:
     # 구도 틀 이름(frames.FRAMES, #779 설계 H). 장면 크기·구도·얼굴 규칙·카메라·수수께끼 조명·검토
     # 핵심은 틀이 정함. 종료 5컷은 줄거리 종류가 바꿀 수 있음(StoryType.outro5_frame). 예전 4컷은 ""
     frame: str = ""
+    # 뭉치 컷 첫 그림의 입 모양(prompts.MOOD_MOUTH 키). 콘티 mungchiMood는 '컷 끝 표정'인데 첫
+    # 그림에 그려, 종료 1컷("알았다!")·4컷이 처음부터 웃고 있어 놀람 → 웃음 변화가 없었음(대표
+    # 5종 2차 5/5 테마, 경고 3건 "이미 활짝 웃는 입"). 6컷은 첫 표정을 컷 표가 정하고 변화는
+    # motion이 말함
+    # (재검토 2026-11-20). 종료 1·4컷 말고는 그동안 그려진 표정 그대로
+    mouth: str = ""
 
     @property
     def has_mungchi(self) -> bool:
@@ -134,6 +140,7 @@ _NEW = {
             speaker="뭉치의 역할 구호(예: '뭉치: 경찰관 뭉치, 출동!')",
             place="ROAD",
             frame="RUN",
+            mouth="determined",
         ),
         CutSpec(
             "MUNGCHI",
@@ -144,6 +151,7 @@ _NEW = {
             "Mungchi's face turns determined (a firm closed mouth) and it sways slightly.",
             place="INCIDENT",
             frame="MUNGCHI_CLOSE",
+            mouth="determined",
         ),
         CutSpec(
             "GROUP",
@@ -160,6 +168,7 @@ _NEW = {
             place="INCIDENT",
             act="The people tilt their heads, puzzled, still looking at the spot.",
             frame="GROUP_QUESTION",
+            mouth="surprised",
         ),
     ),
     "OUTRO": (
@@ -175,6 +184,7 @@ _NEW = {
             speaker="뭉치가 '알았다!' 뒤에 이번 정답을 말함",
             place="INCIDENT",
             frame="MUNGCHI_CLOSE",
+            mouth="determined",  # 다문 입으로 생각하다 → 놀란 입 → 활짝 웃음(motion)
         ),
         CutSpec(
             "RUN",
@@ -183,6 +193,7 @@ _NEW = {
             "뭉치 혼자 정답 장소로 짧은 갈색 발로 옆으로 달려감(대상은 아직 보이지 않음)",
             place="ROAD",
             frame="RUN",
+            mouth="determined",
         ),
         CutSpec(
             "PEOPLE",
@@ -205,6 +216,7 @@ _NEW = {
             "sways happily.",
             place="ANSWER",
             frame="MUNGCHI_CLOSE",
+            mouth="surprised",  # 놀란 입 → 활짝 웃음(motion)
         ),
         CutSpec(
             "PEOPLE",
@@ -216,7 +228,8 @@ _NEW = {
             "나오는 컷일 때만)",
             follows=3,
             place="ANSWER",
-            act="The people act out the story beat calmly with small, natural movements.",
+            # "calmly with small"은 종류 역할 "폴짝 뛰거나 웃음"과 부딪혔음(재검토 2026-11-20)
+            act="The people act out the story beat with gentle, natural movements.",
             frame="JOY",
         ),
         CutSpec(
@@ -241,6 +254,7 @@ _NEW = {
             place="ANSWER",
             act="The people turn toward Mungchi and smile warmly from a little distance.",
             frame="FACING_MUNGCHI",
+            mouth="smile",
         ),
     ),
 }

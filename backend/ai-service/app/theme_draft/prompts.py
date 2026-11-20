@@ -270,7 +270,8 @@ PLAN_SYSTEM = (
     # #779(실측 2026-11-18): 영상 모델은 뭉치가 뛰거나 손을 쓰면 팔·흰 다리를 만들고, 제자리 통통
     # 튀기도 마찬가지였음. 뭉치가 거의 가만히 있고 사람·배경·카메라가 움직이면 모양이 유지됨
     "- action은 그 컷 역할이 영상에서 한눈에 보이는 분명한 동작 하나. 사람은 만화처럼 크고 "
-    "분명하게 움직인다(걸어 들어가기·펄쩍 놀라기·손 흔들기·건네기·안기 등). 뭉치는 팔이 "
+    # 좋은 동작 예에 '손 흔들기'가 남아 같은 문단의 공중 손짓 금지와 부딪혔음(재검토 2026-11-20)
+    "분명하게 움직인다(걸어 들어가기·펄쩍 놀라기·건네기·안기 등). 뭉치는 팔이 "
     "없어(몸 앞쪽 작은 동그란 손과 짧은 갈색 발만) 뭉치의 동작은 표정 바꾸기·고개 갸웃·몸 살짝 "
     "흔들기만 쓴다. 단, 뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 옆으로 "
     "힘차게 달려간다. 손 "
@@ -1583,6 +1584,15 @@ def mood_mouth(cut: dict) -> str | None:
     return MOOD_MOUTH.get(cut.get("mungchiMood") or "none")
 
 
+def first_mouth(spec: cut_layout.CutSpec, cut: dict) -> str | None:
+    """컷 첫 그림의 뭉치 입 모양. 6컷은 컷 표(CutSpec.mouth)가 정하고 콘티 mungchiMood(컷 끝 표정)는
+    쓰지 않는다 — 끝 표정을 첫 그림에 그려 종료 1·4컷이 처음부터 웃고 있었음(재검토 2026-11-20).
+    예전 4컷은 예전처럼 콘티 값."""
+    if spec.frame:
+        return MOOD_MOUTH.get(spec.mouth)
+    return mood_mouth(cut)
+
+
 def _no_target(theme: Theme) -> str:
     t = story_type(theme)
     if not t.target_visual:  # #634 ④ 시간 탐정: 대상이 '때'라 그릴 것이 없음
@@ -1860,6 +1870,12 @@ FIRST_MOMENT = (
     "This picture is the very first moment of this cut's action, so everything the action needs "
     "is already in view and the characters already face where they will look, wave or clap"
 )
+# 6컷: 공중 손짓(흔들기·손뼉)은 쓰지 않아(사용자 결정 2026-11-19) 그 낱말을 뺀 글. 예전 글이 모든
+# 6컷 그림 지시에 남아 있었음(재검토 2026-11-20). 예전 4컷 초안은 예전 글 그대로
+FIRST_MOMENT_NEW = (
+    "This picture is the very first moment of this cut's action, so everything the action needs "
+    "is already in view and the characters already face where they will look or point"
+)
 
 
 def cut_frame(theme: Theme, scene: str, index: int) -> Frame | None:
@@ -1923,7 +1939,7 @@ def cut_image_prompt(
     lines = [IMAGE_STYLE]
     if spec.has_mungchi:
         lines.append(MUNGCHI_LOOK.format(outfit=theme["outfit"]))
-        if mouth := mood_mouth(cut):
+        if mouth := first_mouth(spec, cut):
             lines.append(f"Mungchi's expression: {mouth}, dot eyes unchanged.")
         if spec.who == "RUN":
             lines.append(RUN_POSE)
@@ -1939,7 +1955,7 @@ def cut_image_prompt(
     # 너구리를 보지 않았음. 영상 지시와 같은 할 일·동작을 받아 첫 순간에 필요한 것을 그림
     lines.append(f"This cut's story beat (Korean): {cut_beat(theme, scene, index)}")
     if action := str(cut.get("action") or "").strip():
-        lines.append(f"{FIRST_MOMENT} (Korean): {action}")
+        lines.append(f"{FIRST_MOMENT if n == 4 else FIRST_MOMENT_NEW} (Korean): {action}")
     if prev_scene is None:
         lines.append(CUT_FRAMING)
     else:
@@ -2037,7 +2053,10 @@ IMAGE_REVIEW_SYSTEM = (
     # #779 설계 H: 구도 틀의 검토 핵심을 따로 판정(SCENE_FIT 안에 묻혀 엔딩에서 인물들이 카메라
     # 쪽을 봐도 통과했음, 틀 확인 2026-11-19 엔딩 3장)
     "FRAME(items에 있을 때만): core(이 컷 구도의 핵심)가 그림에 그대로 있는지만 본다. 없으면 "
-    "FAIL이다(예: core가 '인물들이 뭉치 쪽을 봄'인데 인물들이 카메라 쪽이나 서로를 보면 FAIL).\n"
+    "FAIL이다(예: core가 '인물들이 뭉치 쪽을 봄'인데 인물들이 카메라 쪽이나 서로를 보면 FAIL). "
+    # 위 공통 줄 "시선은 판단하지 않는다"와 부딪혀 "서로 보는지 분명하지 않다" 경고가 났음(재검토
+    # 2026-11-20). 방향은 몸·얼굴로 판정
+    "core의 '~쪽을 봄'은 눈동자가 아니라 몸과 얼굴이 향한 쪽으로 판정한다.\n"
     # #779 설계 C표: 그림 검토가 뭉치 기준만 보고 인물 기준 그림은 보지 않았음
     "PEOPLE(items에 있을 때만): PERSON 그림의 등장인물과 같은 사람(얼굴·머리 모양·옷)으로 "
     "보이는지. 다른 사람처럼 보이면 FAIL, 작은 소품·옷 무늬 차이는 WARN.\n"
@@ -2225,7 +2244,15 @@ def video_prompt(
     elif safe and camera not in ("HOLD_CLOSE", "TRACK_SIDE"):  # 출동 컷 안전판도 옆으로 따라감
         camera = "PAN_SIDE"
     if spec.has_mungchi:
-        mouth = mood_mouth(cut)
+        # 6컷: 표정 변화는 컷 표 motion이 말하므로 표정 줄은 motion이 없을 때(달리기 컷·안전판)만
+        # 첫 그림 표정 그대로(재검토 2026-11-20). 예전 4컷은 콘티 mungchiMood
+        mouth = (
+            mood_mouth(cut)
+            if n == 4
+            else first_mouth(spec, cut)
+            if safe or not spec.motion
+            else None
+        )
         go = MUNGCHI_GO_SAFE if safe else MUNGCHI_RUN
         mungchi = [
             go if spec.who == "RUN" else MUNGCHI_STILL,
@@ -2249,7 +2276,11 @@ def video_prompt(
         if t.facts is not None and t.facts.drawable and (scene, index) in answer_cuts:
             about_target = f"{_answer_look(theme)} Keep it looking the same."
             if t.facts.group(str(theme.get("answer") or "")) == "동물":
-                about_target += " Nobody touches, lifts or holds the animal; everyone watches it."
+                # '모두 그 동물을 바라봄'은 공개 컷에만: 6컷의 마무리(서로 기뻐함)·엔딩(뭉치 쪽을
+                # 봄) 컷에도 들어가 구도와 부딪혔음(재검토 2026-11-20). 예전 4컷은 예전 글 그대로
+                frame = cut_frame(theme, scene, index)
+                watch = "; everyone watches it" if frame is None or frame.id == "REVEAL" else ""
+                about_target += f" Nobody touches, lifts or holds the animal{watch}."
     elif t.animal and shows:
         # #634 ③: 정답 동물은 같은 모습. #779(사용자 결정 2026-11-19): 아무도 만지지 않고 떨어져
         # 바라봄(예전: 사람이 제자리에서 안아 올림), 엔딩은 제 갈 곳으로 천천히 걸어가며 화면 안
@@ -2387,7 +2418,9 @@ VIDEO_REVIEW_SYSTEM = (
     "뭉치가 사건 대상(target, 찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나 "
     "받는지(사람과 함께 잡아도 결함). 뭉치가 차림 소품(목에 걸거나 손에 든 돋보기·모자처럼 기준 "
     "장면의 테마 차림)을 쥐거나 지니고 있는 것은 결함이 아니다. storyType이 동물 장난꾸러기·발자국 "
-    "주인(PRANK·FOOTPRINT)이면 사람이나 뭉치가 정답 동물을 만지거나 안으면 결함이고(#779: 떨어져 "
+    # 소리 탐정의 동물도 만지지 않음(#634 ⑤ 결정)인데 이 줄에 빠져 있었음(재검토 2026-11-20)
+    "주인(PRANK·FOOTPRINT)이거나 소리 탐정(SOUND)의 정답이 동물이면 사람이나 뭉치가 정답 동물을 "
+    "만지거나 안으면 결함이고(#779: 떨어져 "
     "바라보고 배웅), 동물이 천천히 걸어가며 화면 안에 남는 것은 결함이 아니다. 잃어버린 것·출처 "
     "찾기에서 그 동물을 돌보거나 데리고 있는 사람(주인·돌보던 아이)이 안는 것은 결함이 아니다.\n"
     "MORPH: 인물·뭉치의 몸·얼굴·눈 모양이 장면 사이에 녹아내리듯 바뀌거나 팔다리가 늘어나는지, "

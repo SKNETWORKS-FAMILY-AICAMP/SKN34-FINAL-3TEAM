@@ -574,7 +574,7 @@ def test_outro_ending_thanks_mungchi_and_animal_farewell_in_cut5() -> None:
     # 그림은 그 컷 할 일·동작의 첫 순간(4차 콘티: 5컷에 덮을 떡이 없고 6컷에서 아무도 안 봄)
     img = prompts.cut_image_prompt(theme, "OUTRO", 6, theme["outroCuts"][5], [])
     assert f"This cut's story beat (Korean): {ending.beat}" in img
-    assert theme["outroCuts"][5]["action"] in img and prompts.FIRST_MOMENT in img
+    assert theme["outroCuts"][5]["action"] in img and prompts.FIRST_MOMENT_NEW in img
 
 
 def test_follow_cuts_point_to_earlier_people_cut() -> None:

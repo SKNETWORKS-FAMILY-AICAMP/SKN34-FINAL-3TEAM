@@ -15,6 +15,12 @@
 
 멈춤 규칙(설계 H 5): 틀이나 변형을 두 번 고쳐도 그림 모델이 따르지 않으면 문장을 더 손보지 않고
 이미 잘 나온 더 단순한 틀로 바꾼다.
+
+검토 핵심(core) 쓰는 법(재검토 2026-11-20): '그림에 무엇이 보이는지'로만 쓴다. '누가 어디를 봄'은
+구도가 방향을 정해 주는 틀(배웅·엔딩의 앞쪽 뒷모습)에만 쓴다. 핵심은 틀마다 한 문장인데 종류별
+역할은 제각각이라(어느 길: 나른 사람에게 인사, 보물 쪽지: 함께 들여다봄) '대상을 봄'·'서로를 봄'을
+핵심에 두면 틀대로 그려도 FRAME이 떨어진다(대표 5종 2차 경고 "서로 보는지 분명하지 않다" 2건). 한
+줄 서기는 WARN(rules NO_ROW, 사용자 결정 2026-11-19)이라 핵심에 넣지 않는다.
 """
 
 import zlib
@@ -49,9 +55,11 @@ MUNGCHI_CLOSE_SHOT = (
     "empty space above its head for a caption; the place shows softly behind it."
 )
 # #779(사용자 결정 2026-11-19, 수수께끼 모험물 컷신 느낌): 사건 컷만 살짝 신비롭게, 무섭지 않게
+# 시간대는 박지 않음: "bright afternoon daylight"가 밤 이야기(소리 탐정)의 시작 2·3컷을 낮으로
+# 바꿨음(재검토 2026-11-20, 시작 1컷은 밤)
 MYSTERY_LIGHT = (
-    "A touch of mystery: soft long shadows and slightly cooler tones, still in bright afternoon "
-    "daylight, never dark or scary."
+    "A touch of mystery: soft long shadows and slightly cooler tones, in the scene's own time of "
+    "day; the picture stays bright and gentle, never dark or scary."
 )
 
 
@@ -62,7 +70,7 @@ class Frame:
     variants: tuple[str, ...]  # 테마마다 하나(영어)
     faces: Faces
     camera: str  # 영상 카메라(models.CameraMove)
-    core: str  # 그림 검토 핵심(한국어, 빠지면 SCENE_FIT FAIL)
+    core: str  # 그림 검토 핵심(한국어, 빠지면 FRAME FAIL — 그림에 보이는 것으로만, 머리말)
     mystery: bool = False  # 사건 컷 수수께끼 조명
 
 
@@ -79,12 +87,14 @@ FRAMES: dict[str, Frame] = {
             ),
             "angle",
             "PAN_SIDE",
-            "장소가 한눈에 보이고 인물들이 나란히 서지 않음",
+            "장소가 한눈에 보이는 넓은 장면",
         ),
         Frame(
             "OBJECT_CLOSE",
-            "Close shot of the incident object or spot, large in the picture; only a person's "
-            "shoulder and a natural-size hand are at one side.",
+            # 실제 그림은 인물 어깨 위(옆얼굴)와 손으로 그려짐(대표 5종 4/4). 예전 글 "어깨와
+            # 손만"이 얼굴 규칙·컷 표 표정(눈·입)과 부딪혀 그려지는 대로 맞춤(재검토 2026-11-20)
+            "Close shot of the incident object or spot, large in the picture; one person is at one "
+            "side, seen from the shoulders up, with a natural-size hand.",
             (
                 "The object is on the left side and the person's hand on the right.",
                 "The object is on the right side and the person's hand on the left.",
@@ -92,7 +102,7 @@ FRAMES: dict[str, Frame] = {
             ),
             "side",
             "PUSH_SLOW",
-            "사건 물건이나 자리가 크게 보임",
+            "사건 대상(물건·동물·자리)이 크게 보임",
             mystery=True,
         ),
         Frame(
@@ -104,7 +114,7 @@ FRAMES: dict[str, Frame] = {
             ),
             "angle",
             "HOLD_CLOSE",
-            "인물들이 놀란 얼굴로 사건 쪽을 봄",
+            "인물들의 놀란 얼굴이 크게 보임",
             mystery=True,
         ),
         Frame(
@@ -137,7 +147,7 @@ FRAMES: dict[str, Frame] = {
             ),
             "side",
             "PAN_SIDE",
-            "뭉치와 인물들이 떨어져 있고 인물들이 사건 자리를 봄",
+            "뭉치와 인물들이 서로 떨어져 한 그림에 있음",
         ),
         Frame(
             "REVEAL",
@@ -148,14 +158,15 @@ FRAMES: dict[str, Frame] = {
             ),
             "side",
             "HOLD_CLOSE",
-            "드러난 대상이 보이고 인물들이 그것을 봄",
+            "이 컷에서 드러나는 것(찾은 대상·정답, 또는 장면 글이 말한 사람·물건)이 그림에 보임",
         ),
         # 배웅(동물 종류 종료 5컷). '등·옆모습'을 직접 시킨 배웅은 문제 컷 다시 그리기에서 나아졌음
         Frame(
             "FAREWELL",
             "The people are in the foreground, seen from the side or from behind, all looking "
-            "toward the animal; the animal is in the background near the bushes, walking away and "
-            "glancing back.",
+            # 가는 곳을 덤불로 박지 않음(오리는 물가 — 종류 역할 "제가 사는 쪽", 재검토 2026-11-20)
+            "toward the animal; the animal is in the background, walking away toward where it "
+            "lives (bushes, woods or water, as the scene says) and glancing back.",
             (
                 "The animal is on the left in the background.",
                 "The animal is on the right in the background.",
@@ -173,7 +184,7 @@ FRAMES: dict[str, Frame] = {
             ),
             "side",
             "PAN_SIDE",
-            "인물들이 기쁜 얼굴로 서로를 봄",
+            "인물들이 기쁘거나 안도한 얼굴로 함께 있음",
         ),
         # 엔딩(종료 6컷). 옆모습으로 마주보게 한 두 번(대표 5종 콘티 3/3, 틀 확인 1/4) 모두
         # 인물들이 카메라 쪽이나 서로를 봐서, 멈춤 규칙대로 배웅(FAREWELL)에서 잘 나온 앞쪽 뒷모습

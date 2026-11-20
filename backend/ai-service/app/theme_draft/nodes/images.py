@@ -8,7 +8,7 @@
    끝내 못 그리면 예전처럼 시작 1컷을 먼저 그려 인물 기준으로 씀
 3. 미션 5 + 컷 8을 [테마 옷 뭉치, 인물 기준 그림] 참조로 동시에(asyncio.gather).
    시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음(뭉치 혼자 출동).
-   #779 6컷(B안): 앞 컷을 잇는 컷(시작 2·3·6 ← 1, 종료 5 ← 3, 6 ← 5)은 그 앞 컷이 끝난 뒤 그
+   #779 6컷(B안): 앞 컷을 잇는 컷(시작 2·3·6 ← 1, 종료 5·6 ← 3)은 그 앞 컷이 끝난 뒤 그
    그림을 마지막 참고 그림으로 받아 장소·가구·물건 상태를 잇고, 검토도 그 그림을 보며 FLOW를 더함
 
 그림 대역(IMAGE_PROVIDER=fake)이면 검토를 부르지 않고 통과로 보며 warnings에 IMAGE ALL 한 줄(#716).
@@ -18,6 +18,14 @@ review_images는 별도 노드가 아니라 그림마다 그린 직후 돈다(re
 다시(상한 theme_max_regen, 마감 확인). 미션 그림이 끝내 실패하면 failure IMAGE, 컷 첫 그림이
 끝내 실패하면 그 장면 영상만 빼고 warnings(VIDEO). 응답 images의 INTRO·OUTRO는 4번째 컷 첫
 그림, MON~FRI는 미션 그림이고 S3에 .png로 올린 키를 담는다.
+
+#779(사용자 결정 2026-11-20): 6컷 컷 그림이 구도(FRAME)·이어짐(FLOW)·인물 닮음(PEOPLE)에서만 끝내
+떨어지면 그렇게 떨어진 마지막 그림을 쓰고 warnings(IMAGE)에 사유를 남긴다(SOFT_IDS). 컷 하나가
+세 번 떨어지면 그 장면 영상 전체가 빠지는데, 6컷에 검토 항목이 늘어 걸릴 곳이 많아졌음(대표 5종
+2차: 5개 테마 중 2개가 컷 하나로 종료 영상이 빠짐). 뭉치 모양·정답 노출·글자·안전·장면 맞음
+(MUNGCHI·ANSWER_HINT·TEXT·SAFETY·SCENE_FIT)에서 떨어지거나 그림 호출이 실패하면 예전처럼 뺀다.
+미션 그림과 예전 4컷 초안은 예전 그대로. 부분 다시 생성(#537)도 예전 그대로다(돌아갈 원래 그림이
+있어 그 장면을 원래대로 둠).
 
 부분 다시 생성 재료(#537): 테마 옷 뭉치(OUTFIT)와 컷 첫 그림 8장(INTRO1~4·OUTRO1~4)도 같은 실행
 폴더에 올리고 키를 assets에 둔다(인물 기준 PERSON = 인물만 그린 그림 CHARS, 없으면 예전처럼 처음
@@ -58,6 +66,9 @@ NO_SETUP = "그림 설정 없음"
 # 비용·시간·결과가 왜곡됨
 FAKE_REVIEW_SKIPPED = "그림 대역이라 검토를 건너뜀"
 KEPT_NOTE = "원래 그림·영상 유지"  # 부분 다시 생성에서 컷 그림이 끝내 실패한 장면(#537)
+# 6컷 컷 그림이 이 항목에서만 끝내 떨어지면 그 그림을 쓰고 경고(#779 사용자 결정 2026-11-20, 머리말)
+SOFT_IDS = frozenset({"FRAME", "FLOW", "PEOPLE"})
+SOFT_NOTE = "끝내 통과하지 못해 이 그림을 그대로 씀"
 ASSET_NOTE = "부분 다시 생성 재료"  # 재료 그림 업로드 실패(그 대상만 다시 만들 수 없게 됨)
 
 
@@ -94,7 +105,8 @@ class Shot:
     action: str | None = None  # 컷 그림만: 그 컷 동작(그림은 동작의 첫 순간, 검토 SCENE_FIT)
     # 등장인물 기준 그림(검토 PEOPLE, #779 설계 C표). 사람이 나오는 그림만
     person: bytes | None = None
-    core: str | None = None  # 컷 그림만: 구도 틀의 검토 핵심(빠지면 SCENE_FIT FAIL, #779 설계 H)
+    core: str | None = None  # 컷 그림만: 구도 틀의 검토 핵심(빠지면 FRAME FAIL, #779 설계 H)
+    keep_soft: bool = False  # 6컷 컷 그림만: SOFT_IDS에서만 끝내 떨어지면 마지막 그림을 씀
     follow_scene: str | None = None
     follow_prompt: Callable[[list[str]], str] | None = None
 
@@ -136,6 +148,7 @@ async def draw(
     ]
     feedback: list[str] = list(seed or [])  # 요청 previousFailures의 IMAGE 사유(처음부터)
     bad: list[str] = []
+    soft: Drawn | None = None  # SOFT_IDS에서만 떨어진 가장 최근 그림(끝내 통과 못 하면 이것을 씀)
     for attempt in range(ctx.settings.theme_max_regen + 1):
         if attempt and not ctx.can_regenerate():
             bad = [*bad, DEADLINE_REASON]
@@ -186,8 +199,17 @@ async def draw(
         bad = shape + [f"{x['id']} {x['reason']}" for x in fails]
         if not bad:
             return Drawn(image, [], [f"{x['id']} {x['reason']}" for x in warns])
+        if shot.keep_soft and not shape and all(x["id"] in SOFT_IDS for x in fails):
+            soft = Drawn(
+                image,
+                [],
+                [
+                    *(f"{x['id']} {x['reason']}" for x in warns),
+                    *(f"{x['id']} {x['reason']} ({SOFT_NOTE})" for x in fails),
+                ],
+            )
         feedback = uniq([*feedback, *bad])
-    return Drawn(None, bad)
+    return soft or Drawn(None, bad)
 
 
 async def dress_mungchi(ctx: ThemeContext, theme: Theme) -> tuple[bytes | None, list[str]]:
@@ -236,8 +258,15 @@ async def draw_characters(ctx: ThemeContext, theme: Theme) -> bytes | None:
 
 
 def cut_shot(
-    ctx: ThemeContext, theme: Theme, scene: str, index: int, outfit: bytes, person: bytes | None
+    ctx: ThemeContext,
+    theme: Theme,
+    scene: str,
+    index: int,
+    outfit: bytes,
+    person: bytes | None,
+    soft: bool = False,
 ) -> Shot:
+    """soft: 처음 생성의 6컷 컷 그림만 True(SOFT_IDS에서만 끝내 떨어지면 마지막 그림을 씀)."""
     body = ctx.prompt.body
     cut = theme[CUTS_KEY[scene]][index - 1]
     n = len(theme[CUTS_KEY[scene]])
@@ -260,6 +289,7 @@ def cut_shot(
         action=cut.get("action") or None,
         person=person if body.cut_has_characters(scene, index, n) else None,
         core=frame.core if (frame := body.cut_frame(theme, scene, index)) else None,
+        keep_soft=soft and n != 4,
         follow_scene=prev_scene,
         follow_prompt=(
             (lambda fb: body.cut_image_prompt(theme, scene, index, cut, fb, prev_scene))
@@ -402,14 +432,14 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             first = await draw(
                 ctx,
                 theme,
-                cut_shot(ctx, theme, "INTRO", 1, outfit, None),
+                cut_shot(ctx, theme, "INTRO", 1, outfit, None, soft=True),
                 outfit,
                 seed_of("INTRO1"),
             )
             person = first.image  # 시작 1컷이 끝내 실패하면 인물 참조 없이
         shots = [mission_shot(ctx, theme, d, state["drafts"][d], outfit, person) for d in DAYS]
         shots += [
-            cut_shot(ctx, theme, scene, i, outfit, person)
+            cut_shot(ctx, theme, scene, i, outfit, person, soft=True)
             for scene in CUT_SCENES
             for i in cut_range(scene)
             if first is None or (scene, i) != ("INTRO", 1)

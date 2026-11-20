@@ -245,6 +245,65 @@ def test_frames_do_not_conflict_with_face_rules_and_variants_are_stable() -> Non
     assert {f.id for f in prompts.FRAMES.values() if f.mystery} == {"OBJECT_CLOSE", "REACTION"}
 
 
+@pytest.mark.parametrize(("code", "branch"), CASES, ids=IDS)
+def test_no_cut_carries_lines_that_fight_each_other(code: str, branch: str | None) -> None:
+    """부딪히는 문장이 한 컷 지시에 함께 들어가지 않음(재검토 2026-11-20). 위 시험들은 '있어야 할
+    문장이 있는지'만 봐서, 서로 반대인 문장이 같이 들어간 곳을 놓쳤음(끝 표정을 첫 그림에, 공중
+    손짓 낱말, 밤 이야기에 오후 햇빛, 서로 보는 컷에 '모두 동물을 봄')."""
+    theme = theme_of(code) | ({"branch": branch} if branch else {})
+    for scene, i, cut, spec in all_cuts(theme):
+        where = f"{code}/{branch} {scene}{i}"
+        frame = prompts.cut_frame(theme, scene, i)
+        assert frame is not None, where
+        # 뭉치 표정: 첫 그림은 컷 표의 첫 입 모양(콘티 mungchiMood = 컷 끝 표정은 쓰지 않음)
+        for mood in ("smile", "surprised", "determined"):
+            image = prompts.cut_image_prompt(theme, scene, i, {**cut, "mungchiMood": mood}, [])
+            video = prompts.video_prompt(theme, scene, i, {**cut, "mungchiMood": mood}, [])
+            line = f"Mungchi's expression: {prompts.MOOD_MOUTH.get(spec.mouth)}, dot eyes"
+            assert (line in image) == spec.has_mungchi, where
+            assert bool(spec.mouth) == spec.has_mungchi, where
+            # 영상: 표정 변화는 움직임 줄이 말함. 움직임이 없는 달리기 컷만 첫 표정 줄
+            expects = spec.has_mungchi and not spec.motion
+            assert ("Mungchi's expression:" in video) == expects, where
+            # 공중 손짓 낱말은 그림 지시에 없음(영상은 금지 문장에만)
+            assert "wave" not in image and "clap" not in image, where
+            # 조명·배웅은 시간대·가는 곳을 박지 않음(밤 이야기, 물가에 사는 동물)
+            assert "afternoon" not in image and "near the bushes" not in image, where
+            # '모두 그 동물을 바라봄'은 공개 컷에만
+            assert "everyone watches it" not in video or frame.id == "REVEAL", where
+        # 종료 5컷: 종류가 틀을 바꿔도 카메라는 컷 표 틀과 같음(cut_camera는 컷 표 틀을 봄)
+        assert frame.camera == prompts.FRAMES[spec.frame].camera, where
+        # 첫 표정은 그 컷 움직임의 시작: 놀란 입에서 시작하는 컷은 놀란 입, 웃음으로 끝나는 깨달음
+        # 컷은 다문 입
+    assert cuts.spec("OUTRO", 1, 6).mouth == "determined"
+    assert cuts.spec("OUTRO", 4, 6).mouth == "surprised"
+
+
+def test_review_cores_say_what_is_visible_and_plan_has_no_air_gesture_example() -> None:
+    """검토 핵심은 '그림에 보이는 것'으로만(재검토 2026-11-20). '~를 봄'은 구도가 방향을 정하는
+    배웅·엔딩 틀만, 한 줄 서기는 WARN이라 핵심에 없음. 방향은 몸·얼굴로 판정."""
+    gaze = {f.id for f in prompts.FRAMES.values() if "봄" in f.core}
+    assert gaze == {"FAREWELL", "FACING_MUNGCHI"}
+    assert all(prompts.FRAMES[k].faces == "back" for k in gaze)
+    assert not any("나란히" in f.core or "한 줄" in f.core for f in prompts.FRAMES.values())
+    assert "몸과 얼굴이 향한 쪽으로 판정" in prompts.IMAGE_REVIEW_SYSTEM
+    # 사건 클로즈업: 틀 글이 얼굴 규칙·컷 표 표정(눈·입)과 같게 인물 어깨 위
+    assert "from the shoulders up" in prompts.FRAMES["OBJECT_CLOSE"].image
+    assert "only a person's shoulder" not in prompts.FRAMES["OBJECT_CLOSE"].image
+    # 줄거리 지시: 좋은 동작 예에 공중 손짓이 없고, 금지 문장에만 나옴
+    plan = prompts.PLAN_SYSTEM
+    assert plan.count("손 흔들기") == 1 and "손 흔들기·손뼉 같은 공중 손짓은 하지 않는다" in plan
+    # 예전 4컷 초안의 그림 지시는 예전 글 그대로
+    old = valid_theme()
+    old = {**old, "introCuts": old["introCuts"][:4], "outroCuts": old["outroCuts"][:4]}
+    assert prompts.FIRST_MOMENT in prompts.cut_image_prompt(
+        old, "OUTRO", 4, old["outroCuts"][3], []
+    )
+    # 소리 탐정의 동물도 영상 검토에서 만지면 결함, 종류 문구는 리액션(놀람)과 같은 결
+    assert "소리 탐정(SOUND)의 정답이 동물이면" in prompts.VIDEO_REVIEW_SYSTEM
+    assert "놀람" in families.STORY_TYPES["VEHICLE"].intro_cuts[1]
+
+
 def test_frame_core_is_judged_as_its_own_item_and_flow_fails_only_other_place() -> None:
     """구도 핵심은 그림 검토의 별도 항목(FRAME)으로 판정(SCENE_FIT 안에 묻혀 엔딩 3장이 통과했음),
     엔딩 틀은 멈춤 규칙대로 앞쪽 뒷모습 방식(틀 확인 2026-11-19)."""

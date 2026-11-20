@@ -480,8 +480,10 @@ def test_video_success_joins_cuts_with_captions() -> None:
     assert "touching the animal" not in video_negative(valid_theme())
     assert sorted(c[3] for c in video.calls) == [4] * 13  # #779 6컷 × 4초
     smile = [c[0] for c in video.calls if OUTRO_CUTS[5]["action"] in c[0]]
-    # 종료 6컷은 대상을 보여 줘도 되는 컷이라 숨기라는 문구가 없음(점검 C5)
-    assert "a small smiling mouth" in smile[0] and "Do not show" not in smile[0]
+    # 종료 6컷은 대상을 보여 줘도 되는 컷이라 숨기라는 문구가 없음(점검 C5). 6컷 뭉치 표정은 컷 표
+    # 움직임(motion)이 말하고 콘티 mungchiMood 줄은 넣지 않음(재검토 2026-11-20)
+    assert "smiles shyly" in smile[0] and "Do not show" not in smile[0]
+    assert "Mungchi's expression:" not in smile[0]
     first = [c[0] for c in video.calls if INTRO_CUTS[0]["action"] in c[0]][0]
     assert "may be held or used, but do not show where it is put" in first
     assert "Mungchi does not appear in this clip." in first  # 시작 1컷은 뭉치 없음(점검 C6)
@@ -600,6 +602,59 @@ def test_cut_image_failure_omits_only_that_video() -> None:
     assert all(w.reason.startswith("OUTRO2 그림 TEXT") for w in response.warnings)
     assert "OUTRO" in response.images  # 4번째 컷 그림은 통과
     assert response.motions["OUTRO"].captions == []  # 영상이 없으면 문구 없음
+
+
+@pytest.mark.parametrize("item", ["FRAME", "FLOW", "PEOPLE"])
+def test_cut_image_failing_only_soft_items_is_kept_with_warning(item: str) -> None:
+    """#779(사용자 결정 2026-11-20): 6컷 컷 그림이 구도·이어짐·인물 닮음에서만 끝내 떨어지면 마지막
+    그림을 쓰고 경고(컷 하나 때문에 그 장면 영상 전체가 빠지지 않게). 종료 5컷은 사람 컷(PEOPLE)·
+    앞 컷 잇기(FLOW)·구도 틀(FRAME)이 모두 있는 컷."""
+
+    def verdicts(user: dict) -> dict[str, str]:
+        return {item: "FAIL"} if user["scene"] == OUTRO_CUTS[4]["scene"] else {}
+
+    video, image = FakeVideoClient(), FakeImageClient()
+    response = run(
+        gen_llm(),
+        review_llm(image=verdicts),
+        image=image,
+        video=video,
+        storage=MemoryThemeStorage(),
+    )
+    assert response.failure is None
+    assert set(response.videos) == {"INTRO", "OUTRO"} and len(video.calls) == 12
+    assert {(w.stage, w.item) for w in response.warnings} == {("IMAGE", "OUTRO5")}
+    note = image_node.SOFT_NOTE
+    assert all(w.reason == f"{item} {item} 사유 ({note})" for w in response.warnings)
+    # 다시 그리기는 상한까지 다 해 본 뒤에 마지막 그림을 씀
+    assert len(prompts_with(image, OUTRO_CUTS[4]["scene"])) >= get_settings().theme_max_regen + 1
+
+
+def test_cut_image_failing_a_hard_item_is_still_dropped_even_with_soft_fails() -> None:
+    """장면 맞음(SCENE_FIT) 같은 다른 항목이 함께 떨어진 그림은 쓰지 않음. 미션 그림은 구도·인물
+    항목만 떨어져도 예전처럼 실패(IMAGE)."""
+
+    def cut(user: dict) -> dict[str, str]:
+        hit = user["scene"] == OUTRO_CUTS[4]["scene"]
+        return {"FRAME": "FAIL", "SCENE_FIT": "FAIL"} if hit else {}
+
+    response = run(
+        gen_llm(),
+        review_llm(image=cut),
+        image=FakeImageClient(),
+        video=FakeVideoClient(),
+        storage=MemoryThemeStorage(),
+    )
+    assert set(response.videos) == {"INTRO"}
+    assert {(w.stage, w.item) for w in response.warnings} == {("VIDEO", "OUTRO")}
+
+    def mission(user: dict) -> dict[str, str]:
+        return {"PEOPLE": "FAIL"} if scene_is(user, "마을 tue 길") else {}
+
+    failed = run(
+        gen_llm(), review_llm(image=mission), image=FakeImageClient(), storage=MemoryThemeStorage()
+    )
+    assert failed.failure is not None and failed.failure.stage == "IMAGE"
 
 
 def test_video_skipped_near_deadline() -> None:

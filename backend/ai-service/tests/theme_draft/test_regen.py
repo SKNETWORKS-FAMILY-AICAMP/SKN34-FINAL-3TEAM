@@ -157,10 +157,13 @@ def test_intro_image_redraws_cuts_and_refilms_intro() -> None:
     assert out.regen["assets"]["INTRO1"] != response.regen["assets"]["INTRO1"]
 
 
-def test_failed_intro_cut_keeps_original_intro() -> None:
+@pytest.mark.parametrize("item", ["SAFETY", "FRAME"])
+def test_failed_intro_cut_keeps_original_intro(item: str) -> None:
+    """구도(FRAME)에서만 떨어져도 부분 다시 생성은 원래 그림을 둠(처음 생성만 떨어진 그림을 씀,
+    #779 사용자 결정 2026-11-20 — 여기는 돌아갈 원래 그림이 있음)."""
     response, storage = full()
     review = review_llm(
-        image=lambda u: {"SAFETY": "FAIL"} if scene_is(u, INTRO_CUTS[1]["scene"]) else {}
+        image=lambda u: {item: "FAIL"} if scene_is(u, INTRO_CUTS[1]["scene"]) else {}
     )
     out, _, _, _, video = partial(response, storage, ["IMAGE:INTRO"], review=review)
     assert out.failure is None
