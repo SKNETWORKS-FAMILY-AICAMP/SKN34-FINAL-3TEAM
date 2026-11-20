@@ -419,6 +419,7 @@ learning 답변 제출에서 단어 목록 다음 단계로 부르는 2분류 �
 | 파일 | `score_cuts.json` 없는 5개. 사전 검사(#368)·로더가 이름 접두어별 파일 목록 사용 |
 | 로더 검사 | `single_label_classification`·`num_labels=2`, `train_info.json`의 `threshold`(0 초과 1 미만)·`max_length`·`stride` 필수 |
 | 판정 | 칸마다 128토큰 창·겹침 32, 창 하나라도 `threshold` 이상이면 그 칸 flagged, 한 칸이라도 flagged면 전체 flagged |
+| 경계 구간 | flagged가 아니고 한 창이라도 `review_threshold` 이상이면 `review:true`(#725 계약, #726). 아래 8.2 |
 | 동시 실행·마감 | tox 전용 게이트 1개(M2와 따로), 1초 대기 또는 처리 1.3초(창 8개 묶음 사이에서 확인) 넘으면 503 `SCORING_UNAVAILABLE`, `run_in_threadpool` |
 | 사용량 | 이벤트 없음. 요청마다 로그 한 줄(모델 이름·결과·지연 ms), 원문·점수 없음 |
 | readiness | 활성 `tox-` 모델이 없어도 `models=UP`(#85 규칙), 요청에는 `{active:false}` |
@@ -441,3 +442,19 @@ learning 답변 제출에서 단어 목록 다음 단계로 부르는 2분류 �
 
 - 로컬 확인(2026-11-19, develop 7d9d7751, compose `e2e.env`): #690 모델 `tox-koelectra-small` 1.0-1119(KoELECTRA-small 증류, int8 0.99)를 로컬 MinIO에 파일 5개 전체 SHA-256과 올림 → 사전 검사 `FILES_AND_METADATA_VERIFIED` → 등록·승인·활성화(`answer-filter`) → `/internal/toxicity/checks` 정상 `flagged:false`·모욕 `true`, 1,501자 400·다른 서비스 토큰 403·토큰 없음 401. M2 서술 3.0-1112b·논술 3.1-1112b를 같이 켜도 M2 채점 정상(점수 값 비교는 안 함)
 - 남은 것: 운영 Pod에서 M2와 같이 돌 때 1,500자 지연·메모리(limit 2Gi) 확인. PC 참고값은 1,200자 요청 p95 혼자 375ms·M2 채점과 같이 569ms(HTTP 포함, 20회)로 마감 1.3초 안. 모델 숫자·한계는 [eval_tox.md](../../ml/tox/results/eval_tox.md) "11/19 모델 교체"
+
+### 8.2 경계 구간 review (#726, 11/20)
+
+재학습 자동화(#688 MLOps)의 scoring 몫으로, 막지는 않았지만 애매한 답을 learning이 표현 검토 대기(#727)에 올릴 수 있게 응답에 `review`를 더한다. 계약은 [API 명세 4.3.4](../design/api-spec.md)·5.2.1
+
+| 항목 | 내용 |
+|---|---|
+| 응답 | 활성 모델이 있으면 `{active:true, flagged, review, model}`, 없으면 `{active:false}`만(기존 그대로). `flagged:false`이고 한 창이라도 `review_threshold` 이상이면 `review:true`, `flagged:true`면 항상 `false`. 칸별 결과·점수는 계속 내보내지 않음 |
+| 모델 값 | `train_info.json` 선택 값 `review_threshold`(0 초과·`threshold` 미만). 없으면 경계 구간 없음으로 항상 `review:false`. 로더·사전 검사가 같은 `validate_toxicity`로 범위를 검사해 벗어나면 로더 거부·사전 검사 `INVALID_METADATA` |
+| 계산 | 창 확률이 `threshold` 이상이면 바로 flagged로 멈추고, 아니면 끝까지 보며 `review_threshold` 이상인 창이 있었는지 기록(`app/toxicity/service.py` `classify`) |
+| 건수 | scoring에는 지표 수집이 없다(Prometheus exporter·Collector egress 없음, [architecture](../design/architecture.md) 4.3·4.6). 그래서 처리 차례를 받은 요청마다 남는 로그 한 줄 `Toxicity check model=… result=REVIEW latency_ms=…`로 센다(형식 오류 400은 이 줄이 없고, 차례 대기 초과는 `Toxicity check skipped reason=QUEUE_TIMEOUT`). `result`는 `FLAGGED`·`REVIEW`·`PASSED`·`INACTIVE`·`DEADLINE`·`FAILED`, 원문·점수·학생 ID 없음(NFR-SEC-05). 운영자가 보는 건수는 learning 표현 검토 대기 행 수(#727). scoring 지표가 필요해지면 지표 수집과 함께 따로 정한다 |
+| 시험 | `tests/test_toxicity.py`: `review` 참 · flagged면 거짓 · `review_threshold` 없으면 거짓, 메타데이터 검사 거부(`validate_toxicity`, `review_threshold`가 `threshold`와 같거나 큼·0), 사전 검사 `INVALID_METADATA`. 계약 `ToxicityActive.review` 필수 |
+| 구현 시점 | 코드·계약·시험은 #691 커밋(3f2d96a5, PR #773)에 함께 들어갔다. #726은 이 절과 건수 기준만 더한다 |
+
+- 지금 서비스 모델 `tox-koelectra-small` 1.0-1119에는 `review_threshold`가 없어 `review`는 항상 `false`다. 값은 재학습(#729)에서 기준안(검증용 정상 문장 중 경계 구간 비율 5% 이하, api-spec 4.3.4)으로 계산한다
+- learning `ToxicityClient`는 이미 `review`를 읽고, 응답에 없으면 계약 밖으로 보고 검사 안 됨으로 처리한다. 검토 대기에 올리는 것은 #727
