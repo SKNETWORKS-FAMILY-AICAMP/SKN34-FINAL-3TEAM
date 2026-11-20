@@ -166,10 +166,6 @@
     "maxReplicas": 3,
     "cpuUtilization": 70
   },
-  "image": {
-    "digest": "sha256:deef0fc1b721f8f79446ec7d1a8e5cfe9a3e3b836854984b1854b29f23a69f61",
-    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-service"
-  },
   "ingress": {
     "enabled": false
   },
@@ -180,7 +176,77 @@
     "enabled": false
   },
   "migration": {
-    "enabled": false
+    "enabled": true,
+    "image": {
+      "pullPolicy": "IfNotPresent"
+    },
+    "args": [
+      "migrate"
+    ],
+    "env": [
+      {
+        "name": "FLYWAY_URL",
+        "value": "jdbc:postgresql://sagomungchi-demo-db.czcw0ywu2euo.ap-northeast-2.rds.amazonaws.com:5432/learning_db?sslmode=verify-full&sslrootcert=/rds-ca/global-bundle.pem&connectTimeout=10"
+      },
+      {
+        "name": "FLYWAY_USER",
+        "valueFrom": {
+          "secretKeyRef": {
+            "name": "learning-migrate-credentials",
+            "key": "DB_USERNAME"
+          }
+        }
+      },
+      {
+        "name": "FLYWAY_PASSWORD",
+        "valueFrom": {
+          "secretKeyRef": {
+            "name": "learning-migrate-credentials",
+            "key": "DB_PASSWORD"
+          }
+        }
+      },
+      {
+        "name": "FLYWAY_DEFAULT_SCHEMA",
+        "value": "public"
+      },
+      {
+        "name": "FLYWAY_CREATE_SCHEMAS",
+        "value": "false"
+      },
+      {
+        "name": "FLYWAY_BASELINE_ON_MIGRATE",
+        "value": "false"
+      },
+      {
+        "name": "FLYWAY_CLEAN_DISABLED",
+        "value": "true"
+      }
+    ],
+    "resources": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "128Mi"
+      },
+      "limits": {
+        "memory": "512Mi"
+      }
+    },
+    "extraVolumes": [
+      {
+        "name": "rds-ca",
+        "configMap": {
+          "name": "rds-ca"
+        }
+      }
+    ],
+    "extraVolumeMounts": [
+      {
+        "name": "rds-ca",
+        "mountPath": "/rds-ca",
+        "readOnly": true
+      }
+    ]
   },
   "nameOverride": "learning-service",
   "networkPolicy": {
@@ -268,7 +334,29 @@
       "report-worker"
     ],
     "namespaceDefaultDeny": false,
-    "egressToCollector": true
+    "egressToCollector": true,
+    "migrationEgress": [
+      {
+        "ports": [
+          {
+            "port": 5432,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "10.20.128.0/20"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "10.20.144.0/20"
+            }
+          }
+        ]
+      }
+    ]
   },
   "pdb": {
     "enabled": false
