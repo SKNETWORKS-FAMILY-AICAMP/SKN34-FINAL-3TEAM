@@ -137,5 +137,22 @@ class JobConflict(ValueError):
     """A job ID was reused for a different student or period."""
 
 
+def ensure_same_job(
+    report: WeeklyReport,
+    student_id: UUID,
+    period_from: date,
+    period_to: date,
+    period_type: PeriodType,
+) -> None:
+    """Shared by generation and reconciliation so both accept the same job identity."""
+    if (report.student_id, report.period_from, report.period_to, report.period_type) != (
+        student_id,
+        period_from,
+        period_to,
+        period_type,
+    ):
+        raise JobConflict("Report job student/period does not match")
+
+
 class GenerationBusy(RuntimeError):
     """Another worker owns the job; let EventConsumer retry the delivery."""

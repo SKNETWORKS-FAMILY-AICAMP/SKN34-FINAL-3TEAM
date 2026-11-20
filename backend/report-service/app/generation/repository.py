@@ -35,6 +35,7 @@ from app.generation.models import (
     ReportState,
     ReportStatus,
     WeeklyReport,
+    ensure_same_job,
 )
 
 metadata = MetaData()
@@ -369,18 +370,13 @@ class ReportRepository:
         )
         existing = self.find_by_job(session, command.job_id)
         if existing is not None:
-            if (
-                existing.student_id,
-                existing.period_from,
-                existing.period_to,
-                existing.period_type,
-            ) != (
+            ensure_same_job(
+                existing,
                 command.student_id,
                 command.period_from,
                 command.period_to,
                 command.period_type,
-            ):
-                raise JobConflict("Report job student/period does not match")
+            )
             return existing, False
         revision = session.scalar(
             select(func.coalesce(func.max(weekly_report.c.revision), 0) + 1).where(
