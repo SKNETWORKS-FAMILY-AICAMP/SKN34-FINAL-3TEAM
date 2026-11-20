@@ -15,7 +15,6 @@ import type {
   Feedback,
   Mission,
   Period,
-  Report,
   Session,
 } from '../../domain/classroom.ts'
 import type { ClassroomGateway } from './gateway.ts'
@@ -132,7 +131,6 @@ function payload(a: AnswerContent, followupId?: string, timing?: AnswerTiming): 
 const body = (data: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(data) })
 export function createApiGateway(): ClassroomGateway {
   const conversations = new Map<string, string>()
-  const regenerating = new Map<string, number>()
   async function childRecords(child: Child, role: 'STUDENT' | 'PARENT', period: Period) {
     const path = role === 'STUDENT' ? '/students/me/attempts' : `/children/${child.id}/attempts`
     const rows: import('../../domain/classroom.ts').PublicAttempt[] = []
@@ -352,72 +350,6 @@ export function createApiGateway(): ClassroomGateway {
     async reflect(id, reflection) {
       await saveReflection(id, reflection)
       return attemptDto(await apiFetch<unknown>(`/attempts/${id}`, { cache: 'no-store' }))
-    },
-    async report(child, period, revision) {
-      const reports = list(await apiFetch<unknown>(`/children/${child.id}/reports`)).map(object)
-      const found = reports.find((r) => object(r.period).from === period.from)
-      if (!found)
-        throw new ApiError({
-          code: 'REPORT_NOT_GENERATED',
-          status: 404,
-          title: '아직 생성된 리포트가 없습니다.',
-          detail: '완료된 기록 없음 리포트와 생성 전 상태는 다릅니다.',
-        })
-      const id = text(found.reportId, 'reportId'),
-        raw = object(
-          await apiFetch<unknown>(`/reports/${id}${revision ? `?revision=${revision}` : ''}`),
-        )
-      if (!['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED'].includes(String(raw.status)))
-        return contractError('리포트 status가 필요합니다.')
-      const reportPeriod = object(raw.period)
-      if (
-        raw.childId !== child.id ||
-        reportPeriod.from !== period.from ||
-        reportPeriod.to !== period.to
-      )
-        return contractError('요청한 자녀·기간과 리포트 범위가 다릅니다.')
-      // #129: core가 현재 상품 권한을 확인해 무료/프리미엄 필드를 선택한다.
-      // /children에 없는 plan이나 오래된 화면 상태로 서버의 제공 범위를 다시 판단하지 않는다.
-      if (raw.status === 'COMPLETED' && raw.narrative) {
-        const verification = object(raw.verification)
-        if (verification.numbersMatched !== true || verification.quotesMatched !== true)
-          return contractError('리포트의 숫자·인용 대조가 완료되지 않았습니다.')
-      }
-      const baseline = regenerating.get(id)
-      if (!revision && baseline !== undefined) {
-        if (Number(raw.revision) <= baseline && raw.status === 'COMPLETED') raw.status = 'QUEUED'
-        else if (raw.status === 'FAILED' || Number(raw.revision) > baseline) regenerating.delete(id)
-      }
-      const records = raw.status === 'COMPLETED' && raw.parentSharingEnabled !== false ? await childRecords(child, 'PARENT', period) : []
-      return {
-        reportId: id,
-        childId: child.id,
-        period,
-        revision: Number(raw.revision ?? 1),
-        revisions: Array.isArray(raw.revisions)
-          ? raw.revisions.map((v) => Number(object(v).revision))
-          : [1],
-        status: raw.status,
-        state: raw.state,
-        metrics: Array.isArray(raw.metrics) ? raw.metrics : [],
-        records,
-        eveningQuestion: typeof raw.eveningQuestion === 'string' ? raw.eveningQuestion : undefined,
-        narrative: typeof object(raw.narrative ?? {}).text === 'string'
-          ? object(raw.narrative).text
-          : null,
-        regenerations: Math.max(0, (Array.isArray(raw.revisions) ? raw.revisions.length : 1) - 1),
-      } as Report
-    },
-    async regenerate(report) {
-      if (regenerating.has(report.reportId))
-        throw new ApiError({
-          status: 409,
-          code: 'REPORT_GENERATION_IN_PROGRESS',
-          title: '이미 새 판을 생성 중입니다.',
-        })
-      await apiFetch(`/reports/${report.reportId}/regenerate`, body({}))
-      regenerating.set(report.reportId, report.revision)
-      return { ...report, status: 'QUEUED', regenerations: 1 }
     },
     async analyze(child, period, question) {
       const scopeKey = `${child.id}:${period.from}:${period.to}`

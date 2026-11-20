@@ -51,6 +51,38 @@ function serve(t: test.TestContext, report: unknown) {
   return paths
 }
 
+test('같은 월요일의 일일·주간 리포트는 선택한 ID로 조회한다 (#837)', async t => {
+  const daily = { ...summary, reportId: 'daily', periodType: 'DAILY', period: { from: '2026-11-16', to: '2026-11-16' } }
+  const weekly = { ...summary, reportId: 'weekly', periodType: 'WEEKLY', period: { from: '2026-11-16', to: '2026-11-22' } }
+  const paths: string[] = []
+  setAccessToken('synthetic', 'PARENT')
+  t.after(() => setAccessToken(null))
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    paths.push(String(url))
+    const path = new URL(String(url), 'https://example.test')
+    if (path.pathname.endsWith('/children/child-1/reports')) {
+      const kind = path.searchParams.get('periodType')
+      return json({ items: [daily, weekly].filter(r => !kind || r.periodType === kind) })
+    }
+    const selected = [daily, weekly].find(r => path.pathname === `/api/v1/reports/${r.reportId}`)
+    return selected ? json(detail({ ...selected, revision: Number(path.searchParams.get('revision') ?? 1) })) : json({}, 404)
+  })
+  assert.equal((await parentApi.reports(child.id, 'COMPLETED')).items.length, 2)
+  for (const selected of [weekly, daily]) {
+    const report = await parentApi.report(selected.reportId, child.id)
+    assert.equal(report.reportId, selected.reportId)
+    assert.deepEqual(report.period, selected.period)
+    assert.equal(report.periodType, selected.periodType)
+  }
+  assert.deepEqual(paths.slice(1), ['/api/v1/reports/weekly', '/api/v1/reports/daily'])
+  assert.equal((await parentApi.report('weekly', child.id, 2)).revision, 2)
+  assert.equal(paths.at(-1), '/api/v1/reports/weekly?revision=2')
+  const filtered = await parentApi.reports(child.id, 'COMPLETED', undefined, 'WEEKLY')
+  assert.deepEqual(filtered.items.map(r => r.reportId), ['weekly'])
+  assert.match(paths.at(-1)!, /status=COMPLETED&periodType=WEEKLY$/)
+  await assert.rejects(parentApi.report('weekly', 'other-child'), /자녀 범위/)
+})
+
 test('자녀 목록의 plan 미제공은 미확인으로 두고 무료로 단정하지 않음', async (t) => {
   setAccessToken('memory-test-token')
   t.mock.method(globalThis, 'fetch', async () =>
@@ -71,10 +103,10 @@ test('plan이 없어도 서버가 준 서술·저녁 질문을 표시하고 숫�
     eveningQuestion: '오늘 어떤 생각을 더 적고 싶었나요?',
     narrative: { text: '서버가 대조를 마친 요약', source: 'LLM', modelExplanation: null },
   }))
-  const report = await createApiGateway().report(child, previousWeek)
+  const report = await parentApi.report('r-1', child.id)
   assert.equal(report.eveningQuestion, '오늘 어떤 생각을 더 적고 싶었나요?')
-  assert.equal(report.narrative, '서버가 대조를 마친 요약')
-  assert.ok(paths[0].endsWith(`/children/${child.id}/reports`)) // 목록은 {items}만(ReportList)
+  assert.equal(report.narrative?.text, '서버가 대조를 마친 요약')
+  assert.deepEqual(paths, ['/api/v1/reports/r-1'])
   setAccessToken(null)
 })
 
@@ -83,15 +115,15 @@ test('plan이 없어도 서술이 있는데 대조 실패면 성공으로 표시
     narrative: { text: '대조 실패 서술', source: 'LLM', modelExplanation: null },
     verification: { numbersMatched: false, quotesMatched: true },
   }))
-  await assert.rejects(createApiGateway().report(child, previousWeek), /대조/)
+  await assert.rejects(parentApi.report('r-1', child.id), /검증/)
   setAccessToken(null)
 })
 
 test('무료 응답(narrative·eveningQuestion null)은 수치만', async (t) => {
   serve(t, detail({}))
-  const report = await createApiGateway().report(child, previousWeek)
+  const report = await parentApi.report('r-1', child.id)
   assert.equal(report.narrative, null)
-  assert.equal(report.eveningQuestion, undefined)
+  assert.equal(report.eveningQuestion, null)
   setAccessToken(null)
 })
 
@@ -100,17 +132,17 @@ test('오래된 자녀 plan과 관계없이 core의 현재 리포트 제공 범�
     eveningQuestion: '현재 구독으로 제공된 질문',
     narrative: { text: '현재 구독으로 제공된 요약', source: 'LLM', modelExplanation: null },
   }))
-  const report = await createApiGateway().report(child, previousWeek)
-  assert.equal(report.narrative, '현재 구독으로 제공된 요약')
+  const report = await parentApi.report('r-1', child.id)
+  assert.equal(report.narrative?.text, '현재 구독으로 제공된 요약')
   assert.equal(report.eveningQuestion, '현재 구독으로 제공된 질문')
   setAccessToken(null)
 })
 
 test('core의 무료 응답에 서술을 덧붙이지 않는다', async (t) => {
   serve(t, detail({}))
-  const report = await createApiGateway().report(child, previousWeek)
+  const report = await parentApi.report('r-1', child.id)
   assert.equal(report.narrative, null)
-  assert.equal(report.eveningQuestion, undefined)
+  assert.equal(report.eveningQuestion, null)
   setAccessToken(null)
 })
 
@@ -147,8 +179,8 @@ test('비공개 리포트는 수치를 표시하면서 학부모 원문을 추�
     requests.push(String(url))
     return json(String(url).includes('/children/') ? { items: [summary] } : detail({ parentSharingEnabled: false }))
   })
-  const result = await createApiGateway().report(child, previousWeek)
-  assert.deepEqual(result.records, [])
+  const result = await parentApi.report('r-1', child.id)
+  assert.equal(result.parentSharingEnabled, false)
   assert.ok(requests.every(url => !url.includes('/attempts')))
 })
 

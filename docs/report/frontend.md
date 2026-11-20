@@ -1188,3 +1188,11 @@ NFR-UX-02(주요 기능 키보드·터치 조작, 오류·진행 상태를 색�
 1. 실제 core: `npm run dev`(목업 비활성). DB·core·상품·학부모·연결 자녀와 테스트 상점 설정 필요
 2. 화면·모의 검증: `VITE_API_MOCK=true npm run dev`. 외부 PG 미호출, 상단 상태 선택기로 결제 확인 중·갱신 실패·환불 실패 시연. 고정 데이터는 `src/mocks/handlers/payments.ts`
 3. 실제 PG 단건 연결 확인: `npm run dev:payment -- --port 5251`. 결제창과 서버 승인은 실제 토스 테스트 API, 주문은 메모리에만 보관하고 SANDBOX_ONLY 표시, 이용권 미부여. production 미포함. 테스트 상품 14,900원은 `scripts/payment-test-server.ts`
+
+
+## 48. 미사용 리포트 조회 경로 정리 (#837)
+
+- 화면에서 사용하지 않는 `useReport`와 classroom gateway의 리포트 조회·재생성, 전용 타입·시연 저장소 및 student MSW의 중복 리포트 핸들러를 제거했다. 시작일만 비교하여 월요일 일일 리포트를 주간 리포트로 선택할 수 있던 경로가 없어졌다.
+- 실제 학부모 화면은 기존 `parentApi.report(reportId, childId, revision)`과 parent MSW 핸들러를 유지한다. API·DB·화면 동작 계약은 변경하지 않았다.
+- 기존 서버 응답 검증 테스트를 실제 parent API 경로로 옮겼다. 같은 시작일의 일일·주간 리포트 선택, `periodType=WEEKLY` 필터, 이전 판 조회와 자녀 범위 검사를 회귀 검증한다.
+- 검증: 웹 테스트 400개 통과(실패·스킵 없음), `test:types`, `lint`, `build` 통과. 로컬 자동 검증 결과이며 실서버 브라우저 테스트·원격 CI 결과와 구분한다.

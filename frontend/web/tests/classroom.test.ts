@@ -69,7 +69,7 @@ test('AI 실패해도 답변 저장 유지, 피드백 재시도/멱등 제출은
   )
   assert.equal((await api.attempt(a.attemptId)).answers.length, 1)
 })
-test('초안 실패 입력 보존 / 버전 충돌 / 메모는 학부모·리포트·분석에서 제외', async () => {
+test('초안 실패 입력 보존 / 버전 충돌 / 메모는 학부모 기록·분석에서 제외', async () => {
   const { api, child } = await setup()
   const a = await api.start(demoMissions(child.grade)[2], child)
   const draft = {
@@ -90,7 +90,6 @@ test('초안 실패 입력 보존 / 버전 충돌 / 메모는 학부모·리포�
   const records = await api.records(child, 'PARENT', recentPeriod)
   assert.equal('draft' in records.find((r) => r.attemptId === a.attemptId)!, false)
   assert.equal(JSON.stringify(await api.record(child, a.attemptId)).includes('SECRET'), false)
-  assert.equal(JSON.stringify(await api.report(child, previousWeek)).includes('SECRET'), false)
   assert.equal(
     JSON.stringify(await api.analyze(child, recentPeriod, '원문')).includes('SECRET'),
     false,
@@ -136,25 +135,13 @@ test('고르기 정답은 추가 질문 없이 마무리, 학생 자녀 범위 �
   assert.equal(f.followup, undefined)
   await assert.rejects(api.records({ ...child, id: 'another' }, 'STUDENT', recentPeriod))
 })
-test('학부모 자녀별 기록, 무료 분석 잠금, 빈 주 완료와 소표본, 이전 판 보존', async () => {
+test('학부모 자녀별 기록 범위와 무료 분석 잠금', async () => {
   const api = createDemoGateway()
   await api.login('parent@example.test', 'demo')
   const [premium, free] = await api.children()
   assert.equal((await api.records(free, 'PARENT', recentPeriod)).length, 1)
-  const empty = await api.report(premium, { from: '2026-10-12', to: '2026-10-18' })
-  assert.equal(empty.status, 'COMPLETED')
-  assert.equal(empty.state, 'NO_RECORD')
-  const r = await api.report(premium, previousWeek)
-  assert.equal(r.state, 'INSUFFICIENT_SAMPLE')
-  assert.equal(
-    r.metrics.every((m) => m.value === null),
-    true,
-  )
-  assert.equal((await api.regenerate(r)).revision, 2)
-  assert.equal((await api.report(premium, previousWeek, 1)).revision, 1)
-  await assert.rejects(api.regenerate(r))
   await assert.rejects(api.analyze(free, recentPeriod, '원문'))
-  await assert.rejects(api.record(free, r.records[0].attemptId))
+  await assert.rejects(api.record(free, (await api.records(premium, 'PARENT', previousWeek))[0].attemptId))
   await assert.rejects(api.records({ id: 'other-parent-child' } as Child, 'PARENT', recentPeriod))
 })
 test('학년별 입력 방식과 KST 기간 경계', () => {
