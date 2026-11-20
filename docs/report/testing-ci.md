@@ -164,7 +164,7 @@ $COMPOSE down -v
 | migrations | `migrations/*.Dockerfile`을 저장소 루트 context로 `docker build`(push 없음) | 빌드 실패 |
 
 - 렌더 조합은 Argo CD 정의를 따름. 환경 파일 이름과 같은 chart가 있으면(`observability`·`platform-data`) 그 chart, 나머지는 파일 이름을 릴리스 이름으로 `app-service` chart에. namespace는 app-service `app`, observability `observability`, platform-data `platform`. 새 chart 추가 시 워크플로의 namespace 대응도 추가(빠지면 CI 오류). 의존 chart가 있으면 `helm dependency build` 선행(현재 없음)
-- prod의 외부 chart values(`external-secrets`·`aws-load-balancer-controller`·`karpenter`)는 chart를 받아야 해서 검사하지 않음. 새 외부 chart values를 추가하면 워크플로 건너뛰기 목록에도 추가(빠지면 app-service로 렌더돼 CI 오류)
+- prod의 외부 chart values(`external-secrets`·`aws-load-balancer-controller`·`karpenter`·`argocd`)는 chart를 받아야 해서 검사하지 않음. 새 외부 chart values를 추가하면 워크플로 건너뛰기 목록에도 추가(빠지면 app-service로 렌더돼 CI 오류)
 - `app-service` 기본 values는 `image.repository`가 빈 문자열이라 단독 lint 시 스키마 `minLength` 실패. 환경별 이미지를 강제하는 설계이므로 실제 배포 조합으로만 lint
 
 ### CRD 처리
@@ -176,7 +176,7 @@ kubeconform은 기본 Kubernetes 스키마 → 공개 CRD 카탈로그 순으로
 | Kubernetes 스키마 | [yannh/kubernetes-json-schema](https://github.com/yannh/kubernetes-json-schema) `e0c72a1`의 `v1.35.8-standalone-strict` | kind 노드 이미지 v1.35.8과 같은 버전 |
 | CRD 스키마 | [datreeio/CRDs-catalog](https://github.com/datreeio/CRDs-catalog) `27233a5` | KEDA 2.21.0 CRD 갱신(2026-11-01) 포함, Argo CD `Application`·`ApplicationSet` 포함 |
 
-KEDA chart 버전을 올리면 카탈로그 커밋도 같은 버전 이후로 갱신. 카탈로그의 Argo CD 스키마와 v3.5.5 일치 여부는 미확인.
+KEDA chart 버전을 올리면 카탈로그 커밋도 같은 버전 이후로 갱신. 카탈로그의 Argo CD `Application`·`ApplicationSet`·`AppProject` 스키마는 prod Argo CD v3.5.7(argo-cd chart 10.11.7) CRD와 필드 경로가 모두 같음을 확인(2026-11-20, #855, [infra 9.18.1](infra.md#9181-argo-cd-설치-값과-진입점-855-2026-11-20)). Argo CD를 올리면 같은 대조를 다시 한다. 로컬 v3.5.5와는 대조하지 않았다.
 
 ### 로컬 실행
 

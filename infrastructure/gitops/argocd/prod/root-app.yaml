@@ -1,0 +1,31 @@
+# prod(EKS) app-of-apps 진입점(#855). project.yaml 다음에 손으로 1회 적용한다.
+# 같은 폴더의 platform/*.yaml(#856 플랫폼 Application)과 apps/*.yaml(#857 앱 ApplicationSet)만 읽는다.
+# 하위 Application의 sync-wave는 argocd.json의 Application health 확인 덕분에 앞 wave가 Healthy가 될 때까지 기다린다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sagomungchi-prod-root
+  namespace: argocd
+spec:
+  project: sagomungchi-prod
+  source:
+    repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+    targetRevision: main
+    path: infrastructure/gitops/argocd/prod
+    directory:
+      recurse: true
+      include: "{platform/*.yaml,apps/*.yaml}"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    # main 병합이 곧 배포 승인이라 자동 동기화한다. 하위 Application 파일을 지워도 자동 삭제하지 않는다(손으로 확인 뒤 삭제).
+    automated:
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

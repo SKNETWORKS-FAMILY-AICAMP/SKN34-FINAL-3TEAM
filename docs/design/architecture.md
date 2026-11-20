@@ -1061,7 +1061,7 @@ SKN34-FINAL-3TEAM/
 │  │     │     ├─ metrics-server.yaml
 │  │     │     ├─ observability.yaml
 │  │     │     └─ platform-network.yaml
-│  │     └─ prod/                # (예정) EKS Argo CD 진입점, External Secrets·AWS LB Controller·Karpenter
+│  │     └─ prod/                # EKS Argo CD 진입점(#855): project.yaml(AppProject sagomungchi-prod)·root-app.yaml(main), platform/(#856)·apps/(#857)
 │  ├─ kind/
 │  │  ├─ README.md               # 클러스터 기준·설치 절차
 │  │  ├─ local.yaml              # kind 클러스터 설정

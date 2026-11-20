@@ -1485,6 +1485,44 @@ SageMaker는 0대에서 켜질 때마다 S3에서 모델을 다시 받는데, �
 
 20:12 KST에 SageMaker 엔드포인트·IC·Auto Scaling 대상·로그 그룹이 운영 것(`sagomungchi-demo-explanation`, 사본 0, 마지막 변경 17:46)만 남았고 승인 경로(`explanation/gemma4-26b-a4b-lora-20261118/`, 31.7GB)는 바뀌지 않았음을 확인했다. 비용은 `ml.g6e.xlarge` 약 1시간(약 $3.2)과 S3 복사·요청이다.
 
+## 9.18 prod Argo CD 전환 (#859, 2026-11-20)
+
+2026-11-20 결정으로 운영(EKS) 배포를 B 계정 첫 배포(11/28)부터 Argo CD로 옮긴다. 배포 승인은 main 대상 digest 갱신 PR의 승인·병합이고, 범위는 앱 6개·migration·클러스터 플랫폼이다. 11/25 A 재가동에서 먼저 확인하고 11/26~28 B에 적용한다. 하위 절은 이슈별로 고정한다: 9.18.1 #855(설치 값·진입점·알림), 9.18.2 #856(플랫폼 Application), 9.18.3 #857(앱 ApplicationSet), 9.18.4 #858(cd-release digest PR). 이슈 사이 계약(AppProject 이름, root app 경로, sync wave, images 파일 키)은 에픽 #859 본문이 기준이다. 기존 Helm 경로(`cd-release` deploy job·`redeploy-app.ps1`)는 12/7 시연까지 비상용으로 둔다.
+
+### 9.18.1 Argo CD 설치 값과 진입점 (#855, 2026-11-20)
+
+절차는 [prod Argo CD README](../../infrastructure/gitops/argocd/prod/README.md), 값은 `infrastructure/gitops/environments/prod/argocd.json`.
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 버전 | argo-cd chart **10.11.7**(Argo CD **v3.5.7**), `global.image.tag`도 고정 | 로컬 kind와 같은 3.5대의 최신 patch(확인 필요 기본안). 3.6(chart 10.12 이상)은 로컬에서 쓴 적이 없다 |
+| 설치 | 손으로 `helm install` 1회 → `project.yaml` → `root-app.yaml`. Argo CD 자체는 root app이 관리하지 않음 | 자기 자신을 동기화하다 망가지면 복구 경로가 없어진다(확인 필요 기본안). 버전 변경도 손으로 `helm upgrade` |
+| 구성 | dex·HA·Ingress 끔, 각 1개, `eks.amazonaws.com/nodegroup=application` 필수 배치. 요청 CPU 275m·메모리 640Mi, 메모리 limit 합 약 2Gi | 데모 단일 클러스터, `application` 노드그룹 t3.medium 2대 예산. 자리가 없으면 Karpenter `application-burst`가 노드를 늘린다. 접속은 `kubectl port-forward`와 admin 계정만 |
+| AppProject | `sagomungchi-prod`. 출처는 이 저장소와 ESO·LB Controller·Karpenter chart 저장소, 대상은 `argocd`·`app`·`platform`·`observability`·`external-secrets`·`kube-system`, cluster 범위 자원은 Namespace·StorageClass·CRD·ClusterRole(Binding)·webhook 설정·IngressClass(Params)·NodePool·EC2NodeClass만. AppProject 자체는 하위 Application이 만들 수 없음 | #856·#857이 쓰는 범위만 연다. 새 namespace·외부 chart가 필요하면 그 PR에서 이 파일을 함께 고친다 |
+| root app | `sagomungchi-prod-root`, `targetRevision: main`, `argocd/prod`에서 `{platform/*.yaml,apps/*.yaml}`만 읽음. 자동 동기화(prune 끔, selfHeal 켬), 재시도 3회 | main 병합이 배포 승인이다. 하위 Application 파일을 지워도 배포된 리소스가 함께 지워지지 않도록 prune은 손으로 |
+| sync wave 대기 | `resource.customizations.health.argoproj.io_Application`으로 하위 Application health를 root에 올림 | Argo CD 1.8부터 Application health가 꺼져 있어, 켜지 않으면 app-of-apps에서 다음 wave가 앞 wave의 Healthy를 기다리지 않는다 |
+| 알림 | Notifications 켬, webhook 서비스 `discord`, 기본 구독으로 모든 Application의 동기화 성공·실패(같은 revision 1회)와 Health Degraded. webhook URL은 `argocd-notifications-secret`의 `discord-webhook-url`에 손으로 | Grafana 경보와 같은 Discord 채널(확인 필요 기본안). Argo CD에는 Discord 전용 서비스가 없어 webhook JSON(`content`)으로 보내고, 메시지는 `toJson`으로 따옴표를 처리 |
+| CI | `ci-gitops.yml`의 kubeconform이 `argocd/` 전체(local·prod)를 이미 검사. `argocd.json`은 외부 chart values로 건너뛰기 목록에 추가 | 빠지면 app-service chart로 렌더링돼 실패한다(testing-ci 4절의 규칙) |
+
+**확인 (2026-11-20, 저장소·로컬만, AWS 실행 없음)**
+
+| 확인 | 결과 |
+|---|---|
+| `helm template`(Helm 4.3.1, `--kube-version 1.35.8`) | 52개 리소스. Deployment 5·StatefulSet 1·Job 1 모두 `application` 노드그룹 필수 배치, 위 자원 값 |
+| kubeconform 0.8.0(ci-gitops와 같은 스키마 커밋, `-strict`) | `argocd/`·렌더 결과 60개 중 57개 통과, 실패 0. 건너뛴 3개는 Argo CD CRD 정의 자체 |
+| 카탈로그 Argo CD 스키마 대조 | datreeio `27233a5`의 Application·ApplicationSet·AppProject 스키마와 v3.5.7 CRD의 필드 경로가 각각 1482·7893·73개로 모두 같음. testing-ci 4절의 "v3.5.5 일치 여부 미확인" 항목을 정리 |
+| 별도 kind 클러스터(v1.35.8, 확인 뒤 삭제) | 같은 values(노드그룹 배치만 비움)로 설치 37초, Pod 6개 Running. 사용 메모리 controller 106Mi, 나머지 각 11~34Mi |
+| root app, 하위 폴더 비어 있음 | 리소스 0개로 Synced·Healthy |
+| sync wave 대기 | 시험용 하위 Application 2개(wave `1`은 readiness 60초 지연, wave `10`은 ConfigMap): root 동기화가 "waiting for healthy state of …/check-slow"로 63초 기다린 뒤 wave 10을 만들고 둘 다 Synced·Healthy |
+| AppProject 제한 | 허용하지 않은 저장소와 `default` namespace 대상 Application은 `InvalidSpecError` |
+| 알림 | webhook을 클러스터 안 echo 서버로 돌려 확인. root 수동 동기화 1회에 `{"content": "[Argo CD prod] sagomungchi-prod-root 동기화 성공, revision …"}` 1건(`Content-Type: application/json`), 하위 Application마다 1건 |
+
+kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 파일 사본, 저장소 URL만 바꿈)를 썼다. 실제 Discord 수신, Health Degraded 알림, EKS 노드 배치와 자원 여유, `main`의 실제 GitHub 동기화는 11/25 A에서 처음 확인한다.
+
+**A(11/25)·B(11/26~28)에서 할 일**: argocd CLI v3.5.7 준비 → `helm install`(README) → `argocd-notifications-secret` 생성 → `project.yaml`·`root-app.yaml` 적용 → root 수동 동기화 1회로 Discord 1건 → admin 비밀번호 변경·초기 Secret 삭제. B 런북 0·7단계에 넣었다.
+
+**한계**: root app은 `argocd` namespace에 Application을 만들 수 있으므로, 하위 Application 파일이 다른 AppProject(`default` 등)를 가리키지 않는지는 PR 리뷰로 확인한다. 하위 Application이 생긴 뒤 root app·Argo CD를 지우면 배포된 리소스까지 지워질 수 있어 되돌리기는 손으로 확인하며 한다.
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
