@@ -1,0 +1,69 @@
+{
+  "recordedAt": "2026-11-04T08:54:26.855289+00:00",
+  "environment": "prod",
+  "operation": "deploy",
+  "sourceCommit": "a47a596247adafa2ccfed82c94e4768b1837867b",
+  "targetRelease": "main-a47a596247ad",
+  "planSha256": "4e19c16f5962c43f348af46af2091f0b74559303bd32a556d04fc70a3c493aaa",
+  "policySha256": "4d784f5164ae86a227f2ebdbe2a399f2ba7066b139b98242942764dad135e129",
+  "images": {
+    "scoring-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/scoring-service@sha256:b2c36e72b9fdcd33c9d76fc32b16d96f8171af77e63d5f046b1e4fa4595af284"
+  },
+  "actor": "20220348-kim",
+  "run": {
+    "id": "41802823411",
+    "attempt": "1",
+    "url": "https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/41802823411"
+  },
+  "approvals": [
+    {
+      "user": "20220348-kim",
+      "state": "approved",
+      "environments": [
+        "prod"
+      ],
+      "comment": false
+    }
+  ],
+  "releases": [
+    {
+      "release": "scoring-service",
+      "digest": "sha256:b2c36e72b9fdcd33c9d76fc32b16d96f8171af77e63d5f046b1e4fa4595af284",
+      "previousRevision": 5,
+      "revision": 6,
+      "status": "deployed"
+    }
+  ],
+  "smoke": {
+    "checkedAt": "2026-11-04T08:54:26.009516+00:00",
+    "ok": true,
+    "steps": [
+      {
+        "step": "student-login",
+        "ok": true,
+        "ms": 1094
+      },
+      {
+        "step": "start-attempt",
+        "ok": true,
+        "ms": 108
+      },
+      {
+        "step": "submit-answer",
+        "ok": true,
+        "ms": 93
+      },
+      {
+        "step": "parent-refresh",
+        "ok": true,
+        "ms": 62
+      },
+      {
+        "step": "list-reports",
+        "ok": true,
+        "ms": 140
+      }
+    ]
+  },
+  "result": "success"
+}

@@ -298,3 +298,99 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 
 - 체크아웃은 `fetch-depth: 0`, PR은 병합 커밋이 아닌 PR 머리 커밋 기준
 - 실행 요약(`GITHUB_STEP_SUMMARY`)에 검사 범위와 커밋 수를 남긴다
+
+## 9. 비기능 요구사항 검증 근거표 (#811)
+
+[기능명세 3장](../design/functional-spec.md#3-비기능-명세) NFR 40개를 검증 방법이 실제로 실행됐는지 기준으로 한 표에 모은다(NFR-QA-01·QA-04). 결과·수치는 각 근거 절의 실제 실행 기록만 옮기고, 실행하지 않은 것은 "점검 예정"으로 둔다. 점검이 끝나면 해당 줄만 고친다.
+
+### 9.1 읽는 법
+
+- 기준: 2026-11-20, develop `a836e3e8`
+- 상태: **충족** / **미충족**(사유) / **범위 밖**(결정 근거) / **점검 예정**(날짜·이슈, 9.4). 결과 칸의 "참고"는 같은 검증을 다른 환경에서 먼저 한 기록이며 상태 판정에 쓰지 않는다
+- 검증 구분(NFR-QA-04)
+  - 모의: 테스트 대역(LLM·결제·하위 서비스 스텁, MSW). DB·브로커는 Testcontainers 실제
+  - PG: 토스페이먼츠 테스트 거래
+  - 실API: 실제 OpenAI·SageMaker 호출
+  - CI: 원격 GitHub Actions 실행(9.2)
+  - 배포: 실환경 확인. kind(로컬 팀 클러스터), A(AWS A 계정 운영 데모), B(AWS B 계정 시연, #783)
+- 테스트 경로 약어: core·learning = `backend/<서비스>-service/src/test/kotlin/com/sagomungchi/<core|learning>/`, ai·report = `backend/<서비스>-service/tests/`, web = `frontend/web/tests/`
+
+### 9.2 CI·E2E 기준 실행 (2026-11-20 확인)
+
+| 워크플로 | 대상 | 실행 ID | 결과 |
+|---|---|---|---|
+| ci-core-service·ci-learning-service·ci-ai-service·ci-report-service·ci-web·ci-contracts·ci-secrets | develop push `8034ca25` (11/20 14:07 KST) | 44678892265·44678892352·44678892303·44678892222·44678892251·44678892304·44678892089 | 모두 success |
+| ci-contracts·ci-secrets | develop push `a836e3e8` (11/20 15:14 KST) | 44686359539·44686359553 | success |
+| e2e(야간 schedule, 대역 스택) | develop `3a07ddc4` (11/20 09:06 KST) | 44643094168 | 9 passed (1.9분) |
+
+- 표의 "CI"는 위 실행에서 해당 테스트가 통과했다는 뜻이다. 테스트 이름은 근거 칸에 적는다
+- `e2e.yml`은 모의(Google·LLM·M2·설명 sLLM·토스 대역)만 쓴다. 실제 API·PG·배포 확인으로 해석하지 않는다(2절)
+
+### 9.3 근거표
+
+| NFR | 기준(요약) | 검증 구분 | 결과 | 근거 위치 | 날짜 | 상태 |
+|---|---|---|---|---|---|---|
+| SEC-01 | 만 14세 미만 법정대리인 동의 없이 자녀 등록 불가 | 모의·CI | 동의 전 `GET /children`·`PATCH /me` 403 `CONSENT_REQUIRED`, 동의 항목 누락 `POST /children` 400, 필수 문서가 바뀌면 기존 동의 무효. 동의한 적 없는 계정의 `POST /children`을 직접 보내는 시험은 없음 | core `consent/ConsentChildrenTest`, [auth-account 2](auth-account.md#2-동의자녀-등록-37) | 11/20 | 충족 |
+| SEC-02 | 권한 규칙을 전 경로에 적용, 친구 방 응답에 학생 ID·회차 키 없음 | 모의·CI | 다른 보호자·학생의 자녀·시도·답변·리포트·대화·알림 요청 403·404, 친구 방 응답에 `studentId`·`themeId`·`weekStart`·`postId` 없음 | core `community/FriendRoomIntegrationTest`·`learning/DashboardIntegrationTest`·`report/ReportHttpTest`·`conversation/ConversationIntegrationTest`, learning `answer/service/AnswerServiceTest`, `scripts/tests/test_friend_room_contract.py`, [retention-expansion 20](retention-expansion.md#20-친구-방-구경-core-708learning-707-2026-11-16) | 11/20 | 충족 |
+| SEC-03 | 외부 AI에 최소 기록만, 이름·불필요한 식별정보 제외 | — | LLM 요청 페이로드 점검 미실행 | — | — | 점검 예정 11/26 |
+| SEC-04 | LLM·토스 키를 저장소·배포 파일·화면에 두지 않음 | CI | Gitleaks 전체 이력 스캔에서 합성 값 3건 예외 처리 뒤 0건. 이후 모든 PR·push에서 실행(9.2 `a836e3e8` success) | [8절](#8-비밀-정보-스캔-ci-810), [infra 4.3](infra.md#43-비밀-정보-스캔-ci-810) | 11/19 | 충족 |
+| SEC-05 | 비밀번호·키·카드 정보·학생 원문을 운영 로그에 미기록 | — | 로그 샘플 점검 미실행 | — | — | 점검 예정 11/26 |
+| SEC-06 | 결제수단 민감 정보는 PG 처리, 화면·로그 비노출 | 모의·CI | 저장 데이터: 빌링 자격 무작위·암호화, 결제·환불 응답과 멱등 저장 기록에 PG 키 없음. 로그 점검은 미실행(시험은 도메인 객체 `toString()`만 봄) | core `payment/PaymentProtectionTest`·`payment/PaymentIntegrationTest`(#168), [core-gateway 24.6](core-gateway.md#246-pg-검증운영-입력) | 11/20 | 점검 예정 11/26(로그) |
+| SEC-07 | 가상 학생·자체 미션만, 실제 아동 정보 미수집 | 배포(kind) | 참고: kind에서 `audit-demo-data.sql`(기준 월요일 12/7 사본) 3개 DB 통과. A·B 미실행 | `infrastructure/aws/audit-demo-data.sql`, [infra 9.7.2](infra.md#972-kind-확인-실제-17201745) | 11/13 | 점검 예정 12/5 |
+| SEC-08 | PIN·기기 자격은 해시, 쿠키 httpOnly·Secure·SameSite=Strict | 모의·CI | 미등록·위조·다른 자녀·만료·해제 기기는 PIN 전 거부, 동시 실패 5회 잠금·해제 후 초기화, PIN `pbkdf2-sha256` 해시, 페어링 코드는 해시만 Redis, 쿠키 HttpOnly·SameSite=Strict. 시험 설정이 `cookie-secure=false`라 Secure 속성은 미확인 | core `account/StudentDeviceAuthTest`, [auth-account 4](auth-account.md#4-학생-기기pin-로그인-p01-개정-58) | 11/20 | 충족 |
+| DAT-01 | 답변·판정·되묻기·돌아보기를 덮어쓰지 않음 | 모의·CI | 보완 답변 v2·v3 제출 뒤 v1 행 그대로, 시도 버전 [1,2,3] | learning `answer/service/AnswerServiceTest`·`attempt/service/AttemptComparisonIntegrationTest` | 11/20 | 충족 |
+| DAT-02 | 결과마다 미션·기준표·모델·프롬프트 버전 연결 | 모의·CI | 판정·되묻기에 모델·프롬프트 버전, 답변에 기준표 버전 저장, 공개 중 수정은 새 버전·진행 중 시도는 시작 버전 유지. "판정 뒤 기준표 변경 → 과거 판정 재조회"를 한 번에 잇는 시험은 없음 | learning `judgment/facade/FeedbackFacadeTest`·`mission/service/AdminMissionServiceTest`·`attempt/service/AttemptServiceTest`, ai `test_active_versions.py` | 11/20 | 충족 |
+| DAT-03 | AI Hub 데이터 저장소·화면 미포함, 생성형 AI 출력은 학습 자료로 미사용 | 저장소 점검 | `git ls-files`(`a836e3e8`): zip·parquet 0개, jsonl·csv 12개는 자체 작성 평가 자료·교육과정 지식, AI Hub 이름이 든 3개는 집계 요약·스크립트로 원문 0건. `.gitignore` 14~21행이 AI Hub 폴더·파일명 차단. 생성형 AI 출력 쪽은 `ml/tox` 아이 말투 학습 문장이 Claude 작성(README에 예외로 적음, 기능명세에는 예외 없음) | 이 절 점검, [ml/tox README](../../ml/tox/README.md) | 11/20 | 미충족(tox 학습에 생성형 AI 문장 사용. 설계 예외 반영 또는 재학습 결정 필요) |
+| DAT-04 | 삭제 정책을 문제풀이·대화·리포트·대시보드에 동일 적용 | 모의·CI | 학생 삭제 뒤 learning 근거 `available=false`·원문 없음, report 삭제 대기 중 조회·생성 차단, core 대화 근거 이용 불가, 웹은 `available:false` 근거를 링크하지 않음. 화면 전체 미노출 확인은 수동 `parent-admin-browser.mjs`뿐(CI 밖) | learning `record/StudentDeletionTest`, report `test_deletion.py`, core `conversation/ConversationIntegrationTest`, web `reportHighlight.test.ts` | 11/20 | 충족 |
+| DAT-05 | PITR 7일, RPO 5분·RTO 4시간, 복구 정합성 확인 | 배포(A) | RTO 요청→`available` 19분 8초. RPO 5분 23초(같은 날 다른 시점 3분 37초). 답변 2,814건 md5·스키마·열 지문 일치. 근거 연결·결제 행이 0건이라 그 정합성과 PG 대조는 실데이터로 미확인 | [infra 9.12](infra.md#912-rds-pitr-복구-시험-629-2026-11-18) | 11/18 | 미충족(RPO: PITR 로그 업로드 주기가 약 5분이라 5분을 넘을 수 있음. 목표는 유지, 2026-11-20 결정) |
+| REL-01 | 제출·결제 승인·PG 통지·알림·재처리 1회만 반영 | 모의·CI | 같은 키 재제출은 첫 답변 반환, 동시 승인 → PG 호출 1·구독 1, 같은 갱신 기간 1회 청구, 서명된 중복 웹훅 1회 반영, 반복 사건 알림 1건, 소비자 `processed_event` 중복 무시 | learning `AnswerServiceTest`·`answer/service/AnswerConcurrencyTest`, core `payment/PaymentIntegrationTest`·`notification/NotificationIntegrationTest`·`_common/messaging/MessagingIntegrationTest` | 11/20 | 충족 |
+| REL-02 | 지연·외부 장애 시 시간 초과·재시도·중복 방지(P12) | 모의·CI | 하위 서비스 대역 지연·장애로 504·재시도 없음·서킷 열림, 사용 증빙 6초 지연을 5초에 끊음, 전송 시간 초과는 두 번째 호출 없이 UNKNOWN 기록 | core `learning/LearningClientTest`·`payment/TossCircuitTest`·`payment/PremiumUsageClientTest`·`admin/AdminOperationsIntegrationTest`, learning `judgment/client/AiClientTest`·`_common/config/FeedbackTimeoutBudgetTest` | 11/20 | 충족 |
+| REL-03 | 실패한 분석을 임의 결과로 대체하지 않음, 결제 불명확 시 추가 청구 전 확인 | 모의·CI | AI 실패는 FAILED·503 재시도 가능·답변 유지, 근거 없는 충족 응답은 `AI_BAD_RESPONSE`, 분석 대화 최종 검증 실패는 답을 저장하지 않음, 승인 응답 유실은 재청구 없이 조회로 복구 | learning `judgment/facade/FeedbackFacadeTest`, core `conversation/AdminConversationRetryTest`·`payment/PaymentIntegrationTest`, ai `analysis_agent/test_verification.py`, web `paymentCheckout.test.ts` | 11/20 | 충족 |
+| REL-04 | 저장/AI 결과, 보류/실패, 기록 없음/조회 실패 분리 | 모의·CI | 보류는 DONE + 사유, 실패는 FAILED, core·report 클라이언트가 기록 없음과 조회 실패 구분, 웹은 조회 실패·처리 중을 빈 기록으로 바꾸지 않음 | learning `judgment/domain/JudgmentTest`, core `learning/LearningRecordClientTest`·`learning/FeedbackIntegrationTest`, report `test_learning_client.py`, web `dashboard40Contract.test.ts` | 11/20 | 충족 |
+| PRF-01 | 제출·되묻기·분석 대화·리포트 지연 실측, 목표는 측정 후 합의 | 실API·배포(kind·A) | 실제 LLM·동시 1명: 판정 SSE p95 8.9초(kind)·8.8초(A), 판정+되묻기 12.5·12.8초, 분석 대화 8.9·8.1초, 주간 리포트 재생성 35.3초(kind만). LLM 스텁 부하: 300명 API p95 374ms(1차)·1,042ms(2차), 한계는 RDS CPU | [infra 9](infra.md#9-aws-데모-부하-시험-1차-361)·[9.10](infra.md#910-실제-llm-조건-로컬-응답-시간-실측-630-2026-11-16)·[9.10.6](infra.md#9106-aws-운영-데모-실측-2026-11-18)·[9.14](infra.md#914-aws-데모-부하-시험-2차-hpakarpenter-확장축소-384-2026-11-18), [ai 19.5](ai.md#195-aws-운영-데모-실측과-kind-비교-2026-11-18) | 11/05~11/18 | 충족(실측 기록. 응답 목표 수치는 "측정 후 합의"라 범위 밖, B 재측정 9.4) |
+| PRF-02 | 호출별 입력·출력 토큰 기록, 학생 ID·답변 미기록, 원가 산식 | 모의·CI·실API | `llm.usage.recorded.v1` 스키마에 학생·답변 필드 없음(`additionalProperties: false`), 발행 본문 `subject` 없음 시험. 실제 OpenAI 호출 종류별 평균 토큰(판정 입력 585·출력 301)과 원가 산식 계산 | `contracts/events/llm.usage.recorded.v1.schema.json`, ai `messaging/test_usage_recorder.py`, [ai 19.2](ai.md#192-호출-종류별-평균-토큰비용-이번-측정)·[19.3](ai.md#193-원가-산식-기획서-39) | 11/16 | 충족 |
+| PRF-03 | 리포트 설명 주 1회 일괄, 엔드포인트 일 23:30~월 02:00만 1대 | 실API·배포(A) | 참고: A 시험 예약으로 축소 → 사본 0(15:50)·인스턴스 0(16:01), 확장 → 준비 +20.5분, 주간 예약 설정. 실제 주간 창 뒤 0대 복귀는 미확인 | `infrastructure/aws/sagemaker/explanation-endpoint.json`, [infra 9.13.9](infra.md#콜드-시간과-예약-확장), [ai 24.6](ai.md#246-a-계정-실제-엔드포인트-확인-2026-11-18-가상-입력) | 11/18 | 점검 예정(B 첫 주간 창, #783) |
+| AIQ-01 | 미션당 예시 20개·평가자 2명, 사람-사람·사람-AI QWK | 실API·배포(kind) | 데모 미션 5개 × 자체 작성 답안 20개: 결과 QWK 사람-사람 0.809·사람-AI 0.792, 요소 일치율 0.880·0.875, 보류 12%, 인용 불일치 0. 최저 DEMO-14 0.676. 합격선은 AIQ-06 | [ai 1 기준선 결과](ai.md#기준선-결과-585-2026-11-13), `evaluation/results/judgment/` | 11/13 | 충족 |
+| AIQ-02 | M2 klue 학습, 처음 보는 주제 분리 평가, 기준선·공개 LLM 비교, 사람끼리 상관 함께 보고 | 학습 기록(RunPod) | Pearson 처음 보는 주제 서술 0.538·논술 0.452(사람끼리 0.694·0.560), 학습한 주제 0.685·0.700, 공개 LLM LoRA(Qwen3-1.7B 0.684·Kanana-2-3B 0.689) 비교 뒤 klue 유지. 규칙·TF-IDF 기준선은 2.0 모델(71819) QWK로만 있고 `c26d8455` 이전 `ml/m2/README.md`에 남음 | [ml/m2 README](../../ml/m2/README.md), [planning 2.3](planning.md#23-m2-중간-결과-112-기준) | 11/01~11/02 | 충족 |
+| AIQ-03 | 설명 sLLM 인용·금지어 검사와 사람 검토 50개, 허용 기준 11/22 | 실API(SageMaker·RunPod) | 참고: 가상 글 1편 15회 `checks.py` 통과 LoRA 14/15·기반 단독 8/15, 파일럿 금지어 0·인용 4/4 원문 일치. 사람 검토 50개·3인 A/B 설문 미실시, 실제 학생 글 통과율 미집계, 허용 기준 미정 | [ml/sllm README 평가](../../ml/sllm/README.md#평가), [gemma-explanation-validation 3](gemma-explanation-validation.md#3-결과), [infra 9.13.9](infra.md#기반-단독과-lora-비교-746-d2) | 11/16~11/18 | 점검 예정 11/22 |
+| AIQ-04 | M1 수학 문항 그룹 분할·학습·평가, 검증 범위만 활성화 | 학습 기록 | 시험 16,913개 균형 정확도: 다수 클래스 0.500, 규칙 0.642·0.703. 학습 모델은 코드 확인용(0.5)뿐이라 서비스 비활성 | `ml/m1/results/eval_m1.md`·`eda_71716.md` | 11/02 | 충족(후순위, 비활성 유지) |
+| AIQ-05 | 활성화 전 고정 평가 비교, 기준 충족 범위만 승인 | 배포(A) | M2 b판 경계: 사전 검사 → 등록 → 승인·활성화(초5·6) → scoring `LOADED`, 실제 채점 5건 새 경계와 일치. 리포트 Gemma `gemma4-26b-a4b-lora-20261118-r2` 활성화(사람 검토 미실시 상태). 판정 프롬프트 `.evaluation.json` 준비 | [ai 3](ai.md#3-모델-레지스트리ai-사용량-43), [scoring 7.8](scoring.md#78-운영-적용-613-2026-11-17), [ml/sllm README](../../ml/sllm/README.md) | 11/17~11/18 | 충족 |
+| AIQ-06 | 11/22까지 허용 기준, 넘은 범위만 서비스 적용 | — | 판정 QWK·M2·설명 sLLM·M1 허용 기준 모두 미정 | [ai 1](ai.md#1-판정되묻기-6), [planning 2.3](planning.md#23-m2-중간-결과-112-기준) | — | 점검 예정 11/22 |
+| UX-01 | PC에서 학습 흐름, 학부모·관리자 768·390px 가로 넘침 없음 | 모의·CI·배포(대역 compose) | PC 실서버 E2E 9개 통과(9.2). 참고: 1440·768·390px 넘침 검사는 MSW 목업에서만(학부모 31항목, 관리자 7·14화면) | [2절](#2-실서버-브라우저-e2e와-외부-스텁-246), [frontend 22](frontend.md#22-학부모-공통-레이아웃설정결제-개선-548-2026-11-12) | 11/12~11/20 | 점검 예정 11/27(#763 뒤) |
+| UX-02 | 키보드·터치, 색 외 글 안내, 입력 이름·선택 대상 | 모의·CI | 참고: axe-core로 학생·학부모 14화면 점검(MSW) → #639~#641 수정, `tests/browser/accessibility.spec.ts` 1440·1024·390 회귀. 실제 서버·화면 읽기 프로그램 미점검 | [frontend 40](frontend.md#40-학생학부모-주요-화면-접근성-점검-nfr-ux-02-630-일부-2026-11-13)·[44](frontend.md#44-학생학부모-접근성-버그-수정-639640641-2026-11-13) | 11/13 | 점검 예정 11/27(#763 뒤) |
+| UX-03 | 학년이 이해할 길이·표현, 대표 시나리오에서 문구 확인 | 문서 점검 | 학생 화면 글자·간격·폭과 문구 47+12곳 정리, 넘긴 18줄 모두 반영 | [frontend 21](frontend.md#21-학생-화면-글자-크기간격폭과-문구-정리-431-2026-11-12)·[31](frontend.md#31-문제-푸는-화면-개편-440-2026-11-15) | 11/12~11/15 | 충족 |
+| UX-04 | 미션 10분 안팎 | — | 콘텐츠 검토 기록 없음 | — | — | 미충족(검토 기록 없음) |
+| OPS-01 | 환경별 데이터·외부 연동 분리, 시연·테스트 거래가 운영 통계에 안 섞임 | 배포(kind) | 참고: kind 감사 SQL 통과(SEC-07과 같은 실행). A는 신규 보호자 `is_demo=true`. B 미실행 | `infrastructure/aws/audit-demo-data.sql`, [infra 9.7.2](infra.md#972-kind-확인-실제-17201745) | 11/13 | 점검 예정 12/5 |
+| OPS-02 | 승인 절차 배포·수행자·시점 기록, 시연 URL 경로 확인 | 배포(A) | 참고: A cd-release 5회(성공 3·실패 2) 모두 `prod` 승인·수행자·plan 호환성 기록. 성공 회차 경로 확인(학생 로그인 → 시도 → 답변 → 학부모 갱신 → 리포트 목록) 통과, 11/05 1회는 답변 422로 실패 처리. prod 배포는 Argo CD로 전환 중이라 B 점검은 그 경로 기준([infra 9.18](infra.md#918-prod-argo-cd-전환-859-2026-11-20)) | [infra 7.4](infra.md#74-운영-실행에서-얻은-주의점), [evidence/issue811-cd-history-a](evidence/issue811-cd-history-a/) | 11/04~11/19 | 점검 예정 11/28(B, #783) |
+| OPS-03 | 장애 시 승인된 이전 버전 복구, 호환성·영향 확인 | 배포(A) | 참고: 11/04 scoring을 이전 release로 되돌리는 cd-release 실행·경로 확인 통과. 진행 중 학습·결제 영향 기록은 없음 | [infra 7.4](infra.md#74-운영-실행에서-얻은-주의점), `evidence/issue811-cd-history-a/20261104-41802823411-*.json` | 11/04 | 점검 예정 11/28~29(B, #783) |
+| OPS-04 | 오류율·지연·적체 경보를 Grafana → 디스코드 | 배포(kind·A) | 참고: kind 실제 DLQ 적재 → 규칙 발생 → `aws-alerts` Firing·Resolved 수신, A 임시 규칙으로 수신 경로 확인. prod 규칙 16개 적용 시각 미확인 | [infra 8.2](infra.md#82-검증-상태) | 11/03~11/04 | 점검 예정 11/28~29(B, #783) |
+| OPS-05 | 실패 요청을 학습·대화·리포트·결제 작업과 연결해 추적 | 배포(kind) | 참고: 명령 소비 → 동기 HTTP → 결과 이벤트 → 재시도·DLQ가 한 trace(span 67개). 로그인 사용자 요청 시작점·실패 요청 연결 미실행 | [infra 8.2](infra.md#82-검증-상태) | 11/12 기록 | 점검 예정 11/28~29(B, #783) |
+| OPS-06 | DB 집계만, 기간·분모·대상 기록, 인과 주장 없음 | 배포(kind) | 지표 6개를 원본 행과 대조(학생 11명, 기준일 11/16·11/23), 대조에서 `seen_at` NULL 결함 발견·수정 | `scripts/retention_metrics/`, [retention-expansion 15.3](retention-expansion.md#153-kind-대조-2026-11-13-읽기-전용) | 11/13 | 충족 |
+| QA-01 | 판정·화면·리포트·분석·권한 필수 자동 검증, 실패·중복·보류·선공개 포함 | CI | develop 서비스별 CI 전부 통과, 야간 실서버 E2E 9개 통과(9.2). 남은 위험: core 통합 테스트 DB 연결 최대 99/100(3절) | 9.2, [2절](#2-실서버-브라우저-e2e와-외부-스텁-246)·[3절](#3-core-계정-http-경로-테스트-136) | 11/20 | 충족 |
+| QA-02 | 토스 테스트 결제로 승인·실패·중복 통지·갱신 실패·해지·환불 | 모의·CI·PG | 모의: 위 경로 전부 core 통합 테스트. PG: kind에서 테스트 결제 승인·구독 `ACTIVE` 1건만. 빌링 발급·정기 청구·취소·웹훅은 실제 PG 미검증, A는 공용 위젯 키 500으로 결제 불가 | core `payment/PaymentIntegrationTest`, [core-gateway 24.8](core-gateway.md#248-검증-범위와-한계), [infra 3.2](infra.md#32-kind-환경값외부-egress-236) | 11/03 | 미충족(실제 PG는 승인만) |
+| QA-03 | 테스트 거래가 실제 결제·매출과 분리 | 모의·CI | 운영(`live`) 키·PG 설정 누락은 네트워크 호출 전 거부, 웹은 `live_gsk_` 거부·샌드박스 권한 표시. 거래 기록 점검은 미실행 | core `payment/PaymentProtectionTest`, web `paymentCheckout.test.ts` | 11/20 | 점검 예정 12/5(감사 SQL 결제 집계) |
+| QA-04 | 모의·PG·실제 API·원격 CI·배포 확인을 각각 기록 | 문서 | 이 표의 검증 구분 칸 | 이 절 | 11/20 | 충족 |
+
+### 9.4 점검 예정
+
+| 날짜 | 대상 | 할 일 |
+|---|---|---|
+| 11/22 | AIQ-03·06 | 설명 sLLM 허용 기준 결정, 사람 검토 50개 표본 결과. 판정 QWK·M2 기준도 같은 기한 |
+| 11/26 | SEC-03·05·06 | LLM 요청 페이로드와 운영 로그 샘플 점검(학생 이름·ID·원문·키·카드 정보) |
+| 11/27 | UX-01·02 | #763 뒤 1440·768·390px 넘침, 키보드 조작, 대비 점검 |
+| 11/28~29 | OPS-02~05, PRF-01·03 | B 계정 배포 승인·경로 확인(Argo CD, 11/25 A에서 먼저 확인 #859), 복구 리허설, 경보 발생, 실패 요청 trace, 부하 재측정, 첫 주간 창 뒤 엔드포인트 0대 복귀(#783) |
+| 12/5 | SEC-07, OPS-01, QA-03 | 시연 환경에서 `audit-demo-data.sql` 실행(가상 학생·시연 표시·결제 집계) |
+
+### 9.5 미충족과 보강할 점
+
+- DAT-03: `ml/tox` 아이 말투 학습 문장이 Claude 작성. 기능명세에 예외를 넣을지, 생성형 AI 문장을 빼고 다시 학습할지 결정 필요
+- DAT-05: RPO 1회 측정 5분 23초. 목표 5분 유지(2026-11-20 결정), 근거 연결·결제 행이 있는 상태의 복구 대조는 미실행
+- QA-02: 실제 PG로 정기결제·실패·해지·환불·웹훅 미검증
+- UX-04: 미션 분량(10분 안팎) 콘텐츠 검토 기록 없음
+- 충족 줄의 시험 공백: SEC-01 미동의 계정 `POST /children`, SEC-08 Secure 속성, DAT-02 기준표 변경 후 과거 판정 재조회, DAT-04 화면 전체 미노출(수동만), AIQ-02 현재 모델의 기준선 비교, AIQ-05 리포트 Gemma 사람 검토 없이 활성화
+
+### 9.6 증거 파일
+
+- [evidence/issue811-cd-history-a](evidence/issue811-cd-history-a/): A 계정 cd-release 5회의 `history.json`(승인자·수행자·이미지 digest·migration·경로 확인)과 `plan.json`(사유·호환성 판단). Actions 산출물(보관 90일)에서 받은 원본이며 비밀 값 없음. 이미지 주소의 A 계정 번호는 저장소에 이미 공개된 값
+- 저장소 안 결과 파일(`evaluation/results/`, `ml/*/results/`)은 복사하지 않고 근거 칸에서 원래 위치를 링크
+- 저장소 밖 원본(M2 예측 CSV, 설명 sLLM 출력, k6 원시 출력)은 학생·AI Hub 글이 들어 있거나 일회성이라 넣지 않음

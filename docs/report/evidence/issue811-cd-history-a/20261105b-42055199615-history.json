@@ -1,0 +1,113 @@
+{
+  "recordedAt": "2026-11-05T15:56:11.778711+00:00",
+  "environment": "prod",
+  "operation": "deploy",
+  "sourceCommit": "322e7976b26a23f1c3f730d7ef8d20159c9515cd",
+  "targetRelease": "main-322e7976b26a",
+  "planSha256": "f945e5dfd5ebe61da443f39e45b2a16371e77439f7b8d69d38177649b3606790",
+  "policySha256": "4d784f5164ae86a227f2ebdbe2a399f2ba7066b139b98242942764dad135e129",
+  "images": {
+    "core-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-service@sha256:0c9208e900e84267d4833e1878faee57036044f6c5632efa54b29eaa276e1c7d",
+    "learning-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/learning-service@sha256:deef0fc1b721f8f79446ec7d1a8e5cfe9a3e3b836854984b1854b29f23a69f61",
+    "ai-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/ai-service@sha256:de70c3cddf55d72db17aa6184c48f0d7379ecc33df7fab7fab70ee73ba6070cb",
+    "scoring-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/scoring-service@sha256:bec277857d70af4354f91591c398302672924f466d92a16c63976367f2d123d7",
+    "report-service": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service@sha256:6f151ca992e4bc3bcfeeb6ea9d2e014ef63845d34783e328a74266540fa8d586"
+  },
+  "actor": "20220348-kim",
+  "run": {
+    "id": "42055199615",
+    "attempt": "2",
+    "url": "https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/runs/42055199615"
+  },
+  "approvals": [
+    {
+      "user": "20220348-kim",
+      "state": "approved",
+      "environments": [
+        "prod"
+      ],
+      "comment": false
+    }
+  ],
+  "releases": [
+    {
+      "release": "core-service",
+      "digest": "sha256:0c9208e900e84267d4833e1878faee57036044f6c5632efa54b29eaa276e1c7d",
+      "previousRevision": 9,
+      "revision": 10,
+      "status": "deployed"
+    },
+    {
+      "release": "learning-service",
+      "digest": "sha256:deef0fc1b721f8f79446ec7d1a8e5cfe9a3e3b836854984b1854b29f23a69f61",
+      "previousRevision": 5,
+      "revision": 6,
+      "status": "deployed"
+    },
+    {
+      "release": "ai-service",
+      "digest": "sha256:de70c3cddf55d72db17aa6184c48f0d7379ecc33df7fab7fab70ee73ba6070cb",
+      "previousRevision": 5,
+      "revision": 6,
+      "status": "deployed"
+    },
+    {
+      "release": "scoring-service",
+      "digest": "sha256:bec277857d70af4354f91591c398302672924f466d92a16c63976367f2d123d7",
+      "previousRevision": 7,
+      "revision": 8,
+      "status": "deployed"
+    },
+    {
+      "release": "report-api",
+      "digest": "sha256:6f151ca992e4bc3bcfeeb6ea9d2e014ef63845d34783e328a74266540fa8d586",
+      "previousRevision": 4,
+      "revision": 5,
+      "status": "deployed"
+    },
+    {
+      "release": "report-worker",
+      "digest": "sha256:6f151ca992e4bc3bcfeeb6ea9d2e014ef63845d34783e328a74266540fa8d586",
+      "previousRevision": 4,
+      "revision": 5,
+      "status": "deployed"
+    }
+  ],
+  "smoke": {
+    "checkedAt": "2026-11-05T15:56:10.751463+00:00",
+    "ok": true,
+    "steps": [
+      {
+        "step": "student-login",
+        "ok": true,
+        "ms": 891
+      },
+      {
+        "step": "pick-mission",
+        "ok": true,
+        "ms": 1530
+      },
+      {
+        "step": "start-attempt",
+        "ok": true,
+        "ms": 2046
+      },
+      {
+        "step": "read-answer",
+        "ok": true,
+        "ms": 125
+      },
+      {
+        "step": "parent-refresh",
+        "ok": true,
+        "ms": 78
+      },
+      {
+        "step": "list-reports",
+        "ok": true,
+        "ms": 187
+      }
+    ]
+  },
+  "result": "success"
+}
