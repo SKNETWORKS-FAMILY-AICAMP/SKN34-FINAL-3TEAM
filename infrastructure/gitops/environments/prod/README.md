@@ -19,6 +19,7 @@
 | `app-oneoff-db-network.json` | app | 일회성 DB Pod(`rds-bootstrap` Job, `demo-db-oneoff`)의 DNS·RDS 5432 egress. app 기본 거부(#657) 때문에 필요, 미적용 |
 | `app-check-pods-network.json` | app | 배포 확인 Pod(`deployment-check` 라벨)의 core·learning·scoring egress(#657), 미적용 |
 | `karpenter.json` | kube-system / karpenter | oci://public.ecr.aws/karpenter/karpenter 1.15.1 (#211) |
+| `argocd.json` | argocd / argocd | argo/argo-cd 10.11.7(Argo CD v3.5.7). 손으로 1회 설치 뒤 [prod Argo CD 진입점](../../argocd/prod/README.md)(AppProject `sagomungchi-prod`·root app)을 적용한다(#855). 미적용 |
 | `karpenter-nodepool.json` | cluster | EC2NodeClass `application`, NodePool `application-burst`. Karpenter 설치 후 `kubectl apply` (#211) |
 
 앱 6개·platform·외부 chart values는 2026-11-03 라이브 리소스에서 수집하고 이후 배포 때 맞춘 값이다(아래 배포 기록). 그 뒤 저장소에만 추가한 값은 위 표에 미적용으로 표시한다. 설명 sLLM release `sllm-server`와 NodePool `explanation-cpu`(#476)는 SageMaker 전환(#742)으로 쓰지 않아 #835에서 values를 지웠다(AWS에 적용한 적 없음). Helm chart 기본값 전체를 복사한 파일은 아니다. 이 디렉토리의 저장소 chart values·manifest JSON은 ci-gitops가 렌더링·kubeconform 검사한다(#509, 외부 chart values 제외). 배포된 앱 chart의 기반은 `b67d8a462b6b3dc239ecfc14b2aa185766c0c293`이며, 저장소 chart 변경 시 렌더링 차이를 먼저 검토한다. 앱 이미지는 각 파일의 digest로 고정한다. core digest에는 아직 커밋되지 않은 이용권 수정이 들어 있으므로 기반 SHA만으로 같은 이미지를 재빌드할 수 있다고 주장하지 않는다. scoring은 PR #288 병합 SHA `f6250bdd131c4875feba99212212bfdb580c353e`를 사용한다.
@@ -119,7 +120,7 @@ app namespace 기본 거부(#657): `core-service.json`의 `namespaceDefaultDeny=
 - 공개가 아닌 origin 검증 헤더는 [별도 redacted 파일](../../../aws/README.md)에 표시만 하고 값은 보존하지 않는다.
 - 이 설정은 계정 `347161580747`, 서울 리전 및 현재 데모 DB/S3를 가리킨다. 다른 환경에 그대로 적용하지 않는다.
 - PVC 삭제·Helm uninstall·RDS 삭제·노드 축소는 이 정리 작업에서 실행하지 않았다. 현재 RabbitMQ/Redis 단일 replica는 노드 축소 시 서비스 중단 가능성이 있다.
-- Argo CD prod, KEDA, 앱 PDB는 미구성이다. core·learning·ai는 HPA(1~3, CPU 70%)와 `application` 노드그룹 preferred affinity를 쓰고, 노드는 Karpenter가 늘린다(2026-11-05 #211·#372). **이 values가 main에 들어가기 전에 main 기준으로 세 앱을 재배포하면 HPA가 지워진다.** 최소 관측 스택은 수동 Helm으로 배포했으며 Discord 경보는 전용 Secret 연결 후 활성화했다. 실제 검증 범위는 #185 보고서를 따른다. 전체 운영 관측 완료를 뜻하지 않는다.
+- KEDA, 앱 PDB는 미구성이다. Argo CD prod는 설치 값과 진입점만 저장소에 있고 아직 적용하지 않았다(#855, 11/25 A에서 처음 설치). core·learning·ai는 HPA(1~3, CPU 70%)와 `application` 노드그룹 preferred affinity를 쓰고, 노드는 Karpenter가 늘린다(2026-11-05 #211·#372). **이 values가 main에 들어가기 전에 main 기준으로 세 앱을 재배포하면 HPA가 지워진다.** 최소 관측 스택은 수동 Helm으로 배포했으며 Discord 경보는 전용 Secret 연결 후 활성화했다. 실제 검증 범위는 #185 보고서를 따른다. 전체 운영 관측 완료를 뜻하지 않는다.
 
 ## 초기 배포 재현 절차 (#185)
 
@@ -152,6 +153,8 @@ kubectl --kubeconfig $kubeconfig config view --minify
 계정·endpoint가 다르거나 자원 소유자가 불명확하면 적용을 중단한다. `demo-observed.json`은 생성 입력이 아니다. 새 VPC/EKS/IAM/RDS/S3 생성은 현재 완성된 IaC가 없어 이 절만으로 실행할 수 없다.
 
 ### 2. 기반 자원 → Secret → 저장소
+
+Argo CD 경로(#859, A 11/25·B 11/26~28)에서는 이 절보다 먼저 [prod Argo CD README](../../argocd/prod/README.md)대로 Argo CD를 설치하고 root app을 적용한다. 아래 순서의 플랫폼 적용은 #856의 플랫폼 Application과 sync wave가 대신하며, Application이 준비되기 전이나 Argo CD 경로가 막혔을 때는 아래 손 절차를 쓴다.
 
 1. 기존 클러스터의 VPC CNI·CoreDNS·kube-proxy·EBS CSI·Pod Identity Agent 상태와 namespace, gp3 StorageClass를 확인한다. gp3 정의는 [gp3.json](../../../eks/gp3.json)이다. namespace는 app/platform/external-secrets/observability를 준비한다. 기존 객체에는 소유권 강제 이전·삭제를 하지 않는다.
 2. 현재 역할·ServiceAccount·Pod Identity 연결을 [EKS 인벤토리](../../../eks/demo-observed.json)와 대조한다. ESO 자체의 AWS 권한이 먼저 준비돼야 다른 Secret을 동기화할 수 있다.

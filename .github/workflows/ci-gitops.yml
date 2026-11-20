@@ -62,7 +62,7 @@ jobs:
       # prod(#509)는 JSON이다. 저장소 chart values는 같은 규칙으로 렌더링하고, 앱은 argocd/prod/apps ApplicationSet(#857)처럼
       # 설정 파일 + images/<release>.json(digest·migration revision)을 함께 넘긴다(PreSync migration Job·NetworkPolicy 포함).
       # kind가 있는 manifest(NodePool·NetworkPolicy·ExternalSecret)는 그대로 kubeconform에 넘긴다.
-      # 외부 chart(ESO·LB Controller·Karpenter) values는 chart를 받아야 하므로 검사하지 않는다.
+      # 외부 chart(ESO·LB Controller·Karpenter·argo-cd) values는 chart를 받아야 하므로 검사하지 않는다.
       - name: chart·환경별 helm lint·template 렌더링
         run: |
           for chart in charts/*/; do
@@ -105,7 +105,7 @@ jobs:
               continue
             fi
             case "$release" in
-              external-secrets|aws-load-balancer-controller|karpenter)
+              external-secrets|aws-load-balancer-controller|karpenter|argocd)
                 echo "외부 chart values라 건너뜀: $values"
                 continue ;;
             esac
@@ -127,6 +127,8 @@ jobs:
             esac
           done
       # 카탈로그에 없는 CRD만 건너뛰고, 건너뛴 종류를 로그로 남긴다.
+      # argocd/ 원본은 local·prod(#855 AppProject·root app, #856·#857 하위 Application)를 모두 검사한다.
+      # 카탈로그의 Argo CD 스키마는 prod Argo CD v3.5.7(argo-cd chart 10.11.7) CRD와 필드가 같다(2026-11-20 대조).
       - name: kubeconform 스키마 검사
         run: |
           k8s_schema="https://raw.githubusercontent.com/yannh/kubernetes-json-schema/${K8S_SCHEMA_REF}/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json"
