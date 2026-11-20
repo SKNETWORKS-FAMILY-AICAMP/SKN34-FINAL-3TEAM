@@ -68,6 +68,9 @@ class DailyReportBuilder:
                 "attemptId": str(attempt.id),
                 "title": attempt.mission_title,
                 "context": attempt.context,
+                "scheduledDay": attempt.scheduled_day
+                if attempt.context in ("THEME_DAY", "THEME_REVIEW")
+                else None,
                 "judgment": judgment.result if judgment else None,
                 "followups": [
                     {

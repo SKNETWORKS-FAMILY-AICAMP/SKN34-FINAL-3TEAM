@@ -125,6 +125,7 @@ class DailyProblem(ItemResponse):
     attempt_id: UUID
     title: str
     context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None
+    scheduled_day: Literal["MON", "TUE", "WED", "THU", "FRI"] | None = None
     judgment: Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"] | None
     followups: list[DailyFollowup]
     final_answer: str | None

@@ -355,6 +355,15 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - [learning.md 42절](learning.md#42-답변-생각작성-시간과-붙여넣기-막기-설계-800-2026-11-19): learning `answers[].thinkingSeconds`·`writingSeconds`로 일일 `problems[].answerTimes` 생성, "처음 답/되묻기 뒤 답/두 번째 되묻기 뒤 답: 생각 N분 · 작성 N분"(60초 미만 "1분 미만", 시간 없는 답 생략, 원문 비공개여도 표시), HTML·Markdown·PDF·웹 화면 같은 문구는 #803. 주간 리포트·지표는 범위 밖
 - report 구현(#803, [learning.md 42.3](learning.md#423-report-일일-리포트-표시-803-2026-11-19)): `AnswerInput` 선택 칸(없으면 None, 하나만 있거나 0~86400 밖이면 입력 오류) → `AnswerRecord` → `DailyReportBuilder`가 `answerTimes` 저장(공유 여부 무관). 문구는 `renderer.answer_time_line`을 HTML·PDF·Markdown이 함께 씀. 이전 저장본은 `presentation.assemble`에서 `[]`. learning #801 병합 계약과 일치, kind 확인은 learning.md 42.4. core 원문 비공개 경로(`ReportDocument.withoutProblemOriginals`)는 `answerTimes`를 남기도록 고쳤고 웹 `ParentReports.tsx`도 같은 문구로 표시
 
+
+## 일일 리포트 예정 요일 (#845, 2026-11-20)
+
+- 선택 칸 `scheduledDay`(`MON`~`FRI`/null)를 learning 일일 기록 → report PROBLEM 저장·조회 → core → web으로 전달한다. 테마 시도만 값이 있고 EXTRA는 null이다.
+- learning은 페이지에 포함된 시도를 한 번에 조회하여 `attempt.theme_id`·`theme_week_start`·`mission_id`와 테마 게시본(없으면 현재본)의 요일을 연결한다. 이전 주 테마 재사용도 지원하며 미래 주 테마의 잘못된 연결은 제외한다. 현재 학생 학년이나 완료일로 예정 요일을 추정하지 않는다. DB 테이블·컬럼 변경은 없다.
+- 리포트 집계 날짜는 계속 KST 완료일이다. 다른 요일에 완료한 문제는 상세·PDF·Markdown에 `화요일 문제 · 목요일에 풀었어요`처럼 표시한다. 당일 풀이·추가 문제·예정 요일 없는 이전 저장본은 기존 표시를 유지한다. 이전 저장본은 재생성 없이 null로 읽는다.
+- 원문 비공개에서도 예정 요일은 유지한다. 판정·점수·권한·주간 리포트의 기존 동작은 변경하지 않는다.
+- 검증: 최신 develop `cc831e8a` 반영 뒤 core 리포트 테스트 106개·bootJar, report 관련 테스트 183개, 계약 검사 9개 통과. 재사용 테마를 포함한 learning 기록 테스트 59개·bootJar, web 단위 400개·타입/린트/빌드, 관련 PC·태블릿·모바일 브라우저 테스트 61개 통과. 테스트용 DB와 합성 입력을 사용했으며 운영 배포 검증과 구분한다.
+
 ## 30. 안 푼 날 일일 리포트 알림 문구 구분 (#846, 2026-11-20)
 
 2026-11-20 결정: 기록 없는 날도 "기록 없음" 일일 리포트와 알림을 만드는 구성은 유지하고, 알림 문구만 구분한다. 알림 유형(`DAILY_REPORT_COMPLETED`)·수신 설정·링크·DB는 바꾸지 않는다.

@@ -192,7 +192,7 @@ class ReportClientTest {
             "thinkingTypes":[{"type":"A","state":"OK","missions":[],"itemId":"i","summary":"합성"}],
             "changes":[{"attemptId":"a","counts":{},"itemId":"i","first":{"text":"합성"},"revised":{"text":"합성"},"followup":"합성","extra":"합성"}],
             "reflections":[{"attemptId":"a","written":true,"difficulty":"NORMAL","itemId":"i","text":"합성"}],
-            "problems":[{"missionId":"m","attemptId":"a","title":"t","context":"c","judgment":"j","elements":[],"itemId":"i","finalAnswer":"합성","followups":[{"q":"합성"}],"quotes":[{"text":"합성"}],"reflection":"합성","answerTimes":[{"version":1,"thinkingSeconds":45,"writingSeconds":130}]}]}""") as ObjectNode
+            "problems":[{"missionId":"m","attemptId":"a","title":"t","context":"THEME_DAY","scheduledDay":"TUE","judgment":"j","elements":[],"itemId":"i","finalAnswer":"합성","followups":[{"q":"합성"}],"quotes":[{"text":"합성"}],"reflection":"합성","answerTimes":[{"version":1,"thinkingSeconds":45,"writingSeconds":130}]}]}""") as ObjectNode
         val narrativeOnly = ReportDocument(body.deepCopy(), reportId).apply { withoutNarrative() }.body
         assertTrue(narrativeOnly["narrative"].isNull && narrativeOnly["eveningQuestion"].isNull && narrativeOnly["explanations"].isNull)
         assertFalse(narrativeOnly["thinkingTypes"][0].has("summary")); assertEquals("합성", narrativeOnly["quotes"][0]["text"].asText())
@@ -201,6 +201,8 @@ class ReportClientTest {
         assertEquals(setOf("attemptId", "counts", "itemId", "followup", "first", "revised"), originals["changes"][0].fieldNames().asSequence().toSet())
         val problems = ReportDocument(body.deepCopy(), reportId).apply { withoutProblemOriginals() }.body
         assertFalse(problems["problems"].toString().contains("합성")); assertEquals("합성", problems["narrative"]["text"].asText())
+        assertEquals("TUE", problems["problems"][0]["scheduledDay"].asText())
+        assertEquals("TUE", originals["problems"][0]["scheduledDay"].asText())
         assertEquals(45, problems["problems"][0]["answerTimes"][0]["thinkingSeconds"].asInt())
     }
 }

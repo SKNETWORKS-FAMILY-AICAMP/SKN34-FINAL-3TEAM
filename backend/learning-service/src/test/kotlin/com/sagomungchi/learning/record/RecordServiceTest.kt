@@ -96,6 +96,37 @@ class RecordServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `일일 예정 요일은 완료일 아닌 시도의 테마 주와 미션 기준이며 추가 문제는 없다`() {
+        val attempts = (0..4).map { attempt(title = "요일 $it") }
+        val theme = rows.publishedTheme(attempts.map { it.missionId }, week.from)
+        val completed = inWeek.plusDays(2) // 목요일
+        attempts.forEachIndexed { index, a ->
+            answer(a, "합성 답변")
+            val context = when (index) { 1 -> "THEME_REVIEW"; 2 -> "EXTRA"; else -> "THEME_DAY" }
+            jdbc.update("UPDATE attempt SET status='COMPLETED', finished_at=?, completed_at=?, context=?, theme_id=?, theme_week_start=? WHERE id=?",
+                completed, completed, context, if (index == 2) null else theme,
+                if (index == 2) null else week.from, a.id)
+        }
+        val day = Period(completed.toLocalDate(), completed.toLocalDate())
+        val records = service.dailyAttempts(student, day, 0, 20).items.associateBy { it.detail.attempt.id }
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.MON, records.getValue(attempts[0].id).scheduledDay)
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.TUE, records.getValue(attempts[1].id).scheduledDay)
+        assertNull(records.getValue(attempts[2].id).scheduledDay)
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.THU, records.getValue(attempts[3].id).scheduledDay)
+        val response = com.sagomungchi.learning.record.controller.RecordAttemptResponse.from(records.getValue(attempts[1].id))
+        assertEquals("TUE", ObjectMapper().findAndRegisterModules().valueToTree<com.fasterxml.jackson.databind.JsonNode>(response)["scheduledDay"].asText())
+        assertTrue(service.dailyAttempts(student, day, 1, 20).items.isEmpty())
+        // 이번 주 새 테마가 없으면 이전 주 게시 테마를 재사용한다. 회차 주가 달라도 같은 문제 요일이다.
+        jdbc.update("UPDATE weekly_theme SET week_start=? WHERE id=?", week.from.minusWeeks(1), theme)
+        val reused = service.dailyAttempts(student, day, 0, 20).items.associateBy { it.detail.attempt.id }
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.MON, reused.getValue(attempts[0].id).scheduledDay)
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.TUE, reused.getValue(attempts[1].id).scheduledDay)
+        // 아직 시작되지 않은 미래 테마를 연결한 잘못된 데이터에는 요일을 추측해 붙이지 않는다.
+        jdbc.update("UPDATE attempt SET theme_week_start=? WHERE id=?", week.from.minusWeeks(2), attempts[0].id)
+        assertNull(service.dailyAttempts(student, day, 0, 20).items.first { it.detail.attempt.id == attempts[0].id }.scheduledDay)
+    }
+
+    @Test
     fun `일일 리포트는 제출일 대신 완료일로 조회하고 주간 P08은 유지한다`() {
         val prior = attempt(title = "어제 답변 오늘 완료")
         answer(prior, "어제 쓴 답", inWeek.minusDays(1))
