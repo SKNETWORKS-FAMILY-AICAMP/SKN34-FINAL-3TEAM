@@ -1164,10 +1164,10 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 요청 `{grade(3~6), inputType:"NARRATIVE"|"ESSAY", text, scores}`. `text`는 학생 작성 칸 평문(공백만이면 400), `scores`는 learning `modelScores.m2.scores` 그대로다. 서술은 9개 키(`hol` 1~4, 나머지 1~5), 논술은 `org`·`cont`·`exp`(0~3) 3개 키가 정확히 있어야 하며 아니면 `400 VALIDATION_FAILED`. 학생·시도·답변 ID와 이름·닉네임은 넣지 않는다(NFR-SEC-03)
 - 활성 확인: core 모델 레지스트리의 `MODEL` `report-explanation`이 scope `explanation/grade-{grade}/{narrative|essay}`에 활성이어야 한다(활성 목록·`model.version.activated`로 받음, #480). 아니면 sLLM을 부르지 않고 `200 {active:false}`
 - 설명 항목: 가장 높은 항목 1개(잘한 점) + 가장 낮은 항목 1개(함께 이야기해 볼 점). 동점은 항목 표 순서(서술 과제 수행→명료성→구체성→적절성→연결성→통일성→어휘→어법, 논술 구성→내용→표현)로 앞선 항목, 모든 항목이 같은 점수면 1개(범위 중간 이상이면 잘한 점, 아니면 함께 이야기해 볼 점). 서술 총점 `hol`은 고르지 않는다
-- 생성: 항목마다 설명 전용 OpenAI 호환 클라이언트(`EXPLANATION_BASE_URL`, 다른 호출의 LLM 제공자는 그대로)로 평문 1회, 재시도 없음. 입력 형식은 #475 학습 쌍과 같다([AI 보고서](../report/ai.md)). 사용량 `callType = REPORT_EXPLANATION`(#480), 프롬프트 이름 `reportExplanation`
+- 생성: 항목마다 리포트 전용 SageMaker 클라이언트(`REPORT_LLM_ENDPOINT`·`REPORT_LLM_COMPONENT`, #747. 다른 호출의 LLM 제공자는 그대로)로 1회, 재시도 없음. 입력 형식은 #475 학습 쌍과 같다([AI 보고서](../report/ai.md)). 사용량 `callType = REPORT_EXPLANATION`(#480), 프롬프트 이름 `reportExplanation`
 - 규칙 후처리·검사: 숫자나 금지어(레벨·등급·점수·사고력 등, 분석 대화 검증과 같은 목록)가 있는 문장은 버리고 항목당 앞 2문장까지 남긴다. 남는 문장이 없는 항목이 하나라도 있으면 `422 AI_EXPLANATION_REJECTED`(`retryable:false`)
 - 응답 `{active:true, explanation:{text, quote}, versions:{model, prompt}}`. `text`는 `잘한 점: …`·`함께 이야기해 볼 점: …` 줄(1~2줄), `quote`는 설명과 낱말(앞 두 글자 기준)이 2개 이상 겹치는 학생 글 문장 중 가장 많이 겹치는 문장(원문 부분 문자열), 없으면 null이다. `versions.model`은 레지스트리 `이름@버전`
-- 오류: 설명 sLLM 주소 미설정·호출 실패·마감 초과는 `503 AI_UNAVAILABLE`(+`retryable`). 시간 초과·5xx·422는 리포트 생성 실패로 바꾸지 않는다. report는 해당 설명만 빼고 `explanations.state = NOT_INCLUDED`로 저장한다(P16)
+- 오류: 설명 엔드포인트(`REPORT_LLM_ENDPOINT`·`REPORT_LLM_COMPONENT`) 미설정·호출 실패·마감 초과는 `503 AI_UNAVAILABLE`(+`retryable`). 시간 초과·5xx·422는 리포트 생성 실패로 바꾸지 않는다. report는 해당 설명만 빼고 `explanations.state = NOT_INCLUDED`로 저장한다(P16)
 - 이력: #475 CPU 실측 전 임시 기준안(항목 1회 60초·요청 마감 125초, report→ai 호출당 130초·단계 400초)은 #747에서 아래 값으로 바뀌었다(P12 예외: 주 1회 배치라 기다리는 사람이 없음)
 - #747 시간·오류(현재 값, P12 예외): SageMaker 실시간 엔드포인트의 LoRA 인퍼런스 컴포넌트 호출 1회(60초 응답 제한, boto3 읽기 70초), 요청 마감 `EXPLANATION_DEADLINE=75`초, `EXPLANATION_MAX_TOKENS=1536`, 재시도 없음. report→ai 대기 `REPORT_EXPLANATION_TIMEOUT_SECONDS=80`초, 설명 단계 전체 `REPORT_EXPLANATION_BUDGET_SECONDS=300`초. 가동 창 밖(사본 0)·출력 잘림(`finish_reason=length`)·시간 초과는 `503 AI_UNAVAILABLE`, 문장이 끊긴 칸만 남아 상세 분석이 비면 `422 AI_EXPLANATION_REJECTED`. 어느 쪽이든 그 설명만 빠진다(`NOT_INCLUDED`). 다른 모델로 대체하지 않는다(#733)
 
