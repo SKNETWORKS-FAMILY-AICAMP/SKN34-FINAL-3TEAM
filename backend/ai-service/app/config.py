@@ -138,7 +138,7 @@ class Settings(BaseSettings):
     image_size: str = "1536x864"  # 16:9 바로 생성(공식 크기 조건 안)
     image_quality: str = "medium"
     theme_image_timeout: float = 280.0  # 그림 1장 상한(기준안, 실측 약 30초)
-    # 영상은 시작·종료만(컷 4개), 기본 꺼짐. 인증은 Google 표준 자격 증명(#538): 운영은
+    # 영상은 시작·종료만(6컷, 예전 초안 4컷), 기본 꺼짐. 인증은 Google 표준 자격 증명(#538): 운영은
     # GOOGLE_APPLICATION_CREDENTIALS(서비스 계정 키 또는 WIF 설정 파일, Secret으로 마운트),
     # 로컬은 `gcloud auth application-default login`. 자격 증명이 없으면 영상만 건너뜀
     theme_video_enabled: bool = False
@@ -166,7 +166,7 @@ class Settings(BaseSettings):
     # (실측 2026-11-11). 컷 생성은 마감까지만 기다리고(남은 시간이 상한보다 짧으면 그만큼만),
     # 끝내 못 만든 컷은 움직이는 그림으로 대신함
     theme_video_min_seconds: float = 300.0
-    # 시작·종료 영상 컷 길이(초, 컷 4개). 첫 그림만 고정하고 0.5초씩 겹쳐 녹아들게 이음
+    # 시작·종료 영상 컷 길이(초). 첫 그림만 고정하고 0.5초씩 겹쳐 녹아들게 이음
     # (사용자 결정 2026-11-11, 4+6+8+6-1.5 = 22.5초)
     # #779(사용자 결정 2026-11-19): 새 테마 6컷 × 4초(기준안). 예전 4컷 초안은 컷 수에 맞춰
     # 4·6·8·6초(cuts.seconds)

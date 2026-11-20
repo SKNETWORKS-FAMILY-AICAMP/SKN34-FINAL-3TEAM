@@ -1598,6 +1598,30 @@ def start_mouth_ko(theme: Theme, scene: str, index: int) -> str | None:
     return MOUTH_KO.get(spec.mouth)
 
 
+def end_face_prompt(theme: Theme, scene: str, index: int, feedback: list[str]) -> str:
+    """표정 그림 두 장 컷의 끝 그림(#779 사용자 결정 2026-11-20 A안): 그 컷 첫 그림(마지막 참고
+    그림)을 그대로 두고 뭉치 입만 끝 입 모양으로. 참고 그림은 첫 그림 한 장뿐이다."""
+    spec = cut_spec(theme, scene, index)
+    return "\n".join(
+        [
+            "Edit this picture. Keep the picture exactly as it is: the background, framing, camera "
+            "angle, Mungchi's body, outfit, hat, hands, position, size and all colors stay "
+            "identical.",
+            f"Change only Mungchi's mouth to {MOOD_MOUTH[spec.end_mouth]}; its small dot eyes (no "
+            "eye whites) and pink cheeks stay unchanged. Nothing else changes.",
+            IMAGE_STYLE,
+            CUT_IMAGE_RULES,
+            *_fixes(feedback),
+        ]
+    )
+
+
+def end_mouth_ko(theme: Theme, scene: str, index: int) -> str | None:
+    """표정 그림 두 장 컷의 끝 입 모양(끝 그림 검토 mungchiMouth). 그 밖은 None."""
+    spec = cut_spec(theme, scene, index)
+    return MOUTH_KO.get(spec.end_mouth) if spec.frame and spec.two_faces else None
+
+
 def first_mouth(spec: cut_layout.CutSpec, cut: dict) -> str | None:
     """컷 첫 그림의 뭉치 입 모양. 6컷은 컷 표(CutSpec.mouth)가 정하고 콘티 mungchiMood(컷 끝 표정)는
     쓰지 않는다 — 끝 표정을 첫 그림에 그려 종료 1·4컷이 처음부터 웃고 있었음(재검토 2026-11-20).

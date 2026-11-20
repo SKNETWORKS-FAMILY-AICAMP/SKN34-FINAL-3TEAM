@@ -67,7 +67,9 @@ class ThemeState(TypedDict, total=False):
     # 그림·영상·움직임(review_story PASS 뒤 차례로 실행)
     # 테마 옷 뭉치(뭉치가 나오는 그림의 참조, 모든 그림 검토의 비교 그림)
     outfit_image: bytes
-    scene_images: dict[str, bytes]  # MON~FRI 미션 그림, INTRO1~4·OUTRO1~4 컷 첫 그림(통과한 것만)
+    # MON~FRI 미션 그림, INTRO1~n·OUTRO1~n 컷 첫 그림, 끝 표정 그림(INTRO5END 등, #779 A안).
+    # 통과한 것만
+    scene_images: dict[str, bytes]
     image_keys: dict[str, str]  # 장면 → S3 키(INTRO·OUTRO는 4번째 컷 첫 그림)
     video_skip: list[str]  # 컷 그림이 끝내 실패해 영상을 만들지 않을 장면(INTRO·OUTRO)
     video_keys: dict[str, str]
@@ -75,12 +77,12 @@ class ThemeState(TypedDict, total=False):
     motions: dict[str, dict]  # 장면 → ThemeMotion 모양
     media_warnings: Annotated[list[dict], operator.add]  # {stage, item, reason}
     # 부분 다시 생성 재료 그림 S3 키(#537): OUTFIT·PERSON(인물 기준 = 처음 생성의 INTRO1)·
-    # INTRO1~4·OUTRO1~4
+    # INTRO1~n·OUTRO1~n·끝 표정 그림(INTRO5END 등)
     assets: dict[str, str]
     # 부분 다시 생성(#537, restore가 채움). partial이 없으면 전체 생성
     partial: bool
     person_image: bytes | None  # 인물 기준 그림(부분 다시 생성은 처음 생성의 INTRO1을 그대로 씀)
-    redo_images: list[str]  # 다시 그릴 그림(MON~FRI, INTRO1~4·OUTRO1~4)
+    redo_images: list[str]  # 다시 그릴 그림(MON~FRI, INTRO1~n·OUTRO1~n)
     redo_videos: list[str]  # 다시 만들 영상(INTRO·OUTRO)
     redo_motions: list[str]  # 다시 정할 장면 움직임
     redo_targets: list[str]  # 요청 대상(검토가 대상 밖을 고치려 하면 실패로 끝냄)

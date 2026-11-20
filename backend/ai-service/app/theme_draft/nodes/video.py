@@ -16,6 +16,9 @@
   (kept_videos)
 - #779(사용자 결정 2026-11-18): 검토에 뭉치 팔·다리·얼굴 판정 예시 그림 2장(허용·결함)을 장면 뒤에
   붙인다(REVIEW_EXAMPLES). 생성 쪽은 뭉치 거의 정지·출동 컷만 옆으로 달리기(prompts.video_prompt)
+- #779(사용자 결정 2026-11-20 A안): 표정 그림 두 장 컷(CutSpec.end_mouth, 뭉치 혼자 클로즈업)은
+  Veo를 부르지 않고 첫 그림과 끝 표정 그림(그림 단계가 그림·검토)을 녹아드는 전환·천천히 확대로
+  잇는다(media.two_face_clip). 끝 그림이 없으면 그 컷만 움직이는 그림
 - #779(사용자 결정 2026-11-18, Veo만 쓸 수 있어서): 시도마다 Veo 한 번 호출로 후보
   theme_video_candidates개를 받아 동시에 검사하고, 처음 통과한 후보(후보 순서대로)를 쓴다. 모두
   실패하면 후보들의 실패 사유를 모아 다시 만들기·안전판으로. 중간 멈춤은 FREEZE_WARN~FREEZE_FAIL초면
@@ -31,7 +34,15 @@ from pathlib import Path
 from langgraph.runtime import Runtime
 
 from app.llm.base import LlmUnavailable
-from app.llm.media import freeze_spans, join_xfade, still_clip, trim_clip, video_frames
+from app.llm.media import (
+    freeze_spans,
+    join_xfade,
+    still_clip,
+    trim_clip,
+    two_face_clip,
+    video_frames,
+)
+from app.theme_draft import cuts as cut_layout
 from app.theme_draft.checks import VIDEO_REVIEW_IDS, Theme, check_review
 from app.theme_draft.cuts import seconds as cut_seconds
 from app.theme_draft.models import GeneratedVideoReview
@@ -194,6 +205,24 @@ async def film(
     return None, bad, [], 0.0
 
 
+async def face_cut(
+    ctx: ThemeContext, images: dict[str, bytes], key: str, seconds: int
+) -> tuple[bytes | None, list[str], list[str], float]:
+    """표정 그림 두 장 컷(#779 A안, Veo 없음). film과 같은 꼴(영상, 실패 사유, WARN, 길이).
+    끝 그림이 없거나 이어 붙이기가 실패하면 실패 사유로 돌려 움직이는 그림으로 대신하게 한다."""
+    assert ctx.video is not None
+    end = images.get(cut_layout.end_key(key))
+    if end is None:
+        return None, ["FACE 끝 표정 그림 없음"], [], 0.0
+    try:
+        clip = await asyncio.to_thread(
+            two_face_clip, images[key], end, float(seconds), ctx.video.size
+        )
+    except (RuntimeError, subprocess.SubprocessError) as exc:
+        return None, [f"FACE 이어 붙이기 실패 {type(exc).__name__}"], [], 0.0
+    return clip, [], [], float(seconds)
+
+
 async def join_and_put(
     ctx: ThemeContext, scene: str, clips: list[bytes], durations: list[float]
 ) -> tuple[str | None, str | None]:
@@ -242,9 +271,16 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             continue  # 컷 그림 실패 경고는 generate_images가 남김
         scenes.append(scene)
     jobs = [(scene, i) for scene in scenes for i in range(1, len(lengths_of[scene]) + 1)]
+
+    def two_faces(scene: str, i: int) -> bool:
+        n = len(lengths_of[scene])
+        return n != 4 and cut_layout.spec(scene, i, n).two_faces
+
     results = await asyncio.gather(
         *(
-            film(ctx, theme, scene, i, images[f"{scene}{i}"], lengths_of[scene][i - 1])
+            face_cut(ctx, images, f"{scene}{i}", lengths_of[scene][i - 1])
+            if two_faces(scene, i)
+            else film(ctx, theme, scene, i, images[f"{scene}{i}"], lengths_of[scene][i - 1])
             for scene, i in jobs
         )
     )

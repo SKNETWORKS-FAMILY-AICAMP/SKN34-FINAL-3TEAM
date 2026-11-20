@@ -83,8 +83,10 @@ def test_video_prompt_story_beat_camera_and_mungchi_rules() -> None:
     first = prompts.video_prompt(theme, "INTRO", 1, INTRO_CUTS[0], [])
     assert "Mungchi does not appear in this clip." in first
     assert f"Camera: {prompts.CAMERA_TEXT['PAN_SIDE']}" in first
-    aha = prompts.video_prompt(theme, "OUTRO", 1, OUTRO_CUTS[0], [])
-    assert "breaks into a big smile" in aha and "Only Mungchi is in this clip" in aha
+    aha = prompts.video_prompt(theme, "INTRO", 6, INTRO_CUTS[5], [])  # 큰 질문(뭉치 갸웃)
+    assert "tilts its head" in aha and "Only Mungchi is in this clip" in go
+    # 뭉치 혼자 클로즈업(시작 5, 종료 1·4)은 Veo 대신 표정 그림 두 장(#779 A안)
+    assert all(cuts.spec(s, i, 6).two_faces for s, i in (("INTRO", 5), ("OUTRO", 1), ("OUTRO", 4)))
     for word in ("white legs", "dog nose", "brown hands", "clouds indoors", "page curl"):
         assert word in prompts.VIDEO_NEGATIVE
     # 대사 자막은 입 모양 없이(립싱크 하지 않음)
@@ -128,7 +130,7 @@ def test_video_review_gets_judgement_examples_after_frames() -> None:
         video=FakeVideoClient(),
         storage=MemoryThemeStorage(),
     )
-    assert len(seen) == 12  # 시작·종료 6컷씩(#779)
+    assert len(seen) == 9  # Veo 9컷(표정 그림 두 장 컷 3개는 검토할 영상이 없음, #779 A안)
     assert all(len(images) >= 4 and images[-2:] == list(review_examples()) for images in seen)
 
 
@@ -234,9 +236,10 @@ def test_safe_video_prompt_reduces_motion_and_keeps_close_shot() -> None:
     people = prompts.video_prompt(theme, "OUTRO", 5, OUTRO_CUTS[4], [], safe=True)
     assert "The people make small, gentle movements" in people
     assert f"Camera: {prompts.CAMERA_TEXT['PAN_SIDE']}" in people
-    close = prompts.video_prompt(theme, "OUTRO", 1, OUTRO_CUTS[0], [], safe=True)
+    # 다가가는 카메라 Veo 컷(사건 클로즈업, #779 A안 뒤 뭉치 클로즈업은 Veo 없음)
+    close = prompts.video_prompt(theme, "INTRO", 2, INTRO_CUTS[1], [], safe=True)
     assert f"Camera: {prompts.CAMERA_TEXT['HOLD_CLOSE']}" in close  # 다가가지 않고 그대로
-    assert "breaks into a big smile" not in close  # 안전판은 표정 변화 지시도 뺌
+    assert "lean in a little" not in close  # 안전판은 컷 표 움직임 대신 작은 움직임
 
 
 def test_review_judges_space_objects_pictures_and_small_flaws() -> None:
@@ -263,7 +266,7 @@ def test_failed_cut_tries_safe_version_before_still_cut() -> None:
     seen: dict[str, int] = {}
 
     def verdicts(user: dict) -> dict[str, str]:
-        if user["scene"] != OUTRO_CUTS[3]["scene"]:
+        if user["scene"] != OUTRO_CUTS[5]["scene"]:  # 엔딩(뭉치·사람, Veo)
             return {}
         seen["n"] = seen.get("n", 0) + 1
         return {"CONTINUITY": "FAIL"} if seen["n"] <= 2 else {}  # 처음·다시 만들기 실패, 안전 통과
@@ -277,7 +280,7 @@ def test_failed_cut_tries_safe_version_before_still_cut() -> None:
         storage=MemoryThemeStorage(),
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 12 + 1 + 1
+    assert len(video.calls) == 9 + 1 + 1
     reasons = [w.reason for w in response.warnings]
     assert any(r.startswith(SAFE_NOTE) for r in reasons)
     assert not any(STILL_NOTE in r for r in reasons)
@@ -343,7 +346,7 @@ def test_cut_uses_first_passing_candidate_without_regenerating() -> None:
     seen: dict[str, int] = {}
 
     def verdicts(user: dict) -> dict[str, str]:
-        if user["scene"] != OUTRO_CUTS[3]["scene"]:
+        if user["scene"] != OUTRO_CUTS[5]["scene"]:  # 엔딩(뭉치·사람, Veo)
             return {}
         seen["n"] = seen.get("n", 0) + 1
         return {"CONTINUITY": "FAIL"} if seen["n"] == 1 else {}  # 두 후보 중 하나만 실패
@@ -358,7 +361,7 @@ def test_cut_uses_first_passing_candidate_without_regenerating() -> None:
         settings={"theme_video_candidates": 2},
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert video.counts == [2] * 12 and len(video.calls) == 24  # 컷 12개 × 후보 2, 다시 없음
+    assert video.counts == [2] * 9 and len(video.calls) == 18  # Veo 9컷 × 후보 2, 다시 없음
     assert seen["n"] == 2 and response.warnings == []
 
 
@@ -368,7 +371,7 @@ def test_all_candidates_failing_regenerates_with_their_reasons() -> None:
     seen: dict[str, int] = {}
 
     def verdicts(user: dict) -> dict[str, str]:
-        if user["scene"] != OUTRO_CUTS[3]["scene"]:
+        if user["scene"] != OUTRO_CUTS[5]["scene"]:  # 엔딩(뭉치·사람, Veo)
             return {}
         seen["n"] = seen.get("n", 0) + 1
         return {"MORPH": "FAIL"} if seen["n"] <= 2 else {}  # 첫 시도 후보 2개 모두 실패
@@ -382,7 +385,7 @@ def test_all_candidates_failing_regenerates_with_their_reasons() -> None:
         storage=MemoryThemeStorage(),
         settings={"theme_video_candidates": 2},
     )
-    assert response.failure is None and len(video.calls) == 24 + 2  # 그 컷만 후보 2개로 다시
+    assert response.failure is None and len(video.calls) == 18 + 2  # 그 컷만 후보 2개로 다시
     assert not any(STILL_NOTE in w.reason for w in response.warnings)
     regen = [c[0] for c in video.calls if "MORPH" in c[0]]
     assert len(regen) == 2  # 다시 만들기 지시에 실패 사유가 들어감

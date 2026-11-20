@@ -28,6 +28,18 @@ LEGACY_SECONDS = (4, 6, 8, 6)  # 예전 4컷 초안 컷 길이(사용자 결정 
 NEW_SECONDS = (4, 4, 4, 4, 4, 4)  # 6컷 컷 길이(기준안, theme_video_cut_seconds 기본값)
 CAPTION_MAX = {4: 30, 6: 20}  # 컷 자막 글자 상한(6컷은 "이름: " 포함, 기준안)
 MUNGCHI_ALONE: tuple[Who, ...] = ("MUNGCHI", "RUN")
+# 표정 그림 두 장 컷의 끝 그림 이름 꼬리(INTRO5END 등, #779 A안). 그림·재료·영상이 같은 이름을 씀
+END_FACE = "END"
+
+
+def end_key(key: str) -> str:
+    """컷 그림 이름 → 그 컷 끝 표정 그림 이름(INTRO5 → INTRO5END)."""
+    return f"{key}{END_FACE}"
+
+
+def scene_of(key: str) -> str:
+    """그림 이름 → 장면(INTRO5·INTRO5END → INTRO, 요일은 그대로)."""
+    return key[:5] if key.startswith(("INTRO", "OUTRO")) else key
 
 
 @dataclass(frozen=True)
@@ -63,6 +75,17 @@ class CutSpec:
     # motion이 말함
     # (재검토 2026-11-20). 종료 1·4컷 말고는 그동안 그려진 표정 그대로
     mouth: str = ""
+    # 끝 입 모양(prompts.MOOD_MOUTH 키). 있으면 그 컷은 Veo를 쓰지 않고 표정 그림 두 장(첫 그림 +
+    # 입만 바꾼 끝 그림, 그림 단계가 그림·검토)을 녹아드는 전환과 천천히 확대로 잇는다(#779 사용자
+    # 결정 2026-11-20 A안). 뭉치 혼자 클로즈업은 Veo가 구도와 상관없이 팔을 만들어(장난꾸러기 "정리"
+    # 영상 확인: 가슴 위 클로즈업 0/3, 가운데·전신·카메라 고정 0/3 — 9번 시도 모두 "몸 밖으로 뻗은
+    # 팔"), 같은 3컷을 그림 두 장으로 만든 비교는 3/3 첫 시도 통과
+    end_mouth: str = ""
+
+    @property
+    def two_faces(self) -> bool:
+        """Veo 대신 표정 그림 두 장으로 만드는 컷(end_mouth)."""
+        return bool(self.end_mouth)
 
     @property
     def has_mungchi(self) -> bool:
@@ -146,12 +169,15 @@ _NEW = {
             "MUNGCHI",
             3,
             False,
-            # 장소는 사건 장소 안(5차 콘티: 장면 글 "떡집 앞"이 장소 칸 "떡집 안"과 부딪혔음)
-            "뭉치 결심: 사건 장소 안에 선 뭉치 혼자 가슴 위 클로즈업, 다문 입으로 결심한 얼굴",
-            "Mungchi's face turns determined (a firm closed mouth) and it sways slightly.",
+            # 장소는 사건 장소 안(5차 콘티: 장면 글 "떡집 앞"이 장소 칸 "떡집 안"과 부딪혔음).
+            # 표정 그림 두 장(end_mouth): 놀란 입 → 다문 입(결심)
+            "뭉치 결심: 사건 장소 안에 선 뭉치 혼자 가슴 위 클로즈업, 놀란 입에서 다문 입으로 "
+            "결심한 얼굴",
+            "Mungchi's small surprised o mouth turns into a firm closed mouth (determined).",
             place="INCIDENT",
             frame="MUNGCHI_CLOSE",
-            mouth="determined",
+            mouth="surprised",
+            end_mouth="determined",
         ),
         CutSpec(
             "GROUP",
@@ -176,15 +202,16 @@ _NEW = {
             "MUNGCHI",
             1,
             True,
+            # 표정 그림 두 장(end_mouth): 생각하는 다문 입 → '알았다!' 웃는 입
             "뭉치 깨달음: 뒤쪽 판·벽에 단서 그림들이 붙어 있고 그 앞에서 뭉치 혼자 정면을 보는 "
-            "가슴 위 클로즈업(단서 물건을 뭉치 앞 바닥·탁자에 두지 않음), 갸웃하다 놀란 입, 활짝 "
-            "웃음",
-            "Mungchi tilts its head, then its mouth opens in a small surprised o, then it breaks "
-            "into a big smile.",
+            "가슴 위 클로즈업(단서 물건을 뭉치 앞 바닥·탁자에 두지 않음), 생각하는 다문 입에서 "
+            "알아챈 웃는 입으로",
+            "Mungchi's closed thinking mouth turns into a smiling mouth as it realizes the answer.",
             speaker="뭉치가 '알았다!' 뒤에 이번 정답을 말함",
             place="INCIDENT",
             frame="MUNGCHI_CLOSE",
-            mouth="determined",  # 다문 입으로 생각하다 → 놀란 입 → 활짝 웃음(motion)
+            mouth="determined",
+            end_mouth="smile",
         ),
         CutSpec(
             "RUN",
@@ -211,12 +238,13 @@ _NEW = {
             "MUNGCHI",
             3,
             False,
+            # 표정 그림 두 장(end_mouth): 놀란 입 → 웃는 입
             "뭉치 리액션: 정답 장소 앞 뭉치 혼자 가슴 위 클로즈업, 놀란 입에서 활짝 웃음",
-            "Mungchi's mouth opens in a small surprised o, then it breaks into a big smile and "
-            "sways happily.",
+            "Mungchi's small surprised o mouth turns into a big smile.",
             place="ANSWER",
             frame="MUNGCHI_CLOSE",
-            mouth="surprised",  # 놀란 입 → 활짝 웃음(motion)
+            mouth="surprised",
+            end_mouth="smile",
         ),
         CutSpec(
             "PEOPLE",

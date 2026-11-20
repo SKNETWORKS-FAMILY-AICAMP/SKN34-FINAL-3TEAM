@@ -1,4 +1,5 @@
-"""generate_images: 미션 그림 5장과 시작·종료 영상 컷 첫 그림 8장을 만들고 그림마다 검토한다.
+"""generate_images: 미션 그림 5장과 시작·종료 영상 컷 첫 그림(6컷 12장, 예전 4컷 8장)·끝 표정 그림을
+만들고 그림마다 검토한다.
 
 순서(사용자 결정 2026-11-11, #779에서 2를 바꿈):
 1. 테마 옷 뭉치 = 기본 뭉치 그림(assets)을 고쳐 테마 옷만 더한 1장. 뭉치가 나오는 그림의 첫 참조이고
@@ -10,6 +11,10 @@
    시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음(뭉치 혼자 출동).
    #779 6컷(B안): 앞 컷을 잇는 컷(시작 2·3·6 ← 1, 종료 5·6 ← 3)은 그 앞 컷이 끝난 뒤 그
    그림을 마지막 참고 그림으로 받아 장소·가구·물건 상태를 잇고, 검토도 그 그림을 보며 FLOW를 더함
+   #779 표정 그림 두 장 컷(CutSpec.end_mouth, 사용자 결정 2026-11-20 A안): 그 컷 첫 그림이 끝난 뒤
+   뭉치 입만 바꾼 끝 그림(INTRO5END 등)을 그림. 검토는 MUNGCHI·TEXT·SAFETY·FLOW(끝 입 모양
+   mungchiMouth). 끝 그림이 끝내 실패하면 장면 영상을 빼지 않고 그 컷만 움직이는 그림으로 대신함
+   (영상 단계), 경고 IMAGE
 
 그림 대역(IMAGE_PROVIDER=fake)이면 검토를 부르지 않고 통과로 보며 warnings에 IMAGE ALL 한 줄(#716).
 
@@ -27,7 +32,8 @@ review_images는 별도 노드가 아니라 그림마다 그린 직후 돈다(re
 미션 그림과 예전 4컷 초안은 예전 그대로. 부분 다시 생성(#537)도 예전 그대로다(돌아갈 원래 그림이
 있어 그 장면을 원래대로 둠).
 
-부분 다시 생성 재료(#537): 테마 옷 뭉치(OUTFIT)와 컷 첫 그림 8장(INTRO1~4·OUTRO1~4)도 같은 실행
+부분 다시 생성 재료(#537): 테마 옷 뭉치(OUTFIT)와 컷 첫 그림(INTRO1~n·OUTRO1~n)·끝 표정 그림
+(INTRO5END 등)도 같은 실행
 폴더에 올리고 키를 assets에 둔다(인물 기준 PERSON = 인물만 그린 그림 CHARS, 없으면 예전처럼 처음
 생성의 INTRO1). 부분 다시 생성은
 redo_images만 다시 그리고 나머지는 원래 키를 그대로 둔다. 시작·종료 컷 그림이 하나라도 끝내 실패하면
@@ -44,6 +50,7 @@ from langgraph.runtime import Runtime
 
 from app.llm.base import LlmUnavailable
 from app.mission_draft.models import Draft
+from app.theme_draft import cuts as cut_layout
 from app.theme_draft.checks import (
     DAYS,
     IMAGE_REVIEW_IDS,
@@ -69,6 +76,9 @@ KEPT_NOTE = "원래 그림·영상 유지"  # 부분 다시 생성에서 컷 그
 # 6컷 컷 그림이 이 항목에서만 끝내 떨어지면 그 그림을 쓰고 경고(#779 사용자 결정 2026-11-20, 머리말)
 SOFT_IDS = frozenset({"FRAME", "FLOW", "PEOPLE"})
 SOFT_NOTE = "끝내 통과하지 못해 이 그림을 그대로 씀"
+NO_START = "첫 그림이 없어 끝 표정 그림을 그리지 않음"  # 표정 그림 두 장 컷(#779 A안)
+END_NOTE = "그 컷은 움직이는 그림으로 대신함"  # 끝 표정 그림 실패(장면 영상은 그대로)
+END_IDS = ("MUNGCHI", "TEXT", "SAFETY")  # 끝 표정 그림 검토(+ 앞 그림 FLOW)
 ASSET_NOTE = "부분 다시 생성 재료"  # 재료 그림 업로드 실패(그 대상만 다시 만들 수 없게 됨)
 
 
@@ -110,6 +120,7 @@ class Shot:
     mouth: str | None = (
         None  # 6컷 뭉치 컷만: 시작 입 모양(검토 mungchiMouth, prompts.start_mouth_ko)
     )
+    needs_prev: bool = False  # 앞 컷 그림이 있어야만 그림(표정 그림 두 장 컷의 끝 그림)
     follow_scene: str | None = None
     follow_prompt: Callable[[list[str]], str] | None = None
 
@@ -304,6 +315,31 @@ def cut_shot(
     )
 
 
+def end_shot(ctx: ThemeContext, theme: Theme, scene: str, index: int) -> Shot | None:
+    """표정 그림 두 장 컷의 끝 그림 일감(#779 A안). 그 컷 첫 그림을 마지막(유일한) 참고 그림으로
+    받아 입만 바꾼다. 표정 그림 두 장 컷이 아니면 None."""
+    body = ctx.prompt.body
+    n = len(theme[CUTS_KEY[scene]])
+    if n == 4 or not cut_layout.spec(scene, index, n).two_faces:
+        return None
+    key = f"{scene}{index}"
+    text = theme[CUTS_KEY[scene]][index - 1]["scene"]
+    return Shot(
+        key=cut_layout.end_key(key),
+        scene_text=text,
+        prompt=lambda fb: body.end_face_prompt(theme, scene, index, fb),
+        refs=[],
+        ids=END_IDS,
+        has_mungchi=True,
+        shows_target=False,
+        follows=key,
+        follow_scene=text,
+        follow_prompt=lambda fb: body.end_face_prompt(theme, scene, index, fb),
+        mouth=body.end_mouth_ko(theme, scene, index),
+        needs_prev=True,
+    )
+
+
 async def draw_all(
     ctx: ThemeContext,
     theme: Theme,
@@ -323,6 +359,8 @@ async def draw_all(
             prev = (await tasks[shot.follows]).image
         elif shot.follows:
             prev = have.get(shot.follows)
+        if shot.needs_prev and prev is None:  # 끝 표정 그림은 첫 그림 없이 그리지 않음
+            return Drawn(None, [NO_START])
         return await draw(ctx, theme, shot, outfit, seed_of(shot.key), prev)
 
     for shot in shots:  # 일감을 모두 만든 뒤에 돌기 시작해 잇는 컷이 앞 컷 일감을 찾음
@@ -426,6 +464,12 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             for i in cut_range(scene)
             if f"{scene}{i}" in redo
         ]
+        shots += [  # 다시 그리는 컷의 끝 표정 그림(#779 A안)
+            s
+            for scene in CUT_SCENES
+            for i in cut_range(scene)
+            if f"{scene}{i}" in redo and (s := end_shot(ctx, theme, scene, i)) is not None
+        ]
         drawn = await draw_all(ctx, theme, shots, outfit, seed_of, state.get("scene_images") or {})
     else:
         chars = await draw_characters(ctx, theme)
@@ -448,6 +492,12 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             for scene in CUT_SCENES
             for i in cut_range(scene)
             if first is None or (scene, i) != ("INTRO", 1)
+        ]
+        shots += [  # 표정 그림 두 장 컷의 끝 그림(#779 A안)
+            s
+            for scene in CUT_SCENES
+            for i in cut_range(scene)
+            if (s := end_shot(ctx, theme, scene, i)) is not None
         ]
         drawn = await draw_all(
             ctx,
@@ -477,7 +527,10 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
         if key in DAYS:
             failures += [f"{key} {r}" for r in result.bad]
             continue
-        scene = key[:-1]
+        if key.endswith(cut_layout.END_FACE):  # 끝 표정 그림만 실패: 그 컷만 움직이는 그림(#779)
+            warnings += [warning("IMAGE", key, f"{r}, {END_NOTE}") for r in result.bad]
+            continue
+        scene = cut_layout.scene_of(key)
         if partial:
             kept += [] if scene in kept else [scene]
             warnings += [warning("IMAGE", key, f"그림 {r}, {KEPT_NOTE}") for r in result.bad]
@@ -486,7 +539,9 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             warnings += [warning("VIDEO", scene, f"{key} 그림 {r}") for r in result.bad]
 
     new_images = {
-        k: r.image for k, r in drawn.items() if r.image is not None and k[:-1] not in kept
+        k: r.image
+        for k, r in drawn.items()
+        if r.image is not None and cut_layout.scene_of(k) not in kept
     }
     scene_images = {**(state.get("scene_images") or {}), **new_images}
     to_upload = {

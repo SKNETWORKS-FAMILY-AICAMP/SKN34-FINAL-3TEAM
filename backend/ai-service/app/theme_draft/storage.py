@@ -4,7 +4,9 @@ report-service `clients/storage.py` 패턴(boto3, 자격 증명은 SDK 기본 �
 실행마다 ID를 만들어 `theme-drafts/{실행 ID}/{장면}.png`·`.mp4`로 올리고 키만 돌려준다.
 learning은 `theme-drafts/`로 시작하는 키만 같은 버킷(ASSET_S3_BUCKET)에서 presigned URL로 바꾼다.
 
-부분 다시 생성 재료(#537): 테마 옷 뭉치 `OUTFIT.png`와 컷 첫 그림 `INTRO1~4.png`·`OUTRO1~4.png`도
+부분 다시 생성 재료(#537): 테마 옷 뭉치 `OUTFIT.png`와 컷 첫 그림 `INTRO1~6.png`·`OUTRO1~6.png`·
+끝 표정 그림
+`INTRO5END.png` 등(#779)도
 같은
 실행 폴더에 올리고, 부분 다시 생성 때 `get`으로 다시 읽는다(ai 역할에 GetObject 필요, 사용자 결정
 2026-11-17). 보관 기간은 따로 두지 않는다(지우지 않음).
@@ -16,12 +18,18 @@ import uuid
 from typing import Protocol
 
 from app.config import Settings
+from app.theme_draft.cuts import END_FACE as END
 
 SCENES = ("INTRO", "MON", "TUE", "WED", "THU", "FRI", "OUTRO")
 # 부분 다시 생성 재료 그림(#537): 테마 옷 뭉치와 시작·종료 컷 첫 그림, 인물만 그린 인물 기준
 # 그림(CHARS, #779). regen.assets는 ai 전용 칸이라 learning은 이름을 보지 않음. 컷은 6컷 틀까지
 # (#779 2026-11-19, 예전 초안은 1~4)
-ASSETS = ("OUTFIT", "CHARS", *(f"{s}{i}" for s in ("INTRO", "OUTRO") for i in range(1, 7)))
+# 표정 그림 두 장 컷의 끝 그림(INTRO5END 등, #779 사용자 결정 2026-11-20 A안)도 재료
+ASSETS = (
+    "OUTFIT",
+    "CHARS",
+    *(f"{s}{i}{e}" for s in ("INTRO", "OUTRO") for i in range(1, 7) for e in ("", END)),
+)
 CONTENT_TYPE = {"png": "image/png", "mp4": "video/mp4"}
 PREFIX = "theme-drafts"
 

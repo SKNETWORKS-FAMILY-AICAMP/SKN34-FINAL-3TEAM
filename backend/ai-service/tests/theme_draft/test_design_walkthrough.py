@@ -332,6 +332,23 @@ def test_story_wide_facts_reach_every_cut_not_only_people_cuts(
             assert image.index(start) > image.index(prompts.FIRST_MOMENT_NEW), (code, scene, i)
 
 
+def test_close_ups_are_two_face_cuts_with_a_real_change() -> None:
+    """뭉치 혼자 클로즈업은 표정 그림 두 장(#779 사용자 결정 2026-11-20 A안): 시작·끝 입이 다르고,
+    끝 그림 지시는 입만 바꾸며, 그 밖의 컷은 Veo 그대로."""
+    theme = valid_theme()
+    for scene, specs in cuts.layout(6).items():
+        for i, s in enumerate(specs, 1):
+            assert s.two_faces == (s.frame == "MUNGCHI_CLOSE"), (scene, i)
+            if not s.two_faces:
+                continue
+            assert s.mouth and s.end_mouth and s.mouth != s.end_mouth, (scene, i)
+            text = prompts.end_face_prompt(theme, scene, i, [])
+            assert prompts.MOOD_MOUTH[s.end_mouth] in text and "Change only Mungchi's mouth" in text
+            assert prompts.end_mouth_ko(theme, scene, i) == prompts.MOUTH_KO[s.end_mouth]
+    assert cuts.end_key("OUTRO1") == "OUTRO1END" and cuts.scene_of("OUTRO1END") == "OUTRO"
+    assert cuts.scene_of("MON") == "MON"
+
+
 def test_review_cores_say_what_is_visible_and_plan_has_no_air_gesture_example() -> None:
     """검토 핵심은 '그림에 보이는 것'으로만(재검토 2026-11-20). '~를 봄'은 구도가 방향을 정하는
     배웅·엔딩 틀만, 한 줄 서기는 WARN이라 핵심에 없음. 방향은 몸·얼굴로 판정."""

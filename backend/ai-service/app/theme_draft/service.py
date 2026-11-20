@@ -66,7 +66,8 @@ def initial_state(request: ThemeDraftRequest) -> ThemeState:
     """previousFailures → 처음부터 넣을 사유. THEME·REVIEW는 줄거리, MISSION은 요일별 미션.
 
     MISSION 사유는 "<요일> <검사 코드> <자세히>"이고 요일이 없으면 다섯 요일 모두에 넣는다.
-    IMAGE 사유는 "<그림 이름> <검사 코드> <자세히>"(그림 이름 MON~FRI·INTRO1~4·OUTRO1~4)면 그
+    IMAGE 사유는 "<그림 이름> <검사 코드> <자세히>"(그림 이름 MON~FRI·INTRO1~n·OUTRO1~n·끝 표정
+    그림 INTRO5END 등)면 그
     그림을 그릴 때마다, 이름이 없으면 모든 그림에 넣는다(설계 "IMAGE는 그림 단계에서 씀").
     """
     plan_feedback: list[tuple[str, list[str]]] = []
