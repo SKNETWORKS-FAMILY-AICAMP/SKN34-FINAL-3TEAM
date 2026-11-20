@@ -13,7 +13,8 @@
 | `platform-data.json` | platform / platform-data | `../../charts/platform-data` |
 | `external-secrets.json` | external-secrets / external-secrets | external-secrets/external-secrets 2.14.0 |
 | `aws-load-balancer-controller.json` | kube-system / aws-load-balancer-controller | eks/aws-load-balancer-controller 1.14.1 |
-| `external-secret-resources.json` | app·platform | SecretStore 2개, ExternalSecret 12개. 비밀 값 없이 원격 이름·키만 보존 |
+| `external-secret-resources.json` | app·platform | SecretStore 2개, ExternalSecret 14개. 비밀 값 없이 원격 이름·키만 보존 |
+| `namespaces.json` | cluster | namespace `app`·`platform`·`external-secrets`·`observability`(#856). Argo CD wave 0이 `gp3.json`과 함께 만든다. 수동 Helm 경로에서는 쓰지 않는다 |
 | `platform-network.json` | platform | 기본 ingress 거부, RabbitMQ·Redis 클라이언트 허용 |
 | `core-alb-network.json` | app | ALB public subnet에서 core:8080 허용 |
 | `app-oneoff-db-network.json` | app | 일회성 DB Pod(`rds-bootstrap` Job, `demo-db-oneoff`)의 DNS·RDS 5432 egress. app 기본 거부(#657) 때문에 필요, 미적용 |
@@ -23,6 +24,25 @@
 | `karpenter-nodepool.json` | cluster | EC2NodeClass `application`, NodePool `application-burst`. Karpenter 설치 후 `kubectl apply` (#211) |
 
 앱 6개·platform·외부 chart values는 2026-11-03 라이브 리소스에서 수집하고 이후 배포 때 맞춘 값이다(아래 배포 기록). 그 뒤 저장소에만 추가한 값은 위 표에 미적용으로 표시한다. 설명 sLLM release `sllm-server`와 NodePool `explanation-cpu`(#476)는 SageMaker 전환(#742)으로 쓰지 않아 #835에서 values를 지웠다(AWS에 적용한 적 없음). Helm chart 기본값 전체를 복사한 파일은 아니다. 이 디렉토리의 저장소 chart values·manifest JSON은 ci-gitops가 렌더링·kubeconform 검사한다(#509, 외부 chart values 제외). 배포된 앱 chart의 기반은 `b67d8a462b6b3dc239ecfc14b2aa185766c0c293`이며, 저장소 chart 변경 시 렌더링 차이를 먼저 검토한다. 앱 이미지는 각 파일의 digest로 고정한다. core digest에는 아직 커밋되지 않은 이용권 수정이 들어 있으므로 기반 SHA만으로 같은 이미지를 재빌드할 수 있다고 주장하지 않는다. scoring은 PR #288 병합 SHA `f6250bdd131c4875feba99212212bfdb580c353e`를 사용한다.
+
+### Argo CD 플랫폼 Application (#856, 2026-11-20)
+
+Argo CD 경로에서는 위 파일을 그대로 값으로 쓰는 Application 10개([`argocd/prod/platform/`](../../argocd/prod/platform/))가 2절 순서를 sync wave로 옮긴다. 앱 ApplicationSet(wave 10, #857)보다 먼저 끝나야 한다. 결정 근거는 [infra 9.18.2](../../../../docs/report/infra.md#9182-플랫폼-application과-sync-wave-856).
+
+| wave | Application | 내용 |
+|---|---|---|
+| 0 | `prod-cluster-base` | `namespaces.json`, [`gp3.json`](../../../eks/gp3.json) |
+| 1 | `prod-external-secrets` | ESO 2.14.0 + `external-secrets.json` |
+| 2 | `prod-external-secret-resources` | `external-secret-resources.json`(Ready까지 대기) |
+| 3 | `prod-aws-load-balancer-controller` | LB Controller 1.14.1 + `aws-load-balancer-controller.json` |
+| 4 | `prod-platform-network` | `platform-network.json`, `observability-platform-network.json` |
+| 5 | `prod-platform-data` | `platform-data` chart + `platform-data.json` |
+| 6 | `prod-karpenter` | Karpenter 1.15.1 + `karpenter.json` |
+| 7 | `prod-karpenter-nodepool` | `karpenter-nodepool.json` |
+| 8 | `prod-observability` | `observability` chart + `observability.json` |
+| 9 | `prod-app-network` | `app-oneoff-db-network.json`, `app-check-pods-network.json`, `core-alb-network.json` |
+
+Argo CD 밖에 남는 것: `app/rds-ca` ConfigMap, 관측 Secret 2개(root app 동기화 전), core Ingress(origin 헤더 실제 값). 플랫폼 Application은 prune을 끄고 finalizer가 없어 Git에서 파일을 지우거나 Application을 지워도 클러스터 자원은 남는다. 손으로 값을 바꿔야 하면(예: 관측 Deployment 0으로 축소) selfHeal이 되돌리므로 root app과 해당 Application의 자동 동기화를 먼저 끈다.
 
 ## 선행 조건
 
@@ -136,7 +156,7 @@ app namespace 기본 거부(#657): `core-service.json`의 `namespaceDefaultDeny=
 | 데이터 | 기존 RDS/PVC/S3 또는 검증된 복원본 | 기존 데이터 재사용 시 초기화·seed를 다시 실행하지 않음. 빈 DB에는 migration과 초기 운영 데이터 준비 필요 |
 | 외부 입력 | Google OAuth·LLM·JWT·내부 토큰·DB·RabbitMQ | Secrets Manager의 원격 이름·JSON property는 external-secret-resources.json 기준. 실제 값은 Git·터미널 출력에 남기지 않음 |
 | 웹·origin | CloudFront URL·OAC·ALB origin 검증 헤더 | OAuth callback과 AUTH_WEB_ORIGIN 일치, origin 헤더는 양쪽에 동일한 실제 값 주입 |
-| 관측 | Grafana admin·Discord webhook | ESO 12개와 별개인 observability Secret 2개를 안전하게 복구해야 함 |
+| 관측 | Grafana admin·Discord webhook | ESO 14개와 별개인 observability Secret 2개를 안전하게 복구해야 함 |
 
 저장소 루트, PowerShell 7에서 작업하며 모든 kubectl/helm 명령에 전용 kubeconfig를 명시한다.
 

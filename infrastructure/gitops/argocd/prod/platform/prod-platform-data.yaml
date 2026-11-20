@@ -1,0 +1,35 @@
+# wave 5: platform-data chart(prod는 RabbitMQ·Redis만). platform-data-credentials(wave 2)와 gp3(wave 0)가 필요하다. PVC는 StatefulSet volumeClaimTemplates라 Argo CD가 지우지 않는다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prod-platform-data
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: sagomungchi-prod
+  sources:
+    - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+      targetRevision: main
+      path: infrastructure/gitops/charts/platform-data
+      helm:
+        releaseName: platform-data
+        valueFiles:
+          - $values/infrastructure/gitops/environments/prod/platform-data.json
+    - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  # 플랫폼은 prune 끔(상태 저장 자원·CRD·NodePool 보호), selfHeal 켬. finalizer가 없어 Application을 지워도 자원은 남는다.
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

@@ -1523,6 +1523,43 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 
 **한계**: root app은 `argocd` namespace에 Application을 만들 수 있으므로, 하위 Application 파일이 다른 AppProject(`default` 등)를 가리키지 않는지는 PR 리뷰로 확인한다. 하위 Application이 생긴 뒤 root app·Argo CD를 지우면 배포된 리소스까지 지워질 수 있어 되돌리기는 손으로 확인하며 한다.
 
+### 9.18.2 플랫폼 Application과 sync wave (#856)
+
+손으로 하던 플랫폼 적용(prod README 2절, B 런북 7·7a·12단계)을 `infrastructure/gitops/argocd/prod/platform/`의 Application 10개로 옮겼다. 값은 기존 `environments/prod/*.json`을 그대로 참조하고(외부 chart는 `$values` 다중 source, manifest는 directory `include`), 내용은 바꾸지 않았다. B 값(`vpcId`·서브넷·SG·클러스터 이름)은 #809 6a PR이 같은 파일을 바꾸면 그대로 따라간다. 새 파일은 `environments/prod/namespaces.json`(namespace 4개) 하나다.
+
+| wave | Application | 기다리는 것 |
+|---|---|---|
+| 0 | `prod-cluster-base` | namespace `app`·`platform`·`external-secrets`·`observability`, gp3 StorageClass |
+| 1 | `prod-external-secrets` | ESO Deployment 3개 Ready(webhook 포함) |
+| 2 | `prod-external-secret-resources` | SecretStore 2개·ExternalSecret 14개 Ready(Secrets Manager 값·ESO Pod Identity) |
+| 3 | `prod-aws-load-balancer-controller` | LB Controller Ready. Service 변경 webhook이 `failurePolicy: Fail`이라 Service를 만드는 platform-data·관측보다 먼저 |
+| 4 | `prod-platform-network` | platform 기본 거부·클라이언트 허용·Prometheus 수집 허용 |
+| 5 | `prod-platform-data` | RabbitMQ·Redis StatefulSet, 초기화 Job Complete(`platform-data-credentials` 필요) |
+| 6 | `prod-karpenter` | Karpenter 컨트롤러 Ready |
+| 7 | `prod-karpenter-nodepool` | EC2NodeClass Ready(서브넷·SG·역할 확인), NodePool |
+| 8 | `prod-observability` | Collector·Prometheus·Grafana·Tempo(관측 Secret 2개 필요) |
+| 9 | `prod-app-network` | app 일회성 DB Pod·배포 확인 Pod egress, ALB → core:8080 |
+
+앱 ApplicationSet은 wave 10(#857)이고, root app이 Application health를 보고 다음 wave로 넘어간다(#855 설정). 순서는 prod README 2절과 같다. 다른 점은 namespace·gp3를 맨 앞에 Git으로 두고, 관측 수집 정책(`observability-platform-network.json`)을 platform 정책과 같은 wave에 둔 것이다(대상 Pod가 없어도 해가 없음).
+
+결정("확인 필요"는 기본안대로):
+- CRD 동기화: ESO는 `ServerSideApply=true`. `secretstores`·`clustersecretstores` CRD가 각 약 740KB라 client-side apply의 last-applied 주석 한도(256KB)를 넘는다(임시 kind에서 SSA 없이 `metadata.annotations: Too long`으로 실패, SSA로 성공). Karpenter도 `ServerSideApply=true`. 로컬 KEDA의 `Replace=true`는 CRD를 지웠다 다시 만들 수 있어 쓰지 않았다. LB Controller CRD는 작아 기본 apply.
+- CRD가 다른 Application에 있는 CR(ExternalSecret·SecretStore, EC2NodeClass·NodePool)은 `SkipDryRunOnMissingResource=true`. 같은 chart 안의 CR(LB Controller `IngressClassParams`)은 Argo CD가 자동으로 dry-run을 건너뛴다.
+- webhook 인증서: LB Controller chart는 렌더링할 때마다 인증서를 새로 만들고(Argo CD 렌더링에는 `lookup`이 없음), ESO는 cert-controller가 실행 중에 caBundle을 채운다. 둘 다 `ignoreDifferences`(Secret `aws-load-balancer-tls` `/data`, webhook `caBundle`)와 `RespectIgnoreDifferences=true`로 첫 동기화 때 짝을 유지한다. 임시 kind에서 동기화 몇 분 뒤에도 두 Application이 Synced로 남는 것을 확인했다.
+- prune·selfHeal: 플랫폼 10개는 prune 끔·selfHeal 켬, finalizer 없음(앱 ApplicationSet은 prune 켬, #857). RabbitMQ·Redis PVC는 StatefulSet `volumeClaimTemplates`라 원래 Argo CD 추적 대상이 아니고, 관측 PVC 3개는 chart의 `helm.sh/resource-policy: keep`에 더해 prune 끔으로 보호한다. namespace 4개에는 `Prune=false,Delete=false`를 붙였다. NodePool을 지우면 Karpenter 노드가 정리되므로 이것도 prune하지 않는다. 대신 Git에서 지운 자원은 클러스터에 남으므로 손으로 지운다. selfHeal 때문에 손 변경(관측 0으로 축소 등)은 root app과 해당 Application의 자동 동기화를 먼저 끄고 한다.
+- 범위: platform-data·관측도 함께 옮겼다(기본안). 빠진 것: core Ingress(origin 헤더 실제 값이 Git 밖), 관측 Secret 2개, `app/rds-ca` ConfigMap(손으로). `karpenter-nodepool-explanation.json`·`sllm-server.json`은 #835에서 이미 지워져 대상이 없다.
+- 실패 재시도: 플랫폼은 `retry` 5회(30초부터 2배, 최대 5분). CRD 등록·webhook 기동 순간의 일시 오류를 넘기기 위함이다. platform-data 초기화 Job은 이름에 값 해시가 있어 같은 커밋 재시도에서 다시 돌지 않는다.
+- 문서 정정: `external-secret-resources.json`은 SecretStore 2개·ExternalSecret 14개다(prod README에는 "12개"로 남아 있었음). prod README를 고쳤고, B 런북 7단계 확인 열("ESO Ready 12개")은 #855가 같은 줄을 고치므로 그쪽에 넘겼다.
+
+확인(2026-11-20, AWS 실행 없음):
+- 외부 chart 3개를 prod 값으로 `helm template`(Helm 4.3.1): 객체 종류·webhook·CRD 크기 확인.
+- 임시 kind 클러스터(`kindest/node:v1.35.8`, 기존 `sagomungchi-local`과 분리, 확인 뒤 삭제)에서 두 번 확인했다. 1차는 argo-cd chart 10.18.2(Argo CD v3.6.2)·project `default`, 2차는 #855와 같은 chart 10.11.7(v3.5.7)과 `environments/prod/argocd.json`(kind에 없는 노드 affinity만 뺌)·AppProject `sagomungchi-prod`(#855 `project.yaml`)다. 사본은 `targetRevision: develop`으로만 바꿨다. 10개 모두 manifest 생성 성공(`List` 펼침 16·2·3개, `include` 여러 파일, `$values` JSON, Karpenter OCI). Karpenter OCI chart는 두 버전 모두 저장소 선언(`enableOCI`) 없이 받아졌다. 자동 동기화를 켠 6개 중 cluster-base·platform-network·app-network·LB Controller·ESO는 Synced/Healthy(몇 분 뒤에도 Synced 유지), ExternalSecret은 AWS 자격 증명이 없어 Degraded다. 실제로는 이 지점에서 다음 wave가 멈춘다. ESO를 SSA 없이 동기화하면 CRD 주석 크기 초과로 실패하는 것도 1차에서 확인했다. 2차에서 `prod-cluster-base`가 destination namespace가 비어 AppProject에 거부되는 것을 찾아 `kube-system`으로 고쳤다. Karpenter·NodePool·platform-data·관측은 AWS·EBS가 없어 동기화하지 않았다.
+- 새 `namespaces.json`과 Application 10개는 kubeconform 0.8.0으로 검사(ci-gitops와 같은 스키마 위치).
+
+11/25 A에서 할 일: root app 전에 관측 namespace·Secret 2개 → root app 동기화 → wave 0~9 Synced/Healthy, `kubectl get externalsecret -A` 14개 Ready, `kubectl get nodepool,ec2nodeclass`(EC2NodeClass Ready), Grafana 로그인. 걸린 시간과 막힌 wave를 이 절에 적는다.
+
+한계: 실제 EKS에서의 ESO·LB Controller·Karpenter 동작, EC2NodeClass Ready, observability PVC 바인딩은 11/25 A에서 처음 확인한다. A·B에서 막히면 비상용 수동 Helm(prod README 2절)으로 해당 단계만 적용하고, 그 Application의 자동 동기화를 끈 상태로 둔다.
+
 ### 9.18.3 앱 ApplicationSet과 migration PreSync (#857)
 
 #### 결정
