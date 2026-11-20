@@ -318,6 +318,31 @@ test('전체 리포트도 주간·일일 그리드를 분리하고 목록과 상
   await expect(daily).toHaveCount(0)
 })
 
+test('일일·주간 리포트에서 돌아보기 난이도를 화면 문구로 표시한다 (#860)', async ({ page, context }) => {
+  const { report, controls } = await parentServer(context, 'DAILY', true)
+  const problem = report.problems![0]
+  const reflection = { written: true, difficulty: 'NORMAL', text: '까닭을 한 문장 더 적었어요.' }
+  problem.reflection = reflection
+  report.problems!.push({ ...problem, missionId: 'legacy', attemptId: 'legacy', title: '이전 형식',
+    reflection: { ...reflection, difficulty: 'UNKNOWN_LEVEL', text: '다시 생각했어요.' } })
+  controls.extraReports.push({ ...report, reportId: 'weekly-report', periodType: 'WEEKLY',
+    period: { from: '2026-11-09', to: '2026-11-15' }, problems: [],
+    reflections: [{ ...reflection, attemptId: 'weekly-1' },
+      { ...reflection, difficulty: '쉬웠어요', text: '이유가 떠올랐어요.', attemptId: 'weekly-2' }] })
+
+  await page.goto(`/parent/report?childId=${childId}&view=reports&reportId=report-1`)
+  await expect(page.getByText('돌아보기 · 보통 까닭을 한 문장 더 적었어요.', { exact: true })).toBeVisible()
+  await expect(page.getByText('돌아보기 · 다시 생각했어요.', { exact: true })).toBeVisible()
+  await expect(page.getByText(/NORMAL|UNKNOWN_LEVEL/)).toHaveCount(0)
+
+  await page.getByRole('button', { name: '리포트 목록으로 돌아가기' }).click()
+  await page.getByRole('region', { name: '주간 리포트', exact: true })
+    .getByRole('button', { name: '리포트 보기', exact: true }).click()
+  await expect(page.getByText('보통 · 까닭을 한 문장 더 적었어요.', { exact: true })).toBeVisible()
+  await expect(page.getByText('쉬웠어요 · 이유가 떠올랐어요.', { exact: true })).toBeVisible()
+  await expect(page.getByText(/NORMAL/)).toHaveCount(0)
+})
+
 test('상세 설명 구역과 개선 목록을 화면 폭에 맞춰 읽고 보완점이 없으면 생략한다 @responsive', async ({ page, context }) => {
   const { report } = await parentServer(context, 'WEEKLY')
   const content = { analysis: '나무가 그늘을 만든다는 구체적인 역할을 설명했어요.\n\n그늘에서 어떤 활동을 할 수 있는지 덧붙이면 생각을 더 자세히 전달할 수 있어요.',
