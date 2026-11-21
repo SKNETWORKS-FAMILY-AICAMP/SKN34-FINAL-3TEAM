@@ -46,27 +46,45 @@ def test_check_cuts_allows_running_only_in_run_cuts() -> None:
 
 def test_plan_and_fix_rules_keep_mungchi_still_except_run_cuts() -> None:
     assert "통통 튀기는 사람만" in prompts.PLAN_SYSTEM
-    go_rule = "뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 옆으로"
+    # 6컷 달리기 컷은 코드가 합성하며 방향을 정해(#779 ②안) 글에는 방향을 쓰지 않음
+    go_rule = "뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 힘차게 달린다"
     assert go_rule in prompts.PLAN_SYSTEM
     go_role = prompts.cut_roles(valid_theme(), "introCuts")[2]
-    assert "짧은 갈색 발로 옆으로 힘차게 달려가고" in go_role
+    assert "짧은 갈색 발로 힘차게 달림" in go_role and "옆으로" not in go_role
     run_fix = prompts.fix_rules(valid_theme(), "outroCuts2.action")
-    assert any("이 컷에서 짧은 갈색 발로 옆으로 힘차게 달려간다" in r for r in run_fix)
+    assert any("이 컷에서 짧은 갈색 발로 힘차게 달린다" in r for r in run_fix)
 
 
-def test_run_cut_images_are_drawn_running_and_facing_the_viewer() -> None:
+def test_run_cut_images_are_road_and_green_poses() -> None:
+    """6컷 달리기 컷(#779 사용자 결정 2026-11-20 ②안): 컷 그림은 뭉치 없는 길 배경, 뭉치는 초록
+    배경 기본 자세 → 그것을 고친 왼발·오른발 자세(시제품 2026-11-21: '다른 발'이라고 하자 두
+    자세가 같은 발을 들었고, 처음 그림에만 움직임 선이 남아 깜빡였음). 예전 4컷 출동 컷은 예전처럼
+    달리는 자세 첫 그림."""
     theme = valid_theme()
-    go = prompts.cut_image_prompt(theme, "INTRO", 4, INTRO_CUTS[3], [])
-    to_answer = prompts.cut_image_prompt(theme, "OUTRO", 2, OUTRO_CUTS[1], [])
-    close = prompts.cut_image_prompt(theme, "INTRO", 5, INTRO_CUTS[4], [])
-    assert prompts.RUN_POSE in go and "never a side profile" in go and prompts.RUN_POSE in to_answer
-    assert prompts.RUN_POSE not in close
+    assert cuts.spec("INTRO", 4, 6).run_comp and cuts.spec("OUTRO", 2, 6).run_comp
+    assert not cuts.spec("INTRO", 3, 4).run_comp  # 예전 4컷 출동 컷
+    for scene, i, cut in (("INTRO", 4, INTRO_CUTS[3]), ("OUTRO", 2, OUTRO_CUTS[1])):
+        road = prompts.cut_image_prompt(theme, scene, i, cut, [])
+        assert road == prompts.road_prompt(theme, scene, i, [])
+        assert prompts.RUN_ROAD in road and "no Mungchi" in road and "Place: the way" in road
+        assert prompts.MUNGCHI_LOOK.format(outfit=theme["outfit"]) not in road
+        assert "Do not draw 강아지 보리" in road  # 대상·후보 숨기기는 다른 컷과 같게
+        base = prompts.run_base_prompt(theme, scene, i, [])
+        assert prompts.RUN_BASE_POSE in base and prompts.RUN_GREEN in base
+        assert "a closed straight-line mouth" in base and prompts.MUNGCHI_SEPARATE in base
+    left, right = prompts.run_step_prompt(0, []), prompts.run_step_prompt(1, [])
+    assert "the foot on the left side of the picture is lifted high" in left
+    assert "the foot on the right side of the picture is lifted high" in right
+    assert all("Remove any shadow, motion lines" in p for p in (left, right))
+    legacy = prompts.cut_image_prompt(theme, "INTRO", 3, INTRO_CUTS[2], [])  # 4컷 테마 아님
+    assert prompts.RUN_POSE not in legacy
 
 
 def test_video_prompt_story_beat_camera_and_mungchi_rules() -> None:
     """컷 틀의 할 일·카메라로 이야기 흐름, 달리는 컷만 달리기, 나머지는 뭉치 거의 정지, 배경
     움직임은 실내·실외를 나눔(모든 컷에 구름을 넣자 실내 벽에 구름이 생겼음)."""
     theme = valid_theme()
+    # 6컷 달리기 컷의 영상 지시(영상 단계는 합성이라 쓰지 않지만 지시 자체는 예전 그대로)
     go = prompts.video_prompt(theme, "INTRO", 4, INTRO_CUTS[3], [])
     assert prompts.MUNGCHI_RUN in go and prompts.MUNGCHI_STILL not in go
     assert f"Camera: {prompts.CAMERA_TEXT['TRACK_SIDE']}" in go
@@ -130,7 +148,8 @@ def test_video_review_gets_judgement_examples_after_frames() -> None:
         video=FakeVideoClient(),
         storage=MemoryThemeStorage(),
     )
-    assert len(seen) == 9  # Veo 9컷(표정 그림 두 장 컷 3개는 검토할 영상이 없음, #779 A안)
+    # Veo 7컷(표정 그림 두 장 컷 3개·달리기 합성 컷 2개는 검토할 Veo 영상이 없음, #779 A안·②안)
+    assert len(seen) == 7
     assert all(len(images) >= 4 and images[-2:] == list(review_examples()) for images in seen)
 
 
@@ -280,7 +299,7 @@ def test_failed_cut_tries_safe_version_before_still_cut() -> None:
         storage=MemoryThemeStorage(),
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 9 + 1 + 1
+    assert len(video.calls) == 7 + 1 + 1  # Veo 7컷 + 다시 1번 + 안전한 버전 1번
     reasons = [w.reason for w in response.warnings]
     assert any(r.startswith(SAFE_NOTE) for r in reasons)
     assert not any(STILL_NOTE in r for r in reasons)
@@ -361,7 +380,7 @@ def test_cut_uses_first_passing_candidate_without_regenerating() -> None:
         settings={"theme_video_candidates": 2},
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert video.counts == [2] * 9 and len(video.calls) == 18  # Veo 9컷 × 후보 2, 다시 없음
+    assert video.counts == [2] * 7 and len(video.calls) == 14  # Veo 7컷 × 후보 2, 다시 없음
     assert seen["n"] == 2 and response.warnings == []
 
 
@@ -385,7 +404,7 @@ def test_all_candidates_failing_regenerates_with_their_reasons() -> None:
         storage=MemoryThemeStorage(),
         settings={"theme_video_candidates": 2},
     )
-    assert response.failure is None and len(video.calls) == 18 + 2  # 그 컷만 후보 2개로 다시
+    assert response.failure is None and len(video.calls) == 14 + 2  # 그 컷만 후보 2개로 다시
     assert not any(STILL_NOTE in w.reason for w in response.warnings)
     regen = [c[0] for c in video.calls if "MORPH" in c[0]]
     assert len(regen) == 2  # 다시 만들기 지시에 실패 사유가 들어감

@@ -273,8 +273,9 @@ PLAN_SYSTEM = (
     # 좋은 동작 예에 '손 흔들기'가 남아 같은 문단의 공중 손짓 금지와 부딪혔음(재검토 2026-11-20)
     "분명하게 움직인다(걸어 들어가기·펄쩍 놀라기·건네기·안기 등). 뭉치는 팔이 "
     "없어(몸 앞쪽 작은 동그란 손과 짧은 갈색 발만) 뭉치의 동작은 표정 바꾸기·고개 갸웃·몸 살짝 "
-    "흔들기만 쓴다. 단, 뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 옆으로 "
-    "힘차게 달려간다. 손 "
+    # 달리기 방향은 코드가 합성하며 정함(#779 ②안, cuts.CutSpec.run_comp)이라 글에 쓰지 않음
+    "흔들기만 쓴다. 단, 뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 힘차게 "
+    "달린다(달리는 방향은 쓰지 않음). 손 "
     "들기·가리키기·짚기·건네기·안기·모으기·놓기·뛰기·통통 튀기는 사람만 한다. 사람도 손 흔들기·"
     "손뼉 같은 공중 손짓은 하지 않는다(#779 사용자 결정 2026-11-19, 예: 사람 컷 '사람들이 폴짝 "
     "뛰며 웃는다', 뭉치 컷 '뭉치가 환하게 웃으며 몸을 살짝 흔든다'). "
@@ -761,7 +762,7 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             "열린 문으로만 이동한다. 하나뿐인 물건은 드는 사람을 한 명만 쓰고, 글자가 들어갈 "
             "물건은 글자 없이 그림·기호로 쓴다(숨긴 물건·찾는 대상·후보 장소는 그리지 않음).",
             # #779: 콘티 규칙(PLAN_SYSTEM action)과 같은 뭉치 동작
-            "뭉치는 이 컷에서 짧은 갈색 발로 옆으로 힘차게 달려간다. 손짓·건네기·안기·뛰기·통통 "
+            "뭉치는 이 컷에서 짧은 갈색 발로 힘차게 달린다. 손짓·건네기·안기·뛰기·통통 "
             "튀기처럼 손이나 팔다리를 쓰는 동작은 사람이 한다."
             if spec.who == "RUN"
             else "뭉치는 표정 바꾸기·고개 갸웃·몸 살짝 흔들기만 한다. 손짓·건네기·안기·뛰기·통통 "
@@ -1852,6 +1853,89 @@ RUN_POSE = (
 )
 
 
+# 달리기 합성 컷(cuts.CutSpec.run_comp, #779 사용자 결정 2026-11-20 ②안, 시제품 2026-11-21). 초록은
+# 코드가 지움(media.run_clip). 처음 그린 자세에는 "움직임 선 없음"을 줘도 선이 남았고 고친 그림에는
+# 없어 0.17초마다 선이 깜빡였음 → 기본 자세를 그린 뒤 왼발·오른발 자세를 둘 다 그것을 고쳐 만듦.
+# "다른 발"이라고 하자 두 자세 모두 같은 발을 들어 왼쪽·오른쪽을 글로 정함
+RUN_GREEN = (
+    "The background is one flat solid pure green color (#00FF00) with nothing else: no ground, no "
+    "shadow, no motion lines, no dust, no sparkles. Mungchi itself has no pure bright green on it."
+)
+RUN_BASE_POSE = (
+    "Draw Mungchi alone, centered, facing the viewer (front view), its whole body inside the "
+    "picture with empty space around it, in a running pose with its round fluffy body unchanged. "
+    "Its feet stay short and brown (no legs) and its tiny round hands stay small round shapes on "
+    "the front of its body (no arms)."
+)
+RUN_STEP = (
+    "Edit this picture. Keep everything exactly the same (Mungchi's body, face, mouth, outfit, "
+    "hat, hands, size, position and the flat pure green background), except its two short brown "
+    "feet: the foot on the {up} side of the picture is lifted high just under its body and the "
+    "foot on the {down} side is flat on the ground, as one step of running. Remove any shadow, "
+    "motion lines, dust or sparkles; the background is only flat pure green."
+)
+RUN_ROAD = (
+    "A wide view of this way, seen at Mungchi's eye level, with the floor or path in the lower "
+    "third and a clear empty middle where a small character will be added later. No people, no "
+    "animals, no Mungchi, no vehicles."
+)
+
+
+def run_base_prompt(theme: Theme, scene: str, index: int, feedback: list[str]) -> str:
+    """달리기 합성 컷의 기본 자세(초록 배경, 테마 옷 뭉치 참고). 검토 없이 두 자세의 바탕이 됨."""
+    spec = cut_spec(theme, scene, index)
+    return "\n".join(
+        x
+        for x in [
+            IMAGE_STYLE.replace("simple painted background", "no background"),
+            MUNGCHI_LOOK.format(outfit=theme["outfit"]),
+            f"Mungchi's expression: {MOOD_MOUTH[spec.mouth]}, dot eyes unchanged."
+            if spec.mouth in MOOD_MOUTH
+            else "",
+            RUN_BASE_POSE,
+            RUN_GREEN,
+            # 뭉치 컷 공통 규칙(분리·물건 안 듦 등, rules.RULES)은 컷 그림(길 배경) 대신 여기에
+            *common_rules.lines("image", cut_flags(theme, scene, index)),
+            CUT_IMAGE_RULES,
+            *_fixes(feedback),
+        ]
+        if x
+    )
+
+
+def run_step_prompt(step: int, feedback: list[str]) -> str:
+    """달리기 합성 컷의 자세 그림(기본 자세를 고침). step 0은 그림 왼쪽 발, 1은 오른쪽 발을 듦."""
+    up, down = ("left", "right") if step == 0 else ("right", "left")
+    return "\n".join([RUN_STEP.format(up=up, down=down), CUT_IMAGE_RULES, *_fixes(feedback)])
+
+
+def road_prompt(theme: Theme, scene: str, index: int, feedback: list[str]) -> str:
+    """달리기 합성 컷의 컷 그림: 그 컷 장소로 가는 길, 사람·뭉치 없는 배경(밤 종류는 밤)."""
+    spec = cut_spec(theme, scene, index)
+    return "\n".join(
+        x
+        for x in [
+            IMAGE_STYLE,
+            cut_place(theme, scene, spec),
+            RUN_ROAD,
+            *target_lines(theme, scene, index),  # 대상·후보 숨기기(다른 컷 그림과 같은 줄)
+            NIGHT_SCENE if story_type(theme).night else "",
+            CUT_IMAGE_RULES,
+            *_fixes(feedback),
+        ]
+        if x
+    )
+
+
+def road_scene_ko(theme: Theme, scene: str) -> str:
+    """달리기 합성 컷 길 배경의 검토 장면 글(한국어)."""
+    goal = str(theme.get(cut_layout.PLACE_KEY["INCIDENT" if scene == "INTRO" else "ANSWER"]) or "")
+    return (
+        f"{goal.strip() or '이 테마 장소'}(으)로 가는 길(실내면 복도). 사람·동물·뭉치가 없는 배경 "
+        "그림이고 뭉치는 영상에서 코드가 겹친다"
+    )
+
+
 # #779(만화 연출 시제품 2026-11-18): 인물 기준 그림이 시작 1컷 장면이면 그림 모델이 배경·구도까지
 # 따라 그려 컷마다 같은 장면이 됐음. 인물만 민무늬 배경에 그린 그림을 기준으로 씀
 def characters_prompt(theme: Theme) -> str:
@@ -1987,6 +2071,8 @@ def cut_image_prompt(
     camera(HOLD_CLOSE면 가까운 장면)와 시작 1컷 넓은 장면 규칙 그대로."""
     n = cut_count(theme, scene)
     spec = cut_layout.spec(scene, index, n)
+    if spec.run_comp:  # 달리기 합성 컷의 컷 그림은 뭉치 없는 길 배경(#779 ②안)
+        return road_prompt(theme, scene, index, feedback)
     lines = [IMAGE_STYLE]
     if spec.has_mungchi:
         lines.append(MUNGCHI_LOOK.format(outfit=theme["outfit"]))
@@ -2209,7 +2295,8 @@ VIDEO_NEGATIVE = (
     "Mungchi merging with a person, sleeves on Mungchi, talking, lip sync, "
     "flashing lights, bright flash, light burst, glowing rays, lens flare, scary, sudden cuts"
 )
-# #779: 뭉치 모양 고정. 뭉치는 거의 가만히(표정·갸웃·흔들기), 출동 컷만 정면을 본 채 옆으로 달림.
+# #779: 뭉치 모양 고정. 뭉치는 거의 가만히(표정·갸웃·흔들기), 예전 4컷 출동 컷만 정면을 본 채
+# 옆으로 달림(6컷 달리기 컷은 Veo 없이 코드가 합성, cuts.CutSpec.run_comp).
 # 손·발·얼굴은 실측에서 바뀐 것(팔·흰 다리·갈색 손·강아지 코)을 하나씩 막는 줄
 MUNGCHI_KEEP = [
     "Mungchi's two tiny round hands are small round shapes on the front of its body, the same "
@@ -2294,7 +2381,9 @@ def video_prompt(
     같은 컷 판정(cut_has_mungchi·cut_has_characters·cut_shows_target)을 따른다.
 
     #779: 컷 역할(줄거리 종류의 콘티 틀)과 콘티가 고른 카메라로 4컷이 만화 한 장면처럼 이어지게
-    하고, 뭉치는 거의 가만히(출동 컷만 옆으로 달림), 사람은 크게 움직인다. safe는 끝내 실패한 컷을
+    하고, 뭉치는 거의 가만히(예전 4컷 출동 컷만 옆으로 달림), 사람은 크게 움직인다. 6컷 달리기
+    컷(run_comp)·표정 그림 두 장 컷(two_faces)은 영상 단계가 이 지시를 쓰지 않는다. safe는 끝내
+    실패한 컷을
     정지 그림 대신 한 번 더 찍는 안전한 버전(뭉치·사람 움직임을 줄이고 카메라만 천천히 훑음).
     """
     target = theme.get("target") or "the missing target"

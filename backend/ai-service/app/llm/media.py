@@ -598,6 +598,60 @@ def two_face_clip(first: bytes, second: bytes, seconds: float, size: tuple[int, 
         return out.read_bytes()
 
 
+# 달리기 합성 컷(#779 사용자 결정 2026-11-20 ②안, 시제품 2026-11-21 기준안)
+RUN_KEY = "0x00FF00"  # 자세 그림의 초록 배경(prompts.RUN_GREEN)
+RUN_KEY_SIMILARITY, RUN_KEY_BLEND = 0.18, 0.08  # 올리브 모자·연두 조끼는 남고 배경만 지워졌음
+RUN_STEP_FRAMES = 4  # 이 프레임마다 왼발·오른발 자세를 바꿈(24fps에서 약 0.17초)
+RUN_HEIGHT = 0.62  # 뭉치 키(화면 높이 비율)
+RUN_BOTTOM = 0.06  # 화면 아래 여백(화면 높이 비율)
+RUN_BOUNCE = 6 / 720  # 걸음마다 통통 튀는 높이(화면 높이 비율, 720p에서 6px)
+RUN_ZOOM = 1.4  # 배경 처음 배율 → 1.0으로 물러남. 옆으로 흘리면 정면 뭉치가 미끄러져 보였음
+RUN_FOCUS_Y = 0.7  # 확대한 배경에서 자를 세로 위치(길이 있는 아래쪽)
+
+
+def run_clip(road: bytes, steps: Sequence[bytes], seconds: float, size: tuple[int, int]) -> bytes:
+    """달리기 합성 컷: 길 배경을 RUN_ZOOM배에서 1배로 천천히 물리고(화면 쪽으로 달려옴), 초록을 지운
+    자세 그림(왼발·오른발, 하나면 그 하나)을 화면 가운데 아래에 RUN_STEP_FRAMES마다 번갈아 겹쳐
+    걸음마다 살짝 통통 튀게 함(24fps·yuv420p, size 크기). Veo를 쓰지 않음."""
+    if not steps:
+        raise ValueError("달리기 자세 그림 없음")
+    width, height = size
+    frames = max(1, round(seconds * 24))
+    a, b = steps[0], steps[-1]
+    tall = int(height * RUN_HEIGHT)
+    zoom = f"({RUN_ZOOM}-{RUN_ZOOM - 1:.3f}*t/{seconds})"
+    wide = 2 * round(tall * 16 / 9 / 2)  # 두 자세를 같은 크기로(blend는 크기가 같아야 함)
+    key = f"chromakey={RUN_KEY}:{RUN_KEY_SIMILARITY}:{RUN_KEY_BLEND},scale={wide}:{tall}"
+    bounce = f"{height * RUN_BOUNCE:.2f}*abs(sin(PI*t*{24 / RUN_STEP_FRAMES / 2}))"
+    with tempfile.TemporaryDirectory() as tmp:
+        bg, pa, pb, out = (Path(tmp) / x for x in ("bg.img", "a.img", "b.img", "c.mp4"))
+        bg.write_bytes(road)
+        pa.write_bytes(a)
+        pb.write_bytes(b)
+        loop = ("-loop", "1", "-framerate", "24", "-t", str(seconds), "-i")
+        _ffmpeg(
+            [
+                *loop,
+                str(bg),
+                *loop,
+                str(pa),
+                *loop,
+                str(pb),
+                "-filter_complex",
+                f"[0]scale=w='trunc({width}*{zoom}/2)*2':h='trunc({height}*{zoom}/2)*2':"
+                f"eval=frame,crop={width}:{height}:(iw-{width})/2:(ih-{height})*{RUN_FOCUS_Y},"
+                "setsar=1[bg];"
+                f"[1]{key}[ka];[2]{key}[kb];"
+                f"[ka][kb]blend=all_expr='if(lt(mod(floor(N/{RUN_STEP_FRAMES}),2),1),A,B)'[run];"
+                f"[bg][run]overlay=x=(W-w)/2:y=H-h-{int(height * RUN_BOTTOM)}-{bounce},"
+                "format=yuv420p[v]",
+                *("-map", "[v]", "-frames:v", str(frames)),
+                *("-c:v", "libx264", "-pix_fmt", "yuv420p", str(out)),
+            ]
+        )
+        return out.read_bytes()
+
+
 def concat_mp4(clips: Sequence[bytes]) -> bytes:
     """같은 형식 컷들을 순서대로 이어 한 파일로(다시 인코딩 없이 복사)."""
     with tempfile.TemporaryDirectory() as tmp:

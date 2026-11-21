@@ -46,13 +46,21 @@ def all_cuts(theme: dict[str, Any]):
             yield scene, i, cut, cuts.spec(scene, i, 6)
 
 
+def mungchi_image(theme: dict[str, Any], scene: str, i: int, cut: dict[str, Any]) -> str:
+    """그 컷에서 뭉치를 그리는 그림 지시. 달리기 합성 컷(#779 ②안)은 컷 그림이 뭉치 없는 길
+    배경이라 기본 자세 그림 지시가 뭉치 규칙·표정을 받는다."""
+    if cuts.spec(scene, i, 6).run_comp:
+        return prompts.run_base_prompt(theme, scene, i, [])
+    return prompts.cut_image_prompt(theme, scene, i, cut, [])
+
+
 @pytest.mark.parametrize(("code", "branch"), CASES, ids=IDS)
 def test_every_cut_follows_design_tables(code: str, branch: str | None) -> None:
     theme = theme_of(code) | ({"branch": branch} if branch else {})
     negative = prompts.video_negative(theme)
     for scene, i, cut, spec in all_cuts(theme):
         where = f"{code}/{branch} {scene}{i}"
-        image = prompts.cut_image_prompt(theme, scene, i, cut, [])
+        image = mungchi_image(theme, scene, i, cut)
         video = prompts.video_prompt(theme, scene, i, cut, [])
         beat = prompts.cut_beat(theme, scene, i)
         # C표: 뭉치 컷 공통 규칙은 대상 줄에 얹지 않고 뭉치 컷 전부에
@@ -217,7 +225,7 @@ def test_common_rules_land_exactly_where_their_scope_says(code: str, branch: str
     negative = prompts.video_negative(theme)
     for scene, i, cut, _spec in all_cuts(theme):
         flags = prompts.cut_flags(theme, scene, i)
-        image = prompts.cut_image_prompt(theme, scene, i, cut, [])
+        image = mungchi_image(theme, scene, i, cut)
         video = prompts.video_prompt(theme, scene, i, cut, [])
         for r in rules.RULES:
             if r.image:
@@ -246,7 +254,9 @@ def test_frames_do_not_conflict_with_face_rules_and_variants_are_stable() -> Non
         assert f.camera != "PUSH_SLOW" or f.id in ("OBJECT_CLOSE", "MUNGCHI_CLOSE"), f.id
     for code, branch in CASES:
         theme = theme_of(code) | ({"branch": branch} if branch else {})
-        for scene, i, cut, _spec in all_cuts(theme):
+        for scene, i, cut, spec in all_cuts(theme):
+            if spec.run_comp:  # 길 배경(사람·뭉치 없음)이라 얼굴 규칙 없음(#779 ②안)
+                continue
             frame = prompts.cut_frame(theme, scene, i)
             image = prompts.cut_image_prompt(theme, scene, i, cut, [])
             assert prompts.FACE_TEXT[frame.faces] in image, (code, scene, i)
@@ -274,7 +284,7 @@ def test_no_cut_carries_lines_that_fight_each_other(code: str, branch: str | Non
         assert frame is not None, where
         # 뭉치 표정: 첫 그림은 컷 표의 첫 입 모양(콘티 mungchiMood = 컷 끝 표정은 쓰지 않음)
         for mood in ("smile", "surprised", "determined"):
-            image = prompts.cut_image_prompt(theme, scene, i, {**cut, "mungchiMood": mood}, [])
+            image = mungchi_image(theme, scene, i, {**cut, "mungchiMood": mood})
             video = prompts.video_prompt(theme, scene, i, {**cut, "mungchiMood": mood}, [])
             line = f"Mungchi's expression: {prompts.MOOD_MOUTH.get(spec.mouth)}, dot eyes"
             assert (line in image) == spec.has_mungchi, where

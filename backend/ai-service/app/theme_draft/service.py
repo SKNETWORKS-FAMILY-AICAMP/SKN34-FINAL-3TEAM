@@ -36,7 +36,11 @@ from app.theme_draft.regen import bundle
 from app.theme_draft.storage import ThemeStorage, new_run_id
 
 DAY_PREFIX = re.compile(r"^(MON|TUE|WED|THU|FRI)\s+(.+)$")
-IMAGE_PREFIX = re.compile(r"^(MON|TUE|WED|THU|FRI|INTRO[1-6]|OUTRO[1-6])\s+(.+)$")
+# 컷에 딸린 그림(끝 표정 END·달리기 자세 POSE·RUNA·RUNB, #779)도 그림 이름. 예전 꼴은 INTRO5END를
+# 못 읽어 모든 그림에 넣었음
+IMAGE_PREFIX = re.compile(
+    r"^(MON|TUE|WED|THU|FRI|(?:INTRO|OUTRO)[1-6](?:END|POSE|RUNA|RUNB)?)\s+(.+)$"
+)
 # 기본 뭉치 그림(기준안, 앱 원본 솜뭉치 그림이 저장되면 바꿈)
 MUNGCHI_IMAGE = Path(__file__).parent / "assets" / "mungchi-2d.png"
 
@@ -67,8 +71,8 @@ def initial_state(request: ThemeDraftRequest) -> ThemeState:
 
     MISSION 사유는 "<요일> <검사 코드> <자세히>"이고 요일이 없으면 다섯 요일 모두에 넣는다.
     IMAGE 사유는 "<그림 이름> <검사 코드> <자세히>"(그림 이름 MON~FRI·INTRO1~n·OUTRO1~n·끝 표정
-    그림 INTRO5END 등)면 그
-    그림을 그릴 때마다, 이름이 없으면 모든 그림에 넣는다(설계 "IMAGE는 그림 단계에서 씀").
+    그림 INTRO5END 등·달리기 자세 그림 INTRO4RUNA 등)면 그 그림을 그릴 때마다, 이름이 없으면 모든
+    그림에 넣는다(설계 "IMAGE는 그림 단계에서 씀").
     """
     plan_feedback: list[tuple[str, list[str]]] = []
     seed: dict[str, list[str]] = {}

@@ -30,11 +30,38 @@ CAPTION_MAX = {4: 30, 6: 20}  # 컷 자막 글자 상한(6컷은 "이름: " 포�
 MUNGCHI_ALONE: tuple[Who, ...] = ("MUNGCHI", "RUN")
 # 표정 그림 두 장 컷의 끝 그림 이름 꼬리(INTRO5END 등, #779 A안). 그림·재료·영상이 같은 이름을 씀
 END_FACE = "END"
+# 달리기 합성 컷의 자세 그림 이름 꼬리(#779 사용자 결정 2026-11-20 ②안): 초록 배경 기본 자세(POSE)와
+# 그것을 고친 왼발·오른발 자세(RUNA·RUNB). 컷 그림(INTRO4)은 뭉치 없는 길 배경
+RUN_BASE, RUN_STEPS = "POSE", ("RUNA", "RUNB")
+EXTRA_TAILS = (END_FACE, RUN_BASE, *RUN_STEPS)
 
 
 def end_key(key: str) -> str:
     """컷 그림 이름 → 그 컷 끝 표정 그림 이름(INTRO5 → INTRO5END)."""
     return f"{key}{END_FACE}"
+
+
+def run_keys(key: str) -> tuple[str, str, str]:
+    """달리기 합성 컷 그림 이름 → (기본 자세, 왼발 자세, 오른발 자세) 그림 이름."""
+    return f"{key}{RUN_BASE}", f"{key}{RUN_STEPS[0]}", f"{key}{RUN_STEPS[1]}"
+
+
+def extra_keys(key: str) -> tuple[str, ...]:
+    """컷 그림 이름 → 그 컷에 딸린 그림 이름이 될 수 있는 것 모두(끝 표정·달리기 자세)."""
+    return tuple(f"{key}{t}" for t in EXTRA_TAILS)
+
+
+def cut_key_of(key: str) -> str:
+    """딸린 그림 이름 → 그 컷 그림 이름(INTRO5END·INTRO4RUNA → INTRO5·INTRO4). 그 밖은 그대로."""
+    for tail in EXTRA_TAILS:
+        if key.startswith(("INTRO", "OUTRO")) and key.endswith(tail) and key != tail:
+            return key.removesuffix(tail)
+    return key
+
+
+def is_extra(key: str) -> bool:
+    """컷에 딸린 그림(끝 표정·달리기 자세)인지. 실패해도 장면 영상을 빼지 않고 그 컷만 대신함."""
+    return cut_key_of(key) != key
 
 
 def scene_of(key: str) -> str:
@@ -86,6 +113,15 @@ class CutSpec:
     def two_faces(self) -> bool:
         """Veo 대신 표정 그림 두 장으로 만드는 컷(end_mouth)."""
         return bool(self.end_mouth)
+
+    @property
+    def run_comp(self) -> bool:
+        """Veo 대신 코드가 합성하는 달리기 컷(6컷 RUN 틀, #779 사용자 결정 2026-11-20 ②안).
+
+        뭉치 혼자 달리기는 Veo가 팔을 만들거나 몸을 틀어(장난꾸러기 "정리" 영상 확인: 시작 4컷
+        3번 모두 실패, 종료 2컷 1번 통과) 길 배경 + 초록 배경 자세 그림 두 장을 번갈아 겹친다
+        (media.run_clip). 예전 4컷 출동 컷은 예전처럼 Veo."""
+        return self.who == "RUN" and bool(self.frame)
 
     @property
     def has_mungchi(self) -> bool:
@@ -159,7 +195,10 @@ _NEW = {
             "RUN",
             3,
             True,
-            "뭉치 출동: 뭉치 혼자 정면을 본 채 짧은 갈색 발로 옆으로 힘차게 달리고 배경이 흘러감",
+            # 합성 컷(run_comp): 달리는 방향은 코드가 정함(배경이 뒤로 물러남, media.run_clip)이라
+            # 글에는 방향을 쓰지 않음. "옆으로"는 합성과 어긋나고 "화면 쪽으로"는 글 규칙 "누구도
+            # 화면 쪽으로 다가오지 않는다"와 부딪힘(2026-11-21)
+            "뭉치 출동: 뭉치 혼자 정면을 본 채 짧은 갈색 발로 힘차게 달림",
             speaker="뭉치의 역할 구호(예: '뭉치: 경찰관 뭉치, 출동!')",
             place="ROAD",
             frame="RUN",
@@ -217,7 +256,8 @@ _NEW = {
             "RUN",
             2,
             False,
-            "뭉치 혼자 정답 장소로 짧은 갈색 발로 옆으로 달려감(대상은 아직 보이지 않음)",
+            "뭉치 혼자 정답 장소로 가는 길을 정면을 본 채 짧은 갈색 발로 달려감(대상은 아직 보이지 "
+            "않음)",
             place="ROAD",
             frame="RUN",
             mouth="determined",

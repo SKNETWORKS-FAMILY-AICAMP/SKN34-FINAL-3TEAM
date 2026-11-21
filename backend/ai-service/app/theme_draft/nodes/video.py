@@ -19,6 +19,9 @@
 - #779(사용자 결정 2026-11-20 A안): 표정 그림 두 장 컷(CutSpec.end_mouth, 뭉치 혼자 클로즈업)은
   Veo를 부르지 않고 첫 그림과 끝 표정 그림(그림 단계가 그림·검토)을 녹아드는 전환·천천히 확대로
   잇는다(media.two_face_clip). 끝 그림이 없으면 그 컷만 움직이는 그림
+- #779(사용자 결정 2026-11-20 ②안): 달리기 합성 컷(CutSpec.run_comp, 시작 4·종료 2)도 Veo를 부르지
+  않고 길 배경(컷 그림)에 초록을 지운 왼발·오른발 자세 그림을 번갈아 겹친다(media.run_clip). 자세
+  그림이 하나면 그 하나로, 둘 다 없으면 길 배경 움직이는 그림. 예전 4컷 출동 컷은 예전처럼 Veo
 - #779(사용자 결정 2026-11-18, Veo만 쓸 수 있어서): 시도마다 Veo 한 번 호출로 후보
   theme_video_candidates개를 받아 동시에 검사하고, 처음 통과한 후보(후보 순서대로)를 쓴다. 모두
   실패하면 후보들의 실패 사유를 모아 다시 만들기·안전판으로. 중간 멈춤은 FREEZE_WARN~FREEZE_FAIL초면
@@ -37,6 +40,7 @@ from app.llm.base import LlmUnavailable
 from app.llm.media import (
     freeze_spans,
     join_xfade,
+    run_clip,
     still_clip,
     trim_clip,
     two_face_clip,
@@ -223,6 +227,24 @@ async def face_cut(
     return clip, [], [], float(seconds)
 
 
+async def run_cut(
+    ctx: ThemeContext, images: dict[str, bytes], key: str, seconds: int
+) -> tuple[bytes | None, list[str], list[str], float]:
+    """달리기 합성 컷(#779 ②안, Veo 없음). film과 같은 꼴. 자세 그림이 하나뿐이면 WARN을 남기고
+    그 하나로, 없거나 합성이 실패하면 실패 사유로 돌려 길 배경 움직이는 그림으로 대신하게 한다."""
+    assert ctx.video is not None
+    _, *names = cut_layout.run_keys(key)
+    steps = [images[n] for n in names if n in images]
+    if not steps:
+        return None, ["RUN 달리기 자세 그림 없음"], [], 0.0
+    warns = [] if len(steps) == len(names) else ["RUN 달리기 자세 그림 하나로 합성(발 바뀜 없음)"]
+    try:
+        clip = await asyncio.to_thread(run_clip, images[key], steps, float(seconds), ctx.video.size)
+    except (RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        return None, [f"RUN 합성 실패 {type(exc).__name__}"], [], 0.0
+    return clip, [], warns, float(seconds)
+
+
 async def join_and_put(
     ctx: ThemeContext, scene: str, clips: list[bytes], durations: list[float]
 ) -> tuple[str | None, str | None]:
@@ -272,18 +294,16 @@ async def generate_videos(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
         scenes.append(scene)
     jobs = [(scene, i) for scene in scenes for i in range(1, len(lengths_of[scene]) + 1)]
 
-    def two_faces(scene: str, i: int) -> bool:
-        n = len(lengths_of[scene])
-        return n != 4 and cut_layout.spec(scene, i, n).two_faces
+    def make(scene: str, i: int):  # noqa: ANN202 (컷 하나 만드는 코루틴)
+        n, key, length = len(lengths_of[scene]), f"{scene}{i}", lengths_of[scene][i - 1]
+        spec = cut_layout.spec(scene, i, n)
+        if n != 4 and spec.two_faces:  # 표정 그림 두 장(#779 A안)
+            return face_cut(ctx, images, key, length)
+        if n != 4 and spec.run_comp:  # 달리기 합성(#779 ②안)
+            return run_cut(ctx, images, key, length)
+        return film(ctx, theme, scene, i, images[key], length)
 
-    results = await asyncio.gather(
-        *(
-            face_cut(ctx, images, f"{scene}{i}", lengths_of[scene][i - 1])
-            if two_faces(scene, i)
-            else film(ctx, theme, scene, i, images[f"{scene}{i}"], lengths_of[scene][i - 1])
-            for scene, i in jobs
-        )
-    )
+    results = await asyncio.gather(*(make(scene, i) for scene, i in jobs))
     filmed = dict(zip(jobs, results, strict=True))
     if jobs and ctx.settings.video_provider == "fake":
         warnings.append(warning("VIDEO", "ALL", FAKE_REVIEW_SKIPPED))

@@ -67,7 +67,8 @@ class ThemeState(TypedDict, total=False):
     # 그림·영상·움직임(review_story PASS 뒤 차례로 실행)
     # 테마 옷 뭉치(뭉치가 나오는 그림의 참조, 모든 그림 검토의 비교 그림)
     outfit_image: bytes
-    # MON~FRI 미션 그림, INTRO1~n·OUTRO1~n 컷 첫 그림, 끝 표정 그림(INTRO5END 등, #779 A안).
+    # MON~FRI 미션 그림, INTRO1~n·OUTRO1~n 컷 첫 그림, 끝 표정 그림(INTRO5END 등, #779 A안)·달리기
+    # 자세 그림(INTRO4POSE·RUNA·RUNB 등, #779 ②안).
     # 통과한 것만
     scene_images: dict[str, bytes]
     image_keys: dict[str, str]  # 장면 → S3 키(INTRO·OUTRO는 4번째 컷 첫 그림)
@@ -77,7 +78,7 @@ class ThemeState(TypedDict, total=False):
     motions: dict[str, dict]  # 장면 → ThemeMotion 모양
     media_warnings: Annotated[list[dict], operator.add]  # {stage, item, reason}
     # 부분 다시 생성 재료 그림 S3 키(#537): OUTFIT·PERSON(인물 기준 = 처음 생성의 INTRO1)·
-    # INTRO1~n·OUTRO1~n·끝 표정 그림(INTRO5END 등)
+    # INTRO1~n·OUTRO1~n·끝 표정 그림(INTRO5END 등)·달리기 자세 그림(INTRO4POSE 등)
     assets: dict[str, str]
     # 부분 다시 생성(#537, restore가 채움). partial이 없으면 전체 생성
     partial: bool

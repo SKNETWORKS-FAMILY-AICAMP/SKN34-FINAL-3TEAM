@@ -15,6 +15,11 @@
    뭉치 입만 바꾼 끝 그림(INTRO5END 등)을 그림. 검토는 MUNGCHI·TEXT·SAFETY·FLOW(끝 입 모양
    mungchiMouth). 끝 그림이 끝내 실패하면 장면 영상을 빼지 않고 그 컷만 움직이는 그림으로 대신함
    (영상 단계), 경고 IMAGE
+   #779 달리기 합성 컷(CutSpec.run_comp, 사용자 결정 2026-11-20 ②안): 컷 그림(INTRO4 등)은 뭉치
+   없는 길 배경(검토 MUNGCHI(안 나옴)·ANSWER_HINT·TEXT·SAFETY·SCENE_FIT). 따로 초록 배경 기본
+   자세(INTRO4POSE, 테마 옷 뭉치 참고, 검토 없음)를 그리고, 그것을 고친 왼발·오른발 자세(RUNA·RUNB,
+   검토 MUNGCHI·TEXT·SAFETY·FLOW)를 그림. 자세 그림이 끝내 실패해도 장면 영상은 빼지 않음(영상
+   단계가 남은 자세 하나로, 둘 다 없으면 길 배경 움직이는 그림으로), 경고 IMAGE
 
 그림 대역(IMAGE_PROVIDER=fake)이면 검토를 부르지 않고 통과로 보며 warnings에 IMAGE ALL 한 줄(#716).
 
@@ -32,8 +37,8 @@ review_images는 별도 노드가 아니라 그림마다 그린 직후 돈다(re
 미션 그림과 예전 4컷 초안은 예전 그대로. 부분 다시 생성(#537)도 예전 그대로다(돌아갈 원래 그림이
 있어 그 장면을 원래대로 둠).
 
-부분 다시 생성 재료(#537): 테마 옷 뭉치(OUTFIT)와 컷 첫 그림(INTRO1~n·OUTRO1~n)·끝 표정 그림
-(INTRO5END 등)도 같은 실행
+부분 다시 생성 재료(#537): 테마 옷 뭉치(OUTFIT)와 컷 첫 그림(INTRO1~n·OUTRO1~n)·컷에 딸린 그림
+(끝 표정 INTRO5END 등, 달리기 자세 INTRO4POSE·RUNA·RUNB)도 같은 실행
 폴더에 올리고 키를 assets에 둔다(인물 기준 PERSON = 인물만 그린 그림 CHARS, 없으면 예전처럼 처음
 생성의 INTRO1). 부분 다시 생성은
 redo_images만 다시 그리고 나머지는 원래 키를 그대로 둔다. 시작·종료 컷 그림이 하나라도 끝내 실패하면
@@ -78,7 +83,12 @@ SOFT_IDS = frozenset({"FRAME", "FLOW", "PEOPLE"})
 SOFT_NOTE = "끝내 통과하지 못해 이 그림을 그대로 씀"
 NO_START = "첫 그림이 없어 끝 표정 그림을 그리지 않음"  # 표정 그림 두 장 컷(#779 A안)
 END_NOTE = "그 컷은 움직이는 그림으로 대신함"  # 끝 표정 그림 실패(장면 영상은 그대로)
-END_IDS = ("MUNGCHI", "TEXT", "SAFETY")  # 끝 표정 그림 검토(+ 앞 그림 FLOW)
+# 달리기 자세 그림 실패(장면 영상은 그대로, 영상 단계가 남은 자세나 길 배경으로 대신함)
+RUN_NOTE = "달리기 컷은 남은 그림으로 대신함"
+END_IDS = ("MUNGCHI", "TEXT", "SAFETY")  # 끝 표정·달리기 자세 그림 검토(+ 앞 그림 FLOW)
+ROAD_IDS = ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT")  # 길 배경(뭉치 안 나옴)
+# 달리기 자세 그림의 검토 장면 글
+RUN_SCENE = "뭉치 혼자 달리는 자세, 단색 초록 배경(영상에서 초록을 지우고 길 배경에 겹침)"
 ASSET_NOTE = "부분 다시 생성 재료"  # 재료 그림 업로드 실패(그 대상만 다시 만들 수 없게 됨)
 
 
@@ -120,7 +130,8 @@ class Shot:
     mouth: str | None = (
         None  # 6컷 뭉치 컷만: 시작 입 모양(검토 mungchiMouth, prompts.start_mouth_ko)
     )
-    needs_prev: bool = False  # 앞 컷 그림이 있어야만 그림(표정 그림 두 장 컷의 끝 그림)
+    needs_prev: bool = False  # 앞 그림이 있어야만 그림(끝 표정 그림·달리기 자세 그림)
+    review: bool = True  # False면 그리기만(달리기 기본 자세: 두 자세의 바탕, 테마 옷 뭉치처럼)
     follow_scene: str | None = None
     follow_prompt: Callable[[list[str]], str] | None = None
 
@@ -174,8 +185,8 @@ async def draw(
                 prompt_version=ctx.prompt.version,
                 deadline=ctx.deadline,
             )
-            if ctx.settings.image_provider == "fake":
-                return Drawn(image)  # 대역 그림은 검토하지 않음(#716)
+            if ctx.settings.image_provider == "fake" or not shot.review:
+                return Drawn(image)  # 대역 그림·검토 없는 그림(달리기 기본 자세)(#716·#779)
             review = await ctx.review_llm.generate(
                 system=body.IMAGE_REVIEW_SYSTEM,
                 user=body.image_review_user(
@@ -281,10 +292,22 @@ def cut_shot(
     person: bytes | None,
     soft: bool = False,
 ) -> Shot:
-    """soft: 처음 생성의 6컷 컷 그림만 True(SOFT_IDS에서만 끝내 떨어지면 마지막 그림을 씀)."""
+    """soft: 처음 생성의 6컷 컷 그림만 True(SOFT_IDS에서만 끝내 떨어지면 마지막 그림을 씀).
+    달리기 합성 컷(#779 ②안)은 뭉치 없는 길 배경."""
     body = ctx.prompt.body
     cut = theme[CUTS_KEY[scene]][index - 1]
     n = len(theme[CUTS_KEY[scene]])
+    if n != 4 and cut_layout.spec(scene, index, n).run_comp:
+        return Shot(
+            key=f"{scene}{index}",
+            scene_text=body.road_scene_ko(theme, scene),
+            prompt=lambda fb: body.road_prompt(theme, scene, index, fb),
+            refs=[],
+            ids=ROAD_IDS,
+            has_mungchi=False,
+            shows_target=False,
+            keep_soft=soft,
+        )
     has_mungchi = body.cut_has_mungchi(scene, index, n)
     refs = [outfit] if has_mungchi else []
     if person is not None and body.cut_has_characters(scene, index, n):
@@ -313,6 +336,56 @@ def cut_shot(
             else None
         ),
     )
+
+
+def extra_shots(
+    ctx: ThemeContext, theme: Theme, scene: str, index: int, outfit: bytes
+) -> list[Shot]:
+    """그 컷에 딸린 그림 일감(#779): 표정 그림 두 장 컷의 끝 그림, 달리기 합성 컷의 자세 그림 셋.
+    둘 다 아니면 빈 목록."""
+    shot = end_shot(ctx, theme, scene, index)
+    return [shot] if shot is not None else run_shots(ctx, theme, scene, index, outfit)
+
+
+def run_shots(ctx: ThemeContext, theme: Theme, scene: str, index: int, outfit: bytes) -> list[Shot]:
+    """달리기 합성 컷의 자세 그림 일감(#779 ②안): 초록 배경 기본 자세(테마 옷 뭉치 참고, 검토
+    없음) → 그것을 고친 왼발·오른발 자세(검토, 기본 자세가 없으면 그리지 않음)."""
+    body = ctx.prompt.body
+    n = len(theme[CUTS_KEY[scene]])
+    spec = cut_layout.spec(scene, index, n)
+    if n == 4 or not spec.run_comp:
+        return []
+    base, *steps = cut_layout.run_keys(f"{scene}{index}")
+    shots = [
+        Shot(
+            key=base,
+            scene_text=RUN_SCENE,
+            prompt=lambda fb: body.run_base_prompt(theme, scene, index, fb),
+            refs=[outfit],
+            ids=(),
+            has_mungchi=True,
+            shows_target=False,
+            review=False,
+        )
+    ]
+    for step, key in enumerate(steps):
+        shots.append(
+            Shot(
+                key=key,
+                scene_text=RUN_SCENE,
+                prompt=lambda fb, step=step: body.run_step_prompt(step, fb),
+                refs=[],
+                ids=END_IDS,
+                has_mungchi=True,
+                shows_target=False,
+                follows=base,
+                follow_scene=RUN_SCENE,
+                follow_prompt=lambda fb, step=step: body.run_step_prompt(step, fb),
+                mouth=body.MOUTH_KO.get(spec.mouth),
+                needs_prev=True,
+            )
+        )
+    return shots
 
 
 def end_shot(ctx: ThemeContext, theme: Theme, scene: str, index: int) -> Shot | None:
@@ -359,7 +432,7 @@ async def draw_all(
             prev = (await tasks[shot.follows]).image
         elif shot.follows:
             prev = have.get(shot.follows)
-        if shot.needs_prev and prev is None:  # 끝 표정 그림은 첫 그림 없이 그리지 않음
+        if shot.needs_prev and prev is None:  # 끝 표정·달리기 자세는 앞 그림 없이 그리지 않음
             return Drawn(None, [NO_START])
         return await draw(ctx, theme, shot, outfit, seed_of(shot.key), prev)
 
@@ -464,11 +537,12 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             for i in cut_range(scene)
             if f"{scene}{i}" in redo
         ]
-        shots += [  # 다시 그리는 컷의 끝 표정 그림(#779 A안)
+        shots += [  # 다시 그리는 컷에 딸린 그림(#779 끝 표정·달리기 자세)
             s
             for scene in CUT_SCENES
             for i in cut_range(scene)
-            if f"{scene}{i}" in redo and (s := end_shot(ctx, theme, scene, i)) is not None
+            if f"{scene}{i}" in redo
+            for s in extra_shots(ctx, theme, scene, i, outfit)
         ]
         drawn = await draw_all(ctx, theme, shots, outfit, seed_of, state.get("scene_images") or {})
     else:
@@ -493,11 +567,11 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
             for i in cut_range(scene)
             if first is None or (scene, i) != ("INTRO", 1)
         ]
-        shots += [  # 표정 그림 두 장 컷의 끝 그림(#779 A안)
+        shots += [  # 컷에 딸린 그림(#779 끝 표정·달리기 자세)
             s
             for scene in CUT_SCENES
             for i in cut_range(scene)
-            if (s := end_shot(ctx, theme, scene, i)) is not None
+            for s in extra_shots(ctx, theme, scene, i, outfit)
         ]
         drawn = await draw_all(
             ctx,
@@ -527,8 +601,9 @@ async def generate_images(state: ThemeState, runtime: Runtime[ThemeContext]) -> 
         if key in DAYS:
             failures += [f"{key} {r}" for r in result.bad]
             continue
-        if key.endswith(cut_layout.END_FACE):  # 끝 표정 그림만 실패: 그 컷만 움직이는 그림(#779)
-            warnings += [warning("IMAGE", key, f"{r}, {END_NOTE}") for r in result.bad]
+        if cut_layout.is_extra(key):  # 딸린 그림만 실패: 장면 영상은 그대로, 그 컷만 대신(#779)
+            note = END_NOTE if key.endswith(cut_layout.END_FACE) else RUN_NOTE
+            warnings += [warning("IMAGE", key, f"{r}, {note}") for r in result.bad]
             continue
         scene = cut_layout.scene_of(key)
         if partial:

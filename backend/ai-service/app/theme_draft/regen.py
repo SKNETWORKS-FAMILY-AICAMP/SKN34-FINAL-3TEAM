@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from langgraph.runtime import Runtime
 
 from app.theme_draft.checks import DAYS
-from app.theme_draft.cuts import NEW_CUTS, end_key
+from app.theme_draft.cuts import NEW_CUTS, cut_key_of, extra_keys
 from app.theme_draft.models import REGEN_VERSION, ThemeWarning
 from app.theme_draft.nodes import ThemeContext, ThemeState
 
@@ -99,10 +99,10 @@ def keep_warnings(warnings: list[ThemeWarning], plan: Plan) -> list[dict]:
             return item in plan.mission_days
         if w.stage == "REVIEW":
             return bool(plan.mission_days)  # 글 검토를 다시 함
-        if w.stage == "IMAGE":  # 끝 표정 그림(INTRO5END)은 그 컷 그림과 함께 다시 그림
+        if w.stage == "IMAGE":  # 컷에 딸린 그림(INTRO5END·INTRO4RUNA)은 그 컷 그림과 함께 다시 그림
             return (
                 item in plan.images
-                or item.removesuffix("END") in plan.images
+                or cut_key_of(item) in plan.images
                 or item in redrawn_scenes
                 or (item == "ALL" and plan.images)
             )
@@ -125,9 +125,9 @@ def needed_assets(plan: Plan, assets: dict[str, str]) -> dict[str, str]:
     for scene in plan.videos:
         if f"{scene}1" not in plan.images:  # 영상만 다시: 원래 컷 첫 그림으로 다시 찍음
             need += cut_keys(scene, plan.counts[scene])
-            # 표정 그림 두 장 컷의 끝 그림(#779 A안). 없는 결과는 그 컷만 움직이는 그림
+            # 컷에 딸린 그림(#779 끝 표정·달리기 자세). 없는 결과는 그 컷만 움직이는 그림
             need += [
-                end_key(k) for k in cut_keys(scene, plan.counts[scene]) if end_key(k) in assets
+                x for k in cut_keys(scene, plan.counts[scene]) for x in extra_keys(k) if x in assets
             ]
     return {name: assets[name] for name in dict.fromkeys(need)}
 
