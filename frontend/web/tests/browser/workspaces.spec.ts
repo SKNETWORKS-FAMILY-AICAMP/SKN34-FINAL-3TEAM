@@ -13,7 +13,7 @@ async function login(page: Page, role: 'parent' | 'admin' = 'parent', email?: st
   if (email) await page.getByRole('textbox', { name: role === 'admin' ? '로그인 ID' : '이메일', exact: true }).fill(email)
   await page.getByRole('button', { name: role === 'admin' ? '로그인' : '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(role === 'admin' ? /\/admin\/home/ : /\/parent\/journal/)
-  if (role === 'parent') await expect(page.getByRole('group', { name: '자녀 선택' })).toBeVisible()
+  if (role === 'parent') await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toBeVisible()
 }
 
 async function studentLogin(page: Page) {
@@ -117,7 +117,7 @@ test('학부모 로그인 → 자녀별 기록 → 이용권·결제 화면', as
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await login(page)
-  await expect(page.getByRole('group', { name: '자녀 선택' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toBeVisible()
   const menu = page.getByRole('button', { name: '학부모 메뉴 열기' })
   if (!(await page.getByRole('navigation', { name: '학부모 하단 메뉴' }).isVisible()) && await menu.isVisible()) await menu.click()
   await page.getByRole('link', { name: '이용권·결제', exact: true }).filter({ visible: true }).click()
@@ -220,7 +220,7 @@ test('학생 생각 활동 메뉴와 섬 화면의 해 본 생각 (#240) @respon
 
 test('학부모 분석 대화 예시 질문은 고른 질문을 현재 자녀·기간으로 보낸다 (#240)', async ({ page }, testInfo) => {
   await login(page)
-  await expect(page.getByRole('group', { name: '자녀 선택' }).locator('button[aria-pressed=true]')).toHaveCount(1)
+  await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toHaveCount(1)
   await expect(page).toHaveURL(/childId=/)
   const childId = new URL(page.url()).searchParams.get('childId')!
   await page.evaluate(async id => {
@@ -228,7 +228,7 @@ test('학부모 분석 대화 예시 질문은 고른 질문을 현재 자녀·�
     const { saveSharing } = await import(path)
     saveSharing(id, true)
   }, childId)
-  await page.goto('/parent/analysis')
+  await page.goto('/parent/report')
   const examples = page.getByRole('group', { name: '예시 질문' })
   await expect(examples).toBeVisible()
   await expect(examples.getByRole('button')).toHaveCount(5)
@@ -250,6 +250,7 @@ test('학부모 도움말·공지·문의 접수는 core 계약 모양을 쓴다
   await page.getByText('자녀와 조회 기간', { exact: true }).click()
   await expect(page.getByText('선택한 자녀와 기간의 기록만 조회합니다.', { exact: false })).toBeVisible()
   await page.goto('/parent/notices')
+  await page.locator('.service-reading-list summary').first().click()
   await expect(page.getByText('현재 개발 시연에서는 직접 만든 예시 학생', { exact: false })).toBeVisible()
   await page.goto('/parent/support')
   await page.getByLabel('제목', { exact: true }).fill('기록 확인 문의')
@@ -258,7 +259,8 @@ test('학부모 도움말·공지·문의 접수는 core 계약 모양을 쓴다
   await page.getByRole('button', { name: '접수하기', exact: true }).click()
   expect((await sent).postDataJSON()).toEqual({ category: 'USAGE', title: '기록 확인 문의', body: '학습 기록은 어디서 보나요?' })
   await expect(page.getByText('기록 확인 문의', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '판정·답변 오류', exact: true }).click()
+  await page.getByRole('button', { name: '학습 결과가 이상해요', exact: true }).click()
+  await page.getByText('신고 대상 확인·직접 입력',{exact:true}).click()
   await page.getByLabel('대상 기록 번호', { exact: true }).fill('00000000-0000-4000-8000-000000000000')
   await page.getByLabel('내용', { exact: true }).fill('판정이 이상해요')
   const report = page.waitForRequest(r => r.url().endsWith('/api/v1/error-reports') && r.method() === 'POST')
@@ -299,5 +301,5 @@ test('동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부
   await unlock.getByLabel('보호자 비밀번호').fill('2580')
   await unlock.getByRole('button', { name: '학부모 화면으로', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
-  await expect(page.getByRole('group', { name: '자녀 선택' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toBeVisible()
 })

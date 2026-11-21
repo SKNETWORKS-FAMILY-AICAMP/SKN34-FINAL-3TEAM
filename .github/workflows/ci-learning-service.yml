@@ -5,11 +5,13 @@ on:
     branches: [develop, main]
     paths:
       - "backend/learning-service/**"
+      - "contracts/examples/p08-metrics/**"
       - ".github/workflows/ci-learning-service.yml"
       - ".github/workflows/_spring.yml"
   pull_request:
     paths:
       - "backend/learning-service/**"
+      - "contracts/examples/p08-metrics/**"
       - ".github/workflows/ci-learning-service.yml"
       - ".github/workflows/_spring.yml"
 

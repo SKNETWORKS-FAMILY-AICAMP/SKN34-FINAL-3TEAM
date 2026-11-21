@@ -1,0 +1,10 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "app", "annotations": {"argocd.argoproj.io/sync-options": "Prune=false,Delete=false"}}},
+    {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "platform", "annotations": {"argocd.argoproj.io/sync-options": "Prune=false,Delete=false"}}},
+    {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "external-secrets", "annotations": {"argocd.argoproj.io/sync-options": "Prune=false,Delete=false"}}},
+    {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "observability", "annotations": {"argocd.argoproj.io/sync-options": "Prune=false,Delete=false"}}}
+  ]
+}

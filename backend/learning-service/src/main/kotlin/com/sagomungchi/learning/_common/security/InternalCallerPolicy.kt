@@ -12,7 +12,7 @@ object InternalCallerPolicy {
         "ai" to listOf("/internal/records/students/**"),
         "report-api" to listOf("/internal/records/evidence"),
         "report-worker" to listOf("/internal/records/**", "/internal/students/*/weekly-theme/summary"),
-        "ops" to listOf("/internal/admin/knowledge/**", "/internal/knowledge/**"),
+        "ops" to listOf("/internal/admin/knowledge/**", "/internal/knowledge/**", "/internal/expression-reviews/**"),
     )
 
     private val matcher = AntPathMatcher()

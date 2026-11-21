@@ -97,6 +97,7 @@ class AttemptRecord:
     reflection: ReflectionRecord | None = None
     mission_id: UUID | None = None
     context: str | None = None
+    scheduled_day: str | None = None
 
 
 @dataclass(frozen=True)

@@ -29,7 +29,6 @@ if (typeof sessionStorage !== 'undefined') {
       if (
         Array.isArray(data.attempts) &&
         Array.isArray(data.keys) &&
-        Array.isArray(data.reports) &&
         Number.isInteger(data.serial)
       ) {
         fixtureStore.restoreSnapshot(data)

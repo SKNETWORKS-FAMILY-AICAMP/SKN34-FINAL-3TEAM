@@ -96,10 +96,6 @@
   "hpa": {
     "enabled": false
   },
-  "image": {
-    "digest": "sha256:6f151ca992e4bc3bcfeeb6ea9d2e014ef63845d34783e328a74266540fa8d586",
-    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service"
-  },
   "keda": {
     "enabled": false
   },
@@ -245,7 +241,7 @@
   },
   "serviceAccount": {
     "automountToken": false,
-    "create": false
+    "create": true
   },
   "terminationGracePeriodSeconds": 480,
   "tracing": {

@@ -44,8 +44,10 @@ class NotificationService(private val repository: NotificationRepository, privat
         values.forEach { repository.setting(user, it) }
         return settings(identity)
     }
+    /** [noRecordDay]: target day of a completed report without records (#846); only daily titles use it. */
     @Transactional(propagation = Propagation.MANDATORY)
-    fun report(userId: UUID, childId: UUID, sourceEventId: UUID, reportId: UUID, failed: Boolean, daily: Boolean = false) {
+    fun report(userId: UUID, childId: UUID, sourceEventId: UUID, reportId: UUID, failed: Boolean, daily: Boolean = false,
+        noRecordDay: java.time.LocalDate? = null) {
         val type = when {
             daily && failed -> NotificationType.DAILY_REPORT_FAILED
             daily -> NotificationType.DAILY_REPORT_COMPLETED
@@ -53,8 +55,12 @@ class NotificationService(private val repository: NotificationRepository, privat
             else -> NotificationType.REPORT_COMPLETED
         }
         val name = if (daily) "일일 리포트" else "주간 리포트"
-        val value = Notification(UUID.randomUUID(), userId, childId, type, sourceEventId,
-            if (failed) "$name 생성에 실패했습니다." else "${name}가 완성되었습니다.",
+        val title = when {
+            failed -> "$name 생성에 실패했습니다."
+            daily && noRecordDay != null -> "${noRecordDayLabel(noRecordDay)} 학습 기록이 없어요. 일일 리포트를 확인해 주세요."
+            else -> "${name}가 완성되었습니다."
+        }
+        val value = Notification(UUID.randomUUID(), userId, childId, type, sourceEventId, title,
             if (failed) "/parent/report?childId=$childId" else "/parent/report?childId=$childId&reportId=$reportId", null, OffsetDateTime.now())
         if (repository.insert(value)) events.publishEvent(NotificationStored(value.id, userId))
     }
@@ -85,4 +91,9 @@ class NotificationService(private val repository: NotificationRepository, privat
         if (repository.insert(value)) events.publishEvent(NotificationStored(value.id, userId))
     }
     fun find(userId: UUID, id: UUID) = repository.find(userId, id)
+
+    /** "어제는" for the usual midnight run; a late regeneration, retry or recovery names the day instead. */
+    private fun noRecordDayLabel(day: java.time.LocalDate): String =
+        if (day == java.time.LocalDate.now(KST).minusDays(1)) "어제는" else "${day.monthValue}월 ${day.dayOfMonth}일은"
+    private companion object { val KST: java.time.ZoneId = java.time.ZoneId.of("Asia/Seoul") }
 }

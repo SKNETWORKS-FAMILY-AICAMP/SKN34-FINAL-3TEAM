@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.domain.ExpressionPolicy
+import com.sagomungchi.learning.answer.domain.ExpressionReviewLabel
+import com.sagomungchi.learning.answer.service.ExpressionReviewService
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.theme.service.WeeklyThemeService
@@ -57,6 +59,7 @@ class CommunityService(
     private val weeklyThemeService: WeeklyThemeService,
     private val expressionPolicy: ExpressionPolicy,
     private val objectMapper: ObjectMapper,
+    private val expressionReviewService: ExpressionReviewService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -173,8 +176,17 @@ class CommunityService(
             "VALIDATION_FAILED", "입력값 오류", "status는 HIDDEN_REPORT·VISIBLE·REMOVED")
         val post = repository.findPost(postId, lock = true) ?: postNotFound()
         val next = CommunityRules.moderate(post.status, requested, repository.findVisibility(post.studentId) != false)
+        val now = now()
         // 같은 요청 반복은 바꾸지 않음. error_report_id는 상태를 마지막으로 바꾼 신고
-        if (next != post.status) repository.updateStatus(postId, next, errorReportId, now())
+        if (next != post.status) repository.updateStatus(postId, next, errorReportId, now)
+        // 표현 검토 대기(#727, api-spec 4.1.5): 신고 숨김은 올리고, 처리 결과로 자동 라벨. 같은 요청 반복은 그대로
+        when {
+            next == CommunityPostStatus.HIDDEN_REPORT -> expressionReviewService.recordReported(post.answerId, now)
+            next == CommunityPostStatus.REMOVED && post.status != CommunityPostStatus.REMOVED ->
+                expressionReviewService.autoLabel(post.answerId, ExpressionReviewLabel.OFFENSIVE, now)
+            post.status == CommunityPostStatus.HIDDEN_REPORT && requested == CommunityPostStatus.VISIBLE ->
+                expressionReviewService.autoLabel(post.answerId, ExpressionReviewLabel.CLEAN, now)
+        }
         return next
     }
 

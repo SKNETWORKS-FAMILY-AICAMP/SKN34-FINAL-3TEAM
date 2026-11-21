@@ -214,3 +214,21 @@ def test_refusal_is_not_retried():
         generate(llm)
     assert raised.value.code == "LLM_REFUSED"
     assert len(runtime.calls) == 1
+
+
+@pytest.mark.parametrize("penalty", [None, 1.1])
+def test_repetition_penalty_is_sent_only_when_requested(penalty):
+    llm, runtime = make(completion('{"narrative":"가상 기록 요약입니다."}'))
+    asyncio.run(
+        llm.generate(
+            system="Use the supplied records",
+            user="synthetic record",
+            output=Output,
+            call_type="REPORT_EXPLANATION",
+            prompt_version="report-explanation@4",
+            repetition_penalty=penalty,
+        )
+    )
+    body = json.loads(runtime.calls[0]["Body"])
+    assert body.get("repetition_penalty") == penalty
+    assert ("repetition_penalty" in body) is (penalty is not None)

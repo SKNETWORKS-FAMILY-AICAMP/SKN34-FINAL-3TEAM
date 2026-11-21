@@ -11394,6 +11394,10 @@ components:
           type: string
         title:
           type: string
+        scheduledDay:
+          type: [string, "null"]
+          enum: [MON, TUE, WED, THU, FRI, null]
+          description: "원래 예정 요일. EXTRA·이전 리포트는 null (#845)"
         context:
           enum:
           - THEME_DAY

@@ -1,0 +1,32 @@
+# wave 7: EC2NodeClass application·NodePool application-burst. 서브넷·SG 값은 karpenter-nodepool.json(B는 #809 6a PR이 교체). NodePool을 지우면 노드가 정리되므로 prune 끔.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prod-karpenter-nodepool
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  project: sagomungchi-prod
+  source:
+    repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+    targetRevision: main
+    path: infrastructure/gitops/environments/prod
+    directory:
+      include: 'karpenter-nodepool.json'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  # 플랫폼은 prune 끔(상태 저장 자원·CRD·NodePool 보호), selfHeal 켬. finalizer가 없어 Application을 지워도 자원은 남는다.
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - SkipDryRunOnMissingResource=true

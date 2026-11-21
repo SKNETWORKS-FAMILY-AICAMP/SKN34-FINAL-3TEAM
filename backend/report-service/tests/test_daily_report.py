@@ -197,6 +197,7 @@ def test_monday_revisions_lists_and_database_constraints(db_session):
 
 def test_daily_persistence_response_and_rendering(db_session):
     command, records, learning = daily_fixture()
+    records = replace(records, attempts=(replace(records.attempts[0], scheduled_day="TUE"),))
     repo = ReportRepository()
     report, _ = repo.get_or_create(db_session, command)
     result = asyncio.run(DailyReportBuilder().build(records, True, learning))
@@ -214,6 +215,8 @@ def test_daily_persistence_response_and_rendering(db_session):
     assert b"%PDF" in rendered["PDF"][:10]
     assert "근거를 보완한 답." in rendered["HTML"].decode()
     assert "일일 리포트" in rendered["MD"].decode()
+    assert "화요일 문제 · 토요일에 풀었어요" in rendered["HTML"].decode()
+    assert "화요일 문제 · 토요일에 풀었어요" in rendered["MD"].decode()
 
 
 def test_theme_scope_no_participation_and_http_failure():
@@ -664,3 +667,97 @@ async def read_daily_with(extra):
             return await LearningClient(client).daily_records(command.student_id, records.period)
     finally:
         reset_user_context(token)
+
+
+@pytest.mark.parametrize(
+    "context,scheduled,expected",
+    [
+        ("THEME_DAY", "TUE", "화요일 문제 · 목요일에 풀었어요"),
+        ("THEME_REVIEW", "TUE", "화요일 문제 · 목요일에 풀었어요"),
+        ("THEME_DAY", "THU", None),
+        ("EXTRA", "TUE", None),
+        ("THEME_DAY", None, None),
+    ],
+)
+def test_scheduled_day_detail_and_files(context, scheduled, expected):
+    from app.rendering.renderer import scheduled_day_line
+
+    command, records, learning = daily_fixture("2026-11-19")
+    records = replace(
+        records, attempts=(replace(records.attempts[0], context=context, scheduled_day=scheduled),)
+    )
+    result = asyncio.run(DailyReportBuilder().build(records, False, learning))
+    problem = next(i.payload for i in result.items if i.type == ItemType.PROBLEM)
+    assert problem["scheduledDay"] == (None if context == "EXTRA" else scheduled)
+    assert scheduled_day_line(problem, "2026-11-19") == expected
+    # 권한과 무관한 요일 정보는 원문 비공개에도 남는다.
+    assert problem["finalAnswer"] is None
+    from app.generation.presentation import assemble
+
+    detail = assemble(
+        {
+            "periodType": "DAILY",
+            "period": {"from": "2026-11-19", "to": "2026-11-19"},
+            "revision": 1,
+            "state": "OK",
+            "inclusionRule": "완료일 기준",
+        },
+        [(i.type, None, i.payload) for i in result.items],
+    )
+    renderer = ReportRenderer()
+    html = renderer._templates.get_template("daily.html").render(report=detail, name="합성학생")
+    markdown = renderer.markdown(detail, "합성학생")
+    for rendered in (html, markdown):
+        if expected:
+            assert expected in rendered
+        else:
+            assert "에 풀었어요" not in rendered
+
+
+def test_old_daily_problem_has_null_schedule():
+    from app.generation.presentation import assemble
+
+    detail = assemble({}, [(ItemType.PROBLEM, None, {"title": "이전 저장본"})])
+    assert detail["problems"][0]["scheduledDay"] is None
+
+
+@pytest.mark.parametrize(
+    ("difficulty", "written", "label"),
+    [
+        ("EASY", True, "쉬웠어요"),
+        ("NORMAL", True, "보통"),
+        ("HARD", True, "어려웠어요"),
+        ("UNKNOWN_LEVEL", True, ""),
+        (None, False, "미작성"),
+    ],
+)
+def test_daily_markdown_localizes_reflection(difficulty, written, label):
+    reflection = {
+        "difficulty": difficulty,
+        "written": written,
+        "text": "생각을 덧붙였어요." if written else None,
+    }
+    report = {
+        "periodType": "DAILY",
+        "period": {"from": "2026-11-19", "to": "2026-11-19"},
+        "revision": 1,
+        "state": "OK",
+        "metrics": [],
+        "problems": [
+            {
+                "title": "미션",
+                "judgment": None,
+                "followups": [],
+                "finalAnswer": None,
+                "elements": [],
+                "reflection": reflection,
+                "quotes": [],
+            },
+        ],
+    }
+
+    markdown = ReportRenderer.markdown(report, "합성학생")
+
+    assert f"### 돌아보기\n{label}\n{reflection['text'] or ''}" in markdown
+    assert difficulty is None or difficulty not in markdown
+    assert reflection["difficulty"] == difficulty

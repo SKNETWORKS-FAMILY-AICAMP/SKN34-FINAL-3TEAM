@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
@@ -15,47 +17,39 @@ const when = (iso: string) =>
  * 다른 학생의 글·잔액·순위는 보여 주지 않는다.
  */
 export function ChildParticipation({ child, canReadOriginals = false }: { child: Child; canReadOriginals?: boolean }) {
+  const [tab, setTab] = useState<'posts' | 'points'>('posts')
+  const [postPage, setPostPage] = useState(0), [pointPage, setPointPage] = useState(0)
   const posts = useChildPosts(child.id, canReadOriginals)
-  const points = useChildPoints(child.id)
-  return (
-    <section className="ws-card" aria-labelledby="participation-h">
-      <h2 id="participation-h">{child.nickname}의 참여 기록</h2>
-      <h3>포인트</h3>
+  const points = useChildPoints(child.id, pointPage)
+  const items = !posts.error ? posts.data ?? [] : []
+  return <section className="pd-participation" aria-labelledby="participation-h">
+    <header className="pd-explorer-heading"><h2 id="participation-h">참여 기록</h2>
+      {points.data && !points.error && <span className="pd-point-balance">보유 포인트 <strong>{points.data.balance.toLocaleString()} P</strong></span>}
+    </header>
+    <nav className="pd-participation-tabs" aria-label="참여 기록 종류">
+      <button type="button" aria-pressed={tab === 'posts'} onClick={() => setTab('posts')}>나눈 생각</button>
+      <button type="button" aria-pressed={tab === 'points'} onClick={() => setTab('points')}>포인트 내역</button>
+    </nav>
+    {tab === 'points' ? <>
       <QueryFeedback query={points} />
-      {points.data && !points.error && (
-        <>
-          <p>지금 {points.data.balance}포인트 · 참여한 만큼 쌓이며 판정 결과·순위와는 관계없습니다.</p>
-          <ul>
-            {points.data.items.slice(0, 5).map((e, i) => (
-              <li key={`${e.createdAt}-${i}`}>
-                {when(e.createdAt)} · {POINT_EVENT_LABELS[e.eventType]} · {e.amount > 0 ? `+${e.amount}` : e.amount}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      <h3>커뮤니티에 나눈 생각</h3>
+      <div className="pd-table-scroll" role="region" aria-label="포인트 내역 목록" tabIndex={0}><table className="pd-explorer-table"><thead><tr><th>날짜</th><th>활동</th><th>포인트</th></tr></thead><tbody>
+        {!points.error && points.data?.items.map((e, i) => <tr key={`${e.createdAt}-${i}`}><td>{when(e.createdAt)}</td><td>{POINT_EVENT_LABELS[e.eventType]}</td><td className="pd-point-amount">{e.amount > 0 ? '+' : ''}{e.amount.toLocaleString()} P</td></tr>)}
+      </tbody></table></div>
+      {points.data && !points.error && <nav className="pd-explorer-pagination" aria-label="포인트 페이지"><span>총 {points.data.totalElements}건</span><button type="button" disabled={pointPage === 0} onClick={() => setPointPage(pointPage - 1)}>이전</button><span>{pointPage + 1}</span><button type="button" disabled={(pointPage + 1) * points.data.size >= points.data.totalElements} onClick={() => setPointPage(pointPage + 1)}>다음</button></nav>}
+      <p className="pd-date-note">포인트는 참여 기록이며 판정 결과나 순위와는 관계없습니다.</p>
+    </> : <>
       <CommunityConsentStatus child={child} />
       {canReadOriginals ? <QueryFeedback query={posts} /> : <p>공유한 답변 원문은 아이가 학부모 공개를 켠 뒤 확인할 수 있습니다.</p>}
-      {canReadOriginals && posts.data && !posts.error && !posts.data.length && (
-        <p>아직 나눈 생각이 없습니다. 커뮤니티 공개는 보호자 동의 후 자녀가 직접 켭니다.</p>
-      )}
-      {canReadOriginals && posts.data?.map((p) => (
-        <article className="ws-card" key={p.postId}>
-          <p>
-            {p.missionTitle} · {POST_STATUS_LABELS[p.status]}
-          </p>
-          <blockquote>{p.answer}</blockquote>
-          <p>
-            받은 반응 ·{' '}
-            {REACTIONS.filter((r) => p.reactions[r] > 0)
-              .map((r) => `${REACTION_LABELS[r]} ${p.reactions[r]}`)
-              .join(' · ') || '없음'}
-          </p>
-        </article>
-      ))}
-    </section>
-  )
+      {canReadOriginals && <div className="pd-shared-list">
+        <div className="pd-shared-labels"><span>활동</span><span>공유 상태</span><span>날짜</span></div>
+        {items.slice(postPage * 10, postPage * 10 + 10).map(p => <details key={p.postId} className="pd-shared-row"><summary><strong>{p.missionTitle}</strong><span className="pd-shared-status" data-status={p.status}>{POST_STATUS_LABELS[p.status]}</span><time>{p.createdAt ? when(p.createdAt) : '—'}</time><ChevronDown size={16} aria-hidden="true" /></summary>
+          <div className="pd-shared-detail"><blockquote>{p.answer}</blockquote><p>받은 반응 · {REACTIONS.filter(r => p.reactions[r] > 0).map(r => `${REACTION_LABELS[r]} ${p.reactions[r]}`).join(' · ') || '없음'}</p></div>
+        </details>)}
+        {!posts.isPending && !posts.error && !items.length && <p>아직 나눈 생각이 없습니다.</p>}
+        <nav className="pd-explorer-pagination" aria-label="나눈 생각 페이지"><span>총 {items.length}건</span><button type="button" disabled={postPage === 0} onClick={() => setPostPage(postPage - 1)}>이전</button><span>{postPage + 1}</span><button type="button" disabled={(postPage + 1) * 10 >= items.length} onClick={() => setPostPage(postPage + 1)}>다음</button></nav>
+      </div>}
+    </>}
+  </section>
 }
 
 /**

@@ -991,6 +991,24 @@
             ],
             "title": "Context"
           },
+          "scheduledDay": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "MON",
+                  "TUE",
+                  "WED",
+                  "THU",
+                  "FRI"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduledday"
+          },
           "judgment": {
             "anyOf": [
               {
@@ -1520,6 +1538,11 @@
               }
             ],
             "title": "Failurereason"
+          },
+          "noRecord": {
+            "type": "boolean",
+            "title": "Norecord",
+            "default": false
           }
         },
         "additionalProperties": false,

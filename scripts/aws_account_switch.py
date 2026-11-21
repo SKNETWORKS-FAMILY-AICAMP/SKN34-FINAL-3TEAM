@@ -42,7 +42,7 @@ CHANGE = [
     'infrastructure/eks/README.md',
     'infrastructure/cd/README.md',
     'infrastructure/gitops/environments/prod/*.json',
-    'infrastructure/gitops/environments/prod/migrations/*.json',
+    'infrastructure/gitops/environments/prod/images/*.json',
     'infrastructure/gitops/environments/prod/redeploy-app.ps1',
     'infrastructure/gitops/environments/prod/README.md',
     'scripts/tests/test_cd_migration_runner.py',

@@ -1,7 +1,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from threading import Event
 from uuid import uuid4
 
@@ -16,7 +16,7 @@ from app.deletion.service import finish_deletion
 from app.deletion.state import DeleteStudent, deletion_guard
 from app.errors import ApiError
 from app.generation.locking import JobLocks
-from app.generation.models import GenerationResult, JobConflict, ReportState
+from app.generation.models import GenerationResult, JobConflict, PeriodType, ReportState
 from app.generation.reconciliation import ReconciliationService
 from app.generation.repository import ReportRepository, report_job_guard, weekly_report
 from app.outbox.repository import outbox_event
@@ -86,6 +86,29 @@ def test_no_row_response_loss_blocks_delayed_delivery_and_rejects_identity_chang
         assert error.value.code == "REPORT_JOB_IDENTITY_MISMATCH"
         with pytest.raises(JobConflict):
             asyncio.run(make_service(report_factory, db_engine, changed).generate(changed))
+
+
+def test_existing_report_rejects_identity_changes_in_generation_and_recovery(
+    report_factory, db_engine, report_student_id
+):
+    command = command_for(report_student_id)
+    with transaction(report_factory) as session:
+        ReportRepository().get_or_create(session, command)
+    before = stored(report_factory, report_student_id)
+    for changed in (
+        replace(command, student_id=uuid4()),
+        replace(
+            command,
+            period_from=command.period_from + timedelta(days=7),
+            period_to=command.period_to + timedelta(days=7),
+        ),
+    ):
+        with pytest.raises(ApiError) as error:
+            recover(report_factory, db_engine, changed)
+        assert error.value.code == "REPORT_JOB_IDENTITY_MISMATCH"
+        with pytest.raises(JobConflict):
+            asyncio.run(make_service(report_factory, db_engine, changed).generate(changed))
+    assert stored(report_factory, report_student_id) == before
 
 
 def test_live_generation_is_busy_and_can_complete(report_factory, db_engine, report_student_id):
@@ -346,3 +369,52 @@ def test_daily_http_reconcile_keeps_core_response_contract(
         ).status_code
         == 409
     )
+
+
+@pytest.mark.parametrize("state", list(ReportState))
+def test_http_reconcile_marks_only_a_completed_no_record_report(
+    report_factory, db_engine, report_student_id, state
+):
+    """#846: noRecord=true only for COMPLETED + NO_RECORD; every other answer keeps 7 fields."""
+    app = create_app()
+    app.state.session_factory, app.state.engine = report_factory, db_engine
+    client = TestClient(app)
+    command = replace(
+        command_for(report_student_id),
+        period_from=date(2026, 11, 19),
+        period_to=date(2026, 11, 19),
+        period_type=PeriodType.DAILY,
+    )
+    with transaction(report_factory) as session:
+        report, _ = ReportRepository().get_or_create(session, command)
+        ReportRepository().finish(session, report.id, result=GenerationResult(state))
+    body = dict(
+        studentId=str(report_student_id),
+        periodFrom="2026-11-19",
+        periodTo="2026-11-19",
+        periodType="DAILY",
+    )
+    headers = {
+        "X-Internal-Token": "test-token",
+        "X-User-Role": "SYSTEM",
+        "X-Student-Scope": str(report_student_id),
+    }
+    response = client.post(
+        f"/internal/report-jobs/{command.job_id}/reconcile", json=body, headers=headers
+    )
+    assert response.status_code == 200
+    expected = {k: v for k, v in body.items() if k != "periodType"} | dict(
+        jobId=str(command.job_id), status="COMPLETED", reportId=str(report.id), failureReason=None
+    )
+    if state == ReportState.NO_RECORD:
+        expected["noRecord"] = True
+    assert response.json() == expected
+
+
+def test_failed_reconcile_never_marks_no_record(report_factory, db_engine, report_student_id):
+    command = command_for(report_student_id)
+    with transaction(report_factory) as session:
+        report, _ = ReportRepository().get_or_create(session, command)
+        ReportRepository().finish(session, report.id, failure_reason="GENERATION_FAILED")
+    result = recover(report_factory, db_engine, command)
+    assert result.status == "FAILED" and result.no_record is False

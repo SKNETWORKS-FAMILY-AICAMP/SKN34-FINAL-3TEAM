@@ -224,9 +224,9 @@ stateDiagram-v2
 - 되묻기는 시도당 최대 2회, 2회째 보완 답변 판정 후 되묻기 생성 없이 마무리 안내. 고르기 `CORRECT`도 되묻기 없이 마무리 안내 (P04)
 - 초안 `attempt_draft.version`: 저장마다 +1, `WHERE version = :ifMatch` (상태값 없음)
 
-#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385 → 2026-11-10 개정 #483)
+#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385·#483)
 
-2026-11-10 개정(#483, 구현 learning #484·core #485): 공개된 문제가 쌓이는 누적 공개로 바꾼다. core #485는 일요일 허용 값 `sundayTheme` 전달·무료 테마 문제 한도 없음을, learning #484는 아래 요일 상태·시작 검사를 구현했다(`ThemeWeek.stateOf`·`WeeklyThemeService.checkStart`).
+공개된 문제가 쌓이는 누적 공개(#483). learning #484가 아래 요일 상태·시작 검사(`ThemeWeek.stateOf`·`WeeklyThemeService.checkStart`)를, core #485가 일요일 허용 값 `sundayTheme` 전달·무료 테마 문제 한도 없음을 맡는다.
 
 ```mermaid
 stateDiagram-v2
@@ -241,12 +241,12 @@ stateDiagram-v2
 
 - `SUNDAY_OPEN`은 응답 값이 아니라 설명용이다. 응답 `state`는 `LOCKED`·`OPEN`·`CLOSED` 셋 그대로이고, 프리미엄 일요일에는 `OPEN`으로 계산한다(일요일 허용 여부는 core #485가 상품 `features.sundayTheme`으로 판단해 learning 쿼리 `sundayTheme=true|false`로 전달, [api-spec 4.1](api-spec.md))
 - 월요일에는 월 문제만, 금요일에는 다섯 문제 모두 `OPEN`. 토요일에는 다섯 문제 모두 `OPEN`
-- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 그 주에 이미 마무리한 문제의 새 `THEME_DAY` 시도는 `409 THEME_DAY_CLOSED`로 거부한다(learning #484, 전에는 무료 하루 1개 429가 부수적으로 막았음 #506). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기존 코드 재사용, 일요일 전용 코드는 만들지 않음, #484)
+- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 그 주에 이미 마무리한 문제의 새 `THEME_DAY` 시도는 `409 THEME_DAY_CLOSED`로 거부한다(learning #484·#506). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기존 코드 재사용, 일요일 전용 코드는 만들지 않음, #484)
 - 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용(일요일 포함). 당일 풀이(`completedOnDay`)·개근은 그 요일 KST 안의 학습 완료 시각만 인정, 주간 완주(`finished`)는 그 주 테마 시도로 토요일 23:59:59 KST까지 다섯 문제 학습 완료(일요일 완료 제외, #484)
 - 재사용 테마의 이미 푼 문제도 그 주 `OPEN`이면 `THEME_DAY` 신규 시도 가능(지난 주 시도는 "그 주에 마무리"에 들지 않음)
-- 이전 규칙(#385 구현, #484 전): 그 요일만 `OPEN`, 다음 날 `CLOSED`, 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준(개정 뒤에도 같음)
+- 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준
 
-#### 3.2.2 주간 테마 엔딩 (파생, 2026-11-10 개정 #483, learning #484)
+#### 3.2.2 주간 테마 엔딩 (파생, #483, learning #484)
 
 큰 질문 정답 고르기(금요일 문제를 마무리한 뒤 후보 중 하나, 한 주 한 번, #437·#484) 결과로 학생·주마다 정한다. 고른 값은 learning `theme_answer_pick`(학생·주당 1행, ERD 4.2.1)에 두고 엔딩은 저장하지 않고 계산한다(`ThemeEnding`, 사용자 결정 2026-11-12).
 
@@ -262,10 +262,10 @@ stateDiagram-v2
 
 - 응답 값은 `ending`(`NOT_ENDED`·`ENDED`, 주간 테마 조회·요약, #484). `WAITING_RETRY`는 설명용이며 응답에서는 `NOT_ENDED`. 고르기 전에 마무리한 다시 풀기는 엔딩 조건에 들지 않는다
 - 정답 고르기 요청(`POST …/weekly-theme/answer-picks {pick}`, api-spec 2.11): 후보 밖 400, 큰 질문 없는 테마·금요일 문제 마무리 전·이미 고름·무료 일요일은 `409 THEME_PICK_NOT_ALLOWED`
-- `ENDED` 전에는 정답·종료 이야기(`outro`)를 응답에 넣지 않는다(#438 "공개 시점 전 제외"를 이 조건으로 바꿈). 종료 이야기 표시는 `ENDED` 뒤, 무료 일요일에는 이미 본 엔딩 다시 보기만
-- 정답 고르기가 있는 문제(큰 질문 테마의 금요일 문제)의 커뮤니티 열람은 그 문제로 고른 주에 `ENDED`인 학생만(P20, 아니면 `403 COMMUNITY_LOCKED_UNTIL_ENDING`, 사용자 결정 2026-11-12 새 코드. 학습 완료 전은 지금처럼 `COMMUNITY_LOCKED`)
+- `ENDED` 전에는 정답·종료 이야기(`outro`)를 응답에 넣지 않는다. 종료 이야기 표시는 `ENDED` 뒤, 무료 일요일에는 이미 본 엔딩 다시 보기만
+- 정답 고르기가 있는 문제(큰 질문 테마의 금요일 문제)의 커뮤니티 열람은 그 문제로 고른 주에 `ENDED`인 학생만(P20, 아니면 `403 COMMUNITY_LOCKED_UNTIL_ENDING`. 학습 완료 전은 지금처럼 `COMMUNITY_LOCKED`)
 
-#438 추가:
+#438 공개 조건:
 - 정답 구조 공개(#438 → #484): 요일 단서(`clue`·`rulesOut`)는 학생이 그 문제를 그 주에 학습 완료한 뒤에만 학생 응답에 넣는다(ai.md 17장 사용자 결정 2026-11-11 "미션을 마쳐야 단서", 공개 기준은 학습 완료 사용자 결정 2026-11-12. #438은 `LOCKED`가 아닐 때였음). 이야기 열람 기록은 INTRO 월~토(그 주 1번, 2026-11-10 사용자 결정으로 에픽의 '월요일 첫 진입'에서 바꿈. 웹은 그 주 처음 '오늘 문제 풀기'를 누를 때 보여 주고 기록, #589 2026-11-14)에 받는다
 - 단서 근거 공개(#647, 기준안): 요일 특징(`days[].clueFeature`·`clueFacts`, 그날 단서가 쓰는 특징의 후보별 값)은 그날 단서와 같은 조건(그 문제를 그 주에 학습 완료한 뒤)에서만, 후보 특징 표 전체(`features`)는 엔딩(`ENDED`) 뒤에만 학생 응답에 넣는다. 얻지 못한 요일 특징은 엔딩 전에 넣지 않는다
 - 종료 공개(#438 칸, 조건은 #483·#484): 종료 이야기·정답·결정적 단서·종료 장면 그림·영상·움직임은 엔딩 상태(3.2.2 `ENDED`)일 때만 학생 응답에 넣고 OUTRO 열람 기록도 그때만 받는다(엔딩 전 정답 제외). 엔딩 조건과 정답 고르기 저장·판정은 3.2.2(learning #484). 엔딩 여부는 한 곳(`ThemeEnding`)에서 판단하고, OUTRO 열람 기록은 엔딩이고 무료 일요일이 아닐 때 받는다(요일 무관). #484 전에는 토·일을 엔딩으로 봤다

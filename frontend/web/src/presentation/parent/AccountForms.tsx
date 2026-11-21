@@ -259,7 +259,7 @@ export function ProfileSettings({ child }: { child?: Child }) {
   return (
     <div className="ws-grid">
       <section className="ws-card">
-        <h2>본인 정보</h2>
+        <h2>보호자 정보</h2>
         <QueryFeedback query={me} />
         <p>현재 이름: {me.data?.name ?? '확인 중'}</p>
         <form
@@ -288,10 +288,8 @@ export function ProfileSettings({ child }: { child?: Child }) {
         </form>
       </section>
       {child && <section className="ws-card">
-        <h2>자녀 정보</h2>
-        <p>학년 변경은 이후 제공 문제에만 적용됩니다. 과거 답변과 문항은 변경하지 않습니다.</p>
-        <p>{gradePromotionNotice}</p>
-        <p>현재 로그인 권한으로 별명과 학년을 수정합니다. 연결 해제·삭제는 계정 관리 탭에서 별도로 본인 확인합니다.</p>
+        <h2>{child.nickname}의 프로필</h2>
+        <p>현재 별명: {child.nickname}</p>
 
         <form
           className="ws-form"
@@ -337,6 +335,10 @@ export function ProfileSettings({ child }: { child?: Child }) {
           </button>
           <ErrorNotice error={update.error} />
         </form>
+        <details className="parent-profile-guidance"><summary>학년 변경·자동 진급 안내</summary>
+          <p>학년 변경은 이후 제공 문제에만 적용됩니다. 과거 답변과 문항은 변경하지 않습니다.</p>
+          <p>{gradePromotionNotice}</p>
+        </details>
       </section>}
       <p role="status">{notice}</p>
     </div>

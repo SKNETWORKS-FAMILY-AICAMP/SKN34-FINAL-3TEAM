@@ -752,6 +752,36 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("--require-executable", self.text)
         self.assertNotIn("helm rollback", self.text)
 
+    def test_digest_pr_is_default_and_helm_is_emergency_only(self):
+        # #858: 기본은 digest PR, 예전 Helm deploy는 입력으로 고르는 비상용(12/7까지)
+        delivery = self.wf[True]["workflow_dispatch"]["inputs"]["delivery"]
+        self.assertEqual(delivery["default"], "pull-request")
+        self.assertEqual(delivery["options"], ["pull-request", "helm-emergency"])
+        self.assertIn("delivery == 'pull-request'", self.jobs["digest-pr"]["if"])
+        self.assertIn("delivery == 'helm-emergency'", self.jobs["deploy"]["if"])
+        self.assertIn("--check-images", self.jobs["validate"]["steps"][3]["run"])
+
+    def test_digest_pr_job_permissions_and_steps(self):
+        job = self.jobs["digest-pr"]
+        self.assertEqual(job["runs-on"], "ubuntu-latest")
+        self.assertNotIn("environment", job)  # 승인은 PR에서
+        self.assertEqual(
+            job["permissions"],
+            {"contents": "write", "pull-requests": "write", "actions": "write"},
+        )
+        self.assertNotIn("id-token", job["permissions"])
+        checkout = job["steps"][0]
+        self.assertEqual(checkout["with"]["ref"], "main")
+        gate = job["steps"][1]["run"]
+        for flag in ("--require-executable", "--write-images", "--require-ancestor-of origin/main"):
+            self.assertIn(flag, gate)
+        self.assertIn('grep -v "^$images_dir/"', gate)
+        create = job["steps"][2]["run"]
+        self.assertIn("gh pr create --base main", create)
+        self.assertIn('git add -A -- "$IMAGES_DIR"', create)
+        self.assertIn("gh workflow run ci-gitops.yml", job["steps"][3]["run"])
+        self.assertNotIn("CD_KUBECONFIG", str(job))
+
     def test_migrations_are_published_with_the_app_tag(self):
         publish = self.jobs["publish"]
         self.assertIn("migrations", publish["outputs"])

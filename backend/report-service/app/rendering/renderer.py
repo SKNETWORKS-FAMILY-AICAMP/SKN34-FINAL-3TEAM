@@ -1,5 +1,6 @@
 """Jinja2 HTML -> Chromium PDF plus Markdown, with escaped source text and no network."""
 
+from datetime import date
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
@@ -68,6 +69,21 @@ def answer_time_line(time: dict) -> str:
     )
 
 
+def scheduled_day_line(problem: dict, completed_date: str) -> str | None:
+    """일일 리포트 날짜는 KST 완료일. 같은 요일·추가 문제·이전 저장본은 기존 표시."""
+    if problem.get("context") not in ("THEME_DAY", "THEME_REVIEW"):
+        return None
+    days = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+    labels = ("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일")
+    scheduled = problem.get("scheduledDay")
+    if scheduled not in days[:5]:
+        return None
+    actual = date.fromisoformat(completed_date).weekday()
+    if days[actual] == scheduled:
+        return None
+    return f"{labels[days.index(scheduled)]} 문제 · {labels[actual]}에 풀었어요"
+
+
 class ReportRenderer:
     def __init__(self) -> None:
         self._templates = Environment(
@@ -85,6 +101,7 @@ class ReportRenderer:
             theme_day_label=theme_day_label,
             theme_status_lines=theme_status_lines,
             answer_time_line=answer_time_line,
+            scheduled_day_line=scheduled_day_line,
         )
 
     def render(self, report: dict, display_name: str) -> dict[str, bytes]:
@@ -143,6 +160,8 @@ class ReportRenderer:
                         "판정: " + safe(problem["judgment"] or "판정 대기"),
                     ]
                 )
+                if label := scheduled_day_line(problem, report["period"]["from"]):
+                    lines.append(label)
                 lines.extend(safe(answer_time_line(t)) for t in problem.get("answerTimes", []))
                 for followup in problem["followups"]:
                     lines.extend(
@@ -159,10 +178,11 @@ class ReportRenderer:
                         safe(element["label"]) + (": 확인" if element["satisfied"] else ": 미확인")
                     )
                 reflection = problem["reflection"]
+                difficulty = DIFFICULTY_LABELS.get(reflection["difficulty"], "")
                 lines.extend(
                     [
                         "### 돌아보기",
-                        safe(reflection["difficulty"] or "미작성"),
+                        safe(difficulty) if reflection["written"] else "미작성",
                         safe(reflection["text"] or ""),
                     ]
                 )

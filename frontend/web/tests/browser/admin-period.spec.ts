@@ -87,3 +87,31 @@ test('날짜 직접 입력은 실제 날짜와 순서를 확인하고 잘못된 
   await expect(page.getByRole('alert')).toHaveCount(0)
   await expect(page).toHaveURL(/from=2026-11-10&to=2026-11-18/)
 })
+
+test('기간 적용 직후 새로 입력한 날짜는 URL 반영에 덮어쓰이지 않는다 @responsive', async ({ page }) => {
+  await overview(page)
+  const from = page.getByLabel('집계 시작일', { exact: true })
+  // CI에서 발생한 URL 변경과 React 렌더 사이의 입력을 시간 지연 없이 재현한다.
+  await page.evaluate(() => {
+    const pushState = history.pushState
+    history.pushState = function (...args: Parameters<History['pushState']>) {
+      pushState.apply(this, args)
+      history.pushState = pushState
+      const input = document.querySelector<HTMLInputElement>('input[aria-label="집계 시작일"]')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '2026-02-30')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  })
+  await from.fill('2026-11-02')
+  await page.getByRole('button', { name: '기간 적용', exact: true }).click()
+  await expect(page).toHaveURL(/from=2026-11-02&to=2026-11-09/)
+  await expect(from).toHaveValue('2026-02-30')
+  await page.getByRole('button', { name: '기간 적용', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('YYYY-MM-DD')
+  await expect(page).toHaveURL(/from=2026-11-02&to=2026-11-09/)
+  // 뒤로 가기처럼 외부에서 기간이 바뀌면 입력과 오류도 그 기간으로 초기화한다.
+  await page.goBack()
+  await expect(page).toHaveURL(/from=2026-11-01&to=2026-11-09/)
+  await expect(from).toHaveValue('2026-11-01')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})

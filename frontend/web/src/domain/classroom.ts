@@ -164,20 +164,6 @@ export interface Metric {
   sourceType: 'RECORD' | 'RULE' | 'ANSWER_KEY' | 'AI_OBSERVATION'
   state: 'OK' | 'NO_RECORD' | 'INSUFFICIENT_SAMPLE'
 }
-export interface Report {
-  reportId: string
-  childId: string
-  period: Period
-  revision: number
-  revisions: number[]
-  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
-  state: 'OK' | 'NO_RECORD' | 'INSUFFICIENT_SAMPLE'
-  metrics: Metric[]
-  records: PublicAttempt[]
-  narrative: string | null
-  eveningQuestion?: string
-  regenerations: number
-}
 export interface AnalysisVerification {
   numbersMatched: boolean
   quotesMatched: boolean

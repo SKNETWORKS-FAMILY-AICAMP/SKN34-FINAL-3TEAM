@@ -4,36 +4,47 @@
 서빙(scoring-service `POST /internal/toxicity/checks`, #691)과 learning 호출(#692)은 이 폴더 범위가 아니며, 여기서는 학습·평가와 등록부에 올릴 모델 폴더 만들기만 한다.
 
 > 원자료·분할·체크포인트·모델 폴더는 저장소에 넣지 않는다 (NFR-DAT-03). `.gitignore`로 막혀 있다.
-> 학습·평가 데이터는 외부 LLM API로 보내지 않는다. AI Hub 데이터는 쓰지 않는다.
+> 아이 말투 학습 문장은 Claude가 지은 문장으로, NFR-DAT-03(생성형 AI 출력 학습 미사용)의 예외로 쓴다.
+> 학습·평가 데이터는 외부 LLM API로 보내지 않는다. AI Hub 학생 답안(71818 서술형 초5·6)은 학습에 쓰지 않고 오탐 확인에만 쓰며, 원문은 저장·출력·커밋하지 않는다(확률 요약만 `results/`).
 
-## 최신 상태 (2026-11-17)
+## 최신 상태 (2026-11-19)
 
 | 항목 | 내용 |
 |---|---|
-| 모델 | `beomi/KcELECTRA-base`(MIT) `single_label_classification` 2라벨(0 정상, 1 막을 글) |
-| 데이터 | 학습 K-MHaS·Korean HateSpeech(BEEP!), 외부 시험 APEACH, 모두 CC BY-SA 4.0 |
+| 서비스 모델 | `tox-koelectra-small` 1.0-1119: `monologg/koelectra-small-v3-discriminator`(Apache 2.0) 2라벨(0 정상, 1 막을 글)을 아이 말투 재학습한 KcELECTRA-base(선생님)에게 증류 |
+| 데이터 | 학습 K-MHaS·Korean HateSpeech(BEEP!)(CC BY-SA 4.0) + 직접 지은 아이 말투 문장 691개 ×3, 외부 시험 APEACH, 아이 시험 문장 250개(직접 지음) |
 | 입력 | 학생이 쓴 칸별 글, 128토큰 창·겹침 32, 창 하나라도 확률 ≥ 임계값이면 걸림(api-spec 4.3.4) |
-| 서비스 기본값 | 파일은 fp32, scoring이 불러올 때 Linear 채널별 int8 동적 양자화(`quantization: int8-dynamic-channel`, `scripts/quant.py`), 임계값 0.95(fp32로 쓰면 0.97) |
-| 임계값 기준 | 꼭 통과할 글 390개 오탐 0, 단어 목록 대비 정상 추가 오탐 ≤ 1%(검증) |
-| 성능(int8 0.95, 시험 K-MHaS) | 단어 목록만 29.3% → 모델을 붙이면 71.7% 잡음(단어 목록이 놓친 것의 59.9%를 더 잡음), 정상 추가 오탐 1.33%. APEACH는 25.9% → 45.1% |
-| CPU 지연(1코어 p95) | int8 1,500자 포드 553ms·PC 1,068ms, fp32 1,500자 1,619ms·2,322ms(처리 마감 1.3초 넘음). 목표 300ms는 둘 다 미달. 채널별 int8은 같은 기계에서 per-tensor와 같은 속도 |
+| 서비스 기본값 | 파일은 fp32, scoring이 불러올 때 Linear 채널별 int8 동적 양자화(`quantization: int8-dynamic-channel`, `scripts/quant.py`), 임계값 0.99 |
+| 임계값 기준 | 꼭 통과할 글 389개 오탐 0, 단어 목록 대비 정상 추가 오탐 ≤ 1%(검증) |
+| 성능(int8 0.99) | 아이 모욕 100개 중 76개(단어 목록과 합쳐, 첫 모델 34), 아이 정상 150개·실제 초5·6 답 16,385개 오탐 0. 어른 K-MHaS 시험 66.79%(첫 모델 71.6%)·APEACH F1 0.507(0.574)로 낮아짐 |
+| CPU 지연(1코어 p95) | 1,200자 99ms·1,500자 139ms(작업 공간), 목표 300ms 통과 |
+| 재현 | `train.py`가 시드 + GPU 계산 순서를 고정(결정적 학습). 같은 GPU 종류에서 같은 가중치(md5 확인) |
 
-자세한 숫자·한계는 [results/eval_tox.md](results/eval_tox.md).
+자세한 숫자·후보 비교·한계는 [results/eval_tox.md](results/eval_tox.md). 11/17 첫 모델(KcELECTRA-base, 0.95) 기록도 같은 문서 아래쪽에 있다.
 
 ## 폴더 구조
 
 ```
 ml/tox/
 ├─ scripts/
-│  ├─ prepare_data.py   # 공개 데이터 → 2분류 jsonl (data/processed/), 표준 라이브러리만
-│  ├─ train.py          # KcELECTRA 파인튜닝, 등록부 모델 폴더 저장 (checkpoints/)
-│  ├─ eval.py           # 모델만 지표·글별 점수 저장 (results/eval_tox*.json)
-│  ├─ wordlist.py       # 단어 목록과 함께 쓸 때 지표·임계값 (results/wordlist_*.json)
-│  └─ latency.py        # CPU 1코어 지연 (results/latency_*.json)
-├─ tests/               # 데이터 정리·임계값 계산·저장 형식 시험
-├─ results/eval_tox.md  # 지표·임계값·지연·한계
-├─ data/                # (커밋 안 함) 원자료·분할
-├─ checkpoints/         # (커밋 안 함) 학습한 모델 폴더
+│  ├─ prepare_data.py    # 공개 데이터 → 2분류 jsonl (data/processed/), 표준 라이브러리만
+│  ├─ kid_data.py        # 아이 말투 학습 문장 만들기·시험 문장과 겹침 검사
+│  ├─ make_data_kid.py   # data/processed → p_orig·p_kid(아이 ×3)·p_cont
+│  ├─ train.py           # 파인튜닝·이어 학습(--model에 체크포인트 폴더)·증류(--teacher), 결정적 학습
+│  ├─ teacher_probs.py   # 증류용 선생님 확률(npz, 글 없음)
+│  ├─ eval.py            # 모델만 지표·글별 점수 (results/…/eval_tox*.json)
+│  ├─ wordlist.py        # 단어 목록과 함께 쓸 때 지표·임계값 (results/…/wordlist_*.json)
+│  ├─ kid_eval.py        # 아이 말투 시험 문장 250개(--test로 다른 시험 파일)
+│  ├─ kid_variants.py    # 아이 시험 문장을 모양만 바꾼 시험 만들기
+│  ├─ mustpass_probs.py  # 꼭 통과할 글 389개 전부의 확률
+│  ├─ aihub_probs.py     # 실제 초등 답 확률(원문 저장 안 함)
+│  ├─ quant.py           # scoring 로더와 같은 채널별 int8
+│  └─ latency.py         # CPU 1코어 지연 (results/…/latency_*.json)
+├─ eval_sets/            # 직접 지은 아이 말투 문장(kid_test.json 시험 250 · kid_train.json 학습 691 · kid_test_variants.json 모양 바꾼 시험) · user_probe.json 팀원 문장 13
+├─ tests/                # 데이터 정리·임계값 계산·저장 형식·아이 문장 시험
+├─ results/eval_tox.md   # 지표·임계값·지연·한계, results/1119-distill/ 지금 모델 숫자 원본
+├─ data/                 # (커밋 안 함) 원자료·분할·선생님 확률·글별 확률
+├─ checkpoints/          # (커밋 안 함) 학습한 모델 폴더
 ├─ pyproject.toml
 └─ uv.lock
 ```
@@ -45,21 +56,26 @@ cd ml/tox
 uv sync --frozen
 # 1) 데이터 정리: K-MHaS(github adlnlp/K-MHaS data/), BEEP!(github kocohub/korean-hate-speech labeled/), APEACH(HF jason9693/APEACH apeach.test.csv)
 uv run python -I scripts/prepare_data.py --kmhas <K-MHaS/data> --beep <korean-hate-speech/labeled> --apeach <apeach.test.csv> --out data/processed
-# 2) 학습 (GPU 있으면 자동으로 GPU)
-#    동작 확인만: --limit 200 --epochs 1
-uv run python scripts/train.py --out checkpoints/kcelectra-base-s42 --revision 681201a097b8120e6dd2a2e63a3e13d338736f88
-# 3) 모델만 지표 + 글별 점수 저장 (--int8: 채널별 동적 양자화, scoring처럼 글 하나씩·창 8개씩 잼)
-uv run python scripts/eval.py --model checkpoints/kcelectra-base-s42 --int8 --save-probs data/probs_int8.npz
-# 3-1) 단어 목록 결과(results/eval_tox.md 재현의 임시 Kotlin 시험)와 합쳐 임계값을 train_info.json에 씀
-uv run python scripts/wordlist.py --probs data/probs_int8.npz --flags data/wordlist_flags.json --eval-json results/eval_tox_int8.json --model checkpoints/kcelectra-base-s42 --write
-# 4) CPU 1코어 지연
-OMP_NUM_THREADS=1 uv run python scripts/latency.py --model checkpoints/kcelectra-base-s42
+# 2) 아이 말투 문장 붙이기 → data/p_kid
+uv run python scripts/make_data_kid.py
+# 3) 학습 (GPU 있으면 자동으로 GPU, 동작 확인만: --limit 200 --epochs 1)
+#    지금 모델의 선생님·학생 명령은 results/eval_tox.md "재현 (11/19 모델)"
+uv run python scripts/train.py --data data/p_kid --out checkpoints/<이름> [--model … --revision … --teacher data/teacher_s48.npz]
+# 4) 모델만 지표 + 글별 점수 (--int8: 채널별 동적 양자화, scoring처럼 글 하나씩·창 8개씩)
+uv run python scripts/eval.py --model checkpoints/<이름> --int8 --data data/p_kid --save-probs data/probs_int8.npz --out <json>
+# 4-1) 단어 목록 결과(results/eval_tox.md 이전 기록 재현의 임시 Kotlin 시험)와 합쳐 임계값을 train_info.json에 씀
+uv run python scripts/wordlist.py --probs data/probs_int8.npz --flags data/wordlist_flags.json --eval-json <json> --model checkpoints/<이름> --write
+# 4-2) 아이 말투 시험 문장
+uv run python scripts/kid_eval.py --model checkpoints/<이름> --int8 --threshold <임계값>
+# 5) CPU 1코어 지연
+OMP_NUM_THREADS=1 uv run python scripts/latency.py --model checkpoints/<이름> --int8
 # 시험
 uv run pytest
 ```
 
-- `eval.py`는 저장소의 `backend/learning-service/db/seed/demo_missions.sql`, `frontend/web/src/data/classroom/demoGateway.ts`, `ExpressionPolicyTest.kt`에서 꼭 통과할 글을 읽는다. 저장소 밖에서 돌리면 `--repo`로 저장소 위치를 준다
+- `eval.py`·`mustpass_probs.py`·`latency.py`는 저장소의 `backend/learning-service/db/seed/demo_missions.sql`, `frontend/web/src/data/classroom/demoGateway.ts`, `ExpressionPolicyTest.kt`에서 꼭 통과할 글을 읽는다. 저장소 밖에서 돌리면 `eval.py`·`latency.py`는 `--repo`로 저장소 위치를 준다
 - `python -I`로 `eval.py`를 돌리면 같은 폴더의 `train.py`를 못 불러온다. `uv run python scripts/eval.py`로 돌린다
+- 결정적 학습은 같은 시드·GPU 종류·라이브러리에서 같은 가중치를 낸다. 대신 조금 느리다
 
 ## 모델 폴더 (등록부 업로드 단위)
 
@@ -67,17 +83,18 @@ uv run pytest
 |---|---|
 | `config.json`·`model.safetensors` | HF `save_pretrained`, fp32 |
 | `tokenizer.json`·`tokenizer_config.json` | 토크나이저 |
-| `train_info.json` | `task`·`labels`·`positiveLabel`·`max_length`(128)·`stride`(32)·`threshold`·`thresholdSource`·`quantization`(`int8-dynamic-channel`이면 scoring이 불러올 때 채널별 int8, `wordlist.py --write`·`eval.py --write`가 씀)·`baseModel`·`baseRevision`·데이터 출처·학습 설정·검증 지표 |
+| `train_info.json` | `task`·`labels`·`positiveLabel`·`max_length`(128)·`stride`(32)·`threshold`·`thresholdSource`·`quantization`·`baseModel`·`baseRevision`·데이터 출처·학습 설정(`deterministic`)·검증 지표·`distill`(선생님·α·온도) |
 | `valid_probs.npz` | (업로드 안 함) 검증 확률·라벨, 글 없음 |
 
-- 이름 규칙 `tox-…`, 적용 범위 `answer-filter`, 로더 검사(2분류·`threshold` 필수)는 api-spec 5.2를 따른다. 업로드·preflight는 #691
-- 학습 1회는 RunPod RTX 4090에서 4분 20초라 가중치는 다시 만들 수 있다
+- 이름 규칙 `tox-…`, 적용 범위 `answer-filter`, 로더 검사(2분류·`threshold` 필수)는 api-spec 5.2를 따른다. 업로드·사전 검사·활성화는 scoring.md 6장(로컬 확인 결과는 eval_tox.md)
+- 학생 학습 1회는 RunPod RTX 4090에서 약 17분(결정적 설정), 선생님 확률 약 1분
 
 ## 라이선스
 
 | 대상 | 라이선스 | 확인 |
 |---|---|---|
-| beomi/KcELECTRA-base | MIT | HF 모델 API, 2026-11-16 |
+| monologg/koelectra-small-v3-discriminator (지금 모델) | Apache 2.0 | GitHub `monologg/KoELECTRA` LICENSE 원문(HF 모델 카드엔 표기 없음), 2026-11-18 |
+| beomi/KcELECTRA-base (선생님·첫 모델) | MIT | HF 모델 API, 2026-11-16 |
 | K-MHaS | CC BY-SA 4.0 | HF jeanlee/kmhas_korean_hate_speech 데이터 카드 |
 | Korean HateSpeech(BEEP!) | CC BY-SA 4.0 | 저장소 `LICENSE.md` 원문 |
 | APEACH | CC BY-SA 4.0 | HF jason9693/APEACH 데이터 카드 |
@@ -86,8 +103,8 @@ uv run pytest
 
 ## 한계
 
-- 학습 데이터가 성인 뉴스·연예 댓글이라 초등 답과 말투가 다르다
-- 미션 본문에 나온 말을 허용하는 규칙이 모델에는 없다
-- 다른 출처(APEACH) 재현율 0.390, 시드 1개
-- fp32 1,500자 지연이 scoring 처리 마감 1.3초를 넘어 int8로 쓴다(채널별, 시험 재현율 0.82%p 손해). 운영 Pod에서 fp32가 마감 안이면 되돌린다(#691)
+- 아이 말투 숫자는 직접 지은 문장으로 잰 것이라 부풀었을 수 있다. 실제 아이 모욕 데이터는 없다
+- 어른식 욕설·처음 보는 말투(APEACH)는 첫 모델보다 약하다(기준4·5 미달, 담당 결정으로 우선 사용)
+- 미션 본문에 나온 말을 허용하는 규칙이 모델에는 없다. 욕과 같은 글자가 든 정상 문장("시바새끼도 귀여워")을 막을 수 있다
+- 같은 설정이어도 학습마다 결과가 흔들린다. 결정적 학습은 같은 GPU 종류·라이브러리에서만 같은 가중치를 보장한다
 - int8은 같이 계산한 글에 따라 확률이 달라진다. int8 평가는 scoring과 같게 글 하나씩 잰다(`eval.py --int8` 기본)

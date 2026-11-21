@@ -190,6 +190,7 @@ class AttemptInput(InputModel):
     reflection: ReflectionInput | None = None
     available: StrictBool = True
     context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None = None
+    scheduled_day: Literal["MON", "TUE", "WED", "THU", "FRI"] | None = None
 
     def record(self) -> AttemptRecord:
         return AttemptRecord(
@@ -198,6 +199,9 @@ class AttemptInput(InputModel):
             mission_title=self.mission.title,
             mission_id=self.mission.id,
             context=self.context,
+            scheduled_day=self.scheduled_day
+            if self.context in ("THEME_DAY", "THEME_REVIEW")
+            else None,
             thinking_type=self.mission.thinking_type,
             status=self.status,
             answers=tuple(

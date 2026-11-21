@@ -7,7 +7,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StrictBool, field_validator
 
-from app.generation.models import GenerateReport, PeriodType, ReportEvent, ReportStatus
+from app.generation.models import (
+    GenerateReport,
+    PeriodType,
+    ReportEvent,
+    ReportState,
+    ReportStatus,
+)
 from app.messaging.contracts import InvalidEvent, uuid_text
 from app.messaging.envelope import EventEnvelope
 
@@ -92,6 +98,9 @@ class ReportV1Codec:
             data["failureReason"] = event.failure_reason
         elif event.failure_reason is not None:
             raise ValueError("Only failed events carry a failure reason")
+        # #846: optional, true only. Other completions keep the pre-#846 shape for strict consumers.
+        if event.event_type == "report.completed" and event.report.state == ReportState.NO_RECORD:
+            data["noRecord"] = True
         return EventEnvelope(
             type=event.event_type,
             source="report-service",

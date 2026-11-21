@@ -1,4 +1,4 @@
-"""추억 검색 평가셋 memory@1 적재 (#568): 가상 학생 기록을 공개 API로 만든다. SQL INSERT 없음.
+"""추억 검색 평가셋 memory@1(#568)·memory@2(#853) 적재: 가상 학생 기록을 공개 API로 만든다. SQL INSERT 없음.
 
 #624 시연 계정 스크립트(infrastructure/aws/demo_account_data.py)의 Api(로그인·호출)를 그대로 쓰고,
 답은 TOPICS 대신 이 폴더의 students.json에서 넣는다. 순서와 시계 옮기기는 README "만드는 순서"를 따른다.
@@ -10,6 +10,8 @@
     (core·learning 시계를 그 주 토요일 14:00 KST로) python -I load_via_api.py solve --week W1   # W1~W7 차례로
     (시계 되돌린 뒤) python -I load_via_api.py extra / current / delete
     python -I load_via_api.py manifest                 # 적재 표 확인
+    memory@2(#853)는 --dataset ../memory@2를 붙이고 themes 앞에 missions(주마다 새 미션 5개 작성·게시), solve는 W01~W52
+    (weeks 명령이 주 키와 시계를 옮길 토요일을 찍음). extra·current·delete는 없음. 순서는 memory@2/README.md
 
 환경 변수는 demo_account_data.py와 같다(DEMO_API_BASE·DEMO_PARENT_*·DEMO_ADMIN_* 등, 값은 출력하지 않음).
 학부모는 평가 전용 계정을 쓴다(시연 학부모와 섞지 않음). 학부모 1명당 자녀가 3명까지라(core MAX_CHILDREN)
@@ -33,17 +35,37 @@ sys.path.insert(0, str(REPO / "infrastructure" / "aws"))
 import demo_account_data as demo  # Api·DAYS 재사용
 
 TEXT_TYPES = {"NARRATIVE"}
+DATASET, DATA_NAME = HERE, "memory@1"  # main에서 --dataset으로 바꿈
 
 
 def load(name):
-    return json.loads((HERE / name).read_text(encoding="utf-8"))
+    return json.loads((DATASET / name).read_text(encoding="utf-8"))
+
+
+def student_rounds(data, s):
+    """학생 회차 목록. memory@1은 students.json의 rounds, memory@2는 최근 weekCount주를 주별 미션 답(변형 A·B)으로 만든다."""
+    if "rounds" in s:
+        return s["rounds"]
+    return [{"week": wk, "themeKey": f"T{wk[1:]}", "complete": True, "days": list(demo.DAYS),
+             "answers": {d: data["weekMissions"][wk][d]["answers"][s["variant"]] for d in demo.DAYS}}
+            for wk in list(data["weeks"])[-s["weekCount"]:]]
+
+
+def mission_id(data, man, grade, week, day):
+    """그 주·요일 미션 ID. memory@1은 학년 표(시드 미션 고정), memory@2는 missions 명령이 만든 주별 미션(적재 표)."""
+    if "weekMissions" in data:
+        mid = man.data.get("missions", {}).get(week, {}).get(day)
+        if not mid:
+            raise SystemExit(f"{week} {day} 미션이 적재 표에 없음 — 먼저 missions 명령")
+        return mid
+    return data["missions"][f"G{grade}"][day]["missionId"]
 
 
 class Manifest:
     def __init__(self, path):
         self.path = pathlib.Path(path)
         self.data = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {
-            "dataset": "memory@1", "students": {}, "themes": {}, "attempts": []}
+            "dataset": DATA_NAME, "students": {}, "themes": {}, "attempts": []}
 
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -182,12 +204,12 @@ def cmd_themes(api, args, data, man):
     atok = api.admin()
     today = dt.datetime.now(demo.KST).date()
     this_monday = (today - dt.timedelta(days=today.isoweekday() - 1)).isoformat()
-    if this_monday <= data["weeks"]["W7"]:
-        raise SystemExit(f"오늘({today})이 W7 주 안이라 실행 주 테마를 게시할 수 없음 — W7 다음 주(월요일) 이후에 실행")
+    last = list(data["weeks"])[-1]
+    if this_monday <= data["weeks"][last]:
+        raise SystemExit(f"오늘({today})이 {last} 주 안이라 테마를 게시할 수 없음 — {last} 다음 주(월요일) 이후에 실행")
     for t in load("themes.json"):
         grade = f"G{t['grade']}"
         week = this_monday if t["week"] == "CURRENT" else data["weeks"][t["week"]]
-        plan = data["missions"][grade]
         s, p, _ = api.call("GET", f"/admin/weekly-themes?grade={grade}&weekStart={week}&size=100", token=atok)
         items = api.ok("테마 목록", s, p, (200,))["items"]
         mine = next((i for i in items if i["title"] == t["title"]), None)
@@ -199,8 +221,8 @@ def cmd_themes(api, args, data, man):
             raise SystemExit(f"{t['themeKey']} {grade} {week}에 다른 게시 테마가 있음 — 중단하거나 다른 주를 쓸지 정하기")
         if mine is None:
             body = {"grade": grade, "weekStart": week, "title": t["title"], "intro": t["intro"],
-                    "days": [{"day": d["day"], "missionId": plan[d["day"]]["missionId"], "dialogue": d["dialogue"]}
-                             for d in t["days"]]}
+                    "days": [{"day": d["day"], "missionId": mission_id(data, man, t["grade"], t["week"], d["day"]),
+                              "dialogue": d["dialogue"]} for d in t["days"]]}
             s, mine, _ = api.call("POST", "/admin/weekly-themes", body, atok)
             mine = api.ok(f"{t['themeKey']} 작성", s, mine, (200, 201))
         if mine["status"] != "PUBLISHED":
@@ -215,11 +237,84 @@ def cmd_themes(api, args, data, man):
         print(f"{t['themeKey']} {grade} {week}: 게시됨")
 
 
+def plain_text(answer):
+    """기준표 예시 답용 글(학생 답 변형 A)."""
+    if "text" in answer:
+        return answer["text"]
+    if "essay" in answer:
+        e = answer["essay"]
+        return " ".join([e["claim"], *e["reasons"], e["rebuttal"]])
+    return " ".join(answer["steps"])
+
+
+def cmd_missions(api, args, data, man):
+    """memory@2: 주마다 시드 틀 미션(초5 DEMO-11~15)의 생각 유형·입력 방식·교과·학년·성취기준·기준표 요소를 복사하고
+    제목·질문·예시 답(풀이 단계는 정답도)만 그 주 것으로 바꾼 새 미션을 작성 → 기준표 → 검토 요청 → 검토 승인 → 게시한다.
+    틀을 복사하므로 테마 게시 검사(다섯 생각 유형·게시·학년)와 미션 게시 필수 칸을 그대로 채운다.
+    미션 ID는 작성 직후 적재 표에 남겨, 다시 실행하면 게시 안 된 것만 이어서 끝낸다(중복 작성 없음)."""
+    if "weekMissions" not in data:
+        raise SystemExit("memory@1은 시드 미션을 그대로 씀(missions 명령 없음)")
+    atok = api.admin()
+    seeds = {}
+    for day, sd in data["seedMissions"]["G5"].items():
+        s, m, _ = api.call("GET", f"/admin/missions/{sd['missionId']}", token=atok)
+        m = api.ok(f"{sd['code']} 틀", s, m, (200,))
+        v = next(x for x in m["versions"] if x["version"] == m["publishedVersion"])
+        r = next(x for x in m["rubrics"] if x["version"] == m["publishedRubricVersion"])
+        if v["inputType"] != sd["inputType"]:
+            raise SystemExit(f"{sd['code']} 입력 방식 {v['inputType']}가 평가셋 틀({sd['inputType']})과 다름")
+        seeds[day] = (v, r)
+    done = man.data.setdefault("missions", {})
+    keep = ("code", "label", "description", "points", "commonErrors", "goodThought", "judgeVerified", "standardCode")
+    for wk in data["weeks"]:
+        for day in demo.DAYS:
+            v, r = seeds[day]
+            wm = data["weekMissions"][wk][day]
+            label = f"{wk} {day}"
+            mid = done.get(wk, {}).get(day)
+            if mid:
+                s, m, _ = api.call("GET", f"/admin/missions/{mid}", token=atok)
+                if api.ok(f"{label} 상세", s, m, (200,))["status"] == "PUBLISHED":
+                    continue
+            else:
+                body = {k: v.get(k) for k in ("subject", "gradeMin", "gradeMax", "thinkingType", "inputType", "achievementLevels")}
+                body.update({k: v.get(k) or [] for k in ("achievementStandards", "choices", "categories", "inputTemplate")})
+                body.update(title=wm["title"], question=wm["question"], guide=None, sceneUri=None, staticSceneUri=None,
+                            answerUnit=wm.get("answerUnit", v.get("answerUnit")), demoOnly=False)
+                s, m, _ = api.call("POST", "/admin/missions", body, atok)
+                mid = api.ok(f"{label} 작성", s, m, (200, 201))["missionId"]
+                done.setdefault(wk, {})[day] = mid
+                man.save()
+            rubric = {"elements": [{k: e.get(k) for k in keep} for e in r["elements"]],
+                      "answerKey": {"finalAnswer": wm["finalAnswer"]} if v["inputType"] == "SOLUTION_STEPS" else r.get("answerKey"),
+                      "exampleAnswer": plain_text(wm["answers"]["A"]), "forbiddenTerms": r.get("forbiddenTerms") or [],
+                      "hints": r.get("hints") or [], "keywords": [], "essayType": r.get("essayType")}
+            s, m, _ = api.call("PUT", f"/admin/missions/{mid}/rubric", rubric, atok)
+            m = api.ok(f"{label} 기준표", s, m, (200, 201))
+            pin = {"missionVersion": m["currentVersion"], "rubricVersion": m["currentRubricVersion"]}
+            s, p, _ = api.call("POST", f"/admin/missions/{mid}/review-request", pin, atok)
+            api.ok(f"{label} 검토 요청", s, p, (200,))
+            s, p, _ = api.call("POST", f"/admin/missions/{mid}/review",
+                               {**pin, "result": "APPROVED", "comment": "#853 평가 전용 합성 미션"}, atok)
+            api.ok(f"{label} 검토", s, p, (200,))
+            s, p, _ = api.call("POST", f"/admin/missions/{mid}/publish", {}, atok)
+            api.ok(f"{label} 게시", s, p, (200,))
+        print(f"{wk} {data['weeks'][wk]}: 미션 5개 게시")
+
+
+def cmd_weeks(api, args, data, man):
+    """주 키와 시계를 옮길 그 주 토요일(14:00 KST = 05:00 UTC)을 찍는다. README 반복문이 읽는다."""
+    for wk, start in data["weeks"].items():
+        print(wk, (dt.date.fromisoformat(start) + dt.timedelta(days=5)).isoformat())
+
+
 def cmd_solve(api, args, data, man):
-    """서버 시계가 --week 주 토요일일 때 학생마다 그 주 회차를 푼다(W1~W6 다섯, W7 셋)."""
+    """서버 시계가 --week 주 토요일일 때 학생마다 그 주 회차를 푼다(memory@1 W1~W6 다섯·W7 셋, memory@2 풀이 주마다 다섯)."""
+    if args.week not in data["weeks"]:
+        raise SystemExit(f"--week {args.week}가 평가셋 주({', '.join(data['weeks'])})에 없음")
     week_start = data["weeks"][args.week]
     for s in data["students"]:
-        r = next((x for x in s["rounds"] if x["week"] == args.week), None)
+        r = next((x for x in student_rounds(data, s) if x["week"] == args.week), None)
         if r is None or man.data["students"].get(s["studentKey"], {}).get("deleted"):
             continue
         stok, _ = api.student(s["nickname"])
@@ -227,17 +322,16 @@ def cmd_solve(api, args, data, man):
         want = man.data["themes"][r["themeKey"]]["themeId"]
         if theme["weekStart"] != week_start or theme["themeId"] != want:
             raise SystemExit(f"{s['studentKey']}: 서버 이번 주 {theme['weekStart']} 테마가 {args.week} {r['themeKey']}가 아님 — 시계 확인")
-        plan = data["missions"][f"G{s['grade']}"]
         days = {d["day"]: d for d in theme["days"]}
         for day in r["days"]:
             d = days[day]
-            if d["missionId"] != plan[day]["missionId"]:
+            if d["missionId"] != mission_id(data, man, s["grade"], args.week, day):
                 raise SystemExit(f"{s['studentKey']} {args.week} {day} 미션이 평가셋 표와 다름")
             aid = None  # 이미 끝낸 요일(다시 실행)은 요일 응답에 시도 ID가 없어 비워 두고, 러너가 학생·주·미션으로 채움
             if d.get("attemptStatus") != "COMPLETED":
                 if d["state"] != "OPEN":
                     raise SystemExit(f"{s['studentKey']} {args.week} {day}가 {d['state']}라 지금 풀 수 없음")
-                answer = r["answers"][day] or plan[day]["defaultAnswer"]
+                answer = r["answers"][day] or data["missions"][f"G{s['grade']}"][day]["defaultAnswer"]
                 aid = finish_attempt(api, stok, d["missionId"], "THEME_DAY", answer, f"{s['studentKey']} {args.week} {day}")
             man.add_attempt(studentKey=s["studentKey"], week=args.week, day=day, context="THEME_DAY", attemptId=aid,
                             themeKey=r["themeKey"], missionId=d["missionId"], complete=r["complete"])
@@ -324,18 +418,27 @@ def cmd_manifest(api, args, data, man):
 
 
 def main():
+    global DATASET, DATA_NAME
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--manifest", default=str(REPO / "evaluation" / "results" / "memory" / "load-manifest.json"))
+    ap.add_argument("--dataset", default=str(HERE), help="평가셋 폴더(기본 memory@1, memory@2는 ../memory@2)")
+    ap.add_argument("--manifest", help="적재 표(기본 memory@1 load-manifest.json, 그 밖 load-manifest__<평가셋>.json)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("parent-signup", "children", "themes", "extra", "current", "delete", "manifest"):
+    for name in ("parent-signup", "children", "missions", "themes", "extra", "current", "delete", "manifest", "weeks"):
         sub.add_parser(name)
     p = sub.add_parser("solve")
-    p.add_argument("--week", required=True, choices=[f"W{i}" for i in range(1, 8)])
+    p.add_argument("--week", required=True, help="memory@1 W1~W7, memory@2 W01~W52")
     args = ap.parse_args()
-    data, man = load("students.json"), Manifest(args.manifest)
-    api = None if args.cmd == "manifest" else EvalApi(data)
-    {"parent-signup": cmd_parent_signup, "children": cmd_children, "themes": cmd_themes, "solve": cmd_solve, "extra": cmd_extra,
-     "current": cmd_current, "delete": cmd_delete, "manifest": cmd_manifest}[args.cmd](api, args, data, man)
+    DATASET = pathlib.Path(args.dataset).resolve()
+    data = load("students.json")
+    DATA_NAME = data["dataset"]
+    results = REPO / "evaluation" / "results" / "memory"
+    man = Manifest(args.manifest or results / ("load-manifest.json" if DATA_NAME == "memory@1" else f"load-manifest__{DATA_NAME}.json"))
+    if man.data["dataset"] != DATA_NAME:
+        raise SystemExit(f"적재 표 {man.path.name}는 {man.data['dataset']} 것 — --manifest 확인")
+    api = None if args.cmd in ("manifest", "weeks") else EvalApi(data)
+    {"parent-signup": cmd_parent_signup, "children": cmd_children, "missions": cmd_missions, "themes": cmd_themes,
+     "solve": cmd_solve, "extra": cmd_extra, "current": cmd_current, "delete": cmd_delete, "manifest": cmd_manifest,
+     "weeks": cmd_weeks}[args.cmd](api, args, data, man)
 
 
 if __name__ == "__main__":
