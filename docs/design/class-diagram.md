@@ -1037,7 +1037,7 @@ classDiagram
     +createOrder(idempotencyKey, request) Order
     +confirm(idempotencyKey, request) ConfirmResult
     +status(orderId) PaymentStatus
-    +history() Page
+    +history(page, size) List
     +requestRefund(paymentId, idempotencyKey, request) RefundRequest
   }
   class SubscriptionController {
