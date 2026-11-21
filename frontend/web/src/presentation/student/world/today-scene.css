@@ -170,6 +170,27 @@
 }
 #class-journal .st-world .ts-line { flex: 1 1 260px; min-width: 0; font-family: var(--st-hand); font-weight: 700; font-size: 22px; line-height: 1.45; }
 #class-journal .st-world .ts-pos { flex: none; font-weight: 700; font-size: 14px; white-space: nowrap; }
+/* 문제 시작하기(사용자 결정 2026-11-22): 대화창 오른쪽, 세로 화면은 대화창 아래 오른쪽 */
+#class-journal .st-world .ts-row { display: flex; align-items: stretch; gap: 12px; }
+#class-journal .st-world .ts-row .ts-box { flex: 1 1 auto; min-width: 0; }
+#class-journal .st-world .ts-start {
+  flex: none;
+  align-self: stretch;
+  min-height: 56px;
+  padding: 10px 22px;
+  border: 3px solid #1f4e6b;
+  border-radius: 18px;
+  background: #ff8a1f;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  color: var(--sk-ink, #0f3b36);
+  font-family: var(--st-display);
+  font-size: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  animation: ts-start-in 0.25s ease-out both;
+}
+@keyframes ts-start-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+#class-journal .st-world .ts-start:focus-visible { outline: 4px solid #ffd84d; outline-offset: 3px; }
 #class-journal .st-world .ts-chip:focus-visible,
 #class-journal .st-world .ts-box:focus-visible,
 #class-journal .st-world .ts-advance:focus-visible { outline: 4px solid #ff8a1f; outline-offset: 3px; }
@@ -179,11 +200,16 @@
   #class-journal .st-world .ts-stage { justify-content: flex-start; padding-top: 14px; }
   #class-journal .st-world .ts-top { position: static; margin-bottom: 14px; }
   #class-journal .st-world .ts-title { white-space: normal; }
+  #class-journal .st-world .ts-title > span { flex: none; white-space: nowrap; }
   #class-journal .st-world .ts-col { width: 100%; }
   #class-journal .st-world .ts-talk { position: relative; left: auto; right: auto; bottom: auto; margin: 30px 4px 0; }
   #class-journal .st-world .ts-line { font-size: 20px; }
+  #class-journal .st-world .ts-row { flex-direction: column; align-items: flex-end; gap: 10px; }
+  #class-journal .st-world .ts-row .ts-box { width: 100%; }
+  #class-journal .st-world .ts-start { align-self: flex-end; }
 }
 @media (prefers-reduced-motion: reduce) {
+  #class-journal .st-world .ts-start { animation: none; }
   #class-journal .st-world .ts-cam,
   #class-journal .st-world .ts-rise { animation: none; }
   #class-journal .st-world .ts-intro { display: none; }

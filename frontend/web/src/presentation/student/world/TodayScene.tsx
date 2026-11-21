@@ -19,8 +19,9 @@ const imageUrl = (uri: string | undefined) => (uri && /^(https?:\/\/|\/[^/])/.te
 /**
  * 오늘 장면 `/student/theme/scene/{day}`(user-flow 3.2, 사용자 결정 2026-11-19 #807, 설계 캔버스 TodaySceneTalk).
  * 들어오면 그 요일 테마 문제의 시도를 시작하고(대화가 시도 시작·이어하기 응답 `themeScene`에만 있음, 진행 중 시도가 있으면 그 시도),
- * 그날 그림 위에 대화를 한 줄씩 보여 준다. 그림이나 상자를 누르면 다음 줄, 마지막 대사를 누르면 바로 답변 작성으로 넘어간다
- * ('문제 시작하기' 단추·살펴보기 없음). 대화가 없거나(ai 생성 실패·관리자 테마) 이미 답을 쓴 시도면 장면 없이 바로 답변 작성.
+ * 그날 그림 위에 대화를 한 줄씩 보여 준다. 그림이나 상자를 누르면 다음 줄. 마지막 대사에서 대화창 오른쪽에 '문제 시작하기'가 나타나고
+ * (마지막 대사 상자를 눌러도 넘어감), 다시 풀기(THEME_REVIEW)는 이미 본 이야기라 처음부터 단추를 보여 건너뛸 수 있다(사용자 결정 2026-11-22).
+ * 살펴보기는 없음. 대화가 없거나(ai 생성 실패·관리자 테마) 이미 답을 쓴 시도면 장면 없이 바로 답변 작성.
  * 시도 종류는 그 요일을 마무리했으면 THEME_REVIEW, 아니면 THEME_DAY(홈·정답 고르기·되돌아보기와 같은 규칙).
  */
 export function TodayScene({ child, day, onHome, onProblem }: {
@@ -43,10 +44,13 @@ export function TodayScene({ child, day, onHome, onProblem }: {
   const [step, setStep] = useState(0)
   const [badImage, setBadImage] = useState<string | null>(null)
   const started = useRef(false)
+  // 시작할 때 보낸 종류. 시작 뒤 주간 테마가 다시 오면 그 요일이 '푸는 중'으로 바뀌어 context가 THEME_DAY로 보이므로 따로 둔다
+  const [startedAs, setStartedAs] = useState<AttemptContext | null>(null)
   const start = () => {
     if (!mission) return
     started.current = true
-    learning.start.mutateAsync({ mission, child, context }).then(setAttempt, () => { started.current = false })
+    const as = context
+    learning.start.mutateAsync({ mission, child, context: as }).then((a) => { setStartedAs(as); setAttempt(a) }, () => { started.current = false })
   }
   // 요일·미션을 알면 한 번 시작(같은 미션 진행 중 시도가 있으면 learning이 그 시도를 돌려줌)
   useEffect(() => {
@@ -110,6 +114,9 @@ export function TodayScene({ child, day, onHome, onProblem }: {
     else onProblem(attempt.attemptId)
   }
   const label = `${DAY_LABELS[day]}요일`
+  // 처음 푸는 문제는 대화를 다 넘긴 뒤에만, 다시 풀기는 처음부터. 대화 상자가 올라오기 전에는 숨김(보지 못한 대사를 건너뛰지 않게)
+  // 다시 풀기 여부는 시도 응답이 아니라 시작할 때 보낸 종류로 판단(learning 시도 응답에는 종류 칸이 없음)
+  const canStart = ready && (step >= last || startedAs === 'THEME_REVIEW')
 
   return (
     <main className="ts-stage ts-scene" aria-label="오늘 장면">
@@ -142,10 +149,17 @@ export function TodayScene({ child, day, onHome, onProblem }: {
         <div className={reduce ? 'ts-talk' : 'ts-talk ts-rise'}>
           {tail !== null && <span className="ts-tail" aria-hidden="true" style={{ left: `${tail}%` }} />}
           <span className="ts-name">{current.speaker}</span>
-          <button type="button" className="ts-box" onClick={next} data-ready={ready}>
-            <span className="ts-line" aria-live="polite">{current.text}</span>
-            <span className="ts-pos">{Math.min(step, last) + 1} / {lines.length} · {step < last ? '다음 ▼' : '문제로 →'}</span>
-          </button>
+          <div className="ts-row">
+            <button type="button" className="ts-box" onClick={next} data-ready={ready}>
+              <span className="ts-line" aria-live="polite">{current.text}</span>
+              <span className="ts-pos">{Math.min(step, last) + 1} / {lines.length}{step < last ? ' · 다음 ▼' : ''}</span>
+            </button>
+            {canStart && (
+              <button type="button" className="ts-start" onClick={() => onProblem(attempt.attemptId)}>
+                문제 시작하기<span aria-hidden="true"> →</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </main>

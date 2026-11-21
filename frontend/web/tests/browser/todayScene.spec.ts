@@ -34,7 +34,7 @@ const go = (page: Page, path: string) =>
 const chips = (page: Page) => page.getByRole('list', { name: '이번 주 진행' })
 const scene = (page: Page) => page.getByRole('main', { name: '오늘 장면' })
 
-test('홈에서 문제를 열면 오늘 장면: 대사를 한 줄씩 넘기고 마지막 대사를 누르면 바로 답변 작성, 문제 상자에 그날 마지막 대사', async ({ page }) => {
+test('홈에서 문제를 열면 오늘 장면: 대사를 한 줄씩 넘기고 마지막 대사에서 대화창 오른쪽 문제 시작하기로 답변 작성, 문제 상자에 그날 마지막 대사', async ({ page }) => {
   await student(page)
   await week(page, { weekday: 3, days: 'DDD--' })
   await chips(page).getByRole('button', { name: '목요일 문제 풀기' }).click()
@@ -47,13 +47,21 @@ test('홈에서 문제를 열면 오늘 장면: 대사를 한 줄씩 넘기고 �
   await expect(scene(page).locator('.ts-name')).toHaveText('뭉치')
   await expect(box).toContainText('연못가 정원도 살펴보자.')
   await expect(box).toContainText('1 / 3 · 다음 ▼')
+  // 처음 푸는 문제는 대화를 다 넘기기 전에는 문제 시작하기가 없다(2026-11-22)
+  const startButton = scene(page).getByRole('button', { name: /^문제 시작하기/ })
+  await expect(startButton).toHaveCount(0)
   await box.click()
   await expect(scene(page).locator('.ts-name')).toHaveText('이장님')
   await expect(box).toContainText('물뿌리개 옆에 물 준 시간을 적은 표가 있어.')
   // 그림을 눌러도 다음 줄
   await scene(page).getByRole('button', { name: '다음 대사' }).click()
-  await expect(box).toContainText('3 / 3 · 문제로 →')
-  await box.click()
+  await expect(box).toContainText('3 / 3')
+  await expect(box).not.toContainText('다음 ▼')
+  // 마지막 대사에서 대화창 오른쪽에 문제 시작하기(넓은 화면은 상자와 같은 줄 오른쪽)
+  await expect(startButton).toBeVisible()
+  const [boxAt, startAt] = [await box.boundingBox(), await startButton.boundingBox()]
+  expect(startAt!.x).toBeGreaterThanOrEqual(boxAt!.x + boxAt!.width)
+  await startButton.click()
   await expect(page).toHaveURL(/\/student\/attempts\//)
   // 답변 작성: 왼쪽 '오늘의 문제' 상자에 그날 대화 마지막 줄(뭉치가 오늘 문제로 잇는 말)
   await expect(page.locator('.sw-qtag')).toHaveText('오늘의 문제')
@@ -150,7 +158,19 @@ test('주말 되돌아보기의 다시 풀기도 오늘 장면을 거친다(마�
   // 목업은 THEME_REVIEW가 아니면(또는 주말이 아니면) 시작을 거부하므로 장면 대화가 나오면 종류가 맞다
   await expect(page).toHaveURL(/\/student\/theme\/scene\/FRI$/)
   await expect(scene(page).locator('.ts-box')).toContainText('종 옆 난간에서 이걸 발견했단다.')
+  // 다시 풀기는 이미 본 이야기라 첫 대사부터 문제 시작하기가 보이고, 누르면 남은 대사를 건너뛴다(2026-11-22)
+  await expect(scene(page).locator('.ts-box')).toHaveAttribute('data-ready', 'true')
+  await expect(scene(page).locator('.ts-box')).toContainText('· 다음 ▼')
+  await scene(page).getByRole('button', { name: /^문제 시작하기/ }).click()
+  await expect(page).toHaveURL(/\/student\/attempts\//)
+})
+
+test('마지막 대사 상자를 눌러도 답변 작성으로 넘어간다(문제 시작하기와 같음)', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 3, days: 'DDD--' })
+  await go(page, '/student/theme/scene/THU')
   await throughTodayScene(page)
+  await expect(page.locator('.sw-qtag')).toHaveText('오늘의 문제')
 })
 
 test('아직 안 열린 요일 주소는 시작하지 않고 안내와 홈으로', async ({ page }) => {
@@ -176,6 +196,19 @@ test('오늘 장면은 PC 1440×900에서 스크롤 없이 한 화면, 휴대전
   const talk = await box.boundingBox()
   if (testInfo.project.name === 'compact') expect(talk!.y).toBeGreaterThanOrEqual(frame!.y + frame!.height)
   else expect(talk!.y + talk!.height).toBeLessThanOrEqual(frame!.y + frame!.height)
+  // 마지막 대사의 문제 시작하기: 넓은 화면은 상자 오른쪽, 휴대전화는 상자 아래 오른쪽. 어느 쪽이든 가로 넘침 없음
+  await expect(box).toHaveAttribute('data-ready', 'true')
+  await box.click(); await box.click()
+  const start = scene(page).getByRole('button', { name: /^문제 시작하기/ })
+  await expect(start).toBeVisible()
+  const [b, st] = [await box.boundingBox(), await start.boundingBox()]
+  if (testInfo.project.name === 'compact') {
+    expect(st!.y).toBeGreaterThanOrEqual(b!.y + b!.height)
+    expect(st!.x + st!.width).toBeLessThanOrEqual(b!.x + b!.width + 1)
+  } else expect(st!.x).toBeGreaterThanOrEqual(b!.x + b!.width)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  if (testInfo.project.name === 'laptop')
+    expect(await page.locator('.st-world').evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(900)
 })
 
 test('더 풀어 보기(프리미엄 추가 문제)는 그대로 미션 안내', async ({ page }) => {
