@@ -17,7 +17,7 @@
 | 형식 | JSON(UTF-8), 필드 camelCase, 시각 ISO-8601 오프셋 포함(`2026-11-02T19:00:00+09:00`), 날짜 `YYYY-MM-DD`(KST) |
 | 식별자 | 문자열 ID(UUID). 학부모 경로의 `{childId}`는 학생 ID |
 | 기간 조회 | `from`, `to`(날짜, 양 끝 포함). 응답에 실제 조회 기간 `period` 반환 (FN-DSH-10) |
-| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}`. 예외: 알림은 `totalElements` 대신 `hasNext`(2.7), 리포트·학생 기기 목록은 `{items}`만(5.5·3.11, 리포트는 core가 report 페이지를 끝까지 모아 전체 반환 #500), 자녀·동의 목록은 페이지 없이 전체를 `page: 0, size = items 수`로 반환(5.3) |
+| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}`. 예외: 알림은 `totalElements` 대신 `hasNext`(2.7), 리포트·학생 기기 목록은 `{items}`만(5.5·3.11, 리포트는 core가 report 페이지를 끝까지 모아 전체 반환 #500), 자녀·동의 목록은 페이지 없이 전체를 `page: 0, size = items 수`로 반환(5.3), 결제 목록 4개(`/payments`·`/admin/payments`·`/admin/payments/reconciliation`·`/admin/refund-requests`)는 `{items}`만이고 받은 건수가 `size`보다 적으면 마지막 페이지(2.6·2.8, `page` 0~10000·`size` 1~100 밖이면 409 `INVALID_PAGE` #862), 관리자 꾸미기 아이템 목록 `/admin/look-items`는 기본 `size` 50(2.8) |
 | 스트리밍 | `text/event-stream`, 각 이벤트 `event: <이름>` + `data: <JSON>` (1.6) |
 
 ### 1.2 인증·권한
@@ -418,7 +418,7 @@
 | POST | `/orders` | 학부모 | 결제 요청 생성 `{productId, childId}` → `orderId`·금액·위젯 파라미터. 중복 구독 409. `Idempotency-Key` | PAY-02, PAY-03 | 우선2 |
 | POST | `/payments/confirm` | 학부모 | 위젯 성공 리다이렉트 값(`paymentKey, orderId, amount`)으로 서버 승인 → 금액 대조 → 구독·권한 반영. `Idempotency-Key` | PAY-03, PAY-04, PAY-05 | 우선2 |
 | GET | `/payments/{orderId}` | 학부모 | 결제 상태 (`CONFIRMING`이면 PG 상태 조회 후 갱신) | PAY-04 | 우선2 |
-| GET | `/payments` | 학부모 | 본인 거래 내역(결제·취소·환불) | PAY-07 | 우선2 |
+| GET | `/payments?page&size` | 학부모 | 본인 거래 내역(결제·취소·환불) `{items}`(1.1 예외) | PAY-07 | 우선2 |
 | GET | `/subscriptions` | 학부모 | 구독 상태·대상 자녀·이용 기간·다음 결제 예정일 | PAY-07 | 우선2 |
 | GET | `/subscriptions/{subscriptionId}/billing-key` | 학부모 | 자동결제 수단 등록 준비 `{subscriptionId, customerKey}` (PG 결제위젯 빌링 인증 요청에 사용) | PAY-08 | 우선2 |
 | POST | `/subscriptions/{subscriptionId}/billing-key` | 학부모 | 자동결제 수단 등록·변경 `{authKey, customerKey}` (PG `authKey` → 빌링키 발급, 카드 정보 미저장). `Idempotency-Key` | PAY-08 | 우선2 |
@@ -520,9 +520,9 @@
 | POST | `/admin/inquiries/{inquiryId}/answer` | SERVICE_OPS | 문의 답변 | SUP-06 | 우선2 |
 | GET | `/admin/notices?status=SCHEDULED\|ACTIVE\|ENDED&role=STUDENT\|PARENT\|ADMIN` | SERVICE_OPS | 예약·공개 중·종료 공지 전체 목록 (상태·대상 역할 필터, 페이지, #242) | SUP-07 | 우선2 |
 | POST / PATCH / DELETE | `/admin/notices`, `/admin/notices/{noticeId}` | SERVICE_OPS | 공지 등록·수정·종료 (공개 기간·대상 역할) | SUP-07 | 우선2 |
-| GET | `/admin/payments?status&from&to` | PAYMENT_VIEW | 결제·구독 상태, 대상 자녀 권한 반영 여부 | ADM-14 | 우선2 |
-| GET | `/admin/payments/reconciliation?from&to` | PAYMENT_VIEW | 내부 기록 vs PG 상태 대조, 누락·중복·불일치 분리 | ADM-15 | 우선2 |
-| GET | `/admin/refund-requests?status` | PAYMENT_VIEW | 환불 요청 목록 | ADM-16 | 우선2 |
+| GET | `/admin/payments?status&from&to&page&size` | PAYMENT_VIEW | 결제·구독 상태, 대상 자녀 권한 반영 여부 `{items}`(1.1 예외) | ADM-14 | 우선2 |
+| GET | `/admin/payments/reconciliation?from&to&page&size` | PAYMENT_VIEW | 내부 기록 vs PG 상태 대조, 누락·중복·불일치 분리 `{items}`(1.1 예외) | ADM-15 | 우선2 |
+| GET | `/admin/refund-requests?status&page&size` | PAYMENT_VIEW | 환불 요청 목록 `{items}`(1.1 예외) | ADM-16 | 우선2 |
 | POST | `/admin/refund-requests/{requestId}/approve` | PAYMENT_REFUND | 대상·금액·사유 확인 후 PG 취소, 결과·수행자 기록. `Idempotency-Key` | ADM-16 | 우선2 |
 | POST | `/admin/refund-requests/{requestId}/reject` | PAYMENT_REFUND | 반려 사유 기록 | ADM-16 | 우선2 |
 | GET | `/admin/model-versions?kind=RUBRIC\|MODEL\|PROMPT\|GENERATION` | SERVICE_OPS | 버전 목록·활성 상태·평가 결과 | ADM-17 | 우선1 |
@@ -540,7 +540,7 @@
 | POST | `/admin/theme-drafts` | CONTENT | 테마 초안 생성 요청(에픽 #436) `{grade, weekStart, topic?, missions?:[{thinkingType, standardCodes[], inputType}]}`(본문 값 검사는 learning #438) → `202 ThemeDraft`(`status: GENERATING`, 생성은 learning 주기 작업) | ADM-22 | core 프록시 #439 |
 | GET | `/admin/theme-drafts?status&source&page&size` · `/admin/theme-drafts/{draftId}` | CONTENT | 목록(최근 요청 순)·상세. `status`는 `GENERATING`·`READY`·`CHECK_FAILED`·`FAILED`·`ADOPTED`·`DISCARDED`, `source`는 `AUTO`(주간 자동)·`ADMIN`(관리자 요청) | ADM-22 | core 프록시 #439 |
 | POST | `/admin/theme-drafts/{draftId}/adopt` · `/discard` · `/regenerate` | CONTENT | 채택 `{}` → `201 AdminWeeklyTheme`(미션 5개 `DRAFT`·테마 `DRAFT`를 learning 한 트랜잭션으로, 자동 게시 없음), 버리기 `{}` → `ThemeDraft`, 다시 생성 `{}`(전체) 또는 `{targets:[…]}`(고른 대상만, #537) → `202 ThemeDraft`(새 초안). 상태상 불가 전이 `409 CONFLICT` | ADM-22 | core 프록시 #439 |
-| GET·POST | `/admin/look-items?status&slot&page&size` | CONTENT | 아이템 목록(최신 등록순 `{items, page, size, totalElements}`)·등록 `{code, slot, name, pricePoints, assetKey?}` → 201 `{itemId, code, slot, name, pricePoints, assetKey, status, createdAt, updatedAt}`. `slot`은 캐릭터 `HAT`·`OUTFIT`·`ACCESSORY`·`BACKGROUND`와 생활공간 가구 `DESK`·`WALL`·`WARDROBE`(#555), 내 방 바닥 `FLOOR`·방 소품 `DECOR`(#704), `code`는 대문자·숫자·밑줄 3~40자(변경 불가, 중복 409 `LOOK_ITEM_CODE_DUPLICATE`), 이름 1~40자, 포인트 1~10000, 형식 오류 422 | ADM-23 | 핵심(#389) |
+| GET·POST | `/admin/look-items?status&slot&page&size` | CONTENT | 아이템 목록(최신 등록순 `{items, page, size, totalElements}`, 기본 `size` 50)·등록 `{code, slot, name, pricePoints, assetKey?}` → 201 `{itemId, code, slot, name, pricePoints, assetKey, status, createdAt, updatedAt}`. `slot`은 캐릭터 `HAT`·`OUTFIT`·`ACCESSORY`·`BACKGROUND`와 생활공간 가구 `DESK`·`WALL`·`WARDROBE`(#555), 내 방 바닥 `FLOOR`·방 소품 `DECOR`(#704), `code`는 대문자·숫자·밑줄 3~40자(변경 불가, 중복 409 `LOOK_ITEM_CODE_DUPLICATE`), 이름 1~40자, 포인트 1~10000, 형식 오류 422 | ADM-23 | 핵심(#389) |
 | PATCH | `/admin/look-items/{itemId}` | CONTENT | 이름·필요 포인트·그림 수정, `status`(`ON_SALE`·`STOPPED`, 삭제 없음). 판매 중단해도 해금한 학생은 계속 착용, 가격 변경은 해금한 학생과 무관. 없는 아이템 404 | ADM-23 | 핵심(#389) |
 
 - 테마는 core가 learning `/internal/admin/weekly-themes…`로 프록시(#355 미션 초안과 같은 방식, core #387·learning #385 구현), 테마 초안은 `/internal/admin/theme-drafts…`로 같은 방식(core #439·learning #438), 아이템은 core 소유. 변경은 `audit_log`(`WEEKLY_THEME_*`·`THEME_DRAFT_*`·`LOOK_ITEM_*`). 테마 초안 요청·버리기·다시 생성은 응답 초안(`target_type = THEME_DRAFT`), 채택은 만든 테마(`WEEKLY_THEME`, `detail.draftId`)가 결과 감사 대상 아이템은 같은 트랜잭션에서 `LOOK_ITEM_CREATED`·`LOOK_ITEM_UPDATED`·`LOOK_ITEM_STOPPED`·`LOOK_ITEM_RESUMED`(`target_type = LOOK_ITEM`, 수정은 `detail.before`에 이전 값)
