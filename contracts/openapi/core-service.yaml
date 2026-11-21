@@ -17,6 +17,7 @@ tags:
 - name: Children
 - name: Admin
 - name: ModelRegistry
+- name: ExpressionReview
 - name: Support
 - name: Community
 security:
@@ -5365,6 +5366,67 @@ paths:
               schema: {$ref: '#/components/schemas/ModelLoadingStatus'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/expression-reviews:
+    get:
+      operationId: listExpressionReviews
+      tags: [ExpressionReview]
+      summary: SERVICE_OPS 표현 검토 대기 목록 (FN-ADM-24, #728)
+      description: >-
+        learning `/internal/admin/expression-reviews`(4.1.5)로 ADMIN + X-User-Id + 빈 학생 범위로 넘긴다. 허용한 칸만 돌려주고(학생 이름·ID 없음)
+        보여 준 항목 ID를 EXPRESSION_REVIEW_VIEW로 감사한다. 감사를 남기지 못하면 503이고 글을 돌려주지 않는다.
+      parameters:
+      - {name: labeled, in: query, schema: {type: boolean, default: false}}
+      - {name: source, in: query, schema: {$ref: '#/components/schemas/ExpressionReviewSource'}}
+      - {name: page, in: query, schema: {type: integer, minimum: 0, maximum: 1000, default: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 라벨 없는 것은 오래된 순, 라벨 있는 것은 최근 라벨 순(learning 4.1.5)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExpressionReviewPage'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503':
+          description: LEARNING_INVALID_RESPONSE 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /admin/expression-reviews/{reviewId}/label:
+    put:
+      operationId: labelExpressionReview
+      tags: [ExpressionReview]
+      summary: SERVICE_OPS 표현 검토 라벨 (FN-ADM-24, #728)
+      description: >-
+        값 검사 뒤 EXPRESSION_REVIEW_LABEL_REQUESTED 감사 → learning 한 번 → 결과 감사(_SUCCEEDED·_REJECTED·_UNKNOWN, 관리자 미션과 같은 방식).
+        같은 값 다시 보내기도 200. 결과를 모르면 503과 확인 번호(다시 보내기 전에 목록에서 확인).
+      parameters:
+      - {name: reviewId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExpressionReviewLabelRequest'}
+      responses:
+        '200':
+          description: 갱신된 항목
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExpressionReview'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: EXPRESSION_REVIEW_NOT_FOUND
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: LEARNING_UNAVAILABLE(결과 모름) 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
   /admin/model-versions:
     get:
       operationId: listModelVersions
@@ -12312,6 +12374,42 @@ components:
           - 'null'
           format: date-time
         createdAt: *id004
+    ExpressionReviewSource: {type: string, enum: [GRAY_ZONE, COMMUNITY_REPORT]}
+    ExpressionReviewLabel: {type: string, enum: [OFFENSIVE, CLEAN, SKIP]}
+    ExpressionReview:
+      type: object
+      additionalProperties: false
+      description: 학생 이름·ID·답변 ID 없음. text는 그 답변의 학생이 쓴 칸을 줄바꿈으로 이은 글(learning 4.1.5)
+      required: [id, source, text, modelVersion, label, labeledAt, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        source: {$ref: '#/components/schemas/ExpressionReviewSource'}
+        text: {type: string}
+        modelVersion: {type: ['string', 'null']}
+        label:
+          oneOf:
+          - {$ref: '#/components/schemas/ExpressionReviewLabel'}
+          - {type: 'null'}
+        labeledAt: {type: ['string', 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+    ExpressionReviewPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ExpressionReview'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, minimum: 0}
+    ExpressionReviewLabelRequest:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label: {$ref: '#/components/schemas/ExpressionReviewLabel'}
     ModelVersionPage:
       type: object
       additionalProperties: false
