@@ -5470,6 +5470,47 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '503': {$ref: '#/components/responses/ModelStateUnavailable'}
+  /internal/model-versions:
+    post:
+      operationId: registerModelVersionFromPipeline
+      tags: [ModelRegistry]
+      summary: 재학습 작업(ops) 자동 등록
+      servers: [{url: /}]
+      security: [{InternalToken: []}]
+      description: >-
+        ops 토큰만 허용(api-spec 4장·5.2.3, #728). tox- MODEL만 받고 아니면 422. core가 사전 검사(5.2.1, 20초)를 먼저 부르며
+        FAIL이면 422와 확장 필드 preflight, 연결 실패 503. PASS면 관리자 등록과 같은 규칙으로 REGISTERED 저장하고 활성화하지 않는다.
+        감사(MODEL_PREFLIGHT·MODEL_REGISTER) actor는 재학습 계정(app.model-registry.pipeline-actor-id). 같은 kind·name·version은 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PipelineRegisterModelVersion'}
+      responses:
+        '201':
+          description: REGISTERED로 저장된 버전. 활성화하지 않음
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelVersion'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/ModelConflict'}
+        '422':
+          description: MODEL_APPROVAL_REJECTED. tox- MODEL·recommendation·등록 규칙 위반, 또는 사전 검사 FAIL(이때만 preflight 포함)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '502':
+          description: MODEL_PREFLIGHT_INVALID_RESPONSE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: MODEL_PREFLIGHT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
 
   /consent-documents:
     get:
@@ -11949,6 +11990,34 @@ components:
           default: []
           maxItems: 100
           items: {type: string, minLength: 1, maxLength: 4000, pattern: '.*\S.*'}
+        recommendation:
+          $ref: '#/components/schemas/ModelRecommendation'
+    ModelRecommendation:
+      type: object
+      additionalProperties: false
+      description: >-
+        재학습 추천 태그(api-spec 5.2.3, #728). 활성 모델과 같은 평가 세트로 비교한 참고 정보이며 활성화·복귀 검사에 쓰지 않는다.
+        모든 종류·출처에서 선택, 재학습 자동 등록에서는 필수
+      required: [tag, comparedTo, reasons]
+      properties:
+        tag: {type: string, enum: [RECOMMENDED, NOT_RECOMMENDED]}
+        comparedTo:
+          type: string
+          minLength: 1
+          maxLength: 201
+          pattern: '.*\S.*'
+          description: 비교한 활성 버전 name:version, 처음이면 NONE
+        reasons:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: {type: string, minLength: 1, maxLength: 500, pattern: '.*\S.*'}
+        metrics:
+          type: object
+          default: {}
+          maxProperties: 50
+          propertyNames: {minLength: 1, maxLength: 100, pattern: '.*\S.*'}
+          additionalProperties: {type: number}
     RegisterModelVersion:
       type: object
       additionalProperties: false
@@ -11990,6 +12059,36 @@ components:
           $ref: '#/components/schemas/EvaluationEvidence'
         registration:
           $ref: '#/components/schemas/ModelRegistrationMetadata'
+    PipelineRegisterModelVersion:
+      type: object
+      additionalProperties: false
+      description: 관리자 등록 본문과 같되 registration(PIPELINE)·artifactUri·evaluation.recommendation 필수. tox- MODEL만 받는다(아니면 422)
+      required: [kind, name, version, artifactUri, evaluation, registration]
+      properties:
+        kind: {$ref: '#/components/schemas/ModelKind'}
+        name: {type: string, minLength: 1, maxLength: 100}
+        version: {type: string, minLength: 1, maxLength: 100}
+        refId:
+          type: ['null']
+        artifactUri: {type: string, minLength: 1, maxLength: 2048, pattern: '.*\S.*'}
+        evaluation:
+          allOf:
+          - $ref: '#/components/schemas/EvaluationEvidence'
+          - required: [recommendation]
+        registration: {$ref: '#/components/schemas/PipelineRegistrationMetadata'}
+    PipelineRegistrationMetadata:
+      type: object
+      additionalProperties: false
+      description: 재학습 작업이 신고한 학습 데이터 해시와 산출물 파일 목록. 서버의 데이터·품질 검증을 의미하지 않음
+      required: [source, datasetSha256, artifactFiles]
+      properties:
+        source: {type: string, const: PIPELINE}
+        datasetSha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        artifactFiles:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ModelRegistrationArtifact'}
     ModelRegistrationMetadata:
       type: object
       additionalProperties: false
@@ -12034,6 +12133,7 @@ components:
             - evaluation.humanReview
             - evaluation.evaluatedScopes
             - evaluation.limitations
+            - evaluation.recommendation
         artifactFiles:
           type: array
           default: []
@@ -12635,6 +12735,9 @@ components:
           minimum: 0
           maximum: 4
           description: 학생 PIN 불일치 시 남은 실패 허용 횟수. 잠금 응답은 0.
+        preflight:
+          $ref: '#/components/schemas/ModelPreflightResult'
+          description: 재학습 자동 등록의 사전 검사 FAIL 결과(422, #728)
         type:
           type: string
           format: uri-reference

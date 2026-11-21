@@ -1,5 +1,7 @@
 package com.sagomungchi.core.admin.controller
 
+import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.exception.Problems
 import com.sagomungchi.core._common.security.RequestAttributes
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core.admin.domain.*
@@ -8,6 +10,9 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotNull
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.ProblemDetail
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
 
@@ -19,8 +24,12 @@ class ModelVersionController(private val service: ModelVersionService) {
 
     @PostMapping("/api/v1/admin/model-versions")
     @ResponseStatus(HttpStatus.CREATED)
-    fun register(@Valid @RequestBody body: RegisterRequest, request: HttpServletRequest) = service.register(
-        RegisterVersion(body.kind, body.name, body.version, body.refId, body.artifactUri, body.evaluation, body.registration.toMetadata()), actor(request))
+    fun register(@Valid @RequestBody body: RegisterRequest, request: HttpServletRequest): ModelVersion {
+        if (body.registration.source == RegistrationSource.PIPELINE)
+            throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "PIPELINE 출처는 재학습 작업 내부 등록만 씁니다.")
+        return service.register(RegisterVersion(body.kind, body.name, body.version, body.refId, body.artifactUri, body.evaluation,
+            body.registration.toMetadata()), actor(request))
+    }
 
     @PostMapping("/api/v1/admin/model-versions/{versionId}/activate")
     fun activate(@PathVariable versionId: UUID, @Valid @RequestBody body: ActivateRequest, request: HttpServletRequest) =
@@ -69,4 +78,33 @@ data class RollbackRequest(val scopes: List<String>, val reason: String, @field:
 class InternalModelVersionController(private val service: ModelVersionService) {
     @GetMapping("/internal/model-versions/active")
     fun active() = mapOf("items" to service.active())
+
+    /** 재학습 작업(ops) 자동 등록 (api-spec 5.2.3, #728). 활성화하지 않음 */
+    @PostMapping("/internal/model-versions")
+    @ResponseStatus(HttpStatus.CREATED)
+    fun registerFromPipeline(@RequestBody body: PipelineRegisterRequest) = service.registerFromPipeline(
+        RegisterVersion(body.kind, body.name, body.version, body.refId, body.artifactUri, body.evaluation, body.registration.toMetadata()))
+
+    @ExceptionHandler(PreflightRejected::class)
+    fun preflightRejected(ex: PreflightRejected, request: HttpServletRequest): ResponseEntity<ProblemDetail> {
+        val problem = Problems.of(ex.status, ex.code, ex.title, ex.detail, request)
+        problem.setProperty("preflight", ex.result)
+        return ResponseEntity.status(ex.status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(problem)
+    }
+}
+
+/** 재학습 작업 등록 본문. 관리자 등록과 같되 registration은 PIPELINE 형식 필수, 모르는 칸은 거부 */
+data class PipelineRegisterRequest(val kind: ModelKind, val name: String, val version: String, val refId: UUID? = null,
+    val artifactUri: String? = null, val evaluation: EvaluationEvidence, val registration: PipelineRegistrationRequest) {
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    fun unknown(name: String, value: Any?) { throw IllegalArgumentException("Unknown registration field: $name") }
+}
+
+/** `{source: PIPELINE, datasetSha256, artifactFiles}`. 다른 source는 400 */
+data class PipelineRegistrationRequest(val source: RegistrationSource, val datasetSha256: String,
+    val artifactFiles: List<RegistrationArtifactRequest?>) {
+    init { require(source == RegistrationSource.PIPELINE) { "registration.source must be PIPELINE" } }
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    fun unknown(name: String, value: Any?) { throw IllegalArgumentException("Unknown registration field: $name") }
+    fun toMetadata() = RegistrationMetadata(source, artifactFiles = artifactFiles.map { it?.toArtifact() }, datasetSha256 = datasetSha256)
 }

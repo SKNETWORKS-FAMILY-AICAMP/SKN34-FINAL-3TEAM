@@ -101,6 +101,7 @@ app:
       scoring: ${INTERNAL_TOKEN_SCORING:}
       learning: ${INTERNAL_TOKEN_LEARNING:}
       report-worker: ${INTERNAL_TOKEN_REPORT_WORKER:}
+      ops: ${INTERNAL_TOKEN_OPS:} # 재학습 작업 (#728)
     connect-timeout: 2s
     read-timeout: 30s # 내부 호출 기본값 (P12 목록 밖). 용도별 값은 호출 측 지정 (architecture 1.3)
   services:

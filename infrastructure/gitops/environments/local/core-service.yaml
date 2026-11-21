@@ -34,6 +34,7 @@ env:
   - {name: INTERNAL_TOKEN_SCORING, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_SCORING}}}
   - {name: INTERNAL_TOKEN_LEARNING, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_LEARNING}}}
   - {name: INTERNAL_TOKEN_REPORT_WORKER, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_REPORT_WORKER}}}
+  - {name: INTERNAL_TOKEN_OPS, valueFrom: {secretKeyRef: {name: app-service-credentials, key: INTERNAL_TOKEN_OPS, optional: true}}}
   - {name: AUTH_JWT_SECRET, valueFrom: {secretKeyRef: {name: app-service-credentials, key: AUTH_JWT_SECRET}}}
   - {name: AUTH_WEB_ORIGIN, value: "http://localhost:5173"}
   - {name: AUTH_COOKIE_SECURE, value: "false"}
