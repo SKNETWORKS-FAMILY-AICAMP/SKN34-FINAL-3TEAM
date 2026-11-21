@@ -409,7 +409,11 @@ def test_frame_core_is_judged_as_its_own_item_and_flow_fails_only_other_place() 
     # 시작 2컷 문구는 물건·자리 중심(사건 클로즈업 틀과 맞춤)
     assert "빈자리" in families.LOST.intro_cuts[1]
     assert "짐" in families.STORY_TYPES["VEHICLE"].intro_cuts[1]
-    assert "소리가 난 쪽" in families.STORY_TYPES["SOUND"].intro_cuts[1]
+    # 소리: 소리 난 자리는 그리지 않음('소리 난 곳' 후보 값을 가리키지 않게, 사용자 결정 2026-11-21)
+    sound2 = families.STORY_TYPES["SOUND"].intro_cuts[1]
+    assert "창가" in sound2 and "소리 난 자리가 보이지 않음" in sound2
+    assert not any(w in sound2 for w in ("담장", "지붕", "나무 위", "구석"))
+    assert "소리를 듣는 창가" in cuts.spec("INTRO", 2, 6).beat
 
 
 def test_reveal_cut_has_no_arrival_role_and_plan_gives_only_used_roles() -> None:
