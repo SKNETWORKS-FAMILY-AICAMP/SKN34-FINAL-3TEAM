@@ -67,11 +67,11 @@ class ToxicityClientTest {
     }
 
     @Test
-    fun `통과한 글은 review 값과 함께 Clean`() {
+    fun `통과한 글은 review 값·판단한 모델 이름과 버전과 함께 Clean`() {
         reply("""{"active":true,"flagged":false,"review":true,$model}""")
-        assertEquals(ToxicityVerdict.Clean(review = true), client.check(listOf("보통 글")))
+        assertEquals(ToxicityVerdict.Clean(review = true, modelVersion = "tox-kcelectra:1.0"), client.check(listOf("보통 글")))
         reply("""{"active":true,"flagged":false,"review":false,$model}""")
-        assertEquals(ToxicityVerdict.Clean(review = false), client.check(listOf("보통 글")))
+        assertEquals(ToxicityVerdict.Clean(review = false, modelVersion = "tox-kcelectra:1.0"), client.check(listOf("보통 글")))
     }
 
     @Test

@@ -88,6 +88,29 @@ def test_no_row_response_loss_blocks_delayed_delivery_and_rejects_identity_chang
             asyncio.run(make_service(report_factory, db_engine, changed).generate(changed))
 
 
+def test_existing_report_rejects_identity_changes_in_generation_and_recovery(
+    report_factory, db_engine, report_student_id
+):
+    command = command_for(report_student_id)
+    with transaction(report_factory) as session:
+        ReportRepository().get_or_create(session, command)
+    before = stored(report_factory, report_student_id)
+    for changed in (
+        replace(command, student_id=uuid4()),
+        replace(
+            command,
+            period_from=command.period_from + timedelta(days=7),
+            period_to=command.period_to + timedelta(days=7),
+        ),
+    ):
+        with pytest.raises(ApiError) as error:
+            recover(report_factory, db_engine, changed)
+        assert error.value.code == "REPORT_JOB_IDENTITY_MISMATCH"
+        with pytest.raises(JobConflict):
+            asyncio.run(make_service(report_factory, db_engine, changed).generate(changed))
+    assert stored(report_factory, report_student_id) == before
+
+
 def test_live_generation_is_busy_and_can_complete(report_factory, db_engine, report_student_id):
     entered, release = Event(), Event()
 

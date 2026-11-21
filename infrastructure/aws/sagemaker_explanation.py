@@ -5,6 +5,7 @@ desired state lives in sagemaker/explanation-endpoint.json. IAM roles and the se
 defined in demo-stack.json / iam/ and created separately (see README). Run from the repository root:
 
   python infrastructure/aws/sagemaker_explanation.py --profile <p> status
+  python infrastructure/aws/sagemaker_explanation.py --profile <p> lock --confirm-account <id>   # #777 path lock
   python infrastructure/aws/sagemaker_explanation.py --profile <p> apply --confirm-account <id>
   python infrastructure/aws/sagemaker_explanation.py --profile <p> schedule            # weekly window
   python infrastructure/aws/sagemaker_explanation.py --profile <p> schedule --test-start 2026-11-18T15:10 --test-end 2026-11-18T15:50
@@ -13,10 +14,16 @@ defined in demo-stack.json / iam/ and created separately (see README). Run from 
   python infrastructure/aws/sagemaker_explanation.py --profile <p> delete --confirm-account <id>
 
 Only synthetic inputs may be sent with `invoke`; generated text is not printed unless --show.
+`--spec <file>` swaps the desired-state file (trial endpoints with other names and model paths).
+
+#777: the model data is the whole version root `explanation/<version>/` (manifest.json + base + adapter),
+the image is model-check/Dockerfile (DLC + startup sha256 check), and MODEL_MANIFEST_SHA256 is set from
+the manifest's S3 FULL_OBJECT SHA-256, so every cold start re-checks the downloaded files.
 """
 import argparse
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -53,10 +60,11 @@ class Aws:
         return json.loads(result.stdout) if result.stdout.strip() else {}
 
 
-def load_spec(aws):
-    raw = json.loads(SPEC.read_text(encoding='utf-8'))
+def load_spec(aws, path=SPEC):
+    raw = json.loads(Path(path).read_text(encoding='utf-8'))
     account = aws('sts', 'get-caller-identity')['Account']
     values = {'account': account, 'region': raw['region'], 'modelVersion': raw['modelVersion'],
+              'imageDigest': raw.get('imageDigest', ''),
               'instanceSlug': raw['instanceType'].replace('ml.', '').replace('.', '-')}
 
     def fill(v):
@@ -160,9 +168,16 @@ def manifest(aws, spec, args):
 
 def verify(aws, spec, args):
     """SageMaker does not check sha256 when it loads model data (#368·#493). Before apply, compare every
-    object under the prefixes SageMaker reads with manifest.json: the S3 FULL_OBJECT SHA-256 that S3 itself
-    validated on upload must equal the manifest, and no extra or missing object is allowed (SageMaker
-    downloads everything under the prefix). The manifest itself is checked the same way."""
+    object under the version root SageMaker reads (`modelDataPrefix`) with manifest.json: the S3 FULL_OBJECT
+    SHA-256 that S3 itself validated on upload must equal the manifest, and no extra or missing object is
+    allowed (SageMaker downloads everything under the prefix, so unused formats such as base-gguf/ must be
+    removed first). The manifest itself is checked the same way. The serving image repeats the file check
+    inside the container on every start (#777)."""
+    return check_manifest(aws, spec, args)[0]
+
+
+def check_manifest(aws, spec, args):
+    """(0 or 1, sha256 of manifest.json) for verify/apply/lock."""
     import hashlib
     if getattr(args, 'local_manifest', None):
         body = Path(args.local_manifest).read_bytes()
@@ -176,15 +191,16 @@ def verify(aws, spec, args):
         kind, sha, _ = head_sha256(aws, spec, spec['manifestKey'])
         good = kind == 'FULL_OBJECT' and sha == hashlib.sha256(body).hexdigest()
         print(f'{"OK  " if good else "DIFF"} manifest.json {sha[:8]}')
+    manifest_sha = hashlib.sha256(body).hexdigest()
     data = json.loads(body)
     if data['prefixes'] != used_prefixes(spec):
         print(f'PREFIX     manifest {data["prefixes"]} != spec {used_prefixes(spec)}')
         good = False
     expected = {f['key']: f for f in data['files']}
-    actual = set()
-    for prefix in used_prefixes(spec):
-        listed = aws('s3api', 'list-objects-v2', '--bucket', spec['bucket'], '--prefix', prefix)
-        actual |= {o['Key'] for o in listed.get('Contents', [])}
+    if not all(p.startswith(spec['modelDataPrefix']) for p in used_prefixes(spec)) \
+            or not spec['manifestKey'].startswith(spec['modelDataPrefix']):
+        raise SystemExit('modelDataPrefix must contain manifestKey and every prefix SageMaker reads')
+    actual = list_keys(aws, spec['bucket'], spec['modelDataPrefix']) - {spec['manifestKey']}
     good &= actual == set(expected)
     for key in sorted(actual - set(expected)):
         print(f'UNEXPECTED {key}')
@@ -196,20 +212,87 @@ def verify(aws, spec, args):
         good &= ok
         print(f'{"OK  " if ok else "DIFF"} {key.rsplit("/", 2)[-2]}/{key.rsplit("/", 1)[-1]} {sha[:8]}')
     print('verify:', 'all objects match' if good else 'MISMATCH')
-    return 0 if good else 1
+    return (0 if good else 1), manifest_sha
+
+
+def list_keys(aws, bucket, prefix):
+    keys, token = set(), []
+    while True:
+        listed = aws('s3api', 'list-objects-v2', '--bucket', bucket, '--prefix', prefix, *token)
+        keys |= {o['Key'] for o in listed.get('Contents', [])}
+        if not listed.get('NextContinuationToken'):
+            return keys
+        token = ['--continuation-token', listed['NextContinuationToken']]
+
+
+def model_container(spec, manifest_sha):
+    """The SageMaker model container: the check image, the whole version root, and the manifest pin."""
+    environment = dict(spec['environment'])
+    if spec['useAdapter']:
+        environment.update(spec['adapterEnvironment'])
+    environment['MODEL_MANIFEST_SHA256'] = manifest_sha
+    return {'Image': spec['image'], 'ModelDataSource': s3_source(spec, spec['modelDataPrefix']),
+            'Environment': environment}
+
+
+def lock_sid(prefix):
+    return 'LockModel' + re.sub('[^A-Za-z0-9]', '', prefix)[:90]
+
+
+def lock_statement(bucket, prefix):
+    """#777: nobody may write, overwrite or delete (any version of) objects under an approved model path."""
+    return {'Sid': lock_sid(prefix), 'Effect': 'Deny', 'Principal': '*',
+            'Action': ['s3:PutObject', 's3:DeleteObject', 's3:DeleteObjectVersion'],
+            'Resource': f'arn:aws:s3:::{bucket}/{prefix}*'}
+
+
+def bucket_policy(aws, bucket):
+    found = aws('s3api', 'get-bucket-policy', '--bucket', bucket, check=False)
+    return json.loads(found['Policy']) if found else None
+
+
+def locked_policy(current, bucket, prefix, remove=False):
+    """Bucket policy with the lock statement for prefix added (or removed); other statements are kept."""
+    policy = current or {'Version': '2012-10-17', 'Statement': []}
+    statements = [s for s in policy.get('Statement', []) if s.get('Sid') != lock_sid(prefix)]
+    if not remove:
+        statements.append(lock_statement(bucket, prefix))
+    return dict(policy, Statement=statements)
+
+
+def lock(aws, spec, args):
+    """Add the deny statement for the approved version root to the model bucket policy (after verify).
+    `--prefix` locks another path (trial); `--remove` drops a lock again (trial revert only)."""
+    if args.confirm_account != spec['account']:
+        raise SystemExit('lock needs --confirm-account <current account id>')
+    prefix = args.prefix or spec['lockPrefix']
+    if not prefix.endswith('/') or not prefix.startswith('explanation/'):
+        raise SystemExit('lock prefix must be explanation/<path>/')
+    if not args.prefix and not args.remove and check_manifest(aws, spec, args)[0] != 0:
+        raise SystemExit('model data does not match manifest.json; not locking')
+    current = bucket_policy(aws, spec['bucket'])
+    policy = locked_policy(current, spec['bucket'], prefix, remove=args.remove)
+    print(json.dumps(policy, indent=1))
+    if args.dry_run:
+        print('dry run: bucket policy not changed')
+        return 0
+    if policy['Statement']:
+        aws('s3api', 'put-bucket-policy', '--bucket', spec['bucket'], '--policy', json.dumps(policy))
+    else:
+        aws('s3api', 'delete-bucket-policy', '--bucket', spec['bucket'])
+    print(f'{"unlocked" if args.remove else "locked"} s3://{spec["bucket"]}/{prefix}')
+    return 0
 
 
 def apply(aws, spec, args):
     if args.confirm_account != spec['account']:
         raise SystemExit('apply needs --confirm-account <current account id>')
-    if verify(aws, spec, args) != 0:
+    code, manifest_sha = check_manifest(aws, spec, args)
+    if code != 0:
         raise SystemExit('model data does not match manifest.json; not applying')
     network = resolve_network(aws, spec)
     if not describe(aws, 'model', spec['model']):
-        container = {'Image': spec['image'], 'ModelDataSource': s3_source(spec, spec['baseModelPrefix']),
-                     'Environment': dict(spec['environment'])}
-        if spec['useAdapter']:
-            container['Environment'].update(spec['adapterEnvironment'])
+        container = model_container(spec, manifest_sha)
         aws('sagemaker', 'create-model', payload={
             'ModelName': spec['model'],
             'ExecutionRoleArn': role_arn(spec),
@@ -349,6 +432,9 @@ def status(aws, spec, args):
                   '--resource-id', resource)['ScheduledActions']
     for a in actions:
         print(f'scheduled {a["ScheduledActionName"]}: {a["Schedule"]} {a.get("Timezone", "UTC")} {a["ScalableTargetAction"]}')
+    policy = bucket_policy(aws, spec['bucket']) or {}
+    locked = any(s.get('Sid') == lock_sid(spec['lockPrefix']) for s in policy.get('Statement', []))
+    print(f'path lock {spec["lockPrefix"]}: {"locked" if locked else "NOT locked"}')
 
 
 def invoke(aws, spec, args):
@@ -407,6 +493,7 @@ def delete(aws, spec, args):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--profile')
+    p.add_argument('--spec', default=str(SPEC), help='desired-state JSON (default: sagemaker/explanation-endpoint.json)')
     sub = p.add_subparsers(dest='command', required=True)
     sub.add_parser('status')
     hashes = str(HERE.parent.parent / 'ml' / 'sllm' / 'results' / 'serving-compare-20261118.json')
@@ -414,16 +501,19 @@ def main():
     m.add_argument('--upload', action='store_true', help='upload once to S3 (If-None-Match; the path is never rewritten)')
     v = sub.add_parser('verify'); v.add_argument('--local-manifest')
     a = sub.add_parser('apply'); a.add_argument('--confirm-account'); a.add_argument('--local-manifest')
+    k = sub.add_parser('lock'); k.add_argument('--confirm-account'); k.add_argument('--dry-run', action='store_true')
+    k.add_argument('--prefix', help='lock another explanation/<path>/ (trial)'); k.add_argument('--remove', action='store_true')
     s = sub.add_parser('schedule'); s.add_argument('--test-start', help='UTC yyyy-mm-ddThh:mm'); s.add_argument('--test-end')
     c = sub.add_parser('copies'); c.add_argument('count', type=int, choices=[0, 1]); c.add_argument('--wait', action='store_true')
     i = sub.add_parser('invoke'); i.add_argument('--body', required=True)
     i.add_argument('--component', help='inference component to call (default: base; adapter component applies LoRA)'); i.add_argument('--save'); i.add_argument('--show', action='store_true')
     d = sub.add_parser('delete'); d.add_argument('--confirm-account')
     args = p.parse_args()
-    raw = json.loads(SPEC.read_text(encoding='utf-8'))
+    raw = json.loads(Path(args.spec).read_text(encoding='utf-8'))
     aws = Aws(args.profile, raw['region'])
-    spec = load_spec(aws)
-    handler = {'status': status, 'manifest': manifest, 'verify': verify, 'apply': apply, 'schedule': schedule, 'copies': copies, 'invoke': invoke, 'delete': delete}
+    spec = load_spec(aws, args.spec)
+    handler = {'status': status, 'manifest': manifest, 'verify': verify, 'lock': lock, 'apply': apply, 'schedule': schedule,
+               'copies': copies, 'invoke': invoke, 'delete': delete}
     return handler[args.command](aws, spec, args) or 0
 
 

@@ -576,6 +576,8 @@ sequenceDiagram
   W->>C: POST /answers/{answerId}/feedback (SSE)
   C-->>W: event status {RUNNING}
   C->>L: POST /internal/answers/{answerId}/feedback (동기)
+  L->>C: POST /internal/payment-usage/reservations {studentId, sourceId: answerId} (4초)
+  C-->>L: reservationId (프리미엄 사용 대상 아니면 null)
   L->>DB: judgment 조건부 전이 PENDING·FAILED·리스 만료 RUNNING → RUNNING
   alt 이미 DONE
     L-->>C: 저장된 결과
@@ -625,6 +627,9 @@ sequenceDiagram
       L-->>C: 200 FeedbackResult
     end
   end
+  opt 돌려줄 결과가 DONE + reservationId 있음 (이미 DONE·다른 요청 결과·이번 저장 모두, 실제로는 위 응답을 보내기 전에 호출)
+    L->>C: POST /internal/payment-usage/completions {studentId, reservationId, used: true} (4초)
+  end
   alt status RUNNING 수신
     C-->>W: event status → done (클라이언트가 잠시 후 재요청)
   else 503 수신
@@ -635,7 +640,8 @@ sequenceDiagram
 ```
 
 - 클라이언트가 끊겨도 core→learning 호출은 끝까지 진행·저장, 재요청 시 저장 결과 반환 (API 3.2)
-- 타임아웃 예산: core→learning 80초 > learning→ai(judgments 35초 + followups 35초), 판정 리스 90초 (P12, 아키텍처 1.3)
+- 타임아웃 예산: core→learning 80초 > learning→core 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초, 판정 리스 90초 (P12, 아키텍처 1.3)
+- 결제 사용 예약·완료는 core→learning 요청 안에서 learning이 core를 다시 부르는 동기 왕복(`FeedbackFacade`·`PaymentUsageClient`). 예약·완료 호출이 실패하면 `503 PAYMENT_USAGE_UNAVAILABLE`, core가 거절한 409는 그 코드로 응답
 - `nextActions`: 되묻기 생성 시 `[ANSWER_FOLLOWUP, FINISH]`(FINISH = "이대로 돌아보기"), 되묻기 2회 소진·고르기 CORRECT면 `[FINISH]` (P04)
 - 판정 보류(`result = HELD`)는 정상 처리(`DONE`), 처리 실패(`process_status = FAILED`)와 구분 (NFR-REL-04)
 - 보류 사유 결정은 모두 ai 담당, learning은 `judge_verified`·학년을 포함한 기준표 전달 (상태 다이어그램 3.3)
@@ -1590,7 +1596,7 @@ sequenceDiagram
 - scoring 교체·롤백 시 artifact를 다시 내려받아 로딩한 뒤 임시 파일을 정리한다. 로딩 중에는 기존 모델을 사용하며 실패 시 기존 모델을 유지하고 재시도한다. 새 승인 scopes에서 제외된 범위에는 기존 모델도 사용하지 않는다. 최초 준비·재연결 복구가 끝나기 전에는 readiness false다.
 - 기준표(`kind = RUBRIC`) 행은 core 레지스트리의 승인·활성 기록만 담당. learning은 이 이벤트를 소비하지 않으며, `judge_verified`·현재 기준표 버전 반영은 관리자 미션 API(`/admin/missions/...`)로 별도 수행
 
-### 9.1 표현 분류 재학습·자동 등록 (#688 재학습 자동화, 설계 #725, 구현 전 #727~#730)
+### 9.1 표현 분류 재학습·자동 등록 (#688 재학습 자동화, 설계 #725, learning 구현 #727, 구현 전 #728~#730)
 
 ```mermaid
 sequenceDiagram

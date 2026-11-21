@@ -1,0 +1,37 @@
+# wave 6: Karpenter 1.15.1(OCI chart, repoURL에 oci:// 없이). Argo CD v3.6.2 임시 kind에서 저장소 선언 없이 받아짐을 확인(2026-11-20). CRD는 chart crds/에서 함께 적용된다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prod-karpenter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  project: sagomungchi-prod
+  sources:
+    - repoURL: public.ecr.aws/karpenter
+      chart: karpenter
+      targetRevision: 1.15.1
+      helm:
+        releaseName: karpenter
+        valueFiles:
+          - $values/infrastructure/gitops/environments/prod/karpenter.json
+    - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  # 플랫폼은 prune 끔(상태 저장 자원·CRD·NodePool 보호), selfHeal 켬. finalizer가 없어 Application을 지워도 자원은 남는다.
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - ServerSideApply=true

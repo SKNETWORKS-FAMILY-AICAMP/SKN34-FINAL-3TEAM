@@ -15,14 +15,15 @@ async function newStudent(browser: Browser, prefix: string, consent: boolean) {
   await onboardParent(parentPage, nickname)
   if (consent) {
     // 계정·자녀 설정 › 공개·동의 › 풀이 공유 커뮤니티(선택 동의 COMMUNITY)
-    const card = parentPage.getByRole('region', { name: /참여 기록/ })
+    await parentPage.getByRole('button', { name: '참여 기록', exact: true }).click()
+    const card = parentPage.getByRole('dialog').getByRole('region', { name: /참여 기록/ })
     await card.getByRole('link', { name: '커뮤니티 동의하기' }).click()
     const section = parentPage.locator('#community-consent')
     // 다른 동의 목록을 불러오는 동안 "불러오고 있습니다." status가 함께 있을 수 있어 현재 상태 문구만 본다
     const state = section.getByRole('status').filter({ hasText: /^현재 / })
-    await expect(state).toContainText('동의하지 않음')
+    await expect(state.getByText('동의하지 않음', { exact: true })).toBeVisible()
     await section.getByRole('button', { name: '커뮤니티 이용에 동의' }).click()
-    await expect(state).toContainText('현재 동의함')
+    await expect(state.getByText('동의함', { exact: true })).toBeVisible()
   }
   const student = await loginStudent(browser, parentPage, nickname, `커뮤니티 ${prefix}`)
   await parentContext.close()

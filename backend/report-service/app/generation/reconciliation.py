@@ -15,6 +15,7 @@ from app.generation.models import (
     ReportEvent,
     ReportState,
     ReportStatus,
+    ensure_same_job,
 )
 from app.generation.repository import ReportRepository
 from app.outbox import service as outbox_service
@@ -75,13 +76,8 @@ class ReconciliationService:
         try:
             with transaction(self._factory) as session:
                 report = self._repository.find_by_job(session, job_id)
-                if report is not None and (
-                    report.student_id,
-                    report.period_from,
-                    report.period_to,
-                    report.period_type,
-                ) != (student_id, period_from, period_to, period_type):
-                    raise JobConflict("Report job student/period does not match")
+                if report is not None:
+                    ensure_same_job(report, student_id, period_from, period_to, period_type)
                 guard = self._repository.guard(
                     session, job_id, student_id, period_from, period_to, period_type
                 )

@@ -10,8 +10,7 @@ test('일일 리포트 문제별로 답변마다 생각·작성 시간을 보이
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
   await page.goto('/parent/report')
-  const tab = page.getByRole('navigation', { name: '리포트·챗봇 보기' }).getByRole('button', { name: '리포트 보기', exact: true })
-  if (await tab.isVisible()) await tab.click()
+  await page.getByRole('button', { name: '리포트 자세히 보기', exact: false }).click()
   await page.getByLabel('리포트 종류').selectOption('DAILY')
   // 시연 목 저장소의 일일 리포트에 report 상세 모양의 문제 하나를 넣는다(원문 비공개, 2번째 답은 시간 없음)
   await page.evaluate(async () => {
@@ -28,8 +27,10 @@ test('일일 리포트 문제별로 답변마다 생각·작성 시간을 보이
       }]
     }
   })
-  await page.locator('.parent-report-grid').getByRole('button', { name: '리포트 보기', exact: true }).first().click()
-  const problem = page.locator('article').filter({ hasText: '합성 시간 문제' })
+  await page.locator('.parent-report-grid').getByRole('button', { name: '자세히 보기', exact: true }).first().click()
+  await page.getByRole('button', { name: '활동 기록', exact: true }).click()
+  const problem = page.locator('details.report-answer-comparison').filter({ hasText: '합성 시간 문제' })
+  await problem.locator('summary').click()
   await expect(problem.getByText('처음 답: 생각 1분 미만 · 작성 2분', { exact: true })).toBeVisible()
   await expect(problem.getByText('두 번째 되묻기 뒤 답: 생각 10분 · 작성 1분', { exact: true })).toBeVisible()
   await expect(problem.getByText(/^되묻기 뒤 답:/)).toHaveCount(0)

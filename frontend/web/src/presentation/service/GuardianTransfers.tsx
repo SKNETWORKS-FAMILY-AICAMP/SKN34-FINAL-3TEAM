@@ -6,6 +6,7 @@ import { useGuardianTransferList, useParentMutation, useParentQuery } from '../.
 import { restoreSession } from '../../data/classroom/useClassroom.ts'
 import { useSession } from '../auth/sessionContext.ts'
 import { ConsentFields } from '../parent/AccountForms.tsx'
+import { parentNavigation } from '../parent/parentNavigation.tsx'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { IdentityRecheck } from './AccountLifecycle.tsx'
@@ -40,7 +41,7 @@ export function GuardianTransfers() {
     if (guardianTransferEnabled && next.nextAction !== 'CONSENT_REQUIRED') await children.refetch()
     await requests.refetch()
   }
-  return <Workspace title="자녀 이관" nav={[{ path: '/parent/journal', label: '대시보드·공책' }, { path: '/parent/transfers', label: '자녀 이관' }]}><div className="svc-page ws-stack transfer-page"><h1>자녀 이관</h1>
+  return <Workspace title="학부모 공간" variant="parent" nav={parentNavigation}><div className="svc-page ws-stack transfer-page"><h1>자녀 이관</h1>
     <p>{canTransfer ? '가입에 사용한 이메일로 요청을 보내고, 상대방이 수락하면 자녀가 연결됩니다.' : '지금은 기존 이관 요청의 확인·취소·거절만 할 수 있습니다. 취소만으로 탈퇴하거나 자녀가 삭제되지는 않습니다.'}</p>
     <nav><Link to="/parent/settings?section=account">계정 관리</Link> · <Link to="/parent/children/new">자녀 등록</Link></nav>
     {canTransfer && <section className="ws-card ws-form"><h2>이관 요청 보내기</h2><QueryFeedback query={children}/>

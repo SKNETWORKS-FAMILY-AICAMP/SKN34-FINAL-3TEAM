@@ -74,15 +74,56 @@
   "hpa": {
     "enabled": false
   },
-  "image": {
-    "digest": "sha256:6f151ca992e4bc3bcfeeb6ea9d2e014ef63845d34783e328a74266540fa8d586",
-    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service"
-  },
   "keda": {
     "enabled": false
   },
   "migration": {
-    "enabled": false
+    "enabled": true,
+    "image": {
+      "pullPolicy": "IfNotPresent"
+    },
+    "command": [
+      "alembic"
+    ],
+    "args": [
+      "upgrade",
+      "head"
+    ],
+    "env": [
+      {
+        "name": "DATABASE_URL",
+        "valueFrom": {
+          "secretKeyRef": {
+            "name": "report-migrate-credentials",
+            "key": "REPORT_ALEMBIC_DATABASE_URL"
+          }
+        }
+      }
+    ],
+    "resources": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "128Mi"
+      },
+      "limits": {
+        "memory": "512Mi"
+      }
+    },
+    "extraVolumes": [
+      {
+        "name": "rds-ca",
+        "configMap": {
+          "name": "rds-ca"
+        }
+      }
+    ],
+    "extraVolumeMounts": [
+      {
+        "name": "rds-ca",
+        "mountPath": "/rds-ca",
+        "readOnly": true
+      }
+    ]
   },
   "nameOverride": "report-api",
   "networkPolicy": {
@@ -188,6 +229,28 @@
     "enabled": true,
     "ingressFromApps": [
       "core-service"
+    ],
+    "migrationEgress": [
+      {
+        "ports": [
+          {
+            "port": 5432,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "10.20.128.0/20"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "10.20.144.0/20"
+            }
+          }
+        ]
+      }
     ]
   },
   "pdb": {

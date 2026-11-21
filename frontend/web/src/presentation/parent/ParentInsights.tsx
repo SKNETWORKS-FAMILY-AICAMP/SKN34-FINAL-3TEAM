@@ -1,6 +1,6 @@
+import './parent-insights.css'
 import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useSearchParams } from 'react-router'
 import type { Child } from '../../domain/classroom.ts'
 import type { Scope } from '../../domain/parent.ts'
 import { samePeriod, verifiedReportAnswer } from '../../domain/reportHighlight.ts'
@@ -15,7 +15,6 @@ export function ParentInsights({ child, scope, canReadOriginals, onScope, period
   child: Child; scope: Scope; canReadOriginals: boolean; onScope: (scope: Scope) => void
   periodControl?: ReactNode; sharingPending?: boolean
 }) {
-  const [params, setParams] = useSearchParams()
   const [report, setReport] = useState<ReportContext | null>(null)
   const [highlight, setHighlight] = useState<ReportHighlight | null>(null)
   const [selectedMessageId, setSelectedMessageId] = useState<string>()
@@ -52,27 +51,17 @@ export function ParentInsights({ child, scope, canReadOriginals, onScope, period
       if (reveal) setRevealToken(value => value + 1)
     }).catch(error => { setHighlight(null); setLinkError(error) })
   }, [child.id, canReadOriginals, report, clearHighlight, loadEvidence])
-  const view = params.get('view') === 'chat' ? 'chat' : 'reports'
-  const setView = (nextView: string) => {
-    const next = new URLSearchParams(params); next.set('view', nextView); setParams(next)
-  }
   const chatScope = report ? { childId: child.id, ...report.period } : scope
-  const preview = view === 'chat' ? highlight ?? report ?? undefined : undefined
-  return <section className={preview ? 'parent-insights is-linked' : 'parent-insights'}>
-    <header className="parent-page-head"><h1>리포트·AI 챗봇</h1><p>학습 결과를 확인하고, 같은 곳에서 궁금한 점을 이어서 물어보세요.</p></header>
-    <nav className="parent-tabs" aria-label="리포트·챗봇 보기">
-      <button aria-pressed={view === 'reports'} onClick={() => setView('reports')}>리포트 보기</button>
-      <button aria-pressed={view === 'chat'} onClick={() => setView('chat')}>AI에게 질문하기</button>
-    </nav>
+  return <section className="parent-insights parent-insights-unified">
+    <header className="parent-page-head"><h1>리포트·AI 챗봇</h1></header>
     <div className="parent-insights-content">
-    <div className="parent-insights-report" data-report-preview={preview ? 'true' : undefined} hidden={view !== 'reports' && !preview}>
-      {preview && <h2>질문에 연결한 리포트</h2>}
-      <div className="parent-insights-report-body">
-      <ParentReports child={child} preview={preview} highlight={highlight} revealToken={revealToken} onReportChange={clearHighlight}
-        onAskReport={value => { clearHighlight(); setReport(value); setView('chat') }} />
+    <div className="parent-insights-report">
+      <div className="parent-report-workspace">
+      <ParentReports child={child} highlight={highlight} revealToken={revealToken} onReportChange={clearHighlight}
+        onAskReport={value => { clearHighlight(); setReport(value); requestAnimationFrame(() => document.getElementById('parent-ai-conversation')?.scrollIntoView({block:'start',behavior:'smooth'})) }} />
       </div>
     </div>
-    <div className="parent-insights-chat" hidden={view !== 'chat'}>
+    <div className="parent-insights-chat" id="parent-ai-conversation">
       {!report && periodControl}
       {linking && <p role="status">답변의 근거 위치를 확인하고 있습니다.</p>}
       {linkNotice && <p role="status">{linkNotice}</p>}

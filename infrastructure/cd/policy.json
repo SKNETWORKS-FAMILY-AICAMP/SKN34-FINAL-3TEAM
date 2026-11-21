@@ -3,5 +3,20 @@
   "releaseBranch": "main",
   "approvers": ["20220348-kim", "kty2001"],
   "environmentProtectionVerified": true,
-  "infrastructureReady": true
+  "infrastructureReady": true,
+  "delivery": {
+    "imagesDir": "infrastructure/gitops/environments/prod/images",
+    "imageFiles": {
+      "core-service": ["core-service"],
+      "learning-service": ["learning-service"],
+      "ai-service": ["ai-service"],
+      "scoring-service": ["scoring-service"],
+      "report-service": ["report-api", "report-worker"]
+    },
+    "migrationFiles": {
+      "core-service": "core-service",
+      "learning-service": "learning-service",
+      "report-service": "report-api"
+    }
+  }
 }

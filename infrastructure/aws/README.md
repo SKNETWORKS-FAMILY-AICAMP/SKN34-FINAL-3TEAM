@@ -75,19 +75,23 @@ B 계정(시연, 11/30 무렵)으로 옮길 때 바꿀 항목: 버킷 이름의 
 | 파일 | 내용 |
 |---|---|
 | `sagemaker/explanation-endpoint.json` | 원하는 상태: 이미지, S3 경로, 인스턴스, 메모리 예약, vLLM 환경 변수, LoRA 사용 여부, 예약 창 |
-| `sagemaker_explanation.py` | `status`·`manifest`·`verify`·`apply`·`schedule`·`copies`·`invoke`·`delete`. aws CLI만 쓴다 |
-| `iam/sagemaker-explanation-role.*` | SageMaker 실행 역할(S3 `explanation/*` 읽기, DLC 이미지 받기, 로그·지표, VPC ENI) |
+| `sagemaker_explanation.py` | `status`·`manifest`·`verify`·`lock`·`apply`·`schedule`·`copies`·`invoke`·`delete`. aws CLI만 쓴다 |
+| `sagemaker/model-check/` | 서빙 이미지(#777): vLLM DLC + 시작 때 `/opt/ml/model` 해시 검사 + `POST /adapters` LoRA 검사. 수동 빌드·게시, digest 고정 |
+| `iam/sagemaker-explanation-role.*` | SageMaker 실행 역할(S3 `explanation/*` 읽기, DLC·검사 이미지 받기, 로그·지표, VPC ENI) |
 | `iam/ai-asset-s3-role.inline.ai-sagemaker-explanation-invoke.json` | ai Pod Identity 역할의 `sagemaker:InvokeEndpoint`(엔드포인트와 IC ARN 모두 필요) |
 
 새 계정 순서:
 
 1. `demo_stack.py apply --confirm-account <계정>`으로 실행 역할을 만든다. 역할이 이미 있으면 inline 정책은 `aws iam put-role-policy`로 넣는다(ai 역할 추가분 포함). Pod 재시작은 필요 없다.
 2. 보안 그룹 `sagomungchi-demo-sagemaker-explanation-sg`를 VPC에 만든다. ingress는 없고 egress는 tcp 443만 둔다.
-3. `sagemaker_explanation.py manifest --upload`로 승인 목록을 한 번만 올린다. 이때 LoRA 사용 여부(`useAdapter`)를 먼저 정한다.
-4. `apply --confirm-account <계정>`을 실행한다. manifest 대조 → 모델 → 설정 → 엔드포인트 → IC(어댑터 포함) → Auto Scaling 대상 순서다. 인스턴스가 이미 떠 있어도 IC가 InService가 되기까지 약 9분 걸린다.
-5. `schedule`로 주간 창(일 23:30·월 02:00 KST, 0대에서 켜지는 데 약 21분)을 건다. 시험은 `--test-start/--test-end`(UTC)로 시각을 당겨 확인한다.
+3. `sagemaker_explanation.py manifest --upload`로 승인 목록을 한 번만 올린다. 이때 LoRA 사용 여부(`useAdapter`)를 먼저 정한다. 버전 경로(`explanation/<버전>/`)에는 manifest.json과 manifest에 적힌 파일만 둔다(`base-gguf/`·`adapter-gguf/` 등은 지운다). SageMaker가 버전 경로 전체를 받고, 컨테이너가 남는 파일을 거부하기 때문이다.
+4. 검사 이미지를 빌드해 그 계정 ECR `sagomungchi/sagemaker-explanation`(IMMUTABLE)에 올리고, 받은 digest를 `explanation-endpoint.json` `imageDigest`에 적는다(#777, 절차는 [infra 9.17](../../docs/report/infra.md#917-리포트-gemma-sagemaker-경로-잠금과-적재-때-해시-검사-777-2026-11-18)).
+5. `lock --confirm-account <계정>`(먼저 `--dry-run`)으로 버전 경로의 쓰기·삭제를 버킷 정책으로 막는다. `verify`가 통과해야 잠근다.
+6. `apply --confirm-account <계정>`을 실행한다. manifest 대조 → 모델 → 설정 → 엔드포인트 → IC(어댑터 포함) → Auto Scaling 대상 순서다. 인스턴스가 이미 떠 있어도 IC가 InService가 되기까지 약 9분 걸린다.
+7. `schedule`로 주간 창(일 23:30·월 02:00 KST, 0대에서 켜지는 데 약 21분)을 건다. 시험은 `--test-start/--test-end`(UTC)로 시각을 당겨 확인한다.
 
-- 계정 번호가 들어간 곳: `iam/sagemaker-explanation-role.*`, `iam/ai-asset-s3-role.inline.ai-sagemaker-explanation-invoke.json`. 버킷 이름은 스크립트가 sts로 채운다.
+- 계정 번호가 들어간 곳: `iam/sagemaker-explanation-role.*`, `iam/ai-asset-s3-role.inline.ai-sagemaker-explanation-invoke.json`. 버킷 이름과 이미지 레지스트리는 스크립트가 sts로 채운다. `imageDigest`는 계정마다 게시한 값으로 바꾼다.
+- 시험 엔드포인트는 `--spec <다른 JSON>`으로 이름·경로를 바꿔 같은 명령으로 만들고 지운다(#777 시험).
 - 지울 때: `delete --confirm-account <계정>`(예약·Auto Scaling 대상·IC·엔드포인트·설정·모델). IAM·SG·S3 모델 파일은 남는다.
 
 ## 배포·복구 유의 사항
@@ -190,13 +194,13 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 1. #760(계획 `currentRelease: "none"`, `redeploy-app.ps1 -AllowInstall`, scoring·report SA를 chart가 만듦)이 develop에 병합돼 있다. 없으면 11/17처럼 첫 배포가 `release: not found`로 멈춘다.
 2. 계정 번호 교체 PR(아래 "A 계정 값 교체")을 develop에 병합한다. cd-release는 main SHA만 배포하고 `redeploy-app.ps1`이 계정 번호를 확인하므로, 이 교체와 6a단계 값 교체가 main에 들어가야 B에 배포된다(develop → main 릴리스, #623 시연 고정 버전).
-3. GitHub 변수(손으로, A 종료 뒤): Repository `CD_AWS_ROLE_ARN`·`CD_ECR_REGISTRY`·`CD_AWS_REGION`, Environment `prod` `CD_BASE_URL`([CD README](../cd/README.md)). OIDC subject 설정은 저장소 단위라 바꾸지 않는다.
+3. GitHub 변수(손으로, A 종료 뒤): Repository `CD_AWS_ROLE_ARN`·`CD_ECR_REGISTRY`·`CD_AWS_REGION`, Environment `prod` `CD_BASE_URL`([CD README](../cd/README.md)). OIDC subject 설정은 저장소 단위라 바꾸지 않는다. Argo CD(#858) 방식이면 `CD_BASE_URL`은 비상용 Helm 경로만 쓰고, 경로 확인은 작업자 PC에서 B 도메인을 직접 준다. digest PR 저장소 설정(Actions PR 생성 허용·main 보호·CODEOWNERS, [CD README B2](../cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정))은 11/24에 이미 적용돼 있어야 하며 계정과 무관해 다시 하지 않는다. main의 `images/<release>.json` 저장소 주소는 A 레지스트리로 남아 있으므로 B 첫 digest PR은 서비스 5개 전부와 `allowRepositoryChange=true`로 실행한다(16단계).
 
 ### 순서
 
 | # | 단계 | 명령·방법 | 확인 | 예상 | Argo CD면 |
 |---|---|---|---|---|---|
-| 0 | 도구·로그인 | AWS CLI v2, eksctl 0.231.0(공식 릴리스, 체크섬 확인), kubectl 1.35, Helm 4.3.1, PowerShell 7, Python 3.12, Node.js·npm, gh. `aws sts get-caller-identity --profile <B>` | 계정이 B. 선행 1·2가 들어간 main SHA | 30분 | argocd CLI 추가 |
+| 0 | 도구·로그인 | AWS CLI v2, eksctl 0.231.0(공식 릴리스, 체크섬 확인), kubectl 1.35, Helm 4.3.1, argocd CLI v3.5.7(공식 릴리스 `argocd-windows-amd64.exe`, `cli_checksums.txt`로 확인), PowerShell 7, Python 3.12, Node.js·npm, gh. `aws sts get-caller-identity --profile <B>` | 계정이 B. 선행 1·2가 들어간 main SHA | 30분 | argocd CLI는 이 단계에 포함(#855) |
 | 1★ | IAM·OIDC·ECR·S3·VPC | GitHub OIDC 제공자를 먼저 만든다([CD README A](../cd/README.md#a-aws-github-oidc-게시-역할-aws-변경), `demo_stack.py`가 관리하지 않음) → `python infrastructure/aws/demo_stack.py --profile <B> plan` → `apply --confirm-account <B 계정> --without-rds`. VPC·NAT·S3 endpoint, S3 4개, ECR 7개, IAM 역할 13개(SageMaker 실행 역할·ai invoke 정책 포함), RDS SG·서브넷 그룹을 만들고 RDS 인스턴스만 만들지 않는다 | `plan`에서 `eks`·`secret`·`rds`만 MISSING | 20분 | 같음 |
 | 2★ | S3 데이터 | 아래 "S3 복사" | `sagemaker_explanation.py --profile <B> verify` 13개 일치, scoring 객체 `FULL_OBJECT` SHA-256 | 서버 간 30분, 로컬 경유 1~2시간 | 같음 |
 | 3★ | Secrets Manager 12개 | 이름은 `demo-stack.json` `secrets`. 값은 저장소 밖 파일로 `create-secret --secret-string file://…`(출력하지 않음). **A와 같아야 하는 값**: DB 계정 6개(복원 DB의 계정이 A 비밀번호를 그대로 갖고 `rds-bootstrap`은 비밀번호를 바꾸지 않음), `app/payment`의 `PAYMENT_BILLING_ENCRYPTION_KEY`(DB에 암호화해 둔 값을 읽는 키). **새 값 가능**: `app/internal` 6개·`platform/rabbitmq`(RabbitMQ는 새 PVC), `app/auth` JWT(새 도메인이라 어차피 다시 로그인). `app/ai`는 `OPENAI_API_KEY`·`THEME_VIDEO_CREDENTIALS_JSON`·`VIDEO_PROJECT`만 넣고 RunPod 키 `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`·`SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA`는 넣지 않는다(11/19 결정, ExternalSecret도 `OPENAI_API_KEY`만 읽음) | `plan`의 secret OK. 값은 보지 않고 `describe-secret`로 이름만 본다 | 30분 | 같음(ESO) |
@@ -204,17 +208,17 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 | 5★ | RDS 스냅샷 복원 | 아래 "RDS 복원" | `plan`의 rds OK, `rds.force_ssl`, 새 endpoint 기록 | 40~60분 | 같음 |
 | 6★ | EKS | `render-eksctl --operator-cidr <작업자 IP>/32 --out <저장소 밖>` → `eksctl create cluster -f <파일>` → `apply --confirm-account <B 계정> --after-eksctl`(RDS SG에 클러스터 SG 5432) → `plan` | 노드그룹 2개 OK, add-on 7개, Pod Identity 10개 | 30~40분(11/17 실측 17분) | 같음 |
 | 6a | 자원 값 교체 PR | 아래 "B 자원을 만든 뒤 바꿀 값"(RDS endpoint·VPC·서브넷·클러스터 SG·CloudFront 도메인) → develop → main | main SHA에 B 값 | 1시간(리뷰 포함) | Argo CD가 읽을 브랜치에 같은 값 |
-| 7 | 플랫폼 | [prod README 2절](../gitops/environments/prod/README.md#2-기반-자원--secret--저장소): gp3·namespace → ESO 2.14.0 → LB Controller 1.14.1(B `vpcId`) → `app/rds-ca` → `kubectl apply -f external-secret-resources.json` → `platform-network.json`·platform-data → Karpenter 1.15.1 → `karpenter-nodepool.json`(B 서브넷·SG) → `app-oneoff-db-network.json`·`app-check-pods-network.json` | ESO Ready 12개, `ai-provider-credentials`에 `OPENAI_API_KEY`만, RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분(11/17 실측 3분) | 외부 chart·ExternalSecret·NetworkPolicy를 Application으로. ESO·CRD 순서는 sync wave |
-| 7a | 관측(#784) | 관측 Secret 2개(Grafana admin·Discord webhook, 값은 담당자) → `observability-platform-network.json` → `helm upgrade --install observability infrastructure/gitops/charts/observability -n observability -f infrastructure/gitops/environments/prod/observability.json`(Tempo 1Gi·Collector 지표 격리 포함) | Grafana 로그인·datasource, Tempo `/ready` 200, Prometheus `up`. 앱이 뜨기 전에는 LLM 비용 경보가 NoData로 Discord에 온다(11/17) | 15분 | Application(Secret은 손으로) |
-| 8★ | DB 확인·모델 경로 | `demo_stack.py rds-bootstrap --kubeconfig <파일> --execute`(복원 DB라 DB·계정·`vector` 확장은 확인만, 멱등) → demo-db-oneoff로 `model_version` 활성 행과 `artifactUri` 조회 → **scoring 모델 경로 전환**(아래) | 활성 scoring 모델의 경로가 B 버킷에서 읽힘 | 30분 | 같음 |
-| 9★ | 첫 배포 | cd-release, 계획 `currentRelease: "none"`, `services` 5개, 승인 1명 | 미리보기 `install`, migration 3개 complete(A 마지막 배포 뒤 새 migration만), release 6개 "첫 설치→r1". 경로 확인은 fixture 쿠키 때문에 실패할 수 있다(15단계) | 30~40분 | Application 동기화. migration은 PreSync 훅이 되고 승인·이력 방식은 다시 정한다 |
-| 10 | 권한 정리 | `rds-bootstrap --execute` 한 번 더 | 새 테이블 app 권한, 이력 테이블 app 권한 회수 | 5분 | PostSync 훅 후보 |
+| 7 | 플랫폼 | **Argo CD 먼저(#855)**: [prod Argo CD README](../gitops/argocd/prod/README.md)대로 `helm install argocd argo/argo-cd --version 10.11.7 -n argocd --create-namespace -f infrastructure/gitops/environments/prod/argocd.json` → `argocd-notifications-secret`(Discord webhook, 값은 저장소 밖 파일) → `project.yaml` → `root-app.yaml` → root 손 동기화 1회 → admin 비밀번호 변경·초기 Secret 삭제. 그다음 [prod README 2절](../gitops/environments/prod/README.md#2-기반-자원--secret--저장소): gp3·namespace → ESO 2.14.0 → LB Controller 1.14.1(B `vpcId`) → `app/rds-ca` → `kubectl apply -f external-secret-resources.json` → `platform-network.json`·platform-data → Karpenter 1.15.1 → `karpenter-nodepool.json`(B 서브넷·SG) → `app-oneoff-db-network.json`·`app-check-pods-network.json` | Argo CD Pod 6개 Running(`application` 노드), `sagomungchi-prod-root` Synced·Healthy, Discord에 동기화 성공 1건. ESO Ready 14개(ExternalSecret 14, SecretStore 2), `ai-provider-credentials`에 `OPENAI_API_KEY`만, RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분(11/17 실측 3분) + Argo CD 15분 | 외부 chart·ExternalSecret·NetworkPolicy를 Application으로. ESO·CRD 순서는 sync wave |
+| 7a | 관측(#784) | **7단계 root app 동기화 전에** `kubectl create namespace observability` → 관측 Secret 2개(`observability-credentials`의 Grafana admin, `discord-alert-webhook`의 `DISCORD_WEBHOOK_URL`. 값은 담당자, 출력하지 않음). 나머지는 플랫폼 Application([prod README](../gitops/environments/prod/README.md#argo-cd-플랫폼-application-856-2026-11-20))이 한다: wave 4 `prod-platform-network`(`observability-platform-network.json`), wave 8 `prod-observability`(Tempo 1Gi·Collector 지표 격리 포함). Secret이 없으면 wave 8이 Healthy가 안 되어 앱(wave 10)도 멈춘다. 비상용은 `helm upgrade --install observability infrastructure/gitops/charts/observability -n observability -f infrastructure/gitops/environments/prod/observability.json`(먼저 자동 동기화를 끈다) | `prod-observability` Synced/Healthy, Grafana 로그인·datasource, Tempo `/ready` 200, Prometheus `up`. 앱이 뜨기 전에는 LLM 비용 경보가 NoData로 Discord에 온다(11/17) | 15분 | Application(Secret 2개는 손으로, #856) |
+| 8★ | DB 확인·모델 경로 | `demo_stack.py rds-bootstrap --kubeconfig <파일> --execute`(복원 DB라 DB·계정·`vector` 확장은 확인만, 멱등) → demo-db-oneoff로 `model_version` 활성 행과 `artifactUri` 조회 → **scoring 모델 경로 전환**(아래) | 활성 scoring 모델의 경로가 B 버킷에서 읽힘 | 30분 | 같음(master secret을 쓰므로 손으로, 훅으로 옮기지 않음). 경로 전환 전이면 `prod-scoring-service`만 Degraded로 남고 다른 앱 동기화는 막히지 않는다 |
+| 9★ | 첫 배포 | Argo CD(#857): root app이 ApplicationSet `sagomungchi-prod-apps`(wave 10, 플랫폼 뒤)를 만들고 Application `prod-<앱>` 6개가 main의 `<앱>.json` + `images/<앱>.json`으로 자동 동기화. core·learning·report-api는 PreSync로 NetworkPolicy `<앱>-migration` → Job `<앱>-migrate-<revision>` 뒤 앱. `kubectl -n argocd get applications`, `kubectl -n app get jobs` | migration Job 3개 Complete(복원 DB라 새 migration만 적용), Application 6개 Synced/Healthy(scoring은 8단계 결정에 따라). 경로 확인은 fixture 쿠키 때문에 실패할 수 있다(15단계) | 30~40분 | (이 행이 Argo CD 기준) 막히면 비상용 Helm: 해당 Application 자동 동기화를 끄고 cd-release 계획 `currentRelease: "none"`, `services` 5개, 승인 1명(`redeploy-app.ps1 -AllowInstall`, [prod README](../gitops/environments/prod/README.md#argo-cd-배포-857-2026-11-20)) |
+| 10 | 권한 정리 | 9단계 migration Job 3개 Complete 뒤 `rds-bootstrap --execute` 한 번 더(손으로) | 새 테이블 app 권한, 이력 테이블 app 권한 회수 | 5분 | 같음(master secret을 쓰므로 PostSync 훅으로 옮기지 않음, #857) |
 | 11 | 웹 | 9단계와 같은 main SHA로 `frontend/web`에서 `npm ci && npm run build`(11/19처럼 env 없음) → `aws s3 cp dist/assets s3://<web 버킷>/assets --recursive` → 그 밖 정적 파일 → `index.html`을 `--cache-control no-cache`로 마지막 → `aws cloudfront create-invalidation --distribution-id <ID> --paths "/*"`(Git Bash면 `MSYS_NO_PATHCONV=1`) | CloudFront index의 해시 파일이 로컬 빌드와 같은 sha256, 콘솔 오류 0 | 15분 | 같음(Argo CD는 S3를 다루지 않음) |
-| 12★ | ALB·API origin | `core-alb-network.json` + 검토한 Ingress(origin 헤더 실제 값은 Git 밖) → 새 ALB DNS로 CloudFront `/api/*` origin·behavior 추가 → Google OAuth에 새 origin·callback 2개 | prefix list만 허용, idle 120·XFF preserve, `/api/*` 응답 | 20분(11/17 실측 4분) | Ingress·NetworkPolicy는 Application, CloudFront·OAuth는 같음 |
+| 12★ | ALB·API origin | `core-alb-network.json`은 플랫폼 Application wave 9 `prod-app-network`가 이미 적용했다(확인만). 검토한 core Ingress는 손으로(origin 헤더 실제 값은 Git 밖, Argo CD 대상 아님) → 새 ALB DNS로 CloudFront `/api/*` origin·behavior 추가 → Google OAuth에 새 origin·callback 2개 | `prod-app-network` Synced, prefix list만 허용, idle 120·XFF preserve, `/api/*` 응답 | 20분(11/17 실측 4분) | NetworkPolicy는 Application(#856), Ingress·CloudFront·OAuth는 손으로 |
 | 13★ | SageMaker | [위 절](#리포트-gemma-sagemaker-엔드포인트-746-2026-11-18)의 새 계정 순서: SG `sagomungchi-demo-sagemaker-explanation-sg`(ingress 없음, egress 443) → `sagemaker_explanation.py --profile <B> verify` → `apply --confirm-account <B 계정>` → `schedule` → 확인 뒤 `copies 0`. `manifest.json`은 2단계에서 같은 sha256으로 복사했으므로 `manifest --upload`는 하지 않는다(같은 키면 `PreconditionFailed`). #777 검사 이미지는 미정: 쓰기로 하면 ECR 저장소 추가·이미지 게시 뒤 apply, 아니면 지금처럼 AWS DLC | 엔드포인트 InService, ai Pod에서 호출 200(infra 9.13.9), IC 0대로 내림 | 40분(IC 9분 + 인스턴스) | 같음 |
 | 14 | 운영 데이터 | 스냅샷에 관리자·동의 문서·FREE 상품·모델 버전·성취기준 표·시연 학부모가 있다. 관리자 로그인, 모델 활성 상태·로딩(관리자 화면), 테마 그림 URL(learning presigned, B 버킷), 리포트 다운로드 | 모두 B 버킷에서 열림 | 20분 | 같음 |
 | 15 | fixture·테마 | B 도메인에서 fixture 학부모 Google 로그인(refresh 쿠키 7일)·학생 기기 등록(`student_device`, 도메인별)으로 fixture 파일 갱신. 시연 주차 테마 초안 생성 → 채택 → 미션 검토·게시(11/17 A에서 READY까지 14분). 11/30~12/8은 두 주라 주마다 | 학생 로그인이 `CHILD_NOT_LINKED`가 아님, 학생 주간 테마에 시연 주차 문제 | 1시간 | 같음 |
-| 16 | 확인 | 같은 계획을 다시 승인받아 실행(migration `already-complete`, 앱 `upgrade`) 또는 `python scripts/verify_cd_deployment.py --base-url <B 도메인> --fixture <파일> --output <파일>` → 리포트 설명(SageMaker 창 안에서만) → #624 시연 데이터·#668 M2 입력은 각 절차대로 | 6단계 통과, 결과를 #783에 기록 | 30분 | 동기화 상태 Healthy를 함께 본다 |
+| 16 | 확인 | 같은 계획을 다시 승인받아 실행(migration `already-complete`, 앱 `upgrade`) 또는 `python scripts/verify_cd_deployment.py --base-url <B 도메인> --fixture <파일> --output <파일>` → 리포트 설명(SageMaker 창 안에서만) → #624 시연 데이터·#668 M2 입력은 각 절차대로 | 6단계 통과, 결과를 #783에 기록 | 30분 | 동기화 상태 Healthy를 함께 본다. 배포는 cd-release `delivery=pull-request`(B 첫 실행은 서비스 5개·`allowRepositoryChange=true`) → digest PR 승인·병합 → Synced/Healthy → `verify_cd_deployment.py` 결과를 PR 댓글로 → (시연 일정에 지장 없는 시점에) digest PR revert 복구 1회와 재배포([CD README](../cd/README.md#digest-pr-배포-기본-858)). 막히면 비상용 Helm(`delivery=helm-emergency`, 자동 동기화 끄고) |
 
 0~16은 합쳐 약 8~10시간이다. 11/26에 0~8(6a PR 포함), 11/27~28에 9~16을 하면 #783 일정과 맞는다.
 
@@ -273,11 +277,11 @@ scoring은 기동할 때 core의 활성 모델 목록을 받아 각 `artifactUri
 | RDS 스냅샷 복사·복원·설정 | 5 | 위 "RDS 복원" | 같음 |
 | eksctl 클러스터·`--after-eksctl` | 6 | [EKS README](../eks/README.md) | 같음 |
 | ESO·LB Controller·Karpenter chart, ExternalSecret·NetworkPolicy·NodePool 적용 | 7 | prod README 2절 | Application |
-| observability chart와 Secret 2개 | 7a | [관측 chart README](../gitops/charts/observability/README.md) | Application(Secret은 손으로) |
+| 관측 Secret 2개(chart는 Application) | 7a(root app 전) | [관측 chart README](../gitops/charts/observability/README.md) | Secret만 손으로, chart·수집 정책은 Application(#856) |
 | `rds-bootstrap` 앞뒤 | 8·10 | RDS master secret을 쓰므로 workflow에 넣지 않음(#760) | 훅 후보 |
 | scoring 모델 경로 | 8 | 위 결정 | 같음 |
 | 웹 빌드·S3 업로드·무효화 | 11 | prod README "main 기준 core·웹 재배포" | 같음 |
-| ALB Ingress origin 헤더(Git 밖 실제 값, CloudFront와 양쪽 같게) | 12 | `core-ingress.redacted.json` | Ingress는 Application, 헤더 값은 손으로 |
+| ALB Ingress와 origin 헤더(Git 밖 실제 값, CloudFront와 양쪽 같게) | 12 | `core-ingress.redacted.json` | Ingress는 손으로 유지(헤더 실제 값이 Git 밖), `core-alb-network.json`은 Application(#856) |
 | CloudFront `/api/*` origin·behavior | 12 | 위 "외부 요청 흐름" | 같음 |
 | Google OAuth 승인 origin·redirect URI 2개 | 12 | 위 "배포·복구 유의 사항" | 같음 |
 | SageMaker SG·엔드포인트·예약 | 13 | 위 SageMaker 절 | 같음 |
@@ -293,7 +297,7 @@ B 계정 번호를 받으면 한 번에 바꾼다. 분류 기준은 [`scripts/aw
 |---|---|---|
 | 바꿈: IAM 원문 | `infrastructure/aws/iam/*.json` | 25 |
 | 바꿈: IaC | `infrastructure/aws/demo-stack.json`, `infrastructure/eks/cluster.json`, `infrastructure/aws/cloudfront-config.redacted.json` | 3 |
-| 바꿈: 배포 값 | `infrastructure/gitops/environments/prod/`의 앱 values 6개·`migrations/` 3개·`redeploy-app.ps1` | 10 |
+| 바꿈: 배포 값 | `infrastructure/gitops/environments/prod/`의 앱 values 5개(core는 ECR 주소가 `images/`로 옮겨 없음)·`images/` 6개·`redeploy-app.ps1`(#857 뒤. `images/`는 main에서 digest PR(#858)도 바꾸므로 develop과 main 양쪽 값을 맞춘다) | 12 |
 | 바꿈: 시험 | `scripts/tests/test_cd_migration_runner.py`(가짜 `sts`가 돌려주는 번호가 `redeploy-app.ps1`과 같아야 함) | 1 |
 | 바꿈: 절차 문서 | 이 README, `infrastructure/eks/README.md`, `infrastructure/cd/README.md`, prod README, `docs/report/scoring.md`(6.2·6.3 업로드 명령) | 5 |
 | 남김: 기록·근거 | `docs/report/**`(scoring.md 빼고: `infra.md` 4절, `evidence/issue493-…json`), `infrastructure/aws/demo-observed.json`, `infrastructure/eks/demo-observed.json` | 4 |
@@ -316,7 +320,7 @@ python -m unittest discover -s scripts/tests
 
 | 값 | A 값으로 찾기 | 파일 |
 |---|---|---|
-| RDS endpoint | `git grep -n czcw0ywu2euo` | prod `core-service.json`·`learning-service.json`·`migrations/core-service.json`·`migrations/learning-service.json`·`external-secret-resources.json`(2곳), `infrastructure/aws/demo-db-oneoff.k8s.yaml` |
+| RDS endpoint | `git grep -n czcw0ywu2euo` | prod `core-service.json`(2곳)·`learning-service.json`(2곳, migration `FLYWAY_URL` 포함, #857)·`external-secret-resources.json`(2곳), `infrastructure/aws/demo-db-oneoff.k8s.yaml` |
 | VPC ID | `git grep -n vpc-0f4d9134097830b4b -- infrastructure/gitops` | prod `aws-load-balancer-controller.json` |
 | 서브넷·클러스터 SG | `karpenter-nodepool.json`의 `subnet-…`·`sg-…` | prod `karpenter-nodepool.json`(EC2NodeClass. SG는 eksctl이 만든 클러스터 SG) |
 | CloudFront 도메인 | `git grep -n d3jf0rnm6vhd9v -- infrastructure/gitops infrastructure/aws/verify-viewer-ip.ps1 evaluation/load/core-load.js` | core `AUTH_WEB_ORIGIN`, `verify-viewer-ip.ps1`, `core-load.js` 기본값, GitHub `CD_BASE_URL` |
