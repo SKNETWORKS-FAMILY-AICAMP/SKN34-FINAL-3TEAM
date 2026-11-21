@@ -1,0 +1,640 @@
+{
+ "dataset": "memory@2",
+ "label": "pc-1121-hybrid",
+ "collectedAt": "2026-11-21T02:31:28+09:00",
+ "environment": "PC compose(E2E), 하이브리드, 기준일 2026-11-18",
+ "today": "2026-11-18",
+ "docStatus": {
+  "READY": 780
+ },
+ "minCheckers": 1,
+ "queriesUsed": 120,
+ "droppedUnchecked": 0,
+ "droppedCurrentMissing": 0,
+ "chosenThreshold": null,
+ "tuneSweep": [],
+ "asServed": true,
+ "tune": {},
+ "eval": {
+  "V@served": {
+   "threshold": null,
+   "nResults": 82,
+   "nReject": 38,
+   "recall@3": 0.626,
+   "recall@3_ci": [
+    0.514,
+    0.719
+   ],
+   "hit@1": 0.622,
+   "mrr@3": 0.626,
+   "recall@k": {
+    "1": 0.622,
+    "2": 0.622,
+    "3": 0.626
+   },
+   "reject": 0.842,
+   "reject_ci": [
+    0.696,
+    0.926
+   ],
+   "byCategory": {
+    "PERIOD_EMPTY": {
+     "n": 24,
+     "rejected": 0.75
+    },
+    "PERIOD_ONLY": {
+     "n": 36,
+     "recall": 0.042,
+     "rejected": 1.0
+    },
+    "PERIOD_TOPIC": {
+     "n": 60,
+     "recall": 1.0,
+     "rejected": 1.0
+    }
+   }
+  },
+  "K1": {
+   "threshold": null,
+   "nResults": 82,
+   "nReject": 38,
+   "recall@3": 0.0,
+   "recall@3_ci": [
+    0.0,
+    0.045
+   ],
+   "hit@1": 0.0,
+   "mrr@3": 0.0,
+   "recall@k": {
+    "1": 0.0,
+    "2": 0.0,
+    "3": 0.0
+   },
+   "reject": 1.0,
+   "reject_ci": [
+    0.908,
+    1.0
+   ],
+   "byCategory": {
+    "PERIOD_EMPTY": {
+     "n": 24,
+     "rejected": 1.0
+    },
+    "PERIOD_ONLY": {
+     "n": 36,
+     "recall": 0.0,
+     "rejected": 1.0
+    },
+    "PERIOD_TOPIC": {
+     "n": 60,
+     "recall": 0.0,
+     "rejected": 1.0
+    }
+   }
+  },
+  "K2": {
+   "threshold": null,
+   "nResults": 82,
+   "nReject": 38,
+   "recall@3": 0.695,
+   "recall@3_ci": [
+    0.589,
+    0.784
+   ],
+   "hit@1": 0.476,
+   "mrr@3": 0.579,
+   "recall@k": {
+    "1": 0.476,
+    "2": 0.561,
+    "3": 0.695
+   },
+   "reject": 0.421,
+   "reject_ci": [
+    0.279,
+    0.578
+   ],
+   "byCategory": {
+    "PERIOD_EMPTY": {
+     "n": 24,
+     "rejected": 0.417
+    },
+    "PERIOD_ONLY": {
+     "n": 36,
+     "recall": 0.25,
+     "rejected": 1.0
+    },
+    "PERIOD_TOPIC": {
+     "n": 60,
+     "recall": 0.98,
+     "rejected": 0.2
+    }
+   }
+  }
+ },
+ "deleted": {
+  "V": {}
+ },
+ "violations": {
+  "V": [],
+  "K1": [],
+  "K2": []
+ },
+ "latencyMs": {
+  "n": 120,
+  "p50": 3106.7,
+  "p95": 5474.6,
+  "max": 6275.4,
+  "repeats": 1,
+  "note": "learning 내부 API 순차 호출, 질문 임베딩 포함, core·브라우저 제외"
+ },
+ "criteria": {
+  "recall@3 ≥ 0.80": false,
+  "V − max(K1,K2) ≥ 0.10": false,
+  "reject ≥ 0.80": true,
+  "violations = 0": true,
+  "p95 ≤ 2000ms": false,
+  "explanation (human)": "별도 표시지로 판정",
+  "H 질문 단위 섞임 발생률 ≤ 0.10": false
+ },
+ "mixing": {
+  "V@served": {
+   "nQueries": 120,
+   "cards": 115,
+   "cardMixRate": 0.191,
+   "queryMixRate": 0.108,
+   "queryMixRate_ci": [
+    0.064,
+    0.177
+   ],
+   "boundaryCardRate": 0.0,
+   "mixedQueries": 13,
+   "mixedCards": 22,
+   "boundaryCards": 0,
+   "causes": {
+    "기간 해석 실패(기간 없음)": 18,
+    "필터 누락(해석 기간과 안 겹침, 확인 필요)": 1,
+    "해석 기간 미수집": 3
+   },
+   "mixedByQuery": {
+    "p120": 1,
+    "p204": 1,
+    "p212": 1,
+    "p220": 2,
+    "p304": 2,
+    "p312": 1,
+    "p320": 3,
+    "p420": 1,
+    "p504": 1,
+    "p520": 2,
+    "p604": 2,
+    "p612": 2,
+    "p620": 3
+   }
+  },
+  "K1": {
+   "nQueries": 120,
+   "cards": 0,
+   "cardMixRate": null,
+   "queryMixRate": 0.0,
+   "queryMixRate_ci": [
+    -0.0,
+    0.031
+   ],
+   "boundaryCardRate": null,
+   "mixedQueries": 0,
+   "mixedCards": 0,
+   "boundaryCards": 0,
+   "causes": {},
+   "mixedByQuery": {}
+  },
+  "K2": {
+   "nQueries": 120,
+   "cards": 225,
+   "cardMixRate": 0.689,
+   "queryMixRate": 0.692,
+   "queryMixRate_ci": [
+    0.604,
+    0.767
+   ],
+   "boundaryCardRate": 0.0,
+   "mixedQueries": 83,
+   "mixedCards": 155,
+   "boundaryCards": 0,
+   "causes": {
+    "기간 미사용(벡터 유사·키워드 일치)": 155
+   },
+   "mixedByQuery": {
+    "p101": 2,
+    "p103": 1,
+    "p105": 1,
+    "p106": 2,
+    "p107": 1,
+    "p110": 1,
+    "p111": 2,
+    "p112": 2,
+    "p117": 3,
+    "p120": 2,
+    "p201": 2,
+    "p202": 1,
+    "p203": 1,
+    "p204": 1,
+    "p205": 2,
+    "p206": 2,
+    "p207": 2,
+    "p208": 2,
+    "p209": 2,
+    "p210": 2,
+    "p211": 2,
+    "p212": 2,
+    "p217": 3,
+    "p220": 3,
+    "p301": 2,
+    "p302": 1,
+    "p303": 2,
+    "p304": 2,
+    "p305": 2,
+    "p306": 2,
+    "p307": 2,
+    "p308": 2,
+    "p309": 2,
+    "p310": 2,
+    "p311": 2,
+    "p312": 2,
+    "p317": 3,
+    "p320": 3,
+    "p401": 2,
+    "p403": 1,
+    "p405": 2,
+    "p406": 2,
+    "p407": 2,
+    "p408": 1,
+    "p410": 1,
+    "p411": 2,
+    "p412": 2,
+    "p417": 3,
+    "p420": 1,
+    "p501": 2,
+    "p502": 1,
+    "p503": 1,
+    "p504": 2,
+    "p505": 2,
+    "p506": 2,
+    "p507": 2,
+    "p508": 2,
+    "p509": 1,
+    "p510": 2,
+    "p511": 2,
+    "p512": 2,
+    "p513": 1,
+    "p515": 1,
+    "p517": 3,
+    "p519": 1,
+    "p520": 3,
+    "p601": 2,
+    "p602": 2,
+    "p603": 2,
+    "p604": 2,
+    "p605": 2,
+    "p606": 2,
+    "p607": 2,
+    "p608": 2,
+    "p609": 2,
+    "p610": 2,
+    "p611": 2,
+    "p612": 2,
+    "p613": 1,
+    "p615": 1,
+    "p617": 3,
+    "p619": 1,
+    "p620": 3
+   }
+  }
+ },
+ "bySize": {
+  "30": {
+   "V@served": {
+    "recall@3": 0.65,
+    "reject": 0.9,
+    "nResults": 20,
+    "nReject": 20,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 23,
+     "cardMixRate": 0.087,
+     "queryMixRate": 0.05,
+     "queryMixRate_ci": [
+      0.014,
+      0.165
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 2,
+     "mixedCards": 2,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 해석 실패(기간 없음)": 2
+     },
+     "mixedByQuery": {
+      "p120": 1,
+      "p420": 1
+     }
+    }
+   },
+   "K1": {
+    "recall@3": 0.0,
+    "reject": 1.0,
+    "nResults": 20,
+    "nReject": 20,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 0,
+     "cardMixRate": null,
+     "queryMixRate": 0.0,
+     "queryMixRate_ci": [
+      -0.0,
+      0.088
+     ],
+     "boundaryCardRate": null,
+     "mixedQueries": 0,
+     "mixedCards": 0,
+     "boundaryCards": 0,
+     "causes": {},
+     "mixedByQuery": {}
+    }
+   },
+   "K2": {
+    "recall@3": 0.733,
+    "reject": 0.5,
+    "nResults": 20,
+    "nReject": 20,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 55,
+     "cardMixRate": 0.655,
+     "queryMixRate": 0.525,
+     "queryMixRate_ci": [
+      0.375,
+      0.671
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 21,
+     "mixedCards": 36,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 미사용(벡터 유사·키워드 일치)": 36
+     },
+     "mixedByQuery": {
+      "p101": 2,
+      "p103": 1,
+      "p105": 1,
+      "p106": 2,
+      "p107": 1,
+      "p110": 1,
+      "p111": 2,
+      "p112": 2,
+      "p117": 3,
+      "p120": 2,
+      "p401": 2,
+      "p403": 1,
+      "p405": 2,
+      "p406": 2,
+      "p407": 2,
+      "p408": 1,
+      "p410": 1,
+      "p411": 2,
+      "p412": 2,
+      "p417": 3,
+      "p420": 1
+     }
+    }
+   }
+  },
+  "100": {
+   "V@served": {
+    "recall@3": 0.6,
+    "reject": 0.8,
+    "nResults": 30,
+    "nReject": 10,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 41,
+     "cardMixRate": 0.171,
+     "queryMixRate": 0.125,
+     "queryMixRate_ci": [
+      0.055,
+      0.261
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 5,
+     "mixedCards": 7,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 해석 실패(기간 없음)": 6,
+      "필터 누락(해석 기간과 안 겹침, 확인 필요)": 1
+     },
+     "mixedByQuery": {
+      "p204": 1,
+      "p212": 1,
+      "p220": 2,
+      "p504": 1,
+      "p520": 2
+     }
+    }
+   },
+   "K1": {
+    "recall@3": 0.0,
+    "reject": 1.0,
+    "nResults": 30,
+    "nReject": 10,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 0,
+     "cardMixRate": null,
+     "queryMixRate": 0.0,
+     "queryMixRate_ci": [
+      -0.0,
+      0.088
+     ],
+     "boundaryCardRate": null,
+     "mixedQueries": 0,
+     "mixedCards": 0,
+     "boundaryCards": 0,
+     "causes": {},
+     "mixedByQuery": {}
+    }
+   },
+   "K2": {
+    "recall@3": 0.689,
+    "reject": 0.3,
+    "nResults": 30,
+    "nReject": 10,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 83,
+     "cardMixRate": 0.687,
+     "queryMixRate": 0.775,
+     "queryMixRate_ci": [
+      0.625,
+      0.877
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 31,
+     "mixedCards": 57,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 미사용(벡터 유사·키워드 일치)": 57
+     },
+     "mixedByQuery": {
+      "p201": 2,
+      "p202": 1,
+      "p203": 1,
+      "p204": 1,
+      "p205": 2,
+      "p206": 2,
+      "p207": 2,
+      "p208": 2,
+      "p209": 2,
+      "p210": 2,
+      "p211": 2,
+      "p212": 2,
+      "p217": 3,
+      "p220": 3,
+      "p501": 2,
+      "p502": 1,
+      "p503": 1,
+      "p504": 2,
+      "p505": 2,
+      "p506": 2,
+      "p507": 2,
+      "p508": 2,
+      "p509": 1,
+      "p510": 2,
+      "p511": 2,
+      "p512": 2,
+      "p513": 1,
+      "p515": 1,
+      "p517": 3,
+      "p519": 1,
+      "p520": 3
+     }
+    }
+   }
+  },
+  "260": {
+   "V@served": {
+    "recall@3": 0.635,
+    "reject": 0.75,
+    "nResults": 32,
+    "nReject": 8,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 51,
+     "cardMixRate": 0.255,
+     "queryMixRate": 0.15,
+     "queryMixRate_ci": [
+      0.071,
+      0.291
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 6,
+     "mixedCards": 13,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 해석 실패(기간 없음)": 10,
+      "해석 기간 미수집": 3
+     },
+     "mixedByQuery": {
+      "p304": 2,
+      "p312": 1,
+      "p320": 3,
+      "p604": 2,
+      "p612": 2,
+      "p620": 3
+     }
+    }
+   },
+   "K1": {
+    "recall@3": 0.0,
+    "reject": 1.0,
+    "nResults": 32,
+    "nReject": 8,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 0,
+     "cardMixRate": null,
+     "queryMixRate": 0.0,
+     "queryMixRate_ci": [
+      -0.0,
+      0.088
+     ],
+     "boundaryCardRate": null,
+     "mixedQueries": 0,
+     "mixedCards": 0,
+     "boundaryCards": 0,
+     "causes": {},
+     "mixedByQuery": {}
+    }
+   },
+   "K2": {
+    "recall@3": 0.677,
+    "reject": 0.375,
+    "nResults": 32,
+    "nReject": 8,
+    "mixing": {
+     "nQueries": 40,
+     "cards": 87,
+     "cardMixRate": 0.713,
+     "queryMixRate": 0.775,
+     "queryMixRate_ci": [
+      0.625,
+      0.877
+     ],
+     "boundaryCardRate": 0.0,
+     "mixedQueries": 31,
+     "mixedCards": 62,
+     "boundaryCards": 0,
+     "causes": {
+      "기간 미사용(벡터 유사·키워드 일치)": 62
+     },
+     "mixedByQuery": {
+      "p301": 2,
+      "p302": 1,
+      "p303": 2,
+      "p304": 2,
+      "p305": 2,
+      "p306": 2,
+      "p307": 2,
+      "p308": 2,
+      "p309": 2,
+      "p310": 2,
+      "p311": 2,
+      "p312": 2,
+      "p317": 3,
+      "p320": 3,
+      "p601": 2,
+      "p602": 2,
+      "p603": 2,
+      "p604": 2,
+      "p605": 2,
+      "p606": 2,
+      "p607": 2,
+      "p608": 2,
+      "p609": 2,
+      "p610": 2,
+      "p611": 2,
+      "p612": 2,
+      "p613": 1,
+      "p615": 1,
+      "p617": 3,
+      "p619": 1,
+      "p620": 3
+     }
+    }
+   }
+  }
+ },
+ "periodAccuracy": {
+  "n": 114,
+  "exact": 0.693,
+  "none": 0.307
+ }
+}
