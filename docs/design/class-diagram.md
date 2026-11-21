@@ -1037,7 +1037,7 @@ classDiagram
     +createOrder(idempotencyKey, request) Order
     +confirm(idempotencyKey, request) ConfirmResult
     +status(orderId) PaymentStatus
-    +history() Page
+    +history(page, size) List
     +requestRefund(paymentId, idempotencyKey, request) RefundRequest
   }
   class SubscriptionController {
@@ -2108,7 +2108,7 @@ classDiagram
 - `RecordRepository.findEligible`: 집계 대상 시도(P08: 기간 안 답변 제출, 미완료 포함, 조회 종료일까지 모두 처리 실패인 시도·삭제 학생 제외)와 시도별 사실(완료, 최초 답변 전 생각 열기 열람, 되묻기 받음, 보완 답변, 모두 조회 종료일까지)을 한 번 읽고 summary·thinkingTypes·attempts가 같이 씀. `isRecorded`는 기간과 무관한 상세용, `stats`는 운영 집계
 - `RecordService.attempts`·`attempt`: 학생 시도 상세(`AttemptService.get`)를 그대로 쓰고 응답에서 초안(메모 포함)만 뺌(P05). 목록은 답변·생각 열기 열람을 조회 종료일까지로 자르고 돌아보기는 기간 안에 쓴 것만 남김. 시도 항목에 `completedAt`·`hintUsages`·돌아보기 `createdAt`을 붙임(report #51). 상세는 이력을 자르지 않음(core #40) 그래서 `findAttemptsWithTimeline`은 두지 않음
 - `RecordService.home`·`thinkingActivities` (core #40 요청): `home`은 이어할 시도(`findResume`: 진행 중 시도 중 시작·답변 제출·초안 저장 중 가장 늦은 시각이 가장 최근, 기간과 무관, 초안은 저장 시각만 읽음)를 기록 상세와 같은 모양으로, 미션은 `MissionService.listForStudent` 그대로. `thinkingActivities`는 `findEligible` 대상의 유형·미션 이름과 기간 안에 쓴 돌아보기. 둘 다 `state`는 기간 안 집계 대상 시도 수
-- `RecordService.changes`: 보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변. 원문은 `plain_text`, 글자·문장·까닭을 잇는 말 수는 학생이 쓴 칸 내용으로 셈(칸 이름 제외). 까닭을 잇는 말 목록(`TextCounts.REASON_CONNECTIVES`)은 report와 확정
+- `RecordService.changes`: 보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변. 원문은 `plain_text`, 글자·문장·까닭을 잇는 말 수는 학생이 쓴 칸 내용으로 셈(칸 이름 제외). 까닭을 잇는 말 목록(`TextCounts.REASON_CONNECTIVES`)은 report와 확정, report·ai와 공통 픽스처(`contracts/examples/p08-metrics`)로 일치 검사(#836, architecture 1.1)
 - `StudentDeletedConsumer`: 봉투 검증(`specversion` 1.0, `id` UUID, type `student.deleted`·source `core-service`·dataschema `student.deleted.v1`, `subject` = `data.studentId`, 시간대 있는 `time`, data는 스키마 그대로). 형식 오류는 재시도 없이 DLQ, 나머지 실패는 `RetryingConsumer`로 지연 재시도
 - `StudentDeletionService.delete`: `deletionRequestId`는 완료 보고 경로에 필요하고 learning DB에 없어 이벤트에서 받음(#128). 한 트랜잭션에서 `processed_event`에 없으면 삭제·`deleted_student`·`processed_event` 저장, 있으면 건너뜀. 커밋 뒤 트랜잭션 밖에서 `CoreClient.reportDeletionCompleted`(SYSTEM + 대상 학생 범위). 이미 처리한 이벤트도 보고는 다시 보냄(core가 첫 보고를 놓쳤을 수 있음, report와 같음). 보고 실패 시 예외 → 지연 재시도(1·5·15분) 때 삭제 없이 보고만 (P09, 아키텍처 1.6)
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
