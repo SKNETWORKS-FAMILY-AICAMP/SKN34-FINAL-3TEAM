@@ -27,6 +27,8 @@ from app.generation.records import (
 
 # #51 owner confirmed this server list on 2026-10-27; kept in one place.
 REASON_CONNECTIVES = ("왜냐하면", "때문", "그래서", "따라서")
+# P08: below five, counts instead of ratios. Shared fixture: contracts/examples/p08-metrics.
+MIN_SAMPLE = 5
 INCLUSION_RULE = (
     "기간 내 답변 제출이 있는 시도(미완료 포함), 처리 실패만 있는 시도·삭제 기록 제외. "
     "최초 답변과 조회 종료일 이전 마지막 답변을 비교하며, 도움은 최초 답변 전 열람 기준."
@@ -36,7 +38,7 @@ INCLUSION_RULE = (
 def sample_state(count: int) -> ReportState:
     if count == 0:
         return ReportState.NO_RECORD
-    return ReportState.INSUFFICIENT_SAMPLE if count < 5 else ReportState.OK
+    return ReportState.INSUFFICIENT_SAMPLE if count < MIN_SAMPLE else ReportState.OK
 
 
 def text_counts(text: str) -> dict[str, int]:
@@ -314,7 +316,7 @@ class MetricsCalculator:
                     "numerator": numerator,
                     "denominator": total,
                     "formula": formula,
-                    "value": numerator / total if ratio and total >= 5 else None,
+                    "value": numerator / total if ratio and total >= MIN_SAMPLE else None,
                     "period": period.payload(),
                     "sourceType": "RECORD",
                     "state": state,

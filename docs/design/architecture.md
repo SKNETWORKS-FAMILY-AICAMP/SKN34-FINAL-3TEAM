@@ -25,6 +25,7 @@
 - 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
 - scoring 분리 근거: PyTorch 이미지·메모리 요구가 ai-service와 달라 배포·확장 단위 분리, 모델 미활성 시 ai-service 영향 없음
 - 리포트 Gemma 설명 엔드포인트(FN-RPT-09, #742·#746): 업무 서비스가 아니라 ai만 호출하는 같은 계정·VPC의 SageMaker 실시간 엔드포인트(GPU `ml.g6e.xlarge`, vLLM SageMaker DLC). 상태·DB 없음, S3의 승인된 AWQ 기반 모델에 LoRA 어댑터를 붙여 추론한다. 평소 0대이고 주간 리포트 배치 전 예약 확장으로 1대를 켜며(일 23:30 ~ 월 02:00), ai는 LoRA 인퍼런스 컴포넌트를 `InvokeEndpoint`로 부른다(4.4). 학생 글은 AWS 밖으로 나가지 않음
+- P08 수치 규칙 중복 허용(#836): 표의 "수치·전후 변화 코드 계산"은 report 책임이지만, 같은 규칙(글자·문장·까닭을 잇는 말 수, 표본 5 미만)을 learning(대시보드·전후 변화, `record/domain/TextCounts`·`Metric`)·report(리포트, `generation/metrics.py`)·ai(분석 에이전트 표본 규칙, `analysis_agent/calculators.py`)가 각자 계산한다(서비스 간 계산 호출을 늘리지 않기 위함). 일치는 공통 픽스처 `contracts/examples/p08-metrics/cases.json`을 세 서비스 테스트가 함께 읽어 보장하고, 규칙을 바꿀 때는 P08 → 픽스처 → 세 구현을 함께 고친다
 - 다른 서비스 DB 직접 접근 금지, API 또는 이벤트로만 연동 (참고 레포 원칙 동일)
 - DB 권한으로 강제(#230): 인스턴스 1개(로컬 PostgreSQL·운영 RDS)에 DB별 migrate(DDL)·app(DML) 계정을 두고 각 DB의 PUBLIC CONNECT 회수 → 다른 서비스 DB 접속 불가. 로컬·운영 모두 `charts/platform-data/files/postgres/rds-bootstrap.sql`로 생성, 관리자 계정은 초기화 전용 ([결정](../report/db-dev-guide.md#8-서비스별-db-계정-230))
 - 권한 기준: 학부모-자녀 연결은 core만 소유. core가 요청마다 권한 확인 후 내부 호출에 사용자 컨텍스트·허용 학생 범위 전달 (2.3)
