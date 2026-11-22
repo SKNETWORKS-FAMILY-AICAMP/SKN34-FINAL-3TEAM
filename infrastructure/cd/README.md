@@ -25,7 +25,7 @@
 | `.github/CODEOWNERS` | images 폴더 승인자(김동섭·김태윤) |
 | `scripts/verify_cd_deployment.py` | 배포 후 로그인 → 학습 제출 → 리포트 조회 |
 | `scripts/cd_record.py` | (비상용 Helm 경로) 수행자·승인·시점·버전·결과 이력 |
-| `infrastructure/gitops/environments/prod/redeploy-app.ps1` | release 하나 dry-run/적용. `-ImageDigest`로 저장소 values를 바꾸지 않고 digest만 교체. `-Migration`이면 앱 대신 `migrations/<release>.json`의 Job만 다룬다(아래 DB migration 절). `-AllowInstall`이면 release가 없을 때 처음 설치한다(아래 빈 클러스터 첫 배포 절) |
+| `infrastructure/gitops/environments/prod/redeploy-app.ps1` | release 하나 dry-run/적용. 설정 파일 `<release>.json` + `images/<release>.json`을 함께 넘기고 앱 release에는 `migration.enabled=false`. `-ImageDigest`·`-Revision`은 images 파일의 임시 사본만 바꾼다. `-Migration`이면 앱 대신 migration Job만 다룬다(아래 DB migration 절). `-AllowInstall`이면 release가 없을 때 처음 설치한다(아래 빈 클러스터 첫 배포 절) |
 | `infrastructure/gitops/migrations/{core,learning}.Dockerfile` | core·learning Flyway migration 이미지. report는 앱 이미지의 Alembic을 쓴다 |
 
 ## 1회 설정
@@ -68,13 +68,13 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 
 ### B2. digest PR 저장소 설정 (#858, 관리자 손 작업, 11/24 예정)
 
-**아직 적용하지 않았다.** 저장소 관리자 권한이 필요해 이 PR에서는 바꾸지 않고 절차만 적는다. 11/24 develop → main 릴리스(#623)가 병합된 **뒤에** 적용한다(먼저 켜면 릴리스 PR에도 승인 규칙이 걸린다. 아래 표 참고). 화면 이름은 2026-11 GitHub 기준이다.
+**아직 적용하지 않았다**(저장소 관리자 권한 필요). 11/24 develop → main 릴리스(#623)가 병합된 **뒤에** 적용한다(먼저 켜면 릴리스 PR에도 승인 규칙이 걸린다. 아래 표 참고). 화면 이름은 2026-11 GitHub 기준이다.
 
 | 순서 | 위치 | 값 | 이유 |
 |---|---|---|---|
 | 1 | Settings → Actions → General → Workflow permissions | "Allow GitHub Actions to create and approve pull requests" 켬. 기본 권한(Read repository contents)은 그대로 | `GITHUB_TOKEN`으로 digest PR을 만든다. 이 workflow는 PR을 승인하지 않는다(승인은 사람) |
 | 2 | Settings → Branches → Add branch ruleset(또는 classic branch protection) → 대상 `main` | Require a pull request before merging: 켬 / Required approvals: **1** / Require review from Code Owners: 켬 / Dismiss stale approvals when new commits are pushed: 켬 / Require status checks: 끔(아래) / Block force pushes·Restrict deletions: 켬 / Bypass list: 비움(관리자 우회 없음) | digest PR 승인 = 배포 승인. 승인자 수는 #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같다. 바뀌면 이 값만 고친다 |
-| 3 | 저장소 파일 `.github/CODEOWNERS` | `/infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001` (이 PR에 포함, 11/24 릴리스로 main에 들어감) | 2의 Code Owners 설정이 있어야 강제된다 |
+| 3 | 저장소 파일 `.github/CODEOWNERS` | `/infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001` (develop에 있음, 11/24 릴리스로 main에 들어감) | 2의 Code Owners 설정이 있어야 강제된다 |
 | 4 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 아래 A 계정 확인 1단계의 digest PR에 "Review required"·Code owner 표시가 뜨는지 | |
 
 - status check를 필수로 두지 않는 이유: `ci-gitops` 등은 경로 필터가 있어 develop → main 릴리스 PR에 항상 돌지 않는다. 필수로 걸면 경로가 맞지 않는 PR이 영원히 대기한다. digest PR에는 workflow가 `ci-gitops`를 `workflow_dispatch`로 실행하고, 승인자가 그 결과(Actions 목록, PR 커밋 check)를 보고 승인한다.
@@ -172,7 +172,7 @@ A 재가동(11/25)에서 Argo CD 설치·플랫폼·앱(#855~#857)이 Synced/Hea
 | 5 | `verify_cd_deployment.py` → PR 댓글 | 6단계 ok |
 | 6 | digest PR Revert → 승인·병합 | Argo CD가 이전 digest로 Synced/Healthy, 경로 확인 다시 ok. 확인 뒤 같은 계획으로 다시 실행해 최신 digest로 돌려놓는다 |
 
-- 대체안(에픽 #859): 11/24까지 이 PR이 준비되지 않으면 A에서는 `images/<svc>.json`을 손으로 PR해 동기화만 확인하고, digest PR 자동 생성은 B에서 처음 한다. 11/24 저장소 설정(B2)만 늦어지면 1·2·4·5·6은 그대로 하고 3은 승인 없이 병합되는 것만 기록한다.
+- 대체안(에픽 #859): 11/24 저장소 설정(B2)이 늦어지면 1·2·4·5·6은 그대로 하고 3은 승인 없이 병합되는 것만 기록한다.
 - 막히면: 비상용 Helm 경로(아래)로 배포하고 Argo CD로 넘긴다.
 
 ## 비상용 Helm 경로 (helm-emergency)
@@ -209,7 +209,7 @@ gh workflow run cd-release.yml --ref main -f delivery=helm-emergency -f plan="$(
 | 대상 | 계획 `services` 중 DB를 가진 서비스만: core-service → release `core-service`, learning-service → `learning-service`, report-service → `report-api`. ai·scoring만 배포하면 migration 없음 |
 | 이미지 | 앱과 같은 태그 `main-<SHA 12자리>`. core·learning은 `sagomungchi/{core,learning}-migrate`에 `infrastructure/gitops/migrations/*.Dockerfile`로 빌드, 태그가 이미 있으면 digest만 읽어 재사용(ECR 태그 불변). report는 같은 배포의 `report-service` 앱 이미지(Alembic 포함)를 그대로 쓴다 |
 | 게이트 | `cd_release.py --migrations`가 확인: 대상 서비스와 키가 일치, 저장소 이름(`core-migrate`·`learning-migrate`·`report-service`)과 `@sha256` digest, report는 앱 이미지와 동일. rollback 계획에 migration이 있으면 거부 |
-| values | 저장소의 `migrations/<release>.json`은 그대로 두고 digest와 `migration.revision`(=`main-<SHA 12자리>`)만 바꾼 임시 사본을 쓴다. Job 이름은 `<release>-migrate-main-<SHA 12자리>`(11/4·11/5 수동 Job과 같은 규칙) |
+| values | 설정 파일과 `images/<release>.json`(#857)을 쓰고, images 파일은 그대로 두고 `migration.image.digest`와 `migration.revision`(=`main-<SHA 12자리>`)만 바꾼 임시 사본을 쓴다. Job 이름은 `<release>-migrate-main-<SHA 12자리>`(11/4·11/5 수동 Job과 같은 규칙) |
 | 순서 | 승인 → 게이트 → migration server dry-run(core → learning → report) → 앱 server dry-run → migration 적용(core → learning → report, 하나씩 완료 확인) → 앱 적용. 각자 자기 DB라 서로 의존하지 않지만 실패 위치를 분명히 하려고 하나씩 한다 |
 | 적용 | NetworkPolicy(`<release>-migration`, DNS·RDS 5432) 다음 Job을 `kubectl apply -n app`. ESO Ready 확인 후. 5초마다 Job 조건을 읽어 `Complete`면 다음, `Failed`·660초 초과면 중단(chart: `backoffLimit: 1`, `activeDeadlineSeconds: 600`) |
 | 재실행 | 같은 SHA로 다시 실행하면 이미 `Complete`인 Job은 건너뛴다(`already-complete`). 이미 `Failed`인 Job이 있으면 dry-run부터 멈춘다(Job은 고칠 수 없으므로 원인을 고친 새 main SHA로 배포) |

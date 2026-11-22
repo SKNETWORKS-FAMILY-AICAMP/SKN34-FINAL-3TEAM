@@ -596,7 +596,7 @@ AWS에서 남은 확인(#601 재가동 뒤 B 계정)
 | 관리자 신고 | 6건: 학부모 정정 요청(`WRONG_JUDGMENT`, 대상 `JUDGMENT`) 4·학생 커뮤니티 신고(`COMMUNITY_POST`) 2. 정정 요청 2건 처리 | 신고 API, 관리자 처리 | 9 |
 | 관리자 문의 | 8건(학부모 6·학생 2), 4건 답변 | 문의 API, 관리자 답변 | 9 |
 | 관리자 공지 | 3건(학생·학부모·관리자 대상 각 1) | 관리자 API | 9 |
-| 관리자 표현 검토 큐 | 2건(`COMMUNITY_REPORT`, 위 커뮤니티 신고에서 자동) | #728 화면이 12/7 전에 머지될 때만 보임 | 9 |
+| 관리자 표현 검토 큐 | 2건(`COMMUNITY_REPORT`, 위 커뮤니티 신고에서 자동) | 관리자 표현 검토 화면(#728) | 9 |
 | 리텐션 지표 | 주별 회차 완료·액자 걸기·포인트 사용·추억 검색 | `-v from=2026-11-09 -v to=2026-12-07 -v include_demo=1` | 10 |
 
 - 커뮤니티 신고는 처리 전까지 그 공유물을 바로 숨긴다. 시연 학생 화면에서 글이 빠지지 않게 G4·G6 공유물만 신고함
@@ -615,51 +615,12 @@ AWS에서 남은 확인(#601 재가동 뒤 B 계정)
 | 시험 구독 표시 | `product_snapshot.demoAccount = '624'` | `'854'` |
 | 비밀번호·PIN | 저장소 밖 | 저장소 밖 별도 파일 |
 
-재사용할 것과 #808에서 더할 것
-
-| 도구 | 단계 | 더할 것 |
-|---|---|---|
-| `evaluation/load/prepare_accounts.py` | 1 | 가족 목록 입력(로그인 ID·이름·자녀 별명·학년), 자녀별 `COMMUNITY` 동의. 지금은 별명 `부하N`·학년 하나만 됨. 가입 제한(IP당 10분 5회) 때문에 30가족은 `--wait`로 약 60분 |
-| `infrastructure/aws/demo_account_data.py` | 3, 5~10 | 학부모 여러 명(비밀 파일), `solve`에 열린 요일 앞에서부터 N개만 푸는 옵션, 학생별로 다른 답변(지금 `topic()`은 주·요일로만 골라 같은 주 학생 답변이 모두 같음), 공개 켬(`PUT /students/me/community-settings`), 반응, 소품 구매·배치, 분석 대화, 신고·문의·공지 |
-| `prepare-demo-account-students.sql` 방식 | 2 | 새 SQL: `dm854p` 학부모 자녀 중 가족 목록의 프리미엄 12명, `demoAccount = '854'`, 시작일이 W1(11/9) 이전 |
-| `demo-clock.Dockerfile` | 4~8 | 그대로 |
-| `audit-demo-data.sql` | 10 | `dummy854_*` 항목(무리·학년별 학생 수, 주별 시도·완료, 공유물·반응, 구독, 주별 리포트, 신고·문의 상태) |
-| `evaluation/load/llm_usage_window.sql` | 단계마다 | 그대로(비용 확인) |
-| `evaluation/load/llm-stub.k8s.yaml` | kind 리허설 | 그대로(판정 LLM 대역) |
-
 - 답변 문구는 자체 작성(NFR-SEC-07). 학생·주·요일마다 달라야 친구 생각과 추억 검색이 구분됨. 실행 전에 문구를 미리 검수함(결정 2)
 - 더미 계정은 `AUTH_NEW_ACCOUNT_DEMO=true`라 모두 `is_demo`. core 관리자 집계·커뮤니티는 `is_demo`로 거르지 않아 그대로 보임
-
-실행 순서(B 기준. kind 리허설은 가족 6개·llm-stub로 같은 순서)
-
-| 단계 | 시각(KST) | 내용 |
-|---|---|---|
-| 0 | 실행 전 | G3~G6 × 11/9·11/16·11/23·11/30 테마 16개 게시 확인(`themes --grades G3,G4,G5,G6`). 테마·미션은 더미 스크립트가 만들지 않고 LLM·RAG 생성 담당자가 게시(#890, 2026-11-22 결정). 없으면 멈춤. 12/7 주 테마도 미리 게시(실제 12/2 03:00 자동 초안 방지). 판매 중 가구·소품(`/admin/look-items?status=ON_SALE`, 기본 50개씩). #728 머지 여부 |
-| 1 | 실제 시각 | 30가족 가입·동의·자녀(`COMMUNITY` 포함)·기기·PIN |
-| 2 | 실제 시각 | 시험 구독 SQL(프리미엄 12명) |
-| 3 | 실제 시각, 첫 풀이 전 | 원문 공개(`parentSharingEnabled`) 36명, 공개 켬 20명+시연 2명. 공유물은 돌아보기 저장 때만 생겨 나중에 켜면 앞 풀이는 공유되지 않음 |
-| 4 | 시계 시작 전 | Argo CD `prod-core-service`·`prod-learning-service` 자동 동기화 끔(B만), core·learning 시험 시계 이미지, learning `APP_THEMEDRAFT_ENABLED=false` |
-| 5 | W1: 수 11/11 19:00 → 토 11/14 14:00 → 토 23:56 → 일 23:56 | 수: 5문제 무리 월~수. 토: 나머지 풀이·정답 고르기 → 반응. 토 23:56 → 일요일 00:00 일일 리포트. 일 23:56 → 월요일 00:00 일일·주간 리포트 |
-| 6 | W2: 11/18 → 11/21 → 11/21 23:56 → 11/22 23:56 | 5와 같음. 토 14:00에 #624 시연 학생 `solve`, 반응은 그 뒤 |
-| 7 | W3: 11/25 → 11/28 → 11/28 23:56 → 11/29 23:56 | 6과 같음 |
-| 8 | W3 끝 | 시계 되돌림, 자동 동기화 다시 켬, Pod 시각이 실제 시각이고 이미지·환경 변수가 배포 값과 같은지 |
-| 9 | W4 실제: 수 12/2 19:00·토 12/5 14:00, 12/5~12/6 | 풀이(시연 학생은 9.7 순서 5), 반응, 더미 꾸미기·액자·소품, 분석 대화, 신고·문의. 12/6 관리자 문의 답변·정정 처리·공지, 토스 테스트 결제(되면) |
-| 10 | 12/7 00:00 뒤 | #624 `decorate`·`verify`, 세 DB `audit-demo-data.sql`, `llm_usage_window.sql`, 화면 확인 |
-
-다시 실행 규칙
-- 계정·자녀·동의·구독은 있으면 건너뜀. 같은 명령을 다시 돌려도 바뀌지 않아야 함
-- 풀이는 끝난 요일을 건너뜀. 정지점 중간에 실패하면 같은 정지점에서 다시 돌린 뒤에만 다음 정지점으로 감
-- 주를 넘긴 뒤 빠진 데이터는 채우지 않고 기록함("이번 주"가 서버 시계 기준이라 지난 주로 돌아가려면 시계를 다시 옮겨야 함)
-- 멱등이 아닌 생성(신고·문의·공지·분석 대화·소품 구매)은 기존 목록을 확인한 뒤 건너뜀. 반응은 API가 멱등
-
-시계 주의
-- 정지점은 수요일 03:00을 넘지 않게 고름(테마 초안 자동 생성, 그림·영상 포함 1개 $4~5). 시계 동안 초안 생성도 끔
-- 시계를 옮길 때마다 Pod가 다시 뜨고, 그 사이 자정은 지나가지 않음. 수·목·금 일일 리포트는 W1~W3에 생기지 않음
-- 리포트 ShedLock은 DB(실제) 시각 기준이고 최소 1분 잠금. 경계 통과 사이 실제 간격을 1분 넘게 둠
-- 시계 동안 S3 서명 URL이 깨짐. 화면 확인은 시계를 되돌린 뒤
-- B에서 시계가 W3 끝(가짜 11/30 00:00) 리포트를 만든 뒤 실제 11/30 00:00 정기 실행이 같은 기간을 다시 만들지 않는지 kind 리허설에서 확인
-- kind 리허설(11/26)은 실제 날짜보다 미래 기록이 남음(9.7.2와 같음)
-- W1~W3 가짜 월요일 경계에는 리포트 Gemma(SageMaker)가 0대라 더미 리포트는 설명 없이 발행됨(시연에 나오지 않음). 시연 자녀 W2·W3도 같음
+- 도구·명령·시계 정지점·다시 실행 규칙은 [AWS README 런북](../../infrastructure/aws/README.md#전체-서비스-더미-데이터-808). B 기준이고 kind 리허설은 가족 6개·llm-stub로 같은 순서
+  - 단계: 0 테마(#890 담당자 게시, 없으면 멈춤)·판매 아이템 확인 → 1 가족 가입(실제 시각) → 2 시험 구독 SQL → 3 공개 켬(공유물은 돌아보기 저장 때만 생겨 첫 풀이 전) → 4 시계 켬(B는 Argo CD 자동 동기화 끔, 초안 생성 끔) → 5~7 W1~W3 정지점 → 8 시계 끔 → 9 W4 실제 시각 풀이·관리자 처리 → 10 12/7 확인
+  - 멱등이 아닌 생성(신고·문의·공지·분석 대화·소품 구매)은 기존 목록 확인 뒤 건너뜀. 주를 넘긴 뒤 빠진 데이터는 채우지 않음("이번 주"가 서버 시계 기준)
+- 시계로 생기는 차이: 정지점 사이 자정을 지나지 않아 수·목·금 일일 리포트는 W1~W3에 없음, W1~W3 리포트는 SageMaker 0대라 설명 없이 발행(시연 자녀 W2·W3 포함), kind 리허설(11/26)은 실제 날짜보다 미래 기록이 남음(9.7.2와 같음)
 
 #### 9.7.6.4 LLM 호출 수·비용 추정
 
@@ -688,19 +649,19 @@ AWS에서 남은 확인(#601 재가동 뒤 B 계정)
 | 커뮤니티 노출 | 시연 학생에게 더미 글이 보이게 함. G3·G5 더미 6명 이상 공개 켬, 더미 답변 문구 미리 검수 |
 | LLM 비용 상한 | OpenAI $5, SageMaker는 기존 12/7 창만(약 $0.5). 넘으면 멈추고 원인 확인 |
 | 결제 내역 | 시험 구독 SQL로 프리미엄. 토스 테스트 결제는 위젯이 동작할 때만 시연 학부모 1건·더미 2건을 손으로. 실패하면 결제 화면은 시연 대본에서 뺌 |
-| 표현 검토 큐 | 공유물 신고 숨김으로 데이터 생성. learning 쪽(#727)은 머지됨. 관리자 화면(#728)이 12/7 전에 머지될 때만 시연에 씀 |
+| 표현 검토 큐 | 공유물 신고 숨김으로 데이터 생성. 관리자 화면(#728)이 12/7 전에 머지되면 시연에 씀(2026-11-22 머지됨) |
 
 #### 9.7.6.6 구현 단위 (#808)
 
-| 단위 | 내용 | 기한 |
+| 단위 | 구현(#808) | 상태 |
 |---|---|---|
-| U1 가족 목록·계정 | 가족 목록 파일 형식(로그인 접두어·이름·별명·학년·무리·주별 문제 수·공개 여부), `prepare_accounts.py` 확장 또는 새 명령 | 11/25 |
-| U2 여러 학생 풀이 | `demo_account_data.py`: 열린 요일 N개·가족 목록 반복·학생별 답변, 공개 켬·반응·꾸미기(소품 포함)·분석 대화·신고·문의·공지 | 11/25 |
-| U3 구독 SQL·점검 | 더미 프리미엄 12명 시험 구독 SQL, `audit-demo-data.sql` `dummy854_*` | 11/25 |
-| U4 시계 실행 런북 | 정지점 목록, Argo CD 자동 동기화 끄기·되돌리기, 시계 동안 초안 끄기, `infrastructure/aws/README.md` 절 | 11/26 리허설 전 |
-| U5 실행 | 11/26 kind 리허설(가족 6개) → B W1~W3 → 12/1~12/6 W4·관리자 처리 → 12/7 확인, 결과를 이 절 아래 기록 | 12/7 |
+| U1 가족 목록·계정 | `infrastructure/aws/dummy854-families.json`(로그인 접두어·이름·별명·학년·무리·주별 문제 수·공개 여부), `evaluation/load/prepare_accounts.py --families` | 구현 |
+| U2 여러 학생 풀이 | `infrastructure/aws/dummy854_data.py`(`demo_account_data.py` 풀이 흐름 재사용, 열린 요일 N개·학생별 답변·공개 켬·반응·꾸미기·분석 대화·신고·문의·공지) | 구현 |
+| U3 구독 SQL·점검 | `add-dummy854-subscriptions.sql`, `audit-demo-data.sql` `dummy854_*` | 구현 |
+| U4 시계 실행 런북 | [AWS README](../../infrastructure/aws/README.md#전체-서비스-더미-데이터-808) | 구현 |
+| U5 실행 | 11/26 kind 리허설(가족 6개) → B W1~W3 → 12/1~12/6 W4·관리자 처리 → 12/7 확인, 결과를 이 절 아래 기록 | 12/7까지 |
 
-U1~U4 구현 위치(#808): 가족 목록 `infrastructure/aws/dummy854-families.json`, 계정 `evaluation/load/prepare_accounts.py --families`, 여러 학생 명령 `infrastructure/aws/dummy854_data.py`(`demo_account_data.py`의 풀이 흐름을 가져다 씀. 이 표의 `demo_account_data.py` 추가분은 이 파일로 둠), 구독 `add-dummy854-subscriptions.sql`, 점검 `audit-demo-data.sql` `dummy854_*`, 런북 [infrastructure/aws/README.md](../../infrastructure/aws/README.md#전체-서비스-더미-데이터-808). 구현 때 확인한 차이: 자녀 등록은 GUARDIAN 동의 1개만 받아 COMMUNITY 동의는 등록 뒤 별도 호출(`POST /me/consents`), 커뮤니티 공유물·반응 테이블은 learning DB, `payment`에는 샌드박스 표시 칸이 없어 테스트 거래 여부는 시연 표시별 결제 집계와 결제 키 설정으로 판단(#811 QA-03).
+구현 때 확인한 차이: 자녀 등록은 GUARDIAN 동의 1개만 받아 COMMUNITY 동의는 등록 뒤 별도 호출(`POST /me/consents`), 커뮤니티 공유물·반응 테이블은 learning DB, `payment`에는 샌드박스 표시 칸이 없어 테스트 거래 여부는 시연 표시별 결제 집계와 결제 키 설정으로 판단(#811 QA-03).
 
 ## 9.8 prod 테마 자산 버킷과 네임스페이스 기본 거부 준비 (#652·#657, 2026-11-16)
 
@@ -1626,7 +1587,7 @@ SageMaker는 0대에서 켜질 때마다 S3에서 모델을 다시 받는데, �
 | 5 | 콜드·LoRA 호출 1건: `copies 0 --wait` → `copies 1`(경합으로 실패하면 상태만 따라감, 9.17.4) → 기반·어댑터 IC 호출 각 1건 | 콜드 시간 기록, 어댑터 첫 호출 뒤 `adapter … check OK` |
 
 - 결과와 걸린 시간은 이 절 아래에 덧붙인다.
-- **B**: #809 B 런북(AWS README 13단계)에 같은 단계를 넣는다. 런북 파일 수정은 이번 범위가 아니다. 지금 런북의 "ECR 7개"는 이 변경으로 8개가 된다.
+- **B**: #809 B 런북(AWS README 13단계)에서 검사 이미지 사용 여부를 정한다(9.17.7). ECR은 8개(`demo-stack.json`).
 
 ### 9.17.7 B 계정 적용 절차
 
@@ -1729,7 +1690,7 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 - prune·selfHeal: 플랫폼 10개는 prune 끔·selfHeal 켬, finalizer 없음(앱 ApplicationSet은 prune 켬, #857). RabbitMQ·Redis PVC는 StatefulSet `volumeClaimTemplates`라 원래 Argo CD 추적 대상이 아니고, 관측 PVC 3개는 chart의 `helm.sh/resource-policy: keep`에 더해 prune 끔으로 보호한다. namespace 4개에는 `Prune=false,Delete=false`를 붙였다. NodePool을 지우면 Karpenter 노드가 정리되므로 이것도 prune하지 않는다. 대신 Git에서 지운 자원은 클러스터에 남으므로 손으로 지운다. selfHeal 때문에 손 변경(관측 0으로 축소 등)은 root app과 해당 Application의 자동 동기화를 먼저 끄고 한다.
 - 범위: platform-data·관측도 함께 옮겼다(기본안). 빠진 것: core Ingress(origin 헤더 실제 값이 Git 밖), 관측 Secret 2개, `app/rds-ca` ConfigMap(손으로). `karpenter-nodepool-explanation.json`·`sllm-server.json`은 #835에서 이미 지워져 대상이 없다.
 - 실패 재시도: 플랫폼은 `retry` 5회(30초부터 2배, 최대 5분). CRD 등록·webhook 기동 순간의 일시 오류를 넘기기 위함이다. platform-data 초기화 Job은 이름에 값 해시가 있어 같은 커밋 재시도에서 다시 돌지 않는다.
-- 문서 정정: `external-secret-resources.json`은 SecretStore 2개·ExternalSecret 14개다(prod README에는 "12개"로 남아 있었음). prod README를 고쳤고, B 런북 7단계 확인 열("ESO Ready 12개")은 #855가 같은 줄을 고치므로 그쪽에 넘겼다.
+- 문서 정정: `external-secret-resources.json`은 SecretStore 2개·ExternalSecret 14개(prod README·B 런북 7단계의 "12개"를 고침).
 
 확인(2026-11-20, AWS 실행 없음):
 - 외부 chart 3개를 prod 값으로 `helm template`(Helm 4.3.1): 객체 종류·webhook·CRD 크기 확인.
@@ -1788,7 +1749,7 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 - 저장소 설정(Actions PR 생성 허용, main 보호 규칙, Code Owners 리뷰)은 관리자 손 작업으로 11/24 develop → main 릴리스 뒤 적용한다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정). 2026-11-20 기준 적용하지 않았다.
 - 11/25 A 확인 순서: digest PR 생성 → ci-gitops → 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
 - 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push, `gh pr create --base main`, `gh workflow run ci-gitops.yml --ref <브랜치>` 호출까지.
-- 한계: digest PR 작성자가 봇이라 실행한 사람도 승인할 수 있다(Environment `prod`와 같음, 운영 규칙으로 다른 사람 승인 권장). `GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않는다. 실제 images 파일(#857)은 아직 develop에 없어 #857 병합 뒤 실제 파일로 시험을 다시 돌린다(`RealImagesFileTests`).
+- 한계: digest PR 작성자가 봇이라 실행한 사람도 승인할 수 있다(Environment `prod`와 같음, 운영 규칙으로 다른 사람 승인 권장). `GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않는다. #857 병합으로 생긴 실제 images 파일 6개는 `RealImagesFileTests`가 구조를 검사한다.
 
 ## 10. 근거 링크
 
