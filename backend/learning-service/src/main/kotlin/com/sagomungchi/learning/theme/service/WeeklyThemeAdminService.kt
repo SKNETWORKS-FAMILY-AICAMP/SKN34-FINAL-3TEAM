@@ -30,7 +30,7 @@ import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /**
- * 관리자 주간 테마. 학년별 편성·제출·게시를 직렬화하고, 최초 게시본과 요일 버전을 고정한다.
+ * 관리자 주간 테마. 학년별 편성·제출·게시를 직렬화하고, 게시 버전마다 요일별 미션과 기준표를 고정한다.
  * #438: 이야기·정답 구조·요일 칸은 수정 때 본문에 없으면 이전 버전에서 이어받고(ThemeCarryOver), 합친 결과의 정답 논리와
  * 생각 열기 위치를 저장 전에 검사한다(400)
  */
@@ -71,13 +71,19 @@ class WeeklyThemeAdminService(
         return get(id)
     }
 
-    /** 수정: 새 버전을 현재본으로. 잠긴 주는 409, 검토 중 수정은 DRAFT로 */
+    /** 새 편집본을 저장한다. 게시 중에는 기존 게시본과 편성을 유지한다. */
     @Transactional
-    fun update(themeId: UUID, author: UUID, content: ThemeContent): AdminWeeklyTheme {
-        val header = writableHeader(themeId, content.grade)
-        planner.requireOpen(content.grade, content.weekStart)
+    fun update(themeId: UUID, author: UUID, content: ThemeContent, expectedVersion: Int? = null): AdminWeeklyTheme {
+        val header = writableHeader(themeId, content.grade, expectedVersion)
+        val scheduleChanged = header.grade != content.grade || header.weekStart != content.weekStart
+        if (scheduleChanged) {
+            if (header.status == WeeklyThemeStatus.PUBLISHED) planner.locked()
+            planner.requireOpen(content.grade, content.weekStart)
+            if (planner.generationWeek(themeId) != null) {
+                throw BusinessException(HttpStatus.CONFLICT, "THEME_SCHEDULE_LOCKED", "채택한 테마의 학년과 적용 주는 변경할 수 없습니다.")
+            }
+        }
         val theme = entity(header)
-        theme.requireEditable()
         val merged = ThemeCarryOver.merge(repository.findContent(header, header.currentVersionId), content)
         requireMissions(merged)
         requireStory(merged)
@@ -88,8 +94,8 @@ class WeeklyThemeAdminService(
 
     /** 검토 요청: 현재본을 검토 요청 버전으로. 상태 전이가 안 되면 409 CONFLICT */
     @Transactional
-    fun requestReview(themeId: UUID): AdminWeeklyTheme {
-        val theme = entity(writableHeader(themeId))
+    fun requestReview(themeId: UUID, expectedVersion: Int? = null): AdminWeeklyTheme {
+        val theme = entity(writableHeader(themeId, expectedVersion = expectedVersion))
         theme.requestReview()
         repository.markReviewRequested(themeId, theme.status, now())
         return get(themeId)
@@ -101,14 +107,17 @@ class WeeklyThemeAdminService(
      */
     @Transactional
     fun publish(themeId: UUID, expectedVersion: Int? = null, expectedPlan: UUID? = null, checkPlan: Boolean = false): AdminWeeklyTheme {
-        val header = writableHeader(themeId)
-        if (expectedVersion != null && header.currentVersion != expectedVersion) planner.stale("검토한 테마 버전이 바뀌었습니다.")
+        val header = writableHeader(themeId, expectedVersion = expectedVersion)
         if (checkPlan) planner.requireOccupant(header.grade,header.weekStart,expectedPlan)
         val theme = entity(header)
         theme.requirePublishable()
         planner.lockMissions(header.currentVersionId)
-        val days = repository.findDays(header.currentVersionId).map { ThemeDayMission(ThemeDay.ofNumber(it.dayOfWeek), it.missionId) }
-        val missions = days.mapNotNull { day -> missionService.publishedView(day.missionId)?.let { day.missionId to it } }.toMap()
+        val dayRows = repository.findDays(header.currentVersionId)
+        val days = dayRows.map { ThemeDayMission(ThemeDay.ofNumber(it.dayOfWeek), it.missionId) }
+        val missions = dayRows.mapNotNull { day ->
+            val published = missionService.publishedView(day.missionId) ?: return@mapNotNull null
+            day.missionId to (day.missionVersionId?.let(missionService::getVersion) ?: published)
+        }.toMap()
         theme.publish(ThemePublishCheck.errors(header.grade, days, missions,
             repository.existsOtherPublished(themeId, header.grade, header.weekStart)))
         try {
@@ -120,12 +129,17 @@ class WeeklyThemeAdminService(
         return get(themeId)
     }
 
-    /** 이전 클라이언트의 중단 요청도 최종 게시를 되돌릴 수 없다. */
+    /** 제공을 중단해도 게시 버전은 보관한다. 다시 제공하려면 현재본을 다시 검토 요청해야 한다. */
     @Transactional
-    fun unpublish(themeId: UUID): AdminWeeklyTheme {
-        val h = header(themeId)
-        if (h.status == WeeklyThemeStatus.PUBLISHED) planner.locked()
-        throw BusinessException(HttpStatus.CONFLICT, "CONFLICT", "게시 중이 아닌 테마입니다.")
+    fun unpublish(themeId: UUID, expectedPublishedVersion: Int? = null): AdminWeeklyTheme {
+        val header = writableHeader(themeId)
+        if (expectedPublishedVersion != null && header.publishedVersion != expectedPublishedVersion) {
+            planner.stale("학생에게 제공 중인 테마 버전이 바뀌었습니다.")
+        }
+        val theme = entity(header)
+        theme.unpublish()
+        repository.updateStatus(themeId, theme.status, now())
+        return get(themeId)
     }
 
     private fun requireMissions(content: ThemeContent) {
@@ -149,12 +163,13 @@ class WeeklyThemeAdminService(
     private fun header(themeId: UUID, lock: Boolean = false): ThemeHeader =
         repository.findHeader(themeId, lock) ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "주간 테마 없음")
 
-    private fun writableHeader(themeId: UUID, destination: ThemeGrade? = null): ThemeHeader {
+    private fun writableHeader(themeId: UUID, destination: ThemeGrade? = null, expectedVersion: Int? = null): ThemeHeader {
         val before = header(themeId)
         planner.lockGrades(before.grade, destination ?: before.grade)
         val current = header(themeId, lock = true)
         if (current.grade != before.grade || current.weekStart != before.weekStart) planner.stale("테마의 학년 또는 주차가 바뀌었습니다.")
-        planner.requireOpen(current.grade,current.weekStart)
+        if (current.status != WeeklyThemeStatus.PUBLISHED) planner.requireOpen(current.grade, current.weekStart)
+        if (expectedVersion != null && current.currentVersion != expectedVersion) planner.stale("테마의 편집 버전이 바뀌었습니다.")
         return current
     }
 
@@ -162,8 +177,7 @@ class WeeklyThemeAdminService(
         WeeklyTheme(h.id, h.status, h.grade, h.weekStart, h.currentVersion, h.publishedVersion, h.reviewVersion)
 
     private fun view(h: ThemeHeader): AdminWeeklyTheme {
-        val viewVersionId = if (h.status == WeeklyThemeStatus.PUBLISHED) checkNotNull(h.publishedVersionId) else h.currentVersionId
-        val version = repository.findVersion(viewVersionId)
+        val version = repository.findVersion(h.currentVersionId)
         val story = version.story
         return AdminWeeklyTheme(
             themeId = h.id,
@@ -175,7 +189,7 @@ class WeeklyThemeAdminService(
             reviewRequested = entity(h).reviewRequested,
             title = version.title,
             intro = version.intro,
-            days = repository.findDays(viewVersionId).map {
+            days = repository.findDays(h.currentVersionId).map {
                 AdminThemeDay(ThemeDay.ofNumber(it.dayOfWeek), it.missionId, it.clue, it.rulesOut, it.dialogue, it.hintSpots, it.videoUri,
                     videoUrl = assetUrls.url(it.videoUri), sceneImageUrl = assetUrls.url(it.sceneUri), clueFeature = it.clueFeature,
                     title = it.title, sceneMotion = it.sceneMotion)

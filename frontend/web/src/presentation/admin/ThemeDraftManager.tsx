@@ -217,13 +217,15 @@ function ThemeDraftDetail({ draftId, params, change, leave, choose, requestedNot
     <div className="tw-decisions"><div><strong>{d.status==='DISCARDED'?'버림 이력':d.weekLocked?'게시 확정':'초안 검수'}</strong>
       <p>{d.adoptionWeekLocked && !d.weekLocked?'생성 주의 게시가 확정됐습니다. 다른 주에 편성하면 채택할 수 있습니다.':d.plannedWeek?'채택하면 '+d.plannedWeek+' 주차의 테마가 만들어집니다.':context}</p></div>
       <div className="ws-actions">
-        {allowed.adopt && !d.weekLocked && !d.adoptionWeekLocked && <button className="cj-primary" disabled={blocked||pendingChild} onClick={()=>setConfirm({action:'adopt',plannedWeek:d.plannedWeek})}>채택해서 테마 만들기</button>}
+        {allowed.adopt && !d.weekLocked && !d.adoptionWeekLocked && <button className="cj-primary" disabled={blocked||pendingChild} onClick={()=>setConfirm({action:'adopt',plannedWeek:d.plannedWeek ?? null})}>채택해서 테마 만들기</button>}
         {allowed.regenerate && !d.weekLocked && <button disabled={blocked||pendingChild} onClick={()=>setConfirm({action:'regenerate'})}>{d.status==='DISCARDED'?'이 초안으로 새 초안 생성':'다시 생성'}</button>}
         {allowed.discard && !d.weekLocked && <button className="ad-danger" disabled={blocked} onClick={()=>setConfirm({action:'discard',plannedWeek:d.plannedWeek})}>버리기</button>}
       </div></div>
     {confirm && <Modal title={actionText+' 확인'} onClose={()=>{if(!act.isPending)setConfirm(null)}}>
-      <p><strong>{theme?.title || d.input.topic || '주간 테마 초안'}</strong> · {context}</p>
-      <p>{confirm.target?regenConfirmText(confirm.target):confirm.action==='adopt'?'선택한 장면과 미션 5개로 테마를 만듭니다. 학생 공개는 게시 관리에서 확정합니다.':
+      <p><strong>{theme?.title || d.input.topic || '주간 테마 초안'}</strong> · {confirm.action==='adopt'
+        ? [d.grade && THEME_GRADE_LABELS[d.grade], '적용 주 '+(confirm.plannedWeek ?? d.weekStart ?? '미확인')].filter(Boolean).join(' · ')
+        : context}</p>
+      <p>{confirm.target?regenConfirmText(confirm.target):confirm.action==='adopt'?'채택하면 이 학년과 적용 주가 고정됩니다. 선택한 장면과 미션 5개로 테마를 만들고, 학생 공개는 게시 관리에서 확정합니다.':
         confirm.action==='discard'?'버린 초안은 다시 채택할 수 없습니다. 장면과 미션은 버림 이력에서 볼 수 있습니다.':'같은 입력으로 별도의 새 초안을 요청합니다.'}</p>
       {confirm.action==='discard' && confirm.plannedWeek && <p>{confirm.plannedWeek} 주차의 편성에서 이 후보가 해제됩니다.</p>}
       <div className="ws-actions"><button disabled={act.isPending} onClick={()=>setConfirm(null)}>취소</button>

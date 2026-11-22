@@ -532,6 +532,18 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         assertEquals(400,draftCall("POST","/weekly-themes",access,"[]").status)
         assertTrue(requests.isEmpty())
     }
+    @Test fun `adopted theme schedule rejection is exposed through the update route`() {
+        val (_, access) = token("CONTENT")
+        missionStatus = 409
+        missionBody = """{"status":409,"code":"THEME_SCHEDULE_LOCKED","detail":"private memo"}"""
+        val response = draftCall("PUT", "/weekly-themes/${UUID.randomUUID()}", access, """{"weekStart":"2026-11-30"}""")
+        assertEquals(409, response.status)
+        val problem = json.readTree(response.contentAsByteArray)
+        assertEquals("THEME_SCHEDULE_LOCKED", problem["code"].asText())
+        assertEquals("채택한 테마의 학년과 적용 주는 변경할 수 없습니다.", problem["title"].asText())
+        assertFalse(response.contentAsString.contains("private memo"))
+    }
+
     @Test fun `weekly theme publish check failure keeps the learning code and hides supplier text`() {
         val (admin,access)=token("CONTENT");val theme=UUID.randomUUID()
         missionStatus=422;missionBody="""{"status":422,"code":"WEEKLY_THEME_PUBLISH_INCOMPLETE","detail":"student secret","errors":[{"code":"DAYS_INCOMPLETE","message":"secret"},{"code":"secret","message":"secret"}]}"""

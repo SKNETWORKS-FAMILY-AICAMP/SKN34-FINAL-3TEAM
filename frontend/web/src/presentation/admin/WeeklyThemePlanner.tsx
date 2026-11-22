@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { CalendarDays, LockKeyhole } from 'lucide-react'
+import { CalendarDays } from 'lucide-react'
 import { themePlannerApi, type PlannerDraft, type PlannerTheme, type PlanChange, type WeekSlot } from '../../data/admin/themePlannerApi.ts'
 import { useAdminMutation, useAdminQuery } from '../../data/admin/queries.ts'
 import { THEME_GRADE_LABELS, THEME_STATUS_LABELS, publishProblems, type ThemeGrade } from '../../domain/admin/retention.ts'
@@ -42,6 +42,8 @@ export function WeeklyThemePlanner({onOpen,onCreate}: {onOpen:(id:string)=>void;
   const [message,setMessage] = useState('')
   const change = useAdminMutation((action:Decision) => action.kind==='plan' ? themePlannerApi.apply(action.request).then(()=>undefined) : themePlannerApi.publish(action.theme,action.slot.planned?.draftId??null).then(()=>undefined))
   const candidates = board.data?.candidates ?? []
+  const destinationLocked = choosing && 'draft' in choosing &&
+    board.data?.weeks.some(slot => slot.weekStart === choosing.destination && slot.locked)
   const choosePeriod = (nextGrade:ThemeGrade, nextWeek:string) => {
     if (!isMonday(nextWeek)) return
     const next=new URLSearchParams(params)
@@ -91,8 +93,8 @@ export function WeeklyThemePlanner({onOpen,onCreate}: {onOpen:(id:string)=>void;
         const available = candidates.some(d=>d.plannedWeek!==slot.weekStart)
         return <section className="ad-plan-slot" key={slot.weekStart} aria-label={slot.weekStart+' 주차'}>
           <header><CalendarDays size={17} aria-hidden="true"/><h3>{slot.weekStart} 주</h3></header>
-          {slot.locked && published ? <div className="ad-plan-theme"><Badge active>게시 확정</Badge>
-            <strong>{published.title}</strong><button onClick={()=>onOpen(published.themeId)}>게시 내용 보기</button></div> : <>
+          {slot.locked && published ? <div className="ad-plan-theme"><Badge active>게시 중</Badge>
+            <strong>{published.title}</strong><button onClick={()=>onOpen(published.themeId)}>게시 테마 관리</button></div> : <>
             {slot.themes.map(t=><div className="ad-plan-theme" key={t.themeId}><Badge>{THEME_STATUS_LABELS[t.status]}</Badge>
               <strong>{t.title}</strong><button onClick={()=>onOpen(t.themeId)}>테마 열기</button>
               {t.status==='REVIEW_REQUIRED' && <button className="cj-primary" onClick={()=>{change.reset();setDecision({kind:'publish',theme:t,slot,grade})}}>최종 게시</button>}</div>)}
@@ -118,20 +120,21 @@ export function WeeklyThemePlanner({onOpen,onCreate}: {onOpen:(id:string)=>void;
     {choosing && <Modal title={'draft' in choosing?'편성할 주차 선택':'편성할 초안 선택'} onClose={()=>setChoosing(null)}>
       <form className="ws-form" onSubmit={e=>{
         e.preventDefault()
-        if ('draft' in choosing) { if (isMonday(choosing.destination)) askPlan(choosing.draft,choosing.destination) }
+        if ('draft' in choosing) { if (isMonday(choosing.destination) && !destinationLocked) askPlan(choosing.draft,choosing.destination) }
         else { const draft=candidates.find(d=>d.draftId===choosing.candidateId); if(draft) askPlan(draft,choosing.week) }
       }}>
         {'draft' in choosing ? <><p>{THEME_GRADE_LABELS[grade]} · {choosing.draft.title}</p>
           <label>편성 주차 (월요일)<input type="date" required min={thisMonday()} value={choosing.destination} onChange={e=>setChoosing({...choosing,destination:e.target.value})}/></label>
-          {choosing.destination && !isMonday(choosing.destination) && <p role="alert">월요일 날짜를 선택해 주세요.</p>}</> :
+          {choosing.destination && !isMonday(choosing.destination) && <p role="alert">월요일 날짜를 선택해 주세요.</p>}
+          {destinationLocked && <p role="alert">이미 게시된 주차입니다. 다른 주를 선택해 주세요.</p>}</> :
           <><p>{THEME_GRADE_LABELS[grade]} · {choosing.week}</p><label>초안<select required value={choosing.candidateId} onChange={e=>setChoosing({...choosing,candidateId:e.target.value})}>
             <option value="">후보 선택</option>{candidates.filter(d=>d.plannedWeek!==choosing.week).map(d=><option key={d.draftId} value={d.draftId}>{d.title} · {d.plannedWeek??'미편성'}</option>)}</select></label></>}
         <div className="ws-actions"><button type="button" onClick={()=>setChoosing(null)}>취소</button><button className="cj-primary"
-          disabled={'draft' in choosing ? !isMonday(choosing.destination)||choosing.destination===choosing.draft.plannedWeek||choosing.destination<thisMonday() : !choosing.candidateId}>변경 내용 확인</button></div>
+          disabled={'draft' in choosing ? !!destinationLocked||!isMonday(choosing.destination)||choosing.destination===choosing.draft.plannedWeek||choosing.destination<thisMonday() : !choosing.candidateId}>변경 내용 확인</button></div>
       </form></Modal>}
     {decision && <Modal title={decision.kind==='publish'?'이 주차의 게시를 확정할까요?':decision.other&&decision.request.expectedWeek?'두 주의 후보를 맞바꿀까요?':'주차 편성을 변경할까요?'} onClose={close}>
       {decision.kind==='publish' ? <><p><strong>{THEME_GRADE_LABELS[decision.grade]} · {decision.slot.weekStart} · {decision.theme.title}</strong></p>
-        <p><LockKeyhole size={16} aria-hidden="true"/> 확정하면 이 주의 테마와 요일별 게시 내용이 잠깁니다. 게시 중단이나 다른 테마로 교체할 수 없습니다.</p>
+        <p>이 버전의 테마와 요일별 미션을 학생에게 공개합니다. 이후 수정한 내용은 검토 후 재게시할 때 반영됩니다.</p>
         {decision.slot.planned && <p>편성 후보 ‘{decision.slot.planned.title}’는 미편성으로 돌아갑니다.</p>}</> :
         <><p><strong>{decision.draft.title}</strong> · {decision.request.expectedWeek??'미편성'} → {decision.request.targetWeek??'미편성'}</p>
         {decision.other && <p><strong>{decision.other.title}</strong> · {decision.other.plannedWeek} → {decision.request.expectedWeek??'미편성'}</p>}</>}

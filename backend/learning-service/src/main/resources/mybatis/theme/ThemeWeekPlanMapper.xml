@@ -41,7 +41,8 @@
         WHERE d.theme_version_id=#{versionId} ORDER BY m.id FOR UPDATE OF m
     </select>
     <update id="freezeDays">
-        UPDATE weekly_theme_day d SET mission_version_id=m.published_version_id,rubric_version_id=m.published_rubric_version_id
+        UPDATE weekly_theme_day d SET mission_version_id=COALESCE(d.mission_version_id,m.published_version_id),
+            rubric_version_id=COALESCE(d.rubric_version_id,m.published_rubric_version_id)
         FROM mission m WHERE d.theme_version_id=#{versionId} AND m.id=d.mission_id AND m.status='PUBLISHED'
         AND m.published_version_id IS NOT NULL AND m.published_rubric_version_id IS NOT NULL
     </update>

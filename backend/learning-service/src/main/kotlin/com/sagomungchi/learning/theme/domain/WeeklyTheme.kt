@@ -40,22 +40,22 @@ class WeeklyTheme(
         private set
 
     /** 지금 편집 중인 버전을 검토 요청함 */
-    val reviewRequested: Boolean get() = reviewVersion != null && reviewVersion == currentVersion
+    val reviewRequested: Boolean get() = reviewVersion == currentVersion &&
+        (status == WeeklyThemeStatus.REVIEW_REQUIRED || hasLiveRevision)
 
-    /** 게시된 주의 내용은 최초 게시본으로 고정한다. */
-    fun requireEditable() {
-        if (status == WeeklyThemeStatus.PUBLISHED) conflict("게시가 확정된 테마는 수정할 수 없음")
-    }
+    private val hasLiveRevision: Boolean get() = status == WeeklyThemeStatus.PUBLISHED && currentVersion != publishedVersion
 
     /** 수정 저장 뒤: 검토 중이면 검토 대상이 바뀌어 DRAFT, 나머지는 상태 유지(게시본 그대로) */
     fun edited() {
         if (status == WeeklyThemeStatus.REVIEW_REQUIRED) status = WeeklyThemeStatus.DRAFT
+        reviewVersion = null
     }
 
-    /** 이전 중단본과 작성본은 검토 요청한 버전을 기억한다. */
+    /** 제공 중인 테마는 게시 상태를 유지하면서 새 편집본만 검토 요청한다. */
     fun requestReview() {
         when {
             status == WeeklyThemeStatus.DRAFT || status == WeeklyThemeStatus.UNPUBLISHED -> status = WeeklyThemeStatus.REVIEW_REQUIRED
+            hasLiveRevision && !reviewRequested -> Unit
             else -> conflict("검토 요청할 수 없는 상태")
         }
         reviewVersion = currentVersion
@@ -63,7 +63,7 @@ class WeeklyTheme(
 
     /** 게시·재게시 전이 가능 여부: 검토 요청한 버전이 현재본이어야 함 (아니면 409) */
     fun requirePublishable() {
-        if (status != WeeklyThemeStatus.REVIEW_REQUIRED || !reviewRequested) conflict("검토 요청한 현재 버전만 게시할 수 있음")
+        if (!reviewRequested) conflict("검토 요청한 현재 버전만 게시할 수 있음")
     }
 
     /** 게시·재게시: 전이와 게시 검사를 통과하면 게시본 <- 현재본 */
@@ -72,6 +72,13 @@ class WeeklyTheme(
         if (errors.isNotEmpty()) throw WeeklyThemePublishIncompleteException(errors)
         status = WeeklyThemeStatus.PUBLISHED
         publishedVersion = currentVersion
+        reviewVersion = null
+    }
+
+    fun unpublish() {
+        if (status != WeeklyThemeStatus.PUBLISHED) conflict("게시 중인 테마만 중단할 수 있음")
+        status = WeeklyThemeStatus.UNPUBLISHED
+        reviewVersion = null
     }
 
     private fun conflict(detail: String): Nothing =

@@ -45,6 +45,38 @@ test('메뉴 검색은 승인된 메뉴만 찾고 이동 후 모바일 메뉴를
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 
+test('낮은 화면에서 관리자 프로필을 열고 닫거나 마지막 메뉴로 스크롤해도 프로필은 하단에 남는다 @responsive', async ({ page }) => {
+  await page.setViewportSize({ ...page.viewportSize()!, height: 420 })
+  await login(page, 'ops@example.test')
+  await openMenu(page)
+  const profile = page.locator('details.ad-sidebar-profile')
+  const summary = profile.getByLabel('관리자 계정 및 권한 안내')
+  const permissions = profile.getByText('서비스 운영', { exact: true })
+  const scroller = page.locator('.ad-nav-scroll')
+  const nav = scroller.getByRole('navigation', { name: '관리자 메뉴' })
+  const last = nav.getByRole('link', { name: 'AI 사용량', exact: true })
+  await expect(nav.getByRole('link')).toHaveCount(8)
+  await expect(summary).toContainText('이용 가능한 메뉴 8개')
+  await expect(summary).toBeInViewport({ ratio: 1 })
+  await expect(permissions).toBeHidden()
+  await summary.focus()
+  await summary.press('Enter')
+  await expect(profile.getByText('승인 권한', { exact: true })).toBeVisible()
+  await expect(permissions).toBeVisible()
+  await summary.press('Enter')
+  await expect(permissions).toBeHidden()
+
+  const footerTop = (await profile.boundingBox())!.y
+  await expect.poll(() => scroller.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+  await last.scrollIntoViewIfNeeded()
+  await expect.poll(() => scroller.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+  await expect(last).toBeInViewport({ ratio: 1 })
+  await expect(summary).toBeInViewport({ ratio: 1 })
+  expect((await profile.boundingBox())!.y).toBe(footerTop)
+  await last.click()
+  await expect(page).toHaveURL(/\/admin\/usage/)
+})
+
 test('초안 요청 양식을 접었다 열어도 작성 중인 값과 목록은 유지한다 @responsive', async ({ page }) => {
   await login(page)
   await openMenu(page)

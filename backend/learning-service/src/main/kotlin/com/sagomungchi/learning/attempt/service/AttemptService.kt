@@ -83,11 +83,15 @@ class AttemptService(
     private val themeFrameService: ThemeFrameService,
     private val memorySearchService: MemorySearchService,
 ) {
-    /** 안내를 여는 것만으로 시도를 생성하지 않는다. 주차·요일·학생 조건은 실제 시작과 같다. */
+    /** 같은 경로에서 진행 중인 내 시도는 고정된 안내를 보여 준다. 신규 안내는 시작과 같은 공개 조건을 검사한다. */
     @Transactional(readOnly = true)
     fun themeGuide(studentId: UUID, missionId: UUID, grade: Int, demo: Boolean, context: AttemptContext, sundayTheme: Boolean): MissionView {
+        val existing = attemptRepository.findInProgress(studentId, missionId)
+        if (existing != null && existing.context == context && existing.themeId != null) {
+            return missionService.getVersion(existing.missionVersionId)
+        }
         val theme = weeklyThemeService.checkStart(studentId, missionId, grade, context, sundayTheme)
-        val version = attemptRepository.findInProgress(studentId, missionId)?.missionVersionId ?: theme.snapshot?.missionVersionId
+        val version = existing?.missionVersionId ?: theme.snapshot?.missionVersionId
         return if (version != null) accessibleVersion(missionId, version, grade, demo)
             else missionService.get(missionId, grade, demo)
     }
@@ -149,8 +153,8 @@ class AttemptService(
             feedbacks = feedbacks,
             revealed = attempt.finishedAt?.let { revealed(attempt, it, mission, answers, feedbacks) },
             reflection = attemptRepository.findReflection(attempt.id),
-            themeScene = attempt.themeId?.takeIf { attempt.context != AttemptContext.EXTRA }
-                ?.let { weeklyThemeService.scene(it, attempt.missionId) },
+            themeScene = if (attempt.context == AttemptContext.EXTRA) null
+                else weeklyThemeService.scene(attempt.themeVersionId, attempt.missionId),
         )
     }
 

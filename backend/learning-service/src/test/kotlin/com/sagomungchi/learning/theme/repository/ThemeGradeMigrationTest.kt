@@ -66,6 +66,27 @@ class ThemeGradeMigrationTest {
                 """.trimIndent(),
             )
         }
+        flyway("26").migrate()
+        db.createStatement().use { s ->
+            s.execute(
+                """
+                INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at)
+                SELECT '$REVISED_VERSION', theme_id, 2, '수정본', intro, created_by, created_at + interval '2 days'
+                FROM weekly_theme_version WHERE id = '$LOWER_VERSION';
+                INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id, mission_version_id, rubric_version_id)
+                SELECT '$REVISED_VERSION', day_of_week, mission_id, mission_version_id, rubric_version_id
+                FROM weekly_theme_day WHERE theme_version_id = '$LOWER_VERSION';
+                UPDATE weekly_theme SET current_version_id = '$REVISED_VERSION', published_version_id = '$REVISED_VERSION',
+                    published_at = created_at + interval '3 days' WHERE id = '$LOWER_THEME';
+                INSERT INTO attempt (id, student_id, mission_id, mission_version_id, rubric_version_id, grade,
+                    status, context, theme_id, theme_week_start, started_at, updated_at)
+                SELECT gen_random_uuid(), gen_random_uuid(), '$MISSION', '$MISSION_VERSION', '$RUBRIC_VERSION', 3,
+                    'IN_PROGRESS', 'THEME_DAY', '$LOWER_THEME', '2026-11-09', v.created_at + age, v.created_at + age
+                FROM weekly_theme_version v, (VALUES (interval '1 day'), (interval '2 days 12 hours'), (interval '4 days')) AS offsets(age)
+                WHERE v.id = '$LOWER_VERSION';
+                """.trimIndent(),
+            )
+        }
         flyway(null).migrate()
     }
 
@@ -73,6 +94,13 @@ class ThemeGradeMigrationTest {
     fun stop() {
         db.close()
         postgres.stop()
+    }
+
+    @Test
+    fun `기존 시도는 고정된 과거 게시본을 복원하고 특정할 수 없으면 마지막 게시본의 같은 미션 장면을 유지한다`() {
+        assertEquals("$LOWER_VERSION|$REVISED_VERSION|$REVISED_VERSION", one(
+            "SELECT string_agg(theme_version_id::text, '|' ORDER BY started_at) FROM attempt WHERE theme_id = '$LOWER_THEME'",
+        ))
     }
 
     @Test
@@ -182,6 +210,7 @@ class ThemeGradeMigrationTest {
         const val GRANDCHILD_DRAFT = "00000000-0000-4000-8000-000000000303"
         const val LOWER_THEME = "00000000-0000-4000-8000-000000000201"
         const val LOWER_VERSION = "00000000-0000-4000-8000-000000000202"
+        const val REVISED_VERSION = "00000000-0000-4000-8000-000000000205"
         const val UPPER_THEME = "00000000-0000-4000-8000-000000000203"
         const val UPPER_VERSION = "00000000-0000-4000-8000-000000000204"
     }

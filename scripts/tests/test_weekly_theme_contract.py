@@ -105,6 +105,15 @@ class WeeklyThemeContractTest(unittest.TestCase):
         params = {p.get('name') for p in self.learning['paths']['/admin/weekly-themes']['get']['parameters'] if 'name' in p}
         self.assertEqual(params, {'grade', 'weekStart', 'status', 'page', 'size'})
 
+    def test_review_and_unpublish_match_the_version_opened_by_the_admin(self):
+        for spec in (self.spec, self.learning):
+            for action, version in [('review-request', 'expectedVersion'), ('unpublish', 'expectedPublishedVersion')]:
+                operation = spec['paths']['/admin/weekly-themes/{themeId}/' + action]['post']
+                body = operation['requestBody']['content']['application/json']['schema']
+                self.assertEqual(body['properties'][version], {'type': 'integer', 'minimum': 1})
+                self.assertNotIn(version, body.get('required', []))
+                self.assertIn('409', operation['responses'])
+
     def test_four_week_board_and_planning_expectations(self):
         schemas = self.spec['components']['schemas']
         for name in ('PlannerDraft', 'WeekBoard', 'WeekPlanChange', 'WeekPlanResult', 'FinalPublicationRequest'):

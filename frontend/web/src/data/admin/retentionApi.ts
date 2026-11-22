@@ -46,10 +46,11 @@ export const adminRetentionApi = {
     apiFetch<Page<AdminWeeklyTheme>>(`/admin/weekly-themes?${query(filters)}`, { signal }),
   theme: (id: string, signal?: AbortSignal) => apiFetch<AdminWeeklyTheme>(`/admin/weekly-themes/${p(id)}`, { signal }),
   createTheme: (data: WeeklyThemeInput) => apiFetch<AdminWeeklyTheme>('/admin/weekly-themes', json(data)),
-  saveTheme: (id: string, data: WeeklyThemeInput) =>
-    apiFetch<AdminWeeklyTheme>(`/admin/weekly-themes/${p(id)}`, json(data, 'PUT')),
-  themeAction: (id: string, action: 'review-request' | 'publish' | 'unpublish') =>
-    apiFetch<AdminWeeklyTheme>(`/admin/weekly-themes/${p(id)}/${action}`, json({})),
+  saveTheme: (id: string, data: WeeklyThemeInput, expectedVersion?: number) =>
+    apiFetch<AdminWeeklyTheme>(`/admin/weekly-themes/${p(id)}`, json({ ...data, expectedVersion }, 'PUT')),
+  themeAction: (id: string, action: 'review-request' | 'publish' | 'unpublish', expected: {
+    expectedVersion?: number; expectedPublishedVersion?: number; expectedPlannedDraftId?: string | null
+  } = {}) => apiFetch<AdminWeeklyTheme>(`/admin/weekly-themes/${p(id)}/${action}`, json(expected)),
   items: (signal?: AbortSignal, slot?: string, page = 0) =>
     apiFetch<Page<AdminLookItem>>(`/admin/look-items?${query({ slot, page: String(page), size: '20' })}`, { signal }),
   createItem: (data: LookItemInput) => apiFetch<AdminLookItem>('/admin/look-items', json(data)),

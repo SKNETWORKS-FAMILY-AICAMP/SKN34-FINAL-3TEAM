@@ -62,6 +62,7 @@ data class WeeklyThemeRequest(
     val answer: String? = null,
     val answerClue: String? = null,
     val features: List<ThemeFeature>? = null,
+    val expectedVersion: Int? = null,
 )
 
 data class WeeklyThemeDayRequest(
@@ -78,7 +79,7 @@ data class WeeklyThemeDayRequest(
 /**
  * 관리자 주간 테마 내부 API (api-spec 2.8·4.1, FN-ADM-22, #385). core #387이 `/api/v1/admin/weekly-themes…`를
  * 관리자 미션과 같은 방식(CONTENT 확인 후 ADMIN + X-User-Id + 빈 학생 범위)으로 넘김. 성공 응답은 모두 JSON 객체(core 감사 기록이 themeId·status를 읽음).
- * 검토 요청·게시·중단 본문은 {}(내용은 쓰지 않음)
+ * 수정·검토 요청·게시는 편집본 번호, 중단은 게시본 번호로 화면에서 확인한 버전을 검사할 수 있다.
  */
 @RestController
 @RequestMapping("/internal/admin/weekly-themes")
@@ -125,20 +126,18 @@ class AdminWeeklyThemeController(
 
     @PutMapping("/{themeId}")
     fun update(@PathVariable themeId: UUID, @RequestBody request: WeeklyThemeRequest): AdminWeeklyTheme =
-        service.update(themeId, requireAdmin(), request.toContent())
+        service.update(themeId, requireAdmin(), request.toContent(), version(request.expectedVersion, "expectedVersion"))
 
     @PostMapping("/{themeId}/review-request")
     fun requestReview(@PathVariable themeId: UUID, @RequestBody(required = false) body: Map<String, Any?>?): AdminWeeklyTheme {
         requireAdmin()
-        return service.requestReview(themeId)
+        return service.requestReview(themeId, version(body?.get("expectedVersion"), "expectedVersion"))
     }
 
     @PostMapping("/{themeId}/publish")
     fun publish(@PathVariable themeId: UUID, @RequestBody(required = false) body: Map<String, Any?>?): AdminWeeklyTheme {
         requireAdmin()
-        val version = body?.get("expectedVersion")?.let {
-            (it as? Int)?.takeIf { value -> value > 0 } ?: invalid("expectedVersion은 양의 정수")
-        }
+        val version = version(body?.get("expectedVersion"), "expectedVersion")
         val expectedPlan = body?.get("expectedPlannedDraftId")?.let {
             (it as? String)?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() } ?: invalid("expectedPlannedDraftId는 UUID 또는 null")
         }
@@ -148,7 +147,7 @@ class AdminWeeklyThemeController(
     @PostMapping("/{themeId}/unpublish")
     fun unpublish(@PathVariable themeId: UUID, @RequestBody(required = false) body: Map<String, Any?>?): AdminWeeklyTheme {
         requireAdmin()
-        return service.unpublish(themeId)
+        return service.unpublish(themeId, version(body?.get("expectedPublishedVersion"), "expectedPublishedVersion"))
     }
 
     /** 게시 검사 실패: `errors:[{code, message}]` (웹 publishProblems가 message를 표시) */
@@ -228,6 +227,10 @@ class AdminWeeklyThemeController(
 
     private fun requireMonday(date: LocalDate) {
         if (date.dayOfWeek != DayOfWeek.MONDAY) invalid("weekStart는 월요일 날짜")
+    }
+
+    private fun version(raw: Any?, field: String): Int? = raw?.let {
+        (it as? Int)?.takeIf { number -> number > 0 } ?: invalid("$field 값은 양의 정수")
     }
 
     private fun missing(field: String): Nothing = invalid("$field 필요")

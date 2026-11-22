@@ -131,18 +131,33 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `수정·검토 요청은 테마 전체를 돌려주며 확정 후 중단은 409`() {
+    fun `수정·재검토·재게시에는 편집본 번호를 중단에는 게시본 번호를 전달한다`() {
         val content = ThemeContent(ThemeGrade.G3, monday, "물의 여행", "소개", listOf(ThemeDayMission(ThemeDay.MON, mission)))
-        given(service.update(themeId, admin, content)).willReturn(theme)
-        given(service.requestReview(themeId)).willReturn(theme)
-        given(service.unpublish(themeId)).willThrow(com.sagomungchi.learning._common.exception.BusinessException(
-            org.springframework.http.HttpStatus.CONFLICT,"WEEK_LOCKED","이미 게시가 확정된 주차입니다."))
-
-        mockMvc.put("/internal/admin/weekly-themes/$themeId") { asAdmin(content = body) }.andExpect { status { isOk() } }
-        mockMvc.post("/internal/admin/weekly-themes/$themeId/review-request") { asAdmin(content = "{}") }.andExpect { status { isOk() } }
-        mockMvc.post("/internal/admin/weekly-themes/$themeId/unpublish") { asAdmin(content = "{}") }.andExpect {
-            status { isConflict() }
-            jsonPath("$.code") { value("WEEK_LOCKED") }
+        val edited = theme.copy(status = WeeklyThemeStatus.PUBLISHED, version = 2, publishedVersion = 1)
+        given(service.update(themeId, admin, content, 1)).willReturn(edited)
+        given(service.requestReview(themeId, 2)).willReturn(edited.copy(reviewRequested = true))
+        given(service.publish(themeId, 2, null, true)).willReturn(edited.copy(publishedVersion = 2))
+        given(service.unpublish(themeId, 2)).willReturn(edited.copy(status = WeeklyThemeStatus.UNPUBLISHED, publishedVersion = 2))
+        val route = "/internal/admin/weekly-themes/$themeId"
+        mockMvc.put(route) { asAdmin(content = body.dropLast(1) + ""","expectedVersion":1}""") }.andExpect {
+            status { isOk() }
+            jsonPath("$.version") { value(2) }
+            jsonPath("$.publishedVersion") { value(1) }
+        }
+        mockMvc.post("$route/review-request") { asAdmin(content = """{"expectedVersion":2}""") }.andExpect {
+            status { isOk() }
+            jsonPath("$.reviewRequested") { value(true) }
+        }
+        mockMvc.post("$route/publish") { asAdmin(content = """{"expectedVersion":2,"expectedPlannedDraftId":null}""") }.andExpect {
+            status { isOk() }
+            jsonPath("$.publishedVersion") { value(2) }
+        }
+        mockMvc.post("$route/unpublish") { asAdmin(content = """{"expectedPublishedVersion":2}""") }.andExpect {
+            status { isOk() }
+            jsonPath("$.status") { value("UNPUBLISHED") }
+        }
+        mockMvc.post("$route/unpublish") { asAdmin(content = """{"expectedPublishedVersion":0}""") }.andExpect {
+            status { isBadRequest() }
         }
     }
 

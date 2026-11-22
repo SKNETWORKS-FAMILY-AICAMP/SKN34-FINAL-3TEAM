@@ -206,14 +206,10 @@ class WeeklyThemeService(
     private fun pickNotAllowed(detail: String): Nothing =
         throw BusinessException(HttpStatus.CONFLICT, "THEME_PICK_NOT_ALLOWED", "정답을 고를 수 없음", detail)
 
-    /**
-     * 테마 시도의 문제 장면 (#438, api-spec 4.1 themeScene). 시도에 저장된 테마의 게시본(없으면 현재본)에서 그 미션의 요일 칸.
-     * 테마가 그 미션을 더는 담지 않으면(재게시로 바뀜) 모두 null
-     */
+    /** 시도 시작 당시 게시 버전의 요일 장면. 게시본을 복원할 수 없는 이전 시도는 장면 칸을 비운다. */
     @Transactional(readOnly = true)
-    fun scene(themeId: UUID, missionId: UUID): ThemeScene {
-        val theme = repository.findHeader(themeId) ?: return ThemeScene(null, null, null)
-        val day = repository.findDays(theme.publishedVersionId ?: theme.currentVersionId).firstOrNull { it.missionId == missionId }
+    fun scene(themeVersionId: UUID?, missionId: UUID): ThemeScene {
+        val day = themeVersionId?.let { repository.findDays(it).first { day -> day.missionId == missionId } }
         return ThemeScene(day?.dialogue, day?.hintSpots, assetUrls.url(day?.videoUri))
     }
 
@@ -245,7 +241,7 @@ class WeeklyThemeService(
                 throw BusinessException(HttpStatus.CONFLICT, "THEME_DAY_CLOSED", "이미 마무리한 테마 문제",
                     "마무리한 문제는 토요일에 다시 풀 수 있어요.")
             }
-            return ThemeAttempt(theme.id, week, snapshot)
+            return ThemeAttempt(theme.id, week, published(theme), snapshot)
         }
         if (theme == null || day == null || !ThemeWeek.reviewOpen(today, sundayTheme) ||
             !finished(repository.findStudentAttempts(studentId, week), missionId)
@@ -253,7 +249,7 @@ class WeeklyThemeService(
             throw BusinessException(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED", "다시 풀 수 없는 테마 문제",
                 "토요일에 이번 주 마무리한 테마 문제만 다시 풀 수 있어요.")
         }
-        return ThemeAttempt(theme.id, week, snapshot)
+        return ThemeAttempt(theme.id, week, published(theme), snapshot)
     }
 
     /** 되돌아보기 열람 기록 (주 1회 멱등). 토요일·프리미엄 일요일만, 아니면 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404 */

@@ -31,6 +31,7 @@ import kotlin.test.assertTrue
 class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var service: WeeklyThemeAdminService
     @Autowired lateinit var studentService: WeeklyThemeService
+    @Autowired lateinit var planner: ThemeWeekPlanner
     @Autowired lateinit var jdbc: JdbcTemplate
 
     private lateinit var rows: TestRows
@@ -81,6 +82,7 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
 
         val live = service.publish(created.themeId)
         assertEquals(WeeklyThemeStatus.PUBLISHED to 1, live.status to live.publishedVersion)
+        assertFalse(live.reviewRequested)
         assertTrue(live.publishedAt != null)
         assertEquals(1L, service.list(ThemeGrade.G3, WEEK, WeeklyThemeStatus.PUBLISHED, 0, 20).totalElements)
         assertEquals(0L, service.list(ThemeGrade.G5, null, null, 0, 20).totalElements)
@@ -108,15 +110,59 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `최종 게시 후 기존 테마와 주차 및 게시본은 변경할 수 없음`() {
+    fun `직접 작성한 테마는 게시 전 학년과 적용 주를 변경 가능`() {
+        val created = service.create(admin, content())
+        val nextWeek = WEEK.plusWeeks(1)
+
+        val moved = service.update(created.themeId, admin, content(band = ThemeGrade.G4, week = nextWeek))
+
+        assertNull(moved.generationWeek)
+        assertEquals(ThemeGrade.G4 to nextWeek, moved.grade to moved.weekStart)
+    }
+
+    @Test
+    fun `게시본을 제공하면서 편집하고 마지막으로 검토 요청한 현재본만 재게시한다`() {
         val id = published()
-        assertError(HttpStatus.CONFLICT, "WEEK_LOCKED") { service.update(id, admin, content(title = "새 제목")) }
         assertError(HttpStatus.CONFLICT, "WEEK_LOCKED") { service.update(id, admin, content(week = WEEK.plusWeeks(1))) }
         assertError(HttpStatus.CONFLICT, "WEEK_LOCKED") { service.update(id, admin, content(band = ThemeGrade.G5)) }
-        assertError(HttpStatus.CONFLICT, "WEEK_LOCKED") { service.requestReview(id) }
-        assertError(HttpStatus.CONFLICT, "WEEK_LOCKED") { service.publish(id) }
-        assertTrue(service.get(id).weekLocked)
-        assertEquals("물의 여행", studentService.current(UUID.randomUUID(), ThemeGrade.G3, WEEK).title)
+        // 기존 게시 데이터에는 게시 시 소비된 검토 포인터가 남아 있을 수 있다.
+        jdbc.update("UPDATE weekly_theme SET review_version_id=current_version_id WHERE id=?", id)
+        assertFalse(service.get(id).reviewRequested)
+        assertError(HttpStatus.CONFLICT, "CONFLICT") { service.requestReview(id) }
+        assertError(HttpStatus.CONFLICT, "CONFLICT") { service.publish(id) }
+
+        val revised = service.update(id, admin, content(title = "새 제목"), expectedVersion = 1)
+        assertEquals(WeeklyThemeStatus.PUBLISHED, revised.status)
+        assertEquals(2 to 1, revised.version to revised.publishedVersion)
+        assertEquals("새 제목", service.get(id).title)
+        assertTrue(revised.weekLocked)
+        val board = planner.board(ThemeGrade.G3, WEEK).weeks.first()
+        assertTrue(board.locked)
+        assertEquals("물의 여행" to 1, board.themes.single().let { it.title to it.version })
+        assertError(HttpStatus.CONFLICT, "PLAN_CONFLICT") { service.update(id, admin, content(), expectedVersion = 1) }
+        assertError(HttpStatus.CONFLICT, "PLAN_CONFLICT") { service.requestReview(id, expectedVersion = 1) }
+        assertFalse(revised.reviewRequested)
+        assertTrue(service.requestReview(id, expectedVersion = 2).reviewRequested)
+        assertError(HttpStatus.CONFLICT, "CONFLICT") { service.requestReview(id, expectedVersion = 2) }
+
+        val mondayMission = rows.mission(grade = 3, title = "새 월요일 미션", thinkingType = "ANALYZE")
+        val last = service.update(id, admin, content(ids = listOf(mondayMission.id) + missions.drop(1), title = "최종 수정"), expectedVersion = 2)
+        val student = UUID.randomUUID()
+        assertFalse(last.reviewRequested)
+        val beforeRepublish = studentService.current(student, ThemeGrade.G3, WEEK)
+        assertEquals("물의 여행", beforeRepublish.title)
+        assertEquals(missions.first(), beforeRepublish.days.first().missionId)
+        assertEquals(mondayMission.id, last.days.first().missionId)
+        assertError(HttpStatus.CONFLICT, "CONFLICT") { service.publish(id, expectedVersion = 3) }
+        service.requestReview(id, expectedVersion = 3)
+        assertError(HttpStatus.CONFLICT, "PLAN_CONFLICT") { service.publish(id, expectedVersion = 2) }
+        val live = service.publish(id, expectedVersion = 3, expectedPlan = null, checkPlan = true)
+        assertEquals(3 to 3, live.version to live.publishedVersion)
+        assertFalse(live.reviewRequested)
+        val afterRepublish = studentService.current(student, ThemeGrade.G3, WEEK)
+        assertEquals("최종 수정", afterRepublish.title)
+        assertEquals(mondayMission.id, afterRepublish.days.first().missionId)
+        assertError(HttpStatus.CONFLICT, "PLAN_CONFLICT") { service.unpublish(id, expectedPublishedVersion = 1) }
     }
 
     @Test
@@ -165,15 +211,49 @@ class WeeklyThemeAdminServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `게시 중단은 거부하고 다음 주 재사용·요일 미션 버전은 유지`() {
+    fun `중단하면 학생은 이전 게시 테마로 돌아가고 재검토 후 같은 버전을 재개하면 기존 미션과 기준표를 제공한다`() {
+        val previousId = published(content(week = WEEK.minusWeeks(1), title = "이전 주"))
         val id = published(content(title = "이번 주"))
-        assertError(HttpStatus.CONFLICT, "WEEK_LOCKED") { service.unpublish(id) }
-        val view = studentService.current(UUID.randomUUID(), ThemeGrade.G3, WEEK.plusWeeks(1))
+        val student = UUID.randomUUID()
+        val view = studentService.current(student, ThemeGrade.G3, WEEK.plusWeeks(1))
         assertEquals(id to true, view.themeId to view.reused)
         val original = view.days.first()
-        val otherVersion = rows.addVersion(original.missionId,2,"다른 주 독립 수정본")
-        jdbc.update("UPDATE mission SET published_version_id = ? WHERE id = ?", otherVersion, original.missionId)
-        assertEquals(original.title,studentService.current(UUID.randomUUID(),ThemeGrade.G3,WEEK).days.first().title)
+        val pinQuery = """SELECT mission_version_id, rubric_version_id FROM weekly_theme_day
+            WHERE theme_version_id=(SELECT published_version_id FROM weekly_theme WHERE id=?) AND day_of_week=1"""
+        val pins = jdbc.queryForMap(pinQuery, id)
+        val stopped = service.unpublish(id, expectedPublishedVersion = 1)
+        assertEquals(WeeklyThemeStatus.UNPUBLISHED, stopped.status)
+        assertEquals(1, stopped.publishedVersion)
+        assertFalse(stopped.reviewRequested)
+        assertFalse(stopped.weekLocked)
+        assertEquals(previousId, studentService.current(student, ThemeGrade.G3, WEEK).themeId)
+        assertError(HttpStatus.CONFLICT, "CONFLICT") { service.publish(id) }
+
+        val otherVersion = rows.addVersion(original.missionId, 2, "다른 주 독립 수정본", thinkingType = "REFLECT")
+        val otherRubric = UUID.randomUUID()
+        jdbc.update("INSERT INTO rubric_version (id, mission_id, version, created_by, created_at) VALUES (?, ?, 2, ?, ?)",
+            otherRubric, original.missionId, admin, rows.now)
+        jdbc.update("UPDATE mission SET published_version_id=?, published_rubric_version_id=? WHERE id=?",
+            otherVersion, otherRubric, original.missionId)
+        assertTrue(service.requestReview(id).reviewRequested)
+        val resumed = service.publish(id, expectedVersion = 1)
+        assertFalse(resumed.reviewRequested)
+        assertEquals(pins, jdbc.queryForMap(pinQuery, id))
+        val current = studentService.current(student, ThemeGrade.G3, WEEK)
+        assertEquals(id, current.themeId)
+        assertEquals(original.title, current.days.first().title)
+    }
+
+    @Test
+    fun `재검토 중 중단한 테마는 수정본의 검토 요청도 초기화하고 재요청 후 최신본을 제공한다`() {
+        val id = published()
+        service.update(id, admin, content(title = "수정본"))
+        service.requestReview(id)
+        assertFalse(service.unpublish(id, expectedPublishedVersion = 1).reviewRequested)
+        assertError(HttpStatus.CONFLICT, "CONFLICT") { service.publish(id) }
+        service.requestReview(id)
+        assertEquals(2, service.publish(id).publishedVersion)
+        assertEquals("수정본", studentService.current(UUID.randomUUID(), ThemeGrade.G3, WEEK).title)
     }
 
     /** 후보 4개, 화·목·금에 틀린 후보를 하나씩 뺌. 월요일 대화·생각 열기 위치, 장면 키 */

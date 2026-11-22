@@ -192,6 +192,9 @@ export function mockPlannerDrafts() {
     generationWeek:d.weekStart,plannedWeek:plannedWeek(d.draftId),
   }))
 }
+export function mockThemeGenerationWeek(themeId: string) {
+  return drafts.find(d => d.themeId === themeId)?.weekStart ?? null
+}
 async function checkPlanningSnapshot(req:Request,d:MockThemeDraft) {
   const body=await req.json() as {expectedPlannedWeek?:string|null}
   if(Object.hasOwn(body,'expectedPlannedWeek') && body.expectedPlannedWeek!==plannedWeek(d.draftId))learningFail(409,'CONFLICT')
@@ -288,7 +291,7 @@ function adopt(d: MockThemeDraft) {
   persistRetention()
   Object.assign(d, { status: 'ADOPTED', themeId: theme.themeId, updatedAt: stamp() })
   assignWeek(d.draftId,null)
-  return theme
+  return { ...theme, generationWeek: d.weekStart }
 }
 
 const historyPath='/api/v1/admin/theme-drafts/:draftId/scenes/:scene/versions'

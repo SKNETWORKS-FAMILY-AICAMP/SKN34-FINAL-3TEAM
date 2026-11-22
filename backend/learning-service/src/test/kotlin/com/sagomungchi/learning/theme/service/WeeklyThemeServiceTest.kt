@@ -44,6 +44,9 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
     private lateinit var themeId: UUID
     private val student = UUID.randomUUID()
 
+    private fun expectedTheme(id: UUID, week: LocalDate) =
+        ThemeAttempt(id, week, checkNotNull(repository.findHeader(id)?.publishedVersionId))
+
     @BeforeEach
     fun seed() {
         rows = TestRows(jdbc)
@@ -66,8 +69,8 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
             assertEquals("${grade.name} 테마", service.current(student, grade, WEEK).title)
         }
         // 시도 시작은 시도 학년으로 테마를 정함: 4학년은 G4, 중학생(7~9)은 G6
-        assertEquals(ThemeAttempt(byGrade.getValue(ThemeGrade.G4), WEEK), service.checkStart(student, wide[0].id, 4, AttemptContext.THEME_DAY))
-        assertEquals(ThemeAttempt(byGrade.getValue(ThemeGrade.G6), WEEK), service.checkStart(student, wide[0].id, 8, AttemptContext.THEME_DAY))
+        assertEquals(expectedTheme(byGrade.getValue(ThemeGrade.G4), WEEK), service.checkStart(student, wide[0].id, 4, AttemptContext.THEME_DAY))
+        assertEquals(expectedTheme(byGrade.getValue(ThemeGrade.G6), WEEK), service.checkStart(student, wide[0].id, 8, AttemptContext.THEME_DAY))
         // 3학년 테마의 미션은 4학년 테마에 없으니 4학년 시작은 409
         assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") { service.checkStart(student, missions[0].id, 4, AttemptContext.THEME_DAY) }
     }
@@ -167,17 +170,17 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         val sunday = WEEK.plusDays(6)
 
         // 화요일에 월요일 문제처럼 지난 요일 문제도 공개됐으면 시작
-        assertEquals(ThemeAttempt(themeId, WEEK), service.checkStart(student, missions[2].id, 3, AttemptContext.THEME_DAY))
-        assertEquals(ThemeAttempt(themeId, WEEK), service.checkStart(student, missions[1].id, 3, AttemptContext.THEME_DAY))
-        assertEquals(ThemeAttempt(themeId, WEEK), serviceOn(WEEK.plusDays(1)).checkStart(student, missions[0].id, 3, AttemptContext.THEME_DAY))
+        assertEquals(expectedTheme(themeId, WEEK), service.checkStart(student, missions[2].id, 3, AttemptContext.THEME_DAY))
+        assertEquals(expectedTheme(themeId, WEEK), service.checkStart(student, missions[1].id, 3, AttemptContext.THEME_DAY))
+        assertEquals(expectedTheme(themeId, WEEK), serviceOn(WEEK.plusDays(1)).checkStart(student, missions[0].id, 3, AttemptContext.THEME_DAY))
         assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") { service.checkStart(student, missions[3].id, 3, AttemptContext.THEME_DAY) }
         assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") { service.checkStart(student, missions[2].id, 5, AttemptContext.THEME_DAY) }
         // 토요일에는 안 푼 문제 새로 시작
-        assertEquals(ThemeAttempt(themeId, WEEK), serviceOn(WEEK.plusDays(5)).checkStart(student, missions[4].id, 3, AttemptContext.THEME_DAY))
+        assertEquals(expectedTheme(themeId, WEEK), serviceOn(WEEK.plusDays(5)).checkStart(student, missions[4].id, 3, AttemptContext.THEME_DAY))
         // 일요일은 core 허용 값(프리미엄)이 있을 때만
         assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") { serviceOn(sunday).checkStart(student, missions[4].id, 3, AttemptContext.THEME_DAY) }
         assertEquals(
-            ThemeAttempt(themeId, WEEK),
+            expectedTheme(themeId, WEEK),
             serviceOn(sunday).checkStart(student, missions[4].id, 3, AttemptContext.THEME_DAY, sundayTheme = true),
         )
         // 그 주에 이미 마무리한 문제는 새 THEME_DAY 대신 토요일 THEME_REVIEW로(#506). 마무리 전 시도만 있으면 시작 가능.
@@ -186,11 +189,11 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         attempt(missions[0], "THEME_DAY", at(WEEK), finishedAt = at(WEEK, 11), studentId = solver)
         attempt(missions[1], "THEME_DAY", at(WEEK.plusDays(1)), studentId = solver)
         assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") { service.checkStart(solver, missions[0].id, 3, AttemptContext.THEME_DAY) }
-        assertEquals(ThemeAttempt(themeId, WEEK), service.checkStart(solver, missions[1].id, 3, AttemptContext.THEME_DAY))
+        assertEquals(expectedTheme(themeId, WEEK), service.checkStart(solver, missions[1].id, 3, AttemptContext.THEME_DAY))
         // 지난주에 마무리한 시도는 이번 주 "마무리"에 들지 않음(재사용 테마)
         val nextWednesday = wednesday.plusWeeks(1)
         assertEquals(
-            ThemeAttempt(themeId, WEEK.plusWeeks(1)),
+            expectedTheme(themeId, WEEK.plusWeeks(1)),
             serviceOn(nextWednesday).checkStart(solver, missions[0].id, 3, AttemptContext.THEME_DAY),
         )
     }
@@ -202,7 +205,7 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         val saturday = serviceOn(WEEK.plusDays(5))
         val sunday = serviceOn(WEEK.plusDays(6))
 
-        assertEquals(ThemeAttempt(themeId, WEEK), saturday.checkStart(student, missions[0].id, 3, AttemptContext.THEME_REVIEW))
+        assertEquals(expectedTheme(themeId, WEEK), saturday.checkStart(student, missions[0].id, 3, AttemptContext.THEME_REVIEW))
         assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") { saturday.checkStart(student, missions[1].id, 3, AttemptContext.THEME_REVIEW) }
         assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") { saturday.checkStart(student, missions[2].id, 3, AttemptContext.THEME_REVIEW) }
         assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") {
@@ -213,7 +216,7 @@ class WeeklyThemeServiceTest : PostgresRepositoryTest() {
         }
         assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") { sunday.checkStart(student, missions[0].id, 3, AttemptContext.THEME_REVIEW) }
         assertEquals(
-            ThemeAttempt(themeId, WEEK),
+            expectedTheme(themeId, WEEK),
             sunday.checkStart(student, missions[0].id, 3, AttemptContext.THEME_REVIEW, sundayTheme = true),
         )
     }

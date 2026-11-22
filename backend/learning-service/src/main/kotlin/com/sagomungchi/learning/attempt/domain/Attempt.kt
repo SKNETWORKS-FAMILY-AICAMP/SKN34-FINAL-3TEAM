@@ -27,6 +27,7 @@ data class Attempt(
     val context: AttemptContext = AttemptContext.EXTRA,
     val themeId: UUID? = null,
     val themeWeekStart: LocalDate? = null,
+    val themeVersionId: UUID? = null,
 ) {
     /** 아직 답변을 받는 시도 (완료·마무리 전). 되묻기 생성과 다음 행동 안내에 씀 (P04) */
     val acceptsAnswers: Boolean get() = status == AttemptStatus.IN_PROGRESS && finishedAt == null
@@ -97,6 +98,7 @@ data class Attempt(
             context = context,
             themeId = theme?.themeId,
             themeWeekStart = theme?.weekStart,
+            themeVersionId = theme?.themeVersionId,
         ).also {
             require((context == AttemptContext.EXTRA) == (theme == null)) { "테마 컨텍스트에만 테마가 있음" }
         }
@@ -112,5 +114,5 @@ enum class AttemptStatus { IN_PROGRESS, COMPLETED }
 enum class AttemptContext { THEME_DAY, THEME_REVIEW, EXTRA }
 
 /** 테마 시도에 고정할 그 주 테마 (테마 시작 검사 결과) */
-data class ThemeAttempt(val themeId: UUID, val weekStart: LocalDate, val snapshot: MissionSnapshot? = null)
+data class ThemeAttempt(val themeId: UUID, val weekStart: LocalDate, val themeVersionId: UUID, val snapshot: MissionSnapshot? = null)
 

@@ -1762,8 +1762,9 @@ paths:
       operationId: updateAdminWeeklyTheme
       summary: 테마 수정 (전체 교체, 새 버전을 현재본으로)
       description: >-
-        게시 중 수정은 재검토·재게시 전까지 학생에게 게시본이 보인다(상태 PUBLISHED 유지). 검토 요청 중 수정은 DRAFT로 돌아간다.
-        게시 중 grade·weekStart 변경은 409 CONFLICT.
+        초안에서 채택한 테마는 학년과 적용 주가 고정된다. 게시 전 내용 수정은 새 버전을 만들며 검토 요청 중이면 DRAFT로 돌아간다.
+        직접 작성한 테마는 게시 전 열린 주차 사이에서 학년과 적용 주를 변경할 수 있다. 게시 중에는 같은 테마의 내용만 수정할 수 있다.
+        관리자는 수정한 현재본을 보며 학생은 재게시 전까지 기존 게시본을 본다. expectedVersion은 관리자가 열었던 현재본의 버전이다.
       parameters:
         - $ref: '#/components/parameters/AdminUserId'
         - $ref: '#/components/parameters/AdminRole'
@@ -1786,7 +1787,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: CONFLICT(게시 중 학년·주 변경)
+          description: 채택한 테마의 편성 변경은 THEME_SCHEDULE_LOCKED. 게시 중인 주의 편성 변경은 WEEK_LOCKED. 열었던 현재본의 버전이 바뀌면 PLAN_CONFLICT.
           content:
             application/problem+json:
               schema:
@@ -1796,7 +1797,7 @@ paths:
       operationId: requestAdminWeeklyThemeReview
       summary: 검토 요청 (현재본을 검토 요청 버전으로)
       description: >-
-        DRAFT·UNPUBLISHED → REVIEW_REQUIRED, 게시 중 수정본은 PUBLISHED 유지. 그 밖(이미 검토 요청한 현재본 등)은 409 CONFLICT. 본문은 {}.
+        작성 중이거나 제공을 중단한 테마의 현재본을 검토 요청한다. 게시 중인 테마는 편집 버전이 게시 버전보다 새로울 때 검토 요청할 수 있으며 기존 공개를 유지한다. expectedVersion으로 검토할 버전을 지정할 수 있다.
       parameters:
         - $ref: '#/components/parameters/AdminUserId'
         - $ref: '#/components/parameters/AdminRole'
@@ -1806,7 +1807,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmptyObject'
+              type: object
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
       responses:
         '200':
           description: 결과
@@ -1818,7 +1821,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: CONFLICT(상태상 불가 전이, state-diagram 3.5)
+          description: 상태상 불가 전이는 CONFLICT, 열었던 버전이 바뀌면 PLAN_CONFLICT.
           content:
             application/problem+json:
               schema:
@@ -1826,9 +1829,9 @@ paths:
   /admin/weekly-themes/{themeId}/publish:
     post:
       operationId: publishAdminWeeklyTheme
-      summary: 학년·주차 최종 게시 및 주차 잠금
+      summary: 검토를 마친 현재본 게시·재게시
       description: >-
-        별도 검토 경로 없이 검토 요청한 버전이 현재본일 때의 게시가 승인이다. 아니면 409 CONFLICT.
+        검토 요청한 현재본을 학생에게 공개한다. 재게시는 같은 테마의 공개 버전을 교체한다. 검토 요청 후 현재본이 바뀌었으면 다시 검토 요청해야 한다.
         게시 검사(월~금 다섯 요일, 게시 미션만·시연 전용 제외, 미션 학년 범위가 테마 학년을 포함(G3·G4 논술 불가, GRADE_MISMATCH), 다섯 생각 유형 1개씩,
         같은 학년·주 게시 1개)를 모두 모아 실패하면 422 WEEKLY_THEME_PUBLISH_INCOMPLETE + errors. expectedVersion이 있으면 현재 버전 일치를 검사한다. 확정한 요일의 미션·기준표 버전을 고정한다.
       parameters:
@@ -1852,7 +1855,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: CONFLICT(검토 요청한 현재본이 아님·상태상 불가 전이)
+          description: 검토 요청한 현재본만 게시할 수 있다(CONFLICT). 버전이나 편성이 바뀌면 PLAN_CONFLICT, 같은 학년·주에 다른 테마가 게시 중이면 WEEK_LOCKED.
           content:
             application/problem+json:
               schema:
@@ -1877,7 +1880,7 @@ paths:
       operationId: unpublishAdminWeeklyTheme
       summary: 게시 중단 (진행 중 시도는 그대로 이어함)
       description: >-
-        게시 확정된 학년·주는 중단할 수 없으며 409 CONFLICT로 거부한다.
+        게시 중인 테마를 UNPUBLISHED로 전환한다. 시작한 시도는 이어갈 수 있고, 해당 주의 학생 조회는 이전 주의 최근 게시 테마를 사용한다. 이전 게시 테마도 없으면 404다. expectedPublishedVersion은 중단할 공개본의 버전이다.
       parameters:
         - $ref: '#/components/parameters/AdminUserId'
         - $ref: '#/components/parameters/AdminRole'
@@ -1887,7 +1890,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmptyObject'
+              type: object
+              properties:
+                expectedPublishedVersion: {type: integer, minimum: 1}
       responses:
         '200':
           description: 결과
@@ -1899,7 +1904,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: CONFLICT(게시 중이 아님)
+          description: 게시 중이 아니면 CONFLICT, 중단 대상으로 확인한 공개본이 바뀌면 PLAN_CONFLICT.
           content:
             application/problem+json:
               schema:
@@ -3752,7 +3757,7 @@ components:
             - type: 'null'
         themeScene:
           description: >-
-            테마 시도(context THEME_DAY·THEME_REVIEW)의 문제 장면(#438). 그 시도 테마 게시본의 그 미션 요일 값, EXTRA는 null.
+            테마 시도(context THEME_DAY·THEME_REVIEW)의 문제 장면(#438). 시작 당시 테마 게시본의 해당 미션 요일 값, EXTRA는 null.
             생각 열기는 순서대로 하나씩 여는 기존 동작 그대로이고 hintSpots는 그림 위 표시 위치만
           oneOf:
             - $ref: '#/components/schemas/ThemeScene'
@@ -4623,6 +4628,7 @@ components:
       type: object
       required: [grade, weekStart, title, intro, days]
       properties:
+        expectedVersion: {type: integer, minimum: 1, description: 수정 시 관리자가 열었던 현재 버전}
         grade: {$ref: '#/components/schemas/ThemeGrade'}
         weekStart: {type: string, format: date, description: KST 월요일(아니면 400)}
         title: {type: string, minLength: 1, maxLength: 100}
@@ -5022,14 +5028,14 @@ components:
       type: object
       required: [themeId, grade, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt]
       properties:
-        weekLocked: {type: boolean}
+        weekLocked: {type: boolean, description: 이 학년·주의 후보 편성 잠금. 게시 중인 테마 자체의 내용 수정과 제공 중단은 가능하다.}
         generationWeek: {type: [string, 'null'], format: date, description: 채택한 초안의 생성 기준 주}
         themeId: {type: string, format: uuid}
         grade: {$ref: '#/components/schemas/ThemeGrade'}
         weekStart: {type: string, format: date}
         status: {$ref: '#/components/schemas/MissionStatus'}
         version: {type: integer, minimum: 1, description: 편집 중인 현재본}
-        publishedVersion: {type: [integer, 'null'], description: 학생에게 제공 중인 게시본}
+        publishedVersion: {type: [integer, 'null'], description: 최근 게시 버전. PUBLISHED 상태에서 학생에게 제공하며 제공 중단 후에도 마지막 버전 번호를 보존한다.}
         reviewRequested: {type: boolean, description: 현재본을 검토 요청함(게시 가능)}
         title: {type: string}
         intro: {type: string}

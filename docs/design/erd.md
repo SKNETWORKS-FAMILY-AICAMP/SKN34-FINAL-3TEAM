@@ -1165,6 +1165,7 @@ erDiagram
     timestamptz updated_at
     varchar context "THEME_DAY|THEME_REVIEW|EXTRA · 시작 경로 (P23, #385)"
     uuid theme_id FK "NULL 허용 · 테마 컨텍스트의 그 주 테마"
+    uuid theme_version_id FK "NULL 허용 · 테마 시도 시작 당시 게시본 · mission_id와 함께 weekly_theme_day 참조"
     date theme_week_start "NULL 허용 · 테마 시도의 주(KST 월요일, 재사용 테마도 그 주)"
   }
   attempt_draft {
@@ -1285,6 +1286,7 @@ erDiagram
   - `previous`·`corrected`는 `{"result": "PARTIAL"}` 모양. `previous`는 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과), 최신 정정은 `created_at` 가장 늦은 행 (#80)
 - `self_assessment` UK `(attempt_id, rubric_element_id)`. AI 판정·원본 답변과 별도 저장 (FN-LRN-13)
 - 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
+- `attempt.theme_version_id`(V27)는 테마 시도를 시작할 때의 게시 버전을 고정한다. 기존 시도는 게시 시각과 미션·기준표 버전으로 복원한다. 과거 버전을 특정할 수 없으면 마지막 게시본에 남은 같은 미션 장면을 사용하고, 그 장면도 없으면 비워 둔다.
 - `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 2026-11-10 개정(#483) 뒤 뜻: `THEME_DAY`는 공개된 테마 문제 신규 시도(월~토, 프리미엄 일요일), `THEME_REVIEW`는 토요일(프리미엄 일요일) 다시 풀기. 값·CHECK는 그대로이며, 당일 풀이는 `completed_at`과 문제 요일로 계산하고 큰 질문 정답 고르기 결과는 `theme_answer_pick`(4.2.1, #484)에 둔다. 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
 
 **`answer` 생각·작성 시간 (P28, 설계 #800, 구현 #801 V23)**: 위 Mermaid `answer`의 `thinking_seconds`(문제 화면, 보완 답변은 되묻기 질문 표시 → 답변 칸 첫 입력)·`writing_seconds`(첫 입력 → 제출), 정수 초.
@@ -1432,7 +1434,7 @@ erDiagram
   }
 ```
 
-- 관리자는 `current_version_id`를 검토 요청한다. 최종 게시는 `review_version_id = current_version_id`인 버전을 `published_version_id`로 고정한다. 학생 조회와 시작 검사는 게시본을 사용한다. 최종 게시한 학년·주는 잠기며 테마 수정, 재게시, 게시 중단 요청은 거절한다(#882).
+- 관리자는 `current_version_id`를 검토 요청한다. 최종 게시는 `review_version_id = current_version_id`인 버전을 `published_version_id`로 고정한다. 학생 조회와 시작 검사는 게시본을 사용한다. 게시 중 수정은 편집 버전을 추가한다. 재검토 후 재게시하면 학생에게 새 버전을 제공한다. 제공 중단은 신규 제공을 종료하며 기존 시도의 미션·기준표 버전은 유지한다.
 - 부분 UK `(grade, week_start) WHERE status = 'PUBLISHED'` → 학년·주당 게시 1개. `weekly_theme_version` UK `(theme_id, version)`, `weekly_theme_day` UK `(theme_version_id, mission_id)`
 - V26은 최종 게시 시 각 요일의 `mission_version_id`와 `rubric_version_id`를 해당 미션의 게시 버전으로 고정한다. 두 칸은 함께 채우거나 함께 비워야 한다(CHECK). 마이그레이션 시점에 게시 중인 테마의 요일은 당시 미션의 두 게시 버전이 모두 있으면 채운다. 같은 미션이 이후 다른 주에 쓰여도 이미 고정된 문제와 기준표는 유지된다.
 - 학년·주는 테마 행에 두고 버전에 두지 않음(게시 중 변경 409). 다섯 생각 유형 1개씩·게시 미션·그 학년을 포함하는 미션 학년 범위는 게시 검사(DB 제약 아님, FN-ADM-22)

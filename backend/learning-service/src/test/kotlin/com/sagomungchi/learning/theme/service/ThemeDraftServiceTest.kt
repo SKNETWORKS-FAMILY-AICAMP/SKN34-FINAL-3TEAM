@@ -17,7 +17,9 @@ import com.sagomungchi.learning.theme.ThemeDraftFixtures
 import com.sagomungchi.learning.theme.client.AiThemeDraftRequest
 import com.sagomungchi.learning.theme.client.AiThemeRegenerate
 import com.sagomungchi.learning.theme.client.ThemeDraftAiClient
+import com.sagomungchi.learning.theme.domain.ThemeContent
 import com.sagomungchi.learning.theme.domain.ThemeDay
+import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.ThemeDraft
 import com.sagomungchi.learning.theme.domain.ThemeDraftInput
 import com.sagomungchi.learning.theme.domain.ThemeDraftRegenerate
@@ -477,6 +479,26 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         assertCode(409,"PLAN_CONFLICT") { service.discard(b.id,null,true) }
         service.discard(b.id,one,true)
         assertNull(planner.state(b.id).plannedWeek)
+    }
+
+    @Test
+    fun `다른 주로 편성해 채택하면 학년과 적용 주는 고정되고 내용은 수정 가능`() {
+        val draft = readyDraft()
+        val plannedWeek = draft.weekStart.plusWeeks(2)
+        planner.change(PlanChange(draft.grade, draft.id, null, plannedWeek, null))
+        val adopted = service.adopt(draft.id, admin, plannedWeek, true)
+        val revision = ThemeContent(
+            adopted.grade, plannedWeek, "고친 테마 제목", adopted.intro,
+            adopted.days.map { ThemeDayMission(it.day, it.missionId) },
+        )
+
+        assertEquals(draft.weekStart, themes.get(adopted.themeId).generationWeek)
+        assertCode(409, "THEME_SCHEDULE_LOCKED") { themes.update(adopted.themeId, admin, revision.copy(weekStart = draft.weekStart)) }
+        assertCode(409, "THEME_SCHEDULE_LOCKED") { themes.update(adopted.themeId, admin, revision.copy(grade = ThemeGrade.G6)) }
+        val edited = themes.update(adopted.themeId, admin, revision)
+        assertEquals(adopted.version + 1, edited.version)
+        assertEquals(revision.title, edited.title)
+        assertEquals(draft.grade to plannedWeek, edited.grade to edited.weekStart)
     }
 
     @Test

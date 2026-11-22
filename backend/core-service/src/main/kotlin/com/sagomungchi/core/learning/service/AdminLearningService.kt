@@ -233,11 +233,12 @@ class AdminLearningService(private val client: LearningClient,private val json: 
         if(node?.isObject!=true) unavailable("LEARNING_INVALID_RESPONSE")
         if(response.status !in 200..299) {
             val allowedCodes = setOf("VALIDATION_FAILED","FORBIDDEN","MISSION_PUBLISH_INCOMPLETE","MISSION_NOT_AVAILABLE",
-                "MISSION_VERSION_CONFLICT","CONFLICT","WEEK_LOCKED","PLAN_CONFLICT","NOT_FOUND","INTERNAL_ERROR","AI_UNAVAILABLE","WEEKLY_THEME_PUBLISH_INCOMPLETE")
+                "MISSION_VERSION_CONFLICT","CONFLICT","WEEK_LOCKED","THEME_SCHEDULE_LOCKED","PLAN_CONFLICT","NOT_FOUND","INTERNAL_ERROR","AI_UNAVAILABLE","WEEKLY_THEME_PUBLISH_INCOMPLETE")
             val code = node.path("code").asText().takeIf { it in allowedCodes } ?: "LEARNING_REQUEST_FAILED"
             val title = when (code) {
                 "WEEK_LOCKED" -> "이미 게시가 확정된 주차입니다."
-                "PLAN_CONFLICT" -> "편성이 변경됐습니다. 최신 후보를 확인해 주세요."
+                "THEME_SCHEDULE_LOCKED" -> "채택한 테마의 학년과 적용 주는 변경할 수 없습니다."
+                "PLAN_CONFLICT" -> "테마 버전이나 주차 편성이 변경되었습니다. 최신 내용을 확인해 주세요."
                 else -> "학습 서비스가 관리자 요청을 처리하지 못했습니다."
             }
             val safe = json.createObjectNode().put("code",code).put("status",response.status).put("title",title)

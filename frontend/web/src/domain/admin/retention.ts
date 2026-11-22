@@ -19,6 +19,8 @@ export interface AdminWeeklyTheme {
   days: { day: ThemeDay; missionId: string; title?: string; videoUrl?: string | null; sceneImageUrl?: string | null; sceneMotion?: unknown; clue?: string | null }[]
   status: ThemeStatus
   version?: number
+  publishedVersion?: number | null
+  reviewRequested?: boolean
   weekLocked?: boolean
   generationWeek?: string | null
   updatedAt: string

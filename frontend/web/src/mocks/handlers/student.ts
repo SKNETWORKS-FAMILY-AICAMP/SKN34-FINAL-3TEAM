@@ -14,6 +14,7 @@ import {
 } from '../fixtures/accounts.ts'
 import {
   fixtureStore as store,
+  startedContexts,
   normalizeAnswer,
   wireAttempt,
   wireDraft,
@@ -139,8 +140,6 @@ export const mockStudentHome = (c: Child) => store.home(c)
 export const mockLatestAttempt = (studentId: string, missionId: string) =>
   store.snapshot().attempts.filter((a) => a.studentId === studentId && a.mission.id === missionId)
     .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0]?.attemptId ?? null
-/** 시작할 때 받은 시도 종류(목업). 기록 목록의 `context`(#700)로 돌려준다(#710) */
-const startedContexts = new Map<string, AttemptContext>()
 /** 기록 목록 `context`(#700, 선택 칸): 시작 때 받은 값, 없으면(예전 목업 기록) 이번 주 테마 문제면 THEME_DAY, 아니면 EXTRA */
 async function withContexts<T extends { attemptId: string; mission: { id: string } }>(owner: Child, rows: T[]) {
   const home = await store.home(owner)
@@ -157,7 +156,8 @@ async function checkContext(context: AttemptContext | undefined, missionId: stri
   if (!context || mockRole !== 'STUDENT' || !child) return
   const home = await store.home(child)
   const existing = store.snapshot().attempts.find(a => a.studentId === child!.id && a.mission.id === missionId && a.status === 'IN_PROGRESS')
-  if (resume && existing) return // 기존 시도 시작 요청은 이어서 진행한다.
+  // 기존 시도 시작과 같은 종류의 안내 조회는 시도에 고정한 미션을 이어서 연다.
+  if (existing && (resume || startedContexts.get(existing.attemptId) === context)) return
   const plan = mockPremium(child.id) ? 'PREMIUM' : 'FREE' // 이용권은 결제 목업 구독 한 곳에서 정함(#602)
   const week = weeklyThemeFor(child.id, home.missions, child.grade, plan)
   // 2026-11-10 개정(#484): 공개된(OPEN) 문제는 토요일(프리미엄 일요일)까지 새로 시작, 이미 마무리한 문제는 다시 풀기로.

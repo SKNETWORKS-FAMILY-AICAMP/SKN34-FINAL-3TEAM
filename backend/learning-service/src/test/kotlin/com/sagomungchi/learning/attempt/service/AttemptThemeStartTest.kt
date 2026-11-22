@@ -15,6 +15,7 @@ import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.HintSpot
 import com.sagomungchi.learning.theme.repository.WeeklyThemeRepository
+import com.sagomungchi.learning.theme.service.WeeklyThemeAdminService
 import com.sagomungchi.learning.theme.service.WeeklyThemeService
 import org.mybatis.spring.SqlSessionTemplate
 import org.junit.jupiter.api.AfterEach
@@ -40,6 +41,7 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
     @Autowired lateinit var missionService: MissionService
     @Autowired lateinit var judgmentService: JudgmentService
     @Autowired lateinit var themeRepository: WeeklyThemeRepository
+    @Autowired lateinit var adminThemes: WeeklyThemeAdminService
     @Autowired lateinit var themeFrameService: com.sagomungchi.learning.memory.service.ThemeFrameService
     @Autowired lateinit var memorySearchService: com.sagomungchi.learning.memory.service.MemorySearchService
     @Autowired lateinit var jdbc: JdbcTemplate
@@ -194,6 +196,56 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
         }
         assertEquals(guide, sunday.themeGuide(student, monday.id, 3, false, AttemptContext.THEME_REVIEW, true))
         assertEquals(start.missionVersionId, sunday.start(student, monday.id, 3, false, AttemptContext.THEME_REVIEW, true).attempt.missionVersionId)
+    }
+
+    @Test
+    fun `재게시와 제공 중단 뒤에도 시작한 학생만 그 시도의 안내와 요일 장면으로 이어간다`() {
+        val monday = missions.first()
+        val day = AttemptContext.THEME_DAY
+        val service = on(WEEK)
+        val original = checkNotNull(themeRepository.findHeader(themeId))
+        jdbc.update(
+            """UPDATE weekly_theme_day SET video_uri = 'theme-drafts/run/first.mp4',
+                   mission_version_id = ?, rubric_version_id = ?
+               WHERE theme_version_id = ? AND mission_id = ?""",
+            monday.versionId, monday.rubricVersionId, original.publishedVersionId, monday.id,
+        )
+        val started = service.start(student, monday.id, 3, false, day).attempt
+        assertEquals(original.publishedVersionId, started.themeVersionId)
+
+        val content = themeRepository.findContent(original, original.currentVersionId)
+        val revised = TestRows(jdbc).addVersion(monday.id, 2, "수정한 월요일 문제")
+        jdbc.update("UPDATE mission SET current_version_id = ?, published_version_id = ? WHERE id = ?", revised, revised, monday.id)
+        sqlSession.clearCache()
+        adminThemes.update(themeId, original.createdBy, content.copy(days = content.days.map {
+            if (it.missionId == monday.id) it.copy(videoUri = "theme-drafts/run/second.mp4") else it
+        }), expectedVersion = 1)
+        val newcomer = UUID.randomUUID()
+        assertEquals("테마 1", service.themeGuide(newcomer, monday.id, 3, false, day, false).title)
+        adminThemes.requestReview(themeId, expectedVersion = 2)
+        adminThemes.publish(themeId, expectedVersion = 2)
+        assertEquals("수정한 월요일 문제", service.themeGuide(newcomer, monday.id, 3, false, day, false).title)
+        val later = service.start(newcomer, monday.id, 3, false, day).attempt
+        assertEquals(revised, later.missionVersionId)
+        UserContextHolder.set(UserContext(null, "STUDENT", setOf(newcomer.toString()), null))
+        assertTrue(checkNotNull(service.get(later.id).themeScene?.videoUrl).contains("/second.mp4"))
+
+        adminThemes.unpublish(themeId, expectedPublishedVersion = 2)
+        UserContextHolder.set(UserContext(null, "STUDENT", setOf(student.toString()), null))
+        val resumed = service.start(student, monday.id, 3, false, day)
+        assertFalse(resumed.created)
+        assertEquals(started.id, resumed.attempt.id)
+        assertEquals("테마 1", service.themeGuide(student, monday.id, 3, false, day, false).title)
+        assertTrue(checkNotNull(service.get(started.id).themeScene?.videoUrl).contains("/first.mp4"))
+        assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") {
+            service.themeGuide(UUID.randomUUID(), monday.id, 3, false, day, false)
+        }
+        assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") {
+            service.start(student, missions[1].id, 3, false, day)
+        }
+        assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") {
+            service.themeGuide(student, monday.id, 3, false, AttemptContext.THEME_REVIEW, false)
+        }
     }
 
     @Test

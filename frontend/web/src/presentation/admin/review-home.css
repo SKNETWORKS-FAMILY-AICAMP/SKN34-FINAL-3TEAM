@@ -20,7 +20,7 @@
 #class-journal .ad-priority-theme h2 { color:white; font-size:1.45rem; margin:8px 0 2px; }
 #class-journal .ad-priority-theme p { color:#e5edf1; margin:4px 0 10px; }
 .ad-priority-theme span, .ad-theme-work-list h2 { display:flex; align-items:center; gap:6px; }
-#class-journal .ad-priority-theme a { display:inline-block; padding:6px 12px; border-radius:6px; background:white; color:#163846; font-weight:650; }
+#class-journal .admin-shell .ad-priority-theme a { display:inline-block; padding:6px 12px; border-radius:6px; background:white; color:#163846; font-weight:650; }
 #class-journal .ad-theme-work-list h2 { margin-bottom:8px; }
 #class-journal .ad-theme-work-list a { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 3px; border-bottom:1px solid #e9eef0; text-decoration:none; color:#2b4149; }
 #class-journal .ad-theme-work-list .ad-request-theme { border:0; font-weight:650; color:var(--cj-accent); }

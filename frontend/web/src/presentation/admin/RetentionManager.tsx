@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { adminApi } from '../../data/admin/api.ts'
 import { adminRetentionApi as api } from '../../data/admin/retentionApi.ts'
+import { ApiError } from '../../data/apiClient.ts'
 import { useAdminMutation, useAdminQuery } from '../../data/admin/queries.ts'
 import { thinkingLabels } from '../../domain/classroom.ts'
 import { ALL_ITEM_SLOTS, DAY_LABELS, SLOT_LABELS, THEME_DAYS } from '../../domain/retention.ts'
@@ -9,11 +10,12 @@ import type { ItemSlot, ThemeDay } from '../../domain/retention.ts'
 import {
   THEME_GRADE_LABELS,
   THEME_STATUS_LABELS,
+  publishProblems,
 } from '../../domain/admin/retention.ts'
 import type { AdminLookItem, AdminWeeklyTheme, ThemeGrade } from '../../domain/admin/retention.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ThemeMotionPlayer } from '../common/ThemeMotionPlayer.tsx'
-import { ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { Badge, Empty, Panel } from './AdminUi.tsx'
 import { WeeklyThemePlanner } from './WeeklyThemePlanner.tsx'
 
@@ -42,7 +44,7 @@ export function WeeklyThemeManager() {
   if (!linked.data || linked.error) return <><button onClick={()=>selectId(null)}>편성 보드로</button><QueryFeedback query={linked}/></>
   const theme = linked.data
   const close = () => selectId(null,theme)
-  if (theme.status==='PUBLISHED'||theme.weekLocked) return <Panel title={theme.status==='PUBLISHED'?'게시 내용':'잠긴 주차의 테마'} action={<button onClick={close}>편성 보드로</button>}>
+  if (theme.weekLocked && theme.status !== 'PUBLISHED') return <Panel title="다른 테마가 게시 중인 주차" action={<button onClick={close}>편성 보드로</button>}>
     <div className="ad-plan-readonly"><p>{THEME_GRADE_LABELS[theme.grade]} · 적용 주 {theme.weekStart} · {THEME_STATUS_LABELS[theme.status]} · 읽기 전용</p>
       {theme.generationWeek && theme.generationWeek!==theme.weekStart && <p>생성 기준 주 {theme.generationWeek}</p>}
       <h3>{theme.title}</h3><p>{theme.intro}</p><ThemeMotionPlayer label="시작 이야기" imageUrl={theme.introImageUrl??null} videoUrl={theme.introVideoUrl??null} motion={theme.introMotion}/>
@@ -67,11 +69,16 @@ function ThemeEditor({
 }) {
   const [grade, setGrade] = useState<ThemeGrade>(theme?.grade ?? 'G3')
   const [weekStart, setWeekStart] = useState(theme?.weekStart ?? nextMonday())
+  const live = theme?.status === 'PUBLISHED'
+  const hasPublication = live || theme?.publishedVersion != null
+  const fixedSchedule = theme?.generationWeek != null || live ? theme : undefined
+  const [formVersion, setFormVersion] = useState(theme?.version)
   const [title, setTitle] = useState(theme?.title ?? ''), [intro, setIntro] = useState(theme?.intro ?? '')
   const [days, setDays] = useState<Record<ThemeDay, string>>(
     () => Object.fromEntries(THEME_DAYS.map((d) => [d, theme?.days.find((x) => x.day === d)?.missionId ?? ''])) as Record<ThemeDay, string>,
   )
   const [message, setMessage] = useState('')
+  const [decision, setDecision] = useState<{action:'publish' | 'unpublish'; version:number} | null>(null)
   const returnFocus = useRef<HTMLSelectElement>(null)
   useEffect(()=>{ if (activeDay) returnFocus.current?.focus() },[activeDay])
   const missions = useAdminQuery(['missions', 'theme-picker'], (s) => adminApi.missions({ status: 'PUBLISHED' }, s))
@@ -79,23 +86,56 @@ function ThemeEditor({
     const v = m.versions.find((x) => x.version === (m.publishedVersion ?? m.currentVersion)) ?? m.versions.at(-1)
     return { id: m.missionId, title: v?.title ?? m.missionId, type: v?.thinkingType, grades: v ? `초${v.gradeMin}~${v.gradeMax}` : '' }
   })
-  const input = () => ({ grade, weekStart, title: title.trim(), intro: intro.trim(), days: THEME_DAYS.map((day) => ({ day, missionId: days[day] })) })
-  const save = useAdminMutation(() => (theme ? api.saveTheme(theme.themeId, input()) : api.createTheme(input())))
-  const action = useAdminMutation(() => api.themeAction(theme!.themeId, 'review-request'))
+  const input = () => ({ grade: fixedSchedule?.grade ?? grade, weekStart: fixedSchedule?.weekStart ?? weekStart,
+    title: title.trim(), intro: intro.trim(), days: THEME_DAYS.map((day) => ({ day, missionId: days[day] })) })
+  const save = useAdminMutation(() => (theme ? api.saveTheme(theme.themeId, input(), hasPublication ? formVersion : undefined) : api.createTheme(input())))
+  const review = useAdminMutation(() => api.themeAction(theme!.themeId, 'review-request', hasPublication ? { expectedVersion: formVersion } : {}))
+  const publication = useAdminMutation((choice: NonNullable<typeof decision>) => api.themeAction(theme!.themeId, choice.action,
+    choice.action === 'publish' ? { expectedVersion: choice.version, expectedPlannedDraftId: null } : { expectedPublishedVersion: choice.version }))
+  const busy = save.isPending || review.isPending || publication.isPending
+  const changed = theme && (title.trim() !== theme.title || intro.trim() !== theme.intro ||
+    THEME_DAYS.some(day => days[day] !== (theme.days.find(d => d.day === day)?.missionId ?? '')))
+  const staleForm = hasPublication && formVersion !== theme?.version
+  const newer = live && theme.version != null && theme.publishedVersion != null && theme.version > theme.publishedVersion
+  const problems = publication.error instanceof ApiError ? publishProblems(publication.error.problem) : []
   const types = THEME_DAYS.map((d) => choices.find((c) => c.id === days[d])?.type).filter(Boolean)
   const duplicateType = new Set(types).size !== types.length
-  const requestReview = () => void action.mutateAsync(undefined).then(t=>{onSaved(t);onClose()}).catch(()=>{})
+  const requestReview = () => void review.mutateAsync(undefined).then(t => {
+    onSaved(t)
+    if (live) setMessage('수정본 검토를 요청했습니다.')
+    else onClose()
+  }).catch(()=>{})
+  const decide = (action: 'publish' | 'unpublish', version: number) => {
+    publication.reset()
+    setDecision({ action, version })
+  }
+  const confirm = () => {
+    if (!decision || busy) return
+    void publication.mutateAsync(decision).then(t => {
+      onSaved(t)
+      setMessage(decision.action === 'publish' ? '수정본을 재게시했습니다.' : '테마 제공을 중단했습니다.')
+      setDecision(null)
+    }).catch(()=>{})
+  }
   return (
-    <Panel title={theme ? '테마 수정·검토' : '새 테마 작성'} action={<button onClick={onClose}>닫기</button>}>
-      {theme?.generationWeek && theme.generationWeek!==theme.weekStart && <p>생성 기준 주 {theme.generationWeek} · 적용 주 {theme.weekStart}</p>}
+    <Panel title={live ? '게시 테마 관리' : theme ? '테마 수정·검토' : '새 테마 작성'} action={<button onClick={onClose}>{live ? '편성 보드로' : '닫기'}</button>}>
+      {live && <p><strong>학생 게시본{theme.publishedVersion != null && ' v'+theme.publishedVersion}</strong>
+        {theme.version != null && ' · 작업본 v'+theme.version}
+        {newer && (theme.reviewRequested ? ' · 재게시 검토 대기' : ' · 수정본 저장됨')}</p>}
+      {theme?.status === 'UNPUBLISHED' && <p>제공 중단 상태입니다. 검토를 요청한 뒤 편성 보드에서 게시하면 다시 제공됩니다.</p>}
       <form
         className="ws-form"
         onSubmit={(e) => {
           e.preventDefault()
-          void save.mutateAsync(undefined).then((t) => { onSaved(t); setMessage('테마를 저장했습니다.') }).catch(() => {})
+          if (busy || staleForm) return
+          void save.mutateAsync(undefined).then((t) => { setFormVersion(t.version); onSaved(t); setMessage('테마를 저장했습니다.') }).catch(() => {})
         }}
       >
-        <div className="ad-two">
+        {fixedSchedule ? <fieldset>
+          <legend>{fixedSchedule.generationWeek ? '채택 시 확정된 편성' : '게시 중인 편성'}</legend>
+          <p>{THEME_GRADE_LABELS[fixedSchedule.grade]} · 적용 주 {fixedSchedule.weekStart}</p>
+          {fixedSchedule.generationWeek && fixedSchedule.generationWeek !== fixedSchedule.weekStart && <p>생성 기준 주 {fixedSchedule.generationWeek}</p>}
+        </fieldset> : <div className="ad-two">
           <label>학년
             <select aria-label="학년" value={grade} onChange={(e) => setGrade(e.target.value as ThemeGrade)}>
               {Object.entries(THEME_GRADE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -104,7 +144,7 @@ function ThemeEditor({
           <label>주 시작(월요일)
             <input type="date" aria-label="주 시작일" required value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
           </label>
-        </div>
+        </div>}
         <label>제목<input aria-label="테마 제목" required maxLength={100} value={title} onChange={(e) => setTitle(e.target.value)} /></label>
         <label>월요일 도입 이야기<textarea aria-label="도입 이야기" required maxLength={2000} value={intro} onChange={(e) => setIntro(e.target.value)} /></label>
         {theme && (theme.outro || theme.introImageUrl || theme.outroImageUrl || theme.introVideoUrl || theme.outroVideoUrl) && (
@@ -144,14 +184,32 @@ function ThemeEditor({
           ))}
           {duplicateType && <p role="alert">같은 생각 유형이 두 번 들어 있습니다. 게시 검사에서 막힙니다.</p>}
         </fieldset>
+        {live && <details className="ad-story"><summary>작업본의 요일별 장면</summary>
+          {theme.days.map(day => <article key={day.day}><h3>{DAY_LABELS[day.day]}요일 · {day.title ?? '요일 미션'}</h3>
+            <ThemeMotionPlayer label={DAY_LABELS[day.day]+'요일 장면'} imageUrl={day.sceneImageUrl ?? null} videoUrl={day.videoUrl ?? null} motion={day.sceneMotion}/>
+            {day.clue && <p>{day.clue}</p>}</article>)}
+        </details>}
+        {staleForm && <p role="alert">다른 관리자가 수정본을 저장했습니다. 편성 보드에서 테마를 다시 열어 최신 내용을 확인해 주세요.</p>}
         <div className="ws-actions">
-          <button className="cj-primary" disabled={save.isPending || theme?.status === 'REVIEW_REQUIRED'}>테마 저장</button>
-          {theme && (theme.status==='DRAFT'||theme.status==='UNPUBLISHED') && <button type="button" disabled={action.isPending} onClick={requestReview}>검토 요청</button>}
+          <button className="cj-primary" disabled={busy || staleForm || theme?.status === 'REVIEW_REQUIRED' || (live && !changed)}>테마 저장</button>
+          {theme && (theme.status==='DRAFT'||theme.status==='UNPUBLISHED') && <button type="button" disabled={busy || (hasPublication && (staleForm || changed))} onClick={requestReview}>검토 요청</button>}
           {theme?.status==='REVIEW_REQUIRED' && <button type="button" onClick={onClose}>편성 보드에서 게시</button>}
+          {newer && !theme.reviewRequested && <button type="button" disabled={busy || staleForm || changed} onClick={requestReview}>수정본 검토 요청</button>}
+          {newer && theme.reviewRequested && <button type="button" disabled={busy || staleForm || changed} onClick={() => decide('publish', theme.version!)}>수정본 재게시</button>}
+          {live && theme.publishedVersion != null && <button type="button" className="ad-danger" disabled={busy} onClick={() => decide('unpublish', theme.publishedVersion!)}>제공 중단</button>}
         </div>
-        <ErrorNotice error={save.error ?? action.error} />
+        <ErrorNotice error={save.error ?? review.error} />
         <p role="status">{message}</p>
       </form>
+      {decision && theme && <Modal title={decision.action === 'publish' ? '수정본을 재게시할까요?' : '학생에게 테마 제공을 중단할까요?'}
+        onClose={() => { if (!busy) setDecision(null) }}>
+        <p>{THEME_GRADE_LABELS[theme.grade]} · {theme.weekStart} · v{decision.version}</p>
+        <p>{decision.action === 'publish' ? '검토한 수정본을 학생에게 공개합니다.' : '이 테마의 신규 제공을 중단합니다. 이미 시작한 학습은 이어갈 수 있습니다.'}</p>
+        {problems.length > 0 ? <ul role="alert">{problems.map(p => <li key={p}>{p}</li>)}</ul> : <ErrorNotice error={publication.error}/>}
+        <div className="ws-actions"><button disabled={busy} onClick={() => setDecision(null)}>취소</button>
+          <button className={decision.action === 'publish' ? 'cj-primary' : 'ad-danger'} disabled={busy || publication.isError} onClick={confirm}>
+            {decision.action === 'publish' ? '재게시 확정' : '제공 중단 확정'}</button></div>
+      </Modal>}
     </Panel>
   )
 }

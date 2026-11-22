@@ -105,9 +105,10 @@ test('완료 초안 상세: 이야기·요일 문제·실패를 보이고 채택
   await expect(page.getByRole('dialog').getByText('합성 질문')).toBeVisible()
   await page.getByRole('button',{name:'월요일 장면 보기'}).click()
   await page.getByRole('button', { name: '채택해서 테마 만들기', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('적용 주 2026-11-16')
   await page.getByRole('dialog').getByRole('button', { name: '채택', exact: true }).click()
   await expect(page).toHaveURL(new RegExp('/admin/themes\\?themeId=' + themeId))
-  expect(calls.filter(c => c.path.endsWith('/adopt'))).toEqual([expect.objectContaining({ method: 'POST', body: {} })])
+  expect(calls.filter(c => c.path.endsWith('/adopt'))).toEqual([expect.objectContaining({ method: 'POST', body: { expectedPlannedWeek: null } })])
 })
 
 test('유형별 선택은 기존 성취기준 표를 사용하고 요청에 지정한 필드만 보낸다', async ({ page, context }) => {

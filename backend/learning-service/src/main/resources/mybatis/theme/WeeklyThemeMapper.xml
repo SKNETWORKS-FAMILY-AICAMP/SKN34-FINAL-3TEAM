@@ -206,12 +206,12 @@
     <update id="updateHeader">
         UPDATE weekly_theme
         SET grade = #{grade}, week_start = #{weekStart}, status = #{status},
-            current_version_id = #{currentVersionId}, updated_at = #{now}
+            current_version_id = #{currentVersionId}, review_version_id = NULL, updated_at = #{now}
         WHERE id = #{id}
     </update>
 
     <update id="updateStatus">
-        UPDATE weekly_theme SET status = #{status}, updated_at = #{now} WHERE id = #{id}
+        UPDATE weekly_theme SET status = #{status}, review_version_id = NULL, updated_at = #{now} WHERE id = #{id}
     </update>
 
     <update id="markReviewRequested">
@@ -221,7 +221,8 @@
     <!-- 게시·재게시: 게시본 <- 현재본. 같은 학년·주의 다른 게시본과는 부분 UK uq_weekly_theme_published_week로 충돌 -->
     <update id="publish">
         UPDATE weekly_theme
-        SET status = 'PUBLISHED', published_version_id = current_version_id, published_at = #{now}, updated_at = #{now}
+        SET status = 'PUBLISHED', published_version_id = current_version_id, review_version_id = NULL,
+            published_at = #{now}, updated_at = #{now}
         WHERE id = #{id}
     </update>
 
