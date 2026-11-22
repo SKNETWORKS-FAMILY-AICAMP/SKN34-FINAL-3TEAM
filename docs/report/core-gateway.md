@@ -935,7 +935,8 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 - `PipelineRegistrationHttpTest` 7개: PASS 등록(재학습 계정 감사·활성화 안 함), FAIL 422+`preflight`, scoring 오류 502, 409, 규칙 위반은 사전 검사 전 거부, ops 토큰 정책, 관리자 `PIPELINE` 400
 - `AdminExpressionReviewHttpTest` 7개: 목록 중계(ADMIN·빈 학생 범위, 학생 ID 등 다른 칸 버림, 보여 준 ID 감사), 기본값·빈 쪽, 잘못된 조회 400·learning 형식 오류 503(감사 없음), 라벨 감사 후 전달, 잘못된 라벨 400(감사·호출 없음), learning 404·결과 모름 503(보낼 때마다 감사 1줄), SERVICE_OPS만
 - `ModelVersionHttpTest`: 추천 태그 저장·응답·잘못된 6가지 422
-- `scripts/tests` 386개 통과(`test_model_registry_contract` 문서 경로 7개·내부 경로 보안, `test_admin_operations_contract` 지문 예외 #728)
+- `scripts/tests` 실패 0(Linux pytest 386 / Windows unittest 385), 최종은 CI. 대상(`test_model_registry_contract` 문서 경로 7개·내부 경로 보안, `test_admin_operations_contract` 지문 예외 #728)
+- 로컬 확인(2026-11-22, compose e2e·합성 자료): 관리자 화면 라벨 2건 → learning 반영·감사, ops 자동 등록(사전 검사 PASS·REGISTERED)·추천 태그 표시. 경계 구간 행 자동 생성은 범위 밖
 
 ### 한계
 
