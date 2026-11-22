@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLearningActions, useMission } from '../../../data/classroom/useClassroom.ts'
 import { useWeeklyTheme } from '../../../data/retention/queries.ts'
 import { studentThinkingLabels } from '../../../domain/classroom.ts'
 import type { Attempt, Child } from '../../../domain/classroom.ts'
 import { DAY_LABELS } from '../../../domain/retention.ts'
 import type { AttemptContext, ThemeDay } from '../../../domain/retention.ts'
-import { readThemeMotion } from '../../../domain/themeMotion.ts'
+import { cameraTransform, readThemeMotion } from '../../../domain/themeMotion.ts'
 import { attemptStarted } from '../../../domain/themeScene.ts'
 import { MotionEffects } from '../../common/MotionEffects.tsx'
 import { QueryStateNotice } from '../../common/QueryStateNotice.tsx'
@@ -14,6 +14,8 @@ import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import './today-scene.css'
 
 /** 그림 주소로 쓸 수 있는 값만(절대 주소·사이트 안 경로). 나머지는 그림 없음 */
+/** 말꼬리(px): 밑변(반 폭 HALF)이 이름표에서 GAP 떨어지고 상자 오른쪽 끝에서 CORNER(둥근 모서리 + 반 폭) 안, 끝은 화자 쪽으로 최대 LEAN 기울임 */
+const TAIL_HALF = 19, TAIL_GAP = 12, TAIL_CORNER = 46, TAIL_LEAN = 18
 const imageUrl = (uri: string | undefined) => (uri && /^(https?:\/\/|\/[^/])/.test(uri) ? uri : null)
 
 /**
@@ -68,6 +70,44 @@ export function TodayScene({ child, day, onHome, onProblem }: {
     return () => window.clearTimeout(timer)
   }, [showing, reduce])
   const ready = reduce || risen
+  const sceneMotion = attempt ? readThemeMotion(attempt.mission.sceneMotion) : null
+  // 처음 3.2초: ai 카메라 끝 위치(그날 중심 인물·물건 쪽 확대)에서 전체 그림으로 빠지고 대사 중에는 멈춤(사용자 결정 2026-11-23).
+  // 카메라 값이 없으면 CSS 가운데 당기기(ts-cam), 움직임 줄이기면 움직이지 않음
+  const camera = reduce ? null : (sceneMotion?.camera ?? null)
+  const art = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = art.current
+    if (!showing || !el || !camera) return
+    const animation = el.animate([{ transform: cameraTransform(camera.to) }, { transform: 'none' }], { duration: 3200, easing: 'ease-out', fill: 'forwards' })
+    return () => animation.cancel()
+  }, [showing, camera?.to.x, camera?.to.y, camera?.to.zoom]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 말꼬리 자리: 화자 x(그림 너비 %)를 그림 틀의 화면 위치로 바꿔 대화 상자 기준으로 잰다. 밑동은 상자 곧은 윗변 안에만,
+  // 화자가 그 밖이면(마지막 대사 뭉치가 '문제 시작하기' 단추 위 등) 끝만 화자 쪽으로 기울인다(사용자 결정 2026-11-23)
+  const speakerX = showing && lines.length > 0 ? sceneMotion?.speakers[lines[Math.min(step, lines.length - 1)].speaker]?.x : undefined
+  const frame = useRef<HTMLDivElement>(null)
+  const talk = useRef<HTMLDivElement>(null)
+  const box = useRef<HTMLButtonElement>(null)
+  const name = useRef<HTMLSpanElement>(null)
+  const [tail, setTail] = useState<{ left: number; lean: number } | null>(null)
+  useLayoutEffect(() => {
+    const f = frame.current, t = talk.current, b = box.current, n = name.current
+    if (speakerX === undefined || !f || !t || !b) { setTail(null); return }
+    const place = () => {
+      const fr = f.getBoundingClientRect(), tr = t.getBoundingClientRect(), br = b.getBoundingClientRect()
+      if (!fr.width || !br.width) return
+      const aim = fr.left + (speakerX / 100) * fr.width - tr.left
+      const min = (n ? n.getBoundingClientRect().right : br.left) - tr.left + TAIL_GAP + TAIL_HALF
+      const max = br.right - tr.left - TAIL_CORNER
+      const left = max < min ? (min + max) / 2 : Math.max(min, Math.min(max, aim))
+      const lean = Math.max(-TAIL_LEAN, Math.min(TAIL_LEAN, aim - left))
+      setTail((p) => (p && Math.abs(p.left - left) < 0.5 && Math.abs(p.lean - lean) < 0.5 ? p : { left, lean }))
+    }
+    place()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(place)
+    for (const el of [f, t, b, n]) if (el) observer.observe(el)
+    return () => observer.disconnect()
+  }, [speakerX, step])
   // 대화가 없거나 이미 답을 쓴 시도는 장면 없이 바로 문제(부모가 다시 그려도 한 번만 넘김)
   const left = useRef(false)
   useEffect(() => {
@@ -102,12 +142,8 @@ export function TodayScene({ child, day, onHome, onProblem }: {
   const m = attempt.mission
   const raw = imageUrl(reduce ? m.staticSceneUri || m.sceneUri : m.sceneUri || m.staticSceneUri)
   const image = raw && raw !== badImage ? raw : null
-  const motion = readThemeMotion(m.sceneMotion)
   const last = lines.length - 1
   const current = lines[Math.min(step, last)]
-  // 말꼬리는 그 화자 위치가 있을 때만(ai 움직임 speakers, 그림 너비 %). 가장자리에서 넘치지 않게
-  const at = motion?.speakers[current.speaker]
-  const tail = at ? Math.max(6, Math.min(94, at.x)) : null
   const title = today?.title ?? m.title
   const next = () => {
     if (!ready) return
@@ -127,11 +163,11 @@ export function TodayScene({ child, day, onHome, onProblem }: {
         <h1 className="ts-chip ts-title"><span>{label}</span>{title}</h1>
       </div>
       <div className="ts-col">
-        <div className="ts-frame">
+        <div ref={frame} className="ts-frame">
           {image ? (
-            <div className={reduce ? 'ts-art' : 'ts-art ts-cam'}>
+            <div ref={art} className={reduce || camera ? 'ts-art' : 'ts-art ts-cam'}>
               <img src={image} alt={`${label} 장면`} onError={() => setBadImage(raw)} />
-              {!reduce && motion && motion.effects.length > 0 && <MotionEffects effects={motion.effects} />}
+              {!reduce && sceneMotion && sceneMotion.effects.length > 0 && <MotionEffects effects={sceneMotion.effects} />}
             </div>
           ) : (
             <div className="ts-noimg" role="img" aria-label={raw ? '그림을 불러오지 못함' : '그림 없음'}>
@@ -147,11 +183,17 @@ export function TodayScene({ child, day, onHome, onProblem }: {
           )}
           <button type="button" className="ts-advance" onClick={next} aria-label={step < last ? '다음 대사' : '문제로 넘어가기'} />
         </div>
-        <div className={reduce ? 'ts-talk' : 'ts-talk ts-rise'}>
-          {tail !== null && <span className="ts-tail" aria-hidden="true" style={{ left: `${tail}%` }} />}
-          <span className="ts-name">{current.speaker}</span>
+        <div ref={talk} className={reduce ? 'ts-talk' : 'ts-talk ts-rise'}>
+          {tail && speakerX !== undefined && (
+            // 두 변만 선(끝이 상자 테두리 선 한가운데 y 29.5에서 이어짐), 안쪽은 상자 윗 테두리(y 28~31)까지 상자 색으로 덮음
+            <svg className="ts-tail" aria-hidden="true" viewBox="-40 0 80 32" style={{ left: `${tail.left}px` }}>
+              <polygon className="ts-tail-fill" points={`-17,31 17,31 ${tail.lean},1.5`} />
+              <polyline className="ts-tail-line" points={`-18.5,29.5 ${tail.lean},1.5 18.5,29.5`} />
+            </svg>
+          )}
+          <span ref={name} className="ts-name">{current.speaker}</span>
           <div className="ts-row">
-            <button type="button" className="ts-box" onClick={next} data-ready={ready}>
+            <button ref={box} type="button" className="ts-box" onClick={next} data-ready={ready}>
               <span className="ts-line" aria-live="polite">{current.text}</span>
               <span className="ts-pos">{Math.min(step, last) + 1} / {lines.length}{step < last ? ' · 다음 ▼' : ''}</span>
             </button>

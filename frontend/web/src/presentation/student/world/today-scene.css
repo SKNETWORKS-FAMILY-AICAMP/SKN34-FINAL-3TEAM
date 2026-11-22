@@ -117,25 +117,19 @@
 #class-journal .st-world .ts-talk { position: absolute; left: 4%; right: 4%; bottom: 4%; z-index: 5; }
 #class-journal .st-world .ts-rise { animation: ts-rise 0.45s ease-out 2.4s both; }
 @keyframes ts-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+/* 말꼬리(#807 2026-11-23): 상자 기준 px 위치(TodayScene TAIL_*), 밑변 y 28이 상자 윗변에 닿게 */
 #class-journal .st-world .ts-tail {
   position: absolute;
-  top: -22px;
-  width: 0;
-  height: 0;
+  top: -28px;
+  z-index: 2;
+  width: 80px;
+  height: 32px;
+  overflow: visible;
   transform: translateX(-50%);
-  border-style: solid;
-  border-width: 0 15px 22px 15px;
-  border-color: transparent transparent #1f4e6b transparent;
+  pointer-events: none;
 }
-#class-journal .st-world .ts-tail::after {
-  content: "";
-  position: absolute;
-  left: -11px;
-  top: 5px;
-  border-style: solid;
-  border-width: 0 11px 18px 11px;
-  border-color: transparent transparent #fff8e6 transparent;
-}
+#class-journal .st-world .ts-tail-fill { fill: #fff8e6; }
+#class-journal .st-world .ts-tail-line { fill: none; stroke: #1f4e6b; stroke-width: 3; stroke-linejoin: round; stroke-linecap: butt; }
 #class-journal .st-world .ts-name {
   position: absolute;
   left: 20px;

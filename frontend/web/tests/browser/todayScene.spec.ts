@@ -33,6 +33,36 @@ const go = (page: Page, path: string) =>
   page.evaluate(path => { history.pushState({}, '', path); dispatchEvent(new PopStateEvent('popstate')) }, path)
 const chips = (page: Page) => page.getByRole('list', { name: '이번 주 진행' })
 const scene = (page: Page) => page.getByRole('main', { name: '오늘 장면' })
+/** 이번 주 게시 테마를 두고 월요일 미션 사본(#882 missionSnapshots)에 움직임 값·대화를 넣는다(말꼬리·카메라 시험용) */
+async function publishMonday(page: Page, motion: { speakers: Record<string, { x: number; y: number; zoom: number }>; camera: unknown }, dialogue: { speaker: string; text: string }[]) {
+  await page.evaluate(async ({ motion, dialogue }) => {
+    const retention = await import('/src/mocks/fixtures/retention.ts' as string)
+    const { fixtureStore } = await import('/src/mocks/fixtures/student.ts' as string)
+    const { queryClient } = await import('/src/data/queryClient.ts' as string)
+    const child = fixtureStore.snapshot().session.child
+    const days = retention.themeMissions((await fixtureStore.home(child)).missions, child.grade).days
+    const snapshots = days.map(({ day, mission }: { day: string; mission: Record<string, unknown> }) => ({
+      ...mission, id: 'scene807-' + day, status: undefined, attemptId: undefined,
+      sceneMotion: { version: 1, transition: { kind: 'fade', seconds: 0.6 }, camera: motion.camera, speakers: motion.speakers, effects: [], captions: [], spots: [] },
+    }))
+    retention.retentionState.themes = [{
+      themeId: 'theme-807-motion', grade: `G${Math.min(child.grade, 6)}`, weekStart: retention.weekStart(), title: '움직임 시험 테마',
+      intro: '말꼬리·카메라 시험', status: 'PUBLISHED', updatedAt: new Date().toISOString(), missionSnapshots: snapshots,
+      days: days.map(({ day }: { day: string }, i: number) => ({ day, missionId: snapshots[i].id, dialogue: day === 'MON' ? dialogue : null })),
+    }]
+    retention.persistRetention()
+    await queryClient.invalidateQueries()
+  }, { motion, dialogue })
+  await expect(page.locator('.sh-title')).toHaveText('움직임 시험 테마')
+}
+const DEMO_CAMERA = { from: { x: 50, y: 50, zoom: 1 }, to: { x: 45, y: 55, zoom: 1.2 }, seconds: 12 }
+/** 말꼬리 선(두 변)의 화면 영역과 끝의 기울기(SVG 단위, 0이면 곧게) */
+async function tailOf(page: Page) {
+  const line = scene(page).locator('.ts-tail-line')
+  const box = await line.boundingBox()
+  const lean = Number((await line.getAttribute('points'))?.split(' ')[1]?.split(',')[0])
+  return { box: box!, lean }
+}
 
 test('홈에서 문제를 열면 오늘 장면: 대사를 한 줄씩 넘기고 마지막 대사에서 대화창 오른쪽 문제 시작하기로 답변 작성, 문제 상자에 그날 마지막 대사', async ({ page }) => {
   await student(page)
@@ -102,7 +132,60 @@ test('말꼬리는 그 화자 위치가 있을 때만(미션 움직임 speakers)
   await box.click()
   await box.click()
   await expect(scene(page).locator('.ts-name')).toHaveText('뭉치')
-  await expect(scene(page).locator('.ts-tail')).toHaveAttribute('style', /left: 30%/)
+  // 말꼬리 끝은 그림 틀의 30% 자리(상자 여백과 상관없이 화면 위치로 잼)
+  const frame = (await scene(page).locator('.ts-frame').boundingBox())!
+  const { box: tail, lean } = await tailOf(page)
+  expect(lean).toBe(0)
+  expect(Math.abs(tail.x + tail.width / 2 - (frame.x + frame.width * 0.3))).toBeLessThan(3)
+})
+
+test('말꼬리 밑동은 대화 상자 안: 화자가 단추 위면 끝만 화자 쪽으로 기울고 단추와 겹치지 않음, 이름표보다 왼쪽 화자는 이름표 옆에서 왼쪽으로', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 4, days: '-----' })
+  await publishMonday(page, { speakers: { 이장님: { x: 2, y: 50, zoom: 1.2 }, 뭉치: { x: 97, y: 60, zoom: 1.2 } }, camera: DEMO_CAMERA },
+    [{ speaker: '이장님', text: '어젯밤에도 종이 울렸단다.' }, { speaker: '뭉치', text: '종소리 단서를 같이 따져 볼래?' }])
+  await go(page, '/student/theme/scene/MON')
+  const box = scene(page).locator('.ts-box')
+  await expect(box).toHaveAttribute('data-ready', 'true')
+  const first = await tailOf(page)
+  const nameBox = (await scene(page).locator('.ts-name').boundingBox())!
+  expect(first.lean).toBeLessThan(0)
+  expect(first.box.x).toBeGreaterThanOrEqual(nameBox.x + nameBox.width + 10)
+  await box.click()
+  const start = scene(page).getByRole('button', { name: /^문제 시작하기/ })
+  await expect(start).toBeVisible()
+  await expect.poll(async () => (await tailOf(page)).lean).toBeGreaterThan(0)
+  const last = await tailOf(page)
+  const boxRect = (await box.boundingBox())!, startRect = (await start.boundingBox())!
+  expect(last.box.x + last.box.width).toBeLessThanOrEqual(boxRect.x + boxRect.width - 10)
+  expect(last.box.x + last.box.width).toBeLessThan(startRect.x)
+})
+
+test('처음 3초는 ai 카메라 끝 위치에서 전체 그림으로 빠지고 대사 중에는 멈춤, 카메라 값이 없으면 가운데 당기기, 움직임 줄이기면 움직이지 않음', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 4, days: '-----' })
+  const art = scene(page).locator('.ts-art')
+  // 시연 월요일 미션은 카메라 끝 위치 x 45·y 55·확대 1.2
+  await go(page, '/student/theme/scene/MON')
+  await expect(art).toBeVisible()
+  await expect(art).not.toHaveClass(/ts-cam/)
+  await expect.poll(() => art.evaluate((el) => el.getAnimations().map((a) => JSON.stringify((a.effect as KeyframeEffect).getKeyframes()[0].transform)).join())).toContain('scale(1.2)')
+  await expect(scene(page).locator('.ts-box')).toHaveAttribute('data-ready', 'true')
+  // 다 빠진 뒤에는 변환 없음(브라우저에 따라 none 또는 단위 행렬)
+  await expect.poll(() => art.evaluate((el) => getComputedStyle(el).transform), { timeout: 5_000 }).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/)
+
+  await go(page, '/student/home')
+  await publishMonday(page, { speakers: { 뭉치: { x: 30, y: 60, zoom: 1.2 } }, camera: null }, [{ speaker: '뭉치', text: '카메라 값이 없는 장면이야.' }])
+  await go(page, '/student/theme/scene/MON')
+  await expect(art).toHaveClass(/ts-cam/)
+
+  await go(page, '/student/home')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await publishMonday(page, { speakers: { 뭉치: { x: 30, y: 60, zoom: 1.2 } }, camera: DEMO_CAMERA }, [{ speaker: '뭉치', text: '움직임 줄이기 장면이야.' }])
+  await go(page, '/student/theme/scene/MON')
+  await expect(art).toBeVisible()
+  await expect(art).not.toHaveClass(/ts-cam/)
+  expect(await art.evaluate((el) => el.getAnimations().length)).toBe(0)
 })
 
 test('장면에서 홈으로 돌아가도 답을 안 쓴 시도는 이어서 풀 때 장면부터, 답을 쓰면 바로 답변 작성', async ({ page }) => {
