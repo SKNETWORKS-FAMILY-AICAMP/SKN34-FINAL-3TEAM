@@ -32,6 +32,14 @@ class AdminWeeklyThemesController(private val service: AdminLearningService) {
         grade?.let { params["grade"]=it };weekStart?.let { params["weekStart"]=it };status?.let { params["status"]=it }
         return service.weeklyThemes("GET",query=params.entries.joinToString("&") { "${it.key}=${URLEncoder.encode(it.value,StandardCharsets.UTF_8)}" }).themeAdminHttp()
     }
+    @GetMapping("/planner")
+    fun planner(@RequestParam grade: String, @RequestParam weekStart: LocalDate): ResponseEntity<ByteArray> {
+        if (grade !in GRADES || weekStart.dayOfWeek != DayOfWeek.MONDAY) invalidOperations()
+        return service.weeklyPlanner("GET", "grade=$grade&weekStart=$weekStart").themeAdminHttp()
+    }
+    @PutMapping("/planner")
+    fun plan(@RequestBody body: ByteArray) = service.weeklyPlanner("PUT", body=body).themeAdminHttp()
+
     @PostMapping fun create(@RequestBody body: ByteArray)=service.weeklyThemes("POST",body=body).themeAdminHttp()
     @GetMapping("/{themeId}") fun detail(@PathVariable themeId: UUID)=service.weeklyThemes("GET",themeId).themeAdminHttp()
     @PutMapping("/{themeId}") fun update(@PathVariable themeId: UUID,@RequestBody body: ByteArray)=service.weeklyThemes("PUT",themeId,body=body).themeAdminHttp()

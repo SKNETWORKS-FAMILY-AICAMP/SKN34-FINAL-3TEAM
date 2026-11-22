@@ -536,7 +536,7 @@
 | GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·지식 임베딩(#467 `KNOWLEDGE_EMBEDDING`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`·영상 `THEME_VIDEO` #436)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
 | GET·POST | `/admin/weekly-themes?grade&weekStart&status` | CONTENT | 테마 목록·작성 `{grade, weekStart, title, intro, days:[{day, missionId}]}`. `grade`는 `G3`·`G4`·`G5`·`G6`(학년별 테마, 에픽 #436) | ADM-22 | core 프록시 #387 |
 | GET·PUT | `/admin/weekly-themes/{themeId}` | CONTENT | 상세·수정(게시 중 수정은 재검토) | ADM-22 | core 프록시 #387 |
-| POST | `/admin/weekly-themes/{themeId}/review-request` · `/publish` · `/unpublish` | CONTENT | 미션과 같은 작성→검토→게시(본문 `{}`). 별도 검토 경로 없이 검토 요청한 현재본의 게시가 승인, 아니면 `409 CONFLICT`. 게시 검사: 월~금 다섯 요일, 게시 미션만(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 테마 학년을 포함(초3·초4 논술 불가, #438 학년별 테마), 같은 학년·주 게시 1개 | ADM-22 | core 프록시 #387 |
+| POST | `/admin/weekly-themes/{themeId}/review-request` · `/publish` · `/unpublish` | CONTENT | 작성→검토→최종 게시. 이미 확정된 주의 중단은 409. 별도 검토 경로 없이 검토 요청한 현재본의 게시가 승인, 아니면 `409 CONFLICT`. 게시 검사: 월~금 다섯 요일, 게시 미션만(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 테마 학년을 포함(초3·초4 논술 불가, #438 학년별 테마), 같은 학년·주 게시 1개 | ADM-22 | core 프록시 #387 |
 | POST | `/admin/theme-drafts` | CONTENT | 테마 초안 생성 요청(에픽 #436) `{grade, weekStart, topic?, missions?:[{thinkingType, standardCodes[], inputType}]}`(본문 값 검사는 learning #438) → `202 ThemeDraft`(`status: GENERATING`, 생성은 learning 주기 작업) | ADM-22 | core 프록시 #439 |
 | GET | `/admin/theme-drafts?status&source&page&size` · `/admin/theme-drafts/{draftId}` | CONTENT | 목록(최근 요청 순)·상세. `status`는 `GENERATING`·`READY`·`CHECK_FAILED`·`FAILED`·`ADOPTED`·`DISCARDED`, `source`는 `AUTO`(주간 자동)·`ADMIN`(관리자 요청) | ADM-22 | core 프록시 #439 |
 | POST | `/admin/theme-drafts/{draftId}/adopt` · `/discard` · `/regenerate` | CONTENT | 채택 `{}` → `201 AdminWeeklyTheme`(미션 5개 `DRAFT`·테마 `DRAFT`를 learning 한 트랜잭션으로, 자동 게시 없음), 버리기 `{}` → `ThemeDraft`, 다시 생성 `{}`(전체) 또는 `{targets:[…]}`(고른 대상만, #537) → `202 ThemeDraft`(새 초안). 상태상 불가 전이 `409 CONFLICT` | ADM-22 | core 프록시 #439 |
@@ -546,6 +546,14 @@
 - 테마는 core가 learning `/internal/admin/weekly-themes…`로 프록시(#355 미션 초안과 같은 방식, core #387·learning #385 구현), 테마 초안은 `/internal/admin/theme-drafts…`로 같은 방식(core #439·learning #438), 아이템은 core 소유. 변경은 `audit_log`(`WEEKLY_THEME_*`·`THEME_DRAFT_*`·`LOOK_ITEM_*`). 테마 초안 요청·버리기·다시 생성은 응답 초안(`target_type = THEME_DRAFT`), 채택은 만든 테마(`WEEKLY_THEME`, `detail.draftId`)가 결과 감사 대상 아이템은 같은 트랜잭션에서 `LOOK_ITEM_CREATED`·`LOOK_ITEM_UPDATED`·`LOOK_ITEM_STOPPED`·`LOOK_ITEM_RESUMED`(`target_type = LOOK_ITEM`, 수정은 `detail.before`에 이전 값)
 - 커뮤니티 신고 검토는 기존 `/admin/error-reports`(SERVICE_OPS). 신고 연결 공유물 원문 열람은 감사 기록(P07)
 - 표현 검토(FN-ADM-24, #725): `GET /admin/expression-reviews?labeled&source&page&size`·`PUT /admin/expression-reviews/{reviewId}/label`, SERVICE_OPS. core가 learning `/internal/admin/expression-reviews…`(4.1.5)로 프록시하고 목록 열람 `EXPRESSION_REVIEW_VIEW`·라벨 `EXPRESSION_REVIEW_LABEL` 감사 기록(P07). 응답 모양은 4.1.5와 같음(학생 이름·ID 없음)
+
+#### 관리자 테마 검수와 최종 게시 (#882)
+
+- 콘텐츠 관리자는 시작·월~금·마무리 장면 각각의 생성 이력을 조회한다. `GET /admin/theme-drafts/{draftId}/scenes/{scene}/versions`에서 두 후보를 독립적으로 고를 수 있다. 최근 세 건 외의 기록도 보관한다. `PUT …/versions/selection`으로 선택본을 저장하고 `PATCH …/versions/{versionId}`로 별표와 메모를 저장한다. 재생성 요청 자체는 기존 선택을 바꾸지 않는다.
+- 초안 목록은 생성 출처, 상태, 학년, 생성 기준 주, 버린 초안 숨기기 및 비교 대기 조건을 지원한다. 관리자는 직접 테마 생성을 요청할 수 있다. 요일 미션 내용과 해당 장면 자료를 왕복할 수 있고 영상 파일이 없는 장면은 실제 제공된 정지 이미지·모션을 표시한다.
+- `GET /admin/weekly-themes/planner?grade&weekStart`는 학년의 연속 4주 편성과 후보를 조회한다. `PUT /admin/weekly-themes/planner`는 채택 전 후보를 배치·이동·맞교환·해제한다. 생성 기준 주는 보존한다. 원래 주와 대상 칸이 관리자가 본 상태와 달라졌으면 `409 PLAN_CONFLICT`를 반환한다. 이미 게시가 확정된 주는 `409 WEEK_LOCKED`를 반환한다.
+- 채택 시 장면별 선택을 반영한 테마와 요일 미션을 만든다. 최종 게시하면 학년·주차에 게시본 하나를 고정하고 요일별 미션 본문·기준표 버전을 함께 저장한다. 확정한 주의 재편성·테마 수정·게시 중단은 409다. 학생이 테마에서 여는 미션 안내(`GET /missions/{missionId}?context=THEME_DAY|THEME_REVIEW`)와 시도 시작은 같은 주의 확정본과 공개 조건을 사용한다. 독립 미션의 수정과 다른 주의 편성은 계속 가능하다.
+- `GET /admin/overview/workload`는 운영 권한에 따라 답변 대기 문의·신규 신고·기간 내 실패 작업과 환불 승인 대기 건수를 반환한다. 같은 상태와 기간을 전용 목록에 넘긴다.
 
 #### 2.8.2 AI 사용량 조회 (#43)
 

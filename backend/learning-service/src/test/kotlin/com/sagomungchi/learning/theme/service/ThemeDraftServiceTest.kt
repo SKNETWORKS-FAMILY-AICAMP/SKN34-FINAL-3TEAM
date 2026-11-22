@@ -66,6 +66,8 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var clock: Clock
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var semesters: StandardSemesters
+    @Autowired lateinit var planner: ThemeWeekPlanner
+    @Autowired lateinit var media: ThemeDraftMediaService
     @MockitoBean lateinit var ai: ThemeDraftAiClient
 
     private val admin = UUID.randomUUID()
@@ -436,7 +438,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         val all = service.list(null, null, 0, 20).items
         assertEquals(all.sortedByDescending { it.createdAt }.map { it.draftId }, all.map { it.draftId })
 
-        val view = ThemeDraftService(drafts, ai, missions, themes, properties, clock, TestAssets.urls, semesters).view(drafts.findById(ready.id)!!)
+        val view = ThemeDraftService(drafts, ai, missions, themes, properties, clock, TestAssets.urls, semesters, planner, media).view(drafts.findById(ready.id)!!)
         assertEquals(ThemeDraftRules.SCENES, view.scenes.map { it.scene })
         view.scenes.forEach {
             assertTrue(it.imageUrl!!.startsWith(TestAssets.BASE + ThemeDraftFixtures.key(it.scene) + "?"), it.imageUrl)
@@ -449,6 +451,57 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         }
         assertEquals(listOf(3, 1, "REVIEW"), listOf(view.maxAttempts, view.attempts, view.draft!!.warnings.single().stage))
         assertEquals(emptyList(), service.view(service.request(command(weekStart = nextWeek.plusWeeks(2)))).scenes) // 생성 전
+    }
+
+    @Test
+    fun `편성·교환은 학년 안에서만 원자적으로 적용하고 채택 시 생성 주와 실제 주를 구분`() {
+        val a = readyDraft()
+        val b = readyDraft()
+        val one = nextWeek.plusWeeks(1)
+        val two = nextWeek.plusWeeks(2)
+        planner.change(PlanChange(a.grade,a.id,null,one,null))
+        planner.change(PlanChange(b.grade,b.id,null,two,null))
+        assertCode(409,"PLAN_CONFLICT") { planner.change(PlanChange(a.grade,a.id,one,two,null)) }
+        assertCode(409,"PLAN_CONFLICT") { planner.change(PlanChange(ThemeGrade.G4,a.id,one,two,b.id)) }
+        assertEquals(one,planner.state(a.id).plannedWeek)
+        assertEquals(two,planner.state(b.id).plannedWeek)
+        planner.change(PlanChange(a.grade,a.id,one,two,b.id))
+        val board = planner.board(a.grade,one)
+        assertEquals(listOf(b.id,a.id),board.weeks.take(2).map { it.planned?.draftId })
+        assertCode(409,"PLAN_CONFLICT") { service.adopt(a.id,admin,one,true) }
+        val theme = service.adopt(a.id,admin,two,true)
+        assertEquals(two,theme.weekStart)
+        assertEquals(nextWeek,service.get(a.id).weekStart)
+        assertNull(planner.state(a.id).plannedWeek)
+        assertEquals(one,planner.state(b.id).plannedWeek)
+        assertCode(409,"PLAN_CONFLICT") { service.discard(b.id,null,true) }
+        service.discard(b.id,one,true)
+        assertNull(planner.state(b.id).plannedWeek)
+    }
+
+    @Test
+    fun `최초 게시 때 미채택 후보를 반환하고 생성 주가 닫힌 후보는 다른 주에 편성해 채택`() {
+        val candidate = readyDraft()
+        val fallback = readyDraft()
+        planner.change(PlanChange(candidate.grade,candidate.id,null,nextWeek,null))
+        val seeds = com.sagomungchi.learning.TestRows(jdbc).themeMissions(5,6)
+        val days = ThemeDay.entries.zip(seeds).map { (day,mission) -> com.sagomungchi.learning.theme.domain.ThemeDayMission(day,mission.id) }
+        val content = com.sagomungchi.learning.theme.domain.ThemeContent(candidate.grade,nextWeek,"게시할 테마","소개",days)
+        val selected = themes.create(admin,content)
+        themes.requestReview(selected.themeId)
+        assertCode(409,"PLAN_CONFLICT") { themes.publish(selected.themeId,selected.version+1) }
+        assertEquals(nextWeek,planner.state(candidate.id).plannedWeek)
+        themes.publish(selected.themeId,selected.version)
+        assertTrue(planner.board(candidate.grade,nextWeek).weeks.first().locked)
+        assertNull(planner.state(candidate.id).plannedWeek)
+        assertFalse(planner.state(fallback.id).weekLocked)
+        assertTrue(planner.state(fallback.id).adoptionWeekLocked)
+        assertCode(409,"WEEK_LOCKED") { service.request(command()) }
+        assertCode(409,"WEEK_LOCKED") { service.adopt(fallback.id,admin,null,true) }
+        assertCode(409,"WEEK_LOCKED") { planner.change(PlanChange(candidate.grade,candidate.id,null,nextWeek,null)) }
+        val open = nextWeek.plusWeeks(1)
+        planner.change(PlanChange(fallback.grade,fallback.id,null,open,null))
+        assertEquals(open,service.adopt(fallback.id,admin,open,true).weekStart)
     }
 
     private fun readyDraft(regen: Map<String, Any?>? = null): ThemeDraft {

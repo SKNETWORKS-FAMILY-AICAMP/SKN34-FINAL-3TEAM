@@ -46,6 +46,26 @@ class ThemeGradeMigrationTest {
                 """.trimIndent(),
             )
         }
+        flyway("24").migrate()
+        db.createStatement().use { s ->
+            s.execute(
+                """
+                INSERT INTO theme_draft (id, grade, week_start, source, status, input, attempts, created_at, updated_at)
+                VALUES ('$ROOT_DRAFT','G3','2026-11-09','ADMIN','READY','{}',1,now(),now()),
+                       ('$CHILD_DRAFT','G3','2026-11-09','ADMIN','READY',
+                        '{"regenerate":{"baseDraftId":"$ROOT_DRAFT","targets":["VIDEO:INTRO"]}}',1,now(),now()),
+                       ('$GRANDCHILD_DRAFT','G3','2026-11-09','ADMIN','READY',
+                        '{"regenerate":{"baseDraftId":"$CHILD_DRAFT","targets":["VIDEO:OUTRO"]}}',1,now(),now());
+                INSERT INTO mission_version (id, mission_id, version, title, subject, grade_min, grade_max,
+                                             thinking_type, input_type, question, created_by, created_at)
+                VALUES ('$MISSION_VERSION','$MISSION',1,'기존 문제','MATH',3,4,'ANALYZE','CHOICE','기존 질문','$AUTHOR',now());
+                INSERT INTO rubric_version (id,mission_id,version,created_by,created_at)
+                VALUES ('$RUBRIC_VERSION','$MISSION',1,'$AUTHOR',now());
+                UPDATE mission SET published_version_id='$MISSION_VERSION', published_rubric_version_id='$RUBRIC_VERSION'
+                WHERE id='$MISSION';
+                """.trimIndent(),
+            )
+        }
         flyway(null).migrate()
     }
 
@@ -53,6 +73,20 @@ class ThemeGradeMigrationTest {
     fun stop() {
         db.close()
         postgres.stop()
+    }
+
+    @Test
+    fun `이전 장면 계보를 최초 초안에 연결하고 당시 게시된 주의 문제와 기준표만 고정한다`() {
+        assertNull(one("SELECT family_root_id FROM theme_draft WHERE id = '$ROOT_DRAFT'"))
+        for (draft in listOf(CHILD_DRAFT, GRANDCHILD_DRAFT)) {
+            assertEquals(ROOT_DRAFT, one("SELECT family_root_id FROM theme_draft WHERE id = '$draft'"))
+        }
+        assertEquals("0", one("SELECT count(*) FROM theme_draft WHERE planned_week IS NOT NULL"))
+        for (version in listOf(LOWER_VERSION, copyId(LOWER_VERSION, "G4"))) {
+            assertEquals("$MISSION_VERSION|$RUBRIC_VERSION",
+                one("SELECT mission_version_id || '|' || rubric_version_id FROM weekly_theme_day WHERE theme_version_id = '$version'"))
+        }
+        assertNull(one("SELECT mission_version_id FROM weekly_theme_day WHERE theme_version_id = '$UPPER_VERSION'"))
     }
 
     @Test
@@ -141,6 +175,11 @@ class ThemeGradeMigrationTest {
     private companion object {
         const val AUTHOR = "00000000-0000-4000-8000-000000000001"
         const val MISSION = "00000000-0000-4000-8000-000000000101"
+        const val MISSION_VERSION = "00000000-0000-4000-8000-000000000102"
+        const val RUBRIC_VERSION = "00000000-0000-4000-8000-000000000103"
+        const val ROOT_DRAFT = "00000000-0000-4000-8000-000000000301"
+        const val CHILD_DRAFT = "00000000-0000-4000-8000-000000000302"
+        const val GRANDCHILD_DRAFT = "00000000-0000-4000-8000-000000000303"
         const val LOWER_THEME = "00000000-0000-4000-8000-000000000201"
         const val LOWER_VERSION = "00000000-0000-4000-8000-000000000202"
         const val UPPER_THEME = "00000000-0000-4000-8000-000000000203"

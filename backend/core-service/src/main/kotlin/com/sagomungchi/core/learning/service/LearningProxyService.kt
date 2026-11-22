@@ -32,6 +32,14 @@ class LearningProxyService(private val client: LearningClient, private val idemp
             "$method /api/v1$path", context.studentScope, requireNotNull(body), operation)
     }
 
+    /** 테마 안내도 학습 시작과 같은 학생 범위, 학년 및 일요일 이용 조건으로 게시 당시 버전을 조회한다. */
+    fun themeMission(mission: UUID, context: String): HttpExchangeResult {
+        val actor = verifiedStudent()
+        val profile = profileQuery(actor)
+        val sunday = entitlements.sundayTheme(UUID.fromString(actor.studentScope.single()))
+        return client.exchange("GET", "/missions/$mission", "$profile&context=$context&sundayTheme=$sunday")
+    }
+
     /**
      * 시도 시작 (#387, api-spec 2.2·2.11). `context` 생략은 `EXTRA`(생각 유형별 고르기). 판정은 [ProductEntitlementService]가 하고
      * learning에는 학년·시연 여부·일요일 허용(`sundayTheme`, #485)과 `{context}`를 넘긴다(요일·되돌아보기·일요일 검사는 learning).

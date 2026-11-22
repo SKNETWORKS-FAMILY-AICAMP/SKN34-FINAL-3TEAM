@@ -1,5 +1,5 @@
 import { useStudentHome } from '../../../data/classroom/useClassroom.ts'
-import type { Child, Mission } from '../../../domain/classroom.ts'
+import type { Child } from '../../../domain/classroom.ts'
 import { DAY_LABELS, ruledOutOn } from '../../../domain/retention.ts'
 import type { AttemptContext, ThemeDay, WeeklyTheme, WeeklyThemeDay } from '../../../domain/retention.ts'
 
@@ -25,15 +25,16 @@ export const dayName = (d: ThemeDay) => `${DAY_LABELS[d]}요일`
 export function useThemeMissions(
   child: Child,
   onResume: (attemptId: string) => void,
-  onStartTheme: (mission: Mission, context: AttemptContext) => void,
+  onStartTheme: (missionId: string, context: AttemptContext) => void,
 ) {
   const home = useStudentHome(child)
   const byId = new Map((home.data?.missions ?? []).map((m) => [m.id, m]))
   const open = (missionId: string, context: AttemptContext) => {
     const m = byId.get(missionId)
-    if (!m) return
-    if (m.status === 'IN_PROGRESS' && m.attemptId) onResume(m.attemptId)
-    else onStartTheme(m, context)
+    const resume = home.data?.resume
+    if (m?.status === 'IN_PROGRESS' && m.attemptId) onResume(m.attemptId)
+    else if (resume?.status === 'IN_PROGRESS' && resume.mission.id === missionId) onResume(resume.attemptId)
+    else onStartTheme(missionId, context)
   }
   const image = (missionId: string) => {
     const m = byId.get(missionId)

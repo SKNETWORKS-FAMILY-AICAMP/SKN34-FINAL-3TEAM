@@ -1,0 +1,28 @@
+#class-journal .ad-workload { margin: 0 0 22px; }
+#class-journal .ad-workload h2 { margin-bottom: 4px; }
+#class-journal .ad-workload > p { color: var(--cj-muted); margin: 0 0 12px; }
+.ad-workload-cards { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,175px),1fr)); gap: 12px; }
+#class-journal .ad-workload-cards a, #class-journal .ad-theme-work-list {
+  background: #fff; border: 1px solid #d7e1e6; border-radius: 12px; padding: 16px;
+}
+#class-journal .ad-workload-cards a { display:flex; align-items:center; gap:12px; color:#263c49; text-decoration:none; }
+#class-journal .ad-workload-cards a:hover, #class-journal .ad-theme-work-list a:hover { border-color:#678aa0; background:#f3f8fa; }
+.ad-workload-cards strong { display:block; line-height:1.35; font-size:1.45rem; font-variant-numeric:tabular-nums; }
+.ad-task-icon { width:38px; height:38px; display:grid; place-items:center; border-radius:10px; }
+.ad-task-icon.pendingInquiries {color:#345cac;background:#eaf1ff}
+.ad-task-icon.receivedReports {color:#835820;background:#fff0d5}
+.ad-task-icon.failedJobs {color:#674593;background:#f1ebfc}
+.ad-task-icon.pendingRefunds {color:#256650;background:#e1f3e9}
+.ad-theme-work { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(260px,1fr); gap:16px; margin-bottom:24px; }
+.ad-priority-theme { position:relative; isolation:isolate; overflow:hidden; display:flex; min-height:205px; align-items:end; padding:22px; background:#234752; color:white; border-radius:12px; }
+.ad-priority-theme img { position:absolute; inset:0; z-index:-2; width:100%; height:100%; object-fit:cover; }
+.ad-priority-theme::before { content:""; z-index:-1; position:absolute; inset:0; background:linear-gradient(0deg,#122734ed,transparent); }
+#class-journal .ad-priority-theme h2 { color:white; font-size:1.45rem; margin:8px 0 2px; }
+#class-journal .ad-priority-theme p { color:#e5edf1; margin:4px 0 10px; }
+.ad-priority-theme span, .ad-theme-work-list h2 { display:flex; align-items:center; gap:6px; }
+#class-journal .ad-priority-theme a { display:inline-block; padding:6px 12px; border-radius:6px; background:white; color:#163846; font-weight:650; }
+#class-journal .ad-theme-work-list h2 { margin-bottom:8px; }
+#class-journal .ad-theme-work-list a { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 3px; border-bottom:1px solid #e9eef0; text-decoration:none; color:#2b4149; }
+#class-journal .ad-theme-work-list .ad-request-theme { border:0; font-weight:650; color:var(--cj-accent); }
+@media(max-width:800px) { .ad-theme-work { grid-template-columns:1fr; } }
+@media(max-width:500px) { .ad-workload-cards { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } #class-journal .ad-workload-cards a { padding:10px; flex-wrap:wrap; } .ad-task-icon{width:28px;height:28px;} }

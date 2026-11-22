@@ -14,10 +14,14 @@ import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
 import com.sagomungchi.learning.theme.service.ThemeDraftCommand
 import com.sagomungchi.learning.theme.service.ThemeDraftService
+import com.sagomungchi.learning.theme.service.ThemeDraftMediaService
+import com.sagomungchi.learning.theme.service.SceneHistory
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -40,6 +44,9 @@ data class ThemeDraftMissionRequest(
     val inputType: InputType? = null,
 )
 
+data class SceneSelectionRequest(val versionId: UUID, val expectedVersionId: UUID?, val expectedVersionCount: Int? = null)
+data class SceneAnnotationRequest(val starred: Boolean? = null, val note: String? = null)
+
 /**
  * 테마 초안 내부 API (api-spec 2.8·4.1, class-diagram 4.4, #438). core #439가 `/api/v1/admin/theme-drafts…`를
  * 관리자 미션 초안과 같은 방식(CONTENT 확인 후 ADMIN + X-User-Id + 빈 학생 범위)으로 넘김. 채택·버리기 본문은 {}(내용은 쓰지 않음),
@@ -49,6 +56,7 @@ data class ThemeDraftMissionRequest(
 @RequestMapping("/internal/admin/theme-drafts")
 class AdminThemeDraftController(
     private val service: ThemeDraftService,
+    private val media: ThemeDraftMediaService,
 ) {
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -76,10 +84,14 @@ class AdminThemeDraftController(
         @RequestParam(required = false) source: ThemeDraftSource?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
+        @RequestParam(required = false) grade: ThemeGrade? = null,
+        @RequestParam(required = false) weekStart: LocalDate? = null,
+        @RequestParam(defaultValue = "false") hideDiscarded: Boolean = false,
+        @RequestParam(defaultValue = "false") comparisonPending: Boolean = false,
     ): ThemeDraftViewPage {
         requireAdmin()
         if (page < 0 || size !in 1..MAX_SIZE) invalid("page는 0 이상, size는 1~$MAX_SIZE")
-        return service.list(status, source, page, size)
+        return service.list(status, source, page, size, grade, weekStart, hideDiscarded, comparisonPending)
     }
 
     @GetMapping("/{draftId}")
@@ -88,15 +100,40 @@ class AdminThemeDraftController(
         return service.view(service.get(draftId))
     }
 
+    @GetMapping("/{draftId}/scenes/{scene}/versions")
+    fun sceneHistory(@PathVariable draftId: UUID, @PathVariable scene: String): SceneHistory {
+        requireAdmin()
+        return media.history(draftId, scene)
+    }
+
+    @PutMapping("/{draftId}/scenes/{scene}/versions/selection")
+    fun selectScene(@PathVariable draftId: UUID, @PathVariable scene: String, @RequestBody body: SceneSelectionRequest): SceneHistory {
+        requireAdmin()
+        if (body.expectedVersionCount != null && body.expectedVersionCount < 1) invalid("expectedVersionCount는 1 이상")
+        return media.select(draftId, scene, body.versionId, body.expectedVersionId, body.expectedVersionCount)
+    }
+
+    @PatchMapping("/{draftId}/scenes/{scene}/versions/{versionId}")
+    fun annotateScene(@PathVariable draftId: UUID, @PathVariable scene: String, @PathVariable versionId: UUID,
+        @RequestBody body: SceneAnnotationRequest): SceneHistory {
+        requireAdmin()
+        return media.annotate(draftId, scene, versionId, body.starred, body.note)
+    }
+
     @PostMapping("/{draftId}/adopt")
     @ResponseStatus(HttpStatus.CREATED)
     fun adopt(@PathVariable draftId: UUID, @RequestBody(required = false) body: Map<String, Any?>?): AdminWeeklyTheme =
-        service.adopt(draftId, requireAdmin())
+        service.adopt(draftId, requireAdmin(), expectedWeek(body), body?.containsKey("expectedPlannedWeek") == true)
 
     @PostMapping("/{draftId}/discard")
     fun discard(@PathVariable draftId: UUID, @RequestBody(required = false) body: Map<String, Any?>?): ThemeDraftView {
         requireAdmin()
-        return service.view(service.discard(draftId))
+        return service.view(service.discard(draftId, expectedWeek(body), body?.containsKey("expectedPlannedWeek") == true))
+    }
+
+    private fun expectedWeek(body: Map<String,Any?>?): LocalDate? = body?.get("expectedPlannedWeek")?.let { value ->
+        (value as? String)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            ?: invalid("expectedPlannedWeek는 날짜 또는 null이어야 합니다.")
     }
 
     /** 본문 `{}`·targets 없음(null 포함)은 전체 다시 생성, `{"targets": [...]}`는 부분 다시 생성(#537) */

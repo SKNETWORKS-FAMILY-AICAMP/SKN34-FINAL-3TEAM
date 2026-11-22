@@ -1,15 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { adminApi } from '../../data/admin/api.ts'
 import { adminRetentionApi as api } from '../../data/admin/retentionApi.ts'
 import { useAdminMutation, useAdminQuery } from '../../data/admin/queries.ts'
-import { ApiError } from '../../data/apiClient.ts'
 import { thinkingLabels } from '../../domain/classroom.ts'
 import { ALL_ITEM_SLOTS, DAY_LABELS, SLOT_LABELS, THEME_DAYS } from '../../domain/retention.ts'
 import type { ItemSlot, ThemeDay } from '../../domain/retention.ts'
 import {
   THEME_GRADE_LABELS,
-  publishProblems,
   THEME_STATUS_LABELS,
 } from '../../domain/admin/retention.ts'
 import type { AdminLookItem, AdminWeeklyTheme, ThemeGrade } from '../../domain/admin/retention.ts'
@@ -17,7 +15,7 @@ import { QueryFeedback } from '../common/Workspace.tsx'
 import { ThemeMotionPlayer } from '../common/ThemeMotionPlayer.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { Badge, Empty, Panel } from './AdminUi.tsx'
-import { date } from './adminFormatting.ts'
+import { WeeklyThemePlanner } from './WeeklyThemePlanner.tsx'
 
 const nextMonday = () => {
   const kst = new Date(Date.now() + 9 * 3600_000)
@@ -30,85 +28,40 @@ const nextMonday = () => {
  * 게시 검사(게시 미션만·유형 1개씩·학년 맞음·같은 주 게시 1개)는 서버가 하고 실패 이유를 그대로 보인다.
  */
 export function WeeklyThemeManager() {
-  const [grade, setGrade] = useState(''), [status, setStatus] = useState('')
-  const list = useAdminQuery(['weekly-themes', grade, status], (s) => api.themes({ grade, status }, s))
   const [params, setParams] = useSearchParams()
   const themeId = params.get('themeId') ?? ''
   const linked = useAdminQuery(['weekly-theme', themeId], signal => api.theme(themeId, signal), !!themeId && themeId !== 'new')
-  const [local, setEditing] = useState<AdminWeeklyTheme | 'new' | null>(null)
-  const editing = themeId === 'new' ? 'new' : local && local !== 'new' && local.themeId === themeId ? local : linked.data
-  const selectId = (id: string | null) => { const next = new URLSearchParams(params); if (id) next.set('themeId', id); else next.delete('themeId'); setParams(next) }
-  // 저장 뒤 편집 중인 테마가 바뀌어도 창을 다시 만들지 않게, 열 때마다 바뀌는 키를 따로 둔다.
-  const [opened, setOpened] = useState(0)
-  const open = (t: AdminWeeklyTheme | 'new') => {
-    setEditing(t)
-    selectId(t === 'new' ? 'new' : t.themeId)
-    setOpened((n) => n + 1)
+  const selectId = (id: string | null, theme?: AdminWeeklyTheme) => {
+    const next = new URLSearchParams(params)
+    if (id) next.set('themeId',id); else { next.delete('themeId'); next.delete('day') }
+    if (theme) { next.set('grade',theme.grade); next.set('weekStart',theme.weekStart) }
+    setParams(next)
   }
-  const rows = list.error ? [] : (list.data?.items ?? [])
-  return (
-    <div className="ad-two">
-      <Panel title="주간 테마" action={<button onClick={() => open('new')}>새 테마</button>}>
-        <div className="ad-toolbar">
-          <label>
-            학년
-            <select aria-label="테마 학년" value={grade} onChange={(e) => setGrade(e.target.value)}>
-              <option value="">전체</option>
-              {Object.entries(THEME_GRADE_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            상태
-            <select aria-label="테마 상태" value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">전체</option>
-              {Object.entries(THEME_STATUS_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <QueryFeedback query={list} />
-        <div className="ad-table-wrap">
-          <table className="ad-table">
-            <thead>
-              <tr><th>주 시작</th><th>제목</th><th>학년</th><th>상태</th><th>관리</th></tr>
-            </thead>
-            <tbody>
-              {rows.map((t) => (
-                <tr key={t.themeId}>
-                  <td>{t.weekStart}</td>
-                  <td>{t.title}<small>수정 {date(t.updatedAt)}</small></td>
-                  <td>{THEME_GRADE_LABELS[t.grade]}</td>
-                  <td><Badge active={t.status === 'PUBLISHED'}>{THEME_STATUS_LABELS[t.status]}</Badge></td>
-                  <td><button onClick={() => open(t)} aria-label={`${t.title} 테마 열기`}>열기</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {list.data && !list.error && !rows.length && <Empty>조건에 맞는 테마가 없습니다.</Empty>}
-      </Panel>
-      {themeId && themeId !== 'new' && <QueryFeedback query={linked} />}
-      {editing && !linked.error && (
-        <ThemeEditor
-          key={`${themeId}:${opened}`}
-          theme={editing === 'new' ? undefined : editing}
-          onSaved={theme => { setEditing(theme); selectId(theme.themeId) }}
-          onClose={() => { setEditing(null); selectId(null) }}
-        />
-      )}
-    </div>
-  )
+  if (!themeId) return <WeeklyThemePlanner onOpen={id=>selectId(id)} onCreate={()=>selectId('new')}/>
+  if (themeId==='new') return <ThemeEditor onSaved={t=>selectId(t.themeId,t)} onClose={()=>selectId(null)}/>
+  if (!linked.data || linked.error) return <><button onClick={()=>selectId(null)}>편성 보드로</button><QueryFeedback query={linked}/></>
+  const theme = linked.data
+  const close = () => selectId(null,theme)
+  if (theme.status==='PUBLISHED'||theme.weekLocked) return <Panel title={theme.status==='PUBLISHED'?'게시 내용':'잠긴 주차의 테마'} action={<button onClick={close}>편성 보드로</button>}>
+    <div className="ad-plan-readonly"><p>{THEME_GRADE_LABELS[theme.grade]} · 적용 주 {theme.weekStart} · {THEME_STATUS_LABELS[theme.status]} · 읽기 전용</p>
+      {theme.generationWeek && theme.generationWeek!==theme.weekStart && <p>생성 기준 주 {theme.generationWeek}</p>}
+      <h3>{theme.title}</h3><p>{theme.intro}</p><ThemeMotionPlayer label="시작 이야기" imageUrl={theme.introImageUrl??null} videoUrl={theme.introVideoUrl??null} motion={theme.introMotion}/>
+      {theme.days.map(day=><article key={day.day}><h3>{DAY_LABELS[day.day]}요일 · {day.title??'요일 미션'}</h3>
+        <ThemeMotionPlayer label={DAY_LABELS[day.day]+'요일 장면'} imageUrl={day.sceneImageUrl??null} videoUrl={day.videoUrl??null} motion={day.sceneMotion}/>{day.clue&&<p>{day.clue}</p>}</article>)}
+      <article><h3>종료 이야기</h3><p>{theme.outro}</p><ThemeMotionPlayer label="종료 이야기" imageUrl={theme.outroImageUrl??null} videoUrl={theme.outroVideoUrl??null} motion={theme.outroMotion}/></article>
+    </div></Panel>
+  const activeDay = THEME_DAYS.find(d=>d===params.get('day'))
+  return <ThemeEditor key={theme.themeId} theme={theme} activeDay={activeDay} onSaved={t=>selectId(t.themeId,t)} onClose={close}/>
 }
 
 function ThemeEditor({
   theme,
+  activeDay,
   onSaved,
   onClose,
 }: {
   theme?: AdminWeeklyTheme
+  activeDay?: ThemeDay
   onSaved: (t: AdminWeeklyTheme) => void
   onClose: () => void
 }) {
@@ -119,6 +72,8 @@ function ThemeEditor({
     () => Object.fromEntries(THEME_DAYS.map((d) => [d, theme?.days.find((x) => x.day === d)?.missionId ?? ''])) as Record<ThemeDay, string>,
   )
   const [message, setMessage] = useState('')
+  const returnFocus = useRef<HTMLSelectElement>(null)
+  useEffect(()=>{ if (activeDay) returnFocus.current?.focus() },[activeDay])
   const missions = useAdminQuery(['missions', 'theme-picker'], (s) => adminApi.missions({ status: 'PUBLISHED' }, s))
   const choices = (missions.error ? [] : (missions.data?.items ?? [])).map((m) => {
     const v = m.versions.find((x) => x.version === (m.publishedVersion ?? m.currentVersion)) ?? m.versions.at(-1)
@@ -126,19 +81,18 @@ function ThemeEditor({
   })
   const input = () => ({ grade, weekStart, title: title.trim(), intro: intro.trim(), days: THEME_DAYS.map((day) => ({ day, missionId: days[day] })) })
   const save = useAdminMutation(() => (theme ? api.saveTheme(theme.themeId, input()) : api.createTheme(input())))
-  const action = useAdminMutation((a: 'review-request' | 'publish' | 'unpublish') => api.themeAction(theme!.themeId, a))
+  const action = useAdminMutation(() => api.themeAction(theme!.themeId, 'review-request'))
   const types = THEME_DAYS.map((d) => choices.find((c) => c.id === days[d])?.type).filter(Boolean)
   const duplicateType = new Set(types).size !== types.length
-  const problems = action.error instanceof ApiError ? publishProblems(action.error.problem) : []
-  const run = (a: 'review-request' | 'publish' | 'unpublish', done: string) =>
-    void action.mutateAsync(a).then((t) => { onSaved(t); setMessage(done) }).catch(() => {})
+  const requestReview = () => void action.mutateAsync(undefined).then(t=>{onSaved(t);onClose()}).catch(()=>{})
   return (
     <Panel title={theme ? '테마 수정·검토' : '새 테마 작성'} action={<button onClick={onClose}>닫기</button>}>
+      {theme?.generationWeek && theme.generationWeek!==theme.weekStart && <p>생성 기준 주 {theme.generationWeek} · 적용 주 {theme.weekStart}</p>}
       <form
         className="ws-form"
         onSubmit={(e) => {
           e.preventDefault()
-          void save.mutateAsync(undefined).then((t) => { onSaved(t); setMessage('테마를 저장했습니다. 게시 중 수정은 다시 검토를 거칩니다.') }).catch(() => {})
+          void save.mutateAsync(undefined).then((t) => { onSaved(t); setMessage('테마를 저장했습니다.') }).catch(() => {})
         }}
       >
         <div className="ad-two">
@@ -176,7 +130,7 @@ function ThemeEditor({
           {THEME_DAYS.map((d) => (
             <label key={d}>
               {DAY_LABELS[d]}요일
-              <select aria-label={`${DAY_LABELS[d]}요일 미션`} required value={days[d]} onChange={(e) => setDays({ ...days, [d]: e.target.value })}>
+              <select ref={activeDay===d?returnFocus:undefined} aria-label={`${DAY_LABELS[d]}요일 미션`} required value={days[d]} onChange={(e) => setDays({ ...days, [d]: e.target.value })}>
                 <option value="">미션 선택</option>
                 {days[d] && !choices.some(c => c.id === days[d]) && <option value={days[d]}>연결된 미션 · 미션 관리에서 게시 상태 확인</option>}
                 {choices.map((c) => (
@@ -185,30 +139,17 @@ function ThemeEditor({
                   </option>
                 ))}
               </select>
-              {days[d] && <Link to={'/admin/missions?missionId=' + encodeURIComponent(days[d])}>{DAY_LABELS[d]}요일 미션 편집</Link>}
+              {days[d] && <Link to={'/admin/missions?' + new URLSearchParams({missionId:days[d],...(theme?{themeId:theme.themeId,themeDay:d}:{})})}>{DAY_LABELS[d]}요일 미션 편집</Link>}
             </label>
           ))}
           {duplicateType && <p role="alert">같은 생각 유형이 두 번 들어 있습니다. 게시 검사에서 막힙니다.</p>}
         </fieldset>
         <div className="ws-actions">
           <button className="cj-primary" disabled={save.isPending || theme?.status === 'REVIEW_REQUIRED'}>테마 저장</button>
-          {theme && theme.status === 'DRAFT' && (
-            <button type="button" disabled={action.isPending} onClick={() => run('review-request', '검토를 요청했습니다.')}>검토 요청</button>
-          )}
-          {theme && theme.status === 'REVIEW_REQUIRED' && (
-            <button type="button" disabled={action.isPending} onClick={() => run('publish', '게시했습니다.')}>게시</button>
-          )}
-          {theme && theme.status === 'PUBLISHED' && (
-            <button className="ad-danger" type="button" disabled={action.isPending} onClick={() => run('unpublish', '게시를 중단했습니다.')}>게시 중단</button>
-          )}
+          {theme && (theme.status==='DRAFT'||theme.status==='UNPUBLISHED') && <button type="button" disabled={action.isPending} onClick={requestReview}>검토 요청</button>}
+          {theme?.status==='REVIEW_REQUIRED' && <button type="button" onClick={onClose}>편성 보드에서 게시</button>}
         </div>
-        {problems.length > 0 && (
-          <div className="ad-note" role="alert">
-            <p>게시 검사를 통과하지 못했습니다.</p>
-            <ul>{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>
-          </div>
-        )}
-        <ErrorNotice error={save.error ?? (problems.length ? null : action.error)} />
+        <ErrorNotice error={save.error ?? action.error} />
         <p role="status">{message}</p>
       </form>
     </Panel>

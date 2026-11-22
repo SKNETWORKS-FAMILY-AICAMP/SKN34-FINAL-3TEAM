@@ -233,6 +233,9 @@ class WeeklyThemeService(
         val theme = repository.findLatestPublished(ThemeGrade.of(grade), week)
         val days = theme?.let { repository.findDays(published(it)) }.orEmpty()
         val day = days.firstOrNull { it.missionId == missionId }
+        val snapshot = day?.missionVersionId?.let {
+            com.sagomungchi.learning.mission.domain.MissionSnapshot(it, checkNotNull(day.rubricVersionId))
+        }
         if (context == AttemptContext.THEME_DAY) {
             if (theme == null || day == null || ThemeWeek.stateOf(ThemeDay.ofNumber(day.dayOfWeek), today, sundayTheme) != DayState.OPEN) {
                 throw BusinessException(HttpStatus.CONFLICT, "THEME_DAY_CLOSED", "열리지 않은 테마 문제",
@@ -242,7 +245,7 @@ class WeeklyThemeService(
                 throw BusinessException(HttpStatus.CONFLICT, "THEME_DAY_CLOSED", "이미 마무리한 테마 문제",
                     "마무리한 문제는 토요일에 다시 풀 수 있어요.")
             }
-            return ThemeAttempt(theme.id, week)
+            return ThemeAttempt(theme.id, week, snapshot)
         }
         if (theme == null || day == null || !ThemeWeek.reviewOpen(today, sundayTheme) ||
             !finished(repository.findStudentAttempts(studentId, week), missionId)
@@ -250,7 +253,7 @@ class WeeklyThemeService(
             throw BusinessException(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED", "다시 풀 수 없는 테마 문제",
                 "토요일에 이번 주 마무리한 테마 문제만 다시 풀 수 있어요.")
         }
-        return ThemeAttempt(theme.id, week)
+        return ThemeAttempt(theme.id, week, snapshot)
     }
 
     /** 되돌아보기 열람 기록 (주 1회 멱등). 토요일·프리미엄 일요일만, 아니면 409 THEME_REVIEW_NOT_ALLOWED, 게시 테마가 없으면 404 */

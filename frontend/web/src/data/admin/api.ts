@@ -27,10 +27,12 @@ const p = (id: string) => encodeURIComponent(id)
 export const adminApi = {
   preflightModel: (body: PreflightRequest) => apiFetch<PreflightResult>('/admin/models/preflight', { ...json(body), signal: AbortSignal.timeout(25_000) }),
   modelLoading: (signal?: AbortSignal) => apiFetch<LoadingReport>('/admin/model-loading', { signal }),
+  workload: (period: Period, signal?: AbortSignal) =>
+    apiFetch<Partial<Record<'pendingInquiries' | 'receivedReports' | 'failedJobs' | 'pendingRefunds', number>>>(`/admin/overview/workload?${new URLSearchParams({ ...period })}`, { signal }),
   overview: (period: Period, signal?: AbortSignal) =>
     apiFetch<Overview>(`/admin/overview?${new URLSearchParams({ ...period })}`, { signal }),
-  jobs: (type: string, status: string, signal?: AbortSignal, period?: Period) =>
-    apiFetch<Page<Job>>(`/admin/jobs?${operationFilters({ type, status, ...period })}`, {
+  jobs: (type: string, status: string, signal?: AbortSignal, period?: Period, page = 0) =>
+    apiFetch<Page<Job>>(`/admin/jobs?${operationFilters({ type, status, ...period, page: String(page) })}`, {
       signal,
     }),
   job: (id: string, signal?: AbortSignal) => apiFetch<Job>(`/admin/jobs/${p(id)}`, { signal }),
@@ -43,8 +45,8 @@ export const adminApi = {
     apiFetch<{ vhost: string; items: OperationQueue[] }>('/admin/queues', {
       signal,
     }),
-  audits: (period: Period, targetType: string, signal?: AbortSignal) =>
-    apiFetch<Page<Audit>>(`/admin/audit-logs?${operationFilters({ ...period, targetType })}`, {
+  audits: (period: Period, targetType: string, signal?: AbortSignal, page = 0) =>
+    apiFetch<Page<Audit>>(`/admin/audit-logs?${operationFilters({ ...period, targetType, page: String(page) })}`, {
       signal,
     }),
   missions: (filters: Record<string, string>, signal?: AbortSignal) =>
@@ -118,7 +120,7 @@ export const adminApi = {
     ),
   usage: (period: Period, callType: string, signal?: AbortSignal) =>
     apiFetch<Usage>(`/admin/ai-usage?${new URLSearchParams({ ...period, callType })}`, { signal }),
-  errors: (signal?: AbortSignal) => apiFetch<Page<ErrorReport>>('/admin/error-reports', { signal }),
+  errors: (signal?: AbortSignal, status='', page=0) => apiFetch<Page<ErrorReport>>(`/admin/error-reports?${operationFilters({ status, page:String(page), size:'20' })}`, { signal }),
   error: (id: string, signal?: AbortSignal) =>
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, { signal }),
   reviewError: (id: string, status: ErrorReport['status'], reviewReason: string, reviewResult?: CommunityReviewResult) =>

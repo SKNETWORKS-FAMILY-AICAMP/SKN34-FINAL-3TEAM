@@ -14,6 +14,8 @@ import { THINKING_ORDER } from '../src/domain/studentLook.ts'
 import { saveSharing } from '../src/mocks/fixtures/sharing.ts'
 import { setMockChildPlan } from '../src/mocks/fixtures/childPlan.ts'
 import { mockPremium } from '../src/mocks/fixtures/payments.ts'
+import { fixtureStore } from '../src/mocks/fixtures/student.ts'
+import { missions as adminMissions } from '../src/mocks/fixtures/admin/operations.ts'
 
 // 2026-11-06 결정(에픽 #396) 참여 기능 목업 계약: API 명세 2.4·2.5·2.8~2.11 구현 예정 경로.
 const handlers = [...retentionHandlers, ...serviceHandlers, ...parentHandlers, ...adminHandlers, ...studentHandlers]
@@ -444,4 +446,51 @@ test('테마 목업: 같은 주의 게시 테마가 여러 개여도 학생 학�
   for (const grade of ['G3', 'G4', 'G5', 'G6'] as const) retentionState.themes.push({ themeId: `theme-${grade}`, grade, weekStart: weekStart(), title: `${grade} 테마`, intro: '도입',
     status: 'PUBLISHED', updatedAt: '2026-11-10T00:00:00Z', days: THEME_DAYS.map((day, i) => ({ day, missionId: missions[i].id })) })
   for (const grade of [3, 4, 5, 6, 7, 8, 9]) assert.equal(themeMissions(missions, grade).themeId, `theme-G${Math.min(grade, 6)}`)
+})
+
+test('주간 게시 후 일반 미션 수정·공개 중단에도 주간 안내와 시도는 게시 질문을 사용한다', async (t) => {
+  weekday(0)
+  // 편성 목업이 사용하는 브라우저 저장소도 이 시험의 메모리 저장소로 격리한다.
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: globalThis.sessionStorage })
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  })
+  const childId = await parent(), prefix = 'weekly-pinned-882-'
+  token = (await call('/auth/login', { email: 'content@example.test', password: 'demo-only' })).data.accessToken
+  const count = adminMissions.length
+  const days = THEME_DAYS.map((day, i) => {
+    const m = structuredClone(adminMissions[0]), id = prefix+i, thinkingType = THINKING_ORDER[i]
+    m.missionId=id; m.status='PUBLISHED'; m.publishedVersion=m.currentVersion
+    m.versions[0].thinkingType=thinkingType
+    adminMissions.push(m)
+    fixtureStore.publishCatalog(id, { id, title: day+' 게시본', subject: '국어', grade: 3, thinkingType,
+      inputType:'NARRATIVE',question:day+' 게시한 질문',hint:'찾아보세요.',scene:'korean' })
+    return { day, missionId:id }
+  })
+  try {
+    const created = await call('/admin/weekly-themes', {grade:'G3',weekStart:weekStart(),title:'버전 고정',intro:'도입',days})
+    assert.equal(created.status,201)
+    const detail = '/admin/weekly-themes/'+created.data.themeId
+    assert.equal((await call(detail+'/review-request',{})).status,200)
+    const publication = await call(detail+'/publish',{})
+    assert.equal(publication.status,200,JSON.stringify(publication.data))
+    const id = days[0].missionId, base = '/missions/'+id
+    const original = fixtureStore.snapshot().catalog!.find(m=>m.id===id)!
+    fixtureStore.publishCatalog(id,{...original,question:'최신 질문'})
+    await parent(); await student(childId)
+    assert.equal((await call(base)).data.question,'최신 질문')
+    assert.equal((await call(base+'?context=THEME_DAY')).data.question,original.question)
+    fixtureStore.publishCatalog(id,null)
+    assert.equal((await call(base)).status,404)
+    assert.equal((await call('/students/me/weekly-theme')).data.days[0].missionId,id)
+    assert.equal((await call(base+'?context=THEME_DAY')).data.question,original.question)
+    assert.equal((await call(base+'?context=THEME_REVIEW')).data.code,'THEME_REVIEW_NOT_ALLOWED')
+    assert.equal((await call(base+'/attempts',{context:'THEME_DAY'})).data.mission.question,original.question)
+    assert.equal((await call('/students/me/weekly-theme')).data.days[0].attemptStatus,'IN_PROGRESS')
+  } finally {
+    adminMissions.splice(count)
+    days.forEach(d=>fixtureStore.publishCatalog(d.missionId,null))
+  }
 })

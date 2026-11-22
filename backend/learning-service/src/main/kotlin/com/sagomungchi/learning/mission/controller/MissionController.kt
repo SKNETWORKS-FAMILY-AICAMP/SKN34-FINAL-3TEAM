@@ -3,6 +3,8 @@ package com.sagomungchi.learning.mission.controller
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning._common.web.MissionListItemResponse
 import com.sagomungchi.learning._common.web.MissionResponse
+import com.sagomungchi.learning.attempt.domain.AttemptContext
+import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.mission.service.MissionService
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
@@ -21,6 +23,7 @@ import java.util.UUID
 @RequestMapping("/internal/missions")
 class MissionController(
     private val missionService: MissionService,
+    private val attemptService: AttemptService,
 ) {
     @GetMapping
     fun list(
@@ -45,9 +48,13 @@ class MissionController(
         @PathVariable missionId: UUID,
         @RequestParam @Min(MIN_GRADE) @Max(MAX_GRADE) grade: Int,
         @RequestParam(defaultValue = "false") demo: Boolean,
+        @RequestParam(defaultValue = "EXTRA") context: AttemptContext,
+        @RequestParam(defaultValue = "false") sundayTheme: Boolean,
     ): MissionResponse {
-        UserContextHolder.current().requireSelfStudent()
-        return MissionResponse.from(missionService.get(missionId, grade, demo))
+        val student = UserContextHolder.current().requireSelfStudent()
+        val mission = if (context == AttemptContext.EXTRA) missionService.get(missionId, grade, demo)
+            else attemptService.themeGuide(student, missionId, grade, demo, context, sundayTheme)
+        return MissionResponse.from(mission)
     }
 
     companion object {

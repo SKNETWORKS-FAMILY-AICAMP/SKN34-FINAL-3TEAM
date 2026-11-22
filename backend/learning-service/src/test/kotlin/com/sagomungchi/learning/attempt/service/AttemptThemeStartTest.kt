@@ -16,6 +16,7 @@ import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.HintSpot
 import com.sagomungchi.learning.theme.repository.WeeklyThemeRepository
 import com.sagomungchi.learning.theme.service.WeeklyThemeService
+import org.mybatis.spring.SqlSessionTemplate
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -42,6 +43,7 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
     @Autowired lateinit var themeFrameService: com.sagomungchi.learning.memory.service.ThemeFrameService
     @Autowired lateinit var memorySearchService: com.sagomungchi.learning.memory.service.MemorySearchService
     @Autowired lateinit var jdbc: JdbcTemplate
+    @Autowired lateinit var sqlSession: SqlSessionTemplate
 
     private lateinit var missions: List<TestRows.SeededMission>
     private lateinit var themeId: UUID
@@ -151,6 +153,47 @@ class AttemptThemeStartTest : PostgresRepositoryTest() {
         jdbc.update("UPDATE mission SET status = 'UNPUBLISHED' WHERE id = ?", missions[0].id)
 
         assertError(HttpStatus.CONFLICT, "MISSION_NOT_AVAILABLE") { on(WEEK).start(student, missions[0].id, 3, false, AttemptContext.THEME_DAY) }
+    }
+
+    @Test
+    fun `게시 당시 안내와 문제 버전은 일반 미션을 수정하거나 내려도 유지되고 다른 학생과 닫힌 요일은 접근할 수 없다`() {
+        val monday = missions.first()
+        jdbc.update(
+            "UPDATE weekly_theme_day SET mission_version_id = ?, rubric_version_id = ? WHERE mission_id = ?",
+            monday.versionId, monday.rubricVersionId, monday.id,
+        )
+        val original = missionService.getVersion(monday.versionId)
+        val revised = TestRows(jdbc).addVersion(monday.id, 2, "다른 주에 쓰는 새 버전")
+        jdbc.update("UPDATE mission SET current_version_id = ?, published_version_id = ? WHERE id = ?", revised, revised, monday.id)
+        assertEquals("다른 주에 쓰는 새 버전", missionService.get(monday.id, 3, false).title)
+        jdbc.update("UPDATE mission SET status = 'UNPUBLISHED' WHERE id = ?", monday.id)
+        // JDBC로 다른 요청의 쓰기를 재현했으므로 시험 트랜잭션에 남은 MyBatis 조회 캐시를 비운다.
+        sqlSession.clearCache()
+        assertError(HttpStatus.CONFLICT, "MISSION_NOT_AVAILABLE") { missionService.get(monday.id, 3, false) }
+        val service = on(WEEK)
+        val guide = service.themeGuide(student, monday.id, 3, false, AttemptContext.THEME_DAY, false)
+        assertEquals(original, guide)
+        assertNull(attemptRepository.findInProgress(student, monday.id))
+        assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") {
+            service.themeGuide(student, missions[4].id, 3, false, AttemptContext.THEME_DAY, false)
+        }
+        assertError(HttpStatus.CONFLICT, "THEME_DAY_CLOSED") {
+            service.themeGuide(student, monday.id, 5, false, AttemptContext.THEME_DAY, false)
+        }
+        val start = service.start(student, monday.id, 3, false, AttemptContext.THEME_DAY).attempt
+        assertEquals(monday.versionId, start.missionVersionId)
+        assertEquals(guide, service.get(start.id).mission)
+        jdbc.update("UPDATE attempt SET finished_at = now(), status = 'COMPLETED', completed_at = now() WHERE id = ?", start.id)
+        sqlSession.clearCache()
+        val sunday = on(WEEK.plusDays(6))
+        assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") {
+            sunday.themeGuide(student, monday.id, 3, false, AttemptContext.THEME_REVIEW, false)
+        }
+        assertError(HttpStatus.CONFLICT, "THEME_REVIEW_NOT_ALLOWED") {
+            sunday.themeGuide(UUID.randomUUID(), monday.id, 3, false, AttemptContext.THEME_REVIEW, true)
+        }
+        assertEquals(guide, sunday.themeGuide(student, monday.id, 3, false, AttemptContext.THEME_REVIEW, true))
+        assertEquals(start.missionVersionId, sunday.start(student, monday.id, 3, false, AttemptContext.THEME_REVIEW, true).attempt.missionVersionId)
     }
 
     @Test

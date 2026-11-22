@@ -41,6 +41,7 @@ import java.util.UUID
 @TestPropertySource(properties = ["app.internal.token=test-token", "app.internal.connect-timeout=1s", "app.internal.read-timeout=1s"])
 class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     @MockitoBean lateinit var service: WeeklyThemeAdminService
+    @MockitoBean lateinit var planner: com.sagomungchi.learning.theme.service.ThemeWeekPlanner
 
     private val admin = UUID.randomUUID()
     private val themeId = UUID.randomUUID()
@@ -113,17 +114,35 @@ class AdminWeeklyThemeControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
-    fun `수정·검토 요청·중단은 테마 전체를 돌려줌`() {
+    fun `편성 보드와 주차 변경은 관리자 권한을 검사한다`() {
+        val route="/internal/admin/weekly-themes/planner"
+        val board=com.sagomungchi.learning.theme.service.WeekBoard(ThemeGrade.G3,monday,emptyList(),emptyList())
+        given(planner.board(ThemeGrade.G3,monday)).willReturn(board)
+        mockMvc.get(route+"?grade=G3&weekStart="+monday) { asAdmin() }.andExpect {
+            status { isOk() }; jsonPath("$.weekStart") { value(monday.toString()) }
+        }
+        val change="""{"grade":"G3","draftId":"$themeId","expectedWeek":null,"targetWeek":"$monday","expectedTargetDraftId":null}"""
+        mockMvc.put(route) { asAdmin(role="PARENT",content=change) }.andExpect { status { isForbidden() } }
+        val command=com.sagomungchi.learning.theme.service.PlanChange(ThemeGrade.G3,themeId,null,monday,null)
+        given(planner.change(command)).willReturn(com.sagomungchi.learning.theme.service.PlanResult(themeId,ThemeGrade.G3,monday,null))
+        mockMvc.put(route) { asAdmin(content=change) }.andExpect {
+            status { isOk() }; jsonPath("$.plannedWeek") { value(monday.toString()) }
+        }
+    }
+
+    @Test
+    fun `수정·검토 요청은 테마 전체를 돌려주며 확정 후 중단은 409`() {
         val content = ThemeContent(ThemeGrade.G3, monday, "물의 여행", "소개", listOf(ThemeDayMission(ThemeDay.MON, mission)))
         given(service.update(themeId, admin, content)).willReturn(theme)
         given(service.requestReview(themeId)).willReturn(theme)
-        given(service.unpublish(themeId)).willReturn(theme)
+        given(service.unpublish(themeId)).willThrow(com.sagomungchi.learning._common.exception.BusinessException(
+            org.springframework.http.HttpStatus.CONFLICT,"WEEK_LOCKED","이미 게시가 확정된 주차입니다."))
 
         mockMvc.put("/internal/admin/weekly-themes/$themeId") { asAdmin(content = body) }.andExpect { status { isOk() } }
         mockMvc.post("/internal/admin/weekly-themes/$themeId/review-request") { asAdmin(content = "{}") }.andExpect { status { isOk() } }
         mockMvc.post("/internal/admin/weekly-themes/$themeId/unpublish") { asAdmin(content = "{}") }.andExpect {
-            status { isOk() }
-            jsonPath("$.themeId") { value(themeId.toString()) }
+            status { isConflict() }
+            jsonPath("$.code") { value("WEEK_LOCKED") }
         }
     }
 

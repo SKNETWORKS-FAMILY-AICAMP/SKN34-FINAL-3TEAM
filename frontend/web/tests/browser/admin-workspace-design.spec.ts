@@ -48,7 +48,7 @@ test('메뉴 검색은 승인된 메뉴만 찾고 이동 후 모바일 메뉴를
 test('초안 요청 양식을 접었다 열어도 작성 중인 값과 목록은 유지한다 @responsive', async ({ page }) => {
   await login(page)
   await openMenu(page)
-  await page.getByRole('navigation', { name: '관리자 메뉴' }).getByRole('link', { name: '테마 초안', exact: true }).click()
+  await page.getByRole('navigation', { name: '관리자 메뉴' }).getByRole('link', { name: '주간 테마 검수', exact: true }).click()
   await expect(page.getByLabel('테마 주제 키워드')).toBeHidden()
   await page.getByText('새 테마 초안 요청', { exact: true }).click()
   await page.getByLabel('테마 주제 키워드').fill('우리 동네 도서관')
@@ -209,7 +209,7 @@ test('관리자 메뉴의 정보 영역은 화면 폭 안에 유지된다 @respo
   await login(page)
   for (const [label, path] of [
     ['운영 현황', 'home'], ['감사 이력', 'audit'], ['미션 관리', 'missions'], ['미션 초안', 'mission-drafts'],
-    ['주간 테마', 'themes'], ['테마 초안', 'theme-drafts'], ['꾸미기 아이템', 'looks'],
+    ['게시 관리', 'themes'], ['주간 테마 검수', 'theme-drafts'], ['꾸미기 아이템', 'looks'],
     ['작업 재처리', 'jobs'], ['작업 대기열', 'queues'], ['오류 신고', 'errors'], ['문의·공지', 'support'],
     ['모델·프롬프트', 'models'], ['AI 사용량', 'usage'], ['결제·환불', 'payments'],
   ]) {

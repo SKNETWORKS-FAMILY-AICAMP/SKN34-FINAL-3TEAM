@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { ArrowUpRight, Megaphone, MessageSquare, Plus } from 'lucide-react'
 import { adminServiceApi as api } from '../../data/admin/serviceApi.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
@@ -8,18 +9,28 @@ import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { Badge, Empty, Inspector, Panel } from './AdminUi.tsx'
 import { date } from './adminFormatting.ts'
 export function SupportManager() {
-  const [tab,setTab] = useState<'inquiries'|'notices'>('inquiries')
+  const [params,setParams] = useSearchParams()
+  const tab = params.get('tab') === 'notices' ? 'notices' : 'inquiries'
+  const status = params.get('status') ?? ''
+  function setTab(tab: string) {
+    const next=new URLSearchParams(params); next.set('tab',tab); next.delete('status'); setParams(next)
+    setPage(0); setSelected(null)
+  }
+  function setStatus(value: string) {
+    const next=new URLSearchParams(params); if(value) next.set('status',value); else next.delete('status')
+    setParams(next); setPage(0); setSelected(null)
+  }
   const [page,setPage] = useState(0), [noticePage,setNoticePage] = useState(0), [filter,setFilter] = useState<NoticeFilter>({})
-  const inquiries = useAdminQuery(['inquiries',page], s => api.inquiries(page,s)), notices = useAdminQuery(['notices',filter,noticePage], s => api.notices(filter,noticePage,s))
+  const inquiries = useAdminQuery(['inquiries',page,status], s => api.inquiries(page,s,status), tab==='inquiries'), notices = useAdminQuery(['notices',filter,noticePage], s => api.notices(filter,noticePage,s), tab==='notices')
   const noticeRows = notices.error ? [] : notices.data?.items ?? [], checkedAt = notices.dataUpdatedAt
   function changeFilter(next:NoticeFilter) {setFilter(next); setNoticePage(0)}
-  const [selected,setSelected] = useState<string|null>(null), [status,setStatus] = useState(''), [editing,setEditing] = useState<AdminNotice|'new'|null>(null)
-  const rows = inquiries.error ? [] : (inquiries.data?.items ?? []).filter(i => !status || i.status === status)
+  const [selected,setSelected] = useState<string|null>(null), [editing,setEditing] = useState<AdminNotice|'new'|null>(null)
+  const rows = inquiries.error ? [] : inquiries.data?.items ?? []
   const chosen = rows.find(i => i.inquiryId === selected)
   return <>
     <div className="ad-view-tabs" aria-label="문의·공지 업무"><button aria-pressed={tab === 'inquiries'} onClick={() => setTab('inquiries')}><MessageSquare size={17} aria-hidden="true" />문의함</button><button aria-pressed={tab === 'notices'} onClick={() => setTab('notices')}><Megaphone size={17} aria-hidden="true" />공지·점검</button></div>
     {tab === 'inquiries' ? <section className="ad-data-surface">
-      <div className="ad-data-toolbar"><div><h2>문의</h2></div><label>문의 상태<select aria-label="문의 상태" value={status} onChange={e => setStatus(e.target.value)}><option value="">현재 페이지 전체</option><option value="RECEIVED">답변 대기</option><option value="RESOLVED">답변 완료</option></select></label></div>
+      <div className="ad-data-toolbar"><div><h2>문의</h2></div><label>문의 상태<select aria-label="문의 상태" value={status} onChange={e => setStatus(e.target.value)}><option value="">전체 상태</option><option value="RECEIVED">답변 대기</option><option value="RESOLVED">답변 완료</option></select></label></div>
       <QueryFeedback query={inquiries} />
       <div className="ad-inbox-list">{rows.map(i => <button key={i.inquiryId} className="ad-inbox-row" onClick={() => setSelected(i.inquiryId)} aria-label={`${i.title} 문의 선택`}>
         <span className={`ad-inbox-icon${i.status === 'RESOLVED' ? ' is-resolved' : ''}`}><MessageSquare size={20} aria-hidden="true" /></span><span className="ad-inbox-copy"><span className="ad-inbox-meta">{{ACCOUNT:'계정',USAGE:'이용',PAYMENT:'결제'}[i.category] ?? i.category}<span>·</span>{date(i.createdAt)}</span><strong>{i.title}</strong><span className="ad-inbox-excerpt">{i.body}</span></span><Badge active={i.status === 'RESOLVED'}>{i.status === 'RESOLVED' ? '답변 완료' : '답변 대기'}</Badge><ArrowUpRight size={17} aria-hidden="true" />

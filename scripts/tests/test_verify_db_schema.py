@@ -101,6 +101,30 @@ class ContractTests(unittest.TestCase):
             with self.subTest(comment=comment):
                 self.assertEqual(allowed_values(comment), values)
 
+    def test_scene_review_week_planning_and_published_day_contract(self):
+        learning = erd_contract()["learning_db"]
+        draft = learning["theme_draft"]
+        self.assertTrue(draft["family_root_id"]["fk"])
+        for column in ("family_root_id", "frozen_scene_choices", "planned_week"):
+            self.assertTrue(draft[column]["nullable"])
+        scenes = {"INTRO", "MON", "TUE", "WED", "THU", "FRI", "OUTRO"}
+        selection = learning["theme_draft_scene_selection"]
+        note = learning["theme_draft_scene_note"]
+        for table, key in ((selection, "root_id"), (note, "version_id")):
+            self.assertEqual([col for col, data in table.items() if data["pk"]], [key, "scene"])
+            self.assertTrue(table[key]["fk"])
+            self.assertEqual(table["scene"]["values"], scenes)
+        self.assertTrue(selection["version_id"]["fk"])
+        self.assertEqual(selection["reviewed_version_ids"]["type"], "uuid[]")
+        self.assertEqual(note["note"]["type"], "varchar(160)")
+        for column in ("mission_version_id", "rubric_version_id"):
+            self.assertTrue(learning["weekly_theme_day"][column]["fk"])
+            self.assertTrue(learning["weekly_theme_day"][column]["nullable"])
+        indexes = index_contract((ROOT / "docs/design/erd.md").read_text(encoding="utf-8"))["learning_db"]
+        for columns, predicate in ((["family_root_id", "created_at"], ""),
+                                   (["grade", "planned_week"], "planned_week IS NOT NULL")):
+            self.assertIn({"table": "theme_draft", "columns": columns, "predicate": predicate}, indexes)
+
     def test_plain_text_is_not_an_enum_contract(self):
         for comment in [None, "", "core 논리 참조", "FREE, PREMIUM 등; 고정 enum 아님"]:
             with self.subTest(comment=comment):

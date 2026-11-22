@@ -67,10 +67,16 @@ interface ThemeDraftMapper {
     fun findPage(
         @Param("status") status: DraftStatus?,
         @Param("source") source: ThemeDraftSource?,
+        @Param("grade") grade: ThemeGrade?,
+        @Param("weekStart") weekStart: LocalDate?,
+        @Param("hideDiscarded") hideDiscarded: Boolean,
+        @Param("comparisonPending") comparisonPending: Boolean,
         @Param("size") size: Int,
         @Param("offset") offset: Long,
     ): List<ThemeDraftRow>
-    fun count(@Param("status") status: DraftStatus?, @Param("source") source: ThemeDraftSource?): Long
+    fun count(@Param("status") status: DraftStatus?, @Param("source") source: ThemeDraftSource?,
+        @Param("grade") grade: ThemeGrade?, @Param("weekStart") weekStart: LocalDate?,
+        @Param("hideDiscarded") hideDiscarded: Boolean, @Param("comparisonPending") comparisonPending: Boolean): Long
     fun findInputs(@Param("grade") grade: ThemeGrade, @Param("from") from: LocalDate, @Param("until") until: LocalDate): List<ThemeDraftInput>
     fun findWeekInputs(@Param("weekStart") weekStart: LocalDate): List<ThemeDraftInput>
     fun claimNext(@Param("now") now: Instant, @Param("leaseUntil") leaseUntil: Instant): ThemeDraftRow?
@@ -98,8 +104,13 @@ class ThemeDraftRepository(private val mapper: ThemeDraftMapper) {
     fun findById(id: UUID, lock: Boolean = false): ThemeDraft? = mapper.findById(id, lock)?.draft()
 
     /** 최근 요청 순 */
-    fun findPage(status: DraftStatus?, source: ThemeDraftSource?, page: Int, size: Int): ThemeDraftPage =
-        ThemeDraftPage(mapper.findPage(status, source, size, page.toLong() * size).map { it.draft() }, page, size, mapper.count(status, source))
+    fun findPage(status: DraftStatus?, source: ThemeDraftSource?, page: Int, size: Int,
+        grade: ThemeGrade? = null, weekStart: LocalDate? = null, hideDiscarded: Boolean = false,
+        comparisonPending: Boolean = false): ThemeDraftPage {
+        val rows = mapper.findPage(status, source, grade, weekStart, hideDiscarded, comparisonPending, size, page.toLong() * size)
+        return ThemeDraftPage(rows.map { it.draft() }, page, size,
+            mapper.count(status, source, grade, weekStart, hideDiscarded, comparisonPending))
+    }
 
     /** 그 학년의 적용 주가 [from, until)인 초안 입력 (자동 성취기준이 최근 코드를 피함) */
     fun findInputs(grade: ThemeGrade, from: LocalDate, until: LocalDate): List<ThemeDraftInput> = mapper.findInputs(grade, from, until)

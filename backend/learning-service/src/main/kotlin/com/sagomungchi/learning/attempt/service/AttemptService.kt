@@ -83,6 +83,23 @@ class AttemptService(
     private val themeFrameService: ThemeFrameService,
     private val memorySearchService: MemorySearchService,
 ) {
+    /** 안내를 여는 것만으로 시도를 생성하지 않는다. 주차·요일·학생 조건은 실제 시작과 같다. */
+    @Transactional(readOnly = true)
+    fun themeGuide(studentId: UUID, missionId: UUID, grade: Int, demo: Boolean, context: AttemptContext, sundayTheme: Boolean): MissionView {
+        val theme = weeklyThemeService.checkStart(studentId, missionId, grade, context, sundayTheme)
+        val version = attemptRepository.findInProgress(studentId, missionId)?.missionVersionId ?: theme.snapshot?.missionVersionId
+        return if (version != null) accessibleVersion(missionId, version, grade, demo)
+            else missionService.get(missionId, grade, demo)
+    }
+
+    private fun accessibleVersion(missionId: UUID, versionId: UUID, grade: Int, demo: Boolean): MissionView {
+        val mission = missionService.getVersion(versionId)
+        if (mission.id != missionId || !mission.isOpenTo(grade, demo)) {
+            throw BusinessException(HttpStatus.CONFLICT, "MISSION_NOT_AVAILABLE", "제공되지 않는 미션")
+        }
+        return mission
+    }
+
     /**
      * 시도 시작 (state-diagram 3.2, sequence-diagram 3.1). 진행 중 시도가 있으면 미션 공개·범위와 무관하게 그 시도를 돌려줌
      * (공개 중단 뒤에도 기존 시도는 당시 버전 유지, state-diagram 3.1). 없으면 공개·범위를 확인하고 현재 버전을 고정해 만듦.
@@ -99,10 +116,15 @@ class AttemptService(
         sundayTheme: Boolean = false,
     ): AttemptStart {
         attemptRepository.findInProgress(studentId, missionId)?.let { return AttemptStart(it, created = false) }
-        missionService.get(missionId, grade, demo)
         val theme = if (context == AttemptContext.EXTRA) null else weeklyThemeService.checkStart(studentId, missionId, grade, context, sundayTheme)
+        val snapshot = theme?.snapshot?.also {
+            accessibleVersion(missionId, it.missionVersionId, grade, demo)
+        } ?: run {
+            missionService.get(missionId, grade, demo)
+            missionService.currentVersions(missionId)
+        }
         val now = now()
-        val attempt = Attempt.start(studentId, missionId, missionService.currentVersions(missionId), grade, now, context, theme)
+        val attempt = Attempt.start(studentId, missionId, snapshot, grade, now, context, theme)
         if (attemptRepository.insertIfNoneInProgress(attempt)) {
             draftRepository.insert(AttemptDraft.empty(attempt.id, now))
             return AttemptStart(attempt, created = true)

@@ -26,7 +26,7 @@ import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook
 import type { StudentLook } from '../../domain/studentLook.ts'
 import { companionKey, FURNITURE_SLOTS, ITEM_SLOTS, themeKey } from '../../domain/retention.ts'
 import type { AttemptContext } from '../../domain/retention.ts'
-import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, weeklyThemeFor, weekRules } from '../fixtures/retention.ts'
+import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, themeMissions, weeklyThemeFor, weekRules } from '../fixtures/retention.ts'
 import { mockPremium } from '../fixtures/payments.ts'
 import { difficultyCodes } from '../../domain/learning.ts'
 
@@ -153,12 +153,11 @@ const startContext = async (request: Request) => {
   return (text ? (JSON.parse(text) as { context?: AttemptContext }) : {}).context
 }
 /** 2.11 시작 맥락 검사(목업). 맥락 없이 부르는 기존 화면은 검사하지 않는다. */
-async function checkContext(request: Request, missionId: string) {
-  const context = await startContext(request)
+async function checkContext(context: AttemptContext | undefined, missionId: string, resume: boolean) {
   if (!context || mockRole !== 'STUDENT' || !child) return
   const home = await store.home(child)
-  const existing = home.missions.find((m) => m.id === missionId)?.status === 'IN_PROGRESS'
-  if (existing) return // 이어하기(200)는 요일 검사를 하지 않는다
+  const existing = store.snapshot().attempts.find(a => a.studentId === child!.id && a.mission.id === missionId && a.status === 'IN_PROGRESS')
+  if (resume && existing) return // 기존 시도 시작 요청은 이어서 진행한다.
   const plan = mockPremium(child.id) ? 'PREMIUM' : 'FREE' // 이용권은 결제 목업 구독 한 곳에서 정함(#602)
   const week = weeklyThemeFor(child.id, home.missions, child.grade, plan)
   // 2026-11-10 개정(#484): 공개된(OPEN) 문제는 토요일(프리미엄 일요일)까지 새로 시작, 이미 마무리한 문제는 다시 풀기로.
@@ -168,6 +167,15 @@ async function checkContext(request: Request, missionId: string) {
     throw new ApiError({ status: 409, code: 'THEME_REVIEW_NOT_ALLOWED', title: '토요일에 이번 주 마무리한 문제만 다시 풀 수 있어요.' })
   if (context === 'EXTRA' && !mockPremium(child.id))
     throw new ApiError({ status: 403, code: 'PREMIUM_REQUIRED', title: '생각 유형별 추가 문제는 프리미엄에서 풀 수 있어요.' })
+}
+async function missionForContext(owner: Child, missionId: string, context?: AttemptContext) {
+  if (context !== 'THEME_DAY' && context !== 'THEME_REVIEW') return store.mission(missionId, owner)
+  const active = store.snapshot().attempts.find(a => a.studentId === owner.id && a.mission.id === missionId && a.status === 'IN_PROGRESS')
+  if (active) return active.mission
+  const home = await store.home(owner)
+  const day = themeMissions(home.missions, owner.grade).days.find(d => d.mission.id === missionId)
+  if (!day) throw new ApiError({ status: 409, code: 'MISSION_NOT_AVAILABLE', title: '이번 주 테마의 미션을 찾을 수 없어요.' })
+  return day.mission
 }
 function studentOnly() {
   if (mockRole !== 'STUDENT' || !child)
@@ -440,16 +448,22 @@ export const studentHandlers = [
   http.get('/api/v1/missions/:missionId', ({ request, params }) =>
     respond(async () => {
       guard(request)
-      return store.mission(id(params.missionId), child!)
+      const context = new URL(request.url).searchParams.get('context')
+      if (context === null) return store.mission(id(params.missionId), child!)
+      if (context !== 'THEME_DAY' && context !== 'THEME_REVIEW')
+        throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: '주간 테마 안내 맥락을 확인해 주세요.' })
+      const owner = studentOnly(), missionId = id(params.missionId)
+      await checkContext(context, missionId, false)
+      return missionForContext(owner, missionId, context)
     }),
   ),
   http.post('/api/v1/missions/:missionId/attempts', ({ request, params }) =>
     respond(async () => {
       guard(request)
-      const m = await store.mission(id(params.missionId), child!)
-      await checkContext(request, m.id)
+      const context = await startContext(request), missionId = id(params.missionId)
+      await checkContext(context, missionId, true)
+      const m = await missionForContext(child!, missionId, context)
       const started = await store.start(m, child!)
-      const context = await startContext(request)
       if (context && !startedContexts.has(started.attemptId)) startedContexts.set(started.attemptId, context)
       return wireAttempt(started)
     }, 201),

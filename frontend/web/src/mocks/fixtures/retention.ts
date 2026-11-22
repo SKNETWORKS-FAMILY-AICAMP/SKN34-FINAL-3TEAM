@@ -1,6 +1,7 @@
 import type { ErrorReport } from '../../domain/admin/operations.ts'
 import type { ThemeGrade } from '../../domain/admin/retention.ts'
 import type { Child, Mission } from '../../domain/classroom.ts'
+import { fixtureStore } from './student.ts'
 import {
   baseLookCatalog,
   companionKey,
@@ -61,6 +62,8 @@ export interface MockLookItem {
 export interface MockDecorPurchase { itemKey: string; ownedCount: number; balance: number }
 export interface MockWeeklyTheme {
   themeId: string
+  missionSnapshots?: Mission[]
+  version?: number
   grade: ThemeGrade
   weekStart: string
   title: string
@@ -323,7 +326,12 @@ export function themeMissions(missions: Mission[], grade: number) {
   const published = retentionState.themes.find((t) => t.status === 'PUBLISHED' && t.weekStart === weekStart() && t.grade === `G${Math.min(grade, 6)}`)
   if (published) {
     const byId = new Map(missions.map((m) => [m.id, m]))
-    const days = published.days.flatMap((d) => (byId.get(d.missionId) ? [{ day: d.day, mission: byId.get(d.missionId)! }] : []))
+    const days = published.days.flatMap((d) => {
+      const live = byId.get(d.missionId)
+      const snapshot = published.missionSnapshots?.find(m => m.id === d.missionId)
+      const mission = snapshot ? { ...snapshot, grade, status: live?.status, attemptId: live?.attemptId } : live
+      return mission ? [{ day: d.day, mission }] : []
+    })
     // 테마 초안 채택(#441 목업)이나 관리자가 넣은 그림·영상·움직임도 학생 응답에 그대로(실서버처럼, #440)
     const scene = { introImageUrl: published.introImageUrl ?? null, introVideoUrl: published.introVideoUrl ?? null, introMotion: published.introMotion ?? null,
       outroImageUrl: published.outroImageUrl ?? null, outroVideoUrl: published.outroVideoUrl ?? null, outroMotion: published.outroMotion ?? null }
@@ -406,7 +414,9 @@ export function weeklyThemeFor(studentId: string, missions: Mission[], grade: nu
   const theme = themeMissions(missions, grade)
   const week = `${studentId}:${weekStart()}`
   const days = theme.days.map(({ day, mission }, i) => {
-    const attemptStatus = mission.status ?? 'NOT_STARTED'
+    const past = mission.status ? undefined : fixtureStore.snapshot().attempts.filter(a => a.studentId === studentId && a.mission.id === mission.id)
+    const latest = past?.find(a => a.status === 'IN_PROGRESS') ?? past?.at(-1)
+    const attemptStatus = mission.status ?? latest?.status ?? 'NOT_STARTED'
     const done = attemptStatus === 'COMPLETED'
     const completion = retentionState.completions[completionKey(studentId, mission.id)]
     return {

@@ -19,7 +19,7 @@ function list<T>(request:Request,rows:T[]){const q=new URL(request.url).searchPa
 function noticeView(n:typeof notices[number]):AdminNotice{return {noticeId:n.id,kind:(n as unknown as AdminNotice).kind??'NOTICE',title:n.title,body:n.content,targetRoles:n.roles as AdminNotice['targetRoles'],visibleFrom:n.startsAt,visibleTo:n.endsAt,endedAt:(n as unknown as AdminNotice).endedAt??null}}
 function inquiryView(c:typeof cases[number]){return {inquiryId:c.id,category:c.category,title:c.title??c.comment.slice(0,60),body:c.comment,status:c.status,answer:c.answer??null,createdAt:c.createdAt}}
 export const adminServiceHandlers=[
- http.get('/api/v1/admin/inquiries',({request})=>respond(async()=>{admin(request,'SERVICE_OPS');return list(request,cases.filter(c=>c.kind==='inquiries').map(inquiryView))})),
+ http.get('/api/v1/admin/inquiries',({request})=>respond(async()=>{admin(request,'SERVICE_OPS');const status=new URL(request.url).searchParams.get('status');return list(request,cases.filter(c=>c.kind==='inquiries' && (!status || c.status===status)).map(inquiryView))})),
  http.post('/api/v1/admin/inquiries/:id/answer',({request,params})=>respond(async()=>{admin(request,'SERVICE_OPS');const data=await request.json() as {answer:string};const c=cases.find(c=>c.id===params.id);if(!c)fail('NOT_FOUND','문의가 없습니다.',404);if(c!.status==='RESOLVED'&&c!.answer!==data.answer)fail('CONFLICT','처리 완료한 답변은 바꿀 수 없습니다.',409);return inquiryView(answerCase(String(params.id),data.answer)!)})),
  http.get('/api/v1/notices',({request})=>respond(async()=>{guard(request);const role=store.snapshot().session!.role;const rows=notices.filter(n=>n.roles.includes(role)&&Date.parse(n.startsAt)<=Date.now()&&(!n.endsAt||Date.parse(n.endsAt)>Date.now())&&!(n as unknown as AdminNotice).endedAt);return list(request,rows.map(noticeView))})),
  // Mirrors core GET /admin/notices: status derived at query time, targetRoles filter, visibleFrom DESC.
@@ -39,7 +39,7 @@ export const adminServiceHandlers=[
  },method==='post'?201:200))),
  http.delete('/api/v1/admin/notices/:id',({request,params})=>respond(async()=>{admin(request,'SERVICE_OPS');const n=notices.find(n=>n.id===params.id);if(!n)fail('NOT_FOUND','공지가 없습니다.',404);Object.assign(n!,{endedAt:(n as unknown as AdminNotice).endedAt??new Date().toISOString()});return noticeView(n!)})),
  http.get('/api/v1/admin/payments',({request})=>respond(async()=>{admin(request,'PAYMENT_VIEW');return list(request,demoPayments)})),
- http.get('/api/v1/admin/refund-requests',({request})=>respond(async()=>{admin(request,'PAYMENT_VIEW');return list(request,demoRefunds)})),
+ http.get('/api/v1/admin/refund-requests',({request})=>respond(async()=>{admin(request,'PAYMENT_VIEW');const status=new URL(request.url).searchParams.get('status');return list(request,demoRefunds.filter(r=>!status || r.status===status))})),
  http.post('/api/v1/admin/refund-requests/:id/approve',({request,params})=>respond(async()=>{
   admin(request,'PAYMENT_REFUND');const key=request.headers.get('Idempotency-Key');if(!key)fail('VALIDATION_FAILED','멱등 키가 필요합니다.',400)
   const previous=receipts.get(key!);if(previous){if(previous.requestId!==params.id)fail('CONFLICT','같은 키로 다른 환불을 처리할 수 없습니다.',409);return structuredClone(previous.data)}

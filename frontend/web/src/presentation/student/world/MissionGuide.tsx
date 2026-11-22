@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../../data/apiClient.ts'
 import { isDemo, useMission } from '../../../data/classroom/useClassroom.ts'
 import type { Child, InputType, Mission } from '../../../domain/classroom.ts'
+import type { AttemptContext } from '../../../domain/retention.ts'
 import { studentThinkingLabels } from '../../../domain/classroom.ts'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { SceneArt } from '../MissionScene.tsx'
@@ -51,6 +52,7 @@ function GuideArt({ mission }: { mission: Mission }) {
  */
 export function MissionGuide({
   id,
+  context,
   child,
   backLabel,
   onClose,
@@ -59,6 +61,7 @@ export function MissionGuide({
   error,
 }: {
   id: string
+  context?: AttemptContext
   child: Child
   /** 돌아가기 버튼 이름(미션 고르기에서 열면 "미션 고르기", 홈에서 열면 "홈") */
   backLabel: string
@@ -68,7 +71,7 @@ export function MissionGuide({
   error: unknown
 }) {
   const { companion, worn } = useLook()
-  const query = useMission(id, child)
+  const query = useMission(id, child, context)
   const m = query.data
   const premiumOnly = error instanceof ApiError && error.problem?.code === 'PREMIUM_REQUIRED'
   const [speaking, setSpeaking] = useState(false)

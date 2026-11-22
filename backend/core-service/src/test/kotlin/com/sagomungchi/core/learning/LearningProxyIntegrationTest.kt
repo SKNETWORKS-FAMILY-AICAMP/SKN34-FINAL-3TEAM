@@ -134,6 +134,21 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         }
     }
 
+    @Test fun `theme mission guidance uses verified identity profile and Sunday entitlement`() {
+        val mission=UUID.randomUUID()
+        jdbc.update("UPDATE student SET grade=4,is_demo=false WHERE id=?",child)
+        for (context in listOf("THEME_DAY","THEME_REVIEW")) {
+            call("GET","/api/v1/missions/$mission?context=$context&grade=6&demo=true&sundayTheme=true&studentId=${UUID.randomUUID()}")
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store"))
+            val sent=stub.requests.last()
+            assertEquals("/internal/missions/$mission?grade=4&demo=false&context=$context&sundayTheme=false",sent.target)
+            assertEquals(child.toString(),sent.header("X-Student-Scope"))
+        }
+        stub.requests.clear()
+        call("GET","/api/v1/missions/$mission?context=UNKNOWN").andExpect(status().isBadRequest())
+        assertTrue(stub.requests.isEmpty())
+    }
+
     @Test fun `all ten routes forward verified context method body and ETag`() {
         val mission = UUID.randomUUID()
         val routes = listOf("GET" to "/missions", "GET" to "/missions/$mission", "POST" to "/missions/$mission/attempts",

@@ -18,6 +18,10 @@ import com.sagomungchi.learning.theme.domain.WeeklyThemePublishIncompleteExcepti
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
 import com.sagomungchi.learning.theme.domain.ThemeContent
 import com.sagomungchi.learning.theme.service.WeeklyThemeAdminService
+import com.sagomungchi.learning.theme.service.PlanChange
+import com.sagomungchi.learning.theme.service.PlanResult
+import com.sagomungchi.learning.theme.service.ThemeWeekPlanner
+import com.sagomungchi.learning.theme.service.WeekBoard
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
@@ -80,7 +84,20 @@ data class WeeklyThemeDayRequest(
 @RequestMapping("/internal/admin/weekly-themes")
 class AdminWeeklyThemeController(
     private val service: WeeklyThemeAdminService,
+    private val planner: ThemeWeekPlanner,
 ) {
+    @GetMapping("/planner")
+    fun board(@RequestParam grade: ThemeGrade, @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) weekStart: LocalDate): WeekBoard {
+        requireAdmin()
+        return planner.board(grade, weekStart)
+    }
+
+    @PutMapping("/planner")
+    fun plan(@RequestBody body: PlanChange): PlanResult {
+        requireAdmin()
+        return planner.change(body)
+    }
+
     @GetMapping
     fun list(
         @RequestParam(required = false) grade: ThemeGrade?,
@@ -119,7 +136,13 @@ class AdminWeeklyThemeController(
     @PostMapping("/{themeId}/publish")
     fun publish(@PathVariable themeId: UUID, @RequestBody(required = false) body: Map<String, Any?>?): AdminWeeklyTheme {
         requireAdmin()
-        return service.publish(themeId)
+        val version = body?.get("expectedVersion")?.let {
+            (it as? Int)?.takeIf { value -> value > 0 } ?: invalid("expectedVersion은 양의 정수")
+        }
+        val expectedPlan = body?.get("expectedPlannedDraftId")?.let {
+            (it as? String)?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() } ?: invalid("expectedPlannedDraftId는 UUID 또는 null")
+        }
+        return service.publish(themeId, version, expectedPlan, body?.containsKey("expectedPlannedDraftId") == true)
     }
 
     @PostMapping("/{themeId}/unpublish")

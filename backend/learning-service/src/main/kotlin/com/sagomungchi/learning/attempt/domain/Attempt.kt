@@ -112,5 +112,5 @@ enum class AttemptStatus { IN_PROGRESS, COMPLETED }
 enum class AttemptContext { THEME_DAY, THEME_REVIEW, EXTRA }
 
 /** 테마 시도에 고정할 그 주 테마 (테마 시작 검사 결과) */
-data class ThemeAttempt(val themeId: UUID, val weekStart: LocalDate)
+data class ThemeAttempt(val themeId: UUID, val weekStart: LocalDate, val snapshot: MissionSnapshot? = null)
 

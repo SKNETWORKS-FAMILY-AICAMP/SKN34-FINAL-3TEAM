@@ -258,8 +258,9 @@ export function createApiGateway(): ClassroomGateway {
         return { ...m, id: text(m.missionId ?? m.id, 'missionId') } as unknown as Mission
       })
     },
-    async mission(id) {
-      const m = object(await apiFetch<unknown>(`/missions/${id}`))
+    async mission(id, _child, context) {
+      const query = context === 'THEME_DAY' || context === 'THEME_REVIEW' ? '?context=' + context : ''
+      const m = object(await apiFetch<unknown>(`/missions/${encodeURIComponent(id)}${query}`))
       if (
         typeof m.question !== 'string' ||
         typeof m.title !== 'string' ||

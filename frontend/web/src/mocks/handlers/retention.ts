@@ -1,4 +1,7 @@
 import { THEME_GRADE_LABELS } from '../../domain/admin/retention.ts'
+import type { PlanChange } from '../../data/admin/themePlannerApi.ts'
+import { mockPlannerDrafts } from './adminThemeDrafts.ts'
+import { assignWeek, requireOpenWeek, weekLocked } from '../fixtures/themePlanning.ts'
 import { http, HttpResponse } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
 import { baseLookCatalog, DECOR_MAX_OWNED, REACTIONS } from '../../domain/retention.ts'
@@ -33,6 +36,7 @@ import {
 } from '../fixtures/retention.ts'
 import { guard, mockLatestAttempt, mockStudent, mockStudentHome, respond } from './student.ts'
 import { mockThemeNone } from '../fixtures/themeState.ts'
+import { fixtureStore } from '../fixtures/student.ts'
 import { consentRows, docs, fixtureConsent, parentChild } from './parent.ts'
 import { allow } from './admin.ts'
 import { ALL_ITEM_SLOTS, DECOR_COLOR_RE, DECOR_SPOT_LIMIT, inDecorGrid, isDecorSurface, THEME_DAYS } from '../../domain/retention.ts'
@@ -504,6 +508,37 @@ export const retentionHandlers = [
   }),
 
   // ---------- 관리자 주간 테마·꾸미기 아이템 (2.8, CONTENT) ----------
+  http.get('/api/v1/admin/weekly-themes/planner', ({request})=>respond(async()=>{
+    allow(request,'CONTENT')
+    const query=new URL(request.url).searchParams
+    const grade=query.get('grade')??'', start=query.get('weekStart')??''
+    if(!(grade in THEME_GRADE_LABELS)||!isPlanMonday(start)) fail(400,'VALIDATION_FAILED','학년 및 월요일을 확인해 주세요.')
+    const candidates=mockPlannerDrafts().filter(d=>d.grade===grade)
+    const weeks=Array.from({length:4},(_,index)=>{
+      const date=new Date(start+'T00:00:00Z')
+      date.setUTCDate(date.getUTCDate()+7*index)
+      const week=date.toISOString().slice(0,10)
+      return {weekStart:week,locked:weekLocked(grade,week),planned:candidates.find(d=>d.plannedWeek===week)??null,
+        themes:retentionState.themes.filter(t=>t.grade===grade&&t.weekStart===week).map(t=>({themeId:t.themeId,title:t.title,status:t.status,version:t.version??1}))}
+    })
+    return {grade,weekStart:start,weeks,candidates}
+  })),
+  http.put('/api/v1/admin/weekly-themes/planner',({request})=>respond(async()=>{
+    allow(request,'CONTENT')
+    const plan=await request.json() as PlanChange
+    const candidates=mockPlannerDrafts()
+    const draft=candidates.find(d=>d.draftId===plan.draftId && d.grade===plan.grade)
+    if(!draft||draft.plannedWeek!==plan.expectedWeek) fail(409,'PLAN_CONFLICT','초안 편성 주를 새로 확인해 주세요.')
+    if(plan.targetWeek!==null && (!isPlanMonday(plan.targetWeek)||plan.targetWeek<weekStart())) fail(400,'VALIDATION_FAILED','편성 주는 이번 주 이후 월요일입니다.')
+    if(plan.expectedWeek) requireOpenWeek(plan.grade,plan.expectedWeek)
+    if(plan.targetWeek) requireOpenWeek(plan.grade,plan.targetWeek)
+    const other=plan.targetWeek && candidates.find(d=>d.grade===plan.grade&& d.draftId!==plan.draftId&&d.plannedWeek===plan.targetWeek)
+    const displaced=other?other.draftId:null
+    if(displaced!==plan.expectedTargetDraftId) fail(409,'PLAN_CONFLICT','대상 주의 후보가 바뀌었습니다.')
+    if(displaced) assignWeek(displaced,plan.expectedWeek)
+    assignWeek(plan.draftId,plan.targetWeek)
+    return {draftId:plan.draftId, grade:plan.grade, plannedWeek:plan.targetWeek, displacedDraftId:displaced}
+  })),
   http.get('/api/v1/admin/weekly-themes', ({ request }) =>
     respond(async () => {
       allow(request, 'CONTENT')
@@ -512,9 +547,11 @@ export const retentionHandlers = [
         (t) =>
           (!q.get('grade') || t.grade === q.get('grade')) &&
           (!q.get('status') || t.status === q.get('status')) &&
+          (q.get('status') !== 'REVIEW_REQUIRED' || !weekLocked(t.grade,t.weekStart)) &&
           (!q.get('weekStart') || t.weekStart === q.get('weekStart')),
       )
-      return { items, page: 0, size: items.length, totalElements: items.length }
+      const page=Number(q.get('page')??0), size=Number(q.get('size')??20)
+      return { items:items.slice(page*size,(page+1)*size), page, size, totalElements: items.length }
     }),
   ),
   http.post('/api/v1/admin/weekly-themes', ({ request }) =>
@@ -526,6 +563,7 @@ export const retentionHandlers = [
         status: 'DRAFT',
         updatedAt: new Date().toISOString(),
       }
+      requireOpenWeek(t.grade,t.weekStart)
       retentionState.themes.unshift(t)
       return saved(t)
     }, 201),
@@ -533,16 +571,18 @@ export const retentionHandlers = [
   http.get('/api/v1/admin/weekly-themes/:themeId', ({ request, params }) =>
     respond(async () => {
       allow(request, 'CONTENT')
-      return themeById(String(params.themeId))
+      const theme=themeById(String(params.themeId))
+      return {...theme,version:theme.version??1,weekLocked:weekLocked(theme.grade,theme.weekStart)}
     }),
   ),
   http.put('/api/v1/admin/weekly-themes/:themeId', ({ request, params }) =>
     respond(async () => {
       allow(request, 'CONTENT')
       const t = themeById(String(params.themeId))
-      if (t.status === 'REVIEW_REQUIRED') fail(409, 'WEEKLY_THEME_IN_REVIEW', '검토 중인 테마는 수정할 수 없습니다.')
-      // 게시 중 수정은 재검토: 작성 상태로 돌린다.
-      Object.assign(t, themeInput(await request.json()), { status: 'DRAFT', updatedAt: new Date().toISOString() })
+      const input=themeInput(await request.json())
+      requireOpenWeek(t.grade,t.weekStart)
+      requireOpenWeek(input.grade,input.weekStart)
+      Object.assign(t, input, {status:'DRAFT',version:(t.version??1)+1,updatedAt:new Date().toISOString()})
       return saved(t)
     }),
   ),
@@ -551,10 +591,13 @@ export const retentionHandlers = [
       respond(async () => {
         allow(request, 'CONTENT')
         const t = themeById(String(params.themeId))
+        requireOpenWeek(t.grade,t.weekStart)
         if (action === 'review-request') {
-          if (t.status !== 'DRAFT') fail(409, 'INVALID_STATE', '작성 중인 테마만 검토를 요청할 수 있습니다.')
+          if (t.status !== 'DRAFT' && t.status !== 'UNPUBLISHED') fail(409, 'INVALID_STATE', '검토를 요청할 수 없습니다.')
           t.status = 'REVIEW_REQUIRED'
         } else if (action === 'publish') {
+          const body=await request.json() as {expectedVersion?:number;expectedPlannedDraftId?:string|null}
+          if(body.expectedVersion!==undefined && body.expectedVersion!==(t.version??1)) fail(409,'PLAN_CONFLICT','테마 버전이 바뀌었습니다.')
           if (t.status !== 'REVIEW_REQUIRED') fail(409, 'INVALID_STATE', '검토 요청한 테마만 게시할 수 있습니다.')
           const errors = await publishErrors(t)
           if (errors.length)
@@ -564,10 +607,16 @@ export const retentionHandlers = [
               title: '게시 검사를 통과하지 못했습니다.',
               errors: errors.map((message) => ({ message })),
             } as never)
+          requireOpenWeek(t.grade,t.weekStart)
+          const planned=mockPlannerDrafts().find(d=>d.grade===t.grade&&d.plannedWeek===t.weekStart)
+          if('expectedPlannedDraftId' in body && body.expectedPlannedDraftId!==(planned?.draftId??null)) fail(409,'PLAN_CONFLICT','해제할 편성 후보가 바뀌었습니다.')
+          const catalog=fixtureStore.snapshot().catalog ?? []
+          t.missionSnapshots=t.days.map(day=>catalog.find(m=>m.id===day.missionId)
+            ?? fail(422,'WEEKLY_THEME_PUBLISH_INCOMPLETE','게시 버전의 미션 내용을 찾지 못했습니다.'))
           t.status = 'PUBLISHED'
+          mockPlannerDrafts().filter(d=>d.grade===t.grade && d.plannedWeek===t.weekStart).forEach(d=>assignWeek(d.draftId,null))
         } else {
-          if (t.status !== 'PUBLISHED') fail(409, 'INVALID_STATE', '게시 중인 테마만 중단할 수 있습니다.')
-          t.status = 'UNPUBLISHED'
+          fail(409,'INVALID_STATE','게시 중단할 수 없습니다.')
         }
         t.updatedAt = new Date().toISOString()
         return saved(t)
@@ -633,6 +682,9 @@ export const COMMUNITY_DOCUMENT: ConsentDocument = {
   required: false,
 }
 
+function isPlanMonday(date:string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && new Date(date+'T00:00:00Z').getUTCDay()===1
+}
 function themeById(id: string) {
   const t = retentionState.themes.find((x) => x.themeId === id)
   if (!t) fail(404, 'NOT_FOUND', '테마를 찾을 수 없습니다.')
