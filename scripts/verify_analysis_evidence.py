@@ -54,7 +54,7 @@ def main():
         core.execute("INSERT INTO user_account(id,role,login_id,status,is_demo,created_at,updated_at) VALUES(%s,'PARENT',%s,'ACTIVE',true,now(),now())", (owner,str(owner)+"@example.invalid"))
         core.execute("INSERT INTO auth_session(id,user_id,role,version,expires_at,created_at) VALUES(%s,%s,'PARENT',1,now()+interval '1 hour',now())", (sid,owner))
         for kind in ["TERMS","PRIVACY"]:
-            doc = core.execute("SELECT id FROM consent_document WHERE kind=%s ORDER BY effective_from DESC,created_at DESC,id DESC LIMIT 1", (kind,)).fetchone()
+            doc = core.execute("SELECT id FROM consent_document WHERE kind=%s AND effective_from<=(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date ORDER BY effective_from DESC,created_at DESC,id DESC LIMIT 1", (kind,)).fetchone()
             if doc:
                 core.execute("INSERT INTO consent(id,document_id,subject_user_id,agreed,status,agreed_at) VALUES(%s,%s,%s,true,'AGREED',now())", (uuid.uuid4(),doc[0],owner))
     account(user,session)

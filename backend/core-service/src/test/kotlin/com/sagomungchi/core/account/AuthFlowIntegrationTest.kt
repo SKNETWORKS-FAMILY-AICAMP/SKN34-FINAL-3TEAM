@@ -124,7 +124,7 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
         val id = UUID.randomUUID()
         jdbc.update("INSERT INTO student(pin_failed_count,id,nickname,grade,birth_year,is_demo,status,created_at,updated_at) VALUES(0,?,'학생',3,2017,false,'ACTIVE',?,?)", id, OffsetDateTime.now(), OffsetDateTime.now())
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',?)", UUID.randomUUID(), user, id, OffsetDateTime.now())
-        val existingDocument = jdbc.queryForList("SELECT id FROM consent_document WHERE kind='GUARDIAN' ORDER BY created_at DESC LIMIT 1", UUID::class.java).firstOrNull()
+        val existingDocument = jdbc.queryForList("SELECT id FROM consent_document WHERE kind='GUARDIAN' AND effective_from<=(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date ORDER BY created_at DESC LIMIT 1", UUID::class.java).firstOrNull()
         val document = existingDocument ?: UUID.randomUUID().also { value ->
             jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,'GUARDIAN',?,'동의','본문',true,CURRENT_DATE,?)", value, UUID.randomUUID().toString(), OffsetDateTime.now())
         }
