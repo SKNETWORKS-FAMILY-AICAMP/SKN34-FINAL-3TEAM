@@ -159,7 +159,7 @@ $COMPOSE down -v
 |---|---|---|
 | charts | Helm v4.3.1·kubeconform v0.8.0을 공식 배포본에서 받아 SHA256 대조 | 체크섬 불일치 |
 | charts | `environments/<env>/*.yaml`마다 `helm lint --strict`와 `helm template` | 렌더 실패, `values.schema.json` 위반, lint 경고 |
-| charts | `environments/prod/*.json`(#509): 저장소 chart values는 local과 같은 규칙으로 lint·template, `migrations/<release>.json`이 있으면 덮어써 migration Job까지 렌더. `kind`가 있는 manifest(NodePool·NetworkPolicy·ExternalSecret)는 그대로 kubeconform 대상 | 렌더 실패, 스키마 위반 |
+| charts | `environments/prod/*.json`(#509): 저장소 chart values는 local과 같은 규칙으로 lint·template, `images/<release>.json`(#857)이 있으면 함께 넘겨 PreSync migration Job·NetworkPolicy까지 렌더, ApplicationSet 목록과 images 파일 이름 일치 확인. `kind`가 있는 manifest(NodePool·NetworkPolicy·ExternalSecret)는 그대로 kubeconform 대상 | 렌더 실패, 스키마 위반 |
 | charts | 렌더 결과와 `argocd/`·`policies/` 원본 manifest의 kubeconform `-strict` | 스키마 위반, 정의되지 않은 필드 |
 | migrations | `migrations/*.Dockerfile`을 저장소 루트 context로 `docker build`(push 없음) | 빌드 실패 |
 
