@@ -168,7 +168,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 ## 전체 서비스 더미 데이터 (#808)
 
-**아직 실행하지 않은 절차**다(2026-11-22 작성). 12/7 시연에서 학생 커뮤니티(친구 생각·반응·친구 방)·학부모(리포트·분석 대화·알림)·관리자 화면(운영 현황·작업 상태·AI 사용량·결제·신고·문의·공지)이 비어 보이지 않게, 가상 가족 30개(자녀 36명)에 4주(W1 11/9·W2 11/16·W3 11/23은 시험 시계, W4 11/30은 실제 시각) 기록을 공개 API로 쌓는다. 계획·화면별 최소 건수·결정은 [infra 9.7.6](../../docs/report/infra.md#976-전체-서비스-시연용-더미-데이터-생성-계획-854-2026-11-22), 실행 결과는 그 절 아래에 남긴다. 위 #624 시연 학생 절차와 같은 시계 정지점에서 함께 돈다.
+2026-11-22 작성, 2026-11-23 kind 리허설(가족 6개)로 한 번 돌렸다([infra 9.7.6.7](../../docs/report/infra.md#9767-u5-kind-리허설-결과-2026-11-23)). B에서는 아직 실행하지 않았다. 12/7 시연에서 학생 커뮤니티(친구 생각·반응·친구 방)·학부모(리포트·분석 대화·알림)·관리자 화면(운영 현황·작업 상태·AI 사용량·결제·신고·문의·공지)이 비어 보이지 않게, 가상 가족 30개(자녀 36명)에 4주(W1 11/9·W2 11/16·W3 11/23은 시험 시계, W4 11/30은 실제 시각) 기록을 공개 API로 쌓는다. 계획·화면별 최소 건수·결정은 [infra 9.7.6](../../docs/report/infra.md#976-전체-서비스-시연용-더미-데이터-생성-계획-854-2026-11-22), 실행 결과는 그 절 아래에 남긴다. 위 #624 시연 학생 절차와 같은 시계 정지점에서 함께 돈다.
 
 테마·미션·가구·소품은 만들지 않는다. 테마·미션은 LLM·RAG 생성 담당자가 게시한다(#890). 스크립트는 게시 여부만 확인하고 없으면 멈춘다.
 
@@ -208,6 +208,10 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 `FAKETIME`은 UTC다. 정지점마다 core·learning 두 Deployment의 `FAKETIME`만 바꾸고 롤아웃을 기다린다(Pod가 다시 뜨고 그 사이 자정은 지나가지 않는다). 리포트 ShedLock은 DB(실제) 시각 기준 최소 1분 잠금이라 경계 정지점 사이 실제 간격을 1분 넘게 둔다.
 
+- 롤아웃이 끝나도 이전 Pod가 `Terminating`으로 약 1분 더 요청을 받는다. 그동안 API를 부르면 이전 가짜 시각으로 발급한 토큰을 새 Pod가 `TOKEN_EXPIRED`로 거절한다. `kubectl -n app get pods`에서 core·learning `Terminating`이 없어진 뒤 명령을 돌린다(kind 리허설 실측: 정지점 전환 약 40초)
+- 같은 `FAKETIME` 값을 다시 넣으면 Pod가 다시 뜨지 않는다(시계가 그대로 흐름). 같은 시각에서 다시 시작하려면 `kubectl -n app rollout restart`
+- Git Bash에서 `kubectl set env`를 부르면 `LD_PRELOAD=/usr/...` 경로가 Windows 경로로 바뀌어 시계가 켜지지 않는다. `MSYS_NO_PATHCONV=1`을 붙이거나 PowerShell에서 실행하고, 켠 뒤 `kubectl -n app get deploy core-service -o yaml`의 `LD_PRELOAD` 값을 본다
+
 | 주 | 수 19:00(5문제 무리 월~수) | 토 14:00(나머지·정답·반응) | 토 23:56(→ 일 00:00 일일) | 일 23:56(→ 월 00:00 일일·주간) |
 |---|---|---|---|---|
 | W1 | `@2026-11-11 10:00:00` | `@2026-11-14 05:00:00` | `@2026-11-14 14:56:00` | `@2026-11-15 14:56:00` |
@@ -216,7 +220,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 - 수 19:00: `D solve --stage wed`
 - 토 14:00: `D solve --stage sat` → (W2·W3만) #624 `solve --child <초3>`·`solve --child <초5>` → `D react`(모든 풀이 뒤)
-- 토 23:56·일 23:56: 롤아웃 뒤 가짜 00:00이 지나고 5분 더 기다린 뒤 관리자 작업 상태 또는 `audit-demo-data.sql` `dummy854_report_jobs`로 그 기간 작업이 `COMPLETED`인지 본다. 리포트 Gemma(SageMaker)는 실제 시각 예약이라 0대여서 더미 리포트는 설명 없이 발행된다(정상)
+- 토 23:56·일 23:56: 롤아웃 뒤 가짜 00:00이 지나고 5분 더 기다린 뒤 관리자 작업 상태 또는 `audit-demo-data.sql` `dummy854_report_jobs`로 그 기간 작업이 `COMPLETED`인지 본다. 주간 서술도 리포트 Gemma(SageMaker)로 부르고 실패하면 대체 문구 없이 작업이 `FAILED(GENERATION_FAILED)`가 된다(설계상 대체 없음, kind 리허설 발견). SageMaker는 실제 시각 예약이라 W1~W3 경계에서는 0대이므로, **시계 동안 SageMaker를 손으로 1대로 켜 둔다(2026-11-23 결정)**. 켜 두지 않으면 그 주 기록이 있는 프리미엄 학생(더미 꾸준·보통 프리미엄, 시연 초5 W2·W3)의 주간 리포트가 실패한다. 기록 없는 학생·무료 학생·일일 리포트는 SageMaker와 상관없이 `COMPLETED`다
 - 정지점 중간에 실패하면 같은 정지점에서 같은 명령을 다시 돌린다(끝난 요일·반응은 건너뜀). 주를 넘긴 뒤 빠진 데이터는 채우지 않고 기록한다
 - 수요일 03:00을 넘는 정지점은 없다(테마 초안 자동 생성, 1개 $4~5). 시계 동안 learning 초안 생성도 끈다
 
@@ -225,19 +229,21 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 시험 시계 이미지는 위 #624 순서 4와 같다(`demo-clock.Dockerfile`, core·learning 각각 ECR push).
 
 켜기
+0. B만: 시계 시작 약 30분 전에 `sagemaker_explanation.py --profile <B> copies 1`로 리포트 Gemma를 1대로 켜고(0대에서 약 21분) `status`로 InService·copies 1을 확인한다. 주간 예약(`schedule`)은 건드리지 않는다. 비용은 `ml.g6e.xlarge` 시간당 약 $3.2, W1~W3 동안 켜 두면 약 3시간·$10
 1. B만: Argo CD가 되돌리지 않게 한다. ApplicationSet 템플릿이 자동 동기화라 Application만 끄면 ApplicationSet 컨트롤러가 다시 켤 수 있으므로 컨트롤러를 먼저 멈춘다
    - `kubectl -n argocd get deploy`로 이름 확인 → `kubectl -n argocd scale deploy argocd-applicationset-controller --replicas=0`
    - `argocd app set prod-core-service --sync-policy none`, `argocd app set prod-learning-service --sync-policy none`
    - B 첫 정지점에서 1~2분 뒤 `argocd app get prod-core-service`의 Sync Policy가 계속 `<none>`인지 확인(kind에는 ApplicationSet·자동 동기화가 없어 확인 불가)
 2. `kubectl -n app set image deploy/core-service core-service=<core 시계 이미지>`, learning도 같게
 3. `kubectl -n app set env deploy/core-service LD_PRELOAD=/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1 FAKETIME="@2026-11-11 10:00:00" FAKETIME_FORCE_MONOTONIC_FIX=1 FAKETIME_DONT_RESET=1`, learning은 같은 값에 `APP_THEMEDRAFT_ENABLED=false`(수 03:00 자동 초안·초안 생성 주기 끔)
-4. `kubectl -n app rollout status deploy/core-service`·`learning-service` → `kubectl -n app exec deploy/core-service -- date -u`가 정지점 시각
+4. `kubectl -n app rollout status deploy/core-service`·`learning-service` → 이전 Pod `Terminating`이 없어질 때까지 기다린다. `kubectl exec ... date -u`는 새 프로세스라 늘 `FAKETIME` 시작 값만 보여 주므로 앱 시각 확인으로 쓰지 않는다. 앱 시각은 `kubectl -n app logs deploy/core-service -c core-service --tail=1`의 로그 시각 또는 `FAKETIME` + (지금 − 컨테이너 시작 시각)으로 본다
 
 끄기(W3 끝)
 1. B: `argocd app set prod-core-service --sync-policy automated --auto-prune --self-heal`(learning도) → selfHeal이 이미지·환경 변수를 Git 값으로 되돌린다 → `kubectl -n argocd scale deploy argocd-applicationset-controller --replicas=1` → 두 Application Synced·Healthy
 2. kind: `kubectl -n app set image`로 원래 이미지, `kubectl -n app set env deploy/<앱> LD_PRELOAD- FAKETIME- FAKETIME_FORCE_MONOTONIC_FIX- FAKETIME_DONT_RESET-`(learning은 `APP_THEMEDRAFT_ENABLED-`도)
 3. 두 Pod `date -u`가 실제 시각이고 ReplicaSet이 배포 상태와 같은지 확인. 시계 동안 가짜 시각으로 서명한 S3 그림 URL은 깨지므로 화면 확인은 끈 뒤에 한다
-4. 실제 11/30 00:00 정기 실행이 가짜 11/30 00:00에 만든 W3 주간 리포트를 다시 만들지 않는지 `dummy854_report_jobs`로 확인(kind 리허설 확인 항목)
+4. B: W1~W3 주간 리포트(일 23:56 정지점)가 모두 `COMPLETED`인지 본 뒤 `sagemaker_explanation.py --profile <B> copies 0`으로 내린다. **11/29 23:30 실제 주간 창(#886 PRF-03 0대 복귀 확인) 전에 끝낸다.** 예약은 그대로라 그 창은 평소대로 켜지고 월 02:00에 0대로 돌아간다
+5. 실제 11/30 00:00 정기 실행이 가짜 11/30 00:00에 만든 W3 주간 리포트를 다시 만들지 않는지 `dummy854_report_jobs`로 확인(kind 리허설 확인 항목)
 
 되돌리기: 시험 구독은 `add-dummy854-subscriptions.sql` 머리말의 UPDATE로 해지한다. 더미 기록은 dm854p 학부모가 자녀 프로필을 삭제(학부모 설정)해 지운다.
 
