@@ -45,10 +45,42 @@ test('메뉴 검색은 승인된 메뉴만 찾고 이동 후 모바일 메뉴를
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 
+test('낮은 화면에서 관리자 프로필을 열고 닫거나 마지막 메뉴로 스크롤해도 프로필은 하단에 남는다 @responsive', async ({ page }) => {
+  await page.setViewportSize({ ...page.viewportSize()!, height: 420 })
+  await login(page, 'ops@example.test')
+  await openMenu(page)
+  const profile = page.locator('details.ad-sidebar-profile')
+  const summary = profile.getByLabel('관리자 계정 및 권한 안내')
+  const permissions = profile.getByText('서비스 운영', { exact: true })
+  const scroller = page.locator('.ad-nav-scroll')
+  const nav = scroller.getByRole('navigation', { name: '관리자 메뉴' })
+  const last = nav.getByRole('link', { name: 'AI 사용량', exact: true })
+  await expect(nav.getByRole('link')).toHaveCount(8)
+  await expect(summary).toContainText('이용 가능한 메뉴 8개')
+  await expect(summary).toBeInViewport({ ratio: 1 })
+  await expect(permissions).toBeHidden()
+  await summary.focus()
+  await summary.press('Enter')
+  await expect(profile.getByText('승인 권한', { exact: true })).toBeVisible()
+  await expect(permissions).toBeVisible()
+  await summary.press('Enter')
+  await expect(permissions).toBeHidden()
+
+  const footerTop = (await profile.boundingBox())!.y
+  await expect.poll(() => scroller.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+  await last.scrollIntoViewIfNeeded()
+  await expect.poll(() => scroller.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+  await expect(last).toBeInViewport({ ratio: 1 })
+  await expect(summary).toBeInViewport({ ratio: 1 })
+  expect((await profile.boundingBox())!.y).toBe(footerTop)
+  await last.click()
+  await expect(page).toHaveURL(/\/admin\/usage/)
+})
+
 test('초안 요청 양식을 접었다 열어도 작성 중인 값과 목록은 유지한다 @responsive', async ({ page }) => {
   await login(page)
   await openMenu(page)
-  await page.getByRole('navigation', { name: '관리자 메뉴' }).getByRole('link', { name: '테마 초안', exact: true }).click()
+  await page.getByRole('navigation', { name: '관리자 메뉴' }).getByRole('link', { name: '주간 테마 검수', exact: true }).click()
   await expect(page.getByLabel('테마 주제 키워드')).toBeHidden()
   await page.getByText('새 테마 초안 요청', { exact: true }).click()
   await page.getByLabel('테마 주제 키워드').fill('우리 동네 도서관')
@@ -209,7 +241,7 @@ test('관리자 메뉴의 정보 영역은 화면 폭 안에 유지된다 @respo
   await login(page)
   for (const [label, path] of [
     ['운영 현황', 'home'], ['감사 이력', 'audit'], ['미션 관리', 'missions'], ['미션 초안', 'mission-drafts'],
-    ['주간 테마', 'themes'], ['테마 초안', 'theme-drafts'], ['꾸미기 아이템', 'looks'],
+    ['게시 관리', 'themes'], ['주간 테마 검수', 'theme-drafts'], ['꾸미기 아이템', 'looks'],
     ['작업 재처리', 'jobs'], ['작업 대기열', 'queues'], ['오류 신고', 'errors'], ['문의·공지', 'support'],
     ['모델·프롬프트', 'models'], ['AI 사용량', 'usage'], ['결제·환불', 'payments'],
   ]) {

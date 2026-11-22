@@ -3,6 +3,8 @@ package com.sagomungchi.learning.mission.controller
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning.attempt.domain.AttemptContext
+import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.mission.domain.Choice
 import com.sagomungchi.learning.mission.domain.InputType
 import com.sagomungchi.learning.mission.domain.MissionListItem
@@ -38,6 +40,7 @@ class MissionControllerTest(
     @Autowired private val objectMapper: ObjectMapper,
 ) {
     @MockitoBean lateinit var missionService: MissionService
+    @MockitoBean lateinit var attemptService: AttemptService
 
     private val student = UUID.randomUUID()
 
@@ -97,6 +100,22 @@ class MissionControllerTest(
             jsonPath("$.items[0].demoOnly") { doesNotExist() }
         }
         studentRequest("/internal/missions/${mission.id}?grade=3&demo=true").andExpect { status { isOk() } }
+    }
+
+    @Test
+    fun `테마 안내는 인증된 학생과 현재 학년·요일 권한으로 확정본을 조회한다`() {
+        val mission = missionView(grade = 3)
+        for (context in listOf(AttemptContext.THEME_DAY, AttemptContext.THEME_REVIEW)) {
+            given(attemptService.themeGuide(student, mission.id, 3, false, context, true)).willReturn(mission)
+            val url = "/internal/missions/${mission.id}?grade=3&context=$context&sundayTheme=true"
+            studentRequest(url).andExpect {
+                status { isOk() }
+                jsonPath("$.id") { value(mission.id.toString()) }
+                jsonPath("$.question") { value(mission.question) }
+            }
+            studentRequest(url, role = "PARENT").andExpect { forbidden() }
+        }
+        studentRequest("/internal/missions/${mission.id}?grade=3&context=OTHER").andExpect { status { isBadRequest() } }
     }
 
     @Test

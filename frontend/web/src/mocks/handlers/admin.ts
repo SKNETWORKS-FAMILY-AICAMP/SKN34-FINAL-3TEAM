@@ -33,7 +33,9 @@ import {
   stamp,
 } from '../fixtures/admin/operations.ts'
 import { guard, respond } from './student.ts'
-import { fail, page } from './parent.ts'
+import { demoRefunds } from './adminService.ts'
+import { cases } from './service.ts'
+import { fail } from './parent.ts'
 const reports = () => [...retentionState.communityReports.map(({ report }) => report), ...errorReports]
 const unpublishedChanges = (m: AdminMission) => m.currentVersion !== m.publishedVersion || m.currentRubricVersion !== m.publishedRubricVersion
 const reviewable = (m: AdminMission) => m.status === 'REVIEW_REQUIRED' || m.status === 'PUBLISHED' && unpublishedChanges(m)
@@ -159,6 +161,20 @@ function versionData(d: Partial<MissionVersion>, version: number): MissionVersio
   }
 }
 export const adminHandlers = [
+  http.get('/api/v1/admin/overview/workload', ({ request }) => respond(async () => {
+    allow(request); queryFault()
+    const permissions=store.snapshot().session?.permissions ?? []
+    const range=period(request)
+    const total=(n:number)=>mode==='empty'?0:n
+    return {
+      ...(permissions.includes('SERVICE_OPS') ? {
+        pendingInquiries:total(cases.filter(c=>c.kind==='inquiries' && c.status==='RECEIVED').length),
+        receivedReports:total(reports().filter(r=>r.status==='RECEIVED').length),
+        failedJobs:total(jobs.filter(j=>j.status==='FAILED' && j.createdAt.slice(0,10)>=range.from && j.createdAt.slice(0,10)<=range.to).length),
+      }:{}),
+      ...(permissions.includes('PAYMENT_VIEW') ? {pendingRefunds:total(demoRefunds.filter(r=>r.status==='REQUESTED').length)}:{}),
+    }
+  })),
   http.get('/api/v1/admin/overview', ({ request }) =>
     respond(async () => {
       allow(request)
@@ -193,8 +209,7 @@ export const adminHandlers = [
       allow(request, 'SERVICE_OPS')
       queryFault()
       const q = new URL(request.url).searchParams
-      return page(
-        mode === 'empty'
+      const filtered = mode === 'empty'
           ? []
           : jobs.filter(
               (j) =>
@@ -202,8 +217,10 @@ export const adminHandlers = [
                 (!q.get('to') || j.createdAt.slice(0, 10) <= q.get('to')!) &&
                 (!q.get('type') || j.type === q.get('type')) &&
                 (!q.get('status') || j.status === q.get('status')),
-            ),
-      )
+            )
+      const index = Math.max(0, Number(q.get('page')) || 0)
+      const size = 20
+      return { items: filtered.slice(index * size, (index + 1) * size), page: index, size, totalElements: filtered.length }
     }),
   ),
   http.get('/api/v1/admin/jobs/:jobId', ({ request, params }) =>
@@ -276,14 +293,14 @@ export const adminHandlers = [
       queryFault()
       const p = period(request),
         q = new URL(request.url).searchParams
-      return page(
-        audits.filter(
+      const filtered = audits.filter(
           (a) =>
             (!q.get('targetType') || a.targetType === q.get('targetType')) &&
             a.createdAt.slice(0, 10) >= p.from &&
             a.createdAt.slice(0, 10) <= p.to,
-        ),
-      )
+        )
+      const index = Math.max(0,Number(q.get('page')) || 0), size = 20
+      return { items: filtered.slice(index*size,(index+1)*size), page:index, size, totalElements:filtered.length }
     }),
   ),
   http.get('/api/v1/admin/missions', ({ request }) =>
@@ -651,7 +668,10 @@ export const adminHandlers = [
     respond(async () => {
       allow(request, 'SERVICE_OPS')
       queryFault()
-      return page(reports())
+      const params=new URL(request.url).searchParams
+      const status=params.get('status'), index=Number(params.get('page')||0), size=Number(params.get('size')||20)
+      const rows=mode==='empty'?[]:reports().filter(r=>!status || r.status===status)
+      return {items:rows.slice(index*size,(index+1)*size),page:index,size,totalElements:rows.length}
     }),
   ),
   http.get('/api/v1/admin/error-reports/:reportId', ({ request, params }) =>

@@ -128,6 +128,13 @@ class AdminOperationsContracts(unittest.TestCase):
                         reviewed['properties'].pop(field)
                     self.assertEqual(reviewed['properties']['email']['type'],['string','null'])
                     reviewed['properties']['email']={'type':'string','format':'email'}
+                # #882 specifies the optional theme-specific mission guide without changing the general response.
+                if section=='paths' and name=='/missions/{missionId}':
+                    get=reviewed['get']
+                    self.assertEqual(get.pop('parameters'),[{'name':'context','in':'query','required':False,
+                        'schema':{'type':'string','enum':['EXTRA','THEME_DAY','THEME_REVIEW']},'description':'생략하면 일반 미션 안내'}])
+                    self.assertIn('게시 당시',get['description'])
+                    get['description']='STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 전달하며 클라이언트 query는 사용하지 않는다. learning의 공개 전 정답·예시 답 비공개 계약을 유지한다.'
                 # #387 adds the attempt start {context} body and the core limit/premium errors; restore only the approved fields.
                 if section=='paths' and name=='/missions/{missionId}/attempts':
                     post=reviewed['post']

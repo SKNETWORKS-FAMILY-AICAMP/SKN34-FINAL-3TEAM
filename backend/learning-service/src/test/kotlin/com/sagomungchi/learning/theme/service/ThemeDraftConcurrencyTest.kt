@@ -61,6 +61,7 @@ import kotlin.test.assertTrue
 )
 class ThemeDraftConcurrencyTest {
     @Autowired lateinit var service: ThemeDraftService
+    @Autowired lateinit var weekly: WeeklyThemeAdminService
     @Autowired lateinit var drafts: ThemeDraftRepository
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var dataSource: DataSource
@@ -152,6 +153,27 @@ class ThemeDraftConcurrencyTest {
         }
         assertTrue(generation.get(30, TimeUnit.SECONDS))
         assertEquals(DraftStatus.READY, drafts.findById(draft.id)!!.status)
+    }
+
+    @Test
+    fun `두 관리자가 동시에 다른 테마를 게시하면 한 건만 확정하고 다른 요청은 주차 잠금 충돌`() {
+        val monday = week(40)
+        val seeds = com.sagomungchi.learning.TestRows(jdbc).themeMissions()
+        val days = com.sagomungchi.learning.theme.domain.ThemeDay.entries.zip(seeds).map { (day,mission) ->
+            com.sagomungchi.learning.theme.domain.ThemeDayMission(day,mission.id)
+        }
+        val candidates = (1..2).map { n ->
+            val content = com.sagomungchi.learning.theme.domain.ThemeContent(ThemeGrade.G3,monday,"후보 "+n,"소개",days)
+            weekly.create(UUID.randomUUID(),content).also { weekly.requestReview(it.themeId) }
+        }
+        val next = java.util.concurrent.atomic.AtomicInteger()
+        val outcomes = race(2) {
+            val t = candidates[next.getAndIncrement()]
+            runCatching { weekly.publish(t.themeId,t.version) }
+        }
+        assertEquals(1,outcomes.count { it.isSuccess })
+        assertEquals("WEEK_LOCKED",errorCodeOf(outcomes.single { it.isFailure }.exceptionOrNull()!!))
+        assertEquals(1L,weekly.list(ThemeGrade.G3,monday,com.sagomungchi.learning.theme.domain.WeeklyThemeStatus.PUBLISHED,0,10).totalElements)
     }
 
     private fun <T> race(threads: Int, task: () -> T): List<T> {

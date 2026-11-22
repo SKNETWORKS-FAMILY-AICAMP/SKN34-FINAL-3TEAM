@@ -2,9 +2,24 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { REGEN_TARGETS, regenConfirmText, regenKindsOf, regenTargetLabel, themeDraftActions, themeDraftOf } from '../src/domain/admin/themeDrafts.ts'
 import { captionAt, readThemeMotion } from '../src/domain/themeMotion.ts'
+import { readSceneHistory } from '../src/domain/admin/sceneVersions.ts'
 
 // #441 테마 초안 상세·움직임 형식 v1 읽기. 가상 값만 쓴다.
 const base = { draftId: 'd-1', status: 'READY' }
+
+test('장면 이력의 누락된 선택 가능 여부·메모·미디어를 거부하고 명시한 null과 false는 보존한다', () => {
+  const version = { versionId: 'd-1', number: 1, source: 'ORIGINAL', status: 'READY', createdAt: '2026-11-19T00:00:00Z',
+    starred: false, note: '', selectable: false, imageUrl: null, videoUrl: null, motion: null }
+  const response = (row: object) => ({ scene: 'MON', rootDraftId: 'd-1', editable: false, selectedVersionId: null, versions: [row] })
+  assert.deepEqual(readSceneHistory(response(version), 'MON').versions, [version])
+  for (const name of ['selectable', 'note', 'status', 'imageUrl', 'videoUrl', 'motion']) {
+    const row = Object.fromEntries(Object.entries(version).filter(([key]) => key !== name))
+    assert.throws(() => readSceneHistory(response(row), 'MON'), /장면 이력/, name)
+  }
+  for (const fields of [{ selectable: 'true' }, { note: null }, { motion: [] }]) {
+    assert.throws(() => readSceneHistory(response({ ...version, ...fields }), 'MON'), /장면 이력/)
+  }
+})
 
 test('테마 초안 상세: 계약 칸을 읽고 모르는 값·빠진 칸은 비운 값으로 둔다', () => {
   const d = themeDraftOf({

@@ -59,6 +59,7 @@
  SELECT <include refid="order"/> FROM payment_order o WHERE EXISTS(SELECT 1 FROM payment p WHERE p.order_id=o.id AND (p.status='CONFIRMING' OR p.entitlement_status='RECOVERY_REQUIRED')) ORDER BY created_at LIMIT 100
  </select>
  <select id="refunds" resultType="com.sagomungchi.core.payment.domain.RefundRequest">SELECT <include refid="refund"/> FROM refund_request <if test="status != null">WHERE status=#{status}</if> ORDER BY created_at DESC,id LIMIT #{size} OFFSET #{offset}</select>
+ <select id="countRefunds" resultType="long">SELECT count(*) FROM refund_request WHERE status=#{status}</select>
  <select id="refund" resultType="com.sagomungchi.core.payment.domain.RefundRequest" flushCache="true" useCache="false">SELECT <include refid="refund"/> FROM refund_request WHERE id=#{id}</select>
  <select id="pendingRefund" resultType="com.sagomungchi.core.payment.domain.RefundRequest" flushCache="true" useCache="false">SELECT <include refid="refund"/> FROM refund_request WHERE payment_id=(SELECT id FROM payment WHERE order_id=#{order}) AND status IN ('REQUESTED','APPROVED','FAILED')</select>
  <select id="refundPending" resultType="boolean" flushCache="true" useCache="false">SELECT EXISTS(SELECT 1 FROM refund_request r JOIN payment p ON p.id=r.payment_id JOIN payment_order o ON o.id=p.order_id WHERE o.student_id=#{student} AND r.status IN ('REQUESTED','APPROVED','FAILED'))</select>

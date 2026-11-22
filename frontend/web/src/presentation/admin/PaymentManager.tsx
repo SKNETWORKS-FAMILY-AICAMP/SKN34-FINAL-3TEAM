@@ -17,16 +17,22 @@ export function PaymentManager({ period, permissions }: { period: Period; permis
   const [params, setParams] = useSearchParams(), raw = params.get('tab'), tab = ['payments', 'reconciliation'].includes(raw ?? '') ? raw! : 'refunds'
   const canView = hasPermission(permissions, 'PAYMENT_VIEW'), canApprove = hasPermission(permissions, 'PAYMENT_REFUND')
   const [page, setPage] = useState(0), [selected, setSelected] = useState<string | null>(null)
-  const [search, setSearch] = useState(''), [status, setStatus] = useState('')
+  const [search, setSearch] = useState('')
+  const status = params.get('status') ?? ''
+  function setStatus(value: string) {
+    const next=new URLSearchParams(params)
+    if(value) next.set('status',value); else next.delete('status')
+    setParams(next); setPage(0); setSelected(null)
+  }
   const payments = useAdminQuery(['payments', period, page], s => api.payments(period, page, s), canView && tab === 'payments')
-  const refunds = useAdminQuery(['refunds', page], s => api.refunds(page, s), canView && tab === 'refunds')
+  const refunds = useAdminQuery(['refunds', page,status], s => api.refunds(page, s,status), canView && tab === 'refunds')
   const reconciliation = useAdminQuery(['reconciliation', period, page], s => api.reconciliation(period, page, s), canView && tab === 'reconciliation')
   const allRows = refunds.error ? [] : refunds.data?.items ?? [], chosen = allRows.find(r => r.id === selected)
-  const rows = allRows.filter(r => (!status || r.status === status) && `${r.id} ${r.paymentId}`.toLowerCase().includes(search.trim().toLowerCase()))
+  const rows = allRows.filter(r => `${r.id} ${r.paymentId}`.toLowerCase().includes(search.trim().toLowerCase()))
   const active = tab === 'refunds' ? refunds : tab === 'payments' ? payments : reconciliation
   function changeTab(value: string) {
-    setPage(0); setSelected(null); setSearch(''); setStatus('')
-    const next = new URLSearchParams(params); next.set('tab', value); setParams(next)
+    setPage(0); setSelected(null); setSearch('')
+    const next = new URLSearchParams(params); next.set('tab', value); next.delete('status'); setParams(next)
   }
   if (!canView) return <Panel title="결제 조회 권한 필요"><p role="alert">PAYMENT_VIEW 권한이 있어야 거래와 환불 요청을 볼 수 있습니다. 환불 처리에는 PAYMENT_REFUND 권한이 별도로 필요합니다.</p></Panel>
   return <div className="ad-payment-workbench">
@@ -37,7 +43,7 @@ export function PaymentManager({ period, permissions }: { period: Period; permis
     </div>
     <section className="ad-data-surface" aria-label={tab === 'refunds' ? '환불 요청 목록' : tab === 'payments' ? '거래 내역 목록' : 'PG 대조 목록'}>
       <div className="ad-data-toolbar">
-        <div><h2>{tab === 'refunds' ? '환불 요청' : tab === 'payments' ? '거래 내역' : '내부 기록·PG 상태 대조'}</h2><p>{tab === 'refunds' ? '접수일 전체 · 현재 페이지에서 검색·필터' : '선택한 조회 기간'}</p></div>
+        <div><h2>{tab === 'refunds' ? '환불 요청' : tab === 'payments' ? '거래 내역' : '내부 기록·PG 상태 대조'}</h2><p>{tab === 'refunds' ? '상태는 접수일 전체에 적용 · 번호는 현재 페이지에서 검색' : '선택한 조회 기간'}</p></div>
         <button aria-label="상태 새로고침" disabled={active.isFetching} onClick={() => void active.refetch()}><RefreshCw size={15} aria-hidden="true" />새로고침</button>
       </div>
       {tab === 'refunds' && <div className="ad-list-filters">

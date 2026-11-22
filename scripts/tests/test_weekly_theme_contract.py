@@ -17,6 +17,7 @@ PROXY = CORE / 'learning/service/LearningProxyService.kt'
 ADMIN_SERVICE = CORE / 'learning/service/AdminLearningService.kt'
 FILTER = CORE / 'account/controller/PublicAuthFilter.kt'
 THEME = ROOT / 'backend/learning-service/src/main/kotlin/com/sagomungchi/learning/theme'
+PLANNER = '/admin/weekly-themes/planner'
 
 
 class WeeklyThemeContractTest(unittest.TestCase):
@@ -35,7 +36,7 @@ class WeeklyThemeContractTest(unittest.TestCase):
         routes = set()
         for method, path in re.findall(r'@(Get|Post|Put)Mapping(?:\("([^"]*)"\))?', self.admin):
             routes.add((method.lower(), '/admin/weekly-themes' + (path or '')))
-        self.assertEqual(len(routes), 7)
+        self.assertTrue({('get', PLANNER), ('put', PLANNER)} <= routes)
         self.assertEqual(routes, self.documented('/admin/weekly-themes'))
         query = {p['name'] for p in self.spec['paths']['/admin/weekly-themes']['get']['parameters']}
         self.assertEqual(query, {'grade', 'weekStart', 'status', 'page', 'size'})
@@ -48,6 +49,8 @@ class WeeklyThemeContractTest(unittest.TestCase):
             self.assertIn(f'"WEEKLY_THEME_{action}"', service)
         self.assertIn('"WEEKLY_THEME_${action!!', service)
         self.assertIn('"/admin/weekly-themes"', service)
+        self.assertIn(f'"{PLANNER}"', service)
+        self.assertIn('"THEME_DRAFT_PLAN"', service)
 
     def test_student_routes_and_internal_paths(self):
         routes = {(m.lower(), p.removeprefix('/api/v1')) for m, p in re.findall(r'@(Get|Post)Mapping\("([^"]+)"\)', self.student)}
@@ -94,11 +97,64 @@ class WeeklyThemeContractTest(unittest.TestCase):
                 if len(args) > 2 and args[2].startswith('"'):
                     path += '/' + args[2].strip('"')
             routes.add((args[0].strip('"').lower(), path))
-        documented = {(m, p) for p, methods in self.learning['paths'].items() if p.startswith('/admin/weekly-themes') for m in methods}
-        self.assertEqual(len(documented), 7)
+        for method in re.findall(r'service\.weeklyPlanner\("([^"]+)"', self.admin):
+            routes.add((method.lower(), PLANNER))
+        documented = {(m, p) for p, methods in self.learning['paths'].items() if p.startswith('/admin/weekly-themes')
+                      for m in methods if m != 'parameters'}
         self.assertEqual(routes, documented)
         params = {p.get('name') for p in self.learning['paths']['/admin/weekly-themes']['get']['parameters'] if 'name' in p}
         self.assertEqual(params, {'grade', 'weekStart', 'status', 'page', 'size'})
+
+    def test_review_and_unpublish_match_the_version_opened_by_the_admin(self):
+        for spec in (self.spec, self.learning):
+            for action, version in [('review-request', 'expectedVersion'), ('unpublish', 'expectedPublishedVersion')]:
+                operation = spec['paths']['/admin/weekly-themes/{themeId}/' + action]['post']
+                body = operation['requestBody']['content']['application/json']['schema']
+                self.assertEqual(body['properties'][version], {'type': 'integer', 'minimum': 1})
+                self.assertNotIn(version, body.get('required', []))
+                self.assertIn('409', operation['responses'])
+
+    def test_four_week_board_and_planning_expectations(self):
+        schemas = self.spec['components']['schemas']
+        for name in ('PlannerDraft', 'WeekBoard', 'WeekPlanChange', 'WeekPlanResult', 'FinalPublicationRequest'):
+            self.assertEqual(schemas[name], self.learning['components']['schemas'][name], name)
+        for spec in (self.spec, self.learning):
+            get = spec['paths'][PLANNER]['get']
+            put = spec['paths'][PLANNER]['put']
+            query = {p['name'] for p in get['parameters'] if p.get('in') == 'query' and p.get('required')}
+            self.assertEqual(query, {'grade', 'weekStart'})
+            self.assertEqual(get['responses']['200']['content']['application/json']['schema']['$ref'],
+                             '#/components/schemas/WeekBoard')
+            self.assertEqual(put['requestBody']['content']['application/json']['schema']['$ref'],
+                             '#/components/schemas/WeekPlanChange')
+            self.assertEqual(put['responses']['200']['content']['application/json']['schema']['$ref'],
+                             '#/components/schemas/WeekPlanResult')
+            publish = spec['paths']['/admin/weekly-themes/{themeId}/publish']['post']
+            self.assertEqual(publish['requestBody']['content']['application/json']['schema']['$ref'],
+                             '#/components/schemas/FinalPublicationRequest')
+
+        board = schemas['WeekBoard']
+        self.assertEqual(set(board['required']), {'grade', 'weekStart', 'weeks', 'candidates'})
+        weeks = board['properties']['weeks']
+        self.assertEqual((weeks['minItems'], weeks['maxItems']), (4, 4))
+        slot = weeks['items']
+        self.assertEqual(set(slot['required']), {'weekStart', 'locked', 'planned', 'themes'})
+        planned = {'$ref': '#/components/schemas/PlannerDraft'}
+        self.assertCountEqual(slot['properties']['planned']['anyOf'], [planned, {'type': 'null'}])
+        self.assertEqual(board['properties']['candidates']['items'], planned)
+        self.assertEqual(schemas['PlannerDraft']['properties']['generationWeek'], {'type': 'string', 'format': 'date'})
+
+        for name, field, fmt in (('PlannerDraft', 'plannedWeek', 'date'), ('WeekPlanChange', 'expectedWeek', 'date'),
+                                 ('WeekPlanChange', 'targetWeek', 'date'), ('WeekPlanChange', 'expectedTargetDraftId', 'uuid'),
+                                 ('WeekPlanResult', 'plannedWeek', 'date'), ('WeekPlanResult', 'displacedDraftId', 'uuid')):
+            with self.subTest(schema=name, field=field):
+                self.assertIn(field, schemas[name]['required'])
+                self.assertEqual(schemas[name]['properties'][field], {'type': ['string', 'null'], 'format': fmt})
+        final = schemas['FinalPublicationRequest']
+        self.assertEqual(final['properties']['expectedVersion']['minimum'], 1)
+        self.assertNotIn('expectedPlannedDraftId', final.get('required', []))
+        self.assertEqual(final['properties']['expectedPlannedDraftId']['type'], ['string', 'null'])
+        self.assertEqual(final['properties']['expectedPlannedDraftId']['format'], 'uuid')
 
     def test_core_student_internal_paths_are_in_learning_contract(self):
         # #438 학년별 테마: learning은 grade를 받고, core 반영 전까지 core가 보내는 gradeBand도 받는다(사용 중단 예정)

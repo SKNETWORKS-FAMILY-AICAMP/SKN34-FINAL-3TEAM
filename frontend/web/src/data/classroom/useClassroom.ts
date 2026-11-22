@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import type { AnswerTiming } from '../../domain/answerTiming.ts'
+import type { AttemptContext } from '../../domain/retention.ts'
 import type {
   AnswerContent,
   Attempt,
@@ -135,10 +136,11 @@ export function useStudentHome(child: Child | undefined) {
     retry: false,
   })
 }
-export function useMission(id: string, child: Child) {
+export function useMission(id: string, child: Child, context?: AttemptContext) {
+  const themeContext = context === 'EXTRA' ? undefined : context
   return useQuery({
-    queryKey: ['mission', child.id, child.grade, id],
-    queryFn: () => gateway.mission(id, child),
+    queryKey: ['mission', child.id, child.grade, id, themeContext ?? 'catalog'],
+    queryFn: () => gateway.mission(id, child, themeContext),
     retry: false,
   })
 }

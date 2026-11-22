@@ -3,10 +3,12 @@ import type { AdminMission } from '../../domain/admin/operations.ts'
 import type { ThinkingType } from '../../domain/classroom.ts'
 import { REGEN_TARGETS, regenTargetLabel, themeDraftRequestErrors, THEME_SCENES } from '../../domain/admin/themeDrafts.ts'
 import type { RegenTarget, ThemeDraftRequest, ThemeDraftStatus, ThemeSceneName } from '../../domain/admin/themeDrafts.ts'
+import type { SceneHistory, VersionAnnotation } from '../../domain/admin/sceneVersions.ts'
 import { THINKING_ORDER } from '../../domain/studentLook.ts'
 import { THEME_DAYS } from '../../domain/retention.ts'
 import { achievementStandards, audit, missions, stamp } from '../fixtures/admin/operations.ts'
 import { persistRetention, retentionState } from '../fixtures/retention.ts'
+import { assignWeek, plannedWeek, requireOpenWeek, weekLocked } from '../fixtures/themePlanning.ts'
 import { allow } from './admin.ts'
 import { fail } from './parent.ts'
 import { respond } from './student.ts'
@@ -20,6 +22,8 @@ import { respond } from './student.ts'
  *   다시 만들 수 있는 대상은 저장하지 않고 응답할 때 계산한다(이 기능 전에 저장된 목업 초안도 같게 보이게)
  */
 interface MockThemeDraft {
+  selections?: Partial<Record<ThemeSceneName, { id: string; seen: number }>>
+  annotations?: Partial<Record<ThemeSceneName, VersionAnnotation>>
   draftId: string
   status: ThemeDraftStatus
   source: 'AUTO' | 'ADMIN'
@@ -63,10 +67,10 @@ const learningFail = (status = 400, code = 'VALIDATION_FAILED'): never => fail(c
 
 const HUES: Record<ThemeSceneName, string> = { INTRO: '#7FC8D8', MON: '#9CCB8C', TUE: '#E9B949', WED: '#F2B8A0', THU: '#B8C2CC', FRI: '#C9A7E8', OUTRO: '#F4D88A' }
 /** 가상 장면 그림(외부 호출 없음) */
-const sceneSvg = (scene: ThemeSceneName, title: string) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+const sceneSvg = (scene: ThemeSceneName, title: string, take = 0) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><rect width="640" height="360" fill="#C6EAE1"/>` +
-  `<circle cx="520" cy="80" r="40" fill="#F2C14E"/><path d="M0 360 L160 170 L280 260 L420 140 L640 360Z" fill="${HUES[scene]}" stroke="#1F2421" stroke-width="5"/>` +
-  `<circle cx="250" cy="250" r="34" fill="#FFFDF7" stroke="#1F2421" stroke-width="5"/><text x="24" y="44" font-size="28" font-family="sans-serif" fill="#1F2421">${scene} · ${title}</text></svg>`)
+  `<circle cx="${520-(take%5)*60}" cy="${80+(take%3)*18}" r="40" fill="#F2C14E"/><path d="M0 360 L160 170 L280 260 L420 140 L640 360Z" fill="${HUES[scene]}" stroke="#1F2421" stroke-width="5"/>` +
+  `<circle cx="${250+(take%6)*42}" cy="250" r="${34+(take%4)*5}" fill="#FFFDF7" stroke="#1F2421" stroke-width="5"/><text x="24" y="44" font-size="28" font-family="sans-serif" fill="#1F2421">${scene} · ${title}</text></svg>`)
 /** ai 움직임 형식 v1 그대로(ai-service.yaml ThemeMotion: 카메라 8~20초, 방향 0~359도, 빠르기 2~20, #440에서 계약 범위로 맞춤) */
 const motionOf = (scene: ThemeSceneName) => ({
   version: 1,
@@ -129,7 +133,72 @@ function regenerableTargets(d: MockThemeDraft): RegenTarget[] {
   const missionCount = Array.isArray((d.draft as { missions?: unknown[] } | null)?.missions) ? (d.draft as { missions: unknown[] }).missions.length : 0
   return REGENERABLE.includes(d.status) && missionCount === 5 ? [...REGEN_TARGETS] : []
 }
-const view = (d: MockThemeDraft) => ({ ...d, input: { ...d.input, regenerate: d.input.regenerate ?? null }, regenerableTargets: regenerableTargets(d) })
+function rootOf(d: MockThemeDraft): MockThemeDraft {
+  let node=d
+  const seen=new Set([d.draftId])
+  while(node.input.regenerate){
+    const parent=drafts.find(record=>record.draftId===node.input.regenerate?.baseDraftId)
+    if(!parent||seen.has(parent.draftId))break
+    seen.add(parent.draftId);node=parent
+  }
+  return node
+}
+function historyOf(d: MockThemeDraft, name: ThemeSceneName): SceneHistory {
+  const root=rootOf(d)
+  const records=drafts.filter(record=>rootOf(record).draftId===root.draftId && record.scenes.some(s=>s.scene===name) &&
+    (record.draftId===root.draftId || record.input.regenerate?.targets.some(t=>t.endsWith(':'+name))))
+    .sort((a,b)=>a===b?0:a.draftId===root.draftId?-1:b.draftId===root.draftId?1:a.createdAt.localeCompare(b.createdAt)||a.draftId.localeCompare(b.draftId))
+  const versions=records.map((record,i)=>{
+    const media=record.scenes.find(s=>s.scene===name)!
+    return {versionId:record.draftId,number:i+1,source:i===0?'ORIGINAL' as const:'REGENERATED' as const,
+      imageUrl:media.imageUrl,videoUrl:media.videoUrl,motion:media.motion,createdAt:record.createdAt,
+      starred:record.annotations?.[name]?.starred??false,note:record.annotations?.[name]?.note??'',
+      status:record.status,selectable:record.status==='READY'}
+  }).reverse()
+  const selected=root.selections?.[name]?.id ?? (records.includes(d)?d.draftId:records[0]?.draftId)
+  const assignedWeek=plannedWeek(d.draftId)
+  return {scene:name,rootDraftId:root.draftId,versions,selectedVersionId:selected??null,editable:root.status==='READY'&&d.status==='READY'&&(!assignedWeek||!weekLocked(d.grade,assignedWeek))}
+}
+interface MockOutput { missions?: {day:string}[]; dialogues?: {day:string}[]; theme?: {days?: {day:string}[]} }
+function chosenOutput(d: MockThemeDraft) {
+  const output=structuredClone(d.draft)
+  const data=output as MockOutput|null
+  const root=rootOf(d)
+  const scenes=d.scenes.map(original=>{
+    const chosenId=root.selections?.[original.scene]?.id
+    const selected=chosenId ? byId(chosenId) : d
+    const source=selected.draft as MockOutput|null
+    if(data&&source&&selected!==d){
+      for(const key of ['missions','dialogues'] as const){
+        const item=source[key]?.find(r=>r.day===original.scene)
+        if(item&&data[key])data[key]=data[key].map(r=>r.day===original.scene?item:r)
+      }
+      const day=source.theme?.days?.find(r=>r.day===original.scene)
+      if(day&&data.theme?.days)data.theme.days=data.theme.days.map(r=>r.day===original.scene?day:r)
+    }
+    return selected.scenes.find(s=>s.scene===original.scene)??original
+  })
+  return { draft:output, scenes }
+}
+function view(d: MockThemeDraft) {
+  const planned=plannedWeek(d.draftId)
+  const effective=planned??retentionState.themes.find(t=>t.themeId===d.themeId)?.weekStart??d.weekStart
+  return { ...d, ...chosenOutput(d), plannedWeek:planned, weekLocked:!!(planned||d.themeId)&&weekLocked(d.grade,effective),
+    adoptionWeekLocked:weekLocked(d.grade,effective),input:{...d.input,regenerate:d.input.regenerate??null},regenerableTargets:regenerableTargets(d) }
+}
+export function mockPlannerDrafts() {
+  return drafts.map(advance).filter(d=>d.status==='READY'&&!d.input.regenerate).map(d=>({
+    draftId:d.draftId,grade:d.grade,title:String((d.draft?.theme as {title?:string})?.title??d.input.topic??'테마 초안'),
+    generationWeek:d.weekStart,plannedWeek:plannedWeek(d.draftId),
+  }))
+}
+export function mockThemeGenerationWeek(themeId: string) {
+  return drafts.find(d => d.themeId === themeId)?.weekStart ?? null
+}
+async function checkPlanningSnapshot(req:Request,d:MockThemeDraft) {
+  const body=await req.json() as {expectedPlannedWeek?:string|null}
+  if(Object.hasOwn(body,'expectedPlannedWeek') && body.expectedPlannedWeek!==plannedWeek(d.draftId))learningFail(409,'CONFLICT')
+}
 /** 부분 다시 생성 결과: 원래 초안 결과를 복사하고 고른 장면만 바꿈(그림·영상·움직임·미션 표시) */
 function partialResult(d: MockThemeDraft, spec: { baseDraftId: string; targets: RegenTarget[] }) {
   const base = drafts.find((x) => x.draftId === spec.baseDraftId)
@@ -145,11 +214,16 @@ function partialResult(d: MockThemeDraft, spec: { baseDraftId: string; targets: 
   for (const target of spec.targets) {
     const [kind, name] = target.split(':') as ['VIDEO' | 'IMAGE' | 'MISSION', ThemeSceneName]
     const s = scenes.find((x) => x.scene === name)
-    if (s) s.imageUrl = kind === 'VIDEO' ? s.imageUrl : sceneSvg(name, `${draft.theme.title} · 다시 만듦`)
-    if (s) s.motion = motionOf(name) // 다시 정한 움직임(목업은 같은 값)
+    const take=historyOf(base,name).versions.length
+    if (s) {
+      if(kind!=='VIDEO')s.imageUrl=sceneSvg(name,`${draft.theme.title} · 다시 만듦 ${take}`,take)
+      const motion=motionOf(name)
+      motion.camera.to.x=40+(take%4)*12
+      s.motion=motion
+    }
     if (kind === 'MISSION') {
       const m = draft.missions.find((x) => x.day === name)
-      if (m) m.draft.title = `${m.draft.title} (다시 만듦)`
+      if (m) m.draft.title = `${m.draft.title} (다시 만듦 ${take})`
     }
   }
   d.draft = draft
@@ -186,7 +260,8 @@ if (!drafts.length) {
 }
 
 function adopt(d: MockThemeDraft) {
-  const g = d.draft as { theme: { title: string; intro: string; outro: string }; missions: { thinkingType: ThinkingType; draft: { title: string; question: string; guide: string } }[] }
+  const chosen = chosenOutput(d)
+  const g = chosen.draft as { theme: { title: string; intro: string; outro: string }; missions: { thinkingType: ThinkingType; draft: { title: string; question: string; guide: string } }[] }
   const grade = Number(d.grade.slice(1)), subjectOf = (code: string) => achievementStandards.find((s) => s.code === code)?.subject ?? ''
   const ids = d.input.missions.map((input, i) => {
     const m: AdminMission = {
@@ -195,7 +270,7 @@ function adopt(d: MockThemeDraft) {
       versions: [{ version: 1, title: g.missions[i].draft.title, subject: subjectOf(input.standardCodes[0]), gradeMin: grade, gradeMax: grade,
         thinkingType: input.thinkingType, inputType: input.inputType as AdminMission['versions'][number]['inputType'],
         question: g.missions[i].draft.question, guide: g.missions[i].draft.guide, answerUnit: null, inputTemplate: [],
-        sceneUri: d.scenes.find((s) => s.scene === THEME_DAYS[i])?.imageUrl ?? null, staticSceneUri: null,
+        sceneUri: chosen.scenes.find((s) => s.scene === THEME_DAYS[i])?.imageUrl ?? null, staticSceneUri: null,
         achievementStandards: input.standardCodes, achievementLevels: null, choices: [], categories: [], createdAt: stamp() }],
       rubrics: [{ version: 1, elements: [{ code: 'e1', label: '생각 근거', description: '장면에서 찾은 근거를 말함', points: 1, commonErrors: [],
         goodThought: true, judgeVerified: false, standardCode: input.standardCodes[0] }], answerKey: null, exampleAnswer: null,
@@ -205,25 +280,60 @@ function adopt(d: MockThemeDraft) {
     missions.push(m)
     return m.missionId
   })
-  const scene = (name: ThemeSceneName) => d.scenes.find((s) => s.scene === name)
+  const scene = (name: ThemeSceneName) => chosen.scenes.find((s) => s.scene === name)
   const theme = {
-    themeId: `theme-${crypto.randomUUID().slice(0, 8)}`, grade: d.grade, weekStart: d.weekStart, title: g.theme.title, intro: g.theme.intro,
+    themeId: `theme-${crypto.randomUUID().slice(0, 8)}`, grade: d.grade, weekStart: plannedWeek(d.draftId)??d.weekStart, title: g.theme.title, intro: g.theme.intro,
     days: THEME_DAYS.map((day, i) => ({ day, missionId: ids[i] })), status: 'DRAFT' as const, updatedAt: stamp(),
     outro: g.theme.outro, introImageUrl: scene('INTRO')?.imageUrl ?? null, outroImageUrl: scene('OUTRO')?.imageUrl ?? null,
-    introVideoUrl: null, outroVideoUrl: null, introMotion: scene('INTRO')?.motion ?? null, outroMotion: scene('OUTRO')?.motion ?? null,
+    introVideoUrl: scene('INTRO')?.videoUrl ?? null, outroVideoUrl: scene('OUTRO')?.videoUrl ?? null, introMotion: scene('INTRO')?.motion ?? null, outroMotion: scene('OUTRO')?.motion ?? null,
   }
   retentionState.themes.unshift(theme)
   persistRetention()
   Object.assign(d, { status: 'ADOPTED', themeId: theme.themeId, updatedAt: stamp() })
-  return theme
+  assignWeek(d.draftId,null)
+  return { ...theme, generationWeek: d.weekStart }
 }
 
+const historyPath='/api/v1/admin/theme-drafts/:draftId/scenes/:scene/versions'
+function readContext(id:string,name:string) {
+  if(!(THEME_SCENES as string[]).includes(name))return learningFail()
+  const d=byId(id),scene=name as ThemeSceneName
+  return {d,scene,history:historyOf(d,scene)}
+}
 export const adminThemeDraftHandlers = [
+  http.get(historyPath,({request,params})=>respond(async()=>{
+    allow(request,'CONTENT')
+    return readContext(String(params.draftId),String(params.scene)).history
+  })),
+  http.put(historyPath+'/selection',({request,params})=>respond(async()=>{
+    allow(request,'CONTENT')
+    const {d,scene,history}=readContext(String(params.draftId),String(params.scene))
+    const body=await request.json() as {versionId:string;expectedVersionId:string;expectedVersionCount?:number}
+    if(!history.editable || body.expectedVersionId!==history.selectedVersionId ||
+      (body.expectedVersionCount!==undefined && body.expectedVersionCount!==history.versions.length) ||
+      !history.versions.some(v=>v.versionId===body.versionId&&v.selectable))return learningFail(409,'CONFLICT')
+    const root=rootOf(d)
+    root.selections={...root.selections,[scene]:{id:body.versionId,seen:history.versions.length}}
+    persist();return historyOf(d,scene)
+  })),
+  http.patch(historyPath+'/:versionId',({request,params})=>respond(async()=>{
+    allow(request,'CONTENT')
+    const {d,scene,history}=readContext(String(params.draftId),String(params.scene))
+    const row=history.versions.find(v=>v.versionId===params.versionId)
+    if(!history.editable || !row?.selectable)return learningFail(409,'CONFLICT')
+    const change=await request.json() as VersionAnnotation
+    if(!Object.keys(change).length || ('starred' in change && typeof change.starred!=='boolean') ||
+      ('note' in change && (typeof change.note!=='string'||[...change.note].length>160)))return learningFail()
+    const source=byId(row.versionId)
+    source.annotations={...source.annotations,[scene]:{...source.annotations?.[scene],...change}}
+    persist();return historyOf(d,scene)
+  })),
   http.post('/api/v1/admin/theme-drafts', ({ request }) =>
     respond(async () => {
       allow(request, 'CONTENT')
       const body = (await request.json()) as ThemeDraftRequest
       if (themeDraftRequestErrors(body).length || (body.topic && body.topic.length > 100)) learningFail()
+      requireOpenWeek(body.grade,body.weekStart)
       const d = create(body, 'ADMIN')
       audit('THEME_DRAFT_REQUEST', 'THEME_DRAFT', d.draftId, 'SUCCESS', '테마 초안 생성 요청')
       persist()
@@ -236,7 +346,13 @@ export const adminThemeDraftHandlers = [
       const q = new URL(request.url).searchParams
       const index = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20), status = q.get('status'), source = q.get('source')
       if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100) learningFail()
-      const rows = drafts.map(advance).filter((d) => (!status || d.status === status) && (!source || d.source === source))
+      const rows = drafts.map(advance).filter(d => (!status || d.status===status) && (!source || d.source===source) &&
+        (!q.get('grade')||d.grade===q.get('grade')) && (!q.get('weekStart')||d.weekStart===q.get('weekStart')) &&
+        (q.get('hideDiscarded')!=='true'||d.status!=='DISCARDED') &&
+        (q.get('comparisonPending')!=='true' || (d.status==='READY' && rootOf(d)===d && THEME_SCENES.some(s=>{
+          const h=historyOf(d,s)
+          return h.versions.length>(d.selections?.[s]?.seen??1)&&h.versions.some(v=>v.source==='REGENERATED'&&v.selectable)
+        }))))
       persist()
       return { items: rows.slice(index * size, (index + 1) * size).map(view), page: index, size, totalElements: rows.length }
     }),
@@ -254,6 +370,8 @@ export const adminThemeDraftHandlers = [
       allow(request, 'CONTENT')
       const d = byId(String(params.draftId))
       if (d.status !== 'READY' || !d.draft) learningFail(409, 'CONFLICT')
+      await checkPlanningSnapshot(request,d)
+      requireOpenWeek(d.grade,plannedWeek(d.draftId)??d.weekStart)
       const theme = adopt(d)
       audit('THEME_DRAFT_ADOPT', 'WEEKLY_THEME', theme.themeId, 'SUCCESS', `초안 ${d.draftId} 채택`)
       persist()
@@ -265,6 +383,10 @@ export const adminThemeDraftHandlers = [
       allow(request, 'CONTENT')
       const d = byId(String(params.draftId))
       if (!['READY', 'CHECK_FAILED', 'FAILED'].includes(d.status)) learningFail(409, 'CONFLICT')
+      await checkPlanningSnapshot(request,d)
+      const assigned=plannedWeek(d.draftId)
+      if(assigned)requireOpenWeek(d.grade,assigned)
+      assignWeek(d.draftId,null)
       Object.assign(d, { status: 'DISCARDED', updatedAt: stamp() })
       audit('THEME_DRAFT_DISCARD', 'THEME_DRAFT', d.draftId, 'SUCCESS', '초안 버림')
       persist()
@@ -280,6 +402,7 @@ export const adminThemeDraftHandlers = [
       if (raw != null && (!Array.isArray(raw) || !raw.length || raw.some((t) => !(REGEN_TARGETS as unknown[]).includes(t)))) learningFail()
       const targets = raw == null ? null : [...new Set(raw as RegenTarget[])]
       if (d.status === 'GENERATING' || d.status === 'ADOPTED') learningFail(409, 'CONFLICT')
+      if(d.status==='DISCARDED' && targets)learningFail(409,'CONFLICT')
       if (targets && targets.some((t) => !regenerableTargets(d).includes(t))) learningFail(409, 'CONFLICT')
       const next = create({ grade: d.grade, weekStart: d.weekStart, topic: d.input.topic ?? undefined,
         missions: d.input.missions as ThemeDraftRequest['missions'] }, 'ADMIN')

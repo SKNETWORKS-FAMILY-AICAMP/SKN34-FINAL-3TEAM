@@ -1165,6 +1165,7 @@ erDiagram
     timestamptz updated_at
     varchar context "THEME_DAY|THEME_REVIEW|EXTRA · 시작 경로 (P23, #385)"
     uuid theme_id FK "NULL 허용 · 테마 컨텍스트의 그 주 테마"
+    uuid theme_version_id FK "NULL 허용 · 테마 시도 시작 당시 게시본 · mission_id와 함께 weekly_theme_day 참조"
     date theme_week_start "NULL 허용 · 테마 시도의 주(KST 월요일, 재사용 테마도 그 주)"
   }
   attempt_draft {
@@ -1285,6 +1286,7 @@ erDiagram
   - `previous`·`corrected`는 `{"result": "PARTIAL"}` 모양. `previous`는 정정 직전에 보이던 결과(앞선 정정이 있으면 그 결과), 최신 정정은 `created_at` 가장 늦은 행 (#80)
 - `self_assessment` UK `(attempt_id, rubric_element_id)`. AI 판정·원본 답변과 별도 저장 (FN-LRN-13)
 - 도움 이용 비율 집계 근거 = `hint_usage.opened_at` vs 최초 `answer.submitted_at` (최초 답변 전 열람 없는 시도 / 집계 대상 시도, P08)
+- `attempt.theme_version_id`(V27)는 테마 시도를 시작할 때의 게시 버전을 고정한다. 기존 시도는 게시 시각과 미션·기준표 버전으로 복원한다. 과거 버전을 특정할 수 없으면 마지막 게시본에 남은 같은 미션 장면을 사용하고, 그 장면도 없으면 비워 둔다.
 - `attempt.context`(#385, V11 준비·V12 최종): `THEME_DAY`(오늘 요일 테마 문제)·`THEME_REVIEW`(토·일 되돌아보기 다시 풀기)·`EXTRA`(생각 유형별 고르기). 2026-11-10 개정(#483) 뒤 뜻: `THEME_DAY`는 공개된 테마 문제 신규 시도(월~토, 프리미엄 일요일), `THEME_REVIEW`는 토요일(프리미엄 일요일) 다시 풀기. 값·CHECK는 그대로이며, 당일 풀이는 `completed_at`과 문제 요일로 계산하고 큰 질문 정답 고르기 결과는 `theme_answer_pick`(4.2.1, #484)에 둔다. 기존 행은 V11에서 `EXTRA`로 채움. CHECK `ck_attempt_theme_context`: 테마 컨텍스트는 `theme_id`·`theme_week_start`가 함께 있고 `EXTRA`는 둘 다 NULL. 진행 중 시도 부분 UK는 컨텍스트와 무관하게 학생·미션당 하나
 
 **`answer` 생각·작성 시간 (P28, 설계 #800, 구현 #801 V23)**: 위 Mermaid `answer`의 `thinking_seconds`(문제 화면, 보완 답변은 되묻기 질문 표시 → 답변 칸 첫 입력)·`writing_seconds`(첫 입력 → 제출), 정수 초.
@@ -1302,11 +1304,17 @@ erDiagram
   weekly_theme ||--o{ weekly_theme_version : versions
   weekly_theme_version ||--o{ weekly_theme_day : days
   mission ||--o{ weekly_theme_day : "요일 문제"
+  mission_version |o--o{ weekly_theme_day : "게시 시 고정한 문제 버전"
+  rubric_version |o--o{ weekly_theme_day : "게시 시 고정한 기준표 버전"
   weekly_theme ||--o{ theme_review_view : "되돌아보기 열람"
   weekly_theme ||--o{ theme_story_view : "시작·종료 이야기 열람"
   weekly_theme ||--o{ theme_answer_pick : "큰 질문 정답 고르기"
   mission ||--o{ theme_answer_pick : "고를 때 금요일 문제"
-  weekly_theme ||--o| theme_draft : adopted
+  weekly_theme |o--o| theme_draft : adopted
+  theme_draft |o--o{ theme_draft : "부분 재생성의 최초 초안"
+  theme_draft ||--o{ theme_draft_scene_selection : "검수 대상의 최초 초안"
+  theme_draft ||--o{ theme_draft_scene_selection : "선택한 장면을 생성한 초안"
+  theme_draft ||--o{ theme_draft_scene_note : "별표와 메모를 단 버전"
   weekly_theme ||--o{ theme_frame : "기념 액자 (P27)"
   weekly_theme_version ||--o{ theme_frame : "지급 때 버전"
 
@@ -1354,6 +1362,8 @@ erDiagram
     jsonb hint_spots "NULL 허용 · 그림 위 생각 열기 위치 [{seq, x, y}]"
     varchar video_uri "NULL 허용 · 문제 전 영상 S3 키(관리자 입력용, ai 테마 초안 채택분은 NULL)"
     varchar clue_feature "NULL 허용 · 그날 단서가 쓰는 특징 이름 (#647)"
+    uuid mission_version_id FK "NULL 허용 · 최종 게시 시 고정한 문제 버전"
+    uuid rubric_version_id FK "NULL 허용 · 최종 게시 시 고정한 기준표 버전"
   }
   theme_review_view {
     uuid student_id PK "core 논리 참조"
@@ -1390,7 +1400,8 @@ erDiagram
   theme_draft {
     uuid id PK
     varchar grade "G3|G4|G5|G6"
-    date week_start "적용 주 KST 월요일 (CHECK)"
+    date week_start "생성 기준 주의 KST 월요일 (CHECK)"
+    date planned_week "NULL 허용 · 채택 전 편성한 KST 월요일"
     varchar source "AUTO|ADMIN"
     varchar status "GENERATING|READY|CHECK_FAILED|FAILED|ADOPTED|DISCARDED"
     uuid requested_by "NULL 허용 · core 사용자, 주간 자동은 NULL"
@@ -1403,13 +1414,29 @@ erDiagram
     varchar prompt_version "NULL 허용"
     timestamptz lease_until "NULL 허용 · 생성 작업 점유"
     uuid theme_id FK "NULL 허용 · UK · 채택한 테마"
+    uuid family_root_id FK "NULL 허용 · 부분 재생성 계보의 최초 초안"
+    jsonb frozen_scene_choices "NULL 허용 · 채택 또는 버릴 때 고정한 장면별 버전 ID"
     timestamptz created_at
     timestamptz updated_at
   }
+  theme_draft_scene_selection {
+    uuid root_id PK,FK "최초 초안"
+    varchar scene PK "INTRO|MON|TUE|WED|THU|FRI|OUTRO"
+    uuid version_id FK "선택한 장면을 생성한 초안"
+    uuid[] reviewed_version_ids "선택을 확정할 때 비교할 수 있던 버전 ID들"
+    timestamptz confirmed_at
+  }
+  theme_draft_scene_note {
+    uuid version_id PK,FK "장면을 생성한 초안"
+    varchar scene PK "INTRO|MON|TUE|WED|THU|FRI|OUTRO"
+    boolean starred
+    varchar(160) note "운영자 메모 · 빈 문자열 허용"
+  }
 ```
 
-- 게시 중 수정은 미션(4.1)과 같은 버전 방식: 관리자 편집은 `current_version_id`, 학생 조회·시작 검사는 `published_version_id`. 재검토·재게시 때 교체하고 상태는 `PUBLISHED` 유지. 별도 검토 경로 없이 `review_version_id = current_version_id`일 때의 게시가 승인(state-diagram 3.5)
+- 관리자는 `current_version_id`를 검토 요청한다. 최종 게시는 `review_version_id = current_version_id`인 버전을 `published_version_id`로 고정한다. 학생 조회와 시작 검사는 게시본을 사용한다. 게시 중 수정은 편집 버전을 추가한다. 재검토 후 재게시하면 학생에게 새 버전을 제공한다. 제공 중단은 신규 제공을 종료하며 기존 시도의 미션·기준표 버전은 유지한다.
 - 부분 UK `(grade, week_start) WHERE status = 'PUBLISHED'` → 학년·주당 게시 1개. `weekly_theme_version` UK `(theme_id, version)`, `weekly_theme_day` UK `(theme_version_id, mission_id)`
+- V26은 최종 게시 시 각 요일의 `mission_version_id`와 `rubric_version_id`를 해당 미션의 게시 버전으로 고정한다. 두 칸은 함께 채우거나 함께 비워야 한다(CHECK). 마이그레이션 시점에 게시 중인 테마의 요일은 당시 미션의 두 게시 버전이 모두 있으면 채운다. 같은 미션이 이후 다른 주에 쓰여도 이미 고정된 문제와 기준표는 유지된다.
 - 학년·주는 테마 행에 두고 버전에 두지 않음(게시 중 변경 409). 다섯 생각 유형 1개씩·게시 미션·그 학년을 포함하는 미션 학년 범위는 게시 검사(DB 제약 아님, FN-ADM-22)
 - 이번 주 테마 = 그 주 게시본, 없으면 그 주 이전 최근 게시본(재사용). 요일 상태는 날짜로 계산해 저장하지 않음(state-diagram 3.2.1)
 - `theme_review_view`는 학생·주당 1행(`ON CONFLICT DO NOTHING`)으로 되돌아보기 열람 멱등. 학생 삭제 때 함께 물리 삭제(4.3)
@@ -1420,7 +1447,9 @@ erDiagram
 - `theme_frame`(#559, P27, FN-RET-10): 회차(학생·테마·주)당 1개(UK). 학습 완료(돌아보기 저장) 트랜잭션에서 시도가 `THEME_DAY`·`THEME_REVIEW`면 회차 잠금(`pg_advisory_xact_lock`, 같은 회차의 다른 문제 완료가 동시에 커밋돼 서로 못 보는 경우 방지) 뒤 `INSERT … SELECT … ON CONFLICT DO NOTHING`. 완료 조건은 그 회차 완료 시도(`completed_at` 있음)를 문제별로 묶어 테마 게시본(없으면 현재본)의 요일 문제 5개와 모두 맞는 것이고, `awarded_at` = 문제별 처음 완료 시각 중 가장 늦은 값(프리미엄 일요일·자정 넘긴 이어하기 포함, 다시 풀기는 이미 있는 액자를 바꾸지 않음). `EXTRA`는 회차 칸이 없어 빠진다. `theme_version_id`는 지급 때 버전으로 고정해 이후 재게시와 무관하게 앨범 제목·그림을 유지하고, 판정 규칙이 바뀌어도 저장된 액자는 지우지 않는다. 도입 전 기록은 learning 기동 때마다 같은 조건으로 소급(`seen_at = awarded_at`, 다시 돌려도 같은 결과, `docs/report/retention-expansion.md` 9.2). 앨범·상세·확인·보유 확인은 `theme_week_start < 이번 주(KST)`만 본다. 학생 삭제 때 같은 트랜잭션에서 물리 삭제(4.3)
 - 단서 근거(#647, V21, 기준안): `weekly_theme_version.features`는 ai 테마 초안의 후보 특징 표(요일 `rules_out`을 계산한 근거), `weekly_theme_day.clue_feature`는 그날 단서가 쓰는 특징 이름. 둘 다 NULL 허용(사람이 쓴 테마·#647 전 채택분은 비어 있음, 기존 행 채움 없음)이고 다른 버전·요일 칸처럼 새 버전 때 복사한다. 학생 응답에는 그날 단서를 얻은 요일의 특징만, 전체 표는 엔딩 뒤만 넣는다(api-spec 2.11). 시연 테마는 채우지 않는다(사용자 결정 2026-11-16: 시연은 배포 환경에서 새로 생성한 테마)
 - `answer_clue`(결정적 단서): ai 응답 계약(api-spec 4.2)에 칸이 없어, 채택 때 learning이 요일 단서에서 마지막 틀린 후보를 빼는 날(`rules_out`이 비지 않은 마지막 요일)의 `clue`로 채우고 관리자가 고칠 수 있다(엔딩 화면의 정답 근거)
-- `theme_draft`(#438, 미션 초안 `mission_draft`와 같은 구조): 검사에 실패한 초안은 테마를 만들지 않아 `weekly_theme`과 따로 둔다. 채택 1회에 테마 1개(`theme_id` UK). 부분 UK `(grade, week_start) WHERE source = 'AUTO'`로 레플리카가 주간 자동 생성을 동시에 돌려도 학년·주당 자동 초안 1개(`ON CONFLICT DO NOTHING`). `input`은 `{topic, missions:[{thinkingType, inputType, standardCodes}], regenerate?}`(관리자가 고르지 않은 유형은 learning이 채운 값, `regenerate = {baseDraftId, targets}`는 부분 다시 생성으로 만든 초안만 #537), `check_results`는 시도마다 `{attempt, failures:[{stage, reasons[]}]}`, `output`은 ai 응답(api-spec 4.2 `/internal/theme-drafts`) 그대로(#537 부분 다시 생성 재료 `regen` 포함, learning은 `regen.targets`만 읽음). 칼럼 변경 없음. `lease_until`은 `mission_draft.lease_until`과 같은 점유 방식. 학생 ID·학생 답은 없다
+- `theme_draft`(#438, 미션 초안 `mission_draft`와 같은 구조): 검사에 실패한 초안은 테마를 만들지 않아 `weekly_theme`과 따로 둔다. 채택 1회에 테마 1개(`theme_id` UK). 부분 UK `(grade, week_start) WHERE source = 'AUTO'`로 레플리카가 주간 자동 생성을 동시에 돌려도 학년·주당 자동 초안 1개(`ON CONFLICT DO NOTHING`). `input`은 `{topic, missions:[{thinkingType, inputType, standardCodes}], regenerate?}`(관리자가 고르지 않은 유형은 learning이 채운 값, `regenerate = {baseDraftId, targets}`는 부분 다시 생성으로 만든 초안만 #537), `check_results`는 시도마다 `{attempt, failures:[{stage, reasons[]}]}`, `output`은 ai 응답(api-spec 4.2 `/internal/theme-drafts`) 그대로(#537 부분 다시 생성 재료 `regen` 포함, learning은 `regen.targets`만 읽음). `lease_until`은 `mission_draft.lease_until`과 같은 점유 방식. 학생 ID·학생 답은 없다
+- V25는 부분 재생성 버전에 `family_root_id`를 기록한다. 기존 자료는 `input.regenerate.baseDraftId`를 거슬러 최초 초안에 연결하며, 전체 생성으로 시작한 최초 초안의 값은 NULL이다. 장면 선택은 `theme_draft_scene_selection`에 최초 초안·장면당 한 행으로 저장한다. 선택 확정 때 확인한 버전 목록을 함께 보관하므로 이후 새 후보를 구분할 수 있다. 버전별 별표와 최대 160자의 메모는 `theme_draft_scene_note`에 저장한다. 채택하거나 버릴 때 `frozen_scene_choices`에 당시의 명시적 선택을 고정한다.
+- V26의 `planned_week`는 미채택 초안을 임시 편성한 날짜다. CHECK가 READY 초안의 월요일만 허용하고, NULL은 미편성을 뜻한다. 채택 시 편성 주를 우선 사용하고 없으면 생성 기준 주를 사용한다. 주 이동, 맞교환과 편성 해제는 생성 기준 주·이력·자동 생성 고유 키를 바꾸지 않는다.
 
 ### 4.3 삭제·공통
 
@@ -1848,7 +1877,9 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | learning | `mission` | `(status, sort_order)`, `mission_version (thinking_type, grade_min, grade_max)` | 학년·유형별 공개 미션 목록 |
 | learning | `attempt` | `(student_id, started_at)`, `(student_id, theme_week_start)` | 기간별 기록 조회 (대시보드·에이전트·리포트), 학생의 그 주 테마 시도(요일 상태·완주·주간 요약, #385) |
 | learning | `weekly_theme` | `(grade, week_start) WHERE status = 'PUBLISHED'`, `(grade, status, week_start)` | 학년·주당 게시 1개(UNIQUE), 이번 주 테마 해석·관리자 목록 (#385, 학년 기준 #438 V16) |
-| learning | `theme_draft` | `(grade, week_start) WHERE source = 'AUTO'`, `(status, created_at)` | 학년·주당 자동 초안 1개(UNIQUE, 레플리카 중복 방지), 초안 목록·생성 작업 점유 (#438) |
+| learning | `theme_draft` | `(grade, week_start) WHERE source = 'AUTO'`, `(status, created_at)`, `(family_root_id, created_at)`, `(grade, planned_week) WHERE planned_week IS NOT NULL` | 학년·생성 주당 자동 초안 1개(UNIQUE), 생성 작업 점유, 장면 버전 이력, 학년·편성 주당 후보 1개(UNIQUE) |
+| learning | `theme_draft_scene_selection` | `(root_id, scene)` | 최초 초안의 장면별 선택 1건(PK) |
+| learning | `theme_draft_scene_note` | `(version_id, scene)` | 생성 버전의 장면별 별표와 메모 1건(PK) |
 | learning | `answer` | `(attempt_id, submitted_at)` | 시도 타임라인 |
 | learning | `answer` | `(followup_id) WHERE followup_id IS NOT NULL` | 최근 되묻기에 이미 답했는지 확인·되묻기 삭제 때 FK 검사 (#775 V22) |
 | learning | `followup` | `(attempt_id, created_at)` | 시도의 최근 되묻기·학습 기록 목록의 되묻기 받음 여부 (#775 V22). 판정당 1개는 UK `(judgment_id)` |
@@ -1876,7 +1907,7 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 
 ## 8. 마이그레이션 원칙
 
-- 버전: core Flyway V1~V9·V12~V53(V10·V11 결번), learning Flyway V1~V24, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 111개 테이블·965개 컬럼(core 63/537, learning 40/362, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
+- 버전: core Flyway V1~V9·V12~V53(V10·V11 결번), learning Flyway V1~V26, report Alembic `20261026_01`·`20261027_02`·`20261029_03`·`20261030_04`·`20261102_05`·`20261109_06`·`20261109_07`·`20261110_08`. 현재 113개 테이블·979개 컬럼(core 63/537, learning 42/376, report 8/66, ERD Mermaid 집계이며 `scripts/verify_db_schema.py`가 실제 DB와 대조). learning V14(#466)는 pgvector `vector` 확장이 있어야 함(V17이 임베딩 칸을 지웠지만 V14를 처음부터 적용할 때 필요)(관리자 bootstrap, [DB 개발 가이드 8.7](../report/db-dev-guide.md#87-learning_db-vector-확장-466)). 결정 경위는 [DB 스키마 보고서](../report/db-dev-guide.md)
 - 이미 적용된 버전은 수정하지 않음(주석 포함, 체크섬 보존). V10·V11 결번
 - 상태 CHECK는 각 컬럼에 명시한 값 전체에 적용. NOT_STARTED(시도 미생성)·SAVED(초안 조회 응답)·PROCESSING·조회 FAILED는 API 표현이라 DB 상태로 추가하지 않음
 - NULL 허용 컬럼은 위 Mermaid에 표시. nullable UNIQUE는 PostgreSQL 기본 NULLS DISTINCT

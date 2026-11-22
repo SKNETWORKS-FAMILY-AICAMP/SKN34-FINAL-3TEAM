@@ -76,6 +76,9 @@ export interface ThemeDraft {
   source: ThemeDraftSource | null
   grade: ThemeGrade | null
   weekStart: string | null
+  plannedWeek?: string | null
+  weekLocked: boolean
+  adoptionWeekLocked: boolean
   attempts: number
   maxAttempts: number
   input: {
@@ -148,6 +151,9 @@ export function themeDraftOf(raw: unknown): ThemeDraft {
     source: Object.hasOwn(themeDraftSourceLabels, str(value.source)) ? (value.source as ThemeDraftSource) : null,
     grade: Object.hasOwn(THEME_GRADE_LABELS, str(value.grade)) ? (value.grade as ThemeGrade) : null,
     weekStart: /^\d{4}-\d{2}-\d{2}$/.test(str(value.weekStart)) ? str(value.weekStart) : null,
+    ...(Object.hasOwn(value, 'plannedWeek') ? { plannedWeek: strOrNull(value.plannedWeek) } : {}),
+    weekLocked: value.weekLocked === true,
+    adoptionWeekLocked: value.adoptionWeekLocked === true,
     attempts: int(value.attempts),
     maxAttempts: int(value.maxAttempts),
     input: {
@@ -193,6 +199,7 @@ export const themeDraftActions = (status: ThemeDraftStatus) => ({
 })
 export function themeDraftRequestErrors(req: ThemeDraftRequest): string[] {
   const errors: string[] = []
+  if (req.topic && req.topic.length > 100) errors.push('주제 키워드는 100자 이내로 입력해 주세요.')
   if (!Object.hasOwn(THEME_GRADE_LABELS, req.grade)) errors.push('학년을 선택해 주세요.')
   const date = new Date(req.weekStart + 'T00:00:00Z')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(req.weekStart) || !Number.isFinite(date.valueOf()) || date.toISOString().slice(0, 10) !== req.weekStart || date.getUTCDay() !== 1)

@@ -122,6 +122,32 @@ class AdminLearningService(private val client: LearningClient,private val json: 
             else -> throw BusinessException(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED","지원하지 않는 테마 초안 작업입니다.")
         }
     }
+    fun weeklyPlanner(method: String, query: String? = null, body: ByteArray? = null): HttpExchangeResult {
+        val path = "/admin/weekly-themes/planner"
+        val actor = verifiedActor(body)
+        if (method == "GET") return sanitize(exchange(method, path, query), THEME_NOT_FOUND)
+        val draftId = runCatching { UUID.fromString(json.readTree(body).path("draftId").asText()) }.getOrNull()
+            ?: throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "편성할 초안이 필요합니다.")
+        return audited(method, path, null, body, actor, "THEME_DRAFT_PLAN", MissionAuditService.THEME_DRAFT, draftId, THEME_DRAFT_NOT_FOUND) { node ->
+            if (node.path("draftId").asText() != draftId.toString()) unavailable("LEARNING_INVALID_RESPONSE")
+            AuditTarget(MissionAuditService.THEME_DRAFT, draftId)
+        }
+    }
+
+    fun sceneVersions(method: String, draftId: UUID, scene: String, versionId: UUID? = null, body: ByteArray? = null): HttpExchangeResult {
+        val path = "/admin/theme-drafts/$draftId/scenes/$scene/versions"
+        val actor = verifiedActor(body)
+        if (method == "GET") return sanitize(exchange(method, path), THEME_DRAFT_NOT_FOUND)
+        val select = method == "PUT"
+        val action = if (select) "THEME_SCENE_SELECT" else "THEME_SCENE_ANNOTATE"
+        val endpoint = if (select) "$path/selection" else "$path/$versionId"
+        return audited(method, endpoint, null, body, actor, action, MissionAuditService.THEME_DRAFT, draftId, THEME_DRAFT_NOT_FOUND,
+            extra = mapOf("scene" to scene)) { node ->
+            if (node.path("scene").asText() != scene || !node.path("versions").isArray) unavailable("LEARNING_INVALID_RESPONSE")
+            AuditTarget(MissionAuditService.THEME_DRAFT, draftId)
+        }
+    }
+
     /** 다시 생성 본문 targets가 문자열 목록이면 받은 그대로(#537). 없거나 null·목록 아님·문자열 아닌 값이 섞이면 null(감사에 넣지 않음) */
     private fun regenerateTargets(body: ByteArray?): List<String>? {
         val targets=body?.let { runCatching { json.readTree(it) }.getOrNull() }?.get("targets") ?: return null
@@ -207,11 +233,31 @@ class AdminLearningService(private val client: LearningClient,private val json: 
         if(node?.isObject!=true) unavailable("LEARNING_INVALID_RESPONSE")
         if(response.status !in 200..299) {
             val allowedCodes = setOf("VALIDATION_FAILED","FORBIDDEN","MISSION_PUBLISH_INCOMPLETE","MISSION_NOT_AVAILABLE",
-                "MISSION_VERSION_CONFLICT","CONFLICT","NOT_FOUND","INTERNAL_ERROR","AI_UNAVAILABLE","WEEKLY_THEME_PUBLISH_INCOMPLETE")
+                "MISSION_VERSION_CONFLICT","CONFLICT","WEEK_LOCKED","THEME_SCHEDULE_LOCKED","PLAN_CONFLICT","NOT_FOUND","INTERNAL_ERROR","AI_UNAVAILABLE","WEEKLY_THEME_PUBLISH_INCOMPLETE")
             val code = node.path("code").asText().takeIf { it in allowedCodes } ?: "LEARNING_REQUEST_FAILED"
-            val safe = json.createObjectNode().put("code",code).put("status",response.status).put("title","학습 서비스가 관리자 요청을 처리하지 못했습니다.")
+            val title = when (code) {
+                "WEEK_LOCKED" -> "이미 게시가 확정된 주차입니다."
+                "THEME_SCHEDULE_LOCKED" -> "채택한 테마의 학년과 적용 주는 변경할 수 없습니다."
+                "PLAN_CONFLICT" -> "테마 버전이나 주차 편성이 변경되었습니다. 최신 내용을 확인해 주세요."
+                else -> "학습 서비스가 관리자 요청을 처리하지 못했습니다."
+            }
+            val safe = json.createObjectNode().put("code",code).put("status",response.status).put("title",title)
             if(node.path("missingFields").isArray) safe.set<com.fasterxml.jackson.databind.JsonNode>("missingFields",
                 json.valueToTree(node.path("missingFields").filter { it.isTextual && it.asText().matches(Regex("[a-zA-Z][a-zA-Z0-9.\\[\\]]{0,99}")) }.map { it.asText() }))
+            if (code == "WEEKLY_THEME_PUBLISH_INCOMPLETE" && node.path("errors").isArray) {
+                val messages = mapOf(
+                    "DAYS_INCOMPLETE" to "월요일부터 금요일까지 요일별 미션을 하나씩 배치해 주세요.",
+                    "MISSION_NOT_PUBLISHED" to "요일별 미션을 모두 게시해 주세요.",
+                    "MISSION_DEMO_ONLY" to "시연 전용 미션을 교체해 주세요.",
+                    "GRADE_MISMATCH" to "테마 학년에 맞는 미션을 선택해 주세요.",
+                    "THINKING_TYPES" to "다섯 생각 유형을 하나씩 배치해 주세요.",
+                    "WEEK_ALREADY_PUBLISHED" to "이 학년의 해당 주차는 이미 게시됐습니다."
+                )
+                val errors = safe.putArray("errors")
+                node.path("errors").map { it.path("code").asText() }.distinct().forEach { key ->
+                    messages[key]?.let { message -> errors.addObject().put("code", key).put("message", message) }
+                }
+            }
             return HttpExchangeResult(response.status,mapOf("Content-Type" to listOf("application/problem+json")),json.writeValueAsBytes(safe))
         }
         return response
