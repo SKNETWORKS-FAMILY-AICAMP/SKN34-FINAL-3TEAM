@@ -634,7 +634,7 @@ AWS에서 남은 확인(#601 재가동 뒤 B 계정)
 
 | 단계 | 시각(KST) | 내용 |
 |---|---|---|
-| 0 | 실행 전 | G3~G6 × 11/9·11/16·11/23·11/30 테마 16개 게시 확인(`themes --grades G3,G4,G5,G6`). 없으면 기존 게시 테마를 복사해 관리자 API로 작성·게시(AI 초안 안 씀). 12/7 주 테마도 미리 게시(실제 12/2 03:00 자동 초안 방지). 판매 중 가구·소품(`/admin/look-items?status=ON_SALE`, 기본 50개씩). #728 머지 여부 |
+| 0 | 실행 전 | G3~G6 × 11/9·11/16·11/23·11/30 테마 16개 게시 확인(`themes --grades G3,G4,G5,G6`). 테마·미션은 더미 스크립트가 만들지 않고 LLM·RAG 생성 담당자가 게시(#890, 2026-11-22 결정). 없으면 멈춤. 12/7 주 테마도 미리 게시(실제 12/2 03:00 자동 초안 방지). 판매 중 가구·소품(`/admin/look-items?status=ON_SALE`, 기본 50개씩). #728 머지 여부 |
 | 1 | 실제 시각 | 30가족 가입·동의·자녀(`COMMUNITY` 포함)·기기·PIN |
 | 2 | 실제 시각 | 시험 구독 SQL(프리미엄 12명) |
 | 3 | 실제 시각, 첫 풀이 전 | 원문 공개(`parentSharingEnabled`) 36명, 공개 켬 20명+시연 2명. 공유물은 돌아보기 저장 때만 생겨 나중에 켜면 앞 풀이는 공유되지 않음 |
@@ -699,6 +699,8 @@ AWS에서 남은 확인(#601 재가동 뒤 B 계정)
 | U3 구독 SQL·점검 | 더미 프리미엄 12명 시험 구독 SQL, `audit-demo-data.sql` `dummy854_*` | 11/25 |
 | U4 시계 실행 런북 | 정지점 목록, Argo CD 자동 동기화 끄기·되돌리기, 시계 동안 초안 끄기, `infrastructure/aws/README.md` 절 | 11/26 리허설 전 |
 | U5 실행 | 11/26 kind 리허설(가족 6개) → B W1~W3 → 12/1~12/6 W4·관리자 처리 → 12/7 확인, 결과를 이 절 아래 기록 | 12/7 |
+
+U1~U4 구현 위치(#808): 가족 목록 `infrastructure/aws/dummy854-families.json`, 계정 `evaluation/load/prepare_accounts.py --families`, 여러 학생 명령 `infrastructure/aws/dummy854_data.py`(`demo_account_data.py`의 풀이 흐름을 가져다 씀. 이 표의 `demo_account_data.py` 추가분은 이 파일로 둠), 구독 `add-dummy854-subscriptions.sql`, 점검 `audit-demo-data.sql` `dummy854_*`, 런북 [infrastructure/aws/README.md](../../infrastructure/aws/README.md#전체-서비스-더미-데이터-808). 구현 때 확인한 차이: 자녀 등록은 GUARDIAN 동의 1개만 받아 COMMUNITY 동의는 등록 뒤 별도 호출(`POST /me/consents`), 커뮤니티 공유물·반응 테이블은 learning DB, `payment`에는 샌드박스 표시 칸이 없어 테스트 거래 여부는 시연 표시별 결제 집계와 결제 키 설정으로 판단(#811 QA-03).
 
 ## 9.8 prod 테마 자산 버킷과 네임스페이스 기본 거부 준비 (#652·#657, 2026-11-16)
 
