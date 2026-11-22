@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Activity, BookOpen, CalendarDays, ChevronRight, CreditCard, FilePenLine, History, LayoutDashboard, Layers, LogOut, Menu, MessagesSquare, Palette, RotateCcw, Search, ShieldCheck, SlidersHorizontal, TriangleAlert, UserRound, Workflow, X } from 'lucide-react'
+import { Activity, BookOpen, CalendarDays, ChevronRight, CreditCard, FilePenLine, History, LayoutDashboard, Layers, LogOut, Menu, MessagesSquare, Palette, RotateCcw, Search, ShieldAlert, ShieldCheck, SlidersHorizontal, TriangleAlert, UserRound, Workflow, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -17,6 +17,7 @@ import { ThemeDraftManager } from './ThemeDraftManager.tsx'
 import { NotificationBell } from '../common/NotificationBell.tsx'
 import { ErrorManager } from './ModelManager.tsx'
 import { ModelRegistry } from './ModelRegistry.tsx'
+import { ExpressionReviewManager } from './ExpressionReviewManager.tsx'
 import { SupportManager } from './SupportManager.tsx'
 import { PaymentManager } from './PaymentManager.tsx'
 import { LookItemManager, WeeklyThemeManager } from './RetentionManager.tsx'
@@ -28,8 +29,8 @@ import './admin-design.css'
 import './period-picker.css'
 
 const permissionLabel: Record<Permission, string> = { CONTENT: '콘텐츠', SERVICE_OPS: '서비스 운영', PAYMENT_VIEW: '결제 조회', PAYMENT_REFUND: '환불 승인' }
-const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '작업 대기열 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '모델·프롬프트 버전', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', 'mission-drafts': '미션 초안 요청·검사', themes: '게시 관리', 'theme-drafts': '주간 테마 검수', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
-const icons: Record<string, LucideIcon> = { home: LayoutDashboard, audit: History, jobs: RotateCcw, queues: Workflow, errors: TriangleAlert, support: MessagesSquare, models: Layers, usage: Activity, missions: BookOpen, 'mission-drafts': FilePenLine, themes: CalendarDays, 'theme-drafts': SlidersHorizontal, looks: Palette, payments: CreditCard }
+const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '작업 대기열 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '모델·프롬프트 버전', expressions: '표현 검토 라벨링', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', 'mission-drafts': '미션 초안 요청·검사', themes: '게시 관리', 'theme-drafts': '주간 테마 검수', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
+const icons: Record<string, LucideIcon> = { home: LayoutDashboard, audit: History, jobs: RotateCcw, queues: Workflow, errors: TriangleAlert, support: MessagesSquare, models: Layers, expressions: ShieldAlert, usage: Activity, missions: BookOpen, 'mission-drafts': FilePenLine, themes: CalendarDays, 'theme-drafts': SlidersHorizontal, looks: Palette, payments: CreditCard }
 export function AdminWorkspace() {
   const { session, setSession, setExpired } = useSession(), location = useLocation(), navigate = useNavigate()
   const [params, setParams] = useSearchParams(), cache = useQueryClient(), auth = useAuthentication()
@@ -48,7 +49,7 @@ export function AdminWorkspace() {
     { group: '콘텐츠', path: 'theme-drafts', label: '주간 테마 검수', visible: can('CONTENT') },
     { group: '콘텐츠', path: 'themes', label: '게시 관리', visible: can('CONTENT') },
     { group: '콘텐츠', path: 'looks', label: '꾸미기 아이템', visible: can('CONTENT') },
-    ...[['support', '문의·공지'], ['errors', '오류 신고'], ['jobs', '작업 재처리'], ['queues', '작업 대기열'], ['models', '모델·프롬프트'], ['usage', 'AI 사용량']].map(([path, label]) => ({ group: '서비스 운영', path, label, visible: can('SERVICE_OPS') })),
+    ...[['support', '문의·공지'], ['errors', '오류 신고'], ['jobs', '작업 재처리'], ['queues', '작업 대기열'], ['models', '모델·프롬프트'], ['expressions', '표현 검토'], ['usage', 'AI 사용량']].map(([path, label]) => ({ group: '서비스 운영', path, label, visible: can('SERVICE_OPS') })),
     { group: '결제 관리', path: 'payments', label: '결제·환불', visible: can('PAYMENT_VIEW') || can('PAYMENT_REFUND') },
   ].filter((n) => n.visible)
   const allowed = nav.some((n) => n.path === page) || page === 'queues' && can('SERVICE_OPS')
@@ -121,6 +122,7 @@ export function AdminWorkspace() {
         : page === 'theme-drafts' ? <ThemeDraftManager />
         : page === 'looks' ? <LookItemManager />
         : page === 'models' ? <ModelRegistry />
+        : page === 'expressions' ? <ExpressionReviewManager />
         : page === 'errors' ? <ErrorManager />
         : page === 'support' ? <SupportManager />
         : page === 'payments' ? <PaymentManager period={period} permissions={permissions} />

@@ -182,3 +182,34 @@ test('사전 검사는 파일 확인만 표시하고 입력 변경 시 결과를
   expect(state.models).toHaveLength(0)
   expect(state.writes.every(w => w.path === '/admin/models/preflight')).toBe(true)
 })
+test('재학습 추천 태그는 추천·비추천으로 보이고 근거는 펼쳐 본다, 태그 없는 버전은 표시 없음 (#728)', async ({ page }) => {
+  const tagged = (name: string, ver: string, recommendation: NonNullable<ModelRegistration['evaluation']['recommendation']>) => {
+    const r = entry(name, ver, ['answer-filter']); r.evaluation.recommendation = recommendation; return version(r, `${name}-${ver}`)
+  }
+  await server(page, [
+    tagged('tox-kcelectra', '2.0', { tag: 'RECOMMENDED', comparedTo: 'tox-kcelectra:1.0-1119', reasons: ['놓친 글이 줄었다', '정상 글 오차단 같음'], metrics: { recall: 0.96, precision: 0.99 } }),
+    tagged('tox-kcelectra', '2.1', { tag: 'NOT_RECOMMENDED', comparedTo: 'NONE', reasons: ['막은 정상 글이 늘었다'] }),
+    version(entry(), 'plain'),
+  ])
+  const good = page.getByRole('article', { name: 'tox-kcelectra 2.0', exact: true })
+  const bad = page.getByRole('article', { name: 'tox-kcelectra 2.1', exact: true })
+  const plain = page.getByRole('article', { name: 'm2-klue-essay 3.1', exact: true })
+  await expect(good.locator('.ad-version-disclosure > summary .model-recommendation-tag')).toHaveText('추천')
+  await expect(bad.locator('.ad-version-disclosure > summary .model-recommendation-tag')).toHaveText('비추천')
+  await expect(plain.locator('.model-recommendation-tag, .model-recommendation')).toHaveCount(0)
+  await good.locator('.ad-version-disclosure > summary').click()
+  const details = good.locator('details.model-recommendation')
+  await expect(details).toBeVisible()
+  await expect(details.getByText('비교 대상 버전: tox-kcelectra:1.0-1119')).toBeHidden() // 펼치기 전
+  await details.locator('summary').click()
+  await expect(details.getByText('비교 대상 버전: tox-kcelectra:1.0-1119')).toBeVisible()
+  await expect(details.getByRole('listitem')).toHaveText(['놓친 글이 줄었다', '정상 글 오차단 같음'])
+  await expect(details.locator('dt')).toHaveText(['precision', 'recall'])
+  await expect(details.locator('dd')).toHaveText(['0.99', '0.96'])
+  await bad.locator('.ad-version-disclosure > summary').click()
+  await bad.locator('details.model-recommendation > summary').click()
+  await expect(bad.getByText('비교 대상 버전: 처음 등록 (비교한 활성 버전 없음)')).toBeVisible()
+  await expect(bad.locator('details.model-recommendation dl')).toHaveCount(0)
+  await plain.locator('.ad-version-disclosure > summary').click()
+  await expect(plain.locator('details.model-recommendation')).toHaveCount(0)
+})

@@ -28,6 +28,7 @@ import {
   audit,
   modelVersions,
   errorReports,
+  expressionReviews,
   reportedAttemptIds,
   retryReceipts,
   stamp,
@@ -662,6 +663,34 @@ export const adminHandlers = [
         period: p,
         items: [],
       }
+    }),
+  ),
+  // #728 표현 검토 (core 프록시와 같은 규칙: SERVICE_OPS, 글만, 열람·라벨 감사)
+  http.get('/api/v1/admin/expression-reviews', ({ request }) =>
+    respond(async () => {
+      allow(request, 'SERVICE_OPS')
+      queryFault()
+      const q = new URL(request.url).searchParams
+      const labeled = (q.get('labeled') ?? 'false') === 'true', source = q.get('source'), number = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20)
+      if (!['true', 'false'].includes(q.get('labeled') ?? 'false') || (source && !['GRAY_ZONE', 'COMMUNITY_REPORT'].includes(source)) ||
+        !Number.isInteger(number) || number < 0 || !Number.isInteger(size) || size < 1 || size > 100) fail('VALIDATION_FAILED', '요청 값을 확인해 주세요.')
+      const rows = mode === 'empty' ? [] : expressionReviews.filter(r => (r.label !== null) === labeled && (!source || r.source === source))
+        .sort((a, b) => labeled ? String(b.labeledAt).localeCompare(String(a.labeledAt)) : a.createdAt.localeCompare(b.createdAt))
+      const items = rows.slice(number * size, number * size + size)
+      audit('EXPRESSION_REVIEW_VIEW', 'EXPRESSION_REVIEW', 'list', 'SUCCESS', { reviewIds: items.map(r => r.id) })
+      return { items, page: number, size, totalElements: rows.length }
+    }),
+  ),
+  http.put('/api/v1/admin/expression-reviews/:reviewId/label', ({ request, params }) =>
+    respond(async () => {
+      allow(request, 'SERVICE_OPS')
+      const body = (await request.json().catch(() => null)) as { label?: unknown } | null
+      if (!body || Object.keys(body).length !== 1 || !['OFFENSIVE', 'CLEAN', 'SKIP'].includes(String(body.label))) fail('VALIDATION_FAILED', '요청 값을 확인해 주세요.')
+      const review = expressionReviews.find(r => r.id === params.reviewId)
+      if (!review) fail('EXPRESSION_REVIEW_NOT_FOUND', '검토 항목을 찾을 수 없습니다.', 404)
+      review!.label = body!.label as 'OFFENSIVE' | 'CLEAN' | 'SKIP'; review!.labeledAt = stamp()
+      audit('EXPRESSION_REVIEW_LABEL_SUCCEEDED', 'EXPRESSION_REVIEW', review!.id, 'SUCCESS', { label: review!.label })
+      return review
     }),
   ),
   http.get('/api/v1/admin/error-reports', ({ request }) =>
