@@ -11,6 +11,9 @@ DB에 직접 쓰지 않는다. 학부모·관리자 로그인 → 학생 세션 
   DEMO_ORIGIN       Origin 헤더(CSRF 검사). 기본 http://localhost:5173
   DEMO_PARENT_LOGIN / DEMO_PARENT_PASSWORD   시연 학부모(ID·비밀번호 로그인)
   DEMO_ADMIN_LOGIN / DEMO_ADMIN_PASSWORD     정답 조회·테마 게시 확인용 CONTENT 관리자
+  DEMO_OPS_ADMIN_LOGIN / DEMO_OPS_ADMIN_PASSWORD  공지·문의 답변·신고 처리용 SERVICE_OPS 관리자(#808, 없으면 DEMO_ADMIN_*)
+
+#808 더미 가족 여러 명은 dummy854_data.py가 이 파일의 Api·solve_week를 가져다 쓴다.
 
 출력에는 닉네임·상태 코드·건수만 남기고 토큰·비밀번호·presigned URL·학생 답변 원문은 남기지 않는다.
 가상 학생과 저장소의 자체 미션만 대상으로 한다(NFR-SEC-07).
@@ -45,6 +48,12 @@ TOPICS = [
     ("캠핑에서 별자리를 찾아본 일", "밝은 별을 먼저 찾으면 나머지를 이어 볼 수 있기 때문이야"),
     ("친구 생일 카드에 그림을 그려 준 일", "마음을 담으면 작은 선물도 크게 느껴지기 때문이야"),
     ("자전거 타기를 처음 연습한 일", "넘어져도 균형 잡는 법을 조금씩 알게 되기 때문이야"),
+    # #808: 더미 학생 한 명이 4주(20문제) 동안 같은 소재를 다시 쓰지 않게 20개로 늘림
+    ("아빠와 함께 종이비행기를 멀리 날린 일", "날개 모양을 바꾸면 나는 거리가 달라지기 때문이야"),
+    ("교실 어항의 금붕어 먹이 당번을 한 일", "맡은 일을 꾸준히 해야 모두가 믿을 수 있기 때문이야"),
+    ("비 온 뒤 운동장에서 무지개를 본 일", "햇빛과 물방울이 만나면 색이 나뉘어 보이기 때문이야"),
+    ("이웃 할아버지께 먼저 인사드린 일", "작은 인사가 서로를 더 가깝게 만들어 주기 때문이야"),
+    ("집에서 콩나물을 길러 본 일", "물을 자주 주고 빛을 가려야 잘 자라기 때문이야"),
 ]
 
 
@@ -59,16 +68,17 @@ M2_INPUTS = {
 }
 
 
-def topic(week_start, day):
-    """주(월요일)·요일마다 정해진 소재. 연속 3주는 서로 겹치지 않는다."""
+def topic(week_start, day, seed=0):
+    """주(월요일)·요일마다 정해진 소재. 연속 4주는 서로 겹치지 않는다.
+    seed(#808 더미 학생의 학년 안 순번)가 다르면 같은 주·요일에도 소재가 달라 친구 생각 글이 서로 구분된다."""
     weeks = (dt.date.fromisoformat(week_start) - dt.date(2026, 1, 5)).days // 7
-    return TOPICS[(weeks * len(DAYS) + DAYS.index(day)) % len(TOPICS)]
+    return TOPICS[(weeks * len(DAYS) + DAYS.index(day) + seed) % len(TOPICS)]
 
 
-def answer_body(mission, week_start, day):
+def answer_body(mission, week_start, day, seed=0):
     """입력 방식별 제출 본문(api-spec 3.1). 선택형은 미션 선택지에서 고른다."""
     kind = mission.get("inputType", "NARRATIVE")
-    about, why = topic(week_start, day)
+    about, why = topic(week_start, day, seed)
     title = mission.get("title") or "이번 문제"
     choices = [c["id"] for c in mission.get("choices") or []]
     if kind == "NARRATIVE":
@@ -133,9 +143,10 @@ class Api:
         return payload
 
     # --- 로그인 ---
-    def parent(self):
-        s, p, ck = self.call("POST", "/auth/parent/login", {"loginId": os.environ["DEMO_PARENT_LOGIN"],
-                                                            "password": os.environ["DEMO_PARENT_PASSWORD"]})
+    def parent(self, creds=None):
+        """creds가 없으면 시연 학부모(환경 변수), 있으면 (로그인 ID, 비밀번호) — #808 더미 학부모"""
+        login, password = creds or (os.environ["DEMO_PARENT_LOGIN"], os.environ["DEMO_PARENT_PASSWORD"])
+        s, p, ck = self.call("POST", "/auth/parent/login", {"loginId": login, "password": password})
         self.ok("학부모 로그인", s, p, (200,))
         return p["accessToken"], ck
 
@@ -145,12 +156,20 @@ class Api:
         self.ok("관리자 로그인", s, p, (200,))
         return p["accessToken"]
 
+    def ops_admin(self):
+        """공지·문의·신고 처리는 ADMIN + SERVICE_OPS 권한(api-spec 2.8)"""
+        login = os.environ.get("DEMO_OPS_ADMIN_LOGIN") or os.environ["DEMO_ADMIN_LOGIN"]
+        password = os.environ.get("DEMO_OPS_ADMIN_PASSWORD") or os.environ["DEMO_ADMIN_PASSWORD"]
+        s, p, _ = self.call("POST", "/auth/admin/login", {"loginId": login, "password": password})
+        self.ok("운영 관리자 로그인", s, p, (200,))
+        return p["accessToken"]
+
     def children(self, ptok):
         s, p, _ = self.call("GET", "/children", token=ptok)
         return {c["nickname"]: c for c in self.ok("자녀 목록", s, p, (200,))["items"]}
 
-    def student(self, nickname):
-        ptok, ck = self.parent()
+    def student(self, nickname, creds=None):
+        ptok, ck = self.parent(creds)
         child = self.children(ptok).get(nickname)
         if not child:
             raise SystemExit(f"자녀 '{nickname}'이 없음. 먼저 children 명령으로 등록")
@@ -280,7 +299,7 @@ def theme_answer(api, theme_id):
     return api.ok("테마 상세", s, p, (200,)).get("answer")
 
 
-def solve_mission(api, stok, mission_id, context, week_start, day):
+def solve_mission(api, stok, mission_id, context, week_start, day, seed=0):
     """시작 → 답변 → 피드백(SSE) → 마무리 → 돌아보기. 진행 중 시도는 이어서 끝낸다."""
     s, att, _ = api.call("POST", f"/missions/{mission_id}/attempts", {"context": context}, stok)
     api.ok(f"{day} 시작", s, att, (200, 201))
@@ -290,7 +309,7 @@ def solve_mission(api, stok, mission_id, context, week_start, day):
     if answers:
         answer_id = answers[-1]["answerId"]
     else:
-        body = {"inputType": mission.get("inputType", "NARRATIVE"), **answer_body(mission, week_start, day),
+        body = {"inputType": mission.get("inputType", "NARRATIVE"), **answer_body(mission, week_start, day, seed),
                 "dictatedByGuardian": False}
         s, a, _ = api.call("POST", f"/attempts/{aid}/answers", body, stok, headers={"Idempotency-Key": str(uuid.uuid4())})
         answer_id = api.ok(f"{day} 답변", s, a, (200, 201))["answerId"]
@@ -309,20 +328,32 @@ def cmd_solve(api, args):
     stok, child = api.student(args.child)
     s, p, _ = api.call("PUT", "/students/me/sharing-preferences", {"parentSharingEnabled": True}, stok)
     api.ok("원문 공개", s, p)
+    solve_week(api, stok, args.child, skip_pick=args.skip_pick)
+
+
+def solve_week(api, stok, label, limit=None, finish=True, skip_pick=False, seed=0):
+    """이번 주 테마를 월요일부터 열린 요일 순서로 푼다. limit이면 완료 요일이 limit개가 될 때까지만(#808 무리별 주 문제 수),
+    finish=False면 정답 고르기·종료 이야기를 하지 않는다. 끝난 요일은 건너뛰므로 다시 불러도 같은 결과다."""
     s, theme, _ = api.call("GET", "/students/me/weekly-theme", token=stok)
     theme = api.ok("이번 주 테마", s, theme, (200,))
     week = theme["weekStart"]
-    print(f"{args.child}: {week} 주 테마, 요일 상태 {[(d['day'], d['state'], d.get('attemptStatus')) for d in theme['days']]}")
+    print(f"{label}: {week} 주 테마, 요일 상태 {[(d['day'], d['state'], d.get('attemptStatus')) for d in theme['days']]}")
     api.call("POST", "/students/me/weekly-theme/story-views", {"kind": "INTRO"}, stok)
+    done = sum(d.get("attemptStatus") == "COMPLETED" for d in theme["days"])
     for d in theme["days"]:
+        if limit is not None and done >= limit:
+            break
         if d.get("attemptStatus") == "COMPLETED":
             continue
         if d["state"] != "OPEN":
             raise SystemExit(f"{d['day']}가 {d['state']}라 지금 풀 수 없음(무료는 금·토, 프리미엄은 일요일까지)")
-        solve_mission(api, stok, d["missionId"], "THEME_DAY", week, d["day"])
+        solve_mission(api, stok, d["missionId"], "THEME_DAY", week, d["day"], seed)
+        done += 1
         print(f"  {d['day']} 완료")
+    if not finish:
+        return
     s, theme, _ = api.call("GET", "/students/me/weekly-theme", token=stok)
-    if theme.get("ending") != "ENDED" and not args.skip_pick:
+    if theme.get("ending") != "ENDED" and not skip_pick:
         answer = theme_answer(api, theme["themeId"])
         if answer is None:
             print("  정답 후보가 없는 테마라 정답 고르기 생략")

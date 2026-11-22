@@ -122,7 +122,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 ## #185 검증 도구
 
 - `verify-viewer-ip.ps1`: 명시한 EKS context에서 Redis 카운터를 읽고 CloudFront 기기 등록 API에 유효하지 않은 코드로 두 번 요청한다. 직접 확인한 접속자 공인 IPv4를 `-ViewerIp`, 전용 kubeconfig를 `-Kubeconfig`로 전달한다. 두 번째 요청에는 위조 XFF를 넣는다. 실제 viewer 카운터 +2, 위조 IP 카운터 불변과 PAIRING_CODE_INVALID 응답을 모두 확인한다. 기기·페어링을 생성하지 않지만 IP별 10분 한도에서 2회를 사용한다. 동시 요청·카운터 TTL 만료·프록시 egress 차이가 있으면 실패로 보고 조사하며 카운터를 임의로 지우지 않는다.
-- `audit-demo-data.sql`: read-only transaction에서 건수만 조회한다. core_db(core_app)는 계정·학생의 demo flag별 건수, 결제 건수, DB CONNECT 권한과 #624 시연 학생 준비 상태(프리미엄·추억의 벽·가구·지난 주 리포트)를 본다. learning_db(learning_app)는 진행 주 이전 액자 수·검색 문서 상태·지난 주 M2 점수 답변, 최근 3주 판정 결과·보류 사유별 건수(`MODEL_DISAGREEMENT` 포함)와 M2 입력이 있는 공개 기준표 수(#668)를, report_db(report_app)는 지난 주 주간 리포트의 설명 카드·최근 일일 리포트를 본다. 접속한 DB에 맞는 절만 실행되므로 같은 파일을 세 DB에 각각 돌린다(`demo-db-oneoff.k8s.yaml`의 `PGDATABASE`·Secret을 바꿔 실행). 개인정보를 출력하지 않는다. demo flag가 false라고 실제 사용자라고 단정하거나, 별도 DB라는 이유만으로 모든 데이터가 demo라고 단정하지 않는다. 실제 배포의 외부 키·접속 대상·데이터 생성 절차와 함께 해석한다.
+- `audit-demo-data.sql`: read-only transaction에서 건수만 조회한다. core_db(core_app)는 계정·학생의 demo flag별 건수, 결제 건수, DB CONNECT 권한과 #624 시연 학생 준비 상태(프리미엄·추억의 벽·가구·지난 주 리포트)를 본다. learning_db(learning_app)는 진행 주 이전 액자 수·검색 문서 상태·지난 주 M2 점수 답변, 최근 3주 판정 결과·보류 사유별 건수(`MODEL_DISAGREEMENT` 포함)와 M2 입력이 있는 공개 기준표 수(#668)를, report_db(report_app)는 지난 주 주간 리포트의 설명 카드·최근 일일 리포트를 본다. `dummy854_*`는 #808 더미 가족(아래 절) 점검과 결제의 시연 표시별 집계(#811 NFR-QA-03)다. 접속한 DB에 맞는 절만 실행되므로 같은 파일을 세 DB에 각각 돌린다(`demo-db-oneoff.k8s.yaml`의 `PGDATABASE`·Secret을 바꿔 실행). 개인정보를 출력하지 않는다. demo flag가 false라고 실제 사용자라고 단정하거나, 별도 DB라는 이유만으로 모든 데이터가 demo라고 단정하지 않는다. 실제 배포의 외부 키·접속 대상·데이터 생성 절차와 함께 해석한다.
 - `mark-confirmed-demo-data.sql`: 사용자가 테스트용이라고 확인한 기존 학부모 1명·학생 2명의 flag를 보정한 일회성 SQL이다. 자동 초기화나 일반 운영 DB에서 실행하지 않는다. 새 가입자의 demo 여부를 자동 설정하는 기능이 아니다.
 - `scan-repository-secrets.py`: Python 표준 라이브러리와 Gitleaks 8.30.1로 이력·현재 파일을 분리 검사한다. 예: `python infrastructure/aws/scan-repository-secrets.py --gitleaks <실행파일> --reports <저장소밖-보고서폴더>`. `.gitleaks.toml`의 예외는 검토한 합성 값과 비밀이 아닌 식별자에 한정한다. Git 무시 파일·원격의 미수신 이력은 검사 범위 밖이다.
 
@@ -165,6 +165,81 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 6. 12/7 00:00 이후: `decorate --child <닉네임> --min-frames 3 --keep-newest-unseen --furniture <DESK 코드>,<WALL 코드>`(가장 최근 회차는 "새 액자"로 남김) → `verify --child <닉네임> --query "<답변 소재 질문>"` → 세 DB에 `audit-demo-data.sql`
 
 되돌리기: 시험 구독은 `prepare-demo-account-students.sql` 머리말의 UPDATE로 해지한다. 학습 기록은 자녀 프로필 삭제(학부모 설정)로 지운다.
+
+## 전체 서비스 더미 데이터 (#808)
+
+**아직 실행하지 않은 절차**다(2026-11-22 작성). 12/7 시연에서 학생 커뮤니티(친구 생각·반응·친구 방)·학부모(리포트·분석 대화·알림)·관리자 화면(운영 현황·작업 상태·AI 사용량·결제·신고·문의·공지)이 비어 보이지 않게, 가상 가족 30개(자녀 36명)에 4주(W1 11/9·W2 11/16·W3 11/23은 시험 시계, W4 11/30은 실제 시각) 기록을 공개 API로 쌓는다. 계획·화면별 최소 건수·결정은 [infra 9.7.6](../../docs/report/infra.md#976-전체-서비스-시연용-더미-데이터-생성-계획-854-2026-11-22), 실행 결과는 그 절 아래에 남긴다. 위 #624 시연 학생 절차와 같은 시계 정지점에서 함께 돈다.
+
+테마·미션·가구·소품은 만들지 않는다. 테마·미션은 LLM·RAG 생성 담당자가 게시한다(#890). 스크립트는 게시 여부만 확인하고 없으면 멈춘다.
+
+| 파일 | 역할 |
+|---|---|
+| `dummy854-families.json` | 가족 목록(로그인 ID `dm854p01`~`30`·이름 `가상가족01`~`30`·자녀 별명·학년·무리·프리미엄·공개)과 무리별 주 문제 수. 비밀값 없음. 앞 6가족(자녀 8명)이 kind 리허설용 |
+| `evaluation/load/prepare_accounts.py --families` | 가입·계정 동의·자녀(GUARDIAN)·자녀별 COMMUNITY 동의·기기·PIN. 비밀번호·PIN은 저장소 밖 비밀 파일. 가입 직후 비밀번호를 먼저 저장해 중간에 멈춰도 다음 실행이 이어서 한다 |
+| `add-dummy854-subscriptions.sql` | dm854p 자녀 중 프리미엄 학생에게 결제 없는 시험 구독(`product_snapshot.demoAccount = '854'`), dm854p 학부모·자녀 `is_demo` 표시 |
+| `dummy854_data.py` | `plan`(API 없이 무리·주별 문제 수·구독 SQL 값) → `community`(원문 공개·커뮤니티 공개) → `solve --stage wed\|sat`(무리별 문제 수만큼) → `react` → `room` → `converse` → `support` → `admin-ops`. `demo_account_data.py`의 풀이 흐름을 그대로 쓰고 학생마다 답변 소재가 다르다 |
+| `audit-demo-data.sql` | `dummy854_*`: core 학년별 학생·구독·주별 리포트 작업·신고·문의·대화·공지·결제(시연 표시별), learning 주별 완료 문제 수 분포·액자·공유물·반응, report 주별 리포트 상태 |
+
+### 사전 조건(0단계)
+
+1. #890 테마: `python demo_account_data.py themes --weeks 2026-11-09,2026-11-16,2026-11-23,2026-11-30,2026-12-07 --grades G3,G4,G5,G6`이 모두 "게시됨". 12/7 주 테마가 있어야 실제 12/2(수) 03:00 자동 초안이 건너뛴다. kind 리허설은 게시된 학년만 `--grades`로 돌리고 빠진 주·학년은 결과에 적는다
+2. 판매 중 가구(DESK 등)·소품(DECOR) 코드 확인: 관리자 `GET /admin/look-items?status=ON_SALE`(50개씩). 없으면 `room`은 생략하고 기록한다
+3. 관리자 계정: CONTENT(`DEMO_ADMIN_*`, 정답 조회), ADMIN+SERVICE_OPS(`DEMO_OPS_ADMIN_*`, 공지·문의 답변·신고 처리. 같은 계정이면 생략). #728(표현 검토 큐 관리자 화면) 머지 여부
+4. 비용: OpenAI 누적 $5 상한(결정 3). 단계마다 `psql -v from="'<시작 UTC>'" -v to="'<끝 UTC>'" -f evaluation/load/llm_usage_window.sql`(실제 시각)로 보고 넘을 것 같으면 멈춘다
+
+### 순서
+
+환경 변수는 `demo_account_data.py` 머리말과 같다. 아래 `D`는 `python infrastructure/aws/dummy854_data.py --secrets <비밀 파일>`(kind 리허설은 `--count 6`, 테마가 일부 학년만 있으면 `--grades G3,G5`도). B는 `prepare_accounts.py`에 `--base-url <B 도메인>`, kind는 `--base-url http://127.0.0.1 --host api.sagomungchi.local --origin http://localhost:5173`.
+
+| 단계 | 시각(KST) | 명령 | 확인 |
+|---|---|---|---|
+| 1 | 실제 | `python evaluation/load/prepare_accounts.py --families infrastructure/aws/dummy854-families.json --secrets <저장소 밖>/dummy854.json --wait [--count 6]` | "30/30 families ready"(가입 제한 IP당 10분 5회라 약 60분). 다시 돌리면 "already ready"만 |
+| 2 | 실제 | `D plan`의 프리미엄 별명 목록으로 `add-dummy854-subscriptions.sql`(`psql -v premium=<목록> -v expected=12 -v product_code=PREMIUM`, kind는 `expected=4`·`LOCAL-PLUS`). AWS는 `demo-db-oneoff.k8s.yaml`의 `command`에 `-v` 세 개를 더한다 | 학년별 `premium_854` 합이 expected |
+| 3 | 실제, 첫 풀이 전 | `D community --demo-child <초3 시연 별명> --demo-child <초5 시연 별명>` | 공개 켬 20명+시연 2명. 공유물은 돌아보기 저장 때만 생기므로 반드시 W1 전에 |
+| 4 | 시계 시작 전 | 아래 "시계 켜기" | Pod 시각이 첫 정지점 |
+| 5~7 | W1~W3 정지점 | 아래 정지점 표 | 정지점마다 실패 학생 없음 |
+| 8 | W3 끝 | 아래 "시계 끄기" | Pod 실제 시각, 이미지·환경 변수가 배포 값 |
+| 9 | 수 12/2 19:00 | `D solve --stage wed` | |
+| 9 | 토 12/5 14:00 | `D solve --stage sat` → #624 `solve`(위 절 순서 5) → `D react` → `D room --furniture <가구 코드> --decor <소품 코드 2개>` → `D converse` → `D support` | 정정 요청 4·커뮤니티 신고 2(G4·G6 공유물만, 처리 전까지 숨김)·문의 8 |
+| 9 | 일 12/6 | `D admin-ops`, 토스 테스트 결제(위젯이 동작할 때만 손으로, 결정 4) | 공지 3·문의 답변 4·정정 처리 2 |
+| 10 | 12/7 00:00 뒤 | #624 `decorate`·`verify`, 세 DB `audit-demo-data.sql`, `llm_usage_window.sql`, 리텐션(`scripts/retention_metrics` `-v from=2026-11-09 -v to=2026-12-07 -v include_demo=1`), 화면 확인 | infra 9.7.6.2 화면별 최소 건수 |
+
+### 시계 정지점(W1~W3)
+
+`FAKETIME`은 UTC다. 정지점마다 core·learning 두 Deployment의 `FAKETIME`만 바꾸고 롤아웃을 기다린다(Pod가 다시 뜨고 그 사이 자정은 지나가지 않는다). 리포트 ShedLock은 DB(실제) 시각 기준 최소 1분 잠금이라 경계 정지점 사이 실제 간격을 1분 넘게 둔다.
+
+| 주 | 수 19:00(5문제 무리 월~수) | 토 14:00(나머지·정답·반응) | 토 23:56(→ 일 00:00 일일) | 일 23:56(→ 월 00:00 일일·주간) |
+|---|---|---|---|---|
+| W1 | `@2026-11-11 10:00:00` | `@2026-11-14 05:00:00` | `@2026-11-14 14:56:00` | `@2026-11-15 14:56:00` |
+| W2 | `@2026-11-18 10:00:00` | `@2026-11-21 05:00:00` | `@2026-11-21 14:56:00` | `@2026-11-22 14:56:00` |
+| W3 | `@2026-11-25 10:00:00` | `@2026-11-28 05:00:00` | `@2026-11-28 14:56:00` | `@2026-11-29 14:56:00` |
+
+- 수 19:00: `D solve --stage wed`
+- 토 14:00: `D solve --stage sat` → (W2·W3만) #624 `solve --child <초3>`·`solve --child <초5>` → `D react`(모든 풀이 뒤)
+- 토 23:56·일 23:56: 롤아웃 뒤 가짜 00:00이 지나고 5분 더 기다린 뒤 관리자 작업 상태 또는 `audit-demo-data.sql` `dummy854_report_jobs`로 그 기간 작업이 `COMPLETED`인지 본다. 리포트 Gemma(SageMaker)는 실제 시각 예약이라 0대여서 더미 리포트는 설명 없이 발행된다(정상)
+- 정지점 중간에 실패하면 같은 정지점에서 같은 명령을 다시 돌린다(끝난 요일·반응은 건너뜀). 주를 넘긴 뒤 빠진 데이터는 채우지 않고 기록한다
+- 수요일 03:00을 넘는 정지점은 없다(테마 초안 자동 생성, 1개 $4~5). 시계 동안 learning 초안 생성도 끈다
+
+### 시계 켜기·끄기
+
+시험 시계 이미지는 위 #624 순서 4와 같다(`demo-clock.Dockerfile`, core·learning 각각 ECR push).
+
+켜기
+1. B만: Argo CD가 되돌리지 않게 한다. ApplicationSet 템플릿이 자동 동기화라 Application만 끄면 ApplicationSet 컨트롤러가 다시 켤 수 있으므로 컨트롤러를 먼저 멈춘다
+   - `kubectl -n argocd get deploy`로 이름 확인 → `kubectl -n argocd scale deploy argocd-applicationset-controller --replicas=0`
+   - `argocd app set prod-core-service --sync-policy none`, `argocd app set prod-learning-service --sync-policy none`
+   - B 첫 정지점에서 1~2분 뒤 `argocd app get prod-core-service`의 Sync Policy가 계속 `<none>`인지 확인(kind에는 ApplicationSet·자동 동기화가 없어 확인 불가)
+2. `kubectl -n app set image deploy/core-service core-service=<core 시계 이미지>`, learning도 같게
+3. `kubectl -n app set env deploy/core-service LD_PRELOAD=/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1 FAKETIME="@2026-11-11 10:00:00" FAKETIME_FORCE_MONOTONIC_FIX=1 FAKETIME_DONT_RESET=1`, learning은 같은 값에 `APP_THEMEDRAFT_ENABLED=false`(수 03:00 자동 초안·초안 생성 주기 끔)
+4. `kubectl -n app rollout status deploy/core-service`·`learning-service` → `kubectl -n app exec deploy/core-service -- date -u`가 정지점 시각
+
+끄기(W3 끝)
+1. B: `argocd app set prod-core-service --sync-policy automated --auto-prune --self-heal`(learning도) → selfHeal이 이미지·환경 변수를 Git 값으로 되돌린다 → `kubectl -n argocd scale deploy argocd-applicationset-controller --replicas=1` → 두 Application Synced·Healthy
+2. kind: `kubectl -n app set image`로 원래 이미지, `kubectl -n app set env deploy/<앱> LD_PRELOAD- FAKETIME- FAKETIME_FORCE_MONOTONIC_FIX- FAKETIME_DONT_RESET-`(learning은 `APP_THEMEDRAFT_ENABLED-`도)
+3. 두 Pod `date -u`가 실제 시각이고 ReplicaSet이 배포 상태와 같은지 확인. 시계 동안 가짜 시각으로 서명한 S3 그림 URL은 깨지므로 화면 확인은 끈 뒤에 한다
+4. 실제 11/30 00:00 정기 실행이 가짜 11/30 00:00에 만든 W3 주간 리포트를 다시 만들지 않는지 `dummy854_report_jobs`로 확인(kind 리허설 확인 항목)
+
+되돌리기: 시험 구독은 `add-dummy854-subscriptions.sql` 머리말의 UPDATE로 해지한다. 더미 기록은 dm854p 학부모가 자녀 프로필을 삭제(학부모 설정)해 지운다.
 
 ## B 계정 전환 런북 (#809)
 
