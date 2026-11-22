@@ -359,12 +359,13 @@ export const callTypeLabels = {
 } as const
 /**
  * 감사 기록 대상 유형(#655). 계약은 자유 문자열이라 core가 audit_log에 실제로 쓰는 값을 모았다
- * (작업 재처리 CONVERSATION·REPORT·NOTIFICATION, 미션·초안·주간 테마, 모델 버전, 신고·문의·공지, 계정 관리, 결제, 꾸미기 아이템).
+ * (작업 재처리 CONVERSATION·REPORT·NOTIFICATION, 미션·초안·주간 테마, 모델 버전, 신고·문의·공지, 계정 관리, 결제, 꾸미기 아이템, 표현 검토).
  * 목록에 없는 값이 와도 표시는 원래 값 그대로 한다.
  */
 export const auditTargetLabels = {
   CONVERSATION: '분석 대화', REPORT: '리포트', NOTIFICATION: '알림', MISSION: '미션', MISSION_DRAFT: '미션 초안',
   WEEKLY_THEME: '주간 테마', THEME_DRAFT: '테마 초안', MODEL_VERSION: '모델 버전', ERROR_REPORT: '오류 신고',
   INQUIRY: '문의', NOTICE: '공지', ACCOUNT_MANAGEMENT: '계정 관리', PAYMENT: '결제', LOOK_ITEM: '꾸미기 아이템',
+  EXPRESSION_REVIEW: '표현 검토',
 } as const
 export const labelOf = (labels: Record<string, string>, value: string) => labels[value] ?? value

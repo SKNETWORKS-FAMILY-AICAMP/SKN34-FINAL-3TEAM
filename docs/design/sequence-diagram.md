@@ -1610,9 +1610,9 @@ sequenceDiagram
 
   Note over AW,L: 라벨 모으기 (평소)
   AW->>C: GET /admin/expression-reviews?labeled=false
-  C->>C: audit_log (EXPRESSION_REVIEW_VIEW)
   C->>L: GET /internal/admin/expression-reviews
   L-->>C: 글·출처·모델 버전 (학생 이름·ID 없음)
+  C->>C: audit_log (EXPRESSION_REVIEW_VIEW, 보여 줄 항목 ID)
   AW->>C: PUT /admin/expression-reviews/{id}/label {OFFENSIVE|CLEAN|SKIP}
   C->>C: audit_log (EXPRESSION_REVIEW_LABEL)
   C->>L: PUT /internal/admin/expression-reviews/{id}/label

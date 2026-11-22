@@ -109,7 +109,7 @@
 | `LEARNING_UNAVAILABLE` / `LEARNING_TIMEOUT` / `LEARNING_CIRCUIT_OPEN` | 503 / 504 / 503 | core→learning 호출 실패 / 시간 초과 / 서킷 차단 (1.4) |
 | `LEARNING_CONTRACT_INVALID` | 502 | 대시보드 공급자의 JSON·학생 식별자·필수 조회 봉투 계약 위반. 기록 없음으로 대체하지 않음 (#40, 2.3) |
 | `MODEL_VERSION_CONFLICT` / `MODEL_APPROVAL_REJECTED` / `MODEL_VERSION_STATE_INVALID` | 409 / 422 / 503 | 허용되지 않는 전이·복귀 이력 없음 / 승인 근거·범위 부족 / 기존 ACTIVE 상태 불완전 (5.2) |
-| `LEARNING_INVALID_RESPONSE` | 502 | 피드백 SSE에서 learning 응답 형식 오류 (3.2) |
+| `LEARNING_INVALID_RESPONSE` | 502 | learning 응답 형식 오류: 피드백 SSE (3.2), 관리자 표현 검토 목록·라벨(라벨은 `detail`에 확인 번호) (2.8, #907) |
 | `SUPPORT_CORRECTION_CONFLICT` / `SUPPORT_CORRECTION_REJECTED` | 409 / 422 | learning 정정 POST의 업무 충돌 / 요청 거부. 공급자 본문은 공개하지 않음 (5.7) |
 | `SUPPORT_DEPENDENCY_UNAVAILABLE` / `SUPPORT_INVALID_RESPONSE` | 503 / 502 | 지원 GET의 검증된 403·404를 제외한 비-2xx / 잘못된 2xx 성공 응답 (5.7) |
 | `REPORT_NOT_FOUND` / `REPORT_SCOPE_REJECTED` | 404 / 403 | 없는 리포트 / report-api가 학생 범위를 거부 (5.5) |
@@ -138,6 +138,7 @@
 | `CORRECTION_REPORT_CONFLICT` / `JUDGMENT_STATE_CONFLICT` | 409 | learning: 같은 신고로 이미 정정함 / 판정 처리 상태 충돌 (5.7) |
 | `MISSION_VERSION_CONFLICT` / `CONFLICT` | 409 | learning 미션 버전 충돌 / 현재 미션 상태에서 허용되지 않는 전이 (2.8 #47 미션 운영) |
 | `ADMIN_MISSIONS_UNAVAILABLE` / `MISSION_AUDIT_UNAVAILABLE` / `LEARNING_STATS_UNAVAILABLE` / `LEARNING_REQUEST_FAILED` | 503 / 503 / 503 / learning 상태 | core 관리자 미션·감사·통계 조회의 learning 실패 / 허용 목록 밖 learning 오류 코드 대체 (2.8) |
+| `EXPRESSION_REVIEW_NOT_FOUND` / `EXPRESSION_REVIEW_AUDIT_UNAVAILABLE` | 404 / 503 | 없는 표현 검토 항목 라벨(learning 판정, core는 같은 코드로 전달) / 표현 검토 열람·라벨 감사 기록 실패: 글을 돌려주거나 라벨을 전달하지 않음 (2.8·4.1.5) |
 | `QUEUE_MANAGEMENT_NOT_CONFIGURED` / `QUEUE_MANAGEMENT_UNAVAILABLE` / `QUEUE_MANAGEMENT_TIMEOUT` / `QUEUE_MANAGEMENT_INVALID_RESPONSE` / `QUEUE_MANAGEMENT_INCOMPLETE` | 503 / 503 / 504 / 503 / 503 | 관리자 큐 조회: RabbitMQ 관리 API 미설정 / 연결 실패 / 5초 초과 / 응답 형식 오류 / 정의된 큐 누락 (2.8) |
 | `AI_PROMPT_VERSION_UNAVAILABLE` / `SCORING_UNAVAILABLE` | 503 | ai 활성 프롬프트 본문 없음 / scoring 모델 미준비 (내부 API, 4.2·4.3) |
 | `KNOWLEDGE_DATASET_NOT_FOUND` / `KNOWLEDGE_DATASET_STATE_CONFLICT` | 404 / 409 | learning 지식 판 관리: 없는 판 조회·활성화·제거 / `LOADING`이 아닌 판 활성화·적재 뒤 활성 판 변경·`RETIRED`가 아닌 판 제거·하루 99판 초과·같은 판 이름 동시 적재 (내부 API, 4.1.3, #466) |
@@ -546,7 +547,7 @@
 - 테마는 core가 learning `/internal/admin/weekly-themes…`로 프록시(#355 미션 초안과 같은 방식, core #387·learning #385 구현), 테마 초안은 `/internal/admin/theme-drafts…`로 같은 방식(core #439·learning #438), 아이템은 core 소유. 변경은 `audit_log`(`WEEKLY_THEME_*`·`THEME_DRAFT_*`·`LOOK_ITEM_*`). 테마 초안 요청·버리기·다시 생성은 응답 초안(`target_type = THEME_DRAFT`), 채택은 만든 테마(`WEEKLY_THEME`, `detail.draftId`)가 결과 감사 대상 아이템은 같은 트랜잭션에서 `LOOK_ITEM_CREATED`·`LOOK_ITEM_UPDATED`·`LOOK_ITEM_STOPPED`·`LOOK_ITEM_RESUMED`(`target_type = LOOK_ITEM`, 수정은 `detail.before`에 이전 값)
 - 커뮤니티 신고 검토는 기존 `/admin/error-reports`(SERVICE_OPS). 신고 연결 공유물 원문 열람은 감사 기록(P07)
 - 표현 검토(FN-ADM-24, #725): `GET /admin/expression-reviews?labeled&source&page&size`·`PUT /admin/expression-reviews/{reviewId}/label`, SERVICE_OPS. core가 learning `/internal/admin/expression-reviews…`(4.1.5)로 프록시하고 목록 열람 `EXPRESSION_REVIEW_VIEW`·라벨 `EXPRESSION_REVIEW_LABEL` 감사 기록(P07). 응답 모양은 4.1.5와 같음(학생 이름·ID 없음). learning 내부 API는 #727 구현, core 프록시·관리자 화면은 #728 구현
-  - 구현(#728): core는 learning 응답에서 4.1.5의 칸만 다시 만들어 돌려준다(다른 칸이 와도 버림, 형식이 틀리면 503 `LEARNING_INVALID_RESPONSE`). 목록 감사(detail `reviewIds`·`labeled`·`source`·`page`·`size`, 글 없음)를 남기지 못하면 503 `EXPRESSION_REVIEW_AUDIT_UNAVAILABLE`이고 글을 돌려주지 않는다. 라벨은 `{label}`만 받고(다른 칸 400) 감사(detail `label`)를 남기지 못하면 learning에 넘기지 않는다. 넘긴 결과를 모르면 503 `LEARNING_UNAVAILABLE`과 확인 번호(감사 ID). learning 404 `EXPRESSION_REVIEW_NOT_FOUND`·400은 그대로. 웹 메뉴는 서비스 운영 "표현 검토"(`/admin/expressions`)
+  - 구현(#728, 계층·상태 정정 #907): core `learning/client/LearningExpressionReviewClient`가 learning 응답을 4.1.5의 칸만 가진 타입으로 바꾼다(다른 칸이 와도 버림). service는 그 타입 값으로 감사와 요청 대조만 한다. 목록은 200인데 모양이 틀리면(200이 아닌 2xx 포함) 502 `LEARNING_INVALID_RESPONSE`, learning 400 외 오류는 503 `LEARNING_UNAVAILABLE`이고(시간 초과·서킷은 1.3 공통) 어느 쪽도 감사하지 않는다. 목록 감사(detail `reviewIds`·`labeled`·`source`·`page`·`size`, 글 없음)를 남기지 못하면 503 `EXPRESSION_REVIEW_AUDIT_UNAVAILABLE`이고 글을 돌려주지 않는다. 라벨은 `{label}`만 받고(다른 칸 400) 감사(detail `label`)를 남기지 못하면 learning에 넘기지 않는다. 넘긴 뒤 200인데 모양이 틀리면(200이 아닌 2xx 포함) 502 `LEARNING_INVALID_RESPONSE`, 결과를 모르면(시간 초과·연결 실패·서킷·5xx 등 그 밖의 오류, 응답의 ID·라벨이 보낸 것과 다름) 503 `LEARNING_UNAVAILABLE`이고 둘 다 `detail`에 확인 번호(감사 ID)를 준다. learning 404 `EXPRESSION_REVIEW_NOT_FOUND`·400은 그대로. 웹 메뉴는 서비스 운영 "표현 검토"(`/admin/expressions`)
 
 #### 관리자 테마 검수와 최종 게시 (#882)
 
@@ -1119,8 +1120,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 |---|---|---|---|
 | GET | `/internal/admin/expression-reviews?labeled&source&page&size` | core 프록시(2.8) | `ADMIN` + `X-User-Id`, 빈 학생 범위. `labeled`(기본 `false`)·`source`(`GRAY_ZONE`·`COMMUNITY_REPORT`) 필터, 라벨 없는 것은 오래된 순·라벨 있는 것은 최근 라벨 순 → `{items:[{id, source, text, modelVersion, label, labeledAt, createdAt}], page, size, totalElements}`. `text`는 그 답변의 학생이 쓴 칸(`writtenTexts`)을 줄바꿈으로 이은 글. `page` 0부터·`size` 1~100(기본 20) |
 | PUT | `/internal/admin/expression-reviews/{reviewId}/label` | core 프록시(2.8) | `{label: OFFENSIVE\|CLEAN\|SKIP}` → 갱신된 항목. 같은 값 다시 보내기도 200(시각·라벨한 사람 갱신), 없는 ID 404 `EXPRESSION_REVIEW_NOT_FOUND`, 알 수 없는 값 400 |
-| GET | `/internal/expression-reviews/label-count?since` | 재학습 작업(ops) | `SYSTEM`. `since`(ISO-8601, 생략하면 처음부터) 이후 `labeled_at`이고 `SKIP`이 아닌 행 수 → `{count, latestLabeledAt}` |
-| GET | `/internal/expression-reviews/export?since&until` | 재학습 작업(ops) | `SYSTEM`. 범위 안 라벨(`OFFENSIVE`·`CLEAN`) 행을 `labeled_at` 순으로 → `{items:[{text, label}]}`. `text`는 위와 같이 이은 뒤 api-spec 4.3.4와 같은 앞 1,500자로 자름. 학생·답변 ID·시각 없음. `until`은 응답 시점 이전 값만 허용해 같은 범위를 다시 받으면 같은 결과(삭제된 학생 행 제외) |
+| GET | `/internal/expression-reviews/label-count?since` | 재학습 작업(ops) | `SYSTEM`. `since`(ISO-8601, 생략하면 처음부터) 이후 `labeled_at`이고 `SKIP`이 아닌 행 수 → `{count, latestLabeledAt}`. 둘은 한 조회로 세어 `latestLabeledAt`은 센 행 중 가장 늦은 시각 |
+| GET | `/internal/expression-reviews/export?since&until` | 재학습 작업(ops) | `SYSTEM`. `until` 필수(없으면 400), `since` 선택. 범위 안 라벨(`OFFENSIVE`·`CLEAN`) 행을 `labeled_at` 순으로 → `{items:[{text, label}]}`. `text`는 위와 같이 이은 뒤 api-spec 4.3.4와 같은 앞 1,500자로 자름. 학생·답변 ID·시각 없음. `until`은 응답 시점 이전 값만 허용해 같은 범위를 다시 받으면 같은 결과(삭제된 학생 행 제외) |
 
 - 운영자 라벨은 core가 감사 기록(`EXPRESSION_REVIEW_LABEL`)을 남긴 뒤 learning에 전달한다. 목록 열람도 `EXPRESSION_REVIEW_VIEW`(보여 준 항목 ID 목록)로 남긴다(P07)
 - 신고 공유물 행 추가·자동 라벨은 기존 `PUT /internal/community/posts/{postId}/moderation` 처리 안에서 한다(새 경로 없음). `HIDDEN_REPORT` → 행 추가(라벨 없음), `REMOVED` → `OFFENSIVE`, `VISIBLE` → `CLEAN`. 이 호출은 `SYSTEM`이고 다시 보내질 수 있어(core `CommunityModerationService.apply`) 자동 라벨의 `labeled_by`는 null이며, 운영자가 이미 직접 라벨한 행(`labeled_by` 있음)은 바꾸지 않는다

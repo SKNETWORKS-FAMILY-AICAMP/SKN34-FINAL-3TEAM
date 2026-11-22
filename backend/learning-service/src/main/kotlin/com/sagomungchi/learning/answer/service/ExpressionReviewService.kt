@@ -68,8 +68,7 @@ class ExpressionReviewService(private val repository: ExpressionReviewRepository
 
     /** 재학습 새 라벨 수 (ops, api-spec 4.1.5). since 생략이면 처음부터 */
     @Transactional(readOnly = true)
-    fun labelCount(since: Instant?): ExpressionReviewLabelCount =
-        repository.countLabeledSince(since).let { (count, latest) -> ExpressionReviewLabelCount(count, latest) }
+    fun labelCount(since: Instant?): ExpressionReviewLabelCount = repository.countLabeledSince(since)
 
     /**
      * 재학습 학습 데이터 (ops, api-spec 4.1.5). 글·라벨만, SKIP 제외, labeled_at 순. 응답은 저장하지 않음(재학습 작업 임시 디렉터리).
