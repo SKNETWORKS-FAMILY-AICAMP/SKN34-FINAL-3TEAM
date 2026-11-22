@@ -24,7 +24,7 @@
 
 - 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
 - scoring 분리 근거: PyTorch 이미지·메모리 요구가 ai-service와 달라 배포·확장 단위 분리, 모델 미활성 시 ai-service 영향 없음
-- 리포트 Gemma 설명 엔드포인트(FN-RPT-09, #742·#746): 업무 서비스가 아니라 ai만 호출하는 같은 계정·VPC의 SageMaker 실시간 엔드포인트(GPU `ml.g6e.xlarge`, vLLM SageMaker DLC). 상태·DB 없음, S3의 승인된 AWQ 기반 모델에 LoRA 어댑터를 붙여 추론한다. 평소 0대이고 주간 리포트 배치 전 예약 확장으로 1대를 켜며(일 23:30 ~ 월 02:00), ai는 LoRA 인퍼런스 컴포넌트를 `InvokeEndpoint`로 부른다(4.4). 학생 글은 AWS 밖으로 나가지 않음
+- 리포트 Gemma 설명 엔드포인트(FN-RPT-09, #742·#746): 업무 서비스가 아니라 ai만 호출하는 같은 계정·VPC의 SageMaker 실시간 엔드포인트(GPU `ml.g6e.xlarge`, vLLM SageMaker DLC 기반 이미지). 상태·DB 없음, S3의 승인된 AWQ 기반 모델에 LoRA 어댑터를 붙여 추론한다. 평소 0대이고 주간 리포트 배치 전 예약 확장으로 1대를 켜며(일 23:30 ~ 월 02:00), ai는 LoRA 인퍼런스 컴포넌트를 `InvokeEndpoint`로 부른다(4.4). 학생 글은 AWS 밖으로 나가지 않음
 - P08 수치 규칙 중복 허용(#836): 표의 "수치·전후 변화 코드 계산"은 report 책임이지만, 같은 규칙(글자·문장·까닭을 잇는 말 수, 표본 5 미만)을 learning(대시보드·전후 변화, `record/domain/TextCounts`·`Metric`)·report(리포트, `generation/metrics.py`)·ai(분석 에이전트 표본 규칙, `analysis_agent/calculators.py`)가 각자 계산한다(서비스 간 계산 호출을 늘리지 않기 위함). 일치는 공통 픽스처 `contracts/examples/p08-metrics/cases.json`을 세 서비스 테스트가 함께 읽어 보장하고, 규칙을 바꿀 때는 P08 → 픽스처 → 세 구현을 함께 고친다
 - 다른 서비스 DB 직접 접근 금지, API 또는 이벤트로만 연동 (참고 레포 원칙 동일)
 - DB 권한으로 강제(#230): 인스턴스 1개(로컬 PostgreSQL·운영 RDS)에 DB별 migrate(DDL)·app(DML) 계정을 두고 각 DB의 PUBLIC CONNECT 회수 → 다른 서비스 DB 접속 불가. 로컬·운영 모두 `charts/platform-data/files/postgres/rds-bootstrap.sql`로 생성, 관리자 계정은 초기화 전용 ([결정](../report/db-dev-guide.md#8-서비스별-db-계정-230))
@@ -859,13 +859,13 @@ backend/report-service/
   - 자녀 수만큼 매일 작업이 생겨 report_db·S3 파일이 주간 대비 약 7배로 늘어난다. 보관 기간은 기존(P09 이용 중 보관)과 같음
 - 리포트 Gemma SageMaker 엔드포인트(FN-RPT-09·NFR-PRF-03, #742·#746)
   - 같은 계정·VPC의 SageMaker 실시간 엔드포인트 하나에 인퍼런스 컴포넌트(IC) 두 개를 둔다. 기반 IC `…-ic`(GPU 1, 메모리 예약 4096MB, 사본 0~1)가 S3 `base-awq/`(AWQ INT4 기반 모델)를 `ModelDataSource`로 받아 `/opt/ml/model`에 올리고, 어댑터 IC `…-explain`이 `BaseInferenceComponentName`으로 기반 IC 위에 S3 `adapter/`(LoRA r16)를 붙인다. **ai는 어댑터 IC를 부른다**(#746 D2, 2026-11-18 LoRA 사용 결정). 요청 본문의 `model` 값으로는 LoRA가 붙지 않아 `InvokeEndpoint`의 `InferenceComponentName`으로 고른다
-  - 컨테이너는 AWS vLLM SageMaker DLC(vLLM 0.33.0)다. LMI(DJL)는 쓰지 않는다. 인스턴스는 `ml.g6e.xlarge`(L40S 48GB, 호스트 32GiB)다. `ml.g6.xlarge`는 호스트 메모리가 부족해 IC 배치가 실패했다. 엔드포인트 설정은 `ManagedInstanceScaling` 0~1, 라우팅 `LEAST_OUTSTANDING_REQUESTS`, private 서브넷 2개와 전용 보안 그룹(4.3)이다
+  - 컨테이너는 AWS vLLM SageMaker DLC(vLLM 0.33.0) 위에 시작 때 모델 해시 검사를 더한 저장소 이미지(`infrastructure/aws/sagemaker/model-check/Dockerfile`, #777)다. 실서버 적용 시점은 팀 결정 대기([infra 9.17.8](../report/infra.md#9178-127-데모-전-적용-판단-근거-결정은-팀))이고, 적용 전 엔드포인트는 DLC 이미지 그대로다. LMI(DJL)는 쓰지 않는다. 인스턴스는 `ml.g6e.xlarge`(L40S 48GB, 호스트 32GiB)다. `ml.g6.xlarge`는 호스트 메모리가 부족해 IC 배치가 실패했다. 엔드포인트 설정은 `ManagedInstanceScaling` 0~1, 라우팅 `LEAST_OUTSTANDING_REQUESTS`, private 서브넷 2개와 전용 보안 그룹(4.3)이다
   - 평소 0대. Application Auto Scaling 예약 작업(`Asia/Seoul`)이 기반 IC 사본을 일 23:30에 최소·최대 1로, 월 02:00에 0으로 바꾼다. 사본이 0이 되면 관리형 인스턴스 축소로 인스턴스도 0대가 된다. 0대에서 호출 가능까지 약 20.5분(인스턴스 준비·이미지 10.6GB·모델 17GB 받기·vLLM 기동)이 걸려 월 00:00 배치보다 30분 먼저 켠다. 어댑터 IC는 기반이 다시 뜨면 SageMaker가 다시 붙인다
   - 0대(창 밖)일 때 들어온 요청은 즉시 `ValidationError`로 실패한다. 이때 다른 모델로 대체하지 않고 설명 없이 발행한다(#733). 경보·단계 확장으로 깨우는 정책은 두지 않았다
   - 응답 제한·생성 길이: 실시간 호출 60초 제한 안에서 `max_tokens`는 상세 1536·서술 1024다. 정상 상세 1건 약 5.7초(LoRA p50), 최악(동시 8건, 1536토큰)은 23.4초였다(1.3)
   - 권한(IAM): SageMaker 실행 역할(S3 `models/explanation/*` 읽기, DLC 이미지 받기, 로그·지표, VPC ENI)과 ai Pod Identity 역할의 `sagemaker:InvokeEndpoint`다. IC를 지정한 호출은 `inference-component/<이름>` ARN으로 권한을 검사하므로 엔드포인트 ARN과 IC ARN을 모두 허용한다. ai 클라이언트는 boto3 리전을 설정으로 명시한다(#747)
-  - 모델 무결성: 배포 전 `sagemaker_explanation.py verify`(그리고 `apply` 직전)가 S3 `manifest.json`(`base-awq/` + `adapter/`)과 객체 목록·크기·FULL_OBJECT SHA-256을 대조하고, 다르면 모델을 만들지 않는다(#746 D1). 승인 경로 잠금과 적재 때 검사는 #777이다
-  - 구성 정의는 `infrastructure/aws/sagemaker/explanation-endpoint.json`과 `sagemaker_explanation.py`(aws CLI)다. Argo CD·Helm 대상이 아니고, 저장소에서 빌드하는 이미지도 없어 `cd-release` 대상이 아니다. 절차는 [AWS README](../../infrastructure/aws/README.md#리포트-gemma-sagemaker-엔드포인트-746-2026-11-18), 근거는 [infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)
+  - 모델 무결성: 배포 전 `sagemaker_explanation.py verify`(그리고 `apply` 직전)가 S3 `manifest.json`(`base-awq/` + `adapter/`)과 객체 목록·크기·FULL_OBJECT SHA-256을 대조하고, 다르면 모델을 만들지 않는다(#746 D1). 승인 경로 잠금(`lock`, 버킷 정책 Deny)과 컨테이너 시작·LoRA 적재 때 해시 검사는 #777로 구현했다([infra 9.17](../report/infra.md#917-리포트-gemma-sagemaker-경로-잠금과-적재-때-해시-검사-777-2026-11-18))
+  - 구성 정의는 `infrastructure/aws/sagemaker/explanation-endpoint.json`과 `sagemaker_explanation.py`(aws CLI)다. Argo CD·Helm 대상이 아니다. 이미지는 `model-check/Dockerfile`로 계정마다 수동 빌드·게시하고 `explanation-endpoint.json`의 `imageRepository`·`imageDigest`로 고정하며, `cd-release` 대상이 아니다. 절차는 [AWS README](../../infrastructure/aws/README.md#리포트-gemma-sagemaker-엔드포인트-746-2026-11-18), 근거는 [infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)
   - 남은 것: 30명 배치 실측 뒤 창 끝 시각(지금 월 02:00) 조정, GPU 재고 부족 때 동작(이번 시험에서는 재고 부족이 나지 않음), 창 시작 뒤 IC가 InService가 아닐 때 경보(4.7)
   - 이전 설계(#742 전 클러스터 안 CPU `sllm-server`, #476·#509, AWS 데모 미배포)의 남은 release·NodePool·egress 값은 #835에서 지웠다. chart의 `keda.cron`·`modelDownload`·`nodeSelector`·`tolerations`, platform-data `placeholderObjects` 기능은 남겼고 쓰는 release는 없다
   - local(kind) 대역: `llm-stub` release(1대, KEDA·모델 받기 없음)가 SageMaker `InvokeEndpoint` 경로(`/endpoints/<이름>/invocations`)를 고정 응답으로 받는다. ai는 `REPORT_LLM_ENDPOINT_URL`을 이 Service로 돌리고 egress는 `llm-stub:8080`만 연다. 운영 값에는 없다
@@ -990,6 +990,8 @@ SKN34-FINAL-3TEAM/
 │  │  ├─ <message>.v1.schema.json  # 메시지 1개·버전 1개 = 파일 1개, 1.4 메시지 이름 그대로
 │  │  └─ asyncapi.yaml           # (예정) exchange·routing key·생산/소비 매핑
 │  ├─ examples/
+│  │  ├─ model-registration-import.json  # 모델 등록 가져오기 예시(#367, scripts/tests 계약 검사)
+│  │  ├─ p08-metrics/            # P08 수치 규칙 공통 픽스처 cases.json(learning·report·ai 테스트 공용, #836)
 │  │  └─ report-admin-retry/     # 관리자 리포트 재처리 계약 예시
 │  └─ openapi/
 │     ├─ <service>.yaml          # api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
@@ -1052,6 +1054,8 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  ├─ platform-data.yaml
 │  │  │  │  └─ observability.yaml     # local metrics 기반, Langfuse 제외
 │  │  │  └─ prod/                # AWS 데모 Helm values·ExternalSecret 참조·NetworkPolicy
+│  │  │     ├─ images/           # 앱별 이미지 digest만(#857, main에서 cd-release digest PR이 갱신)
+│  │  │     └─ argocd.json       # Argo CD chart values(손으로 1회 설치, #855)
 │  │  ├─ migrations/             # core·learning Flyway PreSync 이미지 Dockerfile
 │  │  ├─ operational-alerts/     # #187 경보 규칙 검증 스크립트·절차
 │  │  ├─ policies/
@@ -1086,6 +1090,7 @@ SKN34-FINAL-3TEAM/
 │     ├─ _web.yml
 │     ├─ ci-<service>.yml        # 서비스별 경로 필터 → 재사용 워크플로 호출 (감시 경로는 아래 목록)
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
+│     ├─ ci-secrets.yml          # 저장소 비밀 정보 스캔(NFR-SEC-04, #810), 경로 필터 없이 모든 PR·push
 │     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143·#237); asyncapi 검사는 미구현
 │     ├─ ci-gitops.yml           # chart lint·렌더·스키마 검증(local YAML·prod JSON), migration 이미지 빌드 (#238·#509)
 │     ├─ ci-ml-m1.yml · ci-ml-m2.yml · ci-ml-tox.yml  # ml/m1·ml/m2·ml/tox ruff·pytest
