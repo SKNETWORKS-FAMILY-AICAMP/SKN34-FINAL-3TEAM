@@ -3,11 +3,18 @@
 // POST /endpoints/<엔드포인트>/invocations 본문은 chat.completions와 같고, 서명·IC 이름은 검사하지 않는다.
 // 응답은 response_format.json_schema.name(ai-service Pydantic 모델 이름)으로 고른다.
 // LLM_STUB_DELAY_MS(기본 0)·LLM_STUB_JITTER_MS(기본 0): 응답 전 대기(기본값 + 0~지터 균등). 부하 시험에서 실제 LLM 지연을 흉내 낸다.
+// LLM_STUB_RECORD_FILE(기본 없음, #884): 받은 요청 본문을 이 파일에 한 줄씩(JSONL) 남긴다. 학생 글이 들어가므로 stdout에는 쓰지 않는다.
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
+import { appendFileSync } from 'node:fs'
 
 const delayMs = Math.max(0, Number(process.env.LLM_STUB_DELAY_MS ?? 0) || 0)
 const jitterMs = Math.max(0, Number(process.env.LLM_STUB_JITTER_MS ?? 0) || 0)
+const recordFile = process.env.LLM_STUB_RECORD_FILE
+const record = (path, body) => {
+  if (recordFile) appendFileSync(recordFile, JSON.stringify({ ts: new Date().toISOString(), path, schema: body.response_format?.json_schema?.name ?? null, body }) + '\n')
+}
+
 const wait = () => {
   const ms = delayMs + Math.random() * jitterMs
   return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve()
@@ -68,6 +75,7 @@ createServer(async (req, res) => {
     for await (const part of req) raw += part
     let body
     try { body = JSON.parse(raw) } catch { return json(res, { error: { message: 'invalid json' } }, 400) }
+    record(req.url, body)
     await wait()
     if (body.stream && !sagemaker) return stream(res, body.model)
     const result = completion(body)

@@ -1,0 +1,382 @@
+{
+  "secret_value_keys_checked": [
+    "AUTH_JWT_SECRET",
+    "CORE_APP_PASSWORD",
+    "CORE_MIGRATE_PASSWORD",
+    "GOOGLE_CLIENT_SECRET",
+    "INTERNAL_TOKEN_AI",
+    "INTERNAL_TOKEN_CORE",
+    "INTERNAL_TOKEN_LEARNING",
+    "INTERNAL_TOKEN_REPORT_API",
+    "INTERNAL_TOKEN_REPORT_WORKER",
+    "INTERNAL_TOKEN_SCORING",
+    "LEARNING_APP_PASSWORD",
+    "LEARNING_MIGRATE_PASSWORD",
+    "MINIO_ROOT_PASSWORD",
+    "PAYMENT_BILLING_ENCRYPTION_KEY",
+    "POSTGRES_PASSWORD",
+    "RABBITMQ_AI_PASSWORD",
+    "RABBITMQ_CORE_PASSWORD",
+    "RABBITMQ_LEARNING_PASSWORD",
+    "RABBITMQ_PASSWORD",
+    "RABBITMQ_REPORT_PASSWORD",
+    "RABBITMQ_SCORING_PASSWORD",
+    "REPORT_APP_PASSWORD",
+    "REPORT_MIGRATE_PASSWORD",
+    "TOSS_TEST_BILLING_SECRET_KEY",
+    "TOSS_TEST_BILLING_WEBHOOK_SECURITY_KEY",
+    "TOSS_TEST_SECRET_KEY",
+    "TOSS_TEST_WEBHOOK_SECURITY_KEY"
+  ],
+  "canary_counts": {
+    "student_ids": 7,
+    "nicknames": 7,
+    "guardian_names": 10,
+    "attempt_ids": 4,
+    "answer_ids": 5,
+    "answer_texts": 5,
+    "rubric_element_ids": 56
+  },
+  "sec03_llm_requests": {
+    "requests": 12,
+    "by_route_schema": {
+      "chat:Extraction": 5,
+      "chat:GeneratedQuestion": 5,
+      "endpoints:ExplanationDetail": 1,
+      "endpoints:GeneratedNarrative": 1
+    },
+    "requests_detail": [
+      {
+        "schema": "Extraction",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 3,
+        "uuid_rubric_element": 3,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "GeneratedQuestion",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 0,
+        "uuid_rubric_element": 0,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "Extraction",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 3,
+        "uuid_rubric_element": 3,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "GeneratedQuestion",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 0,
+        "uuid_rubric_element": 0,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "Extraction",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 3,
+        "uuid_rubric_element": 3,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "GeneratedQuestion",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 0,
+        "uuid_rubric_element": 0,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "Extraction",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 3,
+        "uuid_rubric_element": 3,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "GeneratedQuestion",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 0,
+        "uuid_rubric_element": 0,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "Extraction",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 3,
+        "uuid_rubric_element": 3,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "GeneratedQuestion",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_completion_tokens",
+          "messages",
+          "model",
+          "response_format"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 0,
+        "uuid_rubric_element": 0,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "GeneratedNarrative",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_tokens",
+          "messages",
+          "model",
+          "response_format",
+          "stream",
+          "temperature"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 0,
+        "uuid_rubric_element": 0,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      },
+      {
+        "schema": "ExplanationDetail",
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "top_level_keys": [
+          "max_tokens",
+          "messages",
+          "model",
+          "response_format",
+          "stream",
+          "temperature"
+        ],
+        "id_like_keys_in_messages": 0,
+        "student_id": 0,
+        "attempt_id": 0,
+        "answer_id": 0,
+        "student_nickname": 0,
+        "guardian_login_or_display_name": 0,
+        "uuid_total": 0,
+        "uuid_rubric_element": 0,
+        "uuid_other": 0,
+        "contains_student_answer_text": true
+      }
+    ],
+    "totals": {
+      "id_like_keys_in_messages": 0,
+      "student_id": 0,
+      "attempt_id": 0,
+      "answer_id": 0,
+      "student_nickname": 0,
+      "guardian_login_or_display_name": 0,
+      "uuid_rubric_element": 15,
+      "uuid_other": 0
+    }
+  },
+  "sec05_service_logs": {
+    "source": "docker compose logs (서비스만)",
+    "lines": 219,
+    "e2e_env_secret_values": {},
+    "e2e_env_secret_values_total": 0,
+    "toss_key_prefix(test_sk_|test_gsk_|test_ck_|live_sk|live_gsk)": 0,
+    "openai_key(sk-...)": 0,
+    "bearer_token": 0,
+    "jwt(eyJ...)": 0,
+    "payment_field(billingKey|customerKey|paymentKey|cardNumber)": 0,
+    "card_number_16digits": 0,
+    "password_assign(password=|\"password\":)": 0,
+    "pin_value(e2e PIN)": 0,
+    "student_answer_text": 0,
+    "student_nickname": 0,
+    "guardian_login_or_display_name": 0,
+    "student_id": 41,
+    "attempt_id": 5,
+    "answer_id": 4
+  },
+  "sec06_payment_test_output": {
+    "source": "core payment 패키지 테스트 system-out",
+    "lines": 130,
+    "e2e_env_secret_values": {},
+    "e2e_env_secret_values_total": 0,
+    "toss_key_prefix(test_sk_|test_gsk_|test_ck_|live_sk|live_gsk)": 0,
+    "openai_key(sk-...)": 0,
+    "bearer_token": 0,
+    "jwt(eyJ...)": 0,
+    "payment_field(billingKey|customerKey|paymentKey|cardNumber)": 0,
+    "card_number_16digits": 0,
+    "password_assign(password=|\"password\":)": 0,
+    "pin_value(e2e PIN)": 0,
+    "student_answer_text": 0,
+    "student_nickname": 0,
+    "guardian_login_or_display_name": 0,
+    "student_id": 0,
+    "attempt_id": 0,
+    "answer_id": 0,
+    "pg_fake_key_literals(synthetic-|test_sk_|test_gsk_)": 0
+  }
+}

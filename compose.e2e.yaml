@@ -13,6 +13,9 @@ services:
 
   llm-stub:
     build: ./infrastructure/stubs/llm-stub
+    environment:
+      # #884: 설정하면 컨테이너 안 이 경로에 받은 요청 본문을 JSONL로 남김(기본 꺼짐)
+      LLM_STUB_RECORD_FILE: ${LLM_STUB_RECORD_FILE:-}
 
   scoring-stub:
     build: ./infrastructure/stubs/scoring-stub
