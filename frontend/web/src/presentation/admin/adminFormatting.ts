@@ -33,6 +33,8 @@ const auditActions: Record<string, string> = {
   MODEL_ACTIVATE: '모델 버전 활성화',
   MODEL_ROLLBACK: '이전 모델 버전으로 복귀',
   SUPPORT_ORIGINAL_VIEW: '신고에 연결된 원문 열람',
+  EXPRESSION_REVIEW_VIEW: '표현 검토 목록 열람',
+  EXPRESSION_REVIEW_LABEL: '표현 검토 라벨',
   ERROR_REPORT_VIEW: '오류 신고 상세 열람',
   SUPPORT_REVIEW: '오류 신고 검토',
   ERROR_REPORT_REVIEW: '오류 신고 검토',

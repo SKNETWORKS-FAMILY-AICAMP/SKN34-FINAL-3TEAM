@@ -7,7 +7,6 @@ import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.security.UserContextHolder
 import com.sagomungchi.core._common.web.HttpExchangeResult
 import com.sagomungchi.core.admin.repository.MissionAuditRepository
-import com.sagomungchi.core.admin.service.MissionAuditService
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -17,11 +16,12 @@ import java.util.UUID
  * 관리자 미션처럼 `ADMIN` + `X-User-Id` + 빈 학생 범위로 넘긴다. SERVICE_OPS 검사는 인증 필터(경로 기본값).
  * - 목록: learning 응답을 허용한 칸만 다시 만들어 돌려주고(학생 이름·ID가 섞여 와도 버림), 보여 준 항목 ID를 `EXPRESSION_REVIEW_VIEW`로 감사.
  *   감사를 남기지 못하면 글을 돌려주지 않는다(P07)
- * - 라벨: 값 검사 → `EXPRESSION_REVIEW_LABEL_REQUESTED` 감사 → learning 한 번 → 결과 감사(`_SUCCEEDED`·`_REJECTED`·`_UNKNOWN`). 미션 감사와 같은 방식
+ * - 라벨: 값 검사 → `EXPRESSION_REVIEW_LABEL` 감사(detail label)를 남긴 뒤 learning에 한 번 전달(api-spec 4.1.5). 감사를 남기지 못하면 전달하지 않는다.
+ *   전달 결과를 모르면 503과 감사 ID(확인 번호)
  */
 @Service
 class AdminExpressionReviewService(private val client: LearningClient, private val json: ObjectMapper,
-                                   private val audit: MissionAuditService, private val audits: MissionAuditRepository) {
+                                   private val audits: MissionAuditRepository) {
     fun list(labeled: Boolean, source: String?, page: Int, size: Int): Map<String, Any?> {
         val actor = actor()
         val query = listOfNotNull("labeled=$labeled", source?.let { "source=$it" }, "page=$page", "size=$size").joinToString("&")
@@ -49,28 +49,19 @@ class AdminExpressionReviewService(private val client: LearningClient, private v
         val label = node?.takeIf { it.isObject && it.size() == 1 }?.get("label")?.takeIf { it.isTextual }?.asText()
         if (label !in LABELS) invalid()
         val operation = UUID.randomUUID()
-        val extra = mapOf<String, Any?>("label" to label)
-        try { audit.requested(operation, actor, ACTION, id, TARGET, extra) } catch (_: RuntimeException) { auditUnavailable(operation) }
+        try {
+            audits.insert(operation, actor, ACTION, TARGET, id, "SUCCESS", mapOf("label" to label))
+        } catch (_: RuntimeException) { auditUnavailable(operation) }
         val response = try {
             exchange("PUT", "$PATH/$id/label", null, json.writeValueAsBytes(mapOf("label" to label)))
-        } catch (_: RuntimeException) {
-            finished(operation, actor, id, "UNKNOWN", null, extra)
-            unknown(operation)
-        }
+        } catch (_: RuntimeException) { unknown(operation) }
         val result = parse(response)
         return when {
-            response.status == 200 -> {
-                val item = result?.let { item(it) }?.takeIf { it["id"] == id.toString() && it["label"] == label }
-                if (item == null) { finished(operation, actor, id, "UNKNOWN", 200, extra); unknown(operation) }
-                finished(operation, actor, id, "SUCCEEDED", 200, extra)
-                item
-            }
-            response.status == 404 && result?.path("code")?.asText() == NOT_FOUND -> {
-                finished(operation, actor, id, "REJECTED", 404, extra)
+            response.status == 200 -> result?.let { item(it) }?.takeIf { it["id"] == id.toString() && it["label"] == label } ?: unknown(operation)
+            response.status == 404 && result?.path("code")?.asText() == NOT_FOUND ->
                 throw BusinessException(HttpStatus.NOT_FOUND, NOT_FOUND, "검토 항목을 찾을 수 없습니다.")
-            }
-            response.status == 400 -> { finished(operation, actor, id, "REJECTED", 400, extra); invalid() }
-            else -> { finished(operation, actor, id, "UNKNOWN", response.status, extra); unknown(operation) }
+            response.status == 400 -> invalid()
+            else -> unknown(operation)
         }
     }
 
@@ -92,10 +83,6 @@ class AdminExpressionReviewService(private val client: LearningClient, private v
         if (!modelOk || !labelOk || !labeledOk) return null
         return linkedMapOf("id" to id.toString(), "source" to source, "text" to text, "modelVersion" to model,
             "label" to label, "labeledAt" to labeledAt, "createdAt" to createdAt)
-    }
-
-    private fun finished(operation: UUID, actor: UUID, id: UUID, outcome: String, status: Int?, extra: Map<String, Any?>) {
-        try { audit.finished(operation, actor, ACTION, id, outcome, status, targetType = TARGET, extra = extra) } catch (_: RuntimeException) { auditUnavailable(operation) }
     }
 
     private fun parse(response: HttpExchangeResult): JsonNode? = runCatching { json.readTree(response.body) }.getOrNull()?.takeIf { it.isObject }

@@ -5399,8 +5399,8 @@ paths:
       tags: [ExpressionReview]
       summary: SERVICE_OPS 표현 검토 라벨 (FN-ADM-24, #728)
       description: >-
-        값 검사 뒤 EXPRESSION_REVIEW_LABEL_REQUESTED 감사 → learning 한 번 → 결과 감사(_SUCCEEDED·_REJECTED·_UNKNOWN, 관리자 미션과 같은 방식).
-        같은 값 다시 보내기도 200. 결과를 모르면 503과 확인 번호(다시 보내기 전에 목록에서 확인).
+        값 검사 뒤 EXPRESSION_REVIEW_LABEL 감사(detail label)를 남기고 learning에 한 번 전달한다(4.1.5). 감사를 남기지 못하면 전달하지 않고 503.
+        같은 값 다시 보내기도 200. 전달 결과를 모르면 503 LEARNING_UNAVAILABLE과 확인 번호(다시 보내기 전에 목록에서 확인).
       parameters:
       - {name: reviewId, in: path, required: true, schema: {type: string, format: uuid}}
       requestBody:
@@ -5423,7 +5423,7 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         '503':
-          description: LEARNING_UNAVAILABLE(결과 모름) 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE
+          description: LEARNING_UNAVAILABLE(전달 결과 모름) 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE(전달 안 함)
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}

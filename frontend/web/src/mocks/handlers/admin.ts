@@ -689,7 +689,7 @@ export const adminHandlers = [
       const review = expressionReviews.find(r => r.id === params.reviewId)
       if (!review) fail('EXPRESSION_REVIEW_NOT_FOUND', '검토 항목을 찾을 수 없습니다.', 404)
       review!.label = body!.label as 'OFFENSIVE' | 'CLEAN' | 'SKIP'; review!.labeledAt = stamp()
-      audit('EXPRESSION_REVIEW_LABEL_SUCCEEDED', 'EXPRESSION_REVIEW', review!.id, 'SUCCESS', { label: review!.label })
+      audit('EXPRESSION_REVIEW_LABEL', 'EXPRESSION_REVIEW', review!.id, 'SUCCESS', { label: review!.label })
       return review
     }),
   ),

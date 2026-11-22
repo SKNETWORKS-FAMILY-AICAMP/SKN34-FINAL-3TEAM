@@ -22,7 +22,7 @@ import kotlin.test.*
 
 /** 관리자 표현 검토 → learning 중계·감사 (FN-ADM-24, api-spec 2.8·4.1.5, #728) */
 @AutoConfigureMockMvc
-/** 라벨 감사가 별도 트랜잭션(REQUIRES_NEW)이라 시험 트랜잭션으로 묶지 않음. 감사는 이 시험의 관리자 것만 센다 */
+/** 라벨 감사는 learning에 넘기기 전에 커밋돼야 해서(stub이 다른 스레드에서 확인) 시험 트랜잭션으로 묶지 않음. 감사는 이 시험의 관리자 것만 센다 */
 class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
     @Autowired lateinit var mvc: MockMvc
     @Autowired lateinit var jdbc: JdbcTemplate
@@ -88,10 +88,10 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
         assertTrue(audits("EXPRESSION_REVIEW_VIEW", admin).isEmpty())
     }
 
-    @Test fun `label audits before forwarding then records the outcome`() {
+    @Test fun `label is audited once before forwarding`() {
         val (admin, access) = token()
         stub.respond = {
-            assertEquals(1, audits("EXPRESSION_REVIEW_LABEL_REQUESTED", admin).size) // 넘기기 전에 요청 감사
+            assertEquals(1, audits("EXPRESSION_REVIEW_LABEL", admin).size) // 감사를 남긴 뒤 전달 (api-spec 4.1.5)
             LearningHttpStub.Reply(body = json.writeValueAsString(item("OFFENSIVE") + ("studentId" to student.toString())))
         }
         val body = mvc.put("/api/v1/admin/expression-reviews/$review/label") {
@@ -102,11 +102,11 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
         val seen = stub.requests.single()
         assertEquals("PUT", seen.method); assertEquals("/internal/admin/expression-reviews/$review/label", seen.target)
         assertEquals("""{"label":"OFFENSIVE"}""", seen.body); assertEquals(admin.toString(), seen.header("X-User-Id"))
-        val requested = audits("EXPRESSION_REVIEW_LABEL_REQUESTED", admin).single()
-        val done = audits("EXPRESSION_REVIEW_LABEL_SUCCEEDED", admin).single()
-        listOf(requested, done).forEach { assertEquals(admin, it["actor_user_id"]); assertEquals(review, it["target_id"]); assertEquals("EXPRESSION_REVIEW", it["target_type"]) }
-        assertEquals("OFFENSIVE", json.readTree(done["detail"] as String)["label"].asText())
-        assertEquals(200, json.readTree(done["detail"] as String)["httpStatus"].asInt())
+        val labeled = audits("EXPRESSION_REVIEW_LABEL", admin).single()
+        assertEquals(admin, labeled["actor_user_id"]); assertEquals(review, labeled["target_id"]); assertEquals("EXPRESSION_REVIEW", labeled["target_type"])
+        val detail = json.readTree(labeled["detail"] as String)
+        assertEquals(listOf("label"), detail.fieldNames().asSequence().toList()); assertEquals("OFFENSIVE", detail["label"].asText())
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action LIKE 'EXPRESSION_REVIEW_LABEL_%' AND actor_user_id=?", Int::class.java, admin))
     }
 
     @Test fun `bad label body is 400 before any audit or call`() {
@@ -123,20 +123,18 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action LIKE 'EXPRESSION_REVIEW%' AND actor_user_id=?", Int::class.java, admin))
     }
 
-    @Test fun `learning 404 is rejected not found and unexpected answers are unknown`() {
+    @Test fun `learning 404 is not found and unexpected answers are unknown, each send audited once`() {
         val (admin, access) = token()
         fun send() = mvc.put("/api/v1/admin/expression-reviews/$review/label") {
             header("Authorization", "Bearer $access"); contentType = MediaType.APPLICATION_JSON; content = """{"label":"CLEAN"}"""
         }
         stub.respond = { LearningHttpStub.Reply(404, """{"code":"EXPRESSION_REVIEW_NOT_FOUND","status":404}""", mapOf("Content-Type" to "application/problem+json")) }
         send().andExpect { status { isNotFound() }; jsonPath("$.code") { value("EXPRESSION_REVIEW_NOT_FOUND") } }
-        assertEquals(1, audits("EXPRESSION_REVIEW_LABEL_REJECTED", admin).size)
         stub.respond = { LearningHttpStub.Reply(body = json.writeValueAsString(item("OFFENSIVE"))) } // 보낸 라벨과 다름
         send().andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("LEARNING_UNAVAILABLE") } }
         stub.respond = { LearningHttpStub.Reply(500, "{}", mapOf("Content-Type" to "application/problem+json")) }
         send().andExpect { status { isServiceUnavailable() } }
-        assertEquals(2, audits("EXPRESSION_REVIEW_LABEL_UNKNOWN", admin).size)
-        assertTrue(audits("EXPRESSION_REVIEW_LABEL_SUCCEEDED", admin).isEmpty())
+        assertEquals(3, audits("EXPRESSION_REVIEW_LABEL", admin).size)
     }
 
     @Test fun `only SERVICE_OPS administrators reach it`() {
