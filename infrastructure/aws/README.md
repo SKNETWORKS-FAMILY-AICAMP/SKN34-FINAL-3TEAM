@@ -152,7 +152,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 환경 변수는 스크립트 머리말을 따른다(`DEMO_API_BASE`, `DEMO_PARENT_*`, `DEMO_ADMIN_*`). 값은 출력하지 않는다.
 
-1. 자녀 등록: `python demo_account_data.py children --child <초3 닉네임>:3 --child <초5 닉네임>:5`
+1. 자녀 등록: `python demo_account_data.py children --child <초3 닉네임>:3 --child <초5 닉네임>:5`. 이미 있는 자녀는 그대로 둔다. 필수 동의 문서 새 버전 시행일(예: #732 처리방침 1.2·법정대리인 동의서 1.1, 2026-11-23) 뒤에는 같은 명령을 다시 돌려 계정 동의(`/me` `CONSENT_REQUIRED`일 때)와 기존 자녀 법정대리인 재동의(`guardianConsentRequired`일 때)를 보낸다. 안 하면 `student`·`solve`의 학생 세션이 403이다(#894)
 2. 시연 표시·프리미엄: `demo-db-oneoff.k8s.yaml`로 `prepare-demo-account-students.sql` 실행(`psql -v g3=<초3> -v g5=<초5> -v product_code=PREMIUM`). Pod의 `command`에 `-v` 세 개를 더한다.
 3. 설명 카드용 기준표(첫 `solve` 전에): `python demo_account_data.py m2-rubric --weeks 2026-11-16,2026-11-23,2026-11-30 [--m2-input <JSON>]`. 먼저 `--dry-run`으로 채울 미션을 본다. 공개 기준표를 복사해 M2 입력만 더한 새 기준표 버전을 저장·검토 승인·재게시하고, 이미 있으면 그대로 둔다. 주마다 "M2 입력 서술 3유형"이 나와야 한다. 입력이 없는 미션이나 공개 안 된 수정본이 걸린 미션이 있으면 실패하고 이름을 알려 준다. 판정은 답변 때의 공개 기준표로 하므로 보강 전에 푼 답변에는 M2 점수가 생기지 않는다
 4. 앞선 2회차(시험 시계):
@@ -175,7 +175,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 | 파일 | 역할 |
 |---|---|
 | `dummy854-families.json` | 가족 목록(로그인 ID `dm854p01`~`30`·이름 `가상가족01`~`30`·자녀 별명·학년·무리·프리미엄·공개)과 무리별 주 문제 수. 비밀값 없음. 앞 6가족(자녀 8명)이 kind 리허설용 |
-| `evaluation/load/prepare_accounts.py --families` | 가입·계정 동의·자녀(GUARDIAN)·자녀별 COMMUNITY 동의·기기·PIN. 비밀번호·PIN은 저장소 밖 비밀 파일. 가입 직후 비밀번호를 먼저 저장해 중간에 멈춰도 다음 실행이 이어서 한다 |
+| `evaluation/load/prepare_accounts.py --families` | 가입·계정 동의·자녀(GUARDIAN)·자녀별 COMMUNITY 동의·기기·PIN. 비밀번호·PIN은 저장소 밖 비밀 파일. 가입 직후 비밀번호를 먼저 저장해 중간에 멈춰도 다음 실행이 이어서 한다. 다시 돌리면 준비된 가족도 로그인해 계정 동의와 기존 자녀 법정대리인 재동의(`guardianConsentRequired`일 때)를 다시 보낸다(#894) |
 | `add-dummy854-subscriptions.sql` | dm854p 자녀 중 프리미엄 학생에게 결제 없는 시험 구독(`product_snapshot.demoAccount = '854'`), dm854p 학부모·자녀 `is_demo` 표시 |
 | `dummy854_data.py` | `plan`(API 없이 무리·주별 문제 수·구독 SQL 값) → `community`(원문 공개·커뮤니티 공개) → `solve --stage wed\|sat`(무리별 문제 수만큼) → `react` → `room` → `converse` → `support` → `admin-ops`. `demo_account_data.py`의 풀이 흐름을 그대로 쓰고 학생마다 답변 소재가 다르다 |
 | `audit-demo-data.sql` | `dummy854_*`: core 학년별 학생·구독·주별 리포트 작업·신고·문의·대화·공지·결제(시연 표시별), learning 주별 완료 문제 수 분포·액자·공유물·반응, report 주별 리포트 상태 |
@@ -193,7 +193,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 | 단계 | 시각(KST) | 명령 | 확인 |
 |---|---|---|---|
-| 1 | 실제 | `python evaluation/load/prepare_accounts.py --families infrastructure/aws/dummy854-families.json --secrets <저장소 밖>/dummy854.json --wait [--count 6]` | "30/30 families ready"(가입 제한 IP당 10분 5회라 약 60분). 다시 돌리면 "already ready"만 |
+| 1 | 실제 | `python evaluation/load/prepare_accounts.py --families infrastructure/aws/dummy854-families.json --secrets <저장소 밖>/dummy854.json --wait [--count 6]` | "30/30 families ready"(가입 제한 IP당 10분 5회라 약 60분). 다시 돌리면 가입 없이 가족마다 로그인·동의만 확인. 필수 동의 문서 새 버전 시행일 뒤 첫 풀이 전에 다시 돌린다(#894) |
 | 2 | 실제 | `D plan`의 프리미엄 별명 목록으로 `add-dummy854-subscriptions.sql`(`psql -v premium=<목록> -v expected=12 -v product_code=PREMIUM`, kind는 `expected=4`·`LOCAL-PLUS`). AWS는 `demo-db-oneoff.k8s.yaml`의 `command`에 `-v` 세 개를 더한다 | 학년별 `premium_854` 합이 expected |
 | 3 | 실제, 첫 풀이 전 | `D community --demo-child <초3 시연 별명> --demo-child <초5 시연 별명>` | 공개 켬 20명+시연 2명. 공유물은 돌아보기 저장 때만 생기므로 반드시 W1 전에 |
 | 4 | 시계 시작 전 | 아래 "시계 켜기" | Pod 시각이 첫 정지점 |

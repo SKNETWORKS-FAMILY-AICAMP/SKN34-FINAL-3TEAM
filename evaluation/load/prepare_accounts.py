@@ -14,7 +14,9 @@ Running again with the same --prefix and --secrets appends only the accounts tha
 With --families <json> (#808 dummy families, infrastructure/aws/dummy854-families.json) the login IDs, parent names,
 child nicknames and grades come from the file, and each child also gets the optional COMMUNITY consent. The password is
 written to the secrets file right after signup, so a run that stops halfway resumes on the next run (login, then only
-the missing consents, children, device and PINs). --count limits it to the first N families.
+the missing consents, children, device and PINs). Every run logs in to each family again, so after a new required
+document version takes effect the account consent and existing children's GUARDIAN consent are given again (#894).
+--count limits it to the first N families.
 """
 import argparse
 import http.cookiejar
@@ -152,16 +154,20 @@ def prepare_family(base_url, family, entry, save, wait, host=None, origin=None):
         raise ApiFailure("consent documents", 200, "NO_COMMUNITY_DOCUMENT")
     # Re-sending the same account consent is a no-op (api-spec 2.1).
     client.call("account consents", "POST", "/me/consents", {"consents": [documents["TERMS"], documents["PRIVACY"]]})
-    have = {c["nickname"]: c["id"] for c in client.call("children", "GET", "/children")["items"]}
+    have = {c["nickname"]: c for c in client.call("children", "GET", "/children")["items"]}
     kids = {k["nickname"]: k for k in entry["children"] if k.get("nickname")}
     for spec in family["children"]:
         if spec["nickname"] not in have:
             child = client.call("child registration", "POST", "/children", {
                 "nickname": spec["nickname"], "grade": spec["grade"], "birthYear": date.today().year - spec["grade"] - 6,
                 "consents": [documents["GUARDIAN"]]})
-            have[spec["nickname"]] = child["id"]
+            have[spec["nickname"]] = child
+        elif have[spec["nickname"]].get("guardianConsentRequired"):
+            # A new GUARDIAN version took effect (#894): COMMUNITY alone needs the current GUARDIAN consent (api-spec 2.9).
+            client.call("guardian consent", "POST", "/me/consents",
+                        {"childId": have[spec["nickname"]]["id"], "consents": [documents["GUARDIAN"]]})
         kid = kids.setdefault(spec["nickname"], {"nickname": spec["nickname"]})
-        kid["childId"] = have[spec["nickname"]]
+        kid["childId"] = have[spec["nickname"]]["id"]
         # COMMUNITY is optional and cannot be given at registration (one GUARDIAN item only); the same choice again is a no-op.
         client.call("community consent", "POST", "/me/consents",
                     {"childId": kid["childId"], "consents": [documents["COMMUNITY"]]})
@@ -196,10 +202,9 @@ def run_families(args, accounts, write):
         write()
 
     for family in families:
+        # Ready families are prepared again too: every step is a no-op when nothing changed, and a new required
+        # consent document version needs re-consent (#894).
         entry = by_id.get(family["loginId"])
-        if entry and family_ready(entry, family):
-            print(f"{family['loginId']}: already ready", flush=True)
-            continue
         try:
             prepare_family(args.base_url, family, entry, save, args.wait, args.host, args.origin)
         except ApiFailure as failure:

@@ -179,16 +179,16 @@ class Api:
 
 
 def cmd_children(api, args):
-    """시연 학부모 아래 가상 자녀를 등록한다. 이미 있으면 그대로 둔다."""
+    """시연 학부모 아래 가상 자녀를 등록한다. 이미 있으면 그대로 두고, 필수 동의 문서 새 버전 시행 뒤면 재동의한다."""
     ptok, _ = api.parent()
     _, docs, _ = api.call("GET", "/consent-documents")
 
     def agree(*kinds):
         return [{"documentId": d["documentId"], "version": d["version"], "agreed": True}
                 for d in docs["items"] if d["kind"] in kinds]
-    s, p, _ = api.call("GET", "/children", token=ptok)
-    if s == 403 and (p or {}).get("code") == "CONSENT_REQUIRED":
-        # 새로 가입한 시연 학부모: 계정 필수 동의(이용약관·개인정보)부터 저장
+    s, me, _ = api.call("GET", "/me", token=ptok)
+    if api.ok("내 정보", s, me, (200,)).get("nextAction") == "CONSENT_REQUIRED":
+        # 새로 가입했거나 계정 필수 문서(이용약관·개인정보) 새 버전이 시행된 시연 학부모(#894)
         s, p, _ = api.call("POST", "/me/consents", {"consents": agree("TERMS", "PRIVACY")}, ptok)
         api.ok("계정 동의", s, p, (200, 201, 204))
         print("학부모 계정 동의 저장")
@@ -198,6 +198,11 @@ def cmd_children(api, args):
     for spec in args.child:
         nickname, grade = spec.rsplit(":", 1)
         if nickname in have:
+            if have[nickname].get("guardianConsentRequired"):
+                # 법정대리인 동의서 새 버전 시행(#894)·철회: 학생 세션 전에 자녀 단위 재동의
+                s, p, _ = api.call("POST", "/me/consents", {"childId": have[nickname]["id"], "consents": consents}, ptok)
+                api.ok(f"{nickname} 법정대리인 재동의", s, p, (200, 201, 204))
+                print(f"{nickname}: 법정대리인 재동의")
             print(f"{nickname}: 이미 있음(grade {have[nickname]['grade']})")
             continue
         s, p, _ = api.call("POST", "/children", {"nickname": nickname, "grade": int(grade),
