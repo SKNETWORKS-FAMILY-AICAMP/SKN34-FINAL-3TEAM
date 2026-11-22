@@ -32,7 +32,7 @@
 | `PAYMENT_VIEW` | 결제·구독 조회, PG 대조 |
 | `PAYMENT_REFUND` | 환불 승인 |
 | `SERVICE_OPS` | 작업·큐 현황, 작업 재처리, 신고·문의·공지, 모델·프롬프트 버전, AI 사용량 (운영 현황 `/admin/overview`·감사 로그 조회는 권한 없이 ADMIN 역할만, 2.8.1) |
-| 학생 원문 열람 | `SERVICE_OPS`가 오류 신고·문의에 연결된 시도의 답변·판정과 표현 검토 대기 글(FN-ADM-24, 글만·학생 이름·ID 없음, 구현 전 #728)만, 열람·라벨마다 `audit_log` (P07) |
+| 학생 원문 열람 | `SERVICE_OPS`가 오류 신고·문의에 연결된 시도의 답변·판정과 표현 검토 대기 글(FN-ADM-24, 글만·학생 이름·ID 없음, 구현 #728)만, 열람·라벨마다 `audit_log` (P07) |
 
 - 리소스 권한 (FN 1.1, NFR-SEC-02)
   - 학생: 본인 기록만
@@ -531,8 +531,8 @@
 | POST | `/admin/model-versions/{versionId}/rollback` | SERVICE_OPS | 이전 승인 버전 복귀, 재분석 여부 기록 | ADM-18 | 우선1 |
 | POST | `/admin/models/preflight` | SERVICE_OPS | 모델 등록 전 파일 사전 검사, core가 scoring `/internal/models/preflight`로 동기 중계 (#368, 5.2.1) | ADM-17 | 우선1 |
 | GET | `/admin/model-loading` | SERVICE_OPS | scoring Pod별 모델 로딩 상태 `pods[]`·활성 버전별 요약 `summaries[]` (#370, [scoring Pod별 모델 로딩 확인](#519-scoring-pod별-모델-로딩-확인-370)) | ADM-18 | 우선1 |
-| GET | `/admin/expression-reviews?labeled&source&page&size` | SERVICE_OPS | 표현 검토 대기 목록(글만, 학생 이름·ID 없음), 열람 감사 기록 (#725, 4.1.5, 구현 전 #728) | ADM-24 | 우선2 |
-| PUT | `/admin/expression-reviews/{reviewId}/label` | SERVICE_OPS | `{label: OFFENSIVE\|CLEAN\|SKIP}` 라벨, 감사 기록 (#725, 구현 전 #728) | ADM-24 | 우선2 |
+| GET | `/admin/expression-reviews?labeled&source&page&size` | SERVICE_OPS | 표현 검토 대기 목록(글만, 학생 이름·ID 없음), 열람 감사 기록 (#725, 4.1.5, 구현 #728) | ADM-24 | 우선2 |
+| PUT | `/admin/expression-reviews/{reviewId}/label` | SERVICE_OPS | `{label: OFFENSIVE\|CLEAN\|SKIP}` 라벨, 감사 기록 (#725, 구현 #728) | ADM-24 | 우선2 |
 | GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·지식 임베딩(#467 `KNOWLEDGE_EMBEDDING`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`·영상 `THEME_VIDEO` #436)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
 | GET·POST | `/admin/weekly-themes?grade&weekStart&status` | CONTENT | 테마 목록·작성 `{grade, weekStart, title, intro, days:[{day, missionId}]}`. `grade`는 `G3`·`G4`·`G5`·`G6`(학년별 테마, 에픽 #436) | ADM-22 | core 프록시 #387 |
 | GET·PUT | `/admin/weekly-themes/{themeId}` | CONTENT | 상세·수정(게시 중 수정은 재검토) | ADM-22 | core 프록시 #387 |
@@ -545,7 +545,8 @@
 
 - 테마는 core가 learning `/internal/admin/weekly-themes…`로 프록시(#355 미션 초안과 같은 방식, core #387·learning #385 구현), 테마 초안은 `/internal/admin/theme-drafts…`로 같은 방식(core #439·learning #438), 아이템은 core 소유. 변경은 `audit_log`(`WEEKLY_THEME_*`·`THEME_DRAFT_*`·`LOOK_ITEM_*`). 테마 초안 요청·버리기·다시 생성은 응답 초안(`target_type = THEME_DRAFT`), 채택은 만든 테마(`WEEKLY_THEME`, `detail.draftId`)가 결과 감사 대상 아이템은 같은 트랜잭션에서 `LOOK_ITEM_CREATED`·`LOOK_ITEM_UPDATED`·`LOOK_ITEM_STOPPED`·`LOOK_ITEM_RESUMED`(`target_type = LOOK_ITEM`, 수정은 `detail.before`에 이전 값)
 - 커뮤니티 신고 검토는 기존 `/admin/error-reports`(SERVICE_OPS). 신고 연결 공유물 원문 열람은 감사 기록(P07)
-- 표현 검토(FN-ADM-24, #725): `GET /admin/expression-reviews?labeled&source&page&size`·`PUT /admin/expression-reviews/{reviewId}/label`, SERVICE_OPS. core가 learning `/internal/admin/expression-reviews…`(4.1.5)로 프록시하고 목록 열람 `EXPRESSION_REVIEW_VIEW`·라벨 `EXPRESSION_REVIEW_LABEL` 감사 기록(P07). 응답 모양은 4.1.5와 같음(학생 이름·ID 없음). learning 내부 API는 #727 구현, core 프록시·관리자 화면은 구현 전(#728)
+- 표현 검토(FN-ADM-24, #725): `GET /admin/expression-reviews?labeled&source&page&size`·`PUT /admin/expression-reviews/{reviewId}/label`, SERVICE_OPS. core가 learning `/internal/admin/expression-reviews…`(4.1.5)로 프록시하고 목록 열람 `EXPRESSION_REVIEW_VIEW`·라벨 `EXPRESSION_REVIEW_LABEL` 감사 기록(P07). 응답 모양은 4.1.5와 같음(학생 이름·ID 없음). learning 내부 API는 #727 구현, core 프록시·관리자 화면은 #728 구현
+  - 구현(#728): core는 learning 응답에서 4.1.5의 칸만 다시 만들어 돌려준다(다른 칸이 와도 버림, 형식이 틀리면 503 `LEARNING_INVALID_RESPONSE`). 목록 감사(detail `reviewIds`·`labeled`·`source`·`page`·`size`, 글 없음)를 남기지 못하면 503 `EXPRESSION_REVIEW_AUDIT_UNAVAILABLE`이고 글을 돌려주지 않는다. 라벨은 `{label}`만 받고(다른 칸 400) 감사(detail `label`)를 남기지 못하면 learning에 넘기지 않는다. 넘긴 결과를 모르면 503 `LEARNING_UNAVAILABLE`과 확인 번호(감사 ID). learning 404 `EXPRESSION_REVIEW_NOT_FOUND`·400은 그대로. 웹 메뉴는 서비스 운영 "표현 검토"(`/admin/expressions`)
 
 #### 관리자 테마 검수와 최종 게시 (#882)
 
@@ -955,7 +956,7 @@ If-Match: "7"
 
 | 받는 쪽 | 호출자 → 허용 경로 (`*` 한 세그먼트, `**` 하위 전체) |
 |---|---|
-| core | ai·scoring → `/internal/model-versions/active` · ops → `/internal/model-versions`, `/internal/model-versions/active`(재학습 작업, #725, 구현 전 #728) · learning → `/internal/payment-usage/**`, `/internal/deletion-requests/*/completions`, `/internal/students/*/profile` · report-worker → `/internal/students/*/profile`, `/internal/students/*/report-template`, `/internal/deletion-requests/*/completions` |
+| core | ai·scoring → `/internal/model-versions/active` · ops → `/internal/model-versions`, `/internal/model-versions/active`(재학습 작업, #725, 구현 #728) · learning → `/internal/payment-usage/**`, `/internal/deletion-requests/*/completions`, `/internal/students/*/profile` · report-worker → `/internal/students/*/profile`, `/internal/students/*/report-template`, `/internal/deletion-requests/*/completions` |
 | learning | core → `/internal/**`(프록시) · ai → `/internal/records/students/**` · report-api → `/internal/records/evidence` · report-worker → `/internal/records/**`, `/internal/students/*/weekly-theme/summary` · ops → `/internal/admin/knowledge/**`, `/internal/knowledge/**`, `/internal/expression-reviews/**`(재학습 작업, #725) |
 | ai | core → `/internal/analysis/**` · learning → `/internal/{judgments,followups,mission-drafts,theme-drafts,embeddings,memory-explanations,memory-queries}`(`memory-queries`는 #681 구현) · report-worker → `/internal/report-narratives`, `/internal/report-explanations` · ops → `/internal/embeddings`, `/internal/judgments`, `/internal/versions` |
 | scoring | ai → `/internal/m1/**`, `/internal/m2/**` · core → `/internal/models/preflight` · learning → `/internal/toxicity/**`(#692) · ops → `/internal/versions` |
@@ -1331,7 +1332,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/internal/model-versions/active` | 기동 시 활성 모델·프롬프트 버전 조회. 재학습 작업(ops)도 이어 학습할 활성 `tox-` 모델을 찾는 데 씀(#725) |
-| POST | `/internal/model-versions` | 재학습 작업(ops) 자동 등록(#725, 구현 전 #728). 5.2.3 |
+| POST | `/internal/model-versions` | 재학습 작업(ops) 자동 등록(#725, 구현 #728). 5.2.3 |
 | POST | `/internal/deletion-requests/{deletionRequestId}/completions` | learning·report가 `student.deleted` 처리 후 완료 보고 `{service}`. 두 서비스 모두 보고 시 `COMPLETED` (멱등, P09) |
 | POST | `/internal/payment-usage/reservations` | learning 피드백 실행 전 프리미엄 사용 예약 `{studentId,sourceId}` → `{reservationId,premium}` (STUDENT+본인 scope, #48) |
 | POST | `/internal/payment-usage/completions` | learning 피드백 DONE 저장 후 사용 확정 `{studentId,reservationId,used}` (#48) |
@@ -1426,13 +1427,14 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 - 등록 요청의 승인 여부·활성화 범위·사유·재분석 계획·승인자 및 알 수 없는 필드는 400 VALIDATION_FAILED. 유효한 타입의 업무 검증 실패는 기존 422 MODEL_APPROVAL_REJECTED, 중복은 409 MODEL_VERSION_CONFLICT. 공통 Problem Details 형식은 유지한다.
 - 프론트 전달용 예시와 역할 분담: [#367 API 전달 내용](../report/ai.md#11-모델-등록-api-367). 화면·웹 타입은 프론트 담당 범위다.
 
-#### 5.2.3 재학습 자동 등록·추천 태그 (#688, 설계 #725, 구현 전 #728)
+#### 5.2.3 재학습 자동 등록·추천 태그 (#688, 설계 #725, 구현 #728)
 
 - `evaluation.recommendation?`: `{tag: RECOMMENDED|NOT_RECOMMENDED, comparedTo, reasons:[], metrics:{}}`. `comparedTo`는 비교한 활성 버전(`name:version`, 처음이면 `NONE`), `reasons`는 1~20개·각 1~500자, `metrics`는 이름(최대 50개)→숫자 객체. 모든 종류·출처에서 선택이며 `evalResult.evidence.recommendation`에 그대로 저장한다. 참고 정보라 활성화·복귀 검사에 쓰지 않는다(자동 품질 합격선 없음 유지). 관리자 등록부 화면은 태그를 "추천"·"비추천"으로, 이유·비교 버전·지표는 펼쳐 보인다(없으면 표시 없음)
 - 내부 `POST /internal/model-versions`(ops 토큰, 4장 허용 표): 본문은 관리자 등록과 같다. `kind: MODEL`·`name`이 `tox-`로 시작하는 것만 받고 아니면 422 `MODEL_APPROVAL_REJECTED`. `registration`은 `{source: PIPELINE, datasetSha256, artifactFiles:[{file,bytes,sha256}]}` 필수(다른 source는 400, 반대로 관리자 공개 등록은 `PIPELINE`을 400으로 거부), `evaluation.recommendation` 필수
 - 처리: core가 5.2.1 preflight를 먼저 부르고(같은 20초 제한), `FAIL`이면 422 `MODEL_APPROVAL_REJECTED`(파일별 결과를 `detail`이 아닌 확장 필드 `preflight`로), 연결 실패 503. `PASS`면 관리자 등록과 같은 규칙으로 `REGISTERED` 저장. 활성화하지 않는다
 - 감사: `MODEL_PREFLIGHT`·`MODEL_REGISTER`의 actor는 재학습 계정 `mlops-pipeline`([ERD 3.5](erd.md), 설정 `app.model-registry.pipeline-actor-id`). 이 계정은 로그인·활성화 권한이 없다. detail에 source·`datasetSha256`·파일 목록을 남긴다
 - 같은 `(kind,name,version)` 다시 보내기는 409 `MODEL_VERSION_CONFLICT`. 재학습 작업은 버전 이름을 실행 날짜로 정하므로(`tox-…` / `yyyyMMdd-HHmm`) 409면 이미 등록된 것으로 보고 끝낸다
+- 구현(#728) 세부: `recommendation`은 모르는 칸이면 400(본문 읽기 실패), `comparedTo`는 비지 않고 201자 이하(이름 100 + `:` + 버전 100), `reasons`는 각 비지 않음, `metrics` 이름은 비지 않고 100자 이하·값은 유한 숫자. 틀리면 관리자 등록과 같이 422 `MODEL_APPROVAL_REJECTED`. 관리자 수정 필드 목록에 `evaluation.recommendation`. 내부 등록의 규칙 위반(`tox-` MODEL·`recommendation`·등록 규칙)은 preflight를 부르기 전에 422로 막는다. `registration.datasetSha256`은 소문자 16진수 64자, `artifactFiles`는 1~100개·이름 중복 없음, `jsonSha256`·`manifestSha256`·`modifiedFields`는 받지 않는다. 계약은 `core-service.yaml`의 `PipelineRegisterModelVersion`·`ModelRecommendation`·`Problem.preflight`
 
 ### 5.3 #37 동의·자녀 구현 계약
 

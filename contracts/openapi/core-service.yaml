@@ -17,6 +17,7 @@ tags:
 - name: Children
 - name: Admin
 - name: ModelRegistry
+- name: ExpressionReview
 - name: Support
 - name: Community
 security:
@@ -5365,6 +5366,67 @@ paths:
               schema: {$ref: '#/components/schemas/ModelLoadingStatus'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/expression-reviews:
+    get:
+      operationId: listExpressionReviews
+      tags: [ExpressionReview]
+      summary: SERVICE_OPS 표현 검토 대기 목록 (FN-ADM-24, #728)
+      description: >-
+        learning `/internal/admin/expression-reviews`(4.1.5)로 ADMIN + X-User-Id + 빈 학생 범위로 넘긴다. 허용한 칸만 돌려주고(학생 이름·ID 없음)
+        보여 준 항목 ID를 EXPRESSION_REVIEW_VIEW로 감사한다. 감사를 남기지 못하면 503이고 글을 돌려주지 않는다.
+      parameters:
+      - {name: labeled, in: query, schema: {type: boolean, default: false}}
+      - {name: source, in: query, schema: {$ref: '#/components/schemas/ExpressionReviewSource'}}
+      - {name: page, in: query, schema: {type: integer, minimum: 0, maximum: 1000, default: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 라벨 없는 것은 오래된 순, 라벨 있는 것은 최근 라벨 순(learning 4.1.5)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExpressionReviewPage'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503':
+          description: LEARNING_INVALID_RESPONSE 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /admin/expression-reviews/{reviewId}/label:
+    put:
+      operationId: labelExpressionReview
+      tags: [ExpressionReview]
+      summary: SERVICE_OPS 표현 검토 라벨 (FN-ADM-24, #728)
+      description: >-
+        값 검사 뒤 EXPRESSION_REVIEW_LABEL 감사(detail label)를 남기고 learning에 한 번 전달한다(4.1.5). 감사를 남기지 못하면 전달하지 않고 503.
+        같은 값 다시 보내기도 200. 전달 결과를 모르면 503 LEARNING_UNAVAILABLE과 확인 번호(다시 보내기 전에 목록에서 확인).
+      parameters:
+      - {name: reviewId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExpressionReviewLabelRequest'}
+      responses:
+        '200':
+          description: 갱신된 항목
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExpressionReview'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: EXPRESSION_REVIEW_NOT_FOUND
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: LEARNING_UNAVAILABLE(전달 결과 모름) 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE(전달 안 함)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
   /admin/model-versions:
     get:
       operationId: listModelVersions
@@ -5470,6 +5532,47 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '503': {$ref: '#/components/responses/ModelStateUnavailable'}
+  /internal/model-versions:
+    post:
+      operationId: registerModelVersionFromPipeline
+      tags: [ModelRegistry]
+      summary: 재학습 작업(ops) 자동 등록
+      servers: [{url: /}]
+      security: [{InternalToken: []}]
+      description: >-
+        ops 토큰만 허용(api-spec 4장·5.2.3, #728). tox- MODEL만 받고 아니면 422. core가 사전 검사(5.2.1, 20초)를 먼저 부르며
+        FAIL이면 422와 확장 필드 preflight, 연결 실패 503. PASS면 관리자 등록과 같은 규칙으로 REGISTERED 저장하고 활성화하지 않는다.
+        감사(MODEL_PREFLIGHT·MODEL_REGISTER) actor는 재학습 계정(app.model-registry.pipeline-actor-id). 같은 kind·name·version은 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PipelineRegisterModelVersion'}
+      responses:
+        '201':
+          description: REGISTERED로 저장된 버전. 활성화하지 않음
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelVersion'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/ModelConflict'}
+        '422':
+          description: MODEL_APPROVAL_REJECTED. tox- MODEL·recommendation·등록 규칙 위반, 또는 사전 검사 FAIL(이때만 preflight 포함)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '502':
+          description: MODEL_PREFLIGHT_INVALID_RESPONSE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: MODEL_PREFLIGHT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
 
   /consent-documents:
     get:
@@ -11949,6 +12052,34 @@ components:
           default: []
           maxItems: 100
           items: {type: string, minLength: 1, maxLength: 4000, pattern: '.*\S.*'}
+        recommendation:
+          $ref: '#/components/schemas/ModelRecommendation'
+    ModelRecommendation:
+      type: object
+      additionalProperties: false
+      description: >-
+        재학습 추천 태그(api-spec 5.2.3, #728). 활성 모델과 같은 평가 세트로 비교한 참고 정보이며 활성화·복귀 검사에 쓰지 않는다.
+        모든 종류·출처에서 선택, 재학습 자동 등록에서는 필수
+      required: [tag, comparedTo, reasons]
+      properties:
+        tag: {type: string, enum: [RECOMMENDED, NOT_RECOMMENDED]}
+        comparedTo:
+          type: string
+          minLength: 1
+          maxLength: 201
+          pattern: '.*\S.*'
+          description: 비교한 활성 버전 name:version, 처음이면 NONE
+        reasons:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: {type: string, minLength: 1, maxLength: 500, pattern: '.*\S.*'}
+        metrics:
+          type: object
+          default: {}
+          maxProperties: 50
+          propertyNames: {minLength: 1, maxLength: 100, pattern: '.*\S.*'}
+          additionalProperties: {type: number}
     RegisterModelVersion:
       type: object
       additionalProperties: false
@@ -11990,6 +12121,36 @@ components:
           $ref: '#/components/schemas/EvaluationEvidence'
         registration:
           $ref: '#/components/schemas/ModelRegistrationMetadata'
+    PipelineRegisterModelVersion:
+      type: object
+      additionalProperties: false
+      description: 관리자 등록 본문과 같되 registration(PIPELINE)·artifactUri·evaluation.recommendation 필수. tox- MODEL만 받는다(아니면 422)
+      required: [kind, name, version, artifactUri, evaluation, registration]
+      properties:
+        kind: {$ref: '#/components/schemas/ModelKind'}
+        name: {type: string, minLength: 1, maxLength: 100}
+        version: {type: string, minLength: 1, maxLength: 100}
+        refId:
+          type: ['null']
+        artifactUri: {type: string, minLength: 1, maxLength: 2048, pattern: '.*\S.*'}
+        evaluation:
+          allOf:
+          - $ref: '#/components/schemas/EvaluationEvidence'
+          - required: [recommendation]
+        registration: {$ref: '#/components/schemas/PipelineRegistrationMetadata'}
+    PipelineRegistrationMetadata:
+      type: object
+      additionalProperties: false
+      description: 재학습 작업이 신고한 학습 데이터 해시와 산출물 파일 목록. 서버의 데이터·품질 검증을 의미하지 않음
+      required: [source, datasetSha256, artifactFiles]
+      properties:
+        source: {type: string, const: PIPELINE}
+        datasetSha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        artifactFiles:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ModelRegistrationArtifact'}
     ModelRegistrationMetadata:
       type: object
       additionalProperties: false
@@ -12034,6 +12195,7 @@ components:
             - evaluation.humanReview
             - evaluation.evaluatedScopes
             - evaluation.limitations
+            - evaluation.recommendation
         artifactFiles:
           type: array
           default: []
@@ -12212,6 +12374,42 @@ components:
           - 'null'
           format: date-time
         createdAt: *id004
+    ExpressionReviewSource: {type: string, enum: [GRAY_ZONE, COMMUNITY_REPORT]}
+    ExpressionReviewLabel: {type: string, enum: [OFFENSIVE, CLEAN, SKIP]}
+    ExpressionReview:
+      type: object
+      additionalProperties: false
+      description: 학생 이름·ID·답변 ID 없음. text는 그 답변의 학생이 쓴 칸을 줄바꿈으로 이은 글(learning 4.1.5)
+      required: [id, source, text, modelVersion, label, labeledAt, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        source: {$ref: '#/components/schemas/ExpressionReviewSource'}
+        text: {type: string}
+        modelVersion: {type: ['string', 'null']}
+        label:
+          oneOf:
+          - {$ref: '#/components/schemas/ExpressionReviewLabel'}
+          - {type: 'null'}
+        labeledAt: {type: ['string', 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+    ExpressionReviewPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ExpressionReview'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, minimum: 0}
+    ExpressionReviewLabelRequest:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label: {$ref: '#/components/schemas/ExpressionReviewLabel'}
     ModelVersionPage:
       type: object
       additionalProperties: false
@@ -12635,6 +12833,9 @@ components:
           minimum: 0
           maximum: 4
           description: 학생 PIN 불일치 시 남은 실패 허용 횟수. 잠금 응답은 0.
+        preflight:
+          $ref: '#/components/schemas/ModelPreflightResult'
+          description: 재학습 자동 등록의 사전 검사 FAIL 결과(422, #728)
         type:
           type: string
           format: uri-reference

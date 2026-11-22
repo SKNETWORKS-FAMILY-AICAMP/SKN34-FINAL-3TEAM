@@ -55,8 +55,8 @@ test('낮은 화면에서 관리자 프로필을 열고 닫거나 마지막 메�
   const scroller = page.locator('.ad-nav-scroll')
   const nav = scroller.getByRole('navigation', { name: '관리자 메뉴' })
   const last = nav.getByRole('link', { name: 'AI 사용량', exact: true })
-  await expect(nav.getByRole('link')).toHaveCount(8)
-  await expect(summary).toContainText('이용 가능한 메뉴 8개')
+  await expect(nav.getByRole('link')).toHaveCount(9)
+  await expect(summary).toContainText('이용 가능한 메뉴 9개')
   await expect(summary).toBeInViewport({ ratio: 1 })
   await expect(permissions).toBeHidden()
   await summary.focus()
@@ -243,7 +243,7 @@ test('관리자 메뉴의 정보 영역은 화면 폭 안에 유지된다 @respo
     ['운영 현황', 'home'], ['감사 이력', 'audit'], ['미션 관리', 'missions'], ['미션 초안', 'mission-drafts'],
     ['게시 관리', 'themes'], ['주간 테마 검수', 'theme-drafts'], ['꾸미기 아이템', 'looks'],
     ['작업 재처리', 'jobs'], ['작업 대기열', 'queues'], ['오류 신고', 'errors'], ['문의·공지', 'support'],
-    ['모델·프롬프트', 'models'], ['AI 사용량', 'usage'], ['결제·환불', 'payments'],
+    ['모델·프롬프트', 'models'], ['표현 검토', 'expressions'], ['AI 사용량', 'usage'], ['결제·환불', 'payments'],
   ]) {
     await navigate(page, label)
     await expect(page.locator('#admin-main h1')).toBeVisible()

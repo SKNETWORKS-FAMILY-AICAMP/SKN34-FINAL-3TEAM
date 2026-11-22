@@ -10,6 +10,8 @@ object InternalCallerPolicy {
     val allowed: Map<String, List<String>> = mapOf(
         "ai" to listOf("/internal/model-versions/active"),
         "scoring" to listOf("/internal/model-versions/active"),
+        // 재학습 작업(#725): 이어 학습할 활성 모델 조회·자동 등록 (#728, api-spec 5.2.3)
+        "ops" to listOf("/internal/model-versions", "/internal/model-versions/active"),
         "learning" to listOf(
             "/internal/payment-usage/**",
             "/internal/deletion-requests/*/completions",

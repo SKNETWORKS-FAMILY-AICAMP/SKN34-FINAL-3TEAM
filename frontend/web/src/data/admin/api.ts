@@ -20,6 +20,8 @@ import type {
   EvaluationEvidence,
 } from '../../domain/admin/operations.ts'
 import type { AchievementStandard, MissionDraft, MissionDraftRequest } from '../../domain/admin/missionStandards.ts'
+import { expressionReviewQuery } from '../../domain/admin/expressionReview.ts'
+import type { ExpressionReview, ExpressionReviewFilter, ExpressionReviewLabel } from '../../domain/admin/expressionReview.ts'
 const operationFilters = (values: Record<string, string | undefined>) => new URLSearchParams(
   Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== ''),
 )
@@ -121,6 +123,11 @@ export const adminApi = {
   usage: (period: Period, callType: string, signal?: AbortSignal) =>
     apiFetch<Usage>(`/admin/ai-usage?${new URLSearchParams({ ...period, callType })}`, { signal }),
   errors: (signal?: AbortSignal, status='', page=0) => apiFetch<Page<ErrorReport>>(`/admin/error-reports?${operationFilters({ status, page:String(page), size:'20' })}`, { signal }),
+  /** 표현 검토 목록 (#728): 열람은 core가 감사 기록 */
+  expressionReviews: (filter: ExpressionReviewFilter, signal?: AbortSignal) =>
+    apiFetch<Page<ExpressionReview>>(`/admin/expression-reviews?${expressionReviewQuery(filter)}`, { signal }),
+  labelExpressionReview: (id: string, label: ExpressionReviewLabel) =>
+    apiFetch<ExpressionReview>(`/admin/expression-reviews/${p(id)}/label`, json({ label }, 'PUT')),
   error: (id: string, signal?: AbortSignal) =>
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, { signal }),
   reviewError: (id: string, status: ErrorReport['status'], reviewReason: string, reviewResult?: CommunityReviewResult) =>

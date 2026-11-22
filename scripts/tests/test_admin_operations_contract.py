@@ -229,6 +229,11 @@ class AdminOperationsContracts(unittest.TestCase):
                 # #367 adds optional evidence limitations; retain the original evidence fingerprint.
                 if section=='schemas' and name=='EvaluationEvidence':
                     self.assertEqual(reviewed['properties'].pop('limitations')['default'],[])
+                    # #728 adds the optional recommendation tag only.
+                    self.assertEqual(reviewed['properties'].pop('recommendation'),{'$ref':'#/components/schemas/ModelRecommendation'})
+                # #728 adds the pipeline preflight FAIL extension field only.
+                if section=='schemas' and name=='Problem':
+                    self.assertEqual(reviewed['properties'].pop('preflight')['$ref'],'#/components/schemas/ModelPreflightResult')
                 if section=='schemas' and name=='RegisterModelVersion':
                     self.assertEqual(reviewed.pop('allOf')[0]['then']['required'],['artifactUri'])
                 # #423 documents the existing response bodies (Kotlin DTO / report EvidencePage) instead of bare objects.
