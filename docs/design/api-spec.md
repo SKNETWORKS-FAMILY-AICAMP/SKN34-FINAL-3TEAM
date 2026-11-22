@@ -1124,7 +1124,7 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 
 - 운영자 라벨은 core가 감사 기록(`EXPRESSION_REVIEW_LABEL`)을 남긴 뒤 learning에 전달한다. 목록 열람도 `EXPRESSION_REVIEW_VIEW`(보여 준 항목 ID 목록)로 남긴다(P07)
 - 신고 공유물 행 추가·자동 라벨은 기존 `PUT /internal/community/posts/{postId}/moderation` 처리 안에서 한다(새 경로 없음). `HIDDEN_REPORT` → 행 추가(라벨 없음), `REMOVED` → `OFFENSIVE`, `VISIBLE` → `CLEAN`. 이 호출은 `SYSTEM`이고 다시 보내질 수 있어(core `CommunityModerationService.apply`) 자동 라벨의 `labeled_by`는 null이며, 운영자가 이미 직접 라벨한 행(`labeled_by` 있음)은 바꾸지 않는다
-- 내보내기 응답은 저장하지 않고 재학습 작업의 임시 디렉터리에서만 쓴다(architecture 4.5 재학습 작업)
+- 내보내기 응답은 저장하지 않고 재학습 작업의 임시 디렉터리에서만 쓴다(architecture 4.4 재학습 작업)
 - 구현(#727) 세부: `since`는 그 시각 초과(지난 실행의 `labelsUntil`을 다시 세지 않게), `until`은 필수이고 지금 이전이며 그 시각 이하, 둘 다 오프셋을 포함한 ISO-8601이고 틀리면 400. 신고 처리 자동 라벨은 라벨이 실제로 바뀔 때만 `labeled_at`을 고친다(같은 반영이 다시 와도 새 라벨로 세지 않게). 계약은 `contracts/openapi/learning-service.yaml`(1.5.0)
 
 ### 4.2 ai-service (호출: learning, core, report)

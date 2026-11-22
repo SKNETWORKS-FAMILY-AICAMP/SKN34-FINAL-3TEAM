@@ -2669,13 +2669,13 @@ paths:
   /expression-reviews/label-count:
     get:
       operationId: countExpressionReviewLabels
-      summary: 재학습 새 라벨 수 (ops, #727)
+      summary: '재학습 새 라벨 수 (ops, #727)'
       description: >-
         표현 분류 재학습 작업(ops 토큰) 전용, core 프록시 없음. since(생략하면 처음부터)보다 뒤에 라벨된 OFFENSIVE·CLEAN 행 수와
         그중 가장 늦은 라벨 시각(없으면 null).
       parameters:
         - $ref: '#/components/parameters/SystemRole'
-        - {name: since, in: query, description: ISO-8601 시각(오프셋 포함), 이 시각 초과, schema: {type: string, format: date-time}}
+        - {name: since, in: query, description: 'ISO-8601 시각(오프셋 포함), 이 시각 초과', schema: {type: string, format: date-time}}
       responses:
         '200':
           description: 결과
@@ -2688,15 +2688,15 @@ paths:
   /expression-reviews/export:
     get:
       operationId: exportExpressionReviews
-      summary: 재학습 학습 데이터 내보내기 (ops, #727)
+      summary: '재학습 학습 데이터 내보내기 (ops, #727)'
       description: >-
         표현 분류 재학습 작업(ops 토큰) 전용. since 초과·until 이하에 라벨된 OFFENSIVE·CLEAN 행을 labeled_at 순으로 글·라벨만.
         학생·답변 ID와 시각은 없다. text는 학생이 쓴 칸을 줄바꿈으로 이은 뒤 앞 1,500자(코드포인트)로 자른 글.
         until은 필수이고 지금 이전이어야 해서 같은 범위를 다시 받으면 같은 결과(그사이 삭제된 학생 행만 빠짐).
       parameters:
         - $ref: '#/components/parameters/SystemRole'
-        - {name: since, in: query, description: ISO-8601 시각(오프셋 포함), 이 시각 초과, schema: {type: string, format: date-time}}
-        - {name: until, in: query, required: true, description: ISO-8601 시각(오프셋 포함), 이 시각 이하, 지금 이전, schema: {type: string, format: date-time}}
+        - {name: since, in: query, description: 'ISO-8601 시각(오프셋 포함), 이 시각 초과', schema: {type: string, format: date-time}}
+        - {name: until, in: query, required: true, description: 'ISO-8601 시각(오프셋 포함), 이 시각 이하, 지금 이전', schema: {type: string, format: date-time}}
       responses:
         '200':
           description: 결과
