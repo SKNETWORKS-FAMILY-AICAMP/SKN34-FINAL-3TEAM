@@ -547,7 +547,7 @@ AWS에서 남은 확인(#601 재가동 뒤 B 계정)
 | 알림 | `notification` | 학부모 알림(학생 알림 유형 없음) | 리포트 완료·문의 답변·신고 처리·결제/구독 변경의 부수 효과 | 자동(시험 구독 SQL은 알림 없음) |
 | 신고·정정 | `error_report`·`correction`, learning `judgment_correction` | 학생·학부모 처리 결과, 관리자 신고 | 공개 API, 처리는 관리자 API | 9단계 |
 | 문의·공지 | `inquiry`·`notice` | 학생·학부모 도움, 관리자 문의·공지 | 공개 API, 관리자 API | 9단계 |
-| 표현 검토 | learning `expression_review` | 관리자 화면 없음(#728 예정, 지금은 learning 내부 API만) | 경계 구간 답변(`GRAY_ZONE`), 공유물 신고 숨김(`COMMUNITY_REPORT`)의 부수 효과(#727 머지됨) | 9단계 커뮤니티 신고로 생김 |
+| 표현 검토 | learning `expression_review` | 관리자 표현 검토(#728) | 경계 구간 답변(`GRAY_ZONE`), 공유물 신고 숨김(`COMMUNITY_REPORT`)의 부수 효과(#727 머지됨) | 9단계 커뮤니티 신고로 생김 |
 | LLM 사용량 | `llm_usage` | 관리자 AI 사용량 | ai·scoring 사용량 이벤트 소비 | 실제 호출의 부수 효과(kind 대역은 stub) |
 | 작업·메시지 | `outbox_event`·`processed_event`·`event_log`·`audit_log` | 관리자 큐·감사 | 부수 효과 | 자동 |
 | 만들지 않음 | `knowledge_*`·`mission_draft`·`theme_draft`·`model_version`·`model_loading_report`·삭제·탈퇴·학년 올림 | — | — | 시연 범위 밖이거나 기존 데이터 사용 |
