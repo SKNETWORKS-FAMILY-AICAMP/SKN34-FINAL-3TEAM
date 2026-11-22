@@ -11,10 +11,22 @@ import com.sagomungchi.core._common.web.invalidOperations
 import com.sagomungchi.core._common.web.operationPage
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import com.sagomungchi.core.support.service.SupportService
+import com.sagomungchi.core.payment.service.RefundService
 import java.util.UUID
 @Service
 class OperationsService(private val reports: ReportOperationsService, private val notifications: NotificationOperationsService,
-    private val conversations: ConversationOperationsService,private val repository: OperationsRepository,private val learning: AdminLearningService,private val reportRetries: ReportAdminRetryService) {
+    private val conversations: ConversationOperationsService,private val repository: OperationsRepository,private val learning: AdminLearningService,private val reportRetries: ReportAdminRetryService,
+    private val support: SupportService, private val refunds: RefundService) {
+    /** 미처리 문의·신고·환불은 접수일 전체, 실패 작업은 작업 목록과 같은 생성 기간으로 조회한다. */
+    fun workload(period: OperationPeriod, permissions: Set<String>): Map<String, Long> = buildMap {
+        if ("SERVICE_OPS" in permissions) {
+            put("pendingInquiries", support.pendingInquiryCount())
+            put("receivedReports", support.receivedReportCount())
+            put("failedJobs", OperationJobType.entries.sumOf { count(it, period, "FAILED").toLong() })
+        }
+        if ("PAYMENT_VIEW" in permissions) put("pendingRefunds", refunds.pendingCount())
+    }
     fun overview(period: OperationPeriod): Map<String,Any> {
         val stats = learning.stats(period)
         return mapOf("period" to period,"learning" to stats,"inclusionRule" to "core: KST 생성 기간 안의 작업, 현재 상태; learning: P08 답변 기간",

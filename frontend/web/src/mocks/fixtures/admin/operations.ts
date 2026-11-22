@@ -197,6 +197,27 @@ export const modelVersions: ModelVersion[] = [
     approvedBy: 'mock-reviewer',
     createdAt: stamp(),
   },
+  // #728 재학습 작업이 자동 등록한 표현 분류 버전(승인 전). 추천 태그는 참고용
+  {
+    id: 'tox-retrain-1',
+    kind: 'MODEL',
+    name: 'tox-kcelectra',
+    version: 'mock-retrain-1',
+    status: 'REGISTERED',
+    artifactUri: 's3://mock-models/models/tox-kcelectra/mock-retrain-1/',
+    evalResult: {
+      evidence: { ...demoEvaluation(false).evidence, evaluatedScopes: ['answer-filter'],
+        recommendation: { tag: 'RECOMMENDED', comparedTo: 'NONE', reasons: ['개발용 예시 · 처음 등록이라 비교한 활성 버전 없음'], metrics: { recall: 0.96, precision: 0.99 } } },
+      approval: null, activeScopes: [], revision: 0,
+    },
+    createdAt: stamp(),
+  },
+]
+/** #728 표현 검토 대기 (FN-ADM-24). 개발용 합성 글이며 학생 이름·ID 없음 */
+export const expressionReviews: import('../../../domain/admin/expressionReview.ts').ExpressionReview[] = [
+  { id: 'review-1', source: 'GRAY_ZONE', text: '개발용 합성 답변 · 친구가 너무 답답하게 굴어서 짜증이 났다', modelVersion: 'tox-kcelectra:mock-1', label: null, labeledAt: null, createdAt: '2026-11-20T01:00:00Z' },
+  { id: 'review-2', source: 'COMMUNITY_REPORT', text: '개발용 합성 공유물\n두 번째 줄', modelVersion: null, label: null, labeledAt: null, createdAt: '2026-11-20T02:00:00Z' },
+  { id: 'review-3', source: 'GRAY_ZONE', text: '개발용 합성 답변 · 이미 라벨을 붙인 글', modelVersion: 'tox-kcelectra:mock-1', label: 'CLEAN', labeledAt: '2026-11-21T00:00:00Z', createdAt: '2026-11-19T00:00:00Z' },
 ]
 export const reportedAttemptIds = new Map([['error-1', 'demo-seoyun-math']])
 export const errorReports: ErrorReport[] = [

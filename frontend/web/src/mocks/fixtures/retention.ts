@@ -2,6 +2,7 @@ import type { ErrorReport } from '../../domain/admin/operations.ts'
 import type { ThemeGrade } from '../../domain/admin/retention.ts'
 import type { Child, Mission } from '../../domain/classroom.ts'
 import type { DialogueLine } from '../../domain/themeScene.ts'
+import { fixtureStore } from './student.ts'
 import {
   baseLookCatalog,
   companionKey,
@@ -62,6 +63,11 @@ export interface MockLookItem {
 export interface MockDecorPurchase { itemKey: string; ownedCount: number; balance: number }
 export interface MockWeeklyTheme {
   themeId: string
+  missionSnapshots?: Mission[]
+  version?: number
+  publishedVersion?: number
+  reviewVersion?: number | null
+  publishedContent?: Pick<MockWeeklyTheme, 'title' | 'intro' | 'days'>
   grade: ThemeGrade
   weekStart: string
   title: string
@@ -320,16 +326,27 @@ export function isUnlocked(studentId: string, itemKey: string) {
 }
 
 // ---------- 주간 테마 ----------
-/** 게시된 관리자 테마가 있으면 그것을, 없으면 학생 미션으로 다섯 유형 하나씩 고른 가상 테마를 쓴다. */
+/** 실제 편성 이력이 있으면 이번 주 또는 이전 주의 최근 게시본을 사용한다. */
 export function themeMissions(missions: Mission[], grade: number) {
-  const published = retentionState.themes.find((t) => t.status === 'PUBLISHED' && t.weekStart === weekStart() && t.grade === `G${Math.min(grade, 6)}`)
+  const week = weekStart()
+  const eligible = retentionState.themes.filter(t => t.weekStart <= week && t.grade === `G${Math.min(grade, 6)}`)
+  const published = eligible.filter(t => t.status === 'PUBLISHED').sort((a,b) => b.weekStart.localeCompare(a.weekStart))[0]
   if (published) {
+    const content = published.publishedContent ?? published
     const byId = new Map(missions.map((m) => [m.id, m]))
-    const days = published.days.flatMap((d) => (byId.get(d.missionId) ? [{ day: d.day, mission: byId.get(d.missionId)! }] : []))
+    const days = content.days.flatMap((d) => {
+      const live = byId.get(d.missionId)
+      const snapshot = published.missionSnapshots?.find(m => m.id === d.missionId)
+      const mission = snapshot ? { ...snapshot, grade, status: live?.status, attemptId: live?.attemptId } : live
+      return mission ? [{ day: d.day, mission }] : []
+    })
     // 테마 초안 채택(#441 목업)이나 관리자가 넣은 그림·영상·움직임도 학생 응답에 그대로(실서버처럼, #440)
     const scene = { introImageUrl: published.introImageUrl ?? null, introVideoUrl: published.introVideoUrl ?? null, introMotion: published.introMotion ?? null,
       outroImageUrl: published.outroImageUrl ?? null, outroVideoUrl: published.outroVideoUrl ?? null, outroMotion: published.outroMotion ?? null }
-    if (days.length === 5) return { themeId: published.themeId, title: published.title, intro: published.intro, reused: false, days, scene }
+    if (days.length === 5) return { themeId: published.themeId, title: content.title, intro: content.intro, reused: published.weekStart !== week, days, scene }
+  }
+  if (eligible.some(t => t.publishedVersion != null || t.status === 'UNPUBLISHED')) {
+    return { themeId: null, title: '', intro: '', reused: false, days: [], scene: null }
   }
   const picked = THINKING_ORDER.map((type) => missions.find((m) => m.thinkingType === type)).filter((m): m is Mission => !!m)
   return {
@@ -350,7 +367,9 @@ export function themeSceneFor(missionId: string, missions: Mission[], grade: num
   const i = theme.days.findIndex((d) => d.mission.id === missionId)
   if (i < 0) return null
   const published = retentionState.themes.find((t) => t.themeId === theme.themeId)
-  const dialogue = published ? (published.days.find((d) => d.missionId === missionId)?.dialogue ?? null) : MOCK_STORY.dialogues[i]
+  // 학생에게는 게시본의 대화(게시 중 수정하면 재게시 전까지 보관한 publishedContent, #882)
+  const content = published ? (published.publishedContent ?? published) : null
+  const dialogue = content ? (content.days.find((d) => d.missionId === missionId)?.dialogue ?? null) : MOCK_STORY.dialogues[i]
   return { dialogue, hintSpots: null, videoUrl: null }
 }
 /**
@@ -435,7 +454,9 @@ export function weeklyThemeFor(studentId: string, missions: Mission[], grade: nu
   const theme = themeMissions(missions, grade)
   const week = `${studentId}:${weekStart()}`
   const days = theme.days.map(({ day, mission }, i) => {
-    const attemptStatus = mission.status ?? 'NOT_STARTED'
+    const past = mission.status ? undefined : fixtureStore.snapshot().attempts.filter(a => a.studentId === studentId && a.mission.id === mission.id)
+    const latest = past?.find(a => a.status === 'IN_PROGRESS') ?? past?.at(-1)
+    const attemptStatus = mission.status ?? latest?.status ?? 'NOT_STARTED'
     const done = attemptStatus === 'COMPLETED'
     const completion = retentionState.completions[completionKey(studentId, mission.id)]
     return {
@@ -460,7 +481,7 @@ export function weeklyThemeFor(studentId: string, missions: Mission[], grade: nu
   const ended = !!picked && (picked.correct || (!!fridayRedo && fridayRedo.weekday >= 5 && fridayRedo.at > picked.at))
   const hasStory = days.length === 5
   // 관리자가 게시한 테마가 아니면(가상 테마) 목업 장면 그림을 붙인다
-  const mockScene = hasStory && theme.themeId.startsWith('mock-theme-')
+  const mockScene = hasStory && theme.themeId?.startsWith('mock-theme-')
   return {
     themeId: theme.themeId,
     weekStart: weekStart(),

@@ -76,7 +76,7 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
                     throw BusinessException(HttpStatus.FORBIDDEN, "CHILD_NOT_LINKED", "연결 또는 법정대리인 동의를 확인해 주세요.")
             }
             if (path.startsWith("/admin/")) {
-                val adminRead = request.method == "GET" && path in setOf("/admin/overview", "/admin/audit-logs")
+                val adminRead = request.method == "GET" && path in setOf("/admin/overview", "/admin/overview/workload", "/admin/audit-logs")
                 if (adminRead) {
                     if (identity.session.role != "ADMIN") throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "관리자 세션이 필요합니다.")
                 } else auth.requirePermission(identity, permission(path,request.method))

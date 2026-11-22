@@ -1,0 +1,103 @@
+{
+  "_comment": "#808 더미 가족 목록(infra 9.7.6.2). 비밀값 없음. 비밀번호·PIN은 prepare_accounts.py --families가 저장소 밖 파일에 둔다. 앞 6가족은 kind 리허설용",
+  "weekStarts": ["2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30"],
+  "cohorts": {"steady": [5, 5, 5, 5], "normal": [5, 4, 3, 4], "irregular": [5, 0, 4, 2], "late": [0, 0, 5, 5]},
+  "families": [
+    {"loginId": "dm854p01", "name": "가상가족01", "children": [
+      {"nickname": "도토리", "grade": 3, "cohort": "steady", "premium": true, "public": true},
+      {"nickname": "봄비", "grade": 5, "cohort": "normal", "premium": true, "public": true}
+    ]},
+    {"loginId": "dm854p02", "name": "가상가족02", "children": [
+      {"nickname": "다람쥐", "grade": 4, "cohort": "steady", "premium": true, "public": true}
+    ]},
+    {"loginId": "dm854p03", "name": "가상가족03", "children": [
+      {"nickname": "아기별", "grade": 5, "cohort": "irregular", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p04", "name": "가상가족04", "children": [
+      {"nickname": "보리", "grade": 6, "cohort": "late", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p05", "name": "가상가족05", "children": [
+      {"nickname": "구름빵", "grade": 3, "cohort": "normal", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p06", "name": "가상가족06", "children": [
+      {"nickname": "산들바람", "grade": 4, "cohort": "irregular", "premium": false, "public": false},
+      {"nickname": "이슬", "grade": 6, "cohort": "steady", "premium": true, "public": true}
+    ]},
+    {"loginId": "dm854p07", "name": "가상가족07", "children": [
+      {"nickname": "파랑새", "grade": 3, "cohort": "irregular", "premium": false, "public": false},
+      {"nickname": "호두", "grade": 4, "cohort": "late", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p08", "name": "가상가족08", "children": [
+      {"nickname": "단풍잎", "grade": 5, "cohort": "steady", "premium": true, "public": true},
+      {"nickname": "펭귄", "grade": 6, "cohort": "normal", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p09", "name": "가상가족09", "children": [
+      {"nickname": "꼬마곰", "grade": 3, "cohort": "late", "premium": false, "public": false},
+      {"nickname": "가을하늘", "grade": 5, "cohort": "normal", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p10", "name": "가상가족10", "children": [
+      {"nickname": "무지개", "grade": 4, "cohort": "normal", "premium": true, "public": false},
+      {"nickname": "콩나물", "grade": 6, "cohort": "irregular", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p11", "name": "가상가족11", "children": [
+      {"nickname": "솔방울", "grade": 3, "cohort": "steady", "premium": true, "public": true}
+    ]},
+    {"loginId": "dm854p12", "name": "가상가족12", "children": [
+      {"nickname": "민들레", "grade": 3, "cohort": "steady", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p13", "name": "가상가족13", "children": [
+      {"nickname": "해바라기", "grade": 3, "cohort": "normal", "premium": true, "public": true}
+    ]},
+    {"loginId": "dm854p14", "name": "가상가족14", "children": [
+      {"nickname": "별사탕", "grade": 3, "cohort": "normal", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p15", "name": "가상가족15", "children": [
+      {"nickname": "달맞이", "grade": 3, "cohort": "irregular", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p16", "name": "가상가족16", "children": [
+      {"nickname": "몽돌", "grade": 4, "cohort": "steady", "premium": true, "public": true}
+    ]},
+    {"loginId": "dm854p17", "name": "가상가족17", "children": [
+      {"nickname": "새싹", "grade": 4, "cohort": "steady", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p18", "name": "가상가족18", "children": [
+      {"nickname": "반딧불", "grade": 4, "cohort": "normal", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p19", "name": "가상가족19", "children": [
+      {"nickname": "은하수", "grade": 4, "cohort": "normal", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p20", "name": "가상가족20", "children": [
+      {"nickname": "조약돌", "grade": 4, "cohort": "irregular", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p21", "name": "가상가족21", "children": [
+      {"nickname": "밤톨", "grade": 5, "cohort": "steady", "premium": true, "public": true}
+    ]},
+    {"loginId": "dm854p22", "name": "가상가족22", "children": [
+      {"nickname": "눈송이", "grade": 5, "cohort": "steady", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p23", "name": "가상가족23", "children": [
+      {"nickname": "여름밤", "grade": 5, "cohort": "normal", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p24", "name": "가상가족24", "children": [
+      {"nickname": "노을", "grade": 5, "cohort": "irregular", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p25", "name": "가상가족25", "children": [
+      {"nickname": "햇살", "grade": 5, "cohort": "late", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p26", "name": "가상가족26", "children": [
+      {"nickname": "풀잎", "grade": 6, "cohort": "steady", "premium": true, "public": true}
+    ]},
+    {"loginId": "dm854p27", "name": "가상가족27", "children": [
+      {"nickname": "꿀벌", "grade": 6, "cohort": "steady", "premium": false, "public": true}
+    ]},
+    {"loginId": "dm854p28", "name": "가상가족28", "children": [
+      {"nickname": "고래", "grade": 6, "cohort": "normal", "premium": true, "public": false}
+    ]},
+    {"loginId": "dm854p29", "name": "가상가족29", "children": [
+      {"nickname": "수달", "grade": 6, "cohort": "normal", "premium": false, "public": false}
+    ]},
+    {"loginId": "dm854p30", "name": "가상가족30", "children": [
+      {"nickname": "꽃게", "grade": 6, "cohort": "irregular", "premium": false, "public": false}
+    ]}
+  ]
+}

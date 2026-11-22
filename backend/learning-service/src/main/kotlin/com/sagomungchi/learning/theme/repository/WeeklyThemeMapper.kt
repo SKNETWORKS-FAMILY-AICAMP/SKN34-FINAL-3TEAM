@@ -74,6 +74,9 @@ data class ThemeDayRow(
     val videoUri: String? = null,
     val sceneUri: String? = null,
     val clueFeature: String? = null,
+    val missionVersionId: UUID? = null,
+    val rubricVersionId: UUID? = null,
+    val sceneMotion: Map<String,Any?>? = null,
 ) {
     fun toMission(): ThemeDayMission = ThemeDayMission(
         com.sagomungchi.learning.theme.domain.ThemeDay.ofNumber(dayOfWeek), missionId, clue, rulesOut, dialogue, hintSpots, videoUri,

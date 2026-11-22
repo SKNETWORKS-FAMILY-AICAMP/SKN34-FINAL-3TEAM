@@ -56,6 +56,51 @@ const chipButtons = (page: Page) => chips(page).getByRole('button')
 const missedCard = (page: Page) => page.getByRole('button', { name: /^아직 안 푼 문제/ })
 const NO_PAYMENT = /결제|구매|이용권|프리미엄/
 
+test('#882 일반 목록에서 내려간 미션을 주간 홈·주말 다시 풀기·정답 고르기에서 게시본으로 연다', async ({ page }) => {
+  await student(page)
+  const ids = await page.evaluate(async () => {
+    const { fixtureStore } = await import('/src/mocks/fixtures/student.ts' as string)
+    const r = await import('/src/mocks/fixtures/retention.ts' as string)
+    const { applyMockWeek } = await import('/src/mocks/fixtures/themeState.ts' as string)
+    const { queryClient } = await import('/src/data/queryClient.ts' as string)
+    const child = fixtureStore.snapshot().session.child
+    const original = r.themeMissions((await fixtureStore.home(child)).missions, child.grade)
+    const snapshots = original.days.map(({day,mission}:{day:string;mission:{id:string}})=>({
+      ...mission, id:'pinned-'+day, title:day+' 게시본', question:day+' 게시했던 질문', status:undefined, attemptId:undefined,
+    }))
+    r.retentionState.themes=[{themeId:'weekly-882',grade:'G'+child.grade,weekStart:r.weekStart(),title:'게시 주간의 지도',intro:'도입',
+      status:'PUBLISHED',updatedAt:new Date().toISOString(),missionSnapshots:snapshots,
+      days:original.days.map(({day}:{day:string},i:number)=>({day,missionId:snapshots[i].id}))}]
+    await applyMockWeek(child,{weekday:0,days:'-----'},true)
+    await queryClient.invalidateQueries()
+    return snapshots.map((m:{id:string})=>m.id)
+  })
+  await expect(page.getByRole('heading',{name:'게시 주간의 지도'})).toBeVisible()
+  // 테마 문제는 오늘 장면을 거친다(#807). 게시본 요일에 대화가 없어 장면 없이 바로 답 쓰기
+  await page.getByRole('button',{name:/오늘 문제 풀기/}).click()
+  await page.waitForURL('**/student/attempts/**')
+  await expect(page.locator('.sw-question')).toContainText('MON 게시했던 질문')
+  const key = await page.evaluate(async (id:string)=>{
+    const { queryClient } = await import('/src/data/queryClient.ts' as string)
+    return queryClient.getQueryCache().findAll({queryKey:['mission']}).filter((q:{queryKey:unknown[]})=>q.queryKey.includes(id)).map((q:{queryKey:unknown[]})=>q.queryKey.at(-1))
+  },ids[0])
+  expect(key).toContain('THEME_DAY')
+  const first = page.url()
+  await page.goBack()
+  await page.getByRole('button',{name:/이어서 풀기/}).first().click()
+  await page.waitForURL('**/student/attempts/**')
+  await expect(page).toHaveURL(first)
+  await page.goBack()
+  await week(page,{weekday:5,days:'DDDDD',pick:'wrong'},true)
+  await page.getByRole('button',{name:/주말 되돌아보기/}).first().click()
+  await page.locator('.tw-review-days article').last().getByRole('button',{name:'다시 풀기'}).click()
+  await page.waitForURL('**/student/attempts/**')
+  await expect(page.locator('.sw-question')).toContainText('FRI 게시했던 질문')
+  await page.evaluate(()=>{ history.pushState({},'', '/student/theme/pick'); dispatchEvent(new PopStateEvent('popstate')) })
+  await page.getByRole('button',{name:/금요일 문제 (다시|이어서) 풀기/}).click()
+  await page.waitForURL('**/student/attempts/**')
+  await expect(page.locator('.sw-question')).toContainText('FRI 게시했던 질문')
+})
 
 test('오늘 문제(목요일): 큰 버튼은 오늘 문제, 지난 날은 모두 풀어 카드가 없고 오늘 칩만 누를 수 있다', async ({ page }) => {
   await student(page)

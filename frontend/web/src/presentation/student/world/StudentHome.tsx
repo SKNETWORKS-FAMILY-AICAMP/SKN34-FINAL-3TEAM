@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
-import { useStudentHome } from '../../../data/classroom/useClassroom.ts'
 import { useMyPoints, useWeeklyTheme } from '../../../data/retention/queries.ts'
-import type { Child, Mission } from '../../../domain/classroom.ts'
+import type { Child } from '../../../domain/classroom.ts'
 import { studentThinkingLabels } from '../../../domain/classroom.ts'
 import { DAY_LABELS, clueCount, dayAction, onTimeCount, pickStage, remainingCandidates, storyToShow, themeClosed, todayThemeDay } from '../../../domain/retention.ts'
 import type { AttemptContext, StoryKind, WeeklyTheme, WeeklyThemeDay } from '../../../domain/retention.ts'
@@ -9,6 +8,7 @@ import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { QueryStateNotice } from '../../common/QueryStateNotice.tsx'
 import { HomeScene } from './HomeScene.tsx'
 import { useLook } from './lookContext.ts'
+import { useThemeMissions } from './themeWeek.ts'
 import './home.css'
 
 /** 이 탭에서 이미 자동으로 띄운 이야기(열람 기록이 실패해도 같은 세션에서 다시 띄우지 않음) */
@@ -94,7 +94,7 @@ export function StudentHome({
 }: {
   child: Child
   /** 테마 문제 열기(새로 시작·이어 풀기 모두, 오늘 장면 #807) */
-  onStartTheme: (mission: Mission, context: AttemptContext) => void
+  onStartTheme: (missionId: string, context: AttemptContext) => void
   onJournal: () => void
   onRoom: () => void
   /** 더 풀어 보기(생각 유형별 미션 고르기). 무료 학생은 미션을 시작할 때 403 PREMIUM_REQUIRED를 받아 안내 창이 프리미엄 안내를 띄운다(#487, 결제 유도 문구 없음) */
@@ -106,26 +106,20 @@ export function StudentHome({
   /** 시작 이야기·이야기의 끝(#440). replace는 홈에 들어오자마자 자동으로 띄울 때(뒤로 가기로 홈에 갇히지 않게) */
   onStory: (kind: StoryKind, replace?: boolean) => void
   /** 그 주 시작 이야기를 아직 안 봤으면 문제를 열기 전에 시작 이야기부터(이야기를 닫으면 그 문제로 이어감) */
-  onIntroThen: (mission: Mission, context: AttemptContext) => void
+  onIntroThen: (missionId: string, context: AttemptContext) => void
   onReview: () => void
 }) {
   const { t, companion, worn } = useLook()
-  const homeQuery = useStudentHome(child)
-  const home = homeQuery.error ? undefined : homeQuery.data
-  const ready = home && home.state !== 'FAILED' && home.state !== 'PROCESSING'
   const themeQuery = useWeeklyTheme(child.id)
   const points = useMyPoints(child.id)
   const theme = themeQuery.error ? null : (themeQuery.data ?? null)
-  const byId = new Map((home?.missions ?? []).map((m) => [m.id, m]))
-  const open = (missionId: string, context: AttemptContext) => {
-    const m = byId.get(missionId)
-    if (!m) return
-    // 푸는 중이면 오늘 장면이 이어하기를 판단한다(답을 안 쓴 시도는 장면부터, 쓴 게 있으면 바로 답변 작성, #807)
-    if (m.status === 'IN_PROGRESS' && m.attemptId) onStartTheme(m, context)
-    // 그 주 처음 문제를 열 때 시작 이야기부터(user-flow: 그 주 처음 '오늘 문제 풀기'를 누를 때, 사용자 결정 2026-11-13·14)
-    else if (context === 'THEME_DAY' && theme?.intro && !theme.introSeen && !themeClosed(theme)) onIntroThen(m, context)
-    else onStartTheme(m, context)
-  }
+  // 푸는 중이면 오늘 장면이 이어하기를 판단한다(#807). 새로 열 때만: 그 주 처음 문제면 시작 이야기부터(사용자 결정 2026-11-13·14)
+  const { byId, open, home: homeQuery } = useThemeMissions(child, onStartTheme, (missionId, context) => {
+    if (context === 'THEME_DAY' && theme?.intro && !theme.introSeen && !themeClosed(theme)) onIntroThen(missionId, context)
+    else onStartTheme(missionId, context)
+  })
+  const home = homeQuery.error ? undefined : homeQuery.data
+  const ready = home && home.state !== 'FAILED' && home.state !== 'PROCESSING'
   const today = theme ? todayThemeDay(theme) : null
   // 공개됐는데 아직 시작하지 않은 지난 요일(오늘 문제는 큰 버튼). 모두 시작할 수 있다(#483 누적 공개, #487 42행)
   const missed = theme?.days.filter((d) => chipState(d, today) === 'missed') ?? []

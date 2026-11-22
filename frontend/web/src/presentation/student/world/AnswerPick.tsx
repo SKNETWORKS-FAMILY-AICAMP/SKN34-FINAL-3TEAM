@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAnswerPick, useWeeklyTheme } from '../../../data/retention/queries.ts'
-import type { Child, Mission } from '../../../domain/classroom.ts'
+import type { Child } from '../../../domain/classroom.ts'
 import { clueCount, pickStage, remainingCandidates, ruledOutOn, themeClosed } from '../../../domain/retention.ts'
 import type { AnswerPickResult, AttemptContext, WeeklyTheme } from '../../../domain/retention.ts'
 import { QueryStateNotice } from '../../common/QueryStateNotice.tsx'
@@ -50,7 +50,7 @@ export function AnswerPick({ child, onHome, onEnding, onJournal, onStartTheme }:
   onEnding: () => void
   onJournal: () => void
   /** 금요일 문제 열기(새로 시작·이어 풀기·다시 풀기 모두, 오늘 장면 #807) */
-  onStartTheme: (mission: Mission, context: AttemptContext) => void
+  onStartTheme: (missionId: string, context: AttemptContext) => void
 }) {
   const query = useWeeklyTheme(child.id)
   const pick = useAnswerPick(child.id)

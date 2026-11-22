@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useLearningActions, useStudentHome } from '../../../data/classroom/useClassroom.ts'
+import { useLearningActions, useMission } from '../../../data/classroom/useClassroom.ts'
 import { useWeeklyTheme } from '../../../data/retention/queries.ts'
 import { studentThinkingLabels } from '../../../domain/classroom.ts'
 import type { Attempt, Child } from '../../../domain/classroom.ts'
@@ -32,12 +32,10 @@ export function TodayScene({ child, day, onHome, onProblem }: {
   onProblem: (attemptId: string) => void
 }) {
   const themeQuery = useWeeklyTheme(child.id)
-  const homeQuery = useStudentHome(child)
   const learning = useLearningActions()
   const reduce = useReducedMotion()
   const theme = themeQuery.error ? null : (themeQuery.data ?? null)
   const today = theme?.days.find((d) => d.day === day) ?? null
-  const mission = today ? homeQuery.data?.missions.find((m) => m.id === today.missionId) : undefined
   const open = !!today && today.state === 'OPEN'
   const context: AttemptContext = today?.attemptStatus === 'COMPLETED' ? 'THEME_REVIEW' : 'THEME_DAY'
   const [attempt, setAttempt] = useState<Attempt | null>(null)
@@ -46,6 +44,9 @@ export function TodayScene({ child, day, onHome, onProblem }: {
   const started = useRef(false)
   // 시작할 때 보낸 종류. 시작 뒤 주간 테마가 다시 오면 그 요일이 '푸는 중'으로 바뀌어 context가 THEME_DAY로 보이므로 따로 둔다
   const [startedAs, setStartedAs] = useState<AttemptContext | null>(null)
+  // 미션은 맥락을 붙여 게시본으로 받는다(#882: 일반 목록에서 내려간 미션도, 푸는 중이면 그 시도의 버전). 시작 뒤에는 보낸 종류로 고정
+  const missionQuery = useMission(today?.missionId ?? '', child, startedAs ?? context, open)
+  const mission = missionQuery.error ? undefined : missionQuery.data
   const start = () => {
     if (!mission) return
     started.current = true
@@ -75,12 +76,12 @@ export function TodayScene({ child, day, onHome, onProblem }: {
     onProblem(attempt.attemptId)
   }, [attempt, skip, onProblem])
 
-  if (themeQuery.isPending || homeQuery.isPending) return <main className="ts-stage"><QueryStateNotice state="PROCESSING" /></main>
-  if (!open || (homeQuery.data && !mission))
+  if (themeQuery.isPending || (open && missionQuery.isPending)) return <main className="ts-stage"><QueryStateNotice state="PROCESSING" /></main>
+  if (!open || missionQuery.error)
     return (
       <main className="st-paper st-sheet ts-closed">
-        <ErrorNotice error={themeQuery.error ?? homeQuery.error} retry={() => { void themeQuery.refetch(); void homeQuery.refetch() }} />
-        {!themeQuery.error && !homeQuery.error && <p className="st-empty">아직 열리지 않은 문제예요.</p>}
+        <ErrorNotice error={themeQuery.error ?? missionQuery.error} retry={() => { void themeQuery.refetch(); void missionQuery.refetch() }} />
+        {!themeQuery.error && !missionQuery.error && <p className="st-empty">아직 열리지 않은 문제예요.</p>}
         <button type="button" className="tw-go tw-go-plain" onClick={onHome}>홈으로</button>
       </main>
     )

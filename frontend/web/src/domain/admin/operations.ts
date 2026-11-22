@@ -150,6 +150,15 @@ export interface EvaluationEvidence {
   trainingEvaluationSeparation: string; quoteAccuracy: string; calculationAccuracy: string; humanReview: string
   evaluatedScopes: string[]
   limitations?: string[]
+  /** 재학습 추천 태그(api-spec 5.2.3, #728). 참고용이며 활성화 조건이 아님. 없는 기존 버전은 표시하지 않음 */
+  recommendation?: ModelRecommendation
+}
+export interface ModelRecommendation {
+  tag: 'RECOMMENDED' | 'NOT_RECOMMENDED'
+  /** 비교한 활성 버전 `name:version`, 처음이면 `NONE` */
+  comparedTo: string
+  reasons: string[]
+  metrics?: Record<string, number>
 }
 export interface EvaluationRecord {
   evidence: EvaluationEvidence

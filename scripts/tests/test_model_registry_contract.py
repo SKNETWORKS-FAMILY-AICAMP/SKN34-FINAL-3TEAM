@@ -22,15 +22,15 @@ class ModelRegistryContractTests(unittest.TestCase):
             for method, path in re.findall(r'@(Get|Post)Mapping\("([^\"]+)"\)', source.read_text(encoding="utf-8")):
                 actual.add((method.lower(), path.removeprefix("/api/v1")))
         documented = {(method, path) for path, methods in self.api["paths"].items()
-                      if path.startswith("/admin/model-versions") or path in {"/admin/ai-usage", "/internal/model-versions/active"}
+                      if path.startswith("/admin/model-versions") or path in {"/admin/ai-usage", "/internal/model-versions/active", "/internal/model-versions"}
                       for method in methods if method in {"get", "post", "put", "patch", "delete"}}
         self.assertEqual(actual, documented)
-        self.assertEqual(len(documented), 6)
+        self.assertEqual(len(documented), 7)
 
     def test_internal_snapshot_has_separate_token_and_root_server(self):
-        op = self.api["paths"]["/internal/model-versions/active"]["get"]
-        self.assertEqual(op["security"], [{"InternalToken": []}])
-        self.assertEqual(op["servers"], [{"url": "/"}])
+        for op in [self.api["paths"]["/internal/model-versions/active"]["get"], self.api["paths"]["/internal/model-versions"]["post"]]:
+            self.assertEqual(op["security"], [{"InternalToken": []}])
+            self.assertEqual(op["servers"], [{"url": "/"}])
         self.assertEqual(self.api["components"]["securitySchemes"]["InternalToken"]["name"], "X-Internal-Token")
         for path, operations in self.api["paths"].items():
             if path.startswith("/admin/model-versions") or path == "/admin/ai-usage":

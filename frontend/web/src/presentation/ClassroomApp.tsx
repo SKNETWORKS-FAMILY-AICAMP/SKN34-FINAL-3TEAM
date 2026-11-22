@@ -99,12 +99,9 @@ export function ClassroomApp() {
     navigate(id ? `/student/attempts/${encodeURIComponent(id)}` : '/student/journal')
   const [detail, setDetail] = useState<PublicAttempt | null>(null)
   const [period, setPeriod] = useState<Period>(recentPeriod)
-  const [startContext, setStartContext] = useState<AttemptContext | undefined>()
   // 그 주 처음 '오늘 문제 풀기'를 누르면 시작 이야기를 먼저 보고 그 문제로 이어간다(user-flow 사용자 결정 2026-11-13·14)
-  const [introThen, setIntroThen] = useState<{ mission: import('../domain/classroom.ts').Mission; context: AttemptContext } | null>(null)
-  const [instructions, setInstructions] = useState<import('../domain/classroom.ts').Mission | null>(
-    null,
-  )
+  const [introThen, setIntroThen] = useState<{ missionId: string; context: AttemptContext } | null>(null)
+  const [instructions, setInstructions] = useState<{ id: string; context?: AttemptContext } | null>(null)
   const [email, setEmail] = useState(isDemo ? 'parent@example.test' : ''),
     [password, setPassword] = useState(isDemo ? 'demo-only' : '')
   const [subject, setSubject] = useState('all'),
@@ -160,24 +157,22 @@ export function ClassroomApp() {
   /**
    * 테마 문제를 연다(user-flow 3.2, #807): 미션 안내 대신 그 요일 오늘 장면 `/student/theme/scene/{day}`.
    * 오늘 장면이 시도를 시작·이어 하고 대화가 없거나 이미 답을 쓴 시도면 바로 답변 작성으로 넘긴다.
-   * 주간 테마에서 요일을 못 찾으면(응답 전·실패) 예전처럼: 푸는 중이면 이어 풀기, 아니면 미션 안내
+   * 주간 테마에서 요일을 못 찾으면(응답 전·실패) 맥락을 붙인 미션 안내(푸는 중이면 learning이 그 시도를 돌려줌, #882)
    */
-  function openTheme(mission: import('../domain/classroom.ts').Mission, context: AttemptContext) {
-    const day = weeklyTheme.data?.days.find((d) => d.missionId === mission.id)?.day
+  function openTheme(missionId: string, context: AttemptContext) {
+    const day = weeklyTheme.data?.days.find((d) => d.missionId === missionId)?.day
     if (day) return navigate(`/student/theme/scene/${day}`)
-    if (mission.status === 'IN_PROGRESS' && mission.attemptId) return setWork(mission.attemptId)
-    openMission(mission, context)
+    openMission(missionId, context)
   }
-  /** 미션 안내 창을 연다. context(2.11)는 시작 버튼을 누를 때 함께 보낸다. */
-  function openMission(mission: import('../domain/classroom.ts').Mission, context?: AttemptContext) {
+  /** 안내와 시도 생성에 같은 맥락을 보내 주간 테마 게시 버전을 이어서 사용한다. */
+  function openMission(id: string, context?: AttemptContext) {
     learning.start.reset()
-    setStartContext(context)
-    setInstructions(mission)
+    setInstructions({ id, context })
   }
   async function start(mission: import('../domain/classroom.ts').Mission) {
     if (!child) return
     try {
-      const a = await learning.start.mutateAsync({ mission, child, context: startContext })
+      const a = await learning.start.mutateAsync({ mission, child, context: instructions?.context })
       setWork(a.attemptId)
       setInstructions(null)
     } catch {
@@ -416,8 +411,9 @@ export function ClassroomApp() {
             ) : instructions ? (
               // 학생 미션 안내는 작은 창 대신 학생 틀 안 전체 화면(시안 MissionGuide, #648)
               <MissionGuide
-                key={instructions.id}
+                key={instructions.id + ':' + (instructions.context ?? '')}
                 id={instructions.id}
+                context={instructions.context}
                 child={child}
                 backLabel={studentPage === 'missions' ? '미션 고르기' : studentPage === 'home' ? '홈' : '돌아가기'}
                 onClose={() => {
@@ -442,7 +438,7 @@ export function ClassroomApp() {
                 onHome={() => {
                   // 시작 이야기를 '오늘 문제 풀기'에서 열었으면 그 문제로 이어간다(테마 문제는 오늘 장면, #807)
                   setPage('home')
-                  if (themeView === 'intro' && introThen) openTheme(introThen.mission, introThen.context)
+                  if (themeView === 'intro' && introThen) openTheme(introThen.missionId, introThen.context)
                   setIntroThen(null)
                 }}
                 continuing={themeView === 'intro' && !!introThen}
@@ -522,8 +518,8 @@ export function ClassroomApp() {
                 onClues={() => setPage('theme/clues')}
                 onPick={() => setPage('theme/pick')}
                 onStory={(kind, replace) => navigate(`/student/theme/${kind === 'OUTRO' ? 'ending' : 'intro'}`, { replace })}
-                onIntroThen={(mission, context) => {
-                  setIntroThen({ mission, context })
+                onIntroThen={(missionId, context) => {
+                  setIntroThen({ missionId, context })
                   setPage('theme/intro')
                 }}
                 onReview={() => setPage('theme/review')}
@@ -533,7 +529,7 @@ export function ClassroomApp() {
                 child={child}
                 type={isThinkingType(typeFilter) ? typeFilter : null}
                 onType={(t) => navigate(t ? `/student/missions?type=${t}` : '/student/missions')}
-                onOpen={(m) => openMission(m, 'EXTRA')}
+                onOpen={(m) => openMission(m.id, 'EXTRA')}
               />
             ) : detail ? (
               <StudentJournalEntry key={detail.attemptId} record={detail} child={child} onBack={() => setDetail(null)} onWork={(id) => { setDetail(null); setWork(id) }} />
@@ -728,7 +724,7 @@ export function ClassroomApp() {
                                   <button
                                     type="button"
                                     className="cj-primary"
-                                    onClick={() => setInstructions(m)}
+                                    onClick={() => openMission(m.id)}
                                   >
                                     미션 열기 <ArrowRight />
                                   </button>

@@ -28,12 +28,15 @@ import {
   audit,
   modelVersions,
   errorReports,
+  expressionReviews,
   reportedAttemptIds,
   retryReceipts,
   stamp,
 } from '../fixtures/admin/operations.ts'
 import { guard, respond } from './student.ts'
-import { fail, page } from './parent.ts'
+import { demoRefunds } from './adminService.ts'
+import { cases } from './service.ts'
+import { fail } from './parent.ts'
 const reports = () => [...retentionState.communityReports.map(({ report }) => report), ...errorReports]
 const unpublishedChanges = (m: AdminMission) => m.currentVersion !== m.publishedVersion || m.currentRubricVersion !== m.publishedRubricVersion
 const reviewable = (m: AdminMission) => m.status === 'REVIEW_REQUIRED' || m.status === 'PUBLISHED' && unpublishedChanges(m)
@@ -159,6 +162,20 @@ function versionData(d: Partial<MissionVersion>, version: number): MissionVersio
   }
 }
 export const adminHandlers = [
+  http.get('/api/v1/admin/overview/workload', ({ request }) => respond(async () => {
+    allow(request); queryFault()
+    const permissions=store.snapshot().session?.permissions ?? []
+    const range=period(request)
+    const total=(n:number)=>mode==='empty'?0:n
+    return {
+      ...(permissions.includes('SERVICE_OPS') ? {
+        pendingInquiries:total(cases.filter(c=>c.kind==='inquiries' && c.status==='RECEIVED').length),
+        receivedReports:total(reports().filter(r=>r.status==='RECEIVED').length),
+        failedJobs:total(jobs.filter(j=>j.status==='FAILED' && j.createdAt.slice(0,10)>=range.from && j.createdAt.slice(0,10)<=range.to).length),
+      }:{}),
+      ...(permissions.includes('PAYMENT_VIEW') ? {pendingRefunds:total(demoRefunds.filter(r=>r.status==='REQUESTED').length)}:{}),
+    }
+  })),
   http.get('/api/v1/admin/overview', ({ request }) =>
     respond(async () => {
       allow(request)
@@ -193,8 +210,7 @@ export const adminHandlers = [
       allow(request, 'SERVICE_OPS')
       queryFault()
       const q = new URL(request.url).searchParams
-      return page(
-        mode === 'empty'
+      const filtered = mode === 'empty'
           ? []
           : jobs.filter(
               (j) =>
@@ -202,8 +218,10 @@ export const adminHandlers = [
                 (!q.get('to') || j.createdAt.slice(0, 10) <= q.get('to')!) &&
                 (!q.get('type') || j.type === q.get('type')) &&
                 (!q.get('status') || j.status === q.get('status')),
-            ),
-      )
+            )
+      const index = Math.max(0, Number(q.get('page')) || 0)
+      const size = 20
+      return { items: filtered.slice(index * size, (index + 1) * size), page: index, size, totalElements: filtered.length }
     }),
   ),
   http.get('/api/v1/admin/jobs/:jobId', ({ request, params }) =>
@@ -276,14 +294,14 @@ export const adminHandlers = [
       queryFault()
       const p = period(request),
         q = new URL(request.url).searchParams
-      return page(
-        audits.filter(
+      const filtered = audits.filter(
           (a) =>
             (!q.get('targetType') || a.targetType === q.get('targetType')) &&
             a.createdAt.slice(0, 10) >= p.from &&
             a.createdAt.slice(0, 10) <= p.to,
-        ),
-      )
+        )
+      const index = Math.max(0,Number(q.get('page')) || 0), size = 20
+      return { items: filtered.slice(index*size,(index+1)*size), page:index, size, totalElements:filtered.length }
     }),
   ),
   http.get('/api/v1/admin/missions', ({ request }) =>
@@ -647,11 +665,42 @@ export const adminHandlers = [
       }
     }),
   ),
+  // #728 표현 검토 (core 프록시와 같은 규칙: SERVICE_OPS, 글만, 열람·라벨 감사)
+  http.get('/api/v1/admin/expression-reviews', ({ request }) =>
+    respond(async () => {
+      allow(request, 'SERVICE_OPS')
+      queryFault()
+      const q = new URL(request.url).searchParams
+      const labeled = (q.get('labeled') ?? 'false') === 'true', source = q.get('source'), number = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20)
+      if (!['true', 'false'].includes(q.get('labeled') ?? 'false') || (source && !['GRAY_ZONE', 'COMMUNITY_REPORT'].includes(source)) ||
+        !Number.isInteger(number) || number < 0 || !Number.isInteger(size) || size < 1 || size > 100) fail('VALIDATION_FAILED', '요청 값을 확인해 주세요.')
+      const rows = mode === 'empty' ? [] : expressionReviews.filter(r => (r.label !== null) === labeled && (!source || r.source === source))
+        .sort((a, b) => labeled ? String(b.labeledAt).localeCompare(String(a.labeledAt)) : a.createdAt.localeCompare(b.createdAt))
+      const items = rows.slice(number * size, number * size + size)
+      audit('EXPRESSION_REVIEW_VIEW', 'EXPRESSION_REVIEW', 'list', 'SUCCESS', { reviewIds: items.map(r => r.id) })
+      return { items, page: number, size, totalElements: rows.length }
+    }),
+  ),
+  http.put('/api/v1/admin/expression-reviews/:reviewId/label', ({ request, params }) =>
+    respond(async () => {
+      allow(request, 'SERVICE_OPS')
+      const body = (await request.json().catch(() => null)) as { label?: unknown } | null
+      if (!body || Object.keys(body).length !== 1 || !['OFFENSIVE', 'CLEAN', 'SKIP'].includes(String(body.label))) fail('VALIDATION_FAILED', '요청 값을 확인해 주세요.')
+      const review = expressionReviews.find(r => r.id === params.reviewId)
+      if (!review) fail('EXPRESSION_REVIEW_NOT_FOUND', '검토 항목을 찾을 수 없습니다.', 404)
+      review!.label = body!.label as 'OFFENSIVE' | 'CLEAN' | 'SKIP'; review!.labeledAt = stamp()
+      audit('EXPRESSION_REVIEW_LABEL', 'EXPRESSION_REVIEW', review!.id, 'SUCCESS', { label: review!.label })
+      return review
+    }),
+  ),
   http.get('/api/v1/admin/error-reports', ({ request }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
       queryFault()
-      return page(reports())
+      const params=new URL(request.url).searchParams
+      const status=params.get('status'), index=Number(params.get('page')||0), size=Number(params.get('size')||20)
+      const rows=mode==='empty'?[]:reports().filter(r=>!status || r.status===status)
+      return {items:rows.slice(index*size,(index+1)*size),page:index,size,totalElements:rows.length}
     }),
   ),
   http.get('/api/v1/admin/error-reports/:reportId', ({ request, params }) =>

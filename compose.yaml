@@ -145,6 +145,8 @@ services:
       INTERNAL_TOKEN_SCORING: ${INTERNAL_TOKEN_SCORING:?.env 설정 필요}
       INTERNAL_TOKEN_LEARNING: ${INTERNAL_TOKEN_LEARNING:?.env 설정 필요}
       INTERNAL_TOKEN_REPORT_WORKER: ${INTERNAL_TOKEN_REPORT_WORKER:?.env 설정 필요}
+      # 재학습 작업(ops) 자동 등록 POST /internal/model-versions (#728). 없으면 ops 호출 거부
+      INTERNAL_TOKEN_OPS: ${INTERNAL_TOKEN_OPS:-}
       DB_URL: jdbc:postgresql://postgres:5432/core_db
       DB_USERNAME: core_app
       DB_PASSWORD: ${CORE_APP_PASSWORD}

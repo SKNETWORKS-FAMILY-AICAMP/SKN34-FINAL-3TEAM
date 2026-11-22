@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useRecordReviewView, useWeeklyTheme } from '../../../data/retention/queries.ts'
-import type { Child, Mission } from '../../../domain/classroom.ts'
+import type { Child } from '../../../domain/classroom.ts'
 import { studentThinkingLabels } from '../../../domain/classroom.ts'
 import { POINT_RULES, themeClosed } from '../../../domain/retention.ts'
 import type { AttemptContext } from '../../../domain/retention.ts'
@@ -23,7 +23,7 @@ export function ThemeReview({ child, onJournal, onEnding, onHome, onStartTheme }
   onEnding: () => void
   onHome: () => void
   /** 요일 문제 열기(새로 시작·이어 풀기·다시 풀기 모두, 오늘 장면 #807) */
-  onStartTheme: (mission: Mission, context: AttemptContext) => void
+  onStartTheme: (missionId: string, context: AttemptContext) => void
 }) {
   const query = useWeeklyTheme(child.id)
   const record = useRecordReviewView(child.id)

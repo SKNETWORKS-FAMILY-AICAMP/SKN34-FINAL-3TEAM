@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import type { AnswerTiming } from '../../domain/answerTiming.ts'
+import type { AttemptContext } from '../../domain/retention.ts'
 import type {
   AnswerContent,
   Attempt,
@@ -135,10 +136,13 @@ export function useStudentHome(child: Child | undefined) {
     retry: false,
   })
 }
-export function useMission(id: string, child: Child) {
+/** enabled: 미션 id를 아직 모를 때 부르지 않게(오늘 장면이 주간 테마 요일을 찾은 뒤에 부름, #807). 생략하면 늘 부름 */
+export function useMission(id: string, child: Child, context?: AttemptContext, enabled = true) {
+  const themeContext = context === 'EXTRA' ? undefined : context
   return useQuery({
-    queryKey: ['mission', child.id, child.grade, id],
-    queryFn: () => gateway.mission(id, child),
+    queryKey: ['mission', child.id, child.grade, id, themeContext ?? 'catalog'],
+    queryFn: () => gateway.mission(id, child, themeContext),
+    enabled: enabled && !!id,
     retry: false,
   })
 }

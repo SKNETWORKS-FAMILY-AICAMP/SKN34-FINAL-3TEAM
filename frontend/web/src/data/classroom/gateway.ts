@@ -25,7 +25,7 @@ export interface ClassroomGateway {
   missions: (child: Child) => Promise<Mission[]>
   home: (child: Child) => Promise<StudentHome>
   restore: () => Promise<Session>
-  mission: (id: string, child: Child) => Promise<Mission>
+  mission: (id: string, child: Child, context?: import('../../domain/retention.ts').AttemptContext) => Promise<Mission>
   records: (child: Child, role: 'STUDENT' | 'PARENT', period: Period) => Promise<PublicAttempt[]>
   record: (child: Child, id: string, period?: Period) => Promise<PublicAttempt>
   /** context(2.11): 주간 테마 당일 문제·되돌아보기 다시 풀기·추가 문제. 생략하면 보내지 않는다. */

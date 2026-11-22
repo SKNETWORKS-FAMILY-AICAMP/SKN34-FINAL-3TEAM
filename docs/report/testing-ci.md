@@ -332,10 +332,10 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 |---|---|---|---|---|---|---|
 | SEC-01 | 만 14세 미만 법정대리인 동의 없이 자녀 등록 불가 | 모의·CI | 동의 전 `GET /children`·`PATCH /me` 403 `CONSENT_REQUIRED`, 동의 항목 누락 `POST /children` 400, 필수 문서가 바뀌면 기존 동의 무효. 동의한 적 없는 계정의 `POST /children`을 직접 보내는 시험은 없음 | core `consent/ConsentChildrenTest`, [auth-account 2](auth-account.md#2-동의자녀-등록-37) | 11/20 | 충족 |
 | SEC-02 | 권한 규칙을 전 경로에 적용, 친구 방 응답에 학생 ID·회차 키 없음 | 모의·CI | 다른 보호자·학생의 자녀·시도·답변·리포트·대화·알림 요청 403·404, 친구 방 응답에 `studentId`·`themeId`·`weekStart`·`postId` 없음 | core `community/FriendRoomIntegrationTest`·`learning/DashboardIntegrationTest`·`report/ReportHttpTest`·`conversation/ConversationIntegrationTest`, learning `answer/service/AnswerServiceTest`, `scripts/tests/test_friend_room_contract.py`, [retention-expansion 20](retention-expansion.md#20-친구-방-구경-core-708learning-707-2026-11-16) | 11/20 | 충족 |
-| SEC-03 | 외부 AI에 최소 기록만, 이름·불필요한 식별정보 제외 | — | LLM 요청 페이로드 점검 미실행 | — | — | 점검 예정 11/26 |
+| SEC-03 | 외부 AI에 최소 기록만, 이름·불필요한 식별정보 제외 | 모의 | 대역 스택에서 외부로 나간 요청 12건(판정 5·되묻기 5·리포트 서술 1·설명 1)에 학생·시도·답변 ID·닉네임·보호자 이름 0건, 메시지 안 ID 키 0건. 분석 대화·추억 3종은 대역에서 안 돌아 테스트로, 주간 테마 생성은 코드로만 확인(ai 228·report 74·learning 73 통과). 판정·되묻기·분석 대화는 답 본문 속 닉네임을 가리지 않음(설계상 가리기 대상 아님) | [10절](#10-민감정보-점검-884-2026-11-22), [evidence/issue884-sensitive-audit](evidence/issue884-sensitive-audit/) | 11/22 | 충족 |
 | SEC-04 | LLM·토스 키를 저장소·배포 파일·화면에 두지 않음 | CI | Gitleaks 전체 이력 스캔에서 합성 값 3건 예외 처리 뒤 0건. 이후 모든 PR·push에서 실행(9.2 `a836e3e8` success) | [8절](#8-비밀-정보-스캔-ci-810), [infra 4.3](infra.md#43-비밀-정보-스캔-ci-810) | 11/19 | 충족 |
-| SEC-05 | 비밀번호·키·카드 정보·학생 원문을 운영 로그에 미기록 | — | 로그 샘플 점검 미실행 | — | — | 점검 예정 11/26 |
-| SEC-06 | 결제수단 민감 정보는 PG 처리, 화면·로그 비노출 | 모의·CI | 저장 데이터: 빌링 자격 무작위·암호화, 결제·환불 응답과 멱등 저장 기록에 PG 키 없음. 로그 점검은 미실행(시험은 도메인 객체 `toString()`만 봄) | core `payment/PaymentProtectionTest`·`payment/PaymentIntegrationTest`(#168), [core-gateway 24.6](core-gateway.md#246-pg-검증운영-입력) | 11/20 | 점검 예정 11/26(로그) |
+| SEC-05 | 비밀번호·키·카드 정보·학생 원문을 운영 로그에 미기록 | 모의 | 대역 스택 E2E 1회 서비스 로그 219줄에서 비밀 값 27종 원문·키·토큰·카드번호·비밀번호·PIN·학생 답변 원문 0건. 잠재 위험: DB 제약 오류 상세 #898, ai·scoring 응답 검증 오류 입력값 #899 | [10절](#10-민감정보-점검-884-2026-11-22), [evidence/issue884-sensitive-audit](evidence/issue884-sensitive-audit/) | 11/22 | 충족 |
+| SEC-06 | 결제수단 민감 정보는 PG 처리, 화면·로그 비노출 | 모의·CI(저장 데이터) | 저장 데이터: 빌링 자격 무작위·암호화, 결제·환불 응답과 멱등 저장 기록에 PG 키 없음. 로그(모의): core 결제 테스트 51개(승인·실패 재청구·환불·웹훅·빌링) 출력과 E2E 결제 승인 로그에 PG 키·결제 필드·카드번호 0건. 잠재 위험: trace의 토스 URL 키 #900 | core `payment/PaymentProtectionTest`·`payment/PaymentIntegrationTest`(#168), [core-gateway 24.6](core-gateway.md#246-pg-검증운영-입력), [10절](#10-민감정보-점검-884-2026-11-22) | 11/22 | 충족 |
 | SEC-07 | 가상 학생·자체 미션만, 실제 아동 정보 미수집 | 배포(kind) | 참고: kind에서 `audit-demo-data.sql`(기준 월요일 12/7 사본) 3개 DB 통과. A·B 미실행 | `infrastructure/aws/audit-demo-data.sql`, [infra 9.7.2](infra.md#972-kind-확인-실제-17201745) | 11/13 | 점검 예정 12/5 |
 | SEC-08 | PIN·기기 자격은 해시, 쿠키 httpOnly·Secure·SameSite=Strict | 모의·CI | 미등록·위조·다른 자녀·만료·해제 기기는 PIN 전 거부, 동시 실패 5회 잠금·해제 후 초기화, PIN `pbkdf2-sha256` 해시, 페어링 코드는 해시만 Redis, 쿠키 HttpOnly·SameSite=Strict. 시험 설정이 `cookie-secure=false`라 Secure 속성은 미확인 | core `account/StudentDeviceAuthTest`, [auth-account 4](auth-account.md#4-학생-기기pin-로그인-p01-개정-58) | 11/20 | 충족 |
 | DAT-01 | 답변·판정·되묻기·돌아보기를 덮어쓰지 않음 | 모의·CI | 보완 답변 v2·v3 제출 뒤 v1 행 그대로, 시도 버전 [1,2,3] | learning `answer/service/AnswerServiceTest`·`attempt/service/AttemptComparisonIntegrationTest` | 11/20 | 충족 |
@@ -376,7 +376,6 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 | 날짜 | 대상 | 할 일 |
 |---|---|---|
 | 11/22 | AIQ-03·06 | 설명 sLLM 허용 기준 결정, 사람 검토 50개 표본 결과. 판정 QWK·M2 기준도 같은 기한 |
-| 11/26 | SEC-03·05·06 | LLM 요청 페이로드와 운영 로그 샘플 점검(학생 이름·ID·원문·키·카드 정보) |
 | 11/27 | UX-01·02 | #763 뒤 1440·768·390px 넘침, 키보드 조작, 대비 점검 |
 | 11/28~29 | OPS-02~05, PRF-01·03 | B 계정 배포 승인·경로 확인(Argo CD, 11/25 A에서 먼저 확인 #859), 복구 리허설, 경보 발생, 실패 요청 trace, 부하 재측정, 첫 주간 창 뒤 엔드포인트 0대 복귀(#783) |
 | 12/5 | SEC-07, OPS-01, QA-03 | 시연 환경에서 `audit-demo-data.sql` 실행(가상 학생·시연 표시·결제 집계) |
@@ -394,3 +393,60 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 - [evidence/issue811-cd-history-a](evidence/issue811-cd-history-a/): A 계정 cd-release 5회의 `history.json`(승인자·수행자·이미지 digest·migration·경로 확인)과 `plan.json`(사유·호환성 판단). Actions 산출물(보관 90일)에서 받은 원본이며 비밀 값 없음. 이미지 주소의 A 계정 번호는 저장소에 이미 공개된 값
 - 저장소 안 결과 파일(`evaluation/results/`, `ml/*/results/`)은 복사하지 않고 근거 칸에서 원래 위치를 링크
 - 저장소 밖 원본(M2 예측 CSV, 설명 sLLM 출력, k6 원시 출력)은 학생·AI Hub 글이 들어 있거나 일회성이라 넣지 않음
+
+## 10. 민감정보 점검 (#884, 2026-11-22)
+
+외부 LLM 요청 내용(NFR-SEC-03)과 운영 로그(NFR-SEC-05·06)에 학생 이름·ID·원문·비밀 값·결제수단 정보가 있는지 실제 실행분으로 점검. 기록에는 항목 이름·건수만 둠.
+
+### 10.1 환경
+
+- 기준: develop `22a42a54` + llm-stub 요청 기록 옵션(`LLM_STUB_RECORD_FILE`, 기본 꺼짐)
+- 검증 구분: 모의. 2절 대역 스택(`compose.e2e.yaml`, LLM·토스·Google·M2 대역, DB·브로커 실제)을 로컬 Docker로 1회 기동. 실제 OpenAI·SageMaker·PG 호출과 kind·A·B 로그는 보지 않음
+- 실행: `LLM_STUB_RECORD_FILE=/tmp/llm-requests.jsonl`로 기동 → `npm run test:e2e` 7 통과·1 실패·1 건너뜀
+  - 실패: `learning-journey` 주간 리포트. 리포트 생성 완료 뒤 기간 문구가 화면 두 곳에 있어 locator 엄격 모드 위반(점검 대상 경로는 끝까지 실행됨)
+  - 건너뜀: 주간 테마 시나리오(KST 일요일에는 무료 이용권 문제가 닫힘)
+- Git Bash에서는 `MSYS_NO_PATHCONV=1`이 필요. 없으면 기록 경로가 Windows 경로로 바뀌어 대역이 종료됨(첫 실행). `down -v` 뒤 재실행분만 사용
+
+### 10.2 대상과 방법
+
+| 대상 | 수집 | 검사 |
+|---|---|---|
+| 외부 LLM 요청(SEC-03) | llm-stub이 받은 본문 12건(외부로 나가는 최종 요청) | 실행 뒤 DB에서 뽑은 학생 ID 7·닉네임 7·보호자 로그인 ID·표시 이름 10·시도 ID 4·답변 ID 5와 문자열 대조, 메시지 안 `studentId`·`attemptId`·`answerId`·`childId`·`nickname`·`name` 키, UUID(채점 요소 ID 56개와 대조해 분리) |
+| 서비스 로그(SEC-05) | `docker compose logs` core·learning·ai·report-api·report-worker 219줄 | `e2e.env` 비밀 값 27종 원문, 토스 키 접두사(`test_sk_`·`test_gsk_`·`live_`), OpenAI 키, `Bearer` 토큰, JWT, 결제 필드 이름(`billingKey`·`customerKey`·`paymentKey`·`cardNumber`), 16자리 카드번호, `password=`, E2E PIN, 학생 답변 원문 5개(8자 이상 `plain_text`), 닉네임·보호자 이름, 학생·시도·답변 ID |
+| 결제 로그(SEC-06) | core `payment` 패키지 테스트 51개(승인·위조 거부·응답 유실·갱신 실패 재청구·해지·환불·취소 유실·웹훅·빌링 등록) system-out 130줄 + 위 서비스 로그의 E2E 결제 승인분 | 위 패턴 + 테스트 대역 합성 PG 키(`synthetic-`·`test_sk_`·`test_gsk_`) |
+
+- 검색 패턴 원본: [evidence/issue884-sensitive-audit/scan.py](evidence/issue884-sensitive-audit/scan.py), 결과: [scan-result.json](evidence/issue884-sensitive-audit/scan-result.json)(건수·요청 키·메시지 역할만, 원문·ID 값 없음)
+
+### 10.3 결과
+
+| 항목 | 결과 |
+|---|---|
+| LLM 요청 종류 | 판정(`Extraction`) 5, 되묻기(`GeneratedQuestion`) 5, 리포트 서술(`GeneratedNarrative`) 1, 리포트 설명(`ExplanationDetail`) 1 |
+| LLM 요청의 학생·시도·답변 ID, 닉네임, 보호자 이름, ID 키 | 모두 0건 |
+| LLM 요청의 UUID | 15개 모두 채점 요소 ID(판정 5건 × 3, 학생 기록 ID 아님). 그 밖 UUID 0 |
+| LLM 요청의 학생 답변 원문 | 12건 모두 포함(판정·설명 대상이라 필요한 전달). 대조 문자열이 실제로 걸리는지 확인하는 양성 대조로도 씀 |
+| 서비스 로그 비밀·결제·원문 패턴 | 모두 0건 |
+| 서비스 로그 학생·시도·답변 ID | 50건. 내부 HTTP 접근 로그 URL(`/internal/reports?studentId=…` 등)과 판정 건너뜀 사유 로그(`attemptId=… reason=TIMEOUT`). SEC-05 대상(비밀번호·키·카드·원문) 아님 |
+| 결제 테스트 출력 패턴 | 모두 0건 |
+
+e2e로 안 도는 경로는 테스트로 확인(로컬 실행, 모두 통과)
+
+| 경로 | 테스트 |
+|---|---|
+| 분석 대화 | ai `tests/analysis_agent/test_router.py::test_llm_requests_have_no_student_id`, `test_nodes.py`. 대역에서 안 돈 이유: E2E 시나리오 없음 |
+| 추억 임베딩·설명·질의 변환 | learning `memory/MemoryEmbeddingClientTest`·`MemoryExplanationTest`·`MemoryQuerySearchServiceTest`·`MemorySearchTest`·`MemoryQueryAiClientTest`(닉네임 `[학생]`·UUID `[식별자]` 가림), ai `tests/memory_explanation`·`tests/memory_query`(ID 칸 거부). 대역에서 안 돈 이유: llm-stub 미지원 스키마, 임베딩은 OpenAI 주소 고정 |
+| 주간 테마 생성 | 코드 확인만. learning `theme/client/ThemeDraftAiClient`가 보내는 칸이 학년·주차·주제·성취기준뿐이라 학생 데이터 입력 없음. 관리자 미션 초안은 ai `tests/mission_draft/test_prompts.py`(이름·`studentId` 없음) |
+| 리포트 서술·설명 | report `tests/test_narrative.py::test_known_nickname_and_identity_fields_are_not_sent`, `tests/test_explanations.py` |
+| 판정·되묻기 | ai `tests/judgment/test_service.py`·`tests/followup/test_service.py`, learning `judgment/facade/FeedbackFacadeTest` |
+
+- 실행 수: ai 228, report 74, learning 73, core payment 51 통과
+
+### 10.4 남은 위험
+
+- 판정·되묻기·분석 대화는 답·질문 본문에 학생이 쓴 닉네임을 가리지 않고 보냄. 설계상 닉네임 가리기는 리포트 서술·설명과 추억 경로만이라 위반으로 보지 않음(2026-11-22 결정)
+- 샘플에는 없었지만 코드상 생길 수 있는 경우
+  - core·learning 전역 예외 로그에 DB 제약 오류 상세(답변 원문), 비밀번호·PIN data class 기본 `toString()`: #898
+  - ai·scoring 전역 예외 로그에 응답 검증 오류 입력값: #899
+  - OTel trace의 토스 호출 URL에 `billingKey`·`paymentKey`, Google 콜백 `code`(로그가 아닌 trace, Tempo 24시간): #900
+- ai·scoring·report-api는 로깅 설정이 없어 WARNING 이상과 uvicorn 접근 로그만 남음(운영 이미지와 같은 조건). 로그 수준을 올리면 다시 점검 필요
+- 운영 로그 중앙 수집이 없어(`OTEL_LOGS_EXPORTER=none`, Loki 없음) 배포 환경 샘플은 파드별 `kubectl logs`로만 얻을 수 있음. 이번 점검은 로컬 실행분만 봄

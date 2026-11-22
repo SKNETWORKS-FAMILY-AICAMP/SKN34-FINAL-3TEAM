@@ -16,8 +16,13 @@ export interface AdminWeeklyTheme {
   weekStart: string
   title: string
   intro: string
-  days: { day: ThemeDay; missionId: string }[]
+  days: { day: ThemeDay; missionId: string; title?: string; videoUrl?: string | null; sceneImageUrl?: string | null; sceneMotion?: unknown; clue?: string | null }[]
   status: ThemeStatus
+  version?: number
+  publishedVersion?: number | null
+  reviewRequested?: boolean
+  weekLocked?: boolean
+  generationWeek?: string | null
   updatedAt: string
   /**
    * #438 이야기 칸(선택). 응답에만 쓰고 저장 본문에는 보내지 않는다: 수정 때 없으면 서버가 이전 값을 이어받음.

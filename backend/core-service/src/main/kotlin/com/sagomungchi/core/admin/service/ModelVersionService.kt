@@ -1,5 +1,6 @@
 package com.sagomungchi.core.admin.service
 
+import com.sagomungchi.core._common.config.AppProperties
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.messaging.OutboxWriter
 import com.sagomungchi.core.admin.domain.*
@@ -8,13 +9,16 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Isolation
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 @Service
-class ModelVersionService(private val repository: ModelVersionRepository, private val outbox: OutboxWriter) {
+class ModelVersionService(private val repository: ModelVersionRepository, private val outbox: OutboxWriter,
+                          private val preflight: ModelPreflightService, private val transactions: TransactionTemplate,
+                          private val properties: AppProperties) {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     fun list(kind: ModelKind?, page: Int, size: Int): ModelVersionPage {
         if (page < 0 || size !in 1..100) throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "페이지 범위가 유효하지 않습니다.")
@@ -26,6 +30,27 @@ class ModelVersionService(private val repository: ModelVersionRepository, privat
 
     @Transactional
     fun register(command: RegisterVersion, actor: UUID): ModelVersion {
+        validate(command)
+        return store(command, actor)
+    }
+
+    /**
+     * 재학습 작업(ops) 자동 등록 (api-spec 5.2.3, #728). 등록 규칙을 먼저 모두 검사하고, 트랜잭션 밖에서 사전 검사를 부른 뒤
+     * PASS일 때만 관리자 등록과 같은 저장·감사를 한다. actor는 재학습 계정. 활성화하지 않는다
+     */
+    fun registerFromPipeline(command: RegisterVersion): ModelVersion {
+        if (command.kind != ModelKind.MODEL || !command.name.startsWith("tox-")) invalid("재학습 자동 등록은 tox- MODEL만 받습니다.")
+        if (command.evaluation.recommendation == null) invalid("재학습 자동 등록에는 recommendation이 필요합니다.")
+        if (command.registration.source != RegistrationSource.PIPELINE) invalid("재학습 자동 등록의 출처는 PIPELINE입니다.")
+        validate(command)
+        val actor = properties.modelRegistry.pipelineActorId
+        val result = preflight.check(ModelPreflightCheck(command.name, command.version, command.artifactUri!!,
+            command.registration.artifactFiles), actor)
+        if (result.status != "PASS") throw PreflightRejected(result)
+        return requireNotNull(transactions.execute { store(command, actor) })
+    }
+
+    private fun validate(command: RegisterVersion) {
         if (command.name.isBlank() || command.name.length > 100 || command.version.isBlank() || command.version.length > 100 ||
             (command.artifactUri != null && (command.artifactUri.isBlank() || command.artifactUri.length > 2048))) invalid("버전 식별값이 유효하지 않습니다.")
         if ((command.kind == ModelKind.RUBRIC) != (command.refId != null)) invalid("RUBRIC만 learning 기준표 refId를 필수로 사용합니다.")
@@ -33,14 +58,20 @@ class ModelVersionService(private val repository: ModelVersionRepository, privat
         if (command.kind == ModelKind.MODEL && command.artifactUri.isNullOrBlank()) invalid("MODEL 등록에는 artifactUri가 필요합니다.")
         if (command.evaluation.limitations.size > 100 || command.evaluation.limitations.any { it.isNullOrBlank() || it.length > 4000 })
             invalid("limitations는 4,000자 이하의 비어 있지 않은 문자열을 최대 100개까지 받습니다.")
+        if (command.evaluation.recommendation?.valid() == false)
+            invalid("recommendation은 comparedTo, 1~20개·각 500자 이하 reasons, 최대 50개 숫자 metrics가 필요합니다.")
         if (!command.registration.valid()) invalid("등록 출처·파일 해시·수정 필드 정보가 유효하지 않습니다.")
+    }
+
+    private fun store(command: RegisterVersion, actor: UUID): ModelVersion {
         val version = ModelVersion(UUID.randomUUID(), command.kind, command.name, command.version, command.refId,
             command.artifactUri, EvaluationRecord(command.evaluation), VersionStatus.REGISTERED, null, null, now())
         if (!repository.insert(version)) conflict("이미 등록된 버전입니다.")
         repository.audit(actor, "MODEL_REGISTER", version.id, mapOf("kind" to version.kind, "name" to version.name, "version" to version.version,
             "source" to command.registration.source, "jsonSha256" to command.registration.jsonSha256,
             "manifestSha256" to command.registration.manifestSha256, "modifiedFields" to command.registration.modifiedFields,
-            "artifactFiles" to command.registration.artifactFiles), version.createdAt)
+            "artifactFiles" to command.registration.artifactFiles) +
+            listOfNotNull(command.registration.datasetSha256?.let { "datasetSha256" to it }), version.createdAt)
         return version
     }
 
@@ -112,6 +143,9 @@ class ModelVersionService(private val repository: ModelVersionRepository, privat
 data class RegisterVersion(val kind: ModelKind, val name: String, val version: String, val refId: UUID?,
                            val artifactUri: String?, val evaluation: EvaluationEvidence,
                            val registration: RegistrationMetadata = RegistrationMetadata())
+/** 사전 검사 FAIL: 422 MODEL_APPROVAL_REJECTED, 파일별 결과는 확장 필드 preflight로 (api-spec 5.2.3) */
+class PreflightRejected(val result: ModelPreflightResult) : BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+    "MODEL_APPROVAL_REJECTED", "모델 파일 사전 검사를 통과하지 못했습니다.")
 data class ActivateVersion(val approved: Boolean, val scopes: List<String>, val reason: String, val reanalysisPlanned: Boolean)
 data class RollbackVersion(val scopes: List<String>, val reason: String, val reanalysisPlanned: Boolean)
 data class ModelVersionPage(val items: List<ModelVersion>, val page: Int, val size: Int, val totalElements: Long)

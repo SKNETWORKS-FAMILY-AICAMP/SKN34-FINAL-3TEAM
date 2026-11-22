@@ -35,6 +35,9 @@ class SupportService(private val repository: SupportRepository,private val acces
  private fun conflict(): Nothing=throw BusinessException(HttpStatus.CONFLICT,"SUPPORT_STATE_CONFLICT","현재 처리 상태 또는 기존 요청과 일치하지 않습니다.")
  private fun missing(): Nothing=throw BusinessException(HttpStatus.NOT_FOUND,"NOT_FOUND","지원 요청을 찾을 수 없습니다.")
  private fun text(s: String,max: Int=10000) { if(s.isBlank() || s.length>max) invalid() }
+ fun pendingInquiryCount(): Long = db.inquiryCount(null, null, null, emptySet(), "RECEIVED")
+ fun receivedReportCount(): Long = db.reportCount(null, null, null, emptySet(), "RECEIVED")
+
  private fun paging(page: Int,size: Int) { if(page<0 || size !in 1..100) invalid() }
  private fun status(value: String?) { if(value!=null && value !in setOf("RECEIVED","IN_REVIEW","RESOLVED")) invalid() }
  private fun report(id: UUID)=db.report(id) ?: missing()

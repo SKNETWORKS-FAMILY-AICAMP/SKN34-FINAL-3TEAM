@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { BookOpen } from 'lucide-react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
+import { DAY_LABELS, THEME_DAYS } from '../../domain/retention.ts'
 import type { AdminMission, MissionVersion, Rubric } from '../../domain/admin/operations.ts'
 import { missingFieldLabel, missingMissionFields, rubricSaveErrors } from '../../domain/admin/operations.ts'
 import type { ElementKind } from '../../domain/admin/missionStandards.ts'
@@ -22,6 +23,7 @@ import { MissionScene } from '../student/MissionScene.tsx'
 import { AnswerFields } from '../student/StudentWorkPage.tsx'
 import { date } from './adminFormatting.ts'
 export function MissionManager() {
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams(),
     filters = {
       status: params.get('status') ?? '',
@@ -45,7 +47,15 @@ export function MissionManager() {
     if (key !== 'page') next.set('page', '0')
     setParams(next)
   }
-  if (id) return <MissionDetail key={id} id={id} onClose={() => setId(null)} />
+  if (id) {
+    const theme = params.get('themeId')
+    const day = THEME_DAYS.find(d=>d===params.get('themeDay'))
+    if (theme && /^[a-zA-Z0-9-]{1,80}$/.test(theme) && day) {
+      return <MissionDetail key={id} id={id} returnLabel={DAY_LABELS[day]+'요일 테마 검수로'}
+        onClose={()=>navigate('/admin/themes?'+new URLSearchParams({themeId:theme,day}))}/>
+    }
+    return <MissionDetail key={id} id={id} onClose={() => setId(null)} />
+  }
   return (
     <>
       <p className="ad-context-note">수정하면 새 버전이 생깁니다. 기존 학습은 시작 당시 미션·기준표를 유지합니다.</p>
@@ -374,7 +384,7 @@ const reviewLabels: Record<MissionReviewResult, string> = {
 }
 const reviewCommentLimit = 1000
 
-function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
+function MissionDetail({ id, onClose, returnLabel='미션 목록으로' }: { id: string; onClose: () => void; returnLabel?:string }) {
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { heading.current?.focus() }, [])
   const q = useAdminQuery(['mission', id], (signal) => adminApi.mission(id, signal))
@@ -431,7 +441,7 @@ function MissionDetail({ id, onClose }: { id: string; onClose: () => void }) {
     <section className="ws-card ad-mission-editor" aria-labelledby="mission-editor-title">
       <div className="ws-actions ad-mission-editor-heading">
         <h2 id="mission-editor-title" ref={heading} tabIndex={-1}>미션 상세·버전</h2>
-        <button className="cj-secondary" onClick={onClose}>미션 목록으로</button>
+        <button className="cj-secondary" onClick={onClose}>{returnLabel}</button>
       </div>
       <QueryFeedback query={q} />
       {m && (

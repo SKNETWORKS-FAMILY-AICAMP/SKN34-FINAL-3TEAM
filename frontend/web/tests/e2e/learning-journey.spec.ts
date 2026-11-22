@@ -59,7 +59,8 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
 
     await card.getByRole('button', { name: '자세히 보기' }).click()
     await expect(page.getByRole('heading', { name: '주간 리포트', exact:true })).toBeVisible()
-    await expect(page.getByText(`${from} ~ ${to}`, { exact: false })).toBeVisible()
+    // 일요일에는 질문할 기간(최근 7일)도 같은 날짜라 리포트 머리글 안에서만 찾는다.
+    await expect(page.locator('header', { has: page.getByRole('heading', { name: '주간 리포트', exact: true }) }).getByText(`${from} ~ ${to}`, { exact: false })).toBeVisible()
     await expect(page.getByText('수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.')).toBeVisible()
   })
 })

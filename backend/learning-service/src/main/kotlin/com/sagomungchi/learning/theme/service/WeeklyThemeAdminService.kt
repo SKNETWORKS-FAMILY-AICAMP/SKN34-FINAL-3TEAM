@@ -30,9 +30,7 @@ import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /**
- * 관리자 주간 테마 (FN-ADM-22, api-spec 2.8·4.1, state-diagram 3.5). 미션과 같은 작성 → 검토 요청 → 게시 → 중단.
- * 수정은 새 버전을 만들어 현재본으로 두고, 게시 중이면 재검토·재게시 전까지 학생에게는 게시본이 보인다.
- * 쓰기는 테마 행을 잠가 같은 테마 요청을 차례로 처리한다.
+ * 관리자 주간 테마. 학년별 편성·제출·게시를 직렬화하고, 게시 버전마다 요일별 미션과 기준표를 고정한다.
  * #438: 이야기·정답 구조·요일 칸은 수정 때 본문에 없으면 이전 버전에서 이어받고(ThemeCarryOver), 합친 결과의 정답 논리와
  * 생각 열기 위치를 저장 전에 검사한다(400)
  */
@@ -42,6 +40,7 @@ class WeeklyThemeAdminService(
     private val missionService: MissionService,
     private val clock: Clock,
     private val assetUrls: AssetUrls,
+    private val planner: ThemeWeekPlanner,
 ) {
     @Transactional(readOnly = true)
     fun list(grade: ThemeGrade?, weekStart: LocalDate?, status: WeeklyThemeStatus?, page: Int, size: Int): AdminWeeklyThemePage =
@@ -62,6 +61,8 @@ class WeeklyThemeAdminService(
     /** 작성: DRAFT·버전 1. 없는 미션은 400 */
     @Transactional
     fun create(author: UUID, content: ThemeContent): AdminWeeklyTheme {
+        planner.lockGrades(content.grade)
+        planner.requireOpen(content.grade, content.weekStart)
         val normalized = ThemeCarryOver.normalize(content)
         requireMissions(normalized)
         requireStory(normalized)
@@ -70,12 +71,19 @@ class WeeklyThemeAdminService(
         return get(id)
     }
 
-    /** 수정: 새 버전을 현재본으로. 게시 중 학년·주 변경은 409, 검토 중 수정은 DRAFT로 */
+    /** 새 편집본을 저장한다. 게시 중에는 기존 게시본과 편성을 유지한다. */
     @Transactional
-    fun update(themeId: UUID, author: UUID, content: ThemeContent): AdminWeeklyTheme {
-        val header = header(themeId, lock = true)
+    fun update(themeId: UUID, author: UUID, content: ThemeContent, expectedVersion: Int? = null): AdminWeeklyTheme {
+        val header = writableHeader(themeId, content.grade, expectedVersion)
+        val scheduleChanged = header.grade != content.grade || header.weekStart != content.weekStart
+        if (scheduleChanged) {
+            if (header.status == WeeklyThemeStatus.PUBLISHED) planner.locked()
+            planner.requireOpen(content.grade, content.weekStart)
+            if (planner.generationWeek(themeId) != null) {
+                throw BusinessException(HttpStatus.CONFLICT, "THEME_SCHEDULE_LOCKED", "채택한 테마의 학년과 적용 주는 변경할 수 없습니다.")
+            }
+        }
         val theme = entity(header)
-        theme.requireEditable(content.grade, content.weekStart)
         val merged = ThemeCarryOver.merge(repository.findContent(header, header.currentVersionId), content)
         requireMissions(merged)
         requireStory(merged)
@@ -86,38 +94,49 @@ class WeeklyThemeAdminService(
 
     /** 검토 요청: 현재본을 검토 요청 버전으로. 상태 전이가 안 되면 409 CONFLICT */
     @Transactional
-    fun requestReview(themeId: UUID): AdminWeeklyTheme {
-        val theme = entity(header(themeId, lock = true))
+    fun requestReview(themeId: UUID, expectedVersion: Int? = null): AdminWeeklyTheme {
+        val theme = entity(writableHeader(themeId, expectedVersion = expectedVersion))
         theme.requestReview()
         repository.markReviewRequested(themeId, theme.status, now())
         return get(themeId)
     }
 
     /**
-     * 게시·재게시: 검토 요청한 현재본만(아니면 409 CONFLICT). 게시 검사(게시 미션·시연 전용 제외·테마 학년 포함·다섯 유형 1개씩·
+     * 최종 게시: 검토 요청한 현재본만(아니면 409 CONFLICT). 게시 검사(게시 미션·시연 전용 제외·테마 학년 포함·다섯 유형 1개씩·
      * 같은 학년·주 게시 1개)를 모두 모아 실패하면 422 WEEKLY_THEME_PUBLISH_INCOMPLETE. 동시 게시가 부분 UK에 걸려도 같은 422
      */
     @Transactional
-    fun publish(themeId: UUID): AdminWeeklyTheme {
-        val header = header(themeId, lock = true)
+    fun publish(themeId: UUID, expectedVersion: Int? = null, expectedPlan: UUID? = null, checkPlan: Boolean = false): AdminWeeklyTheme {
+        val header = writableHeader(themeId, expectedVersion = expectedVersion)
+        if (checkPlan) planner.requireOccupant(header.grade,header.weekStart,expectedPlan)
         val theme = entity(header)
         theme.requirePublishable()
-        val days = repository.findDays(header.currentVersionId).map { ThemeDayMission(ThemeDay.ofNumber(it.dayOfWeek), it.missionId) }
-        val missions = days.mapNotNull { day -> missionService.publishedView(day.missionId)?.let { day.missionId to it } }.toMap()
+        planner.lockMissions(header.currentVersionId)
+        val dayRows = repository.findDays(header.currentVersionId)
+        val days = dayRows.map { ThemeDayMission(ThemeDay.ofNumber(it.dayOfWeek), it.missionId) }
+        val missions = dayRows.mapNotNull { day ->
+            val published = missionService.publishedView(day.missionId) ?: return@mapNotNull null
+            day.missionId to (day.missionVersionId?.let(missionService::getVersion) ?: published)
+        }.toMap()
         theme.publish(ThemePublishCheck.errors(header.grade, days, missions,
             repository.existsOtherPublished(themeId, header.grade, header.weekStart)))
         try {
             repository.publish(themeId, now())
+            planner.finishPublication(header.currentVersionId,header.grade,header.weekStart)
         } catch (_: DuplicateKeyException) {
             throw WeeklyThemePublishIncompleteException(listOf(WEEK_TAKEN))
         }
         return get(themeId)
     }
 
-    /** 게시 중단: 게시 중이 아니면 409. 진행 중 시도는 그대로 이어함 */
+    /** 제공을 중단해도 게시 버전은 보관한다. 다시 제공하려면 현재본을 다시 검토 요청해야 한다. */
     @Transactional
-    fun unpublish(themeId: UUID): AdminWeeklyTheme {
-        val theme = entity(header(themeId, lock = true))
+    fun unpublish(themeId: UUID, expectedPublishedVersion: Int? = null): AdminWeeklyTheme {
+        val header = writableHeader(themeId)
+        if (expectedPublishedVersion != null && header.publishedVersion != expectedPublishedVersion) {
+            planner.stale("학생에게 제공 중인 테마 버전이 바뀌었습니다.")
+        }
+        val theme = entity(header)
         theme.unpublish()
         repository.updateStatus(themeId, theme.status, now())
         return get(themeId)
@@ -144,6 +163,16 @@ class WeeklyThemeAdminService(
     private fun header(themeId: UUID, lock: Boolean = false): ThemeHeader =
         repository.findHeader(themeId, lock) ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "주간 테마 없음")
 
+    private fun writableHeader(themeId: UUID, destination: ThemeGrade? = null, expectedVersion: Int? = null): ThemeHeader {
+        val before = header(themeId)
+        planner.lockGrades(before.grade, destination ?: before.grade)
+        val current = header(themeId, lock = true)
+        if (current.grade != before.grade || current.weekStart != before.weekStart) planner.stale("테마의 학년 또는 주차가 바뀌었습니다.")
+        if (current.status != WeeklyThemeStatus.PUBLISHED) planner.requireOpen(current.grade, current.weekStart)
+        if (expectedVersion != null && current.currentVersion != expectedVersion) planner.stale("테마의 편집 버전이 바뀌었습니다.")
+        return current
+    }
+
     private fun entity(h: ThemeHeader) =
         WeeklyTheme(h.id, h.status, h.grade, h.weekStart, h.currentVersion, h.publishedVersion, h.reviewVersion)
 
@@ -155,14 +184,15 @@ class WeeklyThemeAdminService(
             grade = h.grade,
             weekStart = h.weekStart,
             status = h.status,
-            version = h.currentVersion,
+            version = version.version,
             publishedVersion = h.publishedVersion,
             reviewRequested = entity(h).reviewRequested,
             title = version.title,
             intro = version.intro,
             days = repository.findDays(h.currentVersionId).map {
                 AdminThemeDay(ThemeDay.ofNumber(it.dayOfWeek), it.missionId, it.clue, it.rulesOut, it.dialogue, it.hintSpots, it.videoUri,
-                    videoUrl = assetUrls.url(it.videoUri), sceneImageUrl = assetUrls.url(it.sceneUri), clueFeature = it.clueFeature)
+                    videoUrl = assetUrls.url(it.videoUri), sceneImageUrl = assetUrls.url(it.sceneUri), clueFeature = it.clueFeature,
+                    title = it.title, sceneMotion = it.sceneMotion)
             },
             publishedAt = h.publishedAt,
             createdAt = h.createdAt,
@@ -183,6 +213,8 @@ class WeeklyThemeAdminService(
             introVideoUrl = assetUrls.url(story.introVideoUri),
             outroVideoUrl = assetUrls.url(story.outroVideoUri),
             features = story.features,
+            weekLocked = repository.existsPublished(h.grade,h.weekStart),
+            generationWeek = planner.generationWeek(h.id),
         )
     }
 

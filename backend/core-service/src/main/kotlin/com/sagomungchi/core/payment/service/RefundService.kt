@@ -86,6 +86,8 @@ class RefundService(private val repository: PaymentRepository,private val tx: Pa
             rejected
         }
     }
+    fun pendingCount(): Long = repository.countRefunds("REQUESTED")
+
     fun list(status: String?,page: Int,size: Int): List<RefundRequest> { PaymentService.pagination(page,size); return repository.refunds(status,page*size,size) }
     fun recover() { repository.refundRecovery().forEach { r ->
         try { refresh(r) } catch(e: Exception) { org.slf4j.LoggerFactory.getLogger(javaClass).error("Refund recovery {} requires attention ({})",r.id,(e as? com.sagomungchi.core._common.exception.BusinessException)?.code ?: e.javaClass.simpleName) }

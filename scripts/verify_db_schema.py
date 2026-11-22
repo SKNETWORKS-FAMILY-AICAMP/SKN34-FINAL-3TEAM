@@ -27,7 +27,8 @@ def require(condition, message):
 
 
 # Reference rows that migrations publish on purpose (#235 V25 consent documents 1.0, #388 COMMUNITY 1.0,
-# #389 V35 reward rules, #485 V43 THEME_ON_TIME·THEME_FINISHED rules, #415 V39 TERMS·PRIVACY 1.1). Only these exact keys may exist before the fixtures run;
+# #389 V35 reward rules, #485 V43 THEME_ON_TIME·THEME_FINISHED rules, #415 V39 TERMS·PRIVACY 1.1,
+# #732 V54 PRIVACY 1.2·GUARDIAN 1.1, #728 V55 pipeline account). Only these exact keys may exist before the fixtures run;
 # anything else means a non-isolated DB.
 MIGRATION_SEED_ROWS = {
     "core_db": {
@@ -38,6 +39,8 @@ MIGRATION_SEED_ROWS = {
             "00000000-0000-4000-8000-000003880001",
             "00000000-0000-4000-8000-000004150001",
             "00000000-0000-4000-8000-000004150002",
+            "00000000-0000-4000-8000-000007320001",
+            "00000000-0000-4000-8000-000007320002",
         ),
         "reward_rule": (
             "MISSION_COMPLETED",
@@ -48,6 +51,7 @@ MIGRATION_SEED_ROWS = {
             "THEME_ON_TIME",
             "THEME_FINISHED",
         ),
+        "user_account": ("00000000-0000-4000-8000-0000000f0725",),
     },
 }
 # Seed tables whose primary key is not "id".
@@ -517,6 +521,15 @@ UPDATE weekly_theme SET published_version_id = current_version_id, review_versio
 WHERE id = '00000000-0000-4000-8000-000000000120';
 INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id)
 VALUES ('00000000-0000-4000-8000-000000000121', 1, '00000000-0000-4000-8000-000000000101');
+-- 게시된 요일의 문제와 기준표는 함께 고정되며 각각 존재하는 버전을 가리킨다.
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE weekly_theme_day SET mission_version_id = '00000000-0000-4000-8000-000000000102'
+$$, '23514');
+UPDATE weekly_theme_day SET mission_version_id = '00000000-0000-4000-8000-000000000102',
+                            rubric_version_id = '00000000-0000-4000-8000-000000000103';
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE weekly_theme_day SET rubric_version_id = '00000000-0000-4000-8000-999999999999'
+$$, '23503');
 SELECT pg_temp.expect_sqlstate($$
     UPDATE weekly_theme SET grade = 'G3_4' WHERE id = '00000000-0000-4000-8000-000000000120'
 $$, '23514');
@@ -665,6 +678,34 @@ SELECT pg_temp.expect_sqlstate($$
     UPDATE theme_draft SET theme_id = '00000000-0000-4000-8000-999999999999'
     WHERE id = '00000000-0000-4000-8000-000000000128'
 $$, '23503');
+-- 임시 편성은 READY의 월요일만 가능하며 한 학년·편성 주에 한 자리만 예약한다.
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET planned_week = '2026-11-23' WHERE id = '00000000-0000-4000-8000-000000000127'
+$$, '23514');
+UPDATE theme_draft SET status = 'READY' WHERE id IN
+    ('00000000-0000-4000-8000-000000000127','00000000-0000-4000-8000-000000000128');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET planned_week = '2026-11-24' WHERE id = '00000000-0000-4000-8000-000000000127'
+$$, '23514');
+UPDATE theme_draft SET planned_week = '2026-11-23' WHERE id = '00000000-0000-4000-8000-000000000127';
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft SET planned_week = '2026-11-23' WHERE id = '00000000-0000-4000-8000-000000000128'
+$$, '23505');
+UPDATE theme_draft SET family_root_id = '00000000-0000-4000-8000-000000000127'
+WHERE id = '00000000-0000-4000-8000-000000000128';
+INSERT INTO theme_draft_scene_selection (root_id, scene, version_id, reviewed_version_ids, confirmed_at)
+SELECT family_root_id, 'INTRO', id, ARRAY[family_root_id,id], now()
+FROM theme_draft WHERE id = '00000000-0000-4000-8000-000000000128';
+SELECT pg_temp.expect_sqlstate($$
+    INSERT INTO theme_draft_scene_selection SELECT * FROM theme_draft_scene_selection
+$$, '23505');
+SELECT pg_temp.expect_sqlstate($$
+    UPDATE theme_draft_scene_selection SET version_id = '00000000-0000-4000-8000-999999999999'
+$$, '23503');
+INSERT INTO theme_draft_scene_note (version_id, scene, starred, note)
+SELECT version_id, scene, true, '' FROM theme_draft_scene_selection;
+SELECT pg_temp.expect_sqlstate($$UPDATE theme_draft_scene_note SET scene = 'SAT'$$, '23514');
+SELECT pg_temp.expect_sqlstate($$UPDATE theme_draft_scene_note SET note = repeat('가',161)$$, '22001');
 UPDATE theme_draft SET status = 'ADOPTED', theme_id = '00000000-0000-4000-8000-000000000120'
 WHERE id = '00000000-0000-4000-8000-000000000128';
 SELECT pg_temp.expect_sqlstate($$
@@ -1152,9 +1193,9 @@ def verify_schema(query):
                     f"{database}.{key}: varchar length differs",
                 )
             elif typ.endswith("[]"):
-                mapped = "ARRAY"  # #466 smallint[]·varchar[]: element type is checked through udt_name
+                mapped = "ARRAY"  # PostgreSQL reports the element type through udt_name.
                 require(
-                    col["udt"] == "_" + {"smallint": "int2", "varchar": "varchar"}[typ[:-2]],
+                    col["udt"] == "_" + {"smallint": "int2", "varchar": "varchar", "uuid": "uuid"}[typ[:-2]],
                     f"{database}.{key}: array element type differs",
                 )
             elif typ.startswith("vector("):

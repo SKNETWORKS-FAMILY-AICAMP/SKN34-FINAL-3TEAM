@@ -2,6 +2,7 @@ import type { CommunityReviewResult, ErrorReport } from '../../domain/admin/oper
 import { answerText, POST_STATUS_LABELS } from '../../domain/retention.ts'
 import { correctionImpactText } from '../../domain/admin/operations.ts'
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
@@ -18,11 +19,20 @@ const targetLabels: Record<string, string> = {
   COMMUNITY_POST: '커뮤니티 공유물 · 접수 즉시 숨김',
 }
 export function ErrorManager() {
-  const q = useAdminQuery(['errors'], (signal) => adminApi.errors(signal)),
+  const [params,setParams] = useSearchParams()
+  const status=params.get('status') ?? ''
+  const [page,setPage] = useState(0)
+  const q = useAdminQuery(['errors',status,page], (signal) => adminApi.errors(signal,status,page)),
     [id, setId] = useState<string | null>(null)
   return (
     <>
-      <h2>오류 신고 검토</h2>
+      <div className="ad-data-toolbar"><h2>오류 신고 검토</h2>
+        <label>신고 상태 <select aria-label="신고 상태" value={status} onChange={e=>{
+          const next=new URLSearchParams(params)
+          if(e.target.value) next.set('status',e.target.value); else next.delete('status')
+          setParams(next); setPage(0); setId(null)
+        }}><option value="">전체 상태</option>{Object.entries(reportStatusLabel).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+      </div>
       <p>신고에 연결된 답변이나 공유물 원문을 열람하면 감사 이력이 남습니다.</p>
       <QueryFeedback query={q} />
       {q.data &&
@@ -42,6 +52,8 @@ export function ErrorManager() {
             </button>
           </article>
         ))}
+      {q.data && !q.error && <div className="ad-list-footer"><span>{q.data.totalElements}건 · {page+1}페이지</span>
+        <div><button disabled={page===0} onClick={()=>setPage(page-1)}>이전 신고</button><button disabled={(page+1)*20>=q.data.totalElements} onClick={()=>setPage(page+1)}>다음 신고</button></div></div>}
       {id && (
         <Modal title="신고 연결 기록 검토" onClose={() => setId(null)}>
           <ErrorDetail id={id} />

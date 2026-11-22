@@ -37,6 +37,7 @@ interface PaymentMapper {
     fun due(today: LocalDate): List<Subscription>
     fun recovery(): List<PaymentOrder>
     fun refunds(@Param("status") status: String?, @Param("offset") offset: Int, @Param("size") size: Int): List<RefundRequest>
+    fun countRefunds(status: String): Long
     fun refund(id: UUID): RefundRequest?
     fun refundHistory(order: UUID): List<RefundRequest>
     fun pendingRefund(order: UUID): RefundRequest?

@@ -426,6 +426,81 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         val unsupported=draftCall("GET","/achievement-standards",access)
         assertEquals(503,unsupported.status);assertEquals("ADMIN_MISSIONS_UNAVAILABLE",json.readTree(unsupported.contentAsString)["code"].asText())
     }
+    @Test fun `home workload returns permission scoped counts matching the filtered job list`() {
+        val (actor, ops) = token("SERVICE_OPS")
+        notification(actor)
+        val range = "from=2026-01-01&to=2026-01-03"
+        fun counts(access: String): com.fasterxml.jackson.databind.JsonNode {
+            val response = draftCall("GET", "/overview/workload?$range", access)
+            assertEquals(200, response.status)
+            return json.readTree(response.contentAsByteArray)
+        }
+        val operations = counts(ops)
+        assertEquals(setOf("failedJobs","pendingInquiries","receivedReports"), operations.fieldNames().asSequence().toSet())
+        val listed = draftCall("GET","/jobs?$range&status=FAILED",ops)
+        assertEquals(200, listed.status)
+        assertTrue(operations["failedJobs"].asLong() > 0)
+        assertEquals(json.readTree(listed.contentAsByteArray)["totalElements"].asLong(), operations["failedJobs"].asLong())
+        for ((field,table) in listOf("pendingInquiries" to "inquiry", "receivedReports" to "error_report")) {
+            assertEquals(jdbc.queryForObject("SELECT count(*) FROM $table WHERE status='RECEIVED'", Long::class.java), operations[field].asLong())
+        }
+        val refunds = counts(token("PAYMENT_VIEW").second)
+        assertEquals(setOf("pendingRefunds"), refunds.fieldNames().asSequence().toSet())
+        assertEquals(jdbc.queryForObject("SELECT count(*) FROM refund_request WHERE status='REQUESTED'",Long::class.java), refunds["pendingRefunds"].asLong())
+        assertEquals(0,counts(token("CONTENT").second).size())
+    }
+
+    @Test fun `scene and week writes forward admin identity and reject stale changes without exposing notes`() {
+        val (admin, content) = token("CONTENT")
+        val draft = UUID.randomUUID()
+        val version = UUID.randomUUID()
+        val scenePath = "/theme-drafts/$draft/scenes/MON/versions"
+        val planner = "/weekly-themes/planner"
+        val scene = """{"rootDraftId":"$draft","scene":"MON","versions":[],"selectedVersionId":"$version","editable":true}"""
+        val routes = listOf(
+            Triple("GET", scenePath, null),
+            Triple("PUT", "$scenePath/selection", """{"versionId":"$version","expectedVersionId":null,"expectedVersionCount":1}"""),
+            Triple("PATCH", "$scenePath/$version", """{"starred":true,"note":"private memo"}"""),
+            Triple("GET", "$planner?grade=G4&weekStart=2026-11-23", null),
+            Triple("PUT", planner, """{"draftId":"$draft","grade":"G4","targetWeek":"2026-11-23","expectedWeek":null,"expectedTargetDraftId":null}"""))
+        for ((method,path,body) in routes) {
+            missionBody = if (path.startsWith(planner)) """{"draftId":"$draft","grade":"G4"}""" else scene
+            val response = draftCall(method,path,content,body)
+            assertEquals(200,response.status,path)
+            val forwarded = requests.last()
+            assertEquals("/internal/admin"+path.substringBefore('?'),forwarded.path)
+            assertEquals(method,forwarded.method)
+            assertEquals(admin.toString(),forwarded.user)
+            assertNull(forwarded.scope)
+            if (path.contains('?')) assertEquals(path.substringAfter('?'),forwarded.query)
+            if (body!=null) {
+                assertEquals(body,forwarded.body)
+                assertNotNull(response.getHeader("X-Admin-Operation-Id"))
+            }
+        }
+        val audit=jdbc.queryForList("SELECT action, detail::text AS detail FROM audit_log WHERE actor_user_id=?",admin)
+        assertTrue(audit.any { it["action"]=="THEME_SCENE_ANNOTATE_SUCCEEDED" })
+        assertTrue(audit.any { it["action"]=="THEME_DRAFT_PLAN_SUCCEEDED" })
+        assertFalse(audit.any { it["detail"].toString().contains("private memo") })
+        missionStatus=409
+        missionBody="""{"code":"CONFLICT","status":409,"detail":"private memo"}"""
+        val conflict=draftCall("PUT","$scenePath/selection",content,routes[1].third)
+        assertEquals(409,conflict.status)
+        assertFalse(conflict.contentAsString.contains("private memo"))
+        for (code in listOf("WEEK_LOCKED","PLAN_CONFLICT")) {
+            missionBody="""{"code":"$code","status":409,"detail":"private memo"}"""
+            val rejected=draftCall("PUT",planner,content,routes.last().third)
+            assertEquals(409,rejected.status)
+            assertEquals(code,json.readTree(rejected.contentAsByteArray)["code"].asText())
+            assertFalse(rejected.contentAsString.contains("private memo"))
+        }
+        val ops=token("SERVICE_OPS").second
+        requests.clear()
+        for ((method,path,body) in routes) assertEquals(403,draftCall(method,path,ops,body).status)
+        assertEquals(400,draftCall("GET","$planner?grade=G4&weekStart=2026-11-24",content).status)
+        assertTrue(requests.isEmpty())
+    }
+
     @Test fun `weekly theme proxy forwards every route with CONTENT and audits changes by theme`() {
         val (admin,access)=token("CONTENT");val theme=UUID.randomUUID()
         val routes=listOf(
@@ -457,11 +532,26 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         assertEquals(400,draftCall("POST","/weekly-themes",access,"[]").status)
         assertTrue(requests.isEmpty())
     }
+    @Test fun `adopted theme schedule rejection is exposed through the update route`() {
+        val (_, access) = token("CONTENT")
+        missionStatus = 409
+        missionBody = """{"status":409,"code":"THEME_SCHEDULE_LOCKED","detail":"private memo"}"""
+        val response = draftCall("PUT", "/weekly-themes/${UUID.randomUUID()}", access, """{"weekStart":"2026-11-30"}""")
+        assertEquals(409, response.status)
+        val problem = json.readTree(response.contentAsByteArray)
+        assertEquals("THEME_SCHEDULE_LOCKED", problem["code"].asText())
+        assertEquals("채택한 테마의 학년과 적용 주는 변경할 수 없습니다.", problem["title"].asText())
+        assertFalse(response.contentAsString.contains("private memo"))
+    }
+
     @Test fun `weekly theme publish check failure keeps the learning code and hides supplier text`() {
         val (admin,access)=token("CONTENT");val theme=UUID.randomUUID()
-        missionStatus=422;missionBody="""{"status":422,"code":"WEEKLY_THEME_PUBLISH_INCOMPLETE","detail":"student secret"}"""
+        missionStatus=422;missionBody="""{"status":422,"code":"WEEKLY_THEME_PUBLISH_INCOMPLETE","detail":"student secret","errors":[{"code":"DAYS_INCOMPLETE","message":"secret"},{"code":"secret","message":"secret"}]}"""
         val failed=draftCall("POST","/weekly-themes/$theme/publish",access,"{}")
         assertEquals(422,failed.status);assertEquals("WEEKLY_THEME_PUBLISH_INCOMPLETE",json.readTree(failed.contentAsString)["code"].asText())
+        val errors=json.readTree(failed.contentAsByteArray)["errors"]
+        assertEquals(1,errors.size())
+        assertEquals("DAYS_INCOMPLETE",errors[0]["code"].asText())
         assertFalse(failed.contentAsString.contains("secret"))
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='WEEKLY_THEME_PUBLISH_REJECTED'",Int::class.java,admin))
         missionStatus=404;missionBody="""{"status":404,"code":"NOT_FOUND","detail":"secret"}"""
@@ -585,7 +675,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         assertFalse(missing.contentAsString.contains("secret"))
     }
     companion object {
-        data class Seen(val method: String,val path: String,val body: String,val role: String?,val scope: String?,val token: String?,val user: String?)
+        data class Seen(val method: String,val path: String,val body: String,val role: String?,val scope: String?,val token: String?,val user: String?,val query: String?)
         val requests=CopyOnWriteArrayList<Seen>()
         @Volatile var statsStatus=200
         const val STATS="{\"period\":{\"from\":\"2026-01-01\",\"to\":\"2026-01-03\"},\"inclusionRule\":\"P08\",\"attempts\":7,\"completedAttempts\":3,\"students\":2,\"studentName\":\"secret\"}"
@@ -596,7 +686,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         @Volatile var missionBody="{}"
         private val server=HttpServer.create(InetSocketAddress("127.0.0.1",0),0).apply {
             createContext("/internal") { e ->
-                requests.add(Seen(e.requestMethod,e.requestURI.path,e.requestBody.readBytes().toString(Charsets.UTF_8),e.requestHeaders.getFirst("X-User-Role"),e.requestHeaders.getFirst("X-Student-Scope"),e.requestHeaders.getFirst("X-Internal-Token"),e.requestHeaders.getFirst("X-User-Id")))
+                requests.add(Seen(e.requestMethod,e.requestURI.path,e.requestBody.readBytes().toString(Charsets.UTF_8),e.requestHeaders.getFirst("X-User-Role"),e.requestHeaders.getFirst("X-Student-Scope"),e.requestHeaders.getFirst("X-Internal-Token"),e.requestHeaders.getFirst("X-User-Id"),e.requestURI.rawQuery))
                 val stats=e.requestURI.path=="/internal/stats";val status=if(stats) statsStatus else missionStatus
                 val body=(if(stats) statsBody else missionBody).toByteArray()
                 e.responseHeaders.set("Content-Type",if(!stats && missionContentType!=null) missionContentType!! else if(status>=400) "application/problem+json" else "application/json")
