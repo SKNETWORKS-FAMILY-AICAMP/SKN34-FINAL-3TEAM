@@ -32,7 +32,7 @@
 | `PAYMENT_VIEW` | 결제·구독 조회, PG 대조 |
 | `PAYMENT_REFUND` | 환불 승인 |
 | `SERVICE_OPS` | 작업·큐 현황, 작업 재처리, 신고·문의·공지, 모델·프롬프트 버전, AI 사용량 (운영 현황 `/admin/overview`·감사 로그 조회는 권한 없이 ADMIN 역할만, 2.8.1) |
-| 학생 원문 열람 | `SERVICE_OPS`가 오류 신고·문의에 연결된 시도의 답변·판정만, 열람마다 `audit_log` (P07) |
+| 학생 원문 열람 | `SERVICE_OPS`가 오류 신고·문의에 연결된 시도의 답변·판정과 표현 검토 대기 글(FN-ADM-24, 글만·학생 이름·ID 없음, 구현 전 #728)만, 열람·라벨마다 `audit_log` (P07) |
 
 - 리소스 권한 (FN 1.1, NFR-SEC-02)
   - 학생: 본인 기록만
@@ -531,8 +531,8 @@
 | POST | `/admin/model-versions/{versionId}/rollback` | SERVICE_OPS | 이전 승인 버전 복귀, 재분석 여부 기록 | ADM-18 | 우선1 |
 | POST | `/admin/models/preflight` | SERVICE_OPS | 모델 등록 전 파일 사전 검사, core가 scoring `/internal/models/preflight`로 동기 중계 (#368, 5.2.1) | ADM-17 | 우선1 |
 | GET | `/admin/model-loading` | SERVICE_OPS | scoring Pod별 모델 로딩 상태 `pods[]`·활성 버전별 요약 `summaries[]` (#370, [scoring Pod별 모델 로딩 확인](#519-scoring-pod별-모델-로딩-확인-370)) | ADM-18 | 우선1 |
-| GET | `/admin/expression-reviews?labeled&source&page&size` | SERVICE_OPS | 표현 검토 대기 목록(글만, 학생 이름·ID 없음), 열람 감사 기록 (#725, 4.1.5) | ADM-24 | 우선2 |
-| PUT | `/admin/expression-reviews/{reviewId}/label` | SERVICE_OPS | `{label: OFFENSIVE\|CLEAN\|SKIP}` 라벨, 감사 기록 (#725) | ADM-24 | 우선2 |
+| GET | `/admin/expression-reviews?labeled&source&page&size` | SERVICE_OPS | 표현 검토 대기 목록(글만, 학생 이름·ID 없음), 열람 감사 기록 (#725, 4.1.5, 구현 전 #728) | ADM-24 | 우선2 |
+| PUT | `/admin/expression-reviews/{reviewId}/label` | SERVICE_OPS | `{label: OFFENSIVE\|CLEAN\|SKIP}` 라벨, 감사 기록 (#725, 구현 전 #728) | ADM-24 | 우선2 |
 | GET | `/admin/ai-usage?from&to&callType` | SERVICE_OPS | 되묻기·판정·분석·리포트·미션 초안(#355, `MISSION_DRAFT`)·리포트 설명(FN-RPT-09, #480 `REPORT_EXPLANATION`)·지식 임베딩(#467 `KNOWLEDGE_EMBEDDING`)·주간 테마 생성(#439, 텍스트 `THEME_DRAFT`·이미지 `THEME_IMAGE`·영상 `THEME_VIDEO` #436)·scoring 모델(`M2`·`M1`)별 호출량·실패·지연·토큰·비용 (요금제 한도 P13, 월 LLM 비용 예산 80% 경보 P10) | ADM-19 | 우선1 |
 | GET·POST | `/admin/weekly-themes?grade&weekStart&status` | CONTENT | 테마 목록·작성 `{grade, weekStart, title, intro, days:[{day, missionId}]}`. `grade`는 `G3`·`G4`·`G5`·`G6`(학년별 테마, 에픽 #436) | ADM-22 | core 프록시 #387 |
 | GET·PUT | `/admin/weekly-themes/{themeId}` | CONTENT | 상세·수정(게시 중 수정은 재검토) | ADM-22 | core 프록시 #387 |
@@ -545,7 +545,7 @@
 
 - 테마는 core가 learning `/internal/admin/weekly-themes…`로 프록시(#355 미션 초안과 같은 방식, core #387·learning #385 구현), 테마 초안은 `/internal/admin/theme-drafts…`로 같은 방식(core #439·learning #438), 아이템은 core 소유. 변경은 `audit_log`(`WEEKLY_THEME_*`·`THEME_DRAFT_*`·`LOOK_ITEM_*`). 테마 초안 요청·버리기·다시 생성은 응답 초안(`target_type = THEME_DRAFT`), 채택은 만든 테마(`WEEKLY_THEME`, `detail.draftId`)가 결과 감사 대상 아이템은 같은 트랜잭션에서 `LOOK_ITEM_CREATED`·`LOOK_ITEM_UPDATED`·`LOOK_ITEM_STOPPED`·`LOOK_ITEM_RESUMED`(`target_type = LOOK_ITEM`, 수정은 `detail.before`에 이전 값)
 - 커뮤니티 신고 검토는 기존 `/admin/error-reports`(SERVICE_OPS). 신고 연결 공유물 원문 열람은 감사 기록(P07)
-- 표현 검토(FN-ADM-24, #725): `GET /admin/expression-reviews?labeled&source&page&size`·`PUT /admin/expression-reviews/{reviewId}/label`, SERVICE_OPS. core가 learning `/internal/admin/expression-reviews…`(4.1.5)로 프록시하고 목록 열람 `EXPRESSION_REVIEW_VIEW`·라벨 `EXPRESSION_REVIEW_LABEL` 감사 기록(P07). 응답 모양은 4.1.5와 같음(학생 이름·ID 없음)
+- 표현 검토(FN-ADM-24, #725): `GET /admin/expression-reviews?labeled&source&page&size`·`PUT /admin/expression-reviews/{reviewId}/label`, SERVICE_OPS. core가 learning `/internal/admin/expression-reviews…`(4.1.5)로 프록시하고 목록 열람 `EXPRESSION_REVIEW_VIEW`·라벨 `EXPRESSION_REVIEW_LABEL` 감사 기록(P07). 응답 모양은 4.1.5와 같음(학생 이름·ID 없음). learning 내부 API는 #727 구현, core 프록시·관리자 화면은 구현 전(#728)
 
 #### 관리자 테마 검수와 최종 게시 (#882)
 
@@ -955,10 +955,10 @@ If-Match: "7"
 
 | 받는 쪽 | 호출자 → 허용 경로 (`*` 한 세그먼트, `**` 하위 전체) |
 |---|---|
-| core | ai·scoring → `/internal/model-versions/active` · ops → `/internal/model-versions`, `/internal/model-versions/active`(재학습 작업, #725) · learning → `/internal/payment-usage/**`, `/internal/deletion-requests/*/completions`, `/internal/students/*/profile` · report-worker → `/internal/students/*/profile`, `/internal/students/*/report-template`, `/internal/deletion-requests/*/completions` |
+| core | ai·scoring → `/internal/model-versions/active` · ops → `/internal/model-versions`, `/internal/model-versions/active`(재학습 작업, #725, 구현 전 #728) · learning → `/internal/payment-usage/**`, `/internal/deletion-requests/*/completions`, `/internal/students/*/profile` · report-worker → `/internal/students/*/profile`, `/internal/students/*/report-template`, `/internal/deletion-requests/*/completions` |
 | learning | core → `/internal/**`(프록시) · ai → `/internal/records/students/**` · report-api → `/internal/records/evidence` · report-worker → `/internal/records/**`, `/internal/students/*/weekly-theme/summary` · ops → `/internal/admin/knowledge/**`, `/internal/knowledge/**`, `/internal/expression-reviews/**`(재학습 작업, #725) |
 | ai | core → `/internal/analysis/**` · learning → `/internal/{judgments,followups,mission-drafts,theme-drafts,embeddings,memory-explanations,memory-queries}`(`memory-queries`는 #681 구현) · report-worker → `/internal/report-narratives`, `/internal/report-explanations` · ops → `/internal/embeddings`, `/internal/judgments`, `/internal/versions` |
-| scoring | ai → `/internal/m1/**`, `/internal/m2/**` · core → `/internal/models/preflight` · ops → `/internal/versions` |
+| scoring | ai → `/internal/m1/**`, `/internal/m2/**` · core → `/internal/models/preflight` · learning → `/internal/toxicity/**`(#692) · ops → `/internal/versions` |
 | report-api | core → `/internal/reports/**`, `/internal/report-jobs/**` |
 
 - ops는 운영 스크립트(`scripts/knowledge`·`evaluation`)와 표현 분류 재학습 작업(`ml/tox` CronJob, #725) 전용 토큰이며 비워 두면 받지 않는다. report-worker는 HTTP를 받지 않는다
