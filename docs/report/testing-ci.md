@@ -255,7 +255,7 @@ A1~A21 모두 해결(#69·#166~#171·#192·#204·#249~#256·#278~#280·#314·#63
 | 컨텍스트 전파(2.3) | ai `clients/base.py`가 `X-User-*`·`X-Student-Scope`를 learning 호출에 부착. report 소비자는 `SYSTEM` + 이벤트 학생 범위 |
 | 레이어 단방향·기능 간 service 경유(2.2) | controller→repository 0건, 다른 기능 repository 참조 0건, Presentation의 `@Transactional` 0건. 예외는 기존 결정(`_common/messaging` #278, support의 learning client #46) |
 | 트랜잭션 안 외부 호출 금지(2.2) | 리포트 복구 `NOT_SUPPORTED`, 알림 Redis 발행 `AFTER_COMMIT`, learning 피드백은 `FeedbackFacade` 트랜잭션 밖 AI 호출, report Outbox는 advisory lock·짧은 트랜잭션 |
-| 재시도 계층(1.3) | 재시도는 ai LLM 호출(1회, 1초)과 되묻기 유출 재생성(1회)만. 서비스 간 호출은 재시도 없음. 모든 클라이언트에 타임아웃 |
+| 재시도 계층(1.3) | 서비스 간 호출은 재시도 없음. ai 내부에는 일반 LLM 재시도(1회, 1초), 되묻기 유출 재생성(1회), 리포트 상세 설명의 조건부 재생성(공유 마감 75초 안에서 1회, #850)이 있다. 모든 클라이언트에 타임아웃 |
 | Outbox·멱등 소비(1.6) | Outbox는 core·report만, learning은 발행 없음, ai·scoring은 best-effort. 리스너는 수동 ACK·`RetryingConsumer` |
 | readiness(4.4) | core·learning `readinessState,db,rabbit`, ai RabbitMQ, scoring RabbitMQ·모델, report DB. 하위 서비스 호출 없음 |
 | 스케줄 중복 방지(1.5) | 정기·복구 스케줄러는 ShedLock 또는 레플리카 안전 조건부 UPDATE·DELETE |
@@ -450,6 +450,12 @@ e2e로 안 도는 경로는 테스트로 확인(로컬 실행, 모두 통과)
     - 비밀번호·PIN·토큰·연결 코드·`customerKey`를 담은 core 요청·결과 타입 17개는 `toString()`에서 값을 `***`로 가림
     - 시험: learning `answer/service/AnswerServiceTest`(답변 저장 CHECK 위반을 전역 예외 로그로 남겨도 원문 0건, 설정 전에는 실패 확인), core `_common/persistence/DbErrorDetailLogTest`·`account/SecretToStringTest`
   - ai·scoring 전역 예외 로그에 응답 검증 오류 입력값: #899 해결. ai·scoring 전역 처리기와 분석 대화가 Pydantic 검증 오류를 본문 없이 기록
-  - OTel trace의 토스 호출 URL에 `billingKey`·`paymentKey`, Google 콜백 `code`(로그가 아닌 trace, Tempo 24시간): #900에서 조치. Collector traces pipeline `transform/redact`가 청구·취소 경로 키를 `{billingKey}`·`{paymentKey}`로 바꾸고 로그인·재인증 콜백 server span의 `url.query`를 지움. Collector 0.164.0에 prod 렌더 설정으로 가짜 span 6건을 보내 키·code 0건, 주문 조회·일반 경로는 그대로임을 확인. 운영 Tempo 검색 0건 확인은 배포 후(기존 span은 24시간 뒤 만료)
+  - OTel trace의 토스 호출 URL에 `billingKey`·`paymentKey`, Google 콜백 `code`(로그가 아닌 trace, Tempo 24시간): #900에서 조치. Collector traces pipeline `transform/redact`가 청구·취소 경로 키를 `{billingKey}`·`{paymentKey}`로 바꾸고 로그인·재인증 콜백 server span의 `url.query`를 지움. Collector 0.164.0에 prod 렌더 설정으로 가짜 span 6건을 보내 키·code 0건, 주문 조회·일반 경로는 그대로임을 확인. 운영 Tempo 검색 0건 확인은 배포 후(기존 span은 24시간 뒤 만료). 이후 URL 별칭과 span 이름을 포함한 검증은 10.5
 - ai·scoring·report-api는 로깅 설정이 없어 WARNING 이상과 uvicorn 접근 로그만 남음(운영 이미지와 같은 조건). 로그 수준을 올리면 다시 점검 필요
 - 운영 로그 중앙 수집이 없어(`OTEL_LOGS_EXPORTER=none`, Loki 없음) 배포 환경 샘플은 파드별 `kubectl logs`로만 얻을 수 있음. 이번 점검은 로컬 실행분만 봄
+
+### 10.5 trace URL 비식별화 (#900, 2026-11-23)
+
+- Collector의 trace 파이프라인에서 토스 빌링 청구·결제 취소 URL의 키를 경로 템플릿으로 바꾼다. Google 로그인·재인증 콜백에서는 쿼리 속성을 삭제하고, URL이나 span 이름에 포함된 쿼리도 제거한다. 변환 처리 오류는 원문 export 대신 실패로 처리한다.
+- 검증 환경은 로컬 Docker Collector 0.164.0 → Tempo 2.10.10이다. Helm 4.3.1로 렌더링한 구성에서 변환 단계만 뺀 대조군과 변환 적용군에 동일한 합성 span 7개씩 전송했다. Tempo에서 두 trace를 조회한 결과 민감 값이 포함된 span은 4건에서 0건으로 줄었고, 양쪽 모두 7개를 저장했다. 상태 코드, 빌링 자격 발급 경로, 무관한 URL 및 속성은 유지됐다.
+- Tempo 활성, Langfuse 전용, 메트릭 전용 차트 렌더링을 확인했다. 운영의 실제 기존 trace 조회와 배포 뒤 확인은 남아 있다. 운영에서는 Collector 전환 이후의 시간 범위에서 청구·취소의 키 경로와 콜백 쿼리 속성을 조회해 건수만 남긴다. 기존 저장분은 Tempo 보존 기간의 영향을 받는다.

@@ -336,6 +336,70 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409': {$ref: '#/components/responses/Problem'}
+  /attempts/{attemptId}/word-help:
+    post:
+      operationId: wordHelp
+      summary: 낱말 물어보기 (api-spec 2.2.1·4.1, FN-LRN-21, #599)
+      description: >-
+        학생 본인 시도만. 미션 질문·안내 글·시도 학년·교과를 붙이고, 마무리 전이면 유출 검사 값(보이는 정답 글자·금지어·예시 답)을 넣어
+        ai POST /internal/word-helps를 부른다(25초). ai 응답의 versions를 뺀 값을 그대로 돌려주며 질문·응답은 저장하지 않는다.
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [question]
+              properties:
+                question: {type: string, minLength: 1, maxLength: 100, description: 앞뒤 공백을 뗀 뒤 1~100자}
+      responses:
+        '200':
+          description: 결과(state로 구분)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [state, headword, text, example, senses]
+                properties:
+                  state: {type: string, enum: [EXPLAINED, DICTIONARY_ONLY, NOT_FOUND, DEFERRED, OUT_OF_SCOPE]}
+                  headword: {type: [string, 'null']}
+                  text: {type: string}
+                  example: {type: [string, 'null']}
+                  senses:
+                    type: array
+                    maxItems: 3
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [definition, source]
+                      properties:
+                        definition: {type: string}
+                        source: {type: string, enum: [표준국어대사전, 온용어]}
+                        attribution: {type: [string, 'null']}
+                        sourceUrl: {type: [string, 'null'], format: uri}
+                        license: {type: [string, 'null'], format: uri}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502':
+          description: AI_BAD_RESPONSE (ai 4xx·계약 밖 응답)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: DICTIONARY_UNAVAILABLE 또는 AI_UNAVAILABLE(ai 장애·서킷 차단). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /attempts/{attemptId}/answers:
     post:
       operationId: submitAnswer

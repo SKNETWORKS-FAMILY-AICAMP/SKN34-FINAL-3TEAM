@@ -355,6 +355,7 @@ export const callTypeLabels = {
   JUDGMENT: '판정', FOLLOWUP: '되묻기', ANALYSIS: '분석 대화', REPORT_NARRATIVE: '리포트 서술',
   MISSION_DRAFT: '미션 초안', THEME_DRAFT: '주간 테마 초안', THEME_IMAGE: '테마 그림', REPORT_EXPLANATION: '리포트 설명',
   KNOWLEDGE_EMBEDDING: '지식 임베딩', THEME_VIDEO: '테마 영상', MEMORY_EMBEDDING: '추억 검색 임베딩', MEMORY_EXPLANATION: '추억 설명', MEMORY_QUERY: '추억 검색 질의 변환',
+  WORD_HELP: '낱말 물어보기',
   M2: '서술 채점 모델(M2)', M1: '풀이 확인 모델(M1)',
 } as const
 /**

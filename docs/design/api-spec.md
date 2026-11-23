@@ -321,6 +321,7 @@
 | POST | `/attempts/{attemptId}/self-assessment` | 학생 | 자기 체크 저장 → AI 확인 항목과 나란히 반환 (원본·판정 불변) | LRN-13 | 선택 |
 | POST | `/attempts/{attemptId}/reflection` | 학생 | 돌아보기 `{difficulty(필수), text(선택)}` 저장 → 학습 완료 처리 (P04) | LRN-12, LRN-14 | 핵심 |
 | GET | `/attempts/{attemptId}/comparison` | 학생 본인 | 같은 학생·미션의 직전 마무리 시도와 현재 시도 비교 `NO_PREVIOUS\|COMPARABLE\|CRITERIA_CHANGED` (#207, 5.15). 학생 세션 전용(학부모·관리자 403), 현재 시도 마무리 이후만 | LRN-09, LRN-11 | — |
+| POST | `/attempts/{attemptId}/word-help` | 학생 본인 | 낱말 물어보기 (#599, 2.2.1). 본문 `{question}`(1~100자) → `200 {state, headword, text, example, senses:[{definition, source}]}`. 저장하지 않음, `Cache-Control: no-store` | LRN-21 | 선택 |
 
 - #38 미션 조회의 `grade`·`demo`는 검증된 STUDENT의 연결된 활성 학생을 core DB에서 읽어 결정한다. 공개 요청의 동일 이름 query는 사용하지 않는다. 목록은 `page`·`size`만 learning에 전달하고, 상세도 같은 학생 학년·시연 여부를 붙인다. 학년별 문항 노출·시연 전용 미션 판단은 learning 소유다.
 
@@ -342,6 +343,19 @@
   - 검증 전 결과는 `trial: true`("AI 채점(시범)")
   - 숫자 레벨은 응답에 포함하지 않음
 - 판정 보류(`HELD`)와 처리 실패(`FAILED`)는 서로 다른 필드로 구분 (NFR-REL-04)
+
+#### 2.2.1 낱말 물어보기 (FN-LRN-21, #599)
+
+core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-help`(4.1)로 그대로 넘기고, learning이 시도의 미션 문장·학년·유출 검사 값을 붙여 ai `POST /internal/word-helps`(4.2.7)를 부른다. 답은 저장하지 않는다.
+
+- 요청 `{question}`: 학생이 적은 낱말이나 짧은 질문(공백 제외 1자 이상, 100자 이하). 정의 밖 칸·빈 글은 `400 VALIDATION_FAILED`
+- 응답 `200 {state, headword, text, example, senses}`
+  - `state`: `EXPLAINED`(사전 뜻을 쉬운 말로), `DICTIONARY_ONLY`(AI 실패라 사전 원문만, P16), `NOT_FOUND`(사전에 없거나 문장에 맞는 뜻이 없음), `DEFERRED`(마무리 전인데 정답 키·금지어·예시 답과 겹침), `OUT_OF_SCOPE`(낱말 뜻 질문이 아님)
+  - `headword`: 사전에서 찾은 표제어(`EXPLAINED`·`DICTIONARY_ONLY`·`NOT_FOUND`일 때, 못 찾으면 `null`)
+  - `text`: 캐릭터가 하는 말. `EXPLAINED`는 쉬운 말 한두 문장, 나머지는 정해진 안내 문구. `example`: `EXPLAINED`일 때 예문 하나(없으면 `null`)
+  - `senses[]` `{definition, source, attribution?, sourceUrl?, license?}`: `EXPLAINED`는 고른 뜻의 사전 원문 1개, `DICTIONARY_ONLY`는 해당 사전의 뜻 최대 3개, 그 밖은 빈 배열. `source`는 `표준국어대사전`·`온용어`. 출처·원문 링크·이용허락을 표시하고 쉬운 말에는 원문을 변경했다고 표시한다.
+- 마무리 전(`IN_PROGRESS`)만 유출 검사, 마무리 뒤에는 검사하지 않는다(정답이 이미 공개됨)
+- 오류: 없는 시도 `404 NOT_FOUND`, 다른 학생의 시도 `403 FORBIDDEN`, 완료(`COMPLETED`)한 시도도 허용. 사전 API 장애·미설정 `503 DICTIONARY_UNAVAILABLE`(`retryable:true`), ai 장애 `503 AI_UNAVAILABLE`. 사용량 `callType = WORD_HELP`(LLM 호출마다)
 
 ### 2.3 대시보드 (FN-DSH)
 
@@ -982,6 +996,7 @@ If-Match: "7"
 | GET | `/internal/missions?grade&demo&page&size`, `/internal/missions/{id}?grade&demo` | core | 학생용 미션 조회 (2.2 프록시). core가 학생 학년 `grade`(3~6, 필수. 저장 학년 7~9인 중학생은 중학교 과정 확장 전까지 6으로 맞춤, P26 #432)와 시연 학생 여부 `demo`(`student.is_demo`, 기본 `false`)를 붙임. `demo_only` 미션은 `demo=true`일 때만 노출. 미션에 분류 그룹 `categories`·수학 답 단위 `answerUnit` 포함(3.8, #79) |
 | POST | `/internal/missions/{id}/attempts?grade&demo&sundayTheme` | core | 시도 시작·이어하기 (2.2와 1:1). 조회와 동일하게 core가 인증된 학생의 `grade`(필수, 3~6)와 `demo`(`student.is_demo`, 기본값 `false`)를 전달함. 공개 요청의 `grade`·`demo` 값은 사용하지 않음. 진행 중인 시도가 있으면 미션의 공개 여부나 제공 범위와 관계없이 해당 시도를 반환(`200`)하고, 신규 시도는 `201`을 반환함. core는 응답 상태를 그대로 전달하며, 신규 시도의 제공 범위 검사와 기존 시도의 시작 당시 버전 유지는 learning이 담당함. #387: core가 body `{context}`를 그대로 넘기고(요일·되돌아보기 검사는 learning #385), 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA` `201`만 core `mission_daily_usage`에 집계(2.2, core #485). #485: `sundayTheme`(`true`·`false`, core가 항상 붙임)은 KST 일요일이고 상품이 일요일 테마를 허용할 때만 `true`([core 보고서 18절](../report/core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10)), learning은 `true`일 때만 일요일을 토요일과 같이 연다(#484) |
 | POST · GET · PUT | `/internal/attempts/...` | core | 시도·초안·도움·답변·마무리·돌아보기·자기 평가 (2.2 경로와 1:1). 생각 열기 응답 형식은 `{question, seq, total}`이며, 질문이 없는 미션은 `404`를 반환함. 시도 상세 `answers[]`는 `{answerId, version, submittedAt, inputType, text(입력 틀 칸 이름을 붙인 원문), followupId, content, feedback, thinkingSeconds, writingSeconds(P28, 없으면 null)}`, `feedback`은 아래 피드백 결과와 같은 모양(판정 전이면 `{status, judgment:null, followup:null, nextActions:[], versions:null}`), 시도 `nextActions`는 마지막 답변의 `nextActions`. 시도 상세의 `reveal`·`revealKind`·`checklist`는 마무리 뒤에만, `reflection{difficulty, text}`는 돌아보기 뒤에만(그 전에는 `null`). 마무리 `finish` → `200 {attemptId, finishedAt, reveal(시도 기준표 버전의 예시 답, 닫힌 문제는 정답과 해설), revealKind(고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`), checklist(기준표 요소 전체 3.2 `Element[]`, 이 시도의 처리 완료 판정 중 원문 구절과 함께 충족된 요소만 체크·가장 최근 구절)}`, 판정 `DONE` 1회 미만이면 `409 REVEAL_CONDITION_UNMET`, 다시 요청하면 기록하지 않고 같은 결과. 돌아보기 `reflection` `{difficulty(EASY·NORMAL·HARD, 필수), text(선택, 빈 글은 null)}` → `200 {attemptId, status:"COMPLETED", reflection}`(완료 시점은 시도 상세·기록 조회), 난이도 없음·값 밖 `400`, 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`. 자기 평가 `self-assessment` `{checks:[{elementId, checked}]}` → `200 [{elementId, label, selfChecked(체크 안 한 요소는 null), aiChecked, quote}]`(기준표 요소 전체), 마무리 전 `409 REVEAL_CONDITION_UNMET`, 완료 뒤 `409 ATTEMPT_CLOSED`, 비었거나 같은 요소 두 번·기준표 밖 요소 `400`, 다시 보내면 `checked`만 바꿈 |
+| POST | `/internal/attempts/{id}/word-help` | core | 낱말 물어보기 (2.2.1, #599). 학생 본인 시도만(아니면 `404`). learning이 시도의 미션 질문·안내 글을 `missionText`, 시도 학년을 `grade`, 미션 교과를 `subject`로 붙이고, 시도가 `IN_PROGRESS`이면 유출 검사 값 `leak{answerKey(학생에게 보이는 정답 글자: 고르기·순서는 정답 선택지 이름, 풀이 단계는 최종 답), forbiddenTerms, exampleAnswer}`를, 마무리 뒤면 `leak:null`을 넣어 ai 4.2.7을 부른다(25초, core→learning 일반 30초 안). ai 응답의 `versions`는 빼고 그대로 돌려준다. ai 4xx·계약 밖 응답은 `502 AI_BAD_RESPONSE`, ai 503은 같은 코드·`retryable`로 전달 |
 | POST | `/internal/attempts/{id}/answers` | core | 답변 제출 (3.1·3.8 형식, 생각·작성 시간 저장 규칙은 3.1·P28). `Idempotency-Key`(UUID) 필수, 없거나 형식 오류면 `400`. 같은 키·같은 본문은 처음 답변을 `201`로 다시, 다른 본문은 `422 IDEMPOTENCY_KEY_REUSED`. 미션 입력 방식과 다르면 `400`, 누락은 `422 ANSWER_INCOMPLETE`, 서술·풀이·논술 글에 욕설·비속어·성적·혐오·위협 표현이나 연락처(전화번호·이메일)가 있으면 `422 ANSWER_INAPPROPRIATE`(누락 검사 다음·되묻기 연결 검사 전, 저장·판정 없이 차단. `detail`은 범주별 고정 문구로 표현은 "고운 말로 바꿔서 다시 적어 주세요.", 연락처는 "전화번호나 이메일 같은 개인정보는 빼고 다시 적어 주세요."이고 걸린 단어·원문은 넣지 않음. 혐오 표현과 `새끼`처럼 뜻이 둘인 말은 미션 본문에 나온 말이면 허용, #205. 단어 목록 다음 같은 자리에서 표현 분류 모델 결과(4.3.4, 시도 잠금 전에 미리 받아 둠)가 flagged면 같은 422·표현 문구, #688), 마무리·완료한 시도는 `409 ATTEMPT_CLOSED`. 보완 답변은 가장 최근 미답 되묻기의 `followupId` 필수(아니면 `422 ANSWER_INCOMPLETE`). 저장하면 같은 트랜잭션에서 초안 `content.answer`를 비우고 `memo`는 유지, 초안 `version` +1 |
 | POST | `/internal/answers/{answerId}/feedback` | core | 판정 오케스트레이션: 규칙 판정 또는 ai 호출 → 저장 → 결과 반환 (동기). `200` 결과는 3.2 `result`와 같은 `{status, judgment{judgmentId, result, trial, elements[{elementId(rubric_element.id), label, satisfied, quote, sourceType}], heldReason}, followup{followupId, type, question, source}, nextActions, versions{mission, rubric, model, prompt}}`, `versions.mission`·`rubric`은 `미션 code@버전`, 규칙 판정이면 `model`·`prompt` 없음. 다른 요청이 처리 중이면(그사이 다른 요청이 실패한 경우도 포함, 다시 요청하면 실행) `200 {status:"RUNNING", judgment:null, followup:null, nextActions:[], versions:null}`. ai·LLM 실패·타임아웃·서킷 차단은 판정 `FAILED` 후 `503 AI_UNAVAILABLE` + `retryable`(ai가 false로 준 오류·ai 4xx·계약 밖 응답은 false), 그 밖의 예상 못 한 오류는 판정 `FAILED` 후 `500`. 허용 안 되는 판정 전이는 `409 JUDGMENT_STATE_CONFLICT`(learning 내부 방어 코드: 처리 중이 아닌 판정을 끝내거나 실패로 기록하려 함, state-diagram 1.3. 획득한 리스로만 저장해 정상 흐름에서는 없어 1.3 공통 오류 표에는 넣지 않음). `nextActions`는 지금 할 수 있는 행동: 이 판정의 되묻기에 아직 답하지 않았으면 `[ANSWER_FOLLOWUP, FINISH]`, 되묻기가 없으면 `[FINISH]`, 마무리·완료한 시도는 `[]` |
 | POST | `/internal/judgments/{judgmentId}/corrections` | core | 신고 정정 반영(SUP-03, #80). `X-User-Role: ADMIN`, `X-Student-Scope`에 판정 학생 정확히 1명, `X-User-Id`(UUID, 정정한 관리자 = `corrected_by`) 필수. 요청 `{reportId(UUID), reason(1자 이상), corrected(CORRECT·PARTIAL·RETHINK·HELD)}` + `Idempotency-Key`(UUID, core가 저장한 정정 ID). 기존 판정·요소·답변은 그대로 두고 `judgment_correction` 행 추가. `200 {correctionId, previousResult(정정 직전에 보이던 결과, 앞선 정정이 있으면 그 결과), corrected, createdAt, impact{conversation, aggregation, report}}`(값은 `APPLIED`·`NOT_APPLIED`·`UNKNOWN`, 5.7.1. `AFFECTED`·`NOT_AFFECTED`는 core가 채우며 learning은 보내지 않음). 같은 키·같은 요청(판정·본문)은 처음 응답 전체를 다시 `200`, 다른 요청이면 `422 IDEMPOTENCY_KEY_REUSED`. 같은 `reportId` 정정이 다른 키로 이미 있으면 `409 CORRECTION_REPORT_CONFLICT`, 판정이 `DONE` 전이면 `409 JUDGMENT_STATE_CONFLICT`, 판정 없음 `404`, 역할·학생 범위 위반 `403`, 헤더·본문 형식 오류 `400`(409·422 코드는 learning 내부용, 공개 오류는 core #46이 바꿔 정함). 이후 피드백 결과·시도 상세·기록(#27)의 `judgment.result`는 최신 정정 결과(정정이 있으면 `heldReason: null`), 판정 요소·되묻기·`nextActions`는 원판정 그대로. `impact.aggregation`은 learning 수치 집계가 판정 결과를 쓰지 않아 `NOT_APPLIED`(변경 대상 없음), `conversation`·`report`는 learning이 확인할 수 없어 `UNKNOWN` (core #46 계약 `support-learning-required.yaml`) |
@@ -1239,6 +1254,23 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 사용량 `callType = MEMORY_QUERY`(core 허용 목록 확장 #680 병합 뒤에만 보냄), 프롬프트 이름 `memoryQuery`·scope `ai/memory-query`, 내장 버전 `memory-query@1`. 요청·응답 원문은 저장·로그하지 않는다(NFR-SEC-05)
 - 가짜 구현(개발용): `MEMORY_QUERY_PROVIDER=fake`면 LLM 없이 질문을 공백으로 나눈 앞 5개(1~20자로 자름, 중복 제거)를 `keywords`로, `period = null`, `searchText` = 원문. 모델 `fake-memory-query-v1`, 사용량 없음
 
+
+#### 4.2.8 낱말 물어보기 (FN-LRN-21, #599)
+
+호출자 learning(4.1). ai OpenAPI `/word-helps`, 모듈 `app/word_help/`. 사전은 국립국어원 표준국어대사전 `search.do`(`DICT_KOREAN_API`·`DICT_KOREAN_API_KEY`)와 온용어 `search.do`(`KLI_KOREAN_API`·`KLI_KOREAN_API_KEY`). 키·주소는 환경 변수로만 읽고 로그·응답에 남기지 않는다.
+
+- `POST /internal/word-helps` `{question(1~100자), missionText(1~4,000자), grade(3~6), subject(1~20자), leak:{answerKey[], forbiddenTerms[], exampleAnswer} | null}` → `200` 2.2.1 응답 + `versions{prompt, model}`(LLM을 부르지 않았으면 `model: null`)
+- 흐름
+  1. 표제어: 질문이 띄어쓰기 없는 한 낱말이고 표준국어대사전에 그 표제어가 있으면 그대로 쓴다. 아니면 LLM이 학생 질문·미션 문장에서 사전 표제어(기본형)를 고른다(빈 값이면 `OUT_OF_SCOPE`)
+  2. 유출 미리 검사(`leak`가 있을 때): 질문·표제어가 정답 키·금지어를 포함하면 사전·LLM 없이 `DEFERRED`
+  3. 표준국어대사전에서 표제어가 같은 항목을 먼저 찾는다. 해당 문맥과 일치하는 뜻이 없으면 온용어를 조회한다. 온용어는 이용 조건이 확인된 공공누리 1유형 또는 우리말샘 CC BY-SA 항목 최대 3건만 사용한다. 사전 조회는 표제어 단위로 캐시한다(12시간, 최대 2,000개).
+  4. 각 사전에서 뜻 번호 하나와 학년에 맞는 쉬운 말·예문을 고른다. 후보가 없거나 맞는 뜻을 고르지 못하면 다음 사전으로 넘어간다. 두 사전에서 찾지 못하면 Luna Responses API 웹 검색으로 온용어의 대체 항목 URL을 찾는다. 검색에는 표제어만 넘기고, 서버가 온용어 상세 페이지에서 표제어·출처·이용 조건·뜻풀이를 직접 확인한다. 허용된 근거를 찾지 못하면 `NOT_FOUND`다. 총 마감은 20초로 유지한다.
+  5. 유출 뒤 검사(`leak`가 있을 때): `text`·`example`이 정답 키·금지어를 포함하거나 예시 답과 연속 12자(되묻기와 같은 값) 겹치면 `DEFERRED`
+- LLM: ai 기본 LLM(`LLM_PROVIDER`)을 구조화 출력으로 부른다. 생성 호출은 전체 마감 20초(`WORD_HELP_DEADLINE`)를 공유한다(learning→ai 25초, core→learning 일반 30초). 웹 검색은 OpenAI 키가 있을 때 활성화하며, ai에 남은 마감과 6초 중 짧은 값을 사용한다.
+- 대체 응답(P16): 1의 LLM이 실패하면 질문에서 문장부호·조사를 뗀 글자로 사전을 찾아 보고, 4의 LLM이 실패하거나 형식 밖이면 해당 사전에서 이용 조건을 통과한 후보 최대 3개를 `DICTIONARY_ONLY`로 돌려준다(유출 뒤 검사는 이 원문에도 적용).
+- 오류: 사전 호출 실패·미설정 `503 DICTIONARY_UNAVAILABLE`(`retryable:true`, 캐시에 있으면 사전을 부르지 않음), 사전 결과가 있는데도 1의 LLM 실패로 표제어를 못 정하면 `503 AI_UNAVAILABLE`
+- 사용량 `callType = WORD_HELP`, 프롬프트 이름 `wordHelp`·scope `ai/word-help`, 내장 버전 `word-help@1`. 검색 호출은 `word-help-search@1`로 구분한다. 학생 질문·응답 원문은 저장·로그하지 않는다(NFR-SEC-05, 로그는 상태·사유 코드만)
+- 가짜 구현(개발용): `WORD_HELP_PROVIDER=fake`면 LLM 대신 질문 글자를 표제어로, 사전 첫 후보를 고르고 `{표제어}는 {원문}라는 뜻이야.`로 답한다(사전은 실제 호출, 모델 `fake-word-help-v1`, 사용량 없음)
 
 ### 4.3 scoring-service (호출: ai, learning, core)
 

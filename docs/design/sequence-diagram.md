@@ -1174,6 +1174,11 @@ sequenceDiagram
         RW->>A: POST /internal/report-explanations {grade, inputType, text, scores} (호출당 80초, 유형당 1회)
         A->>X: InvokeEndpoint(LoRA IC 지정, 본문은 OpenAI 호환 형식, 일 23:30~월 02:00 예약 확장으로 1대 기동, #742·#746)
         X-->>A: 설명 초안
+        A->>A: 첫 출력 형식 및 정리 후 내용 확인
+        opt 형식 오류 또는 정리 후 설명 부족 (#850, 75초 마감 공유)
+          A->>X: InvokeEndpoint 1회 재생성 (repetition_penalty=1.1)
+          X-->>A: 새 설명 초안
+        end
         A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 선택
         A-->>RW: {active, explanation, versions} 또는 실패
         RW->>RW: report 재검사 (숫자·금지어·수량·별명·인용 원문 부분 문자열)
