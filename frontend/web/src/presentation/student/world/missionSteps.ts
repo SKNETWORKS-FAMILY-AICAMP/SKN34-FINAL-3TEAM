@@ -19,6 +19,39 @@ export function feedbackHeadline(f: Feedback) {
       : '답을 저장했어요. 피드백을 준비하고 있어요.'
 }
 
+/**
+ * 피드백 대기 표시(#847): 경과 시간에 따른 말풍선 문구와 캐릭터 움직임. 실제 진행과 무관한 시간표다
+ * (피드백 SSE는 status(RUNNING) 한 번뿐이라 진행 정보가 없음, api-spec 3.2). 막대·퍼센트는 쓰지 않는다.
+ * 움직임은 단계마다 하나: look 돋보기로 살피기, tilt 고개 갸웃, hop 제자리 콩콩.
+ */
+export type WaitingMotion = 'look' | 'tilt' | 'hop'
+export const WAITING_STEPS: readonly { from: number; line: string; motion: WaitingMotion }[] = [
+  { from: 0, line: '답을 꼼꼼히 읽고 있어', motion: 'look' },
+  { from: 5, line: '생각의 단서를 찾는 중이야', motion: 'look' },
+  { from: 15, line: '너에게 할 질문을 고르고 있어', motion: 'tilt' },
+  { from: 30, line: '조금 오래 걸리네. 답은 벌써 저장했어!', motion: 'hop' },
+  { from: 60, line: '거의 다 왔어. 잠깐만 기다려 줘', motion: 'hop' },
+]
+/** core→learning 피드백 시간 제한(P12·api-spec 3.2). 이보다 길게 셀 일은 없어 경과 시간을 여기서 자른다 */
+export const FEEDBACK_WAIT_LIMIT_SECONDS = 80
+const clampWait = (seconds: number) =>
+  Number.isNaN(seconds) ? 0 : Math.min(FEEDBACK_WAIT_LIMIT_SECONDS, Math.max(0, seconds))
+/** 경과 초 → 단계. next는 다음 단계까지 남은 초(마지막 단계면 null). 음수·80초 넘음·NaN은 0~80으로 자른다 */
+export function waitingStep(seconds: number) {
+  const s = clampWait(seconds)
+  const index = WAITING_STEPS.findLastIndex((step) => step.from <= s)
+  const following = WAITING_STEPS[index + 1]
+  return { index, ...WAITING_STEPS[index], next: following ? following.from - s : null }
+}
+/**
+ * 새로고침 뒤 PENDING·RUNNING을 이어받을 때의 대기 시작 시각(밀리초). 마지막 답의 submittedAt부터 세되
+ * 기기 시계가 서버와 어긋날 수 있어 경과를 0~80초로 자른다(미래 시각이면 지금부터, 너무 오래면 80초 전).
+ */
+export function resumeWaitStart(submittedAt: string | undefined, now: number) {
+  const at = submittedAt ? Date.parse(submittedAt) : Number.NaN
+  return Number.isNaN(at) ? now : now - clampWait((now - at) / 1000) * 1000
+}
+
 /** 되묻기 종류 이름 */
 export function followupLabel(type: string) {
   return type === 'ONE_STEP_MORE' ? '한 걸음 더' : type === 'LOOK_AGAIN' ? '다시 살펴보기' : '더 말해 보기'

@@ -590,6 +590,8 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
       answer!.feedback = { status: 'RUNNING', nextActions: [] }
       onStatus(copy(answer!.feedback))
       if (scenario === 'running' && once('running-' + answerId)) return copy(answer!.feedback)
+      // 피드백 대기 표시 확인용(#847): 결과를 40초 늦게 준다(80초 시간 제한 안쪽)
+      if (scenario === 'feedback-slow') await new Promise<void>((resolve) => setTimeout(resolve, 40_000))
       await pause()
       if (scenario === 'ai-fail' && once('ai-' + answerId)) {
         answer!.feedback = { status: 'FAILED', nextActions: [] }

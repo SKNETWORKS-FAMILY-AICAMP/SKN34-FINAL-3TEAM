@@ -22,6 +22,7 @@ import { ActivityPaper, ErrorNotice, MemoCanvas, Modal } from '../shared/Classro
 import { MissionScene } from './MissionScene.tsx'
 import { Companion } from './world/Companion.tsx'
 import { SpeechBubble } from './world/SpeechBubble.tsx'
+import { FeedbackWaiting, Magnifier } from './world/FeedbackWaiting.tsx'
 import { useLook } from './world/lookContext.ts'
 import { companionLabel } from '../../domain/studentLook.ts'
 import { STEPS, difficultyLabel, feedbackHeadline, followupLabel } from './world/missionSteps.ts'
@@ -208,9 +209,14 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     setDirty(true)
     if (!['FAILED', 'CONFLICT', 'SAVING'].includes(saveState)) setSaveState('DIRTY')
   }
+  // 대기 표시 시작 시각(#847): 처음 요청·"피드백 다시 받기"는 요청을 보낸 시각. 없으면 마지막 답의 submittedAt(이어받기)
+  const [waitStart, setWaitStart] = useState<{ answerId: string; at: number } | null>(null)
   async function feedback() {
     if (!a?.answers.length) return
     setError(null)
+    // "다시 확인하기"(RUNNING)는 같은 처리를 다시 보는 것이라 시작 시각을 그대로 둔다
+    const last = a.answers.at(-1)!
+    if (last.feedback.status === 'FAILED') setWaitStart({ answerId: last.answerId, at: Date.now() })
     try {
       await actions.feedback.mutateAsync({ attempt: a, answerId: a.answers.at(-1)!.answerId })
     } catch (e) {
@@ -274,6 +280,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
           : null,
       )
       // 답변 저장이 끝난 뒤 같은 answerId의 피드백을 별도 요청한다.
+      setWaitStart({ answerId: saved.answers.at(-1)!.answerId, at: Date.now() })
       try {
         await actions.feedback.mutateAsync({
           attempt: saved,
@@ -329,6 +336,25 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     result.current.focus()
     setFocusAnswerId(null)
   }, [focusAnswerId, writing])
+  // 피드백 대기(#847): 마지막 답이 PENDING·RUNNING이거나 피드백 요청 중. 저장 중 눌러 기다리는 것(submitQueued)과
+  // 답을 보내는 중(submit)은 아직 답 쓰기 화면이라 버튼 문구만 바꾼다. "다시 확인하기"가 뜬 RUNNING도 대기 표시를 같이 보인다
+  const lastAnswer = a.answers.at(-1)
+  const waiting = !a.finishedAt && !!f && (f.status === 'PENDING' || f.status === 'RUNNING' || actions.feedback.isPending)
+  const waitStartedAt = waitStart && waitStart.answerId === lastAnswer?.answerId ? waitStart.at : undefined
+  // 결과가 오면 상자는 바로 보여 주고 그 위에 "찾았다!"를 0.5초쯤 겹친다(움직임 줄이기면 CSS가 숨김)
+  const wasWaiting = useRef(false)
+  const [found, setFound] = useState(false)
+  useEffect(() => {
+    const arrived = wasWaiting.current && !waiting && f?.status === 'DONE'
+    wasWaiting.current = waiting
+    if (!arrived) return
+    setFound(true)
+    const timer = setTimeout(() => setFound(false), 600)
+    return () => {
+      clearTimeout(timer)
+      setFound(false)
+    }
+  }, [waiting, f?.status])
   const pending =
     actions.submit.isPending ||
     actions.feedback.isPending ||
@@ -623,7 +649,11 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                   else void submit()
                 }}
               >
-                {submitQueued ? '저장하고 보내는 중이에요' : a.answers.length ? '더해서 보내기' : '다 썼어요'}
+                {submitQueued
+                  ? '저장하고 보내는 중이에요'
+                  : actions.submit.isPending
+                    ? '보내는 중이에요'
+                    : a.answers.length ? '더해서 보내기' : '다 썼어요'}
                 <span aria-hidden="true"> →</span>
               </button>
             </div>
@@ -644,13 +674,30 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
           </section>
           <section className="sw-feedback-panel" aria-label="피드백">
             {f && (
-              <div ref={result} tabIndex={-1} className="ux-feedback sw-feedback" role="status">
+              // 화면 읽기 영역은 이 상자 하나: 대기 표시도 안에 넣어 결과가 오면 같은 영역의 내용이 바뀌며 읽힌다(#847)
+              <div ref={result} tabIndex={-1} className="ux-feedback sw-feedback" role="status" data-waiting={waiting || undefined}>
+                {found && (
+                  <span className="sw-found" aria-hidden="true">
+                    <Magnifier className="sw-found-glass" />
+                    찾았다!
+                  </span>
+                )}
                 <div className="sw-feedback-head">
-                  <h2>{feedbackHeadline(f)}</h2>
-                  {f.judgment?.trial && (
+                  {/* "피드백 다시 받기"를 누른 직후(아직 FAILED)에도 실패 제목 대신 준비 중 제목 */}
+                  <h2>{feedbackHeadline(waiting ? { status: 'RUNNING', nextActions: [] } : f)}</h2>
+                  {!waiting && f.judgment?.trial && (
                     <small className="sw-trial">AI 채점(시범){isDemo ? ' · 실제 모델 호출 없음' : ''}</small>
                   )}
                 </div>
+                {waiting && (
+                  <FeedbackWaiting
+                    key={`${lastAnswer?.answerId}:${waitStartedAt ?? 'resume'}`}
+                    companion={companion}
+                    worn={worn}
+                    startedAt={waitStartedAt}
+                    submittedAt={lastAnswer?.submittedAt}
+                  />
+                )}
                 {f.judgment?.m2Notices?.map((notice) => (
                   <p key={notice}>{notice}</p>
                 ))}
@@ -679,10 +726,10 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
               </div>
             )}
             <div className="sw-actions">
-              {f?.status === 'FAILED' && feedbackFinal && (
+              {f?.status === 'FAILED' && !waiting && feedbackFinal && (
                 <p role="status">지금은 피드백을 받을 수 없어요. 답은 저장했어요.</p>
               )}
-              {f?.status === 'FAILED' && !feedbackFinal && (
+              {f?.status === 'FAILED' && !waiting && !feedbackFinal && (
                 <button
                   type="button"
                   className="mg-start sw-go"
