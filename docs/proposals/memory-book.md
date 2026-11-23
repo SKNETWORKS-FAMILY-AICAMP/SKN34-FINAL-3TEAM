@@ -2,6 +2,7 @@
 
 - 상태: **제안 단계**. 공식 이슈 없음. 원격 브랜치 `feature/memory-book`에서만 시험 구현하고, 끝까지 동작하는 것을 확인한 뒤 도입 여부를 정한다.
 - 영향 범위: develop·main·실서버에 반영하지 않는다(11/24 develop→main 릴리스, 11/25 A 계정, 11/26~28 B 계정 일정과 분리). `docs/design/`·`contracts/`는 이 문서로 고치지 않는다. 도입이 정해지면 그때 api-spec·ERD·OpenAPI에 옮긴다.
+- 결정 반영(2026-11-23, 동섭): **원문을 공개한 학생(`parentSharingEnabled = true`)에 한해서만 제공**한다(D2). 그 밖의 열린 결정은 모두 권장안대로 시험 구현하고, 결과를 보고 다시 판단한다. 그래서 그림책 판은 원문 포함 판 하나뿐이다(원문 제외 판 없음).
 - 표기: **[확인]** 은 2026-11-23 `origin/develop`(df81a8c6) 코드·문서에서 직접 본 사실, **[추정]** 은 코드로 끝까지 확인하지 못했거나 설계상 가정인 것.
 
 ## 1. 목적
@@ -78,9 +79,11 @@
 | B. 학생만 | 자기 답변이라 #206 제약 없음. 앨범 화면에 버튼만 더하면 됨 | 초등 학생이 파일을 저장·인쇄하기 어려움. 유료 결제자(학부모)가 받지 못함. 학생 기기(공용 기기)에 파일이 남음 |
 | C. 둘 다 | 학생은 원문 포함 판, 학부모는 공개 설정을 따르는 판 | 두 판(원문 포함·원문 제외)을 렌더링·보관. 화면·API 2벌 |
 
-**#206과 맞추는 방법**: 기존 리포트와 같이 **한 그림책에 두 판**을 만든다. `full`(답변·되묻기·보완 답변·돌아보기 포함)과 `private`(그림·문제·엔딩만, 답변 칸은 "아이 답변은 아이만 볼 수 있어요"). 학생 요청은 언제나 `full`. 학부모 요청은 **요청 시점** 공개 설정이 true면 `full`, false면 `private`(기존 리포트는 비공개면 파일 자체를 403으로 막지만, 그림책은 원문 없는 판이 의미가 있어 원문 제외 판을 준다. 이 차이는 열린 결정 D2).
+**#206과 맞추는 방법(결정, D2)**: 원문을 공개한 학생만 쓸 수 있다. 생성·목록·내려받기(학생·학부모 모두)마다 core가 **그 시점의** `parentSharingEnabled`를 확인하고, false면 403 `STUDENT_RECORDS_PRIVATE`(기존 리포트 비공개 응답과 같은 코드·문구)를 돌려준다. 그림책 판은 원문 포함 판 하나뿐이다. 공개 상태에서 만든 뒤 비공개로 바꾸면 이미 만든 그림책도 내려받을 수 없고(기존 리포트의 "원문 포함 기존 파일 미제공"과 같음), 다시 공개하면 보관 기간 안의 파일을 다시 받을 수 있다.
 
-**권장안: C(둘 다), 1차 구현은 학생 요청 + 학부모 내려받기.** 학생이 앨범에서 "그림책 만들기"를 누르고, 학부모는 리포트 화면의 "추억 그림책" 목록에서 내려받는다. 이유: 그림책의 핵심 내용(아이 답변)을 원문 공개 설정과 충돌 없이 담을 수 있는 쪽은 학생 본인이고, 유료 결제자는 학부모라 둘 다 받아야 가치가 맞는다. 시험 구현 순서는 학생 → 학부모로 나눠 범위를 줄인다.
+검토했던 대안(채택 안 함): 비공개 학생에게 답변을 뺀 `private` 판을 따로 만드는 방식. 판이 둘이 되어 렌더링·보관·시험이 두 배가 되므로 시험 구현에서는 빼고, 도입 판단 때 다시 본다.
+
+**권장안(채택): C(둘 다), 1차 구현은 학생 요청 + 학부모 내려받기, 단 원문 공개 학생만.** 학생이 앨범에서 "그림책 만들기"를 누르고, 학부모는 리포트 화면의 "추억 그림책" 목록에서 내려받는다. 이유: 그림책의 핵심 내용(아이 답변)을 원문 공개 설정과 충돌 없이 담을 수 있는 쪽은 학생 본인이고, 유료 결제자는 학부모라 둘 다 받아야 가치가 맞는다. 시험 구현 순서는 학생 → 학부모로 나눠 범위를 줄인다.
 
 ## 5. 단위
 
@@ -118,6 +121,10 @@ sequenceDiagram
     S->>C: POST /students/me/memory-books {rounds:[{themeId, weekStart}]}
     C->>C: STUDENT 세션 확인
     C->>C: ProductEntitlementService.memoryBook(student)
+    C->>C: StudentLearningContextService.requireShared(student)
+    alt 원문 비공개
+        C-->>S: 403 STUDENT_RECORDS_PRIVATE
+    end
     alt 무료 또는 features.memoryBook=false
         C-->>S: 403 PREMIUM_REQUIRED
     end
@@ -133,19 +140,21 @@ sequenceDiagram
     R->>L: GET /internal/students/{id}/memory-book/{themeId}/{weekStart}
     L-->>R: 회차 조립(엔딩 전이면 outro·answer·종료 그림 null, 그림은 짧은 presigned URL)
     R->>A: 그림 GET(presigned, 허용 호스트만)
-    R->>R: data URI로 바꿔 Jinja2 → Chromium PDF (full·private 두 판)
-    R->>B: PUT reports/{studentId}/memory-books/{bookId}/{full|private}/pdf
+    R->>R: 프로필 parentSharingEnabled=false면 중단(FAILED STUDENT_RECORDS_PRIVATE)
+    R->>R: data URI로 바꿔 Jinja2 → Chromium PDF (한 판)
+    R->>B: PUT reports/{studentId}/memory-books/{bookId}/pdf
     R->>C: memorybook.completed 이벤트 (READY 또는 FAILED)
     S->>C: GET /students/me/memory-books/{bookId}
     C-->>S: {status: READY}
     S->>C: GET /students/me/memory-books/{bookId}/download
-    C->>R: GET /internal/memory-books/{bookId}/files/pdf?audience=full
+    C->>C: requireShared(student) (비공개면 403)
+    C->>R: GET /internal/memory-books/{bookId}/files/pdf
     R-->>C: {url, expiresAt} (TTL 300초)
     C->>DB: 감사·열람 기록
     C-->>S: {url, expiresAt}
 ```
 
-학부모 내려받기는 15~18 단계만 다르다: `GET /children/{childId}/memory-books/{bookId}/download` → core가 연결 확인 → 현재 `parentSharingEnabled`로 `full`/`private` 결정 → 같은 report 내부 경로.
+학부모 내려받기는 15~18 단계만 다르다: `GET /children/{childId}/memory-books/{bookId}/download` → core가 연결 확인 → 현재 `parentSharingEnabled` 확인(false면 403 `STUDENT_RECORDS_PRIVATE`) → 같은 report 내부 경로.
 
 **[추정]** 완료 알림은 기존 리포트처럼 report가 core로 완료 이벤트를 보내는 구조를 따른다고 가정했다. 실제 리포트 완료 경로(`ReportLifecycleConsumer`)의 이벤트 이름·모양을 구현 때 다시 맞춘다.
 
@@ -160,9 +169,9 @@ sequenceDiagram
 | POST | `/students/me/memory-books` | 학생 | `{rounds:[{themeId, weekStart}]}`(1차 길이 1), `Idempotency-Key` | 202 `{bookId, status, rounds, createdAt}`. 같은 회차·같은 원본 버전의 READY 그림책이 있으면 200으로 그것을 돌려줌 | 400 `VALIDATION_FAILED`(월요일 아님·길이), 403 `PREMIUM_REQUIRED`, 404 `THEME_FRAME_NOT_FOUND`, 409 `REFUND_IN_PROGRESS`·`MEMORY_BOOK_IN_PROGRESS`(같은 회차 생성 중), 429 `USAGE_LIMIT_REACHED`(하루 생성 한도), 503 `PAYMENT_PRODUCT_UNAVAILABLE` |
 | GET | `/students/me/memory-books?page&size` | 학생 | - | `{items:[{bookId, status, rounds:[{themeId, weekStart, title}], createdAt, expiresAt}], page, size, totalElements}` | 400 |
 | GET | `/students/me/memory-books/{bookId}` | 학생 | - | `{bookId, status: QUEUED|RUNNING|READY|FAILED, failureCode?, ...}` | 404 `MEMORY_BOOK_NOT_FOUND` |
-| GET | `/students/me/memory-books/{bookId}/download` | 학생 | - | `{url, expiresAt}` (`full` 판) | 403 `PREMIUM_REQUIRED`(구독이 끝남, D5), 404, 409 `MEMORY_BOOK_NOT_READY`, 410 `MEMORY_BOOK_EXPIRED`, 503 `DATA_UNAVAILABLE` |
-| GET | `/children/{childId}/memory-books` | 학부모 | - | 학생 목록과 같은 모양 + `audience: FULL|PRIVATE`(지금 내려받으면 받을 판) | 403 `FORBIDDEN`(연결 아님) |
-| GET | `/children/{childId}/memory-books/{bookId}/download` | 학부모 | - | `{url, expiresAt, audience}` | 학생 경로와 같음. 비공개면 `private` 판(D2 대안을 고르면 403 `STUDENT_RECORDS_PRIVATE`) |
+| GET | `/students/me/memory-books/{bookId}/download` | 학생 | - | `{url, expiresAt}` | 403 `STUDENT_RECORDS_PRIVATE`(지금 비공개), 404, 409 `MEMORY_BOOK_NOT_READY`, 410 `MEMORY_BOOK_EXPIRED`, 503 `DATA_UNAVAILABLE` |
+| GET | `/children/{childId}/memory-books` | 학부모 | - | 학생 목록과 같은 모양 | 403 `FORBIDDEN`(연결 아님), 403 `STUDENT_RECORDS_PRIVATE` |
+| GET | `/children/{childId}/memory-books/{bookId}/download` | 학부모 | - | `{url, expiresAt}` | 학생 경로와 같음 |
 
 - 모든 응답 `Cache-Control: no-store`.
 - 학부모 생성 경로는 1차에 두지 않는다(D1에서 학부모 생성을 고르면 `POST /children/{childId}/memory-books` 추가).
@@ -174,9 +183,9 @@ sequenceDiagram
 | core → learning | POST | `/internal/students/{studentId}/frames/ownership` | **기존** 보유 확인 재사용 |
 | report-worker → learning | GET | `/internal/students/{studentId}/memory-book/{themeId}/{weekStart}` | **새로**. 응답 초안: `{themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days:[{day, missionId, title, thinkingType, question, sceneImage, dialogue, attempt:{attemptId, completedAt, answers:[{version, text, followup:{type, question}|null}], reflection:{difficulty, text}|null}|null}], ending:{seen, outro, answer, outroImage}}`. 이미지 칸은 `{url, expiresAt}` 또는 null. `X-Student-Scope`·SYSTEM 역할 확인, 미보유 404 |
 | report-worker → core | GET | `/internal/students/{studentId}/profile` | **기존**(별명, `parentSharingEnabled`) |
-| core → report-api | GET | `/internal/memory-books/{bookId}/files/pdf?audience=full|private` | **새로**. `{url, expiresAt}`. 파일 없음 404, 삭제 중 409 `DELETION_IN_PROGRESS` |
+| core → report-api | GET | `/internal/memory-books/{bookId}/files/pdf` | **새로**. `{url, expiresAt}`. 파일 없음 404, 삭제 중 409 `DELETION_IN_PROGRESS` |
 | 메시지 | 명령 | `memorybook.generate` (`cmd.direct`) | `{bookId, studentId, rounds:[{themeId, weekStart}], requestedBy, requestedAt}` |
-| 메시지 | 이벤트 | `memorybook.completed` (`events.topic`) | `{bookId, studentId, status, failureCode?, files:[{audience, sizeBytes}], sourceVersions}` |
+| 메시지 | 이벤트 | `memorybook.completed` (`events.topic`) | `{bookId, studentId, status, failureCode?, sizeBytes, sourceVersions}` |
 
 - 내부 경로 허용 목록(core·learning `InternalCallerPolicy`, report `security.CALLER_PATHS`)에 위 경로를 더해야 한다.
 - **[추정]** learning 새 경로는 학부모 기록 경로(`/records/students/{id}/attempts/{attemptId}`)를 요일마다 부르는 대신 한 번에 조립한다. 쿼리 수는 회차당 시도 5개 × (답변·되묻기·돌아보기)라 조인 1~3번으로 충분하다고 본다.
@@ -205,7 +214,7 @@ CREATE INDEX ix_memory_book_job_student_created ON memory_book_job (student_id, 
 ```
 
 - `payment_premium_usage.kind` CHECK에 `MEMORY_BOOK` 추가(core migration). `ProductEntitlementService.reserve`의 `require(kind in ...)`에도 추가.
-- report-service: 파일 메타데이터를 report DB에 둘지(alembic 새 revision `memory_book_file`) 아니면 키 규칙만으로 찾을지 → **권장: 키 규칙만**(`reports/{studentId}/memory-books/{bookId}/{audience}/pdf`, `head_object`로 존재 확인). report DB migration이 필요 없다. 대신 `delete_prefix`의 허용 모양에 `reports/{uuid}/memory-books/{uuid}/`를 더해야 단건 삭제가 된다.
+- report-service: 파일 메타데이터를 report DB에 둘지(alembic 새 revision `memory_book_file`) 아니면 키 규칙만으로 찾을지 → **권장: 키 규칙만**(`reports/{studentId}/memory-books/{bookId}/pdf`, `head_object`로 존재 확인). report DB migration이 필요 없다. 대신 `delete_prefix`의 허용 모양에 `reports/{uuid}/memory-books/{uuid}/`를 더해야 단건 삭제가 된다.
 - learning: **새 테이블 없음**. 조회용 인덱스는 기존 `attempt`·`theme_frame` 인덱스로 충분하다고 본다 **[추정, 실행 계획 미확인]**.
 
 ### 8.2 보관 기간
@@ -216,7 +225,7 @@ CREATE INDEX ix_memory_book_job_student_created ON memory_book_job (student_id, 
 ### 8.3 삭제 요청
 
 - 학생 삭제·탈퇴(P09): report는 이미 `reports/{studentId}/` 전체를 지우므로 **그림책 파일도 자동으로 지워진다**(키를 그 아래에 두는 이유). core는 같은 삭제 트랜잭션에서 `memory_book_job`을 지운다. 사용 기록(`payment_premium_usage`)은 기존 정책대로 결제 기록 보관 규칙을 따른다.
-- 공개 설정을 false로 바꿈: 이미 만든 `full` 판은 학부모에게 재발급하지 않는다(내려받기 때마다 현재 설정 확인). 이미 받은 파일은 회수할 수 없음(api-spec 5.15와 같은 문구로 안내).
+- 공개 설정을 false로 바꿈: 이미 만든 그림책은 학생·학부모 모두에게 URL을 재발급하지 않는다(내려받기 때마다 현재 설정 확인, 파일은 보관 기간까지 남음). 이미 받은 파일은 회수할 수 없음(api-spec 5.15와 같은 문구로 안내).
 - 액자는 지워지지 않으므로 회차 단위 삭제 경로는 두지 않는다. 학생·학부모가 개별 그림책을 지우는 버튼은 1차 범위 밖(D7).
 
 ## 9. 그림 가져오기
@@ -249,7 +258,7 @@ A4 세로, 그림 위주. 회차 1개 기준 약 9쪽.
 | 8. 엔딩 | 종료 그림 + `outro` + 큰 질문의 답 | "아직 이 이야기의 끝을 보지 못했어요" 쪽(종료 그림·정답 없음) |
 | 9. 저녁 질문·뒤표지 | 이번 주 가족에게 묻는 질문 한 개, 만든 날짜, 쪽 번호 | 같음 |
 
-- `private` 판: 3~7쪽 답변 칸에 "아이 답변은 아이만 볼 수 있어요", 돌아보기 줄 없음. 그 밖은 같음.
+- 판은 하나(원문 공개 학생 전용, D2). 원문 제외 판은 만들지 않는다.
 - 저녁 질문 출처 **[추정, D9]**: 그 주 주간 리포트의 `eveningQuestion`(LLM 생성, 유료·공개 설정에 따라 없을 수 있음)을 쓰거나, 테마 `bigQuestion`에서 고정 문장("이번 주 {큰 질문}, 너라면 어떻게 생각해?")을 만든다. 1차는 새 LLM 호출 없이 고정 문장을 권장.
 - 별명: report가 core 내부 프로필(4.5.1)에서 받는다. 실명·학년·학교는 넣지 않는다.
 
@@ -290,8 +299,6 @@ A4 세로, 그림 위주. 회차 1개 기준 약 9쪽.
     <p class="question">{{ day.question }}</p>
     {% if not day.attempt %}
       <p class="locked">이 날은 쉬어 갔어요</p>
-    {% elif audience == "private" %}
-      <p class="locked">아이 답변은 아이만 볼 수 있어요</p>
     {% else %}
       {% for a in day.attempt.answers %}
         {% if a.followup %}<p class="followup">{{ a.followup.question }}</p>{% endif %}
@@ -332,8 +339,8 @@ A4 세로, 그림 위주. 회차 1개 기준 약 9쪽.
 
 ### 12.2 성능
 
-- 기존 주간 리포트 렌더링은 2판(full·free) × Chromium 실행이다. 그림책도 2판을 만든다. **[추정]** 그림 디코딩 포함 1판 3~8초, 그림 받기 1~3초. 주간 리포트 배치(일요일 자정 직후)와 겹치지 않게 report-worker 같은 큐 prefetch를 공유하되 그림책 큐를 따로 둔다(`memorybook.generate`), prefetch 1.
-- 그림책 하나는 Chromium 한 번에 두 판을 만들도록(브라우저 재사용) renderer를 고치면 시간이 줄어든다. 기존 `render()`는 판마다 브라우저를 띄운다.
+- 기존 주간 리포트 렌더링은 2판(full·free) × Chromium 실행이다. 그림책은 1판이다. **[추정]** 그림 디코딩 포함 1판 3~8초, 그림 받기 1~3초. 주간 리포트 배치(일요일 자정 직후)와 겹치지 않게 report-worker 같은 큐 prefetch를 공유하되 그림책 큐를 따로 둔다(`memorybook.generate`), prefetch 1.
+- 그림책은 HTML 한 번·Chromium 한 번으로 끝난다(기존 `render()`는 판마다 브라우저를 띄우고 HTML·PDF·MD를 같이 만든다. 그림책은 HTML·PDF만).
 
 ### 12.3 실패 처리
 
@@ -349,7 +356,7 @@ A4 세로, 그림 위주. 회차 1개 기준 약 9쪽.
 ### 12.4 보안
 
 - 서명 URL: 기존과 같은 `presigned_url`(TTL 300초, `attachment`, 파일 이름 `memory-book-{weekStart}.pdf`). URL은 저장하지 않고 요청마다 새로 만든다. 파일 이름에 별명을 넣지 않는다.
-- 원문 노출: 학부모 경로는 내려받기마다 현재 `parentSharingEnabled`를 core에서 확인해 판을 정한다(생성 시점 값을 믿지 않음). report 내부 경로는 `audience`를 core가 정해 보내고, report는 `private` 판만 따로 서명할 수 있게 키를 분리한다. report가 생성할 때도 프로필의 공개 설정과 관계없이 두 판을 다 만들고, `full` 판을 학부모에게 줄지는 core가 매번 정한다.
+- 원문 노출: 원문 공개 학생만 이용(D2). core는 생성·목록·내려받기마다 현재 `parentSharingEnabled`를 확인한다(생성 시점 값을 믿지 않음). report도 생성 직전 프로필을 다시 읽어 false면 렌더링하지 않는다(요청과 생성 사이에 비공개로 바뀐 경우).
 - P23: 엔딩 전 정보는 learning 조립 단계에서 null로 만든다(report·web이 가리는 것에 기대지 않음). learning 단위 시험으로 고정한다.
 - 감사 기록: 생성 요청·내려받기(누가, 어느 학생, 어느 판)를 core에 남긴다. 기존 리포트 열람 기록(`ReportViewService.record`)과 같은 성격의 표를 쓸지, 새 `memory_book_download` 행을 둘지는 D10.
 - 내부 호출: 새 경로를 호출자별 허용 목록에 더하고, learning 새 경로는 SYSTEM(report-worker) + `X-Student-Scope`만.
@@ -360,15 +367,15 @@ A4 세로, 그림 위주. 회차 1개 기준 약 9쪽.
 ### 13.1 단위·통합 시험
 
 - learning: `MemoryBookServiceTest` — 엔딩 전 회차에서 `outro`·`answer`·`outroImage`가 null, 엔딩 본 회차는 채워짐(P23). 다시 풀기 시도가 있으면 마지막 완료 시도를 씀. 장면 그림이 시도의 `mission_version_id`를 따름(재게시 뒤에도 그때 그림). 남의 학생·미보유·진행 중 주 404.
-- core: `MemoryBookServiceTest` — 무료 403 `PREMIUM_REQUIRED`, `features.memoryBook` 값 없음/true/false/문자열(503), 환불 중 409, 하루 한도 429, 재사용 200, 학부모 내려받기에서 공개 설정 false면 `private`·true면 `full`. `StudentSharingBoundaryTest`에 "비공개 학생의 그림책은 학부모에게 full URL을 주지 않음" 사례 추가.
-- report: 렌더러 시험 — 답변 속 `<script>`·`<img src=http…>`가 이스케이프됨, 외부 URL이 PDF에 요청되지 않음(기존 네트워크 차단 시험과 같은 방식), `private` 판에 답변 문자열이 없음(PDF 텍스트 추출로 확인), 그림 받기 허용 호스트·크기·형식 거부. 저장 키·`delete_prefix` 허용 모양 시험.
+- core: `MemoryBookServiceTest` — 무료 403 `PREMIUM_REQUIRED`, `features.memoryBook` 값 없음/true/false/문자열(503), 환불 중 409, 하루 한도 429, 재사용 200, 생성·목록·내려받기(학생·학부모)에서 공개 설정 false면 403 `STUDENT_RECORDS_PRIVATE`이고 report를 부르지 않음. `StudentSharingBoundaryTest`에 "비공개 학생의 그림책 URL은 누구에게도 발급하지 않음" 사례 추가.
+- report: 렌더러 시험 — 답변 속 `<script>`·`<img src=http…>`가 이스케이프됨, 외부 URL이 PDF에 요청되지 않음(기존 네트워크 차단 시험과 같은 방식), 프로필이 비공개면 렌더링하지 않음, 그림 받기 허용 호스트·크기·형식 거부. 저장 키·`delete_prefix` 허용 모양 시험.
 - 계약: 새 내부 응답 모양을 core·report client 시험에서 502 경계로 확인.
 
 ### 13.2 kind 확인
 
 1. `feature/memory-book` 이미지를 kind에 올린다(`docs/report/` kind 시험 절차와 같은 방식, 로컬 MinIO `sagomungchi-local-missions`·`-reports`).
 2. 시험 데이터: 엔딩 본 회차 1개, 엔딩 못 본 회차 1개, 요일 하나를 안 푼 회차 1개, 그림 키가 없는 사람 작성 테마 회차 1개. 학생 공개 설정 true·false 각각.
-3. 유료 학생으로 생성 → READY → 학생 `full`, 학부모(true) `full`, 학부모(false) `private` 내려받기. 무료 학생 403 확인.
+3. 유료·공개 학생으로 생성 → READY → 학생·학부모 내려받기. 공개를 끄면 둘 다 403 `STUDENT_RECORDS_PRIVATE`, 다시 켜면 다시 받을 수 있음. 무료 학생 403 `PREMIUM_REQUIRED`, 비공개 학생 생성 403 확인.
 4. 학생 삭제를 실행하고 MinIO에서 `reports/{studentId}/memory-books/`가 사라졌는지 확인.
 
 ### 13.3 결과를 화면으로 확인
@@ -392,12 +399,28 @@ A4 세로, 그림 위주. 회차 1개 기준 약 9쪽.
 
 1단계만으로도 "결과물이 쓸 만한가"를 먼저 판단할 수 있다. 1단계 결과를 보고 2단계 이후 진행을 정하는 것을 권한다.
 
+### 14.1 1단계 결과 (2026-11-23)
+
+- 구현: `backend/report-service/app/rendering/memory_book.py`(화면 값: 요일 순서, 답변 버전 순서, 그림은 `data:image/png|jpeg|webp;base64` 만 통과, 엔딩 전이면 종료 이야기·정답·종료 그림 제거, 저녁 질문 고정 문장), `templates/memory_book.html`, `ReportRenderer.render_memory_book()`(HTML·PDF). 기존 `render()`의 PDF 인쇄 부분을 `_pdf()`로 떼어 같이 쓴다(기존 스냅숏 시험 그대로 통과).
+- 표본 스크립트: `backend/report-service/scripts/memory_book_sample.py`. 지어낸 회차(엔딩 본 회차, 목요일 안 푼 날, 그림은 단색 그러데이션 PNG)로 9쪽 PDF를 만든다. `--before-ending`은 엔딩 전 회차, `--book <json>`은 7.2 모양 JSON에 로컬 그림 파일 경로를 넣어 실제 테마 그림으로 볼 때 쓴다.
+
+```powershell
+cd backend/report-service
+uv run python -m scripts.memory_book_sample --out build/memory-book
+```
+
+- 시험: `tests/test_memory_book_rendering.py`(9쪽 구성, 되물음·보완 답변 순서, 엔딩 전 숨김, 입력 불변, 아이 글·별명 이스케이프, 외부 URL·SVG·HTML data URI 거부, 주 표기·저녁 질문, 빈 별명 거부). report 전체 시험 521개 통과, ruff 통과.
+- 관찰: 표본 PDF 약 110KB, 렌더링 1~2초(로컬 Windows). 실제 테마 그림 크기는 아직 재지 않았다(16장 3번).
+- 남은 판단: 결과물 모양을 보고 2단계(learning 조립 API) 이후를 계속할지 정한다.
+
 ## 15. 열린 결정 (동섭이 정할 것)
+
+11/23: D2는 위처럼 결정했고, 나머지는 권장안대로 시험 구현한 뒤 결과를 보고 다시 판단한다.
 
 | # | 결정 | 권장안 | 이유 |
 |---|---|---|---|
 | D1 | 누가 만들고 누가 받나 | 학생이 만들고, 학생·학부모 둘 다 받음(1차: 학생 생성만) | 원문 공개 설정과 충돌 없이 답변을 담을 수 있는 쪽은 학생 본인, 유료 결제자는 학부모. 학부모 생성은 비공개 학생에게 원문 없는 판만 나와 가치가 낮음 |
-| D2 | 학생이 비공개일 때 학부모에게 | 원문 뺀 `private` 판 제공 | 그림·문제·엔딩만으로도 기념물 가치가 있음. 기존 리포트처럼 403으로 막으면 비공개(기본값) 학생의 학부모는 기능을 전혀 못 씀. 대안: 리포트와 똑같이 403 `STUDENT_RECORDS_PRIVATE`(규칙이 하나라 설명은 쉬움) |
+| D2 | 학생이 비공개일 때 | **결정(11/23): 원문 공개 학생만 제공**, 비공개면 학생·학부모 모두 403 `STUDENT_RECORDS_PRIVATE` | 판이 하나라 시험 범위가 작고 기존 리포트 규칙과 같음. 처음 권장안(원문 뺀 판 제공)은 도입 판단 때 다시 봄 |
 | D3 | 단위 | 회차 1개, API는 배열로 열어 둠 | 기존 조립 경로 재사용, 렌더링 크기 예측 쉬움. 묶음은 길이 제한만 풀면 됨 |
 | D4 | `features` 키·한도 | `features.memoryBook`, `limits.dailyMemoryBooks = 3` | 기존 `extraMissions`·`sundayTheme`과 같은 규칙이라 상품 데이터·시험 방식 재사용 |
 | D5 | 구독이 끝난 뒤 이미 만든 파일 | 보관 기간(30일) 안이면 내려받기 허용 | 결제 기간에 만든 결과물이라 막으면 불만이 큼. 생성만 유료로 막음 |

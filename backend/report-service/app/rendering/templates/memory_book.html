@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>추억 그림책</title>
+<style>
+@page { size: A4; margin: 14mm; }
+body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a22; font-size:13px; line-height:1.8; margin:0; }
+.page { break-after: page; }
+.page:last-child { break-after: auto; }
+.scene { display:block; width:100%; max-height:120mm; object-fit:contain; border-radius:5mm; margin:0 auto 5mm; }
+.scene--missing { height:70mm; border-radius:5mm; margin-bottom:5mm; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
+.cover { text-align:center; padding-top:14mm; }
+.cover h1 { font-size:30px; color:#6b4a1f; margin:6mm 0 2mm; }
+.cover .who { font-size:17px; color:#8a6a3a; margin:0; }
+.cover .when { color:#8a7c66; }
+h2 { font-size:18px; color:#6b4a1f; margin:4mm 0; }
+.label { display:inline-block; font-size:12px; color:#fff; background:#c98a2e; border-radius:10px; padding:1px 10px; margin-right:6px; }
+.type { color:#8a6a3a; font-size:12px; }
+.dialogue { margin:1mm 0; color:#5a5243; } .dialogue b { color:#8a6a3a; margin-right:4px; }
+.question { background:#fbf6ec; border-radius:4mm; padding:3mm 4mm; margin:4mm 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.followup { color:#7a5b2c; margin:3mm 0 1mm; white-space:pre-wrap; overflow-wrap:anywhere; }
+.followup::before { content:"되물음 · "; font-weight:bold; }
+.answer { border-left:3px solid #e0a43c; padding-left:4mm; margin:1mm 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.reflection { color:#5d6b52; margin-top:3mm; white-space:pre-wrap; overflow-wrap:anywhere; }
+.reflection::before { content:"돌아보기 · "; font-weight:bold; }
+.locked { color:#8a8a8a; font-style:italic; }
+.big { font-size:16px; color:#6b4a1f; }
+.back { text-align:center; padding-top:40mm; }
+.back .q { font-size:17px; margin:8mm 10mm; white-space:pre-wrap; overflow-wrap:anywhere; }
+.small { font-size:10px; color:#8a7c66; }
+</style></head><body>
+
+<section class="page cover">
+{% if book.introImage %}<img class="scene" src="{{ book.introImage }}" alt="">{% else %}<div class="scene scene--missing"></div>{% endif %}
+<h1>{{ book.title }}</h1>
+<p class="who">{{ name }}의 추억 그림책</p>
+<p class="when">{{ book.weekLabel }}</p>
+</section>
+
+<section class="page intro">
+<h2>이야기의 시작</h2>
+<p class="question">{{ book.intro }}</p>
+{% if book.bigQuestion %}<p class="big">이번 주 큰 질문: {{ book.bigQuestion }}</p>{% endif %}
+</section>
+
+{% for day in book.days %}<section class="page day" data-day="{{ day.day }}">
+<p><span class="label">{{ day.dayLabel }}</span><span class="type">{{ thinking_labels.get(day.thinkingType, '') }}</span></p>
+{% if day.sceneImage %}<img class="scene" src="{{ day.sceneImage }}" alt="">{% else %}<div class="scene scene--missing"></div>{% endif %}
+<h2>{{ day.title }}</h2>
+{% for line in day.dialogue %}<p class="dialogue"><b>{{ line.speaker }}</b>{{ line.text }}</p>{% endfor %}
+<div class="question">{{ day.question }}</div>
+{% if day.attempt is none %}<p class="locked">이 날은 쉬어 갔어요</p>
+{% else %}{% for a in day.attempt.answers %}{% if a.followup %}<p class="followup">{{ a.followup }}</p>{% endif %}<p class="answer">{{ a.text }}</p>
+{% endfor %}{% if day.attempt.reflection %}<p class="reflection">{{ day.attempt.reflection }}</p>{% endif %}{% endif %}
+</section>
+{% endfor %}
+
+<section class="page ending">
+<h2>이야기의 끝</h2>
+{% if book.ending.seen %}{% if book.ending.outroImage %}<img class="scene" src="{{ book.ending.outroImage }}" alt="">{% endif %}
+<p class="question">{{ book.ending.outro }}</p>
+{% if book.ending.answer %}<p class="big">큰 질문의 답: {{ book.ending.answer }}</p>{% endif %}
+{% else %}<div class="scene scene--missing"></div>
+<p class="locked">아직 이 이야기의 끝을 보지 못했어요</p>{% endif %}
+</section>
+
+<section class="page back">
+<h2>오늘 저녁 질문</h2>
+<p class="q">{{ book.eveningQuestion }}</p>
+<p class="small">사고뭉치 추억 그림책</p>
+</section>
+</body></html>
