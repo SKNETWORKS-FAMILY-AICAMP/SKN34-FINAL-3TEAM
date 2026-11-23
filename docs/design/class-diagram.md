@@ -2208,6 +2208,7 @@ classDiagram
     <<controller>>
     +request(body) ThemeDraftView
     +list(status, source, page, size, grade?, weekStart?, hideDiscarded, comparisonPending) Page
+    +reviewList(grade?, source?, status?, stage?, week?, weekStart?, comparisonPending, hideDiscarded, page, size) ThemeDraftReviewPage
     +detail(draftId) ThemeDraftView
     +sceneHistory(draftId, scene) SceneHistory
     +selectScene(draftId, scene, body) SceneHistory
@@ -2222,6 +2223,7 @@ classDiagram
     +createWeekly(weekStart)
     +regenerate(draftId, author, targets?) ThemeDraftView
     +list(status, source, page, size, grade?, weekStart?, hideDiscarded, comparisonPending) Page
+    +reviewPage(filter, page, size) ThemeDraftReviewPage
     +adopt(draftId, author, expected?, supplied) AdminWeeklyTheme
     +discard(draftId, expected?, supplied) ThemeDraftView
     +generateNext(now)
@@ -2250,6 +2252,7 @@ classDiagram
     +findInputs(grade, from, until) List
     +claimNext(now, leaseUntil) ThemeDraft
     +saveAttempt(draft, claimedLease)
+    +reviewPage(filter, page, size) ThemeDraftReviewPage
   }
   class AssetUrls {
     <<common>>
@@ -2339,6 +2342,7 @@ classDiagram
 #882(장면 비교·주차 편성·게시 확정, learning V25~V27, 결정과 근거는 [learning 보고서](../report/learning.md) #882 절):
 - `ThemeWeekPlanner`: 학년별 권고 잠금(`lockGrades`, 학년 순서대로)으로 테마 작성·수정·게시와 초안 요청·채택·버리기·편성을 직렬화한다. `requireOpen`은 그 학년·주에 `PUBLISHED` 테마가 있으면 `409 WEEK_LOCKED`, `stale`은 관리자가 본 값과 다르면 `409 PLAN_CONFLICT`. `board`는 연속 4주 칸(`WeekSlot(weekStart, locked, planned, themes)`)과 후보(원본 `READY` 초안), `change(PlanChange{grade, draftId, expectedWeek, targetWeek, expectedTargetDraftId})`는 `theme_draft.planned_week`만 바꾼다(맞교환 포함, 생성 기준 주 `week_start`는 그대로). `finishPublication`은 게시 버전의 요일 미션·기준표 버전을 고정하고 그 학년·주 편성을 해제
 - `ThemeDraftMediaService`: 장면(`INTRO`·`MON`~`FRI`·`OUTRO`)마다 묶음 원본과 다시 생성본의 결과를 버전 이력(`SceneHistory`)으로 보여 주고, 선택·별표·메모를 저장한다(V25). `selectedOutput`이 장면별 선택본을 합친 결과를 채택에 넘기고, 채택·버리기 때 `freeze`로 선택을 고정. 묶음에 `GENERATING` 다시 생성본이 있으면(`hasPendingGeneration`) 채택·버리기는 `PLAN_CONFLICT`
+- 검수 목록(#964): `ThemeDraftService.reviewPage`가 `ThemeDraftReviewFilter`(<<value>>, 조회 조건·버림 이력 여부 `archived`)로 `ThemeDraftRepository.reviewPage`를 불러 `ThemeDraftReviewPage`(<<value>>, `ThemeDraftReviewRow` 목록·개수·적용 주 선택지 `weeks`)를 만든다. 검수 단계(`stage`)·적용 주·묶음 합치기는 매퍼 SQL이 계산하고(규칙 [state-diagram 3.5.1](state-diagram.md#351-theme_draftstatus-438)), 서비스는 썸네일만 `AssetUrls.url`로 바꾼다. 목록·개수·주 선택지가 한 스냅샷이 되도록 `REPEATABLE_READ` 읽기 트랜잭션
 - 시도의 테마 버전 고정(V27 `attempt.theme_version_id`)은 [ERD](erd.md)·[시퀀스](sequence-diagram.md) 참고
 - core 감사(`AdminLearningService`): 편성 변경 `THEME_DRAFT_PLAN`, 장면 선택 `THEME_SCENE_SELECT`, 별표·메모 `THEME_SCENE_ANNOTATE`(`target_type = THEME_DRAFT`, 장면은 `detail.scene`). learning 오류 `WEEK_LOCKED`·`THEME_SCHEDULE_LOCKED`·`PLAN_CONFLICT`는 허용 목록으로 그대로 전달
 - `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
