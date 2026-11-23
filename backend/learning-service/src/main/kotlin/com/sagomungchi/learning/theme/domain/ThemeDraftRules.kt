@@ -66,6 +66,22 @@ object ThemeDraftRules {
 
     val AUTO_SUBJECTS: Set<String> = setOf(KOREAN, MATH)
 
+    /**
+     * 자동 성취기준에서 빼는 성취기준 (#782, 사용자 결정 2026-11-19). 서술·논술은 읽고 생각하고 쓰는 활동이라, 글로 할 수 없는
+     * 말하기·듣기·소리 내어 읽기·매체 제작·도구 조작·그리기가 중심인 성취기준은 자동으로 고르지 않는다. 관리자가 직접 고르면 그대로 쓴다.
+     * 근거: 고시 원문(성취기준·해설·적용 시 고려 사항) 156개 전수 검토와 저장된 실측 미션 5,780개 검사(ai.md 27절, learning.md 44장)
+     */
+    val AUTO_EXCLUDED: Set<String> = setOf(
+        // 국어 듣기·말하기 13개: 글로 옮긴 말을 읽고 하면 읽기 문제가 됨
+        "4국01-01", "4국01-02", "4국01-03", "4국01-04", "4국01-05", "4국01-06",
+        "6국01-01", "6국01-02", "6국01-03", "6국01-04", "6국01-05", "6국01-06", "6국01-07",
+        "4국02-01", // 소리 내어 유창하게 읽기
+        "4국06-01", "4국06-02", "6국06-03", // 인터넷 접속·자료 훑어보기, 발표 자료 만들기, 카드 뉴스·영상 만들기
+        // 수학 그리기·조작 8개: 컴퍼스로 원 그리기, 모양 만들기·채우기, 각도기로 재기, 대칭 도형 그리기, 겨냥도·전개도 그리기,
+        // 위·앞·옆에서 본 모양 그리기
+        "4수03-07", "4수03-12", "4수03-24", "6수03-02", "6수03-04", "6수03-06", "6수03-08", "6수03-10",
+    )
+
     /** 자동 입력 방식 (FN 1.5 기본): 서술·논술·서술·풀이 단계·서술, 초3·초4 따져 보기는 서술(P03 논술 초5~6) */
     fun defaultInputType(type: ThinkingType, grade: ThemeGrade): InputType = when (type) {
         ThinkingType.EVALUATE -> if (grade.grade >= MissionView.ESSAY_MIN_GRADE) InputType.ESSAY else InputType.NARRATIVE
@@ -83,7 +99,8 @@ object ThemeDraftRules {
     /**
      * 자동 성취기준 후보 (#536, class-diagram 4.4, RAG 안 씀 팀 결정 2026-11-11). 교과마다 학년군 표(`tables`)를 학기 대응표로 나눈
      * 학기 단계: ① 이번 학기(`current`, 예: `4-2`) ② 같은 학년군에서 이번 학기까지 배운 학기(`soFar`, 예: 3-1~4-2).
-     * 빈 단계와 앞 단계와 같은 단계는 뺀다. 아래 학년군은 넣지 않는다(미션 학년이 성취기준 학년군 안이어야 하는 게시 규칙 #353)
+     * 빈 단계와 앞 단계와 같은 단계는 뺀다. 아래 학년군은 넣지 않는다(미션 학년이 성취기준 학년군 안이어야 하는 게시 규칙 #353).
+     * 자동으로 고르지 않는 성취기준(`AUTO_EXCLUDED`, #782)은 학기 단계와 학년군 표 모두에서 뺀다
      */
     fun candidatePools(
         tables: Map<String, List<AchievementStandard>>,
@@ -91,7 +108,8 @@ object ThemeDraftRules {
         current: String,
         soFar: List<String>,
     ): Map<String, StandardCandidates> =
-        tables.mapValues { (_, table) ->
+        tables.mapValues { (_, all) ->
+            val table = all.filterNot { it.code in AUTO_EXCLUDED }
             val tiers = listOf(
                 table.filter { semesters.covers(it.code, current) },
                 table.filter { standard -> soFar.any { semesters.covers(standard.code, it) } },
