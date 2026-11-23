@@ -1,6 +1,6 @@
 import type { Feedback, Reflection } from '../../../domain/classroom.ts'
 
-/** 문제 화면 단계(시안 MissionGuide·#589). 미션 안내 화면이 1단계, 문제 푸는 화면(StudentWorkPage)이 2~5단계(#440) */
+/** 미션 안내 화면의 단계 칩(시안 MissionGuide·#589). 문제 푸는 화면(StudentWorkPage)은 단계 칩을 뺐다(#807 D안, 사용자 결정 2026-11-23) */
 export const STEPS = ['질문 읽기', '답변 쓰기', '피드백', '마무리', '돌아보기']
 
 /**

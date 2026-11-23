@@ -8,7 +8,7 @@ enum class JudgmentMethod { RULE, LLM }
 /** 근거 출처 (api-spec 1.5). 규칙 판정은 ANSWER_KEY, LLM 근거 구절은 AI_OBSERVATION (api-spec 3.2) */
 enum class ElementSource { RECORD, RULE, ANSWER_KEY, AI_OBSERVATION }
 
-/** 학생이 지금 할 수 있는 행동 (api-spec 2.2). FINISH는 "이대로 돌아보기" */
+/** 학생이 지금 할 수 있는 행동 (api-spec 2.2). FINISH는 "마무리 보기"(웹 단추, #807) */
 enum class NextAction { ANSWER_FOLLOWUP, FINISH }
 
 /**

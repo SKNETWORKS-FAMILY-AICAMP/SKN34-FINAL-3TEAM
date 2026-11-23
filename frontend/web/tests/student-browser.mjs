@@ -71,11 +71,12 @@ async function submit(p) {
   await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
 }
 async function finish(p) {
-  await p.getByRole('button', { name: '이대로 돌아보기', exact: true }).click()
-  await p.getByRole('button', { name: '돌아보기 남기기' }).waitFor()
-  await p.getByRole('button', { name: '돌아보기 남기기' }).click()
+  await p.getByRole('button', { name: '마무리 보기', exact: true }).click()
+  await p.getByRole('button', { name: '미션 완료하기' }).waitFor()
   await p.getByRole('button', { name: '보통이에요' }).click()
-  await p.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
+  await p.getByRole('button', { name: '미션 완료하기' }).click()
+  // 미션 완료 화면(#807)에서 내 공책으로
+  await p.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '내 공책 보기' }).click()
   await p.waitForURL('**/student/journal')
 }
 try {
@@ -210,7 +211,7 @@ try {
     await saved(p)
     await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     await submit(p)
-    await p.getByRole('button', { name: '이대로 돌아보기', exact: true }).waitFor()
+    await p.getByRole('button', { name: '마무리 보기', exact: true }).waitFor()
     await p.getByRole('button', { name: '생각 메모 · 나만 보기', exact: true }).click()
     assert.equal(await p.getByRole('button', { name: '메모를 답에 옮기기' }).isDisabled(), true)
   })
@@ -270,8 +271,8 @@ try {
       assert.equal(submitted.request().postDataJSON().dictatedByGuardian, true)
       assert.equal('memo' in submitted.request().postDataJSON(), false)
       await p.locator('[data-evidence-verified="true"]').waitFor()
-      await p.getByRole('button', { name: '이대로 돌아보기' }).waitFor()
-      assert.equal(await p.getByRole('list', { name: '마무리 체크리스트' }).count(), 0)
+      await p.getByRole('button', { name: '마무리 보기' }).waitFor()
+      assert.equal(await p.getByRole('group', { name: '마무리 체크리스트' }).count(), 0)
       if (out && type === 'NARRATIVE')
         await p.screenshot({
           path: path.join(out, 'tablet-feedback.jpg'),
@@ -309,26 +310,26 @@ try {
         await p.getByRole('button', { name: '피드백 다시 받기' }).waitFor()
         await p.getByRole('button', { name: '피드백 다시 받기' }).click()
       }
-      await p.getByRole('button', { name: '이대로 돌아보기' }).waitFor()
+      await p.getByRole('button', { name: '마무리 보기' }).waitFor()
       if (scenario === 'submit-fail') {
         assert.equal(calls.length, 2)
         assert.equal(calls[0].key, calls[1].key)
         assert.equal(calls[0].body, calls[1].body)
       } else assert.equal(calls.length, 1)
       if (scenario === 'finish-unmet') {
-        await p.getByRole('button', { name: '이대로 돌아보기' }).click()
+        await p.getByRole('button', { name: '마무리 보기' }).click()
         await p.getByText('REVEAL_CONDITION_UNMET', { exact: true }).waitFor()
-        assert.equal(await p.getByRole('list', { name: '마무리 체크리스트' }).count(), 0)
-        assert.equal(await p.getByRole('button', { name: '돌아보기 남기기' }).count(), 0)
+        assert.equal(await p.getByRole('group', { name: '마무리 체크리스트' }).count(), 0)
+        assert.equal(await p.getByRole('button', { name: '미션 완료하기' }).count(), 0)
       }
       if (scenario === 'rethink')
-        assert.ok((await p.locator('.ux-evidence').innerText()).includes('다시 생각'))
+        await p.getByText('한 번 더 살펴볼까요?', { exact: true }).waitFor()
       if (scenario === 'held')
         await p.getByText('답을 잘 받았어요.', { exact: true }).waitFor()
       if (scenario === 'correct') {
         await p.getByText('정답을 확인했어요.', { exact: true }).waitFor()
         // 판정 신고 대상은 답변 ID가 아니라 판정 ID (#146)
-        const report = await p.getByRole('link', { name: '이 결과 오류 신고' }).getAttribute('href')
+        const report = await p.getByRole('link', { name: '결과가 이상해요' }).getAttribute('href')
         assert.ok(report.includes('targetType=JUDGMENT') && report.includes('-judgment'), report)
       }
     })
@@ -342,7 +343,7 @@ try {
     assert.equal(await p.getByRole('button', { name: '피드백 다시 받기' }).count(), 0)
     assert.equal(await p.getByRole('button', { name: '다시 시도', exact: true }).count(), 0)
     // 판정이 없으니 판정 신고 버튼도 없음 (#146)
-    assert.equal(await p.getByRole('link', { name: '이 결과 오류 신고' }).count(), 0)
+    assert.equal(await p.getByRole('link', { name: '결과가 이상해요' }).count(), 0)
   })
   await check(
     '움직임 줄이기 정적 대체·모바일 제출 버튼 접근',

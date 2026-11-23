@@ -118,7 +118,7 @@ class AttemptFinishTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `되묻기에 답하지 않아도 마무리 가능 (api-spec 2·2 이대로 돌아보기)`() {
+    fun `되묻기에 답하지 않아도 마무리 가능 (api-spec 2·2 마무리 보기)`() {
         val setup = narrative()
         val answer = submit(setup.attempt, "놀 수 있어서 좋아요")
         rows.judged(answer.id)

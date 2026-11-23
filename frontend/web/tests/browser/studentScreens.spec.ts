@@ -120,8 +120,9 @@ test('PC 1440×900에서 시안 맞춘 화면은 칸 안 스크롤이 없고, �
   }
 })
 
-// #440 문제 푸는 화면(시안 MissionWrite·Feedback): 미션 안내와 같은 다섯 단계 칩, 메모는 답 칸을 가리지 않음, PC 한 화면·휴대전화 가로 스크롤 없음
-test('#440 문제 푸는 화면은 다섯 단계 칩을 잇고 메모를 답 칸 아래에 펼친다 @responsive', async ({ page }, testInfo) => {
+// #440 문제 푸는 화면(시안 MissionWrite·Feedback): 메모는 답 칸을 가리지 않음, PC 한 화면·휴대전화 가로 스크롤 없음.
+// 단계 칩은 미션 안내에만 남기고 문제 푸는 화면에서는 뺐다(#807 D안, 사용자 결정 2026-11-23)
+test('#440 문제 푸는 화면은 단계 칩 없이 메모를 답 칸 아래에 펼친다 @responsive', async ({ page }, testInfo) => {
   await student(page)
   const attemptId = await page.evaluate(async () => {
     const path = '/src/mocks/fixtures/student.ts'
@@ -134,9 +135,8 @@ test('#440 문제 푸는 화면은 다섯 단계 칩을 잇고 메모를 답 칸
     return attempt.attemptId as string
   })
   await navigate(page, `/student/attempts/${attemptId}`)
-  const steps = page.getByRole('list', { name: '미션 진행 단계' })
-  await expect(steps.getByRole('listitem')).toHaveCount(5)
-  await expect(steps.locator('[aria-current="step"]')).toHaveText('2 답변 쓰기')
+  await expect(page.getByRole('textbox', { name: '내 생각과 이유', exact: true })).toBeVisible()
+  await expect(page.getByRole('list', { name: '미션 진행 단계' })).toHaveCount(0)
   if (testInfo.project.name === 'laptop')
     expect(await page.locator('.st-world').evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(900)
   const answer = page.getByRole('textbox', { name: '내 생각과 이유', exact: true })
@@ -149,7 +149,7 @@ test('#440 문제 푸는 화면은 다섯 단계 칩을 잇고 메모를 답 칸
   await expect(page.locator('.ux-save-line[role=status]')).toContainText('저장했어요')
   await page.getByRole('button', { name: '다 썼어요', exact: true }).click()
   await expect(page.locator('.ux-feedback[role=status]')).not.toContainText('준비하고 있어요', { timeout: 15_000 })
-  await expect(steps.locator('[aria-current="step"]')).toHaveText('3 피드백')
+  await expect(page.getByRole('list', { name: '미션 진행 단계' })).toHaveCount(0)
   // 결과 이름에 내부 말 '판정'을 쓰지 않는다(#440 26번)
   await expect(page.getByRole('region', { name: '내가 쓴 답' })).not.toContainText('판정')
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)

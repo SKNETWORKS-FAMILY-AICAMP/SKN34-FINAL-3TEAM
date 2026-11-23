@@ -303,13 +303,12 @@ test('더 풀어 보기(프리미엄 추가 문제)는 그대로 미션 안내',
   await expect(page).not.toHaveURL(/\/student\/theme\/scene\//)
 })
 
-/** 문제를 마무리하고 돌아보기까지 저장한다(되묻기는 받지 않고 '이대로 돌아보기') */
+/** 문제를 마무리하고 돌아보기까지 저장한다(되묻기는 받지 않고 '마무리 보기' → 난이도 → '미션 완료하기', D안) */
 async function finishAndReflect(page: Page) {
   await page.getByRole('button', { name: /^(다 썼어요|이걸로 할래요)/ }).click()
-  await page.getByRole('button', { name: '이대로 돌아보기' }).click({ timeout: 20_000 })
-  await page.getByRole('button', { name: '돌아보기 남기기' }).click()
+  await page.getByRole('button', { name: '마무리 보기' }).click({ timeout: 20_000 })
   await page.getByRole('button', { name: '보통이에요' }).click()
-  await page.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
+  await page.getByRole('button', { name: '미션 완료하기' }).click()
 }
 
 test('문제를 마치면 미션 완료 화면: 그 요일 단서가 열렸다고 알리고 단서 모음으로 잇는다(시안 SC-02-012)', async ({ page }) => {
@@ -328,6 +327,45 @@ test('문제를 마치면 미션 완료 화면: 그 요일 단서가 열렸다�
   await expect(done.getByRole('button', { name: '같은 미션 친구 생각 보기' })).toBeVisible()
   await done.getByRole('button', { name: /단서 모음 보기/ }).click()
   await expect(page).toHaveURL(/\/student\/theme\/clues$/)
+})
+
+// 마무리 D안(사용자 결정 2026-11-23): 화면 크기마다 아래 줄·세 칸·이어 붙임, 난이도는 골라도 바로 넘어가지 않고 '미션 완료하기'에서 필수 확인
+test('마무리 화면은 화면 크기대로 배치를 바꾸고, 난이도를 안 고르고 누르면 그 칸에 안내가 보인다', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 4, days: '-----' })
+  await go(page, '/student/theme/scene/MON')
+  await throughTodayScene(page)
+  await page.getByRole('button', { name: /잎의 색과 크기/ }).click()
+  await page.getByRole('button', { name: /^(다 썼어요|이걸로 할래요)/ }).click()
+  await page.getByRole('button', { name: '마무리 보기' }).click({ timeout: 20_000 })
+  const finish = page.locator('.sw-finish')
+  const done = page.getByRole('button', { name: '미션 완료하기' })
+  await expect(page.getByRole('list', { name: '미션 진행 단계' })).toHaveCount(0)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(finish).toHaveAttribute('data-fit', '')
+  await expect(finish).not.toHaveAttribute('data-wide', '')
+  await expect(done).toBeInViewport()
+  // 가로 태블릿(주소창 뺀 높이): 세 칸, 안내는 고정 높이 칸 안에서도 보인다
+  await page.setViewportSize({ width: 1180, height: 740 })
+  await expect(finish).toHaveAttribute('data-wide', '')
+  await expect(finish).toHaveAttribute('data-fit', '')
+  await done.click()
+  const notice = page.getByRole('region', { name: '이번 활동은 어땠나요?' }).getByRole('alert')
+  await expect(notice).toHaveText('이번 활동이 어땠는지 하나 골라 주세요.')
+  await expect(notice).toBeInViewport({ ratio: 1 })
+  await expect(page.getByRole('dialog', { name: '미션 완료!' })).toHaveCount(0)
+  // 고르기만으로는 넘어가지 않는다
+  await page.getByRole('button', { name: '보통이에요' }).click()
+  await expect(page.getByRole('button', { name: '보통이에요' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(notice).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: '미션 완료!' })).toHaveCount(0)
+  // 휴대전화 폭은 맞추지 않고 이어 붙임(칸 안 자름), 가로 스크롤 없음
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(finish).not.toHaveAttribute('data-fit', '')
+  await expect(page.locator('.sw-more')).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  await done.click()
+  await expect(page.getByRole('dialog', { name: '미션 완료!' })).toBeVisible()
 })
 
 test('금요일 문제를 마치면 마지막 단서와 정답 고르기, 금요일 친구 생각은 엔딩 전이라 없다', async ({ page }) => {

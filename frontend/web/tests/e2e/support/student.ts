@@ -86,13 +86,12 @@ export async function solveNarrative(page: Page, answer: string, { followup }: {
     await expect(page.getByText(/덧붙인 답 1/)).toBeVisible()
     await expect(checked).toBeVisible({ timeout: 60_000 })
   }
-  await page.getByRole('button', { name: '이대로 돌아보기' }).click()
-  // #648 마무리 화면 제목은 "마무리 정답과 비교해 보세요"(마침표 없음)
-  await expect(page.getByRole('heading', { name: /(정답|예시 답)과 비교해 보세요/ })).toBeVisible()
-  await expect(page.getByRole('list', { name: '마무리 체크리스트' })).toBeVisible()
-  await page.getByRole('button', { name: '돌아보기 남기기' }).click()
+  await page.getByRole('button', { name: /^마무리(보기|하기)$/ }).click()
+  // 마무리 화면 제목은 화면 읽기용으로만 남음(D안 #807): "마무리 · 정답과 비교해 보세요"
+  await expect(page.getByRole('heading', { name: /(정답|예시 답)과 비교해 보세요/ })).toBeAttached()
+  await expect(page.getByRole('group', { name: '마무리 체크리스트' })).toBeVisible()
   await page.getByRole('button', { name: '보통이에요' }).click()
-  await page.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
+  await page.getByRole('button', { name: '미션 완료하기' }).click()
   // 미션 완료 화면(#807)에서 내 공책으로
   await page.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '내 공책 보기' }).click()
   await page.waitForURL('**/student/journal**')

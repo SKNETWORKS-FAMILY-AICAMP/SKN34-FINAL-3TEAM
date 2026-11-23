@@ -67,7 +67,8 @@ test('내 포인트 주소는 포인트 화면을 열고 설정 메뉴 아래로
   await expect(page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '설정', exact: true })).toHaveAttribute('aria-current', 'page')
 })
 
-test('학생 결과의 이전·현재 공책 비교 @responsive', async ({ page }, testInfo) => {
+// 다시 푼 문제의 마무리: '이전 답과 나란히' 창 대신 내 답 아래 '저번엔' 한 줄(#807 D안, 사용자 결정 2026-11-23)
+test('학생 결과의 저번 답은 내 답 아래 한 줄로 보인다 @responsive', async ({ page }, testInfo) => {
   await studentLogin(page)
   // 기존 MSW fixture만 구성한다. 실서버·학생 원문·외부 모델 호출은 사용하지 않는다.
   await page.evaluate(async () => {
@@ -83,6 +84,8 @@ test('학생 결과의 이전·현재 공책 비교 @responsive', async ({ page 
     previous.attemptId = 'browser-previous'
     previous.finishedAt = '2026-10-31T01:00:00Z'
     previous.answers[0].text = '이전에 쓴 합성 답입니다.'
+    // '저번엔' 줄은 저번 시도의 마지막 답만 보인다
+    previous.answers.at(-1).text = '저번 마지막에 쓴 합성 답입니다.'
     current.attemptId = 'browser-current'
     current.finishedAt = '2026-11-01T01:00:00Z'
     current.answers[0].text = '이번에는 까닭을 보탠 합성 답입니다.'
@@ -91,18 +94,19 @@ test('학생 결과의 이전·현재 공책 비교 @responsive', async ({ page 
     history.pushState({}, '', '/student/attempts/browser-current')
     dispatchEvent(new PopStateEvent('popstate'))
   })
-  const panel = page.getByRole('region', { name: '이전 답과 이번 답 비교' })
-  await expect(panel).toBeVisible()
-  await expect(panel.getByRole('heading', { name: '이전 답', exact: true })).toBeVisible()
-  await expect(panel.getByRole('heading', { name: '이번 답', exact: true })).toBeVisible()
-  await expect(panel.getByText('이전에 쓴 합성 답입니다.', { exact: true })).toBeVisible()
-  await expect(panel.getByText('이번에는 까닭을 보탠 합성 답입니다.', { exact: true })).toBeVisible()
-  expect(await panel.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false)
-  await panel.screenshot({ path: testInfo.outputPath('attempt-comparison.png') })
+  const mine = page.getByRole('region', { name: '내 답' })
+  const prev = mine.locator('.sw-prev')
+  await expect(prev).toBeVisible()
+  await expect(prev.getByText('저번엔', { exact: true })).toBeVisible()
+  await expect(prev.getByText('저번 마지막에 쓴 합성 답입니다.', { exact: true })).toBeVisible()
+  await expect(mine.getByText('이번에는 까닭을 보탠 합성 답입니다.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '이전 답과 이번 답 비교' })).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  await mine.screenshot({ path: testInfo.outputPath('attempt-comparison.png') })
   await writeFile(testInfo.outputPath('comparison-rendered.html'), (await page.content()).replace(/<script\b[\s\S]*?<\/script>/gi, ''))
   await page.getByRole('button', { name: '이 미션 다시 풀기', exact: true }).click()
   await expect(page).toHaveURL(/\/student\/attempts\/new-/)
-  await expect(page.getByRole('region', { name: '이전 답과 이번 답 비교' })).toHaveCount(0)
+  await expect(page.locator('.sw-prev')).toHaveCount(0)
   const originals = await page.evaluate(async () => {
     const path = '/src/mocks/fixtures/student.ts'
     const { fixtureStore } = await import(path)
