@@ -354,6 +354,24 @@ def test_invalid_final_template_is_error_without_result_or_done(monkeypatch):
     assert not any(name in {"result", "done"} for name, _ in parsed)
 
 
+def test_result_validation_error_does_not_log_input(monkeypatch, caplog):
+    from app.analysis_agent.models import ResultScope
+    from app.analysis_agent.nodes import respond
+
+    def invalid_result(*args, **kwargs):
+        return ResultScope.model_validate({"childId": "s-1", "from": "PRIVATE-STUDENT-TEXT"})
+
+    monkeypatch.setattr(respond, "_result", invalid_result)
+    parsed = events(post(FakeLlm(classified("CHANGES"), "기록을 보면 활동이 있어요.")))
+    assert parsed[-1] == (
+        "error",
+        {"code": "INTERNAL_ERROR", "message": "답변을 만들지 못했어요.", "retryable": True},
+    )
+    assert not any(name in {"result", "done"} for name, _ in parsed)
+    assert "분석 대화 결과 검증 실패" in caplog.text
+    assert "PRIVATE-STUDENT-TEXT" not in caplog.text
+
+
 # --- 일일 리포트 고정 대화 (#392) ----------------------------------------------
 
 REPORT = {
