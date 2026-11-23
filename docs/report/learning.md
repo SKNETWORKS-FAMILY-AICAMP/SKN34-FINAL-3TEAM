@@ -1482,3 +1482,20 @@ learning #801 병합 전에 목 입력으로 개발했고, 병합된 learning Op
 
 - 학부모 일일 리포트 문제 카드의 "돌아보기" 줄이 원문 공개 상태에서 난이도 코드를 그대로 `돌아보기 · NORMAL`로 보인다(비공개 상태는 `쓰지 않음`). Markdown도 `### 돌아보기` 아래 `NORMAL`. 난이도 코드를 화면 문구(쉬웠어요·보통이에요·어려웠어요)로 바꾸는 처리가 없는 것으로 추정
 - Markdown·PDF 파일은 생성 때의 공개 설정으로 만들어져, 비공개 때 생성한 판은 나중에 공개로 바꿔도 "원문 비공개 또는 답변 없음"으로 남는다(기존 동작, 이번 기능과 무관)
+
+## 43. 주간 테마 장면 검수·주차 편성·게시 확정 (#882, 2026-11-23 문서 정리 #909)
+
+PR #889(learning V25~V27)로 구현한 관리자 주간 테마 운영의 서버 규칙을 정리한다. 설계 문서는 [state-diagram 3.5·3.5.1](../design/state-diagram.md#35-weekly_themestatus-p23-385), [api-spec 2.8](../design/api-spec.md#28-관리자-fn-adm-fn-sup-관리-측--apiv1admin)·4.1, [class-diagram 4.4](../design/class-diagram.md#44-주간-테마커뮤니티-theme-385--community-386-구현)에 반영했다.
+
+### 정한 것
+
+- 장면 검수(V25): 다시 생성본은 원래 초안 묶음(`theme_draft.family_root_id`)에 매달고, 장면(`INTRO`·`MON`~`FRI`·`OUTRO`)마다 버전 이력에서 선택본(`theme_draft_scene_selection`)과 별표·메모(`theme_draft_scene_note`, 160자)를 저장한다. 채택은 장면별 선택본을 합친 결과로 미션 5개·테마를 만들고, 원래 결과와 조합이 다르면 learning 검사를 다시 한다. 채택·버리기 때 선택을 고정(`frozen_scene_choices`)한다. 다시 생성 요청 자체는 기존 선택을 바꾸지 않는다
+- 주차 편성(V26): 생성 기준 주(`week_start`)와 별도로 편성 주(`planned_week`, 학년·주당 하나 부분 UK)를 둔다. 채택 적용 주는 편성 주, 없으면 생성 기준 주. 편성은 원본 `READY` 초안만, 학년별 권고 잠금으로 테마 작성·게시와 직렬화한다
+- 게시 확정: 학년·주에 게시 테마가 있으면 그 주는 잠긴다(`409 WEEK_LOCKED`) — 같은 주 다른 테마 게시·작성·수정, 그 주 초안 요청·채택·버리기·편성·장면 선택이 막힌다. 게시는 요일 미션·기준표 버전을 고정(`weekly_theme_day.mission_version_id`·`rubric_version_id`)하고 그 주 편성을 해제한다. 예전 문서의 "같은 학년·주 `PUBLISHED`가 있으면 422"는 학년 잠금 뒤 409가 먼저 나가므로 바로잡았다(422 `WEEK_ALREADY_PUBLISHED`는 동시 게시가 부분 UK에 걸릴 때만)
+- 관리자가 본 상태 대조: 테마 `expectedVersion`·`expectedPlannedDraftId`·`expectedPublishedVersion`, 초안 `expectedPlannedWeek`, 편성 `expectedWeek`·`expectedTargetDraftId`가 다르거나 묶음에 영상 생성 대기가 있으면 `409 PLAN_CONFLICT`. 채택한 테마의 학년·주 변경은 `409 THEME_SCHEDULE_LOCKED`. core는 세 코드를 허용 목록으로 그대로 전달한다
+- 진행 중 시도의 테마 버전 고정(V27 `attempt.theme_version_id`)은 #930·[ERD](../design/erd.md)에서 다룬다
+
+### 검증
+
+- 단위·통합 테스트: `WeeklyThemeAdminServiceTest`·`ThemeDraftServiceTest`·`ThemeDraftMediaServiceTest`·`ThemeDraftConcurrencyTest`·`AdminWeeklyThemeControllerTest`(learning), `AdminOperationsIntegrationTest`(core, 오류 코드 전달·감사)
+- #909 문서 정리는 코드 동작을 바꾸지 않았다(`WeeklyThemeAdminService.publish` 주석만 실제 오류 코드로 정정)

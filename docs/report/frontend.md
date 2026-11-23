@@ -1239,7 +1239,17 @@ NFR-UX-02(주요 기능 키보드·터치 조작, 오류·진행 상태를 색�
 - **검증(로컬)**: 웹 단위 418개, `test:types`·`lint`·`build` 통과, 브라우저 전체 319개(2개 건너뜀)·`test:models` 18개·`test:auth` 63개 통과. 화면 읽기 프로그램의 실제 음성은 확인하지 않았다. API 변경 없음
 - **남은 곳(후속)**: 학부모·서비스·학생 화면의 같은 모양(`disabled={…isPending…}` 한 줄 표기 기준 69곳·27개 파일)은 이번 범위 밖이라 그대로다. 많은 순: `service/GuardianTransfers` 7, `service/Withdrawal`·`parent/StudentDevices`·`parent/PaymentManagement` 각 6, `service/AccountLifecycle`·`parent/ConsentSettings`·`parent/AccountForms` 각 4, `student/StudentSharingPage`·`service/NotificationCenter`·`parent/ParentReports` 각 3, `student/world/StudentCommunity`·`student/world/MemorySearch`·`student/StudentWorkPage`·`student/SelfAssessmentPanel`·`auth/ParentPasswordForms`·`ClassroomApp` 각 2, 그 밖 11개 파일 각 1
 
-## 52. 학부모 화면 접근성 serious 4종 수정 (NFR-UX-02, #915, 2026-11-23)
+## 52. 관리자 운영 홈·주간 테마 검수·게시 관리 화면 (#882, 2026-11-23 문서 정리 #909)
+
+PR #889의 관리자 화면을 [user-flow 3.3](../design/user-flow.md#33-관리자)에 반영했다. 서버 규칙은 [learning 보고서 43절](learning.md#43-주간-테마-장면-검수주차-편성게시-확정-882-2026-11-23-문서-정리-909).
+
+- 메뉴: 콘텐츠 '미션 관리'·'미션 초안'(`/admin/mission-drafts`)·'주간 테마 검수'(`/admin/theme-drafts`)·'게시 관리'(`/admin/themes`)·'꾸미기 아이템', 서비스 운영에 '표현 검토'(`/admin/expressions`, #728)
+- 운영 홈(`/admin/home`): `GET /admin/overview/workload`의 처리 대기 건수를 권한별 카드로 보이고 전용 목록으로 같은 조건을 넘긴다. CONTENT면 우선 검수 테마와 검사 통과 초안·장면 비교 대기(`comparisonPending=true`)·게시 검토 대기 건수(`AdminReviewHome.tsx`)
+- 주간 테마 검수(`ThemeDraftManager.tsx`): 장면을 주소 값(`scene`·`view`)으로 오가며 버전 두 개 비교, 선택·별표·메모, 요일별 미션과 장면 왕복. 목록 필터 학년·생성 기준 주·버린 초안 숨기기·비교 대기
+- 게시 관리(`WeeklyThemePlanner.tsx`): 학년별 연속 4주 칸에 후보 배치·이동·맞교환·해제, 칸의 테마 열기·게시 확정(확인 창). 잠긴 주는 '게시 중'만 보이고, `PLAN_CONFLICT`·`WEEK_LOCKED`는 새로 불러오라고 안내
+- 화면 검증은 MSW 목업(`mocks/handlers/adminThemeDrafts.ts`·`mocks/fixtures/themePlanning.ts`)과 PR #889 확인을 따른다(이번 정리에서 다시 실행하지 않음)
+
+## 53. 학부모 화면 접근성 serious 4종 수정 (NFR-UX-02, #915, 2026-11-23)
 
 - #885 실서버 점검에서 남은 axe serious 4종을 고쳤다
 - **로그인 보조 글 대비**(`color-contrast`): `/login` 아이디 로그인 폼(`.ux-login-id`) 안에서만 `--cj-muted`를 `#666e69`로 바꿔 "또는 아이디로 로그인"·안내 `small`이 흰 바탕 5.25:1(기존 4.41:1). 전역 `--cj-muted`는 그대로 둬 다른 화면에 영향이 없다
