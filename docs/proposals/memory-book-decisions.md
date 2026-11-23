@@ -82,7 +82,7 @@
 
 1. 공식 이슈 만들기.
 2. `contracts/openapi/core-service.yaml`에 학부모용 API 4개 추가.
-3. `docs/design/`의 api-spec, ERD, architecture, sequence-diagram, functional-spec, user-flow, usecase 갱신.
+3. `docs/design/`의 api-spec, architecture, sequence-diagram, functional-spec, user-flow, usecase 갱신. ERD는 CI(실제 DB 대조) 때문에 3.5.3절로 먼저 넣었다.
 4. `infrastructure/gitops/environments/prod/`에 report-worker 그림 받기 주소, 새 큐 구독, core migration 판 번호 추가.
 5. develop을 합친 뒤 시험 다시 돌리기(지금은 충돌 없음). core migration 번호 V57이 그때도 비어 있는지 확인.
 

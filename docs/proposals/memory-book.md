@@ -1,7 +1,7 @@
 # 추억 그림책 PDF 설계 초안 (미도입 제안)
 
 - 상태: **제안 단계**. 공식 이슈 없음. 원격 브랜치 `feature/memory-book`에서만 시험 구현하고, 끝까지 동작하는 것을 확인한 뒤 도입 여부를 정한다.
-- 영향 범위: develop·main·실서버에 반영하지 않는다(11/24 develop→main 릴리스, 11/25 A 계정, 11/26~28 B 계정 일정과 분리). `docs/design/`은 고치지 않는다(도입이 정해지면 그때 api-spec·ERD에 옮긴다). `contracts/openapi`·RabbitMQ 정의·저장소 계약 시험은 코드와 어긋나면 CI가 실패하므로 시험 구현 단계(14.2·14.3)에서 이 브랜치 안에서만 함께 고쳤다.
+- 영향 범위: develop·main·실서버에 반영하지 않는다(11/24 develop→main 릴리스, 11/25 A 계정, 11/26~28 B 계정 일정과 분리). `docs/design/`은 고치지 않는다(도입이 정해지면 그때 api-spec 등에 옮긴다). 예외: Draft PR #966의 ci-db-schema(실제 DB와 ERD 대조)가 통과하도록 `erd.md` 3.5.3·6장에 그림책 테이블 2개와 `MEMORY_BOOK` 값만 먼저 넣었다(11/23). `contracts/openapi`·RabbitMQ 정의·저장소 계약 시험은 코드와 어긋나면 CI가 실패하므로 시험 구현 단계(14.2·14.3)에서 이 브랜치 안에서만 함께 고쳤다.
 - 결정 반영(2026-11-23, 동섭): **발급은 학부모만**(D1 변경, 학생 화면에는 그림책 칸 없음, 14.7). **원문을 공개한 학생(`parentSharingEnabled = true`)에 한해서만 제공**한다(D2). 그 밖의 열린 결정은 모두 권장안대로 시험 구현하고, 결과를 보고 다시 판단한다. 그래서 그림책 판은 원문 포함 판 하나뿐이다(원문 제외 판 없음).
 - 표기: **[확인]** 은 2026-11-23 `origin/develop`(df81a8c6) 코드·문서에서 직접 본 사실, **[추정]** 은 코드로 끝까지 확인하지 못했거나 설계상 가정인 것.
 
@@ -635,7 +635,7 @@ cd frontend/web; Get-Content ../../infrastructure/stubs/e2e.env | Where-Object {
 
 ### 17.2 아직 고치지 않은 것 (도입하려면 필요)
 
-1. **설계 문서(`docs/design/`)**: 처음 지시대로 손대지 않았다. `api-spec.md`(공개 4개·내부 API), `erd.md`(테이블 2개, 상품 값), `architecture.md`(새 큐, core→learning·report 호출), `sequence-diagram.md`(6.1), `functional-spec.md`·`user-flow.md`·`usecase.md`(학부모 발급 흐름). `class-diagram.md`·`state-diagram.md`는 그림책 작업 상태를 넣을지 판단.
+1. **설계 문서(`docs/design/`)**: `erd.md`만 CI 때문에 먼저 반영했다(3.5.3, 6장). 나머지는 손대지 않았다. `api-spec.md`(공개 4개·내부 API), `architecture.md`(새 큐, core→learning·report 호출), `sequence-diagram.md`(6.1), `functional-spec.md`·`user-flow.md`·`usecase.md`(학부모 발급 흐름). `class-diagram.md`·`state-diagram.md`는 그림책 작업 상태를 넣을지 판단.
 2. **core 공개 API 계약**: `contracts/openapi/core-service.yaml`에 `/children/{childId}/memory-books…` 4개가 없다 **[확인]**.
 3. **운영(prod) 환경**: `infrastructure/gitops/environments/prod/`에 그림책 설정이 없다 **[확인]**. report-worker의 그림 받기 허용 주소(`MEMORY_BOOK_ASSET_ORIGINS` 등), 새 큐 구독, core migration 판 번호. prod는 MinIO가 아니라 S3라 주소 값이 local과 다르고, 실제 AWS에서는 돌려 보지 않았다 **[추정: 값만 바꾸면 됨]**.
 4. **요금제 안내**: 상품 설명·요금제 화면에 그림책을 넣을지(D4와 함께).
