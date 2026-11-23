@@ -654,8 +654,9 @@ paths:
         MEMORY_QUERY_PROVIDER=fake면 개발용 가짜 변환(공백 분리 키워드 앞 5개·기간 null·searchText=원문, fake-memory-query-v1, 사용량 없음)
       description: >-
         질문은 learning이 닉네임을 가린 뒤 보내고 학생 이름·ID는 받지 않는다(정의 밖 칸은 400). 질문 안 지시는 따르지 않는다(프롬프트 구분자).
-        질문·변환 결과는 저장·로그하지 않는다(NFR-SEC-03·05). learning은 모든 실패(시간 초과·5xx·서킷 열림)에서 원문 질문으로 검색하고
-        기간은 그대로 믿지 않고 보정한다(이번 주 월요일 이후 자르기).
+        질문·변환 결과는 저장·로그하지 않는다(NFR-SEC-03·05). "N월 N째 주"는 LLM 대신 ai 코드가 기간을 계산해 덮어쓰고 그 표현 조각을 keywords에서 뺀다(#877).
+        learning은 재시도 가능한 실패(5xx·시간 초과·연결 실패)를 한 번 더 부르고, 끝내 실패하면 기간 낱말이 있는 질문은 503, 없으면 원문 질문으로 검색한다(#878).
+        기간은 그대로 믿지 않고 보정한다(이번 주 월요일 이후 자르기). keywords가 비고 기간이 있으면 learning이 기간만 질문으로 본다(#879).
       operationId: create_memory_query
       requestBody:
         content:

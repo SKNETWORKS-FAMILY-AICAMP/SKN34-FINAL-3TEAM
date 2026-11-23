@@ -74,7 +74,7 @@ paths:
         '403':
           description: 학생 scope 불일치
         '503':
-          description: AI_UNAVAILABLE 임베딩 또는 프로필 조회 실패
+          description: AI_UNAVAILABLE 임베딩 또는 프로필 조회 실패, 기간 낱말이 있는 질문의 질의 변환 실패(1회 재시도 뒤, #878)
   /payment-usage/students/{studentId}:
     get:
       operationId: getPaymentUsageEvidence

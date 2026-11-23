@@ -7155,7 +7155,7 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         '503':
-          description: 질문 임베딩 장애 AI_UNAVAILABLE(learning 판정, 그대로 전달), LEARNING_UNAVAILABLE·LEARNING_CIRCUIT_OPEN(learning-memory 차단, Retry-After 30), 상품 한도 값 오류 PAYMENT_PRODUCT_UNAVAILABLE
+          description: 질문 임베딩 장애 또는 기간을 말한 질문의 질의 변환 실패(learning 1회 재시도 뒤, #878) AI_UNAVAILABLE(learning 판정, 그대로 전달), LEARNING_UNAVAILABLE·LEARNING_CIRCUIT_OPEN(learning-memory 차단, Retry-After 30), 상품 한도 값 오류 PAYMENT_PRODUCT_UNAVAILABLE
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
