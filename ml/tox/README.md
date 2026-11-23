@@ -4,7 +4,7 @@
 서빙(scoring-service `POST /internal/toxicity/checks`, #691)과 learning 호출(#692)은 이 폴더 범위가 아니며, 여기서는 학습·평가·모델 폴더 만들기와 재학습 작업(#729: 업로드·`REGISTERED` 자동 등록까지, 활성화 안 함)을 한다.
 
 > 원자료·분할·체크포인트·모델 폴더는 저장소에 넣지 않는다 (NFR-DAT-03). `.gitignore`로 막혀 있다.
-> 아이 말투 학습 문장은 Claude가 지은 문장으로, NFR-DAT-03(생성형 AI 출력 학습 미사용)의 예외로 쓴다.
+> 아이 말투 학습 문장은 Claude가 지은 문장으로, 기능명세 NFR-DAT-03 예외(#887)로 쓴다.
 > 학습·평가 데이터는 외부 LLM API로 보내지 않는다. AI Hub 학생 답안(71818 서술형 초5·6)은 학습에 쓰지 않고 오탐 확인에만 쓰며, 원문은 저장·출력·커밋하지 않는다(확률 요약만 `results/`).
 
 ## 최신 상태 (2026-11-19)
@@ -12,7 +12,7 @@
 | 항목 | 내용 |
 |---|---|
 | 서비스 모델 | `tox-koelectra-small` 1.0-1119: `monologg/koelectra-small-v3-discriminator`(Apache 2.0) 2라벨(0 정상, 1 막을 글)을 아이 말투 재학습한 KcELECTRA-base(선생님)에게 증류 |
-| 데이터 | 학습 K-MHaS·Korean HateSpeech(BEEP!)(CC BY-SA 4.0) + 직접 지은 아이 말투 문장 691개 ×3, 외부 시험 APEACH, 아이 시험 문장 250개(직접 지음) |
+| 데이터 | 학습 K-MHaS·Korean HateSpeech(BEEP!)(CC BY-SA 4.0) + Claude가 지은 아이 말투 문장 691개 ×3(NFR-DAT-03 예외, #887), 외부 시험 APEACH, 아이 시험 문장 250개(Claude가 지음, 평가 전용) |
 | 입력 | 학생이 쓴 칸별 글, 128토큰 창·겹침 32, 창 하나라도 확률 ≥ 임계값이면 걸림(api-spec 4.3.4) |
 | 서비스 기본값 | 파일은 fp32, scoring이 불러올 때 Linear 채널별 int8 동적 양자화(`quantization: int8-dynamic-channel`, `scripts/quant.py`), 임계값 0.99 |
 | 임계값 기준 | 꼭 통과할 글 389개 오탐 0, 단어 목록 대비 정상 추가 오탐 ≤ 1%(검증) |
@@ -41,7 +41,7 @@ ml/tox/
 │  ├─ quant.py           # scoring 로더와 같은 채널별 int8
 │  ├─ latency.py         # CPU 1코어 지연 (results/…/latency_*.json)
 │  └─ retrain.py         # 재학습 작업(#729): 이어 학습·활성 비교·추천 태그·자동 등록
-├─ eval_sets/            # 직접 지은 아이 말투 문장(kid_test.json 시험 250 · kid_train.json 학습 691 · kid_test_variants.json 모양 바꾼 시험) · user_probe.json 팀원 문장 13 · must_pass.json 꼭 통과할 글 389 고정본
+├─ eval_sets/            # Claude가 지은 아이 말투 문장(kid_test.json 시험 250 · kid_train.json 학습 691 · kid_test_variants.json 모양 바꾼 시험) · user_probe.json 팀원 문장 13 · must_pass.json 꼭 통과할 글 389 고정본
 ├─ tests/                # 데이터 정리·임계값 계산·저장 형식·아이 문장·재학습 작업 시험
 ├─ results/eval_tox.md   # 지표·임계값·지연·한계, results/1119-distill/ 지금 모델 숫자 원본
 ├─ data/                 # (커밋 안 함) 원자료·분할·선생님 확률·글별 확률
@@ -81,7 +81,7 @@ uv run pytest
 
 ## 재학습 작업 (#729)
 
-> **운영 실행은 #887 결정 뒤**, CronJob은 #730. 기준·종료 코드·한계는 [learning.md](../../docs/report/learning.md) 16절 "재학습 작업 구현"
+> **운영 실행은 CronJob(#730) 준비 뒤**(#887은 기능명세 NFR-DAT-03 예외로 결정). 기준·종료 코드·한계는 [learning.md](../../docs/report/learning.md) 16절 "재학습 작업 구현"
 
 ```bash
 # 저장소 루트에서
@@ -126,7 +126,7 @@ docker run --rm --network <learning·core·S3에 닿는 망> \
 
 ## 한계
 
-- 아이 말투 숫자는 직접 지은 문장으로 잰 것이라 부풀었을 수 있다. 실제 아이 모욕 데이터는 없다
+- 아이 말투 숫자는 Claude가 지은 문장으로 잰 것이라 부풀었을 수 있다. 실제 아이 모욕 데이터는 없다
 - 어른식 욕설·처음 보는 말투(APEACH)는 첫 모델보다 약하다(기준4·5 미달, 담당 결정으로 우선 사용)
 - 미션 본문에 나온 말을 허용하는 규칙이 모델에는 없다. 욕과 같은 글자가 든 정상 문장("시바새끼도 귀여워")을 막을 수 있다
 - 같은 설정이어도 학습마다 결과가 흔들린다. 결정적 학습은 같은 GPU 종류·라이브러리에서만 같은 가중치를 보장한다

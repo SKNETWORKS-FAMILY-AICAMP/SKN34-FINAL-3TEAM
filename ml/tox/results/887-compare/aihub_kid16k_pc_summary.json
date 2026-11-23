@@ -1,0 +1,35 @@
+{
+ "note": "PC CPU(Intel i5-1135G7, Docker mlops-729-scoring-service torch 2.14.1+cpu, int8 채널별·글 하나씩). 포드·11/19와 CPU 다름. AI Hub 71818 초5·6 라벨 JSON essay_answer.text 16,385개, 원문 저장·출력 안 함",
+ "models": {
+  "a": {
+   "n": 16385,
+   "threshold": 0.99,
+   "flagged": 0,
+   "near±0.03": 3,
+   "max": 0.9812,
+   "over0.9": 7,
+   "over0.5": 20,
+   "median": 0.0062
+  },
+  "b1": {
+   "n": 16385,
+   "threshold": 0.95,
+   "flagged": 0,
+   "near±0.03": 0,
+   "max": 0.6286,
+   "over0.9": 0,
+   "over0.5": 7,
+   "median": 0.0122
+  },
+  "b2": {
+   "n": 16385,
+   "threshold": 0.99,
+   "flagged": 1,
+   "near±0.03": 2,
+   "max": 0.9909,
+   "over0.9": 6,
+   "over0.5": 25,
+   "median": 0.0095
+  }
+ }
+}
