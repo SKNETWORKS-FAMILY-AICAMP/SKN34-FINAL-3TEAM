@@ -26,32 +26,34 @@ h2 { font-size:18px; color:#6b4a1f; margin:4mm 0; }
 .back { text-align:center; padding-top:40mm; }
 .back .q { font-size:17px; margin:8mm 10mm; white-space:pre-wrap; overflow-wrap:anywhere; }
 .small { font-size:10px; color:#8a7c66; }
-/* 웹툰식 요일 칸: 장면 그림 위에 내레이션 띠(문제)·등장인물 말풍선(위)·아이 말풍선(아래) */
-.panel { position:relative; height:168mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
+/* 웹툰식 요일 칸: 그림은 가리지 않게 크게 두고, 말풍선은 그림 위·아래 가장자리에 반쯤 걸쳐 꼬리만 그림 안을 가리킨다 */
+.day-head { margin:0 0 2mm; }
+.narration { margin:0 0 2mm; padding:2.5mm 4mm; background:#fffaec; border:2.5px solid #2f2a22; border-radius:2mm;
+  font-size:12.5px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; box-shadow:2px 3px 0 rgba(47,42,34,.25); }
+.narration b { color:#c98a2e; margin-right:3px; }
+.stage { position:relative; }
+.panel { position:relative; height:120mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
 .panel-art { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .panel-art--missing { position:absolute; inset:0; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
-.narration { position:absolute; top:0; left:0; right:0; padding:2.5mm 4mm; background:rgba(255,250,236,.94);
-  border-bottom:2.5px solid #2f2a22; font-size:12.5px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
-.narration b { color:#c98a2e; margin-right:3px; }
-.cast { position:absolute; top:24mm; left:4mm; right:4mm; display:flex; flex-direction:column; gap:3mm; align-items:flex-start; }
-.kid { position:absolute; left:4mm; right:4mm; bottom:5mm; display:flex; flex-direction:column; gap:3mm; }
-.bubble { position:relative; max-width:62%; background:#fff; border:2.5px solid #2f2a22; border-radius:16px;
-  padding:2mm 3.5mm; font-size:13px; line-height:1.5; box-shadow:2px 3px 0 rgba(47,42,34,.35); overflow-wrap:anywhere; }
+.cast { display:flex; gap:4mm; justify-content:space-between; align-items:flex-end; margin:0 3mm -7mm; position:relative; z-index:2; }
+.kid { display:flex; flex-direction:column; gap:2.5mm; margin:-8mm 3mm 0; position:relative; z-index:2; }
+.bubble { position:relative; max-width:64%; background:#fff; border:2.5px solid #2f2a22; border-radius:18px;
+  padding:2mm 3.5mm; font-size:12.5px; line-height:1.5; box-shadow:2px 3px 0 rgba(47,42,34,.35); overflow-wrap:anywhere; }
 .bubble .who { display:block; font-size:10px; font-weight:bold; color:#8a6a3a; margin-bottom:0.5mm; }
-.bubble::after { content:""; position:absolute; bottom:-10px; left:18px; border-width:10px 8px 0 8px; border-style:solid;
+/* 꼬리: 등장인물은 아래(그림 쪽), 아이는 위(그림 쪽) */
+.cast .bubble { background:#fffdf6; max-width:48%; }
+.cast .bubble::after { content:""; position:absolute; bottom:-11px; left:20px; border-width:11px 8px 0 8px; border-style:solid;
   border-color:#2f2a22 transparent transparent transparent; }
-.cast .bubble { background:#fffdf6; }
-.cast .bubble:nth-child(even) { align-self:flex-end; }
-.cast .bubble:nth-child(even)::after { left:auto; right:18px; }
+.cast .bubble:nth-child(even)::after { left:auto; right:20px; }
 .kid .answer-bubble { align-self:flex-start; background:#fff7e0; }
 .kid .answer-bubble.revised { align-self:flex-end; background:#e9f6ff; }
-.kid .answer-bubble.revised::after { left:auto; right:18px; }
-.kid .answer-bubble::after { top:-10px; bottom:auto; border-width:0 8px 10px 8px; border-color:transparent transparent #2f2a22 transparent; }
+.kid .answer-bubble:first-of-type::after { content:""; position:absolute; top:-11px; left:24px; border-width:0 8px 11px 8px;
+  border-style:solid; border-color:transparent transparent #2f2a22 transparent; }
 .thought { align-self:center; max-width:56%; background:#fff; border:2px dashed #7a5b2c; border-radius:22px; padding:1.5mm 3.5mm;
   font-size:12px; color:#7a5b2c; font-style:italic; overflow-wrap:anywhere; }
 .thought::before { content:"되물음 · "; font-style:normal; font-weight:bold; }
-.rest { position:absolute; left:4mm; right:4mm; bottom:6mm; text-align:center; }
-.rest span { background:rgba(255,255,255,.92); border:2px solid #2f2a22; border-radius:12px; padding:2mm 4mm; font-size:13px; color:#6b6b6b; }
+.rest { margin:-6mm 3mm 0; position:relative; z-index:2; text-align:center; }
+.rest span { display:inline-block; background:#fff; border:2px solid #2f2a22; border-radius:12px; padding:2mm 4mm; font-size:12.5px; color:#6b6b6b; }
 .caption { margin:3mm 1mm 0; font-size:12px; color:#5d6b52; white-space:pre-wrap; overflow-wrap:anywhere; }
 .caption b { color:#5d6b52; }
 .full { margin:3mm 1mm 0; font-size:12px; color:#2f2a22; border-left:3px solid #e0a43c; padding-left:3mm; white-space:pre-wrap; overflow-wrap:anywhere; }
@@ -71,11 +73,11 @@ h2 { font-size:18px; color:#6b4a1f; margin:4mm 0; }
 </section>
 
 {% for day in book.days %}<section class="page day" data-day="{{ day.day }}">
-<p><span class="label">{{ day.dayLabel }}</span><span class="type">{{ thinking_labels.get(day.thinkingType, '') }}</span> <strong>{{ day.title }}</strong></p>
-<div class="panel">
-{% if day.sceneImage %}<img class="panel-art" src="{{ day.sceneImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}
+<p class="day-head"><span class="label">{{ day.dayLabel }}</span><span class="type">{{ thinking_labels.get(day.thinkingType, '') }}</span> <strong>{{ day.title }}</strong></p>
 <div class="narration"><b>문제</b>{{ day.question }}</div>
-{% if day.dialogue %}<div class="cast">{% for line in day.dialogue %}<div class="bubble"><span class="who">{{ line.speaker }}</span>{{ line.text }}</div>{% endfor %}</div>{% endif %}
+<div class="stage">
+{% if day.dialogue %}<div class="cast">{% for line in day.dialogue[:2] %}<div class="bubble"><span class="who">{{ line.speaker }}</span>{{ line.text }}</div>{% endfor %}</div>{% endif %}
+<div class="panel">{% if day.sceneImage %}<img class="panel-art" src="{{ day.sceneImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}</div>
 {% if day.attempt is none %}<div class="rest"><span>이 날 문제는 나중에 바뀌어서 남은 기록이 없어요</span></div>
 {% else %}<div class="kid">{% for a in day.attempt.answers %}{% if a.followup %}<div class="thought">{{ a.followup }}</div>{% endif %}<div class="bubble answer-bubble{% if not loop.first %} revised{% endif %}"><span class="who">{{ name }}{% if not loop.first %} · 다시 생각한 답{% endif %}</span>{{ a.bubble }}</div>
 {% endfor %}</div>{% endif %}
