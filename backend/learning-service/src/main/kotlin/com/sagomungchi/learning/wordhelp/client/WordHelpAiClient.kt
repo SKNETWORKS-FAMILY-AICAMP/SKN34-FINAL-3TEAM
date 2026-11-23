@@ -1,11 +1,18 @@
 package com.sagomungchi.learning.wordhelp.client
 
+import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.client.AiCallException
 import com.sagomungchi.learning._common.client.aiCircuitBreaker
 import com.sagomungchi.learning._common.client.postToAi
 import com.sagomungchi.learning._common.config.InternalRestClientFactory
+import com.sagomungchi.learning.wordhelp.domain.WordHelpResult
+import com.sagomungchi.learning.wordhelp.domain.WordSense
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClientResponseException
@@ -23,22 +30,50 @@ data class WordHelpAiRequest(
     val leak: WordHelpLeak?,
 )
 
-data class WordSense(
+private enum class WordHelpState {
+    EXPLAINED, DICTIONARY_ONLY, NOT_FOUND, DEFERRED, OUT_OF_SCOPE;
+
+    companion object {
+        @JvmStatic
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        fun parse(value: JsonNode): WordHelpState =
+            entries.firstOrNull { it.name == value.textValue() } ?: throw IllegalArgumentException("Invalid word-help state")
+    }
+}
+
+private enum class SenseSource(val label: String) {
+    STANDARD_DICTIONARY("표준국어대사전"),
+    ONYONGEO("온용어");
+
+    companion object {
+        @JvmStatic
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        fun parse(value: JsonNode): SenseSource =
+            entries.firstOrNull { it.label == value.textValue() } ?: throw IllegalArgumentException("Invalid word-help source")
+    }
+}
+
+private data class WordSenseAiResponse(
     val definition: String,
-    val source: String,
+    val source: SenseSource,
     val attribution: String? = null,
     val sourceUrl: String? = null,
     val license: String? = null,
-)
+) {
+    fun toDomain() = WordSense(definition, source.label, attribution, sourceUrl, license)
+}
 
-/** ai 응답에서 versions를 뺀 것이 학생 응답(api-spec 2.2.1) */
-data class WordHelpAiResponse(
-    val state: String,
+@JsonIgnoreProperties("versions")
+private data class WordHelpAiResponse(
+    val state: WordHelpState,
     val headword: String?,
     val text: String,
     val example: String?,
-    val senses: List<WordSense>,
-)
+    @param:JsonSetter(contentNulls = Nulls.FAIL)
+    val senses: List<WordSenseAiResponse>,
+) {
+    fun toDomain() = WordHelpResult(state.name, headword, text, example, senses.map { it.toDomain() })
+}
 
 /**
  * 낱말 물어보기 ai 실패. code는 ai 503 본문의 코드(DICTIONARY_UNAVAILABLE·AI_UNAVAILABLE), 그 밖의 장애는 AI_UNAVAILABLE.
@@ -51,9 +86,15 @@ class WordHelpAiClient(private val factory: InternalRestClientFactory, private v
     private val circuit = aiCircuitBreaker("ai-word-help")
 
     /** ai는 전체 20초 마감(api-spec 4.2.7)이라 25초 안에 끝나고, core→learning 일반 30초 안에 들어간다 */
-    fun help(request: WordHelpAiRequest): WordHelpAiResponse = try {
+    fun help(request: WordHelpAiRequest): WordHelpResult = try {
         circuit.executeSupplier {
-            postToAi(factory.create("ai", Duration.ofSeconds(25)), mapper, "/internal/word-helps", request, WordHelpAiResponse::class.java)
+            val response = postToAi(
+                factory.create("ai", Duration.ofSeconds(25)), mapper, "/internal/word-helps", request, WordHelpAiResponse::class.java,
+            )
+            if (response.senses.size > 3) {
+                throw AiCallException("AI_BAD_RESPONSE", retryable = false, countsAsFailure = false)
+            }
+            response.toDomain()
         }
     } catch (_: CallNotPermittedException) {
         throw WordHelpAiException(503, "AI_UNAVAILABLE", retryable = true)
