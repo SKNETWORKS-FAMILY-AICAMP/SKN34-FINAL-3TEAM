@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.analysis_agent.context import AgentContext, kst_today
 from app.analysis_agent.graph import build_graph
@@ -92,6 +92,11 @@ class AnalysisService:
                     yield chunk["event"], chunk["data"]
                 else:
                     final = chunk
+        except ValidationError:
+            # 검증 오류 문자열에 LLM 답변·근거 인용(학생 글)이 들어갈 수 있어 본문 없이 기록
+            logger.error("분석 대화 결과 검증 실패")
+            yield "error", _internal_error()
+            return
         except Exception:  # noqa: BLE001 - 스트림 도중 실패도 error 이벤트로 알림
             logger.exception("분석 대화 처리 실패")
             yield "error", _internal_error()

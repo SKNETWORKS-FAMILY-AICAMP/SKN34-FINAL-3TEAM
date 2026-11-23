@@ -5,8 +5,9 @@ import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,15 @@ def problem(
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(ResponseValidationError)
+    @app.exception_handler(ValidationError)
+    async def handle_response_validation(
+        request: Request, exc: ResponseValidationError | ValidationError
+    ) -> JSONResponse:
+        # 검증 오류 문자열에 LLM 답변·학생 글이 들어갈 수 있어 본문 없이 기록 (NFR-SEC-05)
+        logger.error("응답 스키마 검증 실패")
+        return problem(request, 500, "INTERNAL_ERROR", "서버 오류")
+
     @app.exception_handler(ApiError)
     async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
         return problem(request, exc.status, exc.code, exc.title, exc.detail, **exc.extra)
