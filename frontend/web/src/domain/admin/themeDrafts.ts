@@ -44,7 +44,7 @@ export const REGEN_TARGETS: RegenTarget[] = [
 ]
 /** 장면 칸마다 보이는 버튼 종류(시작·종료는 영상·그림, 요일은 그림·미션) */
 export const regenKindsOf = (scene: ThemeSceneName): RegenKind[] => scene === 'INTRO' || scene === 'OUTRO' ? ['VIDEO', 'IMAGE'] : ['IMAGE', 'MISSION']
-export const regenButtonLabels: Record<RegenKind, string> = { VIDEO: '영상 다시 만들기', IMAGE: '그림 다시 만들기', MISSION: '미션 다시 만들기' }
+export const regenButtonLabels: Record<RegenKind, string> = { VIDEO: '영상 다시 생성', IMAGE: '그림 다시 생성', MISSION: '미션 다시 생성' }
 const regenSceneNames: Record<ThemeSceneName, string> = { INTRO: '시작', OUTRO: '종료', MON: '월요일', TUE: '화요일', WED: '수요일', THU: '목요일', FRI: '금요일' }
 const regenKindNames: Record<RegenKind, string> = { VIDEO: '영상', IMAGE: '그림', MISSION: '미션' }
 const splitTarget = (target: RegenTarget) => target.split(':') as [RegenKind, ThemeSceneName]

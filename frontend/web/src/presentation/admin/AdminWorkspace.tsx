@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Activity, BookOpen, CalendarDays, ChevronRight, CreditCard, FilePenLine, History, LayoutDashboard, Layers, LogOut, Menu, MessagesSquare, Palette, RotateCcw, Search, ShieldAlert, ShieldCheck, SlidersHorizontal, TriangleAlert, UserRound, Workflow, X } from 'lucide-react'
+import { Activity, BookOpen, CalendarDays, ChevronRight, CreditCard, Eye, FilePenLine, Film, History, LayoutDashboard, Layers, LogOut, Menu, MessagesSquare, Palette, RotateCcw, Search, ShieldCheck, TriangleAlert, UserRound, Workflow, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -28,10 +28,11 @@ import '../common/workspace.css'
 import './admin.css'
 import './admin-design.css'
 import './period-picker.css'
+import './theme-draft-list.css'
 
 const permissionLabel: Record<Permission, string> = { CONTENT: '콘텐츠', SERVICE_OPS: '서비스 운영', PAYMENT_VIEW: '결제 조회', PAYMENT_REFUND: '환불 승인' }
-const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '작업 대기열 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '모델·프롬프트 버전', expressions: '표현 검토 라벨링', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', 'mission-drafts': '미션 초안 요청·검사', themes: '게시 관리', 'theme-drafts': '주간 테마 검수', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
-const icons: Record<string, LucideIcon> = { home: LayoutDashboard, audit: History, jobs: RotateCcw, queues: Workflow, errors: TriangleAlert, support: MessagesSquare, models: Layers, expressions: ShieldAlert, usage: Activity, missions: BookOpen, 'mission-drafts': FilePenLine, themes: CalendarDays, 'theme-drafts': SlidersHorizontal, looks: Palette, payments: CreditCard }
+const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '작업 대기열 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '모델·프롬프트 버전', expressions: '표현 검토', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', 'mission-drafts': '미션 초안 요청·검사', themes: '게시 관리', 'theme-drafts': '주간 테마 검수', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
+const icons: Record<string, LucideIcon> = { home: LayoutDashboard, audit: History, jobs: RotateCcw, queues: Workflow, errors: TriangleAlert, support: MessagesSquare, models: Layers, expressions: Eye, usage: Activity, missions: BookOpen, 'mission-drafts': FilePenLine, themes: CalendarDays, 'theme-drafts': Film, looks: Palette, payments: CreditCard }
 export function AdminWorkspace() {
   useBusyClickGuard()
   const { session, setSession, setExpired } = useSession(), location = useLocation(), navigate = useNavigate()
@@ -42,37 +43,41 @@ export function AdminWorkspace() {
   const [defaultPeriod] = useState(() => calendarPeriods().recentPeriod)
   const permissions = session?.permissions ?? [], can = (p: Permission) => hasPermission(permissions, p)
   const page = location.pathname.split('/')[2] || 'home'
+  const reviewDesk = page === 'theme-drafts'
   const period = { from: params.get('from') ?? defaultPeriod.from, to: params.get('to') ?? defaultPeriod.to }
   const nav = [
-    { group: '공통', path: 'home', label: '운영 현황', visible: true },
-    { group: '공통', path: 'audit', label: '감사 이력', visible: true },
-    { group: '콘텐츠', path: 'missions', label: '미션 관리', visible: can('CONTENT') },
-    { group: '콘텐츠', path: 'mission-drafts', label: '미션 초안', visible: can('CONTENT') },
-    { group: '콘텐츠', path: 'theme-drafts', label: '주간 테마 검수', visible: can('CONTENT') },
-    { group: '콘텐츠', path: 'themes', label: '게시 관리', visible: can('CONTENT') },
-    { group: '콘텐츠', path: 'looks', label: '꾸미기 아이템', visible: can('CONTENT') },
-    ...[['support', '문의·공지'], ['errors', '오류 신고'], ['jobs', '작업 재처리'], ['queues', '작업 대기열'], ['models', '모델·프롬프트'], ['expressions', '표현 검토'], ['usage', 'AI 사용량']].map(([path, label]) => ({ group: '서비스 운영', path, label, visible: can('SERVICE_OPS') })),
+    { group: '워크스페이스', path: 'home', label: '운영 홈', visible: true },
+    { group: '워크스페이스', path: 'audit', label: '감사 이력', visible: true },
+    { group: '콘텐츠 관리', path: 'theme-drafts', label: '주간 테마 검수', visible: can('CONTENT') },
+    { group: '콘텐츠 관리', path: 'themes', label: '게시 관리', visible: can('CONTENT') },
+    { group: '콘텐츠 관리', path: 'missions', label: '미션 관리', visible: can('CONTENT') },
+    { group: '콘텐츠 관리', path: 'mission-drafts', label: '미션 초안', visible: can('CONTENT') },
+    { group: '콘텐츠 관리', path: 'looks', label: '꾸미기 아이템', visible: can('CONTENT') },
+    ...[['support', '문의·공지'], ['errors', '오류 신고'], ['jobs', '작업 재처리'], ['queues', '작업 대기열'], ['models', '모델·프롬프트'], ['usage', 'AI 사용량']].map(([path, label]) => ({ group: '서비스 운영', path, label, visible: can('SERVICE_OPS') })),
     { group: '결제 관리', path: 'payments', label: '결제·환불', visible: can('PAYMENT_VIEW') || can('PAYMENT_REFUND') },
+    { group: '설계안', path: 'expressions', label: '표현 검토', visible: can('SERVICE_OPS') },
   ].filter((n) => n.visible)
   const allowed = nav.some((n) => n.path === page) || page === 'queues' && can('SERVICE_OPS')
   const title = page === 'missions' && params.get('missionId') ? '미션 작성·검토' : titles[page] ?? '화면을 찾을 수 없습니다'
   const current = nav.find(n => n.path === page)
+  const hasPageHeading = allowed && validPeriod(period) && (page === 'expressions' || reviewDesk)
   const PageIcon = icons[page] ?? LayoutDashboard
-  const menuAliases: Record<string,string> = { 'theme-drafts':'테마 초안 영상 비교', themes:'주간 테마 편성' }
+  const menuAliases: Record<string,string> = { home:'운영 현황', 'theme-drafts':'테마 초안 영상 비교', themes:'주간 테마 편성', expressions:'표현검토 서비스 운영 라벨링' }
   const filteredNav = nav.filter(n => `${n.label} ${n.group} ${menuAliases[n.path] ?? ''}`.includes(menuSearch.trim()))
   async function leave() {
     try { await auth.logout.mutateAsync() } finally {
       setSession(null); setExpired(false); cache.clear(); navigate('/admin/login', { replace: true })
     }
   }
-  return <div id="class-journal"><div className="admin-shell" onKeyDown={e => {
+  return <div id="class-journal"><div className={reviewDesk ? 'admin-shell ad-review-desk' : 'admin-shell'} onKeyDown={e => {
     if (e.key === 'Escape' && menuOpen) { setMenuOpen(false); menuButton.current?.focus() }
   }}>
     <a className="ad-skip" href="#admin-main">본문으로 이동</a>
     <header className="ad-topbar">
       <div className="ad-location">
         <button ref={menuButton} className="ad-menu-toggle" aria-label={menuOpen ? '메뉴 닫기' : '메뉴'} aria-expanded={menuOpen} aria-controls="admin-navigation" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
-        <span>워크스페이스</span><ChevronRight size={14} aria-hidden="true" /><strong>{current?.label ?? title}</strong>
+        {reviewDesk ? <><Layers size={15} aria-hidden="true" /><span>관리자 운영실</span><span aria-hidden="true">/</span></> : <><span>워크스페이스</span><ChevronRight size={14} aria-hidden="true" /></>}
+        <strong>{current?.label ?? title}</strong>
       </div>
       <div className="ad-account">{isDemo && <details className="ad-demo-tools"><summary>목업</summary><div className="ad-demo"><span>개발 목업 · 가상 운영 데이터</span><label>상태 시연 <select aria-label="상태 시연" value={scenario} onChange={(e) => {
         setScenario(e.target.value); window.dispatchEvent(new CustomEvent('sagomungchi:workspace-scenario', { detail: e.target.value })); void cache.invalidateQueries({ queryKey: ['admin'] })
@@ -82,9 +87,12 @@ export function AdminWorkspace() {
       </div></header>
     {menuOpen && <button className="ad-nav-backdrop" aria-label="메뉴 바깥 닫기" onClick={() => { setMenuOpen(false); menuButton.current?.focus() }} />}
     <aside className={`ad-sidebar${menuOpen ? ' is-open' : ''}`} id="admin-navigation">
-      <Link to="/admin/home" className="ad-brand" aria-label="사고뭉치 관리자 홈" onClick={() => setMenuOpen(false)}><Brand linked={false} /><span className="ad-brand-context">admin</span></Link>
+      <Link to="/admin/home" className="ad-brand" aria-label="사고뭉치 관리자 홈" onClick={() => setMenuOpen(false)}>
+        {reviewDesk ? <><img src="/admin-review-mark.svg" width="38" height="38" alt="" /><span className="ad-review-wordmark"><strong>사고뭉치</strong><small>관리자 운영실</small></span></> :
+          <><Brand linked={false} /><span className="ad-brand-context">admin</span></>}
+      </Link>
       <div className="ad-nav-scroll">
-        <label className="ad-nav-search"><Search size={16} aria-hidden="true" /><input aria-label="관리자 메뉴 찾기" placeholder="메뉴 찾기" value={menuSearch} onChange={e => setMenuSearch(e.target.value)} />{menuSearch && <button aria-label="메뉴 검색 지우기" onClick={() => setMenuSearch('')}><X size={14} /></button>}</label>
+        <label className="ad-nav-search"><Search size={16} aria-hidden="true" /><input aria-label="관리자 메뉴 찾기" placeholder="메뉴 검색" value={menuSearch} onChange={e => setMenuSearch(e.target.value)} />{menuSearch && <button aria-label="메뉴 검색 지우기" onClick={() => setMenuSearch('')}><X size={14} /></button>}</label>
         <nav aria-label="관리자 메뉴">
           {filteredNav.map((n, i) => {
             const Icon = icons[n.path]
@@ -112,9 +120,9 @@ export function AdminWorkspace() {
     </aside>
     <main id="admin-main" className="ad-main" data-page={page}>
 
-      <div className="ad-page-heading"><div className="ad-page-title"><span className="ad-page-symbol"><PageIcon size={23} strokeWidth={1.7} aria-hidden="true" /></span><div><p>{current?.group === '공통' ? '워크스페이스' : current?.group}</p><h1>{title}</h1></div></div>
+      {!hasPageHeading && <div className="ad-page-heading"><div className="ad-page-title"><span className="ad-page-symbol"><PageIcon size={23} strokeWidth={1.7} aria-hidden="true" /></span><div><p>{current?.group}</p><h1>{title}</h1></div></div>
         {(['home', 'jobs', 'audit', 'usage'].includes(page) || page === 'payments' && ['payments', 'reconciliation'].includes(params.get('tab') ?? '')) && <PeriodPicker period={period} onApply={(p) => { const next = new URLSearchParams(params); next.set('from', p.from); next.set('to', p.to); setParams(next) }} />}
-      </div>
+      </div>}
       <div className="ad-page-content">
       {!allowed ? <section className="ad-panel"><h2>접근 권한 확인</h2><p role="alert">FORBIDDEN · 필요한 관리자 권한이 없습니다.</p><Link to="/admin/home">운영 현황으로 돌아가기</Link></section>
         : !validPeriod(period) ? <p role="alert">집계 기간을 확인해 주세요.</p>

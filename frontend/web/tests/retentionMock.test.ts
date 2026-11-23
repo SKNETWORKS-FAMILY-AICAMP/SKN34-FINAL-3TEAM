@@ -5,6 +5,7 @@ import { retentionHandlers } from '../src/mocks/handlers/retention.ts'
 import { serviceHandlers } from '../src/mocks/handlers/service.ts'
 import { parentHandlers } from '../src/mocks/handlers/parent.ts'
 import { adminHandlers } from '../src/mocks/handlers/admin.ts'
+import { adminThemeDraftHandlers } from '../src/mocks/handlers/adminThemeDrafts.ts'
 import { studentHandlers } from '../src/mocks/handlers/student.ts'
 import { setWorkspaceScenario } from '../src/mocks/fixtures/accounts.ts'
 import { balanceOf, MOCK_STORY, MOCK_WEEKDAY_KEY, resetRetention, retentionState, themeMissions, weekStart, weeklyThemeFor } from '../src/mocks/fixtures/retention.ts'
@@ -16,9 +17,10 @@ import { setMockChildPlan } from '../src/mocks/fixtures/childPlan.ts'
 import { mockPremium } from '../src/mocks/fixtures/payments.ts'
 import { fixtureStore } from '../src/mocks/fixtures/student.ts'
 import { missions as adminMissions } from '../src/mocks/fixtures/admin/operations.ts'
+import { assignWeek } from '../src/mocks/fixtures/themePlanning.ts'
 
 // 2026-11-06 결정(에픽 #396) 참여 기능 목업 계약: API 명세 2.4·2.5·2.8~2.11 구현 예정 경로.
-const handlers = [...retentionHandlers, ...serviceHandlers, ...parentHandlers, ...adminHandlers, ...studentHandlers]
+const handlers = [...adminThemeDraftHandlers, ...retentionHandlers, ...serviceHandlers, ...parentHandlers, ...adminHandlers, ...studentHandlers]
 let token = ''
 async function call(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST', headers: Record<string, string> = {}) {
   const response = await getResponse(
@@ -58,6 +60,36 @@ const weekday = (n: number | null) => {
 test.beforeEach(() => {
   weekday(null)
   resetRetention()
+})
+
+test('검수 목록은 부분 작업 진행 상태와 복구 가능한 성공본을 표시하고 채택 뒤 가족을 잠근다', async t => {
+  const store = new Map<string,string>()
+  const previous = Object.getOwnPropertyDescriptor(globalThis,'localStorage')
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>store.get(k)??null,setItem:(k:string,v:string)=>store.set(k,v)}})
+  t.after(() => { if (previous) Object.defineProperty(globalThis,'localStorage',previous); else Reflect.deleteProperty(globalThis,'localStorage') })
+  t.mock.timers.enable({apis:['Date'],now:new Date('2029-01-01T00:00:00Z')})
+  token = (await call('/auth/login',{email:'content@example.test',password:'demo-only'})).data.accessToken
+  const path = '/admin/theme-drafts', week = '2029-01-08', planned = '2029-01-15'
+  const good = (await call(path,{grade:'G4',weekStart:week,topic:'첫 번째 검수'})).data.draftId as string
+  const root = (await call(path,{grade:'G4',weekStart:week,topic:'검사 실패'})).data.draftId as string
+  t.mock.timers.tick(4000)
+  const list = (stage:string) => call(`${path}/review-list?grade=G4&weekStart=${week}&stage=${stage}`)
+  assert.equal((await list('check_failed')).data.items[0].draftId,root)
+  assignWeek(good,planned)
+  const candidate = (await call(`${path}/${good}/regenerate`,{targets:['VIDEO:INTRO']})).data.draftId as string
+  const active = (await list('generating')).data.items[0]
+  assert.equal(active.draftId,candidate)
+  assert.equal(active.appliedWeek,planned)
+  assert.equal((await call(`${path}/${good}/adopt`,{expectedPlannedWeek:planned})).status,409)
+  const child = (await call(`${path}/${root}/regenerate`,{targets:['VIDEO:INTRO']})).data.draftId as string
+  t.mock.timers.tick(4000)
+  assert.deepEqual(new Set((await list('pair')).data.items.map((r:{draftId:string})=>r.draftId)),new Set([child,good]))
+  const adopted = await call(`${path}/${child}/adopt`,{expectedPlannedWeek:null})
+  assert.equal(adopted.status,201)
+  assert.equal(adopted.data.weekStart,week)
+  assert.equal((await list('adopted')).data.items[0].draftId,child)
+  assert.equal((await list('check_failed')).data.totalElements,0)
+  assert.equal((await call(`${path}/${root}/discard`,{})).status,409)
 })
 
 test('포인트 해금: 잔액 부족·판매 중단은 409, 같은 키는 한 번만 차감, 해금 뒤 꾸미기 저장', async () => {

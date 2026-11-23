@@ -2,6 +2,7 @@ import { apiFetch } from '../apiClient.ts'
 import { json } from '../parent/api.ts'
 import type { Page } from '../../domain/parent.ts'
 import { themeDraftOf } from '../../domain/admin/themeDrafts.ts'
+import { readThemeDraftReviewPage } from '../../domain/admin/themeDraftReviews.ts'
 import type { RegenTarget, ThemeDraftRequest, ThemeSceneName } from '../../domain/admin/themeDrafts.ts'
 import { readSceneHistory } from '../../domain/admin/sceneVersions.ts'
 import type { VersionAnnotation } from '../../domain/admin/sceneVersions.ts'
@@ -20,6 +21,8 @@ const query = (values: Record<string, string | undefined>) =>
 
 /** 관리자 주간 테마·초안·꾸미기 아이템 (API 명세 2.8, CONTENT 권한). 변경은 서버가 감사 이력에 남긴다. */
 export const adminRetentionApi = {
+  themeDraftReviews: async (filters: Record<string, string | undefined>, signal?: AbortSignal) =>
+    readThemeDraftReviewPage(await apiFetch(`/admin/theme-drafts/review-list?${query(filters)}`, { signal })),
   themeDrafts: async (filters: Record<string, string>, signal?: AbortSignal) => {
     const raw = await apiFetch<{ items: unknown[]; totalElements?: unknown }>(`/admin/theme-drafts?${query(filters)}`, { signal })
     if (!Array.isArray(raw?.items)) throw new Error('테마 초안 목록 응답을 확인하지 못했습니다.')

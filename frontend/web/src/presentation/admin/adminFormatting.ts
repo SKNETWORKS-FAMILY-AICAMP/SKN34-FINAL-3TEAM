@@ -82,6 +82,7 @@ export function auditActionLabel(action: string) {
 }
 
 const aiScopeNames: Record<string, string> = {
+  'answer-filter': '답변 표현 필터',
   'ai/judgment': 'AI 판정',
   'ai/followup': '되묻기 질문',
   'ai/analysis': '분석 대화',
@@ -122,3 +123,19 @@ export const reportStatusLabel: Record<string, string> = { RECEIVED: '접수', I
 export const modelKindLabel: Record<string, string> = { RUBRIC: '판정 기준', MODEL: '판정 모델', PROMPT: '프롬프트', GENERATION: '생성 설정' }
 export const number = (v: number) => v.toLocaleString('ko-KR')
 export { formatKoreanDateTime as date } from '../common/dateTime.ts'
+export function reviewWeeks(generated: string | null, planned: string | null | undefined, applied: string | null) {
+  const dates = [
+    { label: '생성 기준 주', date: generated !== applied ? generated : null },
+    { label: applied ? '적용 주' : '편성 주차', date: applied ?? planned },
+  ]
+  return dates.flatMap(({label,date}) => {
+    if (!date) return []
+    const first = new Date(date + 'T00:00:00Z')
+    if (Number.isNaN(first.getTime())) return [{label,date,range:date}]
+    const last = new Date(first)
+    last.setUTCDate(first.getUTCDate() + 4)
+    const short = (day: Date) => (day.getUTCMonth()+1) + '.' + String(day.getUTCDate()).padStart(2,'0')
+    const endYear = first.getUTCFullYear() === last.getUTCFullYear() ? '' : last.getUTCFullYear()+'.'
+    return [{label,date,range:first.getUTCFullYear()+'.'+short(first)+' – '+endYear+short(last)}]
+  })
+}

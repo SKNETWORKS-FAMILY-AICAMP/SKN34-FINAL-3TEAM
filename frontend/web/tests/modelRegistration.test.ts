@@ -94,5 +94,6 @@ test('사전 검사 파일 목록은 이름 접두어로 정한다: tox-는 scor
   assert.equal(supportsPreflight('tox-kcelectra-base', files(PREFLIGHT_FILES)), false)
   assert.equal(supportsPreflight('m2-klue-essay', files(PREFLIGHT_FILES)), true)
   assert.equal(supportsPreflight('m2-klue-essay', files(five)), false)
+  assert.equal(supportsPreflight('unsupported', files(PREFLIGHT_FILES)), false)
   assert.ok(KNOWN_MODEL_SCOPES.includes('answer-filter'))
 })

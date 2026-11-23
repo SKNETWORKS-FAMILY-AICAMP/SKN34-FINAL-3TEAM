@@ -19,7 +19,7 @@ data class SceneVersion(val versionId: UUID, val number: Int, val source: String
     val selectable: Boolean, val imageUrl: String?, val videoUrl: String?, val motion: Map<String, Any?>?, val starred: Boolean, val note: String)
 
 data class SceneHistory(val rootDraftId: UUID, val scene: String, val selectedVersionId: UUID?, val editable: Boolean,
-    val versions: List<SceneVersion>)
+    val versions: List<SceneVersion>, val comparisonPending: Boolean)
 
 @Service
 class ThemeDraftMediaService(private val revisions: ThemeDraftMediaMapper, private val drafts: ThemeDraftRepository,
@@ -51,7 +51,7 @@ class ThemeDraftMediaService(private val revisions: ThemeDraftMediaMapper, priva
             SceneVersion(row.id, index + 1, if (row.id == root) "ORIGINAL" else "REGENERATED", row.createdAt, row.status,
                 editable && row.status == DraftStatus.READY, assets.url(row.image), assets.url(row.video), row.motion, row.starred, row.note)
         }
-        return SceneHistory(root, scene, selected, editable, versions.asReversed())
+        return SceneHistory(root, scene, selected, editable, versions.asReversed(), editable && sources.any { it.unreviewed })
     }
 
     @Transactional

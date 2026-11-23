@@ -35,6 +35,7 @@ try {
   // 2. 평가 근거 8항목·평가 범위로 등록 (승인자 입력칸 없음)
   assert.equal(await p.getByLabel('승인자', { exact: true }).count(), 0)
   await p.getByText('직접 새 버전 등록', { exact: true }).click()
+  await p.getByText('기타 범위 및 코드 직접 편집', { exact: true }).click()
   await p.getByLabel('평가 범위', { exact: true }).fill(scope)
   await p.getByLabel('모델 이름', { exact: true }).fill('judge')
   await p.getByLabel('모델 버전', { exact: true }).fill('mock-3')
