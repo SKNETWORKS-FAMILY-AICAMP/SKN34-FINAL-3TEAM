@@ -38,7 +38,7 @@ def evening_question(big_question: str | None) -> str:
 
 
 # 웹툰식 말풍선에 넣는 글 길이 상한(글자). 넘으면 말풍선에는 앞부분만, 전체는 그림 아래에 싣는다
-BUBBLE_LIMIT = 70
+BUBBLE_LIMIT = 55
 
 
 def bubble(text: str) -> str:

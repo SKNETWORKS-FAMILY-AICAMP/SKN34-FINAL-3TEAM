@@ -28,17 +28,27 @@ def rendered():
     return ReportRenderer().render_memory_book(sample_book(), "합성학생")
 
 
-def test_pdf_has_cover_intro_five_days_ending_and_evening_question(rendered):
+def test_pdf_flows_cover_then_story_days_ending_and_evening_question(rendered):
     pages = [compact(p.extract_text()) for p in PdfReader(io.BytesIO(rendered["PDF"])).pages]
-    assert len(pages) == 9
+    # 표지만 한 쪽, 나머지는 이어지는 흐름(장면 칸은 쪽에 걸쳐 잘리지 않음)
+    assert 4 <= len(pages) <= 7
     assert "합성학생의추억그림책" in pages[0] and "사라진등대불빛" in pages[0]
-    assert "이번주큰질문" in pages[1]
-    days = ("월요일", "화요일", "수요일", "목요일", "금요일")
-    for page, label in zip(pages[2:7], days, strict=True):
-        assert label in page
-    assert "이날문제는나중에바뀌어서남은기록이없어요" in pages[5]
-    assert "큰질문의답" in pages[7]
-    assert "오늘저녁질문" in pages[8]
+    assert "이야기의시작" not in pages[0]
+    text = "".join(pages[1:])
+    order = [
+        "이야기의시작",
+        "월요일",
+        "화요일",
+        "수요일",
+        "목요일",
+        "금요일",
+        "이야기의끝",
+        "오늘저녁질문",
+    ]
+    positions = [text.index(word) for word in order]
+    assert positions == sorted(positions)
+    assert "이날문제는나중에바뀌어서남은기록이없어요" in text
+    assert "큰질문의답" in text
 
 
 def test_answers_follow_version_order_with_followup_before_revised_answer():
@@ -111,7 +121,7 @@ def test_only_raster_data_uris_reach_the_template(value):
     book["days"][0]["sceneImage"] = value
     view = memory_book_view(book)
     assert view["introImage"] is None and view["days"][0]["sceneImage"] is None
-    assert "scene--missing" in html_of(book)
+    assert "art--missing" in html_of(book)
 
 
 def test_week_label_and_evening_question():

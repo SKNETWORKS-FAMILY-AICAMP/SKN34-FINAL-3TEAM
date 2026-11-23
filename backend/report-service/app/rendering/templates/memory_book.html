@@ -2,101 +2,101 @@
 <html lang="ko"><head><meta charset="utf-8"><title>추억 그림책</title>
 <style>
 @page { size: A4; margin: 14mm; }
-body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a22; font-size:13px; line-height:1.8; margin:0; }
-.page { break-after: page; }
-.page:last-child { break-after: auto; }
-.scene { display:block; width:100%; max-height:120mm; object-fit:contain; border-radius:5mm; margin:0 auto 5mm; }
-.scene--missing { height:70mm; border-radius:5mm; margin-bottom:5mm; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
-.cover { text-align:center; padding-top:14mm; }
+body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a22; font-size:13px; line-height:1.7; margin:0; }
+/* 표지만 한 쪽, 그 뒤는 쭉 이어지는 그림책. 한 장면(칸)은 두 쪽에 걸쳐 잘리지 않게 한다 */
+.cover { break-after: page; text-align:center; padding-top:10mm; }
 .cover h1 { font-size:30px; color:#6b4a1f; margin:6mm 0 2mm; }
 .cover .who { font-size:17px; color:#8a6a3a; margin:0; }
 .cover .when { color:#8a7c66; }
-h2 { font-size:18px; color:#6b4a1f; margin:4mm 0; }
-.label { display:inline-block; font-size:12px; color:#fff; background:#c98a2e; border-radius:10px; padding:1px 10px; margin-right:6px; }
-.type { color:#8a6a3a; font-size:12px; }
-.dialogue { margin:1mm 0; color:#5a5243; } .dialogue b { color:#8a6a3a; margin-right:4px; }
-.question { background:#fbf6ec; border-radius:4mm; padding:3mm 4mm; margin:4mm 0; white-space:pre-wrap; overflow-wrap:anywhere; }
-.followup { color:#7a5b2c; margin:3mm 0 1mm; white-space:pre-wrap; overflow-wrap:anywhere; }
-.followup::before { content:"되물음 · "; font-weight:bold; }
-.answer { border-left:3px solid #e0a43c; padding-left:4mm; margin:1mm 0; white-space:pre-wrap; overflow-wrap:anywhere; }
-.reflection { color:#5d6b52; margin-top:3mm; white-space:pre-wrap; overflow-wrap:anywhere; }
-.reflection::before { content:"돌아보기 · "; font-weight:bold; }
-.locked { color:#8a8a8a; font-style:italic; }
-.big { font-size:16px; color:#6b4a1f; }
-.back { text-align:center; padding-top:40mm; }
-.back .q { font-size:17px; margin:8mm 10mm; white-space:pre-wrap; overflow-wrap:anywhere; }
-.small { font-size:10px; color:#8a7c66; }
-/* 웹툰식 요일 칸: 그림은 가리지 않게 크게 두고, 말풍선은 그림 위·아래 가장자리에 반쯤 걸쳐 꼬리만 그림 안을 가리킨다 */
-.day-head { margin:0 0 2mm; }
-.narration { margin:0 0 2mm; padding:2.5mm 4mm; background:#fffaec; border:2.5px solid #2f2a22; border-radius:2mm;
-  font-size:12.5px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; box-shadow:2px 3px 0 rgba(47,42,34,.25); }
+.cover-art { display:block; width:100%; height:150mm; object-fit:cover; border:3px solid #2f2a22; border-radius:5mm; }
+.cover-art--missing { height:150mm; border:3px solid #2f2a22; border-radius:5mm; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
+.scene-block { break-inside: avoid; margin:0 0 8mm; }
+.scene-head { margin:0 0 1.5mm; font-size:13px; }
+.label { display:inline-block; font-size:12px; color:#fff; background:#c98a2e; border-radius:10px; padding:0 10px; margin-right:6px; }
+.type { color:#8a6a3a; font-size:12px; margin-right:4px; }
+.narration { margin:0 0 2mm; padding:2mm 3.5mm; background:#fffaec; border:2px solid #2f2a22; border-radius:2mm;
+  font-size:12px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
 .narration b { color:#c98a2e; margin-right:3px; }
-.stage { position:relative; }
-.panel { position:relative; height:120mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
+.story { margin:0 0 2mm; font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.big { font-size:15px; color:#6b4a1f; margin:2mm 0 0; }
+/* 그림 칸: 말풍선은 그림 안 네 귀퉁이에만 작게 두어 가운데(인물·배경)를 비운다 */
+.panel { position:relative; height:105mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
 .panel-art { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .panel-art--missing { position:absolute; inset:0; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
-.cast { display:flex; gap:4mm; justify-content:space-between; align-items:flex-end; margin:0 3mm -7mm; position:relative; z-index:2; }
-.kid { display:flex; flex-direction:column; gap:2.5mm; margin:-8mm 3mm 0; position:relative; z-index:2; }
-.bubble { position:relative; max-width:64%; background:#fff; border:2.5px solid #2f2a22; border-radius:18px;
-  padding:2mm 3.5mm; font-size:12.5px; line-height:1.5; box-shadow:2px 3px 0 rgba(47,42,34,.35); overflow-wrap:anywhere; }
-.bubble .who { display:block; font-size:10px; font-weight:bold; color:#8a6a3a; margin-bottom:0.5mm; }
-/* 꼬리: 등장인물은 아래(그림 쪽), 아이는 위(그림 쪽) */
-.cast .bubble { background:#fffdf6; max-width:48%; }
-.cast .bubble::after { content:""; position:absolute; bottom:-11px; left:20px; border-width:11px 8px 0 8px; border-style:solid;
-  border-color:#2f2a22 transparent transparent transparent; }
-.cast .bubble:nth-child(even)::after { left:auto; right:20px; }
-.kid .answer-bubble { align-self:flex-start; background:#fff7e0; }
-.kid .answer-bubble.revised { align-self:flex-end; background:#e9f6ff; }
-.kid .answer-bubble:first-of-type::after { content:""; position:absolute; top:-11px; left:24px; border-width:0 8px 11px 8px;
-  border-style:solid; border-color:transparent transparent #2f2a22 transparent; }
-.thought { align-self:center; max-width:56%; background:#fff; border:2px dashed #7a5b2c; border-radius:22px; padding:1.5mm 3.5mm;
-  font-size:12px; color:#7a5b2c; font-style:italic; overflow-wrap:anywhere; }
+.corner { position:absolute; display:flex; flex-direction:column; gap:2mm; max-width:44%; }
+.corner.tl { top:3mm; left:3mm; align-items:flex-start; }
+.corner.tr { top:3mm; right:3mm; align-items:flex-end; }
+.corner.bl { bottom:3mm; left:3mm; align-items:flex-start; }
+.corner.br { bottom:3mm; right:3mm; align-items:flex-end; }
+.bubble { position:relative; background:rgba(255,255,255,.94); border:2px solid #2f2a22; border-radius:14px;
+  padding:1.5mm 3mm; font-size:11.5px; line-height:1.45; box-shadow:1.5px 2px 0 rgba(47,42,34,.35); overflow-wrap:anywhere; }
+.bubble .who { display:block; font-size:9.5px; font-weight:bold; color:#8a6a3a; }
+.bubble::after { content:""; position:absolute; border-style:solid; }
+/* 꼬리는 그림 가운데 쪽을 가리킨다 */
+.tl .bubble::after { bottom:-9px; left:16px; border-width:9px 7px 0 7px; border-color:#2f2a22 transparent transparent transparent; }
+.tr .bubble::after { bottom:-9px; right:16px; border-width:9px 7px 0 7px; border-color:#2f2a22 transparent transparent transparent; }
+.bl .bubble::after { top:-9px; left:16px; border-width:0 7px 9px 7px; border-color:transparent transparent #2f2a22 transparent; }
+.br .bubble::after { top:-9px; right:16px; border-width:0 7px 9px 7px; border-color:transparent transparent #2f2a22 transparent; }
+.bubble.kid { background:rgba(255,247,224,.95); }
+.bubble.kid.revised { background:rgba(233,246,255,.95); }
+.thought { background:rgba(255,255,255,.92); border:1.5px dashed #7a5b2c; border-radius:18px; padding:1mm 3mm;
+  font-size:10.5px; color:#7a5b2c; font-style:italic; overflow-wrap:anywhere; }
 .thought::before { content:"되물음 · "; font-style:normal; font-weight:bold; }
-.rest { margin:-6mm 3mm 0; position:relative; z-index:2; text-align:center; }
-.rest span { display:inline-block; background:#fff; border:2px solid #2f2a22; border-radius:12px; padding:2mm 4mm; font-size:12.5px; color:#6b6b6b; }
-.caption { margin:3mm 1mm 0; font-size:12px; color:#5d6b52; white-space:pre-wrap; overflow-wrap:anywhere; }
+.rest { position:absolute; bottom:3mm; left:0; right:0; text-align:center; }
+.rest span { background:rgba(255,255,255,.94); border:2px solid #2f2a22; border-radius:12px; padding:1.5mm 3.5mm; font-size:11.5px; color:#6b6b6b; }
+.caption { margin:1.5mm 1mm 0; font-size:11.5px; color:#5d6b52; white-space:pre-wrap; overflow-wrap:anywhere; }
 .caption b { color:#5d6b52; }
-.full { margin:3mm 1mm 0; font-size:12px; color:#2f2a22; border-left:3px solid #e0a43c; padding-left:3mm; white-space:pre-wrap; overflow-wrap:anywhere; }
+.full { margin:1.5mm 1mm 0; font-size:11.5px; color:#2f2a22; border-left:3px solid #e0a43c; padding-left:3mm; white-space:pre-wrap; overflow-wrap:anywhere; }
+.locked { color:#8a8a8a; font-style:italic; }
+.closing { break-inside: avoid; text-align:center; margin-top:10mm; padding:8mm 6mm; border-top:2px dashed #c98a2e; }
+.closing h2 { font-size:18px; color:#6b4a1f; margin:0 0 3mm; }
+.closing .q { font-size:16px; margin:0 6mm; white-space:pre-wrap; overflow-wrap:anywhere; }
+.small { font-size:10px; color:#8a7c66; margin-top:6mm; }
 </style></head><body>
 
-<section class="page cover">
-{% if book.introImage %}<img class="scene" src="{{ book.introImage }}" alt="">{% else %}<div class="scene scene--missing"></div>{% endif %}
+<section class="cover">
+{% if book.introImage %}<img class="cover-art" src="{{ book.introImage }}" alt="">{% else %}<div class="cover-art--missing"></div>{% endif %}
 <h1>{{ book.title }}</h1>
 <p class="who">{{ name }}의 추억 그림책</p>
 <p class="when">{{ book.weekLabel }}</p>
 </section>
 
-<section class="page intro">
-<h2>이야기의 시작</h2>
-<p class="question">{{ book.intro }}</p>
+<section class="scene-block intro">
+<p class="scene-head"><span class="label">이야기의 시작</span></p>
+<p class="story">{{ book.intro }}</p>
 {% if book.bigQuestion %}<p class="big">이번 주 큰 질문: {{ book.bigQuestion }}</p>{% endif %}
 </section>
 
-{% for day in book.days %}<section class="page day" data-day="{{ day.day }}">
-<p class="day-head"><span class="label">{{ day.dayLabel }}</span><span class="type">{{ thinking_labels.get(day.thinkingType, '') }}</span> <strong>{{ day.title }}</strong></p>
+{% for day in book.days %}<section class="scene-block day" data-day="{{ day.day }}">
+<p class="scene-head"><span class="label">{{ day.dayLabel }}</span><span class="type">{{ thinking_labels.get(day.thinkingType, '') }}</span><strong>{{ day.title }}</strong></p>
 <div class="narration"><b>문제</b>{{ day.question }}</div>
-<div class="stage">
-{% if day.dialogue %}<div class="cast">{% for line in day.dialogue[:2] %}<div class="bubble"><span class="who">{{ line.speaker }}</span>{{ line.text }}</div>{% endfor %}</div>{% endif %}
-<div class="panel">{% if day.sceneImage %}<img class="panel-art" src="{{ day.sceneImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}</div>
+<div class="panel">
+{% if day.sceneImage %}<img class="panel-art" src="{{ day.sceneImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}
+{% if day.dialogue %}<div class="corner tl"><div class="bubble"><span class="who">{{ day.dialogue[0].speaker }}</span>{{ day.dialogue[0].text }}</div></div>{% endif %}
+{% if day.dialogue|length > 1 %}<div class="corner tr"><div class="bubble"><span class="who">{{ day.dialogue[1].speaker }}</span>{{ day.dialogue[1].text }}</div></div>{% endif %}
 {% if day.attempt is none %}<div class="rest"><span>이 날 문제는 나중에 바뀌어서 남은 기록이 없어요</span></div>
-{% else %}<div class="kid">{% for a in day.attempt.answers %}{% if a.followup %}<div class="thought">{{ a.followup }}</div>{% endif %}<div class="bubble answer-bubble{% if not loop.first %} revised{% endif %}"><span class="who">{{ name }}{% if not loop.first %} · 다시 생각한 답{% endif %}</span>{{ a.bubble }}</div>
-{% endfor %}</div>{% endif %}
+{% else %}{% set first = day.attempt.answers[0] if day.attempt.answers else none %}
+{% if first %}<div class="corner bl"><div class="bubble kid"><span class="who">{{ name }}</span>{{ first.bubble }}</div></div>{% endif %}
+{% if day.attempt.answers|length > 1 %}<div class="corner br">{% for a in day.attempt.answers[1:] %}{% if a.followup %}<div class="thought">{{ a.followup }}</div>{% endif %}<div class="bubble kid revised"><span class="who">{{ name }} · 다시 생각한 답</span>{{ a.bubble }}</div>{% endfor %}</div>{% endif %}
+{% endif %}
 </div>
 {% if day.attempt and day.attempt.reflection %}<p class="caption"><b>돌아보기</b> {{ day.attempt.reflection }}</p>{% endif %}
 {% if day.attempt and day.attempt.truncated %}{% for a in day.attempt.answers %}<p class="full">{{ a.text }}</p>{% endfor %}{% endif %}
 </section>
 {% endfor %}
 
-<section class="page ending">
-<h2>이야기의 끝</h2>
-{% if book.ending.seen %}{% if book.ending.outroImage %}<img class="scene" src="{{ book.ending.outroImage }}" alt="">{% endif %}
-<p class="question">{{ book.ending.outro }}</p>
-{% if book.ending.answer %}<p class="big">큰 질문의 답: {{ book.ending.answer }}</p>{% endif %}
-{% else %}<div class="scene scene--missing"></div>
-<p class="locked">아직 이 이야기의 끝을 보지 못했어요</p>{% endif %}
+<section class="scene-block ending">
+<p class="scene-head"><span class="label">이야기의 끝</span></p>
+{% if book.ending.seen %}
+<div class="narration">{{ book.ending.outro }}</div>
+<div class="panel">
+{% if book.ending.outroImage %}<img class="panel-art" src="{{ book.ending.outroImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}
+{% if book.ending.answer %}<div class="corner bl"><div class="bubble"><span class="who">큰 질문의 답</span>{{ book.ending.answer }}</div></div>{% endif %}
+</div>
+{% else %}<p class="locked">아직 이 이야기의 끝을 보지 못했어요</p>{% endif %}
 </section>
 
-<section class="page back">
+<section class="closing">
 <h2>오늘 저녁 질문</h2>
 <p class="q">{{ book.eveningQuestion }}</p>
 <p class="small">사고뭉치 추억 그림책</p>
