@@ -17,7 +17,10 @@ import java.time.ZoneId
 import java.util.UUID
 
 data class OrderCreated(val orderId: String, val amount: Int, val orderName: String, val childId: UUID, val productId: UUID)
-data class BillingSetup(val customerKey: String, val subscriptionId: UUID)
+// 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+data class BillingSetup(val customerKey: String, val subscriptionId: UUID) {
+    override fun toString() = "BillingSetup(customerKey=***, subscriptionId=$subscriptionId)"
+}
 
 @Service
 class PaymentService(private val repository: PaymentRepository, private val tx: PaymentTransactions,

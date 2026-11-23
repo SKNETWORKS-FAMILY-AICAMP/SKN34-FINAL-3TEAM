@@ -15,7 +15,8 @@ class ChildManagementController(private val service: ChildManagementService,priv
  data class Profile(val nickname: String?=null,val grade: Int?=null)
  data class Deletion(val scope: DeletionScope)
  data class Completion(val service: String)
- data class PinRequest(val pin: String)
+ // 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+ data class PinRequest(val pin: String) { override fun toString()="PinRequest(pin=***)" }
  @PutMapping("/api/v1/children/{childId}/pin")
  fun pin(@PathVariable childId: UUID,@RequestBody body: PinRequest,request: HttpServletRequest): ResponseEntity<Void> {
   pins.set(identity(request),childId,body.pin); return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
