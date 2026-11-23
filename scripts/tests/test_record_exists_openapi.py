@@ -20,7 +20,7 @@ class RecordExistsContractTest(unittest.TestCase):
         # 구현 전 계약 경로는 제외한다. #469 지식 API 2개는 구현되어 실제 컨트롤러와 대조한다.
         documented={(method,path) for path,methods in self.spec['paths'].items() for method,operation in methods.items() if not operation.get('x-implementation-status')}
         self.assertEqual(actual,documented)
-        self.assertEqual(len(actual),94)  # #964 주간 테마 검수 목록 GET /admin/theme-drafts/review-list 포함
+        self.assertEqual(len(actual),95)  # #964 주간 테마 검수 목록 GET /admin/theme-drafts/review-list + 추억 그림책 회차 조립 1개(feature/memory-book) 포함
     def test_producer_and_consumer_use_the_same_path(self):
         path='/records/students/{studentId}/exists'
         self.assertIn(path,self.spec['paths'])

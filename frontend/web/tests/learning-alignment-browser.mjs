@@ -31,9 +31,9 @@ for(const finished of [false,true]){
  return reply({items:[],page:0,size:20,totalElements:0})})
  await p.goto(origin+'/oauth/complete');await p.getByRole('button',{name:'이 자녀로 학습 시작'}).click();await p.getByRole('button',{name:'이어서 작성하기'}).click()
  if(!finished){await p.getByLabel('최종 답',{exact:true}).fill('30');assert.equal(await p.getByLabel('답 단위',{exact:true}).innerText(),'m²');await p.getByLabel('구하는 값',{exact:true}).fill('직사각형의 넓이');await p.getByLabel('계산 과정',{exact:true}).fill('6 × 5 = 30');assert.equal(await p.getByRole('checkbox',{name:'최종 답',exact:true}).count(),0);checks.push('운영 빌드: 답 단위·수 입력·서버 입력 틀·마무리 전 자기 평가 숨김')}
- else{await p.getByRole('checkbox',{name:'최종 답',exact:true}).check();await p.getByRole('button',{name:'내 확인 저장',exact:true}).click();await p.getByRole('region',{name:'내 확인과 선생님 확인 비교'}).waitFor();assert.deepEqual(assessmentBody,{checks:[{elementId:'final',checked:true}]});await p.getByText('선택하지 않았어요',{exact:false}).waitFor();checks.push('운영 빌드: 최종 답 자기 평가 부분 저장·서버 비교 응답')}
- await capture(p,finished?'self-assessment':'answer-unit')
- if(finished){await p.getByRole('button',{name:'돌아보기 남기기'}).click();await p.getByRole('button',{name:'보통이에요',exact:true}).click();await p.getByRole('button',{name:'돌아보기 저장하고 완료'}).click();await p.getByRole('heading',{name:'내 공책',exact:true}).waitFor();assert.equal(reflectionBody.difficulty,'NORMAL');checks.push('운영 빌드: NORMAL 전송 → 완료 → 내 공책')}
+ else{await p.getByRole('group',{name:'마무리 체크리스트'}).waitFor();assert.equal(await p.getByRole('checkbox',{name:'최종 답',exact:true}).count(),0);assert.equal(assessmentBody,undefined);checks.push('운영 빌드: 마무리 화면 자기 확인 없음(D안 #807, FN-LRN-13 웹 미제공)')}
+ await capture(p,finished?'finish':'answer-unit')
+ if(finished){await p.getByRole('button',{name:'보통이에요',exact:true}).click();await p.getByRole('button',{name:'미션 완료하기'}).click();await p.getByRole('dialog',{name:'미션 완료!'}).getByRole('button',{name:'내 공책 보기'}).click();await p.getByRole('heading',{name:'내 공책',exact:true}).waitFor();assert.equal(reflectionBody.difficulty,'NORMAL');checks.push('운영 빌드: NORMAL 전송 → 완료 → 내 공책')}
  await c.close()
 }
 const p=await fresh(),base=process.env.DEMO_URL??'http://127.0.0.1:5242'

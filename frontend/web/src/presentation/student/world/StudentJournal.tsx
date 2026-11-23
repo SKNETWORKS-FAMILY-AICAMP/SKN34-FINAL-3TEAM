@@ -8,10 +8,11 @@ import { comparisonAnswerText } from '../../../domain/learning.ts'
 import type { LearningMission } from '../../../domain/learning.ts'
 import { thinkingHue } from '../../../domain/studentLook.ts'
 import { journalTab } from '../../../domain/retention.ts'
-import type { JournalTab } from '../../../domain/retention.ts'
+import type { JournalTab, ThemeDay } from '../../../domain/retention.ts'
 import { QueryStateNotice } from '../../common/QueryStateNotice.tsx'
 import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { difficultyLabel, feedbackHeadline, followupLabel } from './missionSteps.ts'
+import { useRetryPlan } from './useRetryPlan.ts'
 
 const { recentPeriod, previousWeek, thisWeek } = displayPeriods
 const DAYS = ['일', '월', '화', '수', '목', '금', '토']
@@ -187,18 +188,23 @@ function AnswerBody({ answer, mission }: { answer: Answer; mission: LearningMiss
  * 내 공책 기록 상세(#648 시안 JournalDetail, 사용자 의견 2026-11-16 "공책에서 기록 보는 화면도 이상해").
  * 목록에서 고른 기록(useRecords 응답 그대로)만 쓰고 조회 요청을 새로 만들지 않는다. 머리는 미션 장면(있으면)·꼬리표·섞은 제목·질문,
  * 가운데는 답 버전 카드(그 답 뒤 되묻기는 카드 안 하늘색 칸, 마지막 카드는 굵은 테두리), 아래는 돌아보기와
- * 다시 풀기(마무리한 기록만, 문제 푸는 화면의 '이 미션 다시 풀기'와 같은 시작 요청). 생각 메모는 기록 조회에 없고 넣지 않는다.
- * 기록 응답(core DashboardPublicAttempt)에 시작 맥락(context)이 없어 시안 꼬리표의 "테마 문제"는 보이지 않는다.
+ * 다시 풀기(마무리한 기록만, 문제 푸는 화면의 '이 미션 다시 풀기'와 같은 규칙 `useRetryPlan`: 더 풀어 보기는 다시 시작, 이번 주 테마 문제는
+ * 토요일·프리미엄 일요일만 오늘 장면, 평일은 안내, 지난 주 테마는 없음, #807). 생각 메모는 기록 조회에 없고 넣지 않는다.
+ * 시안 꼬리표의 "테마 문제"는 넣지 않았다(기록 종류 `context`는 공책 탭 나누기에만 씀).
  * PC에서도 칸 안 스크롤 없이 학생 틀 전체가 아래로 내려간다(.st-fit 아님).
  */
-export function StudentJournalEntry({ record, child, onBack, onWork }: {
+export function StudentJournalEntry({ record, child, onBack, onWork, onScene }: {
   record: PublicAttempt
   child: Child
   onBack: () => void
   onWork: (attemptId: string) => void
+  /** 테마 문제 다시 풀기: 그 요일 오늘 장면으로 */
+  onScene: (day: ThemeDay) => void
 }) {
   const title = useRef<HTMLHeadingElement>(null)
   const learning = useLearningActions()
+  // 기록 종류(context)가 없는 예전 기록은 이번 주 테마에 그 미션이 있는지로 가린다
+  const retry = useRetryPlan(record.context ? record.context !== 'EXTRA' : null, record.mission.id, child.id, record.status === 'COMPLETED')
   useEffect(() => {
     title.current?.focus({ preventScroll: true })
     title.current?.closest('.st-stage')?.scrollTo?.({ top: 0 })
@@ -272,13 +278,20 @@ export function StudentJournalEntry({ record, child, onBack, onWork }: {
             <p>아직 돌아보기를 남기지 않았어요.</p>
           )}
         </div>
-        {record.status === 'COMPLETED' && (
+        {record.status === 'COMPLETED' && (retry.kind === 'EXTRA' || retry.kind === 'SCENE' || retry.kind === 'SATURDAY') && (
           <div className="st-jd-retry">
             <h2>다시 풀어 보기</h2>
-            <p>다시 풀면 이번 답과 나란히 비교해 볼 수 있어요. 이번 답은 공책에 그대로 남아요.</p>
-            <button type="button" className="st-pill-link" disabled={learning.start.isPending} onClick={() => void restart()}>
-              다시 풀기
-            </button>
+            {retry.kind === 'SATURDAY' ? (
+              <p>토요일에 다시 풀 수 있어요. 이번 답은 공책에 그대로 남아요.</p>
+            ) : (
+              <>
+                <p>다시 풀고 마무리하면 이번 답이 '저번엔'으로 함께 보여요. 이번 답은 공책에 그대로 남아요.</p>
+                <button type="button" className="st-pill-link" disabled={learning.start.isPending}
+                  onClick={() => (retry.kind === 'SCENE' ? onScene(retry.day) : void restart())}>
+                  다시 풀기
+                </button>
+              </>
+            )}
             <ErrorNotice error={learning.start.error} />
           </div>
         )}

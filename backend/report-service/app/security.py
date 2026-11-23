@@ -23,7 +23,11 @@ TRACEPARENT = "traceparent"
 # 호출자 토큰은 INTERNAL_TOKEN_<호출자>(설정 internal_token_<호출자>).
 # 빈 값이면 그 호출자를 받지 않음
 CALLER_PATHS: dict[str, tuple[str, ...]] = {
-    "core": (r"/internal/(reports|report-jobs)(/.*)?",),
+    "core": (
+        r"/internal/(reports|report-jobs)(/.*)?",
+        # 추억 그림책 파일 주소 (docs/proposals/memory-book.md, 미도입 시험 구현)
+        r"/internal/students/[0-9a-fA-F-]{36}/memory-books/[0-9a-fA-F-]{36}/files/pdf",
+    ),
 }
 _CALLER_PATTERNS = {
     caller: tuple(re.compile(pattern) for pattern in patterns)

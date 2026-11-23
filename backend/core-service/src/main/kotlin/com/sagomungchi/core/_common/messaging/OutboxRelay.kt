@@ -93,7 +93,8 @@ class OutboxRelay(
         private val STOP_CYCLE_CODES = setOf(BROKER_UNAVAILABLE, PUBLISH_TIMEOUT)
 
         /** 명령은 cmd.direct, 나머지 이벤트는 events.topic (아키텍처 1.4) */
-        private val COMMAND_TYPES = setOf("report.generate")
+        // memorybook.generate: 추억 그림책 (docs/proposals/memory-book.md, 미도입 시험 구현)
+        private val COMMAND_TYPES = setOf("report.generate", "memorybook.generate")
 
         private fun exchangeOf(eventType: String) =
             if (eventType in COMMAND_TYPES) MessagingConfig.COMMAND_EXCHANGE else MessagingConfig.EVENTS_EXCHANGE

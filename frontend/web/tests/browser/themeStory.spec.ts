@@ -1,4 +1,4 @@
-import { waitForStudentHome } from './studentFixture.ts'
+import { throughTodayScene, waitForStudentHome } from './studentFixture.ts'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
@@ -60,7 +60,7 @@ async function openTodayIntro(page: Page) {
 const noHorizontalScroll = async (page: Page) =>
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 
-test('#440 시작 이야기: 그 주 처음 문제를 열면 화면 가득 재생 → 건너뛰기 → 이야기, 다시 보기, 이번 주 시작하기로 오늘 문제 안내 @responsive', async ({ page }) => {
+test('#440 시작 이야기: 그 주 처음 문제를 열면 화면 가득 재생 → 건너뛰기 → 이야기, 다시 보기, 이번 주 시작하기로 오늘 장면(#807) @responsive', async ({ page }) => {
   await student(page, 0)
   await openTodayIntro(page)
   const stage = page.getByRole('main', { name: '시작 영상' })
@@ -81,8 +81,9 @@ test('#440 시작 이야기: 그 주 처음 문제를 열면 화면 가득 재�
   await expect(stage).toBeVisible()
   await stage.getByRole('button', { name: '건너뛰기 →' }).click()
   await page.getByRole('button', { name: '이번 주 시작하기 · 오늘 문제로 →', exact: true }).click()
-  // 열람 기록(INTRO) 뒤 오늘 문제 안내로 이어감
-  await expect(page.getByRole('button', { name: '미션 시작하기', exact: true })).toBeVisible()
+  // 열람 기록(INTRO) 뒤 그 문제의 오늘 장면으로 이어감(미션 안내 없음, #807)
+  await expect(page).toHaveURL(/\/student\/theme\/scene\/MON$/)
+  await expect(page.getByRole('main', { name: '오늘 장면' }).locator('.ts-box')).toBeVisible()
   expect((await storyViews(page)).filter(v => v.endsWith(':INTRO'))).toHaveLength(1)
   await noHorizontalScroll(page)
 })
@@ -141,7 +142,11 @@ test('#440 움직임 줄이기면 화면 가득 재생 없이 바로 이야기(�
   await expect(page.locator('.tm-fx')).toHaveCount(0)
   await expect(page.locator('.tm-caption')).toHaveCount(0)
   await page.getByRole('button', { name: '이번 주 시작하기 · 오늘 문제로 →', exact: true }).click()
-  await page.getByRole('button', { name: '미션 시작하기', exact: true }).click()
+  // 오늘 장면도 움직임 줄이기면 당기기·제목 연출·올라오기 없이 바로 대화(#807)
+  await expect(page.locator('.ts-box')).toBeVisible()
+  await expect(page.locator('.ts-intro')).toHaveCount(0)
+  await expect(page.locator('.ts-cam')).toHaveCount(0)
+  await throughTodayScene(page)
   await expect(page).toHaveURL(/\/student\/attempts\//)
   const scene = page.locator('.sw-side .ux-scene')
   await expect(scene.locator('img')).toBeVisible()

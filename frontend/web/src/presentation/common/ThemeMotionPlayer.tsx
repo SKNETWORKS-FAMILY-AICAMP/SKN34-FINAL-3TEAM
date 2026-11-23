@@ -1,17 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import { captionAt, readThemeMotion } from '../../domain/themeMotion.ts'
-import type { MotionPoint } from '../../domain/themeMotion.ts'
+import { cameraTransform, captionAt, readThemeMotion } from '../../domain/themeMotion.ts'
 import { MotionEffects } from './MotionEffects.tsx'
 import { useReducedMotion } from './useReducedMotion.ts'
 import './theme-motion.css'
-
-/** 카메라 위치(그림 % 좌표·확대)를 그림 변환으로. 확대한 만큼만 중심을 옮겨 가장자리가 비지 않게 한다 */
-const cameraTransform = (p: MotionPoint) => {
-  const room = (1 - 1 / p.zoom) * 50
-  const dx = Math.max(-room, Math.min(room, 50 - p.x)), dy = Math.max(-room, Math.min(room, 50 - p.y))
-  return `scale(${p.zoom}) translate(${dx}%, ${dy}%)`
-}
 
 /**
  * 장면 움직임 재생기(형식 v1, domain/themeMotion.ts). 관리자 테마 초안 미리보기(#441)와 학생 시작·끝 이야기(#440)가 쓴다.

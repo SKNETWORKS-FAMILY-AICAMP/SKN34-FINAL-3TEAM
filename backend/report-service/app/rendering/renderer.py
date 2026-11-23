@@ -8,6 +8,7 @@ from playwright.sync_api import sync_playwright
 
 from app.generation.presentation import DIFFICULTY_LABELS
 from app.generation.template_settings import METRICS, settings_for
+from app.rendering.memory_book import memory_book_view
 
 THINKING_LABELS = {
     "ANALYZE": "분석하기",
@@ -110,6 +111,24 @@ class ReportRenderer:
         html = self._templates.get_template(
             "daily.html" if report.get("periodType") == "DAILY" else "weekly.html"
         ).render(report=report, name=display_name)
+        pdf = self._pdf(html)
+        return {
+            "HTML": html.encode("utf-8"),
+            "PDF": pdf,
+            "MD": self.markdown(report, display_name).encode("utf-8"),
+        }
+
+    def render_memory_book(self, book: dict, display_name: str) -> dict[str, bytes]:
+        """추억 그림책 HTML·PDF (docs/proposals/memory-book.md). 그림은 data URI만 남는다."""
+        if not display_name.strip():
+            raise ValueError("A trusted display name is required for memory book files")
+        html = self._templates.get_template("memory_book.html").render(
+            book=memory_book_view(book), name=display_name
+        )
+        return {"HTML": html.encode("utf-8"), "PDF": self._pdf(html)}
+
+    @staticmethod
+    def _pdf(html: str) -> bytes:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(args=["--disable-dev-shm-usage"])
             try:
@@ -128,11 +147,7 @@ class ReportRenderer:
                 )
             finally:
                 browser.close()
-        return {
-            "HTML": html.encode("utf-8"),
-            "PDF": pdf,
-            "MD": self.markdown(report, display_name).encode("utf-8"),
-        }
+        return pdf
 
     @staticmethod
     def markdown(report: dict, display_name: str) -> str:
