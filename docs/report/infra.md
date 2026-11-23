@@ -1525,6 +1525,7 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 | 8 | SageMaker 예약 재개(`ScheduledScalingSuspended=false`) | 11/19에 일시정지 |
 | 9 | 웹 | 11/19에 올린 빌드보다 새 main이면 다시 올린다(assets 먼저, `index.html` 마지막, 무효화) |
 | 10 | fixture 재로그인·갱신 → 경로 확인 | refresh 쿠키 7일 만료. 첫 실행 경로 확인이 실패했으면 갱신 뒤 같은 계획을 다시 실행하거나 `verify_cd_deployment.py`만 실행 |
+| 11★ | (A 종료 직전) B 공유용 스냅샷 | 11/25 확인(#927)이 모두 끝난 뒤, RDS 정지·삭제 전에 고객 관리 KMS 키 생성 → 새 수동 스냅샷 → 그 키로 복사 → B 공유. [B 런북 선행 A-K1~A-K5](../../infrastructure/aws/README.md#선행-a-계정-1125-a-종료-직전), 이유는 9.19 |
 
 **B 계정**: 전체 순서는 [AWS README의 B 계정 전환 런북](../../infrastructure/aws/README.md#b-계정-전환-런북-809)이다(#809). 이 작업이 그 런북에서 맡는 것은 9단계 첫 배포(`currentRelease: "none"`)와 8·10단계 `rds-bootstrap` 앞뒤, 15단계 fixture·테마다.
 
@@ -1533,7 +1534,7 @@ g6e, 모델 4판(최종 설정), 요청마다 system 앞에 무작위 표식을 
 | # | 단계 | 방법·상태 |
 |---|---|---|
 | A-1★ | 시험 데이터 정리 범위 | 부하 시험 계정(`load2*`)·스텁 `llm_usage` 행·경로 확인용 임시 계정 등 시연에 남기지 않을 데이터를 정한다. A에서 지운 뒤 스냅샷을 뜨거나 B 복원 뒤 지운다 |
-| A-2★ | 공유용 스냅샷 | 11/19 최종 스냅샷은 AWS 관리 키(`aws/rds`)로 암호화돼 다른 계정과 공유할 수 없다. B 직전 A를 다시 내릴 때(11/26 전) 새 최종 스냅샷을 뜨고, A의 고객 관리 KMS 키로 `copy-db-snapshot --kms-key-id <키>` → **B 계정 번호가 정해진 뒤** 키 정책에 B 허용 → `modify-db-snapshot-attribute --attribute-name restore --values-to-add <B 계정>` |
+| A-2★ | 공유용 스냅샷 | 11/19 최종 스냅샷은 AWS 관리 키(`aws/rds`)로 암호화돼 다른 계정과 공유할 수 없다. B 직전 A를 다시 내릴 때(11/26 전) 새 최종 스냅샷을 뜨고, A의 고객 관리 KMS 키로 `copy-db-snapshot --kms-key-id <키>` → **B 계정 번호가 정해진 뒤** 키 정책에 B 허용 → `modify-db-snapshot-attribute --attribute-name restore --values-to-add <B 계정>`. 시점은 11/25 A 종료 직전(위 11단계)으로 정했고 세부 단계는 런북 선행 A-K1~A-K4(9.19, 2026-11-23) |
 | A-3 | 보존 | 공유 스냅샷·KMS 키(삭제 대기 기간 포함)·A Secrets Manager의 DB 계정 값 6개·`PAYMENT_BILLING_ENCRYPTION_KEY`는 B 복원이 끝날 때까지 지우지 않는다. B 쪽 복원·비밀번호·S3 경로는 런북 3·5·8단계 |
 
 스냅샷을 복원해도 cd-release 한 번으로 경로 확인까지 끝나는 것은 보장되지 않는다. 학생 PIN·자녀 연결·약관 동의·테마는 스냅샷에 있지만, 부모 refresh 쿠키는 최초 로그인부터 7일이고 학생 기기 쿠키는 새 도메인에서 다시 받아야 한다. 첫 실행의 경로 확인이 실패하면 쿠키를 갱신한 뒤 같은 계획을 다시 실행해 성공 이력을 남긴다.
@@ -1805,6 +1806,37 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 - 11/25 A 확인 순서: digest PR 생성 → ci-gitops → 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
 - 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push, `gh pr create --base main`, `gh workflow run ci-gitops.yml --ref <브랜치>` 호출까지.
 - 한계: digest PR 작성자가 봇이라 실행한 사람도 승인할 수 있다(Environment `prod`와 같음, 운영 규칙으로 다른 사람 승인 권장). `GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않는다. #857 병합으로 생긴 실제 images 파일 6개는 `RealImagesFileTests`가 구조를 검사한다.
+
+## 9.19 B 복원용 스냅샷의 고객 관리 KMS 키 공유 (#809, 2026-11-23)
+
+2026-11-18 결정 "B DB는 A 최종 RDS 스냅샷 복원"(9.16.2 A-2)에는 A 쪽 단계가 한 줄로만 있었고, 런북 일정에는 언제 하는지가 없었다. 11/25 A 재가동(#927)이 B 부트스트랩(11/26~27) 바로 앞이라 A 종료 직전에 해야 한다는 점을 절차로 넣었다. 이 정리에서 AWS는 조회도 변경도 하지 않았다.
+
+### 9.19.1 결정
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 11/19 최종 스냅샷 | `sagomungchi-demo-db-final-20261119`은 B에 쓰지 않는다 | AWS 관리 키(`aws/rds`)로 암호화돼 키 정책을 바꿀 수 없어 다른 계정과 공유할 수 없다. 11/25 재가동에서 migration·시연 데이터(#897 재동의 등)로 DB가 바뀌어 그 뒤 상태가 B에 필요하다 |
+| 시점 | 11/25 A 확인이 모두 끝난 뒤, A RDS 정지·삭제 직전(9.16.2 A 11단계) | 그 뒤 A DB는 바뀌지 않는다. RDS가 켜져 있어야 새 스냅샷을 뜰 수 있다 |
+| 키 | A에 고객 관리 KMS 키(CMK)를 하나 두고 키 정책에 B 주체를 허용 | 다른 계정이 복사·복원하려면 원본 키를 B가 쓸 수 있어야 하고, 그 허용은 고객 관리 키에서만 된다 |
+| A 순서 | 새 수동 스냅샷 → CMK로 `copy-db-snapshot --kms-key-id` → `modify-db-snapshot-attribute --attribute-name restore --values-to-add <B 계정>` | RDS는 인스턴스 키로 스냅샷을 만들므로 키를 바꾸려면 복사가 필요하다. 공유는 CMK 복사본만 |
+| B 순서 | B 작업자 IAM에도 A CMK 허용 → 공유 스냅샷을 B 키로 복사 → 복사본으로 복원 | 다른 계정 키는 키 정책과 호출자 IAM 정책이 둘 다 있어야 쓸 수 있다. B 소유 복사본을 만들어 두면 그 뒤 복원은 A 키·A 계정에 기대지 않는다 |
+| 보존 | CMK·공유 스냅샷·A-K2 원본·A DB 계정 값 6개·`PAYMENT_BILLING_ENCRYPTION_KEY`는 B 복원 확인 전까지 지우지 않음 | 키 삭제를 예약하면 대기 기간(7~30일) 동안에도 키를 쓸 수 없어 B가 복사·복원하지 못한다. 복원 DB는 A 계정 비밀번호와 A 결제 암호화 키로 만든 값을 그대로 갖는다(9.16.2 A-3) |
+| B 번호가 늦을 때 | 11/25에는 키 생성·스냅샷·CMK 복사까지, B 허용과 공유는 번호를 받은 뒤 | 두 작업은 A RDS가 꺼져 있어도 된다 |
+
+실행 절차와 명령 예시는 [AWS README B 런북 "선행 (A 계정, 11/25 A 종료 직전)"](../../infrastructure/aws/README.md#선행-a-계정-1125-a-종료-직전)(A-K1~A-K5)과 같은 런북 5단계 "RDS 복원"이다.
+
+### 9.19.2 비용·시간 (실행 전 추정)
+
+| 항목 | 값 | 근거·상태 |
+|---|---|---|
+| KMS 고객 관리 키 | 키당 월 $1(시간 비례), 요청 1만 건당 $0.03 | AWS 공개 가격. 실행 전 가격 페이지로 다시 확인 |
+| 스냅샷 저장 | A-K2 원본·A-K3 CMK 복사본·B 복사본이 각각 전체 크기로 과금될 수 있음(할당 20GiB gp3) | 서울 리전 GB-월 단가와 실제 사용량은 확인 필요 |
+| 스냅샷 생성·CMK 복사·B 복사 시간 | 확인 필요 | 11/19 최종 스냅샷 소요 시간 기록이 없다. 11/25·B 실측을 이 절에 덧붙인다 |
+
+### 9.19.3 남은 확인
+
+- B 계정 번호와 B 복원 주체(B 루트 위임 또는 복원 역할 하나)
+- 11/25 실행 결과(스냅샷·복사 시각, 키 ARN은 적지 않고 별칭만), B 복원 결과와 A 쪽 보존 자원 정리 시점
 
 ## 10. 근거 링크
 
