@@ -11,6 +11,7 @@ import com.sagomungchi.core.account.service.AccountAccessService
 import com.sagomungchi.core.guardianship.service.ChildAuthorizationService
 import com.sagomungchi.core.conversation.domain.*
 import com.sagomungchi.core.conversation.repository.ConversationRepository
+import com.sagomungchi.core.conversation.repository.MessageJson
 import com.sagomungchi.core.learning.service.LearningRecordService
 import com.sagomungchi.core.learning.service.DashboardQuery
 import org.springframework.http.HttpStatus
@@ -299,12 +300,10 @@ class ConversationService(private val repository: ConversationRepository, privat
     }
     fun complete(ticket: AnalysisTicket, result: AnalysisResult?, clarification: JsonNode?) {
         locked(ticket.parent, ticket.conversation.id) {
-            val row = ticket.message.copy(status = "COMPLETED", answer = result?.answer,
-                source = result?.source, clarification = clarification?.toString(),
-                metrics = result?.metrics, verification = result?.verification,
-                fallback = result?.fallback, notice = result?.notice,
+            val row = ticket.message.copy(status = "COMPLETED", answer = result?.answer, source = result?.source,
                 recordCount = result?.recordCount, failureCode = result?.failureCode, completedAt = OffsetDateTime.now())
-            if (!repository.finish(row, ticket.message.retryCount)) conflict()
+            val values = MessageJson(clarification, result?.metrics, result?.verification, result?.fallback, result?.notice)
+            if (!repository.finish(row, ticket.message.retryCount, values)) conflict()
             result?.evidence?.forEach {
                 repository.insertEvidence(EvidenceRow(it.evidenceId!!, row.id, it.attemptId,
                     if (it.reflection) null else it.answerId, if (it.reflection) null else it.answerVersion,
@@ -375,10 +374,10 @@ class ConversationService(private val repository: ConversationRepository, privat
         "title" to "학습 기록 분석", "createdAt" to row.createdAt, "messages" to messages)
     private fun messageView(row: MessageRow, corrected: Boolean): Map<String, Any?> = mapOf("messageId" to row.id, "question" to row.question,
         "status" to row.status, "scope" to row.scope(), "answer" to row.answer, "source" to row.source,
-        "metrics" to row.metrics?.let(json::readTree), "verification" to row.verification?.let(json::readTree),
-        "clarification" to row.clarification?.let(json::readTree), "recordCount" to row.recordCount,
-        "fallback" to (row.fallback?.let(json::readTree) ?: row.failureCode?.takeIf { row.source == "TEMPLATE" }?.let { mapOf("reason" to it) }),
-        "notice" to row.notice?.let(json::readTree), "correctionNotice" to corrected,
+        "metrics" to row.metrics, "verification" to row.verification,
+        "clarification" to row.clarification, "recordCount" to row.recordCount,
+        "fallback" to (row.fallback ?: row.failureCode?.takeIf { row.source == "TEMPLATE" }?.let { mapOf("reason" to it) }),
+        "notice" to row.notice, "correctionNotice" to corrected,
         "failureCode" to row.failureCode?.takeIf { row.status == "FAILED" }, "retryable" to (row.status == "FAILED"),
         "evidence" to repository.evidence(row.id).map { mapOf("evidenceId" to it.id,"kind" to it.kind, "attemptId" to it.attemptId, "answerId" to it.answerId, "answerVersion" to it.answerVersion) })
     private fun instant(value: String): java.time.Instant = try { java.time.OffsetDateTime.parse(value).toInstant() }

@@ -1,5 +1,6 @@
 package com.sagomungchi.core.reward.repository
 
+import com.sagomungchi.core._common.json.JsonObject
 import com.sagomungchi.core.reward.domain.LookItem
 import com.sagomungchi.core.reward.domain.PointEntry
 import com.sagomungchi.core.reward.domain.RewardRule
@@ -51,7 +52,7 @@ interface RewardMapper {
     fun insertItem(@Param("item") item: LookItem, @Param("actor") actor: UUID): Int
     fun updateItem(@Param("item") item: LookItem): Int
     fun audit(@Param("id") id: UUID, @Param("actor") actor: UUID, @Param("action") action: String,
-              @Param("target") target: UUID, @Param("detail") detail: String): Int
+              @Param("target") target: UUID, @Param("detail") detail: JsonObject): Int
 
     fun deleteEquipment(studentId: UUID): Int
     fun deleteUnlocks(studentId: UUID): Int

@@ -340,7 +340,7 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 | SEC-08 | PIN·기기 자격은 해시, 쿠키 httpOnly·Secure·SameSite=Strict | 모의·CI | 미등록·위조·다른 자녀·만료·해제 기기는 PIN 전 거부, 동시 실패 5회 잠금·해제 후 초기화, PIN `pbkdf2-sha256` 해시, 페어링 코드는 해시만 Redis, 쿠키 HttpOnly·SameSite=Strict. 시험 설정이 `cookie-secure=false`라 Secure 속성은 미확인 | core `account/StudentDeviceAuthTest`, [auth-account 4](auth-account.md#4-학생-기기pin-로그인-p01-개정-58) | 11/20 | 충족 |
 | DAT-01 | 답변·판정·되묻기·돌아보기를 덮어쓰지 않음 | 모의·CI | 보완 답변 v2·v3 제출 뒤 v1 행 그대로, 시도 버전 [1,2,3] | learning `answer/service/AnswerServiceTest`·`attempt/service/AttemptComparisonIntegrationTest` | 11/20 | 충족 |
 | DAT-02 | 결과마다 미션·기준표·모델·프롬프트 버전 연결 | 모의·CI | 판정·되묻기에 모델·프롬프트 버전, 답변에 기준표 버전 저장, 공개 중 수정은 새 버전·진행 중 시도는 시작 버전 유지. "판정 뒤 기준표 변경 → 과거 판정 재조회"를 한 번에 잇는 시험은 없음 | learning `judgment/facade/FeedbackFacadeTest`·`mission/service/AdminMissionServiceTest`·`attempt/service/AttemptServiceTest`, ai `test_active_versions.py` | 11/20 | 충족 |
-| DAT-03 | AI Hub 데이터 저장소·화면 미포함, 생성형 AI 출력은 학습 자료로 미사용 | 저장소 점검 | `git ls-files`(`a836e3e8`): zip·parquet 0개, jsonl·csv 12개는 자체 작성 평가 자료·교육과정 지식, AI Hub 이름이 든 3개는 집계 요약·스크립트로 원문 0건. `.gitignore` 14~21행이 AI Hub 폴더·파일명 차단. 생성형 AI 출력 쪽은 `ml/tox` 아이 말투 학습 문장이 Claude 작성(README에 예외로 적음, 기능명세에는 예외 없음) | 이 절 점검, [ml/tox README](../../ml/tox/README.md) | 11/20 | 미충족(tox 학습에 생성형 AI 문장 사용. 설계 예외 반영 또는 재학습 결정 필요) |
+| DAT-03 | AI Hub 데이터 저장소·화면 미포함, 생성형 AI 출력은 학습 자료로 미사용 | 저장소 점검 | `git ls-files`(`dadc2dd5` + 이 PR의 `ml/tox/results/887-compare` 요약): zip·parquet 0개, jsonl·csv 13개는 자체 작성 평가 자료·교육과정 지식(11/20 뒤 추가 1개는 추억 검색 평가셋 memory@2, 학습에 안 씀), AI Hub 이름·자료 번호가 든 4개(#887에서 `aihub_kid16k_pc_summary.json` 추가)는 집계 요약·스크립트로 원문 0건. `.gitignore` 16~22행이 AI Hub 폴더·파일명 차단. 생성형 AI 출력 쪽은 `ml/tox` 아이 말투 학습 문장만 기능명세 예외(#887, 2026-11-23) | 이 절 점검, [기능명세 NFR-DAT-03](../design/functional-spec.md), [ml/tox README](../../ml/tox/README.md) | 11/23 | 충족 |
 | DAT-04 | 삭제 정책을 문제풀이·대화·리포트·대시보드에 동일 적용 | 모의·CI | 학생 삭제 뒤 learning 근거 `available=false`·원문 없음, report 삭제 대기 중 조회·생성 차단, core 대화 근거 이용 불가, 웹은 `available:false` 근거를 링크하지 않음. 화면 전체 미노출 확인은 수동 `parent-admin-browser.mjs`뿐(CI 밖) | learning `record/StudentDeletionTest`, report `test_deletion.py`, core `conversation/ConversationIntegrationTest`, web `reportHighlight.test.ts` | 11/20 | 충족 |
 | DAT-05 | PITR 7일, RPO 5분·RTO 4시간, 복구 정합성 확인 | 배포(A) | RTO 요청→`available` 19분 8초. RPO 5분 23초(같은 날 다른 시점 3분 37초). 답변 2,814건 md5·스키마·열 지문 일치. 근거 연결·결제 행이 0건이라 그 정합성과 PG 대조는 실데이터로 미확인 | [infra 9.12](infra.md#912-rds-pitr-복구-시험-629-2026-11-18) | 11/18 | 미충족(RPO: PITR 로그 업로드 주기가 약 5분이라 5분을 넘을 수 있음. 목표는 유지, 2026-11-20 결정) |
 | REL-01 | 제출·결제 승인·PG 통지·알림·재처리 1회만 반영 | 모의·CI | 같은 키 재제출은 첫 답변 반환, 동시 승인 → PG 호출 1·구독 1, 같은 갱신 기간 1회 청구, 서명된 중복 웹훅 1회 반영, 반복 사건 알림 1건, 소비자 `processed_event` 중복 무시 | learning `AnswerServiceTest`·`answer/service/AnswerConcurrencyTest`, core `payment/PaymentIntegrationTest`·`notification/NotificationIntegrationTest`·`_common/messaging/MessagingIntegrationTest` | 11/20 | 충족 |
@@ -381,7 +381,6 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 
 ### 9.5 미충족과 보강할 점
 
-- DAT-03: `ml/tox` 아이 말투 학습 문장이 Claude 작성. 기능명세에 예외를 넣을지, 생성형 AI 문장을 빼고 다시 학습할지 결정 필요
 - DAT-05: RPO 1회 측정 5분 23초. 목표 5분 유지(2026-11-20 결정), 근거 연결·결제 행이 있는 상태의 복구 대조는 미실행
 - QA-02: 실제 PG로 정기결제·실패·해지·환불·웹훅 미검증
 - UX-04: 미션 분량(10분 안팎) 콘텐츠 검토 기록 없음

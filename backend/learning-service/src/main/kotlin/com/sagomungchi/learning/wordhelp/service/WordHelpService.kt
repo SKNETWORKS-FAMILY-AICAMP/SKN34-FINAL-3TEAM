@@ -9,12 +9,15 @@ import com.sagomungchi.learning.mission.domain.MissionView
 import com.sagomungchi.learning.mission.domain.Rubric
 import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.wordhelp.client.WordHelpAiClient
+import com.sagomungchi.learning.wordhelp.client.WordHelpAiException
 import com.sagomungchi.learning.wordhelp.client.WordHelpAiRequest
-import com.sagomungchi.learning.wordhelp.client.WordHelpAiResponse
 import com.sagomungchi.learning.wordhelp.client.WordHelpLeak
+import com.sagomungchi.learning.wordhelp.domain.WordHelpResult
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.util.UUID
+
+class WordHelpException(val status: Int, val code: String, val retryable: Boolean) : RuntimeException(code)
 
 /**
  * 낱말 물어보기 (FN-LRN-21, api-spec 2.2.1·4.1, #599). 학생 본인 시도만.
@@ -27,7 +30,7 @@ class WordHelpService(
     private val missionService: MissionService,
     private val aiClient: WordHelpAiClient,
 ) {
-    fun help(attemptId: UUID, question: String): WordHelpAiResponse {
+    fun help(attemptId: UUID, question: String): WordHelpResult {
         val attempt = attemptService.find(attemptId)
             ?: throw BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "학습 시도 없음")
         UserContextHolder.current().requireStudent(attempt.studentId)
@@ -37,7 +40,11 @@ class WordHelpService(
             WordHelpLeak(visibleAnswers(rubric, mission), rubric.forbiddenTerms.filter { it.isNotBlank() }, rubric.exampleAnswer?.takeIf { it.isNotBlank() })
         }
         val missionText = listOfNotNull(mission.question, mission.guide?.takeIf { it.isNotBlank() }).joinToString("\n").take(MISSION_TEXT_MAX)
-        return aiClient.help(WordHelpAiRequest(question, missionText, attempt.grade.coerceIn(3, 6), mission.subject, leak))
+        return try {
+            aiClient.help(WordHelpAiRequest(question, missionText, attempt.grade.coerceIn(3, 6), mission.subject, leak))
+        } catch (error: WordHelpAiException) {
+            throw WordHelpException(error.status, error.code, error.retryable)
+        }
     }
 
     /**
