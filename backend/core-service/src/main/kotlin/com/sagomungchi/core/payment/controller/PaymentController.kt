@@ -42,9 +42,7 @@ class PaymentController(private val payments: PaymentService,private val refunds
     fun confirm(@Valid @RequestBody body: ConfirmPaymentRequest,@RequestHeader("Idempotency-Key") key: UUID,request: HttpServletRequest)=
         cached(request,key,"POST /payments/confirm",body) { PaymentViewResponse.from(payments.confirm(parent(request),body.orderId,body.paymentKey,body.amount)) }
     @GetMapping("/api/v1/payments/{orderId}")
-    fun status(@PathVariable orderId: String,request: HttpServletRequest): PaymentViewResponse {
-        val user=parent(request);refunds.refreshOwned(user,orderId);return PaymentViewResponse.from(payments.status(user,orderId))
-    }
+    fun status(@PathVariable orderId: String,request: HttpServletRequest)=PaymentViewResponse.from(refunds.ownedStatus(parent(request),orderId))
     @GetMapping("/api/v1/payments")
     fun list(request: HttpServletRequest,@RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="20") size: Int)=
         mapOf("items" to payments.list(parent(request),null,null,null,page,size).map(PaymentViewResponse::from))
