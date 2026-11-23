@@ -1,5 +1,6 @@
 package com.sagomungchi.learning._common.persistence
 
+import com.sagomungchi.learning.judgment.client.stubNotPremium
 import org.flywaydb.core.Flyway
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -21,6 +22,10 @@ abstract class PostgresRepositoryTest {
     // Core access is a separate HTTP contract test; repository fixtures use the free permit.
     @org.springframework.test.context.bean.override.mockito.MockitoBean
     lateinit var paymentUsage: com.sagomungchi.learning.judgment.client.PaymentUsageClient
+
+    @org.junit.jupiter.api.BeforeEach
+    fun stubFreePaymentUsage() = paymentUsage.stubNotPremium()
+
     companion object {
         const val STANDARDS_SEED = "db/seed/achievement_standards.sql"
 
