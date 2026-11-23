@@ -232,6 +232,47 @@ class ThemeFrameTest : PostgresRepositoryTest() {
         assertFalse(frameRepository.awardIfComplete(round, Instant.now()))
     }
 
+    @Test
+    fun `재게시로 요일이 바뀌고 미션이 빠져도 시도에 고정된 버전의 요일 5개를 채우면 액자, 지급 버전은 지급 때 게시본 (#930)`() {
+        val v1 = publishedVersion()
+        (0..4).forEach { attempt(missions[it], "THEME_DAY", completedAt = at(WEEK.plusDays(it.toLong())), version = v1) }
+        // 재게시: 월·화 문제를 맞바꾸고 금요일 문제를 새 문제로 교체(이전 금요일 문제는 빠짐)
+        val v2 = republish(listOf(missions[1].id, missions[0].id, missions[2].id, missions[3].id, rows.mission(title = "새 금요일").id))
+
+        assertTrue(frameRepository.awardIfComplete(round(), Instant.now()))
+        assertEquals(v2, frames(student).single()["theme_version_id"])
+        assertEquals(at(WEEK.plusDays(4)).toInstant(), awardedAt(student))
+    }
+
+    @Test
+    fun `회차 안 시도들이 서로 다른 버전에 고정되면 각 시도의 고정 버전 요일로 서로 다른 요일 5개를 센다 (#930)`() {
+        val v1 = publishedVersion()
+        (0..2).forEach { attempt(missions[it], "THEME_DAY", completedAt = at(WEEK.plusDays(it.toLong())), version = v1) }
+        // 재게시: 수·목 문제를 맞바꾸고 금요일 문제를 새 문제로 교체
+        val friday = rows.mission(title = "새 금요일")
+        val v2 = republish(listOf(missions[0].id, missions[1].id, missions[3].id, missions[2].id, friday.id))
+        attempt(missions[3], "THEME_DAY", completedAt = at(WEEK.plusDays(3)), version = v2) // v2 수요일(v1 수요일과 겹침)
+        attempt(friday, "THEME_DAY", completedAt = at(WEEK.plusDays(4)), version = v2)
+
+        // 월·화·수(v1)·수·금(v2) = 서로 다른 요일 4개. 최신 게시본 기준이면 다섯 문제가 모두 맞아 지급됐을 회차
+        assertFalse(frameRepository.awardIfComplete(round(), Instant.now()))
+
+        attempt(missions[2], "THEME_REVIEW", completedAt = at(WEEK.plusDays(5)), version = v2) // v2 목요일
+        assertTrue(frameRepository.awardIfComplete(round(), Instant.now()))
+        assertEquals(at(WEEK.plusDays(5)).toInstant(), awardedAt(student))
+    }
+
+    @Test
+    fun `고정 버전이 없는 옛 시도는 종전대로 게시본 요일로 판정하고 게시본에서 빠진 문제는 세지 않음 (#930)`() {
+        val friday = rows.mission(title = "새 금요일")
+        republish(listOf(missions[0].id, missions[1].id, missions[2].id, missions[3].id, friday.id))
+        (0..4).forEach { attempt(missions[it], "THEME_DAY", completedAt = at(WEEK.plusDays(it.toLong()))) }
+        assertFalse(frameRepository.awardIfComplete(round(), Instant.now()))
+
+        attempt(friday, "THEME_REVIEW", completedAt = at(WEEK.plusDays(5)))
+        assertTrue(frameRepository.awardIfComplete(round(), Instant.now()))
+    }
+
     private fun servicesOn(date: LocalDate, hour: Int = 12): Pair<ThemeFrameService, AlbumService> {
         val clock = Clock.fixed(date.atTime(hour, 0).atZone(KST).toInstant(), KST)
         val frames = ThemeFrameService(frameRepository, clock)
@@ -248,6 +289,23 @@ class ThemeFrameTest : PostgresRepositoryTest() {
 
     /** JdbcTemplate으로 넣은 행을 같은 트랜잭션의 MyBatis 조회가 보게 함(MyBatis 쓰기는 세션 캐시를 비움) */
     private fun clearMyBatisCache() = themeRepository.recordReviewView(student, WEEK, themeId, Instant.now())
+
+    private fun round() = com.sagomungchi.learning.memory.repository.RoundFilter(student, themeId, WEEK)
+
+    /** 재게시: 새 버전(월요일부터 차례로 missions)을 만들어 현재본·게시본으로 바꿈. 이전 버전 행은 남아 고정 시도가 그대로 가리킴 */
+    private fun republish(days: List<UUID>): UUID = UUID.randomUUID().also { version ->
+        val next = jdbc.queryForObject("SELECT max(version) + 1 FROM weekly_theme_version WHERE theme_id = ?", Int::class.java, themeId)
+        jdbc.update(
+            """WITH version AS (
+                   INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at) VALUES (?, ?, ?, '물의 여행', '소개', ?, now())
+               ), days AS (
+                   INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id)
+                   SELECT ?, d.ord, d.mission FROM unnest(?::uuid[]) WITH ORDINALITY AS d(mission, ord)
+               )
+               UPDATE weekly_theme SET current_version_id = ?, published_version_id = ? WHERE id = ?""",
+            version, themeId, next, rows.author, version, days.joinToString(",", "{", "}"), version, version, themeId,
+        )
+    }
 
     private fun publishedVersion(): UUID =
         jdbc.queryForObject("SELECT published_version_id FROM weekly_theme WHERE id = ?", UUID::class.java, themeId)!!
@@ -273,13 +331,14 @@ class ThemeFrameTest : PostgresRepositoryTest() {
         theme: UUID? = themeId,
         week: LocalDate? = WEEK,
         studentId: UUID = student,
+        version: UUID? = null,
     ): UUID = UUID.randomUUID().also {
         jdbc.update(
             """INSERT INTO attempt (id, student_id, mission_id, mission_version_id, rubric_version_id, grade, status,
-                   started_at, finished_at, completed_at, updated_at, context, theme_id, theme_week_start)
-               VALUES (?, ?, ?, ?, ?, 3, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   started_at, finished_at, completed_at, updated_at, context, theme_id, theme_week_start, theme_version_id)
+               VALUES (?, ?, ?, ?, ?, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             it, studentId, mission.id, mission.versionId, mission.rubricVersionId, if (completedAt != null) "COMPLETED" else "IN_PROGRESS",
-            startedAt, finishedAt, completedAt, startedAt, context, theme, week,
+            startedAt, finishedAt, completedAt, startedAt, context, theme, week, version,
         )
     }
 
