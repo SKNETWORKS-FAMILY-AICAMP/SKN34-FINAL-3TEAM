@@ -27,7 +27,11 @@ test('운영 대기 카드가 권한별 건수와 같은 조건의 목록을 연
   expect(new URL(page.url()).searchParams.get('from')).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 })
 
-test('콘텐츠 관리자가 홈에서 비교 대기와 추가 생성 요청으로 이동한다', async ({ page }) => {
+test('콘텐츠 관리자 홈의 검수·비교 대기 건수가 이동한 목록과 일치하고 추가 생성을 연다', async ({ page }) => {
+  const counts = ['review', 'pair'].map(stage => page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname.endsWith('/admin/theme-drafts/review-list') && url.searchParams.get('stage') === stage && response.ok()
+  }).then(response => response.json() as Promise<{ totalElements: number }>))
   await signIn(page, 'content@example.test')
   const queue = page.getByRole('region', { name: '테마 검수·게시', exact: true })
   await expect(page.getByRole('region', { name: '운영 대기 현황' })).toHaveCount(0)
@@ -37,13 +41,19 @@ test('콘텐츠 관리자가 홈에서 비교 대기와 추가 생성 요청으�
   await review.click()
   await expect(page).toHaveURL(/\/admin\/theme-drafts\?draftId=.+/)
   await page.goBack()
-  const compare = queue.getByRole('link', { name: /재생성 장면 비교 대기/ })
-  await expect(compare).toContainText(/\d+건/)
-  await compare.click()
-  await expect(page).toHaveURL(/comparisonPending=true/)
-  await page.goBack()
+  for (const [index, stage] of ['review', 'pair'].entries()) {
+    const { totalElements } = await counts[index]
+    const link = queue.locator(`a[href*="stage=${stage}"]`)
+    await expect(link).toContainText(totalElements + '건')
+    await link.click()
+    const shelf = page.getByRole('region', { name: '주간 테마 목록' })
+    await expect(shelf.getByLabel('검수 상태 선택')).toHaveValue(stage)
+    await expect(shelf.locator('.total')).toHaveText(String(totalElements))
+    await expect(shelf.getByRole('row')).toHaveCount(1 + Math.min(20, totalElements))
+    await page.goBack()
+  }
   await queue.getByRole('link', { name: '테마 추가 생성 요청' }).click()
-  await expect(page.getByLabel('테마 주제 키워드')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '테마 추가 생성 요청' }).getByLabel('테마 주제 키워드')).toBeVisible()
 })
 
 test('결제 조회 관리자는 환불 대기 목록만 열 수 있다', async ({ page }) => {

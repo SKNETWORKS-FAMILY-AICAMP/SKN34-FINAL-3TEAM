@@ -78,7 +78,8 @@ export function Modal({
     }
     const oldOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    panel.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true })
+    const initialFocus = panel.current?.querySelector<HTMLElement>('[data-dialog-initial-focus]') ?? panel.current?.querySelector<HTMLButtonElement>('button')
+    initialFocus?.focus({ preventScroll: true })
     panel.current?.scrollIntoView({ block: 'nearest' })
     const keydown = (e: KeyboardEvent) => {
       // Nested evidence dialogs own Escape and focus until they close.

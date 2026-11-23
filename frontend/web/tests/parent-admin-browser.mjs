@@ -410,8 +410,8 @@ try {
   for (const [account, show, hide] of [
     ['content', '미션 관리', '작업 재처리'],
     ['ops', '작업 재처리', '미션 관리'],
-    ['payment', '운영 현황', '오류 신고'],
-    ['refund', '운영 현황', '미션 관리'],
+    ['payment', '운영 홈', '오류 신고'],
+    ['refund', '운영 홈', '미션 관리'],
   ])
     await check('관리자 권한 ' + account, async (p) => {
       await login(p, account + '@example.test')
