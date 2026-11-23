@@ -16,6 +16,13 @@ import { parentChild } from './parent.ts'
  * 상태 확인: sessionStorage 'sagomungchi:msw-memory-book' = 'FAIL'이면 새 그림책이 만들기 실패(FAILED)로 끝난다.
  */
 export const MOCK_MEMORY_BOOK_SCENARIO_KEY = 'sagomungchi:msw-memory-book'
+/** 시연 스위치: 주소에 ?memoryBookDemo=1을 붙여 열면(browser.ts) 이 탭에서 그림책 목업만 자녀를 유료·원문 공개로 본다 */
+export const MOCK_MEMORY_BOOK_DEMO_KEY = 'sagomungchi:msw-memory-book-demo'
+const demo = () => {
+  try { return typeof sessionStorage !== 'undefined' && sessionStorage.getItem(MOCK_MEMORY_BOOK_DEMO_KEY) === '1' } catch { return false }
+}
+const shared = (id: string) => { if (!demo()) requireShared(id) }
+const premium = (id: string) => demo() || mockPremium(id)
 const READY_AFTER_MS = 4000
 const DAILY_LIMIT = 3
 const SAMPLE_PDF = '/demo/memory-book-sample.pdf'
@@ -80,7 +87,7 @@ export const memoryBookHandlers = [
   http.get('/api/v1/children/:childId/memory-books/rounds', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      requireShared(c.id)
+      shared(c.id)
       const now = Date.now()
       const items = (await framesOfChild(c.id)).map((f) => {
         const latest = books.filter((b) => b.studentId === c.id && b.themeId === f.themeId && b.weekStart === f.weekStart)
@@ -95,7 +102,7 @@ export const memoryBookHandlers = [
     return respond(async () => {
       const c = await parentChild(request, String(params.childId))
       const r = await round(request)
-      requireShared(c.id)
+      shared(c.id)
       const now = Date.now()
       const existing = books.find((b) => b.studentId === c.id && b.themeId === r.themeId && b.weekStart === r.weekStart && view(b, now).status !== 'FAILED')
       if (existing) { created = false; return view(existing, now) }
@@ -103,7 +110,7 @@ export const memoryBookHandlers = [
       if (!owned) return fail(404, 'THEME_FRAME_NOT_FOUND', '아직 받지 않은 기념 액자예요.')
       if (books.filter((b) => b.studentId === c.id && kstDay(b.createdAt) === kstDay(now)).length >= DAILY_LIMIT)
         return fail(429, 'USAGE_LIMIT_REACHED', '오늘은 추억 그림책을 더 만들 수 없어요.')
-      if (!mockPremium(c.id)) return fail(403, 'PREMIUM_REQUIRED', '추억 그림책은 프리미엄 이용권에서 만들 수 있어요.')
+      if (!premium(c.id)) return fail(403, 'PREMIUM_REQUIRED', '추억 그림책은 프리미엄 이용권에서 만들 수 있어요.')
       const book = { bookId: crypto.randomUUID(), studentId: c.id, ...r, createdAt: now, fail: failing() }
       books.push(book)
       return view(book, now)
@@ -112,14 +119,14 @@ export const memoryBookHandlers = [
   http.get('/api/v1/children/:childId/memory-books', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      requireShared(c.id)
+      shared(c.id)
       return pageOf(c.id)
     }),
   ),
   http.get('/api/v1/children/:childId/memory-books/:bookId/download', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      requireShared(c.id)
+      shared(c.id)
       return downloadOf(c.id, String(params.bookId))
     }),
   ),
