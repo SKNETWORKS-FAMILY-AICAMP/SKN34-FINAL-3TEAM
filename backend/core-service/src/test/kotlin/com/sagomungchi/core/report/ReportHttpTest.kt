@@ -304,7 +304,7 @@ class ReportHttpTest : IntegrationTestSupport() {
 
     @Test fun `new required guardian document blocks existing session through merged child access service`() {
         jdbc.update("""INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at)
-            VALUES(?,'GUARDIAN',?,'개정 안내','검증용 개정 본문',true,CURRENT_DATE,CURRENT_TIMESTAMP)""",
+            VALUES(?,'GUARDIAN',?,'개정 안내','검증용 개정 본문',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,CURRENT_TIMESTAMP)""",
             UUID.randomUUID(), UUID.randomUUID().toString())
         assertDenied(token)
         assertTrue(requests.isEmpty()); assertEquals(0, views())

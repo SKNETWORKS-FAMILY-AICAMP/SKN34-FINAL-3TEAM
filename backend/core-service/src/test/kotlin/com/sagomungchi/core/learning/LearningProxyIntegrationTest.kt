@@ -82,7 +82,7 @@ class LearningProxyIntegrationTest : PostgresRepositoryTest() {
         listOf("TERMS", "PRIVACY", "GUARDIAN").forEach { kind ->
             val document = UUID.randomUUID(); documents.add(document)
             // Latest required policy, plus existing policies, are all granted to this unique fixture.
-            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'합성 동의','본문',true,CURRENT_DATE,now())", document, kind, subject)
+            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'합성 동의','본문',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,now())", document, kind, subject)
         }
         jdbc.queryForList("SELECT id,kind FROM consent_document WHERE required=true").forEach { doc ->
             jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at) VALUES(?,?,?,?,true,'AGREED',now())",
