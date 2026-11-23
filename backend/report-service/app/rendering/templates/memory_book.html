@@ -6,7 +6,8 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 /* 표지만 한 쪽, 그 뒤는 쭉 이어지는 그림책. 한 장면(칸)은 두 쪽에 걸쳐 잘리지 않게 한다 */
 .cover { break-after: page; display:grid; grid-template-columns:62% 1fr; gap:10mm; align-items:center; height:180mm; }
 .cover-text { text-align:center; }
-.cover h1 { font-size:30px; color:#6b4a1f; margin:6mm 0 2mm; }
+.cover .intro { text-align:left; margin-top:8mm; padding:4mm 4.5mm; background:#fffaec; border:2px solid #e0c48a; border-radius:4mm; }
+.cover h1 { font-size:30px; color:#6b4a1f; margin:0 0 2mm; }
 .cover .who { font-size:17px; color:#8a6a3a; margin:0; }
 .cover .when { color:#8a7c66; }
 .cover-art { display:block; width:100%; height:170mm; object-fit:cover; border:3px solid #2f2a22; border-radius:5mm; }
@@ -26,23 +27,24 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 .panel { position:relative; height:170mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
 .panel-art { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .panel-art--missing { position:absolute; inset:0; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
-.chat { margin:7.5mm 0 0; padding:3mm 3mm 1mm; background:#f7f4ee; border-radius:4mm; }
-.msg { display:flex; gap:2mm; margin:0 0 2.5mm; break-inside: avoid; align-items:flex-start; }
+.chat { margin:7.5mm 0 0; box-sizing:border-box; min-height:170mm; padding:5mm 4mm; background:#f7f4ee; border-radius:4mm;
+  display:flex; flex-direction:column; justify-content:space-evenly; }
+.msg { display:flex; gap:2.5mm; margin:0; break-inside: avoid; align-items:flex-start; }
 .msg.right { flex-direction:row-reverse; }
-.avatar { flex:none; width:8mm; height:8mm; border-radius:50%; border:1.5px solid #2f2a22; background:#fff; font-size:10px; font-weight:bold;
+.avatar { flex:none; width:9.5mm; height:9.5mm; border-radius:50%; border:1.5px solid #2f2a22; background:#fff; font-size:11.5px; font-weight:bold;
   display:flex; align-items:center; justify-content:center; color:#6b4a1f; }
 .msg.right .avatar { background:#ffe6a8; }
 .msg.mungchi .avatar { background:#e9f6ff; }
 .body { max-width:88%; }
 .msg.right .body { text-align:right; }
-.name { font-size:9.5px; font-weight:bold; color:#8a6a3a; margin:0 1mm 0.5mm; }
+.name { font-size:10.5px; font-weight:bold; color:#8a6a3a; margin:0 1mm 0.5mm; }
 .text { display:inline-block; text-align:left; background:#fff; border:1.5px solid #d9cdb4; border-radius:3mm 3mm 3mm 0.8mm;
-  padding:1.8mm 3mm; font-size:12px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
+  padding:2.5mm 3.5mm; font-size:13.5px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
 .msg.right .text { background:#fff3c9; border-color:#e8c766; border-radius:3mm 3mm 0.8mm 3mm; }
 .msg.question .text { background:#fffaec; border-color:#c98a2e; }
 .msg.question .text b { color:#c98a2e; margin-right:3px; }
 .msg.mungchi .text { background:#e9f6ff; border-color:#9fc9e6; }
-.note { text-align:center; font-size:11px; color:#5d6b52; margin:1mm 0 2mm; white-space:pre-wrap; overflow-wrap:anywhere; }
+.note { text-align:center; font-size:12px; color:#5d6b52; margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
 .note b { color:#5d6b52; }
 .locked { color:#8a8a8a; font-style:italic; }
 .closing { break-inside: avoid; text-align:center; margin-top:10mm; padding:8mm 6mm; border-top:2px dashed #c98a2e; }
@@ -57,13 +59,12 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 <h1>{{ book.title }}</h1>
 <p class="who">{{ name }}의 추억 그림책</p>
 <p class="when">{{ book.weekLabel }}</p>
-</div>
-</section>
-
-<section class="scene-block intro">
+<div class="intro">
 <p class="scene-head"><span class="label">이야기의 시작</span></p>
 <p class="story">{{ book.intro }}</p>
 {% if book.bigQuestion %}<p class="big">이번 주 큰 질문: {{ book.bigQuestion }}</p>{% endif %}
+</div>
+</div>
 </section>
 
 {% for day in book.days %}<section class="scene-block day scene-row" data-day="{{ day.day }}">

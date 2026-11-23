@@ -30,11 +30,11 @@ def rendered():
 
 def test_pdf_flows_cover_then_story_days_ending_and_evening_question(rendered):
     pages = [compact(p.extract_text()) for p in PdfReader(io.BytesIO(rendered["PDF"])).pages]
-    # 표지만 한 쪽, 나머지는 이어지는 흐름(장면 칸은 쪽에 걸쳐 잘리지 않음)
+    # 표지 쪽에 이야기의 시작까지, 그 뒤는 한 장면씩(장면 칸은 쪽에 걸쳐 잘리지 않음)
     assert 4 <= len(pages) <= 9
     assert "합성학생의추억그림책" in pages[0] and "사라진등대불빛" in pages[0]
-    assert "이야기의시작" not in pages[0]
-    text = "".join(pages[1:])
+    assert "이야기의시작" in pages[0] and "월요일" not in pages[0]
+    text = "".join(pages)
     order = [
         "이야기의시작",
         "월요일",
