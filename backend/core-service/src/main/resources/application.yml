@@ -131,4 +131,4 @@ app:
   # 키 형식은 llm-pricing과 같이 정확한 이름 또는 "이름@버전"의 이름. llm-pricing에 단가가 있으면 그쪽이 우선
   llm-billed-externally:
     - veo-3.1-fast-generate-001 # 테마 영상, GCP Vertex AI 초 단위 청구(#600)
-    - gemma-4-26b-a4b-it-qat-awq-int4 # 리포트 서술·설명, RunPod 시간 단위 청구. EKS 안 sLLM 전환(#742) 뒤 llm-pricing 0 단가로 옮김
+    - gemma-4-26b-a4b-it-qat-awq-int4 # 리포트 서술·설명, SageMaker 엔드포인트 인스턴스 시간 청구(#747)

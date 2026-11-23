@@ -212,7 +212,7 @@ erDiagram
 ```
 
 - #37: 동의 권한은 문서·주체·student_id별 agreed_at·id 내림차순 최신 행 기준이다. 같은 보호자의 동의 저장·철회·자녀 등록은 user_account 행 잠금으로 직렬화한다. 기존 스키마를 사용하며 V1~V8을 수정하지 않는다.
-- `consent_document` UK `(kind, version)`. V25가 1.0 문서 3종을 게시(#235), 개정은 행 수정 없이 새 version 행 추가. V39가 TERMS·PRIVACY 1.1(시행 2026-11-09, 가입 방법에 아이디·비밀번호 가입, 처리 항목에 아이디·비밀번호 해시값·이름)을 추가했고, 필수 동의 판정이 현재 버전을 보므로 기존 회원도 다음 로그인 때 다시 동의한다 (#415). 동의는 철회해도 행 유지 → `status`·`withdrawn_at` 갱신 (FN-ACC-02)
+- `consent_document` UK `(kind, version)`. V25가 1.0 문서 3종을 게시(#235), 개정은 행 수정 없이 새 version 행 추가. V39가 TERMS·PRIVACY 1.1(시행 2026-11-09, 가입 방법에 아이디·비밀번호 가입, 처리 항목에 아이디·비밀번호 해시값·이름)을 추가했고, 필수 동의 판정이 현재 버전을 보므로 기존 회원도 다음 로그인 때 다시 동의한다 (#415). V54가 PRIVACY 1.2·GUARDIAN 1.1(시행 2026-11-23, 필수, 학생 글의 표현 분류 모델 개선 학습 목적·커뮤니티 목적 추가)을 추가했고, 기존 회원은 PRIVACY, 자녀마다 GUARDIAN에 다시 동의한다 (#732). 동의는 철회해도 행 유지 → `status`·`withdrawn_at` 갱신 (FN-ACC-02)
 - `guardianship` 부분 UK `(parent_user_id, student_id) WHERE status = 'LINKED'`. 권한 확인은 이 테이블의 `LINKED` 행 기준 (아키텍처 1.1)
 - #289 V26: 추가 부분 UK `(student_id) WHERE status='LINKED'`로 현재 보호자 한 명을 보장한다. `guardian_transfer`는 `(student_id) WHERE status='PENDING'` 고유 인덱스, `(sender_id,created_at)`·`(recipient_id,created_at)` 조회 인덱스를 가진다. 발신자·수신자는 서로 달라야 하며 모두 실제 계정 FK다. `guardianship.transferred_at`은 이관으로 종료된 연결을 일반 해제와 구분한다. 기존 중복 LINKED 데이터는 자동 정리하지 않고 migration을 실패시킨다.
 - 연결 해제는 행 삭제 대신 `UNLINKED` 전환 → 해제 이후 조회 차단, 이력 보존 (FN-DSH-06)
@@ -842,7 +842,7 @@ erDiagram
 - 기준표 원본은 learning `rubric_version`, core는 `kind = RUBRIC` 행의 `ref_id`로 연결해 승인·활성 상태만 관리
 - `llm_usage`에 학생 ID·답변 원문 컬럼 없음 (NFR-PRF-02). 수집 데이터 보고서의 예정 필드 `llm_usage_log(call_type, model, input_tokens, output_tokens, ts)` 대응
 - `cost_usd`는 core 설정의 모델별 토큰 단가(기획서 3.9)로 소비 시 계산, 단가 변경 후에도 과거 값 유지 (FN-ADM-19)
-- #764(V53): `billed_externally`는 단가 대신 서비스 밖 청구서로 비용을 보는 모델(Veo GCP·RunPod Gemma, `app.llm-billed-externally`) 호출을 소비 시점에 표시한다. 이 행은 `cost_usd`가 null이어도 미산정으로 세지 않는다. 기존 행은 false 그대로라 과거 미산정 기록은 바뀌지 않는다. 클러스터 안 모델(M2 등)은 단가 0으로 등록해 토큰이 없어도 `cost_usd` 0으로 저장한다. 아래 항목의 "미산정 호출로 셈"은 각 이슈 당시 기준이다
+- #764(V53): `billed_externally`는 단가 대신 서비스 밖 청구서로 비용을 보는 모델(Veo GCP·리포트 Gemma SageMaker #747, `app.llm-billed-externally`) 호출을 소비 시점에 표시한다. 이 행은 `cost_usd`가 null이어도 미산정으로 세지 않는다. 기존 행은 false 그대로라 과거 미산정 기록은 바뀌지 않는다. 클러스터 안 모델(M2 등)은 단가 0으로 등록해 토큰이 없어도 `cost_usd` 0으로 저장한다. 아래 항목의 "미산정 호출로 셈"은 각 이슈 당시 기준이다
 - #355: ai 미션 초안 호출(FN-ADM-20)의 `call_type` `MISSION_DRAFT`를 V28에서 CHECK에 더함. 호출 종류 목록은 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·core OpenAPI `CallType`과 ai·scoring 발행 목록이 같음(Mermaid 주석 값은 CHECK와 자동 대조, 1장)
 - #439: ai 주간 테마 생성(에픽 #436, ai #437)의 텍스트 호출 `THEME_DRAFT`·이미지 호출 `THEME_IMAGE`를 V40에서 CHECK에 더함(V28과 같은 방식, 허용 목록만 넓힘). 이미지 호출은 토큰이 없어 `cost_usd`가 null(미산정 호출로 셈)
 - #480(에픽 #473): 리포트 설명(FN-RPT-09)의 ai 호출 종류 `REPORT_EXPLANATION`(설명 항목 1개당 클러스터 안 sLLM 1회, ai #477)을 V42에서 CHECK·이 Mermaid 주석·`llm.usage.recorded` 스키마·core `CallType`·OpenAPI `CallType`·ai/scoring 발행 목록에 함께 더함(V28·V40과 같은 방식, 허용 목록만 넓힘). 토큰은 기록하지만 sLLM 단가를 설정하지 않아 `cost_usd`는 null(미산정 호출로 셈, #439 이미지와 같음)
