@@ -19,8 +19,8 @@ class RecordExistsContractTest(unittest.TestCase):
                 actual.add((method.lower(),((prefix[1] if prefix else '')+path).removeprefix('/internal')))
         # 구현 전 계약 경로는 제외한다. #469 지식 API 2개는 구현되어 실제 컨트롤러와 대조한다.
         documented={(method,path) for path,methods in self.spec['paths'].items() for method,operation in methods.items() if not operation.get('x-implementation-status')}
-        self.assertEqual(len(actual),93)  # develop 73개 + #469 지식 조회 2개 + #484 정답 고르기 1개 + #559 앨범·보유 확인 4개 + #563 검색 1개 + #564 설명 1개 + #707 작성자 확인 1개 + #727 표현 검토 4개 + #882 장면 이력·선택·메모 및 편성 조회·변경 5개 + #599 낱말 물어보기 1개
         self.assertEqual(actual,documented)
+        self.assertEqual(len(actual),94)  # #964 주간 테마 검수 목록 GET /admin/theme-drafts/review-list 포함
     def test_producer_and_consumer_use_the_same_path(self):
         path='/records/students/{studentId}/exists'
         self.assertIn(path,self.spec['paths'])
