@@ -139,7 +139,7 @@ test('말꼬리는 그 화자 위치가 있을 때만(미션 움직임 speakers)
   expect(Math.abs(tail.x + tail.width / 2 - (frame.x + frame.width * 0.3))).toBeLessThan(3)
 })
 
-test('말꼬리 밑동은 대화 상자 안: 화자가 단추 위면 끝만 화자 쪽으로 기울고 단추와 겹치지 않음, 이름표보다 왼쪽 화자는 이름표 옆에서 왼쪽으로', async ({ page }) => {
+test('말꼬리 밑동은 대화 상자 안: 화자가 단추 위면 끝만 화자 쪽으로 기울고 단추와 겹치지 않음, 이름표 자리보다 왼쪽 화자는 말꼬리를 화자 쪽에 두고 이름표가 그 오른쪽으로 비킴', async ({ page }) => {
   await student(page)
   await week(page, { weekday: 4, days: '-----' })
   await publishMonday(page, { speakers: { 이장님: { x: 2, y: 50, zoom: 1.2 }, 뭉치: { x: 97, y: 60, zoom: 1.2 } }, camera: DEMO_CAMERA },
@@ -149,8 +149,10 @@ test('말꼬리 밑동은 대화 상자 안: 화자가 단추 위면 끝만 화�
   await expect(box).toHaveAttribute('data-ready', 'true')
   const first = await tailOf(page)
   const nameBox = (await scene(page).locator('.ts-name').boundingBox())!
+  // 화자(x 2)는 상자 왼쪽 끝보다 왼쪽: 말꼬리는 상자 왼쪽 모서리 안쪽에서 화자 쪽으로 기울고, 이름표는 말꼬리 오른쪽(사용자 결정 2026-11-23 (가))
   expect(first.lean).toBeLessThan(0)
-  expect(first.box.x).toBeGreaterThanOrEqual(nameBox.x + nameBox.width + 10)
+  expect(nameBox.x).toBeGreaterThanOrEqual(first.box.x + first.box.width + 4)
+  await expect(scene(page).locator('.ts-name-in')).toHaveCount(0)
   await box.click()
   const start = scene(page).getByRole('button', { name: /^문제 시작하기/ })
   await expect(start).toBeVisible()
@@ -159,6 +161,33 @@ test('말꼬리 밑동은 대화 상자 안: 화자가 단추 위면 끝만 화�
   const boxRect = (await box.boundingBox())!, startRect = (await start.boundingBox())!
   expect(last.box.x + last.box.width).toBeLessThanOrEqual(boxRect.x + boxRect.width - 10)
   expect(last.box.x + last.box.width).toBeLessThan(startRect.x)
+})
+
+test('휴대폰에서 긴 이름의 화자가 그림 가운데면 이름표가 상자 안 첫 줄로 들어가고 말꼬리 끝은 화자를 가리킴(#782 돕는 사람 직업 이름)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await student(page)
+  await week(page, { weekday: 4, days: '-----' })
+  // #782 실제 결과(바닷가 목요일)의 화자 위치·이름 길이와 같게
+  await publishMonday(page, { speakers: { '해변 안내소 관리인': { x: 44, y: 61, zoom: 1.2 }, 뭉치: { x: 16, y: 80, zoom: 1.2 } }, camera: null },
+    [{ speaker: '해변 안내소 관리인', text: '그렇구나. 안내판 준비가 생각처럼 잘 안 돼.' }, { speaker: '뭉치', text: '좋아, 같이 살펴보자!' }])
+  await go(page, '/student/theme/scene/MON')
+  const box = scene(page).locator('.ts-box')
+  await expect(box).toHaveAttribute('data-ready', 'true')
+  const inside = scene(page).locator('.ts-name-in')
+  await expect(inside).toHaveText('해변 안내소 관리인')
+  await expect(scene(page).locator('.ts-name')).toHaveCSS('visibility', 'hidden')
+  // 말꼬리 끝과 화자의 화면 위치 차이가 작다(그림 틀 기준 x 44%)
+  const tip = await page.evaluate(() => {
+    const line = document.querySelector('.ts-tail') as HTMLElement, poly = document.querySelector('.ts-tail-line')!
+    const r = line.getBoundingClientRect(), lean = Number(poly.getAttribute('points')!.split(' ')[1].split(',')[0])
+    const f = document.querySelector('.ts-frame')!.getBoundingClientRect()
+    return Math.abs(r.left + ((lean + 40) / 80) * r.width - (f.left + 0.44 * f.width))
+  })
+  expect(tip).toBeLessThan(12)
+  // 다음 대사(뭉치, 짧은 이름)는 이름표가 다시 상자 위
+  await box.click()
+  await expect(scene(page).locator('.ts-name')).toHaveText('뭉치')
+  await expect(inside).toHaveCount(0)
 })
 
 test('처음 3초는 ai 카메라 끝 위치에서 전체 그림으로 빠지고 대사 중에는 멈춤, 카메라 값이 없으면 가운데 당기기, 움직임 줄이기면 움직이지 않음', async ({ page }) => {

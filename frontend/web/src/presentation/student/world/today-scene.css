@@ -144,6 +144,19 @@
   font-size: 18px;
   line-height: 1.3;
 }
+/* 좁은 화면에 긴 이름(#782 돕는 사람 직업 이름): 이름표를 상자 안 첫 줄로(사용자 결정 2026-11-24) */
+#class-journal .st-world .ts-name-off { visibility: hidden; }
+#class-journal .st-world .ts-name-in { flex: 0 0 100%; text-align: left; }
+#class-journal .st-world .ts-name-in > span {
+  display: inline-block;
+  padding: 0 10px;
+  border: 2px solid #1f4e6b;
+  border-radius: 9px;
+  background: #ffd84d;
+  font-family: var(--st-display);
+  font-size: 15px;
+  line-height: 1.4;
+}
 #class-journal .st-world .ts-box {
   display: flex;
   flex-wrap: wrap;

@@ -14,8 +14,9 @@ import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import './today-scene.css'
 
 /** 그림 주소로 쓸 수 있는 값만(절대 주소·사이트 안 경로). 나머지는 그림 없음 */
-/** 말꼬리(px): 밑변(반 폭 HALF)이 이름표에서 GAP 떨어지고 상자 오른쪽 끝에서 CORNER(둥근 모서리 + 반 폭) 안, 끝은 화자 쪽으로 최대 LEAN 기울임 */
-const TAIL_HALF = 19, TAIL_GAP = 12, TAIL_CORNER = 46, TAIL_LEAN = 18
+/** 말꼬리(px): 밑변(반 폭 HALF)이 이름표에서 GAP 떨어지고 상자 양 끝에서 CORNER(둥근 모서리 + 반 폭) 안, 끝은 화자 쪽으로 최대 LEAN 기울임.
+ *  NAME_LEFT는 이름표 기본 자리(today-scene.css .ts-name left와 같은 값) */
+const TAIL_HALF = 19, TAIL_GAP = 12, TAIL_CORNER = 46, TAIL_LEAN = 18, NAME_LEFT = 20
 const imageUrl = (uri: string | undefined) => (uri && /^(https?:\/\/|\/[^/])/.test(uri) ? uri : null)
 
 /**
@@ -82,13 +83,17 @@ export function TodayScene({ child, day, onHome, onProblem }: {
     return () => animation.cancel()
   }, [showing, camera?.to.x, camera?.to.y, camera?.to.zoom]) // eslint-disable-line react-hooks/exhaustive-deps
   // 말꼬리 자리: 화자 x(그림 너비 %)를 그림 틀의 화면 위치로 바꿔 대화 상자 기준으로 잰다. 밑동은 상자 곧은 윗변 안에만,
-  // 화자가 그 밖이면(마지막 대사 뭉치가 '문제 시작하기' 단추 위 등) 끝만 화자 쪽으로 기울인다(사용자 결정 2026-11-23)
+  // 화자가 그 밖이면(마지막 대사 뭉치가 '문제 시작하기' 단추 위 등) 끝만 화자 쪽으로 기울인다(사용자 결정 2026-11-23).
+  // 화자가 이름표 자리 위·왼쪽이라 이름표 오른쪽에서는 닿지 않으면 말꼬리를 화자 쪽에 두고 이름표를 그 오른쪽으로 비킨다
+  // (사용자 결정 2026-11-23 (가): #782부터 돕는 사람 이름이 직업 이름(최대 12자)이라 휴대폰에서 말꼬리가 엉뚱한 곳을 가리킴).
+  // 비킬 자리도 없으면(좁은 화면에 긴 이름) 이름표를 상자 안 첫 줄로 넣고 말꼬리는 화자 쪽에 둔다(같은 결정, 2026-11-24)
   const speakerX = showing && lines.length > 0 ? sceneMotion?.speakers[lines[Math.min(step, lines.length - 1)].speaker]?.x : undefined
   const frame = useRef<HTMLDivElement>(null)
   const talk = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLButtonElement>(null)
   const name = useRef<HTMLSpanElement>(null)
-  const [tail, setTail] = useState<{ left: number; lean: number } | null>(null)
+  type Tail = { left: number; lean: number; nameLeft: number | null; nameInside: boolean }
+  const [tail, setTail] = useState<Tail | null>(null)
   useLayoutEffect(() => {
     const f = frame.current, t = talk.current, b = box.current, n = name.current
     if (speakerX === undefined || !f || !t || !b) { setTail(null); return }
@@ -96,11 +101,22 @@ export function TodayScene({ child, day, onHome, onProblem }: {
       const fr = f.getBoundingClientRect(), tr = t.getBoundingClientRect(), br = b.getBoundingClientRect()
       if (!fr.width || !br.width) return
       const aim = fr.left + (speakerX / 100) * fr.width - tr.left
-      const min = (n ? n.getBoundingClientRect().right : br.left) - tr.left + TAIL_GAP + TAIL_HALF
-      const max = br.right - tr.left - TAIL_CORNER
-      const left = max < min ? (min + max) / 2 : Math.max(min, Math.min(max, aim))
-      const lean = Math.max(-TAIL_LEAN, Math.min(TAIL_LEAN, aim - left))
-      setTail((p) => (p && Math.abs(p.left - left) < 0.5 && Math.abs(p.lean - lean) < 0.5 ? p : { left, lean }))
+      const boxLeft = br.left - tr.left, max = br.right - tr.left - TAIL_CORNER
+      // 이름표 크기는 옮긴 자리와 상관없이 폭만 쓴다(옮긴 뒤 위치로 재면 기본 자리 판단이 흔들림)
+      const nameWidth = n ? n.offsetWidth : 0
+      const min = (n ? NAME_LEFT + nameWidth : boxLeft) + TAIL_GAP + TAIL_HALF
+      const lean = (left: number) => Math.max(-TAIL_LEAN, Math.min(TAIL_LEAN, aim - left))
+      const keep = max < min ? (min + max) / 2 : Math.max(min, Math.min(max, aim))
+      let next: Tail = { left: keep, lean: lean(keep), nameLeft: null, nameInside: false }
+      if (n && aim < min - TAIL_LEAN) {
+        const left = Math.max(boxLeft + TAIL_CORNER, Math.min(max, aim))
+        const nameLeft = left + TAIL_HALF + TAIL_GAP
+        // 비킨 이름표가 상자 오른쪽 모서리를 넘으면(좁은 화면에 긴 이름) 이름표를 상자 안 첫 줄로
+        next = nameLeft + nameWidth <= br.right - tr.left - TAIL_CORNER + TAIL_HALF
+          ? { left, lean: lean(left), nameLeft, nameInside: false }
+          : { left, lean: lean(left), nameLeft: null, nameInside: true }
+      }
+      setTail((p) => (p && Math.abs(p.left - next.left) < 0.5 && Math.abs(p.lean - next.lean) < 0.5 && p.nameLeft === next.nameLeft && p.nameInside === next.nameInside ? p : next))
     }
     place()
     if (typeof ResizeObserver === 'undefined') return
@@ -191,9 +207,12 @@ export function TodayScene({ child, day, onHome, onProblem }: {
               <polyline className="ts-tail-line" points={`-18.5,29.5 ${tail.lean},1.5 18.5,29.5`} />
             </svg>
           )}
-          <span ref={name} className="ts-name">{current.speaker}</span>
+          {/* 이름표 폭은 늘 이 겉 이름표로 잰다. 상자 안에 넣을 때는 겉 이름표를 숨기기만(자리 계산이 흔들리지 않게) */}
+          <span ref={name} className={tail?.nameInside ? 'ts-name ts-name-off' : 'ts-name'} aria-hidden={tail?.nameInside || undefined}
+            style={tail?.nameLeft != null ? { left: `${tail.nameLeft}px` } : undefined}>{current.speaker}</span>
           <div className="ts-row">
             <button ref={box} type="button" className="ts-box" onClick={next} data-ready={ready}>
+              {tail?.nameInside && <span className="ts-name-in"><span>{current.speaker}</span></span>}
               <span className="ts-line" aria-live="polite">{current.text}</span>
               <span className="ts-pos">{Math.min(step, last) + 1} / {lines.length}{step < last ? ' · 다음 ▼' : ''}</span>
             </button>
