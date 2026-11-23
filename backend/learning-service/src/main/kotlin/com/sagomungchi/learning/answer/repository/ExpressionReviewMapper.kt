@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.answer.repository
 
+import com.sagomungchi.learning.answer.domain.ExpressionReviewLabelCount
 import com.sagomungchi.learning.answer.domain.ExpressionReviewRow
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
@@ -35,9 +36,7 @@ interface ExpressionReviewMapper {
 
     fun findById(id: UUID): ExpressionReviewRow?
 
-    fun countLabeledSince(@Param("since") since: Instant?): Long
-
-    fun latestLabeledSince(@Param("since") since: Instant?): Instant?
+    fun countLabeledSince(@Param("since") since: Instant?): ExpressionReviewLabelCount
 
     fun findExport(@Param("since") since: Instant?, @Param("until") until: Instant): List<ExpressionReviewRow>
 

@@ -1,18 +1,23 @@
 package com.sagomungchi.core.learning
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core.IntegrationTestSupport
 import com.sagomungchi.core.account.service.TokenService
 import com.sagomungchi.core.admin.account
 import com.sagomungchi.core.admin.session
+import com.sagomungchi.core.admin.repository.MissionAuditRepository
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers
+import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -28,6 +33,7 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var json: ObjectMapper
     @Autowired lateinit var tokens: TokenService
+    @MockitoSpyBean lateinit var auditRows: MissionAuditRepository
 
     private val review = UUID.randomUUID()
     private val student = UUID.randomUUID()
@@ -51,7 +57,8 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
         val body = mvc.get("/api/v1/admin/expression-reviews?labeled=true&source=GRAY_ZONE&page=1&size=5") { header("Authorization", "Bearer $access") }
             .andExpect { status { isOk() }; jsonPath("$.items[0].id") { value(review.toString()) }; jsonPath("$.items[0].text") { value("합성 답변 글") }
                 jsonPath("$.totalElements") { value(1) } }
-            .andReturn().response.contentAsString
+            .andReturn().response.getContentAsString(Charsets.UTF_8)
+        assertEquals(json.readTree(page(item())), json.readTree(body)) // 계약 7칸 그대로, null도 칸으로
         assertFalse(body.contains(student.toString())); assertFalse(body.contains("studentName")); assertFalse(body.contains("answerId"))
         val seen = stub.requests.single()
         assertEquals("GET", seen.method)
@@ -73,7 +80,7 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
         assertEquals(0, json.readTree(audits("EXPRESSION_REVIEW_VIEW", admin).single()["detail"] as String)["reviewIds"].size())
     }
 
-    @Test fun `bad list query is 400 without calling learning and a malformed learning page is 503 without audit`() {
+    @Test fun `bad list query is 400 without calling learning, a malformed learning page is 502 and a learning error is 503, all without audit`() {
         val (admin, access) = token()
         listOf("?source=OTHER", "?size=0", "?size=101", "?page=-1", "?labeled=maybe").forEach {
             mvc.get("/api/v1/admin/expression-reviews$it") { header("Authorization", "Bearer $access") }.andExpect { status { isBadRequest() } }
@@ -81,10 +88,17 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
         assertTrue(stub.requests.isEmpty())
         listOf(page(item() + ("source" to "OTHER")), page(item() + ("id" to "not-uuid")), """{"items":{}}""", "[]").forEach { bad ->
             stub.respond = { LearningHttpStub.Reply(body = bad) }
-            mvc.get("/api/v1/admin/expression-reviews") { header("Authorization", "Bearer $access") }.andExpect { status { isServiceUnavailable() } }
+            mvc.get("/api/v1/admin/expression-reviews") { header("Authorization", "Bearer $access") }
+                .andExpect { status { isBadGateway() }; jsonPath("$.code") { value("LEARNING_INVALID_RESPONSE") } }
         }
-        stub.respond = { LearningHttpStub.Reply(status = 500, body = "{}", headers = mapOf("Content-Type" to "application/problem+json")) }
-        mvc.get("/api/v1/admin/expression-reviews") { header("Authorization", "Bearer $access") }.andExpect { status { isServiceUnavailable() } }
+        for (failed in listOf(404, 500)) {
+            stub.respond = { LearningHttpStub.Reply(status = failed, body = "{}", headers = mapOf("Content-Type" to "application/problem+json")) }
+            mvc.get("/api/v1/admin/expression-reviews") { header("Authorization", "Bearer $access") }
+                .andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("LEARNING_UNAVAILABLE") } }
+        }
+        stub.respond = { LearningHttpStub.Reply(status = 400, body = "{}") }
+        mvc.get("/api/v1/admin/expression-reviews") { header("Authorization", "Bearer $access") }
+            .andExpect { status { isBadRequest() }; jsonPath("$.code") { value("VALIDATION_FAILED") } }
         assertTrue(audits("EXPRESSION_REVIEW_VIEW", admin).isEmpty())
     }
 
@@ -97,7 +111,8 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
         val body = mvc.put("/api/v1/admin/expression-reviews/$review/label") {
             header("Authorization", "Bearer $access"); contentType = MediaType.APPLICATION_JSON; content = """{"label":"OFFENSIVE"}"""
         }.andExpect { status { isOk() }; jsonPath("$.label") { value("OFFENSIVE") }; jsonPath("$.id") { value(review.toString()) } }
-            .andReturn().response.contentAsString
+            .andReturn().response.getContentAsString(Charsets.UTF_8)
+        assertEquals(json.valueToTree<JsonNode>(item("OFFENSIVE")), json.readTree(body))
         assertFalse(body.contains(student.toString()))
         val seen = stub.requests.single()
         assertEquals("PUT", seen.method); assertEquals("/internal/admin/expression-reviews/$review/label", seen.target)
@@ -111,10 +126,11 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
 
     @Test fun `bad label body is 400 before any audit or call`() {
         val (admin, access) = token()
-        listOf("""{"label":"BAD"}""", """{}""", """{"label":null}""", """{"label":"CLEAN","extra":1}""", "[]", "not json").forEach {
+        listOf("""{"label":"BAD"}""", """{}""", """{"label":null}""", """{"label":"CLEAN","extra":1}""", "[]", "not json",
+            "", "null", "\"CLEAN\"", """{"label":0}""", """{"label":["CLEAN"]}""").forEach {
             mvc.put("/api/v1/admin/expression-reviews/$review/label") {
                 header("Authorization", "Bearer $access"); contentType = MediaType.APPLICATION_JSON; content = it
-            }.andExpect { status { isBadRequest() } }
+            }.andExpect { status { isBadRequest() }; jsonPath("$.code") { value("VALIDATION_FAILED") } }
         }
         mvc.put("/api/v1/admin/expression-reviews/not-a-uuid/label") {
             header("Authorization", "Bearer $access"); contentType = MediaType.APPLICATION_JSON; content = """{"label":"CLEAN"}"""
@@ -135,6 +151,47 @@ class AdminExpressionReviewHttpTest : IntegrationTestSupport() {
         stub.respond = { LearningHttpStub.Reply(500, "{}", mapOf("Content-Type" to "application/problem+json")) }
         send().andExpect { status { isServiceUnavailable() } }
         assertEquals(3, audits("EXPRESSION_REVIEW_LABEL", admin).size)
+    }
+
+    @Test fun `malformed label answer is 502 and an unknown result is 503, both with the audit id`() {
+        val (admin, access) = token()
+        fun send() = mvc.put("/api/v1/admin/expression-reviews/$review/label") {
+            header("Authorization", "Bearer $access"); contentType = MediaType.APPLICATION_JSON; content = """{"label":"CLEAN"}"""
+        }
+        val cases = listOf(
+            Triple(200, "[]", 502 to "LEARNING_INVALID_RESPONSE"),
+            Triple(200, json.writeValueAsString(item("CLEAN") + ("createdAt" to "어제")), 502 to "LEARNING_INVALID_RESPONSE"),
+            Triple(200, json.writeValueAsString(item("CLEAN") + ("id" to UUID.randomUUID().toString())), 503 to "LEARNING_UNAVAILABLE"),
+            Triple(200, json.writeValueAsString(item("SKIP")), 503 to "LEARNING_UNAVAILABLE"),
+            Triple(500, "{}", 503 to "LEARNING_UNAVAILABLE"),
+        )
+        val details = cases.map { (answered, body, expected) ->
+            stub.respond = { LearningHttpStub.Reply(answered, body) }
+            val response = send().andExpect { status { isEqualTo(expected.first) }; jsonPath("$.code") { value(expected.second) } }
+                .andReturn().response.getContentAsString(Charsets.UTF_8)
+            json.readTree(response)["detail"].asText()
+        }
+        val operations = jdbc.queryForList("SELECT id FROM audit_log WHERE action='EXPRESSION_REVIEW_LABEL' AND actor_user_id=?", UUID::class.java, admin)
+        assertEquals(cases.size, operations.size) // 보낼 때마다 한 줄
+        assertEquals(operations.map { it.toString() }.toSet(),
+            details.map { it.substringAfter("확인 번호: ").substringBefore('.') }.toSet())
+    }
+
+    @Test fun `failed audit hides the list and never forwards a label`() {
+        val (admin, access) = token()
+        stub.respond = { LearningHttpStub.Reply(body = page(item())) }
+        Mockito.doThrow(IllegalStateException("audit down")).`when`(auditRows).insert(
+            ArgumentMatchers.any(UUID::class.java) ?: admin, ArgumentMatchers.eq(admin) ?: admin,
+            ArgumentMatchers.anyString(), ArgumentMatchers.anyString(), ArgumentMatchers.nullable(UUID::class.java),
+            ArgumentMatchers.anyString(), ArgumentMatchers.anyMap<String, Any?>() ?: emptyMap())
+        val listed = mvc.get("/api/v1/admin/expression-reviews") { header("Authorization", "Bearer $access") }
+            .andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("EXPRESSION_REVIEW_AUDIT_UNAVAILABLE") } }
+            .andReturn().response.getContentAsString(Charsets.UTF_8)
+        assertFalse(listed.contains("합성 답변 글"))
+        mvc.put("/api/v1/admin/expression-reviews/$review/label") {
+            header("Authorization", "Bearer $access"); contentType = MediaType.APPLICATION_JSON; content = """{"label":"CLEAN"}"""
+        }.andExpect { status { isServiceUnavailable() }; jsonPath("$.code") { value("EXPRESSION_REVIEW_AUDIT_UNAVAILABLE") } }
+        assertEquals(listOf("GET"), stub.requests.map { it.method })
     }
 
     @Test fun `only SERVICE_OPS administrators reach it`() {

@@ -38,6 +38,27 @@ test('라벨 전 글을 읽고 라벨을 붙이면 라벨 완료로 옮겨 간�
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 
+test('감사 이력은 대상 유형 "표현 검토"로 열람·라벨만 걸러 본다 (#907) @responsive', async ({ page }) => {
+  await open(page)
+  await page.getByRole('region', { name: '표현 검토' }).getByRole('button', { name: '막을 글', exact: true }).first().click()
+  await expect(page.getByRole('status').filter({ hasText: '저장했습니다.' })).toBeVisible()
+  await page.evaluate(async () => { // 걸러져야 하는 다른 유형
+    const path = '/src/mocks/fixtures/admin/operations.ts'
+    const { audits } = await import(path)
+    audits.push({ id: 'test-audit-other', actorUserId: 'test-ops', action: 'MISSION_PUBLISH', targetType: 'MISSION',
+      targetId: 'mission-1', result: 'SUCCESS', createdAt: new Date().toISOString() })
+    history.pushState({}, '', '/admin/audit') // 새로 열면 목업 기록이 지워져 화면 안에서 이동
+    dispatchEvent(new PopStateEvent('popstate'))
+  })
+  const rows = page.locator('.ad-audit-ledger tbody tr')
+  await expect(rows.filter({ hasText: '미션 게시' }).first()).toBeVisible()
+  await page.getByRole('combobox', { name: '감사 대상 유형', exact: true }).selectOption({ label: '표현 검토' })
+  await expect(rows.filter({ hasText: '미션 게시' })).toHaveCount(0)
+  await expect(rows.filter({ hasText: '표현 검토 목록 열람' }).first()).toBeVisible()
+  await expect(rows.filter({ hasText: '표현 검토 라벨' })).toHaveCount(1)
+  await expect(rows.filter({ hasNotText: '표현 검토' })).toHaveCount(0)
+})
+
 test('출처 필터는 신고 숨김 공유물만 보여 준다', async ({ page }) => {
   await open(page)
   await page.getByRole('combobox', { name: '출처', exact: true }).selectOption('COMMUNITY_REPORT')

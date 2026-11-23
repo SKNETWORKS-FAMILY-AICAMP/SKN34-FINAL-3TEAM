@@ -426,6 +426,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - 신고 공유물: 기존 `CommunityService.moderate` 안에서 `HIDDEN_REPORT`가 되면 행 추가, 처음 `REMOVED`가 되면 `OFFENSIVE`, `HIDDEN_REPORT`에서 다시 공개되면 `CLEAN`. 자동 라벨은 `labeled_by` null이고, 운영자가 직접 라벨한 행과 이미 같은 라벨인 행은 그대로 둔다
 - 학생 삭제: `StudentDeletionService`가 시도·답변보다 먼저 `deleteByStudent`(FK NO ACTION)
 - 로그: 출처·라벨·건수만(`표현 검토 대기 추가 source=…`, `표현 검토 자동 라벨 …`, `표현 검토 라벨 label=…`, `표현 검토 내보내기 count=…`). learning에는 사용자 지표가 없어(#692와 같음) 건수는 로그로 본다
+- 새 라벨 수(#907, 2026-11-23): 건수와 가장 늦은 라벨 시각을 `SELECT count(*), max(labeled_at)` 한 문장으로 읽는다. 두 문장이면(READ COMMITTED) 그사이 커밋된 라벨이 시각에만 들어간다. #729 분석: 내보내기 뒤 늦게 커밋된 이른 시각 라벨은 한 문장으로도 남음(`labeled_at`이 `until` 이하라 내보내기에서도 다음 `since` 뒤에서도 빠짐)
 - 계약: `contracts/openapi/learning-service.yaml` 1.5.0에 4개 경로. `ExpressionReviewApiTest`가 실제 응답을 남기고 `scripts/validate_learning_expression_review_contracts.py`가 스키마와 학생·답변 ID가 없는지 확인(ci-contracts learning-contracts)
 - 시험: `ExpressionReviewApiTest`(목록 순서·필터·글 잇기·400·403, 라벨 덮어쓰기·404·400, 새 라벨 수·내보내기 since 초과·until 이하·SKIP 제외·1,500자 자름·400·403), `AnswerServiceTest`(경계 구간만 한 번, 보통·검사 안 됨·막힘은 없음, 로그에 ID 없음), `CommunityTest`(신고 숨김·자동 라벨·반복·직접 라벨 유지), `StudentDeletionTest`(표 목록에 추가), `ToxicityClientTest`(모델 `name:version`)
 

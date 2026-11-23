@@ -921,19 +921,19 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 - **재학습 계정**: V55가 고정 UUID `00000000-0000-4000-8000-0000000f0725`의 `user_account` 1행(ADMIN, `mlops-pipeline@system.invalid`, 비밀번호·권한 없음)을 넣는다. 설정 `app.model-registry.pipeline-actor-id`(기본값 같은 UUID). UUID 값은 설계에 없어 정했다(`f0725` = 설계 이슈 #725)
 - **추천 태그**: `EvaluationEvidence.recommendation`(선택, 모든 출처). 형식 검사와 글자 수는 api-spec 5.2.3 "구현(#728) 세부". 활성화·복귀 검사에는 쓰지 않는다(NFR-AIQ-05)
 - **자동 등록** `POST /internal/model-versions`(ops 토큰만, `InternalCallerPolicy`·`app.internal.callers.ops`·gitops `INTERNAL_TOKEN_OPS` 선택): 규칙 검사 → 트랜잭션 밖에서 사전 검사(actor 재학습 계정) → `FAIL`이면 422와 확장 필드 `preflight` → `PASS`면 관리자 등록과 같은 저장·감사(`MODEL_REGISTER` detail에 `datasetSha256`). 활성화하지 않는다. 관리자 공개 등록은 `PIPELINE` 출처를 400으로 막는다
-- **관리자 표현 검토** `GET /admin/expression-reviews`·`PUT …/{id}/label`(SERVICE_OPS): learning으로 넘기고 응답 칸을 다시 거른다. 감사는 `EXPRESSION_REVIEW_VIEW`(보여 준 항목 ID)·`EXPRESSION_REVIEW_LABEL`(라벨, learning에 넘기기 전). 실패 처리는 api-spec 2.8 "구현(#728)"
+- **관리자 표현 검토** `GET /admin/expression-reviews`·`PUT …/{id}/label`(SERVICE_OPS): `LearningExpressionReviewClient`가 learning으로 넘기고 허용한 칸만 가진 타입으로 바꾼다(#907). 감사는 `EXPRESSION_REVIEW_VIEW`(보여 준 항목 ID)·`EXPRESSION_REVIEW_LABEL`(라벨, learning에 넘기기 전). 실패 처리는 api-spec 2.8 "구현(#728)"
 - 계약 `core-service.yaml`: 위 경로 3개와 `PipelineRegisterModelVersion`·`ModelRecommendation`·`ExpressionReview*`·`Problem.preflight`
 
 ### 정한 것
 
-- 라벨 감사는 설계대로 한 줄(`EXPRESSION_REVIEW_LABEL`)이다. 관리자 미션처럼 요청·결과 두 줄로 남기는 안도 있었지만 설계와 다르고 꼭 필요하지 않아 쓰지 않았다. 그래서 learning이 실패해도 감사에는 라벨 요청 한 줄만 남고, 운영자에게는 503과 확인 번호(감사 ID)를 보여 준다
+- 라벨 감사는 설계대로 한 줄(`EXPRESSION_REVIEW_LABEL`)이다. 관리자 미션처럼 요청·결과 두 줄로 남기는 안도 있었지만 설계와 다르고 꼭 필요하지 않아 쓰지 않았다. 그래서 learning이 실패해도 감사에는 라벨 요청 한 줄만 남고, 운영자에게는 확인 번호(감사 ID)를 보여 준다. 200인데 모양이 틀리면 502 `LEARNING_INVALID_RESPONSE`, 결과를 모르면(시간 초과·5xx·ID·라벨 불일치) 503 `LEARNING_UNAVAILABLE`(#907)
 - `RegistrationMetadata.datasetSha256`은 값이 없으면 JSON에 넣지 않는다. 기존 관리자 등록 본문 모양을 바꾸지 않기 위해서다(처음 구현 때 `null`이 실려 관리자 등록이 400이 된 것을 시험에서 잡음)
 
 ### 검증
 
 - 개발 PC(Docker) core `gradlew cleanTest test` 746개 중 통과 743(실패 0, 건너뜀 3은 로컬 서비스가 있어야 도는 `ModelLoadingLocal`·`ModelPreflightLocal`·`ModelVersionBrowser`), 2026-11-22
 - `PipelineRegistrationHttpTest` 7개: PASS 등록(재학습 계정 감사·활성화 안 함), FAIL 422+`preflight`, scoring 오류 502, 409, 규칙 위반은 사전 검사 전 거부, ops 토큰 정책, 관리자 `PIPELINE` 400
-- `AdminExpressionReviewHttpTest` 7개: 목록 중계(ADMIN·빈 학생 범위, 학생 ID 등 다른 칸 버림, 보여 준 ID 감사), 기본값·빈 쪽, 잘못된 조회 400·learning 형식 오류 503(감사 없음), 라벨 감사 후 전달, 잘못된 라벨 400(감사·호출 없음), learning 404·결과 모름 503(보낼 때마다 감사 1줄), SERVICE_OPS만
+- `AdminExpressionReviewHttpTest` 7개: 목록 중계(ADMIN·빈 학생 범위, 학생 ID 등 다른 칸 버림, 보여 준 ID 감사), 기본값·빈 쪽, 잘못된 조회 400·learning 형식 오류 502·learning 400 외 오류 503(둘 다 감사 없음), 라벨 감사 후 전달, 잘못된 라벨 400(감사·호출 없음), learning 404·라벨 응답 모양 오류 502·결과 모름 503(보낼 때마다 감사 1줄), SERVICE_OPS만. 상태·시험 수는 #907 뒤 기준이 아래 "후속"
 - `ModelVersionHttpTest`: 추천 태그 저장·응답·잘못된 6가지 422
 - `scripts/tests` 410개 중 통과 392(Windows unittest, 실패 0·건너뜀 18), 최종은 CI. 대상(`test_model_registry_contract` 문서 경로 7개·내부 경로 보안, `test_admin_operations_contract` 지문 예외 #728)
 - 로컬 확인(2026-11-22, compose e2e·합성 자료): 관리자 화면 라벨 2건 → learning 반영·감사, ops 자동 등록(사전 검사 PASS·REGISTERED)·추천 태그 표시. 경계 구간 행 자동 생성은 범위 밖
@@ -942,3 +942,20 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 
 - 사전 검사 연결 실패(503)는 새 시험에 없다. 기존 사전 검사 중계(#368)의 동작을 그대로 쓴다
 - 실제 재학습 작업의 호출은 #729·#730에서 확인한다
+
+### 후속: 계층·오류 상태 (#907, 2026-11-23)
+
+- 계층(architecture 2.2): 감사는 `admin/service/ExpressionReviewAuditService`(`viewed`·`labeled`, `REQUIRES_NEW`)를 거친다. `MissionAuditService`의 `requested`·`finished`는 action 뒤에 접미사를 붙여 쓰지 않았다. action 이름·detail·한 줄은 그대로다
+- 응답 해석과 관리자 컨텍스트(빈 학생 범위)는 `learning/client/LearningExpressionReviewClient`로 옮겼다. service는 관리자 확인·감사·ID와 라벨 대조만 한다. 본문 `{label}`은 controller DTO가 검사한다(JSON이 아닌 Content-Type은 415)
+
+| 경우 | 전 | 후 |
+|---|---|---|
+| 목록 200인데 모양 오류 | 503 `LEARNING_INVALID_RESPONSE` | 502 `LEARNING_INVALID_RESPONSE`(감사 없음) |
+| 목록 learning 400 외 오류 | 503 `LEARNING_INVALID_RESPONSE` | 503 `LEARNING_UNAVAILABLE`(감사 없음) |
+| 라벨 200인데 모양 오류 | 503 `LEARNING_UNAVAILABLE` + 확인 번호 | 502 `LEARNING_INVALID_RESPONSE` + 확인 번호 |
+| 라벨 결과 모름(시간 초과·5xx·ID·라벨 불일치) | 503 `LEARNING_UNAVAILABLE` + 확인 번호 | 그대로 |
+
+- 200이 아닌 2xx도 모양 오류로 본다. `createdAt`·`labeledAt`은 계약대로 date-time인지도 검사한다
+- 감사 service 시험은 시험 트랜잭션으로 묶지 않는다(`IntegrationTestSupport`). 커밋 안 된 관리자 행을 `REQUIRES_NEW` 감사가 FK로 기다리며 멈춘다
+- 검증(2026-11-23, 개발 PC): core `cleanTest test` 756개 중 통과 753·실패 0·건너뜀 3(`AdminExpressionReviewHttpTest` 9·`LearningExpressionReviewClientTest` 6·`ExpressionReviewAuditServiceTest` 2 포함), learning 660개 중 통과 657·실패 0·건너뜀 3, 웹 단위 419·types·lint, 브라우저 2파일 39, 계약 검사 스크립트 13개 통과, `scripts/tests` 410개 중 통과 392(실패 0·건너뜀 18). 전체 브라우저는 CI
+- 남은 것: #608 예외인 `AdminLearningService`(통계·관리자 미션)는 같은 `LEARNING_INVALID_RESPONSE`를 503으로 낸다(#907 범위 밖)

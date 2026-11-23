@@ -5370,7 +5370,7 @@ paths:
     get:
       operationId: listExpressionReviews
       tags: [ExpressionReview]
-      summary: SERVICE_OPS 표현 검토 대기 목록 (FN-ADM-24, #728)
+      summary: 'SERVICE_OPS 표현 검토 대기 목록 (FN-ADM-24, #728)'
       description: >-
         learning `/internal/admin/expression-reviews`(4.1.5)로 ADMIN + X-User-Id + 빈 학생 범위로 넘긴다. 허용한 칸만 돌려주고(학생 이름·ID 없음)
         보여 준 항목 ID를 EXPRESSION_REVIEW_VIEW로 감사한다. 감사를 남기지 못하면 503이고 글을 돌려주지 않는다.
@@ -5388,8 +5388,18 @@ paths:
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '502':
+          description: LEARNING_INVALID_RESPONSE(learning 성공 응답의 모양 오류, 감사 없음)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
         '503':
-          description: LEARNING_INVALID_RESPONSE 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE
+          description: LEARNING_UNAVAILABLE(learning 400 외 오류·연결 실패), LEARNING_CIRCUIT_OPEN 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '504':
+          description: LEARNING_TIMEOUT
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -5397,10 +5407,11 @@ paths:
     put:
       operationId: labelExpressionReview
       tags: [ExpressionReview]
-      summary: SERVICE_OPS 표현 검토 라벨 (FN-ADM-24, #728)
+      summary: 'SERVICE_OPS 표현 검토 라벨 (FN-ADM-24, #728)'
       description: >-
         값 검사 뒤 EXPRESSION_REVIEW_LABEL 감사(detail label)를 남기고 learning에 한 번 전달한다(4.1.5). 감사를 남기지 못하면 전달하지 않고 503.
-        같은 값 다시 보내기도 200. 전달 결과를 모르면 503 LEARNING_UNAVAILABLE과 확인 번호(다시 보내기 전에 목록에서 확인).
+        같은 값 다시 보내기도 200. 성공 응답의 모양이 틀리면 502 LEARNING_INVALID_RESPONSE, 전달 결과를 모르면(시간 초과·5xx·ID·라벨 불일치 등) 503 LEARNING_UNAVAILABLE이고
+        둘 다 확인 번호를 준다(다시 보내기 전에 목록에서 확인).
       parameters:
       - {name: reviewId, in: path, required: true, schema: {type: string, format: uuid}}
       requestBody:
@@ -5419,6 +5430,11 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404':
           description: EXPRESSION_REVIEW_NOT_FOUND
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '502':
+          description: LEARNING_INVALID_RESPONSE(전달 뒤 성공 응답의 모양 오류, 확인 번호 포함)
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
