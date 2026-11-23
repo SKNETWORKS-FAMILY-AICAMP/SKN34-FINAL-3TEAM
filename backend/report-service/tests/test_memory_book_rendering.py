@@ -30,13 +30,12 @@ def rendered():
 
 def test_pdf_flows_cover_then_story_days_ending_and_evening_question(rendered):
     pages = [compact(p.extract_text()) for p in PdfReader(io.BytesIO(rendered["PDF"])).pages]
-    # 표지 쪽에 이야기의 시작까지, 그 뒤는 한 장면씩(장면 칸은 쪽에 걸쳐 잘리지 않음)
-    assert 4 <= len(pages) <= 9
+    # 표지 쪽에 목차·이야기의 시작까지, 그 뒤는 한 장면씩 새 쪽
+    assert len(pages) == 8
     assert "합성학생의추억그림책" in pages[0] and "사라진등대불빛" in pages[0]
-    assert "이야기의시작" in pages[0] and "월요일" not in pages[0]
-    text = "".join(pages)
+    assert "이야기의시작" in pages[0] and "월요일" in pages[0]  # 목차
+    text = "".join(pages[1:])
     order = [
-        "이야기의시작",
         "월요일",
         "화요일",
         "수요일",
@@ -49,6 +48,22 @@ def test_pdf_flows_cover_then_story_days_ending_and_evening_question(rendered):
     assert positions == sorted(positions)
     assert "이날문제는나중에바뀌어서남은기록이없어요" in text
     assert "큰질문의답" in text
+
+
+@pytest.mark.parametrize("ending_seen", [True, False])
+def test_cover_toc_page_numbers_match_pdf_pages(ending_seen):
+    book = sample_book(ending_seen=ending_seen)
+    view = memory_book_view(book)
+    pdf = ReportRenderer().render_memory_book(book, "합성학생")["PDF"]
+    pages = [compact(p.extract_text()) for p in PdfReader(io.BytesIO(pdf)).pages]
+    for item in view["toc"]:
+        assert f"{compact(item['title'])}{item['page']}" in pages[0], item
+    labels = [item["title"] for item in view["toc"]]
+    assert ("이야기의 끝" in labels) is ending_seen
+    for item in view["toc"]:
+        head = compact(item["title"])
+        assert head in pages[item["page"] - 1], item
+    assert view["toc"][-1]["page"] == len(pages)
 
 
 def test_answers_follow_version_order_with_followup_before_revised_answer():

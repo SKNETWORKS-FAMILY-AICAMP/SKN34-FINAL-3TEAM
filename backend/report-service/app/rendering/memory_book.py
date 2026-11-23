@@ -74,7 +74,19 @@ def memory_book_view(book: dict) -> dict:
                 "attempt": _attempt(day.get("attempt")),
             }
         )
+    # 목차: 표지가 1쪽, 요일·끝·저녁 질문은 각자 새 쪽에서 시작한다(템플릿 break-before).
+    # 엔딩 전이면 끝 쪽 없이 안내 한 줄과 저녁 질문이 한 쪽에 들어간다.
+    toc = [
+        {"label": day["dayLabel"], "title": day["title"], "page": 2 + index}
+        for index, day in enumerate(days)
+    ]
+    next_page = 2 + len(days)
+    if seen:
+        toc.append({"label": "끝", "title": "이야기의 끝", "page": next_page})
+        next_page += 1
+    toc.append({"label": "함께", "title": "오늘 저녁 질문", "page": next_page})
     return {
+        "toc": toc,
         "title": book["title"],
         "weekLabel": week_label(book["weekStart"]),
         "intro": book.get("intro") or "",
