@@ -1,7 +1,7 @@
 # 답변 표현 분류 모델 (tox)
 
 학생 답변에서 단어 목록(`ExpressionPolicy`, #205)이 놓치는 욕 없는 모욕·비꼼·돌려 말한 성적 표현을 잡는 한국어 2분류 모델의 학습·평가 코드 (이슈 #690, 에픽 #688).
-서빙(scoring-service `POST /internal/toxicity/checks`, #691)과 learning 호출(#692)은 이 폴더 범위가 아니며, 여기서는 학습·평가와 등록부에 올릴 모델 폴더 만들기만 한다.
+서빙(scoring-service `POST /internal/toxicity/checks`, #691)과 learning 호출(#692)은 이 폴더 범위가 아니며, 여기서는 학습·평가·모델 폴더 만들기와 재학습 작업(#729: 업로드·`REGISTERED` 자동 등록까지, 활성화 안 함)을 한다.
 
 > 원자료·분할·체크포인트·모델 폴더는 저장소에 넣지 않는다 (NFR-DAT-03). `.gitignore`로 막혀 있다.
 > 아이 말투 학습 문장은 Claude가 지은 문장으로, NFR-DAT-03(생성형 AI 출력 학습 미사용)의 예외로 쓴다.
@@ -36,15 +36,17 @@ ml/tox/
 │  ├─ wordlist.py        # 단어 목록과 함께 쓸 때 지표·임계값 (results/…/wordlist_*.json)
 │  ├─ kid_eval.py        # 아이 말투 시험 문장 250개(--test로 다른 시험 파일)
 │  ├─ kid_variants.py    # 아이 시험 문장을 모양만 바꾼 시험 만들기
-│  ├─ mustpass_probs.py  # 꼭 통과할 글 389개 전부의 확률
+│  ├─ mustpass_probs.py  # 꼭 통과할 글 전부의 확률(저장소에서 다시 뽑음: 11/19 389개, #837 뒤 387개)
 │  ├─ aihub_probs.py     # 실제 초등 답 확률(원문 저장 안 함)
 │  ├─ quant.py           # scoring 로더와 같은 채널별 int8
-│  └─ latency.py         # CPU 1코어 지연 (results/…/latency_*.json)
-├─ eval_sets/            # 직접 지은 아이 말투 문장(kid_test.json 시험 250 · kid_train.json 학습 691 · kid_test_variants.json 모양 바꾼 시험) · user_probe.json 팀원 문장 13
-├─ tests/                # 데이터 정리·임계값 계산·저장 형식·아이 문장 시험
+│  ├─ latency.py         # CPU 1코어 지연 (results/…/latency_*.json)
+│  └─ retrain.py         # 재학습 작업(#729): 이어 학습·활성 비교·추천 태그·자동 등록
+├─ eval_sets/            # 직접 지은 아이 말투 문장(kid_test.json 시험 250 · kid_train.json 학습 691 · kid_test_variants.json 모양 바꾼 시험) · user_probe.json 팀원 문장 13 · must_pass.json 꼭 통과할 글 389 고정본
+├─ tests/                # 데이터 정리·임계값 계산·저장 형식·아이 문장·재학습 작업 시험
 ├─ results/eval_tox.md   # 지표·임계값·지연·한계, results/1119-distill/ 지금 모델 숫자 원본
 ├─ data/                 # (커밋 안 함) 원자료·분할·선생님 확률·글별 확률
 ├─ checkpoints/          # (커밋 안 함) 학습한 모델 폴더
+├─ Dockerfile            # 재학습 작업 CPU 이미지(빌드 기준은 저장소 루트)
 ├─ pyproject.toml
 └─ uv.lock
 ```
@@ -73,9 +75,30 @@ OMP_NUM_THREADS=1 uv run python scripts/latency.py --model checkpoints/<이름> 
 uv run pytest
 ```
 
-- `eval.py`·`mustpass_probs.py`·`latency.py`는 저장소의 `backend/learning-service/db/seed/demo_missions.sql`, `frontend/web/src/data/classroom/demoGateway.ts`, `ExpressionPolicyTest.kt`에서 꼭 통과할 글을 읽는다. 저장소 밖에서 돌리면 `eval.py`·`latency.py`는 `--repo`로 저장소 위치를 준다
+- `eval.py`·`mustpass_probs.py`·`latency.py`는 저장소의 `backend/learning-service/db/seed/demo_missions.sql`, `frontend/web/src/data/classroom/demoGateway.ts`, `ExpressionPolicyTest.kt`에서 꼭 통과할 글을 읽는다. 저장소 밖에서 돌리면 `eval.py`·`latency.py`는 `--repo`로 저장소 위치를 준다. 이렇게 뽑으면 #837 뒤 387개라, 재학습 작업은 `eval_sets/must_pass.json` 389개 고정본을 쓴다
 - `python -I`로 `eval.py`를 돌리면 같은 폴더의 `train.py`를 못 불러온다. `uv run python scripts/eval.py`로 돌린다
 - 결정적 학습은 같은 시드·GPU 종류·라이브러리에서 같은 가중치를 낸다. 대신 조금 느리다
+
+## 재학습 작업 (#729)
+
+> **운영 실행은 #887 결정 뒤**, CronJob은 #730. 기준·종료 코드·한계는 [learning.md](../../docs/report/learning.md) 16절 "재학습 작업 구현"
+
+```bash
+# 저장소 루트에서
+docker build -f ml/tox/Dockerfile -t tox-retrain .
+docker run --rm --network <learning·core·S3에 닿는 망> \
+  -e LEARNING_URL=http://learning-service:8081 -e CORE_URL=http://core-service:8080 \
+  -e INTERNAL_TOKEN -e S3_BUCKET -e S3_REGION \
+  tox-retrain
+# INTERNAL_TOKEN에는 ops 토큰 값(보내는 쪽 이름, architecture 2.2)
+# 로컬 MinIO: -e S3_ENDPOINT_URL -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY
+# 운영: -e S3_BUCKET_OWNER (업로드 때 버킷 소유 계정 확인)
+# 선택: -e TOX_PUBLIC_DATA_PREFIX(기본 datasets/tox-retrain/public-v1/) -e OMP_NUM_THREADS(기본 2)
+```
+
+- 미리 있어야 하는 것: 활성 `tox-` 모델 1개, S3 public-v1 묶음(`train.jsonl`·`valid.jsonl`·`apeach.jsonl`·`wordlist_flags.json`·`must_pass.json`·`manifest.json`)
+- 새 라벨 200건 미만이면 종료 코드 0. CPU 2개·메모리 3GiB에서 200건에 약 10~14분([실측](results/eval_tox.md))
+- 활성화는 하지 않는다. 등록부의 추천 태그를 보고 사람이 승인한다
 
 ## 모델 폴더 (등록부 업로드 단위)
 
@@ -83,7 +106,7 @@ uv run pytest
 |---|---|
 | `config.json`·`model.safetensors` | HF `save_pretrained`, fp32 |
 | `tokenizer.json`·`tokenizer_config.json` | 토크나이저 |
-| `train_info.json` | `task`·`labels`·`positiveLabel`·`max_length`(128)·`stride`(32)·`threshold`·`thresholdSource`·`quantization`·`baseModel`·`baseRevision`·데이터 출처·학습 설정(`deterministic`)·검증 지표·`distill`(선생님·α·온도) |
+| `train_info.json` | `task`·`labels`·`positiveLabel`·`max_length`(128)·`stride`(32)·`threshold`·`thresholdSource`·`quantization`·`baseModel`·`baseRevision`·데이터 출처·학습 설정(`deterministic`)·검증 지표·`distill`(선생님·α·온도). 재학습 모델은 `review_threshold`·`data`(이번 학습 자료만)·`dataSha256`·`initFrom`(출발 모델·내력) |
 | `valid_probs.npz` | (업로드 안 함) 검증 확률·라벨, 글 없음 |
 
 - 이름 규칙 `tox-…`, 적용 범위 `answer-filter`, 로더 검사(2분류·`threshold` 필수)는 api-spec 5.2를 따른다. 업로드·사전 검사·활성화는 scoring.md 6장(로컬 확인 결과는 eval_tox.md)

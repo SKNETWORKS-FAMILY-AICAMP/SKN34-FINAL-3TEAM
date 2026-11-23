@@ -12835,7 +12835,7 @@ components:
           description: 학생 PIN 불일치 시 남은 실패 허용 횟수. 잠금 응답은 0.
         preflight:
           $ref: '#/components/schemas/ModelPreflightResult'
-          description: 재학습 자동 등록의 사전 검사 FAIL 결과(422, #728)
+          description: '재학습 자동 등록의 사전 검사 FAIL 결과(422, #728)'
         type:
           type: string
           format: uri-reference
