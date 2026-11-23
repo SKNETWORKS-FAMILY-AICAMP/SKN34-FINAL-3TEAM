@@ -13,6 +13,7 @@ import { themeDraftRequestErrors } from '../../domain/admin/themeDrafts.ts'
 import type { ThemeDraft, ThemeDraftRequest } from '../../domain/admin/themeDrafts.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { StandardPicker } from './StandardPicker.tsx'
+import { busyProps } from './busyButton.ts'
 
 const nextMonday = () => {
   const day = new Date(Date.now() + 9 * 3600_000)
@@ -71,7 +72,7 @@ export function ThemeRequest({ initialGrade, initialWeek, expanded, onRequested 
       <ErrorNotice error={request.error} />
       {uncertain && <p role="note">요청이 접수됐을 수 있습니다. 새로 요청하기 전에 목록을 먼저 확인해 주세요.</p>}
       {notice && <p role="status">{notice}</p>}
-      <div className="ws-actions"><button className="cj-primary" disabled={request.isPending}>{request.isPending ? '요청 중…' : '테마 초안 생성 요청'}</button></div>
+      <div className="ws-actions"><button className="cj-primary" {...busyProps(request.isPending)}>{request.isPending ? '요청 중…' : '테마 초안 생성 요청'}</button></div>
     </form>
   </div></details>
 }

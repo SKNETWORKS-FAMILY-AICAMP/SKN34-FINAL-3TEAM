@@ -9,11 +9,17 @@ import { isDemo } from '../../data/classroom/useClassroom.ts'
 import type { Mission } from '../../domain/classroom.ts'
 
 export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => void }) {
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // 관리자 화면(#917): 처리 중에도 초점은 단추에 남으므로, 새 오류 글이 보이는 영역 밖이면 보이게 스크롤한다(이미 보이면 움직이지 않음). 초점은 옮기지 않는다.
+    const el = box.current
+    if (error && el?.closest('.admin-shell, .admin-login-page')) el.scrollIntoView({ block: 'nearest' })
+  }, [error])
   if (!error) return null
   const message = error instanceof Error && /[가-힣]/.test(error.message) ? error.message : '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'
   const problem = error instanceof ApiError ? error.problem : null
   return (
-    <div className="ux-error" role="alert" data-query-state="FAILED">
+    <div ref={box} className="ux-error" role="alert" data-query-state="FAILED">
       <strong>{problem?.title && /[가-힣]/.test(problem.title) ? problem.title : message}</strong>
       {problem?.status === 404 && (
         <p>
