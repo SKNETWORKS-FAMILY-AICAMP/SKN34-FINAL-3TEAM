@@ -23,7 +23,7 @@ class MemorySearchRepository(private val jdbc: JdbcTemplate, private val mapper:
             concat_ws(E'\n',tv.title,scene.text,mv.question,ans.plain_text),'PENDING',0,now()
         FROM attempt a JOIN mission_version mv ON mv.id=a.mission_version_id
         JOIN weekly_theme t ON t.id=a.theme_id
-        JOIN weekly_theme_version tv ON tv.id=coalesce(t.published_version_id,t.current_version_id)
+        JOIN weekly_theme_version tv ON tv.id=coalesce(a.theme_version_id,t.published_version_id,t.current_version_id)
         LEFT JOIN LATERAL (SELECT string_agg(line->>'text', E'\n' ORDER BY ord) text
             FROM weekly_theme_day day CROSS JOIN LATERAL jsonb_array_elements(coalesce(day.dialogue,'[]'::jsonb)) WITH ORDINALITY AS lines(line,ord)
             WHERE day.theme_version_id=tv.id AND day.mission_id=a.mission_id) scene ON true

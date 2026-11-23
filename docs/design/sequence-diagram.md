@@ -879,7 +879,7 @@ sequenceDiagram
     L->>LDB: reflection 저장, attempt COMPLETED
     opt context = THEME_DAY·THEME_REVIEW (EXTRA 제외)
       L->>LDB: memory_search_doc (attempt_id, content_text, PENDING) ON CONFLICT DO NOTHING
-      L->>LDB: 같은 회차(student, theme_id, theme_week_start) 5문제 completed_at 확인
+      L->>LDB: 같은 회차(student, theme_id, theme_week_start) 5문제 completed_at 확인 (시도 고정 버전 요일 또는 게시본 문제)
       opt 5문제 모두 완료
         L->>LDB: theme_frame (awarded_at = 마지막 completed_at) ON CONFLICT DO NOTHING
       end
