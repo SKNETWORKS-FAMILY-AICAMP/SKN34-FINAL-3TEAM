@@ -1209,3 +1209,30 @@ NFR-UX-02(주요 기능 키보드·터치 조작, 오류·진행 상태를 색�
 - 감사 이력 화면에 `EXPRESSION_REVIEW_VIEW`·`EXPRESSION_REVIEW_LABEL` 한글 이름 추가. "대상 유형" 필터에 `EXPRESSION_REVIEW` "표현 검토" 추가(#907)
 - MSW: 재학습 등록 버전 1개(추천 태그)·검토 글 3개(합성), core와 같은 규칙의 목록·라벨 핸들러
 - 검증: 웹 단위 418개(새 8개), `test:types`·`lint`·`build` 통과. 브라우저: 모델 화면(`test:models`) 18개(새 추천 태그 시험 × 화면 3종), 표현 검토·관리자 화면 구성 2개 파일 36개(새 표현 검토 9개 포함) 통과. 전체 브라우저는 원격 CI로 확인. 로컬 자동 검증 결과이며 실서버·원격 CI 결과와 구분한다
+
+## 50. 관리자 글자 대비·가로 스크롤 표 키보드 접근 (#914, NFR-UX-02, 2026-11-23)
+
+#885 실서버 UX 점검에서 남은 관리자 axe serious 위반(글자 대비 WCAG 1.4.3, 스크롤 영역 키보드 접근 WCAG 2.1.1)을 고쳤다. 범위는 담당자 결정(2026-11-23): 보조 글·화면별 표 글·관리자 로그인 글 대비 4.5:1 이상, 390px 가로 스크롤 표 키보드 접근, 공통 초점 외곽선 3:1 이상.
+
+- **색**: `admin-design.css`·`admin-login.css`·`period-picker.css`의 글자색 선언 약 70곳을 같은 색상·채도에서 명도만 낮췄다(#763 디자인 유지). 기준은 페이지 배경 `#f3f5f7`에서 4.6:1, 연녹 배경 위 글(`.ad-note`·`.ad-context-note`, 로그인 소개 칸)은 `#edf3ef`에서 4.6:1. 아이콘(svg)·꺼진 단추·입력 안내 글(placeholder)·어두운 사이드바 글은 바꾸지 않았다. 예: 머리 위치 글 `#859087`→`#656f67`, 제목 위 설명 `#768a7d`→`#607166`, 표 보조 글 `#6c7d72`→`#617066`, 공통 보조 글 변수 `--cj-muted` `#697670`→`#636f6a`, 로그인 머리 글 `#809587`→`#5f7165`
+- **초점 외곽선**: 공통 `:focus-visible` `#79aa95`(흰 배경 2.63:1)→`#5f967e`(흰 3.41:1·`#f3f5f7` 3.12:1·사이드바 `#16332f` 3.97:1, WCAG 1.4.11)
+- **가로 스크롤 표**: 공통 부품 `TableScroll`(`AdminUi.tsx`)로 관리자 표 감싸개 12곳을 바꿨다. 모두 이름 있는 영역(`role="region"`, 예: "AI 사용량 표")이고, 표가 실제로 넘칠 때만 `tabIndex=0`을 줘 넓은 화면에서는 Tab 순서가 늘지 않는다(`ResizeObserver`로 다시 판단). #885에서 걸린 곳은 미션 초안·AI 사용량·결제·환불이지만 넘치는 표는 데이터에 따라 달라(이번 재점검에서는 미션 편집 성취기준 표·작업 재처리도 걸림) 같은 감싸개를 모두 바꿨다
+- **회귀 시험** `tests/browser/admin-contrast.spec.ts`(MSW): 관리자 로그인·운영 현황과 8개 화면에서 보이는 모든 글의 글자색·배경 대비 4.5:1(큰 글 3:1) 이상, 초점 외곽선 흰 배경 3:1 이상, 390px에서 AI 사용량 표가 이름 있는 영역으로 Tab 초점을 받고 화살표·End로 가로 이동(1440px에서는 넘치지 않아 `tabindex` 없음). 고치기 전 CSS로 돌리면 대비·외곽선 시험이 실패함을 확인했다
+- **재점검(모의·대역 compose)**: 이 브랜치로 `compose.e2e.yaml` 스택을 새로 빌드해 axe-core 4.10.2(`wcag2a`·`wcag2aa`·`wcag21aa`·`wcag22aa`)로 관리자 로그인·메뉴 16개·미션 편집·테마 초안 상세를 1440·390에서 점검했다. 고치기 전 36화면 serious 191건(대비 186·스크롤 영역 5) → 고친 뒤 0건. 새 스택이라 작업 목록이 비어 작업 상세는 열지 못했고, #885 때의 성취기준 시드·실패 초안은 넣지 않았다. 원본은 [evidence/issue914-admin-contrast](evidence/issue914-admin-contrast/). MSW 목업으로도 같은 화면 38개에서 serious 0
+- **검증(로컬)**: 웹 단위 418개, `test:types`·`lint`·`tsc -b` 통과, 브라우저 전체 318개 통과(2개 건너뜀). 관리자 로그인·감사 이력을 1440·390에서 고치기 전·후로 찍어 배치·색 계열이 그대로임을 눈으로 확인했다(저장소에 시안 파일이 없어 시안 대조는 하지 않음). 화면 읽기 프로그램의 실제 음성은 확인하지 않았다. API 변경 없음
+- 남은 것: 학부모 화면 대비·체크박스 크기 #915 (처리 중 단추 초점 #917은 51절)
+
+## 51. 관리자 처리 중 단추의 키보드 초점 유지 (#917, NFR-UX-02, 2026-11-23)
+
+#885 추가 확인에서 처리 중에 `disabled`로 꺼지는 저장·요청 단추 때문에 키보드 초점이 `body`로 빠졌다(WCAG 2.4.3). 담당자 결정(2026-11-23): 관리자 화면만, 처리 중에는 `disabled` 대신 `aria-disabled`와 중복 제출 막기로 초점을 단추에 두고, 오류 글이 보이는 영역 밖이면 보이게 스크롤한다. #641(학생 제출 뒤 결과 안내로 초점 이동)처럼 초점을 옮기지는 않는다.
+
+- **공통 부품**
+  - `busyButton.ts`: `busyProps(busy, disabled)`는 처리 중이면 `aria-disabled`만, 입력 부족 같은 다른 이유는 그대로 `disabled`. `useBusyClickGuard()`는 `aria-disabled="true"` 단추의 클릭(Enter·Space·입력 칸 Enter 제출 포함)을 문서 캡처 단계에서 막는다. `AdminWorkspace`·`AdminLoginPage`에서만 건다
+  - `useAdminMutation`: 처리 중에 다시 부르면 두 번째 요청을 보내지 않는다(무시된 `mutateAsync`는 끝나지 않는 Promise라 성공·실패 처리가 두 번 돌지 않음)
+  - `ErrorNotice`: 관리자 화면(`.admin-shell`·`.admin-login-page`) 안에서 새 오류가 생기면 `scrollIntoView({ block: 'nearest' })`로 보이게 한다. 이미 보이면 움직이지 않고 초점은 옮기지 않는다. 학부모·학생 화면은 그대로
+  - 모양: `button[aria-disabled="true"]`를 꺼진 단추와 같은 색으로(`admin-design.css`·`admin-login.css`)
+- **적용**: 관리자 15개 파일의 처리 중 단추 68곳(변경 요청 처리 중 54곳, 목록 조회 중인 새로고침·페이지 단추 14곳). 처리 중 입력 칸을 끄는 `fieldset`·`textarea`(모델 승인 범위, 미션 검토 의견)는 초점이 단추에 있을 때라 그대로 둔다
+- **회귀 시험** `tests/browser/admin-busy-focus.spec.ts`(MSW, 1440·390): fetch를 1.2초 늦춘 채 키보드로 아이템 저장(중복 코드 409)·테마 초안 생성 요청(409로 대체) → 처리 중 초점이 `aria-disabled` 단추, 오류 뒤 같은 단추, 오류 글이 창 안, 처리 중 Enter·Space를 더 눌러도 요청 1번. 고치기 전 코드로는 처리 중 초점이 `BODY`라 실패함을 확인했다
+- **재확인(모의·대역 compose)**: 시드 코드 `E2E_HAT` 아이템 저장 409와 같은 학년·주 두 번째 테마 초안 요청 오류를 응답 1초 지연으로 1440·390에서 확인했다. 고치기 전 4경우 모두 초점 `BODY`(아이템 오류 글은 창 밖) → 고친 뒤 4경우 모두 처리 중·오류 뒤 초점이 단추에 있고 오류 글이 창 안. 원본은 [evidence/issue917-admin-busy-focus](evidence/issue917-admin-busy-focus/)
+- **검증(로컬)**: 웹 단위 418개, `test:types`·`lint`·`build` 통과, 브라우저 전체 319개(2개 건너뜀)·`test:models` 18개·`test:auth` 63개 통과. 화면 읽기 프로그램의 실제 음성은 확인하지 않았다. API 변경 없음
+- **남은 곳(후속)**: 학부모·서비스·학생 화면의 같은 모양(`disabled={…isPending…}` 한 줄 표기 기준 69곳·27개 파일)은 이번 범위 밖이라 그대로다. 많은 순: `service/GuardianTransfers` 7, `service/Withdrawal`·`parent/StudentDevices`·`parent/PaymentManagement` 각 6, `service/AccountLifecycle`·`parent/ConsentSettings`·`parent/AccountForms` 각 4, `student/StudentSharingPage`·`service/NotificationCenter`·`parent/ParentReports` 각 3, `student/world/StudentCommunity`·`student/world/MemorySearch`·`student/StudentWorkPage`·`student/SelfAssessmentPanel`·`auth/ParentPasswordForms`·`ClassroomApp` 각 2, 그 밖 11개 파일 각 1

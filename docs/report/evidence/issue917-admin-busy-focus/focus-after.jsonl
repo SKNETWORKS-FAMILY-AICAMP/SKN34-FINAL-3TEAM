@@ -1,0 +1,4 @@
+{"case":"꾸미기 아이템 저장 409","width":1440,"during":"BUTTON:저장[aria-disabled]","after":"BUTTON:저장","alertInViewport":true}
+{"case":"테마 초안 생성 요청(두 번째)","width":1440,"during":"BUTTON:요청 중…[aria-disabled]","after":"BUTTON:테마 초안 생성 요청","message":"학습 서비스가 관리자 요청을 처리하지 못했습니다.","alertInViewport":true}
+{"case":"꾸미기 아이템 저장 409","width":390,"during":"BUTTON:저장[aria-disabled]","after":"BUTTON:저장","alertInViewport":true}
+{"case":"테마 초안 생성 요청(두 번째)","width":390,"during":"BUTTON:요청 중…[aria-disabled]","after":"BUTTON:테마 초안 생성 요청","message":"학습 서비스가 관리자 요청을 처리하지 못했습니다.","alertInViewport":true}

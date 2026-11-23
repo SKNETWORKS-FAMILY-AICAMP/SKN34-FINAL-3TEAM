@@ -16,8 +16,9 @@ import type { AdminLookItem, AdminWeeklyTheme, ThemeGrade } from '../../domain/a
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ThemeMotionPlayer } from '../common/ThemeMotionPlayer.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
-import { Badge, Empty, Panel } from './AdminUi.tsx'
+import { Badge, Empty, Panel, TableScroll } from './AdminUi.tsx'
 import { WeeklyThemePlanner } from './WeeklyThemePlanner.tsx'
+import { busyProps } from './busyButton.ts'
 
 const nextMonday = () => {
   const kst = new Date(Date.now() + 9 * 3600_000)
@@ -191,12 +192,12 @@ function ThemeEditor({
         </details>}
         {staleForm && <p role="alert">다른 관리자가 수정본을 저장했습니다. 편성 보드에서 테마를 다시 열어 최신 내용을 확인해 주세요.</p>}
         <div className="ws-actions">
-          <button className="cj-primary" disabled={busy || staleForm || theme?.status === 'REVIEW_REQUIRED' || (live && !changed)}>테마 저장</button>
-          {theme && (theme.status==='DRAFT'||theme.status==='UNPUBLISHED') && <button type="button" disabled={busy || (hasPublication && (staleForm || changed))} onClick={requestReview}>검토 요청</button>}
+          <button className="cj-primary" {...busyProps(busy, staleForm || theme?.status === 'REVIEW_REQUIRED' || (live && !changed))}>테마 저장</button>
+          {theme && (theme.status==='DRAFT'||theme.status==='UNPUBLISHED') && <button type="button" {...busyProps(busy, hasPublication && (staleForm || changed))} onClick={requestReview}>검토 요청</button>}
           {theme?.status==='REVIEW_REQUIRED' && <button type="button" onClick={onClose}>편성 보드에서 게시</button>}
-          {newer && !theme.reviewRequested && <button type="button" disabled={busy || staleForm || changed} onClick={requestReview}>수정본 검토 요청</button>}
-          {newer && theme.reviewRequested && <button type="button" disabled={busy || staleForm || changed} onClick={() => decide('publish', theme.version!)}>수정본 재게시</button>}
-          {live && theme.publishedVersion != null && <button type="button" className="ad-danger" disabled={busy} onClick={() => decide('unpublish', theme.publishedVersion!)}>제공 중단</button>}
+          {newer && !theme.reviewRequested && <button type="button" {...busyProps(busy, staleForm || changed)} onClick={requestReview}>수정본 검토 요청</button>}
+          {newer && theme.reviewRequested && <button type="button" {...busyProps(busy, staleForm || changed)} onClick={() => decide('publish', theme.version!)}>수정본 재게시</button>}
+          {live && theme.publishedVersion != null && <button type="button" className="ad-danger" {...busyProps(busy)} onClick={() => decide('unpublish', theme.publishedVersion!)}>제공 중단</button>}
         </div>
         <ErrorNotice error={save.error ?? review.error} />
         <p role="status">{message}</p>
@@ -206,8 +207,8 @@ function ThemeEditor({
         <p>{THEME_GRADE_LABELS[theme.grade]} · {theme.weekStart} · v{decision.version}</p>
         <p>{decision.action === 'publish' ? '검토한 수정본을 학생에게 공개합니다.' : '이 테마의 신규 제공을 중단합니다. 이미 시작한 학습은 이어갈 수 있습니다.'}</p>
         {problems.length > 0 ? <ul role="alert">{problems.map(p => <li key={p}>{p}</li>)}</ul> : <ErrorNotice error={publication.error}/>}
-        <div className="ws-actions"><button disabled={busy} onClick={() => setDecision(null)}>취소</button>
-          <button className={decision.action === 'publish' ? 'cj-primary' : 'ad-danger'} disabled={busy || publication.isError} onClick={confirm}>
+        <div className="ws-actions"><button {...busyProps(busy)} onClick={() => setDecision(null)}>취소</button>
+          <button className={decision.action === 'publish' ? 'cj-primary' : 'ad-danger'} {...busyProps(busy, publication.isError)} onClick={confirm}>
             {decision.action === 'publish' ? '재게시 확정' : '제공 중단 확정'}</button></div>
       </Modal>}
     </Panel>
@@ -232,7 +233,7 @@ export function LookItemManager() {
           </select>
         </label></div>
         <QueryFeedback query={list} />
-        <div className="ad-table-wrap">
+        <TableScroll label="꾸미기 아이템 표">
           <table className="ad-table">
             <thead><tr><th>이름</th><th>칸</th><th>필요 포인트</th><th>상태</th><th>관리</th></tr></thead>
             <tbody>
@@ -247,7 +248,7 @@ export function LookItemManager() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
         {list.data && !list.error && !rows.length && <Empty>등록한 아이템이 없습니다.</Empty>}
         {list.data && !list.error && list.data.totalElements > list.data.size && <div className="ws-actions" aria-label="아이템 목록 페이지">
           <button disabled={page === 0} onClick={() => setPage(page - 1)}>이전 아이템</button>
@@ -294,9 +295,9 @@ function ItemEditor({ item, onClose }: { item?: AdminLookItem; onClose: () => vo
         {slot === 'DECOR' && <p>방 소품은 여러 개 구매해서 방에 배치하는 항목이며, 캐릭터가 착용하는 소품과 다릅니다.</p>}
         {slot === 'FLOOR' && <p>바닥은 한 번 해금한 뒤 방에 적용하는 항목입니다.</p>}
         <div className="ws-actions">
-          <button className="cj-primary" disabled={save.isPending || !validPrice}>저장</button>
+          <button className="cj-primary" {...busyProps(save.isPending, !validPrice)}>저장</button>
           {item && (
-            <button className={item.status === 'ON_SALE' ? 'ad-danger' : undefined} type="button" disabled={toggle.isPending} onClick={() => void toggle.mutateAsync(undefined).then(onClose).catch(() => {})}>
+            <button className={item.status === 'ON_SALE' ? 'ad-danger' : undefined} type="button" {...busyProps(toggle.isPending)} onClick={() => void toggle.mutateAsync(undefined).then(onClose).catch(() => {})}>
               {item.status === 'ON_SALE' ? '판매 중단' : '판매 다시 시작'}
             </button>
           )}

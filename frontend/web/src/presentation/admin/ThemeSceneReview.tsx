@@ -13,6 +13,7 @@ import { ThemeMotionPlayer } from '../common/ThemeMotionPlayer.tsx'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { date } from './adminFormatting.ts'
+import { busyProps } from './busyButton.ts'
 
 export type SceneView = 'scene' | 'mission' | 'missions' | 'compare'
 interface Props {
@@ -97,14 +98,14 @@ export function ThemeSceneReview({ draft, scene, view, open, still }: Props) {
           {versions.map(v => <option value={v.versionId} key={v.versionId}>{versionName(v)}{v.versionId === current?.versionId ? ' · 현재 선택본' : ''}</option>)}</select></label>
         <ThemeMotionPlayer key={version.versionId} imageUrl={version.imageUrl} videoUrl={version.videoUrl} motion={version.motion} label={label + ' ' + sceneLabels[scene]} still={still} showSpots={day}/>
         <div className="tw-pair-foot"><small>{date(version.createdAt)} · {version.videoUrl ? '영상' : '그림·움직임'}</small>
-          {editable && version.selectable && <button disabled={write.isPending} onClick={() => send({ kind: 'select', id: version.versionId, expected: current?.versionId ?? null, count: versions.length })}>
+          {editable && version.selectable && <button {...busyProps(write.isPending)} onClick={() => send({ kind: 'select', id: version.versionId, expected: current?.versionId ?? null, count: versions.length })}>
             {version.versionId === current?.versionId ? '현재 선택본 유지' : label + ' 버전 선택'}</button>}</div>
       </section>
     })}</div> : <div className="tw-single" aria-label="현재 선택본 미리보기">
       <ThemeMotionPlayer key={scene + (current?.versionId ?? '')} imageUrl={media?.imageUrl ?? null} videoUrl={media?.videoUrl ?? null}
         motion={media?.motion} label={sceneLabels[scene]} still={still} showSpots={day}/>
       {current && <span>현재 선택본 · {versionName(current)}</span>}
-      {!current && preview && <span>선택 전 · {versionName(preview)} {editable && preview.selectable && <button disabled={write.isPending}
+      {!current && preview && <span>선택 전 · {versionName(preview)} {editable && preview.selectable && <button {...busyProps(write.isPending)}
         onClick={() => send({ kind:'select',id:preview.versionId,expected:null,count:versions.length })}>이 버전 선택</button>}</span>}
     </div>}
     <QueryFeedback query={query} />
@@ -148,15 +149,15 @@ function SceneHistoryList({ history, current, editable, busy, send, compare, com
       <strong>{versionName(v)}</strong><small>{date(v.createdAt)}{v.versionId === current?.versionId ? ' · 현재 선택본' : ''}{v.starred ? ' · 별표' : ''}</small>
       {v.note && <p>{v.note}</p>}</div><div className="ws-actions">
       {history.versions.length > 1 && (compare ? <><button onClick={() => changeSide('left', v.versionId)}>왼쪽에 보기</button><button onClick={() => changeSide('right', v.versionId)}>오른쪽에 보기</button></> : <button onClick={() => compareWith(v.versionId)}>비교</button>)}
-      {editable && v.selectable && <><button aria-label={versionName(v) + ' 별표'} aria-pressed={v.starred} disabled={busy} onClick={() => send({kind:'annotation',id:v.versionId,patch:{starred:!v.starred}})}><Star size={15} fill={v.starred ? 'currentColor' : 'none'} aria-hidden="true"/></button>
-      <button disabled={busy} onClick={() => {setEditing(v);setNote(v.note);setNoteError(false)}}>메모</button></>}
+      {editable && v.selectable && <><button aria-label={versionName(v) + ' 별표'} aria-pressed={v.starred} {...busyProps(busy)} onClick={() => send({kind:'annotation',id:v.versionId,patch:{starred:!v.starred}})}><Star size={15} fill={v.starred ? 'currentColor' : 'none'} aria-hidden="true"/></button>
+      <button {...busyProps(busy)} onClick={() => {setEditing(v);setNote(v.note);setNoteError(false)}}>메모</button></>}
       </div></li>)}</ol>
     {mode !== 'recent' && filtered.length > pageSize && <nav className="ws-actions" aria-label="생성 이력 페이지"><button disabled={!index} onClick={() => setPage(index - 1)}>이전</button><span>{index + 1} / {Math.ceil(filtered.length / pageSize)}</span><button disabled={(index + 1) * pageSize >= filtered.length} onClick={() => setPage(index + 1)}>다음</button></nav>}
     {editing && editable && <Modal title={versionName(editing) + ' 메모'} onClose={() => {if(!busy)setEditing(null)}}>
       <label className="ws-form">검수 메모<textarea value={note} onChange={e => setNote(e.target.value)} rows={3}/></label>
       <small>{[...note].length} / 160자</small>{noteError && <p role="alert">메모를 저장하지 못했습니다. 이력을 다시 확인해 주세요.</p>}
-      <div className="ws-actions"><button disabled={busy} onClick={() => setEditing(null)}>취소</button>
-      <button disabled={busy || [...note].length > 160} onClick={async () => {
+      <div className="ws-actions"><button {...busyProps(busy)} onClick={() => setEditing(null)}>취소</button>
+      <button {...busyProps(busy, [...note].length > 160)} onClick={async () => {
         setNoteError(false)
         if(await send({kind:'annotation',id:editing.versionId,patch:{note}}))setEditing(null)
         else setNoteError(true)

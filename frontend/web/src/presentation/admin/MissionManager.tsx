@@ -22,6 +22,7 @@ import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from '../student/MissionScene.tsx'
 import { AnswerFields } from '../student/StudentWorkPage.tsx'
 import { date } from './adminFormatting.ts'
+import { busyProps } from './busyButton.ts'
 export function MissionManager() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams(),
@@ -349,7 +350,7 @@ function MissionForm({
         시연 전용 문항
       </label>
       <p>AI Hub 원문·답안·피드백을 등록하지 마세요.</p>
-      <button className="cj-primary" disabled={save.isPending}>
+      <button className="cj-primary" {...busyProps(save.isPending)}>
         {mission ? '새 미션 버전 저장' : '미션 초안 저장'}
       </button>
       <ErrorNotice error={save.error} />
@@ -460,16 +461,16 @@ function MissionDetail({ id, onClose, returnLabel='미션 목록으로' }: { id:
             {latestReview?.comment && <p className="ad-mission-review-comment">{latestReview.comment}</p>}
             <div className="ws-actions">
               <button className="cj-secondary" onClick={() => setPreview(true)}>학생 화면 미리보기</button>
-              <button className="cj-secondary" disabled={busy || !canRequest}
+              <button className="cj-secondary" {...busyProps(busy, !canRequest)}
                 onClick={() => run('review-request', versionPair)}>검토 요청</button>
               {canReview && <>
-                <button className="cj-secondary" disabled={busy} onClick={() => openReview('APPROVED')}>현재 버전 검토 승인</button>
-                <button className="cj-secondary" disabled={busy} onClick={() => openReview('CHANGES_REQUESTED')}>보완 요청</button>
+                <button className="cj-secondary" {...busyProps(busy)} onClick={() => openReview('APPROVED')}>현재 버전 검토 승인</button>
+                <button className="cj-secondary" {...busyProps(busy)} onClick={() => openReview('CHANGES_REQUESTED')}>보완 요청</button>
               </>}
-              <button className="cj-primary" disabled={busy || !canReview || missing.length > 0}
+              <button className="cj-primary" {...busyProps(busy, !canReview || missing.length > 0)}
                 onClick={() => run('publish')}>게시</button>
               {m.status === 'PUBLISHED' &&
-                <button className="cj-secondary ad-danger" disabled={busy} onClick={() => run('unpublish')}>신규 제공 중단</button>}
+                <button className="cj-secondary ad-danger" {...busyProps(busy)} onClick={() => run('unpublish')}>신규 제공 중단</button>}
             </div>
             {(m.status !== 'PUBLISHED' || publishedChanges) && missing.length > 0 && <div><h4>게시 전 확인할 항목</h4>
               <ul aria-label="게시 전 확인">{missing.map(code => <li key={code}>{missingFieldLabel(code)}</li>)}</ul>
@@ -540,10 +541,10 @@ function MissionDetail({ id, onClose, returnLabel='미션 목록으로' }: { id:
           <ErrorNotice error={action.error} />
           <div className="ws-actions">
             <button type="submit" className="cj-primary"
-              disabled={busy || !reviewIsCurrent || (review.result === 'CHANGES_REQUESTED' && !review.comment.trim())}>
+              {...busyProps(busy, !reviewIsCurrent || (review.result === 'CHANGES_REQUESTED' && !review.comment.trim()))}>
               {review.result === 'APPROVED' ? '승인 기록' : '보완 요청 기록'}
             </button>
-            <button type="button" className="cj-secondary" disabled={action.isPending} onClick={closeReview}>취소</button>
+            <button type="button" className="cj-secondary" {...busyProps(action.isPending)} onClick={closeReview}>취소</button>
           </div>
         </form>
       </Modal>}
@@ -744,7 +745,7 @@ function RubricForm({ mission, onSaved }: { mission: AdminMission; onSaved: () =
           {errors.map((e) => <li key={e}>{e}</li>)}
         </ul>
       )}
-      <button className="cj-primary" disabled={save.isPending}>
+      <button className="cj-primary" {...busyProps(save.isPending)}>
         새 기준표 버전 저장
       </button>
       <ErrorNotice error={save.error} />

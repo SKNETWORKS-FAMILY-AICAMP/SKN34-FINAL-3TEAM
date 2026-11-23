@@ -1,0 +1,36 @@
+{"name":"관리자 로그인","w":1440,"url":"/admin/login","n":0,"r":[]}
+{"name":"운영 현황","w":1440,"url":"/admin/home?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"감사 이력","w":1440,"url":"/admin/audit?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"미션 관리","w":1440,"url":"/admin/missions?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"미션 편집","w":1440,"url":"/admin/missions?from=2026-11-17&to=2026-11-23&missionId=d1000000-0000-4000-8000-000000000001","n":0,"r":[]}
+{"name":"미션 초안","w":1440,"url":"/admin/mission-drafts?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"주간 테마 검수","w":1440,"url":"/admin/theme-drafts?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"테마 초안 상세","w":1440,"url":"/admin/theme-drafts?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"게시 관리","w":1440,"url":"/admin/themes?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"꾸미기 아이템","w":1440,"url":"/admin/looks?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"문의·공지","w":1440,"url":"/admin/support?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"오류 신고","w":1440,"url":"/admin/errors?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"작업 재처리","w":1440,"url":"/admin/jobs?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"작업 대기열","w":1440,"url":"/admin/queues?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"모델·프롬프트","w":1440,"url":"/admin/models?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"표현 검토","w":1440,"url":"/admin/expressions?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"AI 사용량","w":1440,"url":"/admin/usage?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"결제·환불","w":1440,"url":"/admin/payments?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"관리자 로그인","w":390,"url":"/admin/login","n":0,"r":[]}
+{"name":"운영 현황","w":390,"url":"/admin/home?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"감사 이력","w":390,"url":"/admin/audit?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"미션 관리","w":390,"url":"/admin/missions?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"미션 편집","w":390,"url":"/admin/missions?from=2026-11-17&to=2026-11-23&missionId=d1000000-0000-4000-8000-000000000001","n":0,"r":[]}
+{"name":"미션 초안","w":390,"url":"/admin/mission-drafts?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"주간 테마 검수","w":390,"url":"/admin/theme-drafts?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"테마 초안 상세","w":390,"url":"/admin/theme-drafts?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"게시 관리","w":390,"url":"/admin/themes?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"꾸미기 아이템","w":390,"url":"/admin/looks?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"문의·공지","w":390,"url":"/admin/support?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"오류 신고","w":390,"url":"/admin/errors?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"작업 재처리","w":390,"url":"/admin/jobs?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"작업 대기열","w":390,"url":"/admin/queues?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"모델·프롬프트","w":390,"url":"/admin/models?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"표현 검토","w":390,"url":"/admin/expressions?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"AI 사용량","w":390,"url":"/admin/usage?from=2026-11-17&to=2026-11-23","n":0,"r":[]}
+{"name":"결제·환불","w":390,"url":"/admin/payments?from=2026-11-17&to=2026-11-23","n":0,"r":[]}

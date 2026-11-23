@@ -13,6 +13,7 @@ import { ModelLoadingStatus } from './ModelLoadingStatus.tsx'
 import { ModelRegistrationPanel } from './ModelRegistrationPanel.tsx'
 import '../service/service.css'
 import './modelRegistry.css'
+import { busyProps } from './busyButton.ts'
 
 function VersionCard({ version: v }: { version: ModelVersion }) {
   const id = useId()
@@ -65,8 +66,8 @@ function VersionCard({ version: v }: { version: ModelVersion }) {
       <Limitations items={record?.evidence.limitations} />
       <p>적용 범위: {scopes.join(', ')}</p><p>변경 사유: {reason}</p><p>재분석 계획: {reanalysis ? '있음 (작업 실행 아님)' : '없음'}</p>
       <p>승인자는 로그인한 계정으로 기록됩니다. 기존 결과는 유지됩니다.</p><ErrorNotice error={mutation.error} />
-      <div className="ws-actions"><button disabled={mutation.isPending} onClick={() => setConfirm(false)}>취소</button>
-        <button className="cj-primary" disabled={!!blockers.length} onClick={() => void mutation.mutateAsync(undefined).then(() => { setConfirm(false); setScopes([]); setApproved(false); setReason(''); setNotice('서버에서 버전 변경을 확인했습니다. 기존 결과는 유지됩니다.') }).catch(() => {})}>확인 후 {verb}</button></div>
+      <div className="ws-actions"><button {...busyProps(mutation.isPending)} onClick={() => setConfirm(false)}>취소</button>
+        <button className="cj-primary" {...busyProps(mutation.isPending, v.status === 'ACTIVE' || !!actionBlockers(v, action, scopes, reason, approved, false).length)} onClick={() => void mutation.mutateAsync(undefined).then(() => { setConfirm(false); setScopes([]); setApproved(false); setReason(''); setNotice('서버에서 버전 변경을 확인했습니다. 기존 결과는 유지됩니다.') }).catch(() => {})}>확인 후 {verb}</button></div>
     </Modal>}
   </div></details></article>
 }
