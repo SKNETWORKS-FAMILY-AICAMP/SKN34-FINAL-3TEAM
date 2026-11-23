@@ -11,7 +11,12 @@ object InternalCallerPolicy {
         "core" to listOf("/internal/**"),
         "ai" to listOf("/internal/records/students/**"),
         "report-api" to listOf("/internal/records/evidence"),
-        "report-worker" to listOf("/internal/records/**", "/internal/students/*/weekly-theme/summary"),
+        "report-worker" to listOf(
+            "/internal/records/**",
+            "/internal/students/*/weekly-theme/summary",
+            // 추억 그림책 회차 조립 (docs/proposals/memory-book.md, 미도입 시험 구현)
+            "/internal/students/*/memory-book/*/*",
+        ),
         "ops" to listOf("/internal/admin/knowledge/**", "/internal/knowledge/**", "/internal/expression-reviews/**"),
     )
 

@@ -54,7 +54,7 @@ def test_default_run_wires_configured_clients_queues_relay_and_releases_resource
             handlers.append(queue)
             events.append("subscribe:" + queue)
             await asyncio.sleep(0)  # 실제 serve의 relay 태스크를 실행한다.
-            if len(handlers) == 2:
+            if len(handlers) == 3:
                 # run이 등록한 실제 종료 신호 callback을 사용한다.
                 captured["stop"]()
 
@@ -97,6 +97,11 @@ def test_default_run_wires_configured_clients_queues_relay_and_releases_resource
             ai_url="http://ai.test",
             consumer_max_retries=3,
             consumer_prefetch=1,
+            memory_book_asset_timeout_seconds=10.0,
+            memory_book_asset_origins="",
+            memory_book_asset_internal_origins="",
+            memory_book_image_max_bytes=1024,
+            memory_book_total_max_bytes=4096,
         ),
     )
     monkeypatch.setattr(worker, "AmqpConnection", Broker)
@@ -129,7 +134,7 @@ def test_default_run_wires_configured_clients_queues_relay_and_releases_resource
         assert handlers == []
     else:
         asyncio.run(scenario())
-        assert handlers == [worker.DELETION_QUEUE, worker.GENERATE_QUEUE]
+        assert handlers == [worker.DELETION_QUEUE, worker.GENERATE_QUEUE, worker.MEMORY_BOOK_QUEUE]
         assert "relay" in events
         stop_positions = [events.index("stop:" + q) for q in handlers]
         close_positions = [events.index("close:" + q) for q in handlers]
