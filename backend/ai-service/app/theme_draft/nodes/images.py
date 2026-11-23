@@ -34,9 +34,11 @@ from app.mission_draft.models import Draft
 from app.theme_draft.checks import (
     DAYS,
     IMAGE_REVIEW_IDS,
+    INVESTIGATE,
     MISSION_IMAGE_REVIEW_IDS,
     Theme,
     check_review,
+    mission_way,
 )
 from app.theme_draft.models import GeneratedImageReview
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState, uniq
@@ -78,8 +80,9 @@ class Shot:
     shows_target: bool
     question: str | None = None
     hints: list[str] | None = None
-    discovery: str | None = None  # 미션 그림만: 그날 증거 발견 줄
-    evidence: str | None = None  # 미션 그림만: 그날 증거 종류(TRACE·SIGHTING·RECORD)
+    discovery: str | None = None  # 미션 그림만: 그날 증거 발견 줄(수사 날만)
+    evidence: str | None = None  # 미션 그림만: 그날 증거 종류(TRACE·SIGHTING·RECORD, 수사 날만)
+    helper: str | None = None  # 미션 그림만: 그날 돕는 사람(#782, 부탁 날은 증거 대신)
     answer_allowed: bool = False  # 종료 콘티 컷만 정답(장소·동물) 공개 허용
 
 
@@ -123,6 +126,7 @@ async def draw(
                     hints=shot.hints,
                     discovery=shot.discovery,
                     evidence=shot.evidence,
+                    helper=shot.helper,
                     answer_allowed=shot.answer_allowed,
                 ),
                 output=GeneratedImageReview,
@@ -196,6 +200,7 @@ def mission_shot(
 ) -> Shot:
     body = ctx.prompt.body
     d = next(x for x in theme["days"] if x["day"] == day)
+    investigate = mission_way(d) == INVESTIGATE
     return Shot(
         key=day,
         scene_text=f"{d['place']}. {d['sceneNote']}",
@@ -207,8 +212,10 @@ def mission_shot(
         shows_target=body.mission_shows_target(theme),
         question=draft.question,
         hints=[h for h in draft.hints if h.strip()],
-        discovery=d.get("discovery"),
-        evidence=body.evidence_kind(d),
+        # #782 테마 짜임: 부탁 날은 증거를 문제 전에 그리지 않고 돕는 사람을 봄
+        discovery=d.get("discovery") if investigate else "",
+        evidence=body.evidence_kind(d) if investigate else "",
+        helper=d.get("helper") or "",
     )
 
 
