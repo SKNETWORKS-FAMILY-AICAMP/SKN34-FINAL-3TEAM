@@ -154,7 +154,7 @@ export const audits: Audit[] = []
 export function audit(
   action: string,
   targetType: string,
-  targetId: string,
+  targetId: string | null,
   result: 'SUCCESS' | 'FAILURE',
   detail: string | Record<string, unknown>,
 ) {
@@ -215,9 +215,9 @@ export const modelVersions: ModelVersion[] = [
 ]
 /** #728 표현 검토 대기 (FN-ADM-24). 개발용 합성 글이며 학생 이름·ID 없음 */
 export const expressionReviews: import('../../../domain/admin/expressionReview.ts').ExpressionReview[] = [
-  { id: 'review-1', source: 'GRAY_ZONE', text: '개발용 합성 답변 · 친구가 너무 답답하게 굴어서 짜증이 났다', modelVersion: 'tox-kcelectra:mock-1', label: null, labeledAt: null, createdAt: '2026-11-20T01:00:00Z' },
-  { id: 'review-2', source: 'COMMUNITY_REPORT', text: '개발용 합성 공유물\n두 번째 줄', modelVersion: null, label: null, labeledAt: null, createdAt: '2026-11-20T02:00:00Z' },
-  { id: 'review-3', source: 'GRAY_ZONE', text: '개발용 합성 답변 · 이미 라벨을 붙인 글', modelVersion: 'tox-kcelectra:mock-1', label: 'CLEAN', labeledAt: '2026-11-21T00:00:00Z', createdAt: '2026-11-19T00:00:00Z' },
+  { id: '00000000-0000-4000-8000-000007280001', source: 'GRAY_ZONE', text: '개발용 합성 답변 · 친구가 너무 답답하게 굴어서 짜증이 났다', modelVersion: 'tox-kcelectra:mock-1', label: null, labeledAt: null, createdAt: '2026-11-20T01:00:00Z' },
+  { id: '00000000-0000-4000-8000-000007280002', source: 'COMMUNITY_REPORT', text: '개발용 합성 공유물\n두 번째 줄', modelVersion: null, label: null, labeledAt: null, createdAt: '2026-11-20T02:00:00Z' },
+  { id: '00000000-0000-4000-8000-000007280003', source: 'GRAY_ZONE', text: '개발용 합성 답변 · 이미 라벨을 붙인 글', modelVersion: 'tox-kcelectra:mock-1', label: 'CLEAN', labeledAt: '2026-11-21T00:00:00Z', createdAt: '2026-11-19T00:00:00Z' },
 ]
 export const reportedAttemptIds = new Map([['error-1', 'demo-seoyun-math']])
 export const errorReports: ErrorReport[] = [

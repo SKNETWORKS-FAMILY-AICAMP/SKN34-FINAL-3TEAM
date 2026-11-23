@@ -677,13 +677,14 @@ export const adminHandlers = [
       const rows = mode === 'empty' ? [] : expressionReviews.filter(r => (r.label !== null) === labeled && (!source || r.source === source))
         .sort((a, b) => labeled ? String(b.labeledAt).localeCompare(String(a.labeledAt)) : a.createdAt.localeCompare(b.createdAt))
       const items = rows.slice(number * size, number * size + size)
-      audit('EXPRESSION_REVIEW_VIEW', 'EXPRESSION_REVIEW', 'list', 'SUCCESS', { reviewIds: items.map(r => r.id) })
+      audit('EXPRESSION_REVIEW_VIEW', 'EXPRESSION_REVIEW', null, 'SUCCESS', { reviewIds: items.map(r => r.id) })
       return { items, page: number, size, totalElements: rows.length }
     }),
   ),
   http.put('/api/v1/admin/expression-reviews/:reviewId/label', ({ request, params }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
+      if (!/^[0-9a-f-]{36}$/i.test(String(params.reviewId))) fail('VALIDATION_FAILED', '요청 값을 확인해 주세요.') // core 경로 변수 UUID
       const body = (await request.json().catch(() => null)) as { label?: unknown } | null
       if (!body || Object.keys(body).length !== 1 || !['OFFENSIVE', 'CLEAN', 'SKIP'].includes(String(body.label))) fail('VALIDATION_FAILED', '요청 값을 확인해 주세요.')
       const review = expressionReviews.find(r => r.id === params.reviewId)
