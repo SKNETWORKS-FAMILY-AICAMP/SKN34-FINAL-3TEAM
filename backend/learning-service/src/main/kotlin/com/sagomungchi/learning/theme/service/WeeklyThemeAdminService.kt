@@ -102,8 +102,9 @@ class WeeklyThemeAdminService(
     }
 
     /**
-     * 최종 게시: 검토 요청한 현재본만(아니면 409 CONFLICT). 게시 검사(게시 미션·시연 전용 제외·테마 학년 포함·다섯 유형 1개씩·
-     * 같은 학년·주 게시 1개)를 모두 모아 실패하면 422 WEEKLY_THEME_PUBLISH_INCOMPLETE. 동시 게시가 부분 UK에 걸려도 같은 422
+     * 최종 게시: 검토 요청한 현재본만(아니면 409 CONFLICT). 같은 학년·주에 다른 게시 테마가 있으면 409 WEEK_LOCKED,
+     * 버전·편성 후보가 바뀌었으면 409 PLAN_CONFLICT. 게시 검사(게시 미션·시연 전용 제외·테마 학년 포함·다섯 유형 1개씩)를
+     * 모두 모아 실패하면 422 WEEKLY_THEME_PUBLISH_INCOMPLETE. 동시 게시가 부분 UK에 걸리면 같은 422(WEEK_ALREADY_PUBLISHED)
      */
     @Transactional
     fun publish(themeId: UUID, expectedVersion: Int? = null, expectedPlan: UUID? = null, checkPlan: Boolean = false): AdminWeeklyTheme {
