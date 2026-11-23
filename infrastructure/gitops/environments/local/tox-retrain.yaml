@@ -1,0 +1,6 @@
+# Build from the repository root with ml/tox/Dockerfile and load into kind.
+image: sagomungchi/tox-retrain:local
+suspend: false
+bucket: sagomungchi-local-models
+region: ap-northeast-2
+credentialsSecret: app-service-credentials

@@ -48,7 +48,7 @@ pdb:
   enabled: false
 networkPolicy:
   enabled: true
-  ingressFromApps: [core-service, ai-service, report-worker, report-api]
+  ingressFromApps: [core-service, ai-service, report-worker, report-api, tox-retrain]
   egressToApps:
     - {name: core-service, port: 8080}
     - {name: ai-service, port: 8000}

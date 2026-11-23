@@ -77,7 +77,7 @@ jobs:
             values="$1"; env="$2"; release="$3"; overlay="${4:-}"
             if [ -d "charts/$release" ]; then chart="$release"; else chart=app-service; fi
             case "$chart" in
-              app-service) namespace=app ;;
+              app-service|tox-retrain) namespace=app ;;
               observability) namespace=observability ;;
               platform-data) namespace=platform ;;
               *) echo "::error file=infrastructure/gitops/$values::$chart chart의 namespace가 정의되지 않음"; exit 1 ;;

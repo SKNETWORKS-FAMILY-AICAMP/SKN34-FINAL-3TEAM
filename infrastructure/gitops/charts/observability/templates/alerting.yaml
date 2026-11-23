@@ -6,6 +6,7 @@ metadata:
 data:
   alerting.yaml: |
     apiVersion: 1
+    {{- if .Values.grafana.alerting.discordEnabled }}
     contactPoints:
       - orgId: 1
         name: discord-aws-alerts
@@ -23,10 +24,11 @@ data:
         group_wait: {{ .Values.grafana.alerting.groupWait }}
         group_interval: {{ .Values.grafana.alerting.groupInterval }}
         repeat_interval: {{ .Values.grafana.alerting.repeatInterval }}
+    {{- end }}
     groups:
       - orgId: 1
         name: demo-platform
-        folder: AWS Demo
+        folder: {{ .Values.grafana.alerting.folder | default "AWS Demo" }}
         interval: {{ .Values.grafana.alerting.interval }}
         rules:
         {{- range .Values.grafana.alerting.rules }}
@@ -43,7 +45,7 @@ data:
             annotations:
               summary: {{ .summary | quote }}
             labels:
-              environment: demo
+              environment: {{ $.Values.grafana.alerting.environment | default "demo" }}
               severity: warning
             data:
               - refId: A
