@@ -35,7 +35,7 @@ async function target44(locator: Locator) {
 }
 
 async function contrast(locator: Locator) {
-  const ratio = await locator.evaluate(el => {
+  const { ratio, text } = await locator.evaluate(el => {
     const rgb = (color: string) => color.match(/[\d.]+/g)!.slice(0, 3).map(Number)
     const luminance = (color: number[]) => color.map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 })
       .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0)
@@ -43,10 +43,101 @@ async function contrast(locator: Locator) {
     while (bg && getComputedStyle(bg).backgroundColor === 'rgba(0, 0, 0, 0)') bg = bg.parentElement
     if (!bg) throw new Error('No opaque background')
     const values = [luminance(rgb(getComputedStyle(el).color)), luminance(rgb(getComputedStyle(bg).backgroundColor))].sort((a, b) => b - a)
-    return (values[0] + 0.05) / (values[1] + 0.05)
+    return { ratio: (values[0] + 0.05) / (values[1] + 0.05), text: el.textContent }
   })
-  expect(ratio).toBeGreaterThanOrEqual(4.5)
+  expect(ratio, `글자 대비: ${text}`).toBeGreaterThanOrEqual(4.5)
 }
+
+async function adminLogin(page: Page) {
+  await page.getByLabel('로그인 ID', { exact: true }).fill('admin@example.test')
+  await page.getByRole('button', { name: '로그인', exact: true }).click()
+  await expect(page).toHaveURL(/\/admin\/home/)
+}
+
+test('#914 관리자 로그인·15개 메뉴의 보조 글 대비 @responsive', async ({ page }, testInfo) => {
+  test.setTimeout(45_000)
+  await page.goto('/admin/login')
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  for (const copy of await page.locator([
+    '.admin-login-eyebrow', '.admin-login-intro > p', '.admin-login-features small',
+    '.admin-login-security', '.admin-login-heading > p', '.admin-login-page footer a',
+  ].map(selector => `${selector}:visible`).join(', ')).all()) {
+    await contrast(copy)
+  }
+  if (testInfo.project.name !== 'tablet') {
+    await page.screenshot({ path: testInfo.outputPath('admin-login.png') })
+  }
+  await adminLogin(page)
+
+  const menus = [
+    'home', 'audit', 'missions', 'mission-drafts', 'themes', 'theme-drafts', 'looks',
+    'support', 'errors', 'jobs', 'queues', 'models', 'expressions', 'usage', 'payments',
+  ]
+  const secondaryText = [
+    '.ad-overview-intro > span', '.ad-mission-publication h3', '.ad-resource-list p', '.ad-time-cell',
+    '.ad-empty > p', '.ad-list-footer > span', '.ad-review-guide > summary', '.ad-view-tabs button',
+    '.ad-data-toolbar p', '.ad-table td small', '.ad-record-id', '.ad-note', '.ad-badge',
+  ]
+  for (const menu of menus) {
+    await test.step(menu, async () => {
+      await navigate(page, `/admin/${menu}`)
+      await expect(page.getByRole('main')).toHaveAttribute('data-page', menu)
+      await expect(page.getByText('불러오고 있습니다.', { exact: true }).first()).toBeHidden()
+      await contrast(page.locator('.ad-page-title p'))
+      const location = page.locator('.ad-location > span:visible')
+      if (await location.count()) await contrast(location.first())
+      await expect(page.getByText('접근 권한 확인', { exact: true })).toHaveCount(0)
+      for (const selector of secondaryText) {
+        const copy = page.locator(`.ad-page-content ${selector}:visible`)
+        if (await copy.count()) await contrast(copy.first())
+      }
+      if (menu === 'home' && testInfo.project.name !== 'tablet') {
+        await page.screenshot({ path: testInfo.outputPath('admin-home.png') })
+      }
+    })
+  }
+
+  await navigate(page, '/admin/theme-drafts?request=1')
+  await page.getByLabel('테마 주제 키워드').fill('검사 실패 시연')
+  await page.getByRole('button', { name: '테마 초안 생성 요청', exact: true }).click()
+  const failure = page.locator('.ad-note').filter({ has: page.getByRole('heading', { name: '검사 실패', exact: true }) })
+  await expect(failure).toBeVisible({ timeout: 12_000 })
+  await contrast(failure.getByRole('heading'))
+  await contrast(failure.locator('p').first())
+})
+
+test('#914 모바일 관리자 표는 Tab과 방향키로 스크롤할 수 있다 @responsive', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'compact', '가로 스크롤이 생기는 모바일 뷰포트에서 확인')
+  await page.goto('/admin/login')
+  await adminLogin(page)
+
+  const tables = [
+    ['audit', '감사 이력 표'],
+    ['mission-drafts', '미션 초안 표'],
+    ['usage', 'AI 사용량 표'],
+    ['payments', '환불 요청 표'],
+    ['payments?tab=payments', '결제 승인 내역 표'],
+    ['payments?tab=reconciliation', '결제 대조 결과 표'],
+  ]
+  for (const [path, label] of tables) {
+    await test.step(label, async () => {
+      await navigate(page, `/admin/${path}`)
+      const region = page.getByRole('region', { name: label, exact: true })
+      await expect(region).toBeVisible()
+      await expect(region).toHaveAttribute('tabindex', '0')
+      await expect.poll(() => region.evaluate(el => el.scrollWidth - el.clientWidth)).toBeGreaterThan(0)
+      await region.focus()
+      await page.keyboard.press('Shift+Tab')
+      await expect(region).not.toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(region).toBeFocused()
+      await expect(region).toHaveCSS('outline-style', 'solid')
+      await page.keyboard.press('ArrowRight')
+      await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(0)
+      await expect(region).toBeFocused()
+    })
+  }
+})
 
 async function work(page: Page) {
   await student(page)

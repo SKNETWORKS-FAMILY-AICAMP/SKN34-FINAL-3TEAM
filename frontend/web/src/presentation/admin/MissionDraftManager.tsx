@@ -39,7 +39,7 @@ export function MissionDraftManager() {
           </label>
         }>
           <QueryFeedback query={list} />
-          <div className="ad-table-wrap">
+          <div className="ad-table-wrap" role="region" aria-label="미션 초안 표" tabIndex={0}>
             <table className="ad-table">
               <thead><tr><th>요청 시각</th><th>성취기준</th><th>상태</th><th className="num">시도</th><th>확인</th></tr></thead>
               <tbody>
