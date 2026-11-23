@@ -2153,10 +2153,31 @@ classDiagram
   class WeeklyThemeAdminService {
     <<service>>
     +create(author, content) AdminWeeklyTheme
-    +update(themeId, author, content) AdminWeeklyTheme
-    +requestReview(themeId) AdminWeeklyTheme
-    +publish(themeId) AdminWeeklyTheme
-    +unpublish(themeId) AdminWeeklyTheme
+    +update(themeId, author, content, expectedVersion?) AdminWeeklyTheme
+    +requestReview(themeId, expectedVersion?) AdminWeeklyTheme
+    +publish(themeId, expectedVersion?, expectedPlan?, checkPlan) AdminWeeklyTheme
+    +unpublish(themeId, expectedPublishedVersion?) AdminWeeklyTheme
+  }
+  class ThemeWeekPlanner {
+    <<service>>
+    +board(grade, weekStart) WeekBoard
+    +change(PlanChange) PlanResult
+    +lockGrades(grades)
+    +requireOpen(grade, week)
+    +lockDraftEdits(draftId) DraftWeekState
+    +requireExpected(state, expected, supplied)
+    +requireOccupant(grade, week, expected)
+    +finishPublication(versionId, grade, week)
+  }
+  class ThemeDraftMediaService {
+    <<service>>
+    +history(draftId, scene) SceneHistory
+    +select(draftId, scene, versionId, expected, expectedCount) SceneHistory
+    +annotate(draftId, scene, versionId, starred?, note?) SceneHistory
+    +selectedOutput(draft) ThemeDraftOutput
+    +rootId(draftId) UUID
+    +hasPendingGeneration(draftId) Boolean
+    +freeze(draftId)
   }
   class WeeklyTheme {
     <<entity>>
@@ -2184,10 +2205,13 @@ classDiagram
   class AdminThemeDraftController {
     <<controller>>
     +request(body) ThemeDraftView
-    +list(status, source, page, size) Page
+    +list(status, source, page, size, grade?, weekStart?, hideDiscarded, comparisonPending) Page
     +detail(draftId) ThemeDraftView
-    +adopt(draftId) AdminWeeklyTheme
-    +discard(draftId) ThemeDraftView
+    +sceneHistory(draftId, scene) SceneHistory
+    +selectScene(draftId, scene, body) SceneHistory
+    +annotateScene(draftId, scene, versionId, body) SceneHistory
+    +adopt(draftId, expectedPlannedWeek?) AdminWeeklyTheme
+    +discard(draftId, expectedPlannedWeek?) ThemeDraftView
     +regenerate(draftId, targets?) ThemeDraftView
   }
   class ThemeDraftService {
@@ -2195,8 +2219,9 @@ classDiagram
     +request(command, author) ThemeDraftView
     +createWeekly(weekStart)
     +regenerate(draftId, author, targets?) ThemeDraftView
-    +adopt(draftId, author) AdminWeeklyTheme
-    +discard(draftId) ThemeDraftView
+    +list(status, source, page, size, grade?, weekStart?, hideDiscarded, comparisonPending) Page
+    +adopt(draftId, author, expected?, supplied) AdminWeeklyTheme
+    +discard(draftId, expected?, supplied) ThemeDraftView
     +generateNext(now)
   }
   class ThemeDraft {
@@ -2268,6 +2293,8 @@ classDiagram
   WeeklyThemeAdminService ..> ThemePublishCheck
   WeeklyThemeAdminService ..> ThemeAnswerRules : 저장 때 정답 논리·생각 열기 위치
   WeeklyThemeAdminService --> MissionService : 게시본 미션
+  AdminWeeklyThemeController --> ThemeWeekPlanner : 주차 편성 조회·변경
+  WeeklyThemeAdminService --> ThemeWeekPlanner : 학년 잠금·주 잠금·게시 고정
   WeeklyThemeService ..> ThemeEnding : 종료 공개·OUTRO
   WeeklyThemeService --> AssetUrls : 그림·영상 URL
   AttemptService --> WeeklyThemeService : context 검사·themeScene
@@ -2279,6 +2306,10 @@ classDiagram
   ThemeDraftService ..> ThemeDraftRules
   ThemeDraftService --> MissionService : createFromDraft(LLM_THEME)·성취기준 조회
   ThemeDraftService --> WeeklyThemeAdminService : 테마 DRAFT 생성·게시 여부
+  ThemeDraftService --> ThemeWeekPlanner : 주 잠금·편성 대조·해제
+  ThemeDraftService --> ThemeDraftMediaService : 장면 선택본·생성 대기·고정
+  AdminThemeDraftController --> ThemeDraftMediaService : 장면 이력·선택·별표·메모
+  ThemeDraftMediaService --> ThemeWeekPlanner : 편집 잠금
   CommunityController --> CommunityService
   CommunityService ..> CommunityRules
   CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
@@ -2303,6 +2334,11 @@ classDiagram
 - 다른 기능은 service로만 부른다(architecture 계층 규칙): 성취기준은 `MissionService.standards(codes)`·`standardsOf(교과, 학년군)`, 주간 자동이 건너뛸 학년(그 학년·주 게시 테마 있음)은 `WeeklyThemeAdminService.publishedExists`. 자동 성취기준이 피할 최근 코드는 `ThemeDraftRepository.findInputs`(같은 학년, 적용 주 앞 4주)
 - 주제 씨앗(`ThemeTopicSeeds`, 기준안 64개, #437 B안 2026-11-11, #634 줄거리 종류 2026-11-16·④⑤ 2026-11-17): 주간 자동과 주제 없이 온 관리자 요청에 `ThemeTopicSeeds.choose`가 `줄거리: <종류> / 뭉치 역할: … / 장소: … / <찾는 대상|밝힐 것>: …` 하나를 골라 `input.topic`에 넣는다. `ThemeTopicSeed(type: StoryType, role, place, target, seasons)`, `StoryType`(LOST·TREASURE·PRANK·FOOTPRINT·ORIGIN·GIFT·SECRET_INGREDIENT·WHEN·ROUTE·VEHICLE·SOUND, `label`·`targetLabel` — 넷째 칸 `찾는 대상`·`밝힐 것`·`손에 든 것`). 그 주 계절(`Season`, 적용 주 월요일의 달)에 맞는 씨앗이 있는 종류 중 같은 학년 직전 주 초안 종류를 빼고 종류를 고른 뒤(모두 빠지면 빼지 않음), 그 종류 씨앗 중 같은 학년 최근 씨앗(`findInputs`, 목록 개수만큼의 주, 초안 상태 무관)·같은 주 다른 초안 씨앗(`findWeekInputs`)·같은 학년 최근 4주 역할(`ROLE_WEEKS`)을 빼고 무작위. 남는 게 없으면 최근 씨앗 → 역할 순으로 풀고 가장 오래전에 쓴 것, 종류는 지킴. 비교는 `parse`(`ParsedTopic`, 옛 형식은 LOST, 읽지 못하면 null)의 (역할 이름, 장소, 대상). 관리자가 쓴 주제와 다시 생성의 저장된 주제는 그대로
 - 자동 성취기준 후보 풀(#536, RAG 안 씀 팀 결정 2026-11-11): learning이 계속 고르고 후보 풀만 바꾼다. `ThemeDraftService.autoInput`이 교과별 학년군 표(`standardsOf`)를 `ThemeDraftRules.candidatePools`로 학기 단계 ① 그 학년·학기(`ThemeSemester.of(grade, weekStart)`, 3월 1일~8월 15일 1학기, 확정 2026-11-12) ② 같은 학년군에서 이번 학기까지 배운 학기(`ThemeSemester.soFar`)와 학년군 표로 나누고(`StandardCandidates`), `autoStandards`가 최근 4주·이미 고른 코드를 빼고 남는 첫 단계에서 고른다. 모든 단계가 최근 코드뿐이면 ① 단계에서 가장 오래전에 쓴 코드(주제 씨앗과 같은 방식). 학년군 표(위 학년 성취기준 포함)는 학기 단계에 고를 코드가 하나도 없을 때만. 아래 학년군은 넣지 않는다(미션 게시 학년군 규칙 #353). 학기 대응표 `StandardSemesters`(<<value>>, 코드 → 학기)는 `StandardSemestersConfig`가 시작 때 resources/knowledge/semester_map.csv(원본 `scripts/knowledge/semester_map.csv` 사본)에서 읽는다(DB·지식 판에 기대지 않음). 최근 코드는 `findInputs`의 오래된 순 목록. ai 요청 `missions[].standards` 계약은 그대로, ai `retrieve`(#470)는 받은 코드의 근거 묶음만 가져온다
+#882(장면 비교·주차 편성·게시 확정, learning V25~V27, 결정과 근거는 [learning 보고서](../report/learning.md) #882 절):
+- `ThemeWeekPlanner`: 학년별 권고 잠금(`lockGrades`, 학년 순서대로)으로 테마 작성·수정·게시와 초안 요청·채택·버리기·편성을 직렬화한다. `requireOpen`은 그 학년·주에 `PUBLISHED` 테마가 있으면 `409 WEEK_LOCKED`, `stale`은 관리자가 본 값과 다르면 `409 PLAN_CONFLICT`. `board`는 연속 4주 칸(`WeekSlot(weekStart, locked, planned, themes)`)과 후보(원본 `READY` 초안), `change(PlanChange{grade, draftId, expectedWeek, targetWeek, expectedTargetDraftId})`는 `theme_draft.planned_week`만 바꾼다(맞교환 포함, 생성 기준 주 `week_start`는 그대로). `finishPublication`은 게시 버전의 요일 미션·기준표 버전을 고정하고 그 학년·주 편성을 해제
+- `ThemeDraftMediaService`: 장면(`INTRO`·`MON`~`FRI`·`OUTRO`)마다 묶음 원본과 다시 생성본의 결과를 버전 이력(`SceneHistory`)으로 보여 주고, 선택·별표·메모를 저장한다(V25). `selectedOutput`이 장면별 선택본을 합친 결과를 채택에 넘기고, 채택·버리기 때 `freeze`로 선택을 고정. 묶음에 `GENERATING` 다시 생성본이 있으면(`hasPendingGeneration`) 채택·버리기는 `PLAN_CONFLICT`
+- 시도의 테마 버전 고정(V27 `attempt.theme_version_id`)은 [ERD](erd.md)·[시퀀스](sequence-diagram.md) 참고
+- core 감사(`AdminLearningService`): 편성 변경 `THEME_DRAFT_PLAN`, 장면 선택 `THEME_SCENE_SELECT`, 별표·메모 `THEME_SCENE_ANNOTATE`(`target_type = THEME_DRAFT`, 장면은 `detail.scene`). learning 오류 `WEEK_LOCKED`·`THEME_SCHEDULE_LOCKED`·`PLAN_CONFLICT`는 허용 목록으로 그대로 전달
 - `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
 
 ### 4.5 기념 액자·추억 검색 (P27, 구현 #559·#563·#564)
