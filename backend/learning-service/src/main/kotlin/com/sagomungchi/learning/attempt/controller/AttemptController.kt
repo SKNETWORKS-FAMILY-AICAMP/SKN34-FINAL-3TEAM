@@ -3,6 +3,7 @@ package com.sagomungchi.learning.attempt.controller
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.exception.Problems
 import com.sagomungchi.learning._common.security.UserContextHolder
+import com.sagomungchi.learning._common.web.MissionResponse
 import com.sagomungchi.learning.attempt.domain.AttemptStatus
 import com.sagomungchi.learning.attempt.domain.AttemptComparison
 import com.sagomungchi.learning.attempt.domain.AttemptContext
@@ -41,6 +42,22 @@ data class AttemptStartRequest(val context: AttemptContext? = null)
 class AttemptController(
     private val attemptService: AttemptService,
 ) {
+    /**
+     * 테마 경로 미션 안내 (#882). 같은 경로의 일반(EXTRA) 상세는 `MissionController.get`이 받고,
+     * `context`가 있고 EXTRA가 아니면 이 매핑이 받는다(params 조건이 더 구체적, #908). 정해진 값 밖은 400
+     */
+    @GetMapping("/missions/{missionId}", params = ["context", "context!=EXTRA"])
+    fun themeGuide(
+        @PathVariable missionId: UUID,
+        @RequestParam @Min(MIN_GRADE) @Max(MAX_GRADE) grade: Int,
+        @RequestParam(defaultValue = "false") demo: Boolean,
+        @RequestParam context: AttemptContext,
+        @RequestParam(defaultValue = "false") sundayTheme: Boolean,
+    ): MissionResponse {
+        val student = UserContextHolder.current().requireSelfStudent()
+        return MissionResponse.from(attemptService.themeGuide(student, missionId, grade, demo, context, sundayTheme))
+    }
+
     /**
      * 새 시도면 201, 진행 중 시도를 돌려주면 200 (sequence-diagram 3.1). 본문 `{context}`(api-spec 2.11, #385):
      * 본문 없음·`{}`·`null`은 EXTRA, 정해진 값 밖은 400. 쿼리 `sundayTheme`은 core가 일요일 테마 허용 여부로 넘김(core #485, #484)
