@@ -3,8 +3,6 @@ package com.sagomungchi.learning.mission.controller
 import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning._common.web.MissionListItemResponse
 import com.sagomungchi.learning._common.web.MissionResponse
-import com.sagomungchi.learning.attempt.domain.AttemptContext
-import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.mission.service.MissionService
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
@@ -17,13 +15,13 @@ import java.util.UUID
 
 /**
  * 학생용 미션 조회 (api-spec 2.2, 4.1). core가 학생 학년을 grade(지원 학년 초3~6, P03),
- * 시연 학생 여부(student.is_demo)를 demo로 넘김.
+ * 시연 학생 여부(student.is_demo)를 demo로 넘김. 같은 상세 경로의 테마 안내(`context`가 EXTRA 아님)는
+ * attempt 기능 `AttemptController.themeGuide`가 받음(#908)
  */
 @RestController
 @RequestMapping("/internal/missions")
 class MissionController(
     private val missionService: MissionService,
-    private val attemptService: AttemptService,
 ) {
     @GetMapping
     fun list(
@@ -48,13 +46,9 @@ class MissionController(
         @PathVariable missionId: UUID,
         @RequestParam @Min(MIN_GRADE) @Max(MAX_GRADE) grade: Int,
         @RequestParam(defaultValue = "false") demo: Boolean,
-        @RequestParam(defaultValue = "EXTRA") context: AttemptContext,
-        @RequestParam(defaultValue = "false") sundayTheme: Boolean,
     ): MissionResponse {
-        val student = UserContextHolder.current().requireSelfStudent()
-        val mission = if (context == AttemptContext.EXTRA) missionService.get(missionId, grade, demo)
-            else attemptService.themeGuide(student, missionId, grade, demo, context, sundayTheme)
-        return MissionResponse.from(mission)
+        UserContextHolder.current().requireSelfStudent()
+        return MissionResponse.from(missionService.get(missionId, grade, demo))
     }
 
     companion object {

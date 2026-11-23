@@ -3,6 +3,7 @@ package com.sagomungchi.learning.mission.controller
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.config.AppProperties
 import com.sagomungchi.learning._common.exception.BusinessException
+import com.sagomungchi.learning.attempt.controller.AttemptController
 import com.sagomungchi.learning.attempt.domain.AttemptContext
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.mission.domain.Choice
@@ -14,6 +15,9 @@ import com.sagomungchi.learning.mission.missionView
 import com.sagomungchi.learning.mission.service.MissionService
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -26,7 +30,8 @@ import org.springframework.test.web.servlet.get
 import java.util.UUID
 import kotlin.test.assertEquals
 
-@WebMvcTest(MissionController::class)
+/** 테마 안내는 같은 경로를 params 조건으로 `AttemptController`가 받으므로 두 controller를 함께 올려 라우팅을 확인(#908) */
+@WebMvcTest(MissionController::class, AttemptController::class)
 @EnableConfigurationProperties(AppProperties::class)
 @TestPropertySource(
     properties = [
@@ -116,6 +121,21 @@ class MissionControllerTest(
             studentRequest(url, role = "PARENT").andExpect { forbidden() }
         }
         studentRequest("/internal/missions/${mission.id}?grade=3&context=OTHER").andExpect { status { isBadRequest() } }
+    }
+
+    @Test
+    fun `context가 없거나 EXTRA면 미션 기능 상세로 가고 시도 기능은 부르지 않는다`() {
+        val mission = missionView(grade = 3)
+        given(missionService.get(mission.id, 3, false)).willReturn(mission)
+
+        for (query in listOf("grade=3", "grade=3&context=EXTRA&sundayTheme=true")) {
+            studentRequest("/internal/missions/${mission.id}?$query").andExpect {
+                status { isOk() }
+                jsonPath("$.id") { value(mission.id.toString()) }
+            }
+        }
+        verify(missionService, times(2)).get(mission.id, 3, false)
+        verifyNoInteractions(attemptService)
     }
 
     @Test

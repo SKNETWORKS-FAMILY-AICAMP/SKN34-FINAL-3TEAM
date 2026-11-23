@@ -1675,6 +1675,7 @@ classDiagram
   }
   class AttemptController {
     <<controller>>
+    +themeGuide(missionId, grade, demo, context, sundayTheme) MissionView
     +start(missionId, grade, demo) Attempt
     +get(attemptId) AttemptDetail
     +saveDraft(attemptId, ifMatch, content) Draft
