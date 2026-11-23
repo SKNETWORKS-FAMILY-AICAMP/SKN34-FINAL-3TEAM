@@ -25,7 +25,6 @@ from app.llm.media import (
     FakeImageClient,
     FakeVideoClient,
     color_clip,
-    run_clip,
     still_clip,
     tiny_png,
     two_face_clip,
@@ -33,7 +32,6 @@ from app.llm.media import (
 from app.mission_draft.models import Draft
 from app.mission_draft.prompts import GeneratedDraft
 from app.prompt_versions.registry import ActiveVersions
-from app.theme_draft import prompts
 from app.theme_draft.checks import DAY_TYPE, DAYS, VIDEO_REVIEW_IDS, motion, spots
 from app.theme_draft.models import (
     GeneratedDialogue,
@@ -55,7 +53,7 @@ from app.theme_draft.models import (
 from app.theme_draft.nodes import images as image_node
 from app.theme_draft.nodes import video as video_node
 from app.theme_draft.nodes.video import STILL_NOTE
-from app.theme_draft.prompts import VIDEO_NEGATIVE, road_scene_ko, video_negative
+from app.theme_draft.prompts import VIDEO_NEGATIVE, video_negative
 from app.theme_draft.service import ThemeDraftGraphRunner
 from app.theme_draft.storage import MemoryThemeStorage
 from tests.theme_draft.fixtures import (
@@ -258,9 +256,8 @@ def test_images_motion_and_video_off_warning() -> None:
     assert set(storage.objects) == set(response.images.values()) | set(
         response.regen["assets"].values()
     )
-    # 장면 7 + 재료 23(테마 옷 뭉치·인물 그림·컷 12·끝 표정 그림 3·달리기 자세 그림 6, #779 6컷·
-    # 표정 그림 두 장·달리기 합성)
-    assert len(storage.objects) == 30
+    # 장면 7 + 재료 17(테마 옷 뭉치·인물 그림·컷 12·끝 표정 그림 3, #779 6컷·표정 그림 두 장)
+    assert len(storage.objects) == 24
     assert {ct for _, ct in storage.objects.values()} == {"image/png"}
     # 테마 옷 뭉치(기본 그림 1장 참조) → 인물만 그린 기준 그림(참조 없음, #779) → 17장 동시에
     assert (
@@ -268,9 +265,8 @@ def test_images_motion_and_video_off_warning() -> None:
         and "Only add the theme outfit: 구조대 주황 조끼" in image.calls[0][0]
     )
     assert image.calls[1][1] == 0 and "Draw only these people" in image.calls[1][0]
-    # 테마 옷 뭉치 + 인물 그림 + 미션 5 + 컷 12 + 끝 표정 그림 3 + 달리기 자세 그림 6(컷 2개 × 기본·
-    # 왼발·오른발, #779 6컷·표정 그림 두 장·달리기 합성)
-    assert len(image.calls) == 28
+    # 테마 옷 뭉치 + 인물 그림 + 미션 5 + 컷 12 + 끝 표정 그림 3(#779 6컷·표정 그림 두 장)
+    assert len(image.calls) == 22
     refs = {
         c[0].split("Scene (Korean): ")[1].split("\n")[0]: c[1]
         for c in image.calls[2:]
@@ -283,15 +279,7 @@ def test_images_motion_and_video_off_warning() -> None:
     # 앞 컷을 잇는 컷(#779 B안: 시작 2·3·6 ← 1, 종료 5·6 ← 3)은 앞 컷 그림을 마지막 참고로
     assert refs[INTRO_CUTS[1]["scene"]] == 2  # 시작 2컷: 인물 기준 그림 + 시작 1컷 그림
     assert refs[INTRO_CUTS[2]["scene"]] == 2  # 시작 3컷: 사람 리액션 + 시작 1컷 그림
-    # 달리기 합성 컷(시작 4·종료 2, #779 ②안): 컷 그림은 참고 없는 길 배경, 기본 자세는 테마 옷
-    # 뭉치만, 왼발·오른발 자세는 기본 자세 한 장만 참고해 발만 바꿈
-    assert INTRO_CUTS[3]["scene"] not in refs and OUTRO_CUTS[1]["scene"] not in refs
-    roads = [c for c in image.calls if prompts.RUN_ROAD in c[0]]
-    bases = [c for c in image.calls if prompts.RUN_BASE_POSE in c[0]]
-    steps = [c for c in image.calls if "as one step of running" in c[0]]
-    assert [len(roads), len(bases), len(steps)] == [2, 2, 4]
-    assert all(c[1] == 0 for c in roads) and all(c[1] == 1 for c in bases + steps)
-    assert sum("the foot on the left side of the picture is lifted" in c[0] for c in steps) == 2
+    assert refs[INTRO_CUTS[3]["scene"]] == 1  # 시작 4컷: 테마 옷 뭉치만(뭉치 혼자 달림)
     assert refs[INTRO_CUTS[4]["scene"]] == 1  # 시작 5컷: 뭉치 혼자 클로즈업(잇지 않음)
     assert refs[INTRO_CUTS[5]["scene"]] == 3  # 시작 6컷: 함께 + 시작 1컷 그림
     assert refs[OUTRO_CUTS[0]["scene"]] == 1  # 종료 1컷: 뭉치 혼자 클로즈업
@@ -314,9 +302,6 @@ def test_images_motion_and_video_off_warning() -> None:
     names = [c[0] for c in image.calls]
     first_close = next(i for i, c in enumerate(names) if INTRO_CUTS[4]["scene"] in c)
     assert all(i > first_close for i, c in enumerate(names) if "Change only Mungchi's mouth" in c)
-    # 달리기 자세는 기본 자세 뒤에(#779 ②안)
-    first_base = next(i for i, c in enumerate(names) if prompts.RUN_BASE_POSE in c)
-    assert all(i > first_base for i, c in enumerate(names) if "as one step of running" in c)
     assert at(OUTRO_CUTS[2]["scene"]) < min(at(OUTRO_CUTS[4]["scene"]), at(OUTRO_CUTS[5]["scene"]))
     assert all(at(INTRO_CUTS[0]["scene"]) < at(INTRO_CUTS[i]["scene"]) for i in (1, 2, 5))
     mon = prompts_with(image, "장소 마을 mon 길")
@@ -329,9 +314,8 @@ def test_images_motion_and_video_off_warning() -> None:
         DISCOVERY["MON"] not in mon[0][0]
         and f"Today's helper (Korean): {HELPER['MON']}" in mon[0][0]
     )
-    # 뭉치 혼자 달림(#779 6컷): 입 모양은 달리기 기본 자세 그림이 받음(합성 컷 ②안)
-    intro4 = next(c[0] for c in image.calls if prompts.RUN_BASE_POSE in c[0])
-    assert "a closed straight-line mouth" in intro4  # determined → 입 모양
+    intro4 = prompts_with(image, INTRO_CUTS[3]["scene"])[0][0]  # 뭉치 혼자 달림(Veo, 설계 v2)
+    assert "a small smiling mouth" in intro4  # 달리기 첫 그림은 웃는 입(설계 v2: 일자 입 안 씀)
     intro3 = prompts_with(image, INTRO_CUTS[2]["scene"])[0][0]  # 사람 리액션: 수수께끼 빛
     assert "Mungchi does not appear" in intro3 and "A touch of mystery" in intro3
     intro1 = prompts_with(image, INTRO_CUTS[0]["scene"])[0][0]
@@ -342,11 +326,11 @@ def test_images_motion_and_video_off_warning() -> None:
     assert "may appear" in prompts_with(image, OUTRO_CUTS[2]["scene"])[0][0]
     # 검토는 [그림, 테마 옷 뭉치](잇는 컷 5장은 앞 컷 그림을 더해 3장), 움직임은 그 장면 그림 1장
     counts = [c[1] for c in review.image_counts if c[0] == "GeneratedImageReview"]
-    # #779 설계 C표: 사람이 나오는 그림은 인물 기준 그림도 봄(PEOPLE). 뭉치 혼자 클로즈업 3장·길
-    # 배경 2장 = 2, 미션 5·시작 1·종료 3 = 3(+인물), 잇는 사람 컷 5장 = 4(+인물·앞 컷), 끝 표정
-    # 그림 3장 = 3(+그 컷 첫 그림, #779 A안), 달리기 자세 4장 = 3(+기본 자세, #779 ②안)
-    assert sorted(counts) == [2] * 5 + [3] * 14 + [4] * 5
-    assert review.count("GeneratedImageReview") == 24
+    # #779 설계 C표: 사람이 나오는 그림은 인물 기준 그림도 봄(PEOPLE). 뭉치 혼자 5장 = 2, 미션 5·
+    # 시작 1·종료 3 = 3(+인물), 잇는 사람 컷 5장 = 4(+인물·앞 컷), 끝 표정 그림 3장 = 3(+그 컷
+    # 첫 그림, #779 A안)
+    assert sorted(counts) == [2] * 5 + [3] * 10 + [4] * 5
+    assert review.count("GeneratedImageReview") == 20
     mon_review = [json.loads(u) for u in review.users("GeneratedImageReview")]
     flow = [u for u in mon_review if "FLOW" in u["items"]]
     assert {u["scene"]: u["previousScene"] for u in flow} == {
@@ -359,8 +343,6 @@ def test_images_motion_and_video_off_warning() -> None:
         INTRO_CUTS[4]["scene"]: INTRO_CUTS[4]["scene"],
         OUTRO_CUTS[0]["scene"]: OUTRO_CUTS[0]["scene"],
         OUTRO_CUTS[3]["scene"]: OUTRO_CUTS[3]["scene"],
-        # 달리기 자세 그림은 기본 자세를 이음(#779 ②안, 두 컷 같은 장면 글)
-        image_node.RUN_SCENE: image_node.RUN_SCENE,
     }
     ends = [u for u in flow if u["scene"] == u["previousScene"]]
     assert all(tuple(u["items"]) == ("MUNGCHI", "TEXT", "SAFETY", "FLOW") for u in ends)
@@ -466,7 +448,7 @@ def test_fake_image_provider_skips_image_review_with_one_warning() -> None:
     )
     assert response.failure is None
     assert set(response.images) == set(SCENES)
-    assert len(image.calls) == 28  # 테마 옷 뭉치 + 인물 그림 + 26장, 다시 그리기 없음
+    assert len(image.calls) == 22  # 테마 옷 뭉치 + 인물 그림 + 20장, 다시 그리기 없음
     assert reviewed(review, GeneratedImageReview) == 0
     assert reviewed(review, GeneratedStoryReview) == 1  # 글 검토는 그대로
     fake = [w for w in response.warnings if w.reason == image_node.FAKE_REVIEW_SKIPPED]
@@ -478,24 +460,14 @@ def test_real_image_provider_still_reviews_every_image() -> None:
     review = review_llm()
     response = run(gen_llm(), review, image=FakeImageClient(), storage=MemoryThemeStorage())
     assert response.failure is None
-    # 미션 5 + 컷 12 + 끝 표정 그림 3 + 달리기 자세 4(기본 자세는 검토 없음, #779 ②안)
-    assert reviewed(review, GeneratedImageReview) == 24
+    assert reviewed(review, GeneratedImageReview) == 20  # 미션 5 + 컷 12 + 끝 표정 그림 3
     assert all(w.reason != image_node.FAKE_REVIEW_SKIPPED for w in response.warnings)
 
 
 def test_request_image_failures_seed_image_prompts() -> None:
     """요청 previousFailures의 IMAGE 사유: 그림 이름이 붙으면 그 그림, 없으면 모든 그림의 첫
     그리기부터 들어감(테마 옷 뭉치·인물만 그린 기준 그림은 제외)."""
-    failures = [
-        {
-            "stage": "IMAGE",
-            "reasons": [
-                "TUE MISSION_FIT 녹음기 안 보임",
-                "TEXT 글자 있음",
-                "INTRO4RUNA MUNGCHI 발이 같음",  # 컷에 딸린 그림 이름(#779 ②안)
-            ],
-        }
-    ]
+    failures = [{"stage": "IMAGE", "reasons": ["TUE MISSION_FIT 녹음기 안 보임", "TEXT 글자 있음"]}]
     image = FakeImageClient()
     response = run(
         gen_llm(),
@@ -513,9 +485,6 @@ def test_request_image_failures_seed_image_prompts() -> None:
     assert "MISSION_FIT 녹음기 안 보임" not in prompts_with(image, "장소 마을 wed 길")[0][0]
     assert "TEXT 글자 있음" not in image.calls[1][0]  # 인물만 그린 기준 그림(#779)
     assert all("TEXT 글자 있음" in c[0] for c in image.calls[2:])
-    run_steps = [c[0] for c in image.calls if "as one step of running" in c[0]]
-    assert sum("MUNGCHI 발이 같음" in c for c in run_steps) == 1  # 시작 4컷 왼발 자세에만
-    assert not any("MUNGCHI 발이 같음" in c[0] for c in image.calls if c[0] not in run_steps)
 
 
 def test_mission_image_failure_is_image_failure_with_text() -> None:
@@ -550,15 +519,16 @@ def test_video_success_joins_cuts_with_captions() -> None:
         body, content_type = storage.objects[key]
         assert content_type == "video/mp4"
         assert mp4_seconds(body) == pytest.approx(6 * 4 - 5 * 0.5, abs=0.15)  # #779 6컷 × 4초
-    # Veo 7컷(표정 그림 두 장 컷 시작 5, 종료 1·4와 달리기 합성 컷 시작 4·종료 2는 Veo 없음, #779
-    # A안·②안) + 다시 만든 1컷
-    assert len(video.calls) == 8
+    # Veo 9컷(표정 그림 두 장 컷 시작 5, 종료 1·4는 Veo 없음, #779 A안) + 다시 만든 1컷
+    assert len(video.calls) == 10
     assert {c[2] for c in video.calls} == {None}  # 첫 그림만 고정
     # #779 설계 C표: 공통 + 공중 손짓·한 줄 서기(잃어버린 것은 돌보는 사람이 안아도 돼 만지기 없음)
-    assert set(video.negatives) == {video_negative(valid_theme())}
-    assert "waving, clapping" in video_negative(valid_theme())
+    # 금지 목록은 컷마다: 공중 손짓은 뭉치가 함께 나오는 사람 컷만(설계 v2 2026-11-23)
+    assert all(neg.startswith(VIDEO_NEGATIVE) for neg in video.negatives)
+    assert "waving, clapping" in video_negative(valid_theme(), "OUTRO", 6)
+    assert "clapping" not in video_negative(valid_theme(), "OUTRO", 5)
     assert "touching the animal" not in video_negative(valid_theme())
-    assert sorted(c[3] for c in video.calls) == [4] * 8  # #779 Veo 7컷 + 다시 1컷, 4초씩
+    assert sorted(c[3] for c in video.calls) == [4] * 10  # #779 Veo 9컷 + 다시 1컷, 4초씩
     smile = [c[0] for c in video.calls if OUTRO_CUTS[5]["action"] in c[0]]
     # 종료 6컷은 대상을 보여 줘도 되는 컷이라 숨기라는 문구가 없음(점검 C5). 6컷 뭉치 표정은 컷 표
     # 움직임(motion)이 말하고 콘티 mungchiMood 줄은 넣지 않음(재검토 2026-11-20)
@@ -567,17 +537,22 @@ def test_video_success_joins_cuts_with_captions() -> None:
     first = [c[0] for c in video.calls if INTRO_CUTS[0]["action"] in c[0]][0]
     assert "may be held or used, but do not show where it is put" in first
     assert "Mungchi does not appear in this clip." in first  # 시작 1컷은 뭉치 없음(점검 C6)
-    # 달리기 컷은 Veo를 부르지 않음(코드 합성, #779 ②안)
-    assert not any(INTRO_CUTS[3]["action"] in c[0] for c in video.calls)
+    run_cut = [c[0] for c in video.calls if INTRO_CUTS[3]["action"] in c[0]][0]
+    assert "Only Mungchi is in this clip" in run_cut and "Do not show 강아지 보리" in run_cut
     again = [c[0] for c in video.calls if INTRO_CUTS[1]["action"] in c[0]]
     assert len(again) == 2 and "MORPH MORPH 사유" in again[1]
     intro = response.motions["INTRO"]
-    # #779 자막은 자막 있는 컷(시작 1·2·4·6)만, 시각은 6컷 × 4초 녹아드는 전환 경계
+    # #779 자막은 모든 컷(설계 v2 2026-11-23), 시각은 6컷 × 4초 녹아드는 전환 경계
+    bounds = [
+        (0.0, 3.75),
+        (3.75, 7.25),
+        (7.25, 10.75),
+        (10.75, 14.25),
+        (14.25, 17.75),
+        (17.75, 21.5),
+    ]
     assert [(c.start, c.end, c.text) for c in intro.captions] == [
-        (0.0, 3.75, INTRO_CUTS[0]["caption"]),
-        (3.75, 7.25, INTRO_CUTS[1]["caption"]),
-        (10.75, 14.25, INTRO_CUTS[3]["caption"]),
-        (17.75, 21.5, INTRO_CUTS[5]["caption"]),
+        (*b, c["caption"]) for b, c in zip(bounds, INTRO_CUTS, strict=True)
     ]
     assert response.motions["MON"].captions == []
 
@@ -597,9 +572,9 @@ def test_fake_video_provider_skips_video_review_with_one_warning() -> None:
     )
     assert response.failure is None
     assert set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 7  # Veo 7컷(표정 그림 두 장·달리기 합성 5컷은 Veo 없음), 다시 없음
+    assert len(video.calls) == 9  # Veo 9컷(표정 그림 두 장 컷 3개는 Veo 없음), 다시 없음
     assert reviewed(review, GeneratedVideoReview) == 0
-    assert reviewed(review, GeneratedImageReview) == 24  # 그림은 실제 설정이라 그대로 검토
+    assert reviewed(review, GeneratedImageReview) == 20  # 그림은 실제 설정이라 그대로 검토
     assert all(STILL_NOTE not in w.reason for w in response.warnings)  # 대신한 컷 없음
     fake = [w for w in response.warnings if w.reason == video_node.FAKE_REVIEW_SKIPPED]
     assert [(w.stage, w.item) for w in fake] == [("VIDEO", "ALL")]
@@ -632,7 +607,7 @@ def test_fake_video_provider_still_checks_freezes() -> None:
         settings={"video_provider": "fake"},
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 8  # Veo 7컷 + 멈춘 1컷을 다시 만듦
+    assert len(video.calls) == 10  # Veo 9컷 + 멈춘 1컷을 다시 만듦
 
 
 def test_failed_video_cut_becomes_still_cut() -> None:
@@ -648,7 +623,7 @@ def test_failed_video_cut_becomes_still_cut() -> None:
         gen_llm(), review_llm(video=verdicts), image=FakeImageClient(), video=video, storage=storage
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 7 + 1 + 1  # 그 컷만 다시 1번(max_regen 1) + 안전한 버전 1번
+    assert len(video.calls) == 9 + 1 + 1  # 그 컷만 다시 1번(max_regen 1) + 안전한 버전 1번
     safe = video.calls[-1][0]  # 안전한 버전: 사건 클로즈업은 다가가지 않고 그대로(#779)
     assert "stays close and steady" in safe and "push-in" not in safe
     assert [(w.stage, w.item) for w in response.warnings] == [("VIDEO", "INTRO")]
@@ -677,7 +652,7 @@ def test_close_up_cuts_skip_veo_and_join_two_faces() -> None:
     video, storage = FakeVideoClient(), MemoryThemeStorage()
     response = run(gen_llm(), review_llm(), image=FakeImageClient(), video=video, storage=storage)
     assert response.failure is None and response.warnings == []
-    assert len(video.calls) == 7  # Veo는 사람·함께 7컷만(달리기는 합성, #779 ②안)
+    assert len(video.calls) == 9  # Veo는 사람·함께·달리기 9컷만
     close = {INTRO_CUTS[4]["action"], OUTRO_CUTS[0]["action"], OUTRO_CUTS[3]["action"]}
     assert not any(a in c[0] for c in video.calls for a in close)
     for scene in ("INTRO", "OUTRO"):
@@ -720,69 +695,9 @@ def test_end_face_failure_replaces_only_that_cut() -> None:
     assert any(w.item == "INTRO5END" and image_node.NO_START in w.reason for w in failed.warnings)
 
 
-def test_run_clip_length_with_two_or_one_pose() -> None:
-    """달리기 합성 컷(#779 ②안): 길 배경 + 자세 그림 두 장(또는 한 장)으로 요청 길이 그대로."""
-    for steps in ([tiny_png(5), tiny_png(6)], [tiny_png(5)]):
-        clip = run_clip(tiny_png(4, 32, 18), steps, 4, (64, 36))
-        assert mp4_seconds(clip) == pytest.approx(4, abs=0.1)
-    with pytest.raises(ValueError):
-        run_clip(tiny_png(4), [], 4, (64, 36))
-
-
-def test_run_cut_uses_one_pose_with_warning_or_falls_back() -> None:
-    """자세 그림이 하나만 있으면 그 하나로 합성하고 WARN, 없으면 실패 사유(움직이는 그림으로
-    대신)."""
-    import asyncio
-    from types import SimpleNamespace
-
-    ctx: Any = SimpleNamespace(video=SimpleNamespace(size=(64, 36)))
-    images = {"INTRO4": tiny_png(4, 32, 18), "INTRO4RUNA": tiny_png(5)}
-    clip, bad, warns, length = asyncio.run(video_node.run_cut(ctx, images, "INTRO4", 4))
-    assert clip is not None and bad == [] and length == 4.0
-    assert warns == ["RUN 달리기 자세 그림 하나로 합성(발 바뀜 없음)"]
-    clip, bad, _, _ = asyncio.run(video_node.run_cut(ctx, {"INTRO4": tiny_png(4)}, "INTRO4", 4))
-    assert clip is None and bad == ["RUN 달리기 자세 그림 없음"]
-
-
-def test_run_cuts_skip_veo_and_pose_failure_replaces_only_that_cut() -> None:
-    """달리기 컷(시작 4·종료 2)은 Veo를 부르지 않고 길 배경에 자세 그림을 합성(#779 사용자 결정
-    2026-11-20 ②안). 자세 그림이 끝내 떨어지면 장면 영상을 빼지 않고 그 컷만 길 배경 움직이는
-    그림(경고 IMAGE·VIDEO)."""
-    video, storage = FakeVideoClient(), MemoryThemeStorage()
-    response = run(gen_llm(), review_llm(), image=FakeImageClient(), video=video, storage=storage)
-    assert response.failure is None and response.warnings == []
-    assert not any(
-        a in c[0] for c in video.calls for a in (INTRO_CUTS[3]["action"], OUTRO_CUTS[1]["action"])
-    )
-    for scene in ("INTRO", "OUTRO"):
-        body, _ = storage.objects[response.videos[scene]]
-        assert mp4_seconds(body) == pytest.approx(6 * 4 - 5 * 0.5, abs=0.15)
-
-    def verdicts(user: dict) -> dict[str, str]:
-        return {"MUNGCHI": "FAIL"} if user["scene"] == image_node.RUN_SCENE else {}
-
-    response = run(
-        gen_llm(),
-        review_llm(image=verdicts),
-        image=FakeImageClient(),
-        video=FakeVideoClient(),
-        storage=MemoryThemeStorage(),
-    )
-    assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert {(w.stage, w.item) for w in response.warnings} == {
-        *(("IMAGE", f"{k}{t}") for k in ("INTRO4", "OUTRO2") for t in ("RUNA", "RUNB")),
-        ("VIDEO", "INTRO"),
-        ("VIDEO", "OUTRO"),
-    }
-    assert any("INTRO4 영상 RUN 달리기 자세 그림 없음" in w.reason for w in response.warnings)
-    assert all(image_node.RUN_NOTE in w.reason for w in response.warnings if w.stage == "IMAGE")
-    assert "INTRO4RUNA" not in response.regen["assets"] and "INTRO4POSE" in response.regen["assets"]
-
-
 def test_cut_image_failure_omits_only_that_video() -> None:
     def verdicts(user: dict) -> dict[str, str]:
-        # 종료 2컷(달리기 합성)의 컷 그림 = 길 배경(#779 ②안)
-        return {"TEXT": "FAIL"} if user["scene"] == road_scene_ko(valid_theme(), "OUTRO") else {}
+        return {"TEXT": "FAIL"} if user["scene"] == OUTRO_CUTS[1]["scene"] else {}
 
     video = FakeVideoClient()
     response = run(
@@ -793,7 +708,7 @@ def test_cut_image_failure_omits_only_that_video() -> None:
         storage=MemoryThemeStorage(),
     )
     assert response.failure is None
-    assert set(response.videos) == {"INTRO"} and len(video.calls) == 4  # 시작 Veo 4컷
+    assert set(response.videos) == {"INTRO"} and len(video.calls) == 5  # 시작 Veo 5컷
     assert {(w.stage, w.item) for w in response.warnings} == {("VIDEO", "OUTRO")}
     assert all(w.reason.startswith("OUTRO2 그림 TEXT") for w in response.warnings)
     assert "OUTRO" in response.images  # 4번째 컷 그림은 통과
@@ -818,7 +733,7 @@ def test_cut_image_failing_only_soft_items_is_kept_with_warning(item: str) -> No
         storage=MemoryThemeStorage(),
     )
     assert response.failure is None
-    assert set(response.videos) == {"INTRO", "OUTRO"} and len(video.calls) == 7
+    assert set(response.videos) == {"INTRO", "OUTRO"} and len(video.calls) == 9
     assert {(w.stage, w.item) for w in response.warnings} == {("IMAGE", "OUTRO5")}
     note = image_node.SOFT_NOTE
     assert all(w.reason == f"{item} {item} 사유 ({note})" for w in response.warnings)
@@ -839,12 +754,11 @@ def test_image_review_gets_start_mouth_only_for_moving_mungchi_cuts() -> None:
         gen_llm(), review_llm(image=verdicts), image=FakeImageClient(), storage=MemoryThemeStorage()
     )
     # 표정 그림 두 장 컷(#779 A안): 첫 그림은 시작 입, 그다음 끝 표정 그림은 끝 입
-    assert seen[INTRO_CUTS[4]["scene"]] == ["작은 동그란 o 입", "다문 일자 입"]
-    assert seen[OUTRO_CUTS[0]["scene"]] == ["다문 일자 입", "웃는 입"]
+    # 설계 v2(2026-11-23): 일자 입(무표정)은 쓰지 않음 — 놀란 입 → 웃는 입
+    assert seen[INTRO_CUTS[4]["scene"]] == ["작은 동그란 o 입", "웃는 입"]
+    assert seen[OUTRO_CUTS[0]["scene"]] == ["작은 동그란 o 입", "웃는 입"]
     assert seen[OUTRO_CUTS[3]["scene"]] == ["작은 동그란 o 입", "웃는 입"]
-    # 달리기 합성 컷(#779 ②안): 길 배경은 뭉치 없음, 왼발·오른발 자세는 컷 표 입(다문 입) × 2컷
-    assert seen[road_scene_ko(valid_theme(), "INTRO")] == [None]
-    assert seen[image_node.RUN_SCENE] == ["다문 일자 입"] * 4
+    assert seen[INTRO_CUTS[3]["scene"]] == [None]  # 달리기 컷(움직임 줄 없음)
     assert seen[OUTRO_CUTS[2]["scene"]] == [None]  # 사람 컷
 
 
@@ -904,7 +818,7 @@ def test_video_runs_when_min_seconds_left() -> None:
         deadline_in=400,
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 7  # Veo 7컷(표정 그림 두 장·달리기 합성 5컷은 Veo 없음)
+    assert len(video.calls) == 9  # Veo 9컷(표정 그림 두 장 컷 3개는 Veo 없음)
 
 
 # --- 움직임 ---------------------------------------------------------------------------
@@ -1131,9 +1045,9 @@ def test_route_uses_media_clients_from_app_state(monkeypatch: pytest.MonkeyPatch
         get_settings.cache_clear()
     body = response.json()
     assert response.status_code == 200 and body["failure"] is None
-    # 장면 그림 7장 + 재료 그림 23장(테마 옷 뭉치·인물 그림·컷 첫 그림 12장·끝 표정 그림 3장·달리기
-    # 자세 그림 6장, #537·#779)
-    assert set(body["images"]) == set(SCENES) and len(storage.objects) == 30
+    # 장면 그림 7장 + 재료 그림 17장(테마 옷 뭉치·인물 그림·컷 첫 그림 12장·끝 표정 그림 3장,
+    # #537·#779)
+    assert set(body["images"]) == set(SCENES) and len(storage.objects) == 24
     assert set(body["motions"]["MON"]["camera"]) == {"from", "to", "seconds"}
     assert DAYS[0] in body["motions"]
 

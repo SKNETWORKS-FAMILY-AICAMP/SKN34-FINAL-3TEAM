@@ -3060,8 +3060,11 @@ def cut_action_problems(
     out = []
     if hands:
         out.append(f"뭉치가 손·팔다리를 쓰는 동작({', '.join(hands)}), 손짓은 사람만")
-    if air:  # 사람·뭉치 모두(#779 공중 손짓 없음)
-        out.append(f"공중 손짓({', '.join(air)})은 사람도 쓰지 않음(폴짝 뛰거나 웃는 것으로)")
+    if air and has_mungchi:  # 뭉치가 나오는 컷만(2026-11-23 설계 v2: 사람만 나오는 컷은 손뼉 됨)
+        out.append(
+            f"공중 손짓({', '.join(air)})은 뭉치가 나오는 컷에서는 사람도 쓰지 않음"
+            "(폴짝 뛰거나 웃는 것으로)"
+        )
     if near:
         out.append(f"화면 쪽으로 다가오거나 화면 밖으로 나가는 동작({', '.join(near)})")
     return out

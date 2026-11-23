@@ -187,22 +187,23 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("target empty", themed(target=""), ["REQUIRED"]),
     ("title too long", themed(title="가" * 21), ["LENGTH"]),
     ("intro too long", themed(intro="가" * 201), ["LENGTH"]),
-    # #779: 자막 말하는 사람(시작 2·종료 3·6컷 지호)이 인물 목록에 없어 CUT_SPEAKER도 나옴
+    # #779: 자막 말하는 사람(시작 2·3·종료 3·5·6컷 지호, 설계 v2 모든 컷 자막)이 인물 목록에 없어
+    # CUT_SPEAKER도 나옴
     (
         "no characters",
         themed(characters=[]),
-        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER", "CUT_SPEAKER"],
+        ["CHARACTERS", *["CUT_SPEAKER"] * 5],
     ),
     (
         "four characters",
         themed(characters=[{"name": f"아이{i}", "look": "모습"} for i in range(4)]),
-        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER", "CUT_SPEAKER"],
+        ["CHARACTERS", *["CUT_SPEAKER"] * 5],
     ),
     ("character without look", themed(characters=[{"name": "지호", "look": ""}]), ["CHARACTERS"]),
     (
         "mungchi as character",
         themed(characters=[{"name": "뭉치", "look": "솜"}]),
-        ["CHARACTERS", "CUT_SPEAKER", "CUT_SPEAKER", "CUT_SPEAKER"],
+        ["CHARACTERS", *["CUT_SPEAKER"] * 5],
     ),
     ("candidate color word", edit(lambda t: _rename(t, "창고", "빨간창고")), ["CANDIDATES"]),
     ("candidate one char", edit(lambda t: _rename(t, "창고", "샘")), ["CANDIDATES"]),
@@ -410,9 +411,15 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
         [],
     ),
     (
+        # 공중 손짓은 뭉치가 함께 나오는 컷만 막음(설계 v2 2026-11-23: 사람만 나오는 컷은 손뼉 됨)
         "person air gesture",
-        edit(lambda t: t["outroCuts"][2].update(action="뭉치 곁에서 지호가 손을 흔든다")),
+        edit(lambda t: t["outroCuts"][5].update(action="뭉치 곁에서 지호가 손을 흔든다")),
         ["CUT_ACTION"],
+    ),
+    (
+        "person claps in people-only cut",
+        edit(lambda t: t["outroCuts"][4].update(action="지호가 손뼉을 치며 폴짝 뛴다")),
+        [],
     ),
     (
         # 시작 1·2컷은 뭉치가 없어 손 동작은 보지 않음(다가오기만 봄)

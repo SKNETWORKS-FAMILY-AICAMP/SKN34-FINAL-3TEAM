@@ -23,8 +23,6 @@ from tests.theme_draft.test_media_graph import gen_llm, review_llm, run, scene_i
 SCENES = ("INTRO", "MON", "TUE", "WED", "THU", "FRI", "OUTRO")
 CUT_ASSETS = {f"{s}{i}" for s in ("INTRO", "OUTRO") for i in range(1, 7)}  # #779 6컷 틀
 END_ASSETS = {"INTRO5END", "OUTRO1END", "OUTRO4END"}  # 표정 그림 두 장 컷의 끝 그림(#779 A안)
-# 달리기 합성 컷(시작 4·종료 2)의 기본·왼발·오른발 자세 그림(#779 ②안)
-RUN_ASSETS = {f"{k}{t}" for k in ("INTRO4", "OUTRO2") for t in ("POSE", "RUNA", "RUNB")}
 RUN_ID = "0123456789abcdef0123456789abcdef"
 
 
@@ -71,14 +69,7 @@ def test_full_run_keeps_regen_materials() -> None:
     regen = response.regen
     assert regen is not None and regen["version"] == 1
     assert regen["targets"] == list(TARGET_ORDER)  # 재료가 다 있으면 14개 모두
-    assert set(regen["assets"]) == {
-        "OUTFIT",
-        "CHARS",
-        "PERSON",
-        *CUT_ASSETS,
-        *END_ASSETS,
-        *RUN_ASSETS,
-    }
+    assert set(regen["assets"]) == {"OUTFIT", "CHARS", "PERSON", *CUT_ASSETS, *END_ASSETS}
     assert regen["assets"]["PERSON"] == regen["assets"]["CHARS"]  # 인물 기준 = 인물만 그린 그림
     assert all(key in storage.objects for key in regen["assets"].values())
     # 응답 theme에 없는 내부 칸(콘티·수사 연결 문장)이 regen.theme에 있음
@@ -120,15 +111,10 @@ def test_video_only_refilms_that_video_from_kept_cut_images() -> None:
     out, gen, review, image, video = partial(response, storage, ["VIDEO:INTRO"])
     assert out.failure is None
     assert image.calls == []  # 그림은 다시 그리지 않음
-    # 시작 영상 Veo 컷 4개만(시작 5는 표정 그림 두 장, 시작 4는 달리기 합성)
-    assert len(video.calls) == 4
-    # 시작 5는 원래 첫 그림 + 원래 끝 표정 그림, 시작 4는 원래 길 배경 + 원래 자세 그림(재료)으로
-    # 다시 이어 붙임(#779 A안·②안)
-    assert not any(
-        "FACE" in w.reason or "RUN" in w.reason or w.item in ("INTRO4", "INTRO5")
-        for w in out.warnings
-    )
-    kept = {storage.objects[response.regen["assets"][f"INTRO{i}"]][0] for i in (1, 2, 3, 6)}
+    assert len(video.calls) == 5  # 시작 영상 Veo 컷 5개만(시작 5는 표정 그림 두 장)
+    # 시작 5는 원래 첫 그림 + 원래 끝 표정 그림(재료)으로 다시 이어 붙임(#779 A안)
+    assert not any("FACE" in w.reason or "INTRO5" in w.item for w in out.warnings)
+    kept = {storage.objects[response.regen["assets"][f"INTRO{i}"]][0] for i in (1, 2, 3, 4, 6)}
     assert {c[1] for c in video.calls} == kept  # 원래 컷 첫 그림에서 다시 찍음
     assert out.videos["INTRO"] != response.videos["INTRO"]
     assert out.videos["OUTRO"] == response.videos["OUTRO"]
@@ -164,13 +150,10 @@ def test_intro_image_redraws_cuts_and_refilms_intro() -> None:
     response, storage = full()
     out, _, _, image, video = partial(response, storage, ["IMAGE:INTRO"])
     assert out.failure is None
-    # 시작 컷 첫 그림 6장 + 시작 5컷 끝 표정 그림 + 시작 4컷 달리기 자세 3장(#779 A안·②안)
-    assert len(image.calls) == 10
+    assert len(image.calls) == 7  # 시작 컷 첫 그림 6장 + 시작 5컷 끝 표정 그림(#779 A안)
     assert image.calls[0][1] == 1  # 시작 1컷도 인물만 그린 기준 그림(#779, 처음 생성과 같게)
-    assert len(video.calls) == 4  # 시작 Veo 4컷(시작 5는 표정 그림 두 장, 시작 4는 달리기 합성)
+    assert len(video.calls) == 5  # 시작 Veo 5컷(시작 5는 표정 그림 두 장, #779 A안)
     assert out.regen["assets"]["INTRO5END"] != response.regen["assets"]["INTRO5END"]
-    assert out.regen["assets"]["INTRO4RUNA"] != response.regen["assets"]["INTRO4RUNA"]
-    assert out.regen["assets"]["OUTRO2RUNA"] == response.regen["assets"]["OUTRO2RUNA"]
     assert out.images["INTRO"] != response.images["INTRO"]
     assert out.videos["INTRO"] != response.videos["INTRO"]
     assert out.videos["OUTRO"] == response.videos["OUTRO"]

@@ -71,19 +71,25 @@ def test_every_cut_follows_design_tables(code: str, branch: str | None) -> None:
         # C표: 사람 컷 공통 규칙(만지기 예외·한 줄 서기·손)과 컷 표의 표정·4초 움직임
         if spec.has_people:
             assert prompts.NO_TOUCH in image and prompts.NOT_IN_A_ROW in image, where
-            for line in (prompts.HAND_RULE, prompts.NO_ROW_VIDEO, prompts.NO_TOUCH, spec.act):
+            for line in (prompts.NO_ROW_VIDEO, prompts.NO_TOUCH, spec.act):
                 assert line and line in video, where
+            # 공중 손짓 금지는 뭉치가 함께 나오는 사람 컷만(설계 v2 2026-11-23, 사람만 나오면
+            # 손뼉 됨)
+            assert (prompts.HAND_RULE in video) == spec.has_mungchi, where
+            cut_negative = prompts.video_negative(theme, scene, i)
+            assert ("clapping" in cut_negative) == spec.has_mungchi, where
             assert prompts.LEGACY_PEOPLE_MOTION not in video, where
             if scene == "OUTRO" and i in (3, 5):  # 공개·마무리 표정은 종류 문구(B표)
                 assert "얼굴" in beat and beat in image, f"{where} 공개·마무리 표정 없음: {beat}"
             else:
                 assert spec.look and spec.look in image, f"{where} 컷 표 표정이 그림에 없음"
-        # A·B표: 공중 손짓(흔들기·손뼉)은 어느 컷의 할 일·영상 지시에도 없음(금지 목록에만)
-        for word in ("손을 흔", "손뼉을 치", "손뼉 치"):
-            assert word not in beat, f"{where} 할 일에 공중 손짓: {beat}"
-        assert "waving" not in video.replace("No waving", "") and "clap" not in video.replace(
-            "no clapping", ""
-        ), where
+        # A·B표: 뭉치가 나오는 컷은 공중 손짓(흔들기·손뼉)이 할 일·영상 지시에 없음(금지 목록에만)
+        if spec.has_mungchi:
+            for word in ("손을 흔", "손뼉을 치", "손뼉 치"):
+                assert word not in beat, f"{where} 할 일에 공중 손짓: {beat}"
+            assert "waving" not in video.replace("No waving", "") and "clap" not in video.replace(
+                "no clapping", ""
+            ), where
         # 장소 칸: 사건 장소·정답 장소 컷은 장소 모습 줄, 잇는 컷은 같은 장소의 앞 컷
         if spec.place in ("INCIDENT", "ANSWER"):
             assert "Place (Korean):" in image, where
@@ -127,7 +133,7 @@ def test_plan_and_review_texts_have_no_old_ending_or_air_gestures() -> None:
     import re
 
     old = re.compile(
-        r"손을 흔들|손뼉을 치|손뼉 치|숲으로 난|숲길로|마지막에는 .*배웅|반려동물을 찾은 주인"
+        r"손을 흔들|숲으로 난|숲길로|마지막에는 .*배웅|반려동물을 찾은 주인"
         r"|clap for"
     )
     texts = {
@@ -140,6 +146,8 @@ def test_plan_and_review_texts_have_no_old_ending_or_air_gestures() -> None:
         for branch in [None, *t.branch_cuts]:
             texts[f"type_rules {code}/{branch}"] = families.type_rules(t, branch)
     assert [(k, m.group(0)) for k, v in texts.items() for m in old.finditer(v)] == []
+    # 손뼉은 사람만 나오는 컷(종료 5컷 마무리)에서만(설계 v2 2026-11-23)
+    assert "사람만 나오는 컷은 손뼉 쳐도 됨" in prompts.PLAN_SYSTEM
 
 
 def test_role_texts_pass_existing_checks_and_examples_carry_no_content() -> None:
@@ -169,21 +177,23 @@ def test_role_texts_pass_existing_checks_and_examples_carry_no_content() -> None
             p for p in checks.cut_action_problems(line, True, False, ["예린"]) if "손·팔다리" in p
         ], line
     assert checks.cut_action_problems("뭉치는 작은 상자를 안고 웃는다", True, False, ["예린"])
-    # 사람도 공중 손짓은 코드 검사가 막음(재검토 2026-11-20). 종류 역할의 "손뼉 없이"는 걸지 않음
+    # 뭉치가 나오는 컷은 사람도 공중 손짓을 코드 검사가 막음(재검토 2026-11-20). 사람만 나오는
+    # 컷은 손뼉 됨(설계 v2 2026-11-23). 종류 역할의 "손뼉 없이"는 걸지 않음
     for line in ("지호가 손뼉을 치며 폴짝 뛴다", "예린이 손을 흔들며 배웅한다", "모두 박수를 친다"):
-        assert any("공중 손짓" in p for p in checks.cut_action_problems(line, False)), line
+        assert any("공중 손짓" in p for p in checks.cut_action_problems(line, True)), line
+        assert not checks.cut_action_problems(line, False), line
     assert not checks.cut_action_problems("함께 기뻐함(손뼉 없이 폴짝 뛰거나 웃음)", False)
     bad = checks.check_cuts(
         {
             **valid_theme(),
             "outroCuts": [
-                *valid_theme()["outroCuts"][:4],
-                {**valid_theme()["outroCuts"][4], "action": "지호가 손뼉을 치며 폴짝 뛴다"},
-                valid_theme()["outroCuts"][5],
+                *valid_theme()["outroCuts"][:5],
+                # 뭉치가 함께 나오는 종료 6컷(사람만 나오는 종료 5컷은 손뼉 됨, 설계 v2)
+                {**valid_theme()["outroCuts"][5], "action": "지호가 손뼉을 치며 폴짝 뛴다"},
             ],
         }
     )
-    assert any(r.startswith("CUT_ACTION outroCuts5.action 공중 손짓") for r in bad), bad
+    assert any(r.startswith("CUT_ACTION outroCuts6.action 공중 손짓") for r in bad), bad
     assert checks.fix_targets([r for r in bad if "공중 손짓" in r])  # 그 칸만 고쳐 씀
     # 자막 예시에 인물 이름·후보·장소를 박지 않음
     words = [*prompts.NAME_POOL, *families.ANIMALS.rows, *families.GIFTS.rows, "떡"]
@@ -288,7 +298,7 @@ def test_no_cut_carries_lines_that_fight_each_other(code: str, branch: str | Non
         for mood in ("smile", "surprised", "determined"):
             image = mungchi_image(theme, scene, i, {**cut, "mungchiMood": mood})
             video = prompts.video_prompt(theme, scene, i, {**cut, "mungchiMood": mood}, [])
-            line = f"Mungchi's expression: {prompts.MOOD_MOUTH.get(spec.mouth)}, dot eyes"
+            line = f"Mungchi's expression: {prompts.MOOD_MOUTH.get(spec.mouth)}, eyes"
             assert (line in image) == spec.has_mungchi, where
             assert bool(spec.mouth) == spec.has_mungchi, where
             # 영상: 표정 변화는 움직임 줄이 말함. 움직임이 없는 달리기 컷만 첫 표정 줄
@@ -304,9 +314,14 @@ def test_no_cut_carries_lines_that_fight_each_other(code: str, branch: str | Non
         # (1단계 실측 2026-11-23: 사람 클로즈업은 다가가지 않음)
         if spec.has_people and not spec.run_comp and not spec.two_faces:
             assert f"Camera: {prompts.CAMERA_TEXT[frame.camera]}" in video, where
-        # 첫 표정은 그 컷 움직임의 시작: 놀란 입에서 시작하는 컷은 놀란 입, 웃음으로 끝나는 깨달음
-        # 컷은 다문 입
-    assert cuts.spec("OUTRO", 1, 6).mouth == "determined"
+        # 첫 표정은 그 컷 움직임의 시작: 놀란 입에서 시작해 웃음으로 끝남. 일자 입(무표정)은 6컷
+        # 컷 표에 쓰지 않음(설계 v2 2026-11-23)
+    assert cuts.spec("OUTRO", 1, 6).mouth == "surprised"
+    assert all(
+        "determined" not in (s.mouth, s.end_mouth)
+        for specs in cuts.layout(6).values()
+        for s in specs
+    )
     assert cuts.spec("OUTRO", 4, 6).mouth == "surprised"
 
 
@@ -384,7 +399,8 @@ def test_review_cores_say_what_is_visible_and_plan_has_no_air_gesture_example() 
     assert "only a person's shoulder" not in prompts.FRAMES["OBJECT_CLOSE"].image
     # 줄거리 지시: 좋은 동작 예에 공중 손짓이 없고, 금지 문장에만 나옴
     plan = prompts.PLAN_SYSTEM
-    assert plan.count("손 흔들기") == 1 and "손 흔들기·손뼉 같은 공중 손짓은 하지 않는다" in plan
+    assert plan.count("손 흔들기") == 1
+    assert "뭉치가 나오는 컷에서는 사람도 손 흔들기·손뼉 같은 공중 손짓을 하지 않는다" in plan
     # 예전 4컷 초안의 그림 지시는 예전 글 그대로
     old = valid_theme()
     old = {**old, "introCuts": old["introCuts"][:4], "outroCuts": old["outroCuts"][:4]}

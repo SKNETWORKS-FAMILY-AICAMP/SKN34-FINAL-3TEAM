@@ -135,16 +135,16 @@ FRAMES: dict[str, Frame] = {
             "인물들의 놀란 얼굴이 크게 보임",
             mystery=True,
         ),
-        # 달리기 합성 컷(cuts.CutSpec.run_comp, 2026-11-20 ②안): 컷 그림은 뭉치 없는 길 배경
-        # (prompts.road_prompt)이고 영상은 코드가 합성해 이 틀의 구도·카메라·핵심은 그림·영상
-        # 지시에 쓰이지 않음. 합성 모습(배경이 물러나며 정면 뭉치가 달려옴)과 같게 적어 둠
+        # 달리기 컷(2026-11-23 설계 v2: 다시 Veo, 11-20 종료 2컷 통과 방식 — 정면을 본 채 옆으로
+        # 달리고 카메라가
+        # 따라가 배경이 흐름)
         Frame(
             "RUN",
-            "Mungchi alone runs toward the viewer along the way, facing the viewer.",
-            ("Mungchi stays in the center of the picture.",),
+            "Mungchi alone runs sideways along the way, facing the viewer.",
+            ("Mungchi runs from left to right.", "Mungchi runs from right to left."),
             "front",
             "TRACK_SIDE",
-            "뭉치가 정면을 본 채 달림",
+            "뭉치가 정면을 본 채 옆으로 달림",
         ),
         Frame(
             "MUNGCHI_CLOSE",

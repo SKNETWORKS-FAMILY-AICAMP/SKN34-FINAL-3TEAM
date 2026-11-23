@@ -143,11 +143,15 @@ def cut_layout_lines(n: int = cut_layout.NEW_CUTS) -> list[str]:
     return out
 
 
-# #779(사용자 결정 2026-11-19): 자막 = 중요한 순간 컷에만, 그 컷에 보이는 인물의 "이름: 대사"(시작
-# 1컷만 이름 없는 장면 소개). 꼴 검사는 checks.caption_problems(CUT_SPEAKER, 그 칸만 고쳐 씀).
+# #779: 자막은 그 컷에 보이는 인물의 "이름: 대사"(시작 1컷만 이름 없는 장면 소개). 2026-11-23 설계
+# v2: 모든 컷에
+# (그 전 11-19 B안은 중요한 순간 컷에만 — 뭉치 컷이 말없이 나와 아이가 흐름을 놓쳤음). 꼴 검사는
+# checks.caption_problems(CUT_SPEAKER,
+# 그 칸만 고쳐 씀).
 # 대사 꼴을 내레이터 꼴로 되돌리려면 이 글과 caption_problems만 바꾼다
 CAPTION_RULE = (
-    "자막 있는 컷에만 쓰고 자막 없는 컷은 빈 글('')로 둔다. 꼴은 '이름: 대사'이고 말하는 사람은 "
+    "모든 컷에 쓴다. 그 학년 아이가 바로 읽고 알아듣는 쉬운 말로, 컷 순서대로 자막만 읽어도 누가·"
+    "왜·어떻게 됐는지 이어지게 쓴다. 꼴은 '이름: 대사'이고 말하는 사람은 "
     "그 컷 화면에 보이는 한 명이다: 뭉치 혼자 나오는 컷은 '뭉치', 사람만 나오는 컷은 그 컷 scene에 "
     "나오는 인물(characters의 name 그대로), 함께 나오는 컷은 뭉치나 그 컷 scene에 나오는 인물. "
     "시작 1컷만 이름 없이 장면을 소개하는 짧은 말이다. 반말로 짧게(이름 포함 "
@@ -284,8 +288,8 @@ PLAN_SYSTEM = (
     # #779: scene은 컷 첫 그림으로 그려지고 영상이 그 그림에서 시작함(예전 문구 "컷 끝에 보이는
     # 장면"은 첫 그림과 어긋나 이동 컷이 거꾸로 움직였음)
     "scene은 그 컷이 시작하는 첫 장면(누가 어디서, 무엇이 보이는지, 영상이 이 그림에서 시작), "
-    "action은 그 컷의 동작 하나, caption은 영상 위에 띄울 짧은 대사(아래 caption 규칙, 자막 없는 "
-    "컷은 빈 글 ''). mungchiMood는 그 컷 끝 뭉치 표정으로 "
+    "action은 그 컷의 동작 하나, caption은 영상 위에 띄울 짧은 대사(아래 caption 규칙). "
+    "mungchiMood는 그 컷 끝 뭉치 표정으로 "
     "입 모양으로만 나타낸다: smile(웃는 입), surprised(작은 o 입), determined(다문 일자 입). "
     "뭉치가 나오지 않는 컷은 none, 뭉치가 나오는 컷은 none이 아니다. camera는 PAN_SIDE로 둔다"
     "(카메라는 코드가 컷 틀대로 정함).\n"
@@ -311,8 +315,9 @@ PLAN_SYSTEM = (
     "- 하나뿐인 물건(쪽지·상자·편지 등)은 그 컷에서 드는 사람을 한 명만 쓴다('새봄이 쪽지를 들고 "
     "아저씨는 곁에서 본다'). 글자가 들어갈 물건(쪽지·편지·지도·안내판)은 글자 없이 그림·기호(점선 "
     "길, X 표시 등)로 쓰고, 그 그림에 숨긴 물건·찾는 대상·후보 장소는 그리지 않는다.\n"
-    # #779(사용자 결정 2026-11-19): 자막은 중요한 순간 컷에만, 그 컷에 보이는 인물이 말하는 대사
-    # 꼴. 컷마다 내레이터 해설(2026-11-18 반말 내레이션)은 해설 영상처럼 보이고 누가 말하는지
+    # #779: 자막은 그 컷에 보이는 인물이 말하는 대사 꼴(2026-11-23 설계 v2: 모든 컷). 컷마다
+    # 내레이터 해설(2026-11-18 반말 내레이션)은 해설
+    # 영상처럼 보이고 누가 말하는지
     # 헷갈렸음(애니매틱 비교). 말하는 사람이 화면에 보이게 함
     "- caption(자막): " + CAPTION_RULE + "\n"
     "- 시작 콘티에는 정답 이름·정답 장소를 쓰지 않는다. 종료 콘티는 정답 공개 뒤라 정답 이름·정답 "
@@ -327,12 +332,14 @@ PLAN_SYSTEM = (
     # 좋은 동작 예에 '손 흔들기'가 남아 같은 문단의 공중 손짓 금지와 부딪혔음(재검토 2026-11-20)
     "분명하게 움직인다(걸어 들어가기·펄쩍 놀라기·건네기·안기 등). 뭉치는 팔이 "
     "없어(몸 앞쪽 작은 동그란 손과 짧은 갈색 발만) 뭉치의 동작은 표정 바꾸기·고개 갸웃·몸 살짝 "
-    # 달리기 방향은 코드가 합성하며 정함(#779 ②안, cuts.CutSpec.run_comp)이라 글에 쓰지 않음
-    "흔들기만 쓴다. 단, 뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 힘차게 "
-    "달린다(달리는 방향은 쓰지 않음). 손 "
-    "들기·가리키기·짚기·건네기·안기·모으기·놓기·뛰기·통통 튀기는 사람만 한다. 사람도 손 흔들기·"
-    "손뼉 같은 공중 손짓은 하지 않는다(#779 사용자 결정 2026-11-19, 예: 사람 컷 '사람들이 폴짝 "
-    "뛰며 웃는다', 뭉치 컷 '뭉치가 환하게 웃으며 몸을 살짝 흔든다'). "
+    # 2026-11-23 설계 v2: 달리기는 다시 Veo(정면을 본 채 옆으로, 카메라가 따라감). 공중 손짓 금지는
+    # 뭉치가 나오는
+    # 컷만(뭉치 곁 사람 팔이 뭉치에게 옮겨 붙던 문제) — 사람만 나오는 컷은 손뼉 됨
+    "흔들기만 쓴다. 단, 뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 옆으로 "
+    "힘차게 달려간다. 손 "
+    "들기·가리키기·짚기·건네기·안기·모으기·놓기·뛰기·통통 튀기는 사람만 한다. 뭉치가 나오는 "
+    "컷에서는 사람도 손 흔들기·손뼉 같은 공중 손짓을 하지 않는다(사람만 나오는 컷은 손뼉 쳐도 됨, "
+    "예: 함께 컷 '사람들이 폴짝 뛰며 웃는다', 뭉치 컷 '뭉치가 환하게 웃으며 몸을 살짝 흔든다'). "
     "인물·뭉치가 화면 "
     "쪽으로 다가오지 않고, 걸어서 화면 밖으로 나가거나 새 인물이 들어오지 않는다(카메라가 인물을 "
     "따라가며 다른 인물이 화면 밖으로 빠지는 것은 된다).\n"
@@ -1380,7 +1387,7 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
             "열린 문으로만 이동한다. 하나뿐인 물건은 드는 사람을 한 명만 쓰고, 글자가 들어갈 "
             "물건은 글자 없이 그림·기호로 쓴다(숨긴 물건·찾는 대상·후보 장소는 그리지 않음).",
             # #779: 콘티 규칙(PLAN_SYSTEM action)과 같은 뭉치 동작
-            "뭉치는 이 컷에서 짧은 갈색 발로 힘차게 달린다. 손짓·건네기·안기·뛰기·통통 "
+            "뭉치는 이 컷에서 짧은 갈색 발로 옆으로 힘차게 달려간다. 손짓·건네기·안기·뛰기·통통 "
             "튀기처럼 손이나 팔다리를 쓰는 동작은 사람이 한다."
             if spec.who == "RUN"
             else "뭉치는 표정 바꾸기·고개 갸웃·몸 살짝 흔들기만 한다. 손짓·건네기·안기·뛰기·통통 "
@@ -2573,8 +2580,9 @@ IMAGE_STYLE = (
 )
 MUNGCHI_LOOK = (
     "Mungchi (the main character): a cream-colored fluffy cotton-ball body with about 12 soft "
-    "round bumps, the face low in the center of the body, small dot eyes with a tiny highlight "
-    "(no eye whites), pink cheeks, small hands at the lower front on the left and right, short "
+    "round bumps, the face low in the center of the body, round dark-brown eyes each with one "
+    "clear white highlight dot (no eye whites), pink cheeks, small hands at the lower front on the "
+    "left and right, short "
     "brown feet, no arms (only the tiny hands). Mungchi wears the theme outfit: {outfit}. "
     # #779(사용자 결정 2026-11-19): 셔츠·가운처럼 몸을 감싸는 옷을 입히자 몸 옆 울퉁불퉁한 곳이
     # 소매로 그려져 손 두 개와 합쳐 팔이 넷처럼 보였고, 소매 없는 조끼도 조끼 가장자리가 옆
@@ -2658,6 +2666,17 @@ def start_mouth_ko(theme: Theme, scene: str, index: int) -> str | None:
     return MOUTH_KO.get(spec.mouth)
 
 
+# 끝 표정 그림의 만화 효과(2026-11-23 설계 v2, cuts.CutSpec.effect). 눈썹 없는 점 눈이라 입만으로는
+# 결심·깨달음이
+# 무표정으로 보였음. 글자·물음표·느낌표는 쓰지 않음(그림 검토 TEXT)
+MANGA_EFFECT = {
+    "sparkle": "Add a few small yellow sparkle marks next to Mungchi's head (a simple manga "
+    "effect, not letters or symbols).",
+    "burst": "Add a few short yellow burst lines around Mungchi's head like a manga 'aha' moment "
+    "(no letters, no question or exclamation marks).",
+}
+
+
 def end_face_prompt(theme: Theme, scene: str, index: int, feedback: list[str]) -> str:
     """표정 그림 두 장 컷의 끝 그림(#779 사용자 결정 2026-11-20 A안): 그 컷 첫 그림(마지막 참고
     그림)을 그대로 두고 뭉치 입만 끝 입 모양으로. 참고 그림은 첫 그림 한 장뿐이다."""
@@ -2667,8 +2686,10 @@ def end_face_prompt(theme: Theme, scene: str, index: int, feedback: list[str]) -
             "Edit this picture. Keep the picture exactly as it is: the background, framing, camera "
             "angle, Mungchi's body, outfit, hat, hands, position, size and all colors stay "
             "identical.",
-            f"Change only Mungchi's mouth to {MOOD_MOUTH[spec.end_mouth]}; its small dot eyes (no "
-            "eye whites) and pink cheeks stay unchanged. Nothing else changes.",
+            f"Change only Mungchi's mouth to {MOOD_MOUTH[spec.end_mouth]}; its round dark eyes "
+            "with their white highlight dots and its pink cheeks stay unchanged.",
+            MANGA_EFFECT.get(spec.effect, ""),
+            "Nothing else changes.",
             IMAGE_STYLE,
             CUT_IMAGE_RULES,
             *_fixes(feedback),
@@ -2967,7 +2988,7 @@ def run_base_prompt(theme: Theme, scene: str, index: int, feedback: list[str]) -
         for x in [
             IMAGE_STYLE.replace("simple painted background", "no background"),
             MUNGCHI_LOOK.format(outfit=theme["outfit"]),
-            f"Mungchi's expression: {MOOD_MOUTH[spec.mouth]}, dot eyes unchanged."
+            f"Mungchi's expression: {MOOD_MOUTH[spec.mouth]}, eyes unchanged."
             if spec.mouth in MOOD_MOUTH
             else "",
             RUN_BASE_POSE,
@@ -3165,7 +3186,7 @@ def cut_image_prompt(
     if spec.has_mungchi:
         lines.append(MUNGCHI_LOOK.format(outfit=theme["outfit"]))
         if mouth := first_mouth(spec, cut):
-            lines.append(f"Mungchi's expression: {mouth}, dot eyes unchanged.")
+            lines.append(f"Mungchi's expression: {mouth}, eyes unchanged.")
         if spec.who == "RUN":
             lines.append(RUN_POSE)
     else:
@@ -3242,9 +3263,11 @@ IMAGE_REVIEW_SYSTEM = (
     "탐정(SOUND)이면 candidates는 후보 동물·물건이라 정답 공개가 허용되지 않은 그림에 그 가운데 "
     "어느 것이라도 보이면 결함이고 target(밤에 들린 소리)은 그릴 것이 없다.\n"
     "MUNGCHI: 뭉치가 나와야 하는 그림이면 기준 모습과 같은지(크림색 몽글몽글한 몸, 몸 아래쪽 "
-    "가운데 얼굴, 흰자 없는 점 눈, 분홍 볼, 작은 손, "
+    "가운데 얼굴, 흰자 없는 동그란 진갈색 눈과 눈마다 흰 반짝 점, 분홍 볼, 작은 손, "
     "갈색 짧은 발, 테마 옷). 손에 든 물건·자세·표정은 "
     "장면에 따라 달라도 된다. "
+    # 2026-11-23 설계 v2: 끝 표정 그림의 만화 효과(MANGA_EFFECT)는 결함이 아님
+    "뭉치 머리 옆 노란 반짝·번쩍 선 같은 만화 효과는 결함이 아니고 글자도 아니다. "
     # #779(2026-11-19): 옷 소매가 팔처럼 그려지고, 뭉치가 사람 곁에 붙으면 영상에서 팔이 옮겨 붙음
     "옷에 소매가 있거나 옷 입은 부분 옆으로 울퉁불퉁한 돌기가 삐져나와 소매·팔처럼 보여 팔이 "
     "넷처럼 보이면 결함(옷은 아래쪽을 꽉 끼게 감싸 매끈한 둥근 몸통). "
@@ -3384,7 +3407,7 @@ def image_review_user(
 # 실제로 나와 더함. 3테마 실행에서 사람에게 안경·콧수염이 생기고(6건) 뭉치가 너구리로 바뀌고(2건)
 # 상자가 열릴 때 빛이 번쩍여(SAFETY) 더함
 VIDEO_NEGATIVE = (
-    "big eyes, eye whites, changing eye shape, body morphing, extra limbs, long arms, wings, "
+    "eye whites, changing eye shape, body morphing, extra limbs, long arms, wings, "
     "stretched limbs, Mungchi raising hands, Mungchi grabbing or handing over objects, "
     "Mungchi legs, white legs, Mungchi jumping, dog nose, animal muzzle, puppy face, brown hands, "
     "outfit change, "
@@ -3406,7 +3429,8 @@ MUNGCHI_KEEP = [
     "Mungchi's two tiny round hands are small round shapes on the front of its body, the same "
     "cream color as its body with a thin dark outline: never arms, never brown or dark blobs.",
     "Mungchi has no legs: its two short brown feet stay right under its body.",
-    "Keep Mungchi's round fluffy shape and small dot eyes unchanged (no eye whites). Mungchi has "
+    "Keep Mungchi's round fluffy shape and its round dark eyes with white highlight dots unchanged "
+    "(no eye whites). Mungchi has "
     "no nose and no animal muzzle: its face keeps the same simple mouth and pink cheeks as in the "
     "first frame and never looks like a dog or any other animal.",
 ]
@@ -3613,11 +3637,13 @@ LEGACY_PEOPLE_MOTION = (
 )
 
 
-def video_negative(theme: Theme) -> str:
+def video_negative(theme: Theme, scene: str | None = None, index: int | None = None) -> str:
     """영상 금지 목록: 고정 목록(VIDEO_NEGATIVE) + 공통 규칙 목록의 금지 낱말(공중 손짓·한 줄 서기,
     야생 동물 종류면 동물 만지기 — 잃어버린 것·출처 찾기는 돌보는 사람이 동물을 안아도 돼서 빼지
     않음, #779 설계 C·H)."""
     flags = {"wild"} if wild_answer(theme) else set()
+    if scene and index:  # 2026-11-23 설계 v2: 컷마다(공중 손짓 금지는 뭉치가 나오는 사람 컷만)
+        flags |= cut_flags(theme, scene, index)
     return ", ".join([VIDEO_NEGATIVE, *common_rules.lines("negative", flags)])
 
 
@@ -3637,6 +3663,8 @@ def cut_flags(theme: Theme, scene: str, index: int) -> set[str]:
     flags |= {"mungchi"} if spec.has_mungchi else set()
     flags |= {"people"} if spec.has_people else set()
     flags |= {"people6"} if spec.has_people and n != 4 else set()
+    # 뭉치와 사람이 함께 나오는 컷(공중 손짓 금지, 2026-11-23 설계 v2)
+    flags |= {"people_mungchi"} if spec.has_people and spec.has_mungchi else set()
     flags |= {"wild"} if wild_answer(theme) else set()
     return flags
 
@@ -3657,7 +3685,9 @@ VIDEO_REVIEW_SYSTEM = (
     "결함이 아니다), 인물이 장면 공간에 맞게 움직이는지(길·바닥·열린 문이 아니라 담·울타리·화단·"
     "의자·물건 위나 속으로 걷거나 통과하면 결함), 하나뿐인 물건(쪽지·상자 등)이 둘로 늘어나지 "
     "않는지, 뭉치의 옷·모자·목에 건 것이 기준 "
-    "장면과 같은지, 사람의 머리핀·안경·옷이 기준 장면과 같은지(토끼 머리핀이 토끼 귀로 자라는 "
+    # 2026-11-23 설계 v2: 옛 달리기 시작 4컷이 작은 배지 변화로 떨어짐(장면은 멀쩡했음)
+    "장면과 같은지(다른 옷으로 바뀌거나 없던 옷·소품이 생기면 결함, 배지·무늬가 조금 바뀌는 것은 "
+    "WARN), 사람의 머리핀·안경·옷이 기준 장면과 같은지(토끼 머리핀이 토끼 귀로 자라는 "
     "것처럼 바뀌거나 새로 생기면 결함). "
     # #779(사용자 결정 2026-11-18): 뭉치 팔·다리·얼굴 기준을 판정 예시 그림과 함께 줌. 글로만
     # "팔이 생기면 결함"이라 하면 같은 영상도 판정이 흔들렸고(재검토 12건), 예시를 넣자 두 번

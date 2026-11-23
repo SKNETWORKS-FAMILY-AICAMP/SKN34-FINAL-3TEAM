@@ -46,45 +46,27 @@ def test_check_cuts_allows_running_only_in_run_cuts() -> None:
 
 def test_plan_and_fix_rules_keep_mungchi_still_except_run_cuts() -> None:
     assert "통통 튀기는 사람만" in prompts.PLAN_SYSTEM
-    # 6컷 달리기 컷은 코드가 합성하며 방향을 정해(#779 ②안) 글에는 방향을 쓰지 않음
-    go_rule = "뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 힘차게 달린다"
+    go_rule = "뭉치 혼자 달리는 컷(시작 4·종료 2)에서는 뭉치가 짧은 갈색 발로 옆으로"
     assert go_rule in prompts.PLAN_SYSTEM
     go_role = prompts.cut_roles(valid_theme(), "introCuts")[2]
-    assert "짧은 갈색 발로 힘차게 달림" in go_role and "옆으로" not in go_role
+    assert "짧은 갈색 발로 옆으로 힘차게 달려가고" in go_role
     run_fix = prompts.fix_rules(valid_theme(), "outroCuts2.action")
-    assert any("이 컷에서 짧은 갈색 발로 힘차게 달린다" in r for r in run_fix)
+    assert any("이 컷에서 짧은 갈색 발로 옆으로 힘차게 달려간다" in r for r in run_fix)
 
 
-def test_run_cut_images_are_road_and_green_poses() -> None:
-    """6컷 달리기 컷(#779 사용자 결정 2026-11-20 ②안): 컷 그림은 뭉치 없는 길 배경, 뭉치는 초록
-    배경 기본 자세 → 그것을 고친 왼발·오른발 자세(시제품 2026-11-21: '다른 발'이라고 하자 두
-    자세가 같은 발을 들었고, 처음 그림에만 움직임 선이 남아 깜빡였음). 예전 4컷 출동 컷은 예전처럼
-    달리는 자세 첫 그림."""
+def test_run_cut_images_are_drawn_running_and_facing_the_viewer() -> None:
     theme = valid_theme()
-    assert cuts.spec("INTRO", 4, 6).run_comp and cuts.spec("OUTRO", 2, 6).run_comp
-    assert not cuts.spec("INTRO", 3, 4).run_comp  # 예전 4컷 출동 컷
-    for scene, i, cut in (("INTRO", 4, INTRO_CUTS[3]), ("OUTRO", 2, OUTRO_CUTS[1])):
-        road = prompts.cut_image_prompt(theme, scene, i, cut, [])
-        assert road == prompts.road_prompt(theme, scene, i, [])
-        assert prompts.RUN_ROAD in road and "no Mungchi" in road and "Place: the way" in road
-        assert prompts.MUNGCHI_LOOK.format(outfit=theme["outfit"]) not in road
-        assert "Do not draw 강아지 보리" in road  # 대상·후보 숨기기는 다른 컷과 같게
-        base = prompts.run_base_prompt(theme, scene, i, [])
-        assert prompts.RUN_BASE_POSE in base and prompts.RUN_GREEN in base
-        assert "a closed straight-line mouth" in base and prompts.MUNGCHI_SEPARATE in base
-    left, right = prompts.run_step_prompt(0, []), prompts.run_step_prompt(1, [])
-    assert "the foot on the left side of the picture is lifted high" in left
-    assert "the foot on the right side of the picture is lifted high" in right
-    assert all("Remove any shadow, motion lines" in p for p in (left, right))
-    legacy = prompts.cut_image_prompt(theme, "INTRO", 3, INTRO_CUTS[2], [])  # 4컷 테마 아님
-    assert prompts.RUN_POSE not in legacy
+    go = prompts.cut_image_prompt(theme, "INTRO", 4, INTRO_CUTS[3], [])
+    to_answer = prompts.cut_image_prompt(theme, "OUTRO", 2, OUTRO_CUTS[1], [])
+    close = prompts.cut_image_prompt(theme, "INTRO", 5, INTRO_CUTS[4], [])
+    assert prompts.RUN_POSE in go and "never a side profile" in go and prompts.RUN_POSE in to_answer
+    assert prompts.RUN_POSE not in close
 
 
 def test_video_prompt_story_beat_camera_and_mungchi_rules() -> None:
     """컷 틀의 할 일·카메라로 이야기 흐름, 달리는 컷만 달리기, 나머지는 뭉치 거의 정지, 배경
     움직임은 실내·실외를 나눔(모든 컷에 구름을 넣자 실내 벽에 구름이 생겼음)."""
     theme = valid_theme()
-    # 6컷 달리기 컷의 영상 지시(영상 단계는 합성이라 쓰지 않지만 지시 자체는 예전 그대로)
     go = prompts.video_prompt(theme, "INTRO", 4, INTRO_CUTS[3], [])
     assert prompts.MUNGCHI_RUN in go and prompts.MUNGCHI_STILL not in go
     assert f"Camera: {prompts.CAMERA_TEXT['TRACK_SIDE']}" in go
@@ -148,8 +130,7 @@ def test_video_review_gets_judgement_examples_after_frames() -> None:
         video=FakeVideoClient(),
         storage=MemoryThemeStorage(),
     )
-    # Veo 7컷(표정 그림 두 장 컷 3개·달리기 합성 컷 2개는 검토할 Veo 영상이 없음, #779 A안·②안)
-    assert len(seen) == 7
+    assert len(seen) == 9  # Veo 9컷(표정 그림 두 장 컷 3개는 검토할 영상이 없음, #779 A안)
     assert all(len(images) >= 4 and images[-2:] == list(review_examples()) for images in seen)
 
 
@@ -299,7 +280,7 @@ def test_failed_cut_tries_safe_version_before_still_cut() -> None:
         storage=MemoryThemeStorage(),
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 7 + 1 + 1  # Veo 7컷 + 다시 1번 + 안전한 버전 1번
+    assert len(video.calls) == 9 + 1 + 1
     reasons = [w.reason for w in response.warnings]
     assert any(r.startswith(SAFE_NOTE) for r in reasons)
     assert not any(STILL_NOTE in r for r in reasons)
@@ -380,7 +361,7 @@ def test_cut_uses_first_passing_candidate_without_regenerating() -> None:
         settings={"theme_video_candidates": 2},
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert video.counts == [2] * 7 and len(video.calls) == 14  # Veo 7컷 × 후보 2, 다시 없음
+    assert video.counts == [2] * 9 and len(video.calls) == 18  # Veo 9컷 × 후보 2, 다시 없음
     assert seen["n"] == 2 and response.warnings == []
 
 
@@ -404,7 +385,7 @@ def test_all_candidates_failing_regenerates_with_their_reasons() -> None:
         storage=MemoryThemeStorage(),
         settings={"theme_video_candidates": 2},
     )
-    assert response.failure is None and len(video.calls) == 14 + 2  # 그 컷만 후보 2개로 다시
+    assert response.failure is None and len(video.calls) == 18 + 2  # 그 컷만 후보 2개로 다시
     assert not any(STILL_NOTE in w.reason for w in response.warnings)
     regen = [c[0] for c in video.calls if "MORPH" in c[0]]
     assert len(regen) == 2  # 다시 만들기 지시에 실패 사유가 들어감
@@ -448,7 +429,8 @@ def test_layout_table_separates_people_and_mungchi_cuts() -> None:
         "OUTRO": ["MUNGCHI", "RUN", "PEOPLE", "MUNGCHI", "PEOPLE", "GROUP"],
     }
     captions = {s: [i for i, c in enumerate(specs, 1) if c.caption] for s, specs in new.items()}
-    assert captions == {"INTRO": [1, 2, 4, 6], "OUTRO": [1, 3, 6]}
+    # 설계 v2(2026-11-23): 자막은 모든 컷(아이가 자막만 보고 따라가게)
+    assert captions == {"INTRO": [1, 2, 3, 4, 5, 6], "OUTRO": [1, 2, 3, 4, 5, 6]}
     roles = {s: [c.role for c in specs] for s, specs in new.items()}
     assert roles == {"INTRO": [1, 2, 2, 3, 3, 4], "OUTRO": [1, 2, 3, 3, 4, 4]}
     legacy = cuts.layout(4)
@@ -462,26 +444,12 @@ def test_layout_table_separates_people_and_mungchi_cuts() -> None:
 
 
 def test_off_captions_are_cleared_by_code() -> None:
+    """6컷은 모든 컷이 자막 컷이라(설계 v2 2026-11-23) 코드가 지우는 자막이 없음."""
     theme = valid_theme()
     for c in [*theme["introCuts"], *theme["outroCuts"]]:
         c["caption"] = c["caption"] or "지호: 남은 자막"
     checks.clear_off_captions(theme)
-    assert [bool(c["caption"]) for c in theme["introCuts"]] == [
-        True,
-        True,
-        False,
-        True,
-        False,
-        True,
-    ]
-    assert [bool(c["caption"]) for c in theme["outroCuts"]] == [
-        True,
-        False,
-        True,
-        False,
-        False,
-        True,
-    ]
+    assert all(c["caption"] for c in [*theme["introCuts"], *theme["outroCuts"]])
 
 
 def test_caption_speaker_must_be_visible_in_that_cut() -> None:
@@ -692,3 +660,37 @@ def test_mission_picture_keeps_papers_unreadable_and_text_review_is_graded() -> 
     assert "never readable letters or numbers" in prompts.MISSION_WRITTEN
     review = prompts.IMAGE_REVIEW_SYSTEM
     assert "읽을 수 있는 글자·숫자가 보이는지" in review and "빈칸만 있으면 WARN" in review
+
+
+def test_design_v2_lines_agree_across_prompts_checks_and_reviews() -> None:
+    """설계 v2(2026-11-23): 같은 결정이 그림 지시·영상 지시·그림 검토·영상 검토·코드 검사에 함께
+    들어감(한 곳만 바꾸면 검토가 옛 기준으로 떨어뜨리던 일이 되풀이됐음)."""
+    from app.theme_draft import rules
+
+    theme = valid_theme()
+    # 뭉치 눈: 기준 그림처럼 흰 반짝 점 — 그림·끝 표정·영상·그림 검토
+    assert "white highlight dot" in prompts.MUNGCHI_LOOK
+    assert "white highlight dots" in prompts.end_face_prompt(theme, "INTRO", 5, [])
+    assert any("white highlight dots" in line for line in prompts.MUNGCHI_KEEP)
+    assert "흰 반짝 점" in prompts.IMAGE_REVIEW_SYSTEM
+    assert "small dot eyes" not in prompts.MUNGCHI_LOOK + " ".join(prompts.MUNGCHI_KEEP)
+    # 끝 표정 만화 효과: 그림 지시에 들어가고 그림 검토는 결함·글자로 보지 않음
+    assert prompts.MANGA_EFFECT["sparkle"] in prompts.end_face_prompt(theme, "INTRO", 5, [])
+    assert prompts.MANGA_EFFECT["burst"] in prompts.end_face_prompt(theme, "OUTRO", 1, [])
+    assert "만화 효과는 결함이 아니고 글자도 아니다" in prompts.IMAGE_REVIEW_SYSTEM
+    # 일자 입은 6컷 컷 표·검토 입 모양에 없음
+    for scene in ("INTRO", "OUTRO"):
+        for i in range(1, 7):
+            assert prompts.start_mouth_ko(theme, scene, i) != "다문 일자 입"
+            assert prompts.end_mouth_ko(theme, scene, i) != "다문 일자 입"
+    # 손뼉: 줄거리 지시·규칙 목록·금지 목록·코드 검사가 같은 범위(뭉치가 함께 나오는 사람 컷)
+    assert rules.BY_ID["HAND"].video_when == rules.BY_ID["HAND"].negative_when == "people_mungchi"
+    assert "사람만 나오는 컷은 손뼉 쳐도 됨" in prompts.PLAN_SYSTEM
+    assert checks.cut_action_problems("지호가 손뼉을 친다", True)
+    assert not checks.cut_action_problems("지호가 손뼉을 친다", False)
+    # 달리기: Veo(합성 끔) — 줄거리·고쳐 쓰기·구도·영상 지시가 모두 옆으로 달림
+    assert not cuts.spec("INTRO", 4, 6).run_comp and not cuts.spec("OUTRO", 2, 6).run_comp
+    assert "옆으로 힘차게 달려간다" in prompts.PLAN_SYSTEM
+    assert "sideways" in prompts.FRAMES["RUN"].image and "sideways" in prompts.MUNGCHI_RUN
+    # 영상 검토: 옷 무늬·배지가 조금 바뀌는 건 WARN
+    assert "배지·무늬가 조금 바뀌는 것은 WARN" in prompts.VIDEO_REVIEW_SYSTEM

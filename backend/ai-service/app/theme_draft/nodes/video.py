@@ -186,7 +186,8 @@ async def film(
                 seconds=seconds,
                 prompt_version=ctx.prompt.version,
                 deadline=ctx.deadline,
-                negative=body.video_negative(theme),  # #779 설계 C표: 공중 손짓·야생 동물 만지기
+                # #779 설계 C표: 공중 손짓(뭉치가 나오는 사람 컷만, 설계 v2)·야생 동물 만지기
+                negative=body.video_negative(theme, scene, index),
             )
         except LlmUnavailable as exc:
             bad = [f"VIDEO_CALL {exc.code}"]

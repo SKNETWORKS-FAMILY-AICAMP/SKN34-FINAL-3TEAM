@@ -564,18 +564,24 @@ def still_clip(image: bytes, seconds: float, size: tuple[int, int]) -> bytes:
         return out.read_bytes()
 
 
-FACE_FADE = 0.3  # 표정 그림 두 장 컷의 녹아드는 시간(초). 0.8초는 두 입이 겹쳐 보였음(#779 비교)
-FACE_SWITCH = 0.4  # 컷 길이의 이 비율에서 끝 표정으로 넘어가기 시작
+# 2026-11-23 설계 v2(사용자 확인): 녹아듦 + 계속 확대는 입이 겹쳐 보이고 다가오기만 해 어색했음 →
+# 확대 없이 바로
+# 바뀌고 바뀌는 순간 살짝 커졌다 돌아옴(만화처럼 표정이 툭 바뀜)
+FACE_SWITCH = 0.375  # 컷 길이의 이 비율(4초 컷 1.5초)에서 끝 표정으로 바로 바뀜
+FACE_POP = 0.06  # 바뀌는 순간 커지는 비율
+FACE_POP_SECONDS = 0.3  # 커졌다 돌아오는 시간(초)
 
 
 def two_face_clip(first: bytes, second: bytes, seconds: float, size: tuple[int, int]) -> bytes:
-    """표정 그림 두 장 컷(#779 사용자 결정 2026-11-20 A안): 첫 그림 → FACE_FADE초 녹아듦 → 끝 그림,
-    전체를 가운데로 천천히 확대(still_clip과 같은 원근 필터, 24fps·yuv420p, size 크기)."""
+    """표정 그림 두 장 컷(#779 A안, 설계 v2 연출): 첫 그림 → FACE_SWITCH에서 끝 그림으로 바로 바뀌고
+    FACE_POP_SECONDS 동안 FACE_POP만큼 커졌다 돌아옴(확대·녹아듦 없음, 24fps·yuv420p, size 크기)."""
     width, height = size
     frames = max(1, round(seconds * 24))
-    edge = f"(1-1/(1+{STILL_ZOOM - 1:.3f}*on/{frames}))/2"
-    left, top, right, bottom = f"W*{edge}", f"H*{edge}", f"W-W*{edge}", f"H-H*{edge}"
     switch = round(seconds * FACE_SWITCH, 3)
+    pop = (
+        f"scale=w='trunc({width}*(1+{FACE_POP}*sin(PI*min(t/{FACE_POP_SECONDS}\\,1)))/2)*2'"
+        f":h=-2:eval=frame,crop={width}:{height}"
+    )
     with tempfile.TemporaryDirectory() as tmp:
         a, b, out = Path(tmp) / "a.img", Path(tmp) / "b.img", Path(tmp) / "c.mp4"
         a.write_bytes(first)
@@ -583,14 +589,10 @@ def two_face_clip(first: bytes, second: bytes, seconds: float, size: tuple[int, 
         fit = f"scale={width}:{height}:flags=lanczos,setsar=1,format=yuv420p"
         _ffmpeg(
             [
-                *("-loop", "1", "-framerate", "24", "-t", str(seconds), "-i", str(a)),
-                *("-loop", "1", "-framerate", "24", "-t", str(seconds), "-i", str(b)),
+                *("-loop", "1", "-framerate", "24", "-t", str(switch), "-i", str(a)),
+                *("-loop", "1", "-framerate", "24", "-t", str(seconds - switch), "-i", str(b)),
                 "-filter_complex",
-                f"[0]{fit}[a];[1]{fit}[b];"
-                f"[a][b]xfade=transition=fade:duration={FACE_FADE}:offset={switch}[x];"
-                f"[x]perspective=x0='{left}':y0='{top}':x1='{right}':y1='{top}':"
-                f"x2='{left}':y2='{bottom}':x3='{right}':y3='{bottom}':"
-                "interpolation=cubic:eval=frame[v]",
+                f"[0]{fit}[a];[1]{fit},{pop}[b];[a][b]concat=n=2:v=1,format=yuv420p[v]",
                 *("-map", "[v]", "-frames:v", str(frames)),
                 *("-c:v", "libx264", "-pix_fmt", "yuv420p", str(out)),
             ]

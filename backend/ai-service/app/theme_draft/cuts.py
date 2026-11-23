@@ -2,8 +2,9 @@
 
 새 테마는 시작·종료 각 6컷 × 4초("만화 예고편 컷 문법"): 사람이 손으로 하는 동작(안기·열기·손뼉)
 곁에 뭉치가 있으면 영상 모델이 사람 팔을 뭉치에게 옮겨 붙여서(3테마 실행 실패 5컷 모두), 사람 컷과
-뭉치 컷을 나누고 마지막 단체 컷만 함께(뭉치는 떨어져) 나온다. 자막은 중요한 순간 컷에만(B안,
-"이름: 대사" 꼴), 카메라는 컷 역할마다 코드가 정한다.
+뭉치 컷을 나누고 마지막 단체 컷만 함께(뭉치는 떨어져) 나온다. 자막은 모든 컷에("이름: 대사" 꼴,
+2026-11-23 설계 v2: 아이가 그림과 자막만 보고 따라가게. 그 전 B안은 중요한 순간 컷에만), 카메라는
+컷 역할마다 코드가 정한다.
 
 예전에 저장된 4컷 초안(4·6·8·6초)은 부분 다시 생성(#537)·영상만 다시 만들기에서 예전 동작 그대로
 돌도록 4컷 틀을 함께 둔다(카메라는 콘티 camera 칸, 자막은 모든 컷).
@@ -34,6 +35,11 @@ END_FACE = "END"
 # 그것을 고친 왼발·오른발 자세(RUNA·RUNB). 컷 그림(INTRO4)은 뭉치 없는 길 배경
 RUN_BASE, RUN_STEPS = "POSE", ("RUNA", "RUNB")
 EXTRA_TAILS = (END_FACE, RUN_BASE, *RUN_STEPS)
+# 2026-11-23 설계 v2: 달리기는 다시 Veo(11-20 종료 2컷처럼 크게 자연스럽게 통과함, 떨어진 시작 4컷도
+# 장면은
+# 멀쩡했고 검토가 작은 옷 무늬 변화로 떨어뜨림). 합성은 배경만 쪼그라들고 뭉치가 떠 보였음(사용자
+# 확인)
+RUN_COMPOSITE = False
 
 
 def end_key(key: str) -> str:
@@ -108,6 +114,10 @@ class CutSpec:
     # 영상 확인: 가슴 위 클로즈업 0/3, 가운데·전신·카메라 고정 0/3 — 9번 시도 모두 "몸 밖으로 뻗은
     # 팔"), 같은 3컷을 그림 두 장으로 만든 비교는 3/3 첫 시도 통과
     end_mouth: str = ""
+    # 끝 표정 그림에 더하는 만화 효과(영어 한 줄, 2026-11-23 설계 v2). 눈썹 없는 점 눈이라 입만
+    # 바꾸면 결심·생각이
+    # 무표정으로 보였음(사용자 확인) — 사람 리액션 컷처럼 노란 효과로 표정을 살림
+    effect: str = ""
 
     @property
     def two_faces(self) -> bool:
@@ -121,7 +131,7 @@ class CutSpec:
         뭉치 혼자 달리기는 Veo가 팔을 만들거나 몸을 틀어(장난꾸러기 "정리" 영상 확인: 시작 4컷
         3번 모두 실패, 종료 2컷 1번 통과) 길 배경 + 초록 배경 자세 그림 두 장을 번갈아 겹친다
         (media.run_clip). 예전 4컷 출동 컷은 예전처럼 Veo."""
-        return self.who == "RUN" and bool(self.frame)
+        return self.who == "RUN" and bool(self.frame) and RUN_COMPOSITE
 
     @property
     def has_mungchi(self) -> bool:
@@ -185,8 +195,12 @@ _NEW = {
         CutSpec(
             "PEOPLE",
             2,
-            False,
-            "인물 리액션: 사건을 본 인물들이 펄쩍 놀라는 얼굴(어깨 위, 뭉치 없음)",
+            True,
+            # 2026-11-23 설계 v2: 뭉치가 왜 오는지 없이 다음 컷에서 갑자기 출동했음(사용자 확인) →
+            # 뭉치를 부름
+            "인물 리액션: 사건을 본 인물들이 펄쩍 놀라며 뭉치를 부름(어깨 위, 뭉치는 아직 없음)",
+            speaker="그 컷에 보이는 인물(characters의 이름)이 뭉치를 부르는 말(예: '뭉치야, "
+            "도와줘!')",
             look="Everyone shows a big surprised face: wide eyes, raised eyebrows and open "
             "mouths, not smiling.",
             follows=1,
@@ -198,28 +212,31 @@ _NEW = {
             "RUN",
             3,
             True,
-            # 합성 컷(run_comp): 달리는 방향은 코드가 정함(배경이 뒤로 물러남, media.run_clip)이라
-            # 글에는 방향을 쓰지 않음. "옆으로"는 합성과 어긋나고 "화면 쪽으로"는 글 규칙 "누구도
-            # 화면 쪽으로 다가오지 않는다"와 부딪힘(2026-11-21)
-            "뭉치 출동: 뭉치 혼자 정면을 본 채 짧은 갈색 발로 힘차게 달림",
-            speaker="뭉치의 역할 구호(예: '뭉치: 경찰관 뭉치, 출동!')",
+            # 2026-11-23 설계 v2: Veo로 정면을 본 채 옆으로 달리고 카메라가 따라감(11-20 종료 2컷
+            # 통과 방식)
+            "뭉치 출동: 뭉치 혼자 정면을 본 채 짧은 갈색 발로 옆으로 힘차게 달리고 배경이 흘러감",
+            speaker="뭉치의 역할 구호(예: '뭉치: ○○ 뭉치, 출동!')",
             place="ROAD",
             frame="RUN",
-            mouth="determined",
+            mouth="smile",
         ),
         CutSpec(
             "MUNGCHI",
             3,
-            False,
+            True,
             # 장소는 사건 장소 안(5차 콘티: 장면 글 "떡집 앞"이 장소 칸 "떡집 안"과 부딪혔음).
-            # 표정 그림 두 장(end_mouth): 놀란 입 → 다문 입(결심)
-            "뭉치 결심: 사건 장소 안에 선 뭉치 혼자 가슴 위 클로즈업, 놀란 입에서 다문 입으로 "
-            "결심한 얼굴",
-            "Mungchi's small surprised o mouth turns into a firm closed mouth (determined).",
+            # 2026-11-23 설계 v2: 출동한 뒤라 '도착해서 결심'(예전 '결심'은 출동 뒤라 순서가
+            # 거꾸로였음). 일자 입은
+            # 무표정으로 보여 자신 있게 웃는 입 + 반짝
+            "뭉치 도착·결심: 사건 장소에 도착한 뭉치 혼자 가슴 위 클로즈업, 놀란 입에서 자신 있게 "
+            "웃는 입으로",
+            "Mungchi's small surprised o mouth turns into a confident smile.",
+            speaker="뭉치가 꼭 해결하겠다는 짧은 말(예: '뭉치: 내가 꼭 찾아낼게!')",
             place="INCIDENT",
             frame="MUNGCHI_CLOSE",
             mouth="surprised",
-            end_mouth="determined",
+            end_mouth="smile",
+            effect="sparkle",
         ),
         CutSpec(
             "GROUP",
@@ -244,34 +261,39 @@ _NEW = {
             "MUNGCHI",
             1,
             True,
-            # 표정 그림 두 장(end_mouth): 생각하는 다문 입 → '알았다!' 웃는 입
+            # 표정 그림 두 장(end_mouth). 2026-11-23 설계 v2: 일자 입(생각)은 무표정으로 보여 놀란 o
+            # 입 → 웃는
+            # 입 + 번쩍 선
             "뭉치 깨달음: 뒤쪽 판·벽에 단서 그림들이 붙어 있고 그 앞에서 뭉치 혼자 정면을 보는 "
-            "가슴 위 클로즈업(단서 물건을 뭉치 앞 바닥·탁자에 두지 않음), 생각하는 다문 입에서 "
-            "알아챈 웃는 입으로",
-            "Mungchi's closed thinking mouth turns into a smiling mouth as it realizes the answer.",
+            "가슴 위 클로즈업(단서 물건을 뭉치 앞 바닥·탁자에 두지 않음), 놀란 입에서 알아챈 활짝 "
+            "웃는 입으로",
+            "Mungchi's small surprised o mouth turns into a big smile as it realizes the answer.",
             speaker="뭉치가 '알았다!' 뒤에 이번 정답을 말함",
             place="INCIDENT",
             frame="MUNGCHI_CLOSE",
-            mouth="determined",
+            mouth="surprised",
             end_mouth="smile",
+            effect="burst",
         ),
         CutSpec(
             "RUN",
             2,
-            False,
-            "뭉치 혼자 정답 장소로 가는 길을 정면을 본 채 짧은 갈색 발로 달려감(대상은 아직 보이지 "
-            "않음)",
+            True,
+            # 2026-11-23 설계 v2: Veo 달리기(시작 4컷과 같은 방식), 어디로 가는지 자막으로
+            "뭉치 혼자 정답 장소로 짧은 갈색 발로 옆으로 달려감(대상은 아직 보이지 않음)",
+            speaker="뭉치가 정답 장소로 가자는 짧은 말(예: '뭉치: ○○로 가 보자!')",
             place="ROAD",
             frame="RUN",
-            mouth="determined",
+            mouth="smile",
         ),
         CutSpec(
             "PEOPLE",
             3,
             True,
             "정답 공개: 정답 장소에서 사람들과 대상(뭉치 없음)",
+            # 2026-11-23 설계 v2: 뭉치가 안 나오는 컷이라 뭉치 말이 맞았음을 자막으로 이음
             speaker="그 컷에 보이는 인물(characters의 이름)이 공개에 놀라는 말('짜잔!'·'와!' 같은 "
-            "말로 시작)",
+            "말로 시작, 뭉치 말이 맞았음이 드러나게 — 예: '와! 뭉치 말대로 ○○였구나!')",
             place="ANSWER",
             act="The people react as the story beat says with clear, natural movements (pointing "
             "or picking something up is fine).",
@@ -280,23 +302,26 @@ _NEW = {
         CutSpec(
             "MUNGCHI",
             3,
-            False,
+            True,
             # 표정 그림 두 장(end_mouth): 놀란 입 → 웃는 입
             "뭉치 리액션: 정답 장소 앞 뭉치 혼자 가슴 위 클로즈업, 놀란 입에서 활짝 웃음",
             "Mungchi's small surprised o mouth turns into a big smile.",
+            speaker="뭉치가 마음이 놓인 짧은 말(예: '뭉치: 다행이다!')",
             place="ANSWER",
             frame="MUNGCHI_CLOSE",
             mouth="surprised",
             end_mouth="smile",
+            effect="sparkle",
         ),
         CutSpec(
             "PEOPLE",
             4,
-            False,
+            True,
             # 내용은 종류 역할 4(동물 종류는 덮어 두기 + 배웅). 예전 "사람들과 대상이 함께 기뻐함
             # (손뼉)"은 종류마다 다른 마무리와 어긋났음
             "마무리: 역할 4 내용을 사람들만으로(뭉치 없음, 대상은 줄거리 종류 규칙에서 대상이 "
             "나오는 컷일 때만)",
+            speaker="그 컷에 보이는 인물(characters의 이름)이 그 장면을 마무리하는 짧은 말",
             follows=3,
             place="ANSWER",
             # "calmly with small"은 종류 역할 "폴짝 뛰거나 웃음"과 부딪혔음(재검토 2026-11-20)

@@ -21,7 +21,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-When = Literal["all", "mungchi", "people", "people6", "wild", ""]
+When = Literal["all", "mungchi", "people", "people6", "people_mungchi", "wild", ""]
 
 
 @dataclass(frozen=True)
@@ -95,14 +95,17 @@ RULES: tuple[Rule, ...] = (
         "만지거나 안거나 붙잡으면 결함이다.",
         fail="예외 밖에서 만지거나 안거나 붙잡음",
     ),
-    # 사람 손(사용자 결정 2026-11-19): 공중 손짓 없음. 물건을 다루는 손은 컷 할 일에 적힌 것만
+    # 사람 손(사용자 결정 2026-11-19): 공중 손짓 없음. 물건을 다루는 손은 컷 할 일에 적힌 것만.
+    # 2026-11-23 설계 v2: 뭉치가 나오는 사람 컷만(뭉치 곁 사람 팔이 뭉치에게 옮겨 붙던 문제). 사람만
+    # 나오는
+    # 컷은 손뼉 됨 — 막아 두자 손을 든 채 멈춘 그림이 나왔음(사용자 확인)
     Rule(
         "HAND",
         video="No waving and no clapping: the people's hands only hold, open or point at things "
         "as the story beat says.",
-        video_when="people6",
+        video_when="people_mungchi",
         negative="waving, clapping",
-        negative_when="all",
+        negative_when="people_mungchi",
         warn="다른 동작",
     ),
     # 한 줄 서기는 WARN(사용자 결정 2026-11-19), 그 컷 핵심이 빠지면 SCENE_FIT FAIL
