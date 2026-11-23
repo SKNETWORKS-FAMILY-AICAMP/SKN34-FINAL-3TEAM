@@ -61,11 +61,18 @@ export function comparisonAnswerText(answer: ComparisonSnapshot['answers'][numbe
 /** 낱말 물어보기 (FN-LRN-21, api-spec 2.2.1, #599). 뜻은 국립국어원 사전에서만 오고, 저장하지 않는다. */
 export type WordHelpState = 'EXPLAINED' | 'DICTIONARY_ONLY' | 'NOT_FOUND' | 'DEFERRED' | 'OUT_OF_SCOPE'
 export const wordSources = ['표준국어대사전', '온용어'] as const
+export type WordSense = {
+  definition: string
+  source: (typeof wordSources)[number]
+  attribution?: string | null
+  sourceUrl?: string | null
+  license?: string | null
+}
 export interface WordHelp {
   state: WordHelpState
   headword: string | null
   text: string
   example: string | null
-  senses: { definition: string; source: (typeof wordSources)[number] }[]
+  senses: WordSense[]
 }
 export const WORD_QUESTION_MAX = 100

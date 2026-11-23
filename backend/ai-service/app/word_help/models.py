@@ -48,6 +48,9 @@ class WordHelpRequest(_Forbid):
 class WordSense(ApiModel):
     definition: str
     source: DictionarySource
+    attribution: str | None = None
+    source_url: str | None = None
+    license: str | None = None
 
 
 class WordHelpVersions(ApiModel):

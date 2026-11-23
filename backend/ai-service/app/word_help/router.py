@@ -15,7 +15,11 @@ def get_word_help_service(
     request: Request, llm: Annotated[LlmClient, Depends(get_llm)]
 ) -> WordHelpService:
     return WordHelpService(
-        llm, request.app.state.dictionary, get_settings(), request.app.state.active_versions
+        llm,
+        request.app.state.dictionary,
+        get_settings(),
+        request.app.state.active_versions,
+        request.app.state.word_web_search,
     )
 
 

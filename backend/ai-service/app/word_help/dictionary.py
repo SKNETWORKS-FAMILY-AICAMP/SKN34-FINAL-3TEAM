@@ -2,7 +2,7 @@
 
 - 표준국어대사전 search.do: key·q·req_type=json·num. 표제어마다 첫 뜻 하나만 준다(검색 응답의 한계)
 - 온용어 search.do: key·apiSearchWord·start·num. 용어마다 공공누리 유형(kr_gvrn_lcns_ty)이
-다르고 4유형은 변경 금지
+다르므로 재서술과 상업 이용 조건을 확인한 후보만 남긴다.
 두 사전 모두 표제어가 정확히 같은 항목만 쓰고, 뜻풀이의 HTML 조각(<I>·&#44;)을 지운다.
 키·주소는 설정에서만 읽고 로그·예외 메시지에 남기지 않는다(키가 URL 쿼리에 들어가므로 httpx 예외
 문구도 버림).
@@ -25,7 +25,8 @@ STDICT = "표준국어대사전"
 ONYONG = "온용어"
 STDICT_MAX = 50
 ONYONG_MAX = 3
-NO_CHANGE_LICENSE = "4"  # 공공누리 4유형: 출처표시·상업적 이용금지·변경금지
+KOGL_1 = "https://www.kogl.or.kr/info/licenseType1.do"
+CC_BY_SA = "https://creativecommons.org/licenses/by-sa/2.0/kr/"
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,9 @@ class Candidate:
     source: str
     definition: str
     detail: str  # 품사(표준국어대사전) 또는 분야(온용어). 없으면 빈 글
-    no_change: bool = False
+    attribution: str | None = None
+    source_url: str | None = None
+    license: str | None = None
 
 
 def clean(text: str | None) -> str:
@@ -44,6 +47,20 @@ def clean(text: str | None) -> str:
 def _headword(text: str | None) -> str:
     """표제어 표기의 붙임표·어깨번호 표시(-, ^)와 띄어쓰기를 뗀다"""
     return re.sub(r"[-^\s]", "", clean(text))
+
+
+def _stdict_link(sense: dict, item: dict) -> str:
+    link = sense.get("link") or item.get("link")
+    if isinstance(link, dict):
+        link = next(iter(link.values()), None)
+    match = re.fullmatch(
+        r"https://(?:stdict\.korean\.go\.kr|kdict\.korean\.go\.kr)"
+        r"/(?:standard/)?search/searchView\.do\?wordNo=([0-9]{1,12})(?:&[^#]*)?",
+        link if isinstance(link, str) else "",
+    )
+    if match:
+        return f"https://kdict.korean.go.kr/standard/search/searchView.do?wordNo={match[1]}"
+    return "https://kdict.korean.go.kr/standard"
 
 
 class DictionaryUnavailable(ApiError):
@@ -86,19 +103,6 @@ class Dictionary:
         except DictionaryUnavailable:
             return []  # 보완 사전 장애는 표준국어대사전 결과만으로 이어 감
 
-    async def candidates(self, word: str) -> list[Candidate]:
-        rows = await self.stdict(word) + await self.onyong(word)
-        seen: set[str] = set()
-        unique = []
-        for row in rows:
-            if row.definition and row.definition not in seen:
-                seen.add(row.definition)
-                unique.append(row)
-        # 변경 금지(공공누리 4유형) 뜻은 쉬운 말로 바꿀 수 없어 다른 후보가 있으면 뺀다.
-        # 다른 후보가 없을 때만 원문 그대로 보여 준다(11-13 실측: "증발"에서 어려운 원문을 고름)
-        changeable = [row for row in unique if not row.no_change]
-        return changeable or unique
-
     async def _cached(self, key, fetch) -> list[Candidate]:
         hit = self._cache.get(key)
         if hit and time.monotonic() - hit[0] < self._ttl:
@@ -138,12 +142,21 @@ class Dictionary:
         for item in items if isinstance(items, list) else [items]:
             if not isinstance(item, dict) or _headword(item.get("word")) != word:
                 continue
-            sense = item.get("sense") or {}
-            sense = sense[0] if isinstance(sense, list) and sense else sense
-            definition = clean(sense.get("definition") if isinstance(sense, dict) else "")
-            if definition:
-                rows.append(Candidate(STDICT, definition, clean(item.get("pos"))))
-        return rows
+            senses = item.get("sense") or {}
+            for sense in senses if isinstance(senses, list) else [senses]:
+                definition = clean(sense.get("definition") if isinstance(sense, dict) else "")
+                if definition:
+                    rows.append(
+                        Candidate(
+                            STDICT,
+                            definition,
+                            clean(sense.get("pos") or item.get("pos")),
+                            "표준국어대사전 / 국립국어원",
+                            _stdict_link(sense, item),
+                            CC_BY_SA,
+                        )
+                    )
+        return unique_definitions(rows)
 
     async def _fetch_onyong(self, word: str) -> list[Candidate]:
         url, key = self._onyong
@@ -158,14 +171,25 @@ class Dictionary:
                 if not isinstance(item, dict) or _headword(item.get("word")) != word:
                     continue
                 definition = clean(item.get("definition"))
-                if definition:
-                    rows.append(
-                        Candidate(
-                            ONYONG,
-                            definition,
-                            clean(item.get("category_sub")),
-                            str(item.get("kr_gvrn_lcns_ty") or "") == NO_CHANGE_LICENSE,
-                        )
+                glossary, source = clean(item.get("glossary")), clean(item.get("source"))
+                license_code = str(item.get("kr_gvrn_lcns_ty", ""))
+                if license_code != "1" or not glossary or not source or not definition:
+                    continue
+                rows.append(
+                    Candidate(
+                        ONYONG,
+                        definition,
+                        clean(item.get("category_sub")),
+                        f"{glossary} / {source}",
+                        "https://kli.korean.go.kr/term",
+                        CC_BY_SA if glossary == "우리말샘" and source == "국립국어원" else KOGL_1,
                     )
-        rows.sort(key=lambda row: row.no_change)  # 바꿀 수 있는 뜻을 먼저 남긴다
-        return rows[:ONYONG_MAX]
+                )
+        return unique_definitions(rows)[:ONYONG_MAX]
+
+
+def unique_definitions(rows: list[Candidate]) -> list[Candidate]:
+    unique: dict[str, Candidate] = {}
+    for row in rows:
+        unique.setdefault(row.definition, row)
+    return list(unique.values())

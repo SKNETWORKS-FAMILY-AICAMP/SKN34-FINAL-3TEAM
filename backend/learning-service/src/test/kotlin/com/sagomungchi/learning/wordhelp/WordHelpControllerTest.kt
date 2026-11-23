@@ -40,11 +40,18 @@ class WordHelpControllerTest(@Autowired private val mockMvc: MockMvc) {
 
     @Test fun `질문을 다듬어 넘기고 결과를 그대로 돌려준다`() {
         given(service.help(attemptId, "분수가 뭐야?")).willReturn(
-            WordHelpAiResponse("EXPLAINED", "분수", "쉬운 말", "예문", listOf(WordSense("뜻", "표준국어대사전"))))
+            WordHelpAiResponse("EXPLAINED", "분수", "쉬운 말", "예문", listOf(
+                WordSense("뜻", "온용어", "우리말샘 / 국립국어원",
+                    "https://kli.korean.go.kr/term/trgtWord/indexTrgtWord.do?trgtWordNo=1",
+                    "https://creativecommons.org/licenses/by-sa/2.0/kr/"),
+            )))
         mockMvc.post("/internal/attempts/$attemptId/word-help") { asStudent() }.andExpect {
             status { isOk() }
             jsonPath("$.state") { value("EXPLAINED") }
-            jsonPath("$.senses[0].source") { value("표준국어대사전") }
+            jsonPath("$.senses[0].source") { value("온용어") }
+            jsonPath("$.senses[0].attribution") { value("우리말샘 / 국립국어원") }
+            jsonPath("$.senses[0].sourceUrl") { value("https://kli.korean.go.kr/term/trgtWord/indexTrgtWord.do?trgtWordNo=1") }
+            jsonPath("$.senses[0].license") { value("https://creativecommons.org/licenses/by-sa/2.0/kr/") }
             jsonPath("$.versions") { doesNotExist() }
         }
     }

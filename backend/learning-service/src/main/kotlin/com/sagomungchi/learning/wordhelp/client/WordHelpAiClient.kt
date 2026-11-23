@@ -23,7 +23,13 @@ data class WordHelpAiRequest(
     val leak: WordHelpLeak?,
 )
 
-data class WordSense(val definition: String, val source: String)
+data class WordSense(
+    val definition: String,
+    val source: String,
+    val attribution: String? = null,
+    val sourceUrl: String? = null,
+    val license: String? = null,
+)
 
 /** ai 응답에서 versions를 뺀 것이 학생 응답(api-spec 2.2.1) */
 data class WordHelpAiResponse(

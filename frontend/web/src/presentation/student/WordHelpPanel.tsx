@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CompanionId } from '../../domain/studentLook.ts'
 import { companionLabel } from '../../domain/studentLook.ts'
-import type { WordHelp } from '../../domain/learning.ts'
+import type { WordHelp, WordSense } from '../../domain/learning.ts'
 import { WORD_QUESTION_MAX } from '../../domain/learning.ts'
 import { useAskWord } from '../../data/classroom/useClassroom.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
@@ -9,6 +9,21 @@ import { SpeechBubble } from './world/SpeechBubble.tsx'
 
 type Turn = { id: number; question: string; answer: WordHelp }
 const KEEP = 5
+
+function SenseSource({ sense, adapted = false }: { sense: WordSense; adapted?: boolean }) {
+  const name = sense.attribution ?? sense.source
+  return <small className="st-word-cite">
+    출처: {sense.sourceUrl?.startsWith('https://')
+      ? <a href={sense.sourceUrl} target="_blank" rel="noopener noreferrer">{name}</a>
+      : name}
+    {sense.license?.startsWith('https://') && <>
+      {' · '}<a href={sense.license} target="_blank" rel="noopener noreferrer">
+        {sense.license.includes('creativecommons.org') ? 'CC BY-SA 2.0 KR' : '공공누리 1유형'}
+      </a>
+      {adapted && ' · 쉬운 말로 바꿈'}
+    </>}
+  </small>
+}
 
 /**
  * 낱말 물어보기 (FN-LRN-21, #599). 동행 캐릭터가 국립국어원 사전 뜻을 쉬운 말로 알려 준다.
@@ -41,9 +56,9 @@ export function WordHelpPanel({ attemptId, companion }: { attemptId: string; com
             <p>{turn.answer.text}</p>
             {turn.answer.example && <p className="st-word-example">예: {turn.answer.example}</p>}
             {turn.answer.state === 'DICTIONARY_ONLY'
-              ? <ul className="st-word-source">{turn.answer.senses.map((sense, index) => <li key={index}>{sense.definition} <small>출처: {sense.source}</small></li>)}</ul>
+              ? <ul className="st-word-source">{turn.answer.senses.map((sense, index) => <li key={index}>{sense.definition} <SenseSource sense={sense} /></li>)}</ul>
               : turn.answer.senses.length > 0 && <>
-                <small className="st-word-cite">출처: {turn.answer.senses[0].source}</small>
+                <SenseSource sense={turn.answer.senses[0]} adapted />
                 <details className="st-word-source">
                   <summary>사전에 적힌 뜻 보기</summary>
                   <p>{turn.answer.senses[0].definition}</p>

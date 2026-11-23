@@ -353,7 +353,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
   - `state`: `EXPLAINED`(사전 뜻을 쉬운 말로), `DICTIONARY_ONLY`(AI 실패라 사전 원문만, P16), `NOT_FOUND`(사전에 없거나 문장에 맞는 뜻이 없음), `DEFERRED`(마무리 전인데 정답 키·금지어·예시 답과 겹침), `OUT_OF_SCOPE`(낱말 뜻 질문이 아님)
   - `headword`: 사전에서 찾은 표제어(`EXPLAINED`·`DICTIONARY_ONLY`·`NOT_FOUND`일 때, 못 찾으면 `null`)
   - `text`: 캐릭터가 하는 말. `EXPLAINED`는 쉬운 말 한두 문장, 나머지는 정해진 안내 문구. `example`: `EXPLAINED`일 때 예문 하나(없으면 `null`)
-  - `senses[]` `{definition, source}`: `EXPLAINED`는 고른 뜻의 사전 원문 1개, `DICTIONARY_ONLY`는 표준국어대사전 뜻 최대 3개, 그 밖은 빈 배열. `source`는 `표준국어대사전`·`온용어`
+  - `senses[]` `{definition, source, attribution?, sourceUrl?, license?}`: `EXPLAINED`는 고른 뜻의 사전 원문 1개, `DICTIONARY_ONLY`는 해당 사전의 뜻 최대 3개, 그 밖은 빈 배열. `source`는 `표준국어대사전`·`온용어`. 출처·원문 링크·이용허락을 표시하고 쉬운 말에는 원문을 변경했다고 표시한다.
 - 마무리 전(`IN_PROGRESS`)만 유출 검사, 마무리 뒤에는 검사하지 않는다(정답이 이미 공개됨)
 - 오류: 없는 시도 `404 NOT_FOUND`, 다른 학생의 시도 `403 FORBIDDEN`, 완료(`COMPLETED`)한 시도도 허용. 사전 API 장애·미설정 `503 DICTIONARY_UNAVAILABLE`(`retryable:true`), ai 장애 `503 AI_UNAVAILABLE`. 사용량 `callType = WORD_HELP`(LLM 호출마다)
 
@@ -1263,13 +1263,13 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 - 흐름
   1. 표제어: 질문이 띄어쓰기 없는 한 낱말이고 표준국어대사전에 그 표제어가 있으면 그대로 쓴다. 아니면 LLM이 학생 질문·미션 문장에서 사전 표제어(기본형)를 고른다(빈 값이면 `OUT_OF_SCOPE`)
   2. 유출 미리 검사(`leak`가 있을 때): 질문·표제어가 정답 키·금지어를 포함하면 사전·LLM 없이 `DEFERRED`
-  3. 사전 후보: 표준국어대사전에서 표제어가 같은 항목(검색 응답이 항목마다 첫 뜻 하나만 주는 한계가 있음), 온용어에서 표제어가 같은 용어 최대 3개를 모은다. HTML 조각을 지우고 같은 뜻풀이는 하나로. 공공누리 4유형(변경 금지) 뜻은 다른 후보가 있으면 뺀다(쉬운 말로 바꿀 수 없음). 후보가 없으면 `NOT_FOUND`. 결과는 표제어 단위로 메모리에 캐시(12시간, 최대 2,000개)
-  4. 뜻 고르기·쉬운 말: LLM이 후보 번호 하나(`-1`이면 맞는 뜻 없음 → `NOT_FOUND`)와 학년 말투(되묻기 `grade_style`) 한두 문장, 예문 하나를 쓴다. 고른 뜻이 공공누리 4유형(변경 금지, 다른 후보가 없을 때만 남음)이면 쉬운 말 대신 원문을 `text`로 쓰고 예문은 없음
+  3. 표준국어대사전에서 표제어가 같은 항목을 먼저 찾는다. 해당 문맥과 일치하는 뜻이 없으면 온용어를 조회한다. 온용어는 이용 조건이 확인된 공공누리 1유형 또는 우리말샘 CC BY-SA 항목 최대 3건만 사용한다. 사전 조회는 표제어 단위로 캐시한다(12시간, 최대 2,000개).
+  4. 각 사전에서 뜻 번호 하나와 학년에 맞는 쉬운 말·예문을 고른다. 후보가 없거나 맞는 뜻을 고르지 못하면 다음 사전으로 넘어간다. 두 사전에서 찾지 못하면 Luna Responses API 웹 검색으로 온용어의 대체 항목 URL을 찾는다. 검색에는 표제어만 넘기고, 서버가 온용어 상세 페이지에서 표제어·출처·이용 조건·뜻풀이를 직접 확인한다. 허용된 근거를 찾지 못하면 `NOT_FOUND`다. 총 마감은 20초로 유지한다.
   5. 유출 뒤 검사(`leak`가 있을 때): `text`·`example`이 정답 키·금지어를 포함하거나 예시 답과 연속 12자(되묻기와 같은 값) 겹치면 `DEFERRED`
-- LLM: ai 기본 LLM 설정(`LLM_PROVIDER`), 구조화 출력, P12 15초·재시도 1회. 두 번 부르면 최악 62초라 learning→ai 35초를 넘을 수 있어 두 호출을 요청 전체 마감 20초(`WORD_HELP_DEADLINE`) 안에서만 부른다(learning→ai 25초, core→learning 일반 30초)(마감이 지나면 그 호출은 실패로 보고 아래 대체 응답)
-- 대체 응답(P16): 1의 LLM이 실패하면 질문에서 문장부호·조사(은·는·이·가·을·를·이란·란·가 뭐야 등)를 뗀 글자로 사전을 찾아 보고, 4의 LLM이 실패하거나 형식 밖이면 표준국어대사전 후보 최대 3개를 `DICTIONARY_ONLY`로 돌려준다(유출 뒤 검사는 이 원문에도 적용)
+- LLM: ai 기본 LLM(`LLM_PROVIDER`)을 구조화 출력으로 부른다. 생성 호출은 전체 마감 20초(`WORD_HELP_DEADLINE`)를 공유한다(learning→ai 25초, core→learning 일반 30초). 웹 검색은 OpenAI 키가 있을 때 활성화하며, ai에 남은 마감과 6초 중 짧은 값을 사용한다.
+- 대체 응답(P16): 1의 LLM이 실패하면 질문에서 문장부호·조사를 뗀 글자로 사전을 찾아 보고, 4의 LLM이 실패하거나 형식 밖이면 해당 사전에서 이용 조건을 통과한 후보 최대 3개를 `DICTIONARY_ONLY`로 돌려준다(유출 뒤 검사는 이 원문에도 적용).
 - 오류: 사전 호출 실패·미설정 `503 DICTIONARY_UNAVAILABLE`(`retryable:true`, 캐시에 있으면 사전을 부르지 않음), 사전 결과가 있는데도 1의 LLM 실패로 표제어를 못 정하면 `503 AI_UNAVAILABLE`
-- 사용량 `callType = WORD_HELP`, 프롬프트 이름 `wordHelp`·scope `ai/word-help`, 내장 버전 `word-help@1`. 학생 질문·응답 원문은 저장·로그하지 않는다(NFR-SEC-05, 로그는 상태·사유 코드만)
+- 사용량 `callType = WORD_HELP`, 프롬프트 이름 `wordHelp`·scope `ai/word-help`, 내장 버전 `word-help@1`. 검색 호출은 `word-help-search@1`로 구분한다. 학생 질문·응답 원문은 저장·로그하지 않는다(NFR-SEC-05, 로그는 상태·사유 코드만)
 - 가짜 구현(개발용): `WORD_HELP_PROVIDER=fake`면 LLM 대신 질문 글자를 표제어로, 사전 첫 후보를 고르고 `{표제어}는 {원문}라는 뜻이야.`로 답한다(사전은 실제 호출, 모델 `fake-word-help-v1`, 사용량 없음)
 
 ### 4.3 scoring-service (호출: ai, learning, core)

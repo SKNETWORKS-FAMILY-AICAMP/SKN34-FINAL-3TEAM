@@ -2884,6 +2884,9 @@ components:
       properties:
         definition: {type: string, description: 사전 뜻풀이 원문(HTML 조각 제거)}
         source: {type: string, enum: [표준국어대사전, 온용어]}
+        attribution: {type: [string, 'null']}
+        sourceUrl: {type: [string, 'null'], format: uri}
+        license: {type: [string, 'null'], format: uri}
     WordHelpResponse:
       type: object
       additionalProperties: false
@@ -2893,7 +2896,7 @@ components:
           type: string
           enum: [EXPLAINED, DICTIONARY_ONLY, NOT_FOUND, DEFERRED, OUT_OF_SCOPE]
         headword: {type: [string, 'null'], description: 사전에서 찾은 표제어}
-        text: {type: string, description: 'EXPLAINED는 쉬운 말 한두 문장(공공누리 4유형은 원문), 나머지는 정해진 안내 문구'}
+        text: {type: string, description: 'EXPLAINED는 쉬운 말 한두 문장, 나머지는 정해진 안내 문구'}
         example: {type: [string, 'null'], description: EXPLAINED일 때 예문 하나}
         senses:
           type: array

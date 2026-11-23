@@ -26,5 +26,15 @@ export function mockWordHelp(question: string, open: boolean): WordHelp {
     return reply('DEFERRED', '이 낱말은 문제의 답과 이어져 있어서 문제를 다 풀고 알려 줄게!')
   const entry = WORDS[word]
   if (!entry) return reply('NOT_FOUND', '사전에서 이 문장에 맞는 뜻을 찾지 못했어. 선생님이나 보호자께 물어보자.', { headword: word || null })
-  return reply('EXPLAINED', entry.easy, { headword: word, example: entry.example, senses: [{ definition: entry.definition, source: '표준국어대사전' }] })
+  return reply('EXPLAINED', entry.easy, {
+    headword: word,
+    example: entry.example,
+    senses: [{
+      definition: entry.definition,
+      source: '표준국어대사전',
+      attribution: '표준국어대사전',
+      sourceUrl: 'https://kdict.korean.go.kr/standard',
+      license: 'https://creativecommons.org/licenses/by-sa/2.0/kr/',
+    }],
+  })
 }

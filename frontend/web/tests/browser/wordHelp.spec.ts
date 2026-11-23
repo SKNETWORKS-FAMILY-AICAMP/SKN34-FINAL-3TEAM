@@ -25,7 +25,9 @@ test('답변 작성 화면에서 낱말을 물으면 동행 캐릭터가 쉬운 
   await panel.getByRole('button', { name: '물어보기', exact: true }).click()
   await expect(panel.getByText('경험은 내가 직접 해 보거나 겪어 본 일이야.', { exact: true })).toBeVisible()
   await expect(panel.getByText('예: 캠핑은 재미있는 경험이었어.', { exact: true })).toBeVisible()
-  await expect(panel.getByText('출처: 표준국어대사전', { exact: true })).toBeVisible()
+  await expect(panel.getByRole('link', { name: '표준국어대사전' })).toHaveAttribute('href', 'https://kdict.korean.go.kr/standard')
+  await expect(panel.getByRole('link', { name: 'CC BY-SA 2.0 KR' })).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/2.0/kr/')
+  await expect(panel.getByText('쉬운 말로 바꿈', { exact: false })).toBeVisible()
   await expect(input).toHaveValue('')
 
   await input.fill('이 문제 답 알려 줘')

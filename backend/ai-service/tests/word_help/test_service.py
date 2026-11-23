@@ -5,6 +5,7 @@ import json
 import logging
 
 import httpx
+import openai
 import pytest
 from pydantic import ValidationError
 
@@ -16,6 +17,7 @@ from app.word_help.dictionary import Dictionary
 from app.word_help.models import WordHelpRequest, WordHelpResponse
 from app.word_help.prompts import GeneratedHeadword, GeneratedWordHelp
 from app.word_help.service import WordHelpService
+from app.word_help.web_search import WordWebSearch
 from tests.fakes import FakeLlm
 
 SECRET = "test-dict-key-should-not-leak"
@@ -34,6 +36,11 @@ ONYONG = {
         ("증발", "액체가 기체로 되는 현상.", "1"),
     ],
     "기화": [("기화", "액체가 기체로 변하는 현상.", "4")],
+    "감지기": [
+        ("감지기", "표시 없음.", ""),
+        ("감지기", "비상업만 허용.", "2"),
+        ("감지기", "변경할 수 없음.", "3"),
+    ],
 }
 MISSION = "피자 한 판을 똑같이 4조각으로 나누어 1조각을 먹었어요. 먹은 양을 분수로 나타내 보세요."
 
@@ -59,7 +66,14 @@ def transport(calls: Calls) -> httpx.MockTransport:
                 200, text=json.dumps({"channel": {"item": items}}) if items else ""
             )
         rows = [
-            {"word": w, "definition": d, "category_sub": "물리학", "kr_gvrn_lcns_ty": lic}
+            {
+                "word": w,
+                "definition": d,
+                "category_sub": "물리학",
+                "kr_gvrn_lcns_ty": lic,
+                "glossary": "시험 용어집",
+                "source": "시험 기관",
+            }
             for w, d, lic in ONYONG.get(q["apiSearchWord"], [])
         ]
         return httpx.Response(200, json={"channel": {"return_object": [{"resultlist": rows}]}})
@@ -67,7 +81,12 @@ def transport(calls: Calls) -> httpx.MockTransport:
     return httpx.MockTransport(handle)
 
 
-def make(llm: FakeLlm, calls: Calls | None = None, **settings: object) -> WordHelpService:
+def make(
+    llm: FakeLlm,
+    calls: Calls | None = None,
+    web_search: WordWebSearch | None = None,
+    **settings: object,
+) -> WordHelpService:
     calls = calls or Calls()
     dictionary = Dictionary(
         "https://std.test/api/search.do",
@@ -76,7 +95,8 @@ def make(llm: FakeLlm, calls: Calls | None = None, **settings: object) -> WordHe
         SECRET,
         transport=transport(calls),
     )
-    return WordHelpService(llm, dictionary, Settings(**settings), ActiveVersions())  # type: ignore[arg-type]
+    settings_obj = Settings(**settings)  # type: ignore[arg-type]
+    return WordHelpService(llm, dictionary, settings_obj, ActiveVersions(), web_search)
 
 
 def body(
@@ -116,9 +136,11 @@ def test_헤드워드를_LLM이_고르고_맞는_뜻을_쉬운_말로_답하며_
 
 
 def test_한_낱말이고_사전에_있으면_표제어_LLM을_부르지_않는다():
+    calls = Calls()
     llm = FakeLlm(EXPLAIN)
-    out = run(make(llm), body("분수"))
+    out = run(make(llm, calls), body("분수"))
     assert out.state == "EXPLAINED" and len(llm.requests) == 1
+    assert [httpx.URL(url).host for url in calls.urls] == ["std.test"]
 
 
 def test_낱말_질문이_아니면_범위_밖():
@@ -167,22 +189,109 @@ def test_마무리_뒤에는_유출_검사를_하지_않는다():
     assert run(make(llm), body("증발")).state == "EXPLAINED"
 
 
-def test_변경_금지_유형_뜻은_다른_후보가_있으면_빼고_없을_때만_원문으로():
+def test_표준국어대사전에서_맞는_뜻이_없으면_허용된_온용어를_사용한다():
+    calls = Calls()
     llm = FakeLlm(
-        GeneratedWordHelp(kind="WORD", sense=0, easy="증발은 물이 날아가는 거야.", example="")
+        GeneratedWordHelp(kind="WORD", sense=-1, easy="", example=""),
+        GeneratedWordHelp(kind="WORD", sense=0, easy="증발은 물이 날아가는 거야.", example=""),
     )
-    service = make(llm)
-    run(service, body("증발"))
-    user = llm.requests[0].user
+    out = run(make(llm, calls), body("증발"))
+    user = llm.requests[1].user
+    assert [httpx.URL(url).host for url in calls.urls] == ["std.test", "on.test"]
     assert "상이 변하는 것" not in user and "액체가 기체로 되는 현상." in user
-    # 표준국어대사전에 없는 낱말이라 표제어 LLM을 거친다
+    assert out.state == "EXPLAINED" and out.senses[0].source == "온용어"
+    assert out.senses[0].attribution == "시험 용어집 / 시험 기관"
+
+
+@pytest.mark.parametrize("word", ["기화", "감지기"])
+def test_제한되거나_조건이_불명확한_온용어는_원문과_모델_후보에서_제외한다(word: str):
+    llm = FakeLlm(GeneratedHeadword(headword=word))
+    out = run(make(llm), body(word))
+    assert out.state == "NOT_FOUND" and out.senses == []
+    assert len(llm.requests) == 1
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+def test_대체_검색은_공식_상세_페이지에서_허용된_뜻만_사용한다(allowed: bool):
+    entry = "https://kli.korean.go.kr/term/trgtWord/indexTrgtWord.do?trgtWordNo="
+    openai_requests = []
+    visited = []
+
+    def search(request: httpx.Request) -> httpx.Response:
+        openai_requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp_test",
+                "object": "response",
+                "output": [
+                    {
+                        "id": "ws_test",
+                        "type": "web_search_call",
+                        "status": "completed",
+                        "action": {
+                            "type": "search",
+                            "sources": [
+                                {"type": "url", "url": url}
+                                for url in (
+                                    entry + "1",
+                                    entry + "2",
+                                    entry + "3",
+                                    entry.replace("kli.korean.go.kr", "external.test") + "4",
+                                )
+                            ],
+                        },
+                    }
+                ],
+            },
+        )
+
+    def page(request: httpx.Request) -> httpx.Response:
+        ident = request.url.params["trgtWordNo"]
+        visited.append(ident)
+        title = "응결" if ident == "3" else "기화"
+        accepted = allowed and ident == "2"
+        rights = (
+            "저작자표시-동일조건변경허락 2.0 대한민국"
+            if accepted
+            else "이 용어 정보는 공공누리 4유형 조건에 따라 이용할 수 있습니다."
+        )
+        definition = "허용된 뜻풀이" if accepted else "제한된 뜻풀이"
+        return httpx.Response(
+            200,
+            text=f'<h2 class="trgtWord">{title}</h2>'
+            '<div class="cont_src_dl"><dl><dt>출처</dt><dd>우리말샘 / 국립국어원</dd></dl></div>'
+            f'<div class="kogl_type"><span>{rights}</span></div>'
+            f'<p class="mean">{definition}<br>《우리말샘》</p>',
+        )
+
+    async def scenario() -> WordHelpResponse:
+        async with (
+            httpx.AsyncClient(transport=httpx.MockTransport(search)) as openai_http,
+            httpx.AsyncClient(transport=httpx.MockTransport(page)) as source_http,
+            openai.AsyncOpenAI(api_key="test", http_client=openai_http) as client,
+        ):
+            service = make(llm, web_search=WordWebSearch(client, source_http))
+            return await service.help(body("기화"))
+
     llm = FakeLlm(
         GeneratedHeadword(headword="기화"),
-        GeneratedWordHelp(kind="WORD", sense=0, easy="바꾼 말", example="예문"),
+        GeneratedWordHelp(kind="WORD", sense=0, easy="액체가 기체로 바뀌는 거야.", example=""),
     )
-    out = run(make(llm), body("기화"))
-    assert out.state == "EXPLAINED" and out.text == "액체가 기체로 변하는 현상."
-    assert out.example is None and out.senses[0].source == "온용어"
+    out = asyncio.run(scenario())
+    assert sorted(visited) == ["1", "2", "3"]
+    assert len(openai_requests) == 1 and openai_requests[0]["input"] == "기화"
+    assert openai_requests[0]["store"] is False
+    assert openai_requests[0]["tools"][0]["filters"]["allowed_domains"] == ["kli.korean.go.kr"]
+    if allowed:
+        assert out.state == "EXPLAINED"
+        assert out.senses[0].definition == "허용된 뜻풀이"
+        assert out.senses[0].source_url == entry + "2"
+        assert out.senses[0].license == "https://creativecommons.org/licenses/by-sa/2.0/kr/"
+        assert "제한된 뜻풀이" not in llm.requests[-1].user
+    else:
+        assert out.state == "NOT_FOUND" and out.senses == []
+        assert len(llm.requests) == 1
 
 
 def test_설명_LLM이_실패하면_사전_원문만_돌려준다():
