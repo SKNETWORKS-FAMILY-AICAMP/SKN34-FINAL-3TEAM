@@ -322,7 +322,13 @@ def test_no_cut_carries_lines_that_fight_each_other(code: str, branch: str | Non
         for specs in cuts.layout(6).values()
         for s in specs
     )
-    assert cuts.spec("OUTRO", 4, 6).mouth == "surprised"
+    # 뭉치 클로즈업은 시작 5·종료 1뿐이고 두 끝 표정이 다름(설계 v2 2026-11-23)
+    closeups = [
+        (s, i) for s in ("INTRO", "OUTRO") for i in range(1, 7) if cuts.spec(s, i, 6).two_faces
+    ]
+    assert closeups == [("INTRO", 5), ("OUTRO", 1)]
+    assert cuts.spec("INTRO", 5, 6).end_mouth != cuts.spec("OUTRO", 1, 6).end_mouth
+    assert cuts.spec("INTRO", 5, 6).effect != cuts.spec("OUTRO", 1, 6).effect
 
 
 @pytest.mark.parametrize(("code", "branch"), CASES, ids=IDS)

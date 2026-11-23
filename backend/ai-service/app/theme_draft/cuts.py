@@ -228,14 +228,14 @@ _NEW = {
             # 2026-11-23 설계 v2: 출동한 뒤라 '도착해서 결심'(예전 '결심'은 출동 뒤라 순서가
             # 거꾸로였음). 일자 입은
             # 무표정으로 보여 자신 있게 웃는 입 + 반짝
-            "뭉치 도착·결심: 사건 장소에 도착한 뭉치 혼자 가슴 위 클로즈업, 놀란 입에서 자신 있게 "
-            "웃는 입으로",
-            "Mungchi's small surprised o mouth turns into a confident smile.",
+            "뭉치 도착·결심: 사건 장소에 도착한 뭉치 혼자 가슴 위 클로즈업, 놀란 입에서 꾹 다문 "
+            "씩 웃는 입으로",
+            "Mungchi's small surprised o mouth turns into a closed confident grin.",
             speaker="뭉치가 꼭 해결하겠다는 짧은 말(예: '뭉치: 내가 꼭 찾아낼게!')",
             place="INCIDENT",
             frame="MUNGCHI_CLOSE",
             mouth="surprised",
-            end_mouth="smile",
+            end_mouth="confident",
             effect="sparkle",
         ),
         CutSpec(
@@ -262,18 +262,20 @@ _NEW = {
             1,
             True,
             # 표정 그림 두 장(end_mouth). 2026-11-23 설계 v2: 일자 입(생각)은 무표정으로 보여 놀란 o
-            # 입 → 웃는
-            # 입 + 번쩍 선
+            # 입 → 크게 벌린
+            # 활짝 웃음 + 전구(시작 5 '씩 웃음 + 반짝'과 다른 표정, 뭉치 클로즈업은 시작·종료
+            # 하나씩)
             "뭉치 깨달음: 뒤쪽 판·벽에 단서 그림들이 붙어 있고 그 앞에서 뭉치 혼자 정면을 보는 "
-            "가슴 위 클로즈업(단서 물건을 뭉치 앞 바닥·탁자에 두지 않음), 놀란 입에서 알아챈 활짝 "
-            "웃는 입으로",
-            "Mungchi's small surprised o mouth turns into a big smile as it realizes the answer.",
+            "가슴 위 클로즈업(단서 물건을 뭉치 앞 바닥·탁자에 두지 않음), 놀란 입에서 알아채 크게 "
+            "벌린 활짝 웃는 입으로",
+            "Mungchi's small surprised o mouth turns into a big open-mouthed smile as it realizes "
+            "the answer.",
             speaker="뭉치가 '알았다!' 뒤에 이번 정답을 말함",
             place="INCIDENT",
             frame="MUNGCHI_CLOSE",
             mouth="surprised",
-            end_mouth="smile",
-            effect="burst",
+            end_mouth="big_smile",
+            effect="bulb",
         ),
         CutSpec(
             "RUN",
@@ -300,18 +302,25 @@ _NEW = {
             frame="REVEAL",
         ),
         CutSpec(
-            "MUNGCHI",
+            "GROUP",
             3,
             True,
-            # 표정 그림 두 장(end_mouth): 놀란 입 → 웃는 입
-            "뭉치 리액션: 정답 장소 앞 뭉치 혼자 가슴 위 클로즈업, 놀란 입에서 활짝 웃음",
-            "Mungchi's small surprised o mouth turns into a big smile.",
+            # 2026-11-23 설계 v2(사용자 결정): 뭉치 클로즈업이 셋이라 같은 장면이 되풀이됐음 →
+            # 시작·종료 하나씩만.
+            # 종료 4는 달려간 뭉치가 정답 장소에서 사람들과 함께(뭉치는 떨어져) 기뻐함 — 정답 공개
+            # 컷(사람만)에 없던 뭉치가 여기서 나타나 흐름도 이어짐
+            "함께 기뻐함: 정답 장소에 도착한 뭉치가 사람들과 조금 떨어져, 모두 찾은 것을 보며 "
+            "기뻐함"
+            "(아무도 뭉치를 만지지 않음, 대상은 줄거리 종류 규칙에서 대상이 나오는 컷일 때만)",
+            "Mungchi stays apart from the people, smiles happily and sways a little.",
             speaker="뭉치가 마음이 놓인 짧은 말(예: '뭉치: 다행이다!')",
+            own=True,
+            look="The people smile, happy and relieved.",
+            follows=3,
             place="ANSWER",
-            frame="MUNGCHI_CLOSE",
-            mouth="surprised",
-            end_mouth="smile",
-            effect="sparkle",
+            act="The people smile and share the moment, looking at what was found.",
+            frame="GROUP_JOY",
+            mouth="smile",
         ),
         CutSpec(
             "PEOPLE",

@@ -315,7 +315,7 @@ def test_mungchi_alone_cut_does_not_draw_in_hand_target() -> None:
     # 그림·영상 실측: 선물 상자 시작 3컷(뭉치 혼자 출동)에서 뭉치가 상자를 들고 그려짐. #779 6컷
     # 틀은 뭉치 혼자 컷(시작 4·5, 종료 1·2·4) 모두
     gift = gift_theme()
-    for scene, i in (("INTRO", 4), ("INTRO", 5), ("OUTRO", 1), ("OUTRO", 4)):
+    for scene, i in (("INTRO", 4), ("INTRO", 5), ("OUTRO", 1)):  # 뭉치 혼자 컷(설계 v2)
         key = "introCuts" if scene == "INTRO" else "outroCuts"
         alone = prompts.cut_image_prompt(gift, scene, i, gift[key][i - 1], [])
         assert "Do not draw 생일에 받은 리본 상자 in this picture; Mungchi holds nothing." in alone

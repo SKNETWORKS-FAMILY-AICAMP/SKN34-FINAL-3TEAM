@@ -170,6 +170,20 @@ FRAMES: dict[str, Frame] = {
             "PAN_SIDE",
             "뭉치와 인물들이 서로 떨어져 한 그림에 있음",
         ),
+        # 종료 4 함께 기뻐함(2026-11-23 설계 v2): GROUP_QUESTION은 '사건 자리를 봄'이라 정답 장소와
+        # 어긋남
+        Frame(
+            "GROUP_JOY",
+            f"{WIDE_SHOT} The people stand together on one side, happy and relieved, looking at "
+            "what was found; Mungchi stands apart on the other side, facing the viewer.",
+            (
+                "The people are on the left and Mungchi on the right.",
+                "The people are on the right and Mungchi on the left.",
+            ),
+            "side",
+            "PAN_SIDE",
+            "뭉치와 인물들이 서로 떨어져 함께 기뻐함",
+        ),
         Frame(
             "REVEAL",
             # 드러나는 것이 사람(어느 길: 나른 사람, 시간 탐정: 그 일을 한 사람)인 종류도 있어

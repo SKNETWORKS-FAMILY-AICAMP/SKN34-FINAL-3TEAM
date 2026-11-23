@@ -2645,6 +2645,10 @@ MOOD_MOUTH = {
     "smile": "a small smiling mouth",
     "surprised": "a small round o-shaped mouth",
     "determined": "a closed straight-line mouth",
+    # 2026-11-23 설계 v2: 뭉치 클로즈업 두 컷의 끝 표정이 서로 다르게(시작 5 씩 웃음, 종료 1 크게
+    # 벌린 웃음)
+    "confident": "a closed confident grin with one corner of the mouth raised a little",
+    "big_smile": "a big open-mouthed happy smile",
 }
 
 
@@ -2655,7 +2659,13 @@ def mood_mouth(cut: dict) -> str | None:
 # 그림 검토에 주는 시작 입 모양(한국어). 그림 지시 MOUTH_AT_START와 같은 컷(움직임이 있는 6컷 뭉치
 # 컷)에만 — 검토가 동작 글의 뒤 표정("놀란 입 → 웃음")을 보고 "입이 일자"라고 경고했음(갈래 확인
 # 2026-11-20, 두 테마 모두)
-MOUTH_KO = {"smile": "웃는 입", "surprised": "작은 동그란 o 입", "determined": "다문 일자 입"}
+MOUTH_KO = {
+    "smile": "웃는 입",
+    "surprised": "작은 동그란 o 입",
+    "determined": "다문 일자 입",
+    "confident": "꾹 다문 채 씩 웃는 입",
+    "big_smile": "크게 벌린 활짝 웃는 입",
+}
 
 
 def start_mouth_ko(theme: Theme, scene: str, index: int) -> str | None:
@@ -2674,6 +2684,8 @@ MANGA_EFFECT = {
     "effect, not letters or symbols).",
     "burst": "Add a few short yellow burst lines around Mungchi's head like a manga 'aha' moment "
     "(no letters, no question or exclamation marks).",
+    "bulb": "Add a small glowing yellow light bulb just above Mungchi's head, a manga 'idea' "
+    "symbol (a simple drawn bulb, no letters or symbols on it).",
 }
 
 
@@ -3267,7 +3279,7 @@ IMAGE_REVIEW_SYSTEM = (
     "갈색 짧은 발, 테마 옷). 손에 든 물건·자세·표정은 "
     "장면에 따라 달라도 된다. "
     # 2026-11-23 설계 v2: 끝 표정 그림의 만화 효과(MANGA_EFFECT)는 결함이 아님
-    "뭉치 머리 옆 노란 반짝·번쩍 선 같은 만화 효과는 결함이 아니고 글자도 아니다. "
+    "뭉치 머리 옆·위의 노란 반짝·번쩍 선·전구 같은 만화 효과는 결함이 아니고 글자도 아니다. "
     # #779(2026-11-19): 옷 소매가 팔처럼 그려지고, 뭉치가 사람 곁에 붙으면 영상에서 팔이 옮겨 붙음
     "옷에 소매가 있거나 옷 입은 부분 옆으로 울퉁불퉁한 돌기가 삐져나와 소매·팔처럼 보여 팔이 "
     "넷처럼 보이면 결함(옷은 아래쪽을 꽉 끼게 감싸 매끈한 둥근 몸통). "

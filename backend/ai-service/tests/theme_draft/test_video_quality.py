@@ -86,7 +86,8 @@ def test_video_prompt_story_beat_camera_and_mungchi_rules() -> None:
     aha = prompts.video_prompt(theme, "INTRO", 6, INTRO_CUTS[5], [])  # 큰 질문(뭉치 갸웃)
     assert "tilts its head" in aha and "Only Mungchi is in this clip" in go
     # 뭉치 혼자 클로즈업(시작 5, 종료 1·4)은 Veo 대신 표정 그림 두 장(#779 A안)
-    assert all(cuts.spec(s, i, 6).two_faces for s, i in (("INTRO", 5), ("OUTRO", 1), ("OUTRO", 4)))
+    assert all(cuts.spec(s, i, 6).two_faces for s, i in (("INTRO", 5), ("OUTRO", 1)))
+    assert not cuts.spec("OUTRO", 4, 6).two_faces  # 종료 4는 함께 컷(설계 v2 2026-11-23)
     for word in ("white legs", "dog nose", "brown hands", "clouds indoors", "page curl"):
         assert word in prompts.VIDEO_NEGATIVE
     # 대사 자막은 입 모양 없이(립싱크 하지 않음)
@@ -130,7 +131,7 @@ def test_video_review_gets_judgement_examples_after_frames() -> None:
         video=FakeVideoClient(),
         storage=MemoryThemeStorage(),
     )
-    assert len(seen) == 9  # Veo 9컷(표정 그림 두 장 컷 3개는 검토할 영상이 없음, #779 A안)
+    assert len(seen) == 10  # Veo 10컷(표정 그림 두 장 컷 2개는 검토할 영상이 없음, #779 A안)
     assert all(len(images) >= 4 and images[-2:] == list(review_examples()) for images in seen)
 
 
@@ -191,7 +192,7 @@ def test_six_cut_camera_is_fixed_by_layout() -> None:
     PUSH_SLOW는 얼굴 클로즈업에서만."""
     expect = {
         "INTRO": ["PAN_SIDE", "PUSH_SLOW", "HOLD_CLOSE", "TRACK_SIDE", "PUSH_SLOW", "PAN_SIDE"],
-        "OUTRO": ["PUSH_SLOW", "TRACK_SIDE", "HOLD_CLOSE", "PUSH_SLOW", "PAN_SIDE", "PAN_SIDE"],
+        "OUTRO": ["PUSH_SLOW", "TRACK_SIDE", "HOLD_CLOSE", "PAN_SIDE", "PAN_SIDE", "PAN_SIDE"],
     }
     for scene, cams in expect.items():
         for i, cam in enumerate(cams, 1):
@@ -206,7 +207,7 @@ def test_cut_images_use_own_framing_shots_mystery_and_pictures_instead_of_letter
     theme = valid_theme()
     close = prompts.cut_image_prompt(theme, "INTRO", 2, INTRO_CUTS[1], [])  # 사건 클로즈업
     wide = prompts.cut_image_prompt(theme, "INTRO", 1, INTRO_CUTS[0], [])
-    alone = prompts.cut_image_prompt(theme, "OUTRO", 4, OUTRO_CUTS[3], [])
+    alone = prompts.cut_image_prompt(theme, "OUTRO", 1, OUTRO_CUTS[0], [])  # 뭉치 클로즈업
     react = prompts.cut_image_prompt(theme, "INTRO", 3, INTRO_CUTS[2], [])  # 리액션 틀
     # 장면 크기·조명은 구도 틀(#779 설계 H): 사건 클로즈업 틀은 물건을 크게, 리액션은 어깨 위
     assert prompts.FRAMES["OBJECT_CLOSE"].image in close
@@ -280,7 +281,7 @@ def test_failed_cut_tries_safe_version_before_still_cut() -> None:
         storage=MemoryThemeStorage(),
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert len(video.calls) == 9 + 1 + 1
+    assert len(video.calls) == 10 + 1 + 1
     reasons = [w.reason for w in response.warnings]
     assert any(r.startswith(SAFE_NOTE) for r in reasons)
     assert not any(STILL_NOTE in r for r in reasons)
@@ -361,7 +362,7 @@ def test_cut_uses_first_passing_candidate_without_regenerating() -> None:
         settings={"theme_video_candidates": 2},
     )
     assert response.failure is None and set(response.videos) == {"INTRO", "OUTRO"}
-    assert video.counts == [2] * 9 and len(video.calls) == 18  # Veo 9컷 × 후보 2, 다시 없음
+    assert video.counts == [2] * 10 and len(video.calls) == 20  # Veo 10컷 × 후보 2, 다시 없음
     assert seen["n"] == 2 and response.warnings == []
 
 
@@ -385,7 +386,7 @@ def test_all_candidates_failing_regenerates_with_their_reasons() -> None:
         storage=MemoryThemeStorage(),
         settings={"theme_video_candidates": 2},
     )
-    assert response.failure is None and len(video.calls) == 18 + 2  # 그 컷만 후보 2개로 다시
+    assert response.failure is None and len(video.calls) == 20 + 2  # 그 컷만 후보 2개로 다시
     assert not any(STILL_NOTE in w.reason for w in response.warnings)
     regen = [c[0] for c in video.calls if "MORPH" in c[0]]
     assert len(regen) == 2  # 다시 만들기 지시에 실패 사유가 들어감
@@ -426,7 +427,7 @@ def test_layout_table_separates_people_and_mungchi_cuts() -> None:
     who = {s: [c.who for c in specs] for s, specs in new.items()}
     assert who == {
         "INTRO": ["PEOPLE", "OBJECT", "PEOPLE", "RUN", "MUNGCHI", "GROUP"],
-        "OUTRO": ["MUNGCHI", "RUN", "PEOPLE", "MUNGCHI", "PEOPLE", "GROUP"],
+        "OUTRO": ["MUNGCHI", "RUN", "PEOPLE", "GROUP", "PEOPLE", "GROUP"],
     }
     captions = {s: [i for i, c in enumerate(specs, 1) if c.caption] for s, specs in new.items()}
     # 설계 v2(2026-11-23): 자막은 모든 컷(아이가 자막만 보고 따라가게)
@@ -550,7 +551,7 @@ def test_outro_ending_thanks_mungchi_and_animal_farewell_in_cut5() -> None:
         assert "딱 걸려" in t.outro_cuts[2] and "만지지 않음" in t.outro_cuts[2]
         assert "배웅" in t.outro_cuts[3] and "제가 사는 쪽" in t.outro_cuts[3]
         c = families.type_cuts(t, 6)
-        assert c.target == {("OUTRO", 3), ("OUTRO", 5)}  # 6컷엔 동물이 이미 떠남
+        assert c.target == {("OUTRO", 3), ("OUTRO", 4), ("OUTRO", 5)}  # 6컷엔 동물이 이미 떠남
     theme = valid_theme()
     for code in ("LOST", "PRANK"):  # 엔딩 할 일은 종류와 상관없이 같음(종류 역할을 붙이지 않음)
         assert prompts.cut_beat({**theme, "storyType": code}, "OUTRO", 6) == ending.beat
@@ -579,8 +580,9 @@ def test_follow_cuts_point_to_earlier_people_cut() -> None:
         ("INTRO", 2): 1,
         ("INTRO", 3): 1,
         ("INTRO", 6): 1,
+        ("OUTRO", 4): 3,  # 함께 기뻐함(설계 v2): 공개 컷 장소를 이음
         ("OUTRO", 5): 3,
-        ("OUTRO", 6): 3,  # 두 단(3 → 5·6), 대표 5종 2차에서 3 → 5 → 6이 그림 시간을 늘림
+        ("OUTRO", 6): 3,  # 두 단(3 → 4·5·6), 대표 5종 2차에서 3 → 5 → 6이 그림 시간을 늘림
     }
     for (scene, i), k in follows.items():
         if k:
@@ -676,7 +678,7 @@ def test_design_v2_lines_agree_across_prompts_checks_and_reviews() -> None:
     assert "small dot eyes" not in prompts.MUNGCHI_LOOK + " ".join(prompts.MUNGCHI_KEEP)
     # 끝 표정 만화 효과: 그림 지시에 들어가고 그림 검토는 결함·글자로 보지 않음
     assert prompts.MANGA_EFFECT["sparkle"] in prompts.end_face_prompt(theme, "INTRO", 5, [])
-    assert prompts.MANGA_EFFECT["burst"] in prompts.end_face_prompt(theme, "OUTRO", 1, [])
+    assert prompts.MANGA_EFFECT["bulb"] in prompts.end_face_prompt(theme, "OUTRO", 1, [])
     assert "만화 효과는 결함이 아니고 글자도 아니다" in prompts.IMAGE_REVIEW_SYSTEM
     # 일자 입은 6컷 컷 표·검토 입 모양에 없음
     for scene in ("INTRO", "OUTRO"):

@@ -22,7 +22,8 @@ from tests.theme_draft.test_media_graph import gen_llm, review_llm, run, scene_i
 
 SCENES = ("INTRO", "MON", "TUE", "WED", "THU", "FRI", "OUTRO")
 CUT_ASSETS = {f"{s}{i}" for s in ("INTRO", "OUTRO") for i in range(1, 7)}  # #779 6컷 틀
-END_ASSETS = {"INTRO5END", "OUTRO1END", "OUTRO4END"}  # 표정 그림 두 장 컷의 끝 그림(#779 A안)
+# 표정 그림 두 장 컷의 끝 그림(#779 A안, 설계 v2: 뭉치 클로즈업은 시작 5·종료 1뿐)
+END_ASSETS = {"INTRO5END", "OUTRO1END"}
 RUN_ID = "0123456789abcdef0123456789abcdef"
 
 
