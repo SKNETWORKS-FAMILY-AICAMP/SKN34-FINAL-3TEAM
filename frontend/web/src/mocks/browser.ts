@@ -7,7 +7,7 @@ import { studentHandlers, setMockScenario, mockStudent } from './handlers/studen
 import { applyMockThemeState } from './fixtures/themeState.ts'
 import type { MockThemeState } from './fixtures/themeState.ts'
 import type { DemoScenario } from '../domain/classroom.ts'
-import { parentHandlers } from './handlers/parent.ts'
+import { parentHandlers, reviseMockConsents } from './handlers/parent.ts'
 import { retentionHandlers } from './handlers/retention.ts'
 import { memoryHandlers } from './handlers/memory.ts'
 import { adminHandlers } from './handlers/admin.ts'
@@ -55,6 +55,8 @@ export function installMockEvents() {
   window.addEventListener('sagomungchi:workspace-scenario', (event) =>
     setWorkspaceScenario((event as CustomEvent<string>).detail),
   )
+  // 개발 점검표 "동의 문서 개정(재동의) 시연": 지금 계정을 개정 전 문서에만 동의한 상태로 (#912)
+  window.addEventListener('sagomungchi:mock-consent-revised', () => reviseMockConsents())
   // 개발 목업 "홈 상태"(캔버스 Home 보드와 같은 8가지)·프리미엄 바꿔 보기
   window.addEventListener('sagomungchi:mock-theme-state', (event) => {
     const { state, premium } = (event as CustomEvent<{ state: MockThemeState | ''; premium: boolean }>).detail

@@ -28,6 +28,6 @@ export function SupportResults() {
     <h2>내 문의</h2>
     {inquiries.data?.items.map(i => <p key={i.inquiryId}><Link to={detailLink('inquiryId', i.inquiryId)}>{i.title} · {supportStatusLabel(i.status)}</Link></p>)}
     {inquiries.data && inquiries.data.items.length === 0 && <p>아직 접수한 문의가 없습니다.</p>}
-    <Link to={session?.role === 'STUDENT' ? '/student/home' : '/parent/journal'}>돌아가기</Link>
+    <Link className="ws-text-link" to={session?.role === 'STUDENT' ? '/student/home' : '/parent/journal'}>돌아가기</Link>
   </section>
 }

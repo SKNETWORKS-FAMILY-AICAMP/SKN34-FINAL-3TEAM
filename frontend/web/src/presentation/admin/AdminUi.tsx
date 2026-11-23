@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import { ChevronDown, FilePlus2, Inbox } from 'lucide-react'
@@ -7,6 +8,22 @@ export function Panel({ title, action, children, className = '' }: { title?: str
 }
 export function Badge({ children, active = false, tone }: { children: ReactNode; active?: boolean; tone?: 'success' | 'danger' }) {
   return <span className={`ad-badge${active ? ' is-active' : ''}${tone ? ` is-${tone}` : ''}`}>{children}</span>
+}
+/** 넘쳐서 스크롤되는 동안만 키보드 초점을 받는 표 영역(WCAG 2.1.1). 넘치지 않으면 Tab 순서에 끼지 않는다. */
+export function TableScroll({ label, className = '', children }: { label: string; className?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [scrollable, setScrollable] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => setScrollable(el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
+    check()
+    const observer = new ResizeObserver(check)
+    observer.observe(el)
+    if (el.firstElementChild) observer.observe(el.firstElementChild)
+    return () => observer.disconnect()
+  }, [])
+  return <div ref={ref} className={`ad-table-wrap${className ? ` ${className}` : ''}`} role="region" aria-label={label} tabIndex={scrollable ? 0 : undefined}>{children}</div>
 }
 export function Empty({ children = '조건에 맞는 기록이 없습니다.' }: { children?: ReactNode }) { return <div className="ad-empty"><Inbox size={27} strokeWidth={1.4} aria-hidden="true" /><p>{children}</p></div> }
 /** 접어도 입력 중인 폼을 마운트한 채 유지한다. 생성 상태를 나타내는 진행 표시가 아니다. */

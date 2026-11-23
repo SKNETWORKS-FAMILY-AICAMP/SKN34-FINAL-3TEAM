@@ -8,8 +8,8 @@ import type { Child } from '../../domain/classroom.ts'
 import { checkoutConfirmation, paymentComplete, paymentStateLabel, duplicateSubscription } from '../../domain/payment.ts'
 import type { PendingCheckout } from '../../domain/payment.ts'
 import { paymentApi, paymentClientKey, paymentTestMode, mockPaymentMode } from '../../data/payment/api.ts'
-import { readCheckout, saveCheckout } from '../../data/payment/checkoutStorage.ts'
-import { useCheckoutState, usePaymentConfirmation, usePaymentResult } from '../../data/payment/queries.ts'
+import { readCheckout } from '../../data/payment/checkoutStorage.ts'
+import { requestCheckoutOrder, useCheckoutState, usePaymentConfirmation, usePaymentResult } from '../../data/payment/queries.ts'
 import { loadToss } from '../../data/payment/toss.ts'
 import type { TossWidget } from '../../data/payment/toss.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
@@ -17,7 +17,6 @@ import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import './payment.css'
 
-const pendingOrder = (created: Omit<PendingCheckout, 'confirmKey' | 'createdAt'>): PendingCheckout => ({ ...created, confirmKey: crypto.randomUUID(), createdAt: Date.now() })
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 export function ParentPayments({ child }: { child?: Child }) {
   const [params] = useSearchParams(), cache = useQueryClient()
@@ -38,19 +37,6 @@ export function ParentPayments({ child }: { child?: Child }) {
   // Reconcile a returning checkout before allowing a cached PENDING order to open the widget.
   const canInitializeWidget = checkoutState.isFetchedAfterMount && state?.status === 'PENDING'
   const createKey = useRef(params.get('orderKey') ?? crypto.randomUUID())
-  // One request per idempotency key: a re-run effect (StrictMode, refetch) must reuse it, not race into 409.
-  const orderRequest = useRef<{ id: string; promise: Promise<PendingCheckout> } | null>(null)
-  const requestOrder = (childId: string, productId: string) => {
-    const id = [childId, productId, createKey.current].join(':')
-    if (orderRequest.current?.id !== id) {
-      const promise = paymentApi.order(childId, productId, createKey.current).then(created => {
-        const pending = pendingOrder(created); saveCheckout(pending); return pending
-      })
-      promise.catch(() => { if (orderRequest.current?.promise === promise) orderRequest.current = null })
-      orderRequest.current = { id, promise }
-    }
-    return orderRequest.current.promise
-  }
   const [tabNotice, setTabNotice] = useState('')
   const [opening, setOpening] = useState(false)
   useEffect(() => {
@@ -59,10 +45,11 @@ export function ParentPayments({ child }: { child?: Child }) {
     window.addEventListener('sagomungchi:payment-fixture-updated', refresh)
     return () => { window.removeEventListener('focus', refresh); window.removeEventListener('sagomungchi:payment-fixture-updated', refresh) }
   }, [cache])
+  // 같은 멱등 키의 주문 생성은 data 계층에서 진행 중 요청을 공유한다. effect가 다시 실행돼도(StrictMode·재조회) 409 경합 없이 같은 결과를 받는다.
   useEffect(() => {
     if (!checkoutMode || order || !product || !child || duplicate || !paymentAvailable || !paymentTestMode && (subscriptions.isPending || subscriptions.error)) return
     let active = true
-    void requestOrder(child.id, product.id).then(pending => {
+    void requestCheckoutOrder(child.id, product.id, createKey.current).then(pending => {
       if (active) setOrder(pending)
     }).catch(e => { if (active) setError(e) }).finally(() => { if (active) setBusy(false) })
     return () => { active = false }
@@ -72,7 +59,7 @@ export function ParentPayments({ child }: { child?: Child }) {
     setBusy(true); setError(null)
     try {
       if (checkoutMode) {
-        setOrder(await requestOrder(child.id, product.id))
+        setOrder(await requestCheckoutOrder(child.id, product.id, createKey.current))
         return
       }
       const url = new URL('/parent/billing', location.origin)

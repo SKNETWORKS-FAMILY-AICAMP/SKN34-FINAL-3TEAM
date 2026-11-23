@@ -486,6 +486,70 @@
 
 /* 미션 작성(문제 푸는 화면)은 world/work.css(#440) */
 
+/* 낱말 물어보기 (#599): 동행 캐릭터와 묻고 답하는 작은 창 */
+#class-journal .st-word-help {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--sk-line);
+  border-radius: 16px;
+  background: #fffdf7;
+}
+#class-journal .st-word-turns {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#class-journal .st-word-me {
+  justify-self: end;
+  width: fit-content;
+  max-width: 80%;
+  margin: 0 0 8px auto;
+  padding: 8px 14px;
+  border-radius: 18px 4px 18px 18px;
+  background: var(--st-ink);
+  color: #fffdf7;
+}
+#class-journal .st-word-example {
+  color: #4a4a45;
+}
+#class-journal .st-word-cite {
+  color: #4a4a45;
+  overflow-wrap: anywhere;
+}
+#class-journal .st-word-cite a { text-decoration: underline; }
+#class-journal .st-word-answer { margin-left: 4px; }
+#class-journal .st-word-source {
+  margin: 6px 0 0;
+  font-size: var(--st-fs-xs, 13px);
+  color: #4a4a45;
+}
+#class-journal ul.st-word-source {
+  padding-left: 18px;
+}
+#class-journal .st-word-source summary {
+  cursor: pointer;
+}
+#class-journal .st-word-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#class-journal .st-word-form label {
+  flex: 1 1 220px;
+}
+#class-journal .st-word-form input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 2px solid var(--st-ink);
+  border-radius: 12px;
+  font-size: var(--st-fs-base, 18px);
+}
+
 /* 자녀 기기 로그인·PIN 화면(#648 새 디자인)은 student/pinpad.css */
 
 /* ── 태블릿: 오늘의 미션을 지도 위로 ── */

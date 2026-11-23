@@ -32,10 +32,16 @@
     </sql>
 
     <sql id="insertColumns">
-        INSERT INTO theme_draft (id, grade, week_start, source, status, requested_by, input, attempts, created_at, updated_at)
+        INSERT INTO theme_draft (id, grade, week_start, source, status, requested_by, input, attempts, created_at, updated_at, family_root_id)
         VALUES (#{d.id}, #{d.grade}, #{d.weekStart}, #{d.source}, #{d.status}, #{d.requestedBy,jdbcType=OTHER},
                 #{d.input,typeHandler=com.sagomungchi.learning.theme.repository.ThemeDraftInputTypeHandler,jdbcType=OTHER},
-                #{d.attempts}, #{d.createdAt}, #{d.updatedAt})
+                #{d.attempts}, #{d.createdAt}, #{d.updatedAt},
+                <choose>
+                    <when test="d.input.regenerate != null">
+                        (SELECT coalesce(family_root_id, id) FROM theme_draft WHERE id = #{d.input.regenerate.baseDraftId})
+                    </when>
+                    <otherwise>NULL</otherwise>
+                </choose>)
     </sql>
 
     <insert id="insert">
@@ -57,6 +63,22 @@
         <where>
             <if test="status != null">status = #{status}</if>
             <if test="source != null">AND source = #{source}</if>
+            <if test="grade != null">AND grade = #{grade}</if>
+            <if test="weekStart != null">AND week_start = #{weekStart}</if>
+            <if test="hideDiscarded">AND status != 'DISCARDED'</if>
+            <if test="comparisonPending">
+                AND family_root_id IS NULL AND status = 'READY'
+                AND EXISTS (
+                    SELECT 1 FROM theme_draft child
+                    CROSS JOIN LATERAL jsonb_array_elements_text(child.input #> '{regenerate,targets}') AS target(value)
+                    LEFT JOIN theme_draft_scene_selection pick
+                      ON pick.root_id = child.family_root_id AND pick.scene = split_part(target.value, ':', 2)
+                    WHERE child.family_root_id = theme_draft.id AND child.status = 'READY'
+                      AND (pick.root_id IS NULL OR NOT (child.id = ANY(pick.reviewed_version_ids)))
+                )
+                AND NOT EXISTS (SELECT 1 FROM theme_draft adopted
+                                WHERE adopted.family_root_id = theme_draft.id AND adopted.status = 'ADOPTED')
+            </if>
         </where>
     </sql>
 

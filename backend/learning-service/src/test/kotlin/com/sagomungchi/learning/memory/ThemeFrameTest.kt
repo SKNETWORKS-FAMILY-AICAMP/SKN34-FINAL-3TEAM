@@ -119,6 +119,51 @@ class ThemeFrameTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `재게시로 문제가 바뀌거나 빠져도 시도에 고정된 버전 기준으로 다섯 요일을 채우면 액자, 버전은 지급 때 게시본 (#930)`() {
+        val v1 = publishedVersion()
+        (0..2).forEach { attempt(missions[it], "THEME_DAY", completedAt = at(WEEK.plusDays(it.toLong())), version = v1) }
+        // 재게시: 수요일·금요일 문제를 새 문제로 교체. 금요일 옛 문제는 재게시 전에 시작해 고정 버전이 v1
+        val v2 = republish(listOf(missions[0].id, missions[1].id, rows.mission(gradeMax = 4, title = "새 수").id, missions[3].id,
+            rows.mission(gradeMax = 4, title = "새 금").id))
+        val thursday = attempt(missions[3], "THEME_DAY", completedAt = at(WEEK.plusDays(3)), version = v2)
+        assertFalse(frameService.awardIfComplete(load(thursday)))
+
+        val friday = attempt(missions[4], "THEME_DAY", completedAt = at(WEEK.plusDays(4)), version = v1)
+        assertTrue(frameService.awardIfComplete(load(friday)))
+
+        val frame = frames(student).single()
+        assertEquals(v2, frame["theme_version_id"])
+        assertEquals(at(WEEK.plusDays(4)).toInstant(), awardedAt(student))
+    }
+
+    @Test
+    fun `재게시로 두 문제의 요일을 맞바꿔도 지금 게시본의 다섯 문제를 모두 풀면 액자 (#930)`() {
+        val v1 = publishedVersion()
+        (0..2).forEach { attempt(missions[it], "THEME_DAY", completedAt = at(WEEK.plusDays(it.toLong())), version = v1) }
+        // 월요일 문제(이미 v1로 완료)와 목요일 문제를 맞바꿈. 고정 버전 기준으로는 월요일이 겹치고 목요일이 빔
+        val v2 = republish(listOf(missions[3].id, missions[1].id, missions[2].id, missions[0].id, missions[4].id))
+        attempt(missions[3], "THEME_DAY", completedAt = at(WEEK.plusDays(3)), version = v2)
+        val last = attempt(missions[4], "THEME_DAY", completedAt = at(WEEK.plusDays(4)), version = v2)
+
+        assertTrue(frameService.awardIfComplete(load(last)))
+        assertEquals(at(WEEK.plusDays(4)).toInstant(), awardedAt(student))
+    }
+
+    @Test
+    fun `바뀐 요일의 옛 문제와 새 문제를 함께 풀어 다섯 문제가 돼도 빈 요일이 있으면 액자 없음 (#930)`() {
+        val v1 = publishedVersion()
+        (0..2).forEach { attempt(missions[it], "THEME_DAY", completedAt = at(WEEK.plusDays(it.toLong())), version = v1) }
+        val replaced = rows.mission(gradeMax = 4, title = "새 수")
+        val v2 = republish(listOf(missions[0].id, missions[1].id, replaced.id, missions[3].id, missions[4].id))
+        attempt(replaced, "THEME_DAY", completedAt = at(WEEK.plusDays(3)), version = v2)
+        val thursday = attempt(missions[3], "THEME_DAY", completedAt = at(WEEK.plusDays(3), 11), version = v2)
+
+        assertFalse(frameService.awardIfComplete(load(thursday)))
+        frameRepository.backfill(Instant.now())
+        assertEquals(0, frames(student).size)
+    }
+
+    @Test
     fun `소급은 두 번 돌려도 같은 결과이고 빠진 회차만 확인 처리된 상태(확인 시각 = 획득 시각)로, 이미 받은 액자는 그대로`() {
         val earlier = UUID.randomUUID()
         (0..4).forEach { attempt(missions[it], "THEME_DAY", completedAt = at(WEEK.plusDays(it.toLong())), studentId = earlier) }
@@ -273,13 +318,28 @@ class ThemeFrameTest : PostgresRepositoryTest() {
         theme: UUID? = themeId,
         week: LocalDate? = WEEK,
         studentId: UUID = student,
+        version: UUID? = null,
     ): UUID = UUID.randomUUID().also {
         jdbc.update(
             """INSERT INTO attempt (id, student_id, mission_id, mission_version_id, rubric_version_id, grade, status,
-                   started_at, finished_at, completed_at, updated_at, context, theme_id, theme_week_start)
-               VALUES (?, ?, ?, ?, ?, 3, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   started_at, finished_at, completed_at, updated_at, context, theme_id, theme_week_start, theme_version_id)
+               VALUES (?, ?, ?, ?, ?, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             it, studentId, mission.id, mission.versionId, mission.rubricVersionId, if (completedAt != null) "COMPLETED" else "IN_PROGRESS",
-            startedAt, finishedAt, completedAt, startedAt, context, theme, week,
+            startedAt, finishedAt, completedAt, startedAt, context, theme, week, version,
+        )
+    }
+
+    /** 재게시: 요일 순서(월~금) 미션으로 새 버전을 만들어 현재본·게시본으로 */
+    private fun republish(missionIds: List<UUID>): UUID = UUID.randomUUID().also { version ->
+        val days = missionIds.mapIndexed { index, mission -> "('$version'::uuid, ${index + 1}, '$mission'::uuid)" }.joinToString(", ")
+        jdbc.update(
+            """WITH version AS (
+                   INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at) VALUES (?, ?, 2, '물의 여행 2', '소개', ?, ?)
+               ), days AS (
+                   INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id) VALUES $days
+               )
+               UPDATE weekly_theme SET current_version_id = ?, published_version_id = ? WHERE id = ?""",
+            version, themeId, rows.author, rows.now, version, version, themeId,
         )
     }
 

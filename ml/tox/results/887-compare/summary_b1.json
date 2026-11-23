@@ -1,0 +1,35 @@
+{
+ "name": "b1",
+ "model": "checkpoints/kcelectra-base-s42",
+ "threshold": 0.95,
+ "mustPass": {
+  "n": 389,
+  "flagged": 0,
+  "max": 0.8669
+ },
+ "kid": {
+  "blockModel": 20,
+  "blockCombined": 34,
+  "passCombinedFlagged": 0,
+  "block": 100,
+  "pass": 150
+ },
+ "valid": {
+  "n": 9243,
+  "modelF1": 0.7717,
+  "combinedRecall": 0.6706,
+  "combinedFalsePositiveRate": 0.0327
+ },
+ "test": {
+  "n": 21900,
+  "modelF1": 0.8005,
+  "combinedRecall": 0.7158,
+  "combinedFalsePositiveRate": 0.0374
+ },
+ "apeach": {
+  "n": 3770,
+  "modelF1": 0.5744,
+  "combinedRecall": 0.4506,
+  "combinedFalsePositiveRate": 0.0189
+ }
+}

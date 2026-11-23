@@ -17,6 +17,10 @@ import com.sagomungchi.learning.judgment.client.AiRubric
 import com.sagomungchi.learning.judgment.client.AiRubricElement
 import com.sagomungchi.learning.judgment.client.AiTimelineItem
 import com.sagomungchi.learning.judgment.client.AiVersions
+import com.sagomungchi.learning.judgment.client.PaymentUsageClient
+import com.sagomungchi.learning.judgment.client.PaymentUsageCompletion
+import com.sagomungchi.learning.judgment.client.PaymentUsageFailure
+import com.sagomungchi.learning.judgment.client.PaymentUsageReservation
 import com.sagomungchi.learning.judgment.domain.ElementSource
 import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.FeedbackTarget
@@ -58,18 +62,22 @@ class FeedbackFacade(
     private val missionService: MissionService,
     private val ruleJudges: List<RuleJudge>,
     private val aiClient: AiClient,
-    private val paymentUsage: com.sagomungchi.learning.judgment.client.PaymentUsageClient,
+    private val paymentUsage: PaymentUsageClient,
 ) {
     fun feedback(answerId: UUID): FeedbackResult {
         val target = judgmentService.target(answerId)
         val timeline = attemptService.timeline(target.attemptId)
         val attempt = timeline.attempt
         // timeline verifies answer ownership before reserving premium use for this source ID.
-        val reservation=paymentUsage.begin(attempt.studentId,answerId)
+        val reservation = when (val reserved = paymentUsage.begin(attempt.studentId, answerId)) {
+            PaymentUsageReservation.NotPremium -> null
+            is PaymentUsageReservation.Reserved -> reserved.reservationId
+            is PaymentUsageFailure -> throw paymentUsageError(reserved)
+        }
         val judgment = when (val acquired = judgmentService.acquire(answerId, Instant.now())) {
             is AcquireResult.Acquired -> acquired.judgment
             is AcquireResult.Busy -> return current(answerId).also {
-                if(it.status==ProcessStatus.DONE && reservation!=null) paymentUsage.complete(attempt.studentId,reservation)
+                if(it.status==ProcessStatus.DONE && reservation!=null) completeUsage(attempt.studentId,reservation)
             }
         }
         try {
@@ -91,8 +99,26 @@ class FeedbackFacade(
         }
         // 리스를 잃어 저장하지 못했어도 현재 상태(다른 요청의 결과나 처리 중)를 돌려줌
         return current(answerId).also {
-            if(it.status==ProcessStatus.DONE && reservation!=null) paymentUsage.complete(attempt.studentId,reservation)
+            if(it.status==ProcessStatus.DONE && reservation!=null) completeUsage(attempt.studentId,reservation)
         }
+    }
+
+    private fun completeUsage(student: UUID, reservation: UUID) {
+        when (val completed = paymentUsage.complete(student, reservation)) {
+            PaymentUsageCompletion.Received -> Unit
+            is PaymentUsageFailure -> throw paymentUsageError(completed)
+        }
+    }
+
+    /**
+     * core 결제 사용 결과의 공개 오류 (api-spec 1.3, #276·#948). 목록의 3개 코드만 같은 코드 409와 코드별 문구,
+     * 목록 밖·형식 오류 409는 환불로 안내하지 않고 확인 불가와 같이 503 `PAYMENT_USAGE_UNAVAILABLE`
+     */
+    private fun paymentUsageError(failure: PaymentUsageFailure): BusinessException {
+        val code = (failure as? PaymentUsageFailure.Rejected)?.code
+        val title = code?.let { PAYMENT_USAGE_CONFLICTS[it] }
+        return if (code != null && title != null) BusinessException(HttpStatus.CONFLICT, code, title)
+        else BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_USAGE_UNAVAILABLE", "프리미엄 사용 권한을 확인하지 못했습니다.")
     }
 
     /**
@@ -288,5 +314,12 @@ class FeedbackFacade(
         /** ai 판정이 받는 입력 방식 (ai-service JudgmentRequest.input_type). 그 밖은 규칙만으로 판정 */
         val AI_INPUT_TYPES = setOf(InputType.NARRATIVE, InputType.ESSAY, InputType.SOLUTION_STEPS)
         const val INTERNAL_ERROR = "INTERNAL_ERROR"
+
+        /** #276: 같은 코드 409로 학생에게 전달하는 core 결제 사용 거절 코드와 안내 문구 */
+        val PAYMENT_USAGE_CONFLICTS = mapOf(
+            "REFUND_IN_PROGRESS" to "환불 처리 중에는 프리미엄 기능을 사용할 수 없습니다.",
+            "PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE" to "이 답변은 이전 사용 확인이 실패해 다시 피드백을 받을 수 없습니다. 새 답변으로 시도해 주세요.",
+            "PAYMENT_USAGE_STATE_CHANGED" to "처리 중 이용권 상태가 바뀌어 프리미엄 사용을 확인하지 못했습니다. 이용권 상태를 확인해 주세요.",
+        )
     }
 }

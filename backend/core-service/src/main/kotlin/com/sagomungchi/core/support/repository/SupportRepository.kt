@@ -1,5 +1,6 @@
 package com.sagomungchi.core.support.repository
 
+import com.sagomungchi.core._common.json.JsonObject
 import com.sagomungchi.core.support.domain.*
 import org.apache.ibatis.annotations.*
 import org.springframework.stereotype.Repository
@@ -37,11 +38,12 @@ interface SupportMapper {
  fun insertNotice(value: Notice): Int
  fun updateNotice(value: Notice): Int
  fun audit(@Param("id") id: UUID, @Param("actor") actor: UUID, @Param("action") action: String,
-  @Param("type") type: String, @Param("target") target: UUID, @Param("detail") detail: String): Int
+  @Param("type") type: String, @Param("target") target: UUID, @Param("detail") detail: JsonObject): Int
 }
+/** 감사 detail은 칸 이름 → 값 Map으로 받고 jsonb 변환은 mapper 처리기가 한다(#947) */
 @Repository
 class SupportRepository(val mapper: SupportMapper) {
- fun audit(actor: UUID, action: String, type: String, target: UUID, detail: String = "{}") {
-  check(mapper.audit(UUID.randomUUID(),actor,action,type,target,detail)==1)
+ fun audit(actor: UUID, action: String, type: String, target: UUID, detail: Map<String,Any?> = emptyMap()) {
+  check(mapper.audit(UUID.randomUUID(),actor,action,type,target,JsonObject(detail))==1)
  }
 }

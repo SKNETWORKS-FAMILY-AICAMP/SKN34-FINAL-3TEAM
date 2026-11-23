@@ -29,7 +29,9 @@ import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.patch
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.CyclicBarrier
@@ -99,15 +101,26 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
         mvc.get("/api/v1/consent-documents").andExpect { status { isOk() }; jsonPath("$.totalElements") { value(4) } }
     }
     @Test fun `migration seeds the required documents and optional COMMUNITY as the public publication`() {
-        // #415 V39 publishes TERMS·PRIVACY 1.1 (ID/password signup); GUARDIAN stays 1.0 (#235), COMMUNITY 1.0 (#388).
+        // #415 V39 publishes TERMS·PRIVACY 1.1 (ID/password signup); GUARDIAN 1.0 (#235), COMMUNITY 1.0 (#388).
+        // #732 V54 PRIVACY 1.2·GUARDIAN 1.1 take effect 2026-11-23 KST; until then PRIVACY 1.1·GUARDIAN 1.0 stay current.
+        val revised = !LocalDate.now(ZoneId.of("Asia/Seoul")).isBefore(LocalDate.of(2026, 11, 23))
+        val privacy = "00000000-0000-4000-8000-000004150002" to "00000000-0000-4000-8000-000007320001"
+        val guardian = "00000000-0000-4000-8000-000002350003" to "00000000-0000-4000-8000-000007320002"
         val seeded = mapOf("TERMS" to "00000000-0000-4000-8000-000004150001",
-            "PRIVACY" to "00000000-0000-4000-8000-000004150002", "GUARDIAN" to "00000000-0000-4000-8000-000002350003",
+            "PRIVACY" to if (revised) privacy.second else privacy.first,
+            "GUARDIAN" to if (revised) guardian.second else guardian.first,
             "COMMUNITY" to "00000000-0000-4000-8000-000003880001")
-        val versions = mapOf("TERMS" to "1.1", "PRIVACY" to "1.1", "GUARDIAN" to "1.0", "COMMUNITY" to "1.0")
-        val effective = mapOf("TERMS" to "2026-11-09", "PRIVACY" to "2026-11-09", "GUARDIAN" to "2026-11-03", "COMMUNITY" to "2026-11-08")
+        val versions = mapOf("TERMS" to "1.1", "PRIVACY" to if (revised) "1.2" else "1.1",
+            "GUARDIAN" to if (revised) "1.1" else "1.0", "COMMUNITY" to "1.0")
+        val effective = mapOf("TERMS" to "2026-11-09", "PRIVACY" to if (revised) "2026-11-23" else "2026-11-09",
+            "GUARDIAN" to if (revised) "2026-11-23" else "2026-11-03", "COMMUNITY" to "2026-11-08")
+        assertEquals(listOf("PRIVACY 1.2 2026-11-23 true", "GUARDIAN 1.1 2026-11-23 true"), jdbc.queryForList(
+            "SELECT concat_ws(' ', kind, version, effective_from::text, required::text) FROM consent_document WHERE id IN (?,?) ORDER BY id",
+            String::class.java, UUID.fromString(privacy.second), UUID.fromString(guardian.second)))
         // Synthetic fixtures (this class's or leftovers of other groups) move to the future and roll back with the test.
-        jdbc.update("UPDATE consent_document SET effective_from=effective_from+3650 WHERE id NOT IN (?,?,?,?)",
-            *seeded.values.map(UUID::fromString).toTypedArray())
+        val migrated = (seeded.values + listOf(privacy.first, privacy.second, guardian.first, guardian.second)).distinct()
+        jdbc.update("UPDATE consent_document SET effective_from=effective_from+3650 WHERE id NOT IN (${migrated.joinToString(",") { "?" }})",
+            *migrated.map(UUID::fromString).toTypedArray())
         val body = mvc.get("/api/v1/consent-documents").andExpect {
             status { isOk() }; jsonPath("$.totalElements") { value(4) }
         }.andReturn().response.contentAsString

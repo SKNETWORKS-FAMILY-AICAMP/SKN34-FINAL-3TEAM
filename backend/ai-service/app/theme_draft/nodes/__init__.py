@@ -55,13 +55,29 @@ class ThemeState(TypedDict, total=False):
     mission_warnings: Annotated[dict[str, list[str]], merge]
     # 요일 노드가 미션 뒤 고쳐 쓴 수사 연결 문장(빈 값은 그대로 둠, missions_done이 테마에 넣음)
     hook_fixes: Annotated[dict[str, str], merge]
+    # 요일 노드가 미션 검토 '[지문]' 사유로 고쳐 쓴 그날 지문(#782 설계 v8, missions_done이 넣음)
+    material_fixes: Annotated[dict[str, str], merge]
     dialogues: Annotated[dict[str, list[dict] | None], merge]
+    # 요일 대화 경고(DIALOGUE): 빠진 요일의 사유, #782 설계 v10부터 약속 줄을 코드 문장으로 대신
+    # 넣은 날(PROMISE_FALLBACK)도 — 이때는 대화가 남아 있음
     dialogue_omitted: Annotated[dict[str, list[str]], merge]
     review_runs: int
     review_reasons: list[str]  # 마지막 검토 FAIL 사유
     # PASS·FAIL·AGAIN(형식만 틀림)·CLUE(단서만 고쳐 씀)·PLAN(줄거리부터)·DAYS(그 요일 미션·대화)
+    # ·TALK(그 요일 대화만, #782 설계 v12)·HELPER(그 요일 돕는 사람·일 칸 고쳐 쓰기, #782 설계 v13)
     review_route: str
     clue_fixed: bool  # 글 검토 CLUE_LOGIC으로 단서 문장만 고쳐 쓰기를 한 번 했는지(실행마다 한 번)
+    # #782 설계 v12: 대화만 다시 만들 요일 → 처음부터 넣을 사유(글 검토가 약속 줄만 틀렸다고 함,
+    # 단서를 고쳐 약속 감각이 바뀜). 비면 없음
+    talk_seed: dict[str, list[str]]
+    talk_fixed: bool  # 글 검토 TALK(대화만 다시)를 한 번 했는지(첫 재검토는 상한에 넣지 않음)
+    # #782 설계 v13: 같은 주 같은 약속 줄을 한 번 다시 만들었는지(테마마다 한 번만)
+    promise_deduped: bool
+    # #782 설계 v13: 글 검토 HELPER_FIT으로 돕는 사람·일 칸을 한 번 고쳤는지(두 번째 FAIL은 경고)
+    helper_fixed: bool
+    # #782 설계 v13: 대화만 다시(TALK)가 끝내 실패하면 원래 대화를 남길지(같은 주 약속 다시
+    # 만들기만 남김)
+    talk_keep: bool
     review_warnings: list[dict]
     failure: dict | None
     # 그림·영상·움직임(review_story PASS 뒤 차례로 실행)

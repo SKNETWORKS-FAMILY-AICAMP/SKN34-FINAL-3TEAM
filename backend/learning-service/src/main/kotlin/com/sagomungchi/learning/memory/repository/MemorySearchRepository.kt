@@ -23,7 +23,7 @@ class MemorySearchRepository(private val jdbc: JdbcTemplate, private val mapper:
             concat_ws(E'\n',tv.title,scene.text,mv.question,ans.plain_text),'PENDING',0,now()
         FROM attempt a JOIN mission_version mv ON mv.id=a.mission_version_id
         JOIN weekly_theme t ON t.id=a.theme_id
-        JOIN weekly_theme_version tv ON tv.id=coalesce(t.published_version_id,t.current_version_id)
+        JOIN weekly_theme_version tv ON tv.id=coalesce(a.theme_version_id,t.published_version_id,t.current_version_id)
         LEFT JOIN LATERAL (SELECT string_agg(line->>'text', E'\n' ORDER BY ord) text
             FROM weekly_theme_day day CROSS JOIN LATERAL jsonb_array_elements(coalesce(day.dialogue,'[]'::jsonb)) WITH ORDINALITY AS lines(line,ord)
             WHERE day.theme_version_id=tv.id AND day.mission_id=a.mission_id) scene ON true
@@ -68,6 +68,19 @@ class MemorySearchRepository(private val jdbc: JdbcTemplate, private val mapper:
         mapper.hybrid(id,before,vector.joinToString(",","[","]"),model,minimum,
             keywords.map(::keywordPattern),from,to)
 
+    /**
+     * 기간만 질문(#879): hybrid와 같은 범위에서 기간 안 회차를 최신순으로 3개. 유사도 기준값·키워드 조건 없음.
+     * 이 경로만 회차 주 월~금 중 기간 안 날이 1일 이상인 회차를 넣는다(주말에만 겹친 주 제외).
+     * 기간에 평일이 하나도 없으면(월요일에 묻는 "어제" = 일요일) hybrid처럼 하루라도 겹치는 회차를 넣는다.
+     * 문서 점수는 hybrid와 같은 식(모델이 같으면 벡터 유사도, 다르면 0)이라 카드 score 정의가 그대로다.
+     */
+    fun latestInPeriod(id: UUID, before: LocalDate, vector: List<Double>, model: String,
+        from: LocalDate, to: LocalDate): List<MemoryHit> =
+        mapper.periodLatest(id,before,vector.joinToString(",","[","]"),model,from,to,if(hasWeekday(from,to)) 5 else 7)
+
+    private fun hasWeekday(from: LocalDate, to: LocalDate) =
+        generateSequence(from) { it.plusDays(1) }.takeWhile { it<to }.take(7).any { it.dayOfWeek.value<=5 }
+
     private fun keywordPattern(value: String) = "%" + value.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
 
     /** #568 비교용: 같은 접근 범위, 최종 답변에 대한 문자 검색. 외부 API로 노출하지 않음. */
@@ -83,6 +96,9 @@ interface MemoryVectorMapper {
     fun hybrid(@Param("studentId") studentId: UUID, @Param("before") before: LocalDate,
         @Param("vector") vector: String, @Param("model") model: String, @Param("minimum") minimum: Double,
         @Param("keywords") keywords: List<String>, @Param("from") from: LocalDate?, @Param("to") to: LocalDate?): List<MemoryHit>
+    fun periodLatest(@Param("studentId") studentId: UUID, @Param("before") before: LocalDate,
+        @Param("vector") vector: String, @Param("model") model: String,
+        @Param("from") from: LocalDate, @Param("to") to: LocalDate, @Param("overlapDays") overlapDays: Int): List<MemoryHit>
     fun ready(@Param("lease") lease: MemoryLease, @Param("vector") vector: String,
         @Param("model") model: String, @Param("now") now: Instant): Int
     fun hits(@Param("studentId") studentId: UUID, @Param("before") before: LocalDate,

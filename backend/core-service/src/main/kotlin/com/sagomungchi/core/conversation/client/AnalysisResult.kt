@@ -32,10 +32,10 @@ class AnalysisResult internal constructor(private val node: ObjectNode, val scop
     val body: JsonNode get() = node
     val answer: String get() = node.path("answer").asText()
     val source: String get() = node.path("source").asText()
-    val metrics: String get() = node.path("metrics").toString()
-    val verification: String get() = node.path("verification").toString()
-    val fallback: String? get() = node.get("fallback")?.takeUnless { it.isNull }?.toString()
-    val notice: String? get() = node.get("notice")?.takeUnless { it.isNull }?.toString()
+    val metrics: JsonNode get() = node.path("metrics")
+    val verification: JsonNode get() = node.path("verification")
+    val fallback: JsonNode? get() = node.get("fallback")?.takeUnless { it.isNull }
+    val notice: JsonNode? get() = node.get("notice")?.takeUnless { it.isNull }
     val recordCount: Int get() = node.path("recordCount").asInt()
     /** TEMPLATE 대체 사유(`fallback.reason`), 없으면 null. */
     val failureCode: String? get() = node.path("fallback").path("reason").asText().takeIf { it.isNotBlank() }

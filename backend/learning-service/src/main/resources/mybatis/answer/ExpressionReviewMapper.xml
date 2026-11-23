@@ -13,6 +13,13 @@
         </constructor>
     </resultMap>
 
+    <resultMap id="labelCount" type="com.sagomungchi.learning.answer.domain.ExpressionReviewLabelCount">
+        <constructor>
+            <arg column="labeled_count" javaType="_long"/>
+            <arg column="latest_labeled_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
     <sql id="rowColumns">
         r.id, r.source, a.content, r.model_version, r.label, r.labeled_at, r.created_at
     </sql>
@@ -54,12 +61,10 @@
         <if test="since != null">AND r.labeled_at &gt; #{since}</if>
     </sql>
 
-    <select id="countLabeledSince" resultType="long">
-        SELECT count(*) FROM expression_review r WHERE <include refid="trainable"/>
-    </select>
-
-    <select id="latestLabeledSince" resultType="java.time.Instant">
-        SELECT max(r.labeled_at) FROM expression_review r WHERE <include refid="trainable"/>
+    <!-- 한 문장(#907): READ COMMITTED라 나눠 읽으면 그사이 커밋된 라벨이 시각에만 들어감 -->
+    <select id="countLabeledSince" resultMap="labelCount">
+        SELECT count(*) AS labeled_count, max(r.labeled_at) AS latest_labeled_at
+        FROM expression_review r WHERE <include refid="trainable"/>
     </select>
 
     <select id="findExport" resultMap="row">

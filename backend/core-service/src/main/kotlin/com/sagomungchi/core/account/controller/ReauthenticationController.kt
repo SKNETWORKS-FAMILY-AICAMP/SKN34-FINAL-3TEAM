@@ -30,7 +30,10 @@ class ReauthenticationController(private val service: ReauthenticationService, p
    .header(HttpHeaders.SET_COOKIE,cookie(started.stateCookie,Duration.ofMinutes(10)).toString())
    .body(mapOf("challengeId" to started.challengeId,"authorizationUrl" to started.authorizationUrl,"expiresAt" to started.expiresAt))
  }
- data class PasswordRequest(val purpose: ReauthPurpose?=null,val childId: UUID?=null,val scope: String?=null,val password: String?=null)
+ // 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+ data class PasswordRequest(val purpose: ReauthPurpose?=null,val childId: UUID?=null,val scope: String?=null,val password: String?=null) {
+  override fun toString()="PasswordRequest(purpose=$purpose, childId=$childId, scope=$scope, password=***)"
+ }
  /** #415: ID/password accounts re-enter the login password and get the same reauth grant as the Google flow. */
  @PostMapping("/api/v1/me/reauth/password")
  fun password(@RequestBody body: PasswordRequest, request: HttpServletRequest): ResponseEntity<Any> {

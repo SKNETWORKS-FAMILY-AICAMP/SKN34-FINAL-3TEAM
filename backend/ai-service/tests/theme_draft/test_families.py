@@ -75,12 +75,14 @@ def animal_theme(story_type: str = "PRANK") -> dict[str, Any]:
     # 월(흔적) 발톱으로 고양이, 수(목격) 발 수로 까치, 금(기록) 꼬리로 다람쥐가 빠짐
     for d, clue, kind, feat, allowed in (
         ("MON", "그 동물 발자국에 발톱 자국이 있었어.", "RULE", "발자국의 발톱", ["발톱 자국"]),
+        # 화 힌트는 남은 너구리·까치·다람쥐의 꼬리 값만(빠진 고양이의 '가는 꼬리'는 빠짐). 털·깃털은
+        # 남은 후보 값이 곧 특징 값 전부라 아무것도 알려 주지 않음(#782 CLUE_EMPTY)
         (
             "TUE",
-            "지나간 동물의 부드러운 털이나 깃털을 봤대.",
+            "지나간 동물 꼬리는 가는 꼬리가 아니었어.",  # #782 v3 빠지는 값을 부정으로
             "HINT",
-            "몸을 덮은 것",
-            ["부드러운 털", "깃털"],
+            "꼬리 모양",
+            ["굵은 꼬리", "긴 꼬리", "복슬 꼬리"],
         ),
         ("WED", "네 발로 걷는 뒷모습을 봤대.", "RULE", "발자국 발 수", ["네 발"]),
         ("THU", "그 동물이 남긴 부드러운 털이 있었어.", "HINT", "몸을 덮은 것", ["부드러운 털"]),
@@ -398,7 +400,8 @@ def test_fix_rules_follow_story_type() -> None:
     assert "쪽지를 받아 들고 놀람" in prompts.fix_rules(treasure, "introCuts2.scene")[0]
     # #779 설계 B표: 보물이 늘 상자·편지는 아님(씨앗 "기념 메달")
     assert "보물을 함께 들여다봄" in prompts.fix_rules(treasure, "outroCuts5.action")[0]
-    assert "고양이" in prompts.fix_rules(animal, "TUE.sceneNote")[1]  # 머리 낱말까지 쓰지 말 낱말
+    # 머리 낱말까지 쓰지 말 낱말
+    assert "고양이" in " ".join(prompts.fix_rules(animal, "TUE.sceneNote"))
 
 
 def test_note_style_clue_is_field_fixed_but_ratio_is_not() -> None:

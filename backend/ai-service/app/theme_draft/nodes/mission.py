@@ -38,6 +38,7 @@ from app.theme_draft.nodes import (
     split_mission_feedback,
     uniq,
 )
+from app.theme_draft.nodes.plan import fix_fields
 
 
 def mission_request(ctx: ThemeContext, day: str, previous: list[Any]) -> MissionDraftRequest:
@@ -92,7 +93,8 @@ async def review_mission(
     return shape + [reason(x) for x in fails], [reason(x) for x in [*advisory, *warns]]
 
 
-EXAMPLE_ONLY = "MISSION_REVIEW EXAMPLE_COMPLETE "
+# 예시 답만 고쳐 쓰면 되는 사유: 검토 예시 답 미완성, 예시 답이 학년 상한보다 김(#782 테마 짜임)
+EXAMPLE_ONLY = ("MISSION_REVIEW EXAMPLE_COMPLETE ", "EXAMPLE_LONG ")
 # FAIL이어도 다시 만들지 않고 경고로만 남기는 미션 검토 항목(사용자 결정 2026-11-15)
 WARN_ONLY_IDS = ("STORY_LINK",)
 
@@ -141,6 +143,7 @@ async def generate_mission(payload: dict[str, Any], runtime: Runtime[ThemeContex
     day, theme = payload["day"], payload["theme"]
     feedback: list[str] = list(payload.get("seed") or [])
     bad: list[str] = []
+    material_fix = ""  # #782 설계 v8: 이 요일에서 고친 지문(한 번만)
     for attempt in range(ctx.settings.theme_max_regen + 1):
         if attempt and not ctx.can_regenerate():
             bad = [*bad, DEADLINE_REASON]
@@ -181,6 +184,7 @@ async def generate_mission(payload: dict[str, Any], runtime: Runtime[ThemeContex
                     "mission_failures": {day: []},
                     "mission_warnings": {day: warns},
                     "hook_fixes": {day: hook},
+                    "material_fixes": {day: material_fix},
                 }
             if (
                 only_example(bad, request.input_type)
@@ -192,13 +196,42 @@ async def generate_mission(payload: dict[str, Any], runtime: Runtime[ThemeContex
                 fixes += 1
                 continue
             break
+        # #782 설계 v8: 검토가 지문 자체를 짚으면([지문]) 미션을 다시 만들어도 못 고침(지문은
+        # 그대로 써야 함) → 그 요일 지문만 칸 고쳐 쓰기, 줄거리 검사에 새로 걸리지 않을 때만 씀
+        tagged = [r for r in bad if MATERIAL_TAG in r]
+        if tagged and not material_fix and ctx.can_regenerate():
+            if (fixed := await fix_material(ctx, day, theme, tagged)) is not None:
+                theme, material_fix = fixed
+                continue
         feedback = uniq([*feedback, *bad])
     return {
         "drafts": {day: draft},
         "mission_failures": {day: bad},
         "mission_warnings": {day: []},
         "hook_fixes": {day: ""},
+        "material_fixes": {day: material_fix},
     }
+
+
+MATERIAL_TAG = "[지문]"
+
+
+async def fix_material(
+    ctx: ThemeContext, day: str, theme: dict[str, Any], reasons: list[str]
+) -> tuple[dict[str, Any], str] | None:
+    """미션 검토가 짚은 그 요일 지문(missionMaterial)만 칸 고쳐 쓰기로 고친다(#782 설계 v8).
+    (고친 테마, 고친 지문). 바뀌지 않았거나 줄거리 검사에 새로 걸리면 None."""
+    path = f"{day}.missionMaterial"
+    codes = {s.code for m in ctx.request.missions for s in m.standards}
+    before = set(check_theme(theme, ctx.grade, codes))
+    fixed = copy.deepcopy(theme)
+    await fix_fields(ctx, fixed, {path: [r.replace(MATERIAL_TAG, "").strip() for r in reasons]})
+    text = theme_day_text(fixed, path)
+    if not text or text == theme_day_text(theme, path):
+        return None
+    if set(check_theme(fixed, ctx.grade, codes)) - before:
+        return None
+    return fixed, text
 
 
 STORY_LINK_WARN = "MISSION_REVIEW STORY_LINK "
@@ -257,14 +290,17 @@ async def fix_hook(
     return text, warns
 
 
-def apply_hooks(theme: dict[str, Any], hooks: dict[str, str], days: list[str]) -> dict[str, Any]:
-    """요일 노드가 고쳐 쓴 수사 연결 문장을 테마에 넣는다(이번에 만든 요일만, 빈 값은 그대로)."""
+def apply_hooks(
+    theme: dict[str, Any], hooks: dict[str, str], days: list[str], key: str = "missionHook"
+) -> dict[str, Any]:
+    """요일 노드가 고쳐 쓴 수사 연결 문장(key, #782 설계 v8부터 지문 missionMaterial도)을 테마에
+    넣는다(이번에 만든 요일만, 빈 값은 그대로)."""
     todo = {d: hooks[d] for d in days if hooks.get(d)}
     if not todo:
         return theme
     fixed = copy.deepcopy(theme)
     for day, text in todo.items():
-        set_text_at(fixed, f"{day}.missionHook", text)
+        set_text_at(fixed, f"{day}.{key}", text)
     return fixed
 
 

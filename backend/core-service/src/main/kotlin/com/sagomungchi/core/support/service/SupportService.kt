@@ -2,6 +2,7 @@ package com.sagomungchi.core.support.service
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.sagomungchi.core._common.json.JsonObject
 import com.sagomungchi.core.account.domain.AuthenticatedAccount
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.web.IdempotencyService
@@ -35,6 +36,9 @@ class SupportService(private val repository: SupportRepository,private val acces
  private fun conflict(): Nothing=throw BusinessException(HttpStatus.CONFLICT,"SUPPORT_STATE_CONFLICT","현재 처리 상태 또는 기존 요청과 일치하지 않습니다.")
  private fun missing(): Nothing=throw BusinessException(HttpStatus.NOT_FOUND,"NOT_FOUND","지원 요청을 찾을 수 없습니다.")
  private fun text(s: String,max: Int=10000) { if(s.isBlank() || s.length>max) invalid() }
+ fun pendingInquiryCount(): Long = db.inquiryCount(null, null, null, emptySet(), "RECEIVED")
+ fun receivedReportCount(): Long = db.reportCount(null, null, null, emptySet(), "RECEIVED")
+
  private fun paging(page: Int,size: Int) { if(page<0 || size !in 1..100) invalid() }
  private fun status(value: String?) { if(value!=null && value !in setOf("RECEIVED","IN_REVIEW","RESOLVED")) invalid() }
  private fun report(id: UUID)=db.report(id) ?: missing()
@@ -96,18 +100,18 @@ class SupportService(private val repository: SupportRepository,private val acces
   if(admin && value.attemptId!=null) view["linkedAttempt"]=original(actor,"ERROR_REPORT",id,value.attemptId,value.studentId ?: conflict())
   if(admin && value.targetType==Community.TARGET_TYPE) {
    val post=community.original(value.targetId)
-   tx.executeWithoutResult { repository.audit(actor.account.id,"SUPPORT_ORIGINAL_VIEW","ERROR_REPORT",id,json.writeValueAsString(mapOf("postId" to value.targetId,"available" to post["available"]))) }
+   tx.executeWithoutResult { repository.audit(actor.account.id,"SUPPORT_ORIGINAL_VIEW","ERROR_REPORT",id,mapOf("postId" to value.targetId,"available" to post["available"])) }
    view["linkedPost"]=post
   }
   return view
  }
  private fun original(actor: AuthenticatedAccount,type: String,id: UUID,attempt: UUID,student: UUID): JsonNode {
   val data=learning.original(attempt,student)
-  tx.executeWithoutResult { repository.audit(actor.account.id,"SUPPORT_ORIGINAL_VIEW",type,id,json.writeValueAsString(mapOf("attemptId" to attempt,"studentId" to student))) }
+  tx.executeWithoutResult { repository.audit(actor.account.id,"SUPPORT_ORIGINAL_VIEW",type,id,mapOf("attemptId" to attempt,"studentId" to student)) }
   return data
  }
  private fun reportView(value: SupportReport,admin: Boolean,includeCorrections: Boolean=true): Map<String,Any?> {
-  val corrections=if(!includeCorrections) emptyList() else db.corrections(value.id).map { c -> mapOf("correctionId" to c.id,"reason" to c.reason,"corrected" to c.corrected,"previousResult" to c.previousResult,"status" to c.processingStatus,"createdAt" to c.createdAt,"completedAt" to c.completedAt,"impact" to c.impact?.takeIf { admin }?.let { json.readTree(it) }) }
+  val corrections=if(!includeCorrections) emptyList() else db.corrections(value.id).map { c -> mapOf("correctionId" to c.id,"reason" to c.reason,"corrected" to c.corrected,"previousResult" to c.previousResult,"status" to c.processingStatus,"createdAt" to c.createdAt,"completedAt" to c.completedAt,"impact" to c.impact?.takeIf { admin }) }
   return mapOf("reportId" to value.id,"status" to value.status,"targetType" to value.targetType,"targetId" to value.targetId,"category" to value.category,"comment" to value.comment,"reviewReason" to value.resolutionReason,"reviewResult" to value.reviewResult,"createdAt" to value.createdAt,"resolvedAt" to value.resolvedAt,"corrections" to corrections.filter { admin || it["status"]=="COMPLETED" })
  }
  fun review(actor: AuthenticatedAccount,id: UUID,command: ReviewCommand): Map<String,Any?> {
@@ -167,7 +171,7 @@ class SupportService(private val repository: SupportRepository,private val acces
    val locked=db.lockReport(id) ?: missing();val current=db.correction(id) ?: missing()
    if(current.processingStatus!="COMPLETED") {
     if(response.previousResult!=current.previousResult) conflict()
-    val completed=current.copy(processingStatus="COMPLETED",providerResult=json.writeValueAsString(response.body),impact=json.writeValueAsString(impact),completedAt=now())
+    val completed=current.copy(processingStatus="COMPLETED",providerResult=response.body,impact=impact,completedAt=now())
     check(db.updateCorrection(completed)==1)
     val updated=locked.copy(status="RESOLVED",reviewResult=command.corrected,resolutionReason=command.reason,reviewedBy=actor.account.id,resolvedAt=completed.completedAt)
     check(db.updateReport(updated)==1);repository.audit(actor.account.id,"CORRECTION_COMPLETED","ERROR_REPORT",id);notifyReport(updated)
@@ -179,20 +183,20 @@ class SupportService(private val repository: SupportRepository,private val acces
   * FN-SUP-03 #244: which existing reports and answers used the corrected judgment. A failed lookup stays UNKNOWN and never blocks the correction.
   * Reports match by attempt because evidence links are absent when parent sharing is off; answers match the exact judged answer. Outside transactions.
   */
- private fun derivedImpact(student: UUID?,attempt: UUID?,judgment: UUID,supplied: JsonNode): JsonNode {
+ private fun derivedImpact(student: UUID?,attempt: UUID?,judgment: UUID,supplied: JsonObject): JsonObject {
   if(student==null || attempt==null) return supplied
   val affected=try { reports.affected(student,attempt) } catch(_: RuntimeException) { null }
   val messages=try {
    conversations.citing(learning.judgedAnswer(attempt,student,judgment))
   } catch(_: RuntimeException) { null }
   val pinned=try { affected.orEmpty().filter { it.periodType==ReportPeriodType.DAILY }.flatMap { conversations.pinned(student,it.periodFrom,it.revision) }.distinct() } catch(_: RuntimeException) { null }
-  val result=supplied.deepCopy<JsonNode>() as com.fasterxml.jackson.databind.node.ObjectNode
-  result.put("report",when { affected==null -> "UNKNOWN"; affected.isEmpty() -> "NOT_AFFECTED"; else -> "AFFECTED" })
-  result.put("conversation",when { messages?.isNotEmpty()==true || pinned?.isNotEmpty()==true -> "AFFECTED"; affected==null || messages==null || pinned==null -> "UNKNOWN"; else -> "NOT_AFFECTED" })
-  affected?.takeIf { it.isNotEmpty() }?.let { result.set<JsonNode>("reportIds",json.valueToTree(it.map { report -> report.reportId })) }
-  messages?.takeIf { it.isNotEmpty() }?.let { result.set<JsonNode>("messageIds",json.valueToTree(it)) }
-  pinned?.takeIf { it.isNotEmpty() }?.let { result.set<JsonNode>("conversationIds",json.valueToTree(it)) }
-  return result
+  val result=LinkedHashMap(supplied.values)
+  result["report"]=when { affected==null -> "UNKNOWN"; affected.isEmpty() -> "NOT_AFFECTED"; else -> "AFFECTED" }
+  result["conversation"]=when { messages?.isNotEmpty()==true || pinned?.isNotEmpty()==true -> "AFFECTED"; affected==null || messages==null || pinned==null -> "UNKNOWN"; else -> "NOT_AFFECTED" }
+  affected?.takeIf { it.isNotEmpty() }?.let { result["reportIds"]=it.map { report -> report.reportId } }
+  messages?.takeIf { it.isNotEmpty() }?.let { result["messageIds"]=it }
+  pinned?.takeIf { it.isNotEmpty() }?.let { result["conversationIds"]=it }
+  return JsonObject(result)
  }
  fun submitInquiry(actor: AuthenticatedAccount,command: InquirySubmission): Map<String,Any?> {
   access.user(actor);text(command.title,200);text(command.body)
@@ -244,9 +248,9 @@ class SupportService(private val repository: SupportRepository,private val acces
   return tx.execute {
    val prior=id?.let { db.lockNotice(it) ?: missing() }
    if(prior?.endedAt!=null) conflict()
-   val value=Notice(id ?: UUID.randomUUID(),command.kind,command.title,command.body,json.writeValueAsString(command.targetRoles),command.visibleFrom,command.visibleTo,prior?.createdBy ?: actor.account.id,prior?.createdAt ?: now(),null)
+   val value=Notice(id ?: UUID.randomUUID(),command.kind,command.title,command.body,command.targetRoles,command.visibleFrom,command.visibleTo,prior?.createdBy ?: actor.account.id,prior?.createdAt ?: now(),null)
    check((if(prior==null) db.insertNotice(value) else db.updateNotice(value))==1)
-   repository.audit(actor.account.id,if(prior==null) "NOTICE_CREATED" else "NOTICE_UPDATED","NOTICE",value.id,json.writeValueAsString(mapOf("before" to prior?.let(::noticeView),"after" to noticeView(value))))
+   repository.audit(actor.account.id,if(prior==null) "NOTICE_CREATED" else "NOTICE_UPDATED","NOTICE",value.id,mapOf("before" to prior?.let(::noticeView),"after" to noticeView(value)))
    noticeView(value)
   }!!
  }
@@ -256,11 +260,11 @@ class SupportService(private val repository: SupportRepository,private val acces
    val prior=db.lockNotice(id) ?: missing()
    if(prior.endedAt!=null) return@execute noticeView(prior)
    val ended=prior.copy(endedAt=now());check(db.updateNotice(ended)==1)
-   repository.audit(actor.account.id,"NOTICE_ENDED","NOTICE",id,json.writeValueAsString(mapOf("before" to noticeView(prior),"after" to noticeView(ended))))
+   repository.audit(actor.account.id,"NOTICE_ENDED","NOTICE",id,mapOf("before" to noticeView(prior),"after" to noticeView(ended)))
    noticeView(ended)
   }!!
  }
- private fun noticeView(value: Notice): Map<String,Any?> = mapOf("noticeId" to value.id,"kind" to value.kind,"title" to value.title,"body" to value.body,"targetRoles" to json.readTree(value.targetRoles),"visibleFrom" to value.visibleFrom,"visibleTo" to value.visibleTo,"endedAt" to value.endedAt)
+ private fun noticeView(value: Notice): Map<String,Any?> = mapOf("noticeId" to value.id,"kind" to value.kind,"title" to value.title,"body" to value.body,"targetRoles" to value.targetRoles,"visibleFrom" to value.visibleFrom,"visibleTo" to value.visibleTo,"endedAt" to value.endedAt)
  fun help(actor: AuthenticatedAccount,role: String?): Map<String,Any?> {
   val current=actor.session.role
   if(role!=null && role!=current) throw BusinessException(HttpStatus.FORBIDDEN,"FORBIDDEN","현재 역할의 도움말만 조회할 수 있습니다.")

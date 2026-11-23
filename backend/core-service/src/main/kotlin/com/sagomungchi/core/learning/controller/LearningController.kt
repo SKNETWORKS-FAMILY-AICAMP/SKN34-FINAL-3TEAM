@@ -19,7 +19,12 @@ class LearningController(private val service: LearningProxyService, private val 
         service.exchange("GET", "/missions", query = "page=$page&size=$size").http()
 
     @GetMapping("/api/v1/missions/{missionId}")
-    fun mission(@PathVariable missionId: UUID) = service.exchange("GET", "/missions/$missionId").http()
+    fun mission(@PathVariable missionId: UUID, @RequestParam(required = false) context: String?): ResponseEntity<ByteArray> {
+        if (context != null && context !in ATTEMPT_CONTEXTS)
+            throw BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "지원하지 않는 미션 안내 경로입니다.")
+        return if (context == null || context == "EXTRA") service.exchange("GET", "/missions/$missionId").http()
+        else service.themeMission(missionId, context).http(noStore = true)
+    }
 
     @PostMapping("/api/v1/missions/{missionId}/attempts")
     fun start(@PathVariable missionId: UUID, @RequestBody(required = false) body: ByteArray?) =
@@ -41,6 +46,11 @@ class LearningController(private val service: LearningProxyService, private val 
     @PostMapping("/api/v1/attempts/{attemptId}/answers")
     fun answer(@PathVariable attemptId: UUID, @RequestHeader("Idempotency-Key") key: UUID, @RequestBody body: ByteArray) =
         service.exchange("POST", "/attempts/$attemptId/answers", body = objectBody(body), key = key).http()
+
+    /** 낱말 물어보기 (#599, api-spec 2.2.1). 학생 질문·응답은 저장하지 않는다 */
+    @PostMapping("/api/v1/attempts/{attemptId}/word-help")
+    fun wordHelp(@PathVariable attemptId: UUID, @RequestBody body: ByteArray) =
+        service.exchange("POST", "/attempts/$attemptId/word-help", body = objectBody(body)).http(noStore = true)
 
     @PostMapping("/api/v1/attempts/{attemptId}/finish")
     fun finish(@PathVariable attemptId: UUID) = service.exchange("POST", "/attempts/$attemptId/finish").http()

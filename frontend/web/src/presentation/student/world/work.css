@@ -204,6 +204,30 @@
   display: flex;
   justify-content: center;
 }
+#class-journal .st-world .sw-word-trigger {
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  min-width: 72px;
+  padding: 0 4px 4px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--sk-ink);
+  font-size: var(--st-fs-xs, 14px);
+  cursor: pointer;
+}
+#class-journal .st-world .sw-word-trigger:hover span,
+#class-journal .st-world .sw-word-trigger[aria-expanded='true'] span { text-decoration: underline; }
+#class-journal .st-world .sw-word-trigger:focus-visible {
+  outline: 3px solid var(--sk-accent);
+  outline-offset: 3px;
+}
+#class-journal .st-world .sw-helper:has(.sw-word-trigger[aria-expanded='true']) {
+  position: static;
+  margin-top: 0;
+}
 #class-journal .st-world .sw-bubble {
   position: relative;
   flex: 1;
@@ -645,6 +669,377 @@
 #class-journal .st-world .sw-actions > p { flex-basis: 100%; margin: 0; text-align: right; }
 #class-journal .st-world .sw-actions .mg-read { min-height: 56px; padding: 0 22px; }
 #class-journal .st-world .sw-actions .sw-go { min-height: 56px; padding: 0 28px; font-size: clamp(19px, 1.5vw, 22px); }
+/* 피드백 대기 표시(#847): 친구(착용 포함) + 돋보기 + 말풍선. 단계마다 움직임 하나, 막대·퍼센트 없음 */
+/* "찾았다!"(결과 전구)는 피드백 패널 기준으로 자리를 잡는다.
+   대기 그림·말풍선 크기는 창 폭이 아니라 패널 폭(container)을 따른다: 창 폭 기준이면 두 칸이 되는 920~960px·좁은 360px에서
+   패널이 좁아도 친구·글자가 줄지 않아 말풍선 글자가 칸 밖으로 밀려났다(#847 넘침) */
+#class-journal .st-world .sw-feedback-panel { position: relative; container-type: inline-size; }
+/* 위쪽 30px은 구름만 지나가는 빈 하늘(제목 줄과 겹치지 않게, 친구·말풍선은 그 아래) */
+#class-journal .st-world .sw-wait {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 4cqi, 22px);
+  min-width: 0;
+  padding: 30px 0 4px;
+}
+#class-journal .st-world .sw-wait-friend {
+  --w: clamp(72px, 24cqi, 150px);
+  position: relative;
+  flex: none;
+  width: var(--w);
+  height: var(--w);
+  /* 돋보기 렌즈가 친구 옆으로 조금 나가도 말풍선·칸 끝과 겹치지 않게 양옆 여백 */
+  margin: 0 calc(var(--w) * 0.12);
+  padding: 0;
+  border: 0;
+  border-radius: 24px;
+  background: none;
+  cursor: pointer;
+}
+#class-journal .st-world .sw-wait-poke,
+#class-journal .st-world .sw-wait-pose,
+#class-journal .st-world .sw-wait-breath {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#class-journal .st-world .sw-wait-breath .st-companion { display: block; width: 100%; height: 100%; }
+/*
+ * 움직임(사용자 의견 2026-11-23 "작고 느리게, 움직임 사이에 쉼"). 단계마다 하나 + 늘 숨쉬기·눈 깜빡임.
+ * 0초~ 돋보기를 눈앞에 대고 좌→우 훑기(1.2초 왕복 + 0.6초 쉼, 투명 렌즈로 친구 눈이 비침) / 5초~ 공책 한 장씩(0.8초, 2초마다, 고개 살짝 따라감)
+ * 15초~ 고개 갸웃 약 8도 + 머리 위 "?"(2초 주기) / 30초~ 낮게 두 번 콩콩(0.6초) 후 1.5초 쉼
+ */
+#class-journal .st-world .sw-wait-breath { animation: sw-wait-breath 2.4s ease-in-out infinite; }
+@keyframes sw-wait-breath {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+/* 눈 깜빡임(약 4초에 한 번): 친구 그림(friendArt FACE)의 눈(반지름 10)과 눈 반짝(3.4)만 골라 깜빡인다. 공용 그림 파일은 그대로 */
+#class-journal .st-world .sw-wait .st-friend-art > circle[r='10'],
+#class-journal .st-world .sw-wait .st-friend-art > circle[r='3.4'] {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sw-wait-blink 4s ease-in-out infinite;
+}
+@keyframes sw-wait-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+/*
+ * 찡긋(살피기 0초~, 사용자 의견 2026-11-23): 돋보기를 댄 눈의 반대쪽 눈을 살짝 감고, 훑기가 끝나 쉴 때 다시 뜬다.
+ * 훑기 1.8초 주기(렌즈가 0% 왼쪽 눈 → 33% 오른쪽 눈 → 67% 왼쪽 눈, 67~100% 쉼)에 맞춰
+ * 렌즈가 왼쪽 눈 앞일 때 오른쪽 눈(cx 122·반짝 126), 오른쪽 눈 앞일 때 왼쪽 눈(cx 78·반짝 82)을 감는다.
+ * 눈은 살짝(25%)만, 눈 반짝은 다 감는다. 움직임 줄이기면 두 눈 뜬 멈춘 그림(아래 줄이기 규칙)
+ */
+#class-journal .st-world .sw-wait .st-friend-art > circle[r='10'] { --shut: 0.25; }
+#class-journal .st-world .sw-wait .st-friend-art > circle[r='3.4'] { --shut: 0; }
+#class-journal .st-world .sw-wait[data-motion='look'] .st-friend-art > circle:is([cx='122'], [cx='126']) {
+  animation: sw-wait-wink-r 1.8s ease-in-out infinite;
+}
+#class-journal .st-world .sw-wait[data-motion='look'] .st-friend-art > circle:is([cx='78'], [cx='82']) {
+  animation: sw-wait-wink-l 1.8s ease-in-out infinite;
+}
+@keyframes sw-wait-wink-r {
+  0%, 16%, 50%, 70%, 100% { transform: scaleY(1); }
+  5%, 10%, 56%, 64% { transform: scaleY(var(--shut)); }
+}
+@keyframes sw-wait-wink-l {
+  0%, 18%, 49%, 100% { transform: scaleY(1); }
+  23%, 43% { transform: scaleY(var(--shut)); }
+}
+/* 돋보기 쉬는 자리: 몸 가운데 높이에서 손잡이가 몸 앞에 걸치고 렌즈가 바깥 위로(갸웃·콩콩 단계) */
+#class-journal .st-world .sw-wait-glass {
+  position: absolute;
+  top: 38%;
+  width: 50%;
+  height: 50%;
+}
+/* 소품이 없으면 몸 앞쪽(오른쪽)에 들고, 소품을 들었으면 왼쪽으로 비킨다 */
+#class-journal .st-world .sw-wait-glass[data-side='right'] { left: 62%; }
+#class-journal .st-world .sw-wait-glass[data-side='left'] { right: 62%; }
+/* 살피기(0초~): 눈앞에 대고(그림 칸 56%, 렌즈 가운데가 왼쪽 눈 (38%, 53%)) 오른쪽 눈(62%)까지 천천히 훑고 돌아와 쉰다 */
+#class-journal .st-world .sw-wait[data-motion='look'] .sw-wait-glass {
+  top: 31.4%;
+  left: 3.9%;
+  right: auto;
+  width: 56%;
+  height: 56%;
+  animation: sw-wait-sweep 1.8s ease-in-out infinite;
+}
+#class-journal .st-world .sw-wait[data-motion='look'] .sw-wait-glass[data-side='left'] { left: 16.1%; }
+@keyframes sw-wait-sweep {
+  0%, 66.7%, 100% { transform: translateX(0); }
+  33.3% { transform: translateX(42.9%); }
+}
+/* 공책(5초~): 한 장 넘기는 데 0.8초, 2초마다. 고개(몸)는 넘어가는 책장을 살짝 따라간다 */
+#class-journal .st-world .sw-wait[data-motion='notebook'] .sw-wait-pose {
+  transform-origin: 50% 85%;
+  animation: sw-wait-follow 2s ease-in-out infinite;
+}
+@keyframes sw-wait-follow {
+  0%, 100% { transform: rotate(2deg); }
+  40%, 70% { transform: rotate(-2deg); }
+}
+/* 갸웃(15초~): 약 8도 기울였다 돌아오고, 머리 위 작은 "?"가 떠올랐다 사라진다(2초 주기) */
+#class-journal .st-world .sw-wait[data-motion='tilt'] .sw-wait-pose {
+  transform-origin: 50% 92%;
+  animation: sw-wait-tilt 2s ease-in-out infinite;
+}
+@keyframes sw-wait-tilt {
+  0%, 100% { transform: rotate(0deg); }
+  30%, 70% { transform: rotate(-8deg); }
+}
+#class-journal .st-world .sw-wait-q {
+  position: absolute;
+  top: 0;
+  right: -4%;
+  color: #3a2a20;
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: calc(var(--w) * 0.2);
+  line-height: 1;
+  animation: sw-wait-q 2s ease-in-out infinite;
+}
+@keyframes sw-wait-q {
+  0% { opacity: 0; transform: translateY(30%); }
+  30%, 60% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-40%); }
+}
+/*
+ * 기지개(30초~ "조금 오래 걸리네"): 몸 전체를 위로 쭉 폈다(1.2초) 1.5초 쉰다(2.7초 주기).
+ * 뭉치는 팔이 없는 캐릭터라(설계 class-diagram 그림·영상 검토 "뭉치에게 팔·날개가 새로 생기면 결함") 팔은 그리지 않고 몸을 늘인다
+ */
+#class-journal .st-world .sw-wait[data-motion='stretch'] .sw-wait-pose {
+  transform-origin: 50% 96%;
+  animation: sw-wait-stretch 2.7s ease-in-out infinite;
+}
+@keyframes sw-wait-stretch {
+  0%, 44.4%, 100% { transform: scale(1, 1); }
+  16%, 30% { transform: scale(0.93, 1.1); }
+}
+/* 누르기 반응(누를 때마다 차례로): 콩 → 뽀잉(눌렸다 펴기) → 하트 하나 뿅. 빙글 한 바퀴는 공처럼 굴러 보여 뽀잉으로 바꿈(사용자 의견 2026-11-23) */
+#class-journal .st-world .sw-wait-poke[data-poked='hop'] { animation: sw-wait-poke 0.5s ease-out 1; }
+@keyframes sw-wait-poke {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-18%); }
+}
+/* 뽀잉: 발은 땅에 둔 채 아래로 살짝 눌렸다가 말랑하게 튀어 올라 제자리로(0.5초) */
+#class-journal .st-world .sw-wait-poke[data-poked='squish'] { transform-origin: 50% 96%; animation: sw-wait-squish 0.5s ease-out 1; }
+@keyframes sw-wait-squish {
+  0%, 100% { transform: scale(1, 1); }
+  25% { transform: scale(1.12, 0.82); }
+  55% { transform: scale(0.94, 1.08); }
+  80% { transform: scale(1.03, 0.97); }
+}
+#class-journal .st-world .sw-wait-heart {
+  position: absolute;
+  top: -4%;
+  left: 58%;
+  z-index: 1;
+  width: 22%;
+  height: 20%;
+  overflow: visible;
+  animation: sw-wait-heart 0.9s ease-out both;
+}
+@keyframes sw-wait-heart {
+  0% { opacity: 0; transform: scale(0); }
+  30% { opacity: 1; transform: scale(1.15); }
+  60% { opacity: 1; transform: translateY(-15%) scale(1); }
+  100% { opacity: 0; transform: translateY(-45%) scale(1); }
+}
+/* 주변(연하고 작게): 풀잎 셋이 천천히 살랑(3초 주기, 서로 어긋나게), 작은 구름이 상자 위쪽을 아주 천천히 지나감(26초) */
+#class-journal .st-world .sw-wait-blade {
+  position: absolute;
+  bottom: 1%;
+  z-index: 1;
+  width: 8%;
+  height: 10.7%;
+  overflow: visible;
+  transform-origin: 50% 100%;
+  animation: sw-wait-sway 3s ease-in-out infinite;
+}
+#class-journal .st-world .sw-wait-blade-1 { left: -10%; }
+#class-journal .st-world .sw-wait-blade-2 { left: 4%; height: 8.6%; animation-delay: -1s; }
+#class-journal .st-world .sw-wait-blade-3 { left: 88%; animation-delay: -2s; }
+@keyframes sw-wait-sway {
+  0%, 100% { transform: rotate(-6deg); }
+  50% { transform: rotate(6deg); }
+}
+/* 구름: 대기 표시 위쪽 빈 하늘(30px 띠)만 지나간다. 제목 줄로는 올라가지 않고 친구·말풍선보다 위 */
+#class-journal .st-world .sw-wait-cloud {
+  position: absolute;
+  top: 3px;
+  left: 30%;
+  z-index: 0;
+  width: 44px;
+  height: 24px;
+  opacity: 0.7;
+  pointer-events: none;
+  animation: sw-wait-cloud 26s linear infinite;
+}
+@keyframes sw-wait-cloud {
+  0% { left: 0; opacity: 0; }
+  8%, 92% { opacity: 0.7; }
+  100% { left: calc(100% - 44px); opacity: 0; }
+}
+/* 공책 넘기기(5초~): 친구 앞쪽 아래 가운데. 크기 60/184 = 착용 아이템과 같은 배율(선 두께 같게) */
+#class-journal .st-world .sw-wait-book {
+  position: absolute;
+  left: calc(50% - 16.3%);
+  bottom: 2%;
+  width: 32.6%;
+  height: 32.6%;
+  overflow: visible;
+}
+#class-journal .st-world .sw-wait-page {
+  transform-box: view-box;
+  transform-origin: 30px 34px;
+  animation: sw-wait-page 2s ease-in-out infinite;
+}
+@keyframes sw-wait-page {
+  0% { transform: scaleX(1); opacity: 1; }
+  40% { transform: scaleX(-1); opacity: 1; }
+  41%, 100% { transform: scaleX(-1); opacity: 0; }
+}
+/* 돋보기를 입었으면(그려 넣는 돋보기 없음) 살피기 단계에서 입은 돋보기를 쥔 곳(그림 가운데) 기준으로 천천히 기울인다 */
+#class-journal .st-world .sw-wait[data-motion='look'][data-own-lens] image[data-slot='ACCESSORY'] {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: sw-wait-own-lens 1.8s ease-in-out infinite;
+}
+@keyframes sw-wait-own-lens {
+  0%, 66.7%, 100% { transform: rotate(0deg); }
+  33.3% { transform: rotate(-12deg); }
+}
+/* 화면 안 움직임 줄이기 체크(OS 설정과 같은 결과): 멈춘 그림 + 문구만(두 눈 뜬 채, 돋보기는 왼쪽 눈 앞에 투명 렌즈 그대로, "?"·풀잎·구름은 멈춘 채, 누르면 말만 바뀜) */
+#class-journal .st-world .sw-wait[data-reduce] :is(.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-breath, .sw-wait-page, .sw-wait-q, .sw-wait-blade, .sw-wait-cloud),
+#class-journal .st-world .sw-wait[data-reduce] .st-friend-art > circle,
+#class-journal .st-world .sw-wait[data-reduce] image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }
+#class-journal .st-world .sw-wait[data-reduce] .sw-wait-heart { display: none; }
+/* 결과 전구도 움직임 없이 켜진 그림만 */
+#class-journal .st-world .sw-found[data-reduce],
+#class-journal .st-world .sw-found[data-reduce] * { animation: none !important; }
+/* 대기 화면 움직임 줄이기 체크박스: 화면설계서 SC-02-010 미션 장면처럼 그림 아래 오른쪽에 작게 */
+#class-journal .st-world .sw-wait-motion {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  margin-top: -6px;
+  color: var(--sk-sub);
+  font-size: var(--st-fs-xs, 14px);
+  cursor: pointer;
+}
+#class-journal .st-world .sw-wait-motion input { width: 18px; height: 18px; margin: 0; accent-color: var(--sk-line); cursor: pointer; }
+#class-journal .st-world .sw-wait-bubble {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 14px 18px;
+}
+/* 한국어는 띄어쓰기에서만 꺾는다(글자 중간 꺾임 없음). 최소 폭은 두지 않는다: 좁은 패널에서 말풍선보다 넓어져 글자가 밖으로 나갔음.
+   글자 크기는 패널 폭을 따라 16~21px */
+#class-journal .st-world .sw-wait-bubble p {
+  margin: 0;
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: clamp(16px, 4.6cqi, 21px);
+  line-height: 1.45;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  /* 두 줄이 되면 줄 길이를 고르게(마지막 줄에 한 단어만 남지 않게) */
+  text-wrap: balance;
+}
+/* 대기 중에만: 제목은 본문보다 조금 크게·굵게, 상자 아래 빈 공간 줄이기(결과·실패 모양은 그대로) */
+#class-journal .st-world .sw-feedback[data-waiting] { gap: 8px; }
+#class-journal .st-world .sw-feedback[data-waiting] .sw-feedback-head h2 {
+  font-size: clamp(20px, 1.5vw, 22px);
+  /* 제목 글꼴이 이미 굵은 제목체라 굵기를 더하면 브라우저가 가짜 굵게로 번지게 그린다. 글꼴 굵기 그대로 */
+  font-weight: 400;
+  font-synthesis: none;
+  line-height: 1.3;
+}
+#class-journal .st-world .sw-feedback[data-waiting] .sw-wait { padding-bottom: 0; }
+/* 대기 중에는 상자 테두리·바탕·그림자를 빼서 친구가 네모 안에 갇혀 보이지 않게(무대처럼). 같은 요소의 모양만 바꾸고
+   테두리 두께·여백은 그대로 둬서 결과가 와 상자가 생길 때 크기가 튀지 않는다. 결과·실패 모양은 그대로 */
+#class-journal .st-world .sw-feedback-panel {
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+#class-journal .st-world .sw-feedback-panel:has(.sw-feedback[data-waiting]) {
+  align-self: start;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+/* 발밑 얇은 풀밭 선 하나(친구가 콩콩 뛰어도 땅은 그대로) */
+#class-journal .st-world .sw-wait-ground {
+  position: absolute;
+  left: -14%;
+  right: -14%;
+  bottom: 1%;
+  height: 3px;
+  border-radius: 999px;
+  background: #7cbf5a;
+  box-shadow: 0 1px 0 #5c9a3e;
+}
+#class-journal .st-world .sw-feedback-panel:has(.sw-feedback[data-waiting]) .sw-actions:empty { display: none; }
+/*
+ * 결과가 온 순간 잠깐 겹쳐 반짝(상자는 늦추지 않음). 자리는 패널 왼쪽 아래 빈 곳:
+ * 제목·"AI 채점(시범)"(FN-JDG-03 필수 문구)·버튼을 0.5초라도 가리지 않게(오른쪽 위에 두었을 때 시범 표시를 가렸음)
+ */
+#class-journal .st-world .sw-found {
+  position: absolute;
+  left: 18px;
+  bottom: 14px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px 4px 8px;
+  border: 2px solid var(--sk-line);
+  border-radius: 999px;
+  background: #fffbea;
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: var(--st-fs-md, 21px);
+  pointer-events: none;
+  animation: sw-found 0.5s ease-out both;
+}
+/* 결과 전구(0.5초): "?"가 사라지며 전구가 켜지고 빛줄기가 퍼진다. 움직임이 없을 때의 모습은 켜진 전구 */
+#class-journal .st-world .sw-found-bulb { width: 32px; height: 32px; overflow: visible; }
+#class-journal .st-world .sw-found-q { opacity: 0; animation: sw-found-q 0.5s ease-out both; }
+#class-journal .st-world .sw-found-light {
+  transform-box: fill-box;
+  transform-origin: 50% 80%;
+  animation: sw-found-light 0.5s ease-out both;
+}
+#class-journal .st-world .sw-found-rays {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: sw-found-rays 0.5s ease-out both;
+}
+@keyframes sw-found-q {
+  0% { opacity: 1; }
+  35%, 100% { opacity: 0; }
+}
+@keyframes sw-found-light {
+  0%, 20% { opacity: 0; transform: scale(0.6); }
+  50% { opacity: 1; transform: scale(1.12); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes sw-found-rays {
+  0%, 40% { opacity: 0; transform: scale(0.5); }
+  70%, 100% { opacity: 1; transform: scale(1); }
+}
+@keyframes sw-found {
+  0% { opacity: 0; transform: scale(0.6); }
+  30% { opacity: 1; transform: scale(1.08); }
+  70% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
 #class-journal .st-world .sw-work .mg-read:disabled,
 #class-journal .st-world .sw-work .mg-start:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -959,9 +1354,29 @@
   #class-journal .st-world .sw-reflect-face { top: 16px; left: 18px; }
   #class-journal .st-world .sw-reflect .cj-difficulties { gap: 8px; }
   #class-journal .st-world .sw-reflect .cj-difficulties button { min-height: 76px; font-size: 18px; }
+  #class-journal .st-world .sw-wait { padding-top: 28px; }
+  #class-journal .st-world .sw-wait-friend { margin: 0 calc(var(--w) * 0.1); }
+  #class-journal .st-world .sw-found { left: 12px; bottom: 10px; gap: 4px; padding: 2px 10px 2px 6px; font-size: 16px; }
+  #class-journal .st-world .sw-found-bulb { width: 24px; height: 24px; }
+  #class-journal .st-world .sw-wait-bubble { padding: 12px; }
 }
-/* 움직임 줄이기: 기울인 쪽지·단추를 바로 세운다(미션 안내 그림과 같은 기준) */
+/* 움직임 줄이기: 기울인 쪽지·단추를 바로 세운다(미션 안내 그림과 같은 기준).
+   피드백 대기(#847)는 멈춘 그림 + 문구만(두 눈 뜬 채), 누르기 반응·하트 없이 말만 바뀌고, 결과 때는 켜진 전구 그림만 */
 @media (prefers-reduced-motion: reduce) {
   #class-journal .st-world .sw-memo,
   #class-journal .st-world .sw-reflect .cj-difficulties button { transform: none !important; }
+  #class-journal .st-world .sw-wait-glass,
+  #class-journal .st-world .sw-wait-pose,
+  #class-journal .st-world .sw-wait-poke,
+  #class-journal .st-world .sw-wait-breath,
+  #class-journal .st-world .sw-wait-page,
+  #class-journal .st-world .sw-wait-q,
+  #class-journal .st-world .sw-wait-blade,
+  #class-journal .st-world .sw-wait-cloud,
+  #class-journal .st-world .sw-wait .st-friend-art > circle,
+  #class-journal .st-world .sw-wait image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }
+  #class-journal .st-world .sw-wait-heart { display: none; }
+  #class-journal .st-world .sw-feedback-panel { transition: none; }
+  #class-journal .st-world .sw-found,
+  #class-journal .st-world .sw-found * { animation: none !important; }
 }

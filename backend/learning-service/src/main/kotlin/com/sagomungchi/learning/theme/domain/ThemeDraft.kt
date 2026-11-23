@@ -310,6 +310,9 @@ data class ThemeDraftView(
     val updatedAt: Instant,
     /** 부분 다시 생성할 수 있는 대상 (#537, ThemeDraft.regenerableTargets). 없으면 빈 배열 */
     val regenerableTargets: List<String> = emptyList(),
+    val plannedWeek: LocalDate? = null,
+    val weekLocked: Boolean = false,
+    val adoptionWeekLocked: Boolean = false,
 )
 
 data class ThemeDraftViewPage(val items: List<ThemeDraftView>, val page: Int, val size: Int, val totalElements: Long)

@@ -30,7 +30,7 @@ export function ConsentFields({
             </summary>
             <p>{d.content}</p>
           </details>
-          <label className="ws-check">
+          <label className="ws-check ws-consent-check">
             <input
               type="checkbox"
               checked={!!value.find((c) => c.documentId === d.documentId && c.version === d.version)?.agreed}

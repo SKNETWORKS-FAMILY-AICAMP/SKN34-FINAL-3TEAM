@@ -74,7 +74,7 @@ paths:
         '403':
           description: 학생 scope 불일치
         '503':
-          description: AI_UNAVAILABLE 임베딩 또는 프로필 조회 실패
+          description: AI_UNAVAILABLE 임베딩 또는 프로필 조회 실패, 기간 낱말이 있는 질문의 질의 변환 실패(1회 재시도 뒤, #878)
   /payment-usage/students/{studentId}:
     get:
       operationId: getPaymentUsageEvidence
@@ -152,6 +152,8 @@ paths:
         - $ref: '#/components/parameters/StudentScope'
         - $ref: '#/components/parameters/Grade'
         - $ref: '#/components/parameters/Demo'
+        - {name: context, in: query, required: false, schema: {type: string, enum: [EXTRA, THEME_DAY, THEME_REVIEW]}}
+        - $ref: '#/components/parameters/ThemeSunday'
       responses:
         '200':
           description: 미션 상세. `scene`은 미제공, 분류 그룹 `categories`·수학 답 단위 `answerUnit` 포함 (api-spec 3.7·3.8, #79)
@@ -163,7 +165,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: MISSION_NOT_AVAILABLE (비공개·학년 범위 밖)
+          description: MISSION_NOT_AVAILABLE (비공개·학년 범위 밖), THEME_DAY_CLOSED 및 THEME_REVIEW_NOT_ALLOWED (현재 학생의 테마 요일 공개 조건 미충족)
           content:
             application/problem+json:
               schema:
@@ -334,6 +336,70 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409': {$ref: '#/components/responses/Problem'}
+  /attempts/{attemptId}/word-help:
+    post:
+      operationId: wordHelp
+      summary: 낱말 물어보기 (api-spec 2.2.1·4.1, FN-LRN-21, #599)
+      description: >-
+        학생 본인 시도만. 미션 질문·안내 글·시도 학년·교과를 붙이고, 마무리 전이면 유출 검사 값(보이는 정답 글자·금지어·예시 답)을 넣어
+        ai POST /internal/word-helps를 부른다(25초). ai 응답의 versions를 뺀 값을 그대로 돌려주며 질문·응답은 저장하지 않는다.
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [question]
+              properties:
+                question: {type: string, minLength: 1, maxLength: 100, description: 앞뒤 공백을 뗀 뒤 1~100자}
+      responses:
+        '200':
+          description: 결과(state로 구분)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [state, headword, text, example, senses]
+                properties:
+                  state: {type: string, enum: [EXPLAINED, DICTIONARY_ONLY, NOT_FOUND, DEFERRED, OUT_OF_SCOPE]}
+                  headword: {type: [string, 'null']}
+                  text: {type: string}
+                  example: {type: [string, 'null']}
+                  senses:
+                    type: array
+                    maxItems: 3
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [definition, source]
+                      properties:
+                        definition: {type: string}
+                        source: {type: string, enum: [표준국어대사전, 온용어]}
+                        attribution: {type: [string, 'null']}
+                        sourceUrl: {type: [string, 'null'], format: uri}
+                        license: {type: [string, 'null'], format: uri}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502':
+          description: AI_BAD_RESPONSE (ai 4xx·계약 밖 응답)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: DICTIONARY_UNAVAILABLE 또는 AI_UNAVAILABLE(ai 장애·서킷 차단). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /attempts/{attemptId}/answers:
     post:
       operationId: submitAnswer
@@ -1760,8 +1826,9 @@ paths:
       operationId: updateAdminWeeklyTheme
       summary: 테마 수정 (전체 교체, 새 버전을 현재본으로)
       description: >-
-        게시 중 수정은 재검토·재게시 전까지 학생에게 게시본이 보인다(상태 PUBLISHED 유지). 검토 요청 중 수정은 DRAFT로 돌아간다.
-        게시 중 grade·weekStart 변경은 409 CONFLICT.
+        초안에서 채택한 테마는 학년과 적용 주가 고정된다. 게시 전 내용 수정은 새 버전을 만들며 검토 요청 중이면 DRAFT로 돌아간다.
+        직접 작성한 테마는 게시 전 열린 주차 사이에서 학년과 적용 주를 변경할 수 있다. 게시 중에는 같은 테마의 내용만 수정할 수 있다.
+        관리자는 수정한 현재본을 보며 학생은 재게시 전까지 기존 게시본을 본다. expectedVersion은 관리자가 열었던 현재본의 버전이다.
       parameters:
         - $ref: '#/components/parameters/AdminUserId'
         - $ref: '#/components/parameters/AdminRole'
@@ -1784,7 +1851,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: CONFLICT(게시 중 학년·주 변경)
+          description: 채택한 테마의 편성 변경은 THEME_SCHEDULE_LOCKED. 게시 중인 주의 편성 변경은 WEEK_LOCKED. 열었던 현재본의 버전이 바뀌면 PLAN_CONFLICT.
           content:
             application/problem+json:
               schema:
@@ -1794,7 +1861,7 @@ paths:
       operationId: requestAdminWeeklyThemeReview
       summary: 검토 요청 (현재본을 검토 요청 버전으로)
       description: >-
-        DRAFT·UNPUBLISHED → REVIEW_REQUIRED, 게시 중 수정본은 PUBLISHED 유지. 그 밖(이미 검토 요청한 현재본 등)은 409 CONFLICT. 본문은 {}.
+        작성 중이거나 제공을 중단한 테마의 현재본을 검토 요청한다. 게시 중인 테마는 편집 버전이 게시 버전보다 새로울 때 검토 요청할 수 있으며 기존 공개를 유지한다. expectedVersion으로 검토할 버전을 지정할 수 있다.
       parameters:
         - $ref: '#/components/parameters/AdminUserId'
         - $ref: '#/components/parameters/AdminRole'
@@ -1804,7 +1871,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmptyObject'
+              type: object
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
       responses:
         '200':
           description: 결과
@@ -1816,7 +1885,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: CONFLICT(상태상 불가 전이, state-diagram 3.5)
+          description: 상태상 불가 전이는 CONFLICT, 열었던 버전이 바뀌면 PLAN_CONFLICT.
           content:
             application/problem+json:
               schema:
@@ -1824,11 +1893,11 @@ paths:
   /admin/weekly-themes/{themeId}/publish:
     post:
       operationId: publishAdminWeeklyTheme
-      summary: 게시·재게시 (게시본 ← 현재본, 검토 요청한 현재본일 때 = 승인)
+      summary: 검토를 마친 현재본 게시·재게시
       description: >-
-        별도 검토 경로 없이 검토 요청한 버전이 현재본일 때의 게시가 승인이다. 아니면 409 CONFLICT.
+        검토 요청한 현재본을 학생에게 공개한다. 재게시는 같은 테마의 공개 버전을 교체한다. 검토 요청 후 현재본이 바뀌었으면 다시 검토 요청해야 한다.
         게시 검사(월~금 다섯 요일, 게시 미션만·시연 전용 제외, 미션 학년 범위가 테마 학년을 포함(G3·G4 논술 불가, GRADE_MISMATCH), 다섯 생각 유형 1개씩,
-        같은 학년·주 게시 1개)를 모두 모아 실패하면 422 WEEKLY_THEME_PUBLISH_INCOMPLETE + errors. 본문은 {}.
+        같은 학년·주 게시 1개)를 모두 모아 실패하면 422 WEEKLY_THEME_PUBLISH_INCOMPLETE + errors. expectedVersion이 있으면 현재 버전 일치를 검사한다. 확정한 요일의 미션·기준표 버전을 고정한다.
       parameters:
         - $ref: '#/components/parameters/AdminUserId'
         - $ref: '#/components/parameters/AdminRole'
@@ -1838,7 +1907,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmptyObject'
+              $ref: '#/components/schemas/FinalPublicationRequest'
       responses:
         '200':
           description: 결과
@@ -1850,7 +1919,7 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: CONFLICT(검토 요청한 현재본이 아님·상태상 불가 전이)
+          description: 검토 요청한 현재본만 게시할 수 있다(CONFLICT). 버전이나 편성이 바뀌면 PLAN_CONFLICT, 같은 학년·주에 다른 테마가 게시 중이면 WEEK_LOCKED.
           content:
             application/problem+json:
               schema:
@@ -1875,7 +1944,7 @@ paths:
       operationId: unpublishAdminWeeklyTheme
       summary: 게시 중단 (진행 중 시도는 그대로 이어함)
       description: >-
-        PUBLISHED가 아니면 409 CONFLICT. 중단 뒤 그 주 학생에게는 이전 최근 게시 테마가 보인다. 본문은 {}.
+        게시 중인 테마를 UNPUBLISHED로 전환한다. 시작한 시도는 이어갈 수 있고, 해당 주의 학생 조회는 이전 주의 최근 게시 테마를 사용한다. 이전 게시 테마도 없으면 404다. expectedPublishedVersion은 중단할 공개본의 버전이다.
       parameters:
         - $ref: '#/components/parameters/AdminUserId'
         - $ref: '#/components/parameters/AdminRole'
@@ -1885,7 +1954,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmptyObject'
+              type: object
+              properties:
+                expectedPublishedVersion: {type: integer, minimum: 1}
       responses:
         '200':
           description: 결과
@@ -1897,11 +1968,189 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '404': {$ref: '#/components/responses/Problem'}
         '409':
-          description: CONFLICT(게시 중이 아님)
+          description: 게시 중이 아니면 CONFLICT, 중단 대상으로 확인한 공개본이 바뀌면 PLAN_CONFLICT.
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /admin/weekly-themes/planner:
+    get:
+      operationId: learningAdminWeekBoard
+      summary: 학년별 4주 편성과 후보 조회
+      description: CONTENT 권한. 변경 요청은 편성·선택 상태와 게시 잠금을 다시 확인한다.
+      parameters:
+      - {$ref: '#/components/parameters/AdminUserId'}
+      - {$ref: '#/components/parameters/AdminRole'}
+      - name: grade
+        in: query
+        required: true
+        schema:
+          type: string
+          enum: [G3, G4, G5, G6]
+      - name: weekStart
+        in: query
+        required: true
+        schema: {type: string, format: date}
+      responses:
+        '200':
+          description: 학년별 4주 편성과 후보 조회 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WeekBoard'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+        '404':
+          description: NOT_FOUND · 대상을 찾을 수 없음
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+    put:
+      operationId: learningAdminChangeWeekPlan
+      summary: 채택 전 후보의 편성 또는 주차 교환
+      description: CONTENT 권한. 변경 요청은 편성·선택 상태와 게시 잠금을 다시 확인한다.
+      parameters:
+      - {$ref: '#/components/parameters/AdminUserId'}
+      - {$ref: '#/components/parameters/AdminRole'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WeekPlanChange'}
+      responses:
+        '200':
+          description: 채택 전 후보의 편성 또는 주차 교환 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WeekPlanResult'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+        '404':
+          description: NOT_FOUND · 대상을 찾을 수 없음
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /admin/theme-drafts/{draftId}/scenes/{scene}/versions:
+    get:
+      operationId: learningAdminSceneHistory
+      summary: 장면의 전체 생성 이력 조회
+      description: CONTENT 권한. 변경 요청은 편성·선택 상태와 게시 잠금을 다시 확인한다.
+      parameters:
+      - {$ref: '#/components/parameters/AdminUserId'}
+      - {$ref: '#/components/parameters/AdminRole'}
+      - name: draftId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: scene
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [INTRO, MON, TUE, WED, THU, FRI, OUTRO]
+      responses:
+        '200':
+          description: 장면의 전체 생성 이력 조회 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReviewSceneHistory'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+        '404':
+          description: NOT_FOUND · 대상을 찾을 수 없음
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /admin/theme-drafts/{draftId}/scenes/{scene}/versions/selection:
+    put:
+      operationId: learningAdminSelectSceneVersion
+      summary: 확인한 버전을 기준으로 장면 선택 확정
+      description: CONTENT 권한. 변경 요청은 편성·선택 상태와 게시 잠금을 다시 확인한다.
+      parameters:
+      - {$ref: '#/components/parameters/AdminUserId'}
+      - {$ref: '#/components/parameters/AdminRole'}
+      - name: draftId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: scene
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [INTRO, MON, TUE, WED, THU, FRI, OUTRO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SceneSelectionRequest'}
+      responses:
+        '200':
+          description: 확인한 버전을 기준으로 장면 선택 확정 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReviewSceneHistory'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+        '404':
+          description: NOT_FOUND · 대상을 찾을 수 없음
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /admin/theme-drafts/{draftId}/scenes/{scene}/versions/{versionId}:
+    patch:
+      operationId: learningAdminAnnotateSceneVersion
+      summary: 장면 버전의 별표 또는 메모 저장
+      description: CONTENT 권한. 변경 요청은 편성·선택 상태와 게시 잠금을 다시 확인한다.
+      parameters:
+      - {$ref: '#/components/parameters/AdminUserId'}
+      - {$ref: '#/components/parameters/AdminRole'}
+      - name: draftId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: scene
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [INTRO, MON, TUE, WED, THU, FRI, OUTRO]
+      - name: versionId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SceneAnnotationRequest'}
+      responses:
+        '200':
+          description: 장면 버전의 별표 또는 메모 저장 결과
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReviewSceneHistory'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+        '404':
+          description: NOT_FOUND · 대상을 찾을 수 없음
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
   /admin/theme-drafts:
     post:
       operationId: requestThemeDraft
@@ -1940,6 +2189,24 @@ paths:
       operationId: listThemeDrafts
       summary: 테마 초안 목록, 최근 요청 순 (#438)
       parameters:
+        - name: grade
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [G3, G4, G5, G6]
+        - name: weekStart
+          in: query
+          required: false
+          schema: {type: string, format: date}
+        - name: hideDiscarded
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+        - name: comparisonPending
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
         - $ref: '#/components/parameters/AdminUserId'
         - $ref: '#/components/parameters/AdminRole'
         - {name: status, in: query, schema: {$ref: '#/components/schemas/ThemeDraftStatus'}}
@@ -1991,7 +2258,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmptyObject'
+              $ref: '#/components/schemas/DraftWeekExpectation'
       responses:
         '201':
           description: 만든 테마
@@ -2021,7 +2288,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmptyObject'
+              $ref: '#/components/schemas/DraftWeekExpectation'
       responses:
         '200':
           description: 결과
@@ -2466,13 +2733,13 @@ paths:
   /expression-reviews/label-count:
     get:
       operationId: countExpressionReviewLabels
-      summary: 재학습 새 라벨 수 (ops, #727)
+      summary: '재학습 새 라벨 수 (ops, #727)'
       description: >-
         표현 분류 재학습 작업(ops 토큰) 전용, core 프록시 없음. since(생략하면 처음부터)보다 뒤에 라벨된 OFFENSIVE·CLEAN 행 수와
         그중 가장 늦은 라벨 시각(없으면 null).
       parameters:
         - $ref: '#/components/parameters/SystemRole'
-        - {name: since, in: query, description: ISO-8601 시각(오프셋 포함), 이 시각 초과, schema: {type: string, format: date-time}}
+        - {name: since, in: query, description: 'ISO-8601 시각(오프셋 포함), 이 시각 초과', schema: {type: string, format: date-time}}
       responses:
         '200':
           description: 결과
@@ -2485,15 +2752,15 @@ paths:
   /expression-reviews/export:
     get:
       operationId: exportExpressionReviews
-      summary: 재학습 학습 데이터 내보내기 (ops, #727)
+      summary: '재학습 학습 데이터 내보내기 (ops, #727)'
       description: >-
         표현 분류 재학습 작업(ops 토큰) 전용. since 초과·until 이하에 라벨된 OFFENSIVE·CLEAN 행을 labeled_at 순으로 글·라벨만.
         학생·답변 ID와 시각은 없다. text는 학생이 쓴 칸을 줄바꿈으로 이은 뒤 앞 1,500자(코드포인트)로 자른 글.
         until은 필수이고 지금 이전이어야 해서 같은 범위를 다시 받으면 같은 결과(그사이 삭제된 학생 행만 빠짐).
       parameters:
         - $ref: '#/components/parameters/SystemRole'
-        - {name: since, in: query, description: ISO-8601 시각(오프셋 포함), 이 시각 초과, schema: {type: string, format: date-time}}
-        - {name: until, in: query, required: true, description: ISO-8601 시각(오프셋 포함), 이 시각 이하, 지금 이전, schema: {type: string, format: date-time}}
+        - {name: since, in: query, description: 'ISO-8601 시각(오프셋 포함), 이 시각 초과', schema: {type: string, format: date-time}}
+        - {name: until, in: query, required: true, description: 'ISO-8601 시각(오프셋 포함), 이 시각 이하, 지금 이전', schema: {type: string, format: date-time}}
       responses:
         '200':
           description: 결과
@@ -3554,7 +3821,7 @@ components:
             - type: 'null'
         themeScene:
           description: >-
-            테마 시도(context THEME_DAY·THEME_REVIEW)의 문제 장면(#438). 그 시도 테마 게시본의 그 미션 요일 값, EXTRA는 null.
+            테마 시도(context THEME_DAY·THEME_REVIEW)의 문제 장면(#438). 시작 당시 테마 게시본의 해당 미션 요일 값, EXTRA는 null.
             생각 열기는 순서대로 하나씩 여는 기존 동작 그대로이고 hintSpots는 그림 위 표시 위치만
           oneOf:
             - $ref: '#/components/schemas/ThemeScene'
@@ -4417,12 +4684,15 @@ components:
         hintSpots: {type: [array, 'null'], items: {$ref: '#/components/schemas/HintSpot'}}
         videoUri: {type: [string, 'null'], description: 저장된 S3 키}
         videoUrl: {type: [string, 'null'], description: 미리보기 presigned URL}
-        sceneImageUrl: {type: [string, 'null'], description: '그날 미션 장면 미리보기 URL(게시본, 없으면 현재본)'}
+        sceneImageUrl: {type: [string, 'null'], description: 그날 미션 장면 미리보기 URL}
+        title: {type: [string, 'null'], description: 그날 미션 제목}
+        sceneMotion: {type: [object, 'null'], description: 그날 장면의 모션 설정}
         clueFeature: {type: [string, 'null'], description: 그날 단서가 쓰는 특징 이름(#647)}
     AdminWeeklyThemeRequest:
       type: object
       required: [grade, weekStart, title, intro, days]
       properties:
+        expectedVersion: {type: integer, minimum: 1, description: 수정 시 관리자가 열었던 현재 버전}
         grade: {$ref: '#/components/schemas/ThemeGrade'}
         weekStart: {type: string, format: date, description: KST 월요일(아니면 400)}
         title: {type: string, minLength: 1, maxLength: 100}
@@ -4550,6 +4820,140 @@ components:
         imageUrl: {type: [string, 'null'], description: 장면 그림 presigned URL (버킷 설정이 없거나 그림이 없으면 null)}
         videoUrl: {type: [string, 'null'], description: 장면 영상 presigned URL. INTRO·OUTRO만 값이 있고 요일은 null(ai 요일 영상 없음)}
         motion: {$ref: '#/components/schemas/ThemeMotion'}
+    ReviewSceneHistory:
+      type: object
+      required: [rootDraftId, scene, selectedVersionId, editable, versions]
+      properties:
+        rootDraftId: {type: string, format: uuid}
+        scene:
+          type: string
+          enum: [INTRO, MON, TUE, WED, THU, FRI, OUTRO]
+        selectedVersionId:
+          type: [string, 'null']
+          format: uuid
+        editable: {type: boolean}
+        versions:
+          type: array
+          items:
+            type: object
+            required: [versionId, number, source, status, selectable, createdAt, imageUrl, videoUrl, motion, starred, note]
+            properties:
+              versionId: {type: string, format: uuid}
+              number: {type: integer, minimum: 1}
+              source:
+                type: string
+                enum: [ORIGINAL, REGENERATED]
+              status: {type: string}
+              selectable: {type: boolean}
+              createdAt: {type: string, format: date-time}
+              imageUrl:
+                type: [string, 'null']
+              videoUrl:
+                type: [string, 'null']
+              motion:
+                type: [object, 'null']
+              starred: {type: boolean}
+              note: {type: string, maxLength: 160}
+    SceneSelectionRequest:
+      type: object
+      required: [versionId, expectedVersionId]
+      properties:
+        versionId: {type: string, format: uuid}
+        expectedVersionId: {type: [string, 'null'], format: uuid}
+        expectedVersionCount: {type: integer, minimum: 1}
+    SceneAnnotationRequest:
+      type: object
+      minProperties: 1
+      properties:
+        starred: {type: boolean}
+        note: {type: string, maxLength: 160}
+    DraftWeekExpectation:
+      type: object
+      properties:
+        expectedPlannedWeek:
+          type: [string, 'null']
+          format: date
+    FinalPublicationRequest:
+      type: object
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        expectedPlannedDraftId: {type: [string, 'null'], format: uuid, description: 확인 화면에 있던 미채택 편성 초안 식별자}
+    PlannerDraft:
+      type: object
+      required: [draftId, title, generationWeek, plannedWeek]
+      properties:
+        draftId: {type: string, format: uuid}
+        title: {type: string}
+        generationWeek: {type: string, format: date}
+        plannedWeek:
+          type: [string, 'null']
+          format: date
+    WeekBoard:
+      type: object
+      required: [grade, weekStart, weeks, candidates]
+      properties:
+        grade:
+          type: string
+          enum: [G3, G4, G5, G6]
+        weekStart: {type: string, format: date}
+        weeks:
+          type: array
+          items:
+            type: object
+            required: [weekStart, locked, planned, themes]
+            properties:
+              weekStart: {type: string, format: date}
+              locked: {type: boolean}
+              planned:
+                anyOf:
+                - {$ref: '#/components/schemas/PlannerDraft'}
+                - {type: 'null'}
+              themes:
+                type: array
+                items:
+                  type: object
+                  required: [themeId, title, status, version]
+                  properties:
+                    themeId: {type: string, format: uuid}
+                    title: {type: string}
+                    status: {type: string}
+                    version: {type: integer, minimum: 1}
+          minItems: 4
+          maxItems: 4
+        candidates:
+          type: array
+          items: {$ref: '#/components/schemas/PlannerDraft'}
+    WeekPlanChange:
+      type: object
+      required: [grade, draftId, expectedWeek, targetWeek, expectedTargetDraftId]
+      properties:
+        grade:
+          type: string
+          enum: [G3, G4, G5, G6]
+        draftId: {type: string, format: uuid}
+        expectedWeek:
+          type: [string, 'null']
+          format: date
+        targetWeek:
+          type: [string, 'null']
+          format: date
+        expectedTargetDraftId:
+          type: [string, 'null']
+          format: uuid
+    WeekPlanResult:
+      type: object
+      required: [draftId, grade, plannedWeek, displacedDraftId]
+      properties:
+        draftId: {type: string, format: uuid}
+        grade:
+          type: string
+          enum: [G3, G4, G5, G6]
+        plannedWeek:
+          type: [string, 'null']
+          format: date
+        displacedDraftId:
+          type: [string, 'null']
+          format: uuid
     ThemeDraft:
       type: object
       additionalProperties: false
@@ -4557,6 +4961,11 @@ components:
       required: [draftId, status, source, grade, weekStart, attempts, maxAttempts, input, checkResults, draft, scenes, failureCode, versions,
                  themeId, requestedBy, createdAt, updatedAt, regenerableTargets]
       properties:
+        plannedWeek:
+          type: [string, 'null']
+          format: date
+        weekLocked: {type: boolean}
+        adoptionWeekLocked: {type: boolean}
         draftId: {type: string, format: uuid}
         status: {$ref: '#/components/schemas/ThemeDraftStatus'}
         source: {$ref: '#/components/schemas/ThemeDraftSource'}
@@ -4683,12 +5092,14 @@ components:
       type: object
       required: [themeId, grade, weekStart, status, version, publishedVersion, reviewRequested, title, intro, days, publishedAt, createdAt, updatedAt]
       properties:
+        weekLocked: {type: boolean, description: 이 학년·주의 후보 편성 잠금. 게시 중인 테마 자체의 내용 수정과 제공 중단은 가능하다.}
+        generationWeek: {type: [string, 'null'], format: date, description: 채택한 초안의 생성 기준 주}
         themeId: {type: string, format: uuid}
         grade: {$ref: '#/components/schemas/ThemeGrade'}
         weekStart: {type: string, format: date}
         status: {$ref: '#/components/schemas/MissionStatus'}
         version: {type: integer, minimum: 1, description: 편집 중인 현재본}
-        publishedVersion: {type: [integer, 'null'], description: 학생에게 제공 중인 게시본}
+        publishedVersion: {type: [integer, 'null'], description: 최근 게시 버전. PUBLISHED 상태에서 학생에게 제공하며 제공 중단 후에도 마지막 버전 번호를 보존한다.}
         reviewRequested: {type: boolean, description: 현재본을 검토 요청함(게시 가능)}
         title: {type: string}
         intro: {type: string}

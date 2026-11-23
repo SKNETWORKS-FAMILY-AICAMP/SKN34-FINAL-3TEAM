@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     # 마감 기준안 15분(learning→ai 대기 16분 안). 텍스트 시험에서 글 단계만 6~13분이라
     # 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않음(ai.md 17절)
     theme_draft_deadline: float = 900.0
+    # #782 설계 v11(운영 그물, 기준안): 그래프 전체를 마감 + 이만큼에서 끊는다. 8차 측정에서 테마
+    # 하나가 끝나지 않고 기다려 작업을 붙잡음(원인 못 찾음). learning 대기 16분(960초) 안이어야 해
+    # 900 + 30 = 930초
+    theme_draft_hang_grace: float = 30.0
     # 테마 생성·검토 모델은 테마 전용 설정(사용자 결정 2026-11-10). 생성과 검토는 다른 모델로 둔다.
     # 로컬·운영 OPENAI_MODEL은 #502(2026-11-11)로 gpt-6-luna(생성 모델과 같음)이고, 검토만 terra.
     # 텍스트 시험은 생성 luna·검토 terra로 검증. 같은 OpenAI 키를 쓰고, 둘이 같으면 테마 경로만 503
@@ -201,6 +205,17 @@ class Settings(BaseSettings):
     memory_query_provider: Literal["llm", "fake"] = "llm"
     memory_query_max_tokens: int = 512
     memory_query_llm_timeout: float = 7.0
+    # 낱말 물어보기 (FN-LRN-21, api-spec 4.2.8, #599). 기본 LLM·웹 검색은 요청 전체 마감을 공유.
+    # ai 20초·learning→ai 25초. 사전 키·주소는 국립국어원 표준국어대사전·온용어 Open
+    # API(.env에서만, 로그 금지).
+    # fake는 개발용 규칙 설명(사전은 실제 호출, 사용량 없음)
+    word_help_provider: Literal["llm", "fake"] = "llm"
+    word_help_max_tokens: int = 400
+    word_help_deadline: float = 20.0
+    dict_korean_api: str = ""
+    dict_korean_api_key: str = ""
+    kli_korean_api: str = ""
+    kli_korean_api_key: str = ""
 
     # 분석 대화 전체 마감(초). core 기준 전체 120초(P12)보다 짧게, LLM 호출은 이 안에서만
     analysis_deadline: float = 110.0

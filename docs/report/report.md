@@ -356,14 +356,6 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - report 구현(#803, [learning.md 42.3](learning.md#423-report-일일-리포트-표시-803-2026-11-19)): `AnswerInput` 선택 칸(없으면 None, 하나만 있거나 0~86400 밖이면 입력 오류) → `AnswerRecord` → `DailyReportBuilder`가 `answerTimes` 저장(공유 여부 무관). 문구는 `renderer.answer_time_line`을 HTML·PDF·Markdown이 함께 씀. 이전 저장본은 `presentation.assemble`에서 `[]`. learning #801 병합 계약과 일치, kind 확인은 learning.md 42.4. core 원문 비공개 경로(`ReportDocument.withoutProblemOriginals`)는 `answerTimes`를 남기도록 고쳤고 웹 `ParentReports.tsx`도 같은 문구로 표시
 
 
-## 일일 리포트 예정 요일 (#845, 2026-11-20)
-
-- 선택 칸 `scheduledDay`(`MON`~`FRI`/null)를 learning 일일 기록 → report PROBLEM 저장·조회 → core → web으로 전달한다. 테마 시도만 값이 있고 EXTRA는 null이다.
-- learning은 페이지에 포함된 시도를 한 번에 조회하여 `attempt.theme_id`·`theme_week_start`·`mission_id`와 테마 게시본(없으면 현재본)의 요일을 연결한다. 이전 주 테마 재사용도 지원하며 미래 주 테마의 잘못된 연결은 제외한다. 현재 학생 학년이나 완료일로 예정 요일을 추정하지 않는다. DB 테이블·컬럼 변경은 없다.
-- 리포트 집계 날짜는 계속 KST 완료일이다. 다른 요일에 완료한 문제는 상세·PDF·Markdown에 `화요일 문제 · 목요일에 풀었어요`처럼 표시한다. 당일 풀이·추가 문제·예정 요일 없는 이전 저장본은 기존 표시를 유지한다. 이전 저장본은 재생성 없이 null로 읽는다.
-- 원문 비공개에서도 예정 요일은 유지한다. 판정·점수·권한·주간 리포트의 기존 동작은 변경하지 않는다.
-- 검증: 최신 develop `cc831e8a` 반영 뒤 core 리포트 테스트 106개·bootJar, report 관련 테스트 183개, 계약 검사 9개 통과. 재사용 테마를 포함한 learning 기록 테스트 59개·bootJar, web 단위 400개·타입/린트/빌드, 관련 PC·태블릿·모바일 브라우저 테스트 61개 통과. 테스트용 DB와 합성 입력을 사용했으며 운영 배포 검증과 구분한다.
-
 ## 30. 안 푼 날 일일 리포트 알림 문구 구분 (#846, 2026-11-20)
 
 2026-11-20 결정: 기록 없는 날도 "기록 없음" 일일 리포트와 알림을 만드는 구성은 유지하고, 알림 문구만 구분한다. 알림 유형(`DAILY_REPORT_COMPLETED`)·수신 설정·링크·DB는 바꾸지 않는다.
@@ -385,3 +377,12 @@ kind 확인(2026-11-20 11:42~11:46 KST, 공유 `kind-sagomungchi-local`): 이 �
 같은 시간 core 로그에 lifecycle 계약 오류 없음. 남긴 시험 데이터: core `report_job` 2건(id `84600000-0000-4000-8000-00000000000{1,2}`)·Outbox 2건·알림 2건, report 일일 새 판 2개
 
 테스트: report `test_report_codec.py`(상태별 `noRecord` 유무·스키마, 실제 codec 파이프라인의 Outbox 완료 이벤트), `test_report_reconciliation.py`(상태별 HTTP 복구 응답, 실패 복구). core `DailyReportScheduleTest`(어제·지난 날짜·푼 날·필드 생략·주간 문구), `ReportMessagingTest`(실제 브로커 기록 없음 완료 → 알림, 잘못된 `noRecord` → DLQ, 계약 산출물 `report-completed-no-record.json`), `ReportRecoveryTest`(복구 기록 없음 문구, 잘못된 값 거부, 필드 생략 기존 문구). `scripts/validate_report_contracts.py`가 기록 없음 완료 산출물을 스키마로 검사하고 일반 완료에는 칸이 없음을 확인
+
+## 31. 일일 리포트 예정 요일 (#845, 2026-11-20)
+
+- 선택 칸 `scheduledDay`(`MON`~`FRI`/null)를 learning 일일 기록 → report PROBLEM 저장·조회 → core → web으로 전달한다. 테마 시도만 값이 있고 EXTRA는 null이다.
+- learning은 페이지에 포함된 시도를 한 번에 조회하여 `attempt.theme_id`·`theme_week_start`·`mission_id`와 테마 게시본(없으면 현재본)의 요일을 연결한다. 이전 주 테마 재사용도 지원하며 미래 주 테마의 잘못된 연결은 제외한다. 현재 학생 학년이나 완료일로 예정 요일을 추정하지 않는다. DB 테이블·컬럼 변경은 없다.
+- 리포트 집계 날짜는 계속 KST 완료일이다. 다른 요일에 완료한 문제는 상세·PDF·Markdown에 `화요일 문제 · 목요일에 풀었어요`처럼 표시한다. 당일 풀이·추가 문제·예정 요일 없는 이전 저장본은 기존 표시를 유지한다. 이전 저장본은 재생성 없이 null로 읽는다.
+- 기준 버전: 시도에 고정된 테마 버전(`attempt.theme_version_id`, V27)의 요일을 쓰고, 값이 없는 시도만 게시본(없으면 현재본)을 쓴다. 재게시로 요일이 바뀌거나 빠져도 시작 당시 요일을 유지한다(#906).
+- 원문 비공개에서도 예정 요일은 유지한다. 판정·점수·권한·주간 리포트의 기존 동작은 변경하지 않는다.
+- 검증: 최신 develop `cc831e8a` 반영 뒤 core 리포트 테스트 106개·bootJar, report 관련 테스트 183개, 계약 검사 9개 통과. 재사용 테마를 포함한 learning 기록 테스트 59개·bootJar, web 단위 400개·타입/린트/빌드, 관련 PC·태블릿·모바일 브라우저 테스트 61개 통과. 테스트용 DB와 합성 입력을 사용했으며 운영 배포 검증과 구분한다.

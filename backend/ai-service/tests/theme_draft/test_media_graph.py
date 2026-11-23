@@ -37,6 +37,7 @@ from app.theme_draft import prompts
 from app.theme_draft.checks import DAY_TYPE, DAYS, VIDEO_REVIEW_IDS, motion, spots
 from app.theme_draft.models import (
     GeneratedDialogue,
+    GeneratedHelperJudge,
     GeneratedHookFixes,
     GeneratedImageReview,
     GeneratedMissionReview,
@@ -59,10 +60,12 @@ from app.theme_draft.service import ThemeDraftGraphRunner
 from app.theme_draft.storage import MemoryThemeStorage
 from tests.theme_draft.fixtures import (
     DISCOVERY,
+    HELPER,
     INTRO_CUTS,
     OUTRO_CUTS,
     dialogue,
     generated_theme,
+    helper_judge,
     mission_draft,
     mission_review,
     story_review,
@@ -129,7 +132,7 @@ def gen_llm(motion_reply: Callable[[dict], Any] | None = None) -> MediaLlm:
         {
             GeneratedTheme: lambda n, d: generated_theme(),
             GeneratedDraft: lambda n, d: mission_draft(DAY_TYPE[d]),
-            GeneratedDialogue: lambda n, d: dialogue(),
+            GeneratedDialogue: lambda n, d: dialogue(d),
             GeneratedHookFixes: lambda n, d: GeneratedHookFixes(fixes=[]),
         },
     )
@@ -148,6 +151,7 @@ def review_llm(
         {
             GeneratedStoryReview: lambda n, d: story_review(),
             GeneratedMissionReview: lambda n, d: mission_review(),
+            GeneratedHelperJudge: lambda n, d: helper_judge(),  # #782 설계 v13 가
         },
     )
 
@@ -320,7 +324,11 @@ def test_images_motion_and_video_off_warning() -> None:
     assert "Do not draw 강아지 보리" in mon[0][0]
     assert mission_draft("ANALYZE").question in mon[0][0]  # 미션 질문 한국어 그대로
     assert "무엇을 보았는지 떠올려 볼까?" in mon[0][0]  # 생각 열기 질문
-    assert DISCOVERY["MON"] in mon[0][0]  # 그날 증거 발견 줄(증거 물건이 보이게)
+    # #782 미션 방식: 월요일은 부탁 날(기본 요청 배정)이라 증거 대신 돕는 사람을 그림
+    assert (
+        DISCOVERY["MON"] not in mon[0][0]
+        and f"Today's helper (Korean): {HELPER['MON']}" in mon[0][0]
+    )
     # 뭉치 혼자 달림(#779 6컷): 입 모양은 달리기 기본 자세 그림이 받음(합성 컷 ②안)
     intro4 = next(c[0] for c in image.calls if prompts.RUN_BASE_POSE in c[0])
     assert "a closed straight-line mouth" in intro4  # determined → 입 모양
@@ -360,7 +368,10 @@ def test_images_motion_and_video_off_warning() -> None:
     assert {tuple(u["items"]) for u in mon_review if "missionQuestion" in u} == {
         ("MUNGCHI", "ANSWER_HINT", "TEXT", "SAFETY", "SCENE_FIT", "MISSION_FIT", "PEOPLE")
     }
-    assert {u["discovery"] for u in mon_review if "missionQuestion" in u} == set(DISCOVERY.values())
+    # #782 미션 방식: 수사 날(기본 요청은 화요일)만 증거를 보고, 다른 날은 돕는 사람을 봄
+    missions = [u for u in mon_review if "missionQuestion" in u]
+    assert {u["discovery"] for u in missions} == {DISCOVERY["TUE"], ""}
+    assert {u["helper"] for u in missions} == set(HELPER.values())
     assert {c for c in gen.image_counts if c[0] == "GeneratedMotion"} == {("GeneratedMotion", 1)}
     # 영상 클라이언트가 없으면 영상만 건너뜀
     assert response.videos == {}
@@ -370,7 +381,7 @@ def test_images_motion_and_video_off_warning() -> None:
     # 움직임: 장면 7개, 요일은 대화 화자, 시작·종료는 영상이 없어 문구 없음
     assert set(response.motions) == set(SCENES)
     assert all(isinstance(m, ThemeMotion) and m.version == 1 for m in response.motions.values())
-    assert set(response.motions["MON"].speakers) == {"뭉치", "지호"}
+    assert set(response.motions["MON"].speakers) == {"뭉치", "지호", HELPER["MON"]}
     assert response.motions["INTRO"].speakers == {} and response.motions["INTRO"].captions == []
     dumped = response.model_dump(by_alias=True)["motions"]["MON"]
     assert set(dumped) == {
@@ -388,17 +399,22 @@ def test_images_motion_and_video_off_warning() -> None:
     assert response.motions["INTRO"].spots == []
     motion_users = [json.loads(u) for u in gen.users("GeneratedMotion")]
     mon_user = next(u for u in motion_users if u["scene"] == "MON")
-    assert mon_user["dayInfo"]["discovery"] == DISCOVERY["MON"]
+    # #782 미션 방식: 월요일은 부탁 날이라 증거(문제 뒤 단서)를 주지 않고 돕는 사람을 줌
+    assert mon_user["dayInfo"]["discovery"] == "" and mon_user["dayInfo"]["evidenceKind"] == ""
+    assert mon_user["dayInfo"]["helper"] == HELPER["MON"]
+    tue_user = next(u for u in motion_users if u["scene"] == "TUE")  # 수사 날은 증거 그대로
+    assert tue_user["dayInfo"]["discovery"] == DISCOVERY["TUE"]
     assert mon_user["dayInfo"]["missionQuestion"] == mission_draft("ANALYZE").question
     # 증거 종류와 피할 낱말(그날 단서 값·후보 이름·미션 금지어)을 함께 줌(점검 C3·C11·C20)
     assert set(mon_user["dayInfo"]) == {
         "discovery",
         "evidenceKind",
+        "helper",
         "missionQuestion",
         "hints",
         "avoidWords",
     }
-    assert mon_user["dayInfo"]["evidenceKind"] == "TRACE"
+    assert tue_user["dayInfo"]["evidenceKind"] == valid_theme()["days"][1]["evidence"]["kind"]
     assert "젖음" in mon_user["dayInfo"]["avoidWords"]
     assert all(c in mon_user["dayInfo"]["avoidWords"] for c in valid_theme()["candidates"])
     assert "dayInfo" not in next(u for u in motion_users if u["scene"] == "INTRO")
@@ -922,7 +938,7 @@ def test_motion_out_of_range_is_fitted_with_warnings() -> None:
     mon = response.motions["MON"]
     assert mon.transition.seconds == 1.2 and mon.camera is not None
     assert (mon.camera.from_.x, mon.camera.from_.zoom, mon.camera.seconds) == (0, 1.4, 20)
-    assert set(mon.speakers) == {"뭉치", "지호"}  # 찾는 대상은 뺌
+    assert set(mon.speakers) == {"뭉치", "지호", HELPER["MON"]}  # 찾는 대상은 뺌
     assert len(mon.effects) == 1  # 색이 틀린 층은 빼고 2층까지
     e = mon.effects[0]
     assert (e.count, e.size, e.direction, e.speed, e.opacity) == (20, 6, 40, 2, 0.8)
@@ -1031,6 +1047,13 @@ OTHER = spot("마을 지도", "지도로 길을 따라가 볼까?", False, 60, 4
         (
             "candidate name",
             [EV, OTHER, spot("창고 문", "문이 열려 있네")],
+            ["발자국", "마을 지도"],
+            ["MOTION_SPOT"],
+        ),
+        # #782 오늘 장면 대비: 물건 이름이 그날 단서 값('젖음')을 말해도 그 물건을 뺌
+        (
+            "clue early in label",
+            [EV, OTHER, spot("젖음 자국", "어디까지 이어지는지 봐")],
             ["발자국", "마을 지도"],
             ["MOTION_SPOT"],
         ),

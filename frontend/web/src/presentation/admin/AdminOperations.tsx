@@ -1,15 +1,18 @@
 import { useRef, useState } from 'react'
 import { ArrowUpRight, BookOpen, CalendarDays, CheckCheck, FilePenLine, NotebookPen, RotateCcw, Search, Server } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router'
+import { WorkloadCards, ThemeWorkQueue } from './AdminReviewHome.tsx'
+import './review-home.css'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
 import type { Audit, Permission } from '../../domain/admin/operations.ts'
 import { auditTargetLabels, callTypeLabels, hasPermission, jobLabels, jobTypeLabels, jobRetryMessage, labelOf, missionLabels } from '../../domain/admin/operations.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
-import { Badge, Empty, Inspector } from './AdminUi.tsx'
+import { Badge, Empty, Inspector, TableScroll } from './AdminUi.tsx'
 import { auditActionLabel, date, modelScopeLabel, number, queueHeading } from './adminFormatting.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { busyProps } from './busyButton.ts'
 export function AdminOperations({
   page,
   period,
@@ -21,7 +24,7 @@ export function AdminOperations({
 }) {
   if (page === 'jobs') return <Jobs />
   if (page === 'queues') return <Queues />
-  if (page === 'audit') return <AuditLog period={period} />
+  if (page === 'audit') return <AuditLog key={period.from + period.to} period={period} />
   if (page === 'usage') return <Usage period={period} />
   return <Overview period={period} permissions={permissions} />
 }
@@ -29,6 +32,8 @@ function Overview({ period, permissions }: { period: Period; permissions: Permis
   const q = useAdminQuery(['overview', period], (signal) => adminApi.overview(period, signal))
   return (
     <>
+      <WorkloadCards period={period} permissions={permissions}/>
+      {hasPermission(permissions, 'CONTENT') && <ThemeWorkQueue/>}
       <QueryFeedback query={q} />
       {q.data && !q.error && (
         <>
@@ -55,7 +60,7 @@ function Overview({ period, permissions }: { period: Period; permissions: Permis
           {hasPermission(permissions, 'SERVICE_OPS') && (
             <>
               <div className="ad-section-title"><h3>처리 현황</h3></div>
-              <div className="ad-table-wrap ad-job-matrix"><table className="ad-table">
+              <TableScroll label="처리 현황 표" className="ad-job-matrix"><table className="ad-table">
                 <thead><tr><th scope="col">작업</th>{Object.entries(jobLabels).map(([status, label]) => <th scope="col" key={status}>{label}</th>)}</tr></thead>
                 <tbody>{Object.entries(jobTypeLabels).map(([type, label]) => {
                   const counts = q.data.jobCounts.filter(c => c.type === type)
@@ -68,7 +73,7 @@ function Overview({ period, permissions }: { period: Period; permissions: Permis
                     </Link> : <span aria-label="집계 없음">—</span>}</td>
                   })}</tr>
                 })}</tbody>
-              </table></div>
+              </table></TableScroll>
             </>
           )}
         </>
@@ -104,24 +109,31 @@ function Jobs() {
   const [params, setParams] = useSearchParams(),
     type = params.get('type') ?? '',
     status = params.get('status') ?? '',
+    page = Math.max(0, Number.parseInt(params.get('page') ?? '0', 10) || 0),
     [id, setId] = useState<string | null>(null),
     period =
       params.get('from') && params.get('to')
         ? { from: params.get('from')!, to: params.get('to')! }
         : undefined,
-    q = useAdminQuery(['jobs', type, status, period], (signal) =>
-      adminApi.jobs(type, status, signal, period),
+    q = useAdminQuery(['jobs', type, status, period, page], (signal) =>
+      adminApi.jobs(type, status, signal, period, page),
     )
   function filter(key: string, value: string) {
     const next = new URLSearchParams(params)
     next.set(key, value)
+    if (key !== 'page') next.delete('page')
     setParams(next)
   }
   return <section className="ad-data-surface">
-    <div className="ad-data-toolbar"><div><h2>작업 목록</h2></div><button disabled={q.isFetching} onClick={() => void q.refetch()}><RotateCcw size={15} aria-hidden="true" />새로고침</button></div>
+    <div className="ad-data-toolbar"><div><h2>작업 목록</h2></div><button {...busyProps(q.isFetching)} onClick={() => void q.refetch()}><RotateCcw size={15} aria-hidden="true" />새로고침</button></div>
     <div className="ad-list-filters"><label>작업 유형<select aria-label="작업 유형" value={type} onChange={e => filter('type', e.target.value)}><option value="">전체</option>{Object.entries(jobTypeLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label><label>작업 상태<select aria-label="작업 상태" value={status} onChange={e => filter('status',e.target.value)}><option value="">전체</option>{Object.entries(jobLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
     <QueryFeedback query={q} />
-    {q.data && !q.error && <><div className="ad-table-wrap"><table className="ad-table"><thead><tr><th>작업</th><th>상태</th><th>재처리</th><th>실패 사유</th><th>확인</th></tr></thead><tbody>{q.data.items.map(j => <tr key={j.jobId}><td><strong>{jobTypeLabels[j.type]}</strong><small className="ad-record-id" title={j.jobId}>{j.jobId}</small></td><td><Badge active={j.status === 'COMPLETED'} tone={j.status === 'FAILED' ? 'danger' : undefined}>{jobLabels[j.status]}</Badge></td><td>{j.retryCount}회</td><td className="ad-cell-note">{j.failureReason ?? '—'}</td><td><button onClick={() => setId(j.jobId)}>작업 상세</button></td></tr>)}</tbody></table></div>{!q.data.items.length && <Empty>조건에 맞는 작업이 없습니다.</Empty>}</>}
+    {q.data && !q.error && <><TableScroll label="작업 목록 표"><table className="ad-table"><thead><tr><th>작업</th><th>상태</th><th>재처리</th><th>실패 사유</th><th>확인</th></tr></thead><tbody>{q.data.items.map(j => <tr key={j.jobId}><td><strong>{jobTypeLabels[j.type]}</strong><small className="ad-record-id" title={j.jobId}>{j.jobId}</small></td><td><Badge active={j.status === 'COMPLETED'} tone={j.status === 'FAILED' ? 'danger' : undefined}>{jobLabels[j.status]}</Badge></td><td>{j.retryCount}회</td><td className="ad-cell-note">{j.failureReason ?? '—'}</td><td><button onClick={() => setId(j.jobId)}>작업 상세</button></td></tr>)}</tbody></table></TableScroll>{!q.data.items.length && <Empty>조건에 맞는 작업이 없습니다.</Empty>}</>}
+    {q.data && !q.error && q.data.totalElements > q.data.size && <nav aria-label="작업 목록 페이지" className="ad-list-footer">
+      <button disabled={page === 0} onClick={() => filter('page', String(page - 1))}>이전</button>
+      <span>{page + 1} / {Math.ceil(q.data.totalElements / q.data.size)}</span>
+      <button disabled={(page + 1) * q.data.size >= q.data.totalElements} onClick={() => filter('page', String(page + 1))}>다음</button>
+    </nav>}
     {id && <Inspector title="작업 상세·재처리" onClose={() => setId(null)}><JobDetail key={id} id={id} /></Inspector>}
   </section>
 }
@@ -156,13 +168,13 @@ function JobDetail({ id }: { id: string }) {
           )}
           <section className="ad-job-history"><h4>처리 이력</h4><ol className="ad-job-timeline">{q.data.executions.map(e => <li key={e.executionId}><strong>{e.attemptNo}회</strong><div><Badge active={e.status === 'COMPLETED'} tone={e.status === 'FAILED' ? 'danger' : undefined}>{jobLabels[e.status]}</Badge><time dateTime={e.startedAt}>{date(e.startedAt)}</time><code>{e.errorCode ?? '오류 없음'}</code></div></li>)}</ol>{!q.data.executions.length && <p className="ad-cell-note">아직 처리 이력이 없습니다.</p>}</section>
           {q.data.retryable && (
-            <button className="cj-primary" disabled={retry.isPending} onClick={run}>
+            <button className="cj-primary" {...busyProps(retry.isPending)} onClick={run}>
               작업 재처리
             </button>
           )}
         </>
       )}
-      <button disabled={q.isFetching} onClick={() => {
+      <button {...busyProps(q.isFetching)} onClick={() => {
         void q.refetch().then(({ data, error }) => {
           if (data && !error) setNotice(jobRetryMessage(data.status))
         })
@@ -216,7 +228,8 @@ function Queues() {
 }
 function AuditLog({ period }: { period: Period }) {
   const [target, setTarget] = useState(''), [result, setResult] = useState(''), [search, setSearch] = useState('')
-  const q = useAdminQuery(['audit', period, target], signal => adminApi.audits(period, target, signal))
+  const [page,setPage] = useState(0)
+  const q = useAdminQuery(['audit', period, target, page], signal => adminApi.audits(period, target, signal, page))
   const term = search.trim().toLowerCase()
   const rows = (q.error ? [] : q.data?.items ?? []).map(a => ({
     ...a,
@@ -226,18 +239,24 @@ function AuditLog({ period }: { period: Period }) {
     [a.actionLabel, a.action, a.targetLabel, a.targetType, a.targetId, a.actorUserId].join(' ').toLowerCase().includes(term))
   return <section className="ad-data-surface ad-audit-ledger">
     <div className="ad-data-toolbar"><div><h2>활동 기록</h2></div></div>
-    <div className="ad-list-filters"><label className="ad-inline-search"><Search size={16} aria-hidden="true" /><input aria-label="조회된 감사 이력 검색" placeholder="작업·대상·처리자 검색" value={search} onChange={e => setSearch(e.target.value)} /></label><label>대상 유형<select aria-label="감사 대상 유형" value={target} onChange={e => setTarget(e.target.value)}><option value="">전체</option>{Object.entries(auditTargetLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
+    <div className="ad-list-filters"><label className="ad-inline-search"><Search size={16} aria-hidden="true" /><input aria-label="조회된 감사 이력 검색" placeholder="작업·대상·처리자 검색" value={search} onChange={e => setSearch(e.target.value)} /></label><label>대상 유형<select aria-label="감사 대상 유형" value={target} onChange={e => { setTarget(e.target.value); setPage(0) }}><option value="">전체</option>{Object.entries(auditTargetLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
     <div className="ad-result-tabs" aria-label="감사 결과 필터">{[['','전체 결과'],['SUCCESS','성공'],['FAILURE','실패']].map(([v,l]) => <button key={v} aria-pressed={result === v} onClick={() => setResult(v)}>{l}</button>)}<span>조회된 이력 내 검색</span></div>
     <QueryFeedback query={q} />
-    {q.data && !q.error && <><div className="ad-table-wrap"><table className="ad-table"><thead><tr><th>시각</th><th>작업</th><th>대상</th><th>처리자 ID</th><th>결과</th></tr></thead><tbody>{rows.map(a => <tr key={a.id}>
+    {q.data && !q.error && <><TableScroll label="감사 이력 표"><table className="ad-table"><thead><tr><th>시각</th><th>작업</th><th>대상</th><th>처리자 ID</th><th>결과</th></tr></thead><tbody>{rows.map(a => <tr key={a.id}>
       <td className="ad-time-cell"><time dateTime={a.createdAt}>{date(a.createdAt)}</time></td>
       <td>
         <strong className="ad-audit-action" title={a.action}>{a.actionLabel}</strong>
         {a.actionLabel === '기타 작업' && <small className="ad-record-id">{a.action}</small>}
-        {a.targetType === 'MODEL_VERSION' && <AuditModelDetail detail={a.detail} />}
+        {a.targetType === 'MODEL_VERSION' ? <AuditModelDetail detail={a.detail} /> :
+          <details className="ad-audit-detail"><summary>활동 상세</summary><dl>
+            <div><dt>기록 번호</dt><dd>{a.id}</dd></div><div><dt>작업 코드</dt><dd>{a.action}</dd></div>
+            <div><dt>대상 번호</dt><dd>{a.targetId ?? '기록 없음'}</dd></div>
+          </dl></details>}
       </td>
       <td>{a.targetLabel}<small className="ad-record-id" title={a.targetId ?? undefined}>{a.targetId ?? '—'}</small></td><td><span className="ad-record-id" title={a.actorUserId}>{a.actorUserId}</span></td><td><Badge tone={a.result === 'SUCCESS' ? 'success' : 'danger'}>{a.result === 'SUCCESS' ? '성공' : '실패'}</Badge></td>
-    </tr>)}</tbody></table></div>{!rows.length && <Empty>{search || result ? '검색 조건에 맞는 이력이 없습니다.' : '조회 기간의 조치 이력이 없습니다.'}</Empty>}<div className="ad-list-footer"><span>{rows.length}건 표시</span>{(search || result) && <button onClick={() => {setSearch(''); setResult('')}}>검색 초기화</button>}</div></>}
+    </tr>)}</tbody></table></TableScroll>{!rows.length && <Empty>{search || result ? '검색 조건에 맞는 이력이 없습니다.' : '조회 기간의 조치 이력이 없습니다.'}</Empty>}<div className="ad-list-footer"><span>현재 페이지 {rows.length}건 표시</span>{q.data.totalElements > q.data.size && <>
+      <button disabled={page===0} onClick={()=>setPage(page-1)}>이전</button><span>{page+1} / {Math.ceil(q.data.totalElements/q.data.size)}</span>
+      <button disabled={(page+1)*q.data.size>=q.data.totalElements} onClick={()=>setPage(page+1)}>다음</button></>}{(search || result) && <button onClick={() => {setSearch(''); setResult('')}}>검색 초기화</button>}</div></>}
   </section>
 }
 const auditModelFields = {
@@ -262,6 +281,6 @@ function Usage({ period }: { period: Period }) {
   return <section className="ad-data-surface">
     <div className="ad-data-toolbar"><div><h2>호출별 사용량</h2><p>확인하지 못한 비용은 미측정으로 표시합니다.</p></div><label>호출 종류<select aria-label="호출 종류" value={type} onChange={e => setType(e.target.value)}><option value="">전체</option>{Object.entries(callTypeLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
     <QueryFeedback query={q} />
-    {q.data && !q.error && <><div className="ad-table-wrap"><table className="ad-table"><thead><tr><th>호출 종류</th><th className="num">호출 / 실패</th><th className="num">평균 지연</th><th className="num">입력 / 출력 토큰</th><th className="num">비용 (USD)</th></tr></thead><tbody>{q.data.items.map(u => <tr key={u.callType}><td><strong>{labelOf(callTypeLabels,u.callType)}</strong></td><td className="num">{number(u.calls)} / <span className={u.failures ? 'ad-text-danger' : ''}>{number(u.failures)}</span></td><td className="num">{u.calls ? `${number(u.latencyMs)}ms` : '미측정'}</td><td className="num">{u.inputTokens == null ? '미측정' : number(u.inputTokens)} / {u.outputTokens == null ? '미측정' : number(u.outputTokens)}</td><td className="num"><strong>{u.costUsd ?? '미측정'}</strong><small>비용 미산정 {number(u.unpricedCalls)}건{u.externallyBilledCalls > 0 && ` · 별도 청구 ${number(u.externallyBilledCalls)}건`}</small></td></tr>)}</tbody></table></div>{!q.data.items.length && <Empty>이 기간에 기록된 AI 호출이 없습니다.</Empty>}<div className="ad-list-footer"><span>실제 조회 기간 {q.data.period.from} ~ {q.data.period.to}</span></div></>}
+    {q.data && !q.error && <><TableScroll label="AI 사용량 표"><table className="ad-table"><thead><tr><th>호출 종류</th><th className="num">호출 / 실패</th><th className="num">평균 지연</th><th className="num">입력 / 출력 토큰</th><th className="num">비용 (USD)</th></tr></thead><tbody>{q.data.items.map(u => <tr key={u.callType}><td><strong>{labelOf(callTypeLabels,u.callType)}</strong></td><td className="num">{number(u.calls)} / <span className={u.failures ? 'ad-text-danger' : ''}>{number(u.failures)}</span></td><td className="num">{u.calls ? `${number(u.latencyMs)}ms` : '미측정'}</td><td className="num">{u.inputTokens == null ? '미측정' : number(u.inputTokens)} / {u.outputTokens == null ? '미측정' : number(u.outputTokens)}</td><td className="num"><strong>{u.costUsd ?? '미측정'}</strong><small>비용 미산정 {number(u.unpricedCalls)}건{u.externallyBilledCalls > 0 && ` · 별도 청구 ${number(u.externallyBilledCalls)}건`}</small></td></tr>)}</tbody></table></TableScroll>{!q.data.items.length && <Empty>이 기간에 기록된 AI 호출이 없습니다.</Empty>}<div className="ad-list-footer"><span>실제 조회 기간 {q.data.period.from} ~ {q.data.period.to}</span></div></>}
   </section>
 }

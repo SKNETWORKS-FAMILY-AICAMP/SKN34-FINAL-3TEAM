@@ -609,9 +609,9 @@ export const DECOR_GRID: Record<DecorSurface, { cols: number; rows: number }> = 
 }
 /** 한 번에 놓을 수 있는 방 소품 수(#723 기준안 8개) */
 export const DECOR_SPOT_LIMIT = 8
-/** color: 놓은 것마다 고른 색(core #723 계약안, null = 기본 색). 어떤 색이 있는지는 웹 그림 목록 */
+/** color: 놓은 것마다 고른 색(core #758, null = 기본 색). 어떤 색이 있는지는 웹 그림 목록 */
 export interface DecorSpot { surface: DecorSurface; col: number; row: number; itemKey: string; color: string | null; name: string; assetKey: string }
-/** 색 키 형식(#723: 영문 소문자·숫자·하이픈 1~20자). 형식이 틀리면 기본 색으로 읽는다 */
+/** 색 키 형식(#758: 영문 소문자·숫자·하이픈 1~20자). 형식이 틀리면 기본 색으로 읽는다 */
 export const DECOR_COLOR_RE = /^[a-z0-9-]{1,20}$/
 const decorColorOf = (v: unknown) => (typeof v === 'string' && DECOR_COLOR_RE.test(v) ? v : null)
 export const isDecorSurface = (v: unknown): v is DecorSurface => typeof v === 'string' && (DECOR_SURFACES as string[]).includes(v)

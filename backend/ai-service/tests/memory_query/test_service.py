@@ -50,14 +50,14 @@ def test_rewrites_with_usage_version_and_short_timeout() -> None:
     assert response.period is not None
     assert (response.period.from_, response.period.to) == (date(2026, 11, 9), date(2026, 11, 16))
     assert response.search_text == "동물들이 살 수 있게 만든 것"
-    assert (response.versions.model, response.versions.prompt) == ("fake-model", "memory-query@1")
+    assert (response.versions.model, response.versions.prompt) == ("fake-model", "memory-query@2")
     [request] = llm.requests
-    assert (request.call_type, request.prompt_version) == ("MEMORY_QUERY", "memory-query@1")
+    assert (request.call_type, request.prompt_version) == ("MEMORY_QUERY", "memory-query@2")
     assert (request.timeout, request.max_tokens) == (7.0, 512)
     [usage] = llm.usages
     assert (usage.call_type, usage.prompt_version, usage.success) == (
         "MEMORY_QUERY",
-        "memory-query@1",
+        "memory-query@2",
         True,
     )
 
@@ -205,7 +205,7 @@ def test_fake_provider_skips_llm() -> None:
     assert response.period is None
     assert response.search_text == QUERY
     assert response.versions.model == FAKE_MODEL
-    assert response.versions.prompt == "memory-query@1"
+    assert response.versions.prompt == "memory-query@2"
 
 
 def test_fake_dedupes_truncates_and_always_passes_checks() -> None:
@@ -242,7 +242,7 @@ def test_call_type_is_publishable_and_matches_event_contract() -> None:
             output_tokens=400,
             latency_ms=4000,
             success=True,
-            prompt_version="memory-query@1",
+            prompt_version="memory-query@2",
         )
     )
     [(body, _)] = capturing.sent
@@ -251,5 +251,67 @@ def test_call_type_is_publishable_and_matches_event_contract() -> None:
     Draft202012Validator(schema).validate(body["data"])
     assert (body["data"]["callType"], body["data"]["promptVersion"]) == (
         "MEMORY_QUERY",
-        "memory-query@1",
+        "memory-query@2",
     )
+
+
+WEEK_BODY = {"query": "10월 첫째 주에 별자리 한 거 찾아줘", "today": TODAY}
+
+
+@pytest.mark.parametrize(
+    "llm_period",
+    [None, GeneratedPeriod(from_date="2026-10-01", to_date="2026-11-01")],
+)
+def test_week_of_month_overrides_llm_period(llm_period: GeneratedPeriod | None) -> None:
+    # #877: LLM이 몇째 주를 null이나 한 달 전체로 내도 코드가 계산한 기간으로 덮어씀
+    llm = FakeLlm(make(keywords=["별자리"], period=llm_period, search_text="별자리"))
+    response = run(llm, WEEK_BODY)
+    assert response.period is not None
+    assert (response.period.from_, response.period.to) == (date(2026, 10, 1), date(2026, 10, 12))
+    assert response.versions.prompt == "memory-query@2"
+    [usage] = llm.usages
+    assert (usage.prompt_version, usage.success) == ("memory-query@2", True)
+
+
+def test_week_words_are_removed_from_keywords() -> None:
+    generated = make(keywords=["첫째", "주", "별자리", "10월", "첫째 주"], period=None)
+    response = run(FakeLlm(generated), WEEK_BODY)
+    assert response.keywords == ["별자리"]
+    # 몇째 주가 없는 질문은 LLM 키워드·기간을 그대로 둠
+    plain = run(FakeLlm(make(keywords=["주", "동물"])))
+    assert plain.keywords == ["주", "동물"]
+    assert plain.period is not None and plain.period.from_ == date(2026, 11, 9)
+
+
+def test_week_that_cannot_be_decided_drops_llm_period() -> None:
+    # 그달에 없는 주(2026-10 다섯째 주)는 LLM이 낸 기간도 버리고 null(짐작하지 않음)
+    body = {"query": "10월 다섯째 주에 한 거", "today": TODAY}
+    response = run(
+        FakeLlm(
+            make(keywords=[], period=GeneratedPeriod(from_date="2026-10-26", to_date="2026-11-02"))
+        ),
+        body,
+    )
+    assert response.period is None
+
+
+def test_fake_provider_does_not_compute_weeks() -> None:
+    # 가짜 구현은 "period 언제나 null" 계약 그대로(api-spec 4.2.7)
+    response = run(FakeLlm(), WEEK_BODY, memory_query_provider="fake")
+    assert response.period is None
+
+
+def test_prompt_has_week_and_period_only_rules() -> None:
+    # #877 몇째 주는 프로그램이 계산하니 null,
+    # #879 기간만이면 keywords 빈 목록·search_text는 질문 그대로
+    for phrase in (
+        "몇째 주 표현",
+        "10월 첫째 주",
+        "11월 마지막 주",
+        "프로그램이",
+        "기간만 있고 찾을 소재가 없으면 keywords는 빈 목록",
+        "지난주에 한 문제 보여 줘",
+        "키워드가 아니다",
+        "빈 글로 두지 말고 질문을 그대로 쓴다",
+    ):
+        assert phrase in SYSTEM, phrase

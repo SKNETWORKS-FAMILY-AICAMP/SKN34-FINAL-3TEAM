@@ -107,6 +107,7 @@ class CallTypeListTest(unittest.TestCase):
         self.assertIn('KNOWLEDGE_EMBEDDING', expected)  # #467
         self.assertTrue({'MEMORY_EMBEDDING', 'MEMORY_EXPLANATION'} <= set(expected))  # #566
         self.assertIn('MEMORY_QUERY', expected)  # #680
+        self.assertIn('WORD_HELP', expected)  # #599
         public = yaml.safe_load((ROOT / 'contracts/openapi/core-service.yaml').read_text(encoding='utf-8'))
         enum = (ROOT / 'backend/core-service/src/main/kotlin/com/sagomungchi/core/usage/domain/UsageSummary.kt').read_text(encoding='utf-8')
         migrations = sorted((ROOT / 'backend/core-service/src/main/resources/db/migration').glob('V*__*.sql'),

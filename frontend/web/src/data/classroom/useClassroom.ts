@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import type { AnswerTiming } from '../../domain/answerTiming.ts'
+import type { AttemptContext } from '../../domain/retention.ts'
 import type {
   AnswerContent,
   Attempt,
@@ -13,7 +14,7 @@ import type {
 } from '../../domain/classroom.ts'
 import { apiFetch, notifyAuthChange, setAccessToken, unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
-import { getAttemptComparison, getThinkingActivities, saveReflection, saveSelfAssessment } from './learningApi.ts'
+import { askWord, getAttemptComparison, getThinkingActivities, saveReflection, saveSelfAssessment } from './learningApi.ts'
 import { sharingApi } from './sharingApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
@@ -135,10 +136,11 @@ export function useStudentHome(child: Child | undefined) {
     retry: false,
   })
 }
-export function useMission(id: string, child: Child) {
+export function useMission(id: string, child: Child, context?: AttemptContext) {
+  const themeContext = context === 'EXTRA' ? undefined : context
   return useQuery({
-    queryKey: ['mission', child.id, child.grade, id],
-    queryFn: () => gateway.mission(id, child),
+    queryKey: ['mission', child.id, child.grade, id, themeContext ?? 'catalog'],
+    queryFn: () => gateway.mission(id, child, themeContext),
     retry: false,
   })
 }
@@ -314,4 +316,8 @@ export function useStudentSharing(childId: string) {
       cache.removeQueries({ predicate: q => ['parent', 'records', 'report', 'public-record'].includes(String(q.queryKey[0])) })
     } })
   return { query, save }
+}
+/** 낱말 물어보기 (#599). 답은 저장·캐시하지 않고 화면 대화에만 둔다. */
+export function useAskWord(attemptId: string) {
+  return useMutation({ mutationFn: (question: string) => askWord(attemptId, question) })
 }

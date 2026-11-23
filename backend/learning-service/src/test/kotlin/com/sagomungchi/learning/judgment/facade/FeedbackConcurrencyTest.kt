@@ -15,6 +15,7 @@ import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.service.AttemptService
+import com.sagomungchi.learning.judgment.client.stubNotPremium
 import com.sagomungchi.learning.judgment.domain.ElementSource
 import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.Followup
@@ -70,6 +71,9 @@ class FeedbackConcurrencyTest {
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var judgmentService: JudgmentService
     @Autowired lateinit var dataSource: DataSource
+
+    @org.junit.jupiter.api.BeforeEach
+    fun stubFreePaymentUsage() = paymentUsage.stubNotPremium()
 
     @Test
     fun `동시에 요청해도 ai 판정은 한 번, 나머지는 처리 중 응답이고 끝난 뒤에는 같은 결과`() {

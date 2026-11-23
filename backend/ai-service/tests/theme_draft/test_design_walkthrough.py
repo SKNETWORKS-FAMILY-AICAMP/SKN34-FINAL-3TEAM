@@ -1,7 +1,7 @@
 """6컷 설계 걸어 보기(#779 설계 E 4단계, 2026-11-19).
 
 줄거리 종류 11개 × 갈래 × 시작·종료 12컷의 실제 그림·영상 지시와 금지 목록을 코드에서 만들어, 설계표
-(ai.md 26절 "6컷 설계" A·B·C)와 어긋나는 곳이 없는지 본다. 콘티를 돌릴 때마다 새 빈틈이 나온 것은 한
+(ai.md 28절 "6컷 설계" A·B·C)와 어긋나는 곳이 없는지 본다. 콘티를 돌릴 때마다 새 빈틈이 나온 것은 한
 씨앗(떡집)으로만 확인했기 때문이라, 모든 종류·갈래·컷을 한 번에 본다(한 예시로 일반화하지 않음).
 """
 
@@ -408,12 +408,19 @@ def test_frame_core_is_judged_as_its_own_item_and_flow_fails_only_other_place() 
     assert "가구의 배치·모양·개수 차이" in prompts.IMAGE_REVIEW_SYSTEM
     # 시작 2컷 문구는 물건·자리 중심(사건 클로즈업 틀과 맞춤)
     assert "빈자리" in families.LOST.intro_cuts[1]
-    assert "짐" in families.STORY_TYPES["VEHICLE"].intro_cuts[1]
-    # 소리: 소리 난 자리는 그리지 않음('소리 난 곳' 후보 값을 가리키지 않게, 사용자 결정 2026-11-21)
+    # 탈것: 깜짝 찾아온 사람을 보고 놀람 + 이미 짐을 정리해 둬 탈것·들고 온 것이 안 보임(#782와
+    # 합침, 사용자 결정 2026-11-23)
+    vehicle2 = families.STORY_TYPES["VEHICLE"].intro_cuts[1]
+    assert "놀람" in vehicle2 and "들고 온 것도 보이지 않음" in vehicle2
+    assert "반갑게" not in vehicle2
+    # 소리: 소리 난 자리는 그리지 않음('소리 난 곳' 후보 값을 가리키지 않게, 사용자 결정
+    # 2026-11-21), 문장은 #782 v10(이웃·가족이 들려줌, 사용자 결정 2026-11-23)
     sound2 = families.STORY_TYPES["SOUND"].intro_cuts[1]
-    assert "창가" in sound2 and "소리 난 자리가 보이지 않음" in sound2
+    assert "소리 난 자리가 보이지 않음" in sound2
     assert not any(w in sound2 for w in ("담장", "지붕", "나무 위", "구석"))
-    assert "소리를 듣는 창가" in cuts.spec("INTRO", 2, 6).beat
+    beat = cuts.spec("INTRO", 2, 6).beat
+    assert "소리 이야기를 듣는 아이" in beat and "깜짝 찾아온 사람" in beat
+    assert "창가" not in beat and "짐" not in beat
 
 
 def test_reveal_cut_has_no_arrival_role_and_plan_gives_only_used_roles() -> None:

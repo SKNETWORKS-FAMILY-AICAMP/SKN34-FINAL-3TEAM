@@ -10,9 +10,10 @@ import { adminApi } from '../../data/admin/api.ts'
 import { useAdminMutation, useAdminQuery } from '../../data/admin/queries.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
-import { Badge, DraftWorkflow, Empty, Panel, RequestPanel } from './AdminUi.tsx'
+import { Badge, DraftWorkflow, Empty, Panel, RequestPanel, TableScroll } from './AdminUi.tsx'
 import { date } from './adminFormatting.ts'
 import { StandardPicker } from './StandardPicker.tsx'
+import { busyProps } from './busyButton.ts'
 
 /** 생성 중인 초안이 있으면 5초마다 다시 조회 (생성 1회 15~70초, 주기 작업 10초, state-diagram 3.4) */
 const POLL_MS = 5_000
@@ -39,7 +40,7 @@ export function MissionDraftManager() {
           </label>
         }>
           <QueryFeedback query={list} />
-          <div className="ad-table-wrap">
+          <TableScroll label="초안 목록 표">
             <table className="ad-table">
               <thead><tr><th>요청 시각</th><th>성취기준</th><th>상태</th><th className="num">시도</th><th>확인</th></tr></thead>
               <tbody>
@@ -54,7 +55,7 @@ export function MissionDraftManager() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
           {list.data && !list.error && !rows.length && <Empty>조건에 맞는 초안이 없습니다.</Empty>}
           {list.data && !list.error && (
             <div className="ws-actions" aria-label="초안 목록 페이지">
@@ -120,7 +121,7 @@ function DraftRequestForm({ onRequested }: { onRequested: (d: MissionDraft) => v
           </label>
         </div>
         {errors.length > 0 && <ul role="alert" aria-label="초안 요청 전 확인">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
-        <button className="cj-primary" disabled={request.isPending}>초안 요청</button>
+        <button className="cj-primary" {...busyProps(request.isPending)}>초안 요청</button>
         <p role="status">{notice}</p>
         <ErrorNotice error={request.error} />
       </form>
@@ -182,7 +183,7 @@ function DraftDetail({ id }: { id: string }) {
           )}
           <div className="ws-actions">
             {d.status === 'READY' && (
-              <button className="cj-primary" disabled={adopt.isPending}
+              <button className="cj-primary" {...busyProps(adopt.isPending)}
                 onClick={() => void adopt.mutateAsync(undefined).then((m) => navigate(`/admin/missions?missionId=${encodeURIComponent(m.missionId)}`)).catch(() => {})}>
                 채택해 미션 편집
               </button>
@@ -191,7 +192,7 @@ function DraftDetail({ id }: { id: string }) {
               <button className="cj-secondary" onClick={() => navigate(`/admin/missions?missionId=${encodeURIComponent(d.missionId!)}`)}>채택한 미션 열기</button>
             )}
             {discardableDraft(d.status) && (
-              <button className="cj-secondary ad-danger" disabled={discard.isPending}
+              <button className="cj-secondary ad-danger" {...busyProps(discard.isPending)}
                 onClick={() => void discard.mutateAsync(undefined).then(() => setNotice('초안을 버렸습니다.')).catch(() => {})}>
                 버리기
               </button>

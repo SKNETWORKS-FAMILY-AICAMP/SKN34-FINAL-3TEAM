@@ -1,5 +1,19 @@
 import type { EvaluationEvidence, ModelVersion } from './operations.ts'
 
+/** 등록부 카드의 추천 태그 표시 값 (#728). 형식이 틀린 태그는 표시하지 않는다(서버가 검사하지만 화면도 믿지 않음) */
+export function recommendationView(evidence?: EvaluationEvidence | null) {
+  const r = evidence?.recommendation
+  if (!r || (r.tag !== 'RECOMMENDED' && r.tag !== 'NOT_RECOMMENDED') || typeof r.comparedTo !== 'string' || !Array.isArray(r.reasons)) return null
+  return {
+    tag: r.tag,
+    label: r.tag === 'RECOMMENDED' ? '추천' : '비추천',
+    comparedTo: r.comparedTo === 'NONE' ? '처음 등록 (비교한 활성 버전 없음)' : r.comparedTo,
+    reasons: r.reasons.filter(reason => typeof reason === 'string'),
+    metrics: Object.entries(r.metrics ?? {}).filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
+      .sort(([a], [b]) => a.localeCompare(b)),
+  }
+}
+
 export const EVIDENCE_LABELS = {
   datasetId: '평가셋 ID', datasetVersion: '평가셋 버전', baselineVersion: '비교 기준 버전', comparisonReport: '비교 보고서',
   trainingEvaluationSeparation: '학습·평가 분리 근거', quoteAccuracy: '인용 정확성 근거',

@@ -150,6 +150,15 @@ export interface EvaluationEvidence {
   trainingEvaluationSeparation: string; quoteAccuracy: string; calculationAccuracy: string; humanReview: string
   evaluatedScopes: string[]
   limitations?: string[]
+  /** 재학습 추천 태그(api-spec 5.2.3, #728). 참고용이며 활성화 조건이 아님. 없는 기존 버전은 표시하지 않음 */
+  recommendation?: ModelRecommendation
+}
+export interface ModelRecommendation {
+  tag: 'RECOMMENDED' | 'NOT_RECOMMENDED'
+  /** 비교한 활성 버전 `name:version`, 처음이면 `NONE` */
+  comparedTo: string
+  reasons: string[]
+  metrics?: Record<string, number>
 }
 export interface EvaluationRecord {
   evidence: EvaluationEvidence
@@ -346,16 +355,18 @@ export const callTypeLabels = {
   JUDGMENT: '판정', FOLLOWUP: '되묻기', ANALYSIS: '분석 대화', REPORT_NARRATIVE: '리포트 서술',
   MISSION_DRAFT: '미션 초안', THEME_DRAFT: '주간 테마 초안', THEME_IMAGE: '테마 그림', REPORT_EXPLANATION: '리포트 설명',
   KNOWLEDGE_EMBEDDING: '지식 임베딩', THEME_VIDEO: '테마 영상', MEMORY_EMBEDDING: '추억 검색 임베딩', MEMORY_EXPLANATION: '추억 설명', MEMORY_QUERY: '추억 검색 질의 변환',
+  WORD_HELP: '낱말 물어보기',
   M2: '서술 채점 모델(M2)', M1: '풀이 확인 모델(M1)',
 } as const
 /**
  * 감사 기록 대상 유형(#655). 계약은 자유 문자열이라 core가 audit_log에 실제로 쓰는 값을 모았다
- * (작업 재처리 CONVERSATION·REPORT·NOTIFICATION, 미션·초안·주간 테마, 모델 버전, 신고·문의·공지, 계정 관리, 결제, 꾸미기 아이템).
+ * (작업 재처리 CONVERSATION·REPORT·NOTIFICATION, 미션·초안·주간 테마, 모델 버전, 신고·문의·공지, 계정 관리, 결제, 꾸미기 아이템, 표현 검토).
  * 목록에 없는 값이 와도 표시는 원래 값 그대로 한다.
  */
 export const auditTargetLabels = {
   CONVERSATION: '분석 대화', REPORT: '리포트', NOTIFICATION: '알림', MISSION: '미션', MISSION_DRAFT: '미션 초안',
   WEEKLY_THEME: '주간 테마', THEME_DRAFT: '테마 초안', MODEL_VERSION: '모델 버전', ERROR_REPORT: '오류 신고',
   INQUIRY: '문의', NOTICE: '공지', ACCOUNT_MANAGEMENT: '계정 관리', PAYMENT: '결제', LOOK_ITEM: '꾸미기 아이템',
+  EXPRESSION_REVIEW: '표현 검토',
 } as const
 export const labelOf = (labels: Record<string, string>, value: string) => labels[value] ?? value

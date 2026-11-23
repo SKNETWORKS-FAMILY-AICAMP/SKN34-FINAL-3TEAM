@@ -71,6 +71,8 @@ class ThemeDraftService(
     private val clock: Clock,
     private val assetUrls: AssetUrls,
     private val semesters: StandardSemesters,
+    private val planner: ThemeWeekPlanner,
+    private val media: ThemeDraftMediaService,
 ) {
     val maxAttempts: Int get() = properties.themeDraft.maxAttempts
 
@@ -82,6 +84,8 @@ class ThemeDraftService(
     fun request(command: ThemeDraftCommand): ThemeDraft {
         val grade = command.grade
         requireWeek(command.weekStart)
+        planner.lockGrades(grade)
+        planner.requireOpen(grade, command.weekStart)
         val topic = command.topic?.trim()?.takeIf { it.isNotEmpty() }
         if (topic != null && topic.length > MAX_TOPIC) invalid("topic은 ${MAX_TOPIC}자 이하")
         val missions = command.missions
@@ -112,12 +116,8 @@ class ThemeDraftService(
      */
     fun createWeekly(weekStart: LocalDate): Int = ThemeGrade.entries.count { grade ->
         try {
-            when {
-                themeAdminService.publishedExists(grade, weekStart) -> {
-                    log.info("weekly theme draft skipped: {} {} already published", grade, weekStart)
-                    false
-                }
-                else -> autoInput(grade, weekStart, null, emptyList())?.let { input ->
+            planner.autoIfOpen(grade, weekStart) {
+                autoInput(grade, weekStart, null, emptyList())?.let { input ->
                     repository.insertAutoIfAbsent(ThemeDraft.requested(UUID.randomUUID(), grade, weekStart, ThemeDraftSource.AUTO, null, input, now()))
                 } ?: run {
                     log.warn("weekly theme draft skipped: {} {} no achievement standards to choose", grade, weekStart)
@@ -136,15 +136,21 @@ class ThemeDraftService(
      */
     @Transactional
     fun regenerate(draftId: UUID, author: UUID, targets: List<String>? = null): ThemeDraft {
+        val root = media.rootId(draftId)
+        val family = planner.lockDraftEdits(root)
         val original = repository.findById(draftId, lock = true) ?: notFound()
+        if (targets != null && (original.status == DraftStatus.DISCARDED || family.status == DraftStatus.DISCARDED || media.hasAdopted(draftId))) {
+            throw BusinessException(HttpStatus.CONFLICT,"CONFLICT","종결된 테마의 장면을 다시 생성할 수 없습니다.")
+        }
         val draft = original.regenerate(UUID.randomUUID(), author, now(), targets)
         repository.insert(draft)
         return draft
     }
 
     @Transactional(readOnly = true)
-    fun list(status: DraftStatus?, source: ThemeDraftSource?, page: Int, size: Int): ThemeDraftViewPage {
-        val result = repository.findPage(status, source, page, size)
+    fun list(status: DraftStatus?, source: ThemeDraftSource?, page: Int, size: Int, grade: ThemeGrade? = null,
+        weekStart: LocalDate? = null, hideDiscarded: Boolean = false, comparisonPending: Boolean = false): ThemeDraftViewPage {
+        val result = repository.findPage(status, source, page, size, grade, weekStart, hideDiscarded, comparisonPending)
         return ThemeDraftViewPage(result.items.map(::view), result.page, result.size, result.totalElements)
     }
 
@@ -156,25 +162,54 @@ class ThemeDraftService(
      * 테마(DRAFT, 생각 열기 위치 비움, 결정적 단서 계산)를 같은 트랜잭션에 만들고 ADOPTED. 자동 게시 없음(P19)
      */
     @Transactional
-    fun adopt(draftId: UUID, author: UUID): AdminWeeklyTheme {
+    fun adopt(draftId: UUID, author: UUID, expected: LocalDate? = null, supplied: Boolean = false): AdminWeeklyTheme {
+        val root = media.rootId(draftId)
+        val state = planner.lockDraftEdits(root)
+        if (state.status == DraftStatus.DISCARDED || media.hasAdopted(draftId)) {
+            throw BusinessException(HttpStatus.CONFLICT,"CONFLICT","이미 버리거나 채택한 테마입니다.")
+        }
+        planner.requireExpected(state,expected,supplied)
+        val effectiveWeek = state.plannedWeek ?: state.generationWeek
+        planner.requireOpen(state.grade,effectiveWeek)
         val draft = repository.findById(draftId, lock = true) ?: notFound()
         draft.requireAdoptable()
-        val output = checkNotNull(draft.output) { "READY 초안에 생성 결과 없음" }
+        if (media.hasPendingGeneration(draftId)) planner.stale("영상 생성이 끝난 뒤 채택해 주세요.")
+        val output = checkNotNull(media.selectedOutput(draft)) { "READY 초안에 생성 결과 없음" }
         val standards = missionService.standards(draft.input.missions.flatMap { it.standardCodes })
+        if (output !== draft.output) {
+            val failures = ThemeDraftRules.learningFailures(output, draft.input, draft.grade, standards)
+            if (failures.isNotEmpty()) throw BusinessException(HttpStatus.CONFLICT, "CONFLICT",
+                "선택본 조합을 채택할 수 없습니다.", failures.joinToString())
+        }
         val missionIds = ThemeDraftRules.adoptedMissions(output, draft.input, draft.grade, standards, author).associate {
             it.day to missionService.createFromDraft(it.command, it.rubric, MissionSource.LLM_THEME)
         }
-        val theme = themeAdminService.create(author, ThemeDraftRules.themeContent(output, draft.grade, draft.weekStart, missionIds))
+        val theme = themeAdminService.create(author, ThemeDraftRules.themeContent(output, draft.grade, effectiveWeek, missionIds))
+        planner.clearDraft(root, state)
         draft.adopt(theme.themeId, now())
+        media.freeze(draftId)
         repository.updateState(draft)
-        return theme
+        return theme.copy(generationWeek = draft.weekStart)
     }
 
     /** 버리기: READY·CHECK_FAILED·FAILED만, 아니면 409 */
     @Transactional
-    fun discard(draftId: UUID): ThemeDraft {
+    fun discard(draftId: UUID, expected: LocalDate? = null, supplied: Boolean = false): ThemeDraft {
+        val root = media.rootId(draftId)
+        val familyState = planner.lockDraftEdits(root)
+        if (draftId != root && (familyState.status == DraftStatus.DISCARDED || media.hasAdopted(draftId) || media.isSelectedSource(draftId))) {
+            throw BusinessException(HttpStatus.CONFLICT,"CONFLICT","종결된 테마 또는 현재 선택에 쓰인 장면은 버릴 수 없습니다.")
+        }
+        if (familyState.status == DraftStatus.READY && media.hasAdopted(draftId)) {
+            throw BusinessException(HttpStatus.CONFLICT,"CONFLICT","이미 채택한 테마입니다.")
+        }
+        val state = if (draftId == root) familyState else planner.state(draftId)
+        planner.requireExpected(familyState,expected,supplied)
         val draft = repository.findById(draftId, lock = true) ?: notFound()
+        if (state.status == DraftStatus.READY && media.hasPendingGeneration(draftId)) planner.stale("영상 생성이 끝난 뒤 버려 주세요.")
         draft.discard(now())
+        media.freeze(draftId)
+        planner.clearDraft(draftId,state)
         repository.updateState(draft)
         return draft
     }
@@ -198,7 +233,9 @@ class ThemeDraftService(
 
     /** 초안 응답: 장면 7개의 그림·영상은 presigned URL(AssetUrls), 생성 결과가 없으면 draft null·scenes 빈 배열 */
     fun view(draft: ThemeDraft): ThemeDraftView {
-        val output = draft.output
+        val output = media.selectedOutput(draft)
+        val programming = if (draft.input.regenerate == null || draft.status == DraftStatus.ADOPTED) planner.state(draft.id)
+            else planner.state(media.rootId(draft.id))
         return ThemeDraftView(
             draftId = draft.id,
             status = draft.status,
@@ -220,6 +257,9 @@ class ThemeDraftService(
             createdAt = draft.createdAt,
             updatedAt = draft.updatedAt,
             regenerableTargets = draft.regenerableTargets,
+            plannedWeek = programming.plannedWeek,
+            weekLocked = programming.weekLocked,
+            adoptionWeekLocked = programming.adoptionWeekLocked,
         )
     }
 
@@ -301,8 +341,8 @@ class ThemeDraftService(
     }
 
     /**
-     * 같은 학년 직전 주 초안 줄거리 종류를 빼고 종류를 고른 뒤, 같은 학년 최근(씨앗 개수만큼의 주) 씨앗·같은 주 다른 초안 씨앗·
-     * 같은 학년 최근 4주 역할을 빼고 씨앗을 고름(#634, 초안 상태 무관)
+     * 같은 학년 직전 주 초안 줄거리 종류를 빼고 종류를 고른 뒤, 같은 학년 최근(사건 개수만큼의 주) 장소·사건, 같은 주 다른 초안 사건,
+     * 같은 학년 최근 4주 역할을 빼고 장소 → 사건 → 역할을 고름(#634, #782 장소 목록 기준안, 초안 상태 무관)
      */
     private fun seedTopic(grade: ThemeGrade, weekStart: LocalDate): String {
         fun topics(weeks: Long) = repository.findInputs(grade, weekStart.minusWeeks(weeks), weekStart).mapNotNull { it.topic }

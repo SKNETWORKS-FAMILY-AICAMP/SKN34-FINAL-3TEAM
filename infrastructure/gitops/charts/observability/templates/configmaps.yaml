@@ -22,6 +22,28 @@ data:
         check_interval: 1s
         limit_mib: {{ .Values.collector.traceLimits.memoryLimitMiB }}
         spike_limit_mib: {{ .Values.collector.traceLimits.memorySpikeMiB }}
+      transform/trace_urls:
+        # Fail closed if a transform fails. Do not export the original trace.
+        error_mode: propagate
+        trace_statements:
+          - context: span
+            conditions:
+              - IsMatch(attributes["url.path"], "/auth/google/(reauth/)?callback([/?#]|$$)")
+              - IsMatch(attributes["http.route"], "/auth/google/(reauth/)?callback([/?#]|$$)")
+              - IsMatch(attributes["url.full"], "/auth/google/(reauth/)?callback([/?#]|$$)")
+              - IsMatch(attributes["http.url"], "/auth/google/(reauth/)?callback([/?#]|$$)")
+              - IsMatch(attributes["http.target"], "/auth/google/(reauth/)?callback([/?#]|$$)")
+              - IsMatch(name, "/auth/google/(reauth/)?callback([/?#]|$$)")
+            statements:
+              - delete_key(attributes, "url.query")
+          - context: span
+            statements:
+              - replace_all_patterns(attributes, "value", "(/auth/google/(reauth/)?callback/?)[?].*", "$$1")
+              - replace_all_patterns(attributes, "value", "/v1/billing/[^/?#]+/?([?#].*)?$$", "/v1/billing/{billingKey}")
+              - replace_all_patterns(attributes, "value", "/v1/payments/[^/?#]+/cancel/?([?#].*)?$$", "/v1/payments/{paymentKey}/cancel")
+              - replace_pattern(name, "(/auth/google/(reauth/)?callback/?)[?].*", "$$1")
+              - replace_pattern(name, "/v1/billing/[^/?#]+/?([?#].*)?$$", "/v1/billing/{billingKey}")
+              - replace_pattern(name, "/v1/payments/[^/?#]+/cancel/?([?#].*)?$$", "/v1/payments/{paymentKey}/cancel")
     {{- end }}
       batch: {}
     exporters:
@@ -73,7 +95,7 @@ data:
     {{ if $traceExporters }}
         traces:
           receivers: [otlp]
-          processors: [memory_limiter/traces, batch]
+          processors: [memory_limiter/traces, transform/trace_urls, batch]
           exporters: [{{ join ", " $traceExporters }}]
     {{ end }}
 ---

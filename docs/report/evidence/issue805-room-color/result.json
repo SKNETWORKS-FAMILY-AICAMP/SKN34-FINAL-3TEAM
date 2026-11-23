@@ -1,0 +1,128 @@
+{
+  "run": "2026-11-22T15:24:55.212Z",
+  "kind": "모의(대역 compose)",
+  "pointsBeforeBuy": "내 포인트 15",
+  "pointsAfterBuy": "내 포인트 5",
+  "colorButtons": [
+    {
+      "name": "주황",
+      "pressed": "true"
+    },
+    {
+      "name": "하늘",
+      "pressed": "false"
+    },
+    {
+      "name": "분홍",
+      "pressed": "false"
+    },
+    {
+      "name": "노랑",
+      "pressed": "false"
+    },
+    {
+      "name": "초록",
+      "pressed": "false"
+    },
+    {
+      "name": "보라",
+      "pressed": "false"
+    },
+    {
+      "name": "흰",
+      "pressed": "false"
+    },
+    {
+      "name": "남색",
+      "pressed": "false"
+    }
+  ],
+  "put": {
+    "status": 200,
+    "request": {
+      "spots": [
+        {
+          "surface": "FLOOR",
+          "col": 8,
+          "row": 7,
+          "itemKey": "E2E_DECOR_PLANT",
+          "color": "sky"
+        }
+      ]
+    },
+    "response": {
+      "spots": [
+        {
+          "surface": "FLOOR",
+          "col": 8,
+          "row": 7,
+          "itemKey": "E2E_DECOR_PLANT",
+          "name": "E2E 작은 화분",
+          "assetKey": "room/decor-plant.svg",
+          "color": "sky"
+        }
+      ]
+    }
+  },
+  "afterMenuRoundTrip": {
+    "sky": true,
+    "orange": false
+  },
+  "reloadUrl": "/student/login",
+  "getAfterReload": {
+    "status": 200,
+    "response": {
+      "spots": [
+        {
+          "surface": "FLOOR",
+          "col": 8,
+          "row": 7,
+          "itemKey": "E2E_DECOR_PLANT",
+          "name": "E2E 작은 화분",
+          "assetKey": "room/decor-plant.svg",
+          "color": "sky"
+        }
+      ]
+    }
+  },
+  "afterReload": {
+    "sky": true,
+    "orange": false
+  },
+  "reopenPressed": "하늘",
+  "dbRows": [
+    {
+      "surface": "FLOOR",
+      "cell_col": 8,
+      "cell_row": 7,
+      "color": "sky"
+    }
+  ],
+  "friendRoom": {
+    "status": 200,
+    "topKeys": [
+      "nickname",
+      "look",
+      "room"
+    ],
+    "roomKeys": [
+      "wallpaper",
+      "floor",
+      "furniture",
+      "decor",
+      "frames"
+    ],
+    "decor": [
+      {
+        "surface": "FLOOR",
+        "col": 8,
+        "row": 7,
+        "assetKey": "room/decor-plant.svg",
+        "color": "sky"
+      }
+    ]
+  },
+  "friendPaint": {
+    "sky": true
+  }
+}

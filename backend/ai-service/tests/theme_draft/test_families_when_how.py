@@ -36,9 +36,14 @@ def table_features(table: families.FactTable, cands: list[str]) -> list[dict[str
     return [feature(name, {c: table.fact(c, name) or "" for c in cands}) for name in table.features]
 
 
+WHEN_INTRO = "지호네 화단이 흠뻑 젖어 있었어요. 탐정 뭉치가 출동해요."
+
+
 def when_theme() -> dict[str, Any]:
     """시간 탐정 줄거리(정답 저녁 7시, check_theme 통과). 월 RULE 켜진 가로등 → 아침 7시·낮 12시,
-    목 RULE 열린 빵집 → 밤 9시. 흔적 날 없음(목격·기록만)."""
+    금 RULE 열린 빵집 → 밤 9시. 화~목은 남은 저녁 7시·밤 9시를 새로 알려 줄 특징이 없어(가로등은
+    월요일과 같은 단서, 빵집 문은 값 전부, 종소리는 없는 값) 사건 단서(#782 테마 짜임). 흔적 날
+    없음(목격·기록만)."""
     theme = copy.deepcopy(valid_theme())
     theme |= {
         "storyType": "WHEN",
@@ -59,36 +64,36 @@ def when_theme() -> dict[str, Any]:
             ),
             day(
                 "TUE",
-                "그때 찍힌 사진에 켜진 가로등이 있었어.",
+                "그때 찍힌 사진에 물뿌리개를 든 사람이 있었어.",
                 "기록",
-                "HINT",
-                "가로등",
-                ["켜진 가로등"],
+                "STORY",
+                "",
+                [],
                 "RECORD",
             ),
             day(
                 "WED",
-                "물 주던 화단 옆에 켜진 가로등이 비쳤대.",
+                "물 주던 사람이 화단 둘레를 천천히 돌았대.",
                 "시각",
-                "HINT",
-                "가로등",
-                ["켜진 가로등"],
+                "STORY",
+                "",
+                [],
                 "SIGHTING",
             ),
             day(
                 "THU",
-                "물을 줄 때 열린 빵집에서 빵 냄새가 났대.",
+                "물을 다 준 사람이 물뿌리개를 담장 옆에 두고 갔대.",
                 "냄새",
-                "RULE",
-                "빵집 문",
-                ["열린 빵집"],
+                "STORY",
+                "",
+                [],
                 "SIGHTING",
             ),
             day(
                 "FRI",
-                "녹음에 열린 빵집 문소리가 담겨 있었어.",
+                "그때 찍힌 사진에 열린 빵집이 함께 보였어.",
                 "소리",
-                "HINT",
+                "RULE",
                 "빵집 문",
                 ["열린 빵집"],
                 "RECORD",
@@ -97,14 +102,20 @@ def when_theme() -> dict[str, Any]:
     }
     for d in theme["days"]:
         d["evidence"]["when"] = "화단에 물을 준 그때"
+        # 미션 지문(#782)도 엔딩 전 글이라 시각을 쓰지 않음(TIME_WORD)
+        d["missionMaterial"] = "이웃의 말: 물뿌리개 소리가 나고 잠시 뒤 화단에서 물 냄새가 퍼졌어."
+    # #782 설계 v4: 시간 탐정 시작 이야기에는 때를 가리키는 말이 없음(valid_theme의 '비가 그친
+    # 오후'는 정답 시각 후보와 어긋나거나 미리 알려 줌 — TIME_WORD)
+    theme["intro"] = WHEN_INTRO
     theme["introStory"] = theme["intro"]
     theme["outroCuts"][0]["caption"] = f"뭉치: 알았다! {theme['answer']}!"  # #779 종료 1컷은 정답
     return checks.compose_intro(theme)
 
 
 def vehicle_theme() -> dict[str, Any]:
-    """탈것 찾기 줄거리(정답 버스, check_theme 통과). 월 RULE 소리 → 자전거·킥보드, 목 RULE 표 →
-    기차. 없는 값(바퀴 자국 없음)은 단서로 쓰지 않음."""
+    """탈것 찾기 줄거리(정답 버스, check_theme 통과). 월 RULE 소리 → 자전거·킥보드, 금 RULE 표 →
+    기차, 수·목은 사건 단서(#782 테마 짜임: 마지막 후보는 금요일에, 앞 요일 단서를 되풀이하지
+    않음). 없는 값(바퀴 자국 없음)은 단서로 쓰지 않음."""
     theme = copy.deepcopy(valid_theme())
     theme |= {
         "storyType": "VEHICLE",
@@ -116,7 +127,7 @@ def vehicle_theme() -> dict[str, Any]:
         "days": [
             day(
                 "MON",
-                "삼촌이 올 때 부릉 소리나 덜컹덜컹 소리가 났대.",
+                "삼촌이 올 때 드르륵 소리도 따르릉 소리도 아니었어.",  # #782 v3 부정형
                 "목격",
                 "RULE",
                 "들린 소리",
@@ -125,7 +136,7 @@ def vehicle_theme() -> dict[str, Any]:
             ),
             day(
                 "TUE",
-                "사진 속 삼촌 손에 교통카드나 좌석표가 있었어.",
+                "사진 속 삼촌 손에 든 건 헬멧이 아니었어.",
                 "기록",
                 "HINT",
                 "들고 온 것",
@@ -134,29 +145,29 @@ def vehicle_theme() -> dict[str, Any]:
             ),
             day(
                 "WED",
-                "이웃이 삼촌 올 때 부릉 소리나 덜컹덜컹 소리를 들었대.",
+                "이웃이 삼촌이 큰길 쪽에서 가방을 메고 걸어오는 걸 봤대.",
                 "소리",
-                "HINT",
-                "들린 소리",
-                ["부릉 소리", "덜컹덜컹 소리"],
+                "STORY",
+                "",
+                [],
                 "SIGHTING",
             ),
             day(
                 "THU",
-                "삼촌이 교통카드를 꺼내는 걸 봤대.",
+                "삼촌이 골목 입구에서 모자를 벗고 땀을 닦았대.",
                 "잠김",
-                "RULE",
-                "들고 온 것",
-                ["교통카드"],
+                "STORY",
+                "",
+                [],
                 "SIGHTING",
             ),
             day(
                 "FRI",
-                "삼촌 올 때 녹음에 부릉 소리가 담겼어.",
+                "사진 속 삼촌 손에 교통카드가 있었어.",
                 "시각",
-                "HINT",
-                "들린 소리",
-                ["부릉 소리"],
+                "RULE",
+                "들고 온 것",
+                ["교통카드"],
                 "RECORD",
             ),
         ],
@@ -241,7 +252,7 @@ def test_when_theme_passes_and_intro_gets_town_rule() -> None:
     assert checks.check_theme(theme, 3) == []
     assert theme["intro"].endswith(families.TOWN_NOTES[0])  # 시작 이야기가 '…요.'로 끝남
     # 마을 규칙의 '낮 12시'·'오전 9시'는 후보 이름·시각 검사에 걸리지 않음(모델 몫만 봄)
-    assert checks.intro_story(theme) == valid_theme()["intro"]
+    assert checks.intro_story(theme) == WHEN_INTRO
     # 다시 합쳐도 한 번만 붙고, 모델이 규칙을 옮겨 써도 한 번만
     again = checks.compose_intro({**theme, "introStory": theme["intro"]})
     assert again["intro"].count("가로등은") == 1
@@ -267,14 +278,12 @@ def test_when_intro_length_counts_model_part_and_fix_rewrites_it() -> None:
     assert "LENGTH intro 201자 > 200" in checks.check_theme(checks.compose_intro(long), 3)
 
 
-def test_when_clue_time_is_not_added() -> None:
-    theme = when_theme()
-    theme["days"][0]["evidence"]["when"] = "오후 3시"
-    before = theme["days"][0]["clue"]
-    assert checks.add_clue_time(theme)["days"][0]["clue"] == before
-    lost = copy.deepcopy(valid_theme())
-    lost["days"][1]["evidence"]["when"] = "오후 3시"
-    assert checks.add_clue_time(lost)["days"][1]["clue"].startswith("오후 3시, ")
+def test_clue_time_is_not_added() -> None:
+    """단서 앞 시각·'그때' 붙이기는 #782 테마 짜임에서 모든 종류에서 뺌(단서는 발견 장면 대사)."""
+    for theme in (when_theme(), copy.deepcopy(valid_theme())):
+        theme["days"][1]["evidence"]["when"] = "오후 3시"
+        before = [d["clue"] for d in theme["days"]]
+        assert [d["clue"] for d in checks.finalize_texts(theme)["days"]] == before
 
 
 def test_when_time_words_before_ending_are_fixed_by_field() -> None:
@@ -426,7 +435,7 @@ def test_vehicle_clues_name_the_person() -> None:
     assert checks.clue_person(theme) == "삼촌"
     assert checks.clue_person({**theme, "target": "사촌 언니가 타고 온 탈것"}) == "사촌언니"
     assert checks.clue_person(valid_theme()) is None
-    theme["days"][1]["clue"] = "사진 속 손에 교통카드나 좌석표가 있었어."
+    theme["days"][1]["clue"] = "사진 속 손에 든 건 헬멧이 아니었어."
     bad = checks.check_theme(theme, 3)
     assert bad == [
         "CLUE_OWNER TUE clue 단서에 온 사람('삼촌')이 없음(그 사람이 탄 탈것의 증거임을 밝힘)"
@@ -458,3 +467,13 @@ def test_route_trace_is_only_what_sticks_to_target() -> None:
     for name in ("들린 소리", "길 모양", "가로등 빛"):
         assert not checks.traceable(name, families.ROUTE), name
     assert checks.traceable("흔들면 나는 소리", families.GIFT)  # ②는 그대로
+
+
+def test_when_intro_must_not_say_daypart() -> None:
+    """#782 설계 v4: 3차 측정 way5b "점심을 먹고 온 아이가 먹이 준 일이 끝난 걸 앎"인데 정답 오후
+    3시. 시작 이야기(모델 몫)만 보고, 코드가 붙인 마을 규칙('오후 7시')과 다른 요일 장면은 보지
+    않음."""
+    theme = {**when_theme(), "introStory": "점심을 먹고 온 지호는 화단이 젖은 걸 알았어요."}
+    bad = [r for r in checks.check_theme(theme, 3) if r.startswith("TIME_WORD intro")]
+    assert bad and "'점심'" in bad[0] and list(checks.fix_targets(bad)) == ["intro"]
+    assert not [r for r in checks.check_theme(when_theme(), 3) if r.startswith("TIME_WORD")]

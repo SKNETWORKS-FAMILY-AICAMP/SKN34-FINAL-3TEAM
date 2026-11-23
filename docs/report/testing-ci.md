@@ -159,7 +159,7 @@ $COMPOSE down -v
 |---|---|---|
 | charts | Helm v4.3.1·kubeconform v0.8.0을 공식 배포본에서 받아 SHA256 대조 | 체크섬 불일치 |
 | charts | `environments/<env>/*.yaml`마다 `helm lint --strict`와 `helm template` | 렌더 실패, `values.schema.json` 위반, lint 경고 |
-| charts | `environments/prod/*.json`(#509): 저장소 chart values는 local과 같은 규칙으로 lint·template, `migrations/<release>.json`이 있으면 덮어써 migration Job까지 렌더. `kind`가 있는 manifest(NodePool·NetworkPolicy·ExternalSecret)는 그대로 kubeconform 대상 | 렌더 실패, 스키마 위반 |
+| charts | `environments/prod/*.json`(#509): 저장소 chart values는 local과 같은 규칙으로 lint·template, `images/<release>.json`(#857)이 있으면 함께 넘겨 PreSync migration Job·NetworkPolicy까지 렌더, ApplicationSet 목록과 images 파일 이름 일치 확인. `kind`가 있는 manifest(NodePool·NetworkPolicy·ExternalSecret)는 그대로 kubeconform 대상 | 렌더 실패, 스키마 위반 |
 | charts | 렌더 결과와 `argocd/`·`policies/` 원본 manifest의 kubeconform `-strict` | 스키마 위반, 정의되지 않은 필드 |
 | migrations | `migrations/*.Dockerfile`을 저장소 루트 context로 `docker build`(push 없음) | 빌드 실패 |
 
@@ -255,7 +255,7 @@ A1~A21 모두 해결(#69·#166~#171·#192·#204·#249~#256·#278~#280·#314·#63
 | 컨텍스트 전파(2.3) | ai `clients/base.py`가 `X-User-*`·`X-Student-Scope`를 learning 호출에 부착. report 소비자는 `SYSTEM` + 이벤트 학생 범위 |
 | 레이어 단방향·기능 간 service 경유(2.2) | controller→repository 0건, 다른 기능 repository 참조 0건, Presentation의 `@Transactional` 0건. 예외는 기존 결정(`_common/messaging` #278, support의 learning client #46) |
 | 트랜잭션 안 외부 호출 금지(2.2) | 리포트 복구 `NOT_SUPPORTED`, 알림 Redis 발행 `AFTER_COMMIT`, learning 피드백은 `FeedbackFacade` 트랜잭션 밖 AI 호출, report Outbox는 advisory lock·짧은 트랜잭션 |
-| 재시도 계층(1.3) | 재시도는 ai LLM 호출(1회, 1초)과 되묻기 유출 재생성(1회)만. 서비스 간 호출은 재시도 없음. 모든 클라이언트에 타임아웃 |
+| 재시도 계층(1.3) | 서비스 간 호출은 재시도 없음(예외: #878 learning→ai 추억 검색 질의 변환 1회, ai 쪽 그 LLM 호출은 재시도 0회라 증폭 없음). ai 내부에는 일반 LLM 재시도(1회, 1초), 되묻기 유출 재생성(1회), 리포트 상세 설명의 조건부 재생성(공유 마감 75초 안에서 1회, #850)이 있다. 모든 클라이언트에 타임아웃 |
 | Outbox·멱등 소비(1.6) | Outbox는 core·report만, learning은 발행 없음, ai·scoring은 best-effort. 리스너는 수동 ACK·`RetryingConsumer` |
 | readiness(4.4) | core·learning `readinessState,db,rabbit`, ai RabbitMQ, scoring RabbitMQ·모델, report DB. 하위 서비스 호출 없음 |
 | 스케줄 중복 방지(1.5) | 정기·복구 스케줄러는 ShedLock 또는 레플리카 안전 조건부 UPDATE·DELETE |
@@ -332,15 +332,15 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 |---|---|---|---|---|---|---|
 | SEC-01 | 만 14세 미만 법정대리인 동의 없이 자녀 등록 불가 | 모의·CI | 동의 전 `GET /children`·`PATCH /me` 403 `CONSENT_REQUIRED`, 동의 항목 누락 `POST /children` 400, 필수 문서가 바뀌면 기존 동의 무효. 동의한 적 없는 계정의 `POST /children`을 직접 보내는 시험은 없음 | core `consent/ConsentChildrenTest`, [auth-account 2](auth-account.md#2-동의자녀-등록-37) | 11/20 | 충족 |
 | SEC-02 | 권한 규칙을 전 경로에 적용, 친구 방 응답에 학생 ID·회차 키 없음 | 모의·CI | 다른 보호자·학생의 자녀·시도·답변·리포트·대화·알림 요청 403·404, 친구 방 응답에 `studentId`·`themeId`·`weekStart`·`postId` 없음 | core `community/FriendRoomIntegrationTest`·`learning/DashboardIntegrationTest`·`report/ReportHttpTest`·`conversation/ConversationIntegrationTest`, learning `answer/service/AnswerServiceTest`, `scripts/tests/test_friend_room_contract.py`, [retention-expansion 20](retention-expansion.md#20-친구-방-구경-core-708learning-707-2026-11-16) | 11/20 | 충족 |
-| SEC-03 | 외부 AI에 최소 기록만, 이름·불필요한 식별정보 제외 | — | LLM 요청 페이로드 점검 미실행 | — | — | 점검 예정 11/26 |
+| SEC-03 | 외부 AI에 최소 기록만, 이름·불필요한 식별정보 제외 | 모의 | 대역 스택에서 외부로 나간 요청 12건(판정 5·되묻기 5·리포트 서술 1·설명 1)에 학생·시도·답변 ID·닉네임·보호자 이름 0건, 메시지 안 ID 키 0건. 분석 대화·추억 3종은 대역에서 안 돌아 테스트로, 주간 테마 생성은 코드로만 확인(ai 228·report 74·learning 73 통과). 판정·되묻기·분석 대화는 답 본문 속 닉네임을 가리지 않음(설계상 가리기 대상 아님) | [10절](#10-민감정보-점검-884-2026-11-22), [evidence/issue884-sensitive-audit](evidence/issue884-sensitive-audit/) | 11/22 | 충족 |
 | SEC-04 | LLM·토스 키를 저장소·배포 파일·화면에 두지 않음 | CI | Gitleaks 전체 이력 스캔에서 합성 값 3건 예외 처리 뒤 0건. 이후 모든 PR·push에서 실행(9.2 `a836e3e8` success) | [8절](#8-비밀-정보-스캔-ci-810), [infra 4.3](infra.md#43-비밀-정보-스캔-ci-810) | 11/19 | 충족 |
-| SEC-05 | 비밀번호·키·카드 정보·학생 원문을 운영 로그에 미기록 | — | 로그 샘플 점검 미실행 | — | — | 점검 예정 11/26 |
-| SEC-06 | 결제수단 민감 정보는 PG 처리, 화면·로그 비노출 | 모의·CI | 저장 데이터: 빌링 자격 무작위·암호화, 결제·환불 응답과 멱등 저장 기록에 PG 키 없음. 로그 점검은 미실행(시험은 도메인 객체 `toString()`만 봄) | core `payment/PaymentProtectionTest`·`payment/PaymentIntegrationTest`(#168), [core-gateway 24.6](core-gateway.md#246-pg-검증운영-입력) | 11/20 | 점검 예정 11/26(로그) |
+| SEC-05 | 비밀번호·키·카드 정보·학생 원문을 운영 로그에 미기록 | 모의 | 대역 스택 E2E 1회 서비스 로그 219줄에서 비밀 값 27종 원문·키·토큰·카드번호·비밀번호·PIN·학생 답변 원문 0건. 잠재 위험: DB 제약 오류 상세·비밀 값 `toString()` #898(해결), ai·scoring 응답 검증 오류 입력값 #899(해결) | [10절](#10-민감정보-점검-884-2026-11-22), [evidence/issue884-sensitive-audit](evidence/issue884-sensitive-audit/) | 11/22 | 충족 |
+| SEC-06 | 결제수단 민감 정보는 PG 처리, 화면·로그 비노출 | 모의·CI(저장 데이터) | 저장 데이터: 빌링 자격 무작위·암호화, 결제·환불 응답과 멱등 저장 기록에 PG 키 없음. 로그(모의): core 결제 테스트 51개(승인·실패 재청구·환불·웹훅·빌링) 출력과 E2E 결제 승인 로그에 PG 키·결제 필드·카드번호 0건. trace의 토스 URL 키는 Collector에서 저장 전 가림(#900, 운영 Tempo 확인은 배포 후) | core `payment/PaymentProtectionTest`·`payment/PaymentIntegrationTest`(#168), [core-gateway 24.6](core-gateway.md#246-pg-검증운영-입력), [10절](#10-민감정보-점검-884-2026-11-22) | 11/22 | 충족 |
 | SEC-07 | 가상 학생·자체 미션만, 실제 아동 정보 미수집 | 배포(kind) | 참고: kind에서 `audit-demo-data.sql`(기준 월요일 12/7 사본) 3개 DB 통과. A·B 미실행 | `infrastructure/aws/audit-demo-data.sql`, [infra 9.7.2](infra.md#972-kind-확인-실제-17201745) | 11/13 | 점검 예정 12/5 |
 | SEC-08 | PIN·기기 자격은 해시, 쿠키 httpOnly·Secure·SameSite=Strict | 모의·CI | 미등록·위조·다른 자녀·만료·해제 기기는 PIN 전 거부, 동시 실패 5회 잠금·해제 후 초기화, PIN `pbkdf2-sha256` 해시, 페어링 코드는 해시만 Redis, 쿠키 HttpOnly·SameSite=Strict. 시험 설정이 `cookie-secure=false`라 Secure 속성은 미확인 | core `account/StudentDeviceAuthTest`, [auth-account 4](auth-account.md#4-학생-기기pin-로그인-p01-개정-58) | 11/20 | 충족 |
 | DAT-01 | 답변·판정·되묻기·돌아보기를 덮어쓰지 않음 | 모의·CI | 보완 답변 v2·v3 제출 뒤 v1 행 그대로, 시도 버전 [1,2,3] | learning `answer/service/AnswerServiceTest`·`attempt/service/AttemptComparisonIntegrationTest` | 11/20 | 충족 |
 | DAT-02 | 결과마다 미션·기준표·모델·프롬프트 버전 연결 | 모의·CI | 판정·되묻기에 모델·프롬프트 버전, 답변에 기준표 버전 저장, 공개 중 수정은 새 버전·진행 중 시도는 시작 버전 유지. "판정 뒤 기준표 변경 → 과거 판정 재조회"를 한 번에 잇는 시험은 없음 | learning `judgment/facade/FeedbackFacadeTest`·`mission/service/AdminMissionServiceTest`·`attempt/service/AttemptServiceTest`, ai `test_active_versions.py` | 11/20 | 충족 |
-| DAT-03 | AI Hub 데이터 저장소·화면 미포함, 생성형 AI 출력은 학습 자료로 미사용 | 저장소 점검 | `git ls-files`(`a836e3e8`): zip·parquet 0개, jsonl·csv 12개는 자체 작성 평가 자료·교육과정 지식, AI Hub 이름이 든 3개는 집계 요약·스크립트로 원문 0건. `.gitignore` 14~21행이 AI Hub 폴더·파일명 차단. 생성형 AI 출력 쪽은 `ml/tox` 아이 말투 학습 문장이 Claude 작성(README에 예외로 적음, 기능명세에는 예외 없음) | 이 절 점검, [ml/tox README](../../ml/tox/README.md) | 11/20 | 미충족(tox 학습에 생성형 AI 문장 사용. 설계 예외 반영 또는 재학습 결정 필요) |
+| DAT-03 | AI Hub 데이터 저장소·화면 미포함, 생성형 AI 출력은 학습 자료로 미사용 | 저장소 점검 | `git ls-files`(`dadc2dd5` + 이 PR의 `ml/tox/results/887-compare` 요약): zip·parquet 0개, jsonl·csv 13개는 자체 작성 평가 자료·교육과정 지식(11/20 뒤 추가 1개는 추억 검색 평가셋 memory@2, 학습에 안 씀), AI Hub 이름·자료 번호가 든 4개(#887에서 `aihub_kid16k_pc_summary.json` 추가)는 집계 요약·스크립트로 원문 0건. `.gitignore` 16~22행이 AI Hub 폴더·파일명 차단. 생성형 AI 출력 쪽은 `ml/tox` 아이 말투 학습 문장만 기능명세 예외(#887, 2026-11-23) | 이 절 점검, [기능명세 NFR-DAT-03](../design/functional-spec.md), [ml/tox README](../../ml/tox/README.md) | 11/23 | 충족 |
 | DAT-04 | 삭제 정책을 문제풀이·대화·리포트·대시보드에 동일 적용 | 모의·CI | 학생 삭제 뒤 learning 근거 `available=false`·원문 없음, report 삭제 대기 중 조회·생성 차단, core 대화 근거 이용 불가, 웹은 `available:false` 근거를 링크하지 않음. 화면 전체 미노출 확인은 수동 `parent-admin-browser.mjs`뿐(CI 밖) | learning `record/StudentDeletionTest`, report `test_deletion.py`, core `conversation/ConversationIntegrationTest`, web `reportHighlight.test.ts` | 11/20 | 충족 |
 | DAT-05 | PITR 7일, RPO 5분·RTO 4시간, 복구 정합성 확인 | 배포(A) | RTO 요청→`available` 19분 8초. RPO 5분 23초(같은 날 다른 시점 3분 37초). 답변 2,814건 md5·스키마·열 지문 일치. 근거 연결·결제 행이 0건이라 그 정합성과 PG 대조는 실데이터로 미확인 | [infra 9.12](infra.md#912-rds-pitr-복구-시험-629-2026-11-18) | 11/18 | 미충족(RPO: PITR 로그 업로드 주기가 약 5분이라 5분을 넘을 수 있음. 목표는 유지, 2026-11-20 결정) |
 | REL-01 | 제출·결제 승인·PG 통지·알림·재처리 1회만 반영 | 모의·CI | 같은 키 재제출은 첫 답변 반환, 동시 승인 → PG 호출 1·구독 1, 같은 갱신 기간 1회 청구, 서명된 중복 웹훅 1회 반영, 반복 사건 알림 1건, 소비자 `processed_event` 중복 무시 | learning `AnswerServiceTest`·`answer/service/AnswerConcurrencyTest`, core `payment/PaymentIntegrationTest`·`notification/NotificationIntegrationTest`·`_common/messaging/MessagingIntegrationTest` | 11/20 | 충족 |
@@ -356,8 +356,8 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 | AIQ-04 | M1 수학 문항 그룹 분할·학습·평가, 검증 범위만 활성화 | 학습 기록 | 시험 16,913개 균형 정확도: 다수 클래스 0.500, 규칙 0.642·0.703. 학습 모델은 코드 확인용(0.5)뿐이라 서비스 비활성 | `ml/m1/results/eval_m1.md`·`eda_71716.md` | 11/02 | 충족(후순위, 비활성 유지) |
 | AIQ-05 | 활성화 전 고정 평가 비교, 기준 충족 범위만 승인 | 배포(A) | M2 b판 경계: 사전 검사 → 등록 → 승인·활성화(초5·6) → scoring `LOADED`, 실제 채점 5건 새 경계와 일치. 리포트 Gemma `gemma4-26b-a4b-lora-20261118-r2` 활성화(사람 검토 미실시 상태). 판정 프롬프트 `.evaluation.json` 준비 | [ai 3](ai.md#3-모델-레지스트리ai-사용량-43), [scoring 7.8](scoring.md#78-운영-적용-613-2026-11-17), [ml/sllm README](../../ml/sllm/README.md) | 11/17~11/18 | 충족 |
 | AIQ-06 | 11/22까지 허용 기준, 넘은 범위만 서비스 적용 | — | 판정 QWK·M2·설명 sLLM·M1 허용 기준 모두 미정 | [ai 1](ai.md#1-판정되묻기-6), [planning 2.3](planning.md#23-m2-중간-결과-112-기준) | — | 점검 예정 11/22 |
-| UX-01 | PC에서 학습 흐름, 학부모·관리자 768·390px 가로 넘침 없음 | 모의·CI·배포(대역 compose) | PC 실서버 E2E 9개 통과(9.2). 참고: 1440·768·390px 넘침 검사는 MSW 목업에서만(학부모 31항목, 관리자 7·14화면) | [2절](#2-실서버-브라우저-e2e와-외부-스텁-246), [frontend 22](frontend.md#22-학부모-공통-레이아웃설정결제-개선-548-2026-11-12) | 11/12~11/20 | 점검 예정 11/27(#763 뒤) |
-| UX-02 | 키보드·터치, 색 외 글 안내, 입력 이름·선택 대상 | 모의·CI | 참고: axe-core로 학생·학부모 14화면 점검(MSW) → #639~#641 수정, `tests/browser/accessibility.spec.ts` 1440·1024·390 회귀. 실제 서버·화면 읽기 프로그램 미점검 | [frontend 40](frontend.md#40-학생학부모-주요-화면-접근성-점검-nfr-ux-02-630-일부-2026-11-13)·[44](frontend.md#44-학생학부모-접근성-버그-수정-639640641-2026-11-13) | 11/13 | 점검 예정 11/27(#763 뒤) |
+| UX-01 | PC에서 학습 흐름, 학부모·관리자 768·390px 가로 넘침 없음 | 모의·CI | 대역 compose 실서버(#885, 1회 기록)에서 학부모 16·관리자 17화면과 로그인 2화면을 1440·768·390px로 재 105건 모두 넘침 0(추가 확인한 테마 초안 실패 상세 3건도 0). 같은 스택 PC 실서버 E2E 9 passed(6.3분), 야간 CI 9개 통과(9.2) | [evidence/issue885-ux-real-server](evidence/issue885-ux-real-server/README.md), [2절](#2-실서버-브라우저-e2e와-외부-스텁-246) | 11/23 | 충족 |
+| UX-02 | 키보드·터치, 색 외 글 안내, 입력 이름·선택 대상 | 모의·CI | 대역 compose 실서버(#885, 1회 기록)에서 학생 18·학부모 16·관리자 17화면을 1440·390px(터치) axe 99회: critical 0, 학생 위반 0. serious는 관리자 15메뉴 전부 글자 대비(285건, 3.31~4.45:1, 추가 확인한 테마 초안 실패 상세도 13건)·로그인 2화면 대비·관리자 390 가로 스크롤 표 키보드 불가 3화면·학부모 동의 체크박스 크기 2화면·`aria-label` 금지 1·문장 속 링크 1. 키보드 Tab 99회 초점 유실 0(학부모·관리자 본문 건너뛰기, 대화 창 Esc 복귀), 이름 없는 입력 0, 선택 표시(`aria-current`·`aria-selected`·`aria-pressed`), 오류·진행은 `role=status`·`role=alert` 글. #805 색 단추의 고른 색 초점 안 보임은 찾아서 고침. 이후 관리자 대비·390 가로 스크롤 표는 #914로 고쳐 관리자 로그인·메뉴 16개·상세 2개 1440·390 axe serious 191건 → 0건(`tests/browser/admin-contrast.spec.ts`), 처리 중 단추 초점(아이템 저장 409·테마 초안 요청 오류를 키보드로 제출 시 `body`)은 #917로 고쳐 단추에 유지(1440·390, `tests/browser/admin-busy-focus.spec.ts`). 학부모 4종은 #915로 고친 뒤 같은 대역 스택·같은 점검 스크립트로 다시 재 99회 전체 serious·critical 0(학부모 16·공개 2화면 1440·390 34회 포함, #885 학부모·학부모 로그인 15건 → 0, 넘침 133회 0). 회귀는 MSW `tests/browser/accessibility.spec.ts`(#915 카드 역할·링크 밑줄·동의 체크박스 크기 추가)·위 두 시험(CI). 학부모 로그인 아이디 폼은 실제 모드에서만 나와 실서버 재점검으로만 확인. 화면 읽기 프로그램·실기기 미점검 | [evidence/issue885-ux-real-server](evidence/issue885-ux-real-server/README.md)·[issue914-admin-contrast](evidence/issue914-admin-contrast/)·[issue917-admin-busy-focus](evidence/issue917-admin-busy-focus/)·[issue915-parent-a11y](evidence/issue915-parent-a11y/README.md), [frontend 40](frontend.md#40-학생학부모-주요-화면-접근성-점검-nfr-ux-02-630-일부-2026-11-13)·[44](frontend.md#44-학생학부모-접근성-버그-수정-639640641-2026-11-13)·[50](frontend.md#50-관리자-글자-대비가로-스크롤-표-키보드-접근-914-nfr-ux-02-2026-11-23)·[51](frontend.md#51-관리자-처리-중-단추의-키보드-초점-유지-917-nfr-ux-02-2026-11-23)·[52](frontend.md#52-학부모-화면-접근성-serious-4종-수정-nfr-ux-02-915-2026-11-23) | 11/13~11/23 | 충족(대역 실서버 axe serious 0. 화면 읽기 프로그램·실기기는 범위 밖) |
 | UX-03 | 학년이 이해할 길이·표현, 대표 시나리오에서 문구 확인 | 문서 점검 | 학생 화면 글자·간격·폭과 문구 47+12곳 정리, 넘긴 18줄 모두 반영 | [frontend 21](frontend.md#21-학생-화면-글자-크기간격폭과-문구-정리-431-2026-11-12)·[31](frontend.md#31-문제-푸는-화면-개편-440-2026-11-15) | 11/12~11/15 | 충족 |
 | UX-04 | 미션 10분 안팎 | — | 콘텐츠 검토 기록 없음 | — | — | 미충족(검토 기록 없음) |
 | OPS-01 | 환경별 데이터·외부 연동 분리, 시연·테스트 거래가 운영 통계에 안 섞임 | 배포(kind) | 참고: kind 감사 SQL 통과(SEC-07과 같은 실행). A는 신규 보호자 `is_demo=true`. B 미실행 | `infrastructure/aws/audit-demo-data.sql`, [infra 9.7.2](infra.md#972-kind-확인-실제-17201745) | 11/13 | 점검 예정 12/5 |
@@ -376,14 +376,11 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 | 날짜 | 대상 | 할 일 |
 |---|---|---|
 | 11/22 | AIQ-03·06 | 설명 sLLM 허용 기준 결정, 사람 검토 50개 표본 결과. 판정 QWK·M2 기준도 같은 기한 |
-| 11/26 | SEC-03·05·06 | LLM 요청 페이로드와 운영 로그 샘플 점검(학생 이름·ID·원문·키·카드 정보) |
-| 11/27 | UX-01·02 | #763 뒤 1440·768·390px 넘침, 키보드 조작, 대비 점검 |
 | 11/28~29 | OPS-02~05, PRF-01·03 | B 계정 배포 승인·경로 확인(Argo CD, 11/25 A에서 먼저 확인 #859), 복구 리허설, 경보 발생, 실패 요청 trace, 부하 재측정, 첫 주간 창 뒤 엔드포인트 0대 복귀(#783) |
 | 12/5 | SEC-07, OPS-01, QA-03 | 시연 환경에서 `audit-demo-data.sql` 실행(가상 학생·시연 표시·결제 집계) |
 
 ### 9.5 미충족과 보강할 점
 
-- DAT-03: `ml/tox` 아이 말투 학습 문장이 Claude 작성. 기능명세에 예외를 넣을지, 생성형 AI 문장을 빼고 다시 학습할지 결정 필요
 - DAT-05: RPO 1회 측정 5분 23초. 목표 5분 유지(2026-11-20 결정), 근거 연결·결제 행이 있는 상태의 복구 대조는 미실행
 - QA-02: 실제 PG로 정기결제·실패·해지·환불·웹훅 미검증
 - UX-04: 미션 분량(10분 안팎) 콘텐츠 검토 기록 없음
@@ -394,3 +391,69 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 - [evidence/issue811-cd-history-a](evidence/issue811-cd-history-a/): A 계정 cd-release 5회의 `history.json`(승인자·수행자·이미지 digest·migration·경로 확인)과 `plan.json`(사유·호환성 판단). Actions 산출물(보관 90일)에서 받은 원본이며 비밀 값 없음. 이미지 주소의 A 계정 번호는 저장소에 이미 공개된 값
 - 저장소 안 결과 파일(`evaluation/results/`, `ml/*/results/`)은 복사하지 않고 근거 칸에서 원래 위치를 링크
 - 저장소 밖 원본(M2 예측 CSV, 설명 sLLM 출력, k6 원시 출력)은 학생·AI Hub 글이 들어 있거나 일회성이라 넣지 않음
+
+## 10. 민감정보 점검 (#884, 2026-11-22)
+
+외부 LLM 요청 내용(NFR-SEC-03)과 운영 로그(NFR-SEC-05·06)에 학생 이름·ID·원문·비밀 값·결제수단 정보가 있는지 실제 실행분으로 점검. 기록에는 항목 이름·건수만 둠.
+
+### 10.1 환경
+
+- 기준: develop `22a42a54` + llm-stub 요청 기록 옵션(`LLM_STUB_RECORD_FILE`, 기본 꺼짐)
+- 검증 구분: 모의. 2절 대역 스택(`compose.e2e.yaml`, LLM·토스·Google·M2 대역, DB·브로커 실제)을 로컬 Docker로 1회 기동. 실제 OpenAI·SageMaker·PG 호출과 kind·A·B 로그는 보지 않음
+- 실행: `LLM_STUB_RECORD_FILE=/tmp/llm-requests.jsonl`로 기동 → `npm run test:e2e` 7 통과·1 실패·1 건너뜀
+  - 실패: `learning-journey` 주간 리포트. 리포트 생성 완료 뒤 기간 문구가 화면 두 곳에 있어 locator 엄격 모드 위반(점검 대상 경로는 끝까지 실행됨)
+  - 건너뜀: 주간 테마 시나리오(KST 일요일에는 무료 이용권 문제가 닫힘)
+- Git Bash에서는 `MSYS_NO_PATHCONV=1`이 필요. 없으면 기록 경로가 Windows 경로로 바뀌어 대역이 종료됨(첫 실행). `down -v` 뒤 재실행분만 사용
+
+### 10.2 대상과 방법
+
+| 대상 | 수집 | 검사 |
+|---|---|---|
+| 외부 LLM 요청(SEC-03) | llm-stub이 받은 본문 12건(외부로 나가는 최종 요청) | 실행 뒤 DB에서 뽑은 학생 ID 7·닉네임 7·보호자 로그인 ID·표시 이름 10·시도 ID 4·답변 ID 5와 문자열 대조, 메시지 안 `studentId`·`attemptId`·`answerId`·`childId`·`nickname`·`name` 키, UUID(채점 요소 ID 56개와 대조해 분리) |
+| 서비스 로그(SEC-05) | `docker compose logs` core·learning·ai·report-api·report-worker 219줄 | `e2e.env` 비밀 값 27종 원문, 토스 키 접두사(`test_sk_`·`test_gsk_`·`live_`), OpenAI 키, `Bearer` 토큰, JWT, 결제 필드 이름(`billingKey`·`customerKey`·`paymentKey`·`cardNumber`), 16자리 카드번호, `password=`, E2E PIN, 학생 답변 원문 5개(8자 이상 `plain_text`), 닉네임·보호자 이름, 학생·시도·답변 ID |
+| 결제 로그(SEC-06) | core `payment` 패키지 테스트 51개(승인·위조 거부·응답 유실·갱신 실패 재청구·해지·환불·취소 유실·웹훅·빌링 등록) system-out 130줄 + 위 서비스 로그의 E2E 결제 승인분 | 위 패턴 + 테스트 대역 합성 PG 키(`synthetic-`·`test_sk_`·`test_gsk_`) |
+
+- 검색 패턴 원본: [evidence/issue884-sensitive-audit/scan.py](evidence/issue884-sensitive-audit/scan.py), 결과: [scan-result.json](evidence/issue884-sensitive-audit/scan-result.json)(건수·요청 키·메시지 역할만, 원문·ID 값 없음)
+
+### 10.3 결과
+
+| 항목 | 결과 |
+|---|---|
+| LLM 요청 종류 | 판정(`Extraction`) 5, 되묻기(`GeneratedQuestion`) 5, 리포트 서술(`GeneratedNarrative`) 1, 리포트 설명(`ExplanationDetail`) 1 |
+| LLM 요청의 학생·시도·답변 ID, 닉네임, 보호자 이름, ID 키 | 모두 0건 |
+| LLM 요청의 UUID | 15개 모두 채점 요소 ID(판정 5건 × 3, 학생 기록 ID 아님). 그 밖 UUID 0 |
+| LLM 요청의 학생 답변 원문 | 12건 모두 포함(판정·설명 대상이라 필요한 전달). 대조 문자열이 실제로 걸리는지 확인하는 양성 대조로도 씀 |
+| 서비스 로그 비밀·결제·원문 패턴 | 모두 0건 |
+| 서비스 로그 학생·시도·답변 ID | 50건. 내부 HTTP 접근 로그 URL(`/internal/reports?studentId=…` 등)과 판정 건너뜀 사유 로그(`attemptId=… reason=TIMEOUT`). SEC-05 대상(비밀번호·키·카드·원문) 아님 |
+| 결제 테스트 출력 패턴 | 모두 0건 |
+
+e2e로 안 도는 경로는 테스트로 확인(로컬 실행, 모두 통과)
+
+| 경로 | 테스트 |
+|---|---|
+| 분석 대화 | ai `tests/analysis_agent/test_router.py::test_llm_requests_have_no_student_id`, `test_nodes.py`. 대역에서 안 돈 이유: E2E 시나리오 없음 |
+| 추억 임베딩·설명·질의 변환 | learning `memory/MemoryEmbeddingClientTest`·`MemoryExplanationTest`·`MemoryQuerySearchServiceTest`·`MemorySearchTest`·`MemoryQueryAiClientTest`(닉네임 `[학생]`·UUID `[식별자]` 가림, #878 실패 로그는 `failureCode`·시도 번호만이고 질문·응답 원문 없음), ai `tests/memory_explanation`·`tests/memory_query`(ID 칸 거부). 대역에서 안 돈 이유: llm-stub 미지원 스키마, 임베딩은 OpenAI 주소 고정 |
+| 주간 테마 생성 | 코드 확인만. learning `theme/client/ThemeDraftAiClient`가 보내는 칸이 학년·주차·주제·성취기준뿐이라 학생 데이터 입력 없음. 관리자 미션 초안은 ai `tests/mission_draft/test_prompts.py`(이름·`studentId` 없음) |
+| 리포트 서술·설명 | report `tests/test_narrative.py::test_known_nickname_and_identity_fields_are_not_sent`, `tests/test_explanations.py` |
+| 판정·되묻기 | ai `tests/judgment/test_service.py`·`tests/followup/test_service.py`, learning `judgment/facade/FeedbackFacadeTest` |
+
+- 실행 수: ai 228, report 74, learning 73, core payment 51 통과
+
+### 10.4 남은 위험
+
+- 판정·되묻기·분석 대화는 답·질문 본문에 학생이 쓴 닉네임을 가리지 않고 보냄. 설계상 닉네임 가리기는 리포트 서술·설명과 추억 경로만이라 위반으로 보지 않음(2026-11-22 결정)
+- 샘플에는 없었지만 코드상 생길 수 있는 경우
+  - core·learning 전역 예외 로그에 DB 제약 오류 상세(답변 원문), 비밀번호·PIN data class 기본 `toString()`: #898에서 처리
+    - 두 서비스 `application.yml` `spring.datasource.hikari.data-source-properties.logServerErrorDetail: false`. `DB_URL`과 상관없이 적용, 오류 로그에는 제약 이름·SQL(`?` 자리표시)만 남음
+    - 비밀번호·PIN·토큰·연결 코드·`customerKey`를 담은 core 요청·결과 타입 17개는 `toString()`에서 값을 `***`로 가림
+    - 시험: learning `answer/service/AnswerServiceTest`(답변 저장 CHECK 위반을 전역 예외 로그로 남겨도 원문 0건, 설정 전에는 실패 확인), core `_common/persistence/DbErrorDetailLogTest`·`account/SecretToStringTest`
+  - ai·scoring 전역 예외 로그에 응답 검증 오류 입력값: #899 해결. ai·scoring 전역 처리기와 분석 대화가 Pydantic 검증 오류를 본문 없이 기록
+  - OTel trace의 토스 호출 URL에 `billingKey`·`paymentKey`, Google 콜백 `code`(로그가 아닌 trace, Tempo 24시간): #900에서 조치. Collector traces pipeline `transform/redact`가 청구·취소 경로 키를 `{billingKey}`·`{paymentKey}`로 바꾸고 로그인·재인증 콜백 server span의 `url.query`를 지움. Collector 0.164.0에 prod 렌더 설정으로 가짜 span 6건을 보내 키·code 0건, 주문 조회·일반 경로는 그대로임을 확인. 운영 Tempo 검색 0건 확인은 배포 후(기존 span은 24시간 뒤 만료). 이후 URL 별칭과 span 이름을 포함한 검증은 10.5
+- ai·scoring·report-api는 로깅 설정이 없어 WARNING 이상과 uvicorn 접근 로그만 남음(운영 이미지와 같은 조건). 로그 수준을 올리면 다시 점검 필요
+- 운영 로그 중앙 수집이 없어(`OTEL_LOGS_EXPORTER=none`, Loki 없음) 배포 환경 샘플은 파드별 `kubectl logs`로만 얻을 수 있음. 이번 점검은 로컬 실행분만 봄
+
+### 10.5 trace URL 비식별화 (#900, 2026-11-23)
+
+- Collector의 trace 파이프라인에서 토스 빌링 청구·결제 취소 URL의 키를 경로 템플릿으로 바꾼다. Google 로그인·재인증 콜백에서는 쿼리 속성을 삭제하고, URL이나 span 이름에 포함된 쿼리도 제거한다. 변환 처리 오류는 원문 export 대신 실패로 처리한다.
+- 검증 환경은 로컬 Docker Collector 0.164.0 → Tempo 2.10.10이다. Helm 4.3.1로 렌더링한 구성에서 변환 단계만 뺀 대조군과 변환 적용군에 동일한 합성 span 7개씩 전송했다. Tempo에서 두 trace를 조회한 결과 민감 값이 포함된 span은 4건에서 0건으로 줄었고, 양쪽 모두 7개를 저장했다. 상태 코드, 빌링 자격 발급 경로, 무관한 URL 및 속성은 유지됐다.
+- Tempo 활성, Langfuse 전용, 메트릭 전용 차트 렌더링을 확인했다. 운영의 실제 기존 trace 조회와 배포 뒤 확인은 남아 있다. 운영에서는 Collector 전환 이후의 시간 범위에서 청구·취소의 키 경로와 콜백 쿼리 속성을 조회해 건수만 남긴다. 기존 저장분은 Tempo 보존 기간의 영향을 받는다.

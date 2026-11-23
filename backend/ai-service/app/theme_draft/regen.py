@@ -185,13 +185,14 @@ async def restore(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeSta
 
 
 def outside_targets(state: ThemeState, route: str, todo: list[str] | None = None) -> bool:
-    """부분 다시 생성에서 글 검토가 대상 밖을 고치려 하는지(줄거리·단서는 늘 대상 밖)."""
+    """부분 다시 생성에서 글 검토가 대상 밖을 고치려 하는지(줄거리·단서는 늘 대상 밖). 대화만 다시
+    (TALK, #782 설계 v12)는 미션 대상 요일이면 그 요일 미션과 함께 다시 만드는 대화라 대상 안."""
     if not state.get("partial"):
         return False
-    if route in ("PLAN", "CLUE"):
+    if route in ("PLAN", "CLUE", "HELPER"):  # HELPER: 줄거리 칸(돕는 사람·일)을 고침(#782 설계 v13)
         return True
     days = {t.split(":")[1] for t in state.get("redo_targets") or [] if t.startswith("MISSION:")}
-    return route == "DAYS" and not set(todo or []) <= days
+    return route in ("DAYS", "TALK") and not set(todo or []) <= days
 
 
 def regenerable(state: ThemeState) -> list[str]:

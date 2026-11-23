@@ -49,6 +49,13 @@ class MemorySearchControllerTest(@Autowired private val mvc: MockMvc) {
         given(service.search(student,"동물")).willThrow(BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"AI_UNAVAILABLE","일시 실패"))
         mvc.post(url) { auth();content="""{"query":"동물"}""" }.andExpect { status { isServiceUnavailable() } }
     }
+    @Test fun `기간 질문 변환 실패는 503 AI_UNAVAILABLE`() {
+        // #878: 새 칸·상태 없이 임베딩 장애와 같은 503 모양(core가 사용량을 되돌리고 웹은 다시 찾기 안내)
+        given(service.search(student,"지난달에 푼 문제")).willThrow(BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"AI_UNAVAILABLE","추억 검색을 잠시 사용할 수 없어요"))
+        mvc.post(url) { auth();content="""{"query":"지난달에 푼 문제"}""" }.andExpect {
+            status { isServiceUnavailable() };jsonPath("$.code") { value("AI_UNAVAILABLE") }
+        }
+    }
 
     @Test fun `검색 카드의 날짜 식별자 인용 점수 직렬화`() {
         val theme=UUID.randomUUID();val mission=UUID.randomUUID();val attempt=UUID.randomUUID()

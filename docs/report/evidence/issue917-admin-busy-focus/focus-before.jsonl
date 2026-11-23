@@ -1,0 +1,4 @@
+{"case":"꾸미기 아이템 저장 409","width":1440,"during":"BODY:본문으로 이동워크스페이스꾸미기 아이템","after":"BODY:본문으로 이동워크스페이스꾸미기 아이템","alertInViewport":false}
+{"case":"테마 초안 생성 요청(두 번째)","width":1440,"during":"BODY:본문으로 이동워크스페이스주간 테마 검","after":"BODY:본문으로 이동워크스페이스주간 테마 검","message":"학습 서비스가 관리자 요청을 처리하지 못했습니다.","alertInViewport":true}
+{"case":"꾸미기 아이템 저장 409","width":390,"during":"BODY:본문으로 이동워크스페이스꾸미기 아이템","after":"BODY:본문으로 이동워크스페이스꾸미기 아이템","alertInViewport":false}
+{"case":"테마 초안 생성 요청(두 번째)","width":390,"during":"BODY:본문으로 이동워크스페이스주간 테마 검","after":"BODY:본문으로 이동워크스페이스주간 테마 검","message":"학습 서비스가 관리자 요청을 처리하지 못했습니다.","alertInViewport":true}

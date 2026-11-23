@@ -14,7 +14,7 @@ interface MissionAuditMapper {
 }
 
 /**
- * 관리자 미션·미션 초안(#355)·주간 테마(#387)·테마 초안(#439)·모델 사전 검사(#368) 감사. target_type은 MISSION·MISSION_DRAFT·WEEKLY_THEME·THEME_DRAFT·MODEL_VERSION.
+ * 관리자 미션·미션 초안(#355)·주간 테마(#387)·테마 초안(#439)·모델 사전 검사(#368)·표현 검토(#907) 감사. target_type은 MISSION·MISSION_DRAFT·WEEKLY_THEME·THEME_DRAFT·MODEL_VERSION·EXPRESSION_REVIEW.
  * detail은 칸 이름 → 값 Map으로 받고 jsonb 변환은 여기서만 한다(#816)
  */
 @Repository

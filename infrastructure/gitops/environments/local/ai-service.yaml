@@ -44,6 +44,11 @@ env:
   - {name: LLM_PROVIDER, value: openai}
   - {name: OPENAI_MODEL, value: gpt-6-luna}
   - {name: OPENAI_JSON_MODE, value: json_schema}
+  # #599: 낱말 물어보기 국립국어원 사전(표준국어대사전·온용어). 없으면 그 요청만 503 DICTIONARY_UNAVAILABLE
+  - {name: DICT_KOREAN_API, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DICT_KOREAN_API, optional: true}}}
+  - {name: DICT_KOREAN_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DICT_KOREAN_API_KEY, optional: true}}}
+  - {name: KLI_KOREAN_API, valueFrom: {secretKeyRef: {name: app-service-credentials, key: KLI_KOREAN_API, optional: true}}}
+  - {name: KLI_KOREAN_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: KLI_KOREAN_API_KEY, optional: true}}}
   - {name: ANTHROPIC_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: ANTHROPIC_API_KEY, optional: true}}}
   - {name: ANTHROPIC_MODEL, value: claude-sonnet-5-5}
   - {name: ANTHROPIC_EFFORT, value: medium}

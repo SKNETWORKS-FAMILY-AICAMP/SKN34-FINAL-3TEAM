@@ -59,7 +59,7 @@ class LearningSupportClientTest {
             "createdAt":"2026-11-19T00:00:00Z","impact":{"conversation":"APPLIED","aggregation":"UNKNOWN","report":"NOT_APPLIED"}}""") }
         val result = client(stub).correct(UUID.randomUUID(), student, UUID.randomUUID(), UUID.randomUUID(), "근거", "CORRECT")
         assertEquals("HELD", result.previousResult)
-        assertEquals("APPLIED", result.impact["conversation"].asText())
-        assertEquals("CORRECT", result.body["corrected"].asText())
+        assertEquals("APPLIED", result.impact["conversation"])
+        assertEquals("CORRECT", result.body["corrected"])
     }
 }
