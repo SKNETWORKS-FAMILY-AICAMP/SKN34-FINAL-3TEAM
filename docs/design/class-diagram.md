@@ -1154,6 +1154,7 @@ classDiagram
 - `PaymentService.confirm`: 금액 대조(트랜잭션) → `TossClient.confirm`(트랜잭션 밖) → 결제 저장·구독 반영(트랜잭션). 반영 실패 시 `requireRecovery()` 후 `recoverEntitlement` 재시도 (FN-PAY-05)
 - `BillingScheduler`: ShedLock, 정기 청구·해지 효력·`CONFIRMING` 재조회. 매일 09:00 KST. 갱신 실패 시 유예 3일·매일 1회 최대 3회 재청구 후 해지 (P13), 자동 갱신 해지는 `period_end` 경과 시 `CANCELED` (P14)
 - 구현 이름(#48): 컨트롤러는 `PaymentController` 하나(구독·관리자 결제/환불·`TossWebhookController`의 웹훅 포함)와 내부 `InternalPaymentUsageController`, `SubscriptionService` 역할은 `PaymentService`(구독 조회·빌링 등록·자동 갱신 해지)·`RenewalService`(정기 청구·재조회)·`ProductEntitlementService`(현재 권한)로 나뉨, 웹훅 = `PaymentWebhookService`, `BillingScheduler` = `payment/scheduler/PaymentScheduler`, Repository는 `PaymentRepository` 하나(`PaymentOrderRepository`·`SubscriptionRepository`·`RefundRequestRepository`·`PgWebhookEventRepository` 역할 포함)
+- 결제 상태 조회(#946): `GET /payments/{orderId}`는 `RefundService.ownedStatus` 한 번만 부른다. 이 메서드가 승인된 미해결 환불을 PG 결과와 먼저 대조한 뒤 `PaymentService.status`로 최신 상태를 돌려준다. `RefundService`가 이미 `PaymentService`에 의존하므로 반대 방향으로 두지 않는다(순환 방지)
 - 응답 경계(#168): `PaymentController`는 domain `PaymentView`·`RefundRequest` 대신 `payment/controller/PaymentResponses`(`PaymentViewResponse`·`RefundRequestResponse`)를 응답·멱등 저장본으로 내보내 PG 키(`paymentKey`·`cancelKey`)를 넣지 않음. 상품 `features`·`limits`·상품 스냅샷은 Jackson `JsonNode` 대신 `_common/json/JsonObject`(이 타입에만 Jackson·MyBatis 변환 등록)
 
 ### 3.5 신고·지원·사용량·관리자 (support · usage · admin)

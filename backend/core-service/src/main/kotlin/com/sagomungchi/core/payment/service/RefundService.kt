@@ -99,7 +99,13 @@ class RefundService(private val repository: PaymentRepository,private val tx: Pa
         // Recovery never issues another cancellation or a new key after an ambiguous result.
         applyVerified(refund,pg.lookup(attempt.pgOrderNo,order.kind=="RENEWAL"))
     }
-    fun refreshOwned(parent: UUID,no: String) {
+    // Payment status for a parent: settle an approved refund with the PG first, then return the latest view.
+    // Lives here because RefundService already depends on PaymentService (the reverse would be a cycle).
+    fun ownedStatus(parent: UUID,no: String): PaymentView {
+        refreshOwned(parent,no)
+        return payments.status(parent,no)
+    }
+    private fun refreshOwned(parent: UUID,no: String) {
         val order=tx.ownedOrder(parent,no)
         repository.pendingRefund(order.id)?.takeIf { it.status=="APPROVED" }?.let(::refresh)
     }
