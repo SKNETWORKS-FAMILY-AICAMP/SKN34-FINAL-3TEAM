@@ -14,7 +14,8 @@ class RecordExistsContractTest(unittest.TestCase):
         for source in (ROOT/'backend/learning-service/src/main/kotlin').rglob('*Controller.kt'):
             text=source.read_text(encoding='utf-8')
             prefix=re.search(r'^@RequestMapping\("([^"]*)"\)',text,re.M)
-            for method,path in re.findall(r'@(Get|Post|Put|Patch|Delete)Mapping(?:\("([^"]*)"\))?',text):
+            # 경로 뒤 params 등 추가 인자도 허용(#908: 같은 GET /missions/{missionId}를 context 조건으로 MissionController·AttemptController가 나눠 받아 operation은 1개)
+            for method,path in re.findall(r'@(Get|Post|Put|Patch|Delete)Mapping(?:\("([^"]*)"[^)]*\))?',text):
                 actual.add((method.lower(),((prefix[1] if prefix else '')+path).removeprefix('/internal')))
         # 구현 전 계약 경로는 제외한다. #469 지식 API 2개는 구현되어 실제 컨트롤러와 대조한다.
         documented={(method,path) for path,methods in self.spec['paths'].items() for method,operation in methods.items() if not operation.get('x-implementation-status')}
