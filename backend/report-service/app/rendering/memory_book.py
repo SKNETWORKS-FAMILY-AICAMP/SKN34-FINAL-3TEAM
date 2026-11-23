@@ -37,36 +37,20 @@ def evening_question(big_question: str | None) -> str:
     return "이번 주 이야기에서 가장 기억에 남는 장면은 무엇인가요?"
 
 
-# 웹툰식 말풍선에 넣는 글 길이 상한(글자). 넘으면 말풍선에는 앞부분만, 전체는 그림 아래에 싣는다
-BUBBLE_LIMIT = 55
-
-
-def bubble(text: str) -> str:
-    text = " ".join(text.split())
-    return text if len(text) <= BUBBLE_LIMIT else text[: BUBBLE_LIMIT - 1].rstrip() + "…"
-
-
 def _attempt(attempt: dict | None) -> dict | None:
     if attempt is None:
         return None
     answers = []
     for answer in sorted(attempt.get("answers") or [], key=lambda a: a["version"]):
         followup = answer.get("followup")
-        text = answer.get("text") or ""
         answers.append(
             {
-                "text": text,
-                "bubble": bubble(text),
+                "text": answer.get("text") or "",
                 "followup": (followup or {}).get("question") or None,
             }
         )
     reflection = attempt.get("reflection") or {}
-    return {
-        "answers": answers,
-        "reflection": reflection.get("text") or None,
-        # 말풍선에 다 못 넣은 답이 있으면 그림 아래에 전체 답을 싣는다
-        "truncated": any(a["bubble"] != " ".join(a["text"].split()) for a in answers),
-    }
+    return {"answers": answers, "reflection": reflection.get("text") or None}
 
 
 def memory_book_view(book: dict) -> dict:

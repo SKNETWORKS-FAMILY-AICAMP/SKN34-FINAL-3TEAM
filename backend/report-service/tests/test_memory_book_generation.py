@@ -392,7 +392,7 @@ def test_generate_stores_pdf_and_announces_ready(db_session_factory, s3):
     assert key == f"reports/{student}/memory-books/{command.book_id}/pdf"
     body = s3._client.get_object(Bucket="synthetic-reports", Key=key)["Body"].read()
     text = pdf_text(body)
-    assert "합성학생의추억그림책" in text and "보완답1" in text and "큰질문의답바람" in text
+    assert "합성학생의추억그림책" in text and "보완답1" in text and "큰질문의답은「바람」" in text
     assert len(assets.urls) == 7  # 시작 + 요일 5 + 종료
     assert locks.acquired == [(command.book_id, student)]
     [event] = events

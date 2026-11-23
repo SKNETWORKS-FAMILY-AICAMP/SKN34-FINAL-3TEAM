@@ -71,17 +71,23 @@ def test_before_ending_hides_outro_answer_and_outro_image():
     assert outro_image not in html
 
 
-def test_long_answers_are_shortened_in_bubbles_and_printed_in_full_below():
+def test_chat_keeps_long_answers_whole_and_in_conversation_order():
     book = sample_book()
     long = "가" * 120
     book["days"][1]["attempt"]["answers"][0]["text"] = long
-    view = memory_book_view(book)
-    tue = view["days"][1]["attempt"]
-    assert tue["truncated"] and tue["answers"][0]["bubble"].endswith("…")
-    assert len(tue["answers"][0]["bubble"]) <= 70
-    assert not view["days"][0]["attempt"]["truncated"]
     html = html_of(book)
-    assert html.count(long) == 1  # 말풍선에는 줄인 글, 그림 아래에 전체 글 한 번
+    assert html.count(long) == 1
+    monday = html[html.index('data-day="MON"') : html.index('data-day="TUE"')]
+    order = [
+        "등대지기",
+        "오늘의 문제",
+        "먼저 바람이 불었고",
+        "불이 꺼진 건 언제였을까?",
+        "문이 열린 다음에",
+        "돌아보기",
+    ]
+    positions = [monday.index(word) for word in order]
+    assert positions == sorted(positions)
 
 
 def test_view_does_not_mutate_input():
