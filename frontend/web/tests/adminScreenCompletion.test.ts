@@ -79,3 +79,14 @@ test('관리자 공지 전체 목록: 예약·종료 공지도 새로 조회되�
  for(const email of ['payment@example.test','parent@example.test']){await login(email);for(const q of ['','?status=PUBLISHED','?role=SYSTEM'])assert.equal((await call('/admin/notices'+q)).status,403)}
  assert.equal((await call('/notices')).data.items.some((v:{noticeId:string})=>v.noticeId===scheduled||v.noticeId===ended),false)
 })
+test('#862 결제 목록은 core처럼 {items}만, 페이지 범위 밖은 409 INVALID_PAGE',async()=>{
+ await login('admin@example.test')
+ const period='from=2026-11-01&to=2026-11-30'
+ for(const path of ['/admin/payments?','/admin/refund-requests?','/admin/payments/reconciliation?'+period+'&']){
+  const ok=await call(path+'page=0&size=20');assert.equal(ok.status,200,path);assert.deepEqual(Object.keys(ok.data),['items'],path)
+  for(const q of ['page=-1&size=20','page=10001&size=20','page=0&size=0','page=0&size=101']){const r=await call(path+q);assert.equal(r.status,409,path+q);assert.equal(r.data.code,'INVALID_PAGE',path+q)}
+ }
+ assert.equal((await call('/admin/payments/reconciliation?from=2026-11-01')).data.code,'PAYMENT_RECONCILIATION_RANGE_REQUIRED')
+ assert.equal((await call('/admin/payments/reconciliation?from=2026-11-30&to=2026-11-01')).data.code,'INVALID_DATE_RANGE')
+ assert.equal((await call('/admin/payments?from=2026-11-30&to=2026-11-01')).status,409)
+})

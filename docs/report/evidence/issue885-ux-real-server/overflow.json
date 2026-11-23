@@ -1,0 +1,1574 @@
+[
+ {
+  "role": "public",
+  "screen": "학부모 로그인",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "public",
+  "screen": "학부모 로그인",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "public",
+  "screen": "학부모 로그인",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "public",
+  "screen": "관리자 로그인",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "public",
+  "screen": "관리자 로그인",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "public",
+  "screen": "관리자 로그인",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "새 보호자 온보딩(동의)",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "새 보호자 온보딩(동의)",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "새 보호자 온보딩(동의)",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "학습 현황",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "학습 현황",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "학습 현황",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트·AI 챗봇",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트·AI 챗봇",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트·AI 챗봇",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정·자녀 설정",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정·자녀 설정",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정·자녀 설정",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "기기·PIN",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "기기·PIN",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "기기·PIN",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ws-table",
+    "right": 452,
+    "width": 417
+   },
+   {
+    "el": "thead",
+    "right": 452,
+    "width": 417
+   },
+   {
+    "el": "tr",
+    "right": 452,
+    "width": 417
+   },
+   {
+    "el": "th",
+    "right": 452,
+    "width": 80
+   },
+   {
+    "el": "tbody",
+    "right": 452,
+    "width": 417
+   }
+  ]
+ },
+ {
+  "role": "parent",
+  "screen": "이용권·결제",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "이용권·결제",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "이용권·결제",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "도움말",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "도움말",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "도움말",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의 결과",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의 결과",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의 결과",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "공지",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "공지",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "공지",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "알림",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "알림",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "알림",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "보호자 이전",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "보호자 이전",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "보호자 이전",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "자녀 추가",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "자녀 추가",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "자녀 추가",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트 목록(창)",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트 목록(창)",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트 목록(창)",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "주간 리포트 상세",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "주간 리포트 상세",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "parent",
+  "screen": "주간 리포트 상세",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "홈",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "시작 이야기",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "단서 모음",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "미션 고르기",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "내 공책",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "생각 활동",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "div.st-f.st-room-floor",
+    "right": 3742,
+    "width": 4206
+   },
+   {
+    "el": "div.st-f",
+    "right": 3312,
+    "width": 2873
+   },
+   {
+    "el": "div.st-f",
+    "right": 2708,
+    "width": 2214
+   }
+  ]
+ },
+ {
+  "role": "student",
+  "screen": "추억 앨범",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "꾸미기",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "뭉치 친구들",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "친구 생각",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "설정",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "내 포인트",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "도움말",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "운영 현황",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "운영 현황",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "운영 현황",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "감사 이력",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "감사 이력",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 978,
+    "width": 733
+   },
+   {
+    "el": "thead",
+    "right": 978,
+    "width": 733
+   },
+   {
+    "el": "tr",
+    "right": 978,
+    "width": 733
+   },
+   {
+    "el": "th",
+    "right": 978,
+    "width": 86
+   },
+   {
+    "el": "tbody",
+    "right": 978,
+    "width": 733
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "감사 이력",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 750,
+    "width": 733
+   },
+   {
+    "el": "thead",
+    "right": 750,
+    "width": 733
+   },
+   {
+    "el": "tr",
+    "right": 750,
+    "width": 733
+   },
+   {
+    "el": "th",
+    "right": 750,
+    "width": 86
+   },
+   {
+    "el": "tbody",
+    "right": 750,
+    "width": 733
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "미션 관리",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 관리",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 관리",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 초안",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 초안",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 초안",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 617,
+    "width": 570
+   },
+   {
+    "el": "caption",
+    "right": 617,
+    "width": 570
+   },
+   {
+    "el": "thead",
+    "right": 617,
+    "width": 570
+   },
+   {
+    "el": "tr",
+    "right": 617,
+    "width": 570
+   },
+   {
+    "el": "th",
+    "right": 617,
+    "width": 150
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "게시 관리",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "게시 관리",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "게시 관리",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "주간 테마 검수",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "주간 테마 검수",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "주간 테마 검수",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "꾸미기 아이템",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "꾸미기 아이템",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "꾸미기 아이템",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 606,
+    "width": 570
+   },
+   {
+    "el": "thead",
+    "right": 606,
+    "width": 570
+   },
+   {
+    "el": "tr",
+    "right": 606,
+    "width": 570
+   },
+   {
+    "el": "th",
+    "right": 606,
+    "width": 92
+   },
+   {
+    "el": "tbody",
+    "right": 606,
+    "width": 570
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "작업 재처리",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 재처리",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 852,
+    "width": 607
+   },
+   {
+    "el": "thead",
+    "right": 852,
+    "width": 607
+   },
+   {
+    "el": "tr",
+    "right": 852,
+    "width": 607
+   },
+   {
+    "el": "th",
+    "right": 852,
+    "width": 104
+   },
+   {
+    "el": "tbody",
+    "right": 852,
+    "width": 607
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "작업 재처리",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 624,
+    "width": 607
+   },
+   {
+    "el": "thead",
+    "right": 624,
+    "width": 607
+   },
+   {
+    "el": "tr",
+    "right": 624,
+    "width": 607
+   },
+   {
+    "el": "th",
+    "right": 624,
+    "width": 104
+   },
+   {
+    "el": "tbody",
+    "right": 624,
+    "width": 607
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "작업 대기열",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 대기열",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 대기열",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "오류 신고",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "오류 신고",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "오류 신고",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "문의·공지",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "문의·공지",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "문의·공지",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "모델·프롬프트",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "모델·프롬프트",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "모델·프롬프트",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "표현 검토",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "표현 검토",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "표현 검토",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "AI 사용량",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "AI 사용량",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "AI 사용량",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 587,
+    "width": 570
+   },
+   {
+    "el": "thead",
+    "right": 587,
+    "width": 570
+   },
+   {
+    "el": "tr",
+    "right": 587,
+    "width": 570
+   },
+   {
+    "el": "th.num",
+    "right": 587,
+    "width": 172
+   },
+   {
+    "el": "tbody",
+    "right": 587,
+    "width": 570
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "결제·환불",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "결제·환불",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "결제·환불",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 587,
+    "width": 570
+   },
+   {
+    "el": "thead",
+    "right": 587,
+    "width": 570
+   },
+   {
+    "el": "tr",
+    "right": 587,
+    "width": 570
+   },
+   {
+    "el": "th",
+    "right": 587,
+    "width": 85
+   },
+   {
+    "el": "tbody",
+    "right": 587,
+    "width": 570
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "작업 상세",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 상세",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 852,
+    "width": 607
+   },
+   {
+    "el": "thead",
+    "right": 852,
+    "width": 607
+   },
+   {
+    "el": "tr",
+    "right": 852,
+    "width": 607
+   },
+   {
+    "el": "th",
+    "right": 852,
+    "width": 104
+   },
+   {
+    "el": "tbody",
+    "right": 852,
+    "width": 607
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "작업 상세",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 624,
+    "width": 607
+   },
+   {
+    "el": "thead",
+    "right": 624,
+    "width": 607
+   },
+   {
+    "el": "tr",
+    "right": 624,
+    "width": 607
+   },
+   {
+    "el": "th",
+    "right": 624,
+    "width": 104
+   },
+   {
+    "el": "tbody",
+    "right": 624,
+    "width": 607
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "미션 편집",
+  "width": 1440,
+  "scrollWidth": 1440,
+  "innerWidth": 1440,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 편집",
+  "width": 768,
+  "scrollWidth": 768,
+  "innerWidth": 768,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 편집",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "table.ad-table",
+    "right": 619,
+    "width": 570
+   },
+   {
+    "el": "caption",
+    "right": 619,
+    "width": 570
+   },
+   {
+    "el": "thead",
+    "right": 619,
+    "width": 570
+   },
+   {
+    "el": "tr",
+    "right": 619,
+    "width": 570
+   },
+   {
+    "el": "th",
+    "right": 619,
+    "width": 150
+   }
+  ]
+ },
+ {
+  "role": "student",
+  "screen": "홈",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "시작 이야기",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "단서 모음",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "미션 고르기",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "내 공책",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "생각 활동",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "div.st-f.st-room-floor",
+    "right": 1297,
+    "width": 1533
+   },
+   {
+    "el": "div.st-f",
+    "right": 1140,
+    "width": 1047
+   },
+   {
+    "el": "div.st-f",
+    "right": 920,
+    "width": 807
+   },
+   {
+    "el": "div.st-room-stage",
+    "right": 417,
+    "width": 444
+   },
+   {
+    "el": "div.st-f",
+    "right": 416,
+    "width": 58
+   }
+  ]
+ },
+ {
+  "role": "student",
+  "screen": "추억 앨범",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "꾸미기",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "뭉치 친구들",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": [
+   {
+    "el": "svg",
+    "right": 401,
+    "width": 413
+   },
+   {
+    "el": "circle",
+    "right": 397,
+    "width": 404
+   },
+   {
+    "el": "text",
+    "right": 393,
+    "width": 397
+   },
+   {
+    "el": "textpath",
+    "right": 393,
+    "width": 397
+   }
+  ]
+ },
+ {
+  "role": "student",
+  "screen": "친구 생각",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "설정",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "내 포인트",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ },
+ {
+  "role": "student",
+  "screen": "도움말",
+  "width": 390,
+  "scrollWidth": 390,
+  "innerWidth": 390,
+  "overflow": false,
+  "widest": []
+ }
+]

@@ -1,0 +1,69 @@
+{
+ "extra": {
+  "run": "2026-11-22T17:51:22.062Z",
+  "listBefore": {
+   "rows": 0
+  },
+  "request": {
+   "httpStatus": 409,
+   "code": "CONFLICT",
+   "title": "학습 서비스가 관리자 요청을 처리하지 못했습니다.",
+   "detail": null,
+   "alertTexts": [
+    "학습 서비스가 관리자 요청을 처리하지 못했습니다.문제 자세히 보기CONFLICT"
+   ],
+   "alertVisible": true,
+   "focusAfter": {
+    "tag": "body"
+   },
+   "notes": []
+  },
+  "detail": {
+   "opened": false,
+   "reason": "theme draft request returned 409"
+  },
+  "adminDuplicate": [
+   {
+    "width": 1440,
+    "status": 409,
+    "code": "LOOK_ITEM_CODE_DUPLICATE",
+    "problemTitle": "이미 있는 코드입니다.",
+    "alertTexts": [
+     "이미 있는 코드입니다.문제 자세히 보기LOOK_ITEM_CODE_DUPLICATE · 확인 번호 ad8b82581279479ab66c033dcfda9ed4"
+    ],
+    "alertVisible": true,
+    "alertInViewport": false,
+    "formStillOpen": true,
+    "codeKept": "E2E_HAT",
+    "focusAfter": {
+     "tag": "body"
+    },
+    "detailsToggle": 1
+   },
+   {
+    "width": 390,
+    "status": 409,
+    "code": "LOOK_ITEM_CODE_DUPLICATE",
+    "problemTitle": "이미 있는 코드입니다.",
+    "alertTexts": [
+     "이미 있는 코드입니다.문제 자세히 보기LOOK_ITEM_CODE_DUPLICATE · 확인 번호 27f440ec17be45268df1a06c05d6a45b"
+    ],
+    "alertVisible": true,
+    "alertInViewport": true,
+    "formStillOpen": true,
+    "codeKept": "E2E_HAT",
+    "focusAfter": {
+     "tag": "button",
+     "role": "",
+     "name": "저장",
+     "inViewport": true
+    },
+    "detailsToggle": 1
+   }
+  ]
+ },
+ "overflow": [],
+ "axe": [],
+ "keyboard": [],
+ "states": []
+}

@@ -24,7 +24,7 @@
 
 - 언어 분담 근거: 트랜잭션·권한·버전 관리·Outbox·스케줄·결제 = Spring 생태계(Spring AMQP, Flyway, ShedLock) 성숙 / LLM·모델 추론·렌더링 = Python 생태계
 - scoring 분리 근거: PyTorch 이미지·메모리 요구가 ai-service와 달라 배포·확장 단위 분리, 모델 미활성 시 ai-service 영향 없음
-- 리포트 Gemma 설명 엔드포인트(FN-RPT-09, #742·#746): 업무 서비스가 아니라 ai만 호출하는 같은 계정·VPC의 SageMaker 실시간 엔드포인트(GPU `ml.g6e.xlarge`, vLLM SageMaker DLC). 상태·DB 없음, S3의 승인된 AWQ 기반 모델에 LoRA 어댑터를 붙여 추론한다. 평소 0대이고 주간 리포트 배치 전 예약 확장으로 1대를 켜며(일 23:30 ~ 월 02:00), ai는 LoRA 인퍼런스 컴포넌트를 `InvokeEndpoint`로 부른다(4.4). 학생 글은 AWS 밖으로 나가지 않음
+- 리포트 Gemma 설명 엔드포인트(FN-RPT-09, #742·#746): 업무 서비스가 아니라 ai만 호출하는 같은 계정·VPC의 SageMaker 실시간 엔드포인트(GPU `ml.g6e.xlarge`, vLLM SageMaker DLC 기반 이미지). 상태·DB 없음, S3의 승인된 AWQ 기반 모델에 LoRA 어댑터를 붙여 추론한다. 평소 0대이고 주간 리포트 배치 전 예약 확장으로 1대를 켜며(일 23:30 ~ 월 02:00), ai는 LoRA 인퍼런스 컴포넌트를 `InvokeEndpoint`로 부른다(4.4). 학생 글은 AWS 밖으로 나가지 않음
 - P08 수치 규칙 중복 허용(#836): 표의 "수치·전후 변화 코드 계산"은 report 책임이지만, 같은 규칙(글자·문장·까닭을 잇는 말 수, 표본 5 미만)을 learning(대시보드·전후 변화, `record/domain/TextCounts`·`Metric`)·report(리포트, `generation/metrics.py`)·ai(분석 에이전트 표본 규칙, `analysis_agent/calculators.py`)가 각자 계산한다(서비스 간 계산 호출을 늘리지 않기 위함). 일치는 공통 픽스처 `contracts/examples/p08-metrics/cases.json`을 세 서비스 테스트가 함께 읽어 보장하고, 규칙을 바꿀 때는 P08 → 픽스처 → 세 구현을 함께 고친다
 - 다른 서비스 DB 직접 접근 금지, API 또는 이벤트로만 연동 (참고 레포 원칙 동일)
 - DB 권한으로 강제(#230): 인스턴스 1개(로컬 PostgreSQL·운영 RDS)에 DB별 migrate(DDL)·app(DML) 계정을 두고 각 DB의 PUBLIC CONNECT 회수 → 다른 서비스 DB 접속 불가. 로컬·운영 모두 `charts/platform-data/files/postgres/rds-bootstrap.sql`로 생성, 관리자 계정은 초기화 전용 ([결정](../report/db-dev-guide.md#8-서비스별-db-계정-230))
@@ -98,14 +98,15 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 
 - 동기 호출 장애 대응: 타임아웃 + 재시도 제한 + 서킷 브레이커(Spring Resilience4j / Python httpx 타임아웃·재시도). 값(P12): LLM 1회 15초·재시도 1회(1초 대기), learning→ai 판정·되묻기 각 35초(예외: 미션 초안은 주기 작업이라 ai LLM 60초 1회·마감 63초, learning→ai 70초, #353. 주간 테마 초안은 호출 1번에 그래프를 끝까지 돌리는 주기 작업이라 ai LLM 호출당 300초·재시도 없음·전체 마감 900초, learning→ai 읽기 16분·생성 리스 18분, #437·#438. 값은 ai `theme_llm_timeout`·`theme_draft_deadline`, learning `app.theme-draft.ai-read-timeout`·`lease`), core→learning 피드백 80초, 분석 대화 core→ai 첫 응답 20초·전체 120초, 서킷 브레이커 최근 20건 중 실패 50% 이상 시 30초 차단, 리포트 작업 재시도 3회(1·5·15분) 후 DLQ(예외: 주간 리포트는 주 1회 배치라 report→ai 서술 대기 80초·설명 호출당 80초·설명 단계 300초, 리포트 작업 복구 후보 4시간, #479·#508·#747). 실패 시 "처리 실패"로 기록·SSE 전달, 판정 보류·기록 없음과 구분
   - 리포트 Gemma SageMaker 호출(#742·#746): 실시간 `InvokeEndpoint`는 컨테이너가 60초 안에 응답해야 한다(AWS 제한). 이를 지키려고 `max_tokens`를 상세 설명 1536·서술 1024로 둔다. 최악 경우(동시 8건, 1536토큰 끝까지 생성)도 LoRA 23.4초로 제한 안이다([infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)). 이 60초 기준의 시간(#747): ai는 boto3 읽기 타임아웃 70초·서술·설명 마감 각 75초, report→ai는 서술 80초·설명 호출당 80초·설명 단계 300초. 엔드포인트가 0대이면 호출이 즉시 `ValidationError`로 실패하고 다른 모델로 대체하지 않고 설명 없이 발행한다(#733)
-  - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`·`learning-memory`), learning→ai(판정·되묻기 `ai`, 미션 초안 `ai-mission-draft`, 주간 테마 초안 `ai-theme-draft`, 추억 검색 임베딩 `ai-memory-embedding`, 추억 설명 `ai-memory-explanation`, 추억 검색 질의 변환 `ai-memory-query`(#679 설계, #682 구현). 기준은 아래와 같고, 기능마다 서킷을 나눠 한 기능의 ai 장애가 다른 호출을 막지 않게 한다, #305·#353·#438·#563·#564), learning→scoring(답변 표현 분류 `scoring-toxicity`, #688), core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 결제 환불의 learning 사용 증빙 조회(`payment/client/PremiumUsageClient`)는 `learning-json`을 함께 쓰고 응답 시간만 5초다(`LearningClient.withReadTimeout`, #654). 서킷 차단도 시간 초과·전송 실패와 같이 503 `REFUND_USAGE_UNAVAILABLE`(사용 여부 확인 불가, 환불 요청·승인 진행 안 함)이다. 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다.
+  - 서킷 브레이커 적용 구간은 core→learning(`learning-json`·`learning-feedback`·`learning-memory`), learning→ai(판정·되묻기 `ai`, 미션 초안 `ai-mission-draft`, 주간 테마 초안 `ai-theme-draft`, 추억 검색 임베딩 `ai-memory-embedding`, 추억 설명 `ai-memory-explanation`, 추억 검색 질의 변환 `ai-memory-query`(#679 설계, #682 구현). 기준은 아래와 같고, 기능마다 서킷을 나눠 한 기능의 ai 장애가 다른 호출을 막지 않게 한다, #305·#353·#438·#563·#564), learning→scoring(답변 표현 분류 `scoring-toxicity`, #688), core→ai(`ai-analysis`), core→report(`report-query`·`report-recovery`), core→토스 조회(`toss-lookup`·`toss-transactions`)다(#167). 결제 환불의 learning 사용 증빙 조회(`payment/client/PremiumUsageClient`)는 `learning-json`을 함께 쓰고 응답 시간만 5초다(`LearningClient.withReadTimeout`, #654). 서킷 차단도 시간 초과·전송 실패와 같이 503 `REFUND_USAGE_UNAVAILABLE`(사용 여부 확인 불가, 환불 요청·승인 진행 안 함)이다. 각 core 인스턴스 안에서 구간별 상태를 공유하며 구간 사이는 독립이다. 최근/최소 20건·실패율 50%·30초 차단·half-open 1건을 사용한다. HTTP 4xx는 실패로 세지 않고 전송 오류·시간 초과·5xx는 실패로 센다. report 2xx 복구 결과 FAILED/BUSY는 정상 통신 결과다. 토스 쓰기(승인·청구·취소·빌링키 발급)는 예외로 기존 타임아웃만 유지한다. 준비 상태 저장 후 전송을 차단하면 PG 거래가 없어 조회만으로 복구할 수 없으므로, 전송 전 차단 상태/복구 설계를 별도로 확정하기 전에는 적용하지 않는다. 서비스 간 재시도는 추가하지 않는다. 예외는 learning→ai 추억 검색 질의 변환 `ai-memory-query`의 1회 재시도다(재시도 가능한 실패만, 대기 없음, 시도마다 서킷에 기록, #878).
 - #305 learning→ai 판정·되묻기는 서킷 `ai` 하나를 함께 쓰므로, 그 뒤 ai→scoring 실패가 이 서킷으로 번지지 않게 ai에서 끊는다. ai→scoring(M2·M1)은 교차 확인 플래그(`M2_CROSS_CHECK_ENABLED`·`M1_CHECK_ENABLED`, 기본 꺼짐)가 켜진 경우에만 부르고, scoring 장애·시간 초과·5xx·4xx(입력 한도 초과 등)·계약 밖 응답은 503으로 바꾸지 않는다. ai는 교차 확인을 생략한 LLM 판정을 200으로 돌려주고 `modelScores.skipped`(`SCORING_UNAVAILABLE`·`SCORING_REJECTED`)에 사유를 남긴다(api-spec 4.2.2). 따라서 scoring 장애는 learning `ai` 서킷의 실패로 집계되지 않고 scoring과 무관한 판정·되묻기를 막지 않는다. 대신 교차 확인 없이 확정된 판정은 다시 판정하지 않는다. ai→scoring에는 서킷·재시도를 따로 두지 않는다(요청마다 남은 판정 시간 안의 timeout만).
 - #688 learning→scoring 답변 표현 분류(`POST /internal/toxicity/checks`, api-spec 4.3.4)는 연결 공통값(`app.internal.connect-timeout` 2초, `InternalRestClientFactory` 그대로)·응답 1.5초, 서킷 `scoring-toxicity`(공통 기준: 최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·전송 오류·시간 초과·5xx 실패), 재시도 없음. 시간 초과·전송 오류·5xx·4xx·계약 밖 응답·서킷 열림·`{active:false}`는 모두 모델 검사만 건너뛰고 제출을 진행한다(fail-open, 로그는 `attemptId`·건너뜀 사유만). learning은 시도 행 잠금·트랜잭션 전에 결과를 받아 둔다(DB 연결과 잠금을 쥔 채 기다리지 않음). 답변 제출 core→learning 30초 안이다
 - #280 core→ai 리포트 설정 제안(`AiClient.reportTemplate`, 25초)은 분석 스트림과 분리한 작은 서킷 `ai-report-template`(최근/최소 10건·실패율 50%·30초 차단·half-open 1건)을 쓴다. 설정 제안 실패가 분석 대화 스트림을 차단하지 않게 하기 위해서다. HTTP 4xx는 성공으로, 전송 오류·시간 초과·5xx(ai `AI_UNAVAILABLE`·`AI_PROMPT_VERSION_UNAVAILABLE` 포함)·빈 본문은 실패로 센다. OPEN은 기존 502 `AI_UNAVAILABLE`로 실패하며 이미 차감한 분석 사용량은 그대로 둔다. 재시도는 추가하지 않는다.
 - #167 분석 서킷은 헤더/첫 이벤트가 아닌 스트림 종료 결과를 집계한다. 중간 EOF·잘못된 스트림·시간 초과·error 이벤트는 실패, 정상 done/clarification 및 기존 TEMPLATE 결과는 성공이다. 사용자 취소·core 권한/저장/전송 처리 오류는 AI 실패 집계에서 제외하고 half-open 허가를 반환한다. OPEN은 기존 AI_UNAVAILABLE로 실패하며, 이미 접수한 분석 시도의 한도/사용 이력 차감은 보존한다. HTTP/1.1과 기존 body 종료·timer 취소를 유지한다.
 - 타임아웃 예산: 바깥 호출 타임아웃 > 안쪽 호출 합계 (예: core→learning 피드백 80초 > learning→core 결제 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초. learning→core는 `app.internal.core-read-timeout` 4초로 ai 35초와 따로 둔다, #501). 전체 상한은 CloudFront·ALB 타임아웃(4.3) 이내. 이를 넘는 SSE(피드백 80초, 분석 대화 120초)는 15초 heartbeat가 유휴 타이머를 갱신하는 것을 전제로 함
-- 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭)
-- P27 추억 설명은 learning→ai LLM 호출(15초·재시도 1회)을 기다리므로 learning→ai 35초가 필요해 일반 프록시 30초를 넘는다. core→learning 설명 경로는 별도 서킷 `learning-memory`(응답 45초 > learning→ai 35초, core #566)를 쓴다. 추억 검색도 같은 `learning-memory` 서킷을 쓰되 응답은 30초다(임베딩 1회). 검색의 임베딩 장애(learning 503 `AI_UNAVAILABLE`)가 일반 `learning-json`의 5xx 실패로 쌓여 주간 테마·시도 같은 일반 경로까지 막지 않게 하려는 것이다. 서킷 기준(최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·5xx 실패)은 `learning-json`과 같고, 값은 `app.learning.memory-search-timeout`·`memory-explanation-timeout`. 타임아웃 예산: 설명 45초 > learning→ai 설명 35초 + learning 내부 처리, 검색 30초 > learning→ai 임베딩 1회(20초). learning 쪽은 임베딩·설명이 각각 서킷 `ai-memory-embedding`·`ai-memory-explanation`을 쓴다. 질의 변환(#679 설계, ai #681·learning #682 구현)을 더하면 검색 30초 > learning→ai 변환 8초(재시도 없음, 서킷 `ai-memory-query`, ai LLM 호출 7초·재시도 없음, #681) + 임베딩 20초다. 변환 실패는 검색 실패가 아니라 원문 질문으로 진행하므로 core `learning-memory` 서킷 실패로 세지 않는다
+  - 상세 설명은 첫 출력이 형식 오류이거나 정리 후 부족할 때 반복 억제를 켜 한 번 재생성한다(#850). 두 SageMaker 호출은 합계 75초 마감을 공유한다. report→ai는 후보당 한 번만 요청하며 80초 상한과 설명 단계 300초 예산을 유지한다.
+- 재시도 계층: ai의 LLM 호출에서만 재시도, core·learning·report의 서비스 간 호출은 재시도 없음 (계층별 재시도 시 호출 수 곱셈 증폭). 예외는 learning→ai 추억 검색 질의 변환 1회 재시도다(#878). ai 쪽 그 LLM 호출은 재시도 0회라 곱셈 증폭 없이 최대 2번이다
+- P27 추억 설명은 learning→ai LLM 호출(15초·재시도 1회)을 기다리므로 learning→ai 35초가 필요해 일반 프록시 30초를 넘는다. core→learning 설명 경로는 별도 서킷 `learning-memory`(응답 45초 > learning→ai 35초, core #566)를 쓴다. 추억 검색도 같은 `learning-memory` 서킷을 쓰되 응답은 30초다(임베딩 1회). 검색의 임베딩 장애(learning 503 `AI_UNAVAILABLE`)가 일반 `learning-json`의 5xx 실패로 쌓여 주간 테마·시도 같은 일반 경로까지 막지 않게 하려는 것이다. 서킷 기준(최근/최소 20건·실패율 50%·30초 차단·half-open 1건, 4xx 정상·5xx 실패)은 `learning-json`과 같고, 값은 `app.learning.memory-search-timeout`·`memory-explanation-timeout`. 타임아웃 예산: 설명 45초 > learning→ai 설명 35초 + learning 내부 처리, 검색 30초 > learning→ai 임베딩 1회(검색 질문 임베딩 10초, #878. 주기 작업·설명 임베딩은 20초). learning 쪽은 임베딩·설명이 각각 서킷 `ai-memory-embedding`·`ai-memory-explanation`을 쓴다. 질의 변환(#679 설계, ai #681·learning #682 구현)과 1회 재시도(#878)를 더하면 검색 30초 > learning→ai 변환 8초 × 최대 2회(서킷 `ai-memory-query`, ai LLM 호출 7초·재시도 없음, #681) + 검색 질문 임베딩 10초 = 26초다. 기간 낱말이 없는 질문의 변환 실패는 원문 질문으로 진행하므로 core `learning-memory` 서킷 실패로 세지 않는다. 기간 낱말이 있는 질문이 재시도 뒤에도 실패하면 learning 503 `AI_UNAVAILABLE`이라 core `learning-memory` 서킷이 실패로 센다(임베딩 장애와 같음)
 - #38 일반 core→learning JSON 프록시는 연결 2초·응답 30초를 사용한다(피드백의 80초 예산은 #39). Resilience4j count window 20·최소 20건·실패율 50%·차단 30초·half-open 1건으로 복구를 확인한다. 전송 오류·5xx를 실패로 집계하고 4xx는 정상 HTTP 결과로 센다.
 - SSE heartbeat: 모든 SSE는 15초마다 주석 줄(`: ping`) 전송. 피드백은 learning 동기 응답 대기 중 전송할 데이터가 없어 필수
 - SSE 연결 종료
@@ -225,7 +226,7 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 | Domain | `domain` | `models.py`, `state.py` | 엔티티·값 객체, 상태 전이 규칙(`QUEUED→RUNNING`, 판정 상태 등) | 프레임워크·외부 라이브러리 의존 |
 | Infrastructure | `repository`, `client`, `messaging` | `repository.py`, `clients/`, `messaging/`, `llm/` | DB, 외부 API, 브로커, LLM, PG, S3 연동 | 업무 판단 |
 
-- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용한다. `_common`의 다른 주기 작업은 `_common/scheduler`에 두고 service를 호출한다(`IdempotencyCleanupScheduler` → `IdempotencyService.deleteExpired`, #314). 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`)
+- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용한다. `_common`의 다른 주기 작업은 `_common/scheduler`에 두고 service를 호출한다(`IdempotencyCleanupScheduler` → `IdempotencyService.deleteExpired`, #314). 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`). 같은 경로라도 다른 기능의 흐름이면 요청 조건으로 나눠 그 기능 controller가 받는다(learning `GET /internal/missions/{id}`: `context` 없음·`EXTRA`는 `MissionController.get` → `MissionService`, 테마 `context`는 `AttemptController.themeGuide` → `AttemptService`, #908)
 - Domain 오류(Spring): domain은 HTTP 상태가 없는 `_common/exception`의 `DomainException(ErrorKind, code, title, detail)`만 던진다. `ErrorKind` → HTTP 상태 변환은 `_common/exception` 한 곳에서 하고(2.3), HTTP 상태를 직접 받는 `BusinessException`은 application·presentation에서만 쓴다. repository는 한도 비교·HTTP 상태를 정하지 않고 값만 돌려준다(예: `SignupRateLimiter`는 가입 횟수, 조회 실패는 `null` → `AuthService`가 429·503 결정, #816). 예외의 상태·code를 읽는 곳은 두 예외를 함께 처리하는 공통 함수(`httpStatusOf`·`errorCodeOf`)를 쓴다 (#249)
 
 ### 2.2 의존 규칙
@@ -241,7 +242,7 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
   - 프록시 service 응답 해석 예외(#608, 2026-11-13 결정): 아래 core service는 learning 응답 본문을 service에서 `ObjectMapper.readTree`로 직접 읽는다. 발표 전 위험을 줄이려 코드를 옮기지 않고 예외로 둔다
     - 허용 이유: 공용 `LearningClient.exchange`가 돌려준 `HttpExchangeResult`를 controller까지 거의 그대로 넘기는 프록시라, 해석을 client로 옮기면 원문 응답 전달과 몇 칸 추출을 함께 돌려주는 client를 새로 만들어야 한다. service가 읽는 칸은 뒤따르는 업무 처리(사용량·포인트 적립·감사·액자 표시)를 정하는 데 필요한 것뿐이고, 읽기에 실패하면 응답을 바꾸지 않고 그 처리만 건너뛰거나(로그) 계약 오류로 막는다
     - 응답을 그대로 넘기며 후속 처리용 칸만 읽음: `LearningProxyService`(`startAttempt` 201의 `attemptId` → 사용량 기록, `reflection`의 409 `code`(`ATTEMPT_CLOSED`), `completedMission`·`inProgress`의 시도 `status`·`mission.id`), `ParticipationRewardService`(`reviewViewed`·`weeklyThemeViewed`가 받은 응답의 완료 칸으로 포인트 적립, 실패해도 응답 불변), `MemoryProxyService.album`(200 항목에 `displayed`만 더함, 모양이 다르면 502 `LEARNING_CONTRACT_INVALID`)
-    - 관리자 응답 허용 목록·감사: `AdminLearningService`(`stats`·`missionCounts`는 허용한 칸만 골라 반환, `sanitize`는 오류 응답을 허용 `code`만 남긴 problem으로 다시 만듦, `audited`는 성공 응답에서 감사 대상 ID·버전을 읽음). 해석 범위가 이 묶음에서 가장 크지만 요청 감사 → learning 호출 → 결과 감사 순서와 묶여 있어 결과를 모르면 `UNKNOWN`으로 남기는 흐름을 한 service에 둔다
+    - 관리자 응답 허용 목록·감사: `AdminLearningService`(`stats`·`missionCounts`는 허용한 칸만 골라 반환, `sanitize`는 오류 응답을 허용 `code`만 남긴 problem으로 다시 만듦, `audited`는 성공 응답에서 감사 대상 ID·버전을 읽음). 같은 성격으로 더한 칸(#908 점검): `weeklyPlanner`는 요청 본문 `draftId`로 감사 대상을 정하고 성공 응답 `draftId`와 대조, `sceneVersions`는 성공 응답 `scene`·`versions` 모양을 대조(감사 대상은 경로 `draftId`), `sanitize`는 `WEEKLY_THEME_PUBLISH_INCOMPLETE`의 `errors[].code`를 허용 코드만 남겨 core 고정 문구로 다시 만듦(learning 원문 메시지 미전달). 요청 본문은 변경 요청이 JSON 객체인지(`verifiedActor`)와 테마 초안 다시 생성의 `targets`(감사 detail, #537)만 읽음. 해석 범위가 이 묶음에서 가장 크지만 요청 감사 → learning 호출 → 결과 감사 순서와 묶여 있어 결과를 모르면 `UNKNOWN`으로 남기는 흐름을 한 service에 둔다
     - 응답 값을 업무 상태와 대조: `ConversationService`(`requirePeriodAttempts`·`reflection`). 응답은 `LearningRecordService` → `LearningRecordClient`로 받고, service는 그 값이 이번 분석 요청의 자녀·기간·페이지·근거 시도와 맞는지 확인한다. 업무 판단이라 Application 책임에 맞는다
     - 요청 본문 다시 만들기(하위 서비스 응답 아님): `LearningProxyService.storyViewed`·`answerPicked`, `MemoryProxyService.search`·`explanation`(`objectWith`)은 프록시가 원문 바이트로 받은 학생 요청 본문에서 허용 칸만 꺼내 새 본문을 만든다
     - 적용 범위: 위 service의 위 메서드에서 `LearningClient`·`LearningRecordService`·`LearningMemoryClient` 응답이나 요청 본문을 읽는 경우만. 결제 웹훅 본문(`PaymentWebhookService`)과 `SupportService`의 DB JSON 칸 읽기(정정 영향·공지 대상 역할)는 이 예외와 관계없다. `SupportService`는 learning 지원 응답도 읽고 있었으나(#792 점검) 이 목록에 넣지 않고 `LearningSupportClient`로 옮겼다(위 #792 항목)
@@ -485,6 +486,10 @@ backend/learning-service/src/main/kotlin/com/sagomungchi/learning/
 │  ├─ client/                    # MemoryEmbeddingClient(ai /internal/embeddings), MemoryExplanationAiClient, MemoryQueryAiClient(ai /internal/memory-queries, #682 구현), StudentProfileClient(core 닉네임)
 │  ├─ domain/
 │  └─ repository/
+├─ wordhelp/                     # (#599) 낱말 물어보기: 본인 시도 확인·미션 글·유출 검사 값을 붙여 ai 호출(저장 없음)
+│  ├─ controller/
+│  ├─ service/
+│  └─ client/                    # WordHelpAiClient(ai /internal/word-helps, 25초)
 └─ record/                       # 대시보드·에이전트 도구·리포트용 조회 API, student.deleted 소비(#128)
    ├─ controller/                # 기록 조회·존재 확인·결제 사용 증빙
    ├─ consumer/                  # StudentDeletedConsumer
@@ -579,8 +584,16 @@ backend/ai-service/
 │  │  ├─ service.py              # 기본 LLM 1회(또는 가짜)
 │  │  ├─ models.py
 │  │  ├─ checks.py               # 키워드·기간·검색용 문장 칸 규칙 검사
+│  │  ├─ weeks.py                # "N월 N째 주" 기간 계산(#877, LLM 값을 덮어씀)
 │  │  ├─ fake.py                 # MEMORY_QUERY_PROVIDER=fake 공백 분리 키워드
 │  │  └─ prompts.py              # memoryQuery 프롬프트 본문·버전
+│  ├─ word_help/                 # 낱말 물어보기: 국립국어원 사전 뜻 → 학생용 쉬운 말 (FN-LRN-21, #599)
+│  │  ├─ router.py               # POST /internal/word-helps
+│  │  ├─ service.py              # 표제어·유출 검사·뜻 고르기·대체 응답(사전 원문)
+│  │  ├─ dictionary.py           # 표준국어대사전·온용어 조회, 표제어 단위 캐시
+│  │  ├─ models.py
+│  │  ├─ fake.py                 # WORD_HELP_PROVIDER=fake 개발용 설명
+│  │  └─ prompts.py              # wordHelp 프롬프트 본문·버전
 │  ├─ prompt_versions/           # 활성 프롬프트 버전 (#68, #254 분리)
 │  │  ├─ router.py               # GET /internal/versions
 │  │  ├─ service.py              # PromptSync: core snapshot·대기 이벤트 조정
@@ -859,13 +872,13 @@ backend/report-service/
   - 자녀 수만큼 매일 작업이 생겨 report_db·S3 파일이 주간 대비 약 7배로 늘어난다. 보관 기간은 기존(P09 이용 중 보관)과 같음
 - 리포트 Gemma SageMaker 엔드포인트(FN-RPT-09·NFR-PRF-03, #742·#746)
   - 같은 계정·VPC의 SageMaker 실시간 엔드포인트 하나에 인퍼런스 컴포넌트(IC) 두 개를 둔다. 기반 IC `…-ic`(GPU 1, 메모리 예약 4096MB, 사본 0~1)가 S3 `base-awq/`(AWQ INT4 기반 모델)를 `ModelDataSource`로 받아 `/opt/ml/model`에 올리고, 어댑터 IC `…-explain`이 `BaseInferenceComponentName`으로 기반 IC 위에 S3 `adapter/`(LoRA r16)를 붙인다. **ai는 어댑터 IC를 부른다**(#746 D2, 2026-11-18 LoRA 사용 결정). 요청 본문의 `model` 값으로는 LoRA가 붙지 않아 `InvokeEndpoint`의 `InferenceComponentName`으로 고른다
-  - 컨테이너는 AWS vLLM SageMaker DLC(vLLM 0.33.0)다. LMI(DJL)는 쓰지 않는다. 인스턴스는 `ml.g6e.xlarge`(L40S 48GB, 호스트 32GiB)다. `ml.g6.xlarge`는 호스트 메모리가 부족해 IC 배치가 실패했다. 엔드포인트 설정은 `ManagedInstanceScaling` 0~1, 라우팅 `LEAST_OUTSTANDING_REQUESTS`, private 서브넷 2개와 전용 보안 그룹(4.3)이다
+  - 컨테이너는 AWS vLLM SageMaker DLC(vLLM 0.33.0) 위에 시작 때 모델 해시 검사를 더한 저장소 이미지(`infrastructure/aws/sagemaker/model-check/Dockerfile`, #777)다. 실서버 적용 시점은 팀 결정 대기([infra 9.17.8](../report/infra.md#9178-127-데모-전-적용-판단-근거-결정은-팀))이고, 적용 전 엔드포인트는 DLC 이미지 그대로다. LMI(DJL)는 쓰지 않는다. 인스턴스는 `ml.g6e.xlarge`(L40S 48GB, 호스트 32GiB)다. `ml.g6.xlarge`는 호스트 메모리가 부족해 IC 배치가 실패했다. 엔드포인트 설정은 `ManagedInstanceScaling` 0~1, 라우팅 `LEAST_OUTSTANDING_REQUESTS`, private 서브넷 2개와 전용 보안 그룹(4.3)이다
   - 평소 0대. Application Auto Scaling 예약 작업(`Asia/Seoul`)이 기반 IC 사본을 일 23:30에 최소·최대 1로, 월 02:00에 0으로 바꾼다. 사본이 0이 되면 관리형 인스턴스 축소로 인스턴스도 0대가 된다. 0대에서 호출 가능까지 약 20.5분(인스턴스 준비·이미지 10.6GB·모델 17GB 받기·vLLM 기동)이 걸려 월 00:00 배치보다 30분 먼저 켠다. 어댑터 IC는 기반이 다시 뜨면 SageMaker가 다시 붙인다
   - 0대(창 밖)일 때 들어온 요청은 즉시 `ValidationError`로 실패한다. 이때 다른 모델로 대체하지 않고 설명 없이 발행한다(#733). 경보·단계 확장으로 깨우는 정책은 두지 않았다
   - 응답 제한·생성 길이: 실시간 호출 60초 제한 안에서 `max_tokens`는 상세 1536·서술 1024다. 정상 상세 1건 약 5.7초(LoRA p50), 최악(동시 8건, 1536토큰)은 23.4초였다(1.3)
   - 권한(IAM): SageMaker 실행 역할(S3 `models/explanation/*` 읽기, DLC 이미지 받기, 로그·지표, VPC ENI)과 ai Pod Identity 역할의 `sagemaker:InvokeEndpoint`다. IC를 지정한 호출은 `inference-component/<이름>` ARN으로 권한을 검사하므로 엔드포인트 ARN과 IC ARN을 모두 허용한다. ai 클라이언트는 boto3 리전을 설정으로 명시한다(#747)
-  - 모델 무결성: 배포 전 `sagemaker_explanation.py verify`(그리고 `apply` 직전)가 S3 `manifest.json`(`base-awq/` + `adapter/`)과 객체 목록·크기·FULL_OBJECT SHA-256을 대조하고, 다르면 모델을 만들지 않는다(#746 D1). 승인 경로 잠금과 적재 때 검사는 #777이다
-  - 구성 정의는 `infrastructure/aws/sagemaker/explanation-endpoint.json`과 `sagemaker_explanation.py`(aws CLI)다. Argo CD·Helm 대상이 아니고, 저장소에서 빌드하는 이미지도 없어 `cd-release` 대상이 아니다. 절차는 [AWS README](../../infrastructure/aws/README.md#리포트-gemma-sagemaker-엔드포인트-746-2026-11-18), 근거는 [infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)
+  - 모델 무결성: 배포 전 `sagemaker_explanation.py verify`(그리고 `apply` 직전)가 S3 `manifest.json`(`base-awq/` + `adapter/`)과 객체 목록·크기·FULL_OBJECT SHA-256을 대조하고, 다르면 모델을 만들지 않는다(#746 D1). 승인 경로 잠금(`lock`, 버킷 정책 Deny)과 컨테이너 시작·LoRA 적재 때 해시 검사는 #777로 구현했다([infra 9.17](../report/infra.md#917-리포트-gemma-sagemaker-경로-잠금과-적재-때-해시-검사-777-2026-11-18))
+  - 구성 정의는 `infrastructure/aws/sagemaker/explanation-endpoint.json`과 `sagemaker_explanation.py`(aws CLI)다. Argo CD·Helm 대상이 아니다. 이미지는 `model-check/Dockerfile`로 계정마다 수동 빌드·게시하고 `explanation-endpoint.json`의 `imageRepository`·`imageDigest`로 고정하며, `cd-release` 대상이 아니다. 절차는 [AWS README](../../infrastructure/aws/README.md#리포트-gemma-sagemaker-엔드포인트-746-2026-11-18), 근거는 [infra 9.13.9](../report/infra.md#9139-sagemaker-검증과-엔드포인트-구성-746-2026-11-18)
   - 남은 것: 30명 배치 실측 뒤 창 끝 시각(지금 월 02:00) 조정, GPU 재고 부족 때 동작(이번 시험에서는 재고 부족이 나지 않음), 창 시작 뒤 IC가 InService가 아닐 때 경보(4.7)
   - 이전 설계(#742 전 클러스터 안 CPU `sllm-server`, #476·#509, AWS 데모 미배포)의 남은 release·NodePool·egress 값은 #835에서 지웠다. chart의 `keda.cron`·`modelDownload`·`nodeSelector`·`tolerations`, platform-data `placeholderObjects` 기능은 남겼고 쓰는 release는 없다
   - local(kind) 대역: `llm-stub` release(1대, KEDA·모델 받기 없음)가 SageMaker `InvokeEndpoint` 경로(`/endpoints/<이름>/invocations`)를 고정 응답으로 받는다. ai는 `REPORT_LLM_ENDPOINT_URL`을 이 Service로 돌리고 egress는 `llm-stub:8080`만 연다. 운영 값에는 없다
@@ -896,6 +909,7 @@ backend/report-service/
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량(큐별 `<큐>.dlq`, #187), 판정·피드백·리포트 처리 지연
 - 경보(#185·#187): Grafana Alerting → 팀 디스코드 웹훅(`aws-alerts`). 수집 장애·작업 적체·DLQ 적재·RabbitMQ 메모리, core 공개 API 영역별(인증·학생 학습·AI 처리·리포트·결제) 5xx 비율과 p95 지연(AI 처리는 SSE 스트림이 섞여 5xx 비율만), 월 LLM 비용 300 USD의 80%와 최근 1시간에 새로 생긴 미산정 호출(#764). 담당은 인프라 1명(동섭)이 전체를 받는다 (P10, P13). 임계값은 초기 기준이며 [경보 검증](../../infrastructure/gitops/operational-alerts/README.md)을 따른다
 - trace 저장(#187): Collector → Tempo(observability chart 선택 구성) → Grafana. core·learning은 Java agent trace, report-worker는 OTel SDK 소비 span. ai·scoring·report-api의 자체 span은 아직 없음
+- Collector는 trace 내보내기 전에 토스 청구·취소 URL의 키 경로와 Google 로그인·재인증 콜백의 쿼리를 제거한다(#900). 경로 형태와 상태 코드 등 진단용 span은 유지한다.
 - 백업: RDS 자동 백업(일 1회) + PITR, 보관 7일, RPO 5분·RTO 4시간 (P12)
 - `traceparent`를 HTTP 헤더와 이벤트 봉투 양쪽에 전파 → 동기·비동기 구간 단일 trace. core outbox는 저장 시점 span을 봉투에 담고 relay가 그 context 아래에서 발행해 AMQP 헤더로 잇는다. report-worker는 봉투 값을 부모로 소비 span을 열고 결과 이벤트에 AMQP 헤더를 붙인다 (#187, kind 검증)
 
@@ -936,6 +950,7 @@ backend/report-service/
 - core: `OutboxWriter`가 저장 시점 활성 span(없으면 요청 헤더 값)을 봉투 `traceparent`에 넣고, `OutboxRelay`가 그 값을 부모 context로 발행해 Java agent가 PRODUCER span·AMQP `traceparent` 헤더를 만든다. core·learning 소비자와 HTTP는 Java agent가 잇는다
 - report-worker: 봉투 `traceparent`를 부모로 CONSUMER span을 열고 하위 HTTP 호출과 결과 이벤트 봉투·AMQP 헤더에 넘긴다. 실패는 `messaging.outcome`(retry/dlq)·`error.type`만 남긴다
 - 업무 ID·학생 ID·메시지 내용은 span attribute에 넣지 않는다(메시지 ID·큐 이름만, HTTP span은 경로 템플릿만). exporter가 꺼져 있으면 받은 값만 그대로 넘긴다
+- Java agent가 자동으로 남기는 URL 속성 중 토스 청구·취소 경로의 `billingKey`·`paymentKey`(client `url.full`)와 Google 로그인·재인증 콜백의 `code`·`state`(server `url.query`)는 Collector traces pipeline의 `transform/redact`가 저장 전에 가린다(NFR-SEC-05·06, #900)
 - trace 저장소 장애는 지표·경보로 번지지 않게 한다(#784): Collector traces pipeline은 metrics보다 낮은 메모리 제한, exporter 대기열은 바이트 상한·재시도 30초로 묶어 넘치면 버린다
 
 #### 남은 경계
@@ -990,6 +1005,8 @@ SKN34-FINAL-3TEAM/
 │  │  ├─ <message>.v1.schema.json  # 메시지 1개·버전 1개 = 파일 1개, 1.4 메시지 이름 그대로
 │  │  └─ asyncapi.yaml           # (예정) exchange·routing key·생산/소비 매핑
 │  ├─ examples/
+│  │  ├─ model-registration-import.json  # 모델 등록 가져오기 예시(#367, scripts/tests 계약 검사)
+│  │  ├─ p08-metrics/            # P08 수치 규칙 공통 픽스처 cases.json(learning·report·ai 테스트 공용, #836)
 │  │  └─ report-admin-retry/     # 관리자 리포트 재처리 계약 예시
 │  └─ openapi/
 │     ├─ <service>.yaml          # api-spec.md 기준 생성. core-service(공개 API), 나머지(내부 API)
@@ -997,7 +1014,7 @@ SKN34-FINAL-3TEAM/
 ├─ ml/                           # 모델 학습 (클러스터 밖 실행, 이미지 빌드·배포 대상 아님. 예외: tox 재학습 이미지)
 │  ├─ m2/
 │  ├─ m1/                        # 수학 풀이 점검 학습·평가 코드(#263, 기준선까지·본 학습 전)
-│  ├─ tox/                       # 답변 표현 분류 학습·평가(#690), (예정) 재학습 진입점·CPU 이미지(#729, CronJob #730)
+│  ├─ tox/                       # 답변 표현 분류 학습·평가(#690), 재학습 진입점·CPU 이미지(#729), (예정) CronJob(#730)
 │  └─ sllm/                      # 설명 sLLM(리포트 Gemma LoRA) 학습·평가, 서빙 비교·SageMaker 측정 스크립트 (#475·#743·#746)
 ├─ evaluation/                   # 판정 일치도(QWK, #199)·(예정) 되묻기 유출·에이전트 숫자/인용 대조 평가
 │  ├─ datasets/                  # 평가셋별 cases.jsonl·fixtures (자체 작성 예시 답안, AI Hub 원문 미포함)
@@ -1052,6 +1069,8 @@ SKN34-FINAL-3TEAM/
 │  │  │  │  ├─ platform-data.yaml
 │  │  │  │  └─ observability.yaml     # local metrics 기반, Langfuse 제외
 │  │  │  └─ prod/                # AWS 데모 Helm values·ExternalSecret 참조·NetworkPolicy
+│  │  │     ├─ images/           # 앱별 이미지 digest만(#857, main에서 cd-release digest PR이 갱신)
+│  │  │     └─ argocd.json       # Argo CD chart values(손으로 1회 설치, #855)
 │  │  ├─ migrations/             # core·learning Flyway PreSync 이미지 Dockerfile
 │  │  ├─ operational-alerts/     # #187 경보 규칙 검증 스크립트·절차
 │  │  ├─ policies/
@@ -1086,6 +1105,7 @@ SKN34-FINAL-3TEAM/
 │     ├─ _web.yml
 │     ├─ ci-<service>.yml        # 서비스별 경로 필터 → 재사용 워크플로 호출 (감시 경로는 아래 목록)
 │     ├─ ci-db-schema.yml        # 마이그레이션 적용·ERD 대조 (scripts/check_db_migrations.py)
+│     ├─ ci-secrets.yml          # 저장소 비밀 정보 스캔(NFR-SEC-04, #810), 경로 필터 없이 모든 PR·push
 │     ├─ ci-contracts.yml        # 저장소 계약 회귀·core 실제 테스트 산출물 대조 (#143·#237); asyncapi 검사는 미구현
 │     ├─ ci-gitops.yml           # chart lint·렌더·스키마 검증(local YAML·prod JSON), migration 이미지 빌드 (#238·#509)
 │     ├─ ci-ml-m1.yml · ci-ml-m2.yml · ci-ml-tox.yml  # ml/m1·ml/m2·ml/tox ruff·pytest

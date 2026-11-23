@@ -74,7 +74,7 @@ paths:
         '403':
           description: 학생 scope 불일치
         '503':
-          description: AI_UNAVAILABLE 임베딩 또는 프로필 조회 실패
+          description: AI_UNAVAILABLE 임베딩 또는 프로필 조회 실패, 기간 낱말이 있는 질문의 질의 변환 실패(1회 재시도 뒤, #878)
   /payment-usage/students/{studentId}:
     get:
       operationId: getPaymentUsageEvidence
@@ -336,6 +336,70 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409': {$ref: '#/components/responses/Problem'}
+  /attempts/{attemptId}/word-help:
+    post:
+      operationId: wordHelp
+      summary: 낱말 물어보기 (api-spec 2.2.1·4.1, FN-LRN-21, #599)
+      description: >-
+        학생 본인 시도만. 미션 질문·안내 글·시도 학년·교과를 붙이고, 마무리 전이면 유출 검사 값(보이는 정답 글자·금지어·예시 답)을 넣어
+        ai POST /internal/word-helps를 부른다(25초). ai 응답의 versions를 뺀 값을 그대로 돌려주며 질문·응답은 저장하지 않는다.
+      parameters:
+        - $ref: '#/components/parameters/AttemptId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/StudentRole'
+        - $ref: '#/components/parameters/StudentScope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [question]
+              properties:
+                question: {type: string, minLength: 1, maxLength: 100, description: 앞뒤 공백을 뗀 뒤 1~100자}
+      responses:
+        '200':
+          description: 결과(state로 구분)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [state, headword, text, example, senses]
+                properties:
+                  state: {type: string, enum: [EXPLAINED, DICTIONARY_ONLY, NOT_FOUND, DEFERRED, OUT_OF_SCOPE]}
+                  headword: {type: [string, 'null']}
+                  text: {type: string}
+                  example: {type: [string, 'null']}
+                  senses:
+                    type: array
+                    maxItems: 3
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [definition, source]
+                      properties:
+                        definition: {type: string}
+                        source: {type: string, enum: [표준국어대사전, 온용어]}
+                        attribution: {type: [string, 'null']}
+                        sourceUrl: {type: [string, 'null'], format: uri}
+                        license: {type: [string, 'null'], format: uri}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '502':
+          description: AI_BAD_RESPONSE (ai 4xx·계약 밖 응답)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: DICTIONARY_UNAVAILABLE 또는 AI_UNAVAILABLE(ai 장애·서킷 차단). `retryable` 포함
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /attempts/{attemptId}/answers:
     post:
       operationId: submitAnswer
@@ -2669,13 +2733,13 @@ paths:
   /expression-reviews/label-count:
     get:
       operationId: countExpressionReviewLabels
-      summary: 재학습 새 라벨 수 (ops, #727)
+      summary: '재학습 새 라벨 수 (ops, #727)'
       description: >-
         표현 분류 재학습 작업(ops 토큰) 전용, core 프록시 없음. since(생략하면 처음부터)보다 뒤에 라벨된 OFFENSIVE·CLEAN 행 수와
         그중 가장 늦은 라벨 시각(없으면 null).
       parameters:
         - $ref: '#/components/parameters/SystemRole'
-        - {name: since, in: query, description: ISO-8601 시각(오프셋 포함), 이 시각 초과, schema: {type: string, format: date-time}}
+        - {name: since, in: query, description: 'ISO-8601 시각(오프셋 포함), 이 시각 초과', schema: {type: string, format: date-time}}
       responses:
         '200':
           description: 결과
@@ -2688,15 +2752,15 @@ paths:
   /expression-reviews/export:
     get:
       operationId: exportExpressionReviews
-      summary: 재학습 학습 데이터 내보내기 (ops, #727)
+      summary: '재학습 학습 데이터 내보내기 (ops, #727)'
       description: >-
         표현 분류 재학습 작업(ops 토큰) 전용. since 초과·until 이하에 라벨된 OFFENSIVE·CLEAN 행을 labeled_at 순으로 글·라벨만.
         학생·답변 ID와 시각은 없다. text는 학생이 쓴 칸을 줄바꿈으로 이은 뒤 앞 1,500자(코드포인트)로 자른 글.
         until은 필수이고 지금 이전이어야 해서 같은 범위를 다시 받으면 같은 결과(그사이 삭제된 학생 행만 빠짐).
       parameters:
         - $ref: '#/components/parameters/SystemRole'
-        - {name: since, in: query, description: ISO-8601 시각(오프셋 포함), 이 시각 초과, schema: {type: string, format: date-time}}
-        - {name: until, in: query, required: true, description: ISO-8601 시각(오프셋 포함), 이 시각 이하, 지금 이전, schema: {type: string, format: date-time}}
+        - {name: since, in: query, description: 'ISO-8601 시각(오프셋 포함), 이 시각 초과', schema: {type: string, format: date-time}}
+        - {name: until, in: query, required: true, description: 'ISO-8601 시각(오프셋 포함), 이 시각 이하, 지금 이전', schema: {type: string, format: date-time}}
       responses:
         '200':
           description: 결과

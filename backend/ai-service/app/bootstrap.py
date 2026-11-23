@@ -3,6 +3,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import httpx
+import openai
 from fastapi import FastAPI
 from langfuse import Langfuse
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -36,6 +38,9 @@ from app.report_narrative.router import router as report_narrative_router
 from app.security import InternalAuthMiddleware
 from app.theme_draft.router import router as theme_draft_router
 from app.theme_draft.storage import create_storage
+from app.word_help.dictionary import Dictionary
+from app.word_help.router import router as word_help_router
+from app.word_help.web_search import WordWebSearch
 
 
 @asynccontextmanager
@@ -81,6 +86,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.theme_storage = create_storage(settings)
     # 임베딩 (#467). 사용량 callType은 purpose로 KNOWLEDGE_EMBEDDING·MEMORY_EMBEDDING(#565)
     app.state.embedder = create_embedder(settings, recorder=usage_recorder)
+    # 낱말 물어보기 사전 (#599). 키가 없으면 그 요청만 503 DICTIONARY_UNAVAILABLE
+    app.state.dictionary = Dictionary(
+        settings.dict_korean_api,
+        settings.dict_korean_api_key,
+        settings.kli_korean_api,
+        settings.kli_korean_api_key,
+    )
 
     async def rabbitmq_ready() -> bool:
         return amqp.is_connected
@@ -88,7 +100,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with (
         internal_client(settings.core_url) as http,
         internal_client(settings.scoring_url) as scoring_http,
+        httpx.AsyncClient(timeout=3.0) as word_source_http,
     ):
+        search_client = (
+            openai.AsyncOpenAI(
+                api_key=settings.openai_api_key,
+                base_url="https://api.openai.com/v1",
+                max_retries=0,
+            )
+            if settings.word_help_provider == "llm" and settings.openai_api_key
+            else None
+        )
+        app.state.word_web_search = (
+            WordWebSearch(search_client, word_source_http, usage_recorder)
+            if search_client is not None
+            else None
+        )
         # 판정 M2·M1 교차 확인 (#69). timeout은 요청마다 남은 판정 시간으로 정함
         app.state.scoring = ScoringClient(scoring_http)
         versions = ActiveVersions()
@@ -99,6 +126,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             yield
         finally:
+            if search_client is not None:
+                await search_client.close()
             await consumer.close()
             await usage_recorder.close()
             await amqp.close()
@@ -122,5 +151,6 @@ def create_app() -> FastAPI:
     app.include_router(embedding_router)
     app.include_router(memory_explanation_router)
     app.include_router(memory_query_router)
+    app.include_router(word_help_router)
     app.include_router(versions_router)
     return app

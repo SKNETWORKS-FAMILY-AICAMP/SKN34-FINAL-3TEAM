@@ -22,6 +22,11 @@ score는 조정용 나누기가 없어 V를 --threshold(기본 0.35)로 채점�
 경계 카드 비율·원인)를 방식별·기록 수(학생 풀이 주 수)별로 더한다. 회차 주 월~금 중 질문 기간 안 날이 3일 이상이면 기간 안,
 1~2일이면 경계(섞임에서 뺌), 0일이면 섞임.
 
+#878 뒤 learning은 기간을 말한 질문의 질의 변환이 끝내 실패하면 503 AI_UNAVAILABLE을 돌려준다.
+모으기는 멈추지 않고 그 질문을 state UNAVAILABLE(카드 없음)로 남기고,
+채점은 결과 질문 Recall 0·기록 없음 질문 거절 실패로 세며 건수(unavailable)를 따로 낸다.
+해석 기간 수집은 키워드 개수(keywordCount, 원문 없음)도 남겨 기간만 질문 판정(#879)을 확인한다.
+
 토큰·비밀번호는 출력하지 않는다. 결과 파일에는 질문 ID·회차 키·시도 ID·점수·시간·해석 기간만 남는다.
 """
 from __future__ import annotations
@@ -78,7 +83,9 @@ def weekdays_in(week_start: str, period) -> int:
 
 
 def overlaps(week_start: str, period) -> bool:
-    """서비스 기간 필터(16.3)와 같은 겹침: 회차 주 [월요일, +7일)과 기간이 하루라도 겹침(주말 포함)"""
+    """서비스 기간 필터(16.3)와 같은 겹침: 회차 주 [월요일, +7일)과 기간이 하루라도 겹침(주말 포함).
+    #879 기간만 질문 경로는 월~금 중 1일 이상만 넣어 이보다 좁으므로
+    "필터 누락" 판정에는 이 넓은 규칙을 그대로 쓴다(16.9)"""
     s = dt.date.fromisoformat(week_start)
     return dt.date.fromisoformat(period["from"]) < s + dt.timedelta(days=7) and s < dt.date.fromisoformat(period["to"])
 
@@ -169,6 +176,9 @@ def v_search(url: str, token: str, sid: str, query: str) -> tuple[dict, float]:
     except urllib.error.HTTPError as e:
         status, payload = e.code, e.read()
     ms = (time.perf_counter() - start) * 1000
+    # #878: 기간 질문의 질의 변환 실패 안내(임베딩 장애도 같은 코드). 멈추지 않고 기록
+    if status == 503:
+        return {"state": "UNAVAILABLE", "cards": []}, ms
     if status != 200:
         raise SystemExit(f"검색 API HTTP {status} — 서비스·토큰·학생 ID 확인")
     body = json.loads(payload)
@@ -178,15 +188,19 @@ def v_search(url: str, token: str, sid: str, query: str) -> tuple[dict, float]:
 
 
 def ai_period(url: str, token: str, query: str, today: str):
-    """ai 질의 변환(api-spec 4.2.7)을 learning 호출자 토큰으로 직접 불러 해석 기간만 돌려준다(원인 분류용, 검색 때 호출과 별개).
-    실패하면 {"error": HTTP 상태}. 질문은 합성 평가셋 그대로(닉네임 없음)."""
+    """ai 질의 변환(api-spec 4.2.7)을 learning 호출자 토큰으로 직접 불러 해석 기간과 키워드 개수만 돌려준다.
+
+    원인 분류용이고 검색 때 호출과 별개다. 키워드 원문은 남기지 않는다.
+    실패하면 {"error": HTTP 상태}. 질문은 합성 평가셋 그대로(닉네임 없음).
+    """
     req = urllib.request.Request(f"{url.rstrip('/')}/internal/memory-queries", method="POST",
                                  data=json.dumps({"query": query, "today": today}).encode())
     req.add_header("Content-Type", "application/json")
     req.add_header("X-Internal-Token", token)
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return {"period": json.loads(r.read()).get("period")}
+            body = json.loads(r.read())
+            return {"period": body.get("period"), "keywordCount": len(body.get("keywords") or [])}
     except urllib.error.HTTPError as e:
         return {"error": e.code}
     except (urllib.error.URLError, TimeoutError):
@@ -303,16 +317,18 @@ def gold_keys(q, themes):
 def judge(q, res, threshold, themes):
     cards = [c for c in res["cards"] if threshold is None or c["score"] >= threshold]
     keys = [(c["themeId"], c["weekStart"]) for c in cards]
+    unavailable = res["state"] == "UNAVAILABLE"  # 503 안내(#878): 결과도 거절 성공도 아님
     if kind(q) == "deleted":
-        return {"ok": res["state"] == "NO_RECORDS"}
+        return {"ok": res["state"] == "NO_RECORDS", "unavailable": unavailable}
     if kind(q) == "reject":
-        return {"rejected": not keys}
+        return {"rejected": not keys and not unavailable, "unavailable": unavailable}
     gold = gold_keys(q, themes)
     # memory@2 기간만 질문은 정답 회차가 3개보다 많을 수 있어(카드 최대 3) 분모를 min(3, 정답 수)로 둔다
     denom = lambda k: min(k, len(gold)) if "period" in q else len(gold)
     found = [k for k in keys[:3] if k in gold]
     rank = next((i + 1 for i, k in enumerate(keys[:3]) if k in gold), None)
     return {"recall": len(set(found)) / denom(3), "hit1": bool(keys[:1] and keys[0] in gold),
+            "unavailable": unavailable,
             "mrr": 1 / rank if rank else 0.0,
             "recall_at": {k: len({x for x in keys[:k] if x in gold}) / denom(k) for k in (1, 2, 3)}}
 
@@ -331,6 +347,7 @@ def summarize(qs, raw, method, threshold):
            "recall@k": {k: round(sum(r["recall_at"][k] for r in res) / len(res), 3) for k in (1, 2, 3)} if res else None,
            "reject": round(sum(r["rejected"] for r in rej) / len(rej), 3) if rej else None,
            "reject_ci": wilson(sum(r["rejected"] for r in rej), len(rej)),
+           "unavailable": sum(r["unavailable"] for r in rs),
            "byCategory": {}}
     for cat in sorted({q["category"] for q in qs}):
         part = [(q, r) for q, r in zip(qs, rs) if q["category"] == cat]
@@ -500,7 +517,9 @@ def cmd_score(args):
     how = "돌려준 그대로(기준값 안 고름)" if args.as_served else (f"고른 기준값 {best}" if sweep else f"고정 기준값 {best}")
     print(f"{how} (조정용 {len(tune)}개) · 평가용 {len(ev)}개")
     for name, s in [(vname, v), *([] if not sweep else [("V@0.35", e["V@0.35"])]), ("K1", e["K1"]), ("K2", e["K2"])]:
-        print(f"  {name:8} Recall@3 {s['recall@3']} {s['recall@3_ci']} · Hit@1 {s['hit@1']} · MRR {s['mrr@3']} · 거절 {s['reject']} {s['reject_ci']}")
+        print(f"  {name:8} Recall@3 {s['recall@3']} {s['recall@3_ci']} · Hit@1 {s['hit@1']}"
+              f" · MRR {s['mrr@3']} · 거절 {s['reject']} {s['reject_ci']}"
+              f" · 503 {s['unavailable']}")
     print(f"  범위 위반 { {m: len(x) for m, x in report['violations'].items()} } · p95 {report['latencyMs']['p95']}ms")
     for name, mx in (report.get("mixing") or {}).items():
         print(f"  {name:8} 섞임: 카드 {mx['cardMixRate']} · 질문 {mx['queryMixRate']} {mx['queryMixRate_ci']} · 경계 카드 {mx['boundaryCardRate']} · 원인 {mx['causes']}")

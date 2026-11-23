@@ -398,6 +398,8 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 | 자동 등록 기록자 | 로그인·활성화 권한 없는 시드 계정 `mlops-pipeline` | `audit_log.actor_user_id`가 NOT NULL FK(core V5)라 사람 아닌 등록자를 넣을 계정이 필요. 사용자 결정 11/17 |
 | 학습 데이터 보관 | Job의 emptyDir에만, 끝나면 삭제. 등록 기록에는 건수·해시만 | 탈퇴·삭제 학생 원문이 학습 데이터 사본으로 남지 않게(P09) |
 | 다음 실행 기준 | S3 `models/tox-retrain/last.json`의 `labelsUntil` | core 내부 snapshot은 평가 근거를 전파하지 않음(api-spec 5.2). DB를 늘리지 않음 |
+| 공개 데이터 경로 | S3 모델 버킷 `datasets/tox-retrain/public-v1/`(비공개, 재학습 작업은 읽기만). 공개 데이터는 K-MHaS·BEEP! 학습·검증과 평가용 APEACH만이고 아이 말투 문장(`kid_train`, Claude 작성)은 넣지 않는다. 함께 두는 것: 검증 글의 단어 목록 결과, 아래 꼭 통과할 글 고정본, 파일별 SHA-256 `manifest.json` | 담당자 결정 2026-11-23(#729, 설계에 없던 값). `models/` 밖이라 #730에서 읽기·쓰기 권한을 나눌 수 있음. 생성형 AI 문장 제외는 NFR-DAT-03(#887) |
+| 꼭 통과할 글 고정 | 389개(데모 241·웹 97·함정 51)를 `must_pass.json`으로 얼려 위 묶음에 둔다. 웹 데모 문장은 #837(`da8f322c`) 직전 커밋에서 꺼낸 것 | 담당자 결정 2026-11-23. #837은 중복 목업 정리라 지워진 2문장도 정상 문장이다. 지금 저장소에서 뽑으면 387개라 평가 세트가 달라진다 |
 
 #### 이슈 본문과 달라진 점
 
@@ -409,9 +411,9 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 #### 한계·확인 필요
 
 - 모델이 경계 구간에도 넣지 않고 신고도 없는 신조어는 모이지 않는다. 단어 목록(`answer-filter`) 갱신은 이 루프 밖이다
-- 이어 학습을 반복하면 예전에 배운 것을 잊을 수 있다. 공개 데이터를 섞고 APEACH 하락 조건으로 확인한다. 섞는 비율(기준안 새 라벨의 3배)은 #729 실측으로 정한다
+- 이어 학습을 반복하면 예전에 배운 것을 잊을 수 있다. 공개 데이터를 섞고 APEACH 하락 조건으로 확인한다. 섞는 비율은 #729에서 기준안(새 라벨의 3배)을 그대로 썼다. 실제 라벨로 다시 본다
 - 경계 답변은 운영자 라벨이 쌓여야 쓸 수 있어, 라벨이 없으면 재학습이 돌지 않는다(주기마다 성공 종료)
-- CPU 학습 시간·메모리, CronJob을 둘 노드는 #729·#730에서 실측한다
+- CPU 학습 시간·메모리는 #729에서 실측했다(아래 구현 기록). CronJob을 둘 노드는 #730에서 정한다
 - 모델 개선 이용 고지(#732, 사용자 결정 2026-11-22): 개인정보 처리방침 1.1 9.③이 "입력 정보를 인공지능 모델 학습에 이용하지 않음"이라 재학습과 충돌했다. core V54로 처리방침 1.2·법정대리인 동의서 1.1(둘 다 필수, 2026-11-23 시행)을 게시해 처리 목적·항목·보유 기간에 표현 분류 모델 개선을 넣고 9.③은 외부 생성형 AI에 한정했다. 기존 학부모·자녀는 다시 동의해야 이용 가능. 필수 동의라 재학습 데이터 범위(#727)는 바꾸지 않는다. 경위는 [인증·계정 보고서](auth-account.md) 8절
 - 확인 필요: Job 실패 경보의 지표 출처(kube-state-metrics 유무) → #730
 - 구현: scoring `review` #726, learning 검토 대기·내보내기 #727, core·web 라벨링·자동 등록·추천 태그 #728, `ml/tox` 재학습 #729, CronJob·네트워크 #730
@@ -424,6 +426,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - 신고 공유물: 기존 `CommunityService.moderate` 안에서 `HIDDEN_REPORT`가 되면 행 추가, 처음 `REMOVED`가 되면 `OFFENSIVE`, `HIDDEN_REPORT`에서 다시 공개되면 `CLEAN`. 자동 라벨은 `labeled_by` null이고, 운영자가 직접 라벨한 행과 이미 같은 라벨인 행은 그대로 둔다
 - 학생 삭제: `StudentDeletionService`가 시도·답변보다 먼저 `deleteByStudent`(FK NO ACTION)
 - 로그: 출처·라벨·건수만(`표현 검토 대기 추가 source=…`, `표현 검토 자동 라벨 …`, `표현 검토 라벨 label=…`, `표현 검토 내보내기 count=…`). learning에는 사용자 지표가 없어(#692와 같음) 건수는 로그로 본다
+- 새 라벨 수(#907, 2026-11-23): 건수와 가장 늦은 라벨 시각을 `SELECT count(*), max(labeled_at)` 한 문장으로 읽는다. 두 문장이면(READ COMMITTED) 그사이 커밋된 라벨이 시각에만 들어간다. #729 분석: 내보내기 뒤 늦게 커밋된 이른 시각 라벨은 한 문장으로도 남음(`labeled_at`이 `until` 이하라 내보내기에서도 다음 `since` 뒤에서도 빠짐)
 - 계약: `contracts/openapi/learning-service.yaml` 1.5.0에 4개 경로. `ExpressionReviewApiTest`가 실제 응답을 남기고 `scripts/validate_learning_expression_review_contracts.py`가 스키마와 학생·답변 ID가 없는지 확인(ci-contracts learning-contracts)
 - 시험: `ExpressionReviewApiTest`(목록 순서·필터·글 잇기·400·403, 라벨 덮어쓰기·404·400, 새 라벨 수·내보내기 since 초과·until 이하·SKIP 제외·1,500자 자름·400·403), `AnswerServiceTest`(경계 구간만 한 번, 보통·검사 안 됨·막힘은 없음, 로그에 ID 없음), `CommunityTest`(신고 숨김·자동 라벨·반복·직접 라벨 유지), `StudentDeletionTest`(표 목록에 추가), `ToxicityClientTest`(모델 `name:version`)
 
@@ -433,6 +436,63 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - "답변 파기 시 함께 삭제": cascade가 아니라 답변보다 먼저 같은 트랜잭션에서 지운다(ERD 4.3.1과 같은 방식, 이슈 댓글)
 - 설계에 없어 정한 것(사용자 확인 2026-11-20): 같은 신고 처리 반영이 다시 와도 라벨 시각을 바꾸지 않음(재학습 새 라벨로 다시 세지 않게), 내보내기 `until`은 필수(같은 범위면 같은 결과). `since`는 "이후"를 초과로 읽음
 - 이미 신고로 숨겨져 있던 공유물(V24 전)은 행이 없다가, 처리되면 라벨과 함께 행이 생긴다
+
+#### 재학습 작업 구현 (#729, 2026-11-23)
+
+- **운영 실행은 #887 결정 뒤.** 지금 활성 모델 1.0-1119는 Claude가 쓴 아이 말투 문장으로 배운 모델이고 이어 학습한 모델도 그것을 이어받는다. 이 구현은 활성 모델을 따라가므로 #887에서 모델을 바꿔도 코드는 그대로다
+- 코드: `ml/tox/scripts/retrain.py`(진입점), `ml/tox/Dockerfile`(CPU torch, uid 10001, 빌드 기준은 저장소 루트), `ml/tox/tests/test_retrain.py`. 학습·평가는 기존 `train.py`·`eval.py`(`score_texts`)·`wordlist.py`(`pick`)·`quant.py`를 쓴다
+- 새 모델 `train_info.json`: `data`는 이번 학습 자료만(K-MHaS·BEEP! 건수, 서비스 라벨 건수·해시), `dataSha256`은 라벨·학습·홀드아웃·공개 묶음 해시. 출발 모델의 자료 설명은 이어받지 않고, 계보에 아이 말투 문장 학습이 있으면 `initFrom.kidWrittenLineage`에 내력만 남긴다(#887)
+- 순서: `last.json`의 `labelsUntil` → 새 라벨 수(200건 미만이면 종료 코드 0) → 내보내기 → 활성 모델·public-v1 받기(해시 대조) → 이어 학습 → `threshold`·`review_threshold`를 다시 계산해 `train_info.json`에 → 비교·추천 태그 → 업로드(파일마다 전체 SHA-256 PUT, HEAD `FULL_OBJECT`) → 자동 등록 → 성공했을 때만 `last.json`
+- 호출: learning·core의 내부 API 4개만(`label-count`·`export`·`model-versions/active`·`model-versions`). DB·다른 서비스 코드에는 닿지 않는다. 토큰은 보내는 쪽 규칙대로 환경 변수 `INTERNAL_TOKEN`에 ops 토큰 값(architecture 2.2)
+- 종료 코드: 0 성공·건너뜀·409, 10 설정, 11 `last.json` 읽기, 12 라벨 수, 13 내보내기, 14 활성 모델, 15 데이터, 16 학습, 17 평가, 18 업로드, 19 등록, 20 `last.json` 쓰기, 21 중단, 22 그 밖
+- 작업이 남기는 로그는 단계·걸린 초·건수·버전·오류 종류만(평가 때 transformers·torch 경고는 stderr에 나오며 글·점수 없음). 학습 프로세스 출력(에폭별 점수)은 버리고 토큰·AWS 자격 증명도 넘기지 않는다
+
+실제로 쓴 값(이슈 #729 "확인 필요"):
+
+| 항목 | 쓴 값 | 근거 |
+|---|---|---|
+| 새 라벨 | 200건 이상 | 기준안 |
+| 공개 데이터 | 새 라벨 수의 3배(200건이면 600건), K-MHaS·BEEP! 학습 86,095줄에서 범위마다 정해진 무작위 | 기준안 |
+| 홀드아웃 | 라벨 시각이 늦은 20%(올림, 200건이면 40건) | 기준안 |
+| 에폭 | 2(그중 검증 F1이 높은 에폭 저장) | 기준안 1~2. CPU 2개로 전체 약 10~14분(세 번 실측)이라 줄이지 않음 |
+| 추천 | 꼭 통과 389개 오탐 0 AND 홀드아웃 F1이 활성보다 큼 AND APEACH F1 하락 0.01 이하 | 기준안 |
+| 경계 구간 | 검증 정상 글 중 `[review_threshold, threshold)`가 5% 이하인 가장 낮은 값(0.01 간격) | 기준안 |
+
+이슈 본문과 다른 점(설계를 따름):
+
+- 추천 태그는 `evaluation.recommendation`으로 보내 `evalResult.evidence.recommendation`에 저장된다(api-spec 5.2.3)
+- 평가 세트는 이슈의 "데모 491·함정 약 80"이 아니라 꼭 통과할 글 389개 고정본·APEACH·홀드아웃
+- 다음 실행 기준은 S3 `models/tox-retrain/last.json`의 `labelsUntil`
+
+설계에 없어 구현하며 정한 것(리뷰 때 확인 부탁. 데이터 경로·389 고정은 위 표의 담당자 결정):
+
+- 후보·활성 비교도 서비스 조건(활성 모델의 `quantization`, 글 하나씩·창 8개씩, 각자 자기 임계값, 모델만)으로 잰다. 설계는 임계값을 그 조건으로 고른다고만 적고(api-spec 5.2, 위 임계값 표) 비교 조건은 따로 적지 않았다
+- 모델 이름은 활성 모델과 같게(다른 이름을 켜면 활성 2개로 scoring 503), 버전 `yyyyMMdd-HHmm`의 시각은 KST(CronJob 시간대)
+- `until`은 라벨 수 응답의 `latestLabeledAt`을 그대로 쓴다(작업 시계와 무관)
+- 홀드아웃·검증·APEACH·꼭 통과할 글과 같은 글은 학습에서 뺀다. 공개 묶음에 `kid-written` 줄이 있거나 389개 고정본이 저장소 것과 다르면 멈춘다
+- 학습률·배치는 `train.py` 기본값(2e-5·32), `OMP_NUM_THREADS` 기본 2
+- 조건에 맞는 임계값이 없으면 기존 스크립트처럼 실패로 끝내고 등록하지 않는다. 409는 종료 코드 0이지만 `last.json`은 바꾸지 않는다
+- 업로드는 이미지에 AWS CLI 대신 boto3 `put_object`(같은 PutObject, `upload_file` 안 씀). 인자는 scoring.md 6.3과 같고 재시도 없음. `--expected-bucket-owner`는 `S3_BUCKET_OWNER`를 줄 때 붙으므로 운영에서는 #730이 넣는다
+
+로컬 확인(2026-11-23, compose e2e·MinIO·재학습 이미지, 실제 AWS·EKS 아님):
+
+- **로컬 확인 라벨 = K-MHaS test 200, 사람이 쓴 글.** 합성 학생 행에 시드 729 무작위로 넣고 실제 라벨 그대로 core 관리자 API로 라벨(막을 글 99·정상 101, 49.5:50.5. 시험셋 전체는 46.0:54.0)
+- 199건(99·100): 1)에서 종료 코드 0, S3·등록부 변화 없음
+- 200건: 1)~6) 끝까지, `tox-koelectra-small` `20261123-0015` `REGISTERED`·`NOT_RECOMMENDED`(홀드아웃 F1 0.6250, 활성 0.6667). 관리자 화면에서 "승인 대기"·"비추천"·근거 확인. 활성화하지 않음
+- 자체 점검 반영 뒤 같은 200건으로 1)~6)을 두 번 더(`20261123-0052`, 최종 코드 `20261123-0108`): 가중치·지표·태그가 첫 실행과 같고 `train_info.json`에 "팀 작성" 없음. 지난 기준을 못 본 것처럼만 바꿔 돌림
+- 다시 실행하면 `labelsUntil` 뒤 0건으로 종료 코드 0. 학습 중 SIGTERM이면 종료 코드 21, 임시 폴더 남지 않음
+- 시험: `uv run pytest` 115개 통과(재학습 93개 포함: 추천 규칙, 200/199, 내보내기 형식, 업로드 실패 시 등록 안 함, 단계별 종료 코드), `ruff check`·`format --check` 통과
+- 로그·감사·등록 기록에 라벨 글(6자 이상 196개)·학생 ID·ops 토큰 0건
+- 이 후보는 K-MHaS test로 재지 않았다(일부가 학습·홀드아웃에 들어가 부풀어 보임)
+- 시간·메모리: CPU 2개에서 587·854·774초, 첫 실행의 컨테이너 최고 2,469MiB([eval_tox.md](../../ml/tox/results/eval_tox.md) "재학습 실측")
+
+남은 것·한계:
+
+- 운영 실행(#887 결정 뒤), CronJob·권한·이미지 배포(#730). 첫 실행에 `last.json`이 없을 때 S3가 404를 주려면 `s3:ListBucket`이 필요하다(없으면 403이라 종료 코드 11)
+- #907 5번(`label-count`의 count·latest 두 조회): 재학습은 `until = latestLabeledAt`으로 내보내기를 받아 두 조회 사이에 커밋된 라벨도 학습에 들어간다(건수만 더 많음). 그사이 삭제되면 count > 0·latest null이라 종료 코드 12로 끝난다. `labeled_at`이 `until`보다 이른데 내보내기 뒤에 커밋된 라벨은 다음 `since`에서 빠질 수 있고, 이것은 한 문장 조회로도 남는다
+- public-v1은 운영 S3에 아직 없다. `ExpressionPolicy`가 바뀌면 `wordlist_flags.json`을 다시 뽑아 새 버전 경로로 올려야 한다
+- 등록 뒤 `last.json` 쓰기만 실패하면 다음 주기에 같은 라벨로 한 번 더 등록된다. 업로드 뒤 등록이 실패하면 객체는 남는다(scoring.md 6.3)
+- 홀드아웃이 최소 40개(200건의 20%)라 한두 문장으로 추천이 갈릴 수 있다(로컬 확인의 비추천도 막을 글 22개 중 1개 차이). 기준안 조정은 운영 데이터를 보고 판단한다. APEACH·389개는 매번 같은 세트라 반복하면 그 세트에 치우칠 수 있다
 
 ## 17. 고착 RUNNING 판정 1분 주기 탐지 (#241)
 
@@ -1422,3 +1482,20 @@ learning #801 병합 전에 목 입력으로 개발했고, 병합된 learning Op
 
 - 학부모 일일 리포트 문제 카드의 "돌아보기" 줄이 원문 공개 상태에서 난이도 코드를 그대로 `돌아보기 · NORMAL`로 보인다(비공개 상태는 `쓰지 않음`). Markdown도 `### 돌아보기` 아래 `NORMAL`. 난이도 코드를 화면 문구(쉬웠어요·보통이에요·어려웠어요)로 바꾸는 처리가 없는 것으로 추정
 - Markdown·PDF 파일은 생성 때의 공개 설정으로 만들어져, 비공개 때 생성한 판은 나중에 공개로 바꿔도 "원문 비공개 또는 답변 없음"으로 남는다(기존 동작, 이번 기능과 무관)
+
+## 43. 주간 테마 장면 검수·주차 편성·게시 확정 (#882, 2026-11-23 문서 정리 #909)
+
+PR #889(learning V25~V27)로 구현한 관리자 주간 테마 운영의 서버 규칙을 정리한다. 설계 문서는 [state-diagram 3.5·3.5.1](../design/state-diagram.md#35-weekly_themestatus-p23-385), [api-spec 2.8](../design/api-spec.md#28-관리자-fn-adm-fn-sup-관리-측--apiv1admin)·4.1, [class-diagram 4.4](../design/class-diagram.md#44-주간-테마커뮤니티-theme-385--community-386-구현)에 반영했다.
+
+### 정한 것
+
+- 장면 검수(V25): 다시 생성본은 원래 초안 묶음(`theme_draft.family_root_id`)에 매달고, 장면(`INTRO`·`MON`~`FRI`·`OUTRO`)마다 버전 이력에서 선택본(`theme_draft_scene_selection`)과 별표·메모(`theme_draft_scene_note`, 160자)를 저장한다. 채택은 장면별 선택본을 합친 결과로 미션 5개·테마를 만들고, 원래 결과와 조합이 다르면 learning 검사를 다시 한다. 채택·버리기 때 선택을 고정(`frozen_scene_choices`)한다. 다시 생성 요청 자체는 기존 선택을 바꾸지 않는다
+- 주차 편성(V26): 생성 기준 주(`week_start`)와 별도로 편성 주(`planned_week`, 학년·주당 하나 부분 UK)를 둔다. 채택 적용 주는 편성 주, 없으면 생성 기준 주. 편성은 원본 `READY` 초안만, 학년별 권고 잠금으로 테마 작성·게시와 직렬화한다
+- 게시 확정: 학년·주에 게시 테마가 있으면 그 주는 잠긴다(`409 WEEK_LOCKED`) — 같은 주 다른 테마 게시·작성·수정, 그 주 초안 요청·채택·버리기·편성·장면 선택이 막힌다. 게시는 요일 미션·기준표 버전을 고정(`weekly_theme_day.mission_version_id`·`rubric_version_id`)하고 그 주 편성을 해제한다. 예전 문서의 "같은 학년·주 `PUBLISHED`가 있으면 422"는 학년 잠금 뒤 409가 먼저 나가므로 바로잡았다(422 `WEEK_ALREADY_PUBLISHED`는 동시 게시가 부분 UK에 걸릴 때만)
+- 관리자가 본 상태 대조: 테마 `expectedVersion`·`expectedPlannedDraftId`·`expectedPublishedVersion`, 초안 `expectedPlannedWeek`, 편성 `expectedWeek`·`expectedTargetDraftId`가 다르거나 묶음에 영상 생성 대기가 있으면 `409 PLAN_CONFLICT`. 채택한 테마의 학년·주 변경은 `409 THEME_SCHEDULE_LOCKED`. core는 세 코드를 허용 목록으로 그대로 전달한다
+- 진행 중 시도의 테마 버전 고정(V27 `attempt.theme_version_id`)은 #930·[ERD](../design/erd.md)에서 다룬다
+
+### 검증
+
+- 단위·통합 테스트: `WeeklyThemeAdminServiceTest`·`ThemeDraftServiceTest`·`ThemeDraftMediaServiceTest`·`ThemeDraftConcurrencyTest`·`AdminWeeklyThemeControllerTest`(learning), `AdminOperationsIntegrationTest`(core, 오류 코드 전달·감사)
+- #909 문서 정리는 코드 동작을 바꾸지 않았다(`WeeklyThemeAdminService.publish` 주석만 실제 오류 코드로 정정)

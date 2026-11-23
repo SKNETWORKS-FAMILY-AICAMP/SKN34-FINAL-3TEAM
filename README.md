@@ -72,7 +72,7 @@
 
 리텐션과 리포트 개편 기능입니다. 모두 구현했습니다.
 
-- **주간 테마:** 학년(초3·초4·초5·초6)별 주 1테마, 그 주 처음 '오늘 문제 풀기' 때 시작 이야기(#589), 월~금 KST 0시마다 1문제 누적 공개(다섯 생각 유형)·토요일까지 풀기, 토요일 되돌아보기·다시 풀기, 일요일 닫힘(프리미엄은 토요일과 같이 이용)·정답 즉시 엔딩(2026-11-10 개정 #483). 포인트는 당일 풀이·개근·주간 완주(core #485·learning #484 반영, web #487 진행 중)
+- **주간 테마:** 학년(초3·초4·초5·초6)별 주 1테마, 그 주 처음 '오늘 문제 풀기' 때 시작 이야기(#589), 월~금 KST 0시마다 1문제 누적 공개(다섯 생각 유형)·토요일까지 풀기, 토요일 되돌아보기·다시 풀기, 일요일 닫힘(프리미엄은 토요일과 같이 이용)·정답 즉시 엔딩(2026-11-10 개정 #483). 포인트는 당일 풀이·개근·주간 완주(core #485·learning #484·web #487 반영)
 - **커뮤니티:** 학생이 공개 설정(기본 끔, 보호자 선택 동의)을 켜면 미션을 처음 마무리한 답을 공유하고, 같은 미션을 마무리한 학생만 정해진 반응 4종으로 의견을 남김. 순위·인기순 없음
 - **포인트·꾸미기:** 판정 결과와 무관하게 참여로만 적립, 포인트 조회와 테마·캐릭터·캐릭터 아이템 해금·착용
 - **일일 리포트:** 매일 자정(다음 날 00:00) 그날 기록을 템플릿으로 정리(LLM 미호출, 무료 포함), 주간 리포트는 유지하고 테마 요약 추가. 일일 리포트 대화는 프리미엄
@@ -142,9 +142,9 @@ flowchart LR
 | **DB·파일** | PostgreSQL 17, AWS RDS, S3, MinIO | 서비스별 데이터 소유권과 무결성, 파일·모델 가중치 분리 저장 |
 | **이벤트·중계** | Redis 8, RabbitMQ 4 | Redis는 기기 페어링·요청 제한·알림 중계, RabbitMQ는 생성 작업·완료·삭제·버전 이벤트 |
 | **인증·결제** | Google OAuth/OIDC, JWT, 토스페이먼츠 테스트 SDK·API | 보호자 로그인·재인증, 학생 세션, 테스트 결제·구독·환불 |
-| **컨테이너·배포** | Docker Compose, kind, Kubernetes, Helm, AWS EKS | 로컬 통합 환경과 클러스터 배포. AWS는 승인 후 Helm으로 적용 |
+| **컨테이너·배포** | Docker Compose, kind, Kubernetes, Helm, AWS EKS | 로컬 통합 환경과 클러스터 배포. AWS는 이미지 digest PR 병합 → prod Argo CD 동기화로 구현, 현재 AWS 데모는 수동 Helm 배포 |
 | **AWS 기반 구성** | ALB, CloudFront, ECR, Secrets Manager, External Secrets | 진입 경로, 이미지 저장, 환경별 비밀 값 주입 |
-| **CI·GitOps** | GitHub Actions, Argo CD | 테스트·계약 검사·이미지 빌드·배포. Argo CD는 로컬 kind GitOps 환경에서 사용 |
+| **CI·GitOps** | GitHub Actions, Argo CD | 테스트·계약 검사·이미지 빌드·배포. Argo CD는 로컬 kind와 prod 정의(`infrastructure/gitops/argocd/prod/`, #855~#857) |
 | **관측·확장** | Prometheus, Grafana, OpenTelemetry, Langfuse, HPA, Karpenter | 서비스·LLM 관측 구성과 확장. 실제 적용·시험 범위는 [배포 현황](#deployment)에서 구분 |
 | **테스트** | JUnit 5, Testcontainers, pytest, Ruff, Playwright, MSW, k6 | 단위·통합·계약·화면·E2E·부하 시험 |
 
@@ -515,16 +515,16 @@ npm run dev
 |---|---|---|
 | **로컬 개발** | Docker Compose + Vite, 선택 MinIO | 서비스 통합·기능별 재현 |
 | **로컬 Kubernetes** | kind·Calico·Ingress·Helm·Argo CD | GitOps 동기화·네트워크 정책·관측 구성 |
-| **AWS 데모** | CloudFront·ALB·EKS, RDS·S3, ECR·Secrets Manager | GitHub Actions에서 승인 후 Helm 배포, 배포 후 주요 경로 확인 |
-| **관측·확장** | 서비스·큐·DB 지표, 감사·이벤트·LLM 사용량, HPA·Karpenter | core·learning·ai HPA 반영. 부하에 따른 Karpenter 확장·축소 실측과 scoring·worker 확장은 후속 검증 |
+| **AWS 데모** | CloudFront·ALB·EKS, RDS·S3, ECR·Secrets Manager | 구현: `cd-release`가 이미지 게시 후 digest PR 생성 → 병합 시 prod Argo CD 동기화(비상용 `helm-emergency`). 현재 데모 앱은 수동 Helm 배포 상태 |
+| **관측·확장** | 서비스·큐·DB 지표, 감사·이벤트·LLM 사용량, HPA·Karpenter | core·learning·ai HPA 반영. 부하에 따른 HPA·Karpenter 노드 확장·축소 실측 완료([infra 9.14](docs/report/infra.md#914-aws-데모-부하-시험-2차-hpakarpenter-확장축소-384-2026-11-18)), scoring·worker 확장은 후속 검증 |
 
 ```text
 feature 브랜치 → develop 통합·CI → main 배포 기준
-  → 릴리스 계획·이미지 준비 → prod 승인
-  → Helm 적용 → 배포 후 경로 확인 → 이력·증빙 저장
+  → cd-release: 릴리스 계획 검증·이미지 게시 → digest PR
+  → PR 승인·병합 → prod Argo CD 동기화 → 배포 후 경로 확인 → PR 댓글 기록
 ```
 
-AWS 데모 배포는 **승인된 Helm 적용**입니다. 실패 시 자동 롤백했다고 간주하지 않으며, 배포 이력과 준비된 복귀 절차를 따릅니다.
+AWS 데모 배포는 **digest PR 승인·병합 뒤 Argo CD 동기화**로 구현했고(비상용은 승인된 Helm 적용 `helm-emergency`), 현재 데모 앱은 수동 Helm으로 배포된 상태입니다([architecture 4.2](docs/design/architecture.md#42-운영-클러스터-eks)). 실패 시 자동 롤백했다고 간주하지 않으며, 배포 이력과 준비된 복귀 절차를 따릅니다.
 
 [로컬 kind](infrastructure/kind/README.md) · [AWS 구축·운영](docs/report/infra.md#4-aws-데모-구성-185) · [배포 승인·복귀](docs/report/infra.md#7-cd-배포-승인이력롤백-186) · [릴리스 워크플로](.github/workflows/cd-release.yml)
 

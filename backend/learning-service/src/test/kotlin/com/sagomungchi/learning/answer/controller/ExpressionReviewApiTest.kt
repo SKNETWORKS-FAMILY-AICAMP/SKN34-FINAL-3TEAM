@@ -14,6 +14,7 @@ import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.mission.domain.InputType
+import org.apache.ibatis.session.SqlSessionFactory
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -34,6 +35,8 @@ import java.nio.file.Path
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /** 표현 검토 대기 관리자·재학습 내부 API (#727, api-spec 4.1.5). 응답에 학생·답변 ID가 없는지도 봄 */
 @AutoConfigureMockMvc
@@ -43,6 +46,7 @@ class ExpressionReviewApiTest : PostgresRepositoryTest() {
     @Autowired lateinit var json: ObjectMapper
     @Autowired lateinit var attemptService: AttemptService
     @Autowired lateinit var answerService: AnswerService
+    @Autowired lateinit var sessions: SqlSessionFactory
     @MockitoBean lateinit var toxicity: ToxicityClient
 
     private lateinit var rows: TestRows
@@ -136,6 +140,18 @@ class ExpressionReviewApiTest : PostgresRepositoryTest() {
         export("until=어제").andExpect { status { isBadRequest() } }
         labelCount("since=2026-11-20").andExpect { status { isBadRequest() } }
         labelCount(role = "ADMIN").andExpect { status { isForbidden() } }
+    }
+
+    @Test
+    fun `새 라벨 수와 가장 늦은 라벨 시각은 한 문장으로 읽는다`() {
+        val mapper = "com.sagomungchi.learning.answer.repository.ExpressionReviewMapper"
+        val sql = sessions.configuration.getMappedStatement("$mapper.countLabeledSince")
+            .getBoundSql(mapOf("since" to null)).sql.lowercase()
+        assertTrue(sql.contains("count(*)") && sql.contains("max(r.labeled_at)"), sql)
+        assertFalse(sessions.configuration.hasStatement("$mapper.latestLabeledSince"))
+
+        val empty = labelCount().body()
+        assertEquals(listOf(0, true), listOf(empty["count"].asInt(), empty["latestLabeledAt"].isNull))
     }
 
     // ---------- 준비 ----------

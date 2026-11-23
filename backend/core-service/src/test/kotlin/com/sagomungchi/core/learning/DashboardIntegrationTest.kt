@@ -62,7 +62,7 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
         listOf("TERMS", "PRIVACY", "GUARDIAN").forEach { kind ->
             val document = UUID.randomUUID(); documents.add(document)
             // Latest required policy, plus existing policies, are all granted to this unique fixture.
-            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'합성 동의','본문',true,CURRENT_DATE,now())", document, kind, subject)
+            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'합성 동의','본문',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,now())", document, kind, subject)
         }
         jdbc.queryForList("SELECT id,kind FROM consent_document WHERE required=true").forEach { doc ->
             jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at) VALUES(?,?,?,?,true,'AGREED',now())",
@@ -114,6 +114,18 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
             "detail" -> attemptJson().dropLast(1) + ",\"state\":\"OK\",$period}"
             else -> """{$base,"items":[]}"""
         }
+    }
+
+    @Test fun `consent fixture stays current over a migration document taking effect today in KST`() {
+        // #918: a migration document effective today (KST) used to outrank the fixture dated with the DB's UTC
+        // CURRENT_DATE between 00:00 and 09:00 KST. Fixtures now use the app's KST date and are newer on a tie.
+        listOf("TERMS", "PRIVACY", "GUARDIAN").forEach { kind ->
+            val document = UUID.randomUUID(); documents.add(document)
+            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'합성 개정','본문',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,now()-interval '1 day')",
+                document, kind, document.toString())
+        }
+        stub.respond = { LearningHttpStub.Reply(body = reply("summary", true)) }
+        call("GET", "/api/v1/children/$child/summary?from=2026-10-01&to=2026-10-07", bearer = parentToken()).andExpect(status().isOk())
     }
 
     @Test fun `seven routes authenticate and forward one student with trace and internal token`() {

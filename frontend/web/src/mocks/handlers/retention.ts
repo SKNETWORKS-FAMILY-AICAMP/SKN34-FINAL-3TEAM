@@ -637,7 +637,7 @@ export const retentionHandlers = [
               status: 422,
               code: 'WEEKLY_THEME_PUBLISH_INCOMPLETE',
               title: '게시 검사를 통과하지 못했습니다.',
-              errors: errors.map((message) => ({ message })),
+              errors,
             } as never)
           const planned=mockPlannerDrafts().find(d=>d.grade===t.grade&&d.plannedWeek===t.weekStart)
           if('expectedPlannedDraftId' in body && body.expectedPlannedDraftId!==(planned?.draftId??null)) fail(409,'PLAN_CONFLICT','해제할 편성 후보가 바뀌었습니다.')
@@ -761,8 +761,9 @@ function themeInput(raw: unknown): Omit<MockWeeklyTheme, 'themeId' | 'status' | 
   }
 }
 /** 게시 검사(목업): 다섯 요일 모두 채움·서로 다른 생각 유형·같은 학년·주 게시 1개. */
+// learning WeeklyTheme.publishErrors와 같은 오류 코드({code, message}). 목업 미션에는 시연 전용 표시가 없어 MISSION_DEMO_ONLY는 없음
 function publishErrors(t: MockWeeklyTheme) {
-  const errors: string[] = []
+  const errors: { code: string; message: string }[] = []
   const grade = Number(t.grade.slice(1))
   // 같은 테마 버전의 제공을 재개할 때는 미션이 여전히 게시 중인지 확인하고 저장된 학년·유형을 검사한다.
   const frozen = t.publishedVersion === (t.version ?? 1) ? t.missionSnapshots : undefined
@@ -776,12 +777,14 @@ function publishErrors(t: MockWeeklyTheme) {
         return v && v.gradeMin <= grade && v.gradeMax >= grade ? [[m.missionId, v.thinkingType] as const] : []
       }),
   )
-  if (t.days.some((d) => !d.missionId)) errors.push('비어 있는 요일이 있습니다.')
-  if (t.days.some((d) => d.missionId && !byId.has(d.missionId))) errors.push('학년에 맞지 않거나 게시되지 않은 미션이 있습니다.')
+  const published = new Set(adminMissions.filter((m) => m.status === 'PUBLISHED').map((m) => m.missionId))
+  if (t.days.some((d) => !d.missionId)) errors.push({ code: 'DAYS_INCOMPLETE', message: '비어 있는 요일이 있습니다.' })
+  if (t.days.some((d) => d.missionId && !published.has(d.missionId))) errors.push({ code: 'MISSION_NOT_PUBLISHED', message: '게시되지 않은 미션이 있습니다.' })
+  if (t.days.some((d) => d.missionId && published.has(d.missionId) && !byId.has(d.missionId))) errors.push({ code: 'GRADE_MISMATCH', message: '학년에 맞지 않는 미션이 있습니다.' })
   const types = t.days.map((d) => byId.get(d.missionId)).filter(Boolean)
-  if (new Set(types).size !== THINKING_ORDER.length) errors.push('다섯 생각 유형이 하나씩 들어가야 합니다.')
+  if (new Set(types).size !== THINKING_ORDER.length) errors.push({ code: 'THINKING_TYPES', message: '다섯 생각 유형이 하나씩 들어가야 합니다.' })
   if (retentionState.themes.some((x) => x !== t && x.status === 'PUBLISHED' && x.grade === t.grade && x.weekStart === t.weekStart))
-    errors.push('같은 학년·주에 이미 게시한 테마가 있습니다.')
+    errors.push({ code: 'WEEK_ALREADY_PUBLISHED', message: '같은 학년·주에 이미 게시한 테마가 있습니다.' })
   return errors
 }
 function itemFields(b: Partial<MockLookItem>) {

@@ -24,8 +24,11 @@ class ReauthenticationService(private val repository: ReauthenticationRepository
  private val credentials: PasswordCredentialService,
  manager: PlatformTransactionManager) {
  private val tx=TransactionTemplate(manager)
- data class Started(val challengeId: UUID, val authorizationUrl: String, val expiresAt: OffsetDateTime, val stateCookie: String)
- data class Issued(val reauthToken: String, val expiresAt: OffsetDateTime)
+ // 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+ data class Started(val challengeId: UUID, val authorizationUrl: String, val expiresAt: OffsetDateTime, val stateCookie: String) {
+  override fun toString() = "Started(challengeId=$challengeId, authorizationUrl=***, expiresAt=$expiresAt, stateCookie=***)"
+ }
+ data class Issued(val reauthToken: String, val expiresAt: OffsetDateTime) { override fun toString() = "Issued(reauthToken=***, expiresAt=$expiresAt)" }
  fun start(identity: AuthenticatedAccount, purpose: ReauthPurpose, childId: UUID?, scope: String?): Started {
   validate(purpose,childId,scope)
   val id=UUID.randomUUID(); val state=tokens.randomToken(); val nonce="$id:${tokens.randomToken()}"; val verifier=tokens.randomToken()

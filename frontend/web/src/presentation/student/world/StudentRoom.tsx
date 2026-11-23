@@ -55,13 +55,8 @@ const frameSaveMessage = (e: unknown) => {
 }
 const LOOK_SAVE_FAILED = '벽지·가구를 바꾸지 못했어요. 고른 그대로 두었으니 잠시 뒤에 다시 저장해 주세요.'
 const DECOR_SAVE_FAILED = '방 소품을 놓지 못했어요. 놓은 그대로 두었으니 잠시 뒤에 다시 저장해 주세요.'
-/** 방 소품 초안 한 칸(서버에 보내는 모양, core #723 계약안) */
+/** 방 소품 초안 한 칸(서버에 보내는 모양, core #723 칸 + #758 색). color null = 소품 기본 색 */
 type DraftDecor = { surface: DecorSurface; col: number; row: number; itemKey: string; color: string | null }
-/**
- * 놓은 방 소품 색 고르기를 보일지. core는 #723(PR #736)에 color 칸이 없어 실서버는 color를 저장하지 않는다(모르는 칸으로 버림).
- * core 색 후속 이슈가 병합되면 true로 켠다. 그때까지 놓으면 기본 색(color null)이고, 받은 색은 그대로 그린다.
- */
-const DECOR_COLOR_PICK = false
 const decorKey = (list: DraftDecor[]) => JSON.stringify(list.map((d) => `${d.surface}:${d.col}:${d.row}:${d.itemKey}:${d.color ?? ''}`).sort())
 
 /** 액자 속 그림이 없을 때 쓰는 작은 풍경. 회차마다 언덕 색만 달라진다 */
@@ -214,8 +209,8 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
     }
     if (decorChanged) {
       kinds.push('decor')
-      // 색 칸은 core 색 후속 전 계약에 없어 보내지 않는다(DECOR_COLOR_PICK을 켤 때 같이 보냄)
-      jobs.push(saveDecor.mutateAsync(DECOR_COLOR_PICK ? draftDecor : draftDecor.map(({ surface, col, row, itemKey }) => ({ surface, col, row, itemKey }))))
+      // 색 포함 계약 칸 다섯 개 그대로 보낸다(core #758: 색을 빼면 서버가 기본 색으로 바꿔 저장하므로 늘 함께 보냄)
+      jobs.push(saveDecor.mutateAsync(draftDecor))
     }
     const results = await Promise.allSettled(jobs)
     setSaving(false)
@@ -345,7 +340,7 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
     const { dc, dr } = stepCell(picked.surface, dir)
     moveTo(picked.surface, picked.col + dc, picked.row + dr)
   }
-  /** 고른 소품 색 바꾸기(놓은 것마다, core #723 color) */
+  /** 고른 소품 색 바꾸기(놓은 것마다, core #758 color) */
   const paint = (color: string) => {
     if (pickedDecor === null) return
     setDraftDecor((d) => d.map((x, i) => (i === pickedDecor ? { ...x, color } : x)))
@@ -607,7 +602,7 @@ export function StudentRoom({ child, onTheme, onAlbum, onCustomize, onFriends, o
                     <span className="st-decor-thumb"><DecorThumb assetKey={picked.assetKey} color={picked.color} /></span>
                     <span><b>{pickedName} 옮기는 중</b><small>방의 초록 칸을 누르거나 화살표·방향키로 옮겨요.</small></span>
                   </div>
-                  {DECOR_COLOR_PICK && decorColors(picked.assetKey).length > 1 && (
+                  {decorColors(picked.assetKey).length > 1 && (
                     <div className="st-decor-colors" role="group" aria-label={`${pickedName} 색`}>
                       {decorColors(picked.assetKey).map((col) => (
                         <button key={col.key} type="button" aria-pressed={(decorColor(picked.assetKey, picked.color)?.key ?? '') === col.key} aria-label={col.label}

@@ -388,6 +388,8 @@ test('관리자: 주간 테마 작성→검토→게시 검사, 꾸미기 아이
   assert.equal(publish.status, 422)
   assert.equal(publish.data.code, 'WEEKLY_THEME_PUBLISH_INCOMPLETE')
   assert.ok(publish.data.errors.length > 0)
+  assert.ok(publish.data.errors.some((e: { code: string }) => e.code === 'DAYS_INCOMPLETE'), '서버처럼 errors[{code, message}]')
+  for (const e of publish.data.errors) assert.deepEqual(Object.keys(e).sort(), ['code', 'message'])
   assert.equal((await call('/admin/weekly-themes', { ...created.data, weekStart: '2026-11-17' })).status, 422, '월요일만')
 
   const item = await call('/admin/look-items', { code: 'HAT_TEST', slot: 'HAT', name: '시험 모자', pricePoints: 20, assetKey: 'looks/test.svg' })

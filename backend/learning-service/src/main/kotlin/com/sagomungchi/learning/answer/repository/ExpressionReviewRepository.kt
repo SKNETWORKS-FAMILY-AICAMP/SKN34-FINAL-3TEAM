@@ -1,6 +1,7 @@
 package com.sagomungchi.learning.answer.repository
 
 import com.sagomungchi.learning.answer.domain.ExpressionReviewLabel
+import com.sagomungchi.learning.answer.domain.ExpressionReviewLabelCount
 import com.sagomungchi.learning.answer.domain.ExpressionReviewRow
 import com.sagomungchi.learning.answer.domain.ExpressionReviewSource
 import org.springframework.stereotype.Repository
@@ -33,8 +34,8 @@ class ExpressionReviewRepository(private val mapper: ExpressionReviewMapper) {
 
     fun findById(id: UUID): ExpressionReviewRow? = mapper.findById(id)
 
-    /** since 뒤(초과)에 라벨되고 SKIP이 아닌 행 수와 그중 가장 늦은 라벨 시각 */
-    fun countLabeledSince(since: Instant?): Pair<Long, Instant?> = mapper.countLabeledSince(since) to mapper.latestLabeledSince(since)
+    /** since 뒤(초과)에 라벨되고 SKIP이 아닌 행 수와 그중 가장 늦은 라벨 시각. 한 문장이라 둘은 같은 행들의 값(#907) */
+    fun countLabeledSince(since: Instant?): ExpressionReviewLabelCount = mapper.countLabeledSince(since)
 
     /** since 초과·until 이하에 라벨된 OFFENSIVE·CLEAN 행을 labeled_at 순으로 */
     fun findExport(since: Instant?, until: Instant): List<ExpressionReviewRow> = mapper.findExport(since, until)

@@ -168,7 +168,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 ## 전체 서비스 더미 데이터 (#808)
 
-**아직 실행하지 않은 절차**다(2026-11-22 작성). 12/7 시연에서 학생 커뮤니티(친구 생각·반응·친구 방)·학부모(리포트·분석 대화·알림)·관리자 화면(운영 현황·작업 상태·AI 사용량·결제·신고·문의·공지)이 비어 보이지 않게, 가상 가족 30개(자녀 36명)에 4주(W1 11/9·W2 11/16·W3 11/23은 시험 시계, W4 11/30은 실제 시각) 기록을 공개 API로 쌓는다. 계획·화면별 최소 건수·결정은 [infra 9.7.6](../../docs/report/infra.md#976-전체-서비스-시연용-더미-데이터-생성-계획-854-2026-11-22), 실행 결과는 그 절 아래에 남긴다. 위 #624 시연 학생 절차와 같은 시계 정지점에서 함께 돈다.
+2026-11-22 작성, 2026-11-23 kind 리허설(가족 6개)로 한 번 돌렸다([infra 9.7.6.7](../../docs/report/infra.md#9767-u5-kind-리허설-결과-2026-11-23)). B에서는 아직 실행하지 않았다. 12/7 시연에서 학생 커뮤니티(친구 생각·반응·친구 방)·학부모(리포트·분석 대화·알림)·관리자 화면(운영 현황·작업 상태·AI 사용량·결제·신고·문의·공지)이 비어 보이지 않게, 가상 가족 30개(자녀 36명)에 4주(W1 11/9·W2 11/16·W3 11/23은 시험 시계, W4 11/30은 실제 시각) 기록을 공개 API로 쌓는다. 계획·화면별 최소 건수·결정은 [infra 9.7.6](../../docs/report/infra.md#976-전체-서비스-시연용-더미-데이터-생성-계획-854-2026-11-22), 실행 결과는 그 절 아래에 남긴다. 위 #624 시연 학생 절차와 같은 시계 정지점에서 함께 돈다.
 
 테마·미션·가구·소품은 만들지 않는다. 테마·미션은 LLM·RAG 생성 담당자가 게시한다(#890). 스크립트는 게시 여부만 확인하고 없으면 멈춘다.
 
@@ -208,6 +208,10 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 `FAKETIME`은 UTC다. 정지점마다 core·learning 두 Deployment의 `FAKETIME`만 바꾸고 롤아웃을 기다린다(Pod가 다시 뜨고 그 사이 자정은 지나가지 않는다). 리포트 ShedLock은 DB(실제) 시각 기준 최소 1분 잠금이라 경계 정지점 사이 실제 간격을 1분 넘게 둔다.
 
+- 롤아웃이 끝나도 이전 Pod가 `Terminating`으로 약 1분 더 요청을 받는다. 그동안 API를 부르면 이전 가짜 시각으로 발급한 토큰을 새 Pod가 `TOKEN_EXPIRED`로 거절한다. `kubectl -n app get pods`에서 core·learning `Terminating`이 없어진 뒤 명령을 돌린다(kind 리허설 실측: 정지점 전환 약 40초)
+- 같은 `FAKETIME` 값을 다시 넣으면 Pod가 다시 뜨지 않는다(시계가 그대로 흐름). 같은 시각에서 다시 시작하려면 `kubectl -n app rollout restart`
+- Git Bash에서 `kubectl set env`를 부르면 `LD_PRELOAD=/usr/...` 경로가 Windows 경로로 바뀌어 시계가 켜지지 않는다. `MSYS_NO_PATHCONV=1`을 붙이거나 PowerShell에서 실행하고, 켠 뒤 `kubectl -n app get deploy core-service -o yaml`의 `LD_PRELOAD` 값을 본다
+
 | 주 | 수 19:00(5문제 무리 월~수) | 토 14:00(나머지·정답·반응) | 토 23:56(→ 일 00:00 일일) | 일 23:56(→ 월 00:00 일일·주간) |
 |---|---|---|---|---|
 | W1 | `@2026-11-11 10:00:00` | `@2026-11-14 05:00:00` | `@2026-11-14 14:56:00` | `@2026-11-15 14:56:00` |
@@ -216,7 +220,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 - 수 19:00: `D solve --stage wed`
 - 토 14:00: `D solve --stage sat` → (W2·W3만) #624 `solve --child <초3>`·`solve --child <초5>` → `D react`(모든 풀이 뒤)
-- 토 23:56·일 23:56: 롤아웃 뒤 가짜 00:00이 지나고 5분 더 기다린 뒤 관리자 작업 상태 또는 `audit-demo-data.sql` `dummy854_report_jobs`로 그 기간 작업이 `COMPLETED`인지 본다. 리포트 Gemma(SageMaker)는 실제 시각 예약이라 0대여서 더미 리포트는 설명 없이 발행된다(정상)
+- 토 23:56·일 23:56: 롤아웃 뒤 가짜 00:00이 지나고 5분 더 기다린 뒤 관리자 작업 상태 또는 `audit-demo-data.sql` `dummy854_report_jobs`로 그 기간 작업이 `COMPLETED`인지 본다. 주간 서술도 리포트 Gemma(SageMaker)로 부르고 실패하면 대체 문구 없이 작업이 `FAILED(GENERATION_FAILED)`가 된다(설계상 대체 없음, kind 리허설 발견). SageMaker는 실제 시각 예약이라 W1~W3 경계에서는 0대이므로, **시계 동안 SageMaker를 손으로 1대로 켜 둔다(2026-11-23 결정)**. 켜 두지 않으면 그 주 기록이 있는 프리미엄 학생(더미 꾸준·보통 프리미엄, 시연 초5 W2·W3)의 주간 리포트가 실패한다. 기록 없는 학생·무료 학생·일일 리포트는 SageMaker와 상관없이 `COMPLETED`다
 - 정지점 중간에 실패하면 같은 정지점에서 같은 명령을 다시 돌린다(끝난 요일·반응은 건너뜀). 주를 넘긴 뒤 빠진 데이터는 채우지 않고 기록한다
 - 수요일 03:00을 넘는 정지점은 없다(테마 초안 자동 생성, 1개 $4~5). 시계 동안 learning 초안 생성도 끈다
 
@@ -225,19 +229,21 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 시험 시계 이미지는 위 #624 순서 4와 같다(`demo-clock.Dockerfile`, core·learning 각각 ECR push).
 
 켜기
+0. B만: 시계 시작 약 30분 전에 `sagemaker_explanation.py --profile <B> copies 1`로 리포트 Gemma를 1대로 켜고(0대에서 약 21분) `status`로 InService·copies 1을 확인한다. 주간 예약(`schedule`)은 건드리지 않는다. 비용은 `ml.g6e.xlarge` 시간당 약 $3.2, W1~W3 동안 켜 두면 약 3시간·$10
 1. B만: Argo CD가 되돌리지 않게 한다. ApplicationSet 템플릿이 자동 동기화라 Application만 끄면 ApplicationSet 컨트롤러가 다시 켤 수 있으므로 컨트롤러를 먼저 멈춘다
    - `kubectl -n argocd get deploy`로 이름 확인 → `kubectl -n argocd scale deploy argocd-applicationset-controller --replicas=0`
    - `argocd app set prod-core-service --sync-policy none`, `argocd app set prod-learning-service --sync-policy none`
    - B 첫 정지점에서 1~2분 뒤 `argocd app get prod-core-service`의 Sync Policy가 계속 `<none>`인지 확인(kind에는 ApplicationSet·자동 동기화가 없어 확인 불가)
 2. `kubectl -n app set image deploy/core-service core-service=<core 시계 이미지>`, learning도 같게
 3. `kubectl -n app set env deploy/core-service LD_PRELOAD=/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1 FAKETIME="@2026-11-11 10:00:00" FAKETIME_FORCE_MONOTONIC_FIX=1 FAKETIME_DONT_RESET=1`, learning은 같은 값에 `APP_THEMEDRAFT_ENABLED=false`(수 03:00 자동 초안·초안 생성 주기 끔)
-4. `kubectl -n app rollout status deploy/core-service`·`learning-service` → `kubectl -n app exec deploy/core-service -- date -u`가 정지점 시각
+4. `kubectl -n app rollout status deploy/core-service`·`learning-service` → 이전 Pod `Terminating`이 없어질 때까지 기다린다. `kubectl exec ... date -u`는 새 프로세스라 늘 `FAKETIME` 시작 값만 보여 주므로 앱 시각 확인으로 쓰지 않는다. 앱 시각은 `kubectl -n app logs deploy/core-service -c core-service --tail=1`의 로그 시각 또는 `FAKETIME` + (지금 − 컨테이너 시작 시각)으로 본다
 
 끄기(W3 끝)
 1. B: `argocd app set prod-core-service --sync-policy automated --auto-prune --self-heal`(learning도) → selfHeal이 이미지·환경 변수를 Git 값으로 되돌린다 → `kubectl -n argocd scale deploy argocd-applicationset-controller --replicas=1` → 두 Application Synced·Healthy
 2. kind: `kubectl -n app set image`로 원래 이미지, `kubectl -n app set env deploy/<앱> LD_PRELOAD- FAKETIME- FAKETIME_FORCE_MONOTONIC_FIX- FAKETIME_DONT_RESET-`(learning은 `APP_THEMEDRAFT_ENABLED-`도)
 3. 두 Pod `date -u`가 실제 시각이고 ReplicaSet이 배포 상태와 같은지 확인. 시계 동안 가짜 시각으로 서명한 S3 그림 URL은 깨지므로 화면 확인은 끈 뒤에 한다
-4. 실제 11/30 00:00 정기 실행이 가짜 11/30 00:00에 만든 W3 주간 리포트를 다시 만들지 않는지 `dummy854_report_jobs`로 확인(kind 리허설 확인 항목)
+4. B: W1~W3 주간 리포트(일 23:56 정지점)가 모두 `COMPLETED`인지 본 뒤 `sagemaker_explanation.py --profile <B> copies 0`으로 내린다. **11/29 23:30 실제 주간 창(#886 PRF-03 0대 복귀 확인) 전에 끝낸다.** 예약은 그대로라 그 창은 평소대로 켜지고 월 02:00에 0대로 돌아간다
+5. 실제 11/30 00:00 정기 실행이 가짜 11/30 00:00에 만든 W3 주간 리포트를 다시 만들지 않는지 `dummy854_report_jobs`로 확인(kind 리허설 확인 항목)
 
 되돌리기: 시험 구독은 `add-dummy854-subscriptions.sql` 머리말의 UPDATE로 해지한다. 더미 기록은 dm854p 학부모가 자녀 프로필을 삭제(학부모 설정)해 지운다.
 
@@ -245,7 +251,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 2026-11-19 작성, **아직 실행하지 않은 절차**다. 시연용 B 계정을 11/26~27에 부트스트랩하고 11/28에 배포한다(#783). B의 DB는 A 최종 RDS 스냅샷을 복원한다(2026-11-18 결정). 이 문서 작업에서 AWS는 조회도 변경도 하지 않았다.
 
-- 위치: 실행 절차는 쓰는 스크립트(`demo_stack.py`·`sagemaker_explanation.py`) 옆인 이 README에 둔다. `docs/report/infra.md`는 A에서 한 일의 기록이라 계정 번호를 바꿀 때도 A 값을 그대로 둔다. #760의 빈 클러스터 첫 배포와 B DB용 A 쪽 스냅샷 단계(A-1~A-3)는 [infra 보고서 9.16](../../docs/report/infra.md#916-빈-클러스터-첫-배포와-b-계정-부트스트랩-보완-760-2026-11-18)에 있고, B 순서는 이 런북 하나로 둔다. 실행 결과와 실제 걸린 시간은 끝난 뒤 infra 보고서에 절로 남긴다.
+- 위치: 실행 절차는 쓰는 스크립트(`demo_stack.py`·`sagemaker_explanation.py`) 옆인 이 README에 둔다. `docs/report/infra.md`는 A에서 한 일의 기록이라 계정 번호를 바꿀 때도 A 값을 그대로 둔다. #760의 빈 클러스터 첫 배포와 B DB용 A 쪽 스냅샷 단계(A-1~A-3)는 [infra 보고서 9.16](../../docs/report/infra.md#916-빈-클러스터-첫-배포와-b-계정-부트스트랩-보완-760-2026-11-18)에 있고(세부 KMS 단계는 아래 "선행 (A 계정, 11/25 A 종료 직전)", 결정은 infra 9.19), B 순서는 이 런북 하나로 둔다. 실행 결과와 실제 걸린 시간은 끝난 뒤 infra 보고서에 절로 남긴다.
 - 배포 방식: 지금 방식(cd-release가 앱 5종을 배포하고 나머지는 손으로 적용)을 기준으로 썼다. 팀이 B에 Argo CD 도입을 검토 중이며(미결정), 도입하면 달라지는 단계를 표의 "Argo CD면" 열에 적었다.
 - ★는 실행 전 동섭 승인 지점이다. 예상 시간은 11/17·11/19 A 실측(infra 9.11, #601 기록)을 바탕으로 한 추정이다. 명령의 `<B>`는 B 프로필, `<B 계정>`은 12자리 번호다.
 
@@ -258,7 +264,8 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 | B 계정 번호 | (미정) | 아래 "A 계정 값 교체", CD 변수 |
 | 리전 | (미정. A와 같은 `ap-northeast-2`로 가정) | `demo-stack.json` `region`·서브넷 AZ(2a·2b), CloudFront origin-facing prefix list `pl-22a6434b`(리전별 값), ECR 주소, `CD_AWS_REGION`. 다르면 계정 번호와 별도로 바꾼다 |
 | 도메인 | (미정. 새 CloudFront 기본 주소인지 custom domain인지) | core `AUTH_WEB_ORIGIN`, Google OAuth origin·callback, `CD_BASE_URL`, 쿠키(도메인별) |
-| A 최종 스냅샷·KMS 키 공유 | (미정. 11/19 종료 때 완료 여부) | 5단계 |
+| A 최종 스냅샷·KMS 키 공유 | 11/19 스냅샷은 `aws/rds` 키라 공유할 수 없고 11/25 재가동으로 DB가 바뀌므로 B에 쓰지 않는다(2026-11-23 정리). 11/25 A 종료 직전 새로 만든다(아래 "선행 (A 계정, 11/25 A 종료 직전)") | 선행 A-K, 5단계 |
+| B 복원 주체 | (미정. B 루트 위임으로 둘지, B 복원 역할 하나만 허용할지) | A-K1 키 정책의 주체, B 작업자 IAM 정책 |
 | A Secrets Manager 값 보존 | (미정. DB 계정 6개·결제 암호화 키를 B 입력 때까지 저장소 밖에 보관했는지) | 3단계 |
 | A S3 객체 | (미정. A 버킷을 B 복사가 끝날 때까지 남기고 B 작업자가 읽게 하는지) | 2단계 |
 | B AWS CLI 프로필 이름 | (미정) | 명령의 `--profile`, `redeploy-app.ps1` 기본값 `sagomungchi-provided`, runner의 `CD_AWS_PROFILE` |
@@ -271,6 +278,64 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 2. 계정 번호 교체 PR(아래 "A 계정 값 교체")을 develop에 병합한다. cd-release는 main SHA만 배포하고 `redeploy-app.ps1`이 계정 번호를 확인하므로, 이 교체와 6a단계 값 교체가 main에 들어가야 B에 배포된다(develop → main 릴리스, #623 시연 고정 버전).
 3. GitHub 변수(손으로, A 종료 뒤): Repository `CD_AWS_ROLE_ARN`·`CD_ECR_REGISTRY`·`CD_AWS_REGION`, Environment `prod` `CD_BASE_URL`([CD README](../cd/README.md)). OIDC subject 설정은 저장소 단위라 바꾸지 않는다. Argo CD(#858) 방식이면 `CD_BASE_URL`은 비상용 Helm 경로만 쓰고, 경로 확인은 작업자 PC에서 B 도메인을 직접 준다. digest PR 저장소 설정(Actions PR 생성 허용·main 보호·CODEOWNERS, [CD README B2](../cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정))은 11/24에 이미 적용돼 있어야 하며 계정과 무관해 다시 하지 않는다. main의 `images/<release>.json` 저장소 주소는 A 레지스트리로 남아 있으므로 B 첫 digest PR은 서비스 5개 전부와 `allowRepositoryChange=true`로 실행한다(16단계).
 
+### 선행 (A 계정, 11/25 A 종료 직전)
+
+B 5단계(RDS 복원)에 쓸 공유 스냅샷을 A에서 만든다. 결정과 이유는 [infra 보고서 9.19](../../docs/report/infra.md#919-b-복원용-스냅샷의-고객-관리-kms-키-공유-809-2026-11-23), A 11/25 순서에서는 [9.16.2](../../docs/report/infra.md#9162-계정별-순서)의 11단계다.
+
+- **11/19 최종 스냅샷 `sagomungchi-demo-db-final-20261119`은 B에 쓰지 않는다.** AWS 관리 키(`aws/rds`)로 암호화된 스냅샷은 다른 계정과 공유할 수 없고(키 정책을 바꿀 수 없음), 11/25 A 재가동에서 migration·시연 데이터(#897 재동의 등)로 DB가 바뀌어 그 뒤 상태가 필요하다.
+- 시점: 11/25 A 작업(#927 11/25 항목)이 모두 끝나고 **A RDS를 정지·삭제하기 전**. A-1(시험 데이터 정리, infra 9.16.2)을 A에서 하기로 했으면 그 뒤에 뜬다.
+- B 계정 번호가 11/25까지 정해지지 않으면 A-K1(키 생성)~A-K3(CMK 복사)까지만 하고, A-K1의 B 허용과 A-K4 공유는 번호를 받은 뒤 한다. 두 작업은 A RDS가 꺼져 있어도 된다.
+- 명령은 예시다. `<A>`는 A 프로필, `<A 계정>`·`<B 계정>`은 12자리 번호, `<CMK ARN>`은 A-K1에서 만든 키 ARN이다. 실제 값은 저장소에 적지 않는다.
+
+| # | 단계 | 명령·방법 | 확인 | 예상 |
+|---|---|---|---|---|
+| A-K1★ | 고객 관리 KMS 키(CMK) | 대칭 키 1개를 만들고(기존 고객 관리 키가 있으면 그것을 써도 된다) 별칭 `alias/sagomungchi-demo-db-share`를 붙인다. 키 정책에 A 관리 문장(기본값)과 **B 허용 문장 2개**를 더한다(아래 정책 예시). 주체는 B 루트(`arn:aws:iam::<B 계정>:root`, B 안에서 IAM 정책으로 다시 좁힘) 또는 B 복원 역할 ARN(확인 필요 표의 "B 복원 주체") | `describe-key`의 `KeyManager=CUSTOMER`·`KeyState=Enabled`, `get-key-policy`에 B 주체 | 10분 |
+| A-K2★ | 새 수동 스냅샷 | `create-db-snapshot`으로 A RDS의 현재 상태를 뜬다. 이 스냅샷은 인스턴스와 같은 `aws/rds` 키로 암호화된다 | `Status=available` | 확인 필요(20GiB gp3, 11/19 소요 시간 기록 없음. 실측을 9.19에 적는다) |
+| A-K3★ | CMK로 스냅샷 복사 | `copy-db-snapshot --kms-key-id <CMK ARN>`. 같은 리전 복사지만 키가 바뀌어 전체 복사가 된다 | 복사본 `KmsKeyId`가 `<CMK ARN>`, `Encrypted=true`, `Status=available` | 확인 필요(같은 리전 키 변경 복사, 실측 기록) |
+| A-K4★ | B에 공유 | `modify-db-snapshot-attribute --attribute-name restore --values-to-add <B 계정>`. CMK 복사본만 공유한다(`aws/rds` 스냅샷은 이 명령이 거부됨) | `describe-db-snapshot-attributes`의 `restore`에 B 번호만(`all` 없음) | 5분 |
+| A-K5 | 보존 | CMK·공유 스냅샷(A-K3 복사본)·A-K2 원본·A Secrets Manager의 DB 계정 값 6개·`PAYMENT_BILLING_ENCRYPTION_KEY`를 **B 5단계 복원 확인 전까지 지우지 않는다**(infra 9.16.2 A-3). A 정리 목록에서 이 다섯 가지를 빼 둔다 | A 정리 뒤에도 키 `Enabled`, 스냅샷 `available` | — |
+
+```powershell
+$p = '<A>'
+# A-K1 키 생성(정책은 저장소 밖 파일. 아래 예시 문장을 기본 정책에 더함)
+aws kms create-key --description "sagomungchi demo DB snapshot share to B" --key-usage ENCRYPT_DECRYPT --key-spec SYMMETRIC_DEFAULT --profile $p
+aws kms create-alias --alias-name alias/sagomungchi-demo-db-share --target-key-id <키 ID> --profile $p
+aws kms put-key-policy --key-id <CMK ARN> --policy-name default --policy file://<저장소 밖>/db-share-key-policy.json --profile $p
+# A-K2·A-K3
+aws rds create-db-snapshot --db-instance-identifier sagomungchi-demo-db --db-snapshot-identifier sagomungchi-demo-db-final-20261125 --profile $p
+aws rds wait db-snapshot-available --db-snapshot-identifier sagomungchi-demo-db-final-20261125 --profile $p
+aws rds copy-db-snapshot --source-db-snapshot-identifier sagomungchi-demo-db-final-20261125 --target-db-snapshot-identifier sagomungchi-demo-db-share-20261125 `
+  --kms-key-id <CMK ARN> --copy-tags --profile $p
+aws rds wait db-snapshot-available --db-snapshot-identifier sagomungchi-demo-db-share-20261125 --profile $p
+# A-K4
+aws rds modify-db-snapshot-attribute --db-snapshot-identifier sagomungchi-demo-db-share-20261125 --attribute-name restore --values-to-add <B 계정> --profile $p
+aws rds describe-db-snapshot-attributes --db-snapshot-identifier sagomungchi-demo-db-share-20261125 --profile $p
+```
+
+키 정책에 더할 B 허용 문장 예시(AWS 문서 "Sharing a DB snapshot"의 암호화 스냅샷 예시 기준, 실행 전 문서로 다시 확인):
+
+```json
+{
+  "Sid": "AllowBUseOfTheKey",
+  "Effect": "Allow",
+  "Principal": { "AWS": "arn:aws:iam::<B 계정>:root" },
+  "Action": ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey"],
+  "Resource": "*"
+},
+{
+  "Sid": "AllowBGrantsForRds",
+  "Effect": "Allow",
+  "Principal": { "AWS": "arn:aws:iam::<B 계정>:root" },
+  "Action": ["kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant"],
+  "Resource": "*",
+  "Condition": { "Bool": { "kms:GrantIsForAWSResource": "true" } }
+}
+```
+
+- 다른 계정 키는 키 정책만으로 쓸 수 없다. B 5단계를 하는 B 작업자(또는 복원 역할)의 IAM 정책에도 같은 동작을 `Resource: <CMK ARN>`으로 허용해야 한다(B 변경, 5단계 전에).
+- 키 삭제 주의: `schedule-key-deletion`은 대기 기간(7~30일, 기본 30일)을 두지만 **예약하는 순간부터 키를 쓸 수 없다**. B가 자기 계정으로 복사(5단계 첫 `copy-db-snapshot`)하기 전에 예약하면 B는 복원할 수 없다. 잘못 예약했으면 `cancel-key-deletion` → `enable-key`로 되돌린다. A 계정을 닫으면 키·스냅샷도 쓸 수 없으므로 계정 해지도 B 복원 확인 뒤에 한다.
+- 비용: KMS 고객 관리 키는 키당 월 $1(시간 비례), API 요청은 1만 건당 $0.03(AWS 공개 가격 기준, 실행 전 가격 페이지로 확인). 스냅샷은 A-K2 원본과 A-K3 복사본이 각각 전체 크기(20GiB 할당)로 과금될 수 있다. 서울 리전 스냅샷 GB-월 단가와 실제 크기는 확인 필요. B 복원이 확인되면 정리 여부를 동섭에게 묻는다.
+
 ### 순서
 
 | # | 단계 | 명령·방법 | 확인 | 예상 | Argo CD면 |
@@ -280,7 +345,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 | 2★ | S3 데이터 | 아래 "S3 복사" | `sagemaker_explanation.py --profile <B> verify` 13개 일치, scoring 객체 `FULL_OBJECT` SHA-256 | 서버 간 30분, 로컬 경유 1~2시간 | 같음 |
 | 3★ | Secrets Manager 12개 | 이름은 `demo-stack.json` `secrets`. 값은 저장소 밖 파일로 `create-secret --secret-string file://…`(출력하지 않음). **A와 같아야 하는 값**: DB 계정 6개(복원 DB의 계정이 A 비밀번호를 그대로 갖고 `rds-bootstrap`은 비밀번호를 바꾸지 않음), `app/payment`의 `PAYMENT_BILLING_ENCRYPTION_KEY`(DB에 암호화해 둔 값을 읽는 키). **새 값 가능**: `app/internal` 6개·`platform/rabbitmq`(RabbitMQ는 새 PVC), `app/auth` JWT(새 도메인이라 어차피 다시 로그인). `app/ai`는 `OPENAI_API_KEY`·`THEME_VIDEO_CREDENTIALS_JSON`·`VIDEO_PROJECT`만 넣고 RunPod 키 `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`·`SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA`는 넣지 않는다(11/19 결정, ExternalSecret도 `OPENAI_API_KEY`만 읽음) | `plan`의 secret OK. 값은 보지 않고 `describe-secret`로 이름만 본다 | 30분 | 같음(ESO) |
 | 4★ | CloudFront 먼저 | 아래 "손으로 하는 단계"의 CloudFront를 웹 origin만으로 먼저 만든다(OAC·`spa-router.js`·웹 버킷 policy). 도메인이 이때 정해져야 6a 값 교체 PR을 낼 수 있다. `/api/*`의 ALB origin은 12단계에서 붙인다 | 배포 Deployed, 도메인 기록 | 20분 | 같음 |
-| 5★ | RDS 스냅샷 복원 | 아래 "RDS 복원" | `plan`의 rds OK, `rds.force_ssl`, 새 endpoint 기록 | 40~60분 | 같음 |
+| 5★ | RDS 스냅샷 복원 | 선행 A-K4(공유)가 끝났는지 본 뒤 아래 "RDS 복원": B 작업자 IAM에 A CMK 허용 → 공유 스냅샷을 B 키로 복사 → 복원 | 복사본 `KmsKeyId`가 B 키, `plan`의 rds OK, `rds.force_ssl`, 새 endpoint 기록 | 40~60분 + 복사 시간(확인 필요) | 같음 |
 | 6★ | EKS | `render-eksctl --operator-cidr <작업자 IP>/32 --out <저장소 밖>` → `eksctl create cluster -f <파일>` → `apply --confirm-account <B 계정> --after-eksctl`(RDS SG에 클러스터 SG 5432) → `plan` | 노드그룹 2개 OK, add-on 7개, Pod Identity 10개 | 30~40분(11/17 실측 17분) | 같음 |
 | 6a | 자원 값 교체 PR | 아래 "B 자원을 만든 뒤 바꿀 값"(RDS endpoint·VPC·서브넷·클러스터 SG·CloudFront 도메인) → develop → main | main SHA에 B 값 | 1시간(리뷰 포함) | Argo CD가 읽을 브랜치에 같은 값 |
 | 7 | 플랫폼 | **Argo CD 먼저(#855)**: [prod Argo CD README](../gitops/argocd/prod/README.md)대로 `helm install argocd argo/argo-cd --version 10.11.7 -n argocd --create-namespace -f infrastructure/gitops/environments/prod/argocd.json` → `argocd-notifications-secret`(Discord webhook, 값은 저장소 밖 파일) → `project.yaml` → `root-app.yaml` → root 손 동기화 1회 → admin 비밀번호 변경·초기 Secret 삭제. 그다음 [prod README 2절](../gitops/environments/prod/README.md#2-기반-자원--secret--저장소): gp3·namespace → ESO 2.14.0 → LB Controller 1.14.1(B `vpcId`) → `app/rds-ca` → `kubectl apply -f external-secret-resources.json` → `platform-network.json`·platform-data → Karpenter 1.15.1 → `karpenter-nodepool.json`(B 서브넷·SG) → `app-oneoff-db-network.json`·`app-check-pods-network.json` | Argo CD Pod 6개 Running(`application` 노드), `sagomungchi-prod-root` Synced·Healthy, Discord에 동기화 성공 1건. ESO Ready 14개(ExternalSecret 14, SecretStore 2), `ai-provider-credentials`에 `OPENAI_API_KEY`만, RabbitMQ 서비스별 계정 5개, NodePool limits CPU 4·16Gi | 30분(11/17 실측 3분) + Argo CD 15분 | 외부 chart·ExternalSecret·NetworkPolicy를 Application으로. ESO·CRD 순서는 sync wave |
@@ -310,12 +375,17 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 #### RDS 복원
 
-A 쪽(infra 9.16.2 A-2: A 고객 관리 KMS 키로 스냅샷 복사, 키 정책에 B 허용, 스냅샷 `restore` 속성에 B 추가)이 끝났다는 전제다. 11/19 최종 스냅샷 `sagomungchi-demo-db-final-20261119`은 `aws/rds` 키라 공유할 수 없으므로, B 직전 A를 다시 내릴 때 새 스냅샷으로 하고 B 계정 번호가 정해진 뒤 공유한다.
+위 "선행 (A 계정, 11/25 A 종료 직전)"의 A-K1~A-K4(A 고객 관리 KMS 키로 스냅샷 복사, 키 정책에 B 허용, 스냅샷 `restore` 속성에 B 추가)가 끝났다는 전제다. 11/19 최종 스냅샷 `sagomungchi-demo-db-final-20261119`은 `aws/rds` 키라 공유할 수 없고 11/25 뒤 DB와 다르므로 쓰지 않는다. 공유 스냅샷은 `sagomungchi-demo-db-share-20261125`(A 계정 소유)다.
+
+1. B 작업자(또는 복원 역할) IAM 정책에 A CMK 동작을 허용한다: `kms:Decrypt`·`kms:DescribeKey`·`kms:ReEncrypt*`·`kms:GenerateDataKey*`·`kms:CreateGrant`(조건 `kms:GrantIsForAWSResource=true`), `Resource: <CMK ARN>`. 키 정책(A-K1)과 IAM 정책 둘 다 있어야 한다.
+2. 공유 스냅샷을 B 계정 스냅샷으로 복사하면서 **B의 키로 다시 암호화**한다(아래는 B `aws/rds`. B에서 다시 공유할 일이 없으므로 관리 키로 충분하다). 복사본은 B 소유라 그 뒤 복원은 A 키·A 계정과 무관하다. 공유 스냅샷에서 바로 복원하지 않는 것은 A 키가 지워지거나 A 계정이 닫혀도 B가 다시 복원할 수 있게 하려는 것이다.
+3. 복사본으로 복원·설정한다.
 
 ```powershell
 $p = '<B>'
-aws rds describe-db-snapshots --include-shared --snapshot-type shared --profile $p --query 'DBSnapshots[].DBSnapshotArn'
-aws rds copy-db-snapshot --source-db-snapshot-identifier <공유 스냅샷 ARN> --target-db-snapshot-identifier sagomungchi-demo-db-from-a --kms-key-id alias/aws/rds --profile $p
+aws rds describe-db-snapshots --include-shared --snapshot-type shared --profile $p --query 'DBSnapshots[].[DBSnapshotArn,KmsKeyId,Status]'
+aws rds copy-db-snapshot --source-db-snapshot-identifier arn:aws:rds:ap-northeast-2:<A 계정>:snapshot:sagomungchi-demo-db-share-20261125 `
+  --target-db-snapshot-identifier sagomungchi-demo-db-from-a --kms-key-id alias/aws/rds --copy-tags --profile $p
 aws rds wait db-snapshot-available --db-snapshot-identifier sagomungchi-demo-db-from-a --profile $p
 aws rds restore-db-instance-from-db-snapshot --db-instance-identifier sagomungchi-demo-db --db-snapshot-identifier sagomungchi-demo-db-from-a `
   --db-instance-class db.t4g.small --db-subnet-group-name sagomungchi-demo-db-subnet-group --vpc-security-group-ids <RDS SG ID> `
@@ -328,7 +398,8 @@ aws rds modify-db-instance --db-instance-identifier sagomungchi-demo-db --backup
 - 값은 `demo-stack.json` `rds`와 같게 둔다. `--manage-master-user-password`는 B Secrets Manager에 새 master 비밀번호를 만든다(`rds-bootstrap`이 쓰는 값). A의 master 비밀번호는 넘어오지 않는다.
 - 복원 DB의 app·migrate 계정 6개는 A 비밀번호를 그대로 가진다(3단계에서 A와 같은 값). 다른 값으로 바꾸려면 master로 `ALTER ROLE`을 먼저 한다.
 - 시험 데이터 정리(부하 시험 계정·스텁 `llm_usage`·경로 확인용 임시 계정)를 A에서 못 했으면 여기서 정한다(infra 9.16.2 A-1).
-- 끝나면 공유 스냅샷 복사본과 A 키 공유를 정리해도 되는지 동섭에게 묻는다(infra 9.16.2 A-3: B 복원이 끝날 때까지 보존).
+- 복사가 `KMSKeyNotAccessibleFault`·`AccessDenied`로 멈추면 A-K1 키 정책의 B 주체, 1번 IAM 정책, 키 상태(`Enabled`, 삭제 예약 아님)를 차례로 본다.
+- 끝나면 A 쪽 보존 자원(A-K5: CMK·공유 스냅샷·A-K2 원본·DB Secret 값)을 정리해도 되는지 동섭에게 묻는다(infra 9.16.2 A-3: B 복원 확인 전까지 보존). 정리 순서는 공유 해제(`--values-to-remove <B 계정>`) → 스냅샷 삭제 → 키 삭제 예약이다.
 
 #### scoring 모델 경로 전환 (결정 필요)
 
@@ -349,7 +420,8 @@ scoring은 기동할 때 core의 활성 모델 목록을 받아 각 `artifactUri
 | GitHub OIDC 제공자 | 1 | [CD README A](../cd/README.md#a-aws-github-oidc-게시-역할-aws-변경) | 같음 |
 | Secrets Manager 값 | 3 | 위 3단계 | 같음 |
 | CloudFront 배포·OAC·`spa-router.js` Function·웹 버킷 policy(배포 ID 필요) | 4 | `cloudfront-config.redacted.json`(직접 적용 금지, 식별값은 B에서 조회) | 같음 |
-| RDS 스냅샷 복사·복원·설정 | 5 | 위 "RDS 복원" | 같음 |
+| A CMK 생성·키 정책 B 허용, 스냅샷 생성·CMK 복사·B 공유, 보존 | 선행 A-K1~A-K5(11/25 A 종료 직전, A 계정) | 위 "선행 (A 계정, 11/25 A 종료 직전)" | 같음 |
+| B 작업자 IAM에 A CMK 허용, RDS 스냅샷 복사(B 키)·복원·설정 | 5 | 위 "RDS 복원" | 같음 |
 | eksctl 클러스터·`--after-eksctl` | 6 | [EKS README](../eks/README.md) | 같음 |
 | ESO·LB Controller·Karpenter chart, ExternalSecret·NetworkPolicy·NodePool 적용 | 7 | prod README 2절 | Application |
 | 관측 Secret 2개(chart는 Application) | 7a(root app 전) | [관측 chart README](../gitops/charts/observability/README.md) | Secret만 손으로, chart·수집 정책은 Application(#856) |

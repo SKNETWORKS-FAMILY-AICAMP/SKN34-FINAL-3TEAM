@@ -16,8 +16,9 @@ import java.util.UUID
 @RestController
 class StudentDeviceController(private val service: StudentAuthService,private val properties: AuthProperties) {
     data class PairingRequest(val childIds: List<UUID>)
-    data class RegistrationRequest(val pairingCode: String,val label: String)
-    data class LoginRequest(val childId: UUID,val pin: String)
+    // 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+    data class RegistrationRequest(val pairingCode: String,val label: String) { override fun toString()="RegistrationRequest(pairingCode=***, label=$label)" }
+    data class LoginRequest(val childId: UUID,val pin: String) { override fun toString()="LoginRequest(childId=$childId, pin=***)" }
     @PostMapping("/api/v1/student-devices/pairings")
     fun pairing(@RequestBody body: PairingRequest,request: HttpServletRequest)=ok(service.pairing(identity(request),body.childIds))
     @GetMapping("/api/v1/student-devices")

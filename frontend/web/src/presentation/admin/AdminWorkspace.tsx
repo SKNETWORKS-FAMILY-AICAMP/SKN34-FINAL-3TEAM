@@ -22,6 +22,7 @@ import { SupportManager } from './SupportManager.tsx'
 import { PaymentManager } from './PaymentManager.tsx'
 import { LookItemManager, WeeklyThemeManager } from './RetentionManager.tsx'
 import { PeriodPicker } from './PeriodPicker.tsx'
+import { useBusyClickGuard } from './busyButton.ts'
 import '../classroom.css'
 import '../common/workspace.css'
 import './admin.css'
@@ -32,6 +33,7 @@ const permissionLabel: Record<Permission, string> = { CONTENT: '콘텐츠', SERV
 const titles: Record<string, string> = { home: '운영 요약', jobs: '작업 목록', queues: '작업 대기열 현황', errors: '신고 검토', support: '문의 답변과 공지 관리', models: '모델·프롬프트 버전', expressions: '표현 검토 라벨링', usage: 'AI 호출량·비용', audit: '운영 조치·열람 이력', missions: '미션 목록', 'mission-drafts': '미션 초안 요청·검사', themes: '게시 관리', 'theme-drafts': '주간 테마 검수', looks: '꾸미기 아이템', payments: '거래와 환불 요청' }
 const icons: Record<string, LucideIcon> = { home: LayoutDashboard, audit: History, jobs: RotateCcw, queues: Workflow, errors: TriangleAlert, support: MessagesSquare, models: Layers, expressions: ShieldAlert, usage: Activity, missions: BookOpen, 'mission-drafts': FilePenLine, themes: CalendarDays, 'theme-drafts': SlidersHorizontal, looks: Palette, payments: CreditCard }
 export function AdminWorkspace() {
+  useBusyClickGuard()
   const { session, setSession, setExpired } = useSession(), location = useLocation(), navigate = useNavigate()
   const [params, setParams] = useSearchParams(), cache = useQueryClient(), auth = useAuthentication()
   const [menuOpen, setMenuOpen] = useState(false), [scenario, setScenario] = useState('normal')

@@ -127,6 +127,44 @@ class RecordServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `일일 예정 요일은 재게시로 요일이 바뀌거나 빠져도 시도에 고정된 테마 버전 기준이며 고정 버전이 없으면 게시본 (#906)`() {
+        val (moved, removed, unpinned) = (0..2).map { attempt(title = "재게시 $it") }
+        val theme = rows.publishedTheme(listOf(moved, removed, unpinned).map { it.missionId }, week.from)
+        val v1 = jdbc.queryForObject("SELECT published_version_id FROM weekly_theme WHERE id = ?", UUID::class.java, theme)
+        val v2 = UUID.randomUUID()
+        // 재게시: 옮긴 미션은 월→목, 뺀 미션은 없음, 고정 없는 미션은 수→월
+        jdbc.update(
+            """WITH version AS (
+                   INSERT INTO weekly_theme_version (id, theme_id, version, title, intro, created_by, created_at) VALUES (?, ?, 2, '테마', '소개', ?, ?)
+               ), days AS (
+                   INSERT INTO weekly_theme_day (theme_version_id, day_of_week, mission_id) VALUES (?, 4, ?), (?, 1, ?)
+               )
+               UPDATE weekly_theme SET current_version_id = ?, published_version_id = ? WHERE id = ?""",
+            v2, theme, rows.author, rows.now, v2, moved.missionId, v2, unpinned.missionId, v2, v2, theme,
+        )
+        val completed = inWeek.plusDays(2)
+        fun complete(a: Attempt, version: UUID?) {
+            answer(a, "합성 답변")
+            jdbc.update("UPDATE attempt SET status='COMPLETED', finished_at=?, completed_at=?, context='THEME_DAY', theme_id=?, theme_week_start=?, theme_version_id=? WHERE id=?",
+                completed, completed, theme, week.from, version, a.id)
+        }
+        complete(moved, v1)
+        complete(removed, v1)
+        complete(unpinned, null)
+        actAs(student, role = "STUDENT")
+        val after = attemptService.start(student, moved.missionId, 3, demo = false).attempt
+        actAs(student)
+        complete(after, v2)
+
+        val records = service.dailyAttempts(student, Period(completed.toLocalDate(), completed.toLocalDate()), 0, 20)
+            .items.associate { it.detail.attempt.id to it.scheduledDay }
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.MON, records.getValue(moved.id))
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.THU, records.getValue(after.id))
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.TUE, records.getValue(removed.id))
+        assertEquals(com.sagomungchi.learning.theme.domain.ThemeDay.MON, records.getValue(unpinned.id))
+    }
+
+    @Test
     fun `일일 리포트는 제출일 대신 완료일로 조회하고 주간 P08은 유지한다`() {
         val prior = attempt(title = "어제 답변 오늘 완료")
         answer(prior, "어제 쓴 답", inWeek.minusDays(1))

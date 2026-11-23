@@ -43,7 +43,7 @@ abstract class GuardianTransferRecoveryHttpTest : PostgresRepositoryTest() {
  @BeforeEach fun documents() {
   listOf("TERMS","PRIVACY","GUARDIAN").forEach { kind ->
    val id=UUID.randomUUID()
-   jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'합성 문서','테스트 동의',true,CURRENT_DATE,clock_timestamp())",id,kind,id.toString())
+   jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'합성 문서','테스트 동의',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,clock_timestamp())",id,kind,id.toString())
   }
  }
  private fun choices(guardian: Boolean)=consent.documents().filter { if (guardian) it.kind == "GUARDIAN" else it.kind in setOf("TERMS", "PRIVACY") }.map { ConsentChoice(it.documentId,it.version,true) }

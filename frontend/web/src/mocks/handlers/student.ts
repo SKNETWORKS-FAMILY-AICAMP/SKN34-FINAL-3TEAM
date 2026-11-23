@@ -22,6 +22,7 @@ import {
   mockSubmissionReceipts,
 } from '../fixtures/student.ts'
 import { mockLooks, persistLooks } from '../fixtures/studentLook.ts'
+import { mockWordHelp } from '../fixtures/wordHelp.ts'
 import { attemptGuardianPassword, lockParentSession, parentSessionLocked } from '../fixtures/guardianPassword.ts'
 import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook.ts'
 import type { StudentLook } from '../../domain/studentLook.ts'
@@ -461,7 +462,7 @@ export const studentHandlers = [
     respond(async () => {
       guard(request)
       const context = new URL(request.url).searchParams.get('context')
-      if (context === null) return store.mission(id(params.missionId), child!)
+      if (context === null || context === 'EXTRA') return store.mission(id(params.missionId), child!) // core도 EXTRA는 일반 안내
       if (context !== 'THEME_DAY' && context !== 'THEME_REVIEW')
         throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: '주간 테마 안내 맥락을 확인해 주세요.' })
       const owner = studentOnly(), missionId = id(params.missionId)
@@ -526,6 +527,18 @@ export const studentHandlers = [
         version: (request.headers.get('If-Match') ?? '').replaceAll('"', ''),
       })
       return wireDraft(d)
+    }),
+  ),
+  // 낱말 물어보기 (#599): 가상 뜻만, 마무리 전에는 목업 정답 낱말을 미룸
+  http.post('/api/v1/attempts/:attemptId/word-help', ({ request, params }) =>
+    respond(async () => {
+      guard(request)
+      const a = await store.attempt(id(params.attemptId))
+      const body = (await request.json().catch(() => null)) as { question?: unknown } | null
+      const question = typeof body?.question === 'string' ? body.question.trim() : ''
+      if (!question || question.length > 100)
+        throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: '물어볼 낱말을 1~100자로 적어 주세요' })
+      return mockWordHelp(question, !a.finishedAt)
     }),
   ),
   http.post('/api/v1/attempts/:attemptId/hints', ({ request, params }) =>

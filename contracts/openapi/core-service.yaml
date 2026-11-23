@@ -4744,6 +4744,20 @@ paths:
         '503': {$ref: '#/components/responses/LearningProblem'}
         '504': {$ref: '#/components/responses/LearningProblem'}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /attempts/{attemptId}/word-help:
+    parameters:
+    - {$ref: '#/components/parameters/AttemptId'}
+    post:
+      operationId: wordHelp
+      tags: [Learning]
+      summary: 학생 낱말 물어보기 (FN-LRN-21, api-spec 2.2.1, #599)
+      description: >-
+        STUDENT 전용. 본문 {question}(1~100자)을 learning /internal/attempts/{attemptId}/word-help로 그대로 넘기고 응답
+        {state, headword, text, example, senses}를 Cache-Control no-store로 돌려준다. 저장하지 않는다.
+      requestBody: {$ref: '#/components/requestBodies/LearningJson'}
+      responses:
+        '200': {$ref: '#/components/responses/LearningResult'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /attempts/{attemptId}/finish:
     parameters:
     - {$ref: '#/components/parameters/AttemptId'}
@@ -5370,7 +5384,7 @@ paths:
     get:
       operationId: listExpressionReviews
       tags: [ExpressionReview]
-      summary: SERVICE_OPS 표현 검토 대기 목록 (FN-ADM-24, #728)
+      summary: 'SERVICE_OPS 표현 검토 대기 목록 (FN-ADM-24, #728)'
       description: >-
         learning `/internal/admin/expression-reviews`(4.1.5)로 ADMIN + X-User-Id + 빈 학생 범위로 넘긴다. 허용한 칸만 돌려주고(학생 이름·ID 없음)
         보여 준 항목 ID를 EXPRESSION_REVIEW_VIEW로 감사한다. 감사를 남기지 못하면 503이고 글을 돌려주지 않는다.
@@ -5388,8 +5402,18 @@ paths:
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '502':
+          description: LEARNING_INVALID_RESPONSE(learning 성공 응답의 모양 오류, 감사 없음)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
         '503':
-          description: LEARNING_INVALID_RESPONSE 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE
+          description: LEARNING_UNAVAILABLE(learning 400 외 오류·연결 실패), LEARNING_CIRCUIT_OPEN 또는 EXPRESSION_REVIEW_AUDIT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '504':
+          description: LEARNING_TIMEOUT
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -5397,10 +5421,11 @@ paths:
     put:
       operationId: labelExpressionReview
       tags: [ExpressionReview]
-      summary: SERVICE_OPS 표현 검토 라벨 (FN-ADM-24, #728)
+      summary: 'SERVICE_OPS 표현 검토 라벨 (FN-ADM-24, #728)'
       description: >-
         값 검사 뒤 EXPRESSION_REVIEW_LABEL 감사(detail label)를 남기고 learning에 한 번 전달한다(4.1.5). 감사를 남기지 못하면 전달하지 않고 503.
-        같은 값 다시 보내기도 200. 전달 결과를 모르면 503 LEARNING_UNAVAILABLE과 확인 번호(다시 보내기 전에 목록에서 확인).
+        같은 값 다시 보내기도 200. 성공 응답의 모양이 틀리면 502 LEARNING_INVALID_RESPONSE, 전달 결과를 모르면(시간 초과·5xx·ID·라벨 불일치 등) 503 LEARNING_UNAVAILABLE이고
+        둘 다 확인 번호를 준다(다시 보내기 전에 목록에서 확인).
       parameters:
       - {name: reviewId, in: path, required: true, schema: {type: string, format: uuid}}
       requestBody:
@@ -5419,6 +5444,11 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404':
           description: EXPRESSION_REVIEW_NOT_FOUND
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '502':
+          description: LEARNING_INVALID_RESPONSE(전달 뒤 성공 응답의 모양 오류, 확인 번호 포함)
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -7125,7 +7155,7 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
         '503':
-          description: 질문 임베딩 장애 AI_UNAVAILABLE(learning 판정, 그대로 전달), LEARNING_UNAVAILABLE·LEARNING_CIRCUIT_OPEN(learning-memory 차단, Retry-After 30), 상품 한도 값 오류 PAYMENT_PRODUCT_UNAVAILABLE
+          description: 질문 임베딩 장애 또는 기간을 말한 질문의 질의 변환 실패(learning 1회 재시도 뒤, #878) AI_UNAVAILABLE(learning 판정, 그대로 전달), LEARNING_UNAVAILABLE·LEARNING_CIRCUIT_OPEN(learning-memory 차단, Retry-After 30), 상품 한도 값 오류 PAYMENT_PRODUCT_UNAVAILABLE
           content:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
@@ -12472,7 +12502,7 @@ components:
             $ref: '#/components/schemas/ActiveModelVersion'
     CallType:
       type: string
-      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, THEME_DRAFT, THEME_IMAGE, REPORT_EXPLANATION, KNOWLEDGE_EMBEDDING, THEME_VIDEO, MEMORY_EMBEDDING, MEMORY_EXPLANATION, MEMORY_QUERY, M2, M1]
+      enum: [JUDGMENT, FOLLOWUP, ANALYSIS, REPORT_NARRATIVE, MISSION_DRAFT, THEME_DRAFT, THEME_IMAGE, REPORT_EXPLANATION, KNOWLEDGE_EMBEDDING, THEME_VIDEO, MEMORY_EMBEDDING, MEMORY_EXPLANATION, MEMORY_QUERY, WORD_HELP, M2, M1]
     AiUsageResponse:
       type: object
       additionalProperties: false
@@ -12835,7 +12865,7 @@ components:
           description: 학생 PIN 불일치 시 남은 실패 허용 횟수. 잠금 응답은 0.
         preflight:
           $ref: '#/components/schemas/ModelPreflightResult'
-          description: 재학습 자동 등록의 사전 검사 FAIL 결과(422, #728)
+          description: '재학습 자동 등록의 사전 검사 FAIL 결과(422, #728)'
         type:
           type: string
           format: uri-reference

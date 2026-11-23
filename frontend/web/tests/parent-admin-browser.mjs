@@ -71,7 +71,7 @@ try {
     await p.getByRole('button', { name: '동의하고 등록하기' }).click()
     const body = (await request).postDataJSON()
     assert.equal(body.consents.length, 2)
-    assert.ok(body.consents.every((c) => c.agreed && c.version === '1.0'))
+    assert.deepEqual(body.consents.map((c) => c.agreed && c.version).sort(), ['1.1', '1.2']) // 현재 TERMS 1.1·PRIVACY 1.2
     await p.getByRole('button', { name: '로그인하기' }).click()
     await p.getByLabel('이메일', { exact: true }).fill('new-parent@example.test')
     await p.getByRole('button', { name: '시연 계정으로 로그인' }).click()

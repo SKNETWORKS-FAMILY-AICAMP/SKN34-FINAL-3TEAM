@@ -11,6 +11,7 @@ import {
   mockAccounts,
   mockIdentity,
   mockAccountChildren,
+  consentDocuments, previousConsentDocuments,
   mockConsentHistory, mockConsentRequired, mockGuardianConsentRequired,
   mockPasswordParents, mockPasswordLogin,
   workspaceScenario as mode,
@@ -51,33 +52,7 @@ export async function parentChild(request: Request, id: string) {
   if (!c || mockGuardianConsentRequired(id)) fail('CHILD_NOT_LINKED', '연결 또는 법정대리인 동의를 확인해 주세요.', 403)
   return c!
 }
-export const docs: ConsentDocument[] = [
-  {
-    documentId: 'terms-v1',
-    kind: 'TERMS',
-    version: '1.0',
-    title: '이용 안내',
-    content: '가상 데이터로 학습 흐름을 확인하는 개발 시연입니다. 실제 개인정보를 입력하지 마세요.',
-    required: true,
-  },
-  {
-    documentId: 'privacy-v1',
-    kind: 'PRIVACY',
-    version: '1.0',
-    title: '개인정보 처리 동의',
-    content: '이 화면은 개발용 목업입니다. 운영 동의 문서는 법률·서비스 검토 후 확정해야 합니다.',
-    required: true,
-  },
-  {
-    documentId: 'guardian-v1',
-    kind: 'GUARDIAN',
-    version: '1.0',
-    title: '법정대리인 동의',
-    content:
-      '만 14세 미만 자녀의 법정대리인임을 확인하고 자녀 정보 처리에 동의합니다. 개발 시연 문구입니다.',
-    required: true,
-  },
-]
+export const docs = consentDocuments
 export function fixtureConsent(document: ConsentDocument, studentId: string | null = null, agreed = true): ConsentHistory {
   const now = new Date().toISOString()
   return { consentId: `msw-consent-${crypto.randomUUID()}`, subjectUserId: mockIdentity.userId, studentId,
@@ -92,6 +67,15 @@ export async function consentRows() {
     mockConsentHistory.set(mockIdentity.email, rows)
   }
   return rows
+}
+/** 상태 시연 "동의 문서 개정(재동의)": 지금 계정이 개정 전 PRIVACY·GUARDIAN에만 동의한 상태(core V54 적용 직후와 같음) */
+export function reviseMockConsents() {
+  const [privacy, guardian] = previousConsentDocuments
+  mockConsentHistory.set(mockIdentity.email, [
+    fixtureConsent(docs.find((d) => d.kind === 'TERMS')!),
+    fixtureConsent(privacy),
+    ...(store.snapshot().children ?? []).map((c) => fixtureConsent(guardian, c.id)),
+  ])
 }
 export function mockChildConsentMetadata(c: Child) {
   const blocked = mockGuardianConsentRequired(c.id)

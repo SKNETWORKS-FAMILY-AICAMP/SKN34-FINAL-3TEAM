@@ -9,6 +9,7 @@ import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { date, reportStatusLabel } from './adminFormatting.ts'
 import { Badge } from './AdminUi.tsx'
+import { busyProps } from './busyButton.ts'
 export { ModelRegistry as ModelManager } from './ModelRegistry.tsx'
 /** 신고 대상 이름. COMMUNITY_POST는 2026-11-06 결정(P20): 접수 즉시 숨김, 처리 결과로 다시 공개 또는 계속 숨김. */
 const targetLabels: Record<string, string> = {
@@ -116,7 +117,7 @@ function ErrorDetail({ id }: { id: string }) {
                 onChange={(e) => setReason(e.target.value)}
               />
             </label>
-            <button className="cj-secondary" disabled={review.isPending}>
+            <button className="cj-secondary" {...busyProps(review.isPending)}>
               검토 결과 저장
             </button>
             <ErrorNotice error={review.error} />
@@ -134,7 +135,7 @@ function ErrorDetail({ id }: { id: string }) {
                 {['CORRECT', 'PARTIAL', 'RETHINK', 'HELD'].map((value) => <option key={value}>{value}</option>)}
               </select>
             </label>
-            <button className="cj-primary" disabled={!reason.trim() || correction.isPending}>
+            <button className="cj-primary" {...busyProps(correction.isPending, !reason.trim())}>
               정정 이력 추가
             </button>
             <ErrorNotice error={correction.error} />
@@ -192,7 +193,7 @@ function CommunityReportDetail({ report, refreshing }: { report: ErrorReport; re
           <h4>검토 완료{savedResult && ` · ${communityReviewLabels[savedResult]}`}</h4>
           {saved.reviewReason && <p>검토 사유 · {saved.reviewReason}</p>}
           {savedResult && saved.reviewReason && (
-            <button className="cj-secondary" disabled={review.isPending || refreshing} onClick={() => {
+            <button className="cj-secondary" {...busyProps(review.isPending || refreshing)} onClick={() => {
               void review.mutateAsync({
                 status: 'RESOLVED',
                 reason: saved.reviewReason!,
@@ -225,7 +226,7 @@ function CommunityReportDetail({ report, refreshing }: { report: ErrorReport; re
             검토 사유
             <textarea required value={reason} onChange={(e) => setReason(e.target.value)} />
           </label>
-          <button className="cj-primary" disabled={!reason.trim() || review.isPending || refreshing}>
+          <button className="cj-primary" {...busyProps(review.isPending || refreshing, !reason.trim())}>
             {completing ? '검토 결과 저장' : '검토 시작'}
           </button>
         </form>

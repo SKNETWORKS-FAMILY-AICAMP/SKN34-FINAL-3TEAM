@@ -165,6 +165,7 @@ class AdminOperationsContracts(unittest.TestCase):
                     reviewed['enum'].remove('MEMORY_EMBEDDING'); reviewed['enum'].remove('MEMORY_EXPLANATION')
                     # #680 adds only the memory search query rewrite usage type.
                     reviewed['enum'].remove('MEMORY_QUERY')
+                    reviewed['enum'].remove('WORD_HELP')
                 # #390 (P24 daily report) adds only the periodType filter/field, daily detail fields and two
                 # daily notification types. Remove exactly those additions; every other field stays fingerprinted.
                 if section=='paths' and name=='/children/{childId}/reports':

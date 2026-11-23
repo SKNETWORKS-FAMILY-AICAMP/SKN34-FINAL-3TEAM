@@ -1055,7 +1055,9 @@
 /* 방 소품 색 고르기(#705, 놓은 것마다 색): 44px 동그라미 */
 #class-journal .cj-app-student .st-decor-colors { grid-column: 1; display: flex; flex-wrap: wrap; gap: 8px; }
 #class-journal .cj-app-student .st-decor-colors button { width: 44px; height: 44px; border: 3px solid var(--sk-line); border-radius: 50%; cursor: pointer; }
-#class-journal .cj-app-student .st-decor-colors button[aria-pressed='true'] { outline: 4px solid #f08a24; outline-offset: 2px; }
+/* 고른 색은 짙은 주황 고리(그림자, #b85c00: 옮기기 판 바탕 #fff7ea와 4.32:1, WCAG 1.4.11 3:1 이상, 사용자 결정 2026-11-23), 키보드 초점은 그 바깥 파란 외곽선(3.43:1). 예전에는 고른 색도 외곽선이라 고른 색에 초점이 가면 초점이 보이지 않았다(#885 실서버 점검, #805에서 고침) */
+#class-journal .cj-app-student .st-decor-colors button[aria-pressed='true'] { box-shadow: 0 0 0 2px #fffdf6, 0 0 0 6px #b85c00; }
+#class-journal .cj-app-student .st-decor-colors button:focus-visible { outline: 3px solid #3e8bcb; outline-offset: 5px; }
 #class-journal .cj-app-student .st-dthumb { background-color: #FFFDF6; }
 @media (max-width: 640px) {
   #class-journal .cj-app-student .st-decor-colors { grid-column: 1 / -1; }

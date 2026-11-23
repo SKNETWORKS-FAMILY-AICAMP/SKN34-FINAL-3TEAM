@@ -9,6 +9,7 @@ import { adminHandlers } from '../src/mocks/handlers/admin.ts'
 import { studentHandlers } from '../src/mocks/handlers/student.ts'
 import { setWorkspaceScenario } from '../src/mocks/fixtures/accounts.ts'
 import { audits, expressionReviews } from '../src/mocks/fixtures/admin/operations.ts'
+const [r1, r2, r3] = expressionReviews.map(r => r.id) // core처럼 UUID
 
 test('조회 쿼리: labeled는 항상, source는 고를 때만, 쪽은 0부터', () => {
   assert.equal(expressionReviewQuery({ labeled: false, page: 0, size: 20 }), 'labeled=false&page=0&size=20')
@@ -59,19 +60,23 @@ test('목 서버: 라벨 전은 오래된 순, 글만 있고 학생 ID 없음, �
     const before = audits.length
     const list = await call('/admin/expression-reviews?labeled=false&page=0&size=20')
     assert.equal(list.status, 200)
-    assert.deepEqual(list.data.items.map((r: { id: string }) => r.id), ['review-1', 'review-2'])
+    assert.deepEqual(list.data.items.map((r: { id: string }) => r.id), [r1, r2])
     for (const item of list.data.items) assert.deepEqual(Object.keys(item).sort(), ['createdAt', 'id', 'label', 'labeledAt', 'modelVersion', 'source', 'text'])
     assert.equal(audits.length, before + 1) // 열람 감사
+    assert.equal(audits[0].targetId, null) // 목록 열람은 대상 ID 없음(core와 같음)
     const only = await call('/admin/expression-reviews?labeled=false&source=COMMUNITY_REPORT&page=0&size=20')
-    assert.deepEqual(only.data.items.map((r: { id: string }) => r.id), ['review-2'])
-    const saved = await call('/admin/expression-reviews/review-1/label', { label: 'OFFENSIVE' })
+    assert.deepEqual(only.data.items.map((r: { id: string }) => r.id), [r2])
+    const saved = await call(`/admin/expression-reviews/${r1}/label`, { label: 'OFFENSIVE' })
     assert.equal(saved.status, 200)
     assert.equal(saved.data.label, 'OFFENSIVE')
-    assert.deepEqual((await call('/admin/expression-reviews?labeled=false&page=0&size=20')).data.items.map((r: { id: string }) => r.id), ['review-2'])
-    assert.deepEqual((await call('/admin/expression-reviews?labeled=true&page=0&size=20')).data.items.map((r: { id: string }) => r.id), ['review-1', 'review-3']) // 최근 라벨 순
-    assert.equal((await call('/admin/expression-reviews/review-1/label', { label: 'BAD' })).status, 400)
-    assert.equal((await call('/admin/expression-reviews/review-1/label', { label: 'CLEAN', extra: 1 })).status, 400)
-    const missing = await call('/admin/expression-reviews/missing/label', { label: 'CLEAN' })
+    assert.deepEqual((await call('/admin/expression-reviews?labeled=false&page=0&size=20')).data.items.map((r: { id: string }) => r.id), [r2])
+    assert.deepEqual((await call('/admin/expression-reviews?labeled=true&page=0&size=20')).data.items.map((r: { id: string }) => r.id), [r1, r3]) // 최근 라벨 순
+    assert.equal((await call(`/admin/expression-reviews/${r1}/label`, { label: 'BAD' })).status, 400)
+    assert.equal((await call(`/admin/expression-reviews/${r1}/label`, { label: 'CLEAN', extra: 1 })).status, 400)
+    const invalid = await call('/admin/expression-reviews/review-1/label', { label: 'CLEAN' })
+    assert.equal(invalid.status, 400) // UUID가 아닌 ID
+    assert.equal(invalid.data.code, 'VALIDATION_FAILED')
+    const missing = await call('/admin/expression-reviews/00000000-0000-4000-8000-000000000000/label', { label: 'CLEAN' })
     assert.equal(missing.status, 404)
     assert.equal(missing.data.code, 'EXPRESSION_REVIEW_NOT_FOUND')
     assert.equal((await call('/admin/expression-reviews?size=0')).status, 400)
@@ -93,6 +98,6 @@ test('목 서버: 빈 목록·조회 실패·권한 없음은 서로 다르게 �
   const forbidden = await call('/admin/expression-reviews?labeled=false&page=0&size=20')
   assert.equal(forbidden.status, 403)
   assert.equal(forbidden.data.code, 'FORBIDDEN')
-  assert.equal((await call('/admin/expression-reviews/review-1/label', { label: 'CLEAN' })).status, 403)
+  assert.equal((await call(`/admin/expression-reviews/${r1}/label`, { label: 'CLEAN' })).status, 403)
   setWorkspaceScenario('normal')
 })
