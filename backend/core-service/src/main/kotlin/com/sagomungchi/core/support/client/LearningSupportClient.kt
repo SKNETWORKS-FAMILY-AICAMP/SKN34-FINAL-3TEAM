@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.client.LearningClient
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.json.JsonObject
 import com.sagomungchi.core._common.security.UserContextHolder
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
@@ -15,8 +16,8 @@ import java.util.UUID
 class LearningSupportClient(private val http: LearningClient, private val json: ObjectMapper) {
  /** Support target owner. [previousResult] is the judgment result for JUDGMENT targets and empty text when the supplier omits it. */
  data class SupportTarget(val studentId: UUID, val attemptId: UUID, val previousResult: String)
- /** Validated correction response. [body] is kept whole as the provider result record. */
- data class CorrectionResult(val previousResult: String, val impact: JsonNode, val body: JsonNode)
+ /** Validated correction response. [body] is kept whole as the provider result record. impact·body는 domain JSON 값으로 넘긴다(#947) */
+ data class CorrectionResult(val previousResult: String, val impact: JsonObject, val body: JsonObject)
 
  /** Malformed student/attempt IDs are 502 `SUPPORT_INVALID_RESPONSE`. */
  fun target(type: String, id: UUID, student: UUID?=null): SupportTarget {
@@ -46,8 +47,9 @@ class LearningSupportClient(private val http: LearningClient, private val json: 
   try { UUID.fromString(value["correctionId"].asText()); java.time.OffsetDateTime.parse(value["createdAt"].asText()) } catch (_: Exception) { invalid() }
   if (value["previousResult"].asText() !in setOf("CORRECT","PARTIAL","RETHINK","HELD") ||
       listOf("conversation","aggregation","report").any { value["impact"].path(it).asText() !in setOf("APPLIED","NOT_APPLIED","UNKNOWN") }) invalid()
-  CorrectionResult(value["previousResult"].asText(),value["impact"],value)
+  CorrectionResult(value["previousResult"].asText(),jsonObject(value["impact"]),jsonObject(value))
  }
+ private fun jsonObject(node: JsonNode)=JsonObject(json.convertValue(node,json.typeFactory.constructMapType(LinkedHashMap::class.java,String::class.java,Any::class.java)))
  private fun exchange(method: String, path: String, body: ByteArray?=null, key: UUID?=null, correction: Boolean=false): JsonNode {
   check(!TransactionSynchronizationManager.isActualTransactionActive())
   val response=http.exchange(method,path,body=body,key=key?.toString())

@@ -307,7 +307,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ exception/
 │  ├─ security/
 │  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비, 이벤트 감사 기록·보존 정리(EventAuditConsumer·EventRetentionCleanup, #208, repository 직접 호출은 2.1 공통 인프라 예외 #278)
-│  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
+│  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168, 공지·정정·대화 이력 #947)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 │  ├─ scheduler/                 # IdempotencyCleanupScheduler: 만료 멱등 키 정리 주기 실행 (#314)
 │  └─ web/                       # IdempotencyService, SseEmitters, 관리자 목록 페이지 범위 검사 PageQuery (core만)

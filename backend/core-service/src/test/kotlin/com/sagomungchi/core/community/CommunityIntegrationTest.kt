@@ -253,6 +253,9 @@ class CommunityIntegrationTest : IntegrationTestSupport() {
         // #825: 확인한 공유 답변은 learning 원문 그대로(칸 순서 포함) 나간다.
         assertEquals(json.valueToTree<JsonNode>(STEPS_ANSWER), detail["linkedPost"]["answer"])
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='SUPPORT_ORIGINAL_VIEW' AND target_id=?", Int::class.java, id))
+        // #947 감사 detail 저장 값: 글 ID와 원문 확인 여부
+        assertEquals(json.valueToTree<JsonNode>(mapOf("postId" to friendPost, "available" to detail["linkedPost"]["available"])),
+            json.readTree(jdbc.queryForObject("SELECT CAST(detail AS text) FROM audit_log WHERE action='SUPPORT_ORIGINAL_VIEW' AND target_id=?", String::class.java, id)))
         call("PATCH", "/admin/error-reports/$id", adminToken, mapOf("status" to "IN_REVIEW", "reviewReason" to "검토 시작"))
         call("PATCH", "/admin/error-reports/$id", adminToken, mapOf("status" to "RESOLVED", "reviewReason" to "문제 없음", "reviewResult" to "SHOW"), 400)
         call("PATCH", "/admin/error-reports/$id", adminToken, mapOf("status" to "RESOLVED", "reviewReason" to "문제 없음", "reviewResult" to "VISIBLE"))
