@@ -1,7 +1,7 @@
 # 추억 그림책 PDF 설계 초안 (미도입 제안)
 
 - 상태: **제안 단계**. 공식 이슈 없음. 원격 브랜치 `feature/memory-book`에서만 시험 구현하고, 끝까지 동작하는 것을 확인한 뒤 도입 여부를 정한다.
-- 영향 범위: develop·main·실서버에 반영하지 않는다(11/24 develop→main 릴리스, 11/25 A 계정, 11/26~28 B 계정 일정과 분리). `docs/design/`·`contracts/`는 이 문서로 고치지 않는다. 도입이 정해지면 그때 api-spec·ERD·OpenAPI에 옮긴다.
+- 영향 범위: develop·main·실서버에 반영하지 않는다(11/24 develop→main 릴리스, 11/25 A 계정, 11/26~28 B 계정 일정과 분리). `docs/design/`은 고치지 않는다(도입이 정해지면 그때 api-spec·ERD에 옮긴다). `contracts/openapi`·RabbitMQ 정의·저장소 계약 시험은 코드와 어긋나면 CI가 실패하므로 시험 구현 단계(14.2·14.3)에서 이 브랜치 안에서만 함께 고쳤다.
 - 결정 반영(2026-11-23, 동섭): **원문을 공개한 학생(`parentSharingEnabled = true`)에 한해서만 제공**한다(D2). 그 밖의 열린 결정은 모두 권장안대로 시험 구현하고, 결과를 보고 다시 판단한다. 그래서 그림책 판은 원문 포함 판 하나뿐이다(원문 제외 판 없음).
 - 표기: **[확인]** 은 2026-11-23 `origin/develop`(df81a8c6) 코드·문서에서 직접 본 사실, **[추정]** 은 코드로 끝까지 확인하지 못했거나 설계상 가정인 것.
 
@@ -183,9 +183,9 @@ sequenceDiagram
 | core → learning | POST | `/internal/students/{studentId}/frames/ownership` | **기존** 보유 확인 재사용 |
 | report-worker → learning | GET | `/internal/students/{studentId}/memory-book/{themeId}/{weekStart}` | **새로**. 응답 초안: `{themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days:[{day, missionId, title, thinkingType, question, sceneImage, dialogue, attempt:{attemptId, completedAt, answers:[{version, text, followup:{type, question}|null}], reflection:{difficulty, text}|null}|null}], ending:{seen, outro, answer, outroImage}}`. 이미지 칸은 URL 문자열 또는 null(`AssetUrls`, ai S3 키면 presigned URL, 만료는 `app.assets.url-ttl` 1시간 이내). `X-Student-Scope`·SYSTEM 역할 확인, 미보유 404 (2단계 구현됨, 14.2) |
 | report-worker → core | GET | `/internal/students/{studentId}/profile` | **기존**(별명, `parentSharingEnabled`) |
-| core → report-api | GET | `/internal/memory-books/{bookId}/files/pdf` | **새로**. `{url, expiresAt}`. 파일 없음 404, 삭제 중 409 `DELETION_IN_PROGRESS` |
-| 메시지 | 명령 | `memorybook.generate` (`cmd.direct`) | `{bookId, studentId, rounds:[{themeId, weekStart}], requestedBy, requestedAt}` |
-| 메시지 | 이벤트 | `memorybook.completed` (`events.topic`) | `{bookId, studentId, status, failureCode?, sizeBytes, sourceVersions}` |
+| core → report-api | GET | `/internal/students/{studentId}/memory-books/{bookId}/files/pdf` | **새로(3단계 구현)**. report DB에 그림책 행이 없어 학생 ID를 경로로 받는다. `{url, expiresAt}`(TTL 300초, 파일 이름 `memory-book-{bookId}.pdf`). 학생 범위 밖 403, 파일 없음 404, 삭제 중 409 `DELETION_IN_PROGRESS`, S3 오류 503 |
+| 메시지 | 명령 | `memorybook.generate` (`cmd.direct` → 큐 `report.memorybook.generate`, 재시도 1·5·15분, DLQ) | 봉투 `source=core-service`, `dataschema=memorybook.generate.v1`, `subject=studentId`. data `{bookId, studentId, rounds:[{themeId, weekStart}](1차 길이 1), requestedBy?}`. 요청 시각은 봉투 `time` |
+| 메시지 | 이벤트 | `memorybook.completed` (`events.topic`, report Outbox) | `source=report-service`, `dataschema=memorybook.completed.v1`. data `{bookId, studentId, status: READY\|FAILED, failureCode?, sizeBytes?, themeVersionId?}`. `failureCode`는 영구 실패만: `STUDENT_RECORDS_PRIVATE`·`THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`. 지금은 core `core.event.audit`에만 묶여 있고 core 소비자는 4단계 |
 
 - 내부 경로 허용 목록(core·learning `InternalCallerPolicy`, report `security.CALLER_PATHS`)에 위 경로를 더해야 한다.
 - **[추정]** learning 새 경로는 학부모 기록 경로(`/records/students/{id}/attempts/{attemptId}`)를 요일마다 부르는 대신 한 번에 조립한다. 쿼리 수는 회차당 시도 5개 × (답변·되묻기·돌아보기)라 조인 1~3번으로 충분하다고 본다.
@@ -421,6 +421,21 @@ uv run python -m scripts.memory_book_sample --out build/memory-book
 - 시험: `MemoryBookTest`(DB 통합 4개: 요일 다섯 개 조립·되묻기 순서·돌아보기·엔딩 전 숨김, 엔딩 뒤 종료 그림, 고친 미션에도 그때 그림, 미보유·남의 회차 404), `MemoryBookControllerTest`(4개: SYSTEM만, 학생·학부모·다른 범위 403, 월요일 검사, report-worker 경로 허용·report-api 거부).
 - 새로 안 사실: 액자는 다섯 문제를 모두 학습 완료해야 생기므로, 그림책 요일의 `attempt`가 null인 경우는 **재게시로 그 요일 문제가 바뀐 회차뿐**이다(일반적으로 "쉬어 간 날"은 없음). 템플릿의 "이 날은 쉬어 갔어요" 문구는 "이 날 문제가 바뀌었어요" 쪽이 정확할 수 있다(3단계에서 정리).
 - 남은 것: 3단계(report가 이 API를 불러 그림을 받아 PDF 저장), 4단계(core 유료·공개 확인·작업 행), 5단계(web).
+
+### 14.3 3단계 결과 (2026-11-23)
+
+- 구현(report `app/`):
+  - `memory_book/consumer.py`: `memorybook.generate` v1 수신 검사(형식·학생 일치·월요일·회차 1개, 어기면 `InvalidEvent` → DLQ), SYSTEM·학생 범위로 실행.
+  - `memory_book/service.py`: 학생 공유 잠금(학생 삭제와 겹치지 않음) → 삭제 상태 확인 → core 프로필로 원문 공개 확인(D2, 비공개면 learning을 부르지 않음) → 이미 저장한 파일이면 다시 만들지 않고 완료만 다시 알림(재전달 멱등) → learning 조립(2단계 API) → 그림 받기 → PDF 렌더링 → S3 저장 → Outbox `memorybook.completed`. 영구 실패는 FAILED 이벤트, 일시 장애(learning·core 5xx, S3 오류)는 예외로 올려 큐 재시도.
+  - `clients/memory_book_client.py`: 조립 응답 모양 검사(틀리면 `INVALID_ROUND`), 404 → `THEME_FRAME_NOT_FOUND`, **엔딩 전인데 종료 이야기·정답·종료 그림이 오면 렌더링하지 않음**(P23 이중 확인).
+  - `clients/asset_fetcher.py`: 허용 출처(`MEMORY_BOOK_ASSET_ORIGINS`)만, 리디렉트 거부, 그림 1장 5MB·그림책 전체 40MB, 파일 앞부분으로 PNG·JPEG·WEBP 판별(SVG·HTML 거부), 실패한 그림만 빈 칸. **내부 토큰·사용자 헤더가 붙지 않는 별도 httpx 클라이언트**로 받는다. 로컬 kind용 `MEMORY_BOOK_ASSET_INTERNAL_ORIGINS`(공개 출처=클러스터 안 출처)는 연결만 클러스터 안 MinIO로 하고 Host 헤더는 원래 값으로 보내 presigned 서명이 그대로 맞는다.
+  - `memory_book/router.py`: core 전용 파일 주소 `GET /internal/students/{studentId}/memory-books/{bookId}/files/pdf`(`security.CALLER_PATHS` core에 추가).
+  - `clients/storage.py`: `memory_book_key`·`exists()`, `delete_prefix`가 `reports/{uuid}/memory-books/{uuid}/`도 허용. 학생 삭제의 `reports/{studentId}/`가 그림책도 함께 지운다.
+  - `worker.py`: 세 번째 구독으로 등록. 설정 `MEMORY_BOOK_ASSET_ORIGINS`(비면 그림 없이 만듦)·`MEMORY_BOOK_ASSET_INTERNAL_ORIGINS`·`MEMORY_BOOK_IMAGE_MAX_BYTES`·`MEMORY_BOOK_TOTAL_MAX_BYTES`·`MEMORY_BOOK_ASSET_TIMEOUT_SECONDS`.
+  - 템플릿: 시도 없는 요일 문구를 "이 날 문제는 나중에 바뀌어서 남은 기록이 없어요"로 바꿈(14.2 발견).
+- 함께 고친 곳(이 브랜치만): RabbitMQ `definitions.json`(큐 `report.memorybook.generate`·재시도 3개·DLQ, `cmd.direct`·`dlx`·`report.retry` 바인딩, 명령·완료 이벤트를 `core.event.audit`에 바인딩. 바인딩이 없으면 Outbox 발행이 반송돼 막힘), `import-definitions.sh` report 계정 읽기·발행 권한, 로컬 `report-worker.yaml`(그림 출처 2개, KEDA 깨우기 큐), `contracts/openapi/learning-service.yaml`·`report-service.yaml`(새 경로), 계약 시험의 고정 개수 2곳(learning 경로 93→94, 큐 35→40).
+- 시험: `tests/test_memory_book_generation.py` 33개(명령 계약, 그림 받기 허용·거부·크기·내부 주소, learning 응답 검사, 생성 성공·엔딩 전 종료 그림 안 받음·비공개·미보유·계약 오류·일시 장애 재시도·재전달·삭제된 학생, 저장 키·삭제 모양, 파일 주소 범위·없음·서명, 경로 허용). report 전체 554개, 저장소 계약 시험 411개 통과, ruff 통과.
+- 남은 것: core가 명령을 보내고 완료 이벤트를 받는 부분(4단계), web(5단계), kind 끝까지 확인(6단계). prod 값(`report-worker.json`의 그림 출처·KEDA 큐)은 넣지 않았다. AWS에서는 learning presigned URL이 `https://<missions 버킷>.s3.ap-northeast-2.amazonaws.com` 형식이라 그 출처를 넣어야 한다 **[추정: 실제 presigned 주소 형식 미확인]**.
 
 ## 15. 열린 결정 (동섭이 정할 것)
 

@@ -36,7 +36,7 @@ def test_pdf_has_cover_intro_five_days_ending_and_evening_question(rendered):
     days = ("월요일", "화요일", "수요일", "목요일", "금요일")
     for page, label in zip(pages[2:7], days, strict=True):
         assert label in page
-    assert "이날은쉬어갔어요" in pages[5]
+    assert "이날문제는나중에바뀌어서남은기록이없어요" in pages[5]
     assert "큰질문의답" in pages[7]
     assert "오늘저녁질문" in pages[8]
 

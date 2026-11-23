@@ -72,6 +72,6 @@ service_user scoring "$RABBITMQ_SCORING_PASSWORD" '' '^amq(_[0-9a-f]{32}|[.]gen-
   '^(events[.]topic|amq_[0-9a-f]{32}|amq[.]gen-.*)$' '^(events[.]topic|amq_[0-9a-f]{32}|amq[.]gen-.*)$' \
   '^(llm[.]usage[.]recorded|model[.]loading[.]reported)$'
 service_user report "$RABBITMQ_REPORT_PASSWORD" '' "$none" \
-  '^(events[.]topic|report[.]retry)$' '^report[.](report[.]generate|student[.]deleted)$' \
-  '^report[.](started|completed|failed)$'
+  '^(events[.]topic|report[.]retry)$' '^report[.](report[.]generate|student[.]deleted|memorybook[.]generate)$' \
+  '^(report[.](started|completed|failed)|memorybook[.]completed)$'
 echo 'RabbitMQ service accounts applied'

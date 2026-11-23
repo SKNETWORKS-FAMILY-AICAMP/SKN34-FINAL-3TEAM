@@ -47,7 +47,7 @@ h2 { font-size:18px; color:#6b4a1f; margin:4mm 0; }
 <h2>{{ day.title }}</h2>
 {% for line in day.dialogue %}<p class="dialogue"><b>{{ line.speaker }}</b>{{ line.text }}</p>{% endfor %}
 <div class="question">{{ day.question }}</div>
-{% if day.attempt is none %}<p class="locked">이 날은 쉬어 갔어요</p>
+{% if day.attempt is none %}<p class="locked">이 날 문제는 나중에 바뀌어서 남은 기록이 없어요</p>
 {% else %}{% for a in day.attempt.answers %}{% if a.followup %}<p class="followup">{{ a.followup }}</p>{% endif %}<p class="answer">{{ a.text }}</p>
 {% endfor %}{% if day.attempt.reflection %}<p class="reflection">{{ day.attempt.reflection }}</p>{% endif %}{% endif %}
 </section>
