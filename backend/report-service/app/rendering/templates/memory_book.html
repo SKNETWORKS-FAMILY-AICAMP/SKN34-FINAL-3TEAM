@@ -21,19 +21,19 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 .story { margin:0 0 2mm; font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .big { font-size:15px; color:#6b4a1f; margin:2mm 0 0; }
 /* 그림 칸은 가리지 않고, 그 아래에 메신저처럼 주고받은 대화(왼쪽: 문제·등장인물·뭉치, 오른쪽: 아이) */
-.scene-row { display:grid; grid-template-columns:54% 1fr; gap:6mm; align-items:start; }
+.scene-row { display:grid; grid-template-columns:62% 1fr; gap:6mm; align-items:start; }
 .scene-top { break-inside: avoid; }
-.panel { position:relative; height:118mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
+.panel { position:relative; height:170mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
 .panel-art { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .panel-art--missing { position:absolute; inset:0; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
-.chat { margin:7mm 0 0; padding:3mm 3mm 1mm; background:#f7f4ee; border-radius:4mm; }
+.chat { margin:7.5mm 0 0; padding:3mm 3mm 1mm; background:#f7f4ee; border-radius:4mm; }
 .msg { display:flex; gap:2mm; margin:0 0 2.5mm; break-inside: avoid; align-items:flex-start; }
 .msg.right { flex-direction:row-reverse; }
 .avatar { flex:none; width:8mm; height:8mm; border-radius:50%; border:1.5px solid #2f2a22; background:#fff; font-size:10px; font-weight:bold;
   display:flex; align-items:center; justify-content:center; color:#6b4a1f; }
 .msg.right .avatar { background:#ffe6a8; }
 .msg.mungchi .avatar { background:#e9f6ff; }
-.body { max-width:84%; }
+.body { max-width:88%; }
 .msg.right .body { text-align:right; }
 .name { font-size:9.5px; font-weight:bold; color:#8a6a3a; margin:0 1mm 0.5mm; }
 .text { display:inline-block; text-align:left; background:#fff; border:1.5px solid #d9cdb4; border-radius:3mm 3mm 3mm 0.8mm;
