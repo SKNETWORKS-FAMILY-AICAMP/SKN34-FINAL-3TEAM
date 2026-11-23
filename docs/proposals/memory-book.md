@@ -489,7 +489,8 @@ uv run python -m scripts.memory_book_sample --out build/memory-book
 - 결과 PDF: 9쪽, 그림 7장(표지·월~금·엔딩), 약 1.5MB. 장면 그림은 learning이 MinIO 공개 주소(127.0.0.1)로 서명한 URL을 report-worker가 클러스터 안 MinIO로 받되 Host는 원래 값으로 보내 서명이 맞았다(14.3의 로컬 설정이 실제로 동작). core에는 작업 READY·결제 사용 `MEMORY_BOOK` USED·내려받기 감사 기록이 남았다.
 - 확인 중 고친 점: 시드 SQL에서 같은 문장으로 넣은 시도 행을 다른 CTE가 표에서 다시 읽어 0건이 되던 문제(같은 문장 안에서는 새 행이 보이지 않음) → CTE 결과로 잇게 고침. 학생 기기 등록 뒤 학부모 화면이 기기·PIN에 있어 리포트 화면으로 이동하도록 고침. 서비스 코드는 고치지 않았다.
 - 16장 3번 추정 확인: 실제 크기 그림(JPEG 7장)으로 PDF 약 1.4~1.5MB, 렌더링은 학생이 누른 뒤 몇 초 안에 끝났다(로컬 Docker). 그림 축소(D8)는 지금 크기로는 필요 없어 보인다.
-- 다시 돌리는 방법(저장소 루트, 덮어쓰기 파일은 아래 내용을 임시 파일로 두고 `-f`로 더한다):
+- 원격 CI(11/23 Draft PR #966): 공용 E2E 스택에는 아래 덮어쓰기 설정(learning 그림 버킷, report-worker 그림 받기 주소, MinIO 계정 환경 변수)이 없어 이 시험이 그림 올리기에서 403으로 실패했다. 그래서 `E2E_MEMORY_BOOK=1`일 때만 돌게 했고, **원격 CI에서는 건너뛴다**. 도입하면 `compose.e2e.yaml`에 이 설정을 넣고 건너뛰기를 없앤다.
+- 다시 돌리는 방법(저장소 루트, 덮어쓰기 파일은 아래 내용을 임시 파일로 두고 `-f`로 더한다. 시험을 돌릴 때 `E2E_MEMORY_BOOK=1`과 `MINIO_ROOT_USER`·`MINIO_ROOT_PASSWORD`를 준다):
 
 ```powershell
 docker compose -p memorybook-e2e --env-file infrastructure/stubs/e2e.env -f compose.yaml -f compose.minio.yaml -f compose.e2e.yaml -f memorybook-e2e.override.yaml up -d --build --wait core-service learning-service report-api report-worker

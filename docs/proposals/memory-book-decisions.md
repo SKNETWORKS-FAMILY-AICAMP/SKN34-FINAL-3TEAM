@@ -84,7 +84,8 @@
 2. `contracts/openapi/core-service.yaml`에 학부모용 API 4개 추가.
 3. `docs/design/`의 api-spec, architecture, sequence-diagram, functional-spec, user-flow, usecase 갱신. ERD는 CI(실제 DB 대조) 때문에 3.5.3절로 먼저 넣었다.
 4. `infrastructure/gitops/environments/prod/`에 report-worker 그림 받기 주소, 새 큐 구독, core migration 판 번호 추가.
-5. develop을 합친 뒤 시험 다시 돌리기(지금은 충돌 없음). core migration 번호 V57이 그때도 비어 있는지 확인.
+5. 공용 E2E 스택(`compose.e2e.yaml`)에 그림책 설정을 넣고 `memory-book.spec.ts`의 건너뛰기 없애기. 지금 원격 CI에서는 이 e2e 시험을 건너뛴다.
+6. develop을 합친 뒤 시험 다시 돌리기(지금은 충돌 없음). core migration 번호 V57이 그때도 비어 있는지 확인.
 
 ## 6. 아직 확인하지 못한 것
 
