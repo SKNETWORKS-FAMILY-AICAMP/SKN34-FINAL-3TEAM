@@ -60,6 +60,14 @@ async function writeAndSend(page: Page) {
 }
 const box = (page: Page) => page.locator('.ux-feedback[role=status]')
 const anim = (page: Page, sel: string) => page.locator(sel).first().evaluate(e => getComputedStyle(e).animationName)
+/**
+ * 결과가 올 때까지 시험 시계를 멈추고 0.2초씩 넘긴다. 멈춘 채 한 번에 크게 넘기면 그 뒤에 목업이 거는 타이머(결과 보내기)가 안 돌고,
+ * 그냥 흐르게 두면 "찾았다!"(0.55초)가 확인 전에 사라질 수 있어서
+ */
+async function untilResult(page: Page, maxMs = 15_000) {
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1_000)
+  for (let t = 0; t < maxMs && !(await page.locator('.sw-found').count()); t += 200) await page.clock.fastForward(200)
+}
 const bubble = (page: Page) => page.locator('.sw-wait-bubble')
 
 test('40초 늦는 피드백: 문구가 차례로 바뀌고 결과가 오면 바로 피드백 상자, "찾았다!"는 잠깐만', async ({ page }) => {
@@ -86,11 +94,18 @@ test('40초 늦는 피드백: 문구가 차례로 바뀌고 결과가 오면 바
   await shot(page, `wait-00s-${test.info().project.name}`)
   await expect(page.locator('.sw-wait-glass')).toHaveCount(1)
   await expect(page.locator('.sw-wait-book')).toHaveCount(0)
-  // 늘: 숨쉬기·눈 깜빡임. 0초~: 돋보기를 눈앞에 대고 훑기, 렌즈 안 큰 눈
+  // 늘: 숨쉬기·눈 깜빡임. 0초~: 돋보기를 눈앞에 대고 훑기, 투명 렌즈(따로 그린 눈 없음)
   expect(await anim(page, '.sw-wait-breath')).toBe('sw-wait-breath')
-  expect(await anim(page, '.sw-wait .st-friend-art > circle[r="10"]')).toBe('sw-wait-blink')
+  // 주변: 풀잎 셋 살랑(3초), 구름은 아주 천천히(20초 넘게)
+  await expect(page.locator('.sw-wait-blade')).toHaveCount(3)
+  expect(await anim(page, '.sw-wait-blade')).toBe('sw-wait-sway')
+  expect(await page.locator('.sw-wait-cloud').evaluate(e => [getComputedStyle(e).animationName, parseFloat(getComputedStyle(e).animationDuration)])).toEqual(['sw-wait-cloud', 26])
+  // 살피기: 돋보기를 댄 쪽 반대 눈 찡긋(오른쪽·왼쪽 눈이 번갈아), 렌즈는 확대 없이 연한 하늘색(따로 그린 눈 없음)
+  expect(await anim(page, '.sw-wait .st-friend-art > circle[cx="122"]')).toBe('sw-wait-wink-r')
+  expect(await anim(page, '.sw-wait .st-friend-art > circle[cx="78"]')).toBe('sw-wait-wink-l')
+  await expect(page.locator('.sw-wait-glass circle')).toHaveCount(1)
   expect(await anim(page, '.sw-wait-glass')).toBe('sw-wait-sweep')
-  await expect(page.locator('.sw-wait-glass .sw-wait-bigeye')).toHaveCount(1)
+  await expect(page.locator('.sw-wait-glass[data-clear]')).toHaveCount(1)
   await page.clock.fastForward(5_000)
   await expect(bubble(page)).toHaveText('생각의 단서를 찾는 중이야')
   // 5초~ 공책 넘기기: 돋보기는 내려놓고 공책 책장이 넘어간다
@@ -99,41 +114,57 @@ test('40초 늦는 피드백: 문구가 차례로 바뀌고 결과가 오면 바
   await expect(page.locator('.sw-wait-glass')).toHaveCount(0)
   expect(await anim(page, '.sw-wait-page')).toBe('sw-wait-page')
   expect(await anim(page, '.sw-wait-pose')).toBe('sw-wait-follow')
+  // 살피기가 끝나면 찡긋 대신 보통 깜빡임
+  expect(await anim(page, '.sw-wait .st-friend-art > circle[cx="122"]')).toBe('sw-wait-blink')
   await shot(page, `wait-05s-${test.info().project.name}`)
   await page.clock.fastForward(10_000)
   await expect(bubble(page)).toHaveText('너에게 할 질문을 고르고 있어')
   await expect(wait).toHaveAttribute('data-motion', 'tilt')
   await expect(page.locator('.sw-wait-book')).toHaveCount(0)
   await expect(page.locator('.sw-wait-glass')).toHaveCount(1)
-  // 15초~: 갸웃 + 머리 위 "?", 돋보기는 쉬는 자리(큰 눈 없음)
+  // 15초~: 갸웃 + 머리 위 "?", 돋보기는 쉬는 자리(투명 렌즈 아님)
   expect(await anim(page, '.sw-wait-pose')).toBe('sw-wait-tilt')
   expect(await anim(page, '.sw-wait-q')).toBe('sw-wait-q')
-  await expect(page.locator('.sw-wait-glass .sw-wait-bigeye')).toHaveCount(0)
+  await expect(page.locator('.sw-wait-glass[data-clear]')).toHaveCount(0)
   await shot(page, `wait-15s-${test.info().project.name}`)
   await page.clock.fastForward(15_000)
   await expect(bubble(page)).toHaveText('조금 오래 걸리네. 답은 벌써 저장했어!')
-  await expect(wait).toHaveAttribute('data-motion', 'hop')
-  expect(await anim(page, '.sw-wait-pose')).toBe('sw-wait-hop')
+  await expect(wait).toHaveAttribute('data-motion', 'stretch')
+  expect(await anim(page, '.sw-wait-pose')).toBe('sw-wait-stretch')
   await expect(page.locator('.sw-wait-q')).toHaveCount(0)
   await shot(page, `wait-30s-${test.info().project.name}`)
-  // 친구를 키보드로 누르면 말풍선이 잠깐 바뀌고 한 번 콩
+  // 친구를 키보드로 누르면 움직임만(콩 → 빙글 → 하트 차례), 말풍선과 화면 읽기 영역 문구는 그대로
+  const statusText = () => box(page).textContent()
+  const before = await statusText()
   const friend = page.getByRole('button', { name: /에게 말 걸기$/ })
   await friend.focus()
   await page.keyboard.press('Enter')
-  await expect(bubble(page)).toHaveText('조금만 기다려 줘!')
-  await expect(page.locator('.sw-wait-poke[data-poked]')).toHaveCount(1)
-  await page.clock.fastForward(2_100)
+  await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', 'hop')
   await expect(bubble(page)).toHaveText('조금 오래 걸리네. 답은 벌써 저장했어!')
+  expect(await statusText()).toBe(before)
+  // 누를 때마다 차례로 다른 반응(키보드 Space·Enter도 같음)
   await page.keyboard.press('Space')
-  await expect(bubble(page)).toHaveText('조금만 기다려 줘!')
+  await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', 'spin')
+  expect(await anim(page, '.sw-wait-poke')).toBe('sw-wait-spin')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', 'heart')
+  await expect(page.locator('.sw-wait-heart')).toHaveCount(1)
+  expect(await anim(page, '.sw-wait-heart')).toBe('sw-wait-heart')
+  await page.keyboard.press('Space')
+  await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', 'hop')
+  await expect(page.locator('.sw-wait-heart')).toHaveCount(0)
+  await expect(bubble(page)).toHaveText('조금 오래 걸리네. 답은 벌써 저장했어!')
+  expect(await statusText()).toBe(before)
   // 40초가 되면 결과: 대기 표시는 사라지고 같은 상자에 결과, 그 위에 "찾았다!"가 잠깐
-  await page.clock.fastForward(8_000)
+  await untilResult(page)
   await expect(wait).toHaveCount(0)
   await expect(box(page).locator('h2')).not.toHaveText('피드백을 만드는 중이에요')
   await expect(page.locator('.sw-found')).toBeVisible()
   await expect(page.locator('.sw-found')).toHaveAttribute('aria-hidden', 'true')
-  // 렌즈 반짝
-  expect(await anim(page, '.sw-found-glint')).toBe('sw-found-glint')
+  // "?"가 전구로 바뀌며 켜진다
+  await expect(page.locator('.sw-found .sw-found-bulb')).toBeVisible()
+  expect(await anim(page, '.sw-found-light')).toBe('sw-found-light')
+  expect(await anim(page, '.sw-found-q')).toBe('sw-found-q')
   await page.clock.fastForward(700)
   await expect(page.locator('.sw-found')).toHaveCount(0)
 })
@@ -175,7 +206,7 @@ test('새로고침 뒤 보낸 지 65초 된 RUNNING은 60초 단계부터', asyn
   const attemptId = await openAttempt(page, { seconds: 65 })
   await go(page, attemptId)
   await expect(bubble(page)).toHaveText('거의 다 왔어. 잠깐만 기다려 줘')
-  await expect(page.locator('.sw-wait')).toHaveAttribute('data-motion', 'hop')
+  await expect(page.locator('.sw-wait')).toHaveAttribute('data-motion', 'stretch')
   await shot(page, `resume-65s-${test.info().project.name}`)
 })
 
@@ -183,6 +214,7 @@ for (const accessory of [false, true])
   test(`1440·768·390px에서 겹침 없음(소품 ${accessory ? '있음' : '없음'})`, async ({ page }) => {
     // 겹침은 움직이지 않는 자리에서 잰다(돋보기는 몸 쪽으로만 움직임)
     await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.clock.install()
     // 소품 있음은 손전등(돋보기 소품은 그려 넣는 돋보기를 빼므로 아래 따로 시험)
     await login(page, accessory ? 'ACC_LIGHT' : undefined)
     const attemptId = await openAttempt(page)
@@ -190,6 +222,8 @@ for (const accessory of [false, true])
     await scenario(page, 'feedback-slow')
     await writeAndSend(page)
     await expect(page.locator('.sw-wait')).toBeVisible()
+    // 세 폭을 재는 동안 실제 시간이 흘러 5초 공책 단계(돋보기를 내려놓음)로 넘어가지 않게 시계를 멈춘다
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1_000)
     const glass = page.locator('.sw-wait-glass')
     await expect(glass).toHaveAttribute('data-side', accessory ? 'left' : 'right')
     if (accessory) await expect(page.locator('.sw-wait image[data-slot="ACCESSORY"]')).toBeVisible()
@@ -201,7 +235,7 @@ for (const accessory of [false, true])
         return {
           glass: rect('.sw-wait-glass'), bubble: rect('.sw-wait-bubble'), panel: rect('.sw-feedback-panel'),
           acc: rect('.sw-wait image[data-slot="ACCESSORY"]'), friend: rect('.sw-wait-friend'),
-          head: rect('.sw-feedback-head h2'),
+          head: rect('.sw-feedback-head h2'), cloud: rect('.sw-wait-cloud'),
           scroll: document.documentElement.scrollWidth > innerWidth,
         }
       })
@@ -211,6 +245,9 @@ for (const accessory of [false, true])
       expect(hit(r.glass, r.acc), `${width}px 돋보기·소품`).toBe(false)
       expect(hit(r.friend, r.bubble), `${width}px 친구·말풍선`).toBe(false)
       expect(hit(r.head, r.friend), `${width}px 제목·친구`).toBe(false)
+      // 구름은 가로로만 움직이므로 제목 줄 아래 띠에 있으면 지나가는 내내 글자와 겹치지 않는다
+      expect(hit(r.cloud, r.head), `${width}px 구름·제목`).toBe(false)
+      expect(r.cloud!.t, `${width}px 구름이 제목 줄 아래`).toBeGreaterThanOrEqual(r.head!.b)
       for (const part of [r.glass, r.bubble, r.friend]) {
         expect(part!.l, `${width}px 패널 왼쪽 안`).toBeGreaterThanOrEqual(r.panel!.l)
         expect(part!.r, `${width}px 패널 오른쪽 안`).toBeLessThanOrEqual(r.panel!.r)
@@ -234,18 +271,18 @@ test('돋보기 소품을 입으면 그려 넣는 돋보기는 빼고(하나만 
   await expect(lens).toHaveCount(1)
   await expect(lens).toHaveAttribute('href', '/student-assets/looks/acc-lens.svg')
   const animation = () => lens.evaluate(e => getComputedStyle(e).animationName)
-  expect(await animation()).toBe('sw-wait-own-lens')
+  await expect.poll(animation).toBe('sw-wait-own-lens')
   await page.locator('.sw-wait').scrollIntoViewIfNeeded()
   await shot(page, `own-lens-${test.info().project.name}`)
   // 움직임 줄이기면 입은 돋보기도 멈춘다
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  expect(await animation()).toBe('none')
+  await expect.poll(animation).toBe('none')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
-  expect(await animation()).toBe('sw-wait-own-lens')
+  await expect.poll(animation).toBe('sw-wait-own-lens')
   // 갸웃(15초~)부터는 친구 전체가 움직이고 입은 돋보기만 따로 움직이지 않는다
   await page.clock.fastForward(15_000)
   await expect(wait).toHaveAttribute('data-motion', 'tilt')
-  expect(await animation()).toBe('none')
+  await expect.poll(animation).toBe('none')
 })
 
 test('움직임 줄이기: 멈춘 그림 + 문구, 눌러도 뛰지 않고 말만 바뀜, "찾았다!" 없음', async ({ page }) => {
@@ -257,7 +294,7 @@ test('움직임 줄이기: 멈춘 그림 + 문구, 눌러도 뛰지 않고 말�
   await scenario(page, 'feedback-slow')
   await writeAndSend(page)
   await expect(bubble(page)).toHaveText('답을 꼼꼼히 읽고 있어')
-  const still = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-page, .sw-wait-breath, .sw-wait-q, .sw-wait .st-friend-art > circle')]
+  const still = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-page, .sw-wait-breath, .sw-wait-q, .sw-wait-blade, .sw-wait-cloud, .sw-wait .st-friend-art > circle')]
     .map(e => { const s = getComputedStyle(e); return `${s.animationName}|${s.transform}` }))
   expect(new Set(await still())).toEqual(new Set(['none|none']))
   // 5초(공책: 펼친 공책이 멈춘 그림)·15초·30초 단계 모두 멈춤
@@ -271,12 +308,18 @@ test('움직임 줄이기: 멈춘 그림 + 문구, 눌러도 뛰지 않고 말�
   }
   await expect(bubble(page)).toHaveText('조금 오래 걸리네. 답은 벌써 저장했어!')
   await page.getByRole('button', { name: /에게 말 걸기$/ }).click()
-  await expect(bubble(page)).toHaveText('조금만 기다려 줘!')
+  await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', 'hop')
+  await expect(bubble(page)).toHaveText('조금 오래 걸리네. 답은 벌써 저장했어!')
   expect(new Set(await still())).toEqual(new Set(['none|none']))
   await shot(page, `reduced-motion-${test.info().project.name}`)
-  await page.clock.fastForward(11_000)
+  await untilResult(page)
   await expect(page.locator('.sw-wait')).toHaveCount(0)
-  await expect(page.locator('.sw-found')).toBeHidden()
+  // 결과 전구는 움직임 없이 켜진 그림만("?" 없이)
+  await expect(page.locator('.sw-found .sw-found-bulb')).toBeVisible()
+  expect(await anim(page, '.sw-found-light')).toBe('none')
+  expect(await page.locator('.sw-found-q').evaluate(e => getComputedStyle(e).opacity)).toBe('0')
+  await page.clock.fastForward(700)
+  await expect(page.locator('.sw-found')).toHaveCount(0)
 })
 
 test('공책 넘기기 단계 1440·768·390px: 공책이 패널 안에 있고 말풍선·손전등과 겹치지 않음, 캡처', async ({ page }) => {
@@ -319,6 +362,15 @@ const measure = (page: Page) => page.evaluate(() => {
     title: lines(q('.sw-feedback-head h2')), bubble: lines(q('.sw-wait-bubble p')),
     below: Math.round(panel.getBoundingClientRect().bottom - Math.max(...content)),
     border: ps.borderTopColor, background: ps.backgroundColor, shadow: ps.boxShadow, height: Math.round(panel.getBoundingClientRect().height),
+    decorHitsBubble: (() => {
+      const bubble = q('.sw-wait-bubble')
+      if (!bubble) return false
+      const b = bubble.getBoundingClientRect()
+      return [...document.querySelectorAll('.sw-wait-cloud, .sw-wait-blade')].some(e => {
+        const r = e.getBoundingClientRect()
+        return r.left < b.right - 1 && b.left < r.right - 1 && r.top < b.bottom - 1 && b.top < r.bottom - 1
+      })
+    })(),
   }
 })
 
@@ -342,6 +394,7 @@ test('대기 모양: 상자 테두리·바탕 없음, 390px 제목 한 줄, 문�
       const m = await measure(page)
       report.push(`${step}s ${width}px 제목 ${m.title}줄 말풍선 ${m.bubble}줄 아래 ${m.below}px 높이 ${m.height}px`)
       expect(m.bubble, `${step}s ${width}px 말풍선 줄 수`).toBeLessThanOrEqual(2)
+      expect(m.decorHitsBubble, `${step}s ${width}px 구름·풀잎이 말풍선과 겹침`).toBe(false)
       if (width === 390) expect(m.title, '390px 제목 한 줄').toBe(1)
       expect(m.border, '대기 중 테두리 없음').toBe('rgba(0, 0, 0, 0)')
       expect(m.background, '대기 중 바탕 없음').toBe('rgba(0, 0, 0, 0)')
@@ -357,9 +410,25 @@ test('대기 모양: 상자 테두리·바탕 없음, 390px 제목 한 줄, 문�
   expect((await measure(page)).bubble).toBeLessThanOrEqual(2)
   // 결과: 같은 상자(읽기 영역 하나)에 테두리·바탕이 돌아오고 높이 변화를 기록
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.clock.fastForward(11_000)
+  await untilResult(page)
   await expect(page.locator('.sw-wait')).toHaveCount(0)
   await expect(page.locator('.ux-feedback[role=status]')).toHaveCount(1)
+  // "찾았다!"(시계를 멈춰 둔 채)가 "AI 채점(시범)"(FN-JDG-03)·제목·버튼·링크를 가리지 않는다
+  await expect(page.locator('.sw-found')).toBeVisible()
+  await expect(page.locator('.sw-trial')).toBeVisible()
+  for (const [width, height] of [[1440, 900], [768, 1024], [390, 844]]) {
+    await page.setViewportSize({ width, height })
+    await page.locator('.sw-feedback-panel').scrollIntoViewIfNeeded()
+    const covered = await page.evaluate(() => {
+      const box = (e: Element) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom } }
+      const found = box(document.querySelector('.sw-found')!)
+      const targets = [...document.querySelectorAll('.sw-trial, .sw-feedback-head h2, .sw-feedback-panel button, .sw-feedback-panel a')]
+      return targets.filter(e => { const t = box(e); return found.l < t.r - 1 && t.l < found.r - 1 && found.t < t.b - 1 && t.t < found.b - 1 })
+        .map(e => (e.textContent ?? '').trim().slice(0, 20))
+    })
+    expect(covered, `${width}px "찾았다!"가 가리는 것`).toEqual([])
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
   const done = await measure(page)
   expect(done.border).not.toBe('rgba(0, 0, 0, 0)')
   expect(done.background).not.toBe('rgba(0, 0, 0, 0)')
@@ -382,7 +451,7 @@ test('화면 안 "움직임 줄이기"(WCAG 2.2.2): 기본은 OS 설정, 체크�
   // 읽기 영역(피드백 상자) 밖: 대기 표시가 들어올 때 체크박스 이름까지 읽히지 않게
   await expect(page.locator('.ux-feedback .sw-wait-motion')).toHaveCount(0)
   expect(await anim(page, '.sw-wait-glass')).toBe('sw-wait-sweep')
-  const moving = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-page, .sw-wait-breath, .sw-wait-q, .sw-wait .st-friend-art > circle, .sw-wait image')]
+  const moving = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-page, .sw-wait-breath, .sw-wait-q, .sw-wait-blade, .sw-wait-cloud, .sw-wait .st-friend-art > circle, .sw-wait image')]
     .map(e => getComputedStyle(e)).filter(s => s.animationName !== 'none' || s.transform !== 'none').length)
   // 키보드(Space)로 체크
   await toggle.focus()
@@ -390,17 +459,21 @@ test('화면 안 "움직임 줄이기"(WCAG 2.2.2): 기본은 OS 설정, 체크�
   await expect(toggle).toBeChecked()
   await expect(page.locator('.sw-wait')).toHaveAttribute('data-reduce', 'true')
   expect(await moving()).toBe(0)
-  await expect(page.locator('.sw-wait-glass .sw-wait-bigeye')).toHaveCount(1)
+  await expect(page.locator('.sw-wait-glass[data-clear]')).toHaveCount(1)
   // 문구는 그대로 바뀌고, 단계마다 멈춘 그림
   for (const [ms, line] of [[5_000, '생각의 단서를 찾는 중이야'], [10_000, '너에게 할 질문을 고르고 있어'], [15_000, '조금 오래 걸리네. 답은 벌써 저장했어!']] as const) {
     await page.clock.fastForward(ms)
     await expect(bubble(page)).toHaveText(line)
     expect(await moving(), line).toBe(0)
   }
-  // 친구를 눌러도 뛰지 않고 말만 바뀜
-  await page.getByRole('button', { name: /에게 말 걸기$/ }).click()
-  await expect(bubble(page)).toHaveText('조금만 기다려 줘!')
-  expect(await moving()).toBe(0)
+  // 친구를 눌러도(콩·빙글·하트 차례) 움직이지 않고 말풍선도 단계 문구 그대로, 하트도 안 보임
+  for (const reaction of ['hop', 'spin', 'heart']) {
+    await page.getByRole('button', { name: /에게 말 걸기$/ }).click()
+    await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', reaction)
+    await expect(bubble(page)).toHaveText('조금 오래 걸리네. 답은 벌써 저장했어!')
+    expect(await moving(), reaction).toBe(0)
+  }
+  await expect(page.locator('.sw-wait-heart')).toBeHidden()
   // 390px: 체크박스가 패널 안, 말풍선·친구와 겹치지 않음
   await page.setViewportSize({ width: 390, height: 844 })
   await page.locator('.sw-wait-motion').scrollIntoViewIfNeeded()
@@ -419,7 +492,7 @@ test('화면 안 "움직임 줄이기"(WCAG 2.2.2): 기본은 OS 설정, 체크�
   // 다시 풀면 움직임이 돌아온다
   await toggle.click()
   await expect(toggle).not.toBeChecked()
-  expect(await anim(page, '.sw-wait-pose')).toBe('sw-wait-hop')
+  await expect.poll(() => anim(page, '.sw-wait-pose')).toBe('sw-wait-stretch')
 })
 
 test('OS가 움직임 줄이기면 체크박스가 처음부터 체크되어 있고 풀 수 없다(MissionScene과 같음)', async ({ page }) => {
@@ -434,6 +507,60 @@ test('OS가 움직임 줄이기면 체크박스가 처음부터 체크되어 있
   await toggle.click()
   await expect(toggle).toBeChecked()
   await expect(page.locator('.sw-wait')).toHaveAttribute('data-reduce', 'true')
+})
+
+test('캡처: 1440·768·390px 단계별(0·5·15·30초)·누르기 반응 3가지·움직임 줄이기·결과 직후 전구', async ({ page }) => {
+  test.skip(test.info().project.name !== 'laptop', '창 크기를 시험 안에서 바꾸므로 한 프로젝트에서만')
+  test.setTimeout(120_000)
+  await page.clock.install()
+  await login(page)
+  const attemptId = await openAttempt(page)
+  await go(page, attemptId)
+  await scenario(page, 'feedback-slow')
+  await writeAndSend(page)
+  await expect(page.locator('.sw-wait')).toBeVisible()
+  // 찍는 동안 실제 시간이 흘러 결과가 먼저 오지 않게 시험 시계를 멈추고 fastForward로만 넘긴다
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1_000)
+  // CSS 움직임은 시험 시계와 따로 돌므로 보여 줄 순간에 멈춰 찍고 다시 돌린다
+  // 구름(26초)은 들어오는 중(투명)이 아니라 지나가는 중간에 멈춘다
+  const freeze = (ms: number) => page.evaluate(t => document.getAnimations().forEach(a => {
+    a.pause()
+    a.currentTime = (a as CSSAnimation).animationName === 'sw-wait-cloud' ? 9_000 : t
+  }), ms)
+  const resume = () => page.evaluate(() => document.getAnimations().forEach(a => a.play()))
+  const shoot3 = async (name: string) => {
+    for (const [width, height] of [[1440, 900], [768, 1024], [390, 844]]) {
+      await page.setViewportSize({ width, height })
+      await page.locator('.sw-feedback-panel').scrollIntoViewIfNeeded()
+      await page.locator('.sw-feedback-panel').screenshot({ path: path.join(shots, `847-cap-${name}-${width}.png`) })
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+  }
+  for (const [ms, name] of [[0, '00s'], [5_000, '05s'], [10_000, '15s'], [15_000, '30s']] as const) {
+    if (ms) await page.clock.fastForward(ms)
+    await expect(page.locator('.sw-wait')).toHaveAttribute('data-step', String(['00s', '05s', '15s', '30s'].indexOf(name)))
+    await freeze(name === '30s' ? 600 : 500)
+    await shoot3(name)
+    await resume()
+  }
+  // 누르기 반응 3가지(콩·빙글·하트)
+  for (const reaction of ['hop', 'spin', 'heart']) {
+    await page.getByRole('button', { name: /에게 말 걸기$/ }).click()
+    await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', reaction)
+    await freeze(reaction === 'heart' ? 350 : 250)
+    await shoot3(`poke-${reaction}`)
+    await resume()
+  }
+  // 움직임 줄이기(화면 안 체크)
+  const toggle = page.getByRole('checkbox', { name: '움직임 줄이기', exact: true })
+  await toggle.check()
+  await shoot3('reduced')
+  await toggle.uncheck()
+  // 결과 직후 전구: 시계가 멈춰 있어 "찾았다!"가 사라지기 전에 찍는다
+  await untilResult(page)
+  await expect(page.locator('.sw-found .sw-found-bulb')).toBeVisible()
+  await freeze(280)
+  await shoot3('result-bulb')
 })
 
 test('390px 대기 화면 캡처 @responsive', async ({ page }) => {

@@ -22,15 +22,15 @@ export function feedbackHeadline(f: Feedback) {
 /**
  * 피드백 대기 표시(#847): 경과 시간에 따른 말풍선 문구와 캐릭터 움직임. 실제 진행과 무관한 시간표다
  * (피드백 SSE는 status(RUNNING) 한 번뿐이라 진행 정보가 없음, api-spec 3.2). 막대·퍼센트는 쓰지 않는다.
- * 움직임은 단계마다 하나: look 돋보기로 살피기, notebook 공책 넘기기(돋보기는 내려놓음), tilt 고개 갸웃, hop 제자리 콩콩.
+ * 움직임은 단계마다 하나: look 돋보기로 살피기, notebook 공책 넘기기(돋보기는 내려놓음), tilt 고개 갸웃, stretch 기지개(몸 전체를 쭉 폈다 쉼, 뭉치는 팔이 없는 캐릭터라 팔은 그리지 않음).
  */
-export type WaitingMotion = 'look' | 'notebook' | 'tilt' | 'hop'
+export type WaitingMotion = 'look' | 'notebook' | 'tilt' | 'stretch'
 export const WAITING_STEPS: readonly { from: number; line: string; motion: WaitingMotion }[] = [
   { from: 0, line: '답을 꼼꼼히 읽고 있어', motion: 'look' },
   { from: 5, line: '생각의 단서를 찾는 중이야', motion: 'notebook' },
   { from: 15, line: '너에게 할 질문을 고르고 있어', motion: 'tilt' },
-  { from: 30, line: '조금 오래 걸리네. 답은 벌써 저장했어!', motion: 'hop' },
-  { from: 60, line: '거의 다 왔어. 잠깐만 기다려 줘', motion: 'hop' },
+  { from: 30, line: '조금 오래 걸리네. 답은 벌써 저장했어!', motion: 'stretch' },
+  { from: 60, line: '거의 다 왔어. 잠깐만 기다려 줘', motion: 'stretch' },
 ]
 /**
  * 대기 중 피드백 상자 제목(사용자 결정 2026-11-23). 말풍선이 "답을 꼼꼼히 읽고 있어"라고 해서 저장 안내와 겹치므로 지금 하는 일만 말한다.

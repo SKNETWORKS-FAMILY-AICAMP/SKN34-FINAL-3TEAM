@@ -16,7 +16,7 @@ test('대기 단계 경계: 0·5·15·30·60초에 문구가 바뀌고 움직임
   assert.equal(at(15).line, '너에게 할 질문을 고르고 있어')
   assert.equal(at(30).line, '조금 오래 걸리네. 답은 벌써 저장했어!')
   assert.equal(at(60).line, '거의 다 왔어. 잠깐만 기다려 줘')
-  assert.deepEqual([0, 5, 15, 30, 60].map((s) => at(s).motion), ['look', 'notebook', 'tilt', 'hop', 'hop'])
+  assert.deepEqual([0, 5, 15, 30, 60].map((s) => at(s).motion), ['look', 'notebook', 'tilt', 'stretch', 'stretch'])
   assert.equal(WAITING_STEPS.length, 5)
 })
 

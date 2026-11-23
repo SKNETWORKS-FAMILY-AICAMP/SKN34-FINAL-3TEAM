@@ -22,7 +22,7 @@ import { ActivityPaper, ErrorNotice, MemoCanvas, Modal } from '../shared/Classro
 import { MissionScene } from './MissionScene.tsx'
 import { Companion } from './world/Companion.tsx'
 import { SpeechBubble } from './world/SpeechBubble.tsx'
-import { FeedbackWaiting, Magnifier } from './world/FeedbackWaiting.tsx'
+import { Bulb, FeedbackWaiting } from './world/FeedbackWaiting.tsx'
 import { useLook } from './world/lookContext.ts'
 import { companionLabel } from '../../domain/studentLook.ts'
 import { STEPS, WAITING_HEADLINE, difficultyLabel, feedbackHeadline, followupLabel } from './world/missionSteps.ts'
@@ -353,20 +353,20 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     media.addEventListener('change', changed)
     return () => media.removeEventListener('change', changed)
   }, [])
-  // 결과가 오면 상자는 바로 보여 주고 그 위에 "찾았다!"와 렌즈 반짝을 0.5초 겹친다(움직임 줄이기면 보이지 않음)
+  // 결과가 오면 상자는 바로 보여 주고 그 위에 "찾았다!"와 켜지는 전구("?"가 전구로)를 0.5초 겹친다(움직임 줄이기면 켜진 전구 그림만)
   const wasWaiting = useRef(false)
   const [found, setFound] = useState(false)
   useEffect(() => {
     const arrived = wasWaiting.current && !waiting && f?.status === 'DONE'
     wasWaiting.current = waiting
-    if (!arrived || reduceMotion) return
+    if (!arrived) return
     setFound(true)
     const timer = setTimeout(() => setFound(false), 550)
     return () => {
       clearTimeout(timer)
       setFound(false)
     }
-  }, [waiting, f?.status, reduceMotion])
+  }, [waiting, f?.status])
   const pending =
     actions.submit.isPending ||
     actions.feedback.isPending ||
@@ -689,8 +689,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
               // 화면 읽기 영역은 이 상자 하나: 대기 표시도 안에 넣어 결과가 오면 같은 영역의 내용이 바뀌며 읽힌다(#847)
               <div ref={result} tabIndex={-1} className="ux-feedback sw-feedback" role="status" data-waiting={waiting || undefined}>
                 {found && (
-                  <span className="sw-found" aria-hidden="true">
-                    <Magnifier className="sw-found-glass" glint />
+                  <span className="sw-found" aria-hidden="true" data-reduce={reduceMotion || undefined}>
+                    <Bulb />
                     찾았다!
                   </span>
                 )}
