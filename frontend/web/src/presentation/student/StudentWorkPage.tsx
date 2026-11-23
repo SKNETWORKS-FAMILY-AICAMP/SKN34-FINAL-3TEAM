@@ -25,7 +25,7 @@ import { SpeechBubble } from './world/SpeechBubble.tsx'
 import { FeedbackWaiting, Magnifier } from './world/FeedbackWaiting.tsx'
 import { useLook } from './world/lookContext.ts'
 import { companionLabel } from '../../domain/studentLook.ts'
-import { STEPS, difficultyLabel, feedbackHeadline, followupLabel } from './world/missionSteps.ts'
+import { STEPS, WAITING_HEADLINE, difficultyLabel, feedbackHeadline, followupLabel } from './world/missionSteps.ts'
 import './world/mission-guide.css'
 import './world/work.css'
 import { ApiError } from '../../data/apiClient.ts'
@@ -683,8 +683,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                   </span>
                 )}
                 <div className="sw-feedback-head">
-                  {/* "피드백 다시 받기"를 누른 직후(아직 FAILED)에도 실패 제목 대신 준비 중 제목 */}
-                  <h2>{feedbackHeadline(waiting ? { status: 'RUNNING', nextActions: [] } : f)}</h2>
+                  {/* 대기 중에는 대기 제목("피드백 다시 받기"를 누른 직후 아직 FAILED여도 실패 제목 대신) */}
+                  <h2>{waiting ? WAITING_HEADLINE : feedbackHeadline(f)}</h2>
                   {!waiting && f.judgment?.trial && (
                     <small className="sw-trial">AI 채점(시범){isDemo ? ' · 실제 모델 호출 없음' : ''}</small>
                   )}

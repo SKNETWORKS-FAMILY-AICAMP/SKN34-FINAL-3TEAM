@@ -76,15 +76,27 @@ test('40초 늦는 피드백: 문구가 차례로 바뀌고 결과가 오면 바
   await expect(bubble(page)).toHaveAttribute('aria-hidden', 'true')
   await expect(page.locator('.sw-wait-friend > span')).toHaveAttribute('aria-hidden', 'true')
   await expect(box(page)).toContainText('답을 꼼꼼히 읽고 있어')
+  // 대기 중 제목은 대기 화면 전용 문장(공책 기록 상세의 처리 중 문장과 따로)
+  await expect(box(page).locator('h2')).toHaveText('피드백을 만드는 중이에요')
   await expect(page.getByRole('progressbar')).toHaveCount(0)
   await expect(wait).toHaveAttribute('data-motion', 'look')
   await expect(bubble(page)).toHaveText('답을 꼼꼼히 읽고 있어')
   await shot(page, `wait-00s-${test.info().project.name}`)
+  await expect(page.locator('.sw-wait-glass')).toHaveCount(1)
+  await expect(page.locator('.sw-wait-book')).toHaveCount(0)
   await page.clock.fastForward(5_000)
   await expect(bubble(page)).toHaveText('생각의 단서를 찾는 중이야')
+  // 5초~ 공책 넘기기: 돋보기는 내려놓고 공책 책장이 넘어간다
+  await expect(wait).toHaveAttribute('data-motion', 'notebook')
+  await expect(page.locator('.sw-wait-book')).toBeVisible()
+  await expect(page.locator('.sw-wait-glass')).toHaveCount(0)
+  expect(await page.locator('.sw-wait-page').evaluate(e => getComputedStyle(e).animationName)).toBe('sw-wait-page')
+  await shot(page, `wait-05s-${test.info().project.name}`)
   await page.clock.fastForward(10_000)
   await expect(bubble(page)).toHaveText('너에게 할 질문을 고르고 있어')
   await expect(wait).toHaveAttribute('data-motion', 'tilt')
+  await expect(page.locator('.sw-wait-book')).toHaveCount(0)
+  await expect(page.locator('.sw-wait-glass')).toHaveCount(1)
   await shot(page, `wait-15s-${test.info().project.name}`)
   await page.clock.fastForward(15_000)
   await expect(bubble(page)).toHaveText('조금 오래 걸리네. 답은 벌써 저장했어!')
@@ -103,7 +115,7 @@ test('40초 늦는 피드백: 문구가 차례로 바뀌고 결과가 오면 바
   // 40초가 되면 결과: 대기 표시는 사라지고 같은 상자에 결과, 그 위에 "찾았다!"가 잠깐
   await page.clock.fastForward(8_000)
   await expect(wait).toHaveCount(0)
-  await expect(box(page).locator('h2')).not.toHaveText('답을 저장했어요. 피드백을 준비하고 있어요.')
+  await expect(box(page).locator('h2')).not.toHaveText('피드백을 만드는 중이에요')
   await expect(page.locator('.sw-found')).toBeVisible()
   await expect(page.locator('.sw-found')).toHaveAttribute('aria-hidden', 'true')
   await page.clock.fastForward(700)
@@ -229,11 +241,16 @@ test('움직임 줄이기: 멈춘 그림 + 문구, 눌러도 뛰지 않고 말�
   await scenario(page, 'feedback-slow')
   await writeAndSend(page)
   await expect(bubble(page)).toHaveText('답을 꼼꼼히 읽고 있어')
-  const still = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke')]
+  const still = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-page')]
     .map(e => { const s = getComputedStyle(e); return `${s.animationName}|${s.transform}` }))
   expect(new Set(await still())).toEqual(new Set(['none|none']))
-  for (const seconds of [15_000, 15_000]) {
+  // 5초(공책: 펼친 공책이 멈춘 그림)·15초·30초 단계 모두 멈춤
+  for (const seconds of [5_000, 10_000, 15_000]) {
     await page.clock.fastForward(seconds)
+    if (seconds === 5_000) {
+      await expect(page.locator('.sw-wait-book')).toBeVisible()
+      await shot(page, `reduced-motion-notebook-${test.info().project.name}`)
+    }
     expect(new Set(await still())).toEqual(new Set(['none|none']))
   }
   await expect(bubble(page)).toHaveText('조금 오래 걸리네. 답은 벌써 저장했어!')
@@ -244,6 +261,36 @@ test('움직임 줄이기: 멈춘 그림 + 문구, 눌러도 뛰지 않고 말�
   await page.clock.fastForward(11_000)
   await expect(page.locator('.sw-wait')).toHaveCount(0)
   await expect(page.locator('.sw-found')).toBeHidden()
+})
+
+test('공책 넘기기 단계 1440·768·390px: 공책이 패널 안에 있고 말풍선·손전등과 겹치지 않음, 캡처', async ({ page }) => {
+  test.skip(test.info().project.name !== 'laptop', '창 크기를 시험 안에서 바꾸므로 한 프로젝트에서만')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.clock.install()
+  await login(page, 'ACC_LIGHT')
+  const attemptId = await openAttempt(page)
+  await go(page, attemptId)
+  await scenario(page, 'feedback-slow')
+  await writeAndSend(page)
+  await expect(page.locator('.sw-wait')).toBeVisible()
+  await page.clock.fastForward(5_000)
+  await expect(page.locator('.sw-wait-book')).toBeVisible()
+  for (const [width, height] of [[1440, 900], [768, 1024], [390, 844]]) {
+    await page.setViewportSize({ width, height })
+    await page.locator('.sw-wait').scrollIntoViewIfNeeded()
+    const r = await page.evaluate(() => {
+      const rect = (s: string) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom } }
+      return { book: rect('.sw-wait-book'), bubble: rect('.sw-wait-bubble'), panel: rect('.sw-feedback-panel'),
+        acc: rect('.sw-wait image[data-slot="ACCESSORY"]'), scroll: document.documentElement.scrollWidth > innerWidth }
+    })
+    const hit = (a: typeof r.book, b: typeof r.book) => !!a && !!b && a.l < b.r - 1 && b.l < a.r - 1 && a.t < b.b - 1 && b.t < a.b - 1
+    expect(r.scroll, `${width}px 가로 스크롤`).toBe(false)
+    expect(hit(r.book, r.bubble), `${width}px 공책·말풍선`).toBe(false)
+    expect(hit(r.book, r.acc), `${width}px 공책·손전등`).toBe(false)
+    expect(r.book!.l).toBeGreaterThanOrEqual(r.panel!.l)
+    expect(r.book!.r).toBeLessThanOrEqual(r.panel!.r)
+    await page.locator('.sw-feedback-panel').screenshot({ path: path.join(shots, `847-notebook-${width}.png`) })
+  }
 })
 
 test('390px 대기 화면 캡처 @responsive', async ({ page }) => {

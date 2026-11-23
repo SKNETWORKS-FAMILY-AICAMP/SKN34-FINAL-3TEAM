@@ -63,7 +63,9 @@ export function FeedbackWaiting({ companion, worn, startedAt, submittedAt }: {
         <span className="sw-wait-poke" key={pokes} data-poked={pokes > 0 || undefined} aria-hidden="true">
           <span className="sw-wait-pose">
             <Companion kind={companion} size={120} worn={worn} decorative />
-            {!ownLens && <Magnifier side={side} />}
+            {/* 공책 넘기기 단계에서는 그려 넣는 돋보기를 내려놓는다(입은 돋보기 소품은 아이템이라 그대로) */}
+            {!ownLens && step.motion !== 'notebook' && <Magnifier side={side} />}
+            {step.motion === 'notebook' && <Notebook />}
           </span>
         </span>
       </button>
@@ -75,16 +77,51 @@ export function FeedbackWaiting({ companion, worn, startedAt, submittedAt }: {
   )
 }
 
-/** 돋보기(#847, 직접 그린 SVG). 쥐는 곳이 아래쪽 끝, 왼쪽에 들 때는 좌우를 뒤집는다 */
+/**
+ * 선 두께 기준: 착용 아이템 그림(가로 60, 소품 배율 1)은 친구 그림 좌표(FRIEND_VIEWBOX 가로 184)에서 그대로 그려진다.
+ * 대기 그림은 친구 칸 너비의 비율로 크기를 정하므로(work.css) 착용 아이템과 같은 두께가 되게 그림 단위로 바꾼다.
+ */
+const FRIEND_UNITS = 184
+const itemStroke = (width: number, viewBox: number, boxRatio: number) =>
+  Math.round(((width * viewBox) / (FRIEND_UNITS * boxRatio)) * 100) / 100
+/** 돋보기 그림 칸 = 친구 칸 너비의 44%(work.css .sw-wait-glass), viewBox 64 */
+const LENS_BOX = 0.44
+const lens = (w: number) => itemStroke(w, 64, LENS_BOX)
+
+/**
+ * 돋보기(#847, 직접 그린 SVG). 쥐는 곳이 아래쪽 끝, 왼쪽에 들 때는 좌우를 뒤집는다.
+ * 선 두께는 착용 돋보기 소품(looks/acc-lens.svg: 테 4.5, 손잡이 7·3.5, 반짝임 3)과 같게(사용자 의견 2026-11-23)
+ */
 export function Magnifier({ side = 'right', className = 'sw-wait-glass' }: { side?: 'left' | 'right'; className?: string }) {
   return (
     <svg className={className} data-side={side} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <g transform={side === 'left' ? 'translate(64 0) scale(-1 1)' : undefined}>
-        <line x1="36" y1="36" x2="54" y2="56" stroke="#3A2A20" strokeWidth="11" strokeLinecap="round" />
-        <line x1="36" y1="36" x2="54" y2="56" stroke="#B8551C" strokeWidth="6" strokeLinecap="round" />
-        <circle cx="25" cy="25" r="17" fill="#DDF3FB" fillOpacity="0.85" stroke="#3A2A20" strokeWidth="5" />
-        <path d="M16 21a10 10 0 0 1 9-7" fill="none" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" />
+        <line x1="36" y1="36" x2="54" y2="56" stroke="#3A2A20" strokeWidth={lens(7)} strokeLinecap="round" />
+        <line x1="36" y1="36" x2="54" y2="56" stroke="#B8551C" strokeWidth={lens(3.5)} strokeLinecap="round" />
+        <circle cx="25" cy="25" r="17" fill="#DDF3FB" fillOpacity="0.85" stroke="#3A2A20" strokeWidth={lens(4.5)} />
+        <path d="M16 21a10 10 0 0 1 9-7" fill="none" stroke="#FFFFFF" strokeWidth={lens(3)} strokeLinecap="round" />
       </g>
+    </svg>
+  )
+}
+
+/**
+ * 펼친 작은 공책(#847 5초 단계, 사용자 의견 2026-11-23). 친구 앞쪽 아래에 두고 오른쪽 책장이 책등을 축으로 넘어간다(CSS).
+ * 그림 칸 = 친구 칸 너비의 60/184(work.css .sw-wait-book), viewBox 60이라 선 두께 3이 착용 아이템 선(3)과 같다. 선 색 #3A2A20
+ */
+const PAGE_LEFT = 'M30 21 Q19 15 7 19 V45 Q19 41 30 47 Z'
+const PAGE_RIGHT = 'M30 21 Q41 15 53 19 V45 Q41 41 30 47 Z'
+function Notebook() {
+  return (
+    <svg className="sw-wait-book" viewBox="0 0 60 60" aria-hidden="true" focusable="false">
+      <path d="M4 22 V49 Q17 45 30 51 Q43 45 56 49 V22" fill="#A8774F" stroke="#3A2A20" strokeWidth="3" strokeLinejoin="round" />
+      <path d={PAGE_LEFT} fill="#FFFDF5" stroke="#3A2A20" strokeWidth="3" strokeLinejoin="round" />
+      <path d={PAGE_RIGHT} fill="#FFFDF5" stroke="#3A2A20" strokeWidth="3" strokeLinejoin="round" />
+      <g stroke="#3A2A20" strokeOpacity="0.35" strokeWidth="2" strokeLinecap="round">
+        <path d="M12 26 Q19 24 25 27 M12 32 Q19 30 25 33 M12 38 Q17 36.5 21 38.5" fill="none" />
+        <path d="M35 27 Q41 24 48 26 M35 33 Q41 30 48 32" fill="none" />
+      </g>
+      <path className="sw-wait-page" d={PAGE_RIGHT} fill="#FFF8E6" stroke="#3A2A20" strokeWidth="3" strokeLinejoin="round" />
     </svg>
   )
 }

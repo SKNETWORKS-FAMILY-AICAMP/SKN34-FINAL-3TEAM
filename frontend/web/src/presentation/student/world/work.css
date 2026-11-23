@@ -688,6 +688,25 @@
 #class-journal .st-world .sw-wait[data-motion='tilt'] .sw-wait-pose { transform-origin: 50% 92%; animation: sw-wait-tilt 2.8s ease-in-out infinite; }
 #class-journal .st-world .sw-wait[data-motion='hop'] .sw-wait-pose { animation: sw-wait-hop 1.2s ease-in-out infinite; }
 #class-journal .st-world .sw-wait-poke[data-poked] { animation: sw-wait-poke 0.5s ease-out 1; }
+/* 공책 넘기기(5초~): 친구 앞쪽 아래 가운데. 크기 60/184 = 착용 아이템과 같은 배율(선 두께 같게) */
+#class-journal .st-world .sw-wait-book {
+  position: absolute;
+  left: calc(50% - 16.3%);
+  bottom: 2%;
+  width: 32.6%;
+  height: 32.6%;
+  overflow: visible;
+}
+#class-journal .st-world .sw-wait-page {
+  transform-box: view-box;
+  transform-origin: 30px 34px;
+  animation: sw-wait-page 1.6s ease-in-out infinite;
+}
+@keyframes sw-wait-page {
+  0% { transform: scaleX(1); opacity: 1; }
+  55% { transform: scaleX(-1); opacity: 1; }
+  75%, 100% { transform: scaleX(-1); opacity: 0; }
+}
 /* 돋보기를 입었으면(그려 넣는 돋보기 없음) 살피기 단계에서 입은 돋보기를 쥔 곳(그림 가운데) 기준으로 기울인다 */
 #class-journal .st-world .sw-wait[data-motion='look'][data-own-lens] image[data-slot='ACCESSORY'] {
   transform-box: fill-box;
@@ -1086,6 +1105,7 @@
   #class-journal .st-world .sw-wait-glass,
   #class-journal .st-world .sw-wait-pose,
   #class-journal .st-world .sw-wait-poke,
+  #class-journal .st-world .sw-wait-page,
   #class-journal .st-world .sw-wait image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }
   #class-journal .st-world .sw-found { display: none; }
 }

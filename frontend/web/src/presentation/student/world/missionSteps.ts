@@ -22,16 +22,21 @@ export function feedbackHeadline(f: Feedback) {
 /**
  * 피드백 대기 표시(#847): 경과 시간에 따른 말풍선 문구와 캐릭터 움직임. 실제 진행과 무관한 시간표다
  * (피드백 SSE는 status(RUNNING) 한 번뿐이라 진행 정보가 없음, api-spec 3.2). 막대·퍼센트는 쓰지 않는다.
- * 움직임은 단계마다 하나: look 돋보기로 살피기, tilt 고개 갸웃, hop 제자리 콩콩.
+ * 움직임은 단계마다 하나: look 돋보기로 살피기, notebook 공책 넘기기(돋보기는 내려놓음), tilt 고개 갸웃, hop 제자리 콩콩.
  */
-export type WaitingMotion = 'look' | 'tilt' | 'hop'
+export type WaitingMotion = 'look' | 'notebook' | 'tilt' | 'hop'
 export const WAITING_STEPS: readonly { from: number; line: string; motion: WaitingMotion }[] = [
   { from: 0, line: '답을 꼼꼼히 읽고 있어', motion: 'look' },
-  { from: 5, line: '생각의 단서를 찾는 중이야', motion: 'look' },
+  { from: 5, line: '생각의 단서를 찾는 중이야', motion: 'notebook' },
   { from: 15, line: '너에게 할 질문을 고르고 있어', motion: 'tilt' },
   { from: 30, line: '조금 오래 걸리네. 답은 벌써 저장했어!', motion: 'hop' },
   { from: 60, line: '거의 다 왔어. 잠깐만 기다려 줘', motion: 'hop' },
 ]
+/**
+ * 대기 중 피드백 상자 제목(사용자 결정 2026-11-23). 말풍선이 "답을 꼼꼼히 읽고 있어"라고 해서 저장 안내와 겹치므로 지금 하는 일만 말한다.
+ * 내 공책 기록 상세는 지난 기록을 보는 화면이라 feedbackHeadline의 처리 중 문장을 그대로 쓴다
+ */
+export const WAITING_HEADLINE = '피드백을 만드는 중이에요'
 /** core→learning 피드백 시간 제한(P12·api-spec 3.2). 이보다 길게 셀 일은 없어 경과 시간을 여기서 자른다 */
 export const FEEDBACK_WAIT_LIMIT_SECONDS = 80
 const clampWait = (seconds: number) =>
