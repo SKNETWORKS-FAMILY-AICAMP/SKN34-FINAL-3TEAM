@@ -5,8 +5,8 @@ import json
 import logging
 from uuid import UUID
 
-from app.database import create_db_engine, create_session_factory, transaction
-from app.outbox.repository import OutboxRepository
+from app.database import create_db_engine, create_session_factory
+from app.outbox import service
 
 
 def main(argv=None):
@@ -20,15 +20,14 @@ def main(argv=None):
     retry.add_argument("event_id", type=UUID)
     args = parser.parse_args(argv)
     engine = create_db_engine()
-    factory, repository = create_session_factory(engine), OutboxRepository()
+    factory = create_session_factory(engine)
     try:
-        with transaction(factory) as session:
-            if args.command == "list":
-                result = {"items": [dict(x) for x in repository.quarantined(session, args.limit)]}
-            elif repository.requeue(session, args.event_id):
-                result = {"eventId": str(args.event_id), "status": "REQUEUED"}
-            else:
-                result = {"eventId": str(args.event_id), "status": "NOT_REQUEUED"}
+        if args.command == "list":
+            result = {"items": service.list_quarantined(factory, args.limit)}
+        elif service.requeue(factory, args.event_id):
+            result = {"eventId": str(args.event_id), "status": "REQUEUED"}
+        else:
+            result = {"eventId": str(args.event_id), "status": "NOT_REQUEUED"}
         print(json.dumps(result, default=str, ensure_ascii=False))
         if args.command == "requeue" and result["status"] == "REQUEUED":
             logging.getLogger(__name__).warning("Outbox manually requeued: id=%s", args.event_id)

@@ -1,9 +1,12 @@
 """#131: 실제 PostgreSQL의 학생별 순서·백오프·격리·운영 재처리."""
 
 import asyncio
+import json
+import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
@@ -221,7 +224,7 @@ def test_failure_record_is_atomic_and_deleted_event_is_not_recreated(
 
 
 def test_operator_cli_lists_no_payload_and_requeues_once(
-    report_factory, db_engine, report_student_id, monkeypatch, capsys
+    report_factory, db_engine, report_student_id, monkeypatch, capsys, caplog
 ):
     event = seed(report_factory, report_student_id)
     with transaction(report_factory) as session:
@@ -236,6 +239,20 @@ def test_operator_cli_lists_no_payload_and_requeues_once(
     assert manage.main(["list"]) == 0
     text_out = capsys.readouterr().out
     assert event.id in text_out and "직접 만든 테스트" not in text_out
-    assert manage.main(["requeue", event.id]) == 0
+    assert [item["id"] for item in json.loads(text_out)["items"]] == [event.id]
+    with caplog.at_level(logging.WARNING, logger=manage.__name__):
+        assert manage.main(["requeue", event.id]) == 0
+    assert json.loads(capsys.readouterr().out) == {"eventId": event.id, "status": "REQUEUED"}
+    assert f"Outbox manually requeued: id={event.id}" in caplog.text
     assert manage.main(["requeue", event.id]) == 2
-    assert manage.main(["requeue", str(uuid4())]) == 2
+    assert json.loads(capsys.readouterr().out) == {"eventId": event.id, "status": "NOT_REQUEUED"}
+    missing = str(uuid4())
+    assert manage.main(["requeue", missing]) == 2
+    assert json.loads(capsys.readouterr().out) == {"eventId": missing, "status": "NOT_REQUEUED"}
+    assert manage.main(["list"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"items": []}
+
+
+def test_operator_cli_leaves_transactions_to_outbox_service():
+    source = Path(manage.__file__).read_text(encoding="utf-8")
+    assert "transaction" not in source and "OutboxRepository" not in source
