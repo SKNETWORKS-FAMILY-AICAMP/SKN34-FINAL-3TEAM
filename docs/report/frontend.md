@@ -20,6 +20,8 @@
 - 새로고침 시험은 sessionStorage의 가상 fixture 상태만 복원. 실제 아동 정보·토큰·비밀번호는 저장하지 않음
 - 개발 시나리오 PARTIAL·RETHINK·CORRECT는 고정 UI 시험 상태이며 모델 판정이 아님
 - 관리자 목 핸들러도 `/me.permissions`로 403 검사. 브라우저 목업 시험은 서버 집계·연동 검증을 대신하지 않음
+- 서버와 맞춘 응답(#912, API 변경 없음): 결제 목록 4개는 `{items}`만·범위 밖 409 `INVALID_PAGE`(대사 기간 누락 409 `PAYMENT_RECONCILIATION_RANGE_REQUIRED`), 동의 문서는 core 현재본(TERMS 1.1·PRIVACY 1.2·GUARDIAN 1.1, 문서 ID도 core와 같음, 제목·본문은 시연 문구)이고 동의 판정은 현재 문서의 최신 이력 기준, 표현 검토 ID는 UUID(아니면 400)·목록 열람 감사 대상 ID는 null, 게시 422 `errors`는 `{code, message}`, 미션 안내 `context=EXTRA`는 일반 안내
+- 재동의 확인: 개발 점검표(`/review`)의 "동의 문서 개정(재동의) 시연"을 누르면 학부모 시연 계정이 개정 전 PRIVACY 1.1·자녀별 GUARDIAN 1.0에만 동의한 상태로 바뀌고 온보딩 재동의로 이동(학부모 화면 개편 뒤 상태 시연 목록은 학부모 화면에 없음). 이어서 동의 설정에서 자녀 법정대리인 재동의. 목업 메모리 상태라 새로고침하면 처음 상태로 돌아감
 
 ### 번들 분할 (#247)
 

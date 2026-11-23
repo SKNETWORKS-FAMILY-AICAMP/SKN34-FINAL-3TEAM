@@ -2,7 +2,7 @@ import test, { before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { setupServer } from 'msw/node'
 import type { Child } from '../src/domain/classroom.ts'
-import { parentHandlers } from '../src/mocks/handlers/parent.ts'
+import { docs, parentHandlers } from '../src/mocks/handlers/parent.ts'
 import { studentHandlers } from '../src/mocks/handlers/student.ts'
 import { serviceHandlers } from '../src/mocks/handlers/service.ts'
 import { guardianTransferHandlers } from '../src/mocks/handlers/guardianTransfers.ts'
@@ -15,7 +15,7 @@ import { saveSharing } from '../src/mocks/fixtures/sharing.ts'
 
 Object.defineProperty(globalThis, 'location', { value: new URL('http://localhost/'), configurable: true })
 const server = setupServer(...guardianTransferHandlers, ...parentHandlers, ...serviceHandlers, ...paymentHandlers, ...studentHandlers)
-const consents = [{ documentId: 'guardian-v1', version: '1.0', agreed: true }]
+const consents = docs.filter(d => d.kind === 'GUARDIAN').map(d => ({ documentId: d.documentId, version: d.version, agreed: true }))
 let token = '', sender = '', receiver = '', serial = 0
 let child: Child
 async function call(path: string, method = 'GET', body?: unknown, grant?: string) {

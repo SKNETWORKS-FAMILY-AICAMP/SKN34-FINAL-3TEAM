@@ -449,7 +449,7 @@ export const studentHandlers = [
     respond(async () => {
       guard(request)
       const context = new URL(request.url).searchParams.get('context')
-      if (context === null) return store.mission(id(params.missionId), child!)
+      if (context === null || context === 'EXTRA') return store.mission(id(params.missionId), child!) // core도 EXTRA는 일반 안내
       if (context !== 'THEME_DAY' && context !== 'THEME_REVIEW')
         throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: '주간 테마 안내 맥락을 확인해 주세요.' })
       const owner = studentOnly(), missionId = id(params.missionId)
