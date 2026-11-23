@@ -36,6 +36,8 @@ class ThemeDraftsContractTest(unittest.TestCase):
                 path += '/{draftId}'
                 if len(args) > 2 and args[2].startswith('"'):
                     path += '/' + args[2].strip('"')
+            elif 'action = "review-list"' in args:
+                path += '/review-list'
             routes.add((args[0].strip('"').lower(), path))
         suffixes = {'GET': '', 'PUT': '/selection', 'PATCH': '/{versionId}'}
         for method in re.findall(r'service\.sceneVersions\("([^"]+)",\s*draftId,\s*scene\.name', self.controller):
@@ -63,6 +65,17 @@ class ThemeDraftsContractTest(unittest.TestCase):
         for const, name in (('DRAFT_STATUSES', 'status'), ('DRAFT_SOURCES', 'source')):
             core = re.search(const + r'=setOf\(([^)]*)\)', self.controller).group(1)
             self.assertEqual([s.strip().strip('"') for s in core.split(',')], params[name]['enum'], name)
+
+    def test_review_list_filters_and_row_fields_match(self):
+        path = PREFIX + '/review-list'
+        for spec in (self.public, self.learning):
+            operation = spec['paths'][path]['get']
+            params = {p['name'] for p in operation['parameters'] if p.get('in') == 'query'}
+            self.assertEqual(params, LIST_FILTERS | {'stage', 'week'})
+            self.assertEqual(operation['responses']['200']['content']['application/json']['schema'],
+                             {'$ref': '#/components/schemas/ThemeDraftReviewPage'})
+        for name in ('ThemeDraftReviewPage', 'ThemeDraftReviewRow', 'ThemeReviewStage'):
+            self.assertEqual(self.public['components']['schemas'][name], self.learning['components']['schemas'][name])
 
     def test_content_permission_and_audit_actions(self):
         rule = re.search(r'(path\.startsWith\("/admin/missions"\)[^>]*)-> "CONTENT"', FILTER.read_text(encoding='utf-8')).group(1)
@@ -124,6 +137,8 @@ class ThemeDraftsContractTest(unittest.TestCase):
                                  '#/components/schemas/DraftWeekExpectation')
         history = schemas['ReviewSceneHistory']
         self.assertIn('selectedVersionId', history['required'])
+        self.assertIn('comparisonPending', history['required'])
+        self.assertEqual(history['properties']['comparisonPending']['type'], 'boolean')
         self.assertEqual(history['properties']['selectedVersionId'], {'type': ['string', 'null'], 'format': 'uuid'})
         scenes = re.search(r'enum class ReviewScene\s*\{([^}]+)\}', self.controller).group(1)
         self.assertEqual(history['properties']['scene']['enum'], [s.strip() for s in scenes.split(',')])

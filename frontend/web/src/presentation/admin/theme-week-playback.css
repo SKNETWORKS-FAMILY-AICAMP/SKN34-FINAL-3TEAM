@@ -1,0 +1,21 @@
+.rv-full-content { display: grid; align-content: start; gap: 14px; min-width: 0; }
+.rv-full-player { min-width: 0; overflow: hidden; border: 1px solid #dce3ed; border-radius: 12px; background: #fff; }
+.rv-full-head, .rv-full-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; }
+.rv-full-head small, .rv-full-foot > div, .rv-full-foot button { display: flex; align-items: center; gap: 7px; }
+.rv-full-head small, .rv-full-foot span { color: #3259d9; font-size: 12px; font-weight: 670; }
+.rv-full-head h2 { margin: 4px 0 0; font-size: 21px; line-height: 1.35; letter-spacing: -.04em; }
+.rv-full-head button, .rv-full-foot button { flex: 0 0 auto; }
+.rv-full-foot > div { flex-wrap: wrap; }
+.rv-full-foot strong, .rv-full-notice { color: #52647a; font-size: 12px; }
+.rv-full-media { margin: 0 18px; }
+.rv-full-media .tm-player { max-width: none; }
+.rv-full-media .tm-stage { background: #142431; }
+.rv-full-media .tm-player[data-paused] .tm-shot,
+.rv-full-media .tm-player[data-paused] .tm-fx { animation-play-state: paused; }
+.rv-full-empty { display: grid; align-content: center; justify-items: center; gap: 8px; aspect-ratio: 16 / 9; margin: 0; padding: 16px; border-radius: 8px; background: #f3f6fa; text-align: center; }
+.rv-full-notice { margin: 0; padding: 0 18px 16px; }
+@media (max-width:530px) {
+  .rv-full-head, .rv-full-foot { padding: 12px; gap: 7px; }
+  .rv-full-head h2 { font-size: 17px; }
+  .rv-full-media { margin: 0 11px; }
+}

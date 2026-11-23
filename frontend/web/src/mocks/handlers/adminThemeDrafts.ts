@@ -1,9 +1,10 @@
 import { http } from 'msw/http'
 import type { AdminMission } from '../../domain/admin/operations.ts'
 import type { ThinkingType } from '../../domain/classroom.ts'
-import { REGEN_TARGETS, regenTargetLabel, themeDraftRequestErrors, THEME_SCENES } from '../../domain/admin/themeDrafts.ts'
+import { REGEN_TARGETS, regenTargetLabel, themeDraftLabels, themeDraftRequestErrors, THEME_SCENES } from '../../domain/admin/themeDrafts.ts'
 import type { RegenTarget, ThemeDraftRequest, ThemeDraftStatus, ThemeSceneName } from '../../domain/admin/themeDrafts.ts'
 import type { SceneHistory, VersionAnnotation } from '../../domain/admin/sceneVersions.ts'
+import { reviewStageLabels, type ThemeDraftReviewRow } from '../../domain/admin/themeDraftReviews.ts'
 import { THINKING_ORDER } from '../../domain/studentLook.ts'
 import { THEME_DAYS } from '../../domain/retention.ts'
 import { achievementStandards, audit, missions, stamp } from '../fixtures/admin/operations.ts'
@@ -22,7 +23,8 @@ import { respond } from './student.ts'
  *   다시 만들 수 있는 대상은 저장하지 않고 응답할 때 계산한다(이 기능 전에 저장된 목업 초안도 같게 보이게)
  */
 interface MockThemeDraft {
-  selections?: Partial<Record<ThemeSceneName, { id: string; seen: number }>>
+  selections?: Partial<Record<ThemeSceneName, { id: string; reviewedIds?: string[]; seen?: number }>>
+  frozenChoices?: Partial<Record<ThemeSceneName, string>>
   annotations?: Partial<Record<ThemeSceneName, VersionAnnotation>>
   draftId: string
   status: ThemeDraftStatus
@@ -143,29 +145,49 @@ function rootOf(d: MockThemeDraft): MockThemeDraft {
   }
   return node
 }
+function hasAdopted(root: MockThemeDraft) { return drafts.some(record=>record.status==='ADOPTED'&&rootOf(record)===root) }
+function hasPending(root: MockThemeDraft) { return drafts.some(record=>record!==root&&rootOf(record)===root&&advance(record).status==='GENERATING') }
+function freezeChoices(d: MockThemeDraft) {
+  d.frozenChoices=Object.fromEntries(Object.entries(rootOf(d).selections??{}).map(([scene,choice])=>[scene,choice.id]))
+}
+function choiceId(d: MockThemeDraft, scene: ThemeSceneName) {
+  return d.status==='ADOPTED'||d.status==='DISCARDED' ? d.frozenChoices?.[scene] : rootOf(d).selections?.[scene]?.id
+}
 function historyOf(d: MockThemeDraft, name: ThemeSceneName): SceneHistory {
   const root=rootOf(d)
+  const assignedWeek=plannedWeek(root.draftId)
+  const editable=d.status==='READY' && root.status!=='DISCARDED' && root.status!=='ADOPTED' &&
+    (!assignedWeek||!weekLocked(d.grade,assignedWeek)) && !hasAdopted(root)
   const records=drafts.filter(record=>rootOf(record).draftId===root.draftId && record.scenes.some(s=>s.scene===name) &&
     (record.draftId===root.draftId || record.input.regenerate?.targets.some(t=>t.endsWith(':'+name))))
     .sort((a,b)=>a===b?0:a.draftId===root.draftId?-1:b.draftId===root.draftId?1:a.createdAt.localeCompare(b.createdAt)||a.draftId.localeCompare(b.draftId))
   const versions=records.map((record,i)=>{
     const media=record.scenes.find(s=>s.scene===name)!
-    return {versionId:record.draftId,number:i+1,source:i===0?'ORIGINAL' as const:'REGENERATED' as const,
+    return {versionId:record.draftId,number:i+1,source:record===root?'ORIGINAL' as const:'REGENERATED' as const,
       imageUrl:media.imageUrl,videoUrl:media.videoUrl,motion:media.motion,createdAt:record.createdAt,
       starred:record.annotations?.[name]?.starred??false,note:record.annotations?.[name]?.note??'',
-      status:record.status,selectable:record.status==='READY'}
+      status:record.status,selectable:editable&&record.status==='READY'}
   }).reverse()
-  const selected=root.selections?.[name]?.id ?? (records.includes(d)?d.draftId:records[0]?.draftId)
-  const assignedWeek=plannedWeek(d.draftId)
-  return {scene:name,rootDraftId:root.draftId,versions,selectedVersionId:selected??null,editable:root.status==='READY'&&d.status==='READY'&&(!assignedWeek||!weekLocked(d.grade,assignedWeek))}
+  const selection=root.selections?.[name]
+  let ancestor:MockThemeDraft|undefined=d
+  const visited=new Set<string>()
+  while (ancestor && !records.includes(ancestor)) {
+    visited.add(ancestor.draftId)
+    const parentId:string|undefined=ancestor.input.regenerate?.baseDraftId
+    ancestor=parentId&&!visited.has(parentId)?drafts.find(record=>record.draftId===parentId):undefined
+  }
+  const selected=choiceId(d,name) ?? ancestor?.draftId
+  // Earlier sessions persisted the length of the oldest-first history at confirmation.
+  const reviewed=selection?.reviewedIds ?? records.slice(0,selection?.seen ?? 0).map(record=>record.draftId)
+  const comparisonPending=editable && versions.some(v=>v.source==='REGENERATED'&&v.selectable&&!reviewed.includes(v.versionId))
+  return {scene:name,rootDraftId:root.draftId,versions,selectedVersionId:selected??null,editable,comparisonPending}
 }
 interface MockOutput { missions?: {day:string}[]; dialogues?: {day:string}[]; theme?: {days?: {day:string}[]} }
 function chosenOutput(d: MockThemeDraft) {
   const output=structuredClone(d.draft)
   const data=output as MockOutput|null
-  const root=rootOf(d)
   const scenes=d.scenes.map(original=>{
-    const chosenId=root.selections?.[original.scene]?.id
+    const chosenId=choiceId(d,original.scene)
     const selected=chosenId ? byId(chosenId) : d
     const source=selected.draft as MockOutput|null
     if(data&&source&&selected!==d){
@@ -181,7 +203,7 @@ function chosenOutput(d: MockThemeDraft) {
   return { draft:output, scenes }
 }
 function view(d: MockThemeDraft) {
-  const planned=plannedWeek(d.draftId)
+  const planned=plannedWeek(d.status==='ADOPTED' ? d.draftId : rootOf(d).draftId)
   const effective=planned??retentionState.themes.find(t=>t.themeId===d.themeId)?.weekStart??d.weekStart
   return { ...d, ...chosenOutput(d), plannedWeek:planned, weekLocked:!!(planned||d.themeId)&&weekLocked(d.grade,effective),
     adoptionWeekLocked:weekLocked(d.grade,effective),input:{...d.input,regenerate:d.input.regenerate??null},regenerableTargets:regenerableTargets(d) }
@@ -197,7 +219,7 @@ export function mockThemeGenerationWeek(themeId: string) {
 }
 async function checkPlanningSnapshot(req:Request,d:MockThemeDraft) {
   const body=await req.json() as {expectedPlannedWeek?:string|null}
-  if(Object.hasOwn(body,'expectedPlannedWeek') && body.expectedPlannedWeek!==plannedWeek(d.draftId))learningFail(409,'CONFLICT')
+  if(Object.hasOwn(body,'expectedPlannedWeek') && body.expectedPlannedWeek!==plannedWeek(rootOf(d).draftId))learningFail(409,'CONFLICT')
 }
 /** 부분 다시 생성 결과: 원래 초안 결과를 복사하고 고른 장면만 바꿈(그림·영상·움직임·미션 표시) */
 function partialResult(d: MockThemeDraft, spec: { baseDraftId: string; targets: RegenTarget[] }) {
@@ -282,15 +304,16 @@ function adopt(d: MockThemeDraft) {
   })
   const scene = (name: ThemeSceneName) => chosen.scenes.find((s) => s.scene === name)
   const theme = {
-    themeId: `theme-${crypto.randomUUID().slice(0, 8)}`, grade: d.grade, weekStart: plannedWeek(d.draftId)??d.weekStart, title: g.theme.title, intro: g.theme.intro,
+    themeId: `theme-${crypto.randomUUID().slice(0, 8)}`, grade: d.grade, weekStart: plannedWeek(rootOf(d).draftId)??d.weekStart, title: g.theme.title, intro: g.theme.intro,
     days: THEME_DAYS.map((day, i) => ({ day, missionId: ids[i] })), status: 'DRAFT' as const, updatedAt: stamp(),
     outro: g.theme.outro, introImageUrl: scene('INTRO')?.imageUrl ?? null, outroImageUrl: scene('OUTRO')?.imageUrl ?? null,
     introVideoUrl: scene('INTRO')?.videoUrl ?? null, outroVideoUrl: scene('OUTRO')?.videoUrl ?? null, introMotion: scene('INTRO')?.motion ?? null, outroMotion: scene('OUTRO')?.motion ?? null,
   }
   retentionState.themes.unshift(theme)
   persistRetention()
+  freezeChoices(d)
   Object.assign(d, { status: 'ADOPTED', themeId: theme.themeId, updatedAt: stamp() })
-  assignWeek(d.draftId,null)
+  assignWeek(rootOf(d).draftId,null)
   return { ...theme, generationWeek: d.weekStart }
 }
 
@@ -301,6 +324,48 @@ function readContext(id:string,name:string) {
   return {d,scene,history:historyOf(d,scene)}
 }
 export const adminThemeDraftHandlers = [
+  http.get('/api/v1/admin/theme-drafts/review-list', ({ request }) => respond(async () => {
+    allow(request,'CONTENT')
+    const q=new URL(request.url).searchParams, stage=q.get('stage'), status=q.get('status'), grade=q.get('grade'), source=q.get('source')
+    const page=Number(q.get('page') ?? 0), size=Number(q.get('size') ?? 20)
+    if (!Number.isInteger(page) || page<0 || !Number.isInteger(size) || size<1 || size>100 || (stage && !Object.hasOwn(reviewStageLabels,stage)) ||
+      (grade && !['G3','G4','G5','G6'].includes(grade)) || (source && !['AUTO','ADMIN'].includes(source)) || (status && !Object.hasOwn(themeDraftLabels,status))) learningFail()
+    for (const key of ['week','weekStart']) {
+      const value=q.get(key)
+      if (value && (!/^\d{4}-\d{2}-\d{2}$/.test(value)||new Date(value+'T00:00:00Z').getUTCDay()!==1)) learningFail()
+    }
+    const archived=stage==='discarded'||status==='DISCARDED'
+    const scope=drafts.map(advance).filter(d => {
+      if (d.status==='DISCARDED') return archived || q.get('hideDiscarded')==='false'
+      if (archived) return false
+      if (d.status==='ADOPTED') return true
+      const root=rootOf(d)
+      return root.status!=='ADOPTED' && root.status!=='DISCARDED' &&
+        (root===d || d.status!=='READY' || root.status!=='READY') &&
+        !hasAdopted(root)
+    })
+    scope.sort((a,b)=>(archived?b.updatedAt:b.createdAt).localeCompare(archived?a.updatedAt:a.createdAt)||a.draftId.localeCompare(b.draftId))
+    const rows=scope.map((d):ThemeDraftReviewRow => {
+      const theme=retentionState.themes.find(t=>t.themeId===d.themeId)
+      const planned=plannedWeek(d.status==='DISCARDED'||d.status==='ADOPTED' ? d.draftId : rootOf(d).draftId)
+      const assigned=theme?.weekStart??planned, appliedWeek=d.status==='DISCARDED'?d.weekStart:assigned??d.weekStart
+      const history=historyOf(d,'INTRO')
+      const image=history.versions.find(v=>v.versionId===history.selectedVersionId)?.imageUrl??null
+      const pending=d.status==='READY'?THEME_SCENES.find(s=>historyOf(d,s).comparisonPending):null
+      const progress=d.status==='DISCARDED'?'discarded':theme?.status==='PUBLISHED'?'published':assigned&&weekLocked(d.grade,assigned)?'closed':
+        theme?.status==='REVIEW_REQUIRED'?'ready':d.status==='ADOPTED'?'adopted':d.status==='GENERATING'?'generating':
+        d.status==='CHECK_FAILED'?'check_failed':d.status==='FAILED'?'failed':pending?'pair':'review'
+      const title=theme?.title||(d.draft?.theme as {title?:string}|undefined)?.title||d.input.topic||'테마 초안'
+      return {draftId:d.draftId,title,thumbnailUrl:theme?theme.introImageUrl??null:image,grade:d.grade,source:d.source,status:d.status,
+        stage:progress,weekStart:d.weekStart,appliedWeek,plannedWeek:planned,updatedAt:d.updatedAt,themeId:d.themeId,comparisonScene:pending??null}
+    })
+    const filtered=rows.filter(r=>(!stage||r.stage===stage)&&(!status||r.status===status)&&
+      (!grade||r.grade===grade)&&(!source||r.source===source)&&
+      (!q.get('week')||r.appliedWeek===q.get('week'))&&(!q.get('weekStart')||r.weekStart===q.get('weekStart'))&&
+      (q.get('comparisonPending')!=='true'||r.stage==='pair'))
+    persist()
+    return {items:filtered.slice(page*size,(page+1)*size),page,size,totalElements:filtered.length,weeks:[...new Set(rows.map(r=>r.appliedWeek))].sort()}
+  })),
   http.get(historyPath,({request,params})=>respond(async()=>{
     allow(request,'CONTENT')
     return readContext(String(params.draftId),String(params.scene)).history
@@ -313,7 +378,7 @@ export const adminThemeDraftHandlers = [
       (body.expectedVersionCount!==undefined && body.expectedVersionCount!==history.versions.length) ||
       !history.versions.some(v=>v.versionId===body.versionId&&v.selectable))return learningFail(409,'CONFLICT')
     const root=rootOf(d)
-    root.selections={...root.selections,[scene]:{id:body.versionId,seen:history.versions.length}}
+    root.selections={...root.selections,[scene]:{id:body.versionId,reviewedIds:history.versions.filter(v=>v.selectable).map(v=>v.versionId)}}
     persist();return historyOf(d,scene)
   })),
   http.patch(historyPath+'/:versionId',({request,params})=>respond(async()=>{
@@ -349,10 +414,7 @@ export const adminThemeDraftHandlers = [
       const rows = drafts.map(advance).filter(d => (!status || d.status===status) && (!source || d.source===source) &&
         (!q.get('grade')||d.grade===q.get('grade')) && (!q.get('weekStart')||d.weekStart===q.get('weekStart')) &&
         (q.get('hideDiscarded')!=='true'||d.status!=='DISCARDED') &&
-        (q.get('comparisonPending')!=='true' || (d.status==='READY' && rootOf(d)===d && THEME_SCENES.some(s=>{
-          const h=historyOf(d,s)
-          return h.versions.length>(d.selections?.[s]?.seen??1)&&h.versions.some(v=>v.source==='REGENERATED'&&v.selectable)
-        }))))
+        (q.get('comparisonPending')!=='true' || (d.status==='READY' && rootOf(d)===d && THEME_SCENES.some(s=>historyOf(d,s).comparisonPending))))
       persist()
       return { items: rows.slice(index * size, (index + 1) * size).map(view), page: index, size, totalElements: rows.length }
     }),
@@ -369,9 +431,10 @@ export const adminThemeDraftHandlers = [
     respond(async () => {
       allow(request, 'CONTENT')
       const d = byId(String(params.draftId))
-      if (d.status !== 'READY' || !d.draft) learningFail(409, 'CONFLICT')
+      const root=rootOf(d)
+      if (d.status !== 'READY' || !d.draft || root.status==='DISCARDED' || hasAdopted(root) || hasPending(root)) learningFail(409, 'CONFLICT')
       await checkPlanningSnapshot(request,d)
-      requireOpenWeek(d.grade,plannedWeek(d.draftId)??d.weekStart)
+      requireOpenWeek(d.grade,plannedWeek(root.draftId)??d.weekStart)
       const theme = adopt(d)
       audit('THEME_DRAFT_ADOPT', 'WEEKLY_THEME', theme.themeId, 'SUCCESS', `초안 ${d.draftId} 채택`)
       persist()
@@ -382,10 +445,13 @@ export const adminThemeDraftHandlers = [
     respond(async () => {
       allow(request, 'CONTENT')
       const d = byId(String(params.draftId))
-      if (!['READY', 'CHECK_FAILED', 'FAILED'].includes(d.status)) learningFail(409, 'CONFLICT')
+      const root=rootOf(d)
+      if (!['READY', 'CHECK_FAILED', 'FAILED'].includes(d.status) || hasAdopted(root) || root.status==='DISCARDED' ||
+        (d.status==='READY' && hasPending(root)) || (root!==d && Object.values(root.selections??{}).some(choice=>choice.id===d.draftId))) learningFail(409, 'CONFLICT')
       await checkPlanningSnapshot(request,d)
-      const assigned=plannedWeek(d.draftId)
+      const assigned=plannedWeek(root.draftId)
       if(assigned)requireOpenWeek(d.grade,assigned)
+      freezeChoices(d)
       assignWeek(d.draftId,null)
       Object.assign(d, { status: 'DISCARDED', updatedAt: stamp() })
       audit('THEME_DRAFT_DISCARD', 'THEME_DRAFT', d.draftId, 'SUCCESS', '초안 버림')
@@ -402,7 +468,9 @@ export const adminThemeDraftHandlers = [
       if (raw != null && (!Array.isArray(raw) || !raw.length || raw.some((t) => !(REGEN_TARGETS as unknown[]).includes(t)))) learningFail()
       const targets = raw == null ? null : [...new Set(raw as RegenTarget[])]
       if (d.status === 'GENERATING' || d.status === 'ADOPTED') learningFail(409, 'CONFLICT')
-      if(d.status==='DISCARDED' && targets)learningFail(409,'CONFLICT')
+      const root=rootOf(d), assigned=plannedWeek(root.draftId)
+      if(assigned)requireOpenWeek(d.grade,assigned)
+      if(targets && (d.status==='DISCARDED'||root.status==='DISCARDED'||hasAdopted(root)))learningFail(409,'CONFLICT')
       if (targets && targets.some((t) => !regenerableTargets(d).includes(t))) learningFail(409, 'CONFLICT')
       const next = create({ grade: d.grade, weekStart: d.weekStart, topic: d.input.topic ?? undefined,
         missions: d.input.missions as ThemeDraftRequest['missions'] }, 'ADMIN')
