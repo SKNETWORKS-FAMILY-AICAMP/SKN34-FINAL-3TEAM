@@ -70,15 +70,30 @@ class LearningClient:
             self._client = None
 
     async def _all_pages(self, scope: Scope, resource: str) -> list[Any]:
+        """첫 페이지 totalElements를 기준으로 모음.
+        누락·변경·초과, 총건수에 못 미친 빈 페이지는 RECORDS_INVALID."""
         items: list[Any] = []
+        expected: int | None = None
         for page in range(MAX_PAGES):
             body = await self._get_student(scope, resource, {"page": page, "size": PAGE_SIZE})
             batch = body.get("items")
-            if not isinstance(batch, list):
+            total = body.get("totalElements")
+            if (
+                not isinstance(batch, list)
+                or not isinstance(total, int)
+                or isinstance(total, bool)
+                or total < 0
+            ):
+                raise RecordsUnavailable("RECORDS_INVALID", retryable=False)
+            if expected is None:
+                expected = total
+            if total != expected or len(items) + len(batch) > expected:
                 raise RecordsUnavailable("RECORDS_INVALID", retryable=False)
             items.extend(batch)
-            if not batch or len(items) >= int(body.get("totalElements", 0)):
+            if len(items) == expected:
                 return items
+            if not batch:  # 모은 수가 총건수보다 적은데 빈 페이지
+                raise RecordsUnavailable("RECORDS_INVALID", retryable=False)
         raise RecordsUnavailable("RECORDS_INVALID", retryable=False)
 
     async def _get_student(
