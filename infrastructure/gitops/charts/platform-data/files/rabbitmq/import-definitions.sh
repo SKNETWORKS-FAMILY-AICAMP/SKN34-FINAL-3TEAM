@@ -62,7 +62,7 @@ service_user() {
 none='^$'
 service_user core "$RABBITMQ_CORE_PASSWORD" monitoring "$none" \
   '^(cmd[.]direct|events[.]topic|core[.]retry)$' \
-  '^core[.](report[.]events|llm[.]usage[.]recorded|event[.]audit|model[.]loading[.]reported)$' \
+  '^core[.](report[.]events|llm[.]usage[.]recorded|event[.]audit|model[.]loading[.]reported|memorybook[.]events)$' \
   '^(student[.]deleted|model[.]version[.]activated)$'
 service_user learning "$RABBITMQ_LEARNING_PASSWORD" '' "$none" \
   '^learning[.]retry$' '^learning[.]student[.]deleted$' "$none"

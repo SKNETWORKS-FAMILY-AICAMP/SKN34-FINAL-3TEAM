@@ -437,6 +437,23 @@ uv run python -m scripts.memory_book_sample --out build/memory-book
 - 시험: `tests/test_memory_book_generation.py` 33개(명령 계약, 그림 받기 허용·거부·크기·내부 주소, learning 응답 검사, 생성 성공·엔딩 전 종료 그림 안 받음·비공개·미보유·계약 오류·일시 장애 재시도·재전달·삭제된 학생, 저장 키·삭제 모양, 파일 주소 범위·없음·서명, 경로 허용). report 전체 554개, 저장소 계약 시험 411개 통과, ruff 통과.
 - 남은 것: core가 명령을 보내고 완료 이벤트를 받는 부분(4단계), web(5단계), kind 끝까지 확인(6단계). prod 값(`report-worker.json`의 그림 출처·KEDA 큐)은 넣지 않았다. AWS에서는 learning presigned URL이 `https://<missions 버킷>.s3.ap-northeast-2.amazonaws.com` 형식이라 그 출처를 넣어야 한다 **[추정: 실제 presigned 주소 형식 미확인]**.
 
+### 14.4 4단계 결과 (2026-11-23)
+
+- 구현(core `memorybook/`, 새 기능 패키지):
+  - `controller/MemoryBookController`: 7.1의 공개 API 6개. `POST /students/me/memory-books`는 새로 만들면 202, 같은 회차의 만드는 중(QUEUED)·보관 기간 안 완성(READY) 작업이 있으면 그 작업을 200으로 돌려준다(처음 초안의 409 `MEMORY_BOOK_IN_PROGRESS` 대신 재사용으로 바꿈). 모든 응답 `Cache-Control: no-store`.
+  - `service/MemoryBookService`: 공개 확인(D2, 생성·목록·조회·내려받기 모두) → 재사용 → learning 보유 확인(트랜잭션 밖) → 하루 한도 → 유료 판정·사용 예약 → 작업 행·명령 저장. 저장이 실패하거나 재사용으로 끝나면 예약을 미사용으로 마감.
+  - `service/MemoryBookJobService`: 학생 행 잠금 안에서 재사용·한도를 다시 확인하고 작업 행과 `memorybook.generate` Outbox를 함께 저장. 완료 이벤트는 `processed_event`로 한 번만 반영하고 사용 예약을 READY면 사용, FAILED면 미사용으로 마감. 학생 삭제(`ChildManagementService.confirm`)와 같은 트랜잭션에서 작업 행을 지움(내려받기 기록은 FK CASCADE).
+  - `consumer/MemoryBookEventsConsumer`: 큐 `core.memorybook.events`, 봉투·데이터 엄격 검사(모양 오류는 DLQ).
+  - `client/MemoryBookLearningClient`(learning `frames/ownership` 재사용), `client/MemoryBookReportClient`(report 파일 주소, 404·409는 결과 값으로 돌려주고 공개 오류는 service가 정함, 아키텍처 2.1 client 오류 범위).
+  - `payment/service/ProductEntitlementService`: `beginMemoryBook`(`features.memoryBook`, 값 없으면 구독 중만, 끄면 403 `PREMIUM_REQUIRED`, 구독 중이면 학부모 잠금 안에서 `MEMORY_BOOK` 사용 예약)·`memoryBookLimit`(`limits.dailyMemoryBooks`, 구독 스냅숏에 없으면 무료 상품 값).
+  - `_common/messaging/OutboxRelay`: `memorybook.generate`를 명령(`cmd.direct`)으로 발행.
+- migration `V57__memory_book_jobs.sql`: `memory_book_job`(회차는 `theme_id`·`week_start` 칸, 같은 회차 QUEUED 1개 부분 유일 색인), `memory_book_download`(감사, D10), `payment_premium_usage.kind`에 `MEMORY_BOOK`, 상품 `features.memoryBook`(무료 false·유료 true)·`limits.dailyMemoryBooks = 3`. 로컬 `core-service.yaml` migration revision `v57`.
+- 함께 고친 곳(이 브랜치만): RabbitMQ 큐 `core.memorybook.events`·재시도 3개·DLQ와 바인딩, core 계정 읽기 권한, 운영 큐 관리 허용 목록(`QueueManagementClient.BASES`), 계약 시험 큐 개수(40→45).
+- 시험: `MemoryBookIntegrationTest` 8개(실제 상품·구독·공개 설정·트랜잭션·Outbox, learning은 가짜 HTTP 서버, report 파일 주소는 대역): 생성 202·재사용 200·명령 내용·사용 예약, 무료 403, 비공개 403(learning 미호출), 미보유 404·검사 400·하루 한도 429, 완료 한 번만 반영·사용/미사용 마감, 내려받기(만드는 중 409·학생/학부모 주소·감사 기록·만료 410·다른 학부모 403), 완료 이벤트 계약, 역할 403. core 전체 768개(큐 허용 목록 시험 1개는 고친 뒤 다시 통과), 저장소 계약 시험 411개 통과.
+- 단순화한 점(도입 때 다시 볼 것): 같은 회차 재사용은 "보관 기간 안 READY면 재사용"만 본다. 다시 풀기로 답이 바뀐 뒤 새로 만들려면 만료를 기다려야 한다(8.2의 원본 비교는 미구현). 만료된 파일을 S3에서 지우는 주기 작업·수명 주기 규칙은 없다. 오래 QUEUED인 작업을 바로잡는 복구 작업(12.3)도 없다. `Idempotency-Key`는 받지 않고 재사용으로 중복을 막는다. 생성 후 구독이 끝나도 내려받기는 허용(D5).
+- 도입 시 필요한 것: `docs/design/erd.md`에 V57 표를 옮기지 않으면 `ci-db-schema`(ERD 대조)가 실패한다. core OpenAPI(`contracts/openapi/core-service.yaml`)에는 공개 API를 아직 넣지 않았다.
+- 남은 것: 5단계 web, 6단계 kind 끝까지 확인.
+
 ## 15. 열린 결정 (동섭이 정할 것)
 
 11/23: D2는 위처럼 결정했고, 나머지는 권장안대로 시험 구현한 뒤 결과를 보고 다시 판단한다.
