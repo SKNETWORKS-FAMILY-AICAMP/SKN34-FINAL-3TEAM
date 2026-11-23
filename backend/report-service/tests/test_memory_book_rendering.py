@@ -61,6 +61,19 @@ def test_before_ending_hides_outro_answer_and_outro_image():
     assert outro_image not in html
 
 
+def test_long_answers_are_shortened_in_bubbles_and_printed_in_full_below():
+    book = sample_book()
+    long = "가" * 120
+    book["days"][1]["attempt"]["answers"][0]["text"] = long
+    view = memory_book_view(book)
+    tue = view["days"][1]["attempt"]
+    assert tue["truncated"] and tue["answers"][0]["bubble"].endswith("…")
+    assert len(tue["answers"][0]["bubble"]) <= 70
+    assert not view["days"][0]["attempt"]["truncated"]
+    html = html_of(book)
+    assert html.count(long) == 1  # 말풍선에는 줄인 글, 그림 아래에 전체 글 한 번
+
+
 def test_view_does_not_mutate_input():
     book = sample_book()
     before = copy.deepcopy(book)
