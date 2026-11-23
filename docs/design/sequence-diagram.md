@@ -642,7 +642,7 @@ sequenceDiagram
 - 클라이언트가 끊겨도 core→learning 호출은 끝까지 진행·저장, 재요청 시 저장 결과 반환 (API 3.2)
 - 타임아웃 예산: core→learning 80초 > learning→core 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초, 판정 리스 90초 (P12, 아키텍처 1.3)
 - 결제 사용 예약·완료는 core→learning 요청 안에서 learning이 core를 다시 부르는 동기 왕복(`FeedbackFacade`·`PaymentUsageClient`). 예약·완료 호출이 실패하면 `503 PAYMENT_USAGE_UNAVAILABLE`, core가 거절한 409는 그 코드로 응답
-- `nextActions`: 되묻기 생성 시 `[ANSWER_FOLLOWUP, FINISH]`(FINISH = "이대로 돌아보기"), 되묻기 2회 소진·고르기 CORRECT면 `[FINISH]` (P04)
+- `nextActions`: 되묻기 생성 시 `[ANSWER_FOLLOWUP, FINISH]`(FINISH = "마무리 보기"), 되묻기 2회 소진·고르기 CORRECT면 `[FINISH]` (P04)
 - 판정 보류(`result = HELD`)는 정상 처리(`DONE`), 처리 실패(`process_status = FAILED`)와 구분 (NFR-REL-04)
 - 보류 사유 결정은 모두 ai 담당, learning은 `judge_verified`·학년을 포함한 기준표 전달 (상태 다이어그램 3.3)
 
