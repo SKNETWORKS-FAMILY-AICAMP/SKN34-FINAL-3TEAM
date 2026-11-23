@@ -408,19 +408,31 @@ def test_frame_core_is_judged_as_its_own_item_and_flow_fails_only_other_place() 
     assert "가구의 배치·모양·개수 차이" in prompts.IMAGE_REVIEW_SYSTEM
     # 시작 2컷 문구는 물건·자리 중심(사건 클로즈업 틀과 맞춤)
     assert "빈자리" in families.LOST.intro_cuts[1]
-    # 탈것: 깜짝 찾아온 사람을 보고 놀람 + 이미 짐을 정리해 둬 탈것·들고 온 것이 안 보임(#782와
-    # 합침, 사용자 결정 2026-11-23)
-    vehicle2 = families.STORY_TYPES["VEHICLE"].intro_cuts[1]
+    # 탈것: 깜짝 찾아온 사람을 보고 놀람 + 탈것·들고 온 것이 안 보임(#782와 합침, 사용자 결정
+    # 2026-11-23). 1컷엔 찾아올 사람이 없고, 2컷 글에 '짐 정리'가 없음(1단계 실측: 1컷으로 끌려감)
+    vehicle1, vehicle2 = families.STORY_TYPES["VEHICLE"].intro_cuts[:2]
     assert "놀람" in vehicle2 and "들고 온 것도 보이지 않음" in vehicle2
-    assert "반갑게" not in vehicle2
+    assert "반갑게" not in vehicle2 and "정리" not in vehicle2
+    assert "찾아올 사람은 아직 보이지 않음" in vehicle1
     # 소리: 소리 난 자리는 그리지 않음('소리 난 곳' 후보 값을 가리키지 않게, 사용자 결정
     # 2026-11-21), 문장은 #782 v10(이웃·가족이 들려줌, 사용자 결정 2026-11-23)
     sound2 = families.STORY_TYPES["SOUND"].intro_cuts[1]
     assert "소리 난 자리가 보이지 않음" in sound2
     assert not any(w in sound2 for w in ("담장", "지붕", "나무 위", "구석"))
+    # 사건 클로즈업 할 일에 여러 종류 예시를 늘어놓지 않음(1단계 실측 2026-11-23: 그림 지시에
+    # 들어가 소리 탐정 클로즈업에 예시의 '파헤친 자리'가 그려짐). 그 종류 역할 2 내용이 정함
     beat = cuts.spec("INTRO", 2, 6).beat
-    assert "소리 이야기를 듣는 아이" in beat and "깜짝 찾아온 사람" in beat
-    assert "창가" not in beat and "짐" not in beat
+    assert "역할 2" in beat
+    assert not any(w in beat for w in ("빈 접시", "파헤친", "창가", "짐", "소리 이야기"))
+    for code in (
+        "SOUND",
+        "VEHICLE",
+        "GIFT",
+        "WHEN",
+    ):  # 그 종류 역할 2에 없는 물건이 그림 지시에 안 감
+        assert not any(
+            w in prompts.cut_beat(theme_of(code), "INTRO", 2) for w in ("파헤친", "빈 접시")
+        )
 
 
 def test_reveal_cut_has_no_arrival_role_and_plan_gives_only_used_roles() -> None:

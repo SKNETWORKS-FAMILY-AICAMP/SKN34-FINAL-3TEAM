@@ -391,6 +391,26 @@ def test_vehicle_theme_passes_and_hides_vehicles() -> None:
     assert not prompts.mission_shows_target(theme)
 
 
+def test_vehicle_first_cut_does_not_show_the_arriving_person() -> None:
+    """시작 1컷(평소 모습)에 온 사람이 나오면 2컷 '와 계시네!'(깜짝 방문)와 어긋남(1단계 실측
+    2026-11-23: 1컷에 짐을 정리하는 삼촌). 그 칸만 고쳐 씀(CUT_TARGET), 2컷부터는 나와도 됨."""
+    theme = vehicle_theme()
+    assert checks.arrival_person(theme) == "삼촌"
+    theme["introCuts"][0]["scene"] = (
+        "거실에서 아이는 소파 곁에 있고 삼촌은 창문 가까이 짐을 정리한다."
+    )
+    bad = [r for r in checks.check_theme(theme, 3) if r.startswith("CUT_TARGET")]
+    assert bad == [
+        "CUT_TARGET introCuts1.scene 시작 1컷(평소 모습)에 찾아올 사람 '삼촌'(2컷에서 처음 보임, "
+        "없다는 말도 쓰지 않음)"
+    ]
+    assert checks.FIX_REASON[2].match(bad[0])  # 칸 고쳐 쓰기 경로(CUT_TARGET)
+    theme = vehicle_theme()
+    theme["introCuts"][1]["scene"] = "현관 안쪽에서 삼촌과 아이의 어깨 위가 크게 보인다."
+    assert not [r for r in checks.check_theme(theme, 3) if r.startswith("CUT_TARGET")]
+    assert checks.arrival_person(valid_theme()) is None
+
+
 def test_vehicle_absent_value_clue_and_ferry_place() -> None:
     theme = vehicle_theme()
     theme["days"][0]["condition"] = {

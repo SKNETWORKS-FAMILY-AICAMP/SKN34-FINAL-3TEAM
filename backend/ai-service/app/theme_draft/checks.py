@@ -1706,10 +1706,12 @@ PERSON_OF_TARGET = re.compile(r"^\s*(.+?)(?:이|가) 타고 온")
 def clue_person(theme: Theme) -> str | None:
     """모든 단서에 넣을 낱말(CLUE_OWNER, 공백 뺀 꼴): 탈것 찾기의 온 사람('삼촌이 타고 온 탈것' →
     '삼촌'), 소리 탐정의 '소리'(families.clue_word). 그 밖·형식 밖은 None."""
-    t = story_type(theme)
-    if t.clue_word:
-        return t.clue_word
-    if t.code != "VEHICLE":
+    return story_type(theme).clue_word or arrival_person(theme)
+
+
+def arrival_person(theme: Theme) -> str | None:
+    """탈것 찾기의 온 사람(공백 뺀 꼴, '삼촌이 타고 온 탈것' → '삼촌'), 그 밖·형식 밖은 None."""
+    if story_type(theme).code != "VEHICLE":
         return None
     m = PERSON_OF_TARGET.match(str(theme.get("target") or ""))
     return compact(m.group(1)) if m else None
@@ -2316,6 +2318,17 @@ def cut_target_problems(theme: Theme) -> list[str]:
                 ):
                     bad.append(
                         f"CUT_TARGET {key}{i}.{k} 동물이 나오지 않는 컷에 '{word}'(이미 떠남)"
+                    )
+                # 탈것 찾기 시작 1컷(평소 모습)에 온 사람을 쓰면 2컷 "와 계시네!"(깜짝 방문)와
+                # 어긋남(1단계 실측 2026-11-23, 1컷에 짐을 정리하는 삼촌)
+                if (
+                    (scene, i) == ("INTRO", 1)
+                    and (who := arrival_person(theme))
+                    and who in compact(text)
+                ):
+                    bad.append(
+                        f"CUT_TARGET {key}{i}.{k} 시작 1컷(평소 모습)에 찾아올 사람 '{who}'"
+                        "(2컷에서 처음 보임, 없다는 말도 쓰지 않음)"
                     )
     return bad
 
