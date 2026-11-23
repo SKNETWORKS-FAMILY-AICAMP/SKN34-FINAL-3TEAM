@@ -655,12 +655,13 @@
   padding: 6px 0 4px;
 }
 #class-journal .st-world .sw-wait-friend {
-  --w: clamp(96px, 9vw, 128px);
+  --w: clamp(128px, 11vw, 160px);
+  position: relative;
   flex: none;
   width: var(--w);
   height: var(--w);
-  /* 돋보기가 친구 옆으로 조금 나가도 말풍선·칸 끝과 겹치지 않게 양옆 여백 */
-  margin: 0 calc(var(--w) * 0.18);
+  /* 돋보기 렌즈가 친구 옆으로 조금 나가도 말풍선·칸 끝과 겹치지 않게 양옆 여백 */
+  margin: 0 calc(var(--w) * 0.12);
   padding: 0;
   border: 0;
   border-radius: 24px;
@@ -675,15 +676,16 @@
   height: 100%;
 }
 #class-journal .st-world .sw-wait-pose .st-companion { display: block; width: 100%; height: 100%; }
+/* 돋보기는 몸 가운데 높이에서 손잡이가 몸 앞에 걸치고 렌즈가 바깥 위로(얼굴 옆에 뜨지 않게) */
 #class-journal .st-world .sw-wait-glass {
   position: absolute;
-  top: 30%;
-  width: 44%;
-  height: 44%;
+  top: 38%;
+  width: 50%;
+  height: 50%;
 }
-/* 소품이 없으면 몸 앞쪽(오른쪽)에 들고, 소품을 들었으면 왼쪽으로 비킨다. 쥐는 곳(손잡이 끝)을 축으로 움직인다 */
-#class-journal .st-world .sw-wait-glass[data-side='right'] { --dir: 1; right: -18%; transform-origin: 84% 88%; }
-#class-journal .st-world .sw-wait-glass[data-side='left'] { --dir: -1; left: -18%; transform-origin: 16% 88%; }
+/* 소품이 없으면 몸 앞쪽(오른쪽)에 들고, 소품을 들었으면 왼쪽으로 비킨다. 쥐는 곳(손잡이 끝, 그림 (12, 52))을 축으로 움직인다 */
+#class-journal .st-world .sw-wait-glass[data-side='right'] { --dir: 1; left: 62%; transform-origin: 19% 81%; }
+#class-journal .st-world .sw-wait-glass[data-side='left'] { --dir: -1; right: 62%; transform-origin: 81% 81%; }
 #class-journal .st-world .sw-wait[data-motion='look'] .sw-wait-glass { animation: sw-wait-look 2.4s ease-in-out infinite; }
 #class-journal .st-world .sw-wait[data-motion='tilt'] .sw-wait-pose { transform-origin: 50% 92%; animation: sw-wait-tilt 2.8s ease-in-out infinite; }
 #class-journal .st-world .sw-wait[data-motion='hop'] .sw-wait-pose { animation: sw-wait-hop 1.2s ease-in-out infinite; }
@@ -718,10 +720,11 @@
   30% { transform: rotate(-14deg); }
   65% { transform: rotate(10deg); }
 }
+/* 살피기: 쥔 곳을 축으로 렌즈를 위아래로 기울이며 들여다본다 */
 @keyframes sw-wait-look {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  30% { transform: translate(calc(var(--dir) * -16%), -16%) rotate(calc(var(--dir) * -10deg)); }
-  65% { transform: translate(calc(var(--dir) * -6%), 14%) rotate(calc(var(--dir) * 8deg)); }
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: translateY(-4%) rotate(calc(var(--dir) * -12deg)); }
+  65% { transform: rotate(calc(var(--dir) * 7deg)); }
 }
 @keyframes sw-wait-tilt {
   0%, 100% { transform: rotate(0deg); }
@@ -744,14 +747,50 @@
   min-width: 0;
   padding: 14px 18px;
 }
+/* 한국어는 띄어쓰기에서만 꺾고(글자 중간 꺾임 없음), 가장 긴 문구도 두 줄 안에 들게 최소 폭 */
 #class-journal .st-world .sw-wait-bubble p {
   margin: 0;
+  min-width: 9.5em;
   font-family: var(--st-hand);
   font-weight: 700;
   font-size: var(--st-fs-md, 21px);
   line-height: 1.45;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  /* 두 줄이 되면 줄 길이를 고르게(마지막 줄에 한 단어만 남지 않게) */
+  text-wrap: balance;
 }
+/* 대기 중에만: 제목은 본문보다 조금 크게·굵게, 상자 아래 빈 공간 줄이기(결과·실패 모양은 그대로) */
+#class-journal .st-world .sw-feedback[data-waiting] { gap: 8px; }
+#class-journal .st-world .sw-feedback[data-waiting] .sw-feedback-head h2 {
+  font-size: clamp(20px, 1.5vw, 22px);
+  font-weight: 700;
+  line-height: 1.3;
+}
+#class-journal .st-world .sw-feedback[data-waiting] .sw-wait { padding-bottom: 0; }
+/* 대기 중에는 상자 테두리·바탕·그림자를 빼서 친구가 네모 안에 갇혀 보이지 않게(무대처럼). 같은 요소의 모양만 바꾸고
+   테두리 두께·여백은 그대로 둬서 결과가 와 상자가 생길 때 크기가 튀지 않는다. 결과·실패 모양은 그대로 */
+#class-journal .st-world .sw-feedback-panel {
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+#class-journal .st-world .sw-feedback-panel:has(.sw-feedback[data-waiting]) {
+  align-self: start;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+/* 발밑 얇은 풀밭 선 하나(친구가 콩콩 뛰어도 땅은 그대로) */
+#class-journal .st-world .sw-wait-ground {
+  position: absolute;
+  left: -14%;
+  right: -14%;
+  bottom: 1%;
+  height: 3px;
+  border-radius: 999px;
+  background: #7cbf5a;
+  box-shadow: 0 1px 0 #5c9a3e;
+}
+#class-journal .st-world .sw-feedback-panel:has(.sw-feedback[data-waiting]) .sw-actions:empty { display: none; }
 /* 결과가 온 순간 상자 위에 잠깐 겹쳐 반짝(상자는 늦추지 않음) */
 #class-journal .st-world .sw-found {
   position: absolute;
@@ -1092,10 +1131,10 @@
   #class-journal .st-world .sw-reflect-face { top: 16px; left: 18px; }
   #class-journal .st-world .sw-reflect .cj-difficulties { gap: 8px; }
   #class-journal .st-world .sw-reflect .cj-difficulties button { min-height: 76px; font-size: 18px; }
-  #class-journal .st-world .sw-wait { gap: 14px; }
-  #class-journal .st-world .sw-wait-friend { --w: 84px; }
-  #class-journal .st-world .sw-wait-bubble { padding: 12px 14px; }
-  #class-journal .st-world .sw-wait-bubble p { font-size: var(--st-fs-base, 18px); }
+  #class-journal .st-world .sw-wait { gap: 10px; }
+  #class-journal .st-world .sw-wait-friend { --w: 88px; margin: 0 calc(var(--w) * 0.1); }
+  #class-journal .st-world .sw-wait-bubble { padding: 12px; }
+  #class-journal .st-world .sw-wait-bubble p { font-size: 16px; }
 }
 /* 움직임 줄이기: 기울인 쪽지·단추를 바로 세운다(미션 안내 그림과 같은 기준).
    피드백 대기(#847)는 멈춘 그림 + 문구만, 누를 때 콩·"찾았다!" 반짝도 하지 않는다 */
@@ -1107,5 +1146,6 @@
   #class-journal .st-world .sw-wait-poke,
   #class-journal .st-world .sw-wait-page,
   #class-journal .st-world .sw-wait image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }
+  #class-journal .st-world .sw-feedback-panel { transition: none; }
   #class-journal .st-world .sw-found { display: none; }
 }

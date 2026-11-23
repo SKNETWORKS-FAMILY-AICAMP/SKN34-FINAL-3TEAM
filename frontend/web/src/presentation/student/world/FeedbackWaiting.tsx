@@ -68,6 +68,7 @@ export function FeedbackWaiting({ companion, worn, startedAt, submittedAt }: {
             {step.motion === 'notebook' && <Notebook />}
           </span>
         </span>
+        <span className="sw-wait-ground" aria-hidden="true" />
       </button>
       <SpeechBubble tail="left" className="sw-wait-bubble" aria-hidden="true">
         <p>{poked ? POKE_LINE : step.line}</p>
@@ -84,22 +85,23 @@ export function FeedbackWaiting({ companion, worn, startedAt, submittedAt }: {
 const FRIEND_UNITS = 184
 const itemStroke = (width: number, viewBox: number, boxRatio: number) =>
   Math.round(((width * viewBox) / (FRIEND_UNITS * boxRatio)) * 100) / 100
-/** 돋보기 그림 칸 = 친구 칸 너비의 44%(work.css .sw-wait-glass), viewBox 64 */
-const LENS_BOX = 0.44
+/** 돋보기 그림 칸 = 친구 칸 너비의 50%(work.css .sw-wait-glass), viewBox 64 */
+const LENS_BOX = 0.5
 const lens = (w: number) => itemStroke(w, 64, LENS_BOX)
 
 /**
- * 돋보기(#847, 직접 그린 SVG). 쥐는 곳이 아래쪽 끝, 왼쪽에 들 때는 좌우를 뒤집는다.
- * 선 두께는 착용 돋보기 소품(looks/acc-lens.svg: 테 4.5, 손잡이 7·3.5, 반짝임 3)과 같게(사용자 의견 2026-11-23)
+ * 돋보기(#847, 직접 그린 SVG). 몸 앞 오른쪽에서 들고 있는 모양: 쥐는 곳(왼쪽 아래 손잡이 끝)이 몸에 걸치고
+ * 렌즈는 오른쪽 위 바깥을 향한다(사용자 의견 2026-11-23 "얼굴 옆에 떠 있지 말고"). 왼쪽에 들 때는 좌우를 뒤집는다.
+ * 선 두께는 착용 돋보기 소품(looks/acc-lens.svg: 테 4.5, 손잡이 7·3.5, 반짝임 3)과 같게. 렌즈는 연한 하늘색 + 작은 반사광
  */
 export function Magnifier({ side = 'right', className = 'sw-wait-glass' }: { side?: 'left' | 'right'; className?: string }) {
   return (
     <svg className={className} data-side={side} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <g transform={side === 'left' ? 'translate(64 0) scale(-1 1)' : undefined}>
-        <line x1="36" y1="36" x2="54" y2="56" stroke="#3A2A20" strokeWidth={lens(7)} strokeLinecap="round" />
-        <line x1="36" y1="36" x2="54" y2="56" stroke="#B8551C" strokeWidth={lens(3.5)} strokeLinecap="round" />
-        <circle cx="25" cy="25" r="17" fill="#DDF3FB" fillOpacity="0.85" stroke="#3A2A20" strokeWidth={lens(4.5)} />
-        <path d="M16 21a10 10 0 0 1 9-7" fill="none" stroke="#FFFFFF" strokeWidth={lens(3)} strokeLinecap="round" />
+        <line x1="12" y1="52" x2="28" y2="36" stroke="#3A2A20" strokeWidth={lens(7)} strokeLinecap="round" />
+        <line x1="12" y1="52" x2="28" y2="36" stroke="#B8551C" strokeWidth={lens(3.5)} strokeLinecap="round" />
+        <circle cx="39" cy="25" r="15" fill="#D6F1FC" fillOpacity="0.92" stroke="#3A2A20" strokeWidth={lens(4.5)} />
+        <path d="M32 21a8 8 0 0 1 6-5" fill="none" stroke="#FFFFFF" strokeWidth={lens(3)} strokeLinecap="round" />
       </g>
     </svg>
   )

@@ -21,17 +21,28 @@
   background: none;
   transform: none;
 }
+/*
+ * 꼬리 테두리를 몸통과 같은 2px로(#847, 사용자 결정 2026-11-23). 테두리색 삼각형(::before) 위에 바탕색 삼각형(::after)을 겹쳐
+ * 테두리처럼 보이게 한다. 예전에는 두 삼각형 크기·위치 차이로 옆선 약 3px·끝 5~6px이라 몸통보다 두껍고 진해 보였다.
+ * 지금: 바깥(::before)은 크기·자리 그대로(꼬리 위치 안 바뀜), 안쪽(::after)을 옆선에서 2px씩 안으로 들인 닮은 삼각형으로 계산하고,
+ * 바깥 끝은 안쪽 끝에서 2px 되는 곳에서 잘라(clip-path) 끝도 2px(살짝 뭉툭)로 둔다.
+ * 테두리 두께(border-width)는 브라우저가 정수 px로 내리므로 정수로 두고 자리(left·bottom)만 소수로 맞춘다.
+ * 아래 꼬리: 바깥 반폭 13·높이 20, 안쪽 반폭 11·높이 17, 안쪽 끝 16.37px(바깥 끝 20px) → 옆선 약 2px, 바깥 끝을 18.37px에서 잘라 끝 2px.
+ * 왼쪽 꼬리: 바깥 반높이 12·길이 21, 안쪽 반높이 10·길이 17, 안쪽 끝 -16.76px(바깥 끝 -21px) → 옆선 약 1.9~2.06px, 바깥 끝을 안쪽 끝에서 2px 되는 곳에서 자름.
+ * 그림자는 몸통과 같은 drop-shadow 하나를 같이 쓴다(위 filter).
+ */
 /* 아래 가운데 꼬리 */
 #class-journal .cj-app-student .st-bubble.st-bubble-down::before {
   left: calc(50% - 13px);
   bottom: -20px;
   border-width: 20px 13px 0 13px;
   border-color: var(--sk-line) transparent transparent transparent;
+  clip-path: polygon(0 0, 26px 0, 14.06px 18.37px, 11.94px 18.37px);
 }
 #class-journal .cj-app-student .st-bubble.st-bubble-down::after {
-  left: calc(50% - 10px);
-  bottom: -15px;
-  border-width: 16px 10px 0 10px;
+  left: calc(50% - 11px);
+  bottom: -16.37px;
+  border-width: 17px 11px 0 11px;
   border-color: var(--st-bubble-bg) transparent transparent transparent;
 }
 /* 왼쪽 아래 꼬리 */
@@ -40,10 +51,11 @@
   bottom: 14px;
   border-width: 12px 21px 12px 0;
   border-color: transparent var(--sk-line) transparent transparent;
+  clip-path: polygon(2.24px 10.72px, 21px 0, 21px 24px, 2.24px 13.28px);
 }
 #class-journal .cj-app-student .st-bubble.st-bubble-left::after {
-  left: -15px;
-  bottom: 17px;
-  border-width: 9px 16px 9px 0;
+  left: -16.76px;
+  bottom: 16px;
+  border-width: 10px 17px 10px 0;
   border-color: transparent var(--st-bubble-bg) transparent transparent;
 }

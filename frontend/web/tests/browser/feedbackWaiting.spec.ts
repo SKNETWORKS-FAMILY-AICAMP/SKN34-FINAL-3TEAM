@@ -74,7 +74,8 @@ test('40초 늦는 피드백: 문구가 차례로 바뀌고 결과가 오면 바
   await expect(box(page)).toHaveCount(1)
   await expect(page.locator('.sw-wait [role=status]')).toHaveCount(0)
   await expect(bubble(page)).toHaveAttribute('aria-hidden', 'true')
-  await expect(page.locator('.sw-wait-friend > span')).toHaveAttribute('aria-hidden', 'true')
+  await expect(page.locator('.sw-wait-poke')).toHaveAttribute('aria-hidden', 'true')
+  await expect(page.locator('.sw-wait-ground')).toHaveAttribute('aria-hidden', 'true')
   await expect(box(page)).toContainText('답을 꼼꼼히 읽고 있어')
   // 대기 중 제목은 대기 화면 전용 문장(공책 기록 상세의 처리 중 문장과 따로)
   await expect(box(page).locator('h2')).toHaveText('피드백을 만드는 중이에요')
@@ -291,6 +292,66 @@ test('공책 넘기기 단계 1440·768·390px: 공책이 패널 안에 있고 �
     expect(r.book!.r).toBeLessThanOrEqual(r.panel!.r)
     await page.locator('.sw-feedback-panel').screenshot({ path: path.join(shots, `847-notebook-${width}.png`) })
   }
+})
+
+/** 대기 모양 재기: 제목 줄 수, 말풍선 줄 수, 상자 아래 빈 공간, 상자 테두리·바탕 */
+const measure = (page: Page) => page.evaluate(() => {
+  const q = (s: string) => document.querySelector(s) as HTMLElement | null
+  const lines = (e: HTMLElement | null) => e ? Math.round(e.getBoundingClientRect().height / parseFloat(getComputedStyle(e).lineHeight)) : -1
+  const panel = q('.sw-feedback-panel')!, ps = getComputedStyle(panel)
+  const content = [q('.sw-wait-friend'), q('.sw-wait-bubble')].filter(Boolean).map(e => e!.getBoundingClientRect().bottom)
+  return {
+    title: lines(q('.sw-feedback-head h2')), bubble: lines(q('.sw-wait-bubble p')),
+    below: Math.round(panel.getBoundingClientRect().bottom - Math.max(...content)),
+    border: ps.borderTopColor, background: ps.backgroundColor, shadow: ps.boxShadow, height: Math.round(panel.getBoundingClientRect().height),
+  }
+})
+
+test('대기 모양: 상자 테두리·바탕 없음, 390px 제목 한 줄, 문구마다 말풍선 2줄 이하, 아래 빈 공간, 결과가 오면 같은 상자', async ({ page }) => {
+  test.skip(test.info().project.name !== 'laptop', '창 크기를 시험 안에서 바꾸므로 한 프로젝트에서만')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.clock.install()
+  await login(page)
+  const attemptId = await openAttempt(page)
+  await go(page, attemptId)
+  await scenario(page, 'feedback-slow')
+  await writeAndSend(page)
+  await expect(page.locator('.sw-wait')).toBeVisible()
+  const report: string[] = []
+  let waitingHeight = 0
+  for (const [at, step] of [[0, 0], [5_000, 5], [10_000, 15], [15_000, 30]] as const) {
+    if (at) await page.clock.fastForward(at)
+    await expect(page.locator('.sw-wait')).toHaveAttribute('data-step', String([0, 5, 15, 30].indexOf(step)))
+    for (const [width, height] of [[1440, 900], [768, 1024], [390, 844]]) {
+      await page.setViewportSize({ width, height })
+      const m = await measure(page)
+      report.push(`${step}s ${width}px 제목 ${m.title}줄 말풍선 ${m.bubble}줄 아래 ${m.below}px 높이 ${m.height}px`)
+      expect(m.bubble, `${step}s ${width}px 말풍선 줄 수`).toBeLessThanOrEqual(2)
+      if (width === 390) expect(m.title, '390px 제목 한 줄').toBe(1)
+      expect(m.border, '대기 중 테두리 없음').toBe('rgba(0, 0, 0, 0)')
+      expect(m.background, '대기 중 바탕 없음').toBe('rgba(0, 0, 0, 0)')
+      expect(m.shadow).toBe('none')
+      // 상자 아래 빈 공간: 여백(390px 16px·넓은 화면 22px)과 테두리(3px)만 남는다
+      expect(m.below, `${step}s ${width}px 아래 빈 공간`).toBeLessThanOrEqual(26)
+      if (width === 1440 && step === 30) waitingHeight = m.height
+      if (step === 0 || step === 5) await page.locator('.sw-feedback-panel').screenshot({ path: path.join(shots, `847-wait-${step}s-${width}.png`) })
+    }
+  }
+  // 친구를 누른 말도 390px에서 2줄 이하
+  await page.getByRole('button', { name: /에게 말 걸기$/ }).click()
+  expect((await measure(page)).bubble).toBeLessThanOrEqual(2)
+  // 결과: 같은 상자(읽기 영역 하나)에 테두리·바탕이 돌아오고 높이 변화를 기록
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.clock.fastForward(11_000)
+  await expect(page.locator('.sw-wait')).toHaveCount(0)
+  await expect(page.locator('.ux-feedback[role=status]')).toHaveCount(1)
+  const done = await measure(page)
+  expect(done.border).not.toBe('rgba(0, 0, 0, 0)')
+  expect(done.background).not.toBe('rgba(0, 0, 0, 0)')
+  report.push(`결과 1440px 높이 ${done.height}px (대기 30초 ${waitingHeight}px, 차이 ${done.height - waitingHeight}px)`)
+  await page.locator('.sw-feedback-panel').screenshot({ path: path.join(shots, '847-result-1440.png') })
+  test.info().annotations.push({ type: 'measure', description: report.join('\n') })
+  console.log(report.join('\n'))
 })
 
 test('390px 대기 화면 캡처 @responsive', async ({ page }) => {
