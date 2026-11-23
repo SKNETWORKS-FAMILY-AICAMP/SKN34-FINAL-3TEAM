@@ -1,0 +1,1233 @@
+[
+ {
+  "role": "public",
+  "screen": "학부모 로그인",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 2,
+    "targets": [
+     ".ux-login-or",
+     "small"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "public",
+  "screen": "학부모 로그인",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 2,
+    "targets": [
+     ".ux-login-or",
+     "small"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "public",
+  "screen": "관리자 로그인",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 7,
+    "targets": [
+     ".admin-login-eyebrow",
+     "div:nth-child(1) > span > small",
+     "div:nth-child(2) > span > small",
+     "div:nth-child(3) > span > small",
+     ".admin-login-security"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "public",
+  "screen": "관리자 로그인",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 2,
+    "targets": [
+     ".admin-login-heading > p",
+     "footer > a[href$=\"login\"][data-discover=\"true\"]"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "새 보호자 온보딩(동의)",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "target-size",
+    "impact": "serious",
+    "count": 2,
+    "targets": [
+     "div:nth-child(1) > label > input",
+     "div:nth-child(2) > label > input"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "새 보호자 온보딩(동의)",
+  "width": 390,
+  "violations": [
+   {
+    "id": "target-size",
+    "impact": "serious",
+    "count": 2,
+    "targets": [
+     "div:nth-child(1) > label > input",
+     "div:nth-child(2) > label > input"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "PIN 로그인",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "풀이",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "학습 현황",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "aria-prohibited-attr",
+    "impact": "serious",
+    "count": 4,
+    "targets": [
+     "div[aria-label=\"분석하기 최근 활동\"]",
+     "div[aria-label=\"새로 만들기 최근 활동\"]",
+     "div[aria-label=\"문제 해결하기 최근 활동\"]",
+     "div[aria-label=\"돌아보기 최근 활동\"]"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트·AI 챗봇",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정·자녀 설정",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "기기·PIN",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "이용권·결제",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": [
+   {
+    "id": "landmark-complementary-is-top-level",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "parent",
+  "screen": "도움말",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의 결과",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "공지",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "알림",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "parent",
+  "screen": "계정",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "보호자 이전",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "자녀 추가",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "target-size",
+    "impact": "serious",
+    "count": 1,
+    "targets": [
+     "input[type=\"checkbox\"]"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트 목록(창)",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "주간 리포트 상세",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "홈",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "시작 이야기",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "단서 모음",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "미션 고르기",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 공책",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "생각 활동",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "추억 앨범",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "꾸미기",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "뭉치 친구들",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "친구 생각",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "설정",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 포인트",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "도움말",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방 서랍(방 소품)",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방 옮기기 판(색 단추)",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "운영 현황",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 10,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-workload > p",
+     ".ad-overview-intro > p",
+     ".ad-overview-intro > details > summary"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "감사 이력",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 44,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     "label:nth-child(2)",
+     ".ad-result-tabs > span",
+     "time[datetime=\"2026-11-22T15:46:09.504072Z\"]"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 관리",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 25,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-context-note",
+     ".ad-page-content > p:nth-child(3)",
+     "article:nth-child(1) > div > p"
+    ]
+   }
+  ],
+  "bestPractice": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "미션 초안",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 5,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-review-guide > summary",
+     ".ad-empty > p",
+     "div[aria-label=\"초안 목록 페이지\"] > span"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "게시 관리",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 2,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "주간 테마 검수",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 5,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-review-guide > summary",
+     ".ad-empty > p",
+     "nav[aria-label=\"테마 초안 목록 페이지\"] > span"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "꾸미기 아이템",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 4,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     "tr:nth-child(1) > td:nth-child(1) > small",
+     "tr:nth-child(2) > td:nth-child(1) > small"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 재처리",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 22,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-list-filters > label:nth-child(1)",
+     "label:nth-child(2)",
+     "tr:nth-child(1) > td:nth-child(1) > .ad-record-id"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 대기열",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 2,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "오류 신고",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 4,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-page-content > p",
+     ".ad-list-footer > span"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "문의·공지",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 5,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-view-tabs > button:nth-child(2)",
+     ".ad-empty > p",
+     ".ad-list-footer > span"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "모델·프롬프트",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 3,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-version-name > small"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "표현 검토",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 2,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "AI 사용량",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 8,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-data-toolbar > div > p",
+     "tr:nth-child(1) > td:nth-child(5) > small",
+     "tr:nth-child(2) > td:nth-child(5) > small"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "결제·환불",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 8,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     ".ad-view-tabs > button:nth-child(2)",
+     ".ad-view-tabs > button:nth-child(3)",
+     ".ad-data-toolbar > div > p"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 상세",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 3,
+    "targets": [
+     ".is-selecting > span",
+     "button[type=\"button\"]:nth-child(3) > span",
+     "p[role=\"status\"]"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 편집",
+  "width": 1440,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 4,
+    "targets": [
+     ".ad-location > span",
+     ".ad-page-title > div > p",
+     "fieldset[aria-label=\"성취기준 고르기\"] > p",
+     "div[aria-label=\"성취기준 표 페이지\"] > span"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "학습 현황",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트·AI 챗봇",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정·자녀 설정",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "기기·PIN",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "이용권·결제",
+  "width": 390,
+  "violations": [],
+  "bestPractice": [
+   {
+    "id": "landmark-complementary-is-top-level",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "parent",
+  "screen": "도움말",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의 결과",
+  "width": 390,
+  "violations": [
+   {
+    "id": "link-in-text-block",
+    "impact": "serious",
+    "count": 1,
+    "targets": [
+     "a[href$=\"journal\"]"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "공지",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "알림",
+  "width": 390,
+  "violations": [],
+  "bestPractice": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "parent",
+  "screen": "계정",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "보호자 이전",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "자녀 추가",
+  "width": 390,
+  "violations": [
+   {
+    "id": "target-size",
+    "impact": "serious",
+    "count": 1,
+    "targets": [
+     "input[type=\"checkbox\"]"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "운영 현황",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 9,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-workload > p",
+     ".ad-overview-intro > p",
+     ".ad-overview-intro > details > summary",
+     ".ad-mission-publication > p"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "감사 이력",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 42,
+    "targets": [
+     ".ad-page-title > div > p",
+     "label:nth-child(2)",
+     ".ad-result-tabs > span",
+     "time[datetime=\"2026-11-22T15:49:07.614471Z\"]",
+     "time[datetime=\"2026-11-22T15:46:09.504072Z\"]"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 관리",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 24,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-context-note",
+     ".ad-page-content > p:nth-child(3)",
+     "article:nth-child(1) > div > p",
+     "article:nth-child(2) > div > p"
+    ]
+   }
+  ],
+  "bestPractice": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "미션 초안",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 4,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-review-guide > summary",
+     ".ad-empty > p",
+     "div[aria-label=\"초안 목록 페이지\"] > span"
+    ]
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "impact": "serious",
+    "count": 1,
+    "targets": [
+     "section > .ad-table-wrap"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "게시 관리",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 1,
+    "targets": [
+     ".ad-page-title > div > p"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "주간 테마 검수",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 4,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-review-guide > summary",
+     ".ad-empty > p",
+     "nav[aria-label=\"테마 초안 목록 페이지\"] > span"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "꾸미기 아이템",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 3,
+    "targets": [
+     ".ad-page-title > div > p",
+     "tr:nth-child(1) > td:nth-child(1) > small",
+     "tr:nth-child(2) > td:nth-child(1) > small"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 재처리",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 21,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-list-filters > label:nth-child(1)",
+     "label:nth-child(2)",
+     "tr:nth-child(1) > td:nth-child(1) > .ad-record-id",
+     "tr:nth-child(2) > td:nth-child(1) > .ad-record-id"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 대기열",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 1,
+    "targets": [
+     ".ad-page-title > div > p"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "오류 신고",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 3,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-page-content > p",
+     ".ad-list-footer > span"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "문의·공지",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 4,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-view-tabs > button:nth-child(2)",
+     ".ad-empty > p",
+     ".ad-list-footer > span"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "모델·프롬프트",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 2,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-version-name > small"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "표현 검토",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 1,
+    "targets": [
+     ".ad-page-title > div > p"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "AI 사용량",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 3,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-data-toolbar > div > p",
+     ".ad-list-footer > span"
+    ]
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "impact": "serious",
+    "count": 1,
+    "targets": [
+     ".ad-table-wrap"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "결제·환불",
+  "width": 390,
+  "violations": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "count": 7,
+    "targets": [
+     ".ad-page-title > div > p",
+     ".ad-view-tabs > button:nth-child(2)",
+     ".ad-view-tabs > button:nth-child(3)",
+     ".ad-data-toolbar > div > p",
+     "label:nth-child(2)"
+    ]
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "impact": "serious",
+    "count": 1,
+    "targets": [
+     ".ad-table-wrap"
+    ]
+   }
+  ],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "PIN 로그인",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "홈",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "시작 이야기",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "단서 모음",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "미션 고르기",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 공책",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "생각 활동",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "추억 앨범",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "꾸미기",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "뭉치 친구들",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "친구 생각",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "설정",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 포인트",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "도움말",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ }
+]

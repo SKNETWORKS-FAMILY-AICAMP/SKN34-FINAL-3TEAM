@@ -373,6 +373,29 @@ test('참여 어댑터는 명세 경로·메서드·멱등 키를 보낸다', as
   assert.equal(JSON.parse(String(calls[7].init.body)).equipped.HAT, 'HAT_ACORN')
 })
 
+test('#805 방 소품 저장은 놓은 것마다 색(color)을 함께 보내고, 받은 색을 그대로 읽는다(core #758)', async (t) => {
+  const calls: { url: string; init: RequestInit }[] = []
+  setAccessToken('synthetic-student', 'STUDENT')
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    calls.push({ url: String(url), init })
+    return Response.json({ spots: [
+      { surface: 'FLOOR', col: 3, row: 5, itemKey: 'DECOR_PLANT', name: '작은 화분', assetKey: 'room/decor-plant.svg', color: 'sky' },
+      { surface: 'WALL_BACK', col: 2, row: 1, itemKey: 'DECOR_CLOCK', name: '벽시계', assetKey: 'room/decor-clock.svg', color: null },
+    ] })
+  })
+  const saved = await retentionApi.saveDecorSpots([
+    { surface: 'FLOOR', col: 3, row: 5, itemKey: 'DECOR_PLANT', color: 'sky' },
+    { surface: 'WALL_BACK', col: 2, row: 1, itemKey: 'DECOR_CLOCK', color: null },
+  ])
+  assert.equal(`${calls[0].init.method} ${calls[0].url}`, 'PUT /api/v1/students/me/room/decor-spots')
+  // null(기본 색)도 빼지 않고 보낸다: 빼면 서버가 저장된 색을 기본 색으로 바꾼다
+  assert.deepEqual(JSON.parse(String(calls[0].init.body)), { spots: [
+    { surface: 'FLOOR', col: 3, row: 5, itemKey: 'DECOR_PLANT', color: 'sky' },
+    { surface: 'WALL_BACK', col: 2, row: 1, itemKey: 'DECOR_CLOCK', color: null },
+  ] })
+  assert.deepEqual(saved.map((x) => x.color), ['sky', null])
+})
+
 
 test('#389 실제 조회·해금 응답과 assetKey를 보존하고 HTTP 캐시를 재사용하지 않는다', async t => {
   setAccessToken('synthetic-student', 'STUDENT')
@@ -544,7 +567,7 @@ test('#709 친구 방 응답: 그림 키·기본값·액자 순서를 읽고, �
     { surface: 'WALL_BACK', col: 0, row: 0 },
   ] } }).decor, [
     { surface: 'FLOOR', col: 12, row: 4, color: 'blue', assetKey: 'room/decor-plant.svg' },
-    // 색 형식이 틀리면 기본 색(null)으로 읽는다(#723 color)
+    // 색 형식이 틀리면 기본 색(null)으로 읽는다(#758 color)
     { surface: 'WALL_LEFT', col: 8, row: 1, color: null, assetKey: 'room/decor-lights.svg' },
   ])
   // 모르는 캐릭터는 기본 캐릭터, 빈 별명은 "친구"
