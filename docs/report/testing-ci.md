@@ -334,7 +334,7 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 | SEC-02 | 권한 규칙을 전 경로에 적용, 친구 방 응답에 학생 ID·회차 키 없음 | 모의·CI | 다른 보호자·학생의 자녀·시도·답변·리포트·대화·알림 요청 403·404, 친구 방 응답에 `studentId`·`themeId`·`weekStart`·`postId` 없음 | core `community/FriendRoomIntegrationTest`·`learning/DashboardIntegrationTest`·`report/ReportHttpTest`·`conversation/ConversationIntegrationTest`, learning `answer/service/AnswerServiceTest`, `scripts/tests/test_friend_room_contract.py`, [retention-expansion 20](retention-expansion.md#20-친구-방-구경-core-708learning-707-2026-11-16) | 11/20 | 충족 |
 | SEC-03 | 외부 AI에 최소 기록만, 이름·불필요한 식별정보 제외 | 모의 | 대역 스택에서 외부로 나간 요청 12건(판정 5·되묻기 5·리포트 서술 1·설명 1)에 학생·시도·답변 ID·닉네임·보호자 이름 0건, 메시지 안 ID 키 0건. 분석 대화·추억 3종은 대역에서 안 돌아 테스트로, 주간 테마 생성은 코드로만 확인(ai 228·report 74·learning 73 통과). 판정·되묻기·분석 대화는 답 본문 속 닉네임을 가리지 않음(설계상 가리기 대상 아님) | [10절](#10-민감정보-점검-884-2026-11-22), [evidence/issue884-sensitive-audit](evidence/issue884-sensitive-audit/) | 11/22 | 충족 |
 | SEC-04 | LLM·토스 키를 저장소·배포 파일·화면에 두지 않음 | CI | Gitleaks 전체 이력 스캔에서 합성 값 3건 예외 처리 뒤 0건. 이후 모든 PR·push에서 실행(9.2 `a836e3e8` success) | [8절](#8-비밀-정보-스캔-ci-810), [infra 4.3](infra.md#43-비밀-정보-스캔-ci-810) | 11/19 | 충족 |
-| SEC-05 | 비밀번호·키·카드 정보·학생 원문을 운영 로그에 미기록 | 모의 | 대역 스택 E2E 1회 서비스 로그 219줄에서 비밀 값 27종 원문·키·토큰·카드번호·비밀번호·PIN·학생 답변 원문 0건. 잠재 위험: DB 제약 오류 상세 #898, ai·scoring 응답 검증 오류 입력값 #899 | [10절](#10-민감정보-점검-884-2026-11-22), [evidence/issue884-sensitive-audit](evidence/issue884-sensitive-audit/) | 11/22 | 충족 |
+| SEC-05 | 비밀번호·키·카드 정보·학생 원문을 운영 로그에 미기록 | 모의 | 대역 스택 E2E 1회 서비스 로그 219줄에서 비밀 값 27종 원문·키·토큰·카드번호·비밀번호·PIN·학생 답변 원문 0건. 잠재 위험: DB 제약 오류 상세 #898, ai·scoring 응답 검증 오류 입력값 #899(해결) | [10절](#10-민감정보-점검-884-2026-11-22), [evidence/issue884-sensitive-audit](evidence/issue884-sensitive-audit/) | 11/22 | 충족 |
 | SEC-06 | 결제수단 민감 정보는 PG 처리, 화면·로그 비노출 | 모의·CI(저장 데이터) | 저장 데이터: 빌링 자격 무작위·암호화, 결제·환불 응답과 멱등 저장 기록에 PG 키 없음. 로그(모의): core 결제 테스트 51개(승인·실패 재청구·환불·웹훅·빌링) 출력과 E2E 결제 승인 로그에 PG 키·결제 필드·카드번호 0건. 잠재 위험: trace의 토스 URL 키 #900 | core `payment/PaymentProtectionTest`·`payment/PaymentIntegrationTest`(#168), [core-gateway 24.6](core-gateway.md#246-pg-검증운영-입력), [10절](#10-민감정보-점검-884-2026-11-22) | 11/22 | 충족 |
 | SEC-07 | 가상 학생·자체 미션만, 실제 아동 정보 미수집 | 배포(kind) | 참고: kind에서 `audit-demo-data.sql`(기준 월요일 12/7 사본) 3개 DB 통과. A·B 미실행 | `infrastructure/aws/audit-demo-data.sql`, [infra 9.7.2](infra.md#972-kind-확인-실제-17201745) | 11/13 | 점검 예정 12/5 |
 | SEC-08 | PIN·기기 자격은 해시, 쿠키 httpOnly·Secure·SameSite=Strict | 모의·CI | 미등록·위조·다른 자녀·만료·해제 기기는 PIN 전 거부, 동시 실패 5회 잠금·해제 후 초기화, PIN `pbkdf2-sha256` 해시, 페어링 코드는 해시만 Redis, 쿠키 HttpOnly·SameSite=Strict. 시험 설정이 `cookie-secure=false`라 Secure 속성은 미확인 | core `account/StudentDeviceAuthTest`, [auth-account 4](auth-account.md#4-학생-기기pin-로그인-p01-개정-58) | 11/20 | 충족 |
@@ -446,7 +446,7 @@ e2e로 안 도는 경로는 테스트로 확인(로컬 실행, 모두 통과)
 - 판정·되묻기·분석 대화는 답·질문 본문에 학생이 쓴 닉네임을 가리지 않고 보냄. 설계상 닉네임 가리기는 리포트 서술·설명과 추억 경로만이라 위반으로 보지 않음(2026-11-22 결정)
 - 샘플에는 없었지만 코드상 생길 수 있는 경우
   - core·learning 전역 예외 로그에 DB 제약 오류 상세(답변 원문), 비밀번호·PIN data class 기본 `toString()`: #898
-  - ai·scoring 전역 예외 로그에 응답 검증 오류 입력값: #899
+  - ai·scoring 전역 예외 로그에 응답 검증 오류 입력값: #899 해결. ai·scoring 전역 처리기와 분석 대화가 Pydantic 검증 오류를 본문 없이 기록
   - OTel trace의 토스 호출 URL에 `billingKey`·`paymentKey`, Google 콜백 `code`(로그가 아닌 trace, Tempo 24시간): #900
 - ai·scoring·report-api는 로깅 설정이 없어 WARNING 이상과 uvicorn 접근 로그만 남음(운영 이미지와 같은 조건). 로그 수준을 올리면 다시 점검 필요
 - 운영 로그 중앙 수집이 없어(`OTEL_LOGS_EXPORTER=none`, Loki 없음) 배포 환경 샘플은 파드별 `kubectl logs`로만 얻을 수 있음. 이번 점검은 로컬 실행분만 봄

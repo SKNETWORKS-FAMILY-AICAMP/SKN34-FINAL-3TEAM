@@ -3,6 +3,7 @@ from typing import Annotated
 import pytest
 from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from app import bootstrap, security
 from app.bootstrap import create_app
@@ -10,6 +11,21 @@ from app.config import Settings
 from app.security import UserContext, caller_permits, get_user_context
 
 probe = APIRouter()
+PRIVATE_TEXT = "PRIVATE-STUDENT-TEXT"
+
+
+class ProbeCount(BaseModel):
+    count: int
+
+
+@probe.get("/internal/analysis/probe/invalid-response", response_model=ProbeCount)
+async def probe_invalid_response() -> dict[str, str]:
+    return {"count": PRIVATE_TEXT}
+
+
+@probe.get("/internal/analysis/probe/invalid-model")
+async def probe_invalid_model() -> ProbeCount:
+    return ProbeCount.model_validate({"count": PRIVATE_TEXT})
 
 
 @probe.get("/internal/analysis/probe/students/{student_id}")
@@ -108,3 +124,14 @@ def test_langfuse_enabled_requires_keys_and_collector_endpoint(monkeypatch) -> N
     with pytest.raises(ValueError, match="Langfuse 계측에"):
         with TestClient(create_app()):
             pass
+
+
+@pytest.mark.parametrize("path", ["invalid-response", "invalid-model"])
+def test_validation_error_does_not_log_input(path, caplog) -> None:
+    headers = {"X-Internal-Token": "test-token", "X-Student-Scope": "s1"}
+    with make_client() as client:
+        response = client.get(f"/internal/analysis/probe/{path}", headers=headers)
+    assert response.status_code == 500
+    assert response.json()["code"] == "INTERNAL_ERROR"
+    assert "응답 스키마 검증 실패" in caplog.text
+    assert PRIVATE_TEXT not in caplog.text + response.text
