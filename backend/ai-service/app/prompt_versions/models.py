@@ -19,6 +19,7 @@ PROMPT_SCOPES = {
     "themeDraft": "ai/theme-draft",
     "memoryExplanation": "ai/memory-explanation",
     "memoryQuery": "ai/memory-query",
+    "wordHelp": "ai/word-help",
 }
 # 프롬프트 외에 ai가 활성 범위를 보는 모델 (#477).
 # scope는 explanation/grade-{학년}/{narrative|essay}

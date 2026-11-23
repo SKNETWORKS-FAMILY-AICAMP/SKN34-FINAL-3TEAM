@@ -123,7 +123,7 @@
     </update>
     <insert id="audit">
         INSERT INTO audit_log(id,actor_user_id,action,target_type,target_id,result,detail,created_at)
-        VALUES(#{id},#{actor},#{action},'LOOK_ITEM',#{target},'SUCCESS',CAST(#{detail} AS jsonb),CURRENT_TIMESTAMP)
+        VALUES(#{id},#{actor},#{action},'LOOK_ITEM',#{target},'SUCCESS',#{detail},CURRENT_TIMESTAMP)
     </insert>
 
     <delete id="deleteEquipment">DELETE FROM student_look_equipment WHERE student_id=#{studentId}</delete>

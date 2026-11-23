@@ -42,7 +42,7 @@
 | `PERIOD_EMPTY` | 4 | "8월 첫째 주에 한 문제", "작년 9월에 쓴 글" | 모든 학생 `NO_RESULTS`(방학 주·적재 전 기간) |
 
 - `period`: 사람이 정한 반열림 기간 `[from, to)`. "N월 첫째 주"는 그달 1일부터 첫 월요일 주 끝까지(예: 10월 첫째 주 = 10/1~10/11), "이번 달"은 진행 주 월요일(11/16)에서 자름
-- 정답·경계 규칙(담당자 결정 2026-11-20): 회차 주 월~금 중 기간 안 날이 3일 이상이면 정답 기간 안, 1~2일이면 경계(`boundary`, 정답도 섞임도 아님), 0일이면 섞임. 서비스 필터는 하루라도(주말 포함) 겹치면 넣으므로 경계·주말 겹침 카드는 "겹침 규칙" 원인으로 따로 셈
+- 정답·경계 규칙(담당자 결정 2026-11-20): 회차 주 월~금 중 기간 안 날이 3일 이상이면 정답 기간 안, 1~2일이면 경계(`boundary`, 정답도 섞임도 아님), 0일이면 섞임. 서비스 필터는 하루라도(주말 포함) 겹치면 넣으므로 경계·주말 겹침 카드는 "겹침 규칙" 원인으로 따로 셈. #879 뒤 기간만 질문 경로만은 회차 주 월~금 중 기간 안 날이 1일 이상인 회차를 넣는다(주말만 겹친 주 제외, retention-expansion.md 16.9)
 - 기록 수별 기대 개수: 6주 학생 결과 있음 10·없음 10, 20주 15·5, 52주 16·4
 
 ## 만드는 순서 (PC compose)
@@ -98,6 +98,26 @@ python -I $R score @D --raw "evaluation/results/memory/memory@2__pc-<날짜>-hyb
 - 결과 요약에 방식별 `mixing`(카드 섞임 비율·질문 단위 섞임 발생률과 Wilson 95% 구간·경계 카드 비율·원인), 기록 수별 `bySize`, 하이브리드 `periodAccuracy`(해석 기간이 사람이 정한 기간과 같은 비율)가 더해진다. Recall@3·거절률·범위 위반·p95도 memory@1과 같은 식으로 나온다
 - 통과 기준(담당자 결정 2026-11-20): H 질문 단위 섞임 발생률 ≤ 0.10(경계 제외). V·K는 기간을 쓰지 않아 비교용
 - H 원인은 검색 때와 별개로 부른 질의 변환으로 추정한다(LLM 결과가 조금씩 다를 수 있음). 해석 기간 없음 = 기간 해석 실패, 해석이 사람이 정한 기간과 다름 = 기간 해석 다름, 해석은 맞는데 주말·경계로 겹침 = 겹침 규칙, 해석 기간과 겹치지 않는데 나옴 = 필터 누락(확인 필요)
+
+### 다시 재기: #877·#878·#879 뒤 H (`memory-query@2`)
+
+몇째 주 계산(#877)·변환 실패 503(#878)·기간만 질문 최신 회차(#879)의 효과를 18.5와 같은 절차로 잰다. 돈이 드는 실행이라 따로 승인받은 뒤 한 번만 한다(재측정 결과는 retention-expansion.md 18.6).
+
+1. 세 이슈가 들어간 브랜치로 ai·learning 이미지를 빌드한다. 평가 스택은 18.5 뒤 지워졌으므로 위 "만드는 순서"부터 다시 적재한다
+2. H만 모은다. V(질의 변환 끔)·K1·K2(SQL)는 이번 변경과 무관해 다시 재지 않고 `pc-1121` 값과 비교한다. 위 2)의 `collect`·`score --as-served`를 새 라벨 `pc-<날짜>-hybrid`로 그대로 실행한다. 수집 시작 시각(KST ISO)을 적어 둔다
+3. 503 처리: learning은 기간을 말한 질문의 질의 변환이 한 번 다시 시도한 뒤에도 실패하면 503 `AI_UNAVAILABLE`을 준다. 러너는 멈추지 않고 그 질문을 `state: UNAVAILABLE`(카드 없음)로 남긴다. 채점은 결과 질문 Recall 0, 기록 없음 질문은 거절 성공으로 세지 않고, 요약에 `unavailable` 건수를 더한다. 그 밖의 HTTP 오류는 지금처럼 멈춘다
+4. `--capture-period`는 해석 기간과 함께 `keywordCount`(키워드 개수, 원문 없음)를 남긴다. 기간만 질문이 실제로 키워드 0개로 변환됐는지 본다
+5. 내리기 전에 실패 사유를 남긴다(커밋하지 않는 파일, 원문 없음):
+
+```powershell
+docker compose @C logs ai-service > "evaluation/results/memory/ai-log__memory@2__pc-<날짜>-hybrid.txt"        # reason= 사유 코드
+docker compose @C logs learning-service > "evaluation/results/memory/learning-log__memory@2__pc-<날짜>-hybrid.txt"  # failureCode·attempt, result=UNAVAILABLE|VECTOR_ONLY
+docker compose @C exec -T postgres psql -U sagomungchi -d core_db -c "SELECT success, error_code, output_tokens >= 512 AS capped, count(*) FROM llm_usage WHERE call_type = 'MEMORY_QUERY' AND occurred_at >= '<수집 시작>' GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"
+```
+
+- `llm_usage`로 502·503 원인을 가른다: `LLM_INVALID_OUTPUT`이면서 출력 512토큰(잘림)·`LLM_TIMEOUT`·성공인데 learning 쪽 실패(칸 검사 502)
+- 멈춤 기준(제안): 처음 20개 검색에서 503이 3개 이상이거나 200·503 밖의 응답이 나오면 멈추고 로그·`llm_usage`부터 본다. 같은 실행을 고쳐 가며 반복하지 않는다
+- 끝나면 `docker compose @C down -v`
 
 ## 정답 확인
 

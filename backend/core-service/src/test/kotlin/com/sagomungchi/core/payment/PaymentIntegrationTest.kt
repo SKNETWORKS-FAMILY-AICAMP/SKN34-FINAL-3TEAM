@@ -499,6 +499,20 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
         assertFalse(report.narrativeEnabled(student));assertTrue(withdrawal.check(owner).canWithdraw)
         verify(pg,times(1)).cancel(anyString(),anyInt(),anyBoolean(),anyId())
     }
+    @Test fun `owned status settles an approved refund with the PG before reading the payment (issue 946)`() {
+        val paid=approved();val r=refunds.request(owner,paid.paymentId!!,"합성 사유")
+        `when`(pg.cancel(anyString(),anyInt(),anyBoolean(),anyId())).thenReturn(PgResult.Unknown)
+        assertEquals("APPROVED",refunds.approve(owner,r.id).status)
+        val order=repository.orderNo(paid.orderId)!!; val attempt=repository.latest(order.id)!!
+        `when`(pg.lookup(attempt.pgOrderNo,false)).thenReturn(found(attempt.pgOrderNo,attempt.paymentKey!!,status="CANCELED"))
+        // payments.status alone does not look at refunds, so the approved refund is still open.
+        val stale=payments.status(owner,paid.orderId)
+        assertEquals("REFUND_REVIEW",stale.status);assertEquals("APPROVED",stale.refundRequests.single().status)
+        val view=refunds.ownedStatus(owner,paid.orderId)
+        assertEquals("REFUNDED",view.status);assertEquals("COMPLETED",view.refundRequests.single().status)
+        verify(pg,times(1)).lookup(attempt.pgOrderNo,false)
+        verify(pg,times(1)).cancel(anyString(),anyInt(),anyBoolean(),anyId())
+    }
     private fun subscriptionRow(id: UUID)=jdbc.queryForMap("SELECT status,auto_renew,next_billing_date,canceled_at,updated_at,revision FROM subscription WHERE id=?",id)
     private fun refundCompletes(paid: PaymentView,r: RefundRequest) {
         val order=repository.orderNo(paid.orderId)!!;val attempt=repository.latest(order.id)!!

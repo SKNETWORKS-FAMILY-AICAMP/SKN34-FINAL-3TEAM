@@ -1154,6 +1154,7 @@ classDiagram
 - `PaymentService.confirm`: 금액 대조(트랜잭션) → `TossClient.confirm`(트랜잭션 밖) → 결제 저장·구독 반영(트랜잭션). 반영 실패 시 `requireRecovery()` 후 `recoverEntitlement` 재시도 (FN-PAY-05)
 - `BillingScheduler`: ShedLock, 정기 청구·해지 효력·`CONFIRMING` 재조회. 매일 09:00 KST. 갱신 실패 시 유예 3일·매일 1회 최대 3회 재청구 후 해지 (P13), 자동 갱신 해지는 `period_end` 경과 시 `CANCELED` (P14)
 - 구현 이름(#48): 컨트롤러는 `PaymentController` 하나(구독·관리자 결제/환불·`TossWebhookController`의 웹훅 포함)와 내부 `InternalPaymentUsageController`, `SubscriptionService` 역할은 `PaymentService`(구독 조회·빌링 등록·자동 갱신 해지)·`RenewalService`(정기 청구·재조회)·`ProductEntitlementService`(현재 권한)로 나뉨, 웹훅 = `PaymentWebhookService`, `BillingScheduler` = `payment/scheduler/PaymentScheduler`, Repository는 `PaymentRepository` 하나(`PaymentOrderRepository`·`SubscriptionRepository`·`RefundRequestRepository`·`PgWebhookEventRepository` 역할 포함)
+- 결제 상태 조회(#946): `GET /payments/{orderId}`는 `RefundService.ownedStatus` 한 번만 부른다. 이 메서드가 승인된 미해결 환불을 PG 결과와 먼저 대조한 뒤 `PaymentService.status`로 최신 상태를 돌려준다. `RefundService`가 이미 `PaymentService`에 의존하므로 반대 방향으로 두지 않는다(순환 방지)
 - 응답 경계(#168): `PaymentController`는 domain `PaymentView`·`RefundRequest` 대신 `payment/controller/PaymentResponses`(`PaymentViewResponse`·`RefundRequestResponse`)를 응답·멱등 저장본으로 내보내 PG 키(`paymentKey`·`cancelKey`)를 넣지 않음. 상품 `features`·`limits`·상품 스냅샷은 Jackson `JsonNode` 대신 `_common/json/JsonObject`(이 타입에만 Jackson·MyBatis 변환 등록)
 
 ### 3.5 신고·지원·사용량·관리자 (support · usage · admin)
@@ -1395,7 +1396,7 @@ classDiagram
 ```
 
 - 정정 영향(#244): `SupportService` → `ReportSupportService.affected`(→ `ReportClient.correctionImpact`가 검사한 `AffectedReport` 목록, 계약 위반 502 `REPORT_CONTRACT_INVALID`도 호출부에서 `UNKNOWN`으로 기록, #824)·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
-- `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). learning 지원 응답 해석은 client가 맡는다(#792): `target`은 `SupportTarget(studentId, attemptId, previousResult)`(학생·시도 ID가 UUID가 아니면 502 `SUPPORT_INVALID_RESPONSE`), `judgedAnswer`는 시도 원문에서 정정한 판정의 답변 ID, `correct`는 검사한 `CorrectionResult(previousResult, impact, body)`. `SupportService`는 그 값을 신고 기록과 대조(다르면 409)하고 정정 영향을 조합한다. `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
+- `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). learning 지원 응답 해석은 client가 맡는다(#792): `target`은 `SupportTarget(studentId, attemptId, previousResult)`(학생·시도 ID가 UUID가 아니면 502 `SUPPORT_INVALID_RESPONSE`), `judgedAnswer`는 시도 원문에서 정정한 판정의 답변 ID, `correct`는 검사한 `CorrectionResult(previousResult, impact, body)`(`impact`·`body`는 `JsonObject`, #947). `SupportService`는 그 값을 신고 기록과 대조(다르면 409)하고 정정 영향을 조합한다. `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
 - 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), 큐 현황 = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
 - #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. `AiUsageController`는 자기 기능 service만 부르도록 `usage/controller`에 둔다(#422, 경로 `GET /api/v1/admin/ai-usage` 동일). 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. 나머지 운영 기능은 #47에서 구현됨(위 구현 이름).
@@ -1675,6 +1676,7 @@ classDiagram
   }
   class AttemptController {
     <<controller>>
+    +themeGuide(missionId, grade, demo, context, sundayTheme) MissionView
     +start(missionId, grade, demo) Attempt
     +get(attemptId) AttemptDetail
     +saveDraft(attemptId, ifMatch, content) Draft
@@ -2153,10 +2155,31 @@ classDiagram
   class WeeklyThemeAdminService {
     <<service>>
     +create(author, content) AdminWeeklyTheme
-    +update(themeId, author, content) AdminWeeklyTheme
-    +requestReview(themeId) AdminWeeklyTheme
-    +publish(themeId) AdminWeeklyTheme
-    +unpublish(themeId) AdminWeeklyTheme
+    +update(themeId, author, content, expectedVersion?) AdminWeeklyTheme
+    +requestReview(themeId, expectedVersion?) AdminWeeklyTheme
+    +publish(themeId, expectedVersion?, expectedPlan?, checkPlan) AdminWeeklyTheme
+    +unpublish(themeId, expectedPublishedVersion?) AdminWeeklyTheme
+  }
+  class ThemeWeekPlanner {
+    <<service>>
+    +board(grade, weekStart) WeekBoard
+    +change(PlanChange) PlanResult
+    +lockGrades(grades)
+    +requireOpen(grade, week)
+    +lockDraftEdits(draftId) DraftWeekState
+    +requireExpected(state, expected, supplied)
+    +requireOccupant(grade, week, expected)
+    +finishPublication(versionId, grade, week)
+  }
+  class ThemeDraftMediaService {
+    <<service>>
+    +history(draftId, scene) SceneHistory
+    +select(draftId, scene, versionId, expected, expectedCount) SceneHistory
+    +annotate(draftId, scene, versionId, starred?, note?) SceneHistory
+    +selectedOutput(draft) ThemeDraftOutput
+    +rootId(draftId) UUID
+    +hasPendingGeneration(draftId) Boolean
+    +freeze(draftId)
   }
   class WeeklyTheme {
     <<entity>>
@@ -2184,10 +2207,13 @@ classDiagram
   class AdminThemeDraftController {
     <<controller>>
     +request(body) ThemeDraftView
-    +list(status, source, page, size) Page
+    +list(status, source, page, size, grade?, weekStart?, hideDiscarded, comparisonPending) Page
     +detail(draftId) ThemeDraftView
-    +adopt(draftId) AdminWeeklyTheme
-    +discard(draftId) ThemeDraftView
+    +sceneHistory(draftId, scene) SceneHistory
+    +selectScene(draftId, scene, body) SceneHistory
+    +annotateScene(draftId, scene, versionId, body) SceneHistory
+    +adopt(draftId, expectedPlannedWeek?) AdminWeeklyTheme
+    +discard(draftId, expectedPlannedWeek?) ThemeDraftView
     +regenerate(draftId, targets?) ThemeDraftView
   }
   class ThemeDraftService {
@@ -2195,8 +2221,9 @@ classDiagram
     +request(command, author) ThemeDraftView
     +createWeekly(weekStart)
     +regenerate(draftId, author, targets?) ThemeDraftView
-    +adopt(draftId, author) AdminWeeklyTheme
-    +discard(draftId) ThemeDraftView
+    +list(status, source, page, size, grade?, weekStart?, hideDiscarded, comparisonPending) Page
+    +adopt(draftId, author, expected?, supplied) AdminWeeklyTheme
+    +discard(draftId, expected?, supplied) ThemeDraftView
     +generateNext(now)
   }
   class ThemeDraft {
@@ -2268,6 +2295,8 @@ classDiagram
   WeeklyThemeAdminService ..> ThemePublishCheck
   WeeklyThemeAdminService ..> ThemeAnswerRules : 저장 때 정답 논리·생각 열기 위치
   WeeklyThemeAdminService --> MissionService : 게시본 미션
+  AdminWeeklyThemeController --> ThemeWeekPlanner : 주차 편성 조회·변경
+  WeeklyThemeAdminService --> ThemeWeekPlanner : 학년 잠금·주 잠금·게시 고정
   WeeklyThemeService ..> ThemeEnding : 종료 공개·OUTRO
   WeeklyThemeService --> AssetUrls : 그림·영상 URL
   AttemptService --> WeeklyThemeService : context 검사·themeScene
@@ -2279,6 +2308,10 @@ classDiagram
   ThemeDraftService ..> ThemeDraftRules
   ThemeDraftService --> MissionService : createFromDraft(LLM_THEME)·성취기준 조회
   ThemeDraftService --> WeeklyThemeAdminService : 테마 DRAFT 생성·게시 여부
+  ThemeDraftService --> ThemeWeekPlanner : 주 잠금·편성 대조·해제
+  ThemeDraftService --> ThemeDraftMediaService : 장면 선택본·생성 대기·고정
+  AdminThemeDraftController --> ThemeDraftMediaService : 장면 이력·선택·별표·메모
+  ThemeDraftMediaService --> ThemeWeekPlanner : 편집 잠금
   CommunityController --> CommunityService
   CommunityService ..> CommunityRules
   CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
@@ -2303,6 +2336,11 @@ classDiagram
 - 다른 기능은 service로만 부른다(architecture 계층 규칙): 성취기준은 `MissionService.standards(codes)`·`standardsOf(교과, 학년군)`, 주간 자동이 건너뛸 학년(그 학년·주 게시 테마 있음)은 `WeeklyThemeAdminService.publishedExists`. 자동 성취기준이 피할 최근 코드는 `ThemeDraftRepository.findInputs`(같은 학년, 적용 주 앞 4주)
 - 주제 씨앗(`ThemeTopicSeeds`, 기준안 64개, #437 B안 2026-11-11, #634 줄거리 종류 2026-11-16·④⑤ 2026-11-17): 주간 자동과 주제 없이 온 관리자 요청에 `ThemeTopicSeeds.choose`가 `줄거리: <종류> / 뭉치 역할: … / 장소: … / <찾는 대상|밝힐 것>: …` 하나를 골라 `input.topic`에 넣는다. `ThemeTopicSeed(type: StoryType, role, place, target, seasons)`, `StoryType`(LOST·TREASURE·PRANK·FOOTPRINT·ORIGIN·GIFT·SECRET_INGREDIENT·WHEN·ROUTE·VEHICLE·SOUND, `label`·`targetLabel` — 넷째 칸 `찾는 대상`·`밝힐 것`·`손에 든 것`). 그 주 계절(`Season`, 적용 주 월요일의 달)에 맞는 씨앗이 있는 종류 중 같은 학년 직전 주 초안 종류를 빼고 종류를 고른 뒤(모두 빠지면 빼지 않음), 그 종류 씨앗 중 같은 학년 최근 씨앗(`findInputs`, 목록 개수만큼의 주, 초안 상태 무관)·같은 주 다른 초안 씨앗(`findWeekInputs`)·같은 학년 최근 4주 역할(`ROLE_WEEKS`)을 빼고 무작위. 남는 게 없으면 최근 씨앗 → 역할 순으로 풀고 가장 오래전에 쓴 것, 종류는 지킴. 비교는 `parse`(`ParsedTopic`, 옛 형식은 LOST, 읽지 못하면 null)의 (역할 이름, 장소, 대상). 관리자가 쓴 주제와 다시 생성의 저장된 주제는 그대로
 - 자동 성취기준 후보 풀(#536, RAG 안 씀 팀 결정 2026-11-11): learning이 계속 고르고 후보 풀만 바꾼다. `ThemeDraftService.autoInput`이 교과별 학년군 표(`standardsOf`)를 `ThemeDraftRules.candidatePools`로 학기 단계 ① 그 학년·학기(`ThemeSemester.of(grade, weekStart)`, 3월 1일~8월 15일 1학기, 확정 2026-11-12) ② 같은 학년군에서 이번 학기까지 배운 학기(`ThemeSemester.soFar`)와 학년군 표로 나누고(`StandardCandidates`), `autoStandards`가 최근 4주·이미 고른 코드를 빼고 남는 첫 단계에서 고른다. 모든 단계가 최근 코드뿐이면 ① 단계에서 가장 오래전에 쓴 코드(주제 씨앗과 같은 방식). 학년군 표(위 학년 성취기준 포함)는 학기 단계에 고를 코드가 하나도 없을 때만. 아래 학년군은 넣지 않는다(미션 게시 학년군 규칙 #353). 학기 대응표 `StandardSemesters`(<<value>>, 코드 → 학기)는 `StandardSemestersConfig`가 시작 때 resources/knowledge/semester_map.csv(원본 `scripts/knowledge/semester_map.csv` 사본)에서 읽는다(DB·지식 판에 기대지 않음). 최근 코드는 `findInputs`의 오래된 순 목록. ai 요청 `missions[].standards` 계약은 그대로, ai `retrieve`(#470)는 받은 코드의 근거 묶음만 가져온다
+#882(장면 비교·주차 편성·게시 확정, learning V25~V27, 결정과 근거는 [learning 보고서](../report/learning.md) #882 절):
+- `ThemeWeekPlanner`: 학년별 권고 잠금(`lockGrades`, 학년 순서대로)으로 테마 작성·수정·게시와 초안 요청·채택·버리기·편성을 직렬화한다. `requireOpen`은 그 학년·주에 `PUBLISHED` 테마가 있으면 `409 WEEK_LOCKED`, `stale`은 관리자가 본 값과 다르면 `409 PLAN_CONFLICT`. `board`는 연속 4주 칸(`WeekSlot(weekStart, locked, planned, themes)`)과 후보(원본 `READY` 초안), `change(PlanChange{grade, draftId, expectedWeek, targetWeek, expectedTargetDraftId})`는 `theme_draft.planned_week`만 바꾼다(맞교환 포함, 생성 기준 주 `week_start`는 그대로). `finishPublication`은 게시 버전의 요일 미션·기준표 버전을 고정하고 그 학년·주 편성을 해제
+- `ThemeDraftMediaService`: 장면(`INTRO`·`MON`~`FRI`·`OUTRO`)마다 묶음 원본과 다시 생성본의 결과를 버전 이력(`SceneHistory`)으로 보여 주고, 선택·별표·메모를 저장한다(V25). `selectedOutput`이 장면별 선택본을 합친 결과를 채택에 넘기고, 채택·버리기 때 `freeze`로 선택을 고정. 묶음에 `GENERATING` 다시 생성본이 있으면(`hasPendingGeneration`) 채택·버리기는 `PLAN_CONFLICT`
+- 시도의 테마 버전 고정(V27 `attempt.theme_version_id`)은 [ERD](erd.md)·[시퀀스](sequence-diagram.md) 참고
+- core 감사(`AdminLearningService`): 편성 변경 `THEME_DRAFT_PLAN`, 장면 선택 `THEME_SCENE_SELECT`, 별표·메모 `THEME_SCENE_ANNOTATE`(`target_type = THEME_DRAFT`, 장면은 `detail.scene`). learning 오류 `WEEK_LOCKED`·`THEME_SCHEDULE_LOCKED`·`PLAN_CONFLICT`는 허용 목록으로 그대로 전달
 - `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
 
 ### 4.5 기념 액자·추억 검색 (P27, 구현 #559·#563·#564)
@@ -2344,6 +2382,12 @@ classDiagram
     <<repository>>
     +register(attemptId) int
     +deleteByStudent(studentId) int
+    +hybrid(studentId, before, vector, model, minimum, keywords, from, to) MemoryHit[]
+    +latestInPeriod(studentId, before, vector, model, from, to) MemoryHit[]
+  }
+  class MemoryPeriodWords {
+    <<rules>>
+    +contains(text) boolean
   }
   class MemorySearchService {
     <<service>>
@@ -2362,6 +2406,7 @@ classDiagram
   class MemoryEmbeddingClient {
     <<client>>
     +embed(texts) Vectors
+    +embedQuery(text) Vectors
   }
   class MemoryExplanationAiClient {
     <<client>>
@@ -2387,6 +2432,7 @@ classDiagram
   MemorySearchRepository --> MemoryVectorMapper
   MemorySearchService --> MemoryEmbeddingClient : 질문·문서 임베딩
   MemorySearchService --> MemoryQueryAiClient : 질의 변환(#679)
+  MemorySearchService ..> MemoryPeriodWords : 변환 실패 때 기간 낱말 확인(#878)
   MemoryExplanationService --> MemoryEvidenceRepository : 본인 READY 근거 재확인
   MemoryExplanationService --> MemoryEmbeddingClient : 질의 관련도 재확인
   MemoryExplanationService --> MemoryExplanationAiClient
@@ -2394,7 +2440,7 @@ classDiagram
   AlbumService --> ThemeFrameService
 ```
 
-- 질의 변환·하이브리드(#679 설계, #682 구현): `MemoryQueryAiClient`는 ai `POST /internal/memory-queries`(읽기 8초, 재시도 없음, 서킷 `ai-memory-query`)를 부르고 실패(시간 초과·5xx·형식 밖·서킷 열림)를 서비스에 전달한다. 서비스는 해당 예외를 원문 로그 없이 null로 처리한다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩 → `MemorySearchRepository`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
+- 질의 변환·하이브리드(#679 설계, #682 구현): `MemoryQueryAiClient`는 ai `POST /internal/memory-queries`(읽기 8초, 서킷 `ai-memory-query`)를 부르고, 재시도 가능한 실패(`AiCallException.retryable`: 5xx·시간 초과·연결 실패)만 대기 없이 한 번 더 부른다(시도마다 서킷에 기록, #878). 실패마다 `failureCode`·시도 번호만 경고 로그로 남기고 끝내 실패(시간 초과·5xx·형식 밖·서킷 열림)하면 서비스에 전달한다. 서비스는 마스킹한 질문에 `MemoryPeriodWords`(프롬프트가 구간으로 바꾸는 표현만)가 있으면 503 `AI_UNAVAILABLE`, 없으면 null로 처리한다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩(`embedQuery`, 읽기 10초) → 키워드가 없고 보정 기간이 있으면 `MemorySearchRepository.latestInPeriod`(기간 안 회차 최신순 3, 유사도 기준·키워드 조건 없음, 회차 주 월~금 중 기간 안 날 1일 이상·평일 없는 기간은 하루 겹침, #879), 그 밖은 `hybrid`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
 - #559 구현(learning V19): `ThemeFrameService`(지급·소급·보유·확인·삭제)·`AlbumService`·`MemoryController`의 앨범·확인·보유 확인과 기동 소급 `ThemeFrameBackfillRunner`. 회차 상세의 문제·시도·엔딩은 `WeeklyThemeService.pastRound`가 조합. 검색은 #563 구현, 설명은 #564 구현([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 - 학습 완료 처리(기존 `AttemptService`의 돌아보기 저장 = 학습 완료)가 같은 트랜잭션에서 `ThemeFrameService.awardIfComplete`(회차 5문제 완료 시 액자)와 `MemorySearchService.register`(`PENDING` 문서, 내부에서 `MemorySearchRepository.register`)를 부름. 다른 기능은 memory repository를 직접 부르지 않음(architecture 2.2). `EXTRA` 시도는 둘 다 건너뜀
 - `MemoryEmbeddingScheduler`는 `StuckJudgmentScheduler`처럼 조건부 UPDATE 선점이라 잠금 없음(상태 3.7). `MemoryEmbeddingClient`는 ai `POST /internal/embeddings`(기존 계약, 요청당 8글, 최대 64글 계약 이내), 이전 `KnowledgeEmbedder`는 V17 정리로 없으므로 신규. HTTP 전송·외부 DTO는 `memory/client`(`MemoryEmbeddingClient`·`MemoryExplanationAiClient`·core 닉네임 조회 `StudentProfileClient`), 마스킹 정책(`MemoryTextPrivacy`)·업무 흐름은 `memory/service`. 생성 호출의 장애 판정(서킷 열림·전송 실패·502 밖 5xx → `MemoryAiOutageException`)은 `MemoryExplanationAiClient`가 맡음
@@ -2773,7 +2819,8 @@ classDiagram
 
 | 클래스 | 위치 | 책임 |
 |---|---|---|
-| `MemoryQueryService` | `memory_query/service.py` | `memoryQuery` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(출력 512토큰, 호출별 7초·재시도 없음, 사용량 `MEMORY_QUERY`), `MEMORY_QUERY_PROVIDER=fake`면 `fake.py`(공백 분리 키워드). 칸 규칙(키워드 0~5개·1~20자, `period` `from < to`, `searchText` 1~200자, `checks.py`) 위반·구조화 실패 502, LLM 실패 503. 원문 없이 사유 코드만 로그 |
+| `MemoryQueryService` | `memory_query/service.py` | `memoryQuery` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(출력 512토큰, 호출별 7초·재시도 없음, 사용량 `MEMORY_QUERY`), `MEMORY_QUERY_PROVIDER=fake`면 `fake.py`(공백 분리 키워드). 칸 규칙(키워드 0~5개·1~20자, `period` `from < to`, `searchText` 1~200자, `checks.py`) 위반·구조화 실패 502, LLM 실패 503. 원문 없이 사유 코드만 로그. LLM 경로에서만 칸 검사 뒤 `weeks.week_of_month`로 "N월 N째 주" 기간을 계산해 덮어쓰고 그 표현 조각을 키워드에서 뺀다(#877, 가짜 구현은 적용 안 함) |
+| `week_of_month` | `memory_query/weeks.py` | 질문에서 몇째 주 표현 하나를 찾아 `[from, to)`를 계산(첫째 주 = 1일 ~ 첫 월요일 주 끝, k째 주 = k번째 월요일 주, 마지막 주 = 월~금 3일 이상이 그달에 든 마지막 월요일 주(기준안), 다음 달 1일에서 자름). 그달에 없는 주·표현 두 개 이상이면 기간 null. 표현이 없으면 None(LLM 값 그대로) |
 | `router` | `memory_query/router.py` | `POST /internal/memory-queries` 요청 검사(`query` 1~200자, `today` 날짜, 정의 밖 칸 400) 후 서비스 호출 (api-spec 4.2.7) |
 
 ---

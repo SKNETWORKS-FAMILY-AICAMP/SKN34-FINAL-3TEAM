@@ -6,6 +6,7 @@ import type { ModelVersion } from '../../domain/admin/operations.ts'
 import { supportsPreflight, preflightMessage, changedRegistrationFields, registrationRequest, EVIDENCE_LABELS, parseManifestFile, parseRegistrationFile, splitScopes, validateRegistration, withManifestLimitations } from '../../domain/admin/modelRegistration.ts'
 import type { PreflightResult, ManifestModel, ModelRegistration, RegistrationFile } from '../../domain/admin/modelRegistration.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { busyProps } from './busyButton.ts'
 
 const blank = (): ModelRegistration => ({ kind: 'PROMPT', name: '', version: '', evaluation: {
   datasetId: '', datasetVersion: '', baselineVersion: '', comparisonReport: '', trainingEvaluationSeparation: '',
@@ -32,7 +33,8 @@ function RegistrationForm({ value, onChange, existing, listReady, manifest, sibl
   const preflightBody = { name: value.name, version: value.version, artifactUri: value.artifactUri ?? '', files: candidate?.files ?? [] }
   const preflightKey = JSON.stringify(preflightBody)
   const [checked, setChecked] = useState<{ key: string; result?: PreflightResult; error?: unknown }>()
-  const locked = saved || mutation.isPending || preflight.isPending
+  const pending = mutation.isPending || preflight.isPending
+  const locked = saved || pending
   const evidence = (key: keyof ModelRegistration['evaluation'], data: string | string[]) => onChange({ ...value, evaluation: { ...value.evaluation, [key]: data } })
   return <form className="ws-card ws-form model-registration" aria-label={title} onSubmit={e => {
     e.preventDefault()
@@ -53,7 +55,7 @@ function RegistrationForm({ value, onChange, existing, listReady, manifest, sibl
       <label>한계·주의 (줄마다 한 항목)<textarea value={(value.evaluation.limitations ?? []).join('\n')} onChange={e => evidence('limitations', e.target.value ? e.target.value.split('\n') : [])} />{field('evaluation.limitations')}</label>
     </fieldset>
     <section aria-label="모델 사전 검사">
-      <button type="button" disabled={locked || !listReady || value.kind !== 'MODEL' || !candidate || !supportsPreflight(value.name, candidate.files) || !!validation.errors.length} onClick={() => {
+      <button type="button" {...busyProps(pending, saved || !listReady || value.kind !== 'MODEL' || !candidate || !supportsPreflight(value.name, candidate.files) || !!validation.errors.length)} onClick={() => {
         const key = preflightKey
         setChecked(undefined); onBusy?.(true)
         void preflight.mutateAsync(preflightBody).then(result => setChecked({ key, result }))
@@ -70,7 +72,7 @@ function RegistrationForm({ value, onChange, existing, listReady, manifest, sibl
     <ul>{validation.warnings.map((w, i) => <li key={i}>경고 · {w.message}</li>)}</ul>
     {field('manifest')}
     {!listReady && !saved && <p role="status">중복 검사를 위해 전체 모델 목록을 확인 중입니다. 조회 실패 시 다시 조회해 주세요.</p>}
-    <button className="cj-primary" disabled={locked || !listReady || !!validation.errors.length}>{saved ? '등록 완료' : mutation.isPending ? '등록 중' : '버전 등록'}</button>
+    <button className="cj-primary" {...busyProps(pending, saved || !listReady || !!validation.errors.length)}>{saved ? '등록 완료' : mutation.isPending ? '등록 중' : '버전 등록'}</button>
   </form>
 }
 async function readJson(file: File) {

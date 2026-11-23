@@ -14,7 +14,7 @@ import type {
 } from '../../domain/classroom.ts'
 import { apiFetch, notifyAuthChange, setAccessToken, unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
-import { getAttemptComparison, getThinkingActivities, saveReflection, saveSelfAssessment } from './learningApi.ts'
+import { askWord, getAttemptComparison, getThinkingActivities, saveReflection, saveSelfAssessment } from './learningApi.ts'
 import { sharingApi } from './sharingApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
@@ -316,4 +316,8 @@ export function useStudentSharing(childId: string) {
       cache.removeQueries({ predicate: q => ['parent', 'records', 'report', 'public-record'].includes(String(q.queryKey[0])) })
     } })
   return { query, save }
+}
+/** 낱말 물어보기 (#599). 답은 저장·캐시하지 않고 화면 대화에만 둔다. */
+export function useAskWord(attemptId: string) {
+  return useMutation({ mutationFn: (question: string) => askWord(attemptId, question) })
 }

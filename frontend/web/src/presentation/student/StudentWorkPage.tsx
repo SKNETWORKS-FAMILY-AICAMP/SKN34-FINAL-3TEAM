@@ -23,6 +23,7 @@ import { MissionScene } from './MissionScene.tsx'
 import { Companion } from './world/Companion.tsx'
 import { SpeechBubble } from './world/SpeechBubble.tsx'
 import { Bulb, FeedbackWaiting } from './world/FeedbackWaiting.tsx'
+import { WordHelpPanel } from './WordHelpPanel.tsx'
 import { useLook } from './world/lookContext.ts'
 import { companionLabel } from '../../domain/studentLook.ts'
 import { STEPS, WAITING_HEADLINE, difficultyLabel, feedbackHeadline, followupLabel } from './world/missionSteps.ts'
@@ -82,6 +83,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     [error, setError] = useState<unknown>(null)
   const [memo, setMemo] = useState(false),
     [hint, setHint] = useState(''),
+    [words, setWords] = useState(false),
     [more, setMore] = useState(false)
   const [memoTarget, setMemoTarget] = useState(''),
     [memoError, setMemoError] = useState('')
@@ -599,9 +601,16 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
               </button>
             </div>
             <div className="sw-helper">
-              <span className="sw-helper-face" aria-hidden="true">
+              <button
+                type="button"
+                className="sw-helper-face sw-word-trigger"
+                aria-expanded={words}
+                aria-controls={words ? 'student-word-help' : undefined}
+                onClick={() => setWords(open => !open)}
+              >
                 <Companion kind={companion} size={72} worn={worn} decorative />
-              </span>
+                <span>낱말 물어보기</span>
+              </button>
               <SpeechBubble tail="left" className="sw-bubble" role="status">
                 {hint ? (
                   <>
@@ -627,6 +636,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                 )}
               </SpeechBubble>
             </div>
+            {words && <WordHelpPanel attemptId={a.attemptId} companion={companion} />}
           </section>
           <section className="sw-panel" aria-labelledby="sw-panel-title">
             <div className="sw-panel-head">

@@ -10,6 +10,7 @@ import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { Badge } from './AdminUi.tsx'
 import { date } from './adminFormatting.ts'
 import './modelRegistry.css'
+import { busyProps } from './busyButton.ts'
 
 const SIZE = 20
 const LABEL_ORDER: ExpressionReviewLabel[] = ['OFFENSIVE', 'CLEAN', 'SKIP']
@@ -39,9 +40,9 @@ export function ExpressionReviewManager() {
     {items && !items.length && <p role="status">{labeled ? '라벨을 붙인 글이 없습니다.' : '검토할 글이 없습니다.'}</p>}
     {items?.map(item => <ExpressionReviewCard key={`${item.id}:${item.label ?? ''}`} item={item} onSaved={setSaved} />)}
     {q.data && !q.error && (page > 0 || hasNextPage(page, SIZE, q.data.totalElements)) && <nav className="ws-actions" aria-label="표현 검토 쪽">
-      <button disabled={page === 0 || q.isFetching} onClick={() => setPage(p => p - 1)}>이전</button>
+      <button {...busyProps(q.isFetching, page === 0)} onClick={() => setPage(p => p - 1)}>이전</button>
       <span>{page + 1}쪽 · 전체 {q.data.totalElements}건</span>
-      <button disabled={!hasNextPage(page, SIZE, q.data.totalElements) || q.isFetching} onClick={() => setPage(p => p + 1)}>다음</button>
+      <button {...busyProps(q.isFetching, !hasNextPage(page, SIZE, q.data.totalElements))} onClick={() => setPage(p => p + 1)}>다음</button>
     </nav>}
   </section>
 }
@@ -55,7 +56,7 @@ function ExpressionReviewCard({ item, onSaved }: { item: ExpressionReview; onSav
     <p className="expression-review-text">{item.text}</p>
     <small>모델 {item.modelVersion ?? '기록 없음'} · 들어온 시각 {date(item.createdAt)}{item.labeledAt ? ` · 라벨 ${date(item.labeledAt)}` : ''}</small>
     <div className="ws-actions" role="group" aria-label="라벨 붙이기">
-      {LABEL_ORDER.map(label => <button key={label} aria-pressed={item.label === label} disabled={mutation.isPending}
+      {LABEL_ORDER.map(label => <button key={label} aria-pressed={item.label === label} {...busyProps(mutation.isPending)}
         onClick={() => { onSaved(''); void mutation.mutateAsync(label).then(() => onSaved(`글 하나를 "${EXPRESSION_REVIEW_LABELS[label]}"(으)로 저장했습니다.`)).catch(() => {}) }}>
         {EXPRESSION_REVIEW_LABELS[label]}</button>)}
     </div>

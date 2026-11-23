@@ -107,7 +107,7 @@ export function ParentDashboard({ child, scope, canReadOriginals = false }: { ch
                     <span className="pd-type-icon"><ThinkingIcon type={t.type} /></span>
                     {thinkingLabels[t.type]}
                   </span>
-                  <div className="pd-recent-missions" aria-label={`${thinkingLabels[t.type]} 최근 활동`}>
+                  <div className="pd-recent-missions" role="group" aria-label={`${thinkingLabels[t.type]} 최근 활동`}>
                     {t.missions.slice(0, 5).map(m => canReadOriginals
                       ? <button key={m.attemptId} type="button" title={m.title} onClick={() => setRecord(m.attemptId)}>{m.title}</button>
                       : <span key={m.attemptId} title={m.title}>{m.title}</span>)}

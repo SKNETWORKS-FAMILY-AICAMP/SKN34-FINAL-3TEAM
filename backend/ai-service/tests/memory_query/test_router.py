@@ -43,7 +43,7 @@ def test_response_is_camel_case_and_matches_openapi() -> None:
         "keywords": ["동물", "집"],
         "period": {"from": "2026-11-09", "to": "2026-11-16"},
         "searchText": "동물들이 살 수 있게 만든 것",
-        "versions": {"model": "fake-model", "prompt": "memory-query@1"},
+        "versions": {"model": "fake-model", "prompt": "memory-query@2"},
     }
     Draft202012Validator(schema("200")).validate(body)
     op, components = operation()

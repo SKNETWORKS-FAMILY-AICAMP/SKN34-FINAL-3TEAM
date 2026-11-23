@@ -52,10 +52,10 @@ class MemorySearchTest {
     @BeforeEach fun seed() {
         rows=TestRows(jdbc);missions=rows.themeMissions();theme=rows.publishedTheme(missions.map { it.id },week)
     }
-    private fun attempt(owner: UUID=student,context: String="THEME_DAY",text: String="동물 집을 만들었어요"): UUID {
+    private fun attempt(owner: UUID=student,context: String="THEME_DAY",text: String="동물 집을 만들었어요",version: UUID?=null): UUID {
         val id=UUID.randomUUID();val m=missions.first()
-        jdbc.update("""INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,finished_at,completed_at,updated_at,context,theme_id,theme_week_start)
-            VALUES(?,?,?,?,?,3,'COMPLETED',now(),now(),now(),now(),?,?,?)""",id,owner,m.id,m.versionId,m.rubricVersionId,context,if(context=="EXTRA") null else theme,if(context=="EXTRA") null else week)
+        jdbc.update("""INSERT INTO attempt(id,student_id,mission_id,mission_version_id,rubric_version_id,grade,status,started_at,finished_at,completed_at,updated_at,context,theme_id,theme_week_start,theme_version_id)
+            VALUES(?,?,?,?,?,3,'COMPLETED',now(),now(),now(),now(),?,?,?,?)""",id,owner,m.id,m.versionId,m.rubricVersionId,context,if(context=="EXTRA") null else theme,if(context=="EXTRA") null else week,version)
         jdbc.update("""INSERT INTO answer(id,attempt_id,version,input_type,content,plain_text,dictated_by_guardian,idempotency_key,submitted_at)
             VALUES(?,?,1,'NARRATIVE','{}'::jsonb,?,false,?,now())""",UUID.randomUUID(),id,text,UUID.randomUUID())
         return id
@@ -72,6 +72,23 @@ class MemorySearchTest {
         assertEquals(1,repository.register(id));assertEquals(0,repository.register());assertEquals(0,repository.register())
         val text=jdbc.queryForObject("SELECT content_text FROM memory_search_doc WHERE attempt_id=?",String::class.java,id)!!
         assertTrue(text.contains("동물 집"))
+    }
+    @Test fun `재게시 전 시작한 시도의 문서는 고정된 버전의 제목·장면, 고정 없는 시도는 게시본 (#930)`() {
+        val v1=jdbc.queryForObject("SELECT published_version_id FROM weekly_theme WHERE id=?",UUID::class.java,theme)!!
+        jdbc.update("UPDATE weekly_theme_version SET title='옛 제목' WHERE id=?",v1)
+        jdbc.update("""UPDATE weekly_theme_day SET dialogue='[{"speaker":"뭉치","text":"옛 장면"}]'::jsonb WHERE theme_version_id=? AND mission_id=?""",v1,missions.first().id)
+        val v2=UUID.randomUUID()
+        jdbc.update("""WITH version AS (
+                INSERT INTO weekly_theme_version(id,theme_id,version,title,intro,created_by,created_at) VALUES(?,?,2,'새 제목','소개',?,?)
+            ), days AS (
+                INSERT INTO weekly_theme_day(theme_version_id,day_of_week,mission_id,dialogue) VALUES(?,4,?,'[{"speaker":"뭉치","text":"새 장면"}]'::jsonb)
+            ) UPDATE weekly_theme SET current_version_id=?,published_version_id=? WHERE id=?""",
+            v2,theme,rows.author,rows.now,v2,missions.first().id,v2,v2,theme)
+        val pinned=attempt(version=v1);val unpinned=attempt()
+        assertEquals(1,repository.register(pinned));assertEquals(1,repository.register(unpinned))
+        fun text(id: UUID)=jdbc.queryForObject("SELECT content_text FROM memory_search_doc WHERE attempt_id=?",String::class.java,id)!!
+        assertTrue(text(pinned).startsWith("옛 제목\n옛 장면\n"),text(pinned))
+        assertTrue(text(unpinned).startsWith("새 제목\n새 장면\n"),text(unpinned))
     }
     @Test fun `선점한 행은 다른 작업에서 다시 선점하지 않음`() {
         attempt();repository.register()

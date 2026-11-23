@@ -37,6 +37,16 @@ class JsonObjectTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandle
     objectMapper, objectMapper.typeFactory.constructType(JsonObject::class.java),
 )
 
+/** jsonb 문자열 배열(공지 대상 역할, #947). List 전역 매핑 없이 XML `typeHandler=`로만 쓴다 */
+class StringListJsonbTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<List<String>>(
+    objectMapper, objectMapper.typeFactory.constructCollectionType(List::class.java, String::class.java),
+)
+
+/** jsonb 객체 배열(분석 대화 metrics, #947). List 전역 매핑 없이 XML `typeHandler=`로만 쓴다 */
+class JsonObjectListTypeHandler(objectMapper: ObjectMapper) : JacksonJsonbTypeHandler<List<JsonObject>>(
+    objectMapper, objectMapper.typeFactory.constructCollectionType(List::class.java, JsonObject::class.java),
+)
+
 /** pgJDBC supports OffsetDateTime directly; convert Instant through UTC without JVM timezone dependence. */
 class InstantTypeHandler : BaseTypeHandler<Instant>() {
     override fun setNonNullParameter(ps: PreparedStatement, i: Int, parameter: Instant, jdbcType: JdbcType?) {

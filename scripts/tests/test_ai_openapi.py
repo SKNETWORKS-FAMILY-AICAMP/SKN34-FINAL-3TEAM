@@ -30,10 +30,11 @@ class AiOpenApiTests(unittest.TestCase):
             for method, operation in methods.items()
             if not operation.get("x-implementation-status")
         }
-        self.assertEqual(len(actual), 12)  # #437 /theme-drafts, #565 /memory-explanations, #681 /memory-queries 포함
+        self.assertEqual(len(actual), 13)  # #437 /theme-drafts, #565 /memory-explanations, #681 /memory-queries 포함
         self.assertIn(("post", "/embeddings"), actual)  # #467
         self.assertIn(("post", "/memory-explanations"), actual)  # #565
         self.assertIn(("post", "/memory-queries"), actual)  # #681
+        self.assertIn(("post", "/word-helps"), actual)  # #599
         self.assertEqual(actual, documented)
 
     def test_internal_token_and_problem_responses(self):
@@ -71,6 +72,16 @@ class AiOpenApiTests(unittest.TestCase):
         self.assertEqual(keywords["maxItems"], limits["KEYWORDS_MAX"])
         self.assertEqual(keywords["items"]["maxLength"], limits["KEYWORD_MAX_CHARS"])
         self.assertEqual(schemas["MemoryQueryResponse"]["properties"]["searchText"]["maxLength"], limits["SEARCH_TEXT_MAX_CHARS"])
+    def test_word_help_states_and_problems(self):
+        # #599: 결과는 200의 state로 구분하고 오류는 400·401·503만(사전·LLM 장애)
+        responses = self.spec["paths"]["/word-helps"]["post"]["responses"]
+        self.assertEqual(set(responses), {"200", "400", "401", "503"})
+        for code in ("DICTIONARY_UNAVAILABLE", "AI_UNAVAILABLE"):
+            self.assertIn(code, responses["503"]["description"])
+        source = (ROOT / "backend/ai-service/app/word_help/models.py").read_text(encoding="utf-8")
+        states = re.findall(r'"([A-Z_]+)"', re.search(r"WordHelpState = Literal\[([^\]]*)\]", source)[1])
+        schema = self.spec["components"]["schemas"]["WordHelpResponse"]
+        self.assertEqual(schema["properties"]["state"]["enum"], states)
 
     def test_held_reason_matches_ai_model(self):
         source = (ROOT / "backend/ai-service/app/judgment/models.py").read_text(encoding="utf-8")
@@ -101,7 +112,7 @@ class AiOpenApiTests(unittest.TestCase):
         self.assertFalse(prompts["additionalProperties"])
         self.assertEqual(set(prompts["required"]), expected)
         self.assertEqual(set(prompts["properties"]), expected)
-        self.assertEqual(len(expected), 10)  # #437 themeDraft, #565 memoryExplanation, #681 memoryQuery 포함
+        self.assertEqual(len(expected), 11)  # #437 themeDraft, #565 memoryExplanation, #681 memoryQuery 포함
 
 
 if __name__ == "__main__":

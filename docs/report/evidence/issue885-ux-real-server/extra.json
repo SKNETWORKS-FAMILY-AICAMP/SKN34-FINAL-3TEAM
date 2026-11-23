@@ -1,0 +1,583 @@
+{
+ "extra": {
+  "run": "2026-11-23T00:08:07.192Z",
+  "listBefore": {
+   "rows": 1
+  },
+  "request": {
+   "httpStatus": 202,
+   "status": "GENERATING",
+   "source": "ADMIN",
+   "grade": "G3",
+   "weekStart": "2026-11-30",
+   "maxAttempts": 3,
+   "notice": []
+  },
+  "generated": {
+   "seconds": 15,
+   "status": "FAILED",
+   "attempts": 3,
+   "failureCode": "AI_UNAVAILABLE",
+   "failureStages": [
+    "1:AI_CALL",
+    "2:AI_CALL",
+    "3:AI_CALL"
+   ],
+   "firstReason": "AI_UNAVAILABLE"
+  },
+  "detail": {
+   "opened": true,
+   "path": "/admin/theme-drafts?draftId=:id",
+   "headings": [
+    "초안 상세",
+    "검사 실패"
+   ],
+   "buttons": [
+    "← 검수 목록으로",
+    "다시 확인",
+    "다시 생성",
+    "버리기"
+   ]
+  },
+  "detailPath": "/admin/theme-drafts?draftId=:id",
+  "adminDuplicate": [
+   {
+    "width": 1440,
+    "status": 409,
+    "code": "LOOK_ITEM_CODE_DUPLICATE",
+    "problemTitle": "이미 있는 코드입니다.",
+    "alertTexts": [
+     "이미 있는 코드입니다.문제 자세히 보기LOOK_ITEM_CODE_DUPLICATE · 확인 번호 0d1abf0520c143168e8250d99910a257"
+    ],
+    "alertVisible": true,
+    "alertInViewport": false,
+    "formStillOpen": true,
+    "codeKept": "E2E_HAT",
+    "focusAfter": {
+     "tag": "button",
+     "role": "",
+     "name": "저장",
+     "inViewport": true
+    },
+    "detailsToggle": 1
+   },
+   {
+    "width": 390,
+    "status": 409,
+    "code": "LOOK_ITEM_CODE_DUPLICATE",
+    "problemTitle": "이미 있는 코드입니다.",
+    "alertTexts": [
+     "이미 있는 코드입니다.문제 자세히 보기LOOK_ITEM_CODE_DUPLICATE · 확인 번호 652696c8fdda421aab7290e03e91dd91"
+    ],
+    "alertVisible": true,
+    "alertInViewport": true,
+    "formStillOpen": true,
+    "codeKept": "E2E_HAT",
+    "focusAfter": {
+     "tag": "body"
+    },
+    "detailsToggle": 1
+   }
+  ]
+ },
+ "overflow": [
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 1440,
+   "scrollWidth": 1440,
+   "innerWidth": 1440,
+   "overflow": false,
+   "widest": []
+  },
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 768,
+   "scrollWidth": 768,
+   "innerWidth": 768,
+   "overflow": false,
+   "widest": []
+  },
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 390,
+   "scrollWidth": 390,
+   "innerWidth": 390,
+   "overflow": false,
+   "widest": []
+  }
+ ],
+ "axe": [
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 1440,
+   "violations": [
+    {
+     "id": "color-contrast",
+     "impact": "serious",
+     "count": 7,
+     "targets": [
+      ".ad-location > span",
+      ".ad-page-title > div > p",
+      ".ad-badge",
+      "h3",
+      ".ad-note > p:nth-child(2)"
+     ]
+    }
+   ],
+   "bestPractice": []
+  },
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 390,
+   "violations": [
+    {
+     "id": "color-contrast",
+     "impact": "serious",
+     "count": 6,
+     "targets": [
+      ".ad-page-title > div > p",
+      ".ad-badge",
+      "h3",
+      ".ad-note > p:nth-child(2)",
+      ".ad-note > p:nth-child(3)"
+     ]
+    }
+   ],
+   "bestPractice": []
+  }
+ ],
+ "keyboard": [
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 1440,
+   "skipLink": true,
+   "stops": 15,
+   "noIndicator": 0,
+   "hidden": 0,
+   "bodyStops": 0,
+   "order": [
+    {
+     "tag": "a",
+     "role": "",
+     "name": "본문으로 이동",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "알림 열기",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "로그아웃",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "사고뭉치 관리자 홈",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "input",
+     "role": "",
+     "name": "관리자 메뉴 찾기",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "운영 현황",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "감사 이력",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "미션 관리",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "미션 초안",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "주간 테마 검수",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "게시 관리",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "꾸미기 아이템",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "문의·공지",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "오류 신고",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "작업 재처리",
+     "visible": true,
+     "indicator": true
+    }
+   ]
+  },
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 390,
+   "skipLink": true,
+   "stops": 15,
+   "noIndicator": 0,
+   "hidden": 0,
+   "bodyStops": 1,
+   "order": [
+    {
+     "tag": "a",
+     "role": "",
+     "name": "본문으로 이동",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "메뉴",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "알림 열기",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "로그아웃",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "← 검수 목록으로",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "다시 확인",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "summary",
+     "role": "",
+     "name": "생성 정보와 요청 조건",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "다시 생성",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "버리기",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "body",
+     "role": "",
+     "name": "",
+     "visible": false,
+     "indicator": false
+    },
+    {
+     "tag": "a",
+     "role": "",
+     "name": "본문으로 이동",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "메뉴",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "알림 열기",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "로그아웃",
+     "visible": true,
+     "indicator": true
+    },
+    {
+     "tag": "button",
+     "role": "",
+     "name": "← 검수 목록으로",
+     "visible": true,
+     "indicator": true
+    }
+   ]
+  }
+ ],
+ "states": [
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 1440,
+   "pointerCoarse": false,
+   "controls": 24,
+   "under24": 0,
+   "under44": 22,
+   "under24List": [],
+   "under44List": [
+    "button.notification-trigger[44x38] 알림 열기",
+    "button.ad-logout[89x32] 로그아웃",
+    "input[155x34] 관리자 메뉴 찾기",
+    "a[212x39] 운영 현황",
+    "a[212x39] 감사 이력",
+    "a[212x39] 미션 관리",
+    "a[212x39] 미션 초안",
+    "a[212x39] 주간 테마 검수"
+   ],
+   "inputs": 1,
+   "unnamedInputs": 0,
+   "unnamedList": [],
+   "selection": {
+    "ariaCurrent": 1,
+    "ariaSelected": 0,
+    "ariaPressed": 0,
+    "checked": 0
+   },
+   "liveRegions": {
+    "status": 0,
+    "alert": 0
+   },
+   "colorOnlyCandidates": []
+  },
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 390,
+   "pointerCoarse": true,
+   "controls": 8,
+   "under24": 0,
+   "under44": 3,
+   "under24List": [],
+   "under44List": [
+    "button.ad-menu-toggle[40x44] 메뉴",
+    "button.ad-logout[36x44] 로그아웃",
+    "button.ad-link-button[97x28] ← 검수 목록으로"
+   ],
+   "inputs": 0,
+   "unnamedInputs": 0,
+   "unnamedList": [],
+   "selection": {
+    "ariaCurrent": 1,
+    "ariaSelected": 0,
+    "ariaPressed": 0,
+    "checked": 0
+   },
+   "liveRegions": {
+    "status": 0,
+    "alert": 0
+   },
+   "colorOnlyCandidates": []
+  }
+ ],
+ "contrast": [
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 1440,
+   "values": [
+    {
+     "fg": "#6d8173",
+     "bg": "#edf3ef",
+     "ratio": 3.7,
+     "fontSize": "9.0pt (12px)",
+     "fontWeight": "normal",
+     "expected": "4.5:1",
+     "count": 3,
+     "targets": [
+      ".ad-note > p:nth-child(2)",
+      ".ad-note > p:nth-child(3)",
+      ".ad-note > p:nth-child(4)"
+     ]
+    },
+    {
+     "fg": "#859087",
+     "bg": "#ffffff",
+     "ratio": 3.31,
+     "fontSize": "9.0pt (12px)",
+     "fontWeight": "normal",
+     "expected": "4.5:1",
+     "count": 1,
+     "targets": [
+      ".ad-location > span"
+     ]
+    },
+    {
+     "fg": "#768a7d",
+     "bg": "#f3f5f7",
+     "ratio": 3.36,
+     "fontSize": "8.3pt (11px)",
+     "fontWeight": "normal",
+     "expected": "4.5:1",
+     "count": 1,
+     "targets": [
+      ".ad-page-title > div > p"
+     ]
+    },
+    {
+     "fg": "#67796b",
+     "bg": "#f5f7f5",
+     "ratio": 4.31,
+     "fontSize": "9.0pt (12px)",
+     "fontWeight": "normal",
+     "expected": "4.5:1",
+     "count": 1,
+     "targets": [
+      ".ad-badge"
+     ]
+    },
+    {
+     "fg": "#6d8173",
+     "bg": "#edf3ef",
+     "ratio": 3.7,
+     "fontSize": "10.5pt (14px)",
+     "fontWeight": "normal",
+     "expected": "4.5:1",
+     "count": 1,
+     "targets": [
+      "h3"
+     ]
+    }
+   ]
+  },
+  {
+   "role": "admin",
+   "screen": "테마 초안 상세",
+   "width": 390,
+   "values": [
+    {
+     "fg": "#6d8173",
+     "bg": "#edf3ef",
+     "ratio": 3.7,
+     "fontSize": "9.0pt (12px)",
+     "fontWeight": "normal",
+     "expected": "4.5:1",
+     "count": 3,
+     "targets": [
+      ".ad-note > p:nth-child(2)",
+      ".ad-note > p:nth-child(3)",
+      ".ad-note > p:nth-child(4)"
+     ]
+    },
+    {
+     "fg": "#768a7d",
+     "bg": "#f3f5f7",
+     "ratio": 3.36,
+     "fontSize": "8.3pt (11px)",
+     "fontWeight": "normal",
+     "expected": "4.5:1",
+     "count": 1,
+     "targets": [
+      ".ad-page-title > div > p"
+     ]
+    },
+    {
+     "fg": "#67796b",
+     "bg": "#f5f7f5",
+     "ratio": 4.31,
+     "fontSize": "9.0pt (12px)",
+     "fontWeight": "normal",
+     "expected": "4.5:1",
+     "count": 1,
+     "targets": [
+      ".ad-badge"
+     ]
+    },
+    {
+     "fg": "#6d8173",
+     "bg": "#edf3ef",
+     "ratio": 3.7,
+     "fontSize": "10.5pt (14px)",
+     "fontWeight": "normal",
+     "expected": "4.5:1",
+     "count": 1,
+     "targets": [
+      "h3"
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -43,7 +43,7 @@ KID_SOURCE_NAME = "kid-written"  # scripts/kid_data.py
 KID_SOURCE = [
     {
         "name": "아이 말투 직접 작성(eval_sets/kid_train.json)",
-        "license": "팀 작성",
+        "license": "Claude 작성, NFR-DAT-03 예외(#887)",
         "use": "학습만(시험 문장 eval_sets/kid_test.json과 겹침 검사)",
     }
 ]

@@ -72,6 +72,12 @@ test('친구 생각 → 놀러 가기: 친구가 꾸민 방·방 주인 뭉치·
   // 친구가 놓은 방 소품(#705·#723): 목업 하늘별 방의 큰 화분·러그·쿠션 소파·줄 조명·시계
   await expect(room.locator('[data-decor]').first()).toBeAttached()
   expect(await room.locator('[data-decor]').count()).toBeGreaterThan(10)
+  // 친구가 고른 색으로 그린다(#805, core #758): 왼쪽 벽 시계 분홍(기본 하늘), 동그란 러그 분홍(연한 분홍 %23FFE3EC, 기본 하늘이면 %23DDEEFB), 쿠션 소파 하늘
+  const paint = await room.locator('[data-decor]').evaluateAll((els) => els.map((e) => `${getComputedStyle(e).backgroundColor} ${e.getAttribute('style') ?? ''}`).join(' | '))
+  expect(paint).toContain('rgb(247, 174, 196)')
+  expect(paint).toContain('%23FFE3EC')
+  expect(paint).not.toContain('%23DDEEFB')
+  expect(paint).toContain('rgb(156, 203, 239)')
   // 방 칸이 화면 폭을 넘지 않음
   const holder = await room.locator('.st-room-holder').boundingBox()
   expect(holder!.x + holder!.width).toBeLessThanOrEqual(page.viewportSize()!.width)

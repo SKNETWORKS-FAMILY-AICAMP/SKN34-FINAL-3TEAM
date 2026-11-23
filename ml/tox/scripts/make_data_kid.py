@@ -2,7 +2,7 @@
 
 `prepare_data.py`가 만든 `data/processed`(학습 86,095줄)에서 시작한다.
 - p_orig: 원래 학습 그대로
-- p_kid : 원래 + 직접 지은 아이 문장 ×3 ← 최종 모델
+- p_kid : 원래 + Claude가 지은 아이 문장 ×3 ← 최종 모델
   (`kid_data.py`, `eval_sets/kid_train.json` 691줄, 11/18 놀림말·욕 정책)
 - p_cont: 이어 학습 실험용(아이 691줄 ×1 + 원래에서 무작위 10,000줄, 시드 42)
 valid·test·apeach는 그대로 복사한다(글 순서가 같아야 단어 목록 결과 `wordlist_flags.json`과 맞음).

@@ -16,6 +16,7 @@ from app.prompt_versions.models import PROMPT_SCOPES, ActiveVersionItem, PromptC
 from app.report_explanation import prompts as report_explanation_prompts
 from app.report_narrative import prompts as report_narrative_prompts
 from app.theme_draft import prompts as theme_draft_prompts
+from app.word_help import prompts as word_help_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ BUILTIN_PROMPTS: dict[str, ModuleType] = {
     "themeDraft": theme_draft_prompts,
     "memoryExplanation": memory_explanation_prompts,
     "memoryQuery": memory_query_prompts,
+    "wordHelp": word_help_prompts,
 }
 
 

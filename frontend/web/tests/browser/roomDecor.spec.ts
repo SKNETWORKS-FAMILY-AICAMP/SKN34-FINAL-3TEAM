@@ -1,6 +1,6 @@
 import { waitForStudentHome } from './studentFixture.ts'
 import { test, expect } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 // #705 내 방 바닥·방 소품(사용자 결정 2026-11-17): 방에 관한 것은 모두 내 방 "방 꾸미기" 서랍(벽지·바닥·가구·방 소품, 서랍에서 바로 열기·사기),
 // 꾸미기 화면은 화면 테마·캐릭터·옷 입히기만. 방 소품은 바닥·벽 칸에 놓고(core #723) 화살표·초록 칸으로 옮긴다.
@@ -18,6 +18,10 @@ async function student(page: Page) {
 }
 const menu = (page: Page, name: string) => page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name, exact: true }).click()
 const drawer = (page: Page) => page.getByRole('region', { name: '방 꾸미기' })
+/** 방 그림 면(놓인 방 소품)의 배경 색들. 입체 소품은 CSS 색(rgb), 그림판·바닥·벽 그림은 data URI 안 색(%23RRGGBB)으로 찾는다 */
+const decorPaint = (scope: Locator) => scope.locator('[data-decor]').evaluateAll((els) => els.map((e) => `${getComputedStyle(e).backgroundColor} ${e.getAttribute('style') ?? ''}`).join(' | '))
+const SKY = { rgb: 'rgb(156, 203, 239)', uri: '%239CCBEF' }
+const ORANGE = { rgb: 'rgb(242, 166, 90)' }
 async function openDrawer(page: Page, tab: string) {
   await page.getByRole('button', { name: '방 꾸미기', exact: true }).click()
   await drawer(page).getByRole('button', { name: tab, exact: true }).click()
@@ -77,8 +81,12 @@ test('방 소품: 서랍에서 사고 놓고 화살표로 옮기며, 못 놓는 
   await expect(move).toBeVisible()
   await expect(page.locator('.st-decor-cell').first()).toBeAttached() // 놓을 수 있는 초록 칸
   await expect(drawer(page).locator('.st-decor-card')).toHaveCount(0) // 옮기는 동안은 목록을 숨김
-  // 색 고르기는 core 색 후속 전까지 숨김
-  await expect(drawer(page).getByRole('group', { name: '작은 화분 색' })).toHaveCount(0)
+  // 색 고르기(#805, core #758): 공통 8색, 새로 놓으면 기본 색(작은 화분은 주황)이 눌린 상태
+  const colors = drawer(page).getByRole('group', { name: '작은 화분 색' })
+  await expect(colors).toBeVisible()
+  await expect(colors.getByRole('button')).toHaveCount(8)
+  await expect(colors.getByRole('button', { name: '주황', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(colors.locator('[aria-pressed="true"]')).toHaveCount(1)
   // 옮기기 판이 열리면 초점은 화살표에, 방향키로도 옮긴다(오른쪽 끝을 넘으면 까닭)
   await expect(move.getByRole('button', { name: '뒤로 한 칸' })).toBeFocused()
   for (let i = 0; i < 20; i++) await page.keyboard.press('ArrowRight')
@@ -90,16 +98,71 @@ test('방 소품: 서랍에서 사고 놓고 화살표로 옮기며, 못 놓는 
   await move.getByRole('button', { name: '오른쪽으로 한 칸' }).click()
   await move.getByRole('button', { name: '다 놓았어요' }).click()
   await expect(card).toContainText('놓음 1/1')
-  // 저장 요청에는 계약에 있는 칸만(색은 core 색 후속 전에는 보내지 않음)
+  // 저장 요청에는 계약 칸 다섯 개(색 포함, core #758). 색을 고르지 않고 놓으면 null(소품 기본 색)
   const put = page.waitForRequest((r) => r.url().includes('/room/decor-spots') && r.method() === 'PUT')
   await page.getByRole('button', { name: '저장', exact: true }).click()
   const sent = (await put).postDataJSON() as { spots: Record<string, unknown>[] }
-  expect(sent.spots.map((x) => Object.keys(x).sort())).toEqual([['col', 'itemKey', 'row', 'surface']])
+  expect(sent.spots.map((x) => Object.keys(x).sort())).toEqual([['col', 'color', 'itemKey', 'row', 'surface']])
+  expect(sent.spots[0].color).toBeNull()
+  await expect(page.locator('.st-room-note')).toHaveText('내 방을 저장했어요.')
+})
+
+test('방 소품 색(#805): 하늘을 누르면 바로 그 색, 키보드로도 고르고 고른 색에 초점이 보이며, 저장하면 색이 실리고 다시 들어와도 그 색 @responsive', async ({ page }) => {
+  await student(page)
+  await menu(page, '내 방')
+  await openDrawer(page, '방 소품')
+  const card = drawer(page).locator('.st-decor-card').filter({ hasText: '작은 화분' })
+  await card.getByRole('button', { name: /작은 화분 1개 사기/ }).click()
+  await drawer(page).locator('section[aria-label="방 소품 사기 확인"]').getByRole('button', { name: '포인트로 사기' }).click()
+  await expect(card).toContainText('놓음 0/1')
+  await card.getByRole('button', { name: '작은 화분 놓기' }).click()
+  const move = drawer(page).getByRole('group', { name: '작은 화분 옮기기' })
+  const colors = drawer(page).getByRole('group', { name: '작은 화분 색' })
+  await expect(colors.getByRole('button', { name: '주황', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  // 하늘을 누르면 그것만 눌리고, 옮기기 판 칸 그림과 방 그림이 바로 그 색
+  const thumb = move.locator('.st-decor-move-head .st-dthumb')
+  const sky = colors.getByRole('button', { name: '하늘', exact: true })
+  await sky.click()
+  await expect(sky).toHaveAttribute('aria-pressed', 'true')
+  await expect(colors.getByRole('button', { name: '주황', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await expect(thumb).toHaveAttribute('style', new RegExp(SKY.uri))
+  expect(await decorPaint(page.locator('.st-mini-room'))).toContain(SKY.rgb)
+  // 키보드(NFR-UX-02): Tab으로 다음 색(분홍)에 가서 Space로 고르고, Shift+Tab으로 돌아와 Space로 하늘
+  await expect(sky).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(colors.getByRole('button', { name: '분홍', exact: true })).toBeFocused()
+  await page.keyboard.press('Space')
+  await expect(colors.getByRole('button', { name: '분홍', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('Shift+Tab')
+  await expect(sky).toBeFocused()
+  await page.keyboard.press('Space')
+  await expect(sky).toHaveAttribute('aria-pressed', 'true')
+  await expect(colors.locator('[aria-pressed="true"]')).toHaveCount(1)
+  // 고른 색에 초점이 있어도 초점이 보인다: 고른 표시는 짙은 주황 고리(그림자, #b85c00), 초점은 파란 외곽선(#885 점검에서 찾음)
+  const ring = await sky.evaluate((e) => { const s = getComputedStyle(e); return { outline: `${s.outlineStyle} ${s.outlineColor}`, shadow: s.boxShadow } })
+  expect(ring.outline).toBe('solid rgb(62, 139, 203)')
+  expect(ring.shadow).toContain('rgb(184, 92, 0)')
+  await move.getByRole('button', { name: '다 놓았어요' }).click()
+  await expect(card).toContainText('놓음 1/1')
+  // 저장 요청에는 계약 칸 다섯 개(색 포함, core #758)
+  const put = page.waitForRequest((r) => r.url().includes('/room/decor-spots') && r.method() === 'PUT')
+  await page.getByRole('button', { name: '저장', exact: true }).click()
+  const sent = (await put).postDataJSON() as { spots: Record<string, unknown>[] }
+  expect(sent.spots.map((x) => Object.keys(x).sort())).toEqual([['col', 'color', 'itemKey', 'row', 'surface']])
+  expect(sent.spots[0].color).toBe('sky')
   await expect(page.locator('.st-room-note')).toHaveText('내 방을 저장했어요.')
 
-  // 다시 열어도 놓인 그대로
+  // 다른 메뉴에 갔다 다시 들어와도 받은 색(하늘)으로 그린다
+  await menu(page, '홈')
+  await waitForStudentHome(page)
+  await menu(page, '내 방')
+  await expect.poll(() => decorPaint(page.locator('.st-mini-room'))).toContain(SKY.rgb)
+  expect(await decorPaint(page.locator('.st-mini-room'))).not.toContain(ORANGE.rgb)
+  // 다시 열어도 놓인 그대로, 그 소품을 고르면 하늘이 눌린 상태
   await openDrawer(page, '방 소품')
   await expect(drawer(page).locator('.st-decor-card').filter({ hasText: '작은 화분' })).toContainText('놓음 1/1')
+  await page.locator('.st-decor-hit').first().click({ force: true })
+  await expect(drawer(page).getByRole('group', { name: '작은 화분 색' }).getByRole('button', { name: '하늘', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('걸린 액자·놓은 칸 목록을 받기 전에는 방 꾸미기를 열 수 없다(빈 목록으로 저장해 내려가지 않게)', async ({ page }) => {

@@ -120,6 +120,10 @@ class SupportIntegrationTest: IntegrationTestSupport() {
  private fun review(id: String)=call("PATCH","/admin/error-reports/$id",adminToken,ReviewCommand("IN_REVIEW","검토 시작"))
  private fun correction(id: String,key: UUID,expected: Int=200)=call("POST","/admin/error-reports/$id/corrections",adminToken,CorrectionCommand("근거 확인","CORRECT"),key,expected)
  private fun count(sql: String,vararg args: Any)=jdbc.queryForObject(sql,Int::class.java,*args)!!
+ /** 저장된 jsonb 그대로(#947) */
+ private fun jsonb(sql: String,vararg args: Any): JsonNode=json.readTree(jdbc.queryForObject(sql,String::class.java,*args))
+ private fun auditDetails(action: String,target: String): List<JsonNode> =
+  jdbc.queryForList("SELECT CAST(detail AS text) FROM audit_log WHERE action=? AND target_id=? ORDER BY created_at",String::class.java,action,UUID.fromString(target)).map(json::readTree)
  @Test fun `missing internal context never fabricates administrator headers`() {
   assertNull(UserContextHolder.currentOrNull())
   val failure=assertFailsWith<com.sagomungchi.core._common.exception.BusinessException> { supportClient.original(attempt,student) }
@@ -173,6 +177,8 @@ class SupportIntegrationTest: IntegrationTestSupport() {
    assertEquals(attempt.toString(),view["linkedAttempt"]["attemptId"].asText());assertNull(view["linkedAttempt"]["draft"])
   }
   assertEquals(2,count("SELECT count(*) FROM audit_log WHERE action='SUPPORT_ORIGINAL_VIEW' AND target_id=?",UUID.fromString(id)))
+  // #947 감사 detail 저장 값: 열람한 시도·학생
+  assertEquals(List(2) { json.valueToTree<JsonNode>(mapOf("attemptId" to attempt,"studentId" to student)) },auditDetails("SUPPORT_ORIGINAL_VIEW",id))
   assertTrue(stub.requests.filter { it.target.contains("/support/attempts/") }.all { it.target.endsWith(attempt.toString()) && it.header("X-Student-Scope")==student.toString() })
   jdbc.execute("CREATE FUNCTION support_test_fail_audit() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''test audit unavailable''; END'")
   jdbc.execute("CREATE TRIGGER support_test_fail_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION support_test_fail_audit()")
@@ -238,6 +244,9 @@ class SupportIntegrationTest: IntegrationTestSupport() {
   val report=UUID.randomUUID();reportsAffected(mapOf("reportId" to report,"periodType" to "WEEKLY","periodFrom" to "2026-10-19","revision" to 1))
   val (id,impact)=corrected()
   assertEquals("AFFECTED",impact["report"].asText());assertEquals("AFFECTED",impact["conversation"].asText());assertEquals("NOT_APPLIED",impact["aggregation"].asText())
+  // #947 저장 값: impact jsonb = 관리자 응답 impact, provider_result jsonb = 공급자 응답 본문 그대로
+  assertEquals(impact,jsonb("SELECT CAST(impact AS text) FROM correction WHERE error_report_id=?",UUID.fromString(id)))
+  assertEquals(json.readTree(applied.values.single()),jsonb("SELECT CAST(provider_result AS text) FROM correction WHERE error_report_id=?",UUID.fromString(id)))
   assertEquals(listOf(report.toString()),impact["reportIds"].map { it.asText() });assertEquals(listOf(citing.toString()),impact["messageIds"].map { it.asText() })
   assertTrue(reportStub.requests.single().target.contains("attemptId=$attempt"))
   assertEquals("RESOLVED",call("GET","/admin/error-reports/$id",adminToken)["status"].asText())
@@ -470,8 +479,13 @@ class SupportIntegrationTest: IntegrationTestSupport() {
  }
  @Test fun `notices honor role interval end history and authenticated help`() {
   val now=OffsetDateTime.now();val command=NoticeCommand("NOTICE","보호자 안내","내용",listOf("PARENT"),now.minusHours(1),now.plusHours(1))
-  val id=call("POST","/admin/notices",adminToken,command,expected=201)["noticeId"].asText()
+  val created=call("POST","/admin/notices",adminToken,command,expected=201);val id=created["noticeId"].asText()
   assertEquals(1,call("GET","/notices",snapshot="notices")["items"].size());assertEquals(0,call("GET","/notices",studentToken)["items"].size())
+  // #947 대상 역할 저장 값·응답 값과 감사 detail(전·후 공지 모양)
+  val roles=json.valueToTree<JsonNode>(listOf("PARENT"))
+  assertEquals(roles,jsonb("SELECT CAST(target_roles AS text) FROM notice WHERE id=?",UUID.fromString(id)))
+  assertEquals(roles,created["targetRoles"]);assertEquals(roles,call("GET","/notices")["items"][0]["targetRoles"])
+  assertEquals(json.valueToTree<JsonNode>(mapOf("before" to null,"after" to created)),auditDetails("NOTICE_CREATED",id).single())
   call("PATCH","/admin/notices/$id",parentToken,command,expected=403)
   call("PATCH","/admin/notices/$id",adminToken,command.copy(visibleFrom=now.plusHours(1),visibleTo=now.plusHours(2)))
   assertEquals(0,call("GET","/notices")["items"].size())
@@ -479,7 +493,10 @@ class SupportIntegrationTest: IntegrationTestSupport() {
   assertEquals(0,call("GET","/notices")["items"].size())
   call("PATCH","/admin/notices/$id",adminToken,command.copy(targetRoles=listOf("SYSTEM")),expected=400)
   call("PATCH","/admin/notices/$id",adminToken,command.copy(visibleTo=command.visibleFrom),expected=400)
-  repeat(2) { call("DELETE","/admin/notices/$id",adminToken) }
+  val ended=List(2) { call("DELETE","/admin/notices/$id",adminToken) }.first()
+  val updates=auditDetails("NOTICE_UPDATED",id);assertEquals(2,updates.size)
+  for(detail in updates+auditDetails("NOTICE_ENDED",id)) { assertEquals(roles,detail["before"]["targetRoles"]);assertEquals(roles,detail["after"]["targetRoles"]) }
+  assertEquals(ended,auditDetails("NOTICE_ENDED",id).single()["after"]);assertTrue(ended["endedAt"].isTextual)
   call("PATCH","/admin/notices/$id",adminToken,command,expected=409)
   assertEquals(1,count("SELECT count(*) FROM notice WHERE id=? AND ended_at IS NOT NULL",UUID.fromString(id)))
   assertEquals(4,count("SELECT count(*) FROM audit_log WHERE target_id=?",UUID.fromString(id)))

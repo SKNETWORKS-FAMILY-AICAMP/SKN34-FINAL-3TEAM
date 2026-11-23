@@ -9,6 +9,7 @@ import { QueryFeedback } from '../common/Workspace.tsx'
 import { Modal, ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { Badge, Panel } from './AdminUi.tsx'
 import './weeklyPlanner.css'
+import { busyProps } from './busyButton.ts'
 
 function offset(date: string, days: number) {
   const stamp = new Date(date + 'T00:00:00Z')
@@ -139,7 +140,7 @@ export function WeeklyThemePlanner({onOpen,onCreate}: {onOpen:(id:string)=>void;
         <><p><strong>{decision.draft.title}</strong> · {decision.request.expectedWeek??'미편성'} → {decision.request.targetWeek??'미편성'}</p>
         {decision.other && <p><strong>{decision.other.title}</strong> · {decision.other.plannedWeek} → {decision.request.expectedWeek??'미편성'}</p>}</>}
       {problems.length>0 && <ul role="alert">{problems.map(p=><li key={p}>{p}</li>)}</ul>}<ErrorNotice error={problems.length?null:change.error}/>
-      <div className="ws-actions"><button disabled={change.isPending} onClick={close}>취소</button><button className="cj-primary" disabled={change.isPending||change.isError} onClick={()=>void finish()}>
+      <div className="ws-actions"><button {...busyProps(change.isPending)} onClick={close}>취소</button><button className="cj-primary" {...busyProps(change.isPending, change.isError)} onClick={()=>void finish()}>
         {decision.kind==='publish'?'최종 게시 확정':'편성 확정'}</button></div>
     </Modal>}
   </div>

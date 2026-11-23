@@ -13,12 +13,13 @@ import type { RegenKind, RegenTarget, ThemeSceneName } from '../../domain/admin/
 import type { SceneHistory } from '../../domain/admin/sceneVersions.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
-import { Badge, DraftWorkflow, Empty, Panel } from './AdminUi.tsx'
+import { Badge, DraftWorkflow, Empty, Panel, TableScroll } from './AdminUi.tsx'
 import { date as when } from './adminFormatting.ts'
 import { ThemeRequest } from './ThemeRequest.tsx'
 import { ThemeSceneReview } from './ThemeSceneReview.tsx'
 import type { SceneView } from './ThemeSceneReview.tsx'
 import './theme-workspace.css'
+import { busyProps } from './busyButton.ts'
 
 const POLL_MS = 5000
 const PAGE_SIZE = 20
@@ -78,14 +79,14 @@ export function ThemeDraftManager() {
         <label className="tw-check"><input type="checkbox" checked={comparisonPending} onChange={e => change({comparisonPending:e.target.checked ? 'true' : null, status:e.target.checked ? 'READY' : status, page:null})}/>영상 비교 대기</label>
       </div>
       <QueryFeedback query={list}/>
-      {!!rows.length && <div className="ad-table-wrap"><table className="ad-table"><thead><tr><th>테마</th><th>학년</th><th>생성 기준 주</th><th>출처</th><th>상태</th><th>검수</th></tr></thead><tbody>
+      {!!rows.length && <TableScroll label="테마 초안 목록 표"><table className="ad-table"><thead><tr><th>테마</th><th>학년</th><th>생성 기준 주</th><th>출처</th><th>상태</th><th>검수</th></tr></thead><tbody>
         {rows.map(d => <tr key={d.draftId}><td><strong>{d.draft?.theme?.title || d.input.topic || '주간 테마 초안'}</strong><small>{when(d.createdAt)}</small></td>
           <td>{d.grade ? THEME_GRADE_LABELS[d.grade] : '—'}</td><td>{d.weekStart ?? '—'}</td><td>{d.source ? themeDraftSourceLabels[d.source] : '—'}{d.input.regenerate ? ' · 부분' : ''}</td>
           <td><Badge active={d.status === 'READY'}>{themeDraftLabels[d.status]}</Badge></td><td><button aria-label={(d.weekStart ?? d.draftId)+' '+(d.grade ? THEME_GRADE_LABELS[d.grade] : '')+' 초안 열기'} onClick={() => {setNotice('');choose(d.draftId)}}>열기</button></td></tr>)}
-      </tbody></table></div>}
+      </tbody></table></TableScroll>}
       {list.data && !list.error && !rows.length && <Empty>조건에 맞는 테마 초안이 없습니다.</Empty>}
-      {list.data && !list.error && <nav className="ws-actions" aria-label="테마 초안 목록 페이지"><button disabled={!page || list.isFetching} onClick={() => change({page:String(page - 1)})}>이전 페이지</button>
-        <span>{page+1}쪽{list.data.totalElements != null && ' · 전체 '+list.data.totalElements+'건'}</span><button disabled={!hasNext || list.isFetching} onClick={() => change({page:String(page+1)})}>다음 페이지</button></nav>}
+      {list.data && !list.error && <nav className="ws-actions" aria-label="테마 초안 목록 페이지"><button {...busyProps(list.isFetching, !page)} onClick={() => change({page:String(page - 1)})}>이전 페이지</button>
+        <span>{page+1}쪽{list.data.totalElements != null && ' · 전체 '+list.data.totalElements+'건'}</span><button {...busyProps(list.isFetching, !hasNext)} onClick={() => change({page:String(page+1)})}>다음 페이지</button></nav>}
     </Panel>
   </div>
 }
@@ -159,13 +160,12 @@ function ThemeDraftDetail({ draftId, params, change, leave, choose, requestedNot
   const pendingChild=!!generationId && (!work.data || work.data.status==='GENERATING') && !work.error
   const regenTargets=d.regenerableTargets.filter(t=>regenKindsOf(scene).some(k=>t===k+':'+scene))
   const context=(d.grade ? THEME_GRADE_LABELS[d.grade]+' · ' : '')+(d.weekStart ?? '생성 주 미확인')
-  const blocked=act.isPending || !!confirm
   const actionText=confirm?.target?regenTargetLabel(confirm.target)+' 다시 만들기':confirm?.action==='discard'?'초안 버리기':confirm?.action==='adopt'?'채택':'새 초안 생성'
   return <div className="tw-desk" ref={heading}>
     <div className="tw-top"><button className="ad-link-button" onClick={()=>leave()}>← 검수 목록으로</button>
       {d.status==='DISCARDED' && <button onClick={()=>leave(true)}>버림 이력 보기</button>}</div>
     {notice && <p role="status">{notice}</p>}
-    <Panel title={theme?.title?'초안 상세 · '+theme.title:'초안 상세'} action={<button disabled={detail.isFetching} onClick={()=>void detail.refetch()}>다시 확인</button>}>
+    <Panel title={theme?.title?'초안 상세 · '+theme.title:'초안 상세'} action={<button {...busyProps(detail.isFetching)} onClick={()=>void detail.refetch()}>다시 확인</button>}>
       <div className="tw-meta"><Badge active={d.status==='READY'}>{themeDraftLabels[d.status]}</Badge><span>{context}</span>
         {d.plannedWeek && <span>편성 주 {d.plannedWeek}</span>}<span>{d.source?themeDraftSourceLabels[d.source]:'출처 미확인'}</span></div>
       {d.status==='GENERATING' && <p role="status">생성 중입니다. 5초마다 다시 확인합니다.</p>}
@@ -199,7 +199,7 @@ function ThemeDraftDetail({ draftId, params, change, leave, choose, requestedNot
           {scene==='INTRO'||scene==='OUTRO'?<p>{(scene==='INTRO'?theme?.intro:theme?.outro)||'이야기 없음'}</p>:<><h4>{mission?.title||sceneLabels[scene]+' 문제'}</h4><p>{mission?.question}</p></>}
           {theme?.bigQuestion && <details><summary>큰 질문과 엔딩 정답</summary><p>{theme.bigQuestion}</p><p>후보 {theme.candidates.join(', ')} · 정답 {theme.answer}</p></details>}
         </section>
-        {!readOnly && allowed.regenerate && <div className="ws-actions">{regenTargets.map(t=><button key={t} disabled={blocked||pendingChild}
+        {!readOnly && allowed.regenerate && <div className="ws-actions">{regenTargets.map(t=><button key={t} {...busyProps(act.isPending, !!confirm||pendingChild)}
           aria-label={sceneLabels[scene]+' '+regenButtonLabels[t.split(':')[0] as RegenKind]} onClick={()=>{
             const selected=cache.getQueryData<SceneHistory>(['admin','theme-scene-history',draftId,scene])?.selectedVersionId
             setConfirm({action:'regenerate',target:t,sourceId:selected??draftId})
@@ -217,9 +217,9 @@ function ThemeDraftDetail({ draftId, params, change, leave, choose, requestedNot
     <div className="tw-decisions"><div><strong>{d.status==='DISCARDED'?'버림 이력':d.weekLocked?'게시 확정':'초안 검수'}</strong>
       <p>{d.adoptionWeekLocked && !d.weekLocked?'생성 주의 게시가 확정됐습니다. 다른 주에 편성하면 채택할 수 있습니다.':d.plannedWeek?'채택하면 '+d.plannedWeek+' 주차의 테마가 만들어집니다.':context}</p></div>
       <div className="ws-actions">
-        {allowed.adopt && !d.weekLocked && !d.adoptionWeekLocked && <button className="cj-primary" disabled={blocked||pendingChild} onClick={()=>setConfirm({action:'adopt',plannedWeek:d.plannedWeek ?? null})}>채택해서 테마 만들기</button>}
-        {allowed.regenerate && !d.weekLocked && <button disabled={blocked||pendingChild} onClick={()=>setConfirm({action:'regenerate'})}>{d.status==='DISCARDED'?'이 초안으로 새 초안 생성':'다시 생성'}</button>}
-        {allowed.discard && !d.weekLocked && <button className="ad-danger" disabled={blocked} onClick={()=>setConfirm({action:'discard',plannedWeek:d.plannedWeek})}>버리기</button>}
+        {allowed.adopt && !d.weekLocked && !d.adoptionWeekLocked && <button className="cj-primary" {...busyProps(act.isPending, !!confirm||pendingChild)} onClick={()=>setConfirm({action:'adopt',plannedWeek:d.plannedWeek ?? null})}>채택해서 테마 만들기</button>}
+        {allowed.regenerate && !d.weekLocked && <button {...busyProps(act.isPending, !!confirm||pendingChild)} onClick={()=>setConfirm({action:'regenerate'})}>{d.status==='DISCARDED'?'이 초안으로 새 초안 생성':'다시 생성'}</button>}
+        {allowed.discard && !d.weekLocked && <button className="ad-danger" {...busyProps(act.isPending, !!confirm)} onClick={()=>setConfirm({action:'discard',plannedWeek:d.plannedWeek})}>버리기</button>}
       </div></div>
     {confirm && <Modal title={actionText+' 확인'} onClose={()=>{if(!act.isPending)setConfirm(null)}}>
       <p><strong>{theme?.title || d.input.topic || '주간 테마 초안'}</strong> · {confirm.action==='adopt'
@@ -228,8 +228,8 @@ function ThemeDraftDetail({ draftId, params, change, leave, choose, requestedNot
       <p>{confirm.target?regenConfirmText(confirm.target):confirm.action==='adopt'?'채택하면 이 학년과 적용 주가 고정됩니다. 선택한 장면과 미션 5개로 테마를 만들고, 학생 공개는 게시 관리에서 확정합니다.':
         confirm.action==='discard'?'버린 초안은 다시 채택할 수 없습니다. 장면과 미션은 버림 이력에서 볼 수 있습니다.':'같은 입력으로 별도의 새 초안을 요청합니다.'}</p>
       {confirm.action==='discard' && confirm.plannedWeek && <p>{confirm.plannedWeek} 주차의 편성에서 이 후보가 해제됩니다.</p>}
-      <div className="ws-actions"><button disabled={act.isPending} onClick={()=>setConfirm(null)}>취소</button>
-        <button disabled={act.isPending} className={confirm.action==='discard'?'ad-danger':'cj-primary'} onClick={()=>run(confirm)}>{confirm.target?'다시 만들기':confirm.action==='adopt'?'채택':actionText}</button></div>
+      <div className="ws-actions"><button {...busyProps(act.isPending)} onClick={()=>setConfirm(null)}>취소</button>
+        <button {...busyProps(act.isPending)} className={confirm.action==='discard'?'ad-danger':'cj-primary'} onClick={()=>run(confirm)}>{confirm.target?'다시 만들기':confirm.action==='adopt'?'채택':actionText}</button></div>
       <ErrorNotice error={act.error}/>
     </Modal>}
     {!confirm && <ErrorNotice error={act.error}/>}

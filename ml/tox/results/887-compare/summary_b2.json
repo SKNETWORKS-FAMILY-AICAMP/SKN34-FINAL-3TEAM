@@ -1,0 +1,35 @@
+{
+ "name": "b2",
+ "model": "checkpoints/b2-distill-s42",
+ "threshold": 0.99,
+ "mustPass": {
+  "n": 389,
+  "flagged": 0,
+  "max": 0.9703
+ },
+ "kid": {
+  "blockModel": 7,
+  "blockCombined": 23,
+  "passCombinedFlagged": 0,
+  "block": 100,
+  "pass": 150
+ },
+ "valid": {
+  "n": 9243,
+  "modelF1": 0.6813,
+  "combinedRecall": 0.5817,
+  "combinedFalsePositiveRate": 0.0281
+ },
+ "test": {
+  "n": 21900,
+  "modelF1": 0.7212,
+  "combinedRecall": 0.6318,
+  "combinedFalsePositiveRate": 0.0317
+ },
+ "apeach": {
+  "n": 3770,
+  "modelF1": 0.4391,
+  "combinedRecall": 0.3564,
+  "combinedFalsePositiveRate": 0.0152
+ }
+}

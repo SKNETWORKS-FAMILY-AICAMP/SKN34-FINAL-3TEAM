@@ -6,6 +6,8 @@ import type { PendingCheckout, PaymentState } from '../src/domain/payment.ts'
 import { createPaymentSandbox, testProduct } from '../scripts/payment-test-server.ts'
 import { paymentApi } from '../src/data/payment/api.ts'
 import { setAccessToken } from '../src/data/apiClient.ts'
+import { requestCheckoutOrder } from '../src/data/payment/queries.ts'
+import { readCheckout } from '../src/data/payment/checkoutStorage.ts'
 
 const pending: PendingCheckout = { orderId: 'test-order-123456', amount: 14900, childId: 'child-a', productId: 'premium', orderName: '프리미엄', confirmKey: randomUUID(), createdAt: Date.now() }
 test('실서버 어댑터는 core 주문·승인 계약과 동일 멱등 키를 사용하고 비밀 키를 전송하지 않음', async (t) => {
@@ -85,4 +87,42 @@ test('타임아웃 후 새 결제 없이 조회로 복구, 다른 주문의 PG �
   assert.equal((await (await handle(request('/payments/' + order.orderId), 'a')).json()).status, 'CONFIRMING')
   orderId = order.orderId
   assert.equal((await (await handle(request('/payments/' + order.orderId), 'a')).json()).status, 'APPROVED')
+})
+
+function stubSessionStorage(t: test.TestContext) {
+  const values = new Map<string, string>()
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage')
+  Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  } })
+  t.after(() => { if (descriptor) Object.defineProperty(globalThis, 'sessionStorage', descriptor); else Reflect.deleteProperty(globalThis, 'sessionStorage') })
+}
+const created = (childId: string, productId: string) => ({ orderId: 'order-' + randomUUID(), amount: 14900, orderName: '프리미엄', childId, productId })
+test('주문 생성: 같은 자녀·상품·멱등 키는 진행 중 요청을 공유하고 대기 정보를 저장', async (t) => {
+  stubSessionStorage(t)
+  const order = t.mock.method(paymentApi, 'order', async (childId: string, productId: string) => created(childId, productId))
+  const key = randomUUID()
+  const [a, b] = await Promise.all([requestCheckoutOrder('child-a', 'premium', key), requestCheckoutOrder('child-a', 'premium', key)])
+  assert.equal(order.mock.callCount(), 1)
+  assert.equal(a, b)
+  assert.deepEqual(order.mock.calls[0].arguments, ['child-a', 'premium', key])
+  assert.deepEqual(readCheckout(), a)
+  await requestCheckoutOrder('child-a', 'premium', randomUUID())
+  assert.equal(order.mock.callCount(), 2)
+})
+test('주문 생성: 실패하면 같은 멱등 키로 다시 요청할 수 있음', async (t) => {
+  stubSessionStorage(t)
+  let fail = true
+  const order = t.mock.method(paymentApi, 'order', async (childId: string, productId: string) => {
+    if (fail) { fail = false; throw new Error('network') }
+    return created(childId, productId)
+  })
+  const key = randomUUID()
+  await assert.rejects(requestCheckoutOrder('child-a', 'premium', key), /network/)
+  assert.equal(readCheckout(), null)
+  const retried = await requestCheckoutOrder('child-a', 'premium', key)
+  assert.equal(order.mock.callCount(), 2)
+  assert.equal(retried.childId, 'child-a')
+  assert.deepEqual(readCheckout(), retried)
 })

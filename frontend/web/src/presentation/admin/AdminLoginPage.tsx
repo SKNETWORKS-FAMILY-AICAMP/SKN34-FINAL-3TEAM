@@ -5,10 +5,12 @@ import { isDemo, useAuthentication } from '../../data/classroom/useClassroom.ts'
 import { roleStart } from '../../domain/navigation.ts'
 import { useSession } from '../auth/sessionContext.ts'
 import { Brand, ErrorNotice } from '../shared/ClassroomParts.tsx'
+import { busyProps, useBusyClickGuard } from './busyButton.ts'
 import './admin-login.css'
 
 /** 공개 루트의 관리자 진입(#724). 가입 없이 등록된 관리자 계정만 로그인한다 (#369). */
 export function AdminLoginPage() {
+  useBusyClickGuard()
   const auth = useAuthentication(), { setSession, setSelected } = useSession(), navigate = useNavigate()
   const [params] = useSearchParams()
   const [loginId, setLoginId] = useState(isDemo ? 'admin@example.test' : '')
@@ -41,7 +43,7 @@ export function AdminLoginPage() {
         {isDemo && <p className="admin-login-demo">개발 목업 · 실제 계정 정보를 입력하지 마세요.</p>}
         <label>로그인 ID<input aria-label="로그인 ID" autoComplete="username" value={loginId} onChange={(e) => setLoginId(e.target.value)} maxLength={254} required /></label>
         <label>비밀번호<input aria-label="비밀번호" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} maxLength={128} required /></label>
-        <button type="submit" disabled={auth.adminLogin.isPending}>{auth.adminLogin.isPending ? '확인 중' : '로그인'}</button>
+        <button type="submit" {...busyProps(auth.adminLogin.isPending)}>{auth.adminLogin.isPending ? '확인 중' : '로그인'}</button>
         <ErrorNotice error={auth.adminLogin.error} />
         {isDemo && <details><summary>권한별 시연 계정 보기</summary>
           <ul><li>전체: admin@example.test</li><li>콘텐츠: content@example.test</li><li>운영: ops@example.test</li><li>결제 조회: payment@example.test</li><li>환불: refund@example.test</li></ul>

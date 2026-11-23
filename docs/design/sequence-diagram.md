@@ -15,7 +15,7 @@
 | 화살표 | `->>` 동기 호출, `-->>` 동기 응답, `-)` 비동기 발행(메시지·이벤트) |
 | 내부 호출 | 모든 서비스 간 HTTP에 호출 주체별 `X-Internal-Token`·`X-User-*`·`X-Student-Scope`·`traceparent` 자동 첨부 (`InternalRestClientFactory`·`internal_client`), 받는 쪽이 호출자별 경로 허용 목록 검사(아키텍처 2.2). 다이어그램에서는 생략 |
 | 트랜잭션 | `rect` 영역 = DB 트랜잭션 1개. 영역 안에 서비스 간 HTTP·AMQP 호출 없음 (아키텍처 2.2) |
-| 재시도 | LLM 호출만 ai `LlmClient`에서 재시도, 서비스 간 호출은 재시도 없음 (아키텍처 1.3) |
+| 재시도 | LLM 호출만 ai `LlmClient`에서 재시도, 서비스 간 호출은 재시도 없음 (아키텍처 1.3). 예외: learning→ai 추억 검색 질의 변환 1회(#878, 3.9) |
 | SSE | 15초 heartbeat `: ping`은 모든 SSE 공통이라 생략 |
 
 ---
@@ -879,7 +879,7 @@ sequenceDiagram
     L->>LDB: reflection 저장, attempt COMPLETED
     opt context = THEME_DAY·THEME_REVIEW (EXTRA 제외)
       L->>LDB: memory_search_doc (attempt_id, content_text, PENDING) ON CONFLICT DO NOTHING
-      L->>LDB: 같은 회차(student, theme_id, theme_week_start) 5문제 completed_at 확인
+      L->>LDB: 같은 회차(student, theme_id, theme_week_start) 5문제 completed_at 확인 (시도 고정 버전 요일 또는 게시본 문제)
       opt 5문제 모두 완료
         L->>LDB: theme_frame (awarded_at = 마지막 completed_at) ON CONFLICT DO NOTHING
       end
@@ -912,18 +912,30 @@ sequenceDiagram
   end
   C->>L: POST /internal/students/{id}/memories/search {query}
   L->>A: POST /internal/memory-queries {query(마스킹), today} (8초, 서킷 ai-memory-query)
+  opt 재시도 가능한 실패(5xx·시간 초과·연결 실패, #878)
+    L->>A: 같은 요청 1회 더(대기 없음, 시도마다 서킷에 기록)
+  end
   alt 변환 성공
     A->>LLM: 질의 변환 (callType MEMORY_QUERY)
+    A->>A: "N월 N째 주"는 코드가 기간 계산해 덮어씀(#877)
     A-->>L: {keywords, period, searchText}
     L->>L: 기간 보정(to는 이번 주 월요일까지, from이 to보다 앞이 아니면 버림)
-  else 변환 실패(시간 초과·5xx·형식 밖·서킷 열림) 또는 기능 꺼짐(호출 안 함)
+  else 변환 실패(재시도 뒤·형식 밖·서킷 열림)이고 질문에 기간 낱말 있음
+    L-->>C: 503 AI_UNAVAILABLE (기간 없이 찾지 않음, 임베딩 안 함)
+    C-->>W: 503 (사용량 되돌림)
+  else 변환 실패이고 기간 낱말 없음, 또는 기능 꺼짐(호출 안 함)
     L->>L: keywords 없음·period 없음·searchText = 원문
   end
-  L->>A: POST /internal/embeddings {texts:[searchText]}
+  L->>A: POST /internal/embeddings {texts:[searchText]} (검색 질문 10초)
   A->>LLM: 임베딩 (callType MEMORY_EMBEDDING)
   A-->>L: {vectors}
-  L->>LDB: READY 문서 중 본인·보유 액자 회차·진행 주 제외·기간 필터 + 벡터(유사도 0.35 이상)·키워드(content_text ILIKE) 순위
-  L->>L: RRF(k=60) 합치기 → 회차 단위 상위 3
+  alt 변환 성공·keywords 없음·보정 기간 있음(기간만 질문, #879)
+    L->>LDB: READY 문서 중 본인·보유 액자 회차·진행 주 제외 + 회차 주 월~금 중 기간 안 날 1일 이상(평일 없는 기간은 하루라도 겹침), 유사도 기준·키워드 조건 없음
+    L->>L: 기간 안 회차 최신순 상위 3
+  else 그 밖
+    L->>LDB: READY 문서 중 본인·보유 액자 회차·진행 주 제외·기간 필터 + 벡터(유사도 0.35 이상)·키워드(content_text ILIKE) 순위
+    L->>L: RRF(k=60) 합치기 → 회차 단위 상위 3
+  end
   L-->>C: {state: RESULTS|NO_RESULTS|NO_RECORDS, cards[≤3]}
   C-->>W: 200 (learning 응답 그대로)
 
@@ -949,7 +961,7 @@ sequenceDiagram
   end
 ```
 
-- 임베딩 장애는 `503 AI_UNAVAILABLE`로 검색 실패. 질의 변환 실패는 검색 실패가 아니며 원문 질문으로 벡터 단독 검색([결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16)). 설명의 질의 임베딩은 변환 없이 원문 질문을 쓴다. 설명 생성·검사 실패는 `200 {state: FAILED}`로 돌려 화면이 검색 결과를 유지
+- 임베딩 장애는 `503 AI_UNAVAILABLE`로 검색 실패. 질의 변환 실패는 재시도 가능한 실패만 한 번 더 부르고, 끝내 실패하면 질문에 기간 낱말이 있을 때 `503 AI_UNAVAILABLE`(기간 밖 기록을 보여 주지 않음), 없을 때 원문 질문으로 벡터 단독 검색([결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16), [16.9](../report/retention-expansion.md#169-기간-해석변환-실패기간만-질문-877878879-2026-11-22)). 기간만 질문의 회차 주 평일 기준은 그 경로에만 쓰고, 하이브리드·원문 검색의 기간 필터는 하루라도 겹치면 넣는다. 설명의 질의 임베딩은 변환 없이 원문 질문을 쓴다. 설명 생성·검사 실패는 `200 {state: FAILED}`로 돌려 화면이 검색 결과를 유지
 - ai 요청에 학생·시도·답변 ID·이름을 넣지 않고 닉네임은 마스킹(NFR-SEC-03). 질문·설명은 저장하지 않음
 
 ### 3.10 검색 문서 임베딩 주기 작업 (P27, #563 구현)
@@ -1174,6 +1186,11 @@ sequenceDiagram
         RW->>A: POST /internal/report-explanations {grade, inputType, text, scores} (호출당 80초, 유형당 1회)
         A->>X: InvokeEndpoint(LoRA IC 지정, 본문은 OpenAI 호환 형식, 일 23:30~월 02:00 예약 확장으로 1대 기동, #742·#746)
         X-->>A: 설명 초안
+        A->>A: 첫 출력 형식 및 정리 후 내용 확인
+        opt 형식 오류 또는 정리 후 설명 부족 (#850, 75초 마감 공유)
+          A->>X: InvokeEndpoint 1회 재생성 (repetition_penalty=1.1)
+          X-->>A: 새 설명 초안
+        end
         A->>A: 규칙 후처리, 금지어·점수·등급 표현 검사, 인용 선택
         A-->>RW: {active, explanation, versions} 또는 실패
         RW->>RW: report 재검사 (숫자·금지어·수량·별명·인용 원문 부분 문자열)

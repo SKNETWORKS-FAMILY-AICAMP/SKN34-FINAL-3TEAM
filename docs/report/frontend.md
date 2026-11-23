@@ -958,7 +958,7 @@ core #704(바닥 `FLOOR`·방 소품 `DECOR`, V50, 2026-11-16 병합)의 학생 
 
 ## 35. 내 방 바닥·방 소품: 화면 (#705, 2026-11-17)
 
-위 "데이터·사기" 절 뒤에 화면을 사용자와 단계마다 확인하며 만들었다. 방 소품 놓은 칸은 core #723(PR #736, 2026-11-17 병합) 계약 그대로다. 결정은 모두 사용자 결정(웹 화면)이고, 서버 계약을 바꾸는 것(놓은 것마다 색)만 core 후속으로 따로 낸다.
+위 "데이터·사기" 절 뒤에 화면을 사용자와 단계마다 확인하며 만들었다. 방 소품 놓은 칸은 core #723(PR #736, 2026-11-17 병합) 계약 그대로다. 결정은 모두 사용자 결정(웹 화면)이고, 서버 계약을 바꾸는 것(놓은 것마다 색)만 core 후속으로 따로 낸다(core #758 병합 뒤 웹은 #805에서 켬, 아래 "core 계약과 다른 점").
 
 ### 정한 것 (사용자 결정 2026-11-17)
 
@@ -1018,7 +1018,8 @@ core #704(바닥 `FLOOR`·방 소품 `DECOR`, V50, 2026-11-16 병합)의 학생 
 
 ### core 계약과 다른 점 · 남은 일
 
-- **놓은 것마다 색(`color`)은 core에 아직 없다**: #723(PR #736)이 색을 정하기 전에 구현돼 저장·조회에 `color`가 없다. 지금 계약(`RoomDecorSpotInput`, `additionalProperties: false`)에 없는 칸이라 웹은 저장할 때 `color`를 보내지 않고, **색 고르기를 숨겨 두어**(`StudentRoom.tsx` `DECOR_COLOR_PICK = false`) 놓으면 기본 색이다(켜면 같이 보냄). 받은 색(목업·나중 실서버)은 그린다. core 색 후속 이슈가 병합되면 설정 하나를 켠다
+- **놓은 것마다 색(`color`)은 #805에서 켰다(2026-11-23)**: #705 당시 core #723(PR #736)에 `color`가 없어 색 고르기를 숨겨 두었고(`DECOR_COLOR_PICK = false`), core #758(PR #761, V52)이 병합된 뒤 #805에서 **플래그(상수·조건·주석)를 지웠다**. 옮기기 판에 색 단추(`role=group` "<소품> 색", 단추마다 `aria-pressed`·`aria-label`)가 늘 보이고, 저장 요청은 계약 칸 다섯 개(`surface`·`col`·`row`·`itemKey`·`color`)를 그대로 보낸다. core는 색을 빼면 기본 색(NULL)으로 바꿔 저장하므로 저장 API 타입의 `color`를 필수(`string | null`, `data/retention/api.ts`·`queries.ts`)로 바꿔 다른 호출이 색을 빠뜨려 저장된 색을 지우는 일을 막았다. 받은 색은 내 방·친구 방 모두 그대로 그린다(읽기·그리기·MSW는 #705 때부터 색을 다룸, 코드 변경 없음). 고른 색 이름은 화면 글로 따로 보이지 않고 `aria-label`·`title`에만 있다(사용자 결정 2026-11-22, 색 목록·규칙 변경 없음). #885 실서버 점검에서 고른 색 단추에 키보드 초점이 가면 초점이 안 보이는 것(고른 표시와 초점 표시가 같은 외곽선)을 찾아 `room.css`에서 고른 표시를 고리(그림자), 초점을 파란 외곽선(`#3e8bcb`, 옮기기 판 바탕 `#fff7ea`와 3.43:1)으로 나눔. 고리 색은 처음에 #705의 주황 `#f08a24`였으나 바탕과 2.36~2.47:1로 WCAG 1.4.11(3:1) 미만이라 짙은 주황 `#b85c00`(4.32:1)으로 바꿈(사용자 결정 2026-11-23, 1440·390 비교 캡처 확인). 고른 소품 점선·옮기기 판 테두리의 `#f08a24`는 그대로
+- 실서버 확인(#805, 모의: 대역 compose — Google·LLM·M2·설명 sLLM·토스 대역, core·learning·DB 실제, develop `f0555bf3` + 이 변경, 2026-11-23 월 KST): 미션 마무리로 받은 포인트로 시드 "E2E 작은 화분"을 사서 놓고 하늘을 고른 뒤 저장 → PUT 요청·응답 `color: "sky"`, 다른 메뉴 갔다 와도·새로 고침 뒤 PIN 다시 입력해도 하늘로 그림(GET `color: "sky"`, 다시 고르면 하늘이 눌린 상태), DB `room_decor_spot.color = 'sky'`, 다른 학생이 친구 생각에서 놀러 간 친구 방 응답 `decor[].color: "sky"`·그림도 하늘. 스크립트·결과(학생 ID·닉네임 없음): [evidence/issue805-room-color](evidence/issue805-room-color/). kind 실서버 확인은 아직(담당 팀원에게 부탁 예정)
 - core V51은 기존 놓은 자리 행이 있으면 지우지 않고 멈춘다(#736 결정). 웹과 상관없음
 - 큰 소품의 차지 칸·겹침·가구 칸·길·PC 화면에 보이는지는 웹만 본다(#723 나눔). 서버는 기준 칸·범위·개수·보유만 본다. 그래서 서버 칸 범위 안이어도 웹이 못 놓게 하는 칸이 있다(가구 칸과 같은 까닭)
 - 칸 그림(서랍 카드)은 평면 그림이다(모양·색은 방 안과 같음)
@@ -1029,7 +1030,8 @@ core #704(바닥 `FLOOR`·방 소품 `DECOR`, V50, 2026-11-16 병합)의 학생 
 
 - 단위: `tests/roomDecor.test.ts`(막힌 칸·drape, 놓기 검사 6가지, 그리지 않을 소품, 처음 놓을 자리·화살표, 그림 목록·색, 놓은 칸 읽기), `tests/retentionMock.test.ts`(MSW 놓은 칸: 범위·같은 기준 칸·보유·색 형식·9개 422, 정렬, 거절 뒤 그대로)
 - 브라우저: `tests/browser/roomDecor.spec.ts`(꾸미기 탭 셋·서랍 탭·칩, 서랍에서 바로 열기, 방 소품 사기·놓기·옮기기(단추·방향키)·막힘 안내·저장, 늦게 온 액자 목록, 좁은 화면 확대·화살표·밀어 보기·폰 앨범 단추, 다시 놓아 주세요) 1440·1024·390. `tests/browser/friendRoom.spec.ts`에 친구가 놓은 방 소품이 보임
-- 실서버 E2E: `tests/e2e/student-room.spec.ts`에 방 꾸미기 › 방 소품(놓음 0/0, 오류 없음)
+- 색(#805): `roomDecor.spec.ts` 원래 방 소품 시험에는 색 묶음·단추 8개·기본 주황 눌림과 저장 `color: null`만 더하고, 색 고르기는 새 시험 "방 소품 색(#805)"으로 나눔(한 시험에 다 넣으니 길어져 시간 초과 위험). 새 시험: 하늘을 누르면 그것만 눌리고 칸 그림·방 그림이 하늘, Tab·Shift+Tab으로 색을 옮겨 Space로 고름, 고른 색에 초점이 있으면 파란 외곽선과 짙은 주황 고리가 함께 보임, 저장 요청 칸 다섯 개·`color: 'sky'`, 홈에 갔다 다시 들어와도 하늘로 그리고 다시 고르면 하늘이 눌림. `friendRoom.spec.ts`에 친구가 고른 색(시계·러그 분홍, 쿠션 소파 하늘)으로 그림. `tests/retention.test.ts`에 `saveDecorSpots` 요청 본문이 색(`null` 포함)을 실음. 결과(2026-11-23, PR 직전 develop `dadc2dd5` 위에서 다시 실행): 단위 422개 통과, `test:types`·oxlint 0·빌드 통과, 브라우저 전체 318개 중 316개 통과·2개 건너뜀(1440 전용 시험, 1440·1024·390, 기본 설정·포트 5271, 21.8분), `test:rewards` 12·`test:auth` 63·`test:models` 18개 통과. 고리 색을 바꾼 직후(`a2af2dec`)에는 `roomDecor`·`friendRoom`·`accessibility` 44개 통과. 옮기기 판 1440·390 캡처에서 색 줄 넘침 없음(1440 한 줄, 390 두 줄, 단추 44px)
+- 실서버 E2E: `tests/e2e/student-room.spec.ts`에 방 꾸미기 › 방 소품(놓음 0/0, 오류 없음). 색 고르기·저장은 포인트가 필요해 E2E에 넣지 않고 위 1회 확인 스크립트로 기록
 
 ## 36. 관리자 테마 초안 상세·채택과 움직임 재생기 (#441, 2026-11-12)
 
@@ -1210,7 +1212,54 @@ NFR-UX-02(주요 기능 키보드·터치 조작, 오류·진행 상태를 색�
 - MSW: 재학습 등록 버전 1개(추천 태그)·검토 글 3개(합성), core와 같은 규칙의 목록·라벨 핸들러
 - 검증: 웹 단위 418개(새 8개), `test:types`·`lint`·`build` 통과. 브라우저: 모델 화면(`test:models`) 18개(새 추천 태그 시험 × 화면 3종), 표현 검토·관리자 화면 구성 2개 파일 36개(새 표현 검토 9개 포함) 통과. 전체 브라우저는 원격 CI로 확인. 로컬 자동 검증 결과이며 실서버·원격 CI 결과와 구분한다
 
-## 50. 피드백 대기 표시 — 친구 돋보기와 단계 문구 (#847, 2026-11-23)
+## 50. 관리자 글자 대비·가로 스크롤 표 키보드 접근 (#914, NFR-UX-02, 2026-11-23)
+
+#885 실서버 UX 점검에서 남은 관리자 axe serious 위반(글자 대비 WCAG 1.4.3, 스크롤 영역 키보드 접근 WCAG 2.1.1)을 고쳤다. 범위는 담당자 결정(2026-11-23): 보조 글·화면별 표 글·관리자 로그인 글 대비 4.5:1 이상, 390px 가로 스크롤 표 키보드 접근, 공통 초점 외곽선 3:1 이상.
+
+- **색**: `admin-design.css`·`admin-login.css`·`period-picker.css`의 글자색 선언 약 70곳을 같은 색상·채도에서 명도만 낮췄다(#763 디자인 유지). 기준은 페이지 배경 `#f3f5f7`에서 4.6:1, 연녹 배경 위 글(`.ad-note`·`.ad-context-note`, 로그인 소개 칸)은 `#edf3ef`에서 4.6:1. 아이콘(svg)·꺼진 단추·입력 안내 글(placeholder)·어두운 사이드바 글은 바꾸지 않았다. 예: 머리 위치 글 `#859087`→`#656f67`, 제목 위 설명 `#768a7d`→`#607166`, 표 보조 글 `#6c7d72`→`#617066`, 공통 보조 글 변수 `--cj-muted` `#697670`→`#636f6a`, 로그인 머리 글 `#809587`→`#5f7165`
+- **초점 외곽선**: 공통 `:focus-visible` `#79aa95`(흰 배경 2.63:1)→`#5f967e`(흰 3.41:1·`#f3f5f7` 3.12:1·사이드바 `#16332f` 3.97:1, WCAG 1.4.11)
+- **가로 스크롤 표**: 공통 부품 `TableScroll`(`AdminUi.tsx`)로 관리자 표 감싸개 12곳을 바꿨다. 모두 이름 있는 영역(`role="region"`, 예: "AI 사용량 표")이고, 표가 실제로 넘칠 때만 `tabIndex=0`을 줘 넓은 화면에서는 Tab 순서가 늘지 않는다(`ResizeObserver`로 다시 판단). #885에서 걸린 곳은 미션 초안·AI 사용량·결제·환불이지만 넘치는 표는 데이터에 따라 달라(이번 재점검에서는 미션 편집 성취기준 표·작업 재처리도 걸림) 같은 감싸개를 모두 바꿨다
+- **회귀 시험** `tests/browser/admin-contrast.spec.ts`(MSW): 관리자 로그인·운영 현황과 8개 화면에서 보이는 모든 글의 글자색·배경 대비 4.5:1(큰 글 3:1) 이상, 초점 외곽선 흰 배경 3:1 이상, 390px에서 AI 사용량 표가 이름 있는 영역으로 Tab 초점을 받고 화살표·End로 가로 이동(1440px에서는 넘치지 않아 `tabindex` 없음). 고치기 전 CSS로 돌리면 대비·외곽선 시험이 실패함을 확인했다
+- **재점검(모의·대역 compose)**: 이 브랜치로 `compose.e2e.yaml` 스택을 새로 빌드해 axe-core 4.10.2(`wcag2a`·`wcag2aa`·`wcag21aa`·`wcag22aa`)로 관리자 로그인·메뉴 16개·미션 편집·테마 초안 상세를 1440·390에서 점검했다. 고치기 전 36화면 serious 191건(대비 186·스크롤 영역 5) → 고친 뒤 0건. 새 스택이라 작업 목록이 비어 작업 상세는 열지 못했고, #885 때의 성취기준 시드·실패 초안은 넣지 않았다. 원본은 [evidence/issue914-admin-contrast](evidence/issue914-admin-contrast/). MSW 목업으로도 같은 화면 38개에서 serious 0
+- **검증(로컬)**: 웹 단위 418개, `test:types`·`lint`·`tsc -b` 통과, 브라우저 전체 318개 통과(2개 건너뜀). 관리자 로그인·감사 이력을 1440·390에서 고치기 전·후로 찍어 배치·색 계열이 그대로임을 눈으로 확인했다(저장소에 시안 파일이 없어 시안 대조는 하지 않음). 화면 읽기 프로그램의 실제 음성은 확인하지 않았다. API 변경 없음
+- 남은 것: 학부모 화면 대비·체크박스 크기 #915(52절에서 고침) (처리 중 단추 초점 #917은 51절)
+
+## 51. 관리자 처리 중 단추의 키보드 초점 유지 (#917, NFR-UX-02, 2026-11-23)
+
+#885 추가 확인에서 처리 중에 `disabled`로 꺼지는 저장·요청 단추 때문에 키보드 초점이 `body`로 빠졌다(WCAG 2.4.3). 담당자 결정(2026-11-23): 관리자 화면만, 처리 중에는 `disabled` 대신 `aria-disabled`와 중복 제출 막기로 초점을 단추에 두고, 오류 글이 보이는 영역 밖이면 보이게 스크롤한다. #641(학생 제출 뒤 결과 안내로 초점 이동)처럼 초점을 옮기지는 않는다.
+
+- **공통 부품**
+  - `busyButton.ts`: `busyProps(busy, disabled)`는 처리 중이면 `aria-disabled`만, 입력 부족 같은 다른 이유는 그대로 `disabled`. `useBusyClickGuard()`는 `aria-disabled="true"` 단추의 클릭(Enter·Space·입력 칸 Enter 제출 포함)을 문서 캡처 단계에서 막는다. `AdminWorkspace`·`AdminLoginPage`에서만 건다
+  - `useAdminMutation`: 처리 중에 다시 부르면 두 번째 요청을 보내지 않는다(무시된 `mutateAsync`는 끝나지 않는 Promise라 성공·실패 처리가 두 번 돌지 않음)
+  - `ErrorNotice`: 관리자 화면(`.admin-shell`·`.admin-login-page`) 안에서 새 오류가 생기면 `scrollIntoView({ block: 'nearest' })`로 보이게 한다. 이미 보이면 움직이지 않고 초점은 옮기지 않는다. 학부모·학생 화면은 그대로
+  - 모양: `button[aria-disabled="true"]`를 꺼진 단추와 같은 색으로(`admin-design.css`·`admin-login.css`)
+- **적용**: 관리자 15개 파일의 처리 중 단추 68곳(변경 요청 처리 중 54곳, 목록 조회 중인 새로고침·페이지 단추 14곳). 처리 중 입력 칸을 끄는 `fieldset`·`textarea`(모델 승인 범위, 미션 검토 의견)는 초점이 단추에 있을 때라 그대로 둔다
+- **회귀 시험** `tests/browser/admin-busy-focus.spec.ts`(MSW, 1440·390): fetch를 1.2초 늦춘 채 키보드로 아이템 저장(중복 코드 409)·테마 초안 생성 요청(409로 대체) → 처리 중 초점이 `aria-disabled` 단추, 오류 뒤 같은 단추, 오류 글이 창 안, 처리 중 Enter·Space를 더 눌러도 요청 1번. 고치기 전 코드로는 처리 중 초점이 `BODY`라 실패함을 확인했다
+- **재확인(모의·대역 compose)**: 시드 코드 `E2E_HAT` 아이템 저장 409와 같은 학년·주 두 번째 테마 초안 요청 오류를 응답 1초 지연으로 1440·390에서 확인했다. 고치기 전 4경우 모두 초점 `BODY`(아이템 오류 글은 창 밖) → 고친 뒤 4경우 모두 처리 중·오류 뒤 초점이 단추에 있고 오류 글이 창 안. 원본은 [evidence/issue917-admin-busy-focus](evidence/issue917-admin-busy-focus/)
+- **검증(로컬)**: 웹 단위 418개, `test:types`·`lint`·`build` 통과, 브라우저 전체 319개(2개 건너뜀)·`test:models` 18개·`test:auth` 63개 통과. 화면 읽기 프로그램의 실제 음성은 확인하지 않았다. API 변경 없음
+- **남은 곳(후속)**: 학부모·서비스·학생 화면의 같은 모양(`disabled={…isPending…}` 한 줄 표기 기준 69곳·27개 파일)은 이번 범위 밖이라 그대로다. 많은 순: `service/GuardianTransfers` 7, `service/Withdrawal`·`parent/StudentDevices`·`parent/PaymentManagement` 각 6, `service/AccountLifecycle`·`parent/ConsentSettings`·`parent/AccountForms` 각 4, `student/StudentSharingPage`·`service/NotificationCenter`·`parent/ParentReports` 각 3, `student/world/StudentCommunity`·`student/world/MemorySearch`·`student/StudentWorkPage`·`student/SelfAssessmentPanel`·`auth/ParentPasswordForms`·`ClassroomApp` 각 2, 그 밖 11개 파일 각 1
+
+## 52. 관리자 운영 홈·주간 테마 검수·게시 관리 화면 (#882, 2026-11-23 문서 정리 #909)
+
+PR #889의 관리자 화면을 [user-flow 3.3](../design/user-flow.md#33-관리자)에 반영했다. 서버 규칙은 [learning 보고서 43절](learning.md#43-주간-테마-장면-검수주차-편성게시-확정-882-2026-11-23-문서-정리-909).
+
+- 메뉴: 콘텐츠 '미션 관리'·'미션 초안'(`/admin/mission-drafts`)·'주간 테마 검수'(`/admin/theme-drafts`)·'게시 관리'(`/admin/themes`)·'꾸미기 아이템', 서비스 운영에 '표현 검토'(`/admin/expressions`, #728)
+- 운영 홈(`/admin/home`): `GET /admin/overview/workload`의 처리 대기 건수를 권한별 카드로 보이고 전용 목록으로 같은 조건을 넘긴다. CONTENT면 우선 검수 테마와 검사 통과 초안·장면 비교 대기(`comparisonPending=true`)·게시 검토 대기 건수(`AdminReviewHome.tsx`)
+- 주간 테마 검수(`ThemeDraftManager.tsx`): 장면을 주소 값(`scene`·`view`)으로 오가며 버전 두 개 비교, 선택·별표·메모, 요일별 미션과 장면 왕복. 목록 필터 학년·생성 기준 주·버린 초안 숨기기·비교 대기
+- 게시 관리(`WeeklyThemePlanner.tsx`): 학년별 연속 4주 칸에 후보 배치·이동·맞교환·해제, 칸의 테마 열기·게시 확정(확인 창). 잠긴 주는 '게시 중'만 보이고, `PLAN_CONFLICT`·`WEEK_LOCKED`는 새로 불러오라고 안내
+- 화면 검증은 MSW 목업(`mocks/handlers/adminThemeDrafts.ts`·`mocks/fixtures/themePlanning.ts`)과 PR #889 확인을 따른다(이번 정리에서 다시 실행하지 않음)
+
+## 53. 학부모 화면 접근성 serious 4종 수정 (NFR-UX-02, #915, 2026-11-23)
+
+- #885 실서버 점검에서 남은 axe serious 4종을 고쳤다
+- **로그인 보조 글 대비**(`color-contrast`): `/login` 아이디 로그인 폼(`.ux-login-id`) 안에서만 `--cj-muted`를 `#666e69`로 바꿔 "또는 아이디로 로그인"·안내 `small`이 흰 바탕 5.25:1(기존 4.41:1). 전역 `--cj-muted`는 그대로 둬 다른 화면에 영향이 없다
+- **동의 체크박스**(`target-size`): `ConsentFields` 체크박스를 24×24px로 키움(`ws-consent-check`). 온보딩·자녀 추가·동의 설정·자녀 이관이 같은 컴포넌트를 쓴다
+- **학습 현황 카드 이름**(`aria-prohibited-attr`): 생각 유형별 최근 활동 묶음(`.pd-recent-missions`)에 `role="group"`을 붙여 `aria-label`이 읽힌다
+- **문의 결과 "돌아가기"**(`link-in-text-block`): Tailwind 초기화로 빠진 밑줄을 `ws-text-link`로 되살림
+- 회귀: `tests/browser/accessibility.spec.ts`에 카드 역할·링크 밑줄·자녀 추가 체크박스 크기 시험 추가(1440·1024·390). 수정 전 코드에서 세 검사가 각각 실패하는 것을 확인했다. 로그인 아이디 폼은 실제 모드에서만 나와 모의 E2E로 재지 못해, 실제 모드 개발 서버에서 API를 401로 막고 띄워 계산된 색으로 5.25:1을 한 번 쟀다(1440, 로컬 수동)
+- 검증: `lint`·`tsc -b` 통과, 브라우저 `accessibility.spec.ts` 15개, 학부모 영향 파일(`parentOverview`·`parentManagement`·`workspaces`) 46개 통과. 로컬 자동 검증 결과다. 실서버 재점검(대역 compose, #885 스크립트, 1440·390): 학부모·학부모 로그인 serious 15건 → 0, 전체 99회 serious 0([evidence/issue915-parent-a11y](evidence/issue915-parent-a11y/README.md))
+
+## 54. 피드백 대기 표시 — 친구 돋보기와 단계 문구 (#847, 2026-11-23)
 
 답을 보낸 뒤 피드백은 최대 80초 걸린다(core→learning 피드백 80초, api-spec 3.2). 지금까지 기다리는 동안 보이는 것은 피드백 상자 제목("답을 저장했어요. 피드백을 준비하고 있어요.")뿐이었다. 이번에 고른 친구(착용 포함)가 돋보기로 답을 살피는 그림과, 시간에 따라 바뀌는 말풍선 문구를 더했다. **웹만 바꿨다**: SSE·learning·core 계약은 그대로다. 피드백 SSE는 `status(RUNNING)`을 한 번만 보내고 진행 정보가 없다. 그래서 퍼센트·진행 막대는 쓰지 않는다. 막대를 두면 실제 진행과 상관없이 움직이는 가짜 막대가 되기 때문이다.
 
