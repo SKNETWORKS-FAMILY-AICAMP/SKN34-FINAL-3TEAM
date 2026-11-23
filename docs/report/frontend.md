@@ -1222,7 +1222,7 @@ NFR-UX-02(주요 기능 키보드·터치 조작, 오류·진행 상태를 색�
 - **회귀 시험** `tests/browser/admin-contrast.spec.ts`(MSW): 관리자 로그인·운영 현황과 8개 화면에서 보이는 모든 글의 글자색·배경 대비 4.5:1(큰 글 3:1) 이상, 초점 외곽선 흰 배경 3:1 이상, 390px에서 AI 사용량 표가 이름 있는 영역으로 Tab 초점을 받고 화살표·End로 가로 이동(1440px에서는 넘치지 않아 `tabindex` 없음). 고치기 전 CSS로 돌리면 대비·외곽선 시험이 실패함을 확인했다
 - **재점검(모의·대역 compose)**: 이 브랜치로 `compose.e2e.yaml` 스택을 새로 빌드해 axe-core 4.10.2(`wcag2a`·`wcag2aa`·`wcag21aa`·`wcag22aa`)로 관리자 로그인·메뉴 16개·미션 편집·테마 초안 상세를 1440·390에서 점검했다. 고치기 전 36화면 serious 191건(대비 186·스크롤 영역 5) → 고친 뒤 0건. 새 스택이라 작업 목록이 비어 작업 상세는 열지 못했고, #885 때의 성취기준 시드·실패 초안은 넣지 않았다. 원본은 [evidence/issue914-admin-contrast](evidence/issue914-admin-contrast/). MSW 목업으로도 같은 화면 38개에서 serious 0
 - **검증(로컬)**: 웹 단위 418개, `test:types`·`lint`·`tsc -b` 통과, 브라우저 전체 318개 통과(2개 건너뜀). 관리자 로그인·감사 이력을 1440·390에서 고치기 전·후로 찍어 배치·색 계열이 그대로임을 눈으로 확인했다(저장소에 시안 파일이 없어 시안 대조는 하지 않음). 화면 읽기 프로그램의 실제 음성은 확인하지 않았다. API 변경 없음
-- 남은 것: 학부모 화면 대비·체크박스 크기 #915 (처리 중 단추 초점 #917은 51절)
+- 남은 것: 학부모 화면 대비·체크박스 크기 #915(52절에서 고침) (처리 중 단추 초점 #917은 51절)
 
 ## 51. 관리자 처리 중 단추의 키보드 초점 유지 (#917, NFR-UX-02, 2026-11-23)
 
@@ -1248,3 +1248,13 @@ PR #889의 관리자 화면을 [user-flow 3.3](../design/user-flow.md#33-관리�
 - 주간 테마 검수(`ThemeDraftManager.tsx`): 장면을 주소 값(`scene`·`view`)으로 오가며 버전 두 개 비교, 선택·별표·메모, 요일별 미션과 장면 왕복. 목록 필터 학년·생성 기준 주·버린 초안 숨기기·비교 대기
 - 게시 관리(`WeeklyThemePlanner.tsx`): 학년별 연속 4주 칸에 후보 배치·이동·맞교환·해제, 칸의 테마 열기·게시 확정(확인 창). 잠긴 주는 '게시 중'만 보이고, `PLAN_CONFLICT`·`WEEK_LOCKED`는 새로 불러오라고 안내
 - 화면 검증은 MSW 목업(`mocks/handlers/adminThemeDrafts.ts`·`mocks/fixtures/themePlanning.ts`)과 PR #889 확인을 따른다(이번 정리에서 다시 실행하지 않음)
+
+## 53. 학부모 화면 접근성 serious 4종 수정 (NFR-UX-02, #915, 2026-11-23)
+
+- #885 실서버 점검에서 남은 axe serious 4종을 고쳤다
+- **로그인 보조 글 대비**(`color-contrast`): `/login` 아이디 로그인 폼(`.ux-login-id`) 안에서만 `--cj-muted`를 `#666e69`로 바꿔 "또는 아이디로 로그인"·안내 `small`이 흰 바탕 5.25:1(기존 4.41:1). 전역 `--cj-muted`는 그대로 둬 다른 화면에 영향이 없다
+- **동의 체크박스**(`target-size`): `ConsentFields` 체크박스를 24×24px로 키움(`ws-consent-check`). 온보딩·자녀 추가·동의 설정·자녀 이관이 같은 컴포넌트를 쓴다
+- **학습 현황 카드 이름**(`aria-prohibited-attr`): 생각 유형별 최근 활동 묶음(`.pd-recent-missions`)에 `role="group"`을 붙여 `aria-label`이 읽힌다
+- **문의 결과 "돌아가기"**(`link-in-text-block`): Tailwind 초기화로 빠진 밑줄을 `ws-text-link`로 되살림
+- 회귀: `tests/browser/accessibility.spec.ts`에 카드 역할·링크 밑줄·자녀 추가 체크박스 크기 시험 추가(1440·1024·390). 수정 전 코드에서 세 검사가 각각 실패하는 것을 확인했다. 로그인 아이디 폼은 실제 모드에서만 나와 모의 E2E로 재지 못해, 실제 모드 개발 서버에서 API를 401로 막고 띄워 계산된 색으로 5.25:1을 한 번 쟀다(1440, 로컬 수동)
+- 검증: `lint`·`tsc -b` 통과, 브라우저 `accessibility.spec.ts` 15개, 학부모 영향 파일(`parentOverview`·`parentManagement`·`workspaces`) 46개 통과. 로컬 자동 검증 결과다. 실서버 재점검(대역 compose, #885 스크립트, 1440·390): 학부모·학부모 로그인 serious 15건 → 0, 전체 99회 serious 0([evidence/issue915-parent-a11y](evidence/issue915-parent-a11y/README.md))

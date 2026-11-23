@@ -1,0 +1,725 @@
+[
+ {
+  "role": "public",
+  "screen": "학부모 로그인",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "public",
+  "screen": "학부모 로그인",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "public",
+  "screen": "관리자 로그인",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "public",
+  "screen": "관리자 로그인",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "새 보호자 온보딩(동의)",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "새 보호자 온보딩(동의)",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "PIN 로그인",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "풀이",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "학습 현황",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트·AI 챗봇",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정·자녀 설정",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "기기·PIN",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "이용권·결제",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": [
+   {
+    "id": "landmark-complementary-is-top-level",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "parent",
+  "screen": "도움말",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의 결과",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "공지",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "알림",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "보호자 이전",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "자녀 추가",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트 목록(창)",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "주간 리포트 상세",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "홈",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "시작 이야기",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "단서 모음",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "미션 고르기",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 공책",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "생각 활동",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "추억 앨범",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "꾸미기",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "뭉치 친구들",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "친구 생각",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "설정",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 포인트",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "도움말",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방 서랍(방 소품)",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방 옮기기 판(색 단추)",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "운영 현황",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "감사 이력",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 관리",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "미션 초안",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "게시 관리",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "주간 테마 검수",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "꾸미기 아이템",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 재처리",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 대기열",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "오류 신고",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "문의·공지",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "모델·프롬프트",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "표현 검토",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "AI 사용량",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "결제·환불",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 상세",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 편집",
+  "width": 1440,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "학습 현황",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "리포트·AI 챗봇",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "계정·자녀 설정",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "기기·PIN",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "이용권·결제",
+  "width": 390,
+  "violations": [],
+  "bestPractice": [
+   {
+    "id": "landmark-complementary-is-top-level",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "parent",
+  "screen": "도움말",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "문의 결과",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "공지",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "알림",
+  "width": 390,
+  "violations": [],
+  "bestPractice": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "parent",
+  "screen": "계정",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "보호자 이전",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "parent",
+  "screen": "자녀 추가",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "운영 현황",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "감사 이력",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "미션 관리",
+  "width": 390,
+  "violations": [],
+  "bestPractice": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "count": 1
+   }
+  ]
+ },
+ {
+  "role": "admin",
+  "screen": "미션 초안",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "게시 관리",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "주간 테마 검수",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "꾸미기 아이템",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 재처리",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "작업 대기열",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "오류 신고",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "문의·공지",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "모델·프롬프트",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "표현 검토",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "AI 사용량",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "admin",
+  "screen": "결제·환불",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "PIN 로그인",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "홈",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "시작 이야기",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "단서 모음",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "미션 고르기",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 공책",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "생각 활동",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 방",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "추억 앨범",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "꾸미기",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "뭉치 친구들",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "친구 생각",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "설정",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "내 포인트",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ },
+ {
+  "role": "student",
+  "screen": "도움말",
+  "width": 390,
+  "violations": [],
+  "bestPractice": []
+ }
+]
