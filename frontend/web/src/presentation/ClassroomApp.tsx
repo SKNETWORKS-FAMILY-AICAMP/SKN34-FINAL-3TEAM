@@ -532,7 +532,8 @@ export function ClassroomApp() {
                 onOpen={(m) => openMission(m.id, 'EXTRA')}
               />
             ) : detail ? (
-              <StudentJournalEntry key={detail.attemptId} record={detail} child={child} onBack={() => setDetail(null)} onWork={(id) => { setDetail(null); setWork(id) }} />
+              <StudentJournalEntry key={detail.attemptId} record={detail} child={child} onBack={() => setDetail(null)} onWork={(id) => { setDetail(null); setWork(id) }}
+                onScene={(day) => { setDetail(null); navigate(`/student/theme/scene/${day}`) }} />
             ) : (
               <StudentJournal key={child.id} child={child} onDetail={setDetail} onContinue={setWork} onMissions={() => setPage('missions')} />
             )}

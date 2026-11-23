@@ -48,7 +48,7 @@ test('내 공책 기록 상세는 답 버전 카드와 학생 말로 보이고 �
   await student(page)
   // 기존 MSW fixture만 구성한다(합성 기록, 실서버·외부 모델 호출 없음)
   await page.evaluate(async () => {
-    const { fixtureStore, persistFixtureState } = await import('/src/mocks/fixtures/student.ts' as string)
+    const { fixtureStore, persistFixtureState, startedContexts } = await import('/src/mocks/fixtures/student.ts' as string)
     const { demoMissions } = await import('/src/data/classroom/demoGateway.ts' as string)
     const data = fixtureStore.snapshot(), child = data.session.child
     const mission = demoMissions(child.grade)[0]
@@ -68,6 +68,8 @@ test('내 공책 기록 상세는 답 버전 카드와 학생 말로 보이고 �
       ],
     }] })
     persistFixtureState()
+    // 더 풀어 보기 기록으로(테마 문제는 다시 풀기가 토요일 규칙을 따름, #807 — todayScene.spec에서 따로 확인)
+    startedContexts.set('journal-detail-648', 'EXTRA')
   })
   await navigate(page, '/student/journal')
   await page.locator('.st-journal-open', { hasText: '같은 수를 다르게 세기' }).click()

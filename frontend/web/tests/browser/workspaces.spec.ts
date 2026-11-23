@@ -73,7 +73,7 @@ test('학생 결과의 저번 답은 내 답 아래 한 줄로 보인다 @respon
   // 기존 MSW fixture만 구성한다. 실서버·학생 원문·외부 모델 호출은 사용하지 않는다.
   await page.evaluate(async () => {
     const path = '/src/mocks/fixtures/student.ts'
-    const { fixtureStore, persistFixtureState } = await import(path)
+    const { fixtureStore, persistFixtureState, startedContexts } = await import(path)
     const data = fixtureStore.snapshot()
     const childId = data.session.child.id
     const base = data.attempts.find((a: { studentId: string; finishedAt?: string }) => a.finishedAt)
@@ -91,6 +91,8 @@ test('학생 결과의 저번 답은 내 답 아래 한 줄로 보인다 @respon
     current.answers[0].text = '이번에는 까닭을 보탠 합성 답입니다.'
     fixtureStore.restoreSnapshot({ ...data, attempts: [...data.attempts, previous, current] })
     persistFixtureState()
+    // 더 풀어 보기 기록으로(테마 문제는 다시 풀기가 토요일 규칙을 따름, #807 — todayScene.spec에서 따로 확인)
+    for (const id of ['browser-previous', 'browser-current']) startedContexts.set(id, 'EXTRA')
     history.pushState({}, '', '/student/attempts/browser-current')
     dispatchEvent(new PopStateEvent('popstate'))
   })

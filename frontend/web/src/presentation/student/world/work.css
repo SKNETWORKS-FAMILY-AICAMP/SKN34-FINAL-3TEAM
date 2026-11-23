@@ -940,6 +940,8 @@
 #class-journal .st-world .sw-howwas .sw-reflect p[role='alert'] { grid-column: 1 / -1; margin: 0; color: #a3360e; font-weight: 700; }
 #class-journal .st-world .sw-howwas-done { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; }
 #class-journal .st-world .sw-howwas-done p { display: flex; flex-direction: column; margin: 0; }
+/* 평일에 끝낸 테마 문제: 다시 풀기 단추 대신 안내(#807) */
+#class-journal .st-world .sw-howwas-done .sw-retry-note { display: block; color: var(--sk-sub); font-weight: 700; font-size: var(--st-fs-sm, 16px); }
 /* '미션 완료하기'는 어땠나요 카드 밖 아래 오른쪽(사용자 결정 2026-11-23) */
 #class-journal .st-world .sw-finish-next { display: flex; justify-content: flex-end; }
 #class-journal .st-world .sw-finish-next .sw-go { min-height: 60px; white-space: nowrap; }

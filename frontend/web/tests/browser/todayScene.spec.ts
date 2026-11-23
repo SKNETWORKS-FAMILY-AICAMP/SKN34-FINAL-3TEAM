@@ -368,6 +368,45 @@ test('마무리 화면은 화면 크기대로 배치를 바꾸고, 난이도를 
   await expect(page.getByRole('dialog', { name: '미션 완료!' })).toBeVisible()
 })
 
+// 끝낸 테마 문제 다시 풀기(#807, 사용자 결정 2026-11-23): 평일은 단추 대신 토요일 안내(learning이 평일 THEME_REVIEW를 거절, 무료는 EXTRA도 꺼짐),
+// 토요일(프리미엄 일요일)은 오늘 장면을 거쳐 THEME_REVIEW. 문제 화면과 내 공책 기록 상세가 같은 규칙
+test('끝낸 테마 문제의 다시 풀기는 평일엔 토요일 안내, 토요일엔 오늘 장면을 거쳐 THEME_REVIEW로 시작한다', async ({ page }) => {
+  await student(page)
+  await week(page, { weekday: 1, days: '-----' })
+  await go(page, '/student/theme/scene/MON')
+  await throughTodayScene(page)
+  await page.getByRole('button', { name: /잎의 색과 크기/ }).click()
+  const attemptPath = new URL(page.url()).pathname
+  await finishAndReflect(page)
+  await page.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '홈으로' }).click()
+  await expect(page.locator('.sh-title')).toBeVisible()
+
+  // 평일(화): 문제 화면도 공책 기록도 단추 없이 안내
+  await go(page, attemptPath)
+  const done = page.getByRole('region', { name: '돌아보기 완료' })
+  await expect(done.getByText('토요일에 다시 풀 수 있어요.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '이 미션 다시 풀기' })).toHaveCount(0)
+  await go(page, '/student/journal')
+  await page.getByRole('button', { name: /같은 날 심었는데/ }).first().click()
+  const retry = page.getByRole('region', { name: '돌아보기와 다시 풀기' })
+  await expect(retry).toContainText('토요일에 다시 풀 수 있어요.')
+  await expect(retry.getByRole('button', { name: '다시 풀기', exact: true })).toHaveCount(0)
+
+  // 토요일: 다시 풀기 → 그 요일 오늘 장면 → 첫 대사부터 문제 시작하기(다시 풀기) → THEME_REVIEW 시작
+  await page.evaluate(async () => {
+    const { MOCK_WEEKDAY_KEY } = await import('/src/mocks/fixtures/retention.ts' as string)
+    const { queryClient } = await import('/src/data/queryClient.ts' as string)
+    sessionStorage.setItem(MOCK_WEEKDAY_KEY, '5')
+    await queryClient.invalidateQueries()
+  })
+  await go(page, attemptPath)
+  const started = page.waitForRequest((r) => r.method() === 'POST' && /\/missions\/[^/]+\/attempts$/.test(r.url()))
+  await page.getByRole('button', { name: '이 미션 다시 풀기' }).click()
+  await expect(page).toHaveURL(/\/student\/theme\/scene\/MON$/)
+  expect((await started).postDataJSON()).toEqual({ context: 'THEME_REVIEW' })
+  await expect(page.getByRole('button', { name: /^문제 시작하기/ })).toBeVisible({ timeout: 20_000 })
+})
+
 test('금요일 문제를 마치면 마지막 단서와 정답 고르기, 금요일 친구 생각은 엔딩 전이라 없다', async ({ page }) => {
   await student(page)
   await week(page, { weekday: 4, days: 'DDDD-' })

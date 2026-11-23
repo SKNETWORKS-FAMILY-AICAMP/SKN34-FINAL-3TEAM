@@ -22,6 +22,7 @@ import { ErrorNotice, MemoCanvas, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from './MissionScene.tsx'
 import { Companion } from './world/Companion.tsx'
 import { MissionDone } from './world/MissionDone.tsx'
+import { useRetryPlan } from './world/useRetryPlan.ts'
 import { SpeechBubble } from './world/SpeechBubble.tsx'
 import { WordHelpPanel } from './WordHelpPanel.tsx'
 import { useLook } from './world/lookContext.ts'
@@ -322,6 +323,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
   const { companion, worn } = useLook()
   const finishRef = useRef<HTMLDivElement>(null)
   const howwasAlert = useRef<HTMLParagraphElement>(null)
+  // 끝낸 문제의 다시 풀기: 테마 문제는 토요일·프리미엄 일요일만 오늘 장면으로 THEME_REVIEW, 평일은 안내(#807, 사용자 결정 2026-11-23)
+  const retry = useRetryPlan(!!a.themeScene, a.mission.id, session?.child?.id, a.status === 'COMPLETED')
   useEffect(() => { if (notice) howwasAlert.current?.scrollIntoView({ block: 'nearest' }) }, [notice])
   // '더 보기'는 창 대신 그 칸을 펼침: 펼친 동안은 한 화면 맞춤을 풀어 이어 붙임(칸 안 자름), '접기'로 되돌림(사용자 결정 2026-11-23)
   const [expandedBy, setExpandedBy] = useState<string | null>(null)
@@ -784,11 +787,19 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                 <strong>돌아보기 완료 · {a.reflection ? difficultyLabel(a.reflection.difficulty) : ''}</strong>
                 {a.reflection?.text && <span>{a.reflection.text}</span>}
               </p>
-              <button type="button" className="mg-start sw-go" disabled={actions.start.isPending || !session?.child}
-                onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
-                  .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
-                이 미션 다시 풀기
-              </button>
+              {retry.kind === 'EXTRA' && (
+                <button type="button" className="mg-start sw-go" disabled={actions.start.isPending || !session?.child}
+                  onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
+                    .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
+                  이 미션 다시 풀기
+                </button>
+              )}
+              {retry.kind === 'SCENE' && (
+                <button type="button" className="mg-start sw-go" onClick={() => navigate(`/student/theme/scene/${retry.day}`)}>
+                  이 미션 다시 풀기
+                </button>
+              )}
+              {retry.kind === 'SATURDAY' && <p className="sw-retry-note">토요일에 다시 풀 수 있어요.</p>}
               <ErrorNotice error={actions.start.error} />
             </section>
           )}
