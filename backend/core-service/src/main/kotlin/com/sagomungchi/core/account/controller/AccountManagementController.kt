@@ -12,7 +12,8 @@ import org.springframework.web.bind.annotation.*
 class AccountManagementController(private val accounts: AccountManagementService, private val withdrawals: AccountWithdrawalService,
  private val passwords: GuardianPasswordService, private val cookies: AuthCookies) {
  data class NameRequest(val name: String)
- data class GuardianPasswordRequest(val password: String)
+ // 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+ data class GuardianPasswordRequest(val password: String) { override fun toString() = "GuardianPasswordRequest(password=***)" }
  @PatchMapping("/api/v1/me")
  fun rename(@RequestBody body: NameRequest, request: HttpServletRequest)=ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(accounts.rename(identity(request),body.name))
  @GetMapping("/api/v1/me/withdrawal/precheck")

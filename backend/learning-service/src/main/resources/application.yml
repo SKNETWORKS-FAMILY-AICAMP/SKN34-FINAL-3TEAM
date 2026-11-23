@@ -20,6 +20,10 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/learning_db}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+    hikari:
+      data-source-properties:
+        # PostgreSQL 오류 Detail(Failing row contains …)에 학생 원문·비밀 값이 들어가 예외 로그에 남지 않게 끔 (NFR-SEC-05, #898)
+        logServerErrorDetail: false
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}

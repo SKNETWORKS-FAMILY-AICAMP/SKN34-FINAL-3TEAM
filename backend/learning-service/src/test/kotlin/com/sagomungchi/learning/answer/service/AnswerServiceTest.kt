@@ -3,6 +3,7 @@ package com.sagomungchi.learning.answer.service
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.exception.ErrorInfo
+import com.sagomungchi.learning._common.exception.GlobalExceptionHandler
 import com.sagomungchi.learning._common.exception.errorInfoOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
@@ -10,6 +11,7 @@ import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.answer.client.ToxicityClient
 import com.sagomungchi.learning.answer.client.ToxicitySkipReason
 import com.sagomungchi.learning.answer.client.ToxicityVerdict
+import com.sagomungchi.learning.answer.domain.Answer
 import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.domain.Assignment
 import com.sagomungchi.learning.answer.domain.Essay
@@ -35,6 +37,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -402,6 +405,23 @@ class AnswerServiceTest : PostgresRepositoryTest() {
         assertThrows<DataIntegrityViolationException> {
             jdbc.update("UPDATE answer SET thinking_seconds = 1 WHERE id = ?", answer.id)
         }
+    }
+
+    @Test
+    fun `답변 저장 DB 오류를 전역 예외 로그로 남겨도 답변 원문은 없고 제약 이름만 (NFR-SEC-05, #898)`(output: CapturedOutput) {
+        val secret = "합성 비밀 답 원문 898"
+        val attempt = start()
+        val answer = Answer.next(
+            null, attempt.id, null, InputType.NARRATIVE, AnswerContent(text = secret), secret,
+            dictatedByGuardian = false, idempotencyKey = UUID.randomUUID(), now = java.time.Instant.now(),
+        ).copy(thinkingSeconds = -1, writingSeconds = 1) // 서비스는 음수 시간을 버리므로 저장소로 바로 넣어 V23 CHECK 위반
+
+        val error = assertThrows<DataIntegrityViolationException> { answerRepository.insert(answer) }
+        GlobalExceptionHandler().handleUnexpected(error, MockHttpServletRequest())
+
+        assertTrue("ck_answer_thinking_seconds" in output.out, "제약 이름은 남아 원인을 찾을 수 있음")
+        assertFalse("합성 비밀" in output.all)
+        assertFalse("Failing row" in output.all)
     }
 
     @Test

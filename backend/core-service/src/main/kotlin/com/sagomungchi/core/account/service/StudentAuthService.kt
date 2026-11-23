@@ -27,12 +27,16 @@ class StudentAuthService(private val devices: StudentDeviceRepository, private v
     private val properties: StudentDeviceProperties, manager: PlatformTransactionManager) {
     private val tx=TransactionTemplate(manager)
     private val random=SecureRandom()
-    data class PairingIssued(val pairingCode: String,val expiresAt: OffsetDateTime)
+    // 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+    data class PairingIssued(val pairingCode: String,val expiresAt: OffsetDateTime) { override fun toString()="PairingIssued(pairingCode=***, expiresAt=$expiresAt)" }
     data class Profile(val childId: UUID,val nickname: String,val pinSet: Boolean,val pinLocked: Boolean)
     data class DeviceChild(val childId: UUID,val nickname: String)
     data class DeviceItem(val deviceId: UUID,val label: String,val children: List<DeviceChild>,val createdAt: OffsetDateTime,val lastUsedAt: OffsetDateTime?,val expiresAt: OffsetDateTime)
-    data class Registered(val deviceId: UUID,val children: List<DeviceChild>,val credential: String,val expiresAt: OffsetDateTime)
-    data class LoggedIn(val accessToken: String,val child: LinkedStudent)
+    // 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+    data class Registered(val deviceId: UUID,val children: List<DeviceChild>,val credential: String,val expiresAt: OffsetDateTime) {
+        override fun toString()="Registered(deviceId=$deviceId, children=$children, credential=***, expiresAt=$expiresAt)"
+    }
+    data class LoggedIn(val accessToken: String,val child: LinkedStudent) { override fun toString()="LoggedIn(accessToken=***, child=$child)" }
     private data class LoginOutcome(val login: LoggedIn?,val attempt: PinAttempt?)
 
     fun pairing(identity: AuthenticatedAccount, ids: List<UUID>): PairingIssued {

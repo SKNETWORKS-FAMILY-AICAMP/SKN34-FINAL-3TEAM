@@ -127,7 +127,10 @@ class AuthController(
     private fun redirect(location: String) = ResponseEntity.status(HttpStatus.FOUND).location(URI(location))
         .cacheControl(CacheControl.noStore()).header("Referrer-Policy", "no-referrer")
     data class StudentSessionRequest(val childId: UUID)
-    data class ParentUnlockRequest(val password: String)
-    data class AdminLoginRequest(val loginId: String?, val password: String?)
-    data class ParentSignupRequest(val loginId: String?, val password: String?, val name: String?)
+    // 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+    data class ParentUnlockRequest(val password: String) { override fun toString() = "ParentUnlockRequest(password=***)" }
+    data class AdminLoginRequest(val loginId: String?, val password: String?) { override fun toString() = "AdminLoginRequest(loginId=$loginId, password=***)" }
+    data class ParentSignupRequest(val loginId: String?, val password: String?, val name: String?) {
+        override fun toString() = "ParentSignupRequest(loginId=$loginId, password=***, name=$name)"
+    }
 }
