@@ -2,7 +2,7 @@
 
 - 상태: **제안 단계**. 공식 이슈 없음. 원격 브랜치 `feature/memory-book`에서만 시험 구현하고, 끝까지 동작하는 것을 확인한 뒤 도입 여부를 정한다.
 - 영향 범위: develop·main·실서버에 반영하지 않는다(11/24 develop→main 릴리스, 11/25 A 계정, 11/26~28 B 계정 일정과 분리). `docs/design/`은 고치지 않는다(도입이 정해지면 그때 api-spec·ERD에 옮긴다). `contracts/openapi`·RabbitMQ 정의·저장소 계약 시험은 코드와 어긋나면 CI가 실패하므로 시험 구현 단계(14.2·14.3)에서 이 브랜치 안에서만 함께 고쳤다.
-- 결정 반영(2026-11-23, 동섭): **원문을 공개한 학생(`parentSharingEnabled = true`)에 한해서만 제공**한다(D2). 그 밖의 열린 결정은 모두 권장안대로 시험 구현하고, 결과를 보고 다시 판단한다. 그래서 그림책 판은 원문 포함 판 하나뿐이다(원문 제외 판 없음).
+- 결정 반영(2026-11-23, 동섭): **발급은 학부모만**(D1 변경, 학생 화면에는 그림책 칸 없음, 14.7). **원문을 공개한 학생(`parentSharingEnabled = true`)에 한해서만 제공**한다(D2). 그 밖의 열린 결정은 모두 권장안대로 시험 구현하고, 결과를 보고 다시 판단한다. 그래서 그림책 판은 원문 포함 판 하나뿐이다(원문 제외 판 없음).
 - 표기: **[확인]** 은 2026-11-23 `origin/develop`(df81a8c6) 코드·문서에서 직접 본 사실, **[추정]** 은 코드로 끝까지 확인하지 못했거나 설계상 가정인 것.
 
 ## 1. 목적
@@ -166,15 +166,13 @@ sequenceDiagram
 
 | Method | Path | 역할 | 요청 | 응답 | 오류 |
 |---|---|---|---|---|---|
-| POST | `/students/me/memory-books` | 학생 | `{rounds:[{themeId, weekStart}]}`(1차 길이 1), `Idempotency-Key` | 202 `{bookId, status, rounds, createdAt}`. 같은 회차·같은 원본 버전의 READY 그림책이 있으면 200으로 그것을 돌려줌 | 400 `VALIDATION_FAILED`(월요일 아님·길이), 403 `PREMIUM_REQUIRED`, 404 `THEME_FRAME_NOT_FOUND`, 409 `REFUND_IN_PROGRESS`·`MEMORY_BOOK_IN_PROGRESS`(같은 회차 생성 중), 429 `USAGE_LIMIT_REACHED`(하루 생성 한도), 503 `PAYMENT_PRODUCT_UNAVAILABLE` |
-| GET | `/students/me/memory-books?page&size` | 학생 | - | `{items:[{bookId, status, rounds:[{themeId, weekStart, title}], createdAt, expiresAt}], page, size, totalElements}` | 400 |
-| GET | `/students/me/memory-books/{bookId}` | 학생 | - | `{bookId, status: QUEUED|RUNNING|READY|FAILED, failureCode?, ...}` | 404 `MEMORY_BOOK_NOT_FOUND` |
-| GET | `/students/me/memory-books/{bookId}/download` | 학생 | - | `{url, expiresAt}` | 403 `STUDENT_RECORDS_PRIVATE`(지금 비공개), 404, 409 `MEMORY_BOOK_NOT_READY`, 410 `MEMORY_BOOK_EXPIRED`, 503 `DATA_UNAVAILABLE` |
-| GET | `/children/{childId}/memory-books` | 학부모 | - | 학생 목록과 같은 모양 | 403 `FORBIDDEN`(연결 아님), 403 `STUDENT_RECORDS_PRIVATE` |
-| GET | `/children/{childId}/memory-books/{bookId}/download` | 학부모 | - | `{url, expiresAt}` | 학생 경로와 같음 |
+| GET | `/children/{childId}/memory-books/rounds?page&size` | 학부모 | - | 발급 화면: 자녀의 보유 액자 회차(최근순) `{items:[{themeId, weekStart, title, imageUrl, book}], page, size, totalElements}`. `book`은 그 회차의 가장 최근 그림책(없으면 null) | 403 `FORBIDDEN`(연결 아님)·`STUDENT_RECORDS_PRIVATE` |
+| POST | `/children/{childId}/memory-books` | 학부모 | `{rounds:[{themeId, weekStart}]}`(1차 길이 1) | 202 `{bookId, status, failureCode, rounds, createdAt, completedAt, expiresAt}`. 같은 회차의 만드는 중·보관 기간 안 완성본이 있으면 200으로 그것 | 400 `VALIDATION_FAILED`, 403 `FORBIDDEN`·`STUDENT_RECORDS_PRIVATE`·`PREMIUM_REQUIRED`, 404 `THEME_FRAME_NOT_FOUND`, 409 `REFUND_IN_PROGRESS`·`STUDENT_UNAVAILABLE`, 429 `USAGE_LIMIT_REACHED`, 503 `PAYMENT_PRODUCT_UNAVAILABLE` |
+| GET | `/children/{childId}/memory-books?page&size` | 학부모 | - | `{items:[그림책], page, size, totalElements}`(최근순, 만료된 완성본은 `EXPIRED`) | 403 `FORBIDDEN`·`STUDENT_RECORDS_PRIVATE` |
+| GET | `/children/{childId}/memory-books/{bookId}/download` | 학부모 | - | `{url, expiresAt}` (TTL 300초) | 403, 404 `MEMORY_BOOK_NOT_FOUND`, 409 `MEMORY_BOOK_NOT_READY`·`MEMORY_BOOK_FAILED`·`DELETION_IN_PROGRESS`, 410 `MEMORY_BOOK_EXPIRED`, 503 |
 
 - 모든 응답 `Cache-Control: no-store`.
-- 학부모 생성 경로는 1차에 두지 않는다(D1에서 학부모 생성을 고르면 `POST /children/{childId}/memory-books` 추가).
+- 학생 경로는 없다(2026-11-23 결정으로 4단계의 학생 경로 4개를 지움). 학생 세션으로 위 경로를 부르면 403.
 
 ### 7.2 내부 API
 
@@ -524,13 +522,20 @@ cd frontend/web; Get-Content ../../infrastructure/stubs/e2e.env | Where-Object {
 
 - 끝나면 같은 compose 옵션으로 `down -v`.
 
+### 14.7 발급 주체 변경: 학부모만 발급 (2026-11-23)
+
+- 결정(동섭): 그림책은 학부모가 발급한다. 학생 회차 화면의 그림책 칸과 학생 경로는 없앤다(D1).
+- core: 학생 경로 4개(`/students/me/memory-books…`)를 지우고 학부모 경로로 바꿈. 새 발급 화면 API `GET /children/{childId}/memory-books/rounds`(learning 앨범을 자녀 범위 SYSTEM으로 읽고 회차마다 가장 최근 그림책을 붙임), `POST /children/{childId}/memory-books`(연결·동의 확인 뒤 같은 순서로 재사용·보유·한도·유료·저장, `requested_by` = 학부모). learning 보유 확인·앨범 호출은 친구 방 구경과 같이 자녀 범위 SYSTEM 컨텍스트로 잠깐 바꿔 부른다(`MemoryBookLearningClient`). report·learning·migration은 바꾸지 않았다(내려받기 기록 역할 칸은 STUDENT·PARENT 그대로 두었지만 지금은 PARENT만 쌓임).
+- web: 학생 `MemoryBookPanel` 삭제(앨범 화면은 develop과 같음). 학부모 `ParentMemoryBooks`가 회차 목록을 보여 주고 회차마다 "그림책 발급" → "만드는 중" → "받기", 실패·만료면 다시 발급. 목업도 학부모 경로만.
+- 시험: core `MemoryBookIntegrationTest` 8개(학부모 발급 202·재사용 200·발급자 기록·회차 목록, 비공개 403, 무료 403, 미보유·검사·한도, 완료 반영, 학부모 내려받기·만료, 학생 세션 403·학생 경로 404), core 전체 768개, web 시험 435개·타입 검사·lint·빌드, 목업 브라우저로 학부모 발급 → 받기 확인, 실서버 e2e 1건(학생 화면에 칸 없음 → 학부모 발급 → 실제 PDF 받기 → 비공개 차단) 통과(15.8초).
+
 ## 15. 열린 결정 (동섭이 정할 것)
 
 11/23: D2는 위처럼 결정했고, 나머지는 권장안대로 시험 구현한 뒤 결과를 보고 다시 판단한다.
 
 | # | 결정 | 권장안 | 이유 |
 |---|---|---|---|
-| D1 | 누가 만들고 누가 받나 | 학생이 만들고, 학생·학부모 둘 다 받음(1차: 학생 생성만) | 원문 공개 설정과 충돌 없이 답변을 담을 수 있는 쪽은 학생 본인, 유료 결제자는 학부모. 학부모 생성은 비공개 학생에게 원문 없는 판만 나와 가치가 낮음 |
+| D1 | 누가 만들고 누가 받나 | **결정(11/23): 학부모만 발급하고 받음, 학생 화면에는 그림책 칸 없음** | 결제자(학부모)가 발급하는 쪽이 자연스럽다는 동섭 판단. 처음 권장안(학생 생성)은 5단계까지 구현했다가 14.7에서 바꿈. 원문 공개 자녀만이라(D2) 학부모 발급에도 답변이 담긴다 |
 | D2 | 학생이 비공개일 때 | **결정(11/23): 원문 공개 학생만 제공**, 비공개면 학생·학부모 모두 403 `STUDENT_RECORDS_PRIVATE` | 판이 하나라 시험 범위가 작고 기존 리포트 규칙과 같음. 처음 권장안(원문 뺀 판 제공)은 도입 판단 때 다시 봄 |
 | D3 | 단위 | 회차 1개, API는 배열로 열어 둠 | 기존 조립 경로 재사용, 렌더링 크기 예측 쉬움. 묶음은 길이 제한만 풀면 됨 |
 | D4 | `features` 키·한도 | `features.memoryBook`, `limits.dailyMemoryBooks = 3` | 기존 `extraMissions`·`sundayTheme`과 같은 규칙이라 상품 데이터·시험 방식 재사용 |

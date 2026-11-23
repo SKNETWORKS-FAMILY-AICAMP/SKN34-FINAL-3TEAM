@@ -4,6 +4,7 @@ import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core.memorybook.domain.MemoryBookDownload
 import com.sagomungchi.core.memorybook.domain.MemoryBookPage
 import com.sagomungchi.core.memorybook.domain.MemoryBookRound
+import com.sagomungchi.core.memorybook.domain.MemoryBookRoundPage
 import com.sagomungchi.core.memorybook.domain.MemoryBookView
 import com.sagomungchi.core.memorybook.service.MemoryBookService
 import org.springframework.http.CacheControl
@@ -24,34 +25,29 @@ data class CreateMemoryBookRequest(val rounds: List<RoundRequest>? = null)
 
 /**
  * 추억 그림책 공개 API (docs/proposals/memory-book.md 7.1, 미도입 시험 구현, feature/memory-book 브랜치 전용).
- * 학생은 세션 본인, 학부모는 연결된 자녀. 원문 공개 학생만(D2). 모든 응답 `Cache-Control: no-store`
+ * 학부모만(2026-11-23 결정): 연결된 자녀의 회차를 골라 발급하고 받는다. 원문 공개 자녀만(D2). 모든 응답 `Cache-Control: no-store`
  */
 @RestController
 class MemoryBookController(private val service: MemoryBookService) {
-    @PostMapping("/api/v1/students/me/memory-books")
-    fun create(@RequestBody request: CreateMemoryBookRequest?): ResponseEntity<MemoryBookView> {
-        val result = service.create(round(request))
+    @GetMapping("/api/v1/children/{childId}/memory-books/rounds")
+    fun rounds(@PathVariable childId: UUID, @RequestParam(required = false) page: Int?,
+               @RequestParam(required = false) size: Int?): ResponseEntity<MemoryBookRoundPage> =
+        noStore(HttpStatus.OK, service.rounds(childId, page, size))
+
+    @PostMapping("/api/v1/children/{childId}/memory-books")
+    fun create(@PathVariable childId: UUID, @RequestBody request: CreateMemoryBookRequest?): ResponseEntity<MemoryBookView> {
+        val result = service.create(childId, round(request))
         return noStore(if (result.created) HttpStatus.ACCEPTED else HttpStatus.OK, result.view)
     }
 
-    @GetMapping("/api/v1/students/me/memory-books")
-    fun mine(@RequestParam(required = false) page: Int?, @RequestParam(required = false) size: Int?): ResponseEntity<MemoryBookPage> =
-        noStore(HttpStatus.OK, service.mine(page, size))
-
-    @GetMapping("/api/v1/students/me/memory-books/{bookId}")
-    fun mineOne(@PathVariable bookId: UUID): ResponseEntity<MemoryBookView> = noStore(HttpStatus.OK, service.mineOne(bookId))
-
-    @GetMapping("/api/v1/students/me/memory-books/{bookId}/download")
-    fun mineDownload(@PathVariable bookId: UUID): ResponseEntity<MemoryBookDownload> = noStore(HttpStatus.OK, service.mineDownload(bookId))
-
     @GetMapping("/api/v1/children/{childId}/memory-books")
-    fun children(@PathVariable childId: UUID, @RequestParam(required = false) page: Int?,
-                 @RequestParam(required = false) size: Int?): ResponseEntity<MemoryBookPage> =
-        noStore(HttpStatus.OK, service.children(childId, page, size))
+    fun books(@PathVariable childId: UUID, @RequestParam(required = false) page: Int?,
+              @RequestParam(required = false) size: Int?): ResponseEntity<MemoryBookPage> =
+        noStore(HttpStatus.OK, service.books(childId, page, size))
 
     @GetMapping("/api/v1/children/{childId}/memory-books/{bookId}/download")
-    fun childDownload(@PathVariable childId: UUID, @PathVariable bookId: UUID): ResponseEntity<MemoryBookDownload> =
-        noStore(HttpStatus.OK, service.childDownload(childId, bookId))
+    fun download(@PathVariable childId: UUID, @PathVariable bookId: UUID): ResponseEntity<MemoryBookDownload> =
+        noStore(HttpStatus.OK, service.download(childId, bookId))
 
     /** 1차는 회차 1개(D3). 묶음은 길이 상한만 풀면 된다 */
     private fun round(request: CreateMemoryBookRequest?): MemoryBookRound {

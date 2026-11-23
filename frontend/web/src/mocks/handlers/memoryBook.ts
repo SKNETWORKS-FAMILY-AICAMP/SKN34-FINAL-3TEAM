@@ -3,11 +3,13 @@ import { ApiError } from '../../data/apiClient.ts'
 import { framesOf } from '../fixtures/retention.ts'
 import { requireShared } from '../fixtures/sharing.ts'
 import { mockPremium } from '../fixtures/payments.ts'
-import { guard, mockStudent, mockStudentHome, respond } from './student.ts'
+import { respond } from './student.ts'
+import { demoMissions } from '../../data/classroom/demoGateway.ts'
+import { fixtureStore } from '../fixtures/student.ts'
 import { parentChild } from './parent.ts'
 
 /**
- * 추억 그림책 목업 (docs/proposals/memory-book.md 7.1, 미도입 시험 구현). core 규칙을 흉내 낸다:
+ * 추억 그림책 목업 (docs/proposals/memory-book.md 7.1, 미도입 시험 구현). 학부모만 발급한다. core 규칙을 흉내 낸다:
  * 원문 공개 학생만(403 STUDENT_RECORDS_PRIVATE), 프리미엄만(403 PREMIUM_REQUIRED), 보유 액자만(404), 하루 3개(429),
  * 같은 회차는 만드는 중·완성본을 재사용(200). 만들고 4초 뒤 완성(READY)으로 바뀐다. 받기 주소는 표본 PDF.
  *
@@ -20,6 +22,7 @@ const SAMPLE_PDF = '/demo/memory-book-sample.pdf'
 
 type MockBook = { bookId: string; studentId: string; themeId: string; weekStart: string; createdAt: number; fail: boolean }
 const books: MockBook[] = []
+const mockChildren = () => fixtureStore.children()
 /** 시험용 */
 export const resetMockMemoryBooks = () => { books.length = 0 }
 
@@ -67,43 +70,45 @@ async function round(request: Request) {
   return { themeId: r.themeId, weekStart: r.weekStart }
 }
 
+/** 학부모 요청이라 학생 홈을 부를 수 없어, 앨범 목업과 같은 학년 데모 미션으로 회차를 만든다(이미 있으면 그대로) */
+async function framesOfChild(childId: string) {
+  const child = (await mockChildren()).find((c) => c.id === childId)
+  return child ? framesOf(child.id, demoMissions(child.grade)) : []
+}
+
 export const memoryBookHandlers = [
-  http.post('/api/v1/students/me/memory-books', async ({ request }) => {
+  http.get('/api/v1/children/:childId/memory-books/rounds', ({ request, params }) =>
+    respond(async () => {
+      const c = await parentChild(request, String(params.childId))
+      requireShared(c.id)
+      const now = Date.now()
+      const items = (await framesOfChild(c.id)).map((f) => {
+        const latest = books.filter((b) => b.studentId === c.id && b.themeId === f.themeId && b.weekStart === f.weekStart)
+          .sort((a, b) => b.createdAt - a.createdAt)[0]
+        return { themeId: f.themeId, weekStart: f.weekStart, title: f.title, imageUrl: null, book: latest ? view(latest, now) : null }
+      })
+      return { items, page: 0, size: 50, totalElements: items.length }
+    }),
+  ),
+  http.post('/api/v1/children/:childId/memory-books', async ({ request, params }) => {
     let created = true
     return respond(async () => {
-      guard(request)
-      const me = mockStudent()
+      const c = await parentChild(request, String(params.childId))
       const r = await round(request)
-      requireShared(me.id)
+      requireShared(c.id)
       const now = Date.now()
-      const existing = books.find((b) => b.studentId === me.id && b.themeId === r.themeId && b.weekStart === r.weekStart && view(b, now).status !== 'FAILED')
+      const existing = books.find((b) => b.studentId === c.id && b.themeId === r.themeId && b.weekStart === r.weekStart && view(b, now).status !== 'FAILED')
       if (existing) { created = false; return view(existing, now) }
-      const owned = framesOf(me.id, (await mockStudentHome(me)).missions).some((f) => f.themeId === r.themeId && f.weekStart === r.weekStart)
+      const owned = (await framesOfChild(c.id)).some((f) => f.themeId === r.themeId && f.weekStart === r.weekStart)
       if (!owned) return fail(404, 'THEME_FRAME_NOT_FOUND', '아직 받지 않은 기념 액자예요.')
-      if (books.filter((b) => b.studentId === me.id && kstDay(b.createdAt) === kstDay(now)).length >= DAILY_LIMIT)
+      if (books.filter((b) => b.studentId === c.id && kstDay(b.createdAt) === kstDay(now)).length >= DAILY_LIMIT)
         return fail(429, 'USAGE_LIMIT_REACHED', '오늘은 추억 그림책을 더 만들 수 없어요.')
-      if (!mockPremium(me.id)) return fail(403, 'PREMIUM_REQUIRED', '추억 그림책은 프리미엄 이용권에서 만들 수 있어요.')
-      const book = { bookId: crypto.randomUUID(), studentId: me.id, ...r, createdAt: now, fail: failing() }
+      if (!mockPremium(c.id)) return fail(403, 'PREMIUM_REQUIRED', '추억 그림책은 프리미엄 이용권에서 만들 수 있어요.')
+      const book = { bookId: crypto.randomUUID(), studentId: c.id, ...r, createdAt: now, fail: failing() }
       books.push(book)
       return view(book, now)
     }).then((response) => (created ? new Response(response.body, { status: response.status === 200 ? 202 : response.status, headers: response.headers }) : response))
   }),
-  http.get('/api/v1/students/me/memory-books', ({ request }) =>
-    respond(async () => {
-      guard(request)
-      const me = mockStudent()
-      requireShared(me.id)
-      return pageOf(me.id)
-    }),
-  ),
-  http.get('/api/v1/students/me/memory-books/:bookId/download', ({ request, params }) =>
-    respond(async () => {
-      guard(request)
-      const me = mockStudent()
-      requireShared(me.id)
-      return downloadOf(me.id, String(params.bookId))
-    }),
-  ),
   http.get('/api/v1/children/:childId/memory-books', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))

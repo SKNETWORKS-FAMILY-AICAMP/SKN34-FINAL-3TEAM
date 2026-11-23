@@ -59,6 +59,19 @@ data class MemoryBookView(
     }
 }
 
+/** 학부모 발급 화면의 회차(보유 액자) 한 줄과 그 회차의 가장 최근 그림책(없으면 null) */
+data class MemoryBookRoundItem(val themeId: UUID, val weekStart: LocalDate, val title: String, val imageUrl: String?)
+
+data class MemoryBookRoundView(
+    val themeId: UUID,
+    val weekStart: LocalDate,
+    val title: String,
+    val imageUrl: String?,
+    val book: MemoryBookView?,
+)
+
+data class MemoryBookRoundPage(val items: List<MemoryBookRoundView>, val page: Int, val size: Int, val totalElements: Long)
+
 data class MemoryBookPage(val items: List<MemoryBookView>, val page: Int, val size: Int, val totalElements: Long)
 
 data class MemoryBookDownload(val url: String, val expiresAt: String)

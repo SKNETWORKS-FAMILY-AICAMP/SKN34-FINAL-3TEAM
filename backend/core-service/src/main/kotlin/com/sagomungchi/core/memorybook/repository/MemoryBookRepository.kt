@@ -40,6 +40,13 @@ class MemoryBookRepository(private val jdbc: JdbcTemplate) {
         row, student, themeId, weekStart, now,
     ).singleOrNull()
 
+    /** 회차별 가장 최근 작업(학부모 발급 화면의 회차 목록에 붙임) */
+    fun latestByStudent(student: UUID): List<MemoryBookJob> = jdbc.query(
+        """SELECT DISTINCT ON (theme_id, week_start) * FROM memory_book_job WHERE student_id=?
+           ORDER BY theme_id, week_start, created_at DESC""",
+        row, student,
+    )
+
     fun createdSince(student: UUID, since: OffsetDateTime): Int =
         jdbc.queryForObject("SELECT count(*) FROM memory_book_job WHERE student_id=? AND created_at>=?", Int::class.java, student, since)!!
 

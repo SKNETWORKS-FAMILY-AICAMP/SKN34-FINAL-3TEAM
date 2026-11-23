@@ -2,7 +2,7 @@ import { ApiError } from '../data/apiClient.ts'
 
 /**
  * 추억 그림책 (docs/proposals/memory-book.md 7.1, 미도입 시험 구현, feature/memory-book 브랜치 전용).
- * 원문 공개 학생만(D2), 유료 구독(features.memoryBook), 회차 1개(D3).
+ * 학부모만 발급(2026-11-23 결정), 원문 공개 자녀만(D2), 유료 구독(features.memoryBook), 회차 1개(D3).
  */
 export type MemoryBookStatus = 'QUEUED' | 'READY' | 'FAILED' | 'EXPIRED'
 export type MemoryBookRound = { themeId: string; weekStart: string }
@@ -61,31 +61,47 @@ export function readMemoryBookDownload(value: unknown, now = Date.now()): Memory
   try { protocol = new URL(url, 'https://base.invalid').protocol } catch { contract() }
   if (!['http:', 'https:'].includes(protocol)) contract()
   if (Date.parse(expiresAt) <= now)
-    throw new ApiError({ status: 410, code: 'DOWNLOAD_EXPIRED', title: '받기 주소가 만료되었어요. 다시 눌러 주세요.', retryable: true })
+    throw new ApiError({ status: 410, code: 'DOWNLOAD_EXPIRED', title: '받기 주소가 만료되었습니다. 다시 눌러 주세요.', retryable: true })
   return { url, expiresAt }
 }
 
-/** 그 회차의 가장 최근 그림책(목록은 최근순) */
-export const bookOfRound = (books: MemoryBook[] | undefined, themeId: string, weekStart: string) =>
-  books?.find((b) => b.rounds.some((r) => r.themeId === themeId && r.weekStart === weekStart))
+/** 발급 화면의 회차(자녀의 보유 액자)와 그 회차의 가장 최근 그림책 */
+export type MemoryBookRoundItem = { themeId: string; weekStart: string; title: string; imageUrl: string | null; book: MemoryBook | null }
+export type MemoryBookRoundPage = { items: MemoryBookRoundItem[]; page: number; size: number; totalElements: number }
+
+export function readMemoryBookRoundPage(value: unknown): MemoryBookRoundPage {
+  const v = record(value)
+  if (!Array.isArray(v.items)) contract()
+  const items = (v.items as unknown[]).map((item) => {
+    const r = record(item)
+    const weekStart = text(r.weekStart)
+    if (!DATE.test(weekStart)) contract()
+    if (typeof r.title !== 'string') contract()
+    if (r.imageUrl != null && typeof r.imageUrl !== 'string') contract()
+    return {
+      themeId: text(r.themeId), weekStart, title: r.title as string,
+      imageUrl: (r.imageUrl as string | null | undefined) ?? null,
+      book: r.book == null ? null : readMemoryBook(r.book),
+    }
+  })
+  return { items, page: count(v.page), size: count(v.size), totalElements: count(v.totalElements) }
+}
 
 /** 만드는 중이면 몇 초마다 다시 본다 */
 export const MEMORY_BOOK_POLL_MS = 3000
-export const memoryBookPolling = (books: MemoryBook[] | undefined) => books?.some((b) => b.status === 'QUEUED') ?? false
+export const memoryBookPolling = (rounds: MemoryBookRoundItem[] | undefined) => rounds?.some((r) => r.book?.status === 'QUEUED') ?? false
 
-/** 공개 오류 코드 → 아이·학부모에게 보일 말. 모르는 오류는 null(일반 오류 안내) */
-export function memoryBookFailure(error: unknown, audience: 'STUDENT' | 'PARENT' = 'STUDENT'): string | null {
+/** 공개 오류 코드 → 학부모에게 보일 말. 모르는 오류는 null(일반 오류 안내) */
+export function memoryBookFailure(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null
   switch (error.problem.code) {
-    case 'PREMIUM_REQUIRED': return audience === 'STUDENT' ? '그림책은 프리미엄 이용권에서 만들 수 있어요.' : '추억 그림책은 프리미엄 이용권에서 만들 수 있어요.'
-    case 'STUDENT_RECORDS_PRIVATE': return audience === 'STUDENT'
-      ? '그림책을 만들려면 보호자에게 답 보여 주기를 켜야 해요.'
-      : '아이가 답 보여 주기를 켜야 그림책을 볼 수 있어요.'
-    case 'USAGE_LIMIT_REACHED': return '오늘은 그림책을 더 만들 수 없어요. 내일 다시 만들어 주세요.'
-    case 'THEME_FRAME_NOT_FOUND': return '아직 받지 않은 액자예요.'
-    case 'MEMORY_BOOK_NOT_READY': return '그림책을 만들고 있어요. 조금만 기다려 주세요.'
-    case 'MEMORY_BOOK_FAILED': return '그림책을 만들지 못했어요. 다시 만들어 주세요.'
-    case 'MEMORY_BOOK_EXPIRED': return '보관 기간이 지난 그림책이에요. 다시 만들 수 있어요.'
+    case 'PREMIUM_REQUIRED': return '추억 그림책은 프리미엄 이용권에서 발급할 수 있습니다.'
+    case 'STUDENT_RECORDS_PRIVATE': return '아이가 답 보여 주기를 켜야 그림책을 발급하고 볼 수 있습니다.'
+    case 'USAGE_LIMIT_REACHED': return '오늘은 그림책을 더 발급할 수 없습니다. 내일 다시 시도해 주세요.'
+    case 'THEME_FRAME_NOT_FOUND': return '아이가 아직 받지 않은 액자입니다.'
+    case 'MEMORY_BOOK_NOT_READY': return '그림책을 만들고 있습니다. 잠시만 기다려 주세요.'
+    case 'MEMORY_BOOK_FAILED': return '그림책을 만들지 못했습니다. 다시 발급해 주세요.'
+    case 'MEMORY_BOOK_EXPIRED': return '보관 기간이 지난 그림책입니다. 다시 발급할 수 있습니다.'
     case 'DOWNLOAD_EXPIRED': return error.problem.title
     default: return null
   }

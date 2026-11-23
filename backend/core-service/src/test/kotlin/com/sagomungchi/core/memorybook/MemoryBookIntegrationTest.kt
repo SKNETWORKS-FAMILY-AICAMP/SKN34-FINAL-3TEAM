@@ -85,11 +85,16 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
                 val asked = json.readTree(request.body)["frames"].map { it["themeId"].asText() to it["weekStart"].asText() }
                 val mine = asked.filter { it in owned }.map { mapOf("themeId" to it.first, "weekStart" to it.second) }
                 LearningHttpStub.Reply(body = json.writeValueAsString(mapOf("owned" to mine)))
+            } else if (request.method == "GET" && request.target.startsWith("/internal/students/$student/album?")) {
+                assertEquals("SYSTEM", request.header("X-User-Role"))
+                val items = owned.map { mapOf("themeId" to it.first, "weekStart" to it.second, "title" to "회차 ${it.first.take(4)}",
+                    "imageUrl" to null, "awardedAt" to "2026-11-06T10:00:00Z", "seen" to true) }
+                LearningHttpStub.Reply(body = json.writeValueAsString(mapOf("items" to items, "page" to 0, "size" to 20, "totalElements" to items.size)))
             } else LearningHttpStub.Reply(404, """{"code":"NOT_FOUND"}""")
         }
     }
 
-    @Test fun `유료·공개 학생은 202로 작업을 만들고 같은 회차는 같은 작업을 200으로 돌려받는다`() {
+    @Test fun `학부모가 유료·공개 자녀의 회차로 202 발급, 같은 회차는 같은 작업을 200으로 돌려받는다`() {
         subscribe()
         val first = create(expected = 202)
         val book = UUID.fromString(first["bookId"].asText())
@@ -106,6 +111,11 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
         val again = create(expected = 200)
         assertEquals(book.toString(), again["bookId"].asText())
         assertEquals(1, count("memory_book_job"))
+        assertEquals(owner, jdbc.queryForObject("SELECT requested_by FROM memory_book_job WHERE id=?", UUID::class.java, book))
+        // 발급 화면 회차 목록: learning 앨범(자녀 범위 SYSTEM) + 회차마다 가장 최근 그림책
+        val rounds = read("/api/v1/children/$student/memory-books/rounds", parentToken)
+        assertEquals(theme.toString(), rounds["items"][0]["themeId"].asText())
+        assertEquals(book.toString(), rounds["items"][0]["book"]["bookId"].asText())
     }
 
     @Test fun `무료 학생은 403 PREMIUM_REQUIRED이고 작업·예약이 없다`() {
@@ -115,13 +125,13 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
         assertEquals(0, count("payment_premium_usage"))
     }
 
-    @Test fun `원문 비공개 학생은 생성·목록·내려받기 모두 403 STUDENT_RECORDS_PRIVATE이고 learning을 부르지 않는다`() {
+    @Test fun `원문 비공개 자녀는 회차 목록·발급·목록 모두 403 STUDENT_RECORDS_PRIVATE이고 learning을 부르지 않는다`() {
         subscribe()
         jdbc.update("UPDATE student SET parent_sharing_enabled=false WHERE id=?", student)
         assertEquals("STUDENT_RECORDS_PRIVATE", create(expected = 403)["code"].asText())
-        assertTrue(stub.requests.isEmpty())
-        assertEquals("STUDENT_RECORDS_PRIVATE", read("/api/v1/students/me/memory-books", studentToken, 403)["code"].asText())
+        assertEquals("STUDENT_RECORDS_PRIVATE", read("/api/v1/children/$student/memory-books/rounds", parentToken, 403)["code"].asText())
         assertEquals("STUDENT_RECORDS_PRIVATE", read("/api/v1/children/$student/memory-books", parentToken, 403)["code"].asText())
+        assertTrue(stub.requests.isEmpty())
     }
 
     @Test fun `보유하지 않은 회차 404, 월요일이 아닌 주·회차 개수 400, 하루 한도 429`() {
@@ -129,12 +139,12 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
         owned.clear()
         assertEquals("THEME_FRAME_NOT_FOUND", create(expected = 404)["code"].asText())
         assertEquals(0, count("payment_premium_usage"))
-        mvc.post("/api/v1/students/me/memory-books") {
-            header("Authorization", "Bearer $studentToken"); contentType = MediaType.APPLICATION_JSON
+        mvc.post("/api/v1/children/$student/memory-books") {
+            header("Authorization", "Bearer $parentToken"); contentType = MediaType.APPLICATION_JSON
             content = """{"rounds":[{"themeId":"$theme","weekStart":"2026-11-03"}]}"""
         }.andExpect { status { isBadRequest() } }
-        mvc.post("/api/v1/students/me/memory-books") {
-            header("Authorization", "Bearer $studentToken"); contentType = MediaType.APPLICATION_JSON
+        mvc.post("/api/v1/children/$student/memory-books") {
+            header("Authorization", "Bearer $parentToken"); contentType = MediaType.APPLICATION_JSON
             content = """{"rounds":[]}"""
         }.andExpect { status { isBadRequest() } }
 
@@ -160,23 +170,23 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
         assertEquals("FAILED", usage(failed))
     }
 
-    @Test fun `학생·학부모 내려받기는 READY·보관 기간 안에서만 주소를 주고 감사 기록을 남긴다`() {
+    @Test fun `학부모 내려받기는 READY·보관 기간 안에서만 주소를 주고 감사 기록을 남긴다`() {
         subscribe()
         val book = UUID.fromString(create(expected = 202)["bookId"].asText())
-        assertEquals("MEMORY_BOOK_NOT_READY", read("/api/v1/students/me/memory-books/$book/download", studentToken, 409)["code"].asText())
+        val download = "/api/v1/children/$student/memory-books/$book/download"
+        assertEquals("MEMORY_BOOK_NOT_READY", read(download, parentToken, 409)["code"].asText())
 
         jobs.complete(MemoryBookCompleted(UUID.randomUUID(), book, student, MemoryBookStatus.READY, null, 10, null))
         given(report.fileUrl(student, book)).willReturn(MemoryBookFileResult.Url(MemoryBookDownload("https://files.test/book", "2026-11-23T00:05:00Z")))
-        assertEquals("https://files.test/book", read("/api/v1/students/me/memory-books/$book/download", studentToken)["url"].asText())
-        assertEquals("https://files.test/book", read("/api/v1/children/$student/memory-books/$book/download", parentToken)["url"].asText())
-        assertEquals(listOf("PARENT", "STUDENT"), jdbc.queryForList("SELECT role FROM memory_book_download WHERE book_id=? ORDER BY role", String::class.java, book))
+        assertEquals("https://files.test/book", read(download, parentToken)["url"].asText())
+        assertEquals(listOf("PARENT"), jdbc.queryForList("SELECT role FROM memory_book_download WHERE book_id=?", String::class.java, book))
 
         val list = read("/api/v1/children/$student/memory-books", parentToken)
         assertEquals(1, list["totalElements"].asInt()); assertEquals("READY", list["items"][0]["status"].asText())
 
         jdbc.update("UPDATE memory_book_job SET expires_at=? WHERE id=?", OffsetDateTime.now().minusMinutes(1), book)
-        assertEquals("MEMORY_BOOK_EXPIRED", read("/api/v1/students/me/memory-books/$book/download", studentToken, 410)["code"].asText())
-        assertEquals("EXPIRED", read("/api/v1/students/me/memory-books/$book", studentToken)["status"].asText())
+        assertEquals("MEMORY_BOOK_EXPIRED", read(download, parentToken, 410)["code"].asText())
+        assertEquals("EXPIRED", read("/api/v1/children/$student/memory-books", parentToken)["items"][0]["status"].asText())
 
         val stranger = parent(jdbc)
         val strangerToken = tokens.access(session(jdbc, stranger, "PARENT"))
@@ -200,15 +210,23 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
         assertFailsWith<RuntimeException> { consumer.parse(envelope(ready, subject = UUID.randomUUID())) }
     }
 
-    @Test fun `학부모가 아닌 세션·학생이 아닌 세션은 403이고 report를 부르지 않는다`() {
-        read("/api/v1/students/me/memory-books", parentToken, 403)
+    @Test fun `학생 세션은 발급·목록·회차 목록 모두 403이고 학생용 경로는 없다`() {
+        subscribe()
+        mvc.post("/api/v1/children/$student/memory-books") {
+            header("Authorization", "Bearer $studentToken"); contentType = MediaType.APPLICATION_JSON
+            content = """{"rounds":[{"themeId":"$theme","weekStart":"$week"}]}"""
+        }.andExpect { status { isForbidden() } }
         read("/api/v1/children/$student/memory-books", studentToken, 403)
+        read("/api/v1/children/$student/memory-books/rounds", studentToken, 403)
+        mvc.get("/api/v1/students/me/memory-books") { header("Authorization", "Bearer $studentToken") }
+            .andExpect { status { isNotFound() } }
+        assertEquals(0, count("memory_book_job"))
         verifyNoInteractions(report)
     }
 
     private fun create(themeId: UUID = theme, expected: Int): JsonNode {
-        val result = mvc.post("/api/v1/students/me/memory-books") {
-            header("Authorization", "Bearer $studentToken"); contentType = MediaType.APPLICATION_JSON
+        val result = mvc.post("/api/v1/children/$student/memory-books") {
+            header("Authorization", "Bearer $parentToken"); contentType = MediaType.APPLICATION_JSON
             content = """{"rounds":[{"themeId":"$themeId","weekStart":"$week"}]}"""
         }.andExpect { status { isEqualTo(expected) } }.andReturn()
         return json.readTree(result.response.contentAsString)
