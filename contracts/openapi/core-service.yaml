@@ -2606,6 +2606,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
       summary: adminThemeDraftsList (CONTENT)
+  /admin/theme-drafts/review-list:
+    get:
+      operationId: adminThemeDraftReviewList
+      tags: [Admin]
+      summary: 주간 테마 검수 목록과 적용 주 선택지
+      description: CONTENT 권한으로 검수할 테마의 대표 이미지와 진행 상태를 조회한다.
+      parameters:
+        - {name: grade, in: query, schema: {type: string, enum: [G3, G4, G5, G6]}}
+        - {name: source, in: query, schema: {type: string, enum: [AUTO, ADMIN]}}
+        - {name: status, in: query, schema: {type: string, enum: [GENERATING, READY, CHECK_FAILED, FAILED, ADOPTED, DISCARDED]}}
+        - {name: stage, in: query, schema: {$ref: '#/components/schemas/ThemeReviewStage'}}
+        - {name: week, in: query, schema: {type: string, format: date}, description: 적용 주. 버림 이력은 생성 기준 주.}
+        - {name: weekStart, in: query, schema: {type: string, format: date}, description: 생성 기준 주}
+        - {name: comparisonPending, in: query, schema: {type: boolean, default: false}}
+        - {name: hideDiscarded, in: query, schema: {type: boolean, default: true}, description: 버림 단계나 버림 상태를 지정하면 버림 이력만 조회}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, maximum: 1000, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 조건에 맞는 검수 목록 한 쪽과 보관 범위 전체의 주 선택지
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ThemeDraftReviewPage'}
+        '400': {$ref: '#/components/responses/LearningProblem'}
+        '401': {$ref: '#/components/responses/LearningProblem'}
+        '403': {$ref: '#/components/responses/LearningProblem'}
+        '404':
+          description: learning이 확인한 NOT_FOUND. 검수 목록에 일치하는 행이 없으면 200과 빈 목록을 반환한다.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503': {$ref: '#/components/responses/LearningProblem'}
   /admin/theme-drafts/{draftId}:
     get:
       operationId: adminThemeDraftsDetail
@@ -10905,7 +10937,7 @@ components:
       description: 'learning 소유 성취기준 표·미션 초안 JSON object (#355). 필드는 api-spec 4.1 `/internal/admin/achievement-standards`·`/internal/admin/mission-drafts…`, core는 성공 응답을 그대로 전달한다.'
     ReviewSceneHistory:
       type: object
-      required: [rootDraftId, scene, selectedVersionId, editable, versions]
+      required: [rootDraftId, scene, selectedVersionId, editable, comparisonPending, versions]
       properties:
         rootDraftId: {type: string, format: uuid}
         scene:
@@ -10915,6 +10947,7 @@ components:
           type: [string, 'null']
           format: uuid
         editable: {type: boolean}
+        comparisonPending: {type: boolean, description: 선택을 마지막으로 확정한 후 아직 비교하지 않은 READY 재생성본이 있는 편집 가능 장면}
         versions:
           type: array
           items:
@@ -11037,6 +11070,35 @@ components:
         displacedDraftId:
           type: [string, 'null']
           format: uuid
+    ThemeReviewStage:
+      type: string
+      enum: [review, pair, adopted, closed, ready, published, discarded, generating, check_failed, failed]
+    ThemeDraftReviewPage:
+      type: object
+      required: [items, page, size, totalElements, weeks]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ThemeDraftReviewRow'}}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        weeks: {type: array, items: {type: string, format: date}}
+    ThemeDraftReviewRow:
+      type: object
+      required: [draftId, title, thumbnailUrl, grade, source, status, stage, weekStart, appliedWeek, plannedWeek, updatedAt, themeId, comparisonScene]
+      properties:
+        draftId: {type: string, format: uuid}
+        title: {type: string}
+        thumbnailUrl: {type: [string, 'null']}
+        grade: {type: string, enum: [G3, G4, G5, G6]}
+        source: {type: string, enum: [AUTO, ADMIN]}
+        status: {type: string, enum: [GENERATING, READY, CHECK_FAILED, FAILED, ADOPTED, DISCARDED]}
+        stage: {$ref: '#/components/schemas/ThemeReviewStage'}
+        weekStart: {type: string, format: date}
+        appliedWeek: {type: string, format: date}
+        plannedWeek: {type: [string, 'null'], format: date}
+        updatedAt: {type: string, format: date-time}
+        themeId: {type: [string, 'null'], format: uuid}
+        comparisonScene: {type: [string, 'null'], enum: [INTRO, MON, TUE, WED, THU, FRI, OUTRO, null]}
     AdminThemeDraftDocument:
       type: object
       additionalProperties: true

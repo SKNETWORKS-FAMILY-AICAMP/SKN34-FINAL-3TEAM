@@ -1,0 +1,35 @@
+.tw-day-missions { background: #fff; border: 1px solid #dce3ed; border-radius: 12px; min-width: 0; }
+.tw-day-missions header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px 16px; }
+.tw-day-missions header small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #516782; font-weight: 650; }
+.tw-day-missions header h2 { margin: 4px 0 0; color: #19283e; font-size: 21px; }
+.tw-day-missions ul { list-style: none; margin: 0 22px 8px; padding: 0; }
+.tw-day-missions li { display: grid; grid-template-columns: 36px minmax(0,1fr) auto auto; gap: 14px; align-items: center; padding: 13px 0; border-top: 1px solid #dce3ed; }
+.tw-day-token { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: #edf2ff; color: #3259bc; font-weight: 700; }
+.tw-day-title strong, .tw-day-title small, .tw-day-scene-link strong, .tw-day-scene-link small { display: block; }
+.tw-day-title small, .tw-day-scene-link small { margin-top: 3px; color: #56677c; font-size: 12px; }
+.tw-day-badge { display: inline-flex; align-items: center; width: fit-content; border-radius: 999px; padding: 3px 9px; color: #495a71; background: #eef2f7; font-size: 12px; font-weight: 600; }
+.tw-day-badge[data-published=true] { background: #e9f6ee; color: #226241; }
+.tw-day-dialog { display: grid; gap: 14px; }
+.tw-day-dialog :is(h3,p,ul) { margin: 0; }
+.tw-day-dialog p { white-space: pre-wrap; }
+.tw-day-dialog h3 { font-size: 14px; margin-bottom: 6px; }
+.tw-day-meta, .tw-day-dialog footer { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tw-day-dialog footer { justify-content: flex-end; }
+.tw-day-dialog footer a { font-weight: 650; }
+.tw-day-question { border-radius: 8px; background: #f2f5fb; padding: 15px 17px; }
+#class-journal .admin-shell .ad-main button.tw-day-scene-link { width: 100%; display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 10px; background: #f7f9fd; border: 1px solid #cbd7ec; color: #223855; text-align: left; }
+.tw-day-scene-link img { width: 76px; aspect-ratio: 16/9; object-fit: cover; border-radius: 5px; }
+.tw-day-scene-link span { flex: 1; min-width: 0; }
+.tw-day-dialog details summary { cursor: pointer; }
+.tw-day-approval { display: grid; gap: 10px; }
+.tw-day-approval > p { color: #56677c; font-size: 12px; }
+.tw-day-approval label { display: flex; gap: 8px; align-items: center; }
+.tw-day-approval input { flex-shrink: 0; }
+.rv-decision .tw-day-board-link { padding: 8px 12px; border: 1px solid #cbd6e4; border-radius: 7px; text-decoration: none; color: #19283e; font-size: 13px; font-weight: 650; }
+@media (max-width: 600px) {
+  .tw-day-missions header { padding: 15px; }
+  .tw-day-missions ul { margin: 0 13px 4px; }
+  .tw-day-missions li { gap: 8px; grid-template-columns: 30px minmax(0,1fr) auto; }
+  .tw-day-token { width: 30px; height: 32px; }
+  .tw-day-missions li button { grid-column: 2 / -1; justify-self: end; }
+}
