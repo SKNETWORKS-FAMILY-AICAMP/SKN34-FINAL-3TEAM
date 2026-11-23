@@ -81,7 +81,6 @@ function lines(theme: WeeklyTheme | null, place: string, missed: WeeklyThemeDay[
  */
 export function StudentHome({
   child,
-  onResume,
   onStartTheme,
   onJournal,
   onRoom,
@@ -94,7 +93,7 @@ export function StudentHome({
   onReview,
 }: {
   child: Child
-  onResume: (attemptId: string) => void
+  /** 테마 문제 열기(새로 시작·이어 풀기 모두, 오늘 장면 #807) */
   onStartTheme: (missionId: string, context: AttemptContext) => void
   onJournal: () => void
   onRoom: () => void
@@ -114,7 +113,8 @@ export function StudentHome({
   const themeQuery = useWeeklyTheme(child.id)
   const points = useMyPoints(child.id)
   const theme = themeQuery.error ? null : (themeQuery.data ?? null)
-  const { byId, open, home: homeQuery } = useThemeMissions(child, onResume, (missionId, context) => {
+  // 푸는 중이면 오늘 장면이 이어하기를 판단한다(#807). 새로 열 때만: 그 주 처음 문제면 시작 이야기부터(사용자 결정 2026-11-13·14)
+  const { byId, open, home: homeQuery } = useThemeMissions(child, onStartTheme, (missionId, context) => {
     if (context === 'THEME_DAY' && theme?.intro && !theme.introSeen && !themeClosed(theme)) onIntroThen(missionId, context)
     else onStartTheme(missionId, context)
   })

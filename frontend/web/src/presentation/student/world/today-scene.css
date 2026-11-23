@@ -1,0 +1,215 @@
+/*
+ * 오늘 장면(#807, 설계 캔버스 TodaySceneTalk): 학생 틀 안을 어두운 바탕으로 가득 채우고(시작 영상 tw-video-stage와 같은 결),
+ * 같은 그림을 흐리게 깐 위에 그림을 원래 비율로 가장 크게, 대화 상자는 그림 아래쪽에 겹친다.
+ * 세로로 긴 화면은 상자를 그림 아래에 붙인다. 움직임 줄이기면 당기기·제목·올라오기 연출을 끈다(컴포넌트가 클래스를 빼고, 기기 설정도 여기서).
+ */
+#class-journal .st-world .ts-stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 72px 16px 16px;
+  border-radius: 30px;
+  background: #0f1a19;
+  color: #fff;
+}
+#class-journal .st-world .ts-wait { font-family: var(--st-hand); font-size: var(--st-fs-base, 18px); }
+#class-journal .st-world .ts-error { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 520px; padding: 22px; border-radius: 20px; background: #fff; color: var(--sk-ink, #0f3b36); }
+#class-journal .st-world .ts-closed { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+#class-journal .st-world .ts-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.15);
+  filter: blur(26px) brightness(0.62);
+  pointer-events: none;
+}
+#class-journal .st-world .ts-top {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+#class-journal .st-world .ts-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 44px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 16px;
+  border: 2px solid var(--sk-ink, #0f3b36);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--sk-ink, #0f3b36);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: var(--st-fs-sm, 16px);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+#class-journal .st-world button.ts-chip { cursor: pointer; align-items: center; }
+#class-journal .st-world .ts-title { font-family: var(--st-display); font-weight: 400; font-size: 24px; }
+#class-journal .st-world .ts-title span { font-family: var(--st-hand); font-weight: 700; font-size: 18px; }
+/* 그림 크기: 학생 틀 높이(바깥 여백 88 + 안쪽 여백 64 + 이 장면 위 72·아래 16 + 그림)가 창 높이 안에 들어오게(1440×900에서 틀 884px) */
+#class-journal .st-world .ts-col { position: relative; width: min(100%, calc((100dvh - 256px) * 16 / 9)); }
+#class-journal .st-world .ts-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 18px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 18px 60px rgba(0, 0, 0, 0.45);
+  background: #f2f5f8;
+}
+#class-journal .st-world .ts-art { position: absolute; inset: 0; }
+#class-journal .st-world .ts-art img { display: block; width: 100%; height: 100%; object-fit: contain; background: #0f1a19; }
+#class-journal .st-world .ts-cam { animation: ts-cam 3.2s ease-out both; }
+@keyframes ts-cam { from { transform: scale(1.08); } to { transform: scale(1); } }
+#class-journal .st-world .ts-noimg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px 20px 140px;
+  box-sizing: border-box;
+  border: 4px dashed #7a8c88;
+  border-radius: 18px;
+  color: var(--sk-ink, #0f3b36);
+  text-align: center;
+}
+#class-journal .st-world .ts-noimg strong { font-family: var(--st-display); font-weight: 400; font-size: 28px; }
+#class-journal .st-world .ts-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(15, 59, 54, 0.55);
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+  animation: ts-title-out 2.6s ease-in both;
+}
+#class-journal .st-world .ts-intro span { font-family: var(--st-hand); font-weight: 700; font-size: 26px; }
+#class-journal .st-world .ts-intro strong { font-family: var(--st-display); font-weight: 400; font-size: clamp(40px, 5vw, 72px); line-height: 1.05; }
+@keyframes ts-title-out { 0%, 55% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+#class-journal .st-world .ts-advance { position: absolute; inset: 0; z-index: 3; border: 0; background: transparent; cursor: pointer; }
+#class-journal .st-world .ts-talk { position: absolute; left: 4%; right: 4%; bottom: 4%; z-index: 5; }
+#class-journal .st-world .ts-rise { animation: ts-rise 0.45s ease-out 2.4s both; }
+@keyframes ts-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+/* 말꼬리(#807 2026-11-23): 상자 기준 px 위치(TodayScene TAIL_*), 밑변 y 28이 상자 윗변에 닿게 */
+#class-journal .st-world .ts-tail {
+  position: absolute;
+  top: -28px;
+  z-index: 2;
+  width: 80px;
+  height: 32px;
+  overflow: visible;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+#class-journal .st-world .ts-tail-fill { fill: #fff8e6; }
+#class-journal .st-world .ts-tail-line { fill: none; stroke: #1f4e6b; stroke-width: 3; stroke-linejoin: round; stroke-linecap: butt; }
+#class-journal .st-world .ts-name {
+  position: absolute;
+  left: 20px;
+  top: -18px;
+  z-index: 1;
+  padding: 2px 14px;
+  border: 2px solid #1f4e6b;
+  border-radius: 10px;
+  background: #ffd84d;
+  color: var(--sk-ink, #0f3b36);
+  font-family: var(--st-display);
+  font-size: 18px;
+  line-height: 1.3;
+}
+#class-journal .st-world .ts-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 4px 16px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 18px 20px 12px;
+  border: 3px solid #1f4e6b;
+  border-radius: 18px;
+  background: #fff8e6;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  color: var(--sk-ink, #0f3b36);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#class-journal .st-world .ts-line { flex: 1 1 260px; min-width: 0; font-family: var(--st-hand); font-weight: 700; font-size: 22px; line-height: 1.45; }
+#class-journal .st-world .ts-pos { flex: none; font-weight: 700; font-size: 14px; white-space: nowrap; }
+/* 문제 시작하기(사용자 결정 2026-11-22): 대화창 오른쪽, 세로 화면은 대화창 아래 오른쪽 */
+#class-journal .st-world .ts-row { display: flex; align-items: stretch; gap: 12px; }
+#class-journal .st-world .ts-row .ts-box { flex: 1 1 auto; min-width: 0; }
+#class-journal .st-world .ts-start {
+  flex: none;
+  align-self: stretch;
+  min-height: 56px;
+  padding: 10px 22px;
+  border: 3px solid #1f4e6b;
+  border-radius: 18px;
+  background: #ff8a1f;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  color: var(--sk-ink, #0f3b36);
+  font-family: var(--st-display);
+  font-size: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  animation: ts-start-in 0.25s ease-out both;
+}
+@keyframes ts-start-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+#class-journal .st-world .ts-start:focus-visible { outline: 4px solid #ffd84d; outline-offset: 3px; }
+#class-journal .st-world .ts-chip:focus-visible,
+#class-journal .st-world .ts-box:focus-visible,
+#class-journal .st-world .ts-advance:focus-visible { outline: 4px solid #ff8a1f; outline-offset: 3px; }
+/* 세로로 긴 화면(휴대폰·좁은 창): 그림 아래에 상자를 붙인다 */
+@media (max-aspect-ratio: 5/4) {
+  /* 이름표 줄이 두 줄로 내려가도 그림을 가리지 않게 그림 위 칸에 따로 둔다 */
+  #class-journal .st-world .ts-stage { justify-content: flex-start; padding-top: 14px; }
+  #class-journal .st-world .ts-top { position: static; margin-bottom: 14px; }
+  #class-journal .st-world .ts-title { white-space: normal; }
+  #class-journal .st-world .ts-title > span { flex: none; white-space: nowrap; }
+  #class-journal .st-world .ts-col { width: 100%; }
+  #class-journal .st-world .ts-talk { position: relative; left: auto; right: auto; bottom: auto; margin: 30px 4px 0; }
+  #class-journal .st-world .ts-line { font-size: 20px; }
+  #class-journal .st-world .ts-row { flex-direction: column; align-items: flex-end; gap: 10px; }
+  #class-journal .st-world .ts-row .ts-box { width: 100%; }
+  #class-journal .st-world .ts-start { align-self: flex-end; }
+}
+/* 휴대폰: 제목 이름표를 작게(사용자 의견 2026-11-23 "모바일 문제 제목 카드는 좀 작아도"), 두 줄이어도 큰 타원이 되지 않게 둥근 네모 */
+@media (max-width: 520px) {
+  #class-journal .st-world .ts-title { padding: 6px 14px; border-radius: 18px; font-size: 18px; }
+  #class-journal .st-world .ts-title span { font-size: 15px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #class-journal .st-world .ts-start { animation: none; }
+  #class-journal .st-world .ts-cam,
+  #class-journal .st-world .ts-rise { animation: none; }
+  #class-journal .st-world .ts-intro { display: none; }
+}

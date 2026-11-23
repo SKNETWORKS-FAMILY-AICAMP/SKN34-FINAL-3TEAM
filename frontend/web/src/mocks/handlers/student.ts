@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw/http'
 import { isShared, saveSharing, requireShared } from '../fixtures/sharing.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
-import type { Child, DemoScenario, Feedback, Period } from '../../domain/classroom.ts'
+import type { Attempt, Child, DemoScenario, Feedback, Period } from '../../domain/classroom.ts'
 import { thisWeek } from '../../domain/classroom.ts'
 import {
   mockAccounts,
@@ -28,7 +28,7 @@ import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook
 import type { StudentLook } from '../../domain/studentLook.ts'
 import { companionKey, FURNITURE_SLOTS, ITEM_SLOTS, themeKey } from '../../domain/retention.ts'
 import type { AttemptContext } from '../../domain/retention.ts'
-import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, themeMissions, weeklyThemeFor, weekRules } from '../fixtures/retention.ts'
+import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, themeMissions, themeSceneFor, weeklyThemeFor, weekRules } from '../fixtures/retention.ts'
 import { mockPremium } from '../fixtures/payments.ts'
 import { difficultyCodes } from '../../domain/learning.ts'
 
@@ -147,6 +147,18 @@ async function withContexts<T extends { attemptId: string; mission: { id: string
   const week = weeklyThemeFor(owner.id, home.missions, owner.grade, mockPremium(owner.id) ? 'PREMIUM' : 'FREE')
   const theme = new Set(week.days.map((d) => d.missionId))
   return rows.map((r) => ({ ...r, context: startedContexts.get(r.attemptId) ?? (theme.has(r.mission.id) ? 'THEME_DAY' : 'EXTRA') }))
+}
+/**
+ * 시도 시작·조회 응답의 `themeScene`(learning #438 목업, 오늘 장면 #807). 시작 때 받은 종류가 EXTRA면 null,
+ * 받은 적이 없으면(새로고침으로 목업 메모리가 비었을 때) 이번 주 테마 미션이면 테마 시도로 본다
+ */
+async function withThemeScene(a: Attempt) {
+  const wire = wireAttempt(a)
+  if (!child || a.studentId !== child.id) return { ...wire, themeScene: null }
+  const home = await store.home(child)
+  const context = startedContexts.get(a.attemptId)
+  const scene = context === 'EXTRA' ? null : themeSceneFor(a.mission.id, home.missions, child.grade)
+  return { ...wire, themeScene: scene }
 }
 const startContext = async (request: Request) => {
   const text = await request.clone().text()
@@ -466,13 +478,13 @@ export const studentHandlers = [
       const m = await missionForContext(child!, missionId, context)
       const started = await store.start(m, child!)
       if (context && !startedContexts.has(started.attemptId)) startedContexts.set(started.attemptId, context)
-      return wireAttempt(started)
+      return withThemeScene(started)
     }, 201),
   ),
   http.get('/api/v1/attempts/:attemptId', ({ request, params }) =>
     respond(async () => {
       guard(request)
-      return wireAttempt(await store.attempt(id(params.attemptId)))
+      return withThemeScene(await store.attempt(id(params.attemptId)))
     }),
   ),
   http.get('/api/v1/attempts/:attemptId/comparison', ({ request, params }) => respond(async () => {

@@ -460,6 +460,29 @@ export function dayAction(theme: WeeklyTheme, day: WeeklyThemeDay): DayAction {
 export const dayContext = (action: DayAction): AttemptContext | null =>
   action === 'START' ? 'THEME_DAY' : action === 'REDO' ? 'THEME_REVIEW' : null
 
+/**
+ * 끝낸 문제의 '다시 풀기'(문제 화면 '이 미션 다시 풀기'·내 공책 기록 상세, #807 사용자 결정 2026-11-23).
+ * - EXTRA: 더 풀어 보기 기록은 예전처럼 `EXTRA`로 다시 시작
+ * - SCENE: 이번 주 테마 문제이고 토요일·프리미엄 일요일(되돌아보기 열림)이면 그 요일 오늘 장면으로(장면이 `THEME_REVIEW`로 시작·이어 함).
+ *   홈·주말 되돌아보기와 같은 `dayAction` 규칙. 푸는 중(RESUME)·안 푼(START) 요일도 장면이 알아서 이어 하거나 시작
+ * - SATURDAY: 이번 주 테마 문제를 평일에 끝냄 → "토요일에 다시 풀 수 있어요" 안내(learning이 평일 `THEME_REVIEW`를 거절하고,
+ *   무료 상품은 `EXTRA`가 꺼져 있어 예전 단추는 오류만 냈음)
+ * - NONE: 지난 주 테마 문제(learning `THEME_REVIEW`는 그 주만)·무료 일요일(테마 닫힘)·아직 안 열린 요일. 프리미엄은 미션 고르기에서 열 수 있음
+ * - WAIT: 주간 테마를 받는 중
+ * `isTheme`은 테마 시도 여부(시도 응답 `themeScene` 유무, 기록 `context`). 모르면 null: 이번 주 테마에 그 미션이 있으면 테마로 본다.
+ */
+export type RetryPlan = { kind: 'EXTRA' } | { kind: 'SCENE'; day: ThemeDay } | { kind: 'SATURDAY' } | { kind: 'NONE' } | { kind: 'WAIT' }
+export function retryPlan(isTheme: boolean | null, missionId: string, theme: WeeklyTheme | null | undefined): RetryPlan {
+  if (isTheme === false) return { kind: 'EXTRA' }
+  if (theme === undefined) return { kind: 'WAIT' }
+  const day = theme?.days.find((d) => d.missionId === missionId)
+  if (!theme || !day) return isTheme === null ? { kind: 'EXTRA' } : { kind: 'NONE' }
+  const action = dayAction(theme, day)
+  if (action === 'REDO' || action === 'RESUME' || action === 'START') return { kind: 'SCENE', day: day.day }
+  if (action === 'DONE' && !themeClosed(theme)) return { kind: 'SATURDAY' }
+  return { kind: 'NONE' }
+}
+
 /** 아직 빠지지 않은 후보(단서는 학습 완료한 요일만 내려오므로 학생이 본 단서 기준). */
 export const remainingCandidates = (theme: WeeklyTheme) =>
   theme.candidates.filter((c) => !theme.days.some((d) => d.rulesOut?.includes(c)))

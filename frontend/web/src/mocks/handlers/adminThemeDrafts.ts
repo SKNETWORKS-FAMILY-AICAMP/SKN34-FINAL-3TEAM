@@ -281,9 +281,12 @@ function adopt(d: MockThemeDraft) {
     return m.missionId
   })
   const scene = (name: ThemeSceneName) => chosen.scenes.find((s) => s.scene === name)
+  // 요일 대화도 채택 테마 요일 칸에(learning ThemeDraftRules와 같이, 오늘 장면 #807). 대화를 못 만든 요일은 null
+  const dialogues = (chosen.draft as { dialogues?: { day: string; lines: { speaker: string; text: string }[] }[] }).dialogues ?? []
+  const dialogueOf = (day: string) => dialogues.find((x) => x.day === day)?.lines ?? null
   const theme = {
     themeId: `theme-${crypto.randomUUID().slice(0, 8)}`, grade: d.grade, weekStart: plannedWeek(d.draftId)??d.weekStart, title: g.theme.title, intro: g.theme.intro,
-    days: THEME_DAYS.map((day, i) => ({ day, missionId: ids[i] })), status: 'DRAFT' as const, updatedAt: stamp(),
+    days: THEME_DAYS.map((day, i) => ({ day, missionId: ids[i], dialogue: dialogueOf(day) })), status: 'DRAFT' as const, updatedAt: stamp(),
     outro: g.theme.outro, introImageUrl: scene('INTRO')?.imageUrl ?? null, outroImageUrl: scene('OUTRO')?.imageUrl ?? null,
     introVideoUrl: scene('INTRO')?.videoUrl ?? null, outroVideoUrl: scene('OUTRO')?.videoUrl ?? null, introMotion: scene('INTRO')?.motion ?? null, outroMotion: scene('OUTRO')?.motion ?? null,
   }

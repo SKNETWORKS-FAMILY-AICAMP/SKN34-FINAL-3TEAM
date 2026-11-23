@@ -4,6 +4,7 @@ import {
   clueCount,
   dayAction,
   dayContext,
+  retryPlan,
   isLookUnlocked,
   onTimeCount,
   remainingCandidates,
@@ -221,6 +222,27 @@ test('문제를 마무리한 직후 이야기의 끝(#440): 엔딩이 됐고 아
   assert.equal(endingDue({ ...ended, outro: null }), false, '종료 이야기가 없는 수동 테마')
   const sunday = { ...ended, review: { open: false, missions: [] }, days: ended.days.map((d) => ({ ...d, state: 'CLOSED' as const })) }
   assert.equal(endingDue(sunday), false, '무료 일요일은 새로 띄우지 않음')
+})
+
+test('끝낸 문제 다시 풀기(#807): 더 풀어 보기는 EXTRA, 이번 주 테마는 토요일·프리미엄 일요일만 오늘 장면, 평일은 토요일 안내, 지난 주·무료 일요일은 없음', () => {
+  const day = (d: string, state: string, attemptStatus: string) => ({ day: d, missionId: `m-${d}`, thinkingType: 'ANALYZE', state, attemptStatus })
+  const week = (open: boolean, days: ReturnType<typeof day>[]) =>
+    readWeeklyTheme({ themeId: 't', weekStart: '2026-11-09', title: '테마', days, review: { open, missions: [] } })!
+  const wed = week(false, [day('MON', 'OPEN', 'COMPLETED'), day('TUE', 'OPEN', 'IN_PROGRESS'), day('WED', 'LOCKED', 'NOT_STARTED')])
+  const sat = week(true, [day('MON', 'OPEN', 'COMPLETED'), day('TUE', 'OPEN', 'IN_PROGRESS'), day('WED', 'OPEN', 'NOT_STARTED')])
+  const freeSunday = week(false, [day('MON', 'CLOSED', 'COMPLETED')])
+  assert.deepEqual(retryPlan(false, 'm-MON', wed), { kind: 'EXTRA' }, '더 풀어 보기는 주간 테마와 무관')
+  assert.deepEqual(retryPlan(true, 'm-MON', undefined), { kind: 'WAIT' })
+  assert.deepEqual(retryPlan(true, 'm-MON', wed), { kind: 'SATURDAY' }, '평일에 끝낸 문제')
+  assert.deepEqual(retryPlan(true, 'm-MON', sat), { kind: 'SCENE', day: 'MON' }, '토요일 다시 풀기')
+  assert.deepEqual(retryPlan(true, 'm-TUE', sat), { kind: 'SCENE', day: 'TUE' }, '푸는 중이면 장면이 이어 함')
+  assert.deepEqual(retryPlan(true, 'm-WED', wed), { kind: 'NONE' }, '아직 안 열린 요일')
+  assert.deepEqual(retryPlan(true, 'm-MON', freeSunday), { kind: 'NONE' }, '무료 일요일은 테마가 닫힘')
+  assert.deepEqual(retryPlan(true, 'm-old', sat), { kind: 'NONE' }, '지난 주 테마 문제')
+  assert.deepEqual(retryPlan(true, 'm-MON', null), { kind: 'NONE' }, '주간 테마를 못 받음')
+  assert.deepEqual(retryPlan(null, 'm-MON', sat), { kind: 'SCENE', day: 'MON' }, '종류 칸 없는 기록: 이번 주 테마에 있으면 테마')
+  assert.deepEqual(retryPlan(null, 'm-old', sat), { kind: 'EXTRA' }, '종류 칸 없는 기록: 이번 주 테마에 없으면 예전처럼')
+  assert.deepEqual(retryPlan(null, 'm-MON', undefined), { kind: 'WAIT' })
 })
 
 test('요일별 할 수 있는 일(#484): 공개된 안 푼 문제 시작, 이어하기는 요일 무관, 다시 풀기는 토요일·프리미엄 일요일만', () => {
