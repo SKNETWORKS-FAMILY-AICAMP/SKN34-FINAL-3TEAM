@@ -466,6 +466,64 @@ uv run python -m scripts.memory_book_sample --out build/memory-book
 - 화면 확인(목업, 브라우저): 가상 학생 PIN 로그인 → 앨범 → 회차 상세에서 "그림책 만들기" → "그림책을 만들고 있어요" → 몇 초 뒤 "그림책 받기" → 표본 PDF로 이동까지 확인했다. 학부모 목록 화면은 목업 시험으로만 확인했고 브라우저로는 보지 않았다.
 - 남은 것: 6단계 kind에서 core·learning·report·web을 이어 실제 테마 그림으로 끝까지 확인.
 
+### 14.6 6단계 결과: 서비스를 이어 끝까지 확인 (2026-11-23)
+
+- 장소: 공용 kind(`sagomungchi-local`)는 다른 세션과 함께 쓰고, V57이 남으면 develop의 다음 core migration과 번호가 충돌하므로 쓰지 않았다(동섭 결정). 대신 실서버 E2E용 compose 구성(`compose.e2e.yaml`, 가짜 Google·결제·LLM 서버, 합성 값 `infrastructure/stubs/e2e.env`)을 별도 프로젝트 이름·포트로 띄워 확인하고 볼륨까지 지웠다.
+- 시험: `frontend/web/tests/e2e/memory-book.spec.ts` + `support/memoryBook.ts`(이 브랜치에 추가). 지난 회차는 그 주가 지나야 액자가 생겨 화면으로 만들 수 없으므로 learning_db에 SQL로 넣는다(3주 전부터 비어 있는 초3 주, 데모 미션 1~5, 월요일 처음 답·되묻기·보완 답·돌아보기, 정답 맞힘 = 엔딩, 기념 액자). 그림은 `public/demo`의 JPEG 7장을 MinIO `sagomungchi-local-missions/theme-drafts/<접두어>/<장면>`에 올린다. 유료 구독·원문 공개·하루 한도는 core_db에 SQL로 넣는다.
+- 흐름(1건 통과, 13.7초): 학부모 Google 가입·자녀 등록 → 학생 기기 등록·PIN 로그인 → 내 방 → 추억 앨범 → 회차 상세 → "그림책 만들기" → "만들고 있어요" → "그림책 받기" → 실제 PDF 내려받기 → 학부모 리포트 화면 목록 "받을 수 있음" → 받기 → 원문 비공개로 바꾸면 학부모 화면에 "아이가 답 보여 주기를 켜야…" 안내.
+- 결과 PDF: 9쪽, 그림 7장(표지·월~금·엔딩), 약 1.5MB. 장면 그림은 learning이 MinIO 공개 주소(127.0.0.1)로 서명한 URL을 report-worker가 클러스터 안 MinIO로 받되 Host는 원래 값으로 보내 서명이 맞았다(14.3의 로컬 설정이 실제로 동작). core에는 작업 READY·결제 사용 `MEMORY_BOOK` USED·내려받기 감사 기록이 남았다.
+- 확인 중 고친 점: 시드 SQL에서 같은 문장으로 넣은 시도 행을 다른 CTE가 표에서 다시 읽어 0건이 되던 문제(같은 문장 안에서는 새 행이 보이지 않음) → CTE 결과로 잇게 고침. 학생 기기 등록 뒤 학부모 화면이 기기·PIN에 있어 리포트 화면으로 이동하도록 고침. 서비스 코드는 고치지 않았다.
+- 16장 3번 추정 확인: 실제 크기 그림(JPEG 7장)으로 PDF 약 1.4~1.5MB, 렌더링은 학생이 누른 뒤 몇 초 안에 끝났다(로컬 Docker). 그림 축소(D8)는 지금 크기로는 필요 없어 보인다.
+- 다시 돌리는 방법(저장소 루트, 덮어쓰기 파일은 아래 내용을 임시 파일로 두고 `-f`로 더한다):
+
+```powershell
+docker compose -p memorybook-e2e --env-file infrastructure/stubs/e2e.env -f compose.yaml -f compose.minio.yaml -f compose.e2e.yaml -f memorybook-e2e.override.yaml up -d --build --wait core-service learning-service report-api report-worker
+```
+
+```yaml
+# 추억 그림책 6단계 전용 덮어쓰기 (공용 kind·다른 compose와 포트가 겹치지 않게). 저장소에 넣지 않음.
+# docker compose -p memorybook-e2e --env-file infrastructure/stubs/e2e.env -f compose.yaml -f compose.minio.yaml -f compose.e2e.yaml -f <이 파일> ...
+services:
+  postgres:
+    ports: !override ["127.0.0.1:25432:5432"]
+  rabbitmq:
+    ports: !override ["127.0.0.1:25672:5672", "127.0.0.1:25673:15672"]
+  redis:
+    ports: !override ["127.0.0.1:26379:6379"]
+  core-service:
+    ports: !override ["127.0.0.1:28080:8080"]
+  learning-service:
+    ports: !override ["127.0.0.1:28081:8081"]
+    environment:
+      ASSET_S3_BUCKET: sagomungchi-local-missions
+      S3_PUBLIC_ENDPOINT_URL: http://127.0.0.1:29000
+      S3_REGION: ap-northeast-2
+      AWS_REGION: ap-northeast-2
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+  ai-service:
+    ports: !override ["127.0.0.1:28000:8000"]
+  scoring-service:
+    ports: !override ["127.0.0.1:28001:8001"]
+  report-api:
+    ports: !override ["127.0.0.1:28002:8002"]
+    environment:
+      S3_PUBLIC_ENDPOINT_URL: http://127.0.0.1:29000
+  report-worker:
+    environment:
+      S3_PUBLIC_ENDPOINT_URL: http://127.0.0.1:29000
+      MEMORY_BOOK_ASSET_ORIGINS: http://127.0.0.1:29000
+      MEMORY_BOOK_ASSET_INTERNAL_ORIGINS: http://127.0.0.1:29000=http://minio:9000
+  minio:
+    ports: !override ["127.0.0.1:29000:9000", "127.0.0.1:29001:9001"]
+```
+
+```powershell
+cd frontend/web; Get-Content ../../infrastructure/stubs/e2e.env | Where-Object { $_ -match '^[A-Z]' } | ForEach-Object { $k,$v = $_ -split '=',2; Set-Item "env:$k" $v }; $env:E2E_POSTGRES_CONTAINER='memorybook-e2e-postgres-1'; $env:E2E_MINIO_URL='http://127.0.0.1:29000'; $env:CORE_HOST_PORT='28080'; npx playwright test -c playwright.e2e.config.ts tests/e2e/memory-book.spec.ts
+```
+
+- 끝나면 같은 compose 옵션으로 `down -v`.
+
 ## 15. 열린 결정 (동섭이 정할 것)
 
 11/23: D2는 위처럼 결정했고, 나머지는 권장안대로 시험 구현한 뒤 결과를 보고 다시 판단한다.
@@ -490,7 +548,7 @@ uv run python -m scripts.memory_book_sample --out build/memory-book
 
 1. ~~시도가 없는 요일의 장면 그림~~ → 2단계에서 정리: 시도 없는 요일은 재게시로 문제가 바뀐 경우뿐이고, 그때는 `weekly_theme_day.mission_version_id` → 게시본 → 현재본 순서로 찾는다(14.2).
 2. 종료 그림·특징 표를 엔딩 내용으로 보는 판단(P23 문구는 "정답·종료 이야기"만 명시).
-3. 테마 초안 그림의 실제 크기·형식, 그에 따른 PDF 크기와 렌더링 시간.
+3. ~~테마 초안 그림의 실제 크기·형식~~ → 6단계에서 JPEG 7장으로 PDF 약 1.5MB 확인(14.6). 실제 ai 테마 초안 그림 해상도는 여전히 미확인.
 4. report 완료 이벤트를 core가 받는 실제 경로(`ReportLifecycleConsumer`)에 그림책 이벤트를 얹는 방법.
 5. `reports` 버킷의 수명 주기 규칙 유무.
 6. learning 새 조립 쿼리의 실행 계획(인덱스 충분 여부).
