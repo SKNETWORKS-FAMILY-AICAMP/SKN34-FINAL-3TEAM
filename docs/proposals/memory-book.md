@@ -181,7 +181,7 @@ sequenceDiagram
 | 호출 | Method | Path | 설명 |
 |---|---|---|---|
 | core → learning | POST | `/internal/students/{studentId}/frames/ownership` | **기존** 보유 확인 재사용 |
-| report-worker → learning | GET | `/internal/students/{studentId}/memory-book/{themeId}/{weekStart}` | **새로**. 응답 초안: `{themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days:[{day, missionId, title, thinkingType, question, sceneImage, dialogue, attempt:{attemptId, completedAt, answers:[{version, text, followup:{type, question}|null}], reflection:{difficulty, text}|null}|null}], ending:{seen, outro, answer, outroImage}}`. 이미지 칸은 `{url, expiresAt}` 또는 null. `X-Student-Scope`·SYSTEM 역할 확인, 미보유 404 |
+| report-worker → learning | GET | `/internal/students/{studentId}/memory-book/{themeId}/{weekStart}` | **새로**. 응답 초안: `{themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days:[{day, missionId, title, thinkingType, question, sceneImage, dialogue, attempt:{attemptId, completedAt, answers:[{version, text, followup:{type, question}|null}], reflection:{difficulty, text}|null}|null}], ending:{seen, outro, answer, outroImage}}`. 이미지 칸은 URL 문자열 또는 null(`AssetUrls`, ai S3 키면 presigned URL, 만료는 `app.assets.url-ttl` 1시간 이내). `X-Student-Scope`·SYSTEM 역할 확인, 미보유 404 (2단계 구현됨, 14.2) |
 | report-worker → core | GET | `/internal/students/{studentId}/profile` | **기존**(별명, `parentSharingEnabled`) |
 | core → report-api | GET | `/internal/memory-books/{bookId}/files/pdf` | **새로**. `{url, expiresAt}`. 파일 없음 404, 삭제 중 409 `DELETION_IN_PROGRESS` |
 | 메시지 | 명령 | `memorybook.generate` (`cmd.direct`) | `{bookId, studentId, rounds:[{themeId, weekStart}], requestedBy, requestedAt}` |
@@ -413,6 +413,15 @@ uv run python -m scripts.memory_book_sample --out build/memory-book
 - 관찰: 표본 PDF 약 110KB, 렌더링 1~2초(로컬 Windows). 실제 테마 그림 크기는 아직 재지 않았다(16장 3번).
 - 남은 판단: 결과물 모양을 보고 2단계(learning 조립 API) 이후를 계속할지 정한다.
 
+### 14.2 2단계 결과 (2026-11-23)
+
+- 구현(learning `memory/`): `controller/MemoryBookController`(`GET /internal/students/{studentId}/memory-book/{themeId}/{weekStart}`, SYSTEM 역할 + 학생 범위만, 월요일 아니면 400), `service/MemoryBookService`, `repository/MemoryBookRepository`(JdbcTemplate 읽기 전용, 대화 JSON 해석도 여기), `domain/MemoryBook.kt`. 호출자 허용 목록 `InternalCallerPolicy`의 report-worker에 `/internal/students/*/memory-book/*/*` 추가. 새 테이블·migration 없음.
+- 재사용: 보유·진행 중 주 판정은 `ThemeFrameService.require`, 요일별 시도 선택·엔딩 판정(P23)은 `WeeklyThemeService.pastRound`를 그대로 쓴다. 앨범 상세와 같은 시도·같은 엔딩 결과가 나온다.
+- 조립 규칙: 문제 글·장면 그림은 시도가 있으면 **그 시도의 `mission_version`**(나중에 미션이 고쳐져도 그때 그림), 없으면 회차 버전 요일의 미션 버전(`weekly_theme_day.mission_version_id` → 게시본 → 현재본, 기존 `findDays`와 같은 순서). 장면은 `static_scene_uri`를 먼저, 없으면 `scene_uri`. 답변은 `answer.plain_text`를 버전 순서로, 보완 답변에는 `followup.type`·`question`. 돌아보기는 `reflection.difficulty`·`changed_text`. 엔딩 전이면 `outro`·`answer`와 함께 `outroImage`도 null.
+- 시험: `MemoryBookTest`(DB 통합 4개: 요일 다섯 개 조립·되묻기 순서·돌아보기·엔딩 전 숨김, 엔딩 뒤 종료 그림, 고친 미션에도 그때 그림, 미보유·남의 회차 404), `MemoryBookControllerTest`(4개: SYSTEM만, 학생·학부모·다른 범위 403, 월요일 검사, report-worker 경로 허용·report-api 거부).
+- 새로 안 사실: 액자는 다섯 문제를 모두 학습 완료해야 생기므로, 그림책 요일의 `attempt`가 null인 경우는 **재게시로 그 요일 문제가 바뀐 회차뿐**이다(일반적으로 "쉬어 간 날"은 없음). 템플릿의 "이 날은 쉬어 갔어요" 문구는 "이 날 문제가 바뀌었어요" 쪽이 정확할 수 있다(3단계에서 정리).
+- 남은 것: 3단계(report가 이 API를 불러 그림을 받아 PDF 저장), 4단계(core 유료·공개 확인·작업 행), 5단계(web).
+
 ## 15. 열린 결정 (동섭이 정할 것)
 
 11/23: D2는 위처럼 결정했고, 나머지는 권장안대로 시험 구현한 뒤 결과를 보고 다시 판단한다.
@@ -435,7 +444,7 @@ uv run python -m scripts.memory_book_sample --out build/memory-book
 
 ## 16. 추정으로 남은 부분 (구현 전 확인할 것)
 
-1. 시도가 없는 요일의 장면 그림을 `weekly_theme_day.mission_version_id`로 찾을 수 있는 비율(V26 이전 게시본은 null 가능).
+1. ~~시도가 없는 요일의 장면 그림~~ → 2단계에서 정리: 시도 없는 요일은 재게시로 문제가 바뀐 경우뿐이고, 그때는 `weekly_theme_day.mission_version_id` → 게시본 → 현재본 순서로 찾는다(14.2).
 2. 종료 그림·특징 표를 엔딩 내용으로 보는 판단(P23 문구는 "정답·종료 이야기"만 명시).
 3. 테마 초안 그림의 실제 크기·형식, 그에 따른 PDF 크기와 렌더링 시간.
 4. report 완료 이벤트를 core가 받는 실제 경로(`ReportLifecycleConsumer`)에 그림책 이벤트를 얹는 방법.
