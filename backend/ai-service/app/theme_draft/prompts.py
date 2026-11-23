@@ -38,6 +38,7 @@ from app.theme_draft.checks import (
     HINTS,
     INVESTIGATE,
     MATH_AHEAD,
+    PERSON_OF_TARGET,
     Theme,
     candidate_words,
     clue_person,
@@ -2825,6 +2826,17 @@ def cut_reveals_answer(scene: str) -> bool:
     return scene == "OUTRO"
 
 
+# 1단계 실측(2026-11-23, 소리 탐정 월요일 "캠핑 안내 자료를 펼쳐 핵심 내용을 추림"): 부탁 날 미션은
+# 안내문·시집·추천 카드처럼 글을 다루는 일이 많아 펼친 종이에 한글이 세 번 모두 그려져 초안 전체가
+# 실패함(#779 콘티 11-19 목요일 일지도 같은 꼴). 컷 그림의 글자 물건 줄(WRITTEN_THINGS)이 미션 그림
+# 지시에는 없었음
+MISSION_WRITTEN = (
+    "Papers, booklets, cards, notebooks and boards in this picture are shown closed, tilted or a "
+    "little far away; anything written on them is only short wavy gray lines or empty boxes, never "
+    "readable letters or numbers."
+)
+
+
 def mission_image_prompt(theme: Theme, day: str, draft: Draft, feedback: list[str]) -> str:
     """요일 미션 그림: 스타일·뭉치·인물·그날 장면 + 그날 증거(수사 날) 또는 돕는 사람(부탁·함께
     발견 날) + 미션 질문·생각 열기 질문.
@@ -2861,6 +2873,7 @@ def mission_image_prompt(theme: Theme, day: str, draft: Draft, feedback: list[st
         "Today's question for the student (Korean). Every object or place the question and the "
         f"thinking prompts point to must be visible in the picture: {draft.question}",
         f"Thinking prompts (Korean): {hints}" if hints else "",
+        MISSION_WRITTEN,
         # 손에 든 것(#634 ②)은 대상이 늘 보이는 종류만 그림(선물 상자는 닫힌 채, 비밀 재료 음식은
         # 물든 색이 답이라 그리지 않음)
         (
@@ -3077,6 +3090,14 @@ FIRST_MOMENT_NEW = (
 )
 
 
+def arrival_name(theme: Theme) -> str | None:
+    """탈것 찾기의 온 사람 이름(대상 글 그대로, '사촌 언니가 타고 온 탈것' → '사촌 언니')."""
+    if story_type(theme).code != "VEHICLE":
+        return None
+    m = PERSON_OF_TARGET.match(str(theme.get("target") or ""))
+    return m.group(1).strip() if m else None
+
+
 def cut_frame(theme: Theme, scene: str, index: int) -> Frame | None:
     """그 컷의 구도 틀(#779 설계 H). 종료 5컷은 줄거리 종류가 바꿀 수 있음(동물 배웅). 예전 4컷은
     None(예전 장면 크기 규칙)."""
@@ -3085,6 +3106,8 @@ def cut_frame(theme: Theme, scene: str, index: int) -> Frame | None:
         return None
     if (scene, index) == ("OUTRO", 5) and story_type(theme).outro5_frame:
         return FRAMES[story_type(theme).outro5_frame]
+    if (scene, index) == ("INTRO", 2) and story_type(theme).intro2_frame:
+        return FRAMES[story_type(theme).intro2_frame]
     return FRAMES[spec.frame]
 
 
@@ -3180,6 +3203,13 @@ def cut_image_prompt(
     # 공통 규칙 목록(rules.RULES, #779 설계 H): 뭉치 컷·사람 컷에 붙는 규칙을 한 곳에서
     lines += common_rules.lines("image", cut_flags(theme, scene, index))
     lines += [x for x in target_lines(theme, scene, index) if x]
+    # 탈것 찾기 시작 1컷(평소 모습)에는 온 사람이 아직 없음. 컷 글에서 빼도 등장인물 목록·인물 기준
+    # 그림을 보고 그려 넣었음(1단계 실측 2026-11-23: 화분에 물 주는 삼촌, checks CUT_TARGET과 짝)
+    if (scene, index) == ("INTRO", 1) and (who := arrival_name(theme)):
+        lines.append(
+            f"{who} has not arrived yet: {who} is not in this picture at all. Draw only the other "
+            "people."
+        )
     frame = cut_frame(theme, scene, index)
     rules = [CUT_IMAGE_RULES, FACE_TEXT[frame.faces]] if frame else [IMAGE_RULES]
     lines += [*rules, *_fixes(feedback)]
@@ -3229,7 +3259,11 @@ IMAGE_REVIEW_SYSTEM = (
     "가리키는 표시가 있는지(장소가 비슷해 보인다는 이유만으로는 결함이 아님). "
     + COVERED_REVIEW
     + "\n"
-    "TEXT: 글자·숫자 같은 글이 보이는지(간판·책·표지에 쓴 글 포함).\n"
+    # 1단계 실측(2026-11-23): 미션 그림 한 장이 글자로 세 번 떨어지면 그 주 초안 전체가 실패함.
+    # 읽히는 글만 FAIL, 읽을 수 없는 물결선·빈칸은 WARN(#779 설계 C표 등급 방식)
+    "TEXT: 읽을 수 있는 글자·숫자가 보이는지(간판·책·표지·종이에 쓴 글 포함, 보이면 FAIL). "
+    "읽을 수 없는 짧은 물결선·작은 낙서·빈칸만 있으면 WARN, 점선·X 표시 같은 그림 기호는 글자가 "
+    "아니다.\n"
     "SAFETY: 무섭거나 위험한 모습, 폭력, 실존 인물·상표가 있는지. " + SAFETY_STORY + "\n"
     # #779: 컷 그림은 동작(action)의 첫 순간(그림 지시 FIRST_MOMENT와 같게)
     "SCENE_FIT: 주어진 장면의 장소·인물·하는 일이 그림에 보이는지. action이 있으면 그림은 그 "
@@ -3461,6 +3495,8 @@ def video_prompt(
     spec = cut_layout.spec(scene, index, n)
     answer_cuts = type_cuts(story_type(theme), n).answer
     camera = cut_camera(scene, index, cut, n)
+    if (frame := cut_frame(theme, scene, index)) is not None:  # 종류가 바꾼 구도(종료 5·시작 2컷)
+        camera = frame.camera
     if safe and camera == "PUSH_SLOW":  # 안전판은 다가가지 않음
         camera = "HOLD_CLOSE"
     elif safe and camera not in ("HOLD_CLOSE", "TRACK_SIDE"):  # 출동 컷 안전판도 옆으로 따라감

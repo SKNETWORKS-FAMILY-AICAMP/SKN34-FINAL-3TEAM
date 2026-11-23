@@ -269,7 +269,9 @@ def test_frames_do_not_conflict_with_face_rules_and_variants_are_stable() -> Non
     }
     assert len(chosen) > 1  # 테마마다 엔딩 변형이 달라질 수 있음
     # 사건 컷 수수께끼 조명·클로즈업만 천천히 다가감(수수께끼 모험물 컷신 느낌)은 틀이 정함
-    assert {f.id for f in prompts.FRAMES.values() if f.mystery} == {"OBJECT_CLOSE", "REACTION"}
+    # (PERSON_CLOSE는 물건 없는 종류의 사건 클로즈업 대신, 1단계 실측 2026-11-23)
+    mystery = {f.id for f in prompts.FRAMES.values() if f.mystery}
+    assert mystery == {"OBJECT_CLOSE", "PERSON_CLOSE", "REACTION"}
 
 
 @pytest.mark.parametrize(("code", "branch"), CASES, ids=IDS)
@@ -298,8 +300,10 @@ def test_no_cut_carries_lines_that_fight_each_other(code: str, branch: str | Non
             assert "afternoon" not in image and "near the bushes" not in image, where
             # '모두 그 동물을 바라봄'은 공개 컷에만
             assert "everyone watches it" not in video or frame.id == "REVEAL", where
-        # 종료 5컷: 종류가 틀을 바꿔도 카메라는 컷 표 틀과 같음(cut_camera는 컷 표 틀을 봄)
-        assert frame.camera == prompts.FRAMES[spec.frame].camera, where
+        # 종류가 틀을 바꾸면(종료 5컷 배웅, 시작 2컷 인물 클로즈업) 영상 카메라도 그 틀을 따름
+        # (1단계 실측 2026-11-23: 사람 클로즈업은 다가가지 않음)
+        if spec.has_people and not spec.run_comp and not spec.two_faces:
+            assert f"Camera: {prompts.CAMERA_TEXT[frame.camera]}" in video, where
         # 첫 표정은 그 컷 움직임의 시작: 놀란 입에서 시작하는 컷은 놀란 입, 웃음으로 끝나는 깨달음
         # 컷은 다문 입
     assert cuts.spec("OUTRO", 1, 6).mouth == "determined"

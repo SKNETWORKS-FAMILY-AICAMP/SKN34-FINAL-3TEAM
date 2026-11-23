@@ -316,6 +316,9 @@ class StoryType:
     # 종료 5컷 구도 틀 이름(frames.FRAMES, 비면 컷 표의 틀 JOY). 동물 배웅은 인물들이 동물 쪽을
     # 보지 않고 서로를 봤음(대표 5종 콘티 장난꾸러기) → FAREWELL
     outro5_frame: str = ""
+    # 시작 2컷 구도 틀 이름(비면 컷 표의 틀 OBJECT_CLOSE). 사건 물건이 없는 종류(탈것·소리 탐정)는
+    # 인물 클로즈업 PERSON_CLOSE(1단계 실측 2026-11-23, frames.py)
+    intro2_frame: str = ""
     branch_cuts: Branches = field(default_factory=dict)
     # 종료 3~6컷 장소(outroPlace)를 고르는 법. 비면 공통 규칙(정답이 밝혀지는 곳, cuts.PLACE_KEY)
     outro_place: str = ""
@@ -1184,6 +1187,7 @@ VEHICLE = StoryType(
         "함께 기뻐함(손뼉 없이 폴짝 뛰거나 웃음) · 기쁜 얼굴",
     ),
     target_cuts=VEHICLE_TARGET_CUTS,  # 대상 = 타고 온 탈것(엔딩에서만)
+    intro2_frame="PERSON_CLOSE",  # 깜짝 찾아온 사람(물건 없음)
     outro_rule=(
         "뭉치와 아이가 온 사람과 함께 그 사람이 타고 온 탈것을 보러 가 확인하고 함께 기뻐하는 "
         "장면만 쓴다."
@@ -1354,6 +1358,7 @@ SOUND = StoryType(
     ),
     branch_cuts=SOUND_BRANCHES,
     target_cuts=ALL_CUTS,  # 대상이 '소리'라 그릴 것이 없음(target_visual)
+    intro2_frame="PERSON_CLOSE",  # 소리 이야기를 전해 들음(물건 없음)
     # 해먹·작은 종·빈 페트병 손보기는 #782 새 줄의 기준안(확인 전, 사용자 결정 2026-11-19)
     outro_rule=(
         "소리의 정체(정답)가 밝혀지는 장면만 쓴다. 동물이면 모두 조금 떨어져서 함께 바라보며 웃고 "

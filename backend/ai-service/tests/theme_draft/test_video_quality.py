@@ -679,3 +679,16 @@ def test_cut_place_is_fixed_by_layout() -> None:
         "outroPlace",
     }
     assert prompts.fix_rules(theme, "outroPlace")
+
+
+def test_mission_picture_keeps_papers_unreadable_and_text_review_is_graded() -> None:
+    """부탁 날 미션은 안내문·카드처럼 글을 다뤄 펼친 종이에 한글이 그려지고 세 번 떨어지면 초안
+    전체가 실패했음(1단계 실측 2026-11-23). 미션 그림에도 글자 물건 줄, 검토는 읽히는 글만 FAIL."""
+    from tests.theme_draft.fixtures import mission_draft
+
+    theme = valid_theme()
+    text = prompts.mission_image_prompt(theme, "MON", mission_draft("ANALYZE"), [])
+    assert prompts.MISSION_WRITTEN in text
+    assert "never readable letters or numbers" in prompts.MISSION_WRITTEN
+    review = prompts.IMAGE_REVIEW_SYSTEM
+    assert "읽을 수 있는 글자·숫자가 보이는지" in review and "빈칸만 있으면 WARN" in review

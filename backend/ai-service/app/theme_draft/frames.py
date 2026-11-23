@@ -106,6 +106,23 @@ FRAMES: dict[str, Frame] = {
             "사건 대상(물건·동물·자리)이 크게 보임",
             mystery=True,
         ),
+        # 사건 물건이 없는 종류(탈것: 깜짝 찾아온 사람, 소리 탐정: 전해 들은 소리 이야기)의 시작
+        # 2컷(StoryType.intro2_frame). OBJECT_CLOSE("사건 물건을 크게")를 쓰면 검토가 "탈것이 크게
+        # 안 보임"으로 세 번 떨어뜨리고(탈것은 엔딩 전에 그리면 안 됨), 그림 모델은 물건을 지어냄
+        # (소리 탐정 클로즈업의 파헤친 흙 자리) — 1단계 실측 2026-11-23
+        Frame(
+            "PERSON_CLOSE",
+            "Close shot of the people at the moment they notice the incident, seen from the chest "
+            "up and turned toward each other; no object needs to be large in the picture.",
+            (
+                "The child is on the left and the other person on the right.",
+                "The child is on the right and the other person on the left.",
+            ),
+            "side",
+            "HOLD_CLOSE",  # 사람 클로즈업은 다가가지 않음(11-18: 다가가는 카메라가 다리를 자름)
+            "사건을 알아챈 순간의 두 인물 얼굴이 크게 보임",
+            mystery=True,
+        ),
         Frame(
             "REACTION",
             f"{CLOSE_SHOT} They look toward the incident spot just outside the picture.",

@@ -409,6 +409,15 @@ def test_vehicle_first_cut_does_not_show_the_arriving_person() -> None:
     theme["introCuts"][1]["scene"] = "현관 안쪽에서 삼촌과 아이의 어깨 위가 크게 보인다."
     assert not [r for r in checks.check_theme(theme, 3) if r.startswith("CUT_TARGET")]
     assert checks.arrival_person(valid_theme()) is None
+    # 그림 지시도: 컷 글에서 빼도 등장인물 목록을 보고 그려 넣었음(1단계 다시 그리기 2026-11-23)
+    first = prompts.cut_image_prompt(
+        vehicle_theme(), "INTRO", 1, vehicle_theme()["introCuts"][0], []
+    )
+    assert "삼촌 has not arrived yet" in first
+    second = prompts.cut_image_prompt(
+        vehicle_theme(), "INTRO", 2, vehicle_theme()["introCuts"][1], []
+    )
+    assert "has not arrived" not in second
 
 
 def test_vehicle_absent_value_clue_and_ferry_place() -> None:
@@ -497,3 +506,16 @@ def test_when_intro_must_not_say_daypart() -> None:
     bad = [r for r in checks.check_theme(theme, 3) if r.startswith("TIME_WORD intro")]
     assert bad and "'점심'" in bad[0] and list(checks.fix_targets(bad)) == ["intro"]
     assert not [r for r in checks.check_theme(when_theme(), 3) if r.startswith("TIME_WORD")]
+
+
+def test_no_object_types_use_person_close_for_intro_two() -> None:
+    """탈것·소리 탐정은 시작 2컷에 사건 물건이 없어 인물 클로즈업(1단계 실측 2026-11-23: '사건
+    물건을 크게'면 검토가 '탈것이 크게 안 보임'으로 세 번 떨어뜨리고, 그림은 물건을 지어냄)."""
+    from tests.theme_draft.test_families_sound import sound_theme
+
+    for theme in (vehicle_theme(), sound_theme()):
+        frame = prompts.cut_frame(theme, "INTRO", 2)
+        assert frame is not None and frame.id == "PERSON_CLOSE"
+        cut = prompts.cut_image_prompt(theme, "INTRO", 2, theme["introCuts"][1], [])
+        assert "no object needs to be large" in cut and "incident object or spot" not in cut
+    assert prompts.cut_frame(valid_theme(), "INTRO", 2).id == "OBJECT_CLOSE"
