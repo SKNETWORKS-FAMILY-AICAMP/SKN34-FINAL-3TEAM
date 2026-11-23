@@ -492,7 +492,7 @@
   gap: 12px;
   margin-top: 12px;
   padding: 14px 16px;
-  border: 2px dashed var(--st-ink);
+  border: 1px solid var(--sk-line);
   border-radius: 16px;
   background: #fffdf7;
 }
@@ -516,10 +516,12 @@
 #class-journal .st-word-example {
   color: #4a4a45;
 }
-#class-journal .st-say .st-word-cite {
-  border-color: #c9c4b4;
+#class-journal .st-word-cite {
   color: #4a4a45;
+  overflow-wrap: anywhere;
 }
+#class-journal .st-word-cite a { text-decoration: underline; }
+#class-journal .st-word-answer { margin-left: 4px; }
 #class-journal .st-word-source {
   margin: 6px 0 0;
   font-size: var(--st-fs-xs, 13px);

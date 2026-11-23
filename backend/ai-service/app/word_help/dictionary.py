@@ -1,4 +1,4 @@
-"""국립국어원 사전 조회 (api-spec 4.2.7, #599).
+"""국립국어원 사전 조회 (api-spec 4.2.8, #599).
 
 - 표준국어대사전 search.do: key·q·req_type=json·num. 표제어마다 첫 뜻 하나만 준다(검색 응답의 한계)
 - 온용어 search.do: key·apiSearchWord·start·num. 용어마다 공공누리 유형(kr_gvrn_lcns_ty)이

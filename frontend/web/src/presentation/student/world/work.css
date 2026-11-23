@@ -220,6 +220,10 @@
 }
 #class-journal .st-world .sw-word-trigger:hover span,
 #class-journal .st-world .sw-word-trigger[aria-expanded='true'] span { text-decoration: underline; }
+#class-journal .st-world .sw-word-trigger:focus-visible {
+  outline: 3px solid var(--sk-accent);
+  outline-offset: 3px;
+}
 #class-journal .st-world .sw-helper:has(.sw-word-trigger[aria-expanded='true']) {
   position: static;
   margin-top: 0;

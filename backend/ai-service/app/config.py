@@ -190,9 +190,8 @@ class Settings(BaseSettings):
     memory_query_provider: Literal["llm", "fake"] = "llm"
     memory_query_max_tokens: int = 512
     memory_query_llm_timeout: float = 7.0
-    # 낱말 물어보기 (FN-LRN-21, api-spec 4.2.7, #599). 기본 LLM 설정을 쓰고 두 번 호출을 전체
-    # 마감 안에서만
-    # (learning→ai 35초보다 짧게). 사전 키·주소는 국립국어원 표준국어대사전·온용어 Open
+    # 낱말 물어보기 (FN-LRN-21, api-spec 4.2.8, #599). 기본 LLM·웹 검색은 요청 전체 마감을 공유.
+    # ai 20초·learning→ai 25초. 사전 키·주소는 국립국어원 표준국어대사전·온용어 Open
     # API(.env에서만, 로그 금지).
     # fake는 개발용 규칙 설명(사전은 실제 호출, 사용량 없음)
     word_help_provider: Literal["llm", "fake"] = "llm"

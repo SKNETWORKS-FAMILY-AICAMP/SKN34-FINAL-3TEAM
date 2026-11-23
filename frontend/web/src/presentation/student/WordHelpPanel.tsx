@@ -50,21 +50,21 @@ export function WordHelpPanel({ attemptId, companion }: { attemptId: string; com
     <ol className="st-word-turns" aria-live="polite">
       {turns.map(turn => <li key={turn.id}>
         <p className="st-word-me"><span className="st-visually-hidden">내 질문</span>{turn.question}</p>
-          <SpeechBubble tail="left" className="sw-bubble st-word-answer">
-            <span className="st-visually-hidden">{name}의 대답</span>
-            {turn.answer.headword && turn.answer.state !== 'NOT_FOUND' && <strong>{turn.answer.headword}</strong>}
-            <p>{turn.answer.text}</p>
-            {turn.answer.example && <p className="st-word-example">예: {turn.answer.example}</p>}
-            {turn.answer.state === 'DICTIONARY_ONLY'
-              ? <ul className="st-word-source">{turn.answer.senses.map((sense, index) => <li key={index}>{sense.definition} <SenseSource sense={sense} /></li>)}</ul>
-              : turn.answer.senses.length > 0 && <>
-                <SenseSource sense={turn.answer.senses[0]} adapted />
-                <details className="st-word-source">
-                  <summary>사전에 적힌 뜻 보기</summary>
-                  <p>{turn.answer.senses[0].definition}</p>
-                </details>
-              </>}
-          </SpeechBubble>
+        <SpeechBubble tail="left" className="sw-bubble st-word-answer">
+          <span className="st-visually-hidden">{name}의 대답</span>
+          {turn.answer.headword && turn.answer.state !== 'NOT_FOUND' && <strong>{turn.answer.headword}</strong>}
+          <p>{turn.answer.text}</p>
+          {turn.answer.example && <p className="st-word-example">예: {turn.answer.example}</p>}
+          {turn.answer.state === 'DICTIONARY_ONLY'
+            ? <ul className="st-word-source">{turn.answer.senses.map((sense, index) => <li key={index}>{sense.definition} <SenseSource sense={sense} /></li>)}</ul>
+            : turn.answer.senses.length > 0 && <>
+              <SenseSource sense={turn.answer.senses[0]} adapted />
+              <details className="st-word-source">
+                <summary>사전에 적힌 뜻 보기</summary>
+                <p>{turn.answer.senses[0].definition}</p>
+              </details>
+            </>}
+        </SpeechBubble>
       </li>)}
     </ol>
     {ask.isPending && <p role="status">사전을 찾고 있어요.</p>}

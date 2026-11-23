@@ -1,4 +1,4 @@
-"""POST /internal/word-helps 요청·응답 (api-spec 2.2.1·4.2.7, FN-LRN-21, #599).
+"""POST /internal/word-helps 요청·응답 (api-spec 2.2.1·4.2.8, FN-LRN-21, #599).
 
 JSON 필드는 camelCase. 학생 이름·답·ID는 받지 않는다(NFR-SEC-03). 정의 밖 칸은 400이라
 ID를 실수로 넣어도 LLM까지 가지 않는다. leak은 마무리 전 시도만 learning이 채운다.
