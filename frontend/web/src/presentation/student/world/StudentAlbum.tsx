@@ -13,6 +13,7 @@ import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
 import { Companion } from './Companion.tsx'
 import { useLook } from './lookContext.ts'
 import { MemorySearch } from './MemorySearch.tsx'
+import { MemoryBookPanel } from './MemoryBookPanel.tsx'
 import './room.css'
 import { FrameScene } from './FrameScene.tsx'
 
@@ -216,6 +217,8 @@ export function StudentEpisode({ child, themeId, weekStart, onBack, onRoom, onAt
               ))}
             </ol>
           </section>
+          {/* 추억 그림책 (docs/proposals/memory-book.md, 미도입 시험 구현) */}
+          <MemoryBookPanel child={child} themeId={e.themeId} weekStart={e.weekStart} />
         </>
       )}
     </main>

@@ -454,6 +454,18 @@ uv run python -m scripts.memory_book_sample --out build/memory-book
 - 도입 시 필요한 것: `docs/design/erd.md`에 V57 표를 옮기지 않으면 `ci-db-schema`(ERD 대조)가 실패한다. core OpenAPI(`contracts/openapi/core-service.yaml`)에는 공개 API를 아직 넣지 않았다.
 - 남은 것: 5단계 web, 6단계 kind 끝까지 확인.
 
+### 14.5 5단계 결과 (2026-11-23)
+
+- 구현(web `frontend/web/src/`):
+  - `domain/memoryBook.ts`: 응답 읽기(상태 `QUEUED`·`READY`·`FAILED`·`EXPIRED`, 회차·시각 검사, 모르는 값은 계약 오류), 받기 주소 검사(http(s)·만료 전만), 회차의 최근 그림책 고르기, 만드는 중이면 3초마다 다시 보기, 공개 오류 코드를 아이·학부모 말로 바꾸기.
+  - `data/memoryBook/api.ts`·`queries.ts`: 7.1 API 6개. 만들기는 재시도하지 않음(하루 한도), 목록은 만드는 중이 있을 때만 다시 조회.
+  - 학생: `presentation/student/world/MemoryBookPanel.tsx`를 회차 상세(`StudentEpisode`) 아래에 붙임. 없음·실패·만료 → "그림책 만들기", 만드는 중 → 기다림 안내, 완성 → "그림책 받기". 유료·비공개·한도 거절은 아이 말로 안내("그림책을 만들려면 보호자에게 답 보여 주기를 켜야 해요" 등).
+  - 학부모: `presentation/parent/ParentMemoryBooks.tsx`를 리포트 칸(`ParentReports`) 아래에 붙임. 주 이름·상태·받기 버튼. 아이가 답 보여 주기를 끄면 목록 대신 안내.
+  - 목업: `mocks/handlers/memoryBook.ts`(core 규칙 흉내: 공개·유료·보유·하루 3개·재사용, 만들고 4초 뒤 완성, `sessionStorage 'sagomungchi:msw-memory-book' = 'FAIL'`이면 실패로 끝남), 받기 주소는 1단계 표본 PDF(`public/demo/memory-book-sample.pdf`).
+- 시험: `tests/memoryBook.test.ts` 5개(응답 읽기·받기 주소·회차 고르기·오류 문구, 목업 계약). web 전체 434개, 타입 검사(앱·시험), oxlint, `vite build` 통과.
+- 화면 확인(목업, 브라우저): 가상 학생 PIN 로그인 → 앨범 → 회차 상세에서 "그림책 만들기" → "그림책을 만들고 있어요" → 몇 초 뒤 "그림책 받기" → 표본 PDF로 이동까지 확인했다. 학부모 목록 화면은 목업 시험으로만 확인했고 브라우저로는 보지 않았다.
+- 남은 것: 6단계 kind에서 core·learning·report·web을 이어 실제 테마 그림으로 끝까지 확인.
+
 ## 15. 열린 결정 (동섭이 정할 것)
 
 11/23: D2는 위처럼 결정했고, 나머지는 권장안대로 시험 구현한 뒤 결과를 보고 다시 판단한다.

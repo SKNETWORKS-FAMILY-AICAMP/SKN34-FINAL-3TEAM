@@ -10,6 +10,7 @@ import type { DemoScenario } from '../domain/classroom.ts'
 import { parentHandlers, reviseMockConsents } from './handlers/parent.ts'
 import { retentionHandlers } from './handlers/retention.ts'
 import { memoryHandlers } from './handlers/memory.ts'
+import { memoryBookHandlers } from './handlers/memoryBook.ts'
 import { adminHandlers } from './handlers/admin.ts'
 import { adminThemeDraftHandlers } from './handlers/adminThemeDrafts.ts'
 import { setWorkspaceScenario } from './fixtures/accounts.ts'
@@ -27,6 +28,7 @@ export const mockHandlers = [
   // 커뮤니티 신고·선택 동의는 기존 신고·동의 목업보다 먼저 받아야 한다.
   ...retentionHandlers,
   ...memoryHandlers,
+  ...memoryBookHandlers,
   ...serviceHandlers,
   ...studentDeviceHandlers,
   ...parentHandlers,

@@ -11,6 +11,7 @@ import type { ReportContext, ReportHighlight, ReportTargets } from '../../domain
 import { emptyReportTargets, reportTargets } from '../../domain/reportHighlight.ts'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
+import { ParentMemoryBooks } from './ParentMemoryBooks.tsx'
 import { knownEntitlement, useChildEntitlement } from '../../data/payment/queries.ts'
 import { thinkingLabels } from '../../domain/classroom.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
@@ -60,6 +61,8 @@ export function ParentReports({
         <div><h2>학습 리포트</h2><p>하루의 학습과 한 주의 변화를 모아 볼 수 있어요.</p></div>
         <button className="parent-report-launcher" onClick={() => setOpened(true)}><Files size={24} aria-hidden="true" /><span><strong>리포트 자세히 보기</strong><small>일일·주간 리포트</small></span><ArrowUpRight size={20} aria-hidden="true" /></button>
       </div>
+      {/* 추억 그림책 (docs/proposals/memory-book.md, 미도입 시험 구현) */}
+      <ParentMemoryBooks child={child} />
       {showModal && <Modal title={`${child.nickname}의 학습 리포트`} onClose={close}>
       <div className="report-explorer" data-detail={!!activeId}>
       {!activeId && <>
