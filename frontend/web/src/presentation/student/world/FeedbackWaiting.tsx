@@ -22,11 +22,13 @@ const LENS_ACCESSORY = 'looks/acc-lens.svg'
  * 화면 읽기: 이 표시는 피드백 상자(role="status") 안에 들어간다. 그림·말풍선은 숨기고(aria-hidden) 단계 문구만 숨김 글자로 둬서
  * 단계가 바뀔 때만 읽힌다(친구를 눌러 바뀐 말은 읽지 않음).
  */
-export function FeedbackWaiting({ companion, worn, startedAt, submittedAt }: {
+export function FeedbackWaiting({ companion, worn, startedAt, submittedAt, reduce = false }: {
   companion: CompanionId
   worn?: Partial<Record<WearSlot, string | null>>
   startedAt?: number
   submittedAt?: string
+  /** 움직임 줄이기(OS 설정 또는 화면 안 체크박스): 멈춘 그림 + 문구만. 말풍선 문구는 그대로 바뀐다 */
+  reduce?: boolean
 }) {
   const [start] = useState(() => startedAt ?? resumeWaitStart(submittedAt, Date.now()))
   const [now, setNow] = useState(() => Date.now())
@@ -42,7 +44,7 @@ export function FeedbackWaiting({ companion, worn, startedAt, submittedAt }: {
       document.removeEventListener('visibilitychange', sync)
     }
   }, [step.index, step.next])
-  // 친구를 누르면 한 번 콩 뛰고 말풍선이 잠깐 바뀐다(움직임 줄이기면 CSS가 뛰기만 끈다)
+  // 친구를 누르면 한 번 콩 뛰고 말풍선이 잠깐 바뀐다(움직임 줄이기면 CSS가 뛰기만 끈다, 말은 그대로 바뀜)
   const [pokes, setPokes] = useState(0)
   const [poked, setPoked] = useState(false)
   const pokeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -58,15 +60,20 @@ export function FeedbackWaiting({ companion, worn, startedAt, submittedAt }: {
   const side = wearAssetUrl(worn?.ACCESSORY) ? 'left' : 'right'
   const ownLens = worn?.ACCESSORY === LENS_ACCESSORY
   return (
-    <div className="sw-wait" data-motion={step.motion} data-step={step.index} data-own-lens={ownLens || undefined}>
+    <div className="sw-wait" data-motion={step.motion} data-step={step.index} data-own-lens={ownLens || undefined} data-reduce={reduce || undefined}>
       <button type="button" className="sw-wait-friend" aria-label={`${companionLabel(companion)}에게 말 걸기`} onClick={poke}>
         <span className="sw-wait-poke" key={pokes} data-poked={pokes > 0 || undefined} aria-hidden="true">
+          {/* pose: 단계 움직임(공책 볼 때 고개 따라가기·갸웃·콩콩), breath: 늘 숨쉬기(위아래 2px) */}
           <span className="sw-wait-pose">
-            <Companion kind={companion} size={120} worn={worn} decorative />
-            {/* 공책 넘기기 단계에서는 그려 넣는 돋보기를 내려놓는다(입은 돋보기 소품은 아이템이라 그대로) */}
-            {!ownLens && step.motion !== 'notebook' && <Magnifier side={side} />}
-            {step.motion === 'notebook' && <Notebook />}
+            <span className="sw-wait-breath">
+              <Companion kind={companion} size={120} worn={worn} decorative />
+              {/* 살피기(0초~)는 돋보기를 눈앞에 대고 렌즈 안에 큰 눈. 공책 단계에서는 내려놓는다(입은 돋보기 소품은 아이템이라 그대로) */}
+              {!ownLens && step.motion !== 'notebook' && <Magnifier side={side} bigEye={step.motion === 'look'} />}
+              {step.motion === 'tilt' && <span className="sw-wait-q">?</span>}
+            </span>
           </span>
+          {/* 공책은 고개를 따라 돌지 않게 pose 밖에 둔다 */}
+          {step.motion === 'notebook' && <Notebook />}
         </span>
         <span className="sw-wait-ground" aria-hidden="true" />
       </button>
@@ -94,18 +101,36 @@ const lens = (w: number) => itemStroke(w, 64, LENS_BOX)
  * 렌즈는 오른쪽 위 바깥을 향한다(사용자 의견 2026-11-23 "얼굴 옆에 떠 있지 말고"). 왼쪽에 들 때는 좌우를 뒤집는다.
  * 선 두께는 착용 돋보기 소품(looks/acc-lens.svg: 테 4.5, 손잡이 7·3.5, 반짝임 3)과 같게. 렌즈는 연한 하늘색 + 작은 반사광
  */
-export function Magnifier({ side = 'right', className = 'sw-wait-glass' }: { side?: 'left' | 'right'; className?: string }) {
+export function Magnifier({ side = 'right', className = 'sw-wait-glass', bigEye = false, glint = false }: {
+  side?: 'left' | 'right'
+  className?: string
+  /** 눈앞에 대고 볼 때 렌즈 안에 친구 눈을 2배로(친구 눈 반지름 10 → 20, 그림 단위로 환산) */
+  bigEye?: boolean
+  /** "찾았다!" 때 렌즈 반짝 */
+  glint?: boolean
+}) {
+  // 살피기 단계에서는 그림 칸이 친구 칸의 56%(work.css)라 친구 눈 반지름 20(2배)을 이 그림 단위로 바꾼다
+  const eye = Math.round((20 * 64) / (FRIEND_UNITS * LOOK_BOX) * 10) / 10
   return (
-    <svg className={className} data-side={side} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+    <svg className={className} data-side={side} data-big-eye={bigEye || undefined} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <g transform={side === 'left' ? 'translate(64 0) scale(-1 1)' : undefined}>
         <line x1="12" y1="52" x2="28" y2="36" stroke="#3A2A20" strokeWidth={lens(7)} strokeLinecap="round" />
         <line x1="12" y1="52" x2="28" y2="36" stroke="#B8551C" strokeWidth={lens(3.5)} strokeLinecap="round" />
         <circle cx="39" cy="25" r="15" fill="#D6F1FC" fillOpacity="0.92" stroke="#3A2A20" strokeWidth={lens(4.5)} />
+        {bigEye && (
+          <g className="sw-wait-bigeye">
+            <circle cx="39" cy="26" r={eye} fill="#3A2A20" />
+            <circle cx="42.5" cy="21.5" r={eye * 0.34} fill="#FFFFFF" />
+          </g>
+        )}
         <path d="M32 21a8 8 0 0 1 6-5" fill="none" stroke="#FFFFFF" strokeWidth={lens(3)} strokeLinecap="round" />
+        {glint && <path className="sw-found-glint" d="M50 6 L52 11 L57 13 L52 15 L50 20 L48 15 L43 13 L48 11 Z" fill="#FFE45C" stroke="#3A2A20" strokeWidth="1.5" strokeLinejoin="round" />}
       </g>
     </svg>
   )
 }
+/** 살피기(눈앞에 대기) 단계의 돋보기 그림 칸 = 친구 칸의 56%(work.css). 큰 눈이 렌즈 안에 들어가게 조금 키운다 */
+const LOOK_BOX = 0.56
 
 /**
  * 펼친 작은 공책(#847 5초 단계, 사용자 의견 2026-11-23). 친구 앞쪽 아래에 두고 오른쪽 책장이 책등을 축으로 넘어간다(CSS).

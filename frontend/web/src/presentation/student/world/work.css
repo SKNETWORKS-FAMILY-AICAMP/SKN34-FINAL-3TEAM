@@ -669,27 +669,104 @@
   cursor: pointer;
 }
 #class-journal .st-world .sw-wait-poke,
-#class-journal .st-world .sw-wait-pose {
+#class-journal .st-world .sw-wait-pose,
+#class-journal .st-world .sw-wait-breath {
   position: relative;
   display: block;
   width: 100%;
   height: 100%;
 }
-#class-journal .st-world .sw-wait-pose .st-companion { display: block; width: 100%; height: 100%; }
-/* 돋보기는 몸 가운데 높이에서 손잡이가 몸 앞에 걸치고 렌즈가 바깥 위로(얼굴 옆에 뜨지 않게) */
+#class-journal .st-world .sw-wait-breath .st-companion { display: block; width: 100%; height: 100%; }
+/*
+ * 움직임(사용자 의견 2026-11-23 "작고 느리게, 움직임 사이에 쉼"). 단계마다 하나 + 늘 숨쉬기·눈 깜빡임.
+ * 0초~ 돋보기를 눈앞에 대고 좌→우 훑기(1.2초 왕복 + 0.6초 쉼, 렌즈 안 큰 눈) / 5초~ 공책 한 장씩(0.8초, 2초마다, 고개 살짝 따라감)
+ * 15초~ 고개 갸웃 약 8도 + 머리 위 "?"(2초 주기) / 30초~ 낮게 두 번 콩콩(0.6초) 후 1.5초 쉼
+ */
+#class-journal .st-world .sw-wait-breath { animation: sw-wait-breath 2.4s ease-in-out infinite; }
+@keyframes sw-wait-breath {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+/* 눈 깜빡임(약 4초에 한 번): 친구 그림(friendArt FACE)의 눈(반지름 10)과 눈 반짝(3.4)만 골라 깜빡인다. 공용 그림 파일은 그대로 */
+#class-journal .st-world .sw-wait .st-friend-art > circle[r='10'],
+#class-journal .st-world .sw-wait .st-friend-art > circle[r='3.4'] {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sw-wait-blink 4s ease-in-out infinite;
+}
+@keyframes sw-wait-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+/* 돋보기 쉬는 자리: 몸 가운데 높이에서 손잡이가 몸 앞에 걸치고 렌즈가 바깥 위로(갸웃·콩콩 단계) */
 #class-journal .st-world .sw-wait-glass {
   position: absolute;
   top: 38%;
   width: 50%;
   height: 50%;
 }
-/* 소품이 없으면 몸 앞쪽(오른쪽)에 들고, 소품을 들었으면 왼쪽으로 비킨다. 쥐는 곳(손잡이 끝, 그림 (12, 52))을 축으로 움직인다 */
-#class-journal .st-world .sw-wait-glass[data-side='right'] { --dir: 1; left: 62%; transform-origin: 19% 81%; }
-#class-journal .st-world .sw-wait-glass[data-side='left'] { --dir: -1; right: 62%; transform-origin: 81% 81%; }
-#class-journal .st-world .sw-wait[data-motion='look'] .sw-wait-glass { animation: sw-wait-look 2.4s ease-in-out infinite; }
-#class-journal .st-world .sw-wait[data-motion='tilt'] .sw-wait-pose { transform-origin: 50% 92%; animation: sw-wait-tilt 2.8s ease-in-out infinite; }
-#class-journal .st-world .sw-wait[data-motion='hop'] .sw-wait-pose { animation: sw-wait-hop 1.2s ease-in-out infinite; }
+/* 소품이 없으면 몸 앞쪽(오른쪽)에 들고, 소품을 들었으면 왼쪽으로 비킨다 */
+#class-journal .st-world .sw-wait-glass[data-side='right'] { left: 62%; }
+#class-journal .st-world .sw-wait-glass[data-side='left'] { right: 62%; }
+/* 살피기(0초~): 눈앞에 대고(그림 칸 56%, 렌즈 가운데가 왼쪽 눈 (38%, 53%)) 오른쪽 눈(62%)까지 천천히 훑고 돌아와 쉰다 */
+#class-journal .st-world .sw-wait[data-motion='look'] .sw-wait-glass {
+  top: 31.4%;
+  left: 3.9%;
+  right: auto;
+  width: 56%;
+  height: 56%;
+  animation: sw-wait-sweep 1.8s ease-in-out infinite;
+}
+#class-journal .st-world .sw-wait[data-motion='look'] .sw-wait-glass[data-side='left'] { left: 16.1%; }
+@keyframes sw-wait-sweep {
+  0%, 66.7%, 100% { transform: translateX(0); }
+  33.3% { transform: translateX(42.9%); }
+}
+/* 공책(5초~): 한 장 넘기는 데 0.8초, 2초마다. 고개(몸)는 넘어가는 책장을 살짝 따라간다 */
+#class-journal .st-world .sw-wait[data-motion='notebook'] .sw-wait-pose {
+  transform-origin: 50% 85%;
+  animation: sw-wait-follow 2s ease-in-out infinite;
+}
+@keyframes sw-wait-follow {
+  0%, 100% { transform: rotate(2deg); }
+  40%, 70% { transform: rotate(-2deg); }
+}
+/* 갸웃(15초~): 약 8도 기울였다 돌아오고, 머리 위 작은 "?"가 떠올랐다 사라진다(2초 주기) */
+#class-journal .st-world .sw-wait[data-motion='tilt'] .sw-wait-pose {
+  transform-origin: 50% 92%;
+  animation: sw-wait-tilt 2s ease-in-out infinite;
+}
+@keyframes sw-wait-tilt {
+  0%, 100% { transform: rotate(0deg); }
+  30%, 70% { transform: rotate(-8deg); }
+}
+#class-journal .st-world .sw-wait-q {
+  position: absolute;
+  top: 0;
+  right: -4%;
+  color: #3a2a20;
+  font-family: var(--st-hand);
+  font-weight: 700;
+  font-size: calc(var(--w) * 0.2);
+  line-height: 1;
+  animation: sw-wait-q 2s ease-in-out infinite;
+}
+@keyframes sw-wait-q {
+  0% { opacity: 0; transform: translateY(30%); }
+  30%, 60% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-40%); }
+}
+/* 콩콩(30초~): 낮게 두 번(0.6초) 뛰고 1.5초 쉰다 */
+#class-journal .st-world .sw-wait[data-motion='hop'] .sw-wait-pose { animation: sw-wait-hop 2.1s ease-out infinite; }
+@keyframes sw-wait-hop {
+  0%, 14.3%, 28.6%, 100% { transform: translateY(0); }
+  7.1%, 21.4% { transform: translateY(-6%); }
+}
 #class-journal .st-world .sw-wait-poke[data-poked] { animation: sw-wait-poke 0.5s ease-out 1; }
+@keyframes sw-wait-poke {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-18%); }
+}
 /* 공책 넘기기(5초~): 친구 앞쪽 아래 가운데. 크기 60/184 = 착용 아이템과 같은 배율(선 두께 같게) */
 #class-journal .st-world .sw-wait-book {
   position: absolute;
@@ -702,45 +779,40 @@
 #class-journal .st-world .sw-wait-page {
   transform-box: view-box;
   transform-origin: 30px 34px;
-  animation: sw-wait-page 1.6s ease-in-out infinite;
+  animation: sw-wait-page 2s ease-in-out infinite;
 }
 @keyframes sw-wait-page {
   0% { transform: scaleX(1); opacity: 1; }
-  55% { transform: scaleX(-1); opacity: 1; }
-  75%, 100% { transform: scaleX(-1); opacity: 0; }
+  40% { transform: scaleX(-1); opacity: 1; }
+  41%, 100% { transform: scaleX(-1); opacity: 0; }
 }
-/* 돋보기를 입었으면(그려 넣는 돋보기 없음) 살피기 단계에서 입은 돋보기를 쥔 곳(그림 가운데) 기준으로 기울인다 */
+/* 돋보기를 입었으면(그려 넣는 돋보기 없음) 살피기 단계에서 입은 돋보기를 쥔 곳(그림 가운데) 기준으로 천천히 기울인다 */
 #class-journal .st-world .sw-wait[data-motion='look'][data-own-lens] image[data-slot='ACCESSORY'] {
   transform-box: fill-box;
   transform-origin: 50% 50%;
-  animation: sw-wait-own-lens 2.4s ease-in-out infinite;
+  animation: sw-wait-own-lens 1.8s ease-in-out infinite;
 }
 @keyframes sw-wait-own-lens {
-  0%, 100% { transform: rotate(0deg); }
-  30% { transform: rotate(-14deg); }
-  65% { transform: rotate(10deg); }
+  0%, 66.7%, 100% { transform: rotate(0deg); }
+  33.3% { transform: rotate(-12deg); }
 }
-/* 살피기: 쥔 곳을 축으로 렌즈를 위아래로 기울이며 들여다본다 */
-@keyframes sw-wait-look {
-  0%, 100% { transform: rotate(0deg); }
-  30% { transform: translateY(-4%) rotate(calc(var(--dir) * -12deg)); }
-  65% { transform: rotate(calc(var(--dir) * 7deg)); }
+/* 화면 안 움직임 줄이기 체크(OS 설정과 같은 결과): 멈춘 그림 + 문구만(돋보기는 왼쪽 눈 앞에 큰 눈 그대로, "?"는 보이는 채로) */
+#class-journal .st-world .sw-wait[data-reduce] :is(.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-breath, .sw-wait-page, .sw-wait-q),
+#class-journal .st-world .sw-wait[data-reduce] .st-friend-art > circle,
+#class-journal .st-world .sw-wait[data-reduce] image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }
+/* 대기 화면 움직임 줄이기 체크박스: 화면설계서 SC-02-010 미션 장면처럼 그림 아래 오른쪽에 작게 */
+#class-journal .st-world .sw-wait-motion {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  margin-top: -6px;
+  color: var(--sk-sub);
+  font-size: var(--st-fs-xs, 14px);
+  cursor: pointer;
 }
-@keyframes sw-wait-tilt {
-  0%, 100% { transform: rotate(0deg); }
-  25%, 45% { transform: rotate(-9deg); }
-  70%, 85% { transform: rotate(6deg); }
-}
-@keyframes sw-wait-hop {
-  0%, 50%, 100% { transform: translateY(0); }
-  18% { transform: translateY(-10%); }
-  34% { transform: translateY(0); }
-  42% { transform: translateY(-4%); }
-}
-@keyframes sw-wait-poke {
-  0%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-18%); }
-}
+#class-journal .st-world .sw-wait-motion input { width: 18px; height: 18px; margin: 0; accent-color: var(--sk-line); cursor: pointer; }
 #class-journal .st-world .sw-wait-bubble {
   position: relative;
   flex: 1 1 auto;
@@ -764,7 +836,9 @@
 #class-journal .st-world .sw-feedback[data-waiting] { gap: 8px; }
 #class-journal .st-world .sw-feedback[data-waiting] .sw-feedback-head h2 {
   font-size: clamp(20px, 1.5vw, 22px);
-  font-weight: 700;
+  /* 제목 글꼴이 이미 굵은 제목체라 굵기를 더하면 브라우저가 가짜 굵게로 번지게 그린다. 글꼴 굵기 그대로 */
+  font-weight: 400;
+  font-synthesis: none;
   line-height: 1.3;
 }
 #class-journal .st-world .sw-feedback[data-waiting] .sw-wait { padding-bottom: 0; }
@@ -808,9 +882,20 @@
   font-weight: 700;
   font-size: var(--st-fs-md, 21px);
   pointer-events: none;
-  animation: sw-found 0.6s ease-out both;
+  animation: sw-found 0.5s ease-out both;
 }
-#class-journal .st-world .sw-found-glass { width: 30px; height: 30px; }
+#class-journal .st-world .sw-found-glass { width: 30px; height: 30px; overflow: visible; }
+/* "찾았다!" 렌즈 반짝(0.5초) */
+#class-journal .st-world .sw-found-glint {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sw-found-glint 0.5s ease-out both;
+}
+@keyframes sw-found-glint {
+  0% { opacity: 0; transform: scale(0.2) rotate(0deg); }
+  40% { opacity: 1; transform: scale(1.3) rotate(25deg); }
+  100% { opacity: 0; transform: scale(0.8) rotate(45deg); }
+}
 @keyframes sw-found {
   0% { opacity: 0; transform: scale(0.6); }
   30% { opacity: 1; transform: scale(1.08); }
@@ -1144,7 +1229,10 @@
   #class-journal .st-world .sw-wait-glass,
   #class-journal .st-world .sw-wait-pose,
   #class-journal .st-world .sw-wait-poke,
+  #class-journal .st-world .sw-wait-breath,
   #class-journal .st-world .sw-wait-page,
+  #class-journal .st-world .sw-wait-q,
+  #class-journal .st-world .sw-wait .st-friend-art > circle,
   #class-journal .st-world .sw-wait image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }
   #class-journal .st-world .sw-feedback-panel { transition: none; }
   #class-journal .st-world .sw-found { display: none; }

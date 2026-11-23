@@ -114,7 +114,9 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     const last = a.answers.at(-1)
     if (
       !last ||
-      !['PENDING', 'RUNNING'].includes(last.feedback.status) ||
+      // feedback은 공개 계약상 필수지만, 화면을 연 채로 시도 기록이 바뀌어(목업 시험의 feedback: null 등) 비어 와도
+      // 이어받기 효과가 화면 전체를 오류 화면으로 바꾸지 않게 한다(#847 렌더 오류 "reading 'status'")
+      !['PENDING', 'RUNNING'].includes(last.feedback?.status ?? '') ||
       resumedFeedback.current === last.answerId ||
       actions.submit.isPending ||
       actions.feedback.isPending
@@ -216,7 +218,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     setError(null)
     // "다시 확인하기"(RUNNING)는 같은 처리를 다시 보는 것이라 시작 시각을 그대로 둔다
     const last = a.answers.at(-1)!
-    if (last.feedback.status === 'FAILED') setWaitStart({ answerId: last.answerId, at: Date.now() })
+    if (last.feedback?.status === 'FAILED') setWaitStart({ answerId: last.answerId, at: Date.now() })
     try {
       await actions.feedback.mutateAsync({ attempt: a, answerId: a.answers.at(-1)!.answerId })
     } catch (e) {
@@ -341,20 +343,30 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
   const lastAnswer = a.answers.at(-1)
   const waiting = !a.finishedAt && !!f && (f.status === 'PENDING' || f.status === 'RUNNING' || actions.feedback.isPending)
   const waitStartedAt = waitStart && waitStart.answerId === lastAnswer?.answerId ? waitStart.at : undefined
-  // 결과가 오면 상자는 바로 보여 주고 그 위에 "찾았다!"를 0.5초쯤 겹친다(움직임 줄이기면 CSS가 숨김)
+  // 대기 화면 "움직임 줄이기"(#847, WCAG 2.2.2 "5초 넘게 움직이는 것은 멈출 수 있어야", 이슈 지침 "MissionScene 방식"):
+  // 기본은 OS 설정을 따르고, 체크하면 멈춘 그림 + 문구만. MissionScene처럼 OS가 줄이기면 체크를 풀 수 없다.
+  // 이 화면에 머무는 동안은 다음 답의 대기에도 그대로 둔다
+  const [reduceMotion, setReduceMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const changed = () => setReduceMotion(media.matches)
+    media.addEventListener('change', changed)
+    return () => media.removeEventListener('change', changed)
+  }, [])
+  // 결과가 오면 상자는 바로 보여 주고 그 위에 "찾았다!"와 렌즈 반짝을 0.5초 겹친다(움직임 줄이기면 보이지 않음)
   const wasWaiting = useRef(false)
   const [found, setFound] = useState(false)
   useEffect(() => {
     const arrived = wasWaiting.current && !waiting && f?.status === 'DONE'
     wasWaiting.current = waiting
-    if (!arrived) return
+    if (!arrived || reduceMotion) return
     setFound(true)
-    const timer = setTimeout(() => setFound(false), 600)
+    const timer = setTimeout(() => setFound(false), 550)
     return () => {
       clearTimeout(timer)
       setFound(false)
     }
-  }, [waiting, f?.status])
+  }, [waiting, f?.status, reduceMotion])
   const pending =
     actions.submit.isPending ||
     actions.feedback.isPending ||
@@ -678,7 +690,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
               <div ref={result} tabIndex={-1} className="ux-feedback sw-feedback" role="status" data-waiting={waiting || undefined}>
                 {found && (
                   <span className="sw-found" aria-hidden="true">
-                    <Magnifier className="sw-found-glass" />
+                    <Magnifier className="sw-found-glass" glint />
                     찾았다!
                   </span>
                 )}
@@ -696,6 +708,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                     worn={worn}
                     startedAt={waitStartedAt}
                     submittedAt={lastAnswer?.submittedAt}
+                    reduce={reduceMotion}
                   />
                 )}
                 {f.judgment?.m2Notices?.map((notice) => (
@@ -724,6 +737,18 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                   </div>
                 )}
               </div>
+            )}
+            {/* 대기 화면 움직임 줄이기(화면설계서 SC-02-010 미션 장면처럼 그림 아래 오른쪽 작게). 읽기 영역(상자) 밖에 둬서
+                대기 표시가 들어올 때 체크박스 이름까지 함께 읽히지 않게 한다 */}
+            {waiting && (
+              <label className="sw-wait-motion">
+                <input
+                  type="checkbox"
+                  checked={reduceMotion}
+                  onChange={(e) => setReduceMotion(e.target.checked || window.matchMedia('(prefers-reduced-motion: reduce)').matches)}
+                />
+                움직임 줄이기
+              </label>
             )}
             <div className="sw-actions">
               {f?.status === 'FAILED' && !waiting && feedbackFinal && (
