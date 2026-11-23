@@ -123,7 +123,6 @@ class DashboardIntegrationTest : PostgresRepositoryTest() {
             val document = UUID.randomUUID(); documents.add(document)
             jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'합성 개정','본문',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,now()-interval '1 day')",
                 document, kind, document.toString())
-            println("DBG918B " + jdbc.queryForObject("SELECT created_at::text || ' | ' || (now()-interval '1 day')::text || ' | ' || current_setting('TimeZone') FROM consent_document WHERE id=?", String::class.java, document))
         }
         stub.respond = { LearningHttpStub.Reply(body = reply("summary", true)) }
         call("GET", "/api/v1/children/$child/summary?from=2026-10-01&to=2026-10-07", bearer = parentToken()).andExpect(status().isOk())
