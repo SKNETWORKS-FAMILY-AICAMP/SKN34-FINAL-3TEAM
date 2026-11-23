@@ -1,15 +1,16 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>추억 그림책</title>
 <style>
-@page { size: A4; margin: 14mm; }
+@page { size: A4 landscape; margin: 12mm 14mm; }
 body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a22; font-size:13px; line-height:1.7; margin:0; }
 /* 표지만 한 쪽, 그 뒤는 쭉 이어지는 그림책. 한 장면(칸)은 두 쪽에 걸쳐 잘리지 않게 한다 */
-.cover { break-after: page; text-align:center; padding-top:10mm; }
+.cover { break-after: page; display:grid; grid-template-columns:62% 1fr; gap:10mm; align-items:center; height:180mm; }
+.cover-text { text-align:center; }
 .cover h1 { font-size:30px; color:#6b4a1f; margin:6mm 0 2mm; }
 .cover .who { font-size:17px; color:#8a6a3a; margin:0; }
 .cover .when { color:#8a7c66; }
-.cover-art { display:block; width:100%; height:150mm; object-fit:cover; border:3px solid #2f2a22; border-radius:5mm; }
-.cover-art--missing { height:150mm; border:3px solid #2f2a22; border-radius:5mm; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
+.cover-art { display:block; width:100%; height:170mm; object-fit:cover; border:3px solid #2f2a22; border-radius:5mm; }
+.cover-art--missing { height:170mm; border:3px solid #2f2a22; border-radius:5mm; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
 .scene-block { break-inside: avoid; margin:0 0 8mm; }
 .scene-head { margin:0 0 1.5mm; font-size:13px; }
 .label { display:inline-block; font-size:12px; color:#fff; background:#c98a2e; border-radius:10px; padding:0 10px; margin-right:6px; }
@@ -20,18 +21,19 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 .story { margin:0 0 2mm; font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .big { font-size:15px; color:#6b4a1f; margin:2mm 0 0; }
 /* 그림 칸은 가리지 않고, 그 아래에 메신저처럼 주고받은 대화(왼쪽: 문제·등장인물·뭉치, 오른쪽: 아이) */
+.scene-row { display:grid; grid-template-columns:54% 1fr; gap:6mm; align-items:start; }
 .scene-top { break-inside: avoid; }
-.panel { position:relative; height:100mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
+.panel { position:relative; height:118mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
 .panel-art { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .panel-art--missing { position:absolute; inset:0; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
-.chat { margin:3mm 0 0; padding:3mm 3mm 1mm; background:#f7f4ee; border-radius:4mm; }
+.chat { margin:7mm 0 0; padding:3mm 3mm 1mm; background:#f7f4ee; border-radius:4mm; }
 .msg { display:flex; gap:2mm; margin:0 0 2.5mm; break-inside: avoid; align-items:flex-start; }
 .msg.right { flex-direction:row-reverse; }
 .avatar { flex:none; width:8mm; height:8mm; border-radius:50%; border:1.5px solid #2f2a22; background:#fff; font-size:10px; font-weight:bold;
   display:flex; align-items:center; justify-content:center; color:#6b4a1f; }
 .msg.right .avatar { background:#ffe6a8; }
 .msg.mungchi .avatar { background:#e9f6ff; }
-.body { max-width:76%; }
+.body { max-width:84%; }
 .msg.right .body { text-align:right; }
 .name { font-size:9.5px; font-weight:bold; color:#8a6a3a; margin:0 1mm 0.5mm; }
 .text { display:inline-block; text-align:left; background:#fff; border:1.5px solid #d9cdb4; border-radius:3mm 3mm 3mm 0.8mm;
@@ -51,9 +53,11 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 
 <section class="cover">
 {% if book.introImage %}<img class="cover-art" src="{{ book.introImage }}" alt="">{% else %}<div class="cover-art--missing"></div>{% endif %}
+<div class="cover-text">
 <h1>{{ book.title }}</h1>
 <p class="who">{{ name }}의 추억 그림책</p>
 <p class="when">{{ book.weekLabel }}</p>
+</div>
 </section>
 
 <section class="scene-block intro">
@@ -62,7 +66,7 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 {% if book.bigQuestion %}<p class="big">이번 주 큰 질문: {{ book.bigQuestion }}</p>{% endif %}
 </section>
 
-{% for day in book.days %}<section class="scene-block day" data-day="{{ day.day }}">
+{% for day in book.days %}<section class="scene-block day scene-row" data-day="{{ day.day }}">
 <div class="scene-top">
 <p class="scene-head"><span class="label">{{ day.dayLabel }}</span><span class="type">{{ thinking_labels.get(day.thinkingType, '') }}</span><strong>{{ day.title }}</strong></p>
 <div class="panel">{% if day.sceneImage %}<img class="panel-art" src="{{ day.sceneImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}</div>
@@ -78,7 +82,7 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 </section>
 {% endfor %}
 
-<section class="scene-block ending">
+<section class="scene-block ending{% if book.ending.seen %} scene-row{% endif %}">
 <div class="scene-top">
 <p class="scene-head"><span class="label">이야기의 끝</span></p>
 {% if book.ending.seen %}<div class="panel">{% if book.ending.outroImage %}<img class="panel-art" src="{{ book.ending.outroImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}</div>{% endif %}
