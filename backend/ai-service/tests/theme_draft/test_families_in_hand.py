@@ -44,24 +44,19 @@ def gift_theme() -> dict[str, Any]:
         feature(name, {c: families.GIFTS.fact(c, name) or "" for c in cands})
         for name in families.GIFTS.features
     ]
-    # 월(흔적) 무게로 목도리·고무공, 금(기록) 소리로 그림책이 빠짐
+    # 월(흔적) 무게로 목도리·고무공, 금(기록) 소리로 그림책이 빠짐. 수·목은 새로 알려 줄 특징이
+    # 없어 사건 단서(#782 테마 짜임: 앞 요일 단서를 되풀이하지 않고 마지막 후보는 금요일에 빠짐)
     for d, clue, kind, feat, allowed in (
         ("MON", "상자를 들어 보니 묵직한 상자였어.", "RULE", "상자 무게", ["묵직한 상자"]),
         (
             "TUE",
-            "선물을 그릇 가게나 서점에서 사는 걸 봤대.",
+            "선물을 계산한 가게는 옷 가게도 장난감 가게도 아니었어.",  # #782 v3 부정형
             "HINT",
             "선물을 산 가게",
             ["그릇 가게", "서점"],
         ),
-        (
-            "WED",
-            "서점이나 그릇 가게에서 선물을 계산하는 걸 봤대.",
-            "HINT",
-            "선물을 산 가게",
-            ["서점", "그릇 가게"],
-        ),
-        ("THU", "상자를 다시 들어 보니 묵직한 상자였어.", "HINT", "상자 무게", ["묵직한 상자"]),
+        ("WED", "누군가 파티 전날 밤 리본을 두 번 감아 묶는 걸 봤대.", "STORY", "", []),
+        ("THU", "상자 리본 매듭이 한쪽으로 기울어 있었어.", "STORY", "", []),
         (
             "FRI",
             "메모에 달그락 소리가 난다고 적혀 있었어.",
@@ -163,7 +158,10 @@ def test_gift_mission_with_candidate_or_answer_value_is_redone(question: str) ->
 def test_mission_dialogue_and_review_say_target_is_in_hand() -> None:
     gift = gift_theme()
     text = prompts.story_text(gift, "MON", 3)
-    assert "손에 든 대상: 생일에 받은 리본 상자" in text and "아직 찾지 못했으므로" not in text
+    # #782 설계 v3(사용자 결정 2026-11-21): 선물은 관리실에 맡겨 둠(받아 들면 무게를 앎)
+    assert "맡겨 둔 대상: 생일에 받은 리본 상자" in text and "아직 찾지 못했으므로" not in text
+    food = {**gift, "storyType": "SECRET_INGREDIENT", "target": "대회에 낸 할머니의 떡"}
+    assert "손에 든 대상: 대회에 낸 할머니의 떡" in prompts.story_text(food, "MON", 3)
     assert "선물 이름, 머리 낱말·정답의 표 값 포함" not in text  # 후보 범주는 '물건'
     assert (
         "물건 후보 이름, 머리 낱말·정답의 표 값 포함): 목도리, 머그컵, 고무공, 그림책, 달그락 소리"
@@ -171,7 +169,8 @@ def test_mission_dialogue_and_review_say_target_is_in_hand() -> None:
     )
     assert "아직 찾지 못했으므로" in prompts.story_text(valid_theme(), "MON", 3)
     plain = Draft.model_validate(mission_draft("ANALYZE").model_dump())
-    assert "손에 든 대상(대화에 나와도 됨" in prompts.dialogue_user(gift, "MON", plain, 3, [])
+    assert "맡겨 둔 대상(관리실에 맡겨 둠" in prompts.dialogue_user(gift, "MON", plain, 3, [])
+    assert "손에 든 대상(대화에 나와도 됨" in prompts.dialogue_user(food, "MON", plain, 3, [])
     review = json.loads(
         prompts.mission_review_user(mission_inputs(), plain, 3, gift["target"], in_hand=True)
     )
@@ -190,7 +189,13 @@ def test_pictures_keep_gift_closed_and_ingredient_food_hidden_until_reveal() -> 
     mission = prompts.mission_image_prompt(
         gift, "MON", Draft.model_validate(mission_draft("ANALYZE").model_dump()), []
     )
-    assert "may appear in the characters' hands" in mission and "gift box stays closed" in mission
+    # #782 설계 v3: 맡겨 둔 선물은 요일 그림에서 손에 들지 않음, 곁에 둔 동물(출처 찾기 '동물')은 됨
+    assert "may appear in the characters' hands" not in mission
+    pet = {**gift, "storyType": "ORIGIN", "branch": "동물", "target": "길 잃은 강아지"}
+    pet_mission = prompts.mission_image_prompt(
+        pet, "MON", Draft.model_validate(mission_draft("ANALYZE").model_dump()), []
+    )
+    assert "may appear in the characters' hands" in pet_mission
     food = {**gift, "storyType": "SECRET_INGREDIENT", "target": "대회에 낸 할머니의 떡"}
     intro = prompts.cut_image_prompt(food, "INTRO", 2, food["introCuts"][1], [])
     # 물든 색이 답이라 엔딩 전엔 덮인 채로만(#765: 콘티 틀 '덮인 음식'과 같게, 전에는 '그리지 마라')
@@ -249,12 +254,16 @@ def test_evidence_plan_follows_what_each_fact_feature_can_show() -> None:
 
 def test_shop_clue_needs_buying_proof() -> None:
     """산 가게 단서는 그 가게에서 '샀다'는 근거 말이 있어야 함(CLUE_PROOF, 칸 고쳐 쓰기)."""
-    went = day_with(gift_theme(), "TUE", clue="그릇 가게나 서점에서 나오는 걸 봤대.")
+    went = day_with(
+        gift_theme(), "TUE", clue="가게에서 나오는 걸 봤는데 옷 가게도 장난감 가게도 아니었어."
+    )
     bad = checks.check_theme(went, 3)
     assert codes(bad) == ["CLUE_PROOF"] and list(checks.fix_targets(bad)) == ["TUE.clue"]
-    bought = day_with(gift_theme(), "TUE", clue="선물을 그릇 가게나 서점에서 계산하는 걸 봤대.")
+    bought = day_with(
+        gift_theme(), "TUE", clue="선물을 계산한 곳은 옷 가게도 장난감 가게도 아니었어."
+    )
     assert checks.check_theme(bought, 3) == []
-    no_thing = day_with(gift_theme(), "TUE", clue="그릇 가게나 서점에서 계산하는 걸 봤대.")
+    no_thing = day_with(gift_theme(), "TUE", clue="계산한 곳은 옷 가게도 장난감 가게도 아니었어.")
     assert [r.split(" ")[0] for r in checks.check_theme(no_thing, 3)] == ["CLUE_PROOF"]  # 선물 낱말
     assert checks.clue_proof_problems(valid_theme()) == []  # 사실표 종류만
 
@@ -272,13 +281,14 @@ def test_origin_route_every_clue_names_target() -> None:
 
 
 def test_in_hand_clues_get_no_clock_time() -> None:
-    # 마지막 확인 2차: 증거의 때가 둘(산 때·받은 뒤)이라 시각을 붙이면 '10시 기록·11시에 샀다' 모순
+    # 마지막 확인 2차: 증거의 때가 둘(산 때·받은 뒤)이라 시각을 붙이면 '10시 기록·11시에 샀다' 모순.
+    # 코드가 단서 앞에 시각을 붙이던 것은 #782 테마 짜임에서 모든 종류에서 뺌
     for t in (families.ORIGIN, families.GIFT, families.SECRET_INGREDIENT, families.ROUTE):
-        assert not t.clue_time and not t.hide_times, t.code
+        assert not t.hide_times, t.code
     gift = gift_theme()
     gift["days"][0]["evidence"]["when"] = "오후 3시"
     before = gift["days"][0]["clue"]
-    assert checks.add_clue_time(gift)["days"][0]["clue"] == before
+    assert checks.finalize_texts(gift)["days"][0]["clue"] == before
     assert "단서에 시각(3시·10시 반 등)을 쓰지 않고" in families.type_rules(families.GIFT)
     assert families.INGREDIENTS.features[1] == "재료 맛"
 

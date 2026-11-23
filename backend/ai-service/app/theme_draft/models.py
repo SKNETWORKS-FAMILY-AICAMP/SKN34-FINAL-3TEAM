@@ -320,7 +320,10 @@ ClueType = Literal[
     "크기",
 ]
 ReviewVerdict = Literal["PASS", "WARN", "FAIL"]
-StoryReviewId = Literal["CLUE_LOGIC", "ANSWER_HINT", "GRADE_VOCAB", "STANDARD_FIT", "SAFETY"]
+# #782 설계 v13: HELPER_FIT(부탁 날 돕는 사람의 일·아이 답의 쓰임, 측정 판정 억지 연결과 같은 말)
+StoryReviewId = Literal[
+    "CLUE_LOGIC", "ANSWER_HINT", "GRADE_VOCAB", "STANDARD_FIT", "HELPER_FIT", "SAFETY"
+]
 MissionReviewId = Literal["EXAMPLE_COMPLETE", "STANDARD_FIT", "MATERIAL", "STORY_LINK"]
 
 
@@ -344,9 +347,11 @@ class GeneratedFeature(BaseModel):
 
 
 class GeneratedCondition(BaseModel):
-    """단서가 말하는 조건. RULE은 그때 남은 후보를 새로 빼고, HINT는 남은 후보를 빼지 않는다."""
+    """단서가 말하는 조건. RULE은 그때 남은 후보를 새로 빼고, HINT는 남은 후보를 빼지 않으며 새
+    특징 값을 알려 준다. STORY(사건 단서, #782 테마 짜임 사용자 결정 2026-11-19)는 후보 특징 대신
+    사건이 어떻게 벌어졌는지 새 사실을 주고 아무 후보도 빼지 않는다(feature ''·allowed [])."""
 
-    kind: Literal["RULE", "HINT"]
+    kind: Literal["RULE", "HINT", "STORY"]
     feature: str
     allowed: list[str]
 
@@ -362,10 +367,11 @@ class GeneratedDay(BaseModel):
     """rulesOut은 LLM이 쓰지 않는다. 특징 표와 condition으로 정해지는 값이라 코드가 채운다
     (checks.fill_rules_out).
 
-    discovery(증거 발견 한 줄)와 missionHook(뭉치의 수사 연결 문장)은 코드가 미션 전 대화 끝 두
-    줄로 그대로 넣는 내부 칸이라 응답 theme에는 넣지 않는다. 단서는 학생이 그날 미션을 마친 뒤
-    보여 주므로 둘 다 후보·정답을 말하지 않고, discovery는 단서 결론도 말하지 않는다
-    (사용자 결정 2026-11-11).
+    dayStep(오늘 온 까닭)·discovery(그날 찾은 증거 한 줄)·missionHook(증거의 어느 부분으로 그날
+    활동을 할지 한 줄)은 대화 모델이 미션 전 대화를 쓰는 재료인 내부 칸이라 응답 theme에는 넣지
+    않는다(#782 테마 짜임, 사용자 결정 2026-11-19: 전에는 discovery·missionHook을 대화 끝 두 줄로
+    그대로 넣어 대화가 틀에 박혔음). discovery는 그림·살펴보기의 증거로도 쓴다. 단서는 학생이 그날
+    미션을 마친 뒤 보여 주므로 셋 다 후보·정답을 말하지 않고 단서 결론도 말하지 않는다.
     """
 
     day: Day
@@ -378,6 +384,21 @@ class GeneratedDay(BaseModel):
     evidence: GeneratedEvidence
     discovery: str
     missionHook: str
+    # 오늘 온 까닭(내부 칸, #782 테마 짜임 기준안 — 확인 전): 어제 한 일에서 이어지는 한 줄(단서
+    # 결과는 말하지 않음, 사용자 결정 2026-11-19 "어제 한 일만 잇기"). 기본값은 예전 저장본(부분
+    # 다시 생성 재료)용이고 LLM 스키마는 필수, 새 줄거리는 check_theme이 REQUIRED로 봄
+    dayStep: str = ""
+    # 그날 돕는 사람 호칭(내부 칸, #782 테마 짜임 사용자 결정 2026-11-20 "부탁을 들어주면 알려 줌",
+    # 기준안). 미션 방식(missionWay)은 코드가 정해 넣음(LLM 스키마 밖). 기본값은 예전 저장본용
+    helper: str = ""
+    # #782 설계 v10: 국어 부탁 날 아이 답이 돕는 사람 일에 쓰이는 곳(내부 칸, 예: '책 추천 카드에
+    # 붙일게', 40자 기준안). 일 → 사람 → 쓰임 → 장소 순서로 모델이 정하고 USE_MISSING이 이 칸에서
+    # 쓰임 낱말을 뽑음. 그 밖의 날은 빈 값, 기본값은 예전 저장본용(dayFrames 쓰임으로 봄)
+    helperUse: str = ""
+    # 그날 미션 지문이 될 증거 내용(내부 칸, #782): 수사 연결 문장이 가리킨 증거의 그 부분을 줄거리
+    # 단계에서 그때 사건에 관한 내용으로 써 두고 미션이 그대로 씀(미션 단계가 지어내면 사건과 무관한
+    # 글로 빠졌음)
+    missionMaterial: str
 
     @model_validator(mode="after")
     def _no_empty_texts(self) -> "GeneratedDay":
@@ -388,7 +409,7 @@ class GeneratedDay(BaseModel):
         """
         empty = [
             k
-            for k in ("place", "sceneNote", "clue", "discovery", "missionHook")
+            for k in ("place", "sceneNote", "clue", "discovery", "missionHook", "missionMaterial")
             if not getattr(self, k).strip()
         ]
         if empty:
@@ -414,13 +435,17 @@ class GeneratedCut(BaseModel):
 
 
 class GeneratedTheme(BaseModel):
-    """줄거리 출력. storyType·incident·answerLook은 #634 내부 칸(응답 theme에 넣지 않음).
+    """줄거리 출력. storyType·incident·answerLook은 #634, branch는 #782 내부 칸(응답 theme에 넣지
+    않음).
 
     기본값은 #634 전 테마·시험 고정 자료용이고, LLM 스키마는 strict라 모두 필수(기본값 제거).
     storyType은 주제가 learning 씨앗이면 코드가 주제에서 읽은 값으로 덮어쓴다(plan_theme).
     """
 
     storyType: StoryTypeCode = "LOST"
+    # 갈래(#782 기준안 — 확인 전, 내부 칸): 종류마다 정한 목록 안 값(families.STORY_BRANCHES),
+    # 갈래가 없는 종류는 null. 주제 글에 갈래가 있으면 plan_theme이 덮어쓰고, 목록 밖 값은 None으로
+    branch: str | None = None
     title: str
     world: str
     characters: list[GeneratedCharacter]
@@ -448,11 +473,10 @@ class GeneratedLine(BaseModel):
 
 
 class GeneratedDialogue(BaseModel):
-    """그날 증거 발견 줄(discovery)은 discoverySpeaker의 줄, 수사 연결 문장(missionHook)은 뭉치의
-    줄로 코드가 끝 두 줄에 그대로 넣는다(LLM은 나머지 줄만, 화자가 비면 뭉치)."""
+    """미션 전 대화 전체(#782 테마 짜임, 사용자 결정 2026-11-19: 모델이 처음부터 끝까지 씀. 전에는
+    증거 발견 줄·수사 연결 문장을 코드가 끝 두 줄로 넣었음)."""
 
     lines: list[GeneratedLine]
-    discoverySpeaker: str
 
 
 class GeneratedFix(BaseModel):
@@ -485,10 +509,28 @@ class StoryReviewItem(BaseModel):
     verdict: ReviewVerdict
     days: list[Day]
     reason: str
+    # #782 설계 v12: CLUE_LOGIC 중 돕는 사람의 약속 줄만 틀린 요일(단서는 맞음). 그 요일 대화만 다시
+    # 만든다(9차 글 검토 실패 50 중 27이 약속 줄인데 단서를 고치고 줄거리를 다시 만듦). 응답
+    # warnings 모양은 그대로(id·days·reason만 씀). 검토 모델은 늘 채우고(strict), 시험 대역은
+    # 비워도 됨
+    promiseDays: list[Day] = []
 
 
 class GeneratedStoryReview(BaseModel):
     items: list[StoryReviewItem]
+
+
+class HelperVerdict(BaseModel):
+    """돕는 사람 판정(#782 설계 v13 가): 부탁 날 하나의 자연/억지와 근거 한 문장(측정 판정과
+    같은 말)."""
+
+    day: Day
+    flow: Literal["NATURAL", "FORCED"]
+    reason: str
+
+
+class GeneratedHelperJudge(BaseModel):
+    items: list[HelperVerdict]
 
 
 class MissionReviewItem(BaseModel):

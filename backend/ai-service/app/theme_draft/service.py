@@ -2,7 +2,8 @@
 
 - 요청 1번에 그래프를 한 번 끝까지 실행한다. 그래프 안에서 실패한 부분만 실패 사유를 넣어 상한까지
   다시 만들고, 마감(theme_draft_deadline)까지 남은 시간이 부족하면 다음 재생성을 시작하지 않는다.
-- 끝내 실패하면 200 + failure. 형식 밖 LLM 응답은 502, 그 밖 실패·마감 초과는 503.
+- 끝내 실패하면 200 + failure. 형식 밖 LLM 응답은 502, 그 밖 실패·마감 초과는 503. 그래프 전체가
+  마감 + theme_draft_hang_grace(기준안 30초)를 넘기면 끊고 503(#782 설계 v11 운영 그물).
 - 테마 모델 설정이 틀리면(검토 모델 = 생성 모델, 키 없음) 이 경로만 503(NotReadyRunner).
 - 글 단계(줄거리·미션·대화·글 검토) 뒤 그림·영상·움직임. 그림 클라이언트나 저장소가 없으면
   images·videos·motions는 빈 값이고 warnings(IMAGE) "그림 설정 없음".
@@ -10,6 +11,7 @@
   regenerate가 있으면 원래 결과에서 고른 대상만 다시 만들고 나머지는 원래 값 그대로 돌려준다.
 """
 
+import asyncio
 import re
 import time
 from functools import lru_cache
@@ -189,8 +191,15 @@ class ThemeDraftGraphRunner:
             run_id=new_run_id(),
             mungchi=self._mungchi or (base_mungchi() if self._image else b""),
         )
+        # #782 설계 v11(운영 그물): 그래프 전체를 마감 + 여유(기준안 30초)에서 끊는다. 8차 측정에서
+        # 테마 하나가 끝나지 않고 기다려 작업을 붙잡음(원인 못 찾음). 기존 계약 503(다시 시도 가능)
+        limit = max(1.0, deadline - time.monotonic()) + self._settings.theme_draft_hang_grace
         try:
-            state = await build_graph().ainvoke(initial_state(request), context=context)
+            state = await asyncio.wait_for(
+                build_graph().ainvoke(initial_state(request), context=context), timeout=limit
+            )
+        except TimeoutError as exc:
+            raise ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=True) from exc
         except LlmUnavailable as exc:
             if exc.code == "LLM_INVALID_OUTPUT":
                 raise ApiError(
