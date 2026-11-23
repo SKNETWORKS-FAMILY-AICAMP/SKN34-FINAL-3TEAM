@@ -1,0 +1,1539 @@
+{
+ "_note": "주간 테마 주제 씨앗 장소 목록과 역할 표(#782, 기준안 — 확인 전). learning ThemeTopicSeeds와 측정 도구가 같이 읽는다. traits는 장소 성격 태그(ai 동물·소리 후보 거르기, 역할 어울림), seasons가 비면 아무 때나, events[].branch는 갈래(잃어버린 것·장난·출처), 소리 탐정 갈래(동물·물건)는 고를 때 무작위",
+ "traits": [
+  "마을",
+  "실내",
+  "길",
+  "학교",
+  "공원",
+  "밭",
+  "숲",
+  "산",
+  "물가",
+  "바다",
+  "눈",
+  "섬"
+ ],
+ "roles": [
+  {
+   "name": "탐정",
+   "outfit": "탐정 모자·돋보기 목걸이",
+   "types": [
+    "LOST",
+    "TREASURE",
+    "PRANK",
+    "FOOTPRINT",
+    "ORIGIN",
+    "GIFT",
+    "SECRET_INGREDIENT",
+    "WHEN",
+    "ROUTE",
+    "VEHICLE",
+    "SOUND"
+   ],
+   "traits": null,
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "마을 지킴이",
+   "outfit": "형광 조끼·호루라기 목걸이",
+   "types": [
+    "LOST",
+    "TREASURE",
+    "PRANK",
+    "FOOTPRINT",
+    "ORIGIN",
+    "GIFT",
+    "SECRET_INGREDIENT",
+    "WHEN",
+    "ROUTE",
+    "VEHICLE",
+    "SOUND"
+   ],
+   "traits": [
+    "마을",
+    "학교",
+    "공원",
+    "밭"
+   ],
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "경찰관",
+   "outfit": "경찰 모자·경찰 배지 조끼",
+   "types": [
+    "PRANK",
+    "FOOTPRINT",
+    "LOST",
+    "ORIGIN"
+   ],
+   "traits": null,
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "과학 수사대",
+   "outfit": "고글·하얀 가운 조끼",
+   "types": [
+    "PRANK",
+    "FOOTPRINT",
+    "SECRET_INGREDIENT",
+    "WHEN",
+    "GIFT"
+   ],
+   "traits": null,
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "동물 구조대",
+   "outfit": "구조 조끼·발바닥 배지",
+   "types": [
+    "PRANK",
+    "FOOTPRINT",
+    "LOST",
+    "ORIGIN",
+    "SOUND"
+   ],
+   "traits": null,
+   "animalOnly": true,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "비밀 요원",
+   "outfit": "검은 모자·검은 조끼",
+   "types": [
+    "GIFT",
+    "TREASURE",
+    "ORIGIN"
+   ],
+   "traits": null,
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "교통 경찰",
+   "outfit": "경찰 모자·형광 조끼",
+   "types": [
+    "VEHICLE",
+    "ROUTE"
+   ],
+   "traits": [
+    "길",
+    "마을"
+   ],
+   "animalOnly": false,
+   "anyPlaceTypes": [
+    "ROUTE"
+   ]
+  },
+  {
+   "name": "소방관",
+   "outfit": "소방 헬멧·반사띠 조끼",
+   "types": [
+    "LOST",
+    "FOOTPRINT"
+   ],
+   "traits": [
+    "마을"
+   ],
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "숲 순찰대",
+   "outfit": "순찰 모자·나뭇잎 배지",
+   "types": [
+    "LOST",
+    "TREASURE",
+    "PRANK",
+    "FOOTPRINT",
+    "ORIGIN",
+    "GIFT",
+    "SECRET_INGREDIENT",
+    "WHEN",
+    "ROUTE",
+    "VEHICLE",
+    "SOUND"
+   ],
+   "traits": [
+    "숲",
+    "산"
+   ],
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "바다 구조대",
+   "outfit": "구명조끼·호루라기 목걸이",
+   "types": [
+    "LOST",
+    "TREASURE",
+    "PRANK",
+    "FOOTPRINT",
+    "ORIGIN",
+    "GIFT",
+    "SECRET_INGREDIENT",
+    "WHEN",
+    "ROUTE",
+    "VEHICLE",
+    "SOUND"
+   ],
+   "traits": [
+    "바다"
+   ],
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "산악 구조대",
+   "outfit": "구조 헬멧·주황 조끼",
+   "types": [
+    "LOST",
+    "TREASURE",
+    "PRANK",
+    "FOOTPRINT",
+    "ORIGIN",
+    "GIFT",
+    "SECRET_INGREDIENT",
+    "WHEN",
+    "ROUTE",
+    "VEHICLE",
+    "SOUND"
+   ],
+   "traits": [
+    "산"
+   ],
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "눈 순찰대",
+   "outfit": "털모자·고글",
+   "types": [
+    "LOST",
+    "TREASURE",
+    "PRANK",
+    "FOOTPRINT",
+    "ORIGIN",
+    "GIFT",
+    "SECRET_INGREDIENT",
+    "WHEN",
+    "ROUTE",
+    "VEHICLE",
+    "SOUND"
+   ],
+   "traits": [
+    "눈"
+   ],
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "시간 탐정",
+   "outfit": "체크무늬 모자·나비넥타이",
+   "types": [
+    "WHEN"
+   ],
+   "traits": null,
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "소리 탐정",
+   "outfit": "헤드폰·탐정 모자",
+   "types": [
+    "SOUND"
+   ],
+   "traits": null,
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "맛 탐정",
+   "outfit": "요리사 모자·돋보기 배지",
+   "types": [
+    "SECRET_INGREDIENT"
+   ],
+   "traits": null,
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  },
+  {
+   "name": "보물 탐험대",
+   "outfit": "탐험 조끼·나침반 목걸이",
+   "types": [
+    "TREASURE"
+   ],
+   "traits": null,
+   "animalOnly": false,
+   "anyPlaceTypes": []
+  }
+ ],
+ "places": [
+  {
+   "type": "LOST",
+   "place": "동네 시장",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "가게 주인 아이의 반려 고양이",
+     "branch": "작은 동물"
+    },
+    {
+     "target": "아이가 장 보러 들고 온 동전 지갑",
+     "branch": "물건"
+    },
+    {
+     "target": "가게 아이가 기르던 아기 거북",
+     "branch": "작은 생물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "수목원",
+   "traits": [
+    "숲"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이가 만든 나무 이름표",
+     "branch": "물건"
+    },
+    {
+     "target": "아이의 나뭇잎 관찰 공책",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 채집 통에 담아 온 달팽이",
+     "branch": "작은 생물",
+     "seasons": [
+      "SPRING",
+      "SUMMER",
+      "AUTUMN"
+     ]
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "바닷가 모래사장",
+   "traits": [
+    "바다"
+   ],
+   "seasons": [
+    "SUMMER"
+   ],
+   "events": [
+    {
+     "target": "아이의 연",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 모은 조개껍데기 주머니",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 관찰 통에 담아 둔 아기 게",
+     "branch": "작은 생물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "마을 축제",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "축제에서 받은 풍선 인형",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 만든 축제 가면",
+     "branch": "물건"
+    },
+    {
+     "target": "아이와 함께 축제에 온 반려 강아지",
+     "branch": "작은 동물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "어린이 박물관 체험실",
+   "traits": [
+    "마을",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "체험용 모형 화석",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 색칠한 탈 만들기 작품",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "체험 농장",
+   "traits": [
+    "밭"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이가 돌보던 아기 염소",
+     "branch": "큰 동물"
+    },
+    {
+     "target": "아이가 돌보던 아기 토끼",
+     "branch": "작은 동물"
+    },
+    {
+     "target": "아이가 쓰던 작은 물뿌리개",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "캠핑장",
+   "traits": [
+    "숲"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이의 별자리 손전등",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 아끼는 곰 인형",
+     "branch": "물건"
+    },
+    {
+     "target": "캠핑에 함께 온 아이의 반려 강아지",
+     "branch": "작은 동물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "작은 기차역",
+   "traits": [
+    "마을",
+    "길"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이의 기차표 지갑",
+     "branch": "물건"
+    },
+    {
+     "target": "아이의 기차 모형 장난감",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "동네 골목",
+   "traits": [
+    "마을",
+    "길"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "할머니께 보낼 편지",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 아끼는 분필 상자",
+     "branch": "물건"
+    },
+    {
+     "target": "골목 집 아이의 반려 고양이",
+     "branch": "작은 동물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "과학관",
+   "traits": [
+    "마을",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이가 만든 작은 로봇",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 받은 체험 스티커 판",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "갯벌 체험장",
+   "traits": [
+    "바다"
+   ],
+   "seasons": [
+    "SUMMER"
+   ],
+   "events": [
+    {
+     "target": "아이의 관찰 통",
+     "branch": "물건"
+    },
+    {
+     "target": "아이의 갯벌 장화 한 짝",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 관찰하던 아기 소라게",
+     "branch": "작은 생물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "동네 공원",
+   "traits": [
+    "공원"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이의 반려 강아지",
+     "branch": "작은 동물"
+    },
+    {
+     "target": "아이의 비눗방울 통",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 산책시키던 큰 개",
+     "branch": "큰 동물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "마을 떡집",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "대회에 낼 떡 모양 틀",
+     "branch": "물건"
+    },
+    {
+     "target": "떡집 아이가 아끼는 나무 주걱",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "꽃 축제 정원",
+   "traits": [
+    "공원"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이가 찍은 사진 앨범",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 만든 꽃 왕관",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 관찰 통에 담은 무당벌레",
+     "branch": "작은 생물",
+     "seasons": [
+      "SPRING",
+      "SUMMER"
+     ]
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "바닷가 등대 마을",
+   "traits": [
+    "바다",
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이의 종이배",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 그린 등대 그림",
+     "branch": "물건"
+    },
+    {
+     "target": "등대 마을 아이의 반려 고양이",
+     "branch": "작은 동물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "숲속 생태 연못",
+   "traits": [
+    "숲",
+    "물가"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이가 기르던 장수풍뎅이",
+     "branch": "작은 생물",
+     "seasons": [
+      "SUMMER",
+      "AUTUMN"
+     ]
+    },
+    {
+     "target": "아이가 관찰 통에 담아 온 아기 개구리",
+     "branch": "작은 생물",
+     "seasons": [
+      "SPRING",
+      "SUMMER"
+     ]
+    },
+    {
+     "target": "아이의 연못 관찰 돋보기",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "마을 소방 체험관",
+   "traits": [
+    "마을",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "체험 때 받은 배지",
+     "branch": "물건"
+    },
+    {
+     "target": "아이의 어린이 소방 모자",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "마을 작은 도서관",
+   "traits": [
+    "마을",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "반납할 그림책",
+     "branch": "물건"
+    },
+    {
+     "target": "아이의 도서 대출 카드",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "학교 강당 공연 준비실",
+   "traits": [
+    "학교",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이의 작은 북",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 쓸 공연 머리띠",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "마을 미술관",
+   "traits": [
+    "마을",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "전시할 그림",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 만든 점토 작품",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "눈썰매장",
+   "traits": [
+    "눈"
+   ],
+   "seasons": [
+    "WINTER"
+   ],
+   "events": [
+    {
+     "target": "아이의 눈썰매 장갑",
+     "branch": "물건"
+    },
+    {
+     "target": "아이의 털모자",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "어린이 동물원",
+   "traits": [
+    "공원"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "먹이 주기 바구니",
+     "branch": "물건"
+    },
+    {
+     "target": "아이의 동물 도장 종이",
+     "branch": "물건"
+    },
+    {
+     "target": "체험장에서 아이가 돌보던 아기 토끼",
+     "branch": "작은 동물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "할머니 댁 꽃밭",
+   "traits": [
+    "마을",
+    "밭"
+   ],
+   "seasons": [
+    "SPRING",
+    "SUMMER"
+   ],
+   "events": [
+    {
+     "target": "아이가 심은 해바라기 씨앗 봉투",
+     "branch": "물건"
+    },
+    {
+     "target": "아이의 꽃삽",
+     "branch": "물건"
+    },
+    {
+     "target": "아이가 기르던 달팽이",
+     "branch": "작은 생물"
+    }
+   ]
+  },
+  {
+   "type": "LOST",
+   "place": "산책길 전망대",
+   "traits": [
+    "산"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "아이의 나침반",
+     "branch": "물건"
+    },
+    {
+     "target": "아이의 쌍안경",
+     "branch": "물건"
+    },
+    {
+     "target": "아이와 산책 온 반려 강아지",
+     "branch": "작은 동물"
+    }
+   ]
+  },
+  {
+   "type": "TREASURE",
+   "place": "할아버지 댁 뒷마당",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "할아버지가 숨긴 타임캡슐"
+    },
+    {
+     "target": "할머니가 숨긴 옛날 사진 상자"
+    },
+    {
+     "target": "삼촌이 숨긴 어린 시절 장난감 상자"
+    }
+   ]
+  },
+  {
+   "type": "TREASURE",
+   "place": "바닷가 마을 놀이터",
+   "traits": [
+    "바다",
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "이웃 할머니가 숨긴 보물 상자"
+    },
+    {
+     "target": "이웃 아저씨가 숨긴 조개 상자"
+    }
+   ]
+  },
+  {
+   "type": "TREASURE",
+   "place": "학교 도서관",
+   "traits": [
+    "학교",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "선생님이 숨긴 수수께끼 상자"
+    },
+    {
+     "target": "사서 선생님이 숨긴 책갈피 꾸러미"
+    }
+   ]
+  },
+  {
+   "type": "TREASURE",
+   "place": "마을 박물관 정원",
+   "traits": [
+    "공원"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "관장님이 숨긴 기념 메달"
+    },
+    {
+     "target": "해설사님이 숨긴 옛날 동전 주머니"
+    }
+   ]
+  },
+  {
+   "type": "PRANK",
+   "place": "마을 떡집",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "떡을 몰래 먹은 동물",
+     "branch": "정리"
+    },
+    {
+     "target": "떡에 꽂을 꽃 장식을 숨겨 둔 동물",
+     "branch": "되찾음"
+    },
+    {
+     "target": "떡고물을 흩어 놓은 동물",
+     "branch": "정리"
+    }
+   ]
+  },
+  {
+   "type": "PRANK",
+   "place": "아파트 화단",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "꽃밭을 파헤친 동물",
+     "branch": "정리"
+    },
+    {
+     "target": "아이가 화단에 둔 구슬을 숨겨 둔 동물",
+     "branch": "되찾음"
+    },
+    {
+     "target": "화단 거름 봉지를 뜯어 놓은 동물",
+     "branch": "정리"
+    }
+   ]
+  },
+  {
+   "type": "PRANK",
+   "place": "캠핑장 쉼터",
+   "traits": [
+    "숲"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "간식 봉지를 뜯어 놓은 동물",
+     "branch": "정리"
+    },
+    {
+     "target": "아이가 탁자에 둔 배지를 숨겨 둔 동물",
+     "branch": "되찾음"
+    },
+    {
+     "target": "쉼터 탁자의 마시멜로를 몰래 먹은 동물",
+     "branch": "정리"
+    }
+   ]
+  },
+  {
+   "type": "PRANK",
+   "place": "사과 과수원",
+   "traits": [
+    "밭"
+   ],
+   "seasons": [
+    "AUTUMN"
+   ],
+   "events": [
+    {
+     "target": "사과를 몰래 먹은 동물",
+     "branch": "정리"
+    },
+    {
+     "target": "아이가 단 나무 이름표를 숨겨 둔 동물",
+     "branch": "되찾음"
+    },
+    {
+     "target": "사과 상자 옆 짚을 흩어 놓은 동물",
+     "branch": "정리"
+    }
+   ]
+  },
+  {
+   "type": "FOOTPRINT",
+   "place": "학교 운동장",
+   "traits": [
+    "학교"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "모래밭에 발자국을 남긴 동물"
+    },
+    {
+     "target": "비 온 뒤 흙길에 발자국을 남긴 동물"
+    },
+    {
+     "target": "조회대 계단에 흙 발자국을 남긴 동물"
+    }
+   ]
+  },
+  {
+   "type": "FOOTPRINT",
+   "place": "마을 소방서 앞마당",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "진흙길에 발자국을 남긴 동물"
+    },
+    {
+     "target": "물청소한 마당에 발자국을 남긴 동물"
+    }
+   ]
+  },
+  {
+   "type": "FOOTPRINT",
+   "place": "강가 갈대밭",
+   "traits": [
+    "물가"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "젖은 모래에 발자국을 남긴 동물"
+    },
+    {
+     "target": "갈대밭 진흙에 발자국을 남긴 동물"
+    },
+    {
+     "target": "강둑 산책길에 발자국을 남긴 동물"
+    }
+   ]
+  },
+  {
+   "type": "FOOTPRINT",
+   "place": "뒷산 산책로",
+   "traits": [
+    "산",
+    "눈"
+   ],
+   "seasons": [
+    "WINTER"
+   ],
+   "events": [
+    {
+     "target": "눈길에 발자국을 남긴 동물"
+    },
+    {
+     "target": "의자에 쌓인 눈에 발자국을 남긴 동물"
+    }
+   ]
+  },
+  {
+   "type": "ORIGIN",
+   "place": "아파트 놀이터",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "놀이터에서 만난 길 잃은 강아지",
+     "branch": "동물"
+    },
+    {
+     "target": "모래밭에 놓여 있던 이름 없는 공",
+     "branch": "물건"
+    },
+    {
+     "target": "미끄럼틀 밑에서 만난 길 잃은 고양이",
+     "branch": "동물"
+    }
+   ]
+  },
+  {
+   "type": "ORIGIN",
+   "place": "마을 상가 거리",
+   "traits": [
+    "마을",
+    "길"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "주소가 지워진 택배 상자",
+     "branch": "물건"
+    },
+    {
+     "target": "가게 앞에 놓여 있던 우산",
+     "branch": "물건"
+    },
+    {
+     "target": "상가 거리에서 만난 목줄 맨 강아지",
+     "branch": "동물"
+    }
+   ]
+  },
+  {
+   "type": "ORIGIN",
+   "place": "학교 앞 문방구 거리",
+   "traits": [
+    "마을",
+    "길"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "운동장에 떨어져 있던 털장갑",
+     "branch": "물건"
+    },
+    {
+     "target": "문방구 앞에서 주운 필통",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "ORIGIN",
+   "place": "바닷가 마을",
+   "traits": [
+    "바다",
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "우체통에 들어 있던 보낸 곳 없는 편지",
+     "branch": "물건"
+    },
+    {
+     "target": "방파제에서 만난 길 잃은 강아지",
+     "branch": "동물"
+    },
+    {
+     "target": "모래밭에 떠밀려 온 밀짚모자",
+     "branch": "물건"
+    }
+   ]
+  },
+  {
+   "type": "GIFT",
+   "place": "아이의 생일 파티",
+   "traits": [
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "생일에 받은 리본 상자"
+    },
+    {
+     "target": "친구가 몰래 두고 간 선물 상자"
+    }
+   ]
+  },
+  {
+   "type": "GIFT",
+   "place": "아파트 현관",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "할머니가 보낸 선물 상자"
+    },
+    {
+     "target": "이웃 이모가 문 앞에 둔 선물 상자"
+    }
+   ]
+  },
+  {
+   "type": "GIFT",
+   "place": "학교 교실",
+   "traits": [
+    "학교",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "선생님이 준비한 선물 상자"
+    },
+    {
+     "target": "전학 간 친구가 보낸 선물 상자"
+    }
+   ]
+  },
+  {
+   "type": "GIFT",
+   "place": "마을 도서관",
+   "traits": [
+    "마을",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "친구가 남긴 수수께끼 선물 상자"
+    },
+    {
+     "target": "사서 선생님이 준비한 선물 상자"
+    }
+   ]
+  },
+  {
+   "type": "SECRET_INGREDIENT",
+   "place": "마을 떡집",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "대회에 낸 할머니의 떡"
+    },
+    {
+     "target": "떡집 사장님의 새 떡"
+    }
+   ]
+  },
+  {
+   "type": "SECRET_INGREDIENT",
+   "place": "동네 빵집",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "빵집 사장님의 새 빵"
+    },
+    {
+     "target": "빵집 사장님의 새 쿠키"
+    }
+   ]
+  },
+  {
+   "type": "SECRET_INGREDIENT",
+   "place": "어린이 요리 교실",
+   "traits": [
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "친구가 만든 주스"
+    },
+    {
+     "target": "선생님이 만든 비밀 수프"
+    },
+    {
+     "target": "친구가 만든 쿠키"
+    }
+   ]
+  },
+  {
+   "type": "SECRET_INGREDIENT",
+   "place": "체험 농장",
+   "traits": [
+    "밭"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "농장 카페의 비밀 케이크"
+    },
+    {
+     "target": "농장 할머니의 비밀 잼"
+    }
+   ]
+  },
+  {
+   "type": "WHEN",
+   "place": "아파트 화단",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "화단에 물을 준 때"
+    },
+    {
+     "target": "화단에 새 꽃모종을 심은 때",
+     "seasons": [
+      "SPRING"
+     ]
+    },
+    {
+     "target": "화단 둘레 낙엽을 쓸어 둔 때",
+     "seasons": [
+      "AUTUMN"
+     ]
+    }
+   ]
+  },
+  {
+   "type": "WHEN",
+   "place": "마을 작은 도서관",
+   "traits": [
+    "마을",
+    "실내"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "반납함에 그림책을 넣은 때"
+    },
+    {
+     "target": "도서관 게시판에 그림을 붙인 때"
+    }
+   ]
+  },
+  {
+   "type": "WHEN",
+   "place": "학교 연못",
+   "traits": [
+    "학교",
+    "물가"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "연못 물고기에게 먹이를 준 때"
+    },
+    {
+     "target": "연못가 화분을 옮겨 놓은 때"
+    }
+   ]
+  },
+  {
+   "type": "WHEN",
+   "place": "동네 놀이터",
+   "traits": [
+    "마을",
+    "눈"
+   ],
+   "seasons": [
+    "WINTER"
+   ],
+   "events": [
+    {
+     "target": "놀이터에 눈사람을 만든 때"
+    },
+    {
+     "target": "미끄럼틀에 쌓인 눈을 쓸어 둔 때"
+    }
+   ]
+  },
+  {
+   "type": "ROUTE",
+   "place": "골목 동네",
+   "traits": [
+    "마을",
+    "길"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "할머니가 보낸 택배 상자"
+    },
+    {
+     "target": "이웃 할머니가 보낸 반찬 꾸러미"
+    }
+   ]
+  },
+  {
+   "type": "ROUTE",
+   "place": "아파트 단지",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "문 앞에 놓여 있던 꽃다발"
+    },
+    {
+     "target": "현관 앞에 배달된 과일 상자"
+    }
+   ]
+  },
+  {
+   "type": "ROUTE",
+   "place": "학교 앞 거리",
+   "traits": [
+    "마을",
+    "길"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "교실로 배달된 우유 상자"
+    },
+    {
+     "target": "교실로 배달된 화분"
+    }
+   ]
+  },
+  {
+   "type": "ROUTE",
+   "place": "강가 캠핑장",
+   "traits": [
+    "숲",
+    "물가"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "캠핑장에 배달된 도시락 꾸러미"
+    },
+    {
+     "target": "텐트 앞에 배달된 장작 묶음"
+    }
+   ]
+  },
+  {
+   "type": "VEHICLE",
+   "place": "바닷가 마을",
+   "traits": [
+    "바다",
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "삼촌이 타고 온 탈것"
+    },
+    {
+     "target": "이모가 타고 온 탈것"
+    }
+   ]
+  },
+  {
+   "type": "VEHICLE",
+   "place": "할머니 댁 시골 마을",
+   "traits": [
+    "마을",
+    "밭"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "할머니가 타고 온 탈것"
+    },
+    {
+     "target": "고모가 타고 온 탈것"
+    }
+   ]
+  },
+  {
+   "type": "VEHICLE",
+   "place": "아파트 단지",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "사촌 언니가 타고 온 탈것"
+    },
+    {
+     "target": "할아버지가 타고 온 탈것"
+    }
+   ]
+  },
+  {
+   "type": "VEHICLE",
+   "place": "섬마을 분교",
+   "traits": [
+    "바다",
+    "학교",
+    "섬"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "선생님이 타고 온 탈것"
+    },
+    {
+     "target": "보건 선생님이 타고 온 탈것"
+    }
+   ]
+  },
+  {
+   "type": "SOUND",
+   "place": "할머니 댁 시골집",
+   "traits": [
+    "마을"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "할머니 댁에서 밤에 들린 소리"
+    },
+    {
+     "target": "할머니 댁 방에서 밤에 들린 소리"
+    }
+   ]
+  },
+  {
+   "type": "SOUND",
+   "place": "숲속 캠핑장",
+   "traits": [
+    "숲"
+   ],
+   "seasons": [
+    "SPRING",
+    "SUMMER",
+    "AUTUMN"
+   ],
+   "events": [
+    {
+     "target": "캠핑장 텐트 밖에서 밤에 들린 소리"
+    },
+    {
+     "target": "캠핑장에서 잠들 무렵 밤에 들린 소리"
+    }
+   ]
+  },
+  {
+   "type": "SOUND",
+   "place": "시골 학교",
+   "traits": [
+    "학교"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "시골 학교에서 밤에 들린 소리"
+    },
+    {
+     "target": "학교 근처 집에서 밤에 들린 소리"
+    }
+   ]
+  },
+  {
+   "type": "SOUND",
+   "place": "바닷가 민박집",
+   "traits": [
+    "바다"
+   ],
+   "seasons": [],
+   "events": [
+    {
+     "target": "바닷가 민박집에서 밤에 들린 소리"
+    },
+    {
+     "target": "민박집 방에서 밤에 들린 소리"
+    }
+   ]
+  }
+ ]
+}
