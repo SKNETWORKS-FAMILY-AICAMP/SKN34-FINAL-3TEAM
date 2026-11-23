@@ -19,6 +19,7 @@ spec:
         {{- end }}
         ops900/trace-redaction: enabled
         ops784/trace-limits: {{ toJson .Values.collector.traceLimits | sha256sum | trunc 16 | quote }}
+        ops900/trace-url-redaction: enabled
       {{- end }}
     spec:
       automountServiceAccountToken: false

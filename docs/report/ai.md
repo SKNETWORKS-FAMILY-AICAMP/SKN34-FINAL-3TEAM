@@ -570,11 +570,11 @@ scoring의 `model.loading.reported` 전체 상태 이벤트와 30초 heartbeat�
 | 설명 항목 | 가장 높은 항목(잘한 점) 1개 + 가장 낮은 항목(함께 이야기해 볼 점) 1개. 서술 총점 `hol` 제외 | 학습 데이터 이유 문장이 항목당 1문장. 9항목 전부는 CPU에서 느림 |
 | 인용 구절 | 설명과 낱말 앞 두 글자가 2개 이상 겹치는 학생 글 문장 중 가장 많이 겹치는 것, 없으면 null | 모델에게 구절까지 만들게 하면 틀리기 쉬움. 원문 문장을 잘라 써 부분 문자열 조건을 항상 만족 |
 | 활성 확인 | 레지스트리 `MODEL` `report-explanation`, scope `explanation/grade-{학년}/{narrative\|essay}`. `ActiveVersions`가 PROMPT와 함께 보관 | 기존 활성 목록·이벤트 수신 재사용 |
-| 클라이언트 | SageMaker 리포트 클라이언트(#747, 24절), 재시도 0. 엔드포인트 설정이 없으면 설명만 503 | 다른 호출의 `LLM_PROVIDER`는 그대로 |
+| 클라이언트 | SageMaker 리포트 클라이언트(#747, 24절), 전송 재시도 0. 출력에 따른 조건부 재생성은 25절. 엔드포인트 설정이 없으면 설명만 503 | 다른 호출의 `LLM_PROVIDER`는 그대로 |
 | 생성 방식 | 평문 스트림을 모음(JSON 구조화 출력 안 씀), `callType = REPORT_EXPLANATION` | LoRA가 평문으로 학습 |
 | 후처리 | 숫자나 금지어(레벨·등급·점수·사고력·IQ·상위·하위·뒤처·영재)가 있는 문장을 버리고 항목당 앞 2문장. 남는 문장이 없으면 422 | 전문가 문장에 점수 표현이 섞임. 생성형 AI로 말투를 바꾸지 않음(NFR-DAT-03) |
 | 문장 틀 | `잘한 점: …` / `함께 이야기해 볼 점: …` | |
-| 시간 | 호출 1회 70초, 마감 75초, 1536토큰(#747, 24절) | SageMaker 실시간 호출 60초 제한 기준 |
+| 시간 | SDK 읽기 타임아웃 70초, 최초 생성과 조건부 재생성 공유 마감 75초, 호출당 1536토큰 | SageMaker 실시간 호출 60초 제한 기준 |
 
 학습 입력 형식(#475와 고정, 문구를 바꾸면 `PROMPT_VERSION`과 학습 쌍을 같이 바꿈):
 
@@ -1711,7 +1711,7 @@ P27 추억 검색 보완(멘토 피드백, 설계 #679)의 ai 몫. 계약은 [ap
 | 설정 | `REPORT_LLM_ENDPOINT`·`REPORT_LLM_COMPONENT`·`REPORT_LLM_REGION`(기본 `ap-northeast-2`, Pod에서 기본 리전이 안 잡혀 명시)·`REPORT_LLM_ENDPOINT_URL`(대역 전용)·`REPORT_LLM_TIMEOUT`. `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`·`..._KEY_GEMMA`(RunPod 주소·키)와 쓰지 않던 `EXPLANATION_BASE_URL`·`EXPLANATION_MODEL`·`EXPLANATION_API_KEY`·`EXPLANATION_LLM_TIMEOUT`, `REPORT_GEMMA_TIMEOUT`은 지움 | 엔드포인트·IC 이름은 비밀값이 아니라 values에 둠. RunPod 키가 필요 없어 Secret 항목도 뺌 |
 | 시간 | 호출 1회 = boto3 읽기 타임아웃 70초(`REPORT_LLM_TIMEOUT`), 연결 5초, botocore 재시도 없음(`total_max_attempts` 1). 서술 마감 `NARRATIVE_DEADLINE` 75초, 설명 마감 `EXPLANATION_DEADLINE` 75초. report→ai 대기는 80초(24.2) | SageMaker 실시간 호출은 60초에 끊김. AWS 권고대로 읽기 타임아웃은 그보다 길게. 콜드 대기(모델 300초, 내부 310초)는 예약 확장으로 창 전에 켜 두므로 필요 없음 |
 | 출력 상한 | 상세 설명 `EXPLANATION_MAX_TOKENS` 1536, 서술 `NARRATIVE_MAX_TOKENS` 1024 | #746 D3. LoRA 정상 출력 p50 568토큰의 약 2.2배. g6e 동시 8건 1536토큰 최악 23.4초 |
-| 재시도 | 없음(서술·설명 모두 호출 1회) | 같은 요청을 다시 보내면 추론이 겹침. 설명은 기존과 같이 재시도 0 |
+| 재시도 | 전송 재시도 0회. 서술은 1회 호출, 상세 설명은 첫 출력에 따라 최대 2회 호출(25절) | 상세 설명 재생성은 반복 억제 설정을 적용하고 최초 생성과 75초 마감을 공유 |
 | 가동 창 밖 | IC 사본 0이면 `ValidationError`("…no capacity…")가 바로 옴 → `LLM_NO_CAPACITY`(`retryable: false`) → 503 `AI_UNAVAILABLE`. 다른 모델로 대체하지 않음. report에서 설명은 그 설명만 빼고(`NOT_INCLUDED`) 발행. **서술 503은 기존 동작대로 주간 리포트 생성 실패(`FAILED`, `GENERATION_FAILED`, api-spec 4.2.1)**. 그래서 창 밖의 주간 리포트 생성(관리자 다시 생성 등)은 실패한다(24.5) | #733: 일반 LLM으로 대체 금지. 서술 실패 처리는 이번에 바꾸지 않음 |
 | 오류 분류 | `ModelError` → 컨테이너 원래 상태 코드로(`LLM_SERVER_ERROR`·`LLM_BAD_REQUEST` 등), `ThrottlingException`·`ModelNotReadyException` → `LLM_RATE_LIMITED`, `AccessDeniedException` → `LLM_AUTH_FAILED`, 읽기·연결 시간 초과 → `LLM_TIMEOUT`, 연결 실패 → `LLM_CONNECTION`, 자격 증명 없음 → `LLM_AUTH_FAILED`(사용량 기록 안 함). 응답 본문·오류 메시지 원문은 로그·예외에 남기지 않음 | 기존 제공자 공통 코드(`status_error`)와 같은 기준 |
 | 잘린 출력 | `finish_reason=length` → `LLM_INVALID_OUTPUT`(설명 빠짐). 인용 부호를 이스케이프하지 않아 칸이 짧게 끊긴 JSON(9.13.9)은 형식이 맞아 그대로 통과했으므로, `checks.clean`에서 문단 끝이 마침표·물음표·느낌표 없이 끝나면 그 조각을 뺌. 상세 분석 칸이 비면 설명 전체가 `422 AI_EXPLANATION_REJECTED` | 끊긴 설명이 학부모에게 그대로 나가지 않게. 프롬프트 쪽 수정(인용은 「」 등)은 하지 않음 |
@@ -1764,3 +1764,11 @@ kind에 `sllm-server`(llm-stub 대역)를 잠시 올리고 ai-service를 이 브
 
 - 사용량·`versions.model`은 설정한 이름(`gemma-4-26b-a4b-it-qat-awq-int4`)으로 남았다. 상세 설명은 모두 `finish_reason=stop`이었다(`length`면 실패로 처리되므로 성공 = 정상 종료)
 - 확인하지 못한 것: 운영 report-worker를 거친 주간 리포트 1건 생성(이 브랜치는 운영에 배포하지 않음), 동시 호출 부하(#746 측정으로 갈음)
+
+## 25. 리포트 상세 설명 재생성 (#850·#910, 2026-11-23)
+
+- 첫 출력이 `LLM_INVALID_OUTPUT`이거나 후처리 뒤 상세 분석 누락, 반복 제거 비율 1/3 이상, 작성된 개선 방안 전부 누락 중 하나에 해당하면 `repetition_penalty=1.1`로 최대 한 번 재생성한다. 두 호출은 75초 마감을 공유한다. 타임아웃·용량 부족 등 다른 호출 실패와 최종 `allowed()` 검사 거절에는 재생성을 적용하지 않는다.
+- 정리 단계는 인사말, 금지어, 점수 암시, 채점 항목 나열, 원문에 근거 없는 숫자·횟수나 자료 조사 요구, 문단 끝의 잘린 문장을 걸러낸다. 같거나 유사한 문장을 구역 간에도 제거한 뒤 상세 분석·보완할 지점·개선 방안을 조립한다.
+- 저장소의 내장 버전은 `report-explanation@4`다. 프롬프트에서도 채점 결과를 암시하는 말과 초등학생이 수행하기 어려운 자료 조사 요구를 금지한다. 승인 범위 `ai/report-explanation`에 활성 PROMPT가 없으면 내장 @4를 사용한다. 이전 버전이 해당 범위에 활성이고 이미지에 본문이 없으면 ai readiness가 실패하고 새 설명 요청은 503이다. 설명용 MODEL의 범위 승인은 별도로 필요하다.
+- 운영 활성값은 이 점검에서 확인하지 못했다. 배포 전 core `GET /internal/model-versions/active`에서 `PROMPT/reportExplanation`과 승인 범위를 읽고, 이전 버전이 활성이라면 운영 권한자가 @4의 등록·승인·활성화와 @4 본문을 포함하는 ai 이미지 전환을 조율한다. 전환 뒤 ai readiness와 `GET /internal/versions`의 `reportExplanation` 값을 확인한다.
+- 검증(11/23, Python 3.12 로컬 Docker·모의 호출): `pytest tests/report_explanation tests/test_versions.py tests/llm/test_report.py -q` 64건 통과. 재생성 조건과 반복 억제 전달, 실패 처리, 버전 응답을 확인했다.
