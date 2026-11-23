@@ -2,7 +2,7 @@
 
 학부모·관리자 화면 가로 넘침(UX-01)과 학생·학부모·관리자 화면 접근성(UX-02)을 실서버(대역 compose)에서 1회 실행해 기록한다. tests/e2e·Playwright 설정·CI는 바꾸지 않았다(사용자 결정 2026-11-22). 결과 판정은 [testing-ci 9.3](../../testing-ci.md#93-근거표) UX-01·02 줄.
 
-이후 조치(2026-11-23): 분리한 #914(관리자 대비·390 가로 스크롤 표)와 #917(처리 중 단추 초점)은 PR #938로 고쳤다(근거 [issue914-admin-contrast](../issue914-admin-contrast/)·[issue917-admin-busy-focus](../issue917-admin-busy-focus/)). 아래 결과는 고치기 전 점검 기록이고, #915(학부모)는 남아 있다.
+이후 조치(2026-11-23): 분리한 #914(관리자 대비·390 가로 스크롤 표)와 #917(처리 중 단추 초점)은 PR #938로 고쳤다(근거 [issue914-admin-contrast](../issue914-admin-contrast/)·[issue917-admin-busy-focus](../issue917-admin-busy-focus/)). #915(학부모 대비·동의 체크박스·카드 이름·문의 결과 링크)도 고친 뒤 이 스크립트로 다시 재 serious 0(근거 [issue915-parent-a11y](../issue915-parent-a11y/README.md)). 아래 결과는 고치기 전 점검 기록이다.
 
 ## 환경
 
