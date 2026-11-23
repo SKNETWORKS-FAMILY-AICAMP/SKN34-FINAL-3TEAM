@@ -16,7 +16,16 @@ from pydantic import ValidationError
 
 from app.llm.base import LlmUnavailable
 from app.llm.media import xfade_caption_times
-from app.theme_draft.checks import DAYS, Theme, dialogue_speakers, motion, spots, theme_day
+from app.theme_draft.checks import (
+    DAYS,
+    INVESTIGATE,
+    Theme,
+    dialogue_speakers,
+    mission_way,
+    motion,
+    spots,
+    theme_day,
+)
 from app.theme_draft.models import GeneratedMotion, ThemeMotion
 from app.theme_draft.nodes import THEME_CALL_TYPE, ThemeContext, ThemeState
 from app.theme_draft.nodes.images import CUTS_KEY, image_of, warning
@@ -59,9 +68,12 @@ async def scene_motion(
     draft = (state.get("drafts") or {}).get(scene) if scene in DAYS else None
     if draft is not None:
         d = theme_day(theme, scene)
+        investigate = mission_way(d) == INVESTIGATE
         day_info = {
-            "discovery": d["discovery"],
-            "evidenceKind": ctx.prompt.body.evidence_kind(d),
+            # #782 테마 짜임: 부탁 날은 증거가 문제 뒤에 나와 돕는 사람을 누르게 함
+            "discovery": d["discovery"] if investigate else "",
+            "evidenceKind": ctx.prompt.body.evidence_kind(d) if investigate else "",
+            "helper": d.get("helper") or "",
             "missionQuestion": draft.question,
             "hints": draft.hints,
             "avoidWords": [

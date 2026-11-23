@@ -24,6 +24,7 @@ import com.sagomungchi.learning.theme.domain.ThemeDraftRules
 import com.sagomungchi.learning.theme.domain.ThemeFailure
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
+import com.sagomungchi.learning.theme.domain.ThemeTopicSeeds
 import com.sagomungchi.learning.theme.domain.ThemeWarning
 
 /**
@@ -31,6 +32,17 @@ import com.sagomungchi.learning.theme.domain.ThemeWarning
  * 장면 7개의 그림 키·움직임(형식 v1), 시작·종료 영상 키. 성취기준 코드는 시드에 있는 값
  */
 object ThemeDraftFixtures {
+    /** 장소 목록에서 나올 수 있는 모든 주제 글(장소 × 사건 × 갈래 × 어울리는 역할, #782) */
+    fun seedTopics(): Set<String> = ThemeTopicSeeds.PLACES.let { data ->
+        data.places.flatMap { place ->
+            place.events.flatMap { event ->
+                data.branchesOf(place.type, event).flatMap { branch ->
+                    data.rolesFor(place, branch).map { ThemeTopicSeeds.topic(place, event, it, branch) }
+                }
+            }
+        }.toSet()
+    }
+
     val CANDIDATES = listOf("고양이", "강아지", "토끼", "햄스터")
     const val ANSWER = "강아지"
     val RULES_OUT = mapOf(

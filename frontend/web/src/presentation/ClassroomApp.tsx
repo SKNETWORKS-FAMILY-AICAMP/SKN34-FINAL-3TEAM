@@ -235,6 +235,7 @@ export function ClassroomApp() {
                 ['partial', '부분 정답'],
                 ['rethink', '다시 생각'],
                 ['running', 'RUNNING 응답 후 재조회'],
+                ['feedback-slow', '피드백 40초 지연'],
                 ['finish-unmet', '마무리 조건 미충족'],
                 ['home-empty', '홈 기록 없음'],
                 ['home-processing', '홈 처리 중'],

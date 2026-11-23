@@ -199,6 +199,7 @@ export type DemoScenario =
   | 'partial'
   | 'rethink'
   | 'running'
+  | 'feedback-slow'
   | 'finish-unmet'
   | 'home-empty'
   | 'home-fail'

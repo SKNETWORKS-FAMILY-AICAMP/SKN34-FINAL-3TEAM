@@ -3,9 +3,14 @@
 경계 사례를 많이 넣는다.
 
 판정기는 ai.md 17절 규칙 문장을 그대로 옮겨 집합 계산으로 따로 구현했다. 단서 문장은 허용 값 낱말만
-늘어놓아 CLUE_TEXT는 나오지 않게 하고, 표·조건·RULE/HINT를 무작위로 만든다. rulesOut은 LLM이
-쓰지 않으므로 사례에 없고, 코드가 채운 값이 판정기 계산(RULE은 허용 값 밖 후보, HINT는 빈 배열)과
-같은지 함께 본다.
+늘어놓아 CLUE_TEXT는 나오지 않게 하고, 표·조건·RULE/HINT/STORY를 무작위로 만든다. rulesOut은 LLM이
+쓰지 않으므로 사례에 없고, 코드가 채운 값이 판정기 계산(RULE은 허용 값 밖 후보, HINT·STORY는 빈
+배열)과 같은지 함께 본다.
+
+#782 테마 짜임(사용자 결정 2026-11-19): 사건 단서(STORY)는 아무 후보도 빼지 않고 단서 문장에 후보
+이름·표 값이 없어야 함(STORY_VALUE), 앞 요일과 같은 단서(같은 특징·같은 허용 값)는 안 됨
+(CLUE_REPEAT, 사건 단서끼리는 비교하지 않음), 월~목 힌트는 남은 후보 2개 이상, 마지막 틀린 후보는
+금요일에 빠짐.
 """
 
 import random
@@ -23,6 +28,18 @@ VALUES = [
 CANDS = ["가게", "공원", "다리", "마당"]
 CASES = 5000
 SEED = 437
+# 사건 단서 문장: 후보 이름·VALUES 낱말이 없는 문장, 표 값을 말하는 문장, 후보 이름을 말하는 문장
+STORY_PLAIN = "발자국이 길게 이어졌어"
+FRI = DAYS.index("FRI")
+
+
+def story_clue(rng: random.Random) -> str:
+    r = rng.random()
+    if r < 0.6:
+        return STORY_PLAIN
+    if r < 0.8:
+        return f"발자국 옆에 {rng.choice(VALUES)} 조각이 있었어"
+    return f"발자국이 {rng.choice(CANDS)} 쪽으로 이어졌어"
 
 
 def oracle(
@@ -30,8 +47,20 @@ def oracle(
 ) -> bool:
     remaining = set(cands)
     first_out: dict[str, int] = {}
+    table_values = {v for vals in table.values() for v in vals.values()}
+    seen: set[tuple[str, frozenset[str]]] = set()
     for i, d in enumerate(days):
         c = d["condition"]
+        if c["kind"] == "STORY":
+            # 사건 단서: 후보를 빼지 않고, 문장에 후보 이름·표 값 낱말이 없음(낱말 단위로 봄)
+            words = d["clue"].split()
+            if any(w.startswith(x) for w in words for x in table_values | set(cands)):
+                return False
+            continue
+        key = (c["feature"], frozenset(c["allowed"]))
+        if key in seen:  # 앞 요일과 같은 단서
+            return False
+        seen.add(key)
         values = table[c["feature"]]
         allowed = set(c["allowed"])
         if not allowed or not allowed <= set(values.values()):
@@ -48,15 +77,17 @@ def oracle(
                 first_out.setdefault(x, i)
             remaining -= out
         else:
-            # HINT: 후보를 빼지 않음, 그때 남은 후보가 모두 허용 값 안, 월~수는 남은 후보 2개 이상
+            # HINT: 후보를 빼지 않음, 그때 남은 후보가 모두 허용 값 안, 월~목은 남은 후보 2개 이상
             if not remaining <= fit:
                 return False
-            if i <= 2 and len(remaining) < 2:
+            if set(values.values()) <= allowed:  # #782: 특징 값 전부면 알려 주는 것이 없음
+                return False
+            if i < FRI and len(remaining) < 2:
                 return False
     wrong = set(cands) - {answer}
     if not wrong <= set(first_out):  # 틀린 후보는 모두 RULE로 빠짐
         return False
-    return max(first_out[x] for x in wrong) >= 3  # 마지막 틀린 후보는 목요일 이후
+    return max(first_out[x] for x in wrong) == FRI  # 마지막 틀린 후보는 금요일
 
 
 def random_case(
@@ -74,6 +105,15 @@ def random_case(
     }
     days = []
     for d in DAYS:
+        if rng.random() < 0.2:  # 사건 단서
+            days.append(
+                {
+                    "day": d,
+                    "clue": story_clue(rng),
+                    "condition": {"kind": "STORY", "feature": "", "allowed": []},
+                }
+            )
+            continue
         feat = rng.choice(names)
         vals = sorted(set(table[feat].values()))
         allowed = rng.sample(vals, rng.randint(1, len(vals)))
@@ -99,7 +139,9 @@ def planned_case(
     "흔든다."""
     answer = rng.choice(CANDS)
     wrong = [c for c in CANDS if c != answer]
-    out_day = {c: rng.choice([0, 1, 2, 3, 3, 4, 4]) for c in wrong}
+    out_day = {c: rng.choice([0, 1, 2, 3, 4, 4, 4]) for c in wrong}
+    if 0 not in out_day.values():  # 월요일 힌트는 늘 특징 값 전부라(#782) 대부분 월요일에 하나 뺌
+        out_day[rng.choice(wrong)] = 0 if rng.random() < 0.8 else out_day[wrong[0]]
     table: dict[str, dict[str, str]] = {}
     days = []
     gone: set[str] = set()
@@ -107,7 +149,20 @@ def planned_case(
         name = f"d{i}"
         leaving = {c for c in wrong if out_day[c] == i}
         extra = {c for c in gone if rng.random() < 0.5}  # 이미 빠진 후보도 함께 뺄 수 있음
+        if not leaving and gone and not extra:
+            # 힌트 날은 이미 빠진 후보 하나 이상이 다른 값이어야 정보가 있는 힌트(#782 CLUE_EMPTY).
+            # 아직 빠진 후보가 없는 날의 힌트는 늘 특징 값 전부라 그대로 실패 사례로 둠
+            extra = {rng.choice(sorted(gone))}
         table[name] = {c: ("포도" if c in leaving | extra else "사과") for c in CANDS}
+        if not leaving and rng.random() < 0.5:  # 후보를 빼지 않는 날은 사건 단서도(#782)
+            days.append(
+                {
+                    "day": d,
+                    "clue": STORY_PLAIN,
+                    "condition": {"kind": "STORY", "feature": "", "allowed": []},
+                }
+            )
+            continue
         kind = "RULE" if leaving else "HINT"
         days.append(
             {
@@ -118,17 +173,27 @@ def planned_case(
         )
         gone |= leaving
     k = rng.randrange(5)
-    shake = rng.randrange(5)
+    shake = rng.randrange(9)
     day = days[k]
-    if shake == 0:
+    story = day["condition"]["kind"] == "STORY"
+    if shake == 0 and not story:
         day["condition"]["kind"] = "HINT" if day["condition"]["kind"] == "RULE" else "RULE"
-    elif shake == 1:  # 두 값 모두 허용: RULE이면 빠지는 후보가 없음
+    elif shake == 1 and not story:  # 두 값 모두 허용: RULE이면 빠지는 후보가 없음
         day["condition"]["allowed"] = ["사과", "포도"]
         day["clue"] = "사과 포도"
-    elif shake == 2:
+    elif shake == 2 and not story:
         day["condition"]["allowed"] = ["포도"]
         day["clue"] = "포도"
-    # 3·4는 그대로(통과 사례)
+    elif shake == 3:  # 사건 단서로 바꿈: 그날 빼던 후보가 있으면 빠지지 않음
+        day["condition"] = {"kind": "STORY", "feature": "", "allowed": []}
+        day["clue"] = STORY_PLAIN
+    elif shake == 4:  # 사건 단서가 표 값·후보 이름을 말함(STORY_VALUE)
+        day["condition"] = {"kind": "STORY", "feature": "", "allowed": []}
+        day["clue"] = rng.choice(["발자국 옆에 사과 조각이 있었어", f"{rng.choice(CANDS)} 쪽으로"])
+    elif shake == 5 and k > 0:  # 앞 요일 단서를 그대로 되풀이(CLUE_REPEAT)
+        day["condition"] = dict(days[k - 1]["condition"])
+        day["clue"] = days[k - 1]["clue"]
+    # 그 밖은 그대로(통과 사례)
     theme = {
         "candidates": CANDS,
         "features": [
@@ -148,7 +213,7 @@ def expected_rules_out(table: dict[str, dict[str, str]], day: dict) -> list[str]
 
 def test_check_logic_matches_independent_oracle() -> None:
     rng = random.Random(SEED)
-    valid = mismatches = 0
+    valid = mismatches = story = repeat = 0
     for _ in range(CASES):
         theme, cands, answer, days, table = (random_case if rng.random() < 0.5 else planned_case)(
             rng
@@ -160,5 +225,9 @@ def test_check_logic_matches_independent_oracle() -> None:
         expected = oracle(cands, answer, table, days)
         valid += expected
         mismatches += expected != (not bad)
+        story += any(d["condition"]["kind"] == "STORY" for d in days) and expected
+        repeat += any(r.startswith(("CLUE_REPEAT", "STORY_VALUE")) for r in bad)
     assert mismatches == 0
     assert valid >= CASES // 10, f"통과 사례가 너무 적어 대조가 약함({valid}건)"
+    # 새 규칙(#782)도 충분히 대조: 사건 단서가 든 통과 사례, 되풀이·사건 단서 값 사유가 난 사례
+    assert story >= CASES // 20 and repeat >= CASES // 20, (story, repeat)
