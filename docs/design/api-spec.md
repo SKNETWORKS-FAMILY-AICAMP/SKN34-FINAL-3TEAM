@@ -332,7 +332,7 @@
 - 되묻기·마무리 (P04)
   - 되묻기는 시도당 최대 2회, 2회째 답변 후 `nextActions: ["FINISH"]`
   - 고르기 `CORRECT`면 되묻기 없이 `nextActions: ["FINISH"]`
-  - 되묻기에 답하지 않고 `FINISH` 가능("이대로 돌아보기")
+  - 되묻기에 답하지 않고 `FINISH` 가능("마무리 보기")
 - 무료 테마 문제(`THEME_DAY`·`THEME_REVIEW`)는 core 하루 한도 집계 없이 통과하고, 무료 주 5개는 learning 누적 공개 규칙으로 정한다(#483, learning #484·core #485). 추가 문제(`EXTRA`)는 무료 403 `PREMIUM_REQUIRED`(V43이 무료 상품 `features.extraMissions = false`, 값이 없으면 무료 거부 #506). `mission_daily_usage`·`limits.dailyMissions`는 유지하되 무료 상품에서 `EXTRA`를 다시 켤 때의 무료 `EXTRA` 하루 한도로만 쓴다([core 보고서 18절](../report/core-gateway.md#18-무료-테마-주-5문제추가-문제-프리미엄-전용프리미엄-일요일당일-풀이주간-완주-포인트-485-2026-11-10))
 - 무료 추가 문제 하루 한도(무료 상품에서 `EXTRA`를 다시 켠 경우만, P13): 한도 수는 무료 상품 `limits.dailyMissions`, 집계는 #210 결정대로 core `mission_daily_usage`([ERD 3.4](erd.md#34-결제구독-fn-pay--토스페이먼츠-테스트), KST 일자)이며 무료 `EXTRA` 신규 생성 `201`만 집계하고 이어하기 `200`·테마 문제(`THEME_DAY`·`THEME_REVIEW`)는 집계하지 않음. 한도 도달 시 신규 생성만 `429 USAGE_LIMIT_REACHED`(같은 미션의 진행 중 시도는 learning에 확인한 뒤 이어하기 허용). 상품 `limits.dailyMissions`가 없거나 음수면 무료 `EXTRA`만 503 `PAYMENT_PRODUCT_UNAVAILABLE`(임의 값으로 대체하지 않음). 2026-11-08 결정(무료 `THEME_DAY`·`EXTRA` 합산 하루 1개)은 위 개정으로 대체
 - 목록 접기·펼치기(FN-LRN-20): 프론트 전용, API 없음
