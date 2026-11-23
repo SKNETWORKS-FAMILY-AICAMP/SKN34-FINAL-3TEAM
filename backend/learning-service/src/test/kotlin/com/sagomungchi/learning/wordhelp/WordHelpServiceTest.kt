@@ -1,5 +1,7 @@
 package com.sagomungchi.learning.wordhelp
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.sagomungchi.learning._common.config.InternalRestClientFactory
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.security.UserContext
 import com.sagomungchi.learning._common.security.UserContextHolder
@@ -15,11 +17,14 @@ import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.wordhelp.client.WordHelpAiClient
 import com.sagomungchi.learning.wordhelp.client.WordHelpAiRequest
-import com.sagomungchi.learning.wordhelp.client.WordHelpAiResponse
+import com.sagomungchi.learning.wordhelp.domain.WordHelpResult
+import com.sagomungchi.learning.wordhelp.service.WordHelpException
 import com.sagomungchi.learning.wordhelp.service.WordHelpService
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
@@ -43,7 +48,7 @@ class WordHelpServiceTest {
     private val missionVersion = UUID.randomUUID()
     private val rubricVersion = UUID.randomUUID()
     private val now = Instant.parse("2026-11-13T00:00:00Z")
-    private val answer = WordHelpAiResponse("EXPLAINED", "분수", "쉬운 말", "예문", emptyList())
+    private val answer = WordHelpResult("EXPLAINED", "분수", "쉬운 말", "예문", emptyList())
 
     private fun attempt(status: AttemptStatus = AttemptStatus.IN_PROGRESS, finishedAt: Instant? = null, owner: UUID = student) =
         Attempt(attemptId, owner, UUID.randomUUID(), missionVersion, rubricVersion, 4, status, now, finishedAt, null, now)
@@ -104,6 +109,24 @@ class WordHelpServiceTest {
         `when`(attempts.find(attemptId)).thenReturn(null)
         assertEquals(HttpStatus.NOT_FOUND, assertFailsWith<BusinessException> { service.help(attemptId, "분수") }.status)
         verifyNoInteractions(ai)
+    }
+
+    @ParameterizedTest
+    @EnumSource(InvalidWordHelpResponse::class)
+    fun `계약 밖 AI 응답을 502 서비스 예외로 바꾼다`(response: InvalidWordHelpResponse) {
+        `when`(attempts.find(attemptId)).thenReturn(attempt(finishedAt = now))
+        `when`(missions.getVersion(missionVersion)).thenReturn(mission(InputType.CHOICE))
+        val mapper = jacksonObjectMapper()
+        val factory = mock(InternalRestClientFactory::class.java)
+        val server = stubWordHelpAi(factory, mapper, response.json)
+        val serviceWithClient = WordHelpService(attempts, missions, WordHelpAiClient(factory, mapper))
+
+        val error = assertFailsWith<WordHelpException> { serviceWithClient.help(attemptId, "분수") }
+        assertEquals(502, error.status)
+        assertEquals("AI_BAD_RESPONSE", error.code)
+        assertEquals(false, error.retryable)
+        assertNull(error.cause)
+        server.verify()
     }
 
     // Mockito matcher는 Kotlin non-null 경계 때문에 실제 더미값을 함께 돌려준다
