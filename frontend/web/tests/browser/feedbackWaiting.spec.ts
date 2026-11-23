@@ -133,7 +133,7 @@ test('40초 늦는 피드백: 문구가 차례로 바뀌고 결과가 오면 바
   expect(await anim(page, '.sw-wait-pose')).toBe('sw-wait-stretch')
   await expect(page.locator('.sw-wait-q')).toHaveCount(0)
   await shot(page, `wait-30s-${test.info().project.name}`)
-  // 친구를 키보드로 누르면 움직임만(콩 → 빙글 → 하트 차례), 말풍선과 화면 읽기 영역 문구는 그대로
+  // 친구를 키보드로 누르면 움직임만(콩 → 뽀잉 → 하트 차례), 말풍선과 화면 읽기 영역 문구는 그대로
   const statusText = () => box(page).textContent()
   const before = await statusText()
   const friend = page.getByRole('button', { name: /에게 말 걸기$/ })
@@ -144,8 +144,8 @@ test('40초 늦는 피드백: 문구가 차례로 바뀌고 결과가 오면 바
   expect(await statusText()).toBe(before)
   // 누를 때마다 차례로 다른 반응(키보드 Space·Enter도 같음)
   await page.keyboard.press('Space')
-  await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', 'spin')
-  expect(await anim(page, '.sw-wait-poke')).toBe('sw-wait-spin')
+  await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', 'squish')
+  expect(await anim(page, '.sw-wait-poke')).toBe('sw-wait-squish')
   await page.keyboard.press('Enter')
   await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', 'heart')
   await expect(page.locator('.sw-wait-heart')).toHaveCount(1)
@@ -466,8 +466,8 @@ test('화면 안 "움직임 줄이기"(WCAG 2.2.2): 기본은 OS 설정, 체크�
     await expect(bubble(page)).toHaveText(line)
     expect(await moving(), line).toBe(0)
   }
-  // 친구를 눌러도(콩·빙글·하트 차례) 움직이지 않고 말풍선도 단계 문구 그대로, 하트도 안 보임
-  for (const reaction of ['hop', 'spin', 'heart']) {
+  // 친구를 눌러도(콩·뽀잉·하트 차례) 움직이지 않고 말풍선도 단계 문구 그대로, 하트도 안 보임
+  for (const reaction of ['hop', 'squish', 'heart']) {
     await page.getByRole('button', { name: /에게 말 걸기$/ }).click()
     await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', reaction)
     await expect(bubble(page)).toHaveText('조금 오래 걸리네. 답은 벌써 저장했어!')
@@ -543,11 +543,11 @@ test('캡처: 1440·768·390px 단계별(0·5·15·30초)·누르기 반응 3가
     await shoot3(name)
     await resume()
   }
-  // 누르기 반응 3가지(콩·빙글·하트)
-  for (const reaction of ['hop', 'spin', 'heart']) {
+  // 누르기 반응 3가지(콩·뽀잉·하트)
+  for (const reaction of ['hop', 'squish', 'heart']) {
     await page.getByRole('button', { name: /에게 말 걸기$/ }).click()
     await expect(page.locator('.sw-wait-poke')).toHaveAttribute('data-poked', reaction)
-    await freeze(reaction === 'heart' ? 350 : 250)
+    await freeze(reaction === 'heart' ? 350 : reaction === 'squish' ? 125 : 250)
     await shoot3(`poke-${reaction}`)
     await resume()
   }

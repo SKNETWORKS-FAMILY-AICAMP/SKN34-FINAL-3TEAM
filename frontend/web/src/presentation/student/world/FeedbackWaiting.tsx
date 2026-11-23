@@ -8,7 +8,7 @@ import type { WearSlot } from './roomAssets.ts'
 import { resumeWaitStart, waitingStep } from './missionSteps.ts'
 
 /** 누를 때마다 차례로 바뀌는 반응(사용자 의견 2026-11-23) */
-const POKE_REACTIONS = ['hop', 'spin', 'heart'] as const
+const POKE_REACTIONS = ['hop', 'squish', 'heart'] as const
 /**
  * 착용 소품이 돋보기 그림이면 그려 넣는 돋보기를 빼서 두 개가 보이지 않게 한다. 착용 값은 아이템 코드가 아니라
  * 그림 키(`look_item.asset_key` = public/student-assets 안 경로)만 오므로 돋보기 그림 파일 경로로 가린다.
@@ -44,7 +44,7 @@ export function FeedbackWaiting({ companion, worn, startedAt, submittedAt, reduc
       document.removeEventListener('visibilitychange', sync)
     }
   }, [step.index, step.next])
-  // 친구를 누를 때마다 차례로 다른 반응(콩 → 빙글 한 바퀴 → 하트 뿅 → 다시 처음)만 한다. 말풍선은 단계 문구 그대로
+  // 친구를 누를 때마다 차례로 다른 반응(콩 → 뽀잉(눌렸다 펴기) → 하트 뿅 → 다시 처음)만 한다. 말풍선은 단계 문구 그대로
   // (사용자 의견 2026-11-23: 눌렀을 때 단계 문구가 2초 사라졌음). 움직임 줄이기면 CSS가 반응을 모두 끈다. 키보드 Enter·Space도 버튼이라 같다
   const [pokes, setPokes] = useState(0)
   const reaction = pokes > 0 ? POKE_REACTIONS[(pokes - 1) % POKE_REACTIONS.length] : undefined

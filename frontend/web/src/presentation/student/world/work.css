@@ -793,16 +793,19 @@
   0%, 44.4%, 100% { transform: scale(1, 1); }
   16%, 30% { transform: scale(0.93, 1.1); }
 }
-/* 누르기 반응(누를 때마다 차례로): 콩 → 빙글 한 바퀴 → 하트 하나 뿅 */
+/* 누르기 반응(누를 때마다 차례로): 콩 → 뽀잉(눌렸다 펴기) → 하트 하나 뿅. 빙글 한 바퀴는 공처럼 굴러 보여 뽀잉으로 바꿈(사용자 의견 2026-11-23) */
 #class-journal .st-world .sw-wait-poke[data-poked='hop'] { animation: sw-wait-poke 0.5s ease-out 1; }
 @keyframes sw-wait-poke {
   0%, 100% { transform: translateY(0); }
   40% { transform: translateY(-18%); }
 }
-#class-journal .st-world .sw-wait-poke[data-poked='spin'] { transform-origin: 50% 60%; animation: sw-wait-spin 0.7s ease-in-out 1; }
-@keyframes sw-wait-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+/* 뽀잉: 발은 땅에 둔 채 아래로 살짝 눌렸다가 말랑하게 튀어 올라 제자리로(0.5초) */
+#class-journal .st-world .sw-wait-poke[data-poked='squish'] { transform-origin: 50% 96%; animation: sw-wait-squish 0.5s ease-out 1; }
+@keyframes sw-wait-squish {
+  0%, 100% { transform: scale(1, 1); }
+  25% { transform: scale(1.12, 0.82); }
+  55% { transform: scale(0.94, 1.08); }
+  80% { transform: scale(1.03, 0.97); }
 }
 #class-journal .st-world .sw-wait-heart {
   position: absolute;
