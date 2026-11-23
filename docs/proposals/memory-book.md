@@ -246,6 +246,8 @@ CREATE INDEX ix_memory_book_job_student_created ON memory_book_job (student_id, 
 
 ## 11. PDF 페이지 구성
 
+> 아래 표와 11.1 목업은 **처음 초안**(A4 세로 9쪽)이다. 시험 구현을 거치며 바뀐 **지금 구성은 11.2**를 본다.
+
 A4 세로, 그림 위주. 회차 1개 기준 약 9쪽.
 
 | 쪽 | 내용 | 엔딩 전 회차 |
@@ -327,6 +329,21 @@ A4 세로, 그림 위주. 회차 1개 기준 약 9쪽.
 
 - 아이 답변·대화는 기존 템플릿처럼 자동 이스케이프. `src`에는 report가 만든 `data:` URI만 들어간다(외부 URL이 들어가도 renderer가 요청을 막음).
 - 답변이 아주 길면(논술) 한 쪽을 넘을 수 있다. 요일 쪽을 `min-height`로만 두고 넘치면 자연스럽게 다음 쪽으로 흐르게 한다.
+
+### 11.2 지금 구성 (2026-11-23 시험 구현 최종, 14.10~14.12 반영)
+
+A4 **가로**(297×210mm, 여백 위아래 12mm·좌우 14mm). 회차 1개 기준 **8쪽**, 엔딩 전 회차는 7쪽. 쪽 아래에 "쪽/전체" 번호.
+
+| 쪽 | 내용 | 엔딩 전 회차 |
+|---|---|---|
+| 1. 표지 | 왼쪽: 시작 그림(폭 62%, 높이 170mm). 오른쪽: 테마 제목, "{별명}의 추억 그림책", 기간 → **목차**(요일·제목·쪽 번호, 이야기의 끝, 오늘 저녁 질문) → **이야기의 시작** 상자(`intro` + 이번 주 큰 질문) | 목차에서 이야기의 끝을 빼고 "이 주에는 이야기의 끝을 보지 못해서, 끝 이야기와 답은 싣지 않았어요" 안내 |
+| 2~6. 요일(월~금) | 위: 요일·생각 유형·제목. 왼쪽: 장면 그림(표지 그림과 같은 크기, 가리는 것 없음). 오른쪽: 그림 높이만큼 세운 **채팅형 대화** — 왼쪽 말풍선은 등장인물 대사·"오늘의 문제"(Q.)·뭉치의 되물음, 오른쪽 말풍선은 아이 답(두 번째부터 "다시 생각한 답"), 끝에 돌아보기 한 줄. 답은 줄이지 않고 전체를 싣는다 | 같음(금요일 정답 고르기 결과·정답 문구는 원래 싣지 않음) |
+| 7. 이야기의 끝 | 왼쪽: 종료 그림. 오른쪽 대화: "이야기"(`outro`) → 뭉치 "큰 질문의 답은 「…」였어!" | 이 쪽 없음. "아직 이 이야기의 끝을 보지 못했어요" 한 줄이 저녁 질문 쪽 위에 들어감 |
+| 8. 오늘 저녁 질문 | 큰 질문으로 만든 고정 문장(D9), "사고뭉치 추억 그림책" | 7쪽 |
+
+- 재게시로 문제가 바뀌어 그 날 시도 기록을 찾지 못한 요일은 대화 칸에 "이 날 문제는 나중에 바뀌어서 남은 기록이 없어요"를 싣는다(문구는 미확정, 17.3).
+- 쪽 번호는 "요일·끝·저녁 질문은 각자 새 쪽에서 시작"이라는 규칙으로 계산한다(14.12). 한 날 대화가 한 쪽을 넘으면 뒤 번호가 밀리는 한계가 있다.
+- 구현 위치: `backend/report-service/app/rendering/memory_book.py`(화면 값·목차), `app/rendering/templates/memory_book.html`(서식), `scripts/memory_book_sample.py`(예시 PDF 만들기), 예시 결과 `frontend/web/public/demo/memory-book-sample.pdf`.
 
 ## 12. 비용·성능·실패·보안
 
@@ -598,3 +615,40 @@ cd frontend/web; Get-Content ../../infrastructure/stubs/e2e.env | Where-Object {
 5. `reports` 버킷의 수명 주기 규칙 유무.
 6. learning 새 조립 쿼리의 실행 계획(인덱스 충분 여부).
 7. 기존 렌더러에 한글 글꼴이 모든 문자(이모지 포함 아이 답변)를 그리는지.
+
+## 17. 도입할 때 프로젝트에서 고쳐야 할 것 (2026-11-23 분석)
+
+기준: `feature/memory-book`(02f9d173)과 `origin/develop`. 브랜치는 develop보다 18커밋 앞·15커밋 뒤이고, 미리 합쳐 보면(`git merge-tree`) **충돌 없이 합쳐진다** **[확인]**. core migration 번호 V57은 develop에서 아직 비어 있다(develop 최신 V56) **[확인]**. 다른 PR이 먼저 V57을 쓰면 번호를 올린다.
+
+### 17.1 이미 브랜치에 있는 것 (합치면 됨)
+
+| 영역 | 내용 |
+|---|---|
+| core | 학부모 발급·목록·받기 API(7.1), 유료 확인·하루 3권 한도(`ProductEntitlementService`), V57(`memory_book_job`·`memory_book_download`, 상품 `features.memoryBook`·`limits.dailyMemoryBooks`), Outbox 명령·완료 이벤트 소비, 자녀 삭제 때 그림책 작업 삭제 |
+| learning | 회차 조립 내부 API(7.2), P23 시험 |
+| report | 그림 받기(허용 주소·상한), 명령 소비, PDF 렌더링, S3 저장·서명, 완료 이벤트 |
+| web | 학부모 화면 그림책 목록(발급·만드는 중·받기), 목업(`?memoryBookDemo=1`), 단위·e2e 시험 |
+| 큐·환경 | RabbitMQ 큐 정의·권한, `environments/local`의 core(v57)·report-worker 설정 |
+| 계약 | `contracts/openapi/learning-service.yaml`·`report-service.yaml`, 저장소 계약 시험 개수 |
+
+### 17.2 아직 고치지 않은 것 (도입하려면 필요)
+
+1. **설계 문서(`docs/design/`)**: 처음 지시대로 손대지 않았다. `api-spec.md`(공개 4개·내부 API), `erd.md`(테이블 2개, 상품 값), `architecture.md`(새 큐, core→learning·report 호출), `sequence-diagram.md`(6.1), `functional-spec.md`·`user-flow.md`·`usecase.md`(학부모 발급 흐름). `class-diagram.md`·`state-diagram.md`는 그림책 작업 상태를 넣을지 판단.
+2. **core 공개 API 계약**: `contracts/openapi/core-service.yaml`에 `/children/{childId}/memory-books…` 4개가 없다 **[확인]**.
+3. **운영(prod) 환경**: `infrastructure/gitops/environments/prod/`에 그림책 설정이 없다 **[확인]**. report-worker의 그림 받기 허용 주소(`MEMORY_BOOK_ASSET_ORIGINS` 등), 새 큐 구독, core migration 판 번호. prod는 MinIO가 아니라 S3라 주소 값이 local과 다르고, 실제 AWS에서는 돌려 보지 않았다 **[추정: 값만 바꾸면 됨]**.
+4. **요금제 안내**: 상품 설명·요금제 화면에 그림책을 넣을지(D4와 함께).
+5. **PR 나누기**: 이 브랜치는 시험용으로 커밋이 쌓여 있다. PR 하나에 커밋 하나 규칙에 맞추려면 계약·설계 문서 → learning → report → core(migration) → web → 운영 환경 순서로 나누는 것을 권한다. 공식 이슈도 아직 없다.
+
+### 17.3 정해야 하는 것
+
+- 15장의 D3~D13(권장안대로 만들어 둔 상태). 바뀌면 고칠 것이 큰 것: **D13**(12/7 시연 포함 여부), **D5·D6**(보관 30일·구독 종료 뒤 받기), **D4**(상품 값·한도), **D7**(개별 삭제 버튼).
+- "이 날 문제는 나중에 바뀌어서 남은 기록이 없어요" 문구(동섭 확인 대기).
+- 세로판(14.10)으로 되돌릴 일은 없는지(지금은 가로판 14.11~14.12).
+
+### 17.4 확인이 덜 된 것
+
+16장에 더해, 가로판에서 새로 생긴 것:
+
+1. 한 날 대화가 한 쪽(약 186mm)을 넘으면 목차 쪽 번호가 밀린다(14.12). 긴 답·여러 번 보완한 날의 실제 길이로 확인 필요.
+2. 실제 ai 테마 초안 그림의 해상도·비율. 그림 칸이 가로 약 167mm×세로 170mm(거의 정사각)라 가로로 긴 그림은 좌우가 잘린다(`object-fit: cover`).
+3. PDF 한 권마다 Chromium을 띄운다. 여러 명이 동시에 발급할 때 report-worker 메모리·처리 시간은 재지 않았다.
