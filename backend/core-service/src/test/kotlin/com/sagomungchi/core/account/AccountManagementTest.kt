@@ -75,7 +75,7 @@ class AccountManagementTest : PostgresRepositoryTest() {
  private fun document(kind: String): UUID {
   docs.firstOrNull { jdbc.queryForObject("SELECT kind FROM consent_document WHERE id=?",String::class.java,it)==kind }?.let { return it }
   val id=UUID.randomUUID(); docs+=id
-  jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'테스트','합성 동의',true,CURRENT_DATE,?)",id,kind,id.toString(),OffsetDateTime.now())
+  jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'테스트','합성 동의',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,?)",id,kind,id.toString(),OffsetDateTime.now())
   return id
  }
  private fun consent(user: UUID, child: UUID?=null) {

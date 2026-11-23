@@ -34,7 +34,7 @@ class GuardianTransferIntegrationTest : PostgresRepositoryTest() {
  @BeforeEach fun documents() {
   listOf("TERMS","PRIVACY","GUARDIAN").forEach {
    val id=UUID.randomUUID()
-   jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'로컬 합성 문서','테스트 동의',true,CURRENT_DATE,clock_timestamp())",id,it,id.toString())
+   jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'로컬 합성 문서','테스트 동의',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,clock_timestamp())",id,it,id.toString())
   }
  }
  private fun choices(guardian: Boolean)=consents.documents().filter { if (guardian) it.kind == "GUARDIAN" else it.kind in setOf("TERMS", "PRIVACY") }.map { ConsentChoice(it.documentId,it.version,true) }

@@ -115,7 +115,7 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
     private fun consent(user: UUID) {
         listOf("TERMS", "PRIVACY").forEach { kind ->
             val id = UUID.randomUUID()
-            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'안내','본문',true,CURRENT_DATE,?)",
+            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'안내','본문',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,?)",
                 id, kind, UUID.randomUUID().toString(), OffsetDateTime.now())
             jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,agreed,status,agreed_at) VALUES(?,?,?,true,'AGREED',?)", UUID.randomUUID(), id, user, OffsetDateTime.now())
         }
@@ -126,7 +126,7 @@ class AuthFlowIntegrationTest : IntegrationTestSupport() {
         jdbc.update("INSERT INTO guardianship(id,parent_user_id,student_id,method,status,linked_at) VALUES(?,?,?,'REGISTER','LINKED',?)", UUID.randomUUID(), user, id, OffsetDateTime.now())
         val existingDocument = jdbc.queryForList("SELECT id FROM consent_document WHERE kind='GUARDIAN' AND effective_from<=(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date ORDER BY created_at DESC LIMIT 1", UUID::class.java).firstOrNull()
         val document = existingDocument ?: UUID.randomUUID().also { value ->
-            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,'GUARDIAN',?,'동의','본문',true,CURRENT_DATE,?)", value, UUID.randomUUID().toString(), OffsetDateTime.now())
+            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,'GUARDIAN',?,'동의','본문',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,?)", value, UUID.randomUUID().toString(), OffsetDateTime.now())
         }
         jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at) VALUES(?,?,?,?,true,'AGREED',?)", UUID.randomUUID(), document, user, id, OffsetDateTime.now())
         return id
