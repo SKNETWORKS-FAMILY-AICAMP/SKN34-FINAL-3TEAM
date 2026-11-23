@@ -313,7 +313,10 @@ _NEW = {
             "기뻐함"
             "(아무도 뭉치를 만지지 않음, 대상은 줄거리 종류 규칙에서 대상이 나오는 컷일 때만)",
             "Mungchi stays apart from the people, smiles happily and sways a little.",
-            speaker="뭉치가 마음이 놓인 짧은 말(예: '뭉치: 다행이다!')",
+            # 예시 '다행이다!'를 그대로 써 떡을 먹어 버린 장난꾸러기 이야기와 어긋났음(사용자 확인
+            # 2026-11-23) → 모든 종류에 맞는 '문제를 풀어 기쁨'으로, 이야기와 안 맞는 말 금지
+            speaker="뭉치가 문제를 풀어 기쁜 짧은 말(예: '뭉치: 사건 해결!'). 찾지 않은 것을 "
+            "찾았다고 하거나 그 이야기와 안 맞는 말은 쓰지 않음",
             own=True,
             look="The people smile, happy and relieved.",
             follows=3,
