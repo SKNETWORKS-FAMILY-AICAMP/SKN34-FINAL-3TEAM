@@ -3572,8 +3572,12 @@ def caption_problems(theme: Theme, scene: str, i: int) -> list[str]:
         return bad
     name = caption_speaker(text)
     people = [str(c.get("name") or "") for c in theme.get("characters") or [] if c.get("name")]
-    matched = [p for p in people if name and (p == name or name in p or p in name)]
     where = f"{cut.get('scene') or ''} {cut.get('action') or ''}"
+    matched = [p for p in people if name and (p == name or name in p or p in name)]
+    # 공개 때 처음 나오는 사람(시간 탐정의 그 일을 한 사람 등, 등장인물 목록 밖 — #782 WHEN_DOER)도
+    # 그 컷 장면에 나오면 말할 수 있음(11종류 확인 2026-11-24: 막아 두자 확인 자막을 아이가 대신함)
+    if name and not matched and name != "뭉치" and name in where:
+        matched = [name]
     if name is None:
         bad.append(f"CUT_SPEAKER {key}{i}.caption '이름: 대사' 꼴이 아님")
     elif spec.mungchi_alone and name != "뭉치":

@@ -187,23 +187,23 @@ THEME_CASES: list[tuple[str, Callable[[], dict], list[str]]] = [
     ("target empty", themed(target=""), ["REQUIRED"]),
     ("title too long", themed(title="가" * 21), ["LENGTH"]),
     ("intro too long", themed(intro="가" * 201), ["LENGTH"]),
-    # #779: 자막 말하는 사람(시작 2·3·종료 3·5·6컷 지호, 설계 v2 모든 컷 자막)이 인물 목록에 없어
-    # CUT_SPEAKER도 나옴
+    # #779: 자막 말하는 사람(지호)이 인물 목록에 없어도 그 컷 장면에 나오면 말할 수 있어(공개 때
+    # 처음 나오는 사람, 2026-11-24) CHARACTERS만 나옴
     (
         "no characters",
         themed(characters=[]),
-        ["CHARACTERS", *["CUT_SPEAKER"] * 5],
+        ["CHARACTERS"],
     ),
     (
         "four characters",
         themed(characters=[{"name": f"아이{i}", "look": "모습"} for i in range(4)]),
-        ["CHARACTERS", *["CUT_SPEAKER"] * 5],
+        ["CHARACTERS"],
     ),
     ("character without look", themed(characters=[{"name": "지호", "look": ""}]), ["CHARACTERS"]),
     (
         "mungchi as character",
         themed(characters=[{"name": "뭉치", "look": "솜"}]),
-        ["CHARACTERS", *["CUT_SPEAKER"] * 5],
+        ["CHARACTERS"],
     ),
     ("candidate color word", edit(lambda t: _rename(t, "창고", "빨간창고")), ["CANDIDATES"]),
     ("candidate one char", edit(lambda t: _rename(t, "창고", "샘")), ["CANDIDATES"]),

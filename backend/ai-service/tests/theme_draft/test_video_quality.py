@@ -696,3 +696,22 @@ def test_design_v2_lines_agree_across_prompts_checks_and_reviews() -> None:
     assert "sideways" in prompts.FRAMES["RUN"].image and "sideways" in prompts.MUNGCHI_RUN
     # 영상 검토: 옷 무늬·배지가 조금 바뀌는 건 WARN
     assert "배지·무늬가 조금 바뀌는 것은 WARN" in prompts.VIDEO_REVIEW_SYSTEM
+
+
+def test_reveal_person_outside_characters_may_speak_when_in_scene() -> None:
+    """정답을 아는 사람이 공개 때 처음 나오는 종류(시간 탐정 등, 등장인물 목록 밖)도 그 컷 장면에
+    나오면 확인 자막을 말할 수 있음 — 막아 두자 아이가 대신 말했음(11종류 확인 2026-11-24)."""
+    theme = valid_theme()
+    theme["outroCuts"][2] = {
+        **theme["outroCuts"][2],
+        "scene": "텃밭에서 이웃 할아버지가 보리를 데려온 지호 곁에 서 있다",
+        "caption": "이웃 할아버지: 맞아, 내가 봤어!",
+    }
+    assert not [r for r in checks.caption_problems(theme, "OUTRO", 3) if "CUT_SPEAKER" in r]
+    theme["outroCuts"][2]["caption"] = "모르는 사람: 맞아!"
+    assert [r for r in checks.caption_problems(theme, "OUTRO", 3) if "CUT_SPEAKER" in r]
+    # 공통 안내가 종류 규칙과 같은 말(정답을 아는 사람이 확인, 퀴즈는 그 사람에게 답을 말함)
+    assert "그 사람이 맞았다고·맞다고 확인하는 말" in cuts.spec("OUTRO", 3, 6).speaker
+    assert "그 사람에게 답을 말하는 꼴" in cuts.spec("OUTRO", 1, 6).speaker
+    assert "기분만 말하는 말" in cuts.spec("OUTRO", 4, 6).speaker
+    assert "기분만 말하는 말" in cuts.spec("OUTRO", 5, 6).speaker
