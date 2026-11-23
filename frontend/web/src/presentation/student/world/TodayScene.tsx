@@ -1,0 +1,210 @@
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLearningActions, useMission } from '../../../data/classroom/useClassroom.ts'
+import { useWeeklyTheme } from '../../../data/retention/queries.ts'
+import { studentThinkingLabels } from '../../../domain/classroom.ts'
+import type { Attempt, Child } from '../../../domain/classroom.ts'
+import { DAY_LABELS } from '../../../domain/retention.ts'
+import type { AttemptContext, ThemeDay } from '../../../domain/retention.ts'
+import { cameraTransform, readThemeMotion } from '../../../domain/themeMotion.ts'
+import { attemptStarted } from '../../../domain/themeScene.ts'
+import { MotionEffects } from '../../common/MotionEffects.tsx'
+import { QueryStateNotice } from '../../common/QueryStateNotice.tsx'
+import { useReducedMotion } from '../../common/useReducedMotion.ts'
+import { ErrorNotice } from '../../shared/ClassroomParts.tsx'
+import './today-scene.css'
+
+/** 그림 주소로 쓸 수 있는 값만(절대 주소·사이트 안 경로). 나머지는 그림 없음 */
+/** 말꼬리(px): 밑변(반 폭 HALF)이 이름표에서 GAP 떨어지고 상자 오른쪽 끝에서 CORNER(둥근 모서리 + 반 폭) 안, 끝은 화자 쪽으로 최대 LEAN 기울임 */
+const TAIL_HALF = 19, TAIL_GAP = 12, TAIL_CORNER = 46, TAIL_LEAN = 18
+const imageUrl = (uri: string | undefined) => (uri && /^(https?:\/\/|\/[^/])/.test(uri) ? uri : null)
+
+/**
+ * 오늘 장면 `/student/theme/scene/{day}`(user-flow 3.2, 사용자 결정 2026-11-19 #807, 설계 캔버스 TodaySceneTalk).
+ * 들어오면 그 요일 테마 문제의 시도를 시작하고(대화가 시도 시작·이어하기 응답 `themeScene`에만 있음, 진행 중 시도가 있으면 그 시도),
+ * 그날 그림 위에 대화를 한 줄씩 보여 준다. 그림이나 상자를 누르면 다음 줄. 마지막 대사에서 대화창 오른쪽에 '문제 시작하기'가 나타나고
+ * (마지막 대사 상자를 눌러도 넘어감), 다시 풀기(THEME_REVIEW)는 이미 본 이야기라 처음부터 단추를 보여 건너뛸 수 있다(사용자 결정 2026-11-22).
+ * 살펴보기는 없음. 대화가 없거나(ai 생성 실패·관리자 테마) 이미 답을 쓴 시도면 장면 없이 바로 답변 작성.
+ * 시도 종류는 그 요일을 마무리했으면 THEME_REVIEW, 아니면 THEME_DAY(홈·정답 고르기·되돌아보기와 같은 규칙).
+ */
+export function TodayScene({ child, day, onHome, onProblem }: {
+  child: Child
+  day: ThemeDay
+  onHome: () => void
+  /** 답변 작성으로(주소를 바꿔치기해 뒤로 가기가 장면으로 돌아오지 않게) */
+  onProblem: (attemptId: string) => void
+}) {
+  const themeQuery = useWeeklyTheme(child.id)
+  const learning = useLearningActions()
+  const reduce = useReducedMotion()
+  const theme = themeQuery.error ? null : (themeQuery.data ?? null)
+  const today = theme?.days.find((d) => d.day === day) ?? null
+  const open = !!today && today.state === 'OPEN'
+  const context: AttemptContext = today?.attemptStatus === 'COMPLETED' ? 'THEME_REVIEW' : 'THEME_DAY'
+  const [attempt, setAttempt] = useState<Attempt | null>(null)
+  const [step, setStep] = useState(0)
+  const [badImage, setBadImage] = useState<string | null>(null)
+  const started = useRef(false)
+  // 시작할 때 보낸 종류. 시작 뒤 주간 테마가 다시 오면 그 요일이 '푸는 중'으로 바뀌어 context가 THEME_DAY로 보이므로 따로 둔다
+  const [startedAs, setStartedAs] = useState<AttemptContext | null>(null)
+  // 미션은 맥락을 붙여 게시본으로 받는다(#882: 일반 목록에서 내려간 미션도, 푸는 중이면 그 시도의 버전). 시작 뒤에는 보낸 종류로 고정
+  const missionQuery = useMission(today?.missionId ?? '', child, startedAs ?? context, open)
+  const mission = missionQuery.error ? undefined : missionQuery.data
+  const start = () => {
+    if (!mission) return
+    started.current = true
+    const as = context
+    learning.start.mutateAsync({ mission, child, context: as }).then((a) => { setStartedAs(as); setAttempt(a) }, () => { started.current = false })
+  }
+  // 요일·미션을 알면 한 번 시작(같은 미션 진행 중 시도가 있으면 learning이 그 시도를 돌려줌)
+  useEffect(() => {
+    if (open && mission && !started.current && !attempt) start()
+  }, [open, mission, attempt]) // eslint-disable-line react-hooks/exhaustive-deps
+  const lines = attempt?.themeScene?.dialogue ?? []
+  const skip = !!attempt && (lines.length === 0 || attemptStarted(attempt))
+  // 대화 상자가 올라오기 전(제목 연출 2.4초 + 올라오기 0.45초)에는 누르기를 받지 않는다(보지 못한 첫 대사를 넘기지 않게). 움직임 줄이기면 바로
+  const showing = !!attempt && !skip
+  const [risen, setRisen] = useState(false)
+  useEffect(() => {
+    if (!showing || reduce) return
+    const timer = window.setTimeout(() => setRisen(true), 2850)
+    return () => window.clearTimeout(timer)
+  }, [showing, reduce])
+  const ready = reduce || risen
+  const sceneMotion = attempt ? readThemeMotion(attempt.mission.sceneMotion) : null
+  // 처음 3.2초: ai 카메라 끝 위치(그날 중심 인물·물건 쪽 확대)에서 전체 그림으로 빠지고 대사 중에는 멈춤(사용자 결정 2026-11-23).
+  // 카메라 값이 없으면 CSS 가운데 당기기(ts-cam), 움직임 줄이기면 움직이지 않음
+  const camera = reduce ? null : (sceneMotion?.camera ?? null)
+  const art = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = art.current
+    if (!showing || !el || !camera) return
+    const animation = el.animate([{ transform: cameraTransform(camera.to) }, { transform: 'none' }], { duration: 3200, easing: 'ease-out', fill: 'forwards' })
+    return () => animation.cancel()
+  }, [showing, camera?.to.x, camera?.to.y, camera?.to.zoom]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 말꼬리 자리: 화자 x(그림 너비 %)를 그림 틀의 화면 위치로 바꿔 대화 상자 기준으로 잰다. 밑동은 상자 곧은 윗변 안에만,
+  // 화자가 그 밖이면(마지막 대사 뭉치가 '문제 시작하기' 단추 위 등) 끝만 화자 쪽으로 기울인다(사용자 결정 2026-11-23)
+  const speakerX = showing && lines.length > 0 ? sceneMotion?.speakers[lines[Math.min(step, lines.length - 1)].speaker]?.x : undefined
+  const frame = useRef<HTMLDivElement>(null)
+  const talk = useRef<HTMLDivElement>(null)
+  const box = useRef<HTMLButtonElement>(null)
+  const name = useRef<HTMLSpanElement>(null)
+  const [tail, setTail] = useState<{ left: number; lean: number } | null>(null)
+  useLayoutEffect(() => {
+    const f = frame.current, t = talk.current, b = box.current, n = name.current
+    if (speakerX === undefined || !f || !t || !b) { setTail(null); return }
+    const place = () => {
+      const fr = f.getBoundingClientRect(), tr = t.getBoundingClientRect(), br = b.getBoundingClientRect()
+      if (!fr.width || !br.width) return
+      const aim = fr.left + (speakerX / 100) * fr.width - tr.left
+      const min = (n ? n.getBoundingClientRect().right : br.left) - tr.left + TAIL_GAP + TAIL_HALF
+      const max = br.right - tr.left - TAIL_CORNER
+      const left = max < min ? (min + max) / 2 : Math.max(min, Math.min(max, aim))
+      const lean = Math.max(-TAIL_LEAN, Math.min(TAIL_LEAN, aim - left))
+      setTail((p) => (p && Math.abs(p.left - left) < 0.5 && Math.abs(p.lean - lean) < 0.5 ? p : { left, lean }))
+    }
+    place()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(place)
+    for (const el of [f, t, b, n]) if (el) observer.observe(el)
+    return () => observer.disconnect()
+  }, [speakerX, step])
+  // 대화가 없거나 이미 답을 쓴 시도는 장면 없이 바로 문제(부모가 다시 그려도 한 번만 넘김)
+  const left = useRef(false)
+  useEffect(() => {
+    if (!attempt || !skip || left.current) return
+    left.current = true
+    onProblem(attempt.attemptId)
+  }, [attempt, skip, onProblem])
+
+  if (themeQuery.isPending || (open && missionQuery.isPending)) return <main className="ts-stage"><QueryStateNotice state="PROCESSING" /></main>
+  if (!open || missionQuery.error)
+    return (
+      <main className="st-paper st-sheet ts-closed">
+        <ErrorNotice error={themeQuery.error ?? missionQuery.error} retry={() => { void themeQuery.refetch(); void missionQuery.refetch() }} />
+        {!themeQuery.error && !missionQuery.error && <p className="st-empty">아직 열리지 않은 문제예요.</p>}
+        <button type="button" className="tw-go tw-go-plain" onClick={onHome}>홈으로</button>
+      </main>
+    )
+  if (!attempt || skip)
+    return (
+      <main className="ts-stage" aria-busy={!learning.start.error}>
+        {learning.start.error ? (
+          <div className="ts-error">
+            <ErrorNotice error={learning.start.error} retry={start} />
+            <button type="button" className="tw-go tw-go-plain" onClick={onHome}>홈으로</button>
+          </div>
+        ) : (
+          <p className="ts-wait" role="status">오늘 장면을 준비하고 있어요.</p>
+        )}
+      </main>
+    )
+
+  const m = attempt.mission
+  const raw = imageUrl(reduce ? m.staticSceneUri || m.sceneUri : m.sceneUri || m.staticSceneUri)
+  const image = raw && raw !== badImage ? raw : null
+  const last = lines.length - 1
+  const current = lines[Math.min(step, last)]
+  const title = today?.title ?? m.title
+  const next = () => {
+    if (!ready) return
+    if (step < last) setStep(step + 1)
+    else onProblem(attempt.attemptId)
+  }
+  const label = `${DAY_LABELS[day]}요일`
+  // 처음 푸는 문제는 대화를 다 넘긴 뒤에만, 다시 풀기는 처음부터. 대화 상자가 올라오기 전에는 숨김(보지 못한 대사를 건너뛰지 않게)
+  // 다시 풀기 여부는 시도 응답이 아니라 시작할 때 보낸 종류로 판단(learning 시도 응답에는 종류 칸이 없음)
+  const canStart = ready && (step >= last || startedAs === 'THEME_REVIEW')
+
+  return (
+    <main className="ts-stage ts-scene" aria-label="오늘 장면">
+      {image && <img className="ts-bg" src={image} alt="" aria-hidden="true" />}
+      <div className="ts-top">
+        <button type="button" className="ts-chip" onClick={onHome}>← 홈</button>
+        <h1 className="ts-chip ts-title"><span>{label}</span>{title}</h1>
+      </div>
+      <div className="ts-col">
+        <div ref={frame} className="ts-frame">
+          {image ? (
+            <div ref={art} className={reduce || camera ? 'ts-art' : 'ts-art ts-cam'}>
+              <img src={image} alt={`${label} 장면`} onError={() => setBadImage(raw)} />
+              {!reduce && sceneMotion && sceneMotion.effects.length > 0 && <MotionEffects effects={sceneMotion.effects} />}
+            </div>
+          ) : (
+            <div className="ts-noimg" role="img" aria-label={raw ? '그림을 불러오지 못함' : '그림 없음'}>
+              {raw && <strong>그림을 불러오지 못했어요</strong>}
+              {raw && <span>대화와 문제는 그대로 이어서 할 수 있어요.</span>}
+            </div>
+          )}
+          {!reduce && (
+            <div className="ts-intro" aria-hidden="true">
+              <span>{label} · {studentThinkingLabels[m.thinkingType]}</span>
+              <strong>{title}</strong>
+            </div>
+          )}
+          <button type="button" className="ts-advance" onClick={next} aria-label={step < last ? '다음 대사' : '문제로 넘어가기'} />
+        </div>
+        <div ref={talk} className={reduce ? 'ts-talk' : 'ts-talk ts-rise'}>
+          {tail && speakerX !== undefined && (
+            // 두 변만 선(끝이 상자 테두리 선 한가운데 y 29.5에서 이어짐), 안쪽은 상자 윗 테두리(y 28~31)까지 상자 색으로 덮음
+            <svg className="ts-tail" aria-hidden="true" viewBox="-40 0 80 32" style={{ left: `${tail.left}px` }}>
+              <polygon className="ts-tail-fill" points={`-17,31 17,31 ${tail.lean},1.5`} />
+              <polyline className="ts-tail-line" points={`-18.5,29.5 ${tail.lean},1.5 18.5,29.5`} />
+            </svg>
+          )}
+          <span ref={name} className="ts-name">{current.speaker}</span>
+          <div className="ts-row">
+            <button ref={box} type="button" className="ts-box" onClick={next} data-ready={ready}>
+              <span className="ts-line" aria-live="polite">{current.text}</span>
+              <span className="ts-pos">{Math.min(step, last) + 1} / {lines.length}{step < last ? ' · 다음 ▼' : ''}</span>
+            </button>
+            {canStart && (
+              <button type="button" className="ts-start" onClick={() => onProblem(attempt.attemptId)}>
+                문제 시작하기<span aria-hidden="true"> →</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </main>
+  )
+}

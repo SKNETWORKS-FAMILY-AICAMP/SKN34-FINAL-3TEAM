@@ -1,11 +1,12 @@
-import { SelfAssessmentPanel } from './SelfAssessmentPanel.tsx'
-import { AttemptComparisonPanel } from './AttemptComparisonPanel.tsx'
 import type { LearningMission } from '../../domain/learning.ts'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { comparisonAnswerText } from '../../domain/learning.ts'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import type React from 'react'
 import { useSession } from '../auth/sessionContext.ts'
 import { useBlocker, useNavigate } from 'react-router'
 import { ReportProblem } from '../service/ReportProblem.tsx'
-import { useAttempt, useLearningActions, isDemo } from '../../data/classroom/useClassroom.ts'
+import { useAttempt, useAttemptComparison, useLearningActions, isDemo } from '../../data/classroom/useClassroom.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
 import {
   answerText,
@@ -14,19 +15,20 @@ import {
   canFinish,
   latestFeedback,
   validateAnswer,
-  isVerifiedElement,
   studentThinkingLabels,
 } from '../../domain/classroom.ts'
 import type { AnswerContent, Attempt, Draft, Reflection } from '../../domain/classroom.ts'
-import { ActivityPaper, ErrorNotice, MemoCanvas, Modal } from '../shared/ClassroomParts.tsx'
+import { ErrorNotice, MemoCanvas, Modal } from '../shared/ClassroomParts.tsx'
 import { MissionScene } from './MissionScene.tsx'
 import { Companion } from './world/Companion.tsx'
+import { MissionDone } from './world/MissionDone.tsx'
+import { useRetryPlan } from './world/useRetryPlan.ts'
 import { SpeechBubble } from './world/SpeechBubble.tsx'
 import { Bulb, FeedbackWaiting } from './world/FeedbackWaiting.tsx'
 import { WordHelpPanel } from './WordHelpPanel.tsx'
 import { useLook } from './world/lookContext.ts'
 import { companionLabel } from '../../domain/studentLook.ts'
-import { STEPS, WAITING_HEADLINE, difficultyLabel, feedbackHeadline, followupLabel } from './world/missionSteps.ts'
+import { WAITING_HEADLINE, difficultyLabel, feedbackHeadline, followupLabel } from './world/missionSteps.ts'
 import './world/mission-guide.css'
 import './world/work.css'
 import { ApiError } from '../../data/apiClient.ts'
@@ -89,7 +91,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     [memoError, setMemoError] = useState('')
   const [conflict, setConflict] = useState<Draft | null>(null),
     [backup, setBackup] = useState<Draft | null>(null)
-  const [reflectOpen, setReflectOpen] = useState(false),
+  const [doneNow, setDoneNow] = useState(false),
+    // 돌아보기를 막 저장함: 미션 완료 화면(#807, 시안 SC-02-012)을 띄운다
     [difficulty, setDifficulty] = useState<Reflection['difficulty'] | ''>(''),
     [reflection, setReflection] = useState('')
   const editVersion = useRef(0),
@@ -127,7 +130,6 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     resumedFeedback.current = last.answerId
     void requestFeedback({ attempt: a, answerId: last.answerId }).catch(setError)
   }, [a, requestFeedback, actions.submit.isPending, actions.feedback.isPending])
-  const [selfAssessmentPending, setSelfAssessmentPending] = useState(false)
   const [notice, setNotice] = useState('')
   const [retryAction, setRetryAction] = useState<(() => Promise<unknown>) | null>(null)
   const [leaveOpen, setLeaveOpen] = useState(false)
@@ -320,21 +322,34 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
         id: a.attemptId,
         reflection: { difficulty, text: reflection },
       })
-      setReflectOpen(false)
-      onCompleted()
+      // 바로 공책으로 가지 않고 미션 완료 화면(엔딩이 됐으면 그 화면이 onCompleted로 이야기의 끝으로 보냄, #807)
+      setDoneNow(true)
     } catch (e) {
       setRetryAction(() => complete)
       setError(e)
     }
   }
   const { companion, worn } = useLook()
+  const finishRef = useRef<HTMLDivElement>(null)
+  const howwasAlert = useRef<HTMLParagraphElement>(null)
+  // 끝낸 문제의 다시 풀기: 테마 문제는 토요일·프리미엄 일요일만 오늘 장면으로 THEME_REVIEW, 평일은 안내(#807, 사용자 결정 2026-11-23)
+  const retry = useRetryPlan(!!a.themeScene, a.mission.id, session?.child?.id, a.status === 'COMPLETED')
+  useEffect(() => { if (notice) howwasAlert.current?.scrollIntoView({ block: 'nearest' }) }, [notice])
+  // '더 보기'는 창 대신 그 칸을 펼침: 펼친 동안은 한 화면 맞춤을 풀어 이어 붙임(칸 안 자름), '접기'로 되돌림(사용자 결정 2026-11-23)
+  const [expandedBy, setExpandedBy] = useState<string | null>(null)
+  const fit = useFitHeight(finishRef, !!a?.finishedAt)
+  const fitHeight = expandedBy ? null : fit.height
+  // 세 칸은 펼친 동안에도 유지(높이 제한만 풂)
+  const fitWide = fit.wide && (fit.height != null || !!expandedBy)
   // 판정 신고는 판정 ID로, 판정 전이면 신고하지 않음 (learning #146)
   const reportJudgmentId = latestFeedback(a)?.judgment?.judgmentId
   // retryable:false면 다시 요청해도 같은 실패라 재요청 버튼 대신 안내 (api-spec 3.2)
   const feedbackFinal = error instanceof ApiError && error.problem.retryable === false
   const f = latestFeedback(a),
     writing = !a.finishedAt && (a.answers.length === 0 || more) && canAddAnswer(a),
-    guide = writing && draft ? writingGuide(draft.answer, more) : null
+    guide = writing && draft ? writingGuide(draft.answer, more, a.mission.choices?.length ?? 0) : null,
+    // 테마 문제의 그날 대화 마지막 줄(뭉치가 오늘 문제로 잇는 말, 마지막 줄은 늘 뭉치 — #782·#807). 대화가 없거나 EXTRA면 없음
+    hook = a.themeScene?.dialogue.at(-1) ?? null
   useEffect(() => {
     if (!focusAnswerId || writing || !result.current) return
     result.current.focus()
@@ -374,22 +389,18 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
     actions.feedback.isPending ||
     actions.finish.isPending ||
     actions.reflect.isPending ||
-    selfAssessmentPending ||
     actions.save.isPending
   const targets = draft ? memoTargets(draft.answer) : []
   const selectedMemoTarget = targets.some((t) => t.id === memoTarget)
     ? memoTarget
     : targets[0]?.id ?? ''
-  // 단계 칩(미션 안내와 같은 다섯 단계, #440): 안내 화면이 1단계라 이 화면은 2단계부터.
-  // 되묻기에 답하는 동안은 피드백 단계로 본다(시안 Feedback에서 덧붙이는 칸이 피드백 상자 안에 있음)
-  const step = a.status === 'COMPLETED' || reflectOpen ? 4 : a.finishedAt ? 3 : a.answers.length ? 2 : 1
-  const read = () => {
+  const read = (text: string = a.mission.question) => {
     if (!window.speechSynthesis) {
       setNotice('이 화면에서는 읽어 주기를 쓸 수 없어요.')
       return
     }
     window.speechSynthesis.cancel()
-    const voice = new SpeechSynthesisUtterance(a.mission.question)
+    const voice = new SpeechSynthesisUtterance(text)
     voice.lang = 'ko-KR'
     window.speechSynthesis.speak(voice)
   }
@@ -486,7 +497,8 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
   )
   const alerts = (
     <>
-      {notice && !reflectOpen && (
+      {/* 마무리 화면의 안내(난이도 안 고름)는 어땠나요 칸 안에 띄운다 */}
+      {notice && !(a.finishedAt && a.status !== 'COMPLETED') && (
         <p className="ux-error" role="alert">
           {notice}
         </p>
@@ -537,12 +549,19 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
       <ReportProblem targetType="JUDGMENT" targetId={reportJudgmentId}/>
     </div>
   )
+  // 고르기·순서·분류는 정답 키로 전부 맞음/전부 아님이라 스티커·형광펜이 뜻이 없음(FeedbackFacade.withAnswerKey)
+  const thoughtful = !CLOSED_TYPES.includes(a.mission.inputType)
+  // 스티커를 누른 요소만 그 근거 구절에 형광펜(평소엔 칠 없음, 사용자 결정 2026-11-20)
+  const [lit, setLit] = useState<string | null>(null)
+  const onLit = (id: string) => setLit((cur) => (cur === id ? null : id))
+  const marks = thoughtful ? foundMarks(a.checklist ?? [], a.answers.map((v) => v.text)) : []
   const answerVersions = (compact = false) => a.answers.map((v, i) => (
     <section className="ux-answer-version sw-version" key={v.answerId} aria-label={v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`}>
-      <small>{v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`}</small>
-      <p className="cj-quote">{v.text}</p>
+      {!(compact && a.answers.length === 1) && <small>{v.version === 1 ? '처음 남긴 답' : `덧붙인 답 ${v.version - 1}`}</small>}
+      <p className="cj-quote">{highlight(v.text, (compact ? marks
+        : thoughtful ? foundMarks(v.feedback.judgment?.elements ?? [], [v.text]) : []).filter((m) => m.id === lit))}</p>
       {!compact && v.feedback.judgment && (
-        <FeedbackEvidence feedback={v.feedback} text={v.text} />
+        <FeedbackEvidence feedback={v.feedback} text={v.text} inputType={a.mission.inputType} lit={lit} onLit={onLit} />
       )}
       {/* 마지막 답의 되묻기는 오른쪽 피드백 상자가 보여 주므로 이전 답의 되묻기만(같은 질문 두 번 방지). 마무리 칸(compact)은 글만(시안 Finish) */}
       {!compact && v.feedback.followup && i < a.answers.length - 1 && (
@@ -568,79 +587,29 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
             </span>
           </div>
         </div>
-        <ol className="mg-steps" aria-label="미션 진행 단계">
-          {STEPS.map((s, i) => (
-            <li key={s} aria-current={i === step ? 'step' : undefined} data-done={i < step || undefined}>
-              {i + 1} {s}
-              {i < step && <span aria-hidden="true"> ✓</span>}
-            </li>
-          ))}
-        </ol>
       </header>
       {writing && draft ? (
-        // 답 쓰기(시안 MissionWrite): 왼쪽 그림·질문·생각 열기·도우미, 오른쪽 답 칸
+        // 답 쓰기(시안 MissionWrite → #807 설계 캔버스 MissionWriteTalk): 왼쪽 그림·'오늘의 문제' 상자, 오른쪽 답 칸·도우미 말풍선
         <div className="sw-body sw-body-write">
           <section className="sw-side" aria-label="질문">
             <MissionScene mission={a.mission} />
-            <h2 className="sw-question">
-              <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>
-              {a.mission.question}
-            </h2>
-            <div className="sw-tools">
-              <button type="button" className="mg-read" onClick={read}>
+            <div className="sw-qbox">
+              <span className="sw-qtag" aria-hidden="true">{a.themeScene ? '오늘의 문제' : '문제'}</span>
+              {/* 테마 문제는 그날 대화 마지막 줄(뭉치가 오늘 문제로 잇는 말)을 함께: 문제 글은 대화에 나온 사건 맥락을 빼고 만들어진다(#807) */}
+              {hook && <p className="sw-hook">{hook.speaker} · {hook.text}</p>}
+              <h2 className="sw-question">
+                <span className="st-visually-hidden">{companionLabel(companion)}의 질문</span>
+                {a.mission.question}
+              </h2>
+              <button type="button" className="sw-read" onClick={() => read()}>
                 질문 읽어 주기
               </button>
-              <button
-                type="button"
-                className="sw-hint"
-                onClick={() => {
-                  void actions.hint.mutateAsync(a.attemptId).then(setHint).catch(setError)
-                }}
-              >
-                생각 열기
-              </button>
             </div>
-            <div className="sw-helper">
-              <button
-                type="button"
-                className="sw-helper-face sw-word-trigger"
-                aria-expanded={words}
-                aria-controls={words ? 'student-word-help' : undefined}
-                onClick={() => setWords(open => !open)}
-              >
-                <Companion kind={companion} size={72} worn={worn} decorative />
-                <span>낱말 물어보기</span>
-              </button>
-              <SpeechBubble tail="left" className="sw-bubble" role="status">
-                {hint ? (
-                  <>
-                    <span className="sw-chip">생각 열기</span>
-                    <p>{hint}</p>
-                  </>
-                ) : guide ? (
-                  <>
-                    <p>{guide.line}</p>
-                    {guide.starters.length > 0 && (
-                      <div className="sw-starters" role="group" aria-label="이렇게 시작해 봐">
-                        {guide.starters.map((s) => (
-                          <button type="button" key={s.text} className="sw-starter" data-optional={s.optional || undefined}
-                            onClick={() => change(s.apply(draft.answer))}>
-                            {s.text}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p>막히면 ‘생각 열기’를 눌러 봐!</p>
-                )}
-              </SpeechBubble>
-            </div>
-            {words && <WordHelpPanel attemptId={a.attemptId} companion={companion} />}
           </section>
+          <div className="sw-write">
           <section className="sw-panel" aria-labelledby="sw-panel-title">
             <div className="sw-panel-head">
-              <h2 id="sw-panel-title">{more ? '더 말해 보기' : '내 생각 쓰기'}</h2>
+              <h2 id="sw-panel-title">{more ? '더 말해 보기' : panelTitle[a.mission.inputType]}</h2>
               <div className="sw-toolbar" role="group" aria-label="작성 도구">
                 {saveLine}
                 {memoToggle}
@@ -675,18 +644,67 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                   ? '저장하고 보내는 중이에요'
                   : actions.submit.isPending
                     ? '보내는 중이에요'
-                    : a.answers.length ? '더해서 보내기' : '다 썼어요'}
+                    : a.answers.length ? '더해서 보내기' : doneLabel[a.mission.inputType]}
                 <span aria-hidden="true"> →</span>
               </button>
             </div>
             {alerts}
             {memoPanel}
           </section>
+            <div className="sw-helper">
+              <button
+                type="button"
+                className="sw-helper-face sw-word-trigger"
+                aria-expanded={words}
+                aria-controls={words ? 'student-word-help' : undefined}
+                onClick={() => setWords(open => !open)}
+              >
+                <Companion kind={companion} size={72} worn={worn} decorative />
+                <span>낱말 물어보기</span>
+              </button>
+              <SpeechBubble tail="left" className="sw-bubble" role="status">
+                {hint ? (
+                  <>
+                    <span className="sw-chip">생각 열기</span>
+                    <p>{hint}</p>
+                  </>
+                ) : guide ? (
+                  <p>{guide.line}</p>
+                ) : (
+                  <p>막히면 ‘생각 열기’를 눌러 봐!</p>
+                )}
+                {/* 시작 문장과 생각 열기를 한 줄에(말풍선이 길어져 1440×900 한 화면을 넘지 않게) */}
+                <div className="sw-bubble-row">
+                  {!hint && guide && guide.starters.length > 0 && (
+                    <div className="sw-starters" role="group" aria-label="이렇게 시작해 봐">
+                      {guide.starters.map((s) => (
+                        <button type="button" key={s.text} className="sw-starter" data-optional={s.optional || undefined}
+                          onClick={() => change(s.apply(draft.answer))}>
+                          {s.text}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="sw-hint"
+                    onClick={() => {
+                      void actions.hint.mutateAsync(a.attemptId).then(setHint).catch(setError)
+                    }}
+                  >
+                    생각 열기
+                  </button>
+                </div>
+              </SpeechBubble>
+            </div>
+            {words && <WordHelpPanel attemptId={a.attemptId} companion={companion} />}
+          </div>
         </div>
       ) : !a.finishedAt ? (
         // 피드백(시안 Feedback): 왼쪽 내가 쓴 답, 오른쪽 피드백 상자와 되묻기
         <div className="sw-body sw-body-feedback">
           <section className="sw-answers" aria-label="내가 쓴 답">
+            <p className="sw-qline"><b>오늘의 문제</b>{a.mission.question}</p>
             <div className="sw-toolbar" role="group" aria-label="작성 도구">
               {(memo || saveState !== 'SAVED') && saveLine}
               {memoToggle}
@@ -796,7 +814,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                     void finish()
                   }}
                 >
-                  {a.answers.length < 3 ? '이대로 돌아보기' : '마무리하기'}
+                  {a.answers.length < 3 ? '마무리 보기' : '마무리하기'}
                 </button>
               )}
               {canAddAnswer(a) && a.answers.length > 0 && (
@@ -810,90 +828,80 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
           </section>
         </div>
       ) : (
-        // 마무리(시안 Finish): 내 답·예시 답 → 들어가면 좋은 생각 → 내 답 돌아보기·이전 답 비교 → 돌아보기
-        <div className="sw-finish">
-          <div className="sw-finish-head">
-            <h2>
-              <span className="sw-finish-big">마무리 </span>
-              <span>{a.revealKind === 'ANSWER' ? '정답과 비교해 보세요' : '예시 답과 비교해 보세요'}</span>
-            </h2>
-            <small className="sw-done-note">다 끝낸 활동이에요.</small>
-          </div>
+        // 마무리(D안, 사용자 결정 2026-11-23): 오늘의 문제 → 내 답 | 예시 답(정답)·생각 스티커 → 어땠나요(난이도 필수) → '미션 완료하기'.
+        // 예전의 자기 확인(FN-LRN-13)·이전 답 비교 창·돌아보기 창은 빼고, 이전 답은 '저번엔' 한 줄과 스티커 '새로!'로 보여 준다
+        <div className="sw-finish" ref={finishRef} data-fit={fitHeight ? '' : undefined} data-wide={fitWide ? '' : undefined} style={fitHeight ? { height: fitHeight } : undefined}>
+          <p className="sw-qline"><b>오늘의 문제</b>{a.mission.question}</p>
+          <h2 className="st-visually-hidden">마무리 · {a.revealKind === 'ANSWER' ? '정답과 비교해 보세요' : '예시 답과 비교해 보세요'}</h2>
           <div className="sw-reveal">
-            <section className="sw-card" aria-label="내 답">
-              <strong>내 답</strong>
+            <ClampCard className="sw-card" label="내 답" expanded={expandedBy === '내 답'} onMore={() => setExpandedBy('내 답')} onLess={() => { setExpandedBy(null); window.scrollTo({ top: 0 }) }} head={<strong>내 답</strong>} foot={report} after={<PrevAnswer attempt={a} />}>
               {answerVersions(true)}
               {f?.judgment?.m2Notices?.map((notice) => (
                 <p key={notice}>{notice}</p>
               ))}
-              {report}
-            </section>
-            <section className="sw-card sw-card-reveal" aria-label={a.revealKind === 'ANSWER' ? '정답' : '예시 답'}>
-              <strong>{a.revealKind === 'ANSWER' ? '정답' : '예시 답'}</strong>
-              <p className="cj-quote">{a.reveal}</p>
-            </section>
-            <div className="sw-paper">
-              <ActivityPaper mission={a.mission} text={a.answers.at(-1)?.text} />
-            </div>
+            </ClampCard>
+            <ClampCard className="sw-card sw-card-reveal" label={a.revealKind === 'ANSWER' ? '정답' : '이렇게 쓸 수도 있어요'}
+              expanded={expandedBy === 'reveal'} onMore={() => setExpandedBy('reveal')} onLess={() => { setExpandedBy(null); window.scrollTo({ top: 0 }) }}
+              head={<strong>{a.revealKind === 'ANSWER' ? '정답' : '이렇게 쓸 수도 있어요'}</strong>}
+              after={thoughtful && !fitWide && <ThoughtStickers attempt={a} lit={lit} onLit={onLit} />}
+              foot={a.reveal && <button type="button" className="sw-read sw-read-reveal" onClick={() => read(a.reveal)}>읽어 주기</button>}>
+              {/* 정답형(고르기·순서·분류·풀이)은 게시 때 예시 답이 필수가 아니라 비어 있을 수 있다(learning Mission 게시 검사) */}
+              {a.reveal ? <p className="cj-quote">{a.reveal}</p>
+                : <p className="sw-reveal-none">{a.revealKind === 'ANSWER' ? '이 문제는 정답 글이 따로 없어요.' : '이 문제는 예시 답이 따로 없어요.'}</p>}
+            </ClampCard>
           </div>
-          <section className="sw-ideas" aria-labelledby="sw-ideas-title">
-            <h3 id="sw-ideas-title">들어가면 좋은 생각</h3>
-            <ul aria-label="마무리 체크리스트" className="ux-checklist">
-              {(a.checklist ?? []).map((e) => {
-                const checked = isVerifiedElement(
-                  e,
-                  a.answers.map((v) => v.text),
-                )
-                return (
-                  <li key={e.elementId} data-checked={checked || undefined}>
-                    <span>
-                      <b>{checked ? '✓ 확인했어요' : '아직 확인하지 못했어요'}</b>
-                      <span className="st-visually-hidden"> · </span>
-                      {e.label}
-                    </span>
-                    {checked && <blockquote>{e.quote}</blockquote>}
-                  </li>
-                )
-              })}
-            </ul>
-            {!a.checklist?.length && (
-              <p>아직 확인된 것이 없어요.</p>
-            )}
-          </section>
-          <div className="sw-two">
-            <SelfAssessmentPanel key={a.attemptId} attempt={a} onBusyChange={setSelfAssessmentPending} />
-            <AttemptComparisonPanel attempt={a}>
-              {a.status === 'COMPLETED' ? (
-                <section className="sw-done" aria-label="돌아보기 완료">
-                  <p>
-                    <strong>돌아보기 완료 · {a.reflection?.difficulty}</strong>
-                    {a.reflection?.text && <span>{a.reflection.text}</span>}
-                  </p>
-                  <div>
-                    <button type="button" className="mg-start sw-go" disabled={actions.start.isPending || !session?.child}
-                      onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
-                        .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
-                      이 미션 다시 풀기
-                    </button>
-                    <p>이번 답은 공책에 남아요.</p>
-                  </div>
-                  <ErrorNotice error={actions.start.error} />
-                </section>
-              ) : (
-                <button
-                  type="button"
-                  className="mg-start sw-go"
-                  disabled={selfAssessmentPending}
-                  onClick={() => {
-                    setReflectOpen(true)
-                    setNotice('')
-                  }}
-                >
-                  돌아보기 남기기<span aria-hidden="true"> →</span>
+          {/* 세 칸 배치에서는 스티커를 두 카드 아래 한 줄 띠로(예시 답 칸이 좁아 스티커가 예시 답을 밀어내지 않게) */}
+          {thoughtful && fitWide && <div className="sw-wide-stickers"><ThoughtStickers attempt={a} lit={lit} onLit={onLit} /></div>}
+
+          {a.status === 'COMPLETED' && (
+            <section className="sw-ideas sw-howwas sw-howwas-done" aria-label="돌아보기 완료">
+              <p>
+                <strong>돌아보기 완료 · {a.reflection ? difficultyLabel(a.reflection.difficulty) : ''}</strong>
+                {a.reflection?.text && <span>{a.reflection.text}</span>}
+              </p>
+              {retry.kind === 'EXTRA' && (
+                <button type="button" className="mg-start sw-go" disabled={actions.start.isPending || !session?.child}
+                  onClick={() => { if (session?.child) void actions.start.mutateAsync({ mission: a.mission, child: session.child })
+                    .then(next => navigate(`/student/attempts/${encodeURIComponent(next.attemptId)}`)).catch(() => {}) }}>
+                  이 미션 다시 풀기
                 </button>
               )}
-            </AttemptComparisonPanel>
-          </div>
+              {retry.kind === 'SCENE' && (
+                <button type="button" className="mg-start sw-go" onClick={() => navigate(`/student/theme/scene/${retry.day}`)}>
+                  이 미션 다시 풀기
+                </button>
+              )}
+              {retry.kind === 'SATURDAY' && <p className="sw-retry-note">토요일에 다시 풀 수 있어요.</p>}
+              <ErrorNotice error={actions.start.error} />
+            </section>
+          )}
+          {a.status !== 'COMPLETED' && (
+            <section className="sw-ideas sw-howwas" aria-labelledby="sw-howwas-title">
+              <div className="sw-reflect">
+                <div className="sw-howwas-l">
+                  <h3 id="sw-howwas-title">이번 활동은 어땠나요? <small>하나 골라 주세요</small></h3>
+                  <input className="sw-howwas-input" aria-label="달라진 점 (선택)" value={reflection} onChange={(e) => setReflection(e.target.value)} maxLength={1200}
+                    placeholder="달라진 생각 한 줄 (안 써도 돼요)" />
+                </div>
+                <div className="cj-difficulties" role="group" aria-label="난이도">
+                  {(['쉬웠어', '보통', '어려웠어'] as const).map((d) => (
+                    <button type="button" key={d} data-level={d} aria-pressed={difficulty === d} disabled={pending}
+                      onClick={() => { setDifficulty(d); setNotice('') }}><span className="sw-face" aria-hidden="true">{FACES[d]}</span>{difficultyLabel(d)}</button>
+                  ))}
+                </div>
+                {/* 칸 높이가 고정된 세 칸 배치에서도 안내가 보이게 그 칸 안에서 스크롤 */}
+                {notice && <p role="alert" ref={howwasAlert}>{notice}</p>}
+              </div>
+            </section>
+          )}
+          {a.status !== 'COMPLETED' && (
+            // 난이도는 필수(FN-LRN-12). 고르기와 넘어가기를 나눠, 카드 밖 아래 오른쪽 단추로 미션 완료(사용자 결정 2026-11-23)
+            <div className="sw-finish-next">
+              <button type="button" className="mg-start sw-go" disabled={pending} onClick={() => { void complete() }}>
+                미션 완료하기<span aria-hidden="true"> →</span>
+              </button>
+            </div>
+          )}
           {alerts}
         </div>
       )}
@@ -972,49 +980,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
           </div>
         </Modal>
       )}
-      {reflectOpen && (
-        // 돌아보기(시안 Reflect): 큰 난이도 버튼 세 개와 달라진 점
-        <Modal title="이번 활동은 어땠나요?" onClose={() => setReflectOpen(false)}>
-          <div className="sw-reflect">
-            <span className="sw-reflect-face" aria-hidden="true">
-              <Companion kind={companion} size={64} worn={worn} decorative />
-            </span>
-            <div className="cj-difficulties" role="group" aria-label="난이도">
-              {(['쉬웠어', '보통', '어려웠어'] as const).map((d) => (
-                <button
-                  type="button"
-                  key={d}
-                  data-level={d}
-                  aria-pressed={difficulty === d}
-                  onClick={() => setDifficulty(d)}
-                >
-                  {difficultyLabel(d)}
-                </button>
-              ))}
-            </div>
-            <label className="cj-field">
-              달라진 점 (선택)
-              <textarea
-                value={reflection}
-                onChange={(e) => setReflection(e.target.value)}
-                maxLength={1200}
-              />
-            </label>
-            {notice && <p role="alert">{notice}</p>}
-            <button
-              type="button"
-              className="mg-start sw-reflect-save"
-              disabled={pending}
-              onClick={() => {
-                void complete()
-              }}
-            >
-              돌아보기 저장하고 완료
-            </button>
-            <ErrorNotice error={error} />
-          </div>
-        </Modal>
-      )}
+      {doneNow && <MissionDone attempt={a} childId={session?.child?.id} onEnding={onCompleted} />}
     </section>
   )
 }
@@ -1026,9 +992,25 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
  * 낱말은 권유 기준일 뿐 판정이 아니다.
  */
 type Starter = { text: string; optional?: boolean; apply: (a: AnswerContent) => AnswerContent }
+/** 입력 방식마다 답 칸 제목과 끝 버튼(사용자 결정 2026-11-19 #807): 고르는 문제에 "쓰기·다 썼어요"가 나오지 않게 */
+const panelTitle: Record<AnswerContent['inputType'], string> = {
+  NARRATIVE: '내 생각 쓰기', SOLUTION_STEPS: '풀이 쓰기', ESSAY: '내 생각 쓰기',
+  CHOICE: '답 고르기', ORDERING: '순서 정하기', CLASSIFICATION: '나누기',
+}
+const doneLabel: Record<AnswerContent['inputType'], string> = {
+  NARRATIVE: '다 썼어요', SOLUTION_STEPS: '다 썼어요', ESSAY: '다 썼어요',
+  CHOICE: '이걸로 할래요', ORDERING: '이 순서로 할래요', CLASSIFICATION: '다 나눴어요',
+}
 const plain = (s: string) => s.replace(/\s/g, '').length
 const append = (prev: string, add: string) => (prev.trim() ? prev.replace(/\s*$/, ' ') : '') + add
-function writingGuide(v: AnswerContent, more: boolean): { line: string; starters: Starter[] } | null {
+function writingGuide(v: AnswerContent, more: boolean, choices = 0): { line: string; starters: Starter[] } | null {
+  // 고르기·순서·분류: 시작 문장 없이 할 일만(사용자 의견 2026-11-19 "고르기 문제면 처음에 시작할 때 어려울 것 같아", #807)
+  if (v.inputType === 'CHOICE')
+    return { line: v.choiceIds.length ? '왜 그게 맞는지 한 번 더 생각해 보고 보내 줘!' : '보기를 하나씩 읽어 보고 맞는 것을 골라 봐.', starters: [] }
+  if (v.inputType === 'ORDERING')
+    return { line: !v.choiceIds.length ? '먼저인 것부터 차례로 눌러 봐.' : v.choiceIds.length < choices ? '다음은 무엇일까? 이어서 눌러 봐.' : '순서가 맞는지 처음부터 읽어 보고 보내 줘!', starters: [] }
+  if (v.inputType === 'CLASSIFICATION')
+    return { line: !v.assignments.length ? '하나씩 보고 어느 쪽인지 눌러 봐.' : v.assignments.length < choices ? '아직 안 나눈 것이 있어.' : '다 나눴어! 맞는지 한 번 더 보고 보내 줘.', starters: [] }
   if (v.inputType === 'NARRATIVE') {
     const n = plain(v.text)
     const add = (text: string, optional = false): Starter => ({ text, optional, apply: (a) => ({ ...a, text: append(a.text, text) }) })
@@ -1240,34 +1222,180 @@ export function AnswerFields({
 function FeedbackEvidence({
   feedback,
   text,
+  inputType,
+  lit,
+  onLit,
 }: {
   feedback: import('../../domain/classroom.ts').Feedback
   text: string
+  inputType: AnswerContent['inputType']
+  lit: string | null
+  onLit: (id: string) => void
 }) {
   const judgment = feedback.judgment
-  if (!judgment) return null
+  if (!judgment || CLOSED_TYPES.includes(inputType)) return null
   // 결과 이름만(#440 26번): '판정'은 내부 말이라 빼고, 보류일 때는 피드백 상자가 이미 '답을 잘 받았어요.'라고 해서 이름을 안 보인다.
   // 'AI 채점(시범)' 표시는 기능명세 FN-JDG-03이라 그대로 둠(#440 27번 보류)
-  const label = [
-    judgment.result === 'HELD' ? '' : { CORRECT: '정답', PARTIAL: '부분 정답', RETHINK: '다시 생각' }[judgment.result],
-    judgment.trial ? 'AI 채점(시범)' : '',
-  ].filter(Boolean).join(' · ')
+  // 근거 상자 대신 생각 스티커(사용자 결정 2026-11-20, 구절은 위 답 글의 형광펜). 결과 이름(정답 등)은 오른쪽 피드백 상자와 겹쳐 뺌, 'AI 채점(시범)'은 오른쪽 피드백 상자에 있어 여기선 안 겹치게(FN-JDG-03)
+  return <Stickers items={judgment.elements ?? []} texts={[text]} label="피드백 생각" lit={lit} onLit={onLit} />
+}
+
+/**
+ * 한 화면에 맞춘 마무리의 카드: 칸 높이를 넘으면 '더 보기', 누르면 창 없이 그 칸을 펼치고 '접기'로 되돌림(사용자 결정 2026-11-23).
+ * 펼침 상태는 부모가 쥔다(펼친 동안 한 화면 맞춤을 풂). 이어 붙이는 화면은 칸을 자르지 않아 '더 보기'가 생기지 않음
+ */
+function ClampCard({ className, label, head, foot, after, expanded, onMore, onLess, children }: { className: string; label: string; head: ReactNode; foot?: ReactNode; after?: ReactNode; expanded: boolean; onMore: () => void; onLess: () => void; children: ReactNode }) {
+  const body = useRef<HTMLDivElement>(null)
+  const [over, setOver] = useState(false)
+  useLayoutEffect(() => {
+    const el = body.current
+    if (!el) return
+    const check = () => setOver(el.scrollHeight > el.clientHeight + 2)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const more = expanded
+    ? <button type="button" className="sw-more" aria-expanded="true" onClick={onLess}>접기</button>
+    : over && <button type="button" className="sw-more" aria-expanded="false" onClick={onMore}>더 보기</button>
   return (
-    <div className="ux-evidence">
-      {label && <small>{label}</small>}
-      <ul>
-        {judgment.elements?.map((e) => {
-          const verified = isVerifiedElement(e, [text])
-          return (
-            <li key={e.elementId} data-evidence-verified={verified ? 'true' : 'false'}>
-              <span>
-                {verified ? '✓ 확인' : '아직 확인하지 못함'} · {e.label}
-              </span>
-              {verified && <blockquote>{e.quote}</blockquote>}
-            </li>
-          )
-        })}
-      </ul>
+    <section className={className} aria-label={label}>
+      {head}
+      <div ref={body} className="sw-clamp" data-over={over || undefined}>{children}</div>
+      {after}
+      <div className="sw-clamp-foot">
+        {foot}
+        {more}
+      </div>
+    </section>
+  )
+}
+
+/** 다시 푼 문제만 내 답 아래 '저번엔' 한 줄(이전 답 비교 창 대신, 사용자 결정 2026-11-23)(날짜·판정·답변 번호 없이 저번 마지막 답 글만, 처음 푼 문제는 없음) */
+function PrevAnswer({ attempt }: { attempt: Attempt }) {
+  const cmp = useAttemptComparison(attempt).data
+  const prev = cmp?.previous
+  const last = prev?.answers.at(-1)
+  if (!prev || !last) return null
+  const text = comparisonAnswerText(last, prev.mission)
+  return (
+    <p className="sw-prev" title={text}>
+      <b>저번엔</b>
+      <span>{text}</span>
+    </p>
+  )
+}
+
+/**
+ * 마무리 영역을 화면 남은 높이에 맞춘다(PC·태블릿). 카드는 그 안에서 줄어들고 넘치면 '더 보기'.
+ * 아래 줄 배치는 너비 760px 초과·높이 800px 이상·남은 높이 400px(카드마다 두세 줄이 보이는 최소) 이상, 세 칸 배치(`wide`)는
+ * 너비 960px 이상·높이 800px 미만·남은 높이 480px 이상일 때 맞춘다. 그 밖은 맞추지 않고 아래로 이어 붙인다(휴대폰·아주 낮은 화면).
+ */
+function useFitHeight(ref: React.RefObject<HTMLDivElement | null>, enabled: boolean) {
+  const [fit, setFit] = useState<{ height: number | null; wide: boolean }>({ height: null, wide: false })
+  useLayoutEffect(() => {
+    if (!enabled) return
+    const fit = () => {
+      const el = ref.current
+      if (!el) return
+      const top = el.getBoundingClientRect().top + window.scrollY
+      // 마무리 영역 아래에 실제로 붙는 것은 감싼 칸들의 아래 안쪽 여백·테두리뿐(.st-world 최소 높이로 생기는 빈 곳은 세지 않음)
+      let pad = 0
+      // 바깥 파란 틀(.st-world) 아래 여백은 화면 밖으로 내려가도 됨 — 흰 종이 안쪽 여백까지만
+      for (let node = el.parentElement; node && !node.classList.contains('st-world'); node = node.parentElement) {
+        const cs = getComputedStyle(node)
+        pad += parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth)
+      }
+      const avail = Math.floor(window.innerHeight - top - pad)
+      // 높이 800px 이상은 아래 줄 배치로 맞춤. 낮고 넓은 화면(가로 태블릿·낮은 노트북)은 어땠나요를 오른쪽 칸으로 옮긴 세 칸 배치로 맞춤.
+      // 그 밖(휴대폰·좁고 낮은 화면)은 이어 붙임(사용자 결정 2026-11-23)
+      const w = window.innerWidth, h = window.innerHeight
+      const wide = w >= 960 && h < 800
+      setFit((p) => {
+        const next = { height: (w > 760 && h >= 800 && avail >= 400) || (wide && avail >= 480) ? avail : null, wide }
+        return p.height === next.height && p.wide === next.wide ? p : next
+      })
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [enabled, ref])
+  return enabled ? fit : NO_FIT
+}
+const NO_FIT = { height: null, wide: false }
+
+const CLOSED_TYPES: AnswerContent['inputType'][] = ['CHOICE', 'ORDERING', 'CLASSIFICATION']
+const FACES = { 쉬웠어: '😄', 보통: '🙂', 어려웠어: '😥' } as const
+type Mark = { quote: string; n: number; id: string }
+/** 공백을 \s+로 바꿔 찾음(ai verifier.is_verbatim처럼 공백 차이 허용) */
+const loose = (q: string) => new RegExp(q.trim().split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'))
+const found = (e: import('../../domain/classroom.ts').FeedbackElement, texts: string[]) =>
+  e.satisfied && !!e.quote?.trim() && texts.some((t) => loose(e.quote!).test(t))
+/** 찾은 요소만 순서대로 번호(스티커와 형광펜이 같은 번호·색) */
+function foundMarks(items: import('../../domain/classroom.ts').FeedbackElement[], texts: string[]): Mark[] {
+  return items.filter((e) => found(e, texts)).map((e, k) => ({ quote: e.quote!, n: k + 1, id: e.elementId }))
+}
+/** 찾은 구절에만 밑줄 형광펜 + 끝에 작은 번호(그 번호 스티커와 짝) */
+function highlight(text: string, marks: Mark[]): ReactNode {
+  if (!marks.length) return text
+  const out: ReactNode[] = []
+  let rest = text, key = 0
+  while (rest) {
+    let best: { at: number; len: number; n: number } | null = null
+    for (const m of marks) {
+      const hit = loose(m.quote).exec(rest)
+      if (hit && (!best || hit.index < best.at)) best = { at: hit.index, len: hit[0].length, n: m.n }
+    }
+    if (!best) { out.push(rest); break }
+    if (best.at) out.push(rest.slice(0, best.at))
+    out.push(<mark key={key++} className="sw-hl" data-n={best.n}>{rest.slice(best.at, best.at + best.len)}</mark>)
+    rest = rest.slice(best.at + best.len)
+  }
+  return out
+}
+
+/**
+ * 들어가면 좋은 생각을 스티커로(사용자 결정 2026-11-20)(FN-LRN-11: 근거 구절이 확인된 요소만 체크, 구절은 위 형광펜).
+ * 확인 못 한 것은 점선 — AI가 놓쳤을 수도 있어 "안 썼다"가 아니라 "뭉치가 아직 못 찾은" 것으로 말한다.
+ */
+function ThoughtStickers({ attempt, lit, onLit }: { attempt: Attempt; lit: string | null; onLit: (id: string) => void }) {
+  // 다시 푼 문제: 같은 기준일 때만 이번에 새로 찾은 생각에 '새로!'(FN-LRN-11·#207 확인 항목 변화)
+  const cmp = useAttemptComparison(attempt).data
+  const fresh = new Set(cmp?.state === 'COMPARABLE' ? cmp.elements.filter((e) => e.change === 'ADDED').map((e) => e.elementId) : [])
+  return <Stickers items={attempt.checklist ?? []} texts={attempt.answers.map((v) => v.text)} label="마무리 체크리스트" title="들어가면 좋은 생각" lit={lit} onLit={onLit} fresh={fresh} />
+}
+function Stickers({ items, texts, label, title, lit, onLit, fresh }: { items: import('../../domain/classroom.ts').FeedbackElement[]; texts: string[]; label: string; title?: string; lit: string | null; onLit: (id: string) => void; fresh?: Set<string> }) {
+  if (!items.length) return null
+  const yes = items.filter((e) => found(e, texts))
+  const no = items.filter((e) => !found(e, texts))
+  return (
+    <div className="sw-stickers-wrap" aria-label={label} role="group">
+      {title && <h3 className="sw-stick-title">{title}</h3>}
+      {yes.length > 0 && (
+        <div className="sw-stick-row">
+          <b>뭉치가 찾았어 <small className="sw-stick-tip">눌러 봐</small></b>
+          <ul className="sw-stickers">
+            {yes.map((e, k) => (
+              <li key={e.elementId} data-checked data-n={k + 1} data-lit={lit === e.elementId || undefined} data-evidence-verified="true">
+                <button type="button" aria-pressed={lit === e.elementId} onClick={() => onLit(e.elementId)}
+                  aria-label={`${e.label} — 내 답에서 찾은 곳: ${e.quote}`}>
+                  <span className="sw-stick-n" aria-hidden="true">{k + 1}</span>{e.label}
+                  {fresh?.has(e.elementId) && <span className="sw-new">새로!</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {no.length > 0 && (
+        <div className="sw-stick-row sw-stick-row-no">
+          <b>아직 못 찾았어</b>
+          <ul className="sw-stickers">
+            {no.map((e) => <li key={e.elementId} data-evidence-verified="false">{e.label}</li>)}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
