@@ -563,6 +563,63 @@ test('캡처: 1440·768·390px 단계별(0·5·15·30초)·누르기 반응 3가
   await shoot3('result-bulb')
 })
 
+test('창 폭 360~1440px(40px 간격) × 단계 문구 5개: 말풍선·친구·구름·체크박스가 칸 안, 글자는 말풍선 안, 서로 안 겹침', async ({ page }) => {
+  test.skip(test.info().project.name !== 'laptop', '창 크기를 시험 안에서 바꾸므로 한 프로젝트에서만')
+  test.setTimeout(120_000)
+  // 움직임 없이 멈춘 자리에서 잰다(구름은 가로로만 움직이므로 세로 띠로 따로 확인)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await login(page)
+  // 단계마다 새 시도를 연다(무료 하루 3개 제한을 피하려고 프리미엄). 로그인은 한 번, 폭은 한 페이지에서 화면 크기만 바꾼다
+  await page.getByRole('checkbox', { name: '프리미엄' }).setChecked(true)
+  await scenario(page, 'feedback-slow')
+  const openRunning = (seconds: number) => page.evaluate(async (seconds) => {
+    const { fixtureStore, persistFixtureState } = await import('/src/mocks/fixtures/student.ts' as string)
+    const { blankAnswer } = await import('/src/domain/classroom.ts' as string)
+    const data = fixtureStore.snapshot(), child = data.session.child
+    const sample = data.attempts.find((a: { mission: { inputType: string } }) => a.mission.inputType === 'NARRATIVE')
+    const attempt = await fixtureStore.start({ ...sample.mission, id: `${sample.mission.id}-w${seconds}`, grade: child.grade }, child)
+    await fixtureStore.submit(attempt.attemptId, { ...blankAnswer('NARRATIVE'), text: '나는 찬성해요.' }, crypto.randomUUID())
+    const snap = fixtureStore.snapshot()
+    const a = snap.attempts.find((x: { attemptId: string }) => x.attemptId === attempt.attemptId)
+    a.answers.at(-1).feedback = { status: 'RUNNING', nextActions: [] }
+    a.answers.at(-1).submittedAt = new Date(Date.now() - seconds * 1000).toISOString()
+    fixtureStore.restoreSnapshot(snap)
+    persistFixtureState()
+    return attempt.attemptId as string
+  }, seconds)
+  const problems: string[] = []
+  // 단계 경계에서 떨어진 시각(재는 동안 다음 단계로 넘어가지 않게): 0·5·15·30·60초 단계
+  for (const [seconds, line] of [[2, '답을 꼼꼼히 읽고 있어'], [9, '생각의 단서를 찾는 중이야'], [20, '너에게 할 질문을 고르고 있어'],
+    [40, '조금 오래 걸리네. 답은 벌써 저장했어!'], [65, '거의 다 왔어. 잠깐만 기다려 줘']] as const) {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await go(page, await openRunning(seconds))
+    await expect(bubble(page)).toHaveText(line)
+    for (let width = 360; width <= 1440; width += 40) {
+      await page.setViewportSize({ width, height: 900 })
+      const r = await page.evaluate(() => {
+        const box = (s: string) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom } }
+        const p = document.querySelector('.sw-wait-bubble p') as HTMLElement
+        return { panel: box('.sw-feedback-panel'), bubble: box('.sw-wait-bubble'), text: box('.sw-wait-bubble p'), friend: box('.sw-wait-friend'),
+          cloud: box('.sw-wait-cloud'), toggle: box('.sw-wait-motion'), head: box('.sw-feedback-head h2'),
+          textOverflow: p.scrollWidth > p.clientWidth + 1, scroll: document.documentElement.scrollWidth > innerWidth }
+      })
+      type Box = NonNullable<typeof r.panel>
+      const outside = (a: Box | null, b: Box | null) => !!a && !!b && (a.l < b.l - 1 || a.r > b.r + 1)
+      const hit = (a: Box | null, b: Box | null) => !!a && !!b && a.l < b.r - 1 && b.l < a.r - 1 && a.t < b.b - 1 && b.t < a.b - 1
+      const at = `${seconds}s ${width}px`
+      for (const k of ['bubble', 'friend', 'cloud', 'toggle'] as const) if (outside(r[k], r.panel)) problems.push(`${at} ${k} 칸 밖`)
+      if (outside(r.text, r.bubble) || r.text!.t < r.bubble!.t - 1 || r.text!.b > r.bubble!.b + 1 || r.textOverflow) problems.push(`${at} 글자 말풍선 밖`)
+      if (r.scroll) problems.push(`${at} 가로 스크롤`)
+      if (hit(r.bubble, r.friend)) problems.push(`${at} 말풍선·친구 겹침`)
+      if (hit(r.toggle, r.bubble) || hit(r.toggle, r.friend)) problems.push(`${at} 체크박스 겹침`)
+      // 구름은 가로로만 지나가므로 제목 아래·친구와 말풍선 위 띠 안에 있으면 지나가는 내내 안 겹친다
+      if (r.cloud!.t < r.head!.b - 1 || r.cloud!.b > Math.min(r.friend!.t, r.bubble!.t) + 1) problems.push(`${at} 구름 띠 밖`)
+      if (seconds === 2 && width === 360) await page.locator('.sw-feedback-panel').screenshot({ path: path.join(shots, '847-overflow-after-360.png') })
+    }
+  }
+  expect(problems).toEqual([])
+})
+
 test('390px 대기 화면 캡처 @responsive', async ({ page }) => {
   test.skip(test.info().project.name !== 'compact', '390px 캡처만')
   await page.clock.install()

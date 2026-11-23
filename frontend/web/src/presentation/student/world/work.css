@@ -670,19 +670,21 @@
 #class-journal .st-world .sw-actions .mg-read { min-height: 56px; padding: 0 22px; }
 #class-journal .st-world .sw-actions .sw-go { min-height: 56px; padding: 0 28px; font-size: clamp(19px, 1.5vw, 22px); }
 /* 피드백 대기 표시(#847): 친구(착용 포함) + 돋보기 + 말풍선. 단계마다 움직임 하나, 막대·퍼센트 없음 */
-/* "찾았다!"(결과 전구)는 피드백 패널 기준으로 자리를 잡는다 */
-#class-journal .st-world .sw-feedback-panel { position: relative; }
+/* "찾았다!"(결과 전구)는 피드백 패널 기준으로 자리를 잡는다.
+   대기 그림·말풍선 크기는 창 폭이 아니라 패널 폭(container)을 따른다: 창 폭 기준이면 두 칸이 되는 920~960px·좁은 360px에서
+   패널이 좁아도 친구·글자가 줄지 않아 말풍선 글자가 칸 밖으로 밀려났다(#847 넘침) */
+#class-journal .st-world .sw-feedback-panel { position: relative; container-type: inline-size; }
 /* 위쪽 30px은 구름만 지나가는 빈 하늘(제목 줄과 겹치지 않게, 친구·말풍선은 그 아래) */
 #class-journal .st-world .sw-wait {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: clamp(8px, 4cqi, 22px);
   min-width: 0;
   padding: 30px 0 4px;
 }
 #class-journal .st-world .sw-wait-friend {
-  --w: clamp(128px, 11vw, 160px);
+  --w: clamp(72px, 24cqi, 150px);
   position: relative;
   flex: none;
   width: var(--w);
@@ -938,13 +940,13 @@
   min-width: 0;
   padding: 14px 18px;
 }
-/* 한국어는 띄어쓰기에서만 꺾고(글자 중간 꺾임 없음), 가장 긴 문구도 두 줄 안에 들게 최소 폭 */
+/* 한국어는 띄어쓰기에서만 꺾는다(글자 중간 꺾임 없음). 최소 폭은 두지 않는다: 좁은 패널에서 말풍선보다 넓어져 글자가 밖으로 나갔음.
+   글자 크기는 패널 폭을 따라 16~21px */
 #class-journal .st-world .sw-wait-bubble p {
   margin: 0;
-  min-width: 9.5em;
   font-family: var(--st-hand);
   font-weight: 700;
-  font-size: var(--st-fs-md, 21px);
+  font-size: clamp(16px, 4.6cqi, 21px);
   line-height: 1.45;
   word-break: keep-all;
   overflow-wrap: break-word;
@@ -1352,12 +1354,11 @@
   #class-journal .st-world .sw-reflect-face { top: 16px; left: 18px; }
   #class-journal .st-world .sw-reflect .cj-difficulties { gap: 8px; }
   #class-journal .st-world .sw-reflect .cj-difficulties button { min-height: 76px; font-size: 18px; }
-  #class-journal .st-world .sw-wait { gap: 10px; padding-top: 28px; }
-  #class-journal .st-world .sw-wait-friend { --w: 88px; margin: 0 calc(var(--w) * 0.1); }
+  #class-journal .st-world .sw-wait { padding-top: 28px; }
+  #class-journal .st-world .sw-wait-friend { margin: 0 calc(var(--w) * 0.1); }
   #class-journal .st-world .sw-found { left: 12px; bottom: 10px; gap: 4px; padding: 2px 10px 2px 6px; font-size: 16px; }
   #class-journal .st-world .sw-found-bulb { width: 24px; height: 24px; }
   #class-journal .st-world .sw-wait-bubble { padding: 12px; }
-  #class-journal .st-world .sw-wait-bubble p { font-size: 16px; }
 }
 /* 움직임 줄이기: 기울인 쪽지·단추를 바로 세운다(미션 안내 그림과 같은 기준).
    피드백 대기(#847)는 멈춘 그림 + 문구만(두 눈 뜬 채), 누르기 반응·하트 없이 말만 바뀌고, 결과 때는 켜진 전구 그림만 */
