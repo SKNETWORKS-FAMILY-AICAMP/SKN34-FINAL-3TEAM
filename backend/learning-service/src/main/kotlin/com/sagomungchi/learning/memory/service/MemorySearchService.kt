@@ -7,6 +7,7 @@ import com.sagomungchi.learning.memory.client.MemoryQueryAiClient
 import com.sagomungchi.learning.memory.client.MemoryQueryRequest
 import com.sagomungchi.learning.memory.client.MemoryQueryPeriod
 import com.sagomungchi.learning.memory.repository.MemorySearchRepository
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -27,6 +28,7 @@ class MemorySearchService(private val repository: MemorySearchRepository,private
     @Value("\${app.memory.minimum-similarity:0.35}") private val minimum: Double,
     private val queryClient: MemoryQueryAiClient,
     @Value("\${app.memory.query-rewrite.enabled:true}") private val queryRewriteEnabled: Boolean) {
+    private val log = LoggerFactory.getLogger(javaClass)
     init { require(minimum.isFinite() && minimum in -1.0..1.0) }
     /** 학습 완료한 시도를 검색 문서 대기 상태로 등록. 호출한 쪽(학습 완료) 트랜잭션에 참여 */
     fun register(attemptId: UUID) { repository.register(attemptId) }
@@ -41,14 +43,29 @@ class MemorySearchService(private val repository: MemorySearchRepository,private
         val masked: String
         try { nickname=privacy.nickname(studentId); masked=privacy.mask(query,nickname) }
         catch (_: Exception) { throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"AI_UNAVAILABLE","추억 검색을 잠시 사용할 수 없어요") }
+        // 클라이언트가 재시도 가능한 실패를 한 번 더 부른 뒤에도 실패한 경우(#878). 원문을 담을 수 있는 예외는 기록하지 않음
         val rewritten=if(queryRewriteEnabled) try { queryClient.rewrite(MemoryQueryRequest(masked,date.toString())) }
-            catch (_: Exception) { null } else null // 원문을 담을 수 있는 예외는 기록하지 않음
-        val result=try { embedding.embed(listOf(if(rewritten==null) masked else privacy.mask(rewritten.searchText,nickname))) }
+            catch (_: Exception) {
+                // 기간을 말한 질문을 기간 없이 찾으면 기간 밖 기록이 나와 오류로 보임 → 임베딩 없이 503 안내
+                if(MemoryPeriodWords.contains(masked)) {
+                    log.warn("추억 질의 변환 실패 처리 result=UNAVAILABLE")
+                    throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"AI_UNAVAILABLE","추억 검색을 잠시 사용할 수 없어요")
+                }
+                log.warn("추억 질의 변환 실패 처리 result=VECTOR_ONLY")
+                null
+            } else null
+        val result=try { embedding.embedQuery(if(rewritten==null) masked else privacy.mask(rewritten.searchText,nickname)) }
             catch (_: Exception) { throw BusinessException(HttpStatus.SERVICE_UNAVAILABLE,"AI_UNAVAILABLE","추억 검색을 잠시 사용할 수 없어요") }
         val period=normalizePeriod(rewritten?.period,before)
-        val hits=if(rewritten==null) repository.search(studentId,before,result.vectors.single(),result.model,minimum)
-            else repository.hybrid(studentId,before,result.vectors.single(),result.model,minimum,
+        val vector=result.vectors.single()
+        val hits=when {
+            rewritten==null -> repository.search(studentId,before,vector,result.model,minimum)
+            // 기간만 질문(#879): 키워드가 없고 보정한 기간이 있으면 기간 안 회차 최신순, 유사도 기준 없음
+            rewritten.keywords.isEmpty() && period!=null ->
+                repository.latestInPeriod(studentId,before,vector,result.model,period.first,period.second)
+            else -> repository.hybrid(studentId,before,vector,result.model,minimum,
                 rewritten.keywords,period?.first,period?.second)
+        }
         val cards=hits.groupBy { it.themeId to it.weekStart }.map { (_,group)->
             val first=group.first()
             MemoryCard(first.themeId,first.weekStart,first.title,assets.url(first.imageUri),
