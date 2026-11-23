@@ -445,11 +445,13 @@ B 계정 번호를 받으면 한 번에 바꾼다. 분류 기준은 [`scripts/aw
 | 바꿈: IAM 원문 | `infrastructure/aws/iam/*.json` | 25 |
 | 바꿈: IaC | `infrastructure/aws/demo-stack.json`, `infrastructure/eks/cluster.json`, `infrastructure/aws/cloudfront-config.redacted.json` | 3 |
 | 바꿈: 배포 값 | `infrastructure/gitops/environments/prod/`의 앱 values 5개(core는 ECR 주소가 `images/`로 옮겨 없음)·`images/` 6개·`redeploy-app.ps1`(#857 뒤. `images/`는 main에서 digest PR(#858)도 바꾸므로 develop과 main 양쪽 값을 맞춘다) | 12 |
-| 바꿈: 시험 | `scripts/tests/test_cd_migration_runner.py`(가짜 `sts`가 돌려주는 번호가 `redeploy-app.ps1`과 같아야 함) | 1 |
+| 바꿈: 시험 | `scripts/tests/test_cd_migration_runner.py`(가짜 `sts`가 돌려주는 번호가 `redeploy-app.ps1`과 같아야 함), `scripts/tests/test_cd_digest_pr.py`(#858 fixture의 ECR 주소. 시험 안에서만 쓰여 B 번호로 바꿔도 통과하고, 바꾸면 `check`에 A 번호가 남지 않음) | 2 |
 | 바꿈: 절차 문서 | 이 README, `infrastructure/eks/README.md`, `infrastructure/cd/README.md`, prod README, `docs/report/scoring.md`(6.2·6.3 업로드 명령) | 5 |
 | 남김: 기록·근거 | `docs/report/**`(scoring.md 빼고: `infra.md` 4절, `evidence/issue493-…json`), `infrastructure/aws/demo-observed.json`, `infrastructure/eks/demo-observed.json` | 4 |
 | 남김: A에서 한 번 실행한 SQL | `add-demo-premium-product.sql`, `add-demo-test-subscription.sql`, `mark-confirmed-demo-data.sql`(아래 확인 결과) | 3 |
 | 남김: A 부하 시험 | `evaluation/load/llm-stub.k8s.yaml`(이미지가 A ECR에 있음. B에서 부하 시험을 다시 하면 이미지를 B ECR에 올린 뒤 바꾼다) | 1 |
+
+`unknown <파일>`로 멈추면 그 파일을 분류하고 위 표에도 적은 뒤 다시 돌린다. B에서 실행·배포하거나 B 전환 뒤에도 통과해야 하는 값은 `CHANGE`, A에서 관측·실행한 기록은 `RECORD`로 넣는다(11/22 `test_cd_digest_pr.py`가 이렇게 멈췄다).
 
 ```powershell
 python scripts/aws_account_switch.py plan --to <B 계정>    # 파일별 바꿀 줄·남길 줄 수. 파일은 바꾸지 않음

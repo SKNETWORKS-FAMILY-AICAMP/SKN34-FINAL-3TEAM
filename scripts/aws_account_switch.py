@@ -46,6 +46,7 @@ CHANGE = [
     'infrastructure/gitops/environments/prod/redeploy-app.ps1',
     'infrastructure/gitops/environments/prod/README.md',
     'scripts/tests/test_cd_migration_runner.py',
+    'scripts/tests/test_cd_digest_pr.py',
 ]
 
 
