@@ -1606,3 +1606,19 @@ PR #889(learning V25~V27)로 구현한 관리자 주간 테마 운영의 서버 
 
 - 소리 탐정 대상 글 8개가 "…에서 밤마다 들린 소리"였다. ai 특징 "소리 나는 밤"(매일 밤·비 오는 밤·바람 부는 밤)과 겹쳐, 답이 "매일 밤"이면 시작 이야기가 단서를 미리 말하고 "비 오는 밤"이면 어긋났다(ai 3차 측정 치명 결함, ai.md 27절 "설계 v4").
 - 8개를 "…에서 밤에 들린 소리"로 바꿨다(`theme_places.json`, `ThemeTopicSeeds` 설명 예시). learning 시험은 이 문자열을 쓰지 않는다. ai는 관리자 자유 글·예전 씨앗을 위해 대상 글의 "밤마다"를 코드가 "밤에"로 바꾼다.
+
+## 46. 주간 테마 검수 목록·검수 단계·버리기 규칙 설계 문서 반영 (#970, 2026-11-24)
+
+PR #965(#964)로 구현한 관리자 주간 테마 검수 목록과 버리기 규칙 변경을 설계 문서에 반영한다. 계약(`contracts/openapi` `ThemeDraftReviewPage`·`ThemeReviewStage`)과 [frontend 보고서](frontend.md)는 #965에서 반영했다. 설계 문서는 [api-spec 2.8](../design/api-spec.md#28-관리자-fn-adm-fn-sup-관리-측--apiv1admin)·4.1, [state-diagram 3.5.1](../design/state-diagram.md#351-theme_draftstatus-438), [class-diagram 4.4](../design/class-diagram.md#44-주간-테마커뮤니티-theme-385--community-386-구현).
+
+### 정한 것
+
+- 검수 목록 API: `GET /admin/theme-drafts/review-list`(core 프록시 → learning `/internal/admin/theme-drafts/review-list`). 조건 `grade·source·status·stage·week·weekStart·comparisonPending·hideDiscarded(기본 true)·page·size`, 응답 `ThemeDraftReviewPage{items, page, size, totalElements, weeks}`. 범위 밖 `stage`, 월요일이 아닌 `week`·`weekStart`는 `400`(core·learning 모두 검사)
+- 검수 단계 `stage` 10종은 저장값이 아닌 조회용 파생값이다. `theme_draft.status`·`weekly_theme.status`·같은 학년·주 다른 게시 테마(`closed`)·미확인 `READY` 부분 다시 생성본(`pair`)으로 계산한다. `READY` 부분 다시 생성본은 `READY` 원본 행에 합치고, 전체 다시 생성본은 독립 행. 적용 주는 테마 주 → 편성 주 → 생성 기준 주 순, 버린 초안은 생성 기준 주
+- 장면 이력 응답에 `comparisonPending`(편집 가능하고 그 장면에 미확인 `READY` 다시 생성본이 있음)
+- 버리기 규칙 변경: 이전 문서 "채택본이 있는 `READY` 묶음도 409" → 묶음 원본은 묶음에 채택본이 있으면 상태와 무관하게 `409 CONFLICT`. `CHECK_FAILED` 원본의 부분 다시 생성본을 채택하면 원본을 버릴 수 없다
+
+### 검증
+
+- 코드 변경 없음. 문서 문구는 `ThemeDraftMapper.xml`(`reviewScope`·`reviewWeek`·`reviewStage`)·`ThemeDraftService.discard`·`AdminThemeDraftController.reviewList`·`ThemeDraftMediaService.history`와 대조
+- 기존 시험: `ThemeDraftMediaServiceTest`("a ready partial recovery of a failed original remains available for adoption" 등), `AdminThemeDraftControllerTest`, `AdminOperationsIntegrationTest`(core), `scripts/tests/test_theme_drafts_contract.py`

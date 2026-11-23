@@ -388,9 +388,27 @@ stateDiagram-v2
 | 생성 1회 | `ThemeDraftScheduler` 주기(기준안 10초) | `ThemeDraftService.generateNext` → `ThemeDraft.recordAttempt` | 리스 점유(기준안 18분) 뒤 ai 1회(대기 기준안 16분) + learning 검사. 점유한 리스가 그대로일 때만 저장해 늦은 작업이 덮어쓰지 않음. 작업이 중간에 죽으면 리스가 지나 다른 레플리카가 다시 맡고 그 시도는 세지 않음 |
 | `GENERATING → READY·CHECK_FAILED·FAILED` | 같음 | `ThemeDraft.recordAttempt` | 상한 기준안 3회(미션 초안과 같음). ai `200`의 `failure`(`THEME`·`MISSION`·`REVIEW`·`IMAGE`)와 learning 검사 실패는 검사 실패, ai `502`·`503`·대기 초과·서킷 열림은 AI 호출 실패(`failure_code`는 판정과 같은 `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`) |
 | `READY → ADOPTED` | `POST /admin/theme-drafts/{id}/adopt` | `ThemeDraftService.adopt` | 학년 잠금과 초안 행 잠금. 묶음이 `DISCARDED`이거나 이미 채택본이 있으면 `409 CONFLICT`. 본문 `expectedPlannedWeek`(보낸 경우, `null` 포함)가 지금 편성 주와 다르거나 묶음에 영상 생성 대기(`GENERATING`)가 있으면 `409 PLAN_CONFLICT`. 적용 주(편성 주, 없으면 생성 기준 주)에 게시 테마가 있으면 `409 WEEK_LOCKED`. 장면별 선택본(`ThemeDraftMediaService.selectedOutput`) 조합이 원래 결과와 다르면 learning 검사를 다시 하고 실패하면 `409 CONFLICT`. 미션 5개(`DRAFT`, `source = LLM_THEME`)와 테마(`DRAFT`, 적용 주)를 같은 트랜잭션에 만들고 편성을 해제·장면 선택을 고정(#882). 그 뒤는 3.1·3.5 |
-| → `DISCARDED` | `POST /admin/theme-drafts/{id}/discard` | `ThemeDraft.discard` | `READY`·`CHECK_FAILED`·`FAILED`만. 나머지는 `409 CONFLICT`. #882: 묶음 편성·적용 주에 게시 테마가 있으면 `409 WEEK_LOCKED`, 다시 생성본은 묶음이 종결(`DISCARDED`·채택)됐거나 장면 선택에 쓰인 버전이면 `409 CONFLICT`, 채택본이 있는 `READY` 묶음도 `409 CONFLICT`. `expectedPlannedWeek`가 다르거나 `READY` 초안에 영상 생성 대기가 있으면 `409 PLAN_CONFLICT`(생성 대기 중에는 버리지 않음). 버리면 편성을 해제하고 장면 선택을 고정 |
+| → `DISCARDED` | `POST /admin/theme-drafts/{id}/discard` | `ThemeDraftService.discard` → `ThemeDraft.discard` | `READY`·`CHECK_FAILED`·`FAILED`만. 나머지는 `409 CONFLICT`. #882: 묶음 편성·적용 주에 게시 테마가 있으면 `409 WEEK_LOCKED`, 다시 생성본은 묶음이 종결(`DISCARDED`·채택)됐거나 장면 선택에 쓰인 버전이면 `409 CONFLICT`. 묶음 원본은 묶음에 채택본이 있으면 상태와 무관하게 `409 CONFLICT`(#964, 예: `CHECK_FAILED` 원본의 부분 다시 생성본을 채택하면 원본은 버릴 수 없음). `expectedPlannedWeek`가 다르거나 `READY` 초안에 영상 생성 대기가 있으면 `409 PLAN_CONFLICT`(생성 대기 중에는 버리지 않음). 버리면 편성을 해제하고 장면 선택을 고정 |
 | 편성 주 배치·이동·맞교환·해제 (`planned_week`, 상태 변화 없음) | `PUT /admin/weekly-themes/planner` | `ThemeWeekPlanner.change` | 본문 `{grade, draftId, expectedWeek, targetWeek, expectedTargetDraftId}`(#882). 월요일 아니거나 지나간 주면 `400`. 학년 잠금 뒤 원본 `READY` 초안(다시 생성본·채택본 있는 묶음 제외)이고 학년·지금 편성 주가 `expectedWeek`와 같아야 하며, 대상 주 점유 후보가 `expectedTargetDraftId`와 같아야 함(아니면 `409 PLAN_CONFLICT`). 원래 주·대상 주에 게시 테마가 있으면 `409 WEEK_LOCKED`. 대상 주에 다른 후보가 있으면 원래 주로 맞바꾼다. 생성 기준 주(`week_start`)는 바꾸지 않음 |
 | 장면 선택·별표·메모 (상태 변화 없음) | `PUT /admin/theme-drafts/{id}/scenes/{scene}/versions/selection`·`PATCH …/{versionId}` | `ThemeDraftMediaService.select`·`annotate` | 고른 초안이 `READY`이고 묶음이 종결되지 않았고 채택본이 없고 편성·적용 주가 잠기지 않았을 때만 편집 가능. 잠긴 주는 `409 WEEK_LOCKED`, 그 밖의 편집 불가·`expectedVersionId`·`expectedVersionCount`가 지금 이력과 다름·고를 수 없는 버전은 `409 CONFLICT` (#882) |
+
+**검수 단계 `stage` (#964)**: `GET /admin/theme-drafts/review-list`가 조회할 때 계산하는 파생값(저장 컬럼 아님, `ThemeDraftMapper.xml` `reviewScope`·`reviewWeek`·`reviewStage`).
+
+- 목록 범위: `ADOPTED`·`DISCARDED` 초안은 항상 보인다. 그 밖의 초안은 묶음 원본이 `ADOPTED`·`DISCARDED`가 아니고 묶음에 채택본이 없을 때만 보인다. 원본이 `READY`이면 `READY` 부분 다시 생성본은 원본 행에 합쳐 따로 보이지 않는다. 전체 다시 생성본은 묶음에 매달지 않으므로(`family_root_id` 없음) 독립 행이다. `status=DISCARDED`나 `stage=discarded`면 `hideDiscarded`와 무관하게 `DISCARDED`만, 그 밖에 `hideDiscarded`면 `DISCARDED`를 뺀다
+- 적용 주(`appliedWeek`, 필터 `week`): 버린 초안은 생성 기준 주(`week_start`). 그 밖은 테마 적용 주 → 묶음 원본 편성 주(`planned_week`) → 생성 기준 주 순으로 처음 있는 값
+
+| 순서 | `stage` | 조건(위에서부터 처음 맞는 것) |
+|---|---|---|
+| 1 | `discarded` | 초안 `DISCARDED` |
+| 2 | `published` | 채택한 테마가 `PUBLISHED` |
+| 3 | `closed` | 테마 적용 주(테마가 없으면 묶음 원본 편성 주)에 같은 학년 다른 게시 테마가 있음. 둘 다 없으면 해당 없음 |
+| 4 | `ready` | 채택한 테마가 `REVIEW_REQUIRED` |
+| 5 | `adopted` | 초안 `ADOPTED`(테마 `DRAFT`·`UNPUBLISHED`) |
+| 6 | `generating`·`check_failed`·`failed` | 초안 `GENERATING`·`CHECK_FAILED`·`FAILED` |
+| 7 | `pair` | 초안 `READY`이고 묶음 원본에 아직 확인하지 않은 `READY` 부분 다시 생성본(그 장면 선택의 `reviewed_version_ids`에 없음)이 있음. `comparisonScene`은 그 대상 장면 중 `INTRO`·`MON`~`FRI`·`OUTRO` 순서로 첫 장면 |
+| 8 | `review` | 그 밖(`READY`) |
+
+- `comparisonPending=true` 필터는 `stage=pair`와 같은 조건이다
 
 - 검사 통과(`READY`)는 공개 승인이 아니다. 채택 뒤 미션 검토·게시(3.1)와 테마 검토 요청·게시(3.5)를 거친다(P19)
 
