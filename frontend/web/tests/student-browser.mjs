@@ -323,7 +323,7 @@ try {
         assert.equal(await p.getByRole('button', { name: '미션 완료하기' }).count(), 0)
       }
       if (scenario === 'rethink')
-        await p.getByText('한 번 더 살펴볼까요?', { exact: true }).waitFor()
+        await p.getByText('다시 생각해 볼까요?', { exact: true }).waitFor()
       if (scenario === 'held')
         await p.getByText('답을 잘 받았어요.', { exact: true }).waitFor()
       if (scenario === 'correct') {
