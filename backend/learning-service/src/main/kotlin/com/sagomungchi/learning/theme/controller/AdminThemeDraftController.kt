@@ -10,6 +10,8 @@ import com.sagomungchi.learning.theme.domain.ThemeDraftRules
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeDraftView
 import com.sagomungchi.learning.theme.domain.ThemeDraftViewPage
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewFilter
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewPage
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
 import com.sagomungchi.learning.theme.service.ThemeDraftCommand
@@ -92,6 +94,20 @@ class AdminThemeDraftController(
         requireAdmin()
         if (page < 0 || size !in 1..MAX_SIZE) invalid("page는 0 이상, size는 1~$MAX_SIZE")
         return service.list(status, source, page, size, grade, weekStart, hideDiscarded, comparisonPending)
+    }
+
+    @GetMapping("/review-list")
+    fun reviewList(@RequestParam(required = false) grade: ThemeGrade?, @RequestParam(required = false) source: ThemeDraftSource?,
+        @RequestParam(required = false) status: DraftStatus?, @RequestParam(required = false) stage: String?,
+        @RequestParam(required = false) week: LocalDate?, @RequestParam(required = false) weekStart: LocalDate?,
+        @RequestParam(defaultValue = "false") comparisonPending: Boolean, @RequestParam(defaultValue = "true") hideDiscarded: Boolean,
+        @RequestParam(defaultValue = "0") page: Int, @RequestParam(defaultValue = "20") size: Int): ThemeDraftReviewPage {
+        requireAdmin()
+        if (page < 0 || size !in 1..MAX_SIZE) invalid("page는 0 이상, size는 1~$MAX_SIZE")
+        if (stage != null && stage !in setOf("review", "pair", "adopted", "closed", "ready", "published", "discarded", "generating", "check_failed", "failed"))
+            invalid("지원하지 않는 검수 단계입니다.")
+        if (listOfNotNull(week, weekStart).any { it.dayOfWeek != java.time.DayOfWeek.MONDAY }) invalid("주 시작일은 월요일입니다.")
+        return service.reviewPage(ThemeDraftReviewFilter(grade, source, status, stage, week, weekStart, comparisonPending, hideDiscarded), page, size)
     }
 
     @GetMapping("/{draftId}")

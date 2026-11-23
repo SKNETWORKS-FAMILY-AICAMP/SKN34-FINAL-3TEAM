@@ -9,6 +9,9 @@ import com.sagomungchi.learning.theme.domain.ThemeDraft
 import com.sagomungchi.learning.theme.domain.ThemeDraftInput
 import com.sagomungchi.learning.theme.domain.ThemeDraftOutput
 import com.sagomungchi.learning.theme.domain.ThemeDraftPage
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewFilter
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewPage
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewRow
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import org.apache.ibatis.annotations.Mapper
@@ -61,6 +64,9 @@ data class ThemeDraftRow(
 
 @Mapper
 interface ThemeDraftMapper {
+    fun reviewRows(@Param("f") filter: ThemeDraftReviewFilter, @Param("size") size: Int, @Param("offset") offset: Long): List<ThemeDraftReviewRow>
+    fun reviewCount(@Param("f") filter: ThemeDraftReviewFilter): Long
+    fun reviewWeeks(@Param("f") filter: ThemeDraftReviewFilter): List<LocalDate>
     fun insert(@Param("d") draft: ThemeDraft): Int
     fun insertAutoIfAbsent(@Param("d") draft: ThemeDraft): Int
     fun findById(@Param("id") id: UUID, @Param("lock") lock: Boolean): ThemeDraftRow?
@@ -90,6 +96,9 @@ interface ThemeDraftMapper {
  */
 @Repository
 class ThemeDraftRepository(private val mapper: ThemeDraftMapper) {
+    fun reviewPage(filter: ThemeDraftReviewFilter, page: Int, size: Int) = ThemeDraftReviewPage(
+        mapper.reviewRows(filter, size, page.toLong() * size), page, size, mapper.reviewCount(filter), mapper.reviewWeeks(filter))
+
     fun insert(draft: ThemeDraft) {
         check(mapper.insert(draft) == 1)
     }

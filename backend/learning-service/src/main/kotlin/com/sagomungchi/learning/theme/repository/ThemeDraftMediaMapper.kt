@@ -7,7 +7,7 @@ import java.time.Instant
 import java.util.UUID
 
 data class SceneSourceRow(val id: UUID, val status: DraftStatus, val createdAt: Instant,
-    val image: String?, val video: String?, val motion: Map<String, Any?>?, val starred: Boolean, val note: String)
+    val image: String?, val video: String?, val motion: Map<String, Any?>?, val starred: Boolean, val note: String, val unreviewed: Boolean)
 
 data class SceneChoiceRow(val scene: String, val versionId: UUID)
 

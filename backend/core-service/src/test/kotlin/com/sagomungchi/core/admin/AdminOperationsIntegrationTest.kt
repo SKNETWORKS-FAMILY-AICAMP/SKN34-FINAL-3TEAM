@@ -566,6 +566,7 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
         val routes=listOf(
             Triple("POST","/theme-drafts","/internal/admin/theme-drafts"),
             Triple("GET","/theme-drafts?status=READY&source=AUTO","/internal/admin/theme-drafts"),
+            Triple("GET","/theme-drafts/review-list?stage=pair&week=2026-11-23&grade=G4&page=1&size=10","/internal/admin/theme-drafts/review-list"),
             Triple("GET","/theme-drafts/$draft","/internal/admin/theme-drafts/$draft"),
             Triple("POST","/theme-drafts/$draft/adopt","/internal/admin/theme-drafts/$draft/adopt"),
             Triple("POST","/theme-drafts/$draft/discard","/internal/admin/theme-drafts/$draft/discard"),
@@ -577,13 +578,17 @@ class AdminOperationsIntegrationTest : IntegrationTestSupport() {
             val response=draftCall(method,path,access,if(method=="GET") null else payload)
             assertEquals(missionStatus,response.status,path)
             val received=requests.last();assertEquals(method,received.method);assertEquals(internal,received.path)
+            if (internal.endsWith("/review-list")) {
+                assertEquals(setOf("stage=pair", "week=2026-11-23", "grade=G4", "page=1", "size=10"), received.query?.split("&")?.toSet())
+            }
             assertEquals(admin.toString(),received.user);assertEquals("ADMIN",received.role);assertNull(received.scope)
             if(method=="POST") { assertEquals(payload,received.body);assertNotNull(response.getHeader("X-Admin-Operation-Id")) }
         }
         val (_,ops)=token("SERVICE_OPS");requests.clear()
         for((method,path,_) in routes) assertEquals(403,draftCall(method,path,ops,if(method=="GET") null else "{}").status,path)
         assertTrue(requests.isEmpty())
-        for(path in listOf("/theme-drafts?status=PRIVATE","/theme-drafts?source=MANUAL","/theme-drafts?size=101","/theme-drafts?page=-1"))
+        for(path in listOf("/theme-drafts?status=PRIVATE","/theme-drafts?source=MANUAL","/theme-drafts?size=101","/theme-drafts?page=-1",
+            "/theme-drafts/review-list?stage=unknown", "/theme-drafts/review-list?week=2026-11-24"))
             assertEquals(400,draftCall("GET",path,access).status,path)
         assertEquals(400,draftCall("POST","/theme-drafts",access,"[]").status)
         assertTrue(requests.isEmpty())

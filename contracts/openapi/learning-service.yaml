@@ -2223,6 +2223,34 @@ paths:
         '400': {$ref: '#/components/responses/Problem'}
         '401': {$ref: '#/components/responses/Problem'}
         '403': {$ref: '#/components/responses/Problem'}
+  /admin/theme-drafts/review-list:
+    get:
+      operationId: learningThemeDraftReviewList
+      summary: 주간 테마 검수 목록과 적용 주 선택지
+      parameters:
+        - $ref: '#/components/parameters/AdminUserId'
+        - $ref: '#/components/parameters/AdminRole'
+        - {name: grade, in: query, schema: {type: string, enum: [G3, G4, G5, G6]}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/ThemeDraftStatus'}}
+        - {name: source, in: query, schema: {$ref: '#/components/schemas/ThemeDraftSource'}}
+        - {name: stage, in: query, schema: {$ref: '#/components/schemas/ThemeReviewStage'}}
+        - {name: week, in: query, schema: {type: string, format: date}, description: 적용 주. 버림 이력은 생성 기준 주.}
+        - {name: weekStart, in: query, schema: {type: string, format: date}, description: 생성 기준 주}
+        - {name: comparisonPending, in: query, schema: {type: boolean, default: false}}
+        - {name: hideDiscarded, in: query, schema: {type: boolean, default: true}, description: 버림 단계나 버림 상태를 지정하면 버림 이력만 조회}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 현재 검수 대상으로 묶은 초안 목록. weeks는 같은 보관 범위 전체 주 선택지.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ThemeDraftReviewPage'}
+        '400':
+          description: 검수 목록 조건 오류
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
   /admin/theme-drafts/{draftId}:
     get:
       operationId: getThemeDraft
@@ -4822,7 +4850,7 @@ components:
         motion: {$ref: '#/components/schemas/ThemeMotion'}
     ReviewSceneHistory:
       type: object
-      required: [rootDraftId, scene, selectedVersionId, editable, versions]
+      required: [rootDraftId, scene, selectedVersionId, editable, comparisonPending, versions]
       properties:
         rootDraftId: {type: string, format: uuid}
         scene:
@@ -4832,6 +4860,7 @@ components:
           type: [string, 'null']
           format: uuid
         editable: {type: boolean}
+        comparisonPending: {type: boolean, description: 선택을 마지막으로 확정한 후 아직 비교하지 않은 READY 재생성본이 있는 편집 가능 장면}
         versions:
           type: array
           items:
@@ -5079,6 +5108,35 @@ components:
           type: [array, 'null']
           minItems: 1
           items: {$ref: '#/components/schemas/ThemeRegenTarget'}
+    ThemeReviewStage:
+      type: string
+      enum: [review, pair, adopted, closed, ready, published, discarded, generating, check_failed, failed]
+    ThemeDraftReviewPage:
+      type: object
+      required: [items, page, size, totalElements, weeks]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ThemeDraftReviewRow'}}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        weeks: {type: array, items: {type: string, format: date}}
+    ThemeDraftReviewRow:
+      type: object
+      required: [draftId, title, thumbnailUrl, grade, source, status, stage, weekStart, appliedWeek, plannedWeek, updatedAt, themeId, comparisonScene]
+      properties:
+        draftId: {type: string, format: uuid}
+        title: {type: string}
+        thumbnailUrl: {type: [string, 'null']}
+        grade: {type: string, enum: [G3, G4, G5, G6]}
+        source: {type: string, enum: [AUTO, ADMIN]}
+        status: {type: string, enum: [GENERATING, READY, CHECK_FAILED, FAILED, ADOPTED, DISCARDED]}
+        stage: {$ref: '#/components/schemas/ThemeReviewStage'}
+        weekStart: {type: string, format: date}
+        appliedWeek: {type: string, format: date}
+        plannedWeek: {type: [string, 'null'], format: date}
+        updatedAt: {type: string, format: date-time}
+        themeId: {type: [string, 'null'], format: uuid}
+        comparisonScene: {type: [string, 'null'], enum: [INTRO, MON, TUE, WED, THU, FRI, OUTRO, null]}
     ThemeDraftPage:
       type: object
       additionalProperties: false

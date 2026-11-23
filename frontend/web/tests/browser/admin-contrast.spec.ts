@@ -55,7 +55,7 @@ async function lowContrast(page: Page) {
   })
 }
 
-const screens = ['감사 이력', '미션 관리', '미션 초안', '작업 재처리', 'AI 사용량', '결제·환불', '문의·공지', '꾸미기 아이템']
+const screens = ['감사 이력', '주간 테마 검수', '미션 관리', '미션 초안', '작업 재처리', '모델·프롬프트', '표현 검토', 'AI 사용량', '결제·환불', '문의·공지', '꾸미기 아이템']
 
 test('관리자 로그인과 주요 관리자 화면의 글자 대비가 4.5:1 이상이다 @responsive', async ({ page }) => {
   test.setTimeout(90_000)

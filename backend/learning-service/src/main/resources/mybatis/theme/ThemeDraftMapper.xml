@@ -59,6 +59,75 @@
         <if test="lock">FOR UPDATE</if>
     </select>
 
+    <sql id="unreviewedReadyCandidate">
+        child.status = 'READY' AND (pick.root_id IS NULL OR NOT (child.id = ANY(pick.reviewed_version_ids)))
+    </sql>
+
+    <sql id="reviewScope">
+        (d.status IN ('ADOPTED','DISCARDED') OR (
+            owner.status NOT IN ('ADOPTED','DISCARDED')
+            AND (d.family_root_id IS NULL OR d.status!='READY' OR owner.status!='READY')
+            AND NOT EXISTS (SELECT 1 FROM theme_draft adopted WHERE adopted.family_root_id=owner.id AND adopted.status='ADOPTED')
+        ))
+        <choose>
+            <when test="f.archived">AND d.status='DISCARDED'</when>
+            <when test="f.hideDiscarded">AND d.status!='DISCARDED'</when>
+        </choose>
+    </sql>
+    <sql id="reviewWeek">CASE WHEN d.status='DISCARDED' THEN d.week_start ELSE coalesce(t.week_start,owner.planned_week,d.week_start) END</sql>
+    <sql id="reviewFamily">
+        FROM theme_draft d JOIN theme_draft owner ON owner.id=coalesce(d.family_root_id,d.id)
+        LEFT JOIN weekly_theme t ON t.id=d.theme_id
+    </sql>
+    <sql id="reviewSource">
+        <include refid="reviewFamily"/>
+        LEFT JOIN LATERAL (
+            SELECT split_part(target.value, ':', 2) AS scene
+            FROM theme_draft child CROSS JOIN LATERAL jsonb_array_elements_text(child.input #> '{regenerate,targets}') target(value)
+            LEFT JOIN theme_draft_scene_selection pick ON pick.root_id=child.family_root_id AND pick.scene=split_part(target.value, ':', 2)
+            WHERE d.status='READY' AND child.family_root_id=owner.id AND <include refid="unreviewedReadyCandidate"/>
+            ORDER BY array_position(ARRAY['INTRO','MON','TUE','WED','THU','FRI','OUTRO'],split_part(target.value, ':', 2)) LIMIT 1
+        ) pending ON true
+    </sql>
+    <sql id="reviewStage">
+        CASE WHEN d.status='DISCARDED' THEN 'discarded' WHEN t.status='PUBLISHED' THEN 'published'
+            WHEN EXISTS (SELECT 1 FROM weekly_theme p WHERE p.grade=d.grade AND p.week_start=coalesce(t.week_start,owner.planned_week) AND p.status='PUBLISHED') THEN 'closed'
+            WHEN t.status='REVIEW_REQUIRED' THEN 'ready' WHEN d.status='ADOPTED' THEN 'adopted'
+            WHEN d.status='GENERATING' THEN 'generating' WHEN d.status='CHECK_FAILED' THEN 'check_failed' WHEN d.status='FAILED' THEN 'failed'
+            WHEN pending.scene IS NOT NULL THEN 'pair' ELSE 'review' END
+    </sql>
+    <sql id="reviewWhere">
+        WHERE <include refid="reviewScope"/>
+        <if test="f.grade != null">AND d.grade=#{f.grade}</if>
+        <if test="f.source != null">AND d.source=#{f.source}</if>
+        <if test="f.status != null">AND d.status=#{f.status}</if>
+        <if test="f.weekStart != null">AND d.week_start=#{f.weekStart}</if>
+        <if test="f.week != null">AND (<include refid="reviewWeek"/>)=#{f.week}</if>
+        <if test="f.stage != null">AND (<include refid="reviewStage"/>)=#{f.stage}</if>
+        <if test="f.comparisonPending">AND (<include refid="reviewStage"/>)='pair'</if>
+    </sql>
+    <select id="reviewRows" resultType="com.sagomungchi.learning.theme.domain.ThemeDraftReviewRow">
+        SELECT d.id AS draft_id, coalesce(nullif(tv.title,''), nullif(d.output #>> '{theme,title}',''), nullif(d.input ->> 'topic',''),'테마 초안') AS title,
+               CASE WHEN tv.id IS NOT NULL THEN tv.intro_image_uri ELSE intro.output #>> '{images,INTRO}' END AS thumbnail_url,
+               d.grade, d.source, d.status, <include refid="reviewStage"/> AS stage, d.week_start, <include refid="reviewWeek"/> AS applied_week,
+               CASE WHEN d.status IN ('DISCARDED','ADOPTED') THEN d.planned_week ELSE owner.planned_week END AS planned_week,
+               d.updated_at, d.theme_id, pending.scene AS comparison_scene
+        <include refid="reviewSource"/>
+        LEFT JOIN weekly_theme_version tv ON tv.id=CASE WHEN t.status='PUBLISHED' THEN t.published_version_id ELSE t.current_version_id END
+        LEFT JOIN theme_draft_scene_selection choice ON choice.root_id=coalesce(d.family_root_id,d.id) AND choice.scene='INTRO'
+        LEFT JOIN theme_draft intro ON intro.id=coalesce(CASE WHEN d.status IN ('ADOPTED','DISCARDED') THEN (d.frozen_scene_choices->>'INTRO')::uuid ELSE choice.version_id END,d.id)
+        <include refid="reviewWhere"/>
+        ORDER BY <choose><when test="f.archived">d.updated_at</when><otherwise>d.created_at</otherwise></choose> DESC, d.id
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+    <select id="reviewCount" resultType="long">
+        SELECT count(*) <include refid="reviewSource"/> <include refid="reviewWhere"/>
+    </select>
+    <select id="reviewWeeks" resultType="java.time.LocalDate">
+        SELECT DISTINCT <include refid="reviewWeek"/> AS week <include refid="reviewFamily"/>
+        WHERE <include refid="reviewScope"/> ORDER BY week
+    </select>
+
     <sql id="filter">
         <where>
             <if test="status != null">status = #{status}</if>
@@ -73,8 +142,7 @@
                     CROSS JOIN LATERAL jsonb_array_elements_text(child.input #> '{regenerate,targets}') AS target(value)
                     LEFT JOIN theme_draft_scene_selection pick
                       ON pick.root_id = child.family_root_id AND pick.scene = split_part(target.value, ':', 2)
-                    WHERE child.family_root_id = theme_draft.id AND child.status = 'READY'
-                      AND (pick.root_id IS NULL OR NOT (child.id = ANY(pick.reviewed_version_ids)))
+                    WHERE child.family_root_id = theme_draft.id AND <include refid="unreviewedReadyCandidate"/>
                 )
                 AND NOT EXISTS (SELECT 1 FROM theme_draft adopted
                                 WHERE adopted.family_root_id = theme_draft.id AND adopted.status = 'ADOPTED')

@@ -159,6 +159,7 @@ test('#950 자녀 삭제 접수 응답으로 처리 상태를 바로 보이고, 
 
   for (const key of [['parent', 'records'], ['children']]) cache.setQueryData(key, [])
   await act(async () => { await h.get().status.refetch() })
+  await until(() => h.get().status.data?.status === 'COMPLETED')
   assert.deepEqual(calls.slice(2), ['GET /api/v1/children/child-a/deletion-requests/del-a'])
   assert.deepEqual(h.get().status.data, done)
   assert.equal(cache.getQueryState(['parent', 'records'])?.isInvalidated, false)
