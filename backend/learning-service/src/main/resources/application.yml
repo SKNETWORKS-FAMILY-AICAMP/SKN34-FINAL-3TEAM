@@ -106,7 +106,7 @@ app:
   memory:
     query-rewrite:
       enabled: ${MEMORY_QUERY_REWRITE_ENABLED:true}
-      timeout: ${MEMORY_QUERY_REWRITE_TIMEOUT:8s} # #681 실제 LLM 기준, 재시도 없음
+      timeout: ${MEMORY_QUERY_REWRITE_TIMEOUT:8s} # #681 실제 LLM 기준. 재시도 가능한 실패만 1회 다시 시도(#878), 8초 × 2 + 검색 질문 임베딩 10초 < core 30초
     enabled: ${MEMORY_EMBEDDING_ENABLED:false} # 앱 기본은 꺼짐. GitOps local·prod 값에서 켬(#591)
     interval: PT1M
     minimum-similarity: ${MEMORY_MINIMUM_SIMILARITY:0.35} # #568 평가셋으로 조정

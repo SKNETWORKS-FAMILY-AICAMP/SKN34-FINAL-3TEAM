@@ -255,7 +255,7 @@ A1~A21 모두 해결(#69·#166~#171·#192·#204·#249~#256·#278~#280·#314·#63
 | 컨텍스트 전파(2.3) | ai `clients/base.py`가 `X-User-*`·`X-Student-Scope`를 learning 호출에 부착. report 소비자는 `SYSTEM` + 이벤트 학생 범위 |
 | 레이어 단방향·기능 간 service 경유(2.2) | controller→repository 0건, 다른 기능 repository 참조 0건, Presentation의 `@Transactional` 0건. 예외는 기존 결정(`_common/messaging` #278, support의 learning client #46) |
 | 트랜잭션 안 외부 호출 금지(2.2) | 리포트 복구 `NOT_SUPPORTED`, 알림 Redis 발행 `AFTER_COMMIT`, learning 피드백은 `FeedbackFacade` 트랜잭션 밖 AI 호출, report Outbox는 advisory lock·짧은 트랜잭션 |
-| 재시도 계층(1.3) | 서비스 간 호출은 재시도 없음. ai 내부에는 일반 LLM 재시도(1회, 1초), 되묻기 유출 재생성(1회), 리포트 상세 설명의 조건부 재생성(공유 마감 75초 안에서 1회, #850)이 있다. 모든 클라이언트에 타임아웃 |
+| 재시도 계층(1.3) | 서비스 간 호출은 재시도 없음(예외: #878 learning→ai 추억 검색 질의 변환 1회, ai 쪽 그 LLM 호출은 재시도 0회라 증폭 없음). ai 내부에는 일반 LLM 재시도(1회, 1초), 되묻기 유출 재생성(1회), 리포트 상세 설명의 조건부 재생성(공유 마감 75초 안에서 1회, #850)이 있다. 모든 클라이언트에 타임아웃 |
 | Outbox·멱등 소비(1.6) | Outbox는 core·report만, learning은 발행 없음, ai·scoring은 best-effort. 리스너는 수동 ACK·`RetryingConsumer` |
 | readiness(4.4) | core·learning `readinessState,db,rabbit`, ai RabbitMQ, scoring RabbitMQ·모델, report DB. 하위 서비스 호출 없음 |
 | 스케줄 중복 방지(1.5) | 정기·복구 스케줄러는 ShedLock 또는 레플리카 안전 조건부 UPDATE·DELETE |
@@ -434,7 +434,7 @@ e2e로 안 도는 경로는 테스트로 확인(로컬 실행, 모두 통과)
 | 경로 | 테스트 |
 |---|---|
 | 분석 대화 | ai `tests/analysis_agent/test_router.py::test_llm_requests_have_no_student_id`, `test_nodes.py`. 대역에서 안 돈 이유: E2E 시나리오 없음 |
-| 추억 임베딩·설명·질의 변환 | learning `memory/MemoryEmbeddingClientTest`·`MemoryExplanationTest`·`MemoryQuerySearchServiceTest`·`MemorySearchTest`·`MemoryQueryAiClientTest`(닉네임 `[학생]`·UUID `[식별자]` 가림), ai `tests/memory_explanation`·`tests/memory_query`(ID 칸 거부). 대역에서 안 돈 이유: llm-stub 미지원 스키마, 임베딩은 OpenAI 주소 고정 |
+| 추억 임베딩·설명·질의 변환 | learning `memory/MemoryEmbeddingClientTest`·`MemoryExplanationTest`·`MemoryQuerySearchServiceTest`·`MemorySearchTest`·`MemoryQueryAiClientTest`(닉네임 `[학생]`·UUID `[식별자]` 가림, #878 실패 로그는 `failureCode`·시도 번호만이고 질문·응답 원문 없음), ai `tests/memory_explanation`·`tests/memory_query`(ID 칸 거부). 대역에서 안 돈 이유: llm-stub 미지원 스키마, 임베딩은 OpenAI 주소 고정 |
 | 주간 테마 생성 | 코드 확인만. learning `theme/client/ThemeDraftAiClient`가 보내는 칸이 학년·주차·주제·성취기준뿐이라 학생 데이터 입력 없음. 관리자 미션 초안은 ai `tests/mission_draft/test_prompts.py`(이름·`studentId` 없음) |
 | 리포트 서술·설명 | report `tests/test_narrative.py::test_known_nickname_and_identity_fields_are_not_sent`, `tests/test_explanations.py` |
 | 판정·되묻기 | ai `tests/judgment/test_service.py`·`tests/followup/test_service.py`, learning `judgment/facade/FeedbackFacadeTest` |

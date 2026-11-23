@@ -22,11 +22,12 @@ class MemoryEmbeddingClientTest {
     private val mapper=com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
     private lateinit var client: MemoryEmbeddingClient
     private lateinit var privacy: MemoryTextPrivacy
+    private lateinit var factory: InternalRestClientFactory
     @BeforeEach fun setup() {
         server.start()
         val props=AppProperties(AppProperties.Internal("test",Duration.ofSeconds(1),Duration.ofSeconds(2)),
             services=mapOf("ai" to server.baseUrl(),"core" to server.baseUrl()))
-        val factory=InternalRestClientFactory(props,RestClient.builder().messageConverters { it.add(0,MappingJackson2HttpMessageConverter(mapper)) })
+        factory=InternalRestClientFactory(props,RestClient.builder().messageConverters { it.add(0,MappingJackson2HttpMessageConverter(mapper)) })
         client=MemoryEmbeddingClient(factory,mapper);privacy=MemoryTextPrivacy(StudentProfileClient(factory))
     }
     @AfterEach fun stop() { server.stop() }
@@ -52,6 +53,18 @@ class MemoryEmbeddingClientTest {
         server.stubFor(post(urlEqualTo("/internal/embeddings")).willReturn(aResponse().withStatus(503)))
         val error=assertFails { client.embed(listOf("비밀 합성 글")) }
         assertFalse(error.message.orEmpty().contains("비밀 합성 글"))
+    }
+    @Test fun `검색 질문은 같은 계약으로 읽기 10초, 주기 작업과 설명은 20초`() {
+        // #878: 질의 변환 8초 × 2 + 검색 질문 임베딩 10초 = 26초 < core 검색 30초
+        val spied=org.mockito.Mockito.spy(factory)
+        val split=MemoryEmbeddingClient(spied,mapper)
+        org.mockito.Mockito.verify(spied).create("ai",Duration.ofSeconds(10))
+        org.mockito.Mockito.verify(spied).create("ai",Duration.ofSeconds(20))
+        server.stubFor(post(urlEqualTo("/internal/embeddings")).willReturn(okJson(response())))
+        assertEquals(1536,split.embedQuery("[학생]의 고양이").dimensions)
+        server.verify(postRequestedFor(urlEqualTo("/internal/embeddings")).withRequestBody(equalToJson(
+            """{"texts":["[학생]의 고양이"],"purpose":"MEMORY"}""")))
+        assertFails { split.embedQuery(" ") }
     }
     @Test fun `프로필 실패와 입력 상한 거부`() {
         assertFails { privacy.nickname(UUID.randomUUID()) }

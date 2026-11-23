@@ -2344,6 +2344,12 @@ classDiagram
     <<repository>>
     +register(attemptId) int
     +deleteByStudent(studentId) int
+    +hybrid(studentId, before, vector, model, minimum, keywords, from, to) MemoryHit[]
+    +latestInPeriod(studentId, before, vector, model, from, to) MemoryHit[]
+  }
+  class MemoryPeriodWords {
+    <<rules>>
+    +contains(text) boolean
   }
   class MemorySearchService {
     <<service>>
@@ -2362,6 +2368,7 @@ classDiagram
   class MemoryEmbeddingClient {
     <<client>>
     +embed(texts) Vectors
+    +embedQuery(text) Vectors
   }
   class MemoryExplanationAiClient {
     <<client>>
@@ -2387,6 +2394,7 @@ classDiagram
   MemorySearchRepository --> MemoryVectorMapper
   MemorySearchService --> MemoryEmbeddingClient : 질문·문서 임베딩
   MemorySearchService --> MemoryQueryAiClient : 질의 변환(#679)
+  MemorySearchService ..> MemoryPeriodWords : 변환 실패 때 기간 낱말 확인(#878)
   MemoryExplanationService --> MemoryEvidenceRepository : 본인 READY 근거 재확인
   MemoryExplanationService --> MemoryEmbeddingClient : 질의 관련도 재확인
   MemoryExplanationService --> MemoryExplanationAiClient
@@ -2394,7 +2402,7 @@ classDiagram
   AlbumService --> ThemeFrameService
 ```
 
-- 질의 변환·하이브리드(#679 설계, #682 구현): `MemoryQueryAiClient`는 ai `POST /internal/memory-queries`(읽기 8초, 재시도 없음, 서킷 `ai-memory-query`)를 부르고 실패(시간 초과·5xx·형식 밖·서킷 열림)를 서비스에 전달한다. 서비스는 해당 예외를 원문 로그 없이 null로 처리한다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩 → `MemorySearchRepository`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
+- 질의 변환·하이브리드(#679 설계, #682 구현): `MemoryQueryAiClient`는 ai `POST /internal/memory-queries`(읽기 8초, 서킷 `ai-memory-query`)를 부르고, 재시도 가능한 실패(`AiCallException.retryable`: 5xx·시간 초과·연결 실패)만 대기 없이 한 번 더 부른다(시도마다 서킷에 기록, #878). 실패마다 `failureCode`·시도 번호만 경고 로그로 남기고 끝내 실패(시간 초과·5xx·형식 밖·서킷 열림)하면 서비스에 전달한다. 서비스는 마스킹한 질문에 `MemoryPeriodWords`(프롬프트가 구간으로 바꾸는 표현만)가 있으면 503 `AI_UNAVAILABLE`, 없으면 null로 처리한다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩(`embedQuery`, 읽기 10초) → 키워드가 없고 보정 기간이 있으면 `MemorySearchRepository.latestInPeriod`(기간 안 회차 최신순 3, 유사도 기준·키워드 조건 없음, 회차 주 월~금 중 기간 안 날 1일 이상·평일 없는 기간은 하루 겹침, #879), 그 밖은 `hybrid`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
 - #559 구현(learning V19): `ThemeFrameService`(지급·소급·보유·확인·삭제)·`AlbumService`·`MemoryController`의 앨범·확인·보유 확인과 기동 소급 `ThemeFrameBackfillRunner`. 회차 상세의 문제·시도·엔딩은 `WeeklyThemeService.pastRound`가 조합. 검색은 #563 구현, 설명은 #564 구현([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 - 학습 완료 처리(기존 `AttemptService`의 돌아보기 저장 = 학습 완료)가 같은 트랜잭션에서 `ThemeFrameService.awardIfComplete`(회차 5문제 완료 시 액자)와 `MemorySearchService.register`(`PENDING` 문서, 내부에서 `MemorySearchRepository.register`)를 부름. 다른 기능은 memory repository를 직접 부르지 않음(architecture 2.2). `EXTRA` 시도는 둘 다 건너뜀
 - `MemoryEmbeddingScheduler`는 `StuckJudgmentScheduler`처럼 조건부 UPDATE 선점이라 잠금 없음(상태 3.7). `MemoryEmbeddingClient`는 ai `POST /internal/embeddings`(기존 계약, 요청당 8글, 최대 64글 계약 이내), 이전 `KnowledgeEmbedder`는 V17 정리로 없으므로 신규. HTTP 전송·외부 DTO는 `memory/client`(`MemoryEmbeddingClient`·`MemoryExplanationAiClient`·core 닉네임 조회 `StudentProfileClient`), 마스킹 정책(`MemoryTextPrivacy`)·업무 흐름은 `memory/service`. 생성 호출의 장애 판정(서킷 열림·전송 실패·502 밖 5xx → `MemoryAiOutageException`)은 `MemoryExplanationAiClient`가 맡음
@@ -2773,7 +2781,8 @@ classDiagram
 
 | 클래스 | 위치 | 책임 |
 |---|---|---|
-| `MemoryQueryService` | `memory_query/service.py` | `memoryQuery` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(출력 512토큰, 호출별 7초·재시도 없음, 사용량 `MEMORY_QUERY`), `MEMORY_QUERY_PROVIDER=fake`면 `fake.py`(공백 분리 키워드). 칸 규칙(키워드 0~5개·1~20자, `period` `from < to`, `searchText` 1~200자, `checks.py`) 위반·구조화 실패 502, LLM 실패 503. 원문 없이 사유 코드만 로그 |
+| `MemoryQueryService` | `memory_query/service.py` | `memoryQuery` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(출력 512토큰, 호출별 7초·재시도 없음, 사용량 `MEMORY_QUERY`), `MEMORY_QUERY_PROVIDER=fake`면 `fake.py`(공백 분리 키워드). 칸 규칙(키워드 0~5개·1~20자, `period` `from < to`, `searchText` 1~200자, `checks.py`) 위반·구조화 실패 502, LLM 실패 503. 원문 없이 사유 코드만 로그. LLM 경로에서만 칸 검사 뒤 `weeks.week_of_month`로 "N월 N째 주" 기간을 계산해 덮어쓰고 그 표현 조각을 키워드에서 뺀다(#877, 가짜 구현은 적용 안 함) |
+| `week_of_month` | `memory_query/weeks.py` | 질문에서 몇째 주 표현 하나를 찾아 `[from, to)`를 계산(첫째 주 = 1일 ~ 첫 월요일 주 끝, k째 주 = k번째 월요일 주, 마지막 주 = 월~금 3일 이상이 그달에 든 마지막 월요일 주(기준안), 다음 달 1일에서 자름). 그달에 없는 주·표현 두 개 이상이면 기간 null. 표현이 없으면 None(LLM 값 그대로) |
 | `router` | `memory_query/router.py` | `POST /internal/memory-queries` 요청 검사(`query` 1~200자, `today` 날짜, 정의 밖 칸 400) 후 서비스 호출 (api-spec 4.2.7) |
 
 ---
