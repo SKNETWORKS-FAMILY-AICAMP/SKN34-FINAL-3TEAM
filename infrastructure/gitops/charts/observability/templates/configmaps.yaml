@@ -22,6 +22,16 @@ data:
         check_interval: 1s
         limit_mib: {{ .Values.collector.traceLimits.memoryLimitMiB }}
         spike_limit_mib: {{ .Values.collector.traceLimits.memorySpikeMiB }}
+      # #900: the Java agent records full URLs. PG keys in Toss paths and OAuth codes
+      # in Google callback queries are removed before any trace backend sees them.
+      transform/redact:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - replace_pattern(span.attributes["url.full"], "/v1/billing/[^/?#]+", "/v1/billing/{billingKey}")
+              - replace_pattern(span.attributes["url.full"], "/v1/payments/[^/?#]+/cancel", "/v1/payments/{paymentKey}/cancel")
+              - delete_key(span.attributes, "url.query") where span.attributes["url.path"] != nil and IsMatch(span.attributes["url.path"], "^/api/v1/auth/google/(reauth/)?callback$")
     {{- end }}
       batch: {}
     exporters:
@@ -73,7 +83,7 @@ data:
     {{ if $traceExporters }}
         traces:
           receivers: [otlp]
-          processors: [memory_limiter/traces, batch]
+          processors: [memory_limiter/traces, transform/redact, batch]
           exporters: [{{ join ", " $traceExporters }}]
     {{ end }}
 ---

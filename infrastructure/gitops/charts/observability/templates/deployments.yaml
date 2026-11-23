@@ -12,11 +12,12 @@ spec:
       labels: {app.kubernetes.io/name: otel-collector}
       {{- if or .Values.tempo.enabled .Values.collector.traces.enabled }}
       # The Collector does not reload its ConfigMap; toggling the Tempo pipeline or
-      # changing trace limits (#784) must roll the Pod.
+      # changing trace limits (#784) or URL redaction (#900) must roll the Pod.
       annotations:
         {{- if .Values.tempo.enabled }}
         ops187/tempo-traces: enabled
         {{- end }}
+        ops900/trace-redaction: enabled
         ops784/trace-limits: {{ toJson .Values.collector.traceLimits | sha256sum | trunc 16 | quote }}
       {{- end }}
     spec:
