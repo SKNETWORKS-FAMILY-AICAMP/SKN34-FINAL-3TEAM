@@ -9,6 +9,11 @@ import { resumeWaitStart, waitingStep } from './missionSteps.ts'
 
 const POKE_LINE = '조금만 기다려 줘!'
 const POKE_MS = 2000
+/**
+ * 착용 소품이 돋보기 그림이면 그려 넣는 돋보기를 빼서 두 개가 보이지 않게 한다. 착용 값은 아이템 코드가 아니라
+ * 그림 키(`look_item.asset_key` = public/student-assets 안 경로)만 오므로 돋보기 그림 파일 경로로 가린다.
+ */
+const LENS_ACCESSORY = 'looks/acc-lens.svg'
 
 /**
  * 피드백 대기 표시(#847): 고른 친구(착용 포함) + 돋보기 + 단계 문구. 진행 막대·퍼센트 없음.
@@ -49,14 +54,16 @@ export function FeedbackWaiting({ companion, worn, startedAt, submittedAt }: {
     pokeTimer.current = setTimeout(() => setPoked(false), POKE_MS)
   }
   // 착용 소품은 몸 앞쪽(오른쪽)에 든다. 겹치면 소품을 숨기지 않고 돋보기를 반대쪽으로 옮긴다
+  // 돋보기를 입었으면 그려 넣는 돋보기는 빼고, 살피기 단계에서는 입은 돋보기를 쥔 곳 기준으로 기울인다(CSS)
   const side = wearAssetUrl(worn?.ACCESSORY) ? 'left' : 'right'
+  const ownLens = worn?.ACCESSORY === LENS_ACCESSORY
   return (
-    <div className="sw-wait" data-motion={step.motion} data-step={step.index}>
+    <div className="sw-wait" data-motion={step.motion} data-step={step.index} data-own-lens={ownLens || undefined}>
       <button type="button" className="sw-wait-friend" aria-label={`${companionLabel(companion)}에게 말 걸기`} onClick={poke}>
         <span className="sw-wait-poke" key={pokes} data-poked={pokes > 0 || undefined} aria-hidden="true">
           <span className="sw-wait-pose">
             <Companion kind={companion} size={120} worn={worn} decorative />
-            <Magnifier side={side} />
+            {!ownLens && <Magnifier side={side} />}
           </span>
         </span>
       </button>

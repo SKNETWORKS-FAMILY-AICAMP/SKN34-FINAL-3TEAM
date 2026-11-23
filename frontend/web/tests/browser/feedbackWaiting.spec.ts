@@ -11,17 +11,17 @@ test.beforeEach(async ({ page }) => {
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort())
 })
 
-/** 시연 학생 로그인. accessory면 로그인 전에 돋보기 소품을 입혀 둔다(새로고침하면 학생 세션이 풀려서) */
-async function login(page: Page, accessory = false) {
+/** 시연 학생 로그인. accessory면 로그인 전에 그 소품(ACC_LIGHT 손전등·ACC_LENS 돋보기)을 입혀 둔다(새로고침하면 학생 세션이 풀려서) */
+async function login(page: Page, accessory?: 'ACC_LIGHT' | 'ACC_LENS') {
   await page.goto('/student/login')
   if (accessory)
-    await page.evaluate(async () => {
+    await page.evaluate(async (code) => {
       const { mockLooks, persistLooks } = await import('/src/mocks/fixtures/studentLook.ts' as string)
       const { pinDemoChild } = await import('/src/mocks/fixtures/studentPinDemo.ts' as string)
       const look = mockLooks.get(pinDemoChild.id) ?? { theme: 'lake', companion: 'mungchi' }
-      mockLooks.set(pinDemoChild.id, { ...look, equipped: { HAT: 'HAT_ACORN', OUTFIT: null, ACCESSORY: 'ACC_LENS', BACKGROUND: null } })
+      mockLooks.set(pinDemoChild.id, { ...look, equipped: { HAT: 'HAT_ACORN', OUTFIT: null, ACCESSORY: code, BACKGROUND: null } })
       persistLooks()
-    })
+    }, accessory)
   await page.getByRole('button', { name: '가상 학생으로 PIN 로그인 준비', exact: true }).click()
   for (const digit of ['5', '0', '9', '0']) await page.getByRole('button', { name: digit, exact: true }).click()
   await page.getByRole('button', { name: /확인|들어가기/ }).click()
@@ -155,7 +155,8 @@ for (const accessory of [false, true])
   test(`1440·768·390px에서 겹침 없음(소품 ${accessory ? '있음' : '없음'})`, async ({ page }) => {
     // 겹침은 움직이지 않는 자리에서 잰다(돋보기는 몸 쪽으로만 움직임)
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await login(page, accessory)
+    // 소품 있음은 손전등(돋보기 소품은 그려 넣는 돋보기를 빼므로 아래 따로 시험)
+    await login(page, accessory ? 'ACC_LIGHT' : undefined)
     const attemptId = await openAttempt(page)
     await go(page, attemptId)
     await scenario(page, 'feedback-slow')
@@ -189,6 +190,35 @@ for (const accessory of [false, true])
       await page.locator('.sw-feedback-panel').screenshot({ path: path.join(shots, `847-layout-${width}-${accessory ? 'acc' : 'plain'}-${test.info().project.name}.png`) })
     }
   })
+
+test('돋보기 소품을 입으면 그려 넣는 돋보기는 빼고(하나만 보임) 살피기 단계에서 입은 돋보기가 움직인다', async ({ page }) => {
+  await page.clock.install()
+  await login(page, 'ACC_LENS')
+  const attemptId = await openAttempt(page)
+  await go(page, attemptId)
+  await scenario(page, 'feedback-slow')
+  await writeAndSend(page)
+  const wait = page.locator('.sw-wait')
+  await expect(wait).toBeVisible()
+  await expect(wait).toHaveAttribute('data-own-lens', 'true')
+  await expect(page.locator('.sw-wait-glass')).toHaveCount(0)
+  const lens = page.locator('.sw-wait image[data-slot="ACCESSORY"]')
+  await expect(lens).toHaveCount(1)
+  await expect(lens).toHaveAttribute('href', '/student-assets/looks/acc-lens.svg')
+  const animation = () => lens.evaluate(e => getComputedStyle(e).animationName)
+  expect(await animation()).toBe('sw-wait-own-lens')
+  await page.locator('.sw-wait').scrollIntoViewIfNeeded()
+  await shot(page, `own-lens-${test.info().project.name}`)
+  // 움직임 줄이기면 입은 돋보기도 멈춘다
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  expect(await animation()).toBe('none')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  expect(await animation()).toBe('sw-wait-own-lens')
+  // 갸웃(15초~)부터는 친구 전체가 움직이고 입은 돋보기만 따로 움직이지 않는다
+  await page.clock.fastForward(15_000)
+  await expect(wait).toHaveAttribute('data-motion', 'tilt')
+  expect(await animation()).toBe('none')
+})
 
 test('움직임 줄이기: 멈춘 그림 + 문구, 눌러도 뛰지 않고 말만 바뀜, "찾았다!" 없음', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })

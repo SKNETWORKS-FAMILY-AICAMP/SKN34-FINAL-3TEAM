@@ -688,6 +688,17 @@
 #class-journal .st-world .sw-wait[data-motion='tilt'] .sw-wait-pose { transform-origin: 50% 92%; animation: sw-wait-tilt 2.8s ease-in-out infinite; }
 #class-journal .st-world .sw-wait[data-motion='hop'] .sw-wait-pose { animation: sw-wait-hop 1.2s ease-in-out infinite; }
 #class-journal .st-world .sw-wait-poke[data-poked] { animation: sw-wait-poke 0.5s ease-out 1; }
+/* 돋보기를 입었으면(그려 넣는 돋보기 없음) 살피기 단계에서 입은 돋보기를 쥔 곳(그림 가운데) 기준으로 기울인다 */
+#class-journal .st-world .sw-wait[data-motion='look'][data-own-lens] image[data-slot='ACCESSORY'] {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: sw-wait-own-lens 2.4s ease-in-out infinite;
+}
+@keyframes sw-wait-own-lens {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(-14deg); }
+  65% { transform: rotate(10deg); }
+}
 @keyframes sw-wait-look {
   0%, 100% { transform: translate(0, 0) rotate(0deg); }
   30% { transform: translate(calc(var(--dir) * -16%), -16%) rotate(calc(var(--dir) * -10deg)); }
@@ -1074,6 +1085,7 @@
   #class-journal .st-world .sw-reflect .cj-difficulties button { transform: none !important; }
   #class-journal .st-world .sw-wait-glass,
   #class-journal .st-world .sw-wait-pose,
-  #class-journal .st-world .sw-wait-poke { animation: none !important; transform: none !important; }
+  #class-journal .st-world .sw-wait-poke,
+  #class-journal .st-world .sw-wait image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }
   #class-journal .st-world .sw-found { display: none; }
 }
