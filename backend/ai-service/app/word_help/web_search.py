@@ -72,19 +72,26 @@ class WordWebSearch:
         remaining = min(_STUDENT_SEARCH_TIMEOUT, deadline - time.monotonic())
         if remaining <= 0 or not _WORD.fullmatch(word):
             return []
+        verified: dict[str, Candidate] = {}
+
+        async def verify(url: str) -> None:
+            candidate = await self._read(word, url)
+            if candidate is not None:
+                verified[url] = candidate
+
+        urls: list[str] = []
         try:
             async with asyncio.timeout(remaining):
                 response = await self._search(word, remaining)
-                urls = dict.fromkeys(
-                    url for raw in _source_urls(response) if (url := _entry_url(raw))
-                )
-                results = await asyncio.gather(
-                    *(self._read(word, url) for url in list(urls)[:_PAGE_LIMIT])
-                )
-                return [row for row in results if row is not None]
+                urls = list(
+                    dict.fromkeys(url for raw in _source_urls(response) if (url := _entry_url(raw)))
+                )[:_PAGE_LIMIT]
+                async with asyncio.TaskGroup() as group:
+                    for url in urls:
+                        group.create_task(verify(url))
         except (TimeoutError, openai.APIError):
-            logger.info("낱말 대체 검색 실패")
-            return []
+            logger.info("낱말 대체 검색 일부 미완료")
+        return [verified[url] for url in urls if url in verified]
 
     async def _search(self, word: str, remaining: float) -> openai.types.responses.Response:
         started = time.monotonic()

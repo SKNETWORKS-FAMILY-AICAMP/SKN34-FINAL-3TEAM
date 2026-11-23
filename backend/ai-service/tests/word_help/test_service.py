@@ -211,8 +211,10 @@ def test_제한되거나_조건이_불명확한_온용어는_원문과_모델_�
     assert len(llm.requests) == 1
 
 
-@pytest.mark.parametrize("allowed", [True, False])
-def test_대체_검색은_공식_상세_페이지에서_허용된_뜻만_사용한다(allowed: bool):
+@pytest.mark.parametrize(("allowed", "slow_page"), [(True, False), (False, False), (True, True)])
+def test_대체_검색은_공식_상세_페이지에서_허용된_뜻만_사용한다(
+    allowed: bool, slow_page: bool, monkeypatch: pytest.MonkeyPatch
+):
     entry = "https://kli.korean.go.kr/term/trgtWord/indexTrgtWord.do?trgtWordNo="
     openai_requests = []
     visited = []
@@ -246,9 +248,11 @@ def test_대체_검색은_공식_상세_페이지에서_허용된_뜻만_사용�
             },
         )
 
-    def page(request: httpx.Request) -> httpx.Response:
+    async def page(request: httpx.Request) -> httpx.Response:
         ident = request.url.params["trgtWordNo"]
         visited.append(ident)
+        if ident == "3" and slow_page:
+            await asyncio.sleep(10)
         title = "응결" if ident == "3" else "기화"
         accepted = allowed and ident == "2"
         rights = (
@@ -278,6 +282,8 @@ def test_대체_검색은_공식_상세_페이지에서_허용된_뜻만_사용�
         GeneratedHeadword(headword="기화"),
         GeneratedWordHelp(kind="WORD", sense=0, easy="액체가 기체로 바뀌는 거야.", example=""),
     )
+    if slow_page:
+        monkeypatch.setattr("app.word_help.web_search._STUDENT_SEARCH_TIMEOUT", 0.5)
     out = asyncio.run(scenario())
     assert sorted(visited) == ["1", "2", "3"]
     assert len(openai_requests) == 1 and openai_requests[0]["input"] == "기화"
