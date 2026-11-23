@@ -475,6 +475,16 @@ class RewardIntegrationTest : IntegrationTestSupport() {
         val actions = jdbc.queryForList("SELECT action FROM audit_log WHERE target_type='LOOK_ITEM' AND target_id=? AND actor_user_id=? ORDER BY created_at",
             String::class.java, UUID.fromString(id), admin)
         assertEquals(listOf("LOOK_ITEM_CREATED", "LOOK_ITEM_UPDATED", "LOOK_ITEM_STOPPED", "LOOK_ITEM_RESUMED"), actions)
+        // #947 감사 detail 저장 값: 바뀐 뒤 칸 전체와 수정이면 바뀌기 전 값
+        val details = jdbc.queryForList("SELECT CAST(detail AS text) FROM audit_log WHERE target_type='LOOK_ITEM' AND target_id=? AND actor_user_id=? ORDER BY created_at",
+            String::class.java, UUID.fromString(id), admin).map { json.readTree(it) }
+        fun item(name: String, price: Int, status: String) = mapOf("code" to code, "slot" to "HAT", "name" to name, "pricePoints" to price,
+            "assetKey" to "look/star-hat.png", "status" to status)
+        fun before(name: String, price: Int, status: String) = mapOf("name" to name, "pricePoints" to price, "assetKey" to "look/star-hat.png", "status" to status)
+        assertEquals(listOf(item("별 모자", 80, "ON_SALE"),
+            item("큰 별 모자", 90, "ON_SALE") + ("before" to before("별 모자", 80, "ON_SALE")),
+            item("큰 별 모자", 90, "STOPPED") + ("before" to before("큰 별 모자", 90, "ON_SALE")),
+            item("큰 별 모자", 90, "ON_SALE") + ("before" to before("큰 별 모자", 90, "STOPPED"))).map { json.valueToTree<JsonNode>(it) }, details)
     }
 
     @Test fun `student deletion removes ledger, balance, unlocks, equipment and frame slots`() {

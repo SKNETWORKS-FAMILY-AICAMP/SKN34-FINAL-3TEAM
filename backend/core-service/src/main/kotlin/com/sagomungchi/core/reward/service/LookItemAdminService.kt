@@ -1,7 +1,7 @@
 package com.sagomungchi.core.reward.service
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.exception.BusinessException
+import com.sagomungchi.core._common.json.JsonObject
 import com.sagomungchi.core.reward.domain.LookCatalog
 import com.sagomungchi.core.reward.domain.LookItem
 import com.sagomungchi.core.reward.repository.RewardMapper
@@ -16,7 +16,7 @@ import java.util.UUID
  * 삭제 없이 판매 중단(`STOPPED`)만 하며, 이미 해금한 학생은 계속 착용한다. 변경은 같은 트랜잭션에서 `audit_log`.
  */
 @Service
-class LookItemAdminService(private val mapper: RewardMapper, private val access: RewardAccessService, private val json: ObjectMapper) {
+class LookItemAdminService(private val mapper: RewardMapper, private val access: RewardAccessService) {
     data class Create(val code: String?, val slot: String?, val name: String?, val pricePoints: Int?, val assetKey: String?)
     data class Update(val name: String?, val pricePoints: Int?, val assetKey: String?, val status: String?)
     data class View(val itemId: UUID, val code: String, val slot: String, val name: String, val pricePoints: Int, val assetKey: String,
@@ -71,7 +71,7 @@ class LookItemAdminService(private val mapper: RewardMapper, private val access:
             "pricePoints" to item.pricePoints, "assetKey" to item.assetKey, "status" to item.status)
         if (before != null) detail["before"] = mapOf("name" to before.name, "pricePoints" to before.pricePoints,
             "assetKey" to before.assetKey, "status" to before.status)
-        check(mapper.audit(UUID.randomUUID(), actor, action, item.id, json.writeValueAsString(detail)) == 1)
+        check(mapper.audit(UUID.randomUUID(), actor, action, item.id, JsonObject(detail)) == 1)
     }
 
     private fun name(value: String?) = value?.trim()?.takeIf { it.isNotEmpty() && it.length <= 40 } ?: throw invalid("이름은 1~40자입니다.")
