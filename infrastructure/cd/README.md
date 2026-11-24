@@ -1,6 +1,6 @@
 # 운영 배포·롤백 (#186, #858)
 
-`.github/workflows/cd-release.yml`은 main 릴리스 SHA만 운영(AWS 데모 EKS)에 배포한다. 2026-11-20 결정(에픽 #859)으로 기본 방식이 **digest PR**로 바뀌었다(#858). workflow가 이미지를 ECR에 게시한 뒤 main 대상으로 `infrastructure/gitops/environments/prod/images/<release>.json`만 고친 PR을 만들고, **그 PR의 승인·병합이 배포 승인**이다. 병합되면 Argo CD가 main을 읽어 자동 동기화하고(#855~#857), migration은 앱보다 먼저 PreSync Job으로 돈다. 되돌리기는 그 PR의 revert다. 실패해도 자동 롤백하지 않는다.
+`.github/workflows/cd-release.yml`은 main 릴리스 SHA만 운영(AWS 데모 EKS)에 배포한다. 2026-11-20 결정(에픽 #859)으로 기본 방식이 **digest PR**로 바뀌었다(#858). workflow가 이미지를 ECR에 게시한 뒤 지금 main 위에 `infrastructure/gitops/environments/prod/images/<release>.json`만 고친 digest 브랜치를 push하고, 실행 요약에 PR 만들기(compare) 링크를 남긴다. 조직 정책상 Actions는 PR을 만들 수 없어(2026-11-24 결정, #986) **PR은 사람이 그 링크로 연다.** **그 PR의 승인·병합이 배포 승인**이다. 병합되면 Argo CD가 main을 읽어 자동 동기화하고(#855~#857), migration은 앱보다 먼저 PreSync Job으로 돈다. 되돌리기는 그 PR의 revert다. 실패해도 자동 롤백하지 않는다.
 
 예전 방식(GitHub Environment `prod` 승인 → 작업자 PC self-hosted runner `cd-prod`에서 migration Job → Helm 적용 → 경로 확인 → 이력)은 실행 입력 `delivery: helm-emergency`로 고르는 **비상용**으로 12/7 시연까지 남긴다([비상용 Helm 경로](#비상용-helm-경로-helm-emergency)). 앱 release가 없는 빈 클러스터의 `currentRelease: "none"`(#760)은 이 비상용 경로에서만 의미가 있다.
 
@@ -8,8 +8,9 @@
 수동 실행(main, 계획 JSON, delivery)
   → validate  : main 확인, 계획 검증, SHA가 main 이력인지, (digest PR) images 파일 구조 확인     (GitHub 호스팅)
   → publish   : deploy만. main-<SHA 12자리> 앱·migration 이미지를 ECR에 게시(이미 있으면 재사용) (GitHub 호스팅, OIDC)
-  → digest-pr : (기본) 최종 게이트 → 지금 main HEAD에서 images 파일 갱신 → PR 생성 → PR 브랜치에 ci-gitops 실행
-                → 승인자 1명(CODEOWNERS) 승인·병합 → Argo CD 동기화(PreSync migration → 앱)
+  → digest-pr : (기본) 최종 게이트 → 지금 main HEAD에서 images 파일 갱신 → 브랜치 push → 실행 요약에 PR 만들기 링크
+                → 사람이 링크로 PR 열기(ci-gitops가 pull_request로 자동 실행)                        (사람)
+                → PR을 연 사람과 다른 code owner 1명 승인·병합 → Argo CD 동기화(PreSync migration → 앱)
                 → 작업자 PC에서 경로 확인, 결과를 PR 댓글로                                       (사람)
   → deploy    : (비상용) prod 승인 대기 → 최종 게이트 → migration·앱 server dry-run → migration Job 완료 → 앱 적용
                 → 경로 확인 → 이력 기록 (작업자 PC)
@@ -72,22 +73,27 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 
 | 순서 | 위치 | 값 | 이유 |
 |---|---|---|---|
-| 1 | Settings → Actions → General → Workflow permissions | "Allow GitHub Actions to create and approve pull requests" 켬. 기본 권한(Read repository contents)은 그대로 | `GITHUB_TOKEN`으로 digest PR을 만든다. 이 workflow는 PR을 승인하지 않는다(승인은 사람) |
-| 2 | Settings → Branches → Add branch ruleset(또는 classic branch protection) → 대상 `main` | Require a pull request before merging: 켬 / Required approvals: **1** / Require review from Code Owners: 켬 / Dismiss stale approvals when new commits are pushed: 켬 / Require status checks: 끔(아래) / Block force pushes·Restrict deletions: 켬 / Bypass list: 비움(관리자 우회 없음) | digest PR 승인 = 배포 승인. 승인자 수는 #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같다. 바뀌면 이 값만 고친다 |
-| 3 | 저장소 파일 `.github/CODEOWNERS` | `/infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001` (develop에 있음, 11/24 릴리스로 main에 들어감) | 2의 Code Owners 설정이 있어야 강제된다 |
-| 4 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 아래 A 계정 확인 1단계의 digest PR에 "Review required"·Code owner 표시가 뜨는지 | |
+| 1 | Settings → Branches → Add branch ruleset(또는 classic branch protection) → 대상 `main` | Require a pull request before merging: 켬 / Required approvals: **1** / Require review from Code Owners: 켬 / Dismiss stale approvals when new commits are pushed: 켬 / Require status checks: 끔(아래) / Block force pushes·Restrict deletions: 켬 / Bypass list: 비움(관리자 우회 없음) | digest PR 승인 = 배포 승인. 승인자 수는 #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같다. 바뀌면 이 값만 고친다 |
+| 2 | 저장소 파일 `.github/CODEOWNERS` | `/infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001` (develop에 있음, 11/24 릴리스로 main에 들어감) | 1의 Code Owners 설정이 있어야 강제된다 |
 
-- status check를 필수로 두지 않는 이유: `ci-gitops` 등은 경로 필터가 있어 develop → main 릴리스 PR에 항상 돌지 않는다. 필수로 걸면 경로가 맞지 않는 PR이 영원히 대기한다. digest PR에는 workflow가 `ci-gitops`를 `workflow_dispatch`로 실행하고, 승인자가 그 결과(Actions 목록, PR 커밋 check)를 보고 승인한다.
+예전 1단계("Allow GitHub Actions to create and approve pull requests")는 조직 정책이 막아 저장소에서 켤 수 없고, 2026-11-24부터 필요 없다(아래 PR 생성 토큰 표).
+| 3 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 아래 A 계정 확인 2단계에서 연 digest PR에 "Review required"·Code owner 표시가 뜨는지 | |
+
+- status check를 필수로 두지 않는 이유: `ci-gitops` 등은 경로 필터가 있어 develop → main 릴리스 PR에 항상 돌지 않는다. 필수로 걸면 경로가 맞지 않는 PR이 영원히 대기한다. digest PR은 사람이 열므로 `ci-gitops`가 `pull_request` 이벤트(경로 `infrastructure/gitops/**`)로 바로 돌고 결과가 PR check에 붙는다. 승인자는 그 check를 보고 승인한다.
 - 승인 규칙은 develop → main 릴리스 PR에도 걸린다. 릴리스 PR 작성자는 자기 PR을 승인할 수 없으므로 다른 한 명(동섭 ↔ 태윤)이 승인한다. CODEOWNERS는 images 폴더만 지정하므로 릴리스 PR은 쓰기 권한이 있는 팀원 누구든 1명이 승인하면 된다.
-- digest PR 작성자는 `github-actions[bot]`이라 cd-release를 실행한 사람도 승인할 수 있다(Environment `prod`도 같았음). 운영 규칙으로 실행한 사람과 다른 사람이 승인하는 것을 권장하고, 시연 일정상 혼자 처리할 때는 PR 댓글에 사유를 남긴다.
-- 되돌릴 때(설정 해제): 1·2를 끄면 예전과 같다. CODEOWNERS 파일은 2가 꺼져 있으면 리뷰 요청만 보낸다.
+- digest PR 작성자는 링크로 PR을 연 사람이다(커밋 작성자는 `github-actions[bot]`). GitHub는 PR 작성자 본인의 승인을 세지 않으므로 **PR을 연 사람과 다른 code owner**(동섭 ↔ 태윤)가 승인한다. 한 명만 있을 때는 다른 사람이 돌아올 때까지 병합하지 않거나, 막히면 비상용 Helm 경로(아래)를 쓴다. revert PR도 Revert를 누른 사람이 작성자라 같은 규칙이다.
+- 되돌릴 때(설정 해제): 1을 끄면 예전과 같다. CODEOWNERS 파일은 1이 꺼져 있으면 리뷰 요청만 보낸다.
 
-#### PR 생성 토큰 (2026-11-20 결정)
+#### PR 생성 토큰 (2026-11-20 결정, 2026-11-24 변경)
 
 | 방식 | 내용 | 채택 |
 |---|---|---|
-| `GITHUB_TOKEN` + `ci-gitops` `workflow_dispatch` | job 권한 `contents: write`·`pull-requests: write`·`actions: write`. `GITHUB_TOKEN`으로 만든 push·PR은 다른 workflow를 깨우지 않지만 `workflow_dispatch`는 예외라, PR 브랜치에 `ci-gitops`를 직접 실행해 같은 커밋에 결과를 붙인다 | **채택**. 새 앱·비밀 값이 필요 없어 승인 없이 된다 |
-| GitHub App 설치 토큰 | 조직에 앱을 만들고(`contents`·`pull_requests` 쓰기) `actions/create-github-app-token`으로 토큰 발급. 앱이 만든 PR에는 `pull_request` CI가 평소처럼 돈다 | 선택지. 새 GitHub App은 조직 승인이 필요해 이번에는 하지 않음. 바꾸려면 digest-pr job의 `GH_TOKEN`·push 자격만 앱 토큰으로 교체하고 dispatch 단계를 지운다 |
+| 브랜치 push + 사람이 링크로 PR 열기 (11/24) | job 권한 `contents: write`만. 커밋 메시지를 `git commit --cleanup=verbatim -F`(1행 제목 + 빈 줄 + `pr-body.md`)로 만들어, 커밋 1개짜리 compare 화면(`compare/main...<브랜치>?expand=1`)이 PR 제목·본문을 채운다. 사람이 연 PR이라 `ci-gitops` 등 `pull_request` CI가 평소처럼 돈다 | **채택**(2026-11-24 팀장 결정, #986). 조직 정책이 "Actions가 PR을 만들고 승인하는 것"을 막고 있고 조직은 바꿀 수 없다고 답했다. 새 토큰·도구가 필요 없고, 사람 한 단계(링크 클릭)만 늘어난다 |
+| `GITHUB_TOKEN` + `ci-gitops` `workflow_dispatch` (11/20) | job 권한 `contents: write`·`pull-requests: write`·`actions: write`로 `gh pr create` 후 PR 브랜치에 `ci-gitops`를 dispatch | 11/20 채택 → 11/24 폐기. `gh pr create` 단계가 조직 정책으로 실패한다 |
+| deploy key (조직 제안) | 저장소 SSH 키로 push | 채택하지 않음. git(SSH) clone·push용이라 PR 생성 API를 부를 수 없다. main 직접 push는 사람 승인 단계가 없어지고 main 보호 규칙과 충돌한다 |
+| 개인 계정 포크 | 포크에서 Actions 실행·PR 생성 | 채택하지 않음. OIDC 신뢰 정책·Argo CD repoURL·GitHub 변수·문서를 모두 포크 기준으로 바꿔야 하고, 배포 기록이 포크에만 남는다 |
+| 개인 토큰(PAT) | 개인 PAT를 비밀 값으로 두고 `gh pr create` | 채택하지 않음. 만료·보안 관리 부담이 있고 조직이 막았을 수도 있다 |
+| GitHub App 설치 토큰 | 조직에 앱을 만들고(`contents`·`pull_requests` 쓰기) `actions/create-github-app-token`으로 토큰 발급. 앱이 만든 PR에는 `pull_request` CI가 평소처럼 돈다 | 선택지. 새 GitHub App은 조직 승인이 필요해 이번에는 하지 않음. 조직 정책도 같이 막을 수 있다. 바꾸려면 digest-pr job의 push 자격을 앱 토큰으로 교체하고 `gh pr create` 단계를 다시 넣는다 |
 | CI 생략 | PR만 만들고 CI 없음 | 채택하지 않음(렌더링 오류를 병합 뒤 Argo CD에서야 발견) |
 
 ### C. 작업자 PC self-hosted runner (비상용 Helm 경로)
@@ -134,9 +140,9 @@ digest PR 방식에는 필요 없다(Argo CD가 클러스터 안에서 동기화
 gh workflow run cd-release.yml --ref main -f delivery=pull-request -f plan="$(Get-Content release.json -Raw | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 10)"
 ```
 
-4. 결과: 실행 요약에 digest PR 링크. PR 브랜치는 `cd/prod-images-main-<SHA 12자리>-<run id>`(자동 브랜치라 `feature/*` 규칙 밖), 바뀐 파일은 `images/<release>.json`뿐이다(workflow가 다른 경로 변경이 있으면 PR을 만들지 않음). 본문에 원본 main SHA, PR 기준 main HEAD, release별 digest 전후, migration revision, 호환성 근거, 계획 기록 JSON, 되돌리기 방법이 들어간다. artifact `cd-digest-pr-<run id>`(90일)에 `plan.json`·`plan-record.json`·`pr-body.md`.
-5. PR 브랜치의 `ci-gitops`(prod 렌더링·kubeconform) 결과를 확인한다. workflow가 실행을 요청하므로 Actions 목록에 `ci-gitops`(workflow_dispatch, 그 브랜치)가 뜬다.
-6. 승인자 1명(CODEOWNERS: 김동섭·김태윤)이 승인하고 **Squash and merge**로 병합한다. 병합 = 배포 승인.
+4. 결과: 실행 요약 "digest PR 열기"에 브랜치와 **PR 만들기** 링크(`compare/main...<브랜치>?expand=1`). 링크를 열면 제목·본문이 채워져 있으니 그대로 **Create pull request**를 누른다(제목·본문은 고치지 않는다). 이전 digest PR이 열려 있으면 닫고 브랜치를 지운다(아래 "열린 digest PR은 하나만"). 브랜치는 `cd/prod-images-main-<SHA 12자리>-<run id>`(자동 브랜치라 `feature/*` 규칙 밖), 바뀐 파일은 `images/<release>.json`뿐이다(workflow가 다른 경로 변경이 있으면 브랜치를 push하지 않음). 본문에 원본 main SHA, PR 기준 main HEAD, release별 digest 전후, migration revision, 호환성 근거, 계획 기록 JSON, 되돌리기 방법이 들어간다. artifact `cd-digest-pr-<run id>`(90일)에 `plan.json`·`plan-record.json`·`pr-body.md`.
+5. PR check의 `ci-gitops`(prod 렌더링·kubeconform) 결과를 확인한다. 사람이 연 PR이라 `pull_request` 이벤트로 자동 실행된다. 실패면 원인을 고치기 전에는 병합하지 않는다.
+6. PR을 연 사람과 다른 code owner 1명(김동섭 ↔ 김태윤)이 승인하고 **Squash and merge**로 병합한다. 병합 = 배포 승인.
 7. Argo CD가 main을 읽어 동기화한다(PreSync migration Job → 앱). Discord 알림(#855)이나 `argocd app list`/UI에서 앱 Application이 Synced/Healthy인지 본다. migration Job 실패면 Application이 Degraded로 멈추고 앱은 바뀌지 않는다(Job 로그는 작업자 PC에서 `kubectl -n app logs job/<Job 이름>`, 공개 로그에 옮기지 않음).
 8. 경로 확인: 작업자 PC에서(fixture가 이 PC에만 있음, 위 D) 실행하고 결과를 그 digest PR 댓글로 남긴다.
 
@@ -154,7 +160,7 @@ gh pr comment <PR 번호> --body "경로 확인: ok=$($s.ok), $(($s.steps | ForE
 
 ## digest PR 되돌리기 (#858)
 
-1. 되돌릴 digest PR 화면에서 **Revert** → 만들어진 revert PR을 같은 승인 규칙(CODEOWNERS 1명)으로 병합한다. Argo CD가 이전 digest로 동기화한다.
+1. 되돌릴 digest PR 화면에서 **Revert** → 만들어진 revert PR을 같은 승인 규칙(Revert를 누른 사람과 다른 code owner 1명)으로 병합한다. Argo CD가 이전 digest로 동기화한다.
 2. Argo CD UI의 rollback·수동 sync로 이전 revision을 띄우지 않는다(Git과 어긋나 다음 자동 동기화가 되돌림).
 3. revert는 앱 이미지·migration 값만 되돌리고 DB는 그대로다. 이전 앱이 새 스키마에서 동작한다는 근거가 그 PR의 schema 근거에 있어야 한다. migration revision도 이전 값으로 돌아가지만 이미 끝난 Job 이름이 같으면 다시 실행해도 Flyway·Alembic은 할 일이 없다.
 4. 그 뒤 다른 digest PR이 병합돼 revert가 충돌하면, 되돌릴 digest를 넣은 PR을 손으로 만든다(`images/**`만, 같은 승인 규칙). 경로 확인은 위 8단계와 같다.
@@ -165,9 +171,9 @@ A 재가동(11/25)에서 Argo CD 설치·플랫폼·앱(#855~#857)이 Synced/Hea
 
 | # | 할 일 | 확인 |
 |---|---|---|
-| 1 | 위 "digest PR 배포" 2~3단계로 cd-release 실행(서비스는 바뀐 것만, 처음이면 5개) | validate·publish 통과, digest PR 생성, 본문 digest가 ECR `main-<SHA 12자리>` 태그와 같음, 바뀐 파일이 `images/**`뿐 |
-| 2 | PR 브랜치 `ci-gitops` 결과 | 성공. 실패면 원인 수정 전 병합하지 않음 |
-| 3 | 승인·Squash and merge | "Review required"·Code owner 표시, 승인 1명 뒤 병합 가능 |
+| 1 | 위 "digest PR 배포" 2~3단계로 cd-release 실행(서비스는 바뀐 것만, 처음이면 5개) | validate·publish·digest-pr 통과, 실행 요약에 브랜치와 PR 만들기 링크, 바뀐 파일이 `images/**`뿐 |
+| 2 | 실행 요약 링크로 PR 열기 → PR check `ci-gitops` | compare 화면에 제목(`chore: prod 이미지 digest main-…`)·본문이 채워져 있음, 본문 digest가 ECR `main-<SHA 12자리>` 태그와 같음. `ci-gitops`가 `pull_request`로 자동 실행돼 성공. 실패면 원인 수정 전 병합하지 않음 |
+| 3 | PR을 연 사람과 다른 code owner가 승인 → Squash and merge | "Review required"·Code owner 표시, 연 사람 본인은 승인할 수 없음, 다른 code owner 승인 1명 뒤 병합 가능 |
 | 4 | Argo CD 동기화 | 앱 Application Synced/Healthy, migration PreSync Job Complete, Pod 이미지 digest가 PR 값과 같음(`kubectl -n app get pod -o jsonpath='{..image}'`), Discord 알림 |
 | 5 | `verify_cd_deployment.py` → PR 댓글 | 6단계 ok |
 | 6 | digest PR Revert → 승인·병합 | Argo CD가 이전 digest로 Synced/Healthy, 경로 확인 다시 ok. 확인 뒤 같은 계획으로 다시 실행해 최신 digest로 돌려놓는다 |
@@ -269,5 +275,5 @@ digest PR 방식의 되돌리기는 위 "digest PR 되돌리기"(revert)다. 아
 - 웹(S3/CloudFront) 배포, RDS 초기화(`rds-bootstrap`), 운영 데이터 seed(성취기준 표 등 일회성 Job)는 이 workflow 범위 밖이다.
 - 빈 클러스터 첫 배포(2026-11-18)는 AWS에서 아직 실행하지 않았다. 확인은 시험(가짜 aws·kubectl·helm)과 일회용 kind 빈 클러스터의 migration·앱 server dry-run까지다.
 - 계정 `347161580747`·클러스터 `sagomungchi-demo-eks`가 `redeploy-app.ps1`·values·IAM 정책에 고정돼 있다. B 계정(시연용)에서 쓰려면 이 값들을 함께 바꿔야 한다.
-- digest PR 방식(2026-11-20)은 GitHub·AWS에서 아직 실행하지 않았다. 확인은 시험(`scripts/tests/test_cd_digest_pr.py`, images 파일 계약 fixture)과 digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 원격·가짜 `gh`)까지다. 실제 PR 생성·ci-gitops dispatch·승인 규칙·Argo CD 동기화는 11/25 A에서 처음 확인한다(위 절차).
-- `GITHUB_TOKEN`으로 만든 PR이라 `pull_request` CI(ci-secrets 등)는 돌지 않는다. ci-gitops만 dispatch로 실행한다. images 파일은 digest 문자열만 바뀌어 다른 CI 대상이 아니다.
+- digest PR 방식(2026-11-20, 11/24 사람이 PR 열기로 변경)은 GitHub·AWS에서 끝까지 실행하지 않았다. 11/24 첫 실행은 `gh pr create`에서 조직 정책으로 멈췄다. 확인은 시험(`scripts/tests/test_cd_digest_pr.py`, `test_cd_deployment.py`)까지다. 링크로 연 PR의 제목·본문 채움, `pull_request` ci-gitops, 승인 규칙, Argo CD 동기화는 11/25 A에서 처음 확인한다(위 절차).
+- PR 열기는 사람 손이다. 링크를 열지 않으면 브랜치만 남고 배포되지 않는다. 오래된 digest 브랜치는 PR을 닫을 때 함께 지운다.
