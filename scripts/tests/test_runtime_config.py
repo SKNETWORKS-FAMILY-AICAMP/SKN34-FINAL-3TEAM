@@ -194,6 +194,28 @@ class RuntimeConfigTests(unittest.TestCase):
                     float(env["REPORT_EXPLANATION_BUDGET_SECONDS"]),
                 )
 
+    def test_prod_memory_book_asset_origin_matches_learning_bucket(self):
+        # #974: learning이 서명하는 테마 그림 주소(SDK 기본 virtual-hosted regional)의 출처만 허용
+        base = ROOT / "infrastructure/gitops/environments/prod"
+        learning = {
+            item["name"]: item.get("value")
+            for item in json.loads((base / "learning-service.json").read_text(encoding="utf-8"))["env"]
+        }
+        worker = json.loads((base / "report-worker.json").read_text(encoding="utf-8"))
+        env = {item["name"]: item.get("value") for item in worker["env"]}
+        self.assertNotIn("S3_PUBLIC_ENDPOINT_URL", learning)
+        self.assertEqual(
+            env.get("MEMORY_BOOK_ASSET_ORIGINS"),
+            f"https://{learning['ASSET_S3_BUCKET']}.s3.{learning['S3_REGION']}.amazonaws.com",
+        )
+        # prod는 S3를 직접 받으므로 클러스터 안 주소 치환(kind MinIO용)이 없어야 함
+        self.assertNotIn("MEMORY_BOOK_ASSET_INTERNAL_ORIGINS", env)
+        https_egress = [
+            rule for rule in worker["networkPolicy"]["egress"]
+            if {"port": 443, "protocol": "TCP"} in rule.get("ports", [])
+        ]
+        self.assertTrue(https_egress, "S3 서명 URL을 받을 443 egress 필요")
+
     @unittest.skipUnless(shutil.which("docker"), "Compose CLI 필요(컨테이너 실행 없음)")
     def test_compose_omitted_and_explicit_false_keep_defaults(self):
         for overrides in (

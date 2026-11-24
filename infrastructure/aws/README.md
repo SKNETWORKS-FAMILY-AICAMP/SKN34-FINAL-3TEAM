@@ -66,7 +66,7 @@ ai는 테마 초안 그림·영상을 `missions` 버킷의 `theme-drafts/{실행
 3. prod `ai-service.json`·`learning-service.json`으로 두 앱을 재배포한다(`ASSET_S3_BUCKET`·`S3_REGION`·`AWS_REGION`·agent egress 포함).
 4. 확인: 관리자 화면에서 테마 초안 1건 생성 → ai 로그에 그림 단계 경고(`skipped`)가 없고 `theme-drafts/` 객체가 생겼는지 → 학생 테마 화면 응답의 장면 URL이 null이 아니고 브라우저에서 열리는지. 결과는 [infra 보고서 9.8](../../docs/report/infra.md#98-prod-테마-자산-버킷과-네임스페이스-기본-거부-준비-652657-2026-11-16)에 적는다.
 
-B 계정(시연, 11/30 무렵)으로 옮길 때 바꿀 항목: 버킷 이름의 계정 번호(`prod/ai-service.json`·`learning-service.json`의 `ASSET_S3_BUCKET`), `iam/ai-asset-s3-role.*`·`iam/learning-asset-s3-role.*`의 버킷·클러스터 ARN, `eks/cluster.json`의 두 연결 role ARN. 다른 계정 번호 항목과 함께 바꾼다(#601 11/14 메모). 전체 순서와 교체 목록은 아래 [B 계정 전환 런북](#b-계정-전환-런북-809)이다.
+B 계정(시연, 11/30 무렵)으로 옮길 때 바꿀 항목: 버킷 이름의 계정 번호(`prod/ai-service.json`·`learning-service.json`의 `ASSET_S3_BUCKET`, `report-worker.json`의 그림책 그림 허용 출처 `MEMORY_BOOK_ASSET_ORIGINS`(#974)), `iam/ai-asset-s3-role.*`·`iam/learning-asset-s3-role.*`의 버킷·클러스터 ARN, `eks/cluster.json`의 두 연결 role ARN. 다른 계정 번호 항목과 함께 바꾼다(#601 11/14 메모). 전체 순서와 교체 목록은 아래 [B 계정 전환 런북](#b-계정-전환-런북-809)이다.
 
 ## 리포트 Gemma SageMaker 엔드포인트 (#746, 2026-11-18)
 
@@ -262,7 +262,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 | 항목 | 값 | 영향 |
 |---|---|---|
 | B 계정 번호 | (미정) | 아래 "A 계정 값 교체", CD 변수 |
-| 리전 | (미정. A와 같은 `ap-northeast-2`로 가정) | `demo-stack.json` `region`·서브넷 AZ(2a·2b), CloudFront origin-facing prefix list `pl-22a6434b`(리전별 값), ECR 주소, `CD_AWS_REGION`. 다르면 계정 번호와 별도로 바꾼다 |
+| 리전 | (미정. A와 같은 `ap-northeast-2`로 가정) | `demo-stack.json` `region`·서브넷 AZ(2a·2b), CloudFront origin-facing prefix list `pl-22a6434b`(리전별 값), ECR 주소, `CD_AWS_REGION`, prod 앱 values의 S3 443 egress 대역(S3 prefix list 대역, report-api·report-worker·scoring), report-worker `MEMORY_BOOK_ASSET_ORIGINS`의 `s3.<리전>` 부분(#974). 다르면 계정 번호와 별도로 바꾼다 |
 | 도메인 | (미정. 새 CloudFront 기본 주소인지 custom domain인지) | core `AUTH_WEB_ORIGIN`, Google OAuth origin·callback, `CD_BASE_URL`, 쿠키(도메인별) |
 | A 최종 스냅샷·KMS 키 공유 | 11/19 스냅샷은 `aws/rds` 키라 공유할 수 없고 11/25 재가동으로 DB가 바뀌므로 B에 쓰지 않는다(2026-11-23 정리). 11/25 A 종료 직전 새로 만든다(아래 "선행 (A 계정, 11/25 A 종료 직전)") | 선행 A-K, 5단계 |
 | B 복원 주체 | (미정. B 루트 위임으로 둘지, B 복원 역할 하나만 허용할지) | A-K1 키 정책의 주체, B 작업자 IAM 정책 |
@@ -461,7 +461,7 @@ git grep -n 347161580747    # A 계정 347161580747이 남은 곳이 위 '남김
 python -m unittest discover -s scripts/tests
 ```
 
-`sllm-server.json`은 infra 9.13.9 정리안대로 #835에서 지웠다. 버킷 이름(`sagomungchi-demo-<계정>-{web,missions,reports,models}`)은 계정 번호가 들어 있어 같이 바뀐다.
+`sllm-server.json`은 infra 9.13.9 정리안대로 #835에서 지웠다. 버킷 이름(`sagomungchi-demo-<계정>-{web,missions,reports,models}`)은 계정 번호가 들어 있어 같이 바뀐다. prod `report-worker.json`의 그림책 그림 허용 출처 `MEMORY_BOOK_ASSET_ORIGINS`(`https://sagomungchi-demo-<계정>-missions.s3.ap-northeast-2.amazonaws.com`, #974)도 missions 버킷 이름이라 이 스크립트가 같이 바꾼다. learning `ASSET_S3_BUCKET`과 어긋나면 그림책 PDF에서 그림이 모두 빠지므로 `python -m unittest scripts.tests.test_runtime_config`로 둘이 맞는지 확인한다.
 
 #### B 자원을 만든 뒤 바꿀 값
 
