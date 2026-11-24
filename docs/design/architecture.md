@@ -969,7 +969,7 @@ backend/report-service/
 - core: `OutboxWriter`가 저장 시점 활성 span(없으면 요청 헤더 값)을 봉투 `traceparent`에 넣고, `OutboxRelay`가 그 값을 부모 context로 발행해 Java agent가 PRODUCER span·AMQP `traceparent` 헤더를 만든다. core·learning 소비자와 HTTP는 Java agent가 잇는다
 - report-worker: 봉투 `traceparent`를 부모로 CONSUMER span을 열고 하위 HTTP 호출과 결과 이벤트 봉투·AMQP 헤더에 넘긴다. 실패는 `messaging.outcome`(retry/dlq)·`error.type`만 남긴다
 - 업무 ID·학생 ID·메시지 내용은 span attribute에 넣지 않는다(메시지 ID·큐 이름만, HTTP span은 경로 템플릿만). exporter가 꺼져 있으면 받은 값만 그대로 넘긴다
-- Java agent가 자동으로 남기는 URL 속성 중 토스 청구·취소 경로의 `billingKey`·`paymentKey`(client `url.full`)와 Google 로그인·재인증 콜백의 `code`·`state`(server `url.query`)는 Collector traces pipeline의 `transform/redact`가 저장 전에 가린다(NFR-SEC-05·06, #900)
+- Java agent가 자동으로 남기는 URL 속성 중 토스 청구·취소 경로의 `billingKey`·`paymentKey`(client `url.full`)와 Google 로그인·재인증 콜백의 `code`·`state`(server `url.query`)는 Collector traces pipeline의 `transform/trace_urls`가 저장 전에 가린다(NFR-SEC-05·06, #900)
 - trace 저장소 장애는 지표·경보로 번지지 않게 한다(#784): Collector traces pipeline은 metrics보다 낮은 메모리 제한, exporter 대기열은 바이트 상한·재시도 30초로 묶어 넘치면 버린다
 
 #### 남은 경계

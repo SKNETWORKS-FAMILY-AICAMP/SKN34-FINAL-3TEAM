@@ -60,6 +60,8 @@ git diff --check
 `verify_chart.py`는 Helm과 검증용 PyYAML이 필요하다(운영 의존성 아님).
 
 - default·local·prod values 렌더 결과가 `--baseline`(기본 #185 병합 develop `de8e225`)과 리소스 단위로 같은지, `helm lint --strict`가 통과하는지 본다.
+  #984 대시보드는 기준·현재 chart 양쪽에서 끄고 비교하며, local·prod의 활성화·provisioning은 별도로 검사한다.
+  prod 앱은 CI·ApplicationSet과 같은 순서로 `prod/<서비스>.json` 다음 `prod/images/<서비스>.json`을 함께 렌더한다.
 - prod 규칙 16개를 지속 10초로 줄이고 적체 임계값을 10으로 낮춘 사본을 렌더한다.
   prod values가 #187 규칙을 포함하므로 기준 비교는 `--baseline` 시점의 prod values로 한다.
   provisioning ConfigMap·mount·webhook Secret 참조, DLQ 수집 job·relabel·Pod annotation을 검사한다.
