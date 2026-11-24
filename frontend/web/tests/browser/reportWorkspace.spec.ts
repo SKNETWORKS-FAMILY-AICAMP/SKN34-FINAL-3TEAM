@@ -128,6 +128,7 @@ test('chat period and composer leave space for verified answers @responsive', as
   await expect(progress).toHaveCount(0)
   await expect(page.locator('.pc-answer-footer')).toContainText('조회 기록')
   await expect(page.getByText(/출처 (LLM|TEMPLATE)/)).toHaveCount(0)
+  await expect(page.getByText(/연결된 리포트를 선택해야/)).toHaveCount(0)
   await expect(page.locator('.pc-message .ws-metrics')).toHaveCount(0)
   await expect(page.locator('.pc-history-list button[aria-current=true]')).toContainText('이번 주 학습 기록을')
 })

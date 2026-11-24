@@ -76,7 +76,7 @@ export function ParentConversation({
       })
       if (!done) return
       const { conversationId, result } = done
-      if (result) {
+      if (result && report) {
         const context = detail.data?.conversationId === conversationId ? detail.data : conversationRef.current
         onAnswer?.({ conversationId, message: { ...result, question: text, status: 'COMPLETED' }, reportId: context?.reportId, reportRevision: context?.reportRevision })
       }
