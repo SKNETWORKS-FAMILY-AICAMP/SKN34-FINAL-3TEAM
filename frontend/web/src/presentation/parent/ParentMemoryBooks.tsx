@@ -15,9 +15,17 @@ const SHELF_COLUMNS = 4
 const comparePath = (childId: string) => `/parent/billing?childId=${encodeURIComponent(childId)}#plan-compare`
 
 /** 책 표지: 회차 시작 그림이 있으면 그 그림, 없으면 테마 이름 첫 글자를 둔 빈 표지(꾸밈이라 읽지 않음) */
-function Cover({ round }: { round: MemoryBookRoundItem }) {
-  if (round.imageUrl) return <img className="memory-shelf-cover" src={round.imageUrl} alt="" loading="lazy" />
-  return <span className="memory-shelf-cover memory-shelf-cover-blank" aria-hidden="true">{(round.title || '책').slice(0, 1)}</span>
+function Cover({ round, lockedIssue }: { round: MemoryBookRoundItem; lockedIssue: boolean }) {
+  const title = round.title || '이름 없는 테마'
+  // 책처럼: 왼쪽 책등 띠, 아래쪽에 제목을 얹는다(제목은 화면 읽기에도 그대로 읽힘)
+  return <span className="memory-shelf-cover-wrap">
+    {round.imageUrl
+      ? <img className="memory-shelf-cover" src={round.imageUrl} alt="" loading="lazy" />
+      : <span className="memory-shelf-cover memory-shelf-cover-blank" aria-hidden="true">{title.slice(0, 1)}</span>}
+    <strong className="memory-shelf-title">{title}</strong>
+    {/* 무료라 발급이 잠긴 책: 책마다 문장을 반복하지 않고 표지 모서리 표시 하나로(화면 읽기는 "발급은 프리미엄") */}
+    {lockedIssue && <span className="memory-shelf-badge"><Lock size={13} aria-hidden="true" /><span className="memory-shelf-sr">발급은 </span>프리미엄</span>}
+  </span>
 }
 
 /**
@@ -56,13 +64,16 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
     }
   }
 
+  /** 무료라 이 회차를 발급할 수 없음(이미 만든 그림책을 받거나 만드는 중이면 아님) */
+  const lockedIssue = (round: MemoryBookRoundItem) => locked && round.book?.status !== 'READY' && round.book?.status !== 'QUEUED'
+
   function action(round: MemoryBookRoundItem) {
     const book = round.book
     // 무료라도 이미 만든 그림책(구독 중에 만든 것)은 보관 기간 안 받을 수 있다(api-spec 2.5.1, C2)
     if (book?.status === 'READY')
       return <button type="button" disabled={download.isPending} onClick={() => void save(book.bookId)}><Download size={16} aria-hidden="true" /> 받기</button>
     if (book?.status === 'QUEUED') return <span role="status" className="muted">만드는 중</span>
-    if (locked) return <span className="memory-shelf-lock"><Lock size={14} aria-hidden="true" /> 발급은 프리미엄</span>
+    if (locked) return null
     return <>
       {book?.status === 'FAILED' && <span className="muted">{memoryBookFailedReason(book.failureCode)}</span>}
       {book?.status === 'EXPIRED' && <span className="muted">보관 기간 지남</span>}
@@ -92,19 +103,19 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
         <ul className="memory-shelf" aria-label={locked ? '최근 4주 그림책 표지' : '그림책을 발급할 수 있는 회차'}>
           {items.map((round) => (
             <li className="memory-shelf-book" key={`${round.themeId}@${round.weekStart}`}>
-              <Cover round={round} />
-              <span className="memory-shelf-meta"><strong>{round.title || '이름 없는 테마'}</strong> · {weekLabel(round.weekStart)}</span>
-              <span className="memory-shelf-action">{action(round)}</span>
+              <Cover round={round} lockedIssue={lockedIssue(round)} />
+              <span className="memory-shelf-meta">{weekLabel(round.weekStart)}</span>
+              {!lockedIssue(round) && <span className="memory-shelf-action">{action(round)}</span>}
             </li>
           ))}
           {locked && lockedCount > 0 && (
-            <li className="memory-shelf-book memory-shelf-hidden">
+            <li className={`memory-shelf-book memory-shelf-hidden${items.length === 0 ? ' memory-shelf-hidden-only' : ''}`}>
               <span className="memory-shelf-cover memory-shelf-cover-locked" aria-hidden="true"><Lock size={28} /></span>
-              <span className="memory-shelf-meta"><strong>잠긴 책 {lockedCount}권</strong> · 지난 회차</span>
+              <span className="memory-shelf-meta"><strong>잠긴 책 {lockedCount}권</strong> · 지난 회차{items.length === 0 && <span className="memory-shelf-sub">최근 4주보다 오래된 회차라 표지가 잠겨 있어요.</span>}</span>
             </li>
           )}
-          {/* 넓은 화면(4칸)에서 첫 줄이 덜 차면 빈 자리를 점선으로 채워 책장처럼 보이게 한다. 꾸밈이라 읽지 않고, 좁은 화면에서는 숨긴다 */}
-          {Array.from({ length: Math.max(0, SHELF_COLUMNS - items.length - (locked && lockedCount > 0 ? 1 : 0)) }, (_, i) => (
+          {/* 넓은 화면(4칸)에서 첫 줄이 덜 차면 빈 자리를 점선으로 채워 책장처럼 보이게 한다. 꾸밈이라 읽지 않고, 좁은 화면과 표지가 하나도 없을 때(잠긴 책만)는 두지 않는다 */}
+          {items.length > 0 && Array.from({ length: Math.max(0, SHELF_COLUMNS - items.length - (locked && lockedCount > 0 ? 1 : 0)) }, (_, i) => (
             <li className="memory-shelf-slot" aria-hidden="true" key={`slot-${i}`}><span className="memory-shelf-cover-slot" /></li>
           ))}
         </ul>
