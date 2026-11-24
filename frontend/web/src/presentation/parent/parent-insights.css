@@ -157,7 +157,7 @@
 .parent-memory-books h2 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 18px; }
 .parent-memory-books p { margin: 0; }
 /* #1000 책장: 표지(시작 그림·테마 제목·주)를 꽂은 칸. 좁으면 두 칸, 휴대폰 한 칸 */
-.parent-memory-books .memory-shelf { margin: 4px 0 0; padding: 0 0 12px; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 14px; border-bottom: 10px solid #b9a27e; border-radius: 0 0 4px 4px; }
+.parent-memory-books .memory-shelf { margin: 4px 0 0; padding: 0 0 12px; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; border-bottom: 10px solid #b9a27e; border-radius: 0 0 4px 4px; }
 .parent-memory-books .memory-shelf-book { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .parent-memory-books .memory-shelf-cover { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid #c9d3cc; background: #eef3ef; box-shadow: 3px 3px 0 rgb(0 0 0 / 0.08); }
 .parent-memory-books .memory-shelf-cover-blank { display: grid; place-items: center; font-size: 32px; font-weight: 600; color: #4a5a50; }
@@ -170,7 +170,9 @@
 .parent-memory-books .memory-shelf-notice a { display: inline-flex; align-items: center; min-height: 44px; }
 .parent-memory-books .memory-shelf-retry { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .parent-memory-books .memory-shelf-retry button { display: inline-flex; align-items: center; min-height: 44px; }
-@media (max-width: 420px) { .parent-memory-books .memory-shelf { grid-template-columns: minmax(0, 1fr); } }
+/* 책장은 넓은 화면 4칸·태블릿 3칸·휴대폰 2칸으로 고정해 표지가 작게 몰리거나 한 권씩 길게 늘어지지 않게 한다 */
+@media (max-width: 900px) { .parent-memory-books .memory-shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .parent-memory-books .memory-shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } .parent-memory-books .memory-shelf-meta { font-size: 13px; } }
 /* 리포트 | AI 챗봇 전환 (제목 자리, 사이드바는 한 칸) */
 #class-journal .ws-parent .parent-insights-switch{display:flex;align-items:center;gap:12px;margin:0}
 #class-journal .ws-parent .parent-insights-switch button{all:unset;cursor:pointer;font:inherit;color:#9aa69f;border-radius:6px;padding:0 2px}
