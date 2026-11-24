@@ -8,7 +8,7 @@ EKS는 [eksctl 설정](../eks/cluster.json), 나머지는 `demo-stack.json`(원�
 
 | 명령 | 동작 | AWS 변경 |
 |---|---|---|
-| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 8개, Secret 이름 12개, RDS·SG·subnet group, IAM 역할 13개(trust·정책 원문, #211 Karpenter 컨트롤러, #652 테마 자산 ai·learning 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
+| `plan` | VPC·subnet·route·NAT·S3 endpoint, S3 4개, ECR 9개(#985 `tox-retrain` 포함), Secret 이름 12개, RDS·SG·subnet group, IAM 역할 13개(trust·정책 원문, #211 Karpenter 컨트롤러, #652 테마 자산 ai·learning 포함), EKS·노드그룹·add-on·Pod Identity를 실제와 비교. 차이가 있으면 exit 1 | 없음 |
 | `apply --confirm-account 347161580747` | `plan`에서 MISSING인 자원만 생성. 기존 자원은 변경·삭제하지 않는다. Secret 값과 EKS는 만들지 않는다. `--without-rds`면 RDS 인스턴스만 만들지 않는다(SG·서브넷 그룹은 만듦, 스냅샷 복원용 #809) | 생성만 |
 | `render-eksctl --operator-cidr <IP>/32 --out <저장소 밖>` | 현재 subnet ID를 채운 eksctl 설정 출력 → `eksctl create cluster -f <파일>` (2026-11-04 eksctl 0.231.0 `--dry-run` 통과) | 없음 |
 | `apply --after-eksctl ...` | 새 클러스터의 cluster SG에서 RDS 5432 허용 | 생성만 |
@@ -277,7 +277,7 @@ Google OAuth의 승인된 origin은 위 HTTPS 주소, redirect URI는 `/api/v1/a
 
 1. #760(계획 `currentRelease: "none"`, `redeploy-app.ps1 -AllowInstall`, scoring·report SA를 chart가 만듦)이 develop에 병합돼 있다. 없으면 11/17처럼 첫 배포가 `release: not found`로 멈춘다.
 2. 계정 번호 교체 PR(아래 "A 계정 값 교체")을 develop에 병합한다. cd-release는 main SHA만 배포하고 `redeploy-app.ps1`이 계정 번호를 확인하므로, 이 교체와 6a단계 값 교체가 main에 들어가야 B에 배포된다(develop → main 릴리스, #623 시연 고정 버전).
-3. GitHub 변수(손으로, A 종료 뒤): Repository `CD_AWS_ROLE_ARN`·`CD_ECR_REGISTRY`·`CD_AWS_REGION`, Environment `prod` `CD_BASE_URL`(도메인이 같아 `https://www.sagomungchi.co.kr` 그대로, [CD README](../cd/README.md)). OIDC subject 설정은 저장소 단위라 바꾸지 않는다. Argo CD(#858) 방식이면 `CD_BASE_URL`은 비상용 Helm 경로만 쓰고, 경로 확인은 작업자 PC에서 `https://www.sagomungchi.co.kr`을 직접 준다. digest PR 저장소 설정(Actions PR 생성 허용·main 보호·CODEOWNERS, [CD README B2](../cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정))은 11/24에 이미 적용돼 있어야 하며 계정과 무관해 다시 하지 않는다. main의 `images/<release>.json` 저장소 주소는 A 레지스트리로 남아 있으므로 B 첫 digest PR은 서비스 5개 전부와 `allowRepositoryChange=true`로 실행한다(16단계).
+3. GitHub 변수(손으로, A 종료 뒤): Repository `CD_AWS_ROLE_ARN`·`CD_ECR_REGISTRY`·`CD_AWS_REGION`, Environment `prod` `CD_BASE_URL`(도메인이 같아 `https://www.sagomungchi.co.kr` 그대로, [CD README](../cd/README.md)). OIDC subject 설정은 저장소 단위라 바꾸지 않는다. Argo CD(#858) 방식이면 `CD_BASE_URL`은 비상용 Helm 경로만 쓰고, 경로 확인은 작업자 PC에서 `https://www.sagomungchi.co.kr`을 직접 준다. digest PR 저장소 설정(Actions PR 생성 허용·main 보호·CODEOWNERS, [CD README B2](../cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정))은 11/24에 이미 적용돼 있어야 하며 계정과 무관해 다시 하지 않는다. main의 `images/<release>.json` 저장소 주소는 A 레지스트리로 남아 있으므로 B 첫 digest PR은 서비스 5개 전부와 `"jobs": ["tox-retrain"]`(재학습 이미지 파일도 A 주소, #985)을 넣고 `allowRepositoryChange=true`로 실행한다(16단계).
 
 ### 선행 (A 계정, 11/25 A 종료 직전)
 
@@ -342,7 +342,7 @@ aws rds describe-db-snapshot-attributes --db-snapshot-identifier sagomungchi-dem
 | # | 단계 | 명령·방법 | 확인 | 예상 | Argo CD면 |
 |---|---|---|---|---|---|
 | 0 | 도구·로그인 | AWS CLI v2, eksctl 0.231.0(공식 릴리스, 체크섬 확인), kubectl 1.35, Helm 4.3.1, argocd CLI v3.5.7(공식 릴리스 `argocd-windows-amd64.exe`, `cli_checksums.txt`로 확인), PowerShell 7, Python 3.12, Node.js·npm, gh. `aws sts get-caller-identity --profile <B>` | 계정이 B. 선행 1·2가 들어간 main SHA | 30분 | argocd CLI는 이 단계에 포함(#855) |
-| 1★ | IAM·OIDC·ECR·S3·VPC | GitHub OIDC 제공자를 먼저 만든다([CD README A](../cd/README.md#a-aws-github-oidc-게시-역할-aws-변경), `demo_stack.py`가 관리하지 않음) → `python infrastructure/aws/demo_stack.py --profile <B> plan` → `apply --confirm-account <B 계정> --without-rds`. VPC·NAT·S3 endpoint, S3 4개, ECR 8개, IAM 역할 13개(SageMaker 실행 역할·ai invoke 정책 포함), RDS SG·서브넷 그룹을 만들고 RDS 인스턴스만 만들지 않는다 | `plan`에서 `eks`·`secret`·`rds`만 MISSING | 20분 | 같음 |
+| 1★ | IAM·OIDC·ECR·S3·VPC | GitHub OIDC 제공자를 먼저 만든다([CD README A](../cd/README.md#a-aws-github-oidc-게시-역할-aws-변경), `demo_stack.py`가 관리하지 않음) → `python infrastructure/aws/demo_stack.py --profile <B> plan` → `apply --confirm-account <B 계정> --without-rds`. VPC·NAT·S3 endpoint, S3 4개, ECR 9개(재학습 `tox-retrain` 포함, #985), IAM 역할 13개(SageMaker 실행 역할·ai invoke 정책 포함), RDS SG·서브넷 그룹을 만들고 RDS 인스턴스만 만들지 않는다 | `plan`에서 `eks`·`secret`·`rds`만 MISSING | 20분 | 같음 |
 | 2★ | S3 데이터 | 아래 "S3 복사" | `sagemaker_explanation.py --profile <B> verify` 13개 일치, scoring 객체 `FULL_OBJECT` SHA-256 | 서버 간 30분, 로컬 경유 1~2시간 | 같음 |
 | 3★ | Secrets Manager 12개 | 이름은 `demo-stack.json` `secrets`. 값은 저장소 밖 파일로 `create-secret --secret-string file://…`(출력하지 않음). **A와 같아야 하는 값**: DB 계정 6개(복원 DB의 계정이 A 비밀번호를 그대로 갖고 `rds-bootstrap`은 비밀번호를 바꾸지 않음), `app/payment`의 `PAYMENT_BILLING_ENCRYPTION_KEY`(DB에 암호화해 둔 값을 읽는 키). **새 값 가능**: `app/internal` 6개·`platform/rabbitmq`(RabbitMQ는 새 PVC), `app/auth` JWT(새 값이면 기존 로그인은 다시 함). `app/ai`는 `OPENAI_API_KEY`·`THEME_VIDEO_CREDENTIALS_JSON`·`VIDEO_PROJECT`만 넣고 RunPod 키 `SAGOMUNGCHI_SLLM_SERVERLESS_GEMMA`·`SAGOMUNGCHI_SLLM_SERVERLESS_KEY_GEMMA`는 넣지 않는다(11/19 결정, ExternalSecret도 `OPENAI_API_KEY`만 읽음) | `plan`의 secret OK. 값은 보지 않고 `describe-secret`로 이름만 본다 | 30분 | 같음(ESO) |
 | 4★ | CloudFront 먼저 | 아래 "손으로 하는 단계"의 CloudFront를 웹 origin만으로 먼저 만든다(OAC·`spa-router.js`·웹 버킷 policy). 시연 주소 `www.sagomungchi.co.kr`은 저장소 값이 바뀌지 않으므로, B 인증서·대체 도메인·가비아 CNAME 전환은 위 "확인 필요" 도메인 행 순서대로 A 종료 뒤 한다. `/api/*`의 ALB origin은 12단계에서 붙인다 | 배포 Deployed, B 기본 주소 기록 | 20분 | 같음 |

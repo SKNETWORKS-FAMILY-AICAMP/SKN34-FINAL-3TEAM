@@ -302,7 +302,7 @@ class DemoStackTest(unittest.TestCase):
         self.assertEqual(kinds.count('subnet'), 4)
         self.assertEqual(kinds.count('s3'), 4)
         self.assertEqual(kinds.count('iam-role'), 13)
-        self.assertEqual(kinds.count('ecr'), 8)
+        self.assertEqual(kinds.count('ecr'), 9)  # #985 tox-retrain 포함
         self.assertIn(('rds', 'sagomungchi-demo-db'), created)
 
         report = demo_stack.plan(aws, self.spec)
