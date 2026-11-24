@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import type { Child } from '../../domain/classroom.ts'
 import type { Consent, ConsentDocument } from '../../domain/parent.ts'
@@ -30,7 +30,7 @@ export function ConsentFields({
             </summary>
             <p>{d.content}</p>
           </details>
-          <label className="ws-check">
+          <label className="ws-check ws-consent-check">
             <input
               type="checkbox"
               checked={!!value.find((c) => c.documentId === d.documentId && c.version === d.version)?.agreed}
@@ -161,9 +161,11 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
     register = useParentMutation(parentApi.register),
     [nickname, setNickname] = useState(''),
     [grade, setGrade] = useState(3),
-    [birthYear, setBirthYear] = useState(() => new Date().getFullYear() - (3 + 6)),
+    [manualYear, setManualYear] = useState<number | null>(null),
     [maxYear] = useState(() => new Date().getFullYear()),
     [consents, setConsents] = useState<Consent[]>([])
+  const birthYear = manualYear ?? maxYear - (grade + 6)
+  const submitted = useRef(false)
   return (
     <section className="ws-card">
       <h2>자녀 등록</h2>
@@ -176,21 +178,24 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
         className="ws-form"
         onSubmit={(e) => {
           e.preventDefault()
+          if (submitted.current) return
+          submitted.current = true
           void register
             .mutateAsync({ nickname, grade, birthYear, consents })
-            .then(onCreated)
-            .catch(() => {})
+            .then(onCreated, () => { submitted.current = false })
         }}
       >
         <label>
           자녀 별명
           <input
             aria-label="자녀 별명"
+            maxLength={40} aria-describedby="child-name-limit"
             value={nickname}
             required
             onChange={(e) => setNickname(e.target.value)}
           />
         </label>
+        <small id="child-name-limit">자녀 별명은 40자까지 입력할 수 있습니다.</small>
         <label>
           자녀 학년
           <select
@@ -199,7 +204,6 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
             onChange={(e) => {
               const nextGrade = Number(e.target.value)
               setGrade(nextGrade)
-              setBirthYear(maxYear - (nextGrade + 6))
             }}
           >
             {REGISTRATION_GRADES.map((g) => (
@@ -216,7 +220,7 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
             aria-label="출생연도"
             value={birthYear}
             required
-            onChange={(e) => setBirthYear(Number(e.target.value))}
+            onChange={(e) => setManualYear(Number(e.target.value))}
           >
             {Array.from({ length: maxYear - 1900 + 1 }, (_, index) => maxYear - index).map(
               (year) => (
@@ -227,6 +231,7 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
             )}
           </select>
         </label>
+        {manualYear !== null && <button type="button" onClick={() => setManualYear(null)}>학년 기준으로 다시 추천</button>}
         <QueryFeedback query={documents} />
         {documents.data && !documents.error && (
           <ConsentFields
@@ -237,7 +242,7 @@ export function ChildRegistration({ onCreated }: { onCreated: (c: Child) => void
         )}
         <button
           className="cj-primary"
-          disabled={register.isPending || !documents.data || !!documents.error}
+          disabled={register.isPending || register.isSuccess || !documents.data || !!documents.error}
         >
           자녀 등록하기
         </button>
@@ -308,9 +313,9 @@ export function ProfileSettings({ child }: { child?: Child }) {
           }}
         >
           <label>
-            새 자녀 별명
+            새 자녀 별명 (40자까지)
             <input
-              aria-label="새 자녀 별명"
+              aria-label="새 자녀 별명" maxLength={40}
               required
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}

@@ -120,6 +120,24 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         "answerId" to answer, "attemptId" to attempt, "answerVersion" to 1, "quote" to if (available) "합성 근거" else null,
         "missionTitle" to "합성 미션", "submittedAt" to Instant.now().toString(), "available" to available))))
     private fun rows(id: UUID) = repository.messages(id)
+    /** 저장된 jsonb 칸 그대로(#947). 도메인 행 타입과 관계없이 DB 값을 읽는다 */
+    private fun stored(messageId: UUID, column: String): JsonNode? =
+        jdbc.queryForObject("SELECT CAST($column AS text) FROM conversation_message WHERE id=?", String::class.java, messageId)?.let(json::readTree)
+    /** 대화 상세(이력)의 메시지 JSON 칸이 저장 jsonb와 같다(#947) */
+    private fun assertHistoryMatchesStored(conversation: UUID) {
+        val messages = json.readTree(call("/conversations/$conversation").body()).path("messages")
+        val saved = rows(conversation)
+        assertEquals(saved.size, messages.size())
+        saved.zip(messages.toList()).forEach { (row, view) ->
+            assertEquals(row.id.toString(), view.path("messageId").asText())
+            for (column in listOf("metrics", "verification", "clarification", "fallback", "notice")) {
+                val value = stored(row.id, column) ?: continue
+                assertEquals(value, view.path(column), column)
+            }
+            for (column in listOf("metrics", "verification", "clarification", "notice"))
+                if (stored(row.id, column) == null) assertTrue(view.path(column).isNull || view.path(column).isMissingNode, column)
+        }
+    }
 
     @Test fun `creation default KST period list detail and stream persistence use core IDs and verified headers`() {
         val id = create()
@@ -181,6 +199,8 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         }
         assertEquals(listOf("status", "clarification", "done"), events(message(id).body()))
         assertEquals("COMPLETED", rows(id).single().status); assertNull(rows(id).single().answer); assertNotNull(rows(id).single().clarification)
+        assertEquals("기간을 확인해 주세요", stored(rows(id).single().id, "clarification")!!.path("question").asText())
+        assertHistoryMatchesStored(id)
     }
     @Test fun `unverified result partial stream invalid order and upstream error stay FAILED with no answer`() {
         val id = create()
@@ -292,7 +312,8 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         val response = message(id)
         assertEquals(listOf("status", "status", "clarification", "done"), events(response.body()), response.body())
         assertEquals("COMPLETED", rows(id).single().status); assertNull(rows(id).single().answer)
-        assertEquals(0, json.readTree(rows(id).single().clarification).path("options").size())
+        assertEquals(0, stored(rows(id).single().id, "clarification")!!.path("options").size())
+        assertHistoryMatchesStored(id)
     }
     @Test fun `normalized conversation paths retain authentication role ownership and SSE protections`() {
         val id = create()
@@ -324,7 +345,7 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         allowed.set(true)
         val success = call("/conversations/$id/messages/${failed.id}/retry", emptyMap<String, String>())
         assertTrue("result" in events(success.body()), success.body())
-        assertTrue(json.readTree(rows(id).single().verification).path("contentAllowed").booleanValue())
+        assertTrue(stored(rows(id).single().id, "verification")!!.path("contentAllowed").booleanValue())
     }
     @Test fun `earlier baseline answer requires membership in selected period including later list pages`() {
         val id = create(); val included = java.util.concurrent.atomic.AtomicBoolean(true)
@@ -531,8 +552,8 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         assertEquals("""{"numbersMatched":true,"quotesMatched":true,"contentAllowed":true}""", result.path("verification").toString())
         assertEquals(5, result.path("recordCount").asInt()); assertEquals("LLM", result.path("source").asText()); assertTrue(result.path("fallback").isNull)
         assertEquals("확정 합성 답변", saved.answer); assertEquals("LLM", saved.source); assertEquals(5, saved.recordCount)
-        assertEquals(json.valueToTree<JsonNode>(listOf(metric)), json.readTree(saved.metrics))
-        assertEquals(result.path("verification"), json.readTree(saved.verification))
+        assertEquals(json.valueToTree<JsonNode>(listOf(metric)), stored(saved.id, "metrics"))
+        assertEquals(result.path("verification"), stored(saved.id, "verification"))
         assertNull(saved.fallback); assertNull(saved.notice); assertNull(saved.failureCode); assertNull(saved.clarification)
         val stored = repository.evidence(saved.id).single()
         assertEquals(ref.path("evidenceId").asText(), stored.id.toString()); assertEquals(attempt, stored.attemptId)
@@ -552,7 +573,7 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
             fallback.path("fallback").toString())
         val row = rows(fallbackId).single()
         assertEquals("TEMPLATE", row.source); assertEquals("VERIFICATION_FAILED", row.failureCode)
-        assertEquals(fallback.path("fallback"), json.readTree(row.fallback))
+        assertEquals(fallback.path("fallback"), stored(row.id, "fallback"))
         val noSource = create()
         streamResult { it.remove("source") }
         assertEquals("LLM", frames(message(noSource).body()).single { it.first == "result" }.second.path("source").asText())
@@ -561,8 +582,9 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         streamResult { value -> value.put("source", "TEMPLATE"); value.putNull("fallback"); value.put("recordCount", 0)
             value.set<JsonNode>("evidence", json.createArrayNode()); value.set<JsonNode>("notice", json.valueToTree(mapOf("reason" to "NO_RECORD"))) }
         val notice = frames(message(noticeId).body()).single { it.first == "result" }.second
-        assertEquals("""{"reason":"NO_RECORD"}""", notice.path("notice").toString()); assertEquals(notice.path("notice"), json.readTree(rows(noticeId).single().notice))
+        assertEquals("""{"reason":"NO_RECORD"}""", notice.path("notice").toString()); assertEquals(notice.path("notice"), stored(rows(noticeId).single().id, "notice"))
         assertNull(rows(noticeId).single().fallback)
+        for (conversation in listOf(id, fallbackId, noSource, noticeId)) assertHistoryMatchesStored(conversation)
     }
 
     @Test fun `ai result outside the contract fails as AI_INVALID_RESPONSE before persistence`() {
@@ -650,7 +672,8 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         val id = create()
         ai.respond = { exchange, _ -> exchange.event("clarification", options); exchange.event("done", "{}") }
         val sent = frames(message(id).body()).single { it.first == "clarification" }.second
-        assertEquals(json.readTree(options), sent); assertEquals(json.readTree(options), json.readTree(rows(id).single().clarification))
+        assertEquals(json.readTree(options), sent); assertEquals(json.readTree(options), stored(rows(id).single().id, "clarification"))
+        assertHistoryMatchesStored(id)
         val noticeId = create()
         ai.respond = { exchange, request ->
             val scope = json.readTree(request.body).path("scope")
@@ -661,7 +684,7 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         assertEquals(listOf("question", "options", "reason", "current"), notice.fieldNames().asSequence().toList())
         assertEquals("자녀를 확인해 주세요", notice.path("question").asText()); assertEquals(0, notice.path("options").size())
         assertEquals("OTHER_CHILD", notice.path("reason").asText()); assertEquals(scopeTree(), notice.path("current"))
-        assertEquals(notice, json.readTree(rows(noticeId).single().clarification))
+        assertEquals(notice, stored(rows(noticeId).single().id, "clarification")); assertHistoryMatchesStored(noticeId)
 
         fun option(label: Any? = "오늘", child: Any? = student, from: Any? = today.toString(), to: Any? = today.toString()) =
             mapOf("label" to label, "scope" to mapOf("childId" to child, "from" to from, "to" to to))

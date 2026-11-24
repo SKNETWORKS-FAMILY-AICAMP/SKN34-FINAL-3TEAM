@@ -52,7 +52,7 @@ def run(
 def state(intent: str, empty: bool = False, **extra) -> dict:
     return {
         "request": REQUEST,
-        "prompt_version": "analysis@4",
+        "prompt_version": "analysis@5",
         "intent": intent,
         "computation": compute(intent, records(empty), SCOPE),
         **extra,
@@ -90,6 +90,16 @@ def test_classify_scope_issue_asks_clarification(issue) -> None:
         "childId": STUDENT,
         **PERIOD,
     }
+
+
+def test_difficulty_question_uses_reflections_without_overriding_scope() -> None:
+    request = REQUEST.model_copy(update={"question": "어떤 걸 어려워했어?"})
+    llm = FakeLlm(Classification(intent="OTHER", scope_issue="NONE"))
+    result, _ = run(understand.classify, {"request": request}, llm)
+    assert result["intent"] == "REFLECTIONS"
+    llm = FakeLlm(Classification(intent="OTHER", scope_issue="OTHER_CHILD"))
+    result, _ = run(understand.classify, {"request": request}, llm)
+    assert result["clarification"].reason == "OTHER_CHILD"
 
 
 def test_pinned_conversation_guides_other_days_to_new_conversation() -> None:
@@ -258,7 +268,7 @@ def test_check_confirms_verified_draft() -> None:
     assert result.fallback is None
     assert [e.answer_id for e in result.evidence] == ["a-2"]
     assert result.versions.model == "fake-model"
-    assert result.versions.prompt == "analysis@4"
+    assert result.versions.prompt == "analysis@5"
     assert written == [status("숫자와 인용을 기록과 맞춰 보는 중")]
 
 

@@ -54,6 +54,17 @@
 | ai-service | 추억 검색 문서·질문 임베딩(기존 API, 사용량 유형 구분), 추억 설명 생성 | 기존 `embedding`, 설명은 `memory_explanation`(#565) |
 | report·scoring | 변경 없음 | - |
 
+#### 1.1.3 추억 그림책 추가 책임 (FN-RPT-18, 구현 #966, 2026-11-24 도입)
+
+학부모가 자녀의 앨범 회차를 PDF 그림책으로 발급받는다([제안 문서](../proposals/memory-book.md), [결정 기록](../proposals/memory-book-decisions.md)). 새 서비스·Pod는 없고 report-worker가 새 명령 큐 하나를 더 소비한다. API는 [API 명세](api-spec.md) 2.5.1·4.1.4·4.4, 저장은 [ERD](erd.md) 3.5.3.
+
+| 서비스 | 추가 책임 | 기능 패키지 |
+|---|---|---|
+| core-service | 학부모 발급·목록·받기 API, 연결·동의·원문 공개(#206) 확인, 유료 판정(`features.memoryBook`)·하루 한도·`MEMORY_BOOK` 사용 예약, 작업 행·`memorybook.generate` Outbox, 완료 이벤트 반영, 받기 감사 기록, 자녀 삭제 때 작업 행 삭제 | `memorybook`(controller → service → repository·client·messaging·consumer), 유료 판정은 기존 `payment/service/ProductEntitlementService` |
+| learning-service | 회차 조립 내부 API(요일 문제·장면 그림·답변·되묻기·돌아보기·엔딩, P23은 여기서 적용). 그림은 단기 presigned URL | 기존 `memory`(MemoryBook controller·service·repository) |
+| report-service | `memorybook.generate` 소비, 프로필 재확인(원문 공개), 그림 받기(허용 출처·크기 상한·리디렉트 거부, 내부 토큰 없는 별도 클라이언트) → `data:` URI → Chromium PDF 1판 → S3 저장 → `memorybook.completed` Outbox, core 전용 받기 주소 | `app/memory_book/`, `app/clients/asset_fetcher.py`·`memory_book_client.py`, `app/rendering/memory_book.py` |
+| ai·scoring | 변경 없음(LLM 호출 없음) | - |
+
 ### 1.2 전체 구성도
 
 ```
@@ -65,7 +76,7 @@
                        ▲                     │  ▲
                        └──── 기록 조회 ───────┘  │
       ┌─────────────────────────── RabbitMQ ──┼──────────────────────────────┐
-      │ cmd.direct  : report.generate          │       (작업 큐, 소비자 1)      │
+      │ cmd.direct  : report.generate, memorybook.generate (작업 큐, 소비자 1)│
       │ events.topic: report.*, llm.*, model.*, student.*  (fan-out, 소비자 N) │
       └────────────────────────────────────────┼──────────────────────────────┘
                ▲ consume                       │ HTTP(서술 생성)
@@ -79,7 +90,7 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 
 - core→scoring 동기 HTTP는 관리자 모델 파일 사전 검사 중계 `POST /internal/models/preflight`(#368, 20초·재시도 없음)뿐이다. 판정 교차 확인(M2·M1)은 ai→scoring이다
 - `model.*`는 `model.version.activated`(core→ai·scoring)와 `model.loading.reported`(scoring→core, #370) 두 메시지다(1.4)
-- 그림에 없는 동기 HTTP: learning→core(피드백 안 결제 사용 예약·완료 `/internal/payment-usage/*`, 삭제 완료 보고 `/internal/deletion-requests/{id}/completions`, 추억 설명용 학생 프로필 `/internal/students/{id}/profile`), learning→scoring(답변 표현 분류, #688), core→report-api(리포트·파일·근거 조회, 정정 영향 조회, 작업 복구 `reconcile`). 서비스 간 허용 관계 전체는 4.3 NetworkPolicy 표
+- 그림에 없는 동기 HTTP: learning→core(피드백 안 결제 사용 예약·완료 `/internal/payment-usage/*`, 삭제 완료 보고 `/internal/deletion-requests/{id}/completions`, 추억 설명용 학생 프로필 `/internal/students/{id}/profile`), learning→scoring(답변 표현 분류, #688), core→report-api(리포트·파일·근거 조회, 정정 영향 조회, 작업 복구 `reconcile`, 추억 그림책 받기 주소), core→learning(추억 그림책 보유 확인·앨범, 자녀 범위 SYSTEM), report-worker→learning(추억 그림책 회차 조립), report-worker→S3 missions(learning이 서명한 그림 GET, IAM 권한 없이 서명 URL로만). 서비스 간 허용 관계 전체는 4.3 NetworkPolicy 표
 
 ### 1.3 통신 원칙
 | 구간 | 방식 | 근거 |
@@ -131,6 +142,8 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 | `llm.usage.recorded` | 이벤트 | ai, scoring | core | 호출 종류별 토큰·지연·실패·버전 집계 (학생 ID·원문 미포함) |
 | `model.version.activated` | 이벤트 | core | ai, scoring (Pod별 수신) | 모든 레플리카가 승인 scope의 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
 | `model.loading.reported` | 이벤트 | scoring (Pod마다 기동·상태 변화 즉시, 이후 30초 주기로 전체 상태 재보고) | core | Pod·인스턴스별 최신 로딩 상태를 `model_loading_report`에 저장(같은 인스턴스는 더 큰 `sequence`만 반영, 1일 넘은 이벤트 무시), 관리자 `GET /admin/model-loading` 조회 (#370) |
+| `memorybook.generate` | 명령 | core (학부모 발급, Outbox) | report-worker (큐 `report.memorybook.generate`, 재시도 1·5·15분·DLQ) | 학생 삭제 잠금 → 프로필로 원문 공개 재확인 → 이미 저장한 파일이면 완료만 다시 알림 → learning 회차 조립 → 그림 받기 → PDF 렌더링·S3 저장 → `memorybook.completed` (#966) |
+| `memorybook.completed` | 이벤트 | report (Outbox) | core (큐 `core.memorybook.events`) | 작업 `READY`·`FAILED`(영구 실패 코드), 사용 예약 마감(READY면 사용, FAILED면 미사용). `processed_event`로 한 번만 반영 (#966) |
 | `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 물리 삭제, 처리 후 core 내부 API로 완료 보고. 페이로드에 `deletionRequestId`·`scope` 포함 (P09) |
 
 - 위 메시지는 모두 core 감사 큐 `core.event.audit`에도 바인딩되어 `event_log`에 기록된다(#208). 바인딩은 routing key별로 두며 `#` 와일드카드는 쓰지 않는다(report 발행자의 unroutable 감지 유지). 메시지를 추가하면 감사 바인딩도 함께 추가하고 `RabbitDefinitionsTest`가 누락을 검사한다.
@@ -166,6 +179,7 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 7. **학습 완료 후**: 돌아보기 저장 성공 → core가 포인트 적립(미션당 최초 1회) → 커뮤니티 공개가 켜져 있고 그 미션 공유물이 없으면 learning에 공유 요청(학생·미션당 1개) → 공유 성공 시 포인트 적립(#388·#389)
 8. **일일 리포트**: core 스케줄러(ShedLock)가 매일 자정(다음 날 00:00 KST) 보호자가 연결된 자녀별 `report_job(period_type = DAILY)` + Outbox → `report.generate` → report가 learning 기록 조회 → 코드 계산·템플릿 구성 → 인용 대조 → 렌더링·S3 저장(ai 호출 없음) → `report.completed` → core 일일 알림
 9. **리포트 대화**: 학부모가 일일 리포트에서 대화 생성 → core가 리포트 소유·자녀 연결 확인 후 대화에 리포트 ID·판을 저장하고 범위를 그날로 고정 → 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣음 → 이후는 4번 분석 대화 흐름 그대로
+10. **추억 그림책**(#966): 학부모가 리포트 화면의 회차 목록에서 발급 → core가 연결·원문 공개·보유·한도·유료를 확인하고 작업 행 + Outbox → `memorybook.generate` → report-worker가 learning 회차 조립·그림 받기 → PDF를 `reports` 버킷에 저장 → `memorybook.completed` → core 작업 READY → 학부모 받기(요청마다 원문 공개 재확인, report 서명 URL 300초). LLM 호출 없음([시퀀스 3.11](sequence-diagram.md))
 
 ### 1.6 메시징 신뢰성 규칙
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴). core 릴레이는 ShedLock 단일 실행, 발행·confirm 대기는 DB 트랜잭션 밖, 발행 시각만 짧은 트랜잭션으로 기록
@@ -226,8 +240,12 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 | Domain | `domain` | `models.py`, `state.py` | 엔티티·값 객체, 상태 전이 규칙(`QUEUED→RUNNING`, 판정 상태 등) | 프레임워크·외부 라이브러리 의존 |
 | Infrastructure | `repository`, `client`, `messaging` | `repository.py`, `clients/`, `messaging/`, `llm/` | DB, 외부 API, 브로커, LLM, PG, S3 연동 | 업무 판단 |
 
-- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용한다. `_common`의 다른 주기 작업은 `_common/scheduler`에 두고 service를 호출한다(`IdempotencyCleanupScheduler` → `IdempotencyService.deleteExpired`, #314). 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`)
-- Domain 오류(Spring): domain은 HTTP 상태가 없는 `_common/exception`의 `DomainException(ErrorKind, code, title, detail)`만 던진다. `ErrorKind` → HTTP 상태 변환은 `_common/exception` 한 곳에서 하고(2.3), HTTP 상태를 직접 받는 `BusinessException`은 application·presentation에서만 쓴다. repository는 한도 비교·HTTP 상태를 정하지 않고 값만 돌려준다(예: `SignupRateLimiter`는 가입 횟수, 조회 실패는 `null` → `AuthService`가 429·503 결정, #816). 예외의 상태·code를 읽는 곳은 두 예외를 함께 처리하는 공통 함수(`httpStatusOf`·`errorCodeOf`)를 쓴다 (#249)
+- 공통 메시징 인프라 예외(#278): `_common/messaging`의 이벤트 감사 기록·보존 정리(core `EventAuditConsumer`·`EventRetentionCleanup`)는 `_common`이 소유한 메시징 테이블(`event_log`·`outbox_event`·`processed_event`)만 다루고 업무 판단이 없어 service 없이 같은 패키지의 `_common` repository를 직접 호출한다. 같은 패키지의 `OutboxRelay`·`ProcessedEventRepository` 멱등 소비와 같은 공통 인프라로 보며, `_common`에 service 계층을 새로 두지 않는다. 이 예외는 `_common/messaging` 안에만 적용한다. `_common`의 다른 주기 작업은 `_common/scheduler`에 두고 service를 호출한다(`IdempotencyCleanupScheduler` → `IdempotencyService.deleteExpired`, #314). 기능 패키지의 controller·consumer·scheduler는 항상 자기 기능 service만 호출한다(learning `record/scheduler/ProcessedEventCleanupScheduler` → `ProcessedEventCleanupService`, report `worker.py` → `deletion/service.py` `prune_event_records`). 같은 경로라도 다른 기능의 흐름이면 요청 조건으로 나눠 그 기능 controller가 받는다(learning `GET /internal/missions/{id}`: `context` 없음·`EXTRA`는 `MissionController.get` → `MissionService`, 테마 `context`는 `AttemptController.themeGuide` → `AttemptService`, #908)
+- Domain 오류(Spring): domain은 HTTP 상태가 없는 `_common/exception`의 `DomainException(ErrorKind, code, title, detail)`만 던진다. `ErrorKind` → HTTP 상태 변환은 `_common/exception` 한 곳에서 하고(2.3), HTTP 상태를 직접 받는 `BusinessException`은 application·presentation에서 쓰고, Infrastructure에서는 아래 client 오류 범위만 허용한다. repository는 한도 비교·HTTP 상태를 정하지 않고 값만 돌려준다(예: `SignupRateLimiter`는 가입 횟수, 조회 실패는 `null` → `AuthService`가 429·503 결정, #816). 예외의 상태·code를 읽는 곳은 두 예외를 함께 처리하는 공통 함수(`httpStatusOf`·`errorCodeOf`)를 쓴다 (#249)
+- client 오류 범위(Spring, #948, 2026-11-23 결정): Infrastructure `client`가 직접 던질 수 있는 `BusinessException`은 하위 서비스 응답의 계약 오류(502, 모양이 틀림 → 2.2)와 연결 실패(503 연결·응답 실패, 시간 초과는 504. 예: `LearningClient` `LEARNING_TIMEOUT`, `QueueManagementClient`, `AiClient.checkActive`)뿐이다. 하위 서비스가 업무상 거절한 응답(409 등)을 어떤 공개 오류 코드·HTTP 상태·안내 문구로 바꿀지, 확인하지 못한 결과를 어떤 공개 오류로 알릴지는 업무 판단이라 application(service·facade)이 정한다. client는 그 결과를 타입 결과나 client 예외(예: learning `AiCallException`)로 돌려준다. 선례: learning `PaymentUsageClient`는 core 결제 사용 응답을 `PaymentUsageReservation`·`PaymentUsageCompletion`(성공, 거절 `code`, 확인 불가)으로 돌려주고, `FeedbackFacade`가 #276 정책(3개 코드만 같은 코드 409와 코드별 문구, 목록 밖·형식 오류 409와 확인 불가는 503 `PAYMENT_USAGE_UNAVAILABLE`)으로 공개 오류를 만든다
+  - 정리 전 남은 곳(#948 확인, 2026-11-23): 아래 core client는 이 범위 밖 상태를 직접 던진다. 공개 계약에 묶인 응답(리포트·지원·커뮤니티·로그인·관리자 표현 검토)이라 12/7 시연 전에는 옮기지 않고 현행대로 두며, 시연 뒤 후속 이슈에서 application으로 옮긴다. 새 client는 위 규칙을 따른다
+    - 하위 서비스 업무 거절 전달: `ReportClient`(403 `REPORT_SCOPE_REJECTED`, 404 `REPORT_NOT_FOUND`, 409 `DELETION_IN_PROGRESS`·`REPORT_JOB_IDENTITY_MISMATCH`), `LearningSupportClient`(409 `SUPPORT_CORRECTION_CONFLICT`, 422 `SUPPORT_CORRECTION_REJECTED`, 지원 대상 403·404), `CommunityClient`(허용 목록의 403·404·409 `code`를 같은 상태와 학생 안내 문구로), `LearningExpressionReviewClient`(400 `VALIDATION_FAILED`, 404)
+    - 인증·호출 컨텍스트 검사: `GoogleOAuthClient`(401 `OAUTH_FAILED`), `LearningSupportClient`(401 `UNAUTHENTICATED`), `LearningExpressionReviewClient`(403 `FORBIDDEN`)
 
 ### 2.2 의존 규칙
 - `Presentation → Application → Infrastructure` 단방향, 계층 건너뛰기 금지 (controller → repository 직접 호출 금지)
@@ -238,11 +256,11 @@ CONVERSATION은 DB의 conversation_job_retry를 core 작업자가 선점하고 �
 - 공통 코드: Spring `_common/`, Python `app/` 루트의 `config.py`·`errors.py`·`security.py`·`messaging/`·`clients/base.py`
   - `_common`은 기능 패키지를 참조하지 않는다. 기능에 의존하는 공통 처리는 그 기능에 둔다(예: `PublicAuthFilter` → account, #251)
   - 여러 기능 client가 같은 하위 서비스 연결을 쓰면 전송은 `_common/client`에 둔다(core `LearningClient`: learning 내부 API, 서킷·타임아웃 공유). 기능별 요청·응답 해석은 각 기능 `client`(learning `LearningRecordClient`·`FeedbackClient`, community `CommunityClient`, support `LearningSupportClient`)가 맡고, 다른 기능의 client를 참조하지 않는다(#422)
-  - 하위 서비스 응답 해석은 기능 `client`가 원본 JSON·SSE를 core 타입(DTO·도메인 객체)으로 바꾸고, 모양이 틀리면 client에서 계약 오류(502)로 막는다. service는 타입 값으로 업무 판단만 하고 하위 서비스 JSON 칸 이름을 알지 않는다. #608 예외 목록 밖에 남아 있던 4곳을 원칙대로 옮겼다(#792, 2026-11-19): `CommunityService` 공유물 목록 → `CommunityClient.missionPosts`·`studentPosts`(`MissionPost`·`StudentPost`, 502 `COMMUNITY_INVALID_RESPONSE`), `SupportService` 지원 대상·정정 응답 → `LearningSupportClient.target`·`judgedAnswer`·`correct`(`SupportTarget`·`CorrectionResult`, 502 `SUPPORT_INVALID_RESPONSE`), `ReportQueryService` 목록·상세·다운로드 계약 검사 → `ReportClient.reports`·`report`·`file`(502 `REPORT_CONTRACT_INVALID`), `AnalysisStreamService` ai SSE 이벤트 모양 → `AiClient.stream`의 `AnalysisEvent`(502 `AI_INVALID_RESPONSE`). 리포트 서술·원문 거르기는 공개 설정·상품 권한에 따른 업무 규칙이라 언제 거를지는 `ReportQueryService`가 정하고, 어느 칸을 거를지는 client 응답 타입 `ReportDocument`가 안다. 분석 이벤트 순서 검사도 실행 상태와 묶인 흐름이라 service에 둔다. 같은 원칙으로 남은 2곳도 옮겼다(#814, 2026-11-19): `ReportQueryService.pinned`·`ConversationService.report`의 고정 대화용 지표·문제·판정 요소 읽기 → `ReportClient.pinned`(`PinnedReport`, 모양이 틀린 항목을 거르지 않고 502 `REPORT_CONTRACT_INVALID`), `CommunityService` 내 공유물·자녀 공유물의 미션 ID·제목·작성 시각·반응 수와 미션 공유물 작성 시각 → `CommunityClient.studentPosts`·`missionPosts`가 형식을 검사한 값(502 `COMMUNITY_INVALID_RESPONSE`). 공유 답변은 공개 계약 `CommunityAnswer`(입력 방식별 `content` oneOf)를 정한 뒤 `CommunityClient`가 같은 502로 모양을 검사하고 확인한 원문을 넘긴다(#825). #814 이후 전수 확인(#824, 2026-11-19)에서 남은 곳도 모두 옮겼다: `ReportSupportService.affected` 정정 영향 조회 → `ReportClient.correctionImpact`(`AffectedReport`, 502 `REPORT_CONTRACT_INVALID`, 호출부 `SupportService`는 기존대로 실패를 `UNKNOWN`으로 기록), `ConversationService.validateResult`·`validateClarification`의 ai 결과·되묻기 모양 → `AiClient.stream`의 `AnalysisResult`·`AnalysisClarification`(502 `AI_INVALID_RESPONSE`, 공개 SSE·저장 칸 이름은 `AnalysisResult`가 앎), `ConversationService.verifyEvidence`·`evidence`의 learning 근거 응답 → `LearningRecordClient.evidence`의 `EvidenceRecord`(502 `LEARNING_INVALID_RESPONSE`), `ReportTemplateService.propose`의 ai 설정 변경안 → `AiClient.reportTemplate`의 `TemplateProposal`(502 `AI_INVALID_RESPONSE`). controller에 남아 있던 피드백 응답 해석도 옮겼다(#834, 2026-11-20): `FeedbackController`의 learning 피드백 응답 형식 검사·`DONE`/`RUNNING` 판별·오류 Problem 기본값 → `FeedbackClient.feedback`의 `FeedbackOutcome`(502 `LEARNING_INVALID_RESPONSE`), SSE 이벤트 결정 → `FeedbackService`. 공개 SSE 이벤트 순서·오류 코드·`retryable`은 그대로다. 결과 범위와 요청 범위 대조, 선택지 자녀 권한, 근거와 learning 기록 대조, 허용 설정 값 검사는 업무 판단이라 service에 둔다. 이로써 아래 #608 예외 밖에서 service가 하위 서비스 JSON 칸을 읽는 곳은 없다(돌아보기 `reflection` 응답에서 근거 원문·시각을 읽는 것은 #608 `ConversationService.reflection` 예외에 속함)
+  - 하위 서비스 응답 해석은 기능 `client`가 원본 JSON·SSE를 core 타입(DTO·도메인 객체)으로 바꾸고, 모양이 틀리면 client에서 계약 오류(502)로 막는다(client가 던질 수 있는 오류는 이 502와 연결 실패(503, 시간 초과 504)뿐, 업무 거절의 공개 오류는 application이 정함 → 2.1 client 오류 범위, #948). service는 타입 값으로 업무 판단만 하고 하위 서비스 JSON 칸 이름을 알지 않는다. #608 예외 목록 밖에 남아 있던 4곳을 원칙대로 옮겼다(#792, 2026-11-19): `CommunityService` 공유물 목록 → `CommunityClient.missionPosts`·`studentPosts`(`MissionPost`·`StudentPost`, 502 `COMMUNITY_INVALID_RESPONSE`), `SupportService` 지원 대상·정정 응답 → `LearningSupportClient.target`·`judgedAnswer`·`correct`(`SupportTarget`·`CorrectionResult`, 502 `SUPPORT_INVALID_RESPONSE`), `ReportQueryService` 목록·상세·다운로드 계약 검사 → `ReportClient.reports`·`report`·`file`(502 `REPORT_CONTRACT_INVALID`), `AnalysisStreamService` ai SSE 이벤트 모양 → `AiClient.stream`의 `AnalysisEvent`(502 `AI_INVALID_RESPONSE`). 리포트 서술·원문 거르기는 공개 설정·상품 권한에 따른 업무 규칙이라 언제 거를지는 `ReportQueryService`가 정하고, 어느 칸을 거를지는 client 응답 타입 `ReportDocument`가 안다. 분석 이벤트 순서 검사도 실행 상태와 묶인 흐름이라 service에 둔다. 같은 원칙으로 남은 2곳도 옮겼다(#814, 2026-11-19): `ReportQueryService.pinned`·`ConversationService.report`의 고정 대화용 지표·문제·판정 요소 읽기 → `ReportClient.pinned`(`PinnedReport`, 모양이 틀린 항목을 거르지 않고 502 `REPORT_CONTRACT_INVALID`), `CommunityService` 내 공유물·자녀 공유물의 미션 ID·제목·작성 시각·반응 수와 미션 공유물 작성 시각 → `CommunityClient.studentPosts`·`missionPosts`가 형식을 검사한 값(502 `COMMUNITY_INVALID_RESPONSE`). 공유 답변은 공개 계약 `CommunityAnswer`(입력 방식별 `content` oneOf)를 정한 뒤 `CommunityClient`가 같은 502로 모양을 검사하고 확인한 원문을 넘긴다(#825). #814 이후 전수 확인(#824, 2026-11-19)에서 남은 곳도 모두 옮겼다: `ReportSupportService.affected` 정정 영향 조회 → `ReportClient.correctionImpact`(`AffectedReport`, 502 `REPORT_CONTRACT_INVALID`, 호출부 `SupportService`는 기존대로 실패를 `UNKNOWN`으로 기록), `ConversationService.validateResult`·`validateClarification`의 ai 결과·되묻기 모양 → `AiClient.stream`의 `AnalysisResult`·`AnalysisClarification`(502 `AI_INVALID_RESPONSE`, 공개 SSE·저장 칸 이름은 `AnalysisResult`가 앎), `ConversationService.verifyEvidence`·`evidence`의 learning 근거 응답 → `LearningRecordClient.evidence`의 `EvidenceRecord`(502 `LEARNING_INVALID_RESPONSE`), `ReportTemplateService.propose`의 ai 설정 변경안 → `AiClient.reportTemplate`의 `TemplateProposal`(502 `AI_INVALID_RESPONSE`). controller에 남아 있던 피드백 응답 해석도 옮겼다(#834, 2026-11-20): `FeedbackController`의 learning 피드백 응답 형식 검사·`DONE`/`RUNNING` 판별·오류 Problem 기본값 → `FeedbackClient.feedback`의 `FeedbackOutcome`(502 `LEARNING_INVALID_RESPONSE`), SSE 이벤트 결정 → `FeedbackService`. 공개 SSE 이벤트 순서·오류 코드·`retryable`은 그대로다. 결과 범위와 요청 범위 대조, 선택지 자녀 권한, 근거와 learning 기록 대조, 허용 설정 값 검사는 업무 판단이라 service에 둔다. 이로써 아래 #608 예외 밖에서 service가 하위 서비스 JSON 칸을 읽는 곳은 없다(돌아보기 `reflection` 응답에서 근거 원문·시각을 읽는 것은 #608 `ConversationService.reflection` 예외에 속함)
   - 프록시 service 응답 해석 예외(#608, 2026-11-13 결정): 아래 core service는 learning 응답 본문을 service에서 `ObjectMapper.readTree`로 직접 읽는다. 발표 전 위험을 줄이려 코드를 옮기지 않고 예외로 둔다
     - 허용 이유: 공용 `LearningClient.exchange`가 돌려준 `HttpExchangeResult`를 controller까지 거의 그대로 넘기는 프록시라, 해석을 client로 옮기면 원문 응답 전달과 몇 칸 추출을 함께 돌려주는 client를 새로 만들어야 한다. service가 읽는 칸은 뒤따르는 업무 처리(사용량·포인트 적립·감사·액자 표시)를 정하는 데 필요한 것뿐이고, 읽기에 실패하면 응답을 바꾸지 않고 그 처리만 건너뛰거나(로그) 계약 오류로 막는다
     - 응답을 그대로 넘기며 후속 처리용 칸만 읽음: `LearningProxyService`(`startAttempt` 201의 `attemptId` → 사용량 기록, `reflection`의 409 `code`(`ATTEMPT_CLOSED`), `completedMission`·`inProgress`의 시도 `status`·`mission.id`), `ParticipationRewardService`(`reviewViewed`·`weeklyThemeViewed`가 받은 응답의 완료 칸으로 포인트 적립, 실패해도 응답 불변), `MemoryProxyService.album`(200 항목에 `displayed`만 더함, 모양이 다르면 502 `LEARNING_CONTRACT_INVALID`)
-    - 관리자 응답 허용 목록·감사: `AdminLearningService`(`stats`·`missionCounts`는 허용한 칸만 골라 반환, `sanitize`는 오류 응답을 허용 `code`만 남긴 problem으로 다시 만듦, `audited`는 성공 응답에서 감사 대상 ID·버전을 읽음). 해석 범위가 이 묶음에서 가장 크지만 요청 감사 → learning 호출 → 결과 감사 순서와 묶여 있어 결과를 모르면 `UNKNOWN`으로 남기는 흐름을 한 service에 둔다
+    - 관리자 응답 허용 목록·감사: `AdminLearningService`(`stats`·`missionCounts`는 허용한 칸만 골라 반환, `sanitize`는 오류 응답을 허용 `code`만 남긴 problem으로 다시 만듦, `audited`는 성공 응답에서 감사 대상 ID·버전을 읽음). 같은 성격으로 더한 칸(#908 점검): `weeklyPlanner`는 요청 본문 `draftId`로 감사 대상을 정하고 성공 응답 `draftId`와 대조, `sceneVersions`는 성공 응답 `scene`·`versions` 모양을 대조(감사 대상은 경로 `draftId`), `sanitize`는 `WEEKLY_THEME_PUBLISH_INCOMPLETE`의 `errors[].code`를 허용 코드만 남겨 core 고정 문구로 다시 만듦(learning 원문 메시지 미전달). 요청 본문은 변경 요청이 JSON 객체인지(`verifiedActor`)와 테마 초안 다시 생성의 `targets`(감사 detail, #537)만 읽음. 해석 범위가 이 묶음에서 가장 크지만 요청 감사 → learning 호출 → 결과 감사 순서와 묶여 있어 결과를 모르면 `UNKNOWN`으로 남기는 흐름을 한 service에 둔다
     - 응답 값을 업무 상태와 대조: `ConversationService`(`requirePeriodAttempts`·`reflection`). 응답은 `LearningRecordService` → `LearningRecordClient`로 받고, service는 그 값이 이번 분석 요청의 자녀·기간·페이지·근거 시도와 맞는지 확인한다. 업무 판단이라 Application 책임에 맞는다
     - 요청 본문 다시 만들기(하위 서비스 응답 아님): `LearningProxyService.storyViewed`·`answerPicked`, `MemoryProxyService.search`·`explanation`(`objectWith`)은 프록시가 원문 바이트로 받은 학생 요청 본문에서 허용 칸만 꺼내 새 본문을 만든다
     - 적용 범위: 위 service의 위 메서드에서 `LearningClient`·`LearningRecordService`·`LearningMemoryClient` 응답이나 요청 본문을 읽는 경우만. 결제 웹훅 본문(`PaymentWebhookService`)과 `SupportService`의 DB JSON 칸 읽기(정정 영향·공지 대상 역할)는 이 예외와 관계없다. `SupportService`는 learning 지원 응답도 읽고 있었으나(#792 점검) 이 목록에 넣지 않고 `LearningSupportClient`로 옮겼다(위 #792 항목)
@@ -307,7 +325,7 @@ backend/core-service/src/main/kotlin/com/sagomungchi/core/
 │  ├─ exception/
 │  ├─ security/
 │  ├─ messaging/                 # 이벤트 봉투, OutboxRelay, 멱등 소비, 이벤트 감사 기록·보존 정리(EventAuditConsumer·EventRetentionCleanup, #208, repository 직접 호출은 2.1 공통 인프라 예외 #278)
-│  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168)
+│  ├─ json/                      # JsonObject: domain이 드는 jsonb 객체 값 (#168, 공지·정정·대화 이력 #947)
 │  ├─ persistence/               # MyBatis 설정·PostgreSQL 타입 핸들러
 │  ├─ scheduler/                 # IdempotencyCleanupScheduler: 만료 멱등 키 정리 주기 실행 (#314)
 │  └─ web/                       # IdempotencyService, SseEmitters, 관리자 목록 페이지 범위 검사 PageQuery (core만)
@@ -759,7 +777,7 @@ backend/report-service/
 - 상태: 서버 상태 TanStack Query, UI 상태는 React state, 전역 상태 라이브러리 미도입
 - API: core-service만 호출, [API 명세서](api-spec.md) 기준
 - 스트리밍: 피드백·분석 대화·알림 SSE를 fetch 스트림으로 수신(인증 헤더 필요), 수신 결과로 쿼리 캐시 갱신
-- 인증: access token 메모리 보관, refresh token httpOnly 쿠키
+- 인증: 학부모·관리자 access token은 메모리, refresh token은 httpOnly 쿠키. 학생 access는 탭 sessionStorage 보관(새로고침·복제 허용), 기본 미사용 30분 갱신 방식이며 명시적 로그아웃을 동일 세션 탭에 전파한다 (#995, API 명세 5.1).
 - 결제: 토스페이먼츠 결제위젯 SDK (테스트 키)
   - 주문 상태는 주문별 TanStack Query 한 곳에서 조회한다(#815). 결제 화면과 위젯이 같은 결과를 사용하고, 진입 또는 복귀 후 조회가 성공해 상태가 `PENDING`일 때만 결제수단을 연다. 결제 화면을 벗어나거나 결제 가능 상태가 아니면 위젯을 정리한다.
 - 접근성: 움직임 줄이기 설정 시 정적 장면, 상태를 색상 외 글로 표시 (NFR-UX-02)
@@ -907,6 +925,7 @@ backend/report-service/
 - #171 local 관측 chart: Collector·Prometheus·Grafana, 공통 앱 chart Java agent로 core·learning JVM/HTTP metrics. AI는 기본 비활성 Langfuse v4 LLM 계측. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없음. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량(큐별 `<큐>.dlq`, #187), 판정·피드백·리포트 처리 지연
+- 표현 분류 판정(#984): learning `ToxicityClient`가 scoring을 부른 판정마다 OTel 카운터 `expression.toxicity.checks`(Prometheus `expression_toxicity_checks_total`)를 올린다. 속성은 `result`(`flagged` 막힘·`review` 통과·경계 구간·`clean` 통과·`unchecked` 검사 안 됨)와 `model`(`name:version`, `unchecked`면 없음)뿐이고 원문·점수·학생 ID는 넣지 않는다(NFR-SEC-05). 꺼짐(`app.toxicity.enabled=false`)·보낼 칸 없음은 세지 않는다. scoring은 OTLP를 보내지 않으므로(4.3) learning에서 센다. observability chart `grafana.dashboards.enabled`(local·prod 켬)가 대시보드 "표현 분류 판정"(모델별 막은 비율·경계 구간 비율, 검사 안 됨 비율, 결과·모델별 건수)을 파일로 provision한다. 모델 교체 시점은 모델별 선이 바뀌는 것으로 보고 활성화 주석은 두지 않는다
 - 경보(#185·#187): Grafana Alerting → 팀 디스코드 웹훅(`aws-alerts`). 수집 장애·작업 적체·DLQ 적재·RabbitMQ 메모리, core 공개 API 영역별(인증·학생 학습·AI 처리·리포트·결제) 5xx 비율과 p95 지연(AI 처리는 SSE 스트림이 섞여 5xx 비율만), 월 LLM 비용 300 USD의 80%와 최근 1시간에 새로 생긴 미산정 호출(#764). 담당은 인프라 1명(동섭)이 전체를 받는다 (P10, P13). 임계값은 초기 기준이며 [경보 검증](../../infrastructure/gitops/operational-alerts/README.md)을 따른다
 - trace 저장(#187): Collector → Tempo(observability chart 선택 구성) → Grafana. core·learning은 Java agent trace, report-worker는 OTel SDK 소비 span. ai·scoring·report-api의 자체 span은 아직 없음
 - Collector는 trace 내보내기 전에 토스 청구·취소 URL의 키 경로와 Google 로그인·재인증 콜백의 쿼리를 제거한다(#900). 경로 형태와 상태 코드 등 진단용 span은 유지한다.
@@ -950,7 +969,7 @@ backend/report-service/
 - core: `OutboxWriter`가 저장 시점 활성 span(없으면 요청 헤더 값)을 봉투 `traceparent`에 넣고, `OutboxRelay`가 그 값을 부모 context로 발행해 Java agent가 PRODUCER span·AMQP `traceparent` 헤더를 만든다. core·learning 소비자와 HTTP는 Java agent가 잇는다
 - report-worker: 봉투 `traceparent`를 부모로 CONSUMER span을 열고 하위 HTTP 호출과 결과 이벤트 봉투·AMQP 헤더에 넘긴다. 실패는 `messaging.outcome`(retry/dlq)·`error.type`만 남긴다
 - 업무 ID·학생 ID·메시지 내용은 span attribute에 넣지 않는다(메시지 ID·큐 이름만, HTTP span은 경로 템플릿만). exporter가 꺼져 있으면 받은 값만 그대로 넘긴다
-- Java agent가 자동으로 남기는 URL 속성 중 토스 청구·취소 경로의 `billingKey`·`paymentKey`(client `url.full`)와 Google 로그인·재인증 콜백의 `code`·`state`(server `url.query`)는 Collector traces pipeline의 `transform/redact`가 저장 전에 가린다(NFR-SEC-05·06, #900)
+- Java agent가 자동으로 남기는 URL 속성 중 토스 청구·취소 경로의 `billingKey`·`paymentKey`(client `url.full`)와 Google 로그인·재인증 콜백의 `code`·`state`(server `url.query`)는 Collector traces pipeline의 `transform/trace_urls`가 저장 전에 가린다(NFR-SEC-05·06, #900)
 - trace 저장소 장애는 지표·경보로 번지지 않게 한다(#784): Collector traces pipeline은 metrics보다 낮은 메모리 제한, exporter 대기열은 바이트 상한·재시도 30초로 묶어 넘치면 버린다
 
 #### 남은 경계

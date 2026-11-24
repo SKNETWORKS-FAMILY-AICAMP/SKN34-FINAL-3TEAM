@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router'
 import type { Session, DemoScenario } from '../../domain/classroom.ts'
 import { restoreSession } from '../../data/classroom/useClassroom.ts'
 import { queryClient } from '../../data/queryClient.ts'
-import { ApiError, watchAuthChange, waitForPendingRefresh, hasAccessToken, parentLoginRequired, prepareLoginEntry } from '../../data/apiClient.ts'
+import { ApiError, watchStudentActivity, watchAuthChange, waitForPendingRefresh, hasAccessToken, parentLoginRequired, prepareLoginEntry } from '../../data/apiClient.ts'
 import { adultLoginPath, landingLoginEntry } from '../../domain/navigation.ts'
 import { AuthContext } from './sessionContext.ts'
 
@@ -20,6 +20,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
 
   useEffect(() => {
+    const stopStudentActivity = watchStudentActivity()
     let revision = 0
     let active = true
     const clear = () => { setSession(null); setSelected(''); queryClient.clear(); setRestoreError('') }
@@ -94,6 +95,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
       stop()
+      stopStudentActivity()
       window.removeEventListener('sagomungchi:session-expired', expire)
       window.removeEventListener('sagomungchi:student-auth-required', studentEntry)
       window.removeEventListener('sagomungchi:parent-login-required', parentEntry)

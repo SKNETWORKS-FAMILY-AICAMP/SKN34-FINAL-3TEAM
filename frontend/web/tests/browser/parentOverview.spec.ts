@@ -7,6 +7,7 @@ test('기록 팝업 필터·원문 복귀·반응형 @responsive', async ({page}
  await page.goto('/parent/journal?childId=demo-seoyun&from=2026-10-01&to=2026-10-31')
  await expect(page.getByRole('heading',{name:'서윤의 학습 현황'})).toBeVisible()
  await expect(page.locator('.pd-focus-value>strong')).toHaveText('3')
+ await expect(page.getByText('이 기간에 활동 3개에 답했어요. 그중 2개에서 생각을 덧붙였어요.')).toBeVisible()
  await page.evaluate(()=>document.fonts.ready)
  await page.screenshot({path:info.outputPath('overview.png'),fullPage:true})
  await page.getByRole('button',{name:'생각 활동 전체 보기',exact:true}).click()
@@ -55,7 +56,7 @@ test('긴 활동 제목과 유형별 10건을 표시하고 목록으로 이동 @
  })
  await page.goto('/parent/journal?childId=demo-seoyun&from=2026-10-01&to=2026-10-31')
  await expect(page.locator('.pd-focus-value>strong')).toHaveText('50')
- await expect(page.getByText('10개 미션에서 관찰',{exact:true})).toHaveCount(5)
+ await expect(page.getByRole('button',{name:/기록 10건 보기$/})).toHaveCount(5)
  // Match the service's three process metrics in this browser-only visual fixture.
  await page.evaluate(async()=>{
   const path='/src/data/queryClient.ts', {queryClient}=await import(path)
@@ -71,7 +72,7 @@ test('긴 활동 제목과 유형별 10건을 표시하고 목록으로 이동 @
  await expect(page.locator('.pd-kpi')).toHaveCount(3)
  const rows=page.locator('.pd-types li')
  for(let i=0;i<5;i++){
-  await expect(rows.nth(i).locator('.pd-recent-missions>button:not(.pd-more-dots)')).toHaveCount(5)
+  await expect(rows.nth(i).locator('.pd-recent-missions>button')).toHaveCount(5)
   expect(await rows.nth(i).evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true)
  }
  await page.locator('.pd-metric-definition summary').first().click()
@@ -80,8 +81,22 @@ test('긴 활동 제목과 유형별 10건을 표시하고 목록으로 이동 @
  await page.evaluate(()=>document.fonts.ready)
  await page.screenshot({path:info.outputPath('overview-dense.png'),fullPage:true})
  expect(await page.locator('.pd-overview').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true)
- await page.getByRole('button',{name:'분석하기 자세히 보기',exact:true}).click()
+ await page.getByRole('button',{name:'분석하기 기록 10건 보기',exact:true}).click()
  await expect(page.getByRole('dialog').getByText('10개 활동',{exact:true})).toBeVisible()
+})
+
+test('홈 카드에서 최근 주간 리포트를 바로 열고 제목에서 날짜를 고른다 @responsive', async ({page}) => {
+ await page.goto('/login')
+ await page.getByRole('button', {name:'시연 계정으로 로그인'}).click()
+ const card = page.getByRole('region', {name:'최근 주간 리포트'})
+ const shownPeriod = await card.locator('.pd-num').innerText()
+ await card.getByRole('button', {name:'리포트 보기', exact:true}).click()
+ const report = page.getByRole('region', {name:'리포트 내용'})
+ await expect(report.locator('.report-period-heading > p')).toHaveText(shownPeriod)
+ await expect(page.getByRole('dialog')).toHaveCount(0)
+ await report.locator('.report-period-picker > summary').click()
+ await expect(report.getByRole('list', {name:'리포트 일자'}).locator('[aria-current=date]')).toHaveText(shownPeriod)
+ await expect(report.getByText('생성 상태', {exact:true})).toHaveCount(0)
 })
 test('비공개 원문 요청 없음 @responsive',async({page})=>{
  const requests:string[]=[];page.on('request',r=>{if(/\/children\/[^/]+\/(?:attempts|records)(?:\/|$)/.test(new URL(r.url()).pathname))requests.push(r.url())})

@@ -1,11 +1,12 @@
 import { assertVerifiedAnalysis } from '../../domain/parent.ts'
-import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin, markParentSessionLocked } from '../apiClient.ts'
+import { refreshAccessToken, notifyStudentLogout, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin, markParentSessionLocked } from '../apiClient.ts'
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
 import type { AnswerTiming } from '../../domain/answerTiming.ts'
 import { blankAnswer, publicAttempt } from '../../domain/classroom.ts'
 import { isStoredGrade } from '../../domain/grade.ts'
 import { isAttemptContext } from '../../domain/retention.ts'
+import { readThemeScene } from '../../domain/themeScene.ts'
 import type {
   AnswerContent,
   AnalysisResult,
@@ -81,6 +82,8 @@ function attemptDto(raw: unknown): Attempt {
   // 시도 종류(#700 선택 칸): 계약 값만 받고 모르는 값은 없는 것으로(#710)
   if (isAttemptContext(data.context)) a.context = data.context
   else delete a.context
+  // 오늘 장면(#807): 모양이 틀린 줄은 빼고 읽는다. 장면이 없어도 문제는 그대로 풀 수 있어야 해서 계약 오류로 막지 않는다
+  a.themeScene = readThemeScene(data.themeScene)
   return a
 }
 function feedbackDto(raw: unknown): Feedback {
@@ -167,7 +170,7 @@ export function createApiGateway(): ClassroomGateway {
     async logout() {
       if (isStudentSession()) {
         if (hasAccessToken()) {
-          try { await apiFetch('/auth/student/logout', body({})) }
+          try { await apiFetch('/auth/student/logout', body({})); notifyStudentLogout() }
           catch (error) {
             // Already-expired/revoked student credentials can be cleared locally; never use parent refresh.
             if (!(error instanceof ApiError) || error.problem.status !== 401) throw error

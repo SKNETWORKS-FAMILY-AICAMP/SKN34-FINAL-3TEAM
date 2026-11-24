@@ -69,7 +69,7 @@ export function demoMissions(grade: number): Mission[] {
       scene: 'science',
       // 미션 내용에 맞춘 시연 그림(2D 만화풍 생성, #648)
       staticSceneUri: '/demo/missions/analyze.jpg',
-      // 테마 문제 장면 움직임(ai 형식 v1 모양 그대로, 문제 화면은 effects만 재생하고 카메라·화자·살펴보기는 쓰지 않음, #440)
+      // 테마 문제 장면 움직임(ai 형식 v1 모양 그대로). 답변 작성 화면은 effects만(#440), 오늘 장면은 effects·화자 위치(말꼬리)·카메라(처음 3초, #807), 살펴보기는 둘 다 안 씀
       sceneMotion: demoSceneMotion([{ shape: 'leaf', color: '#7CB342', count: 8, size: 3, direction: 20, speed: 5, opacity: 0.6 }], [
         { x: 30, y: 25, label: '큰 잎', line: '이 잎을 잘 봐!', evidence: true },
         { x: 72, y: 55, label: '작은 화분', line: '여기도 볼까?', evidence: false },
@@ -590,6 +590,8 @@ export function createDemoGateway({ premium = (childId: string) => childId === '
       answer!.feedback = { status: 'RUNNING', nextActions: [] }
       onStatus(copy(answer!.feedback))
       if (scenario === 'running' && once('running-' + answerId)) return copy(answer!.feedback)
+      // 피드백 대기 표시 확인용(#847): 결과를 40초 늦게 준다(80초 시간 제한 안쪽)
+      if (scenario === 'feedback-slow') await new Promise<void>((resolve) => setTimeout(resolve, 40_000))
       await pause()
       if (scenario === 'ai-fail' && once('ai-' + answerId)) {
         answer!.feedback = { status: 'FAILED', nextActions: [] }

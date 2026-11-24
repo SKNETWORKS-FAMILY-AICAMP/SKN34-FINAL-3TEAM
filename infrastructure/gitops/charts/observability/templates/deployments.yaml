@@ -263,6 +263,10 @@ spec:
             {{- if .Values.grafana.alerting.enabled }}
             - {name: alerting, mountPath: /etc/grafana/provisioning/alerting, readOnly: true}
             {{- end }}
+            {{- if .Values.grafana.dashboards.enabled }}
+            - {name: dashboard-provider, mountPath: /etc/grafana/provisioning/dashboards, readOnly: true}
+            - {name: dashboards, mountPath: /etc/grafana/dashboards, readOnly: true}
+            {{- end }}
       volumes:
         - name: data
           {{- if .Values.grafana.persistence.enabled }}
@@ -277,4 +281,18 @@ spec:
         {{- if .Values.grafana.alerting.enabled }}
         - name: alerting
           configMap: {name: grafana-alerting}
+        {{- end }}
+        {{- if .Values.grafana.dashboards.enabled }}
+        # One ConfigMap split by key: the provider file and the dashboard JSON files.
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboards
+            items: [{key: provider.yaml, path: provider.yaml}]
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+            items:
+              {{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+              - {key: {{ base $path }}, path: {{ base $path }}}
+              {{- end }}
         {{- end }}

@@ -21,11 +21,11 @@ $before = Get-Counter $ViewerIp
 $spoofedBefore = Get-Counter $spoofedIp
 if ($before -ge 18) { throw 'Existing registration limit is near exhaustion; retry after its 10-minute window' }
 foreach ($spoof in @($false, $true)) {
-    $headers = @{'Origin'='https://d3jf0rnm6vhd9v.cloudfront.net'; 'X-Requested-With'='XMLHttpRequest'}
+    $headers = @{'Origin'='https://www.sagomungchi.co.kr'; 'X-Requested-With'='XMLHttpRequest'}
     if ($spoof) { $headers['X-Forwarded-For'] = $spoofedIp }
     # An invalid-format code cannot consume a real pairing or create a device.
     # Each request uses one real rate-limit attempt; let its existing TTL expire.
-    $response = Invoke-WebRequest 'https://d3jf0rnm6vhd9v.cloudfront.net/api/v1/auth/student/devices' -Method Post -Headers $headers -ContentType 'application/json' -Body '{"pairingCode":"!issue185!","label":"issue185-viewer-ip-check"}' -SkipHttpErrorCheck
+    $response = Invoke-WebRequest 'https://www.sagomungchi.co.kr/api/v1/auth/student/devices' -Method Post -Headers $headers -ContentType 'application/json' -Body '{"pairingCode":"!issue185!","label":"issue185-viewer-ip-check"}' -SkipHttpErrorCheck
     $body = if ($response.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($response.Content) } else { $response.Content }
     if ($response.StatusCode -ne 400 -or ($body | ConvertFrom-Json).code -ne 'PAIRING_CODE_INVALID') {
         throw "Unexpected registration response (HTTP $($response.StatusCode)); no success inferred"

@@ -27,7 +27,8 @@
         "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/learning-migrate",
         "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/ai-service",
         "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/scoring-service",
-        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/report-service"
+        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/report-service",
+        "arn:aws:ecr:ap-northeast-2:347161580747:repository/sagomungchi/tox-retrain"
       ]
     }
   ]

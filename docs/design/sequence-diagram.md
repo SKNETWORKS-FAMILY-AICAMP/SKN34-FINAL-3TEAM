@@ -642,7 +642,7 @@ sequenceDiagram
 - 클라이언트가 끊겨도 core→learning 호출은 끝까지 진행·저장, 재요청 시 저장 결과 반환 (API 3.2)
 - 타임아웃 예산: core→learning 80초 > learning→core 사용 예약 4초 + learning→ai judgments 35초 + followups 35초 + learning→core 사용 완료 4초 = 78초, 판정 리스 90초 (P12, 아키텍처 1.3)
 - 결제 사용 예약·완료는 core→learning 요청 안에서 learning이 core를 다시 부르는 동기 왕복(`FeedbackFacade`·`PaymentUsageClient`). 예약·완료 호출이 실패하면 `503 PAYMENT_USAGE_UNAVAILABLE`, core가 거절한 409는 그 코드로 응답
-- `nextActions`: 되묻기 생성 시 `[ANSWER_FOLLOWUP, FINISH]`(FINISH = "이대로 돌아보기"), 되묻기 2회 소진·고르기 CORRECT면 `[FINISH]` (P04)
+- `nextActions`: 되묻기 생성 시 `[ANSWER_FOLLOWUP, FINISH]`(FINISH = "마무리 보기"), 되묻기 2회 소진·고르기 CORRECT면 `[FINISH]` (P04)
 - 판정 보류(`result = HELD`)는 정상 처리(`DONE`), 처리 실패(`process_status = FAILED`)와 구분 (NFR-REL-04)
 - 보류 사유 결정은 모두 ai 담당, learning은 `judge_verified`·학년을 포함한 기준표 전달 (상태 다이어그램 3.3)
 
@@ -988,6 +988,68 @@ sequenceDiagram
 ```
 
 - 상태 전이·조건은 [상태 3.7](state-diagram.md). 여러 레플리카가 같은 주기에 돌아도 선점한 행만 처리
+
+### 3.11 추억 그림책 발급·받기 (FN-RPT-18, 구현 #966, 계약 #975)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor P as 학부모(web)
+  participant C as core
+  participant CDB as core_db
+  participant MQ as RabbitMQ
+  participant R as report-worker
+  participant RA as report-api
+  participant L as learning
+  participant S3M as S3 missions(그림)
+  participant S3R as S3 reports
+
+  P->>C: GET /children/{childId}/memory-books/rounds
+  C->>C: 학부모 세션·연결·동의, 원문 공개 확인(비공개 403 STUDENT_RECORDS_PRIVATE, learning 미호출)
+  C->>L: GET /internal/students/{id}/album (자녀 범위 SYSTEM)
+  C-->>P: 회차 목록 + 회차마다 가장 최근 그림책
+  P->>C: POST /children/{childId}/memory-books {rounds:[{themeId, weekStart}]}
+  C->>C: 연결·동의·원문 공개, 같은 회차 QUEUED·보관 기간 안 READY면 200으로 그것
+  C->>L: POST /internal/students/{id}/frames/ownership (트랜잭션 밖)
+  alt 미보유
+    C-->>P: 404 THEME_FRAME_NOT_FOUND
+  end
+  C->>C: 하루 한도(429) → features.memoryBook(무료 403 PREMIUM_REQUIRED) → MEMORY_BOOK 사용 예약
+  rect rgba(128,128,128,0.12)
+    C->>CDB: 학생 행 잠금 → 재사용·한도 재확인 → memory_book_job QUEUED + Outbox memorybook.generate
+  end
+  C-->>P: 202 {bookId, status: QUEUED}
+  CDB-->>MQ: Outbox relay (cmd.direct)
+  MQ->>R: memorybook.generate {bookId, studentId, rounds}
+  R->>R: 학생 삭제 잠금, 삭제 상태 확인
+  R->>C: GET /internal/students/{id}/profile (별명, parentSharingEnabled)
+  alt 원문 비공개로 바뀜
+    R->>MQ: memorybook.completed FAILED STUDENT_RECORDS_PRIVATE (learning 미호출)
+  else 공개
+    R->>L: GET /internal/students/{id}/memory-book/{themeId}/{weekStart}
+    L-->>R: 회차 조립(엔딩 전이면 outro·answer·outroImage null, 그림은 presigned URL)
+    R->>S3M: 그림 GET (허용 출처만, 리디렉트 거부, 장당 5MB·합 40MB)
+    alt 그림 주소가 있는데 한 장도 못 받음
+      R->>MQ: memorybook.completed FAILED ASSET_UNAVAILABLE
+    end
+    R->>R: data URI(못 받은 장은 빈 칸) → Jinja2 → Chromium PDF(네트워크 차단)
+    R->>S3R: PUT reports/memory-books/{studentId}/{bookId}/pdf
+    R->>MQ: memorybook.completed READY (report Outbox)
+  end
+  MQ->>C: memorybook.completed
+  C->>CDB: processed_event 한 번만 → 작업 READY·FAILED, 사용 예약 마감(READY 사용·FAILED 미사용)
+  P->>C: GET /children/{childId}/memory-books (만드는 중이면 web이 3초마다 다시 조회)
+  P->>C: GET /children/{childId}/memory-books/{bookId}/download
+  C->>C: 연결·동의·현재 원문 공개 확인, QUEUED 409·FAILED 409·만료 410
+  C->>RA: GET /internal/students/{id}/memory-books/{bookId}/files/pdf
+  RA-->>C: {url, expiresAt} (TTL 300초, attachment)
+  C->>CDB: memory_book_download 기록
+  C-->>P: {url, expiresAt} → web이 그 주소로 이동
+```
+
+- 일시 장애(learning·core 5xx, S3 오류)는 report-worker가 예외로 올려 큐 재시도(1·5·15분, DLQ). 영구 실패만 FAILED 이벤트(`STUDENT_RECORDS_PRIVATE`·`THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`). 그림은 받지 못한 장만 빈 칸으로 두되, 그림 주소가 있는데 한 장도 받지 못하면 `ASSET_UNAVAILABLE`로 실패한다(사용 예약 미사용, 한도 안 씀)
+- 같은 명령이 다시 오면 저장된 파일이 있을 때 다시 만들지 않고 완료만 다시 알린다
+- 자녀 삭제 확정은 core가 같은 트랜잭션에서 작업 행을 지우고(받기 기록은 FK CASCADE), report가 `reports/{studentId}/`와 `reports/memory-books/{studentId}/` 아래 파일을 지운다(10.1)
 
 ---
 

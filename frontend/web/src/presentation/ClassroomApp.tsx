@@ -47,6 +47,7 @@ import { ThemeClues } from './student/world/ThemeClues.tsx'
 import { AnswerPick } from './student/world/AnswerPick.tsx'
 import { ThemeStory } from './student/world/ThemeStory.tsx'
 import { ThemeReview } from './student/world/ThemeReview.tsx'
+import { TodayScene } from './student/world/TodayScene.tsx'
 import { StudentCommunity } from './student/world/StudentCommunity.tsx'
 import { StudentSettings } from './student/world/StudentSettings.tsx'
 import { StudentRoom } from './student/world/StudentRoom.tsx'
@@ -57,9 +58,9 @@ import { isCustomizeTab } from './student/world/lookShop.ts'
 import { StudentFriends } from './student/world/StudentFriends.tsx'
 import { StudentHelp } from './student/world/StudentHelp.tsx'
 import { StudentJournal, StudentJournalEntry } from './student/world/StudentJournal.tsx'
-import { endingDue } from '../domain/retention.ts'
+import { endingDue, THEME_DAYS } from '../domain/retention.ts'
 import type { AttemptContext } from '../domain/retention.ts'
-import { useFetchWeeklyTheme } from '../data/retention/queries.ts'
+import { useFetchWeeklyTheme, useWeeklyTheme } from '../data/retention/queries.ts'
 import { StudentWorkPage } from './student/StudentWorkPage.tsx'
 import './classroom.css'
 import { QueryStateNotice } from './common/QueryStateNotice.tsx'
@@ -83,14 +84,16 @@ export function ClassroomApp() {
     'home', 'room', 'album', 'missions', 'activities', 'community', 'points', 'settings',
     'customize', 'friends', 'help', 'support', 'notices', 'notifications', 'theme',
   ] as const).find((p) => p === page) ?? 'journal'
-  // 주간 테마 화면 /student/theme/intro|clues|pick|ending|review (user-flow #589 2026-11-14 URL, #440·#487)
-  const themeView = (['intro', 'clues', 'pick', 'ending', 'review'] as const).find((v) => v === location.pathname.split('/')[3]) ?? 'clues'
+  // 주간 테마 화면 /student/theme/intro|clues|pick|ending|review|scene/{day} (user-flow #589 2026-11-14 URL, #440·#487, 오늘 장면 #807)
+  const themeView = (['intro', 'clues', 'pick', 'ending', 'review', 'scene'] as const).find((v) => v === location.pathname.split('/')[3]) ?? 'clues'
+  const sceneDay = THEME_DAYS.find((d) => d === location.pathname.split('/')[4])
   // 꾸미기 탭 /student/customize?tab=theme|friend|wear|furniture (#648 기준안)
   const customizeTab = new URLSearchParams(location.search).get('tab')
   // 추억 앨범 회차 상세 /student/album/:themeId/:weekStart (P27, #561)
   const [, , , episodeTheme, episodeWeek] = location.pathname.split('/').map((s) => { try { return decodeURIComponent(s) } catch { return s } })
   const episode = studentPage === 'album' && episodeTheme && episodeWeek ? { themeId: episodeTheme, weekStart: episodeWeek } : null
   const typeFilter = new URLSearchParams(location.search).get('type')
+  const communityMission = new URLSearchParams(location.search).get('mission')
   const setPage = (page: Page) => navigate(`/${session?.role.toLowerCase() ?? 'parent'}/${page}`)
   const setWork = (id: string | null) =>
     navigate(id ? `/student/attempts/${encodeURIComponent(id)}` : '/student/journal')
@@ -112,6 +115,8 @@ export function ClassroomApp() {
         : (children.data?.find((c) => c.id === selected) ?? children.data?.[0])
   const missions = useMissions(session?.role === 'STUDENT' ? child : undefined)
   const fetchWeeklyTheme = useFetchWeeklyTheme(session?.role === 'STUDENT' ? child?.id : undefined)
+  // 테마 문제를 열 때 그 미션의 요일을 찾아 오늘 장면으로 보낸다(#807)
+  const weeklyTheme = useWeeklyTheme(session?.role === 'STUDENT' ? child?.id : undefined)
   const records = useRecords(child, session?.role === 'STUDENT' ? 'STUDENT' : 'PARENT', period)
   const sourceRecord = usePublicRecord(session?.role === 'PARENT' ? child : undefined, evidenceId, period)
   const learning = useLearningActions()
@@ -148,6 +153,16 @@ export function ClassroomApp() {
     } catch {
       /* mutation 오류를 화면에 표시 */
     }
+  }
+  /**
+   * 테마 문제를 연다(user-flow 3.2, #807): 미션 안내 대신 그 요일 오늘 장면 `/student/theme/scene/{day}`.
+   * 오늘 장면이 시도를 시작·이어 하고 대화가 없거나 이미 답을 쓴 시도면 바로 답변 작성으로 넘긴다.
+   * 주간 테마에서 요일을 못 찾으면(응답 전·실패) 맥락을 붙인 미션 안내(푸는 중이면 learning이 그 시도를 돌려줌, #882)
+   */
+  function openTheme(missionId: string, context: AttemptContext) {
+    const day = weeklyTheme.data?.days.find((d) => d.missionId === missionId)?.day
+    if (day) return navigate(`/student/theme/scene/${day}`)
+    openMission(missionId, context)
   }
   /** 안내와 시도 생성에 같은 맥락을 보내 주간 테마 게시 버전을 이어서 사용한다. */
   function openMission(id: string, context?: AttemptContext) {
@@ -220,6 +235,7 @@ export function ClassroomApp() {
                 ['partial', '부분 정답'],
                 ['rethink', '다시 생각'],
                 ['running', 'RUNNING 응답 후 재조회'],
+                ['feedback-slow', '피드백 40초 지연'],
                 ['finish-unmet', '마무리 조건 미충족'],
                 ['home-empty', '홈 기록 없음'],
                 ['home-processing', '홈 처리 중'],
@@ -369,7 +385,7 @@ export function ClassroomApp() {
           <StudentWorld
             child={child}
             page={work || instructions ? null : studentPage}
-            focus={!!work || !!instructions || (studentPage === 'theme' && (themeView === 'intro' || themeView === 'ending'))}
+            focus={!!work || !!instructions || (studentPage === 'theme' && (themeView === 'intro' || themeView === 'ending' || themeView === 'scene'))}
             onNavigate={(p) => {
               setPage(p === 'theme' ? 'home' : p)
               setDetail(null)
@@ -413,20 +429,24 @@ export function ClassroomApp() {
               />
             ) : studentPage === 'theme' && themeView === 'pick' ? (
               <AnswerPick child={child} onHome={() => setPage('home')} onEnding={() => setPage('theme/ending')}
-                onJournal={() => setPage('journal')} onResume={setWork} onStartTheme={(m, context) => openMission(m, context)} />
+                onJournal={() => setPage('journal')} onStartTheme={openTheme} />
+            ) : studentPage === 'theme' && themeView === 'scene' && sceneDay ? (
+              // 오늘 장면(#807): 마지막 대사·대화 없음·이미 쓴 시도는 답변 작성으로(주소 바꿔치기, 뒤로 가기가 장면으로 오지 않게)
+              <TodayScene key={sceneDay} child={child} day={sceneDay} onHome={() => setPage('home')}
+                onProblem={(id) => navigate(`/student/attempts/${encodeURIComponent(id)}`, { replace: true })} />
             ) : studentPage === 'theme' && (themeView === 'intro' || themeView === 'ending') ? (
               <ThemeStory key={themeView} child={child} kind={themeView === 'ending' ? 'OUTRO' : 'INTRO'}
                 onHome={() => {
-                  // 시작 이야기를 '오늘 문제 풀기'에서 열었으면 그 문제 안내로 이어간다
+                  // 시작 이야기를 '오늘 문제 풀기'에서 열었으면 그 문제로 이어간다(테마 문제는 오늘 장면, #807)
                   setPage('home')
-                  if (themeView === 'intro' && introThen) openMission(introThen.missionId, introThen.context)
+                  if (themeView === 'intro' && introThen) openTheme(introThen.missionId, introThen.context)
                   setIntroThen(null)
                 }}
                 continuing={themeView === 'intro' && !!introThen}
                 onAlbum={() => setPage('album')} onCommunity={() => setPage('community')} />
             ) : studentPage === 'theme' && themeView === 'review' ? (
               <ThemeReview child={child} onJournal={() => setPage('journal')} onEnding={() => setPage('theme/ending')}
-                onHome={() => setPage('home')} onResume={setWork} onStartTheme={(m, context) => openMission(m, context)} />
+                onHome={() => setPage('home')} onStartTheme={openTheme} />
             ) : studentPage === 'theme' ? (
               <ThemeClues child={child} onHome={() => setPage('home')} onPick={() => setPage('theme/pick')} />
             ) : studentPage === 'help' || studentPage === 'support' || studentPage === 'notices' || studentPage === 'notifications' ? (
@@ -455,7 +475,8 @@ export function ClassroomApp() {
             ) : studentPage === 'friends' ? (
               <StudentFriends child={child} />
             ) : studentPage === 'community' ? (
-              <StudentCommunity key={child.id} child={child} onSettings={() => setPage('settings')} />
+              // ?mission=: 미션 완료 화면 "같은 미션 친구 생각 보기"로 그 미션을 골라 연다(#807)
+              <StudentCommunity key={`${child.id}:${communityMission ?? ''}`} child={child} initialMission={communityMission} onSettings={() => setPage('settings')} />
             ) : studentPage === 'room' ? (
               <StudentRoom
                 key={child.id}
@@ -490,8 +511,7 @@ export function ClassroomApp() {
             ) : studentPage === 'home' ? (
               <StudentHome
                 child={child}
-                onResume={setWork}
-                onStartTheme={(m, context) => openMission(m, context)}
+                onStartTheme={openTheme}
                 onJournal={() => setPage('journal')}
                 onRoom={() => setPage('room')}
                 onMissions={() => navigate('/student/missions')}
@@ -513,7 +533,8 @@ export function ClassroomApp() {
                 onOpen={(m) => openMission(m.id, 'EXTRA')}
               />
             ) : detail ? (
-              <StudentJournalEntry key={detail.attemptId} record={detail} child={child} onBack={() => setDetail(null)} onWork={(id) => { setDetail(null); setWork(id) }} />
+              <StudentJournalEntry key={detail.attemptId} record={detail} child={child} onBack={() => setDetail(null)} onWork={(id) => { setDetail(null); setWork(id) }}
+                onScene={(day) => { setDetail(null); navigate(`/student/theme/scene/${day}`) }} />
             ) : (
               <StudentJournal key={child.id} child={child} onDetail={setDetail} onContinue={setWork} onMissions={() => setPage('missions')} />
             )}

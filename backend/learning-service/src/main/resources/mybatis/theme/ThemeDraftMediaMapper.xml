@@ -11,6 +11,7 @@
             <arg column="motion" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.mission.repository.MotionTypeHandler"/>
             <arg column="starred" javaType="_boolean"/>
             <arg column="note" javaType="java.lang.String"/>
+            <arg column="unreviewed" javaType="_boolean"/>
         </constructor>
     </resultMap>
     <select id="rootId" resultType="java.util.UUID">
@@ -23,13 +24,15 @@
         SELECT EXISTS (SELECT 1 FROM theme_draft WHERE (family_root_id = #{root} OR id = #{root}) AND status = 'ADOPTED')
     </select>
     <select id="sources" resultMap="source" flushCache="true">
-        SELECT d.id, d.status, d.created_at, d.output->'images'->>#{scene} AS image, d.output->'videos'->>#{scene} AS video,
-               d.output->'motions'->#{scene} AS motion, coalesce(n.starred,false) AS starred, coalesce(n.note,'') AS note
-        FROM theme_draft d LEFT JOIN theme_draft_scene_note n ON n.version_id = d.id AND n.scene = #{scene}
-        WHERE d.output IS NOT NULL AND d.status != 'GENERATING' AND (d.id = #{root} OR (d.family_root_id = #{root}
-          AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(d.input #> '{regenerate,targets}') AS t(target)
+        SELECT child.id, child.status, child.created_at, child.output->'images'->>#{scene} AS image, child.output->'videos'->>#{scene} AS video,
+               child.output->'motions'->#{scene} AS motion, coalesce(n.starred,false) AS starred, coalesce(n.note,'') AS note,
+               (child.family_root_id IS NOT NULL AND <include refid="com.sagomungchi.learning.theme.repository.ThemeDraftMapper.unreviewedReadyCandidate"/>) AS unreviewed
+        FROM theme_draft child LEFT JOIN theme_draft_scene_note n ON n.version_id = child.id AND n.scene = #{scene}
+        LEFT JOIN theme_draft_scene_selection pick ON pick.root_id = child.family_root_id AND pick.scene = #{scene}
+        WHERE child.output IS NOT NULL AND child.status != 'GENERATING' AND (child.id = #{root} OR (child.family_root_id = #{root}
+          AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(child.input #> '{regenerate,targets}') AS t(target)
                       WHERE split_part(t.target, ':', 2) = #{scene})))
-        ORDER BY (d.id = #{root}) DESC, d.created_at, d.id
+        ORDER BY (child.id = #{root}) DESC, child.created_at, child.id
     </select>
     <select id="ancestors" resultType="java.util.UUID">
         WITH RECURSIVE ancestors(id,parent,depth) AS (

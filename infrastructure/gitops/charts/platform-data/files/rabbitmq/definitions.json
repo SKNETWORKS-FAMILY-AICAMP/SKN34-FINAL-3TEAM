@@ -113,6 +113,62 @@
       }
     },
     {
+      "name": "report.memorybook.generate",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "report.memorybook.generate"
+      }
+    },
+    {
+      "name": "report.memorybook.generate.retry.1",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 60000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "report.memorybook.generate"
+      }
+    },
+    {
+      "name": "report.memorybook.generate.retry.2",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "report.memorybook.generate"
+      }
+    },
+    {
+      "name": "report.memorybook.generate.retry.3",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 900000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "report.memorybook.generate"
+      }
+    },
+    {
+      "name": "report.memorybook.generate.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
       "name": "core.report.events",
       "vhost": "/",
       "durable": true,
@@ -161,6 +217,62 @@
     },
     {
       "name": "core.report.events.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "core.memorybook.events",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "core.memorybook.events"
+      }
+    },
+    {
+      "name": "core.memorybook.events.retry.1",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 60000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.memorybook.events"
+      }
+    },
+    {
+      "name": "core.memorybook.events.retry.2",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.memorybook.events"
+      }
+    },
+    {
+      "name": "core.memorybook.events.retry.3",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 900000,
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "core.memorybook.events"
+      }
+    },
+    {
+      "name": "core.memorybook.events.dlq",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
@@ -800,6 +912,102 @@
       "destination": "core.model.loading.reported.retry.3",
       "destination_type": "queue",
       "routing_key": "core.model.loading.reported.retry.3",
+      "arguments": {}
+    },
+    {
+      "source": "cmd.direct",
+      "vhost": "/",
+      "destination": "report.memorybook.generate",
+      "destination_type": "queue",
+      "routing_key": "memorybook.generate",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "/",
+      "destination": "report.memorybook.generate.dlq",
+      "destination_type": "queue",
+      "routing_key": "report.memorybook.generate",
+      "arguments": {}
+    },
+    {
+      "source": "cmd.direct",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "memorybook.generate",
+      "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.event.audit",
+      "destination_type": "queue",
+      "routing_key": "memorybook.completed",
+      "arguments": {}
+    },
+    {
+      "source": "report.retry",
+      "vhost": "/",
+      "destination": "report.memorybook.generate.retry.1",
+      "destination_type": "queue",
+      "routing_key": "report.memorybook.generate.retry.1",
+      "arguments": {}
+    },
+    {
+      "source": "report.retry",
+      "vhost": "/",
+      "destination": "report.memorybook.generate.retry.2",
+      "destination_type": "queue",
+      "routing_key": "report.memorybook.generate.retry.2",
+      "arguments": {}
+    },
+    {
+      "source": "report.retry",
+      "vhost": "/",
+      "destination": "report.memorybook.generate.retry.3",
+      "destination_type": "queue",
+      "routing_key": "report.memorybook.generate.retry.3",
+      "arguments": {}
+    },
+    {
+      "source": "events.topic",
+      "vhost": "/",
+      "destination": "core.memorybook.events",
+      "destination_type": "queue",
+      "routing_key": "memorybook.completed",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "/",
+      "destination": "core.memorybook.events.dlq",
+      "destination_type": "queue",
+      "routing_key": "core.memorybook.events",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.memorybook.events.retry.1",
+      "destination_type": "queue",
+      "routing_key": "core.memorybook.events.retry.1",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.memorybook.events.retry.2",
+      "destination_type": "queue",
+      "routing_key": "core.memorybook.events.retry.2",
+      "arguments": {}
+    },
+    {
+      "source": "core.retry",
+      "vhost": "/",
+      "destination": "core.memorybook.events.retry.3",
+      "destination_type": "queue",
+      "routing_key": "core.memorybook.events.retry.3",
       "arguments": {}
     }
   ]

@@ -21,7 +21,23 @@ from tests.fakes import FakeLlm
 from tests.report_explanation.test_checks import NARRATIVE
 
 TEXT = "나는 강아지를 키우고 싶다. 왜냐하면 강아지는 산책을 좋아해서 운동이 된다."
-BODY = {"grade": 5, "inputType": "NARRATIVE", "text": TEXT, "scores": NARRATIVE}
+QUOTE = "강아지는 산책을 좋아해서 운동이 된다"
+BODY = {
+    "grade": 5,
+    "inputType": "NARRATIVE",
+    "text": TEXT,
+    "question": "키우고 싶은 동물과 까닭을 쓰고, 자신이 어떻게 돌볼지 써 보세요.",
+    "criteria": [
+        {
+            "label": "돌봄 방법",
+            "requirement": "기르고 싶은 동물을 자기가 어떻게 돌볼지 설명함",
+            "required": True,
+            "satisfied": False,
+            "quote": QUOTE,
+        }
+    ],
+    "scores": NARRATIVE,
+}
 
 
 def model_item(
@@ -52,45 +68,49 @@ def service(llm: FakeLlm, versions: ActiveVersions | None = None) -> Explanation
     return ExplanationService(llm, Settings(), versions or active("explanation/grade-5/narrative"))
 
 
-def explain(llm: FakeLlm, body: dict = BODY, versions: ActiveVersions | None = None):
+LEGACY_BODY = {key: value for key, value in BODY.items() if key != "criteria"}
+
+
+def explain(llm: FakeLlm, body: dict = LEGACY_BODY, versions: ActiveVersions | None = None):
     return asyncio.run(service(llm, versions).explain(ExplanationRequest.model_validate(body)))
 
 
 def detail(**changes) -> ExplanationDetail:
     values = {
         "analysis": "강아지가 산책을 좋아해서 운동이 된다는 까닭을 들어 주장을 펼쳤습니다.",
-        "improvement_points": "다만, 키우고 싶은 까닭과 운동 이야기의 연결이 짧습니다.",
+        "improvement_points": f'다만, "{QUOTE}"라고 했지만 어떻게 돌볼지는 남아 있습니다.',
+        "gap_criterion": 1,
+        "gap_quote": QUOTE,
         "next_steps": "앞으로 '강아지와 산책하면 무엇이 좋을까?'라고 물어봐 주세요.",
     }
     return ExplanationDetail(**(values | changes))
 
 
-def test_one_call_becomes_titled_detail_with_quote_and_registry_version() -> None:
+def test_legacy_one_call_becomes_analysis_with_quote_and_registry_version() -> None:
     llm = FakeLlm(detail())
-    result = explain(llm, {**BODY, "topic": "키우고 싶은 동물과 까닭을 써 보세요."})
+    result = explain(llm)
     assert isinstance(result, ActiveExplanationResponse)
     assert result.explanation.text == (
-        "상세 분석\n강아지가 산책을 좋아해서 운동이 된다는 까닭을 들어 주장을 펼쳤습니다.\n\n"
-        "보완할 지점\n다만, 키우고 싶은 까닭과 운동 이야기의 연결이 짧습니다.\n\n"
-        "개선 방안\n앞으로 '강아지와 산책하면 무엇이 좋을까?'라고 물어봐 주세요."
+        "상세 분석\n강아지가 산책을 좋아해서 운동이 된다는 까닭을 들어 주장을 펼쳤습니다."
     )
     assert result.explanation.quote == "왜냐하면 강아지는 산책을 좋아해서 운동이 된다."
     assert result.versions.model_dump() == {
         "model": "report-explanation@lora-1",
-        "prompt": "report-explanation@4",
+        "prompt": "report-explanation@6",
     }
     [request] = llm.requests
-    assert request.user.splitlines()[:3] == [
-        "[학년] 초등 5학년",
-        "[문제] 키우고 싶은 동물과 까닭을 써 보세요.",
-        "[학생 글]",
-    ]
-    assert request.user.endswith(TEXT) and "4" not in request.user  # 점수는 넣지 않음
+    lines = request.user.splitlines()
+    assert lines[0:2] == ["[학년] 초등 5학년", "[문제 전문]"]
+    assert BODY["question"] in lines[2]
+    assert lines[3] == "[학생 글]" and TEXT in lines[4]
+    assert lines[5:] == ["[저장된 항목별 판정]", "[]"]
+    assert "hol" not in request.user
+    assert request.max_tokens == Settings().explanation_max_tokens == 1536
     assert {u.call_type for u in llm.usages} == {"REPORT_EXPLANATION"}
 
 
 def test_scores_are_optional() -> None:
-    body = {key: value for key, value in BODY.items() if key != "scores"}
+    body = {key: value for key, value in LEGACY_BODY.items() if key != "scores"}
     assert isinstance(explain(FakeLlm(detail()), body), ActiveExplanationResponse)
 
 
@@ -128,7 +148,7 @@ def test_analysis_left_empty_after_cleaning_is_422_after_one_regeneration() -> N
 
 def test_repeated_sentences_trigger_one_regeneration_with_repetition_penalty() -> None:
     same = "필통의 색과 그림은 썼지만 그 물건이 왜 소중한지는 아직 드러나지 않습니다."
-    looping = detail(analysis=same, improvement_points=same, next_steps=same)
+    looping = detail(analysis=f"{same} {same} {same}", improvement_points=None)
     llm = FakeLlm(looping, detail())
     result = explain(llm)
     assert isinstance(result, ActiveExplanationResponse)
@@ -141,15 +161,7 @@ def test_a_single_repeat_is_dropped_without_regeneration() -> None:
         "강아지가 산책을 좋아해서 운동이 된다는 까닭을 들어 주장을 펼쳤습니다. "
         "주장과 까닭이 바로 이어져 읽기 쉽습니다. 산책 이야기로 생활과 연결했습니다."
     )
-    llm = FakeLlm(
-        detail(
-            analysis=analysis,
-            improvement_points=(
-                "다만, 키우고 싶은 까닭과 운동 이야기의 연결이 짧습니다. "
-                "주장과 까닭이 바로 이어져 읽기 쉽습니다."
-            ),
-        )
-    )
+    llm = FakeLlm(detail(analysis=analysis + " 주장과 까닭이 바로 이어져 읽기 쉽습니다."))
     result = explain(llm)
     assert isinstance(result, ActiveExplanationResponse)
     assert result.explanation.text.count("주장과 까닭이 바로 이어져 읽기 쉽습니다.") == 1
@@ -158,7 +170,7 @@ def test_a_single_repeat_is_dropped_without_regeneration() -> None:
 
 def test_still_insufficient_after_regeneration_is_422() -> None:
     same = "필통의 색과 그림은 썼지만 그 물건이 왜 소중한지는 아직 드러나지 않습니다."
-    looping = detail(analysis=same, improvement_points=same, next_steps=same)
+    looping = detail(analysis=f"{same} {same} {same}", improvement_points=None)
     llm = FakeLlm(looping, looping)
     with pytest.raises(ApiError) as error:
         explain(llm)
@@ -167,10 +179,11 @@ def test_still_insufficient_after_regeneration_is_422() -> None:
 
 
 def test_bad_sentence_is_dropped_not_the_whole_explanation() -> None:
-    llm = FakeLlm(detail(improvement_points="다만, 연결이 짧습니다. 점수가 낮은 글입니다."))
+    analysis = "자녀는 산책을 이유로 들었습니다."
+    llm = FakeLlm(detail(analysis=analysis + " 점수가 낮은 글입니다."))
     result = explain(llm)
     assert isinstance(result, ActiveExplanationResponse)
-    assert "보완할 지점\n다만, 연결이 짧습니다.\n\n" in result.explanation.text
+    assert result.explanation.text == f"상세 분석\n{analysis}"
     assert "점수" not in result.explanation.text
 
 

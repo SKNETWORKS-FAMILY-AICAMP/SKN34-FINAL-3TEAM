@@ -22,6 +22,9 @@ class PersistenceConfig {
             register(OffsetDateTime::class.java, OffsetDateTimeTypeHandler())
             register(JsonNode::class.java, JsonNodeTypeHandler(objectMapper))
             register(JsonObject::class.java, JsonObjectTypeHandler(objectMapper))
+            // 칸 전용(#947): javaType 없이 등록해 XML `typeHandler=` 참조로만 찾게 한다(List 전역 매핑 금지)
+            register(null as Class<List<String>>?, StringListJsonbTypeHandler(objectMapper))
+            register(null as Class<List<JsonObject>>?, JsonObjectListTypeHandler(objectMapper))
         }
     }
 }

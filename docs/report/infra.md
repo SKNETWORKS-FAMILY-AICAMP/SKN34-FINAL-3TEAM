@@ -1791,21 +1791,23 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 
 | 결정 | 내용 | 근거 |
 |---|---|---|
-| 배포 승인 | cd-release의 deploy job 대신 digest-pr job이 main 대상 PR을 만든다(`environments/prod/images/**`만). 그 PR 승인·병합 = 배포 승인 | Argo CD가 Git을 읽으므로 승인 지점을 Git 변경에 둔다. 승인·병합 기록이 그대로 배포 기록이 됨 |
+| 배포 승인 | cd-release의 deploy job 대신 digest-pr job이 `environments/prod/images/**`만 고친 브랜치를 push하고, 사람이 실행 요약 링크로 main 대상 PR을 연다(11/24 변경, 아래). 그 PR 승인·병합 = 배포 승인 | Argo CD가 Git을 읽으므로 승인 지점을 Git 변경에 둔다. 승인·병합 기록이 그대로 배포 기록이 됨 |
 | 대상 파일 | `policy.json` `delivery`: 서비스 5개 → release 파일 6개(report-service → report-api·report-worker), migration 값은 core·learning·report-api. 키는 #857 계약(`image.repository`·`image.digest`, `migration.image.*`·`migration.revision`) | 서비스 목록·파일 대응을 한 곳에 두고 `cd_release.py`가 검증 |
 | 게이트 | validate에서 `--check-images`(파일·키 구조, 이미지 빌드 전), digest-pr에서 `--require-executable --write-images`. 하나라도 틀리면 파일을 하나도 쓰지 않음. 저장소 주소가 다르면 오류, 계정 전환 때만 `allowRepositoryChange`(서비스 5개 전부일 때) | 다른 계정·레지스트리 digest가 섞이지 않게 |
 | PR 기준 | 실행 SHA가 아니라 그때의 main HEAD에서 images 파일을 고침. 본문에 원본 SHA와 기준 HEAD를 함께 | 앞서 병합된 digest PR을 덮어쓰지 않음 |
-| PR 생성 토큰 | `GITHUB_TOKEN`(`contents`·`pull-requests`·`actions` 쓰기) + 생성 뒤 PR 브랜치에 `ci-gitops` `workflow_dispatch` | `GITHUB_TOKEN` 이벤트는 다른 workflow를 깨우지 않지만 dispatch는 예외. 새 GitHub App은 조직 승인이 필요해 선택지로만 남김(CD README B2) |
-| 승인자 | main 보호 규칙 필수 리뷰 1명 + CODEOWNERS(김동섭·김태윤), status check 필수 아님 | #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같게. 경로 필터 CI를 필수로 걸면 릴리스 PR이 대기함 |
+| PR 생성 | (11/24 변경) workflow는 `GITHUB_TOKEN`(`contents: write`만)으로 브랜치 push까지. 커밋 메시지를 1행 제목 + 빈 줄 + PR 본문으로 만들어(`git commit --cleanup=verbatim -F`) compare 링크(`compare/main...<브랜치>?expand=1`)에서 제목·본문이 채워진다. 사람이 연 PR이라 `ci-gitops`가 `pull_request`로 돈다 | 11/20 안(`gh pr create` + `ci-gitops` dispatch)은 조직 정책으로 실패. 새 토큰·도구 없이 되는 방식(CD README PR 생성 토큰 표) |
+| 승인자 | main 보호 규칙 필수 리뷰 1명 + CODEOWNERS(김동섭·김태윤), PR을 연 사람과 다른 code owner가 승인, status check 필수 아님 | #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같게. 경로 필터 CI를 필수로 걸면 릴리스 PR이 대기함 |
 | 브랜치 규칙 | "main은 develop에서만" 예외: images만 바꾸는 PR은 main 직접 병합. develop은 images 파일을 고치지 않음 | main에 digest 커밋이 쌓여도 develop → main 병합에서 충돌 없음(3-way에서 develop 쪽 변경 없음) |
 | 이력 | digest PR + Argo CD sync 이력. `cd_record.py` artifact는 비상용 Helm 경로에서만 | PR 본문에 원본 SHA·digest·계획 JSON·호환성 근거가 남음 |
 | 되돌리기 | digest PR revert(같은 승인). Argo CD UI rollback은 쓰지 않음. rollback 계획은 비상용 Helm에서만 | UI rollback은 Git과 어긋나 다음 자동 동기화가 되돌림. DB는 되돌리지 않음(7.1 원칙 유지) |
 | 비상용 | `delivery: helm-emergency`로 예전 deploy job(작업자 PC runner) 실행. 12/7 시연 뒤 runner·job 정리 | Argo CD 경로가 막혔을 때 첫 배포 수단을 남김(에픽 대체안) |
 
-- 저장소 설정(Actions PR 생성 허용, main 보호 규칙, Code Owners 리뷰)은 관리자 손 작업으로 11/24 develop → main 릴리스 뒤 적용한다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정). 2026-11-20 기준 적용하지 않았다.
-- 11/25 A 확인 순서: digest PR 생성 → ci-gitops → 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
-- 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push, `gh pr create --base main`, `gh workflow run ci-gitops.yml --ref <브랜치>` 호출까지.
-- 한계: digest PR 작성자가 봇이라 실행한 사람도 승인할 수 있다(Environment `prod`와 같음, 운영 규칙으로 다른 사람 승인 권장). `GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않는다. #857 병합으로 생긴 실제 images 파일 6개는 `RealImagesFileTests`가 구조를 검사한다.
+- 변경 사유(2026-11-24, #986): 11/24 첫 실행에서 digest-pr job의 `gh pr create` 단계가 실패했다. 조직(SKNETWORKS-FAMILY-AICAMP) 정책이 "Actions가 PR을 만들고 승인하는 것"을 막고 있고, 조직은 정책을 바꿀 수 없다고 답했다. 이미지 빌드·ECR 게시·images 파일 갱신·브랜치 push는 됐다.
+- 결정(2026-11-24 팀장): workflow는 digest 브랜치 push와 실행 요약의 PR 만들기 링크까지 하고, **PR은 사람이 링크로 연다.** job 권한은 `contents: write`만 남기고 `gh pr create`·`gh workflow run ci-gitops.yml` 단계를 지웠다. 게이트(`--require-executable`·`--write-images`·images 밖 변경 차단)는 그대로다. 승인 → 병합 → Argo CD 자동 동기화 → PreSync migration → revert 복구 흐름도 그대로다. 기각한 대안: deploy key(SSH push용이라 PR API를 못 부르고, main 직접 push는 승인 단계가 없어지며 보호 규칙과 충돌), 개인 계정 포크(OIDC 신뢰·Argo CD repoURL·변수·문서를 모두 바꿔야 하고 배포 기록이 포크에만 남음), 개인 토큰 PAT(만료·보안 관리 부담, 조직 차단 가능성).
+- 저장소 설정(main 보호 규칙, Code Owners 리뷰)은 관리자 손 작업으로 11/24 develop → main 릴리스 뒤 적용한다. 예전 "Actions PR 생성 허용" 단계는 조직 정책상 켤 수 없어 뺐다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정).
+- 11/25 A 확인 순서: cd-release 실행 → 실행 요약 링크로 PR 열기(제목·본문 채워짐) → `pull_request` ci-gitops → 다른 code owner 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
+- 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push까지. 11/24 변경 뒤에는 `test_cd_deployment.py`가 권한(`contents: write`만), `gh pr create`·`gh workflow run` 없음, `-F` 커밋, compare 링크를 검사한다.
+- 한계: PR 작성자는 링크로 연 사람이라 본인 승인이 세지 않는다. 다른 code owner(동섭 ↔ 태윤)가 없으면 병합할 수 없다(막히면 비상용 Helm 경로). PR 열기가 사람 손이라 링크를 열지 않으면 브랜치만 남고 배포되지 않으며, 오래된 digest 브랜치·PR은 사람이 닫고 지운다. 11/20 안의 한계였던 "봇 작성자라 실행한 사람도 승인 가능"과 "`GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않음"은 사람이 PR을 열면서 없어졌다. #857 병합으로 생긴 실제 images 파일 6개는 `RealImagesFileTests`가 구조를 검사한다.
 
 ## 9.19 B 복원용 스냅샷의 고객 관리 KMS 키 공유 (#809, 2026-11-23)
 
@@ -1838,7 +1840,224 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 - B 계정 번호와 B 복원 주체(B 루트 위임 또는 복원 역할 하나)
 - 11/25 실행 결과(스냅샷·복사 시각, 키 ARN은 적지 않고 별칭만), B 복원 결과와 A 쪽 보존 자원 정리 시점
 
-## 9.20 로컬 kind 표현 분류 재학습 (#730)
+## 9.20 추억 그림책 prod 설정과 A 확인 절차 (#974, 2026-11-24)
+
+PR #966(추억 그림책 PDF 발급)이 develop에 들어갔지만 prod report-worker에 그림 받기 허용 출처가 없어, 실서버에서는 그림이 모두 빠진 PDF가 완성(READY)으로 나갈 수 있었다. 결정 E2(`docs/proposals/memory-book-decisions.md`)대로 A 계정에서 한 번 돌려 보기 전에 저장소 설정을 맞췄다. 이 정리에서 AWS는 조회도 변경도 하지 않았다.
+
+### 9.20.1 설정과 근거
+
+| 항목 | 값·상태 | 근거 |
+|---|---|---|
+| 그림 허용 출처 | `report-worker.json`에 `MEMORY_BOOK_ASSET_ORIGINS=https://sagomungchi-demo-347161580747-missions.s3.ap-northeast-2.amazonaws.com` | learning은 `ASSET_S3_BUCKET`(missions)·`S3_REGION`으로 AWS SDK v2 `S3Presigner`를 만들고 `endpointOverride`가 없다(`S3_PUBLIC_ENDPOINT_URL` 없음). 그래서 서명 URL은 virtual-hosted 방식 regional 주소 `https://<버킷>.s3.<리전>.amazonaws.com/theme-drafts/…`다. 버킷 이름에 점이 없어 경로 방식으로 바뀌지 않는다. `asset_fetcher.py`는 `scheme://host[:port]`를 소문자로 비교하므로 경로·쿼리 없이 출처만 넣는다. `scripts/tests/test_runtime_config.py`가 두 파일 값이 맞는지 본다 |
+| 클러스터 안 주소 치환 | prod에는 넣지 않음(`MEMORY_BOOK_ASSET_INTERNAL_ORIGINS` 없음) | kind의 MinIO용이다. prod는 S3에 바로 연결한다 |
+| 크기 상한 | 기본값 그대로: 그림 1장 5MiB(`MEMORY_BOOK_IMAGE_MAX_BYTES`), 1권 40MiB(`MEMORY_BOOK_TOTAL_MAX_BYTES`), 그림 1장 10초(`MEMORY_BOOK_ASSET_TIMEOUT_SECONDS`) | ai 테마 그림은 장면마다 PNG 1장이고 1권은 최대 7장(표지·월~금·엔딩)이다. 실제 크기는 9.20.3의 D6 측정으로 확인한다. 장당 2MB를 넘으면 상한이 아니라 축소(Pillow)를 더하는 것이 D6 기준이다 |
+| egress | 바꾸지 않음 | report-worker NetworkPolicy에 이미 443 → S3 대역 9개(서울 S3 prefix list 대역, report-api·scoring과 같음)가 있다. private 라우팅 테이블 2개는 S3 Gateway endpoint(`sagomungchi-demo-vpce-s3`, 기본 정책)로 가므로 NAT를 거치지 않는다(5절, #212). regional 주소라 서울 대역 안이고, global 주소(`s3.amazonaws.com`)는 쓰지 않는다. 서명 URL은 learning 역할의 `s3:GetObject`(`theme-drafts/*`)로 서명돼 report-worker에는 S3 권한이 필요 없다. DNS(53)는 chart 기본 허용 |
+| RabbitMQ | 바꾸지 않음 | 큐 `report.memorybook.generate`(재시도 3개·DLQ)·`core.memorybook.events`와 바인딩(`cmd.direct` `memorybook.generate`, `events.topic` `memorybook.completed`)은 공용 `charts/platform-data/files/rabbitmq/definitions.json`에 있고 prod도 같은 파일을 쓴다. 권한(`import-definitions.sh`): report 읽기에 `report.memorybook.generate`, topic 쓰기에 `memorybook.completed`, core 읽기에 `core.memorybook.events`. 초기화 Job 이름에 definitions 해시가 들어 있어 platform-data를 새 revision으로 동기화하면 다시 돈다 |
+| 구독·KEDA | 바꾸지 않음 | report-worker는 Pod 1개(`replicaCount: 1`, HPA·KEDA 꺼짐)가 큐 3개(삭제·리포트·그림책)를 각자 채널, `CONSUMER_PREFETCH=1`로 구독한다. 큐는 passive로만 확인하므로 **platform-data가 앱보다 먼저 동기화돼야** 한다(Argo CD wave 5 → 앱). 큐가 없으면 report-worker가 기동에 실패한다. 리포트 1건과 그림책 1권이 동시에 Chromium을 띄울 수 있다(메모리 한도 768Mi, E4) |
+| core V57 | 바꾸지 않음 | `V57__memory_book_jobs.sql`은 core-migrate 이미지에 들어 있고 digest PR의 `migration.revision`(`main-<SHA>`)으로 PreSync Job이 앱보다 먼저 돈다(9.18.3). 상품 값도 이 migration이 넣는다: `price = 0` 상품 `features.memoryBook=false`, `price > 0` 상품 `true`, 모든 상품 `limits.dailyMemoryBooks=3`. 결정 B1(유료 상품 전체)·B2(자녀당 하루 3권)와 같다. 따로 넣는 seed·상품 SQL은 없다 |
+| 기존 구독 | 그대로 동작 | V57 전에 만든 구독 스냅숏(시연 `prepare-demo-account-students.sql` 포함)에는 두 키가 없다. 이때 `features.memoryBook`은 구독 중이면 허용, `limits.dailyMemoryBooks`는 무료 상품 값(V57 뒤 3)을 쓴다(`ProductEntitlementService`). 결과는 B1·B2와 같다 |
+| B 계정 | 계정 번호 교체에 포함 | 출처에 missions 버킷 이름(계정 번호)이 들어 있다. `scripts/aws_account_switch.py`가 prod `*.json`을 바꾸므로 같이 바뀐다. 리전이 바뀌면 `s3.<리전>`과 S3 egress 대역도 바꾼다([AWS README B 런북](../../infrastructure/aws/README.md#a-계정-값-교체)) |
+
+그림이 빠지는 경우(2026-11-24 결정): `asset_fetcher.py`는 받지 못한 그림만 빈 칸으로 둔다. #974 당시에는 그림을 하나도 받지 못해도 READY로 끝났고, #975부터는 아래 "실행 중 실패"처럼 FAILED로 끝난다.
+- 설정 누락: 허용 출처가 비면 report-worker가 뜰 때 경고 로그(`MEMORY_BOOK_ASSET_ORIGINS`가 비어 있어 그림 없이 만듦)를 남긴다(#974). 같은 워커가 리포트·자녀 삭제 큐도 처리하므로 기동은 막지 않는다. 값이 맞는지는 `test_runtime_config`가 PR에서 본다.
+- 실행 중 실패(#975 반영): 그림 주소가 있는데 한 장도 받지 못하면 `memory_book/service.py`가 PDF를 만들지 않고 FAILED `ASSET_UNAVAILABLE`로 끝낸다. 사용 예약은 미사용으로 마감해 한도를 쓰지 않는다. 일부만 빠지면 그 칸만 비우고 READY다. 그래서 A·B 확인에서는 지금처럼 그림 수를 직접 센다(일부 누락은 READY로 나오므로).
+
+### 9.20.2 11/25 A 확인 절차
+
+전제: 이 설정(#974)이 들어간 main이 A에 배포돼 있다. 11/25까지 main에 없으면 이 브랜치의 `report-worker.json`으로 report-worker만 다시 배포하거나(`redeploy-app.ps1`, 비상용 Helm 경로) 그림 확인을 다음 배포 뒤로 미룬다. Argo CD가 관리하는 Deployment에 `kubectl set env`로 넣으면 다음 동기화에서 되돌아간다. 명령의 `<A>`는 A 프로필, `<ID>`는 시연 자녀·그림책 ID다. 측정값은 #974 댓글에 남긴다.
+
+| # | 단계 | 명령·방법 | 확인 |
+|---|---|---|---|
+| 1 | 설정 | 아래 명령 1 | report-worker env에 출처 1개, RabbitMQ 그림책 큐 2개에 consumer 1 |
+| 2 | V57·상품 값 | `demo-db-oneoff.k8s.yaml`로 core_db에 읽기 전용 쿼리(아래 SQL) | `flyway_schema_history` 57 `success=true`, 무료 `false`·유료 `true`, 모든 상품 `3` |
+| 3 | 발급 | 유료 시연 학부모로 웹 "리포트·AI 챗봇" → 그림책 → 액자가 있는 회차 1개 발급. 동시에 명령 2(메모리)를 돌린다 | 화면이 "만드는 중" → "받기", 작업 READY |
+| 4 | 받기 | 같은 화면 "받기"로 PDF 저장 | PDF가 열리고 9쪽 안팎 |
+| 5 | 그림 들어갔는지 | 명령 3(PDF 그림 세기)과 report-worker 로그 | 그림 수 = 그 회차 그림 수(엔딩을 봤으면 7, 아니면 6), 로그에 `그림책 그림 건너뜀` 0줄 |
+| 6 | D6 그림 크기 | 명령 4(원본 크기)와 명령 3의 가로·세로 | 장당 최대 크기. 2MB를 넘는 그림이 있으면 D6대로 축소를 더할지 정한다 |
+| 7 | E4 메모리 | 명령 2 결과의 최댓값, 재시작 수 | 최대 메모리가 한도 768Mi의 몇 %인지, `restartCount` 변화 없음·`OOMKilled` 없음 |
+
+```powershell
+# 명령 1: 설정·큐·구독
+kubectl -n app get deploy report-worker -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="MEMORY_BOOK_ASSET_ORIGINS")].value}'
+kubectl -n platform exec rabbitmq-0 -- rabbitmqctl list_queues name consumers messages | Select-String memorybook
+
+# 명령 2: 발급 동안 report-worker 메모리(2초 간격, 발급이 끝나면 Ctrl+C) 뒤 재시작 수
+while ($true) { kubectl -n app top pod -l app.kubernetes.io/name=report-worker --containers --no-headers; Start-Sleep 2 }
+kubectl -n app get pod -l app.kubernetes.io/name=report-worker -o jsonpath='{range .items[*]}{.metadata.name} {.status.containerStatuses[0].restartCount} {.status.containerStatuses[0].lastState.terminated.reason}{"\n"}{end}'
+kubectl -n app logs deploy/report-worker --since=30m | Select-String '그림책 그림 건너뜀'
+
+# 명령 4: 원본 테마 그림 크기(큰 순 5개, 2MB 초과 수)
+aws s3api list-objects-v2 --bucket sagomungchi-demo-347161580747-missions --prefix theme-drafts/ --profile <A> --query 'reverse(sort_by(Contents[?ends_with(Key, `.png`)], &Size))[:5].[Key, Size]' --output table
+aws s3api list-objects-v2 --bucket sagomungchi-demo-347161580747-missions --prefix theme-drafts/ --profile <A> --query 'length(Contents[?ends_with(Key, `.png`) && Size > `2097152`])'
+```
+
+명령 3은 작업자 PC의 Python 가상 환경에 `pypdf`를 설치해 받은 PDF 경로를 넘긴다. PDF 안의 그림(Form XObject 안쪽 포함)마다 쪽·가로·세로·압축 크기를 출력한다.
+
+```python
+import sys
+from pypdf import PdfReader
+
+def images(resources, seen):
+    for ref in (resources or {}).get("/XObject", {}).values():
+        obj = ref.get_object()
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        if obj.get("/Subtype") == "/Image":
+            yield obj
+        elif obj.get("/Subtype") == "/Form":
+            yield from images(obj.get("/Resources"), seen)
+
+reader, total = PdfReader(sys.argv[1]), 0
+for number, page in enumerate(reader.pages, 1):
+    for obj in images(page.get("/Resources"), set()):
+        total += 1
+        print(number, obj["/Width"], obj["/Height"], obj.get("/Filter"), len(obj._data))
+print("pages", len(reader.pages), "images", total)
+```
+
+```sql
+SELECT version, success FROM flyway_schema_history WHERE version = '57';
+SELECT code, price, active, features -> 'memoryBook' AS memory_book, limits -> 'dailyMemoryBooks' AS daily FROM product ORDER BY price;
+SELECT status, failure_code, size_bytes, created_at, completed_at FROM memory_book_job ORDER BY created_at DESC LIMIT 3;
+```
+
+- 마지막 SQL의 칸 이름은 V57 기준이다. 다르면 `\d memory_book_job`으로 맞춘다.
+- B(시연)에서는 같은 절차를 B 런북 경로 확인 뒤 한 번 더 한다(#927 B 항목).
+
+## 9.21 S3 수명 주기: 추억 그림책 (#975, 2026-11-24)
+
+2026-11-24 결정 C3([결정 기록](../proposals/memory-book-decisions.md)): 보관 기간(30일)이 지난 추억 그림책 PDF는 S3 수명 주기 규칙으로 지운다. 이 절은 규칙 정의만 다룬다. prod report-worker 설정과 A 계정 확인 절차는 #974다.
+
+### 9.21.1 확인한 것
+
+- `reports` 버킷(`infrastructure/aws/demo-stack.json` `buckets`)에는 수명 주기 규칙이 없었다. `demo_stack.py`는 버킷의 버전 관리·공개 차단·기본 암호화만 만들고 대조했다(AWS 계정은 조회하지 않고 코드와 정의 파일만 확인).
+- 버킷은 **버전 관리가 켜져 있다**. 현재 버전만 만료하면 삭제 표시만 생기고 이전 버전이 남으므로 이전 버전 만료와 남은 삭제 표시 정리도 함께 둔다.
+- S3 수명 주기 규칙은 대상을 **접두어 하나(와일드카드 없음)나 객체 태그**로만 고른다. 결정 문구의 `reports/*/memory-books/`처럼 학생 ID가 가운데 있는 키는 고를 수 없다.
+
+### 9.21.2 결정과 변경
+
+- 그림책 키를 `reports/{studentId}/memory-books/{bookId}/pdf`에서 `reports/memory-books/{studentId}/{bookId}/pdf`로 옮겼다(`backend/report-service/app/clients/storage.py`). report IAM(`report-s3-role`)은 `reports/*`라 권한을 바꾸지 않는다(E1 "IAM 변경 없음" 유지). 객체 태그 방식은 `s3:PutObjectTagging` 권한 추가와 B 계정 IAM 반영이 필요해 쓰지 않았다.
+- 학생 삭제(P09)는 그대로 `delete_prefix("reports/{studentId}/")` 한 번이고, 저장소가 `reports/memory-books/{studentId}/`도 함께 지운다. 허용 모양은 학생 전체, 리포트 판, 그림책 한 권(`reports/memory-books/{s}/{b}/`)뿐이다.
+- prod에는 아직 그림책 파일이 없어 옮길 파일은 없다. 로컬에서 옛 키로 만든 파일은 받기가 410(보관 기간 지남)이 되고, 학생 삭제의 `reports/{studentId}/` 아래라 그대로 지워진다.
+
+### 9.21.3 규칙 정의 (`demo-stack.json` `bucketLifecycle`, apply 안 함)
+
+| ID | 대상 | 동작 |
+|---|---|---|
+| `memory-book-expire` | 접두어 `reports/memory-books/` | 현재 버전 35일 뒤 만료(30일 보관 + 여유 5일, core 만료 판정보다 늦게), 이전 버전 1일 뒤 삭제 |
+| `memory-book-delete-markers` | 접두어 `reports/memory-books/` | 남은 삭제 표시 정리(`ExpiredObjectDeleteMarker`) |
+
+- 여유 5일: core는 `expires_at`(발급 + 30일)으로 받기를 막고, S3는 객체 생성일부터 일 단위로 세어 자정(UTC) 기준으로 지운다. 파일은 발급 직후 만들어지므로 35일이면 core 만료 뒤에만 지워진다.
+- `demo_stack.py plan`은 정의와 실제 규칙을 비교해 다르면 DIFF로 보여 준다. `apply`는 **규칙이 하나도 없는 버킷에만** 이 정의를 넣는다. `put-bucket-lifecycle-configuration`은 버킷의 규칙 전체를 바꾸므로, 다른 규칙이 이미 있으면 덮어쓰지 않고 DIFF로 남겨 사람이 합친다.
+- 이 PR에서는 AWS에 적용하지 않았다. 적용은 #974의 A 계정 확인 일정에서 `plan`으로 차이를 본 뒤 `apply --confirm-account`로 한다.
+- 시험: `scripts/tests/test_aws_demo_stack.py`(정의가 그림책 접두어만 고름·35일·이전 버전·삭제 표시, 빈 버킷에만 넣고 다른 규칙은 덮지 않음), report `tests/test_memory_book_generation.py`(새 키 모양, 한 권·학생 전체 삭제, 위험한 접두어 거부).
+
+## 9.22 시연 도메인 www.sagomungchi.co.kr 전환 (2026-11-24)
+
+시연 주소를 CloudFront 기본 주소(`https://d3jf0rnm6vhd9v.cloudfront.net`)에서 `https://www.sagomungchi.co.kr`로 바꿨다. 계정과 무관한 주소라 A→B 계정 전환(#809) 때 앱·OAuth·CD 값을 다시 바꾸지 않아도 된다. 아래 AWS·가비아 작업은 동섭이 손으로 했고, 이 PR은 저장소 값과 문서만 바꾼다.
+
+### 9.22.1 한 일
+
+| 항목 | 값·상태 | 비고 |
+|---|---|---|
+| 도메인 구입 | 2026-11-24 가비아 `sagomungchi.co.kr`, 네임서버는 가비아 | |
+| DNS | 가비아 `www` CNAME → `d3jf0rnm6vhd9v.cloudfront.net` | B 계정 때는 대상만 B CloudFront 기본 주소로 바꾼다 |
+| 인증서 | us-east-1 ACM, `www.sagomungchi.co.kr`·`sagomungchi.co.kr`, DNS 검증(가비아 CNAME), ISSUED | CloudFront는 us-east-1 인증서만 쓴다 |
+| A CloudFront | `EW2QD9OAPEVRK`에 대체 도메인 `www.sagomungchi.co.kr`, 위 인증서, 보안 정책 TLSv1.2_2021 | 루트는 별칭에 넣지 않았다 |
+| 루트 주소 | 가비아 포워딩으로 `https://www.sagomungchi.co.kr`에 넘길 예정 | 루트(apex)에는 CNAME을 둘 수 없어 CloudFront에 직접 연결하지 않는다 |
+| core `AUTH_WEB_ORIGIN` | prod `core-service.json`에서 `https://www.sagomungchi.co.kr` | 아래 9.22.2 |
+| 스크립트 기본값 | `verify-viewer-ip.ps1`, `evaluation/load/core-load.js`, `evaluation/load/README.md` | 요청 Origin이 `AUTH_WEB_ORIGIN`과 같아야 하므로 함께 바꿨다 |
+
+### 9.22.2 `AUTH_WEB_ORIGIN` 하나만 바꾼 근거
+
+- core는 웹 주소를 `AuthProperties.webOrigin`(`app.auth.web-origin`, 환경변수 `AUTH_WEB_ORIGIN`) 하나로만 받는다. 이 값으로 Google OAuth callback(`/api/v1/auth/google/callback`)·재인증 callback(`/api/v1/auth/google/reauth/callback`)과 로그인 뒤 이동 주소(`/oauth/complete`, `/login?oauthError=…`)를 만들고, `PublicAuthFilter`가 쿠키 인증 경로(refresh·학생 로그인 등)의 `Origin` 헤더를 이 값과 정확히 비교한다.
+- 값은 경로·끝 `/` 없는 origin이어야 한다(`AuthProperties` 초기 검사, `TokenServiceTest`). 그래서 여러 주소를 허용할 수 없다.
+- 다른 서비스는 웹 주소를 받지 않는다. 결제 성공·실패 주소와 재인증 주소 검사는 웹이 `location.origin`으로 만들고, 웹 빌드 env에도 주소가 없다(웹과 API가 같은 origin). 리포트·알림에 웹 링크를 넣는 설정도 없다.
+- **예전 주소로는 로그인이 안 된다.** `https://d3jf0rnm6vhd9v.cloudfront.net`으로 열면 화면은 뜨지만 Google 로그인은 callback이 새 주소로 돌아가고, refresh·학생 로그인은 Origin 불일치로 403이다. 2026-11-24에 이를 받아들이기로 했다. 쿠키는 host 단위라 예전 주소에서 받은 refresh·`student_device` 쿠키는 새 주소에서 쓰이지 않으므로 다시 로그인·기기 등록을 한다(CD 경로 확인 fixture 포함).
+
+### 9.22.3 손으로 바꿀 것 (저장소 밖)
+
+| 대상 | 값 |
+|---|---|
+| Google OAuth 클라이언트 → 승인된 JavaScript 원본 | `https://www.sagomungchi.co.kr` |
+| Google OAuth 클라이언트 → 승인된 리디렉션 URI | `https://www.sagomungchi.co.kr/api/v1/auth/google/callback`, `https://www.sagomungchi.co.kr/api/v1/auth/google/reauth/callback` |
+| GitHub Environment `prod` 변수 `CD_BASE_URL` | `https://www.sagomungchi.co.kr` |
+
+예전 cloudfront.net origin·callback은 B 전환이 끝날 때까지 지우지 않아도 된다(core가 새 값만 쓰므로 영향 없음).
+
+### 9.22.4 B 계정
+
+도메인은 그대로 쓰고 앱 값(`AUTH_WEB_ORIGIN`, OAuth, `CD_BASE_URL`)은 바꾸지 않는다. B에서는 us-east-1 ACM 인증서 재발급(가비아 검증 CNAME 추가) → A CloudFront에서 대체 도메인 떼기 → B CloudFront에 붙이기 → 가비아 `www` CNAME 대상 변경 순서로 한다([AWS README 확인 필요 표](../../infrastructure/aws/README.md#확인-필요)). 같은 대체 도메인은 두 배포에 동시에 둘 수 없어 바꾸는 동안 잠깐 끊긴다.
+
+### 9.22.5 남은 확인 (A 재가동 뒤)
+
+이 PR은 develop 병합 → develop→main 릴리스(#623) → A 재가동으로 반영된다. 아래는 아직 확인하지 않았다.
+
+- `https://www.sagomungchi.co.kr` 웹 첫 화면과 인증서, `sagomungchi.co.kr` 포워딩
+- 학부모 Google 로그인·재인증, 학생 기기 로그인(refresh 403 없음)
+- `verify_cd_deployment.py --base-url https://www.sagomungchi.co.kr` 경로 확인(fixture 쿠키를 새 주소에서 다시 받은 뒤)
+- 예전 주소에서 로그인이 막히는 것(예상 동작)
+
+## 9.23 표현 분류 재학습 이미지 ECR 게시와 digest 고정 (#985, 2026-11-24)
+
+MLOps 단계 점검(11/24)에서 재학습 이미지 배포가 빠져 있었다. `ml/tox/Dockerfile`(#729)을 운영 ECR에 올리는 경로가 없었고, #730 CronJob이 쓸 digest도 없었다. 새 도구 없이 cd-release의 `main-<SHA>` 불변 태그·재사용 규칙과 digest PR(#858·#986)을 그대로 쓴다.
+
+### 9.23.1 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 빌드 시점 | 선택값. 계획에 `"jobs": ["tox-retrain"]`이 있을 때만 빌드·게시(2026-11-24 동섭) | 이미지가 약 1.89GB(CPU torch)라 앱 릴리스마다 빌드하면 runner 시간·ECR 용량이 커진다. 재학습 코드는 앱보다 드물게 바뀐다 |
+| 앱 없는 계획 | `"services": []` + `jobs` 허용 | 재학습 이미지만 바꿀 때 앱을 억지로 넣지 않는다. 호환성 여섯 항목 근거 규칙은 그대로 |
+| 고정 위치 | `infrastructure/gitops/environments/prod/images/tox-retrain.json`(`image.repository`·`image.digest`), `policy.json` `delivery.jobImageFiles` | 앱과 같은 images 폴더라 digest PR·CODEOWNERS·revert 규칙을 그대로 쓴다. 앱 ApplicationSet 목록과는 따로 둔다(ci-gitops 목록 검사에서 제외) |
+| 비상용 Helm 경로 | `jobs`가 있으면 거부 | Helm 경로는 앱 release만 적용한다. 작업 이미지는 digest PR로만 고정 |
+| 계정 전환 | `allowRepositoryChange`는 서비스 5개 + `jobs` 전부일 때만 | 작업 이미지 파일만 A 레지스트리로 남는 혼재를 막는다 |
+| PR 확인 | `ci-ml-tox` `image` job이 `docker build -f ml/tox/Dockerfile .`만(push·로그인 없음) | 빌드 깨짐을 릴리스 전에 본다. `ml/tox/**`·`scripts/prepare_model_upload.py`가 바뀐 PR에서만 돈다 |
+
+### 9.23.2 바꾼 것
+
+- `cd-release.yml`: validate가 `jobs`를 출력하고, publish가 `sagomungchi/tox-retrain`을 `-f ml/tox/Dockerfile .`로 게시한다(같은 `publish` 함수). digest-pr의 PR 열기 링크 단계는 바꾸지 않았다.
+- `scripts/cd_release.py`: `JOBS`, `jobs` 검증(deploy만, 저장소 이름 `tox-retrain`, `images` 키 = services ∪ jobs), `jobImageFiles` 정책 검사, images 파일 갱신·PR 본문에 작업 이미지 포함.
+- IAM `github-cd-publish-role.inline.ecr-push.json`과 `demo-stack.json` `ecrRepositories`에 `sagomungchi/tox-retrain`(ECR 8개 → 9개).
+- `images/tox-retrain.json`의 처음 digest는 `sha256:0…0` 자리표시다. 첫 `jobs` 실행 digest PR이 실제 값으로 바꾼다.
+
+### 9.23.3 사람이 할 일 (AWS, 아직 하지 않음)
+
+| 계정 | 할 일 | 순서 |
+|---|---|---|
+| A | ECR `sagomungchi/tox-retrain` 생성(IMMUTABLE, AES256) → 게시 역할 인라인 `ecr-push` 다시 넣기 → `jobs` 계획으로 cd-release 한 번 → digest PR에 `tox-retrain.json` 갱신 확인 | [CD README 작업 이미지 게시](../../infrastructure/cd/README.md#작업-이미지-게시-tox-retrain-985) 표 1~3. A 재가동(11/25) 중 앱 digest PR 확인 뒤 |
+| B | 6a PR(계정 번호 교체) 뒤 `demo_stack.py apply`가 저장소와 역할 정책을 함께 만든다(B 런북 1단계). 첫 digest PR은 서비스 5개 + `"jobs": ["tox-retrain"]` + `allowRepositoryChange=true`(16단계) | [AWS README B 런북](../../infrastructure/aws/README.md#b-계정-전환-런북-809) |
+
+### 9.23.4 #730 CronJob 연결 (후속)
+
+#730(`feature/tox-retrain-kind`)의 차트는 `.Values.image`를 문자열로 받고 kind용 `imagePullPolicy: Never`다. prod Application을 만들 때 values에 `images/tox-retrain.json`을 같이 넘기고, 차트가 `image.repository`·`image.digest`로 `<저장소>@<digest>`를 만들게 한다(앱 chart와 같은 방식, prod는 `IfNotPresent`). 자리표시 digest인 동안에는 prod CronJob을 켜지 않는다.
+
+## 9.24 관측 chart 검증 스크립트 동기화 (#996, 2026-11-24)
+
+`verify_chart.py`가 현재 chart·운영 values를 따라가지 못해 정상 설정도 실패로 판정했다. #984에서 일부 검사를 뺀 임시 사본으로 실행한 이력을 확인하고, 검사를 유지한 원본 스크립트를 수정했다.
+
+- trace pipeline의 processor 이름을 `transform/trace_urls`로 맞췄다. `trace_statements`의 첫 그룹만 보던 검사를 모든 그룹의 `conditions`·`statements`로 넓혀 Google callback 조건·query 삭제와 토스 billing/payment 키 치환을 함께 확인한다. 아키텍처 문서의 이전 processor 이름도 고쳤다.
+- prod 앱 렌더는 CI·ApplicationSet처럼 `prod/<서비스>.json` 다음 `prod/images/<서비스>.json`을 전달한다. 분리된 repository·digest를 읽고 기존 OTLP·Java agent 설정을 계속 검사한다.
+- 작업 시작 시 develop `9e075979`로 실행하면 위 두 검사보다 먼저 기준 리소스 비교가 실패했다. #984 대시보드를 현재 chart에서만 껐기 때문이다. 기준 chart에서도 같은 옵션을 적용하며, 대시보드를 켠 local·prod의 provisioning 검사는 별도로 유지한다.
+- 기본 baseline `de8e225`, #984 이전 `75ddc7fe`, 작업 시작 기준 `9e075979`, 이후 반영한 develop `35fa87d9` 각각 default·local·baseline-prod 렌더가 같은지 확인했다(12조합 통과).
+
+API 변경 없음. 애플리케이션 동작·DB·chart·배포 values 변경 없이 검증 스크립트와 설명을 동기화했다. 이 PR이 영향을 주는 CI는 `ci-gitops`, `ci-contracts`의 저장소 전체 계약 검사, `ci-secrets`다. `verify_chart.py`의 Docker 경보 검사는 CI에 포함되어 있지 않으므로 별도로 실행하며, CI 자동 편입은 이 이슈의 범위 밖이다.
+
+완료 확인 명령:
+
+```powershell
+python infrastructure/gitops/operational-alerts/verify_chart.py --helm <helm-실행파일> --baseline 9e075979
+```
+
+`verify_chart.py`의 검증은 Python `assert`를 사용하므로 이 명령에는 `-O`를 붙이지 않는다. 저장소 계약 검사는 해당 CI의 명령인 `python -O -m unittest discover -s scripts/tests -v`로 실행한다.
+
+CI와 같은 Linux 환경에서 Helm 4.3.1 lint 17조합과 환경별 렌더 25파일, prod ApplicationSet·이미지 파일 목록 일치를 확인했다. kubeconform 0.8.0·Kubernetes 1.35.8·CI 고정 스키마로 45파일의 187개 리소스를 검사해 전부 유효했고 오류·건너뜀은 없었다. core·learning migration 이미지 빌드도 모두 통과했다(이미지 게시·DB 적용 없음).
+
+위 원본 명령은 검사를 제외한 사본 없이 끝까지 종료 코드 0으로 통과했다. 격리 Docker에서 Grafana 규칙 16개, 경보 발생·반복 억제·회복, 큐별 DLQ, 비용·미산정 비용, 인증 오류율·지연, NoData·잘못된 쿼리·없는 datasource, 재적용 중복 방지, 수집 중단·job 제거를 확인했다. 알림은 내부 네트워크의 로컬 수신 대역으로 전달했고 검증용 컨테이너·네트워크는 종료 후 제거했다.
+
+최신 develop `35fa87d9`를 반영한 Linux 전체 계약 검사도 429개 실행, 실패 0개, 건너뜀 1개로 통과했다. 건너뜀은 원문 HWP 폴더가 필요한 기존 검사 하나다. 코드·설정 변경 범위를 다시 대조하고 `git diff --check`도 통과했다. 원격 PR CI 결과와 별도로 수행한 로컬 검증 결과다.
+
+## 9.25 로컬 kind 표현 분류 재학습 (#730)
 
 chart의 기본값은 `suspend: true`다. 로컬 kind values에서만 `suspend: false`를 지정해 예약 실행을 켠다.
 

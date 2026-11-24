@@ -421,11 +421,13 @@ class AccountManagementTest : PostgresRepositoryTest() {
   unlock(p.refreshToken,"1111").andExpect { status { isUnauthorized() };jsonPath("$.code") { value("GUARDIAN_PASSWORD_INVALID") };jsonPath("$.remainingAttempts") { value(4) } }
   assertEquals(1,count("SELECT failed_count FROM guardian_password WHERE user_id=?",p.identity.account.id))
   assertEquals("STUDENT",auth.authenticate(student.accessToken).session.role)
+  val renewedStudent=auth.renewStudent(student.accessToken)
   val response=unlock(p.refreshToken,"2580").andExpect { status { isOk() };jsonPath("$.role") { value("PARENT") } }.andReturn().response
   assertTrue(response.getHeaders("Set-Cookie").any { it.startsWith(com.sagomungchi.core.account.controller.AuthCookies.REFRESH+"=") && !it.contains("Max-Age=0") })
   val access=json.readTree(response.contentAsString)["accessToken"].asText()
   assertEquals("PARENT",auth.authenticate(access).session.role)
   assertFailsWith<BusinessException> { auth.authenticate(student.accessToken) }
+  assertFailsWith<BusinessException> { auth.renewStudent(renewedStudent) }
   assertEquals(0,count("SELECT failed_count FROM guardian_password WHERE user_id=?",p.identity.account.id))
   assertEquals(1,count("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='GUARDIAN_PASSWORD_CHANGED'",p.identity.account.id))
  }

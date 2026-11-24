@@ -316,3 +316,15 @@ data class ThemeDraftView(
 )
 
 data class ThemeDraftViewPage(val items: List<ThemeDraftView>, val page: Int, val size: Int, val totalElements: Long)
+
+data class ThemeDraftReviewRow(val draftId: UUID, val title: String, val thumbnailUrl: String?, val grade: ThemeGrade,
+    val source: ThemeDraftSource, val status: DraftStatus, val stage: String, val weekStart: LocalDate, val appliedWeek: LocalDate,
+    val plannedWeek: LocalDate?, val updatedAt: Instant, val themeId: UUID?, val comparisonScene: String?)
+
+data class ThemeDraftReviewPage(val items: List<ThemeDraftReviewRow>, val page: Int, val size: Int, val totalElements: Long,
+    val weeks: List<LocalDate>)
+
+data class ThemeDraftReviewFilter(val grade: ThemeGrade?, val source: ThemeDraftSource?, val status: DraftStatus?, val stage: String?,
+    val week: LocalDate?, val weekStart: LocalDate?, val comparisonPending: Boolean, val hideDiscarded: Boolean) {
+    val archived: Boolean get() = status == DraftStatus.DISCARDED || stage == "discarded"
+}

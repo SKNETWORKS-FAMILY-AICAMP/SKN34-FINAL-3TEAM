@@ -23,6 +23,8 @@ import com.sagomungchi.learning.theme.domain.ThemeDraftAttempt
 import com.sagomungchi.learning.theme.domain.ThemeDraftContent
 import com.sagomungchi.learning.theme.domain.ThemeDraftInput
 import com.sagomungchi.learning.theme.domain.ThemeDraftRules
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewFilter
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewPage
 import com.sagomungchi.learning.theme.domain.ThemeDraftScene
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeDraftView
@@ -157,6 +159,12 @@ class ThemeDraftService(
     @Transactional(readOnly = true)
     fun get(draftId: UUID): ThemeDraft = repository.findById(draftId) ?: notFound()
 
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    fun reviewPage(filter: ThemeDraftReviewFilter, page: Int, size: Int): ThemeDraftReviewPage {
+        val result = repository.reviewPage(filter, page, size)
+        return result.copy(items = result.items.map { it.copy(thumbnailUrl = assetUrls.url(it.thumbnailUrl)) })
+    }
+
     /**
      * 채택 (state-diagram 3.5.1): 초안 행을 잠그고 READY가 아니면 409. 미션 5개(DRAFT, source LLM_THEME, 장면 키·움직임)와
      * 테마(DRAFT, 생각 열기 위치 비움, 결정적 단서 계산)를 같은 트랜잭션에 만들고 ADOPTED. 자동 게시 없음(P19)
@@ -200,7 +208,7 @@ class ThemeDraftService(
         if (draftId != root && (familyState.status == DraftStatus.DISCARDED || media.hasAdopted(draftId) || media.isSelectedSource(draftId))) {
             throw BusinessException(HttpStatus.CONFLICT,"CONFLICT","종결된 테마 또는 현재 선택에 쓰인 장면은 버릴 수 없습니다.")
         }
-        if (familyState.status == DraftStatus.READY && media.hasAdopted(draftId)) {
+        if (draftId == root && media.hasAdopted(draftId)) {
             throw BusinessException(HttpStatus.CONFLICT,"CONFLICT","이미 채택한 테마입니다.")
         }
         val state = if (draftId == root) familyState else planner.state(draftId)
@@ -341,8 +349,8 @@ class ThemeDraftService(
     }
 
     /**
-     * 같은 학년 직전 주 초안 줄거리 종류를 빼고 종류를 고른 뒤, 같은 학년 최근(씨앗 개수만큼의 주) 씨앗·같은 주 다른 초안 씨앗·
-     * 같은 학년 최근 4주 역할을 빼고 씨앗을 고름(#634, 초안 상태 무관)
+     * 같은 학년 직전 주 초안 줄거리 종류를 빼고 종류를 고른 뒤, 같은 학년 최근(사건 개수만큼의 주) 장소·사건, 같은 주 다른 초안 사건,
+     * 같은 학년 최근 4주 역할을 빼고 장소 → 사건 → 역할을 고름(#634, #782 장소 목록 기준안, 초안 상태 무관)
      */
     private fun seedTopic(grade: ThemeGrade, weekStart: LocalDate): String {
         fun topics(weeks: Long) = repository.findInputs(grade, weekStart.minusWeeks(weeks), weekStart).mapNotNull { it.topic }

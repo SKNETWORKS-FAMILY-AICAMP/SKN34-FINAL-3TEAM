@@ -60,8 +60,9 @@ class AnalysisStreamService(private val conversations: ConversationService, priv
             emit("status", mapOf("state" to "RUNNING", "messageId" to ticket.message.id, "message" to "기록을 조회하는 중"))
             // P25 (#392): re-read the pinned report revision for every message; ai never calls report directly.
             val report = conversations.report(ticket)
+            val explanations = conversations.explanations(ticket)  // weekly report explanations parents already saw
             call.checkActive()
-            ai.stream(conversations.request(ticket, report), call) { event ->
+            ai.stream(conversations.request(ticket, report, explanations), call) { event ->
                 call.checkActive()
                 conversations.guard(ticket)
                 run {

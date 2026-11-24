@@ -7,6 +7,8 @@ on:
       # migration 이미지가 복사하는 SQL
       - "backend/core-service/src/main/resources/db/migration/**"
       - "backend/learning-service/src/main/resources/db/migration/**"
+      # images 파일 중 작업 이미지 목록(jobImageFiles)
+      - "infrastructure/cd/policy.json"
       - ".github/workflows/ci-gitops.yml"
   push:
     branches: [develop, main]
@@ -14,6 +16,8 @@ on:
       - "infrastructure/gitops/**"
       - "backend/core-service/src/main/resources/db/migration/**"
       - "backend/learning-service/src/main/resources/db/migration/**"
+      # images 파일 중 작업 이미지 목록(jobImageFiles)
+      - "infrastructure/cd/policy.json"
       - ".github/workflows/ci-gitops.yml"
   workflow_dispatch:
 
@@ -114,7 +118,9 @@ jobs:
           done
           # ApplicationSet 목록과 images 파일이 서비스 단위로 맞는지 본다(#858 digest PR이 이 파일을 갱신)
           listed="$(sed -n 's/^ *- {name: \([a-z-]*\)}$/\1/p' argocd/prod/apps/applicationset.yaml | sort)"
-          files="$(for f in environments/prod/images/*.json; do basename "$f" .json; done | sort)"
+          # 작업 이미지 파일(#985 tox-retrain 등, cd policy jobImageFiles)은 앱이 아니라 해당 작업 Application이 읽어 제외한다
+          jobs=" $(jq -r '.delivery.jobImageFiles[][]' ../cd/policy.json | tr '\n' ' ')"
+          files="$(for f in environments/prod/images/*.json; do r="$(basename "$f" .json)"; case "$jobs" in *" $r "*) ;; *) echo "$r" ;; esac; done | sort)"
           if [ "$listed" != "$files" ]; then
             echo "::error file=infrastructure/gitops/argocd/prod/apps/applicationset.yaml::ApplicationSet 목록($(echo $listed))과 images 파일($(echo $files))이 다름"
             exit 1

@@ -52,6 +52,41 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
     }
 
     /**
+     * Weekly report explanations for the analysis agent: the latest COMPLETED weekly report whose full period fits within
+     * [from]..[to], only when originals are shared and the narrative entitlement is on (the same gates as [detail]).
+     * Returns `{missionTitle, text}` of INCLUDED explanations; any report-api failure yields none so chat still answers.
+     */
+    fun explanations(childId: UUID, from: java.time.LocalDate, to: java.time.LocalDate): List<Map<String, String>> = try {
+        if (!learningContext.sharingEnabled(childId) || !entitlements.narrativeEnabled(childId)) emptyList()
+        else {
+            val latest = client.reports(childId, ReportJobStatus.COMPLETED, ReportPeriodType.WEEKLY)
+                .filter { item ->
+                    val start = java.time.LocalDate.parse(item.path("period").path("from").asText())
+                    val end = java.time.LocalDate.parse(item.path("period").path("to").asText())
+                    !start.isBefore(from) && !end.isAfter(to)
+                }
+                .maxByOrNull { it.path("period").path("to").asText() }
+            val reportId = latest?.path("reportId")?.asText()?.let(UUID::fromString)
+            val job = reportId?.let(repository::byReport)
+            if (reportId == null || job == null) emptyList()
+            else {
+                val explanations = client.report(job, reportId, null, true).body.path("explanations")
+                if (explanations.path("state").asText() != "INCLUDED") emptyList()
+                else explanations.path("items").mapNotNull { item ->
+                    val title = item.path("missionTitle").asText("")
+                    val text = item.path("text").asText("")
+                    if (title.isBlank() || title.length > 200 || text.isBlank() || text.length > 4000) null
+                    else mapOf("missionTitle" to title, "text" to text)
+                }.take(3)
+            }
+        }
+    } catch (e: Exception) {
+        org.slf4j.LoggerFactory.getLogger(ReportQueryService::class.java)
+            .warn("Weekly report explanations skipped for analysis error_type={}", e.javaClass.simpleName)
+        emptyList()
+    }
+
+    /**
      * P25 pinned conversation (#392): the same ownership and contract checks as [detail] for one revision (latest when
      * null), without view accounting or narrative. [ReportClient.pinned] returns counts and judgments only (#814).
      */

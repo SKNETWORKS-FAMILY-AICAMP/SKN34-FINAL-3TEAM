@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>추억 그림책</title>
+<style>
+@page { size: A4 landscape; margin: 12mm 14mm; }
+body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a22; font-size:13px; line-height:1.7; margin:0; }
+/* 표지만 한 쪽, 그 뒤는 쭉 이어지는 그림책. 한 장면(칸)은 두 쪽에 걸쳐 잘리지 않게 한다 */
+.cover { break-after: page; display:grid; grid-template-columns:62% 1fr; gap:10mm; align-items:center; height:180mm; }
+.cover-text { text-align:center; }
+.toc { list-style:none; margin:6mm 0 0; padding:4mm 0 0; border-top:2px solid #d8ccb0; text-align:left; }
+.toc li { display:flex; align-items:baseline; gap:2.5mm; margin:0 0 2.2mm; font-size:13px; }
+.toc-label { flex:none; width:12mm; font-size:11px; color:#a07a3e; }
+.toc-title { flex:none; max-width:62mm; font-weight:bold; overflow-wrap:anywhere; }
+.toc-dots { flex:1; border-bottom:1.5px dotted #c8bb9e; transform:translateY(-1mm); }
+.toc-page { flex:none; color:#8a7c66; }
+.toc-note { text-align:left; font-size:11px; color:#8a7c66; margin:1mm 0 0; }
+.cover .intro { text-align:left; margin-top:5mm; padding:3mm 4mm; background:#fffaec; border:2px solid #e0c48a; border-radius:4mm; }
+.cover h1 { font-size:28px; color:#6b4a1f; margin:0 0 2mm; }
+.cover .who { font-size:17px; color:#8a6a3a; margin:0; }
+.cover .when { color:#8a7c66; }
+.cover-art { display:block; width:100%; height:170mm; object-fit:cover; border:3px solid #2f2a22; border-radius:5mm; }
+.cover-art--missing { height:170mm; border:3px solid #2f2a22; border-radius:5mm; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
+.scene-block { break-inside: avoid; break-before: page; margin:0; }
+.scene-head { margin:0 0 1.5mm; font-size:13px; }
+.label { display:inline-block; font-size:12px; color:#fff; background:#c98a2e; border-radius:10px; padding:0 10px; margin-right:6px; }
+.type { color:#8a6a3a; font-size:12px; margin-right:4px; }
+.narration { margin:0 0 2mm; padding:2mm 3.5mm; background:#fffaec; border:2px solid #2f2a22; border-radius:2mm;
+  font-size:12px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
+.narration b { color:#c98a2e; margin-right:3px; }
+.story { margin:0 0 2mm; font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.big { font-size:15px; color:#6b4a1f; margin:2mm 0 0; }
+/* 그림 칸은 가리지 않고, 그 아래에 메신저처럼 주고받은 대화(왼쪽: 문제·등장인물·뭉치, 오른쪽: 아이) */
+.scene-row { display:grid; grid-template-columns:62% 1fr; gap:6mm; align-items:start; }
+.scene-top { break-inside: avoid; }
+.panel { position:relative; height:170mm; border:3px solid #2f2a22; border-radius:4mm; overflow:hidden; background:#f6f0e3; }
+.panel-art { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.panel-art--missing { position:absolute; inset:0; background:repeating-linear-gradient(45deg,#f6f0e3,#f6f0e3 8px,#efe6d2 8px,#efe6d2 16px); }
+.chat { margin:7.5mm 0 0; box-sizing:border-box; min-height:170mm; padding:5mm 4mm; background:#f7f4ee; border-radius:4mm;
+  display:flex; flex-direction:column; justify-content:space-evenly; }
+.msg { display:flex; gap:2.5mm; margin:0; break-inside: avoid; align-items:flex-start; }
+.msg.right { flex-direction:row-reverse; }
+.avatar { flex:none; width:9.5mm; height:9.5mm; border-radius:50%; border:1.5px solid #2f2a22; background:#fff; font-size:11.5px; font-weight:bold;
+  display:flex; align-items:center; justify-content:center; color:#6b4a1f; }
+.msg.right .avatar { background:#ffe6a8; }
+.msg.mungchi .avatar { background:#e9f6ff; }
+.body { max-width:88%; }
+.msg.right .body { text-align:right; }
+.name { font-size:10.5px; font-weight:bold; color:#8a6a3a; margin:0 1mm 0.5mm; }
+.text { display:inline-block; text-align:left; background:#fff; border:1.5px solid #d9cdb4; border-radius:3mm 3mm 3mm 0.8mm;
+  padding:2.5mm 3.5mm; font-size:13.5px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
+.msg.right .text { background:#fff3c9; border-color:#e8c766; border-radius:3mm 3mm 0.8mm 3mm; }
+.msg.question .text { background:#fffaec; border-color:#c98a2e; }
+.msg.question .text b { color:#c98a2e; margin-right:3px; }
+.msg.mungchi .text { background:#e9f6ff; border-color:#9fc9e6; }
+.note { text-align:center; font-size:12px; color:#5d6b52; margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.note b { color:#5d6b52; }
+.locked { color:#8a8a8a; font-style:italic; }
+.closing { break-inside: avoid; text-align:center; margin-top:10mm; padding:8mm 6mm; border-top:2px dashed #c98a2e; }
+.closing h2 { font-size:18px; color:#6b4a1f; margin:0 0 3mm; }
+.closing .q { font-size:16px; margin:0 6mm; white-space:pre-wrap; overflow-wrap:anywhere; }
+.closing.own-page { break-before: page; margin-top:0; border-top:none; padding-top:40mm; }
+.small { font-size:10px; color:#8a7c66; margin-top:6mm; }
+</style></head><body>
+
+<section class="cover">
+{% if book.introImage %}<img class="cover-art" src="{{ book.introImage }}" alt="">{% else %}<div class="cover-art--missing"></div>{% endif %}
+<div class="cover-text">
+<h1>{{ book.title }}</h1>
+<p class="who">{{ name }}의 추억 그림책</p>
+<p class="when">{{ book.weekLabel }}</p>
+<ol class="toc">
+{% for item in book.toc %}<li><span class="toc-label">{{ item.label }}</span><span class="toc-title">{{ item.title }}</span><span class="toc-dots"></span><span class="toc-page">{{ item.page }}</span></li>
+{% endfor %}</ol>
+{% if not book.ending.seen %}<p class="toc-note">이 주에는 이야기의 끝을 보지 못해서, 끝 이야기와 답은 싣지 않았어요.</p>{% endif %}
+<div class="intro">
+<p class="scene-head"><span class="label">이야기의 시작</span></p>
+<p class="story">{{ book.intro }}</p>
+{% if book.bigQuestion %}<p class="big">이번 주 큰 질문: {{ book.bigQuestion }}</p>{% endif %}
+</div>
+</div>
+</section>
+
+{% for day in book.days %}<section class="scene-block day scene-row" data-day="{{ day.day }}">
+<div class="scene-top">
+<p class="scene-head"><span class="label">{{ day.dayLabel }}</span><span class="type">{{ thinking_labels.get(day.thinkingType, '') }}</span><strong>{{ day.title }}</strong></p>
+<div class="panel">{% if day.sceneImage %}<img class="panel-art" src="{{ day.sceneImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}</div>
+</div>
+<div class="chat">
+{% for line in day.dialogue %}<div class="msg left"><span class="avatar">{{ line.speaker[:1] }}</span><div class="body"><p class="name">{{ line.speaker }}</p><span class="text">{{ line.text }}</span></div></div>
+{% endfor %}<div class="msg left question"><span class="avatar">문</span><div class="body"><p class="name">오늘의 문제</p><span class="text"><b>Q.</b>{{ day.question }}</span></div></div>
+{% if day.attempt is none %}<p class="note">이 날 문제는 그 뒤에 새 문제로 바뀌어서, 아이가 그때 쓴 답을 함께 싣지 못했어요</p>
+{% else %}{% for a in day.attempt.answers %}{% if a.followup %}<div class="msg left mungchi"><span class="avatar">뭉</span><div class="body"><p class="name">뭉치</p><span class="text">{{ a.followup }}</span></div></div>
+{% endif %}<div class="msg right"><span class="avatar">{{ name[:1] }}</span><div class="body"><p class="name">{{ name }}{% if not loop.first %} · 다시 생각한 답{% endif %}</p><span class="text">{{ a.text }}</span></div></div>
+{% endfor %}{% if day.attempt.reflection %}<p class="note"><b>돌아보기</b> {{ day.attempt.reflection }}</p>{% endif %}{% endif %}
+</div>
+</section>
+{% endfor %}
+
+<section class="scene-block ending{% if book.ending.seen %} scene-row{% endif %}">
+<div class="scene-top">
+<p class="scene-head"><span class="label">이야기의 끝</span></p>
+{% if book.ending.seen %}<div class="panel">{% if book.ending.outroImage %}<img class="panel-art" src="{{ book.ending.outroImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}</div>{% endif %}
+</div>
+{% if book.ending.seen %}<div class="chat">
+<div class="msg left question"><span class="avatar">이</span><div class="body"><p class="name">이야기</p><span class="text">{{ book.ending.outro }}</span></div></div>
+{% if book.ending.answer %}<div class="msg left mungchi"><span class="avatar">뭉</span><div class="body"><p class="name">뭉치</p><span class="text">큰 질문의 답은 「{{ book.ending.answer }}」였어!</span></div></div>{% endif %}
+</div>{% else %}<p class="locked">아직 이 이야기의 끝을 보지 못했어요</p>{% endif %}
+</section>
+
+<section class="closing{% if book.ending.seen %} own-page{% endif %}">
+<h2>오늘 저녁 질문</h2>
+<p class="q">{{ book.eveningQuestion }}</p>
+<p class="small">사고뭉치 추억 그림책</p>
+</section>
+</body></html>

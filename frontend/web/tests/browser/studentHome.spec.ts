@@ -1,4 +1,4 @@
-import { waitForStudentHome } from './studentFixture.ts'
+import { throughTodayScene, waitForStudentHome } from './studentFixture.ts'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
@@ -7,6 +7,8 @@ import type { Page } from '@playwright/test'
 // - 무료와 프리미엄은 평일 규칙이 같다(무료는 테마 문제 주 5개, 하루 상한 없음). 일요일만 다르다: 무료는 닫힘, 프리미엄은 토요일과 같음
 // - 아이 화면에는 결제 유도 문구가 없다
 test.beforeEach(async ({ page }) => {
+  // 문제를 여는 시험은 오늘 장면 대화 상자가 올라오기(약 3초)를 기다려 지나간다(#807). 기본 30초의 세 배
+  test.slow()
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort())
 })
 
@@ -74,35 +76,31 @@ test('#882 일반 목록에서 내려간 미션을 주간 홈·주말 다시 풀
     return snapshots.map((m:{id:string})=>m.id)
   })
   await expect(page.getByRole('heading',{name:'게시 주간의 지도'})).toBeVisible()
+  // 테마 문제는 오늘 장면을 거친다(#807). 게시본 요일에 대화가 없어 장면 없이 바로 답 쓰기
   await page.getByRole('button',{name:/오늘 문제 풀기/}).click()
-  await expect(page.locator('.mg-question')).toHaveText('MON 게시했던 질문')
+  await page.waitForURL('**/student/attempts/**')
+  await expect(page.locator('.sw-question')).toContainText('MON 게시했던 질문')
   const key = await page.evaluate(async (id:string)=>{
     const { queryClient } = await import('/src/data/queryClient.ts' as string)
     return queryClient.getQueryCache().findAll({queryKey:['mission']}).filter((q:{queryKey:unknown[]})=>q.queryKey.includes(id)).map((q:{queryKey:unknown[]})=>q.queryKey.at(-1))
   },ids[0])
   expect(key).toContain('THEME_DAY')
-  await page.getByRole('button',{name:'미션 시작하기'}).click()
-  await expect(page).toHaveURL(/\/student\/attempts\//)
   const first = page.url()
   await page.goBack()
   await page.getByRole('button',{name:/이어서 풀기/}).first().click()
+  await page.waitForURL('**/student/attempts/**')
   await expect(page).toHaveURL(first)
   await page.goBack()
   await week(page,{weekday:5,days:'DDDDD',pick:'wrong'},true)
   await page.getByRole('button',{name:/주말 되돌아보기/}).first().click()
   await page.locator('.tw-review-days article').last().getByRole('button',{name:'다시 풀기'}).click()
-  await expect(page.locator('.mg-question')).toHaveText('FRI 게시했던 질문')
-  await page.getByRole('button',{name:/돌아가기/}).click()
-  await page.evaluate(()=>{ history.pushState({},'', '/student/theme/pick'); dispatchEvent(new PopStateEvent('popstate')) })
-  await page.getByRole('button',{name:/금요일 문제 다시 풀기/}).click()
-  await expect(page.locator('.mg-question')).toHaveText('FRI 게시했던 질문')
-})
-
-/** 미션 안내에서 시작해 문제 화면까지 간다(목업이 THEME_DAY_CLOSED로 거부하면 문제 화면이 열리지 않는다). */
-async function startFromGuide(page: Page) {
-  await page.getByRole('button', { name: '미션 시작하기' }).click()
   await page.waitForURL('**/student/attempts/**')
-}
+  await expect(page.locator('.sw-question')).toContainText('FRI 게시했던 질문')
+  await page.evaluate(()=>{ history.pushState({},'', '/student/theme/pick'); dispatchEvent(new PopStateEvent('popstate')) })
+  await page.getByRole('button',{name:/금요일 문제 (다시|이어서) 풀기/}).click()
+  await page.waitForURL('**/student/attempts/**')
+  await expect(page.locator('.sw-question')).toContainText('FRI 게시했던 질문')
+})
 
 test('오늘 문제(목요일): 큰 버튼은 오늘 문제, 지난 날은 모두 풀어 카드가 없고 오늘 칩만 누를 수 있다', async ({ page }) => {
   await student(page)
@@ -114,7 +112,7 @@ test('오늘 문제(목요일): 큰 버튼은 오늘 문제, 지난 날은 모�
   await expect(chip(page, '금')).toHaveAccessibleName('금요일 아직 안 열렸어요')
   await expect(chipButtons(page)).toHaveText(['목오늘'])
   await chips(page).getByRole('button', { name: '목요일 문제 풀기' }).click()
-  await startFromGuide(page)
+  await throughTodayScene(page)
 })
 
 test('안 푼 지난 문제(목요일): 화요일은 카드와 요일 칩 어느 쪽으로도 시작하고, 안 열린 금요일은 누를 수 없다', async ({ page }) => {
@@ -125,7 +123,7 @@ test('안 푼 지난 문제(목요일): 화요일은 카드와 요일 칩 어느
   await expect(chip(page, '화').getByRole('button', { name: '화요일 문제 풀기' })).toBeVisible()
   await expect(chip(page, '금').getByRole('button')).toHaveCount(0)
   await missedCard(page).click()
-  await startFromGuide(page)
+  await throughTodayScene(page)
 })
 
 test('지난 요일이 여럿이면 공개된 안 푼 날마다 요일 칩으로 시작하고, 무료와 프리미엄이 같다', async ({ page }) => {
@@ -137,7 +135,7 @@ test('지난 요일이 여럿이면 공개된 안 푼 날마다 요일 칩으로
     await expect(chipButtons(page)).toHaveCount(3)
     await expect(chips(page).getByRole('button', { name: '목요일 문제 풀기' })).toBeVisible()
     await chips(page).getByRole('button', { name: '목요일 문제 풀기' }).click()
-    await startFromGuide(page)
+    await throughTodayScene(page)
     // 문제 화면은 메뉴를 숨기므로 주소로 홈에 돌아간다
     await page.evaluate(() => { history.pushState({}, '', '/student/home'); dispatchEvent(new PopStateEvent('popstate')) })
     await waitForStudentHome(page)
@@ -149,9 +147,9 @@ test('금요일에 처음 오면 다섯 문제가 모두 열려 다섯 칩 모�
   await week(page, { weekday: 4, days: '-----' })
   await expect(missedCard(page)).toHaveAccessibleName(/^아직 안 푼 문제 4개 · 월·화·수·목요일/)
   await expect(chipButtons(page)).toHaveCount(5)
-  // 월요일(가장 앞) 문제는 그 주 처음 여는 문제가 아니어도(시작 이야기를 본 상태) 바로 안내로 간다
+  // 월요일(가장 앞) 문제는 그 주 처음 여는 문제가 아니어도(시작 이야기를 본 상태) 바로 오늘 장면으로 간다(#807)
   await chips(page).getByRole('button', { name: '월요일 문제 풀기' }).click()
-  await startFromGuide(page)
+  await throughTodayScene(page)
 })
 
 test('이어하기(목요일): 큰 버튼과 푸는 중 칩은 쓰던 문제를 바로 연다', async ({ page }) => {
@@ -215,7 +213,7 @@ test('토요일: 큰 버튼은 주말 되돌아보기, 안 푼 금요일은 오�
   // 다시 풀기는 주말 되돌아보기에서(칩은 지금 새로 시작·이어서 할 수 있는 날만)
   await expect(chipButtons(page)).toHaveCount(1)
   await chips(page).getByRole('button', { name: '금요일 문제 풀기' }).click()
-  await startFromGuide(page)
+  await throughTodayScene(page)
 })
 
 test('일요일(무료): 이번 주 테마가 끝났어요, 풀기·정답 고르기 없이 기록과 본 엔딩 다시 보기만, 결제 문구 없음', async ({ page }) => {
@@ -260,7 +258,7 @@ test('일요일(프리미엄): 토요일과 같이 안 푼 문제 풀기·되돌
   await expect(missedCard(page)).toHaveAccessibleName(/오늘까지 풀 수 있어요/)
   await expect(page.getByRole('main')).not.toContainText(NO_PAYMENT)
   await chips(page).getByRole('button', { name: '금요일 문제 풀기' }).click()
-  await startFromGuide(page)
+  await throughTodayScene(page)
 })
 
 test('테마 없음: 준비 중 안내와 내 공책·더 풀어 보기', async ({ page }) => {

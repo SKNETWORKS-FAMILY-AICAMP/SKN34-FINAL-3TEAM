@@ -118,6 +118,43 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
         val jobs=(1..n).map { pool.submit(Callable { gate.await(); action() }) }
         gate.countDown(); jobs.map { it.get(25,TimeUnit.SECONDS) }
     }
+    @Test fun `student renew extends expiry with no cookie and rejects expired revoked foreign and missing origin`() {
+        val p=parent(); val c=child(p.identity.account.id); set(p.identity,c); val d=device(p.identity,c)
+        val access=service.login(d.credential,c,"4831").accessToken
+        val sid=auth.authenticate(access).session.id
+        jdbc.update("UPDATE auth_session SET expires_at=now()+interval '2 minutes' WHERE id=?",sid)
+        val response=mvc.post("/api/v1/auth/student/renew") {
+            header("Authorization","Bearer $access");header("Origin","http://localhost:5173");header("X-Requested-With","XMLHttpRequest")
+        }.andExpect { status { isOk() }; header { string("Cache-Control","no-store"); doesNotExist("Set-Cookie") }; jsonPath("$.expiresIn") { value(1800) } }.andReturn().response
+        val renewed=json.readTree(response.contentAsString)["accessToken"].asText()
+        assertEquals(sid,auth.authenticate(renewed).session.id)
+        assertTrue(auth.authenticate(renewed).session.expiresAt.isAfter(OffsetDateTime.now().plusMinutes(29)))
+        assertEquals(d.deviceId.toString(),tokens.verify(renewed).getClaimAsString("deviceId"))
+        mvc.post("/api/v1/auth/student/renew") { header("Authorization","Bearer $renewed") }.andExpect { status { isForbidden() } }
+        mvc.post("/api/v1/auth/student/renew") {
+            header("Authorization","Bearer ${p.accessToken}");header("Origin","http://localhost:5173");header("X-Requested-With","XMLHttpRequest")
+        }.andExpect { status { isForbidden() } }
+        service.revoke(p.identity,d.deviceId)
+        code("UNAUTHENTICATED") { auth.renewStudent(renewed) }
+        // Existing access stays usable until expiry, but a revoked device cannot keep it alive.
+        auth.authenticate(renewed)
+        auth.logoutStudent(renewed)
+        code("UNAUTHENTICATED") { auth.renewStudent(renewed) }
+        val accompanied=auth.enterStudent(c,p.identity)
+        val renewedAccompanied=auth.renewStudent(accompanied.accessToken)
+        assertEquals(accompanied.identity.session.id,auth.authenticate(renewedAccompanied).session.id)
+        jdbc.update("UPDATE auth_session SET expires_at=now()-interval '1 second' WHERE id=?",accompanied.identity.session.id)
+        code("UNAUTHENTICATED") { auth.renewStudent(renewedAccompanied) }
+    }
+
+    @Test fun `parent session replacement revokes even a renewed accompanied student`() {
+        val p=parent();val c=child(p.identity.account.id)
+        val entered=auth.enterStudent(c,p.identity)
+        val renewed=auth.renewStudent(entered.accessToken)
+        auth.login(GoogleProfile(p.identity.account.subject!!,p.identity.account.email,null),p.refreshToken)
+        code("UNAUTHENTICATED") { auth.renewStudent(renewed) }
+    }
+
     @AfterEach fun cleanup() {
         kids.forEach { id ->
             jdbc.update("DELETE FROM student_device_child WHERE student_id=?",id)
@@ -169,7 +206,8 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
                 sign(MACSigner(java.util.Base64.getDecoder().decode(authProperties.jwtSecret)))
             }.serialize()
         listOf(null,"forged",expired,p.accessToken).forEach { access ->
-            mvc.post("/api/v1/auth/student/logout") {
+          listOf("logout", "renew").forEach { operation ->
+            mvc.post("/api/v1/auth/student/$operation") {
                 header("Origin","http://localhost:5173");header("X-Requested-With","XMLHttpRequest")
                 access?.let { header("Authorization","Bearer $it") };cookie(Cookie(AuthCookies.REFRESH,p.refreshToken))
             }.andExpect {
@@ -178,6 +216,7 @@ class StudentDeviceAuthTest : PostgresRepositoryTest() {
             }
             assertEquals("PARENT",auth.authenticate(p.accessToken).session.role)
             assertEquals("STUDENT",auth.authenticate(student).session.role)
+          }
         }
         mvc.post("/api/v1/auth/student/logout") {
             header("Origin","https://untrusted.invalid");header("X-Requested-With","XMLHttpRequest")

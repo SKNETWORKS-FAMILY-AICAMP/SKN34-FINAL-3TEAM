@@ -145,6 +145,20 @@ export function requireReauth(request: Request) {
   )
     fail('REAUTH_REQUIRED', '중요 변경 전에 다시 확인해 주세요.', 403)
 }
+function demoConversationTitle(question: string) {
+  const clean = question.replace(/\s+/g, ' ').trim()
+  const period = /^(이번 주 |지난주 )/.exec(clean)?.[0] ?? ''
+  const subject = clean.slice(period.length)
+  if (/^(학습 횟수|미션 수행 횟수|학습을? 몇 번)/.test(subject)) return period + '학습 횟수'
+  if (/^(어떤|무슨) 생각 활동/.test(subject)) return period + '생각 활동'
+  if (/되묻기.*(전후|달라|차이|변화|바뀌)/.test(subject)) return '되묻기 전후 답변 변화'
+  if (/^(돌아보기에? 뭐|돌아보기 내용)/.test(subject)) return period + '돌아보기 내용'
+  if (/^(아이가|자녀가) 쓴 생각/.test(subject)) return period + '학생이 쓴 생각'
+  const title = clean.replace(/\s*(알려|보여|설명해)\s*(주세요|줘요?)?[.!?…]*$/, '').replace(/[.!?…]+$/, '').trim()
+  const points = Array.from(title || clean)
+  return points.length > 32 ? points.slice(0, 32).join('') + '…' : points.join('')
+}
+
 function streamMessage(
   request: Request,
   c: Conversation,
@@ -158,6 +172,7 @@ function streamMessage(
     // 대화의 첫 답변으로 정정 안내를 확인한다 (#244).
     msg = { messageId, question: data.question, status: 'RUNNING', scope, correctionNotice: c.messages.length === 0 }
     c.messages.push(msg)
+    if (c.messages.length === 1) c.title = demoConversationTitle(msg.question)
   } else {
     msg.status = 'RUNNING'
     msg.failureCode = undefined
@@ -673,6 +688,7 @@ export const parentHandlers = [
         rows = scopedRows(c, r.period),
         key = String(params.itemId)
       requireShared(c.id)
+      if (r.periodType === 'DAILY' && !r.metrics.some(m => m.itemId === key) && !versions.some(version => version.problems?.some(p => p.itemId === key))) fail('NOT_FOUND', '리포트 항목이 없습니다.', 404)
       return evidenceResponse(
         evidence(
           rows.filter(

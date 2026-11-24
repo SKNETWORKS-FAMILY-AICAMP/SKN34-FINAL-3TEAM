@@ -354,13 +354,13 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 | 임계값 | 꼭 통과할 글(데모 시드·웹 데모·`ExpressionPolicyTest` 통과 문장, 11/18 정책으로 "바보야"를 빼 389개) 오탐 0, 단어 목록이 통과시킨 검증 정상 글 추가 오탐 1% 이하에서 F1 최대 → 지금 모델 int8 0.99(채널별, scoring처럼 글 하나씩 잼). 11/17 첫 모델은 int8 0.95·fp32 0.97 | 에픽 기준안, 담당자 확정(#690 지침, 2026-11-17). #205의 "데모 491"은 추출 스크립트가 저장소 밖이라 같은 방식으로 다시 뽑음. 결과 [eval_tox.md](../../ml/tox/results/eval_tox.md) |
 
 - 칸 수·글 길이·창·마감·잠금 전 호출은 이슈·에픽에 없어 담당자가 정한 기준안이다. 길이·창·마감은 11/16 측정(분류 머리 학습 전 `beomi/KcELECTRA-base`, 작업 공간 CPU 1개 스레드)이라 #691에서 실제 Pod로, M2와 CPU를 나눠 쓸 때도 다시 잰다. 메모리는 모델 로딩 약 +300MiB·추론 중 약 +300MiB로 limit 2Gi에 빠듯할 수 있어 같이 확인
-- 학습 데이터 후보(#690): 학습 K-MHaS·Korean HateSpeech(BEEP!)(CC BY-SA 4.0), 평가 APEACH(CC BY-SA 4.0), 기본 모델 `beomi/KcELECTRA-base`(MIT). 11/19 지금 모델은 `monologg/koelectra-small-v3-discriminator`(Apache 2.0, GitHub `monologg/KoELECTRA` LICENSE 원문, HF 카드엔 표기 없음)에 직접 지은 아이 말투 문장 691개를 더함(아래). KOLD(라이선스 표기 없음)·Korean UnSmile(상업 사용 문의 필요)은 제외. BEEP!는 저장소 LICENSE 원문, 나머지는 HF 데이터 카드로 확인(11/16). KOLD 저장소에는 LICENSE 파일이 없음
+- 학습 데이터 후보(#690): 학습 K-MHaS·Korean HateSpeech(BEEP!)(CC BY-SA 4.0), 평가 APEACH(CC BY-SA 4.0), 기본 모델 `beomi/KcELECTRA-base`(MIT). 11/19 지금 모델은 `monologg/koelectra-small-v3-discriminator`(Apache 2.0, GitHub `monologg/KoELECTRA` LICENSE 원문, HF 카드엔 표기 없음)에 Claude가 지은 아이 말투 문장 691개를 더함(NFR-DAT-03 예외 #887, 아래). KOLD(라이선스 표기 없음)·Korean UnSmile(상업 사용 문의 필요)은 제외. BEEP!는 저장소 LICENSE 원문, 나머지는 HF 데이터 카드로 확인(11/16). KOLD 저장소에는 LICENSE 파일이 없음
 - 12/7 데모에 넣는 것으로 진행. CC BY-SA는 에픽 제외 기준(비상업 전용·변경 금지·출처 불명)에 해당하지 않아 쓰며, 출처는 모델 문서에 표시하고 원자료·고친 데이터는 커밋·배포하지 않음
-- 학습·평가(#690, 2026-11-17): `beomi/KcELECTRA-base` 3에폭(RunPod 4090, 4분 20초). 시험(K-MHaS)에서 단어 목록만 29.3% → int8 0.95 모델을 붙이면 71.7% 잡음(단어 목록이 놓친 막을 글의 59.9%), 정상 추가 오탐 1.33%(검증 0.93%). APEACH 25.9% → 45.1%. 꼭 통과할 글 390개 오탐 0, 직접 지은 아이 말투 정상 문장 40개 오탐 0·욕 없는 모욕 10개 중 4개 잡음
+- 학습·평가(#690, 2026-11-17): `beomi/KcELECTRA-base` 3에폭(RunPod 4090, 4분 20초). 시험(K-MHaS)에서 단어 목록만 29.3% → int8 0.95 모델을 붙이면 71.7% 잡음(단어 목록이 놓친 막을 글의 59.9%), 정상 추가 오탐 1.33%(검증 0.93%). APEACH 25.9% → 45.1%. 꼭 통과할 글 390개 오탐 0, Claude가 지은 아이 말투 정상 문장 40개 오탐 0·욕 없는 모욕 10개 중 4개 잡음
 - 지연·int8 결정(#690): CPU 1코어 p95 1,500자 fp32 1.62초(포드)·2.32초(개발 PC)로 처리 마감 1.3초를 넘고 int8은 0.55초·1.07초. 합계 1,500자는 그대로 두고 scoring이 불러올 때 Linear 채널별 int8로 바꾼다(fp32·0.97보다 시험 재현율 0.82%p 손해, 추가 오탐 기준은 같음. 같은 날 오전 층 전체 한 눈금 방식은 5.2%p였고, int8 확률이 같이 계산한 글에 따라 달라져 평가를 scoring처럼 글 하나씩으로 바꿈). #691에서 운영 Pod로 다시 재서 fp32가 마감 안이면 `train_info.json`만 fp32·0.97로 되돌린다
-- 모델 교체(#690 후속, 2026-11-19): 첫 모델이 아이 말투 모욕을 잘 못 잡아(직접 지은 문장 100개 중 단어 목록과 합쳐 34개) 아이 문장 재학습·작은 모델·평균·증류를 비교했고, **증류 다**(KoELECTRA-small 학생이 아이 문장 ×3으로 재학습한 KcELECTRA-base에게 배움, `tox-koelectra-small` 1.0-1119)를 쓴다. int8 0.99에서 아이 모욕 76/100·아이 정상 150개 오탐 0·실제 초5·6 답(AI Hub 71818 서술형 16,385개, 원문 저장 안 함) 오탐 0·꼭 통과 389개 오탐 0, 1,200자 p95 99ms(첫 모델 767ms, 같은 작업 공간). 대신 어른 시험(K-MHaS) 단어 목록과 합쳐 66.79%(첫 모델 71.6%)·APEACH F1 0.507(0.574)로 판정 기준4·5 미달 → 실제 아이 데이터로 고도화. 모양만 바꾼 아이 모욕은 114/351만 잡아, 임계값 0.99로 쓰고 놓친 말은 신고로 처리한다(팀장 결정 2026-11-19). 같은 설정이어도 학습마다 결과가 흔들려(아이 모욕 69~77) `train.py`에 결정적 학습을 넣고 같은 포드에서 두 번 학습해 가중치가 같음을 확인했다. 후보 표·기준은 [eval_tox.md](../../ml/tox/results/eval_tox.md) "11/19 모델 교체"
+- 모델 교체(#690 후속, 2026-11-19): 첫 모델이 아이 말투 모욕을 잘 못 잡아(Claude가 지은 문장 100개 중 단어 목록과 합쳐 34개) 아이 문장 재학습·작은 모델·평균·증류를 비교했고, **증류 다**(KoELECTRA-small 학생이 아이 문장 ×3으로 재학습한 KcELECTRA-base에게 배움, `tox-koelectra-small` 1.0-1119)를 쓴다. int8 0.99에서 아이 모욕 76/100·아이 정상 150개 오탐 0·실제 초5·6 답(AI Hub 71818 서술형 16,385개, 원문 저장 안 함) 오탐 0·꼭 통과 389개 오탐 0, 1,200자 p95 99ms(첫 모델 767ms, 같은 작업 공간). 대신 어른 시험(K-MHaS) 단어 목록과 합쳐 66.79%(첫 모델 71.6%)·APEACH F1 0.507(0.574)로 판정 기준4·5 미달 → 실제 아이 데이터로 고도화. 모양만 바꾼 아이 모욕은 114/351만 잡아, 임계값 0.99로 쓰고 놓친 말은 신고로 처리한다(팀장 결정 2026-11-19). 같은 설정이어도 학습마다 결과가 흔들려(아이 모욕 69~77) `train.py`에 결정적 학습을 넣고 같은 포드에서 두 번 학습해 가중치가 같음을 확인했다. 후보 표·기준은 [eval_tox.md](../../ml/tox/results/eval_tox.md) "11/19 모델 교체"
 - 로컬 확인(#690·#691·#692, 2026-11-19, compose `e2e.env`): MinIO 업로드(파일 5개 SHA-256) → 사전 검사 `FILES_AND_METADATA_VERIFIED` → 등록·승인·활성화 → `/internal/toxicity/checks` 정상 `flagged:false`·모욕 `true`. M2 서술 3.0-1112b·논술 3.1-1112b를 같이 켜도 M2 채점 정상. M2 채점과 같이 돌 때 1,200자 tox 요청은 PC에서 p95 569ms(혼자 375ms, HTTP 포함)로 마감 1.3초 안이며 운영 Pod 값은 배포 때 다시 잰다
-- 한계: 학습 데이터가 성인 뉴스 댓글이라 초등 답과 말투가 다르다. 미션 본문에 나온 말을 허용하는 규칙(`HATE`·맥락 단어)이 모델에는 없어 차별을 다루는 미션에서 오탐이 날 수 있다. 합계 1,500자 뒤의 글과 21번째 칸부터는 모델이 보지 않는다. 동시 요청이 몰리면 게이트에서 기다리다 통과될 수 있다. 장애 중에는 단어 목록만 적용된다. 11/19 모델: 아이 말투 숫자는 직접 지은 문장으로 잰 것이라 부풀었을 수 있고(실제 아이 모욕 데이터 없음), 욕과 같은 글자가 든 정상 문장("시바새끼도 귀여워")을 막을 수 있다. 앞 단계 단어 목록이 "새끼"가 든 정상 문장("새끼돼지가 귀엽다")을 막는 것은 원래부터이며 예외 보완은 나중 할 일이다
+- 한계: 학습 데이터가 성인 뉴스 댓글이라 초등 답과 말투가 다르다. 미션 본문에 나온 말을 허용하는 규칙(`HATE`·맥락 단어)이 모델에는 없어 차별을 다루는 미션에서 오탐이 날 수 있다. 합계 1,500자 뒤의 글과 21번째 칸부터는 모델이 보지 않는다. 동시 요청이 몰리면 게이트에서 기다리다 통과될 수 있다. 장애 중에는 단어 목록만 적용된다. 11/19 모델: 아이 말투 숫자는 Claude가 지은 문장으로 잰 것이라 부풀었을 수 있고(실제 아이 모욕 데이터 없음), 욕과 같은 글자가 든 정상 문장("시바새끼도 귀여워")을 막을 수 있다. 앞 단계 단어 목록이 "새끼"가 든 정상 문장("새끼돼지가 귀엽다")을 막는 것은 원래부터이며 예외 보완은 나중 할 일이다
 
 #### learning 연동 구현 (#692, 2026-11-18)
 
@@ -373,7 +373,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 
 - `app.toxicity.enabled`를 더했다. 전체 컨텍스트 시험이 없는 scoring 주소로 연결을 시도하지 않게 시험 기본값을 false로 두는 것이 이슈의 "시험 공통 기본값"이다. 운영에서는 모델을 잠시 끌 때도 쓴다. 끈 상태는 사유 `DISABLED`이고 장애가 아니라 제출마다 로그를 남기지 않는다
 - 1,500자는 코드포인트로 센다. scoring(Python `len`)과 같게 하고 이모지가 반쪽으로 잘려 400이 되지 않게 하려는 것이다. 잘린 앞부분이 공백뿐이면 그 칸은 보내지 않는다
-- 지표(호출·flagged·건너뜀 사유·지연)는 따로 만들지 않았다. learning에는 Micrometer 사용자 지표가 없고, 호출 수·지연은 Java agent의 HTTP 클라이언트 지표로 본다. 건너뜀 사유는 로그로만 본다
+- 지표(호출·flagged·건너뜀 사유·지연)는 #692에서 따로 만들지 않았다. 호출 수·지연은 Java agent의 HTTP 클라이언트 지표로 본다. 판정 결과(flagged·review·clean·검사 안 됨)는 #984에서 OTel 카운터로 더했다(아래 "운영 지표 구현"). 건너뜀 사유는 지금도 로그로만 본다
 - `review`는 읽기만 한다. 표현 검토 대기 등록은 #727(아래 재학습 자동화 절)
 - 로컬 compose E2E(2026-11-19, 모델 `tox-koelectra-small` 1.0-1119): learning 답 제출 API에 core가 넘기는 헤더로 보냄(학생 로그인·core 게이트웨이는 거치지 않음). 욕 없는 모욕 답 422(로그 `category=INSULT`) 48ms, 보통 답 201 59ms, scoring을 멈춘 채 모욕 답 201(1,555ms, 응답 마감 근처까지 기다림)
 
@@ -425,7 +425,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - 경계 구간: `ToxicityClient`가 scoring 응답 모델을 `name:version`으로 받아 `ToxicityVerdict.Clean(review, modelVersion)`에 담는다. `AnswerService.submit`이 답변·판정을 저장한 뒤 같은 트랜잭션에서 `review:true`이면 `GRAY_ZONE` 행을 넣는다(sequence 3.1). 같은 키 다시 보내기는 저장된 답을 돌려줘 행이 늘지 않고, UK `(answer_id, source)`도 막는다
 - 신고 공유물: 기존 `CommunityService.moderate` 안에서 `HIDDEN_REPORT`가 되면 행 추가, 처음 `REMOVED`가 되면 `OFFENSIVE`, `HIDDEN_REPORT`에서 다시 공개되면 `CLEAN`. 자동 라벨은 `labeled_by` null이고, 운영자가 직접 라벨한 행과 이미 같은 라벨인 행은 그대로 둔다
 - 학생 삭제: `StudentDeletionService`가 시도·답변보다 먼저 `deleteByStudent`(FK NO ACTION)
-- 로그: 출처·라벨·건수만(`표현 검토 대기 추가 source=…`, `표현 검토 자동 라벨 …`, `표현 검토 라벨 label=…`, `표현 검토 내보내기 count=…`). learning에는 사용자 지표가 없어(#692와 같음) 건수는 로그로 본다
+- 로그: 출처·라벨·건수만(`표현 검토 대기 추가 source=…`, `표현 검토 자동 라벨 …`, `표현 검토 라벨 label=…`, `표현 검토 내보내기 count=…`). 검토 대기 건수는 지표로 내지 않고 로그로 본다(learning 사용자 지표는 #984 판정 카운터뿐)
 - 새 라벨 수(#907, 2026-11-23): 건수와 가장 늦은 라벨 시각을 `SELECT count(*), max(labeled_at)` 한 문장으로 읽는다. 두 문장이면(READ COMMITTED) 그사이 커밋된 라벨이 시각에만 들어간다. #729 분석: 내보내기 뒤 늦게 커밋된 이른 시각 라벨은 한 문장으로도 남음(`labeled_at`이 `until` 이하라 내보내기에서도 다음 `since` 뒤에서도 빠짐)
 - 계약: `contracts/openapi/learning-service.yaml` 1.5.0에 4개 경로. `ExpressionReviewApiTest`가 실제 응답을 남기고 `scripts/validate_learning_expression_review_contracts.py`가 스키마와 학생·답변 ID가 없는지 확인(ci-contracts learning-contracts)
 - 시험: `ExpressionReviewApiTest`(목록 순서·필터·글 잇기·400·403, 라벨 덮어쓰기·404·400, 새 라벨 수·내보내기 since 초과·until 이하·SKIP 제외·1,500자 자름·400·403), `AnswerServiceTest`(경계 구간만 한 번, 보통·검사 안 됨·막힘은 없음, 로그에 ID 없음), `CommunityTest`(신고 숨김·자동 라벨·반복·직접 라벨 유지), `StudentDeletionTest`(표 목록에 추가), `ToxicityClientTest`(모델 `name:version`)
@@ -439,7 +439,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 
 #### 재학습 작업 구현 (#729, 2026-11-23)
 
-- **운영 실행은 #887 결정 뒤.** 지금 활성 모델 1.0-1119는 Claude가 쓴 아이 말투 문장으로 배운 모델이고 이어 학습한 모델도 그것을 이어받는다. 이 구현은 활성 모델을 따라가므로 #887에서 모델을 바꿔도 코드는 그대로다
+- **운영 실행은 CronJob(#730) 준비 뒤.** #887에서 기능명세 NFR-DAT-03 예외로 정했다(2026-11-23). 지금 활성 모델 1.0-1119는 Claude가 쓴 아이 말투 문장으로 배운 모델이고 이어 학습한 모델도 그것을 이어받는다. 이 구현은 활성 모델을 따라가므로 아이 말투 문장 없이 처음부터 학습한 모델로 바꿔도(그때 예외가 없어짐) 코드는 그대로다
 - 코드: `ml/tox/scripts/retrain.py`(진입점), `ml/tox/Dockerfile`(CPU torch, uid 10001, 빌드 기준은 저장소 루트), `ml/tox/tests/test_retrain.py`. 학습·평가는 기존 `train.py`·`eval.py`(`score_texts`)·`wordlist.py`(`pick`)·`quant.py`를 쓴다
 - 새 모델 `train_info.json`: `data`는 이번 학습 자료만(K-MHaS·BEEP! 건수, 서비스 라벨 건수·해시), `dataSha256`은 라벨·학습·홀드아웃·공개 묶음 해시. 출발 모델의 자료 설명은 이어받지 않고, 계보에 아이 말투 문장 학습이 있으면 `initFrom.kidWrittenLineage`에 내력만 남긴다(#887)
 - 순서: `last.json`의 `labelsUntil` → 새 라벨 수(200건 미만이면 종료 코드 0) → 내보내기 → 활성 모델·public-v1 받기(해시 대조) → 이어 학습 → `threshold`·`review_threshold`를 다시 계산해 `train_info.json`에 → 비교·추천 태그 → 업로드(파일마다 전체 SHA-256 PUT, HEAD `FULL_OBJECT`) → 자동 등록 → 성공했을 때만 `last.json`
@@ -488,11 +488,64 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 
 남은 것·한계:
 
-- 운영 실행(#887 결정 뒤), CronJob·권한·이미지 배포(#730). 첫 실행에 `last.json`이 없을 때 S3가 404를 주려면 `s3:ListBucket`이 필요하다(없으면 403이라 종료 코드 11)
+- 운영 실행·CronJob·권한·이미지 배포(#730). #887은 기능명세 NFR-DAT-03 예외로 결정(2026-11-23). 첫 실행에 `last.json`이 없을 때 S3가 404를 주려면 `s3:ListBucket`이 필요하다(없으면 403이라 종료 코드 11)
 - #907 5번(`label-count`의 count·latest 두 조회): 재학습은 `until = latestLabeledAt`으로 내보내기를 받아 두 조회 사이에 커밋된 라벨도 학습에 들어간다(건수만 더 많음). 그사이 삭제되면 count > 0·latest null이라 종료 코드 12로 끝난다. `labeled_at`이 `until`보다 이른데 내보내기 뒤에 커밋된 라벨은 다음 `since`에서 빠질 수 있고, 이것은 한 문장 조회로도 남는다
 - public-v1은 운영 S3에 아직 없다. `ExpressionPolicy`가 바뀌면 `wordlist_flags.json`을 다시 뽑아 새 버전 경로로 올려야 한다
 - 등록 뒤 `last.json` 쓰기만 실패하면 다음 주기에 같은 라벨로 한 번 더 등록된다. 업로드 뒤 등록이 실패하면 객체는 남는다(scoring.md 6.3)
 - 홀드아웃이 최소 40개(200건의 20%)라 한두 문장으로 추천이 갈릴 수 있다(로컬 확인의 비추천도 막을 글 22개 중 1개 차이). 기준안 조정은 운영 데이터를 보고 판단한다. APEACH·389개는 매번 같은 세트라 반복하면 그 세트에 치우칠 수 있다
+
+#### 운영 지표 구현 (#984, 2026-11-24)
+
+MLOps 점검(develop `564940e2`)에서 운영 모니터링이 ❌였다. 모델을 바꾼 뒤 막은 비율이 바뀌거나 scoring 장애로 검사 없이 통과(fail-open)가 늘어도 알 수 없었다. 목표는 "판정 비율을 모델 버전별로 볼 수 있음"(🔶)까지. 설계는 [아키텍처](../design/architecture.md) 4.6. API 변경 없음(내부 지표·대시보드만)
+
+| 항목 | 값 |
+|---|---|
+| 지표 | OTel 카운터 `expression.toxicity.checks`(단위 `{check}`, meter `com.sagomungchi.learning.answer`) → Prometheus `expression_toxicity_checks_total{exported_job="learning-service"}` |
+| `result` | `flagged`(막힘)·`review`(통과, 경계 구간)·`clean`(통과)·`unchecked`(시간 초과·5xx·연결 실패·서킷 열림·활성 모델 없음·계약 밖 응답) |
+| `model` | 판단한 모델 `name:version`. `unchecked`면 없음 |
+| 세지 않음 | `app.toxicity.enabled=false`(DISABLED), 보낼 칸 없음(scoring을 부르지 않음) |
+| 넣지 않음 | 원문·점수·학생 ID·attemptId(NFR-SEC-05). 속성은 위 두 키뿐 |
+| 대시보드 | observability chart `dashboards/expression-toxicity.json`(uid `expression-toxicity`, "표현 분류 판정"). `grafana.dashboards.enabled`(기본 꺼짐, local·prod 켬)이면 ConfigMap `grafana-dashboards`를 provider(`/etc/grafana/provisioning/dashboards`)와 JSON(`/etc/grafana/dashboards`)으로 마운트. 파일 provider가 60초마다 다시 읽어 Pod 재시작 없이 반영 |
+
+패널(datasource `prometheus`):
+
+- 막은 비율(모델별): `flagged / (flagged+review+clean)`를 `sum by (model)`로. 0건인 모델은 선이 끊기지 않게 0으로 채움
+- 경계 구간 비율(모델별): 위와 같고 `review`
+- 검사 안 됨 비율: `unchecked / 전체`(모델 없음)
+- 판정 건수: `sum by (result, model) (increase(...))` 누적 막대
+
+구현:
+
+| 위치 | 바뀐 것 |
+|---|---|
+| `ToxicityClient` | 판정마다 카운터 기록. `Flagged`가 모델 `name:version`을 갖게 바꿈(전에는 모델 정보 없음). Meter는 core `LlmCostMetrics`처럼 `GlobalOpenTelemetry` 기본값(agent 없으면 no-op) |
+| `AnswerService` | `Flagged` 판정 분기만 `is` 검사로(동작 같음) |
+| `build.gradle.kts` | `opentelemetry-api`, 시험에 `opentelemetry-sdk-testing`(Boot BOM 버전, core와 같음) |
+| observability chart | `grafana.dashboards.enabled`, `grafana-dashboards` ConfigMap, Grafana 볼륨 2개 |
+| `operational-alerts/verify_chart.py` | 기준 commit 비교에서 대시보드를 끄고 렌더, local·prod 렌더에 대시보드 ConfigMap·마운트·쿼리 지표 이름 단언 |
+
+시험·확인:
+
+- `ToxicityClientTest`(WireMock + `InMemoryMetricReader`): 4종 `result`·`model` 값, `unchecked`에 `model` 없음, 속성 키가 `result`·`model`뿐, DISABLED·빈 칸은 기록 없음. learning `./gradlew test bootJar` 725개(건너뜀 3) 통과
+- chart: Helm 4.3.1 `lint --strict`(기본·local·prod), `verify_chart.py` 대시보드 단언 PASS, 기존 Docker 경보 시험(Grafana 13.3.0 provisioning 포함) 통과. 단, `verify_chart.py`는 develop에서 이미 #910의 trace processor 이름(`transform/trace_urls`)과 app-service 이미지 schema를 따라가지 못해 그 두 블록을 뺀 임시 사본으로 돌렸다(이 이슈 밖)
+- local(2026-11-24, compose, kind 아님): learning(이 브랜치 이미지 + OTel Java agent(app-service chart와 같은 이미지), `OTEL_METRIC_EXPORT_INTERVAL` 10초) → chart로 렌더한 Collector·Prometheus 설정 → Grafana 13.3.0(렌더한 datasource·대시보드). scoring은 로컬 S3 모델이 없어 글 표시로 판정을 고르는 대역으로 바꿈. 데모 미션 2번(NARRATIVE)에 학생마다 시도를 열어 제출
+  - 1차 18건: 막힘 응답은 422 `ANSWER_INAPPROPRIATE`, 나머지는 201(장애 대역도 201, fail-open). Prometheus 값이 제출과 같음
+
+    | model | result | 값 |
+    |---|---|---|
+    | `tox-kcelectra:1.0` | clean·review·flagged | 6·2·2 |
+    | `tox-kcelectra:1.1` | clean·flagged | 3·3 |
+    | (없음) | unchecked | 2 |
+
+  - 2차 10건(1.0: clean 4·review 1·flagged 1, 1.1: clean 2·flagged 1, unchecked 1) 뒤 Grafana `/api/ds/query`로 패널 쿼리: 막은 비율 1.0 0.167·1.1 0.333, 경계 구간 1.0 0.167·1.1 0, 검사 안 됨 0.1. 대시보드는 `provisioned: true`, JSON 갱신이 재시작 없이 반영됨
+
+남은 것(✅까지):
+
+- 통계적 분포 변화(drift) 감지, 라벨 기반 운영 정확도(운영자 라벨과 모델 판정 비교)
+- 점수 분포 지표: 집계 히스토그램이 NFR-SEC-05 "지표에 점수 미기록"과 충돌하는지 결정 필요
+- 경보 규칙은 #730에서 이 지표로 추가(예: 검사 안 됨 비율, 모델 교체 뒤 막은 비율 급변)
+- 모델 활성화 시점 주석(세로선): 사용자 결정 2026-11-24로 이번에는 모델별 선 구분만. 등록부 이벤트를 Grafana가 읽으려면 datasource·권한·NetworkPolicy가 더 필요
+- prod 반영은 observability chart가 `main`을 따라가므로 release 뒤
 
 ## 17. 고착 RUNNING 판정 1분 주기 탐지 (#241)
 
@@ -961,6 +1014,9 @@ python scripts/knowledge/manage_datasets.py load --records R --reviews FIRST --d
   - 서비스(`ThemeDraftService.seedTopic`): `findInputs`를 기간만 달리해 세 번(목록 개수만큼의 주·1주·4주) + `findWeekInputs`. DB·OpenAPI 모양 그대로(설명 문구만)
   - 시험: `ThemeTopicSeedsTest` 9건(목록·라벨·계절·읽기·종류 금지와 풀기·씨앗 제외·단계적 풀기·옛 형식), `ThemeDraftServiceTest` 주제 씨앗 2건(종류마다 하나 남긴 최근 씨앗 제외, 직전 주 종류·4주 역할 제외)
   - 상세는 [ai.md 17.8](ai.md)·이슈 #634. 웹 목업(`frontend/web/src/mocks/handlers/adminThemeDrafts.ts`)의 예시 주제는 옛 형식 그대로 둠(웹 브랜치는 다른 작업 중, 화면 동작과 무관)
+  - **뭉치 역할 = 해결사 직업만(사용자 결정 2026-11-18, #779, ai.md 26)**: 해적 선장·농부·화가·마술사처럼 장소에 맞춘 의상 역할은 왜 그 역할이 사건을 푸는지가 약했음(초5 보물 쪽지 '해적 선장 / 바닷가 마을 놀이터 / 이웃 할머니가 숨긴 보물 상자'). 역할은 사건을 해결하거나 찾아 주는 해결사 직업 16가지(기준안)에서 장소에 맞게 고름: 탐정·경찰관·교통 경찰·소방관·바다 구조대·산악 구조대·눈 순찰대·숲 순찰대·동물 구조대·과학 수사대·보물 탐험대·비밀 요원·마을 지킴이·시간 탐정·소리 탐정·맛 탐정. 테마 느낌은 장소·사건이 맡음(바닷가·갯벌·섬은 바다 구조대, 숲·캠핑장은 숲 순찰대, 동물 사건은 동물 구조대 등). 64개 씨앗의 역할(차림)만 바꾸고 종류·장소·대상·계절은 그대로, 종류별 개수 그대로. 보물 쪽지 4개는 역할이 서로 다름(보물 탐험대·마을 지킴이·탐정·비밀 요원, 단계적 풀기 시험이 역할 차이를 씀). 바뀌기 전 주제로 만든 초안도 같은 (역할 이름, 장소, 대상) 비교라 옛 역할 이름은 새 씨앗과 겹치지 않음(최근 씨앗·4주 역할 제외에서 옛 주제는 다른 씨앗으로 셈). 시험: `ThemeTopicSeedsTest`의 같은 주 씨앗 예시 '수의사(' → '동물 구조대('. ai 줄거리 규칙에도 같은 기준(자유 글 주제일 때 역할을 해결사 직업으로, 씨앗 형식이면 씨앗 역할 그대로)
+  - **차림의 옷은 소매 없는 조끼로(사용자 결정 2026-11-19, #779, ai.md 26)**: 제복·방화복·실험 가운처럼 몸을 감싸는 옷을 입히자 뭉치 몸 옆 울퉁불퉁한 곳이 소매로 그려져 손 두 개와 합쳐 팔이 넷처럼 보였음(옷 입힌 뭉치 그림 실측, 앞치마만 입힌 농부는 괜찮음). 씨앗 차림 3종을 바꿈: 경찰관(경찰 제복·경찰 모자) → (경찰 모자·경찰 배지 조끼), 소방관(방화복·소방 헬멧) → (소방 헬멧·반사띠 조끼), 과학 수사대(실험 가운·고글) → (고글·하얀 가운 조끼). 역할 이름은 그대로라 최근 4주 역할 비교에 영향 없음, 씨앗 비교 묶음(역할 이름·장소·대상)도 그대로. 시험 변경 없음(`ThemeTopicSeedsTest` 9건·`ThemeDraftServiceTest` 16건 통과)
+  - **#782 장소 목록(2026-11-19, 기준안 — 확인 전)**: 위의 씨앗 64줄·비교 묶음(역할 이름, 장소, 대상)·기간 64주·역할 고정과 단계적 풀기는 45장으로 바뀜(장소 목록 파일, 종류 → 장소 → 사건 → 역할, 비교 묶음 (종류, 장소, 대상), 주제 글 끝 칸 갈래·성격)
 
 ### 자동 성취기준의 한계와 다음 설계
 
@@ -1499,3 +1555,123 @@ PR #889(learning V25~V27)로 구현한 관리자 주간 테마 운영의 서버 
 
 - 단위·통합 테스트: `WeeklyThemeAdminServiceTest`·`ThemeDraftServiceTest`·`ThemeDraftMediaServiceTest`·`ThemeDraftConcurrencyTest`·`AdminWeeklyThemeControllerTest`(learning), `AdminOperationsIntegrationTest`(core, 오류 코드 전달·감사)
 - #909 문서 정리는 코드 동작을 바꾸지 않았다(`WeeklyThemeAdminService.publish` 주석만 실제 오류 코드로 정정)
+
+## 44. 자동 성취기준에서 읽고 쓰기와 맞지 않는 성취기준 빼기 (#782, 2026-11-19)
+
+주간 테마 미션은 학생이 글로만 답한다(서술·논술은 읽고 생각하고 쓰는 활동). 그런데 #536 자동 성취기준은 그 학기 국어·수학 성취기준 전체에서 골라, 말하기·듣기·소리 내어 읽기·도구 조작·그리기가 중심인 성취기준도 나왔다. ai는 이런 날을 글로 대신하게 하지만(ai.md 17.1 "글로 대신하는 활동", 사용자 결정 2026-11-11) "발표 글을 써 봐"·"컴퍼스로 그리는 순서를 글로 써"·"끊어 읽을 곳 표시"처럼 어색해지고, 듣기는 옮긴 글을 읽는 읽기 문제가 된다(ai.md 27절).
+
+### 정한 것 (담당자 결정 2026-11-19)
+
+| 항목 | 값 | 근거 |
+|---|---|---|
+| 빼는 국어 | 듣기·말하기 13개(4국01-01~06, 6국01-01~07), 4국02-01(소리 내어 유창하게 읽기), 4국06-01(인터넷 접속·자료 훑어보기), 4국06-02(발표 자료 만들기), 6국06-03(카드 뉴스·영상 만들기) | 고시 원문(성취기준·해설·적용 시 고려 사항) 156개 전수 검토에서 "글로 대신하면 중심이 빠짐" 21개와 저장된 실측 미션 5,780개 검사(4국02-01 46/51 "끊어 읽기 표시", 4국06-02 19/27 "발표 자료 쓰기"). 듣기 9개는 원문 검토로는 "옮긴 글로 대신 가능"이었지만 대신하면 읽기 문제가 된다는 확인 결과(판정 이유 6개 중 5개)와 담당자 방향(읽고 쓰기 위주)으로 함께 뺌 |
+| 빼는 수학 | 4수03-07(컴퍼스로 원 그리기), 4수03-12(모양 만들기·채우기), 4수03-24(각도기로 재기), 6수03-02(대칭 도형 그리기), 6수03-04·06·08(겨냥도·전개도 그리기), 6수03-10(위·앞·옆에서 본 모양 그리기) | 원문 검토 "글로 대신하면 중심이 빠짐", 4수03-07 실측 미션 38/80이 "컴퍼스로 그리기"를 시킴 |
+| 남기는 것 | 그래프 5개(4수04-01~03, 6수04-02·03) | 해석·눈금 정하기는 글로 됨. 실측 미션 132개 중 3개가 "그래프로 나타내"를 시켜 ai `ACT_NAME`으로 막음 |
+| 관리자가 고른 성취기준 | 그대로 씀 | 필요한 주에는 관리자가 직접 고를 수 있게 |
+| 같은 주 안 | 생각 유형마다 다른 성취기준(지금 규칙 그대로) | `autoStandards`가 그 주에 고른 코드를 빼고 고름 |
+
+빼고 남는 그 학기 풀(학기 대응표 기준): 국어 10~14개(초3 1학기 12, 초3 2학기 14, 초4 1·2학기 14, 초5 1학기 10, 초5 2학기 13, 초6 1·2학기 12), 수학 8~18개. 주를 넘어 같은 성취기준이 다시 나오는 것은 괜찮다(담당자 확인). 초3 1학기·초5 1학기는 학년군 첫 학기라 앞 학기로 넓힐 수 없어 2~3주마다 다시 나온다.
+
+### 구현
+
+| 위치 | 바뀐 것 |
+|---|---|
+| `theme/domain/ThemeDraftRules.kt` | `AUTO_EXCLUDED`(25개, 성취기준마다 까닭 주석). `candidatePools`가 학기 단계와 학년군 표 모두에서 뺌 |
+| `ThemeDraftRulesTest` | 빼는 목록 25개·듣기·말하기 13개, 학기 단계·학년군 표에서 빠짐, 관리자가 고르면 그대로. 후보 풀 시험의 예 코드(4국01-01~03)를 빼지 않는 읽기 코드(4국02-02~04)로 바꿈 |
+| `ThemeDraftServiceTest` | 최근 4주 시험의 후보 계산에 같은 목록을 뺌 |
+
+설계: class-diagram 4.4 "자동 성취기준 후보 풀" 문장. ai 요청 `missions[].standards` 계약·DB는 그대로.
+
+## 45. 주제 씨앗을 장소 목록으로 — 종류 → 장소 → 사건 → 역할 (#782, 2026-11-19, 기준안 — 확인 전)
+
+씨앗 64줄이 (종류, 역할, 장소, 대상) 한 줄씩 고정이라 같은 씨앗이 돌아오면 같은 사건·같은 역할이 되풀이됐다(#779 콘티: 떡집 5번 모두 너구리 — 정답 쪽은 ai `candidate_plan_for`, ai.md 27절). 씨앗을 장소 목록으로 바꾸고 장소·사건·역할을 따로 고른다. 방향은 담당자 결정, 값은 모두 기준안이며 고르기 시뮬레이션·사건 글 검사·작은 생성·40쌍 실측으로 확인한 뒤 확정한다.
+
+### 정한 것 (담당자 결정 2026-11-19)
+
+| 항목 | 값 |
+|---|---|
+| 목록 파일 | `resources/knowledge/theme_places.json` 하나(learning과 측정 도구가 같이 읽음). 장소 64·사건 155·역할 16 |
+| 장소 | 종류마다 장소, 장소마다 성격 태그(마을·실내·길·학교·공원·밭·숲·산·물가·바다·눈·섬)·계절(비면 아무 때나)·사건 2~3개. 같은 이름도 종류가 다르면 다른 장소(장난꾸러기 떡집 ≠ 비밀 재료 떡집) |
+| 사건 | 넷째 칸 대상 글과 갈래, 사건 계절(비면 장소 계절. 장수풍뎅이는 여름·가을만) |
+| 갈래 | 잃어버린 것 = 물건·작은 동물·큰 동물·작은 생물, 장난꾸러기 = 되찾음·정리, 출처 = 물건·동물(사건마다 정해 둠). 소리 탐정 = 동물·물건(고를 때 무작위 — 동물이면 동물 구조대도 역할 후보가 되게 learning이 굴림). 그 밖 종류는 갈래 없음 |
+| 역할 어울림 | 종류(`types`)·장소 성격(`traits`, 없으면 어디나)·동물 이야기만(`animalOnly`). 마을 지킴이는 마을·학교·공원·밭, 바다 구조대는 바다만(강은 상관없음), 교통 경찰은 탈것이면 길·마을 장소·길 찾기면 장소와 상관없이, 비밀 요원 차림은 검은 모자·검은 조끼(선글라스가 뭉치 점 눈을 가림) |
+| 고르기 | 종류(직전 주 종류 뺌, 지금 그대로) → 장소 → 사건 → 역할. 장소·사건·역할 모두 "같은 학년에서 최근에 쓴 것을 빼고 그 안에서 무작위, 남는 게 없으면 가장 오래전 것" |
+| 주제 글 | `줄거리: 종류 / 뭉치 역할: 이름(차림) / 장소: 장소 / 대상 칸: 대상 / 갈래: 값 / 성격: 값·값`(갈래 없는 종류는 갈래 칸 없음). ai `parse_topic_fields`와 같은 꼴 |
+| 주제 길이 | 씨앗 글은 100자 상한에서 뺌(상한은 관리자가 쓰는 주제에만. 저장 jsonb·ai는 길이 제한 없음 확인) |
+
+### 바뀐 규칙 (11-11·#634 기록과 다른 점)
+
+| 항목 | 전 | 후 |
+|---|---|---|
+| 씨앗 비교 묶음 | (역할 이름, 장소, 대상) | (종류, 장소, 대상) — 역할을 떼어 고르므로 역할이 들어가면 같은 사건을 다른 씨앗으로 봄. 옛 형식 주제도 같은 묶음으로 읽힘 |
+| 다시 쓰지 않는 기간 | 목록 개수 64주 | 사건 개수 155주(`RECENT_WEEKS`). 장소는 같은 학년이 이 기간에 쓴 (종류, 장소)를 빼고, 사건은 (종류, 장소, 대상)을 뺌 |
+| 역할 | 씨앗마다 고정, 최근 4주 역할 금지 → 막히면 역할을 풂 | 어울림 표에서 고르고 최근 4주 역할(`ROLE_WEEKS`, 종류를 넘어 셈)을 뺌, 모두 막히면 가장 오래전 역할. 모든 사건에 어울리는 역할이 2개 이상이라(읽을 때 검사) 직전 주와 같은 역할은 나오지 않음 |
+| 같은 주 다른 초안 | 같은 씨앗 끝까지 뺌 | 같은 사건 끝까지 뺌, 장소도 같은 주에 남은 사건이 있는 곳에서 고름(모두 막히면 풂) |
+| 단계적 풀기 | 최근 씨앗 → 역할 순으로 풂 | 단계마다 "남는 게 없으면 가장 오래전 것" 한 규칙 |
+
+### 구현
+
+| 위치 | 바뀐 것 |
+|---|---|
+| `resources/knowledge/theme_places.json` | 새 파일(장소 목록·역할 표, `_note`에 기준안 표시) |
+| `theme/domain/ThemeTopicSeeds.kt` | `ThemeTopicSeed`·`ALL` 64줄 삭제. `ThemePlaces`(파일 읽기·형식 검사: 태그 어휘, 장소·사건 겹침, 계절, 갈래 값, 칸 구분자, 사건마다 역할 2개 이상 — 어기면 예외)·`ThemePlace`·`ThemeEvent`·`ThemeRole`(어울림 `fits`). `StoryType.branches`(ai `STORY_BRANCHES`와 같은 표)·`isAnimal`. `ThemeTopicSeeds.topic`(주제 글 만들기)·`choose`(위 순서) |
+| `theme/service/ThemeDraftService.kt` | `seedTopic` 설명 문구만(조회 세 번 그대로) |
+| `ThemeTopicSeedsTest` | 새로 씀 14건: 파일 개수·형식 검사·틀린 파일 예외, 나올 수 있는 모든 주제 글의 형식과 읽기 왕복, 대상 글 규칙(동물·시각·탈것·소리), 계절, 역할 어울림 결정, 읽기 2건, 종류·장소·사건·역할 고르기, 소리 갈래, 한 학년 104주 이어 고르기(종류·역할이 연달아 같지 않음, 탐정 25% 이하) |
+| `ThemeDraftServiceTest` | 주제 씨앗 시험 2건을 장소 목록으로(종류마다 장소 하나 남긴 최근 장소 제외, 직전 주 종류·4주 역할 제외). 주제 글 확인을 `ThemeDraftFixtures.seedTopics()`(나올 수 있는 모든 글)로 |
+| 측정 도구 `requests_auto.py`(저장소 밖) | 파일이 있으면 같은 꼴 주제 글을 만듦(키마다 장소·사건 차례로, 역할·소리 갈래는 키 고정 시드) |
+
+설계: class-diagram 4.4 "주제 씨앗" 문장. ai 요청 계약·DB는 그대로(주제 글 끝 칸만 늘어남).
+
+### 확인 ① 고르기 시뮬레이션 (2026-11-19, 무료)
+
+실제 `choose`로 3학년 × 156주(3년)를 20번(9,360번 고르기, 같은 주 다른 학년·직전 주·4주 역할·최근 기간을 서비스와 같게). 예전 씨앗 64줄과 예전 `choose`(HEAD 판을 임시 시험으로 옮김)를 같은 조건으로 돌려 비교. 시험 파일은 커밋하지 않음.
+
+| 지표 | 예전 | 새 |
+|---|---|---|
+| 나온 사건 수 | 64 | 155(모두) |
+| 같은 학년에서 같은 사건이 다시 나오기까지(주) | 중앙값 35·하위 10% 15·최소 2 | 중앙값 79·하위 10% 50·최소 7 |
+| 같은 사건이 다시 나올 때 지난번과 같은 역할 | 6,223/6,223(100%) | 979/3,151(31%) |
+| 한 사건에서 나온 역할 수 | 모두 1 | 2~7(3~4가 대부분) |
+| 같은 학년 직전 주와 같은 역할 | 22번 | 0번 |
+| 같은 학년 직전 주와 같은 종류 | 0번 | 0번 |
+| 같은 주 다른 학년과 같은 사건 | 0번 | 0번(같은 장소·다른 사건은 212번, 2.3% — 규칙상 허용) |
+| 종류 비율 | 8.6~9.6% | 8.7~9.6% |
+| 탐정 비율 | 13.8% | 15.7% |
+
+역할 비율 중 줄어든 것: 숲 순찰대 8.9% → 3.4%(예전에는 숲·캠핑장 씨앗 6줄에 고정, 이제 숲·산 장소에서 다른 역할과 나눠 가짐), 산악 구조대 0.3%·눈 순찰대 0.8%(산·눈 장소가 적고 눈은 겨울만).
+
+### 확인 ② 사건 글 ai 검사 (2026-11-19, 무료)
+
+모든 장소 × 사건 × 갈래 × 계절(4·7·10·1월) 주제 글 584개를 ai 코드 그대로(`parse_topic_fields`·`candidate_plan_for`·`candidate_pool`·`group_pool`·`habitat_animals`·`place_sounds`·`candidate_names`·`answer_fact_hits`·`TIME_WORD`)로 검사. 사실표 종류 257개.
+
+| 검사 | 결과 |
+|---|---|
+| 주제 글을 ai가 같은 종류·갈래로 읽음 | 584/584 |
+| 후보 4개·정답을 코드가 고를 수 있음(`candidate_plan_for`가 None 아님) | 257/257 |
+| 소리 탐정 범주 = 주제 글 갈래 | 모두 |
+| 장소 성격으로 거른 후보가 4개 미만이라 거르기를 푼 곳 | 0 |
+| 대상·장소 글에 후보 이름이나 정답만의 값(정답마다 따로) | 0 |
+| 시간 탐정 대상·장소 글에 시각 | 0 |
+
+검사가 실제로 걸러내는지 일부러 틀린 글로 확인함(소리 '할머니 댁 고양이 소리' → 이름 걸림, '천장 안쪽에서 들린 소리' → 생쥐 정답 값 걸림, '오후 3시에 물을 준 때' → 시각 걸림).
+
+### 소리 탐정 씨앗의 "밤마다" (#782 설계 v4, 2026-11-22, 담당자 결정)
+
+- 소리 탐정 대상 글 8개가 "…에서 밤마다 들린 소리"였다. ai 특징 "소리 나는 밤"(매일 밤·비 오는 밤·바람 부는 밤)과 겹쳐, 답이 "매일 밤"이면 시작 이야기가 단서를 미리 말하고 "비 오는 밤"이면 어긋났다(ai 3차 측정 치명 결함, ai.md 27절 "설계 v4").
+- 8개를 "…에서 밤에 들린 소리"로 바꿨다(`theme_places.json`, `ThemeTopicSeeds` 설명 예시). learning 시험은 이 문자열을 쓰지 않는다. ai는 관리자 자유 글·예전 씨앗을 위해 대상 글의 "밤마다"를 코드가 "밤에"로 바꾼다.
+
+## 46. 주간 테마 검수 목록·검수 단계·버리기 규칙 설계 문서 반영 (#970, 2026-11-24)
+
+PR #965(#964)로 구현한 관리자 주간 테마 검수 목록과 버리기 규칙 변경을 설계 문서에 반영한다. 계약(`contracts/openapi` `ThemeDraftReviewPage`·`ThemeReviewStage`)과 [frontend 보고서](frontend.md)는 #965에서 반영했다. 설계 문서는 [api-spec 2.8](../design/api-spec.md#28-관리자-fn-adm-fn-sup-관리-측--apiv1admin)·4.1, [state-diagram 3.5.1](../design/state-diagram.md#351-theme_draftstatus-438), [class-diagram 4.4](../design/class-diagram.md#44-주간-테마커뮤니티-theme-385--community-386-구현).
+
+### 정한 것
+
+- 검수 목록 API: `GET /admin/theme-drafts/review-list`(core 프록시 → learning `/internal/admin/theme-drafts/review-list`). 조건 `grade·source·status·stage·week·weekStart·comparisonPending·hideDiscarded(기본 true)·page·size`, 응답 `ThemeDraftReviewPage{items, page, size, totalElements, weeks}`. 범위 밖 `stage`, 월요일이 아닌 `week`·`weekStart`는 `400`(core·learning 모두 검사)
+- 검수 단계 `stage` 10종은 저장값이 아닌 조회용 파생값이다. `theme_draft.status`·`weekly_theme.status`·같은 학년·주 다른 게시 테마(`closed`)·미확인 `READY` 부분 다시 생성본(`pair`)으로 계산한다. `READY` 부분 다시 생성본은 `READY` 원본 행에 합치고, 전체 다시 생성본은 독립 행. 적용 주는 테마 주 → 편성 주 → 생성 기준 주 순, 버린 초안은 생성 기준 주
+- 장면 이력 응답에 `comparisonPending`(편집 가능하고 그 장면에 미확인 `READY` 다시 생성본이 있음)
+- 버리기 규칙 변경: 이전 문서 "채택본이 있는 `READY` 묶음도 409" → 묶음 원본은 묶음에 채택본이 있으면 상태와 무관하게 `409 CONFLICT`. `CHECK_FAILED` 원본의 부분 다시 생성본을 채택하면 원본을 버릴 수 없다
+
+### 검증
+
+- 코드 변경 없음. 문서 문구는 `ThemeDraftMapper.xml`(`reviewScope`·`reviewWeek`·`reviewStage`)·`ThemeDraftService.discard`·`AdminThemeDraftController.reviewList`·`ThemeDraftMediaService.history`와 대조
+- 기존 시험: `ThemeDraftMediaServiceTest`("a ready partial recovery of a failed original remains available for adoption" 등), `AdminThemeDraftControllerTest`, `AdminOperationsIntegrationTest`(core), `scripts/tests/test_theme_drafts_contract.py`

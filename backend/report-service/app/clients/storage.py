@@ -6,6 +6,7 @@ from uuid import UUID
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 
 def report_prefix(student_id: UUID, report_id: UUID, revision: int) -> str:
@@ -20,6 +21,27 @@ def report_key(
     if format not in {"PDF", "MD", "HTML"} or audience not in {"full", "free"}:
         raise ValueError("Invalid report file format/audience")
     return f"{report_prefix(student_id, report_id, revision)}{audience}/{format.lower()}"
+
+
+MEMORY_BOOK_DIR = "memory-books"
+
+
+def memory_book_student_prefix(student_id: UUID) -> str:
+    """추억 그림책 (docs/proposals/memory-book.md, #975 C3).
+
+    `reports/memory-books/` 한 접두어 아래에 모아 S3 수명 주기 규칙(접두어만 고를 수 있음)이
+    그림책만 지우게 한다. 학생 삭제의 `delete_prefix("reports/{studentId}/")`가
+    이 접두어도 함께 지운다.
+    """
+    return f"reports/{MEMORY_BOOK_DIR}/{UUID(str(student_id))}/"
+
+
+def memory_book_prefix(student_id: UUID, book_id: UUID) -> str:
+    return f"{memory_book_student_prefix(student_id)}{UUID(str(book_id))}/"
+
+
+def memory_book_key(student_id: UUID, book_id: UUID) -> str:
+    return memory_book_prefix(student_id, book_id) + "pdf"
 
 
 class ObjectStorage:
@@ -66,6 +88,15 @@ class ObjectStorage:
             CacheControl="private, no-store",
         )
 
+    def exists(self, key: str) -> bool:
+        try:
+            self._client.head_object(Bucket=self._bucket, Key=key)
+            return True
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise
+
     def presigned_url(self, key: str, ttl: int, filename: str) -> dict:
         if not 1 <= ttl <= 3600:
             raise ValueError("Download URL lifetime must be 1..3600 seconds")
@@ -83,19 +114,31 @@ class ObjectStorage:
 
     def delete_prefix(self, prefix: str) -> None:
         # Only canonical report/student prefixes, never an empty bucket-wide prefix.
+        # 허용: 학생 전체 `reports/{s}/`(그림책 `reports/memory-books/{s}/`도 함께),
+        # 리포트 판 `reports/{s}/{r}/r{n}/`, 그림책 한 권 `reports/memory-books/{s}/{b}/`.
         pieces = prefix.split("/")
         if len(pieces) not in (3, 5) or pieces[0] != "reports" or not prefix.endswith("/"):
             raise ValueError("Unsafe report deletion prefix")
-        UUID(pieces[1])
-        if len(pieces) == 5:
+        prefixes = [prefix]
+        if pieces[1] == MEMORY_BOOK_DIR:
+            if len(pieces) != 5:
+                raise ValueError("Unsafe memory book deletion prefix")
             UUID(pieces[2])
-            if not re.fullmatch(r"r[1-9]\d*", pieces[3]):
-                raise ValueError("Unsafe report revision prefix")
+            UUID(pieces[3])
+        else:
+            UUID(pieces[1])
+            if len(pieces) == 5:
+                UUID(pieces[2])
+                if not re.fullmatch(r"r[1-9]\d*", pieces[3]):
+                    raise ValueError("Unsafe report revision prefix")
+            else:
+                prefixes.append(memory_book_student_prefix(UUID(pieces[1])))
         keys = []
-        for page in self._client.get_paginator("list_objects_v2").paginate(
-            Bucket=self._bucket, Prefix=prefix
-        ):
-            keys.extend({"Key": entry["Key"]} for entry in page.get("Contents", []))
+        for each in prefixes:
+            for page in self._client.get_paginator("list_objects_v2").paginate(
+                Bucket=self._bucket, Prefix=each
+            ):
+                keys.extend({"Key": entry["Key"]} for entry in page.get("Contents", []))
         for index in range(0, len(keys), 1000):
             result = self._client.delete_objects(
                 Bucket=self._bucket, Delete={"Objects": keys[index : index + 1000], "Quiet": True}

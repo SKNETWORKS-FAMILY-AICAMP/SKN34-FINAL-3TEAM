@@ -11,6 +11,7 @@ import com.sagomungchi.core.account.service.AccountAccessService
 import com.sagomungchi.core.guardianship.service.ChildAuthorizationService
 import com.sagomungchi.core.conversation.domain.*
 import com.sagomungchi.core.conversation.repository.ConversationRepository
+import com.sagomungchi.core.conversation.repository.MessageJson
 import com.sagomungchi.core.learning.service.LearningRecordService
 import com.sagomungchi.core.learning.service.DashboardQuery
 import org.springframework.http.HttpStatus
@@ -82,6 +83,10 @@ class ConversationService(private val repository: ConversationRepository, privat
             "problems" to report.problems.map { problem -> mapOf("title" to problem.title, "context" to problem.context,
                 "judgment" to problem.judgment, "elements" to problem.elements.map { mapOf("label" to it.label, "satisfied" to it.satisfied) }) })
     }
+    /** Weekly report explanations parents already saw, for the agent to discuss (not for a daily-pinned conversation). */
+    fun explanations(ticket: AnalysisTicket): List<Map<String, String>> =
+        if (ticket.conversation.reportId != null) emptyList()
+        else reports.explanations(ticket.scope.childId, ticket.scope.from, ticket.scope.to)
     private fun reportInvalid(): Nothing = throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "CONVERSATION_REPORT_INVALID",
         "이 자녀의 일일 리포트로만 리포트 대화를 만들 수 있습니다.")
     fun list(child: UUID): Map<String, Any> {
@@ -97,7 +102,7 @@ class ConversationService(private val repository: ConversationRepository, privat
         return locked(parent, id) { row ->
             val messages = repository.messages(id)
             val corrected = corrections.messages(id, messages.map { it.id })
-            view(row, messages.map { messageView(it, it.id in corrected) })
+            view(row, messages.map { messageView(it, it.id in corrected) }, messages.firstOrNull()?.question)
         }
     }
     /** Parent -> student -> conversation order matches #45. Never lock the conversation before the student. */
@@ -151,11 +156,13 @@ class ConversationService(private val repository: ConversationRepository, privat
                 context.copy(studentScope = setOf(selected.childId.toString())))
         }
     }
-    fun request(ticket: AnalysisTicket, report: Map<String, Any?>? = null): Map<String, Any> = buildMap {
+    fun request(ticket: AnalysisTicket, report: Map<String, Any?>? = null,
+        explanations: List<Map<String, String>> = emptyList()): Map<String, Any> = buildMap {
         put("conversationId", ticket.conversation.id); put("messageId", ticket.message.id); put("question", ticket.message.question)
         put("scope", mapOf("studentId" to ticket.scope.childId, "from" to ticket.scope.from, "to" to ticket.scope.to))
         put("history", ticket.history)
         report?.let { put("report", it) }
+        if (explanations.isNotEmpty()) put("explanations", explanations)
     }
 
     fun guard(ticket: AnalysisTicket, action: () -> Unit = {}) {
@@ -299,12 +306,10 @@ class ConversationService(private val repository: ConversationRepository, privat
     }
     fun complete(ticket: AnalysisTicket, result: AnalysisResult?, clarification: JsonNode?) {
         locked(ticket.parent, ticket.conversation.id) {
-            val row = ticket.message.copy(status = "COMPLETED", answer = result?.answer,
-                source = result?.source, clarification = clarification?.toString(),
-                metrics = result?.metrics, verification = result?.verification,
-                fallback = result?.fallback, notice = result?.notice,
+            val row = ticket.message.copy(status = "COMPLETED", answer = result?.answer, source = result?.source,
                 recordCount = result?.recordCount, failureCode = result?.failureCode, completedAt = OffsetDateTime.now())
-            if (!repository.finish(row, ticket.message.retryCount)) conflict()
+            val values = MessageJson(clarification, result?.metrics, result?.verification, result?.fallback, result?.notice)
+            if (!repository.finish(row, ticket.message.retryCount, values)) conflict()
             result?.evidence?.forEach {
                 repository.insertEvidence(EvidenceRow(it.evidenceId!!, row.id, it.attemptId,
                     if (it.reflection) null else it.answerId, if (it.reflection) null else it.answerVersion,
@@ -369,16 +374,17 @@ class ConversationService(private val repository: ConversationRepository, privat
                 .map { mapOf("question" to it, "available" to exists) })
         }!!
     }
-    private fun view(row: ConversationRow, messages: List<Map<String, Any?>>): Map<String, Any?> = mapOf(
+    private fun view(row: ConversationRow, messages: List<Map<String, Any?>>,
+        firstQuestion: String? = row.firstQuestion): Map<String, Any?> = mapOf(
         "conversationId" to row.id, "childId" to row.studentId, "period" to mapOf("from" to row.periodFrom, "to" to row.periodTo),
         "reportId" to row.reportId, "reportRevision" to row.reportRevision,
-        "title" to "학습 기록 분석", "createdAt" to row.createdAt, "messages" to messages)
+        "title" to ConversationTitle.from(firstQuestion), "createdAt" to row.createdAt, "messages" to messages)
     private fun messageView(row: MessageRow, corrected: Boolean): Map<String, Any?> = mapOf("messageId" to row.id, "question" to row.question,
         "status" to row.status, "scope" to row.scope(), "answer" to row.answer, "source" to row.source,
-        "metrics" to row.metrics?.let(json::readTree), "verification" to row.verification?.let(json::readTree),
-        "clarification" to row.clarification?.let(json::readTree), "recordCount" to row.recordCount,
-        "fallback" to (row.fallback?.let(json::readTree) ?: row.failureCode?.takeIf { row.source == "TEMPLATE" }?.let { mapOf("reason" to it) }),
-        "notice" to row.notice?.let(json::readTree), "correctionNotice" to corrected,
+        "metrics" to row.metrics, "verification" to row.verification,
+        "clarification" to row.clarification, "recordCount" to row.recordCount,
+        "fallback" to (row.fallback ?: row.failureCode?.takeIf { row.source == "TEMPLATE" }?.let { mapOf("reason" to it) }),
+        "notice" to row.notice, "correctionNotice" to corrected,
         "failureCode" to row.failureCode?.takeIf { row.status == "FAILED" }, "retryable" to (row.status == "FAILED"),
         "evidence" to repository.evidence(row.id).map { mapOf("evidenceId" to it.id,"kind" to it.kind, "attemptId" to it.attemptId, "answerId" to it.answerId, "answerVersion" to it.answerVersion) })
     private fun instant(value: String): java.time.Instant = try { java.time.OffsetDateTime.parse(value).toInstant() }

@@ -39,6 +39,7 @@ export function Workspace({
   children,
   actions,
   variant,
+  fullScreen = false,
   aside,
 }: {
   title: string
@@ -48,6 +49,7 @@ export function Workspace({
   actions?: ReactNode
   /** parent: 왼쪽 메뉴 + 본문 배치(학부모 대시보드 시안). 관리자는 기존 위쪽 메뉴 배치. */
   variant?: 'parent'
+  fullScreen?: boolean
   /** 왼쪽 메뉴 아래에 붙는 보조 정보(학부모: 이용권) */
   aside?: ReactNode
 }) {
@@ -62,7 +64,7 @@ export function Workspace({
   useLayoutEffect(() => {
     // 메뉴 이동은 새 화면 맨 위에서 시작한다. 명시적 앵커 이동은 보존한다.
     if (variant === 'parent' && !location.hash) window.scrollTo({ top: 0, behavior: 'instant' })
-  }, [variant, location.pathname, location.hash])
+  }, [variant, fullScreen, location.pathname, location.hash])
   useLayoutEffect(() => {
     const element = topbar.current
     if (variant !== 'parent' || !element) return
@@ -71,7 +73,7 @@ export function Workspace({
     const observer = new ResizeObserver(update)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [variant])
+  }, [variant, fullScreen])
   async function leave() {
     try {
       await auth.logout.mutateAsync()
@@ -142,6 +144,10 @@ export function Workspace({
       </label>
     </div>
   )
+  function navigateFromMenu() {
+    setMenuOpen(false)
+    if (menuOpen && variant === 'parent') requestAnimationFrame(() => document.getElementById('parent-main')?.focus())
+  }
   const menu = (
     <nav className="ws-nav" aria-label={`${title} 메뉴`}>
       {nav.map((n) => (
@@ -149,7 +155,7 @@ export function Workspace({
           key={n.path}
           to={n.path + menuSearch(location.search, variant === 'parent')}
           aria-current={location.pathname === n.path ? 'page' : undefined}
-          onClick={() => setMenuOpen(false)}
+          onClick={navigateFromMenu}
         >
           {n.label}
         </Link>
@@ -174,6 +180,15 @@ export function Workspace({
       </button>
     </Modal>
   )
+  if (variant === 'parent' && fullScreen) {
+    return <div id="class-journal">
+      <div className="ws-shell ws-parent ws-parent-fullscreen">
+        <main className="ws-fullscreen-main" id="parent-main" tabIndex={-1}>{children}</main>
+        {expiredModal}
+      </div>
+    </div>
+  }
+
   if (variant === 'parent')
     return (
       <div id="class-journal">
@@ -207,7 +222,7 @@ export function Workspace({
             ))}
           </nav>}
           {expiredModal}
-          {menuOpen && <Modal title="학부모 메뉴" onClose={() => setMenuOpen(false)}><div className="ws-parent-menu">{menu}<div className="ws-menu-actions" onClick={event => { if ((event.target as Element).closest('button')) setMenuOpen(false) }}>{logout}</div><ServiceLinks role={session?.role} onNavigate={() => setMenuOpen(false)} /></div></Modal>}
+          {menuOpen && <Modal title="학부모 메뉴" onClose={() => setMenuOpen(false)}><div className="ws-parent-menu">{menu}<div className="ws-menu-actions" onClick={event => { if ((event.target as Element).closest('button')) setMenuOpen(false) }}>{logout}</div><ServiceLinks role={session?.role} onNavigate={navigateFromMenu} /></div></Modal>}
         </div>
       </div>
     )

@@ -28,7 +28,7 @@ class PublicAuthFilter(private val auth: AuthService, private val properties: Au
         val studentDeviceEntry = (request.method == "GET" && path == "/auth/student/profiles") ||
             (request.method == "POST" && path in setOf("/auth/student/devices", "/auth/student/login"))
         try {
-            if (request.method == "POST" && (studentDeviceEntry || path in setOf("/auth/admin/login", "/auth/parent/login", "/auth/parent/signup", "/auth/refresh", "/auth/parent-unlock", "/auth/logout", "/auth/student/logout", "/auth/student-sessions", "/me/reauth", "/me/reauth/password"))) {
+            if (request.method == "POST" && (studentDeviceEntry || path in setOf("/auth/admin/login", "/auth/parent/login", "/auth/parent/signup", "/auth/refresh", "/auth/parent-unlock", "/auth/logout", "/auth/student/logout", "/auth/student/renew", "/auth/student-sessions", "/me/reauth", "/me/reauth/password"))) {
                 if (request.getHeader("Origin") != properties.webOrigin || request.getHeader("X-Requested-With") != "XMLHttpRequest")
                     throw BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "허용되지 않은 요청 출처입니다.")
             }

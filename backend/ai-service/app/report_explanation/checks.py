@@ -68,7 +68,7 @@ DOUBLE_QUOTED = re.compile(r'[“"「『]([^”"」』]*)[”"」』]')
 EMPTY_QUOTES = re.compile(r"(?:['\"“”‘’]\s*){3,}")
 REPEATED_DOTS = re.compile(r"\.(?:\s*\.)+")
 SENTENCE_END = ".!?。"
-QUOTE_PAIRS = {'"': '"', "'": "'"}
+QUOTE_PAIRS = {'"': '"', "'": "'", "‘": "’", "“": "”"}
 MIN_QUOTE_OVERLAP = 2
 TITLES = ("상세 분석", "보완할 지점", "개선 방안")
 
@@ -84,7 +84,7 @@ def _requote(match: re.Match[str], source: str) -> str:
     return f'"{inner}"' if inner in source else f"'{inner}'"
 
 
-def _split(paragraph: str) -> list[str]:
+def split_prose(paragraph: str) -> list[str]:
     """따옴표 안의 마침표에서는 자르지 않는 문장 나누기"""
     parts, start, closing = [], 0, None
     for index, char in enumerate(paragraph):
@@ -134,7 +134,7 @@ def clean(text: str | None, source: str) -> str:
     paragraphs = []
     for paragraph in re.split(r"\n\s*\n", text):
         flat = re.sub(r"\s+", " ", paragraph).strip()
-        parts = _split(flat)
+        parts = split_prose(flat)
         if parts and not _ended(parts[-1]):
             parts.pop()  # 문장 끝 표시 없이 끝난 조각은 잘린 출력으로 봄(#747)
         kept = [s for s in parts if _keep(s, source)]
@@ -149,7 +149,7 @@ def allowed(text: str, source: str) -> bool:
         return False
     if PREFACE.search(text) or LIST_OR_MARKDOWN.search(text) or SCORE_HINT.search(text):
         return False
-    if any(len(RUBRIC_TERM.findall(sentence)) >= RUBRIC_DUMP for sentence in _split(text)):
+    if any(len(RUBRIC_TERM.findall(sentence)) >= RUBRIC_DUMP for sentence in split_prose(text)):
         return False
     if any(quote not in source for quote in DOUBLE_QUOTED.findall(text)):
         return False
@@ -185,7 +185,7 @@ def _dedupe(sections: list[tuple[str, str]]) -> Cleaned:
         paragraphs = []
         for paragraph in body.split("\n\n"):
             kept = []
-            for sentence in _split(paragraph):
+            for sentence in split_prose(paragraph):
                 total += 1
                 key = REPEAT_KEY.sub("", sentence)
                 if any(_repeats(key, earlier) for earlier in seen):

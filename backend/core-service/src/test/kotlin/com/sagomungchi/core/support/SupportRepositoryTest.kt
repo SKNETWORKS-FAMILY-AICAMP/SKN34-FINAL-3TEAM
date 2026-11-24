@@ -1,5 +1,6 @@
 package com.sagomungchi.core.support
 
+import com.sagomungchi.core._common.json.JsonObject
 import com.sagomungchi.core._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.core.support.repository.SupportRepository
 import com.sagomungchi.core.support.domain.*
@@ -36,10 +37,10 @@ class SupportRepositoryTest: PostgresRepositoryTest() {
   repeat(2) { repository.mapper.insertCorrection(correction.copy(id=UUID.randomUUID(),requestKey=null,processingStatus=null,corrected=null)) }
   repository.mapper.insertCorrection(correction)
   assertEquals(3,repository.mapper.corrections(report.id).size)
-  repository.mapper.updateCorrection(correction.copy(processingStatus="COMPLETED",impact="""{"report":"UNKNOWN"}""",providerResult="""{"correctionId":"provider"}""",completedAt=now))
+  repository.mapper.updateCorrection(correction.copy(processingStatus="COMPLETED",impact=JsonObject(mapOf("report" to "UNKNOWN")),providerResult=JsonObject(mapOf("correctionId" to "provider")),completedAt=now))
   val saved=repository.mapper.correction(report.id)!!
   assertEquals("RETHINK",saved.previousResult);assertEquals("사유",saved.reason);assertEquals("COMPLETED",saved.processingStatus)
-  assertTrue(saved.providerResult!!.contains("provider"));assertNotNull(saved.completedAt)
+  assertEquals(JsonObject(mapOf("correctionId" to "provider")),saved.providerResult);assertEquals(JsonObject(mapOf("report" to "UNKNOWN")),saved.impact);assertNotNull(saved.completedAt)
   assertEquals("IN_REVIEW",repository.mapper.report(report.id)!!.status)
  }
 }

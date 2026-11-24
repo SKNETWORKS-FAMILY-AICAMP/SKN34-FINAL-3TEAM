@@ -24,6 +24,7 @@ from app.generation.records import (
     AnswerRecord,
     AttemptRecord,
     ChangePair,
+    EssayAnswer,
     EvidenceRecord,
     JudgedElement,
     JudgmentRecord,
@@ -146,9 +147,14 @@ class AnswerInput(InputModel):
             raise ValueError("thinkingSeconds and writingSeconds must be both present or both null")
         return self
 
-    def written_text(self) -> str:
-        # Same fields/order as learning TextCounts.writtenText. Never count labels,
-        # selection IDs, draft/memo or extra fields; keep display text separately.
+    def essay(self) -> EssayAnswer | None:
+        if self.input_type != "ESSAY":
+            return None
+        content = EssayContent.model_validate(self.content).essay
+        return EssayAnswer(content.claim, tuple(content.reasons), content.rebuttal)
+
+    def written_text(self, essay: EssayAnswer | None = None) -> str:
+        # Same fields/order as learning TextCounts.writtenText. Keep display text separately.
         match self.input_type:
             case "NARRATIVE":
                 fields = [NarrativeContent.model_validate(self.content).text]
@@ -156,16 +162,37 @@ class AnswerInput(InputModel):
                 content = SolutionContent.model_validate(self.content)
                 fields = [*content.steps, content.final_answer]
             case "ESSAY":
-                essay = EssayContent.model_validate(self.content).essay
+                essay = essay or self.essay()
+                assert essay is not None
                 fields = [essay.claim, *essay.reasons, essay.rebuttal]
             case _:
                 fields = []
         return "\n".join(value for value in fields if value.strip())
 
+    def record(self) -> AnswerRecord:
+        essay = self.essay()
+        return AnswerRecord(
+            id=self.answer_id,
+            version=self.version,
+            submitted_at=self.submitted_at,
+            text=self.text,
+            process_status=self.feedback.status,
+            written_text=self.written_text(essay),
+            input_type=self.input_type,
+            judgment=self.feedback.judgment_record(),
+            followup=self.feedback.followup.question
+            if self.feedback.status == "DONE" and self.feedback.followup
+            else None,
+            thinking_seconds=self.thinking_seconds,
+            writing_seconds=self.writing_seconds,
+            essay=essay,
+        )
+
 
 class MissionInput(InputModel):
     id: UUID | None = None
     title: str
+    question: str | None = None
     thinking_type: ThinkingType
 
 
@@ -192,11 +219,15 @@ class AttemptInput(InputModel):
     context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None = None
     scheduled_day: Literal["MON", "TUE", "WED", "THU", "FRI"] | None = None
 
+    explanation_requirements: dict[UUID, str] = Field(default_factory=dict)
+
     def record(self) -> AttemptRecord:
         return AttemptRecord(
             id=self.attempt_id,
             student_id=self.student_id,
             mission_title=self.mission.title,
+            mission_question=self.mission.question,
+            explanation_requirements=self.explanation_requirements,
             mission_id=self.mission.id,
             context=self.context,
             scheduled_day=self.scheduled_day
@@ -204,24 +235,7 @@ class AttemptInput(InputModel):
             else None,
             thinking_type=self.mission.thinking_type,
             status=self.status,
-            answers=tuple(
-                AnswerRecord(
-                    a.answer_id,
-                    a.version,
-                    a.submitted_at,
-                    a.text,
-                    a.feedback.status,
-                    a.written_text(),
-                    a.input_type,
-                    a.feedback.judgment_record(),
-                    a.feedback.followup.question
-                    if a.feedback.status == "DONE" and a.feedback.followup
-                    else None,
-                    a.thinking_seconds,
-                    a.writing_seconds,
-                )
-                for a in self.answers
-            ),
+            answers=tuple(answer.record() for answer in self.answers),
             hint_opened_at=tuple(h.opened_at for h in self.hint_usages),
             completed_at=self.completed_at,
             reflection=ReflectionRecord(

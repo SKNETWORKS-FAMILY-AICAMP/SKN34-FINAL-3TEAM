@@ -38,7 +38,7 @@ export function ConsentSettings({ child }: { child?: Child }) {
       <header><h3>{entry.document.title}</h3><span className="consent-state">{entry.status === 'WITHDRAWN' ? '철회함' : entry.status === 'AGREED' && entry.agreed ? '동의함' : '상태 확인 필요'}</span></header>
       <p>적용 대상 · {entry.studentId ? child?.nickname ?? '선택한 자녀' : '보호자 계정'}</p>
       <button type="button" className="consent-document-trigger" aria-haspopup="dialog" onClick={() => setReading({title: entry.document.title, version: entry.document.version, content: entry.document.content, agreedAt: entry.agreedAt, withdrawnAt: entry.withdrawnAt ?? undefined})}><FileText size={18} aria-hidden="true"/><span>동의 문서·이력 보기</span><ChevronRight size={18} aria-hidden="true"/></button>
-      {entry.agreed && entry.status === 'AGREED' && <footer className="consent-entry-actions"><button className="cj-secondary" disabled={withdraw.isPending} onClick={() => {
+      {entry.agreed && entry.status === 'AGREED' && <footer className="consent-entry-actions"><button className="cj-secondary" disabled={withdraw.isPending || !!history.error || history.isPending} onClick={() => {
         void withdraw.mutateAsync(entry.consentId).then(refreshState).catch(() => {})
       }}>{entry.document.title} 철회</button></footer>}
     </article>)}
@@ -86,7 +86,7 @@ function CommunityConsent({ child }: { child: Child }) {
       <details className="community-consent-document"><summary>동의 문서 전문 보기 <span>v{doc.version}</span></summary><div className="parent-document-body">{doc.content}</div></details>
       <div className="community-consent-actions">
       {agreed ? (
-        <button className="cj-secondary" disabled={withdraw.isPending} onClick={() => { void withdraw.mutateAsync(current!.consentId).catch(() => {}) }}>
+        <button className="cj-secondary" disabled={withdraw.isPending || !!history.error || history.isPending} onClick={() => { void withdraw.mutateAsync(current!.consentId).catch(() => {}) }}>
           커뮤니티 동의 철회
         </button>
       ) : (

@@ -4,8 +4,8 @@ import { mockAccountChildren, mockIdentity } from './accounts.ts'
 
 // 목업 이용권의 유일한 출처. /children 응답에는 이용권을 넣지 않고(api-spec 3.7·5.3),
 // entitlement·구독 목업과 목업 안 권한 검사(분석 대화·서술·추가 문제)가 모두 이 구독 상태만 읽는다.
-export const premiumProduct: PaymentProduct = { id: '74000000-0000-4000-8000-000000000001', code: 'PREMIUM', name: '프리미엄', price: 14900, billingCycle: 'MONTHLY', childLimit: 1, active: true, features: { feedback: true, conversations: true, fullReport: true }, limits: { dailyFeedback: 50, dailyConversations: 30, reportNarrative: true } }
-export const freeProduct: PaymentProduct = { ...premiumProduct, id: '74000000-0000-4000-8000-000000000000', code: 'FREE', name: '무료', price: 0, billingCycle: 'NONE', features: { feedback: true, conversations: false, fullReport: false }, limits: { dailyMissions: 3, dailyConversations: 0, reportNarrative: false } }
+export const premiumProduct: PaymentProduct = { id: '74000000-0000-4000-8000-000000000001', code: 'PREMIUM', name: '프리미엄', price: 14900, billingCycle: 'MONTHLY', childLimit: 1, active: true, features: { feedback: true, conversations: true, fullReport: true, memoryBook: true }, limits: { dailyFeedback: 50, dailyConversations: 30, reportNarrative: true, dailyMemoryBooks: 3 } }
+export const freeProduct: PaymentProduct = { ...premiumProduct, id: '74000000-0000-4000-8000-000000000000', code: 'FREE', name: '무료', price: 0, billingCycle: 'NONE', features: { feedback: true, conversations: false, fullReport: false, memoryBook: false }, limits: { dailyMissions: 3, dailyConversations: 0, reportNarrative: false, dailyMemoryBooks: 3 } }
 export type PaymentAccount = { subscriptions: PaymentSubscription[]; payments: PaymentRecord[]; orders: Map<string, PaymentOrder>; keys: Map<string, { body: string; result: unknown }> }
 /** 처음부터 구독 중인 가상 자녀. 신규 등록 자녀는 구독이 없어 무료다. */
 const seededPremium = ['demo-seoyun']

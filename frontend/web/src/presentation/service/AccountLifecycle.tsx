@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Child } from '../../domain/classroom.ts'
-import type { DeletionRequest, DeletionScope, ReauthPurpose } from '../../domain/service.ts'
+import type { DeletionScope, ReauthPurpose } from '../../domain/service.ts'
 import { serviceApi } from '../../data/serviceApi.ts'
-import { useParentQuery, useParentMutation } from '../../data/parent/queries.ts'
+import { useParentQuery, useParentMutation, useChildAccountAction, useDeletionRequest } from '../../data/parent/queries.ts'
 import { useReauthReturn } from '../../data/reauthReturn.ts'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import { QueryFeedback } from '../common/Workspace.tsx'
@@ -41,14 +41,14 @@ function GoogleRecheck({ purpose, childId, scope, onProof }: { purpose: ReauthPu
 export function AccountLifecycle({ child }: { child: Child }) {
   const impact=useParentQuery(['deletion-impact',child.id],signal=>serviceApi.impact(child.id,signal))
   const [choice,setChoice]=useState<'UNLINK'|DeletionScope>('UNLINK'),[token,setToken]=useState(''),[confirmed,setConfirmed]=useState(false),[name,setName]=useState(''),[notice,setNotice]=useState('')
-  const [result,setResult]=useState<DeletionRequest|null>(null)
-  const action=useParentMutation(async()=>{if(choice==='UNLINK'){await serviceApi.unlink(child.id,token);return null}return serviceApi.deleteChild(child.id,choice,token)})
-  const check=useParentMutation(()=>serviceApi.deletion(child.id,result!.deletionRequestId))
+  const [requestId,setRequestId]=useState('')
+  const action=useChildAccountAction(child.id)
+  const status=useDeletionRequest(child.id,requestId),result=status.data
   return <div className="svc-page"><section className="ws-card ws-form"><h2>자녀 연결·기록 관리</h2><p>연결 해제와 기록 삭제는 다릅니다. 아래에서 각 작업의 영향을 확인해 주세요.</p><QueryFeedback query={impact}/><dl className="parent-account-effects">{impact.data?.actions.map(a=><div key={a.scope}><dt>{accountActionLabel(a.scope)}</dt><dd>{accountEffectText(a.effect)}</dd></div>)}</dl><p>거래 기록 보관 기간: {impact.data?.retainedTransactionsYears??'확인 중'}년</p>
     <label>요청할 작업<select value={choice} onChange={e=>{setChoice(e.target.value as typeof choice);setToken('');setConfirmed(false);setName('')}}><option value="UNLINK">보호자 연결 해제</option><option value="PROFILE">프로필과 학습 기록 삭제</option><option value="RECORDS">학습 기록 삭제 (프로필 유지)</option></select></label>
     <IdentityRecheck key={choice+child.id} purpose={choice==='UNLINK'?'CHILD_UNLINK':'CHILD_DELETE'} childId={child.id} scope={choice==='UNLINK'?undefined:choice} onProof={setToken}/>
     <label>확인할 자녀 별명<input value={name} onChange={e=>setName(e.target.value)}/></label><label className="ws-check"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>대상 자녀와 위의 처리 범위를 확인했습니다.</label>
-    <button disabled={!impact.data||!token||!confirmed||name!==child.nickname||action.isPending} onClick={()=>void action.mutateAsync(undefined).then(r=>{setResult(r);setToken('');setConfirmed(false);setNotice(r?'삭제 요청을 접수했습니다. 서비스별 처리 상태를 확인해 주세요.':'연결 해제를 확인했습니다.')}).catch(()=>{})}>선택한 작업 요청</button><ErrorNotice error={action.error}/>{notice && <p role="status">{notice}</p>}
-    {result&&<div><p>요청 {result.deletionRequestId} · {result.status}</p><p>완료한 서비스: {result.completedServices.join(', ')||'없음'}</p><button disabled={check.isPending} onClick={()=>void check.mutateAsync(undefined).then(setResult).catch(()=>{})}>삭제 처리 상태 확인</button><ErrorNotice error={check.error}/></div>}
+    <button disabled={!impact.data||!token||!confirmed||name!==child.nickname||action.isPending} onClick={()=>void action.mutateAsync({choice,token}).then(r=>{setRequestId(r?.deletionRequestId??'');setToken('');setConfirmed(false);setNotice(r?'삭제 요청을 접수했습니다. 서비스별 처리 상태를 확인해 주세요.':'연결 해제를 확인했습니다.')}).catch(()=>{})}>선택한 작업 요청</button><ErrorNotice error={action.error}/>{notice && <p role="status">{notice}</p>}
+    {result&&<div><p>요청 {result.deletionRequestId} · {result.status}</p><p>완료한 서비스: {result.completedServices.join(', ')||'없음'}</p><button disabled={status.isFetching} onClick={()=>void status.refetch()}>삭제 처리 상태 확인</button><ErrorNotice error={status.error}/></div>}
   </section></div>
 }

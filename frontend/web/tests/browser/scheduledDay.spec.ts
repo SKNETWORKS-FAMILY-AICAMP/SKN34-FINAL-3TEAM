@@ -6,8 +6,8 @@ test('다른 날 푼 문제의 예정 요일만 보이며 이전 리포트는 �
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
   await page.goto('/parent/report')
-  await page.getByRole('button', { name: '리포트 자세히 보기', exact: false }).click()
-  await page.getByLabel('리포트 종류').selectOption('DAILY')
+  await page.locator('.report-period-picker > summary').click()
+  await page.getByRole('button', { name: '일일', exact: true }).click()
   await page.evaluate(async () => {
     const { reports } = await import('/src/mocks/fixtures/parent.ts' as string)
     for (const versions of reports.values()) for (const r of versions) if (r.periodType === 'DAILY') {
@@ -22,9 +22,10 @@ test('다른 날 푼 문제의 예정 요일만 보이며 이전 리포트는 �
       ].map((p, i) => ({ missionId: `m-${i}`, attemptId: `a-${i}`, judgment: 'PARTIAL', followups: [], finalAnswer: null, elements: [], reflection: null, quotes: [], ...p }))
     }
   })
-  await page.locator('.parent-report-grid').getByRole('button', { name: '자세히 보기', exact: true }).first().click()
-  await page.getByRole('button', { name: '활동 기록', exact: true }).click()
-  for (const summary of await page.locator('details.report-answer-comparison > summary').all()) await summary.click()
+  await page.getByRole('list', { name: '리포트 일자' }).getByRole('button').first().click()
+  const questions = page.locator('details.report-answer-comparison > summary')
+  await expect(questions).toHaveCount(5)
+  for (const summary of await questions.all()) await summary.click()
   await expect(page.getByText('화요일 문제 · 목요일에 풀었어요', { exact: true })).toBeVisible()
   await expect(page.getByText('월요일 문제 · 목요일에 풀었어요', { exact: true })).toBeVisible()
   for (const title of ['당일 문제', '추가 문제', '이전 리포트 문제']) {

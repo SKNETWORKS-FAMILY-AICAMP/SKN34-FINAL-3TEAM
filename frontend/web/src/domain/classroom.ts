@@ -138,6 +138,8 @@ export interface Attempt {
   checklist?: FeedbackElement[]
   /** 시도 종류(core 공개 계약 #700, 선택 칸). 없으면 내 공책에서 "테마 문제"로 본다(#710 기준안) */
   context?: import('./retention.ts').AttemptContext
+  /** 테마 시도의 오늘 장면(learning #438 `themeScene`, EXTRA·없음은 null). 오늘 장면 화면이 문제 전에 쓴다(#807) */
+  themeScene?: import('./themeScene.ts').ThemeScene | null
 }
 export interface StudentHome {
   student: Child
@@ -197,6 +199,7 @@ export type DemoScenario =
   | 'partial'
   | 'rethink'
   | 'running'
+  | 'feedback-slow'
   | 'finish-unmet'
   | 'home-empty'
   | 'home-fail'

@@ -96,15 +96,42 @@ def test_changes_read_all_pages(monkeypatch) -> None:
 def test_attempts_without_size_read_all_pages(monkeypatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         page = int(request.url.params["page"])
-        return body(items=ATTEMPTS if page == 0 else [], page=page, size=100, totalElements=4)
+        return body(items=ATTEMPTS if page == 0 else [], page=page, size=100, totalElements=3)
 
     seen = use_transport(monkeypatch, handler)
     attempts = asyncio.run(run(lambda client: client.attempts(SCOPE, None)))
     assert len(attempts) == 3
-    assert [r.url.params["page"] for r in seen] == ["0", "1"]  # 빈 페이지에서 멈춤
+    assert [r.url.params["page"] for r in seen] == ["0"]  # 총건수를 채우면 멈춤
     assert seen[0].url.params["size"] == "100"
     assert attempts[2].reflection is not None
     assert attempts[2].reflection.created_at == "2026-10-22T19:30:00+09:00"
+
+
+def test_empty_page_with_zero_total_is_no_records(monkeypatch) -> None:
+    use_transport(monkeypatch, lambda request: body(items=[], page=0, size=100, totalElements=0))
+    assert asyncio.run(run(lambda client: client.attempts(SCOPE, None))) == []
+
+
+@pytest.mark.parametrize(
+    "pages",
+    [
+        [{"items": []}],  # totalElements 누락
+        [{"items": [], "totalElements": 3}],  # 총건수와 빈 페이지 불일치
+        [{"items": [], "totalElements": -1}],
+        [{"items": [], "totalElements": "0"}],
+        [{"items": ATTEMPTS, "totalElements": 4}, {"items": [], "totalElements": 5}],  # 총건수 변경
+        [{"items": ATTEMPTS, "totalElements": 2}],  # 모은 항목 수 초과
+    ],
+)
+def test_invalid_pages_are_not_empty_records(monkeypatch, pages) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params["page"])
+        return body(page=page, size=100, **pages[page])
+
+    use_transport(monkeypatch, handler)
+    with pytest.raises(RecordsUnavailable) as caught:
+        asyncio.run(run(lambda client: client.attempts(SCOPE, None)))
+    assert (caught.value.code, caught.value.retryable) == ("RECORDS_INVALID", False)
 
 
 @pytest.mark.parametrize(

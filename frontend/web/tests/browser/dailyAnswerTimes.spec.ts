@@ -10,8 +10,8 @@ test('일일 리포트 문제별로 답변마다 생각·작성 시간을 보이
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
   await page.goto('/parent/report')
-  await page.getByRole('button', { name: '리포트 자세히 보기', exact: false }).click()
-  await page.getByLabel('리포트 종류').selectOption('DAILY')
+  await page.locator('.report-period-picker > summary').click()
+  await page.getByRole('button', { name: '일일', exact: true }).click()
   // 시연 목 저장소의 일일 리포트에 report 상세 모양의 문제 하나를 넣는다(원문 비공개, 2번째 답은 시간 없음)
   await page.evaluate(async () => {
     const { reports } = await import('/src/mocks/fixtures/parent.ts' as string)
@@ -27,8 +27,7 @@ test('일일 리포트 문제별로 답변마다 생각·작성 시간을 보이
       }]
     }
   })
-  await page.locator('.parent-report-grid').getByRole('button', { name: '자세히 보기', exact: true }).first().click()
-  await page.getByRole('button', { name: '활동 기록', exact: true }).click()
+  await page.getByRole('list', { name: '리포트 일자' }).getByRole('button').first().click()
   const problem = page.locator('details.report-answer-comparison').filter({ hasText: '합성 시간 문제' })
   await problem.locator('summary').click()
   await expect(problem.getByText('처음 답: 생각 1분 미만 · 작성 2분', { exact: true })).toBeVisible()

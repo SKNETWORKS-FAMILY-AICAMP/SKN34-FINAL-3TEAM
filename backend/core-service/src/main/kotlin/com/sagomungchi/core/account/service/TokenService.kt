@@ -30,10 +30,10 @@ class TokenService(private val properties: AuthProperties) {
     }
     private val random = SecureRandom()
 
-    fun access(session: AuthSession): String = encode("access",
+    fun access(session: AuthSession, deviceId: String? = null): String = encode("access",
         if (session.role == "STUDENT") properties.studentAccessTtl else properties.accessTtl, mapOf(
         "sub" to session.userId.toString(), "sid" to session.id.toString(), "ver" to session.version,
-        "role" to session.role, "studentId" to session.studentId?.toString(),
+        "role" to session.role, "studentId" to session.studentId?.toString(), "deviceId" to deviceId,
     ), session.expiresAt.toInstant())
 
     fun oauthState(state: String, nonce: String, verifier: String): String =

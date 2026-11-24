@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Conversation, MessageResult, Scope, StreamState } from '../../domain/parent.ts'
+import type { DeletionScope } from '../../domain/service.ts'
 import { parentApi } from './api.ts'
 import { sharingApi } from '../classroom/sharingApi.ts'
 import { guardianTransfers } from '../guardianTransfers.ts'
@@ -25,14 +26,35 @@ export function useParentQuery<T>(
         : false,
   })
 }
-export function useParentMutation<T, V>(fn: (v: V) => Promise<T>) {
+/** 학부모 저장 요청. 성공하면 학부모·자녀 쿼리를 무효화한 뒤 onSaved를 부른다. */
+export function useParentMutation<T, V>(fn: (v: V) => Promise<T>, onSaved?: (data: T) => void) {
   const cache = useQueryClient()
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => {
+    onSuccess: (data) => {
       void cache.invalidateQueries({ queryKey: ['parent'] })
       void cache.invalidateQueries({ queryKey: ['children'] })
+      onSaved?.(data)
     },
+  })
+}
+const deletionKey = (childId: string, requestId: string) => ['parent', 'deletion-request', childId, requestId]
+/** 자녀 연결 해제(null 반환) 또는 기록 삭제 요청. 삭제 접수 응답은 처리 상태 조회의 첫 값으로 넣는다. */
+export function useChildAccountAction(childId: string) {
+  const cache = useQueryClient()
+  return useParentMutation(async ({ choice, token }: { choice: 'UNLINK' | DeletionScope; token: string }) => {
+    if (choice === 'UNLINK') { await serviceApi.unlink(childId, token); return null }
+    return serviceApi.deleteChild(childId, choice, token)
+  }, (request) => { if (request) cache.setQueryData(deletionKey(childId, request.deletionRequestId), request) })
+}
+/** 자녀 삭제 요청의 서비스별 처리 상태. 접수 응답으로 시작해 바로 다시 묻지 않고, 확인 단추(refetch)나 학부모 저장 뒤 무효화 때 다시 읽는다. */
+export function useDeletionRequest(childId: string, requestId: string) {
+  return useQuery({
+    queryKey: deletionKey(childId, requestId),
+    queryFn: ({ signal }) => serviceApi.deletion(childId, requestId, signal),
+    enabled: !!requestId,
+    retry: false,
+    staleTime: Infinity,
   })
 }
 export function useParentDashboard(scope: Scope, page = 0, recordsEnabled = true) {
@@ -44,10 +66,10 @@ export function useParentDashboard(scope: Scope, page = 0, recordsEnabled = true
 }
 
 /** 학생이 정한 답 공개 상태(학부모 화면 안내). 학생이 바꿀 수 있어 볼 때마다 다시 묻는다. */
-export function useParentSharingNotice(studentId: string) {
+export function useParentSharingNotice(studentId: string, enabled = true) {
   return useQuery({ queryKey: ['parent', 'sharing-preferences', studentId],
     queryFn: ({ signal }) => sharingApi.get(studentId, 'PARENT', signal), retry: false,
-    staleTime: 0, refetchOnWindowFocus: 'always' })
+    enabled, staleTime: 0, refetchOnWindowFocus: 'always' })
 }
 /** 보호자 이관 요청 목록. 상대가 수락·거절할 수 있어 5초마다 다시 묻는다. */
 export function useGuardianTransferList() {
@@ -116,15 +138,21 @@ export function useConversationRequests() {
               o.onCreated(c)
             }
             let result: MessageResult | undefined
+            let refreshedTitle = false
             await parentApi.message(conversationId, o.text, o.scope, s => {
+              if (signal.aborted) return
               if (s.phase === 'DONE') result = s.result
-              if (!signal.aborted) o.onState(s)
+              if (!refreshedTitle && s.messageId) {
+                refreshedTitle = true
+                refresh('conversations')
+              }
+              o.onState(s)
             }, signal, o.retryId)
             if (signal.aborted) return undefined
             refresh('conversation', 'conversations')
             return { conversationId, result }
           } catch (e) {
-            if (!signal.aborted) refresh('conversation')
+            if (!signal.aborted) refresh('conversation', 'conversations')
             throw e
           }
         }),

@@ -1,9 +1,9 @@
-"""리포트 상세 설명 흐름 (FN-RPT-09, api-spec 4.2.3, #477, @2 로컬 Gemma 상세 설명).
+"""리포트 상세 설명 흐름 (FN-RPT-09, api-spec 4.2.3, #477, 로컬 Gemma 상세 설명).
 
 1. 설명 모델(레지스트리 MODEL report-explanation)이 explanation/grade-{학년}/{입력 유형}에
    활성이 아니면 {active:false}
-2. 답변 1개에 설명 전용 sLLM(Gemma LoRA) 호출(JSON 세 칸, 중복 접수 없이 1회 호출,
-   사용량 REPORT_EXPLANATION)
+2. 설명용 Gemma LoRA로 상세 분석과 보완·개선 구역을 따로 생성. 질문이 나오면 이미 답했는지 확인.
+   과거 입력(문제·항목 판정 없음)은 기존 구조화 설명 경로 사용. 사용량 REPORT_EXPLANATION.
 3. 문장 단위 정리(checks.clean) → 규칙 검사 → "상세 분석 / 보완할 지점 / 개선 방안" 조립 → 인용
 
 로컬 전용: 환경변수 EXPLANATION_LOCAL_SKIP_REGISTRY=1이면 1의 레지스트리 확인을 건너뛰고
@@ -16,8 +16,8 @@ LLM 실패·미설정·마감 초과는 503 AI_UNAVAILABLE, 검사 실패는 422
 어느 쪽이든 report는 그 설명만 빼고 "설명 미포함"으로 둠 (P16).
 
 재생성 (2026-11-20, LoRA 반복 대응): 첫 출력이 출력 한도까지 같은 말을 되풀이했거나
-(LLM_INVALID_OUTPUT), 정리·반복 제거 뒤 부족하면(상세 분석이 없음, 문장 셋 중 하나 이상이
-반복, 쓴 개선 방안이 통째로 빠짐) 같은 마감 안에서 반복 억제(repetition_penalty)를 켜고
+(LLM_INVALID_OUTPUT), 정리·반복 제거 뒤 부족하면(상세 분석이 없거나 문장 셋 중 하나 이상이
+반복) 같은 마감 안에서 반복 억제(repetition_penalty)를 켜고
 한 번만 다시 만든다. 같은 요청을 그대로 다시 보내는 중복 접수가 아니라 설정을 바꾼 새 요청이다.
 다시 만든 출력도 부족하면 422로 설명 미포함.
 """
@@ -30,11 +30,13 @@ from app.config import Settings
 from app.errors import ApiError
 from app.followup.models import LlmVersions
 from app.llm.base import LlmClient, LlmUnavailable
-from app.prompt_versions.models import EXPLANATION_MODEL
+from app.llm.report import PlainTextOutput
+from app.prompt_versions.models import EXPLANATION_MODEL, PromptChoice
 from app.prompt_versions.registry import ActiveVersions
-from app.report_explanation import checks
+from app.report_explanation import checks, staged
 from app.report_explanation.models import (
     ActiveExplanationResponse,
+    CriterionJudgment,
     Explanation,
     ExplanationDetail,
     ExplanationRequest,
@@ -73,10 +75,83 @@ class ExplanationService:
         prompt = self._versions.prompt("reportExplanation")
         deadline = time.monotonic() + self._settings.explanation_deadline
 
+        target = staged.select_target(request)
+        if target is not None:
+            try:
+                sections = await self._generate_sections(request, target, prompt, deadline)
+            except LlmUnavailable as exc:
+                raise unavailable(exc) from exc
+            if not sections:
+                raise rejected()
+        else:
+            sections = await self._legacy_sections(request, prompt, deadline)
+
+        text = checks.compose(sections)
+        quote = checks.pick_quote(request.text, " ".join(body for _, body in sections[:2]))
+        return ActiveExplanationResponse(
+            explanation=Explanation(text=text, quote=quote),
+            versions=LlmVersions(model=model_label, prompt=prompt.version),
+        )
+
+    async def _generate_sections(
+        self,
+        request: ExplanationRequest,
+        target: CriterionJudgment,
+        prompt: PromptChoice,
+        deadline: float,
+    ) -> list[tuple[str, str]]:
+        async def generate(user: str, penalty: float | None, max_tokens: int) -> str:
+            result = await self._llm.generate(
+                system="",
+                user=user,
+                output=PlainTextOutput,
+                call_type="REPORT_EXPLANATION",
+                prompt_version=prompt.version,
+                max_tokens=max_tokens,
+                deadline=deadline,
+                max_retries=0,
+                repetition_penalty=penalty,
+            )
+            return result.data.text
+
+        max_tokens = self._settings.explanation_max_tokens
+        sections = await staged.stage(
+            generate,
+            prompt.body.analysis_user(request),
+            max_tokens,
+            lambda raw: staged.analysis_sections(raw, request.text),
+        )
+        if not sections:
+            return []
+        try:
+            supplement = await staged.stage(
+                generate,
+                prompt.body.supplement_user(request, target),
+                max_tokens,
+                lambda raw: staged.supplement_sections(raw, sections[0][1], request.text, target),
+            )
+        except LlmUnavailable:
+            logger.info("리포트 보완 설명 생성 실패. 상세 분석만 유지")
+            return sections
+        if supplement:
+            next_steps = await staged.verified_suggestion(
+                supplement[1][1],
+                request.text,
+                generate,
+                lambda question: prompt.body.unanswered_user(request, question),
+                prompt.body.question_user(request, target),
+            )
+            if next_steps:
+                sections.extend([supplement[0], ("개선 방안", next_steps)])
+        return sections
+
+    async def _legacy_sections(
+        self, request: ExplanationRequest, prompt: PromptChoice, deadline: float
+    ) -> list[tuple[str, str]]:
         async def generate(penalty: float | None) -> ExplanationDetail:
             result = await self._llm.generate(
                 system=prompt.body.SYSTEM,
-                user=prompt.body.build_user(request.grade, request.topic, request.text),
+                user=prompt.body.build_user(request),
                 output=ExplanationDetail,
                 call_type="REPORT_EXPLANATION",
                 prompt_version=prompt.version,
@@ -86,7 +161,7 @@ class ExplanationService:
                 max_retries=0,
                 repetition_penalty=penalty,
             )
-            return result.data
+            return ExplanationDetail(analysis=result.data.analysis)
 
         try:
             try:
@@ -96,36 +171,32 @@ class ExplanationService:
                     raise
                 detail = None  # 출력 한도까지 반복했거나 형식이 깨짐
             report = checks.cleaned(detail, request.text) if detail else None
-            if detail is None or report is None or insufficient(detail, report):
+            if detail is None or report is None or insufficient(report):
                 logger.info("리포트 상세 설명 재생성(반복 억제)")
                 detail = await generate(REGENERATE_PENALTY)
                 report = checks.cleaned(detail, request.text)
-                if insufficient(detail, report):
+                if insufficient(report):
                     raise rejected()
         except LlmUnavailable as exc:
-            raise ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable) from exc
+            raise unavailable(exc) from exc
         sections = report.sections
         if not sections or sections[0][0] != "상세 분석":
             raise rejected()
         if not all(checks.allowed(body, request.text) for _, body in sections):
             logger.warning("리포트 상세 설명 검사 실패")
             raise rejected()
-        text = checks.compose(sections)
-        quote = checks.pick_quote(request.text, " ".join(body for _, body in sections[:2]))
-        return ActiveExplanationResponse(
-            explanation=Explanation(text=text, quote=quote),
-            versions=LlmVersions(model=model_label, prompt=prompt.version),
-        )
+        return sections
 
 
-def insufficient(detail: ExplanationDetail, report: checks.Cleaned) -> bool:
+def insufficient(report: checks.Cleaned) -> bool:
     """정리·반복 제거 뒤 쓸 만한 설명이 남지 않았는지"""
     if not report.sections or report.sections[0][0] != "상세 분석":
         return True
-    if report.repeated and report.repeated >= report.sentences * REPEATED_SHARE:
-        return True
-    wrote_next_steps = bool(detail.next_steps and detail.next_steps.strip())
-    return wrote_next_steps and all(title != "개선 방안" for title, _ in report.sections)
+    return report.repeated > 0 and report.repeated >= report.sentences * REPEATED_SHARE
+
+
+def unavailable(exc: LlmUnavailable) -> ApiError:
+    return ApiError(503, "AI_UNAVAILABLE", "AI 처리 실패", retryable=exc.retryable)
 
 
 def rejected() -> ApiError:

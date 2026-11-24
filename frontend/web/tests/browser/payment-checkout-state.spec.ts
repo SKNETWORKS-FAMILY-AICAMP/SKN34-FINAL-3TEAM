@@ -9,6 +9,25 @@ const order = {
   confirmKey: '00000000-0000-4000-8000-000000000815',
 }
 
+test('닫힌 결제 탭을 같은 주문 키와 자녀로 다시 연다', async ({page}) => {
+  await page.goto('/login')
+  await page.getByRole('button', {name:'시연 계정으로 로그인',exact:true}).click()
+  await expect(page).toHaveURL(/parent\/journal/)
+  await page.goto('/parent/billing?childId=demo-doyun')
+  await page.getByRole('radio', {name:/프리미엄/}).check()
+  const opened = page.waitForEvent('popup')
+  await page.getByRole('button', {name:'결제수단 선택',exact:true}).click()
+  const tab = await opened
+  await tab.waitForURL('**/parent/billing?**')
+  const url = tab.url()
+  expect(new URL(url).searchParams.get('orderKey')).toBeTruthy()
+  expect(new URL(url).searchParams.get('childId')).toBe('demo-doyun')
+  await tab.close()
+  const reopened = page.waitForEvent('popup')
+  await page.getByRole('button',{name:'결제 탭 다시 열기'}).click()
+  await expect(await reopened).toHaveURL(url)
+})
+
 for (const initial of ['PENDING', 'CONFIRMING', 'FAILED_TO_LOAD'] as const) {
   test(`결제 화면은 주문 상태를 한 번 조회하고 같은 결과로 결제를 제어한다 (${initial})`, async ({ page }) => {
     await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort())

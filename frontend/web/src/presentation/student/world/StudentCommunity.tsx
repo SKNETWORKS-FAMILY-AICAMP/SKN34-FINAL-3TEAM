@@ -26,14 +26,19 @@ import './retention.css'
  * 친구 방 놀러 가기(#709, FN-RET-14): 글 카드의 "놀러 가기"를 누르면 이 화면 자리에 친구 방을 보여 준다(주소는 그대로, 기준안).
  * 친구 생각 화면은 지우지 않고 숨겨 두어 돌아오면 고른 미션·같은 seed 순서·스크롤 위치가 그대로다.
  */
-export function StudentCommunity({ child, onSettings }: { child: Child; onSettings: () => void }) {
+export function StudentCommunity({ child, onSettings, initialMission = null }: {
+  child: Child
+  onSettings: () => void
+  /** 처음 고를 미션(`?mission=`, 미션 완료 화면 "같은 미션 친구 생각 보기" #807). 마무리한 미션이 아니면 무시 */
+  initialMission?: string | null
+}) {
   const home = useStudentHome(child)
   const settings = useCommunitySettings(child.id)
   const mine = useMyPosts(child.id)
   const finished = (home.data?.missions ?? []).filter((m) => m.status === 'COMPLETED')
-  const [missionId, setMissionId] = useState<string | null>(null)
+  const [missionId, setMissionId] = useState<string | null>(initialMission)
   const [showMine, setShowMine] = useState(false)
-  const selected = missionId ?? finished[0]?.id ?? null
+  const selected = (missionId && finished.some((m) => m.id === missionId) ? missionId : null) ?? finished[0]?.id ?? null
   // 같은 화면에서는 같은 순서로 보이게 seed를 한 번 정한다.
   const [seed] = useState(() => crypto.randomUUID().slice(0, 8))
   const posts = useMissionPosts(child.id, selected, seed)

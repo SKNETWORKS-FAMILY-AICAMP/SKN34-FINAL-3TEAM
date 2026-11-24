@@ -42,13 +42,20 @@ def main():
         # prod values gained #187 rules, so compare the chart change with the baseline's own prod values.
         base_prod = root / "base-prod.json"
         base_prod.write_text(run("git", "-C", str(repo), "show", base + ":" + prod.relative_to(repo).as_posix()), encoding="utf-8")
-        for extra in ([], ["-f", str(environments / "local/observability.yaml")], ["-f", str(base_prod)]):
-            before = load(run(args.helm, "template", "observability", str(baseline), "--namespace", "observability", *extra))
-            after = load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", *extra))
+        # #984 enables dashboards in local/prod values; disable them on both sides
+        # so baselines containing #984 are compared under the same conditions too.
+        no_dashboards = ["--set", "grafana.dashboards.enabled=false"]
+        local = ["-f", str(environments / "local/observability.yaml")]
+        # #730 enables a scrape and Grafana rules in kind only. Compare local with
+        # those features off, then check the actual enabled local values below.
+        local_compat = [*local, "--set", "prometheus.retrainJobMetrics.enabled=false,grafana.alerting.enabled=false"]
+        for extra in ([], local_compat, ["-f", str(base_prod)]):
+            before = load(run(args.helm, "template", "observability", str(baseline), "--namespace", "observability", *extra, *no_dashboards))
+            after = load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", *extra, *no_dashboards))
             # Source filenames can reorder resources, so compare by Kubernetes identity.
             assert identify(before) == identify(after), "Existing default/local/prod resources changed"
             run(args.helm, "lint", "--strict", str(chart), *extra)
-        print("PASS Helm default/local/baseline-prod resources identical to baseline " + base, flush=True)
+        print("PASS default, local compatibility and baseline-prod resources match " + base, flush=True)
         run(args.helm, "lint", "--strict", str(chart), "-f", str(prod))
         prod_rendered = identify(load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", "-f", str(prod))))
         assert "rabbitmq-dlq" in prod_rendered["ConfigMap", "prometheus-config"]["data"]["prometheus.yml"]
@@ -60,11 +67,13 @@ def main():
         # memory limiter, and the Tempo exporter holds a byte-capped queue with a bounded retry.
         pipelines, processors = collector["service"]["pipelines"], collector["processors"]
         assert pipelines["metrics"]["processors"] == ["memory_limiter", "batch"]
-        assert pipelines["traces"]["processors"] == ["memory_limiter/traces", "transform/redact", "batch"]
+        assert pipelines["traces"]["processors"] == ["memory_limiter/traces", "transform/trace_urls", "batch"]
         # #900: Toss billing/cancel keys and Google callback codes are masked before export.
-        redact = "\n".join(processors["transform/redact"]["trace_statements"][0]["statements"])
+        # Callback conditions and URL replacements live in separate statement groups.
+        redact = "\n".join(rule for group in processors["transform/trace_urls"]["trace_statements"]
+                           for field in ("conditions", "statements") for rule in group.get(field, []))
         for rule in ('"/v1/billing/{billingKey}"', '"/v1/payments/{paymentKey}/cancel"',
-                     'delete_key(span.attributes, "url.query")', "^/api/v1/auth/google/(reauth/)?callback$"):
+                     'delete_key(attributes, "url.query")', "/auth/google/(reauth/)?callback([/?#]|$$)"):
             assert rule in redact, rule
         trace_limit = processors["memory_limiter/traces"]["limit_mib"]
         assert trace_limit < processors["memory_limiter"]["limit_mib"] * 0.8  # below the metrics soft limit
@@ -93,13 +102,44 @@ def main():
         app_chart = repo / "infrastructure/gitops/charts/app-service"
         for service, java in (("core-service", True), ("learning-service", True), ("report-worker", False)):
             pod = identify(load(run(args.helm, "template", service, str(app_chart), "-f",
-                                    str(environments / "prod" / (service + ".json")))))["Deployment", service]
+                                    str(environments / "prod" / (service + ".json")), "-f",
+                                    str(environments / "prod/images" / (service + ".json")))))["Deployment", service]
             env = {e["name"]: e.get("value") for e in pod["spec"]["template"]["spec"]["containers"][0]["env"]}
             assert env["OTEL_TRACES_EXPORTER"] == "otlp" and env["OTEL_SERVICE_NAME"] == service
             assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://otel-collector.observability.svc.cluster.local:4318"
             # A JAVA_TOOL_OPTIONS from values must not replace the agent flag.
             assert ("-javaagent:/otel/javaagent.jar" in env.get("JAVA_TOOL_OPTIONS", "")) is java
         print("PASS prod values enable Tempo and OTLP trace export for core, learning and report-worker", flush=True)
+
+        # #984: local and prod provision the expression toxicity dashboard from the chart's dashboards/ folder.
+        run(args.helm, "lint", "--strict", str(chart), *local)
+        local_rendered = identify(load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", *local)))
+        local_scrape = yaml.safe_load(local_rendered["ConfigMap", "prometheus-config"]["data"]["prometheus.yml"])
+        retrain_scrape = next(job for job in local_scrape["scrape_configs"] if job["job_name"] == "tox-retrain-state")
+        assert retrain_scrape["static_configs"] == [{"targets": ["127.0.0.1:8080"]}]
+        role = local_rendered["Role", "tox-retrain-state"]
+        assert role["metadata"]["namespace"] == "app"
+        assert role["rules"] == [{"apiGroups": ["batch"], "resources": ["jobs", "cronjobs"], "verbs": ["list", "watch"]}]
+        local_alerts = yaml.safe_load(local_rendered["ConfigMap", "grafana-alerting"]["data"]["alerting.yaml"])
+        assert {"tox-retrain-failed", "tox-retrain-missed"} <= {rule["uid"] for group in local_alerts["groups"] for rule in group["rules"]}
+        assert not local_alerts.get("contactPoints") and not local_alerts.get("policies")
+        local_grafana = local_rendered["Deployment", "grafana"]["spec"]["template"]["spec"]["containers"][0]
+        assert "DISCORD_WEBHOOK_URL" not in {env["name"] for env in local_grafana["env"]}
+        print("PASS local retraining scrape, namespace-scoped read permissions and Grafana rules without Discord", flush=True)
+        for rendered in (local_rendered, prod_rendered):
+            data = rendered["ConfigMap", "grafana-dashboards"]["data"]
+            provider = yaml.safe_load(data["provider.yaml"])["providers"][0]
+            assert provider["type"] == "file" and provider["options"]["path"] == "/etc/grafana/dashboards"
+            dashboard = json.loads(data["expression-toxicity.json"])
+            exprs = [t["expr"] for panel in dashboard["panels"] for t in panel["targets"]]
+            assert dashboard["uid"] == "expression-toxicity" and all("expression_toxicity_checks_total" in e for e in exprs)
+            assert all(t["datasource"]["uid"] == "prometheus" for panel in dashboard["panels"] for t in panel["targets"])
+            grafana = rendered["Deployment", "grafana"]["spec"]["template"]["spec"]
+            mounts = {m["name"]: m["mountPath"] for m in grafana["containers"][0]["volumeMounts"]}
+            assert mounts["dashboard-provider"] == "/etc/grafana/provisioning/dashboards"
+            assert mounts["dashboards"] == "/etc/grafana/dashboards"
+            assert {v["name"] for v in grafana["volumes"] if v.get("configMap", {}).get("name") == "grafana-dashboards"} == {"dashboard-provider", "dashboards"}
+        print("PASS local and prod values provision the expression toxicity dashboard", flush=True)
 
         # Accelerated copy of the prod rules; not operating thresholds.
         alerting = json.loads(prod.read_text(encoding="utf-8"))["grafana"]["alerting"]

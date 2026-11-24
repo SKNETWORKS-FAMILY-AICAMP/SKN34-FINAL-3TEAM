@@ -70,6 +70,13 @@ class AuthController(
             .cacheControl(CacheControl.noStore()).build()
     }
 
+    @PostMapping("/api/v1/auth/student/renew")
+    fun renewStudent(request: HttpServletRequest): ResponseEntity<Map<String, Any>> {
+        val access = request.getHeader("Authorization").removePrefix("Bearer ")
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(mapOf(
+            "accessToken" to service.renewStudent(access), "expiresIn" to properties.studentAccessTtl.seconds))
+    }
+
     @PostMapping("/api/v1/auth/student/logout")
     fun studentLogout(request: HttpServletRequest): ResponseEntity<Void> {
         service.logoutStudent(request.getHeader("Authorization")?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer "))

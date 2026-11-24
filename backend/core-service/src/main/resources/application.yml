@@ -90,7 +90,7 @@ app:
     web-origin: ${AUTH_WEB_ORIGIN:http://localhost:5173}
     cookie-secure: ${AUTH_COOKIE_SECURE:true}
     access-ttl: ${AUTH_ACCESS_TTL:15m}
-    student-access-ttl: ${AUTH_STUDENT_ACCESS_TTL:15m}
+    student-access-ttl: ${AUTH_STUDENT_ACCESS_TTL:30m}
     reauth-ttl: ${AUTH_REAUTH_TTL:5m}
     refresh-ttl: ${AUTH_REFRESH_TTL:7d}
     google-client-id: ${GOOGLE_CLIENT_ID:}

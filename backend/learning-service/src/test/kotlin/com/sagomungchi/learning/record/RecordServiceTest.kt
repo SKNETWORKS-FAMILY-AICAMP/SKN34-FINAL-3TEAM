@@ -380,6 +380,8 @@ class RecordServiceTest : PostgresRepositoryTest() {
     @Test
     fun `includeModelScores면 판정이 끝난 답변에 저장된 모델 점수 원문, M2를 안 불렀으면 null, 처리 중 답변은 판정 없음 (#478)`() {
         val attempt = attempt(title = "점수")
+        val requirement = "학생이 선택한 재료의 까닭을 설명함"
+        jdbc.update("UPDATE rubric_element SET description = ? WHERE rubric_version_id = ?", requirement, attempt.rubricVersionId)
         val scored = answer(attempt, "처음 답", inWeek)
         rows.judged(scored.id)
         jdbc.update(
@@ -390,12 +392,17 @@ class RecordServiceTest : PostgresRepositoryTest() {
         rows.judged(unscored.id)
         val running = answer(attempt(title = "처리 중"), "답")
 
-        val feedbacks = service.attempts(student, week, null, 0, 20, includeModelScores = true).items.flatMap { it.detail.feedbacks.entries }.associate { it.toPair() }
+        val records = service.attempts(student, week, null, 0, 20, includeModelScores = true).items
+        val requirements = records.single { it.detail.attempt.id == attempt.id }.explanationRequirements.orEmpty()
+        assertEquals(setOf(requirement), requirements.values.toSet())
+        val feedbacks = records.flatMap { it.detail.feedbacks.entries }.associate { it.toPair() }
         val stored = checkNotNull(feedbacks.getValue(scored.id).judgment?.modelScores)
         assertEquals("NARRATIVE", ObjectMapper().readTree(stored).path("m2").path("inputType").asText())
         assertEquals("null", feedbacks.getValue(unscored.id).judgment?.modelScores)
         assertNull(feedbacks.getValue(running.id).judgment)
-        assertNull(service.attempts(student, week, null, 0, 20).items.single { it.detail.attempt.id == attempt.id }.detail.feedbacks.getValue(scored.id).judgment?.modelScores)
+        val publicRecord = service.attempts(student, week, null, 0, 20).items.single { it.detail.attempt.id == attempt.id }
+        assertNull(publicRecord.detail.feedbacks.getValue(scored.id).judgment?.modelScores)
+        assertNull(publicRecord.explanationRequirements)
     }
 
     @Test

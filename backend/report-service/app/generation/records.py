@@ -1,6 +1,6 @@
 """Normalized records for P06/P08. No HTTP framework or student draft/memo fields."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from enum import StrEnum
 from uuid import UUID
@@ -61,6 +61,13 @@ class JudgmentRecord:
 
 
 @dataclass(frozen=True)
+class EssayAnswer:
+    claim: str
+    reasons: tuple[str, ...]
+    rebuttal: str
+
+
+@dataclass(frozen=True)
 class AnswerRecord:
     id: UUID
     version: int
@@ -75,6 +82,7 @@ class AnswerRecord:
     # P28: thinking (shown → first input) and writing (first input → submit) seconds.
     thinking_seconds: int | None = None
     writing_seconds: int | None = None
+    essay: EssayAnswer | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +106,8 @@ class AttemptRecord:
     mission_id: UUID | None = None
     context: str | None = None
     scheduled_day: str | None = None
+    mission_question: str | None = None
+    explanation_requirements: dict[UUID, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

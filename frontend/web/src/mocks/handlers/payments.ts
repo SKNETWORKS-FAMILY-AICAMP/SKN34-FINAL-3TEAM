@@ -53,7 +53,9 @@ export const paymentHandlers = [
   http.get('/api/v1/payments', ({ request }) => respond(async () => {
     const a = account(request), q = new URL(request.url).searchParams, page = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20)
     if (!Number.isInteger(page) || page < 0 || page > 10000 || !Number.isInteger(size) || size < 1 || size > 100) return fail('INVALID_PAGE', '페이지를 확인해 주세요.', 409)
-    return { items: a.payments.slice(page * size, (page + 1) * size) }
+    const childId = q.get('childId')
+    const rows = childId ? a.payments.filter(payment => payment.childId === childId) : a.payments
+    return { items: rows.slice(page * size, (page + 1) * size), hasNext: rows.length > (page + 1) * size }
   })),
   http.post('/api/v1/orders', ({ request }) => respond(async () => {
     parentGuard(request)

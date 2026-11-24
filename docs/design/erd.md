@@ -616,7 +616,7 @@ erDiagram
     uuid id PK
     uuid student_id FK
     uuid subscription_id FK
-    varchar kind "FEEDBACK|CONVERSATION|REPORT_VIEW|EXTRA_MISSION"
+    varchar kind "FEEDBACK|CONVERSATION|REPORT_VIEW|EXTRA_MISSION|MEMORY_BOOK"
     uuid source_id
     varchar status "RESERVED|USED|FAILED"
     timestamptz created_at
@@ -967,6 +967,45 @@ erDiagram
 
 - 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`room_decor_spot`·`student_room_decor`(#704)·`memory_daily_usage`도 삭제
 - 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
+
+### 3.5.3 추억 그림책 (V57, #966)
+
+학부모가 자녀의 추억 앨범 회차를 그림책 PDF로 발급받는 기능의 core 저장 구조([제안 문서](../proposals/memory-book.md) 8.1, [결정 기록](../proposals/memory-book-decisions.md)). PR #966으로 develop에 합쳐졌고 11/24에 도입이 정해졌다(#975).
+
+```mermaid
+erDiagram
+  student ||--o{ memory_book_job : requests
+  memory_book_job ||--o{ memory_book_download : downloaded
+  memory_book_job {
+    uuid id PK
+    uuid student_id FK
+    uuid requested_by "발급한 학부모 사용자 논리 참조"
+    uuid theme_id "learning 테마 논리 참조"
+    date week_start "회차 주 월요일(CHECK)"
+    varchar status "QUEUED|READY|FAILED"
+    varchar failure_code "NULL 허용 · FAILED일 때만 값(CHECK)"
+    bigint size_bytes "NULL 허용 · PDF 크기"
+    uuid theme_version_id "NULL 허용 · 만든 시점의 테마 판"
+    uuid usage_reservation_id "NULL 허용 · payment_premium_usage 논리 참조"
+    timestamptz created_at
+    timestamptz completed_at "NULL 허용"
+    timestamptz expires_at "보관 기한(생성 + 30일), 읽을 때 판정"
+  }
+  memory_book_download {
+    uuid id PK
+    uuid book_id FK "memory_book_job, ON DELETE CASCADE"
+    uuid student_id "자녀 논리 참조"
+    uuid user_id "받은 사용자 논리 참조"
+    varchar role "STUDENT|PARENT"
+    timestamptz created_at
+  }
+```
+
+- `memory_book_job`: 회차 1개 = 작업 1행. 같은 회차를 만드는 중(`QUEUED`)인 작업은 자녀당 하나(부분 UNIQUE, 6장). 발급 1회는 `payment_premium_usage.kind = MEMORY_BOOK`(`source_id` = 그림책 ID)로 남긴다. 조회 인덱스 `ix_memory_book_job_student_created (student_id, created_at DESC)`.
+- `memory_book_download`: 받기 주소를 내줄 때마다 남기는 감사 기록. `role`은 발급 주체가 학부모로 정해진 뒤 `PARENT`만 쓰인다.
+- 학생 삭제 확정(P09): 같은 트랜잭션에서 자녀의 `memory_book_job`을 지우고 `memory_book_download`는 CASCADE로 지워진다. PDF 파일은 report가 학생 삭제 때 `reports/{studentId}/`와 함께 `reports/memory-books/{studentId}/`도 지운다.
+- PDF 파일은 DB에 두지 않고 report `reports` 버킷의 키 규칙 `reports/memory-books/{studentId}/{bookId}/pdf`로 찾는다(#975 C3, 처음 키 `reports/{studentId}/memory-books/{bookId}/pdf`에서 옮김). S3 수명 주기 규칙(접두어 `reports/memory-books/`, 35일)이 보관 기간이 지난 파일을 지운다([infra 9.21](../report/infra.md#921-s3-수명-주기-추억-그림책-975-2026-11-24)). `expires_at`이 지난 작업은 읽을 때 `EXPIRED`로 보여 준다.
+- V57은 상품 값 `product.features.memoryBook`(무료 false·유료 true)과 `product.limits.dailyMemoryBooks = 3`도 넣는다.
 
 ### 3.6 2026-11-06 결정 변경 반영 (core_db)
 
@@ -1860,6 +1899,8 @@ core report_job.report_id는 복구/삭제 실패에서 null을 허용한다. jo
 | core | `correction` | `(error_report_id) WHERE request_key IS NOT NULL` | 신고당 요청 키 정정 1건(UNIQUE `uq_correction_report_request`, V16) |
 | core | `payment` | `(status, updated_at)` | `CONFIRMING` 재조회, 결제 운영 조회 |
 | core | `payment_charge_attempt` | `(status, updated_at)` | 진행 중 시도 조회 복구 (`ix_charge_recovery`, V15). 주문당 진행·승인 시도 1건 부분 UK는 3.4 |
+| core | `memory_book_job` | `(student_id, theme_id, week_start) WHERE status='QUEUED'` | 같은 회차를 만드는 중인 작업은 자녀당 하나 (UNIQUE `uq_memory_book_job_queued_round`, V57) |
+| core | `memory_book_download` | `(book_id)` | 그림책별 받기 기록 (`ix_memory_book_download_book`, V57) |
 | core | `payment_premium_usage` | `(student_id, created_at, status)` | 환불 판정 프리미엄 사용 확인·대화 하루 한도 집계 (`ix_payment_usage_refund`, V15·#225) |
 | core | `subscription` | `(next_billing_date) WHERE auto_renew` | 정기 청구 대상 |
 | core | `mission_daily_usage` | `(student_id, usage_date)`, `(student_id, mission_id, created_at)` | 무료 추가 문제(`EXTRA` 재활성 때) 하루 건수, 한도 뒤 같은 미션 이어하기 확인 (#387 V34, #485 뒤 무료 `EXTRA`만) |
