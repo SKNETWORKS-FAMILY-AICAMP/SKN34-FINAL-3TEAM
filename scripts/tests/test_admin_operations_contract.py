@@ -22,6 +22,22 @@ class AdminOperationsContracts(unittest.TestCase):
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
                 reviewed=deepcopy(current[name])
+                # #995 changes only these student token descriptions; keep the original
+                # fingerprint so every other field in the reviewed contract stays protected.
+                if section == 'schemas' and name == 'StudentTokenResponse':
+                    descriptions = {
+                        'accessToken': (
+                            'HS256 access JWT. 탭 sessionStorage에 보관하며 URL·localStorage에 넣지 않는다.',
+                            'HS256 access JWT. 메모리 보관하며 URL·영구 저장소에 넣지 않는다.',
+                        ),
+                        'expiresIn': (
+                            '설정된 미사용 허용 시간(초), 기본 1800초.',
+                            '설정된 access TTL(초), 초기 기본 900초.',
+                        ),
+                    }
+                    for field, (updated, original) in descriptions.items():
+                        self.assertEqual(reviewed['properties'][field]['description'], updated)
+                        reviewed['properties'][field]['description'] = original
                 # #977 scopes payment history by child and returns the parent's paginated response.
                 if section == 'paths' and name == '/payments':
                     operation = reviewed['get']
