@@ -397,7 +397,7 @@ def render_pr_body(record, changes, *, run_url="", base_sha=""):
         "",
         "### 승인·확인",
         "",
-        "- 승인: CODEOWNERS(김동섭·김태윤) 중 1명. 이 PR은 `images/**`만 바꾼다(브랜치 규칙 예외, `docs/README.md`)",
+        "- 승인: CODEOWNERS(김동섭·김태윤) 중 이 PR을 연 사람과 다른 1명. 이 PR은 `images/**`만 바꾼다(브랜치 규칙 예외, `docs/README.md`)",
         "- migration: core·learning·report-api는 Argo CD PreSync Job이 앱보다 먼저 실행한다. DB는 되돌리지 않는다",
         "- 병합 뒤: Argo CD Synced/Healthy(Discord 알림) → 작업자 PC에서 `python scripts/verify_cd_deployment.py` 결과를 이 PR 댓글로 남긴다(절차: `infrastructure/cd/README.md` digest PR 배포 절)",
         "",

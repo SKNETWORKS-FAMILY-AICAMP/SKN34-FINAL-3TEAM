@@ -765,22 +765,31 @@ class WorkflowTests(unittest.TestCase):
         job = self.jobs["digest-pr"]
         self.assertEqual(job["runs-on"], "ubuntu-latest")
         self.assertNotIn("environment", job)  # 승인은 PR에서
-        self.assertEqual(
-            job["permissions"],
-            {"contents": "write", "pull-requests": "write", "actions": "write"},
-        )
-        self.assertNotIn("id-token", job["permissions"])
+        # #986: 조직 정책상 Actions는 PR을 만들 수 없다. 브랜치 push만 하고 PR은 사람이 링크로 연다
+        self.assertEqual(job["permissions"], {"contents": "write"})
         checkout = job["steps"][0]
         self.assertEqual(checkout["with"]["ref"], "main")
         gate = job["steps"][1]["run"]
         for flag in ("--require-executable", "--write-images", "--require-ancestor-of origin/main"):
             self.assertIn(flag, gate)
         self.assertIn('grep -v "^$images_dir/"', gate)
-        create = job["steps"][2]["run"]
-        self.assertIn("gh pr create --base main", create)
-        self.assertIn('git add -A -- "$IMAGES_DIR"', create)
-        self.assertIn("gh workflow run ci-gitops.yml", job["steps"][3]["run"])
-        self.assertNotIn("CD_KUBECONFIG", str(job))
+        push = job["steps"][2]["run"]
+        self.assertIn('git add -A -- "$IMAGES_DIR"', push)
+        # 커밋 1개짜리 compare 화면이 PR 제목·본문을 채우도록 1행 제목 + 빈 줄 + pr-body.md
+        self.assertIn('printf \'%s\\n\\n\' "$title"; cat "$WORK/pr-body.md"', push)
+        self.assertIn('git commit --cleanup=verbatim -F "$WORK/commit-message.txt"', push)
+        self.assertIn('git push origin "$branch"', push)
+        self.assertIn(
+            'compare="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch?expand=1"', push
+        )
+        self.assertIn("$GITHUB_STEP_SUMMARY", push)
+        self.assertIn("열린 digest PR은 하나만", push)
+        self.assertIn("이전 digest PR", push)
+        text = str(job)
+        self.assertNotIn("gh pr create", text)
+        self.assertNotIn("gh workflow run", text)
+        self.assertNotIn("GH_TOKEN", text)
+        self.assertNotIn("CD_KUBECONFIG", text)
 
     def test_migrations_are_published_with_the_app_tag(self):
         publish = self.jobs["publish"]
