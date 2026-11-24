@@ -15,7 +15,7 @@ import java.time.OffsetDateTime
 import java.util.UUID
 
 /**
- * report `memorybook.completed` v1 소비 (docs/proposals/memory-book.md 7.2, 미도입 시험 구현).
+ * report `memorybook.completed` v1 소비 (docs/proposals/memory-book.md 7.2).
  * 봉투·데이터 모양이 틀리면 재시도 없이 DLQ, 처리 실패는 RetryingConsumer 재시도(1·5·15분)
  */
 @Component

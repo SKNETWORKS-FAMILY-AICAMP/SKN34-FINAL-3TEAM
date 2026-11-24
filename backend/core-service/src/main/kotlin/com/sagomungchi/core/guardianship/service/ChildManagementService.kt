@@ -23,7 +23,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
  private val community: com.sagomungchi.core.community.service.CommunityVisibilityService,
  private val missionUsage: com.sagomungchi.core.usage.service.MissionUsageService,
  private val memoryUsage: com.sagomungchi.core.usage.service.MemoryUsageService,
- // 추억 그림책 작업 행 (docs/proposals/memory-book.md, 미도입 시험 구현). 파일은 report 학생 삭제가 지움
+ // 추억 그림책 작업 행 (docs/proposals/memory-book.md). 파일은 report 학생 삭제가 지움
  private val memoryBooks: com.sagomungchi.core.memorybook.service.MemoryBookJobService) {
  @Transactional
  fun update(identity: AuthenticatedAccount, id: UUID, nickname: String?, grade: Int?): LinkedStudent {

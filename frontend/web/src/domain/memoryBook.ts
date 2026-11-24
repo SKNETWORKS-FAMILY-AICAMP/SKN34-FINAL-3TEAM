@@ -1,7 +1,7 @@
 import { ApiError } from '../data/apiClient.ts'
 
 /**
- * 추억 그림책 (docs/proposals/memory-book.md 7.1, 미도입 시험 구현, feature/memory-book 브랜치 전용).
+ * 추억 그림책 (docs/proposals/memory-book.md 7.1).
  * 학부모만 발급(2026-11-23 결정), 원문 공개 자녀만(D2), 유료 구독(features.memoryBook), 회차 1개(D3).
  */
 export type MemoryBookStatus = 'QUEUED' | 'READY' | 'FAILED' | 'EXPIRED'
@@ -90,6 +90,15 @@ export function readMemoryBookRoundPage(value: unknown): MemoryBookRoundPage {
 /** 만드는 중이면 몇 초마다 다시 본다 */
 export const MEMORY_BOOK_POLL_MS = 3000
 export const memoryBookPolling = (rounds: MemoryBookRoundItem[] | undefined) => rounds?.some((r) => r.book?.status === 'QUEUED') ?? false
+
+/** 실패한 그림책의 이유(report 영구 실패 코드) → 목록에 보일 짧은 말 */
+export function memoryBookFailedReason(failureCode: string | null): string {
+  switch (failureCode) {
+    case 'ASSET_UNAVAILABLE': return '그림을 불러오지 못해 만들지 못했습니다. 다시 발급해 주세요.'
+    case 'STUDENT_RECORDS_PRIVATE': return '아이가 답 보여 주기를 꺼서 만들지 못했습니다.'
+    default: return '지난 발급 실패'
+  }
+}
 
 /** 공개 오류 코드 → 학부모에게 보일 말. 모르는 오류는 null(일반 오류 안내) */
 export function memoryBookFailure(error: unknown): string | null {

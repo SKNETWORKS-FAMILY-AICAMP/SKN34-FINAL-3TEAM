@@ -1,4 +1,4 @@
-"""추억 그림책 화면 값 (docs/proposals/memory-book.md, 시험 구현 1단계).
+"""추억 그림책 화면 값 (docs/proposals/memory-book.md 11.2).
 
 learning 회차 조립 응답(제안 7.2)에서 그림을 `data:` URI로 바꾼 값을 받아 템플릿 값으로 만든다.
 렌더러는 네트워크를 막으므로 그림은 허용한 형식의 `data:` URI만 남기고

@@ -1,4 +1,4 @@
-"""추억 그림책 명령·결과 (docs/proposals/memory-book.md 7.2, 미도입 시험 구현)."""
+"""추억 그림책 명령·결과 (docs/proposals/memory-book.md 7.2)."""
 
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -32,6 +32,9 @@ class FailureCode(StrEnum):
     THEME_FRAME_NOT_FOUND = "THEME_FRAME_NOT_FOUND"
     STUDENT_DELETED = "STUDENT_DELETED"
     INVALID_ROUND = "INVALID_ROUND"
+    # 그림 주소가 있는데 한 장도 받지 못함(출처 누락·저장소 오류 등).
+    # 그림 없는 PDF를 완성으로 내지 않는다(#975)
+    ASSET_UNAVAILABLE = "ASSET_UNAVAILABLE"
 
 
 @dataclass(frozen=True)

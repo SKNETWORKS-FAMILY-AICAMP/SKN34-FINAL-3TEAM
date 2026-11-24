@@ -56,7 +56,7 @@ class QueueManagementClient(private val json: ObjectMapper,
     }
     companion object {
         val BASES = listOf("report.report.generate","core.report.events","core.llm.usage.recorded","learning.student.deleted","report.student.deleted","core.event.audit","core.model.loading.reported",
-            // 추억 그림책 (docs/proposals/memory-book.md, 미도입 시험 구현)
+            // 추억 그림책 (docs/proposals/memory-book.md)
             "report.memorybook.generate","core.memorybook.events")
         fun names() = BASES.flatMap { base -> listOf(base,"$base.retry.1","$base.retry.2","$base.retry.3","$base.dlq") }.toSet()
     }

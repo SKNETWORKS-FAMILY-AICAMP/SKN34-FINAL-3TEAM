@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 /**
- * 추억 그림책 회차 조립 (docs/proposals/memory-book.md 7.2, 미도입 시험 구현). report-worker가 PDF를 만들 때 부른다.
+ * 추억 그림책 회차 조립 (docs/proposals/memory-book.md 7.2). report-worker가 PDF를 만들 때 부른다.
  * 보유·진행 중인 주 판정은 앨범과 같이 [ThemeFrameService], 요일별 시도 선택·엔딩 판정(P23)은 앨범 상세와 같이
  * [WeeklyThemeService.pastRound]에 맡기고, 여기서는 그림책에 필요한 글·그림·답변만 더한다.
  * 엔딩 전이면 종료 이야기·정답과 함께 종료 그림도 넣지 않는다(앨범 카드가 종료 그림을 쓰지 않는 것과 같은 판단)

@@ -1,4 +1,4 @@
-"""learning 추억 그림책 회차 조립 응답 읽기 (docs/proposals/memory-book.md 7.2, 미도입 시험 구현).
+"""learning 추억 그림책 회차 조립 응답 읽기 (docs/proposals/memory-book.md 7.2).
 
 응답 모양이 틀리면 RecordContractError(재시도해도 같으므로 영구 실패로 본다).
 404(미보유·진행 중인 주)는 MemoryBookRoundNotFound로 따로 알린다.

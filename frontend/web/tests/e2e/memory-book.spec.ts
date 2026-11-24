@@ -5,13 +5,10 @@ import { onboardParent } from './support/onboarding.ts'
 import { loginStudent, studentMenu } from './support/student.ts'
 import { bookStatus, pastRound, premiumShared, setSharing, studentIdOf, uploadSceneImages } from './support/memoryBook.ts'
 
-// 추억 그림책 (docs/proposals/memory-book.md 13.2·13.3, 미도입 시험 구현, feature/memory-book 브랜치 전용).
+// 추억 그림책 (docs/proposals/memory-book.md 13.2·13.3, #975).
 // 학부모만 발급(2026-11-23 결정): 리포트 화면 회차 목록 → core 생성 명령 → report-worker가 learning 회차 조립·MinIO 테마 그림으로
 // PDF 저장 → 완료 이벤트 → 학부모 받기. 학생 회차 화면에는 그림책 칸이 없다.
-// 실행: compose.e2e 스택에 이 브랜치 이미지 + report-worker MEMORY_BOOK_ASSET_* 설정이 있어야 한다(14.6).
-// 공용 E2E 스택(.github/workflows/e2e.yml)에는 그 설정(learning 그림 버킷·report-worker 그림 받기 주소·MinIO 계정)이 없어
-// 그림 올리기부터 실패한다. 14.6의 덮어쓰기 스택에서 E2E_MEMORY_BOOK=1 을 줄 때만 돌린다.
-test.skip(process.env.E2E_MEMORY_BOOK !== '1', '추억 그림책 전용 스택(E2E_MEMORY_BOOK=1, 제안 문서 14.6)에서만 실행')
+// 공용 E2E 스택(compose.e2e.yaml)에 learning 그림 버킷·report-worker 그림 받기 주소가 있어 원격 CI에서도 돈다.
 test('학부모: 유료·원문 공개 자녀의 회차로 그림책 발급 → 실제 PDF 받기, 학생 화면에는 칸 없음, 비공개로 바꾸면 막힘',
   async ({ browser, context, page: parentPage }, testInfo) => {
     const nickname = `책${Date.now().toString(36)}`

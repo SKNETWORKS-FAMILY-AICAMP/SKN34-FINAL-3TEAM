@@ -145,7 +145,7 @@
 #class-journal .ws-parent .pc-thread .ws-metrics>.ws-card strong{font-size:22px}
 #class-journal .ws-parent .pc-thread .ws-metrics>.ws-card p{font-size:12px}
 
-/* 추억 그림책 목록 (docs/proposals/memory-book.md, 미도입 시험 구현) */
+/* 추억 그림책 목록 (docs/proposals/memory-book.md) */
 .parent-memory-books { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 .parent-memory-books h2 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 18px; }
 .parent-memory-books p { margin: 0; }

@@ -23,7 +23,7 @@ data class BookAnswerRow(val attemptId: UUID, val version: Int, val text: String
 data class BookReflectionRow(val attemptId: UUID, val difficulty: String?, val text: String?)
 
 /**
- * 추억 그림책 회차 조립 조회 (docs/proposals/memory-book.md, 미도입 시험 구현). 읽기만 하며 learning_db 안에서 끝난다.
+ * 추억 그림책 회차 조립 조회 (docs/proposals/memory-book.md). 읽기만 하며 learning_db 안에서 끝난다.
  * 검색 문서(MemorySearchRepository.register)처럼 시도·답변·미션 버전 표를 직접 읽는다. 시도는 호출자가 그 학생 것으로 고른 ID만
  */
 @Repository

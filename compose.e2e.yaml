@@ -90,16 +90,29 @@ services:
       SCORING_URL: http://scoring-stub:8080
       M2_CROSS_CHECK_ENABLED: "true"
 
+  # 추억 그림책(#975, docs/proposals/memory-book.md 14.6): learning이 테마 그림 키(theme-drafts/…)를 MinIO 공개 주소로 서명한다.
+  # 브라우저와 Playwright(호스트)가 여는 주소라 127.0.0.1. 자격 증명은 MinIO 루트(합성 값, e2e.env)
   learning-service:
     depends_on:
       e2e-seed:
         condition: service_completed_successfully
+    environment:
+      ASSET_S3_BUCKET: sagomungchi-local-missions
+      S3_PUBLIC_ENDPOINT_URL: http://127.0.0.1:${MINIO_HOST_PORT:-9000}
+      S3_REGION: ap-northeast-2
+      AWS_REGION: ap-northeast-2
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?e2e.env 필요}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?e2e.env 필요}
 
   report-api:
     depends_on:
       minio-init:
         condition: service_completed_successfully
+  # 그림책 그림 받기: learning이 서명한 127.0.0.1 주소만 허용하고, 연결은 compose 안 MinIO로 하되 Host는 원래 값(서명 유지)
   report-worker:
     depends_on:
       minio-init:
         condition: service_completed_successfully
+    environment:
+      MEMORY_BOOK_ASSET_ORIGINS: http://127.0.0.1:${MINIO_HOST_PORT:-9000}
+      MEMORY_BOOK_ASSET_INTERNAL_ORIGINS: http://127.0.0.1:${MINIO_HOST_PORT:-9000}=http://minio:9000
