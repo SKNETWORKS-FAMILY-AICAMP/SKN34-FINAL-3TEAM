@@ -71,6 +71,9 @@ grafana:
     groupInterval: 5m
     repeatInterval: 4h
     rules: []
+  # #984: provision dashboards/*.json (expression toxicity verdict ratios). Off keeps the existing render.
+  dashboards:
+    enabled: false
   adminSecret:
     name: observability-credentials
     userKey: GRAFANA_ADMIN_USER

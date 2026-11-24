@@ -22,6 +22,9 @@
     }
   },
   "grafana": {
+    "dashboards": {
+      "enabled": true
+    },
     "persistence": {
       "enabled": true,
       "storageClassName": "gp3",

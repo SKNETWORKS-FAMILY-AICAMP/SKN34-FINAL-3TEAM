@@ -115,7 +115,7 @@ class AnswerService(
     private fun requireKindExpression(attemptId: UUID, content: AnswerContent, mission: MissionView, toxicity: ToxicityVerdict) {
         val category = expressionPolicy.blockedCategory(content.writtenTexts(), mission)
             ?: when (toxicity) {
-                ToxicityVerdict.Flagged -> ExpressionCategory.INSULT
+                is ToxicityVerdict.Flagged -> ExpressionCategory.INSULT
                 is ToxicityVerdict.Clean -> null
                 is ToxicityVerdict.Skipped -> {
                     // 설정으로 끈 것(DISABLED)은 장애가 아니라 매 제출 기록하지 않음

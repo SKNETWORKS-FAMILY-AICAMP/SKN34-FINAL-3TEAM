@@ -179,7 +179,7 @@ class AnswerServiceTest : PostgresRepositoryTest() {
     fun `단어 목록을 통과해도 분류 모델이 걸면 저장·판정 없이 같은 422와 안내, 로그에는 INSULT만`(output: CapturedOutput) {
         val attempt = start()
         val saved = attemptService.saveDraft(attempt.id, ifMatch = 0, content = DraftContent(mapOf("text" to "쓰던 답"), "메모"))
-        modelSays(ToxicityVerdict.Flagged)
+        modelSays(ToxicityVerdict.Flagged("tox-kcelectra:1.0"))
 
         val error = assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
             service.submit(attempt.id, UUID.randomUUID(), narrative("너는 머리가 텅 비었구나"))
@@ -214,7 +214,7 @@ class AnswerServiceTest : PostgresRepositoryTest() {
         val attempt = start()
         val first = service.submit(attempt.id, UUID.randomUUID(), narrative("처음"))
         val followup = followup(attempt.id, first.id)
-        modelSays(ToxicityVerdict.Flagged)
+        modelSays(ToxicityVerdict.Flagged("tox-kcelectra:1.0"))
 
         assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
             service.submit(attempt.id, UUID.randomUUID(), narrative("비꼬는 보완", followupId = followup))
@@ -265,7 +265,7 @@ class AnswerServiceTest : PostgresRepositoryTest() {
         assertEquals(listOf(0, 0), listOf(reviewsOf(plain.id), reviewsOf(skipped.id)))
 
         val blocked = start()
-        modelSays(ToxicityVerdict.Flagged)
+        modelSays(ToxicityVerdict.Flagged("tox-kcelectra:1.0"))
         assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
             service.submit(blocked.id, UUID.randomUUID(), narrative("막힐 합성 답"))
         }
