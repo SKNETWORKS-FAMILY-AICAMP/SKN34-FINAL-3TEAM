@@ -8,6 +8,9 @@ import { memoryBookFailedReason, memoryBookFailure, memoryBookLockedNotice, memo
 import type { MemoryBookRoundItem } from '../../domain/memoryBook.ts'
 import { weekLabel } from '../../domain/retention.ts'
 
+/** 넓은 화면 책장 칸 수(parent-insights.css와 같게) */
+const SHELF_COLUMNS = 4
+
 /** 무료·프리미엄 비교표 자리(#998, 이용권·결제 화면 섹션 id). 책장 잠금 안내가 여기로 간다(user-flow #997) */
 const comparePath = (childId: string) => `/parent/billing?childId=${encodeURIComponent(childId)}#plan-compare`
 
@@ -100,6 +103,10 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
               <span className="memory-shelf-meta"><strong>잠긴 책 {lockedCount}권</strong> · 지난 회차</span>
             </li>
           )}
+          {/* 넓은 화면(4칸)에서 첫 줄이 덜 차면 빈 자리를 점선으로 채워 책장처럼 보이게 한다. 꾸밈이라 읽지 않고, 좁은 화면에서는 숨긴다 */}
+          {Array.from({ length: Math.max(0, SHELF_COLUMNS - items.length - (locked && lockedCount > 0 ? 1 : 0)) }, (_, i) => (
+            <li className="memory-shelf-slot" aria-hidden="true" key={`slot-${i}`}><span className="memory-shelf-cover-slot" /></li>
+          ))}
         </ul>
       )}
       {shelf && locked && (
