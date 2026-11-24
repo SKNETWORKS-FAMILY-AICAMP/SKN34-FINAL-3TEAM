@@ -1480,6 +1480,7 @@ PR #966 검증 때 `tests/queryHooks.test.ts`의 '#950 자녀 삭제 접수 응�
 - 인증 브라우저(`playwright.auth.config.ts`, 운영 빌드): `parentNavigation`·`parentUsability` 47개 통과. #998 새 시험 5개는 시험 안에서 1440·768·390을 돎: 무료 주간 미리보기 → 비교표 이동, 비공개·유료·일일에는 미리보기 없음, `/parent/billing?childId=…#plan-compare` 직접 열기(제목이 머리글에 가려지지 않음, 가로 넘침 없음, "AI 관찰"·"생각 노트" 없음)
 - 목업 브라우저(1440·768·390 프로젝트로 임시 설정. 포트 5271을 #1000 작업 폴더 개발 서버가 쓰고 있어 5281로 띄움): `reportWorkspace`·`landingGuide`(이용 안내 비교표 새 시험)·`payment-checkout-state` 45개 통과. `dailyAnswerTimes`·`scheduledDay`·`workspaces` 45개 중 43개 통과. 실패 2개는 390의 관리자 화면 시험(`workspaces.spec.ts:161`·`:177`)으로, `@responsive` 표시가 없어 저장소 설정으로는 390에서 돌지 않는 시험이고 이 변경을 빼고 develop 그대로 돌려도 같게 실패함
 - 실서버 e2e(`tests/e2e/parent-reports.spec.ts`)는 영역 이름만 바꾸고 돌리지 않음
+- CI e2e learning-journey가 무료 주간 리포트 옛 문장을 기대해 실패 → 미리보기 기준으로 고침(transfer-local 같은 줄도)
 
 **남은 것**
 
