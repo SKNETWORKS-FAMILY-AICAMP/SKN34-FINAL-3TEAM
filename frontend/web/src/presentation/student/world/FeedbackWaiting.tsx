@@ -151,12 +151,12 @@ function Tuft({ className }: { className: string }) {
   )
 }
 
-/** 상자 위쪽을 지나가는 작은 구름. 연하게(선 #3A2A20를 옅게), 크기 44×24px */
+/** 상자 위쪽을 지나가는 작은 구름. 테두리 없이 아주 연한 하늘빛 덩어리(테두리가 있으면 아이콘처럼 보였음, 사용자 의견 2026-11-24), 크기 44×24px */
 function Cloud() {
   return (
     <svg className="sw-wait-cloud" viewBox="0 0 44 24" aria-hidden="true" focusable="false">
       <path d="M10 21 C5 21 3 17.5 4.5 14.5 C5.5 12 8 11 10 11.5 C11 6.5 15.5 4 20 5 C23.5 2 30 3 32 8 C36.5 7.5 40 11 39 15 C41 17.5 39.5 21 36 21 Z"
-        fill="#FFFFFF" fillOpacity="0.9" stroke="#3A2A20" strokeOpacity="0.3" strokeWidth="1.5" strokeLinejoin="round" />
+        fill="#DCEBF4" />
     </svg>
   )
 }

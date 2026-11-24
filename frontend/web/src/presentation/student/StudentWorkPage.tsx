@@ -695,6 +695,9 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
             {memoPanel}
           </section>
           <section className="sw-feedback-panel" aria-label="피드백">
+            {/* 상자와 움직임 줄이기 체크박스를 묶는 칸: 결과 때는 없는 것처럼(display: contents), 대기 중에는 그림·말풍선 너비만큼 줄어
+                체크박스가 그 오른쪽 아래에 붙는다(#847). 늘 같은 칸이라 상자(읽기 영역)가 다시 그려지지 않는다 */}
+            <div className="sw-feedback-group" data-waiting={waiting || undefined}>
             {f && (
               // 화면 읽기 영역은 이 상자 하나: 대기 표시도 안에 넣어 결과가 오면 같은 영역의 내용이 바뀌며 읽힌다(#847)
               <div ref={result} tabIndex={-1} className="ux-feedback sw-feedback" role="status" data-waiting={waiting || undefined}>
@@ -760,6 +763,7 @@ function StudentEditor({ a, onBack, onCompleted }: { a: Attempt; onBack: () => v
                 움직임 줄이기
               </label>
             )}
+            </div>
             <div className="sw-actions">
               {f?.status === 'FAILED' && !waiting && feedbackFinal && (
                 <p role="status">지금은 피드백을 받을 수 없어요. 답은 저장했어요.</p>

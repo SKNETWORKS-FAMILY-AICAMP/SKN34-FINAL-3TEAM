@@ -612,6 +612,8 @@ test('창 폭 360~1440px(40px 간격) × 단계 문구 5개: 말풍선·친구·
       if (r.scroll) problems.push(`${at} 가로 스크롤`)
       if (hit(r.bubble, r.friend)) problems.push(`${at} 말풍선·친구 겹침`)
       if (hit(r.toggle, r.bubble) || hit(r.toggle, r.friend)) problems.push(`${at} 체크박스 겹침`)
+      // 체크박스는 그림·말풍선 묶음의 오른쪽 아래(말풍선 끝 아래)에 붙는다(패널 끝에 혼자 떨어지지 않게)
+      if (Math.abs(r.toggle!.r - Math.max(r.bubble!.r, r.head!.r)) > 4) problems.push(`${at} 체크박스가 말풍선 끝 아래가 아님`)
       // 구름은 가로로만 지나가므로 제목 아래·친구와 말풍선 위 띠 안에 있으면 지나가는 내내 안 겹친다
       if (r.cloud!.t < r.head!.b - 1 || r.cloud!.b > Math.min(r.friend!.t, r.bubble!.t) + 1) problems.push(`${at} 구름 띠 밖`)
       if (seconds === 2 && width === 360) await page.locator('.sw-feedback-panel').screenshot({ path: path.join(shots, '847-overflow-after-360.png') })

@@ -791,14 +791,15 @@
   0%, 100% { transform: rotate(0deg); }
   30%, 70% { transform: rotate(-8deg); }
 }
+/* "?"는 굵은 제목체로 조금 크게(손글씨체는 가늘고 연해 잘 안 보였음, 사용자 의견 2026-11-24) */
 #class-journal .st-world .sw-wait-q {
   position: absolute;
-  top: 0;
-  right: -4%;
+  top: -2%;
+  right: -6%;
   color: #3a2a20;
-  font-family: var(--st-hand);
-  font-weight: 700;
-  font-size: calc(var(--w) * 0.2);
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: calc(var(--w) * 0.24);
   line-height: 1;
   animation: sw-wait-q 2s ease-in-out infinite;
 }
@@ -920,6 +921,16 @@
 /* 결과 전구도 움직임 없이 켜진 그림만 */
 #class-journal .st-world .sw-found[data-reduce],
 #class-journal .st-world .sw-found[data-reduce] * { animation: none !important; }
+/* 상자와 체크박스를 묶는 칸: 결과 때는 없는 것처럼, 대기 중에는 그림·말풍선 너비만큼만(체크박스가 말풍선 끝 아래에 붙게) */
+#class-journal .st-world .sw-feedback-group { display: contents; }
+#class-journal .st-world .sw-feedback-group[data-waiting] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
+}
 /* 대기 화면 움직임 줄이기 체크박스: 화면설계서 SC-02-010 미션 장면처럼 그림 아래 오른쪽에 작게 */
 #class-journal .st-world .sw-wait-motion {
   align-self: flex-end;
