@@ -24,16 +24,11 @@
 #class-journal .ws-parent .parent-insights .pc-layout>aside{max-height:65dvh;overflow:auto;padding:16px;border-color:#d8e2db;background:#edf3ee;border-radius:10px}
 #class-journal .ws-parent .parent-insights .pc-layout>section{max-height:65dvh;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 10px 12px 0}
 #class-journal .ws-parent .parent-insights .pc-layout>section>article{border:0;border-bottom:1px solid #d8e2db;border-radius:0;background:#fff;padding:22px;box-shadow:none}
-#class-journal .ws-parent .parent-insights .pc-layout>section>form{position:sticky;bottom:0;background:#fff;border:1px solid #c5d7ca;border-radius:12px;padding:18px;z-index:1}
 #class-journal .ws-parent .parent-insights :is(button,a,[tabindex]):focus-visible{outline:2px solid #277044;outline-offset:3px}
 @media(max-width:1100px){#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:1fr}#class-journal .ws-parent .parent-insights .pc-layout>aside{max-height:220px}}
-@media(max-width:640px){#class-journal .ws-parent .parent-insights-report-body{max-height:72dvh;padding-right:4px}#class-journal .ws-parent .parent-report-grid>.ws-card{grid-template-columns:1fr auto;padding:16px;gap:8px 12px}#class-journal .ws-parent .parent-report-grid button{grid-column:2;grid-row:1/3}#class-journal .ws-parent .parent-report-grid p{grid-column:1}#class-journal .ws-parent .parent-insights .report-detail{padding:18px}#class-journal .ws-parent .parent-report-filters{gap:12px}#class-journal .ws-parent .parent-insights .pc-layout>section>form{position:static}}
+@media(max-width:640px){#class-journal .ws-parent .parent-insights-report-body{max-height:72dvh;padding-right:4px}#class-journal .ws-parent .parent-report-grid>.ws-card{grid-template-columns:1fr auto;padding:16px;gap:8px 12px}#class-journal .ws-parent .parent-report-grid button{grid-column:2;grid-row:1/3}#class-journal .ws-parent .parent-report-grid p{grid-column:1}#class-journal .ws-parent .parent-insights .report-detail{padding:18px}#class-journal .ws-parent .parent-report-filters{gap:12px}}
 
 /* Detail navigation presents one chapter at a time. */
-#class-journal .ws-parent .report-sections{display:flex;gap:24px;border-bottom:1px solid #d8e2db;margin:24px 0;overflow-x:auto}
-#class-journal .ws-parent .report-sections button{flex-shrink:0;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:12px 0;color:#617267}
-#class-journal .ws-parent .report-sections button[aria-pressed=true]{color:#245d3d;border-bottom-color:#277044;font-weight:600}
-#class-journal .ws-parent .report-section[hidden]{display:none}
 #class-journal .ws-parent .report-section{min-height:160px}
 #class-journal .ws-parent .report-section>h3{font-size:16px;margin:28px 0 14px}
 #class-journal .ws-parent .report-inclusion{font-size:12px;color:#617267;margin-bottom:16px}
@@ -45,7 +40,6 @@
 #class-journal .ws-parent .parent-report-question{padding:0;background:none;border:0;margin:12px 0;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 #class-journal .ws-parent .report-detail>.parent-report-question button{min-height:36px;padding:8px 12px;font-size:13px}
 #class-journal .ws-parent .report-detail>.parent-report-regenerate{margin-top:24px;border:0;padding:0}
-@media(max-width:640px){#class-journal .ws-parent .report-sections{gap:18px}#class-journal .ws-parent .report-sections button{font-size:13px}}
 
 #class-journal .ws-parent .report-detail>h2{margin:0 0 12px;font-size:22px}
 #class-journal .ws-parent .report-detail>p{margin:10px 0;font-size:13px;color:#526b5b}
@@ -71,39 +65,27 @@
 #class-journal .ws-parent .report-reflection-note p{flex-basis:100%;margin:0;font-size:15px;line-height:1.8;overflow-wrap:anywhere}
 @media(max-width:640px){#class-journal .ws-parent .report-followup-question{align-items:flex-start;flex-direction:column;gap:8px}#class-journal .ws-parent .report-student-response{margin-left:0;padding:14px 16px}#class-journal .ws-parent .report-final-answer{padding:16px}}
 
-/* One workspace, with long reports isolated in the reading dialog. */
+/* Keep the selected report inline. */
 #class-journal .ws-parent .parent-insights-unified .parent-insights-content{display:block}
-#class-journal .ws-parent .parent-report-entry{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:20px 0 32px}
-#class-journal .ws-parent .parent-report-entry h2{font-size:20px;margin:0 0 8px}
-#class-journal .ws-parent .parent-report-entry p{font-size:14px;color:#53675b;margin:0;line-height:1.7}
-#class-journal .ws-parent .parent-report-launcher{display:flex;align-items:center;gap:20px;min-width:300px;padding:20px 24px;border:1px solid #cbd8ce;border-radius:12px;background:#fff;color:#284b37;text-align:left;cursor:pointer}
-#class-journal .ws-parent .parent-report-launcher:hover{border-color:#537d60;background:#f8fbf7}
-#class-journal .ws-parent .parent-report-launcher span{flex:1;display:grid;gap:5px}
-#class-journal .ws-parent .parent-report-launcher strong{font-size:16px}
-#class-journal .ws-parent .parent-report-launcher small{font-size:12px;color:#5a6d60}
+#class-journal .ws-parent .parent-report-entry{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding:12px 0 16px}
+#class-journal .ws-parent .parent-report-entry h2{font-size:20px;margin:0}
 #class-journal .ws-parent .parent-insights-unified .parent-insights-chat{border-top:1px solid #cbd8ce;padding-top:28px;scroll-margin-top:24px}
 #class-journal .cj-modal:has(>.cj-modal-body>.report-explorer){width:min(1180px,95vw);max-width:1180px;height:min(840px,92dvh);max-height:92dvh;padding:0;border:0;border-radius:20px;overflow:hidden;display:flex;flex-direction:column;background:#fff;box-shadow:0 24px 80px #18302833}
 #class-journal .cj-modal:has(>.cj-modal-body>.report-explorer)>.cj-modal-head{margin:0;padding:16px 24px;border-bottom:1px solid #e4e8ed;flex-shrink:0}
 #class-journal .cj-modal:has(>.cj-modal-body>.report-explorer)>.cj-modal-head h2{font-size:18px;margin:0}
 #class-journal .cj-modal:has(>.cj-modal-body>.report-explorer)>.cj-modal-body{padding:0;overflow:hidden;flex:1;min-height:0;display:flex}
 #class-journal .report-explorer{width:100%;min-width:0;display:flex;flex-direction:column;padding:24px 28px;overflow:hidden;background:#fff}
+#class-journal .report-explorer.parent-report-inline{overflow:visible;border:1px solid #dbe3dc;border-radius:12px;margin-bottom:24px}
 #class-journal .report-explorer>.parent-page-head{margin:0}
 #class-journal .report-explorer>.parent-page-head h2{font-size:24px;margin:0 0 8px}
 #class-journal .report-explorer>.parent-page-head p{font-size:13px;margin:5px 0;color:#5b6878}
 #class-journal .report-explorer .parent-insights-report-body{flex:1;min-height:0;max-height:none;padding:0 12px 20px 0}
 #class-journal .report-explorer .parent-report-filters{flex-shrink:0;padding:16px 0;margin-bottom:20px}
-#class-journal .report-explorer .parent-report-detail-nav{position:static;background:none;padding:0 0 16px;margin:0}
-#class-journal .ws-parent .parent-insights .report-explorer .report-detail{display:grid;grid-template-columns:164px minmax(0,1fr);column-gap:28px;border:0;border-radius:0;padding:0;background:#fff;min-height:100%;align-content:start}
-#class-journal .report-explorer .report-detail>*{grid-column:2;min-width:0}
-#class-journal .report-explorer .report-detail>.report-sections{grid-column:1;grid-row:1 / span 20;display:flex;flex-direction:column;align-self:start;position:sticky;top:0;gap:8px;margin:0;padding:24px 0 24px 12px;background:#2458d9;border:0;border-radius:12px;overflow:visible}
-#class-journal .report-explorer .report-sections button{color:#fff;text-align:left;white-space:normal;border:0;border-radius:18px 0 0 18px;padding:14px 16px;font-size:14px;background:transparent}
-#class-journal .report-explorer .report-sections button[aria-pressed=true]{background:#fff;color:#2458d9}
-#class-journal .report-explorer .report-sections button:focus-visible{outline-offset:-4px;outline-color:#a8c8ff}
+#class-journal .ws-parent .parent-insights .report-explorer .report-detail{display:block;border:0;border-radius:0;padding:0;background:#fff}
 #class-journal .report-explorer .report-section{border-top:1px solid #e0e6ec;margin-top:20px;padding-top:4px}
 #class-journal .report-explorer .report-section>h3{font-size:19px;font-weight:650;color:#273d32;margin:20px 0 16px}
 #class-journal .report-narrative-text{font-size:15px;line-height:1.95;white-space:pre-wrap;overflow-wrap:anywhere;max-width:75ch;margin:20px 0 12px}
 #class-journal .report-source{font-size:12px;color:#626e68}
-#class-journal .report-explorer .report-detail>.cj-modal-layer{grid-column:auto}
 /* Conversation: history rail, quiet transcript, dedicated composer. */
 #class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:220px minmax(0,1fr);gap:0;border:1px solid #dbe3dc;border-radius:16px;overflow:hidden;background:#fff;align-items:stretch}
 #class-journal .ws-parent .parent-insights .pc-layout>aside{max-height:740px;margin:0;border:0;border-right:1px solid #e2e8e1;border-radius:0;padding:20px 14px;background:#f1f4ee;display:flex;flex-direction:column;gap:12px;overflow:auto}
@@ -127,17 +109,42 @@
 #class-journal .ws-parent .pc-user-message p{margin:4px 0 0;white-space:pre-wrap}
 #class-journal .ws-parent .pc-assistant-message h3{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#325940;margin:0 0 12px}
 #class-journal .ws-parent .pc-assistant-message p{font-size:15px;line-height:1.95;margin:0 0 18px;white-space:pre-wrap;overflow-wrap:anywhere}
-#class-journal .ws-parent .parent-insights .pc-layout>section>form.pc-composer{position:static;flex-shrink:0;margin:0 24px 20px;padding:16px 18px;border:1px solid #c9d5c7;border-radius:14px;background:#fff;display:flex;flex-wrap:wrap;gap:12px;box-shadow:0 6px 20px #243e2b08}
-#class-journal .ws-parent .pc-composer>label{width:100%;font-size:12px;color:#566b5b;display:grid;gap:8px}
-#class-journal .ws-parent .pc-composer textarea{resize:vertical;min-height:72px;max-height:180px;background:transparent;border:0;border-radius:0;padding:0;font-size:15px;line-height:1.8;box-shadow:none}
-#class-journal .ws-parent .pc-composer>button{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:13px;min-height:38px;padding:8px 14px;border-radius:8px}
-#class-journal .ws-parent .pc-composer>.ws-examples{width:100%;border-top:1px solid #e4e9e1;padding-top:12px}
-#class-journal .ws-parent .pc-composer .ws-examples .ws-actions{gap:6px}
-#class-journal .ws-parent .pc-composer .ws-examples button{font-size:12px;background:#f6f8f3;border:1px solid #e2e8db;padding:7px 10px;line-height:1.6;white-space:normal;text-align:left}
-#class-journal .ws-parent .pc-composer>small{font-size:11px;color:#5c6d60;line-height:1.6}
-#class-journal .ws-parent .pc-conversation-panel>.pc-template{margin:0 24px 20px;font-size:12px}
-@media(max-width:900px){#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:180px minmax(0,1fr)}#class-journal .ws-parent .pc-thread{padding:20px}#class-journal .ws-parent .parent-insights .pc-layout>section>form.pc-composer{margin:0 16px 16px}}
-@media(max-width:640px){#class-journal .ws-parent .parent-report-entry{flex-direction:column;align-items:stretch;gap:16px}#class-journal .ws-parent .parent-report-launcher{min-width:0;width:100%}#class-journal .report-explorer{padding:16px}#class-journal .ws-parent .parent-insights .report-explorer .report-detail{display:block}#class-journal .report-explorer .report-detail>.report-sections{position:sticky;top:0;flex-direction:row;overflow:auto;padding:8px;gap:4px;border-radius:8px;margin:16px 0;z-index:2}#class-journal .report-explorer .report-sections button{padding:10px;border-radius:6px;white-space:nowrap;font-size:12px}#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:1fr}#class-journal .ws-parent .parent-insights .pc-layout>aside{max-height:210px;border-right:0;border-bottom:1px solid #e2e8e1;padding:14px}#class-journal .ws-parent .pc-thread{padding:18px;max-height:420px}#class-journal .ws-parent .pc-welcome h3{font-size:21px}#class-journal .ws-parent .pc-user-message{max-width:95%}}
+#class-journal .ws-parent .pc-conversation-panel > .ws-examples {
+  flex-shrink: 0; width: min(880px, calc(100% - 32px)); margin: 0 auto 8px;
+}
+#class-journal .ws-parent .pc-conversation-panel .ws-examples .ws-actions {
+  flex-wrap: nowrap; gap: 6px; margin: 0; overflow-x: auto; padding: 4px;
+}
+#class-journal .ws-parent .pc-conversation-panel .ws-examples button {
+  flex-shrink: 0; min-height: 36px; padding: 6px 10px; border-radius: 20px;
+  background: #fff; font-size: 12px; white-space: nowrap;
+}
+#class-journal .ws-parent .pc-progress {
+  display: flex; align-items: center; gap: 9px; width: fit-content;
+  padding: 8px 14px; border: 1px solid #d7dfdc; border-radius: 24px;
+  background: #fff; color: #43584b; font-size: 13px; line-height: 1.5;
+}
+#class-journal .ws-parent .pc-progress > span {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--pd-accent);
+}
+#class-journal .ws-parent .parent-insights .pc-layout > section > form.pc-composer {
+  position: static; display: flex; align-items: flex-end; gap: 8px; flex-shrink: 0;
+  width: min(880px, calc(100% - 32px)); margin: 0 auto max(16px, env(safe-area-inset-bottom));
+  padding: 6px 7px 6px 12px; border: 1px solid #bfcfc5; border-radius: 20px;
+  background: #fff; box-shadow: none;
+}
+#class-journal .ws-parent .pc-composer:focus-within { border-color: var(--pd-accent); }
+#class-journal .ws-parent .pc-composer textarea {
+  flex: 1; min-width: 0; min-height: 44px; max-height: 108px; field-sizing: content;
+  resize: none; padding: 10px 6px; border: 0; border-radius: 10px;
+  background: transparent; font-size: 16px; line-height: 1.5; box-shadow: none;
+}
+#class-journal .ws-parent .pc-composer textarea:focus { outline: none; }
+#class-journal .ws-parent .pc-composer > button {
+  flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border-radius: 14px;
+}
+@media(max-width:900px){#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:180px minmax(0,1fr)}#class-journal .ws-parent .pc-thread{padding:20px}}
+@media(max-width:640px){#class-journal .report-explorer{padding:16px}#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:1fr}#class-journal .ws-parent .parent-insights .pc-layout>aside{max-height:210px;border-right:0;border-bottom:1px solid #e2e8e1;padding:14px}#class-journal .ws-parent .pc-thread{padding:18px;max-height:420px}#class-journal .ws-parent .pc-welcome h3{font-size:21px}#class-journal .ws-parent .pc-user-message{max-width:95%}}
 
 #class-journal .ws-parent .pc-thread .ws-metrics{gap:0;border-block:1px solid #e0e7de;margin:16px 0}
 #class-journal .ws-parent .pc-thread .ws-metrics>.ws-card{background:none;border:0;border-radius:0;padding:14px 18px;box-shadow:none}
@@ -152,3 +159,168 @@
 .parent-memory-books ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .parent-memory-books li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .parent-memory-books li button { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+/* 리포트 | AI 챗봇 전환 (제목 자리, 사이드바는 한 칸) */
+#class-journal .ws-parent .parent-insights-switch{display:flex;align-items:center;gap:12px;margin:0}
+#class-journal .ws-parent .parent-insights-switch button{all:unset;cursor:pointer;font:inherit;color:#9aa69f;border-radius:6px;padding:0 2px}
+#class-journal .ws-parent .parent-insights-switch button[aria-pressed="true"],#class-journal .ws-parent .parent-insights-switch button[aria-pressed="false"]{border:0;background:none;box-shadow:none;min-height:0}
+#class-journal .ws-parent .parent-insights-switch button[aria-pressed="true"]{color:inherit}
+#class-journal .ws-parent .parent-insights-switch button:hover{color:#2f7d4f}
+#class-journal .ws-parent .parent-insights-switch button:focus-visible{outline:2px solid #2f7d4f;outline-offset:3px}
+#class-journal .ws-parent .parent-insights-switch>span{color:#c9d2cc;font-weight:400}
+
+#class-journal .ws-parent .weekly-activity-records .report-explanations{margin-top:24px;padding-top:20px;border-top:1px solid var(--pd-line)}
+#class-journal .ws-parent .weekly-activity-records .report-explanation-evidence{margin-bottom:0}
+
+#class-journal .parent-report-inline{container:parent-report / inline-size}
+#class-journal .ws-parent .report-toolbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px 20px;padding-bottom:16px;border-bottom:1px solid #e0e8e2}
+#class-journal .ws-parent .report-period-heading h2{margin:0;font-size:22px}
+#class-journal .ws-parent .report-period-heading p{margin:4px 0 0;color:#576c5e;font-size:13px;font-variant-numeric:tabular-nums}
+#class-journal .ws-parent .report-toolbar-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#class-journal .ws-parent .report-body{display:grid;gap:20px;margin-top:20px}
+#class-journal .ws-parent .report-body>.report-data-group,#class-journal .ws-parent .report-overview-grid>.report-data-group{margin:0;min-width:0}
+#class-journal .ws-parent .report-overview-grid,#class-journal .ws-parent .weekly-activity-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+#class-journal .ws-parent .report-overview-grid .report-data-group>h3{margin:0 0 12px;font-size:17px}
+#class-journal .ws-parent .report-overview-grid > .report-narrative-panel {
+  background: #e9f3ec; border: 1px solid #d2e4d7; border-radius: 12px;
+}
+#class-journal .ws-parent .report-overview-grid > .report-narrative-panel > h3 {
+  color: #17482e; border-color: #c9ded0; font-size: 19px;
+}
+#class-journal .ws-parent .report-overview-grid .report-narrative-text {
+  margin: 0 0 14px; max-width: none; color: #203d2c; font-size: 15px; line-height: 1.85;
+}
+#class-journal .ws-parent .report-narrative-text p { margin: 0; }
+#class-journal .ws-parent .report-narrative-text p + p { margin-top: 12px; }
+#class-journal .ws-parent .report-narrative-panel .report-source { color: #41624d; }
+
+#class-journal .ws-parent .weekly-activity-layout > * { min-width: 0; }
+#class-journal .ws-parent .weekly-activity-layout > .report-explanations { margin: 0; padding: 0; border: 0; }
+#class-journal .ws-parent .weekly-activity-layout .report-explanation-card { padding: 0; }
+#class-journal .ws-parent .weekly-activity-layout .report-explanation-evidence { margin: 0 0 24px; }
+#class-journal .ws-parent .weekly-activity-layout .report-explanation-evidence h4 { margin: 0 0 10px; color: var(--pd-accent-ink); }
+#class-journal .ws-parent .weekly-activity-layout .report-explanation-title { margin: 0; font-size: 18px; }
+#class-journal .ws-parent .weekly-activity-layout .weekly-activity-pair { grid-template-columns: 1fr; margin: 0; }
+#class-journal .ws-parent .weekly-activity-layout .weekly-activity-pair > section + section { border-left: 0; border-top: 1px solid #dfe7d8; }
+#class-journal .ws-parent .weekly-activity-layout>.report-explanations>h3{margin:0 0 12px;font-size:17px}
+#class-journal .ws-parent .weekly-activity-picker select{appearance:auto;background-image:none;padding-inline:12px 32px;max-width:32rem}
+#class-journal .ws-parent .report-stat-panel .report-count-list>div{gap:8px 12px;padding:10px 0;flex-wrap:wrap}
+#class-journal .ws-parent .report-stat-panel .report-count-list dd{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}
+#class-journal .ws-parent .report-stat-panel .report-count-list strong{font-size:16px;margin:0}
+#class-journal .ws-parent .report-stat-panel .report-metric-proof{border:1px solid #d4ded7;border-radius:6px;background:#fff;color:#245f3d;font:inherit;padding:5px 9px;min-height:32px;cursor:pointer}
+#class-journal .ws-parent .report-stat-panel .report-metric-proof:hover{background:#eef4ed}
+@container parent-report (min-width: 735px){
+  #class-journal .ws-parent .report-overview-grid:has(>.report-narrative-panel){grid-template-columns:minmax(0,1.16fr) minmax(0,1fr);gap:20px}
+}
+
+#class-journal .ws-parent .report-period-picker { position: relative; width: fit-content; }
+#class-journal .ws-parent .report-period-picker > summary {
+  display: block; list-style: none; cursor: pointer; border-radius: 5px;
+}
+#class-journal .ws-parent .report-period-picker > summary::-webkit-details-marker { display: none; }
+#class-journal .ws-parent .report-period-picker > summary h2 { display: flex; align-items: center; gap: 8px; }
+#class-journal .ws-parent .report-period-picker > summary:hover { color: var(--pd-accent-ink); }
+#class-journal .ws-parent .report-period-picker[open] > summary svg { transform: rotate(180deg); }
+#class-journal .ws-parent .report-period-popover {
+  position: absolute; z-index: 4; top: calc(100% + 8px); left: 0;
+  width: min(320px, calc(100vw - 68px)); padding: 12px;
+  border: 1px solid var(--pd-line); border-radius: 12px; background: #fff;
+  box-shadow: 0 8px 24px #243e2b1a;
+}
+#class-journal .ws-parent .report-period-types {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+}
+#class-journal .ws-parent .report-period-popover :is([aria-pressed=true], [aria-current=date]) {
+  background: var(--pd-accent-soft); color: var(--pd-accent-ink); font-weight: 600;
+}
+#class-journal .ws-parent .report-period-dates {
+  list-style: none; margin: 8px 0 0; padding: 3px; max-height: 35dvh; overflow: auto;
+}
+#class-journal .ws-parent .report-period-dates button {
+  width: 100%; justify-content: flex-start; border-color: transparent;
+  font-variant-numeric: tabular-nums; text-align: left;
+}
+#class-journal .ws-parent .report-period-popover > p { padding: 8px 4px 0; }
+
+#class-journal .ws-parent.ws-parent-fullscreen {
+  position: fixed; inset: 0; width: 100%; height: 100dvh; min-height: 0;
+  display: flex; overflow: hidden; background: #fff;
+}
+#class-journal .ws-parent-fullscreen .ws-fullscreen-main {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto;
+}
+#class-journal .ws-parent.ws-parent-fullscreen :is(.parent-content, .parent-insights-fullscreen, .parent-insights-content, .parent-insights-chat) {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0;
+}
+#class-journal .ws-parent-fullscreen .parent-chat-header {
+  display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+  padding: max(8px, env(safe-area-inset-top)) 16px 8px;
+  border-bottom: 1px solid var(--pd-line); background: #fff;
+}
+#class-journal .ws-parent-fullscreen .parent-chat-header > a {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px;
+}
+#class-journal .ws-parent-fullscreen .parent-chat-header > a:hover { background: var(--pd-accent-soft); }
+#class-journal .ws-parent-fullscreen .parent-chat-header h1 { margin: 0; font-size: 20px; white-space: nowrap; }
+#class-journal .ws-parent-fullscreen .parent-chat-header > :is(.chat-period-picker, .chat-period-control) {
+  margin-inline-start: auto;
+}
+#class-journal .ws-parent-fullscreen .parent-chat-header .chat-period-control {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 44px;
+  padding: 8px 12px; border: 1px solid #d7dfdc; border-radius: 12px;
+  background: #fff; color: #344b3f; font-size: 13px; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#class-journal .ws-parent-fullscreen .parent-chat-header button.chat-period-control:hover {
+  border-color: var(--pd-accent); box-shadow: none;
+}
+#class-journal .ws-parent-fullscreen .chat-period-picker .cj-modal {
+  width: min(448px, calc(100vw - 32px)); border-radius: 18px; background: #fff;
+}
+#class-journal .ws-parent-fullscreen .chat-period-picker .report-inline-calendar {
+  width: 100%; margin: 0; padding: 0; border: 0; box-shadow: none;
+}
+#class-journal .ws-parent-fullscreen .parent-insights-fullscreen .parent-insights-chat { border: 0; padding: 0; }
+#class-journal .ws-parent-fullscreen .parent-insights-chat > p { margin: 0; padding: 8px 20px; flex-shrink: 0; }
+#class-journal .ws-parent-fullscreen .parent-insights-fullscreen .pc-layout {
+  flex: 1; min-height: 0; border-width: 1px 0 0; border-radius: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+#class-journal .ws-parent-fullscreen .parent-insights-fullscreen .pc-layout > aside {
+  max-height: none; background: #f7f8f8;
+}
+#class-journal .ws-parent-fullscreen .parent-insights-fullscreen .pc-conversation-panel {
+  min-height: 0; overflow-y: auto;
+}
+#class-journal .ws-parent-fullscreen .pc-thread {
+  min-height: 96px; max-height: none;
+  padding-inline: max(16px, calc((100% - 880px) / 2));
+}
+@media (max-width: 640px) {
+  #class-journal .ws-parent-fullscreen .parent-chat-header { gap: 6px; padding-inline: 8px; }
+  #class-journal .ws-parent-fullscreen .parent-chat-header h1 { font-size: 17px; }
+  #class-journal .ws-parent-fullscreen .parent-chat-header .chat-period-control { padding-inline: 8px; font-size: 12px; }
+  #class-journal .ws-parent-fullscreen .parent-insights-fullscreen .pc-layout {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  #class-journal .ws-parent-fullscreen .parent-insights-fullscreen .pc-layout > aside { max-height: 22dvh; }
+  #class-journal .ws-parent-fullscreen .pc-layout > aside [role=note] p { margin: 0 0 4px; }
+  #class-journal .ws-parent-fullscreen .pc-welcome { min-height: 0; padding: 0; }
+  #class-journal .ws-parent-fullscreen .pc-welcome h3 { margin: 6px 0 4px; }
+}
+
+#class-journal .ws-parent .pc-thread > .pc-message { margin-bottom: 26px; padding-bottom: 22px; }
+#class-journal .ws-parent .pc-user-message { margin-bottom: 20px; padding: 10px 14px; }
+#class-journal .ws-parent .pc-user-message p { margin: 0; }
+#class-journal .ws-parent .pc-assistant-message p { margin: 0 0 14px; word-break: keep-all; }
+#class-journal .ws-parent .pc-answer-footer {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 18px;
+  color: var(--pd-muted); font-size: 12px;
+}
+#class-journal .ws-parent .pc-answer-context, #class-journal .ws-parent .pc-answer-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+}
+#class-journal .ws-parent .pc-answer-actions :is(button, a) {
+  min-height: 36px; padding: 6px 0; border: 0; background: transparent;
+  color: var(--pd-accent-ink); box-shadow: none; font-size: 12px; text-underline-offset: 4px;
+}
+#class-journal .ws-parent .pc-answer-actions button:not(:disabled):hover { box-shadow: none; text-decoration: underline; }

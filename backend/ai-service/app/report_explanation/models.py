@@ -4,8 +4,7 @@ JSON 필드는 camelCase.
 
 scores는 learning modelScores.m2.scores 그대로(scoring 4.3.1): 서술 9개 키(hol 1~4, 나머지 1~5),
 논술 {org, cont, exp} 0~3. 학생·시도·답변 ID와 이름은 받지 않음 (NFR-SEC-03).
-@2(로컬 Gemma 상세 설명): scores는 없어도 되고(있으면 범위만 검사, 프롬프트에는 넣지 않음),
-topic(미션 질문)을 함께 받는다.
+scores는 선택 항목이며 범위를 검증한다. 문제 전문과 답안별 판정 항목과 함께 설명의 맥락으로 쓴다.
 """
 
 from typing import Literal
@@ -39,17 +38,46 @@ SCORE_RANGES: dict[str, dict[str, tuple[int, int]]] = {
 }
 
 
+class EssayAnswer(ApiModel):
+    claim: str
+    reasons: list[str]
+    rebuttal: str
+
+    def written_text(self) -> str:
+        return "\n".join(
+            part for part in (self.claim, *self.reasons, self.rebuttal) if part.strip()
+        )
+
+
+class CriterionJudgment(ApiModel):
+    label: str = Field(min_length=1)
+    requirement: str | None = None
+    satisfied: bool = Field(strict=True)
+    required: bool = Field(strict=True)
+    quote: str | None = None
+
+    def usable(self, text: str) -> bool:
+        return bool(self.label.strip() and (self.quote is None or self.quote in text))
+
+
 class ExplanationRequest(ApiModel):
     grade: int = Field(ge=3, le=6)
     input_type: InputType
     text: str = Field(min_length=1, max_length=50_000)
     topic: str | None = Field(default=None, max_length=2_000)
     scores: dict[str, int] | None = None
+    question: str | None = Field(default=None, max_length=50_000)
+    essay: EssayAnswer | None = None
+    criteria: list[CriterionJudgment] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_text_and_scores(self) -> "ExplanationRequest":
         if not self.text.strip():
             raise ValueError("text is blank")
+        if self.essay is not None and (
+            self.input_type != "ESSAY" or self.essay.written_text() != self.text
+        ):
+            raise ValueError("essay fields must reproduce the submitted text")
         if self.scores is None:
             return self
         ranges = SCORE_RANGES[self.input_type]
@@ -63,12 +91,7 @@ class ExplanationRequest(ApiModel):
 
 
 class ExplanationDetail(BaseModel):
-    """sLLM이 돌려주는 상세 설명 세 칸 (키는 프롬프트와 같은 snake_case).
-
-    LoRA(explain)는 형식을 자주 벗어나므로 관대하게 받는다(2026-11-17 사용자 결정):
-    정의 밖 칸은 무시, 보완·개선 칸은 빠져도 됨, 목록으로 오면 문장으로 이어 붙임.
-    프롬프트에 붙는 스키마(strict_schema)는 그대로 세 칸 모두 필수로 요구한다.
-    """
+    """학부모에게 보여 줄 설명과 보완에 사용한 항목 번호·인용."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -77,6 +100,21 @@ class ExplanationDetail(BaseModel):
         default=None, description="보완할 지점, 근거가 없으면 null"
     )
     next_steps: str | None = Field(default=None, description="개선 방안 한 문단")
+
+    gap_criterion: int | None = Field(default=None, description="보완에 쓴 항목 번호, 아니면 null")
+    gap_quote: str | None = Field(
+        default=None, description="보완에서 인용한 학생 원문, 아니면 null"
+    )
+
+    @field_validator("gap_criterion", mode="before")
+    @classmethod
+    def valid_gap_number(cls, value: object) -> int | None:
+        return value if type(value) is int and value > 0 else None
+
+    @field_validator("gap_quote", mode="before")
+    @classmethod
+    def valid_gap_quote(cls, value: object) -> str | None:
+        return value if isinstance(value, str) and value.strip() else None
 
     @field_validator("analysis", "improvement_points", "next_steps", mode="before")
     @classmethod

@@ -1,11 +1,11 @@
-import { DateFilter } from './ActivityExplorer.tsx'
+import { ChevronDown } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { ArrowLeft, ArrowUpRight, Files } from 'lucide-react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
-import { ReportExplanations } from './ReportExplanations.tsx'
+import { ReportExplanations, reportExplanationItems } from './ReportExplanations.tsx'
 import type { Child, Metric } from '../../domain/classroom.ts'
-import { scheduledDayLine, answerTimeLine, difficultyText, type DailyProblem, type WeeklyReport, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
+import { scheduledDayLine, answerTimeLine, difficultyText, type DailyProblem, type WeeklyReport, type ReportItem, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
 import type { ReportContext, ReportHighlight, ReportTargets } from '../../domain/reportHighlight.ts'
 import { emptyReportTargets, reportTargets } from '../../domain/reportHighlight.ts'
@@ -16,7 +16,7 @@ import { knownEntitlement, useChildEntitlement } from '../../data/payment/querie
 import { thinkingLabels } from '../../domain/classroom.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { QueryStateNotice } from '../common/QueryStateNotice.tsx'
-import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
+import { Modal } from '../shared/ClassroomParts.tsx'
 import { EvidenceQuery } from './ParentConversation.tsx'
 
 export function ParentReports({
@@ -31,174 +31,140 @@ export function ParentReports({
   onAskReport: (report: ReportContext) => void
 }) {
   const [params, setParams] = useSearchParams()
-  const [opened, setOpened] = useState(false)
   const [dismissedReveal, setDismissedReveal] = useState(0)
-  const [dates,setDates] = useState<Partial<Record<ReportPeriodType,{from:string;to:string}>>>({})
-  const [today] = useState(()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date()))
-  const [calendar,setCalendar] = useState<ReportPeriodType|null>(null)
-  const [pages, setPages] = useState({ WEEKLY: 0, DAILY: 0 })
-  const [status, setStatus] = useState(''),
-    [kind, setKind] = useState<ReportPeriodType | ''>(''),
-    list = useParentQuery(['reports', child.id, status, kind], (signal) =>
-      parentApi.reports(child.id, status, signal, kind || undefined), true,
-    )
-  const matches = (item: {period:{from:string;to:string}}, type:ReportPeriodType) => !dates[type] || (item.period.from <= dates[type]!.to && item.period.to >= dates[type]!.from)
-  const revealRequested = !!highlight && revealToken > dismissedReveal
-  const selected = revealRequested ? highlight : undefined
-  // Deep links can open only reports returned for the currently selected child.
-  const requestedId = params.get('reportId')
-  const linkedId = list.data?.items.find(item => item.reportId === requestedId && item.childId === child.id)?.reportId
-  const activeId = linkedId ?? (revealRequested ? highlight?.reportId : undefined)
+  const [today] = useState(() => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date()))
+  const reports = useParentQuery(['reports', child.id, 'COMPLETED', ''], signal => parentApi.reports(child.id, 'COMPLETED', signal))
+  const items = reports.error ? [] : (reports.data?.items ?? [])
+    .filter(item => item.childId === child.id && item.status === 'COMPLETED')
+    .sort((a, b) => b.period.to.localeCompare(a.period.to))
+  const selected = highlight?.childId === child.id && revealToken > dismissedReveal ? highlight : undefined
+  const linked = items.find(item => item.reportId === params.get('reportId'))
+  const weekly = items.filter(item => reportPeriodType(item) === 'WEEKLY' && item.period.from <= today)
+  const active = linked ?? items.find(item => item.reportId === selected?.reportId)
+    ?? weekly.find(item => item.period.to >= today) ?? weekly[0] ?? items[0]
   const revision = Number(params.get('revision'))
-  const activeRevision = selected && selected.reportId === activeId ? selected.revision
-    : linkedId && Number.isSafeInteger(revision) && revision > 0 ? revision : undefined
-  const showModal = opened || !!linkedId || params.get('view') === 'reports' || revealRequested
-  function clearSelection() {
+  const activeRevision = selected && selected.reportId === active?.reportId ? selected.revision
+    : linked && Number.isSafeInteger(revision) && revision > 0 ? revision : active?.revision
+
+  function chooseReport(reportId: string) {
     const next = new URLSearchParams(params)
-    next.delete('reportId')
+    next.set('reportId', reportId)
     next.delete('revision')
     if (next.get('view') === 'reports') next.delete('view')
-    setParams(next, { replace: true })
+    setDismissedReveal(revealToken)
+    onReportChange?.()
+    setParams(next)
   }
-  const close = () => {
-    setOpened(false); setDismissedReveal(revealToken); onReportChange?.()
-    clearSelection()
-  }
-  return (
-    <>
-      <div className="parent-report-entry">
-        <div><h2>학습 리포트</h2><p>하루의 학습과 한 주의 변화를 모아 볼 수 있어요.</p></div>
-        <button className="parent-report-launcher" onClick={() => setOpened(true)}><Files size={24} aria-hidden="true" /><span><strong>리포트 자세히 보기</strong><small>일일·주간 리포트</small></span><ArrowUpRight size={20} aria-hidden="true" /></button>
-      </div>
-      {/* 추억 그림책 (docs/proposals/memory-book.md) */}
-      <ParentMemoryBooks child={child} />
-      {showModal && <Modal title={`${child.nickname}의 학습 리포트`} onClose={close}>
-      <div className="report-explorer" data-detail={!!activeId}>
-      {!activeId && <>
-      <header className="parent-page-head"><h2>리포트</h2>
-      <p>
-        하루·한 주의 학습을 자동으로 정리한 결과입니다. 궁금한 점은 AI 챗봇에서 질문할 수 있습니다.
-      </p>
-      <p>한국 시간 기준으로 매일 0시에 전날 기록을 모아 일일 리포트를 만듭니다. 매주 월요일 0시에는 지난주 월요일부터 일요일까지의 기록으로 주간 리포트를 만듭니다.</p></header>
-      <div className="parent-report-filters"><label>
-        리포트 종류{' '}
-        <select aria-label="리포트 종류" value={kind} onChange={(e) => setKind(e.target.value as ReportPeriodType | '')}>
-          <option value="">전체</option>
-          <option value="DAILY">일일</option>
-          <option value="WEEKLY">주간</option>
-        </select>
-      </label>{' '}
-      <label>
-        생성 상태{' '}
-        <select aria-label="리포트 상태" value={status} onChange={(e) => { setStatus(e.target.value); setPages({ WEEKLY: 0, DAILY: 0 }) }}>
-          <option value="">전체</option>
-          {[
-            ['RUNNING', '생성 중'],
-            ['COMPLETED', '완료'],
-            ['FAILED', '생성 실패'],
-          ].map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </select>
-      </label>
-      </div>
-      <div className="parent-insights-report-body" tabIndex={0} role="region" aria-label="리포트 목록">
-      <QueryFeedback query={list} />
-      {list.data && !list.error && (
-        <div className="parent-report-groups">
-          {!list.data.items.length && (status || kind ? <div>
-            <p>선택한 조건에 맞는 리포트가 없습니다.</p>
-            <button type="button" className="cj-secondary" onClick={() => {
-              setKind(''); setStatus(''); setDates({}); setCalendar(null); setPages({ WEEKLY: 0, DAILY: 0 })
-            }}>필터 초기화</button>
-          </div> : <p>아직 생성된 리포트가 없습니다.</p>)}
-          {list.data.items.length > 0 && (['WEEKLY', 'DAILY'] as const).filter(type => !kind || type === kind).map(type => <section className="parent-report-group" key={type} aria-labelledby={`report-group-${type}`}>
-            <h2 id={`report-group-${type}`}>{type === 'WEEKLY' ? '주간 리포트' : '일일 리포트'}</h2>
-            <div className="report-date-controls"><button type="button" aria-expanded={calendar===type} onClick={()=>setCalendar(calendar===type ? null : type)}>{type==='WEEKLY' ? '주간 날짜 선택' : '일일 날짜 선택'}</button><span>{dates[type] ? `${dates[type]!.from} ~ ${dates[type]!.to}` : '전체 날짜'}</span>{dates[type] && <button type="button" onClick={()=>{setDates(d=>({...d,[type]:undefined}));setPages(p=>({...p,[type]:0}))}}>초기화</button>}</div>
-            {calendar===type && <DateFilter embedded week={type==='WEEKLY'} initial={dates[type] ?? list.data.items.find(x=>reportPeriodType(x)===type)?.period ?? {from:today,to:today}} onCancel={()=>setCalendar(null)} onApply={value=>{setDates(d=>({...d,[type]:value}));setPages(p=>({...p,[type]:0}));setCalendar(null)}}/>}
-            <div className="parent-report-grid">
-          {list.data.items.filter(item => reportPeriodType(item) === type && matches(item,type)).slice(pages[type] * 6, (pages[type] + 1) * 6).map((r) => (
-            <article className="ws-card" key={r.reportId}>
 
-              <h3>{reportPeriodType(r) === 'DAILY' ? r.period.from : `${r.period.from} ~ ${r.period.to}`}</h3>
-              <p>
-                {r.status === 'COMPLETED'
-                  ? '생성 완료'
-                  : r.status === 'FAILED'
-                    ? '생성 실패'
-                    : '생성 중'}
-              </p>
-              <QueryStateNotice state={r.state} />
-              <button
-                className="cj-secondary"
-                onClick={() => {
-                  onReportChange?.()
-                  const next = new URLSearchParams(params); next.delete('revision'); next.set('reportId', r.reportId); setParams(next)
-                  setOpened(true)
-                }}
-              >
-                자세히 보기
-              </button>
-            </article>
-          ))}
-            </div>
-            {list.data.items.filter(item => reportPeriodType(item) === type && matches(item,type)).length > 6 && <nav className="report-list-pages" aria-label={`${type === 'WEEKLY' ? '주간' : '일일'} 리포트 페이지`}>
-              <button disabled={pages[type] === 0} onClick={() => setPages(p => ({...p, [type]: p[type] - 1}))}>이전</button>
-              <span>{pages[type] + 1} / {Math.ceil(list.data.items.filter(item => reportPeriodType(item) === type && matches(item,type)).length / 6)}</span>
-              <button disabled={(pages[type] + 1) * 6 >= list.data.items.filter(item => reportPeriodType(item) === type && matches(item,type)).length} onClick={() => setPages(p => ({...p, [type]: p[type] + 1}))}>다음</button>
-            </nav>}
-            {!list.data.items.some(item => reportPeriodType(item) === type && matches(item,type)) && <p>{(dates[type] || status) && '선택한 조건에 맞는 '}{type === 'WEEKLY' ? '주간' : '일일'} 리포트가 없습니다.</p>}
-          </section>)}
-        </div>
-      )}
-      </div>
-      </>}
-      {activeId && <div className="parent-report-detail-nav"><button className="parent-report-back" aria-label="리포트 목록으로 돌아가기" onClick={() => {
-        onReportChange?.(); setDismissedReveal(revealToken); setOpened(true)
-        clearSelection()
-
-      }}><ArrowLeft size={20} aria-hidden="true" />리포트 목록</button></div>}
-      {activeId && (
-        <div className="parent-insights-report-body" tabIndex={0} role="region" aria-label="리포트 내용">
+  return <>
+    <div className="parent-report-entry"><h2>{child.nickname}의 학습 리포트</h2></div>
+    <QueryFeedback query={reports} />
+    {active ? (
+      <div className="report-explorer parent-report-inline" aria-label="리포트 내용" role="region">
         <ReportDetail
-          key={activeId}
+          key={active.reportId}
           child={child}
           canReadOriginals={canReadOriginals}
-          id={activeId}
+          id={active.reportId}
           revision={activeRevision}
-          compact={false} highlight={highlight} revealToken={revealToken}
-          onRevision={value => {
-            const next = new URLSearchParams(params)
-            next.set('reportId', activeId)
-            if (value === undefined) next.delete('revision')
-            else next.set('revision', String(value))
-            setDismissedReveal(revealToken); onReportChange?.(); setParams(next, { replace: true })
-          }}
-          onAskReport={value => { close(); onAskReport(value) }}
+          highlight={selected?.reportId === active.reportId ? selected : undefined}
+          revealToken={revealToken}
+          onAskReport={onAskReport}
+          periodPicker={<ReportPeriodPicker items={items} selected={active} onSelect={chooseReport} />}
         />
-        </div>
-      )}
-      </div></Modal>}
-    </>
-  )
+      </div>
+    ) : reports.data && !reports.error && <p>아직 볼 수 있는 리포트가 없습니다.</p>}
+    <ParentMemoryBooks child={child} />
+  </>
 }
+
+function narrativeParagraphs(text: string) {
+  const paragraphs = text.trim().split(/\n\s*\n/)
+  if (paragraphs.length > 1) return paragraphs
+  const sentences = Array.from(new Intl.Segmenter('ko', { granularity: 'sentence' }).segment(text), item => item.segment)
+  if (sentences.length <= 3) return paragraphs
+  return Array.from({ length: Math.floor(sentences.length / 2) }, (_, index) => {
+    const start = index * 2
+    const end = index === Math.floor(sentences.length / 2) - 1 ? sentences.length : start + 2
+    return sentences.slice(start, end).join('').trim()
+  })
+}
+
+function periodLabel(report: ReportItem) {
+  return reportPeriodType(report) === 'DAILY' ? report.period.from : `${report.period.from} ~ ${report.period.to}`
+}
+
+function ReportPeriodPicker({ items, selected, onSelect }: {
+  items: ReportItem[]
+  selected: ReportItem
+  onSelect: (id: string) => void
+}) {
+  const reportType = reportPeriodType(selected)
+  const [kind, setKind] = useState<ReportPeriodType>(reportType)
+  const picker = useRef<HTMLDetailsElement>(null)
+  const trigger = useRef<HTMLElement>(null)
+  const choices = items.filter(item => reportPeriodType(item) === kind)
+  useEffect(() => {
+    function dismiss(event: PointerEvent) {
+      if (picker.current?.open && event.target instanceof Node && !picker.current.contains(event.target)) {
+        picker.current.open = false
+      }
+    }
+    document.addEventListener('pointerdown', dismiss)
+    return () => document.removeEventListener('pointerdown', dismiss)
+  }, [])
+  return <div className="report-period-heading">
+    <details className="report-period-picker" ref={picker} onKeyDown={event => {
+      if (event.key !== 'Escape' || !picker.current?.open) return
+      event.stopPropagation()
+      picker.current.open = false
+      trigger.current?.focus()
+    }}>
+      <summary ref={trigger} onClick={() => {
+        if (!picker.current?.open) setKind(reportType)
+      }}>
+        <h2>
+          {reportType === 'DAILY' ? '일일 리포트' : '주간 리포트'}
+          <ChevronDown size={18} aria-hidden="true" />
+        </h2>
+      </summary>
+      <div className="report-period-popover" aria-label="리포트 기간 선택">
+        <div className="report-period-types" role="group" aria-label="리포트 종류">
+          {(['WEEKLY', 'DAILY'] as const).map(type => (
+            <button key={type} type="button" aria-pressed={kind === type} onClick={() => setKind(type)}>
+              {type === 'WEEKLY' ? '주간' : '일일'}
+            </button>
+          ))}
+        </div>
+        {choices.length ? <ul className="report-period-dates" aria-label="리포트 일자">
+          {choices.map(item => <li key={item.reportId}>
+            <button type="button" aria-current={item.reportId === selected.reportId ? 'date' : undefined}
+              onClick={() => {
+                if (picker.current) picker.current.open = false
+                trigger.current?.focus()
+                if (item.reportId !== selected.reportId) onSelect(item.reportId)
+              }}>{periodLabel(item)}</button>
+          </li>)}
+        </ul> : <p>볼 수 있는 {kind === 'WEEKLY' ? '주간' : '일일'} 리포트가 없습니다.</p>}
+      </div>
+    </details>
+    <p>{periodLabel(selected)}</p>
+  </div>
+}
+
 function ReportDetail({
   child, canReadOriginals,
   id,
   revision,
-  onRevision,
-  onAskReport, compact = false, highlight, revealToken = 0,
+  onAskReport, highlight, revealToken = 0, periodPicker,
 }: {
   child: Child
   canReadOriginals: boolean
-  compact?: boolean
   highlight?: ReportHighlight | null
   revealToken?: number
   id: string
   revision: number | undefined
-  onRevision: (v: number | undefined) => void
+  periodPicker: ReactNode
   onAskReport: (report: ReportContext) => void
 }) {
   const q = useParentQuery(
@@ -207,11 +173,10 @@ function ReportDetail({
       true,
       true,
     ),
-    regenerate = useParentMutation(() => parentApi.regenerate(id)),
     // 이용권은 entitlement로만 판단한다(#602). 조회 전·실패면 서버가 내려준 리포트 내용을 그대로 쓴다.
     entitlement = knownEntitlement(useChildEntitlement(child.id)),
     conversationOff = entitlement?.conversationEnabled === false,
-    download = useParentMutation((format: 'pdf' | 'md') => parentApi.download(id, format)),
+    download = useParentMutation(() => parentApi.download(id, 'pdf')),
     [proof, setProof] = useState<string | null>(null),
     [notice, setNotice] = useState('')
   const awaitingPrivateReport = !canReadOriginals && q.data?.status === 'COMPLETED' && q.data.parentSharingEnabled !== false
@@ -220,29 +185,24 @@ function ReportDetail({
     daily = !!r && reportPeriodType(r) === 'DAILY'
   const panel = useRef<HTMLElement>(null), lastReveal = useRef(0)
   const targets = useMemo(() => r ? reportTargets(r, highlight) : emptyReportTargets(), [r, highlight])
-  const [selection, setSelection] = useState({ tab: 'summary', message: '' })
-  const message = highlight?.messageId ?? ''
-  const tab = message && selection.message !== message ? (targets.metrics.length ? 'summary' : 'records') : selection.tab
   const matched = Object.values(targets).reduce((total, values) => total + values.length, 0)
   useEffect(() => {
     if (!highlight || !ready || !matched) return
     const first = Array.from(panel.current?.querySelectorAll<HTMLElement>('[data-answer-highlight="true"]') ?? []).find(element => !element.closest('[hidden]'))
     if (!first) return
-    const pane = compact ? panel.current?.closest<HTMLElement>('.parent-insights-report-body') : null
     const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
-    if (pane && window.matchMedia('(min-width:1101px)').matches) {
-      pane.scrollTo({ top: pane.scrollTop + first.getBoundingClientRect().top - pane.getBoundingClientRect().top - 16, behavior })
-    } else if (revealToken > lastReveal.current) first.scrollIntoView({ block: 'center', behavior })
-    // 팝업의 초기 초점 설정이 끝난 뒤 선택한 근거로 이동한다.
+    if (revealToken > lastReveal.current) first.scrollIntoView({ block: 'center', behavior })
+    // 리포트를 렌더링한 뒤 질문에 연결된 근거로 초점을 이동한다.
     const frame = revealToken > lastReveal.current
       ? requestAnimationFrame(() => { if (first.isConnected) first.focus({ preventScroll: true }) })
       : undefined
     lastReveal.current = revealToken
     return () => { if (frame !== undefined) cancelAnimationFrame(frame) }
-  }, [highlight, ready, matched, targets, revealToken, compact, tab])
-  async function file(format: 'pdf' | 'md') {
+  }, [highlight, ready, matched, targets, revealToken])
+  async function downloadReport() {
+    setNotice('')
     try {
-      const data = await download.mutateAsync(format)
+      const data = await download.mutateAsync(undefined)
       const url = new URL(data.url, location.href)
       if (!['http:', 'https:'].includes(url.protocol))
         throw new Error('허용되지 않은 다운로드 주소입니다.')
@@ -256,76 +216,69 @@ function ReportDetail({
   return (
     <section className="ws-card report-detail" ref={panel}>
       {awaitingPrivateReport && <p role="status">원문 비공개 설정에 맞는 리포트를 확인해야 합니다. <button onClick={() => void q.refetch()}>다시 조회</button></p>}
-      <header className="report-document-header"><div><h2>{daily ? '일일 리포트' : '주간 리포트'}</h2>{r && <p>{r.period.from} ~ {r.period.to} · {r.revision}판</p>}</div><div className="report-header-actions">
-      <ReportProblem targetType="REPORT" targetId={id}/>
-      {!compact && r && ready && r.parentSharingEnabled !== false && (
-        <div className="parent-report-question">
-          {conversationOff && <p>AI 질문은 프리미엄 기능입니다.</p>}
-          <button className="cj-primary" disabled={conversationOff} onClick={() => onAskReport({ reportId: r.reportId, revision: r.revision, period: r.period, periodType: daily ? 'DAILY' : 'WEEKLY' })}>이 리포트로 질문하기</button>
+      <header className="report-toolbar">
+        {periodPicker}
+        <div className="report-toolbar-actions">
+          <ReportProblem targetType="REPORT" targetId={id} />
+          {r && ready && r.parentSharingEnabled !== false && (
+            <button className="cj-secondary" disabled={conversationOff}
+              title={conversationOff ? 'AI 질문은 프리미엄 기능입니다.' : undefined}
+              onClick={() => onAskReport({ reportId: r.reportId, revision: r.revision, period: r.period, periodType: daily ? 'DAILY' : 'WEEKLY' })}>
+              이 리포트로 질문하기
+            </button>
+          )}
+          {r && ready && (
+            <button className="cj-primary" disabled={download.isPending || r.parentSharingEnabled !== true}
+              onClick={() => void downloadReport()}>
+              {download.isPending ? '다운로드 준비 중' : '리포트 다운로드'}
+            </button>
+          )}
         </div>
-      )}
-      </div></header><QueryFeedback query={q} />
+      </header>
+      <QueryFeedback query={q} />
       {highlight && r && <><p>선택한 질문 · {highlight.question}</p><p role="status" className="report-highlight-summary">{matched
         ? `선택한 답변과 연결된 ${matched}개 항목을 초록 테두리로 표시했습니다.`
-        : '이 답변과 직접 연결된 항목이 현재 리포트 판에는 없습니다.'}</p></>}
+        : '이 답변과 직접 연결된 항목을 리포트에서 찾지 못했습니다.'}</p></>}
       {r && (
         <>
           {r.correctionNotice && (
             <p role="note">이 리포트에 쓰인 판정 중 일부가 리포트를 만든 뒤 정정되었습니다. 리포트 내용은 만들어진 때 그대로입니다.</p>
           )}
-          {!compact && <label className="report-version-control">
-            리포트 판{' '}
-            <select
-              aria-label="리포트 판"
-              value={revision ?? 'latest'}
-              onChange={(e) =>
-                onRevision(e.target.value === 'latest' ? undefined : Number(e.target.value))
-              }
-            >
-              <option value="latest">최신판</option>
-              {r.revisions.map((v) => (
-                <option key={v.revision} value={v.revision}>
-                  {v.revision}판
-                </option>
-              ))}
-            </select>
-          </label>}
-          {!ready ? (
-            <p role="status">
-              {r.status === 'FAILED'
-                ? '리포트 생성에 실패했습니다. 기록 없음과는 다릅니다.'
-                : '리포트를 생성하고 있습니다. 완료 전 내용을 표시하지 않습니다.'}
-            </p>
-          ) : (
-            <>
-              <nav className="report-sections" aria-label="리포트 상세 항목">
-                {([['summary','요약'],['records','활동 기록'],['explanation','설명과 근거'],['files','파일·관리']] as const).filter(([key]) => !compact || key !== 'files').map(([key,label]) => <button key={key} type="button" aria-pressed={tab === key} onClick={() => setSelection({tab:key,message})}>{label}</button>)}
-              </nav>
-              <div className="report-section" hidden={tab !== 'summary'}><h3 className="report-chapter-title">학습 요약</h3>
-              <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details>
+          {!ready ? <p>이 기간에 볼 수 있는 리포트가 없습니다.</p> : (
+            <div className="report-body">
               <QueryStateNotice state={r.state} />
-              {!daily && (r.narrative ? (
-                <section className="report-data-group report-narrative-panel"><h4>한 주의 기록</h4>
-                  <div className="report-narrative-text">{r.narrative.text}</div>
-                  <details className="report-source"><summary>요약 출처</summary><p>{r.narrative.source}</p></details>
+              <div className="report-overview-grid">
+                {!daily && (r.narrative ? (
+                  <section className="report-data-group report-narrative-panel">
+                    <h3>한 주의 기록</h3>
+                    <div className="report-narrative-text">
+                      {narrativeParagraphs(r.narrative.text).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                    </div>
+                    <details className="report-source"><summary>요약 출처</summary><p>{r.narrative.source}</p></details>
+                  </section>
+                ) : (
+                  <p>{r.parentSharingEnabled === false ? '아이의 답변이 비공개입니다.' : '이 리포트는 학습 수치를 제공합니다.'}</p>
+                ))}
+                <section className="report-data-group report-stat-panel" aria-label="학습 수치">
+                  <h3>학습 수치</h3>
+                  <ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics}
+                    canReadOriginals={r.parentSharingEnabled === true} onProof={setProof} />
+                  <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details>
                 </section>
-              ) : (
-                <p>{r.parentSharingEnabled === false ? '아이의 답변 원문이 비공개여서 서술과 인용을 표시하지 않습니다. 학습 수치는 아래에서 확인할 수 있습니다.' : '수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.'}</p>
-              ))}
-              <section className="report-data-group report-stat-panel"><h4>학습 수치</h4><ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics} /></section>
               </div>
-              <div className="report-section" hidden={tab !== 'explanation'}><h3 className="report-chapter-title">설명과 근거</h3>
-              <ReportExplanations report={r} narrativeEnabled={entitlement?.narrativeEnabled} />
-              <MetricEvidence metrics={r.metrics} disabled={r.parentSharingEnabled===false} onProof={setProof}/>
-
-              </div>
-              <div className="report-section" hidden={tab !== 'records'}>
-              {daily && <DailyProblems completedDate={r.period.from} highlighted={targets.problems} problems={r.problems ?? []} canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />}
-              {!daily && r.parentSharingEnabled === false && <p>아이의 답변 원문이 비공개입니다. 요약에서 학습 수치를 확인할 수 있습니다.</p>}
-              {!daily && r.themeSummary && <details className="report-theme-disclosure"><summary>이번 주 테마 보기</summary><ThemeSummaryView summary={r.themeSummary} /></details>}
-              {!daily && entitlement?.narrativeEnabled !== false && r.parentSharingEnabled !== false && (
+              {daily && (
+                <DailyProblems completedDate={r.period.from} highlighted={targets.problems} problems={r.problems ?? []}
+                  canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />
+              )}
+              {!daily && r.themeSummary && (
+                <details className="report-theme-disclosure">
+                  <summary>이번 주 테마 보기</summary>
+                  <ThemeSummaryView summary={r.themeSummary} />
+                </details>
+              )}
+              {!daily && (entitlement?.narrativeEnabled !== false && r.parentSharingEnabled !== false ? (
                 <>
-                  <WeeklyActivityRecords report={r} targets={targets} onProof={setProof} />
+                  <WeeklyActivityRecords report={r} studentName={child.nickname} targets={targets} onProof={setProof} narrativeEnabled={entitlement?.narrativeEnabled} />
                   {r.eveningQuestion && (
                     <section className="report-data-group">
                       <h3>이번 주 저녁 질문</h3>
@@ -333,54 +286,15 @@ function ReportDetail({
                     </section>
                   )}
                 </>
-              )}
-              </div>
-              {!compact && tab === 'files' && <p>{r.parentSharingEnabled === false ? '원문 비공개 중에는 기존 파일을 제공하지 않습니다. 위 학습 수치는 계속 확인할 수 있습니다.' : '다운로드는 서버가 제공하는 최신판 파일입니다.'}</p>}
-
-            </>
+              ) : <ReportExplanations report={r} studentName={child.nickname} narrativeEnabled={entitlement?.narrativeEnabled} />)}
+            </div>
           )}
-          {!compact && tab === 'files' && <div className="parent-report-regenerate"><div className="parent-report-toolbar">{ready && <>                <button
-                  className="cj-secondary"
-                  disabled={download.isPending || r.parentSharingEnabled === false}
-                  onClick={() => {
-                    void file('pdf')
-                  }}
-                >
-                  PDF 다운로드
-                </button>
-                <button
-                  className="cj-secondary"
-                  disabled={download.isPending || r.parentSharingEnabled === false}
-                  onClick={() => {
-                    void file('md')
-                  }}
-                >
-                  Markdown 다운로드
-                </button>
-              </>}<button
-            className="cj-secondary"
-            disabled={regenerate.isPending || r.status === 'RUNNING' || r.status === 'QUEUED'}
-            onClick={() => {
-              void regenerate
-                .mutateAsync(undefined)
-                .then(() => {
-                  onRevision(undefined)
-                  setNotice('새 판 생성을 요청했습니다. 기존 판은 유지됩니다.')
-                })
-                .catch(() => {})
-            }}
-          >
-            새 판으로 재생성
-          </button></div>
-          <p>학부모 재생성은 리포트당 한 번입니다. 이전 판은 유지됩니다.</p></div>}
         </>
       )}
       {r && ready && r.parentSharingEnabled === false && <p role="note">원문 비공개 중에는 원문 근거·AI 질문·파일 다운로드를 이용할 수 없습니다. 위 학습 수치는 계속 확인할 수 있습니다.</p>}
       {notice && <p role="status">{notice}</p>}
-      <ErrorNotice error={regenerate.error} />
-      <ErrorNotice error={download.error} />
       {proof && r && canReadOriginals && r.parentSharingEnabled !== false && (
-        <Modal title="리포트 항목 근거" onClose={() => setProof(null)}>
+        <Modal title="리포트 항목 내용" scrollIndicator onClose={() => setProof(null)}>
           <EvidenceQuery
             queryKey={['report-evidence', child.id, id, proof]}
             load={(signal) => parentApi.reportEvidence(id, proof, signal)}
@@ -450,7 +364,7 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
           {!p.itemId && canReadOriginals && <p>이 문제에는 연결된 원문 근거가 없습니다.</p>}
           {p.itemId && canReadOriginals && (
             <button className="cj-secondary" onClick={() => onProof(p.itemId!)}>
-              원문 근거
+              내용
             </button>
           )}
         </details>
@@ -487,51 +401,102 @@ function ThemeSummaryView({ summary }: { summary: ThemeSummary }) {
   )
 }
 
-function ReportMetricCounts({metrics, highlighted}: {metrics: Metric[]; highlighted: number[]}) {
-  const [page,setPage] = useState({index:0,highlight:''})
-  const highlight=highlighted.join(',')
-  const pages=Math.max(1,Math.ceil(metrics.length/6))
-  const current=Math.min(pages-1,highlight && page.highlight!==highlight ? Math.floor(highlighted[0]/6) : page.index)
-  return <><dl className="report-count-list">{metrics.slice(current*6,current*6+6).map((m,offset)=>{const i=current*6+offset;return <div key={i} className="report-highlight-target" data-answer-highlight={highlighted.includes(i) ? 'true' : undefined} tabIndex={-1}><dt><HighlightLabel active={highlighted.includes(i)}/>{m.label === '도움 없이 시작한 비율' ? '도움 없이 시작한 활동' : m.label}</dt><dd><span>전체 {m.denominator.toLocaleString()}건 중</span> <strong>{m.numerator.toLocaleString()}건</strong>{m.state === 'NO_RECORD' && <small>기록 없음</small>}</dd></div>})}</dl>{pages>1 && <nav className="report-metric-pages" aria-label="학습 수치 페이지"><span>전체 {metrics.length}항목</span><button type="button" disabled={current===0} onClick={()=>setPage({index:current-1,highlight})}>이전</button><span>{current+1} / {pages}</span><button type="button" disabled={current===pages-1} onClick={()=>setPage({index:current+1,highlight})}>다음</button></nav>}</>
-
+function ReportMetricCounts({ metrics, highlighted, canReadOriginals, onProof }: {
+  metrics: (Metric & { itemId?: string })[]
+  highlighted: number[]
+  canReadOriginals: boolean
+  onProof: (id: string) => void
+}) {
+  const [page, setPage] = useState({ index: 0, highlight: '' })
+  const highlight = highlighted.join(',')
+  const pages = Math.max(1, Math.ceil(metrics.length / 6))
+  const current = Math.min(pages - 1, highlight && page.highlight !== highlight ? Math.floor(highlighted[0] / 6) : page.index)
+  if (!metrics.length) return <p>확인할 학습 수치가 없습니다.</p>
+  return <>
+    <dl className="report-count-list">{metrics.slice(current * 6, (current + 1) * 6).map((metric, offset) => {
+      const index = current * 6 + offset
+      const label = metric.label === '도움 없이 시작한 비율' ? '도움 없이 시작한 활동' : metric.label
+      const active = highlighted.includes(index)
+      return <div key={index} className="report-highlight-target" data-answer-highlight={active ? 'true' : undefined} tabIndex={-1}>
+        <dt><HighlightLabel active={active}/>{label}</dt>
+        <dd>
+          <span>전체 {metric.denominator.toLocaleString()}건 중</span>{' '}
+          <strong>{metric.numerator.toLocaleString()}건</strong>
+          {metric.state === 'NO_RECORD' && <small>기록 없음</small>}
+          {canReadOriginals && <button type="button" className="report-metric-proof" aria-label={`${label} 내용 보기`}
+            onClick={() => onProof(metric.itemId ?? `metric-${index}`)}>내용</button>}
+        </dd>
+      </div>
+    })}</dl>
+    {pages > 1 && <nav className="report-metric-pages" aria-label="학습 수치 페이지">
+      <span>전체 {metrics.length}항목</span>
+      <button disabled={current === 0} onClick={() => setPage({ index: current - 1, highlight })}>이전</button>
+      <span>{current + 1} / {pages}</span>
+      <button disabled={current === pages - 1} onClick={() => setPage({ index: current + 1, highlight })}>다음</button>
+    </nav>}
+  </>
 }
 
-function WeeklyActivityRecords({report:r, targets, onProof}: {report:WeeklyReport; targets:ReportTargets; onProof:(id:string)=>void}) {
+function WeeklyActivityRecords({ report: r, targets, onProof, narrativeEnabled, studentName }: {
+  report: WeeklyReport
+  studentName: string
+  targets: ReportTargets
+  onProof: (id: string) => void
+  narrativeEnabled?: boolean
+}) {
+  const explanations = useMemo(() => reportExplanationItems(r), [r])
   const activities = useMemo(() => {
-    const ids = [...new Set([...r.changes.map(x=>x.attemptId), ...r.reflections.map(x=>x.attemptId), ...r.quotes.filter(x=>x.verified).map(x=>x.attemptId)])]
-    return ids.map((id,index) => {
-      const thinking = r.thinkingTypes.find(t=>t.missions.some(m=>m.attemptId===id))
-      return {id,title:thinking?.missions.find(m=>m.attemptId===id)?.title ?? r.explanations?.items.find(x=>x.attemptId===id)?.missionTitle ?? `활동 ${index+1}`,type:thinking?.type}
+    const ids = [...new Set([
+      ...explanations.map(item => item.attemptId),
+      ...r.changes.map(item => item.attemptId),
+      ...r.reflections.map(item => item.attemptId),
+      ...r.quotes.filter(item => item.verified).map(item => item.attemptId),
+    ])]
+    return ids.map((id, index) => {
+      const thinking = r.thinkingTypes.find(type => type.missions.some(mission => mission.attemptId === id))
+      const explanation = explanations.find(item => item.attemptId === id)
+      return {
+        id,
+        title: thinking?.missions.find(mission => mission.attemptId === id)?.title ?? explanation?.missionTitle ?? `활동 ${index + 1}`,
+        type: thinking?.type ?? explanation?.thinkingType,
+      }
     })
-  },[r])
+  }, [r, explanations])
   const highlightedId = r.changes[targets.changes[0]]?.attemptId ?? r.reflections[targets.reflections[0]]?.attemptId ?? r.quotes[targets.quotes[0]]?.attemptId
   const [selection,setSelection] = useState({id:'',highlightedId:undefined as string|undefined})
   const id = highlightedId && selection.highlightedId !== highlightedId ? highlightedId : activities.some(a=>a.id===selection.id) ? selection.id : activities[0]?.id
   const activity = activities.find(a=>a.id===id)
-  const category=activity?.type ?? 'OTHER'
-  const visibleActivities=activities.filter(a=>(a.type ?? 'OTHER')===category)
   const changes = r.changes.map((value,index)=>({value,index})).filter(x=>x.value.attemptId===id)
   const reflections = r.reflections.map((value,index)=>({value,index})).filter(x=>x.value.attemptId===id)
   const quotes = r.quotes.map((value,index)=>({value,index})).filter(x=>x.value.attemptId===id && x.value.verified)
+  const hasExplanation = explanations.some(item => item.attemptId === id)
+  const hasFullOriginal = explanations.some(item => item.attemptId === id && item.itemId)
+  const visibleQuotes = hasFullOriginal ? quotes.filter(({ index }) => targets.quotes.includes(index)) : quotes
+  const explanation = <ReportExplanations report={r} attemptId={id} narrativeEnabled={narrativeEnabled} studentName={studentName} />
   return <section className="report-data-group weekly-activity-records"><h3>활동별 기록</h3>
-    {!activities.length ? <p>이 리포트에 포함된 답변·돌아보기 기록이 없습니다.</p> : <>
-      <label className="weekly-activity-picker">생각 활동 유형<select aria-label="주간 리포트 유형 선택" value={category} onChange={e=>setSelection({id:activities.find(a=>(a.type ?? 'OTHER')===e.target.value)!.id,highlightedId})}>{[...new Set(activities.map(a=>a.type ?? 'OTHER'))].map(type=><option key={type} value={type}>{thinkingLabels[type as keyof typeof thinkingLabels] ?? '기타 활동'}</option>)}</select></label>
-      <label className="weekly-activity-picker">활동 선택<select aria-label="주간 리포트 활동 선택" value={id} onChange={e=>setSelection({id:e.target.value,highlightedId})}>{visibleActivities.map((a,i)=><option key={a.id} value={a.id}>{i+1}. {a.title}{a.type ? ` · ${thinkingLabels[a.type]}` : ''}</option>)}</select></label>
-      <header className="weekly-activity-heading"><h4>{activity?.title}</h4><span>{activity?.type && thinkingLabels[activity.type]} · {visibleActivities.findIndex(a=>a.id===id)+1} / {visibleActivities.length}</span></header>
-      {changes.map(({value:c,index:i})=><details className="report-answer-comparison report-highlight-target" open={targets.changes.includes(i) || undefined} data-answer-highlight={targets.changes.includes(i) ? 'true' : undefined} tabIndex={-1} key={c.attemptId}><summary>처음 답변과 보완 답변</summary><HighlightLabel active={targets.changes.includes(i)}/>{c.followup && <p>되묻기 · {c.followup}</p>}<div className="ws-grid report-change-pair"><div><h4>처음 답변</h4><blockquote>{c.first.text ?? '원문 없음'}</blockquote></div><div><h4>보완 답변</h4><blockquote>{c.revised.text ?? '원문 없음'}</blockquote></div></div><p>글자 수 {c.counts.chars.join(' → ')} · 문장 수 {c.counts.sentences.join(' → ')}</p><details><summary>변화 집계 상세</summary><p>까닭 연결어 수 {c.counts.reasonConnectives.join(' → ')}</p><small>실제로 센 글의 변화이며 사고력 향상으로 단정하지 않습니다.</small></details><button className="cj-secondary" onClick={()=>onProof(c.itemId ?? c.attemptId)}>전후 변화 근거</button></details>)}
-      <div className="weekly-activity-pair"><section><h4>돌아보기</h4>{!reflections.length && <p className="weekly-record-empty">이 활동의 돌아보기가 리포트에 포함되지 않았습니다.</p>}{reflections.map(({value:f,index:i})=><div className="report-highlight-target" key={i} data-answer-highlight={targets.reflections.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.reflections.includes(i)}/>{f.written ? <><span className="weekly-reflection-difficulty">{difficultyText(f.difficulty) || '난이도 미응답'}</span><p>{f.text || '달라진 점 미작성'}</p></> : <p>돌아보기 미작성</p>}</div>)}</section>
-      <section><h4>아이의 말</h4>{!quotes.length && <p className="weekly-record-empty">이 활동의 확인된 인용이 리포트에 포함되지 않았습니다.</p>}{quotes.map(({value:v,index:i})=><blockquote className="report-highlight-target" key={`${v.answerId}-${i}`} data-answer-highlight={targets.quotes.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.quotes.includes(i)}/>{v.text}</blockquote>)}</section></div>
-    </>}
+    {activities.length > 1 && (
+      <label className="weekly-activity-picker">활동 선택
+        <select aria-label="주간 리포트 활동 선택" value={id} onChange={e => setSelection({ id: e.target.value, highlightedId })}>
+          {activities.map(item => <option key={item.id} value={item.id}>{item.title}{item.type ? ` · ${thinkingLabels[item.type]}` : ''}</option>)}
+        </select>
+      </label>
+    )}
+    <div className="weekly-activity-layout">
+      {activity ? <header className="weekly-activity-heading">
+        <h4>{activity.title}</h4>{activity.type && <span>{thinkingLabels[activity.type]}</span>}
+      </header> : <p>이 리포트에 포함된 답변·돌아보기 기록이 없습니다.</p>}
+      {hasExplanation && explanation}
+      {activity && <div className="weekly-activity-pair">
+        {(!hasFullOriginal || visibleQuotes.length > 0) && <section><h4>답변 인용</h4>{!visibleQuotes.length && <p className="weekly-record-empty">이 활동의 확인된 인용이 리포트에 포함되지 않았습니다.</p>}{visibleQuotes.map(({value:v,index:i})=><blockquote className="report-highlight-target" key={`${v.answerId}-${i}`} data-answer-highlight={targets.quotes.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.quotes.includes(i)}/>{v.text}</blockquote>)}</section>}
+        <section><h4>돌아보기</h4>{!reflections.length && <p className="weekly-record-empty">이 활동의 돌아보기가 리포트에 포함되지 않았습니다.</p>}{reflections.map(({value:f,index:i})=><div className="report-highlight-target" key={i} data-answer-highlight={targets.reflections.includes(i) ? 'true' : undefined} tabIndex={-1}><HighlightLabel active={targets.reflections.includes(i)}/>{f.written ? <><span className="weekly-reflection-difficulty">{difficultyText(f.difficulty) || '난이도 미응답'}</span><p>{f.text || '달라진 점 미작성'}</p></> : <p>돌아보기 미작성</p>}</div>)}</section>
+      </div>}
+      {changes.map(({value:c,index:i})=><details className="report-answer-comparison report-highlight-target" open={targets.changes.includes(i) || undefined} data-answer-highlight={targets.changes.includes(i) ? 'true' : undefined} tabIndex={-1} key={c.attemptId}><summary>처음 답변과 보완 답변</summary><HighlightLabel active={targets.changes.includes(i)}/>{c.followup && <p>되묻기 · {c.followup}</p>}<div className="ws-grid report-change-pair"><div><h4>처음 답변</h4><blockquote>{c.first.text ?? '원문 없음'}</blockquote></div><div><h4>보완 답변</h4><blockquote>{c.revised.text ?? '원문 없음'}</blockquote></div></div><p>글자 수 {c.counts.chars.join(' → ')} · 문장 수 {c.counts.sentences.join(' → ')}</p><details><summary>변화 집계 상세</summary><p>까닭 연결어 수 {c.counts.reasonConnectives.join(' → ')}</p><small>실제로 센 글의 변화이며 사고력 향상으로 단정하지 않습니다.</small></details><button className="cj-secondary" onClick={()=>onProof(c.itemId ?? c.attemptId)}>전후 변화 내용</button></details>)}
+      {!hasExplanation && explanation}
+    </div>
     <details className="weekly-thinking-summary" open={targets.thinking.length ? true : undefined}><summary>생각 유형별 활동 전체 보기</summary>{r.thinkingTypes.map((t,i)=><p className="report-highlight-target" data-answer-highlight={targets.thinking.includes(i) ? 'true' : undefined} tabIndex={-1} key={t.type}><HighlightLabel active={targets.thinking.includes(i)}/>{thinkingLabels[t.type]} · {t.state==='NO_RECORD' ? '미관찰 · 확인된 기록 없음' : t.summary ?? `${t.missions.length}개 미션`}</p>)}</details>
   </section>
 }
 
 function HighlightLabel({ active }: { active: boolean }) {
   return active ? <span className="report-highlight-label">선택한 답변의 근거</span> : null
-}
-
-function MetricEvidence({metrics,disabled,onProof}:{metrics:(Metric & {itemId?:string})[];disabled:boolean;onProof:(id:string)=>void}) {
- const [index,setIndex]=useState(0)
- const current=Math.min(index,Math.max(0,metrics.length-1))
- return <section className="report-evidence-selector"><h4>학습 수치의 근거</h4>{metrics.length ? <div><label>항목<select aria-label="근거 항목 선택" value={current} onChange={e=>setIndex(Number(e.target.value))}>{metrics.map((m,i)=><option key={i} value={i}>{m.label}</option>)}</select></label><button className="cj-secondary" disabled={disabled} onClick={()=>onProof(metrics[current].itemId ?? `metric-${current}`)}>근거 보기</button></div> : <p>확인할 학습 수치가 없습니다.</p>}</section>
 }

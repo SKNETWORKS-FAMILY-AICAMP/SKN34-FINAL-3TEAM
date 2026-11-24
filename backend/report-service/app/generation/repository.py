@@ -120,6 +120,12 @@ def _report(row) -> WeeklyReport:
 
 class ReportRepository:
     def latest_page(self, session, student_id, status, page, size, period_type=None):
+        candidates = weekly_report.c.student_id == student_id
+        if period_type:
+            candidates &= weekly_report.c.period_type == period_type
+        # The previously published report remains available during and after an unsuccessful revision.
+        if status == ReportStatus.COMPLETED:
+            candidates &= weekly_report.c.status == ReportStatus.COMPLETED
         ranked = (
             select(
                 weekly_report,
@@ -134,13 +140,11 @@ class ReportRepository:
                 )
                 .label("rank"),
             )
-            .where(weekly_report.c.student_id == student_id)
+            .where(candidates)
             .subquery()
         )
         condition = ranked.c.rank == 1
-        if period_type:
-            condition &= ranked.c.period_type == period_type
-        if status:
+        if status and status != ReportStatus.COMPLETED:
             condition &= ranked.c.status == status
         total = session.scalar(select(func.count()).select_from(ranked).where(condition))
         rows = (

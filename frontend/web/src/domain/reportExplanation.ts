@@ -69,3 +69,28 @@ export function explanationBlocks(body: string): ExplanationBlock[] {
   flush()
   return blocks
 }
+
+/** Use the current student's name only in the rendered commentary, outside quotations. */
+export function personalizeExplanation(prose: string, studentName: string): string {
+  const name = studentName.trim().normalize('NFC')
+  const ending = name.charCodeAt(name.length - 1)
+  if (!name) return prose
+  const batchim = ending >= 0xac00 && ending <= 0xd7a3 ? (ending - 0xac00) % 28 : undefined
+  const particles: Record<string, [string, string]> = {
+    은: ['은', '는'], 는: ['은', '는'],
+    이: ['이', '가'], 가: ['이', '가'],
+    을: ['을', '를'], 를: ['을', '를'],
+    과: ['과', '와'], 와: ['과', '와'],
+  }
+  return prose.split(/("[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|'[^'\n]*')/gu).map((chunk, index) =>
+    index % 2 ? chunk : chunk.replace(
+      /자녀(?:분)?(에게|으로|까지|부터|은|는|이|가|을|를|과|와|로|의|도|만)?(?=$|[\s\p{P}\p{S}])/gu,
+      (_, particle: string | undefined) => {
+        if (!particle) return name
+        if (batchim === undefined) return name + particle
+        if (particle === '으로' || particle === '로') return name + (batchim === 0 || batchim === 8 ? '로' : '으로')
+        return name + (particles[particle]?.[batchim ? 0 : 1] ?? particle)
+      }
+    )
+  ).join('')
+}

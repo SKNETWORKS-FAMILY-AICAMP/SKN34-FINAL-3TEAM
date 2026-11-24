@@ -209,7 +209,9 @@ class ReportExplanation(ItemResponse):
 
 class ReportExplanations(Response):
     state: Literal["INCLUDED", "NOT_INCLUDED", "NO_TARGET"]
-    items: list[ReportExplanation] = Field(max_length=3)
+    items: list[ReportExplanation] = Field(
+        description="Up to three explanations by default. The local demo may include all eligible activities."
+    )
 
 
 class Evidence(Response):

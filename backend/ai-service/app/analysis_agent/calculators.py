@@ -50,6 +50,7 @@ class Computation:
     record_count: int
     insufficient: str | None = None  # NO_RECORD·NO_CHANGES·NO_REFLECTIONS
     extra_numbers: set[str] = field(default_factory=set)  # 답변에 써도 되는 기간 날짜 숫자
+    reflection_ratings: list[tuple[str, str]] = field(default_factory=list)
 
 
 def compute(intent: Intent, records: Records, scope: Scope) -> Computation:
@@ -58,6 +59,7 @@ def compute(intent: Intent, records: Records, scope: Scope) -> Computation:
     total = summary[RECORD_COUNT_LABEL]
     metrics = [total]
     sources: list[Source] = []
+    reflection_ratings: list[tuple[str, str]] = []
     insufficient = "NO_RECORD" if total.count == 0 else None
     titles = {a.attempt_id: a.mission_title for a in records.activities or []}
 
@@ -110,6 +112,10 @@ def compute(intent: Intent, records: Records, scope: Scope) -> Computation:
             count_metric("돌아보기를 쓴 활동", len(written), "기간 안에 쓴 돌아보기 수", period)
         )
         difficulty = Counter(a.reflection.difficulty for a in written if a.reflection)
+        reflection_ratings = [
+            (a.mission.title, DIFFICULTY_LABELS[a.reflection.difficulty])
+            for a in written if a.reflection and a.reflection.difficulty == "HARD"
+        ][:THOUGHT_LIMIT]
         for code, label in DIFFICULTY_LABELS.items():
             if difficulty[code]:
                 formula = "난이도별 돌아보기 수"
@@ -135,7 +141,7 @@ def compute(intent: Intent, records: Records, scope: Scope) -> Computation:
     extra = {
         str(part) for day in (scope.from_, scope.to) for part in (day.month, day.day, day.year)
     }
-    return Computation(metrics, sources, total.count, insufficient, extra)
+    return Computation(metrics, sources, total.count, insufficient, extra, reflection_ratings)
 
 
 def count_metric(label: str, count: int, formula: str, period: Period) -> Metric:

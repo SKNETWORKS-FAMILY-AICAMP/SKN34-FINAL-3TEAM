@@ -83,12 +83,20 @@ class ReportSummary(ApiModel):
     problems: list[ReportProblem] = Field(default_factory=list)
 
 
+class ReportExplanation(ApiModel):
+    """주간 리포트 '대표 답변 설명'(학부모가 이미 본 sLLM 상세 설명). core가 같은 공개·이용권 조건에서만 넘긴다."""
+
+    mission_title: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1, max_length=4000)
+
+
 class AnalysisRequest(ApiModel):
     conversation_id: str
     question: str = Field(min_length=1, max_length=1000)
     scope: Scope
     history: list[Turn] = Field(default_factory=list, max_length=20)
     report: ReportSummary | None = None
+    explanations: list[ReportExplanation] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
     def _pinned_day(self) -> "AnalysisRequest":

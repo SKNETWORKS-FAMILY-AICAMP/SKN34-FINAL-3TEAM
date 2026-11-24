@@ -21,7 +21,7 @@ data class AnalysisScope(val childId: UUID, val from: LocalDate, val to: LocalDa
 data class ConversationRow(val id: UUID, val parentUserId: UUID, val studentId: UUID,
     val periodFrom: LocalDate, val periodTo: LocalDate, val createdAt: OffsetDateTime, val updatedAt: OffsetDateTime,
     /** P25 (#392): set together for a conversation pinned to one daily report revision. */
-    val reportId: UUID? = null, val reportRevision: Int? = null) {
+    val reportId: UUID? = null, val reportRevision: Int? = null, val firstQuestion: String? = null) {
     fun scope() = AnalysisScope(studentId, periodFrom, periodTo)
 }
 data class MessageRow(val id: UUID, val conversationId: UUID, val seq: Int, val question: String,

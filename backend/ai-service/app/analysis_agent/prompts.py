@@ -11,10 +11,10 @@ import json
 from datetime import date
 
 from app.analysis_agent.calculators import Computation
-from app.analysis_agent.models import AnalysisRequest, Intent, ReportSummary, ScopeIssue
+from app.analysis_agent.models import AnalysisRequest, Intent, ReportExplanation, ReportSummary, ScopeIssue
 from app.judgment.models import ApiModel
 
-PROMPT_VERSION = "analysis@4"
+PROMPT_VERSION = "analysis@5"
 HISTORY_TURNS = 6  # 맥락 파악에 쓰는 최근 이전 대화 수
 WEEKDAYS = "월화수목금토일"
 # 웹 학부모 일일 리포트와 같은 표시 문구 (ParentReports.tsx)
@@ -43,9 +43,9 @@ CLASSIFY_SYSTEM = """\
 intent (하나만):
 - COUNT: 몇 번·몇 개·얼마나 했는지 같은 숫자 질문
 - THINKING_TYPES: 생각 유형(분석하기·따져 보기·새로 만들기·문제 해결하기·돌아보기)별 활동
-- CHILD_THOUGHTS: 아이가 실제로 쓴 생각·답변 내용
+- CHILD_THOUGHTS: 아이가 실제로 쓴 생각·답변 내용, 리포트 상세 설명·보완할 점·개선 방안에 대한 질문
 - CHANGES: 되묻기(추가 질문)를 받은 뒤 답변이 어떻게 달라졌는지
-- REFLECTIONS: 미션을 마치고 쓴 돌아보기·난이도
+- REFLECTIONS: 미션을 마치고 쓴 돌아보기·난이도, 아이가 무엇을 어려워했는지 묻는 질문
 - MATH_CHECK: 수학 문제 풀이 점검
 - OTHER: 학습 기록 분석과 관계없는 질문
 
@@ -80,6 +80,13 @@ ANSWER_SYSTEM = """\
 5. 답변 문장만 일반 텍스트로 쓴다. JSON·제목·목록 기호를 쓰지 않는다.
 6. [고정 리포트]가 있으면 그날 일일 리포트의 문제별 판정·확인 요소도 근거로 쓸 수 있다.
    판정 문구는 그대로 옮기고, 판정을 아이의 능력 평가로 바꾸어 말하지 않는다.
+7. [주간 리포트 상세 설명]이 있으면 학부모가 리포트에서 이미 본 설명이다. 리포트 내용·보완할 점·
+   개선 방안을 묻는 질문에는 이 설명을 근거로 답하되, 설명에 없는 평가를 덧붙이지 않는다.
+   아이의 글을 옮길 때는 규칙 2대로 [원문]에 있는 글자만 큰따옴표로 쓴다.
+8. 어려웠던 활동을 묻는다면 [아이가 선택한 난이도]에서 어려웠어로 표시한 활동을 우선 답한다.
+   [원문]에 아이가 이유를 직접 적었다면 그 내용을 연결한다. 난이도만 있으면 이유는 확인되지 않았다고 말한다.
+   어려움에 대한 직접 기록이 없을 때 리포트에 나온 제안은 글을 더 다듬을 지점으로 안내한다.
+   보완 제안이나 미충족 항목을 아이가 실제로 어려워했던 일로 단정하지 않는다.
 """
 
 
@@ -117,10 +124,17 @@ def build_answer_user(request: AnalysisRequest, intent: Intent, computation: Com
 {json.dumps(metrics, ensure_ascii=False, indent=1)}
 [원문]
 {sources or "(없음)"}
-{_report(request.report)}[이전 대화]
+{_ratings(computation)}{_report(request.report)}{_explanations(request.explanations)}[이전 대화]
 {_history(request)}
 [질문]
 {request.question}"""
+
+
+def _ratings(computation: Computation) -> str:
+    if not computation.reflection_ratings:
+        return ""
+    rows = [{"활동": title, "아이 선택": rating} for title, rating in computation.reflection_ratings]
+    return "[아이가 선택한 난이도]\n" + json.dumps(rows, ensure_ascii=False) + "\n"
 
 
 def _day(day: date) -> str:
@@ -143,6 +157,13 @@ def _report(report: ReportSummary | None) -> str:
     return f"""[고정 리포트] {report.day.isoformat()} 일일 리포트, 문제 {len(problems)}개
 {json.dumps(body, ensure_ascii=False, indent=1)}
 """
+
+
+def _explanations(items: list[ReportExplanation]) -> str:
+    if not items:
+        return ""
+    body = "\n\n".join(f"E{i} [{item.mission_title}]\n{item.text}" for i, item in enumerate(items, start=1))
+    return f"[주간 리포트 상세 설명]\n{body}\n"
 
 
 def _history(request: AnalysisRequest) -> str:

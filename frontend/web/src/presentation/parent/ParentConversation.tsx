@@ -1,7 +1,6 @@
 import { ArrowUp, MessageSquare, SquarePen, Search } from 'lucide-react'
 import { Link } from 'react-router'
-import { analysisResultLabel } from '../../domain/parent.ts'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import type { Child } from '../../domain/classroom.ts'
 import type { Scope, StreamState, ConversationMessage, Conversation, Evidence } from '../../domain/parent.ts'
@@ -9,9 +8,8 @@ import { parentApi } from '../../data/parent/api.ts'
 import { useConversationRequests, useParentQuery } from '../../data/parent/queries.ts'
 import { knownEntitlement, useChildEntitlement } from '../../data/payment/queries.ts'
 import { ApiError } from '../../data/apiClient.ts'
-import { QueryFeedback, MetricCards, EvidenceItems } from '../common/Workspace.tsx'
+import { QueryFeedback, EvidenceItems } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
-import { ReportTemplateEditor } from './ReportTemplateEditor.tsx'
 import type { ReportContext } from './ParentInsights.tsx'
 import type { ReportAnswer } from '../../domain/reportHighlight.ts'
 export function ParentConversation({
@@ -22,7 +20,6 @@ export function ParentConversation({
   report,
   onClearReport,
   onAnswer,
-  selectedMessageId,
 }: {
   canReadOriginals?: boolean
   child: Child
@@ -31,7 +28,6 @@ export function ParentConversation({
   report?: ReportContext
   onClearReport?: () => void
   onAnswer?: (answer: ReportAnswer | null, reveal?: boolean) => void
-  selectedMessageId?: string
 }) {
   const requests = useConversationRequests(),
     list = useParentQuery(['conversations', child.id], (signal) =>
@@ -50,9 +46,9 @@ export function ParentConversation({
     [error, setError] = useState<unknown>(null),
     [proof, setProof] = useState<{ conversationId: string; messageId: string } | null>(null),
     conversationRef = useRef<Conversation | null>(null),
-    [lastQuestion, setLastQuestion] = useState(''),
-    [startingTemplate, setStartingTemplate] = useState(false),
-    [templateOpen, setTemplateOpen] = useState(false)
+    [lastQuestion, setLastQuestion] = useState('')
+  const thread = useRef<HTMLDivElement>(null)
+  const followThread = useRef(true)
   // 이용권은 entitlement로만 판단한다(#602). 조회 전·실패면 막지 않고 서버 응답을 따른다.
   const entitlement = knownEntitlement(useChildEntitlement(child.id)),
     conversationOff = entitlement?.conversationEnabled === false
@@ -70,6 +66,7 @@ export function ParentConversation({
     setError(null)
     onAnswer?.(null)
     setLastQuestion(text)
+    followThread.current = true
     setState({ phase: 'RUNNING', temporary: '' })
     try {
       const done = await requests.ask({
@@ -94,40 +91,26 @@ export function ParentConversation({
     return { childId: child.id, scope: confirmedScope, dailyReportId: report?.periodType === 'DAILY' ? report.reportId : undefined }
   }
   function open(conversationId: string) {
+    followThread.current = true
     requests.abort()
     onAnswer?.(null); conversationRef.current = null
     setId(conversationId)
     setState({ phase: 'IDLE', temporary: '' })
     setError(null)
   }
-  async function startTemplate() {
-    if (startingTemplate || conversationOff || !canReadOriginals) return
-    setStartingTemplate(true); setError(null)
-    onAnswer?.(null)
-    try {
-      const conversation = await requests.start(target(scope))
-      if (!conversation) return
-      setId(conversation.conversationId)
-      conversationRef.current = conversation
-    } catch (e) {
-      setError(e)
-    } finally { setStartingTemplate(false) }
-  }
   const messages = detail.data?.childId === child.id && !detail.error ? detail.data.messages : [],
     pending = state.phase === 'RUNNING'
+  const lastMessage = messages.at(-1)
+  useLayoutEffect(() => {
+    if (followThread.current && thread.current) thread.current.scrollTop = thread.current.scrollHeight
+  }, [id, pending, lastMessage, state.phase])
   if (!canReadOriginals) return <section className="ws-stack"><header><h2>AI 챗봇</h2><p>학습 기록을 바탕으로 궁금한 점을 질문하는 대화입니다.</p></header><div className="parent-private-records" role="note"><h2>답변 원문이 비공개여서 기록 분석 질문은 잠시 쉬어요</h2><p>학습 현황과 리포트의 수치는 계속 볼 수 있습니다. 원문을 분석하는 대화는 아이가 공개한 뒤 이용할 수 있습니다.</p><div className="ws-actions"><Link to={`/parent/journal?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">학습 현황 보기</Link><Link to={`/parent/report?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">리포트 보기</Link></div></div></section>
   return (
     <>
-      <header className="parent-page-head">
-      <h2>AI에게 질문하기</h2>
-      <p>
-        {child.nickname} · 선택 기간 {scope.from} ~ {scope.to}
-      </p>
-      </header>
       <div className="pc-layout">
         <aside className="ws-card">
           <h3>{report ? '질문에 연결한 리포트' : '이전 대화'}</h3>
-          {report && <div role="note"><p>{report.periodType === 'DAILY' ? '일일' : '주간'} 리포트 · {report.period.from} ~ {report.period.to}</p>
+          {report && <div role="note"><p>{report.periodType === 'DAILY' ? '일일 리포트' : '주간 리포트'}</p>
             {report.periodType === 'DAILY' && <p>대화 시작 시 최신 리포트 판과 해당 날짜로 연결됩니다.</p>}
             <button className="cj-secondary" onClick={onClearReport}>전체 기록으로 질문하기</button></div>}
           {!report && <QueryFeedback query={list} />}
@@ -142,7 +125,7 @@ export function ParentConversation({
                 aria-current={id === c.conversationId ? 'true' : undefined}
                 onClick={() => open(c.conversationId)}
               >
-                <span>{c.title || '학습 기록 질문'}</span><small>{c.period.from} ~ {c.period.to}</small>
+                <span title={c.title}>{c.title || '학습 기록 질문'}</span><small>{c.period.from} ~ {c.period.to}</small>
               </button>
             ))}
           </div>
@@ -160,15 +143,18 @@ export function ParentConversation({
           </button>
         </aside>
         <section className="ws-stack pc-conversation-panel">
-          <div className="pc-thread" aria-label="대화 내용" tabIndex={0}>
+          <div className="pc-thread" ref={thread} aria-label="대화 내용" tabIndex={0} onScroll={event => {
+            const { scrollHeight, scrollTop, clientHeight } = event.currentTarget
+            followThread.current = scrollHeight - scrollTop - clientHeight < 48
+          }}>
           {!id && !pending && state.phase === 'IDLE' && <div className="pc-welcome"><MessageSquare size={30} strokeWidth={1.5} aria-hidden="true" /><h3>{child.nickname}의 기록에서<br />어떤 점이 궁금하세요?</h3><p>학습 내용과 달라진 생각을 물어보세요.</p></div>}
           {id && <QueryFeedback query={detail} />}
           {messages.map((m) => (
             <article className="ws-card pc-message" key={m.messageId}>
-              <div className="pc-user-message"><span>나의 질문</span><p>{m.question}</p></div>
+              <div className="pc-user-message"><p>{m.question}</p></div>
               {m.status === 'FAILED' ? (
                 <>
-                  <p role="alert">처리 실패 · {m.failureCode}. 임시 문장은 보관하지 않습니다.</p>
+                  <p role="alert">답변을 만들지 못했어요.</p>
                   {m.retryable && (
                     <button
                       className="cj-secondary"
@@ -177,7 +163,7 @@ export function ParentConversation({
                         void ask(m.scope ?? scope, m)
                       }}
                     >
-                      실패 메시지 재시도
+                      다시 시도
                     </button>
                   )}
                 </>
@@ -190,37 +176,21 @@ export function ParentConversation({
                   {m.correctionNotice && (
                     <p role="note">이 답변에 쓰인 판정 중 일부가 정정되었습니다.</p>
                   )}
-                  <ReportProblem targetType="ANALYSIS" targetId={m.messageId}/>
-                  {m.scope && (
-                    <p>
-                      이 답변의 실제 범위 · {m.scope.from} ~ {m.scope.to}
-                      {m.scope.changed && <strong> · 범위가 변경되었습니다.</strong>}
-                    </p>
-                  )}
-                  {m.scope?.changed && (
-                    <button className="cj-secondary" onClick={() => onScope(m.scope!)}>
-                      이 범위를 화면 전체에 적용
-                    </button>
-                  )}
-                  {(m.fallback || m.notice) && (
-                    <p className="ws-tag">
-                      {analysisResultLabel(m)}
-                    </p>
-                  )}
-                  {m.metrics && <MetricCards metrics={m.metrics} />}
-                  {onAnswer && <button className="cj-secondary" aria-pressed={selectedMessageId === m.messageId} disabled={pending}
-                    onClick={() => onAnswer({ conversationId: id!, message: m, reportId: detail.data?.reportId, reportRevision: detail.data?.reportRevision }, true)}>
-                    리포트 근거 위치 보기
-                  </button>}
-                  <p>
-                    출처 {m.source} · 조회 기록 {m.recordCount}건
-                  </p>
-                  <button
-                    className="cj-secondary"
-                    onClick={() => setProof({ conversationId: id!, messageId: m.messageId })}
-                  >
-                    답변 근거 보기
-                  </button>
+                  <footer className="pc-answer-footer">
+                    <span className="pc-answer-context">
+                      {m.scope && <span>{m.scope.from}{m.scope.from !== m.scope.to && ' ~ ' + m.scope.to}</span>}
+                      {Number.isFinite(m.recordCount) && <span>조회 기록 {m.recordCount}건</span>}
+                    </span>
+                    <div className="pc-answer-actions">
+                      {m.scope?.changed && <button type="button" onClick={() => onScope(m.scope!)}>
+                        이 기간으로 변경
+                      </button>}
+                      {!!m.evidence?.length && <button type="button" onClick={() => {
+                        if (id) setProof({ conversationId: id, messageId: m.messageId })
+                      }}>답변 근거 보기</button>}
+                      <ReportProblem targetType="ANALYSIS" targetId={m.messageId} />
+                    </div>
+                  </footer>
                 </>
               ) : (
                 <p>
@@ -232,10 +202,9 @@ export function ParentConversation({
             </article>
           ))}
           {pending && (
-            <div className="ws-chat-temp" role="status">
-              <strong>{state.message ?? '기록을 살펴보고 있습니다.'}</strong>
-              {state.temporary && <p>{state.temporary}</p>}
-              <small>임시 출력 · 숫자·인용 대조 전</small>
+            <div className="pc-progress" role="status">
+              <span aria-hidden="true" />
+              답변을 준비하고 있어요
             </div>
           )}
           {state.phase === 'CLARIFICATION' && state.clarification && (
@@ -278,7 +247,14 @@ export function ParentConversation({
             </p>
           )}
           </div>
-          {!conversationOff && (
+          {!conversationOff && <>
+            {!id && !pending && state.phase === 'IDLE' && <ExampleQuestions
+              childId={child.id}
+              onPick={text => {
+                setQuestion(text)
+                void ask(undefined, undefined, text)
+              }}
+            />}
           <form
             className="ws-card ws-form pc-composer"
             onSubmit={(e) => {
@@ -286,44 +262,24 @@ export function ParentConversation({
               void ask()
             }}
           >
-            <label>
-              기록에 대한 질문
-              <textarea
-                aria-label="기록에 대한 질문"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="되묻기 전후에 어떤 말이 더해졌나요?"
-                maxLength={1000}
-                required
-              />
-            </label>
-            <button className="cj-primary" disabled={!canReadOriginals || pending || startingTemplate}>
-              <ArrowUp size={18} aria-hidden="true" /> 질문 보내기
-            </button>
-            <ExampleQuestions
-              childId={child.id}
-              disabled={!canReadOriginals || pending || startingTemplate}
-              onPick={(text) => {
-                // 현재 자녀·기간(대화 범위)을 그대로 두고 질문만 채워 보낸다.
-                setQuestion(text)
-                void ask(undefined, undefined, text)
-              }}
+            <textarea
+              aria-label="기록에 대한 질문"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="질문을 입력해 주세요"
+              rows={1}
+              maxLength={1000}
+              required
             />
-            <small>
-              다른 화면으로 이동하면 답변 생성을 중단합니다. 저장된 대화는 이전 대화에서 다시 볼 수 있습니다.
-            </small>
+            <button className="cj-primary" type="submit" aria-label="질문 보내기" disabled={pending || !question.trim()}>
+              <ArrowUp size={20} aria-hidden="true" />
+            </button>
           </form>
-          )}
-          {!conversationOff && <details className="pc-template" onToggle={event => setTemplateOpen(event.currentTarget.open)}>
-            <summary>리포트 표시 설정 변경</summary>
-            {templateOpen && (id
-              ? <ReportTemplateEditor key={id} conversationId={id} />
-              : <button className="cj-secondary" disabled={pending || startingTemplate} onClick={() => { void startTemplate() }}>리포트 설정 대화 시작</button>)}
-          </details>}
+          </>}
         </section>
       </div>
       {proof && (
-        <Modal title="분석 답변의 근거" onClose={() => setProof(null)}>
+        <Modal title="답변 근거" scrollIndicator onClose={() => setProof(null)}>
           <EvidenceQuery
             queryKey={['message-evidence', child.id, proof.conversationId, proof.messageId]}
             load={(signal) =>
@@ -336,31 +292,25 @@ export function ParentConversation({
   )
 }
 /** 예시 질문 (FN-AGT-12, 선택). 기록이 없어 답할 수 없는 질문은 보내지 않고 가능 범위를 안내한다. */
-function ExampleQuestions({ childId, disabled, onPick }: { childId: string; disabled: boolean; onPick: (question: string) => void }) {
+function ExampleQuestions({ childId, onPick }: { childId: string; onPick: (question: string) => void }) {
   const examples = useParentQuery(['analysis-examples', childId], (signal) => parentApi.examples(childId, signal))
   if (examples.isPending || examples.error || !examples.data.length) return null
-  const unavailable = examples.data.some((e) => !e.available)
   return (
     <div className="ws-examples" role="group" aria-label="예시 질문">
-      <small>예시 질문</small>
       <div className="ws-actions">
         {examples.data.map((e) => (
           <button
             key={e.question}
             type="button"
             className="cj-secondary"
-            disabled={disabled || !e.available}
+            disabled={!e.available}
+            title={e.available ? undefined : '이 질문에 필요한 학습 기록이 아직 없습니다.'}
             onClick={() => onPick(e.question)}
           >
             {e.question}
           </button>
         ))}
       </div>
-      {unavailable && (
-        <small>
-          흐리게 표시한 질문은 이 자녀의 학습 기록이 아직 없어 답할 수 없습니다. 기록이 생긴 뒤 다시 선택해 주세요.
-        </small>
-      )}
     </div>
   )
 }

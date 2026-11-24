@@ -217,11 +217,14 @@ class RecordControllerTest {
             feedbacks = mapOf(scored.answerId to done("""{"m2": {"scores": {"hol": 3}}, "m1": null, "skipped": null}"""), unscored.answerId to done("null")),
             revealed = null, reflection = null,
         )
+        val elementId = UUID.randomUUID()
+        val requirements = mapOf(elementId to "종이를 고른 이유를 설명함")
         given(service.attempts(any(UUID::class.java) ?: student, any(Period::class.java) ?: week, isNull(), anyInt(), anyInt(), eq(true)))
-            .willReturn(RecordPage(QueryState.OK, listOf(RecordAttempt(detail, emptyList(), null)), 0, 100, 1))
+            .willReturn(RecordPage(QueryState.OK, listOf(RecordAttempt(detail, emptyList(), null, explanationRequirements = requirements)), 0, 100, 1))
 
         mockMvc.get("/internal/records/students/$student/attempts?includeModelScores=true&size=100") { caller("SYSTEM") }.andExpect {
             status { isOk() }
+            jsonPath("$.items[0].explanationRequirements['$elementId']") { value("종이를 고른 이유를 설명함") }
             jsonPath("$.items[0].answers[0].feedback.judgment.modelScores.m2.scores.hol") { value(3) }
             jsonPath("$.items[0].answers[0].feedback.judgment.modelScores.m1") { value(null) }
             // jsonPath exists·doesNotExist는 null 값을 없는 것으로 봐서 키 유무는 본문 문자열로 확인
@@ -244,6 +247,7 @@ class RecordControllerTest {
             status { isOk() }
             jsonPath("$.items[0].answers[0].feedback.judgment.result") { value("PARTIAL") }
             content { string(not(containsString("modelScores"))) }
+            jsonPath("$.items[0].explanationRequirements") { doesNotExist() }
         }
     }
 
