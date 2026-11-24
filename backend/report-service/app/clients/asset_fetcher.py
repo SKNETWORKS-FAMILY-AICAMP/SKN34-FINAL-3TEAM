@@ -68,6 +68,12 @@ class AssetFetcher:
         self._allowed = frozenset(origin.lower() for origin in allowed_origins)
         self._internal = {k.lower(): v for k, v in (internal_origins or {}).items()}
         self._max, self._total = max_bytes, total_bytes
+        if not self._allowed:
+            # 설정 누락이면 모든 그림책이 그림 없이 만들어진다(#974).
+            # 리포트·삭제 큐도 같은 워커라 기동은 막지 않는다
+            logger.warning(
+                "그림책 그림 허용 출처(MEMORY_BOOK_ASSET_ORIGINS)가 비어 있어 그림 없이 만듦"
+            )
 
     def session(self) -> "AssetSession":
         return AssetSession(self)

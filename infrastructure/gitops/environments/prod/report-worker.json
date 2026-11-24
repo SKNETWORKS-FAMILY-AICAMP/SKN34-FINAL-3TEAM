@@ -76,6 +76,10 @@
     {
       "name": "REPORT_THEME_SUMMARY_ENABLED",
       "value": "true"
+    },
+    {
+      "name": "MEMORY_BOOK_ASSET_ORIGINS",
+      "value": "https://sagomungchi-demo-347161580747-missions.s3.ap-northeast-2.amazonaws.com"
     }
   ],
   "extraVolumeMounts": [
