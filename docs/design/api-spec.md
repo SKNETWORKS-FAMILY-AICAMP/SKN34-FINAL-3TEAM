@@ -432,7 +432,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/children/{childId}/memory-books/rounds?page&size` | 학부모 | 발급 화면: 자녀의 보유 액자 회차(진행 중인 주 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, book}], page, size, totalElements}`. `book`은 그 회차의 가장 최근 그림책(없으면 null). learning 4.1.4 앨범을 자녀 범위 SYSTEM으로 읽는다 | RPT-18 | 구현 |
+| GET | `/children/{childId}/memory-books/rounds?page&size` | 학부모 | 책장 화면: 자녀의 보유 액자 회차(진행 중인 주 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, book}], page, size, totalElements, lockedCount, canCreate}`. `book`은 그 회차의 가장 최근 그림책(없으면 null). learning 4.1.4 앨범을 자녀 범위 SYSTEM으로 읽는다. 무료는 끝난 최근 4주만(아래 무료 책장). `lockedCount`·`canCreate`는 #997 기준안, 구현 #999 | RPT-18 | 구현(무료 4주 #999) |
 | POST | `/children/{childId}/memory-books` | 학부모 | body `{rounds:[{themeId, weekStart}]}`(1차 길이 1, `weekStart` 월요일) → 새로 만들면 202, 같은 회차의 만드는 중·보관 기간 안 완성본이 있으면 200으로 그것(한도·사용 예약 안 씀). 응답 `{bookId, status, failureCode, rounds, createdAt, completedAt, expiresAt}` | RPT-18 | 구현 |
 | GET | `/children/{childId}/memory-books?page&size` | 학부모 | 발급 목록(최근순). 보관 기간이 지난 완성본은 `status: EXPIRED` | RPT-18 | 구현 |
 | GET | `/children/{childId}/memory-books/{bookId}/download` | 학부모 | `{url, expiresAt}`(report 서명 URL, TTL 300초, attachment). 받을 때마다 `memory_book_download` 기록 | RPT-18 | 구현 |
@@ -442,6 +442,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 - 생성 실패 코드(`failureCode`, 목록·회차 목록의 `status: FAILED`): `STUDENT_RECORDS_PRIVATE`·`THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`(그림 주소가 있는데 한 장도 받지 못함, #975). 실패는 사용 예약을 미사용으로 마감해 하루 한도를 쓰지 않는다. 일부 그림만 받지 못하면 그 칸만 비우고 `READY`
 - 받기 오류: 없거나 다른 자녀의 그림책 404 `MEMORY_BOOK_NOT_FOUND`, 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`(detail에 실패 코드), 학생 기록 삭제 중 409 `DELETION_IN_PROGRESS`, 보관 기간(30일)이 지났거나 파일 없음 410 `MEMORY_BOOK_EXPIRED`, report 장애 503 `REPORT_UNAVAILABLE`·모양 오류 502 `REPORT_CONTRACT_INVALID`
 - 구독이 끝나도 보관 기간 안의 파일은 받을 수 있다(C2). 새 발급만 유료다
+- 무료 책장(B6, 설계 #997, 구현 #999): 유료 판정은 발급과 같은 `ProductEntitlementService`의 `features.memoryBook` 규칙(값이 없으면 구독 중만)을 쓴다. 무료면 `weekStart ≥ 이번 주 월요일(KST) − 28일`인 회차만 반환한다(진행 중인 주는 원래 빠지므로 최대 4회차). `totalElements`·페이지는 노출 회차 기준, `lockedCount`는 무료라 숨긴 회차 수(유료 0), `canCreate`는 유료 판정 결과(하루 한도·원문 공개는 기존 오류 그대로). 숨긴 회차의 기록·PDF는 지우지 않고(P09, C1) 이미 만든 그림책은 발급 목록·받기에서 보관 기간 안 그대로 쓸 수 있다. 결제하면 다음 조회부터 전체가 보인다. 무료 발급은 403 `PREMIUM_REQUIRED` 그대로
 - 학생 경로는 없다(2026-11-23 결정). 학생 세션으로 위 경로를 부르면 403 `FORBIDDEN`
 - 생성은 비동기: core `memorybook.generate` 명령 → report-worker가 learning 회차 조립(4.1.4)·core 프로필(4.5.1)·그림을 받아 PDF를 `reports/` 버킷에 저장 → `memorybook.completed` 이벤트로 core 작업을 READY·FAILED로 바꾸고 사용 예약을 마감([시퀀스 3.11](sequence-diagram.md))
 
