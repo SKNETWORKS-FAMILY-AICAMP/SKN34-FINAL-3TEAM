@@ -8,9 +8,10 @@ service:
   enabled: false
 # #508·#747: explanation budget 300s + base generation/render/upload margin
 terminationGracePeriodSeconds: 480
+# #1006: 그림책 1권 최대 669Mi(11/24 A, 당시 limit 768Mi) → limit만 1Gi, prod와 같음
 resources:
   requests: {cpu: 100m, memory: 256Mi}
-  limits: {cpu: 500m, memory: 768Mi}
+  limits: {cpu: 500m, memory: 1Gi}
 env:
   # #747: ai SageMaker 호출 1회(60초 제한) 기준. 설명 주당 최대 3건
   - {name: REPORT_NARRATIVE_TIMEOUT_SECONDS, value: "80"}

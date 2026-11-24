@@ -1877,10 +1877,10 @@ PR #966(추억 그림책 PDF 발급)이 develop에 들어갔지만 prod report-w
 |---|---|---|
 | 그림 허용 출처 | `report-worker.json`에 `MEMORY_BOOK_ASSET_ORIGINS=https://sagomungchi-demo-347161580747-missions.s3.ap-northeast-2.amazonaws.com` | learning은 `ASSET_S3_BUCKET`(missions)·`S3_REGION`으로 AWS SDK v2 `S3Presigner`를 만들고 `endpointOverride`가 없다(`S3_PUBLIC_ENDPOINT_URL` 없음). 그래서 서명 URL은 virtual-hosted 방식 regional 주소 `https://<버킷>.s3.<리전>.amazonaws.com/theme-drafts/…`다. 버킷 이름에 점이 없어 경로 방식으로 바뀌지 않는다. `asset_fetcher.py`는 `scheme://host[:port]`를 소문자로 비교하므로 경로·쿼리 없이 출처만 넣는다. `scripts/tests/test_runtime_config.py`가 두 파일 값이 맞는지 본다 |
 | 클러스터 안 주소 치환 | prod에는 넣지 않음(`MEMORY_BOOK_ASSET_INTERNAL_ORIGINS` 없음) | kind의 MinIO용이다. prod는 S3에 바로 연결한다 |
-| 크기 상한 | 기본값 그대로: 그림 1장 5MiB(`MEMORY_BOOK_IMAGE_MAX_BYTES`), 1권 40MiB(`MEMORY_BOOK_TOTAL_MAX_BYTES`), 그림 1장 10초(`MEMORY_BOOK_ASSET_TIMEOUT_SECONDS`) | ai 테마 그림은 장면마다 PNG 1장이고 1권은 최대 7장(표지·월~금·엔딩)이다. 실제 크기는 9.20.3의 D6 측정으로 확인한다. 장당 2MB를 넘으면 상한이 아니라 축소(Pillow)를 더하는 것이 D6 기준이다 |
+| 크기 상한 | 기본값 그대로: 그림 1장 5MiB(`MEMORY_BOOK_IMAGE_MAX_BYTES`), 1권 40MiB(`MEMORY_BOOK_TOTAL_MAX_BYTES`), 그림 1장 10초(`MEMORY_BOOK_ASSET_TIMEOUT_SECONDS`) | ai 테마 그림은 장면마다 PNG 1장이고 1권은 최대 7장(표지·월~금·엔딩)이다. 실제 크기는 9.20.2 6단계의 D6 측정으로 확인한다. 장당 2MB를 넘으면 상한이 아니라 축소(Pillow)를 더하는 것이 D6 기준이다 |
 | egress | 바꾸지 않음 | report-worker NetworkPolicy에 이미 443 → S3 대역 9개(서울 S3 prefix list 대역, report-api·scoring과 같음)가 있다. private 라우팅 테이블 2개는 S3 Gateway endpoint(`sagomungchi-demo-vpce-s3`, 기본 정책)로 가므로 NAT를 거치지 않는다(5절, #212). regional 주소라 서울 대역 안이고, global 주소(`s3.amazonaws.com`)는 쓰지 않는다. 서명 URL은 learning 역할의 `s3:GetObject`(`theme-drafts/*`)로 서명돼 report-worker에는 S3 권한이 필요 없다. DNS(53)는 chart 기본 허용 |
 | RabbitMQ | 바꾸지 않음 | 큐 `report.memorybook.generate`(재시도 3개·DLQ)·`core.memorybook.events`와 바인딩(`cmd.direct` `memorybook.generate`, `events.topic` `memorybook.completed`)은 공용 `charts/platform-data/files/rabbitmq/definitions.json`에 있고 prod도 같은 파일을 쓴다. 권한(`import-definitions.sh`): report 읽기에 `report.memorybook.generate`, topic 쓰기에 `memorybook.completed`, core 읽기에 `core.memorybook.events`. 초기화 Job 이름에 definitions 해시가 들어 있어 platform-data를 새 revision으로 동기화하면 다시 돈다 |
-| 구독·KEDA | 바꾸지 않음 | report-worker는 Pod 1개(`replicaCount: 1`, HPA·KEDA 꺼짐)가 큐 3개(삭제·리포트·그림책)를 각자 채널, `CONSUMER_PREFETCH=1`로 구독한다. 큐는 passive로만 확인하므로 **platform-data가 앱보다 먼저 동기화돼야** 한다(Argo CD wave 5 → 앱). 큐가 없으면 report-worker가 기동에 실패한다. 리포트 1건과 그림책 1권이 동시에 Chromium을 띄울 수 있다(메모리 한도 768Mi, E4) |
+| 구독·KEDA | 바꾸지 않음 | report-worker는 Pod 1개(`replicaCount: 1`, HPA·KEDA 꺼짐)가 큐 3개(삭제·리포트·그림책)를 각자 채널, `CONSUMER_PREFETCH=1`로 구독한다. 큐는 passive로만 확인하므로 **platform-data가 앱보다 먼저 동기화돼야** 한다(Argo CD wave 5 → 앱). 큐가 없으면 report-worker가 기동에 실패한다. 리포트 1건과 그림책 1권이 동시에 Chromium을 띄울 수 있다(메모리 한도 1Gi, E4·[9.20.3](#9203-e4-메모리-측정과-limit-상향-1006-2026-11-24)) |
 | core V57 | 바꾸지 않음 | `V57__memory_book_jobs.sql`은 core-migrate 이미지에 들어 있고 digest PR의 `migration.revision`(`main-<SHA>`)으로 PreSync Job이 앱보다 먼저 돈다(9.18.3). 상품 값도 이 migration이 넣는다: `price = 0` 상품 `features.memoryBook=false`, `price > 0` 상품 `true`, 모든 상품 `limits.dailyMemoryBooks=3`. 결정 B1(유료 상품 전체)·B2(자녀당 하루 3권)와 같다. 따로 넣는 seed·상품 SQL은 없다 |
 | 기존 구독 | 그대로 동작 | V57 전에 만든 구독 스냅숏(시연 `prepare-demo-account-students.sql` 포함)에는 두 키가 없다. 이때 `features.memoryBook`은 구독 중이면 허용, `limits.dailyMemoryBooks`는 무료 상품 값(V57 뒤 3)을 쓴다(`ProductEntitlementService`). 결과는 B1·B2와 같다 |
 | B 계정 | 계정 번호 교체에 포함 | 출처에 missions 버킷 이름(계정 번호)이 들어 있다. `scripts/aws_account_switch.py`가 prod `*.json`을 바꾸므로 같이 바뀐다. 리전이 바뀌면 `s3.<리전>`과 S3 egress 대역도 바꾼다([AWS README B 런북](../../infrastructure/aws/README.md#a-계정-값-교체)) |
@@ -1901,7 +1901,7 @@ PR #966(추억 그림책 PDF 발급)이 develop에 들어갔지만 prod report-w
 | 4 | 받기 | 같은 화면 "받기"로 PDF 저장 | PDF가 열리고 9쪽 안팎 |
 | 5 | 그림 들어갔는지 | 명령 3(PDF 그림 세기)과 report-worker 로그 | 그림 수 = 그 회차 그림 수(엔딩을 봤으면 7, 아니면 6), 로그에 `그림책 그림 건너뜀` 0줄 |
 | 6 | D6 그림 크기 | 명령 4(원본 크기)와 명령 3의 가로·세로 | 장당 최대 크기. 2MB를 넘는 그림이 있으면 D6대로 축소를 더할지 정한다 |
-| 7 | E4 메모리 | 명령 2 결과의 최댓값, 재시작 수 | 최대 메모리가 한도 768Mi의 몇 %인지, `restartCount` 변화 없음·`OOMKilled` 없음 |
+| 7 | E4 메모리 | 명령 2 결과의 최댓값, 재시작 수 | 최대 메모리가 한도(1Gi, 11/24 A 측정 때는 768Mi)의 몇 %인지, `restartCount` 변화 없음·`OOMKilled` 없음 |
 
 ```powershell
 # 명령 1: 설정·큐·구독
@@ -1951,6 +1951,27 @@ SELECT status, failure_code, size_bytes, created_at, completed_at FROM memory_bo
 
 - 마지막 SQL의 칸 이름은 V57 기준이다. 다르면 `\d memory_book_job`으로 맞춘다.
 - B(시연)에서는 같은 절차를 B 런북 경로 확인 뒤 한 번 더 한다(#927 B 항목).
+
+### 9.20.3 E4 메모리 측정과 limit 상향 (#1006, 2026-11-24)
+
+11/24 A에서 9.20.2 7단계(명령 2, 2초 간격 `kubectl top`)로 그림 6장(엔딩 전 회차) 그림책 1권을 발급하는 동안 report-worker 최대 메모리는 **669Mi / limit 768Mi(87%)**였다. 재시작·`OOMKilled`는 없었다. 엔딩을 본 회차(그림 7장)나 주간 리포트와 겹치면 limit을 넘을 수 있어 limit만 올렸다.
+
+| 항목 | 전 | 후 | 근거 |
+|---|---|---|---|
+| prod `report-worker.json` | requests 256Mi·limits 768Mi | requests 256Mi·**limits 1Gi** | 측정 최대 669Mi에서 약 355Mi 여유. 그림 7장 회차·리포트와 겹치는 경우가 이 안에 드는지는 B에서 잰다(아래 남은 확인) |
+| local `report-worker.yaml`(kind도 이 파일) | 같음 | 같음(limits 1Gi) | prod와 같은 PDF 경로라 같은 값으로 맞췄다 |
+| requests | 256Mi | 256Mi(그대로) | 스케줄링은 requests 기준이라 노드 배치·Karpenter 확장·비용이 바뀌지 않는다 |
+
+동시 처리: report-worker는 Pod 1개, 큐마다 채널 `CONSUMER_PREFETCH=1`이라 그림책은 Pod 안에서 한 번에 1권씩이다. 겹칠 수 있는 것은 그림책 1권 + 주간 리포트 1건(full·free 2판 Chromium)이다. 이번 변경에서 동시 처리 수 제한(E4)은 더하지 않았다. 둘지 여부는 B 측정 뒤 정하고, replica나 prefetch를 늘리면 다시 잰다.
+
+노드 여유(저장소 값 기준, AWS 조회 없음):
+- ResourceQuota·LimitRange: `app` namespace를 포함해 저장소에 정의가 없다. limit 상향을 막는 제한이 없다.
+- 관리형 노드 그룹 `application`: t3.medium(메모리 4GiB) 2대. limit 1Gi는 노드 한 대에 들어간다. limits 합은 requests와 달리 노드 용량을 넘을 수 있고(overcommit), 실제 사용이 늘 때만 노드 압박이 생긴다. 11/24 A의 같은 노드 실제 사용 약 62%, requests 합 67%(#1006)였고 requests가 그대로라 67%도 그대로다.
+- Karpenter NodePool `application-burst`(t3.medium·t3.large, limits CPU 4·메모리 16Gi): NodePool `limits`는 만드는 노드 용량의 합이라 Pod limit과 관계없다. report-worker에 nodeSelector가 없어 어느 노드에 가도 1Gi보다 노드가 크다.
+
+확인: `helm lint --strict`와 `helm template`(prod는 `images/report-worker.json`까지, kube 1.35.8)에서 prod·local 모두 limits memory 1Gi·requests 256Mi. `test_runtime_config`·`test_memory_book_contract` 14개, `test_cd_*` 101개 통과.
+
+남은 확인(B): develop → main 릴리스로 B 첫 배포에 들어간 뒤, B에서 엔딩을 본 회차(그림 7장) 1권 발급 중 최대 메모리를 9.20.2 명령 2로 재고 limit 1Gi의 몇 %인지, 재시작·`OOMKilled`가 없는지 #1006에 적는다. 90%를 넘으면 limit을 더 올릴지, 그림책과 리포트가 동시에 렌더링하지 않게 할지 정한다.
 
 ## 9.21 S3 수명 주기: 추억 그림책 (#975, 2026-11-24)
 
