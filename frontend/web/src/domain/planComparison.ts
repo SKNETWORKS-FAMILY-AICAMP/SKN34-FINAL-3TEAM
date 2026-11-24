@@ -30,6 +30,20 @@ function limited(product: Product, key: string, unit: string, featureKey?: strin
   return limit === 0 ? NONE : `하루 ${limit}${unit}`
 }
 
+/** 이번 회차 그림책을 만들 수 없는 상품의 책장(무료, #999·#1000): 끝난 최근 4주 표지만 */
+export const MEMORY_BOOK_FREE = '최근 4주 표지 보기'
+/**
+ * 추억 그림책 칸(#998 이슈 댓글 11/24 확정). 발급 안 되는 상품은 "최근 4주 표지 보기",
+ * 발급되는 상품은 "전체 보기 + 발급 하루 N권"(N = `limits.dailyMemoryBooks`, 상품 설명 `memoryBookLabel`과 같은 규칙:
+ * 값이 없거나 잘못되면 숫자 없이 "전체 보기 + 발급", 0이면 발급 없이 "전체 보기").
+ */
+function memoryBookCell(product: Product) {
+  if (!enabled(product, 'memoryBook')) return MEMORY_BOOK_FREE
+  const limit = dailyLimit(product, 'dailyMemoryBooks')
+  if (limit === null) return '전체 보기 + 발급'
+  return limit === 0 ? '전체 보기' : `전체 보기 + 발급 하루 ${limit}권`
+}
+
 /**
  * 무료·프리미엄 비교표(P13, #998). 지금 구현된 기능만 싣는다. 상품 데이터 칸은
  * 가격·`features.sundayTheme`·`features.extraMissions`·`limits.dailyConversations`·`features.memoryBook`+`limits.dailyMemoryBooks`,
@@ -54,7 +68,7 @@ export function planComparison(free: Product, premium: Product): { price: { free
         paidOnly('한 주의 기록·이번 주 저녁 질문'),
         paidOnly('대표 답변 설명'),
         row('리포트에 물어보기', p => limited(p, 'dailyConversations', '회')),
-        row('추억 그림책', p => limited(p, 'dailyMemoryBooks', '권', 'memoryBook'), '한 주를 엮은 그림책'),
+        row('추억 그림책', memoryBookCell, '한 주를 엮은 그림책'),
       ] },
     ],
   }
