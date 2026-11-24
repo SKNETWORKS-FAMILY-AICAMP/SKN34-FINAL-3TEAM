@@ -84,7 +84,7 @@ class ReportSummary(ApiModel):
 
 
 class ReportExplanation(ApiModel):
-    """주간 리포트 '대표 답변 설명'(학부모가 이미 본 sLLM 상세 설명). core가 같은 공개·이용권 조건에서만 넘긴다."""
+    """공개 범위와 이용권을 확인한 주간 리포트 설명."""
 
     mission_title: str = Field(min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=4000)

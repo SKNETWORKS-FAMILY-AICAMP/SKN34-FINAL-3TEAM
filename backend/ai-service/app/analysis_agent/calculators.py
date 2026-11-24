@@ -114,7 +114,8 @@ def compute(intent: Intent, records: Records, scope: Scope) -> Computation:
         difficulty = Counter(a.reflection.difficulty for a in written if a.reflection)
         reflection_ratings = [
             (a.mission.title, DIFFICULTY_LABELS[a.reflection.difficulty])
-            for a in written if a.reflection and a.reflection.difficulty == "HARD"
+            for a in written
+            if a.reflection and a.reflection.difficulty == "HARD"
         ][:THOUGHT_LIMIT]
         for code, label in DIFFICULTY_LABELS.items():
             if difficulty[code]:

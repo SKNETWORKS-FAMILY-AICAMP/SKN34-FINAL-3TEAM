@@ -11,7 +11,13 @@ import json
 from datetime import date
 
 from app.analysis_agent.calculators import Computation
-from app.analysis_agent.models import AnalysisRequest, Intent, ReportExplanation, ReportSummary, ScopeIssue
+from app.analysis_agent.models import (
+    AnalysisRequest,
+    Intent,
+    ReportExplanation,
+    ReportSummary,
+    ScopeIssue,
+)
 from app.judgment.models import ApiModel
 
 PROMPT_VERSION = "analysis@5"
@@ -83,8 +89,10 @@ ANSWER_SYSTEM = """\
 7. [주간 리포트 상세 설명]이 있으면 학부모가 리포트에서 이미 본 설명이다. 리포트 내용·보완할 점·
    개선 방안을 묻는 질문에는 이 설명을 근거로 답하되, 설명에 없는 평가를 덧붙이지 않는다.
    아이의 글을 옮길 때는 규칙 2대로 [원문]에 있는 글자만 큰따옴표로 쓴다.
-8. 어려웠던 활동을 묻는다면 [아이가 선택한 난이도]에서 어려웠어로 표시한 활동을 우선 답한다.
-   [원문]에 아이가 이유를 직접 적었다면 그 내용을 연결한다. 난이도만 있으면 이유는 확인되지 않았다고 말한다.
+8. 어려웠던 활동을 묻는다면 [아이가 선택한 난이도]에서
+   어려웠어로 표시한 활동을 우선 답한다.
+   [원문]에 아이가 이유를 직접 적었다면 그 내용을 연결한다.
+   난이도만 있으면 이유는 확인되지 않았다고 말한다.
    어려움에 대한 직접 기록이 없을 때 리포트에 나온 제안은 글을 더 다듬을 지점으로 안내한다.
    보완 제안이나 미충족 항목을 아이가 실제로 어려워했던 일로 단정하지 않는다.
 """
@@ -133,7 +141,9 @@ def build_answer_user(request: AnalysisRequest, intent: Intent, computation: Com
 def _ratings(computation: Computation) -> str:
     if not computation.reflection_ratings:
         return ""
-    rows = [{"활동": title, "아이 선택": rating} for title, rating in computation.reflection_ratings]
+    rows = [
+        {"활동": title, "아이 선택": rating} for title, rating in computation.reflection_ratings
+    ]
     return "[아이가 선택한 난이도]\n" + json.dumps(rows, ensure_ascii=False) + "\n"
 
 
@@ -162,7 +172,9 @@ def _report(report: ReportSummary | None) -> str:
 def _explanations(items: list[ReportExplanation]) -> str:
     if not items:
         return ""
-    body = "\n\n".join(f"E{i} [{item.mission_title}]\n{item.text}" for i, item in enumerate(items, start=1))
+    body = "\n\n".join(
+        f"E{i} [{item.mission_title}]\n{item.text}" for i, item in enumerate(items, start=1)
+    )
     return f"[주간 리포트 상세 설명]\n{body}\n"
 
 

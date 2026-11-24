@@ -186,8 +186,7 @@ def test_local_weekly_report_includes_each_activity_without_batch_deadline(monke
     try:
         student = fixed_result()[0].student_id
         activities = [
-            scored(student, times=[f"2026-10-2{index}T10:00:00+09:00"])
-            for index in range(4)
+            scored(student, times=[f"2026-10-2{index}T10:00:00+09:00"]) for index in range(4)
         ]
         original = activities[0]
         newer = replace(original.answers[0], id=uuid4(), version=2)
@@ -196,8 +195,9 @@ def test_local_weekly_report_includes_each_activity_without_batch_deadline(monke
         result = asyncio.run(generator.generate(command, report))
         document = ReportExplanations.model_validate(from_result(report, result)["explanations"])
         assert len(document.items) == len(ai.calls) == 4
-        assert {item.attempt_id for item in document.items} == {activity.id for activity in activities}
-        assert next(item.answer_id for item in document.items if item.attempt_id == original.id) == newer.id
+        answers = {item.attempt_id: item.answer_id for item in document.items}
+        assert answers.keys() == {activity.id for activity in activities}
+        assert answers[original.id] == newer.id
     finally:
         get_settings.cache_clear()
 

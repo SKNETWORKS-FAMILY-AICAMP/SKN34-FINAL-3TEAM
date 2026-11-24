@@ -46,7 +46,11 @@ async def classify(state: AnalysisState, runtime: Runtime[AgentContext]) -> Anal
         return {"intent": "COUNT", "fallback_reason": "AI_UNAVAILABLE"}
     update: AnalysisState = {"intent": result.data.intent, "model": result.model}
     issue = result.data.scope_issue
-    if issue == "NONE" and result.data.intent in ("OTHER", "CHILD_THOUGHTS", "REFLECTIONS") and DIFFICULTY_QUESTION.search(request.question):
+    if (
+        issue == "NONE"
+        and result.data.intent in ("OTHER", "CHILD_THOUGHTS", "REFLECTIONS")
+        and DIFFICULTY_QUESTION.search(request.question)
+    ):
         update["intent"] = "REFLECTIONS"
     if issue != "NONE":
         scope = request.scope

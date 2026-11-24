@@ -123,7 +123,7 @@ class ReportRepository:
         candidates = weekly_report.c.student_id == student_id
         if period_type:
             candidates &= weekly_report.c.period_type == period_type
-        # The previously published report remains available during and after an unsuccessful revision.
+        # Keep the last published revision available when a newer run is incomplete.
         if status == ReportStatus.COMPLETED:
             candidates &= weekly_report.c.status == ReportStatus.COMPLETED
         ranked = (
