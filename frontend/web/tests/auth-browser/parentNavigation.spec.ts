@@ -625,6 +625,8 @@ test('#998: 이용권·결제 #plan-compare 주소로 들어오면 비교표 위
   await billingServer(context)
   for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 900 })
+    // 같은 해시 주소로 다시 goto하면 페이지가 새로 열리지 않고 창 크기만 바뀐다(CI browser-prod 실패). 너비마다 새로 연다.
+    await page.goto('about:blank')
     await page.goto(compareHref)
     await expectComparison(page)
     await page.screenshot({ path: `test-results/parent-navigation/plan-compare-${width}.png` })

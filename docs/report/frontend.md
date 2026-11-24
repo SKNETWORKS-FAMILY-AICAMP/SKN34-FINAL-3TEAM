@@ -1482,6 +1482,7 @@ PR #966 검증 때 `tests/queryHooks.test.ts`의 '#950 자녀 삭제 접수 응�
 - 목업 브라우저(1440·768·390 프로젝트로 임시 설정. 포트 5271을 #1000 작업 폴더 개발 서버가 쓰고 있어 5281로 띄움): `reportWorkspace`·`landingGuide`(이용 안내 비교표 새 시험)·`payment-checkout-state` 45개 통과. `dailyAnswerTimes`·`scheduledDay`·`workspaces` 45개 중 43개 통과. 실패 2개는 390의 관리자 화면 시험(`workspaces.spec.ts:161`·`:177`)으로, `@responsive` 표시가 없어 저장소 설정으로는 390에서 돌지 않는 시험이고 이 변경을 빼고 develop 그대로 돌려도 같게 실패함
 - 실서버 e2e(`tests/e2e/parent-reports.spec.ts`)는 영역 이름만 바꾸고 돌리지 않음
 - CI e2e learning-journey가 무료 주간 리포트 옛 문장을 기대해 실패 → 미리보기 기준으로 고침(transfer-local 같은 줄도)
+- CI browser-prod 실패: 같은 해시 주소로 다시 goto해 페이지가 새로 열리지 않고 창 크기만 줄던 시험 흐름 문제 → 너비마다 새로 열도록 고침(앱 변경 없음)
 
 **남은 것**
 
