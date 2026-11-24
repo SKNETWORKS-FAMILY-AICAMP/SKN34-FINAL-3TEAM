@@ -52,7 +52,7 @@ test('프리미엄 학생 서술 답·되묻기 → 일일 리포트 문제 기�
 
   await openCompletedReport(page, '주간', `${from} ~ ${to}`)
   await expect(page.getByRole('heading', { name: '주간 리포트', exact: true })).toBeVisible()
-  const explanations = page.getByRole('region', { name: '젬마 설명' })
+  const explanations = page.getByRole('region', { name: '대표 답변 설명' })
   await expect(page.locator('.weekly-activity-heading')).toContainText(mission)
   await expect(explanations.getByRole('heading', { name: '상세 분석', exact: true })).toBeVisible()
   await expect(explanations.getByRole('note')).toHaveCount(0)

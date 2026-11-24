@@ -1446,3 +1446,41 @@ PR #966 검증 때 `tests/queryHooks.test.ts`의 '#950 자녀 삭제 접수 응�
 - **이미 된 수정**: #964 `e41de6e5`(11/23 20:36 KST)가 비교 앞에 `await until(() => h.get().status.data?.status === 'COMPLETED')`를 넣어 렌더를 기다림. 실패한 `0aaefc71`에는 이 커밋이 없음(`git merge-base --is-ancestor`로 확인). PR #966의 로컬 실패도 같은 때(develop 반영 전)로 봄. #964 이후 ci-web 실패 기록(모든 브랜치)에 이 시험은 없음
 - **남은 고정 대기**: 156행 `pause(30)`은 접수 응답을 `setQueryData`로 이미 넣은 값을 렌더에서 바로 읽는 단계라 시간에 따라 결과가 바뀌지 않음. 손대지 않음
 - **검증**(develop `acae6588` 위, 이 PC): `npm test` 전체 455개 20회 반복 실패 0, `npm run test:types` 통과. 그 전에 develop `162a5c07`에서 이 시험만 12회·전체 8회 실패 0
+
+## 57. 무료·프리미엄 비교표와 무료 주간 리포트 프리미엄 칸 미리보기 (#998, 2026-11-24)
+
+설계 #997(P13·FN-PAY-01, PR #1005)에 맞춰 학부모가 무료·프리미엄 차이를 한곳에서 보게 했다. **웹만 바꿨다**: API·상품 데이터·권한 규칙(`ProductEntitlementService`)은 그대로이고 새 권한 규칙은 없다.
+
+**정한 것**(이슈 "확인 필요"에 대한 담당자 결정, 2026-11-24)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 설명 카드 이름 | 비교표 행과 리포트 화면 모두 "대표 답변 설명". 리포트의 "AI 관찰 설명" 안내 6개와 "젬마 설명"(카드 제목·영역 이름)을 바꿈. `parentDisplay.ts`의 근거 종류 이름 `AI_OBSERVATION: 'AI 관찰'`은 다른 개념이라 그대로 | P13 "주간 리포트 설명 카드는 '대표 답변 설명'으로 부른다". P13은 고치지 않음 |
+| 추억 그림책 칸 | 행 이름 아래 "한 주를 엮은 그림책", 프리미엄 칸 "하루 N권"(N = `limits.dailyMemoryBooks`). 값이 없으면 유료만 "있음", 0이면 "–", 무료는 "–". 상품 설명의 "추억 그림책 하루 N권"(B4, `memoryBookLabel`)은 그대로 | 무료 책장(끝난 최근 4주 표지)은 #999·#1000 구현 전이라 싣지 않음(P13 "지금 구현된 기능만") |
+| 비교표 위치 | 이용권·결제 화면 맨 위 `<section id="plan-compare">` 하나. 리포트 "비교 보기"·프리미엄 칸, #1000 책장 잠금 안내는 `/parent/billing?childId={자녀}#plan-compare`로 보냄. 모달 없음 | 들어오는 곳이 여럿이어도 표는 한 곳 |
+| 이용 안내 | 로그인 전 이용 안내(`landing/UsageGuide.tsx`) "이용 길잡이"에 접는 칸 "무료·프리미엄 비교". 같은 컴포넌트를 `id` 없이 씀 | 상품 목록 `GET /products`는 공개 API(api-spec). 아이 화면 제외(FN-DSH-01)만 지킴 |
+| 책장 잠금 → 비교표 | #1000으로 넘김 | 책장 화면이 #1000 범위 |
+
+**비교표 칸**
+
+- 상품 값 칸: 가격(`price`), 주간 테마(`features.sundayTheme` → 월~일/월~토), 생각 유형별 추가 미션(`features.extraMissions`), 리포트에 물어보기(`limits.dailyConversations` → 하루 N회), 추억 그림책(`features.memoryBook` + `limits.dailyMemoryBooks`). 값이 없으면 core와 같게 유료 상품(`price > 0`)에만 제공으로 봄. 나머지(되물음·돌아보기, 꾸미기, 일일 리포트, 주간 학습 수치, 한 주의 기록·이번 주 저녁 질문, 대표 답변 설명)는 고정 문구
+- 쓰는 상품: 활성 무료(0원) 하나와 활성 월 결제 유료 하나. 하나라도 없으면 표 대신 안내. "–"는 화면 읽기 프로그램에서 "없음"으로 읽힘
+- 파일: `domain/planComparison.ts`(칸 계산), `presentation/common/PlanComparison.tsx`·`planComparison.css`
+
+**무료 주간 리포트 미리보기**
+
+- 조건: 주간 리포트이고 entitlement `narrativeEnabled === false`이고 원문 공개. "이 리포트는 학습 수치를 제공합니다." 자리에 "한 주의 기록"·"이번 주 저녁 질문" 제목과 한 줄 설명, "비교 보기"를 둠. 셋 다 비교표 주소 링크이고 내용·근거는 요청하지 않음
+- 그대로 둔 것: 원문 비공개("아이의 답변이 비공개입니다."), 유료 주간, 일일 리포트, 활동별 기록의 "대표 답변 설명은 프리미엄 이용권에서 제공합니다." 안내
+- `#plan-compare`로 들어오면 상품을 받아 표를 그린 뒤 그 위치로 옮김. 학부모 화면 위쪽 머리글은 너비마다 높이가 달라서(768에서 두 줄, 약 160px) `scroll-margin-top`을 Workspace의 `--parent-topbar-height` + 16px로 둠. 처음에는 24px 고정이라 768에서 제목이 머리글에 가려졌음(브라우저 시험으로 발견)
+
+**검증**(develop `86f997df` 위, 이 PC. 커밋 전 develop `bbcf9c61`(#999, frontend 변경 없음)으로 다시 맞춘 뒤 `npm test`·`lint`·`test:types`·`build`만 다시 돌려 같은 결과)
+
+- `npm test` 459개 통과(새 `tests/planComparison.test.ts` 4개: 상품 값 칸, 값 없음, 한도 0·잘못된 값·꺼진 기능, 상품 고르기). `npm run lint` 오류 0(경고 1개는 `ReportExplanations.tsx:37`의 기존 경고). `npm run test:types`·`npm run build` 통과
+- 인증 브라우저(`playwright.auth.config.ts`, 운영 빌드): `parentNavigation`·`parentUsability` 47개 통과. #998 새 시험 5개는 시험 안에서 1440·768·390을 돎: 무료 주간 미리보기 → 비교표 이동, 비공개·유료·일일에는 미리보기 없음, `/parent/billing?childId=…#plan-compare` 직접 열기(제목이 머리글에 가려지지 않음, 가로 넘침 없음, "AI 관찰"·"생각 노트" 없음)
+- 목업 브라우저(1440·768·390 프로젝트로 임시 설정. 포트 5271을 #1000 작업 폴더 개발 서버가 쓰고 있어 5281로 띄움): `reportWorkspace`·`landingGuide`(이용 안내 비교표 새 시험)·`payment-checkout-state` 45개 통과. `dailyAnswerTimes`·`scheduledDay`·`workspaces` 45개 중 43개 통과. 실패 2개는 390의 관리자 화면 시험(`workspaces.spec.ts:161`·`:177`)으로, `@responsive` 표시가 없어 저장소 설정으로는 390에서 돌지 않는 시험이고 이 변경을 빼고 develop 그대로 돌려도 같게 실패함
+- 실서버 e2e(`tests/e2e/parent-reports.spec.ts`)는 영역 이름만 바꾸고 돌리지 않음
+
+**남은 것**
+
+- PDF(report-service `renderer.py`)의 "AI 관찰 설명이 포함되지 않았습니다" 문구는 이번 범위 밖
+- 책장 잠금 안내 → 비교표 연결은 #1000

@@ -57,19 +57,19 @@ export function ReportExplanations({ report, attemptId, narrativeEnabled, studen
   const items = reportExplanationItems(report)
   const matching = items.filter(item => item.attemptId === attemptId)
   let notice = ''
-  if (report.parentSharingEnabled !== true) notice = '답변 원문이 비공개이거나 공개 여부를 확인하지 못해 AI 관찰 설명을 표시하지 않습니다.'
-  else if (narrativeEnabled === false) notice = 'AI 관찰 설명은 프리미엄 이용권에서 제공합니다.'
-  else if (!report.explanations) notice = '이 리포트에는 AI 관찰 설명 정보가 제공되지 않았습니다.'
-  else if (report.explanations.state === 'NOT_INCLUDED') notice = '이 리포트에 AI 관찰 설명이 포함되지 않았습니다.'
-  else if (report.explanations.state === 'NO_TARGET') notice = 'AI 관찰 설명에 해당하는 답변 기록이 없습니다.'
-  else if (!items.length) notice = 'AI 관찰 설명 정보를 확인하지 못했습니다.'
-  else if (!matching.length) notice = '이 활동의 답변에 연결된 젬마 설명이 없습니다.'
+  if (report.parentSharingEnabled !== true) notice = '답변 원문이 비공개이거나 공개 여부를 확인하지 못해 대표 답변 설명을 표시하지 않습니다.'
+  else if (narrativeEnabled === false) notice = '대표 답변 설명은 프리미엄 이용권에서 제공합니다.'
+  else if (!report.explanations) notice = '이 리포트에는 대표 답변 설명 정보가 제공되지 않았습니다.'
+  else if (report.explanations.state === 'NOT_INCLUDED') notice = '이 리포트에 대표 답변 설명이 포함되지 않았습니다.'
+  else if (report.explanations.state === 'NO_TARGET') notice = '대표 답변 설명에 해당하는 답변 기록이 없습니다.'
+  else if (!items.length) notice = '대표 답변 설명 정보를 확인하지 못했습니다.'
+  else if (!matching.length) notice = '이 활동의 답변에 연결된 대표 답변 설명이 없습니다.'
 
-  return <section className="report-explanations" aria-label="젬마 설명">
+  return <section className="report-explanations" aria-label="대표 답변 설명">
     {notice ? <p role="note">{notice}</p> : matching.map(item =>
       <article className="report-explanation-card" key={item.itemId ?? item.answerId}>
         <OriginalAnswer report={report} item={item} />
-        <h4 className="report-explanation-title">젬마 설명</h4>
+        <h4 className="report-explanation-title">대표 답변 설명</h4>
         <ExplanationBody text={item.text} studentName={studentName} />
       </article>)}
   </section>

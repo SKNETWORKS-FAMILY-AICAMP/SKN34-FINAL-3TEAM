@@ -192,6 +192,16 @@
 #class-journal .ws-parent .report-narrative-text p { margin: 0; }
 #class-journal .ws-parent .report-narrative-text p + p { margin-top: 12px; }
 #class-journal .ws-parent .report-narrative-panel .report-source { color: #41624d; }
+/* 무료 주간 리포트의 프리미엄 칸 미리보기(#998): 제목·한 줄 설명만, 누르면 이용권·결제 #plan-compare */
+#class-journal .ws-parent .report-premium-preview ul { display: grid; gap: 10px; margin: 0 0 16px; padding: 0; list-style: none; }
+#class-journal .ws-parent .report-premium-preview li a {
+  display: grid; gap: 2px; padding: 12px 14px; border: 1px dashed #c9d6cd; border-radius: 8px;
+  color: inherit; text-decoration: none; background: #f7faf7;
+}
+#class-journal .ws-parent .report-premium-preview li a:hover { border-color: #8fae99; background: #eef4ed; }
+#class-journal .ws-parent .report-premium-preview li strong { color: #17482e; font-size: 15px; }
+#class-journal .ws-parent .report-premium-preview li span { color: #536057; font-size: 14px; }
+#class-journal .ws-parent .report-premium-preview > a.cj-secondary { display: inline-flex; align-items: center; min-height: 40px; text-decoration: none; }
 
 #class-journal .ws-parent .weekly-activity-layout > * { min-width: 0; }
 #class-journal .ws-parent .weekly-activity-layout > .report-explanations { margin: 0; padding: 0; border: 0; }
@@ -209,7 +219,7 @@
 #class-journal .ws-parent .report-stat-panel .report-metric-proof{border:1px solid #d4ded7;border-radius:6px;background:#fff;color:#245f3d;font:inherit;padding:5px 9px;min-height:32px;cursor:pointer}
 #class-journal .ws-parent .report-stat-panel .report-metric-proof:hover{background:#eef4ed}
 @container parent-report (min-width: 735px){
-  #class-journal .ws-parent .report-overview-grid:has(>.report-narrative-panel){grid-template-columns:minmax(0,1.16fr) minmax(0,1fr);gap:20px}
+  #class-journal .ws-parent .report-overview-grid:has(>.report-narrative-panel,>.report-premium-preview){grid-template-columns:minmax(0,1.16fr) minmax(0,1fr);gap:20px}
 }
 
 #class-journal .ws-parent .report-period-picker { position: relative; width: fit-content; }

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
+import { PlanComparison } from '../common/PlanComparison.tsx'
 
 const sections = [
   { title: '처음 시작하기', items: [
@@ -97,6 +98,10 @@ export function UsageGuide({ onClose }: { onClose: () => void }) {
             <li><strong>학습 기기 연결</strong><span>학부모 화면의 기기·PIN에서 등록 코드를 발급하고, 아이가 쓸 기기에서 등록해 주세요.</span></li>
             <li><strong>학생으로 시작</strong><span>등록된 자녀를 선택하고 PIN을 입력하면 학습을 시작할 수 있어요.</span></li>
           </ol></div>
+        </details>
+        <details className="lp-guide-category">
+          <summary><span>무료·프리미엄 비교</span><ChevronDown size={18} aria-hidden="true" /></summary>
+          <div className="lp-guide-article"><PlanComparison heading="h3" /></div>
         </details>
         <details className="lp-guide-category">
           <summary><span>안전하게 이용하기</span><ChevronDown size={18} aria-hidden="true" /></summary>

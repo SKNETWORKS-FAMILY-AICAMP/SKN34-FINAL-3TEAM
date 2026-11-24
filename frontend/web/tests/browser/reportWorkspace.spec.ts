@@ -19,7 +19,7 @@ test('opens the weekly report inline before opening history or chat @responsive'
   await expect(period).toBeFocused()
 
   await expect(detail.getByRole('heading', { name: '활동별 기록' })).toBeVisible()
-  await expect(detail.getByRole('region', { name: '젬마 설명' })).toBeVisible()
+  await expect(detail.getByRole('region', { name: '대표 답변 설명' })).toBeVisible()
   const content = detail.getByRole('button', { name: /내용 보기$/ }).first()
   await content.click()
   const modal = page.getByRole('dialog', { name: '리포트 항목 내용' })
