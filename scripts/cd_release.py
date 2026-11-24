@@ -33,6 +33,27 @@ MIGRATION_REPOSITORIES = {
 }
 # 앱 release가 하나도 없는 빈 클러스터의 첫 배포(#760). 이 값일 때만 실행기가 release 없는 앱을 설치한다
 FIRST_INSTALL = "none"
+# digest PR 본문의 revert 판단 자료(#1013). 서비스별 migration 폴더와 API 계약 폴더
+MIGRATION_PATHS = {
+    "core-service": "backend/core-service/src/main/resources/db/migration",
+    "learning-service": "backend/learning-service/src/main/resources/db/migration",
+    "report-service": "backend/report-service/migrations/versions",
+}
+CONTRACTS_PATH = "contracts/openapi"
+# 한국어를 CP949로 인코딩한 바이트를 Latin-1·CP1252로 읽으면 나오는 문자(#1004, 예: "배포" → "¹èÆ÷").
+# 가운뎃점(·)·곱셈표(×)는 정상 한국어 문장에도 쓰므로 뺀다. 이런 문자가 2개 이상 이어지면 깨진 것으로 본다
+_MOJIBAKE = re.compile(r"[\u0080-¶¸-ÖØ-ɏ]{2,}")
+
+
+def broken_text_fields(value, path="plan"):
+    """계획 안 문자열 중 대체 문자(U+FFFD)나 CP949 오해석 흔적이 있는 위치 목록."""
+    if isinstance(value, dict):
+        return [p for k, v in value.items() for p in broken_text_fields(v, f"{path}.{k}")]
+    if isinstance(value, list):
+        return [p for i, v in enumerate(value) for p in broken_text_fields(v, f"{path}[{i}]")]
+    if isinstance(value, str) and ("�" in value or _MOJIBAKE.search(value)):
+        return [path.removeprefix("plan.")]
+    return []
 
 
 def image_pattern(environment):
@@ -123,6 +144,13 @@ def validate(plan, policy, *, pending_images=False):
     ):
         errors.append(
             "prod는 정책의 릴리스 브랜치(releaseBranch)에서 나온 커밋만 배포합니다"
+        )
+    broken = broken_text_fields(plan)
+    if broken:
+        # 사유·근거가 digest PR 본문과 main 커밋 메시지에 그대로 남으므로 이미지 빌드 전에 막는다(#1004)
+        errors.append(
+            "계획 문자열에 깨진 문자(대체 문자 또는 CP949 오해석)가 있습니다. UTF-8로 다시 넘기세요"
+            f"(infrastructure/cd/README.md digest PR 배포 3단계): {', '.join(broken)}"
         )
     if plan.get("currentRelease") == plan.get("targetRelease"):
         errors.append("현재 버전과 대상 버전이 같습니다")
@@ -387,8 +415,150 @@ def _short(digest):
     return digest.split(":", 1)[-1][:12] if digest else "-"
 
 
-def render_pr_body(record, changes, *, run_url="", base_sha=""):
-    """digest PR 본문: 원본 SHA, 서비스별 digest, 계획 근거, 승인·확인·되돌리기 방법."""
+def _git(root, *args):
+    """git 출력(UTF-8). 실패하면 None(확인 불가로 다룬다)."""
+    try:
+        run = subprocess.run(["git", "-C", str(root), *args], capture_output=True, check=False)
+    except OSError:
+        return None
+    return run.stdout.decode("utf-8", "replace") if run.returncode == 0 else None
+
+
+def _resolve_revision(root, revision):
+    """images 파일 migration revision `main-<SHA 앞자리>` → 전체 SHA. 다른 형식이거나 못 찾으면 None."""
+    match = re.fullmatch(r"main-([0-9a-f]{7,40})", str(revision or ""))
+    if not match:
+        return None
+    out = _git(root, "rev-parse", "--verify", "--quiet", match.group(1) + "^{commit}")
+    return out.strip() if out and re.fullmatch(r"[0-9a-f]{40}", out.strip()) else None
+
+
+def _diff_names(root, previous, commit, path):
+    """두 커밋 트리 사이 path 아래 변경 [(상태 A/M/D, 경로)]. 실패하면 None."""
+    out = _git(root, "diff", "--name-status", "--no-renames", f"{previous}..{commit}", "--", path)
+    if out is None:
+        return None
+    return [tuple(line.split("\t", 1)) for line in out.splitlines() if "\t" in line]
+
+
+def _openapi_paths(text):
+    """OpenAPI YAML 최상위 `paths:` 아래 경로 키 집합. YAML 해석기 없이 들여쓰기 2칸 키만 읽는다."""
+    paths, inside = set(), False
+    for line in (text or "").splitlines():
+        if re.match(r"\S", line):
+            inside = line.startswith("paths:")
+        elif inside and (match := re.fullmatch(r"  ['\"]?(/[^'\"]*?)['\"]?:\s*", line)):
+            paths.add(match.group(1))
+    return paths
+
+
+def release_history(changes, commit, root):
+    """digest PR revert 판단 자료(#1013): 이전 migration revision 커밋 → 이번 원본 SHA 사이의
+    서비스별 migration 파일 변경과 API 계약 변경. 확인할 수 없으면 실패시키지 않고 unknown으로 둔다.
+
+    git 트리 비교라 이전 커밋이 이번 SHA의 조상이 아니어도 "되돌리면 없어지는 파일"이 나온다.
+    """
+    services = []
+    for change in changes:
+        service, before = change["service"], change["before"]
+        if service not in MIGRATION_PATHS or "revision" not in before:
+            continue
+        previous = _resolve_revision(root, before["revision"])
+        entry = {"service": service, "from": before["revision"], "previous": previous}
+        names = _diff_names(root, previous, commit, MIGRATION_PATHS[service]) if previous else None
+        if names is None:
+            entry["status"] = "unknown"
+        else:
+            entry["added"] = sorted(Path(p).name for s, p in names if s == "A")
+            entry["other"] = sorted(f"{Path(p).name}({s})" for s, p in names if s != "A")
+            entry["status"] = "changed" if names else "none"
+        services.append(entry)
+    ranges = sorted({e["previous"] for e in services if e["previous"]})
+    api = {"status": "unknown", "files": []}
+    if ranges:
+        files = {}
+        for previous in ranges:
+            names = _diff_names(root, previous, commit, CONTRACTS_PATH)
+            if names is None:
+                return {"services": services, "api": api}
+            for status, path in names:
+                old = _openapi_paths(_git(root, "show", f"{previous}:{path}") if status != "A" else "")
+                new = _openapi_paths(_git(root, "show", f"{commit}:{path}") if status != "D" else "")
+                item = files.setdefault(path, {"file": path, "added": set(), "removed": set()})
+                item["added"] |= new - old
+                item["removed"] |= old - new
+        api = {
+            "status": "changed" if files else "none",
+            "files": [
+                {"file": f["file"], "added": sorted(f["added"]), "removed": sorted(f["removed"])}
+                for f in sorted(files.values(), key=lambda f: f["file"])
+            ],
+            # 비교 범위를 모르는 서비스가 있으면 그 범위는 빠졌다
+            "partial": any(not e["previous"] for e in services),
+        }
+    return {"services": services, "api": api}
+
+
+def _names(items, limit=8):
+    shown = ", ".join(f"`{n}`" for n in items[:limit])
+    return shown + (f" 외 {len(items) - limit}개" if len(items) > limit else "")
+
+
+def _render_history(history, commit):
+    """revert 판단 절. history가 없으면(본문만 따로 만들 때) 확인 불가로 쓴다."""
+    history = history or {"services": [], "api": {"status": "unknown", "files": []}}
+    services, api = history["services"], history["api"]
+    lines = [
+        "",
+        "### revert 판단 자료 (자동, #1013)",
+        "",
+        f"images 파일의 이전 migration revision(`main-<SHA>`) 커밋과 이번 원본 `main-{commit[:12]}` 사이를 git으로 비교했다.",
+        "",
+    ]
+    if services:
+        lines += ["| 서비스 | 비교 범위 | migration 파일 변경 |", "|---|---|---|"]
+        for e in services:
+            if e["status"] == "unknown":
+                result = "**확인 불가**(이전 revision이 `main-<SHA>` 형식이 아니거나 커밋을 찾지 못함)"
+            elif e["status"] == "none":
+                result = "없음"
+            else:
+                parts = [f"추가 {len(e['added'])}개: {_names(e['added'])}"] if e["added"] else []
+                parts += [f"수정·삭제: {_names(e['other'])}"] if e["other"] else []
+                result = "**있음** " + " / ".join(parts)
+            lines.append(f"| {e['service']} | `{e['from']}` → `main-{commit[:12]}` | {result} |")
+        lines.append("")
+    else:
+        lines += ["- migration: 이번 PR에 DB를 가진 서비스(core·learning·report)가 없음", ""]
+    partial = " (비교 범위를 모르는 서비스는 빠짐)" if api.get("partial") else ""
+    if api["status"] == "unknown":
+        lines.append(f"- API 계약(`{CONTRACTS_PATH}`): **확인 불가**(비교할 이전 커밋을 정하지 못함)")
+    elif api["status"] == "none":
+        lines.append(f"- API 계약(`{CONTRACTS_PATH}`): 변경 없음" + partial)
+    else:
+        detail = []
+        for f in api["files"]:
+            moved = [f"경로 추가 {_names(f['added'], 5)}"] if f["added"] else []
+            moved += [f"경로 삭제 {_names(f['removed'], 5)}"] if f["removed"] else []
+            detail.append(f"`{Path(f['file']).name}`" + (f"({', '.join(moved)})" if moved else "(경로 변화 없음)"))
+        lines.append(f"- API 계약(`{CONTRACTS_PATH}`): **변경 있음** " + "; ".join(detail) + partial)
+    risky = any(e["status"] == "changed" for e in services) or api["status"] == "changed"
+    unknown = any(e["status"] == "unknown" for e in services) or api["status"] == "unknown"
+    if risky:
+        lines.append(
+            "- **이 PR을 revert하면 실패할 수 있음**: 병합 뒤 위 migration이 DB에 적용되면 이전 이미지의 migration이 "
+            "모르는 revision으로 실패하거나(11/24 report Alembic, #1013), 이전 앱에 지금 웹이 부르는 API가 없다. "
+            "문제가 생기면 revert하지 말고 fix-forward(고친 커밋으로 새 digest PR)"
+        )
+    elif unknown:
+        lines.append("- 일부 확인 불가: revert 전에 위 범위를 직접 `git diff`로 확인한다")
+    else:
+        lines.append("- migration·API 계약 변경 없음: 문제가 생기면 이 PR revert로 되돌릴 수 있다")
+    return lines
+
+
+def render_pr_body(record, changes, *, run_url="", base_sha="", history=None):
+    """digest PR 본문: 원본 SHA, 서비스별 digest, revert 판단 자료, 계획 근거, 승인·확인·되돌리기 방법."""
     commit = record.get("sourceCommit") or ""
     lines = [
         "## prod 이미지 digest 갱신 (#858)",
@@ -401,7 +571,7 @@ def render_pr_body(record, changes, *, run_url="", base_sha=""):
         f"- 사유: {record.get('reason') or '-'}",
         f"- 버전: {record.get('currentRelease')} → {record.get('targetRelease')}",
         "",
-        "| 서비스 | release 파일 | 앱 digest (전 → 후) | migration digest (전 → 후) | migration revision |",
+        "| 서비스 | release 파일 | 앱 digest (전 → 후) | migration digest (전 → 후) | migration Job revision(이미지 태그) |",
         "|---|---|---|---|---|",
     ]
     for c in changes:
@@ -417,6 +587,7 @@ def render_pr_body(record, changes, *, run_url="", base_sha=""):
     if moved:
         lines += ["", "**저장소 변경(계정 전환)**: 아래 저장소로 바꾼다. 계정 값 교체(#809 6a)와 같은 계정인지 확인하고 승인한다.", ""]
         lines += [f"- {m}" for m in moved]
+    lines += _render_history(history, commit)
     compatibility = record.get("compatibility") or {}
     lines += ["", "### 호환성 근거 (계획)", "", "| 항목 | 상태 | 근거 |", "|---|---|---|"]
     for name in CHECKS:
@@ -444,8 +615,10 @@ def render_pr_body(record, changes, *, run_url="", base_sha=""):
         "",
         "### 되돌리기",
         "",
-        "- 이 PR을 GitHub에서 Revert → 같은 승인 규칙으로 병합. Argo CD UI rollback은 쓰지 않는다(Git과 어긋남)",
-        "- revert는 앱 이미지와 migration 값만 되돌리고 DB는 그대로다. 이전 앱이 새 스키마에서 동작한다는 근거(위 schema)가 있어야 한다",
+        "- 판단 기준(`infrastructure/cd/README.md` digest PR 되돌리기): 위 revert 판단 자료에서 migration·API 계약 변경이 **없으면** 이 PR revert, "
+        "**있으면** revert하지 않고 fix-forward(고친 커밋으로 새 digest PR). 데이터가 잘못 바뀐 경우만 RDS 시점 복원(PITR, 마지막 수단)",
+        "- revert: 이 PR을 GitHub에서 Revert → 같은 승인 규칙으로 병합. Argo CD UI rollback은 쓰지 않는다(Git과 어긋남)",
+        "- revert는 앱 이미지와 migration 값만 되돌리고 DB는 그대로다. Flyway는 모르는 최신 migration을 건너뛰지만 report Alembic은 DB의 revision을 모르면 PreSync가 실패한다(#1013)",
     ]
     return "\n".join(lines) + "\n"
 
@@ -611,7 +784,13 @@ def main():
     if changes and args.pr_body:
         args.pr_body.parent.mkdir(parents=True, exist_ok=True)
         args.pr_body.write_text(
-            render_pr_body(record, changes, run_url=args.run_url, base_sha=args.base_sha),
+            render_pr_body(
+                record,
+                changes,
+                run_url=args.run_url,
+                base_sha=args.base_sha,
+                history=release_history(changes, record.get("sourceCommit") or "", args.repo_root),
+            ),
             encoding="utf-8",
         )
     print(json.dumps(result, ensure_ascii=False))

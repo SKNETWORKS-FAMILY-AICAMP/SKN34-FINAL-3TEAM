@@ -156,9 +156,41 @@
 .parent-memory-books { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 .parent-memory-books h2 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 18px; }
 .parent-memory-books p { margin: 0; }
-.parent-memory-books ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.parent-memory-books li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.parent-memory-books li button { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+/* #1000 책장: 표지(시작 그림·테마 제목·주)를 꽂은 칸. 좁으면 두 칸, 휴대폰 한 칸 */
+.parent-memory-books .memory-shelf { margin: 4px 0 0; padding: 0 0 12px; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; border-bottom: 10px solid #b9a27e; border-radius: 0 0 4px 4px; }
+.parent-memory-books .memory-shelf-book { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.parent-memory-books .memory-shelf-cover { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid #c9d3cc; background: #eef3ef; box-shadow: 3px 3px 0 rgb(0 0 0 / 0.08); }
+.parent-memory-books .memory-shelf-cover-blank { display: grid; place-items: center; font-size: 32px; font-weight: 600; color: #4a5a50; }
+.parent-memory-books .memory-shelf-cover-locked { display: grid; place-items: center; color: #4a5a50; background: repeating-linear-gradient(135deg, #f1f4f2 0 10px, #e6ece8 10px 20px); border-style: dashed; }
+.parent-memory-books .memory-shelf-meta { font-size: 14px; overflow-wrap: anywhere; }
+.parent-memory-books .memory-shelf-action { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 44px; }
+.parent-memory-books .memory-shelf-action button { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; }
+.parent-memory-books .memory-shelf-lock { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: #4a5a50; }
+.parent-memory-books .memory-shelf-notice { padding: 10px 12px; border-radius: 8px; background: #f3f7f4; }
+.parent-memory-books .memory-shelf-notice a { display: inline-flex; align-items: center; min-height: 44px; }
+.parent-memory-books .memory-shelf-retry { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.parent-memory-books .memory-shelf-retry button { display: inline-flex; align-items: center; min-height: 44px; }
+/* 책 표지: 왼쪽 책등 띠와 아래쪽 제목(어두운 그러데이션 위 흰 글자, 두 줄까지) */
+.parent-memory-books .memory-shelf-cover-wrap { position: relative; display: block; border-radius: 6px; overflow: hidden; box-shadow: 3px 3px 0 rgb(0 0 0 / 0.08); }
+.parent-memory-books .memory-shelf-cover-wrap .memory-shelf-cover { border: 0; border-radius: 0; box-shadow: none; }
+.parent-memory-books .memory-shelf-cover-wrap::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 9px; background: linear-gradient(90deg, rgb(0 0 0 / 0.32), rgb(0 0 0 / 0.08)); z-index: 1; }
+.parent-memory-books .memory-shelf-cover-wrap::after { content: ''; position: absolute; inset: 0 auto 0 9px; width: 1px; background: rgb(255 255 255 / 0.45); z-index: 1; }
+.parent-memory-books .memory-shelf-title { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; padding: 28px 10px 8px 18px; background: linear-gradient(rgb(0 0 0 / 0), rgb(0 0 0 / 0.62)); color: #fff; font-size: 15px; font-weight: 700; line-height: 1.35; text-shadow: 0 1px 2px rgb(0 0 0 / 0.45); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .parent-memory-books .memory-shelf-title { font-size: 13px; padding: 20px 8px 6px 14px; } }
+/* 발급 잠금 표시: 표지 오른쪽 위 작은 띠 */
+.parent-memory-books .memory-shelf-badge { position: absolute; top: 8px; right: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; background: rgb(255 255 255 / 0.92); color: #2f3d34; font-size: 12px; font-weight: 700; box-shadow: 0 1px 3px rgb(0 0 0 / 0.18); }
+.parent-memory-books .memory-shelf-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.parent-memory-books .memory-shelf-sub { display: block; margin-top: 4px; font-size: 14px; color: #536057; }
+/* 표지 없이 잠긴 책만 있을 때: 한 줄 전체를 쓰는 가로 칸(잠긴 표지 + 설명) */
+.parent-memory-books .memory-shelf-hidden-only { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); align-items: center; gap: 18px; }
+.parent-memory-books .memory-shelf-hidden-only .memory-shelf-meta { font-size: 16px; }
+@media (max-width: 600px) { .parent-memory-books .memory-shelf-hidden-only { grid-template-columns: minmax(0, 140px) minmax(0, 1fr); gap: 12px; } .parent-memory-books .memory-shelf-hidden-only .memory-shelf-meta { font-size: 14px; } }
+/* 첫 줄이 덜 찬 넓은 화면의 빈 자리(꾸밈): 표지와 같은 크기의 옅은 점선 칸. 900px 이하(3·2칸)에서는 숨김 */
+.parent-memory-books .memory-shelf-slot { min-width: 0; }
+.parent-memory-books .memory-shelf-cover-slot { display: block; width: 100%; aspect-ratio: 4 / 3; border: 2px dashed #dbe2dd; border-radius: 6px; }
+/* 책장은 넓은 화면 4칸·태블릿 3칸·휴대폰 2칸으로 고정해 표지가 작게 몰리거나 한 권씩 길게 늘어지지 않게 한다 */
+@media (max-width: 900px) { .parent-memory-books .memory-shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); } .parent-memory-books .memory-shelf-slot { display: none; } }
+@media (max-width: 600px) { .parent-memory-books .memory-shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } .parent-memory-books .memory-shelf-meta { font-size: 13px; } }
 /* 리포트 | AI 챗봇 전환 (제목 자리, 사이드바는 한 칸) */
 #class-journal .ws-parent .parent-insights-switch{display:flex;align-items:center;gap:12px;margin:0}
 #class-journal .ws-parent .parent-insights-switch button{all:unset;cursor:pointer;font:inherit;color:#9aa69f;border-radius:6px;padding:0 2px}

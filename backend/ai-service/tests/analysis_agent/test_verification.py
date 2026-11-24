@@ -1,7 +1,7 @@
 from app.analysis_agent.calculators import compute
-from app.analysis_agent.models import Scope
+from app.analysis_agent.models import ReportExplanation, Scope
 from app.analysis_agent.templates import fallback_answer
-from app.analysis_agent.verification import verify
+from app.analysis_agent.verification import explanation_numbers, verify
 from tests.analysis_agent.records_fixture import SCOPE, STUDENT, records
 
 CHANGES = compute("CHANGES", records(), SCOPE)  # sources: a-1, a-2
@@ -75,3 +75,19 @@ def test_generated_fallback_with_small_denominator_has_no_unverified_threshold()
     text = fallback_answer("VERIFICATION_FAILED", CHANGES, SCOPE)
     assert "5개" not in text
     assert verify(text, CHANGES).passed
+
+
+def test_explanation_numbers_pass_only_when_added() -> None:
+    """#1012: 주간 리포트 설명 속 숫자는 설명을 받은 대화에서만 허용."""
+    explanation = ReportExplanation.model_validate(
+        {
+            "missionTitle": "따뜻해진 컵",
+            "text": "온도가 37도쯤 올랐다고 쓰고 까닭은 4개를 들었어요.",
+        }
+    )
+    answer = "설명에 따르면 까닭을 4개 들었고, 온도가 37도쯤 올랐다고 썼어요."
+    computation = compute("CHANGES", records(), SCOPE)
+    assert not verify(answer, computation).verification.numbers_matched
+    computation.extra_numbers |= explanation_numbers([explanation])
+    assert verify(answer, computation).verification.numbers_matched
+    assert explanation_numbers([explanation]) == {"37", "4"}

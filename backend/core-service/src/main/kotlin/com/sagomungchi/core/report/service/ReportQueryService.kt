@@ -52,8 +52,9 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
     }
 
     /**
-     * Weekly report explanations for the analysis agent: the latest COMPLETED weekly report whose full period fits within
-     * [from]..[to], only when originals are shared and the narrative entitlement is on (the same gates as [detail]).
+     * Weekly report explanations for the analysis agent: the latest COMPLETED weekly report whose period overlaps
+     * [from]..[to] (#1012: the default last-7-days scope rarely holds a whole Monday-Sunday week), only when originals
+     * are shared and the narrative entitlement is on (the same gates as [detail]).
      * Returns `{missionTitle, text}` of INCLUDED explanations; any report-api failure yields none so chat still answers.
      */
     fun explanations(childId: UUID, from: java.time.LocalDate, to: java.time.LocalDate): List<Map<String, String>> = try {
@@ -63,7 +64,7 @@ class ReportQueryService(private val repository: ReportJobRepository, private va
                 .filter { item ->
                     val start = java.time.LocalDate.parse(item.path("period").path("from").asText())
                     val end = java.time.LocalDate.parse(item.path("period").path("to").asText())
-                    !start.isBefore(from) && !end.isAfter(to)
+                    !start.isAfter(to) && !end.isBefore(from)
                 }
                 .maxByOrNull { it.path("period").path("to").asText() }
             val reportId = latest?.path("reportId")?.asText()?.let(UUID::fromString)

@@ -2,6 +2,7 @@
 
 - 숫자: 답변의 모든 아라비아 숫자가 계산 결과(개수·분자·분모·비율%)·기록 수·기간 날짜에 있어야 함.
   고정 리포트 대화(#392)는 리포트 요약의 개수·문제 수·문제 제목 숫자도 허용 (report_numbers).
+  주간 리포트 설명을 받은 대화(#1012)는 설명 글과 그 미션 제목 속 숫자도 허용 (explanation_numbers).
   따옴표 인용과 미션 제목 안의 숫자는 원문 그대로라 빼고 셈. "세 번"처럼 한글로 쓴 수는 대조할 수
   없으므로 실패로 봄 (프롬프트에서 아라비아 숫자를 쓰도록 지시).
 - 인용: 본문 따옴표 안 문장이 모두 원문에 그대로 있어야 함 (공백 차이만 허용).
@@ -13,7 +14,7 @@ import re
 from dataclasses import dataclass
 
 from app.analysis_agent.calculators import Computation
-from app.analysis_agent.models import Evidence, ReportSummary, Verification
+from app.analysis_agent.models import Evidence, ReportExplanation, ReportSummary, Verification
 
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
 QUOTED = re.compile(r"[\"“”]([^\"“”]+)[\"“”]|['‘’]([^'‘’]+)['‘’]|「([^」]+)」")
@@ -82,6 +83,15 @@ def report_numbers(report: ReportSummary) -> set[str]:
     for problem in report.problems:
         numbers.update(_normalize_number(n) for n in NUMBER.findall(problem.title))
     return numbers
+
+
+def explanation_numbers(explanations: list[ReportExplanation]) -> set[str]:
+    """주간 리포트 설명(#1012)에서 답변에 써도 되는 숫자: 설명 글과 미션 제목 속 숫자."""
+    return {
+        _normalize_number(n)
+        for item in explanations
+        for n in NUMBER.findall(f"{item.mission_title} {item.text}")
+    }
 
 
 def _normalize_number(text: str) -> str:
