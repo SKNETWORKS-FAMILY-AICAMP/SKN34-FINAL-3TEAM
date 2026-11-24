@@ -7,7 +7,7 @@ import java.time.LocalDate
 import java.util.UUID
 
 /**
- * 추억 그림책 회차 조립 (docs/proposals/memory-book.md 7.2, 미도입 시험 구현).
+ * 추억 그림책 회차 조립 (docs/proposals/memory-book.md 7.2).
  * 그림 칸은 브라우저·report가 여는 URL(AssetUrls, ai S3 키면 짧은 presigned URL)이고 없으면 null.
  * 엔딩을 보지 않은 회차는 종료 이야기·정답·종료 그림이 모두 null(P23)
  */

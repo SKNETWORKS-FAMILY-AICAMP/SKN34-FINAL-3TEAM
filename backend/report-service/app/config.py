@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     report_explanation_timeout_seconds: float = Field(default=80.0, gt=0, le=300)
     report_explanation_budget_seconds: float = Field(default=300.0, gt=0, le=900)
     report_download_ttl_seconds: int = Field(default=300, ge=1, le=3600)
-    # 추억 그림책 (docs/proposals/memory-book.md, 미도입 시험 구현).
+    # 추억 그림책 (docs/proposals/memory-book.md).
     # 그림 허용 출처(scheme://host[:port], 쉼표). 비면 그림 없이 만든다.
     # 내부 주소는 "공개 출처=클러스터 안 출처" 쉼표 목록(로컬 kind 전용)
     memory_book_asset_origins: str = ""

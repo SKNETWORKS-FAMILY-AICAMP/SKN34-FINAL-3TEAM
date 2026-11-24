@@ -1266,9 +1266,9 @@ paths:
   /students/{studentId}/memory-book/{themeId}/{weekStart}:
     get:
       operationId: getMemoryBookRound
-      summary: 추억 그림책 회차 조립 (미도입 시험 구현, docs/proposals/memory-book.md 7.2)
+      summary: 추억 그림책 회차 조립 (docs/proposals/memory-book.md 7.2)
       description: >-
-        feature/memory-book 브랜치에서만 쓰는 제안 기능. report-worker(SYSTEM 역할)만 부르고 X-Student-Scope에 경로 학생이 있어야 함(그 밖 403).
+        report-worker(SYSTEM 역할)만 부르고 X-Student-Scope에 경로 학생이 있어야 함(그 밖 403).
         보유·진행 중인 주 판정과 요일별 시도·엔딩(P23)은 앨범 상세(getAlbumRound)와 같다.
         문제 글·장면 그림은 시도가 있으면 그 시도의 미션 버전 값, 없으면 회차 버전 요일의 값.
         엔딩 전이면 outro·answer·outroImage가 null. 원문 공개 확인(#206)은 core·report가 생성 전에 한다.
@@ -4723,7 +4723,7 @@ components:
             answer: {type: [string, 'null']}
     MemoryBookRound:
       type: object
-      description: 추억 그림책 회차 조립 (미도입 시험 구현). 그림 칸은 URL(ai S3 키면 presigned) 또는 null
+      description: 추억 그림책 회차 조립. 그림 칸은 URL(ai S3 키면 presigned) 또는 null
       required: [themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days, ending]
       properties:
         themeId: {type: string, format: uuid}

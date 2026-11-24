@@ -426,6 +426,25 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 - 알림 유형: `DAILY_REPORT_COMPLETED`·`DAILY_REPORT_FAILED`(2.7 설정 1~9개, #390). 기록 없는 날 완료 알림 문구는 2.7(#846)
 - 리포트 고정 대화의 질문은 그 대상일 밖으로 범위를 바꾸지 않는다. 다른 날 질문은 범위 확인에서 새 대화 안내
 
+#### 2.5.1 추억 그림책 (FN-RPT-18, 구현 #966, 계약 #975)
+
+**구현 계약**(core OpenAPI `MemoryBook` 태그). 학부모가 연결된 자녀의 추억 앨범 회차(기념 액자 1개 = 테마 한 주)를 PDF 그림책으로 발급받는다. 설계·결정은 [제안 문서](../proposals/memory-book.md)·[결정 기록](../proposals/memory-book-decisions.md), 저장은 [ERD 3.5.3](erd.md). 모든 응답 `Cache-Control: no-store`.
+
+| Method | Path | 역할 | 설명 | FN | 우선순위 |
+|---|---|---|---|---|---|
+| GET | `/children/{childId}/memory-books/rounds?page&size` | 학부모 | 발급 화면: 자녀의 보유 액자 회차(진행 중인 주 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, book}], page, size, totalElements}`. `book`은 그 회차의 가장 최근 그림책(없으면 null). learning 4.1.4 앨범을 자녀 범위 SYSTEM으로 읽는다 | RPT-18 | 구현 |
+| POST | `/children/{childId}/memory-books` | 학부모 | body `{rounds:[{themeId, weekStart}]}`(1차 길이 1, `weekStart` 월요일) → 새로 만들면 202, 같은 회차의 만드는 중·보관 기간 안 완성본이 있으면 200으로 그것(한도·사용 예약 안 씀). 응답 `{bookId, status, failureCode, rounds, createdAt, completedAt, expiresAt}` | RPT-18 | 구현 |
+| GET | `/children/{childId}/memory-books?page&size` | 학부모 | 발급 목록(최근순). 보관 기간이 지난 완성본은 `status: EXPIRED` | RPT-18 | 구현 |
+| GET | `/children/{childId}/memory-books/{bookId}/download` | 학부모 | `{url, expiresAt}`(report 서명 URL, TTL 300초, attachment). 받을 때마다 `memory_book_download` 기록 | RPT-18 | 구현 |
+
+- 순서(발급): 학부모 세션(아니면 403 `FORBIDDEN`) → 연결·법정대리인 동의(403 `CHILD_NOT_LINKED`) → 원문 공개(#206, 비공개면 403 `STUDENT_RECORDS_PRIVATE`, learning 미호출) → 같은 회차 재사용 → learning `frames/ownership` 보유 확인(트랜잭션 밖, 미보유 404 `THEME_FRAME_NOT_FOUND`) → 하루 한도 `limits.dailyMemoryBooks`(KST, 429 `USAGE_LIMIT_REACHED`) → 유료 판정 `features.memoryBook`(무료 403 `PREMIUM_REQUIRED`)·`MEMORY_BOOK` 사용 예약(환불 중 409 `REFUND_IN_PROGRESS`) → 학생 행 잠금 안에서 작업 행·`memorybook.generate` Outbox 저장(삭제 확정 학생 409 `STUDENT_UNAVAILABLE`). 저장 실패·재사용이면 예약을 미사용으로 마감
+- 목록·회차 목록·받기도 매번 연결·동의와 **현재** 원문 공개를 확인한다. 비공개로 바꾸면 파일은 남기고 받기만 막는다(C4, 리포트와 같음). 다시 공개하면 보관 기간 안의 파일을 다시 받을 수 있다
+- 생성 실패 코드(`failureCode`, 목록·회차 목록의 `status: FAILED`): `STUDENT_RECORDS_PRIVATE`·`THEME_FRAME_NOT_FOUND`·`STUDENT_DELETED`·`INVALID_ROUND`·`ASSET_UNAVAILABLE`(그림 주소가 있는데 한 장도 받지 못함, #975). 실패는 사용 예약을 미사용으로 마감해 하루 한도를 쓰지 않는다. 일부 그림만 받지 못하면 그 칸만 비우고 `READY`
+- 받기 오류: 없거나 다른 자녀의 그림책 404 `MEMORY_BOOK_NOT_FOUND`, 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`(detail에 실패 코드), 학생 기록 삭제 중 409 `DELETION_IN_PROGRESS`, 보관 기간(30일)이 지났거나 파일 없음 410 `MEMORY_BOOK_EXPIRED`, report 장애 503 `REPORT_UNAVAILABLE`·모양 오류 502 `REPORT_CONTRACT_INVALID`
+- 구독이 끝나도 보관 기간 안의 파일은 받을 수 있다(C2). 새 발급만 유료다
+- 학생 경로는 없다(2026-11-23 결정). 학생 세션으로 위 경로를 부르면 403 `FORBIDDEN`
+- 생성은 비동기: core `memorybook.generate` 명령 → report-worker가 learning 회차 조립(4.1.4)·core 프로필(4.5.1)·그림을 받아 PDF를 `reports/` 버킷에 저장 → `memorybook.completed` 이벤트로 core 작업을 READY·FAILED로 바꾸고 사용 예약을 마감([시퀀스 3.11](sequence-diagram.md))
+
 ### 2.6 결제·구독 (FN-PAY) — 토스페이먼츠 테스트 환경만
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
@@ -690,7 +709,7 @@ core 경로는 #387 구현·OpenAPI 반영(태그 `WeeklyTheme`, 시도 `Attempt
 - learning 5xx·시간 초과·연결 실패·서킷 차단이면 기록을 되돌린다(장애가 한도를 깎지 않음). 4xx와 설명 `FAILED`·`INSUFFICIENT`(200)는 센다. 설명의 ai 장애는 learning이 200 `FAILED`가 아니라 503 `AI_UNAVAILABLE`로 돌려주므로 되돌림 대상이다(4.1.4, #592)
 - core → learning은 4.1.4 경로를 프록시하고 본문은 core가 모양을 확인해 다시 만든 뒤 넘기며 응답·오류를 그대로 전달(`Cache-Control: no-store`). 검색·설명 모두 별도 회로 `learning-memory`(검색 응답 30초·설명 45초, 아키텍처 1.3). ai 장애로 생긴 learning 5xx가 일반 `learning-json`을 열지 않게 하려고 검색도 이 회로를 쓴다(2026-11-12 결정)
 - 검색 반영은 학습 완료 뒤 비동기라 방금 완료한 문제는 잠시 결과에 없을 수 있다(앨범에는 바로 보임). 질문·설명은 저장하지 않는다
-- 학생 이외 역할 경로 없음(학부모 화면 미제공)
+- 학생 이외 역할 경로 없음(학부모 화면 미제공). 학부모는 앨범 회차를 추억 그림책(2.5.1)으로만 받는다
 - **추억의 벽 #555 구현(core V47, 2026-11-12)**: 슬롯 수 6개(기준안 확정). 저장은 ① 요청 검사(learning 호출 전 422) ② learning `frames/ownership`(4.1.4)으로 보유 확인(보유로 돌아오지 않은 회차가 하나라도 있으면 404, 진행 중인 주 회차도 learning이 빼므로 404) ③ learning 앨범 목록에서 제목·그림 조회 ④ 한 트랜잭션에서 학생 행 잠금(`FOR NO KEY UPDATE`, 삭제 확정 학생 409 `STUDENT_UNAVAILABLE`) 뒤 슬롯 전체 삭제·삽입 순서다. ②·③이 실패하면 아무것도 저장하지 않아 화면이 편집 내용을 유지하고 다시 시도한다(P27). learning 응답 실패는 502 `LEARNING_UNAVAILABLE`·`LEARNING_CONTRACT_INVALID`, 연결 장애는 1.4 공통(503·504)
   - 조회의 `title`·`imageUrl`은 core에 저장하지 않고 learning 앨범 목록(4.1.4, `size=100`으로 걸린 회차를 모두 찾을 때까지 앞쪽부터)에서 매번 채운다(그림은 만료되는 presigned URL, 2026-11-12 결정). 걸린 액자가 없으면 learning을 부르지 않는다. 앨범에 없는 회차는 응답에서 빠진다(액자는 지워지지 않으므로 보통 없음)
   - 보유 확인·앨범 조회는 ai를 부르지 않는 learning DB 조회라 일반 `learning-json` 서킷을 쓴다(추억 검색·설명의 `learning-memory`와 따로)
@@ -1115,7 +1134,8 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | GET | `/internal/students/{studentId}/album?page&size` | 2.12 앨범 목록과 같은 모양(`displayed`는 core가 슬롯으로 채움, learning 응답에 없음). `page` 0부터·`size` 1~100(기본 20), 범위 밖 400 |
 | GET | `/internal/students/{studentId}/album/{themeId}/{weekStart}` | 2.12 회차 상세, 미보유 404 `THEME_FRAME_NOT_FOUND`, `weekStart`가 월요일이 아니면 400 |
 | POST | `/internal/students/{studentId}/album/{themeId}/{weekStart}/seen` | `seen_at` 기록(멱등, 처음 시각 유지) → 204, 미보유 404 `THEME_FRAME_NOT_FOUND` |
-| POST | `/internal/students/{studentId}/frames/ownership` | `{frames:[{themeId, weekStart}]}`(최대 100개) → `{owned:[{themeId, weekStart}]}`(보유한 것만, 중복은 한 번. core 액자 슬롯 저장 전 확인) |
+| POST | `/internal/students/{studentId}/frames/ownership` | `{frames:[{themeId, weekStart}]}`(최대 100개) → `{owned:[{themeId, weekStart}]}`(보유한 것만, 중복은 한 번. core 액자 슬롯 저장 전·추억 그림책 발급 전 확인) |
+| GET | `/internal/students/{studentId}/memory-book/{themeId}/{weekStart}` | 추억 그림책 회차 조립(2.5.1, #966). 호출자는 report-worker(SYSTEM 역할 + `X-Student-Scope`)만. `{themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days:[{day, missionId, title, thinkingType, question, sceneImage, dialogue, attempt}], ending:{seen, outro, answer, outroImage}}`. 문제 글·장면 그림은 시도의 미션 버전 값. 엔딩 전이면 `outro`·`answer`·`outroImage` null(P23). 그림 칸은 단기 presigned URL 또는 null. 미보유 404 `THEME_FRAME_NOT_FOUND`, 월요일 아님 400 |
 | POST | `/internal/students/{studentId}/memories/search` | `{query}` → 2.12 검색 응답. 질의 변환은 ai 4.2.7(실패하면 1회 다시 시도, 끝내 실패하면 기간 낱말이 있는 질문은 503 `AI_UNAVAILABLE`·없으면 원문으로 진행, #878), 질문 임베딩은 ai 4.2.4, 임베딩 실패 503 `AI_UNAVAILABLE` |
 | POST | `/internal/students/{studentId}/memories/explanations` | `{query, attemptIds}` → 2.12 설명 응답. 생성은 ai 4.2.6. ai 장애 503 `AI_UNAVAILABLE`(아래 설명 규칙) |
 
@@ -1361,12 +1381,14 @@ P06·P08 계산에 쓰는 learning 공급 입력. 계산 규칙과 검증은 [�
 | GET | `/internal/reports/{reportId}/evidence/{itemId}` | 항목 근거 |
 | GET | `/internal/reports/{reportId}/files/{format}` | 단기 presigned URL 발급 → `{url, expiresAt}` |
 | GET | `/internal/reports/correction-impact?studentId&attemptId` | 판정 정정 영향 조회(#244, FN-SUP-03). 그 시도로 만든 완료 판 `{items:[{reportId, periodType, periodFrom, revision}]}`. 주간은 `THINKING_TYPE`의 `missions[].attemptId`, 일일은 `PROBLEM`의 `attemptId`로 찾음(보호자 공유가 꺼지면 근거 연결을 저장하지 않으므로 근거 테이블로는 찾지 않음) |
+| GET | `/internal/students/{studentId}/memory-books/{bookId}/files/pdf` | 추억 그림책 받기 주소(2.5.1, #966). core만. report DB에 그림책 행이 없어 학생 ID를 경로로 받고 키 규칙으로 찾는다. `{url, expiresAt}`(TTL 300초, 파일 이름 `memory-book-{bookId}.pdf`). 학생 범위 밖 403, 파일 없음 404, 삭제 중 409 `DELETION_IN_PROGRESS`, S3 오류 503 |
 | POST | `/internal/report-jobs/{jobId}/reconcile` | core 작업 복구: `{studentId, periodFrom, periodTo, periodType?}` 대조 후 현재 상태 반환, 불일치 409 `REPORT_JOB_IDENTITY_MISMATCH` (5.9) |
 
 - core는 현재 이용 권한으로 `X-Report-Narrative-Enabled:true|false`를 설정해야 함(공개 요청의 같은 헤더는 전달하지 않음). report는 누락 시 false로 처리해 응답·다운로드에서 AI 서술·생각 유형 summary·저녁 질문을 가림
 - P24: 일일 리포트는 같은 경로를 쓰고 최신 판 선택·재생성 판 단위가 학생·`periodType`·대상 기간이 된다(#391 구현). `report.generate` 페이로드에 `periodType`(`DAILY`·`WEEKLY`, 생략 시 `WEEKLY`)을 추가했고 core는 일일에만 넣는다. 새 메시지 없음([이벤트 계약](../../contracts/events/report-messages.md), #390). 일일 상세·다운로드는 `X-Report-Narrative-Enabled: false`로 요청하며 상품 권한을 조회하지 않는다
 - 목록은 학생/기간 종류/시작일별 최신 revision을 고른 뒤 status를 적용하며 1.1 페이지 봉투를 사용한다. 상세의 기본값은 같은 학생·기간 종류·시작일 최신판, `revision` 지정 시 해당 판이다. evidence/files 경로는 전달한 실제 reportId 판에 속한 항목·파일을 조회한다.
 - 파일 키는 `reports/{studentId}/{reportId}/r{revision}/{full|free}/{pdf|md|html}`다. DB `report_file`에는 full 키 3개를 저장하며 무료용 파생 파일도 생성한다. 다운로드 수명은 설정값이며 운영 기본안은 300초다. 버전·형식·학생이 맞지 않는 키를 서명하지 않는다.
+- 추억 그림책 파일 키는 `reports/memory-books/{studentId}/{bookId}/pdf`다(#975 C3: S3 수명 주기 규칙은 접두어 하나로만 고를 수 있어 그림책을 학생 리포트 밖 한 접두어에 모음). 학생 삭제의 `reports/{studentId}/` 삭제가 `reports/memory-books/{studentId}/`도 함께 지운다. 만료 파일 정리는 S3 수명 주기 규칙([infra 기록](../report/infra.md#921-s3-수명-주기-추억-그림책-975-2026-11-24))
 
 ### 4.5 core-service (호출: ai, scoring, learning, report)
 | Method | Path | 설명 |

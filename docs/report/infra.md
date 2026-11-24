@@ -1856,9 +1856,9 @@ PR #966(추억 그림책 PDF 발급)이 develop에 들어갔지만 prod report-w
 | 기존 구독 | 그대로 동작 | V57 전에 만든 구독 스냅숏(시연 `prepare-demo-account-students.sql` 포함)에는 두 키가 없다. 이때 `features.memoryBook`은 구독 중이면 허용, `limits.dailyMemoryBooks`는 무료 상품 값(V57 뒤 3)을 쓴다(`ProductEntitlementService`). 결과는 B1·B2와 같다 |
 | B 계정 | 계정 번호 교체에 포함 | 출처에 missions 버킷 이름(계정 번호)이 들어 있다. `scripts/aws_account_switch.py`가 prod `*.json`을 바꾸므로 같이 바뀐다. 리전이 바뀌면 `s3.<리전>`과 S3 egress 대역도 바꾼다([AWS README B 런북](../../infrastructure/aws/README.md#a-계정-값-교체)) |
 
-그림이 빠지는 경우(2026-11-24 결정): `asset_fetcher.py`는 받지 못한 그림만 빈 칸으로 두고, `memory_book/service.py`는 그림 수를 보지 않아 그림을 하나도 받지 못해도 READY로 끝난다.
+그림이 빠지는 경우(2026-11-24 결정): `asset_fetcher.py`는 받지 못한 그림만 빈 칸으로 둔다. #974 당시에는 그림을 하나도 받지 못해도 READY로 끝났고, #975부터는 아래 "실행 중 실패"처럼 FAILED로 끝난다.
 - 설정 누락: 허용 출처가 비면 report-worker가 뜰 때 경고 로그(`MEMORY_BOOK_ASSET_ORIGINS`가 비어 있어 그림 없이 만듦)를 남긴다(#974). 같은 워커가 리포트·자녀 삭제 큐도 처리하므로 기동은 막지 않는다. 값이 맞는지는 `test_runtime_config`가 PR에서 본다.
-- 실행 중 실패: 그림 주소가 있는데 한 장도 받지 못하면 FAILED로 끝내고 한도를 쓰지 않는 변경은 실패 코드·계약·화면 문구가 함께 바뀌어 #975에서 한다. 그 전까지는 A·B 확인에서 그림 수를 직접 센다.
+- 실행 중 실패(#975 반영): 그림 주소가 있는데 한 장도 받지 못하면 `memory_book/service.py`가 PDF를 만들지 않고 FAILED `ASSET_UNAVAILABLE`로 끝낸다. 사용 예약은 미사용으로 마감해 한도를 쓰지 않는다. 일부만 빠지면 그 칸만 비우고 READY다. 그래서 A·B 확인에서는 지금처럼 그림 수를 직접 센다(일부 누락은 READY로 나오므로).
 
 ### 9.20.2 11/25 A 확인 절차
 
@@ -1922,6 +1922,34 @@ SELECT status, failure_code, size_bytes, created_at, completed_at FROM memory_bo
 
 - 마지막 SQL의 칸 이름은 V57 기준이다. 다르면 `\d memory_book_job`으로 맞춘다.
 - B(시연)에서는 같은 절차를 B 런북 경로 확인 뒤 한 번 더 한다(#927 B 항목).
+
+## 9.21 S3 수명 주기: 추억 그림책 (#975, 2026-11-24)
+
+2026-11-24 결정 C3([결정 기록](../proposals/memory-book-decisions.md)): 보관 기간(30일)이 지난 추억 그림책 PDF는 S3 수명 주기 규칙으로 지운다. 이 절은 규칙 정의만 다룬다. prod report-worker 설정과 A 계정 확인 절차는 #974다.
+
+### 9.21.1 확인한 것
+
+- `reports` 버킷(`infrastructure/aws/demo-stack.json` `buckets`)에는 수명 주기 규칙이 없었다. `demo_stack.py`는 버킷의 버전 관리·공개 차단·기본 암호화만 만들고 대조했다(AWS 계정은 조회하지 않고 코드와 정의 파일만 확인).
+- 버킷은 **버전 관리가 켜져 있다**. 현재 버전만 만료하면 삭제 표시만 생기고 이전 버전이 남으므로 이전 버전 만료와 남은 삭제 표시 정리도 함께 둔다.
+- S3 수명 주기 규칙은 대상을 **접두어 하나(와일드카드 없음)나 객체 태그**로만 고른다. 결정 문구의 `reports/*/memory-books/`처럼 학생 ID가 가운데 있는 키는 고를 수 없다.
+
+### 9.21.2 결정과 변경
+
+- 그림책 키를 `reports/{studentId}/memory-books/{bookId}/pdf`에서 `reports/memory-books/{studentId}/{bookId}/pdf`로 옮겼다(`backend/report-service/app/clients/storage.py`). report IAM(`report-s3-role`)은 `reports/*`라 권한을 바꾸지 않는다(E1 "IAM 변경 없음" 유지). 객체 태그 방식은 `s3:PutObjectTagging` 권한 추가와 B 계정 IAM 반영이 필요해 쓰지 않았다.
+- 학생 삭제(P09)는 그대로 `delete_prefix("reports/{studentId}/")` 한 번이고, 저장소가 `reports/memory-books/{studentId}/`도 함께 지운다. 허용 모양은 학생 전체, 리포트 판, 그림책 한 권(`reports/memory-books/{s}/{b}/`)뿐이다.
+- prod에는 아직 그림책 파일이 없어 옮길 파일은 없다. 로컬에서 옛 키로 만든 파일은 받기가 410(보관 기간 지남)이 되고, 학생 삭제의 `reports/{studentId}/` 아래라 그대로 지워진다.
+
+### 9.21.3 규칙 정의 (`demo-stack.json` `bucketLifecycle`, apply 안 함)
+
+| ID | 대상 | 동작 |
+|---|---|---|
+| `memory-book-expire` | 접두어 `reports/memory-books/` | 현재 버전 35일 뒤 만료(30일 보관 + 여유 5일, core 만료 판정보다 늦게), 이전 버전 1일 뒤 삭제 |
+| `memory-book-delete-markers` | 접두어 `reports/memory-books/` | 남은 삭제 표시 정리(`ExpiredObjectDeleteMarker`) |
+
+- 여유 5일: core는 `expires_at`(발급 + 30일)으로 받기를 막고, S3는 객체 생성일부터 일 단위로 세어 자정(UTC) 기준으로 지운다. 파일은 발급 직후 만들어지므로 35일이면 core 만료 뒤에만 지워진다.
+- `demo_stack.py plan`은 정의와 실제 규칙을 비교해 다르면 DIFF로 보여 준다. `apply`는 **규칙이 하나도 없는 버킷에만** 이 정의를 넣는다. `put-bucket-lifecycle-configuration`은 버킷의 규칙 전체를 바꾸므로, 다른 규칙이 이미 있으면 덮어쓰지 않고 DIFF로 남겨 사람이 합친다.
+- 이 PR에서는 AWS에 적용하지 않았다. 적용은 #974의 A 계정 확인 일정에서 `plan`으로 차이를 본 뒤 `apply --confirm-account`로 한다.
+- 시험: `scripts/tests/test_aws_demo_stack.py`(정의가 그림책 접두어만 고름·35일·이전 버전·삭제 표시, 빈 버킷에만 넣고 다른 규칙은 덮지 않음), report `tests/test_memory_book_generation.py`(새 키 모양, 한 권·학생 전체 삭제, 위험한 접두어 거부).
 
 ## 10. 근거 링크
 

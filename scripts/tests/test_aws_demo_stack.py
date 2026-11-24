@@ -192,6 +192,14 @@ class FakeAws:
     def s3api_get_bucket_encryption(self, a):
         return {} if self.buckets[a['bucket']].get('encryption') else None
 
+    def s3api_get_bucket_lifecycle_configuration(self, a):
+        # Real S3 answers NoSuchLifecycleConfiguration (non-zero exit) when the bucket has no rules.
+        return self.buckets[a['bucket']].get('lifecycle')
+
+    def s3api_put_bucket_lifecycle_configuration(self, a):
+        self.buckets[a['bucket']]['lifecycle'] = json.loads(a['lifecycle-configuration'])
+        return {}
+
     # IAM
     def iam_get_role(self, a):
         role = self.roles.get(a['role-name'])
@@ -320,6 +328,33 @@ class DemoStackTest(unittest.TestCase):
         self.assertEqual(demo_stack.apply_missing(aws, self.spec, wait=lambda _: None), [])
         changed = [c for c in aws.calls if c[1].split('-')[0] in MUTATING]
         self.assertEqual(changed, [])
+
+    def test_reports_bucket_lifecycle_expires_only_memory_books(self):
+        """#975 C3: 추억 그림책 파일만 30일 보관 + 여유로 지운다(버전 관리 버킷이라 이전 버전·삭제 표시도)."""
+        reports = next(b for b in self.spec['buckets'] if b.endswith('-reports'))
+        self.assertEqual([reports], list(self.spec['bucketLifecycle']))
+        rules = self.spec['bucketLifecycle'][reports]['Rules']
+        self.assertEqual({'reports/memory-books/'}, {r['Filter']['Prefix'] for r in rules})
+        expire = next(r for r in rules if 'Days' in r['Expiration'])
+        self.assertGreater(expire['Expiration']['Days'], 30)
+        self.assertIn('NoncurrentVersionExpiration', expire)
+        self.assertTrue(any(r['Expiration'].get('ExpiredObjectDeleteMarker') for r in rules))
+
+    def test_lifecycle_is_put_only_on_a_bucket_without_rules_and_drift_is_reported(self):
+        reports = next(b for b in self.spec['buckets'] if b.endswith('-reports'))
+        aws = FakeAws(self.spec)
+        created = demo_stack.apply_missing(aws, self.spec, wait=lambda _: None)
+        self.assertIn(('s3-lifecycle', reports), created)
+        self.assertEqual(self.spec['bucketLifecycle'][reports], aws.buckets[reports]['lifecycle'])
+        # Someone else's rules are never replaced: plan shows the difference, apply leaves it.
+        other = {'Rules': [{'ID': 'manual', 'Status': 'Enabled', 'Filter': {'Prefix': 'tmp/'}, 'Expiration': {'Days': 1}}]}
+        aws.buckets[reports]['lifecycle'] = other
+        report = demo_stack.plan(aws, self.spec)
+        self.assertIn(('s3', reports), {(k, n) for k, n, s, _ in report.rows if s == 'DIFF'})
+        aws.calls.clear()
+        demo_stack.apply_missing(aws, self.spec, wait=lambda _: None)
+        self.assertFalse(any(c[1] == 'put-bucket-lifecycle-configuration' for c in aws.calls))
+        self.assertEqual(other, aws.buckets[reports]['lifecycle'])
 
     def test_private_subnets_route_through_nat_and_s3_endpoint(self):
         aws = FakeAws(self.spec)

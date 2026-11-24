@@ -4,7 +4,7 @@ import com.sagomungchi.core._common.messaging.OutboxWriter
 import com.sagomungchi.core.memorybook.domain.MemoryBookJob
 import org.springframework.stereotype.Component
 
-/** `memorybook.generate` v1 명령 (cmd.direct → report-worker, docs/proposals/memory-book.md 7.2, 미도입 시험 구현) */
+/** `memorybook.generate` v1 명령 (cmd.direct → report-worker, docs/proposals/memory-book.md 7.2) */
 @Component
 class MemoryBookGenerateWriter(private val outbox: OutboxWriter) {
     fun append(job: MemoryBookJob) = outbox.append(

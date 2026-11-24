@@ -27,7 +27,7 @@ import java.util.UUID
 class MemoryBookConfiguration { @Bean fun memoryBookClock(): Clock = Clock.systemUTC() }
 
 /**
- * 추억 그림책 작업 행의 트랜잭션 경계 (docs/proposals/memory-book.md 6·8장, 미도입 시험 구현).
+ * 추억 그림책 작업 행의 트랜잭션 경계 (docs/proposals/memory-book.md 6·8장).
  * 생성은 학생 행 잠금 안에서 재사용·하루 한도를 다시 확인하고 작업 행과 `memorybook.generate` Outbox를 함께 저장한다.
  * 완료는 처리한 이벤트를 한 번만 반영하고 사용 예약을 마감한다(READY = 사용, FAILED = 미사용)
  */

@@ -46,7 +46,7 @@ def test_pdf_flows_cover_then_story_days_ending_and_evening_question(rendered):
     ]
     positions = [text.index(word) for word in order]
     assert positions == sorted(positions)
-    assert "이날문제는나중에바뀌어서남은기록이없어요" in text
+    assert "이날문제는그뒤에새문제로바뀌어서,아이가그때쓴답을함께싣지못했어요" in text
     assert "큰질문의답" in text
 
 

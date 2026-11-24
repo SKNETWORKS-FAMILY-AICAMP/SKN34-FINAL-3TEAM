@@ -1,13 +1,22 @@
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
- * 추억 그림책 실서버 확인(docs/proposals/memory-book.md 13.2, 미도입 시험 구현) 준비. 데이터는 모두 합성.
+ * 추억 그림책 실서버 확인(docs/proposals/memory-book.md 13.2) 준비. 데이터는 모두 합성.
  * 지난 회차는 다섯 문제를 실제로 풀어 만들 수 없으므로(그 주가 지나야 액자가 생김) learning_db에 직접 넣는다.
  */
 const container = process.env.E2E_POSTGRES_CONTAINER ?? 'sagomungchi-e2e-postgres-1'
 const minio = process.env.E2E_MINIO_URL ?? 'http://127.0.0.1:9000'
 const bucket = process.env.E2E_MISSIONS_BUCKET ?? 'sagomungchi-local-missions'
+
+/** 셸에 값이 없으면 스택을 띄운 합성 값 파일(infrastructure/stubs/e2e.env)에서 읽는다(CI는 이 파일로 스택을 띄움) */
+function stubEnv(name: string) {
+  const file = readFileSync(resolve(import.meta.dirname, '../../../../../infrastructure/stubs/e2e.env'), 'utf8')
+  const line = file.split('\n').map((l) => l.trimEnd()).find((l) => l.startsWith(`${name}=`))
+  if (!line) throw new Error(`e2e.env에 ${name}이 없습니다`)
+  return line.slice(name.length + 1)
+}
 
 export function psql(database: string, sql: string) {
   return execFileSync('docker', ['exec', '-i', container, 'sh', '-c', `psql -v ON_ERROR_STOP=1 -qAt -U "$POSTGRES_USER" -d ${database}`],
@@ -41,8 +50,8 @@ export function uploadSceneImages(prefix: string) {
     INTRO: 'story/intro.jpg', OUTRO: 'story/outro.jpg',
     MON: 'album/past-forest.jpg', TUE: 'album/past-map.jpg', WED: 'album/past-post.jpg', THU: 'atlas.jpg', FRI: 'story/intro.jpg',
   }
-  const user = process.env.MINIO_ROOT_USER ?? ''
-  const password = process.env.MINIO_ROOT_PASSWORD ?? ''
+  const user = process.env.MINIO_ROOT_USER ?? stubEnv('MINIO_ROOT_USER')
+  const password = process.env.MINIO_ROOT_PASSWORD ?? stubEnv('MINIO_ROOT_PASSWORD')
   for (const [scene, file] of Object.entries(files)) {
     execFileSync('curl', ['-sS', '--fail', '--aws-sigv4', 'aws:amz:ap-northeast-2:s3', '--user', `${user}:${password}`,
       '-H', 'Content-Type: image/jpeg', '-T', resolve(root, file), `${minio}/${bucket}/theme-drafts/${prefix}/${scene}`])

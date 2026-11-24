@@ -15,7 +15,7 @@ import java.time.LocalDate
 import java.util.UUID
 
 /**
- * 추억 그림책의 learning 기념 액자 조회 (docs/proposals/memory-book.md, 미도입 시험 구현). learning 4.1.4 앨범·보유 확인을 그대로 쓴다.
+ * 추억 그림책의 learning 기념 액자 조회 (docs/proposals/memory-book.md). learning 4.1.4 앨범·보유 확인을 그대로 쓴다.
  * 학부모 요청이라 요청 사용자 범위가 아니라 그 자녀 범위(`X-User-Role: SYSTEM`, `X-Student-Scope` = 자녀)로 잠깐 바꿔 부른다
  * (친구 방 구경 `LearningFrameClient.albumFramesOf`와 같은 방식). 진행 중인 주 회차는 learning이 뺀다.
  * 모양이 틀리면 502, 연결 실패는 공용 LearningClient의 503·504

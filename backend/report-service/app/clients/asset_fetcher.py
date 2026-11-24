@@ -1,4 +1,4 @@
-"""추억 그림책 그림 받기 (docs/proposals/memory-book.md 9장, 미도입 시험 구현).
+"""추억 그림책 그림 받기 (docs/proposals/memory-book.md 9장).
 
 learning이 준 그림 URL(테마 그림 presigned URL)을 받아 `data:` URI로 바꾼다.
 PDF 렌더러는 네트워크를 막으므로 그림은 여기서만 받는다. 허용 출처(scheme://host[:port]) 밖,

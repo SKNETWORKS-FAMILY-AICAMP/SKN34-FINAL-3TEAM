@@ -87,7 +87,7 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 <div class="chat">
 {% for line in day.dialogue %}<div class="msg left"><span class="avatar">{{ line.speaker[:1] }}</span><div class="body"><p class="name">{{ line.speaker }}</p><span class="text">{{ line.text }}</span></div></div>
 {% endfor %}<div class="msg left question"><span class="avatar">문</span><div class="body"><p class="name">오늘의 문제</p><span class="text"><b>Q.</b>{{ day.question }}</span></div></div>
-{% if day.attempt is none %}<p class="note">이 날 문제는 나중에 바뀌어서 남은 기록이 없어요</p>
+{% if day.attempt is none %}<p class="note">이 날 문제는 그 뒤에 새 문제로 바뀌어서, 아이가 그때 쓴 답을 함께 싣지 못했어요</p>
 {% else %}{% for a in day.attempt.answers %}{% if a.followup %}<div class="msg left mungchi"><span class="avatar">뭉</span><div class="body"><p class="name">뭉치</p><span class="text">{{ a.followup }}</span></div></div>
 {% endif %}<div class="msg right"><span class="avatar">{{ name[:1] }}</span><div class="body"><p class="name">{{ name }}{% if not loop.first %} · 다시 생각한 답{% endif %}</p><span class="text">{{ a.text }}</span></div></div>
 {% endfor %}{% if day.attempt.reflection %}<p class="note"><b>돌아보기</b> {{ day.attempt.reflection }}</p>{% endif %}{% endif %}

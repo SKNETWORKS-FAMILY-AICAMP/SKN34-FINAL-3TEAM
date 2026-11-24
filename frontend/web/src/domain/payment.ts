@@ -2,6 +2,17 @@ export interface PaymentProduct {
   id: string; code: string; name: string; price: number; billingCycle: string
   childLimit: number; active: boolean; features: Record<string, unknown>; limits: Record<string, unknown>
 }
+/**
+ * 요금제 상품 설명의 추억 그림책 문구(B4, #975). core 규칙과 같게 `features.memoryBook`이 없으면 유료 상품(구독)은 제공,
+ * false면 빼고, 하루 한도(`limits.dailyMemoryBooks`)가 0 이상 정수면 권 수를 붙인다. 앞 문구와 잇도록 " · "로 시작한다.
+ */
+export function memoryBookLabel(product: Pick<PaymentProduct, 'price' | 'features' | 'limits'>): string {
+  const enabled = product.features.memoryBook ?? product.price > 0
+  if (enabled !== true) return ''
+  const limit = product.limits.dailyMemoryBooks
+  if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 0) return ' · 추억 그림책'
+  return limit === 0 ? '' : ` · 추억 그림책 하루 ${limit}권`
+}
 export interface ChildEntitlement {
   childId: string; product: PaymentProduct; subscriptionId: string | null; status: string
   autoRenew: boolean; periodEnd: string | null; graceUntil: string | null

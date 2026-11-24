@@ -24,7 +24,7 @@ data class RoundRequest(val themeId: UUID? = null, val weekStart: LocalDate? = n
 data class CreateMemoryBookRequest(val rounds: List<RoundRequest>? = null)
 
 /**
- * 추억 그림책 공개 API (docs/proposals/memory-book.md 7.1, 미도입 시험 구현, feature/memory-book 브랜치 전용).
+ * 추억 그림책 공개 API (docs/proposals/memory-book.md 7.1).
  * 학부모만(2026-11-23 결정): 연결된 자녀의 회차를 골라 발급하고 받는다. 원문 공개 자녀만(D2). 모든 응답 `Cache-Control: no-store`
  */
 @RestController

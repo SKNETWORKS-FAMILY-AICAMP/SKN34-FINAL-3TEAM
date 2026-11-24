@@ -54,6 +54,17 @@
 | ai-service | 추억 검색 문서·질문 임베딩(기존 API, 사용량 유형 구분), 추억 설명 생성 | 기존 `embedding`, 설명은 `memory_explanation`(#565) |
 | report·scoring | 변경 없음 | - |
 
+#### 1.1.3 추억 그림책 추가 책임 (FN-RPT-18, 구현 #966, 2026-11-24 도입)
+
+학부모가 자녀의 앨범 회차를 PDF 그림책으로 발급받는다([제안 문서](../proposals/memory-book.md), [결정 기록](../proposals/memory-book-decisions.md)). 새 서비스·Pod는 없고 report-worker가 새 명령 큐 하나를 더 소비한다. API는 [API 명세](api-spec.md) 2.5.1·4.1.4·4.4, 저장은 [ERD](erd.md) 3.5.3.
+
+| 서비스 | 추가 책임 | 기능 패키지 |
+|---|---|---|
+| core-service | 학부모 발급·목록·받기 API, 연결·동의·원문 공개(#206) 확인, 유료 판정(`features.memoryBook`)·하루 한도·`MEMORY_BOOK` 사용 예약, 작업 행·`memorybook.generate` Outbox, 완료 이벤트 반영, 받기 감사 기록, 자녀 삭제 때 작업 행 삭제 | `memorybook`(controller → service → repository·client·messaging·consumer), 유료 판정은 기존 `payment/service/ProductEntitlementService` |
+| learning-service | 회차 조립 내부 API(요일 문제·장면 그림·답변·되묻기·돌아보기·엔딩, P23은 여기서 적용). 그림은 단기 presigned URL | 기존 `memory`(MemoryBook controller·service·repository) |
+| report-service | `memorybook.generate` 소비, 프로필 재확인(원문 공개), 그림 받기(허용 출처·크기 상한·리디렉트 거부, 내부 토큰 없는 별도 클라이언트) → `data:` URI → Chromium PDF 1판 → S3 저장 → `memorybook.completed` Outbox, core 전용 받기 주소 | `app/memory_book/`, `app/clients/asset_fetcher.py`·`memory_book_client.py`, `app/rendering/memory_book.py` |
+| ai·scoring | 변경 없음(LLM 호출 없음) | - |
+
 ### 1.2 전체 구성도
 
 ```
@@ -65,7 +76,7 @@
                        ▲                     │  ▲
                        └──── 기록 조회 ───────┘  │
       ┌─────────────────────────── RabbitMQ ──┼──────────────────────────────┐
-      │ cmd.direct  : report.generate          │       (작업 큐, 소비자 1)      │
+      │ cmd.direct  : report.generate, memorybook.generate (작업 큐, 소비자 1)│
       │ events.topic: report.*, llm.*, model.*, student.*  (fan-out, 소비자 N) │
       └────────────────────────────────────────┼──────────────────────────────┘
                ▲ consume                       │ HTTP(서술 생성)
@@ -79,7 +90,7 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 
 - core→scoring 동기 HTTP는 관리자 모델 파일 사전 검사 중계 `POST /internal/models/preflight`(#368, 20초·재시도 없음)뿐이다. 판정 교차 확인(M2·M1)은 ai→scoring이다
 - `model.*`는 `model.version.activated`(core→ai·scoring)와 `model.loading.reported`(scoring→core, #370) 두 메시지다(1.4)
-- 그림에 없는 동기 HTTP: learning→core(피드백 안 결제 사용 예약·완료 `/internal/payment-usage/*`, 삭제 완료 보고 `/internal/deletion-requests/{id}/completions`, 추억 설명용 학생 프로필 `/internal/students/{id}/profile`), learning→scoring(답변 표현 분류, #688), core→report-api(리포트·파일·근거 조회, 정정 영향 조회, 작업 복구 `reconcile`). 서비스 간 허용 관계 전체는 4.3 NetworkPolicy 표
+- 그림에 없는 동기 HTTP: learning→core(피드백 안 결제 사용 예약·완료 `/internal/payment-usage/*`, 삭제 완료 보고 `/internal/deletion-requests/{id}/completions`, 추억 설명용 학생 프로필 `/internal/students/{id}/profile`), learning→scoring(답변 표현 분류, #688), core→report-api(리포트·파일·근거 조회, 정정 영향 조회, 작업 복구 `reconcile`, 추억 그림책 받기 주소), core→learning(추억 그림책 보유 확인·앨범, 자녀 범위 SYSTEM), report-worker→learning(추억 그림책 회차 조립), report-worker→S3 missions(learning이 서명한 그림 GET, IAM 권한 없이 서명 URL로만). 서비스 간 허용 관계 전체는 4.3 NetworkPolicy 표
 
 ### 1.3 통신 원칙
 | 구간 | 방식 | 근거 |
@@ -131,6 +142,8 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 | `llm.usage.recorded` | 이벤트 | ai, scoring | core | 호출 종류별 토큰·지연·실패·버전 집계 (학생 ID·원문 미포함) |
 | `model.version.activated` | 이벤트 | core | ai, scoring (Pod별 수신) | 모든 레플리카가 승인 scope의 활성 모델·프롬프트 버전 교체 (기동 시 core 내부 API로 현재 버전 조회) |
 | `model.loading.reported` | 이벤트 | scoring (Pod마다 기동·상태 변화 즉시, 이후 30초 주기로 전체 상태 재보고) | core | Pod·인스턴스별 최신 로딩 상태를 `model_loading_report`에 저장(같은 인스턴스는 더 큰 `sequence`만 반영, 1일 넘은 이벤트 무시), 관리자 `GET /admin/model-loading` 조회 (#370) |
+| `memorybook.generate` | 명령 | core (학부모 발급, Outbox) | report-worker (큐 `report.memorybook.generate`, 재시도 1·5·15분·DLQ) | 학생 삭제 잠금 → 프로필로 원문 공개 재확인 → 이미 저장한 파일이면 완료만 다시 알림 → learning 회차 조립 → 그림 받기 → PDF 렌더링·S3 저장 → `memorybook.completed` (#966) |
+| `memorybook.completed` | 이벤트 | report (Outbox) | core (큐 `core.memorybook.events`) | 작업 `READY`·`FAILED`(영구 실패 코드), 사용 예약 마감(READY면 사용, FAILED면 미사용). `processed_event`로 한 번만 반영 (#966) |
 | `student.deleted` | 이벤트 | core | learning, report | 삭제 확정 학생의 학습 기록·리포트 물리 삭제, 처리 후 core 내부 API로 완료 보고. 페이로드에 `deletionRequestId`·`scope` 포함 (P09) |
 
 - 위 메시지는 모두 core 감사 큐 `core.event.audit`에도 바인딩되어 `event_log`에 기록된다(#208). 바인딩은 routing key별로 두며 `#` 와일드카드는 쓰지 않는다(report 발행자의 unroutable 감지 유지). 메시지를 추가하면 감사 바인딩도 함께 추가하고 `RabbitDefinitionsTest`가 누락을 검사한다.
@@ -166,6 +179,7 @@ AWS 관리형: SageMaker 리포트 Gemma 엔드포인트(ai만 호출, 같은 �
 7. **학습 완료 후**: 돌아보기 저장 성공 → core가 포인트 적립(미션당 최초 1회) → 커뮤니티 공개가 켜져 있고 그 미션 공유물이 없으면 learning에 공유 요청(학생·미션당 1개) → 공유 성공 시 포인트 적립(#388·#389)
 8. **일일 리포트**: core 스케줄러(ShedLock)가 매일 자정(다음 날 00:00 KST) 보호자가 연결된 자녀별 `report_job(period_type = DAILY)` + Outbox → `report.generate` → report가 learning 기록 조회 → 코드 계산·템플릿 구성 → 인용 대조 → 렌더링·S3 저장(ai 호출 없음) → `report.completed` → core 일일 알림
 9. **리포트 대화**: 학부모가 일일 리포트에서 대화 생성 → core가 리포트 소유·자녀 연결 확인 후 대화에 리포트 ID·판을 저장하고 범위를 그날로 고정 → 메시지마다 core가 report에서 그 판을 읽어 ai 요청에 넣음 → 이후는 4번 분석 대화 흐름 그대로
+10. **추억 그림책**(#966): 학부모가 리포트 화면의 회차 목록에서 발급 → core가 연결·원문 공개·보유·한도·유료를 확인하고 작업 행 + Outbox → `memorybook.generate` → report-worker가 learning 회차 조립·그림 받기 → PDF를 `reports` 버킷에 저장 → `memorybook.completed` → core 작업 READY → 학부모 받기(요청마다 원문 공개 재확인, report 서명 URL 300초). LLM 호출 없음([시퀀스 3.11](sequence-diagram.md))
 
 ### 1.6 메시징 신뢰성 규칙
 - **Outbox**: DB 상태 변경 + 발행이 함께 필요한 서비스(core, report)만 적용 (learning은 발행 없음, 멱등 소비만). 같은 트랜잭션에 outbox 행 저장 → 릴레이 스케줄러가 publisher confirm 받은 후 발행 시각 기록 (참고 레포 `*OutboxScheduler` 패턴). core 릴레이는 ShedLock 단일 실행, 발행·confirm 대기는 DB 트랜잭션 밖, 발행 시각만 짧은 트랜잭션으로 기록

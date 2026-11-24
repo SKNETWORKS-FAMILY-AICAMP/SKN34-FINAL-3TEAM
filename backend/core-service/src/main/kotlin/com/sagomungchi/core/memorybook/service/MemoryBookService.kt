@@ -27,7 +27,7 @@ import java.util.UUID
 data class MemoryBookCreated(val view: MemoryBookView, val created: Boolean)
 
 /**
- * 추억 그림책 공개 API 흐름 (docs/proposals/memory-book.md 6·7·10장, 미도입 시험 구현).
+ * 추억 그림책 공개 API 흐름 (docs/proposals/memory-book.md 6·7·10장).
  * 발급은 학부모만(2026-11-23 결정, D1 변경): 연결된 자녀의 보유 액자 회차를 골라 만들고 받는다. 학생 경로는 없다.
  * 원문 공개 자녀만(D2): 회차 목록·생성·목록·내려받기 모두 지금 `parentSharingEnabled`가 false면 403 `STUDENT_RECORDS_PRIVATE`.
  * 생성 순서: 공개 확인 → 같은 회차 재사용 → learning 보유 확인(외부 호출, 트랜잭션 밖) → 하루 한도 → 유료 판정·사용 예약

@@ -4,7 +4,7 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** 추억 그림책 (docs/proposals/memory-book.md, 미도입 시험 구현). 1차는 회차 1개(D3) */
+/** 추억 그림책 (docs/proposals/memory-book.md). 1차는 회차 1개(D3) */
 enum class MemoryBookStatus { QUEUED, READY, FAILED }
 
 data class MemoryBookJob(
