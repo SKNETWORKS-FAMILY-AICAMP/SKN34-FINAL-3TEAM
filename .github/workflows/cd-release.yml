@@ -5,6 +5,7 @@
 # 비상용(helm-emergency, 12/7 시연까지 유지): 예전 흐름 그대로 prod 승인 → 작업자 PC self-hosted runner(cd-prod)
 # 에서 migration Job 완료 → Helm 적용 → 경로 확인 → 이력 기록. 쓰기 전에 해당 Argo CD Application 자동 동기화를 끈다.
 # 실패해도 자동 롤백하지 않는다. migration 실패면 앱을 적용하지 않고, DB는 되돌리지 않는다.
+# 작업 이미지(#985, 표현 분류 재학습 tox-retrain)는 계획의 jobs에 있을 때만 같은 태그 규칙으로 게시하고 digest PR로만 고정한다.
 # 빈 클러스터 첫 배포(#760)의 계획 currentRelease "none"은 비상용 Helm 경로에서만 의미가 있다.
 name: cd-release
 
@@ -24,7 +25,7 @@ on:
           - pull-request
           - helm-emergency
       allowRepositoryChange:
-        description: "digest PR에서 images 파일 저장소 주소도 바꿈(계정 전환 첫 배포만, 서비스 5개 전부)"
+        description: "digest PR에서 images 파일 저장소 주소도 바꿈(계정 전환 첫 배포만, 서비스 5개와 jobs 전부)"
         required: false
         default: false
         type: boolean
@@ -42,6 +43,7 @@ jobs:
     outputs:
       operation: ${{ steps.plan.outputs.operation }}
       services: ${{ steps.plan.outputs.services }}
+      jobs: ${{ steps.plan.outputs.jobs }}
       delivery: ${{ inputs.delivery }}
     steps:
       - name: main에서만 실행
@@ -85,6 +87,8 @@ jobs:
           plan = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "plan.json"), encoding="utf-8"))
           print("operation=" + plan["operation"])
           print("services=" + json.dumps(plan["services"], separators=(",", ":")))
+          # 작업 이미지(#985)는 선택값이다. 약 1.89GB라 매 릴리스가 아니라 계획에 넣은 릴리스만 빌드한다
+          print("jobs=" + json.dumps(plan.get("jobs", []), separators=(",", ":")))
           EOF
 
   publish:
@@ -105,10 +109,11 @@ jobs:
           aws-region: ${{ vars.CD_AWS_REGION }}
       - uses: docker/setup-buildx-action@v4
       - id: images
-        name: main SHA 앱·migration 이미지 게시 (ECR 태그 불변, 이미 있으면 재사용)
+        name: main SHA 앱·migration·작업 이미지 게시 (ECR 태그 불변, 이미 있으면 재사용)
         env:
           REGISTRY: ${{ vars.CD_ECR_REGISTRY }}
           SERVICES: ${{ needs.validate.outputs.services }}
+          JOBS: ${{ needs.validate.outputs.jobs }}
         run: |
           set -euo pipefail
           shopt -s inherit_errexit
@@ -141,6 +146,14 @@ jobs:
             esac
             migrations=$(jq -c --arg s "$service" --arg i "$migration" '. + {($s): $i}' <<<"$migrations")
           done
+          # 작업 이미지(#985). 같은 main-<SHA> 불변 태그, 이미 있으면 재사용. migration 없음
+          for job in $(echo "$JOBS" | jq -r '.[]'); do
+            case "$job" in
+              tox-retrain) image=$(publish "sagomungchi/tox-retrain" -f ml/tox/Dockerfile .) ;;
+              *) echo "지원하지 않는 작업 이미지: $job" >&2; exit 1 ;;
+            esac
+            images=$(jq -c --arg s "$job" --arg i "$image" '. + {($s): $i}' <<<"$images")
+          done
           echo "images=$images" >> "$GITHUB_OUTPUT"
           echo "migrations=$migrations" >> "$GITHUB_OUTPUT"
 
@@ -148,16 +161,14 @@ jobs:
     needs: [validate, publish]
     if: needs.validate.outputs.delivery == 'pull-request' && needs.publish.result == 'success'
     runs-on: ubuntu-latest
-    # 승인은 이 job이 아니라 만든 PR에서 받는다(main 보호 규칙·CODEOWNERS, infrastructure/cd/README.md)
+    # 브랜치 push까지만 한다. 조직 정책상 Actions는 PR을 만들 수 없어(#986) PR은 사람이 실행 요약 링크로 열고,
+    # 승인은 그 PR에서 받는다(main 보호 규칙·CODEOWNERS, infrastructure/cd/README.md)
     permissions:
-      contents: write        # PR 브랜치 push
-      pull-requests: write   # PR 생성
-      actions: write         # 만든 PR 브랜치에 ci-gitops 실행(GITHUB_TOKEN push는 다른 workflow를 깨우지 않음)
+      contents: write        # digest 브랜치 push
     env:
       PLAN_JSON: ${{ inputs.plan }}
       IMAGES: ${{ needs.publish.outputs.images }}
       MIGRATIONS: ${{ needs.publish.outputs.migrations }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       # images 파일은 지금 main HEAD 기준으로 고친다(다른 digest PR이 먼저 병합됐을 수 있음)
       - uses: actions/checkout@v7
@@ -183,7 +194,7 @@ jobs:
             --images "$work/images.json" --migrations "$work/migration-images.json" \
             --require-executable --write-images --pr-body "$work/pr-body.md" \
             --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --base-sha "$base" "${move[@]}"
-          # images/** 밖이 바뀌었으면 PR을 만들지 않는다(브랜치 규칙 예외는 이 경로만)
+          # images/** 밖이 바뀌었으면 브랜치를 push하지 않는다(브랜치 규칙 예외는 이 경로만)
           images_dir=$(jq -r '.delivery.imagesDir' infrastructure/cd/policy.json)
           outside=$(git status --porcelain --untracked-files=all | cut -c4- | grep -v "^$images_dir/" || true)
           if [ -n "$outside" ]; then
@@ -192,8 +203,7 @@ jobs:
           fi
           echo "work=$work" >> "$GITHUB_OUTPUT"
           echo "images_dir=$images_dir" >> "$GITHUB_OUTPUT"
-      - name: digest PR 생성
-        id: pr
+      - name: digest 브랜치 push와 PR 열기 링크
         env:
           WORK: ${{ steps.gate.outputs.work }}
           IMAGES_DIR: ${{ steps.gate.outputs.images_dir }}
@@ -203,23 +213,24 @@ jobs:
           branch="cd/prod-images-$tag-$GITHUB_RUN_ID"
           releases=$(jq -r '[.imageFileChanges[].release] | join(", ")' "$WORK/plan-record.json")
           title="chore: prod 이미지 digest $tag ($releases)"
+          # 커밋 1개짜리 compare 화면은 커밋 제목·본문으로 PR 제목·본문을 채운다.
+          # 본문의 '#' 제목 줄이 지워지지 않게 verbatim으로 남긴다
+          { printf '%s\n\n' "$title"; cat "$WORK/pr-body.md"; } > "$WORK/commit-message.txt"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
           git add -A -- "$IMAGES_DIR"
-          git commit -m "$title"
+          git commit --cleanup=verbatim -F "$WORK/commit-message.txt"
           git push origin "$branch"
-          url=$(gh pr create --base main --head "$branch" --title "$title" --body-file "$WORK/pr-body.md")
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
-          echo "- digest PR: $url" >> "$GITHUB_STEP_SUMMARY"
-      - name: PR 브랜치에 ci-gitops 실행
-        # GITHUB_TOKEN으로 만든 push·PR은 다른 workflow를 시작하지 않는다. workflow_dispatch는 예외라
-        # 같은 커밋에 ci-gitops(prod 렌더링·kubeconform) 결과가 붙는다. 실패해도 PR은 남기고 승인자가 결과를 본다
-        env:
-          BRANCH: ${{ steps.pr.outputs.branch }}
-        run: |
-          gh workflow run ci-gitops.yml --ref "$BRANCH"
-          echo "- ci-gitops: $BRANCH 에서 실행 요청(Actions 목록에서 확인)" >> "$GITHUB_STEP_SUMMARY"
+          compare="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch?expand=1"
+          {
+            echo "### digest PR 열기"
+            echo ""
+            echo "- 브랜치: \`$branch\`"
+            echo "- [PR 만들기]($compare): 링크를 열고 채워진 제목·본문 그대로 **Create pull request**를 누른다"
+            echo "- 열린 digest PR은 하나만 둔다. 이전 digest PR이 열려 있으면 닫는다(브랜치도 삭제)"
+            echo "- 승인은 PR을 연 사람과 다른 code owner(김동섭 ↔ 김태윤)가 한다. ci-gitops는 PR을 열면 자동으로 돈다"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

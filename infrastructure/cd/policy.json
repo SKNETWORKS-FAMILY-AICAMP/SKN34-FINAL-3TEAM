@@ -13,6 +13,9 @@
       "scoring-service": ["scoring-service"],
       "report-service": ["report-api", "report-worker"]
     },
+    "jobImageFiles": {
+      "tox-retrain": ["tox-retrain"]
+    },
     "migrationFiles": {
       "core-service": "core-service",
       "learning-service": "learning-service",

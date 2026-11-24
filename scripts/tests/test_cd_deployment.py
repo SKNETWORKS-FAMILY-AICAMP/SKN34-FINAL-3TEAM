@@ -153,6 +153,43 @@ class GateTests(unittest.TestCase):
                 plan = prod_plan(services=services, images=images("ai-service"))
                 self.assertFalse(cd.validate(plan, READY_POLICY)["valid"])
 
+    def test_job_images_are_optional_and_may_stand_alone(self):
+        # #985: 재학습 이미지는 계획의 jobs에 있을 때만. 앱 없이 jobs만 있는 계획도 받는다
+        plan = prod_plan(services=[], jobs=["tox-retrain"], images=images("tox-retrain"), migrations={})
+        self.assertTrue(cd.validate(plan, READY_POLICY)["executable"], cd.validate(plan, READY_POLICY))
+        plan = prod_plan(services=[], jobs=["tox-retrain"])
+        self.assertTrue(cd.validate(plan, READY_POLICY, pending_images=True)["valid"])
+        plan = prod_plan(
+            jobs=["tox-retrain"],
+            images=images("learning-service", "report-service", "tox-retrain"),
+            migrations=migrations("learning-service", "report-service"),
+        )
+        self.assertTrue(cd.validate(plan, READY_POLICY)["executable"])
+
+    def test_job_images_are_checked(self):
+        cases = {
+            "unknown job": prod_plan(services=[], jobs=["m2-retrain"], images=images("m2-retrain")),
+            "duplicate": prod_plan(services=[], jobs=["tox-retrain", "tox-retrain"], images=images("tox-retrain")),
+            "not a list": prod_plan(services=[], jobs="tox-retrain", images=images("tox-retrain")),
+            "no services and no jobs": prod_plan(services=[], jobs=[], images=images("tox-retrain")),
+            "image missing": prod_plan(services=[], jobs=["tox-retrain"], images=images("ai-service")),
+            "image not in jobs": prod_plan(
+                services=["ai-service"], images=images("ai-service", "tox-retrain")
+            ),
+            "wrong repository": prod_plan(
+                services=[], jobs=["tox-retrain"], images={"tox-retrain": f"{ECR}ai-service@sha256:" + "d" * 64}
+            ),
+            "tag not digest": prod_plan(
+                services=[], jobs=["tox-retrain"], images={"tox-retrain": f"{ECR}tox-retrain:main-abc"}
+            ),
+            "rollback": prod_plan(
+                operation="rollback", services=[], jobs=["tox-retrain"], images=images("tox-retrain")
+            ),
+        }
+        for name, plan in cases.items():
+            with self.subTest(name):
+                self.assertFalse(cd.validate(plan, READY_POLICY)["valid"])
+
 
 class GateCliTests(unittest.TestCase):
     def run_cli(self, root, plan, *extra):
@@ -765,22 +802,31 @@ class WorkflowTests(unittest.TestCase):
         job = self.jobs["digest-pr"]
         self.assertEqual(job["runs-on"], "ubuntu-latest")
         self.assertNotIn("environment", job)  # 승인은 PR에서
-        self.assertEqual(
-            job["permissions"],
-            {"contents": "write", "pull-requests": "write", "actions": "write"},
-        )
-        self.assertNotIn("id-token", job["permissions"])
+        # #986: 조직 정책상 Actions는 PR을 만들 수 없다. 브랜치 push만 하고 PR은 사람이 링크로 연다
+        self.assertEqual(job["permissions"], {"contents": "write"})
         checkout = job["steps"][0]
         self.assertEqual(checkout["with"]["ref"], "main")
         gate = job["steps"][1]["run"]
         for flag in ("--require-executable", "--write-images", "--require-ancestor-of origin/main"):
             self.assertIn(flag, gate)
         self.assertIn('grep -v "^$images_dir/"', gate)
-        create = job["steps"][2]["run"]
-        self.assertIn("gh pr create --base main", create)
-        self.assertIn('git add -A -- "$IMAGES_DIR"', create)
-        self.assertIn("gh workflow run ci-gitops.yml", job["steps"][3]["run"])
-        self.assertNotIn("CD_KUBECONFIG", str(job))
+        push = job["steps"][2]["run"]
+        self.assertIn('git add -A -- "$IMAGES_DIR"', push)
+        # 커밋 1개짜리 compare 화면이 PR 제목·본문을 채우도록 1행 제목 + 빈 줄 + pr-body.md
+        self.assertIn('printf \'%s\\n\\n\' "$title"; cat "$WORK/pr-body.md"', push)
+        self.assertIn('git commit --cleanup=verbatim -F "$WORK/commit-message.txt"', push)
+        self.assertIn('git push origin "$branch"', push)
+        self.assertIn(
+            'compare="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch?expand=1"', push
+        )
+        self.assertIn("$GITHUB_STEP_SUMMARY", push)
+        self.assertIn("열린 digest PR은 하나만", push)
+        self.assertIn("이전 digest PR", push)
+        text = str(job)
+        self.assertNotIn("gh pr create", text)
+        self.assertNotIn("gh workflow run", text)
+        self.assertNotIn("GH_TOKEN", text)
+        self.assertNotIn("CD_KUBECONFIG", text)
 
     def test_migrations_are_published_with_the_app_tag(self):
         publish = self.jobs["publish"]
@@ -803,6 +849,29 @@ class WorkflowTests(unittest.TestCase):
         resources = policy["Statement"][1]["Resource"]
         for repository in ("core-migrate", "learning-migrate"):
             self.assertTrue(any(r.endswith(f"/sagomungchi/{repository}") for r in resources))
+
+    def test_job_images_are_published_only_when_planned(self):
+        # #985: 계획의 jobs → validate 출력 → publish가 같은 불변 태그로 재학습 이미지를 게시
+        validate = self.jobs["validate"]
+        self.assertIn("jobs", validate["outputs"])
+        plan_step = next(s for s in validate["steps"] if s.get("id") == "plan")
+        self.assertIn('plan.get("jobs", [])', plan_step["run"])
+        publish = self.jobs["publish"]["steps"][-1]
+        self.assertEqual(publish["env"]["JOBS"], "${{ needs.validate.outputs.jobs }}")
+        script = publish["run"]
+        self.assertIn('publish "sagomungchi/tox-retrain" -f ml/tox/Dockerfile .', script)
+        self.assertIn("""for job in $(echo "$JOBS" | jq -r '.[]')""", script)
+        self.assertTrue((ROOT / "ml/tox/Dockerfile").is_file())
+        # 게시 역할과 demo-stack의 ECR 목록에 저장소가 있어야 publish가 push할 수 있다
+        policy = json.loads(
+            (ROOT / "infrastructure/aws/iam/github-cd-publish-role.inline.ecr-push.json").read_text(encoding="utf-8")
+        )
+        self.assertTrue(any(r.endswith("/sagomungchi/tox-retrain") for r in policy["Statement"][1]["Resource"]))
+        stack = json.loads((ROOT / "infrastructure/aws/demo-stack.json").read_text(encoding="utf-8"))
+        self.assertIn("sagomungchi/tox-retrain", stack["ecrRepositories"])
+        # 모든 게시 대상 저장소가 역할 정책에 있다(demo-stack의 SageMaker 검사 이미지는 cd가 게시하지 않음)
+        published = {r.rsplit("/", 1)[-1] for r in policy["Statement"][1]["Resource"]}
+        self.assertTrue(published <= {r.rsplit("/", 1)[-1] for r in stack["ecrRepositories"]})
 
     def test_migrations_finish_after_all_previews_and_before_app_apply(self):
         steps = self.jobs["deploy"]["steps"]
@@ -834,6 +903,22 @@ class WorkflowTests(unittest.TestCase):
         for name, job in self.jobs.items():
             for value in job.get("env", {}).values():
                 self.assertNotIn("runner.", str(value), name)
+
+
+class ToxImageWorkflowTests(unittest.TestCase):
+    def test_pr_builds_retrain_image_without_push(self):
+        # #985: PR에서는 빌드만 본다. 레지스트리 로그인·push·클라우드 자격 증명 없음
+        wf = yaml.safe_load((ROOT / ".github/workflows/ci-ml-tox.yml").read_text(encoding="utf-8"))
+        for event in ("pull_request", "push"):
+            paths = wf[True][event]["paths"]
+            self.assertIn("ml/tox/**", paths)
+            self.assertIn("scripts/prepare_model_upload.py", paths)
+        job = wf["jobs"]["image"]
+        self.assertEqual(job["permissions"], {"contents": "read"})
+        text = json.dumps(job, ensure_ascii=False)
+        self.assertIn("docker build -f ml/tox/Dockerfile", text)
+        for forbidden in ("--push", "docker push", "docker login", "configure-aws-credentials", "id-token"):
+            self.assertNotIn(forbidden, text)
 
 
 class CandidateWorkflowTests(unittest.TestCase):

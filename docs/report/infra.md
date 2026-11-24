@@ -1791,21 +1791,23 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 
 | 결정 | 내용 | 근거 |
 |---|---|---|
-| 배포 승인 | cd-release의 deploy job 대신 digest-pr job이 main 대상 PR을 만든다(`environments/prod/images/**`만). 그 PR 승인·병합 = 배포 승인 | Argo CD가 Git을 읽으므로 승인 지점을 Git 변경에 둔다. 승인·병합 기록이 그대로 배포 기록이 됨 |
+| 배포 승인 | cd-release의 deploy job 대신 digest-pr job이 `environments/prod/images/**`만 고친 브랜치를 push하고, 사람이 실행 요약 링크로 main 대상 PR을 연다(11/24 변경, 아래). 그 PR 승인·병합 = 배포 승인 | Argo CD가 Git을 읽으므로 승인 지점을 Git 변경에 둔다. 승인·병합 기록이 그대로 배포 기록이 됨 |
 | 대상 파일 | `policy.json` `delivery`: 서비스 5개 → release 파일 6개(report-service → report-api·report-worker), migration 값은 core·learning·report-api. 키는 #857 계약(`image.repository`·`image.digest`, `migration.image.*`·`migration.revision`) | 서비스 목록·파일 대응을 한 곳에 두고 `cd_release.py`가 검증 |
 | 게이트 | validate에서 `--check-images`(파일·키 구조, 이미지 빌드 전), digest-pr에서 `--require-executable --write-images`. 하나라도 틀리면 파일을 하나도 쓰지 않음. 저장소 주소가 다르면 오류, 계정 전환 때만 `allowRepositoryChange`(서비스 5개 전부일 때) | 다른 계정·레지스트리 digest가 섞이지 않게 |
 | PR 기준 | 실행 SHA가 아니라 그때의 main HEAD에서 images 파일을 고침. 본문에 원본 SHA와 기준 HEAD를 함께 | 앞서 병합된 digest PR을 덮어쓰지 않음 |
-| PR 생성 토큰 | `GITHUB_TOKEN`(`contents`·`pull-requests`·`actions` 쓰기) + 생성 뒤 PR 브랜치에 `ci-gitops` `workflow_dispatch` | `GITHUB_TOKEN` 이벤트는 다른 workflow를 깨우지 않지만 dispatch는 예외. 새 GitHub App은 조직 승인이 필요해 선택지로만 남김(CD README B2) |
-| 승인자 | main 보호 규칙 필수 리뷰 1명 + CODEOWNERS(김동섭·김태윤), status check 필수 아님 | #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같게. 경로 필터 CI를 필수로 걸면 릴리스 PR이 대기함 |
+| PR 생성 | (11/24 변경) workflow는 `GITHUB_TOKEN`(`contents: write`만)으로 브랜치 push까지. 커밋 메시지를 1행 제목 + 빈 줄 + PR 본문으로 만들어(`git commit --cleanup=verbatim -F`) compare 링크(`compare/main...<브랜치>?expand=1`)에서 제목·본문이 채워진다. 사람이 연 PR이라 `ci-gitops`가 `pull_request`로 돈다 | 11/20 안(`gh pr create` + `ci-gitops` dispatch)은 조직 정책으로 실패. 새 토큰·도구 없이 되는 방식(CD README PR 생성 토큰 표) |
+| 승인자 | main 보호 규칙 필수 리뷰 1명 + CODEOWNERS(김동섭·김태윤), PR을 연 사람과 다른 code owner가 승인, status check 필수 아님 | #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같게. 경로 필터 CI를 필수로 걸면 릴리스 PR이 대기함 |
 | 브랜치 규칙 | "main은 develop에서만" 예외: images만 바꾸는 PR은 main 직접 병합. develop은 images 파일을 고치지 않음 | main에 digest 커밋이 쌓여도 develop → main 병합에서 충돌 없음(3-way에서 develop 쪽 변경 없음) |
 | 이력 | digest PR + Argo CD sync 이력. `cd_record.py` artifact는 비상용 Helm 경로에서만 | PR 본문에 원본 SHA·digest·계획 JSON·호환성 근거가 남음 |
 | 되돌리기 | digest PR revert(같은 승인). Argo CD UI rollback은 쓰지 않음. rollback 계획은 비상용 Helm에서만 | UI rollback은 Git과 어긋나 다음 자동 동기화가 되돌림. DB는 되돌리지 않음(7.1 원칙 유지) |
 | 비상용 | `delivery: helm-emergency`로 예전 deploy job(작업자 PC runner) 실행. 12/7 시연 뒤 runner·job 정리 | Argo CD 경로가 막혔을 때 첫 배포 수단을 남김(에픽 대체안) |
 
-- 저장소 설정(Actions PR 생성 허용, main 보호 규칙, Code Owners 리뷰)은 관리자 손 작업으로 11/24 develop → main 릴리스 뒤 적용한다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정). 2026-11-20 기준 적용하지 않았다.
-- 11/25 A 확인 순서: digest PR 생성 → ci-gitops → 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
-- 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push, `gh pr create --base main`, `gh workflow run ci-gitops.yml --ref <브랜치>` 호출까지.
-- 한계: digest PR 작성자가 봇이라 실행한 사람도 승인할 수 있다(Environment `prod`와 같음, 운영 규칙으로 다른 사람 승인 권장). `GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않는다. #857 병합으로 생긴 실제 images 파일 6개는 `RealImagesFileTests`가 구조를 검사한다.
+- 변경 사유(2026-11-24, #986): 11/24 첫 실행에서 digest-pr job의 `gh pr create` 단계가 실패했다. 조직(SKNETWORKS-FAMILY-AICAMP) 정책이 "Actions가 PR을 만들고 승인하는 것"을 막고 있고, 조직은 정책을 바꿀 수 없다고 답했다. 이미지 빌드·ECR 게시·images 파일 갱신·브랜치 push는 됐다.
+- 결정(2026-11-24 팀장): workflow는 digest 브랜치 push와 실행 요약의 PR 만들기 링크까지 하고, **PR은 사람이 링크로 연다.** job 권한은 `contents: write`만 남기고 `gh pr create`·`gh workflow run ci-gitops.yml` 단계를 지웠다. 게이트(`--require-executable`·`--write-images`·images 밖 변경 차단)는 그대로다. 승인 → 병합 → Argo CD 자동 동기화 → PreSync migration → revert 복구 흐름도 그대로다. 기각한 대안: deploy key(SSH push용이라 PR API를 못 부르고, main 직접 push는 승인 단계가 없어지며 보호 규칙과 충돌), 개인 계정 포크(OIDC 신뢰·Argo CD repoURL·변수·문서를 모두 바꿔야 하고 배포 기록이 포크에만 남음), 개인 토큰 PAT(만료·보안 관리 부담, 조직 차단 가능성).
+- 저장소 설정(main 보호 규칙, Code Owners 리뷰)은 관리자 손 작업으로 11/24 develop → main 릴리스 뒤 적용한다. 예전 "Actions PR 생성 허용" 단계는 조직 정책상 켤 수 없어 뺐다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정).
+- 11/25 A 확인 순서: cd-release 실행 → 실행 요약 링크로 PR 열기(제목·본문 채워짐) → `pull_request` ci-gitops → 다른 code owner 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
+- 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push까지. 11/24 변경 뒤에는 `test_cd_deployment.py`가 권한(`contents: write`만), `gh pr create`·`gh workflow run` 없음, `-F` 커밋, compare 링크를 검사한다.
+- 한계: PR 작성자는 링크로 연 사람이라 본인 승인이 세지 않는다. 다른 code owner(동섭 ↔ 태윤)가 없으면 병합할 수 없다(막히면 비상용 Helm 경로). PR 열기가 사람 손이라 링크를 열지 않으면 브랜치만 남고 배포되지 않으며, 오래된 digest 브랜치·PR은 사람이 닫고 지운다. 11/20 안의 한계였던 "봇 작성자라 실행한 사람도 승인 가능"과 "`GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않음"은 사람이 PR을 열면서 없어졌다. #857 병합으로 생긴 실제 images 파일 6개는 `RealImagesFileTests`가 구조를 검사한다.
 
 ## 9.19 B 복원용 스냅샷의 고객 관리 KMS 키 공유 (#809, 2026-11-23)
 
@@ -1950,6 +1952,85 @@ SELECT status, failure_code, size_bytes, created_at, completed_at FROM memory_bo
 - `demo_stack.py plan`은 정의와 실제 규칙을 비교해 다르면 DIFF로 보여 준다. `apply`는 **규칙이 하나도 없는 버킷에만** 이 정의를 넣는다. `put-bucket-lifecycle-configuration`은 버킷의 규칙 전체를 바꾸므로, 다른 규칙이 이미 있으면 덮어쓰지 않고 DIFF로 남겨 사람이 합친다.
 - 이 PR에서는 AWS에 적용하지 않았다. 적용은 #974의 A 계정 확인 일정에서 `plan`으로 차이를 본 뒤 `apply --confirm-account`로 한다.
 - 시험: `scripts/tests/test_aws_demo_stack.py`(정의가 그림책 접두어만 고름·35일·이전 버전·삭제 표시, 빈 버킷에만 넣고 다른 규칙은 덮지 않음), report `tests/test_memory_book_generation.py`(새 키 모양, 한 권·학생 전체 삭제, 위험한 접두어 거부).
+
+## 9.22 시연 도메인 www.sagomungchi.co.kr 전환 (2026-11-24)
+
+시연 주소를 CloudFront 기본 주소(`https://d3jf0rnm6vhd9v.cloudfront.net`)에서 `https://www.sagomungchi.co.kr`로 바꿨다. 계정과 무관한 주소라 A→B 계정 전환(#809) 때 앱·OAuth·CD 값을 다시 바꾸지 않아도 된다. 아래 AWS·가비아 작업은 동섭이 손으로 했고, 이 PR은 저장소 값과 문서만 바꾼다.
+
+### 9.22.1 한 일
+
+| 항목 | 값·상태 | 비고 |
+|---|---|---|
+| 도메인 구입 | 2026-11-24 가비아 `sagomungchi.co.kr`, 네임서버는 가비아 | |
+| DNS | 가비아 `www` CNAME → `d3jf0rnm6vhd9v.cloudfront.net` | B 계정 때는 대상만 B CloudFront 기본 주소로 바꾼다 |
+| 인증서 | us-east-1 ACM, `www.sagomungchi.co.kr`·`sagomungchi.co.kr`, DNS 검증(가비아 CNAME), ISSUED | CloudFront는 us-east-1 인증서만 쓴다 |
+| A CloudFront | `EW2QD9OAPEVRK`에 대체 도메인 `www.sagomungchi.co.kr`, 위 인증서, 보안 정책 TLSv1.2_2021 | 루트는 별칭에 넣지 않았다 |
+| 루트 주소 | 가비아 포워딩으로 `https://www.sagomungchi.co.kr`에 넘길 예정 | 루트(apex)에는 CNAME을 둘 수 없어 CloudFront에 직접 연결하지 않는다 |
+| core `AUTH_WEB_ORIGIN` | prod `core-service.json`에서 `https://www.sagomungchi.co.kr` | 아래 9.22.2 |
+| 스크립트 기본값 | `verify-viewer-ip.ps1`, `evaluation/load/core-load.js`, `evaluation/load/README.md` | 요청 Origin이 `AUTH_WEB_ORIGIN`과 같아야 하므로 함께 바꿨다 |
+
+### 9.22.2 `AUTH_WEB_ORIGIN` 하나만 바꾼 근거
+
+- core는 웹 주소를 `AuthProperties.webOrigin`(`app.auth.web-origin`, 환경변수 `AUTH_WEB_ORIGIN`) 하나로만 받는다. 이 값으로 Google OAuth callback(`/api/v1/auth/google/callback`)·재인증 callback(`/api/v1/auth/google/reauth/callback`)과 로그인 뒤 이동 주소(`/oauth/complete`, `/login?oauthError=…`)를 만들고, `PublicAuthFilter`가 쿠키 인증 경로(refresh·학생 로그인 등)의 `Origin` 헤더를 이 값과 정확히 비교한다.
+- 값은 경로·끝 `/` 없는 origin이어야 한다(`AuthProperties` 초기 검사, `TokenServiceTest`). 그래서 여러 주소를 허용할 수 없다.
+- 다른 서비스는 웹 주소를 받지 않는다. 결제 성공·실패 주소와 재인증 주소 검사는 웹이 `location.origin`으로 만들고, 웹 빌드 env에도 주소가 없다(웹과 API가 같은 origin). 리포트·알림에 웹 링크를 넣는 설정도 없다.
+- **예전 주소로는 로그인이 안 된다.** `https://d3jf0rnm6vhd9v.cloudfront.net`으로 열면 화면은 뜨지만 Google 로그인은 callback이 새 주소로 돌아가고, refresh·학생 로그인은 Origin 불일치로 403이다. 2026-11-24에 이를 받아들이기로 했다. 쿠키는 host 단위라 예전 주소에서 받은 refresh·`student_device` 쿠키는 새 주소에서 쓰이지 않으므로 다시 로그인·기기 등록을 한다(CD 경로 확인 fixture 포함).
+
+### 9.22.3 손으로 바꿀 것 (저장소 밖)
+
+| 대상 | 값 |
+|---|---|
+| Google OAuth 클라이언트 → 승인된 JavaScript 원본 | `https://www.sagomungchi.co.kr` |
+| Google OAuth 클라이언트 → 승인된 리디렉션 URI | `https://www.sagomungchi.co.kr/api/v1/auth/google/callback`, `https://www.sagomungchi.co.kr/api/v1/auth/google/reauth/callback` |
+| GitHub Environment `prod` 변수 `CD_BASE_URL` | `https://www.sagomungchi.co.kr` |
+
+예전 cloudfront.net origin·callback은 B 전환이 끝날 때까지 지우지 않아도 된다(core가 새 값만 쓰므로 영향 없음).
+
+### 9.22.4 B 계정
+
+도메인은 그대로 쓰고 앱 값(`AUTH_WEB_ORIGIN`, OAuth, `CD_BASE_URL`)은 바꾸지 않는다. B에서는 us-east-1 ACM 인증서 재발급(가비아 검증 CNAME 추가) → A CloudFront에서 대체 도메인 떼기 → B CloudFront에 붙이기 → 가비아 `www` CNAME 대상 변경 순서로 한다([AWS README 확인 필요 표](../../infrastructure/aws/README.md#확인-필요)). 같은 대체 도메인은 두 배포에 동시에 둘 수 없어 바꾸는 동안 잠깐 끊긴다.
+
+### 9.22.5 남은 확인 (A 재가동 뒤)
+
+이 PR은 develop 병합 → develop→main 릴리스(#623) → A 재가동으로 반영된다. 아래는 아직 확인하지 않았다.
+
+- `https://www.sagomungchi.co.kr` 웹 첫 화면과 인증서, `sagomungchi.co.kr` 포워딩
+- 학부모 Google 로그인·재인증, 학생 기기 로그인(refresh 403 없음)
+- `verify_cd_deployment.py --base-url https://www.sagomungchi.co.kr` 경로 확인(fixture 쿠키를 새 주소에서 다시 받은 뒤)
+- 예전 주소에서 로그인이 막히는 것(예상 동작)
+
+## 9.23 표현 분류 재학습 이미지 ECR 게시와 digest 고정 (#985, 2026-11-24)
+
+MLOps 단계 점검(11/24)에서 재학습 이미지 배포가 빠져 있었다. `ml/tox/Dockerfile`(#729)을 운영 ECR에 올리는 경로가 없었고, #730 CronJob이 쓸 digest도 없었다. 새 도구 없이 cd-release의 `main-<SHA>` 불변 태그·재사용 규칙과 digest PR(#858·#986)을 그대로 쓴다.
+
+### 9.23.1 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 빌드 시점 | 선택값. 계획에 `"jobs": ["tox-retrain"]`이 있을 때만 빌드·게시(2026-11-24 동섭) | 이미지가 약 1.89GB(CPU torch)라 앱 릴리스마다 빌드하면 runner 시간·ECR 용량이 커진다. 재학습 코드는 앱보다 드물게 바뀐다 |
+| 앱 없는 계획 | `"services": []` + `jobs` 허용 | 재학습 이미지만 바꿀 때 앱을 억지로 넣지 않는다. 호환성 여섯 항목 근거 규칙은 그대로 |
+| 고정 위치 | `infrastructure/gitops/environments/prod/images/tox-retrain.json`(`image.repository`·`image.digest`), `policy.json` `delivery.jobImageFiles` | 앱과 같은 images 폴더라 digest PR·CODEOWNERS·revert 규칙을 그대로 쓴다. 앱 ApplicationSet 목록과는 따로 둔다(ci-gitops 목록 검사에서 제외) |
+| 비상용 Helm 경로 | `jobs`가 있으면 거부 | Helm 경로는 앱 release만 적용한다. 작업 이미지는 digest PR로만 고정 |
+| 계정 전환 | `allowRepositoryChange`는 서비스 5개 + `jobs` 전부일 때만 | 작업 이미지 파일만 A 레지스트리로 남는 혼재를 막는다 |
+| PR 확인 | `ci-ml-tox` `image` job이 `docker build -f ml/tox/Dockerfile .`만(push·로그인 없음) | 빌드 깨짐을 릴리스 전에 본다. `ml/tox/**`·`scripts/prepare_model_upload.py`가 바뀐 PR에서만 돈다 |
+
+### 9.23.2 바꾼 것
+
+- `cd-release.yml`: validate가 `jobs`를 출력하고, publish가 `sagomungchi/tox-retrain`을 `-f ml/tox/Dockerfile .`로 게시한다(같은 `publish` 함수). digest-pr의 PR 열기 링크 단계는 바꾸지 않았다.
+- `scripts/cd_release.py`: `JOBS`, `jobs` 검증(deploy만, 저장소 이름 `tox-retrain`, `images` 키 = services ∪ jobs), `jobImageFiles` 정책 검사, images 파일 갱신·PR 본문에 작업 이미지 포함.
+- IAM `github-cd-publish-role.inline.ecr-push.json`과 `demo-stack.json` `ecrRepositories`에 `sagomungchi/tox-retrain`(ECR 8개 → 9개).
+- `images/tox-retrain.json`의 처음 digest는 `sha256:0…0` 자리표시다. 첫 `jobs` 실행 digest PR이 실제 값으로 바꾼다.
+
+### 9.23.3 사람이 할 일 (AWS, 아직 하지 않음)
+
+| 계정 | 할 일 | 순서 |
+|---|---|---|
+| A | ECR `sagomungchi/tox-retrain` 생성(IMMUTABLE, AES256) → 게시 역할 인라인 `ecr-push` 다시 넣기 → `jobs` 계획으로 cd-release 한 번 → digest PR에 `tox-retrain.json` 갱신 확인 | [CD README 작업 이미지 게시](../../infrastructure/cd/README.md#작업-이미지-게시-tox-retrain-985) 표 1~3. A 재가동(11/25) 중 앱 digest PR 확인 뒤 |
+| B | 6a PR(계정 번호 교체) 뒤 `demo_stack.py apply`가 저장소와 역할 정책을 함께 만든다(B 런북 1단계). 첫 digest PR은 서비스 5개 + `"jobs": ["tox-retrain"]` + `allowRepositoryChange=true`(16단계) | [AWS README B 런북](../../infrastructure/aws/README.md#b-계정-전환-런북-809) |
+
+### 9.23.4 #730 CronJob 연결 (후속)
+
+#730(`feature/tox-retrain-kind`)의 차트는 `.Values.image`를 문자열로 받고 kind용 `imagePullPolicy: Never`다. prod Application을 만들 때 values에 `images/tox-retrain.json`을 같이 넘기고, 차트가 `image.repository`·`image.digest`로 `<저장소>@<digest>`를 만들게 한다(앱 chart와 같은 방식, prod는 `IfNotPresent`). 자리표시 digest인 동안에는 prod CronJob을 켜지 않는다.
 
 ## 10. 근거 링크
 
