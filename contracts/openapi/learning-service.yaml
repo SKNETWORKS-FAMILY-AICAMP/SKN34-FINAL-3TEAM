@@ -4177,6 +4177,10 @@ components:
       description: 시도 상세(Attempt)에서 draft를 뺀 모양 + completedAt·hintUsages·reflection.createdAt
       required: [attemptId, studentId, mission, status, finishedAt, answers, helped, nextActions, reveal, revealKind, checklist, reflection, completedAt, hintUsages]
       properties:
+        explanationRequirements:
+          type: object
+          description: SYSTEM의 includeModelScores=true 요청에만 포함. 시도에 고정된 기준표의 항목 ID별 요구사항 설명
+          additionalProperties: {type: string}
         attemptId: {type: string, format: uuid}
         studentId: {type: string, format: uuid}
         context: {type: string, enum: [THEME_DAY, THEME_REVIEW, EXTRA]}

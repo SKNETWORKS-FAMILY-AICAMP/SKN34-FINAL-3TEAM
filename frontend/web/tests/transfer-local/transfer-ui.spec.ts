@@ -1,3 +1,4 @@
+import { openCompletedReport } from '../e2e/support/reports.ts'
 import { test, expect, type Page, type BrowserContext, type Locator } from '@playwright/test'
 import { actor, child, call, reauth, transfer, disposeActors, type Actor } from './api.ts'
 import { useGoogleIdentity as installGoogleIdentity } from '../e2e/support/google.ts'
@@ -89,13 +90,8 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
     await expect(receiverPage.getByRole('row').filter({ hasText: mission }).getByRole('button', { name: '원문 보기' })).toBeVisible()
     await receiverPage.getByRole('dialog').getByRole('button', { name: /닫기$/ }).click()
     await receiverPage.goto('/parent/report')
-    await receiverPage.getByRole('button', { name: '리포트 자세히 보기 일일·주간 리포트' }).click()
-    const kept = receiverPage.locator('article', { has: receiverPage.getByRole('heading', { name: `${start} ~ ${end}` }) })
-    await expect(kept.getByText('생성 완료')).toBeVisible()
-    await kept.getByRole('button', { name: '자세히 보기' }).click()
-    await expect(receiverPage.getByRole('heading', { name: '주간 리포트', exact: true })).toBeVisible()
-    await expect(receiverPage.getByText(`${start} ~ ${end}`, { exact: false })).toBeVisible()
-    await expect(receiverPage.getByText('수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.')).toBeVisible()
+    await openCompletedReport(receiverPage, '주간', `${start} ~ ${end}`)
+    await expect(receiverPage.getByText('이 리포트는 학습 수치를 제공합니다.', { exact: true })).toBeVisible()
     await receiverPage.screenshot({ path: 'test-results/transfer-records-preserved.png', fullPage: true })
     expect((await (await call(to, 'get', '/children')).json()).items.some((c: {id: string}) => c.id === id)).toBe(true)
   } finally { await receiverContext.close() }

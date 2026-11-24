@@ -138,15 +138,21 @@ export function useConversationRequests() {
               o.onCreated(c)
             }
             let result: MessageResult | undefined
+            let refreshedTitle = false
             await parentApi.message(conversationId, o.text, o.scope, s => {
+              if (signal.aborted) return
               if (s.phase === 'DONE') result = s.result
-              if (!signal.aborted) o.onState(s)
+              if (!refreshedTitle && s.messageId) {
+                refreshedTitle = true
+                refresh('conversations')
+              }
+              o.onState(s)
             }, signal, o.retryId)
             if (signal.aborted) return undefined
             refresh('conversation', 'conversations')
             return { conversationId, result }
           } catch (e) {
-            if (!signal.aborted) refresh('conversation')
+            if (!signal.aborted) refresh('conversation', 'conversations')
             throw e
           }
         }),

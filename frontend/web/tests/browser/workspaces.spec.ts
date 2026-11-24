@@ -234,7 +234,7 @@ test('학부모 분석 대화 예시 질문은 고른 질문을 현재 자녀·�
     const { saveSharing } = await import(path)
     saveSharing(id, true)
   }, childId)
-  await page.goto('/parent/report')
+  await page.goto('/parent/report?view=chat')
   const examples = page.getByRole('group', { name: '예시 질문' })
   await expect(examples).toBeVisible()
   await expect(examples.getByRole('button')).toHaveCount(5)

@@ -20,8 +20,7 @@ NUMBER = re.compile(r"\d+")
 
 
 def candidates(attempts, period):
-    # 2026-11-16 local Gemma detail: an m2 score is no longer required; the detail prompt reads
-    # the answer and mission title only, and scores are forwarded when they exist.
+    # M2 scores are optional; the detail prompt uses the saved criterion judgments.
     rows = [
         (attempt, answer)
         for attempt in attempts
@@ -100,6 +99,66 @@ def input_scores(answer, grade):
     return scores
 
 
+def explanation_payload(command, attempt, answer, grade, scores):
+    def redacted(value):
+        text = scrub(value, command.display_name)
+        for identifier in (command.student_id, attempt.id, answer.id):
+            text = text.replace(str(identifier), "[식별정보]")
+        return text
+
+    # Redact the fields before joining so the essay and its quote source always agree.
+    essay = None
+    if answer.essay is not None:
+        essay = {
+            "claim": redacted(answer.essay.claim),
+            "reasons": [redacted(reason) for reason in answer.essay.reasons],
+            "rebuttal": redacted(answer.essay.rebuttal),
+        }
+    text = (
+        "\n".join(
+            part for part in (essay["claim"], *essay["reasons"], essay["rebuttal"]) if part.strip()
+        )
+        if essay is not None
+        else redacted(answer.written_text)
+    )
+    payload = {
+        "grade": grade,
+        "inputType": answer.input_type,
+        "text": text,
+        "topic": redacted(attempt.mission_title),
+    }
+    if attempt.mission_question and attempt.mission_question.strip():
+        payload["question"] = redacted(attempt.mission_question)
+    if essay is not None:
+        payload["essay"] = essay
+    if scores is not None:
+        payload["scores"] = scores
+    judgment = answer.judgment
+    if judgment is None or judgment.result == "HELD" or judgment.corrected:
+        return payload
+
+    criteria = []
+    for element in judgment.elements:
+        label = (element.label or "").strip()
+        requirement = attempt.explanation_requirements.get(element.element_id, "").strip()
+        quote = (element.quote or "").strip()
+        # Omit conflicting evidence and identifiers, never recast them as a missing quote.
+        if not label or (quote and (quote not in text or redacted(quote) != quote)):
+            continue
+        criteria.append(
+            {
+                "label": redacted(label),
+                "requirement": redacted(requirement) if requirement else None,
+                "satisfied": element.satisfied,
+                "required": not element.good_thought,
+                "quote": quote or None,
+            }
+        )
+    if criteria:
+        payload["criteria"] = criteria
+    return payload
+
+
 def unsupported_numbers(text, original):
     """Numbers and counted phrases are allowed only when the student wrote them (e.g. "30분")."""
     if any(char.isnumeric() and char not in "0123456789" for char in text):
@@ -138,9 +197,11 @@ class ExplanationGenerator:
         if not command.parent_sharing_enabled:
             return replace(result, explanation_state="NO_TARGET")
         settings = get_settings()
+        all_activities = settings.report_local_all_activity_explanations
+        budget = None if all_activities else settings.report_explanation_budget_seconds
         items, state = [], "NOT_INCLUDED"
         try:
-            async with asyncio.timeout(settings.report_explanation_budget_seconds):
+            async with asyncio.timeout(budget):
                 if not command.display_name:
                     raise RecordContractError("Explanation requires a trusted profile")
                 period = Period(command.period_from, command.period_to)
@@ -156,9 +217,10 @@ class ExplanationGenerator:
                     raise RecordContractError("Explanation requires a trusted grade")
                 called = set()
                 for attempt, answer in rows:
-                    if len(called) == 3:
+                    if not all_activities and len(called) == 3:
                         break
-                    if attempt.thinking_type in called:
+                    selection_key = attempt.id if all_activities else attempt.thinking_type
+                    if selection_key in called:
                         continue
                     try:
                         scores = input_scores(answer, grade)
@@ -181,29 +243,20 @@ class ExplanationGenerator:
                         # Try the next answer of the same type; no sLLM call was made.
                         logger.warning("Report explanation candidate skipped before call")
                         continue
-                    # One sLLM call per type at most, whatever its outcome.
-                    called.add(attempt.thinking_type)
+                    # Call once per activity in the demo, once per thinking type by default.
+                    called.add(selection_key)
                     try:
-                        text = scrub(answer.written_text, command.display_name)
-                        # Identifier strings in a submitted answer are not forwarded either.
-                        for identifier in (command.student_id, attempt.id, answer.id):
-                            text = text.replace(str(identifier), "[식별정보]")
+                        request = explanation_payload(command, attempt, answer, grade, scores)
                         response = await asyncio.wait_for(
                             self._ai.explanation(
-                                {
-                                    "grade": grade,
-                                    "inputType": answer.input_type,
-                                    "text": text,
-                                    "topic": attempt.mission_title,
-                                    **({"scores": scores} if scores is not None else {}),
-                                },
+                                request,
                                 settings.report_explanation_timeout_seconds,
                             ),
                             timeout=settings.report_explanation_timeout_seconds,
                         )
                         if not response.active:
                             continue
-                        verify(response.explanation, original.text, command, text)
+                        verify(response.explanation, original.text, command, request["text"])
                         payload = {
                             "attemptId": str(attempt.id),
                             "answerId": str(answer.id),

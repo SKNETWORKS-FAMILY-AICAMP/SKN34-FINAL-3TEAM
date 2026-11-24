@@ -14,6 +14,7 @@ from app.analysis_agent.calculators import compute as compute_metrics
 from app.analysis_agent.context import AgentContext
 from app.analysis_agent.models import Intent, Records, Scope, StreamError
 from app.analysis_agent.nodes.events import status
+from app.analysis_agent.nodes.understand import DIFFICULTY_QUESTION
 from app.analysis_agent.state import AnalysisState
 from app.analysis_agent.tools import RecordTools
 from app.analysis_agent.verification import report_numbers
@@ -66,4 +67,7 @@ async def compute(state: AnalysisState, runtime: Runtime[AgentContext]) -> Analy
     computation = compute_metrics(state["intent"], state["records"], request.scope)
     if request.report:  # 고정 리포트 대화(#392): 요약 숫자도 대조 허용
         computation.extra_numbers |= report_numbers(request.report)
+    if computation.insufficient == "NO_REFLECTIONS" and request.explanations:
+        if DIFFICULTY_QUESTION.search(request.question):
+            computation.insufficient = None
     return {"computation": computation}

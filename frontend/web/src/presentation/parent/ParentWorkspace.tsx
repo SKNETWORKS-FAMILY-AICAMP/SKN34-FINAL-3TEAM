@@ -1,5 +1,5 @@
 import './parent-management.css'
-import { ChevronDown } from 'lucide-react'
+import { CalendarDays, ChevronDown } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useSearchParams, useLocation } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
@@ -12,6 +12,8 @@ import type { Scope } from '../../domain/parent.ts'
 import { validPeriod } from '../../domain/parent.ts'
 import { Workspace, QueryFeedback } from '../common/Workspace.tsx'
 import { ParentInsights } from './ParentInsights.tsx'
+import { DateFilter } from './ActivityExplorer.tsx'
+import { Modal } from '../shared/ClassroomParts.tsx'
 import { StudentDevices } from './StudentDevices.tsx'
 import { ParentDashboard } from './ParentDashboard.tsx'
 import { ParentSettings } from './ParentSettings.tsx'
@@ -50,11 +52,13 @@ export function ParentWorkspace() {
       setParams(next, { replace: true })
     }
   }, [consentReady, children.data, params, setParams, scope.from, scope.to])
-  if (page === 'analysis') {
+  // 리포트·AI 챗봇은 사이드바 한 칸(/parent/report)이고, 화면 안 '리포트 | AI 챗봇' 전환은 view=chat으로 구분한다.
+  if (page === 'analysis' || page === 'chat') {
     const next = new URLSearchParams(params); next.set('view', 'chat')
     return <Navigate to={'/parent/report?' + next} replace />
   }
-  return <Workspace title="학부모 공간" nav={parentNavigation} variant="parent" actions={consentReady && <ChildPicker items={children.data?.items ?? []} selectedId={child?.id} loading={children.isPending} failed={!!children.error} disabled={page === 'billing' && params.get('checkout') === '1'} onSelect={c => select(c)} />}>
+  const insightsMode = params.get('view') === 'chat' ? 'chat' : 'report'
+  return <Workspace title="학부모 공간" nav={parentNavigation} variant="parent" fullScreen={page === 'report' && insightsMode === 'chat'} actions={consentReady && <ChildPicker items={children.data?.items ?? []} selectedId={child?.id} loading={children.isPending} failed={!!children.error} disabled={page === 'billing' && params.get('checkout') === '1'} onSelect={c => select(c)} />}>
     {consentReady && <QueryFeedback query={children} />}
     {child?.guardianConsentRequired && <p role="alert">자녀 이용을 위해 법정대리인 동의가 필요합니다. 계정·자녀 설정의 공개·동의에서 확인해 주세요.</p>}
     {hasPeriod && child && (page !== 'report' || !validPeriod(scope)) && <details ref={periodFilter} className="parent-scope"><summary>조회 기간 · {scope.from} ~ {scope.to}</summary><PeriodFilter key={`${scope.from}:${scope.to}`} period={scope} onApply={({ from, to }) => {
@@ -69,10 +73,10 @@ export function ParentWorkspace() {
       : childId && !child && children.data && !children.error ? <section className="ws-card"><h1>자녀 연결 확인</h1><p role="alert">연결되지 않은 자녀의 기록은 표시하지 않습니다.</p></section>
       : child && (!hasPeriod || validPeriod(scope)) && !children.error ? <div className="parent-content" key={`${child.id}:${page === 'report' ? 'insights' : hasPeriod ? scope.from + ':' + scope.to : page}`}>
         {(page === 'journal' || sharing.error || sharing.isPending) && <ParentSharingNotice query={sharing} />}
-        {page === 'report' ? !sharing.error && !sharing.isPending && <ParentInsights key={`${scope.from}:${scope.to}:${canReadOriginals}:${sharing.isPending}`} child={child} scope={scope} canReadOriginals={canReadOriginals} sharingPending={sharing.isPending}
-          periodControl={<details className="parent-scope"><summary>질문할 기간 · {scope.from} ~ {scope.to}</summary><PeriodFilter key={`${scope.from}:${scope.to}`} period={scope} onApply={({ from, to }) => {
+        {page === 'report' ? !sharing.error && !sharing.isPending && <ParentInsights key={`${insightsMode}:${scope.from}:${scope.to}:${canReadOriginals}:${sharing.isPending}:${params.get('askReportId') ?? ''}`} mode={insightsMode} child={child} scope={scope} canReadOriginals={canReadOriginals} sharingPending={sharing.isPending}
+          periodControl={<ChatPeriodPicker period={scope} onApply={({ from, to }) => {
             const next = new URLSearchParams(params); next.set('from', from); next.set('to', to); setParams(next)
-          }} /></details>}
+          }} />}
           onScope={s => { const c = children.data?.items.find(c => c.id === s.childId); if (c) select(c, s) }} />
           : <ParentDashboard sharingKnown={sharing.isSuccess} child={child} scope={scope} canReadOriginals={canReadOriginals} onChangePeriod={() => {
             if (periodFilter.current) {
@@ -83,6 +87,24 @@ export function ParentWorkspace() {
       </div> : null}
   </Workspace>
 }
+function ChatPeriodPicker({ period, onApply }: { period: Period; onApply: (period: Period) => void }) {
+  const [open, setOpen] = useState(false)
+  return <div className="chat-period-picker">
+    <button type="button" className="chat-period-control" aria-label={`질문 기간 변경 · ${period.from} ~ ${period.to}`}
+      aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
+      <CalendarDays size={17} aria-hidden="true" />
+      <span>{period.from} ~ {period.to}</span>
+      <ChevronDown size={14} aria-hidden="true" />
+    </button>
+    {open && <Modal title="질문 기간 선택" onClose={() => setOpen(false)}>
+      <DateFilter initial={period} embedded week onCancel={() => setOpen(false)} onApply={value => {
+        setOpen(false)
+        onApply(value)
+      }} />
+    </Modal>}
+  </div>
+}
+
 function PeriodFilter({ period, onApply }: { period: Period; onApply: (p: Period) => void }) {
   const [from, setFrom] = useState(period.from),
     [to, setTo] = useState(period.to),

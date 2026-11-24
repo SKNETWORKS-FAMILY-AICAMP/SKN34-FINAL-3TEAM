@@ -212,39 +212,24 @@ function Kpi({ m, index }: { m: Metric; index: number }) {
 function ReportCard({ child }: { child: Child }) {
   const navigate = useNavigate()
   const { search } = useLocation()
-  const list = useParentQuery(['reports', child.id, ''], (signal) => parentApi.reports(child.id, '', signal))
-  const latest = list.data && !list.error ? list.data.items.filter(report => reportPeriodType(report) === 'WEEKLY')
+  const list = useParentQuery(['reports', child.id, 'COMPLETED', ''], (signal) => parentApi.reports(child.id, 'COMPLETED', signal))
+  const latest = list.data && !list.error ? list.data.items.filter(report =>
+    report.status === 'COMPLETED' && reportPeriodType(report) === 'WEEKLY' && report.childId === child.id)
     .sort((a, b) => b.period.to.localeCompare(a.period.to) || b.revision - a.revision)[0] : undefined
   const reportParams = new URLSearchParams(search)
-  reportParams.delete('reportId')
-  reportParams.delete('revision')
-  reportParams.set('view', 'reports')
-  const allReports = '/parent/report?' + reportParams
-  if (latest?.status === 'COMPLETED') {
-    reportParams.set('reportId', latest.reportId)
-    reportParams.set('revision', String(latest.revision))
-  }
+  for (const key of ['reportId', 'revision', 'view']) reportParams.delete(key)
+  if (latest) reportParams.set('reportId', latest.reportId)
   return (
     <section aria-labelledby="report-h" className="pd-card pd-report">
       <div className="pd-report-title"><BookOpen size={21} aria-hidden="true" /><h2 id="report-h">최근 주간 리포트</h2></div>
       <QueryFeedback query={list} />
-      {list.data && !list.error && !latest && <p>아직 생성된 주간 리포트가 없습니다. 매주 월요일 0시(한국 시간)에 지난주 기록을 모읍니다.</p>}
-      {latest && (
-        <div className="pd-report-meta">
-          <span className="pd-num">
-            {latest.period.from} ~ {latest.period.to} · {latest.revision}판
-          </span>
-          <span className={latest.status === 'COMPLETED' ? 'pd-chip pd-chip-ok' : latest.status === 'FAILED' ? 'pd-chip pd-chip-warn' : 'pd-chip'}>
-            {{ QUEUED: '대기', RUNNING: '생성 중', COMPLETED: '생성 완료', FAILED: '생성 실패' }[latest.status]}
-          </span>
-        </div>
-      )}
+      {list.data && !list.error && !latest && <p>아직 볼 수 있는 주간 리포트가 없습니다.</p>}
+      {latest && <p className="pd-report-meta pd-num">{latest.period.from} ~ {latest.period.to}</p>}
       <EntitlementSummary childId={child.id} report />
       <div className="pd-actions">
-        {latest?.status === 'COMPLETED' && <button type="button" className="cj-primary" onClick={() => navigate('/parent/report?' + reportParams)}>
-          이 주간 리포트 보기
-        </button>}
-        <button type="button" className="cj-secondary" onClick={() => navigate(allReports)}>전체 리포트</button>
+        <button type="button" className="cj-primary" onClick={() => navigate('/parent/report?' + reportParams)}>
+          리포트 보기
+        </button>
         <button type="button" className="cj-secondary" onClick={() => navigate('/parent/analysis' + search)}>
           AI 챗봇으로 질문하기
         </button>

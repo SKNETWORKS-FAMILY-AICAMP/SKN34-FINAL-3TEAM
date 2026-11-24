@@ -83,6 +83,10 @@ class ConversationService(private val repository: ConversationRepository, privat
             "problems" to report.problems.map { problem -> mapOf("title" to problem.title, "context" to problem.context,
                 "judgment" to problem.judgment, "elements" to problem.elements.map { mapOf("label" to it.label, "satisfied" to it.satisfied) }) })
     }
+    /** Weekly report explanations parents already saw, for the agent to discuss (not for a daily-pinned conversation). */
+    fun explanations(ticket: AnalysisTicket): List<Map<String, String>> =
+        if (ticket.conversation.reportId != null) emptyList()
+        else reports.explanations(ticket.scope.childId, ticket.scope.from, ticket.scope.to)
     private fun reportInvalid(): Nothing = throw BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "CONVERSATION_REPORT_INVALID",
         "이 자녀의 일일 리포트로만 리포트 대화를 만들 수 있습니다.")
     fun list(child: UUID): Map<String, Any> {
@@ -98,7 +102,7 @@ class ConversationService(private val repository: ConversationRepository, privat
         return locked(parent, id) { row ->
             val messages = repository.messages(id)
             val corrected = corrections.messages(id, messages.map { it.id })
-            view(row, messages.map { messageView(it, it.id in corrected) })
+            view(row, messages.map { messageView(it, it.id in corrected) }, messages.firstOrNull()?.question)
         }
     }
     /** Parent -> student -> conversation order matches #45. Never lock the conversation before the student. */
@@ -152,11 +156,13 @@ class ConversationService(private val repository: ConversationRepository, privat
                 context.copy(studentScope = setOf(selected.childId.toString())))
         }
     }
-    fun request(ticket: AnalysisTicket, report: Map<String, Any?>? = null): Map<String, Any> = buildMap {
+    fun request(ticket: AnalysisTicket, report: Map<String, Any?>? = null,
+        explanations: List<Map<String, String>> = emptyList()): Map<String, Any> = buildMap {
         put("conversationId", ticket.conversation.id); put("messageId", ticket.message.id); put("question", ticket.message.question)
         put("scope", mapOf("studentId" to ticket.scope.childId, "from" to ticket.scope.from, "to" to ticket.scope.to))
         put("history", ticket.history)
         report?.let { put("report", it) }
+        if (explanations.isNotEmpty()) put("explanations", explanations)
     }
 
     fun guard(ticket: AnalysisTicket, action: () -> Unit = {}) {
@@ -368,10 +374,11 @@ class ConversationService(private val repository: ConversationRepository, privat
                 .map { mapOf("question" to it, "available" to exists) })
         }!!
     }
-    private fun view(row: ConversationRow, messages: List<Map<String, Any?>>): Map<String, Any?> = mapOf(
+    private fun view(row: ConversationRow, messages: List<Map<String, Any?>>,
+        firstQuestion: String? = row.firstQuestion): Map<String, Any?> = mapOf(
         "conversationId" to row.id, "childId" to row.studentId, "period" to mapOf("from" to row.periodFrom, "to" to row.periodTo),
         "reportId" to row.reportId, "reportRevision" to row.reportRevision,
-        "title" to "학습 기록 분석", "createdAt" to row.createdAt, "messages" to messages)
+        "title" to ConversationTitle.from(firstQuestion), "createdAt" to row.createdAt, "messages" to messages)
     private fun messageView(row: MessageRow, corrected: Boolean): Map<String, Any?> = mapOf("messageId" to row.id, "question" to row.question,
         "status" to row.status, "scope" to row.scope(), "answer" to row.answer, "source" to row.source,
         "metrics" to row.metrics, "verification" to row.verification,

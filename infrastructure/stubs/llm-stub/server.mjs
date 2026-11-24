@@ -45,14 +45,26 @@ const fixed = {
   TemplateProposal: () => ({ clarification: '어떤 순서로 보여 드릴까요?' }),
 }
 
+function reportProse(user) {
+  if (user.includes('[다룰 항목]')) {
+    return '보완할 지점\n글에서 제안한 방법이 본인의 생각을 보여 줍니다.\n\n개선 방안\n글에 쓴 장면을 함께 떠올려 보세요.'
+  }
+  if (user.includes("'상세 분석' 한 구역만")) {
+    return '상세 분석\n글에 자신의 생각과 까닭을 함께 적었습니다.\n제안과 이유를 읽는 순서가 분명합니다.'
+  }
+  if (user.includes('[생각을 이어 갈 기준]')) return '그 과정에서 새롭게 알아차린 점은 무엇이었나요?'
+  if (user.includes('[질문]') && user.includes('한 단어만')) return '아니오'
+  return null
+}
+
 function completion(body) {
   const name = body.response_format?.json_schema?.name
   const user = body.messages?.find((message) => message.role === 'user')?.content ?? ''
-  const output = name === 'Extraction' ? extraction(user) : fixed[name]?.()
+  const output = name === 'Extraction' ? extraction(user) : fixed[name]?.() ?? reportProse(user)
   if (!output) return null
   return {
     id: `chatcmpl-${randomUUID()}`, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model: body.model,
-    choices: [{ index: 0, message: { role: 'assistant', content: JSON.stringify(output), refusal: null }, finish_reason: 'stop' }],
+    choices: [{ index: 0, message: { role: 'assistant', content: typeof output === 'string' ? output : JSON.stringify(output), refusal: null }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
   }
 }

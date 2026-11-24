@@ -54,6 +54,7 @@ def test_reflections() -> None:
     assert metrics["돌아보기를 쓴 활동"].count == 1
     assert metrics["난이도 어려웠어 돌아보기"].count == 1
     assert computation.sources[0].text == "근거 찾기가 어려웠어"
+    assert computation.reflection_ratings == [("쉬는 시간 토론", "어려웠어")]
     evidence = computation.sources[0].evidence
     # 돌아보기는 시도당 하나라 attemptId로 식별, 제출 시각 자리에 작성 시각
     assert (evidence.kind, evidence.attempt_id, evidence.mission_title) == (

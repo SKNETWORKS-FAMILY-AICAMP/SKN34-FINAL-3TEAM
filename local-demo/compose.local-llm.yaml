@@ -1,0 +1,35 @@
+# 로컬 시연용: 리포트 서술·설명 LLM(SageMaker 경로)을 RunPod 튜닝 모델로 중계 (compose.e2e.yaml의 llm-stub과 같은 방식)
+# 실행: docker compose -p sagomungchi-reportchat -f compose.yaml -f compose.minio.yaml -f local-demo/compose.local-llm.yaml up -d
+services:
+  llm-proxy:
+    image: python:3.12-slim
+    command: ["python", "-u", "/app/proxy.py"]
+    volumes:
+      - ./local-demo/llm_proxy.py:/app/proxy.py:ro
+    environment:
+      LOCAL_LLM_QUEUE_URL: ${SAGOMUNGCHI_SLLM_SERVERLESS_gemma:?.env 설정 필요}
+      LOCAL_LLM_API_KEY: ${SAGOMUNGCHI_SLLM_SERVERLESS_KEY_gemma:?.env 설정 필요}
+
+  ai-service:
+    depends_on:
+      llm-proxy:
+        condition: service_started
+    environment:
+      REPORT_LLM_ENDPOINT: local-demo
+      REPORT_LLM_COMPONENT: local-demo-explain
+      REPORT_LLM_ENDPOINT_URL: http://llm-proxy:8080
+      REPORT_LLM_TIMEOUT: "120"
+      NARRATIVE_DEADLINE: "115"
+      EXPLANATION_DEADLINE: "115"
+      # 이 오버레이는 RunPod LoRA로 연결하는 로컬 시연용이다.
+      EXPLANATION_LOCAL_SKIP_REGISTRY: "1"
+      # 서명용 가상 자격 증명만 두고 AWS로는 나가지 않는다 (compose.e2e.yaml과 같음)
+      AWS_ACCESS_KEY_ID: local-synthetic
+      AWS_SECRET_ACCESS_KEY: local-synthetic
+
+
+  report-worker:
+    environment:
+      REPORT_NARRATIVE_TIMEOUT_SECONDS: "120"
+      REPORT_EXPLANATION_TIMEOUT_SECONDS: "120"
+      REPORT_LOCAL_ALL_ACTIVITY_EXPLANATIONS: "true"
