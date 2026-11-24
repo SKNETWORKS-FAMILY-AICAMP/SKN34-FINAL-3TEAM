@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router'
 import { ArrowLeft, ArrowUpRight, Files } from 'lucide-react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ReportExplanations } from './ReportExplanations.tsx'
+import { DailyReportSummary } from './DailyReportSummary.tsx'
 import type { Child, Metric } from '../../domain/classroom.ts'
 import { scheduledDayLine, answerTimeLine, difficultyText, type DailyProblem, type WeeklyReport, type ReportPeriodType, type ThemeSummary } from '../../domain/parent.ts'
 import { reportPeriodType } from '../../domain/parent.ts'
@@ -220,10 +221,26 @@ function ReportDetail({
     daily = !!r && reportPeriodType(r) === 'DAILY'
   const panel = useRef<HTMLElement>(null), lastReveal = useRef(0)
   const targets = useMemo(() => r ? reportTargets(r, highlight) : emptyReportTargets(), [r, highlight])
+  // Preserve other stored metrics and their exact evidence targets; they are not completion counts.
+  const additionalDailyMetrics = r?.metrics.map((metric, index) => ({ metric, index })).filter(({ metric }) => metric.label !== '완료한 활동') ?? []
+  const additionalDailyHighlights = additionalDailyMetrics.flatMap((entry, index) => targets.metrics.includes(entry.index) ? [index] : [])
   const [selection, setSelection] = useState({ tab: 'summary', message: '' })
+  const [recordSelection, setRecordSelection] = useState<number[]>([])
   const message = highlight?.messageId ?? ''
   const tab = message && selection.message !== message ? (targets.metrics.length ? 'summary' : 'records') : selection.tab
   const matched = Object.values(targets).reduce((total, values) => total + values.length, 0)
+  useEffect(() => {
+    if (tab !== 'records' || !recordSelection.length) return
+    const frame = requestAnimationFrame(() => {
+      const entries = Array.from(panel.current?.querySelectorAll<HTMLDetailsElement>('[data-daily-problem-index]') ?? [])
+        .filter(element => recordSelection.includes(Number(element.dataset.dailyProblemIndex)))
+      entries.forEach(element => { element.open = true })
+      const first = entries[0]?.querySelector('summary')
+      first?.focus({ preventScroll: true })
+      first?.scrollIntoView({ block: 'nearest', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [recordSelection, tab])
   useEffect(() => {
     if (!highlight || !ready || !matched) return
     const first = Array.from(panel.current?.querySelectorAll<HTMLElement>('[data-answer-highlight="true"]') ?? []).find(element => !element.closest('[hidden]'))
@@ -254,9 +271,9 @@ function ReportDetail({
     }
   }
   return (
-    <section className="ws-card report-detail" ref={panel}>
+    <section className="ws-card report-detail" data-period-type={daily ? 'DAILY' : 'WEEKLY'} ref={panel}>
       {awaitingPrivateReport && <p role="status">원문 비공개 설정에 맞는 리포트를 확인해야 합니다. <button onClick={() => void q.refetch()}>다시 조회</button></p>}
-      <header className="report-document-header"><div><h2>{daily ? '일일 리포트' : '주간 리포트'}</h2>{r && <p>{r.period.from} ~ {r.period.to} · {r.revision}판</p>}</div><div className="report-header-actions">
+      <header className="report-document-header"><div><h2>{daily ? '일일 리포트' : '주간 리포트'}</h2>{r && <p>{daily ? `${child.nickname} · ${r.period.from}` : `${r.period.from} ~ ${r.period.to}`} · {r.revision}판</p>}</div><div className="report-header-actions">
       <ReportProblem targetType="REPORT" targetId={id}/>
       {!compact && r && ready && r.parentSharingEnabled !== false && (
         <div className="parent-report-question">
@@ -278,9 +295,10 @@ function ReportDetail({
             <select
               aria-label="리포트 판"
               value={revision ?? 'latest'}
-              onChange={(e) =>
+              onChange={(e) => {
+                setRecordSelection([])
                 onRevision(e.target.value === 'latest' ? undefined : Number(e.target.value))
-              }
+              }}
             >
               <option value="latest">최신판</option>
               {r.revisions.map((v) => (
@@ -302,7 +320,7 @@ function ReportDetail({
                 {([['summary','요약'],['records','활동 기록'],['explanation','설명과 근거'],['files','파일·관리']] as const).filter(([key]) => !compact || key !== 'files').map(([key,label]) => <button key={key} type="button" aria-pressed={tab === key} onClick={() => setSelection({tab:key,message})}>{label}</button>)}
               </nav>
               <div className="report-section" hidden={tab !== 'summary'}><h3 className="report-chapter-title">학습 요약</h3>
-              <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details>
+              {!daily && <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details>}
               <QueryStateNotice state={r.state} />
               {!daily && (r.narrative ? (
                 <section className="report-data-group report-narrative-panel"><h4>한 주의 기록</h4>
@@ -312,7 +330,11 @@ function ReportDetail({
               ) : (
                 <p>{r.parentSharingEnabled === false ? '아이의 답변 원문이 비공개여서 서술과 인용을 표시하지 않습니다. 학습 수치는 아래에서 확인할 수 있습니다.' : '수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.'}</p>
               ))}
-              <section className="report-data-group report-stat-panel"><h4>학습 수치</h4><ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics} /></section>
+              {daily ? <>{tab === 'summary' && <DailyReportSummary report={r} highlighted={targets.metrics.some(index => r.metrics[index]?.label === '완료한 활동')} onOpenActivities={indices => {
+                setRecordSelection(indices); setSelection({ tab: 'records', message })
+              }} />}
+                {additionalDailyMetrics.length > 0 && <details className="report-inclusion" open={additionalDailyHighlights.length > 0 || undefined}><summary>추가 학습 수치</summary><ReportMetricCounts metrics={additionalDailyMetrics.map(entry => entry.metric)} highlighted={additionalDailyHighlights} /></details>}
+                <details className="report-inclusion"><summary>집계 기준</summary><p>{r.inclusionRule}</p></details></> : <section className="report-data-group report-stat-panel"><h4>학습 수치</h4><ReportMetricCounts metrics={r.metrics} highlighted={targets.metrics} /></section>}
               </div>
               <div className="report-section" hidden={tab !== 'explanation'}><h3 className="report-chapter-title">설명과 근거</h3>
               <ReportExplanations report={r} narrativeEnabled={entitlement?.narrativeEnabled} />
@@ -320,7 +342,7 @@ function ReportDetail({
 
               </div>
               <div className="report-section" hidden={tab !== 'records'}>
-              {daily && <DailyProblems completedDate={r.period.from} highlighted={targets.problems} problems={r.problems ?? []} canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />}
+              {daily && <DailyProblems completedDate={r.period.from} highlighted={targets.problems} selected={recordSelection} problems={r.problems ?? []} canReadOriginals={r.parentSharingEnabled !== false} onProof={setProof} />}
               {!daily && r.parentSharingEnabled === false && <p>아이의 답변 원문이 비공개입니다. 요약에서 학습 수치를 확인할 수 있습니다.</p>}
               {!daily && r.themeSummary && <details className="report-theme-disclosure"><summary>이번 주 테마 보기</summary><ThemeSummaryView summary={r.themeSummary} /></details>}
               {!daily && entitlement?.narrativeEnabled !== false && r.parentSharingEnabled !== false && (
@@ -404,13 +426,13 @@ const contextLabels: Record<NonNullable<DailyProblem['context']>, string> = {
 }
 
 /** 일일 리포트(P24): 그날 문제별 기록만 보여 준다. 서술·저녁 질문은 없다. */
-function DailyProblems({ completedDate, problems, onProof, canReadOriginals, highlighted }: { completedDate: string; problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void; highlighted: number[] }) {
+function DailyProblems({ completedDate, problems, onProof, canReadOriginals, highlighted, selected = [] }: { completedDate: string; problems: DailyProblem[]; canReadOriginals: boolean; onProof: (itemId: string) => void; highlighted: number[]; selected?: number[] }) {
   if (!problems.length) return <p>이날은 기록이 없습니다.</p>
   return (
     <>
       <h3>그날 푼 문제</h3>
       {problems.map((p, i) => (
-        <details className="report-answer-comparison report-highlight-target" open={highlighted.includes(i) || undefined} data-answer-highlight={highlighted.includes(i) ? 'true' : undefined} tabIndex={-1} key={`${p.missionId}-${p.attemptId ?? i}`}>
+        <details className="report-answer-comparison report-highlight-target" open={highlighted.includes(i) || undefined} data-daily-problem-index={i} data-summary-selected={selected.includes(i) || undefined} data-answer-highlight={highlighted.includes(i) ? 'true' : undefined} tabIndex={-1} key={`${p.missionId}-${p.attemptId ?? i}`}>
           <summary>{p.title}</summary>
           {scheduledDayLine(p, completedDate) && <p>{scheduledDayLine(p, completedDate)}</p>}
           <HighlightLabel active={highlighted.includes(i)} />

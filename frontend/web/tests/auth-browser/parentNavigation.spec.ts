@@ -396,12 +396,24 @@ for (const periodType of ['DAILY', 'WEEKLY'] as const) test(`${periodType} 답�
   await expect(marked.filter({ hasText: '답변 제출 시도 수' })).toHaveCount(1)
   await expect(marked.filter({ hasText: '나무가 그늘을 만들어 줍니다.' })).toHaveCount(1)
   await expect(marked.filter({ hasText: '다른 활동' })).toHaveCount(0)
+  if (periodType === 'DAILY') await expect(page.getByRole('region', { name: '오늘 완료한 활동', exact: true })).not.toHaveAttribute('data-answer-highlight', 'true')
   await expect(marked.first()).toHaveCSS('outline-color', 'rgb(39, 112, 68)')
   expect(state.calls.some(call => call.path.endsWith('/message-1/evidence'))).toBe(true)
   if (periodType === 'DAILY') await capture(page, 'report-highlight')
   await closeReport(page)
   await page.getByRole('button', { name: '새 대화', exact: true }).click()
   await expect(marked).toHaveCount(0)
+})
+
+test('일일 완료한 활동 지표는 새 요약 카드와 해당 답변 근거를 강조한다', async ({ page, context }) => {
+  const { report } = await parentServer(context, 'DAILY', true)
+  Object.assign(report.metrics[0], { label: '완료한 활동', formula: '해당 날짜에 완료한 시도 수', count: 1, numerator: 1, denominator: 1 })
+  await askReport(page)
+  const card = page.getByRole('region', { name: '오늘 완료한 활동', exact: true })
+  await expect(card).toHaveAttribute('data-answer-highlight', 'true')
+  await expect(card).toContainText('1개')
+  await expect(card).toBeFocused()
+  await expect(page.locator('[data-answer-highlight=true]')).toHaveCount(2)
 })
 
 test('새 질문 처리 중 강조를 지우고 이전 답변 선택 시 그 근거만 다시 표시한다', async ({ page, context }) => {
@@ -441,7 +453,7 @@ test('일일 대화가 고정한 최신 판을 열고 선택 당시의 옛 판�
   await page.getByRole('button', { name: '질문 보내기', exact: true }).click()
   await revealReport(page)
   await expect(page.locator('[data-answer-highlight=true]')).toHaveCount(2)
-  await expect(page.getByText(/2026-11-09 ~ 2026-11-09 · 2판/)).toBeVisible()
+  await expect(page.getByText('별빛 · 2026-11-09 · 2판', { exact: true })).toBeVisible()
   expect(calls.filter(call => call.path === '/conversations' && call.method === 'POST')).toHaveLength(1)
 })
 
