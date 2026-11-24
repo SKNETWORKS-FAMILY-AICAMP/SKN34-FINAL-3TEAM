@@ -44,8 +44,11 @@ class PaymentController(private val payments: PaymentService,private val refunds
     @GetMapping("/api/v1/payments/{orderId}")
     fun status(@PathVariable orderId: String,request: HttpServletRequest)=PaymentViewResponse.from(refunds.ownedStatus(parent(request),orderId))
     @GetMapping("/api/v1/payments")
-    fun list(request: HttpServletRequest,@RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="20") size: Int)=
-        mapOf("items" to payments.list(parent(request),null,null,null,page,size).map(PaymentViewResponse::from))
+    fun list(request: HttpServletRequest, @RequestParam(required=false) childId: UUID?,
+             @RequestParam(defaultValue="0") page: Int, @RequestParam(defaultValue="20") size: Int): Map<String, Any> {
+        val (items, hasNext) = payments.history(parent(request), childId, page, size)
+        return mapOf("items" to items.map(PaymentViewResponse::from), "hasNext" to hasNext)
+    }
     @GetMapping("/api/v1/subscriptions") fun subscriptions(request: HttpServletRequest)=mapOf("items" to payments.subscriptions(parent(request)))
     @GetMapping("/api/v1/subscriptions/{subscriptionId}/billing-key")
     fun setup(@PathVariable subscriptionId: UUID,request: HttpServletRequest)=payments.billingSetup(parent(request),subscriptionId)

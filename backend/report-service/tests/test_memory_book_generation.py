@@ -218,6 +218,15 @@ def test_size_limits_per_image_and_per_book():
     assert values[0] and values[1] and values[2] is None
 
 
+def test_empty_allowed_origins_warns_once_at_start(caplog):
+    # #974: prod 설정 누락을 기동 로그로 드러냄(기동은 계속)
+    with caplog.at_level("WARNING", logger="app.clients.asset_fetcher"):
+        AssetFetcher(httpx.AsyncClient(), parse_origins(""))
+        AssetFetcher(httpx.AsyncClient(), parse_origins(ORIGIN))
+    warnings = [r for r in caplog.records if "MEMORY_BOOK_ASSET_ORIGINS" in r.getMessage()]
+    assert len(warnings) == 1
+
+
 def test_internal_origin_keeps_signed_host_header():
     seen = []
 

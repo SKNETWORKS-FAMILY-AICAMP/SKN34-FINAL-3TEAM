@@ -673,6 +673,7 @@ export const parentHandlers = [
         rows = scopedRows(c, r.period),
         key = String(params.itemId)
       requireShared(c.id)
+      if (r.periodType === 'DAILY' && !r.metrics.some(m => m.itemId === key) && !versions.some(version => version.problems?.some(p => p.itemId === key))) fail('NOT_FOUND', '리포트 항목이 없습니다.', 404)
       return evidenceResponse(
         evidence(
           rows.filter(

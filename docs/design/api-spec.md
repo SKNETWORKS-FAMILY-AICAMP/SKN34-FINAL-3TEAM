@@ -17,7 +17,7 @@
 | 형식 | JSON(UTF-8), 필드 camelCase, 시각 ISO-8601 오프셋 포함(`2026-11-02T19:00:00+09:00`), 날짜 `YYYY-MM-DD`(KST) |
 | 식별자 | 문자열 ID(UUID). 학부모 경로의 `{childId}`는 학생 ID |
 | 기간 조회 | `from`, `to`(날짜, 양 끝 포함). 응답에 실제 조회 기간 `period` 반환 (FN-DSH-10) |
-| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}`. 예외: 알림은 `totalElements` 대신 `hasNext`(2.7), 리포트·학생 기기 목록은 `{items}`만(5.5·3.11, 리포트는 core가 report 페이지를 끝까지 모아 전체 반환 #500), 자녀·동의 목록은 페이지 없이 전체를 `page: 0, size = items 수`로 반환(5.3), 결제 목록 4개(`/payments`·`/admin/payments`·`/admin/payments/reconciliation`·`/admin/refund-requests`)는 `{items}`만이고 받은 건수가 `size`보다 적으면 마지막 페이지(2.6·2.8, `page` 0~10000·`size` 1~100 밖이면 409 `INVALID_PAGE` #862), 관리자 꾸미기 아이템 목록 `/admin/look-items`는 기본 `size` 50(2.8) |
+| 목록 | `page`(0부터), `size`(기본 20, 최대 100) → `{items, page, size, totalElements}`. 예외: 알림은 `totalElements` 대신 `hasNext`(2.7), 리포트·학생 기기 목록은 `{items}`만(5.5·3.11, 리포트는 core가 report 페이지를 끝까지 모아 전체 반환 #500), 자녀·동의 목록은 페이지 없이 전체를 `page: 0, size = items 수`로 반환(5.3), 학부모 거래 목록 `/payments`는 `{items, hasNext}`, 관리자 결제 목록 3개(`/admin/payments`·`/admin/payments/reconciliation`·`/admin/refund-requests`)는 `{items}`만이고 받은 건수가 `size`보다 적으면 마지막 페이지(2.6·2.8, `page` 0~10000·`size` 1~100 밖이면 409 `INVALID_PAGE` #862), 관리자 꾸미기 아이템 목록 `/admin/look-items`는 기본 `size` 50(2.8) |
 | 스트리밍 | `text/event-stream`, 각 이벤트 `event: <이름>` + `data: <JSON>` (1.6) |
 
 ### 1.2 인증·권한
@@ -434,7 +434,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 | POST | `/orders` | 학부모 | 결제 요청 생성 `{productId, childId}` → `orderId`·금액·위젯 파라미터. 중복 구독 409. `Idempotency-Key` | PAY-02, PAY-03 | 우선2 |
 | POST | `/payments/confirm` | 학부모 | 위젯 성공 리다이렉트 값(`paymentKey, orderId, amount`)으로 서버 승인 → 금액 대조 → 구독·권한 반영. `Idempotency-Key` | PAY-03, PAY-04, PAY-05 | 우선2 |
 | GET | `/payments/{orderId}` | 학부모 | 결제 상태 (`CONFIRMING`이면 PG 상태 조회 후 갱신) | PAY-04 | 우선2 |
-| GET | `/payments?page&size` | 학부모 | 본인 거래 내역(결제·취소·환불) `{items}`(1.1 예외) | PAY-07 | 우선2 |
+| GET | `/payments?childId&page&size` | 학부모 | 본인 거래 내역(결제·취소·환불). `childId`가 있으면 해당 자녀로 제한한 뒤 페이지를 나눔. `{items, hasNext}`(1.1 예외) | PAY-07 | 우선2 |
 | GET | `/subscriptions` | 학부모 | 구독 상태·대상 자녀·이용 기간·다음 결제 예정일 | PAY-07 | 우선2 |
 | GET | `/subscriptions/{subscriptionId}/billing-key` | 학부모 | 자동결제 수단 등록 준비 `{subscriptionId, customerKey}` (PG 결제위젯 빌링 인증 요청에 사용) | PAY-08 | 우선2 |
 | POST | `/subscriptions/{subscriptionId}/billing-key` | 학부모 | 자동결제 수단 등록·변경 `{authKey, customerKey}` (PG `authKey` → 빌링키 발급, 카드 정보 미저장). `Idempotency-Key` | PAY-08 | 우선2 |

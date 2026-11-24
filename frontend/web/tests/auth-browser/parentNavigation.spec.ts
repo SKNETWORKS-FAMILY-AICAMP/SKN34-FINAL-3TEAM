@@ -17,7 +17,7 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
   const metric = { label: '답변 제출 시도 수', formula: '집계 대상 시도 수', period, count: 6, numerator: 6, denominator: 6, value: null, sourceType: 'RECORD' as const, state: 'OK' as const }
   if (withHighlights) {
     report.metrics = [metric, { ...metric, label: '다른 활동', formula: '다른 집계 기준' }]
-    report.problems = [{ missionId: 'mission-1', attemptId: 'attempt-1', title: '나무는 어떤 도움을 줄까요?', context: 'EXTRA', judgment: 'CORRECT',
+    report.problems = [{ itemId: 'daily-item-1', missionId: 'mission-1', attemptId: 'attempt-1', title: '나무는 어떤 도움을 줄까요?', context: 'EXTRA', judgment: 'CORRECT',
       finalAnswer: '나무가 그늘을 만들어 줍니다.', followups: [], elements: [], reflection: null,
       quotes: [{ answerId: 'answer-1', text: '나무가 그늘을 만들어 줍니다.', verified: true }] }]
     report.quotes = [{ attemptId: 'attempt-1', answerId: 'answer-1', text: '나무가 그늘을 만들어 줍니다.', verified: true }]
@@ -83,6 +83,165 @@ async function openReport(page: Page) {
   await page.locator('.parent-report-grid').getByRole('button', { name: '자세히 보기', exact: true }).first().click()
   await expect(page.getByRole('dialog').getByRole('region', { name: '리포트 내용', exact: true })).toBeVisible()
 }
+test('일일 리포트가 문제 항목 ID로 해당 답변 근거를 연다', async ({page, context}) => {
+  await parentServer(context, 'DAILY', true)
+  await context.route('**/reports/report-1/evidence/daily-item-1', route => route.fulfill({json: {items: [{attemptId: 'attempt-1', answerId: 'answer-1', kind: 'ANSWER', available: true, quote: '해당 문제의 원문 근거'}]}}))
+  await page.goto(`/parent/report?childId=${childId}`)
+  await openReport(page)
+  await page.getByRole('button', {name: '활동 기록', exact: true}).click()
+  await page.locator('summary').getByText('나무는 어떤 도움을 줄까요?', {exact:true}).click()
+  await page.getByRole('button', {name: '원문 근거', exact: true}).click()
+  await expect(page.getByText('해당 문제의 원문 근거', {exact: false})).toBeVisible()
+})
+
+test('문의 응답이 늦어도 신고 초안과 유형을 보존하고 오래된 접수 내역을 연다', async ({page, context}) => {
+  await parentServer(context)
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await context.route(/\/api\/v1\/(inquiries|error-reports)(\?|$)/, async route => {
+    if (route.request().method() === 'POST') { await gate; return route.fulfill({status: 201, json: {}}) }
+    const url = new URL(route.request().url())
+    const index = Number(url.searchParams.get('page') ?? 0)
+    const items = Array.from({length: index ? 1 : 20}, (_, n) => ({
+      inquiryId: `inq-${index}-${n}`, reportId: `report-${index}-${n}`, status: 'RESOLVED', category: 'OTHER',
+      title: `문의 ${20*index+n+1}`, comment: `신고 ${20*index+n+1}`, body: '문의 본문', answer: '처리한 답변', createdAt: '2026-11-19T15:30:00Z',
+    }))
+    return route.fulfill({json: {items, page:index, size:20, totalElements:21}})
+  })
+  await page.goto('/parent/support')
+  await page.getByRole('textbox',{name:'제목'}).fill('제출할 문의')
+  await page.getByRole('textbox',{name:'내용'}).fill('일반 문의 본문')
+  await page.getByText('문의 21', {exact:true}).click()
+  await expect(page.locator('details[open]').getByText('처리한 답변')).toBeVisible()
+  await page.getByRole('button',{name:'접수하기'}).click()
+  await page.getByRole('button',{name:'학습 결과가 이상해요'}).click()
+  await expect(page.getByRole('textbox',{name:'내용'})).toHaveValue('')
+  await page.getByRole('textbox',{name:'내용'}).fill('따로 작성한 신고 초안')
+  const response = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/inquiries'))
+  release()
+  await response
+  await page.getByRole('button',{name:'이용 중 궁금한 점이 있어요'}).click()
+  await expect(page.getByText(/접수했습니다. 아래 목록/)).toBeVisible()
+  await page.getByRole('button',{name:'학습 결과가 이상해요'}).click()
+  await expect(page.getByRole('textbox',{name:'내용'})).toHaveValue('따로 작성한 신고 초안')
+  await expect(page.getByRole('combobox',{name:'유형'})).toHaveValue('OTHER')
+  await page.goto('/parent/support/results')
+  await expect(page.getByRole('link',{name:/문의 21 ·/})).toBeVisible()
+  await expect(page.getByRole('link',{name:/신고 21 ·/})).toBeVisible()
+})
+
+test('공개 설정 조회 오류는 원문을 가리고 재조회로 복구한다', async ({page,context}) => {
+  await parentServer(context)
+  let failed = true
+  await context.route('**/sharing-preferences', route => failed
+    ? route.fulfill({status:503,json:{title:'조회 실패',status:503,retryable:true}})
+    : route.fulfill({json:{studentId:childId,parentSharingEnabled:true}}))
+  await page.goto(`/parent/report?childId=${childId}`)
+  await expect(page.getByText(/학생 답변의 공개 여부를 확인할 수 없습니다/)).toBeVisible()
+  await expect(page.getByText(/아이가 답변 원문을 비공개로/)).toHaveCount(0)
+  failed = false
+  await page.getByRole('button',{name:'다시 시도'}).click()
+  await expect(page.getByRole('heading',{name:'리포트·AI 챗봇',exact:true})).toBeVisible()
+})
+
+test('첫 자녀 생성 후 세션 갱신만 재시도하고 직접 고른 출생연도를 유지한다', async ({page,context}) => {
+  await parentServer(context)
+  let creates = 0, restored = false
+  await context.route('**/api/v1/me', route => {
+    if (creates && !restored) return route.fulfill({status:503,json:{status:503,title:'세션 조회 실패'}})
+    return route.fulfill({json:{role:'PARENT',name:'보호자',nextAction: restored ? 'READY' : 'CHILD_REGISTRATION_REQUIRED',startPath: restored ? '/parent/journal' : '/parent/children/new'}})
+  })
+  await context.route('**/api/v1/children', async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    creates++
+    expect(route.request().postDataJSON().birthYear).toBe(2018)
+    return route.fulfill({status:201,json:{id:childId,nickname:'첫 자녀',grade:4,birthYear:2018}})
+  })
+  await page.goto('/parent/children/new')
+  const name = page.getByRole('textbox',{name:'자녀 별명'})
+  await name.fill('가'.repeat(41))
+  await expect(name).toHaveValue('가'.repeat(40))
+  await page.getByLabel('출생연도',{exact:true}).selectOption('2018')
+  await page.getByLabel('자녀 학년',{exact:true}).selectOption('4')
+  await expect(page.getByLabel('출생연도',{exact:true})).toHaveValue('2018')
+  const submit = page.getByRole('button',{name:'자녀 등록하기'})
+  await submit.click()
+  await expect(page.getByRole('button',{name:'저장 후 상태 다시 확인'})).toBeVisible()
+  await expect(submit).toBeDisabled()
+  restored = true
+  await page.getByRole('button',{name:'저장 후 상태 다시 확인'}).click()
+  await expect(page).toHaveURL(/parent\/journal/)
+  expect(creates).toBe(1)
+})
+
+test('마지막 미읽음 알림을 읽으면 남은 알림 페이지로 돌아간다', async ({page,context}) => {
+  await parentServer(context)
+  let count = 21
+  await context.route('**/api/v1/notifications?**', route => {
+    const p = Number(new URL(route.request().url()).searchParams.get('page'))
+    const rows = Array.from({length:count},(_,i) => ({id:String(i),title:`알림 ${i+1}`,readAt:null,createdAt:'2026-11-19T15:30:00Z'}))
+    return route.fulfill({json:{items:rows.slice(p*20,(p+1)*20),page:p,size:20,hasNext:(p+1)*20<count}})
+  })
+  await context.route('**/notifications/20/read', route => { count = 20; return route.fulfill({status:204}) })
+  await page.goto('/parent/notifications')
+  await page.getByLabel('읽지 않은 알림만').check()
+  await page.getByRole('navigation',{name:'알림 페이지'}).getByRole('button',{name:'다음'}).click()
+  await expect(page.getByRole('heading',{name:'알림 21',exact:true})).toBeVisible()
+  await page.getByRole('button',{name:'읽음으로 표시'}).click()
+  await expect(page.getByRole('heading',{name:'알림 1',exact:true})).toBeVisible()
+  await expect(page.getByRole('navigation',{name:'알림 페이지'})).toContainText('1쪽')
+})
+
+test('프로필 초안과 QR 발급 당시 자녀를 보존한다', async ({page,context}) => {
+  await parentServer(context)
+  await context.route('**/student-devices/pairings', route => route.fulfill({json:{pairingCode:'12345678',expiresAt:new Date(Date.now()+600_000).toISOString()}}))
+  await page.goto(`/parent/settings?childId=${otherId}`)
+  await page.getByLabel('새 자녀 별명',{exact:true}).fill('작성 중인 별명')
+  await page.getByRole('tab',{name:'공개·동의'}).click()
+  await page.getByRole('tab',{name:'프로필'}).click()
+  await expect(page.getByLabel('새 자녀 별명',{exact:true})).toHaveValue('작성 중인 별명')
+  await page.goto(`/parent/devices?childId=${otherId}`)
+  await page.getByRole('button',{name:'등록 코드 만들기'}).click()
+  const targets = page.getByText(/이 코드로 등록할 자녀/)
+  await expect(targets).toContainText('별빛, 달빛')
+  await page.getByRole('checkbox',{name:/별빛/}).uncheck()
+  await expect(targets).toContainText('별빛, 달빛')
+  await page.getByRole('button',{name:'변경한 대상으로 새 코드 발급'}).click()
+  await expect(targets).toHaveText('이 코드로 등록할 자녀 · 달빛')
+})
+
+test('모바일 지원 메뉴는 선택한 본문으로 초점을 옮긴다', async ({page,context}) => {
+  await parentServer(context)
+  await page.setViewportSize({width:390,height:844})
+  await page.goto(`/parent/journal?childId=${childId}`)
+  for (const [name,path] of [['도움말','help'],['문의·오류 신고','support'],['공지','notices']]) {
+    await page.getByRole('button',{name:'학부모 메뉴 열기'}).click()
+    await page.getByRole('dialog').getByRole('link',{name,exact:true}).click()
+    await expect(page).toHaveURL(new RegExp('/parent/'+path))
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.locator('#parent-main')).toBeFocused()
+  }
+})
+
+test('일일 기록이 더 최신이어도 홈에는 주간 기록을 연결하고 공지 검색은 21번째까지 찾는다', async ({page,context}) => {
+  const {report,controls} = await parentServer(context)
+  controls.extraReports.push({...report,reportId:'weekly-previous',periodType:'WEEKLY',period:{from:'2026-11-02',to:'2026-11-08'}})
+  await page.goto(`/parent/journal?childId=${childId}`)
+  const card = page.getByRole('region',{name:'최근 주간 리포트'})
+  await expect(card).toContainText('2026-11-02 ~ 2026-11-08')
+  await card.getByRole('button',{name:'이 주간 리포트 보기'}).click()
+  await expect(page).toHaveURL(/reportId=weekly-previous/)
+  await context.route(/\/api\/v1\/notices(\?|$)/, route => {
+    const p = Number(new URL(route.request().url()).searchParams.get('page'))
+    const items = Array.from({length:p ? 1 : 20},(_,i)=>({noticeId:`notice-${p}-${i}`,title:`확인할 공지 ${p*20+i+1}`,body:'공지 본문',kind:'NOTICE',visibleFrom:'2026-11-19T15:30:00Z'}))
+    return route.fulfill({json:{items,page:p,size:20,totalElements:21}})
+  })
+  await page.goto('/parent/notices')
+  await page.getByLabel('공지 제목 검색').fill('공지 21')
+  await page.getByText('확인할 공지 21',{exact:true}).click()
+  await expect(page.getByText('공지 본문',{exact:true})).toBeVisible()
+})
+
 async function closeReport(page: Page) {
   await page.getByRole('dialog').getByRole('button', { name: /닫기$/ }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -124,11 +283,13 @@ test('학습 기록이 없으면 실제 기기·PIN 진입 경로를 안내한�
   await parentServer(context)
   await page.goto(`/parent/journal?childId=${childId}`)
   const status = page.locator('[data-query-state="NO_RECORD"]')
-  await expect(status).toContainText('기기·PIN에서 학생 기기를 등록한 뒤')
-  await expect(status).toContainText('학생 화면에서 PIN으로 로그인')
+  await expect(status).toContainText('선택한 기간에 답변을 제출한 활동이 없습니다.')
+  await status.getByRole('button', { name: '조회 기간 바꾸기' }).click()
+  await expect(page.getByLabel('조회 시작일')).toBeFocused()
   await expect(page.getByText('이 자녀로 학습 시작', { exact: false })).toHaveCount(0)
-  await page.getByRole('link', { name: '기기·PIN', exact: true }).click()
+  await status.getByRole('link', { name: /기기·PIN 설정/ }).click()
   await expect(page).toHaveURL(/\/parent\/devices/)
+  expect(new URL(page.url()).searchParams.get('childId')).toBe(childId)
 })
 
 test('로고는 홈으로 연결하고 자녀 추가는 계정·자녀 설정에서만 연다', async ({ page, context }) => {
