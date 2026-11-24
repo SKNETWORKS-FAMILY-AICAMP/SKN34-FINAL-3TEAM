@@ -352,7 +352,7 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 | PRF-03 | 리포트 설명 주 1회 일괄, 엔드포인트 일 23:30~월 02:00만 1대 | 실API·배포(A) | 참고: A 시험 예약으로 축소 → 사본 0(15:50)·인스턴스 0(16:01), 확장 → 준비 +20.5분, 주간 예약 설정. 실제 주간 창 뒤 0대 복귀는 미확인 | `infrastructure/aws/sagemaker/explanation-endpoint.json`, [infra 9.13.9](infra.md#콜드-시간과-예약-확장), [ai 24.6](ai.md#246-a-계정-실제-엔드포인트-확인-2026-11-18-가상-입력) | 11/18 | 점검 예정(B 첫 주간 창, #783) |
 | AIQ-01 | 미션당 예시 20개·평가자 2명, 사람-사람·사람-AI QWK | 실API·배포(kind) | 데모 미션 5개 × 자체 작성 답안 20개: 결과 QWK 사람-사람 0.809·사람-AI 0.792, 요소 일치율 0.880·0.875, 보류 12%, 인용 불일치 0. 최저 DEMO-14 0.676. 합격선은 AIQ-06 | [ai 1 기준선 결과](ai.md#기준선-결과-585-2026-11-13), `evaluation/results/judgment/` | 11/13 | 충족 |
 | AIQ-02 | M2 klue 학습, 처음 보는 주제 분리 평가, 기준선·공개 LLM 비교, 사람끼리 상관 함께 보고 | 학습 기록(RunPod) | Pearson 처음 보는 주제 서술 0.538·논술 0.452(사람끼리 0.694·0.560), 학습한 주제 0.685·0.700, 공개 LLM LoRA(Qwen3-1.7B 0.684·Kanana-2-3B 0.689) 비교 뒤 klue 유지. 규칙·TF-IDF 기준선은 2.0 모델(71819) QWK로만 있고 `c26d8455` 이전 `ml/m2/README.md`에 남음 | [ml/m2 README](../../ml/m2/README.md), [planning 2.3](planning.md#23-m2-중간-결과-112-기준) | 11/01~11/02 | 충족 |
-| AIQ-03 | 설명 sLLM 인용·금지어 검사와 사람 검토 50개, 허용 기준 11/22 | 실API(SageMaker·RunPod) | 참고: 가상 글 1편 15회 `checks.py` 통과 LoRA 14/15·기반 단독 8/15, 파일럿 금지어 0·인용 4/4 원문 일치. 사람 검토 50개·3인 A/B 설문 미실시, 실제 학생 글 통과율 미집계, 허용 기준 미정 | [ml/sllm README 평가](../../ml/sllm/README.md#평가), [gemma-explanation-validation 3](gemma-explanation-validation.md#3-결과), [infra 9.13.9](infra.md#기반-단독과-lora-비교-746-d2) | 11/16~11/18 | 점검 예정 11/22 |
+| AIQ-03 | 설명 sLLM 인용·금지어 검사와 사람 검토 50개, 허용 기준 11/22 | 실API(SageMaker·RunPod) | 참고: 가상 글 1편 15회 `checks.py` 통과 LoRA 14/15·기반 단독 8/15, 파일럿 금지어 0·인용 4/4 원문 일치. 사람 검토: 서비스 데모 문항·가상 답 모델 출력 50건 검수 완료(검수자 김재현, 11/23~24, 지적·수정 기록은 [explanation-output-review](explanation-output-review.md)). 실제 학생 글 통과율 미집계, 허용 기준 미정 | [ml/sllm README 평가](../../ml/sllm/README.md#평가), [gemma-explanation-validation 3](gemma-explanation-validation.md#3-결과), [infra 9.13.9](infra.md#기반-단독과-lora-비교-746-d2), [explanation-output-review](explanation-output-review.md) | 11/16~11/24 | 점검 예정 11/22 |
 | AIQ-04 | M1 수학 문항 그룹 분할·학습·평가, 검증 범위만 활성화 | 학습 기록 | 시험 16,913개 균형 정확도: 다수 클래스 0.500, 규칙 0.642·0.703. 학습 모델은 코드 확인용(0.5)뿐이라 서비스 비활성 | `ml/m1/results/eval_m1.md`·`eda_71716.md` | 11/02 | 충족(후순위, 비활성 유지) |
 | AIQ-05 | 활성화 전 고정 평가 비교, 기준 충족 범위만 승인 | 배포(A) | M2 b판 경계: 사전 검사 → 등록 → 승인·활성화(초5·6) → scoring `LOADED`, 실제 채점 5건 새 경계와 일치. 리포트 Gemma `gemma4-26b-a4b-lora-20261118-r2` 활성화(사람 검토 미실시 상태). 판정 프롬프트 `.evaluation.json` 준비 | [ai 3](ai.md#3-모델-레지스트리ai-사용량-43), [scoring 7.8](scoring.md#78-운영-적용-613-2026-11-17), [ml/sllm README](../../ml/sllm/README.md) | 11/17~11/18 | 충족 |
 | AIQ-06 | 11/22까지 허용 기준, 넘은 범위만 서비스 적용 | — | 판정 QWK·M2·설명 sLLM·M1 허용 기준 모두 미정 | [ai 1](ai.md#1-판정되묻기-6), [planning 2.3](planning.md#23-m2-중간-결과-112-기준) | — | 점검 예정 11/22 |
@@ -375,7 +375,7 @@ develop `7ef72985` 병합 시 PR #544의 테스트·이미지 빌드 병렬화, 
 
 | 날짜 | 대상 | 할 일 |
 |---|---|---|
-| 11/22 | AIQ-03·06 | 설명 sLLM 허용 기준 결정, 사람 검토 50개 표본 결과. 판정 QWK·M2 기준도 같은 기한 |
+| 미정 | AIQ-03·06 | 설명 sLLM 허용 기준 결정(사람 검토 50건은 11/24 완료). 판정 QWK·M2 기준도 같은 기한 |
 | 11/28~29 | OPS-02~05, PRF-01·03 | B 계정 배포 승인·경로 확인(Argo CD, 11/25 A에서 먼저 확인 #859), 복구 리허설, 경보 발생, 실패 요청 trace, 부하 재측정, 첫 주간 창 뒤 엔드포인트 0대 복귀(#783) |
 | 12/5 | SEC-07, OPS-01, QA-03 | 시연 환경에서 `audit-demo-data.sql` 실행(가상 학생·시연 표시·결제 집계) |
 

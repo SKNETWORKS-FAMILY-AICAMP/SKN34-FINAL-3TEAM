@@ -17,7 +17,7 @@ from app.analysis_agent.nodes.events import status
 from app.analysis_agent.nodes.understand import DIFFICULTY_QUESTION
 from app.analysis_agent.state import AnalysisState
 from app.analysis_agent.tools import RecordTools
-from app.analysis_agent.verification import report_numbers
+from app.analysis_agent.verification import explanation_numbers, report_numbers
 from app.clients.learning_client import RecordsUnavailable
 
 ERROR_MESSAGES = {
@@ -67,6 +67,8 @@ async def compute(state: AnalysisState, runtime: Runtime[AgentContext]) -> Analy
     computation = compute_metrics(state["intent"], state["records"], request.scope)
     if request.report:  # 고정 리포트 대화(#392): 요약 숫자도 대조 허용
         computation.extra_numbers |= report_numbers(request.report)
+    if request.explanations:  # 주간 리포트 설명(#1012): 설명 속 숫자도 대조 허용
+        computation.extra_numbers |= explanation_numbers(request.explanations)
     if computation.insufficient == "NO_REFLECTIONS" and request.explanations:
         if DIFFICULTY_QUESTION.search(request.question):
             computation.insufficient = None
