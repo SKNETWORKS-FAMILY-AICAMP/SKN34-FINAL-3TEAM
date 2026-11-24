@@ -180,17 +180,20 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
      * 무료 상품에서 켠 경우는 예약 없이 허용
      */
     fun beginMemoryBook(student: UUID, book: UUID): UsagePermit {
-        val entitlement=forStudent(student)
-        val subscribed=entitlement.subscriptionId!=null
-        val enabled=when(val value=entitlement.product.features["memoryBook"]) {
-            null -> subscribed
-            is Boolean -> value
-            else -> unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
-        }
-        if(!enabled) throw BusinessException(HttpStatus.FORBIDDEN,"PREMIUM_REQUIRED",
+        if(!memoryBookEnabled(student)) throw BusinessException(HttpStatus.FORBIDDEN,"PREMIUM_REQUIRED",
             "추억 그림책은 프리미엄 이용권에서 만들 수 있어요.","앨범과 추억 검색은 계속 이용할 수 있어요.")
         val sub=repository.active(student) ?: return UsagePermit(null,false)
         return tx.locked(sub.parentUserId) { students.requireLinked(sub.parentUserId,student); reserve(student,MEMORY_BOOK,book) }
+    }
+
+    /** 그림책 발급 허용(`features.memoryBook`, 값이 없으면 구독 중만, boolean이 아니면 503). 발급과 책장 무료 4주 제한(#999)이 같이 쓴다 */
+    fun memoryBookEnabled(student: UUID): Boolean {
+        val entitlement=forStudent(student)
+        return when(val value=entitlement.product.features["memoryBook"]) {
+            null -> entitlement.subscriptionId!=null
+            is Boolean -> value
+            else -> unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
+        }
     }
 
     /** 그림책 하루 생성 한도(`limits.dailyMemoryBooks`). 키가 없는 구독 스냅숏은 무료 상품 값, 그래도 없거나 0 이상 정수가 아니면 503 */
