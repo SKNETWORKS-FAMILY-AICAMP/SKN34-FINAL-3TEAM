@@ -1,0 +1,123 @@
+#class-journal:has(.expression-review.ops-page) { max-width: none; }
+#class-journal .admin-shell:has(.expression-review.ops-page) {
+  background: #f5f7f9;
+  font-family: "Pretendard", "Inter", "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+#class-journal .admin-shell:has(.expression-review.ops-page) .ad-sidebar { background: #182c39; }
+#class-journal .admin-shell:has(.expression-review.ops-page) .ad-sidebar nav a[aria-current="page"] {
+  color: #fff; background: #324b57; box-shadow: inset 3px 0 #b9e6d6;
+}
+#class-journal .admin-shell:has(.expression-review.ops-page) .ad-sidebar nav a[aria-current="page"] svg { color: #d4efe5; }
+#class-journal #admin-main[data-page="expressions"] { max-width: 1580px; padding: 33px clamp(20px,3vw,52px) 52px; }
+@media (min-width:1171px) {
+  #class-journal .admin-shell:has(.expression-review.ops-page) { grid-template-columns: 216px minmax(0,1fr); grid-template-rows: 62px 1fr; }
+}
+@media (min-width:761px) and (max-width:1170px) {
+  #class-journal .admin-shell:has(.expression-review.ops-page) { grid-template-columns: 180px minmax(0,1fr); }
+  #class-journal #admin-main[data-page="expressions"] { padding: 27px 22px 44px; }
+}
+
+.ops-page.expression-review { --ops-ink: #192a3a; --ops-muted: #546477; --ops-line: #dce3e8; --ops-blue: #3259d9; min-width: 0; color: var(--ops-ink); line-height: 1.5; }
+.expression-review .page-intro { display: block; margin: 0 0 16px; }
+#admin-main .expression-review .page-intro h1 { margin: 0; font-size: clamp(27px,2.6vw,36px); line-height: 1.2; letter-spacing: -.065em; font-weight: 750; color: var(--ops-ink); }
+#admin-main .expression-review .page-intro p { margin: 9px 0 0; font-size: 15px; letter-spacing: -.025em; color: var(--ops-muted); }
+.expression-review .ops-notice { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 21px; padding: 10px 13px; border: 1px solid #dce6ef; border-radius: 8px; background: #edf3f8; color: #435c70; font-size: 14px; }
+.expression-review .ops-notice svg { flex: none; margin-top: 2px; }
+.expression-review .ops-notice p { margin: 0; }
+.expression-review .ops-tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 3px 14px; margin: 0 0 19px; border-bottom: 1px solid var(--ops-line); }
+#class-journal #admin-main .expression-review .ops-tabs a { display: inline-flex; align-items: center; min-height: 40px; margin-bottom: -1px; padding: 8px 4px; border-bottom: 3px solid transparent; color: #586b7c; font-size: 15px; font-weight: 620; text-decoration: none; }
+#class-journal #admin-main .expression-review .ops-tabs a[aria-current="page"] { color: #294fa5; border-color: var(--ops-blue); }
+#class-journal #admin-main .expression-review .ops-tabs a:hover { color: #244daa; }
+.expression-review .ops-records { min-width: 0; padding: 0; border: 1px solid var(--ops-line); border-radius: 14px; background: #fff; }
+.expression-review .ops-records > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 20px; }
+.expression-review .ops-records-heading, .expression-review .ops-tools { display: flex; align-items: center; gap: 8px; }
+#admin-main .expression-review .ops-records-heading h2 { margin: 0; font-size: 18px; line-height: 1.33; letter-spacing: -.045em; color: var(--ops-ink); }
+.expression-review .ops-records-heading .total { display: grid; place-items: center; min-width: 23px; height: 23px; padding: 0 6px; border-radius: 7px; color: #526473; background: #edf1f4; font-size: 13px; font-weight: 650; }
+.expression-review .ops-tools { flex-wrap: wrap; min-width: 0; }
+#admin-main .expression-review .ops-search { display: flex; flex-direction: row; align-items: center; gap: 7px; width: 190px; max-width: 100%; min-width: 0; height: 35px; padding: 0 10px; border: 1px solid #ced7dd; border-radius: 7px; color: #637586; background: white; }
+.expression-review .ops-search > svg { flex: none; }
+#class-journal #admin-main .expression-review .ops-search input { width: 100%; min-width: 0; height: 100%; min-height: 0; border: 0; border-radius: 0; padding: 0; color: var(--ops-ink); background: transparent; box-shadow: none; font: inherit; font-size: 14px; }
+.expression-review .ops-search input::placeholder { color: #607283; }
+.expression-review .filter-choice { position: relative; display: flex; flex-direction: row; align-items: center; min-width: 0; }
+#class-journal #admin-main .expression-review .filter-choice select { width: auto; max-width: 100%; min-height: 35px; margin: 0; padding: 6px 8px; border: 1px solid #ced7dd; border-radius: 7px; background: white; color: #344858; font: inherit; font-size: 14px; }
+#class-journal #admin-main .expression-review .filter-choice:has(svg) select { appearance: none; padding-right: 27px; }
+.expression-review .filter-choice svg { position: absolute; right: 9px; color: #576675; pointer-events: none; }
+.expression-review .ops-filter-scope { margin: 0 20px 12px; color: var(--ops-muted); font-size: 13px; }
+.expression-review .ops-rows { min-width: 0; }
+#class-journal .expression-review .ops-rows > .ad-table-wrap { border: 0; border-radius: 0; }
+.expression-review .ops-table { width: 100%; margin: 0; border: 0; border-spacing: 0; border-collapse: separate; text-align: left; font-size: 14px; line-height: 1.5; }
+.expression-review .ops-table :is(th,td) { padding: 13px 11px; border: 0; vertical-align: middle; text-align: left; overflow-wrap: anywhere; }
+.expression-review .ops-table :is(th,td):first-child { padding-left: 20px; }
+.expression-review .ops-table :is(th,td):last-child { padding-right: 20px; }
+.expression-review .ops-table thead th { padding-block: 10px; border-block: 1px solid var(--ops-line); color: #576a7a; background: #f5f7f9; font-size: 12.5px; font-weight: 620; }
+.expression-review .ops-table tbody tr + tr > * { border-top: 1px solid #e8edf0; }
+.expression-review .ops-table tbody th { font-weight: 650; }
+.expression-review .ops-table tbody td { color: #415464; font-variant-numeric: tabular-nums; }
+.expression-review .ops-table tbody tr:hover > * { background: #f7fafc; }
+.expression-review .ops-table tbody tr:last-child th { border-bottom-left-radius: 14px; }
+.expression-review .ops-table tbody tr:last-child td:last-child { border-bottom-right-radius: 14px; }
+#class-journal #admin-main .expression-review .ops-open-row { display: inline-flex; align-items: center; justify-content: flex-start; gap: 5px; max-width: 100%; min-height: 30px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #243c50; box-shadow: none; font: inherit; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
+#class-journal #admin-main .expression-review .ops-open-row:hover { color: var(--ops-blue); text-decoration: underline; text-underline-offset: 3px; }
+.expression-review .ops-open-row svg { flex-shrink: 0; }
+.expression-review .ops-status { display: inline-block; width: fit-content; max-width: 100%; padding: 3px 8px; border-radius: 6px; font-size: 12.3px; line-height: 1.45; font-weight: 650; text-align: center; word-break: keep-all; overflow-wrap: anywhere; }
+.expression-review .ops-status.neutral { color: #455a68; background: #ecf0f3; }
+.expression-review .ops-status.good { color: #266951; background: #e2f2e9; }
+.expression-review .ops-status.wait { color: #775115; background: #fff1d6; }
+.expression-review .ops-status.warn { color: #924334; background: #fbeae5; }
+.expression-review .ops-empty { display: grid; justify-items: center; gap: 12px; padding: 38px 16px; border-top: 1px solid var(--ops-line); color: #475c6c; font-size: 15px; text-align: center; }
+.expression-review .ops-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--ops-line); color: var(--ops-muted); font-size: 13px; }
+.expression-review .ops-detail { width: min(580px,calc(100% - 32px)); max-width: none; max-height: calc(100dvh - 40px); margin: auto; padding: 0; overflow: auto; overscroll-behavior: contain; border: 1px solid #d6dfe6; border-radius: 14px; background: white; color: var(--ops-ink); box-shadow: 0 16px 60px #172c3c3d; }
+.expression-review .ops-detail::backdrop { background: #172b3a80; }
+.expression-review .ops-detail > header, .expression-review .ops-detail > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 21px; background: #fff; }
+.expression-review .ops-detail > header { align-items: flex-start; border-bottom: 1px solid var(--ops-line); }
+#admin-main .expression-review .ops-detail h2 { margin: 7px 0 0; font-size: 20px; line-height: 1.4; letter-spacing: -.045em; overflow-wrap: anywhere; }
+.expression-review .ops-detail > footer { flex-wrap: wrap; border-top: 1px solid var(--ops-line); }
+.expression-review .ops-detail > footer small { color: var(--ops-muted); font-size: 12.5px; }
+.expression-review .ops-fields { margin: 0; padding: 2px 21px; }
+.expression-review .ops-fields > div { display: grid; grid-template-columns: minmax(86px,28%) minmax(0,1fr); align-items: baseline; gap: 14px; padding: 11px 0; }
+.expression-review .ops-fields > div + div { border-top: 1px solid #e8edf0; }
+.expression-review .ops-fields dt { color: #596c7b; font-size: 13.5px; font-weight: 600; }
+.expression-review .ops-fields dd { margin: 0; color: #273d4d; font-size: 14.5px; white-space: pre-line; overflow-wrap: anywhere; }
+.expression-review .expression-label-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 21px 17px; }
+#class-journal #admin-main .expression-review :is(.ops-detail,.ops-pagination,.ops-empty) button { min-height: 38px; padding: 7px 13px; border: 1px solid #cbd5df; border-radius: 7px; background: white; color: #28394b; box-shadow: none; font-size: 14px; font-weight: 650; }
+#class-journal #admin-main .expression-review :is(.ops-detail,.ops-pagination,.ops-empty) button:hover:not(:disabled) { border-color: #aabace; background: #f0f4f7; }
+#class-journal #admin-main .expression-review .expression-label-actions button[aria-pressed="true"] { color: #244faa; border-color: #98ade6; background: #edf2ff; }
+#class-journal #admin-main .expression-review :is(.ops-detail,.ops-pagination) button:disabled { color: #667681; border-color: #dce3e8; background: #f2f4f6; }
+#class-journal #admin-main .expression-review .ops-detail .ops-dismiss { flex: none; min-height: 36px; width: 36px; padding: 0; color: #4f6271; border-color: #dbe3e8; }
+#class-journal #admin-main .expression-review :is(a,button,select):focus-visible, .expression-review .ops-search:focus-within { outline: 3px solid #4778dc; outline-offset: 2px; }
+#class-journal #admin-main .expression-review .ops-search input:focus-visible { outline: none; }
+
+@media (max-width:760px) {
+  #class-journal #admin-main[data-page="expressions"] { padding: 23px 19px 40px; }
+}
+@media (max-width:700px) {
+  .expression-review .page-intro { margin-bottom: 13px; }
+  .expression-review .ops-records > header { gap: 11px; padding: 15px; }
+  .expression-review .ops-tools { flex: 1 1 100%; }
+  #admin-main .expression-review .ops-search { width: auto; flex: 1 1 100px; }
+  .expression-review .ops-table, .expression-review .ops-table tbody, .expression-review .ops-table tbody tr { display: block; }
+  .expression-review .ops-table thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .expression-review .ops-table tbody tr { padding: 9px 15px 12px; border-top: 1px solid var(--ops-line); }
+  .expression-review .ops-table tbody tr + tr > * { border: 0; }
+  .expression-review .ops-table tbody tr > :is(th,td),
+  .expression-review .ops-table tbody tr > :is(th,td):is(:first-child,:last-child) { padding: 0; }
+  .expression-review .ops-table tbody th { display: block; margin: 0 0 4px; }
+  .expression-review .ops-table tbody td { display: grid; grid-template-columns: minmax(80px,32%) minmax(0,1fr); align-items: baseline; justify-items: start; gap: 10px; margin-top: 3px; }
+  .expression-review .ops-table td::before { content: attr(data-label); color: var(--ops-muted); font-size: 12.5px; font-weight: 550; }
+  #class-journal #admin-main .expression-review .ops-open-row { min-height: 40px; font-size: 15px; }
+  .expression-review .ops-detail > header, .expression-review .ops-detail > footer { padding: 14px 16px; }
+  .expression-review .ops-fields, .expression-review .expression-label-actions { padding-inline: 16px; }
+  .expression-review .ops-fields > div { gap: 10px; }
+  #class-journal #admin-main .expression-review .ops-detail button { min-height: 44px; }
+  #class-journal #admin-main .expression-review .ops-detail .ops-dismiss { width: 44px; min-height: 44px; }
+}
+@media (max-width:640px) {
+  #class-journal #admin-main[data-page="expressions"] { padding: 20px 14px 36px; }
+  #admin-main .expression-review .page-intro p { margin-top: 6px; font-size: 14px; }
+}
+@media (max-width:560px) {
+  .expression-review .ops-detail { max-height: calc(100dvh - 24px); width: calc(100% - 20px); }
+}
+@media (max-width:350px) {
+  .expression-review .ops-fields > div { grid-template-columns: 1fr; gap: 3px; }
+}

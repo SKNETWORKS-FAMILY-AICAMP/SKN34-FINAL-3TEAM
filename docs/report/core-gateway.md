@@ -357,7 +357,7 @@ local kind에서 테스트 계정으로 core 공개 API를 실제 호출해 확�
 
 - 리포트 고정 대화: 학부모 원문 공개 전에는 403 `STUDENT_RECORDS_PRIVATE`, 켠 뒤 201·그날 범위 고정. "오늘 …" 질문이 같은 날짜인데도 `DIFFERENT_PERIOD` 되묻기 → #454
 - 사용량: 질문마다 `CONVERSATION` 1건(되묻기 포함)
-- 포인트: 미션 완료 +10, 공유 +5, 반응 +1, 해금 차감·착용 저장. 착용 아이템이 캐릭터에 그려지지 않는 것은 웹 미구현 → #455
+- 포인트: 미션 완료 +10, 공유 +5, 반응 +1, 해금 차감·착용 저장. 착용 아이템을 캐릭터에 그리는 것은 웹 #455
 - 커뮤니티 신고: 접수 → `IN_REVIEW` → `RESOLVED`. `RECEIVED`에서 바로 `RESOLVED`는 409 `SUPPORT_STATE_CONFLICT`
 - 미확인: 되돌아보기 열람·개근 적립(주말·5일 연속 학습 필요)
 
@@ -366,7 +366,7 @@ local kind에서 테스트 계정으로 core 공개 API를 실제 호출해 확�
 에픽 #473(설명 sLLM)의 core 몫.
 
 - `GET /admin/ai-usage?callType`과 `llm.usage.recorded` 이벤트에 `REPORT_EXPLANATION` 추가(V42). 설명 항목 1개당 sLLM 1회라 답변 하나에 최대 2건
-- 클러스터 안 CPU sLLM이라 토큰 단가 없음. `cost_usd` null, `unpricedCalls`로 집계
+- 리포트 Gemma(SageMaker, #747)는 서비스 밖 별도 청구라 `billed_externally`로 표시해 미산정·예산 합산에서 뺀다(#764, 33장)
 - **모델 레지스트리 코드 변경 없음**: 이름·scope가 자유 형식이라 `MODEL` `report-explanation`, scope `explanation/grade-{학년}/{narrative|essay}`를 그대로 등록·승인·복귀 가능
 - 호출 종류를 더할 때는 이벤트 스키마·core `CallType`·core OpenAPI·ERD Mermaid 주석·ai/scoring 발행 목록·`ck_llm_usage_call_type` 마이그레이션·web `callTypeLabel`·MSW 필터를 함께 고침(`test_admin_mission_drafts_contract.py`가 목록 7곳 대조)
 
@@ -522,11 +522,12 @@ core 통합 테스트(실제 JWT/MVC/PostgreSQL·Redis·RabbitMQ)로 권한·기
 - 접수: 기존 `POST /error-reports`에 `targetType: COMMUNITY_POST`, `targetId: postId`(유형 5종 그대로). 학생 세션만 받고 학부모는 400. learning `GET /internal/community/posts/{postId}`로 대상을 확인해 본인 글 409 `COMMUNITY_OWN_POST`, 없거나 볼 수 없는 글(설정·검토 숨김, 작성자 비공개) 404 `COMMUNITY_POST_NOT_FOUND`
 - 신고 행: `student_id`·`requester_student_id`는 신고한 학생, `attempt_id`는 NULL. 작성자 학생 ID를 core 신고 행에 남기지 않아 기존 본인 목록·상세 권한 검사(`student_id ∈ scope`)를 그대로 쓰고, 작성자 삭제로 신고 이력이 깨지지 않음
 - 숨김: 신고 행 저장 뒤 트랜잭션 밖에서 learning `moderation {status: HIDDEN_REPORT, errorReportId}`. 실패해도 접수는 201로 두고 기록만 남김. 같은 멱등 키 재전송·검토 처리 때 다시 보냄. 그 사이에도 core 목록·반응은 신고 행(접수·처리 중, 또는 처리 결과가 `VISIBLE`이 아님)으로 그 공유물을 바로 숨김
-- 처리: 기존 `PATCH /admin/error-reports/{id}`(SERVICE_OPS). `RESOLVED`로 바꿀 때 `reviewResult`는 `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김)만, 생략하면 `REMOVED`(현재 관리자 화면 #395는 결과를 보내지 않아 계속 숨김이 기본). 같은 공유물에 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`, 모두 다시 공개일 때만 `VISIBLE`을 보냄. 정정(`corrections`)은 판정만이라 422 그대로
+- 처리: 기존 `PATCH /admin/error-reports/{id}`(SERVICE_OPS). `RESOLVED`로 바꿀 때 `reviewResult`는 `VISIBLE`(다시 공개)·`REMOVED`(계속 숨김)만, 생략하면 `REMOVED`. 같은 공유물에 신고가 여럿이면 계속 숨김이 하나라도 있으면 `REMOVED`, 처리 중이 있으면 `HIDDEN_REPORT`, 모두 다시 공개일 때만 `VISIBLE`을 보냄. 정정(`corrections`)은 판정만이라 422 그대로
 - 원문 열람: 관리자 상세에 `linkedPost {postId, available, missionId, status, answer, authorStudentId}`. 열람마다 `SUPPORT_ORIGINAL_VIEW`(`ERROR_REPORT`, detail `postId`·`available`) 감사. 파기된 공유물은 `available: false`만
 - 학생 결과 알림은 기존처럼 보호자 계정에 보내지 않음(학생 본인 목록에서 확인)
-- 검증: core `CommunityIntegrationTest`(실제 JWT·MVC·PostgreSQL, learning만 내부 계약 가짜 서버)로 접수 즉시 숨김·같은 키 재전송·learning 반영 지연 중 core 숨김·다시 공개·계속 숨김·복수 신고·원문 열람 감사를 확인. 실제 learning #386과의 연동은 미검증
-- 후속: 관리자 화면(#395)에 다시 공개·계속 숨김 선택과 `linkedPost` 표시 추가 필요. learning #386 `moderation`·`GET posts/{id}` 구현과 응답 모양 대조 필요
+- 검증: core `CommunityIntegrationTest`(실제 JWT·MVC·PostgreSQL, learning만 내부 계약 가짜 서버)로 접수 즉시 숨김·같은 키 재전송·learning 반영 지연 중 core 숨김·다시 공개·계속 숨김·복수 신고·원문 열람 감사를 확인. 당시 learning #386 연동은 목업으로 확인했다.
+- 웹 #806: 신고 상세에서 원문과 현재 공개 상태를 보고 다시 공개·계속 숨김(기본)을 선택한다. 완료 후 저장된 사유와 결과로만 다시 적용할 수 있다. 기존 core·learning API 계약을 사용한다.
+- #806 실서버 검증: 로컬 Compose E2E의 실제 core·learning을 대상으로 `frontend/web/tests/e2e/community.spec.ts`가 통과했다. 학생 신고 직후 learning 상태 `HIDDEN_REPORT`와 학생 목록에서 제거를 확인했고, 관리자 재공개 후 learning 상태 `VISIBLE`과 학생 목록에서 재노출을 확인했다. 이 PC의 kind 클러스터에서는 실행하지 않았다.
 
 ## 24. 결제·구독과 상품 권한 (#48·#184·#419)
 
@@ -606,20 +607,7 @@ core 통합 테스트(실제 JWT/MVC/PostgreSQL·Redis·RabbitMQ)로 권한·기
 
 ### 24.7 학부모 결제·구독 화면 (#184)
 
-- 서버 상품의 가격·월 청구 주기·자녀 수·이용 기능·한도·기간 표시. 무료 조건 별도 표시, 임의로 무료 상품을 선택하지 않음
-- 연결 자녀를 선택해 주문 생성, 같은 자녀의 ACTIVE·RENEWAL_FAILED 구독이 있으면 구매 제한(최종 검사는 core)
-- 주문 생성·승인은 UUID 멱등 키 유지. 저장한 주문과 성공 URL의 주문번호·금액을 대조한 뒤 core 승인 API 호출, `APPROVED`와 `APPLIED`가 모두 확인되어야 이용권 적용 완료 표시
-- `CONFIRMING`·`RECOVERY_REQUIRED`는 GET 상태 조회로 확인(자동 새 주문·재결제 없음). 실패 URL에서는 승인하지 않음
-- 빌링 GET의 customerKey로 SDK 인증을 시작하고 등록·변경 전 자동 갱신 동의 확인. 콜백 고객 범위·만료 검사 후 authKey를 core에 전달. 카드 원문·paymentKey·authKey·시크릿 키는 브라우저 저장소에 남기지 않음
-- 구독 상태·기간·다음 청구일·갱신 금액·빌링 등록 여부, 갱신 실패 유예 종료·재시도 횟수·예정일은 서버 응답 그대로. 해지·철회는 확인 후 서버 응답 재조회
-- 본인 거래의 결제·취소·환불 이력과 전액 환불 요청. REQUESTED·APPROVED·FAILED·COMPLETED 구분 표시, 검토 중 결제수단 변경·갱신 철회 제한
-- 동의 철회·자녀 연결 해제 상태에서도 본인 거래 조회·자동 갱신 해지·환불 복구 접근 유지
-
-실행 모드:
-
-1. 실제 core: `npm run dev`(목업 비활성). DB·core·상품·학부모·연결 자녀와 테스트 상점 설정 필요
-2. 화면·모의 검증: `VITE_API_MOCK=true npm run dev`. 외부 PG 미호출, 상단 상태 선택기로 결제 확인 중·갱신 실패·환불 실패 시연. 고정 데이터는 `src/mocks/handlers/payments.ts`
-3. 실제 PG 단건 연결 확인: `npm run dev:payment -- --port 5251`. 결제창과 서버 승인은 실제 토스 테스트 API, 주문은 메모리에만 보관하고 SANDBOX_ONLY 표시, 이용권 미부여. production 미포함. 테스트 상품 14,900원은 `scripts/payment-test-server.ts`
+→ [frontend 47절](frontend.md#47-학부모-결제구독-화면-184)로 이동
 
 ### 24.8 검증 범위와 한계
 
@@ -668,7 +656,7 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 - 영상 호출은 토큰이 없어 이미지처럼 `cost_usd` null, `unpricedCalls`로 집계
 - 요일 장면 영상은 없다(시작·종료만, learning `ThemeScene.videoUrl`은 ai 채택 테마에서 null). 사용량은 테마 하나에 최대 2건
 - 이번 주 테마 응답은 core가 바꾸지 않고 전달하고 OpenAPI·api-spec 설명만 맞춤. core가 읽는 값은 포인트 적립용 `weekStart`·`completed`·`finished`·`days[].missionId`·`attemptStatus`·`day`·`completedOnDay`뿐(#389·#485). 정답·종료 이야기는 learning이 엔딩 전에 비움
-- ai `app/llm/media.py`는 아직 `THEME_VIDEO`를 발행하지 않고 로그만 남긴다. 이 PR 머지 뒤 ai 발행을 켜고 관리자 사용량 집계를 확인
+- ai 발행은 #546에서 켬([ai 17.5](ai.md#175-영상-사용량-theme_video-546-2026-11-12))
 - 테스트: `ModelVersionHttpTest`(V45 CHECK 저장·조회·미산정), `WeeklyThemeProxyIntegrationTest`(`grade=G5&date=…&sundayTheme=…`), `scripts/tests/test_admin_mission_drafts_contract.py`·`test_admin_operations_contract.py`·`test_core_migration_versions.py`·`test_weekly_theme_contract.py`
 
 ## 26. 큰 질문 정답 고르기 프록시·엔딩 전 커뮤니티 잠김 문구 (#550, 2026-11-12)
@@ -735,11 +723,9 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 - `AccountManagementTest`: 삭제 확정 때 대상 학생 사용량만 삭제
 - 계약: `scripts/tests/test_admin_mission_drafts_contract.py`(호출 종류 목록 일치)·`test_admin_operations_contract.py`·`test_core_migration_versions.py`
 
-### 남은 일
+### 후속 연결
 
-- learning #563·#564가 내부 경로를 만들기 전에는 learning 404를 그대로 전달한다. 머지 뒤 실제 연동 확인
-- ai #565는 이 변경이 병합된 뒤에 새 `callType`을 발행
-- web 관리자 사용량 화면의 호출 종류 이름표(`adminFormatting.ts`)·목 필터(`mocks/handlers/admin.ts`)에는 새 값이 없다(기존 `THEME_*`도 없음). web #567 범위
+- learning 내부 경로 #563·#564([리텐션 확장 12·13장](retention-expansion.md)), ai 새 `callType` 발행 #565([ai 18절](ai.md)), web 관리자 호출 종류 이름표 #655([frontend 39절](frontend.md))
 
 ## 28. 추억 앨범 공개 프록시 (#560, 2026-11-12)
 
@@ -763,9 +749,9 @@ learning #438이 이번 주 테마 응답에 큰 질문·후보·요일 단서�
 
 - `AlbumProxyIntegrationTest`: 걸린 회차만 `displayed:true`·나머지 칸 유지·`page`·`size`만 전달·학생 범위 헤더·쿼리 생략, learning 400·500 전달, 깨진 200 본문 4종 502, `learning-json` 서킷 사용, 상세 바이트 그대로·seen 204·404 `THEME_FRAME_NOT_FOUND` 전달, 학부모 403·형식 오류 400(learning 미호출)
 
-### 남은 일
+### 후속 연결
 
-- learning #559(PR #571)는 병합됨. 배포 환경에서 실제 연동 확인. web #561이 이 경로를 쓴다
+- learning #559(PR #571), web #561([frontend 23절](frontend.md))
 
 ## 29. LLM 단가 등록·월 예산 경보 합산 (#651, 2026-11-16)
 
@@ -793,7 +779,7 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 - **그림 근사치**: `llm_usage`에 글 입력·이미지 입력·이미지 출력 토큰이 나뉘지 않아 입력 토큰 전체에 이미지 입력 단가(8.00)를 매긴다. 글 입력 토큰 단가가 더 낮으면 실제보다 조금 크게 잡힌다
 - **캐시 입력 단가 미반영**: 사용량 이벤트에 캐시 토큰 칸이 없어 캐시 할인 없이 일반 입력 단가로 계산한다(실제보다 크거나 같음)
 - **영상(Veo `veo-3.1-fast-generate-001`) 미등록**: 초 단위 과금이고 ai가 토큰을 null로 보내므로 `cost_usd` null, `unpricedCalls`로 센다. 예산 합산에 영상 비용이 빠진다. 클러스터 안 sLLM(리포트 설명·채점 M1/M2)도 토큰 단가가 없어 같은 처리
-- 위 미산정 호출이 생기면 `llm-unpriced-calls`(> 0) 경보가 함께 울린다. 설계상 미산정인 호출 종류를 경보에서 뺄지는 따로 정한다 → [33장](#33-llm-미산정-경보-정리-764-2026-11-18)에서 정함(M2 단가 0, Veo·RunPod Gemma 별도 청구, 경보는 새 누락만)
+- 위 미산정 호출이 생기면 `llm-unpriced-calls`(> 0) 경보가 함께 울린다. 설계상 미산정인 호출 종류를 경보에서 뺄지는 따로 정한다 → [33장](#33-llm-미산정-경보-정리-764-2026-11-18)에서 정함(M2 단가 0, Veo·리포트 Gemma 별도 청구, 경보는 새 누락만)
 - 예산 금액(300 USD) 변경과 실제 원가 산식(#630)은 범위 밖
 
 ### 검증
@@ -899,7 +885,7 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 |---|---|---|---|
 | 단가 등록 모델, 토큰 있음 | 단가로 계산 | 아님 | 비용 합계 |
 | 단가 0 모델(클러스터 안 M2 등) | 토큰이 없어도 `cost_usd` 0 | 아님 | 비용 0 |
-| 별도 청구 모델(Veo GCP 초 단위, RunPod Gemma 시간 단위) | `cost_usd` null, `billed_externally` true | 아님 | "별도 청구 N건"(`externallyBilledCalls`) |
+| 별도 청구 모델(Veo GCP 초 단위, 리포트 Gemma SageMaker 인스턴스 시간 단위 #747) | `cost_usd` null, `billed_externally` true | 아님 | "별도 청구 N건"(`externallyBilledCalls`) |
 | 미등록 모델, 또는 단가가 있는데 토큰 null | `cost_usd` null | 미산정 | 비용 null, "비용 미산정 N건" |
 
 - **단가 0**: `app.llm-pricing`에 `{input: 0, output: 0}`으로 `m2-klue-essay`·`m2-klue-narrative`를 넣었다. 입력·출력이 모두 0이면 토큰이 없어도 0으로 저장한다. 출력만 0인 임베딩은 그대로 토큰이 있어야 계산한다
@@ -924,4 +910,52 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 
 - core Pod가 다시 뜨면 지표 시계열의 `exported_instance`가 바뀌어 새 시계열이 생긴다. 새 시계열의 첫 값은 delta에 들어가지 않으므로, core가 재시작되는 사이에 생긴 미산정은 경보에 잡히지 않을 수 있다(그 뒤 새로 생기는 것은 잡힘)
 - 해제는 마지막 새 미산정 뒤 1시간이 지나야 한다. 운영 A 계정에는 배포하지 않았다(11/18 밤 종료). 운영 Grafana 무음 처리 여부는 따로 정한다
-- 별도 청구 비용(Veo·RunPod)은 여전히 월 예산 합산에 들어가지 않는다. 그 금액은 GCP·RunPod 청구서로 본다
+- 별도 청구 비용(Veo·리포트 Gemma)은 여전히 월 예산 합산에 들어가지 않는다. 그 금액은 GCP·AWS 청구서로 본다
+
+## 34. 재학습 자동 등록·표현 검토 중계 (#728, 2026-11-22)
+
+에픽 #688 재학습 자동화의 core 몫. 설계는 #725(api-spec 2.8·4.1.5·5.2.3, ERD 3.5, 시퀀스 9.1) 그대로다. 학습 쪽 검토 대기는 #727([learning 보고서](learning.md)), 재학습 작업은 #729·#730.
+
+### 바꾼 곳
+
+- **재학습 계정**: V55가 고정 UUID `00000000-0000-4000-8000-0000000f0725`의 `user_account` 1행(ADMIN, `mlops-pipeline@system.invalid`, 비밀번호·권한 없음)을 넣는다. 설정 `app.model-registry.pipeline-actor-id`(기본값 같은 UUID). UUID 값은 설계에 없어 정했다(`f0725` = 설계 이슈 #725)
+- **추천 태그**: `EvaluationEvidence.recommendation`(선택, 모든 출처). 형식 검사와 글자 수는 api-spec 5.2.3 "구현(#728) 세부". 활성화·복귀 검사에는 쓰지 않는다(NFR-AIQ-05)
+- **자동 등록** `POST /internal/model-versions`(ops 토큰만, `InternalCallerPolicy`·`app.internal.callers.ops`·gitops `INTERNAL_TOKEN_OPS` 선택): 규칙 검사 → 트랜잭션 밖에서 사전 검사(actor 재학습 계정) → `FAIL`이면 422와 확장 필드 `preflight` → `PASS`면 관리자 등록과 같은 저장·감사(`MODEL_REGISTER` detail에 `datasetSha256`). 활성화하지 않는다. 관리자 공개 등록은 `PIPELINE` 출처를 400으로 막는다
+- **관리자 표현 검토** `GET /admin/expression-reviews`·`PUT …/{id}/label`(SERVICE_OPS): `LearningExpressionReviewClient`가 learning으로 넘기고 허용한 칸만 가진 타입으로 바꾼다(#907). 감사는 `EXPRESSION_REVIEW_VIEW`(보여 준 항목 ID)·`EXPRESSION_REVIEW_LABEL`(라벨, learning에 넘기기 전). 실패 처리는 api-spec 2.8 "구현(#728)"
+- 계약 `core-service.yaml`: 위 경로 3개와 `PipelineRegisterModelVersion`·`ModelRecommendation`·`ExpressionReview*`·`Problem.preflight`
+
+### 정한 것
+
+- 라벨 감사는 설계대로 한 줄(`EXPRESSION_REVIEW_LABEL`)이다. 관리자 미션처럼 요청·결과 두 줄로 남기는 안도 있었지만 설계와 다르고 꼭 필요하지 않아 쓰지 않았다. 그래서 learning이 실패해도 감사에는 라벨 요청 한 줄만 남고, 운영자에게는 확인 번호(감사 ID)를 보여 준다. 200인데 모양이 틀리면 502 `LEARNING_INVALID_RESPONSE`, 결과를 모르면(시간 초과·5xx·ID·라벨 불일치) 503 `LEARNING_UNAVAILABLE`(#907)
+- `RegistrationMetadata.datasetSha256`은 값이 없으면 JSON에 넣지 않는다. 기존 관리자 등록 본문 모양을 바꾸지 않기 위해서다(처음 구현 때 `null`이 실려 관리자 등록이 400이 된 것을 시험에서 잡음)
+
+### 검증
+
+- 개발 PC(Docker) core `gradlew cleanTest test` 746개 중 통과 743(실패 0, 건너뜀 3은 로컬 서비스가 있어야 도는 `ModelLoadingLocal`·`ModelPreflightLocal`·`ModelVersionBrowser`), 2026-11-22
+- `PipelineRegistrationHttpTest` 7개: PASS 등록(재학습 계정 감사·활성화 안 함), FAIL 422+`preflight`, scoring 오류 502, 409, 규칙 위반은 사전 검사 전 거부, ops 토큰 정책, 관리자 `PIPELINE` 400
+- `AdminExpressionReviewHttpTest` 7개: 목록 중계(ADMIN·빈 학생 범위, 학생 ID 등 다른 칸 버림, 보여 준 ID 감사), 기본값·빈 쪽, 잘못된 조회 400·learning 형식 오류 502·learning 400 외 오류 503(둘 다 감사 없음), 라벨 감사 후 전달, 잘못된 라벨 400(감사·호출 없음), learning 404·라벨 응답 모양 오류 502·결과 모름 503(보낼 때마다 감사 1줄), SERVICE_OPS만. 상태·시험 수는 #907 뒤 기준이 아래 "후속"
+- `ModelVersionHttpTest`: 추천 태그 저장·응답·잘못된 6가지 422
+- `scripts/tests` 410개 중 통과 392(Windows unittest, 실패 0·건너뜀 18), 최종은 CI. 대상(`test_model_registry_contract` 문서 경로 7개·내부 경로 보안, `test_admin_operations_contract` 지문 예외 #728)
+- 로컬 확인(2026-11-22, compose e2e·합성 자료): 관리자 화면 라벨 2건 → learning 반영·감사, ops 자동 등록(사전 검사 PASS·REGISTERED)·추천 태그 표시. 경계 구간 행 자동 생성은 범위 밖
+
+### 한계
+
+- 사전 검사 연결 실패(503)는 새 시험에 없다. 기존 사전 검사 중계(#368)의 동작을 그대로 쓴다
+- 실제 재학습 작업의 호출은 #729·#730에서 확인한다
+
+### 후속: 계층·오류 상태 (#907, 2026-11-23)
+
+- 계층(architecture 2.2): 감사는 `admin/service/ExpressionReviewAuditService`(`viewed`·`labeled`, `REQUIRES_NEW`)를 거친다. `MissionAuditService`의 `requested`·`finished`는 action 뒤에 접미사를 붙여 쓰지 않았다. action 이름·detail·한 줄은 그대로다
+- 응답 해석과 관리자 컨텍스트(빈 학생 범위)는 `learning/client/LearningExpressionReviewClient`로 옮겼다. service는 관리자 확인·감사·ID와 라벨 대조만 한다. 본문 `{label}`은 controller DTO가 검사한다(JSON이 아닌 Content-Type은 415)
+
+| 경우 | 전 | 후 |
+|---|---|---|
+| 목록 200인데 모양 오류 | 503 `LEARNING_INVALID_RESPONSE` | 502 `LEARNING_INVALID_RESPONSE`(감사 없음) |
+| 목록 learning 400 외 오류 | 503 `LEARNING_INVALID_RESPONSE` | 503 `LEARNING_UNAVAILABLE`(감사 없음) |
+| 라벨 200인데 모양 오류 | 503 `LEARNING_UNAVAILABLE` + 확인 번호 | 502 `LEARNING_INVALID_RESPONSE` + 확인 번호 |
+| 라벨 결과 모름(시간 초과·5xx·ID·라벨 불일치) | 503 `LEARNING_UNAVAILABLE` + 확인 번호 | 그대로 |
+
+- 200이 아닌 2xx도 모양 오류로 본다. `createdAt`·`labeledAt`은 계약대로 date-time인지도 검사한다
+- 감사 service 시험은 시험 트랜잭션으로 묶지 않는다(`IntegrationTestSupport`). 커밋 안 된 관리자 행을 `REQUIRES_NEW` 감사가 FK로 기다리며 멈춘다
+- 검증(2026-11-23, 개발 PC): core `cleanTest test` 756개 중 통과 753·실패 0·건너뜀 3(`AdminExpressionReviewHttpTest` 9·`LearningExpressionReviewClientTest` 6·`ExpressionReviewAuditServiceTest` 2 포함), learning 660개 중 통과 657·실패 0·건너뜀 3, 웹 단위 419·types·lint, 브라우저 2파일 39, 계약 검사 스크립트 13개 통과, `scripts/tests` 410개 중 통과 392(실패 0·건너뜀 18). 전체 브라우저는 CI
+- 남은 것: #608 예외인 `AdminLearningService`(통계·관리자 미션)는 같은 `LEARNING_INVALID_RESPONSE`를 503으로 낸다(#907 범위 밖)

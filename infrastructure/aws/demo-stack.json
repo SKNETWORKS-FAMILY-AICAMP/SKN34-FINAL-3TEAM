@@ -52,6 +52,25 @@
     "sagomungchi-demo-347161580747-reports",
     "sagomungchi-demo-347161580747-models"
   ],
+  "bucketLifecycle": {
+    "sagomungchi-demo-347161580747-reports": {
+      "Rules": [
+        {
+          "ID": "memory-book-expire",
+          "Status": "Enabled",
+          "Filter": {"Prefix": "reports/memory-books/"},
+          "Expiration": {"Days": 35},
+          "NoncurrentVersionExpiration": {"NoncurrentDays": 1}
+        },
+        {
+          "ID": "memory-book-delete-markers",
+          "Status": "Enabled",
+          "Filter": {"Prefix": "reports/memory-books/"},
+          "Expiration": {"ExpiredObjectDeleteMarker": true}
+        }
+      ]
+    }
+  },
   "ecrRepositories": [
     "sagomungchi/core-service",
     "sagomungchi/core-migrate",
@@ -59,7 +78,8 @@
     "sagomungchi/learning-migrate",
     "sagomungchi/ai-service",
     "sagomungchi/scoring-service",
-    "sagomungchi/report-service"
+    "sagomungchi/report-service",
+    "sagomungchi/sagemaker-explanation"
   ],
   "secrets": [
     "sagomungchi/demo/app/ai",

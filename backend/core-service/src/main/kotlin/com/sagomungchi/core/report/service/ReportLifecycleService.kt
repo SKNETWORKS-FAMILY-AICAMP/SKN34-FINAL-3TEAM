@@ -32,7 +32,8 @@ class ReportLifecycleService(private val repository: ReportJobRepository, privat
         repository.execution(job, status, event.failureReason, at)
         if (status != ReportJobStatus.RUNNING) {
             events.publishEvent(ReportJobOutcomeRecorded(event.eventId, job.id, status))
-            events.publishEvent(ReportJobFinished(event.eventId, job.id, job.studentId, event.reportId, status, job.periodType))
+            events.publishEvent(ReportJobFinished(event.eventId, job.id, job.studentId, event.reportId, status, job.periodType,
+                event.noRecord, job.periodFrom))
         }
     }
 
@@ -52,7 +53,7 @@ class ReportLifecycleService(private val repository: ReportJobRepository, privat
         }
         require(result.reportId == null || job.reportId == null || job.reportId == result.reportId) { "Report recovery report identity mismatch" }
         finish(job, ReportJobStatus.valueOf(result.status), result.reportId, result.failureReason,
-            result.reportId != null && result.failureReason != "STUDENT_DELETED")
+            result.reportId != null && result.failureReason != "STUDENT_DELETED", result.noRecord)
     }
 
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
@@ -63,13 +64,15 @@ class ReportLifecycleService(private val repository: ReportJobRepository, privat
         }
     }
 
-    private fun finish(job: ReportJob, status: ReportJobStatus, reportId: java.util.UUID?, reason: String?, notify: Boolean) {
+    private fun finish(job: ReportJob, status: ReportJobStatus, reportId: java.util.UUID?, reason: String?, notify: Boolean,
+        noRecord: Boolean = false) {
         val at = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC)
         if (!repository.transition(job.id, status, reportId, reason, at)) return
         repository.execution(job, status, reason, at)
         val outcomeId = java.util.UUID.randomUUID()
         events.publishEvent(ReportJobOutcomeRecorded(outcomeId, job.id, status))
         if (notify && reportId != null)
-            events.publishEvent(ReportJobFinished(outcomeId, job.id, job.studentId, reportId, status, job.periodType))
+            events.publishEvent(ReportJobFinished(outcomeId, job.id, job.studentId, reportId, status, job.periodType,
+                noRecord, job.periodFrom))
     }
 }

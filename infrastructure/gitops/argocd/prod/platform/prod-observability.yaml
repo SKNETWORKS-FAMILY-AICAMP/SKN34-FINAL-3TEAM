@@ -1,0 +1,35 @@
+# wave 8: 관측 chart(Collector·Prometheus·Grafana·Tempo). Secret 2개(observability-credentials, discord-alert-webhook)는 손으로 먼저 만든다. 없으면 Grafana가 뜨지 않아 이 Application이 Healthy가 되지 않고 앱(wave 10)도 기다린다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prod-observability
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "8"
+spec:
+  project: sagomungchi-prod
+  sources:
+    - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+      targetRevision: main
+      path: infrastructure/gitops/charts/observability
+      helm:
+        releaseName: observability
+        valueFiles:
+          - $values/infrastructure/gitops/environments/prod/observability.json
+    - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  # 플랫폼은 prune 끔(상태 저장 자원·CRD·NodePool 보호), selfHeal 켬. finalizer가 없어 Application을 지워도 자원은 남는다.
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

@@ -1,14 +1,19 @@
 import { useId, useState } from 'react'
+import { ChevronDown, Layers } from 'lucide-react'
+import { Badge } from './AdminUi.tsx'
+import { modelKindLabel } from './adminFormatting.ts'
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useAdminMutation } from '../../data/admin/queries.ts'
 import type { ModelVersion } from '../../domain/admin/operations.ts'
-import { actionBlockers, EVIDENCE_LABELS, KNOWN_MODEL_SCOPES } from '../../domain/admin/modelRegistration.ts'
+import { actionBlockers, EVIDENCE_LABELS, KNOWN_MODEL_SCOPES, recommendationView } from '../../domain/admin/modelRegistration.ts'
+import type { EvaluationEvidence } from '../../domain/admin/operations.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { ModelLoadingStatus } from './ModelLoadingStatus.tsx'
 import { ModelRegistrationPanel } from './ModelRegistrationPanel.tsx'
 import '../service/service.css'
 import './modelRegistry.css'
+import { busyProps } from './busyButton.ts'
 
 function VersionCard({ version: v }: { version: ModelVersion }) {
   const id = useId()
@@ -18,17 +23,19 @@ function VersionCard({ version: v }: { version: ModelVersion }) {
   const action = v.status === 'INACTIVE' ? 'rollback' : 'activate'
   const mutation = useAdminMutation(() => adminApi.modelAction(v.id, action, reason.trim(), scopes, reanalysis))
   const record = v.evalResult
+  const recommendation = recommendationView(record?.evidence)
   const allowed = (action === 'activate' ? record?.evidence.evaluatedScopes : record?.approval?.scopes) ?? []
   const blockers = v.status === 'ACTIVE' ? ['현재 활성 버전입니다. 다른 버전을 승인하거나 이전 승인 버전으로 되돌릴 수 있습니다.']
     : actionBlockers(v, action, scopes, reason, approved, mutation.isPending)
   const verb = action === 'activate' ? '활성화' : '이 버전으로 되돌리기'
-  return <article className="ws-card model-version" aria-label={`${v.name} ${v.version}`}>
-    <h2>{v.name} · {v.version}</h2><p>{v.kind} · {v.status} · 승인자 {v.approvedBy ?? '미승인'}</p>
+  return <article className="ws-card model-version ad-version-record" aria-label={`${v.name} ${v.version}`}>
+    <details className="ad-version-disclosure"><summary><span className="ad-version-icon"><Layers size={20} aria-hidden="true" /></span><span className="ad-version-name"><h2>{v.name} · {v.version}</h2><small>{modelKindLabel[v.kind] ?? v.kind} · {record?.activeScopes.length ? `적용 범위 ${record.activeScopes.length}개` : '활성 적용 범위 없음'}</small></span><Badge active={v.status === 'ACTIVE'}>{{ACTIVE:'활성',REGISTERED:'승인 대기',INACTIVE:'비활성'}[v.status]}</Badge>{recommendation && <RecommendationTag evidence={record?.evidence} />}<ChevronDown size={18} aria-hidden="true" /></summary><div className="ad-version-body"><p>승인자 {v.approvedBy ?? '미승인'}</p>
     {v.status === 'ACTIVE' && <p role="status">core 활성화 완료, 로딩은 scoring에서 확인</p>}
     {record ? <>
       <dl className="model-evidence">{Object.entries(EVIDENCE_LABELS).map(([key, label]) => <div key={key}>
         <dt>{label}</dt><dd>{record.evidence[key as keyof typeof EVIDENCE_LABELS]}</dd>
       </div>)}</dl>
+      <RecommendationDetails evidence={record.evidence} />
       <p>평가 범위: {record.evidence.evaluatedScopes.join(', ')}</p>
       <p>현재 범위: {record.activeScopes.join(', ') || '없음'} · 변경 순번 {record.revision}</p>
       {record.approval && <p>승인 범위: {record.approval.scopes.join(', ')} · {record.approval.reason}</p>}
@@ -59,18 +66,32 @@ function VersionCard({ version: v }: { version: ModelVersion }) {
       <Limitations items={record?.evidence.limitations} />
       <p>적용 범위: {scopes.join(', ')}</p><p>변경 사유: {reason}</p><p>재분석 계획: {reanalysis ? '있음 (작업 실행 아님)' : '없음'}</p>
       <p>승인자는 로그인한 계정으로 기록됩니다. 기존 결과는 유지됩니다.</p><ErrorNotice error={mutation.error} />
-      <div className="ws-actions"><button disabled={mutation.isPending} onClick={() => setConfirm(false)}>취소</button>
-        <button className="cj-primary" disabled={!!blockers.length} onClick={() => void mutation.mutateAsync(undefined).then(() => { setConfirm(false); setScopes([]); setApproved(false); setReason(''); setNotice('서버에서 버전 변경을 확인했습니다. 기존 결과는 유지됩니다.') }).catch(() => {})}>확인 후 {verb}</button></div>
+      <div className="ws-actions"><button {...busyProps(mutation.isPending)} onClick={() => setConfirm(false)}>취소</button>
+        <button className="cj-primary" {...busyProps(mutation.isPending, v.status === 'ACTIVE' || !!actionBlockers(v, action, scopes, reason, approved, false).length)} onClick={() => void mutation.mutateAsync(undefined).then(() => { setConfirm(false); setScopes([]); setApproved(false); setReason(''); setNotice('서버에서 버전 변경을 확인했습니다. 기존 결과는 유지됩니다.') }).catch(() => {})}>확인 후 {verb}</button></div>
     </Modal>}
-  </article>
+  </div></details></article>
+}
+/** 재학습 추천 태그 (#728). 태그 없는 버전은 아무것도 그리지 않음 */
+export function RecommendationTag({ evidence }: { evidence?: EvaluationEvidence | null }) {
+  const view = recommendationView(evidence)
+  return view && <span className={`model-recommendation-tag ${view.tag === 'RECOMMENDED' ? 'is-recommended' : 'is-not-recommended'}`}
+    title="재학습 비교 결과 (참고용, 활성화 조건 아님)">{view.label}</span>
+}
+export function RecommendationDetails({ evidence }: { evidence?: EvaluationEvidence | null }) {
+  const view = recommendationView(evidence)
+  if (!view) return null
+  return <details className="model-recommendation"><summary>추천 근거 · {view.label} (참고용, 활성화 조건 아님)</summary>
+    <p>비교 대상 버전: {view.comparedTo}</p>
+    {view.reasons.length ? <ul>{view.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul> : <p>기록된 이유 없음</p>}
+    {view.metrics.length > 0 && <dl className="model-evidence">{view.metrics.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>}
+  </details>
 }
 export function Limitations({ items }: { items?: string[] }) {
   return <div><strong>한계·주의</strong>{items?.length ? <ul>{items.map((item, i) => <li key={i}>{item}</li>)}</ul> : <p>기록된 한계·주의 없음</p>}</div>
 }
 export function ModelRegistry() {
   const q = useAdminQuery(['models'], signal => adminApi.allModels(signal))
-  return <div className="svc-page model-registry"><h1>모델·프롬프트 버전</h1>
-    <p>평가 근거와 적용 범위를 확인하고 사람이 승인합니다. 등록 후 사전 검사·활성화·로딩·추론을 각각 확인합니다.</p>
+  return <div className="svc-page model-registry">
     <QueryFeedback query={q} />
     <ModelRegistrationPanel existing={q.data?.items ?? []} listReady={!!q.data && !q.error && !q.isFetching} />
     <section aria-label="등록된 버전" className="ws-stack"><h2>등록된 버전</h2>

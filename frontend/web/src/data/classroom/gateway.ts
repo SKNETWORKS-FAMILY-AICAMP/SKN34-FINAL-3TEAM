@@ -1,3 +1,4 @@
+import type { AnswerTiming } from '../../domain/answerTiming.ts'
 import type {
   AnswerContent,
   AnalysisResult,
@@ -10,7 +11,6 @@ import type {
   Period,
   PublicAttempt,
   Reflection,
-  Report,
   Session,
   StudentHome,
 } from '../../domain/classroom.ts'
@@ -25,7 +25,7 @@ export interface ClassroomGateway {
   missions: (child: Child) => Promise<Mission[]>
   home: (child: Child) => Promise<StudentHome>
   restore: () => Promise<Session>
-  mission: (id: string, child: Child) => Promise<Mission>
+  mission: (id: string, child: Child, context?: import('../../domain/retention.ts').AttemptContext) => Promise<Mission>
   records: (child: Child, role: 'STUDENT' | 'PARENT', period: Period) => Promise<PublicAttempt[]>
   record: (child: Child, id: string, period?: Period) => Promise<PublicAttempt>
   /** context(2.11): 주간 테마 당일 문제·되돌아보기 다시 풀기·추가 문제. 생략하면 보내지 않는다. */
@@ -33,7 +33,8 @@ export interface ClassroomGateway {
   attempt: (id: string) => Promise<Attempt>
   saveDraft: (id: string, draft: Draft) => Promise<Draft>
   hint: (id: string) => Promise<string>
-  submit: (id: string, answer: AnswerContent, key: string, followupId?: string) => Promise<Attempt>
+  /** timing: 생각·작성 시간(P28). 생략하면 두 칸을 보내지 않는다 */
+  submit: (id: string, answer: AnswerContent, key: string, followupId?: string, timing?: AnswerTiming) => Promise<Attempt>
   feedback: (
     id: string,
     answerId: string,
@@ -42,7 +43,5 @@ export interface ClassroomGateway {
   ) => Promise<Feedback>
   finish: (id: string) => Promise<Attempt>
   reflect: (id: string, reflection: Reflection) => Promise<Attempt>
-  report: (child: Child, period: Period, revision?: number) => Promise<Report>
-  regenerate: (report: Report) => Promise<Report>
   analyze: (child: Child, period: Period, question: string) => Promise<AnalysisResult>
 }

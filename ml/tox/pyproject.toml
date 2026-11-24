@@ -7,6 +7,10 @@ dependencies = [
     "transformers>=5.20.2",
 ]
 
+[project.optional-dependencies]
+# 재학습 작업(scripts/retrain.py, Dockerfile)만 S3를 쓴다
+retrain = ["boto3>=1.40.0"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",

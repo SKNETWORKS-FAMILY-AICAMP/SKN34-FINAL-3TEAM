@@ -26,6 +26,15 @@ const json = (data: unknown, status = 200, headers = {}) =>
     status,
     headers: { 'Content-Type': 'application/json', ...headers },
   })
+test('미션 안내는 주간 풀이·다시 풀기에서만 학생 테마 맥락을 전달한다', async (t) => {
+  const urls: string[] = []
+  t.mock.method(globalThis, 'fetch', async (path: string) => { urls.push(path); return json(attempt.mission) })
+  const api = createApiGateway(), id = attempt.mission.id
+  for (const context of [undefined, 'EXTRA', 'THEME_DAY', 'THEME_REVIEW'] as const)
+    await api.mission(id, child, context)
+  const base = '/api/v1/missions/' + id
+  assert.deepEqual(urls, [base, base, base + '?context=THEME_DAY', base + '?context=THEME_REVIEW'])
+})
 test('공개 core 경로만 호출, 메모리 토큰·ETag·If-Match·멱등 키', async (t) => {
   const calls: { path: string; init: RequestInit }[] = []
   t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {

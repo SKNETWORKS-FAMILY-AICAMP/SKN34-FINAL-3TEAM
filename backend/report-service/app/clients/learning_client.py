@@ -13,6 +13,7 @@ from pydantic import (
     StrictBool,
     StrictInt,
     ValidationError,
+    model_validator,
 )
 from pydantic.alias_generators import to_camel
 
@@ -135,6 +136,15 @@ class AnswerInput(InputModel):
     ]
     content: dict
     feedback: FeedbackInput
+    # P28 (#800/#803): integer seconds, both or neither. Absent before learning #801 → None.
+    thinking_seconds: StrictInt | None = Field(default=None, ge=0, le=86400)
+    writing_seconds: StrictInt | None = Field(default=None, ge=0, le=86400)
+
+    @model_validator(mode="after")
+    def _answer_times_pair(self):
+        if (self.thinking_seconds is None) != (self.writing_seconds is None):
+            raise ValueError("thinkingSeconds and writingSeconds must be both present or both null")
+        return self
 
     def written_text(self) -> str:
         # Same fields/order as learning TextCounts.writtenText. Never count labels,
@@ -180,6 +190,7 @@ class AttemptInput(InputModel):
     reflection: ReflectionInput | None = None
     available: StrictBool = True
     context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None = None
+    scheduled_day: Literal["MON", "TUE", "WED", "THU", "FRI"] | None = None
 
     def record(self) -> AttemptRecord:
         return AttemptRecord(
@@ -188,6 +199,9 @@ class AttemptInput(InputModel):
             mission_title=self.mission.title,
             mission_id=self.mission.id,
             context=self.context,
+            scheduled_day=self.scheduled_day
+            if self.context in ("THEME_DAY", "THEME_REVIEW")
+            else None,
             thinking_type=self.mission.thinking_type,
             status=self.status,
             answers=tuple(
@@ -203,6 +217,8 @@ class AttemptInput(InputModel):
                     a.feedback.followup.question
                     if a.feedback.status == "DONE" and a.feedback.followup
                     else None,
+                    a.thinking_seconds,
+                    a.writing_seconds,
                 )
                 for a in self.answers
             ),

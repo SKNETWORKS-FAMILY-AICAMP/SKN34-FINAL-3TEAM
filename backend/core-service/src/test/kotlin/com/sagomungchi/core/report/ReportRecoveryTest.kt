@@ -208,6 +208,36 @@ class ReportRecoveryTest : PostgresRepositoryTest() {
         assertEquals(ReportJobStatus.QUEUED,repository.find(recent.id)!!.status)
         assertEquals(1,executionCount(old))
     }
+    /** #846: recovery carries noRecord to the same notification title; a malformed value is a contract error. */
+    @Test fun `daily recovery of a no-record report stores the no-record title and rejects a non-boolean flag`() {
+        fun daily(day: java.time.LocalDate): Pair<UUID, ReportJob> {
+            val parent = parent(jdbc); val child = child(jdbc, parent)
+            val id = jobs.scheduled(parent, child, ReportPeriod(day, day, ReportPeriodType.DAILY))!!.jobId
+            jdbc.update("UPDATE report_job SET created_at=? WHERE id=?", OffsetDateTime.now().minusMinutes(241), id)
+            return parent to repository.find(id)!!
+        }
+        fun completed(job: ReportJob, noRecord: Any?) = json.writeValueAsString(mapOf("jobId" to job.id, "studentId" to job.studentId,
+            "periodFrom" to job.periodFrom, "periodTo" to job.periodTo, "status" to "COMPLETED", "reportId" to UUID.randomUUID(),
+            "failureReason" to null) + (if (noRecord == null) emptyMap() else mapOf("noRecord" to noRecord)))
+        val (parent, job) = daily(java.time.LocalDate.parse("2026-10-25"))
+        respond = { 200 to completed(job, true) }
+        recovery.recover()
+        assertEquals(ReportJobStatus.COMPLETED, repository.find(job.id)!!.status)
+        assertEquals("10월 25일은 학습 기록이 없어요. 일일 리포트를 확인해 주세요.",
+            jdbc.queryForObject("SELECT title FROM notification WHERE user_id=?", String::class.java, parent))
+
+        val (_, invalid) = daily(java.time.LocalDate.parse("2026-10-24"))
+        respond = { 200 to completed(invalid, "yes") }
+        assertFailsWith<IllegalStateException> { recovery.recover() }
+        assertEquals(ReportJobStatus.QUEUED, repository.find(invalid.id)!!.status)
+        assertEquals(0, notificationCount(invalid))
+        // The same response without the field (pre-#846 report-api) completes with the old title.
+        respond = { 200 to completed(invalid, null) }
+        recovery.recover()
+        assertEquals("일일 리포트가 완성되었습니다.",
+            jdbc.queryForObject("SELECT title FROM notification WHERE child_id=?", String::class.java, invalid.studentId))
+    }
+
     @Test fun `daily recovery sends period type and accepts legacy response fields`() {
         val parent = parent(jdbc); val child = child(jdbc, parent)
         val id = jobs.scheduled(parent, child, ReportPeriod(WEEK.from, WEEK.from, ReportPeriodType.DAILY))!!.jobId

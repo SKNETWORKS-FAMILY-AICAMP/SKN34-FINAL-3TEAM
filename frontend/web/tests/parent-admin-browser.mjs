@@ -71,7 +71,7 @@ try {
     await p.getByRole('button', { name: '동의하고 등록하기' }).click()
     const body = (await request).postDataJSON()
     assert.equal(body.consents.length, 2)
-    assert.ok(body.consents.every((c) => c.agreed && c.version === '1.0'))
+    assert.deepEqual(body.consents.map((c) => c.agreed && c.version).sort(), ['1.1', '1.2']) // 현재 TERMS 1.1·PRIVACY 1.2
     await p.getByRole('button', { name: '로그인하기' }).click()
     await p.getByLabel('이메일', { exact: true }).fill('new-parent@example.test')
     await p.getByRole('button', { name: '시연 계정으로 로그인' }).click()
@@ -128,10 +128,11 @@ try {
     const submitted = p.waitForRequest((r) => /\/attempts\/[^/]+\/answers$/.test(r.url()) && r.method() === 'POST')
     await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
     assert.equal(JSON.stringify((await submitted).postDataJSON()).includes(privateMemo), false)
-    await p.getByRole('button', { name: '이대로 돌아보기', exact: true }).click()
-    await p.getByRole('button', { name: '돌아보기 남기기' }).click()
+    await p.getByRole('button', { name: '마무리 보기', exact: true }).click()
     await p.getByRole('button', { name: '보통이에요' }).click()
-    await p.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
+    await p.getByRole('button', { name: '미션 완료하기' }).click()
+    // 미션 완료 화면(#807)에서 내 공책으로
+    await p.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '내 공책 보기' }).click()
     await p.waitForURL('**/student/journal')
     // 학생 로그아웃은 설정 안에서(#583)
     await p.getByRole('button', { name: '설정', exact: true }).click()
@@ -409,8 +410,8 @@ try {
   for (const [account, show, hide] of [
     ['content', '미션 관리', '작업 재처리'],
     ['ops', '작업 재처리', '미션 관리'],
-    ['payment', '운영 현황', '오류 신고'],
-    ['refund', '운영 현황', '미션 관리'],
+    ['payment', '운영 홈', '오류 신고'],
+    ['refund', '운영 홈', '미션 관리'],
   ])
     await check('관리자 권한 ' + account, async (p) => {
       await login(p, account + '@example.test')
@@ -447,10 +448,10 @@ try {
     await p.getByRole('button', { name: '작업 재처리', exact: true }).click()
     await p.getByText('서버에서 재처리 완료를 확인했습니다.', { exact: true }).waitFor()
     await p.getByRole('button', { name: '창 닫기' }).click()
-    await nav(p, '큐·DLQ')
-    await p.getByText('report.report.generate', { exact: true }).waitFor()
+    await nav(p, '작업 대기열')
+    await p.getByRole('heading', { name: '주간 리포트 생성', exact: true }).waitFor()
     await nav(p, '감사 이력')
-    await p.getByText('JOB_RETRY · 성공', { exact: true }).waitFor()
+    await p.getByRole('row').filter({ hasText: '작업 재처리' }).getByText('성공', { exact: true }).waitFor()
     await mode(p, 'forbidden')
     await p.getByText('FORBIDDEN', { exact: true }).waitFor()
   })
@@ -475,8 +476,8 @@ try {
       await p.getByRole('button', { name: '성취기준 조회', exact: true }).click()
       await p.getByRole('button', { name: '4과03-01 고르기', exact: true }).click()
       await p.getByRole('button', { name: '미션 초안 저장' }).click()
-      await p.getByRole('button', { name: '게시', exact: true }).click()
-      await p.getByRole('list', { name: '게시 누락 항목' }).waitFor()
+      assert.equal(await p.getByRole('button', { name: '게시', exact: true }).isDisabled(), true)
+      await p.getByRole('list', { name: '게시 전 확인' }).waitFor()
       await p.getByRole('button', { name: '기준표 요소 추가' }).click()
       await p.getByLabel('요소 1 이름', { exact: true }).fill('관찰한 차이')
       await p.getByLabel('예시 답', { exact: true }).fill('한 잎은 넓고 다른 잎은 길쭉합니다.')
@@ -484,6 +485,7 @@ try {
       await p.getByRole('button', { name: '새 기준표 버전 저장' }).click()
       await p.getByRole('button', { name: '검토 요청', exact: true }).click()
       await p.getByRole('button', { name: '현재 버전 검토 승인' }).click()
+      await p.getByRole('button', { name: '승인 기록', exact: true }).click()
       await p.getByRole('button', { name: '학생 화면 미리보기' }).click()
       await p.getByRole('dialog', { name: '학생 화면 미리보기' }).waitFor()
       await p.getByLabel('내 생각과 이유').fill('미리보기 답변')

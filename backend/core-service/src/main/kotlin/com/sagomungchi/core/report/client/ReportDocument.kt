@@ -37,11 +37,14 @@ class ReportDocument internal constructor(val body: ObjectNode, val reportId: UU
         withoutProblemOriginals()
     }
 
-    /** Daily `problems[]` (P24): keep identity, judgment and element labels; drop answers, followups and quotes (#206). */
+    /**
+     * Daily `problems[]` (P24): keep identity, judgment, element labels and answer times; drop answers, followups and
+     * quotes (#206). `answerTimes` are numbers, not original text, so they stay when sharing is off (P28, #803).
+     */
     fun withoutProblemOriginals() {
         body.path("problems").forEach { node ->
             (node as? ObjectNode)?.apply {
-                retain("missionId", "attemptId", "title", "context", "judgment", "elements", "itemId")
+                retain("missionId", "attemptId", "title", "context", "scheduledDay", "judgment", "elements", "answerTimes", "itemId")
                 putArray("followups"); putNull("finalAnswer"); putArray("quotes")
                 putNull("reflection")
             }

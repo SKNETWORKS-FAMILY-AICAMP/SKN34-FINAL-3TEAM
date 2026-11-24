@@ -1,0 +1,44 @@
+#class-journal .ad-period-control{min-width:0;max-width:100%}
+#class-journal .admin-shell .ad-period{flex-wrap:wrap;gap:4px;padding:5px}
+#class-journal .admin-shell .ad-period input{width:106px;max-width:100%;min-height:36px;padding:5px 7px;font:400 12px/1.5 Arial,sans-serif;font-variant-numeric:tabular-nums;border:0;background:transparent}
+#class-journal .admin-shell .ad-period>label{min-width:0}
+#class-journal .admin-shell .ad-period button{min-height:36px;white-space:nowrap}
+#class-journal .admin-shell .ad-period .ad-period-calendar{width:36px;padding:5px;background:transparent;color:#5c7468;border-left:1px solid #e4eae6;border-radius:0;margin-left:3px}
+#class-journal .ad-period-separator{color:#64726b}
+#class-journal .admin-shell .ad-period-dialog .cj-modal{width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);display:flex;flex-direction:column;overflow:hidden;padding:0;border-radius:16px}
+#class-journal .ad-period-dialog .cj-modal-head{padding:20px 24px;border-bottom:1px solid #e7ede9;flex-shrink:0}
+#class-journal .admin-shell .ad-period-dialog .cj-modal-head h2{font-size:18px;margin:0}
+#class-journal .ad-period-dialog .cj-modal-body{padding:22px 24px 18px;overflow:auto}
+#class-journal .ad-range-summary{display:grid;grid-template-columns:minmax(0,1fr) 20px minmax(0,1fr);align-items:center;gap:8px}
+#class-journal .ad-range-summary>span{text-align:center;color:#63726a}
+#class-journal .admin-shell .ad-range-summary button{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:10px 12px;border:1px solid #dce5df;background:#fff;box-shadow:none;min-width:0}
+#class-journal .admin-shell .ad-range-summary button.is-selecting{border-color:#3b8065;background:#f1f7f3;box-shadow:0 0 0 1px #3b8065}
+#class-journal .ad-range-summary button span{font-size:11px;color:#627369}
+#class-journal .ad-range-summary button strong{font:600 15px/1.5 Arial,'Noto Sans KR',sans-serif;color:#284d3b}
+#class-journal .ad-calendar-heading{display:flex;align-items:center;justify-content:space-between;margin:23px 0 15px}
+#class-journal .admin-shell .ad-calendar-heading h3{font-size:17px;margin:0}
+#class-journal .admin-shell .ad-calendar-heading button{padding:5px;min-height:34px;width:34px;border:0;box-shadow:none;background:transparent}
+#class-journal .ad-calendar-weekdays,#class-journal .ad-calendar-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));text-align:center}
+#class-journal .ad-calendar-weekdays{margin-bottom:8px;color:#64726a;font-size:12px;line-height:28px}
+#class-journal .ad-calendar-weekdays>span:first-child{color:#ac554b}
+#class-journal .ad-calendar-days{row-gap:4px}
+#class-journal .admin-shell .ad-calendar-days button{height:40px;min-height:40px;min-width:0;padding:0;border:0;border-radius:7px;background:transparent;box-shadow:none;font:500 14px/1.5 Arial,sans-serif;position:relative}
+#class-journal .admin-shell .ad-calendar-days button.in-range{background:#e9f2ec;border-radius:0;color:#24513b}
+#class-journal .admin-shell .ad-calendar-days button:is(.is-start,.is-end){background:#236b52;color:#fff;border-radius:7px;font-weight:700}
+#class-journal .admin-shell .ad-calendar-days button:hover{background:#dcebe2;color:#224f38}
+#class-journal .admin-shell .ad-calendar-days button:is(.is-start,.is-end):hover{background:#18553f;color:#fff}
+#class-journal .ad-calendar-days button[aria-current=date]:after{content:'';position:absolute;width:4px;height:4px;border-radius:50%;background:currentColor;bottom:4px}
+#class-journal .ad-calendar-footer{border-top:1px solid #e5ece7;margin-top:18px;padding-top:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#class-journal .ad-calendar-footer p{font-size:11px;color:#627368;margin:0;font-variant-numeric:tabular-nums}
+#class-journal .ad-calendar-footer>div{display:flex;align-items:center;gap:8px;margin-left:auto}
+#class-journal .admin-shell .ad-calendar-footer button{min-width:66px;min-height:38px}
+@media(max-width:480px){
+ #class-journal .admin-shell .ad-period{gap:2px;padding:4px}
+ #class-journal .admin-shell .ad-period input{width:96px;font-size:12px;padding:5px}
+ #class-journal .admin-shell .ad-period button{font-size:11px;padding:5px 8px}
+ #class-journal .admin-shell .ad-period .ad-period-calendar{width:32px;padding:4px;margin-left:0}
+ #class-journal .ad-period-dialog .cj-modal-head{padding:18px}
+ #class-journal .ad-period-dialog .cj-modal-body{padding:20px 18px 18px}
+ #class-journal .ad-range-summary{gap:5px;grid-template-columns:minmax(0,1fr) 16px minmax(0,1fr)}
+ #class-journal .ad-range-summary button strong{font-size:14px}
+}

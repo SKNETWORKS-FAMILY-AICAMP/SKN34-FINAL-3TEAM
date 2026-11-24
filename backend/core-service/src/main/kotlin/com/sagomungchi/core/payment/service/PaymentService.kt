@@ -17,7 +17,10 @@ import java.time.ZoneId
 import java.util.UUID
 
 data class OrderCreated(val orderId: String, val amount: Int, val orderName: String, val childId: UUID, val productId: UUID)
-data class BillingSetup(val customerKey: String, val subscriptionId: UUID)
+// 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+data class BillingSetup(val customerKey: String, val subscriptionId: UUID) {
+    override fun toString() = "BillingSetup(customerKey=***, subscriptionId=$subscriptionId)"
+}
 
 @Service
 class PaymentService(private val repository: PaymentRepository, private val tx: PaymentTransactions,
@@ -72,6 +75,12 @@ class PaymentService(private val repository: PaymentRepository, private val tx: 
         if(from != null && to != null && from>to) conflict("INVALID_DATE_RANGE")
         return repository.orders(parent,status,from,to,page*size,size).map(::view)
     }
+    fun history(parent: UUID, childId: UUID?, page: Int, size: Int): Pair<List<PaymentView>, Boolean> {
+        pagination(page, size)
+        val orders = repository.orders(parent, null, null, null, page * size, size + 1, childId)
+        return orders.take(size).map(::view) to (orders.size > size)
+    }
+
     fun subscriptions(parent: UUID)=repository.subscriptions(parent).map { it.view() }
     fun reconciliation(from: LocalDate?,to: LocalDate?,page: Int,size: Int): List<Map<String,Any?>> {
         pagination(page,size)

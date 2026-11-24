@@ -2,15 +2,10 @@ package com.sagomungchi.core.learning.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.core._common.config.InternalRestClientFactory
-import com.sagomungchi.core._common.web.IdempotencyService
-import com.sagomungchi.core.community.service.CommunityService
-import com.sagomungchi.core.guardianship.service.StudentLearningContextService
 import com.sagomungchi.core._common.client.LearningClient
 import com.sagomungchi.core._common.client.LearningHttpProperties
+import com.sagomungchi.core.learning.client.FeedbackClient
 import com.sagomungchi.core.learning.service.FeedbackService
-import com.sagomungchi.core.learning.service.LearningProxyService
-import com.sagomungchi.core.payment.service.ProductEntitlementService
-import com.sagomungchi.core.reward.service.ParticipationRewardService
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -20,10 +15,10 @@ import java.time.Duration
 class FeedbackConfiguration {
     /** Reuse #38 without changing the general JSON client's 30-second budget or idempotency. */
     @Bean
-    fun feedbackService(factory: InternalRestClientFactory, idempotency: IdempotencyService,
-                        students: StudentLearningContextService, json: ObjectMapper, entitlements: ProductEntitlementService,
-                        community: CommunityService, rewards: ParticipationRewardService,
-                        @Value("\${app.feedback.timeout:80s}") timeout: Duration): FeedbackService = FeedbackService(
-        LearningProxyService(LearningClient.forFeedback(factory, LearningHttpProperties(timeout), json), idempotency, students,
-            entitlements, json, community, rewards))
+    fun feedbackClient(factory: InternalRestClientFactory, json: ObjectMapper,
+                       @Value("\${app.feedback.timeout:80s}") timeout: Duration): FeedbackClient =
+        FeedbackClient(LearningClient.forFeedback(factory, LearningHttpProperties(timeout), json), json)
+
+    @Bean
+    fun feedbackService(client: FeedbackClient): FeedbackService = FeedbackService(client)
 }

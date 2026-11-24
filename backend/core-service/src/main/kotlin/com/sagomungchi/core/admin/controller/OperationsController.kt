@@ -18,6 +18,12 @@ import java.util.UUID
 class OperationsController(private val operations: OperationsService,private val retries: OperationRetryService,private val queues: OperationsQueueService) {
     @GetMapping("/overview")
     fun overview(@RequestParam(required=false) from: String?,@RequestParam(required=false) to: String?)=operations.overview(resolveOperationPeriod(from,to))
+    @GetMapping("/overview/workload")
+    fun workload(@RequestParam(required=false) from: String?, @RequestParam(required=false) to: String?,
+                 request: HttpServletRequest): Map<String, Long> {
+        val actor = request.getAttribute(RequestAttributes.IDENTITY) as AuthenticatedAccount
+        return operations.workload(resolveOperationPeriod(from, to), actor.permissions)
+    }
     @GetMapping("/jobs")
     fun jobs(@RequestParam(required=false) from: String?,@RequestParam(required=false) to: String?,
         @RequestParam(required=false) type: OperationJobType?,@RequestParam(required=false) status: OperationJobStatus?,

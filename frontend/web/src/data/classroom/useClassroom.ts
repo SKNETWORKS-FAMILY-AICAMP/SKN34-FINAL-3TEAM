@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
+import type { AnswerTiming } from '../../domain/answerTiming.ts'
+import type { AttemptContext } from '../../domain/retention.ts'
 import type {
   AnswerContent,
   Attempt,
@@ -9,11 +11,10 @@ import type {
   Feedback,
   Period,
   Reflection,
-  Report,
 } from '../../domain/classroom.ts'
 import { apiFetch, notifyAuthChange, setAccessToken, unlockParentSession } from '../apiClient.ts'
 import { createApiGateway } from './apiGateway.ts'
-import { getAttemptComparison, getThinkingActivities, saveReflection, saveSelfAssessment } from './learningApi.ts'
+import { askWord, getAttemptComparison, getThinkingActivities, saveReflection, saveSelfAssessment } from './learningApi.ts'
 import { sharingApi } from './sharingApi.ts'
 import { demoEmailLogin } from './demoLogin.ts'
 import { calendarPeriods } from '../../domain/classroom.ts'
@@ -135,10 +136,13 @@ export function useStudentHome(child: Child | undefined) {
     retry: false,
   })
 }
-export function useMission(id: string, child: Child) {
+/** enabled: 미션 id를 아직 모를 때 부르지 않게(오늘 장면이 주간 테마 요일을 찾은 뒤에 부름, #807). 생략하면 늘 부름 */
+export function useMission(id: string, child: Child, context?: AttemptContext, enabled = true) {
+  const themeContext = context === 'EXTRA' ? undefined : context
   return useQuery({
-    queryKey: ['mission', child.id, child.grade, id],
-    queryFn: () => gateway.mission(id, child),
+    queryKey: ['mission', child.id, child.grade, id, themeContext ?? 'catalog'],
+    queryFn: () => gateway.mission(id, child, themeContext),
+    enabled: enabled && !!id,
     retry: false,
   })
 }
@@ -223,12 +227,14 @@ export function useLearningActions() {
       answer,
       key,
       followupId,
+      timing,
     }: {
       id: string
       answer: AnswerContent
       key: string
       followupId?: string
-    }) => gateway.submit(id, answer, key, followupId),
+      timing?: AnswerTiming
+    }) => gateway.submit(id, answer, key, followupId, timing),
     onSuccess: update,
   })
   const feedback = useMutation({
@@ -280,30 +286,12 @@ export function useLearningActions() {
   })
   return { start, save, hint, submit, feedback, finish, reflect }
 }
-export function useReport(child: Child | undefined, period: Period, revision?: number) {
-  return useQuery({
-    queryKey: ['report', child?.id, period.from, period.to, revision ?? 'latest'],
-    queryFn: () => gateway.report(child!, period, revision),
-    enabled: !!child,
-    retry: false,
-  })
-}
 export function useParentActions() {
-  const cache = useQueryClient()
-  const regenerate = useMutation({
-    mutationFn: (report: Report) => gateway.regenerate(report),
-    onSuccess: (report) => {
-      cache.setQueryData(
-        ['report', report.childId, report.period.from, report.period.to, 'latest'],
-        report,
-      )
-    },
-  })
   const analyze = useMutation({
     mutationFn: ({ child, period, question }: { child: Child; period: Period; question: string }) =>
       gateway.analyze(child, period, question),
   })
-  return { regenerate, analyze }
+  return { analyze }
 }
 
 /** 마무리한 시도의 이전·이번 답 비교(학생). 마무리 전에는 묻지 않는다. */
@@ -330,4 +318,8 @@ export function useStudentSharing(childId: string) {
       cache.removeQueries({ predicate: q => ['parent', 'records', 'report', 'public-record'].includes(String(q.queryKey[0])) })
     } })
   return { query, save }
+}
+/** 낱말 물어보기 (#599). 답은 저장·캐시하지 않고 화면 대화에만 둔다. */
+export function useAskWord(attemptId: string) {
+  return useMutation({ mutationFn: (question: string) => askWord(attemptId, question) })
 }

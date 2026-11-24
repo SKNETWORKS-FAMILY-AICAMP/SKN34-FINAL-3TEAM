@@ -1,27 +1,34 @@
 #requires -Version 7.0
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('core-service','learning-service','ai-service','scoring-service','report-api','report-worker','sllm-server')][string]$Service,
+    [Parameter(Mandatory)][ValidateSet('core-service','learning-service','ai-service','scoring-service','report-api','report-worker')][string]$Service,
     [Parameter(Mandatory)][string]$Kubeconfig,
     [string]$Helm = 'helm',
     [string]$Kubectl = 'kubectl',
     [string]$Aws = 'aws',
     [string]$Profile = 'sagomungchi-provided',
-    # #186 승인된 배포: 저장소 values는 두고 이 digest로 바꾼 임시 사본을 사용한다
+    # #186 승인된 배포: 저장소 이미지 파일(images/<Service>.json)은 두고 이 digest로 바꾼 임시 사본을 사용한다
     [ValidatePattern('^sha256:[a-f0-9]{64}$')][string]$ImageDigest,
-    # migration Job(migrations/<Service>.json)만 다룬다. 앱 release는 바꾸지 않는다
+    # migration Job(설정 파일의 migration.enabled=true인 서비스)만 다룬다. 앱 release는 바꾸지 않는다
     [switch]$Migration,
     # migration Job 이름 접미사(cd-release는 main-<SHA 12자리>). 생략하면 저장소 값
     [ValidatePattern('^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$')][string]$Revision,
-    # migration 결과(release·Job·digest·상태)를 남길 JSON 경로. 로그·비밀은 넣지 않는다
+    # 결과를 남길 JSON 경로. migration은 release·Job·digest·상태, 앱은 release·digest·install/upgrade·전후 revision·상태.
+    # 로그·비밀은 넣지 않는다
     [string]$ResultPath,
     [int]$MigrationTimeoutSeconds = 660,
+    # #760 빈 클러스터 첫 배포: 앱 release가 없을 때만 helm install(미리보기)·upgrade --install(적용)로 올린다.
+    # 이 스위치가 없으면 지금처럼 기존 deployed release만 다룬다(cd-release는 계획 currentRelease가 "none"일 때만 준다)
+    [switch]$AllowInstall,
     [switch]$Apply
 )
 $ErrorActionPreference = 'Stop'
+# #857 값은 설정 파일 <Service>.json + 이미지 파일 images/<Service>.json(Argo CD ApplicationSet과 같은 조합)
 $valuesPath = Join-Path $PSScriptRoot "$Service.json"
+$imagesPath = Join-Path $PSScriptRoot "images/$Service.json"
 $chart = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../charts/app-service'))
 $values = Get-Content -LiteralPath $valuesPath -Raw | ConvertFrom-Json
+$images = Get-Content -LiteralPath $imagesPath -Raw | ConvertFrom-Json
 
 function Write-TempValues($Object, $Name) {
     $path = Join-Path ([IO.Path]::GetTempPath()) "cd-$Name-$([guid]::NewGuid()).json"
@@ -30,21 +37,19 @@ function Write-TempValues($Object, $Name) {
 }
 
 if ($Migration) {
-    $overridePath = Join-Path $PSScriptRoot "migrations/$Service.json"
-    if (-not (Test-Path -LiteralPath $overridePath)) { throw "No migration values for $Service" }
-    $override = Get-Content -LiteralPath $overridePath -Raw | ConvertFrom-Json
-    if ($ImageDigest) { $override.migration.image.digest = $ImageDigest }
-    if ($Revision) { $override.migration.revision = $Revision }
-    $overridePath = Write-TempValues $override "$Service-migration"
-    $image = $override.migration.image
+    if ($AllowInstall) { throw '-AllowInstall is only for app releases' }
+    if (-not $values.migration.enabled -or -not $images.migration) { throw "No migration values for $Service" }
+    if ($ImageDigest) { $images.migration.image.digest = $ImageDigest }
+    if ($Revision) { $images.migration.revision = $Revision }
+    $image = $images.migration.image
 } else {
-    if ($Revision -or $ResultPath) { throw '-Revision and -ResultPath are only for -Migration' }
-    if ($ImageDigest) {
-        $values.image.digest = $ImageDigest
-        $valuesPath = Write-TempValues $values $Service
-    }
-    $image = $values.image
+    if ($Revision) { throw '-Revision is only for -Migration' }
+    if ($ImageDigest) { $images.image.digest = $ImageDigest }
+    $image = $images.image
 }
+if ($ImageDigest -or $Revision) { $imagesPath = Write-TempValues $images "$Service-images" }
+# 앱 release에는 migration Job·정책을 넣지 않는다(Helm은 PreSync 훅을 모르므로 일반 리소스가 된다). Job은 -Migration으로 먼저 돈다
+$appValues = @('-f', $valuesPath, '-f', $imagesPath, '--set', 'migration.enabled=false')
 if ($image.repository -notlike '347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/*' -or $image.digest -notmatch '^sha256:[a-f0-9]{64}$') {
     throw 'Expected the demo ECR account and a pinned image digest'
 }
@@ -58,9 +63,9 @@ if ($LASTEXITCODE -ne 0 -or (($configured -join "`n") | ConvertFrom-Json).cluste
 if ($Migration) {
     # Argo PreSync 대신 NetworkPolicy(wave -2)와 Job(wave -1)만 그 순서로 렌더링해 앱보다 먼저 적용한다(prod README 3절).
     # 앱 release가 아직 없는 빈 클러스터에서도 쓸 수 있도록 release 상태는 보지 않는다.
-    & $Helm lint $chart -f $valuesPath -f $overridePath
+    & $Helm lint $chart -f $valuesPath -f $imagesPath
     if ($LASTEXITCODE -ne 0) { throw 'Helm lint failed' }
-    $rendered = & $Helm template $Service $chart -n app -f $valuesPath -f $overridePath `
+    $rendered = & $Helm template $Service $chart -n app -f $valuesPath -f $imagesPath `
         --show-only templates/migration-networkpolicy.yaml --show-only templates/migration-job.yaml
     if ($LASTEXITCODE -ne 0) { throw 'Migration render failed' }
     $manifest = Join-Path ([IO.Path]::GetTempPath()) "cd-$Service-migration-$([guid]::NewGuid()).yaml"
@@ -69,7 +74,7 @@ if ($Migration) {
     if (-not $jobMatch.Success) { throw 'Migration Job is not rendered (migration.enabled?)' }
     $job = $jobMatch.Groups[1].Value
     $result = [ordered]@{
-        release = $Service; job = $job; revision = $override.migration.revision
+        release = $Service; job = $job; revision = $images.migration.revision
         image = "$($image.repository)@$($image.digest)"; status = 'pending'
     }
     function Save-Result($Status) {
@@ -127,20 +132,56 @@ if ($Migration) {
     return
 }
 
-$release = & $Helm status $Service -n app --kubeconfig $Kubeconfig -o json
-if ($LASTEXITCODE -ne 0 -or ($release | ConvertFrom-Json).info.status -ne 'deployed') { throw 'Only an existing deployed app release can be redeployed' }
-& $Helm lint $chart -f $valuesPath
+function Get-AppRelease {
+    # helm status는 release가 없을 때와 접속 실패를 같은 종료 코드로 돌려주므로 목록에서 찾는다.
+    # 상태 필터는 Helm 3·4 공통 플래그로 명시한다(Helm 4에는 -a가 없음). 실패·진행 중 release도 보이게 한다
+    $json = & $Helm list -n app --kubeconfig $Kubeconfig --deployed --failed --pending --uninstalling -o json --filter "^$Service$"
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot read app releases' }
+    return @(($json -join "`n") | ConvertFrom-Json) | Where-Object { $_.name -eq $Service } | Select-Object -First 1
+}
+$current = Get-AppRelease
+$install = -not $current
+if ($install -and -not $AllowInstall) {
+    throw "No app release $Service in namespace app. A first install on an empty cluster needs -AllowInstall (cd-release: plan currentRelease ""none"")."
+}
+if (-not $install -and $current.status -ne 'deployed') { throw 'Only an existing deployed app release can be redeployed' }
+$action = if ($install) { 'install' } else { 'upgrade' }
+$appResult = [ordered]@{
+    release = $Service; digest = $image.digest; action = $action
+    previousRevision = $(if ($install) { $null } else { [int]$current.revision }); revision = $null; status = 'pending'
+}
+function Save-AppResult($Status) {
+    $appResult.status = $Status
+    if ($ResultPath) { [pscustomobject]$appResult | ConvertTo-Json | Set-Content -LiteralPath $ResultPath -Encoding utf8 }
+}
+& $Helm lint $chart @appValues
 if ($LASTEXITCODE -ne 0) { throw 'Helm lint failed' }
 # No Secret values are supplied to this command. Dry-run does not apply resources.
 if (-not $Apply) {
-    & $Helm upgrade $Service $chart -n app --kubeconfig $Kubeconfig -f $valuesPath --dry-run=server --hide-secret
+    if ($install) {
+        & $Helm install $Service $chart -n app --kubeconfig $Kubeconfig @appValues --dry-run=server --hide-secret
+    } else {
+        & $Helm upgrade $Service $chart -n app --kubeconfig $Kubeconfig @appValues --dry-run=server --hide-secret
+    }
     if ($LASTEXITCODE -ne 0) { throw 'Helm server dry-run failed' }
+    Save-AppResult "preview-$action"
+    if ($install) { Write-Output "First install: no $Service release yet. -Apply installs it (cd-release does it after the migrations)." }
     Write-Output 'Preview only. Review image, Pod changes, capacity and Secret readiness before using -Apply.'
     return
 }
 & $Kubectl --kubeconfig $Kubeconfig -n app wait --for=condition=Ready externalsecret --all --timeout=60s
-if ($LASTEXITCODE -ne 0) { throw 'External Secrets are not ready' }
-& $Helm upgrade $Service $chart -n app --kubeconfig $Kubeconfig -f $valuesPath --wait --timeout 10m
-if ($LASTEXITCODE -ne 0) { throw 'Deployment failed; inspect the release before retrying. No automatic rollback was attempted.' }
+if ($LASTEXITCODE -ne 0) { Save-AppResult 'failed'; throw 'External Secrets are not ready' }
+if ($install) {
+    # 미리보기와 적용 사이에 같은 release가 먼저 생겼더라도 같은 values로 수렴하도록 upgrade --install을 쓴다
+    & $Helm upgrade --install $Service $chart -n app --kubeconfig $Kubeconfig @appValues --wait --timeout 10m
+} else {
+    & $Helm upgrade $Service $chart -n app --kubeconfig $Kubeconfig @appValues --wait --timeout 10m
+}
+$deployed = $LASTEXITCODE -eq 0
+$after = Get-AppRelease
+if ($after) { $appResult.revision = [int]$after.revision }
+if (-not $deployed) { Save-AppResult 'failed'; throw 'Deployment failed; inspect the release before retrying. No automatic rollback was attempted.' }
 & $Kubectl --kubeconfig $Kubeconfig -n app rollout status "deployment/$Service" --timeout=60s
-if ($LASTEXITCODE -ne 0) { throw 'Deployment rollout did not complete' }
+if ($LASTEXITCODE -ne 0) { Save-AppResult 'failed'; throw 'Deployment rollout did not complete' }
+Save-AppResult $after.status
+if ($install) { Write-Output "First install of $Service completed (revision $($appResult.revision))." }

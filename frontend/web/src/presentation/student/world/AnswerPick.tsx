@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAnswerPick, useWeeklyTheme } from '../../../data/retention/queries.ts'
-import type { Child, Mission } from '../../../domain/classroom.ts'
+import type { Child } from '../../../domain/classroom.ts'
 import { clueCount, pickStage, remainingCandidates, ruledOutOn, themeClosed } from '../../../domain/retention.ts'
 import type { AnswerPickResult, AttemptContext, WeeklyTheme } from '../../../domain/retention.ts'
 import { QueryStateNotice } from '../../common/QueryStateNotice.tsx'
@@ -44,17 +44,17 @@ function ClueRows({ theme, image }: { theme: WeeklyTheme; image: (missionId: str
  * 맞히면 그 자리에서 "이야기의 끝 보기", 틀리면 토요일(프리미엄 일요일)에 금요일 문제를 다시 풀어 마무리하면 엔딩(#484).
  * 단계 판정은 domain pickStage(금요일 문제 학습 완료부터, 사용자 결정 2026-11-12).
  */
-export function AnswerPick({ child, onHome, onEnding, onJournal, onResume, onStartTheme }: {
+export function AnswerPick({ child, onHome, onEnding, onJournal, onStartTheme }: {
   child: Child
   onHome: () => void
   onEnding: () => void
   onJournal: () => void
-  onResume: (attemptId: string) => void
-  onStartTheme: (mission: Mission, context: AttemptContext) => void
+  /** 금요일 문제 열기(새로 시작·이어 풀기·다시 풀기 모두, 오늘 장면 #807) */
+  onStartTheme: (missionId: string, context: AttemptContext) => void
 }) {
   const query = useWeeklyTheme(child.id)
   const pick = useAnswerPick(child.id)
-  const { open, image } = useThemeMissions(child, onResume, onStartTheme)
+  const { open, image } = useThemeMissions(child, onStartTheme)
   const { companion, worn } = useLook()
   const [sel, setSel] = useState('')
   const [tried, setTried] = useState(false)

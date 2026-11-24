@@ -60,14 +60,21 @@ def main():
         # memory limiter, and the Tempo exporter holds a byte-capped queue with a bounded retry.
         pipelines, processors = collector["service"]["pipelines"], collector["processors"]
         assert pipelines["metrics"]["processors"] == ["memory_limiter", "batch"]
-        assert pipelines["traces"]["processors"] == ["memory_limiter/traces", "batch"]
+        assert pipelines["traces"]["processors"] == ["memory_limiter/traces", "transform/redact", "batch"]
+        # #900: Toss billing/cancel keys and Google callback codes are masked before export.
+        redact = "\n".join(processors["transform/redact"]["trace_statements"][0]["statements"])
+        for rule in ('"/v1/billing/{billingKey}"', '"/v1/payments/{paymentKey}/cancel"',
+                     'delete_key(span.attributes, "url.query")', "^/api/v1/auth/google/(reauth/)?callback$"):
+            assert rule in redact, rule
         trace_limit = processors["memory_limiter/traces"]["limit_mib"]
         assert trace_limit < processors["memory_limiter"]["limit_mib"] * 0.8  # below the metrics soft limit
         tempo_exporter = collector["exporters"]["otlp/tempo"]
         assert tempo_exporter["sending_queue"]["sizer"] == "bytes"
         assert tempo_exporter["sending_queue"]["queue_size"] <= trace_limit * 1048576 // 4
         assert tempo_exporter["retry_on_failure"]["max_elapsed_time"] == "30s"
-        assert "ops784/trace-limits" in prod_rendered["Deployment", "otel-collector"]["spec"]["template"]["metadata"]["annotations"]
+        collector_annotations = prod_rendered["Deployment", "otel-collector"]["spec"]["template"]["metadata"]["annotations"]
+        assert "ops784/trace-limits" in collector_annotations
+        assert collector_annotations["ops900/trace-redaction"] == "enabled"
         tempo_config = yaml.safe_load(prod_rendered["ConfigMap", "tempo-config"]["data"]["tempo.yaml"])
         assert tempo_config["ingester"]["max_block_bytes"] <= 128 * 1048576
         assert tempo_config["overrides"]["defaults"]["ingestion"]["rate_limit_bytes"] > 0

@@ -62,6 +62,8 @@ test('제본선을 따라 글씨가 함께 넘어가고 완료 후 단계를 바
   const steps = page.getByRole('list', { name: '학습 흐름 예시 선택' }).getByRole('button')
   await book.scrollIntoViewIfNeeded()
   const before = await book.boundingBox()
+  // 브라우저 부하와 무관하게 중간 프레임을 검사한 뒤 직접 완료시킨다.
+  await page.addStyleTag({ content: '.lp-turning-leaf { animation-play-state: paused !important; }' })
   await steps.nth(1).click()
   const leaf = page.locator('.lp-turning-leaf')
   await leaf.evaluate(el => { for (const a of el.getAnimations()) { a.pause(); a.currentTime = 300 } })
@@ -76,6 +78,7 @@ test('제본선을 따라 글씨가 함께 넘어가고 완료 후 단계를 바
   expect(after!.height).toBeCloseTo(before!.height, 0)
   await steps.nth(0).click()
   await expect(leaf).toHaveAttribute('data-direction', 'previous')
+  await leaf.evaluate(el => el.getAnimations().forEach(a => a.finish()))
   await expect(book).toHaveAttribute('data-step', '0')
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await steps.nth(2).click()
@@ -87,6 +90,7 @@ test('두 단계 이동은 목표 내용을 즉시 보여 주고 두 장을 넘�
   await page.goto('/')
   const book = page.locator('#learning-example')
   const steps = page.getByRole('list', { name: '학습 흐름 예시 선택' }).getByRole('button')
+  await page.addStyleTag({ content: '.lp-turning-leaf { animation-play-state: paused !important; }' })
   for (const [target, direction] of [[2, 'next'], [0, 'previous']] as const) {
     await steps.nth(target).click()
     const leaves = page.locator('.lp-turning-leaf')

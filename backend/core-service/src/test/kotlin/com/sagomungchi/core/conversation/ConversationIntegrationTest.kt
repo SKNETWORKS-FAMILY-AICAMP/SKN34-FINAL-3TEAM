@@ -2,6 +2,7 @@ package com.sagomungchi.core.conversation
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.sagomungchi.core.IntegrationTestSupport
 import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.exception.DomainException
@@ -53,6 +54,7 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
     @Autowired lateinit var deletion: ConversationDeletionService
     @Autowired lateinit var accounts: AccountAccessService
     @Autowired lateinit var tx: TransactionTemplate
+    @Autowired lateinit var aiClient: com.sagomungchi.core.conversation.client.AiClient
     @MockitoBean lateinit var entitlement: AnalysisEntitlementProvider
     @MockitoBean lateinit var outbox: OutboxRelay
     private lateinit var user: UUID
@@ -75,7 +77,7 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         bearer = tokens.access(session(jdbc, user, "PARENT"))
         answer = UUID.randomUUID(); attempt = UUID.randomUUID()
         `when`(entitlement.entitlement(user, student)).thenReturn(AnalysisEntitlement(UUID.randomUUID(), 30, Instant.now().plusSeconds(3600), true))
-        ai.requests.clear(); learning.reset()
+        ai.requests.clear(); learning.reset(); aiClient.circuit.reset()
         ai.respond = { exchange, request ->
             exchange.event("status", """{"state":"RUNNING","message":"합성 조회"}""")
             exchange.event("delta", """{"text":"임시 원문"}""")
@@ -118,6 +120,24 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         "answerId" to answer, "attemptId" to attempt, "answerVersion" to 1, "quote" to if (available) "합성 근거" else null,
         "missionTitle" to "합성 미션", "submittedAt" to Instant.now().toString(), "available" to available))))
     private fun rows(id: UUID) = repository.messages(id)
+    /** 저장된 jsonb 칸 그대로(#947). 도메인 행 타입과 관계없이 DB 값을 읽는다 */
+    private fun stored(messageId: UUID, column: String): JsonNode? =
+        jdbc.queryForObject("SELECT CAST($column AS text) FROM conversation_message WHERE id=?", String::class.java, messageId)?.let(json::readTree)
+    /** 대화 상세(이력)의 메시지 JSON 칸이 저장 jsonb와 같다(#947) */
+    private fun assertHistoryMatchesStored(conversation: UUID) {
+        val messages = json.readTree(call("/conversations/$conversation").body()).path("messages")
+        val saved = rows(conversation)
+        assertEquals(saved.size, messages.size())
+        saved.zip(messages.toList()).forEach { (row, view) ->
+            assertEquals(row.id.toString(), view.path("messageId").asText())
+            for (column in listOf("metrics", "verification", "clarification", "fallback", "notice")) {
+                val value = stored(row.id, column) ?: continue
+                assertEquals(value, view.path(column), column)
+            }
+            for (column in listOf("metrics", "verification", "clarification", "notice"))
+                if (stored(row.id, column) == null) assertTrue(view.path(column).isNull || view.path(column).isMissingNode, column)
+        }
+    }
 
     @Test fun `creation default KST period list detail and stream persistence use core IDs and verified headers`() {
         val id = create()
@@ -179,6 +199,8 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         }
         assertEquals(listOf("status", "clarification", "done"), events(message(id).body()))
         assertEquals("COMPLETED", rows(id).single().status); assertNull(rows(id).single().answer); assertNotNull(rows(id).single().clarification)
+        assertEquals("기간을 확인해 주세요", stored(rows(id).single().id, "clarification")!!.path("question").asText())
+        assertHistoryMatchesStored(id)
     }
     @Test fun `unverified result partial stream invalid order and upstream error stay FAILED with no answer`() {
         val id = create()
@@ -290,7 +312,8 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         val response = message(id)
         assertEquals(listOf("status", "status", "clarification", "done"), events(response.body()), response.body())
         assertEquals("COMPLETED", rows(id).single().status); assertNull(rows(id).single().answer)
-        assertEquals(0, json.readTree(rows(id).single().clarification).path("options").size())
+        assertEquals(0, stored(rows(id).single().id, "clarification")!!.path("options").size())
+        assertHistoryMatchesStored(id)
     }
     @Test fun `normalized conversation paths retain authentication role ownership and SSE protections`() {
         val id = create()
@@ -322,7 +345,7 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         allowed.set(true)
         val success = call("/conversations/$id/messages/${failed.id}/retry", emptyMap<String, String>())
         assertTrue("result" in events(success.body()), success.body())
-        assertTrue(json.readTree(rows(id).single().verification).path("contentAllowed").booleanValue())
+        assertTrue(stored(rows(id).single().id, "verification")!!.path("contentAllowed").booleanValue())
     }
     @Test fun `earlier baseline answer requires membership in selected period including later list pages`() {
         val id = create(); val included = java.util.concurrent.atomic.AtomicBoolean(true)
@@ -478,4 +501,211 @@ class ConversationIntegrationTest : IntegrationTestSupport() {
         }
     }
 
+    // #824: 하위 서비스 응답 해석을 client로 옮기기 전에 공개 SSE·저장 값·오류 코드를 고정한다.
+    private fun frames(body: String): List<Pair<String, JsonNode>> = body.replace("\r\n", "\n").split("\n\n").mapNotNull { frame ->
+        val lines = frame.lines()
+        val event = lines.firstOrNull { it.startsWith("event:") }?.substringAfter(":")?.trim() ?: return@mapNotNull null
+        event to json.readTree(lines.filter { it.startsWith("data:") }.joinToString("\n") { it.substringAfter(":").trimStart() })
+    }
+    private fun errorCode(body: String) = frames(body).firstOrNull { it.first == "error" }?.second?.path("code")?.asText()
+    private fun obj(value: String) = json.readTree(value) as ObjectNode
+    private fun streamResult(mutate: (ObjectNode) -> Unit) {
+        ai.respond = { exchange, request ->
+            exchange.event("status", """{"state":"RUNNING","message":"조회"}""")
+            val value = obj(result(json.readTree(request.body).path("scope"))); mutate(value)
+            exchange.event("result", value.toString()); exchange.event("done", "{}")
+        }
+    }
+    private fun failedWith(code: String, label: String, id: UUID = create()) {
+        // Many contract violations in a row would open the ai circuit (AI_UNAVAILABLE); each case starts from a closed one.
+        aiClient.circuit.reset()
+        val response = message(id)
+        assertEquals(code, errorCode(response.body()), "$label: ${response.body()}"); assertFalse("result" in events(response.body()), label)
+        val row = rows(id).last(); assertEquals("FAILED", row.status, label); assertNull(row.answer, label)
+        assertTrue(repository.evidence(row.id).isEmpty(), label)
+    }
+    private fun scopeTree() = json.valueToTree<JsonNode>(mapOf("childId" to student, "from" to today.minusDays(6), "to" to today, "changed" to false))
+
+    @Test fun `result event and stored row keep their exact shape`() {
+        val id = create()
+        val metric = mapOf("label" to "푼 문제", "value" to null, "count" to 3, "numerator" to 3, "denominator" to 3, "formula" to "count",
+            "period" to mapOf("from" to today.minusDays(6).toString(), "to" to today.toString()), "sourceType" to "RECORD", "state" to "OK")
+        streamResult { value ->
+            value.set<JsonNode>("metrics", json.valueToTree(listOf(metric)))
+            value.set<JsonNode>("versions", json.valueToTree(mapOf("model" to "m", "prompt" to "p")))
+            val evidence = value.path("evidence")[0] as ObjectNode
+            evidence.put("missionTitle", "합성 미션"); evidence.putNull("submittedAt"); evidence.remove("answerVersion")
+        }
+        val response = message(id)
+        val result = frames(response.body()).single { it.first == "result" }.second
+        val saved = rows(id).single()
+        assertEquals(listOf("messageId", "answer", "scope", "metrics", "evidence", "verification", "recordCount", "source", "fallback"),
+            result.fieldNames().asSequence().toList())
+        assertEquals(saved.id.toString(), result.path("messageId").asText())
+        assertEquals(scopeTree(), result.path("scope"))
+        assertEquals(json.valueToTree<JsonNode>(listOf(metric)), result.path("metrics"))
+        val ref = result.path("evidence")[0]
+        assertEquals(listOf("attemptId", "answerId", "quote", "available", "missionTitle", "submittedAt", "kind", "evidenceId", "answerVersion"),
+            ref.fieldNames().asSequence().toList())
+        assertEquals("ANSWER", ref.path("kind").asText()); assertEquals(1, ref.path("answerVersion").asInt())
+        assertEquals("합성 근거", ref.path("quote").asText()); assertTrue(ref.path("submittedAt").isNull)
+        assertEquals("""{"numbersMatched":true,"quotesMatched":true,"contentAllowed":true}""", result.path("verification").toString())
+        assertEquals(5, result.path("recordCount").asInt()); assertEquals("LLM", result.path("source").asText()); assertTrue(result.path("fallback").isNull)
+        assertEquals("확정 합성 답변", saved.answer); assertEquals("LLM", saved.source); assertEquals(5, saved.recordCount)
+        assertEquals(json.valueToTree<JsonNode>(listOf(metric)), stored(saved.id, "metrics"))
+        assertEquals(result.path("verification"), stored(saved.id, "verification"))
+        assertNull(saved.fallback); assertNull(saved.notice); assertNull(saved.failureCode); assertNull(saved.clarification)
+        val stored = repository.evidence(saved.id).single()
+        assertEquals(ref.path("evidenceId").asText(), stored.id.toString()); assertEquals(attempt, stored.attemptId)
+        assertEquals(answer, stored.answerId); assertEquals(1, stored.answerVersion); assertEquals("ANSWER", stored.kind)
+
+        // 결과 scope는 childId로 와도 되고, 빠진 source는 LLM, TEMPLATE 실패 사유는 failureCode로 저장된다.
+        val fallbackId = create()
+        streamResult { value ->
+            val scope = value.path("scope") as ObjectNode
+            scope.put("childId", scope.path("studentId").asText()); scope.remove("studentId")
+            value.put("source", "TEMPLATE")
+            value.set<JsonNode>("fallback", json.valueToTree(mapOf("reason" to "VERIFICATION_FAILED",
+                "draftVerification" to mapOf("numbersMatched" to false, "quotesMatched" to true, "contentAllowed" to true))))
+        }
+        val fallback = frames(message(fallbackId).body()).single { it.first == "result" }.second
+        assertEquals("""{"reason":"VERIFICATION_FAILED","draftVerification":{"numbersMatched":false,"quotesMatched":true,"contentAllowed":true}}""",
+            fallback.path("fallback").toString())
+        val row = rows(fallbackId).single()
+        assertEquals("TEMPLATE", row.source); assertEquals("VERIFICATION_FAILED", row.failureCode)
+        assertEquals(fallback.path("fallback"), stored(row.id, "fallback"))
+        val noSource = create()
+        streamResult { it.remove("source") }
+        assertEquals("LLM", frames(message(noSource).body()).single { it.first == "result" }.second.path("source").asText())
+        assertEquals("LLM", rows(noSource).single().source)
+        val noticeId = create()
+        streamResult { value -> value.put("source", "TEMPLATE"); value.putNull("fallback"); value.put("recordCount", 0)
+            value.set<JsonNode>("evidence", json.createArrayNode()); value.set<JsonNode>("notice", json.valueToTree(mapOf("reason" to "NO_RECORD"))) }
+        val notice = frames(message(noticeId).body()).single { it.first == "result" }.second
+        assertEquals("""{"reason":"NO_RECORD"}""", notice.path("notice").toString()); assertEquals(notice.path("notice"), stored(rows(noticeId).single().id, "notice"))
+        assertNull(rows(noticeId).single().fallback)
+        for (conversation in listOf(id, fallbackId, noSource, noticeId)) assertHistoryMatchesStored(conversation)
+    }
+
+    @Test fun `ai result outside the contract fails as AI_INVALID_RESPONSE before persistence`() {
+        fun evidence(value: ObjectNode) = value.path("evidence")[0] as ObjectNode
+        fun scope(value: ObjectNode) = value.path("scope") as ObjectNode
+        fun verification(value: ObjectNode) = value.path("verification") as ObjectNode
+        val cases = linkedMapOf<String, (ObjectNode) -> Unit>(
+            "scope child" to { scope(it).put("studentId", UUID.randomUUID().toString()) },
+            "scope from" to { scope(it).put("from", today.minusDays(7).toString()) },
+            "scope missing" to { it.remove("scope") },
+            "answer missing" to { it.remove("answer") }, "answer blank" to { it.put("answer", " ") }, "answer number" to { it.put("answer", 1) },
+            "verification missing" to { it.remove("verification") },
+            "verification extra" to { verification(it).put("extra", true) },
+            "contentAllowed false" to { verification(it).put("contentAllowed", false) },
+            "contentAllowed text" to { verification(it).put("contentAllowed", "true") },
+            "metrics object" to { it.putObject("metrics") }, "evidence missing" to { it.remove("evidence") },
+            "recordCount missing" to { it.remove("recordCount") }, "recordCount negative" to { it.put("recordCount", -1) },
+            "recordCount decimal" to { it.put("recordCount", 1.5) }, "recordCount text" to { it.put("recordCount", "5") },
+            "source unknown" to { it.put("source", "OTHER") }, "source number" to { it.put("source", 1) },
+            "template without metadata" to { it.put("source", "TEMPLATE") },
+            "fallback extra key" to { it.put("source", "TEMPLATE"); it.set<JsonNode>("fallback", json.valueToTree(mapOf("reason" to "AI_UNAVAILABLE", "draftVerification" to null, "x" to 1))) },
+            "fallback unknown reason" to { it.put("source", "TEMPLATE"); it.set<JsonNode>("fallback", json.valueToTree(mapOf("reason" to "OTHER", "draftVerification" to null))) },
+            "unavailable with draft" to { it.put("source", "TEMPLATE"); it.set<JsonNode>("fallback", json.valueToTree(mapOf("reason" to "AI_UNAVAILABLE",
+                "draftVerification" to mapOf("numbersMatched" to false, "quotesMatched" to true, "contentAllowed" to true)))) },
+            "notice not object" to { it.put("source", "TEMPLATE"); it.putNull("fallback"); it.put("notice", "NO_RECORD") },
+            "no record with records" to { it.put("source", "TEMPLATE"); it.putNull("fallback"); it.set<JsonNode>("notice", json.valueToTree(mapOf("reason" to "NO_RECORD"))) },
+            "evidence over 100" to { value -> value.set<JsonNode>("evidence", json.valueToTree((0..100).map { mapOf("attemptId" to attempt, "answerId" to UUID.randomUUID(), "quote" to "합성 근거") })) },
+            "evidence not object" to { it.set<JsonNode>("evidence", json.valueToTree(listOf("x"))) },
+            "evidence attempt" to { evidence(it).put("attemptId", "not-uuid") },
+            "evidence kind" to { evidence(it).put("kind", "OTHER") },
+            "evidence answer" to { evidence(it).remove("answerId") },
+            "evidence version zero" to { evidence(it).put("answerVersion", 0) },
+            "evidence version text" to { evidence(it).put("answerVersion", "1") },
+            "evidence duplicate" to { value -> (value.path("evidence") as com.fasterxml.jackson.databind.node.ArrayNode).add(evidence(value).deepCopy()) },
+            "evidence quote blank" to { evidence(it).put("quote", " ") },
+            "evidence quote number" to { evidence(it).put("quote", 1) },
+            "reflection with answer" to { evidence(it).put("kind", "REFLECTION"); evidence(it).put("submittedAt", Instant.now().toString()) },
+            "reflection without time" to { evidence(it).put("kind", "REFLECTION"); evidence(it).putNull("answerId"); evidence(it).putNull("answerVersion") })
+        cases.forEach { (label, mutate) -> streamResult(mutate); failedWith("AI_INVALID_RESPONSE", label) }
+    }
+
+    @Test fun `learning evidence response keeps its error codes`() {
+        fun item(vararg change: Pair<String, Any?>) = mapOf("answerId" to answer, "attemptId" to attempt, "answerVersion" to 1, "quote" to "합성 근거",
+            "missionTitle" to "합성 미션", "submittedAt" to Instant.now().toString(), "available" to true) + change
+        fun items(vararg values: Map<String, Any?>) = json.writeValueAsString(mapOf("items" to values.toList()))
+        val cases = listOf(
+            Triple("items missing", "{}", "LEARNING_INVALID_RESPONSE"),
+            Triple("items object", """{"items":{}}""", "LEARNING_INVALID_RESPONSE"),
+            Triple("extra item", items(item(), item("answerId" to UUID.randomUUID())), "LEARNING_INVALID_RESPONSE"),
+            Triple("other answer", items(item("answerId" to UUID.randomUUID())), "LEARNING_INVALID_RESPONSE"),
+            Triple("unavailable", items(item("available" to false, "quote" to null)), "EVIDENCE_UNAVAILABLE"),
+            Triple("unavailable nulls", items(item("available" to false, "quote" to null, "attemptId" to null,
+                "answerVersion" to null, "submittedAt" to null, "missionTitle" to null)), "EVIDENCE_UNAVAILABLE"),
+            Triple("other attempt", items(item("attemptId" to UUID.randomUUID())), "LEARNING_INVALID_RESPONSE"),
+            Triple("null attempt", items(item("attemptId" to null)), "LEARNING_INVALID_RESPONSE"),
+            Triple("version zero", items(item("answerVersion" to 0)), "LEARNING_INVALID_RESPONSE"),
+            Triple("version null", items(item("answerVersion" to null)), "LEARNING_INVALID_RESPONSE"),
+            Triple("version changed", items(item("answerVersion" to 2)), "LEARNING_INVALID_RESPONSE"),
+            Triple("quote mismatch", items(item("quote" to "다른 원문")), "AI_INVALID_RESPONSE"),
+            Triple("quote null", items(item("quote" to null)), "AI_INVALID_RESPONSE"),
+            Triple("time invalid", items(item("submittedAt" to "어제")), "LEARNING_INVALID_RESPONSE"),
+            Triple("time null", items(item("submittedAt" to null)), "LEARNING_INVALID_RESPONSE"),
+            Triple("after period", items(item("submittedAt" to Instant.now().plusSeconds(3 * 86400).toString())), "AI_INVALID_RESPONSE"))
+        for ((label, body, code) in cases) {
+            learning.respond = { request ->
+                if (request.target.startsWith("/internal/records/evidence")) LearningHttpStub.Reply(body = body)
+                else LearningHttpStub.Reply(body = """{"studentId":"$student","hasRecords":true}""")
+            }
+            failedWith(code, label)
+        }
+        // 고정 버전 없이 온 근거는 learning 버전으로 채워 공개·저장한다.
+        learning.respond = { request ->
+            if (request.target.startsWith("/internal/records/evidence")) LearningHttpStub.Reply(body = items(item("answerVersion" to 3)))
+            else LearningHttpStub.Reply(body = """{"studentId":"$student","hasRecords":true}""")
+        }
+        val id = create()
+        streamResult { (it.path("evidence")[0] as ObjectNode).remove("answerVersion") }
+        val response = message(id)
+        assertEquals(3, frames(response.body()).single { it.first == "result" }.second.path("evidence")[0].path("answerVersion").asInt(), response.body())
+        assertEquals(3, repository.evidence(rows(id).single().id).single().answerVersion)
+    }
+
+    @Test fun `clarification keeps its exact public shape and error codes`() {
+        val options = """{"question":"기간을 확인해 주세요","options":[{"label":"오늘","scope":{"childId":"$student","from":"$today","to":"$today"},"note":"원문 유지"}],"extra":1}"""
+        val id = create()
+        ai.respond = { exchange, _ -> exchange.event("clarification", options); exchange.event("done", "{}") }
+        val sent = frames(message(id).body()).single { it.first == "clarification" }.second
+        assertEquals(json.readTree(options), sent); assertEquals(json.readTree(options), stored(rows(id).single().id, "clarification"))
+        assertHistoryMatchesStored(id)
+        val noticeId = create()
+        ai.respond = { exchange, request ->
+            val scope = json.readTree(request.body).path("scope")
+            exchange.event("clarification", json.writeValueAsString(mapOf("reason" to "OTHER_CHILD", "message" to "자녀를 확인해 주세요", "extra" to 1,
+                "current" to mapOf("childId" to scope.path("studentId").asText(), "from" to scope.path("from").asText(), "to" to scope.path("to").asText()))))
+        }
+        val notice = frames(message(noticeId).body()).single { it.first == "clarification" }.second
+        assertEquals(listOf("question", "options", "reason", "current"), notice.fieldNames().asSequence().toList())
+        assertEquals("자녀를 확인해 주세요", notice.path("question").asText()); assertEquals(0, notice.path("options").size())
+        assertEquals("OTHER_CHILD", notice.path("reason").asText()); assertEquals(scopeTree(), notice.path("current"))
+        assertEquals(notice, stored(rows(noticeId).single().id, "clarification")); assertHistoryMatchesStored(noticeId)
+
+        fun option(label: Any? = "오늘", child: Any? = student, from: Any? = today.toString(), to: Any? = today.toString()) =
+            mapOf("label" to label, "scope" to mapOf("childId" to child, "from" to from, "to" to to))
+        val invalid = linkedMapOf<String, Map<String, Any?>>(
+            "question missing" to mapOf("options" to listOf(option())),
+            "question blank" to mapOf("question" to " ", "options" to listOf(option())),
+            "options missing" to mapOf("question" to "확인"),
+            "options object" to mapOf("question" to "확인", "options" to mapOf("a" to 1)),
+            "label number" to mapOf("question" to "확인", "options" to listOf(option(label = 1))),
+            "child invalid" to mapOf("question" to "확인", "options" to listOf(option(child = "x"))),
+            "from invalid" to mapOf("question" to "확인", "options" to listOf(option(from = "어제"))),
+            "to missing" to mapOf("question" to "확인", "options" to listOf(option(to = null))),
+            "notice reason" to mapOf("reason" to "OTHER", "message" to "확인", "current" to mapOf("childId" to student)),
+            "notice message" to mapOf("reason" to "UNCLEAR", "message" to " ", "current" to mapOf("childId" to student)),
+            "notice current" to mapOf("reason" to "UNCLEAR", "message" to "확인", "current" to mapOf("childId" to UUID.randomUUID())))
+        invalid.forEach { (label, body) ->
+            ai.respond = { exchange, _ -> exchange.event("clarification", json.writeValueAsString(body)); exchange.event("done", "{}") }
+            failedWith("AI_INVALID_RESPONSE", label)
+        }
+        ai.respond = { exchange, _ -> exchange.event("clarification", json.writeValueAsString(mapOf("question" to "확인",
+            "options" to listOf(option(child = UUID.randomUUID()))))); exchange.event("done", "{}") }
+        failedWith("CHILD_NOT_LINKED", "foreign child")
+    }
 }

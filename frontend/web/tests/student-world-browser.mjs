@@ -102,15 +102,14 @@ try {
       .click()
     await p.getByRole('button', { name: '미션 시작하기' }).click()
     await p.waitForURL('**/student/attempts/*')
-    const steps = p.getByRole('list', { name: '미션 진행 단계' })
-    assert.equal(await steps.locator('[aria-current="step"]').innerText(), '2 답변 쓰기')
+    // 단계 칩은 미션 안내에만(문제 푸는 화면에서는 뺌, #807 D안)
+    assert.equal(await p.getByRole('list', { name: '미션 진행 단계' }).count(), 0)
     assert.equal(await p.getByRole('navigation', { name: '학생 메뉴' }).count(), 0, '작성 중에는 메뉴를 숨김')
     await p.locator('.sw-question').waitFor()
     await p.getByLabel('내 생각과 이유').fill('그림이 있으면 이야기를 더 잘 이해할 수 있어요.')
     await p.getByText('저장했어요(모의)', { exact: true }).waitFor()
     await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
-    await p.getByRole('button', { name: '이대로 돌아보기' }).waitFor()
-    assert.equal(await steps.locator('[aria-current="step"]').innerText(), '3 피드백')
+    await p.getByRole('button', { name: '마무리 보기' }).waitFor()
   })
 
   await check(

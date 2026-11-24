@@ -18,12 +18,15 @@ from app.errors import ApiError
 from app.llm.base import LlmClient, LlmError, LlmRequest, LlmUsage, ProviderResponse, T
 from app.mission_draft.prompts import GeneratedDraft
 from app.prompt_versions.registry import ActiveVersions
+from app.theme_draft import checks
 from app.theme_draft.checks import DAY_KO, DAY_TYPE, DAYS
 from app.theme_draft.models import (
     GeneratedDialogue,
     GeneratedExampleFix,
     GeneratedFixes,
+    GeneratedHelperJudge,
     GeneratedHookFixes,
+    GeneratedLine,
     GeneratedMissionReview,
     GeneratedStoryReview,
     GeneratedTheme,
@@ -34,10 +37,13 @@ from app.theme_draft.nodes import DEADLINE_REASON
 from app.theme_draft.service import ThemeDraftGraphRunner
 from tests.theme_draft.fixtures import (
     DISCOVERY,
+    HELPER,
     HOOK,
+    MATERIAL,
     day_with,
     dialogue,
     generated_theme,
+    helper_judge,
     mission_draft,
     mission_review,
     story_review,
@@ -96,7 +102,7 @@ def gen_llm(
     handlers: dict[type, Handler] = {
         GeneratedTheme: theme or (lambda n, d: generated_theme()),
         GeneratedDraft: draft or (lambda n, d: mission_draft(DAY_TYPE[d])),
-        GeneratedDialogue: dlg or (lambda n, d: dialogue()),
+        GeneratedDialogue: dlg or (lambda n, d: dialogue(d)),
         GeneratedHookFixes: hook or (lambda n, d: GeneratedHookFixes(fixes=[])),
     }
     if fix:
@@ -106,14 +112,38 @@ def gen_llm(
     return ScriptedLlm("gen-model", handlers)
 
 
-def review_llm(story: Handler | None = None, mission: Handler | None = None) -> ScriptedLlm:
+def review_llm(
+    story: Handler | None = None, mission: Handler | None = None, helper: Handler | None = None
+) -> ScriptedLlm:
     return ScriptedLlm(
         "review-model",
         {
             GeneratedStoryReview: story or (lambda n, d: story_review()),
             GeneratedMissionReview: mission or (lambda n, d: mission_review()),
+            # #782 설계 v13 가: 돕는 사람 판정(기본은 모두 자연스러움)
+            GeneratedHelperJudge: helper or (lambda n, d: helper_judge()),
         },
     )
+
+
+HOOK_LABEL = "오늘 할 일(③ 재료, 부탁·증거를 같이 보자는 말): "
+FOUND_LABEL = "오늘 찾은 증거(② 재료, 이 증거 그대로): "
+
+
+# 기본 요청(request_body)의 미션 방식 배정(prompts.mission_ways_for, 같은 씨앗이면 같음)
+WAYS = {
+    "MON": checks.ASK,
+    "TUE": checks.INVESTIGATE,
+    "WED": checks.ASK,
+    "THU": checks.ASK,
+    "FRI": checks.ASK,
+}
+
+
+def given(gen: "ScriptedLlm", day: str, label: str) -> str:
+    """그 요일 마지막 대화 요청에 재료로 준 줄(#782 테마 짜임: 대화 모델이 풀어 씀)."""
+    user = gen.users("GeneratedDialogue", day)[-1]
+    return next(x for x in user.splitlines() if x.startswith(label))[len(label) :]
 
 
 def run(
@@ -146,23 +176,35 @@ def test_happy_path_assembles_contract_response() -> None:
     assert response.failure is None and response.warnings == []
     assert response.theme is not None and response.theme.answer == "텃밭"
     # LLM 출력에 없는 rulesOut을 코드가 표로 채워 응답에 넣음
+    # 화·목은 사건 단서(#782 테마 짜임): 빼는 후보도 특징도 없음
     assert [d.rules_out for d in response.theme.days] == [
-        [],
-        [],
         ["창고", "정자"],
-        ["놀이터", "창고"],
         [],
+        [],
+        [],
+        ["놀이터", "창고"],
     ]
+    assert [d.clue_feature for d in response.theme.days] == ["물기", None, "지붕", None, "땅"]
     assert [m.day for m in response.missions] == list(DAYS)
     assert [m.thinking_type for m in response.missions] == [DAY_TYPE[d] for d in DAYS]
     assert [d.day for d in response.dialogues] == list(DAYS)
     # 금요일 안내는 LLM이 만든 그대로(단서는 미션 뒤 learning이 보여 주므로 코드가 넣지 않음)
     fri = response.missions[-1].draft
     assert fri.guide is None
-    # 대화 끝 두 줄 = 그날 증거 발견 줄(화자 기본 뭉치)·수사 연결 문장 그대로, 단서·요약 줄 없음
+    # 대화는 모델이 쓴 줄 그대로(#782 테마 짜임: 끝 두 줄을 코드가 넣지 않음). 증거 발견 줄·수사
+    # 연결 문장·오늘 온 까닭은 재료로만 주고, 단서는 넣지 않음
     for dlg_out in response.dialogues:
-        assert [x.speaker for x in dlg_out.lines[-2:]] == ["뭉치", "뭉치"]
-        assert [x.text for x in dlg_out.lines[-2:]] == [DISCOVERY[dlg_out.day], HOOK[dlg_out.day]]
+        # #782 설계 v3: 첫 줄은 코드가 쓴 오늘 온 까닭(주인공의 말), 그 뒤는 모델 줄 그대로
+        assert dlg_out.lines[0].speaker == "지호"
+        assert dlg_out.lines[0].text.endswith(("왔어.", "시작했어."))
+        # #782 설계 v10: 시험 자료의 약속 줄은 요일마다 다름
+        assert [x.text for x in dlg_out.lines[1:]] == [x.text for x in dialogue(dlg_out.day).lines]
+        assert given(gen, dlg_out.day, HOOK_LABEL) == HOOK[dlg_out.day]
+        # #782 미션 방식: 수사 날만 증거를 문제 전에 줌(부탁 날은 문제 뒤 단서로 나옴)
+        if WAYS[dlg_out.day] == checks.INVESTIGATE:
+            assert given(gen, dlg_out.day, FOUND_LABEL) == DISCOVERY[dlg_out.day]
+        else:
+            assert DISCOVERY[dlg_out.day] not in gen.users("GeneratedDialogue", dlg_out.day)[-1]
         clues = [d.clue for d in response.theme.days]
         assert not any(c in line.text for c in clues for line in dlg_out.lines)
     # 증거 발견 줄·수사 연결 문장은 내부 칸이라 응답 theme에 없음
@@ -193,8 +235,10 @@ def test_mission_prompt_gets_hook_not_clues() -> None:
     for day in DAYS:
         user = gen.users("GeneratedDraft", day)[0]
         assert not [c for c in clues if c in user], day
-        assert HOOK[day] in user and DISCOVERY[day] in user
-        assert "question에 다시 쓰지 않는다" in user
+        assert HOOK[day] in user
+        # #782 미션 방식: 수사 날만 증거 발견 줄을 줌(부탁 날 증거는 문제 뒤 단서)
+        assert (DISCOVERY[day] in user) == (WAYS[day] == checks.INVESTIGATE), day
+        assert "question에 되풀이하지" in user
         others = [HOOK[d] for d in DAYS if d != day]
         assert not [h for h in others if h in user]
     fri = gen.users("GeneratedDraft", "FRI")[0]
@@ -214,14 +258,16 @@ def test_dialogue_prompt_gets_discovery_not_clues() -> None:
     for day in DAYS:
         user = gen.users("GeneratedDialogue", day)[0]
         assert not [c for c in clues if c in user], day
-        assert DISCOVERY[day] in user
+        assert (DISCOVERY[day] in user) == (WAYS[day] == checks.INVESTIGATE), day
 
 
 def test_story_review_sees_discovery_and_hook() -> None:
     review = review_llm()
     run(gen_llm(), review)
     user = review.users("GeneratedStoryReview")[0]
-    assert all(DISCOVERY[d] in user and HOOK[d] in user for d in DAYS)
+    assert all(HOOK[d] in user for d in DAYS)
+    # #782 미션 방식: 증거 발견 줄은 수사 날만(부탁 날은 문제 전에 안 보이는 내부 메모)
+    assert all((DISCOVERY[d] in user) == (WAYS[d] == checks.INVESTIGATE) for d in DAYS)
 
 
 def test_theme_check_failure_regenerates_with_reason() -> None:
@@ -229,6 +275,17 @@ def test_theme_check_failure_regenerates_with_reason() -> None:
     response = run(gen, review_llm())
     assert response.failure is None and gen.count("GeneratedTheme") == 2
     assert "ANSWER_LEAK" in gen.users("GeneratedTheme")[1]
+
+
+def test_empty_plan_is_regenerated_not_crashed() -> None:
+    """요일을 다 내지 않은 줄거리(#782 작은 생성: 조건을 맞출 수 없으면 모델이 빈 줄거리를 냄)는
+    코드 수리를 건너뛰고 check_theme(DAYS)으로 다시 생성한다(예전에는 코드 수리가 요일을 못 찾아
+    멈춤)."""
+    empty = generated_theme().model_copy(update={"days": [], "title": ""})
+    gen = gen_llm(theme=lambda n, d: empty if n == 1 else generated_theme())
+    response = run(gen, review_llm())
+    assert response.failure is None and gen.count("GeneratedTheme") == 2
+    assert "DAYS 요일은" in gen.users("GeneratedTheme")[1]
 
 
 def test_fixable_failure_rewrites_only_those_fields() -> None:
@@ -249,27 +306,26 @@ def test_fixable_failure_rewrites_only_those_fields() -> None:
     )
     assert "후보 이름" in user  # 칸 종류별 지킬 점
     assert response.theme is not None and response.theme.title == valid_theme()["title"]
-    wed = next(x for x in response.dialogues if x.day == "WED")
-    assert wed.lines[-1].text == HOOK["WED"]
+    assert given(gen, "WED", HOOK_LABEL) == HOOK["WED"]
 
 
 def test_logic_error_repaired_by_code_without_regenerating_plan() -> None:
     """정답 논리가 틀리면 코드가 그 요일 조건만 고치고 그날 단서만 고쳐 써서 줄거리를 다시 만들지
     않음(#535 6차, repair_logic). 종료 이야기 정리는 코드가 표로 다시 붙임(#535 7차)."""
     broken = day_with(
-        valid_theme(), "THU", condition={"kind": "HINT", "feature": "땅", "allowed": ["흙"]}
+        valid_theme(), "FRI", condition={"kind": "HINT", "feature": "땅", "allowed": ["흙"]}
     )
     gen = gen_llm(
         theme=lambda n, d: generated_theme(broken),
-        fix=lambda n, d: fixes(("THU.clue", valid_theme()["days"][3]["clue"])),
+        fix=lambda n, d: fixes(("FRI.clue", valid_theme()["days"][4]["clue"])),
     )
     response = run(gen, review_llm())
     assert response.failure is None
     assert gen.count("GeneratedTheme") == 1 and gen.count("GeneratedFixes") == 1
     user = gen.users("GeneratedFixes")[0]
-    assert "path: THU.clue" in user and "LOGIC_FIX THU" in user
+    assert "path: FRI.clue" in user and "LOGIC_FIX FRI" in user
     assert "path: outro" not in user
-    assert response.theme is not None and response.theme.days[3].rules_out
+    assert response.theme is not None and response.theme.days[4].rules_out
     # 종료 이야기 = 코드 정리(요일별 빠진 후보 → 남은 정답) + LLM 마무리 장면
     assert "단서로" in response.theme.outro and "만 남았어" in response.theme.outro
     assert response.theme.outro.endswith(valid_theme()["outro"])
@@ -412,7 +468,8 @@ def test_example_fix_carries_earlier_reasons_for_same_question() -> None:
     review = review_llm(mission=mission)
     response = run(gen, review)
     assert response.failure is None
-    first, second = gen.users("GeneratedExampleFix")  # 서술 미션 하나(고르기·순서는 고쳐 쓰기 없음)
+    # 요일마다 지문이 달라 질문도 달라짐(#782): 월요일 미션의 고쳐 쓰기 두 번만 봄
+    first, second = [u for u in gen.users("GeneratedExampleFix") if questions[0] in u]
     assert "예시사유1" in first and "예시사유2" not in first
     assert "예시사유1" in second and "예시사유2" in second
 
@@ -426,8 +483,12 @@ def test_mission_review_warn_becomes_warning() -> None:
 
 def test_dialogue_failure_omits_that_day_with_warning() -> None:
     gen = gen_llm(
-        dlg=lambda n, d: dialogue("할머니") if d == "MON" else dialogue()
-    )  # 월요일 증거 발견 줄 화자가 등장인물 밖
+        dlg=lambda n, d: (
+            dialogue(lines=[GeneratedLine(speaker="할머니", text="여기야.")] * 4)
+            if d == "MON"
+            else dialogue(d)
+        )
+    )  # 월요일 화자가 등장인물 밖
     response = run(gen, review_llm())
     assert response.failure is None
     assert [d.day for d in response.dialogues] == ["TUE", "WED", "THU", "FRI"]
@@ -504,12 +565,22 @@ def test_story_review_clue_logic_with_answer_hint_regenerates_plan() -> None:
 
 
 def test_fixed_clue_failing_code_check_regenerates_plan() -> None:
-    """고친 단서가 허용 값 낱말을 빠뜨리면(CLUE_TEXT) 줄거리부터 다시."""
-    gen = gen_llm(fix=lambda n, d: fixes(("MON.clue", "보리가 어딘가를 지나갔어.")))
+    """고친 단서가 대상 낱말을 빠뜨리면(CLUE_OWNER) 줄거리부터 다시."""
+    gen = gen_llm(fix=lambda n, d: fixes(("MON.clue", "내가 본 발자국은 젖어 있었어.")))
     response = run(gen, review_llm(story=clue_fail(1)))
     assert response.failure is None
     assert gen.count("GeneratedTheme") == 2 and gen.count("GeneratedDraft") == 10
-    assert "CLUE_TEXT MON" in gen.users("GeneratedTheme")[1]
+    assert "CLUE_OWNER MON" in gen.users("GeneratedTheme")[1]
+
+
+def test_fixed_clue_failing_only_form_gets_template_not_new_plan() -> None:
+    """#782 설계 v4(B1): 고친 단서가 꼴·출처 검사(CLUE_TEXT·CLUE_SOURCE)에만 걸리면 코드 틀 문장으로
+    바꿔 통과(3차 측정 auto4b·new4b: 이 길에 틀 문장이 없어 줄거리를 다시 만들다 마감)."""
+    gen = gen_llm(fix=lambda n, d: fixes(("MON.clue", "보리가 어딘가를 지나갔어.")))
+    response = run(gen, review_llm(story=clue_fail(1)))
+    assert response.failure is None
+    assert gen.count("GeneratedTheme") == 1
+    assert response.theme is not None and "젖음" in response.theme.days[0].clue
 
 
 def test_story_review_shape_error_reviews_again_only() -> None:
@@ -656,7 +727,7 @@ def test_clue_logic_rules_in_prompts() -> None:
     from app.theme_draft import prompts
 
     for rule in (
-        "'나'로 이어 그중 하나였다는",
+        "늘어놓지 않고 빠지는 값",  # #782 설계 v3: 허용 값 여럿은 부정형
         "무엇에 대한 것인지",
         "뜻이 겹치지 않아",
         "evidence.when이 가리키는 그때와 맞춘다",
@@ -665,15 +736,18 @@ def test_clue_logic_rules_in_prompts() -> None:
     ):
         assert rule in prompts.PLAN_SYSTEM
     theme = valid_theme()
+    mon = " ".join(prompts.fix_rules(theme, "MON.clue"))
+    # MON은 RULE·허용 값 하나(#782부터 월 RULE). #782 설계 v3: 늘어놓기는 어느 꼴이든 하지 않음
+    assert "단정해서" in mon and "'나'로 잇는다" not in mon
     wed = " ".join(prompts.fix_rules(theme, "WED.clue"))
-    assert "단정해서" in wed and "'A나 B'" not in wed  # WED는 RULE·허용 값 하나
     # 증거 종류는 그대로 두고 문장만 맞춤(CLUE_EVIDENCE 칸 고쳐 쓰기): WED는 SIGHTING, FRI는 RECORD
     assert "증거 종류가 목격" in wed
     assert "증거 종류가 기록" in " ".join(prompts.fix_rules(theme, "FRI.clue"))
     assert "중 한 곳" not in prompts.PLAN_SYSTEM  # 단서를 길게 만든 예시(40자 초과 13→26번)는 뺌
-    # 증거 발견 줄·수사 연결 문장 예시가 녹음기라 초안 35%에 녹음이 들어감 → 형식만
-    assert "녹음기" not in prompts.PLAN_SYSTEM and "<찾은 증거>를 풀려면" in prompts.PLAN_SYSTEM
-    extra = prompts.mission_extra(theme, "THU", 3, [])
+    # 증거 발견 줄·수사 연결 문장 예시가 녹음기라 초안 35%에 녹음이 들어감 → 형식만. #782 테마
+    # 짜임부터 둘 다 대화 재료라 정해진 말 꼴('<증거>에 <그 부분>도 있어')을 두지 않음
+    assert "녹음기" not in prompts.PLAN_SYSTEM and "<그 부분>도 있어" not in prompts.PLAN_SYSTEM
+    extra = prompts.mission_extra(theme, "FRI", 3, [])
     feature_line = extra.split("오늘 단서가 다루는 특징: '땅'")[1].split("\n")[0]
     assert "흙" not in feature_line  # 단서 값 낱말은 알리지 않음
 
@@ -718,26 +792,33 @@ def test_evidence_kind_off_plan_rewrites_that_day_only() -> None:
     assert all(f"path: FRI.{k}" in user for k in ("clue", "discovery", "missionHook"))
     assert "증거 종류가 배정과 다름(배정 기록 RECORD, 지금 SIGHTING)" in user
     assert "기록 매체 '일지' 낱말을 그대로 쓴다" in user and "기록(RECORD) 증거" in user
-    assert response.theme is not None and response.theme.days[4].clue == fri["clue"]
-    last = next(x for x in response.dialogues if x.day == "FRI").lines[-2:]
-    assert [x.text for x in last] == [DISCOVERY["FRI"], HOOK["FRI"]]
+    # #782 설계 v4: 부탁 날 기록 단서가 매체 낱말로 시작하면 코드가 '내 '를 붙임(돕는 사람의 기록)
+    assert response.theme is not None and response.theme.days[4].clue == f"내 {fri['clue']}"
+    # 금요일은 부탁 날이라 대화 재료에 증거 발견 줄이 없고 수사 연결 문장만
+    assert WAYS["FRI"] == checks.ASK and given(gen, "FRI", HOOK_LABEL) == HOOK["FRI"]
 
 
 def test_mission_prompt_and_review_tie_problem_to_story() -> None:
-    """미션 이야기 조각은 문제 소재를 오늘 장소·찾는 대상·찾은 증거(수사 연결 문장)에서 가져오게
-    하고, 미션 검토는 그날 장소·증거 발견 줄·수사 연결 문장을 받아 STORY_LINK로 본다."""
+    """미션 이야기 조각은 문제의 주 자료를 그날 찾은 증거(수사 연결 문장이 가리킨 부분)로 삼게
+    하고(#782 A안), 미션 검토는 그날 장소·증거 발견 줄·수사 연결 문장을 받아 STORY_LINK로 본다."""
     from app.theme_draft import prompts
 
-    extra = prompts.mission_extra(valid_theme(), "THU", 3, [])
-    assert "문제 소재(문제에서 다루는 물건·자료·상황)는 오늘 장소·찾는 대상·오늘 찾은 증거" in extra
+    extra = prompts.mission_extra(valid_theme(), "THU", 3, [])  # missionWay 없음 = 수사
+    assert "오늘 미션 방식: 수사. 문제의 주 자료는 오늘 돕는 사람이 가진 증거" in extra
+    # 연습 글·안내 글·그림책 장면이 장면 소품으로 통과하던 허용 문구는 뺌(#782)
+    assert "등장인물이 만든 자료(쓴 글·카드·연습 문제)도 이야기" not in extra
+    assert "등장인물이 만든 자료" not in prompts.MISSION_REVIEW_SYSTEM
     assert "STORY_LINK" in extra and "사건 현장의 오늘 단서 특징 값은 정하지" in extra
     # 1차 글 실측(2026-11-13): 돌아보기의 자기 경험을 선택으로 돌리거나 STORY_LINK가 자기 경험을
     # 결함으로 봐서 금요일 미션이 실패함 → 자기 경험은 그대로 묻고 소재 판정에서 뺌
     assert "선택으로 두지 말고 그대로 묻는다" in extra
-    assert "소재 판정에서 빼고" in prompts.MISSION_REVIEW_SYSTEM
-    # 수사 연결 문장이 단서 특징 값(받침대 무게 등)을 풀 대상으로 삼으면 문제가 그 값을 못 정해
-    # 어긋남
-    assert "그날 단서 특징의 값(사건 현장의" in prompts.PLAN_SYSTEM
+    assert "판정에서 뺀다" in prompts.MISSION_REVIEW_SYSTEM
+    # 수사 연결 문장이 가리키는 증거의 부분은 단서 특징 값과 무관해야 문제가 그 값을 정하지 않음.
+    # '풀려면 …이 필요해' 억지 연결 형식은 뺌(#782 C안)
+    # #782 미션 방식: 수사 연결 문장·지문은 그날 단서 결론(allowed 값)을 말하지 않음
+    assert "그날 단서 결론(allowed 값)·후보 이름·정답은 말하지 않는다" in prompts.PLAN_SYSTEM
+    assert "'<증거>를 풀려면 <배울 것>이 필요해'처럼" in prompts.PLAN_SYSTEM
+    assert "형식은 '<찾은 증거>를 풀려면" not in prompts.PLAN_SYSTEM
     assert (
         "STORY_LINK:" in prompts.MISSION_REVIEW_SYSTEM
         and "네 항목" in prompts.MISSION_REVIEW_SYSTEM
@@ -753,20 +834,26 @@ def test_mission_prompt_and_review_tie_problem_to_story() -> None:
         "target": "강아지 보리",
         "discovery": DISCOVERY["THU"],
         "missionHook": HOOK["THU"],
+        "missionMaterial": MATERIAL["THU"],  # #782 줄거리가 정한 미션 지문
+        # #782 미션 방식(기본 요청 배정 목요일 부탁)과 그날 돕는 사람
+        "missionWay": "부탁(ASK)",
+        "helper": HELPER["THU"],
     }
     assert "텃밭" not in thu  # 정답·단서는 주지 않음
 
 
-NEW_HOOK = "발자국 수를 세려면 계산이 필요해. 같이 해 볼래?!"
+# 목요일은 부탁 날이라 할 일에 흔적 낱말(발자국)을 쓰지 않음(#782 EVIDENCE_EARLY)
+NEW_HOOK = "산책 길 수를 세려면 계산이 필요해. 같이 해 볼래?!"
 
 
-def story_link_review(still: bool = False) -> tuple[ScriptedLlm, list[str]]:
-    """목요일 첫 미션 검토만 STORY_LINK FAIL. still이면 수사 연결 문장을 고친 뒤 다시 봐도 FAIL."""
+def story_link_review(still: bool = False, day: str = "THU") -> tuple[ScriptedLlm, list[str]]:
+    """그 요일(기본 목요일) 첫 미션 검토만 STORY_LINK FAIL. still이면 수사 연결 문장을 고친 뒤 다시
+    봐도 FAIL."""
     seen: list[str] = []
 
     def mission(n: int, d: str | None) -> GeneratedMissionReview:
         user = review.calls[-1][2]
-        if HOOK["THU"] in user or NEW_HOOK in user:
+        if HOOK[day] in user or NEW_HOOK in user:
             seen.append(user)
             if len(seen) == 1 or still:
                 return mission_review({"STORY_LINK": "FAIL"})
@@ -793,8 +880,7 @@ def test_story_link_fail_rewrites_hook_then_rechecks() -> None:
     assert all(u.count("path: ") == 1 and "오늘 문제(그대로 둠)" in u for u in users)
     assert [("THU.missionHook" in u) for u in users if "STORY_LINK 사유" in u] == [True]
     assert response.warnings == []
-    thu = next(x for x in response.dialogues if x.day == "THU")
-    assert thu.lines[-1].text == NEW_HOOK
+    assert given(gen, "THU", HOOK_LABEL) == NEW_HOOK
     assert (
         response.theme is not None
         and response.theme.days[3].clue == valid_theme()["days"][3]["clue"]
@@ -820,22 +906,21 @@ def test_hook_rewrite_failing_code_check_keeps_old_hook() -> None:
     gen = gen_llm(hook=lambda n, d: hook_fixes(("THU.missionHook", "가" * 45)))
     response = run(gen, review)
     assert response.failure is None and len(seen) == 1
-    thu = next(x for x in response.dialogues if x.day == "THU")
-    assert thu.lines[-1].text == HOOK["THU"]
+    assert given(gen, "THU", HOOK_LABEL) == HOOK["THU"]
     assert [(w.stage, w.item) for w in response.warnings] == [("MISSION", "THU")]
 
 
 def test_hook_rewrite_telling_clue_conclusion_keeps_old_hook() -> None:
-    """고친 수사 연결 문장이 그날 단서 결론(허용 값)을 말하면 원래 문장을 둠(hook_problems)."""
-    review, seen = story_link_review()
+    """고친 수사 연결 문장이 그날 단서 결론(허용 값)을 말하면 원래 문장을 둠(hook_problems).
+    목요일은 사건 단서라(#782 테마 짜임) 허용 값이 있는 금요일(땅 흙)로 봄."""
+    review, seen = story_link_review(day="FRI")
     gen = gen_llm(
-        hook=lambda n, d: hook_fixes(("THU.missionHook", "흙 자국을 세려면 계산이 필요해."))
+        hook=lambda n, d: hook_fixes(("FRI.missionHook", "흙 자국을 세려면 계산이 필요해."))
     )
     response = run(gen, review)
     assert response.failure is None and len(seen) == 1
-    thu = next(x for x in response.dialogues if x.day == "THU")
-    assert thu.lines[-1].text == HOOK["THU"]
-    assert [(w.stage, w.item) for w in response.warnings] == [("MISSION", "THU")]
+    assert given(gen, "FRI", HOOK_LABEL) == HOOK["FRI"]
+    assert [(w.stage, w.item) for w in response.warnings] == [("MISSION", "FRI")]
 
 
 def test_story_link_with_other_fail_still_regenerates_for_the_other() -> None:
@@ -873,7 +958,25 @@ def test_hooks_rewritten_for_all_days_to_name_problem_material() -> None:
     assert response.failure is None and response.warnings == []
     assert gen.count("GeneratedHookFixes") == 5
     assert review.count("GeneratedMissionReview") == 5  # 다시 확인 없음
-    mon = next(x for x in response.dialogues if x.day == "MON")
-    assert mon.lines[-1].text == MON_HOOK
-    tue = next(x for x in response.dialogues if x.day == "TUE")
-    assert tue.lines[-1].text == HOOK["TUE"]  # 고치지 않은 요일은 그대로
+    assert given(gen, "MON", HOOK_LABEL) == MON_HOOK
+    assert given(gen, "TUE", HOOK_LABEL) == HOOK["TUE"]  # 고치지 않은 요일은 그대로
+
+
+def test_field_fixes_are_called_per_day_so_days_do_not_mix() -> None:
+    """칸 고쳐 쓰기는 요일마다 따로 부름(#782 실측 r782-ways-rd4: 한 호출에 목요일 지문과 금요일
+    수사 연결 문장을 함께 고치다 금요일 문장에 목요일 '삼각형 카드'가 섞임)."""
+    broken = valid_theme()
+    broken["days"][1]["discovery"] = "가" * 50
+    broken["days"][3]["discovery"] = "나" * 50
+    gen = gen_llm(
+        theme=lambda n, d: generated_theme(broken),
+        fix=lambda n, d: fixes(
+            ("TUE.discovery", DISCOVERY["TUE"]), ("THU.discovery", DISCOVERY["THU"])
+        ),
+    )
+    response = run(gen, review_llm())
+    assert response.failure is None
+    users = gen.users("GeneratedFixes")
+    assert len(users) == 2  # 화·목 따로
+    assert sum("path: TUE.discovery" in u for u in users) == 1
+    assert all(("TUE." in u) != ("THU." in u) for u in users)  # 한 호출에 한 요일만

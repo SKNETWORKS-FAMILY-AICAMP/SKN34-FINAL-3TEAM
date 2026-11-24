@@ -22,6 +22,15 @@ class AdminOperationsContracts(unittest.TestCase):
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
                 reviewed=deepcopy(current[name])
+                # #977 scopes payment history by child and returns the parent's paginated response.
+                if section == 'paths' and name == '/payments':
+                    operation = reviewed['get']
+                    child_filter = {'name': 'childId', 'in': 'query', 'schema': {'type': 'string', 'format': 'uuid'}}
+                    self.assertIn(child_filter, operation['parameters'])
+                    operation['parameters'].remove(child_filter)
+                    response = operation['responses']['200']['content']['application/json']
+                    self.assertEqual(response['schema'], {'$ref': '#/components/schemas/OwnPaymentTransactions'})
+                    response['schema'] = {'$ref': '#/components/schemas/PaymentTransactions'}
                 # #479 adds optional explanations; preserve every pre-existing report field.
                 if section=='schemas' and name=='ReportDetail':
                     reviewed['allOf'][1]['properties'].pop('explanations',None)
@@ -29,6 +38,11 @@ class AdminOperationsContracts(unittest.TestCase):
                 if section=='schemas' and name in ('DashboardAttempt','DashboardPublicAttempt','DashboardAttemptDetail'):
                     self.assertEqual(reviewed['properties'].pop('context')['enum'],['THEME_DAY','THEME_REVIEW','EXTRA'])
                     self.assertNotIn('context',reviewed['required'])
+                # #801 documents the optional answer times core already forwards from learning AnswerItem.
+                if section=='schemas' and name=='DashboardAnswerItem':
+                    for field in ('thinkingSeconds','writingSeconds'):
+                        self.assertEqual(reviewed['properties'].pop(field)['type'],['integer','null'])
+                        self.assertNotIn(field,reviewed['required'])
                 # #367 extends registration only; retain all prior fields in the fingerprint.
                 if section=='schemas' and name=='RegisterModelVersion':
                     reviewed['properties'].pop('registration',None)
@@ -123,6 +137,13 @@ class AdminOperationsContracts(unittest.TestCase):
                         reviewed['properties'].pop(field)
                     self.assertEqual(reviewed['properties']['email']['type'],['string','null'])
                     reviewed['properties']['email']={'type':'string','format':'email'}
+                # #882 specifies the optional theme-specific mission guide without changing the general response.
+                if section=='paths' and name=='/missions/{missionId}':
+                    get=reviewed['get']
+                    self.assertEqual(get.pop('parameters'),[{'name':'context','in':'query','required':False,
+                        'schema':{'type':'string','enum':['EXTRA','THEME_DAY','THEME_REVIEW']},'description':'생략하면 일반 미션 안내'}])
+                    self.assertIn('게시 당시',get['description'])
+                    get['description']='STUDENT 전용. 검증된 본인 학생의 grade·demo를 core DB에서 결정해 전달하며 클라이언트 query는 사용하지 않는다. learning의 공개 전 정답·예시 답 비공개 계약을 유지한다.'
                 # #387 adds the attempt start {context} body and the core limit/premium errors; restore only the approved fields.
                 if section=='paths' and name=='/missions/{missionId}/attempts':
                     post=reviewed['post']
@@ -153,6 +174,7 @@ class AdminOperationsContracts(unittest.TestCase):
                     reviewed['enum'].remove('MEMORY_EMBEDDING'); reviewed['enum'].remove('MEMORY_EXPLANATION')
                     # #680 adds only the memory search query rewrite usage type.
                     reviewed['enum'].remove('MEMORY_QUERY')
+                    reviewed['enum'].remove('WORD_HELP')
                 # #390 (P24 daily report) adds only the periodType filter/field, daily detail fields and two
                 # daily notification types. Remove exactly those additions; every other field stays fingerprinted.
                 if section=='paths' and name=='/children/{childId}/reports':
@@ -217,6 +239,11 @@ class AdminOperationsContracts(unittest.TestCase):
                 # #367 adds optional evidence limitations; retain the original evidence fingerprint.
                 if section=='schemas' and name=='EvaluationEvidence':
                     self.assertEqual(reviewed['properties'].pop('limitations')['default'],[])
+                    # #728 adds the optional recommendation tag only.
+                    self.assertEqual(reviewed['properties'].pop('recommendation'),{'$ref':'#/components/schemas/ModelRecommendation'})
+                # #728 adds the pipeline preflight FAIL extension field only.
+                if section=='schemas' and name=='Problem':
+                    self.assertEqual(reviewed['properties'].pop('preflight')['$ref'],'#/components/schemas/ModelPreflightResult')
                 if section=='schemas' and name=='RegisterModelVersion':
                     self.assertEqual(reviewed.pop('allOf')[0]['then']['required'],['artifactUri'])
                 # #423 documents the existing response bodies (Kotlin DTO / report EvidencePage) instead of bare objects.
@@ -260,5 +287,5 @@ class AdminOperationsContracts(unittest.TestCase):
             if name.startswith('Operation'): Draft202012Validator.check_schema(schema)
     def test_queue_allowlist(self):
         definition=json.loads((ROOT/'infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json').read_text())
-        self.assertEqual(35,len(definition['queues']))  # #370 work + 3 retry + DLQ 추가
+        self.assertEqual(45,len(definition['queues']))  # #370 work + 3 retry + DLQ 추가, 추억 그림책 report·core 큐 각 work + 3 retry + DLQ(#966)
         self.assertEqual({'/'},{q['vhost'] for q in definition['queues']})

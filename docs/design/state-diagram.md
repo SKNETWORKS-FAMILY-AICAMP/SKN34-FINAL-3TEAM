@@ -224,9 +224,9 @@ stateDiagram-v2
 - 되묻기는 시도당 최대 2회, 2회째 보완 답변 판정 후 되묻기 생성 없이 마무리 안내. 고르기 `CORRECT`도 되묻기 없이 마무리 안내 (P04)
 - 초안 `attempt_draft.version`: 저장마다 +1, `WHERE version = :ifMatch` (상태값 없음)
 
-#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385 → 2026-11-10 개정 #483)
+#### 3.2.1 테마 요일 문제 열림 (파생, DB 미저장, P23, #385·#483)
 
-2026-11-10 개정(#483, 구현 learning #484·core #485): 공개된 문제가 쌓이는 누적 공개로 바꾼다. core #485는 일요일 허용 값 `sundayTheme` 전달·무료 테마 문제 한도 없음을, learning #484는 아래 요일 상태·시작 검사를 구현했다(`ThemeWeek.stateOf`·`WeeklyThemeService.checkStart`).
+공개된 문제가 쌓이는 누적 공개(#483). learning #484가 아래 요일 상태·시작 검사(`ThemeWeek.stateOf`·`WeeklyThemeService.checkStart`)를, core #485가 일요일 허용 값 `sundayTheme` 전달·무료 테마 문제 한도 없음을 맡는다.
 
 ```mermaid
 stateDiagram-v2
@@ -241,12 +241,12 @@ stateDiagram-v2
 
 - `SUNDAY_OPEN`은 응답 값이 아니라 설명용이다. 응답 `state`는 `LOCKED`·`OPEN`·`CLOSED` 셋 그대로이고, 프리미엄 일요일에는 `OPEN`으로 계산한다(일요일 허용 여부는 core #485가 상품 `features.sundayTheme`으로 판단해 learning 쿼리 `sundayTheme=true|false`로 전달, [api-spec 4.1](api-spec.md))
 - 월요일에는 월 문제만, 금요일에는 다섯 문제 모두 `OPEN`. 토요일에는 다섯 문제 모두 `OPEN`
-- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 그 주에 이미 마무리한 문제의 새 `THEME_DAY` 시도는 `409 THEME_DAY_CLOSED`로 거부한다(learning #484, 전에는 무료 하루 1개 429가 부수적으로 막았음 #506). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기존 코드 재사용, 일요일 전용 코드는 만들지 않음, #484)
+- `OPEN`이면 `THEME_DAY` 신규 시도(안 푼 문제). 그 주에 이미 마무리한 문제의 새 `THEME_DAY` 시도는 `409 THEME_DAY_CLOSED`로 거부한다(learning #484·#506). 마무리한 문제 다시 풀기 `THEME_REVIEW`는 토요일(프리미엄은 일요일도)만. `LOCKED` 신규 시도와 무료 일요일 신규 시도는 `409 THEME_DAY_CLOSED`, 평일·무료 일요일 다시 풀기는 `409 THEME_REVIEW_NOT_ALLOWED`(기존 코드 재사용, 일요일 전용 코드는 만들지 않음, #484)
 - 시작 요청 `context`(`THEME_DAY`·`THEME_REVIEW`·`EXTRA`)는 신규 시도에만 검사. 진행 중 시도 반환(부분 UK 충돌)은 요일과 무관하게 이어하기 허용(일요일 포함). 당일 풀이(`completedOnDay`)·개근은 그 요일 KST 안의 학습 완료 시각만 인정, 주간 완주(`finished`)는 그 주 테마 시도로 토요일 23:59:59 KST까지 다섯 문제 학습 완료(일요일 완료 제외, #484)
 - 재사용 테마의 이미 푼 문제도 그 주 `OPEN`이면 `THEME_DAY` 신규 시도 가능(지난 주 시도는 "그 주에 마무리"에 들지 않음)
-- 이전 규칙(#385 구현, #484 전): 그 요일만 `OPEN`, 다음 날 `CLOSED`, 토·일에는 다섯 요일 모두 `CLOSED`. 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준(개정 뒤에도 같음)
+- 시작 검사는 learning 시계(KST), 조회·열람은 core가 넘긴 날짜 기준
 
-#### 3.2.2 주간 테마 엔딩 (파생, 2026-11-10 개정 #483, learning #484)
+#### 3.2.2 주간 테마 엔딩 (파생, #483, learning #484)
 
 큰 질문 정답 고르기(금요일 문제를 마무리한 뒤 후보 중 하나, 한 주 한 번, #437·#484) 결과로 학생·주마다 정한다. 고른 값은 learning `theme_answer_pick`(학생·주당 1행, ERD 4.2.1)에 두고 엔딩은 저장하지 않고 계산한다(`ThemeEnding`, 사용자 결정 2026-11-12).
 
@@ -262,10 +262,10 @@ stateDiagram-v2
 
 - 응답 값은 `ending`(`NOT_ENDED`·`ENDED`, 주간 테마 조회·요약, #484). `WAITING_RETRY`는 설명용이며 응답에서는 `NOT_ENDED`. 고르기 전에 마무리한 다시 풀기는 엔딩 조건에 들지 않는다
 - 정답 고르기 요청(`POST …/weekly-theme/answer-picks {pick}`, api-spec 2.11): 후보 밖 400, 큰 질문 없는 테마·금요일 문제 마무리 전·이미 고름·무료 일요일은 `409 THEME_PICK_NOT_ALLOWED`
-- `ENDED` 전에는 정답·종료 이야기(`outro`)를 응답에 넣지 않는다(#438 "공개 시점 전 제외"를 이 조건으로 바꿈). 종료 이야기 표시는 `ENDED` 뒤, 무료 일요일에는 이미 본 엔딩 다시 보기만
-- 정답 고르기가 있는 문제(큰 질문 테마의 금요일 문제)의 커뮤니티 열람은 그 문제로 고른 주에 `ENDED`인 학생만(P20, 아니면 `403 COMMUNITY_LOCKED_UNTIL_ENDING`, 사용자 결정 2026-11-12 새 코드. 학습 완료 전은 지금처럼 `COMMUNITY_LOCKED`)
+- `ENDED` 전에는 정답·종료 이야기(`outro`)를 응답에 넣지 않는다. 종료 이야기 표시는 `ENDED` 뒤, 무료 일요일에는 이미 본 엔딩 다시 보기만
+- 정답 고르기가 있는 문제(큰 질문 테마의 금요일 문제)의 커뮤니티 열람은 그 문제로 고른 주에 `ENDED`인 학생만(P20, 아니면 `403 COMMUNITY_LOCKED_UNTIL_ENDING`. 학습 완료 전은 지금처럼 `COMMUNITY_LOCKED`)
 
-#438 추가:
+#438 공개 조건:
 - 정답 구조 공개(#438 → #484): 요일 단서(`clue`·`rulesOut`)는 학생이 그 문제를 그 주에 학습 완료한 뒤에만 학생 응답에 넣는다(ai.md 17장 사용자 결정 2026-11-11 "미션을 마쳐야 단서", 공개 기준은 학습 완료 사용자 결정 2026-11-12. #438은 `LOCKED`가 아닐 때였음). 이야기 열람 기록은 INTRO 월~토(그 주 1번, 2026-11-10 사용자 결정으로 에픽의 '월요일 첫 진입'에서 바꿈. 웹은 그 주 처음 '오늘 문제 풀기'를 누를 때 보여 주고 기록, #589 2026-11-14)에 받는다
 - 단서 근거 공개(#647, 기준안): 요일 특징(`days[].clueFeature`·`clueFacts`, 그날 단서가 쓰는 특징의 후보별 값)은 그날 단서와 같은 조건(그 문제를 그 주에 학습 완료한 뒤)에서만, 후보 특징 표 전체(`features`)는 엔딩(`ENDED`) 뒤에만 학생 응답에 넣는다. 얻지 못한 요일 특징은 엔딩 전에 넣지 않는다
 - 종료 공개(#438 칸, 조건은 #483·#484): 종료 이야기·정답·결정적 단서·종료 장면 그림·영상·움직임은 엔딩 상태(3.2.2 `ENDED`)일 때만 학생 응답에 넣고 OUTRO 열람 기록도 그때만 받는다(엔딩 전 정답 제외). 엔딩 조건과 정답 고르기 저장·판정은 3.2.2(learning #484). 엔딩 여부는 한 곳(`ThemeEnding`)에서 판단하고, OUTRO 열람 기록은 엔딩이고 무료 일요일이 아닐 때 받는다(요일 무관). #484 전에는 토·일을 엔딩으로 봤다
@@ -355,10 +355,12 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 조건 |
 |---|---|---|
-| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 검토 요청한 버전이 현재본(아니면 `409 CONFLICT`). 월~금 5개 요일 모두 게시 미션(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 테마 학년을 포함(초3·초4 논술 불가, #438 학년별 테마), 같은 학년·주 `PUBLISHED` 없음. 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors` |
-| `PUBLISHED → UNPUBLISHED` | `/unpublish` | 그 주 학생에게는 최근 게시 테마 재사용(P23). 이미 시작한 시도는 유지 |
+| `REVIEW_REQUIRED → PUBLISHED` | `POST /admin/weekly-themes/{id}/publish` (CONTENT) | 검토 요청한 버전이 현재본(아니면 `409 CONFLICT`). 같은 학년·주에 다른 테마가 이미 `PUBLISHED`면 `409 WEEK_LOCKED`(#882, `ThemeWeekPlanner.requireOpen`). 본문 `expectedVersion`(열었던 현재본 버전)·`expectedPlannedDraftId`(그 주에 편성돼 있던 후보, `null` 포함)가 지금과 다르면 `409 PLAN_CONFLICT`. 월~금 5개 요일 모두 게시 미션(시연 전용 제외), 다섯 생각 유형 1개씩, 미션 학년 범위가 테마 학년을 포함(초3·초4 논술 불가, #438 학년별 테마). 아니면 `422 WEEKLY_THEME_PUBLISH_INCOMPLETE` + `errors`(동시 게시가 부분 UK에 걸리면 같은 422 `WEEK_ALREADY_PUBLISHED`). 게시하면 그 버전의 요일 미션·기준표 버전을 고정하고, 그 학년·주에 편성된 초안 후보를 해제한다(`planned_week = NULL`) |
+| `PUBLISHED → UNPUBLISHED` | `/unpublish` | 그 주 학생에게는 최근 게시 테마 재사용(P23). 이미 시작한 시도는 유지. 본문 `expectedPublishedVersion`이 지금 게시 버전과 다르면 `409 PLAN_CONFLICT`(#882) |
+| 작성·수정·검토 요청 | `POST /admin/weekly-themes`·`PUT /{id}`·`POST /{id}/review-request` | 학년별 잠금(`ThemeWeekPlanner.lockGrades`) 뒤 처리. 게시 중이 아닌 테마는 그 학년·주에 게시 테마가 있으면 `409 WEEK_LOCKED`. 게시 중 테마의 학년·주 변경은 `409 WEEK_LOCKED`, 초안에서 채택한 테마의 학년·주 변경은 `409 THEME_SCHEDULE_LOCKED`. `expectedVersion`이 다르거나 처리 중 학년·주가 바뀌면 `409 PLAN_CONFLICT` (#882) |
 
 - 미션 상태(3.1)와 같은 전이 규칙. 별도 검토(승인·수정 요청) 경로는 없다(core #387이 7경로만 프록시): 검토 요청한 버전(`review_version_id`)이 현재본일 때의 게시가 승인이고, 검토 중 수정은 `DRAFT`로 돌아간다. 게시 중 수정은 새 버전을 현재본으로 두고 `PUBLISHED`를 유지하며 학생에게는 재게시 전까지 게시본이 보인다. 코드값은 [ERD 4.2.1](erd.md#421-주간-테마-p23-385-v11v12). 위에 없는 전이는 `409 CONFLICT`
+- 제공 중단이나 재게시로 요일 미션이 바뀌기 전에 시작한 진행 중 시도는 시작 당시 미션·기준표 버전과 장면(`attempt.theme_version_id`, V27)으로 이어진다. 주간 홈 '이어서 풀기'는 지금 제공하는 테마의 요일 미션과 `missionId`로만 맞추므로 이 시도를 보여 주지 않고, 내 공책 '이어서 하기'로만 들어간다. 마쳐도 지금 보이는 테마의 단서·엔딩에는 세지 않는다(#882)
 - 테마 초안 채택(3.5.1)으로 만든 테마도 `DRAFT`에서 시작한다(자동 게시 없음, 미션 5개도 `DRAFT`라 미션 게시 뒤에 테마 게시 검사를 통과)
 
 #### 3.5.1 `theme_draft.status` (#438)
@@ -380,13 +382,33 @@ stateDiagram-v2
 
 | 전이 | 트리거 | 담당 | 조건 |
 |---|---|---|---|
-| → `GENERATING` (관리자) | `POST /admin/theme-drafts` (CONTENT) | `ThemeDraftService.request` | 학년 `G3`~`G6`, 적용 주 월요일이고 이번 주 이후, 지정한 유형별 성취기준이 표에 있고 그 학년을 포함하는 학년군, 입력 방식이 유형·학년에 맞음(초3·초4 논술 불가), 유형 중복 없음(400). 고르지 않은 유형은 자동 생성과 같은 규칙으로 learning이 채움(채울 성취기준이 표에 없으면 `409 CONFLICT`). `source = ADMIN` |
+| → `GENERATING` (관리자) | `POST /admin/theme-drafts` (CONTENT) | `ThemeDraftService.request` | 그 학년·주에 게시 테마가 있으면 `409 WEEK_LOCKED`(#882). 학년 `G3`~`G6`, 적용 주 월요일이고 이번 주 이후, 지정한 유형별 성취기준이 표에 있고 그 학년을 포함하는 학년군, 입력 방식이 유형·학년에 맞음(초3·초4 논술 불가), 유형 중복 없음(400). 고르지 않은 유형은 자동 생성과 같은 규칙으로 learning이 채움(채울 성취기준이 표에 없으면 `409 CONFLICT`). `source = ADMIN` |
 | → `GENERATING` (자동) | `ThemeDraftScheduler` 주간 크론(기준안 수요일 03:00 KST) | `ThemeDraftService.createWeekly` | 다음 주 `G3`·`G4`·`G5`·`G6` 각 1개, `source = AUTO`. 그 학년·주에 게시 테마가 있으면 그 학년은 건너뜀(사용자 결정 2026-11-10). 부분 UK `(grade, week_start) WHERE source = 'AUTO'` + `ON CONFLICT DO NOTHING`이라 레플리카가 같이 돌아도 학년·주당 하나 |
-| → `GENERATING` (다시 생성) | `POST /admin/theme-drafts/{id}/regenerate` | `ThemeDraftService.regenerate` | 원래 초안이 `READY`·`CHECK_FAILED`·`FAILED`·`DISCARDED`일 때 같은 `input`·학년·주로 **새 초안**(`source = ADMIN`, attempts 0)을 만들고 원래 초안은 그대로 둔다(사용자 결정 2026-11-10). `GENERATING`·`ADOPTED`는 `409 CONFLICT`. 응답은 새 초안(`draftId`). 본문 `targets`가 있으면 부분 다시 생성(#537, 사용자 결정 2026-11-17): 대상이 모두 원래 초안 `regenerableTargets` 안일 때만(아니면 `409`) 새 초안 `input.regenerate = {baseDraftId, targets}`로 만들고, 생성은 고른 대상만 다시 만든다. 같은 초안에 덮지 않음(덮으면 `READY → GENERATING` 전이가 생기고 실패 때 멀쩡한 결과를 잃음) |
+| → `GENERATING` (다시 생성) | `POST /admin/theme-drafts/{id}/regenerate` | `ThemeDraftService.regenerate` | 원래 초안이 `READY`·`CHECK_FAILED`·`FAILED`·`DISCARDED`일 때 같은 `input`·학년·주로 **새 초안**(`source = ADMIN`, attempts 0)을 만들고 원래 초안은 그대로 둔다(사용자 결정 2026-11-10). `GENERATING`·`ADOPTED`는 `409 CONFLICT`. 초안 묶음(원래 초안과 그 다시 생성본)의 편성·적용 주에 게시 테마가 있으면 `409 WEEK_LOCKED`(#882). 응답은 새 초안(`draftId`). 본문 `targets`가 있으면 부분 다시 생성(#537, 사용자 결정 2026-11-17): 고른 초안이나 묶음 원본이 `DISCARDED`이거나 묶음에 채택본이 있으면 `409 CONFLICT`(#882), 대상이 모두 원래 초안 `regenerableTargets` 안일 때만(아니면 `409`) 새 초안 `input.regenerate = {baseDraftId, targets}`로 만들고, 생성은 고른 대상만 다시 만든다. 같은 초안에 덮지 않음(덮으면 `READY → GENERATING` 전이가 생기고 실패 때 멀쩡한 결과를 잃음) |
 | 생성 1회 | `ThemeDraftScheduler` 주기(기준안 10초) | `ThemeDraftService.generateNext` → `ThemeDraft.recordAttempt` | 리스 점유(기준안 18분) 뒤 ai 1회(대기 기준안 16분) + learning 검사. 점유한 리스가 그대로일 때만 저장해 늦은 작업이 덮어쓰지 않음. 작업이 중간에 죽으면 리스가 지나 다른 레플리카가 다시 맡고 그 시도는 세지 않음 |
 | `GENERATING → READY·CHECK_FAILED·FAILED` | 같음 | `ThemeDraft.recordAttempt` | 상한 기준안 3회(미션 초안과 같음). ai `200`의 `failure`(`THEME`·`MISSION`·`REVIEW`·`IMAGE`)와 learning 검사 실패는 검사 실패, ai `502`·`503`·대기 초과·서킷 열림은 AI 호출 실패(`failure_code`는 판정과 같은 `AI_TIMEOUT`·`AI_UNAVAILABLE`·`AI_BAD_RESPONSE`·`AI_CIRCUIT_OPEN`) |
-| `READY → ADOPTED` | `POST /admin/theme-drafts/{id}/adopt` | `ThemeDraftService.adopt` | 초안 행 잠금, 미션 5개(`DRAFT`, `source = LLM_THEME`)와 테마(`DRAFT`)를 같은 트랜잭션에. 그 뒤는 3.1·3.5 |
-| → `DISCARDED` | `POST /admin/theme-drafts/{id}/discard` | `ThemeDraft.discard` | `READY`·`CHECK_FAILED`·`FAILED`만. 나머지는 `409 CONFLICT` |
+| `READY → ADOPTED` | `POST /admin/theme-drafts/{id}/adopt` | `ThemeDraftService.adopt` | 학년 잠금과 초안 행 잠금. 묶음이 `DISCARDED`이거나 이미 채택본이 있으면 `409 CONFLICT`. 본문 `expectedPlannedWeek`(보낸 경우, `null` 포함)가 지금 편성 주와 다르거나 묶음에 영상 생성 대기(`GENERATING`)가 있으면 `409 PLAN_CONFLICT`. 적용 주(편성 주, 없으면 생성 기준 주)에 게시 테마가 있으면 `409 WEEK_LOCKED`. 장면별 선택본(`ThemeDraftMediaService.selectedOutput`) 조합이 원래 결과와 다르면 learning 검사를 다시 하고 실패하면 `409 CONFLICT`. 미션 5개(`DRAFT`, `source = LLM_THEME`)와 테마(`DRAFT`, 적용 주)를 같은 트랜잭션에 만들고 편성을 해제·장면 선택을 고정(#882). 그 뒤는 3.1·3.5 |
+| → `DISCARDED` | `POST /admin/theme-drafts/{id}/discard` | `ThemeDraftService.discard` → `ThemeDraft.discard` | `READY`·`CHECK_FAILED`·`FAILED`만. 나머지는 `409 CONFLICT`. #882: 묶음 편성·적용 주에 게시 테마가 있으면 `409 WEEK_LOCKED`, 다시 생성본은 묶음이 종결(`DISCARDED`·채택)됐거나 장면 선택에 쓰인 버전이면 `409 CONFLICT`. 묶음 원본은 묶음에 채택본이 있으면 상태와 무관하게 `409 CONFLICT`(#964, 예: `CHECK_FAILED` 원본의 부분 다시 생성본을 채택하면 원본은 버릴 수 없음). `expectedPlannedWeek`가 다르거나 `READY` 초안에 영상 생성 대기가 있으면 `409 PLAN_CONFLICT`(생성 대기 중에는 버리지 않음). 버리면 편성을 해제하고 장면 선택을 고정 |
+| 편성 주 배치·이동·맞교환·해제 (`planned_week`, 상태 변화 없음) | `PUT /admin/weekly-themes/planner` | `ThemeWeekPlanner.change` | 본문 `{grade, draftId, expectedWeek, targetWeek, expectedTargetDraftId}`(#882). 월요일 아니거나 지나간 주면 `400`. 학년 잠금 뒤 원본 `READY` 초안(다시 생성본·채택본 있는 묶음 제외)이고 학년·지금 편성 주가 `expectedWeek`와 같아야 하며, 대상 주 점유 후보가 `expectedTargetDraftId`와 같아야 함(아니면 `409 PLAN_CONFLICT`). 원래 주·대상 주에 게시 테마가 있으면 `409 WEEK_LOCKED`. 대상 주에 다른 후보가 있으면 원래 주로 맞바꾼다. 생성 기준 주(`week_start`)는 바꾸지 않음 |
+| 장면 선택·별표·메모 (상태 변화 없음) | `PUT /admin/theme-drafts/{id}/scenes/{scene}/versions/selection`·`PATCH …/{versionId}` | `ThemeDraftMediaService.select`·`annotate` | 고른 초안이 `READY`이고 묶음이 종결되지 않았고 채택본이 없고 편성·적용 주가 잠기지 않았을 때만 편집 가능. 잠긴 주는 `409 WEEK_LOCKED`, 그 밖의 편집 불가·`expectedVersionId`·`expectedVersionCount`가 지금 이력과 다름·고를 수 없는 버전은 `409 CONFLICT` (#882) |
+
+**검수 단계 `stage` (#964)**: `GET /admin/theme-drafts/review-list`가 조회할 때 계산하는 파생값(저장 컬럼 아님, `ThemeDraftMapper.xml` `reviewScope`·`reviewWeek`·`reviewStage`).
+
+- 목록 범위: `ADOPTED`·`DISCARDED` 초안은 항상 보인다. 그 밖의 초안은 묶음 원본이 `ADOPTED`·`DISCARDED`가 아니고 묶음에 채택본이 없을 때만 보인다. 원본이 `READY`이면 `READY` 부분 다시 생성본은 원본 행에 합쳐 따로 보이지 않는다. 전체 다시 생성본은 묶음에 매달지 않으므로(`family_root_id` 없음) 독립 행이다. `status=DISCARDED`나 `stage=discarded`면 `hideDiscarded`와 무관하게 `DISCARDED`만, 그 밖에 `hideDiscarded`면 `DISCARDED`를 뺀다
+- 적용 주(`appliedWeek`, 필터 `week`): 버린 초안은 생성 기준 주(`week_start`). 그 밖은 테마 적용 주 → 묶음 원본 편성 주(`planned_week`) → 생성 기준 주 순으로 처음 있는 값
+
+| 순서 | `stage` | 조건(위에서부터 처음 맞는 것) |
+|---|---|---|
+| 1 | `discarded` | 초안 `DISCARDED` |
+| 2 | `published` | 채택한 테마가 `PUBLISHED` |
+| 3 | `closed` | 테마 적용 주(테마가 없으면 묶음 원본 편성 주)에 같은 학년 다른 게시 테마가 있음. 둘 다 없으면 해당 없음 |
+| 4 | `ready` | 채택한 테마가 `REVIEW_REQUIRED` |
+| 5 | `adopted` | 초안 `ADOPTED`(테마 `DRAFT`·`UNPUBLISHED`) |
+| 6 | `generating`·`check_failed`·`failed` | 초안 `GENERATING`·`CHECK_FAILED`·`FAILED` |
+| 7 | `pair` | 초안 `READY`이고 묶음 원본에 아직 확인하지 않은 `READY` 부분 다시 생성본(그 장면 선택의 `reviewed_version_ids`에 없음)이 있음. `comparisonScene`은 그 대상 장면 중 `INTRO`·`MON`~`FRI`·`OUTRO` 순서로 첫 장면 |
+| 8 | `review` | 그 밖(`READY`) |
+
+- `comparisonPending=true` 필터는 `stage=pair`와 같은 조건이다
 
 - 검사 통과(`READY`)는 공개 승인이 아니다. 채택 뒤 미션 검토·게시(3.1)와 테마 검토 요청·게시(3.5)를 거친다(P19)
 

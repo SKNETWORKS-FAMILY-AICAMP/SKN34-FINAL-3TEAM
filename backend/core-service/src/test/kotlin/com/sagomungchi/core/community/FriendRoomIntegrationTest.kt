@@ -108,7 +108,7 @@ class FriendRoomIntegrationTest : IntegrationTestSupport() {
             }
             // 신고 접수(core #388)가 확인하는 원문·숨김 반영
             req.method == "GET" && path == "/internal/community/posts/$friendPost" ->
-                ok(mapOf("postId" to friendPost, "studentId" to friend, "missionId" to UUID.randomUUID(), "status" to "VISIBLE", "answer" to mapOf("text" to "원문")))
+                ok(mapOf("postId" to friendPost, "studentId" to friend, "missionId" to UUID.randomUUID(), "status" to "VISIBLE", "answer" to NARRATIVE_ANSWER))
             path.endsWith("/moderation") -> ok(mapOf("postId" to friendPost, "status" to "HIDDEN_REPORT"))
             path.endsWith("/community-visibility") -> ok(mapOf("updated" to 1))
             else -> LearningHttpStub.Reply(404, """{"code":"NOT_FOUND"}""", mapOf("Content-Type" to "application/problem+json"))

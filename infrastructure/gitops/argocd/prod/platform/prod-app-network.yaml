@@ -1,0 +1,30 @@
+# wave 9: app namespace 추가 정책(일회성 DB Pod·배포 확인 Pod egress, ALB → core:8080). 앱 기본 거부 정책은 core chart(#857)가 만들고 이 정책들과 합집합으로 동작한다. core Ingress는 origin 헤더 실제 값이 Git 밖이라 손으로 둔다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prod-app-network
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "9"
+spec:
+  project: sagomungchi-prod
+  source:
+    repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+    targetRevision: main
+    path: infrastructure/gitops/environments/prod
+    directory:
+      include: '{app-oneoff-db-network.json,app-check-pods-network.json,core-alb-network.json}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app
+  # 플랫폼은 prune 끔(상태 저장 자원·CRD·NodePool 보호), selfHeal 켬. finalizer가 없어 Application을 지워도 자원은 남는다.
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

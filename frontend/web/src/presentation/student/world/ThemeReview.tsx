@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useRecordReviewView, useWeeklyTheme } from '../../../data/retention/queries.ts'
-import type { Child, Mission } from '../../../domain/classroom.ts'
+import type { Child } from '../../../domain/classroom.ts'
 import { studentThinkingLabels } from '../../../domain/classroom.ts'
 import { POINT_RULES, themeClosed } from '../../../domain/retention.ts'
 import type { AttemptContext } from '../../../domain/retention.ts'
@@ -17,17 +17,17 @@ const REVIEW_POINTS = POINT_RULES.find((r) => r.type === 'REVIEW_VIEWED')!.amoun
  * 주말 되돌아보기(#487 시안 Review). 토요일·프리미엄 일요일: 안 푼 문제 "지금 풀기", 마무리한 문제 "다시 풀기"(열면 주 1회 기록).
  * 무료 일요일(테마 닫힘): "다음 테마는 월요일에 열려요" + 이번 주 기록·이야기의 끝 다시 보기. 아이 화면에 결제 안내는 넣지 않는다.
  */
-export function ThemeReview({ child, onJournal, onEnding, onHome, onResume, onStartTheme }: {
+export function ThemeReview({ child, onJournal, onEnding, onHome, onStartTheme }: {
   child: Child
   onJournal: () => void
   onEnding: () => void
   onHome: () => void
-  onResume: (attemptId: string) => void
-  onStartTheme: (mission: Mission, context: AttemptContext) => void
+  /** 요일 문제 열기(새로 시작·이어 풀기·다시 풀기 모두, 오늘 장면 #807) */
+  onStartTheme: (missionId: string, context: AttemptContext) => void
 }) {
   const query = useWeeklyTheme(child.id)
   const record = useRecordReviewView(child.id)
-  const { open, image } = useThemeMissions(child, onResume, onStartTheme)
+  const { open, image } = useThemeMissions(child, onStartTheme)
   const { companion, worn } = useLook()
   const theme = query.error ? null : (query.data ?? null)
   const sent = useRef('')

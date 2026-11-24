@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.theme.repository.ThemeDraftMediaMapper">
+    <resultMap id="source" type="com.sagomungchi.learning.theme.repository.SceneSourceRow">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="status" javaType="com.sagomungchi.learning.mission.domain.DraftStatus"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="image" javaType="java.lang.String"/>
+            <arg column="video" javaType="java.lang.String"/>
+            <arg column="motion" javaType="java.util.Map" typeHandler="com.sagomungchi.learning.mission.repository.MotionTypeHandler"/>
+            <arg column="starred" javaType="_boolean"/>
+            <arg column="note" javaType="java.lang.String"/>
+            <arg column="unreviewed" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <select id="rootId" resultType="java.util.UUID">
+        SELECT coalesce(family_root_id, id) FROM theme_draft WHERE id = #{id}
+    </select>
+    <select id="hasGenerating" resultType="_boolean" flushCache="true">
+        SELECT EXISTS (SELECT 1 FROM theme_draft WHERE family_root_id = #{root} AND status = 'GENERATING')
+    </select>
+    <select id="hasAdopted" resultType="_boolean" flushCache="true">
+        SELECT EXISTS (SELECT 1 FROM theme_draft WHERE (family_root_id = #{root} OR id = #{root}) AND status = 'ADOPTED')
+    </select>
+    <select id="sources" resultMap="source" flushCache="true">
+        SELECT child.id, child.status, child.created_at, child.output->'images'->>#{scene} AS image, child.output->'videos'->>#{scene} AS video,
+               child.output->'motions'->#{scene} AS motion, coalesce(n.starred,false) AS starred, coalesce(n.note,'') AS note,
+               (child.family_root_id IS NOT NULL AND <include refid="com.sagomungchi.learning.theme.repository.ThemeDraftMapper.unreviewedReadyCandidate"/>) AS unreviewed
+        FROM theme_draft child LEFT JOIN theme_draft_scene_note n ON n.version_id = child.id AND n.scene = #{scene}
+        LEFT JOIN theme_draft_scene_selection pick ON pick.root_id = child.family_root_id AND pick.scene = #{scene}
+        WHERE child.output IS NOT NULL AND child.status != 'GENERATING' AND (child.id = #{root} OR (child.family_root_id = #{root}
+          AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(child.input #> '{regenerate,targets}') AS t(target)
+                      WHERE split_part(t.target, ':', 2) = #{scene})))
+        ORDER BY (child.id = #{root}) DESC, child.created_at, child.id
+    </select>
+    <select id="ancestors" resultType="java.util.UUID">
+        WITH RECURSIVE ancestors(id,parent,depth) AS (
+            SELECT id, input #>> '{regenerate,baseDraftId}', 0 FROM theme_draft WHERE id = #{id}
+            UNION ALL
+            SELECT d.id, d.input #>> '{regenerate,baseDraftId}', a.depth + 1
+            FROM ancestors a JOIN theme_draft d ON d.id::text = a.parent
+        )
+        SELECT id FROM ancestors ORDER BY depth
+    </select>
+    <select id="choices" resultType="com.sagomungchi.learning.theme.repository.SceneChoiceRow" flushCache="true">
+        SELECT s.scene, s.version_id FROM theme_draft d JOIN theme_draft_scene_selection s
+            ON s.root_id = coalesce(d.family_root_id,d.id)
+        WHERE d.id = #{id} AND d.status NOT IN ('ADOPTED','DISCARDED')
+        UNION ALL
+        SELECT e.key AS scene, e.value::uuid AS version_id FROM theme_draft d
+            CROSS JOIN LATERAL jsonb_each_text(d.frozen_scene_choices) e
+        WHERE d.id = #{id} AND d.status IN ('ADOPTED','DISCARDED')
+    </select>
+    <update id="freeze">
+        UPDATE theme_draft d SET frozen_scene_choices = (
+            SELECT coalesce(jsonb_object_agg(s.scene,s.version_id),'{}'::jsonb)
+            FROM theme_draft_scene_selection s WHERE s.root_id = coalesce(d.family_root_id,d.id)
+        ) WHERE d.id = #{id}
+    </update>
+    <insert id="select">
+        INSERT INTO theme_draft_scene_selection (root_id, scene, version_id, reviewed_version_ids, confirmed_at)
+        VALUES (#{root}, #{scene}, #{version},
+            ARRAY[<foreach collection="reviewed" item="id" separator=",">#{id}</foreach>]::uuid[], clock_timestamp())
+        ON CONFLICT (root_id, scene) DO UPDATE SET version_id = excluded.version_id,
+            reviewed_version_ids = excluded.reviewed_version_ids, confirmed_at = excluded.confirmed_at
+    </insert>
+    <insert id="annotate">
+        INSERT INTO theme_draft_scene_note (version_id, scene, starred, note)
+        VALUES (#{version}, #{scene}, coalesce(#{starred,jdbcType=BOOLEAN},false), coalesce(#{note,jdbcType=VARCHAR},''))
+        ON CONFLICT (version_id, scene) DO UPDATE
+        SET starred = coalesce(#{starred,jdbcType=BOOLEAN},theme_draft_scene_note.starred),
+            note = coalesce(#{note,jdbcType=VARCHAR},theme_draft_scene_note.note)
+    </insert>
+</mapper>

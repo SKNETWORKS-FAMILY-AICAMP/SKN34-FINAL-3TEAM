@@ -18,11 +18,15 @@ import com.sagomungchi.learning.theme.domain.ThemeDraftScene
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeDraftView
 import com.sagomungchi.learning.theme.domain.ThemeDraftViewPage
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewFilter
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewPage
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
 import com.sagomungchi.learning.theme.domain.WeeklyThemeStatus
 import com.sagomungchi.learning.theme.service.ThemeDraftCommand
 import com.sagomungchi.learning.theme.service.ThemeDraftService
+import com.sagomungchi.learning.theme.service.ThemeDraftMediaService
+import com.sagomungchi.learning.theme.service.SceneHistory
 import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
@@ -38,6 +42,8 @@ import org.springframework.test.web.servlet.MockHttpServletRequestDsl
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.patch
+import org.springframework.test.web.servlet.put
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -48,6 +54,7 @@ import java.util.UUID
 @TestPropertySource(properties = ["app.internal.token=test-token", "app.internal.connect-timeout=1s", "app.internal.read-timeout=1s"])
 class AdminThemeDraftControllerTest(@Autowired private val mockMvc: MockMvc) {
     @MockitoBean lateinit var service: ThemeDraftService
+    @MockitoBean lateinit var media: ThemeDraftMediaService
 
     private val admin = UUID.randomUUID()
     private val now = Instant.parse("2026-11-11T00:00:00Z")
@@ -71,6 +78,20 @@ class AdminThemeDraftControllerTest(@Autowired private val mockMvc: MockMvc) {
         content?.let {
             contentType = MediaType.APPLICATION_JSON
             this.content = it
+        }
+    }
+
+    @Test
+    fun `검수 목록은 관리자만 열 수 있고 주차와 단계 조건을 검사한다`() {
+        val uri = "/internal/admin/theme-drafts/review-list"
+        val filter = ThemeDraftReviewFilter(ThemeGrade.G5,null,null,"published",week,null,false,true)
+        given(service.reviewPage(filter,1,2)).willReturn(ThemeDraftReviewPage(emptyList(),1,2,0,listOf(week)))
+        mockMvc.get(uri) { asAdmin(role="STUDENT") }.andExpect { status { isForbidden() } }
+        mockMvc.get("$uri?stage=unknown") { asAdmin() }.andExpect { status { isBadRequest() } }
+        mockMvc.get("$uri?week=${week.plusDays(1)}") { asAdmin() }.andExpect { status { isBadRequest() } }
+        mockMvc.get("$uri?size=0") { asAdmin() }.andExpect { status { isBadRequest() } }
+        mockMvc.get("$uri?grade=G5&stage=published&week=$week&page=1&size=2") { asAdmin() }.andExpect {
+            status { isOk() }; jsonPath("$.weeks[0]") { value(week.toString()) }; jsonPath("$.items") { isEmpty() }
         }
     }
 
@@ -107,6 +128,23 @@ class AdminThemeDraftControllerTest(@Autowired private val mockMvc: MockMvc) {
         mockMvc.post("/internal/admin/theme-drafts") { asAdmin(content = """{"grade":"G5","weekStart":"2026-11-16"}""") }.andExpect {
             status { isAccepted() }
         }
+    }
+
+    @Test
+    fun `장면 이력 선택과 메모는 관리자만 조회·저장하고 확인한 버전과 개수를 전달한다`() {
+        val uri = "/internal/admin/theme-drafts/${draft.id}/scenes/MON/versions"
+        val result = SceneHistory(draft.id,"MON",draft.id,true,emptyList(), comparisonPending = false)
+        given(media.history(draft.id,"MON")).willReturn(result)
+        given(media.select(draft.id,"MON",draft.id,draft.id,2)).willReturn(result)
+        given(media.annotate(draft.id,"MON",draft.id,true,null)).willReturn(result)
+        mockMvc.get(uri) { asAdmin(role = "PARENT") }.andExpect { status { isForbidden() } }
+        mockMvc.get(uri) { asAdmin() }.andExpect {
+            status { isOk() }; jsonPath("$.rootDraftId") { value(draft.id.toString()) }; jsonPath("$.comparisonPending") { value(false) }
+        }
+        mockMvc.put("$uri/selection") { asAdmin(content = """{"versionId":"${draft.id}","expectedVersionId":"${draft.id}","expectedVersionCount":2}""") }
+            .andExpect { status { isOk() }; jsonPath("$.selectedVersionId") { value(draft.id.toString()) } }
+        mockMvc.patch("$uri/${draft.id}") { asAdmin(content = """{"starred":true}""") }
+            .andExpect { status { isOk() } }
     }
 
     @Test

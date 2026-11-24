@@ -7,10 +7,41 @@
 .model-registry textarea { min-height: 84px; resize: vertical; }
 .model-registry small { display: block; }
 .model-registry .model-error { color: #a42a23; }
+.model-registration fieldset[hidden] { display: none; }
+.model-scope-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 8px 16px; margin: 8px 0 12px; }
+.model-registration details > summary { cursor: pointer; }
+.model-import h2 { margin: 0; }
+.model-file-picker {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px;
+  padding: 16px; border: 1px solid #ceded4; border-radius: 9px; background: #f7faf8;
+}
+.model-file-picker > input[hidden] { display: none; }
+.model-file-icon { display: grid; place-items: center; width: 40px; height: 40px; background: #e6f0e9; border-radius: 8px; color: #236b52; }
+.model-file-copy { min-width: 0; }
+.model-file-copy small { margin-top: 3px; color: #52635a; }
+.model-file-copy [role=status]:not(:empty) { margin-top: 5px; overflow-wrap: anywhere; }
+.model-file-loaded { display: inline-flex; align-items: center; gap: 4px; color: #216448; }
+.model-file-loaded svg { flex-shrink: 0; }
+.model-manifest > summary, .model-manual > summary { width: fit-content; max-width: 100%; cursor: pointer; overflow-wrap: anywhere; color: #40594a; }
+.model-manifest[open] > summary, .model-manual[open] > summary { margin-bottom: 10px; }
+.model-manifest .model-file-picker { background: #fafbfa; border-color: #dce2de; }
+.model-manifest > button { margin-top: 8px; }
+.model-manual { padding-inline: 4px; }
+@media (max-width: 600px) {
+  .model-file-picker { grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 12px; }
+  .model-file-picker > button { grid-column: 1 / -1; }
+}
 .model-registry pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .model-evidence { display: grid; gap: 12px; }
 .model-evidence div { display: grid; grid-template-columns: minmax(130px, 1fr) 4fr; gap: 16px; }
 .model-evidence dt { font-weight: 600; }
 .model-evidence dd { margin: 0; white-space: pre-wrap; }
 .model-stages { margin: 16px 0; }
+/* #728 재학습 추천 태그: 참고용이라 상태 배지보다 약하게 */
+.model-recommendation-tag { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 0.8rem; border: 1px solid currentColor; white-space: nowrap; }
+.model-recommendation-tag.is-recommended { color: #1d6b3a; }
+.model-recommendation-tag.is-not-recommended { color: #8a4b0f; }
+.model-recommendation { margin: 16px 0; }
 @media (max-width: 600px) { .model-evidence div { grid-template-columns: 1fr; gap: 4px; } }
+/* #728 표현 검토: 학생 글은 줄바꿈 그대로 */
+.expression-review .expression-review-text { white-space: pre-wrap; overflow-wrap: anywhere; }

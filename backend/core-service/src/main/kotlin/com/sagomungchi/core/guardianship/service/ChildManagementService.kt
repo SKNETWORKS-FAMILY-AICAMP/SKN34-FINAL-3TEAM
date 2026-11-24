@@ -22,7 +22,9 @@ class ChildManagementService(private val repository: ChildManagementRepository,
  private val looks: StudentLookService, private val transfers: GuardianTransferAccessService,
  private val community: com.sagomungchi.core.community.service.CommunityVisibilityService,
  private val missionUsage: com.sagomungchi.core.usage.service.MissionUsageService,
- private val memoryUsage: com.sagomungchi.core.usage.service.MemoryUsageService) {
+ private val memoryUsage: com.sagomungchi.core.usage.service.MemoryUsageService,
+ // 추억 그림책 작업 행 (docs/proposals/memory-book.md). 파일은 report 학생 삭제가 지움
+ private val memoryBooks: com.sagomungchi.core.memorybook.service.MemoryBookJobService) {
  @Transactional
  fun update(identity: AuthenticatedAccount, id: UUID, nickname: String?, grade: Int?): LinkedStudent {
   accounts.lock(identity); access.requireCurrent(identity.account.id,id)
@@ -72,7 +74,7 @@ class ChildManagementService(private val repository: ChildManagementRepository,
   val now=now(); val request=DeletionRequest(UUID.randomUUID(),user,id,scope.name,"CONFIRMED",now,now,null)
   repository.insert(request); repository.block(id,now); accounts.revokeStudent(id)
   if(scope==DeletionScope.PROFILE) repository.unlink(user,id,now)
-  devices.removeChild(id); pins.clear(id); looks.clear(id); community.reset(id); missionUsage.deleteStudent(id); memoryUsage.deleteStudent(id)
+  devices.removeChild(id); pins.clear(id); looks.clear(id); community.reset(id); missionUsage.deleteStudent(id); memoryUsage.deleteStudent(id); memoryBooks.deleteStudent(id)
   reports.failForDeletion(id)
   conversations.deleteStudent(id)
   outbox.append("student.deleted","student.deleted",id.toString(),mapOf("studentId" to id,"deletionRequestId" to request.id,"scope" to scope.name))

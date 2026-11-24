@@ -82,6 +82,13 @@ export function readThemeMotion(raw: unknown): ThemeMotion | null {
   }
 }
 
+/** 카메라 위치(그림 % 좌표·확대)를 그림 변환으로. 확대한 만큼만 중심을 옮겨 가장자리가 비지 않게 한다(재생기 #440·오늘 장면 #807) */
+export function cameraTransform(p: MotionPoint) {
+  const room = (1 - 1 / p.zoom) * 50
+  const dx = Math.max(-room, Math.min(room, 50 - p.x)), dy = Math.max(-room, Math.min(room, 50 - p.y))
+  return `scale(${p.zoom}) translate(${dx}%, ${dy}%)`
+}
+
 /** 재생 시각(초)에 보일 컷 문구. 겹치면 나중에 시작한 문구 */
 export function captionAt(motion: ThemeMotion | null, seconds: number) {
   return motion?.captions.filter((c) => c.start <= seconds && seconds < c.end).at(-1)?.text ?? null

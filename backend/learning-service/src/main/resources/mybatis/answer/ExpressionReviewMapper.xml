@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.answer.repository.ExpressionReviewMapper">
+    <resultMap id="row" type="com.sagomungchi.learning.answer.domain.ExpressionReviewRow">
+        <constructor>
+            <idArg column="id" javaType="java.util.UUID"/>
+            <arg column="source" javaType="com.sagomungchi.learning.answer.domain.ExpressionReviewSource"/>
+            <arg column="content" javaType="com.sagomungchi.learning.answer.domain.AnswerContent"/>
+            <arg column="model_version" javaType="java.lang.String"/>
+            <arg column="label" javaType="com.sagomungchi.learning.answer.domain.ExpressionReviewLabel"/>
+            <arg column="labeled_at" javaType="java.time.Instant"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="labelCount" type="com.sagomungchi.learning.answer.domain.ExpressionReviewLabelCount">
+        <constructor>
+            <arg column="labeled_count" javaType="_long"/>
+            <arg column="latest_labeled_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="rowColumns">
+        r.id, r.source, a.content, r.model_version, r.label, r.labeled_at, r.created_at
+    </sql>
+
+    <sql id="filter">
+        <where>
+            <choose>
+                <when test="labeled">r.label IS NOT NULL</when>
+                <otherwise>r.label IS NULL</otherwise>
+            </choose>
+            <if test="source != null">AND r.source = #{source}</if>
+        </where>
+    </sql>
+
+    <select id="findPage" resultMap="row">
+        SELECT <include refid="rowColumns"/>
+        FROM expression_review r JOIN answer a ON a.id = r.answer_id
+        <include refid="filter"/>
+        <choose>
+            <when test="labeled">ORDER BY r.labeled_at DESC, r.id DESC</when>
+            <otherwise>ORDER BY r.created_at, r.id</otherwise>
+        </choose>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT count(*) FROM expression_review r <include refid="filter"/>
+    </select>
+
+    <select id="findById" resultMap="row">
+        SELECT <include refid="rowColumns"/>
+        FROM expression_review r JOIN answer a ON a.id = r.answer_id
+        WHERE r.id = #{id}
+    </select>
+
+    <!-- 재학습(ops): since는 "이후"라 초과. 지난 실행이 받은 labelsUntil을 다시 세지 않게 -->
+    <sql id="trainable">
+        r.label IN ('OFFENSIVE', 'CLEAN')
+        <if test="since != null">AND r.labeled_at &gt; #{since}</if>
+    </sql>
+
+    <!-- 한 문장(#907): READ COMMITTED라 나눠 읽으면 그사이 커밋된 라벨이 시각에만 들어감 -->
+    <select id="countLabeledSince" resultMap="labelCount">
+        SELECT count(*) AS labeled_count, max(r.labeled_at) AS latest_labeled_at
+        FROM expression_review r WHERE <include refid="trainable"/>
+    </select>
+
+    <select id="findExport" resultMap="row">
+        SELECT <include refid="rowColumns"/>
+        FROM expression_review r JOIN answer a ON a.id = r.answer_id
+        WHERE <include refid="trainable"/> AND r.labeled_at &lt;= #{until}
+        ORDER BY r.labeled_at, r.id
+    </select>
+
+    <delete id="deleteByStudent">
+        DELETE FROM expression_review
+        WHERE answer_id IN (SELECT id FROM answer WHERE attempt_id IN (SELECT id FROM attempt WHERE student_id = #{studentId}))
+    </delete>
+
+    <update id="updateLabel">
+        UPDATE expression_review SET label = #{label}, labeled_by = #{labeledBy}, labeled_at = #{now}
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertGrayZone">
+        INSERT INTO expression_review (id, answer_id, source, model_version, label, labeled_by, labeled_at, created_at)
+        VALUES (#{id}, #{answerId}, 'GRAY_ZONE', #{modelVersion}, NULL, NULL, NULL, #{now})
+        ON CONFLICT (answer_id, source) DO NOTHING
+    </insert>
+
+    <insert id="insertReported">
+        INSERT INTO expression_review (id, answer_id, source, model_version, label, labeled_by, labeled_at, created_at)
+        VALUES (#{id}, #{answerId}, 'COMMUNITY_REPORT', NULL, NULL, NULL, NULL, #{now})
+        ON CONFLICT (answer_id, source) DO NOTHING
+    </insert>
+
+    <!-- 운영자가 직접 라벨한 행(labeled_by 있음)과 같은 라벨인 행은 그대로: 다시 보낸 반영이 labeled_at을 바꿔 새 라벨로 세이지 않게 -->
+    <insert id="upsertAutoLabel">
+        INSERT INTO expression_review (id, answer_id, source, model_version, label, labeled_by, labeled_at, created_at)
+        VALUES (#{id}, #{answerId}, 'COMMUNITY_REPORT', NULL, #{label}, NULL, #{now}, #{now})
+        ON CONFLICT (answer_id, source) DO UPDATE
+        SET label = EXCLUDED.label, labeled_at = EXCLUDED.labeled_at
+        WHERE expression_review.labeled_by IS NULL AND expression_review.label IS DISTINCT FROM EXCLUDED.label
+    </insert>
+</mapper>

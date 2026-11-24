@@ -28,4 +28,8 @@ class FeedbackOpenApiTests(unittest.TestCase):
         source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/controller/FeedbackController.kt").read_text(encoding="utf-8")
         self.assertIn('@PostMapping("/api/v1/answers/{answerId}/feedback"', source)
         self.assertIn("MediaType.TEXT_EVENT_STREAM_VALUE", source)
-        self.assertIn("LEARNING_INVALID_RESPONSE", source)
+        # #834: learning 응답 해석과 계약 위반 502는 controller가 아니라 기능 client가 맡는다.
+        self.assertNotIn("readTree", source)
+        client = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/learning/client/FeedbackClient.kt").read_text(encoding="utf-8")
+        self.assertIn('"/answers/$answerId/feedback"', client)
+        self.assertIn("LEARNING_INVALID_RESPONSE", client)

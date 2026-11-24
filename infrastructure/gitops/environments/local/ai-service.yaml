@@ -44,17 +44,22 @@ env:
   - {name: LLM_PROVIDER, value: openai}
   - {name: OPENAI_MODEL, value: gpt-6-luna}
   - {name: OPENAI_JSON_MODE, value: json_schema}
+  # #599: 낱말 물어보기 국립국어원 사전(표준국어대사전·온용어). 없으면 그 요청만 503 DICTIONARY_UNAVAILABLE
+  - {name: DICT_KOREAN_API, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DICT_KOREAN_API, optional: true}}}
+  - {name: DICT_KOREAN_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: DICT_KOREAN_API_KEY, optional: true}}}
+  - {name: KLI_KOREAN_API, valueFrom: {secretKeyRef: {name: app-service-credentials, key: KLI_KOREAN_API, optional: true}}}
+  - {name: KLI_KOREAN_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: KLI_KOREAN_API_KEY, optional: true}}}
   - {name: ANTHROPIC_API_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: ANTHROPIC_API_KEY, optional: true}}}
   - {name: ANTHROPIC_MODEL, value: claude-sonnet-5-5}
   - {name: ANTHROPIC_EFFORT, value: medium}
   - {name: ANTHROPIC_FALLBACK, value: "true"}
   # #747: 리포트 요약·저녁 질문·상세 설명은 SageMaker LoRA IC 고정. local은 boto3 endpoint_url을
-  # sllm-server(llm-stub 대역, 평소 0대·KEDA cron 창)로 돌려 같은 클라이언트 경로를 탄다.
+  # llm-stub release(SageMaker 대역, environments/local/llm-stub.yaml)로 돌려 같은 클라이언트 경로를 탄다.
   # 서명은 아래 MinIO 자격 증명으로 하며 AWS로는 나가지 않는다.
   - {name: REPORT_LLM_ENDPOINT, value: local-explanation}
   - {name: REPORT_LLM_COMPONENT, value: local-explanation-explain}
   - {name: REPORT_LLM_REGION, value: ap-northeast-2}
-  - {name: REPORT_LLM_ENDPOINT_URL, value: "http://sllm-server.app.svc.cluster.local:8080"}
+  - {name: REPORT_LLM_ENDPOINT_URL, value: "http://llm-stub.app.svc.cluster.local:8080"}
   # #546·#538: 주간 테마 그림·영상. 버킷은 learning과 같고, 영상은 저장소 값에서 꺼 둔다.
   # 영상 자격 증명은 kind에만 수동으로 넣는 Secret ai-theme-video(credentials.json·VIDEO_PROJECT).
   # Secret이 없으면 파일이 없어 영상만 건너뛴다(optional).
@@ -87,7 +92,7 @@ networkPolicy:
     - {name: core-service, port: 8080}
     - {name: learning-service, port: 8081}
     - {name: scoring-service, port: 8001}
-    - {name: sllm-server, port: 8080}
+    - {name: llm-stub, port: 8080}
   egressToPlatform:
     - {name: rabbitmq, port: 5672}
     - {name: minio, port: 9000}

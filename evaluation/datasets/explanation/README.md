@@ -1,26 +1,9 @@
-# Existing LoRA Gemma explanation validation
+# 기존 LoRA Gemma 설명 비교 실행 방법
 
-This experiment keeps the deployed model fixed. No training, deployment setting change or
-production API change is part of the experiment. The RunPod endpoint's LoRA identity is confirmed
-by the user; an independently verified adapter/checkpoint hash is still needed for final reporting.
+범위·결과·결정은 [gemma-explanation-validation 보고서](../../../docs/report/gemma-explanation-validation.md)에 있다. 이 문서는 비교 방식과 실행 절차만 둔다(영문 원문 유지).
 
-## Source and scope
-
-The user's Google Form is explicitly labelled **four synthetic student texts**. It contains
-16 archived outputs: four cases × student/parent × two blinded model labels. The labels are shuffled
-per case and audience. Their identities were subsequently recovered locally by exact body matches
-against archived generation files (16/16). A different v3 CSV matched only 3/16 and was not trusted.
-Never give the private identity file to raters. Respondent identities and ratings are not part of
-the public form and have not been obtained.
-
-The form, texts, outputs, pending GT annotations and generated artifacts are kept under ignored
-`local_data/explanation_eval/`. Do not commit keys, endpoint URLs, source texts or raw model outputs.
-Never send AI Hub material through this runner. The public input allowlist is grade, topic,
-answer and scores; GT concepts, aliases and forbidden claims are excluded from all model prompts.
-
-The four inspected cases are **development/pilot**, not a held-out final test set. GT concept lists
-are draft annotations requiring the team's approval, not expert ground truth. The numbered rubric
-labels in the form have no definitions attached; do not invent what content 1/2/3 mean.
+- 입력은 가상 글 4개(개발 파일럿, 최종 평가 아님). 공개 입력 허용 목록은 grade·topic·answer·scores이고 GT 개념·별칭·금지 주장은 어떤 프롬프트에도 넣지 않는다. AI Hub 자료는 이 러너로 보내지 않는다
+- 설문 원본·글·출력·GT 초안·생성물은 git 무시 `local_data/explanation_eval/`에 둔다. 키·엔드포인트 주소·원문·모델 출력은 커밋하지 않고, 블라인드 대응표는 평가자에게 주지 않는다
 
 ## Frozen comparison
 

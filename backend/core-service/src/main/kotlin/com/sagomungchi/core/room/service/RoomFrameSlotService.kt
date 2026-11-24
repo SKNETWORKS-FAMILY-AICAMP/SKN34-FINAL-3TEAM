@@ -20,7 +20,6 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -83,14 +82,7 @@ class RoomFrameSlotService(private val mapper: RoomFrameSlotMapper, private val 
             mapper.lockActiveStudent(studentId)
                 ?: throw BusinessException(HttpStatus.CONFLICT, "STUDENT_UNAVAILABLE", "학생 상태를 다시 확인해 주세요.")
             // 계속 걸려 있는 액자는 슬롯을 옮겨도 처음 건 시각을 유지한다(리텐션 지표 "전시까지 걸린 기간", 결정 기록 3.6)
-            val since = mapper.hungSince(studentId).associate {
-                FrameKey(UUID.fromString(it["theme_id"] as String), LocalDate.parse(it["week_start"] as String)) to
-                    when (val at = it["saved_at"]) {
-                        is java.time.OffsetDateTime -> at
-                        is java.sql.Timestamp -> at.toInstant().atOffset(ZoneOffset.UTC)
-                        else -> error("unexpected saved_at type: ${at?.javaClass}")
-                    }
-            }
+            val since = mapper.hungSince(studentId).associate { it.key to it.savedAt }
             mapper.deleteSlots(studentId)
             val now = RewardService.now()
             slots.forEach { check(mapper.insertSlot(studentId, it.slotNo, it.themeId, it.weekStart, since[it.key] ?: now) == 1) }

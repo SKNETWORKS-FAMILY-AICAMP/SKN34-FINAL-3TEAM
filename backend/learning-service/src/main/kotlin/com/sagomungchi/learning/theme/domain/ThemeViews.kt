@@ -175,6 +175,8 @@ data class AdminWeeklyTheme(
     val introVideoUrl: String? = null,
     val outroVideoUrl: String? = null,
     val features: List<ThemeFeature>? = null,
+    val weekLocked: Boolean = false,
+    val generationWeek: LocalDate? = null,
 )
 
 /** 관리자 테마 요일 (#438): 저장 값 + 미리보기 URL(문제 전 영상, 그날 미션 장면). #647 clueFeature는 그날 단서 특징 이름 */
@@ -189,6 +191,8 @@ data class AdminThemeDay(
     val videoUrl: String? = null,
     val sceneImageUrl: String? = null,
     val clueFeature: String? = null,
+    val title: String? = null,
+    val sceneMotion: Map<String,Any?>? = null,
 )
 
 data class AdminWeeklyThemePage(val items: List<AdminWeeklyTheme>, val page: Int, val size: Int, val totalElements: Long)

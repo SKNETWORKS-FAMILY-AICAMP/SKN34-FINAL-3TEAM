@@ -702,6 +702,104 @@
           }
         }
       }
+    },
+    "/internal/students/{student_id}/memory-books/{book_id}/files/pdf": {
+      "get": {
+        "tags": [
+          "memory-books"
+        ],
+        "summary": "File",
+        "operationId": "file_internal_students__student_id__memory_books__book_id__files_pdf_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Student Id"
+            }
+          },
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Download"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED (내부 토큰 불일치)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN (학생 범위 밖)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DELETION_IN_PROGRESS (학생 기록 삭제 중)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "DATA_UNAVAILABLE (근거 원문·파일 저장소 장애)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -878,6 +976,32 @@
         ],
         "title": "CorrectionImpactItem"
       },
+      "DailyAnswerTime": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "thinkingSeconds": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Thinkingseconds"
+          },
+          "writingSeconds": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Writingseconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "thinkingSeconds",
+          "writingSeconds"
+        ],
+        "title": "DailyAnswerTime"
+      },
       "DailyElement": {
         "properties": {
           "label": {
@@ -965,6 +1089,24 @@
             ],
             "title": "Context"
           },
+          "scheduledDay": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "MON",
+                  "TUE",
+                  "WED",
+                  "THU",
+                  "FRI"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduledday"
+          },
           "judgment": {
             "anyOf": [
               {
@@ -1016,6 +1158,14 @@
             },
             "type": "array",
             "title": "Quotes"
+          },
+          "answerTimes": {
+            "items": {
+              "$ref": "#/components/schemas/DailyAnswerTime"
+            },
+            "type": "array",
+            "title": "Answertimes",
+            "description": "답변별 생각·작성 시간(P28). 시간이 있는 답만 버전 순, 원문 비공개(#206)여도 넣음. #803 이전 저장본은 []로 읽음."
           }
         },
         "type": "object",
@@ -1486,6 +1636,11 @@
               }
             ],
             "title": "Failurereason"
+          },
+          "noRecord": {
+            "type": "boolean",
+            "title": "Norecord",
+            "default": false
           }
         },
         "additionalProperties": false,

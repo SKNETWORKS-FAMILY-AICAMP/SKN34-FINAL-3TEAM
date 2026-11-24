@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ChildEntitlement, PaymentState, PaymentSubscription } from '../../domain/payment.ts'
+import type { ChildEntitlement, PaymentState, PaymentSubscription, PendingCheckout } from '../../domain/payment.ts'
 import { paymentApi } from './api.ts'
+import { saveCheckout } from './checkoutStorage.ts'
 
 const stateKey = (orderId: string) => ['parent', 'payment-result', orderId]
 
@@ -32,6 +33,17 @@ export function paymentPollDelay(state: PaymentState | undefined, updates: numbe
   return waiting ? 3000 : false
 }
 
+/** 결제수단 화면에서 돌아온 주문도 같은 쿼리로 다시 대조한다. */
+export function useCheckoutState(orderId: string) {
+  return useQuery({
+    queryKey: ['parent', 'checkout-state', orderId],
+    // Core may reconcile with the PG during this read. Keep it in flight across a React remount.
+    queryFn: () => paymentApi.state(orderId),
+    enabled: !!orderId,
+    retry: false,
+  })
+}
+
 /** 결제 결과 화면의 주문 상태. 승인 응답을 받은 경우 그 값으로 시작해 같은 상태를 바로 다시 묻지 않는다. */
 export function usePaymentResult(orderId: string, enabled: boolean) {
   return useQuery({
@@ -47,13 +59,24 @@ export function usePaymentResult(orderId: string, enabled: boolean) {
   })
 }
 
-// StrictMode의 effect 두 번 실행이 같은 요청을 공유하도록 모듈 단위로 보관한다. 새로고침 뒤에는 저장된 같은 멱등 키로 다시 보낸다.
+// 주문 생성·결제 확인·빌링 등록은 StrictMode의 effect 두 번 실행이 같은 요청을 공유하도록 모듈 단위로 보관한다. 새로고침 뒤에는 저장된 같은 멱등 키로 다시 보낸다.
 const confirmations = new Map<string, Promise<PaymentState>>()
+const orders = new Map<string, Promise<PendingCheckout>>()
 const registrations = new Map<string, Promise<PaymentSubscription>>()
 function shared<T>(requests: Map<string, Promise<T>>, key: string, start: () => Promise<T>) {
   let promise = requests.get(key)
   if (!promise) { promise = start(); requests.set(key, promise) }
   return promise
+}
+
+/** 같은 자녀·상품·멱등 키의 주문 생성(POST /orders)은 진행 중 요청을 공유한다. 실패하면 비워 재시도를 허용한다. */
+export function requestCheckoutOrder(childId: string, productId: string, key: string) {
+  const id = [childId, productId, key].join(':')
+  return shared(orders, id, () => paymentApi.order(childId, productId, key).then(created => {
+    const pending: PendingCheckout = { ...created, confirmKey: crypto.randomUUID(), createdAt: Date.now() }
+    saveCheckout(pending)
+    return pending
+  }, (e: unknown) => { orders.delete(id); throw e }))
 }
 
 export function usePaymentConfirmation() {

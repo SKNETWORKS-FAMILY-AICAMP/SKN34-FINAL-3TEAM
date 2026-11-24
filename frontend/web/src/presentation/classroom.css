@@ -1450,6 +1450,44 @@ body {
   overflow: auto;
   flex: none;
 }
+#class-journal .cj-modal.cj-modal-inner-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#class-journal .cj-modal-inner-scroll .cj-modal-head { flex: none; }
+#class-journal .cj-modal-scroll-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#class-journal .cj-modal-scroll-frame > .cj-modal-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+#class-journal .cj-modal-scroll-frame > .cj-modal-body:focus-visible { outline-offset: -3px; }
+#class-journal .cj-modal-scroll-marker {
+  position: absolute;
+  top: 4px;
+  inset-inline-end: 4px;
+  width: 4px;
+  border-radius: 100px;
+  background: #596761ad;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+#class-journal .cj-modal-scroll-marker[data-visible] { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  #class-journal .cj-modal-scroll-marker { transition: none; }
+}
+@media (forced-colors: active) {
+  #class-journal .cj-modal-scroll-frame > .cj-modal-body { scrollbar-width: auto; }
+  #class-journal .cj-modal-scroll-marker { display: none; }
+}
 @media (max-width: 1100px) {
   #class-journal {
     padding: 12px;
@@ -1929,7 +1967,8 @@ body {
 }
 
 /* 로그인 보조 링크와 가입/시연 안내를 독립된 행으로 배치한다. */
-#class-journal .ux-login-id { display:grid; gap:10px; margin-top:16px; }
+/* #915: 흰 바탕 대비 4.5:1 이상(5.25:1). 다른 화면에 퍼지지 않게 로그인 폼 안에서만 바꾼다. */
+#class-journal .ux-login-id { --cj-muted:#666e69; display:grid; gap:10px; margin-top:16px; }
 #class-journal .ux-login-or { margin:0; color:var(--cj-muted); font-size:.92em; }
 #class-journal .ux-login-id small { line-height:1.5; }
 #class-journal .ux-login-links { display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px; margin:16px 0; }

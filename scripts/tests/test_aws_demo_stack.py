@@ -192,6 +192,14 @@ class FakeAws:
     def s3api_get_bucket_encryption(self, a):
         return {} if self.buckets[a['bucket']].get('encryption') else None
 
+    def s3api_get_bucket_lifecycle_configuration(self, a):
+        # Real S3 answers NoSuchLifecycleConfiguration (non-zero exit) when the bucket has no rules.
+        return self.buckets[a['bucket']].get('lifecycle')
+
+    def s3api_put_bucket_lifecycle_configuration(self, a):
+        self.buckets[a['bucket']]['lifecycle'] = json.loads(a['lifecycle-configuration'])
+        return {}
+
     # IAM
     def iam_get_role(self, a):
         role = self.roles.get(a['role-name'])
@@ -294,13 +302,24 @@ class DemoStackTest(unittest.TestCase):
         self.assertEqual(kinds.count('subnet'), 4)
         self.assertEqual(kinds.count('s3'), 4)
         self.assertEqual(kinds.count('iam-role'), 13)
-        self.assertEqual(kinds.count('ecr'), 7)
+        self.assertEqual(kinds.count('ecr'), 8)
         self.assertIn(('rds', 'sagomungchi-demo-db'), created)
 
         report = demo_stack.plan(aws, self.spec)
         missing = {(kind, status) for kind, _, status, _ in report.rows if status != 'OK'}
         # The cluster belongs to eksctl; secret values are entered by their owners.
         self.assertEqual(missing, {('eks', 'MISSING'), ('secret', 'MISSING')}, report.rows)
+
+    def test_apply_without_rds_leaves_only_the_db_instance_for_a_snapshot_restore(self):
+        aws = FakeAws(self.spec)
+        created = demo_stack.apply_missing(aws, self.spec, wait=lambda _: None, create_rds=False)
+        self.assertNotIn('rds', [kind for kind, _ in created])
+        self.assertIn(('db-subnet-group', self.spec['rds']['subnetGroup']['name']), created)
+        self.assertIn(('security-group', self.spec['rds']['securityGroup']['name']), created)
+        self.assertFalse(any(c[1] == 'create-db-instance' for c in aws.calls))
+        report = demo_stack.plan(aws, self.spec)
+        missing = {(kind, status) for kind, _, status, _ in report.rows if status != 'OK'}
+        self.assertEqual(missing, {('eks', 'MISSING'), ('secret', 'MISSING'), ('rds', 'MISSING')}, report.rows)
 
     def test_apply_on_complete_account_changes_nothing(self):
         aws = FakeAws(self.spec)
@@ -309,6 +328,33 @@ class DemoStackTest(unittest.TestCase):
         self.assertEqual(demo_stack.apply_missing(aws, self.spec, wait=lambda _: None), [])
         changed = [c for c in aws.calls if c[1].split('-')[0] in MUTATING]
         self.assertEqual(changed, [])
+
+    def test_reports_bucket_lifecycle_expires_only_memory_books(self):
+        """#975 C3: 추억 그림책 파일만 30일 보관 + 여유로 지운다(버전 관리 버킷이라 이전 버전·삭제 표시도)."""
+        reports = next(b for b in self.spec['buckets'] if b.endswith('-reports'))
+        self.assertEqual([reports], list(self.spec['bucketLifecycle']))
+        rules = self.spec['bucketLifecycle'][reports]['Rules']
+        self.assertEqual({'reports/memory-books/'}, {r['Filter']['Prefix'] for r in rules})
+        expire = next(r for r in rules if 'Days' in r['Expiration'])
+        self.assertGreater(expire['Expiration']['Days'], 30)
+        self.assertIn('NoncurrentVersionExpiration', expire)
+        self.assertTrue(any(r['Expiration'].get('ExpiredObjectDeleteMarker') for r in rules))
+
+    def test_lifecycle_is_put_only_on_a_bucket_without_rules_and_drift_is_reported(self):
+        reports = next(b for b in self.spec['buckets'] if b.endswith('-reports'))
+        aws = FakeAws(self.spec)
+        created = demo_stack.apply_missing(aws, self.spec, wait=lambda _: None)
+        self.assertIn(('s3-lifecycle', reports), created)
+        self.assertEqual(self.spec['bucketLifecycle'][reports], aws.buckets[reports]['lifecycle'])
+        # Someone else's rules are never replaced: plan shows the difference, apply leaves it.
+        other = {'Rules': [{'ID': 'manual', 'Status': 'Enabled', 'Filter': {'Prefix': 'tmp/'}, 'Expiration': {'Days': 1}}]}
+        aws.buckets[reports]['lifecycle'] = other
+        report = demo_stack.plan(aws, self.spec)
+        self.assertIn(('s3', reports), {(k, n) for k, n, s, _ in report.rows if s == 'DIFF'})
+        aws.calls.clear()
+        demo_stack.apply_missing(aws, self.spec, wait=lambda _: None)
+        self.assertFalse(any(c[1] == 'put-bucket-lifecycle-configuration' for c in aws.calls))
+        self.assertEqual(other, aws.buckets[reports]['lifecycle'])
 
     def test_private_subnets_route_through_nat_and_s3_endpoint(self):
         aws = FakeAws(self.spec)
@@ -353,6 +399,48 @@ class DemoStackTest(unittest.TestCase):
             self.assertIn({'key': taint['key'], 'operator': 'Equal', 'value': taint['value'], 'effect': taint['effect']},
                           values['scheduling']['tolerations'])
         self.assertEqual(self.spec['eks']['nodegroups'], [g['name'] for g in config['managedNodeGroups']])
+
+    def test_eksctl_nodegroup_is_ok_with_launch_template_disk_and_eksctl_labels(self):
+        # #760 11/17 재가동: eksctl 노드그룹은 diskSize가 비고(launch template) eksctl 라벨이 붙어 DIFF로 보였다
+        config = json.loads((demo_stack.HERE / self.spec['eks']['config']).read_text(encoding='utf-8'))
+        group = next(g for g in config['managedNodeGroups'] if g['name'] == 'platform-observability')
+        node = {
+            'instanceTypes': [group['instanceType']],
+            'scalingConfig': {'minSize': group['minSize'], 'desiredSize': group['desiredCapacity'], 'maxSize': group['maxSize']},
+            'diskSize': None, 'launchTemplate': {'id': 'lt-0abc', 'name': 'eksctl-lt', 'version': '1'},
+            'nodeRole': group['iam']['instanceRoleARN'],
+            'labels': {**group['labels'], 'alpha.eksctl.io/cluster-name': 'sagomungchi-demo-eks',
+                       'alpha.eksctl.io/nodegroup-name': group['name']},
+            'taints': demo_stack.eks_taints(group),
+        }
+        calls = []
+
+        def aws(service, operation, *args, check=True):
+            calls.append((service, operation, *args))
+            if operation == 'describe-launch-template-versions':
+                return {'LaunchTemplateVersions': [{'LaunchTemplateData': {'BlockDeviceMappings': [
+                    {'DeviceName': '/dev/xvda', 'Ebs': {'VolumeSize': group['volumeSize'], 'VolumeType': 'gp3'}}]}}]}
+            return None
+
+        self.assertEqual(demo_stack.nodegroup_disk(aws, node), group['volumeSize'])
+        self.assertIn(('ec2', 'describe-launch-template-versions', '--launch-template-id', 'lt-0abc', '--versions', '1'), calls)
+        self.assertEqual(demo_stack.nodegroup_labels(node), group['labels'])
+        # 크기가 다르거나 template을 읽지 못하면 여전히 차이다
+        self.assertIsNone(demo_stack.nodegroup_disk(lambda *a, **k: None, node))
+        self.assertEqual(demo_stack.nodegroup_disk(aws, {'diskSize': 50}), 50)
+        self.assertEqual(demo_stack.nodegroup_labels({'labels': {'workload': 'other'}}), {'workload': 'other'})
+
+    def test_app_pod_identity_service_accounts_are_created_by_their_release(self):
+        # #760 빈 클러스터: scoring·report SA를 chart가 만들지 않아 Pod 생성이 막혔다. Pod Identity가 붙는
+        # app SA는 같은 이름 release의 values가 만든다(연결은 SA가 없어도 먼저 만들 수 있다)
+        config = json.loads((demo_stack.HERE / self.spec['eks']['config']).read_text(encoding='utf-8'))
+        for association in config['iam']['podIdentityAssociations']:
+            if association['namespace'] != 'app':
+                continue
+            name = association['serviceAccountName']
+            with self.subTest(name=name):
+                values = json.loads((ROOT / f'infrastructure/gitops/environments/prod/{name}.json').read_text(encoding='utf-8'))
+                self.assertIsNot(values.get('serviceAccount', {}).get('create', True), False)
 
     def test_iam_documents_compare_without_order_or_string_list_difference(self):
         a = {'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Action': 's3:GetObject', 'Resource': ['b', 'a']}]}

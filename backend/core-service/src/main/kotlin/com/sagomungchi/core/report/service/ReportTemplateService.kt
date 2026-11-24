@@ -7,6 +7,7 @@ import com.sagomungchi.core.account.service.AccountAccessService
 import com.sagomungchi.core.conversation.service.ConversationService
 import com.sagomungchi.core.conversation.service.AnalysisTemplateService
 import com.sagomungchi.core.conversation.service.AnalysisUsageService
+import com.sagomungchi.core.conversation.client.TemplateProposal
 import com.sagomungchi.core.guardianship.service.ChildAuthorizationService
 import com.sagomungchi.core.guardianship.service.StudentAccessService
 import com.sagomungchi.core.report.domain.*
@@ -27,23 +28,19 @@ class ReportTemplateService(private val conversations: ConversationService, priv
         return conversations.locked(parent,conversation) { repository.get(parent) }
     }
     fun propose(conversation: UUID, question: String): Map<String, Any> {
+        val proposed: ReportTemplateSettings
         val parent = conversations.parent()
         val current = conversations.locked(parent,conversation) { row ->
             usage.consume(parent,row.studentId,UUID.randomUUID())
             repository.get(parent)
         }
-        val result = ai.reportTemplate(mapOf("question" to question,"current" to current.settings))
-        if (!result.isObject || result.fieldNames().asSequence().any { it !in setOf("settings", "clarification") }) invalid()
-        val clarification = result.get("clarification")
-        if (clarification != null && !clarification.isNull) {
-            if (!clarification.isTextual || clarification.asText().isBlank() || clarification.asText().length>400 ||
-                (result.get("settings")?.isNull == false)) invalid()
+        // AiClient checks the TemplateProposal shape (#824); the allowed sections, metrics and tone stay domain rules.
+        when (val result = ai.reportTemplate(mapOf("question" to question,"current" to current.settings))) {
             // Verify ownership/consent again after HTTP, even for an unsuccessful proposal.
-            return conversations.locked(parent,conversation) { mapOf("clarification" to clarification.asText()) }
+            is TemplateProposal.Clarification -> return conversations.locked(parent,conversation) { mapOf("clarification" to result.text) }
+            is TemplateProposal.Settings -> proposed = result.settings
         }
-        val node = result.get("settings") ?: invalid()
-        if (!node.isObject || node.fieldNames().asSequence().toSet() != setOf("sectionOrder","highlightMetrics","tone")) invalid()
-        val settings = try { json.treeToValue(node,ReportTemplateSettings::class.java).validate() } catch (_: Exception) { invalid() }
+        val settings = try { proposed.validate() } catch (_: Exception) { invalid() }
         return conversations.locked(parent,conversation) { row ->
             usage.requireEntitlement(parent,row.studentId)
             if (repository.get(parent).revision != current.revision) conflict()

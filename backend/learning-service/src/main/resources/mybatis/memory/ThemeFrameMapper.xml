@@ -37,28 +37,55 @@
             hashtextextended('theme_frame:' || #{round.studentId}::text || ':' || #{round.themeId}::text || ':' || #{round.weekStart}::text, 0))
     </select>
 
+    <!-- 회차 문제 완료 시도. EXTRA는 회차가 없어 빠짐 -->
+    <sql id="completedInRound">
+        a.context IN ('THEME_DAY', 'THEME_REVIEW') AND a.completed_at IS NOT NULL
+        <if test="round != null">
+            AND a.student_id = #{round.studentId} AND a.theme_id = #{round.themeId} AND a.theme_week_start = #{round.weekStart}
+        </if>
+    </sql>
+
     <!--
-      테마 5문제를 모두 학습 완료한 회차 (P27, ERD 4.2.1). THEME_DAY·THEME_REVIEW 완료 시도를 회차·문제별로 묶어 처음 완료 시각을 구하고,
-      테마의 게시본(없으면 현재본) 요일 문제 5개와 모두 맞으면 회차 완료. 획득 시각 = 문제별 처음 완료 시각 중 가장 늦은 값
-      (다섯째 문제를 마친 순간, 일요일·자정 넘긴 이어하기 포함). EXTRA는 회차가 없어 빠짐.
+      테마 5문제를 모두 학습 완료한 회차 (P27, ERD 4.2.1). 아래 둘 중 하나를 채우면 회차 완료이고, 획득 시각은 먼저 채운 쪽의 시각.
+      (가) #930: 시도마다 고정된 테마 버전(V27, 없으면 게시본·현재본)에서 그 문제의 요일을 찾아 월~금 다섯 요일을 모두 채움.
+           재게시로 빠지거나 바뀐 문제도 학생이 푼 버전대로 인정. 획득 시각 = 요일별 처음 완료 시각 중 가장 늦은 값
+      (나) 테마의 게시본(없으면 현재본) 요일 문제 5개를 모두 완료(재게시로 두 문제의 요일을 맞바꾼 경우 보완).
+           획득 시각 = 문제별 처음 완료 시각 중 가장 늦은 값
+      다섯째 문제를 마친 순간이며 일요일·자정 넘긴 이어하기 포함.
       버전은 지급 때의 게시본으로 고정해 이후 재게시와 무관하게 제목·그림을 유지
     -->
     <sql id="completedRounds">
-        SELECT c.student_id, c.theme_id, c.theme_week_start, d.theme_version_id, max(c.completed_at) AS awarded_at
+        SELECT r.student_id, r.theme_id, r.theme_week_start,
+               COALESCE(t.published_version_id, t.current_version_id) AS theme_version_id, min(r.awarded_at) AS awarded_at
         FROM (
-            SELECT a.student_id, a.theme_id, a.theme_week_start, a.mission_id, min(a.completed_at) AS completed_at
-            FROM attempt a
-            WHERE a.context IN ('THEME_DAY', 'THEME_REVIEW') AND a.completed_at IS NOT NULL
-            <if test="round != null">
-                AND a.student_id = #{round.studentId} AND a.theme_id = #{round.themeId} AND a.theme_week_start = #{round.weekStart}
-            </if>
-            GROUP BY a.student_id, a.theme_id, a.theme_week_start, a.mission_id
-        ) c
-        JOIN weekly_theme t ON t.id = c.theme_id
-        JOIN weekly_theme_day d ON d.theme_version_id = COALESCE(t.published_version_id, t.current_version_id)
-                               AND d.mission_id = c.mission_id
-        GROUP BY c.student_id, c.theme_id, c.theme_week_start, d.theme_version_id
-        HAVING count(*) = 5
+            SELECT p.student_id, p.theme_id, p.theme_week_start, max(p.completed_at) AS awarded_at
+            FROM (
+                SELECT a.student_id, a.theme_id, a.theme_week_start, d.day_of_week, min(a.completed_at) AS completed_at
+                FROM attempt a
+                JOIN weekly_theme t ON t.id = a.theme_id
+                JOIN weekly_theme_day d ON d.theme_version_id = COALESCE(a.theme_version_id, t.published_version_id, t.current_version_id)
+                                       AND d.mission_id = a.mission_id
+                WHERE <include refid="completedInRound"/>
+                GROUP BY a.student_id, a.theme_id, a.theme_week_start, d.day_of_week
+            ) p
+            GROUP BY p.student_id, p.theme_id, p.theme_week_start
+            HAVING count(*) = 5
+            UNION ALL
+            SELECT c.student_id, c.theme_id, c.theme_week_start, max(c.completed_at) AS awarded_at
+            FROM (
+                SELECT a.student_id, a.theme_id, a.theme_week_start, a.mission_id, min(a.completed_at) AS completed_at
+                FROM attempt a
+                WHERE <include refid="completedInRound"/>
+                GROUP BY a.student_id, a.theme_id, a.theme_week_start, a.mission_id
+            ) c
+            JOIN weekly_theme t ON t.id = c.theme_id
+            JOIN weekly_theme_day d ON d.theme_version_id = COALESCE(t.published_version_id, t.current_version_id)
+                                   AND d.mission_id = c.mission_id
+            GROUP BY c.student_id, c.theme_id, c.theme_week_start
+            HAVING count(*) = 5
+        ) r
+        JOIN weekly_theme t ON t.id = r.theme_id
+        GROUP BY r.student_id, r.theme_id, r.theme_week_start, t.published_version_id, t.current_version_id
     </sql>
 
     <!-- 회차당 1개(UK). 지급은 확인 전(seen_at NULL), 소급은 확인 시각 = 획득 시각이라 다시 돌려도 같은 값 -->

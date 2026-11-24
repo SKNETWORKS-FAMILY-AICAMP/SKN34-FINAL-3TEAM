@@ -110,6 +110,45 @@ class DailyReportScheduleTest : PostgresRepositoryTest() {
         assertEquals("/parent/report?childId=$student", stored["link"])
     }
 
+    /** #846: only a daily completion that report marked noRecord changes the title; type and link stay. */
+    @Test fun `no-record daily completion uses the no-record title and every other title is unchanged`() {
+        val user = parent(jdbc); val student = child(jdbc, user)
+        `when`(entitlement.narrativeEnabled(student)).thenReturn(false)
+        val yesterday = LocalDate.now(java.time.ZoneId.of("Asia/Seoul")).minusDays(1)
+        fun complete(period: ReportPeriod, noRecord: Boolean?): Map<String, Any> {
+            val accepted = jobs.scheduled(user, student, period)!!
+            val report = UUID.randomUUID()
+            lifecycle.apply(if (noRecord == null) ReportLifecycleEvent(UUID.randomUUID(), accepted.jobId, student, report, ReportJobStatus.COMPLETED)
+                else ReportLifecycleEvent(UUID.randomUUID(), accepted.jobId, student, report, ReportJobStatus.COMPLETED, noRecord = noRecord))
+            return jdbc.queryForMap("SELECT type,title,link FROM notification WHERE user_id=? AND link LIKE ?", user, "%reportId=$report")
+        }
+        val noRecordYesterday = complete(ReportPeriod(yesterday, yesterday, ReportPeriodType.DAILY), true)
+        assertEquals("DAILY_REPORT_COMPLETED", noRecordYesterday["type"])
+        assertEquals("어제는 학습 기록이 없어요. 일일 리포트를 확인해 주세요.", noRecordYesterday["title"])
+        assertTrue((noRecordYesterday["link"] as String).startsWith("/parent/report?childId=$student&reportId="))
+        // A late regeneration, retry or recovery of an older day names the day instead of "yesterday".
+        assertEquals("10월 25일은 학습 기록이 없어요. 일일 리포트를 확인해 주세요.", complete(sunday, true)["title"])
+        val older = ReportPeriod(yesterday.minusDays(1), yesterday.minusDays(1), ReportPeriodType.DAILY)
+        assertEquals("일일 리포트가 완성되었습니다.", complete(older, false)["title"])
+        // A pre-#846 report-worker omits the field: the same daily completion keeps the old title.
+        val legacy = ReportPeriod(yesterday.minusDays(2), yesterday.minusDays(2), ReportPeriodType.DAILY)
+        assertEquals("일일 리포트가 완성되었습니다.", complete(legacy, null)["title"])
+        // Weekly reports keep their title even when report marks them noRecord.
+        val weekly = complete(WEEK, true)
+        assertEquals("REPORT_COMPLETED", weekly["type"]); assertEquals("주간 리포트가 완성되었습니다.", weekly["title"])
+        assertEquals(listOf(true, true, false, false, true), events.stream(ReportJobFinished::class.java).toList()
+            .filter { it.studentId == student }.map { it.noRecord })
+    }
+
+    @Test fun `noRecord belongs to completion only`() {
+        assertFailsWith<IllegalArgumentException> {
+            ReportLifecycleEvent(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), ReportJobStatus.FAILED, "RENDER_FAILED", true)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            ReportJobFinished(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), ReportJobStatus.FAILED, noRecord = true)
+        }
+    }
+
     @Test fun `daily opt-out is independent of the weekly setting`() {
         val user = parent(jdbc); val student = child(jdbc, user)
         `when`(entitlement.narrativeEnabled(student)).thenReturn(false)

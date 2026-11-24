@@ -9,6 +9,9 @@ import com.sagomungchi.learning.theme.domain.ThemeDraft
 import com.sagomungchi.learning.theme.domain.ThemeDraftInput
 import com.sagomungchi.learning.theme.domain.ThemeDraftOutput
 import com.sagomungchi.learning.theme.domain.ThemeDraftPage
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewFilter
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewPage
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewRow
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import org.apache.ibatis.annotations.Mapper
@@ -61,16 +64,25 @@ data class ThemeDraftRow(
 
 @Mapper
 interface ThemeDraftMapper {
+    fun reviewRows(@Param("f") filter: ThemeDraftReviewFilter, @Param("size") size: Int, @Param("offset") offset: Long): List<ThemeDraftReviewRow>
+    fun reviewCount(@Param("f") filter: ThemeDraftReviewFilter): Long
+    fun reviewWeeks(@Param("f") filter: ThemeDraftReviewFilter): List<LocalDate>
     fun insert(@Param("d") draft: ThemeDraft): Int
     fun insertAutoIfAbsent(@Param("d") draft: ThemeDraft): Int
     fun findById(@Param("id") id: UUID, @Param("lock") lock: Boolean): ThemeDraftRow?
     fun findPage(
         @Param("status") status: DraftStatus?,
         @Param("source") source: ThemeDraftSource?,
+        @Param("grade") grade: ThemeGrade?,
+        @Param("weekStart") weekStart: LocalDate?,
+        @Param("hideDiscarded") hideDiscarded: Boolean,
+        @Param("comparisonPending") comparisonPending: Boolean,
         @Param("size") size: Int,
         @Param("offset") offset: Long,
     ): List<ThemeDraftRow>
-    fun count(@Param("status") status: DraftStatus?, @Param("source") source: ThemeDraftSource?): Long
+    fun count(@Param("status") status: DraftStatus?, @Param("source") source: ThemeDraftSource?,
+        @Param("grade") grade: ThemeGrade?, @Param("weekStart") weekStart: LocalDate?,
+        @Param("hideDiscarded") hideDiscarded: Boolean, @Param("comparisonPending") comparisonPending: Boolean): Long
     fun findInputs(@Param("grade") grade: ThemeGrade, @Param("from") from: LocalDate, @Param("until") until: LocalDate): List<ThemeDraftInput>
     fun findWeekInputs(@Param("weekStart") weekStart: LocalDate): List<ThemeDraftInput>
     fun claimNext(@Param("now") now: Instant, @Param("leaseUntil") leaseUntil: Instant): ThemeDraftRow?
@@ -84,6 +96,9 @@ interface ThemeDraftMapper {
  */
 @Repository
 class ThemeDraftRepository(private val mapper: ThemeDraftMapper) {
+    fun reviewPage(filter: ThemeDraftReviewFilter, page: Int, size: Int) = ThemeDraftReviewPage(
+        mapper.reviewRows(filter, size, page.toLong() * size), page, size, mapper.reviewCount(filter), mapper.reviewWeeks(filter))
+
     fun insert(draft: ThemeDraft) {
         check(mapper.insert(draft) == 1)
     }
@@ -98,8 +113,13 @@ class ThemeDraftRepository(private val mapper: ThemeDraftMapper) {
     fun findById(id: UUID, lock: Boolean = false): ThemeDraft? = mapper.findById(id, lock)?.draft()
 
     /** 최근 요청 순 */
-    fun findPage(status: DraftStatus?, source: ThemeDraftSource?, page: Int, size: Int): ThemeDraftPage =
-        ThemeDraftPage(mapper.findPage(status, source, size, page.toLong() * size).map { it.draft() }, page, size, mapper.count(status, source))
+    fun findPage(status: DraftStatus?, source: ThemeDraftSource?, page: Int, size: Int,
+        grade: ThemeGrade? = null, weekStart: LocalDate? = null, hideDiscarded: Boolean = false,
+        comparisonPending: Boolean = false): ThemeDraftPage {
+        val rows = mapper.findPage(status, source, grade, weekStart, hideDiscarded, comparisonPending, size, page.toLong() * size)
+        return ThemeDraftPage(rows.map { it.draft() }, page, size,
+            mapper.count(status, source, grade, weekStart, hideDiscarded, comparisonPending))
+    }
 
     /** 그 학년의 적용 주가 [from, until)인 초안 입력 (자동 성취기준이 최근 코드를 피함) */
     fun findInputs(grade: ThemeGrade, from: LocalDate, until: LocalDate): List<ThemeDraftInput> = mapper.findInputs(grade, from, until)

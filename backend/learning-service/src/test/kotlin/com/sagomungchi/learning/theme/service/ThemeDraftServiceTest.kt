@@ -17,7 +17,9 @@ import com.sagomungchi.learning.theme.ThemeDraftFixtures
 import com.sagomungchi.learning.theme.client.AiThemeDraftRequest
 import com.sagomungchi.learning.theme.client.AiThemeRegenerate
 import com.sagomungchi.learning.theme.client.ThemeDraftAiClient
+import com.sagomungchi.learning.theme.domain.ThemeContent
 import com.sagomungchi.learning.theme.domain.ThemeDay
+import com.sagomungchi.learning.theme.domain.ThemeDayMission
 import com.sagomungchi.learning.theme.domain.ThemeDraft
 import com.sagomungchi.learning.theme.domain.ThemeDraftInput
 import com.sagomungchi.learning.theme.domain.ThemeDraftRegenerate
@@ -29,6 +31,7 @@ import com.sagomungchi.learning.theme.domain.Season
 import com.sagomungchi.learning.theme.domain.StandardSemesters
 import com.sagomungchi.learning.theme.domain.StoryType
 import com.sagomungchi.learning.theme.domain.ThemeMissionInput
+import com.sagomungchi.learning.theme.domain.ThemePlace
 import com.sagomungchi.learning.theme.domain.ThemeSemester
 import com.sagomungchi.learning.theme.domain.ThemeTopicSeeds
 import com.sagomungchi.learning.theme.domain.ThemeWeek
@@ -66,6 +69,8 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var clock: Clock
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var semesters: StandardSemesters
+    @Autowired lateinit var planner: ThemeWeekPlanner
+    @Autowired lateinit var media: ThemeDraftMediaService
     @MockitoBean lateinit var ai: ThemeDraftAiClient
 
     private val admin = UUID.randomUUID()
@@ -114,7 +119,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     @Test
     fun `이번 주 테마도 요청할 수 있고 고르지 않으면 다섯 유형 모두 자동, 주제가 없으면 주제 씨앗`() {
         val draft = service.request(command(grade = ThemeGrade.G3, weekStart = nextWeek.minusWeeks(1), topic = null, missions = emptyList()))
-        assertTrue(draft.input.topic in ThemeTopicSeeds.ALL.map { it.topic }, draft.input.topic)
+        assertTrue(draft.input.topic in ThemeDraftFixtures.seedTopics(), draft.input.topic)
         assertEquals(listOf(InputType.NARRATIVE, InputType.NARRATIVE, InputType.NARRATIVE, InputType.SOLUTION_STEPS, InputType.NARRATIVE),
             draft.input.missions.map { it.inputType }) // 초3 따져 보기는 서술
         assertTrue(draft.input.missions.flatMap { it.standardCodes }.all { it.startsWith("4") })
@@ -123,8 +128,11 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     @Test
     fun `자동 성취기준은 같은 학년 최근 4주 초안 코드를 피함 (그 전 주·다른 학년 코드는 상관없음)`() {
         val semester = ThemeSemester.of(ThemeGrade.G3, nextWeek) // #536: 후보 풀은 그 학년·학기 성취기준
-        val korean = missions.standardsOf("국어", "초3~4").map { it.code }.filter { semesters.covers(it, semester) }
-        val math = missions.standardsOf("수학", "초3~4").map { it.code }.filter { semesters.covers(it, semester) }
+        // #782: 자동으로 고르지 않는 성취기준(AUTO_EXCLUDED)은 후보 풀에서 빠짐
+        fun pool(subject: String) = missions.standardsOf(subject, "초3~4").map { it.code }
+            .filter { semesters.covers(it, semester) && it !in ThemeDraftRules.AUTO_EXCLUDED }
+        val korean = pool("국어")
+        val math = pool("수학")
         val (recent, rest) = korean.take(korean.size - 4) to korean.takeLast(4)
         recent.chunked(recent.size / 4 + 1).forEachIndexed { index, codes ->
             seedDraft(ThemeGrade.G3, nextWeek.minusWeeks(index + 1L), codes, math.drop(1))
@@ -171,7 +179,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         assertEquals(setOf(ThemeGrade.G3, ThemeGrade.G4, ThemeGrade.G5), auto.map { it.grade }.toSet())
         auto.forEach {
             assertEquals(listOf(DraftStatus.GENERATING, null, 5), listOf(it.status, it.requestedBy, it.input.missions.size))
-            assertTrue(it.input.topic in ThemeTopicSeeds.ALL.map { seed -> seed.topic }, it.input.topic)
+            assertTrue(it.input.topic in ThemeDraftFixtures.seedTopics(), it.input.topic)
             val band = ThemeDraftRules.gradeBand(it.grade).take(2)
             val codes = it.input.missions.flatMap { m -> m.standardCodes }
             assertTrue(codes.all { code -> code.startsWith(if (band == "초3") "4" else "6") }, it.input.toString())
@@ -183,40 +191,51 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
-    fun `주제 씨앗은 같은 학년 최근 씨앗을 피하고(다른 학년·기간 밖은 상관없음) 관리자가 쓴 주제는 그대로`() {
+    fun `주제 씨앗은 같은 학년 최근 장소를 피하고(다른 학년·기간 밖은 상관없음) 관리자가 쓴 주제는 그대로`() {
         val week = nextWeek
-        val fitting = ThemeTopicSeeds.ALL.filter { it.fits(Season.of(week)) }
-        val rest = fitting.groupBy { it.type }.values.map { it.last().topic } // 종류마다 하나씩 남김(종류는 무작위)
-        val recent = fitting.map { it.topic } - rest.toSet()
-        // 4주 역할 금지에 걸리지 않게 5주 전부터
-        recent.forEachIndexed { index, topic -> seedTopic(ThemeGrade.G4, week.minusWeeks(index % 20 + 5L), topic) }
+        val season = Season.of(week)
+        val data = ThemeTopicSeeds.PLACES
+        fun topicOf(place: ThemePlace): String {
+            val event = place.eventsIn(season).first()
+            val branch = data.branchesOf(place.type, event).first()
+            return ThemeTopicSeeds.topic(place, event, data.rolesFor(place, branch).first(), branch)
+        }
+        val inSeason = data.places.filter { it.eventsIn(season).isNotEmpty() }
+        val rest = inSeason.groupBy { it.type }.values.map { it.last() } // 종류마다 장소 하나씩 남김(종류는 무작위)
+        // 4주 역할 금지·직전 주 종류에 걸리지 않게 5주 전부터
+        (inSeason - rest.toSet()).forEachIndexed { index, place -> seedTopic(ThemeGrade.G4, week.minusWeeks(index % 20 + 5L), topicOf(place)) }
         rest.forEach {
-            seedTopic(ThemeGrade.G4, week.minusWeeks(ThemeTopicSeeds.RECENT_WEEKS + 1), it) // 기간 밖
-            seedTopic(ThemeGrade.G5, week.minusWeeks(1), it) // 다른 학년
+            seedTopic(ThemeGrade.G4, week.minusWeeks(ThemeTopicSeeds.RECENT_WEEKS + 1), topicOf(it)) // 기간 밖
+            seedTopic(ThemeGrade.G5, week.minusWeeks(1), topicOf(it)) // 다른 학년
         }
 
         val draft = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = null, missions = emptyList()))
         val written = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = "우리 반 텃밭", missions = emptyList()))
 
-        assertTrue(draft.input.topic in rest, draft.input.topic)
+        val parsed = ThemeTopicSeeds.parse(draft.input.topic)!!
+        assertTrue(rest.any { it.type == parsed.type && it.place == parsed.place }, draft.input.topic)
         assertEquals("우리 반 텃밭", written.input.topic)
     }
 
     @Test
     fun `주제 씨앗은 같은 학년 직전 주 줄거리 종류와 최근 4주 역할을 피함 (#634)`() {
         val week = nextWeek
-        val fitting = ThemeTopicSeeds.ALL.filter { it.fits(Season.of(week)) }
-        listOf(StoryType.LOST, StoryType.TREASURE).forEach { type ->
-            seedTopic(ThemeGrade.G4, week.minusWeeks(1), fitting.first { it.type == type }.topic) // 직전 주 초안 두 개
+        val data = ThemeTopicSeeds.PLACES
+        fun topicOf(type: StoryType, roleName: String? = null): String {
+            val place = data.places.first { it.type == type && it.eventsIn(Season.of(week)).isNotEmpty() }
+            val event = place.eventsIn(Season.of(week)).first()
+            val branch = data.branchesOf(type, event).first()
+            return ThemeTopicSeeds.topic(place, event, data.rolesFor(place, branch).first { roleName == null || it.name == roleName }, branch)
         }
-        val police = fitting.first { it.type == StoryType.FOOTPRINT && it.role.startsWith("경찰관(") }
-        seedTopic(ThemeGrade.G4, week.minusWeeks(2), police.topic)
+        listOf(StoryType.LOST, StoryType.TREASURE).forEach { seedTopic(ThemeGrade.G4, week.minusWeeks(1), topicOf(it)) } // 직전 주 초안 두 개
+        seedTopic(ThemeGrade.G4, week.minusWeeks(2), topicOf(StoryType.FOOTPRINT, "경찰관"))
 
-        val topic = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = null, missions = emptyList())).input.topic
-
-        val parsed = ThemeTopicSeeds.parse(topic)!!
-        assertTrue(parsed.type !in setOf(StoryType.LOST, StoryType.TREASURE), topic)
-        assertNotEquals("경찰관", parsed.roleName) // 장난꾸러기 찾기 경찰관 씨앗도 역할로 빠짐
+        repeat(5) {
+            val topic = service.request(command(grade = ThemeGrade.G4, weekStart = week, topic = null, missions = emptyList())).input.topic
+            val parsed = ThemeTopicSeeds.parse(topic)!!
+            assertTrue(parsed.type !in setOf(StoryType.LOST, StoryType.TREASURE), topic)
+            assertNotEquals("경찰관", parsed.roleName) // 발자국 경찰관 역할은 종류를 넘어 빠짐
+        }
     }
 
     @Test
@@ -436,7 +455,7 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         val all = service.list(null, null, 0, 20).items
         assertEquals(all.sortedByDescending { it.createdAt }.map { it.draftId }, all.map { it.draftId })
 
-        val view = ThemeDraftService(drafts, ai, missions, themes, properties, clock, TestAssets.urls, semesters).view(drafts.findById(ready.id)!!)
+        val view = ThemeDraftService(drafts, ai, missions, themes, properties, clock, TestAssets.urls, semesters, planner, media).view(drafts.findById(ready.id)!!)
         assertEquals(ThemeDraftRules.SCENES, view.scenes.map { it.scene })
         view.scenes.forEach {
             assertTrue(it.imageUrl!!.startsWith(TestAssets.BASE + ThemeDraftFixtures.key(it.scene) + "?"), it.imageUrl)
@@ -449,6 +468,77 @@ class ThemeDraftServiceTest : PostgresRepositoryTest() {
         }
         assertEquals(listOf(3, 1, "REVIEW"), listOf(view.maxAttempts, view.attempts, view.draft!!.warnings.single().stage))
         assertEquals(emptyList(), service.view(service.request(command(weekStart = nextWeek.plusWeeks(2)))).scenes) // 생성 전
+    }
+
+    @Test
+    fun `편성·교환은 학년 안에서만 원자적으로 적용하고 채택 시 생성 주와 실제 주를 구분`() {
+        val a = readyDraft()
+        val b = readyDraft()
+        val one = nextWeek.plusWeeks(1)
+        val two = nextWeek.plusWeeks(2)
+        planner.change(PlanChange(a.grade,a.id,null,one,null))
+        planner.change(PlanChange(b.grade,b.id,null,two,null))
+        assertCode(409,"PLAN_CONFLICT") { planner.change(PlanChange(a.grade,a.id,one,two,null)) }
+        assertCode(409,"PLAN_CONFLICT") { planner.change(PlanChange(ThemeGrade.G4,a.id,one,two,b.id)) }
+        assertEquals(one,planner.state(a.id).plannedWeek)
+        assertEquals(two,planner.state(b.id).plannedWeek)
+        planner.change(PlanChange(a.grade,a.id,one,two,b.id))
+        val board = planner.board(a.grade,one)
+        assertEquals(listOf(b.id,a.id),board.weeks.take(2).map { it.planned?.draftId })
+        assertCode(409,"PLAN_CONFLICT") { service.adopt(a.id,admin,one,true) }
+        val theme = service.adopt(a.id,admin,two,true)
+        assertEquals(two,theme.weekStart)
+        assertEquals(nextWeek,service.get(a.id).weekStart)
+        assertNull(planner.state(a.id).plannedWeek)
+        assertEquals(one,planner.state(b.id).plannedWeek)
+        assertCode(409,"PLAN_CONFLICT") { service.discard(b.id,null,true) }
+        service.discard(b.id,one,true)
+        assertNull(planner.state(b.id).plannedWeek)
+    }
+
+    @Test
+    fun `다른 주로 편성해 채택하면 학년과 적용 주는 고정되고 내용은 수정 가능`() {
+        val draft = readyDraft()
+        val plannedWeek = draft.weekStart.plusWeeks(2)
+        planner.change(PlanChange(draft.grade, draft.id, null, plannedWeek, null))
+        val adopted = service.adopt(draft.id, admin, plannedWeek, true)
+        val revision = ThemeContent(
+            adopted.grade, plannedWeek, "고친 테마 제목", adopted.intro,
+            adopted.days.map { ThemeDayMission(it.day, it.missionId) },
+        )
+
+        assertEquals(draft.weekStart, themes.get(adopted.themeId).generationWeek)
+        assertCode(409, "THEME_SCHEDULE_LOCKED") { themes.update(adopted.themeId, admin, revision.copy(weekStart = draft.weekStart)) }
+        assertCode(409, "THEME_SCHEDULE_LOCKED") { themes.update(adopted.themeId, admin, revision.copy(grade = ThemeGrade.G6)) }
+        val edited = themes.update(adopted.themeId, admin, revision)
+        assertEquals(adopted.version + 1, edited.version)
+        assertEquals(revision.title, edited.title)
+        assertEquals(draft.grade to plannedWeek, edited.grade to edited.weekStart)
+    }
+
+    @Test
+    fun `최초 게시 때 미채택 후보를 반환하고 생성 주가 닫힌 후보는 다른 주에 편성해 채택`() {
+        val candidate = readyDraft()
+        val fallback = readyDraft()
+        planner.change(PlanChange(candidate.grade,candidate.id,null,nextWeek,null))
+        val seeds = com.sagomungchi.learning.TestRows(jdbc).themeMissions(5,6)
+        val days = ThemeDay.entries.zip(seeds).map { (day,mission) -> com.sagomungchi.learning.theme.domain.ThemeDayMission(day,mission.id) }
+        val content = com.sagomungchi.learning.theme.domain.ThemeContent(candidate.grade,nextWeek,"게시할 테마","소개",days)
+        val selected = themes.create(admin,content)
+        themes.requestReview(selected.themeId)
+        assertCode(409,"PLAN_CONFLICT") { themes.publish(selected.themeId,selected.version+1) }
+        assertEquals(nextWeek,planner.state(candidate.id).plannedWeek)
+        themes.publish(selected.themeId,selected.version)
+        assertTrue(planner.board(candidate.grade,nextWeek).weeks.first().locked)
+        assertNull(planner.state(candidate.id).plannedWeek)
+        assertFalse(planner.state(fallback.id).weekLocked)
+        assertTrue(planner.state(fallback.id).adoptionWeekLocked)
+        assertCode(409,"WEEK_LOCKED") { service.request(command()) }
+        assertCode(409,"WEEK_LOCKED") { service.adopt(fallback.id,admin,null,true) }
+        assertCode(409,"WEEK_LOCKED") { planner.change(PlanChange(candidate.grade,candidate.id,null,nextWeek,null)) }
+        val open = nextWeek.plusWeeks(1)
+        planner.change(PlanChange(fallback.grade,fallback.id,null,open,null))
+        assertEquals(open,service.adopt(fallback.id,admin,open,true).weekStart)
     }
 
     private fun readyDraft(regen: Map<String, Any?>? = null): ThemeDraft {

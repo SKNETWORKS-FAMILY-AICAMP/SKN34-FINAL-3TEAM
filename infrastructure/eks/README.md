@@ -132,7 +132,7 @@ NAT는 정지 버튼이 있는 자원이 아니다. 시간 요금을 없애려�
 
 ### 재생성 순서 (2026-11-12 EKS 삭제 이후)
 
-아래 "재개 순서"는 클러스터가 있을 때의 절차다. 클러스터를 지웠으므로 다시 켤 때는 이 순서를 먼저 따른다. **처음 실행하는 절차**이므로 12/8 시연 1주 이상 전에 시작하고, 막힌 단계와 걸린 시간을 기록한다. 명령은 [AWS IaC](../aws/README.md#iac-eksctl--aws-cli-스크립트-185)를 따른다.
+아래 "재개 순서"는 클러스터가 있을 때의 절차다. 클러스터를 지운 뒤에는 이 순서를 따른다. 2026-11-17 A 계정에서 이 순서로 재생성했다(결과와 걸린 시간은 [infra 9.8.3](../../docs/report/infra.md#983-a-계정-재가동-확인-결과-2026-11-17), 당일 절차는 infra 9.11). 다른 계정으로 옮길 때는 [AWS README의 B 계정 런북](../aws/README.md#b-계정-전환-런북-809).
 
 1. `demo_stack.py plan`으로 남은 자원을 확인하고 `apply --confirm-account 347161580747`로 NAT·EIP를 다시 만든다. private route table 두 개의 blackhole `0.0.0.0/0`을 `aws ec2 replace-route ... --nat-gateway-id <새 NAT>`로 고친다(`apply`는 기존 경로를 바꾸지 않음).
 2. RDS를 시작해 available을 확인한다.

@@ -21,7 +21,7 @@ class LearningOpenApiTests(unittest.TestCase):
         documented = {(method, path) for path, methods in self.spec["paths"].items()
                       for method, operation in methods.items()
                       if method in {"get", "post", "put"} and "Learning" in operation.get("tags", [])}
-        self.assertEqual(len(actual), 11)
+        self.assertEqual(len(actual), 12)  # #599 낱말 물어보기 포함
         self.assertEqual(actual, documented)
         self.assertFalse(any("feedback" in path for _, path in documented))
 

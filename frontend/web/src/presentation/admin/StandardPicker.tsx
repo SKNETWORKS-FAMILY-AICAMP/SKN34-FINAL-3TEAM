@@ -5,6 +5,7 @@ import { bandFor, gradeBands, levelOptions } from '../../domain/admin/missionSta
 import { adminApi } from '../../data/admin/api.ts'
 import { useAdminQuery, useStandardsByCodes } from '../../data/admin/queries.ts'
 import { QueryFeedback } from '../common/Workspace.tsx'
+import { TableScroll } from './AdminUi.tsx'
 
 /**
  * 성취기준 표에서 고르기·성취기준별 성취수준 단계 (FN 1.5·FN-ADM-21, #356).
@@ -68,7 +69,7 @@ export function StandardPicker({ codes, levels, gradeMin, gradeMax, subject, onC
           )
         })}
       </ul>
-      <div className="ws-grid">
+      <div className="ad-standard-filters">
         <label>
           교과
           <input aria-label="성취기준 교과" value={draft.subject} onKeyDown={enter} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} />
@@ -84,12 +85,12 @@ export function StandardPicker({ codes, levels, gradeMin, gradeMax, subject, onC
           코드·문장 검색
           <input aria-label="성취기준 검색어" maxLength={100} value={draft.q} onKeyDown={enter} onChange={(e) => setDraft({ ...draft, q: e.target.value })} />
         </label>
+        <button type="button" className="cj-secondary" onClick={apply}>성취기준 조회</button>
       </div>
-      <button type="button" className="cj-secondary" onClick={apply}>성취기준 조회</button>
       <QueryFeedback query={search} />
       {search.data && !search.error && (
         <>
-          <div className="ad-table-wrap">
+          <TableScroll label="성취기준 표">
             <table className="ad-table">
               <caption>미션 학년 초{gradeMin}~{gradeMax}이 성취기준 학년군 안이어야 게시할 수 있습니다.</caption>
               <thead><tr><th>고르기</th><th>코드</th><th>학년군·영역</th><th>성취기준</th></tr></thead>
@@ -108,7 +109,7 @@ export function StandardPicker({ codes, levels, gradeMin, gradeMax, subject, onC
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
           {!rows.length && <p>조건에 맞는 성취기준이 없습니다.</p>}
           <div className="ws-actions" aria-label="성취기준 표 페이지">
             <button type="button" className="cj-secondary" disabled={filters.page <= 0} onClick={() => setFilters({ ...filters, page: filters.page - 1 })}>이전</button>

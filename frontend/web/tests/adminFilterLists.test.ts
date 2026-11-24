@@ -3,6 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { auditTargetLabels, callTypeLabels, labelOf } from '../src/domain/admin/operations.ts'
+import { auditActionLabel } from '../src/presentation/admin/adminFormatting.ts'
 
 const root = new URL('../../../', import.meta.url)
 const read = (path: string) => readFileSync(new URL(path, root), 'utf-8')
@@ -35,6 +36,14 @@ test('감사 대상 유형 필터는 core가 audit_log에 고정 값으로 쓰�
   const mission = [...missions.matchAll(/const val [A-Z_]+ *= *"([A-Z_]+)"/g)].map(m => m[1])
   for (const value of new Set([...fixed, ...support, ...mission, 'CONVERSATION', 'REPORT', 'NOTIFICATION']))
     assert.ok(value in auditTargetLabels, value)
+})
+
+test('표현 검토 감사는 대상 유형 필터와 작업 이름표에 core가 쓰는 값 그대로 있다 (#907)', () => {
+  const service = read('backend/core-service/src/main/kotlin/com/sagomungchi/core/admin/service/ExpressionReviewAuditService.kt')
+  const value = (name: string) => service.match(new RegExp(`const val ${name} = "([A-Z_]+)"`))![1]
+  assert.equal(labelOf(auditTargetLabels, value('TARGET_TYPE')), '표현 검토')
+  assert.equal(auditActionLabel(value('VIEW')), '표현 검토 목록 열람')
+  assert.equal(auditActionLabel(value('LABEL')), '표현 검토 라벨')
 })
 
 test('목록에 없는 값은 원래 값 그대로 보인다', () => {

@@ -2,10 +2,12 @@ import { createDemoGateway } from '../../data/classroom/demoGateway.ts'
 import { mockPremium } from './payments.ts'
 import { blankAnswer } from '../../domain/classroom.ts'
 import type { AnswerContent, Attempt, Draft, Mission } from '../../domain/classroom.ts'
+import type { AttemptContext } from '../../domain/retention.ts'
 
 // 기존 가상 학생/자체 문항 저장소를 MSW 안에서만 재사용한다. 앱 데이터 경로에 주입하지 않는다.
 // 이용권은 결제 목업의 구독만 본다(fixtures/payments.ts).
 export const fixtureStore = createDemoGateway({ premium: childId => mockPremium(childId) })
+export const startedContexts = new Map<string, AttemptContext>()
 export const mockSubmissionReceipts = new Map<
   string,
   {
@@ -29,10 +31,11 @@ if (typeof sessionStorage !== 'undefined') {
       if (
         Array.isArray(data.attempts) &&
         Array.isArray(data.keys) &&
-        Array.isArray(data.reports) &&
         Number.isInteger(data.serial)
       ) {
         fixtureStore.restoreSnapshot(data)
+        if (Array.isArray(data.startedContexts))
+          for (const [id, context] of data.startedContexts) startedContexts.set(id, context)
         if (Array.isArray(data.requests))
           for (const [k, v] of data.requests) mockSubmissionReceipts.set(k, v)
       }
@@ -48,6 +51,7 @@ export function persistFixtureState() {
         fixtureKey,
         JSON.stringify({
           ...fixtureStore.snapshot(),
+          startedContexts: [...startedContexts.entries()],
           requests: [...mockSubmissionReceipts.entries()],
         }),
       )

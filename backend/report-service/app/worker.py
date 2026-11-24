@@ -6,11 +6,15 @@ import logging
 import signal
 from contextlib import AsyncExitStack
 
+import httpx
+
 from app import tracing
 from app.clients.ai_client import AiClient
+from app.clients.asset_fetcher import AssetFetcher, parse_internal_origins, parse_origins
 from app.clients.base import internal_client
 from app.clients.core_client import CoreClient
 from app.clients.learning_client import LearningClient
+from app.clients.memory_book_client import MemoryBookLearningClient
 from app.clients.storage import ObjectStorage
 from app.concurrency import run_blocking
 from app.config import get_settings
@@ -22,6 +26,8 @@ from app.generation.consumer import GENERATE_QUEUE, GenerationConsumer
 from app.generation.locking import JobLocks
 from app.generation.pipeline import DisplayNameProvider, build_pipeline
 from app.generation.service import GenerationService
+from app.memory_book.consumer import MEMORY_BOOK_QUEUE, MemoryBookConsumer
+from app.memory_book.service import MemoryBookService
 from app.messaging.connection import AmqpConnection
 from app.messaging.consumer import EventConsumer
 from app.messaging.publisher import EventPublisher
@@ -122,10 +128,30 @@ async def run(generator=None, *, display_names: DisplayNameProvider | None = Non
         async with AsyncExitStack() as clients:
             core_http = await clients.enter_async_context(internal_client(settings.core_url))
             core = CoreClient(core_http)
+            learning_http = await clients.enter_async_context(
+                internal_client(settings.learning_url)
+            )
+            # 그림 받기는 내부 토큰·사용자 헤더가 붙지 않는 별도 클라이언트(S3로 토큰이 나가지 않게)
+            asset_http = await clients.enter_async_context(
+                httpx.AsyncClient(timeout=settings.memory_book_asset_timeout_seconds)
+            )
+            memory_books = MemoryBookService(
+                factory,
+                locks,
+                core,
+                MemoryBookLearningClient(learning_http),
+                AssetFetcher(
+                    asset_http,
+                    parse_origins(settings.memory_book_asset_origins),
+                    internal_origins=parse_internal_origins(
+                        settings.memory_book_asset_internal_origins
+                    ),
+                    max_bytes=settings.memory_book_image_max_bytes,
+                    total_bytes=settings.memory_book_total_max_bytes,
+                ),
+                storage,
+            )
             if generator is None:
-                learning_http = await clients.enter_async_context(
-                    internal_client(settings.learning_url)
-                )
                 ai_http = await clients.enter_async_context(internal_client(settings.ai_url))
                 generator = build_pipeline(
                     display_names if display_names is not None else core,
@@ -143,6 +169,7 @@ async def run(generator=None, *, display_names: DisplayNameProvider | None = Non
                         StudentDeletedConsumer(DeletionService(factory, locks, storage, core)),
                     ),
                     (GENERATE_QUEUE, GenerationConsumer(service, codec)),
+                    (MEMORY_BOOK_QUEUE, MemoryBookConsumer(memory_books)),
                 ],
                 OutboxRelay(factory, publisher),
                 stop,

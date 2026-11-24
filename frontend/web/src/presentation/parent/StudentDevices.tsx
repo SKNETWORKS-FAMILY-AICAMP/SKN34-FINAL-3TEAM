@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
+import { KeyRound, Smartphone, ScanLine } from 'lucide-react'
 import { studentDeviceApi } from '../../data/studentDevice/api.ts'
 import { useParentMutation } from '../../data/parent/queries.ts'
 import { useReauthReturn } from '../../data/reauthReturn.ts'
@@ -37,10 +38,10 @@ function useNow(active: boolean) {
  * 학부모: 자녀 기기 등록·PIN·기기 목록 (FN-ACC-14, API 명세 3.11).
  * 자녀 기기에 학부모 Google 세션이 남지 않도록, 코드는 이 화면(학부모 기기)에서 발급해 자녀 기기에 입력한다.
  */
-export function StudentDevices({ items }: { items: Child[] }) {
+export function StudentDevices({ items, selectedChildId }: { items: Child[]; selectedChildId?: string }) {
   return (
     <section className="parent-devices"><header className="parent-page-head"><h1>기기·PIN</h1><p>자녀의 PIN을 정하고 학습할 기기를 연결하세요.</p></header><div className="parent-device-grid">
-      <PinSettings items={items} />
+      <PinSettings key={selectedChildId} items={items} selectedChildId={selectedChildId} />
       <GuardianPasswordSettings />
       <PairingIssue items={items} />
       <DeviceList />
@@ -88,7 +89,7 @@ function GuardianPasswordSettings() {
   useReauthReturn(challenge, !!challenge && !token && !finish.isPending, complete)
   return (
     <section className="ws-card" aria-labelledby="guardian-password-h">
-      <h2 id="guardian-password-h">보호자 비밀번호</h2>
+      <h2 id="guardian-password-h">보호자 비밀번호</h2><span className="device-purpose">학생 화면에서 보호자 화면으로 돌아올 때</span>
       <p>자녀가 학습을 마친 뒤 다시 로그인하지 않고 학부모 화면으로 돌아올 때 입력합니다. 자녀가 모르는 숫자 4~6자리로 정해 주세요. 5번 틀리면 잠기고, 여기서 다시 정하면 풀립니다.</p>
       <QueryFeedback query={state} />
       <form
@@ -139,11 +140,11 @@ function GuardianPasswordSettings() {
   )
 }
 
-function PinSettings({ items }: { items: Child[] }) {
-  const [selected, setSelected] = useState(items[0]?.id ?? '')
+function PinSettings({ items, selectedChildId }: { items: Child[]; selectedChildId?: string }) {
+  const [selected, setSelected] = useState(selectedChildId ?? items[0]?.id ?? '')
   const child = items.find(item => item.id === selected) ?? items[0]
   return <section className="ws-card parent-pin-settings" aria-labelledby="pin-h">
-    <h2 id="pin-h">자녀 PIN</h2>
+    <h2 id="pin-h">자녀 PIN</h2><span className="device-purpose">등록된 기기에서 매번 로그인할 때</span>
     <p>PIN을 정할 자녀를 골라 주세요. 잠긴 PIN도 다시 정하면 풀립니다.</p>
     <div className="parent-child-pills" role="tablist" aria-label="PIN 설정할 자녀">
       {items.map((item, index) => <button key={item.id} type="button" role="tab" id={`pin-tab-${item.id}`}
@@ -187,7 +188,8 @@ function ChildPin({ child }: { child: Child }) {
 
 function PairingIssue({ items }: { items: Child[] }) {
   const [picked, setPicked] = useState<string[]>(() => items.map((c) => c.id))
-  const [pairing, setPairing] = useState<Pairing | null>(null)
+  const [pairing, setPairing] = useState<(Pairing & { targets: Child[] }) | null>(null)
+  const selectionChanged = pairing && (picked.length !== pairing.targets.length || pairing.targets.some(c => !picked.includes(c.id)))
   const [qr, setQr] = useState<{ url: string; src: string; error: boolean } | null>(null)
   const [selectedOrigin, setSelectedOrigin] = useState('')
   const addresses = usePairingOrigins()
@@ -211,7 +213,8 @@ function PairingIssue({ items }: { items: Child[] }) {
   }, [pairing, registrationUrl])
   return (
     <section className="ws-card" aria-labelledby="pairing-h">
-      <h2 id="pairing-h">자녀 기기 등록</h2>
+      <h2 id="pairing-h">새 학습 기기 연결</h2>
+      <ol className="device-setup-steps"><li><KeyRound size={24} strokeWidth={1.5} aria-hidden="true"/><strong>등록 코드 만들기</strong><span>이 화면에서 공부할 자녀를 선택해요.</span></li><li><ScanLine size={24} strokeWidth={1.5} aria-hidden="true"/><strong>자녀 기기로 열기</strong><span>QR을 찍거나 등록 코드를 입력해요.</span></li><li><Smartphone size={24} strokeWidth={1.5} aria-hidden="true"/><strong>기기 이름 정하기</strong><span>등록 후에는 자녀 PIN으로 로그인해요.</span></li></ol>
       <p>
         자녀 태블릿의 기본 카메라로 QR을 찍어 주세요. 열린 화면에서 기기 이름을 적고 등록하면,
         다음부터는 자녀 PIN으로 들어갈 수 있습니다. 코드를 직접 입력해도 됩니다.
@@ -236,8 +239,8 @@ function PairingIssue({ items }: { items: Child[] }) {
         className="ws-form"
         onSubmit={(e) => {
           e.preventDefault()
-          setQr(null)
-          issue.mutate(picked, { onSuccess: setPairing })
+          const targets = items.filter(c => picked.includes(c.id))
+          issue.mutate(picked, { onSuccess: code => setPairing({ ...code, targets }) })
         }}
       >
         <fieldset>
@@ -256,13 +259,15 @@ function PairingIssue({ items }: { items: Child[] }) {
           ))}
         </fieldset>
         <button className="cj-primary" disabled={!picked.length || issue.isPending}>
-          {pairing ? '새 코드 만들기' : '등록 코드 만들기'}
+          {selectionChanged ? '변경한 대상으로 새 코드 발급' : pairing ? '새 코드 만들기' : '등록 코드 만들기'}
         </button>
         <ErrorNotice error={issue.error} />
       </form>
       {pairing && (
         <div className="pairing-code" aria-live="polite">
           <div>
+            <p>이 코드로 등록할 자녀 · {pairing.targets.map(c => c.nickname).join(', ')}</p>
+            {selectionChanged && <p>선택한 자녀가 바뀌었습니다. 변경한 대상으로 새 코드를 발급해 주세요.</p>}
             <p>등록 코드 (한 번만 사용)</p>
             <strong aria-label={`등록 코드 ${pairing.pairingCode.split('').join(' ')}`}>
               {formatPairingCode(pairing.pairingCode)}

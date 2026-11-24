@@ -44,7 +44,7 @@ export const REGEN_TARGETS: RegenTarget[] = [
 ]
 /** 장면 칸마다 보이는 버튼 종류(시작·종료는 영상·그림, 요일은 그림·미션) */
 export const regenKindsOf = (scene: ThemeSceneName): RegenKind[] => scene === 'INTRO' || scene === 'OUTRO' ? ['VIDEO', 'IMAGE'] : ['IMAGE', 'MISSION']
-export const regenButtonLabels: Record<RegenKind, string> = { VIDEO: '영상 다시 만들기', IMAGE: '그림 다시 만들기', MISSION: '미션 다시 만들기' }
+export const regenButtonLabels: Record<RegenKind, string> = { VIDEO: '영상 다시 생성', IMAGE: '그림 다시 생성', MISSION: '미션 다시 생성' }
 const regenSceneNames: Record<ThemeSceneName, string> = { INTRO: '시작', OUTRO: '종료', MON: '월요일', TUE: '화요일', WED: '수요일', THU: '목요일', FRI: '금요일' }
 const regenKindNames: Record<RegenKind, string> = { VIDEO: '영상', IMAGE: '그림', MISSION: '미션' }
 const splitTarget = (target: RegenTarget) => target.split(':') as [RegenKind, ThemeSceneName]
@@ -76,6 +76,9 @@ export interface ThemeDraft {
   source: ThemeDraftSource | null
   grade: ThemeGrade | null
   weekStart: string | null
+  plannedWeek?: string | null
+  weekLocked: boolean
+  adoptionWeekLocked: boolean
   attempts: number
   maxAttempts: number
   input: {
@@ -148,6 +151,9 @@ export function themeDraftOf(raw: unknown): ThemeDraft {
     source: Object.hasOwn(themeDraftSourceLabels, str(value.source)) ? (value.source as ThemeDraftSource) : null,
     grade: Object.hasOwn(THEME_GRADE_LABELS, str(value.grade)) ? (value.grade as ThemeGrade) : null,
     weekStart: /^\d{4}-\d{2}-\d{2}$/.test(str(value.weekStart)) ? str(value.weekStart) : null,
+    ...(Object.hasOwn(value, 'plannedWeek') ? { plannedWeek: strOrNull(value.plannedWeek) } : {}),
+    weekLocked: value.weekLocked === true,
+    adoptionWeekLocked: value.adoptionWeekLocked === true,
     attempts: int(value.attempts),
     maxAttempts: int(value.maxAttempts),
     input: {
@@ -193,6 +199,7 @@ export const themeDraftActions = (status: ThemeDraftStatus) => ({
 })
 export function themeDraftRequestErrors(req: ThemeDraftRequest): string[] {
   const errors: string[] = []
+  if (req.topic && req.topic.length > 100) errors.push('주제 키워드는 100자 이내로 입력해 주세요.')
   if (!Object.hasOwn(THEME_GRADE_LABELS, req.grade)) errors.push('학년을 선택해 주세요.')
   const date = new Date(req.weekStart + 'T00:00:00Z')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(req.weekStart) || !Number.isFinite(date.valueOf()) || date.toISOString().slice(0, 10) !== req.weekStart || date.getUTCDay() !== 1)

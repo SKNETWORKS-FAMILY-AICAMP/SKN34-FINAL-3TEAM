@@ -160,7 +160,7 @@
     },
     {
       "name": "AUTH_WEB_ORIGIN",
-      "value": "https://d3jf0rnm6vhd9v.cloudfront.net"
+      "value": "https://www.sagomungchi.co.kr"
     },
     {
       "name": "AUTH_COOKIE_SECURE",
@@ -298,10 +298,6 @@
     "maxReplicas": 3,
     "cpuUtilization": 70
   },
-  "image": {
-    "digest": "sha256:0c9208e900e84267d4833e1878faee57036044f6c5632efa54b29eaa276e1c7d",
-    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/core-service"
-  },
   "ingress": {
     "enabled": false
   },
@@ -323,7 +319,77 @@
     }
   },
   "migration": {
-    "enabled": false
+    "enabled": true,
+    "image": {
+      "pullPolicy": "IfNotPresent"
+    },
+    "args": [
+      "migrate"
+    ],
+    "env": [
+      {
+        "name": "FLYWAY_URL",
+        "value": "jdbc:postgresql://sagomungchi-demo-db.czcw0ywu2euo.ap-northeast-2.rds.amazonaws.com:5432/core_db?sslmode=verify-full&sslrootcert=/rds-ca/global-bundle.pem&connectTimeout=10"
+      },
+      {
+        "name": "FLYWAY_USER",
+        "valueFrom": {
+          "secretKeyRef": {
+            "name": "core-migrate-credentials",
+            "key": "DB_USERNAME"
+          }
+        }
+      },
+      {
+        "name": "FLYWAY_PASSWORD",
+        "valueFrom": {
+          "secretKeyRef": {
+            "name": "core-migrate-credentials",
+            "key": "DB_PASSWORD"
+          }
+        }
+      },
+      {
+        "name": "FLYWAY_DEFAULT_SCHEMA",
+        "value": "public"
+      },
+      {
+        "name": "FLYWAY_CREATE_SCHEMAS",
+        "value": "false"
+      },
+      {
+        "name": "FLYWAY_BASELINE_ON_MIGRATE",
+        "value": "false"
+      },
+      {
+        "name": "FLYWAY_CLEAN_DISABLED",
+        "value": "true"
+      }
+    ],
+    "resources": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "128Mi"
+      },
+      "limits": {
+        "memory": "512Mi"
+      }
+    },
+    "extraVolumes": [
+      {
+        "name": "rds-ca",
+        "configMap": {
+          "name": "rds-ca"
+        }
+      }
+    ],
+    "extraVolumeMounts": [
+      {
+        "name": "rds-ca",
+        "mountPath": "/rds-ca",
+        "readOnly": true
+      }
+    ]
   },
   "nameOverride": "core-service",
   "networkPolicy": {
@@ -434,7 +500,29 @@
       "scoring-service"
     ],
     "namespaceDefaultDeny": true,
-    "egressToCollector": true
+    "egressToCollector": true,
+    "migrationEgress": [
+      {
+        "ports": [
+          {
+            "port": 5432,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "10.20.128.0/20"
+            }
+          },
+          {
+            "ipBlock": {
+              "cidr": "10.20.144.0/20"
+            }
+          }
+        ]
+      }
+    ]
   },
   "pdb": {
     "enabled": false

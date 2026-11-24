@@ -99,6 +99,9 @@ class SageMakerReportLlm(LlmClient):
                 },
             },
         }
+        if request.repetition_penalty is not None:
+            # vLLM 확장 파라미터. 리포트 상세 설명 재생성에서만 켬
+            body["repetition_penalty"] = request.repetition_penalty
         try:
             async with asyncio.timeout(request.timeout):
                 raw = await asyncio.to_thread(self._invoke, json.dumps(body, ensure_ascii=False))

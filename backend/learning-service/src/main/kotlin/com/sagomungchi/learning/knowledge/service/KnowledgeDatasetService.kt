@@ -1,7 +1,6 @@
 package com.sagomungchi.learning.knowledge.service
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning.knowledge.domain.ChunkKind
 import com.sagomungchi.learning.knowledge.domain.DatasetStatus
@@ -58,7 +57,6 @@ data class KnowledgeLoadResult(
 class KnowledgeDatasetService(
     private val repository: KnowledgeRepository,
     private val transactions: TransactionTemplate,
-    private val objectMapper: ObjectMapper,
     private val clock: Clock,
 ) {
     fun list(): List<KnowledgeDatasetView> = repository.findDatasets().map(::view)
@@ -110,7 +108,7 @@ class KnowledgeDatasetService(
         val dataset = repository.findDataset(version, lock = true) ?: notFound(version)
         if (dataset.status != DatasetStatus.LOADING) conflict("LOADING 판만 활성화할 수 있음: ${dataset.status}")
         val active = repository.findActive(lock = true)
-        val basedOn = objectMapper.readTree(dataset.source).get(PREVIOUS_VERSION)?.takeUnless { it.isNull }?.asText()
+        val basedOn = dataset.source.get(PREVIOUS_VERSION)?.takeUnless { it.isNull }?.asText()
         if (active?.version != basedOn) conflict("적재 뒤 활성 판이 바뀜(적재 기준 $basedOn, 현재 ${active?.version}). 다시 적재")
         val now = clock.instant()
         active?.let { repository.updateStatus(it.version, DatasetStatus.RETIRED) }
@@ -184,11 +182,8 @@ class KnowledgeDatasetService(
         if (next > 99) conflict("하루 판은 99개까지")
         val version = prefix + "%02d".format(next)
         val stored = source + (PREVIOUS_VERSION to previous)
-        val row = DatasetRow(
-            version, DatasetStatus.LOADING, objectMapper.writeValueAsString(stored), 0, 0, now, null,
-        )
         try {
-            transactions.executeWithoutResult { repository.insertDataset(row) }
+            transactions.executeWithoutResult { repository.insertDataset(version, DatasetStatus.LOADING, stored, now) }
         } catch (duplicate: DuplicateKeyException) {
             conflict("같은 판 이름을 동시에 만듦: $version. 다시 적재")
         }
@@ -196,7 +191,7 @@ class KnowledgeDatasetService(
     }
 
     private fun view(row: DatasetRow) = KnowledgeDatasetView(
-        row.version, row.status, objectMapper.readTree(row.source), row.chunkCount, row.relationCount, repository.countChunksByKind(row.version), repository.countRelations(row.version),
+        row.version, row.status, row.source, row.chunkCount, row.relationCount, repository.countChunksByKind(row.version), repository.countRelations(row.version),
         row.createdAt, row.activatedAt,
     )
 

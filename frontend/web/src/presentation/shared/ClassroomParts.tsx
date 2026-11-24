@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, UIEvent } from 'react'
 import { X } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
@@ -9,11 +9,17 @@ import { isDemo } from '../../data/classroom/useClassroom.ts'
 import type { Mission } from '../../domain/classroom.ts'
 
 export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => void }) {
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // 관리자 화면(#917): 처리 중에도 초점은 단추에 남으므로, 새 오류 글이 보이는 영역 밖이면 보이게 스크롤한다(이미 보이면 움직이지 않음). 초점은 옮기지 않는다.
+    const el = box.current
+    if (error && el?.closest('.admin-shell, .admin-login-page')) el.scrollIntoView({ block: 'nearest' })
+  }, [error])
   if (!error) return null
   const message = error instanceof Error && /[가-힣]/.test(error.message) ? error.message : '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'
   const problem = error instanceof ApiError ? error.problem : null
   return (
-    <div className="ux-error" role="alert" data-query-state="FAILED">
+    <div ref={box} className="ux-error" role="alert" data-query-state="FAILED">
       <strong>{problem?.title && /[가-힣]/.test(problem.title) ? problem.title : message}</strong>
       {problem?.status === 404 && (
         <p>
@@ -46,10 +52,12 @@ export function Modal({
   title,
   children,
   onClose,
+  scrollIndicator = false,
 }: {
   title: string
   children: ReactNode
   onClose: () => void
+  scrollIndicator?: boolean
 }) {
   const panel = useRef<HTMLElement>(null),
     close = useRef(onClose)
@@ -70,9 +78,12 @@ export function Modal({
     }
     const oldOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    panel.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true })
+    const initialFocus = panel.current?.querySelector<HTMLElement>('[data-dialog-initial-focus]') ?? panel.current?.querySelector<HTMLButtonElement>('button')
+    initialFocus?.focus({ preventScroll: true })
     panel.current?.scrollIntoView({ block: 'nearest' })
     const keydown = (e: KeyboardEvent) => {
+      // Nested evidence dialogs own Escape and focus until they close.
+      if (panel.current?.querySelector('[role="dialog"][aria-modal="true"]')) return
       if (e.key === 'Escape') close.current()
       if (e.key !== 'Tab') return
       const elements = [
@@ -102,17 +113,41 @@ export function Modal({
   }, [])
   return (
     <div className="cj-modal-layer">
-      <section ref={panel} className="cj-modal" role="dialog" aria-modal="true" aria-label={title}>
+      <section ref={panel} className={scrollIndicator ? 'cj-modal cj-modal-inner-scroll' : 'cj-modal'} role="dialog" aria-modal="true" aria-label={title}>
         <header className="cj-modal-head">
           <h2>{title}</h2>
           <button type="button" className="cj-close" onClick={onClose} aria-label="창 닫기">
             <X />
           </button>
         </header>
-        <div className="cj-modal-body">{children}</div>
+        {scrollIndicator ? <ModalScrollBody title={title}>{children}</ModalScrollBody> : <div className="cj-modal-body">{children}</div>}
       </section>
     </div>
   )
+}
+function ModalScrollBody({ title, children }: { title: string; children: ReactNode }) {
+  const marker = useRef<HTMLSpanElement>(null)
+  const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(idle.current), [])
+
+  function showPosition(event: UIEvent<HTMLDivElement>) {
+    const { clientHeight, scrollHeight, scrollTop } = event.currentTarget
+    const thumb = marker.current
+    if (!thumb || scrollHeight <= clientHeight || clientHeight <= 8) return
+    const track = clientHeight - 8
+    const height = Math.min(track, Math.max(24, track * clientHeight / scrollHeight))
+    const progress = Math.max(0, Math.min(1, scrollTop / (scrollHeight - clientHeight)))
+    thumb.style.height = height + 'px'
+    thumb.style.transform = 'translateY(' + (track - height) * progress + 'px)'
+    thumb.dataset.visible = 'true'
+    clearTimeout(idle.current)
+    idle.current = setTimeout(() => { delete thumb.dataset.visible }, 600)
+  }
+
+  return <div className="cj-modal-scroll-frame">
+    <div className="cj-modal-body" role="region" aria-label={title + ' 내용'} tabIndex={0} onScroll={showPosition}>{children}</div>
+    <span ref={marker} className="cj-modal-scroll-marker" aria-hidden="true" />
+  </div>
 }
 export function Brand({ linked = true }: { linked?: boolean }) {
   const { session } = useSession()

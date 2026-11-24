@@ -4,6 +4,7 @@ import {
   clueCount,
   dayAction,
   dayContext,
+  retryPlan,
   isLookUnlocked,
   onTimeCount,
   remainingCandidates,
@@ -36,7 +37,8 @@ import { readLook } from '../src/domain/studentLook.ts'
 import { canBuyMore, createIdempotencyKeys, keepIdempotencyKey, unlockMessage } from '../src/presentation/student/world/lookShop.ts'
 // 움직임 읽기는 domain/themeMotion.ts 하나(#440에서 retention.ts 중복 정리)
 import { readThemeMotion } from '../src/domain/themeMotion.ts'
-import { isAccountDocument, reportPeriodType } from '../src/domain/parent.ts'
+import { answerTimeLine, durationLabel, isAccountDocument, reportPeriodType } from '../src/domain/parent.ts'
+import { privateReport } from '../src/mocks/fixtures/sharing.ts'
 import { retentionApi } from '../src/data/retention/api.ts'
 import { studentLookApi } from '../src/data/studentLook/api.ts'
 import { ApiError, setAccessToken } from '../src/data/apiClient.ts'
@@ -222,6 +224,27 @@ test('문제를 마무리한 직후 이야기의 끝(#440): 엔딩이 됐고 아
   assert.equal(endingDue(sunday), false, '무료 일요일은 새로 띄우지 않음')
 })
 
+test('끝낸 문제 다시 풀기(#807): 더 풀어 보기는 EXTRA, 이번 주 테마는 토요일·프리미엄 일요일만 오늘 장면, 평일은 토요일 안내, 지난 주·무료 일요일은 없음', () => {
+  const day = (d: string, state: string, attemptStatus: string) => ({ day: d, missionId: `m-${d}`, thinkingType: 'ANALYZE', state, attemptStatus })
+  const week = (open: boolean, days: ReturnType<typeof day>[]) =>
+    readWeeklyTheme({ themeId: 't', weekStart: '2026-11-09', title: '테마', days, review: { open, missions: [] } })!
+  const wed = week(false, [day('MON', 'OPEN', 'COMPLETED'), day('TUE', 'OPEN', 'IN_PROGRESS'), day('WED', 'LOCKED', 'NOT_STARTED')])
+  const sat = week(true, [day('MON', 'OPEN', 'COMPLETED'), day('TUE', 'OPEN', 'IN_PROGRESS'), day('WED', 'OPEN', 'NOT_STARTED')])
+  const freeSunday = week(false, [day('MON', 'CLOSED', 'COMPLETED')])
+  assert.deepEqual(retryPlan(false, 'm-MON', wed), { kind: 'EXTRA' }, '더 풀어 보기는 주간 테마와 무관')
+  assert.deepEqual(retryPlan(true, 'm-MON', undefined), { kind: 'WAIT' })
+  assert.deepEqual(retryPlan(true, 'm-MON', wed), { kind: 'SATURDAY' }, '평일에 끝낸 문제')
+  assert.deepEqual(retryPlan(true, 'm-MON', sat), { kind: 'SCENE', day: 'MON' }, '토요일 다시 풀기')
+  assert.deepEqual(retryPlan(true, 'm-TUE', sat), { kind: 'SCENE', day: 'TUE' }, '푸는 중이면 장면이 이어 함')
+  assert.deepEqual(retryPlan(true, 'm-WED', wed), { kind: 'NONE' }, '아직 안 열린 요일')
+  assert.deepEqual(retryPlan(true, 'm-MON', freeSunday), { kind: 'NONE' }, '무료 일요일은 테마가 닫힘')
+  assert.deepEqual(retryPlan(true, 'm-old', sat), { kind: 'NONE' }, '지난 주 테마 문제')
+  assert.deepEqual(retryPlan(true, 'm-MON', null), { kind: 'NONE' }, '주간 테마를 못 받음')
+  assert.deepEqual(retryPlan(null, 'm-MON', sat), { kind: 'SCENE', day: 'MON' }, '종류 칸 없는 기록: 이번 주 테마에 있으면 테마')
+  assert.deepEqual(retryPlan(null, 'm-old', sat), { kind: 'EXTRA' }, '종류 칸 없는 기록: 이번 주 테마에 없으면 예전처럼')
+  assert.deepEqual(retryPlan(null, 'm-MON', undefined), { kind: 'WAIT' })
+})
+
 test('요일별 할 수 있는 일(#484): 공개된 안 푼 문제 시작, 이어하기는 요일 무관, 다시 풀기는 토요일·프리미엄 일요일만', () => {
   const day = (d: string, state: string, attemptStatus: string, extra: Record<string, unknown> = {}) =>
     ({ day: d, missionId: `m-${d}`, thinkingType: 'ANALYZE', state, attemptStatus, ...extra })
@@ -295,6 +318,20 @@ test('커뮤니티 응답은 반응 수·학생 ID 없이 읽고, 내 글만 반
   assert.deepEqual(mine.reactions, { NEW_IDEA: 0, CLEAR_REASON: 2, DIFFERENT_VIEW: 0, WANT_MORE: 0 })
 })
 
+test('#825 공유 답변은 입력 방식과 관계없이 text(칸 이름을 붙인 원문)를 보인다', () => {
+  const answers = [
+    { inputType: 'NARRATIVE', text: '내 생각', content: { text: '내 생각' } },
+    { inputType: 'SOLUTION_STEPS', text: '식: 3+4\n최종 답: 7 개', content: { finalAnswer: '7', steps: ['3+4'] } },
+    { inputType: 'ESSAY', text: '주장: 가\n까닭 1: 나', content: { essay: { claim: '가', reasons: ['나', '다'], rebuttal: '라' } } },
+    { inputType: 'CHOICE', text: '사과', content: { choiceIds: ['c1'] } },
+    { inputType: 'CLASSIFICATION', text: '사과: 과일', content: { assignments: [{ choiceId: 'c1', categoryId: 'g1' }] } },
+  ]
+  const posts = readCommunityPosts({ items: answers.map((answer, i) => ({ postId: `p${i}`, author: { nickname: '하늘' }, answer })) })
+  assert.deepEqual(posts.map((p) => p.answer), answers.map((a) => a.text))
+  const mine = readMyPosts({ items: answers.map((answer, i) => ({ postId: `m${i}`, answer })) })
+  assert.deepEqual(mine.map((p) => p.answer), answers.map((a) => a.text))
+})
+
 test('#635 친구 생각 작성자 착용은 아이템 키로 읽고, 아이템 목록과 맞춰 그림 주소로 바꾼다(목록에 없는 아이템은 빠짐)', () => {
   const [post] = readCommunityPosts({
     items: [{ postId: 'p1', author: { nickname: '초록콩', look: { companion: 'kongi', equipped: { HAT: 'HAT_GONE', OUTFIT: 'OUTFIT_RAIN', ACCESSORY: '', BACKGROUND: null } } }, answer: '답' }],
@@ -356,6 +393,29 @@ test('참여 어댑터는 명세 경로·메서드·멱등 키를 보낸다', as
   assert.equal(new Headers(calls[6].init.headers).get('Idempotency-Key'), 'key-2')
   assert.deepEqual(JSON.parse(String(calls[6].init.body)), { targetType: 'COMMUNITY_POST', targetId: 'p1', category: 'INAPPROPRIATE', comment: '이상해요' })
   assert.equal(JSON.parse(String(calls[7].init.body)).equipped.HAT, 'HAT_ACORN')
+})
+
+test('#805 방 소품 저장은 놓은 것마다 색(color)을 함께 보내고, 받은 색을 그대로 읽는다(core #758)', async (t) => {
+  const calls: { url: string; init: RequestInit }[] = []
+  setAccessToken('synthetic-student', 'STUDENT')
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    calls.push({ url: String(url), init })
+    return Response.json({ spots: [
+      { surface: 'FLOOR', col: 3, row: 5, itemKey: 'DECOR_PLANT', name: '작은 화분', assetKey: 'room/decor-plant.svg', color: 'sky' },
+      { surface: 'WALL_BACK', col: 2, row: 1, itemKey: 'DECOR_CLOCK', name: '벽시계', assetKey: 'room/decor-clock.svg', color: null },
+    ] })
+  })
+  const saved = await retentionApi.saveDecorSpots([
+    { surface: 'FLOOR', col: 3, row: 5, itemKey: 'DECOR_PLANT', color: 'sky' },
+    { surface: 'WALL_BACK', col: 2, row: 1, itemKey: 'DECOR_CLOCK', color: null },
+  ])
+  assert.equal(`${calls[0].init.method} ${calls[0].url}`, 'PUT /api/v1/students/me/room/decor-spots')
+  // null(기본 색)도 빼지 않고 보낸다: 빼면 서버가 저장된 색을 기본 색으로 바꾼다
+  assert.deepEqual(JSON.parse(String(calls[0].init.body)), { spots: [
+    { surface: 'FLOOR', col: 3, row: 5, itemKey: 'DECOR_PLANT', color: 'sky' },
+    { surface: 'WALL_BACK', col: 2, row: 1, itemKey: 'DECOR_CLOCK', color: null },
+  ] })
+  assert.deepEqual(saved.map((x) => x.color), ['sky', null])
 })
 
 
@@ -529,7 +589,7 @@ test('#709 친구 방 응답: 그림 키·기본값·액자 순서를 읽고, �
     { surface: 'WALL_BACK', col: 0, row: 0 },
   ] } }).decor, [
     { surface: 'FLOOR', col: 12, row: 4, color: 'blue', assetKey: 'room/decor-plant.svg' },
-    // 색 형식이 틀리면 기본 색(null)으로 읽는다(#723 color)
+    // 색 형식이 틀리면 기본 색(null)으로 읽는다(#758 color)
     { surface: 'WALL_LEFT', col: 8, row: 1, color: null, assetKey: 'room/decor-lights.svg' },
   ])
   // 모르는 캐릭터는 기본 캐릭터, 빈 별명은 "친구"
@@ -551,4 +611,16 @@ test('#709 친구 방 응답 모양이 틀리면 계약 오류(화면은 공통 
     { ...ok, room: { ...ok.room, frames: [{ slotNo: 1, title: 'a' }, { slotNo: 1, title: 'b' }] } },
     { ...ok, room: { ...ok.room, frames: [{ slotNo: 1 }] } },
   ]) assert.throws(() => readFriendRoom(bad), /친구 방 정보를 확인하지 못했어요/)
+})
+
+test('#803 일일 리포트 생각·작성 시간 문구는 report 파일과 같고 원문 비공개에도 남는다', () => {
+  assert.deepEqual([0, 59, 60, 119, 600].map(durationLabel), ['1분 미만', '1분 미만', '1분', '1분', '10분'])
+  assert.equal(answerTimeLine({ version: 1, thinkingSeconds: 45, writingSeconds: 130 }), '처음 답: 생각 1분 미만 · 작성 2분')
+  assert.equal(answerTimeLine({ version: 2, thinkingSeconds: 600, writingSeconds: 59 }), '되묻기 뒤 답: 생각 10분 · 작성 1분 미만')
+  assert.equal(answerTimeLine({ version: 3, thinkingSeconds: 60, writingSeconds: 60 }), '두 번째 되묻기 뒤 답: 생각 1분 · 작성 1분')
+  const times = [{ version: 1, thinkingSeconds: 45, writingSeconds: 130 }]
+  const hidden = privateReport({ problems: [{ finalAnswer: '합성 답', followups: [], quotes: [], reflection: null, answerTimes: times }] })
+  const problem = hidden.problems![0] as unknown as { finalAnswer: unknown; answerTimes: unknown }
+  assert.equal(problem.finalAnswer, null, '원문은 숨김')
+  assert.deepEqual(problem.answerTimes, times, '시간은 수치라 그대로(P28)')
 })

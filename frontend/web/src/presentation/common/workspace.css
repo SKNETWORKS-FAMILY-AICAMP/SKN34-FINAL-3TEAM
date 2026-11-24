@@ -163,6 +163,17 @@
   height: 20px;
   accent-color: #64894e;
 }
+/* #915: 동의 체크박스는 터치 대상 24×24px(WCAG 2.5.8). 학부모 틀의 20px 규칙보다 특이성을 높인다. */
+#class-journal label.ws-check.ws-consent-check > input[type='checkbox'] {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+}
+/* #915: Tailwind 초기화로 빠진 링크 밑줄을 되살려 색 외에도 구분한다(WCAG 1.4.1). */
+#class-journal .ws-text-link {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
 #class-journal .ws-tag {
   padding: 4px 10px;
   border-radius: 8px;
@@ -238,6 +249,15 @@
 }
 
 /* 분석 대화 예시 질문 (FN-AGT-12, #240) */
+#class-journal .notification-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  line-height: 1.7;
+}
+#class-journal .notification-meta time { font-size: 13px; }
+
 #class-journal .ws-examples {
   display: grid;
   gap: 8px;

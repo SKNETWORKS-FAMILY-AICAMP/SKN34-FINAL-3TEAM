@@ -7,9 +7,10 @@ import { studentHandlers, setMockScenario, mockStudent } from './handlers/studen
 import { applyMockThemeState } from './fixtures/themeState.ts'
 import type { MockThemeState } from './fixtures/themeState.ts'
 import type { DemoScenario } from '../domain/classroom.ts'
-import { parentHandlers } from './handlers/parent.ts'
+import { parentHandlers, reviseMockConsents } from './handlers/parent.ts'
 import { retentionHandlers } from './handlers/retention.ts'
 import { memoryHandlers } from './handlers/memory.ts'
+import { MOCK_MEMORY_BOOK_DEMO_KEY, memoryBookHandlers } from './handlers/memoryBook.ts'
 import { adminHandlers } from './handlers/admin.ts'
 import { adminThemeDraftHandlers } from './handlers/adminThemeDrafts.ts'
 import { setWorkspaceScenario } from './fixtures/accounts.ts'
@@ -27,6 +28,7 @@ export const mockHandlers = [
   // 커뮤니티 신고·선택 동의는 기존 신고·동의 목업보다 먼저 받아야 한다.
   ...retentionHandlers,
   ...memoryHandlers,
+  ...memoryBookHandlers,
   ...serviceHandlers,
   ...studentDeviceHandlers,
   ...parentHandlers,
@@ -55,6 +57,8 @@ export function installMockEvents() {
   window.addEventListener('sagomungchi:workspace-scenario', (event) =>
     setWorkspaceScenario((event as CustomEvent<string>).detail),
   )
+  // 개발 점검표 "동의 문서 개정(재동의) 시연": 지금 계정을 개정 전 문서에만 동의한 상태로 (#912)
+  window.addEventListener('sagomungchi:mock-consent-revised', () => reviseMockConsents())
   // 개발 목업 "홈 상태"(캔버스 Home 보드와 같은 8가지)·프리미엄 바꿔 보기
   window.addEventListener('sagomungchi:mock-theme-state', (event) => {
     const { state, premium } = (event as CustomEvent<{ state: MockThemeState | ''; premium: boolean }>).detail
@@ -67,6 +71,8 @@ export function installMockEvents() {
   )
 }
 export async function startMockWorker() {
+  // 추억 그림책 시연(docs/proposals/memory-book.md): ?memoryBookDemo=1로 열면 이 탭에서 유료·원문 공개로 본다
+  if (new URLSearchParams(location.search).get('memoryBookDemo') === '1') sessionStorage.setItem(MOCK_MEMORY_BOOK_DEMO_KEY, '1')
   const reportDemo = await import('./fixtures/structuredReportDemo.ts')
   if (reportDemo.structuredReportDemoRequested()) reportDemo.rememberStructuredReportDemo()
   if (reportDemo.hasStructuredReportDemo()) {

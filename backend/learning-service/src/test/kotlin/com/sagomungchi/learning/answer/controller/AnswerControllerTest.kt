@@ -105,6 +105,37 @@ class AnswerControllerTest(@Autowired private val mockMvc: MockMvc) {
     }
 
     @Test
+    fun `생각·작성 시간 칸은 정수 초를 그대로 넘기고, null·큰 정수도 받아 저장 여부는 서비스가 정함 (#801)`() {
+        val bodies = mapOf(
+            """{"inputType":"NARRATIVE","text":"내 답","thinkingSeconds":95,"writingSeconds":240}""" to (95L to 240L),
+            """{"inputType":"NARRATIVE","text":"내 답","thinkingSeconds":null,"writingSeconds":-3}""" to (null to -3L),
+            """{"inputType":"NARRATIVE","text":"내 답","thinkingSeconds":99999999999999999999,"writingSeconds":0}""" to (Long.MAX_VALUE to 0L),
+        )
+        bodies.forEach { (body, time) ->
+            val command = SubmitCommand(
+                InputType.NARRATIVE, AnswerContent(text = "내 답"), dictatedByGuardian = false, followupId = null,
+                thinkingSeconds = time.first, writingSeconds = time.second,
+            )
+            given(service.submit(attemptId, key, command)).willReturn(answer(command))
+
+            mockMvc.post("/internal/attempts/$attemptId/answers") { submission(body) }.andExpect { status { isCreated() } }
+        }
+    }
+
+    @Test
+    fun `생각·작성 시간이 정수가 아니면 400 VALIDATION_FAILED, 서비스는 부르지 않음`() {
+        listOf("1.5", "\"95\"", "true", "[95]", "{}").forEach { value ->
+            mockMvc.post("/internal/attempts/$attemptId/answers") {
+                submission("""{"inputType":"NARRATIVE","text":"답","thinkingSeconds":$value,"writingSeconds":240}""")
+            }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("VALIDATION_FAILED") }
+            }
+        }
+        verifyNoInteractions(service)
+    }
+
+    @Test
     fun `Idempotency-Key가 없거나 UUID가 아니거나 입력 방식이 없으면 400`() {
         listOf(null, "not-a-uuid").forEach { idempotencyKey ->
             mockMvc.post("/internal/attempts/$attemptId/answers") {

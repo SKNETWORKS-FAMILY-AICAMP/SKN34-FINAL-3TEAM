@@ -2,6 +2,7 @@ import { http } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
 import type {
   Permission,
+  ErrorReport,
   AdminMission,
   MissionVersion,
   Rubric,
@@ -16,6 +17,7 @@ import type { LearningMission } from '../../domain/learning.ts'
 import type { Period } from '../../domain/classroom.ts'
 import { validPeriod } from '../../domain/parent.ts'
 import { workspaceScenario as mode } from '../fixtures/accounts.ts'
+import { communityOf, consentOf, persistRetention, retentionState, sharedAnswer } from '../fixtures/retention.ts'
 import { fixtureStore as store } from '../fixtures/student.ts'
 import {
   jobs,
@@ -26,12 +28,16 @@ import {
   audit,
   modelVersions,
   errorReports,
+  expressionReviews,
   reportedAttemptIds,
   retryReceipts,
   stamp,
 } from '../fixtures/admin/operations.ts'
 import { guard, respond } from './student.ts'
-import { fail, page } from './parent.ts'
+import { demoRefunds } from './adminService.ts'
+import { cases } from './service.ts'
+import { fail } from './parent.ts'
+const reports = () => [...retentionState.communityReports.map(({ report }) => report), ...errorReports]
 const unpublishedChanges = (m: AdminMission) => m.currentVersion !== m.publishedVersion || m.currentRubricVersion !== m.publishedRubricVersion
 const reviewable = (m: AdminMission) => m.status === 'REVIEW_REQUIRED' || m.status === 'PUBLISHED' && unpublishedChanges(m)
 export function allow(request: Request, permission?: Permission) {
@@ -156,6 +162,20 @@ function versionData(d: Partial<MissionVersion>, version: number): MissionVersio
   }
 }
 export const adminHandlers = [
+  http.get('/api/v1/admin/overview/workload', ({ request }) => respond(async () => {
+    allow(request); queryFault()
+    const permissions=store.snapshot().session?.permissions ?? []
+    const range=period(request)
+    const total=(n:number)=>mode==='empty'?0:n
+    return {
+      ...(permissions.includes('SERVICE_OPS') ? {
+        pendingInquiries:total(cases.filter(c=>c.kind==='inquiries' && c.status==='RECEIVED').length),
+        receivedReports:total(reports().filter(r=>r.status==='RECEIVED').length),
+        failedJobs:total(jobs.filter(j=>j.status==='FAILED' && j.createdAt.slice(0,10)>=range.from && j.createdAt.slice(0,10)<=range.to).length),
+      }:{}),
+      ...(permissions.includes('PAYMENT_VIEW') ? {pendingRefunds:total(demoRefunds.filter(r=>r.status==='REQUESTED').length)}:{}),
+    }
+  })),
   http.get('/api/v1/admin/overview', ({ request }) =>
     respond(async () => {
       allow(request)
@@ -190,8 +210,7 @@ export const adminHandlers = [
       allow(request, 'SERVICE_OPS')
       queryFault()
       const q = new URL(request.url).searchParams
-      return page(
-        mode === 'empty'
+      const filtered = mode === 'empty'
           ? []
           : jobs.filter(
               (j) =>
@@ -199,8 +218,10 @@ export const adminHandlers = [
                 (!q.get('to') || j.createdAt.slice(0, 10) <= q.get('to')!) &&
                 (!q.get('type') || j.type === q.get('type')) &&
                 (!q.get('status') || j.status === q.get('status')),
-            ),
-      )
+            )
+      const index = Math.max(0, Number(q.get('page')) || 0)
+      const size = 20
+      return { items: filtered.slice(index * size, (index + 1) * size), page: index, size, totalElements: filtered.length }
     }),
   ),
   http.get('/api/v1/admin/jobs/:jobId', ({ request, params }) =>
@@ -273,14 +294,14 @@ export const adminHandlers = [
       queryFault()
       const p = period(request),
         q = new URL(request.url).searchParams
-      return page(
-        audits.filter(
+      const filtered = audits.filter(
           (a) =>
             (!q.get('targetType') || a.targetType === q.get('targetType')) &&
             a.createdAt.slice(0, 10) >= p.from &&
             a.createdAt.slice(0, 10) <= p.to,
-        ),
-      )
+        )
+      const index = Math.max(0,Number(q.get('page')) || 0), size = 20
+      return { items: filtered.slice(index*size,(index+1)*size), page:index, size, totalElements:filtered.length }
     }),
   ),
   http.get('/api/v1/admin/missions', ({ request }) =>
@@ -644,18 +665,63 @@ export const adminHandlers = [
       }
     }),
   ),
+  // #728 표현 검토 (core 프록시와 같은 규칙: SERVICE_OPS, 글만, 열람·라벨 감사)
+  http.get('/api/v1/admin/expression-reviews', ({ request }) =>
+    respond(async () => {
+      allow(request, 'SERVICE_OPS')
+      queryFault()
+      const q = new URL(request.url).searchParams
+      const labeled = (q.get('labeled') ?? 'false') === 'true', source = q.get('source'), number = Number(q.get('page') ?? 0), size = Number(q.get('size') ?? 20)
+      if (!['true', 'false'].includes(q.get('labeled') ?? 'false') || (source && !['GRAY_ZONE', 'COMMUNITY_REPORT'].includes(source)) ||
+        !Number.isInteger(number) || number < 0 || !Number.isInteger(size) || size < 1 || size > 100) fail('VALIDATION_FAILED', '요청 값을 확인해 주세요.')
+      const rows = mode === 'empty' ? [] : expressionReviews.filter(r => (r.label !== null) === labeled && (!source || r.source === source))
+        .sort((a, b) => labeled ? String(b.labeledAt).localeCompare(String(a.labeledAt)) : a.createdAt.localeCompare(b.createdAt))
+      const items = rows.slice(number * size, number * size + size)
+      audit('EXPRESSION_REVIEW_VIEW', 'EXPRESSION_REVIEW', null, 'SUCCESS', { reviewIds: items.map(r => r.id) })
+      return { items, page: number, size, totalElements: rows.length }
+    }),
+  ),
+  http.put('/api/v1/admin/expression-reviews/:reviewId/label', ({ request, params }) =>
+    respond(async () => {
+      allow(request, 'SERVICE_OPS')
+      if (!/^[0-9a-f-]{36}$/i.test(String(params.reviewId))) fail('VALIDATION_FAILED', '요청 값을 확인해 주세요.') // core 경로 변수 UUID
+      const body = (await request.json().catch(() => null)) as { label?: unknown } | null
+      if (!body || Object.keys(body).length !== 1 || !['OFFENSIVE', 'CLEAN', 'SKIP'].includes(String(body.label))) fail('VALIDATION_FAILED', '요청 값을 확인해 주세요.')
+      const review = expressionReviews.find(r => r.id === params.reviewId)
+      if (!review) fail('EXPRESSION_REVIEW_NOT_FOUND', '검토 항목을 찾을 수 없습니다.', 404)
+      review!.label = body!.label as 'OFFENSIVE' | 'CLEAN' | 'SKIP'; review!.labeledAt = stamp()
+      audit('EXPRESSION_REVIEW_LABEL', 'EXPRESSION_REVIEW', review!.id, 'SUCCESS', { label: review!.label })
+      return review
+    }),
+  ),
   http.get('/api/v1/admin/error-reports', ({ request }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
       queryFault()
-      return page(errorReports)
+      const params=new URL(request.url).searchParams
+      const status=params.get('status'), index=Number(params.get('page')||0), size=Number(params.get('size')||20)
+      const rows=mode==='empty'?[]:reports().filter(r=>!status || r.status===status)
+      return {items:rows.slice(index*size,(index+1)*size),page:index,size,totalElements:rows.length}
     }),
   ),
   http.get('/api/v1/admin/error-reports/:reportId', ({ request, params }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
-      const r = errorReports.find((r) => r.reportId === params.reportId)
+      const r = reports().find((r) => r.reportId === params.reportId)
       if (!r) fail('NOT_FOUND', '신고가 없습니다.', 404)
+      if (r!.targetType === 'COMMUNITY_POST') {
+        const post = retentionState.posts.find((p) => p.postId === r!.targetId)
+        audit('SUPPORT_ORIGINAL_VIEW', 'ERROR_REPORT', r!.reportId, 'SUCCESS', '신고된 공유물 원문 열람')
+        const linkedPost = post ? {
+          postId: post.postId,
+          available: true,
+          missionId: post.missionId,
+          status: post.status,
+          answer: sharedAnswer(post.answer),
+          authorStudentId: post.studentId,
+        } : { postId: r!.targetId, available: false }
+        return { ...r!, linkedPost }
+      }
       audit('ERROR_REPORT_VIEW', 'ERROR_REPORT', r!.reportId, 'SUCCESS', '신고 연결 시도 원문 열람')
       const a = store
         .snapshot()
@@ -668,14 +734,37 @@ export const adminHandlers = [
   http.patch('/api/v1/admin/error-reports/:reportId', ({ request, params }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
-      const r = errorReports.find((r) => r.reportId === params.reportId)
+      const r = reports().find((r) => r.reportId === params.reportId)
       if (!r) fail('NOT_FOUND', '신고가 없습니다.', 404)
       const d = (await request.json()) as {
-        status: 'RECEIVED' | 'IN_REVIEW' | 'RESOLVED'
+        status: ErrorReport['status']
         reviewReason: string
+        reviewResult?: string
       }
       if (!d.reviewReason?.trim() || !['RECEIVED', 'IN_REVIEW', 'RESOLVED'].includes(d.status))
         fail('VALIDATION_FAILED', '검토 사유·상태를 확인해 주세요.')
+      if (r!.targetType === 'COMMUNITY_POST') {
+        const result = d.status === 'RESOLVED' ? d.reviewResult ?? 'REMOVED' : d.reviewReason
+        if (d.status === 'RESOLVED' && result !== 'VISIBLE' && result !== 'REMOVED')
+          fail('VALIDATION_FAILED', '공유물 처리 결과를 확인해 주세요.', 400)
+        const replay = r!.status === d.status && r!.reviewReason === d.reviewReason && r!.reviewResult === result
+        if (!replay) {
+          if (!(r!.status === 'RECEIVED' && d.status === 'IN_REVIEW') && !(r!.status === 'IN_REVIEW' && d.status === 'RESOLVED'))
+            fail('SUPPORT_STATE_CONFLICT', '현재 신고 상태에서 처리 결과를 변경할 수 없습니다.', 409)
+          Object.assign(r!, { status: d.status, reviewReason: d.reviewReason, reviewResult: result })
+          audit('ERROR_REPORT_REVIEW', 'ERROR_REPORT', r!.reportId, 'SUCCESS', d.reviewReason)
+        }
+        const related = retentionState.communityReports.filter(({ report }) => report.targetId === r!.targetId)
+        const post = retentionState.posts.find((p) => p.postId === r!.targetId)
+        if (post && post.status !== 'REMOVED') {
+          if (related.some(({ report }) => report.status === 'RESOLVED' && report.reviewResult === 'REMOVED')) post.status = 'REMOVED'
+          else if (related.some(({ report }) => report.status !== 'RESOLVED')) post.status = 'HIDDEN_REPORT'
+          else if (post.studentId.startsWith('friend-') || (communityOf(post.studentId).enabled && consentOf(post.studentId))) post.status = 'VISIBLE'
+          else post.status = 'HIDDEN_SETTING'
+        }
+        persistRetention()
+        return r
+      }
       Object.assign(r!, d)
       audit('ERROR_REPORT_REVIEW', 'ERROR_REPORT', r!.reportId, 'SUCCESS', d.reviewReason)
       return r
@@ -684,8 +773,9 @@ export const adminHandlers = [
   http.post('/api/v1/admin/error-reports/:reportId/corrections', ({ request, params }) =>
     respond(async () => {
       allow(request, 'SERVICE_OPS')
-      const r = errorReports.find((r) => r.reportId === params.reportId)
+      const r = reports().find((r) => r.reportId === params.reportId)
       if (!r) fail('NOT_FOUND', '신고가 없습니다.', 404)
+      if (r!.targetType === 'COMMUNITY_POST') fail('CORRECTION_TARGET_UNSUPPORTED', '판정 정정만 지원합니다.', 422)
       const d = (await request.json()) as { reason: string; corrected: string }
       if (!d.reason?.trim() || !d.corrected?.trim())
         fail('VALIDATION_FAILED', '정정 사유와 결과를 입력해 주세요.')

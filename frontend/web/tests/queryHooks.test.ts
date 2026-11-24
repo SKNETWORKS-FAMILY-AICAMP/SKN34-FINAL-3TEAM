@@ -14,7 +14,7 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 const { createElement, act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
-const { useParentQuery, useParentMutation, useParentDashboard } = await import('../src/data/parent/queries.ts')
+const { useParentQuery, useParentMutation, useParentDashboard, useChildAccountAction, useDeletionRequest } = await import('../src/data/parent/queries.ts')
 const { useAdminQuery, useAdminMutation } = await import('../src/data/admin/queries.ts')
 const device = await import('../src/data/studentDevice/queries.ts')
 const { useStudentLook, useSaveLook } = await import('../src/data/studentLook/queries.ts')
@@ -133,6 +133,37 @@ test('학부모 mutation 성공은 parent·children만 무효화하고 실패는
   assert.equal(cache.getQueryState(['parent', 'records'])?.isInvalidated, true)
   assert.equal(cache.getQueryState(['children'])?.isInvalidated, true)
   assert.equal(cache.getQueryState(['admin', 'jobs'])?.isInvalidated, false)
+})
+
+test('#950 자녀 삭제 접수 응답으로 처리 상태를 바로 보이고, 확인 단추 재조회는 학부모 캐시를 무효화하지 않는다', async t => {
+  const calls: string[] = []
+  const accepted = { deletionRequestId: 'del-a', childId: child.id, scope: 'RECORDS', status: 'CONFIRMED', completedServices: [] }
+  const done = { ...accepted, status: 'COMPLETED', completedServices: ['learning', 'report'] }
+  mockFetch(t, (url, init) => {
+    calls.push(`${init.method ?? 'GET'} ${url}`)
+    if (init.method === 'DELETE') return new Response(null, { status: 204 })
+    return Response.json(init.method === 'POST' ? accepted : done)
+  })
+  const cache = client()
+  let requestId = ''
+  const h = await mount(t, () => ({ action: useChildAccountAction(child.id), status: useDeletionRequest(child.id, requestId) }), cache)
+  await act(async () => { assert.equal(await h.get().action.mutateAsync({ choice: 'UNLINK', token: 'proof' }), null) })
+  assert.deepEqual(calls, ['DELETE /api/v1/children/child-a/link'])
+  assert.equal(h.get().status.fetchStatus, 'idle')
+  assert.deepEqual(cache.getQueriesData({ queryKey: ['parent', 'deletion-request'] }).filter(([, data]) => data), [])
+
+  await act(async () => { requestId = (await h.get().action.mutateAsync({ choice: 'RECORDS', token: 'proof' }))!.deletionRequestId })
+  await h.render(); await act(async () => { await pause(30) })
+  assert.deepEqual(calls.slice(1), ['POST /api/v1/children/child-a/deletion-requests'])
+  assert.deepEqual(h.get().status.data, accepted)
+
+  for (const key of [['parent', 'records'], ['children']]) cache.setQueryData(key, [])
+  await act(async () => { await h.get().status.refetch() })
+  await until(() => h.get().status.data?.status === 'COMPLETED')
+  assert.deepEqual(calls.slice(2), ['GET /api/v1/children/child-a/deletion-requests/del-a'])
+  assert.deepEqual(h.get().status.data, done)
+  assert.equal(cache.getQueryState(['parent', 'records'])?.isInvalidated, false)
+  assert.equal(cache.getQueryState(['children'])?.isInvalidated, false)
 })
 
 test('관리자 mutation은 관리자 캐시만 무효화한다', async t => {
@@ -287,7 +318,8 @@ test('시도 시작은 상세 캐시를 갱신하고 학습 홈·기록·미션�
   })
   const h = await mount(t, classroom.useLearningActions, cache)
   await act(async () => { await h.get().start.mutateAsync({ child, mission: attempt.mission }) })
-  assert.deepEqual(cache.getQueryData(['attempt', attempt.attemptId]), { ...attempt, reflection: undefined })
+  // themeScene: 응답에 없으면 null로 읽는다(EXTRA·테마 장면 없음, 오늘 장면 #807)
+  assert.deepEqual(cache.getQueryData(['attempt', attempt.attemptId]), { ...attempt, reflection: undefined, themeScene: null })
   assert.equal(cache.getQueryState(['student-home', child.id])?.isInvalidated, true)
   assert.equal(cache.getQueryState(['missions', child.id, 3])?.isInvalidated, true)
 })

@@ -1,5 +1,6 @@
 package com.sagomungchi.core.conversation.domain
 
+import com.sagomungchi.core._common.json.JsonObject
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -25,10 +26,10 @@ data class ConversationRow(val id: UUID, val parentUserId: UUID, val studentId: 
 }
 data class MessageRow(val id: UUID, val conversationId: UUID, val seq: Int, val question: String,
     val answer: String?, val scopeStudentId: UUID?, val scopeFrom: LocalDate?, val scopeTo: LocalDate?,
-    val scopeChanged: Boolean, val status: String, val source: String?, val clarification: String?,
-    val metrics: String?, val verification: String?, val recordCount: Int?, val failureCode: String?,
+    val scopeChanged: Boolean, val status: String, val source: String?, val clarification: JsonObject?,
+    val metrics: List<JsonObject>?, val verification: JsonObject?, val recordCount: Int?, val failureCode: String?,
     val retryCount: Int, val createdAt: OffsetDateTime, val completedAt: OffsetDateTime?,
-    val fallback: String? = null, val notice: String? = null) {
+    val fallback: JsonObject? = null, val notice: JsonObject? = null) {
     fun scope() = scopeStudentId?.let { AnalysisScope(it, scopeFrom!!, scopeTo!!, scopeChanged) }
 }
 data class EvidenceRow(val id: UUID, val messageId: UUID, val attemptId: UUID, val answerId: UUID?, val answerVersion: Int?, val kind: String = "ANSWER")

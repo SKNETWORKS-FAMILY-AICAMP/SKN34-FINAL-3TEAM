@@ -288,6 +288,7 @@ P24의 report 몫.
 - `report.generate.v1`의 `periodType` 생략은 WEEKLY. 복구 요청에도 `periodType` 전달
 - **배포 순서**: DB 백업 → report worker 소비 중단·구버전 쓰기 차단 → 마이그레이션 → 새 learning·report-api·report-worker. 구버전 writer와 최종 스키마를 섞는 롤링 배포는 불가. learning producer(#385·#391)를 report worker보다 먼저
 - `REPORT_THEME_SUMMARY_ENABLED=true`가 기본. false면 새 주간 생성에서 테마 조회만 생략
+- 구현 경계: FN-RPT-14·15의 report 생성·저장·조회·다운로드와 FN-RPT-17 테마 소비가 이 절, 스케줄·알림·공개 프록시는 #390(20절), 자정 생성 시각은 #400(21절). #385 테마 요약과 #207 다시 풀기 비교를 연결했고 기존 주간 집계는 원본 기록에서 독립 계산한다
 
 ## 23. 판정 정정 영향 조회와 요소 지표 제외 (#244, 2026-11-09)
 
@@ -314,10 +315,8 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - 받은 설명의 숫자·점수·등급·금지 표현과 인용을 다시 검사. 인용은 같은 답변·버전 원문과 요청 글 양쪽의 부분 문자열이어야 함. `quote=null`은 정상(인용 영역만 생략)
 - 상태: 하나 이상 검증되면 `INCLUDED`, 대상은 있지만 미활성·실패·검사 탈락이면 `NOT_INCLUDED`, 대상 없음·원문 비공개면 `NO_TARGET`. `weekly_report.verification.explanationState`에 저장, 본문은 `report_item.EXPLANATION`(Alembic `20261110_08`, 항목 CHECK만 확장). 기존 `narrative.modelExplanation`은 계속 null
 - 상세·HTML·PDF·Markdown에 같은 상태와 검증된 설명 표시. 무료 다운로드 변형에는 넣지 않음. core도 현재 이용권·공개 상태로 다시 가림
-- 대기 상한: 설명 호출당 `REPORT_EXPLANATION_TIMEOUT_SECONDS`, 설명 단계 전체 `REPORT_EXPLANATION_BUDGET_SECONDS`. 최대 3건 순차, 재시도 없음. 상한 초과 시 이미 검증한 항목은 보존. 이 절 당시 값(CPU 실측 전 기준안 130·400초)은 아래 #747 값으로 바뀜
-  - #747부터 `REPORT_NARRATIVE_TIMEOUT_SECONDS=80`, `REPORT_EXPLANATION_TIMEOUT_SECONDS=80`, `REPORT_EXPLANATION_BUDGET_SECONDS=300`(ai가 SageMaker 실시간 호출 1회·마감 75초). 이전 RunPod 콜드 대기값(310·310·950초)은 지움. 근거와 창 밖 동작은 [AI 보고서 24절](ai.md#24-리포트-gemma-sagemaker-호출-전환-747-2026-11-18)
+- 대기 상한: 서술 `REPORT_NARRATIVE_TIMEOUT_SECONDS=80`, 설명 호출당 `REPORT_EXPLANATION_TIMEOUT_SECONDS=80`, 설명 단계 전체 `REPORT_EXPLANATION_BUDGET_SECONDS=300`(#747, ai가 SageMaker 실시간 호출 1회·마감 75초). 최대 3건 순차, 재시도 없음. 상한 초과 시 이미 검증한 항목은 보존. 근거와 창 밖 동작은 [AI 보고서 24절](ai.md#24-리포트-gemma-sagemaker-호출-전환-747-2026-11-18)
 - 배포 순서: core 사용량(#490) → ai API(#491), learning 점수 공급(#489)과 함께. 공급자가 구버전이면 설명 미포함으로 기존 리포트 유지
-- 미실시: 실제 CPU 모델의 품질·지연 측정(#475), sLLM 서버(#476), 운영 배포
 
 ## 26. 학부모 리포트 목록 전체 반환 (#500, 2026-11-11)
 
@@ -329,18 +328,18 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 
 ## 27. 설명 후속: 대기·종료 시간, 검사 오탐, 후보 대체 (#508, 2026-11-11)
 
-- **복구 후보 기준 60분 → 4시간**(`app.report.recovery.stale-after` 기본 `PT4H`): 월 00:00에 주간·일일 작업이 함께 생기고 report-worker 1대·prefetch 1로 차례로 처리되어, 60분 기준에서는 설명이 켜진 뒤 약 9건 이후 대기 작업이 `REPORT_NOT_CREATED`로 실패할 수 있었음. 기준 > 주간 설명 대상 수 × (설명 단계 + 기본 생성 시간) + 일일 처리 시간. 당시 설명 단계 400초로 데모 30명 기준 약 215분, #747 뒤 300초로 약 165분. 학생 수나 설명 시간이 바뀌면 다시 계산. 진짜 유실 작업의 발견은 최대 4시간으로 늦어짐
-- sLLM 가동 창(일 23:50~월 02:00)은 그대로. 창 밖 호출은 설명만 빠지고(`NOT_INCLUDED`) 리포트는 완료
+- **복구 후보 기준 60분 → 4시간**(`app.report.recovery.stale-after` 기본 `PT4H`): 월 00:00에 주간·일일 작업이 함께 생기고 report-worker 1대·prefetch 1로 차례로 처리되어, 60분 기준에서는 설명이 켜진 뒤 약 9건 이후 대기 작업이 `REPORT_NOT_CREATED`로 실패할 수 있었음. 기준 > 주간 설명 대상 수 × (설명 단계 + 기본 생성 시간) + 일일 처리 시간. 설명 단계 300초(#747)로 데모 30명 기준 약 165분. 학생 수나 설명 시간이 바뀌면 다시 계산. 진짜 유실 작업의 발견은 최대 4시간으로 늦어짐
+- SageMaker 가동 창은 일 23:30~월 02:00(KST). 창 밖에서는 설명만이 아니라 서술 호출도 실패해 주간 리포트가 `FAILED`로 끝남([AI 보고서 24.5](ai.md#245-창-밖-요청-남은-결정))
 - 설명 지표는 `explanationState` 비율로 정함([아키텍처 4.7](../design/architecture.md#47-운영-경보-구성-경계-187)). 규칙·임계값은 실측 뒤
-- 종료 유예: report-worker `terminationGracePeriodSeconds` 480초(당시 설명 단계 400초 + 여유 80초. #747 뒤 설명 단계 300초 + 기본 생성·렌더·업로드 여유로 값은 유지). prod에 설명·테마 요약 환경 변수 명시
+- 종료 유예: report-worker `terminationGracePeriodSeconds` 480초(설명 단계 300초 + 기본 생성·렌더·업로드 여유). prod에 설명·테마 요약 환경 변수 명시
 - 수량 검사 오탐: `KOREAN_COUNT` 앞에 한글 음절이 오면 수 관형사로 보지 않음("정확한 문장" 통과, "한 문장"·"두번" 거부). 요약 검증의 같은 오탐도 해소
 - 후보 선정: 생각 유형마다 최신 답변부터 시도. ai 호출 전 제외(정정·빈 답변·학년·입력 유형·점수 형식·원문 대조 실패)는 같은 유형의 다음 답변으로. ai를 한 번 부른 유형은 결과와 관계없이 다시 부르지 않음(유형당 1회, 최대 3유형)
 - web 설명 본문 `white-space: pre-line`
-- 미실측: 실제 sLLM·클러스터에서의 월요일 배치 시간(#475·#476). 4시간은 계산값
+- 4시간은 계산값(실제 월요일 배치 시간 미측정)
 
 ## 28. 주간 테마 요약 당일 풀이·엔딩 표시 (#486, 2026-11-11)
 
-주간 테마 개정(#483)의 report 몫(FN-RPT-17). 계약은 api-spec 4.1 내부 API 표(`weekly-theme/summary`)·5.17 #391 소비 계약.
+주간 테마 개정(#483)의 report 몫(FN-RPT-17). 계약은 api-spec 4.1 내부 API 표(`weekly-theme/summary`)·5.18 #391 소비 계약.
 
 - 결정(사용자 승인): 요약의 `days[].completed`(그 요일 KST 안에 학습 완료 = 주간 테마 조회의 `completedOnDay`)는 이름·뜻 그대로, `days[].completedInWeek`(그 주 테마 시도 안에 학습 완료, 프리미엄 일요일 포함)를 추가. 요약에는 `completedOnDay`를 두지 않음(#507). 기존 칸 뜻이 그대로라 저장된 리포트 해석 불변
 - 범위: report만 먼저. learning 값 계산은 #484(칸 이름은 #484에 제안). LLM 서술은 테마 요약을 쓰지 않아 프롬프트 불변, core는 `themeSummary`를 그대로 전달, 웹 표시는 #487
@@ -349,4 +348,41 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - 표시(Markdown·PDF 공통, `renderer.py` `theme_day_label`·`theme_status_lines`): 요일 "그날 풀었어요/나중에 풀었어요/못 풀었어요", 새 칸이 있으면 "개근"·"주간 완주"·"엔딩" 줄. 새 칸이 없거나 키가 없는 옛 저장본은 지금처럼 "완주"·요일별 "완료/미완료"
 - 기간: 일일은 완료 시각 기준(22절)이라 몰아 푼 날 그날 마무리한 테마 문제가 모두 잡힘. 주간 생성 시각(월 00:00) 불변, learning 요약은 `theme_week_start`로 모아 일요일 풀이도 포함. 한계: 일요일 시작·월 00:00 뒤 마무리한 시도는 재생성 때만 반영
 - 검증: report pytest 전체 통과(새 10개: 매일·몰아 푼 학생·엔딩 못 본 학생 표시, 이전 입력·옛 저장본 동일 표시, 검증 오류 5종, 일일 몰아 푼 문제), Ruff·OpenAPI 일치 통과. learning `AttemptComparisonIntegrationTest`의 실제 요약을 `validate_theme_summary_contracts.py`로 learning·report OpenAPI와 대조해 PASS
-- 남은 일: #484 병합 뒤 새 칸을 채운 실제 응답 대조와 kind 한 주 흐름 확인
+- 새 칸은 learning #484가 채운다([learning 34절](learning.md))
+
+## 29. 일일 리포트 답변별 생각·작성 시간 (설계 #800, 구현 #803, 2026-11-19)
+
+- [learning.md 42절](learning.md#42-답변-생각작성-시간과-붙여넣기-막기-설계-800-2026-11-19): learning `answers[].thinkingSeconds`·`writingSeconds`로 일일 `problems[].answerTimes` 생성, "처음 답/되묻기 뒤 답/두 번째 되묻기 뒤 답: 생각 N분 · 작성 N분"(60초 미만 "1분 미만", 시간 없는 답 생략, 원문 비공개여도 표시), HTML·Markdown·PDF·웹 화면 같은 문구는 #803. 주간 리포트·지표는 범위 밖
+- report 구현(#803, [learning.md 42.3](learning.md#423-report-일일-리포트-표시-803-2026-11-19)): `AnswerInput` 선택 칸(없으면 None, 하나만 있거나 0~86400 밖이면 입력 오류) → `AnswerRecord` → `DailyReportBuilder`가 `answerTimes` 저장(공유 여부 무관). 문구는 `renderer.answer_time_line`을 HTML·PDF·Markdown이 함께 씀. 이전 저장본은 `presentation.assemble`에서 `[]`. learning #801 병합 계약과 일치, kind 확인은 learning.md 42.4. core 원문 비공개 경로(`ReportDocument.withoutProblemOriginals`)는 `answerTimes`를 남기도록 고쳤고 웹 `ParentReports.tsx`도 같은 문구로 표시
+
+
+## 30. 안 푼 날 일일 리포트 알림 문구 구분 (#846, 2026-11-20)
+
+2026-11-20 결정: 기록 없는 날도 "기록 없음" 일일 리포트와 알림을 만드는 구성은 유지하고, 알림 문구만 구분한다. 알림 유형(`DAILY_REPORT_COMPLETED`)·수신 설정·링크·DB는 바꾸지 않는다.
+
+- 계약: `report.completed` v1 data에 선택 `noRecord`(boolean, 생략 = false), 복구 응답 `POST /internal/report-jobs/{jobId}/reconcile`에도 같은 선택 칸([report-messages #846](../../contracts/events/report-messages.md#846-기록-없음-표시norecord), [api-spec 5.9](../design/api-spec.md#59-리포트-작업-복구-132)). 새 메시지 종류·버전·알림 유형 없음
+- report: `ReportV1Codec.encode`가 저장 상태 `NO_RECORD`인 완료 이벤트에만 `noRecord: true`를 넣는다. 복구는 COMPLETED + `NO_RECORD`일 때만 `noRecord: true`, 나머지는 칸 생략(`response_model_exclude_unset`). OpenAPI `ReconcileResponse`에 선택 `noRecord` 추가
+- core: `ReportLifecycleConsumer`·`ReportClient.reconcile`이 선택 boolean `noRecord`를 받는다(완료가 아닌 이벤트·boolean이 아닌 값은 계약 위반). `ReportJobFinished(noRecord, periodFrom)` → `NotificationService.report(noRecordDay)`. 일일 완료 + 기록 없음이면 제목 "어제는 학습 기록이 없어요. 일일 리포트를 확인해 주세요."
+- 문구 조정: 대상일이 알림 생성일(KST)의 전날이 아니면(늦은 재생성·관리자 재처리·4시간 뒤 복구) "어제는"이 틀리므로 "{M}월 {d}일은 학습 기록이 없어요. …"로 쓴다
+- 바뀌지 않는 것: 푼 날 일일("일일 리포트가 완성되었습니다.")·주간·실패 문구, 주간 리포트가 `noRecord`여도 주간 문구
+- 호환: 필드가 없는 이전 report-worker 이벤트·이전 report-api 복구 응답은 false로 읽어 기존 문구. 반대로 core와 report 소비자가 필드 목록을 정확히 검사하므로 **core를 먼저 배포**한다. 이전 core는 기록 없는 날의 완료 이벤트만 거부한다(재시도 뒤 DLQ)
+
+kind 확인(2026-11-20 11:42~11:46 KST, 공유 `kind-sagomungchi-local`): 이 브랜치 core·report 이미지를 `:issue846` 태그로 적재해 `core-service`·`report-api`·`report-worker`에 걸고(worker 0 → 1대), core DB에 11/19 일일 `ADMIN_RETRY` 작업 2건과 `report.generate` Outbox 행을 넣어 실제 relay → report-worker → `report.completed` → core 소비 → 알림 경로를 탔다. 관리자 API 대신 DB로 작업을 만든 것은 kind 관리자 자격 정보를 쓰지 않기 위해서다. 확인 뒤 세 배포를 원래 `:local` 이미지·worker 0대로 되돌렸다(core rev 67, report-api rev 12, report-worker rev 18).
+
+| 작업 | report 상태 | report Outbox `report.completed` data | 복구 응답(report-api 직접) | core 알림 |
+|---|---|---|---|---|
+| `84600000-…-0001`(그날 기록 없는 자녀) | `NO_RECORD`, 2판 | `noRecord: true` 포함 | 8칸 + `noRecord: true` | `DAILY_REPORT_COMPLETED` "어제는 학습 기록이 없어요. 일일 리포트를 확인해 주세요.", 링크 리포트 상세 |
+| `84600000-…-0002`(그날 기록 있는 자녀) | `OK`, 3판 | 칸 없음(기존 3칸) | 기존 7칸 | `DAILY_REPORT_COMPLETED` "일일 리포트가 완성되었습니다." |
+
+같은 시간 core 로그에 lifecycle 계약 오류 없음. 남긴 시험 데이터: core `report_job` 2건(id `84600000-0000-4000-8000-00000000000{1,2}`)·Outbox 2건·알림 2건, report 일일 새 판 2개
+
+테스트: report `test_report_codec.py`(상태별 `noRecord` 유무·스키마, 실제 codec 파이프라인의 Outbox 완료 이벤트), `test_report_reconciliation.py`(상태별 HTTP 복구 응답, 실패 복구). core `DailyReportScheduleTest`(어제·지난 날짜·푼 날·필드 생략·주간 문구), `ReportMessagingTest`(실제 브로커 기록 없음 완료 → 알림, 잘못된 `noRecord` → DLQ, 계약 산출물 `report-completed-no-record.json`), `ReportRecoveryTest`(복구 기록 없음 문구, 잘못된 값 거부, 필드 생략 기존 문구). `scripts/validate_report_contracts.py`가 기록 없음 완료 산출물을 스키마로 검사하고 일반 완료에는 칸이 없음을 확인
+
+## 31. 일일 리포트 예정 요일 (#845, 2026-11-20)
+
+- 선택 칸 `scheduledDay`(`MON`~`FRI`/null)를 learning 일일 기록 → report PROBLEM 저장·조회 → core → web으로 전달한다. 테마 시도만 값이 있고 EXTRA는 null이다.
+- learning은 페이지에 포함된 시도를 한 번에 조회하여 `attempt.theme_id`·`theme_week_start`·`mission_id`와 테마 게시본(없으면 현재본)의 요일을 연결한다. 이전 주 테마 재사용도 지원하며 미래 주 테마의 잘못된 연결은 제외한다. 현재 학생 학년이나 완료일로 예정 요일을 추정하지 않는다. DB 테이블·컬럼 변경은 없다.
+- 리포트 집계 날짜는 계속 KST 완료일이다. 다른 요일에 완료한 문제는 상세·PDF·Markdown에 `화요일 문제 · 목요일에 풀었어요`처럼 표시한다. 당일 풀이·추가 문제·예정 요일 없는 이전 저장본은 기존 표시를 유지한다. 이전 저장본은 재생성 없이 null로 읽는다.
+- 기준 버전: 시도에 고정된 테마 버전(`attempt.theme_version_id`, V27)의 요일을 쓰고, 값이 없는 시도만 게시본(없으면 현재본)을 쓴다. 재게시로 요일이 바뀌거나 빠져도 시작 당시 요일을 유지한다(#906).
+- 원문 비공개에서도 예정 요일은 유지한다. 판정·점수·권한·주간 리포트의 기존 동작은 변경하지 않는다.
+- 검증: 최신 develop `cc831e8a` 반영 뒤 core 리포트 테스트 106개·bootJar, report 관련 테스트 183개, 계약 검사 9개 통과. 재사용 테마를 포함한 learning 기록 테스트 59개·bootJar, web 단위 400개·타입/린트/빌드, 관련 PC·태블릿·모바일 브라우저 테스트 61개 통과. 테스트용 DB와 합성 입력을 사용했으며 운영 배포 검증과 구분한다.

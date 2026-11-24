@@ -56,27 +56,53 @@ class ThemeDraftRulesTest {
 
     @Test
     fun `학기 단계는 이번 학기, 학년군에서 이번 학기까지 배운 학기 순이고 빈 단계·같은 단계는 빼며 학년군 표는 따로 둔다`() {
+        // 자동 선택에서 빼는 듣기·말하기(4국01, #782)가 아닌 읽기 코드로
         val semesters = StandardSemesters(
-            mapOf("4국01-01" to setOf("3-1", "3-2"), "4국01-02" to setOf("4-1"), "4국01-03" to setOf("4-2"),
+            mapOf("4국02-02" to setOf("3-1", "3-2"), "4국02-03" to setOf("4-1"), "4국02-04" to setOf("4-2"),
                 "4수01-14" to setOf("3-1", "4-2"), "4수01-15" to setOf("4-2")),
         )
         val tables = mapOf(
-            "국어" to listOf(standard("4국01-01", "국어"), standard("4국01-02", "국어"), standard("4국01-03", "국어")),
+            "국어" to listOf(standard("4국02-02", "국어"), standard("4국02-03", "국어"), standard("4국02-04", "국어")),
             "수학" to listOf(standard("4수01-14", "수학"), standard("4수01-15", "수학")),
         )
         fun tiers(current: String, soFar: List<String>) =
             ThemeDraftRules.candidatePools(tables, semesters, current, soFar).mapValues { (_, pool) -> pool.tiers.map { tier -> tier.map { it.code } } }
 
-        // 초3 1학기: 4학년에만 나오는 4국01-02·4국01-03·4수01-15는 학기 단계에 없음(이번 학기 = 배운 학기라 한 단계)
-        assertEquals(mapOf("국어" to listOf(listOf("4국01-01")), "수학" to listOf(listOf("4수01-14"))), tiers("3-1", listOf("3-1")))
+        // 초3 1학기: 4학년에만 나오는 4국02-03·4국02-04·4수01-15는 학기 단계에 없음(이번 학기 = 배운 학기라 한 단계)
+        assertEquals(mapOf("국어" to listOf(listOf("4국02-02")), "수학" to listOf(listOf("4수01-14"))), tiers("3-1", listOf("3-1")))
         // 초4 2학기: 이번 학기 → 3-1~4-2에 배운 것
-        assertEquals(mapOf("국어" to listOf(listOf("4국01-03"), listOf("4국01-01", "4국01-02", "4국01-03")),
+        assertEquals(mapOf("국어" to listOf(listOf("4국02-04"), listOf("4국02-02", "4국02-03", "4국02-04")),
             "수학" to listOf(listOf("4수01-14", "4수01-15"))), tiers("4-2", listOf("3-1", "3-2", "4-1", "4-2")))
         // 초3 2학기 수학: 이번 학기 성취기준이 없어 3-1까지 배운 것만
         assertEquals(listOf(listOf("4수01-14")), tiers("3-2", listOf("3-1", "3-2")).getValue("수학"))
         // 학년군 표는 단계와 따로 그대로
         assertEquals(tables, ThemeDraftRules.candidatePools(tables, semesters, "3-1", listOf("3-1")).mapValues { it.value.table })
         assertEquals(emptyMap(), ThemeDraftRules.candidatePools(emptyMap(), semesters, "3-1", listOf("3-1")))
+    }
+
+    @Test
+    fun `읽고 쓰기와 맞지 않는 성취기준은 학기 단계와 학년군 표에서 빠지고 관리자가 고르면 그대로 쓴다`() {
+        assertEquals(25, ThemeDraftRules.AUTO_EXCLUDED.size)
+        assertEquals(13, ThemeDraftRules.AUTO_EXCLUDED.count { it.startsWith("4국01") || it.startsWith("6국01") }) // 듣기·말하기 전부
+        val semesters = StandardSemesters(
+            mapOf("4국01-05" to setOf("3-1"), "4국02-01" to setOf("3-1"), "4국02-02" to setOf("3-1"),
+                "4수03-07" to setOf("3-1"), "4수01-01" to setOf("3-1")),
+        )
+        val tables = mapOf(
+            "국어" to listOf(standard("4국01-05", "국어"), standard("4국02-01", "국어"), standard("4국02-02", "국어")),
+            "수학" to listOf(standard("4수03-07", "수학"), standard("4수01-01", "수학")),
+        )
+        val pools = ThemeDraftRules.candidatePools(tables, semesters, "3-1", listOf("3-1"))
+        assertEquals(listOf(listOf("4국02-02")), pools.getValue("국어").tiers.map { tier -> tier.map { it.code } })
+        assertEquals(listOf("4국02-02"), pools.getValue("국어").table.map { it.code })
+        assertEquals(listOf("4수01-01"), pools.getValue("수학").table.map { it.code })
+
+        // 관리자가 고른 성취기준은 빼는 목록이어도 그대로
+        val chosen = ThemeMissionInput(ThinkingType.ANALYZE, InputType.NARRATIVE, listOf("4국01-05"))
+        val korean = (2..5).map { standard("4국0$it-02", "국어") }
+        val missions = ThemeDraftRules.autoStandards(ThemeGrade.G3, listOf(chosen), emptyList(), pools(korean, listOf(standard("4수01-01", "수학"))), Random(1))!!
+        assertEquals(chosen, missions[0])
+        assertEquals("4수01-01", missions[3].standardCodes.single())
     }
 
     @Test

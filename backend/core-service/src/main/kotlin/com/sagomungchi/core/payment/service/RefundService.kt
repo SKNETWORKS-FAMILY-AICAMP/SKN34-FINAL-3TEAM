@@ -86,6 +86,8 @@ class RefundService(private val repository: PaymentRepository,private val tx: Pa
             rejected
         }
     }
+    fun pendingCount(): Long = repository.countRefunds("REQUESTED")
+
     fun list(status: String?,page: Int,size: Int): List<RefundRequest> { PaymentService.pagination(page,size); return repository.refunds(status,page*size,size) }
     fun recover() { repository.refundRecovery().forEach { r ->
         try { refresh(r) } catch(e: Exception) { org.slf4j.LoggerFactory.getLogger(javaClass).error("Refund recovery {} requires attention ({})",r.id,(e as? com.sagomungchi.core._common.exception.BusinessException)?.code ?: e.javaClass.simpleName) }
@@ -97,7 +99,13 @@ class RefundService(private val repository: PaymentRepository,private val tx: Pa
         // Recovery never issues another cancellation or a new key after an ambiguous result.
         applyVerified(refund,pg.lookup(attempt.pgOrderNo,order.kind=="RENEWAL"))
     }
-    fun refreshOwned(parent: UUID,no: String) {
+    // Payment status for a parent: settle an approved refund with the PG first, then return the latest view.
+    // Lives here because RefundService already depends on PaymentService (the reverse would be a cycle).
+    fun ownedStatus(parent: UUID,no: String): PaymentView {
+        refreshOwned(parent,no)
+        return payments.status(parent,no)
+    }
+    private fun refreshOwned(parent: UUID,no: String) {
         val order=tx.ownedOrder(parent,no)
         repository.pendingRefund(order.id)?.takeIf { it.status=="APPROVED" }?.let(::refresh)
     }

@@ -39,31 +39,23 @@ class WeeklyTheme(
     var reviewVersion: Int? = reviewVersion
         private set
 
-    /** 게시 중 수정본이 있음: 재검토·재게시 전까지 학생에게는 게시본 */
-    val hasUnpublishedChanges: Boolean get() = currentVersion != publishedVersion
-
     /** 지금 편집 중인 버전을 검토 요청함 */
-    val reviewRequested: Boolean get() = reviewVersion != null && reviewVersion == currentVersion
+    val reviewRequested: Boolean get() = reviewVersion == currentVersion &&
+        (status == WeeklyThemeStatus.REVIEW_REQUIRED || hasLiveRevision)
 
-    /**
-     * 수정 가능 여부: 게시 중에는 학년·주를 바꿀 수 없다(이미 그 주 학생에게 제공 중). 나머지 상태는 모두 수정 가능
-     */
-    fun requireEditable(grade: ThemeGrade, weekStart: LocalDate) {
-        if (status == WeeklyThemeStatus.PUBLISHED && (grade != this.grade || weekStart != this.weekStart)) {
-            conflict("게시 중에는 학년·주를 바꿀 수 없음")
-        }
-    }
+    private val hasLiveRevision: Boolean get() = status == WeeklyThemeStatus.PUBLISHED && currentVersion != publishedVersion
 
     /** 수정 저장 뒤: 검토 중이면 검토 대상이 바뀌어 DRAFT, 나머지는 상태 유지(게시본 그대로) */
     fun edited() {
         if (status == WeeklyThemeStatus.REVIEW_REQUIRED) status = WeeklyThemeStatus.DRAFT
+        reviewVersion = null
     }
 
-    /** DRAFT·UNPUBLISHED → REVIEW_REQUIRED, 게시 중 수정본은 상태 유지. 검토 요청한 버전을 기억 */
+    /** 제공 중인 테마는 게시 상태를 유지하면서 새 편집본만 검토 요청한다. */
     fun requestReview() {
         when {
             status == WeeklyThemeStatus.DRAFT || status == WeeklyThemeStatus.UNPUBLISHED -> status = WeeklyThemeStatus.REVIEW_REQUIRED
-            status == WeeklyThemeStatus.PUBLISHED && hasUnpublishedChanges && !reviewRequested -> Unit
+            hasLiveRevision && !reviewRequested -> Unit
             else -> conflict("검토 요청할 수 없는 상태")
         }
         reviewVersion = currentVersion
@@ -71,9 +63,7 @@ class WeeklyTheme(
 
     /** 게시·재게시 전이 가능 여부: 검토 요청한 버전이 현재본이어야 함 (아니면 409) */
     fun requirePublishable() {
-        val target = status == WeeklyThemeStatus.REVIEW_REQUIRED ||
-            (status == WeeklyThemeStatus.PUBLISHED && hasUnpublishedChanges)
-        if (!target || !reviewRequested) conflict("검토 요청한 현재 버전만 게시할 수 있음")
+        if (!reviewRequested) conflict("검토 요청한 현재 버전만 게시할 수 있음")
     }
 
     /** 게시·재게시: 전이와 게시 검사를 통과하면 게시본 <- 현재본 */
@@ -82,12 +72,13 @@ class WeeklyTheme(
         if (errors.isNotEmpty()) throw WeeklyThemePublishIncompleteException(errors)
         status = WeeklyThemeStatus.PUBLISHED
         publishedVersion = currentVersion
+        reviewVersion = null
     }
 
-    /** 신규 제공 중단. 진행 중 시도는 그대로 이어함 */
     fun unpublish() {
-        if (status != WeeklyThemeStatus.PUBLISHED) conflict("게시 중이 아님")
+        if (status != WeeklyThemeStatus.PUBLISHED) conflict("게시 중인 테마만 중단할 수 있음")
         status = WeeklyThemeStatus.UNPUBLISHED
+        reviewVersion = null
     }
 
     private fun conflict(detail: String): Nothing =

@@ -259,6 +259,28 @@ class ModelVersionHttpTest : PostgresRepositoryTest() {
         assertEquals("MANUAL", jdbc.queryForObject("SELECT detail->>'source' FROM audit_log WHERE target_id=?", String::class.java, id))
     }
 
+    @Test fun `recommendation is optional, kept under evidence and validated for every source (#728)`() {
+        val (_, access) = adminToken()
+        val tag = com.sagomungchi.core.admin.domain.Recommendation(com.sagomungchi.core.admin.domain.RecommendationTag.RECOMMENDED,
+            "tox-a:1", listOf("홀드아웃 F1이 활성 모델보다 높음"), mapOf("holdoutF1" to 0.81))
+        registerHttp(access, registration().copy(evaluation = evidence().copy(recommendation = tag))).andExpect {
+            status { isCreated() }
+            jsonPath("$.evalResult.evidence.recommendation.tag") { value("RECOMMENDED") }
+            jsonPath("$.evalResult.evidence.recommendation.comparedTo") { value("tox-a:1") }
+            jsonPath("$.evalResult.evidence.recommendation.reasons[0]") { value("홀드아웃 F1이 활성 모델보다 높음") }
+            jsonPath("$.evalResult.evidence.recommendation.metrics.holdoutF1") { value(0.81) }
+        }
+        registerHttp(access, registration()).andExpect { status { isCreated() }; jsonPath("$.evalResult.evidence.recommendation") { doesNotExist() } }
+        val before = jdbc.queryForObject("SELECT count(*) FROM model_version", Int::class.java)
+        listOf(tag.copy(reasons = emptyList()), tag.copy(reasons = List(21) { "이유" }), tag.copy(reasons = listOf("가".repeat(501))),
+            tag.copy(comparedTo = " "), tag.copy(metrics = (1..51).associate { "m$it" to 1.0 }), tag.copy(metrics = mapOf(" " to 1.0)),
+        ).forEach { bad ->
+            registerHttp(access, registration().copy(evaluation = evidence().copy(recommendation = bad)))
+                .andExpect { status { isUnprocessableEntity() }; jsonPath("$.code") { value("MODEL_APPROVAL_REJECTED") } }
+        }
+        assertEquals(before, jdbc.queryForObject("SELECT count(*) FROM model_version", Int::class.java))
+    }
+
     @Test fun `MODEL requires artifact URI and invalid provenance has no registration side effects`() {
         val (_, access) = adminToken()
         val valid = json.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(registration())

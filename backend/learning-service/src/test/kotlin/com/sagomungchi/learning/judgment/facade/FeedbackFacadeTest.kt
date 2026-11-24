@@ -24,6 +24,9 @@ import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.domain.Attempt
 import com.sagomungchi.learning.attempt.service.AttemptService
 import com.sagomungchi.learning.judgment.client.AiClient
+import com.sagomungchi.learning.judgment.client.PaymentUsageCompletion
+import com.sagomungchi.learning.judgment.client.PaymentUsageFailure
+import com.sagomungchi.learning.judgment.client.PaymentUsageReservation
 import com.sagomungchi.learning.judgment.domain.ElementSource
 import com.sagomungchi.learning.judgment.domain.FeedbackResult
 import com.sagomungchi.learning.judgment.domain.FollowupSource
@@ -602,7 +605,8 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
         val setup=setup("CHOICE",answerKey="""{"choiceIds":["c2"]}""")
         val answer=submit(setup.attempt,AnswerContent(choiceIds=listOf("c2")),InputType.CHOICE)
         val reservation=UUID.randomUUID()
-        org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenReturn(reservation)
+        org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenReturn(PaymentUsageReservation.Reserved(reservation))
+        org.mockito.Mockito.`when`(paymentUsage.complete(student,reservation)).thenReturn(PaymentUsageCompletion.Received)
         assertEquals(ProcessStatus.DONE,facade.feedback(answer.id).status)
         org.mockito.Mockito.verify(paymentUsage).complete(student,reservation)
     }
@@ -610,9 +614,48 @@ class FeedbackFacadeTest : PostgresRepositoryTest() {
     @Test fun `refund freeze rejects feedback before acquiring a judgment lease`() {
         val setup=setup("CHOICE",answerKey="""{"choiceIds":["c2"]}""")
         val answer=submit(setup.attempt,AnswerContent(choiceIds=listOf("c2")),InputType.CHOICE)
-        org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenThrow(BusinessException(HttpStatus.CONFLICT,"REFUND_IN_PROGRESS","환불 확인 중"))
+        org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenReturn(PaymentUsageFailure.Rejected("REFUND_IN_PROGRESS"))
         assertEquals("REFUND_IN_PROGRESS",assertThrows<BusinessException> { facade.feedback(answer.id) }.code)
         assertEquals("PENDING",judgment(answer.id)["process_status"])
+    }
+
+    /** #276·#948: core 거절 code별 공개 오류는 facade가 정함. 3개 코드만 같은 코드 409, 나머지와 확인 불가는 503 */
+    @Test fun `payment usage failures map to public 409 per known code and 503 otherwise, before the lease`() {
+        val setup=setup("CHOICE",answerKey="""{"choiceIds":["c2"]}""")
+        val answer=submit(setup.attempt,AnswerContent(choiceIds=listOf("c2")),InputType.CHOICE)
+        fun rejected(failure: PaymentUsageFailure): BusinessException {
+            org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenReturn(failure)
+            return assertThrows<BusinessException> { facade.feedback(answer.id) }
+        }
+        val titles=mapOf(
+            "REFUND_IN_PROGRESS" to "환불 처리 중에는 프리미엄 기능을 사용할 수 없습니다.",
+            "PAYMENT_USAGE_RETRY_REQUIRES_NEW_SOURCE" to "이 답변은 이전 사용 확인이 실패해 다시 피드백을 받을 수 없습니다. 새 답변으로 시도해 주세요.",
+            "PAYMENT_USAGE_STATE_CHANGED" to "처리 중 이용권 상태가 바뀌어 프리미엄 사용을 확인하지 못했습니다. 이용권 상태를 확인해 주세요.",
+        )
+        for((code,title) in titles) rejected(PaymentUsageFailure.Rejected(code)).let {
+            assertEquals(HttpStatus.CONFLICT,it.status);assertEquals(code,it.code);assertEquals(title,it.title)
+        }
+        for(failure in listOf(PaymentUsageFailure.Rejected("PRODUCT_FEATURE_DISABLED"),PaymentUsageFailure.Rejected(null),PaymentUsageFailure.Unconfirmed))
+            rejected(failure).let {
+                assertEquals(HttpStatus.SERVICE_UNAVAILABLE,it.status);assertEquals("PAYMENT_USAGE_UNAVAILABLE",it.code)
+                assertEquals("프리미엄 사용 권한을 확인하지 못했습니다.",it.title)
+            }
+        assertEquals("PENDING",judgment(answer.id)["process_status"])
+    }
+
+    @Test fun `completion rejection or outage after DONE uses the same public errors`() {
+        val reservation=UUID.randomUUID()
+        for((failure,expected) in listOf(
+            PaymentUsageFailure.Rejected("PAYMENT_USAGE_STATE_CHANGED") to (HttpStatus.CONFLICT to "PAYMENT_USAGE_STATE_CHANGED"),
+            PaymentUsageFailure.Unconfirmed to (HttpStatus.SERVICE_UNAVAILABLE to "PAYMENT_USAGE_UNAVAILABLE"),
+        )) {
+            val setup=setup("CHOICE",answerKey="""{"choiceIds":["c2"]}""")
+            val answer=submit(setup.attempt,AnswerContent(choiceIds=listOf("c2")),InputType.CHOICE)
+            org.mockito.Mockito.`when`(paymentUsage.begin(student,answer.id)).thenReturn(PaymentUsageReservation.Reserved(reservation))
+            org.mockito.Mockito.`when`(paymentUsage.complete(student,reservation)).thenReturn(failure)
+            assertEquals(expected,assertThrows<BusinessException> { facade.feedback(answer.id) }.let { it.status to it.code })
+            assertEquals("DONE",judgment(answer.id)["process_status"])
+        }
     }
 
     companion object {

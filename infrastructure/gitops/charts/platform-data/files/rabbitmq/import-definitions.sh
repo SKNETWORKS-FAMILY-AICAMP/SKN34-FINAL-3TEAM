@@ -62,7 +62,7 @@ service_user() {
 none='^$'
 service_user core "$RABBITMQ_CORE_PASSWORD" monitoring "$none" \
   '^(cmd[.]direct|events[.]topic|core[.]retry)$' \
-  '^core[.](report[.]events|llm[.]usage[.]recorded|event[.]audit|model[.]loading[.]reported)$' \
+  '^core[.](report[.]events|llm[.]usage[.]recorded|event[.]audit|model[.]loading[.]reported|memorybook[.]events)$' \
   '^(student[.]deleted|model[.]version[.]activated)$'
 service_user learning "$RABBITMQ_LEARNING_PASSWORD" '' "$none" \
   '^learning[.]retry$' '^learning[.]student[.]deleted$' "$none"
@@ -72,6 +72,6 @@ service_user scoring "$RABBITMQ_SCORING_PASSWORD" '' '^amq(_[0-9a-f]{32}|[.]gen-
   '^(events[.]topic|amq_[0-9a-f]{32}|amq[.]gen-.*)$' '^(events[.]topic|amq_[0-9a-f]{32}|amq[.]gen-.*)$' \
   '^(llm[.]usage[.]recorded|model[.]loading[.]reported)$'
 service_user report "$RABBITMQ_REPORT_PASSWORD" '' "$none" \
-  '^(events[.]topic|report[.]retry)$' '^report[.](report[.]generate|student[.]deleted)$' \
-  '^report[.](started|completed|failed)$'
+  '^(events[.]topic|report[.]retry)$' '^report[.](report[.]generate|student[.]deleted|memorybook[.]generate)$' \
+  '^(report[.](started|completed|failed)|memorybook[.]completed)$'
 echo 'RabbitMQ service accounts applied'

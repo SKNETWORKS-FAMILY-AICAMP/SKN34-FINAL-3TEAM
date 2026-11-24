@@ -114,17 +114,29 @@ class DailyQuote(Response):
     verified: bool
 
 
+class DailyAnswerTime(Response):
+    version: int = Field(ge=1)
+    thinking_seconds: int = Field(ge=0)
+    writing_seconds: int = Field(ge=0)
+
+
 class DailyProblem(ItemResponse):
     mission_id: UUID
     attempt_id: UUID
     title: str
     context: Literal["THEME_DAY", "THEME_REVIEW", "EXTRA"] | None
+    scheduled_day: Literal["MON", "TUE", "WED", "THU", "FRI"] | None = None
     judgment: Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"] | None
     followups: list[DailyFollowup]
     final_answer: str | None
     elements: list[DailyElement]
     reflection: DailyReflection
     quotes: list[DailyQuote]
+    answer_times: list[DailyAnswerTime] = Field(
+        default_factory=list,
+        description="답변별 생각·작성 시간(P28). 시간이 있는 답만 버전 순, 원문 비공개(#206)여도 "
+        "넣음. #803 이전 저장본은 []로 읽음.",
+    )
 
 
 class ReportSummary(Response):

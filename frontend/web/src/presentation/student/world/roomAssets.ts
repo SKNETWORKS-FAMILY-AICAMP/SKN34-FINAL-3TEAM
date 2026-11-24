@@ -132,7 +132,7 @@ export type DecorKind = 'FLOOR' | 'WALL'
  * solid: 뭉치가 지나가지 못함(서 있는 것). 러그처럼 바닥에 깔리면 false
  * drape: 추억의 벽(게시판·액자)과 창문(커튼·봉) 위에도 걸 수 있음(사용자 의견·결정 2026-11-17). 액자·창문을 가리는 벽 소품은 false(기본)
  * stand: 바닥에 서는 소품의 그림판 크기 [가로, 높이](방 단위, 화면을 보는 그림판으로 그림). 없으면 바닥에 깔림
- * 색은 decorDraw.ts DECOR_COLORS(놓은 것마다 고름, core #723 color). 15가지·크기·색 모두 기준안(사용자 결정 2026-11-17 "여러 개, 색상이든 크기든")
+ * 색은 decorDraw.ts DECOR_COLORS(놓은 것마다 고름, core #758 color). 15가지·크기·색 모두 기준안(사용자 결정 2026-11-17 "여러 개, 색상이든 크기든")
  */
 type Decor = { name: string; kind: DecorKind; cells: [number, number]; solid: boolean; drape?: boolean; stand?: [number, number] }
 export const DECORS: Record<string, Decor> = {

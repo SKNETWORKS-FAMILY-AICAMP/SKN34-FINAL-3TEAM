@@ -121,7 +121,7 @@ uv run --frozen --project backend/report-service python -O scripts/check_db_migr
 | `timestamptz` | `Instant`(기본)·`OffsetDateTime` | 비교는 `toInstant()`, 정밀도 마이크로초. `LocalDateTime` 금지 |
 | SQL NULL | nullable | JSON `null`(`NullNode`)과 구분 |
 
-- nullable JSON 파라미터는 `#{payload,javaType=com.fasterxml.jackson.databind.JsonNode,jdbcType=OTHER}`로 명시. 구조가 고정된 JSON DTO는 해당 타입에만 `JacksonJsonbTypeHandler` 등록(`Any`·`Map` 전역 등록 금지). Jackson 변환은 Infrastructure 안에서만
+- nullable JSON 파라미터는 `#{payload,javaType=com.fasterxml.jackson.databind.JsonNode,jdbcType=OTHER}`로 명시. 구조가 고정된 JSON DTO는 해당 타입에만 `JacksonJsonbTypeHandler` 등록(`Any`·`Map` 전역 등록 금지). Jackson 변환은 Infrastructure 안에서만. service는 `JsonNode`·`Map`·타입 행을 주고받고 문자열 직렬화·`readTree`를 하지 않는다(예: core `MissionAuditRepository` 감사 detail, learning `KnowledgeRepository` 판 source). domain은 Jackson 타입 대신 `JsonObject`(전역 `JsonObjectTypeHandler`)나 칸 전용 처리기(`StringListJsonbTypeHandler`·`JsonObjectListTypeHandler`, javaType 없이 등록해 XML `typeHandler=`로만 참조)로 받는다(예: 공지 `targetRoles`·정정 `impact`·분석 대화 이력 칸, #947). `timestamptz`는 `resultType="map"` 대신 constructor resultMap 타입 행으로 받는다(예: core `RoomFrameSlotMapper.hungSince`, #816)
 - 예시: core `account/repository/UserAccountRepository`·`UserAccountMapper.xml`. constructor resultMap으로 불변 객체, 모든 값은 `#{...}` 바인딩
 - 트랜잭션은 Application service의 `@Transactional`에서만 시작하고 외부 HTTP·AMQP는 트랜잭션 밖. 고유키 위반은 `DuplicateKeyException`으로 전파해 서비스가 업무 오류로 변환
 - 테스트: `PostgresRepositoryTest` 상속(Testcontainers PostgreSQL 17.11, 테스트 준비 코드가 Flyway 직접 실행, 테스트마다 롤백, Docker 없으면 실패). core는 RabbitMQ listener를 끄고 `OutboxRelay`를 대역으로 교체. 메시징까지 필요하면 `IntegrationTestSupport`(별도 DB). `@Commit`·`REQUIRES_NEW`는 롤백 경계를 벗어나므로 별도 DB 사용

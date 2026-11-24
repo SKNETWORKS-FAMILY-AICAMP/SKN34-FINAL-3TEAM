@@ -16,8 +16,11 @@ import java.time.Duration
 sealed interface ToxicityVerdict {
     data object Flagged : ToxicityVerdict
 
-    /** review: 경계 구간(#725). 표현 검토 대기 등록은 #727 */
-    data class Clean(val review: Boolean) : ToxicityVerdict
+    /**
+     * review: 경계 구간(#725). 참이고 답변이 저장되면 표현 검토 대기에 올림(#727, ExpressionReviewService).
+     * modelVersion: 판단한 tox 모델 `name:version`(ERD 4.3.2 model_version). scoring을 부르지 않았으면 null
+     */
+    data class Clean(val review: Boolean, val modelVersion: String? = null) : ToxicityVerdict
 
     data class Skipped(val reason: ToxicitySkipReason) : ToxicityVerdict
 }
@@ -75,7 +78,7 @@ class ToxicityClient(
         response.active != true || response.flagged == null || response.review == null ||
             response.model?.name.isNullOrBlank() -> ToxicityVerdict.Skipped(ToxicitySkipReason.REJECTED)
         response.flagged -> ToxicityVerdict.Flagged
-        else -> ToxicityVerdict.Clean(response.review)
+        else -> ToxicityVerdict.Clean(response.review, listOfNotNull(response.model?.name, response.model?.version).joinToString(":"))
     }
 
     private fun reasonOf(failureCode: String): ToxicitySkipReason = when (failureCode) {

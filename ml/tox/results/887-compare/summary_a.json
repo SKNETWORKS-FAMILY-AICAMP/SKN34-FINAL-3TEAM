@@ -1,0 +1,35 @@
+{
+ "name": "a",
+ "model": "checkpoints/det-a",
+ "threshold": 0.99,
+ "mustPass": {
+  "n": 389,
+  "flagged": 0,
+  "max": 0.7551
+ },
+ "kid": {
+  "blockModel": 64,
+  "blockCombined": 76,
+  "passCombinedFlagged": 0,
+  "block": 100,
+  "pass": 150
+ },
+ "valid": {
+  "n": 9243,
+  "modelF1": 0.7187,
+  "combinedRecall": 0.6179,
+  "combinedFalsePositiveRate": 0.0305
+ },
+ "test": {
+  "n": 21900,
+  "modelF1": 0.7558,
+  "combinedRecall": 0.6679,
+  "combinedFalsePositiveRate": 0.0348
+ },
+ "apeach": {
+  "n": 3770,
+  "modelF1": 0.5073,
+  "combinedRecall": 0.4053,
+  "combinedFalsePositiveRate": 0.0179
+ }
+}

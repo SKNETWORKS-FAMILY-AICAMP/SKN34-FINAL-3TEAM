@@ -1,0 +1,154 @@
+/* Report workspace: shared parent shell, compact archive and bounded reading panes. */
+#class-journal .ws-parent .parent-insights .parent-tabs{margin:20px 0 24px;gap:28px}
+#class-journal .ws-parent .parent-insights .parent-tabs button[aria-pressed=true]{border-bottom-color:#277044;color:#245d3d;font-weight:600}
+#class-journal .ws-parent .parent-insights-report-body{max-height:70dvh;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:2px 16px 20px 2px;scroll-padding-top:24px}
+#class-journal .ws-parent .parent-insights-report-body>.parent-page-head h2{font-size:20px;margin:0 0 12px}
+#class-journal .ws-parent .parent-insights-report-body>.parent-page-head p{font-size:13px;line-height:1.8;color:#596b61;margin:4px 0}
+#class-journal .ws-parent .parent-report-filters{display:flex;flex-wrap:wrap;gap:20px;padding:20px 0;border-bottom:1px solid #d8e2db;margin-bottom:24px}
+#class-journal .ws-parent .parent-report-filters label{display:flex;align-items:center;gap:10px;font-size:13px}
+#class-journal .ws-parent .parent-report-groups{display:grid;gap:32px}
+#class-journal .ws-parent .parent-report-group>h2{font-size:16px;margin:0 0 12px}
+#class-journal .ws-parent .parent-report-grid{display:grid;grid-template-columns:1fr;gap:0;background:white;border:1px solid #d8e2db;border-radius:12px;overflow:hidden}
+#class-journal .ws-parent .parent-report-grid>.ws-card{display:grid;grid-template-columns:minmax(0,1fr) 100px auto;align-items:center;gap:12px 24px;padding:18px 22px;border:0;border-bottom:1px solid #e5ebe6;border-radius:0;background:transparent;margin:0}
+#class-journal .ws-parent .parent-report-grid>.ws-card:last-child{border-bottom:0}
+#class-journal .ws-parent .parent-report-grid h3{font-size:15px;font-weight:500;margin:0;line-height:1.6;font-variant-numeric:tabular-nums}
+#class-journal .ws-parent .parent-report-grid p{font-size:12px;color:#526b5c;margin:0}
+#class-journal .ws-parent .parent-report-grid [role=status]{grid-column:1/-1}
+#class-journal .ws-parent .parent-report-grid button{grid-column:3;grid-row:1;background:transparent;border-color:#d8e2db;font-size:13px}
+#class-journal .ws-parent .report-list-pages{display:flex;align-items:center;justify-content:flex-end;gap:16px;margin-top:14px;font-size:13px;font-variant-numeric:tabular-nums}
+#class-journal .ws-parent .report-list-pages button{min-height:36px;padding:6px 12px}
+#class-journal .ws-parent .parent-report-detail-nav{position:sticky;top:0;background:#f3f7f4;padding:8px 0 16px;z-index:2}
+#class-journal .ws-parent .parent-insights .report-detail{border:1px solid #d8e2db;border-radius:12px;padding:28px;box-shadow:none;background:#fff}
+#class-journal .ws-parent .parent-insights .report-detail p{line-height:1.85}
+#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:210px minmax(0,1fr);gap:20px;align-items:start}
+#class-journal .ws-parent .parent-insights .pc-layout>aside{max-height:65dvh;overflow:auto;padding:16px;border-color:#d8e2db;background:#edf3ee;border-radius:10px}
+#class-journal .ws-parent .parent-insights .pc-layout>section{max-height:65dvh;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 10px 12px 0}
+#class-journal .ws-parent .parent-insights .pc-layout>section>article{border:0;border-bottom:1px solid #d8e2db;border-radius:0;background:#fff;padding:22px;box-shadow:none}
+#class-journal .ws-parent .parent-insights .pc-layout>section>form{position:sticky;bottom:0;background:#fff;border:1px solid #c5d7ca;border-radius:12px;padding:18px;z-index:1}
+#class-journal .ws-parent .parent-insights :is(button,a,[tabindex]):focus-visible{outline:2px solid #277044;outline-offset:3px}
+@media(max-width:1100px){#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:1fr}#class-journal .ws-parent .parent-insights .pc-layout>aside{max-height:220px}}
+@media(max-width:640px){#class-journal .ws-parent .parent-insights-report-body{max-height:72dvh;padding-right:4px}#class-journal .ws-parent .parent-report-grid>.ws-card{grid-template-columns:1fr auto;padding:16px;gap:8px 12px}#class-journal .ws-parent .parent-report-grid button{grid-column:2;grid-row:1/3}#class-journal .ws-parent .parent-report-grid p{grid-column:1}#class-journal .ws-parent .parent-insights .report-detail{padding:18px}#class-journal .ws-parent .parent-report-filters{gap:12px}#class-journal .ws-parent .parent-insights .pc-layout>section>form{position:static}}
+
+/* Detail navigation presents one chapter at a time. */
+#class-journal .ws-parent .report-sections{display:flex;gap:24px;border-bottom:1px solid #d8e2db;margin:24px 0;overflow-x:auto}
+#class-journal .ws-parent .report-sections button{flex-shrink:0;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:12px 0;color:#617267}
+#class-journal .ws-parent .report-sections button[aria-pressed=true]{color:#245d3d;border-bottom-color:#277044;font-weight:600}
+#class-journal .ws-parent .report-section[hidden]{display:none}
+#class-journal .ws-parent .report-section{min-height:160px}
+#class-journal .ws-parent .report-section>h3{font-size:16px;margin:28px 0 14px}
+#class-journal .ws-parent .report-inclusion{font-size:12px;color:#617267;margin-bottom:16px}
+#class-journal .ws-parent .report-inclusion summary{cursor:pointer}
+#class-journal .ws-parent .report-answer-comparison{border:0;border-bottom:1px solid #dbe5de;padding:0;margin:0;background:none;border-radius:0}
+#class-journal .ws-parent .report-answer-comparison>summary{padding:18px 8px;font-size:15px;font-weight:500;cursor:pointer;line-height:1.7}
+#class-journal .ws-parent .report-answer-comparison[open]{padding-bottom:20px}
+#class-journal .ws-parent .report-answer-comparison> :not(summary){margin-left:12px;margin-right:12px}
+#class-journal .ws-parent .parent-report-question{padding:0;background:none;border:0;margin:12px 0;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+#class-journal .ws-parent .report-detail>.parent-report-question button{min-height:36px;padding:8px 12px;font-size:13px}
+#class-journal .ws-parent .report-detail>.parent-report-regenerate{margin-top:24px;border:0;padding:0}
+@media(max-width:640px){#class-journal .ws-parent .report-sections{gap:18px}#class-journal .ws-parent .report-sections button{font-size:13px}}
+
+#class-journal .ws-parent .report-detail>h2{margin:0 0 12px;font-size:22px}
+#class-journal .ws-parent .report-detail>p{margin:10px 0;font-size:13px;color:#526b5b}
+#class-journal .ws-parent .report-detail>label{display:inline-flex;align-items:center;gap:10px;font-size:13px}
+#class-journal .ws-parent .report-detail .ws-metrics{gap:0;border-block:1px solid #e0e8e2;margin-top:20px}
+#class-journal .ws-parent .report-detail .ws-metrics>.ws-card{background:none;border:0;border-radius:0;padding:20px}
+#class-journal .ws-parent .report-detail .ws-metrics>.ws-card p{font-size:13px}
+
+/* 질문과 응답은 한 묶음으로, 최종 답은 별도 결론으로 구분한다. */
+#class-journal .ws-parent .report-followup{margin-block:20px;padding:0 0 20px;border-bottom:1px solid #e4eae5}
+#class-journal .ws-parent .report-followup-question{display:flex;align-items:baseline;gap:14px;margin-bottom:12px}
+#class-journal .ws-parent .report-step-label{flex-shrink:0;padding:4px 10px;border-radius:6px;background:#e7eee8;color:#315d43;font-size:13px;font-weight:700;line-height:1.6}
+#class-journal .ws-parent .report-followup-question p{margin:0;font-size:15px;font-weight:600;line-height:1.8;overflow-wrap:anywhere}
+#class-journal .ws-parent .report-student-response{margin-left:86px;padding:16px 20px;background:#f6f8f5;border-radius:8px}
+#class-journal .ws-parent .report-response-label{display:block;font-size:12px;color:#526756;margin-bottom:6px;font-weight:600}
+#class-journal .ws-parent .report-student-response blockquote,#class-journal .ws-parent .report-final-answer blockquote{margin:0;padding:0;border:0;background:none;font-size:15px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere}
+#class-journal .ws-parent .report-student-response blockquote[data-empty=true]{font-size:14px;color:#647067}
+#class-journal .ws-parent .report-final-answer{margin-block:24px;padding:20px;border:1px solid #cddccf;border-radius:8px;background:#fafcf9}
+#class-journal .ws-parent .report-final-answer h4,#class-journal .ws-parent .report-reflection-note h4{margin:0 0 10px;font-size:15px;font-weight:700;color:#284b35}
+#class-journal .ws-parent .report-reflection-note{margin-block:24px;display:flex;align-items:baseline;flex-wrap:wrap;gap:8px 12px}
+#class-journal .ws-parent .report-reflection-note h4{margin:0}
+#class-journal .ws-parent .report-difficulty{font-size:12px;color:#596759;border:1px solid #dae2d9;border-radius:4px;padding:2px 8px}
+#class-journal .ws-parent .report-reflection-note p{flex-basis:100%;margin:0;font-size:15px;line-height:1.8;overflow-wrap:anywhere}
+@media(max-width:640px){#class-journal .ws-parent .report-followup-question{align-items:flex-start;flex-direction:column;gap:8px}#class-journal .ws-parent .report-student-response{margin-left:0;padding:14px 16px}#class-journal .ws-parent .report-final-answer{padding:16px}}
+
+/* One workspace, with long reports isolated in the reading dialog. */
+#class-journal .ws-parent .parent-insights-unified .parent-insights-content{display:block}
+#class-journal .ws-parent .parent-report-entry{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:20px 0 32px}
+#class-journal .ws-parent .parent-report-entry h2{font-size:20px;margin:0 0 8px}
+#class-journal .ws-parent .parent-report-entry p{font-size:14px;color:#53675b;margin:0;line-height:1.7}
+#class-journal .ws-parent .parent-report-launcher{display:flex;align-items:center;gap:20px;min-width:300px;padding:20px 24px;border:1px solid #cbd8ce;border-radius:12px;background:#fff;color:#284b37;text-align:left;cursor:pointer}
+#class-journal .ws-parent .parent-report-launcher:hover{border-color:#537d60;background:#f8fbf7}
+#class-journal .ws-parent .parent-report-launcher span{flex:1;display:grid;gap:5px}
+#class-journal .ws-parent .parent-report-launcher strong{font-size:16px}
+#class-journal .ws-parent .parent-report-launcher small{font-size:12px;color:#5a6d60}
+#class-journal .ws-parent .parent-insights-unified .parent-insights-chat{border-top:1px solid #cbd8ce;padding-top:28px;scroll-margin-top:24px}
+#class-journal .cj-modal:has(>.cj-modal-body>.report-explorer){width:min(1180px,95vw);max-width:1180px;height:min(840px,92dvh);max-height:92dvh;padding:0;border:0;border-radius:20px;overflow:hidden;display:flex;flex-direction:column;background:#fff;box-shadow:0 24px 80px #18302833}
+#class-journal .cj-modal:has(>.cj-modal-body>.report-explorer)>.cj-modal-head{margin:0;padding:16px 24px;border-bottom:1px solid #e4e8ed;flex-shrink:0}
+#class-journal .cj-modal:has(>.cj-modal-body>.report-explorer)>.cj-modal-head h2{font-size:18px;margin:0}
+#class-journal .cj-modal:has(>.cj-modal-body>.report-explorer)>.cj-modal-body{padding:0;overflow:hidden;flex:1;min-height:0;display:flex}
+#class-journal .report-explorer{width:100%;min-width:0;display:flex;flex-direction:column;padding:24px 28px;overflow:hidden;background:#fff}
+#class-journal .report-explorer>.parent-page-head{margin:0}
+#class-journal .report-explorer>.parent-page-head h2{font-size:24px;margin:0 0 8px}
+#class-journal .report-explorer>.parent-page-head p{font-size:13px;margin:5px 0;color:#5b6878}
+#class-journal .report-explorer .parent-insights-report-body{flex:1;min-height:0;max-height:none;padding:0 12px 20px 0}
+#class-journal .report-explorer .parent-report-filters{flex-shrink:0;padding:16px 0;margin-bottom:20px}
+#class-journal .report-explorer .parent-report-detail-nav{position:static;background:none;padding:0 0 16px;margin:0}
+#class-journal .ws-parent .parent-insights .report-explorer .report-detail{display:grid;grid-template-columns:164px minmax(0,1fr);column-gap:28px;border:0;border-radius:0;padding:0;background:#fff;min-height:100%;align-content:start}
+#class-journal .report-explorer .report-detail>*{grid-column:2;min-width:0}
+#class-journal .report-explorer .report-detail>.report-sections{grid-column:1;grid-row:1 / span 20;display:flex;flex-direction:column;align-self:start;position:sticky;top:0;gap:8px;margin:0;padding:24px 0 24px 12px;background:#2458d9;border:0;border-radius:12px;overflow:visible}
+#class-journal .report-explorer .report-sections button{color:#fff;text-align:left;white-space:normal;border:0;border-radius:18px 0 0 18px;padding:14px 16px;font-size:14px;background:transparent}
+#class-journal .report-explorer .report-sections button[aria-pressed=true]{background:#fff;color:#2458d9}
+#class-journal .report-explorer .report-sections button:focus-visible{outline-offset:-4px;outline-color:#a8c8ff}
+#class-journal .report-explorer .report-section{border-top:1px solid #e0e6ec;margin-top:20px;padding-top:4px}
+#class-journal .report-explorer .report-section>h3{font-size:19px;font-weight:650;color:#273d32;margin:20px 0 16px}
+#class-journal .report-narrative-text{font-size:15px;line-height:1.95;white-space:pre-wrap;overflow-wrap:anywhere;max-width:75ch;margin:20px 0 12px}
+#class-journal .report-source{font-size:12px;color:#626e68}
+#class-journal .report-explorer .report-detail>.cj-modal-layer{grid-column:auto}
+/* Conversation: history rail, quiet transcript, dedicated composer. */
+#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:220px minmax(0,1fr);gap:0;border:1px solid #dbe3dc;border-radius:16px;overflow:hidden;background:#fff;align-items:stretch}
+#class-journal .ws-parent .parent-insights .pc-layout>aside{max-height:740px;margin:0;border:0;border-right:1px solid #e2e8e1;border-radius:0;padding:20px 14px;background:#f1f4ee;display:flex;flex-direction:column;gap:12px;overflow:auto}
+#class-journal .ws-parent .parent-insights .pc-layout>aside h3{font-size:13px;color:#566858;margin:0 6px 4px;font-weight:600}
+#class-journal .ws-parent .pc-history-search{display:flex;align-items:center;gap:7px;border-bottom:1px solid #cbd6ca;padding:8px 4px;color:#5d705e}
+#class-journal .ws-parent .pc-history-search input{width:100%;min-width:0;border:0;background:none;padding:0;font-size:13px;border-radius:0}
+#class-journal .ws-parent .pc-history-list{display:flex;flex-direction:column;gap:4px;flex:1;overflow:auto;min-height:0}
+#class-journal .ws-parent .pc-history-list button{display:grid;text-align:left;gap:6px;width:100%;border:0;background:transparent;padding:12px;border-radius:8px;color:#2b4034}
+#class-journal .ws-parent .pc-history-list button:hover,#class-journal .ws-parent .pc-history-list button[aria-current=true]{background:#e2e9dd}
+#class-journal .ws-parent .pc-history-list button span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;font-weight:500;line-height:1.7;overflow-wrap:anywhere}
+#class-journal .ws-parent .pc-history-list button small{font-size:11px;color:#5b6b60}
+#class-journal .ws-parent .pc-new-chat{display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;border:1px solid #cad6c8;font-size:13px}
+#class-journal .ws-parent .parent-insights .pc-layout>.pc-conversation-panel{max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column;gap:0;min-width:0}
+#class-journal .ws-parent .pc-thread{flex:1;min-height:220px;max-height:480px;overflow:auto;overscroll-behavior:contain;padding:24px 32px;scrollbar-gutter:stable}
+#class-journal .ws-parent .pc-welcome{min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#345542;padding:20px}
+#class-journal .ws-parent .pc-welcome h3{font-size:25px;font-weight:600;line-height:1.6;margin:16px 0 8px;letter-spacing:-.025em}
+#class-journal .ws-parent .pc-welcome p{font-size:13px;color:#627165;margin:0}
+#class-journal .ws-parent .pc-thread>.pc-message{background:none;border:0;border-radius:0;padding:0 0 28px;margin:0 0 24px;border-bottom:1px solid #e7ece6;box-shadow:none;font-size:14px;line-height:1.85}
+#class-journal .ws-parent .pc-user-message{margin:0 0 24px auto;width:fit-content;max-width:88%;border-radius:14px 14px 4px 14px;background:#edf2e8;padding:14px 18px;overflow-wrap:anywhere}
+#class-journal .ws-parent .pc-user-message span{font-size:11px;color:#526650}
+#class-journal .ws-parent .pc-user-message p{margin:4px 0 0;white-space:pre-wrap}
+#class-journal .ws-parent .pc-assistant-message h3{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#325940;margin:0 0 12px}
+#class-journal .ws-parent .pc-assistant-message p{font-size:15px;line-height:1.95;margin:0 0 18px;white-space:pre-wrap;overflow-wrap:anywhere}
+#class-journal .ws-parent .parent-insights .pc-layout>section>form.pc-composer{position:static;flex-shrink:0;margin:0 24px 20px;padding:16px 18px;border:1px solid #c9d5c7;border-radius:14px;background:#fff;display:flex;flex-wrap:wrap;gap:12px;box-shadow:0 6px 20px #243e2b08}
+#class-journal .ws-parent .pc-composer>label{width:100%;font-size:12px;color:#566b5b;display:grid;gap:8px}
+#class-journal .ws-parent .pc-composer textarea{resize:vertical;min-height:72px;max-height:180px;background:transparent;border:0;border-radius:0;padding:0;font-size:15px;line-height:1.8;box-shadow:none}
+#class-journal .ws-parent .pc-composer>button{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:13px;min-height:38px;padding:8px 14px;border-radius:8px}
+#class-journal .ws-parent .pc-composer>.ws-examples{width:100%;border-top:1px solid #e4e9e1;padding-top:12px}
+#class-journal .ws-parent .pc-composer .ws-examples .ws-actions{gap:6px}
+#class-journal .ws-parent .pc-composer .ws-examples button{font-size:12px;background:#f6f8f3;border:1px solid #e2e8db;padding:7px 10px;line-height:1.6;white-space:normal;text-align:left}
+#class-journal .ws-parent .pc-composer>small{font-size:11px;color:#5c6d60;line-height:1.6}
+#class-journal .ws-parent .pc-conversation-panel>.pc-template{margin:0 24px 20px;font-size:12px}
+@media(max-width:900px){#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:180px minmax(0,1fr)}#class-journal .ws-parent .pc-thread{padding:20px}#class-journal .ws-parent .parent-insights .pc-layout>section>form.pc-composer{margin:0 16px 16px}}
+@media(max-width:640px){#class-journal .ws-parent .parent-report-entry{flex-direction:column;align-items:stretch;gap:16px}#class-journal .ws-parent .parent-report-launcher{min-width:0;width:100%}#class-journal .report-explorer{padding:16px}#class-journal .ws-parent .parent-insights .report-explorer .report-detail{display:block}#class-journal .report-explorer .report-detail>.report-sections{position:sticky;top:0;flex-direction:row;overflow:auto;padding:8px;gap:4px;border-radius:8px;margin:16px 0;z-index:2}#class-journal .report-explorer .report-sections button{padding:10px;border-radius:6px;white-space:nowrap;font-size:12px}#class-journal .ws-parent .parent-insights .pc-layout{grid-template-columns:1fr}#class-journal .ws-parent .parent-insights .pc-layout>aside{max-height:210px;border-right:0;border-bottom:1px solid #e2e8e1;padding:14px}#class-journal .ws-parent .pc-thread{padding:18px;max-height:420px}#class-journal .ws-parent .pc-welcome h3{font-size:21px}#class-journal .ws-parent .pc-user-message{max-width:95%}}
+
+#class-journal .ws-parent .pc-thread .ws-metrics{gap:0;border-block:1px solid #e0e7de;margin:16px 0}
+#class-journal .ws-parent .pc-thread .ws-metrics>.ws-card{background:none;border:0;border-radius:0;padding:14px 18px;box-shadow:none}
+#class-journal .ws-parent .pc-thread .ws-metrics>.ws-card h3{font-size:13px;margin:0 0 8px}
+#class-journal .ws-parent .pc-thread .ws-metrics>.ws-card strong{font-size:22px}
+#class-journal .ws-parent .pc-thread .ws-metrics>.ws-card p{font-size:12px}
+
+/* 추억 그림책 목록 (docs/proposals/memory-book.md) */
+.parent-memory-books { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.parent-memory-books h2 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.parent-memory-books p { margin: 0; }
+.parent-memory-books ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.parent-memory-books li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.parent-memory-books li button { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }

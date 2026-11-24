@@ -125,11 +125,13 @@ test('#639·#640 학부모 본문 랜드마크·보조 메뉴·본문 건너뛰�
   await page.goto('/login')
   await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
+  await expect(page).toHaveURL(/childId=/)
+  const scope = new URL(page.url()).search
   for (const path of ['journal', 'report', 'settings', 'devices']) {
-    await navigate(page, `/parent/${path}`)
+    await navigate(page, `/parent/${path}${scope}`)
     await landmarks(page)
   }
-  await navigate(page, '/parent/journal')
+  await navigate(page, `/parent/journal${scope}`)
   await expect(page.getByRole('region', { name: '학생 답변 공개 상태' })).toBeVisible()
   for (const link of await page.locator('.ws-side .ws-support a').all()) if (await link.isVisible()) await target44(link)
   const skip = page.getByRole('link', { name: '본문으로 건너뛰기' })
@@ -137,4 +139,30 @@ test('#639·#640 학부모 본문 랜드마크·보조 메뉴·본문 건너뛰�
   await page.keyboard.press('Enter')
   await expect(page.locator('#parent-main')).toBeFocused()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+test('#915 학습 현황 카드 이름·동의 체크박스 크기·문의 결과 링크 밑줄 @responsive', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByRole('button', { name: '시연 계정으로 로그인', exact: true }).click()
+  await expect(page).toHaveURL(/childId=/)
+  const scope = new URL(page.url()).search
+  // 이름(aria-label)은 역할이 있어야 화면 읽기 프로그램이 읽는다(aria-prohibited-attr)
+  const recent = page.locator('.pd-recent-missions')
+  await expect(recent).not.toHaveCount(0)
+  expect(await recent.evaluateAll(els => els.filter(el => el.getAttribute('role') !== 'group').length)).toBe(0)
+  // 문장 속 링크는 색 말고도 밑줄로 구분한다(link-in-text-block)
+  await navigate(page, `/parent/support/results${scope}`)
+  const back = page.getByRole('link', { name: '돌아가기', exact: true })
+  await expect(back).toBeVisible()
+  expect(await back.evaluate(el => getComputedStyle(el).textDecorationLine)).toContain('underline')
+  // 자녀 추가의 동의 체크박스는 24×24px 이상(target-size)
+  await navigate(page, `/parent/settings${scope}`)
+  await page.getByRole('button', { name: '자녀 추가 등록', exact: true }).click()
+  const boxes = page.getByRole('dialog', { name: '자녀 프로필 등록' }).getByRole('checkbox')
+  await expect(boxes.first()).toBeVisible()
+  for (const box of await boxes.all()) {
+    const size = await box.boundingBox()
+    expect(size!.width).toBeGreaterThanOrEqual(24)
+    expect(size!.height).toBeGreaterThanOrEqual(24)
+  }
 })

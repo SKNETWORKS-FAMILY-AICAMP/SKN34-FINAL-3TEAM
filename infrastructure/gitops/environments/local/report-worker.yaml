@@ -27,6 +27,10 @@ env:
   - {name: S3_BUCKET, value: sagomungchi-local-reports}
   - {name: S3_REGION, value: ap-northeast-2}
   - {name: CONSUMER_PREFETCH, value: "1"}
+  # 추억 그림책 (docs/proposals/memory-book.md): learning이 브라우저용 MinIO 주소로
+  # 서명한 그림을 클러스터 안 MinIO로 받되 Host는 원래 값으로 보낸다
+  - {name: MEMORY_BOOK_ASSET_ORIGINS, value: "http://127.0.0.1:19000"}
+  - {name: MEMORY_BOOK_ASSET_INTERNAL_ORIGINS, value: "http://127.0.0.1:19000=http://minio.platform.svc.cluster.local:9000"}
   - {name: AWS_ACCESS_KEY_ID, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_USER}}}
   - {name: AWS_SECRET_ACCESS_KEY, valueFrom: {secretKeyRef: {name: app-service-credentials, key: MINIO_ROOT_PASSWORD}}}
 keda:
@@ -37,6 +41,7 @@ keda:
   queues:
     - report.report.generate
     - report.student.deleted
+    - report.memorybook.generate
   rabbitmqSecret:
     name: app-service-credentials
     key: RABBITMQ_REPORT_URL

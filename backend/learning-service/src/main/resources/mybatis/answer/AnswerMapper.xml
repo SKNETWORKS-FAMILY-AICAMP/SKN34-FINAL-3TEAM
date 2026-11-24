@@ -14,19 +14,21 @@
             <arg column="dictated_by_guardian" javaType="_boolean"/>
             <arg column="idempotency_key" javaType="java.util.UUID"/>
             <arg column="submitted_at" javaType="java.time.Instant"/>
+            <arg column="thinking_seconds" javaType="java.lang.Integer"/>
+            <arg column="writing_seconds" javaType="java.lang.Integer"/>
         </constructor>
     </resultMap>
 
     <sql id="columns">
         id, attempt_id, version, followup_id, previous_answer_id, input_type, content, plain_text,
-        dictated_by_guardian, idempotency_key, submitted_at
+        dictated_by_guardian, idempotency_key, submitted_at, thinking_seconds, writing_seconds
     </sql>
 
     <insert id="insert">
         INSERT INTO answer (<include refid="columns"/>)
         VALUES (#{id}, #{attemptId}, #{version}, #{followupId,jdbcType=OTHER}, #{previousAnswerId,jdbcType=OTHER},
                 #{inputType}, #{content}, #{plainText,jdbcType=VARCHAR}, #{dictatedByGuardian}, #{idempotencyKey},
-                #{submittedAt})
+                #{submittedAt}, #{thinkingSeconds,jdbcType=INTEGER}, #{writingSeconds,jdbcType=INTEGER})
     </insert>
 
     <select id="findByIdempotencyKey" resultMap="answer">

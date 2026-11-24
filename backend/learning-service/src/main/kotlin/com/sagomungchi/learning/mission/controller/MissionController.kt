@@ -15,7 +15,8 @@ import java.util.UUID
 
 /**
  * 학생용 미션 조회 (api-spec 2.2, 4.1). core가 학생 학년을 grade(지원 학년 초3~6, P03),
- * 시연 학생 여부(student.is_demo)를 demo로 넘김.
+ * 시연 학생 여부(student.is_demo)를 demo로 넘김. 같은 상세 경로의 테마 안내(`context`가 EXTRA 아님)는
+ * attempt 기능 `AttemptController.themeGuide`가 받음(#908)
  */
 @RestController
 @RequestMapping("/internal/missions")

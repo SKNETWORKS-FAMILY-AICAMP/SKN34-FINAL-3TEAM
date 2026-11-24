@@ -5,11 +5,11 @@ import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSession } from '../auth/sessionContext.ts'
 import type { Child } from '../../domain/classroom.ts'
-import { checkoutConfirmation, paymentComplete, paymentStateLabel, duplicateSubscription } from '../../domain/payment.ts'
+import { checkoutConfirmation, paymentComplete, paymentStateLabel, duplicateSubscription, memoryBookLabel } from '../../domain/payment.ts'
 import type { PendingCheckout } from '../../domain/payment.ts'
 import { paymentApi, paymentClientKey, paymentTestMode, mockPaymentMode } from '../../data/payment/api.ts'
-import { readCheckout, saveCheckout } from '../../data/payment/checkoutStorage.ts'
-import { usePaymentConfirmation, usePaymentResult } from '../../data/payment/queries.ts'
+import { readCheckout } from '../../data/payment/checkoutStorage.ts'
+import { requestCheckoutOrder, useCheckoutState, usePaymentConfirmation, usePaymentResult } from '../../data/payment/queries.ts'
 import { loadToss } from '../../data/payment/toss.ts'
 import type { TossWidget } from '../../data/payment/toss.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
@@ -17,10 +17,9 @@ import { QueryFeedback } from '../common/Workspace.tsx'
 import { ErrorNotice } from '../shared/ClassroomParts.tsx'
 import './payment.css'
 
-const pendingOrder = (created: Omit<PendingCheckout, 'confirmKey' | 'createdAt'>): PendingCheckout => ({ ...created, confirmKey: crypto.randomUUID(), createdAt: Date.now() })
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 export function ParentPayments({ child }: { child?: Child }) {
-  const navigate = useNavigate(), [params] = useSearchParams(), cache = useQueryClient()
+  const [params] = useSearchParams(), cache = useQueryClient()
   const checkoutMode = params.get('checkout') === '1'
   const products = useParentQuery(['products'], signal => paymentApi.products(signal))
   const subscriptions = useParentQuery(['subscriptions'], signal => paymentApi.subscriptions(signal), !paymentTestMode)
@@ -30,25 +29,16 @@ export function ParentPayments({ child }: { child?: Child }) {
   const availableProducts = products.data?.items.filter(p => p.active && p.price > 0 && p.billingCycle === 'MONTHLY') ?? []
   const product = availableProducts.find(p => p.id === selection)
   const paymentAvailable = mockPaymentMode || /^test_gck_/.test(paymentClientKey)
-  const [order, setOrder] = useState<PendingCheckout | null>(() => { const p = readCheckout(); return checkoutMode && p && p.childId === child?.id && p.productId === params.get('productId') ? p : null })
-  const [busy, setBusy] = useState(false), [ready, setReady] = useState(false), [error, setError] = useState<unknown>(null)
-  const checkoutState = useParentQuery(['checkout-state', order?.orderId], signal => paymentApi.state(order!.orderId, signal), !!order)
-  const state = checkoutState.data ?? null
-  const widget = useRef<TossWidget | null>(null), createKey = useRef(params.get('orderKey') ?? crypto.randomUUID())
-  // One request per idempotency key: a re-run effect (StrictMode, refetch) must reuse it, not race into 409.
-  const orderRequest = useRef<{ id: string; promise: Promise<PendingCheckout> } | null>(null)
-  const requestOrder = (childId: string, productId: string) => {
-    const id = [childId, productId, createKey.current].join(':')
-    if (orderRequest.current?.id !== id) {
-      const promise = paymentApi.order(childId, productId, createKey.current).then(created => {
-        const pending = pendingOrder(created); saveCheckout(pending); return pending
-      })
-      promise.catch(() => { if (orderRequest.current?.promise === promise) orderRequest.current = null })
-      orderRequest.current = { id, promise }
-    }
-    return orderRequest.current.promise
-  }
+  const [pending, setOrder] = useState<PendingCheckout | null>(() => { const p = readCheckout(); return checkoutMode && p && p.childId === child?.id && p.productId === params.get('productId') ? p : null })
+  const order = checkoutMode ? pending : null
+  const [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null)
+  const checkoutState = useCheckoutState(order?.orderId ?? '')
+  const state = checkoutState.isSuccess ? checkoutState.data : null
+  // Reconcile a returning checkout before allowing a cached PENDING order to open the widget.
+  const canInitializeWidget = checkoutState.isFetchedAfterMount && state?.status === 'PENDING'
+  const createKey = useRef(params.get('orderKey') ?? crypto.randomUUID())
   const [tabNotice, setTabNotice] = useState('')
+  const checkoutTab = useRef<Window | null>(null)
   const [opening, setOpening] = useState(false)
   useEffect(() => {
     const refresh = () => { void cache.invalidateQueries({ queryKey: ['parent'] }) }
@@ -56,24 +46,78 @@ export function ParentPayments({ child }: { child?: Child }) {
     window.addEventListener('sagomungchi:payment-fixture-updated', refresh)
     return () => { window.removeEventListener('focus', refresh); window.removeEventListener('sagomungchi:payment-fixture-updated', refresh) }
   }, [cache])
+  // 같은 멱등 키의 주문 생성은 data 계층에서 진행 중 요청을 공유한다. effect가 다시 실행돼도(StrictMode·재조회) 409 경합 없이 같은 결과를 받는다.
   useEffect(() => {
     if (!checkoutMode || order || !product || !child || duplicate || !paymentAvailable || !paymentTestMode && (subscriptions.isPending || subscriptions.error)) return
     let active = true
-    void requestOrder(child.id, product.id).then(pending => {
+    void requestCheckoutOrder(child.id, product.id, createKey.current).then(pending => {
       if (active) setOrder(pending)
     }).catch(e => { if (active) setError(e) }).finally(() => { if (active) setBusy(false) })
     return () => { active = false }
   }, [checkoutMode, order, product, child, duplicate, paymentAvailable, subscriptions.isPending, subscriptions.error])
+  async function prepare() {
+    if (!product || !child || duplicate || busy || !paymentAvailable) return
+    setBusy(true); setError(null)
+    try {
+      if (checkoutMode) {
+        setOrder(await requestCheckoutOrder(child.id, product.id, createKey.current))
+        return
+      }
+      if (checkoutTab.current && !checkoutTab.current.closed) { checkoutTab.current.focus(); return }
+      const url = new URL('/parent/billing', location.origin)
+      url.search = new URLSearchParams({ childId: child.id, productId: product.id, checkout: '1', orderKey: createKey.current }).toString()
+      const tab = window.open(url.href, '_blank')
+      if (!tab) throw new Error('결제 탭이 차단되었습니다. 팝업을 허용한 뒤 다시 눌러 주세요.')
+      tab.opener = null
+      checkoutTab.current = tab
+      setOpening(true)
+      setTabNotice('새 탭에서 결제를 진행해 주세요. 돌아오면 이용권 상태를 다시 확인합니다.')
+    } catch (e) { setError(e) } finally { setBusy(false) }
+  }
+  return <section className="payment-page">
+    <header><h1>{checkoutMode ? '결제수단 선택' : '이용권·결제'}</h1><p>{child ? child.nickname + '의 이용권과 결제 내역을 확인하세요.' : '신규 구매는 연결된 자녀를 선택해 주세요. 기존 구독과 본인 거래는 아래에서 확인할 수 있습니다.'}</p></header>
+    {paymentTestMode && <p className="payment-test-note">결제 연동 테스트 · 실제 청구 없이 토스 인증과 승인을 확인합니다. 테스트 주문은 서버 메모리에만 보관되며 학습 이용권에는 적용되지 않습니다.</p>}
+    {mockPaymentMode && <p className="payment-test-note">모의 결제 시연 · 외부 PG를 호출하지 않고 가상 승인·구독·환불을 확인합니다.</p>}
+    {duplicate && <p role="status">이 자녀는 이미 이용 중인 구독이 있습니다. 현재 구독에서 결제수단과 자동 갱신을 관리할 수 있습니다.</p>}
+    <QueryFeedback query={products} />{!paymentTestMode && <QueryFeedback query={subscriptions} />}<ErrorNotice error={error} />
+    {tabNotice && <p role="status" className="parent-payment-notice">{tabNotice}</p>}
+    {opening && !duplicate && <button disabled={busy} onClick={() => void prepare()}>결제 탭 다시 열기</button>}
+    {!checkoutMode && <PaymentManagement key={`current-${child?.id ?? 'all'}`} child={child} section="subscriptions" />}
+    {!checkoutMode && products.data?.items.filter(p => p.active && p.price === 0).map(p => <section className="payment-panel parent-free-plan" key={p.id}><div><h2>{p.name} 플랜</h2><p>정기 청구 없이 이용할 수 있어요.</p><strong>{won(p.price)}</strong>{duplicate && <p>현재 이용 기간은 유지됩니다. 현재 구독에서 자동 갱신을 해지하면 이용 기간이 끝난 뒤 무료로 이용합니다.</p>}</div>{duplicate ? <a className="cj-secondary" href="#current-subscriptions">무료 플랜 전환 안내</a> : <button disabled>{!child ? '자녀 선택 필요' : subscriptions.isPending ? '이용권 확인 중' : subscriptions.error ? '이용권 확인 필요' : entitlement?.status === 'FREE' ? '현재 무료 플랜' : '이용권 정보 확인'}</button>}</section>)}
+    {!duplicate && !order && products.data && !availableProducts.length && <section className="payment-panel"><h2>이용권 안내</h2><p>현재 구매 가능한 이용권이 없습니다. 기존 이용권과 거래 내역은 아래에서 확인할 수 있습니다.</p><Link to="/parent/support">이용권 문의하기</Link></section>}
+    {(!duplicate || !!order) && (!!order || availableProducts.length > 0) && <div className="payment-columns">
+      <section className="payment-panel"><h2>{order ? '결제수단' : '이용권 선택'}</h2>
+        {!order ? <><div className="payment-products">{availableProducts.map(p => <label key={p.id} className="payment-option"><input type="radio" name="product" value={p.id} checked={selection === p.id} onChange={() => { setSelection(p.id); checkoutTab.current = null; setOpening(false); setTabNotice(''); createKey.current = crypto.randomUUID() }} /><span>{p.name}<small>자녀 {p.childLimit}명 · {p.billingCycle === 'MONTHLY' ? '1개월 이용권 · 자동 갱신은 별도 동의' : p.billingCycle}</small><small>{typeof p.limits.dailyFeedback === 'number' ? `하루 피드백 ${p.limits.dailyFeedback}회 · ` : ''}{typeof p.limits.dailyConversations === 'number' ? `분석 대화 ${p.limits.dailyConversations}회 · ` : ''}{typeof p.limits.reportNarrative === 'boolean' ? p.limits.reportNarrative ? '전체 리포트' : '수치 리포트' : ''}{memoryBookLabel(p)}</small></span><strong>{won(p.price)}</strong></label>)}</div>
+          {products.data && !products.data.items.some(p => p.active && p.price > 0 && p.billingCycle === 'MONTHLY') && <p>현재 구매 가능한 이용권이 없습니다.</p>}
+          <button className="payment-primary" disabled={!child || !product || duplicate || busy || opening || !paymentTestMode && (subscriptions.isPending || !!subscriptions.error) || !paymentAvailable} onClick={() => void prepare()}>{busy ? '주문을 준비하고 있습니다…' : opening ? '새 탭에서 결제 진행 중' : checkoutMode ? '주문 다시 준비' : '결제수단 선택'}</button>
+          {!paymentAvailable && <p role="note">지금 결제를 이용할 수 없어요. <Link to="/parent/support">결제 문의하기</Link></p>}
+          {!child && <p>결제할 자녀를 먼저 선택해 주세요.</p>}{!product && <p>구매할 이용권을 선택하면 결제를 진행할 수 있습니다.</p>}</>
+          : <><QueryFeedback query={checkoutState} />
+            {state && state.status !== 'PENDING' ? <><p role="status">{paymentTestMode && state.status === 'APPROVED' ? '테스트 결제 승인이 완료되었습니다. 학습 이용권은 변경되지 않습니다.' : paymentStateLabel(state)}</p><Link to={'/payment/success?orderId=' + encodeURIComponent(order.orderId)}>결제 결과 확인</Link></>
+              : canInitializeWidget ? <CheckoutWidget key={order.orderId} order={order} paymentAvailable={paymentAvailable} checking={checkoutState.fetchStatus !== 'idle'} />
+              : <button className="payment-primary" disabled>{won(order.amount)} 결제하기</button>}
+          </>}
+      </section>
+      <aside className="payment-panel payment-summary"><h2>주문 확인</h2><dl><div><dt>이용할 자녀</dt><dd>{child?.nickname ?? '자녀 선택 필요'}</dd></div><div><dt>이용권</dt><dd>{order?.orderName ?? product?.name ?? '선택해 주세요'}</dd></div><div><dt>결제 금액</dt><dd className="payment-amount">{order ? won(order.amount) : product ? won(product.price) : '—'}</dd></div></dl><p>이번 결제는 1개월 이용권 구매입니다. 자동결제 등록은 포함하지 않습니다.</p><p>결제창에서 인증을 마친 뒤 서버 승인이 완료되면 결과를 안내해 드립니다.</p>{order && <details><summary>주문 자세히 보기</summary><small className="payment-order-id">주문번호 {order.orderId}</small></details>}</aside>
+    </div>}
+    {!checkoutMode && <PaymentManagement key={`history-${child?.id ?? 'all'}`} child={child} section="history" />}
+  </section>
+}
+
+
+function CheckoutWidget({ order, paymentAvailable, checking }: { order: PendingCheckout; paymentAvailable: boolean; checking: boolean }) {
+  const navigate = useNavigate()
+  const widget = useRef<TossWidget | null>(null)
+  const [ready, setReady] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const canPay = ready && !busy && !checking
+
   useEffect(() => {
-    if (!order) return
     let active = true
     const resources: { destroy(): void | Promise<void> }[] = []
     void (async () => {
       if (!paymentAvailable) throw new Error('지금 결제를 이용할 수 없어요. 문의를 통해 이용 가능 여부를 확인해 주세요.')
-      // A returning checkout must be reconciled before another payment window can open.
-      const previous = await paymentApi.state(order.orderId)
-      if (!active) return
-      if (previous.status !== 'PENDING') return
       if (mockPaymentMode) { setReady(true); return }
       await loadToss()
       if (!active) return
@@ -81,32 +125,25 @@ export function ParentPayments({ child }: { child?: Child }) {
       await w.setAmount({ currency: 'KRW', value: order.amount })
       if (!active) return
       const methods = await w.renderPaymentMethods({ selector: '#toss-payment-methods', variantKey: 'DEFAULT' })
-      if (!active) { await methods.destroy(); return }; resources.push(methods)
+      if (!active) { await methods.destroy(); return }
+      resources.push(methods)
       const agreement = await w.renderAgreement({ selector: '#toss-payment-agreement', variantKey: 'AGREEMENT' })
-      if (!active) { await agreement.destroy(); return }; resources.push(agreement)
-      widget.current = w; setReady(true)
+      if (!active) { await agreement.destroy(); return }
+      resources.push(agreement)
+      widget.current = w
+      setReady(true)
     })().catch(e => { if (active) setError(e) })
-    return () => { active = false; widget.current = null; for (const r of resources) { try { void Promise.resolve(r.destroy()).catch(() => {}) } catch { /* Already removed by the SDK. */ } } }
-  }, [order, paymentAvailable])
-  async function prepare() {
-    if (!product || !child || duplicate || busy || !paymentAvailable) return
-    setBusy(true); setError(null)
-    try {
-      if (checkoutMode) {
-        setOrder(await requestOrder(child.id, product.id))
-        return
+    return () => {
+      active = false
+      widget.current = null
+      for (const resource of resources) {
+        try { void Promise.resolve(resource.destroy()).catch(() => {}) } catch { /* Already removed by the SDK. */ }
       }
-      const url = new URL('/parent/billing', location.origin)
-      url.search = new URLSearchParams({ childId: child.id, productId: product.id, checkout: '1', orderKey: createKey.current }).toString()
-      const tab = window.open(url.href, '_blank')
-      if (!tab) throw new Error('결제 탭이 차단되었습니다. 팝업을 허용한 뒤 다시 눌러 주세요.')
-      tab.opener = null
-      setOpening(true)
-      setTabNotice('새 탭에서 결제를 진행해 주세요. 돌아오면 이용권 상태를 다시 확인합니다.')
-    } catch (e) { setError(e) } finally { setBusy(false) }
-  }
+    }
+  }, [order, paymentAvailable])
+
   async function pay() {
-    if (!order || !ready || busy || !mockPaymentMode && !widget.current) return
+    if (!canPay || !mockPaymentMode && !widget.current) return
     setBusy(true); setError(null)
     try {
       if (mockPaymentMode) { navigate('/payment/success?' + new URLSearchParams({ orderId: order.orderId, amount: String(order.amount), paymentKey: 'mock-payment-' + order.orderId })); return }
@@ -114,34 +151,14 @@ export function ParentPayments({ child }: { child?: Child }) {
         successUrl: location.origin + '/payment/success', failUrl: location.origin + '/payment/fail' })
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
-  return <section className="payment-page">
-    <header><h1>{checkoutMode ? '결제수단 선택' : '이용권·결제'}</h1><p>{child ? child.nickname + '의 이용권과 결제 내역을 확인하세요.' : '신규 구매는 연결된 자녀를 선택해 주세요. 기존 구독과 본인 거래는 아래에서 확인할 수 있습니다.'}</p></header>
-    {paymentTestMode && <p className="payment-test-note">결제 연동 테스트 · 실제 청구 없이 토스 인증과 승인을 확인합니다. 테스트 주문은 서버 메모리에만 보관되며 학습 이용권에는 적용되지 않습니다.</p>}
-    {mockPaymentMode && <p className="payment-test-note">모의 결제 시연 · 외부 PG를 호출하지 않고 가상 승인·구독·환불을 확인합니다.</p>}
-    {duplicate && <p role="status">이 자녀는 이미 이용 중인 구독이 있습니다. 아래에서 결제수단과 자동 갱신을 관리해 주세요.</p>}
-    <QueryFeedback query={products} />{!paymentTestMode && <QueryFeedback query={subscriptions} />}<ErrorNotice error={error} />
-    {tabNotice && <p role="status" className="parent-payment-notice">{tabNotice}</p>}
-    {opening && <button onClick={() => { setOpening(false); setTabNotice('') }}>결제 탭 다시 열기</button>}
-    {!checkoutMode && products.data?.items.filter(p => p.active && p.price === 0).map(p => <section className="payment-panel parent-free-plan" key={p.id}><div><h2>{p.name} 플랜</h2><p>정기 청구 없이 이용할 수 있어요.</p><strong>{won(p.price)}</strong>{duplicate && <p>현재 이용 기간은 유지됩니다. 아래 현재 구독에서 자동 갱신을 해지하면 이용 기간이 끝난 뒤 무료로 이용합니다.</p>}</div>{duplicate ? <a className="cj-secondary" href="#current-subscriptions">무료 플랜 전환 안내</a> : <button disabled>{!child ? '자녀 선택 필요' : subscriptions.isPending ? '이용권 확인 중' : subscriptions.error ? '이용권 확인 필요' : entitlement?.status === 'FREE' ? '현재 무료 플랜' : '이용권 정보 확인'}</button>}</section>)}
-    {duplicate && <PaymentManagement key={child?.id ?? 'all'} child={child} />}
-    {!duplicate && !order && products.data && !availableProducts.length && <section className="payment-panel"><h2>이용권 안내</h2><p>현재 구매 가능한 이용권이 없습니다. 기존 이용권과 거래 내역은 아래에서 확인할 수 있습니다.</p><Link to="/parent/support">이용권 문의하기</Link></section>}
-    {(!duplicate || !!order) && (!!order || availableProducts.length > 0) && <div className="payment-columns">
-      <section className="payment-panel"><h2>{order ? '결제수단' : '이용권 선택'}</h2>
-        {!order ? <><div className="payment-products">{availableProducts.map(p => <label key={p.id} className="payment-option"><input type="radio" name="product" value={p.id} checked={selection === p.id} onChange={() => { setSelection(p.id); createKey.current = crypto.randomUUID() }} /><span>{p.name}<small>자녀 {p.childLimit}명 · {p.billingCycle === 'MONTHLY' ? '1개월 이용권 · 자동 갱신은 별도 동의' : p.billingCycle}</small><small>{typeof p.limits.dailyFeedback === 'number' ? `하루 피드백 ${p.limits.dailyFeedback}회 · ` : ''}{typeof p.limits.dailyConversations === 'number' ? `분석 대화 ${p.limits.dailyConversations}회 · ` : ''}{typeof p.limits.reportNarrative === 'boolean' ? p.limits.reportNarrative ? '전체 리포트' : '수치 리포트' : ''}</small></span><strong>{won(p.price)}</strong></label>)}</div>
-          {products.data && !products.data.items.some(p => p.active && p.price > 0 && p.billingCycle === 'MONTHLY') && <p>현재 구매 가능한 이용권이 없습니다.</p>}
-          <button className="payment-primary" disabled={!child || !product || duplicate || busy || opening || !paymentTestMode && (subscriptions.isPending || !!subscriptions.error) || !paymentAvailable} onClick={() => void prepare()}>{busy ? '주문을 준비하고 있습니다…' : opening ? '새 탭에서 결제 진행 중' : checkoutMode ? '주문 다시 준비' : '결제수단 선택'}</button>
-          {!paymentAvailable && <p role="note">지금 결제를 이용할 수 없어요. <Link to="/parent/support">결제 문의하기</Link></p>}
-          {!child && <p>결제할 자녀를 먼저 선택해 주세요.</p>}{!product && <p>구매할 이용권을 선택하면 결제를 진행할 수 있습니다.</p>}</>
-          : <><QueryFeedback query={checkoutState} /><div id="toss-payment-methods" /><div id="toss-payment-agreement" />
-            {!ready && state?.status === 'PENDING' && !error && <p role="status">토스 결제수단을 불러오고 있습니다.</p>}
-            {state && state.status !== 'PENDING' ? <><p role="status">{paymentTestMode && state.status === 'APPROVED' ? '테스트 결제 승인이 완료되었습니다. 학습 이용권은 변경되지 않습니다.' : paymentStateLabel(state)}</p><Link to={'/payment/success?orderId=' + encodeURIComponent(order.orderId)}>결제 결과 확인</Link></>
-              : <button className="payment-primary" disabled={!ready || busy} onClick={() => void pay()}>{busy ? '결제창으로 이동 중…' : won(order.amount) + ' 결제하기'}</button>}
-          </>}
-      </section>
-      <aside className="payment-panel payment-summary"><h2>주문 확인</h2><dl><div><dt>이용할 자녀</dt><dd>{child?.nickname ?? '자녀 선택 필요'}</dd></div><div><dt>이용권</dt><dd>{order?.orderName ?? product?.name ?? '선택해 주세요'}</dd></div><div><dt>결제 금액</dt><dd className="payment-amount">{order ? won(order.amount) : product ? won(product.price) : '—'}</dd></div></dl><p>이번 결제는 1개월 이용권 구매입니다. 자동결제 등록은 포함하지 않습니다.</p><p>결제창에서 인증을 마친 뒤 서버 승인이 완료되면 결과를 안내해 드립니다.</p>{order && <details><summary>주문 자세히 보기</summary><small className="payment-order-id">주문번호 {order.orderId}</small></details>}</aside>
-    </div>}
-    {!duplicate && !checkoutMode && <PaymentManagement key={child?.id ?? 'all'} child={child} />}
-  </section>
+
+  return <>
+    <ErrorNotice error={error} />
+    <div id="toss-payment-methods" />
+    <div id="toss-payment-agreement" />
+    {!ready && !error && <p role="status">토스 결제수단을 불러오고 있습니다.</p>}
+    <button className="payment-primary" disabled={!canPay} onClick={() => void pay()}>{busy ? '결제창으로 이동 중…' : won(order.amount) + ' 결제하기'}</button>
+  </>
 }
 
 export function PaymentResult({ failed = false }: { failed?: boolean }) {

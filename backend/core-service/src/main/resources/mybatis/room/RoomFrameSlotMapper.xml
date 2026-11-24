@@ -9,8 +9,15 @@
         SELECT slot_no::int AS slot_no,theme_id,theme_week_start AS week_start FROM room_frame_slot
         WHERE student_id=#{studentId} ORDER BY slot_no
     </select>
-    <select id="hungSince" resultType="map" flushCache="true" useCache="false">
-        SELECT theme_id::text AS theme_id,theme_week_start::text AS week_start,saved_at FROM room_frame_slot WHERE student_id=#{studentId}
+    <resultMap id="hungFrame" type="com.sagomungchi.core.room.repository.HungFrame">
+        <constructor>
+            <arg column="theme_id" javaType="java.util.UUID"/>
+            <arg column="week_start" javaType="java.time.LocalDate"/>
+            <arg column="saved_at" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+    <select id="hungSince" resultMap="hungFrame" flushCache="true" useCache="false">
+        SELECT theme_id,theme_week_start AS week_start,saved_at FROM room_frame_slot WHERE student_id=#{studentId}
     </select>
     <delete id="deleteSlots">DELETE FROM room_frame_slot WHERE student_id=#{studentId}</delete>
     <insert id="insertSlot">

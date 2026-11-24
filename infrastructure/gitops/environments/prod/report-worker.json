@@ -76,6 +76,10 @@
     {
       "name": "REPORT_THEME_SUMMARY_ENABLED",
       "value": "true"
+    },
+    {
+      "name": "MEMORY_BOOK_ASSET_ORIGINS",
+      "value": "https://sagomungchi-demo-347161580747-missions.s3.ap-northeast-2.amazonaws.com"
     }
   ],
   "extraVolumeMounts": [
@@ -95,10 +99,6 @@
   ],
   "hpa": {
     "enabled": false
-  },
-  "image": {
-    "digest": "sha256:6f151ca992e4bc3bcfeeb6ea9d2e014ef63845d34783e328a74266540fa8d586",
-    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/report-service"
   },
   "keda": {
     "enabled": false
@@ -245,7 +245,7 @@
   },
   "serviceAccount": {
     "automountToken": false,
-    "create": false
+    "create": true
   },
   "terminationGracePeriodSeconds": 480,
   "tracing": {

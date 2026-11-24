@@ -3,6 +3,7 @@ package com.sagomungchi.learning.answer.service
 import com.sagomungchi.learning.TestRows
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.exception.ErrorInfo
+import com.sagomungchi.learning._common.exception.GlobalExceptionHandler
 import com.sagomungchi.learning._common.exception.errorInfoOf
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning._common.security.UserContext
@@ -10,6 +11,7 @@ import com.sagomungchi.learning._common.security.UserContextHolder
 import com.sagomungchi.learning.answer.client.ToxicityClient
 import com.sagomungchi.learning.answer.client.ToxicitySkipReason
 import com.sagomungchi.learning.answer.client.ToxicityVerdict
+import com.sagomungchi.learning.answer.domain.Answer
 import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.domain.Assignment
 import com.sagomungchi.learning.answer.domain.Essay
@@ -32,8 +34,10 @@ import org.mybatis.spring.SqlSessionTemplate
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -227,6 +231,48 @@ class AnswerServiceTest : PostgresRepositoryTest() {
     }
 
     @Test
+    fun `경계 구간 review이고 저장된 답변만 표현 검토 대기에 한 번 올림, 로그에 ID 없음`(output: CapturedOutput) {
+        val model = "tox-koelectra-small:1.0-1119"
+        val reviewsOf = { attemptId: UUID ->
+            count("SELECT count(*) FROM expression_review r JOIN answer a ON a.id = r.answer_id WHERE a.attempt_id = ?", attemptId)
+        }
+        val gray = start()
+        val key = UUID.randomUUID()
+        modelSays(ToxicityVerdict.Clean(review = true, modelVersion = model))
+
+        val answer = service.submit(gray.id, key, narrative("애매한 합성 답"))
+        service.submit(gray.id, key, narrative("애매한 합성 답"))
+
+        val row = jdbc.queryForMap(
+            "SELECT source, model_version, label, labeled_by, labeled_at FROM expression_review WHERE answer_id = ?", answer.id,
+        )
+        assertEquals(
+            listOf<Any?>("GRAY_ZONE", model, null, null, null),
+            listOf(row["source"], row["model_version"], row["label"], row["labeled_by"], row["labeled_at"]),
+        )
+        assertEquals(1, reviewsOf(gray.id))
+        val logLines = output.out.lines().filter { "표현 검토 대기 추가" in it }
+        assertEquals(1, logLines.size)
+        assertTrue("source=GRAY_ZONE" in logLines.single())
+        assertFalse(answer.id.toString() in logLines.single() || student.toString() in logLines.single())
+
+        val plain = start()
+        modelSays(ToxicityVerdict.Clean(review = false, modelVersion = model))
+        service.submit(plain.id, UUID.randomUUID(), narrative("보통 합성 답"))
+        val skipped = start()
+        modelSays(ToxicityVerdict.Skipped(ToxicitySkipReason.TIMEOUT))
+        service.submit(skipped.id, UUID.randomUUID(), narrative("검사 안 된 합성 답"))
+        assertEquals(listOf(0, 0), listOf(reviewsOf(plain.id), reviewsOf(skipped.id)))
+
+        val blocked = start()
+        modelSays(ToxicityVerdict.Flagged)
+        assertError(HttpStatus.UNPROCESSABLE_ENTITY, "ANSWER_INAPPROPRIATE") {
+            service.submit(blocked.id, UUID.randomUUID(), narrative("막힐 합성 답"))
+        }
+        assertEquals(0, reviewsOf(blocked.id))
+    }
+
+    @Test
     fun `분류 모델에는 입력 방식의 학생이 쓴 칸만 보냄`() {
         val attempt = start(inputType = "ESSAY", grade = 5)
         val essay = SubmitCommand(InputType.ESSAY, AnswerContent(text = "안 쓰는 칸", essay = Essay("주장", listOf("근거1", "근거2"), "반박")), false, null)
@@ -265,6 +311,117 @@ class AnswerServiceTest : PostgresRepositoryTest() {
         assertEquals(first, again)
         assertEquals(1, count("SELECT count(*) FROM answer WHERE attempt_id = ?", attempt.id))
         assertEquals(1, count("SELECT count(*) FROM judgment WHERE answer_id = ?", first.id))
+    }
+
+    private fun timeOf(answerId: UUID) = jdbc.queryForMap("SELECT thinking_seconds, writing_seconds FROM answer WHERE id = ?", answerId)
+        .let { it["thinking_seconds"] to it["writing_seconds"] }
+
+    @Test
+    fun `생각·작성 시간은 답변마다 저장해 시도 상세에 보이고, 칸 없는 제출은 둘 다 null (#801)`() {
+        val attempt = start()
+
+        val first = service.submit(attempt.id, UUID.randomUUID(), narrative("처음").copy(thinkingSeconds = 95, writingSeconds = 240))
+        val followup = followup(attempt.id, first.id)
+        val second = service.submit(attempt.id, UUID.randomUUID(), narrative("보완", followupId = followup))
+
+        assertEquals(95 to 240, first.thinkingSeconds to first.writingSeconds)
+        assertEquals(95 to 240, timeOf(first.id))
+        assertEquals(null to null, timeOf(second.id))
+        assertEquals(
+            listOf(95 to 240, null to null),
+            attemptService.get(attempt.id).answers.map { it.thinkingSeconds to it.writingSeconds },
+        )
+    }
+
+    @Test
+    fun `0초·24시간은 저장하고, 하나만 오거나 음수·24시간 초과면 제출은 받고 둘 다 null`() {
+        val stored = mapOf((0L to 0L) to (0 to 0), (86_400L to 86_400L) to (86_400 to 86_400))
+        val dropped = listOf(95L to null, null to 240L, -1L to 240L, 95L to -5L, 86_401L to 240L, 95L to Long.MAX_VALUE)
+        (stored.keys + dropped).forEach { (thinking, writing) ->
+            val attempt = start()
+            val answer = service.submit(attempt.id, UUID.randomUUID(), narrative("답").copy(thinkingSeconds = thinking, writingSeconds = writing))
+            assertEquals(stored[thinking to writing] ?: (null to null), timeOf(answer.id), "$thinking, $writing")
+        }
+    }
+
+    @Test
+    fun `고르기 방식과 보호자 받아쓰기는 값이 와도 null, 풀이 단계·논술은 저장`() {
+        val choices = """[{"id": "a", "label": "물"}, {"id": "b", "label": "얼음"}]"""
+        val categories = """[{"id": "액체", "label": "액체"}, {"id": "고체", "label": "고체"}]"""
+        val cases = listOf(
+            Triple("CHOICE" to 3, SubmitCommand(InputType.CHOICE, AnswerContent(choiceIds = listOf("b")), false, null), false),
+            Triple("ORDERING" to 3, SubmitCommand(InputType.ORDERING, AnswerContent(choiceIds = listOf("b", "a")), false, null), false),
+            Triple(
+                "CLASSIFICATION" to 3,
+                SubmitCommand(InputType.CLASSIFICATION, AnswerContent(assignments = listOf(Assignment("a", "액체"), Assignment("b", "고체"))), false, null),
+                false,
+            ),
+            Triple("NARRATIVE" to 3, SubmitCommand(InputType.NARRATIVE, AnswerContent(text = "엄마가 받아 씀"), true, null), false),
+            Triple("SOLUTION_STEPS" to 3, SubmitCommand(InputType.SOLUTION_STEPS, AnswerContent(finalAnswer = "6", steps = listOf("2씩 3묶음")), false, null), true),
+            Triple("ESSAY" to 5, SubmitCommand(InputType.ESSAY, AnswerContent(essay = Essay("찬성", listOf("안전", "편리"), "그래도 필요")), false, null), true),
+        )
+        cases.forEach { (type, command, measured) ->
+            val mission = rows.mission(inputType = type.first, grade = type.second, choices = choices, categories = categories)
+            val attempt = attemptService.start(student, mission.id, type.second, demo = false).attempt
+            val answer = service.submit(attempt.id, UUID.randomUUID(), command.copy(thinkingSeconds = 30, writingSeconds = 60))
+            assertEquals(if (measured) 30 to 60 else null to null, timeOf(answer.id), "${type.first} 받아쓰기=${command.dictatedByGuardian}")
+        }
+    }
+
+    @Test
+    fun `같은 키 재요청은 시간만 달라도 같은 요청, 처음 저장한 시간을 그대로 돌려줌`() {
+        val attempt = start()
+        val key = UUID.randomUUID()
+
+        val first = service.submit(attempt.id, key, narrative("처음").copy(thinkingSeconds = 95, writingSeconds = 240))
+        val again = service.submit(attempt.id, key, narrative("처음").copy(thinkingSeconds = 100, writingSeconds = 250))
+        val withoutTime = service.submit(attempt.id, key, narrative("처음"))
+
+        assertEquals(first, again)
+        assertEquals(first, withoutTime)
+        assertEquals(95 to 240, timeOf(first.id))
+        assertEquals(1, count("SELECT count(*) FROM answer WHERE attempt_id = ?", attempt.id))
+        assertError(HttpStatus.UNPROCESSABLE_ENTITY, "IDEMPOTENCY_KEY_REUSED") {
+            service.submit(attempt.id, key, narrative("바꿈").copy(thinkingSeconds = 95, writingSeconds = 240))
+        }
+    }
+
+    @Test
+    fun `DB도 음수와 한쪽만 있는 시간을 막음 (V23 CHECK)`() {
+        // 위반 하나로 시험 트랜잭션이 중단되므로 위반은 한 번만 내고, 나머지는 CHECK 정의로 확인
+        val checks = jdbc.queryForList(
+            "SELECT conname || ' ' || pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'answer'::regclass AND (conname LIKE 'ck_answer_%seconds' OR conname = 'ck_answer_time_pair') ORDER BY conname",
+            String::class.java,
+        )
+        assertEquals(
+            listOf(
+                "ck_answer_thinking_seconds CHECK ((thinking_seconds >= 0))",
+                "ck_answer_time_pair CHECK (((thinking_seconds IS NULL) = (writing_seconds IS NULL)))",
+                "ck_answer_writing_seconds CHECK ((writing_seconds >= 0))",
+            ),
+            checks,
+        )
+        val answer = service.submit(start().id, UUID.randomUUID(), narrative("답"))
+        assertThrows<DataIntegrityViolationException> {
+            jdbc.update("UPDATE answer SET thinking_seconds = 1 WHERE id = ?", answer.id)
+        }
+    }
+
+    @Test
+    fun `답변 저장 DB 오류를 전역 예외 로그로 남겨도 답변 원문은 없고 제약 이름만 (NFR-SEC-05, #898)`(output: CapturedOutput) {
+        val secret = "합성 비밀 답 원문 898"
+        val attempt = start()
+        val answer = Answer.next(
+            null, attempt.id, null, InputType.NARRATIVE, AnswerContent(text = secret), secret,
+            dictatedByGuardian = false, idempotencyKey = UUID.randomUUID(), now = java.time.Instant.now(),
+        ).copy(thinkingSeconds = -1, writingSeconds = 1) // 서비스는 음수 시간을 버리므로 저장소로 바로 넣어 V23 CHECK 위반
+
+        val error = assertThrows<DataIntegrityViolationException> { answerRepository.insert(answer) }
+        GlobalExceptionHandler().handleUnexpected(error, MockHttpServletRequest())
+
+        assertTrue("ck_answer_thinking_seconds" in output.out, "제약 이름은 남아 원인을 찾을 수 있음")
+        assertFalse("합성 비밀" in output.all)
+        assertFalse("Failing row" in output.all)
     }
 
     @Test

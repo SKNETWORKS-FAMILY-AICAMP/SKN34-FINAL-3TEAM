@@ -1,0 +1,55 @@
+# wave 3: AWS Load Balancer Controller 1.14.1. 값(clusterName·vpcId)은 environments/prod/aws-load-balancer-controller.json. Service 변경 webhook(failurePolicy Fail)이 있어 platform-data·관측보다 먼저 Healthy여야 한다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prod-aws-load-balancer-controller
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: sagomungchi-prod
+  sources:
+    - repoURL: https://aws.github.io/eks-charts
+      chart: aws-load-balancer-controller
+      targetRevision: 1.14.1
+      helm:
+        releaseName: aws-load-balancer-controller
+        valueFiles:
+          - $values/infrastructure/gitops/environments/prod/aws-load-balancer-controller.json
+    - repoURL: https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  # chart가 렌더링할 때마다 webhook 인증서를 새로 만든다(Argo CD 렌더링에는 lookup이 없음).
+  # 첫 동기화 때 만든 Secret·caBundle 짝을 유지하도록 둘 다 비교·동기화에서 뺀다
+  ignoreDifferences:
+    - kind: Secret
+      name: aws-load-balancer-tls
+      namespace: kube-system
+      jsonPointers:
+        - /data
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      name: aws-load-balancer-webhook
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: aws-load-balancer-webhook
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+  # 플랫폼은 prune 끔(상태 저장 자원·CRD·NodePool 보호), selfHeal 켬. finalizer가 없어 Application을 지워도 자원은 남는다.
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - RespectIgnoreDifferences=true

@@ -1,19 +1,20 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 // 메뉴 이동 때는 자녀·기간 같은 쿼리만 이어가고, 화면 안에서 연 리포트(reportId)는 버린다.
 // 남기면 메뉴를 눌러도 같은 리포트 상세가 다시 열려 목록으로 못 돌아간다.
-function menuSearch(search: string) {
+function menuSearch(search: string, parent = false) {
+  if (parent) return parentMenuSearch(search)
   const next = new URLSearchParams(search)
   next.delete('reportId')
   const value = next.toString()
   return value ? '?' + value : ''
 }
-function ServiceLinks({ role }: { role?: string }) {
+function ServiceLinks({ role, onNavigate }: { role?: string; onNavigate?: () => void }) {
   const location = useLocation()
   if (!role) return null
   const root = '/' + role.toLowerCase()
   return <nav aria-label="이용 지원" className="ws-actions" style={{ marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
-    {[['help', '도움말'], ['support', '문의·오류 신고'], ['notices', '공지']].map(([path, label]) => <Link key={path} to={root + '/' + path + menuSearch(location.search)} aria-current={location.pathname === root + '/' + path ? 'page' : undefined}>{label}</Link>)}
-    {isDemo && <Link to="/review">개발 점검표</Link>}
+    {[['help', '도움말'], ['support', '문의·오류 신고'], ['notices', '공지']].map(([path, label]) => <Link key={path} to={root + '/' + path + menuSearch(location.search, role === 'PARENT')} onClick={onNavigate} aria-current={location.pathname === root + '/' + path ? 'page' : undefined}>{label}</Link>)}
+    {isDemo && <Link to="/review" onClick={onNavigate}>개발 점검표</Link>}
   </nav>
 }
 import type { ReactNode } from 'react'
@@ -27,6 +28,8 @@ import { QueryStateNotice } from './QueryStateNotice.tsx'
 import type { Metric } from '../../domain/classroom.ts'
 import type { Evidence } from '../../domain/parent.ts'
 import { metricText } from '../../domain/parent.ts'
+import { metricSourceLabel, parentMenuSearch } from './parentDisplay.ts'
+import { formatKoreanDateTime } from './dateTime.ts'
 import '../classroom.css'
 import './workspace.css'
 import './workspace-parent.css'
@@ -56,6 +59,10 @@ export function Workspace({
   const [scenario, setScenario] = useState('normal')
   const [menuOpen, setMenuOpen] = useState(false)
   const topbar = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    // 메뉴 이동은 새 화면 맨 위에서 시작한다. 명시적 앵커 이동은 보존한다.
+    if (variant === 'parent' && !location.hash) window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [variant, location.pathname, location.hash])
   useLayoutEffect(() => {
     const element = topbar.current
     if (variant !== 'parent' || !element) return
@@ -135,14 +142,18 @@ export function Workspace({
       </label>
     </div>
   )
+  function navigateFromMenu() {
+    setMenuOpen(false)
+    if (menuOpen && variant === 'parent') requestAnimationFrame(() => document.getElementById('parent-main')?.focus())
+  }
   const menu = (
     <nav className="ws-nav" aria-label={`${title} 메뉴`}>
       {nav.map((n) => (
         <Link
           key={n.path}
-          to={n.path + menuSearch(location.search)}
+          to={n.path + menuSearch(location.search, variant === 'parent')}
           aria-current={location.pathname === n.path ? 'page' : undefined}
-          onClick={() => setMenuOpen(false)}
+          onClick={navigateFromMenu}
         >
           {n.label}
         </Link>
@@ -194,13 +205,13 @@ export function Workspace({
           </div>
           {nav.some(n => n.short) && <nav className="ws-bottom-nav" aria-label="학부모 하단 메뉴">
             {nav.filter(n => n.short).map(n => (
-              <Link key={n.path} to={n.path + menuSearch(location.search)} aria-label={n.label} aria-current={location.pathname === n.path ? 'page' : undefined}>
+              <Link key={n.path} to={n.path + menuSearch(location.search, true)} aria-label={n.label} aria-current={location.pathname === n.path ? 'page' : undefined}>
                 {n.icon}<span>{n.short}</span>
               </Link>
             ))}
           </nav>}
           {expiredModal}
-          {menuOpen && <Modal title="학부모 메뉴" onClose={() => setMenuOpen(false)}><div className="ws-parent-menu">{menu}<div className="ws-menu-actions" onClick={event => { if ((event.target as Element).closest('button')) setMenuOpen(false) }}>{actions}{logout}</div><ServiceLinks role={session?.role} /></div></Modal>}
+          {menuOpen && <Modal title="학부모 메뉴" onClose={() => setMenuOpen(false)}><div className="ws-parent-menu">{menu}<div className="ws-menu-actions" onClick={event => { if ((event.target as Element).closest('button')) setMenuOpen(false) }}>{logout}</div><ServiceLinks role={session?.role} onNavigate={navigateFromMenu} /></div></Modal>}
         </div>
       </div>
     )
@@ -261,7 +272,7 @@ export function MetricCards({ metrics, highlighted }: { metrics: Metric[]; highl
               분자 {m.numerator} · 분모 {m.denominator}
             </p>
             <p>{m.formula}</p>
-            <p>출처: {m.sourceType}</p>
+            <p>출처: {metricSourceLabel(m.sourceType)}</p>
           </details>
         </article>
       ))}
@@ -276,7 +287,7 @@ export function EvidenceItems({ items }: { items: Evidence[] }) {
         <article className="ws-card" key={i}>
           <strong>{e.missionTitle ?? '관련 미션'}</strong>
           <p>
-            {e.kind === 'REFLECTION' ? '돌아보기' : `답변 ${e.answerVersion ?? '확인 전'}`} · {e.submittedAt ?? '시점 정보 없음'}
+            {e.kind === 'REFLECTION' ? '돌아보기' : `답변 ${e.answerVersion ?? '확인 전'}`} · {e.submittedAt ? formatKoreanDateTime(e.submittedAt) : '시점 정보 없음'}
           </p>
           {e.available ? (
             <blockquote>{e.quote ?? '인용 정보 없음'}</blockquote>

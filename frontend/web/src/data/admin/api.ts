@@ -15,10 +15,13 @@ import type {
   Rubric,
   MissionVersion,
   ErrorReport,
+  CommunityReviewResult,
   Usage,
   EvaluationEvidence,
 } from '../../domain/admin/operations.ts'
 import type { AchievementStandard, MissionDraft, MissionDraftRequest } from '../../domain/admin/missionStandards.ts'
+import { expressionReviewQuery } from '../../domain/admin/expressionReview.ts'
+import type { ExpressionReview, ExpressionReviewFilter, ExpressionReviewLabel } from '../../domain/admin/expressionReview.ts'
 const operationFilters = (values: Record<string, string | undefined>) => new URLSearchParams(
   Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== ''),
 )
@@ -26,10 +29,12 @@ const p = (id: string) => encodeURIComponent(id)
 export const adminApi = {
   preflightModel: (body: PreflightRequest) => apiFetch<PreflightResult>('/admin/models/preflight', { ...json(body), signal: AbortSignal.timeout(25_000) }),
   modelLoading: (signal?: AbortSignal) => apiFetch<LoadingReport>('/admin/model-loading', { signal }),
+  workload: (period: Period, signal?: AbortSignal) =>
+    apiFetch<Partial<Record<'pendingInquiries' | 'receivedReports' | 'failedJobs' | 'pendingRefunds', number>>>(`/admin/overview/workload?${new URLSearchParams({ ...period })}`, { signal }),
   overview: (period: Period, signal?: AbortSignal) =>
     apiFetch<Overview>(`/admin/overview?${new URLSearchParams({ ...period })}`, { signal }),
-  jobs: (type: string, status: string, signal?: AbortSignal, period?: Period) =>
-    apiFetch<Page<Job>>(`/admin/jobs?${operationFilters({ type, status, ...period })}`, {
+  jobs: (type: string, status: string, signal?: AbortSignal, period?: Period, page = 0) =>
+    apiFetch<Page<Job>>(`/admin/jobs?${operationFilters({ type, status, ...period, page: String(page) })}`, {
       signal,
     }),
   job: (id: string, signal?: AbortSignal) => apiFetch<Job>(`/admin/jobs/${p(id)}`, { signal }),
@@ -42,8 +47,8 @@ export const adminApi = {
     apiFetch<{ vhost: string; items: OperationQueue[] }>('/admin/queues', {
       signal,
     }),
-  audits: (period: Period, targetType: string, signal?: AbortSignal) =>
-    apiFetch<Page<Audit>>(`/admin/audit-logs?${operationFilters({ ...period, targetType })}`, {
+  audits: (period: Period, targetType: string, signal?: AbortSignal, page = 0) =>
+    apiFetch<Page<Audit>>(`/admin/audit-logs?${operationFilters({ ...period, targetType, page: String(page) })}`, {
       signal,
     }),
   missions: (filters: Record<string, string>, signal?: AbortSignal) =>
@@ -117,11 +122,16 @@ export const adminApi = {
     ),
   usage: (period: Period, callType: string, signal?: AbortSignal) =>
     apiFetch<Usage>(`/admin/ai-usage?${new URLSearchParams({ ...period, callType })}`, { signal }),
-  errors: (signal?: AbortSignal) => apiFetch<Page<ErrorReport>>('/admin/error-reports', { signal }),
+  errors: (signal?: AbortSignal, status='', page=0) => apiFetch<Page<ErrorReport>>(`/admin/error-reports?${operationFilters({ status, page:String(page), size:'20' })}`, { signal }),
+  /** 표현 검토 목록 (#728): 열람은 core가 감사 기록 */
+  expressionReviews: (filter: ExpressionReviewFilter, signal?: AbortSignal) =>
+    apiFetch<Page<ExpressionReview>>(`/admin/expression-reviews?${expressionReviewQuery(filter)}`, { signal }),
+  labelExpressionReview: (id: string, label: ExpressionReviewLabel) =>
+    apiFetch<ExpressionReview>(`/admin/expression-reviews/${p(id)}/label`, json({ label }, 'PUT')),
   error: (id: string, signal?: AbortSignal) =>
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, { signal }),
-  reviewError: (id: string, status: string, reviewReason: string) =>
-    apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, json({ status, reviewReason }, 'PATCH')),
+  reviewError: (id: string, status: ErrorReport['status'], reviewReason: string, reviewResult?: CommunityReviewResult) =>
+    apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}`, json({ status, reviewReason, reviewResult }, 'PATCH')),
   correction: (id: string, reason: string, corrected: string, key: string) =>
     apiFetch<ErrorReport>(`/admin/error-reports/${p(id)}/corrections`, { ...json({ reason, corrected }), headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key } }),
 }

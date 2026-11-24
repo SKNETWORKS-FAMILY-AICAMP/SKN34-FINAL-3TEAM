@@ -5,6 +5,7 @@ import { retentionHandlers } from '../src/mocks/handlers/retention.ts'
 import { serviceHandlers } from '../src/mocks/handlers/service.ts'
 import { parentHandlers } from '../src/mocks/handlers/parent.ts'
 import { adminHandlers } from '../src/mocks/handlers/admin.ts'
+import { adminThemeDraftHandlers } from '../src/mocks/handlers/adminThemeDrafts.ts'
 import { studentHandlers } from '../src/mocks/handlers/student.ts'
 import { setWorkspaceScenario } from '../src/mocks/fixtures/accounts.ts'
 import { balanceOf, MOCK_STORY, MOCK_WEEKDAY_KEY, resetRetention, retentionState, themeMissions, weekStart, weeklyThemeFor } from '../src/mocks/fixtures/retention.ts'
@@ -14,9 +15,12 @@ import { THINKING_ORDER } from '../src/domain/studentLook.ts'
 import { saveSharing } from '../src/mocks/fixtures/sharing.ts'
 import { setMockChildPlan } from '../src/mocks/fixtures/childPlan.ts'
 import { mockPremium } from '../src/mocks/fixtures/payments.ts'
+import { fixtureStore } from '../src/mocks/fixtures/student.ts'
+import { missions as adminMissions } from '../src/mocks/fixtures/admin/operations.ts'
+import { assignWeek } from '../src/mocks/fixtures/themePlanning.ts'
 
 // 2026-11-06 결정(에픽 #396) 참여 기능 목업 계약: API 명세 2.4·2.5·2.8~2.11 구현 예정 경로.
-const handlers = [...retentionHandlers, ...serviceHandlers, ...parentHandlers, ...adminHandlers, ...studentHandlers]
+const handlers = [...adminThemeDraftHandlers, ...retentionHandlers, ...serviceHandlers, ...parentHandlers, ...adminHandlers, ...studentHandlers]
 let token = ''
 async function call(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST', headers: Record<string, string> = {}) {
   const response = await getResponse(
@@ -56,6 +60,36 @@ const weekday = (n: number | null) => {
 test.beforeEach(() => {
   weekday(null)
   resetRetention()
+})
+
+test('검수 목록은 부분 작업 진행 상태와 복구 가능한 성공본을 표시하고 채택 뒤 가족을 잠근다', async t => {
+  const store = new Map<string,string>()
+  const previous = Object.getOwnPropertyDescriptor(globalThis,'localStorage')
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>store.get(k)??null,setItem:(k:string,v:string)=>store.set(k,v)}})
+  t.after(() => { if (previous) Object.defineProperty(globalThis,'localStorage',previous); else Reflect.deleteProperty(globalThis,'localStorage') })
+  t.mock.timers.enable({apis:['Date'],now:new Date('2029-01-01T00:00:00Z')})
+  token = (await call('/auth/login',{email:'content@example.test',password:'demo-only'})).data.accessToken
+  const path = '/admin/theme-drafts', week = '2029-01-08', planned = '2029-01-15'
+  const good = (await call(path,{grade:'G4',weekStart:week,topic:'첫 번째 검수'})).data.draftId as string
+  const root = (await call(path,{grade:'G4',weekStart:week,topic:'검사 실패'})).data.draftId as string
+  t.mock.timers.tick(4000)
+  const list = (stage:string) => call(`${path}/review-list?grade=G4&weekStart=${week}&stage=${stage}`)
+  assert.equal((await list('check_failed')).data.items[0].draftId,root)
+  assignWeek(good,planned)
+  const candidate = (await call(`${path}/${good}/regenerate`,{targets:['VIDEO:INTRO']})).data.draftId as string
+  const active = (await list('generating')).data.items[0]
+  assert.equal(active.draftId,candidate)
+  assert.equal(active.appliedWeek,planned)
+  assert.equal((await call(`${path}/${good}/adopt`,{expectedPlannedWeek:planned})).status,409)
+  const child = (await call(`${path}/${root}/regenerate`,{targets:['VIDEO:INTRO']})).data.draftId as string
+  t.mock.timers.tick(4000)
+  assert.deepEqual(new Set((await list('pair')).data.items.map((r:{draftId:string})=>r.draftId)),new Set([child,good]))
+  const adopted = await call(`${path}/${child}/adopt`,{expectedPlannedWeek:null})
+  assert.equal(adopted.status,201)
+  assert.equal(adopted.data.weekStart,week)
+  assert.equal((await list('adopted')).data.items[0].draftId,child)
+  assert.equal((await list('check_failed')).data.totalElements,0)
+  assert.equal((await call(`${path}/${root}/discard`,{})).status,409)
 })
 
 test('포인트 해금: 잔액 부족·판매 중단은 409, 같은 키는 한 번만 차감, 해금 뒤 꾸미기 저장', async () => {
@@ -333,6 +367,7 @@ test('학부모 리포트: 일일·주간 구분, 일일 리포트로만 고정 
 
   const detail = (await call(`/reports/${daily[0].reportId}`)).data
   assert.ok(Array.isArray(detail.problems))
+  assert.ok(detail.problems.every((p: { answerTimes?: unknown }) => Array.isArray(p.answerTimes)), '#803 문제별 answerTimes(없으면 [])')
   assert.equal(detail.narrative, null, '일일 리포트는 서술 없음')
   assert.ok(!detail.eveningQuestion, '저녁 질문은 주간에만')
   if (detail.parentSharingEnabled === false)
@@ -385,6 +420,8 @@ test('관리자: 주간 테마 작성→검토→게시 검사, 꾸미기 아이
   assert.equal(publish.status, 422)
   assert.equal(publish.data.code, 'WEEKLY_THEME_PUBLISH_INCOMPLETE')
   assert.ok(publish.data.errors.length > 0)
+  assert.ok(publish.data.errors.some((e: { code: string }) => e.code === 'DAYS_INCOMPLETE'), '서버처럼 errors[{code, message}]')
+  for (const e of publish.data.errors) assert.deepEqual(Object.keys(e).sort(), ['code', 'message'])
   assert.equal((await call('/admin/weekly-themes', { ...created.data, weekStart: '2026-11-17' })).status, 422, '월요일만')
 
   const item = await call('/admin/look-items', { code: 'HAT_TEST', slot: 'HAT', name: '시험 모자', pricePoints: 20, assetKey: 'looks/test.svg' })
@@ -443,4 +480,124 @@ test('테마 목업: 같은 주의 게시 테마가 여러 개여도 학생 학�
   for (const grade of ['G3', 'G4', 'G5', 'G6'] as const) retentionState.themes.push({ themeId: `theme-${grade}`, grade, weekStart: weekStart(), title: `${grade} 테마`, intro: '도입',
     status: 'PUBLISHED', updatedAt: '2026-11-10T00:00:00Z', days: THEME_DAYS.map((day, i) => ({ day, missionId: missions[i].id })) })
   for (const grade of [3, 4, 5, 6, 7, 8, 9]) assert.equal(themeMissions(missions, grade).themeId, `theme-G${Math.min(grade, 6)}`)
+})
+
+function prepareThemeMissions(t: import('node:test').TestContext, prefix: string) {
+  weekday(0)
+  // 편성 목업이 사용하는 브라우저 저장소도 이 시험의 메모리 저장소로 격리한다.
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: globalThis.sessionStorage })
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  })
+  const count = adminMissions.length
+  const days = THEME_DAYS.map((day, i) => {
+    const m = structuredClone(adminMissions[0]), id = prefix+i, thinkingType = THINKING_ORDER[i]
+    m.missionId=id; m.status='PUBLISHED'; m.publishedVersion=m.currentVersion
+    m.versions[0].thinkingType=thinkingType
+    adminMissions.push(m)
+    fixtureStore.publishCatalog(id, { id, title: day+' 게시본', subject: '국어', grade: 3, thinkingType,
+      inputType:'NARRATIVE',question:day+' 게시한 질문',hint:'찾아보세요.',scene:'korean' })
+    return { day, missionId:id }
+  })
+  t.after(() => {
+    adminMissions.splice(count)
+    days.forEach(d => fixtureStore.publishCatalog(d.missionId, null))
+  })
+  return days
+}
+
+async function contentAdmin() {
+  token = (await call('/auth/login', { email: 'content@example.test', password: 'demo-only' })).data.accessToken
+}
+
+test('주간 게시 후 일반 미션 수정·공개 중단에도 주간 안내와 시도는 게시 질문을 사용한다', async (t) => {
+    const days = prepareThemeMissions(t, 'weekly-pinned-882-')
+    const childId = await parent()
+    await contentAdmin()
+    const created = await call('/admin/weekly-themes', {grade:'G3',weekStart:weekStart(),title:'버전 고정',intro:'도입',days})
+    assert.equal(created.status,201)
+    const detail = '/admin/weekly-themes/'+created.data.themeId
+    assert.equal((await call(detail+'/review-request',{})).status,200)
+    const publication = await call(detail+'/publish',{})
+    assert.equal(publication.status,200,JSON.stringify(publication.data))
+    const id = days[0].missionId, base = '/missions/'+id
+    const original = fixtureStore.snapshot().catalog!.find(m=>m.id===id)!
+    fixtureStore.publishCatalog(id,{...original,question:'최신 질문'})
+    await parent(); await student(childId)
+    assert.equal((await call(base)).data.question,'최신 질문')
+    assert.equal((await call(base+'?context=THEME_DAY')).data.question,original.question)
+    fixtureStore.publishCatalog(id,null)
+    assert.equal((await call(base)).status,404)
+    assert.equal((await call('/students/me/weekly-theme')).data.days[0].missionId,id)
+    assert.equal((await call(base+'?context=THEME_DAY')).data.question,original.question)
+    assert.equal((await call(base+'?context=THEME_REVIEW')).data.code,'THEME_REVIEW_NOT_ALLOWED')
+    assert.equal((await call(base+'/attempts',{context:'THEME_DAY'})).data.mission.question,original.question)
+    assert.equal((await call('/students/me/weekly-theme')).data.days[0].attemptStatus,'IN_PROGRESS')
+})
+
+test('게시본 수정·재검토·재게시·제공 중단 과정에서 학생과 편성표는 실제 게시 버전을 따른다', async (t) => {
+  const days = prepareThemeMissions(t, 'weekly-republish-')
+  const childId = await parent()
+  await contentAdmin()
+  const source = { grade: 'G3', weekStart: weekStart(), title: '처음 게시', intro: '이전 도입', days }
+  const created = await call('/admin/weekly-themes', source)
+  const detail = '/admin/weekly-themes/' + created.data.themeId
+  const other = await call('/admin/weekly-themes', { ...source, title: '다른 후보' })
+  const otherDetail = '/admin/weekly-themes/' + other.data.themeId
+  assert.equal((await call(otherDetail + '/review-request', {})).status, 200)
+  assert.equal((await call(detail + '/review-request', undefined, 'POST')).status, 200)
+  assert.equal((await call(detail + '/publish', {})).data.publishedVersion, 1)
+  assert.equal((await call(otherDetail + '/publish', {})).data.code, 'WEEK_LOCKED')
+
+  const revision = { ...source, title: '수정한 테마', intro: '수정한 도입', expectedVersion: 1 }
+  const save = await call(detail, revision, 'PUT')
+  assert.deepEqual([save.data.status, save.data.version, save.data.publishedVersion, save.data.reviewRequested], ['PUBLISHED', 2, 1, false])
+  assert.equal((await call(detail, revision, 'PUT')).data.code, 'PLAN_CONFLICT')
+  assert.equal((await call(detail + '/publish', { expectedVersion: 2 })).status, 409)
+  assert.equal((await call(detail + '/review-request', { expectedVersion: 1 })).data.code, 'PLAN_CONFLICT')
+  assert.equal((await call(detail + '/review-request', { expectedVersion: 2 })).data.reviewRequested, true)
+
+  // 편집과 검토 요청 뒤 새 탭에서 복원해도 게시 제목·도입과 요일별 미션은 유지된다.
+  retentionState.themes = JSON.parse(sessionStorage.getItem('sagomungchi:msw-retention:v1')!).themes
+  const board = await call('/admin/weekly-themes/planner?grade=G3&weekStart=' + weekStart())
+  const live = board.data.weeks[0].themes.find((row: { status: string }) => row.status === 'PUBLISHED')
+  assert.deepEqual([board.data.weeks[0].locked, live.title, live.version], [true, source.title, 1])
+  assert.equal((await call(detail)).data.title, revision.title)
+  const monday = days[0].missionId
+  const catalog = fixtureStore.snapshot().catalog!.find(m => m.id === monday)!
+  fixtureStore.publishCatalog(monday, { ...catalog, question: '재게시한 질문' })
+  await parent()
+  await student(childId)
+  const before = (await call('/students/me/weekly-theme')).data
+  assert.deepEqual([before.title, before.intro], [source.title, source.intro])
+  const attemptPath = '/missions/' + monday + '/attempts'
+  const started = (await call(attemptPath, { context: 'THEME_DAY' })).data
+  assert.equal(started.mission.question, catalog.question)
+
+  await contentAdmin()
+  assert.equal((await call(detail + '/publish', { expectedVersion: 2, expectedPlannedDraftId: null })).data.publishedVersion, 2)
+  const after = themeMissions([], 3)
+  assert.deepEqual([after.title, after.intro, after.days[0].mission.question], [revision.title, revision.intro, '재게시한 질문'])
+  assert.equal((await call(detail + '/unpublish', { expectedPublishedVersion: 1 })).data.code, 'PLAN_CONFLICT')
+  const stopped = (await call(detail + '/unpublish', { expectedPublishedVersion: 2 })).data
+  assert.deepEqual([stopped.status, stopped.publishedVersion, stopped.reviewRequested], ['UNPUBLISHED', 2, false])
+  assert.equal((await call(detail + '/publish', {})).status, 409)
+  await parent()
+  await student(childId)
+  assert.equal((await call('/students/me/weekly-theme')).status, 404)
+  assert.equal((await call('/students/me/weekly-theme/story-views', { kind: 'INTRO' })).status, 404)
+  assert.equal((await call('/missions/' + monday + '?context=THEME_DAY')).data.question, catalog.question)
+  assert.equal((await call('/missions/' + monday + '?context=THEME_REVIEW')).data.code, 'THEME_REVIEW_NOT_ALLOWED')
+  assert.equal((await call('/missions/' + days[1].missionId + '?context=THEME_DAY')).data.code, 'THEME_DAY_CLOSED')
+  assert.equal((await call('/missions/' + days[1].missionId + '/attempts', { context: 'THEME_DAY' })).status, 409)
+  const resumed = (await call(attemptPath, { context: 'THEME_DAY' })).data
+  assert.deepEqual([resumed.attemptId, resumed.mission.question], [started.attemptId, catalog.question])
+
+  fixtureStore.publishCatalog(monday, { ...catalog, question: '개별 미션에서만 수정한 질문' })
+  await contentAdmin()
+  assert.equal((await call(detail + '/review-request', { expectedVersion: 2 })).data.status, 'REVIEW_REQUIRED')
+  assert.equal((await call(detail + '/publish', { expectedVersion: 2 })).data.publishedVersion, 2)
+  assert.equal(themeMissions([], 3).days[0].mission.question, '재게시한 질문')
 })

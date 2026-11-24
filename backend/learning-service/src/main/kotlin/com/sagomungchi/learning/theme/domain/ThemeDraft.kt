@@ -310,6 +310,21 @@ data class ThemeDraftView(
     val updatedAt: Instant,
     /** 부분 다시 생성할 수 있는 대상 (#537, ThemeDraft.regenerableTargets). 없으면 빈 배열 */
     val regenerableTargets: List<String> = emptyList(),
+    val plannedWeek: LocalDate? = null,
+    val weekLocked: Boolean = false,
+    val adoptionWeekLocked: Boolean = false,
 )
 
 data class ThemeDraftViewPage(val items: List<ThemeDraftView>, val page: Int, val size: Int, val totalElements: Long)
+
+data class ThemeDraftReviewRow(val draftId: UUID, val title: String, val thumbnailUrl: String?, val grade: ThemeGrade,
+    val source: ThemeDraftSource, val status: DraftStatus, val stage: String, val weekStart: LocalDate, val appliedWeek: LocalDate,
+    val plannedWeek: LocalDate?, val updatedAt: Instant, val themeId: UUID?, val comparisonScene: String?)
+
+data class ThemeDraftReviewPage(val items: List<ThemeDraftReviewRow>, val page: Int, val size: Int, val totalElements: Long,
+    val weeks: List<LocalDate>)
+
+data class ThemeDraftReviewFilter(val grade: ThemeGrade?, val source: ThemeDraftSource?, val status: DraftStatus?, val stage: String?,
+    val week: LocalDate?, val weekStart: LocalDate?, val comparisonPending: Boolean, val hideDiscarded: Boolean) {
+    val archived: Boolean get() = status == DraftStatus.DISCARDED || stage == "discarded"
+}

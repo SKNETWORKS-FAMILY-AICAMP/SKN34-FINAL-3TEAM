@@ -16,7 +16,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 const post = (body: unknown, key: string): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) })
 export const paymentApi = {
   entitlement: (childId: string, signal?: AbortSignal) => call<ChildEntitlement>(`/children/${encodeURIComponent(childId)}/entitlement`, { signal, cache: 'no-store' }),
-  history: (page = 0, signal?: AbortSignal) => call<{ items: PaymentRecord[] }>(`/payments?page=${page}&size=20`, { signal }),
+  history: (page = 0, signal?: AbortSignal, childId?: string) => call<{ items: PaymentRecord[]; hasNext: boolean }>(`/payments?page=${page}&size=20${childId ? `&childId=${encodeURIComponent(childId)}` : ''}`, { signal }),
   subscriptions: (signal?: AbortSignal) => call<{ items: PaymentSubscription[] }>('/subscriptions', { signal }),
   billingSetup: (id: string) => call<{ subscriptionId: string; customerKey: string }>(`/subscriptions/${encodeURIComponent(id)}/billing-key`),
   registerBilling: (id: string, body: { authKey: string; customerKey: string }, key: string) => call<PaymentSubscription>(`/subscriptions/${encodeURIComponent(id)}/billing-key`, post(body, key)),

@@ -64,7 +64,7 @@ class AccountHttpTest : PostgresRepositoryTest() {
             val doc=documents.firstOrNull { jdbc.queryForObject("SELECT kind FROM consent_document WHERE id=?",String::class.java,it)==kind }
                 ?: UUID.randomUUID().also { id ->
                     documents+=id
-                    jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'fixture','synthetic',true,CURRENT_DATE,now())",id,kind,id.toString())
+                    jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'fixture','synthetic',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,now())",id,kind,id.toString())
                 }
             jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at) VALUES(?,?,?,?,true,'AGREED',now())",UUID.randomUUID(),doc,user,child)
         }

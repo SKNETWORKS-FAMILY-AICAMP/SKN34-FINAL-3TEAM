@@ -16,6 +16,7 @@ import com.sagomungchi.learning.answer.domain.AnswerContent
 import com.sagomungchi.learning.answer.service.AnswerService
 import com.sagomungchi.learning.answer.service.SubmitCommand
 import com.sagomungchi.learning.attempt.service.AttemptService
+import com.sagomungchi.learning.community.domain.CommunityPostStatus
 import com.sagomungchi.learning.community.domain.CommunityReaction
 import com.sagomungchi.learning.community.domain.VisibilityReason
 import com.sagomungchi.learning.community.service.CommunityService
@@ -180,6 +181,12 @@ class StudentDeletionTest {
                SELECT ?, ?, id, week_start, published_version_id, now(), NULL, now() FROM weekly_theme WHERE id = ?""",
             UUID.randomUUID(), student, theme,
         )
+        // 표현 검토 대기(#727): 첫 답은 경계 구간(시험 설정은 분류를 끄므로 직접 넣음), 공유물은 신고로 숨김
+        jdbc.update(
+            "INSERT INTO expression_review (id, answer_id, source, model_version, created_at) VALUES (?, ?, 'GRAY_ZONE', 'tox-test:1', now())",
+            UUID.randomUUID(), first.id,
+        )
+        asSystem(student) { communityService.moderate(post, CommunityPostStatus.HIDDEN_REPORT, UUID.randomUUID()) }
         assertEquals(TABLES, counts(student).filterValues { it > 0 }.keys.toList(), "모든 표에 행이 있어야 삭제를 확인할 수 있음")
         return student
     }
@@ -241,6 +248,8 @@ class StudentDeletionTest {
             "theme_story_view" to "x.student_id = ?",
             // 기념 액자 (#559, ERD 4.2.1·4.3)
             "theme_frame" to "x.student_id = ?",
+            // 표현 검토 대기 (#727, ERD 4.3.2): 경계 구간 답변·신고 숨김 공유물
+            "expression_review" to "x.answer_id IN ($ANSWERS)",
         )
         private val TABLES = OWNER.keys.toList()
 

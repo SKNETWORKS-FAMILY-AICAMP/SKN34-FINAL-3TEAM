@@ -1,0 +1,7 @@
+# 빌드 기준이 저장소 루트라 필요한 것만 보낸다(local_data·원자료·체크포인트·.env 제외)
+**
+!ml/tox/pyproject.toml
+!ml/tox/uv.lock
+!ml/tox/scripts/*.py
+!ml/tox/eval_sets/must_pass.json
+!scripts/prepare_model_upload.py

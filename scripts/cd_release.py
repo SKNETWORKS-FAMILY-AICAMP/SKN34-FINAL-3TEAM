@@ -26,6 +26,8 @@ MIGRATION_REPOSITORIES = {
     "learning-service": "learning-migrate",
     "report-service": "report-service",
 }
+# 앱 release가 하나도 없는 빈 클러스터의 첫 배포(#760). 이 값일 때만 실행기가 release 없는 앱을 설치한다
+FIRST_INSTALL = "none"
 
 
 def image_pattern(environment):
@@ -119,6 +121,8 @@ def validate(plan, policy, *, pending_images=False):
         )
     if plan.get("currentRelease") == plan.get("targetRelease"):
         errors.append("현재 버전과 대상 버전이 같습니다")
+    if plan.get("currentRelease") == FIRST_INSTALL and plan.get("operation") != "deploy":
+        errors.append("첫 배포(currentRelease none)는 deploy만 가능합니다. 되돌릴 이전 버전이 없습니다")
     services = plan.get("services")
     if (
         not isinstance(services, list)
@@ -182,6 +186,229 @@ def validate(plan, policy, *, pending_images=False):
     }
 
 
+def validate_delivery(policy):
+    """digest PR(#858) 대상 파일 정의를 확인한다. 서비스마다 images 파일이 있고 migration 파일은 그중 하나다."""
+    delivery = policy.get("delivery") if isinstance(policy, dict) else None
+    if not isinstance(delivery, dict):
+        return ["정책에 delivery(digest PR 대상)가 없습니다"]
+    errors = []
+    if not isinstance(delivery.get("imagesDir"), str) or not delivery["imagesDir"]:
+        errors.append("delivery.imagesDir가 필요합니다")
+    files = delivery.get("imageFiles")
+    if not isinstance(files, dict) or set(files) != SERVICES:
+        errors.append("delivery.imageFiles는 지원 서비스마다 하나씩 있어야 합니다")
+        files = {}
+    releases = []
+    for service, names in files.items():
+        if (
+            not isinstance(names, list)
+            or not names
+            or not all(isinstance(n, str) and re.fullmatch(r"[a-z0-9-]+", n) for n in names)
+        ):
+            errors.append(f"delivery.imageFiles.{service}: release 이름 목록이 필요합니다")
+            continue
+        releases.extend(names)
+    if len(releases) != len(set(releases)):
+        errors.append("delivery.imageFiles에 같은 release가 두 번 있습니다")
+    migrations = delivery.get("migrationFiles")
+    if not isinstance(migrations, dict) or set(migrations) != set(MIGRATION_REPOSITORIES):
+        errors.append("delivery.migrationFiles는 DB를 가진 서비스(core·learning·report)와 같아야 합니다")
+    else:
+        for service, name in migrations.items():
+            if name not in (files.get(service) or []):
+                errors.append(f"delivery.migrationFiles.{service}: 그 서비스의 images 파일이어야 합니다")
+    return errors
+
+
+def _split_image(image):
+    repository, digest = image.split("@", 1)
+    return repository, digest
+
+
+def _get(data, *keys):
+    for key in keys:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
+
+
+def _images_path(policy, root, release):
+    return Path(root) / policy["delivery"]["imagesDir"] / f"{release}.json"
+
+
+def check_images_files(policy, root):
+    """#857 images 파일이 계약 키를 갖는지 본다. 값이 아닌 구조만 확인한다."""
+    errors = validate_delivery(policy)
+    if errors:
+        return errors
+    delivery = policy["delivery"]
+    migration_releases = set(delivery["migrationFiles"].values())
+    for names in delivery["imageFiles"].values():
+        for release in names:
+            path = _images_path(policy, root, release)
+            try:
+                data = json.loads(path.read_bytes())
+            except (OSError, ValueError, UnicodeError):
+                errors.append(f"{release}: images 파일이 없거나 JSON이 아닙니다 ({path.as_posix()})")
+                continue
+            keys = [("image", "repository"), ("image", "digest")]
+            if release in migration_releases:
+                keys += [
+                    ("migration", "image", "repository"),
+                    ("migration", "image", "digest"),
+                    ("migration", "revision"),
+                ]
+            for key in keys:
+                if not isinstance(_get(data, *key), str):
+                    errors.append(f"{release}: {'.'.join(key)}가 필요합니다")
+    return errors
+
+
+def image_file_updates(record, policy, root, *, allow_repository_change=False):
+    """계획 기록(images·migrations) → images 파일 새 내용. (changes, errors).
+
+    저장소 주소가 파일과 다르면(계정·레지스트리 전환) 기본은 고치지 않고 오류로 둔다.
+    allow_repository_change는 B 계정 첫 digest PR처럼 저장소를 함께 바꿀 때만 쓰며,
+    계정이 섞이지 않도록 지원 서비스 전부를 한 PR에서 바꾸는 계획만 받는다.
+    """
+    errors = check_images_files(policy, root)
+    if errors:
+        return [], errors
+    if record.get("environment") != "prod" or record.get("operation") != "deploy":
+        return [], ["digest PR은 prod deploy만 만듭니다. 되돌리기는 digest PR revert로 합니다"]
+    if allow_repository_change and set(record.get("services") or []) != SERVICES:
+        return [], ["저장소 변경은 지원 서비스 전부(5개)를 한 PR에서 바꿀 때만 허용합니다(계정 혼재 방지)"]
+    commit = record.get("sourceCommit") or ""
+    revision = "main-" + commit[:12]
+    delivery = policy["delivery"]
+    images = record.get("images") or {}
+    migrations = record.get("migrations") or {}
+    changes = []
+
+    def swap(target, new_repository, label):
+        """target(image 또는 migration.image)의 저장소가 다르면 허용 여부에 따라 바꾸거나 오류."""
+        old = target["repository"]
+        if old == new_repository:
+            return None
+        if not allow_repository_change:
+            errors.append(
+                f"{label}: 게시한 저장소({new_repository})가 images 파일 저장소({old})와 다릅니다. "
+                "계정 전환이면 allowRepositoryChange로 다시 실행하세요"
+            )
+            return False
+        target["repository"] = new_repository
+        return old
+
+    for service in record.get("services") or []:
+        repository, digest = _split_image(images[service])
+        for release in delivery["imageFiles"][service]:
+            path = _images_path(policy, root, release)
+            data = json.loads(path.read_bytes())
+            before = {"image": data["image"]["digest"]}
+            old = swap(data["image"], repository, release)
+            if old is False:
+                continue
+            data["image"]["digest"] = digest
+            after = {"image": digest}
+            if old:
+                before["repository"], after["repository"] = old, repository
+            if delivery["migrationFiles"].get(service) == release:
+                m_repository, m_digest = _split_image(migrations[service])
+                migration = data["migration"]
+                before |= {"migration": migration["image"]["digest"], "revision": migration["revision"]}
+                m_old = swap(migration["image"], m_repository, f"{release} migration")
+                if m_old is False:
+                    continue
+                migration["image"]["digest"] = m_digest
+                migration["revision"] = revision
+                after |= {"migration": m_digest, "revision": revision}
+                if m_old:
+                    before["migrationRepository"], after["migrationRepository"] = m_old, m_repository
+            if before == after:
+                continue
+            changes.append(
+                {
+                    "service": service,
+                    "release": release,
+                    "file": Path(delivery["imagesDir"], f"{release}.json").as_posix(),
+                    "before": before,
+                    "after": after,
+                    "content": json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                }
+            )
+    if not errors and not changes:
+        errors.append("바꿀 digest가 없습니다(이미 main images 파일과 같음)")
+    return changes, errors
+
+
+def _short(digest):
+    return digest.split(":", 1)[-1][:12] if digest else "-"
+
+
+def render_pr_body(record, changes, *, run_url="", base_sha=""):
+    """digest PR 본문: 원본 SHA, 서비스별 digest, 계획 근거, 승인·확인·되돌리기 방법."""
+    commit = record.get("sourceCommit") or ""
+    lines = [
+        "## prod 이미지 digest 갱신 (#858)",
+        "",
+        "이 PR을 승인·병합하면 Argo CD가 main의 `environments/prod/images`를 읽어 자동 동기화한다(배포 승인).",
+        "",
+        f"- 원본 main SHA: `{commit}` (이미지 태그 `main-{commit[:12]}`)",
+        f"- PR 기준 main HEAD: `{base_sha or '-'}`",
+        f"- cd-release 실행: {run_url or '-'}",
+        f"- 사유: {record.get('reason') or '-'}",
+        f"- 버전: {record.get('currentRelease')} → {record.get('targetRelease')}",
+        "",
+        "| 서비스 | release 파일 | 앱 digest (전 → 후) | migration digest (전 → 후) | migration revision |",
+        "|---|---|---|---|---|",
+    ]
+    for c in changes:
+        b, a = c["before"], c["after"]
+        migration = f"`{_short(b['migration'])}` → `{_short(a['migration'])}`" if "migration" in a else "-"
+        revision = f"{b['revision']} → {a['revision']}" if "revision" in a else "-"
+        lines.append(
+            f"| {c['service']} | `{c['file']}` | `{_short(b['image'])}` → `{_short(a['image'])}` | {migration} | {revision} |"
+        )
+    moved = sorted(
+        {f"`{c['before'][k]}` → `{c['after'][k]}`" for c in changes for k in ("repository", "migrationRepository") if k in c["after"]}
+    )
+    if moved:
+        lines += ["", "**저장소 변경(계정 전환)**: 아래 저장소로 바꾼다. 계정 값 교체(#809 6a)와 같은 계정인지 확인하고 승인한다.", ""]
+        lines += [f"- {m}" for m in moved]
+    compatibility = record.get("compatibility") or {}
+    lines += ["", "### 호환성 근거 (계획)", "", "| 항목 | 상태 | 근거 |", "|---|---|---|"]
+    for name in CHECKS:
+        item = compatibility.get(name) or {}
+        evidence = str(item.get("evidence") or "").replace("|", "\\|").replace("\n", " ")
+        lines.append(f"| {name} | {item.get('status')} | {evidence} |")
+    plan = {k: record.get(k) for k in ("environment", "operation", "sourceCommit", "sourceBranch",
+                                         "services", "currentRelease", "targetRelease", "reason",
+                                         "databaseAction", "images", "migrations")}
+    lines += [
+        "",
+        "<details><summary>계획 기록 JSON</summary>",
+        "",
+        "```json",
+        json.dumps(plan | {"planSha256": record.get("planSha256")}, ensure_ascii=False, indent=2),
+        "```",
+        "",
+        "</details>",
+        "",
+        "### 승인·확인",
+        "",
+        "- 승인: CODEOWNERS(김동섭·김태윤) 중 1명. 이 PR은 `images/**`만 바꾼다(브랜치 규칙 예외, `docs/README.md`)",
+        "- migration: core·learning·report-api는 Argo CD PreSync Job이 앱보다 먼저 실행한다. DB는 되돌리지 않는다",
+        "- 병합 뒤: Argo CD Synced/Healthy(Discord 알림) → 작업자 PC에서 `python scripts/verify_cd_deployment.py` 결과를 이 PR 댓글로 남긴다(절차: `infrastructure/cd/README.md` digest PR 배포 절)",
+        "",
+        "### 되돌리기",
+        "",
+        "- 이 PR을 GitHub에서 Revert → 같은 승인 규칙으로 병합. Argo CD UI rollback은 쓰지 않는다(Git과 어긋남)",
+        "- revert는 앱 이미지와 migration 값만 되돌리고 DB는 그대로다. 이전 앱이 새 스키마에서 동작한다는 근거(위 schema)가 있어야 한다",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def git_ancestor(commit, ref):
     """commit이 ref 이력에 있으면 True. git 실패는 확인 불가(False)로 본다."""
     run = subprocess.run(
@@ -221,7 +448,28 @@ def main():
         action="store_true",
         help="executable이 아니면 종료 코드 3 (배포 직전 게이트)",
     )
+    parser.add_argument(
+        "--check-images",
+        action="store_true",
+        help="digest PR 대상 images 파일 구조를 확인 (#858, 이미지 빌드 전)",
+    )
+    parser.add_argument(
+        "--write-images",
+        action="store_true",
+        help="실행 가능한 deploy 계획이면 images 파일을 새 digest로 고친다 (#858 digest PR)",
+    )
+    parser.add_argument(
+        "--allow-repository-change",
+        action="store_true",
+        help="images 파일 저장소 주소도 게시한 저장소로 바꾼다(계정 전환 첫 digest PR, 서비스 전부일 때만)",
+    )
+    parser.add_argument("--repo-root", type=Path, default=Path("."), help="images 파일 기준 폴더")
+    parser.add_argument("--pr-body", type=Path, help="--write-images 때 PR 본문 Markdown 출력")
+    parser.add_argument("--run-url", default="", help="PR 본문에 남길 cd-release 실행 URL")
+    parser.add_argument("--base-sha", default="", help="PR 기준 main HEAD SHA")
     args = parser.parse_args()
+    if args.write_images and not args.require_executable:
+        parser.error("--write-images는 --require-executable과 함께 씁니다")
     inputs = {args.plan.resolve(), args.policy.resolve()}
     for extra in (args.images, args.migrations):
         if extra:
@@ -256,6 +504,13 @@ def main():
             result["errors"].append(
                 f"sourceCommit이 {args.require_ancestor_of} 이력에 없거나 확인할 수 없습니다"
             )
+        if args.check_images or args.write_images:
+            if isinstance(plan, dict) and plan.get("operation") != "deploy":
+                result["errors"].append(
+                    "digest PR 방식은 deploy만 받습니다. 되돌리기는 digest PR revert(비상용 Helm은 rollback 계획)"
+                )
+            else:
+                result["errors"].extend(check_images_files(policy, args.repo_root))
         result["valid"] = not result["errors"]
         result["executable"] = result["valid"] and not result["blocks"]
     except (OSError, ValueError, UnicodeError) as exc:
@@ -275,16 +530,45 @@ def main():
         "environment": plan.get("environment"),
         "operation": plan.get("operation"),
         "sourceCommit": plan.get("sourceCommit"),
+        "sourceBranch": plan.get("sourceBranch"),
+        "currentRelease": plan.get("currentRelease"),
         "targetRelease": plan.get("targetRelease"),
+        "reason": plan.get("reason"),
+        "databaseAction": plan.get("databaseAction"),
+        "compatibility": plan.get("compatibility"),
+        # 실행기는 이 값이 true일 때만 release가 없는 앱을 helm install로 올린다
+        "firstInstall": plan.get("currentRelease") == FIRST_INSTALL,
         "services": plan.get("services"),
         "images": plan.get("images"),
         "migrations": plan.get("migrations"),
         **result,
     }
+    changes = []
+    if args.write_images and result["executable"]:
+        # 게이트를 통과한 계획만 파일을 고친다. 하나라도 맞지 않으면 아무 파일도 쓰지 않는다
+        changes, change_errors = image_file_updates(
+            record, policy, args.repo_root, allow_repository_change=args.allow_repository_change
+        )
+        if change_errors:
+            changes = []
+            result["errors"].extend(change_errors)
+            result["valid"] = record["valid"] = False
+            result["executable"] = record["executable"] = False
+        record["imageFileChanges"] = [
+            {k: c[k] for k in ("service", "release", "file", "before", "after")} for c in changes
+        ]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    for change in changes:
+        (args.repo_root / change["file"]).write_text(change["content"], encoding="utf-8", newline="\n")
+    if changes and args.pr_body:
+        args.pr_body.parent.mkdir(parents=True, exist_ok=True)
+        args.pr_body.write_text(
+            render_pr_body(record, changes, run_url=args.run_url, base_sha=args.base_sha),
+            encoding="utf-8",
+        )
     print(json.dumps(result, ensure_ascii=False))
     if not result["valid"]:
         return 2

@@ -11,7 +11,7 @@ export const useDecorSpots = (childId: string | undefined) =>
 export function useSaveDecorSpots(childId: string | undefined) {
   const cache = useQueryClient()
   return useMutation({
-    mutationFn: (spots: { surface: DecorSurface; col: number; row: number; itemKey: string; color?: string | null }[]) => retentionApi.saveDecorSpots(spots),
+    mutationFn: (spots: { surface: DecorSurface; col: number; row: number; itemKey: string; color: string | null }[]) => retentionApi.saveDecorSpots(spots),
     onSuccess: (saved) => cache.setQueryData<DecorSpot[]>(['decor-spots', childId], saved),
   })
 }
@@ -49,10 +49,10 @@ const quiet = { retry: false } as const
 
 export const useMyPoints = (childId: string | undefined, page = 0) =>
   useQuery({ queryKey: ['points', childId, page], queryFn: ({ signal }) => retentionApi.myPoints(signal, page), enabled: !!childId, ...quiet })
-export const useChildPoints = (childId: string | undefined) =>
+export const useChildPoints = (childId: string | undefined, page = 0) =>
   useQuery({
-    queryKey: ['parent', 'points', childId],
-    queryFn: ({ signal }) => retentionApi.childPoints(childId!, signal),
+    queryKey: ['parent', 'points', childId, page],
+    queryFn: ({ signal }) => retentionApi.childPoints(childId!, signal, page),
     enabled: !!childId,
     ...quiet,
   })

@@ -1,11 +1,11 @@
 import { apiFetch } from './apiClient.ts'
 import { json } from './parent/api.ts'
-import type { Page } from '../domain/parent.ts'
+import { readServicePages } from './support/pages.ts'
 import type { HelpItem, Notice, NotificationItem, NotificationSettings, ReauthPurpose, DeletionScope, DeletionRequest } from '../domain/service.ts'
 const id = encodeURIComponent
 export const serviceApi = {
   help: (role: string, signal?: AbortSignal) => apiFetch<{ role: string; items: HelpItem[] }>(`/help?role=${id(role)}`, { signal }),
-  notices: (signal?: AbortSignal) => apiFetch<Page<Notice>>('/notices', { signal }),
+  notices: (signal?: AbortSignal) => readServicePages<Notice>('/notices', signal),
   notifications: (unreadOnly: boolean, page: number, signal?: AbortSignal) => apiFetch<{ items: NotificationItem[]; page: number; size: number; hasNext: boolean }>(`/notifications?unreadOnly=${unreadOnly}&page=${page}&size=20`, { signal }),
   read: (key: string) => apiFetch<void>(`/notifications/${id(key)}/read`, json({}, 'PATCH')),
   readAll: () => apiFetch<void>('/notifications/read-all', json({})),
@@ -18,7 +18,7 @@ export const serviceApi = {
   impact: (childId: string, signal?: AbortSignal) => apiFetch<{ childId: string; actions: { scope: string; effect: string }[]; retainedTransactionsYears: number; deviceCleanupPending: boolean }>(`/children/${id(childId)}/deletion-impact`, { signal }),
   unlink: (childId: string, token: string) => apiFetch<void>(`/children/${id(childId)}/link`, { method: 'DELETE', headers: { 'X-Reauth-Token': token } }),
   deleteChild: (childId: string, scope: DeletionScope, token: string) => apiFetch<DeletionRequest>(`/children/${id(childId)}/deletion-requests`, { ...json({ scope }), headers: { 'Content-Type': 'application/json', 'X-Reauth-Token': token } }),
-  deletion: (childId: string, requestId: string) => apiFetch<DeletionRequest>(`/children/${id(childId)}/deletion-requests/${id(requestId)}`),
+  deletion: (childId: string, requestId: string, signal?: AbortSignal) => apiFetch<DeletionRequest>(`/children/${id(childId)}/deletion-requests/${id(requestId)}`, { signal }),
   precheck: () => apiFetch<{ canWithdraw: boolean; activeSubscriptions: number; unresolvedRefunds: number; pendingPayments: number; retainedTransactionsYears: number }>('/me/withdrawal/precheck'),
   withdraw: (token: string) => apiFetch<{ withdrawalRequestId: string; status: string; statusToken: string }>('/me/withdrawal', { ...json({}), headers: { 'Content-Type': 'application/json', 'X-Reauth-Token': token } }),
   withdrawal: (token: string) => apiFetch<{ withdrawalRequestId: string; status: string }>('/me/withdrawal', { headers: { 'X-Withdrawal-Status-Token': token } }),

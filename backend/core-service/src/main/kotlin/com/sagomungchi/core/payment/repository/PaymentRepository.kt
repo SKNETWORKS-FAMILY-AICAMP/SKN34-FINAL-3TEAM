@@ -15,7 +15,7 @@ interface PaymentMapper {
     fun order(id: UUID): PaymentOrder?
     fun orderNo(no: String): PaymentOrder?
     fun renewal(@Param("subscription") subscription: UUID, @Param("period") period: LocalDate): PaymentOrder?
-    fun orders(@Param("owner") owner: UUID?, @Param("status") status: String?, @Param("from") from: LocalDate?, @Param("to") to: LocalDate?, @Param("offset") offset: Int, @Param("size") size: Int): List<PaymentOrder>
+    fun orders(@Param("owner") owner: UUID?, @Param("status") status: String?, @Param("from") from: LocalDate?, @Param("to") to: LocalDate?, @Param("offset") offset: Int, @Param("size") size: Int, @Param("childId") childId: UUID? = null): List<PaymentOrder>
     fun insertOrder(row: PaymentOrder): Int
     fun confirmingStudent(student: UUID): Boolean
     fun attach(@Param("id") id: UUID, @Param("subscription") subscription: UUID): Int
@@ -37,6 +37,7 @@ interface PaymentMapper {
     fun due(today: LocalDate): List<Subscription>
     fun recovery(): List<PaymentOrder>
     fun refunds(@Param("status") status: String?, @Param("offset") offset: Int, @Param("size") size: Int): List<RefundRequest>
+    fun countRefunds(status: String): Long
     fun refund(id: UUID): RefundRequest?
     fun refundHistory(order: UUID): List<RefundRequest>
     fun pendingRefund(order: UUID): RefundRequest?

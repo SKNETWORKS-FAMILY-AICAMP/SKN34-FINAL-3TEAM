@@ -1,5 +1,5 @@
 import { useStudentHome } from '../../../data/classroom/useClassroom.ts'
-import type { Child, Mission } from '../../../domain/classroom.ts'
+import type { Child } from '../../../domain/classroom.ts'
 import { DAY_LABELS, ruledOutOn } from '../../../domain/retention.ts'
 import type { AttemptContext, ThemeDay, WeeklyTheme, WeeklyThemeDay } from '../../../domain/retention.ts'
 
@@ -21,19 +21,25 @@ export const josa = {
 export const list = (xs: string[]) => xs.join(', ')
 export const dayName = (d: ThemeDay) => `${DAY_LABELS[d]}요일`
 
-/** 요일 문제 열기(홈과 같은 규칙): 진행 중이면 이어하기, 아니면 맥락을 붙여 새로 시작. 미션 그림도 여기서 찾는다. */
+/**
+ * 요일 문제 열기(홈과 같은 규칙): 맥락을 붙여 연다. 푸는 중인 문제도 같은 길로 보내 오늘 장면이 이어하기를 판단한다
+ * (답을 안 쓴 시도는 장면부터, 쓴 게 있으면 바로 답변 작성, #807). 미션 그림도 여기서 찾는다.
+ */
 export function useThemeMissions(
   child: Child,
-  onResume: (attemptId: string) => void,
-  onStartTheme: (mission: Mission, context: AttemptContext) => void,
+  onStartTheme: (missionId: string, context: AttemptContext) => void,
+  /** 푸는 중이 아닌 문제를 열 때(홈은 그 주 처음이면 시작 이야기부터). 생략하면 onStartTheme */
+  onNew: (missionId: string, context: AttemptContext) => void = onStartTheme,
 ) {
   const home = useStudentHome(child)
   const byId = new Map((home.data?.missions ?? []).map((m) => [m.id, m]))
   const open = (missionId: string, context: AttemptContext) => {
     const m = byId.get(missionId)
-    if (!m) return
-    if (m.status === 'IN_PROGRESS' && m.attemptId) onResume(m.attemptId)
-    else onStartTheme(m, context)
+    const resume = home.data?.resume
+    // 목록에서 내려간 테마 미션도 연다(#882): 미션 객체 없이 missionId로
+    const doing = (m?.status === 'IN_PROGRESS' && !!m.attemptId) || (resume?.status === 'IN_PROGRESS' && resume.mission.id === missionId)
+    if (doing) onStartTheme(missionId, context)
+    else onNew(missionId, context)
   }
   const image = (missionId: string) => {
     const m = byId.get(missionId)

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { thinkingLabels } from '../../domain/classroom.ts'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
@@ -36,6 +37,7 @@ function OriginalAnswer({ report, item }: { report: WeeklyReport; item: ReportEx
 
 /** narrativeEnabled: entitlement 조회 값(#602). 조회 전·실패면 undefined이며 서버의 explanations만 따른다. */
 export function ReportExplanations({ report, narrativeEnabled }: { report: WeeklyReport; narrativeEnabled?: boolean }) {
+  const [selected,setSelected] = useState('')
   if (reportPeriodType(report) === 'DAILY' || report.status !== 'COMPLETED') return null
   let notice = ''
   let items = report.explanations?.items
@@ -54,10 +56,10 @@ export function ReportExplanations({ report, narrativeEnabled }: { report: Weekl
   if (notice) items = undefined
   return <section className="report-explanations" aria-labelledby="report-explanations-title">
     <h3 id="report-explanations-title">대표 답변 설명</h3>
-    {notice ? <p role="note">{notice}</p> : <div className="ws-stack">{items!.map(item => <article className="ws-card report-explanation-card" key={`${item.answerId}:${item.answerVersion}`}>
+    {notice ? <p role="note">{notice}</p> : <div className="report-explanation-reader"><label>답변 선택<select aria-label="설명할 답변 선택" value={items!.some(x=>x.answerId===selected) ? selected : items![0].answerId} onChange={e=>setSelected(e.target.value)}>{items!.map(item=><option key={item.answerId} value={item.answerId}>{item.missionTitle} · {thinkingLabels[item.thinkingType]}</option>)}</select></label>{items!.filter(item=>item.answerId===(items!.some(x=>x.answerId===selected) ? selected : items![0].answerId)).map(item => <article className="report-explanation-card" key={`${item.answerId}:${item.answerVersion}`}>
       <h4>{item.missionTitle}</h4>
       <p>{thinkingLabels[item.thinkingType]} · <span className="ws-tag">AI 관찰</span></p>
-      <OriginalAnswer report={report} item={item} />
+      <details className="report-original-disclosure"><summary>학생 글 전체 보기</summary><OriginalAnswer report={report} item={item} /></details>
       <ExplanationBody text={item.text} />
     </article>)}</div>}
   </section>

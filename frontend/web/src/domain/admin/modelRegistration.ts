@@ -1,5 +1,19 @@
 import type { EvaluationEvidence, ModelVersion } from './operations.ts'
 
+/** 등록부 카드의 추천 태그 표시 값 (#728). 형식이 틀린 태그는 표시하지 않는다(서버가 검사하지만 화면도 믿지 않음) */
+export function recommendationView(evidence?: EvaluationEvidence | null) {
+  const r = evidence?.recommendation
+  if (!r || (r.tag !== 'RECOMMENDED' && r.tag !== 'NOT_RECOMMENDED') || typeof r.comparedTo !== 'string' || !Array.isArray(r.reasons)) return null
+  return {
+    tag: r.tag,
+    label: r.tag === 'RECOMMENDED' ? '추천' : '비추천',
+    comparedTo: r.comparedTo === 'NONE' ? '처음 등록 (비교한 활성 버전 없음)' : r.comparedTo,
+    reasons: r.reasons.filter(reason => typeof reason === 'string'),
+    metrics: Object.entries(r.metrics ?? {}).filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
+      .sort(([a], [b]) => a.localeCompare(b)),
+  }
+}
+
 export const EVIDENCE_LABELS = {
   datasetId: '평가셋 ID', datasetVersion: '평가셋 버전', baselineVersion: '비교 기준 버전', comparisonReport: '비교 보고서',
   trainingEvaluationSeparation: '학습·평가 분리 근거', quoteAccuracy: '인용 정확성 근거',
@@ -24,7 +38,7 @@ export interface RegistrationProvenance {
 export type RegistrationRequest = ModelRegistration & { registration?: RegistrationProvenance }
 const registrationPaths = (v: ModelRegistration): Record<string, unknown> => ({
   kind: v.kind, name: v.name, version: v.version, refId: v.refId, artifactUri: v.artifactUri,
-  ...Object.fromEntries(Object.entries(v.evaluation).map(([key, value]) => [`evaluation.${key}`, value])),
+  ...Object.fromEntries(Object.entries(v.evaluation ?? {}).map(([key, value]) => [`evaluation.${key}`, value])),
 })
 export function changedRegistrationFields(value: ModelRegistration, original: ModelRegistration) {
   const a = registrationPaths(value), b = registrationPaths(original)
@@ -62,7 +76,16 @@ export function parseRegistrationFile(text: string): RegistrationFile {
     const path = `requests[${index}]`
     if (!object(entry)) return fail(path, 'JSON 객체여야 합니다.')
     for (const key of Object.keys(entry)) if (!allowedRequest.includes(key)) fail(`${path}.${key}`, '등록 API에 없는 필드입니다. 승인·활성화 정보는 가져올 수 없습니다.')
+    // Missing fields stay blank for review. Reject malformed values and unexpected keys.
+    for (const key of ['name', 'version', 'kind']) {
+      if (entry[key] === undefined) entry[key] = ''
+    }
+    if (entry.evaluation === undefined) entry.evaluation = {}
     if (!object(entry.evaluation)) return fail(`${path}.evaluation`, '평가 근거 객체가 필요합니다.')
+    for (const key of Object.keys(EVIDENCE_LABELS)) {
+      if (entry.evaluation[key] === undefined) entry.evaluation[key] = ''
+    }
+    if (entry.evaluation.evaluatedScopes === undefined) entry.evaluation.evaluatedScopes = []
     for (const key of Object.keys(entry.evaluation)) if (!allowedEvidence.includes(key)) fail(`${path}.evaluation.${key}`, '알 수 없는 평가 필드입니다.')
     for (const key of ['name', 'version', 'kind']) if (typeof entry[key] !== 'string') fail(`${path}.${key}`, '문자열이어야 합니다.')
     for (const key of Object.keys(EVIDENCE_LABELS)) if (typeof entry.evaluation[key] !== 'string') fail(`${path}.evaluation.${key}`, '문자열이어야 합니다.')
@@ -157,6 +180,7 @@ export const PREFLIGHT_FILES = ['config.json', 'tokenizer.json', 'tokenizer_conf
 /** 답변 표현 분류(tox-)는 score_cuts.json 없이 다섯 파일 (#691) */
 export const preflightFiles = (name: string) => name.startsWith('tox-') ? PREFLIGHT_FILES.filter(f => f !== 'score_cuts.json') : PREFLIGHT_FILES
 export const supportsPreflight = (name: string, files: ManifestModel['files']) => {
+  if (!['m2-klue-narrative', 'm2-klue-essay'].includes(name) && !/^tox-[A-Za-z0-9._-]{1,96}$/.test(name)) return false
   const expected = preflightFiles(name)
   return files.length === expected.length && new Set(files.map(f => f.file)).size === expected.length && files.every(f => expected.includes(f.file))
 }

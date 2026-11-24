@@ -1,0 +1,67 @@
+{
+  "reasonConnectives": ["왜냐하면", "때문", "그래서", "따라서"],
+  "minSample": 5,
+  "textCounts": [
+    {
+      "name": "서술: 마침표·느낌표로 나눈 두 문장, 잇는 말 2개",
+      "inputType": "NARRATIVE",
+      "content": { "text": "왜냐하면 비가 와서 우산을 썼어요. 그래서 안 젖었어요!" },
+      "expected": { "chars": 31, "sentences": 2, "reasonConnectives": 2 }
+    },
+    {
+      "name": "서술: 같은 말이 다른 말 안에 있어도 각각 셈",
+      "inputType": "NARRATIVE",
+      "content": { "text": "때문에 그래서 그랬던 때문" },
+      "expected": { "chars": 14, "sentences": 1, "reasonConnectives": 3 }
+    },
+    {
+      "name": "서술: 이모지는 한 글자, 줄바꿈도 문장 경계이자 한 글자",
+      "inputType": "NARRATIVE",
+      "content": { "text": "좋아요👍\n네" },
+      "expected": { "chars": 6, "sentences": 2, "reasonConnectives": 0 }
+    },
+    {
+      "name": "서술: 이어진 구두점은 빈 덩어리라 문장으로 세지 않음",
+      "inputType": "NARRATIVE",
+      "content": { "text": "왜? 몰라... 그냥" },
+      "expected": { "chars": 11, "sentences": 3, "reasonConnectives": 0 }
+    },
+    {
+      "name": "풀이 단계: 단계 다음 최종 답, 빈 단계는 빼고 줄바꿈으로 이음",
+      "inputType": "SOLUTION_STEPS",
+      "content": { "steps": ["3 더하기 4는 7", "  ", "7 곱하기 2는 14"], "finalAnswer": "14" },
+      "expected": { "chars": 25, "sentences": 3, "reasonConnectives": 0 }
+    },
+    {
+      "name": "논술: 주장·까닭 2개·반대 의견에 답하기 네 칸만 셈",
+      "inputType": "ESSAY",
+      "content": {
+        "essay": {
+          "claim": "급식에 디저트가 필요해요.",
+          "reasons": ["힘이 나기 때문이에요.", "따라서 오후 수업에 집중해요."],
+          "rebuttal": "단 것이 많으면 안 좋지만 조금은 괜찮아요"
+        }
+      },
+      "expected": { "chars": 68, "sentences": 4, "reasonConnectives": 2 }
+    },
+    {
+      "name": "고르기: 학생이 쓴 글이 없어 모두 0",
+      "inputType": "CHOICE",
+      "content": { "choiceIds": ["c1"] },
+      "expected": { "chars": 0, "sentences": 0, "reasonConnectives": 0 }
+    }
+  ],
+  "sampleState": [
+    { "count": 0, "state": "NO_RECORD" },
+    { "count": 1, "state": "INSUFFICIENT_SAMPLE" },
+    { "count": 4, "state": "INSUFFICIENT_SAMPLE" },
+    { "count": 5, "state": "OK" },
+    { "count": 6, "state": "OK" }
+  ],
+  "ratio": [
+    { "numerator": 0, "denominator": 0, "value": null, "state": "NO_RECORD" },
+    { "numerator": 3, "denominator": 4, "value": null, "state": "INSUFFICIENT_SAMPLE" },
+    { "numerator": 3, "denominator": 5, "value": 0.6, "state": "OK" },
+    { "numerator": 0, "denominator": 6, "value": 0.0, "state": "OK" }
+  ]
+}

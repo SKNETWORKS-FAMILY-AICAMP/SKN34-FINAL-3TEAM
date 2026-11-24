@@ -33,9 +33,9 @@ internal fun session(jdbc: JdbcTemplate, user: UUID, role: String = "ADMIN", chi
 internal fun consents(jdbc: JdbcTemplate, user: UUID, child: UUID? = null) {
     val now = OffsetDateTime.now(ZoneOffset.UTC)
     (if (child == null) listOf("TERMS", "PRIVACY") else listOf("GUARDIAN")).forEach { kind ->
-        val doc = jdbc.queryForList("SELECT id FROM consent_document WHERE kind=? ORDER BY effective_from DESC,created_at DESC,id DESC LIMIT 1",
+        val doc = jdbc.queryForList("SELECT id FROM consent_document WHERE kind=? AND effective_from<=(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date ORDER BY effective_from DESC,created_at DESC,id DESC LIMIT 1",
             UUID::class.java, kind).firstOrNull() ?: UUID.randomUUID().also { id ->
-            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'동의','검증용',true,CURRENT_DATE,?)",
+            jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,?,?,'동의','검증용',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,?)",
                 id, kind, id.toString(), now)
         }
         jdbc.update("INSERT INTO consent(id,document_id,subject_user_id,student_id,agreed,status,agreed_at) VALUES(?,?,?,?,true,'AGREED',?)",

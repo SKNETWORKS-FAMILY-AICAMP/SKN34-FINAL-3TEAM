@@ -25,7 +25,9 @@
 
 ## 2. 공통 모듈
 
-### 2.1 Spring 공통 (`_common/`, core·learning 동일)
+### 2.1 Spring 공통 (`_common/`, core·learning 공통 골격)
+
+두 서비스가 같은 구성을 따르지만 내용이 같지는 않다. 한쪽에만 있는 클래스는 아래 표 상태 칸에 "core만" 등으로 적는다. 패키지도 core만 `json`·`scheduler`, learning만 `storage`(S3 presigned URL `AssetUrls`)가 있고, `_common/web`은 core가 `IdempotencyService`·`PageQuery`·`SseEmitters` 등, learning이 응답 DTO(`SharedResponses`·`FeedbackResponses`)다.
 
 ```mermaid
 classDiagram
@@ -334,7 +336,7 @@ classDiagram
   }
   class SignupRateLimiter {
     <<repository>>
-    +acquire(clientIp)
+    +increment(clientIp) Long?
   }
   class ReauthenticationService {
     <<service>>
@@ -647,7 +649,7 @@ classDiagram
 - 동의는 별도 entity 없이 선택마다 새 `consent` 행(AGREED·WITHDRAWN)을 저장하고 최신 행으로 판정 (상태 다이어그램 2.3, [이슈 #37 보고서](../report/auth-account.md))
 - `StudentAccessService`·`ConsentAccessService`는 인증·인가용 읽기 확인(학생 행 잠금 포함). 쓰기는 자녀 등록 `GuardianshipService`, 정보 수정·해제·삭제 `ChildManagementService`, 동의 저장 `ConsentService`(#37) 소유
 - 공개 API 컨텍스트는 `PublicAuthFilter`가 설정하고 finally에서 해제 (`InternalAuthFilter`와 같은 방식)
-- ID·비밀번호 로그인은 관리자(#369, 가입 없음, `AuthService.adminLogin`, `admin_credential`)와 학부모(#415, `AuthService.parentSignup`·`parentLogin`, `parent_credential`) 두 가지다. 둘 다 `PasswordCredentialService`(`PinHasher` PBKDF2 해시·5회 실패 15분 잠금·없는 ID 더미 해시 검사)와 값 객체 `PasswordCredential`(옛 `AdminCredential`)을 공유하고, 실패는 커밋 뒤 던진다. 학부모 가입은 `SignupRateLimiter`(Redis 고정 창, IP당 기본 10분 5회)를 거친다. 로그인 수단 변경·연결과 비밀번호 찾기·변경은 없다. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
+- ID·비밀번호 로그인은 관리자(#369, 가입 없음, `AuthService.adminLogin`, `admin_credential`)와 학부모(#415, `AuthService.parentSignup`·`parentLogin`, `parent_credential`) 두 가지다. 둘 다 `PasswordCredentialService`(`PinHasher` PBKDF2 해시·5회 실패 15분 잠금·없는 ID 더미 해시 검사)와 값 객체 `PasswordCredential`(옛 `AdminCredential`)을 공유하고, 실패는 커밋 뒤 던진다. 학부모 가입은 `SignupRateLimiter`(Redis 고정 창)가 IP별 가입 횟수만 세고(Redis 장애·빈 응답은 `null`), `AuthService`가 한도(IP당 기본 10분 5회) 초과면 429, `null`이면 503으로 정한다(#816). 로그인 수단 변경·연결과 비밀번호 찾기·변경은 없다. Google 계정은 `(oauth_provider, oauth_subject)`로 식별, 최초 콜백에서 `AuthService.login`이 PARENT 계정 생성 (API 명세 5.1)
 - 재확인 토큰(`reauthToken`)은 Google 재인증 기반(#45), DB reauth_challenge/reauth_grant 저장. 비밀번호 학부모는 `ReauthenticationService.withPassword`(`POST /me/reauth/password`, #415)가 로그인 비밀번호를 확인하고 검증·발급을 마친 challenge·grant를 한 번에 만들어 `consume`은 그대로다. 실패는 로그인과 같은 `parent_credential` 횟수를 쓴다
 - `AuthService.enterStudent` (`POST /auth/student-sessions`): 학부모 Bearer 세션 행을 잠그고 연결·활성 자녀·필수·법정대리인 동의 확인 → 학부모 세션 `locked_at`·version 증가, `parent_session_id`를 가진 학생 세션 생성 → `STUDENT` access만 발급, 학부모 refresh 쿠키는 유지(잠김) (P01, 학부모 동석). 학생 계정·시연 링크 없음
 - `AuthService.unlockParent` (`POST /auth/parent-unlock`): 잠긴 학부모 refresh + `GuardianPasswordService.attempt`(PIN과 같은 해시·5회 잠금) → 잠금 해제·학생 세션 폐기·refresh 회전. `GuardianPasswordService.set`은 `GUARDIAN_PASSWORD` 재인증 grant를 1회 소비 (FN-ACC-05, 2026-11-03)
@@ -691,7 +693,16 @@ classDiagram
   }
   class FeedbackService {
     <<service>>
-    +feedback(answerId) HttpExchangeResult
+    +started() FeedbackEvent
+    +feedback(answerId) FeedbackEvent
+  }
+  class FeedbackClient {
+    <<client>>
+    +feedback(answerId) FeedbackOutcome
+  }
+  class FeedbackOutcome {
+    <<client DTO>>
+    Done(document) · Running · Failed(problem)
   }
   class LearningRecordService {
     <<service>>
@@ -703,6 +714,16 @@ classDiagram
     <<client>>
     +exists(studentId) Boolean
     +dashboard(studentId, resource, query, parent, child) HttpExchangeResult
+    +evidence(answerIds) List~EvidenceRecord~
+  }
+  class EvidenceRecord {
+    <<client DTO>>
+    +answerId UUID
+    +attemptId UUID?
+    +answerVersion Int?
+    +submittedAt String?
+    +quote String?
+    +available Boolean
   }
   class DashboardController {
     <<controller>>
@@ -759,7 +780,22 @@ classDiagram
   class AiClient {
     <<client>>
     +stream(request, call, onEvent)
-    +reportTemplate(request) JsonNode
+    +reportTemplate(request) TemplateProposal
+  }
+  class AnalysisResult {
+    <<client DTO>>
+    +scope Scope
+    +evidence List~Evidence~
+    +body JsonNode
+    +publish(messageId, scope)
+  }
+  class AnalysisClarification {
+    <<client DTO>>
+    ScopeNotice | Options
+  }
+  class TemplateProposal {
+    <<client DTO>>
+    Clarification | Settings
   }
   class ChildAuthorizationService { <<service>> }
   class SseEmitters { <<web>> }
@@ -770,9 +806,15 @@ classDiagram
   LearningProxyService --> LearningClient
   FeedbackController --> FeedbackService
   FeedbackController --> SseEmitters
-  FeedbackService --> LearningProxyService
+  FeedbackService --> FeedbackClient
+  FeedbackClient --> LearningClient : learning-feedback 서킷
+  FeedbackClient ..> FeedbackOutcome
   LearningRecordService --> LearningRecordClient
   LearningRecordClient --> LearningClient
+  LearningRecordClient ..> EvidenceRecord
+  AiClient ..> AnalysisResult
+  AiClient ..> AnalysisClarification
+  AiClient ..> TemplateProposal
   DashboardController --> LearningRecordService
   LearningRecordService --> StudentAccessService : 현재 연결·ACTIVE·동의
   LearningRecordService --> StudentLearningContextService : home 학년·demo
@@ -788,12 +830,12 @@ classDiagram
 ```
 
 - `learning/`은 controller → service(`LearningProxyService`·`FeedbackService`·`LearningRecordService`) → `LearningClient` 구조 (아키텍처 1.3·2.6). 공통 프록시는 `exchange`로 경로·본문을 그대로 전달하고 학생 컨텍스트·답변 멱등을 service에서 처리 ([이슈 #38 보고서](../report/core-gateway.md))
-- 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). 분석 대화(#41)는 `ConversationController`·`ConversationService`(`prepare`·`transport`·`complete`·`fail`·`evidence`·`examples`)·`AnalysisStreamService`(SSE 실행)·`ConversationRepository`·`AiClient.stream`으로 구현됨. 그림의 `ConversationMessageRepository`는 `ConversationRepository`에, `Conversation`·`ConversationMessage` 엔티티 메서드는 서비스 검증에 포함되고, `JobExecutionService` 없이 `conversation_message` 상태·`retry_count`로 실행을 기록한다. `LearningClient.evidence`는 `LearningRecordClient.evidence`, `correctJudgment`는 `support/client/LearningSupportClient.correct`(3.5)
-- `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`, `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
+- 구현 상태: `LearningController`·`LearningProxyService`·`StudentLearningContextService`·`FeedbackController`·`FeedbackService`·`FeedbackClient`·`LearningRecordService`·`LearningRecordClient`·`LearningClient.exchange` 구현됨(마무리·돌아보기·자기 평가 포함). 분석 대화(#41)는 `ConversationController`·`ConversationService`(`prepare`·`transport`·`complete`·`fail`·`evidence`·`examples`)·`AnalysisStreamService`(SSE 실행)·`ConversationRepository`·`AiClient.stream`으로 구현됨. 그림의 `ConversationMessageRepository`는 `ConversationRepository`에, `Conversation`·`ConversationMessage` 엔티티 메서드는 서비스 검증에 포함되고, `JobExecutionService` 없이 `conversation_message` 상태·`retry_count`로 실행을 기록한다. `LearningClient.evidence`는 `LearningRecordClient.evidence`, `correctJudgment`는 `support/client/LearningSupportClient.correct`(3.5)
+- `LearningClient`는 learning 내부 API 공용 전송으로 `_common/client`에 둔다(#422). 기능별 client(`learning/client/LearningRecordClient`·`LearningExpressionReviewClient`·`FeedbackClient`(피드백 전용 `learning-feedback` 서킷), `community/client/CommunityClient`, `support/client/LearningSupportClient`)와 learning service가 같은 서킷·타임아웃을 공유하며, 다른 기능의 client를 직접 참조하지 않는다
 - `DashboardController`(학생 3개·학부모 4개 조회) → `LearningRecordService` → `LearningRecordClient` → `LearningClient`. 집계·home·상세는 learning 기록 API가 계산하고 core는 수치를 계산하지 않음 ([core 보고서](../report/core-gateway.md))
-- `FeedbackController`: learning 동기 응답을 기다리는 동안 heartbeat만 전송, 응답을 `status`·`result`·`error`·`done` 이벤트로 변환. 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3)
-- `AnalysisStreamService`(그림의 `ConversationService.stream`): `AiClient.stream`이 ai SSE 프레임을 `AnalysisEvent`(`Status`·`Delta`·`Result`·`Clarification`·`Error`·`Done`)로 바꿔 넘긴다. 이벤트 모양(`status`의 `state = RUNNING`·`message`, `delta`의 `text`, `error`의 공개 형식 `code`, 모르는 이벤트 이름)이 틀리면 client가 502 `AI_INVALID_RESPONSE`로 막고, service는 이벤트 순서(첫 `status` 전 `delta`·`result` 금지, 종료 뒤 `done`만)와 `result`·`clarification` 업무 검증(`ConversationService.validateResult`·`validateClarification`)만 한다(#792). `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AnalysisCall.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
-- 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2)
+- `FeedbackController`: SSE를 열고 `FeedbackService`가 정한 이벤트만 보낸다(learning 동기 응답을 기다리는 동안은 heartbeat만). 클라이언트 단절과 무관하게 learning 호출 유지 (아키텍처 1.3). `FeedbackClient.feedback`이 learning 응답을 `FeedbackOutcome`으로 바꾼다: 2xx `status` `DONE`은 본문 그대로 `Done`, `RUNNING`은 `Running`, 2xx 밖은 빈 Problem 칸(`type`·`title`·`status`·`code` `LEARNING_UNAVAILABLE`·`retryable` 5xx·429)을 채운 `Failed`, 객체가 아니거나 모르는 `status`는 502 `LEARNING_INVALID_RESPONSE`. `FeedbackService`는 `Done` → `result`, `Running` → `status`(진행 중), `Failed`·업무 예외 → `error` 이벤트를 정한다(#834)
+- `AnalysisStreamService`(그림의 `ConversationService.stream`): `AiClient.stream`이 ai SSE 프레임을 `AnalysisEvent`(`Status`·`Delta`·`Result`·`Clarification`·`Error`·`Done`)로 바꿔 넘긴다. 이벤트 모양(`status`의 `state = RUNNING`·`message`, `delta`의 `text`, `error`의 공개 형식 `code`, 모르는 이벤트 이름)이 틀리면 client가 502 `AI_INVALID_RESPONSE`로 막는다(#792). `result`·`clarification` 본문 모양도 client가 검사해 `AnalysisResult`(답변·검증·출처와 대체·알림 짝·근거 100개 이하·기록 수, 공개 칸 이름과 `publish`)·`AnalysisClarification`(`ScopeNotice`·`Options`)으로 넘긴다(#824). service는 이벤트 순서(첫 `status` 전 `delta`·`result` 금지, 종료 뒤 `done`만), 결과·되묻기 범위가 요청 범위와 같은지, 선택지 자녀의 연결·동의(`ConversationService.validateResult`·`validateClarification`), 근거가 learning 기록과 맞는지(`verifyEvidence`: `LearningRecordClient.evidence`가 검사한 `EvidenceRecord`의 공개 여부·시도·판·원문·제출일)만 판단한다. `result` 수신 시 `complete`(트랜잭션), 클라이언트 단절 시 `AnalysisCall.cancel` + `fail(STREAM_INTERRUPTED)` (재시도 가능)
+- 근거 원문은 저장하지 않고 `message_evidence` ID로 learning `/internal/records/evidence` 조회 (ERD 3.2). 응답 모양(EvidenceList)은 `LearningRecordClient.evidence`가 `EvidenceRecord`로 바꾸고 틀리면 502 `LEARNING_INVALID_RESPONSE`(#824). `ConversationService.evidence`는 저장한 참조와 시도·판이 맞는지만 보고, learning 원문 문자열(미션 제목·제출 시각)을 그대로 내보낸다
 - SSE 처리를 별도 스레드(executor)에서 실행하면 `UserContextHolder`(ThreadLocal) 값이 전달되지 않음 → `SseEmitters.open(context, …)`이 요청 스레드에서 캡처한 컨텍스트를 작업 스레드에서 설정·해제 (#39)
 
 ### 3.3 리포트 작업·알림 (report · notification)
@@ -839,7 +881,7 @@ classDiagram
     <<service>>
     +list(childId, status, periodType) JsonNode
     +detail(reportId, revision) JsonNode
-    +pinned(reportId, revision) JsonNode
+    +pinned(reportId, revision) PinnedReport
     +evidence(reportId, itemId) JsonNode
     +download(reportId, format) JsonNode
   }
@@ -863,6 +905,8 @@ classDiagram
     +get(studentId, path, query, narrativeEnabled) JsonNode
     +reports(childId, status, periodType) ArrayNode
     +report(job, reportId, revision, narrativeEnabled) ReportDocument
+    +pinned(job, reportId, revision) PinnedReport
+    +correctionImpact(studentId, attemptId) List~AffectedReport~
     +file(job, reportId, format, narrativeEnabled) Pair
     +evidence(job, reportId, itemId) JsonNode
     +reconcile(job) ReportReconciliation
@@ -873,6 +917,22 @@ classDiagram
     +withoutNarrative()
     +withoutOriginals()
     +withoutProblemOriginals()
+  }
+  class PinnedReport {
+    <<client DTO>>
+    +reportId UUID
+    +revision Int
+    +status ReportJobStatus
+    +date LocalDate
+    +metrics List~Metric~
+    +problems List~Problem~
+  }
+  class AffectedReport {
+    <<client DTO>>
+    +reportId UUID
+    +periodType ReportPeriodType
+    +periodFrom LocalDate
+    +revision Int
   }
   class NotificationController {
     <<controller>>
@@ -885,7 +945,7 @@ classDiagram
   }
   class NotificationService {
     <<service>>
-    +report(userId, childId, sourceEventId, reportId, failed)
+    +report(userId, childId, sourceEventId, reportId, failed, daily, noRecordDay)
     +list(identity, unreadOnly, page, size) List
     +read(identity, notificationId)
     +settings(identity) List
@@ -935,6 +995,8 @@ classDiagram
   ReportCommandWriter --> OutboxWriter
   ReportQueryService --> ReportClient
   ReportClient ..> ReportDocument
+  ReportClient ..> PinnedReport
+  ReportClient ..> AffectedReport
   ReportQueryService --> ReportViewRepository
   ReportJobService ..> ReportJob
   NotificationController --> NotificationService
@@ -952,14 +1014,15 @@ classDiagram
 - `ReportEventConsumer`: 큐 `core.report.events`, `processed_event`로 멱등, 상태 전이는 조건부 UPDATE (상태 다이어그램 4.1)
 - 알림: 리포트 종료 전이 트랜잭션에서 `QUEUED` 저장 → 커밋 후 `NotificationDispatchService`가 `NotificationRedisPublisher`로 `core:notifications:v1` 발행(발행기는 Redis 발행만) → `NotificationDeliveryService`로 `COMPLETED`·`FAILED` 기록. 관리자 재처리 `NotificationRetryService`도 `dispatch`를 호출(#250). 다른 레플리카의 `NotificationRedisSubscriber`(`notification/consumer`, 구독 연결·채널 이름은 `notification/config/NotificationRedisConfiguration`, #168)가 `NotificationStreams`로 SSE 전달 (아키텍처 1.6)
 - 리포트 조회 API에 `ReportQueryService`를 둬서 controller → client 직접 호출 금지 규칙 준수 (리포트 열람 기록 `report_view` 저장 포함)
-- report 응답 계약 검사는 `ReportClient`(#792): 목록 `reports`는 모든 쪽을 모으며 항목마다 자녀·식별자·회차·기간·요청한 기간 종류를 검사하고 빠진 `periodType`을 `WEEKLY`로 채운다. 상세 `report`는 작업의 자녀·기간 종류·기간·요청 회차와 맞을 때만 `ReportDocument`를 만들고, 다운로드 `file`은 서술 칸 존재와 링크(http(s) 절대 주소·사용자 정보 없음·만료 시각)를 검사한다. 틀리면 502 `REPORT_CONTRACT_INVALID`. 어느 칸이 서술·원문인지는 `ReportDocument`가 알고, 언제 거를지(서술 권한 `narrativeEnabled`, 학부모 공유 `parentSharingEnabled`, 일일 상세 권한)는 공개 설정·상품 권한 업무 규칙이라 `ReportQueryService`가 정한다
+- report 응답 계약 검사는 `ReportClient`(#792): 목록 `reports`는 모든 쪽을 모으며 항목마다 자녀·식별자·회차·기간·요청한 기간 종류를 검사하고 빠진 `periodType`을 `WEEKLY`로 채운다. 상세 `report`는 작업의 자녀·기간 종류·기간·요청 회차와 맞을 때만 `ReportDocument`를 만들고, 고정 대화 `pinned`(#814)는 같은 검사 뒤 서술 없이 받은 판을 `PinnedReport`(회차·상태·날짜, `metrics[]`의 이름·0 이상 개수, `problems[]`의 제목·맥락·판정·판정 요소 이름과 충족 여부)로만 바꾼다. 지표·문제·요소 하나라도 모양이 틀리면 거르지 않고 502로 막아 필수 지표가 조용히 빠진 요약이 ai로 가지 않는다. 정정 영향 `correctionImpact`(#824)는 `items[]`를 `AffectedReport`(UUID `reportId`, 열거값 `periodType`, 날짜 `periodFrom`, 1 이상 `revision`)로만 바꾼다. 다운로드 `file`은 서술 칸 존재와 링크(http(s) 절대 주소·사용자 정보 없음·만료 시각)를 검사한다. 틀리면 502 `REPORT_CONTRACT_INVALID`. 어느 칸이 서술·원문인지는 `ReportDocument`가 알고, 언제 거를지(서술 권한 `narrativeEnabled`, 학부모 공유 `parentSharingEnabled`, 일일 상세 권한)는 공개 설정·상품 권한 업무 규칙이라 `ReportQueryService`가 정한다
 - 리포트 인가는 controller가 아니라 service 안에서 한다. `ReportQueryService`·`ReportViewService`는 `reportId`로 소유 작업(`ReportJobRepository.byReport`)을 찾은 뒤 `ReportAccessService.parent`(학부모 역할 + `StudentAccessService.requireLinked`)로 확인하고, `ReportClient.get`이 `studentScope`를 그 학생 한 명으로 좁혀 report에 전달한다. 재생성은 `ReportJobService.regenerate` → `ReportAccessService.regeneration`(학부모는 연결 확인, 관리자는 `SERVICE_OPS`) (3.1)
-- 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler`·`DailyReportScheduler`(P24, #390) + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
+- 구현 이름: `ReportScheduler` = `report/scheduler/WeeklyReportScheduler`·`DailyReportScheduler`(P24, #390) + `ReportScheduleService`, `ReportEventConsumer` = `report/consumer/ReportLifecycleConsumer` + `ReportLifecycleService`, `ReportCommandWriter` = `report/messaging/ReportGenerateWriter`, `ReportViewRepository` = `ReportJobRepository`(`report_view` 포함). 종료 이벤트 유실 복구(#132)는 `ReportRecoveryScheduler` + `ReportRecoveryService`. 학부모 리포트 표시 설정(#209)은 `ReportTemplateController`·`ReportTemplateService`(제안은 `conversation/service/AnalysisTemplateService.reportTemplate` → `AiClient.reportTemplate`, 응답 칸 모양은 client가 `TemplateProposal`로 검사하고 허용 값은 `ReportTemplateSettings.validate`, #824, 학생 잠금·활성 학부모 조회는 `guardianship/service/StudentAccessService`, #279)·`ReportTemplateRepository`·domain `ReportTemplateSettings`
 
 #### 3.3.1 리포트 복구 호출 구조 (#132)
 
 - `ReportRecoveryScheduler` → `ReportRecoveryService`(후보 조회·오류 격리) → `ReportClient.reconcile`(SYSTEM/단일 scope, DTO 검증) → report generation router → `ReconciliationService` → `ReportRepository`/`JobLocks`.
 - 응답 반영은 별도 `ReportLifecycleService.reconcile` 트랜잭션. 이벤트 apply와 삭제 종료도 기존 lifecycle service에 둔다. HTTP 전후의 트랜잭션을 분리한다.
+- 기록 없음(#846): 완료 이벤트·복구 응답의 선택 `noRecord`를 `ReportLifecycleEvent`·`ReportReconciliation` → `ReportJobFinished(noRecord, periodFrom)` → `ReportNotificationListener` → `NotificationService.report(noRecordDay)`로 넘긴다. 일일 완료일 때만 제목을 바꾼다(api-spec 2.7).
 - `ReportJobService` → `StudentAccessService.lockActive` → 학생 행 잠금, 이후 주 잠금/권한/이용권/Outbox. 관리자도 ACTIVE 검사를 우회하지 않는다.
 - `ChildManagementService.confirm` → `ReportLifecycleService.failForDeletion` (기존 삭제 트랜잭션 필수). 알림 이벤트의 non-null reportId 계약은 유지하고 ID 없는 종료는 실행 이력에만 남긴다.
 
@@ -974,7 +1037,7 @@ classDiagram
     +createOrder(idempotencyKey, request) Order
     +confirm(idempotencyKey, request) ConfirmResult
     +status(orderId) PaymentStatus
-    +history() Page
+    +history(page, size) List
     +requestRefund(paymentId, idempotencyKey, request) RefundRequest
   }
   class SubscriptionController {
@@ -1091,6 +1154,7 @@ classDiagram
 - `PaymentService.confirm`: 금액 대조(트랜잭션) → `TossClient.confirm`(트랜잭션 밖) → 결제 저장·구독 반영(트랜잭션). 반영 실패 시 `requireRecovery()` 후 `recoverEntitlement` 재시도 (FN-PAY-05)
 - `BillingScheduler`: ShedLock, 정기 청구·해지 효력·`CONFIRMING` 재조회. 매일 09:00 KST. 갱신 실패 시 유예 3일·매일 1회 최대 3회 재청구 후 해지 (P13), 자동 갱신 해지는 `period_end` 경과 시 `CANCELED` (P14)
 - 구현 이름(#48): 컨트롤러는 `PaymentController` 하나(구독·관리자 결제/환불·`TossWebhookController`의 웹훅 포함)와 내부 `InternalPaymentUsageController`, `SubscriptionService` 역할은 `PaymentService`(구독 조회·빌링 등록·자동 갱신 해지)·`RenewalService`(정기 청구·재조회)·`ProductEntitlementService`(현재 권한)로 나뉨, 웹훅 = `PaymentWebhookService`, `BillingScheduler` = `payment/scheduler/PaymentScheduler`, Repository는 `PaymentRepository` 하나(`PaymentOrderRepository`·`SubscriptionRepository`·`RefundRequestRepository`·`PgWebhookEventRepository` 역할 포함)
+- 결제 상태 조회(#946): `GET /payments/{orderId}`는 `RefundService.ownedStatus` 한 번만 부른다. 이 메서드가 승인된 미해결 환불을 PG 결과와 먼저 대조한 뒤 `PaymentService.status`로 최신 상태를 돌려준다. `RefundService`가 이미 `PaymentService`에 의존하므로 반대 방향으로 두지 않는다(순환 방지)
 - 응답 경계(#168): `PaymentController`는 domain `PaymentView`·`RefundRequest` 대신 `payment/controller/PaymentResponses`(`PaymentViewResponse`·`RefundRequestResponse`)를 응답·멱등 저장본으로 내보내 PG 키(`paymentKey`·`cancelKey`)를 넣지 않음. 상품 `features`·`limits`·상품 스냅샷은 Jackson `JsonNode` 대신 `_common/json/JsonObject`(이 타입에만 Jackson·MyBatis 변환 등록)
 
 ### 3.5 신고·지원·사용량·관리자 (support · usage · admin)
@@ -1331,8 +1395,8 @@ classDiagram
   class OutboxWriter { <<messaging>> }
 ```
 
-- 정정 영향(#244): `SupportService` → `ReportSupportService.affected`·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
-- `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). learning 지원 응답 해석은 client가 맡는다(#792): `target`은 `SupportTarget(studentId, attemptId, previousResult)`(학생·시도 ID가 UUID가 아니면 502 `SUPPORT_INVALID_RESPONSE`), `judgedAnswer`는 시도 원문에서 정정한 판정의 답변 ID, `correct`는 검사한 `CorrectionResult(previousResult, impact, body)`. `SupportService`는 그 값을 신고 기록과 대조(다르면 409)하고 정정 영향을 조합한다. `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
+- 정정 영향(#244): `SupportService` → `ReportSupportService.affected`(→ `ReportClient.correctionImpact`가 검사한 `AffectedReport` 목록, 계약 위반 502 `REPORT_CONTRACT_INVALID`도 호출부에서 `UNKNOWN`으로 기록, #824)·`ConversationSupportService.citing`/`pinned`로 조회해 `correction.impact`에 기록. `ReportQueryService`·`ConversationService`는 `CorrectionNoticeService`로 `correctionNotice` 표시 여부를 읽음
+- `SupportLearningClient` = `support/client/LearningSupportClient.kt` (아키텍처 2.6). learning 지원 응답 해석은 client가 맡는다(#792): `target`은 `SupportTarget(studentId, attemptId, previousResult)`(학생·시도 ID가 UUID가 아니면 502 `SUPPORT_INVALID_RESPONSE`), `judgedAnswer`는 시도 원문에서 정정한 판정의 답변 ID, `correct`는 검사한 `CorrectionResult(previousResult, impact, body)`(`impact`·`body`는 `JsonObject`, #947). `SupportService`는 그 값을 신고 기록과 대조(다르면 409)하고 정정 영향을 조합한다. `ErrorReportService`·`InquiryService`·`NoticeService` = `SupportService` + `SupportCommands` + `SupportAccessService`(#46)
 - 운영(#47) 구현 이름: `AdminController` = `admin/controller/OperationsController`, `AdminJobService` = `OperationRetryService`(+ `OperationsService` 조회), 큐 현황 = `OperationsQueueService` + `admin/client/QueueManagementClient`, 감사 이력 조회 = `OperationsService.audits`. 관리자 미션(#145) `AdminMissionController` = `learning/controller/AdminMissionsController` + `AdminLearningService`
 - 구현된 #43 공개 경로는 #36 `PublicAuthFilter → AuthService.requirePermission(SERVICE_OPS)`를 재사용한다. 내부 조회는 `InternalAuthFilter`의 내부 토큰 검사를 사용한다. 다른 관리자 기능의 권한 범위는 API 1.2를 따른다.
 - #43은 실제 구현된 `ModelVersionController`·`AiUsageController`·`InternalModelVersionController`를 구분해 표시했다. `AiUsageController`는 자기 기능 service만 부르도록 `usage/controller`에 둔다(#422, 경로 `GET /api/v1/admin/ai-usage` 동일). 내부 응답은 `{items: List<ActiveModelVersion>}`이며 평가·관리자 정보는 제외한다. 나머지 운영 기능은 #47에서 구현됨(위 구현 이름).
@@ -1341,12 +1405,12 @@ classDiagram
 - `OperationsQueueService` → `QueueManagementClient`: RabbitMQ 관리 API(15672) 조회, `definitions.json`의 고정 35개 큐(기본 큐 7개 × 기본·재시도 3·DLQ) 길이·DLQ 적재량 (참고 레포 `QueueOperations*`, api-spec 2.8.1)
 - 모델 파일 사전 검사(#368): `ModelPreflightController`(`POST /api/v1/admin/models/preflight`, SERVICE_OPS) → `ModelPreflightService` → `admin/client/ScoringPreflightClient`(`InternalRestClientFactory` 20초·재시도 없음) → scoring `POST /internal/models/preflight`. 결과·오류는 `MissionAuditRepository`(MyBatis `audit_log`, `target_type = MODEL_VERSION`, 대상 ID 없음)로 감사 기록. 검사 대상·결과 값 객체는 `admin/domain/ModelPreflight.kt`, 모르는 칸 거부는 controller DTO `ModelPreflightRequest`·`RegistrationArtifactRequest`가 맡고 domain은 Jackson에 의존하지 않는다(#422, api-spec 5.2.1, scoring 6장 `preflight.py`)
 - 모델 로딩 상태(#370): scoring `ModelLoadingReporter`가 발행한 `model.loading.reported`를 `admin/consumer/ModelLoadingConsumer`(큐 `core.model.loading.reported`, `RetryingConsumer`)가 받아 `ModelLoadingService.record`로 `model_loading_report`에 Pod·인스턴스별 최신 상태를 저장한다. `ModelLoadingController`(`GET /api/v1/admin/model-loading`)가 `list`로 조회 (아키텍처 1.4). 저장·조회·삭제 SQL은 `ModelLoadingRepository`(MyBatis `ModelLoadingMapper`), 1일 지난 보고 정리는 `admin/scheduler/ModelLoadingCleanupScheduler`가 1시간마다 `ModelLoadingService.cleanup` 호출(#422)
-- 재학습 자동 등록·표현 검토(#725, 구현 전 #728): `InternalModelVersionController.registerFromPipeline`(`POST /internal/model-versions`, ops 토큰)은 `ModelVersionService.registerFromPipeline` → `ModelPreflightService.check`(actor = 재학습 계정 `app.model-registry.pipeline-actor-id`) → PASS면 기존 `register`와 같은 저장·감사(actor 같음). `tox-` MODEL·`registration.source = PIPELINE`·`evaluation.recommendation` 필수 검사는 service에서. 관리자 표현 검토는 `learning/controller/AdminExpressionReviewController`가 관리자 미션처럼 learning `/internal/admin/expression-reviews…`로 넘기고 `EXPRESSION_REVIEW_VIEW`·`EXPRESSION_REVIEW_LABEL` 감사 기록(api-spec 2.8·4.1.5)
+- 재학습 자동 등록·표현 검토(#725, 구현 #728): `InternalModelVersionController.registerFromPipeline`(`POST /internal/model-versions`, ops 토큰)은 `ModelVersionService.registerFromPipeline` → `ModelPreflightService.check`(actor = 재학습 계정 `app.model-registry.pipeline-actor-id`) → PASS면 기존 `register`와 같은 저장·감사(actor 같음). `tox-` MODEL·`registration.source = PIPELINE`·`evaluation.recommendation` 필수 검사는 service에서. 관리자 표현 검토는 `learning/controller/AdminExpressionReviewController`가 관리자 미션처럼 learning `/internal/admin/expression-reviews…`로 넘기고 `EXPRESSION_REVIEW_VIEW`·`EXPRESSION_REVIEW_LABEL` 감사 기록(api-spec 2.8·4.1.5). 구현(#907)은 controller(본문 `{label}` DTO 검사) → `learning/service/AdminExpressionReviewService`(관리자 확인·감사·요청과 응답의 ID·라벨 대조, JSON 칸을 읽지 않음) → `learning/client/LearningExpressionReviewClient`(빈 학생 범위로 호출, 응답을 `learning/domain` `ExpressionReview`·`ExpressionReviewPage`로, 모양이 틀리면 502 `LEARNING_INVALID_RESPONSE`) → `LearningClient`. 감사는 service가 `admin/service/ExpressionReviewAuditService`(`viewed`·`labeled`, `REQUIRES_NEW`, action 이름 그대로) → `MissionAuditRepository`
 - #336 구현(#355): `learning/controller/AdminMissionDraftsController`가 성취기준 표·미션 초안 경로를 같은 방식으로 learning에 넘기고 초안 요청·채택·버리기를 감사 기록한다(api-spec 2.8). 사용량 호출 종류(`usage/domain/UsageSummary.CallType`)에 `MISSION_DRAFT`
 
 ### 3.6 커뮤니티·포인트·꾸미기 (community #388 · reward #389 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 core 클래스. 커뮤니티는 #388, 포인트·꾸미기는 #389로 구현했고 `RewardService.earn` 호출 연결(학습 완료·공유·반응·되돌아보기 열람)도 `ParticipationRewardService`로 구현했다(아래 연결 절). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 core 클래스(커뮤니티 #388, 포인트·꾸미기 #389). `RewardService.earn` 호출 연결(학습 완료·공유·반응·되돌아보기 열람)은 `ParticipationRewardService`(아래 연결 절). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
@@ -1386,6 +1450,7 @@ classDiagram
     +setVisibility(studentId, visible, reason)
     +moderate(postId, status, errorReportId)
     +postAuthor(postId, viewerId, viewerUser) UUID
+    +post(postId) PostDetail
   }
   class RewardController {
     <<controller>>
@@ -1459,11 +1524,11 @@ classDiagram
 - 친구 방 구경(#708): `FriendRoomService.room`이 학생 세션 확인 → `CommunityRepository.reportHidden`(404) → `CommunityClient.postAuthor`(learning #707, 오류 그대로 전달) → `CommunityAuthorMapper.toAuthors`(없으면 404) → `LookUnlockService.equipmentAssets`(착용 여덟 칸 그림 키, 바닥 포함·판매 중단 포함) → `RoomDecorService.friendSpots`(방 소품 놓은 자리, 그림 키만, #704) → `RoomFrameSlotService.friendFrames`(작성자 범위로 learning 앨범) 순서로 조합한다. 트랜잭션 없이 읽기만 해 learning을 기다리는 동안 DB 잠금이 없다. 응답에 학생 ID·회차 키를 넣지 않는다. 커뮤니티 목록 `look.equipped`(`equipmentOf`, 캐릭터 네 슬롯 아이템 코드)는 그대로다
 - #704 바닥·방 소품: 바닥 `FLOOR`는 `LookCatalog.EQUIP_SLOTS`(착용 슬롯)에 들어가 해금·착용 클래스가 그대로다. 방 소품 `DECOR`는 `ITEM_SLOTS`(관리자 등록)에만 있고 `LookUnlockService.purchase`가 해금과 같은 잠금·원장·멱등으로 여러 번 산다(`unlock`은 방 소품을 422로 거절). 목록 `catalog`가 보유 개수 `ownedCount`·등록일 `createdAt`을 채운다. `RewardService.deleteStudent`가 원장보다 먼저 보유 행을 지운다
 - `StudentLookService`(#234, API 3.12)는 저장 전에 `LookUnlockService`로 해금 여부를 확인하고 `equipped` 슬롯을 검증·교체한다. 학생 삭제 확정의 `clear`가 `RewardService.deleteStudent`도 부른다(#389)
-- 공유물 목록 해석(#792): `CommunityClient.missionPosts`·`studentPosts`가 learning `items[]`를 `MissionPost`·`StudentPost`로 바꾼다(공유물·작성자 ID UUID, 상태는 `Community.POST_STATUSES`, 반응 수는 `Community.REACTIONS` 전부를 0으로 채움, 내 반응은 알려진 종류만). 틀리면 502 `COMMUNITY_INVALID_RESPONSE`. `CommunityService`는 작성자 표시·신고 숨김·공개 설정으로 거르고 상태를 덮어쓰는 업무 판단만 한다
+- 공유물 목록 해석(#792·#814): `CommunityClient.missionPosts`·`studentPosts`가 learning `items[]`를 `MissionPost`·`StudentPost`로 바꾼다(공유물·작성자 ID UUID, 상태는 `Community.POST_STATUSES`, 반응 수는 `Community.REACTIONS` 전부를 0 이상 정수로 채움(빠진 종류는 0, 음수·문자열·소수·null은 오류), 내 반응은 알려진 종류만, 미션 ID는 UUID|null·미션 제목은 문자열|null, 작성 시각은 date-time|null이며 learning 문자열 그대로). 답변은 `post`(신고 대상·관리자 원문)까지 세 읽기 모두 공개 계약 `CommunityAnswer`(`{inputType, text, content}`, 입력 방식별 `content` 칸만, #825) 모양을 검사한 learning 원문을 넘긴다. 틀리면 502 `COMMUNITY_INVALID_RESPONSE`. `CommunityService`는 작성자 표시·신고 숨김·공개 설정으로 거르고 상태를 덮어쓰는 업무 판단만 한다
 - 신고 연결(#388 구현): 기존 `SupportService`(3.5)가 `targetType = COMMUNITY_POST` 접수·처리 결과 저장 뒤 `CommunityModerationService.apply`(같은 공유물 신고 전체로 `HIDDEN_REPORT`·`VISIBLE`·`REMOVED`를 정해 learning `moderation` 호출)
 - 동의 철회·이관 수락·공개 설정 변경(#388 구현): 기존 `ConsentService`·`GuardianTransferService`와 `CommunityService.updateSettings`가 `CommunityVisibilityService.sync` 호출(트랜잭션 안에서 설정·현재 보호자 동의로 공개 여부를 정하고 커밋 뒤 learning `community-visibility`). 학생 삭제 확정은 `ChildManagementService`가 `reset`. 공유 요청은 `LearningProxyService.reflection` 돌아보기 저장 성공(또는 `409 ATTEMPT_CLOSED` 재요청) 뒤 `CommunityService.shareCompleted`, 결과 `postId`로 공유 포인트 적립(#389)
-- 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. #387 때는 무료 `THEME_DAY`·`EXTRA`를 셌고, 2026-11-10 개정(core #485)부터 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다
-- 2026-11-10 개정(#483, core #485 구현): `ProductEntitlementService.missionStart`는 `THEME_DAY`·`THEME_REVIEW`를 상품 조회 없이 통과시키고, `EXTRA`는 상품 `features.extraMissions`(값이 없으면 무료 거부·구독 중 허용, #506)로 판정한다. `ProductEntitlementService.sundayTheme(student, date)`가 KST 일요일에만 상품 `features.sundayTheme`을 읽어 learning 쿼리 `sundayTheme`을 정한다(`LearningProxyService`가 시도 시작·주간 테마 조회·열람 기록 2종에 붙임). `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 응답의 `days[].completedOnDay`(당일 풀이 `THEME_ON_TIME`)·`completed`(개근 `THEME_COMPLETED`, #506)·`finished`(주간 완주 `THEME_FINISHED`)로 적립을 보충한다. 사건 종류는 `RewardEvent` 8개(`UNLOCK` 포함)
+- 무료 추가 문제 하루 한도: `MissionUsageService`(`usage/`)가 무료 신규 시도 `201`을 `mission_daily_usage`에 기록·집계, 시도 시작 프록시 전에 확인. 무료 상품에서 `EXTRA`를 다시 켠 경우의 무료 `EXTRA`만 센다(#485)
+- 주간 테마 이용 규칙(#483, core #485): `ProductEntitlementService.missionStart`는 `THEME_DAY`·`THEME_REVIEW`를 상품 조회 없이 통과시키고, `EXTRA`는 상품 `features.extraMissions`(값이 없으면 무료 거부·구독 중 허용, #506)로 판정한다. `ProductEntitlementService.sundayTheme(student, date)`가 KST 일요일에만 상품 `features.sundayTheme`을 읽어 learning 쿼리 `sundayTheme`을 정한다(`LearningProxyService`가 시도 시작·주간 테마 조회·열람 기록 2종에 붙임). `ParticipationRewardService.weeklyThemeViewed`가 주간 테마 조회 응답의 `days[].completedOnDay`(당일 풀이 `THEME_ON_TIME`)·`completed`(개근 `THEME_COMPLETED`, #506)·`finished`(주간 완주 `THEME_FINISHED`)로 적립을 보충한다. 사건 종류는 `RewardEvent` 8개(`UNLOCK` 포함)
 
 ### 3.7 생활공간·추억 프록시 (P27, 구현 #555·#560·#566)
 
@@ -1611,6 +1676,7 @@ classDiagram
   }
   class AttemptController {
     <<controller>>
+    +themeGuide(missionId, grade, demo, context, sundayTheme) MissionView
     +start(missionId, grade, demo) Attempt
     +get(attemptId) AttemptDetail
     +saveDraft(attemptId, ifMatch, content) Draft
@@ -1754,7 +1820,7 @@ classDiagram
 - 보완 답변 연결: 첫 답변은 `followupId` 없이, 버전 2부터는 이 시도의 가장 최근 되묻기 중 아직 답하지 않은 것만 (`JudgmentService.unansweredLatestFollowupId`). 아니면 `422 ANSWER_INCOMPLETE`. 판정 전 추가 제출·되묻기 2회 뒤 제출도 여기서 막힘 (P04)
 - 답변 표현 검사 (#205): `AnswerService.submit`이 누락 검사 다음·되묻기 연결 검사 전에 `ExpressionPolicy.blockedCategory(AnswerContent.writtenTexts(), mission)`를 부름. 학생이 쓴 칸(서술 글·풀이 최종 답과 단계·논술 4칸)을 칸마다 검사하고 고르기·분류·초안·메모는 검사하지 않음. 범주(`ExpressionCategory`: `PROFANITY`·`SEXUAL`·`HATE`·`THREAT`·`PERSONAL_INFO`)가 나오면 저장·판정 없이 `422 ANSWER_INAPPROPRIATE`(`detail`은 범주별 고정 문구), 로그는 `attemptId`·`category`만. 목록은 `resources/answer-filter`(korcen·우리말샘·팀 조정)를 `answer/repository/ExpressionPolicyConfig`가 읽어 빈으로 만들고, domain은 Kotlin 정규식만 씀. `HATE`와 맥락 단어(`새끼`)는 미션 본문(제목·질문·안내·선택지·그룹)에 나오면 허용
 - 표현 분류 모델 단계 (#688): `AnswerService.submit`이 시도 행 잠금 전에 `ToxicityClient.check(writtenTexts)`로 scoring 결과를 받아 둠(공백 칸 제외, 칸 순서대로 앞 20칸·합계 앞 1,500자까지만). 단어 목록을 통과한 뒤 그 결과가 flagged면 `ExpressionCategory.INSULT`로 같은 422(표현 문구). 결과가 없거나(시간 초과·장애·서킷 열림·`active:false`·계약 밖 응답·생략) flagged가 아니면 진행. 로그는 `attemptId`·`category`·건너뜀 사유만
-- 표현 검토 대기 (#725, 구현 전 #727): `ToxicityResult.review`가 참이고 답변을 저장하면 같은 트랜잭션에서 `ExpressionReviewService.recordGrayZone(answerId, modelVersion)`(UK `(answer_id, source)`라 다시 보내기 중복 없음). 패키지는 `answer/` 아래(`answer/service/ExpressionReviewService`, `answer/controller/AdminExpressionReviewController`·`ExpressionReviewExportController`, `answer/repository/ExpressionReviewRepository`). 커뮤니티 운영 반영(`CommunityService`의 moderation 처리)이 `recordReported`·`autoLabel`을 부른다(`HIDDEN_REPORT` → 행 추가, `REMOVED`·`VISIBLE` → 자동 라벨, 직접 라벨한 행은 그대로). 학생 삭제는 답변보다 먼저 이 학생 답변의 행을 지움(ERD 4.3.2). `export`는 학생이 쓴 칸을 이어 1,500자로 자른 글과 라벨만 반환
+- 표현 검토 대기 (#725, 구현 #727): `ToxicityResult.review`가 참이고 답변을 저장하면 같은 트랜잭션에서 `ExpressionReviewService.recordGrayZone(answerId, modelVersion)`(UK `(answer_id, source)`라 다시 보내기 중복 없음). 패키지는 `answer/` 아래(`answer/service/ExpressionReviewService`, `answer/controller/AdminExpressionReviewController`·`ExpressionReviewExportController`, `answer/repository/ExpressionReviewRepository`). 커뮤니티 운영 반영(`CommunityService`의 moderation 처리)이 `recordReported`·`autoLabel`을 부른다(`HIDDEN_REPORT` → 행 추가, `REMOVED`·`VISIBLE` → 자동 라벨, 직접 라벨한 행은 그대로). 학생 삭제는 답변보다 먼저 이 학생 답변의 행을 지움(ERD 4.3.2). `export`는 학생이 쓴 칸을 이어 1,500자로 자른 글과 라벨만 반환
 - `FinishPolicy.canFinish`: 시도 내 판정 `DONE` 1회 이상(결과 무관, `HELD` 포함)이면 true (P04)
 - `AttemptService.finish`: 시도 행을 잠그고(`AttemptRepository.lockById`, 답변 제출·판정 저장과 같은 행) 본인 확인 → 이미 마무리했으면 기록 없이 같은 결과 → 타임라인으로 `FinishPolicy.canFinish`(sequence-diagram 3.3 순서) → `Attempt.finish(now)` → `AttemptRepository.finish`(`WHERE status = 'IN_PROGRESS' AND finished_at IS NULL`) → `FinishResult{finishedAt, reveal, revealKind, checklist}`. `Attempt.finish(now)`는 타임라인을 받지 않아 `canFinish`는 서비스가 먼저 부름
 - 공개 내용(FN-LRN-11): `reveal`은 시도 기준표 버전의 예시 답(닫힌 문제는 정답과 해설), `revealKind`는 고르기·순서·분류·풀이 단계 `ANSWER`, 서술·논술 `EXAMPLE`. 체크리스트는 기준표 요소 전체, 이 시도의 처리 완료 판정(`JudgmentService.results`) 중 원문 구절과 함께 충족된 적 있는 요소만 체크하고 가장 최근 구절 표시. 시도 상세도 마무리 뒤에 같은 값
@@ -2044,7 +2110,7 @@ classDiagram
 - `RecordRepository.findEligible`: 집계 대상 시도(P08: 기간 안 답변 제출, 미완료 포함, 조회 종료일까지 모두 처리 실패인 시도·삭제 학생 제외)와 시도별 사실(완료, 최초 답변 전 생각 열기 열람, 되묻기 받음, 보완 답변, 모두 조회 종료일까지)을 한 번 읽고 summary·thinkingTypes·attempts가 같이 씀. `isRecorded`는 기간과 무관한 상세용, `stats`는 운영 집계
 - `RecordService.attempts`·`attempt`: 학생 시도 상세(`AttemptService.get`)를 그대로 쓰고 응답에서 초안(메모 포함)만 뺌(P05). 목록은 답변·생각 열기 열람을 조회 종료일까지로 자르고 돌아보기는 기간 안에 쓴 것만 남김. 시도 항목에 `completedAt`·`hintUsages`·돌아보기 `createdAt`을 붙임(report #51). 상세는 이력을 자르지 않음(core #40) 그래서 `findAttemptsWithTimeline`은 두지 않음
 - `RecordService.home`·`thinkingActivities` (core #40 요청): `home`은 이어할 시도(`findResume`: 진행 중 시도 중 시작·답변 제출·초안 저장 중 가장 늦은 시각이 가장 최근, 기간과 무관, 초안은 저장 시각만 읽음)를 기록 상세와 같은 모양으로, 미션은 `MissionService.listForStudent` 그대로. `thinkingActivities`는 `findEligible` 대상의 유형·미션 이름과 기간 안에 쓴 돌아보기. 둘 다 `state`는 기간 안 집계 대상 시도 수
-- `RecordService.changes`: 보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변. 원문은 `plain_text`, 글자·문장·까닭을 잇는 말 수는 학생이 쓴 칸 내용으로 셈(칸 이름 제외). 까닭을 잇는 말 목록(`TextCounts.REASON_CONNECTIVES`)은 report와 확정
+- `RecordService.changes`: 보완 답변이 있는 시도의 최초 vs 조회 종료일 이전 마지막 답변. 원문은 `plain_text`, 글자·문장·까닭을 잇는 말 수는 학생이 쓴 칸 내용으로 셈(칸 이름 제외). 까닭을 잇는 말 목록(`TextCounts.REASON_CONNECTIVES`)은 report와 확정, report·ai와 공통 픽스처(`contracts/examples/p08-metrics`)로 일치 검사(#836, architecture 1.1)
 - `StudentDeletedConsumer`: 봉투 검증(`specversion` 1.0, `id` UUID, type `student.deleted`·source `core-service`·dataschema `student.deleted.v1`, `subject` = `data.studentId`, 시간대 있는 `time`, data는 스키마 그대로). 형식 오류는 재시도 없이 DLQ, 나머지 실패는 `RetryingConsumer`로 지연 재시도
 - `StudentDeletionService.delete`: `deletionRequestId`는 완료 보고 경로에 필요하고 learning DB에 없어 이벤트에서 받음(#128). 한 트랜잭션에서 `processed_event`에 없으면 삭제·`deleted_student`·`processed_event` 저장, 있으면 건너뜀. 커밋 뒤 트랜잭션 밖에서 `CoreClient.reportDeletionCompleted`(SYSTEM + 대상 학생 범위). 이미 처리한 이벤트도 보고는 다시 보냄(core가 첫 보고를 놓쳤을 수 있음, report와 같음). 보고 실패 시 예외 → 지연 재시도(1·5·15분) 때 삭제 없이 보고만 (P09, 아키텍처 1.6)
 - `evidence`: `deleted_student`에 있는 학생 근거는 `available: false` (FN-ACC-13)
@@ -2052,7 +2118,7 @@ classDiagram
 
 ### 4.4 주간 테마·커뮤니티 (theme #385 · community #386 구현)
 
-2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스. 주간 테마(`theme`)는 #385, 커뮤니티(`community`)는 #386으로 구현한 이름·시그니처. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정([기능명세 1.4](functional-spec.md#14-확정-정책) P20~P25)의 클래스(주간 테마 `theme` #385, 커뮤니티 `community` #386, 구현 이름·시그니처). 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
@@ -2089,10 +2155,31 @@ classDiagram
   class WeeklyThemeAdminService {
     <<service>>
     +create(author, content) AdminWeeklyTheme
-    +update(themeId, author, content) AdminWeeklyTheme
-    +requestReview(themeId) AdminWeeklyTheme
-    +publish(themeId) AdminWeeklyTheme
-    +unpublish(themeId) AdminWeeklyTheme
+    +update(themeId, author, content, expectedVersion?) AdminWeeklyTheme
+    +requestReview(themeId, expectedVersion?) AdminWeeklyTheme
+    +publish(themeId, expectedVersion?, expectedPlan?, checkPlan) AdminWeeklyTheme
+    +unpublish(themeId, expectedPublishedVersion?) AdminWeeklyTheme
+  }
+  class ThemeWeekPlanner {
+    <<service>>
+    +board(grade, weekStart) WeekBoard
+    +change(PlanChange) PlanResult
+    +lockGrades(grades)
+    +requireOpen(grade, week)
+    +lockDraftEdits(draftId) DraftWeekState
+    +requireExpected(state, expected, supplied)
+    +requireOccupant(grade, week, expected)
+    +finishPublication(versionId, grade, week)
+  }
+  class ThemeDraftMediaService {
+    <<service>>
+    +history(draftId, scene) SceneHistory
+    +select(draftId, scene, versionId, expected, expectedCount) SceneHistory
+    +annotate(draftId, scene, versionId, starred?, note?) SceneHistory
+    +selectedOutput(draft) ThemeDraftOutput
+    +rootId(draftId) UUID
+    +hasPendingGeneration(draftId) Boolean
+    +freeze(draftId)
   }
   class WeeklyTheme {
     <<entity>>
@@ -2120,10 +2207,14 @@ classDiagram
   class AdminThemeDraftController {
     <<controller>>
     +request(body) ThemeDraftView
-    +list(status, source, page, size) Page
+    +list(status, source, page, size, grade?, weekStart?, hideDiscarded, comparisonPending) Page
+    +reviewList(grade?, source?, status?, stage?, week?, weekStart?, comparisonPending, hideDiscarded, page, size) ThemeDraftReviewPage
     +detail(draftId) ThemeDraftView
-    +adopt(draftId) AdminWeeklyTheme
-    +discard(draftId) ThemeDraftView
+    +sceneHistory(draftId, scene) SceneHistory
+    +selectScene(draftId, scene, body) SceneHistory
+    +annotateScene(draftId, scene, versionId, body) SceneHistory
+    +adopt(draftId, expectedPlannedWeek?) AdminWeeklyTheme
+    +discard(draftId, expectedPlannedWeek?) ThemeDraftView
     +regenerate(draftId, targets?) ThemeDraftView
   }
   class ThemeDraftService {
@@ -2131,8 +2222,10 @@ classDiagram
     +request(command, author) ThemeDraftView
     +createWeekly(weekStart)
     +regenerate(draftId, author, targets?) ThemeDraftView
-    +adopt(draftId, author) AdminWeeklyTheme
-    +discard(draftId) ThemeDraftView
+    +list(status, source, page, size, grade?, weekStart?, hideDiscarded, comparisonPending) Page
+    +reviewPage(filter, page, size) ThemeDraftReviewPage
+    +adopt(draftId, author, expected?, supplied) AdminWeeklyTheme
+    +discard(draftId, expected?, supplied) ThemeDraftView
     +generateNext(now)
   }
   class ThemeDraft {
@@ -2159,6 +2252,7 @@ classDiagram
     +findInputs(grade, from, until) List
     +claimNext(now, leaseUntil) ThemeDraft
     +saveAttempt(draft, claimedLease)
+    +reviewPage(filter, page, size) ThemeDraftReviewPage
   }
   class AssetUrls {
     <<common>>
@@ -2204,6 +2298,8 @@ classDiagram
   WeeklyThemeAdminService ..> ThemePublishCheck
   WeeklyThemeAdminService ..> ThemeAnswerRules : 저장 때 정답 논리·생각 열기 위치
   WeeklyThemeAdminService --> MissionService : 게시본 미션
+  AdminWeeklyThemeController --> ThemeWeekPlanner : 주차 편성 조회·변경
+  WeeklyThemeAdminService --> ThemeWeekPlanner : 학년 잠금·주 잠금·게시 고정
   WeeklyThemeService ..> ThemeEnding : 종료 공개·OUTRO
   WeeklyThemeService --> AssetUrls : 그림·영상 URL
   AttemptService --> WeeklyThemeService : context 검사·themeScene
@@ -2215,6 +2311,10 @@ classDiagram
   ThemeDraftService ..> ThemeDraftRules
   ThemeDraftService --> MissionService : createFromDraft(LLM_THEME)·성취기준 조회
   ThemeDraftService --> WeeklyThemeAdminService : 테마 DRAFT 생성·게시 여부
+  ThemeDraftService --> ThemeWeekPlanner : 주 잠금·편성 대조·해제
+  ThemeDraftService --> ThemeDraftMediaService : 장면 선택본·생성 대기·고정
+  AdminThemeDraftController --> ThemeDraftMediaService : 장면 이력·선택·별표·메모
+  ThemeDraftMediaService --> ThemeWeekPlanner : 편집 잠금
   CommunityController --> CommunityService
   CommunityService ..> CommunityRules
   CommunityService --> AttemptService : 학습 완료 여부·첫 완료 시도·마지막 답변
@@ -2226,8 +2326,8 @@ classDiagram
 - 학생 삭제 소비(4.3 `record`)의 `StudentDeletionService`가 같은 트랜잭션에서 시도 삭제 전에 `CommunityService.deleteByStudent`(#386), 시도 삭제 뒤 테마 열람 기록 삭제(`WeeklyThemeService.deleteByStudent`, #385)를 호출
 - 테마 게시 중 수정은 미션과 같은 버전 방식(`weekly_theme_version`, 현재본·게시본·검토 요청본). 학생 조회·시작 검사는 게시본, 관리자 편집은 현재본
 
-#438 추가(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
-- 학년: `GradeBand`(`G3_4`·`G5_6`)를 `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`)로 바꾼다. `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
+#438(학년별 테마·이야기·테마 초안, 결정과 근거는 [learning 보고서](../report/learning.md) #438 절):
+- 학년: `ThemeGrade`(`G3`~`G6`, `of(학년)`은 7~9를 `G6`). `ThemePublishCheck`는 미션 학년 범위가 테마 학년을 포함하는지 보고 실패 코드는 `GRADE_MISMATCH`. 학생 경로는 `grade`가 없으면 `gradeBand`(`G3_4` → `G3`, `G5_6` → `G5`)로 읽는다(core 반영 뒤 제거)
 - 이야기·정답 구조: 버전·요일 새 칸은 테마 새 버전 때 함께 복사. `ThemeAnswerRules`가 관리자 저장 때 정답 논리(정답·후보·`rulesOut`이 함께 있거나 함께 없음, 정답은 후보 안이고 어느 날에도 빠지지 않음, 틀린 후보는 적어도 한 날 빠짐)와 `hintSpots`(0~100, 그날 미션 현재 기준표의 생각 열기 순번, 중복 없음)를 검사(400). 결정적 단서 `decisiveClue`는 마지막 틀린 후보를 빼는 날의 단서
 - 학생 응답: 요일 단서는 그 문제를 그 주에 학습 완료한 뒤에만(#484), 종료 이야기·정답·결정적 단서·종료 장면과 OUTRO 열람은 엔딩(`ThemeEnding.of`가 `ENDED`)일 때만. 엔딩은 저장하지 않고 정답 고르기(`theme_answer_pick`)와 고른 뒤 금요일 문제 `THEME_REVIEW` 마무리 시각으로 계산한다(state-diagram 3.2.2, #484). 요일 상태는 `ThemeWeek.stateOf(day, today, sundayTheme)`(누적 공개, 일요일은 core 허용 값). 커뮤니티 `CommunityService`는 `lockedUntilEnding`으로 정답 고르기 문제를 엔딩 전에 잠근다(`COMMUNITY_LOCKED_UNTIL_ENDING`). INTRO는 월~토 언제든 받음(웹은 그 주 처음 '오늘 문제 풀기'를 누를 때 보여 주고 기록, #589), `intro` 글은 매일. `theme_story_view` 학생·주·kind 멱등, 학생 삭제 때 `deleteByStudent`가 함께 지움
 - 단서 근거(#647, 기준안): `ThemeStory.features`(`ThemeFeature(name, values: List<ThemeFeatureValue(candidate, value)>)`, `weekly_theme_version.features`)와 `ThemeDayMission.clueFeature`(`weekly_theme_day.clue_feature`)를 저장·복사한다. 테마 초안 채택은 ai 응답 `theme.features`·`days[].clueFeature`를 그대로 옮기고, `ThemeAnswerRules.featureErrors`가 특징마다 후보 하나에 값 하나, `clueFeature`는 표의 이름, `rulesOut`이 비지 않은 날은 그 특징 값이 같은 후보끼리 함께 빠지는지 검사한다(테마 초안 learning 검사 `LOGIC`·관리자 저장 `400` 공통, 허용 값은 ai 내부 칸이라 그 이상은 보지 않음). `ThemeCarryOver`는 표를 이어받되 후보가 바뀌면 버리고 그날 `rulesOut`이 바뀌면 그날 `clueFeature`를 버린다. 학생 `ThemeDayView.clueFeature`·`clueFacts`는 그날 단서와 같은 조건(그 주 학습 완료), `WeeklyThemeView.features`는 엔딩 뒤만. 관리자 응답 `AdminWeeklyTheme.features`·`AdminThemeDay.clueFeature`
@@ -2237,8 +2337,14 @@ classDiagram
 - 채택: 초안 잠금 → 미션 5개 `MissionService.createFromDraft(command, rubric, LLM_THEME)`(장면 키·`sceneMotion` = ai 움직임 형식 v1을 칸 검사 없이 그대로, 요일 살펴보기 `spots` 포함) → `WeeklyThemeAdminService`로 테마 `DRAFT`(`hint_spots` NULL, `answer_clue` = 결정적 단서) → `ADOPTED` + `theme_id`, 한 트랜잭션. 다시 생성은 같은 입력의 새 초안(`ADMIN`)
 - `MissionService.createFromDraft`에 출처 인자(기본 `LLM_DRAFT`). `MissionCommand`에 `sceneMotion`, 관리자 미션 수정 본문에 없으면 `sceneUri`가 같을 때 이전 버전 값을 이어받음
 - 다른 기능은 service로만 부른다(architecture 계층 규칙): 성취기준은 `MissionService.standards(codes)`·`standardsOf(교과, 학년군)`, 주간 자동이 건너뛸 학년(그 학년·주 게시 테마 있음)은 `WeeklyThemeAdminService.publishedExists`. 자동 성취기준이 피할 최근 코드는 `ThemeDraftRepository.findInputs`(같은 학년, 적용 주 앞 4주)
-- 주제 씨앗(`ThemeTopicSeeds`, 기준안 64개, #437 B안 2026-11-11, #634 줄거리 종류 2026-11-16·④⑤ 2026-11-17): 주간 자동과 주제 없이 온 관리자 요청에 `ThemeTopicSeeds.choose`가 `줄거리: <종류> / 뭉치 역할: … / 장소: … / <찾는 대상|밝힐 것>: …` 하나를 골라 `input.topic`에 넣는다. `ThemeTopicSeed(type: StoryType, role, place, target, seasons)`, `StoryType`(LOST·TREASURE·PRANK·FOOTPRINT·ORIGIN·GIFT·SECRET_INGREDIENT·WHEN·ROUTE·VEHICLE·SOUND, `label`·`targetLabel` — 넷째 칸 `찾는 대상`·`밝힐 것`·`손에 든 것`). 그 주 계절(`Season`, 적용 주 월요일의 달)에 맞는 씨앗이 있는 종류 중 같은 학년 직전 주 초안 종류를 빼고 종류를 고른 뒤(모두 빠지면 빼지 않음), 그 종류 씨앗 중 같은 학년 최근 씨앗(`findInputs`, 목록 개수만큼의 주, 초안 상태 무관)·같은 주 다른 초안 씨앗(`findWeekInputs`)·같은 학년 최근 4주 역할(`ROLE_WEEKS`)을 빼고 무작위. 남는 게 없으면 최근 씨앗 → 역할 순으로 풀고 가장 오래전에 쓴 것, 종류는 지킴. 비교는 `parse`(`ParsedTopic`, 옛 형식은 LOST, 읽지 못하면 null)의 (역할 이름, 장소, 대상). 관리자가 쓴 주제와 다시 생성의 저장된 주제는 그대로
-- 자동 성취기준 후보 풀(#536, RAG 안 씀 팀 결정 2026-11-11): learning이 계속 고르고 후보 풀만 바꾼다. `ThemeDraftService.autoInput`이 교과별 학년군 표(`standardsOf`)를 `ThemeDraftRules.candidatePools`로 학기 단계 ① 그 학년·학기(`ThemeSemester.of(grade, weekStart)`, 3월 1일~8월 15일 1학기, 확정 2026-11-12) ② 같은 학년군에서 이번 학기까지 배운 학기(`ThemeSemester.soFar`)와 학년군 표로 나누고(`StandardCandidates`), `autoStandards`가 최근 4주·이미 고른 코드를 빼고 남는 첫 단계에서 고른다. 모든 단계가 최근 코드뿐이면 ① 단계에서 가장 오래전에 쓴 코드(주제 씨앗과 같은 방식). 학년군 표(위 학년 성취기준 포함)는 학기 단계에 고를 코드가 하나도 없을 때만. 아래 학년군은 넣지 않는다(미션 게시 학년군 규칙 #353). 학기 대응표 `StandardSemesters`(<<value>>, 코드 → 학기)는 `StandardSemestersConfig`가 시작 때 resources/knowledge/semester_map.csv(원본 `scripts/knowledge/semester_map.csv` 사본)에서 읽는다(DB·지식 판에 기대지 않음). 최근 코드는 `findInputs`의 오래된 순 목록. ai 요청 `missions[].standards` 계약은 그대로, ai `retrieve`(#470)는 받은 코드의 근거 묶음만 가져온다
+- 주제 씨앗(`ThemeTopicSeeds`, #437 B안 2026-11-11, #634 줄거리 종류 2026-11-16·④⑤ 2026-11-17, #782 장소 목록 2026-11-19 기준안 — 확인 전): 주간 자동과 주제 없이 온 관리자 요청에 `ThemeTopicSeeds.choose`가 `줄거리: <종류> / 뭉치 역할: <이름(차림)> / 장소: … / <찾는 대상|밝힐 것|손에 든 것>: …[ / 갈래: …] / 성격: …·…` 하나를 골라 `input.topic`에 넣는다. 목록은 `resources/knowledge/theme_places.json` 하나(`ThemePlaces.load`, 읽을 때 형식 검사 — 어기면 예외): `ThemePlace(type: StoryType, place, traits, seasons, events: List<ThemeEvent>)`, `ThemeEvent(target, branch?, seasons)`(사건 계절이 비면 장소 계절), `ThemeRole(name, outfit, types, traits?, animalOnly, anyPlaceTypes)`(`fits(type, placeTraits, branch)`). `StoryType`(LOST·TREASURE·PRANK·FOOTPRINT·ORIGIN·GIFT·SECRET_INGREDIENT·WHEN·ROUTE·VEHICLE·SOUND, `label`·`targetLabel`·`branches` — ai `STORY_BRANCHES`와 같은 표, `isAnimal(branch)`). 고르기: ① 종류 — 그 주 계절(`Season`, 적용 주 월요일의 달)에 쓸 사건이 있는 종류 중 같은 학년 직전 주 초안 종류를 뺌(모두 빠지면 빼지 않음) ② 장소 ③ 사건 ④ 갈래(사건에 정해 둔 값, 소리 탐정은 동물·물건 무작위) ⑤ 역할(어울림 표). 장소·사건·역할은 모두 같은 학년에서 최근에 쓴 것(장소·사건 `findInputs` `RECENT_WEEKS` = 사건 개수만큼의 주, 역할 `ROLE_WEEKS` 4주, 초안 상태 무관)을 빼고 무작위, 남는 게 없으면 가장 오래전에 쓴 것. 같은 주 다른 초안(`findWeekInputs`)의 사건은 끝까지 뺌. 비교는 `parse`(`ParsedTopic`, 끝 칸 갈래·성격도 읽음, 옛 형식은 LOST, 읽지 못하면 null)의 (종류, 장소, 대상). 씨앗 글은 관리자 주제 100자 상한에서 뺌. 관리자가 쓴 주제와 다시 생성의 저장된 주제는 그대로
+- 자동 성취기준 후보 풀(#536, RAG 안 씀 팀 결정 2026-11-11): learning이 계속 고르고 후보 풀만 바꾼다. `ThemeDraftService.autoInput`이 교과별 학년군 표(`standardsOf`)를 `ThemeDraftRules.candidatePools`로 학기 단계 ① 그 학년·학기(`ThemeSemester.of(grade, weekStart)`, 3월 1일~8월 15일 1학기, 확정 2026-11-12) ② 같은 학년군에서 이번 학기까지 배운 학기(`ThemeSemester.soFar`)와 학년군 표로 나누고(`StandardCandidates`), `autoStandards`가 최근 4주·이미 고른 코드를 빼고 남는 첫 단계에서 고른다. 모든 단계가 최근 코드뿐이면 ① 단계에서 가장 오래전에 쓴 코드(주제 씨앗과 같은 방식). 학년군 표(위 학년 성취기준 포함)는 학기 단계에 고를 코드가 하나도 없을 때만. 아래 학년군은 넣지 않는다(미션 게시 학년군 규칙 #353). 읽고 쓰기와 맞지 않는 성취기준 25개(`ThemeDraftRules.AUTO_EXCLUDED`: 국어 듣기·말하기 13·소리 내어 읽기 4국02-01·매체 제작·접속 4국06-01·4국06-02·6국06-03, 수학 그리기·조작 4수03-07·4수03-12·4수03-24·6수03-02·6수03-04·6수03-06·6수03-08·6수03-10, #782 사용자 결정 2026-11-19)는 `candidatePools`가 학기 단계와 학년군 표 모두에서 뺀다. 관리자가 고른 성취기준은 그대로(`autoStandards`가 고른 유형을 손대지 않음). 같은 주 안에서는 지금처럼 생각 유형마다 다른 성취기준. 학기 대응표 `StandardSemesters`(<<value>>, 코드 → 학기)는 `StandardSemestersConfig`가 시작 때 resources/knowledge/semester_map.csv(원본 `scripts/knowledge/semester_map.csv` 사본)에서 읽는다(DB·지식 판에 기대지 않음). 최근 코드는 `findInputs`의 오래된 순 목록. ai 요청 `missions[].standards` 계약은 그대로, ai `retrieve`(#470)는 받은 코드의 근거 묶음만 가져온다
+#882(장면 비교·주차 편성·게시 확정, learning V25~V27, 결정과 근거는 [learning 보고서](../report/learning.md) #882 절):
+- `ThemeWeekPlanner`: 학년별 권고 잠금(`lockGrades`, 학년 순서대로)으로 테마 작성·수정·게시와 초안 요청·채택·버리기·편성을 직렬화한다. `requireOpen`은 그 학년·주에 `PUBLISHED` 테마가 있으면 `409 WEEK_LOCKED`, `stale`은 관리자가 본 값과 다르면 `409 PLAN_CONFLICT`. `board`는 연속 4주 칸(`WeekSlot(weekStart, locked, planned, themes)`)과 후보(원본 `READY` 초안), `change(PlanChange{grade, draftId, expectedWeek, targetWeek, expectedTargetDraftId})`는 `theme_draft.planned_week`만 바꾼다(맞교환 포함, 생성 기준 주 `week_start`는 그대로). `finishPublication`은 게시 버전의 요일 미션·기준표 버전을 고정하고 그 학년·주 편성을 해제
+- `ThemeDraftMediaService`: 장면(`INTRO`·`MON`~`FRI`·`OUTRO`)마다 묶음 원본과 다시 생성본의 결과를 버전 이력(`SceneHistory`)으로 보여 주고, 선택·별표·메모를 저장한다(V25). `selectedOutput`이 장면별 선택본을 합친 결과를 채택에 넘기고, 채택·버리기 때 `freeze`로 선택을 고정. 묶음에 `GENERATING` 다시 생성본이 있으면(`hasPendingGeneration`) 채택·버리기는 `PLAN_CONFLICT`
+- 검수 목록(#964): `ThemeDraftService.reviewPage`가 `ThemeDraftReviewFilter`(<<value>>, 조회 조건·버림 이력 여부 `archived`)로 `ThemeDraftRepository.reviewPage`를 불러 `ThemeDraftReviewPage`(<<value>>, `ThemeDraftReviewRow` 목록·개수·적용 주 선택지 `weeks`)를 만든다. 검수 단계(`stage`)·적용 주·묶음 합치기는 매퍼 SQL이 계산하고(규칙 [state-diagram 3.5.1](state-diagram.md#351-theme_draftstatus-438)), 서비스는 썸네일만 `AssetUrls.url`로 바꾼다. 목록·개수·주 선택지가 한 스냅샷이 되도록 `REPEATABLE_READ` 읽기 트랜잭션
+- 시도의 테마 버전 고정(V27 `attempt.theme_version_id`)은 [ERD](erd.md)·[시퀀스](sequence-diagram.md) 참고
+- core 감사(`AdminLearningService`): 편성 변경 `THEME_DRAFT_PLAN`, 장면 선택 `THEME_SCENE_SELECT`, 별표·메모 `THEME_SCENE_ANNOTATE`(`target_type = THEME_DRAFT`, 장면은 `detail.scene`). learning 오류 `WEEK_LOCKED`·`THEME_SCHEDULE_LOCKED`·`PLAN_CONFLICT`는 허용 목록으로 그대로 전달
 - `spring.task.scheduling.pool.size` 5(작업마다 스레드 하나). 주기 작업이 ai를 기다리는 동안에도 Tomcat 요청 스레드가 다른 내부 API(#469 지식 API 포함)를 처리
 
 ### 4.5 기념 액자·추억 검색 (P27, 구현 #559·#563·#564)
@@ -2280,6 +2386,12 @@ classDiagram
     <<repository>>
     +register(attemptId) int
     +deleteByStudent(studentId) int
+    +hybrid(studentId, before, vector, model, minimum, keywords, from, to) MemoryHit[]
+    +latestInPeriod(studentId, before, vector, model, from, to) MemoryHit[]
+  }
+  class MemoryPeriodWords {
+    <<rules>>
+    +contains(text) boolean
   }
   class MemorySearchService {
     <<service>>
@@ -2298,6 +2410,7 @@ classDiagram
   class MemoryEmbeddingClient {
     <<client>>
     +embed(texts) Vectors
+    +embedQuery(text) Vectors
   }
   class MemoryExplanationAiClient {
     <<client>>
@@ -2323,6 +2436,7 @@ classDiagram
   MemorySearchRepository --> MemoryVectorMapper
   MemorySearchService --> MemoryEmbeddingClient : 질문·문서 임베딩
   MemorySearchService --> MemoryQueryAiClient : 질의 변환(#679)
+  MemorySearchService ..> MemoryPeriodWords : 변환 실패 때 기간 낱말 확인(#878)
   MemoryExplanationService --> MemoryEvidenceRepository : 본인 READY 근거 재확인
   MemoryExplanationService --> MemoryEmbeddingClient : 질의 관련도 재확인
   MemoryExplanationService --> MemoryExplanationAiClient
@@ -2330,7 +2444,7 @@ classDiagram
   AlbumService --> ThemeFrameService
 ```
 
-- 질의 변환·하이브리드(#679 설계, #682 구현): `MemoryQueryAiClient`는 ai `POST /internal/memory-queries`(읽기 8초, 재시도 없음, 서킷 `ai-memory-query`)를 부르고 실패(시간 초과·5xx·형식 밖·서킷 열림)를 서비스에 전달한다. 서비스는 해당 예외를 원문 로그 없이 null로 처리한다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩 → `MemorySearchRepository`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
+- 질의 변환·하이브리드(#679 설계, #682 구현): `MemoryQueryAiClient`는 ai `POST /internal/memory-queries`(읽기 8초, 서킷 `ai-memory-query`)를 부르고, 재시도 가능한 실패(`AiCallException.retryable`: 5xx·시간 초과·연결 실패)만 대기 없이 한 번 더 부른다(시도마다 서킷에 기록, #878). 실패마다 `failureCode`·시도 번호만 경고 로그로 남기고 끝내 실패(시간 초과·5xx·형식 밖·서킷 열림)하면 서비스에 전달한다. 서비스는 마스킹한 질문에 `MemoryPeriodWords`(프롬프트가 구간으로 바꾸는 표현만)가 있으면 503 `AI_UNAVAILABLE`, 없으면 null로 처리한다. `MemorySearchService.search`는 null이거나 `app.memory.query-rewrite.enabled=false`면 원문 벡터 단독 검색, 아니면 기간 보정 뒤 `searchText` 임베딩(`embedQuery`, 읽기 10초) → 키워드가 없고 보정 기간이 있으면 `MemorySearchRepository.latestInPeriod`(기간 안 회차 최신순 3, 유사도 기준·키워드 조건 없음, 회차 주 월~금 중 기간 안 날 1일 이상·평일 없는 기간은 하루 겹침, #879), 그 밖은 `hybrid`의 벡터·키워드 후보(같은 범위·기간 필터)를 RRF(k=60)로 합쳐 회차 상위 3. `MemoryExplanationService`는 변환을 부르지 않고 원문 질문으로 관련도를 재확인한다(api-spec 4.1.4, [결정 기록 16](../report/retention-expansion.md#16-추억-검색-질의-변환하이브리드-679-2026-11-16))
 - #559 구현(learning V19): `ThemeFrameService`(지급·소급·보유·확인·삭제)·`AlbumService`·`MemoryController`의 앨범·확인·보유 확인과 기동 소급 `ThemeFrameBackfillRunner`. 회차 상세의 문제·시도·엔딩은 `WeeklyThemeService.pastRound`가 조합. 검색은 #563 구현, 설명은 #564 구현([결정 기록 9.2](../report/retention-expansion.md#92-learning-기념-액자앨범-559-2026-11-12))
 - 학습 완료 처리(기존 `AttemptService`의 돌아보기 저장 = 학습 완료)가 같은 트랜잭션에서 `ThemeFrameService.awardIfComplete`(회차 5문제 완료 시 액자)와 `MemorySearchService.register`(`PENDING` 문서, 내부에서 `MemorySearchRepository.register`)를 부름. 다른 기능은 memory repository를 직접 부르지 않음(architecture 2.2). `EXTRA` 시도는 둘 다 건너뜀
 - `MemoryEmbeddingScheduler`는 `StuckJudgmentScheduler`처럼 조건부 UPDATE 선점이라 잠금 없음(상태 3.7). `MemoryEmbeddingClient`는 ai `POST /internal/embeddings`(기존 계약, 요청당 8글, 최대 64글 계약 이내), 이전 `KnowledgeEmbedder`는 V17 정리로 없으므로 신규. HTTP 전송·외부 DTO는 `memory/client`(`MemoryEmbeddingClient`·`MemoryExplanationAiClient`·core 닉네임 조회 `StudentProfileClient`), 마스킹 정책(`MemoryTextPrivacy`)·업무 흐름은 `memory/service`. 생성 호출의 장애 판정(서킷 열림·전송 실패·502 밖 5xx → `MemoryAiOutageException`)은 `MemoryExplanationAiClient`가 맡음
@@ -2625,6 +2739,7 @@ classDiagram
     +missions_done()
     +generate_dialogue(요일 5개 병렬)
     +review_story()
+    +fix_helpers(글 검토 HELPER_FIT: 그 요일 돕는 사람·일 칸만 고쳐 쓰고 그 요일 미션부터)
     +generate_images(테마 옷 뭉치 → 시작 1컷 → 미션 5 + 컷 7, 그림마다 review_images)
     +generate_videos(시작·종료 각 4컷 병렬, 컷마다 review_videos, 녹아드는 전환)
     +generate_motion(그림이 있는 장면)
@@ -2679,20 +2794,22 @@ classDiagram
 - 시간·상한 기준안: LLM 호출 타임아웃 300초(2026-11-11 180초에서 변경, 줄거리 1회 실측 130~170초)·재시도 0(재시도 대신 실패 사유 넣은 다시 생성), 단계마다 다시 생성 상한 2(첫 생성 포함 최대 3회), 줄거리 검사 사유가 모두 칸 하나만 고치면 되는 것(글자 수·증거 발견 줄 단서 값·후보·정답 이름·배정과 다른 증거 종류·매체, 글 칸만)이면 `fix_theme`이 그 칸만 고쳐 쓰고 다시 검사(상한 2, 넘으면 줄거리 다시 생성), 글 검토 재검토 상한 2, 마감까지 180초 미만 남으면 다음 다시 생성을 시작하지 않음(`DEADLINE` 사유를 붙여 실패), 최대 출력 토큰 줄거리·검토 32000·대화 8000
 - `ThemeDraftService.generate`: 요청 1번에 그래프를 한 번 끝까지 실행한다. 그래프 안에서 실패한 부분만 실패 사유를 넣어 상한(기준안 단계마다 2회)까지 다시 만들고(미션은 실패한 유형만, 대화는 실패한 요일만, 영상은 실패한 컷만), 마감까지 남은 시간이 부족하면 다음 재생성을 시작하지 않는다. 그래도 실패하면 `failure{stage, reasons}`를 담아 200으로 돌려준다(`THEME`·`MISSION`·`REVIEW`·`IMAGE`). 대화·영상·움직임은 끝내 실패하면 그 항목만 빼고 `warnings`에 남긴다. learning은 `failure`가 있으면 `CHECK_FAILED`로 두고 다음 시도에 `previousFailures`로 넘긴다. 마감은 기준안 15분(learning→ai 16분 안)
 - 요일 배치: 줄거리 단계에서 기준안(월 `ANALYZE`·화 `EVALUATE`·수 `CREATE`·목 `SOLVE`·금 `REFLECT`, 에픽 확인 필요)대로 정하고 응답 `day`로 돌려준다. learning이 다시 검사
-- 줄거리 구조화 출력의 내부 칸(응답 `theme`에서는 뺌, 계약 그대로): 후보 특징 표 `features`(특징 이름·고른 성취기준 코드 `standardCode`(장면에서 골랐으면 비움)·후보별 값, 그날 성취기준 내용에서 고르는 것을 기본으로 하고 안 되면 장면에서. #647부터 이름·후보별 값만 응답 선택 칸 `theme.features`로, 요일 단서 조건의 특징 이름은 `days[].clueFeature`로 내보냄. `public_theme`이 만들고 `standardCode`는 내부 칸으로 남김), 요일별 단서 조건 `condition`(`RULE`·`HINT`, 특징, 허용 값), 단서 증거 `evidence`(`TRACE`·`SIGHTING`·`RECORD`와 그때), 요일별 증거 종류·기록 매체 배정 `evidencePlan`(#535, 아래), 요일별 증거 발견 줄 `discovery`(미션 전 대화 마지막 줄, 40자)와 수사 연결 문장 `missionHook`(증거 발견 줄 다음 대화 맨 끝 줄, 뭉치, 40자), 찾는 대상 `target`, 시작·종료 콘티(`introCuts`·`outroCuts`, 컷마다 장면·동작·문구·뭉치 표정 `mungchiMood`). 후보 기준안 모든 학년 4개. 뭉치는 테마 역할로 사건을 해결하러 가는 주인공이고 찾는 대상의 주인은 등장인물 중 한 명(사용자 결정 2026-11-11)
+- 줄거리 구조화 출력의 내부 칸(응답 `theme`에서는 뺌, 계약 그대로): 후보 특징 표 `features`(특징 이름·고른 성취기준 코드 `standardCode`(장면에서 골랐으면 비움)·후보별 값, 그날 성취기준 내용에서 고르는 것을 기본으로 하고 안 되면 장면에서. #647부터 이름·후보별 값만 응답 선택 칸 `theme.features`로, 요일 단서 조건의 특징 이름은 `days[].clueFeature`로 내보냄. `public_theme`이 만들고 `standardCode`는 내부 칸으로 남김), 요일별 단서 조건 `condition`(`RULE`·`HINT`·`STORY`, 특징, 허용 값 — `STORY`는 #782 테마 짜임 사건 단서로 특징 `''`·허용 값 `[]`, 후보를 빼지 않고 사건이 어떻게 벌어졌는지 새 사실, 후보 이름·특징 값을 쓰면 `STORY_VALUE`. 마지막 틀린 후보는 금요일, 앞 요일과 같은 단서는 `CLUE_REPEAT` — 코드가 다른 특징이나 사건 단서로 고침), 단서 증거 `evidence`(`TRACE`·`SIGHTING`·`RECORD`와 그때), 요일별 증거 종류·기록 매체 배정 `evidencePlan`(#535, 아래), 요일별 증거 발견 줄 `discovery`(미션 전 대화 마지막 줄, 40자)와 수사 연결 문장 `missionHook`(증거 발견 줄 다음 대화 맨 끝 줄, 뭉치, 40자), 요일별 미션 지문 `missionMaterial`(#782, 수사 연결 문장이 가리킨 증거 내용, 150자, 미션이 그대로 씀), 요일별 오늘 온 까닭 `dayStep`(#782 설계 v7(사용자 결정 2026-11-22)부터 모델이 '오늘 여기 온 까닭'으로 쓰고 어제 일은 들은 것만 — 화~금에 어제 돕는 사람의 부탁·소개·지시·건넴, 오늘 할 일, 어제·오늘이 아닌 다른 날 돕는 사람을 쓰면 `DAY_STEP_MADE`(장소·호칭 낱말은 지우고 봄), 대화 첫 줄 화자(첫 등장인물)의 이름을 쓰면 `SELF_NAME`(모든 요일), 둘 다 칸 고쳐 쓰기·두 번째에도 걸리면 코드 문장 `day_step_text`(월 '{장소}에서 조사를 시작했어', 화~금 요일마다 다른 꼴 `DAY_STEP_LATER` '어제 들은 걸 떠올리며 {장소}로 와 봤어' 등, 돕는 사람 이름 없음). 돕는 사람 호칭이 바뀌면 다음 날 까닭의 옛 호칭도 `HELPER_SAME`. v5에는 어제 돕는 사람 호칭 필수 `DAY_STEP_LINK`(지어내기 원인이라 뺌), v3~v4에는 코드가 씀 — `fill_day_steps`: 월 '{장소}에서 조사를 시작했어'(#782 설계 v4부터 대상 글 안 씀), 화~금 '어제 {전날 돕는 사람}에게 들은 걸 따라 {장소}로 왔어'(전날이 수사면 '증거를 따져 본 뒤'), 40자를 넘으면 짧은 꼴, 칸 고쳐 쓰기 대상 아님. 그 전에는 #782 테마 짜임 기준안, 앞 요일에 간 곳·찾은 증거에서 이어지는 한 줄 40자, 그날·앞 요일 단서 결과를 말하지 않음 `CLUE_EARLY`·`PREV_CLUE`, 대화 재료, 예전 저장본은 빈 값), 요일별 그날 장소 사람 `helper`(#782 설계 v10부터 국어 부탁 날은 줄거리 모델이 '그날 성취기준의 일 → 사람 → 쓰임(내부 칸 `helperUse`) → 장소' 순서로 정하고 v10의 돕는 사람 검토 노드 `review_helpers`는 v11에서 뺌(테마마다 검토 호출 +1, 억지는 미션 검토 `STORY_LINK`·글 검토가 봄 — v13부터 글 검토 `HELPER_FIT`). 그 전에는 국어 부탁 날은 성취기준 영역(코드 셋째·넷째 자리, #782 설계 v9부터 돌아보기 날도 영역대로)의 일 틀에서 코드가 고른 호칭 둘 중 하나 — 내부 칸 `dayFrames`(요일 성취기준 코드·호칭 후보·아이 답의 쓰임, `day_frames`, #782 설계 v3), 아니면 `HELPER_SAME`, 미션 질문에 쓰임 낱말이 없으면 `USE_MISSING`. #782 미션 방식 기준안, 12자, 대화 화자로 나올 수 있음, 예전 저장본은 빈 값)와 미션 방식 `missionWay`(`ASK` 부탁·`INVESTIGATE` 수사(#782 사용자 결정 2026-11-20 "A+C": 함께 발견 `TOGETHER`은 40개 측정에서 그 테마 실패 9/18이라 뺌), LLM이 아니라 코드가 `mission_way_plan`으로 증거 배정 `evidencePlan`의 요일 순서와 함께 정함 — 방식은 그날 증거 종류에 맞는 것만(`WAY_FITS`: 흔적은 부탁, 목격·기록은 부탁·수사), 연달아 같은 방식 없음, 수사는 따지기 성취기준 3개(4국02-04·4국02-05·6국06-02) + 서술·논술 날만, 없으면 수사로 읽음. 흐름 검사: 부탁 날 장면 메모에 흔적·자국이면, 할 일에 약속 말 없이 흔적·자국이면 `EVIDENCE_EARLY`(기록 낱말은 매체 성취기준 날 할 일에 원래 들어가 보지 않음. 부탁 날 증거 발견 줄은 내부 메모라 미리 말하기 검사·글 검토에서 뺌), 수사 연결 문장이 돕는 사람 자신의 생각을 물으면 `HOOK_SELF`(모두 칸 고쳐 쓰기), 부탁 날 대화에 본 것을 알려 주겠다는 약속이 없으면 `ASK_PROMISE`(그 요일 대화 다시), 돕는 사람이 앞 요일과 같거나 등장인물이면 `HELPER_SAME`(그날 칸, 사흘 이상이면 `HELPER_WEEK` 줄거리 다시), 월요일에 시작 이야기에 없는 '어제'면 `DAY1_TIME`. 단서 조건 내부 칸 `excluded`(허용 값 셋 이상·빠지는 값 한두 개일 때 코드가 매김 `mark_excluded`) — #782 설계 v3부터 허용 값 둘 이상이면 늘 부정형(늘어놓으면 `CLUE_TEXT`), 빠지는 값 셋 이상인 조건 꼴은 `CONDITION`(`repair_logic`이 고르지 않음). 부탁 날 단서가 전해 들은 말(~대·~래)이거나 흔적 날에 돕는 사람이 본 흔적이라는 말이 없으면 `CLUE_SOURCE`(칸 고쳐 쓰기, 두 번째는 코드 틀 문장 `clue_template`) — #782 설계 v4부터 부탁 날 단서는 코드가 먼저 다듬음(`normalize_clue_source`: 전해 들은 말 끝·기록 날 '내 '·흔적 날 '내가 보니', 모든 고쳐 쓰기 길의 `finalize_texts` 안), 남는 것만 `CLUE_SOURCE`(자기 기록 아님 `own_record`, 흔적 소리·냄새·맛을 '본'이라 함, 다른 사람이 듣거나 본 것 `other_source`. #782 설계 v9: 수사 날 기록 단서가 '메모에는 ~라고 적혀 있어'로 기록을 옮기면 — 지문이 그 기록이라 따져 확실해진 사실로 `RECORD_QUOTE`). #782 설계 v9: 부탁 날 지문이 돕는 사람 자신의 기록('내 메모에는 이렇게')이면 `MATERIAL_RECORD`, 수학 날 지문·할 일이 그 학년이 아직 안 배운 셈이면 `GRADE_MATH {요일} missionMaterial|missionHook`(둘 다 칸 고쳐 쓰기), 줄거리를 다시 만들 때 빈 위 칸은 앞 판 값으로(`nodes.plan.keep_filled`). #782 설계 v10: 첫 등장인물이 소리를 직접 듣거나(소리 탐정) 대상을 직접 줍거나(출처 찾기 물건) 하면 `INTRO_HEARD`·`INTRO_FOUND`(시작 이야기·오늘 온 까닭·대화의 아이 줄), 시작 이야기의 앞으로의 행사가 단서·지문·미션 글에 이미 열린 꼴이면 `EVENT_LATER`(모든 종류), 시간 탐정 끝 이야기에서 등장인물을 찾아가 확인하면 `WHEN_DOER`(v10의 수사 날 두 증언 비교는 v11에서 v9로 되돌림). #782 설계 v13: 수사 날(`missionWay` 칸에 `INVESTIGATE`가 적힌 날, `testimony_day`) 지문은 그때 직접 보거나 적은 사람의 증언 하나에 그날 단서 내용을 넣고 단서는 따져서 확실해진 그 내용 — 지문 `CLUE_EARLY`와 줄거리·미션 `ANSWER_FACT`에서 그날 단서 값을 빼고(`testimony_ok`), 특징 단서 날 증언에 단서 값(활용형 포함)이 없으면 `TESTIMONY_MISSING`(칸 고쳐 쓰기). 칸 없는 예전 저장본은 옛 규칙. 그래프 전체는 마감 + `theme_draft_hang_grace`(30초)에서 끊고 503(운영 그물, #782 설계 v11), 글 검토 뒤 단서만 고쳐 쓰는 `fix_clues`도 틀 문장. #782 설계 v12(9차 치명 결함 종류, 모두 칸 고쳐 쓰기): 출처 찾기 물건 단서에서 돕는 사람이 자기가 줍거나 날랐다고 하면 `KEPT_CARRY`(돕는 사람은 놓여 있을 때·주운 사람이 들고 지날 때 곁에서 봄), 선물 시작 이야기가 배달인데 등장인물이 상자를 들고 오면 `GIFT_CARRY`, 사건 단서에 다른 요일 특징 이름 낱말이면 `STORY_FEATURE`(시작 이야기·대상 낱말과 흔적 낱말은 뺌), 자기 기록 단서를 '~래·~대'로 쓰면 `RECORD_HEARSAY`, 소리 탐정 오늘 온 까닭에 누구에게 들었는지 대면 `SOUND_TELLER`, 오늘 온 까닭이 '일지에 나온 X'인데 X가 앞 요일 단서에 없거나 '어제 X'가 어제 단서·장면에 없으면 `DAY_STEP_MADE`, 비밀 재료 찾기에서 시작 이야기와 다른 행사 이름(잔치 ↔ 대회)이면 `EVENT_NAME`, 표에 있는 소리 특징 단서(기록 날 빼고)를 '본'·'눈으로'로 쓰면 `SOUND_SEEN`(`v12_problems`). 약속 감각 `promise_sense`의 사건 단서 날은 마지막 말이 소리 이야기('났·들렸·들었·울렸·이어졌·멎었'… '흔들렸'은 아님)일 때만 들은 날. 수사 날 문제가 지문에 없는 증언을 준다고 하면('○○가 본 일을 설명하고') 미션 `MISSION_TESTIMONY`. #782 설계 v13: 문제·예시 답이 사건 때를 '어젯밤·지난밤·그저께'처럼 그날 기준 지난 때로 쓰면 미션 `INCIDENT_TIME`(그 미션 다시, 월요일은 시작 이야기가 전날 밤이면 됨). 시간 탐정 시작 이야기(모델 몫)의 때 말 `TIME_WORD`, 소리 탐정 시작·큰 질문의 '밤마다'(소리 나는 밤 값이 갈릴 때) `SOUND_NIGHT`와 대상 글 '밤마다'→'밤에' `normalize_sound_target`, 맡겨 둔 대상을 다른 곳에 맡겼다고 쓰면 `KEPT_PLACE`. 출처 찾기 '물건'은 관리실 분실물 선반(쪽지 없음). #782 설계 v6: 맡겨 둔 대상 자체의 흔적은 맡겨지기 전에 본 것(`object_self_trace`, 코드 다듬기·틀 문장 '맡겨지기 전에'(v7, '맡기기 전에'는 말한 사람이 맡긴 사람이 됨), 남으면 `KEPT_TRACE`), '내가 맡아 둔'·'내가 맡기·맡겼'은 관리실 사람만(`KEPT_PLACE`), 동물 종류 시작 이야기·사건의 발자국은 흐릿하게 `SEEN_TRACE`. #782 설계 v7: 잃어버린 것·보물 쪽지 시작 이야기에 몇 시를 쓰면 `INTRO_CLOCK`(시각은 증거 칸에만, v6 `EVENT_TIME`을 바꿈), 비밀 재료 단서가 아직 안 열린 잔치·대회에서 본 일이면 `EVENT_LATER`, 사건 단서에 첫 등장인물 자신의 일이면 `STORY_SELF`, 지문(`missionMaterial`)이 활동 이름을 시키는 끝(보자·줘·줄래 등)으로 맺으면 `ACT_NAME`(`act_orders`, 미션 검사도 그 문장은 지문이어도 봄). 출처 찾기 '동물' 갈래는 동물 자체 특징(목줄·털·묻은 것)을 특징 표에 넣으면 `FEATURE_KNOWN`(줄거리 다시). 선물·길·출처 찾기 '물건'은 대상을 관리실에 맡겨 둠(`families.kept_target`): 단서가 빠지는 값을 부정으로 말하면(`negative_form`, #782 설계 v8부터 부정 말은 '아니'만 — '없었다·않았다' 꼴은 본 것 없이 쓴 것으로 `CLUE_TEXT`, 부정문에 허용 값이 섞여도 `CLUE_TEXT`) `CLUE_TEXT`를 통과하고 미리 말하기·앞 요일 단서 검사는 빠지는 값을 봄(`clue_says`). 칸 고쳐 쓰기는 요일마다 따로 부름(`nodes.plan.fix_fields`)), 사실표 종류의 코드가 정한 후보·정답 `candidatePlan`(#782, 소리 탐정은 범주 `group`도), 갈래 `branch`(#782 기준안, 주제 글 갈래가 목록 안이면 코드가 덮어씀, 없으면 모델이 `STORY_BRANCHES`에서 고름), 찾는 대상 `target`, 시작·종료 콘티(`introCuts`·`outroCuts`, 컷마다 장면·동작·문구·뭉치 표정 `mungchiMood`). 후보 기준안 모든 학년 4개. 뭉치는 테마 역할로 사건을 해결하러 가는 주인공이고 찾는 대상의 주인은 등장인물 중 한 명(사용자 결정 2026-11-11)
 - 증거 종류·기록 매체 코드 배정(#535, 요일별 강제는 사용자 결정 2026-11-16, 구성·매체 고르는 값은 기준안): 등장인물 이름처럼 코드가 요일별 증거 종류(흔적·목격·기록)와 기록 날 매체(사진·영상·메모·일지·녹음)를 정해 줄거리 요청에 넣는다(`checks.evidence_plan`·`prompts.evidence_plan_for`, 씨앗 `주-학년`이라 같은 요청이면 같은 배정, 구성은 흔적·목격 각 1개 이상·기록 2개 이하). `plan_theme`이 줄거리에 내부 칸 `evidencePlan`으로 붙이고 `public_theme`이 응답에서 뺀다(계약 그대로). 배정과 종류가 다르면 `CLUE_EVIDENCE`가 그날 `clue`·`discovery`·`missionHook` 세 칸을, 기록 매체 낱말이 없으면 `clue`·`discovery`를 사유로 내고 `fix_theme`이 `evidence.kind`를 배정대로 바꾼 뒤(`apply_evidence_plan`) 그 칸만 고쳐 쓴다(줄거리를 다시 만들지 않음) 줄거리를 만든 직후 코드가 두 가지를 고친다(`nodes/plan.code_adjust`, 2026-11-16 7차): ① 흔적 날 특징이 흔적에 남지 않는 것(빛·그늘·소리·거리 등, `checks.traceable` 기준안)이면 흔적이 맞는 다른 날과 배정·기록 매체·단서 종류를 통째로 바꾸고 맞는 날이 없으면 목격으로(`fit_evidence_plan`), ② 정답 논리(`LOGIC`)가 틀리면 특징 표는 두고 요일 조건만 3일 이내로 가장 적게 바꿈(`repair_logic`, 판정은 `check_logic`). 바뀐 날의 단서·증거 발견 줄·수사 연결 문장과 종료 이야기만 LLM 1번으로 고쳐 쓰고(바뀐 것이 있을 때만) 결과는 `check_theme`이 다시 봄
-- `ThemeChecks`(`checks.py` 모듈 함수): 정답 논리는 특징 표로 판정한다. 요일별 `rulesOut`은 LLM이 쓰지 않고 코드가 표와 조건으로 채운다(`fill_rules_out`, `RULE`은 허용 값 밖의 후보 전부(이미 빠진 후보 포함), `HINT`는 빈 배열). `RULE`은 빠지는 후보가 비어 있지 않음, `HINT`는 그때 남은 후보가 모두 허용 값 안(남은 후보를 빼면 `RULE`이어야 함), `RULE`은 그때 남은 후보를 적어도 하나 새로 뺌(learning 결정적 단서 계산과 맞춤, #438), 틀린 후보는 모두 `RULE`로 빠짐, 수요일까지 후보 2개 이상 남음(마지막 틀린 후보는 목요일 이후), 정답은 어떤 단서로도 빠지지 않음, 요일별 단서 5개(기준안 40자, 흔적 날은 누구의 흔적인지 찾는 대상 낱말을 넣고 46자, 낱말이 없으면 `CLUE_OWNER` 칸 고쳐 쓰기, #535), 단서 문장에 허용 값 낱말이 모두 있고 허용 밖 값 낱말이 없음(활용형·숫자 표기 차이 허용), `standardCode`는 이번 주 성취기준만, `evidence` 종류·때 필수, 찾는 대상은 대화 화자가 아님. 단서 규칙 중 코드로 볼 수 있는 것(정답 이름은 종료 이야기에만, 후보 이름의 색 낱말, 단서 종류 중복), 대화 형식·줄 수·길이·유출, 움직임 개수·속도·크기 상한. 단서는 학생이 그날 미션을 마친 뒤 보여 주므로 증거 발견 줄·장면 메모(`sceneNote`, #535 2026-11-16: 칸 고쳐 쓰기 대상)·대화 LLM 줄이 그날 허용 값을 말하면 `CLUE_EARLY`(정확히 일치하거나 명사형 끝을 뗀 2자 이상 줄기 일치, 한 글자 값은 낱말 첫머리에 올 때만(#535: 값 '게'가 '볼게'에 걸리던 오탐), `mentions_value` 하나로 비교, 수사 연결 문장은 배울 개념을 말하는 자리라 줄거리 검사에서는 보지 않고 미션 뒤 고쳐 쓴 문장만 `hook_problems`로 봄, #535), 증거 발견 줄·수사 연결 문장에 후보·정답 이름이면 `ANSWER_LEAK`, 시작 콘티 1·2컷(뭉치 없음) 표정이 `none`이 아니거나 3·4컷(뭉치 출동·도착)이 `none`이면 `CUT_MOOD`, 단서 문장의 증거(사진·영상·녹음·기록 등)와 evidence 종류가 다르거나 증거 종류·매체가 배정(`evidencePlan`)과 다르면 `CLUE_EVIDENCE`(칸 고쳐 쓰기 대상), 종료 콘티에 뭉치가 안 나오는 컷(`none`)이 있으면 `CUT_MOOD`. 살펴보기 한마디·이름이 미션 답·금지어·예시 답을 말하면 `checks.spot_leaks`로 그 물건을 뺀다. 검토 LLM은 단서 문장이 조건을 그대로 말하는지, 표 값이 자연스러운지, 없음에만 기대지 않는지, `HINT`가 일찍 답을 정하지 않는지를 본다 #535 8~10차(2026-11-16, ai.md 17.6.10): 종료 이야기 = 코드 정리(`outro_recap`, 표로 계산한 요일별 빠진 후보를 세 문장으로, 말투는 마무리 장면에 맞춤) + LLM 마무리 장면(내부 칸 `outroStory`, 응답에 없음, 요일 정리를 쓰면 `OUTRO_RECAP` 칸 고쳐 쓰기), 단서가 그때 시각을 말하지 않으면 코드가 앞에 붙임(`add_clue_time`, 시각이 있으면 그만큼 상한을 늘림), 단서 문장 허용 값 문제(`CLUE_TEXT`)는 칸 고쳐 쓰기, 정답을 빼는 요일은 허용 값에 정답 값을 더하는 코드 수리(`repair_logic` 1단계), 줄거리 글 칸이 비면 형식 밖 응답(`GeneratedDay` 검증), 수학 미션의 학년보다 앞선 개념은 `GRADE_MATH`(`MATH_AHEAD` 기준안)로 그 미션만 다시, 특징 표·단서의 π도 `GRADE_MATH`. 테마 LLM 클라이언트는 형식 밖 응답만 한 번 더 부름(`LlmClient.invalid_output_retries`, 테마만 1). #634 줄거리 종류(2026-11-16, ai.md 17.8): `ThemeFamilies`(`families.py`) 등록표의 종류(`LOST`·`TREASURE`·`PRANK`·`FOOTPRINT`)마다 줄거리 규칙 묶음·콘티 틀·대상이 나와도 되는 컷·결말을 두고, 줄거리 내부 칸 `storyType`(learning 씨앗이면 코드가 주제에서 읽어 덮어씀)으로 고른다. 동물 주인공 가족(`PRANK`·`FOOTPRINT`)은 내부 칸 `incident`·`answerLook`이 필수(`REQUIRED`), `target`에 후보 동물 이름이면 `TARGET_NAMES`, 엔딩 전 글(제목·세계·시작 이야기·시작 콘티·장소·장면 메모·증거 발견 줄·수사 연결 문장·사건·인물 모습)·미션·대화 LLM 줄·고쳐 쓴 수사 연결 문장에 후보 이름이나 머리 낱말이면 `CANDIDATE_NAME`(글 칸은 칸 고쳐 쓰기, 미션은 그 미션만 다시), 흔적 단서 대상 낱말은 `동물`, 특징은 코드의 동물 사실표(`families.ANIMAL_FACTS`, 동물 9 × 특징 4, 기준안) 안에서만 고르고 값은 줄거리 직후 코드가 표 값으로 맞춤(`apply_facts`, 표 밖은 `FACT_TABLE`, ② 선물·재료 사실표도 같은 함수), 흔적 특징은 몸을 덮은 것·발자국 발 수·발자국의 발톱. 흔적 대상 낱말에서 꾸미는 말(받침 ㄴ·ㄹ)은 뺌, 쌍점 쪽지 꼴 단서는 `CLUE_WORDING`. 모든 종류: `UNSAFE`에 체포·수갑·연행·처벌·훔치기·범인·도둑(도둑고양이 등 동물 이름 제외), 뭉치 손 동작에 '잡아·붙잡'. #634 ④(2026-11-17, ai.md 17.8.17): 사실표의 '없는 값'(`FactTable.absent`)을 단서 조건에 쓰면 `CLUE_ABSENT`(다시 생성), 정답을 후보와 있는 값 특징만으로 가를 수 없으면 `FACT_TABLE`, 여객선 후보인데 물가 말이 없으면 `VEHICLE_PLACE`, 시간 탐정은 단서 앞 시각 붙이기를 끄고(`clue_time`) 엔딩 전 글·단서에 시각이 있으면 `TIME_WORD`(칸 고쳐 쓰기), 시작 이야기 끝 마을 규칙은 코드가 붙임(`compose_intro`, 모델 몫은 내부 칸 `introStory`, 길이·후보 이름 검사는 모델 몫만). #634 ⑤(ai.md 17.8.18): 소리 사실표 후보가 한 범주가 아니면 `SAME_KIND`, 기록 날 매체가 그날 특징에 맞지 않으면 코드가 바꿈(`fit_media`, 사실표 `media` — ②④ 표에도), 소리 탐정은 엔딩 전 글·미션·대화에서 후보를 가르는 표 값 전부를 막음(`secret_values`, `ANSWER_FACT`), 모든 단서에 '소리' (`CLUE_OWNER`), 정답 모습 `answerLook` 필수(③과 같이), 마무리 장면에 정답 아닌 후보면 `OUTRO_ANSWER`, `UNSAFE`에 귀신·괴물·유령. 등록표 칸을 성질별로 나눔(`hide_times`·`outro_check`·`target_note`·`needs_answer_look`·`strict_facts`·`clue_word`, 사실표 `image_hide`·`drawable`). #765(2026-11-18, ai.md 23): 콘티 컷 설명(scene·action)은 그 컷 첫 그림·영상 지시와 그림 검토 `SCENE_FIT`에 그대로 들어가므로, 그림에 나오면 안 되는 것을 컷 설명에 쓰면 그림 검토가 어느 쪽으로도 통과하지 못한다(운영 `OUTRO2` "강아지가 … 앞에 서 있다"). 그래서 대상을 그릴 수 있고 사실표가 없는 종류(`LOST`·`TREASURE`)는 대상이 나오면 안 되는 컷(`target_cuts` 밖)의 scene·action에 찾는 대상 이름(대상 전체 이름, 마지막 낱말이 한 낱말로 쓰임(조사 허용), 꾸미는 말이 아닌 앞 낱말은 조사가 붙을 때만 — "강아지 보리"의 "강아지가")이 있으면, 사실표 종류는 정답 공개 전 종료 컷(`answer_cuts` 밖, 시작 컷은 `CANDIDATE_NAME`)의 scene·action에 후보 이름이 있으면 `CUT_TARGET`(그 칸 고쳐 쓰기, "보이지 않는다"처럼 없다는 말도 쓰지 않고 보이는 것만). 비밀 재료의 음식(대상)은 엔딩 전 컷에도 덮개·도시락 안으로 나오는 틀이라 이 검사에서 뺀다. 줄거리 프롬프트 종류 규칙에 대상(사실표 종류는 후보)이 그림에 나오는 컷 목록과 같은 규칙을 붙이고(`target_cuts`·`answer_cuts`에서 만듦), 종료 콘티의 '정답 이름을 써도 됨'은 이 규칙 안에서만.
-- 미션: 유형마다 `MissionDraftService`의 생성·`DraftChecks`를 그대로 쓰고, 테마 이야기 조각과 학년별 생각 열기 질문 개수(기준안 초3 3개·초4 2개·초5 1개·초6 1개)를 더 넣는다. 찾는 대상 이름(아직 못 찾음, 정답은 주지 않음)과 RAG 근거 빈 칸(`knowledge`, 지금은 비움)도 넣는다. 문제 소재는 오늘 장소·찾는 대상·그날 찾은 증거에서 가져오고 수사 연결 문장이 말한 증거를 문제에 그대로 쓴다(사건과 무관한 그림책·시·자료 금지, 학생 자신의 경험을 쓰게 하는 부분은 그대로, #535), 정답 쓰기·정답 추리 문제·새 사건 사실·미션 답이 단서가 되는 것은 막는다. 미션 입력에는 그날 단서도 앞 요일 단서 목록도 넣지 않고(학생이 아직 못 얻었을 수 있음) 그날 `discovery`·`missionHook`을 넣되 둘 다 대화로 이미 나가므로 질문에 다시 쓰지 않게 한다(증거 자체를 살피게 하지 않고 어느 후보가 답인지 묻지 않음). 비교·점검할 글이 필요한 문제(예: 금요일 돌아보기)는 그 글을 문제 글에 직접 넣는다(그날 글만 읽고 풀 수 있게). 재사용은 `MissionDraftService.generate`에 선택 인자 `extra_user`(이야기 조각·테마 실패 사유를 미션 프롬프트 뒤에 덧붙임)·`call_type`(`THEME_DRAFT`)·`deadline`·`timeout`(테마 값)만 더한 최소 확장이고, 주지 않으면 기존 `/internal/mission-drafts` 동작과 같다(재시도·최대 토큰은 미션 초안 설정 그대로). 검사 분담(learning.md 21절): ai 미션 검사는 `DraftChecks`(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`)에 테마 몫(학년별 생각 열기 개수 `HINT_COUNT`, 테마 정답 유출 `THEME_ANSWER_LEAK`, 한국어 밖 글자 `LANGUAGE`)만 더하고, 요소 code·`standardCode`·입력 방식 모양은 learning이 본다. 기존 검사 사유(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`·learning이 돌려준 `STANDARD_CODE`·`ELEMENT_CODE`·`SHAPE`)는 미션 초안 `previousFailures`로, 테마 사유는 `extra_user`로 넣는다. 금요일도 큰 질문·후보·단서 목록을 넣지 않고 안내(`guide`)는 LLM이 만든 그대로 둔다(최종 후보 고르기는 웹·learning 화면, 사용자 결정 2026-11-11)
-- 수사 연결 문장 고쳐 쓰기 `fix_hook`(#535, 요일별 `generate_mission` 안에서 미션이 통과한 직후): 수사 연결 문장은 줄거리 단계에서 미션보다 먼저 정해져 문제 소재와 어긋날 수 있어, 그 요일 `missionHook`을 그날 문제 소재 낱말이 들어가게 LLM 1번(출력 `GeneratedHookFixes`)으로 고쳐 쓴다. 미션은 다시 만들지 않는다. 요일 노드 안에서 하므로 다른 요일 미션을 기다리지 않고, 결과는 상태 `hook_fixes`(요일 → 문장)로 돌려주며 `missions_done`이 이번에 만든 요일만 테마에 넣는다(2026-11-15 닫기 3차: 처음에는 `missions_done` 다음 별도 노드 `fix_hooks`가 모든 요일을 한 번에 고쳤으나 대화 앞에서 기다려 글 실측 평균이 늘어 옮김). 고친 문장이 줄거리 코드 검사(글자 수·후보 이름)에 걸리거나 그날 문제의 답·예시 답·단서 결론(허용 값)을 미리 말하면(`checks.hook_problems`) 원래 문장을 둔다. `STORY_LINK` 경고가 났던 요일만 미션 검토로 다시 확인해 통과하면 경고를 지우고 남으면 경고 그대로(사용자 결정 2026-11-15 경고만). 마감이 가까우면 건너뜀. 응답 계약 그대로
-- `review_missions`(`generate_mission`과 코드 검사·실패 유형 재생성 다음, `generate_dialogue` 앞): 검토 모델이 미션마다 따로 병렬로 본다. 예시 답(또는 정답 키)이 문제가 요구한 것을 모두 채우는지, 성취기준 핵심 행동·생각 유형과 맞는지(혼자 글로 답하는 미션이라 협력·발표는 보지 않음), 그날 글만 읽고 풀 수 있는지(그림에만 있는 정보·비교할 글이 빠진 문제 금지), 문제 소재가 수사 연결 문장이 말한 소재·오늘 장소·찾은 증거에서 왔는지(`STORY_LINK`, #535: 입력에 그날 `story` = 장소·찾는 대상·증거 발견 줄·수사 연결 문장, 정답·단서는 넣지 않음. 학생 자신의 경험 부분은 판정에서 뺌). `EXAMPLE_COMPLETE`·`STANDARD_FIT`·`MATERIAL` `FAIL`은 그 미션만 사유를 넣어 다시 만들고(상한 기준안 2회) 끝내 실패하면 `failure.stage = MISSION`, `WARN`은 `warnings`. `STORY_LINK`는 `FAIL`이어도 다시 만들지 않고 `warnings(MISSION, 요일)`로만 남긴다(사용자 결정 2026-11-15: 관리자가 채택 화면 #441의 경고를 보고 사람이 확인, `nodes/mission.WARN_ONLY_IDS`). 요일별 증거 종류 강제 배정(사용자 결정 2026-11-16)과 미션 소재 검사를 `STORY_LINK` 경고로 두는 것(사용자 결정 2026-11-15, 2026-11-16 확정)은 결정됨. 최종 `review_story`는 지금처럼 전체를 본다. 구현은 별도 노드가 아니라 요일별 `generate_mission` 노드 안에서 코드 검사 통과 뒤에 돈다(생성 → 검사 → 미션 검토 → 다시 생성 루프가 요일마다 독립이라 다른 요일을 기다리지 않음). 모든 요일이 끝나면 `missions_done`이 실패 요일을 모아 `failure.stage = MISSION`으로 끝낸다. 근거: 텍스트 시험(2026-11-10, lab3-reporter-2·lab3-inventor-2)에서 검토 1·2회차가 단서 논리로 줄거리를 통째로 다시 만들며 미션도 새로 생겨, 예시 답 문제는 검토 상한(3회) 마지막에야 드러나 고칠 기회가 없었음. 비용 기준안 미션당 약 $0.003
-- 대화: 그날 증거 발견 줄(`discovery`)과 수사 연결 문장(`missionHook`, 뭉치)을 코드가 대화 끝 두 줄로 그대로 넣고(증거 발견 줄 말하는 사람 `discoverySpeaker`는 LLM이 고르고 기본 뭉치) LLM은 나머지 줄만 만든다. 단서는 학생이 그날 미션을 마친 뒤 learning이 보여 주므로(#484) 대화에 넣지 않고 화~금 앞 요일 요약 줄도 없다(사용자 결정 2026-11-11). 학년별 줄 수(기준안 초3·초4 3~4줄, 초5·초6 2~3줄)는 끝 두 줄 포함. LLM이 띄어 쓴 등장인물 이름의 뒷부분만 화자로 쓰면(예: '캠핑장 관리인' → '관리인') 한 명에게만 맞고 찾는 대상이 아닐 때 코드가 원래 이름으로 바꾼 뒤 검사한다(`checks.full_speakers`, #535). 실패한 요일만 사유를 넣어 다시(상한 2), 끝내 실패하면 그 요일 대화만 빼고 `warnings(DIALOGUE)`
-- `review_story`: 검토 모델이 `CLUE_LOGIC`·`ANSWER_HINT`·`GRADE_VOCAB`·`STANDARD_FIT`·`SAFETY` 다섯 항목을 본다. `CLUE_LOGIC`·`ANSWER_HINT`·`SAFETY` `FAIL`은 사유를 넣어 줄거리부터(미션·대화 다섯 요일 모두 새로), `STANDARD_FIT`·`GRADE_VOCAB` `FAIL`은 그 요일(요일이 없으면 다섯 요일) 미션·대화만 다시 만들고 다시 검토한다. 항목 형식이 틀리면 검토만 다시. 재검토 상한(2)을 넘거나 마감이 가까우면 `failure.stage = REVIEW`, 마지막 검토의 `WARN`은 `warnings(REVIEW)`
+- `ThemeChecks`(`checks.py` 모듈 함수): 정답 논리는 특징 표로 판정한다. 요일별 `rulesOut`은 LLM이 쓰지 않고 코드가 표와 조건으로 채운다(`fill_rules_out`, `RULE`은 허용 값 밖의 후보 전부(이미 빠진 후보 포함), `HINT`는 빈 배열). `RULE`은 빠지는 후보가 비어 있지 않음, `HINT`는 그때 남은 후보가 모두 허용 값 안(남은 후보를 빼면 `RULE`이어야 함), `RULE`은 그때 남은 후보를 적어도 하나 새로 뺌(learning 결정적 단서 계산과 맞춤, #438), 틀린 후보는 모두 `RULE`로 빠짐, 수요일까지 후보 2개 이상 남음(마지막 틀린 후보는 목요일 이후), 정답은 어떤 단서로도 빠지지 않음, 요일별 단서 5개(기준안 40자, 흔적 날은 누구의 흔적인지 찾는 대상 낱말을 넣고 46자, 낱말이 없으면 `CLUE_OWNER` 칸 고쳐 쓰기, #535), 단서 문장에 허용 값 낱말이 모두 있고 허용 밖 값 낱말이 없음(활용형·숫자 표기 차이 허용), `standardCode`는 이번 주 성취기준만, `evidence` 종류·때 필수, 찾는 대상은 대화 화자가 아님. 단서 규칙 중 코드로 볼 수 있는 것(정답 이름은 종료 이야기에만, 후보 이름의 색 낱말, 단서 종류 중복), 대화 형식·줄 수·길이·유출, 움직임 개수·속도·크기 상한. 단서는 학생이 그날 미션을 마친 뒤 보여 주므로 증거 발견 줄·장면 메모(`sceneNote`, #535 2026-11-16: 칸 고쳐 쓰기 대상)·대화 LLM 줄이 그날 허용 값을 말하면 `CLUE_EARLY`(정확히 일치하거나 명사형 끝을 뗀 2자 이상 줄기 일치, 한 글자 값은 낱말 첫머리에 올 때만(#535: 값 '게'가 '볼게'에 걸리던 오탐), `mentions_value` 하나로 비교. #535에서는 수사 연결 문장이 배울 개념을 말하는 자리라 줄거리 검사에서 보지 않고 미션 뒤 고쳐 쓴 문장만 `hook_problems`로 봤으나, #782 C안 형식은 단서 특징 값과 무관한 증거의 한 부분을 가리키고 웹 "오늘 장면"에서 문제 전에 읽으므로 줄거리 검사에서도 보고 칸 고쳐 쓰기, 사용자 결정 2026-11-19), 증거 발견 줄·수사 연결 문장에 후보·정답 이름이면 `ANSWER_LEAK`, 시작 콘티 1·2컷(뭉치 없음) 표정이 `none`이 아니거나 3·4컷(뭉치 출동·도착)이 `none`이면 `CUT_MOOD`, 단서 문장의 증거(사진·영상·녹음·기록 등)와 evidence 종류가 다르거나 증거 종류·매체가 배정(`evidencePlan`)과 다르면 `CLUE_EVIDENCE`(칸 고쳐 쓰기 대상), 종료 콘티에 뭉치가 안 나오는 컷(`none`)이 있으면 `CUT_MOOD`. 살펴보기 한마디·이름이 미션 답·금지어·예시 답을 말하면 `checks.spot_leaks`로 그 물건을 뺀다. 검토 LLM은 단서 문장이 조건을 그대로 말하는지, 표 값이 자연스러운지, 없음에만 기대지 않는지, `HINT`가 일찍 답을 정하지 않는지를 본다 #535 8~10차(2026-11-16, ai.md 17.6.10): 종료 이야기 = 코드 정리(`outro_recap`, 표로 계산한 요일별 빠진 후보를 세 문장으로, 말투는 마무리 장면에 맞춤) + LLM 마무리 장면(내부 칸 `outroStory`, 응답에 없음, 요일 정리를 쓰면 `OUTRO_RECAP` 칸 고쳐 쓰기), 단서 앞 그때 시각 붙이기(`add_clue_time`)는 #782 테마 짜임에서 뺌(단서는 발견 장면 대사처럼, 값 낱말은 그대로), 단서 문장 허용 값 문제(`CLUE_TEXT`)는 칸 고쳐 쓰기, 정답을 빼는 요일은 허용 값에 정답 값을 더하는 코드 수리(`repair_logic` 1단계), 줄거리 글 칸이 비면 형식 밖 응답(`GeneratedDay` 검증), 수학 미션의 학년보다 앞선 개념은 `GRADE_MATH`(`MATH_AHEAD` 기준안)로 그 미션만 다시, 특징 표·단서의 π도 `GRADE_MATH`. 테마 LLM 클라이언트는 형식 밖 응답만 한 번 더 부름(`LlmClient.invalid_output_retries`, 테마만 1). #634 줄거리 종류(2026-11-16, ai.md 17.8): `ThemeFamilies`(`families.py`) 등록표의 종류(`LOST`·`TREASURE`·`PRANK`·`FOOTPRINT`)마다 줄거리 규칙 묶음·콘티 틀·대상이 나와도 되는 컷·결말을 두고, 줄거리 내부 칸 `storyType`(learning 씨앗이면 코드가 주제에서 읽어 덮어씀)으로 고른다. 동물 주인공 가족(`PRANK`·`FOOTPRINT`)은 내부 칸 `incident`·`answerLook`이 필수(`REQUIRED`), `target`에 후보 동물 이름이면 `TARGET_NAMES`, 엔딩 전 글(제목·세계·시작 이야기·시작 콘티·장소·장면 메모·증거 발견 줄·수사 연결 문장·사건·인물 모습)·미션·대화 LLM 줄·고쳐 쓴 수사 연결 문장에 후보 이름이나 머리 낱말이면 `CANDIDATE_NAME`(글 칸은 칸 고쳐 쓰기, 미션은 그 미션만 다시), 흔적 단서 대상 낱말은 `동물`, 특징은 코드의 동물 사실표(`families.ANIMAL_FACTS`, 동물 9 × 특징 4, 기준안) 안에서만 고르고 값은 줄거리 직후 코드가 표 값으로 맞춤(`apply_facts`, 표 밖은 `FACT_TABLE`, ② 선물·재료 사실표도 같은 함수), 흔적 특징은 몸을 덮은 것·발자국 발 수·발자국의 발톱. 흔적 대상 낱말에서 꾸미는 말(받침 ㄴ·ㄹ)은 뺌, 쌍점 쪽지 꼴 단서는 `CLUE_WORDING`. 모든 종류: `UNSAFE`에 체포·수갑·연행·처벌·훔치기·범인·도둑(도둑고양이 등 동물 이름 제외), 뭉치 손 동작에 '잡아·붙잡'. #634 ④(2026-11-17, ai.md 17.8.17): 사실표의 '없는 값'(`FactTable.absent`)을 단서 조건에 쓰면 `CLUE_ABSENT`(다시 생성), 정답을 후보와 있는 값 특징만으로 가를 수 없으면 `FACT_TABLE`, 여객선 후보인데 물가 말이 없으면 `VEHICLE_PLACE`, 시간 탐정은 엔딩 전 글·단서에 시각이 있으면 `TIME_WORD`(칸 고쳐 쓰기), 시작 이야기 끝 마을 규칙은 코드가 붙임(`compose_intro`, 모델 몫은 내부 칸 `introStory`, 길이·후보 이름 검사는 모델 몫만). #634 ⑤(ai.md 17.8.18): 소리 사실표 후보가 한 범주가 아니면 `SAME_KIND`, 기록 날 매체가 그날 특징에 맞지 않으면 코드가 바꿈(`fit_media`, 사실표 `media` — ②④ 표에도), 소리 탐정은 엔딩 전 글·미션·대화에서 후보를 가르는 표 값 전부를 막음(`secret_values`, `ANSWER_FACT`), 모든 단서에 '소리' (`CLUE_OWNER`), 정답 모습 `answerLook` 필수(③과 같이), 마무리 장면에 정답 아닌 후보면 `OUTRO_ANSWER`, `UNSAFE`에 귀신·괴물·유령. 등록표 칸을 성질별로 나눔(`hide_times`·`outro_check`·`target_note`·`needs_answer_look`·`strict_facts`·`clue_word`, 사실표 `image_hide`·`drawable`). #765(2026-11-18, ai.md 23): 콘티 컷 설명(scene·action)은 그 컷 첫 그림·영상 지시와 그림 검토 `SCENE_FIT`에 그대로 들어가므로, 그림에 나오면 안 되는 것을 컷 설명에 쓰면 그림 검토가 어느 쪽으로도 통과하지 못한다(운영 `OUTRO2` "강아지가 … 앞에 서 있다"). 그래서 대상을 그릴 수 있고 사실표가 없는 종류(`LOST`·`TREASURE`)는 대상이 나오면 안 되는 컷(`target_cuts` 밖)의 scene·action에 찾는 대상 이름(대상 전체 이름, 마지막 낱말이 한 낱말로 쓰임(조사 허용), 꾸미는 말이 아닌 앞 낱말은 조사가 붙을 때만 — "강아지 보리"의 "강아지가")이 있으면, 사실표 종류는 정답 공개 전 종료 컷(`answer_cuts` 밖, 시작 컷은 `CANDIDATE_NAME`)의 scene·action에 후보 이름이 있으면 `CUT_TARGET`(그 칸 고쳐 쓰기, "보이지 않는다"처럼 없다는 말도 쓰지 않고 보이는 것만). 비밀 재료의 음식(대상)은 엔딩 전 컷에도 덮개·도시락 안으로 나오는 틀이라 이 검사에서 뺀다. 줄거리 프롬프트 종류 규칙에 대상(사실표 종류는 후보)이 그림에 나오는 컷 목록과 같은 규칙을 붙이고(`target_cuts`·`answer_cuts`에서 만듦), 종료 콘티의 '정답 이름을 써도 됨'은 이 규칙 안에서만. #782(2026-11-18): 힌트 단서(`HINT`)의 허용 값이 그 특징 값 전부면 정보가 없는 단서라 `CLUE_EMPTY`(줄거리 다시 생성, 기준선 실측 줄거리의 약 23%). 단서 앞 시각 붙이기(첫 단서만 시각, 같은 시각은 "그때", `add_clue_time`)는 #782 테마 짜임에서 뺐다(사용자 결정 2026-11-19). 큰 질문에 그 시각이 있으면 월요일도 "그때"(기준선 66%가 다섯 단서 모두 같은 시각으로 시작).
+- 미션: 유형마다 `MissionDraftService`의 생성·`DraftChecks`를 그대로 쓰고, 테마 이야기 조각과 학년별 생각 열기 질문 개수(기준안 초3 3개·초4 2개·초5 1개·초6 1개)를 더 넣는다. 찾는 대상 이름(아직 못 찾음, 정답은 주지 않음)과 RAG 근거 빈 칸(`knowledge`, 지금은 비움)도 넣는다. 문제의 주 자료는 그날 찾은 증거다(#782, 사용자 결정 2026-11-18 A안): 수사 연결 문장이 가리킨 증거의 한 부분(기록에 함께 적힌 글·수, 본 사람이 한 다른 말, 흔적의 다른 모습 — 그날 단서 특징 값은 빼고)을 문제 글 안에 지어 넣고 그날 생각 유형·성취기준 활동을 그 자료로 하게 한다(증거 = 자료, 생각 유형 = 활동). 증거로 그 활동이 어려운 날만 증거와 함께 발견된 물건·그 자리 상황까지, 사건과 무관한 그림책·안내 글·연습 글·일반 지식은 금지(#535의 "등장인물이 만든 자료도 소재" 허용은 뺌, 학생 자신의 경험을 쓰게 하는 부분은 그대로), 정답 쓰기·정답 추리 문제·새 사건 사실·미션 답이 단서가 되는 것은 막는다. 미션 입력에는 그날 단서도 앞 요일 단서 목록도 넣지 않고(학생이 아직 못 얻었을 수 있음) 그날 `discovery`·`missionHook`을 넣되 둘 다 대화로 이미 나가므로 그 문장을 질문에 다시 쓰지 않게 한다(증거의 그 부분은 자료로 쓰고, 어느 후보가 답인지 묻지 않음). 비교·점검할 글이 필요한 문제(예: 금요일 돌아보기)는 그 글을 문제 글에 직접 넣는다(그날 글만 읽고 풀 수 있게). 재사용은 `MissionDraftService.generate`에 선택 인자 `extra_user`(이야기 조각·테마 실패 사유를 미션 프롬프트 뒤에 덧붙임)·`call_type`(`THEME_DRAFT`)·`deadline`·`timeout`(테마 값)만 더한 최소 확장이고, 주지 않으면 기존 `/internal/mission-drafts` 동작과 같다(재시도·최대 토큰은 미션 초안 설정 그대로). 검사 분담(learning.md 21절): ai 미션 검사는 `DraftChecks`(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`)에 테마 몫(학년별 생각 열기 개수 `HINT_COUNT`, 테마 정답 유출 `THEME_ANSWER_LEAK`, 한국어 밖 글자 `LANGUAGE`, 학생이 글로 할 수 없는 활동을 그 이름으로 시킴 `ACT_NAME` — 제목·문제(그날 지문 문장은 뺌)·안내·생각 열기 질문의 "발표 글을 써"·"목소리·몸짓을 괄호에"·"그리는 순서를 글로"·"그래프로 나타내"·"끊어 읽을 곳 표시"·"검색해 봐"·"토의 글", #782 사용자 결정 2026-11-19, 그 요일만 다시 생성)만 더하고, 요소 code·`standardCode`·입력 방식 모양은 learning이 본다. 기존 검사 사유(`REQUIRED`·`QUESTION_LENGTH`·`LEAK`·learning이 돌려준 `STANDARD_CODE`·`ELEMENT_CODE`·`SHAPE`)는 미션 초안 `previousFailures`로, 테마 사유는 `extra_user`로 넣는다. 금요일도 큰 질문·후보·단서 목록을 넣지 않고 안내(`guide`)는 LLM이 만든 그대로 둔다(최종 후보 고르기는 웹·learning 화면, 사용자 결정 2026-11-11)
+- 수사 연결 문장(`missionHook`, #782 사용자 결정 2026-11-18 C안 → 2026-11-20 미션 방식): 미션 방식이 생긴 뒤로는 그날 돕는 사람(`helper`)의 부탁(부탁 날)·증거를 같이 읽고 따져 보자는 말(수사 날)이다. 부탁 날 `missionMaterial`은 그 사람의 일 자료(안내문·쪽지·지은 시·후기·셀 수, 사건 증거가 아니어도 됨)이고, 그날 증거(`discovery`)는 문제 뒤 단서로 나오므로 대화·미션 재료·미션 그림·살펴보기에 미리 주지 않는다(미션 그림은 돕는 사람과 그 일, 살펴보기 증거 칸은 돕는 사람). 아래는 수사 날(과 예전 저장본) 규칙이다. 줄거리 단계에서 그날 생각 유형·성취기준을 보고, 찾은 증거에서 단서 특징 값이 아닌 한 부분을 그날 활동으로 함께 살펴보자고 청하는 한 줄로 쓴다(그 부분이 그날 미션의 주 자료). "<증거>를 풀려면 <배울 것>이 필요해"처럼 증거와 상관없는 활동이 증거를 풀어 준다고 억지로 잇지 않는다(#535 형식을 바꿈, 기준선 실측에서 66%가 억지 연결). 그 부분의 실제 내용은 줄거리 단계가 요일 내부 칸 `missionMaterial`(기준안 60~120자·상한 150자, 응답 `theme`에서는 뺌)에 그때 찾는 대상·사건에 관한 내용(본 사람의 말, 기록에 적힌 글·수, 흔적을 잰 크기)으로 써 두고, 미션은 그 글을 문제 지문으로 그대로 넣는다(#782 사용자 결정 2026-11-18: 이름만 정하면 미션 단계가 '시장 소개'·'읽기 습관'처럼 사건과 무관한 글을 지어냈음, 실측 3건). 코드 검사는 다른 요일 글 칸과 같이 `REQUIRED`·`LENGTH`·`ANSWER_LEAK`(정답·후보 이름)·`CLUE_EARLY`(그날 단서 결론), 사실표 종류의 `CANDIDATE_NAME`·`ANSWER_FACT`, 시간 탐정의 `TIME_WORD`, 보물 쪽지의 `HIDE_SPOT`(모두 칸 고쳐 쓰기). 미션 검토 `STORY_LINK`·글 검토에도 넘긴다. 예전 저장본(부분 다시 생성 `base`)에 칸이 없으면 지문 줄 없이 만든다. 미션 코드 검사(`checks.material_problems`, 그 요일만 다시 생성): 지문 글자의 85%(기준안) 이상이 문제 글에 없으면 `MATERIAL_MISSING`, 수학 최종 답의 수가 지문에 이미 있으면 `MATERIAL_ANSWER`(#782 실측 40건: 지문의 수가 답이 돼 `LEAK`이 되풀이됨). 미션 프롬프트에 지문에 나온 수를 "최종 답이 되면 안 되는 수"로 알린다. 지문 밖 글 덧붙임은 코드로 막지 않고 미션 검토 `STORY_LINK` 경고로 둔다(코드로 막아 보니 같은 위반이 되풀이돼 통과 37 → 27/40, 증거 비율도 오르지 않음). 수사 연결 문장 자체도 줄거리 검사에서 `CLUE_EARLY`(그날 단서 결론)와 `ACT_NAME`(학생이 글로 할 수 없는 활동 이름 — 발표·토의·그리기·소리 내어 읽기·검색, `checks.act_names`)을 보고 그 칸만 고쳐 쓴다(웹 "오늘 장면"에서 학생이 문제 전에 읽는 줄, #782 사용자 결정 2026-11-19. 전에는 미션 뒤 고쳐 쓴 문장만 `hook_problems`가 봤음). `<활동>` 자리는 생각 활동(정리·요약·비교·판단·계산)으로 쓴다(`prompts.HOOK_ACT_RULE`, 줄거리·칸 고쳐 쓰기·미션 뒤 고쳐 쓰기 공통).
+- 지문 고쳐 쓰기 `fix_material`(#782 설계 v8, 요일별 `generate_mission` 안): 미션 검토가 결함이 줄거리 지문 안에 있다고 reason을 '[지문]'으로 시작하면 미션을 다시 만들지 않고 그 요일 `missionMaterial`만 칸 고쳐 쓰기(`nodes.plan.fix_fields`)로 고치고, 줄거리 검사(`check_theme`)에 새로 걸리지 않을 때만 그 지문으로 미션을 다시 만든다(요일마다 한 번). 고친 지문은 `material_fixes`로 돌려주고 `missions_done`이 `apply_hooks(..., "missionMaterial")`로 테마에 넣는다. 테마 미션 검사는 숫자 답 LEAK을 지문 문장을 뺀 글에서 분수·소수를 한 덩어리로 다시 보고(`material_number_leak`), 지문 그대로 쓰기(`MATERIAL_MISSING`)는 지문 끝 부탁·시키는 문장(`REQUEST_END`·`ORDER_END`)을 빼고 비교한다.
+- 수사 연결 문장 고쳐 쓰기 `fix_hook`(#535, 요일별 `generate_mission` 안에서 미션이 통과한 직후): 수사 연결 문장은 줄거리 단계에서 미션보다 먼저 정해져 문제 글이 부른 이름과 어긋날 수 있어, 그 요일 `missionHook`을 문제가 쓴 증거 부분의 이름이 들어가게 LLM 1번(출력 `GeneratedHookFixes`)으로 다듬는다(#782부터 가리키는 증거 부분은 바꾸지 않고, 억지 연결 형식은 쓰지 않음). 미션은 다시 만들지 않는다. 요일 노드 안에서 하므로 다른 요일 미션을 기다리지 않고, 결과는 상태 `hook_fixes`(요일 → 문장)로 돌려주며 `missions_done`이 이번에 만든 요일만 테마에 넣는다(2026-11-15 닫기 3차: 처음에는 `missions_done` 다음 별도 노드 `fix_hooks`가 모든 요일을 한 번에 고쳤으나 대화 앞에서 기다려 글 실측 평균이 늘어 옮김). 고친 문장이 줄거리 코드 검사(글자 수·후보 이름)에 걸리거나 그날 문제의 답·예시 답·단서 결론(허용 값)을 미리 말하면(`checks.hook_problems`) 원래 문장을 둔다. `STORY_LINK` 경고가 났던 요일만 미션 검토로 다시 확인해 통과하면 경고를 지우고 남으면 경고 그대로(사용자 결정 2026-11-15 경고만). 마감이 가까우면 건너뜀. 응답 계약 그대로
+- `review_missions`(`generate_mission`과 코드 검사·실패 유형 재생성 다음, `generate_dialogue` 앞): 검토 모델이 미션마다 따로 병렬로 본다. 예시 답(또는 정답 키)이 문제가 요구한 것을 모두 채우는지, 성취기준 핵심 행동·생각 유형과 맞는지(혼자 글로 답하는 미션이라 협력·발표는 보지 않음), 그날 글만 읽고 풀 수 있는지(그림에만 있는 정보·비교할 글이 빠진 문제 금지), 문제의 주 자료가 그날 찾은 증거(수사 연결 문장이 가리킨 그 부분)인지(`STORY_LINK`, #535: 입력에 그날 `story` = 장소·찾는 대상·증거 발견 줄·수사 연결 문장, 정답·단서는 넣지 않음. 학생 자신의 경험 부분은 판정에서 뺌. #782부터 증거와 무관한 그림책·안내 글·연습 글이면 `FAIL`, 증거가 아닌 장면 소품만 다루면 `WARN`). `EXAMPLE_COMPLETE`·`STANDARD_FIT`·`MATERIAL` `FAIL`은 그 미션만 사유를 넣어 다시 만들고(상한 기준안 2회) 끝내 실패하면 `failure.stage = MISSION`, `WARN`은 `warnings`. `STORY_LINK`는 `FAIL`이어도 다시 만들지 않고 `warnings(MISSION, 요일)`로만 남긴다(사용자 결정 2026-11-15: 관리자가 채택 화면 #441의 경고를 보고 사람이 확인, `nodes/mission.WARN_ONLY_IDS`). 요일별 증거 종류 강제 배정(사용자 결정 2026-11-16)과 미션 소재 검사를 `STORY_LINK` 경고로 두는 것(사용자 결정 2026-11-15, 2026-11-16 확정)은 결정됨. 최종 `review_story`는 지금처럼 전체를 본다. 구현은 별도 노드가 아니라 요일별 `generate_mission` 노드 안에서 코드 검사 통과 뒤에 돈다(생성 → 검사 → 미션 검토 → 다시 생성 루프가 요일마다 독립이라 다른 요일을 기다리지 않음). 모든 요일이 끝나면 `missions_done`이 실패 요일을 모아 `failure.stage = MISSION`으로 끝낸다. 근거: 텍스트 시험(2026-11-10, lab3-reporter-2·lab3-inventor-2)에서 검토 1·2회차가 단서 논리로 줄거리를 통째로 다시 만들며 미션도 새로 생겨, 예시 답 문제는 검토 상한(3회) 마지막에야 드러나 고칠 기회가 없었음. 비용 기준안 미션당 약 $0.003
+- 대화(#782 테마 짜임, 사용자 결정 2026-11-19 — 기준안, 확인 전): 대화 모델이 쓴다(#782 설계 v3부터 첫 줄은 코드가 쓴 오늘 온 까닭 `dayStep`을 첫 등장인물의 말로 앞에 붙이고 모델은 그 뒤 3~4줄, `checks.first_speaker`·`with_first_line` — 상한을 넘으면 모델의 앞쪽 줄부터 지움, 예전 저장본은 `day_step_of`로 그 자리에서 만듦, 월요일은 '{장소}에서 조사를 시작했어'(대상 글 안 씀) #782 설계 v4. #782 설계 v7: 까닭이 첫 줄로 쓸 수 없으면(자기 이름·길이·'이름:'·외국 글자·단서 미리·앞 요일 단서·첫날 어제, `first_line_problems`) 코드 문장으로 붙이고 대화 지시문도 같은 줄(`first_line_text`) — 첫 줄은 코드가 붙여 대화를 다시 만들어도 안 고쳐지므로. #782 설계 v8: 40자 넘는 줄은 문장 경계에서 같은 화자 두 줄로 나누고(`split_long_lines`, 둘 다 40자 안·줄 수 상한 안일 때, #782 설계 v9: 한 문장이면 가운데에 가까운 쉼표에서 `comma_split`), 대화 줄이 글로 할 수 없는 활동을 시키면 `ACT_NAME`, 부탁 날 약속 말은 #782 설계 v10부터 코드가 뜻만 주고(`promise_sense`) 대화 모델이 자기 말로 쓰며 감각이 어긋나면 `ASK_PROMISE`, #782 설계 v11부터 약속만 틀리면 다시 만들지 않고 그 자리에서 코드 문장으로 바꿔 넣음(`put_promise`, 부탁 줄은 건드리지 않음, 감각마다 짧은 꼴 셋을 같은 감각 날끼리 돌려 씀 `PROMISE_FORMS`). #782 설계 v12(사용자 결정 2026-11-23 "다시 써도 계속 틀리는 대화는 코드로")부터 약속이 틀리면 LLM이 사유를 넣어 다시 쓰고 마지막 시도(상한·마감)에도 약속만 틀릴 때만 코드 문장, 약속 말(조건 '~하면' 뒤)에 '오늘·아까'·전해 들은 말이 붙어도 `ASK_PROMISE`(조건의 '오늘'은 됨). 대화 지시문은 검사와 같은 말로 '약속 말에 그때와 알려 줄 것(그때 본 걸·그때 들은 소리를·내 일지를 보여 줄게)을 꼭 넣고 오늘·아까·○○에서는 붙이지 않음', 검사는 '내가 본 장면을'·'들린 소리를'·'이야기(도) 해 줄게'·'전해 줄게'도 약속으로 봄(10차 측정에서 지시문이 '그때'를 빼게 해 맞는 약속을 '없음'으로 잡은 것을 고침). 글 검토 뒤 단서를 고쳐 약속 감각이 바뀐 날도 그 요일 대화만 다시(`promise_redo` → `generate_dialogue`). v10의 같은 말 다시 만들기 노드 `dedupe_dialogues`는 v11에서 뺌. 그 전 v9: 그날 특징·사건 단서 글에 소리가 있으면 '그때 내가 들은 소리를'·맛본 걸·맡은 냄새를, 아니면 본 걸, 기록 날은 '내 녹음을 들려줄게'·'내 일지를 보여 줄게', `ask_promise`·`ASK_PROMISE`)). 줄거리의 오늘 온 까닭(`dayStep`)·그날 찾은 증거(`discovery`)·증거에서 오늘 할 일(`missionHook`)은 재료로만 주고, "오늘 온 까닭 → 증거를 찾음 → 오늘 문제로 이어짐" 순서로 쓰며 마지막 줄은 뭉치가 그 부분을 함께 살펴보자고 청하는 말(미션 방식 뒤로는 돕는 사람의 부탁을 받아 잇는 말, 그날 돕는 사람도 화자로 나올 수 있고 줄여 쓴 이름은 `full_speakers`가 되돌림, 증거 줄은 수사 날만 재료로 줌. `LAST_SPEAKER`, 웹 #807이 답변 화면 '오늘의 문제' 첫 줄에 한 번 더 보여 줌). 전에는 증거 발견 줄·수사 연결 문장을 코드가 끝 두 줄로 그대로 넣어(`discoverySpeaker`) 모델 줄이 대부분 1줄이고 틀에 박혔다(실측 179일 중 138일). 줄 수는 모든 학년 4~5줄(전에는 초3·초4 3~4줄, 초5·초6 2~3줄). 단서는 학생이 그날 미션을 마친 뒤 learning이 보여 주므로(#484) 대화에 넣지 않고, 그날 단서 결론(`CLUE_EARLY`)과 앞 요일 단서 결과(`PREV_CLUE`, 문제는 순서 없이 토요일까지 풀 수 있어서)를 모든 줄에서 막는다(예전 "앞 요일 요약 줄 없음", 사용자 결정 2026-11-11). 예전 저장본을 부분 다시 생성할 때 `dayStep`이 없으면 그날 장면으로 대신한다. LLM이 띄어 쓴 등장인물 이름의 뒷부분만 화자로 쓰면(예: '캠핑장 관리인' → '관리인') 한 명에게만 맞고 찾는 대상이 아닐 때 코드가 원래 이름으로 바꾼 뒤 검사한다(`checks.full_speakers`, #535). 실패한 요일만 사유를 넣어 다시(상한 2), 끝내 실패하면 그 요일 대화만 빼고 `warnings(DIALOGUE)`
+- `review_story`: 검토 모델이 `CLUE_LOGIC`·`ANSWER_HINT`·`GRADE_VOCAB`·`STANDARD_FIT`·`HELPER_FIT`·`SAFETY` 여섯 항목을 본다. #782 설계 v13: 검토 호출 전에 코드가 같은 주 돕는 사람의 약속 줄을 세어(띄어쓰기·문장부호 무시) 같으면 뒤 요일 대화만 한 번 다시 만든다(`same_week_promises`·`PROMISE_SAME`, `TALK` 길, 테마마다 한 번 `promise_deduped`). `HELPER_FIT`(측정 판정 억지 연결과 같은 말: 부탁 날 돕는 사람이 그 장소에서 할 법한 일을 부탁하고 아이 답이 그 일에 쓰이는지, 검토 입력에 `helperUse`) `FAIL`이면 그 요일 `helper`·`helperUse`·`missionHook`·`missionMaterial`·`sceneNote`를 칸 고쳐 쓰기(`fix_helpers`, 코드 검사에 걸리면 한 번 더, 그래도 걸리면 줄거리부터) 뒤 그 요일 미션·대화부터 다시(`HELPER` 길). 호칭이 바뀌면 다음 날 오늘 온 까닭의 옛 호칭을 고쳐 쓰고(`fix_old_names`) 칸이 바뀐 요일도 미션·대화부터, 아이 답의 쓰임은 국어 부탁 날만. 부분 다시 생성, 부탁 날이 없는 판정, 테마에서 두 번째 `HELPER_FIT` `FAIL`(`helper_fixed`)은 경고. 같은 주 약속 다시 만들기가 끝내 실패하면 원래 대화를 남김(`talk_keep`). 대화·살펴보기 피할 낱말(`avoid_words`)에 단서가 말하는 값(`clue_says`)도. #782 설계 v13 가: 글 검토 호출 전에 돕는 사람 판정을 테마마다 한 번 따로 부른다(`judge_helpers`, 측정 판정과 같은 말의 `HELPER_JUDGE_SYSTEM`·`helper_judge_user`, 출력 `GeneratedHelperJudge`, 부탁 날만 한 호출). 억지 요일이 있으면 `HELPER` 길, 없으면 바로 글 검토하고 그 뒤 글 검토 `HELPER_FIT`은 경고. 판정 호출이 실패하거나 부분 다시 생성이면 건너뜀. 돕는 사람 칸 고쳐 쓰기(`fix_helpers`)가 모델 호출 실패(`LlmUnavailable`)면 고치지 않고 글 검토로. #782 설계 v12: `FAIL`이 `CLUE_LOGIC`뿐이고 그 요일이 모두 약속 줄만 틀린 요일(검토 출력 항목의 `promiseDays`, 응답 warnings 모양은 그대로)이면 그 요일 대화만 사유를 넣어 다시 만들고 다시 검토(`TALK`, 첫 재검토는 상한에 넣지 않음 `talk_fixed`). 대화가 없는 요일(끝내 실패해 경고로 남김)은 약속을 볼 수 없다는 이유로 결함으로 보지 않음. `CLUE_LOGIC`·`ANSWER_HINT`·`SAFETY` `FAIL`은 사유를 넣어 줄거리부터(미션·대화 다섯 요일 모두 새로), `STANDARD_FIT`·`GRADE_VOCAB` `FAIL`은 그 요일(요일이 없으면 다섯 요일) 미션·대화만 다시 만들고 다시 검토한다. 항목 형식이 틀리면 검토만 다시. 재검토 상한(2)을 넘거나 마감이 가까우면 `failure.stage = REVIEW`, 마지막 검토의 `WARN`은 `warnings(REVIEW)`
 - `previousFailures` 반영: `THEME`·`REVIEW` 사유는 첫 줄거리 생성부터, `MISSION` 사유(`"<요일> <검사 코드> <자세히>"`)는 그 요일 미션 생성마다(요일이 없으면 다섯 요일) 넣는다. `IMAGE` 사유는 아직 넣지 않는다(넣는 방식 미정)
 - 그림: `gpt-image-2.6-sunburst`, 1536×864, medium. 테마 옷 뭉치 → 시작 1컷 첫 그림(인물 기준 그림) → 미션 그림 5장(`MON`~`FRI`)과 나머지 컷 첫 그림 7장을 [테마 옷 뭉치, 인물 기준 그림] 참조로 동시에 만든다(시작 1·2컷은 뭉치 참조 없음, 시작 3컷은 인물 참조 없음). 응답 `INTRO`·`OUTRO` 그림은 4번째 컷 첫 그림. 프롬프트는 고정 스타일 + 뭉치(테마 옷) + 등장인물 모습 + 장면이고, 미션 그림은 그날 장면 메모·증거 발견 줄·미션 질문·생각 열기 질문(한국어 그대로, 가리키는 물건이 보이게)을 넣는다. 찾는 대상은 시작 1컷·종료 3·4컷에서만(#634 이후 종류별 `target_cuts`), 생각 풍선 없음. 그림 검토 `SCENE_FIT`은 대상이 나오면 안 되는 그림(`targetAllowed` false)에서 찾는 대상·후보가 보이지 않는 것을 결함으로 보지 않는다(#765, `ANSWER_HINT`와 반대로 걸리지 않게). 비밀 재료(`target_covered`)의 엔딩 전 그림·영상(시작·종료 컷과 미션 그림)은 음식을 덮개·도시락 안에 둔 채로 그리고(그릇·도시락은 보여도 되고 음식 자체·색은 안 보임), 그림·영상 검토 `ANSWER_HINT`도 덮인 그릇·도시락만 보이는 것은 대상이 보이는 것으로 보지 않는다(#765, 종류 규칙 "엔딩 전 장면·콘티에서 음식의 색을 보여 주지 않는다(덮개·도시락 안)"과 같게). 그림마다 검토(`MUNGCHI`·`ANSWER_HINT`·`TEXT`·`SAFETY`·`SCENE_FIT`, 미션 그림은 `MISSION_FIT`). 그림 대역(`IMAGE_PROVIDER=fake`)이면 그림 검토를, 영상 대역(`VIDEO_PROVIDER=fake`)이면 영상 컷 검토를 부르지 않고 통과로 보며 `warnings`에 `IMAGE`·`VIDEO`(`item` `ALL`) 한 줄씩(#716). 영상 컷 검토는 `MORPH`·`ANSWER_HINT`·`TEXT`·`SAFETY`·`CONTINUITY`이고 `CONTINUITY`는 뭉치가 사건 대상(찾는 대상 등 이야기 속 물건)을 잡거나 들거나 안거나 건네거나 받는 장면(사람과 함께 잡아도)과 뭉치에게 팔·날개가 새로 생기는 것을 결함으로 보고, 차림 소품(돋보기·모자 등)을 쥐거나 지닌 것은 결함으로 보지 않는다(#535, 종료 3컷 규칙 '뭉치는 곁에서 지켜봄', 사용자 결정 2026-11-15 B안: 그림 검토 `MUNGCHI`와 같은 기준). 영상 생성 지시(`video_prompt`)·부정 조건(`VIDEO_NEGATIVE` "Mungchi grabbing or handing over objects")도 같은 기준: 첫 그림에 든 차림 소품은 그대로 들고, 새 물건·사건 대상을 집거나 건네지 않음(생성 쪽도 B안). 영상: `veo-3.1-fast-generate-001`, 720p·무음, 컷 4·6·8·6초, 컷 첫 그림만 고정(아래 그림체·영상 범위)
 - `ThemeStorage`(`storage.py`): 실행마다 ID를 만들어 `theme-drafts/{실행 ID}/{장면}.png`·`.mp4`로 올리고 키만 돌려준다(report-service `clients/storage.py` 패턴, boto3). 영상은 `INTRO`·`OUTRO`만
 - 그림체·뭉치·영상 범위(사용자 결정 2026-11-11): 2D 만화풍, 앱 솜뭉치 모양의 기본 뭉치 그림(`assets/`, 기준안)을 고쳐 테마 옷만 입힌 뒤(손에 소품 없음) 모든 그림의 첫 참조로 쓴다. 영상은 시작·종료만이고 장면마다 컷 4개(4·6·8·6초, 컷마다 장소·각도 다름)를 컷 첫 그림만 고정해 동시에 만든 뒤 0.5초 녹아드는 전환으로 이어 붙인다(`imageio-ffmpeg`, 22.5초). 둘 다 고정하면 비슷한 두 그림 사이를 억지로 이어 움직임이 흐물거리고 배경이 같아져(실측 2026-11-11) 첫 그림만 고정한다. 콘티(컷마다 장면·동작·문구)는 `plan_theme`이 내부 칸으로 함께 만든다. 실패한 컷만 다시 만들고, 설정이 꺼져 있거나 마감이 가까우면 영상을 건너뛰고 `warnings(VIDEO)`
 - `ImageClient`·`VideoClient`(`app/llm/media.py`, 이슈 작업 위치 `app/llm/`): 그림 생성(참조 그림 여러 장, OpenAI images edits)과 영상 생성(Veo 첫 그림 고정, 끝 그림은 선택, `negativePrompt`, 토큰은 Google 표준 자격 증명에서 만료 전 갱신 `GoogleTokenSource`, #538), 녹아드는 전환 이어 붙이기(`join_xfade`)·문구 시각(`xfade_caption_times`)·장면 뽑기(ffmpeg), 영상 크기(`size`, Veo 1280×720)와 끝내 실패한 컷을 대신하는 움직이는 그림 컷(`still_clip`, 첫 그림을 천천히 확대). 참조 그림이 없으면 `images.generate`. 시험은 가짜 구현
-- 움직임(형식 v1, `models.ThemeMotion`): `transition`·`camera`·`speakers{이름: {x, y, zoom}}`·`effects[]`(최대 2층)·`captions[{start, end, text}]`·`spots[{x, y, label, line, evidence}]`(요일 장면 살펴보기 2~3개, 증거 물건 1개, `checks.spots`가 맞춤, 2026-11-11 추가 선택 칸)(시작·종료 영상 문구). 좌표는 그림 %. 화자 위치는 생성 모델이 그림을 보고 정하고, 상한 밖 숫자는 `ThemeChecks.motion`이 맞추고 경고. 그림 입력은 `LlmClient.generate`의 선택 인자 `images`
+- 움직임(형식 v1, `models.ThemeMotion`): `transition`·`camera`·`speakers{이름: {x, y, zoom}}`·`effects[]`(최대 2층)·`captions[{start, end, text}]`·`spots[{x, y, label, line, evidence}]`(요일 장면 살펴보기 2~3개, 증거 물건 1개, `checks.spots`가 맞춤, 2026-11-11 추가 선택 칸. #782: `line`은 그 물건에서 학생이 볼 부분·확인할 점을 가리키는 말이고 "찾았어!"·"살펴볼까?"처럼 어느 물건에나 쓸 말은 쓰지 않음, 단서 결론·미션 답은 지금처럼 금지. 웹 "오늘 장면" 대비로 물건 이름 `label`도 한마디와 함께 그날 단서 결론(`CLUE_EARLY`)을 보면 그 물건을 뺌, 사용자 결정 2026-11-19)(시작·종료 영상 문구). 좌표는 그림 %. 화자 위치는 생성 모델이 그림을 보고 정하고, 상한 밖 숫자는 `ThemeChecks.motion`이 맞추고 경고. 그림 입력은 `LlmClient.generate`의 선택 인자 `images`
 - 지식 검색(#470): `plan_theme` 앞 `retrieve` 노드와 `check_theme` 범위 확인 자리만 두고 기능 스위치(기본 꺼짐)로 막는다
 - 프롬프트: `prompts.py` 내장 `theme-draft@3`(생성·검토 묶음, #535에서 @1→@2, #634 줄거리 종류로 @3. 공통 규칙은 `PLAN_SYSTEM`, 종류 규칙 묶음은 `plan_user`가 붙임, 그림·영상 검토 칸 `answerPlace`→`answer`·`answerAllowed`), #68 레지스트리 이름 `themeDraft`·scope `ai/theme-draft`. 입력에 학생 정보 없음
 - 사용량: 글 생성·검토 `THEME_DRAFT`, 이미지 `THEME_IMAGE`, 영상 `THEME_VIDEO`. `THEME_VIDEO`는 `VeoVideoClient`가 컷 호출마다 1건(토큰 null), core #543(V45) 반영 뒤 #546부터 보냄
@@ -2709,7 +2826,8 @@ classDiagram
 
 | 클래스 | 위치 | 책임 |
 |---|---|---|
-| `MemoryQueryService` | `memory_query/service.py` | `memoryQuery` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(출력 512토큰, 호출별 7초·재시도 없음, 사용량 `MEMORY_QUERY`), `MEMORY_QUERY_PROVIDER=fake`면 `fake.py`(공백 분리 키워드). 칸 규칙(키워드 0~5개·1~20자, `period` `from < to`, `searchText` 1~200자, `checks.py`) 위반·구조화 실패 502, LLM 실패 503. 원문 없이 사유 코드만 로그 |
+| `MemoryQueryService` | `memory_query/service.py` | `memoryQuery` 프롬프트로 기본 `LlmClient` 1회 구조화 생성(출력 512토큰, 호출별 7초·재시도 없음, 사용량 `MEMORY_QUERY`), `MEMORY_QUERY_PROVIDER=fake`면 `fake.py`(공백 분리 키워드). 칸 규칙(키워드 0~5개·1~20자, `period` `from < to`, `searchText` 1~200자, `checks.py`) 위반·구조화 실패 502, LLM 실패 503. 원문 없이 사유 코드만 로그. LLM 경로에서만 칸 검사 뒤 `weeks.week_of_month`로 "N월 N째 주" 기간을 계산해 덮어쓰고 그 표현 조각을 키워드에서 뺀다(#877, 가짜 구현은 적용 안 함) |
+| `week_of_month` | `memory_query/weeks.py` | 질문에서 몇째 주 표현 하나를 찾아 `[from, to)`를 계산(첫째 주 = 1일 ~ 첫 월요일 주 끝, k째 주 = k번째 월요일 주, 마지막 주 = 월~금 3일 이상이 그달에 든 마지막 월요일 주(기준안), 다음 달 1일에서 자름). 그달에 없는 주·표현 두 개 이상이면 기간 null. 표현이 없으면 None(LLM 값 그대로) |
 | `router` | `memory_query/router.py` | `POST /internal/memory-queries` 요청 검사(`query` 1~200자, `today` 날짜, 정의 밖 칸 400) 후 서비스 호출 (api-spec 4.2.7) |
 
 ---
@@ -3004,7 +3122,7 @@ classDiagram
 
 ### 7.1 리포트 기간 종류 (report #391 구현 · core #390 연동)
 
-2026-11-06 결정의 report 부분은 #391에서 구현했다. core 스케줄·알림(#390)은 구현했고 대화(#392)도 구현했으며 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
+2026-11-06 결정의 report 부분(#391). core 스케줄·알림은 #390, 리포트 대화는 #392. 1장 레이어·의존 규칙을 따른다. 배치는 [아키텍처 1.1.1](architecture.md#111-2026-11-06-결정-추가-책임).
 
 ```mermaid
 classDiagram
@@ -3044,7 +3162,7 @@ classDiagram
 
 - core(#390 구현): `WeeklyReportScheduler`·`DailyReportScheduler`가 각자 ShedLock으로 `ReportScheduleService.generate(at, periodType)`을 부르고, `ReportJobService.scheduled(parent, child, ReportPeriod)`가 보호자가 연결된 자녀별 작업 + Outbox를 저장한다(정기 부분 UK `(student_id, period_type, period_from)`). 기간 종류는 domain `ReportPeriodType`(`DAILY`·`WEEKLY`)과 `ReportPeriod(from, to, type)`이며 일일은 서술 없음(`narrative = false`)이라 상품 권한을 조회하지 않는다. 일일 상세 원문 제공 여부는 `ReportEntitlementService.dailyDetailEnabled` 한 곳에서 정한다
 - report-service `GenerationService`(7장)는 `periodType`으로 분기. `DailyReportBuilder`는 ai 서술 호출 없이 템플릿만 구성하고 기존 대조·렌더링을 재사용
-- core(#392 구현): `ConversationService.createForReport`는 `ReportJobRepository.byReport`로 일일·같은 자녀를 확인하고 `ReportQueryService.pinned`(최신 판)로 완료 여부를 본 뒤 기존 `create`와 같은 대화를 만들고 기간을 그날로 고정, `conversation.report_id`·`report_revision` 저장. 메시지마다 `ConversationService.report`가 `ReportQueryService.pinned(reportId, revision)`(열람 기록 없음)으로 그 판을 읽어 ai 요청 `report`에 개수·판정 요약으로 전달. ai는 `AnalysisRequest.report`(`ReportSummary`)를 답변 프롬프트 `[고정 리포트]`와 숫자 대조 허용값에 넣는다
+- core(#392 구현): `ConversationService.createForReport`는 `ReportJobRepository.byReport`로 일일·같은 자녀를 확인하고 `ReportQueryService.pinned`(최신 판)로 완료 여부를 본 뒤 기존 `create`와 같은 대화를 만들고 기간을 그날로 고정, `conversation.report_id`·`report_revision` 저장. 메시지마다 `ConversationService.report`가 `ReportQueryService.pinned(reportId, revision)`(열람 기록 없음)으로 그 판을 읽어 ai 요청 `report`에 개수·판정 요약으로 전달. 응답 모양 검사와 칸 선택은 `ReportClient.pinned`가 `PinnedReport`로 하고(#814, 틀리면 502 `REPORT_CONTRACT_INVALID`), `ConversationService`는 그 타입에서 ai로 보낼 항목만 고른다. ai는 `AnalysisRequest.report`(`ReportSummary`)를 답변 프롬프트 `[고정 리포트]`와 숫자 대조 허용값에 넣는다
 - report `ReportRepository`의 revision 잠금·UK 단위는 `(student_id, period_type, period_from)`
 
 ---
@@ -3053,5 +3171,5 @@ classDiagram
 - 테마 소비는 코드(`app/config.py` `report_theme_summary_enabled`)·kind `report-worker` 값 모두 `REPORT_THEME_SUMMARY_ENABLED=true`가 기본이다. 단, Docker Compose(`compose.yaml`)는 `${REPORT_THEME_SUMMARY_ENABLED:-false}`로 꺼 두므로 로컬 Compose에서 주간 테마 요약을 보려면 `.env`에서 켠다(기본값 통일은 별도 정리 이슈). #385/#391 learning을 먼저 배포한다. false는 새 주간 요약만 생략하는 복귀 설정이며 조회 오류를 참여 없음으로 바꾸지 않는다.
 
 ## 8. 확인 필요 가정
-- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작 한도는 #387에서 `ProductEntitlementService.missionStart`·`usage/MissionUsageService`·`mission_daily_usage`(#210 PostgreSQL 결정)로 구현했다(당시 무료 `THEME_DAY`·`EXTRA` 합쳐 하루 1개). 2026-11-10 개정(core #485)부터 무료 테마 문제는 한도가 없고 무료 `EXTRA`는 403 `PREMIUM_REQUIRED`라, 이 한도는 무료 상품에서 `EXTRA`를 다시 켠 경우에만 쓰인다. 피드백 한도는 미구현. 생각 유형별 미션 고르기(`EXTRA`)는 무료 상품에서 꺼진 동안 프리미엄 사용(`EXTRA_MISSION`) 기록
+- 요금제 사용 한도(P13): core가 `product.limits`로 확인 후 `USAGE_LIMIT_REACHED`. 분석 대화는 `ProductEntitlementService.reserve`가 보호자 잠금 안에서 자녀별 `payment_premium_usage` KST 일자 집계로 판정(#225, `AnalysisUsageService`는 Redis 미사용). 학생별 미션 시작 한도는 `ProductEntitlementService.missionStart`·`usage/MissionUsageService`·`mission_daily_usage`(#387, #210 PostgreSQL 결정). 무료 테마 문제는 한도가 없고 무료 `EXTRA`는 403 `PREMIUM_REQUIRED`라(#485), 이 한도는 무료 상품에서 `EXTRA`를 다시 켠 경우에만 쓰인다. 피드백 한도는 미구현. 생각 유형별 미션 고르기(`EXTRA`)는 무료 상품에서 꺼진 동안 프리미엄 사용(`EXTRA_MISSION`) 기록
 - 클래스 분할 단위(관리자 controller 등)는 구현 시 조정 가능, 레이어·의존 방향은 고정

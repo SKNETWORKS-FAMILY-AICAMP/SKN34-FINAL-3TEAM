@@ -1,5 +1,8 @@
+import type { ErrorReport } from '../../domain/admin/operations.ts'
 import type { ThemeGrade } from '../../domain/admin/retention.ts'
 import type { Child, Mission } from '../../domain/classroom.ts'
+import type { DialogueLine } from '../../domain/themeScene.ts'
+import { fixtureStore } from './student.ts'
 import {
   baseLookCatalog,
   companionKey,
@@ -60,11 +63,17 @@ export interface MockLookItem {
 export interface MockDecorPurchase { itemKey: string; ownedCount: number; balance: number }
 export interface MockWeeklyTheme {
   themeId: string
+  missionSnapshots?: Mission[]
+  version?: number
+  publishedVersion?: number
+  reviewVersion?: number | null
+  publishedContent?: Pick<MockWeeklyTheme, 'title' | 'intro' | 'days'>
   grade: ThemeGrade
   weekStart: string
   title: string
   intro: string
-  days: { day: ThemeDay; missionId: string }[]
+  /** dialogue: 그 요일 대화(learning 요일 칸 `dialogue`, 테마 초안 채택이면 ai 대화). 없으면 오늘 장면에 대화가 없다(#807) */
+  days: { day: ThemeDay; missionId: string; dialogue?: DialogueLine[] | null }[]
   status: 'DRAFT' | 'REVIEW_REQUIRED' | 'PUBLISHED' | 'UNPUBLISHED'
   updatedAt: string
   /** 테마 초안 채택(#441 목업)에서 온 이야기 칸. 수정 본문에 없으면 이어받음 */
@@ -92,6 +101,7 @@ interface State {
   community:Record<string, { enabled: boolean; updatedAt: string | null }>
   consent: Record<string, boolean>
   posts: MockPost[]
+  communityReports: { reporterId: string; key: string; report: ErrorReport }[]
   /** postId → studentId → 반응 */
   reactions: Record<string, Record<string, Reaction[]>>
   reviewViews: string[]
@@ -184,6 +194,7 @@ const empty = (): State => ({
   community: {},
   consent: {},
   posts: [],
+  communityReports: [],
   reactions: {},
   reviewViews: [],
   items: seedItems(),
@@ -315,16 +326,27 @@ export function isUnlocked(studentId: string, itemKey: string) {
 }
 
 // ---------- 주간 테마 ----------
-/** 게시된 관리자 테마가 있으면 그것을, 없으면 학생 미션으로 다섯 유형 하나씩 고른 가상 테마를 쓴다. */
+/** 실제 편성 이력이 있으면 이번 주 또는 이전 주의 최근 게시본을 사용한다. */
 export function themeMissions(missions: Mission[], grade: number) {
-  const published = retentionState.themes.find((t) => t.status === 'PUBLISHED' && t.weekStart === weekStart() && t.grade === `G${Math.min(grade, 6)}`)
+  const week = weekStart()
+  const eligible = retentionState.themes.filter(t => t.weekStart <= week && t.grade === `G${Math.min(grade, 6)}`)
+  const published = eligible.filter(t => t.status === 'PUBLISHED').sort((a,b) => b.weekStart.localeCompare(a.weekStart))[0]
   if (published) {
+    const content = published.publishedContent ?? published
     const byId = new Map(missions.map((m) => [m.id, m]))
-    const days = published.days.flatMap((d) => (byId.get(d.missionId) ? [{ day: d.day, mission: byId.get(d.missionId)! }] : []))
+    const days = content.days.flatMap((d) => {
+      const live = byId.get(d.missionId)
+      const snapshot = published.missionSnapshots?.find(m => m.id === d.missionId)
+      const mission = snapshot ? { ...snapshot, grade, status: live?.status, attemptId: live?.attemptId } : live
+      return mission ? [{ day: d.day, mission }] : []
+    })
     // 테마 초안 채택(#441 목업)이나 관리자가 넣은 그림·영상·움직임도 학생 응답에 그대로(실서버처럼, #440)
     const scene = { introImageUrl: published.introImageUrl ?? null, introVideoUrl: published.introVideoUrl ?? null, introMotion: published.introMotion ?? null,
       outroImageUrl: published.outroImageUrl ?? null, outroVideoUrl: published.outroVideoUrl ?? null, outroMotion: published.outroMotion ?? null }
-    if (days.length === 5) return { themeId: published.themeId, title: published.title, intro: published.intro, reused: false, days, scene }
+    if (days.length === 5) return { themeId: published.themeId, title: content.title, intro: content.intro, reused: published.weekStart !== week, days, scene }
+  }
+  if (eligible.some(t => t.publishedVersion != null || t.status === 'UNPUBLISHED')) {
+    return { themeId: null, title: '', intro: '', reused: false, days: [], scene: null }
   }
   const picked = THINKING_ORDER.map((type) => missions.find((m) => m.thinkingType === type)).filter((m): m is Mission => !!m)
   return {
@@ -335,6 +357,20 @@ export function themeMissions(missions: Mission[], grade: number) {
     days: picked.slice(0, 5).map((mission, i) => ({ day: THEME_DAYS[i], mission })),
     scene: null,
   }
+}
+/**
+ * 테마 시도의 오늘 장면(learning #438 `themeScene` 목업, #807). 그 미션이 이번 주 테마 요일이면 게시 테마는 그 요일 `dialogue`,
+ * 가상 테마는 `MOCK_STORY.dialogues`. 요일 영상은 ai가 만들지 않아 videoUrl null, hintSpots는 웹이 쓰지 않아 null
+ */
+export function themeSceneFor(missionId: string, missions: Mission[], grade: number) {
+  const theme = themeMissions(missions, grade)
+  const i = theme.days.findIndex((d) => d.mission.id === missionId)
+  if (i < 0) return null
+  const published = retentionState.themes.find((t) => t.themeId === theme.themeId)
+  // 학생에게는 게시본의 대화(게시 중 수정하면 재게시 전까지 보관한 publishedContent, #882)
+  const content = published ? (published.publishedContent ?? published) : null
+  const dialogue = content ? (content.days.find((d) => d.missionId === missionId)?.dialogue ?? null) : MOCK_STORY.dialogues[i]
+  return { dialogue, hintSpots: null, videoUrl: null }
 }
 /**
  * 가상 테마의 큰 질문·후보·요일 단서(#438 모양). 단서는 rulesOut이 빈 날(힌트)도 섞고,
@@ -363,6 +399,21 @@ export const MOCK_STORY = {
     { name: '깃털이 있나요', values: [['다람쥐 우체부', '없어요'], ['고양이 빵집 주인', '없어요'], ['부엉이 선생님', '있어요'], ['토끼 정원사', '없어요']] },
   ].map((f) => ({ name: f.name, values: f.values.map(([candidate, value]) => ({ candidate, value })) })),
   outro: '부엉이 선생님은 밤에 잠들지 못하는 아기 새들을 위해 종을 울려 자장가 시간을 알려 주고 있었어요. 마을 사람들은 이제 열두 시 종소리를 들으면 미소를 지어요.',
+  /**
+   * 요일 오늘 장면 대화(#807, ai 대화 모양: 오늘 온 까닭 → 증거를 찾음 → 뭉치가 오늘 문제로 이음, 마지막 줄은 뭉치, 한 줄 40자 이내).
+   * 단서 결론·후보 이름은 말하지 않는다(ai `check_dialogue`처럼)
+   */
+  dialogues: [
+    [{ speaker: '이장님', text: '어젯밤에도 열두 시에 시계탑 종이 울렸단다.' }, { speaker: '이장님', text: '종 아래를 쓸다가 작은 쪽지를 하나 주웠어.' },
+      { speaker: '뭉치', text: '쪽지에 적힌 글을 같이 차근차근 읽어 볼래?' }],
+    [{ speaker: '뭉치', text: '오늘은 빵집 골목부터 가 보자!' }, { speaker: '이장님', text: '빵집 창문에 그날 밤 메모가 붙어 있었지.' },
+      { speaker: '뭉치', text: '메모에 적힌 말이 맞는지 같이 따져 볼래?' }],
+    [{ speaker: '이장님', text: '종소리는 늘 같은 때 들렸어.' }, { speaker: '이장님', text: '시계탑 계단에서 종 치는 순서표를 찾았단다.' },
+      { speaker: '뭉치', text: '순서표를 보고 새로운 방법을 같이 생각해 볼래?' }],
+    [{ speaker: '뭉치', text: '연못가 정원도 살펴보자.' }, { speaker: '이장님', text: '물뿌리개 옆에 물 준 시간을 적은 표가 있어.' },
+      { speaker: '뭉치', text: '표에 적힌 수로 같이 문제를 풀어 볼래?' }],
+    [{ speaker: '이장님', text: '종 옆 난간에서 이걸 발견했단다.' }, { speaker: '뭉치', text: '이번 주에 모은 단서를 하나씩 떠올려 볼래?' }],
+  ] as DialogueLine[][],
 }
 /** 목업 가상 테마의 시작·끝 장면(2D 만화풍 생성 그림, 목업 전용)과 움직임 v1 예시(카메라·컷 문구·효과). */
 const MOCK_SCENE = {
@@ -403,7 +454,9 @@ export function weeklyThemeFor(studentId: string, missions: Mission[], grade: nu
   const theme = themeMissions(missions, grade)
   const week = `${studentId}:${weekStart()}`
   const days = theme.days.map(({ day, mission }, i) => {
-    const attemptStatus = mission.status ?? 'NOT_STARTED'
+    const past = mission.status ? undefined : fixtureStore.snapshot().attempts.filter(a => a.studentId === studentId && a.mission.id === mission.id)
+    const latest = past?.find(a => a.status === 'IN_PROGRESS') ?? past?.at(-1)
+    const attemptStatus = mission.status ?? latest?.status ?? 'NOT_STARTED'
     const done = attemptStatus === 'COMPLETED'
     const completion = retentionState.completions[completionKey(studentId, mission.id)]
     return {
@@ -428,7 +481,7 @@ export function weeklyThemeFor(studentId: string, missions: Mission[], grade: nu
   const ended = !!picked && (picked.correct || (!!fridayRedo && fridayRedo.weekday >= 5 && fridayRedo.at > picked.at))
   const hasStory = days.length === 5
   // 관리자가 게시한 테마가 아니면(가상 테마) 목업 장면 그림을 붙인다
-  const mockScene = hasStory && theme.themeId.startsWith('mock-theme-')
+  const mockScene = hasStory && theme.themeId?.startsWith('mock-theme-')
   return {
     themeId: theme.themeId,
     weekStart: weekStart(),
@@ -542,6 +595,13 @@ export function onMissionCompleted(student: Child, mission: Pick<Mission, 'id' |
     createdAt: now(),
   })
   earn(student.id, 'COMMUNITY_POSTED', `${student.id}:${mission.id}`)
+}
+/**
+ * 공유 답변 응답 모양(core `CommunityAnswer`, api-spec 2.9, #825). 목업 공유물은 글 답변만 남기므로 서술(NARRATIVE)로 내보낸다.
+ * 화면은 `text`만 보여 준다(`answerText`).
+ */
+export function sharedAnswer(text: string) {
+  return { inputType: 'NARRATIVE' as const, text, content: { text } }
 }
 export function reactionCounts(postId: string) {
   const byStudent = retentionState.reactions[postId] ?? {}

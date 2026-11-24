@@ -5,7 +5,7 @@ import { check, sleep } from 'k6'
 import exec from 'k6/execution'
 import { Counter, Rate, Trend } from 'k6/metrics'
 
-const ORIGIN = (__ENV.BASE_URL || 'https://d3jf0rnm6vhd9v.cloudfront.net').replace(/\/$/, '')
+const ORIGIN = (__ENV.BASE_URL || 'https://www.sagomungchi.co.kr').replace(/\/$/, '')
 // 쿠키 인증 경로(refresh·학생 로그인)는 CSRF 방어로 Origin이 웹 주소와 같아야 한다(PublicAuthFilter).
 const BASE = `${ORIGIN}/api/v1`
 const SECRETS_PATH = __ENV.LOAD_SECRETS

@@ -1,3 +1,4 @@
+import { ArrowUp, MessageSquare, SquarePen, Search } from 'lucide-react'
 import { Link } from 'react-router'
 import { analysisResultLabel } from '../../domain/parent.ts'
 import { useEffect, useRef, useState } from 'react'
@@ -43,6 +44,7 @@ export function ParentConversation({
       (signal) => parentApi.conversation(id!, signal),
       !!id && canReadOriginals,
     )
+  const [historySearch, setHistorySearch] = useState('')
   const [question, setQuestion] = useState(''),
     [state, setState] = useState<StreamState>({ phase: 'IDLE', temporary: '' }),
     [error, setError] = useState<unknown>(null),
@@ -117,8 +119,7 @@ export function ParentConversation({
   return (
     <>
       <header className="parent-page-head">
-      <h2>AI 챗봇</h2>
-      <p>학습 기록에 대해 궁금한 점을 질문하고 답변의 근거를 확인하세요. 리포트는 정해진 주기로 자동 생성됩니다.</p>
+      <h2>AI에게 질문하기</h2>
       <p>
         {child.nickname} · 선택 기간 {scope.from} ~ {scope.to}
       </p>
@@ -130,19 +131,23 @@ export function ParentConversation({
             {report.periodType === 'DAILY' && <p>대화 시작 시 최신 리포트 판과 해당 날짜로 연결됩니다.</p>}
             <button className="cj-secondary" onClick={onClearReport}>전체 기록으로 질문하기</button></div>}
           {!report && <QueryFeedback query={list} />}
+          {!report && <label className="pc-history-search"><Search size={16} aria-hidden="true" /><input aria-label="이전 대화 검색" placeholder="대화 찾기" value={historySearch} onChange={e => setHistorySearch(e.target.value)} /></label>}
+          <div className="pc-history-list">
           {!report && list.data &&
             !list.error &&
-            list.data.items.map((c) => (
+            list.data.items.filter(c => `${c.title} ${c.period.from} ${c.period.to}`.toLocaleLowerCase().includes(historySearch.trim().toLocaleLowerCase())).map((c) => (
               <button
                 className="cj-secondary"
                 key={c.conversationId}
+                aria-current={id === c.conversationId ? 'true' : undefined}
                 onClick={() => open(c.conversationId)}
               >
-                {c.period.from} ~ {c.period.to}
+                <span>{c.title || '학습 기록 질문'}</span><small>{c.period.from} ~ {c.period.to}</small>
               </button>
             ))}
+          </div>
           <button
-            className="cj-secondary"
+            className="cj-secondary pc-new-chat"
             onClick={() => {
               requests.abort()
               onAnswer?.(null); conversationRef.current = null
@@ -151,15 +156,16 @@ export function ParentConversation({
               setError(null)
             }}
           >
-            새 대화
+            <SquarePen size={16} aria-hidden="true" /> 새 대화
           </button>
         </aside>
-        <section className="ws-stack">
+        <section className="ws-stack pc-conversation-panel">
+          <div className="pc-thread" aria-label="대화 내용" tabIndex={0}>
+          {!id && !pending && state.phase === 'IDLE' && <div className="pc-welcome"><MessageSquare size={30} strokeWidth={1.5} aria-hidden="true" /><h3>{child.nickname}의 기록에서<br />어떤 점이 궁금하세요?</h3><p>학습 내용과 달라진 생각을 물어보세요.</p></div>}
           {id && <QueryFeedback query={detail} />}
           {messages.map((m) => (
-            <article className="ws-card" key={m.messageId}>
-              <h3>보호자의 질문</h3>
-              <p>{m.question}</p>
+            <article className="ws-card pc-message" key={m.messageId}>
+              <div className="pc-user-message"><span>나의 질문</span><p>{m.question}</p></div>
               {m.status === 'FAILED' ? (
                 <>
                   <p role="alert">처리 실패 · {m.failureCode}. 임시 문장은 보관하지 않습니다.</p>
@@ -180,7 +186,7 @@ export function ParentConversation({
                 m.verification?.numbersMatched &&
                 m.verification.quotesMatched && m.verification.contentAllowed !== false ? (
                 <>
-                  <p>{m.answer}</p>
+                  <div className="pc-assistant-message"><h3><MessageSquare size={17} aria-hidden="true" />기록을 바탕으로 한 답변</h3><p>{m.answer}</p></div>
                   {m.correctionNotice && (
                     <p role="note">이 답변에 쓰인 판정 중 일부가 정정되었습니다.</p>
                   )}
@@ -271,9 +277,10 @@ export function ParentConversation({
                 : '이 자녀의 무료 플랜에는 분석 대화가 포함되지 않습니다. 대시보드와 수치 리포트는 확인할 수 있습니다.'}
             </p>
           )}
+          </div>
           {!conversationOff && (
           <form
-            className="ws-card ws-form"
+            className="ws-card ws-form pc-composer"
             onSubmit={(e) => {
               e.preventDefault()
               void ask()
@@ -291,7 +298,7 @@ export function ParentConversation({
               />
             </label>
             <button className="cj-primary" disabled={!canReadOriginals || pending || startingTemplate}>
-              질문 보내기
+              <ArrowUp size={18} aria-hidden="true" /> 질문 보내기
             </button>
             <ExampleQuestions
               childId={child.id}

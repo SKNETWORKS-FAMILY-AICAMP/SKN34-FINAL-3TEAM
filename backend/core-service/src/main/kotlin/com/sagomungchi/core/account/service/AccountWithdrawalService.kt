@@ -19,7 +19,10 @@ class AccountWithdrawalService(private val accounts: AccountManagementService,
  private val transfers: com.sagomungchi.core.guardianship.service.GuardianTransferAccessService,
  private val conversations: com.sagomungchi.core.conversation.service.ConversationTransferService) {
  data class State(val withdrawalRequestId: UUID, val status: String)
- data class Requested(val withdrawalRequestId: UUID, val status: String, val statusToken: String)
+ // 비밀 값은 toString()에서 가림: 객체가 로그에 찍혀도 값이 남지 않게 (NFR-SEC-05, #898)
+ data class Requested(val withdrawalRequestId: UUID, val status: String, val statusToken: String) {
+  override fun toString() = "Requested(withdrawalRequestId=$withdrawalRequestId, status=$status, statusToken=***)"
+ }
  @Transactional
  fun precheck(identity: AuthenticatedAccount): Any { accounts.lock(identity); return payment.check(identity.account.id) }
  @Transactional

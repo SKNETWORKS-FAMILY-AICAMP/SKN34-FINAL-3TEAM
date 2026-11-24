@@ -2,9 +2,10 @@
 
 줄거리(후보 4개, 정답 텃밭):
 - 특징 표: 땅(놀이터 모래·텃밭 흙·창고 시멘트·정자 흙),
-  지붕(놀이터·텃밭 없음, 창고·정자 있음), 물기(모두 젖음)
-- 월·화 HINT(물기), 수 RULE(지붕 없음 → 창고·정자), 목 RULE(땅 흙 → 놀이터·창고),
-  금 HINT(물기) → 수요일까지 놀이터·텃밭 2개 남고, 마지막 틀린 후보(놀이터)는 목요일에 빠짐
+  지붕(놀이터·텃밭 없음, 창고·정자 있음), 물기(놀이터·텃밭 젖음, 창고·정자 마름)
+- 월 RULE(물기 젖음 → 창고·정자), 화 STORY(사건 단서), 수 HINT(지붕 없음), 목 STORY,
+  금 RULE(땅 흙 → 놀이터·창고) → 목요일까지 놀이터·텃밭 2개 남고, 마지막 틀린 후보(놀이터)는
+  금요일에 빠짐(#782 테마 짜임: 후보를 빼지 않는 날은 사건 단서, 앞 요일 단서를 되풀이하지 않음)
 - 증거 종류는 기본 요청(helpers.request_body)의 코드 배정과 같음: 월 흔적·화 목격·수 목격·목 흔적·
   금 기록(일지)
 - 뭉치는 구조대로 출동한 해결사, 보리의 주인은 지호. 요일마다 증거 발견 줄(discovery)과
@@ -15,8 +16,10 @@ import copy
 from typing import Any
 
 from app.mission_draft.prompts import GeneratedAnswerKey, GeneratedDraft, GeneratedElement
+from app.theme_draft.checks import REVIEW_IDS
 from app.theme_draft.models import (
     GeneratedDialogue,
+    GeneratedHelperJudge,
     GeneratedLine,
     GeneratedMissionReview,
     GeneratedStoryReview,
@@ -36,14 +39,55 @@ DISCOVERY = {
     "THU": "골목에 보리 발자국이 또 있어! 무엇이 묻었는지 살펴보자.",
     "FRI": "가게 주인의 일지를 찾았어! 그때가 적혀 있을지 몰라.",
 }
-HOOK = {  # 증거 발견 줄 다음 뭉치의 수사 연결(대화 마지막 줄, 40자 이내)
-    "MON": "발자국을 풀려면 동물이 사는 환경을 알아야 해. 도와줄래?",
-    "TUE": "아저씨 말을 따지려면 사실과 의견을 나눠야 해. 도와줄래?",
-    "WED": "본 것을 기억하려면 동물의 특징을 알아야 해. 도와줄래?",
-    "THU": "발자국 수를 세려면 계산이 필요해. 같이 해 볼래?",
-    "FRI": "일지를 보기 전에 이번 주를 돌아보자. 도와줄래?",
+# 증거에서 오늘 할 일(수사 연결, 대화 재료, 40자 이내). #782: 증거의 한 부분과 활동을 말함
+HOOK = {
+    # #782 미션 방식: 부탁 날(기본 요청 배정 월·수·목·금)은 돕는 사람의 일만 말하고
+    # 흔적·기록 낱말을 쓰지 않음(EVIDENCE_EARLY)
+    "MON": "공원 안내문에 보리 산책 이야기가 있어. 같이 까닭을 살펴볼래?",
+    "TUE": "할머니 말에 보리 모습이 더 있어. 사실과 의견을 나눠 볼래?",
+    "WED": "그 아이 말에 보리가 한 일도 있어. 같이 새 생각을 더해 볼래?",
+    "THU": "보리 산책 길 사이를 잰 값도 있어. 같이 늘어난 길이를 구해 볼래?",
+    "FRI": "가게 안내판에 그날 시간도 적혀 있어. 같이 이번 주를 돌아볼래?",
+}
+# 그날 미션 지문이 될 증거 내용(내부 칸 missionMaterial, #782). 그날 단서 값(젖음·없음·흙)·후보
+# 이름은 없음
+MATERIAL = {
+    "MON": "지호의 일지: 보리는 비가 그치자 공을 물고 마을 길로 달려 나갔다. 지호가 부르자 한 번 "
+    "돌아보고 다시 달렸다.",
+    "TUE": "이웃 할머니의 말: 보리가 꼬리를 흔들며 내 앞을 지나갔어. 조금 뒤에 지호가 보리를 "
+    "부르며 따라왔지.",
+    "WED": "본 아이의 말: 보리가 나비를 쫓아 길모퉁이를 돌았어. 나비가 날아가자 한참 냄새를 "
+    "맡았어.",
+    "THU": "발자국 사이를 잰 값: 첫째 30cm, 둘째 45cm, 셋째 60cm.",
+    "FRI": "가게 주인의 일지: 4시 비 그침, 4시 10분 보리 산책 시작, 4시 30분 보리가 보이지 않음.",
+}
+# 오늘 온 까닭(내부 칸 dayStep, #782 테마 짜임). 앞 요일·그날 단서 값(젖음·없음·흙)·후보 이름은 없음
+STEP = {
+    "MON": "보리가 사라진 길부터 살펴보러 왔어.",  # 대화 첫 줄로 지호가 말함(SELF_NAME)
+    # 화~금은 오늘 여기 온 까닭, 어제 일은 들은 것만(#782 설계 v7 DAY_STEP_MADE)
+    "TUE": "공원 관리인 말을 듣고 빵집 앞까지 왔어.",
+    "WED": "빵집 아저씨 이야기를 듣고 길모퉁이로 왔어.",
+    "THU": "꽃집 할머니가 알려 준 골목 안쪽으로 왔어.",
+    "FRI": "문구점 사장님 말을 따라 가게 앞까지 왔어.",
+}
+# 그날 장소 사람(내부 칸 helper, #782 테마 짜임 미션 방식). missionWay가 없으면 수사(예전
+# 저장본과 같음)
+HELPER = {
+    "MON": "공원 관리인",
+    "TUE": "빵집 아저씨",
+    "WED": "꽃집 할머니",
+    "THU": "골목 문구점 사장님",
+    "FRI": "가게 주인",
 }
 TYPE_DAY = {t: d for d, t in DAY_TYPES.items()}
+# 그날 돕는 사람의 약속 줄(#782 설계 v10: 요일마다 다른 말, 기록 날은 자기 기록)
+PROMISE = {
+    "MON": "도와주면 그때 본 걸 알려 줄게.",
+    "TUE": "같이 봐 주면 내가 아는 것도 말해 줄게.",
+    "WED": "도와주면 그날 내가 본 걸 말해 줄게.",
+    "THU": "같이 해 주면 그때 본 것도 알려 줄게.",
+    "FRI": "도와주면 내 일지를 보여 줄게.",
+}
 
 
 def feature(name: str, values: dict[str, str], code: str | None = None) -> dict[str, Any]:
@@ -67,13 +111,17 @@ def day(
         "day": d,
         "thinkingType": DAY_TYPES[d],
         "place": f"마을 {d.lower()} 길",
-        "sceneNote": "뭉치와 지호가 강아지 보리의 흔적을 살펴보는 장면",
+        # #782 미션 방식: 부탁 날 장면 메모에는 흔적을 쓰지 않음(EVIDENCE_EARLY)
+        "sceneNote": "뭉치와 지호가 그곳 사람을 만나 하는 일을 살펴보는 장면",
         "clue": clue,
         "clueType": clue_type,
         "condition": {"kind": kind, "feature": feat, "allowed": allowed},
         "evidence": {"kind": ev, "when": "보리가 사라진 날 오후"},
         "discovery": DISCOVERY[d],
         "missionHook": HOOK[d],
+        "missionMaterial": MATERIAL[d],
+        "dayStep": STEP[d],
+        "helper": HELPER[d],
     }
 
 
@@ -95,43 +143,52 @@ def valid_theme() -> dict[str, Any]:
         "features": [
             feature("땅", {"놀이터": "모래", "텃밭": "흙", "창고": "시멘트", "정자": "흙"}),
             feature("지붕", {"놀이터": "없음", "텃밭": "없음", "창고": "있음", "정자": "있음"}),
-            feature("물기", {c: "젖음" for c in CANDIDATES}, code=STANDARDS["ANALYZE"][0]),
+            # #782: 값이 하나뿐인 특징의 힌트는 아무것도 알려 주지 않아(CLUE_EMPTY) 창고·정자는 마름
+            feature(
+                "물기",
+                {"놀이터": "젖음", "텃밭": "젖음", "창고": "마름", "정자": "마름"},
+                code=STANDARDS["ANALYZE"][0],
+            ),
         ],
         "days": [
-            day("MON", "보리 발자국이 젖어 있었어.", "발자국", "HINT", "물기", ["젖음"]),
+            # 월요일 힌트는 아직 빠진 후보가 없어 늘 특징 값 전부라(#782 CLUE_EMPTY) RULE로
+            # #782 설계 v3 CLUE_SOURCE: 부탁 날 흔적 단서는 돕는 사람이 본 흔적
+            day("MON", "내가 본 보리 발자국은 젖어 있었어.", "발자국", "RULE", "물기", ["젖음"]),
+            # #782 테마 짜임: 후보를 빼지 않는 날은 사건 단서(STORY), 앞 요일 단서를 되풀이하지 않음
             day(
                 "TUE",
-                "보리 털이 비에 젖어 반짝였대.",
-                "물기",
-                "HINT",
-                "물기",
-                ["젖음"],
+                "보리가 공을 물고 골목 쪽으로 달려갔대.",
+                "목격",
+                "STORY",
+                "",
+                [],
                 "SIGHTING",
             ),
             day(
                 "WED",
-                "보리는 지붕이 없는 곳으로 갔대.",
-                "목격",
-                "RULE",
+                "내가 봤는데 보리는 지붕이 없는 곳으로 갔어.",  # 전해 들은 말(~대) 아님
+                "소리",
+                "HINT",
                 "지붕",
                 ["없음"],
                 "SIGHTING",
             ),
             day(
                 "THU",
-                "보리 발바닥에 흙이 묻어 있었어.",
-                "재질",
+                "내가 보니 산책 길 사이로 보리 발자국이 골목 안쪽에 이어졌어.",
+                "크기",
+                "STORY",
+                "",
+                [],
+            ),
+            # 마지막 틀린 후보는 금요일에 빠짐(#782 테마 짜임)
+            day(
+                "FRI",
+                "일지에 보리 발바닥에 흙이 묻어 있었다고 적혔어.",
+                "기록",
                 "RULE",
                 "땅",
                 ["흙"],
-            ),
-            day(
-                "FRI",
-                "일지에 보리가 지나간 길이 젖어 있었다고 적혔어.",
-                "냄새",
-                "HINT",
-                "물기",
-                ["젖음"],
                 "RECORD",
             ),
         ],
@@ -226,7 +283,8 @@ def mission_draft(thinking_type: str, hints: int = 3, **overrides: Any) -> Gener
     solve = thinking_type == "SOLVE"
     body: dict[str, Any] = {
         "title": "뭉치의 탐정 수첩",
-        "question": "뭉치와 지호가 마을 길에서 본 것을 떠올려 보고 까닭과 함께 써 보자.",
+        # #782: 줄거리가 정한 그날 지문을 문제 글에 그대로 넣음(MATERIAL_MISSING)
+        "question": f"{MATERIAL[TYPE_DAY[thinking_type]]} 이 글을 읽고 까닭과 함께 써 보자.",
         "guide": None,
         "sceneNote": None,
         "choices": None,
@@ -253,20 +311,35 @@ def mission_draft(thinking_type: str, hints: int = 3, **overrides: Any) -> Gener
     return GeneratedDraft(**body)
 
 
-def dialogue(speaker: str = "뭉치", **overrides: Any) -> GeneratedDialogue:
-    """초3 대화(증거 발견 줄 포함 2~3줄): LLM 줄 1줄 + 코드가 넣는 증거 발견 줄."""
+def dialogue(day: str | None = None, **overrides: Any) -> GeneratedDialogue:
+    """미션 전 대화 4줄(모든 학년 4~5줄). 검사 시험은 이 4줄을 그대로 보고, 그래프에서는 코드가
+    오늘 온 까닭을 주인공의 말로 앞에 붙여 5줄이 된다(#782 설계 v3). 요일을 주면 셋째 줄은 그날
+    돕는 사람의 약속(#782 미션 방식, 부탁 날 ASK_PROMISE — 다른 날에도 그대로 둠). #782 설계 v10:
+    요일마다 다른 말이고 금요일(기록 날)은 자기
+    일지(ASK_PROMISE 감각)."""
     body: dict[str, Any] = {
-        "lines": [GeneratedLine(speaker="지호", text="여기 뭔가 있는 것 같아!")],
-        "discoverySpeaker": speaker,
+        "lines": [
+            # 첫날에도 쓰므로 '어제'를 쓰지 않음(#782 DAY1_TIME)
+            GeneratedLine(speaker="지호", text="보리를 찾으러 여기까지 왔어."),
+            GeneratedLine(speaker="뭉치", text="여기 뭔가 남아 있는 것 같아!"),
+            GeneratedLine(
+                speaker=HELPER[day] if day else "지호",
+                text=PROMISE[day] if day else PROMISE["MON"],
+            ),
+            GeneratedLine(speaker="뭉치", text="여기 적힌 것을 같이 살펴볼래?"),
+        ],
     }
     body.update(overrides)
     return GeneratedDialogue(**body)
 
 
 def story_review(
-    verdicts: dict[str, str] | None = None, days: dict[str, list[str]] | None = None
+    verdicts: dict[str, str] | None = None,
+    days: dict[str, list[str]] | None = None,
+    promise_days: list[str] | None = None,
 ) -> GeneratedStoryReview:
-    ids = ("CLUE_LOGIC", "ANSWER_HINT", "GRADE_VOCAB", "STANDARD_FIT", "SAFETY")
+    """promise_days: CLUE_LOGIC 중 약속 줄만 틀린 요일(#782 설계 v12)."""
+    ids = REVIEW_IDS  # #782 설계 v13: HELPER_FIT 포함
     verdicts, days = verdicts or {}, days or {}
     return GeneratedStoryReview(
         items=[
@@ -275,9 +348,27 @@ def story_review(
                 verdict=verdicts.get(i, "PASS"),
                 days=days.get(i, []),  # type: ignore[arg-type]
                 reason=f"{i} 사유",
+                promiseDays=(promise_days or []) if i == "CLUE_LOGIC" else [],  # type: ignore[arg-type]
             )
             for i in ids
         ]
+    )
+
+
+def helper_judge(forced: dict[str, str] | None = None) -> GeneratedHelperJudge:
+    """돕는 사람 판정(#782 설계 v13 가). forced: {요일: 근거}만 FORCED, 나머지 요일은 NATURAL."""
+    forced = forced or {}
+    return GeneratedHelperJudge.model_validate(
+        {
+            "items": [
+                {
+                    "day": d,
+                    "flow": "FORCED" if d in forced else "NATURAL",
+                    "reason": forced.get(d) or "자연스러움",
+                }
+                for d in ("MON", "TUE", "WED", "THU", "FRI")
+            ]
+        }
     )
 
 

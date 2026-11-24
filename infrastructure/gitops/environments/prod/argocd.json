@@ -1,0 +1,143 @@
+{
+  "global": {
+    "domain": "localhost:8080",
+    "image": {
+      "tag": "v3.5.7"
+    },
+    "affinity": {
+      "nodeAffinity": {
+        "type": "hard",
+        "matchExpressions": [
+          {
+            "key": "eks.amazonaws.com/nodegroup",
+            "operator": "In",
+            "values": [
+              "application"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "configs": {
+    "cm": {
+      "admin.enabled": true,
+      "resource.customizations.health.argoproj.io_Application": "hs = {}\nhs.status = \"Progressing\"\nhs.message = \"\"\nif obj.status ~= nil then\n  if obj.status.health ~= nil then\n    hs.status = obj.status.health.status\n    if obj.status.health.message ~= nil then\n      hs.message = obj.status.health.message\n    end\n  end\nend\nreturn hs\n"
+    },
+    "params": {
+      "server.insecure": false,
+      "controller.status.processors": 10,
+      "controller.operation.processors": 5,
+      "reposerver.parallelism.limit": 2
+    }
+  },
+  "dex": {
+    "enabled": false
+  },
+  "redis-ha": {
+    "enabled": false
+  },
+  "controller": {
+    "replicas": 1,
+    "resources": {
+      "requests": {
+        "cpu": "100m",
+        "memory": "256Mi"
+      },
+      "limits": {
+        "memory": "768Mi"
+      }
+    }
+  },
+  "repoServer": {
+    "replicas": 1,
+    "resources": {
+      "requests": {
+        "cpu": "50m",
+        "memory": "128Mi"
+      },
+      "limits": {
+        "memory": "512Mi"
+      }
+    }
+  },
+  "server": {
+    "replicas": 1,
+    "ingress": {
+      "enabled": false
+    },
+    "resources": {
+      "requests": {
+        "cpu": "50m",
+        "memory": "96Mi"
+      },
+      "limits": {
+        "memory": "256Mi"
+      }
+    }
+  },
+  "redis": {
+    "resources": {
+      "requests": {
+        "cpu": "25m",
+        "memory": "48Mi"
+      },
+      "limits": {
+        "memory": "128Mi"
+      }
+    }
+  },
+  "applicationSet": {
+    "replicas": 1,
+    "resources": {
+      "requests": {
+        "cpu": "25m",
+        "memory": "64Mi"
+      },
+      "limits": {
+        "memory": "192Mi"
+      }
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "argocdUrl": "https://localhost:8080",
+    "secret": {
+      "create": false
+    },
+    "resources": {
+      "requests": {
+        "cpu": "25m",
+        "memory": "48Mi"
+      },
+      "limits": {
+        "memory": "128Mi"
+      }
+    },
+    "notifiers": {
+      "service.webhook.discord": "url: $discord-webhook-url\nheaders:\n  - name: Content-Type\n    value: application/json\n"
+    },
+    "subscriptions": [
+      {
+        "recipients": [
+          "discord"
+        ],
+        "triggers": [
+          "on-sync-succeeded",
+          "on-sync-failed",
+          "on-health-degraded"
+        ]
+      }
+    ],
+    "templates": {
+      "template.app-sync-succeeded": "webhook:\n  discord:\n    method: POST\n    body: |\n      {\"content\": {{ printf \"[Argo CD prod] %s 동기화 성공, revision %s\" .app.metadata.name (.app.status.operationState.syncResult.revision | default \"\" | trunc 12) | toJson }}}\n",
+      "template.app-sync-failed": "webhook:\n  discord:\n    method: POST\n    body: |\n      {\"content\": {{ printf \"[Argo CD prod] %s 동기화 실패(%s): %s\" .app.metadata.name .app.status.operationState.phase (.app.status.operationState.message | default \"\" | trunc 1500) | toJson }}}\n",
+      "template.app-health-degraded": "webhook:\n  discord:\n    method: POST\n    body: |\n      {\"content\": {{ printf \"[Argo CD prod] %s 상태 Degraded: %s\" .app.metadata.name (.app.status.health.message | default \"\" | trunc 1500) | toJson }}}\n"
+    },
+    "triggers": {
+      "trigger.on-sync-succeeded": "- description: 동기화 성공\n  send: [app-sync-succeeded]\n  when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded']\n  oncePer: app.status.operationState?.syncResult?.revision\n",
+      "trigger.on-sync-failed": "- description: 동기화 실패\n  send: [app-sync-failed]\n  when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']\n  oncePer: app.status.operationState?.syncResult?.revision\n",
+      "trigger.on-health-degraded": "- description: Health Degraded\n  send: [app-health-degraded]\n  when: app.status.health.status == 'Degraded'\n"
+    }
+  }
+}

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sagomungchi.learning.theme.repository.ThemeWeekPlanMapper">
+    <!-- 같은 학년의 편성·채택·게시 순서를 고정한다. 두 학년이 관련되면 서비스가 학년 오름차순으로 획득한다. -->
+    <select id="lockGrade" resultType="int" flushCache="true" useCache="false">
+        SELECT 1 FROM pg_advisory_xact_lock(882, #{grade})
+    </select>
+    <select id="draftState" resultType="com.sagomungchi.learning.theme.repository.DraftWeekState" useCache="false" flushCache="true">
+        SELECT d.grade, d.status, d.week_start AS generation_week, d.planned_week,
+               EXISTS (SELECT 1 FROM weekly_theme p WHERE p.grade = COALESCE(t.grade,d.grade)
+                       AND p.week_start = COALESCE(t.week_start,d.planned_week) AND p.status='PUBLISHED') AS week_locked,
+               EXISTS (SELECT 1 FROM weekly_theme p WHERE p.grade = COALESCE(t.grade,d.grade)
+                       AND p.week_start = COALESCE(t.week_start,d.planned_week,d.week_start) AND p.status='PUBLISHED') AS adoption_week_locked,
+               (d.input -> 'regenerate' ->> 'baseDraftId' IS NULL AND NOT EXISTS (
+                   SELECT 1 FROM theme_draft child WHERE child.family_root_id=d.id AND child.status='ADOPTED')) AS root
+        FROM theme_draft d LEFT JOIN weekly_theme t ON t.id=d.theme_id WHERE d.id=#{id}
+    </select>
+    <select id="candidates" resultType="com.sagomungchi.learning.theme.repository.PlannerDraft">
+        SELECT id AS draft_id, COALESCE(NULLIF(output -> 'theme' ->> 'title',''),input ->> 'topic','테마 초안') AS title,
+               week_start AS generation_week, planned_week
+        FROM theme_draft d WHERE grade=#{grade} AND status='READY' AND input -> 'regenerate' ->> 'baseDraftId' IS NULL
+        AND NOT EXISTS (SELECT 1 FROM theme_draft child WHERE child.family_root_id=d.id AND child.status='ADOPTED')
+        ORDER BY planned_week NULLS LAST, created_at DESC, id
+    </select>
+    <select id="generationWeek" resultType="java.time.LocalDate">
+        SELECT week_start FROM theme_draft WHERE theme_id=#{themeId}
+    </select>
+    <select id="themes" resultType="com.sagomungchi.learning.theme.repository.PlannerTheme">
+        SELECT t.id AS theme_id, v.title, t.status, v.version
+        FROM weekly_theme t JOIN weekly_theme_version v ON v.id =
+          CASE WHEN t.status='PUBLISHED' THEN t.published_version_id ELSE t.current_version_id END
+        WHERE t.grade=#{grade} AND t.week_start=#{week} ORDER BY (t.status='PUBLISHED') DESC, t.created_at,t.id
+    </select>
+    <select id="occupant" resultType="java.util.UUID">
+        SELECT id FROM theme_draft WHERE grade=#{grade} AND planned_week=#{week}
+    </select>
+    <update id="assign">UPDATE theme_draft SET planned_week=#{week,jdbcType=DATE} WHERE id=#{id} AND status='READY'</update>
+    <update id="release">UPDATE theme_draft SET planned_week=NULL WHERE grade=#{grade} AND planned_week=#{week}</update>
+    <select id="lockMissions" resultType="java.util.UUID" useCache="false" flushCache="true">
+        SELECT m.id FROM mission m JOIN weekly_theme_day d ON d.mission_id=m.id
+        WHERE d.theme_version_id=#{versionId} ORDER BY m.id FOR UPDATE OF m
+    </select>
+    <update id="freezeDays">
+        UPDATE weekly_theme_day d SET mission_version_id=COALESCE(d.mission_version_id,m.published_version_id),
+            rubric_version_id=COALESCE(d.rubric_version_id,m.published_rubric_version_id)
+        FROM mission m WHERE d.theme_version_id=#{versionId} AND m.id=d.mission_id AND m.status='PUBLISHED'
+        AND m.published_version_id IS NOT NULL AND m.published_rubric_version_id IS NOT NULL
+    </update>
+</mapper>

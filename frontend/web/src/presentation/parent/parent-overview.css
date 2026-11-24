@@ -1,0 +1,341 @@
+/* Wide record explorer inspired by the supplied order-list layout. */
+#class-journal .pd-detail-launchers{display:flex;gap:12px;flex-wrap:wrap;border-top:1px solid #e7ece9;padding-top:20px}
+#class-journal .pd-detail-launchers button{display:flex;gap:24px;align-items:center;justify-content:space-between;border:1px solid #dce4df;border-radius:10px;background:white;padding:13px 18px;color:#304639;font-size:14px;cursor:pointer}
+#class-journal .cj-modal:has(.pd-record-explorer){width:min(1180px,95vw);max-width:1180px;height:min(800px,90dvh);max-height:90dvh;padding:0;border:0;border-radius:24px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 30px 100px #142b3440;background:#fff}
+#class-journal .cj-modal:has(.pd-record-explorer)>.cj-modal-head{margin:0;padding:18px 24px;border-bottom:1px solid #edf0f5;flex-shrink:0;background:white}
+#class-journal .cj-modal:has(.pd-record-explorer)>.cj-modal-head h2{font-size:18px;margin:0}
+#class-journal .cj-modal:has(.pd-record-explorer)>.cj-modal-body{padding:0;overflow:hidden;flex:1;min-height:0;display:flex}
+#class-journal .pd-record-explorer{display:grid;grid-template-columns:190px minmax(0,1fr);width:100%;height:100%;background:white;color:#26332d}
+#class-journal .pd-explorer-nav{display:flex;flex-direction:column;gap:9px;background:#2458d9;padding:28px 0 22px 16px;color:#fff}
+#class-journal .pd-explorer-brand{display:flex;gap:12px;align-items:center;font-weight:600;font-size:17px;padding:0 12px 30px}
+#class-journal .pd-explorer-nav button{border:0;background:transparent;color:#eef3ff;border-radius:24px 0 0 24px;text-align:left;padding:17px 19px;display:flex;align-items:center;justify-content:space-between;font-size:14px;cursor:pointer}
+#class-journal .pd-explorer-nav button[aria-current=page]{background:white;color:#2458d9;font-weight:650}
+#class-journal .pd-explorer-nav small{margin-top:auto;padding:20px 12px 0;color:#dbe5ff;font-size:12px}
+#class-journal .pd-explorer-content{overflow:auto;min-width:0;padding:28px 30px;overscroll-behavior:contain}
+#class-journal .pd-explorer-period{text-align:right;font-size:12px;color:#6a7681;margin-bottom:18px}
+#class-journal .pd-explorer-heading{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:16px}
+#class-journal .pd-explorer-heading h2{font-size:24px;margin:0 0 4px}
+#class-journal .pd-explorer-heading p,#class-journal .pd-explorer-count{font-size:12px;color:#718078;margin:0 0 16px}
+#class-journal .pd-explorer-heading label{font-size:12px;white-space:nowrap}
+#class-journal .pd-explorer-heading select{margin-left:8px;font-size:13px;border:1px solid #e1e6ef;border-radius:8px;padding:8px;background:#fafbff}
+#class-journal :is(.pd-explorer-table,.pd-record-explorer .pd-table){width:100%;border-collapse:separate;border-spacing:0 10px;min-width:580px;font-size:13px}
+#class-journal :is(.pd-explorer-table,.pd-record-explorer .pd-table) th{background:#f5f6f9;border:0;font-size:11px;font-weight:500;text-align:left;color:#63706b;padding:10px 12px}
+#class-journal :is(.pd-explorer-table,.pd-record-explorer .pd-table) td{padding:14px 12px;border-top:1px solid #e9edf3;border-bottom:1px solid #e9edf3;background:#fff;line-height:1.6}
+#class-journal :is(.pd-explorer-table,.pd-record-explorer .pd-table) td:first-child{border-left:1px solid #e9edf3;border-radius:8px 0 0 8px;color:#89928e}
+#class-journal :is(.pd-explorer-table,.pd-record-explorer .pd-table) td:last-child{border-right:1px solid #e9edf3;border-radius:0 8px 8px 0}
+#class-journal :is(.pd-explorer-table,.pd-record-explorer .pd-table) tr:hover td{background:#eff4ff;border-color:#cbd9ff}
+#class-journal .pd-explorer-table button{white-space:nowrap;background:#f0f4ff;border:0;border-radius:7px;padding:8px 10px;color:#2458d9;font-size:12px;cursor:pointer}
+#class-journal .pd-explorer-type{display:flex;gap:8px;align-items:center;white-space:nowrap;color:var(--type-ink)}
+#class-journal .pd-explorer-pagination,#class-journal .pd-record-explorer nav[aria-label='학습 기록 페이지']{display:flex;align-items:center;justify-content:flex-end;gap:14px;margin-top:20px;font-size:12px}
+#class-journal .pd-explorer-pagination>span:first-child{margin-right:auto;color:#718078}
+#class-journal .pd-explorer-pagination button,#class-journal .pd-record-explorer nav[aria-label='학습 기록 페이지'] button,#class-journal .pd-explorer-back{padding:8px 12px;background:#f3f6fc;border:1px solid #e3e8f0;border-radius:7px;cursor:pointer}
+#class-journal .pd-explorer-pagination button:disabled{opacity:.4;cursor:default}
+#class-journal .pd-record-explorer :is(.ws-card,.pd-card){border:0;padding:0;background:white;box-shadow:none}
+#class-journal .pd-record-explorer .ws-card article{border:1px solid #e6ebf3;padding:18px;border-radius:10px;margin:12px 0}
+#class-journal .pd-record-explorer blockquote{white-space:pre-wrap;overflow-wrap:anywhere;border-left:3px solid #bed0fb;padding:12px 16px;background:#f6f8fc}
+#class-journal .pd-record-explorer .pd-foot{font-size:11px;color:#778079}
+@media(max-width:700px){#class-journal .pd-record-explorer{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}#class-journal .pd-explorer-nav{flex-direction:row;padding:10px;gap:5px}#class-journal .pd-explorer-brand,#class-journal .pd-explorer-nav small{display:none}#class-journal .pd-explorer-nav button{border-radius:10px;padding:10px;font-size:12px;flex:1;justify-content:center;gap:5px}#class-journal .pd-explorer-content{padding:18px}#class-journal .pd-explorer-heading{align-items:flex-start;flex-direction:column}}
+#class-journal .pd-activity-search{display:flex;align-items:center;border:1px solid #dfe5ef;border-radius:9px;background:#fff;gap:10px;padding:0 12px;min-height:42px}
+#class-journal .pd-activity-search>span{font-size:12px;border-right:1px solid #e3e8ef;padding-right:12px;color:#52606c;white-space:nowrap}
+#class-journal .pd-activity-search input{border:0!important;outline:none;background:none;min-width:0;width:170px;padding:10px 0!important;font-size:13px!important}
+#class-journal .pd-filter-summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;font-size:12px;color:#697985}
+#class-journal .pd-filter-summary span{background:#f3f5f9;padding:5px 9px;border-radius:5px}
+#class-journal .pd-activity-table{table-layout:auto;min-width:620px}
+#class-journal .pd-activity-table th:nth-child(2){width:35%}
+#class-journal .pd-activity-table td:nth-child(2){overflow-wrap:anywhere}
+#class-journal .pd-activity-table td:nth-child(4){white-space:nowrap;font-variant-numeric:tabular-nums;color:#52606c}
+#class-journal .pd-column-filter{position:relative;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+#class-journal .pd-column-filter>button{border:0;background:none;padding:2px 5px;color:#7a8796;cursor:pointer;font-size:13px;border-radius:4px;min-height:24px}
+#class-journal .pd-column-filter>button[aria-expanded=true]{background:#e9efff;color:#2458d9}
+#class-journal .pd-column-popover{position:absolute;top:calc(100% + 8px);left:calc(100% - 20px);right:auto;background:#fff;border:1px solid #e2e7ef;border-radius:12px;box-shadow:0 10px 40px #26344c26;z-index:20;color:#26332d;white-space:normal;font-weight:400;text-align:left}
+#class-journal .pd-type-options{width:160px;padding:6px}
+#class-journal .pd-type-options button{display:block;width:100%;text-align:left;padding:10px 12px;background:white;border:0;border-radius:6px;font-size:13px;color:#34453b;cursor:pointer}
+#class-journal .pd-type-options button[aria-pressed=true],#class-journal .pd-type-options button:hover{background:#edf3ff;color:#2458d9}
+#class-journal .pd-date-picker{width:340px;padding:16px}
+#class-journal .pd-date-mode{display:flex;gap:4px;background:#f3f5f9;padding:3px;border-radius:7px;margin-bottom:12px}
+#class-journal .pd-date-mode button{flex:1;border:0;background:none;border-radius:5px;padding:6px;color:#647282;cursor:pointer;font-size:12px}
+#class-journal .pd-date-mode button[aria-pressed=true]{background:white;color:#2458d9;box-shadow:0 1px 4px #0001}
+#class-journal .pd-date-inputs{display:flex;gap:6px;align-items:center;margin-bottom:14px}
+#class-journal .pd-date-inputs input{width:0;flex:1;min-width:0;border:1px solid #dfe5ef;border-radius:6px;font-size:12px;padding:7px 5px;min-height:34px}
+#class-journal .pd-calendar-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+#class-journal .pd-calendar-head strong{font-size:14px}
+#class-journal .pd-calendar-head button{border:0;background:white;padding:5px;display:flex;cursor:pointer}
+#class-journal .pd-calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
+#class-journal .pd-calendar-grid span{font-size:11px;color:#8a95a1;padding:5px}
+#class-journal .pd-calendar-grid button{border:0;background:white;color:#394653;padding:8px 0;border-radius:5px;font-size:12px;cursor:pointer}
+#class-journal .pd-calendar-grid button[aria-pressed=true]{background:#eaf0ff;color:#2458d9}
+#class-journal .pd-calendar-grid button[data-edge]{background:#2458d9;color:white}
+#class-journal .pd-date-picker p{font-size:11px;margin:12px 0;color:#6d7784}
+#class-journal .pd-date-picker footer{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #edf0f4;padding-top:12px}
+#class-journal .pd-date-picker footer button{border:1px solid #dfe5ef;background:white;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer}
+#class-journal .pd-date-picker footer .pd-date-confirm{background:#2458d9;color:white;border-color:#2458d9}
+#class-journal .pd-date-note{color:#7b8791;font-size:11px;margin-top:16px}
+@media(max-width:700px){#class-journal .pd-activity-search{width:100%}#class-journal .pd-activity-search input{flex:1}}
+#class-journal .ws-parent .pd-record-explorer .pd-column-filter>button{padding:0;width:20px;height:24px;min-height:24px;border:0;background:transparent;border-radius:4px;font-size:12px}
+#class-journal .ws-parent .pd-record-explorer .pd-date-mode button{padding:5px 10px;min-height:28px;border:0;background:transparent;box-shadow:none}
+#class-journal .ws-parent .pd-record-explorer .pd-date-mode button[aria-pressed=true]{background:white;color:#2458d9}
+#class-journal .ws-parent .pd-record-explorer .pd-calendar-grid button{padding:0;min-height:28px;height:28px;min-width:0;width:100%;border:0;background:white;border-radius:4px;font-size:12px}
+#class-journal .ws-parent .pd-record-explorer .pd-calendar-grid button[aria-pressed=true]{background:#eaf0ff;color:#2458d9}
+#class-journal .ws-parent .pd-record-explorer .pd-calendar-grid button[data-edge]{background:#2458d9;color:white}
+#class-journal .ws-parent .pd-record-explorer .pd-calendar-head button{min-height:26px;padding:4px;border:0;background:white}
+#class-journal .ws-parent .pd-record-explorer .pd-date-inputs input{padding:5px 4px;font-size:12px;min-height:30px}
+#class-journal .ws-parent .pd-record-explorer .pd-date-picker{padding:12px;width:320px}
+#class-journal .ws-parent .pd-record-explorer .pd-calendar-grid{gap:2px}
+#class-journal .ws-parent .pd-record-explorer .pd-date-picker footer button{min-height:28px;padding:5px 12px;font-size:12px}
+#class-journal .ws-parent .pd-record-explorer .pd-type-options button{min-height:34px;padding:6px 10px;border:0;background:white;width:100%}
+#class-journal .ws-parent .pd-record-explorer .pd-type-options button[aria-pressed=true]{background:#edf3ff;color:#2458d9}
+#class-journal .ws-parent .pd-record-explorer .pd-explorer-nav button{background:transparent;color:#eef3ff;border:0;border-radius:24px 0 0 24px;padding:17px 19px}
+#class-journal .ws-parent .pd-record-explorer .pd-explorer-nav button[aria-current=page]{background:white;color:#2458d9}
+#class-journal .pd-participation{min-width:0}
+#class-journal .pd-participation .pd-explorer-heading{align-items:center;margin-bottom:18px}
+#class-journal .pd-point-balance{display:flex;align-items:center;gap:12px;font-size:12px;color:#758194}
+#class-journal .pd-point-balance strong{color:#2557d7;font-size:22px}
+#class-journal .pd-participation-tabs{display:flex;gap:24px;border-bottom:1px solid #e5e9f0;margin-bottom:20px}
+#class-journal .ws-parent .pd-participation-tabs button{border:0;border-radius:0;background:transparent;padding:10px 0;color:#788391;font-weight:600}
+#class-journal .ws-parent .pd-participation-tabs button[aria-pressed=true]{border-bottom:2px solid #2458d9;color:#2458d9}
+#class-journal .pd-participation [role=note]{font-size:12px;color:#768293;line-height:1.8;margin:0 0 20px}
+#class-journal .pd-participation [role=note] a{padding:0;border:0;background:none;text-decoration:underline;margin-left:8px;font-size:12px}
+#class-journal .pd-shared-labels,#class-journal .pd-shared-row summary{display:grid;grid-template-columns:minmax(180px,1fr) 100px 155px 16px;align-items:center;gap:16px;padding:16px}
+#class-journal .pd-shared-labels{background:#f6f8fb;color:#7c8795;font-size:12px;border-radius:8px;padding-top:10px;padding-bottom:10px}
+#class-journal .pd-shared-row{border-bottom:1px solid #e9edf3}
+#class-journal .pd-shared-row summary{cursor:pointer;list-style:none;font-size:13px}
+#class-journal .pd-shared-row summary::-webkit-details-marker{display:none}
+#class-journal .pd-shared-row summary:hover{background:#f4f7ff}
+#class-journal .pd-shared-row summary strong{font-weight:500;line-height:1.6}
+#class-journal .pd-shared-status{color:#467567;font-size:12px}
+#class-journal .pd-shared-row time{font-size:12px;color:#7b8593}
+#class-journal .pd-shared-detail{padding:4px 22px 18px;background:#f7f9fc}
+#class-journal .pd-shared-detail blockquote{margin:8px 0 16px;padding:12px 16px;border-left:3px solid #bcccf5;white-space:pre-wrap;font-size:14px;line-height:1.9}
+#class-journal .pd-shared-detail p{font-size:12px;color:#708079}
+#class-journal .pd-point-amount{font-weight:600;color:#2458d9;white-space:nowrap}
+#class-journal .pd-original{max-width:840px;margin:20px auto;color:#29394a}
+#class-journal .pd-original-heading{padding:24px 26px;border:1px solid #e3e9f1;border-radius:12px;background:#fff;margin-bottom:20px}
+#class-journal .pd-original-heading>span{font-size:12px;font-weight:600;color:#5277c5}
+#class-journal .pd-original-heading h2{font-size:24px;line-height:1.5;margin:10px 0}
+#class-journal .pd-original-heading p{font-size:12px;color:#8591a1;margin:0}
+#class-journal .pd-original-answer{margin-bottom:26px;border:1px solid #e3e9f1;border-radius:12px;overflow:hidden;background:white}
+#class-journal .pd-original-answer>header,#class-journal .pd-original-reflection>header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 22px;background:#fff;border-bottom:1px solid #edf0f4}
+#class-journal .pd-original h3{margin:0;font-size:15px}
+#class-journal .pd-original time,#class-journal .pd-original-reflection header span{font-size:12px;color:#7a8799}
+#class-journal .pd-original-answer blockquote{margin:0;padding:26px;border:0;background:white;font-size:16px;line-height:2;white-space:pre-wrap;overflow-wrap:anywhere}
+#class-journal .pd-original-followup{margin:0 22px 22px;padding:16px 20px;background:#eef4ff;border-radius:8px;border-left:3px solid #7ea0e4}
+#class-journal .pd-original-followup strong{font-size:12px;color:#4870b9}
+#class-journal .pd-original-followup p{margin:8px 0 0;line-height:1.8;font-size:14px}
+#class-journal .pd-original-reflection{border:1px solid #dfeae5;border-radius:12px;overflow:hidden;padding-bottom:18px}
+#class-journal .pd-original-reflection>header{background:#f0f7f3;margin-bottom:18px}
+#class-journal .pd-original-difficulty{display:inline-block;margin:0 22px;padding:4px 10px;background:#edf3ef;border-radius:5px;font-size:12px}
+#class-journal .pd-original-reflection>p{margin:12px 22px;white-space:pre-wrap;line-height:1.9}
+#class-journal .ws-parent .pd-record-explorer .pd-date-mode{margin-bottom:6px}
+#class-journal .ws-parent .pd-record-explorer .pd-date-inputs{margin-bottom:6px}
+#class-journal .ws-parent .pd-record-explorer .pd-calendar-head{margin-bottom:4px}
+#class-journal .ws-parent .pd-record-explorer .pd-date-picker p{margin:5px 0;line-height:1.4}
+#class-journal .ws-parent .pd-record-explorer .pd-date-picker footer{padding-top:6px}
+#class-journal .pd-explorer-content:has(.pd-original){background:#f4f6f9}
+#class-journal .pd-original-reflection{background:#fff}
+@media(max-width:600px){#class-journal .pd-original-heading{padding:20px}#class-journal .pd-original-answer>header{flex-wrap:wrap;gap:8px}}
+/* Impeccable refinement: preserve the reference composition, improve reading and control rhythm. */
+#class-journal .pd-record-explorer{color:#263548}
+#class-journal .pd-explorer-content{scrollbar-gutter:stable;padding:28px 32px}
+#class-journal .pd-explorer-heading{margin-bottom:22px;align-items:center}
+#class-journal .pd-explorer-heading h2{font-size:24px;line-height:1.4;letter-spacing:-.025em;margin:0 0 6px}
+#class-journal .pd-explorer-heading p{margin:0;font-size:13px;color:#566473}
+#class-journal .pd-filter-summary{align-items:center;color:#526171;gap:8px;margin-bottom:18px}
+#class-journal .ws-parent .pd-reset-filter{padding:4px 8px;min-height:32px;font-size:12px;background:none;border:0;color:#2458d9;text-decoration:underline;text-underline-offset:4px}
+#class-journal .pd-table-scroll{overflow-x:auto;max-width:100%;border-radius:8px}
+#class-journal .pd-explorer-table{font-size:14px;border-spacing:0 8px}
+#class-journal .pd-explorer-table th{font-size:12px;color:#526171;font-weight:600}
+#class-journal .pd-explorer-table td{padding:14px 16px}
+#class-journal .pd-explorer-table td:first-child{color:#5e6c7c;font-variant-numeric:tabular-nums}
+#class-journal .pd-explorer-table td:nth-child(2){word-break:keep-all;overflow-wrap:anywhere}
+#class-journal .pd-date-cell{font-size:13px}
+#class-journal .pd-activity-search:focus-within{border-color:#2458d9;outline:2px solid #2458d9;outline-offset:2px}
+#class-journal .pd-activity-search input::placeholder{color:#647182;opacity:1}
+#class-journal .pd-record-explorer :is(button,input,summary,a,[tabindex]):focus-visible{outline:2px solid #2458d9;outline-offset:3px}
+#class-journal .pd-explorer-nav button:focus-visible{outline-color:#fff;outline-offset:-5px}
+#class-journal .pd-record-explorer ::selection{background:#dce7ff;color:#193f91}
+#class-journal .pd-column-popover[popover]{position:fixed;inset:auto;margin:0;overflow:auto;max-width:calc(100vw - 24px);border:0;box-shadow:0 8px 36px #1b2b4933}
+#class-journal .ws-parent .pd-record-explorer .pd-column-filter>button{width:32px;min-height:32px;height:32px;display:inline-grid;place-items:center;color:#4d5f77}
+#class-journal .ws-parent .pd-record-explorer .pd-column-filter>button:hover,#class-journal .ws-parent .pd-record-explorer .pd-column-filter>button[aria-expanded=true]{background:#e8efff;color:#204fb9}
+#class-journal .ws-parent .pd-record-explorer .pd-calendar-grid button{height:32px;min-height:32px}
+#class-journal .ws-parent .pd-record-explorer .pd-calendar-grid button:hover{background:#e8efff;color:#204fb9}
+#class-journal .ws-parent .pd-record-explorer .pd-calendar-grid button[data-edge]{background:#2458d9;color:#fff}
+#class-journal .pd-explorer-period,#class-journal .pd-date-note,#class-journal .pd-explorer-pagination>span:first-child{color:#5b6878;font-size:12px}
+#class-journal .pd-participation [role=note]{font-size:13px;color:#566473;line-height:1.8;margin-bottom:22px}
+#class-journal .pd-shared-labels{font-size:12px;color:#566473}
+#class-journal .pd-shared-row summary{font-size:14px;min-height:64px}
+#class-journal .pd-shared-row summary strong{line-height:1.7;overflow-wrap:anywhere}
+#class-journal .pd-shared-row time{color:#5d6b7c;font-variant-numeric:tabular-nums}
+#class-journal .pd-shared-status{color:#36614f}
+#class-journal .pd-shared-status:not([data-status=VISIBLE]){color:#755323}
+#class-journal .pd-shared-row[open] summary{background:#f0f5ff}
+#class-journal .pd-shared-row[open] summary>svg{transform:rotate(180deg)}
+#class-journal .pd-shared-detail{padding:12px 24px 24px;background:#f7f9fc}
+#class-journal .pd-shared-detail blockquote{border:0;padding:4px 0;margin:8px 0 20px;max-width:70ch;line-height:1.9;font-size:15px;background:transparent}
+#class-journal .pd-shared-detail p{color:#526171}
+#class-journal .pd-original{max-width:800px;margin-top:24px}
+#class-journal .pd-original-heading{padding:26px 30px;margin-bottom:24px}
+#class-journal .pd-original-heading h2{margin:0 0 12px;word-break:keep-all;overflow-wrap:anywhere;letter-spacing:-.025em}
+#class-journal .pd-original-heading p,#class-journal .pd-original time,#class-journal .pd-original-reflection header span{color:#5c6a7b;font-size:13px}
+#class-journal .pd-original-answer>header,#class-journal .pd-original-reflection>header{padding:18px 28px}
+#class-journal .pd-original-answer blockquote{padding:26px 30px;line-height:1.95;max-width:75ch;word-break:normal}
+#class-journal .pd-original-followup{border:0;margin:0 28px 24px;padding:20px;background:#eef4ff;border-radius:10px}
+#class-journal .pd-original-followup strong{font-size:13px;color:#31598d}
+#class-journal .pd-original-followup p{font-size:15px;line-height:1.8;color:#2e4563}
+#class-journal .pd-original-reflection>p{font-size:15px;color:#334b41}
+@media(min-width:701px) and (max-width:1300px){#class-journal .pd-record-explorer{grid-template-columns:160px minmax(0,1fr)}}
+@media(max-width:700px){
+ #class-journal .cj-modal:has(.pd-record-explorer){width:calc(100vw - 16px);height:calc(100dvh - 24px);max-height:calc(100dvh - 24px);border-radius:16px}
+ #class-journal .cj-modal:has(.pd-record-explorer)>.cj-modal-head{padding:14px 16px}
+ #class-journal .pd-explorer-content{padding:20px 16px}
+ #class-journal .pd-explorer-heading{align-items:stretch;gap:16px}
+ #class-journal .ws-parent .pd-record-explorer .pd-explorer-nav{padding:8px;gap:8px}
+ #class-journal .ws-parent .pd-record-explorer .pd-explorer-nav button{border-radius:8px;padding:10px;min-height:42px}
+ #class-journal .pd-shared-labels{display:none}
+ #class-journal .pd-shared-row summary{grid-template-columns:1fr auto;gap:8px 12px;padding:16px 4px}
+ #class-journal .pd-shared-row summary strong{grid-column:1;grid-row:1;font-size:14px}
+ #class-journal .pd-shared-status{grid-column:1;grid-row:2}
+ #class-journal .pd-shared-row time{grid-column:1;grid-row:3}
+ #class-journal .pd-shared-row summary>svg{grid-column:2;grid-row:1/4}
+ #class-journal .pd-shared-detail{padding:12px 16px}
+ #class-journal .pd-original-heading{padding:20px}
+ #class-journal .pd-original-answer>header,#class-journal .pd-original-reflection>header{padding:16px 20px;flex-wrap:wrap;gap:8px}
+ #class-journal .pd-original-answer blockquote{padding:20px;font-size:15px}
+ #class-journal .pd-original-followup{margin:0 16px 20px;padding:16px}
+ #class-journal .pd-participation .pd-explorer-heading{align-items:flex-start}
+ #class-journal .pd-point-balance{justify-content:space-between;width:100%}
+}
+
+/* Learning overview content only. The page shell uses the shared parent workspace. */
+#class-journal .ws-parent .pd-overview{display:grid;gap:32px;--pd-muted:#596b62;--pd-line:#e1e8e3}
+#class-journal .ws-parent .pd-overview .pd-head{margin:4px 0 0;gap:8px}
+#class-journal .ws-parent .pd-overview .pd-sub{font-size:13px;line-height:1.6;color:var(--pd-muted)}
+#class-journal .ws-parent .pd-overview .pd-status{padding:12px 16px;border:0;border-radius:8px;background:#f5f6f0;font-size:13px;line-height:1.7;gap:6px 12px}
+#class-journal .ws-parent .pd-overview .pd-status .pd-chip{color:#77561d;background:none;padding:0}
+#class-journal .ws-parent .pd-overview-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:24px;align-items:stretch}
+#class-journal .ws-parent :is(.pd-portfolio,.pd-metric-group){display:flex;flex-direction:column;min-width:0}
+#class-journal .ws-parent :is(.pd-portfolio,.pd-metric-group)>h2{font-size:18px;font-weight:600;line-height:1.5;margin:0 0 16px}
+#class-journal .ws-parent .pd-overview-focus{background:#e5f1f8;border:0;border-radius:14px;padding:24px;min-height:290px;flex:1;min-width:0}
+#class-journal .ws-parent .pd-focus-value{display:flex;align-items:baseline;gap:7px;color:#254557;font-variant-numeric:tabular-nums}
+#class-journal .ws-parent .pd-focus-value>strong{font-size:44px;line-height:1.2;font-weight:600;letter-spacing:-.03em}
+#class-journal .ws-parent .pd-focus-value>span{font-size:15px}
+#class-journal .ws-parent .pd-focus-value .pd-focus-coverage{margin-left:auto;font-size:12px;color:#466779;text-align:right}
+#class-journal .ws-parent .pd-overview-focus>p{font-size:13px;color:#466779;margin:6px 0 24px}
+#class-journal .ws-parent .pd-activity-chart{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;min-height:150px}
+#class-journal .ws-parent .pd-activity-chart>div{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;color:var(--type-ink)}
+#class-journal .ws-parent .pd-activity-chart>div>span{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+#class-journal .ws-parent .pd-chart-track{display:flex;align-items:flex-end;width:100%;height:82px;border-bottom:1px solid #acc4d2}
+#class-journal .ws-parent .pd-chart-track i{display:block;width:100%;background:var(--type-bright);border:0;border-radius:4px 4px 0 0}
+#class-journal .ws-parent .pd-activity-chart small{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px;white-space:nowrap;color:var(--type-ink)}
+#class-journal .ws-parent .pd-thinking-icon{display:block;width:32px;height:32px;flex-shrink:0;color:var(--type-ink)}
+#class-journal .ws-parent .pd-activity-chart .pd-thinking-icon{width:25px;height:25px}
+#class-journal .pd-overview [data-thinking='ANALYZE']{--type-ink:#27618c;--type-bright:#82b8d9;--type-soft:#e9f3fa}
+#class-journal .pd-overview [data-thinking='EVALUATE']{--type-ink:#765197;--type-bright:#b59dce;--type-soft:#f1ebf8}
+#class-journal .pd-overview [data-thinking='CREATE']{--type-ink:#866018;--type-bright:#dfbd65;--type-soft:#fbf3da}
+#class-journal .pd-overview [data-thinking='SOLVE']{--type-ink:#2c705b;--type-bright:#82b69f;--type-soft:#e9f4ee}
+#class-journal .pd-overview [data-thinking='REFLECT']{--type-ink:#994f63;--type-bright:#d4a0ad;--type-soft:#faedf1}
+/* One shared surface makes the learning process read as three related measures. */
+#class-journal .ws-parent .pd-overview .pd-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0;flex:1;border:1px solid #d4e1d7;background:#fff;overflow:hidden;border-radius:12px;margin:0}
+#class-journal .ws-parent .pd-overview .pd-kpi{display:flex;flex-direction:column;gap:0;min-width:0;min-height:290px;padding:26px 22px;border:0;border-right:1px solid #e2e9e4;border-radius:0;background:none;box-shadow:none;--metric-ink:#31553e}
+#class-journal .ws-parent .pd-overview .pd-kpi:last-child{border-right:0}
+#class-journal .ws-parent .pd-overview .pd-kpi-heading{display:flex;flex-direction:row-reverse;justify-content:flex-end;gap:10px;align-items:flex-start;color:#557361}
+#class-journal .ws-parent .pd-overview .pd-kpi-heading svg{width:20px;height:20px;flex-shrink:0;margin-top:3px}
+#class-journal .ws-parent .pd-overview .pd-kpi h2{font-size:14px;line-height:1.7;min-height:3.4em;font-weight:500;color:#40584a;margin:0;word-break:keep-all}
+#class-journal .ws-parent .pd-overview .pd-value{margin:24px 0 26px;display:flex;align-items:baseline;flex-wrap:wrap;gap:7px;min-height:72px;color:#5b6e61;font-variant-numeric:tabular-nums}
+#class-journal .ws-parent .pd-overview .pd-value[data-ratio]{flex-direction:column;align-items:flex-start;justify-content:flex-start;flex-wrap:nowrap}
+#class-journal .ws-parent .pd-overview .pd-value strong{font-size:40px;font-weight:600;line-height:1.15;letter-spacing:-.025em;overflow-wrap:anywhere;color:#245d3d}
+#class-journal .ws-parent .pd-overview .pd-value span{font-size:12px;line-height:1.6;color:#617267}
+#class-journal .pd-metric-definition{margin-top:auto;color:#526b5b;font-size:12px}
+#class-journal .pd-metric-definition summary{display:flex;align-items:center;justify-content:space-between;list-style:none;cursor:pointer;min-height:36px;padding-top:8px;gap:8px}
+#class-journal .pd-metric-definition summary:hover{color:#245d3d}
+#class-journal .pd-metric-definition summary::-webkit-details-marker{display:none}
+#class-journal .pd-metric-definition[open] summary svg{transform:rotate(180deg)}
+#class-journal .ws-parent .pd-overview .pd-metric-definition p{font-size:12px;color:#526b5b;line-height:1.8;margin:8px 0 0;word-break:keep-all}
+#class-journal .ws-parent .pd-overview .pd-split{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px;align-items:start;margin:0}
+#class-journal .ws-parent .pd-overview .pd-types{min-width:0;grid-column:auto;border:0;background:none;padding:0;border-radius:0;box-shadow:none}
+#class-journal .ws-parent .pd-overview .pd-card-head{margin:0 0 14px}
+#class-journal .ws-parent .pd-overview .pd-card-head h2{font-size:18px;font-weight:600;line-height:1.5}
+#class-journal .ws-parent .pd-overview .pd-types ul{display:block;margin:0;padding:0;list-style:none;border-top:1px solid var(--pd-line)}
+#class-journal .ws-parent .pd-overview .pd-types li{display:grid;grid-template-columns:140px minmax(0,1fr) 100px;align-items:center;gap:16px;min-height:90px;padding:20px 0;border:0;border-bottom:1px solid var(--pd-line);border-radius:0;background:none}
+#class-journal .ws-parent .pd-overview .pd-type{display:flex;align-items:center;gap:10px;min-width:0;font-size:14px;font-weight:500;color:var(--type-ink)}
+#class-journal .ws-parent .pd-type-icon{display:grid;place-items:center;flex-shrink:0;width:42px;height:42px;border-radius:12px;background:var(--type-soft);color:var(--type-ink);border:0}
+#class-journal .ws-parent .pd-recent-missions{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:7px;min-width:0;min-height:36px}
+#class-journal .ws-parent .pd-recent-missions:empty{padding:0}
+#class-journal .ws-parent .pd-recent-missions>:is(button,span){display:block;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--type-soft);border:0;border-radius:6px;padding:8px 10px;color:var(--type-ink);font-size:12px;font-weight:400;line-height:1.5;min-height:34px;text-align:left}
+#class-journal .ws-parent .pd-recent-missions>button:hover{background:color-mix(in srgb,var(--type-bright) 32%,white);color:var(--type-ink)}
+#class-journal .ws-parent .pd-type-records,
+#class-journal .ws-parent .pd-empty-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 44px;
+  color: #26543b;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+#class-journal .ws-parent .pd-type-records {
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  padding: 4px;
+}
+#class-journal .ws-parent .pd-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+#class-journal .ws-parent .pd-type-actions{display:flex;align-items:center;justify-content:flex-end;align-self:center}
+#class-journal .ws-parent .pd-overview .pd-type-actions .pd-chip{font-size:11px;font-weight:400;background:none;border-radius:0;padding:0;color:#586b61;text-align:right;white-space:normal;line-height:1.7}
+#class-journal .pd-observation-note{font-size:12px;color:var(--pd-muted);line-height:1.7;margin:14px 0 0}
+#class-journal .ws-parent .pd-overview .pd-report{min-width:0;align-self:start;margin:0;padding:26px 24px;border:0;border-radius:14px;background:#253a30;color:#fff;display:flex;flex-direction:column;gap:20px;box-shadow:none}
+#class-journal .ws-parent .pd-overview .pd-report-title{display:flex;gap:10px;align-items:center;color:#e0ede3}
+#class-journal .ws-parent .pd-overview .pd-report-title svg{flex-shrink:0}
+#class-journal .ws-parent .pd-overview .pd-report h2{margin:0;font-size:18px;font-weight:500;line-height:1.5;color:#fff}
+#class-journal .ws-parent .pd-overview .pd-report-meta{display:flex;flex-direction:column;align-items:flex-start;gap:10px;font-size:12px;line-height:1.7;color:#dae7dc}
+#class-journal .ws-parent .pd-overview .pd-report .pd-chip{background:#3c5346;color:#edf6ed;font-size:11px;font-weight:400;padding:2px 8px;border-radius:4px}
+#class-journal .ws-parent .pd-overview .pd-report p{font-size:13px;line-height:1.8;color:#dae7dc;margin:0}
+#class-journal .ws-parent .pd-overview .pd-actions{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+#class-journal .ws-parent .pd-overview .pd-actions button{font-size:13px;padding:12px 14px;min-height:44px;border-radius:8px;font-weight:500}
+#class-journal .ws-parent .pd-overview .pd-report .cj-primary{background:#e5eff4;color:#253a30;border:0}
+#class-journal .ws-parent .pd-overview .pd-report .cj-secondary{background:none;border-color:#6d8576;color:#f0f6f1}
+#class-journal .ws-parent .pd-detail-launchers{display:flex;gap:28px;align-items:center;flex-wrap:wrap;padding:0;border:0;margin:0}
+#class-journal .ws-parent .pd-detail-launchers button{display:flex;gap:14px;align-items:center;background:none;border:0;border-bottom:1px solid #bdcec1;border-radius:0;color:#335d45;padding:10px 0;min-height:44px;font-size:14px;font-weight:500}
+#class-journal .ws-parent .pd-detail-launchers button:hover{color:#174b2c;border-color:#174b2c}
+#class-journal .pd-overview :is(button,summary,a):focus-visible{outline:2px solid #336a50;outline-offset:4px}
+#class-journal .pd-overview ::selection{background:#dcecdf;color:#193c27}
+@media(min-width:701px) and (max-width:1300px){
+ #class-journal .ws-parent .pd-overview-top{grid-template-columns:1fr}
+ #class-journal .ws-parent .pd-overview .pd-split{grid-template-columns:1fr}
+ #class-journal .ws-parent .pd-overview .pd-report{display:grid;grid-template-columns:1fr 1fr;gap:16px 28px}
+ #class-journal .ws-parent .pd-overview .pd-report .pd-actions{grid-column:2;grid-row:1/4;justify-content:center}
+ #class-journal .ws-parent .pd-overview .pd-report .pd-report-meta{flex-direction:row;flex-wrap:wrap}
+}
+@media(max-width:700px){
+ #class-journal .ws-parent .pd-overview{gap:28px}
+ #class-journal .ws-parent .pd-overview .pd-sub{font-size:12px}
+ #class-journal .ws-parent .pd-overview-top{grid-template-columns:1fr;gap:28px}
+ #class-journal .ws-parent .pd-overview-focus{padding:22px 18px}
+ #class-journal .ws-parent .pd-focus-value>strong{font-size:40px}
+ #class-journal .ws-parent .pd-focus-value .pd-focus-coverage{font-size:11px}
+ #class-journal .ws-parent .pd-activity-chart{gap:8px}
+ #class-journal .ws-parent .pd-activity-chart small{font-size:10px}
+ #class-journal .ws-parent .pd-overview .pd-kpis{grid-template-columns:1fr;gap:0}
+ #class-journal .ws-parent .pd-overview .pd-kpi{min-height:0;padding:20px;display:grid;grid-template-columns:1fr auto;gap:12px 16px;border:0;border-bottom:1px solid #e2e9e4}
+ #class-journal .ws-parent .pd-overview .pd-kpi:last-child{border-bottom:0}
+ #class-journal .ws-parent .pd-overview .pd-kpi-heading{flex-direction:row-reverse;justify-content:flex-end;align-items:center;gap:10px}
+ #class-journal .ws-parent .pd-overview .pd-kpi h2{min-height:0;font-size:14px}
+ #class-journal .ws-parent .pd-overview .pd-value{margin:0;min-height:0;flex-direction:column;align-items:flex-end;gap:5px}
+ #class-journal .ws-parent .pd-overview .pd-value[data-ratio]{align-items:flex-end}
+ #class-journal .ws-parent .pd-overview .pd-value strong{font-size:30px}
+ #class-journal .pd-metric-definition{grid-column:1/-1}
+ #class-journal .ws-parent .pd-overview .pd-split{grid-template-columns:1fr;gap:28px}
+ #class-journal .ws-parent .pd-overview .pd-types li{grid-template-columns:minmax(0,1fr) auto;gap:12px;min-height:78px;padding:18px 0}
+ #class-journal .ws-parent .pd-type-actions{grid-column:2;grid-row:1;max-width:110px}
+ #class-journal .ws-parent .pd-recent-missions{grid-column:1/-1;grid-row:2}
+ #class-journal .ws-parent .pd-recent-missions:empty{display:none}
+ #class-journal .ws-parent .pd-recent-missions>:is(button,span){max-width:calc(100% - 8px)}
+ #class-journal .ws-parent .pd-overview .pd-type{font-size:14px}
+ #class-journal .ws-parent .pd-overview .pd-report{padding:24px}
+ #class-journal .ws-parent .pd-detail-launchers{gap:20px}
+}

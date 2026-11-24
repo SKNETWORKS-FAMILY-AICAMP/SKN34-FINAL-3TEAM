@@ -13,7 +13,7 @@ async function login(page: Page, role: 'parent' | 'admin' = 'parent', email?: st
   if (email) await page.getByRole('textbox', { name: role === 'admin' ? '로그인 ID' : '이메일', exact: true }).fill(email)
   await page.getByRole('button', { name: role === 'admin' ? '로그인' : '시연 계정으로 로그인', exact: true }).click()
   await expect(page).toHaveURL(role === 'admin' ? /\/admin\/home/ : /\/parent\/journal/)
-  if (role === 'parent') await expect(page.getByRole('group', { name: '자녀 선택' })).toBeVisible()
+  if (role === 'parent') await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toBeVisible()
 }
 
 async function studentLogin(page: Page) {
@@ -67,12 +67,13 @@ test('내 포인트 주소는 포인트 화면을 열고 설정 메뉴 아래로
   await expect(page.getByRole('navigation', { name: '학생 메뉴' }).getByRole('button', { name: '설정', exact: true })).toHaveAttribute('aria-current', 'page')
 })
 
-test('학생 결과의 이전·현재 공책 비교 @responsive', async ({ page }, testInfo) => {
+// 다시 푼 문제의 마무리: '이전 답과 나란히' 창 대신 내 답 아래 '저번엔' 한 줄(#807 D안, 사용자 결정 2026-11-23)
+test('학생 결과의 저번 답은 내 답 아래 한 줄로 보인다 @responsive', async ({ page }, testInfo) => {
   await studentLogin(page)
   // 기존 MSW fixture만 구성한다. 실서버·학생 원문·외부 모델 호출은 사용하지 않는다.
   await page.evaluate(async () => {
     const path = '/src/mocks/fixtures/student.ts'
-    const { fixtureStore, persistFixtureState } = await import(path)
+    const { fixtureStore, persistFixtureState, startedContexts } = await import(path)
     const data = fixtureStore.snapshot()
     const childId = data.session.child.id
     const base = data.attempts.find((a: { studentId: string; finishedAt?: string }) => a.finishedAt)
@@ -83,26 +84,31 @@ test('학생 결과의 이전·현재 공책 비교 @responsive', async ({ page 
     previous.attemptId = 'browser-previous'
     previous.finishedAt = '2026-10-31T01:00:00Z'
     previous.answers[0].text = '이전에 쓴 합성 답입니다.'
+    // '저번엔' 줄은 저번 시도의 마지막 답만 보인다
+    previous.answers.at(-1).text = '저번 마지막에 쓴 합성 답입니다.'
     current.attemptId = 'browser-current'
     current.finishedAt = '2026-11-01T01:00:00Z'
     current.answers[0].text = '이번에는 까닭을 보탠 합성 답입니다.'
     fixtureStore.restoreSnapshot({ ...data, attempts: [...data.attempts, previous, current] })
     persistFixtureState()
+    // 더 풀어 보기 기록으로(테마 문제는 다시 풀기가 토요일 규칙을 따름, #807 — todayScene.spec에서 따로 확인)
+    for (const id of ['browser-previous', 'browser-current']) startedContexts.set(id, 'EXTRA')
     history.pushState({}, '', '/student/attempts/browser-current')
     dispatchEvent(new PopStateEvent('popstate'))
   })
-  const panel = page.getByRole('region', { name: '이전 답과 이번 답 비교' })
-  await expect(panel).toBeVisible()
-  await expect(panel.getByRole('heading', { name: '이전 답', exact: true })).toBeVisible()
-  await expect(panel.getByRole('heading', { name: '이번 답', exact: true })).toBeVisible()
-  await expect(panel.getByText('이전에 쓴 합성 답입니다.', { exact: true })).toBeVisible()
-  await expect(panel.getByText('이번에는 까닭을 보탠 합성 답입니다.', { exact: true })).toBeVisible()
-  expect(await panel.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false)
-  await panel.screenshot({ path: testInfo.outputPath('attempt-comparison.png') })
+  const mine = page.getByRole('region', { name: '내 답' })
+  const prev = mine.locator('.sw-prev')
+  await expect(prev).toBeVisible()
+  await expect(prev.getByText('저번엔', { exact: true })).toBeVisible()
+  await expect(prev.getByText('저번 마지막에 쓴 합성 답입니다.', { exact: true })).toBeVisible()
+  await expect(mine.getByText('이번에는 까닭을 보탠 합성 답입니다.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '이전 답과 이번 답 비교' })).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  await mine.screenshot({ path: testInfo.outputPath('attempt-comparison.png') })
   await writeFile(testInfo.outputPath('comparison-rendered.html'), (await page.content()).replace(/<script\b[\s\S]*?<\/script>/gi, ''))
   await page.getByRole('button', { name: '이 미션 다시 풀기', exact: true }).click()
   await expect(page).toHaveURL(/\/student\/attempts\/new-/)
-  await expect(page.getByRole('region', { name: '이전 답과 이번 답 비교' })).toHaveCount(0)
+  await expect(page.locator('.sw-prev')).toHaveCount(0)
   const originals = await page.evaluate(async () => {
     const path = '/src/mocks/fixtures/student.ts'
     const { fixtureStore } = await import(path)
@@ -117,7 +123,7 @@ test('학부모 로그인 → 자녀별 기록 → 이용권·결제 화면', as
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await login(page)
-  await expect(page.getByRole('group', { name: '자녀 선택' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toBeVisible()
   const menu = page.getByRole('button', { name: '학부모 메뉴 열기' })
   if (!(await page.getByRole('navigation', { name: '학부모 하단 메뉴' }).isVisible()) && await menu.isVisible()) await menu.click()
   await page.getByRole('link', { name: '이용권·결제', exact: true }).filter({ visible: true }).click()
@@ -152,13 +158,20 @@ test('관리자 로그인은 사용자 화면에 링크가 없고, 학부모 계
   }
 })
 
-test('관리자 큐·DLQ와 작업 재처리의 선택 상태를 분리한다', async ({ page }) => {
+test('관리자 작업 대기열은 작업명을 먼저 보여주고 큐 이름은 기술 정보에 둔다', async ({ page }) => {
   await login(page, 'admin')
-  await page.getByRole('link', { name: '큐·DLQ', exact: true }).click()
+  await page.getByRole('link', { name: '작업 대기열', exact: true }).click()
   await expect(page).toHaveURL(/\/admin\/queues/)
-  await expect(page.getByRole('link', { name: '큐·DLQ', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('link', { name: '작업 대기열', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('link', { name: '작업 재처리', exact: true })).not.toHaveAttribute('aria-current', 'page')
-  await expect(page.getByRole('heading', { name: /큐.*DLQ/ }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '작업 대기열 현황' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '주간 리포트 생성 · 1차 재시도' })).toBeVisible()
+  const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: '주간 리포트 생성 · 실패 보관' }) })
+  await expect(card.getByText('실패 원인 확인', { exact: true })).toHaveCount(0)
+  const rawName = card.getByText('report.report.generate.dlq', { exact: true })
+  await expect(rawName).toBeHidden()
+  await card.getByText('기술 정보', { exact: true }).click()
+  await expect(rawName).toBeVisible()
 })
 
 test('운영 전용 관리자는 결제 메뉴가 없고 모델 운영 화면을 사용할 수 있다', async ({ page }) => {
@@ -213,7 +226,7 @@ test('학생 생각 활동 메뉴와 섬 화면의 해 본 생각 (#240) @respon
 
 test('학부모 분석 대화 예시 질문은 고른 질문을 현재 자녀·기간으로 보낸다 (#240)', async ({ page }, testInfo) => {
   await login(page)
-  await expect(page.getByRole('group', { name: '자녀 선택' }).locator('button[aria-pressed=true]')).toHaveCount(1)
+  await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toHaveCount(1)
   await expect(page).toHaveURL(/childId=/)
   const childId = new URL(page.url()).searchParams.get('childId')!
   await page.evaluate(async id => {
@@ -221,7 +234,7 @@ test('학부모 분석 대화 예시 질문은 고른 질문을 현재 자녀·�
     const { saveSharing } = await import(path)
     saveSharing(id, true)
   }, childId)
-  await page.goto('/parent/analysis')
+  await page.goto('/parent/report')
   const examples = page.getByRole('group', { name: '예시 질문' })
   await expect(examples).toBeVisible()
   await expect(examples.getByRole('button')).toHaveCount(5)
@@ -243,6 +256,7 @@ test('학부모 도움말·공지·문의 접수는 core 계약 모양을 쓴다
   await page.getByText('자녀와 조회 기간', { exact: true }).click()
   await expect(page.getByText('선택한 자녀와 기간의 기록만 조회합니다.', { exact: false })).toBeVisible()
   await page.goto('/parent/notices')
+  await page.locator('.service-reading-list summary').first().click()
   await expect(page.getByText('현재 개발 시연에서는 직접 만든 예시 학생', { exact: false })).toBeVisible()
   await page.goto('/parent/support')
   await page.getByLabel('제목', { exact: true }).fill('기록 확인 문의')
@@ -251,7 +265,8 @@ test('학부모 도움말·공지·문의 접수는 core 계약 모양을 쓴다
   await page.getByRole('button', { name: '접수하기', exact: true }).click()
   expect((await sent).postDataJSON()).toEqual({ category: 'USAGE', title: '기록 확인 문의', body: '학습 기록은 어디서 보나요?' })
   await expect(page.getByText('기록 확인 문의', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '판정·답변 오류', exact: true }).click()
+  await page.getByRole('button', { name: '학습 결과가 이상해요', exact: true }).click()
+  await page.getByText('신고 대상 확인·직접 입력',{exact:true}).click()
   await page.getByLabel('대상 기록 번호', { exact: true }).fill('00000000-0000-4000-8000-000000000000')
   await page.getByLabel('내용', { exact: true }).fill('판정이 이상해요')
   const report = page.waitForRequest(r => r.url().endsWith('/api/v1/error-reports') && r.method() === 'POST')
@@ -292,5 +307,5 @@ test('동석 학습 뒤 보호자 비밀번호로 Google 로그인 없이 학부
   await unlock.getByLabel('보호자 비밀번호').fill('2580')
   await unlock.getByRole('button', { name: '학부모 화면으로', exact: true }).click()
   await expect(page).toHaveURL(/\/parent\/journal/)
-  await expect(page.getByRole('group', { name: '자녀 선택' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '현재 자녀 선택' })).toBeVisible()
 })

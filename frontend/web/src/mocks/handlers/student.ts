@@ -2,8 +2,8 @@ import { http, HttpResponse } from 'msw/http'
 import { isShared, saveSharing, requireShared } from '../fixtures/sharing.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
-import type { Child, DemoScenario, Feedback, Period } from '../../domain/classroom.ts'
-import { previousWeek, thisWeek } from '../../domain/classroom.ts'
+import type { Attempt, Child, DemoScenario, Feedback, Period } from '../../domain/classroom.ts'
+import { thisWeek } from '../../domain/classroom.ts'
 import {
   mockAccounts,
   mockIdentity,
@@ -14,6 +14,7 @@ import {
 } from '../fixtures/accounts.ts'
 import {
   fixtureStore as store,
+  startedContexts,
   normalizeAnswer,
   wireAttempt,
   wireDraft,
@@ -21,12 +22,13 @@ import {
   mockSubmissionReceipts,
 } from '../fixtures/student.ts'
 import { mockLooks, persistLooks } from '../fixtures/studentLook.ts'
+import { mockWordHelp } from '../fixtures/wordHelp.ts'
 import { attemptGuardianPassword, lockParentSession, parentSessionLocked } from '../fixtures/guardianPassword.ts'
 import { DEFAULT_LOOK, isCompanionId, isThemeId } from '../../domain/studentLook.ts'
 import type { StudentLook } from '../../domain/studentLook.ts'
 import { companionKey, FURNITURE_SLOTS, ITEM_SLOTS, themeKey } from '../../domain/retention.ts'
 import type { AttemptContext } from '../../domain/retention.ts'
-import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, weeklyThemeFor, weekRules } from '../fixtures/retention.ts'
+import { isUnlocked, mockWeekday, onMissionCompleted, persistRetention, themeMissions, themeSceneFor, weeklyThemeFor, weekRules } from '../fixtures/retention.ts'
 import { mockPremium } from '../fixtures/payments.ts'
 import { difficultyCodes } from '../../domain/learning.ts'
 
@@ -36,7 +38,6 @@ let child: Child | undefined = store.snapshot().session?.child,
   scenario: DemoScenario = 'normal'
 let mockRole = store.snapshot().session?.role
 const usedKeys = mockSubmissionReceipts
-const reports = new Map<string, { child: Child; period: Period }>()
 const conversations = new Map<string, { child: Child; period: Period }>()
 const selfChecks = new Map<string, Map<string, boolean>>()
 mockAccountChildren.set('parent@example.test', structuredClone(store.snapshot().children ?? []))
@@ -140,8 +141,6 @@ export const mockStudentHome = (c: Child) => store.home(c)
 export const mockLatestAttempt = (studentId: string, missionId: string) =>
   store.snapshot().attempts.filter((a) => a.studentId === studentId && a.mission.id === missionId)
     .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0]?.attemptId ?? null
-/** 시작할 때 받은 시도 종류(목업). 기록 목록의 `context`(#700)로 돌려준다(#710) */
-const startedContexts = new Map<string, AttemptContext>()
 /** 기록 목록 `context`(#700, 선택 칸): 시작 때 받은 값, 없으면(예전 목업 기록) 이번 주 테마 문제면 THEME_DAY, 아니면 EXTRA */
 async function withContexts<T extends { attemptId: string; mission: { id: string } }>(owner: Child, rows: T[]) {
   const home = await store.home(owner)
@@ -149,17 +148,29 @@ async function withContexts<T extends { attemptId: string; mission: { id: string
   const theme = new Set(week.days.map((d) => d.missionId))
   return rows.map((r) => ({ ...r, context: startedContexts.get(r.attemptId) ?? (theme.has(r.mission.id) ? 'THEME_DAY' : 'EXTRA') }))
 }
+/**
+ * 시도 시작·조회 응답의 `themeScene`(learning #438 목업, 오늘 장면 #807). 시작 때 받은 종류가 EXTRA면 null,
+ * 받은 적이 없으면(새로고침으로 목업 메모리가 비었을 때) 이번 주 테마 미션이면 테마 시도로 본다
+ */
+async function withThemeScene(a: Attempt) {
+  const wire = wireAttempt(a)
+  if (!child || a.studentId !== child.id) return { ...wire, themeScene: null }
+  const home = await store.home(child)
+  const context = startedContexts.get(a.attemptId)
+  const scene = context === 'EXTRA' ? null : themeSceneFor(a.mission.id, home.missions, child.grade)
+  return { ...wire, themeScene: scene }
+}
 const startContext = async (request: Request) => {
   const text = await request.clone().text()
   return (text ? (JSON.parse(text) as { context?: AttemptContext }) : {}).context
 }
 /** 2.11 시작 맥락 검사(목업). 맥락 없이 부르는 기존 화면은 검사하지 않는다. */
-async function checkContext(request: Request, missionId: string) {
-  const context = await startContext(request)
+async function checkContext(context: AttemptContext | undefined, missionId: string, resume: boolean) {
   if (!context || mockRole !== 'STUDENT' || !child) return
   const home = await store.home(child)
-  const existing = home.missions.find((m) => m.id === missionId)?.status === 'IN_PROGRESS'
-  if (existing) return // 이어하기(200)는 요일 검사를 하지 않는다
+  const existing = store.snapshot().attempts.find(a => a.studentId === child!.id && a.mission.id === missionId && a.status === 'IN_PROGRESS')
+  // 기존 시도 시작과 같은 종류의 안내 조회는 시도에 고정한 미션을 이어서 연다.
+  if (existing && (resume || startedContexts.get(existing.attemptId) === context)) return
   const plan = mockPremium(child.id) ? 'PREMIUM' : 'FREE' // 이용권은 결제 목업 구독 한 곳에서 정함(#602)
   const week = weeklyThemeFor(child.id, home.missions, child.grade, plan)
   // 2026-11-10 개정(#484): 공개된(OPEN) 문제는 토요일(프리미엄 일요일)까지 새로 시작, 이미 마무리한 문제는 다시 풀기로.
@@ -170,10 +181,30 @@ async function checkContext(request: Request, missionId: string) {
   if (context === 'EXTRA' && !mockPremium(child.id))
     throw new ApiError({ status: 403, code: 'PREMIUM_REQUIRED', title: '생각 유형별 추가 문제는 프리미엄에서 풀 수 있어요.' })
 }
+async function missionForContext(owner: Child, missionId: string, context?: AttemptContext) {
+  if (context !== 'THEME_DAY' && context !== 'THEME_REVIEW') return store.mission(missionId, owner)
+  const active = store.snapshot().attempts.find(a => a.studentId === owner.id && a.mission.id === missionId && a.status === 'IN_PROGRESS')
+  if (active) return active.mission
+  const home = await store.home(owner)
+  const day = themeMissions(home.missions, owner.grade).days.find(d => d.mission.id === missionId)
+  if (!day) throw new ApiError({ status: 409, code: 'MISSION_NOT_AVAILABLE', title: '이번 주 테마의 미션을 찾을 수 없어요.' })
+  return day.mission
+}
 function studentOnly() {
   if (mockRole !== 'STUDENT' || !child)
     throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생만 바꿀 수 있는 설정입니다.' })
   return child
+}
+/** 답변 제출 본문의 thinkingSeconds·writingSeconds(api-spec 3.1). 없으면 null, 정수가 아니면 400 */
+function timingOf(data: Record<string, unknown>) {
+  const read = (name: 'thinkingSeconds' | 'writingSeconds') => {
+    const value = data[name]
+    if (value == null) return null
+    if (!Number.isInteger(value))
+      throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: `${name}는 정수 초여야 합니다.` })
+    return value as number
+  }
+  return { thinkingSeconds: read('thinkingSeconds'), writingSeconds: read('writingSeconds') }
 }
 const id = (value: string | readonly string[] | undefined) => {
   if (!value) throw new Error('경로 식별값이 없습니다.')
@@ -430,24 +461,30 @@ export const studentHandlers = [
   http.get('/api/v1/missions/:missionId', ({ request, params }) =>
     respond(async () => {
       guard(request)
-      return store.mission(id(params.missionId), child!)
+      const context = new URL(request.url).searchParams.get('context')
+      if (context === null || context === 'EXTRA') return store.mission(id(params.missionId), child!) // core도 EXTRA는 일반 안내
+      if (context !== 'THEME_DAY' && context !== 'THEME_REVIEW')
+        throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: '주간 테마 안내 맥락을 확인해 주세요.' })
+      const owner = studentOnly(), missionId = id(params.missionId)
+      await checkContext(context, missionId, false)
+      return missionForContext(owner, missionId, context)
     }),
   ),
   http.post('/api/v1/missions/:missionId/attempts', ({ request, params }) =>
     respond(async () => {
       guard(request)
-      const m = await store.mission(id(params.missionId), child!)
-      await checkContext(request, m.id)
+      const context = await startContext(request), missionId = id(params.missionId)
+      await checkContext(context, missionId, true)
+      const m = await missionForContext(child!, missionId, context)
       const started = await store.start(m, child!)
-      const context = await startContext(request)
       if (context && !startedContexts.has(started.attemptId)) startedContexts.set(started.attemptId, context)
-      return wireAttempt(started)
+      return withThemeScene(started)
     }, 201),
   ),
   http.get('/api/v1/attempts/:attemptId', ({ request, params }) =>
     respond(async () => {
       guard(request)
-      return wireAttempt(await store.attempt(id(params.attemptId)))
+      return withThemeScene(await store.attempt(id(params.attemptId)))
     }),
   ),
   http.get('/api/v1/attempts/:attemptId/comparison', ({ request, params }) => respond(async () => {
@@ -492,6 +529,18 @@ export const studentHandlers = [
       return wireDraft(d)
     }),
   ),
+  // 낱말 물어보기 (#599): 가상 뜻만, 마무리 전에는 목업 정답 낱말을 미룸
+  http.post('/api/v1/attempts/:attemptId/word-help', ({ request, params }) =>
+    respond(async () => {
+      guard(request)
+      const a = await store.attempt(id(params.attemptId))
+      const body = (await request.json().catch(() => null)) as { question?: unknown } | null
+      const question = typeof body?.question === 'string' ? body.question.trim() : ''
+      if (!question || question.length > 100)
+        throw new ApiError({ status: 400, code: 'VALIDATION_FAILED', title: '물어볼 낱말을 1~100자로 적어 주세요' })
+      return mockWordHelp(question, !a.finishedAt)
+    }),
+  ),
   http.post('/api/v1/attempts/:attemptId/hints', ({ request, params }) =>
     respond(async () => {
       guard(request)
@@ -526,6 +575,8 @@ export const studentHandlers = [
         normalizeAnswer(data, a.mission),
         key,
         typeof data.followupId === 'string' ? data.followupId : undefined,
+        // 생각·작성 시간(3.1·P28). 정수가 아니면 실제 서버처럼 400
+        timingOf(data),
       )
       const answer = saved.answers.at(-1)!
       const response = {
@@ -642,46 +693,6 @@ export const studentHandlers = [
       requireShared(selected.id)
       return store.record(selected, id(params.attemptId))
     }),
-  ),
-  http.get('/api/v1/children/:childId/reports', ({ request, params }) =>
-    respond(async () => {
-      guard(request)
-      const c = await linked(id(params.childId))
-      const rows = []
-      for (const p of [previousWeek, thisWeek, { from: '2026-10-12', to: '2026-10-18' }]) {
-        const r = await store.report(c, p)
-        reports.set(r.reportId, { child: c, period: p })
-        rows.push(r)
-      }
-      return page(rows)
-    }),
-  ),
-  http.get('/api/v1/reports/:reportId', ({ request, params }) =>
-    respond(async () => {
-      guard(request)
-      const context = reports.get(id(params.reportId))
-      if (!context) throw new Error('목 리포트 없음')
-      const revision = new URL(request.url).searchParams.get('revision')
-      const r = await store.report(
-        context.child,
-        context.period,
-        revision ? Number(revision) : undefined,
-      )
-      return {
-        ...(isShared(context.child.id) ? r : { ...r, records: [], narrative: null, eveningQuestion: null }),
-        revisions: r.revisions.map((revision) => ({ revision })),
-        narrative: isShared(context.child.id) && r.narrative ? { text: r.narrative, source: 'TEMPLATE' } : null,
-        verification: { numbersMatched: true, quotesMatched: true },
-      }
-    }),
-  ),
-  http.post('/api/v1/reports/:reportId/regenerate', ({ request, params }) =>
-    respond(async () => {
-      guard(request)
-      const context = reports.get(id(params.reportId))!
-      await store.regenerate(await store.report(context.child, context.period))
-      return {}
-    }, 202),
   ),
   http.post('/api/v1/conversations', ({ request }) =>
     respond(async () => {

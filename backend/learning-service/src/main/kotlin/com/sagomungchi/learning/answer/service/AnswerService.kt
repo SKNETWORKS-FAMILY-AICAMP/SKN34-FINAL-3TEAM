@@ -6,6 +6,7 @@ import com.sagomungchi.learning.answer.client.ToxicitySkipReason
 import com.sagomungchi.learning.answer.client.ToxicityVerdict
 import com.sagomungchi.learning.answer.domain.Answer
 import com.sagomungchi.learning.answer.domain.AnswerContent
+import com.sagomungchi.learning.answer.domain.AnswerTime
 import com.sagomungchi.learning.answer.domain.ExpressionCategory
 import com.sagomungchi.learning.answer.domain.ExpressionPolicy
 import com.sagomungchi.learning.answer.repository.AnswerRepository
@@ -28,6 +29,9 @@ data class SubmitCommand(
     val content: AnswerContent,
     val dictatedByGuardian: Boolean,
     val followupId: UUID?,
+    /** 웹이 보낸 생각·작성 시간(초, P28). 저장 여부는 AnswerTime.of가 정함 */
+    val thinkingSeconds: Long? = null,
+    val writingSeconds: Long? = null,
 )
 
 @Service
@@ -38,6 +42,7 @@ class AnswerService(
     private val judgmentService: JudgmentService,
     private val expressionPolicy: ExpressionPolicy,
     private val toxicityClient: ToxicityClient,
+    private val expressionReviewService: ExpressionReviewService,
     private val tx: TransactionTemplate,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -57,6 +62,7 @@ class AnswerService(
         val mission = missionService.getVersion(attempt.missionVersionId)
         val content = command.content.only(command.inputType)
 
+        // 생각·작성 시간은 같은 요청 비교에서 뺀다(Answer.sameRequestAs). 처음 저장한 시간을 그대로 돌려줌
         answerRepository.findByIdempotencyKey(attemptId, idempotencyKey)?.let { existing ->
             val again = existing.copy(
                 inputType = command.inputType, content = content,
@@ -88,9 +94,14 @@ class AnswerService(
             dictatedByGuardian = command.dictatedByGuardian,
             idempotencyKey = idempotencyKey,
             now = now,
+            time = AnswerTime.of(command.thinkingSeconds, command.writingSeconds, command.inputType, command.dictatedByGuardian),
         )
         answerRepository.insert(answer)
         judgmentService.createPending(answer.id, attempt.rubricVersionId, now)
+        // 경계 구간 답변은 같은 트랜잭션에서 표현 검토 대기에 올림 (#727, ERD 4.3.2, sequence 3.1). 막힌 답변은 위에서 끝나 여기 오지 않음
+        if (toxicity is ToxicityVerdict.Clean && toxicity.review && !toxicity.modelVersion.isNullOrBlank()) {
+            expressionReviewService.recordGrayZone(answer.id, toxicity.modelVersion, now)
+        }
         attemptService.clearSubmittedDraft(attemptId, now)
         return answer
     }
