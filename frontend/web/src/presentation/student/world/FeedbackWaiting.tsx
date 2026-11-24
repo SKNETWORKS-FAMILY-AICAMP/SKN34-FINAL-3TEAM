@@ -73,10 +73,9 @@ export function FeedbackWaiting({ companion, worn, startedAt, submittedAt, reduc
           {step.motion === 'notebook' && <Notebook />}
         </span>
         <span className="sw-wait-ground" aria-hidden="true" />
-        {/* 풀밭 선 위 작은 풀잎 셋이 천천히 살랑(발 자리는 비움) */}
-        <Blade className="sw-wait-blade sw-wait-blade-1" />
-        <Blade className="sw-wait-blade sw-wait-blade-2" />
-        <Blade className="sw-wait-blade sw-wait-blade-3" />
+        {/* 친구 양옆 발치에 풀 덩이 둘이 땅 선에 붙어 천천히 살랑(발 자리는 비움) */}
+        <Tuft className="sw-wait-tuft sw-wait-tuft-1" />
+        <Tuft className="sw-wait-tuft sw-wait-tuft-2" />
       </button>
       <SpeechBubble tail="left" className="sw-wait-bubble" aria-hidden="true">
         <p>{step.line}</p>
@@ -135,21 +134,29 @@ function Heart() {
   )
 }
 
-/** 풀잎 하나(통통한 잎 모양). 그림 칸 = 친구 칸 너비의 8%(work.css .sw-wait-blade), viewBox 12 → 선 두께를 착용 아이템(3)과 같게 환산 */
-function Blade({ className }: { className: string }) {
+/**
+ * 풀 덩이 하나: 한 뿌리에서 잎 세 장이 모여 난 모양(사용자 의견 2026-11-24: 따로 선 잎 셋이 진한 갈색 테두리로 가시처럼 보여 어색함).
+ * 땅 선에 붙여 두고 테두리는 진한 초록. 그림 칸 = 친구 칸 너비의 14%(work.css .sw-wait-tuft), viewBox 24 → 선 두께를 착용 아이템(3)과 같게 환산
+ */
+function Tuft({ className }: { className: string }) {
+  const w = itemStroke(3, 24, 0.14)
   return (
-    <svg className={className} viewBox="0 0 12 16" aria-hidden="true" focusable="false">
-      <path d="M6 15.5 C1.5 12 1 6.5 4 1.2 C5 4 10.5 7.5 6 15.5 Z" fill="#B7E09A" stroke="#3A2A20" strokeWidth={itemStroke(3, 12, 0.08)} strokeLinejoin="round" />
+    <svg className={className} viewBox="0 0 24 16" aria-hidden="true" focusable="false">
+      <g fill="#A8DB8A" stroke="#4E8A34" strokeWidth={w} strokeLinejoin="round">
+        <path d="M11 16 C7 13 4 10 2.5 5 C6 7 9 10 12 16 Z" />
+        <path d="M13 16 C17 13 20 10 21.5 5 C18 7 15 10 12 16 Z" />
+        <path d="M10.5 16 C9.5 11 10 5 12 0.8 C14 5 14.5 11 13.5 16 Z" />
+      </g>
     </svg>
   )
 }
 
-/** 상자 위쪽을 지나가는 작은 구름. 연하게(선 #3A2A20를 옅게), 크기 44×24px */
+/** 상자 위쪽을 지나가는 작은 구름. 테두리 없이 아주 연한 하늘빛 덩어리(테두리가 있으면 아이콘처럼 보였음, 사용자 의견 2026-11-24), 크기 44×24px */
 function Cloud() {
   return (
     <svg className="sw-wait-cloud" viewBox="0 0 44 24" aria-hidden="true" focusable="false">
       <path d="M10 21 C5 21 3 17.5 4.5 14.5 C5.5 12 8 11 10 11.5 C11 6.5 15.5 4 20 5 C23.5 2 30 3 32 8 C36.5 7.5 40 11 39 15 C41 17.5 39.5 21 36 21 Z"
-        fill="#FFFFFF" fillOpacity="0.9" stroke="#3A2A20" strokeOpacity="0.3" strokeWidth="1.5" strokeLinejoin="round" />
+        fill="#DCEBF4" />
     </svg>
   )
 }
