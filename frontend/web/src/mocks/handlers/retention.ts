@@ -587,6 +587,8 @@ export const retentionHandlers = [
       const t = themeById(String(params.themeId))
       const body = await request.json() as { expectedVersion?: number }
       const input = themeInput(body)
+      // 요일 대화는 관리자 수정 본문에 없으면 이전 값을 이어받는다(learning ThemeAnswerRules, 오늘 장면 #807)
+      input.days = input.days.map((d) => ({ ...d, dialogue: t.days.find((o) => o.day === d.day)?.dialogue ?? null }))
       const moved = input.grade !== t.grade || input.weekStart !== t.weekStart
       if (t.status !== 'PUBLISHED') requireOpenWeek(t.grade,t.weekStart)
       const version = t.version ?? 1

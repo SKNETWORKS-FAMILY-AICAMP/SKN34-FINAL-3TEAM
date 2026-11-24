@@ -22,22 +22,32 @@ import java.util.UUID
 class AdminThemeDraftsController(private val service: AdminLearningService) {
     @PostMapping fun request(@RequestBody body: ByteArray)=service.themeDrafts("POST",body=body).themeDraftHttp()
     @GetMapping
-    fun list(@RequestParam(required=false) status: String?,@RequestParam(required=false) source: String?,
-        @RequestParam(required=false) grade: String?, @RequestParam(required=false) weekStart: LocalDate?,
-        @RequestParam(required=false) hideDiscarded: Boolean?, @RequestParam(required=false) comparisonPending: Boolean?,
-        @RequestParam(defaultValue="0") page: Int,@RequestParam(defaultValue="20") size: Int): ResponseEntity<ByteArray> {
-        operationPage(page,size)
-        if(status!=null && status !in DRAFT_STATUSES) invalidOperations()
-        if(source!=null && source !in DRAFT_SOURCES) invalidOperations()
-        val params=linkedMapOf("page" to page.toString(),"size" to size.toString())
-        if (grade != null && grade !in setOf("G3","G4","G5","G6")) invalidOperations()
-        if (weekStart != null && weekStart.dayOfWeek != DayOfWeek.MONDAY) invalidOperations()
-        status?.let { params["status"]=it };source?.let { params["source"]=it }
-        grade?.let { params["grade"]=it }
-        weekStart?.let { params["weekStart"]=it.toString() }
-        hideDiscarded?.let { params["hideDiscarded"]=it.toString() }
-        comparisonPending?.let { params["comparisonPending"]=it.toString() }
-        return service.themeDrafts("GET",query=params.entries.joinToString("&") { "${it.key}=${URLEncoder.encode(it.value,StandardCharsets.UTF_8)}" }).themeDraftHttp()
+    fun list(@ModelAttribute filter: ListFilter) =
+        service.themeDrafts("GET", query = filter.query()).themeDraftHttp()
+
+    @GetMapping("/review-list")
+    fun reviewList(@ModelAttribute filter: ListFilter, @RequestParam(required = false) stage: String?,
+                   @RequestParam(required = false) week: LocalDate?): ResponseEntity<ByteArray> {
+        if (stage != null && stage !in REVIEW_STAGES) invalidOperations()
+        if (week != null && week.dayOfWeek != DayOfWeek.MONDAY) invalidOperations()
+        return service.themeDrafts("GET", action = "review-list", query = filter.query(stage, week)).themeDraftHttp()
+    }
+
+    data class ListFilter(val status: String? = null, val source: String? = null, val grade: String? = null,
+                          val weekStart: LocalDate? = null, val hideDiscarded: Boolean? = null,
+                          val comparisonPending: Boolean? = null, val page: Int = 0, val size: Int = 20) {
+        fun query(stage: String? = null, week: LocalDate? = null): String {
+            operationPage(page, size)
+            if (status != null && status !in DRAFT_STATUSES) invalidOperations()
+            if (source != null && source !in DRAFT_SOURCES) invalidOperations()
+            if (grade != null && grade !in setOf("G3", "G4", "G5", "G6")) invalidOperations()
+            if (weekStart != null && weekStart.dayOfWeek != DayOfWeek.MONDAY) invalidOperations()
+            return mapOf("page" to page, "size" to size, "status" to status, "source" to source, "grade" to grade,
+                "weekStart" to weekStart, "hideDiscarded" to hideDiscarded, "comparisonPending" to comparisonPending,
+                "stage" to stage, "week" to week).filterValues { it != null }.entries.joinToString("&") {
+                "${it.key}=${URLEncoder.encode(it.value.toString(), StandardCharsets.UTF_8)}"
+            }
+        }
     }
     @GetMapping("/{draftId}") fun detail(@PathVariable draftId: UUID)=service.themeDrafts("GET",draftId).themeDraftHttp()
     @PostMapping("/{draftId}/adopt") fun adopt(@PathVariable draftId: UUID,@RequestBody body: ByteArray)=service.themeDrafts("POST",draftId,"adopt",body=body).themeDraftHttp()
@@ -61,6 +71,7 @@ class AdminThemeDraftsController(private val service: AdminLearningService) {
     private companion object {
         val DRAFT_STATUSES=setOf("GENERATING","READY","CHECK_FAILED","FAILED","ADOPTED","DISCARDED")
         val DRAFT_SOURCES=setOf("AUTO","ADMIN")
+        val REVIEW_STAGES = setOf("review", "pair", "adopted", "closed", "ready", "published", "discarded", "generating", "check_failed", "failed")
     }
 }
 

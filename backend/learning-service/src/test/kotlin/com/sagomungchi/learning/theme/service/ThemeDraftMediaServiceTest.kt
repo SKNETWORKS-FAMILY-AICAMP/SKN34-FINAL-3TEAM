@@ -3,6 +3,8 @@ package com.sagomungchi.learning.theme.service
 import com.sagomungchi.learning._common.exception.BusinessException
 import com.sagomungchi.learning._common.persistence.PostgresRepositoryTest
 import com.sagomungchi.learning.mission.domain.DraftStatus
+import com.sagomungchi.learning.mission.domain.ReviewResult
+import com.sagomungchi.learning.mission.service.MissionService
 import com.sagomungchi.learning.theme.ThemeDraftFixtures
 import com.sagomungchi.learning.theme.domain.DialogueLine
 import com.sagomungchi.learning.theme.domain.GeneratedDialogue
@@ -10,7 +12,9 @@ import com.sagomungchi.learning.theme.domain.ThemeDay
 import com.sagomungchi.learning.theme.domain.ThemeDraft
 import com.sagomungchi.learning.theme.domain.ThemeDraftAttempt
 import com.sagomungchi.learning.theme.domain.ThemeDraftOutput
+import com.sagomungchi.learning.theme.domain.ThemeDraftReviewFilter
 import com.sagomungchi.learning.theme.domain.ThemeDraftSource
+import com.sagomungchi.learning.theme.domain.ThemeFailure
 import com.sagomungchi.learning.theme.domain.ThemeGrade
 import com.sagomungchi.learning.theme.domain.ThemeWeek
 import com.sagomungchi.learning.theme.repository.ThemeDraftRepository
@@ -30,29 +34,106 @@ class ThemeDraftMediaServiceTest : PostgresRepositoryTest() {
     @Autowired lateinit var drafts: ThemeDraftRepository
     @Autowired lateinit var service: ThemeDraftService
     @Autowired lateinit var media: ThemeDraftMediaService
+    @Autowired lateinit var themes: WeeklyThemeAdminService
+    @Autowired lateinit var missions: MissionService
+    @Autowired lateinit var planner: ThemeWeekPlanner
     @Autowired lateinit var jdbc: JdbcTemplate
     private val admin = UUID.randomUUID()
     private val week = ThemeWeek.startOf(LocalDate.now()).plusWeeks(2)
     private val input = ThemeDraftFixtures.input()
     private val output = ThemeDraftFixtures.output(input).copy(regen = ThemeDraftFixtures.regen(listOf("VIDEO:INTRO", "MISSION:MON")))
 
-    private fun ready(draft: ThemeDraft, generated: ThemeDraftOutput): ThemeDraft {
+    private fun finish(draft: ThemeDraft, result: ThemeDraftAttempt): ThemeDraft {
         val now = Instant.now()
         val claimed = drafts.claimNext(now, now.plusSeconds(60))!!
         assertEquals(draft.id, claimed.id)
         val lease = claimed.leaseUntil!!
-        claimed.recordAttempt(ThemeDraftAttempt.Passed(generated,ThemeDraftFixtures.VERSIONS),3,now)
+        claimed.recordAttempt(result,1,now)
         assertTrue(drafts.saveAttempt(claimed,lease))
         return drafts.findById(draft.id)!!
     }
 
-    private fun newRoot(): ThemeDraft {
+    private fun ready(draft: ThemeDraft, generated: ThemeDraftOutput) = finish(draft,ThemeDraftAttempt.Passed(generated,ThemeDraftFixtures.VERSIONS))
+
+    private fun newRoot(generated: ThemeDraftOutput = output): ThemeDraft {
         val draft = ThemeDraft.requested(UUID.randomUUID(), ThemeGrade.G5,week,ThemeDraftSource.ADMIN,admin,input,Instant.now())
         drafts.insert(draft)
-        return ready(draft,output)
+        return ready(draft,generated)
     }
 
     private fun pending() = service.list(DraftStatus.READY, null,0,20,ThemeGrade.G5,week,true,true).items.map { it.draftId }
+
+    @Test
+    fun `review shelf counts themes once, filters their application week and returns selected poster and publication stage`() {
+        val root = newRoot(output.copy(regen = ThemeDraftFixtures.regen(listOf("IMAGE:INTRO"))))
+        val planned = week.plusWeeks(1)
+        planner.change(PlanChange(ThemeGrade.G5,root.id,null,planned,null))
+        val version = ready(service.regenerate(root.id,admin,listOf("IMAGE:INTRO")),output.copy(images = output.images + ("INTRO" to "example/new-intro.png")))
+        val filter = ThemeDraftReviewFilter(ThemeGrade.G5, null, null, null, planned, week, false, true)
+        val pair = service.reviewPage(filter.copy(stage = "pair"), 0, 1)
+        assertEquals(1L,pair.totalElements)
+        assertEquals(root.id,pair.items.single().draftId)
+        assertEquals("INTRO",pair.items.single().comparisonScene)
+        assertEquals(planned,pair.items.single().appliedWeek)
+        assertTrue(planned in pair.weeks)
+        val emptyPage = service.reviewPage(filter, 1, 1)
+        assertTrue(emptyPage.items.isEmpty())
+        assertEquals(1L,emptyPage.totalElements)
+        media.select(root.id,"INTRO",version.id,root.id,2)
+        assertEquals("example/new-intro.png",service.reviewPage(filter.copy(stage = "review"),0,20).items.single().thumbnailUrl)
+        val theme = service.adopt(root.id,admin)
+        assertEquals(theme.themeId,service.reviewPage(filter.copy(stage = "adopted"),0,20).items.single().themeId)
+        theme.days.forEach { day ->
+            val mission = missions.getForAdmin(day.missionId)
+            val rubric = requireNotNull(mission.currentRubricVersion)
+            missions.requestReview(mission.missionId,mission.currentVersion,rubric)
+            missions.review(mission.missionId,admin,mission.currentVersion,rubric,ReviewResult.APPROVED,null)
+            missions.publish(mission.missionId)
+        }
+        themes.requestReview(theme.themeId,theme.version)
+        assertEquals(root.id,service.reviewPage(filter.copy(stage = "ready"),0,20).items.single().draftId)
+        themes.publish(theme.themeId,theme.version,null,true)
+        assertEquals(theme.themeId,service.reviewPage(filter.copy(stage = "published"),0,20).items.single().themeId)
+    }
+
+    @Test
+    fun `full generation stays independent, partial work and failure stay visible until discarded, successful versions share a row`() {
+        val root = newRoot()
+        val full = service.regenerate(root.id,admin)
+        val filter = ThemeDraftReviewFilter(ThemeGrade.G5,null,null,null,null,week,false,true)
+        fun ids(stage: String) = service.reviewPage(filter.copy(stage=stage),0,20).items.map { it.draftId }
+        assertEquals(listOf(full.id),ids("generating"))
+        ready(full,output)
+        assertEquals(setOf(full.id,root.id),ids("review").toSet())
+        val assigned = week.plusWeeks(1)
+        planner.change(PlanChange(ThemeGrade.G5,root.id,null,assigned,null))
+        val child = service.regenerate(root.id,admin,listOf("VIDEO:INTRO"))
+        val generating = service.reviewPage(filter.copy(stage="generating",week=assigned),0,20).items.single()
+        assertEquals(child.id,generating.draftId)
+        assertEquals(assigned,generating.plannedWeek)
+        finish(child,ThemeDraftAttempt.AiFailed("AI_UNAVAILABLE"))
+        assertEquals(listOf(child.id),ids("failed"))
+        service.discard(child.id,assigned,true)
+        assertEquals(listOf(child.id),ids("discarded"))
+        assertTrue(service.reviewPage(filter.copy(stage="discarded",week=assigned),0,20).items.isEmpty())
+        val retry = service.regenerate(root.id,admin,listOf("VIDEO:INTRO"))
+        ready(retry,output)
+        assertEquals(listOf(root.id),ids("pair"))
+        assertEquals(setOf(root.id,full.id),service.reviewPage(filter,0,20).items.map { it.draftId }.toSet())
+    }
+
+    @Test
+    fun `a ready partial recovery of a failed original remains available for adoption`() {
+        val original = ThemeDraft.requested(UUID.randomUUID(),ThemeGrade.G5,week,ThemeDraftSource.ADMIN,admin,input,Instant.now())
+        drafts.insert(original)
+        finish(original,ThemeDraftAttempt.CheckFailed(output,listOf(ThemeFailure("REVIEW",listOf("검사 실패"))),ThemeDraftFixtures.VERSIONS))
+        val recovered = ready(service.regenerate(original.id,admin,listOf("VIDEO:INTRO")),output)
+        val filter = ThemeDraftReviewFilter(ThemeGrade.G5,null,null,null,null,week,false,true)
+        assertEquals(setOf(original.id,recovered.id),service.reviewPage(filter,0,20).items.map { it.draftId }.toSet())
+        service.adopt(recovered.id,admin)
+        assertEquals(recovered.id,service.reviewPage(filter,0,20).items.single().draftId)
+        assertThrows<BusinessException> { service.discard(original.id) }
+    }
 
     @Test
     fun `three source drafts keep independent media and annotations, selection materializes the chosen day and intro together`() {
@@ -68,6 +149,7 @@ class ThemeDraftMediaServiceTest : PostgresRepositoryTest() {
         val last = ready(waiting,rendition.copy(videos = rendition.videos + ("INTRO" to "example/intro-b.mp4")))
         assertFalse(media.hasPendingGeneration(root.id))
         val history = media.history(root.id,"INTRO")
+        assertTrue(history.comparisonPending)
         assertEquals(root.id,history.selectedVersionId)
         assertEquals(listOf(last.id,first.id,root.id),history.versions.map { it.versionId })
         assertEquals(listOf(3,2,1),history.versions.map { it.number })
@@ -82,7 +164,7 @@ class ThemeDraftMediaServiceTest : PostgresRepositoryTest() {
         val memo = media.history(last.id,"INTRO").versions.single { it.versionId == first.id }
         assertTrue(memo.starred)
         assertEquals("자막 검토 완료",memo.note)
-        media.select(root.id,"INTRO",last.id,root.id,3)
+        assertFalse(media.select(root.id,"INTRO",last.id,root.id,3).comparisonPending)
         assertThrows<BusinessException> { media.select(root.id,"INTRO",first.id,root.id,3) }
         assertEquals(listOf(root.id),pending()) // The Monday change still needs a decision.
         media.select(root.id,"MON",first.id,root.id,2)
@@ -108,10 +190,13 @@ class ThemeDraftMediaServiceTest : PostgresRepositoryTest() {
     @Test
     fun `confirming original clears pending until another generation, discarded draft keeps its previous selection`() {
         val root = newRoot()
+        assertFalse(media.history(root.id,"INTRO").comparisonPending)
         val first = ready(service.regenerate(root.id,admin,listOf("VIDEO:INTRO")),output)
-        media.select(root.id,"INTRO",root.id,root.id,2)
+        assertFalse(media.history(root.id,"MON").comparisonPending)
+        assertFalse(media.select(root.id,"INTRO",root.id,root.id,2).comparisonPending)
         assertTrue(pending().isEmpty())
         val second = ready(service.regenerate(root.id,admin,listOf("VIDEO:INTRO")),output)
+        assertTrue(media.history(root.id,"INTRO").comparisonPending)
         assertEquals(listOf(root.id),pending())
         media.select(root.id,"INTRO",second.id,root.id,3)
         assertThrows<BusinessException> { service.discard(second.id) }

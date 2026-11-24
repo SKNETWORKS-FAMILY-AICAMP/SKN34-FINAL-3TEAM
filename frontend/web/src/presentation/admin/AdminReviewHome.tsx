@@ -36,27 +36,31 @@ export function WorkloadCards({ period, permissions }: { period: Period; permiss
 }
 
 export function ThemeWorkQueue() {
-  const ready=useAdminQuery(['home','ready-drafts'],s=>themes.themeDrafts({status:'READY',hideDiscarded:'true',size:'1'},s))
-  const compare=useAdminQuery(['home','compare-drafts'],s=>themes.themeDrafts({status:'READY',comparisonPending:'true',size:'1'},s))
+  const ready=useAdminQuery(['home','ready-drafts'],s=>themes.themeDraftReviews({stage:'review',size:'1'},s))
+  const compare=useAdminQuery(['home','compare-drafts'],s=>themes.themeDraftReviews({stage:'pair',size:'1'},s))
   const review=useAdminQuery(['home','publish-queue'],s=>themes.themes({status:'REVIEW_REQUIRED'},s))
-  const priority=compare.data?.items[0] ?? ready.data?.items[0]
-  const detail=useAdminQuery(['theme-draft',priority?.draftId],s=>themes.themeDraft(priority!.draftId,s),!!priority)
-  const theme=detail.data
-  const firstImage=theme?.scenes.find(scene=>scene.scene==='INTRO')?.imageUrl
+  const priority=(!compare.isError && compare.data?.items[0]) || (!ready.isError && ready.data?.items[0])
+  const priorityParams=new URLSearchParams()
+  if (priority) {
+    priorityParams.set('draftId',priority.draftId)
+    if (priority.comparisonScene && priority.stage==='pair') {
+      priorityParams.set('scene',priority.comparisonScene)
+      priorityParams.set('view','compare')
+    }
+  }
   const queues=[
-    {label:'검사 통과 초안',to:'/admin/theme-drafts?status=READY',count:ready.data?.totalElements,q:ready},
-    {label:'재생성 장면 비교 대기',to:'/admin/theme-drafts?status=READY&comparisonPending=true',count:compare.data?.totalElements,q:compare},
+    {label:'초안 검수 대기',to:'/admin/theme-drafts?stage=review',count:ready.data?.totalElements,q:ready},
+    {label:'재생성 장면 비교 대기',to:'/admin/theme-drafts?stage=pair',count:compare.data?.totalElements,q:compare},
     {label:'게시 검토 대기',to:'/admin/themes?status=REVIEW_REQUIRED',count:review.data?.totalElements,q:review},
   ]
   return <section className="ad-theme-work" aria-label="테마 검수·게시">
     <div className="ad-priority-theme">
-      {firstImage && <img src={firstImage} alt=""/>}
+      {priority && priority.thumbnailUrl && <img src={priority.thumbnailUrl} alt=""/>}
       <div><span><Clapperboard size={16}/> 우선 검수 테마</span>
-        {priority && <QueryFeedback query={detail}/>}
-        {theme ? <><h2>{theme.draft?.theme?.title || theme.input.topic || '테마 초안'}</h2>
-          <p>{theme.grade && THEME_GRADE_LABELS[theme.grade]} · {theme.weekStart} 생성 기준 주</p>
-          <Link to={'/admin/theme-drafts?draftId='+encodeURIComponent(theme.draftId)}>테마 검수 열기</Link></>
-        : !priority && !ready.isPending && !compare.isPending && <p>{ready.error || compare.error ? '검수 후보를 불러오지 못했습니다.' : '검수할 초안이 없습니다.'}</p>}
+        {priority ? <><h2>{priority.title}</h2>
+          <p>{THEME_GRADE_LABELS[priority.grade]} · 적용 주 {priority.appliedWeek}</p>
+          <Link to={'/admin/theme-drafts?'+priorityParams.toString()}>테마 검수 열기</Link></>
+        : !ready.isPending && !compare.isPending && <p>{ready.error || compare.error ? '검수 후보를 불러오지 못했습니다.' : '검수할 초안이 없습니다.'}</p>}
       </div>
     </div>
     <div className="ad-theme-work-list"><h2><CalendarDays size={18}/> 테마 검수·게시 대기</h2>

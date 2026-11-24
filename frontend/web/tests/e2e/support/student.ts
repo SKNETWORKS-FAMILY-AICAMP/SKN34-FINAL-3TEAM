@@ -45,6 +45,19 @@ export async function startExtraMission(page: Page, mission: string) {
 }
 
 /**
+ * 테마 문제를 연 뒤 답변 작성까지(#807): 테마 문제는 미션 안내 대신 오늘 장면을 거친다. 그날 대화가 있으면 대화 상자를
+ * 마지막 대사까지 눌러 넘기고, 대화가 없는 테마(관리자가 직접 만든 E2E 테마 등)는 장면 없이 바로 답변 작성으로 간다
+ */
+export async function throughTodayScene(page: Page) {
+  await expect(async () => {
+    if (page.url().includes('/student/attempts/')) return
+    const box = page.locator('.ts-box')
+    if (await box.isVisible()) await box.click()
+    expect(page.url()).toContain('/student/attempts/')
+  }).toPass({ timeout: 30_000, intervals: [300] })
+}
+
+/**
  * 답 칸을 채우고 자동 저장(입력 600ms 뒤 초안 저장)이 끝날 때까지 기다린다. 예전에는 저장 중 보내기 버튼이 잠겨
  * 그 사이 누른 클릭이 사라졌다(2026-11-16 로컬 실서버 실행에서 발견). 지금은 저장 중에 누르면 저장 뒤 보내지만(StudentWorkPage),
  * 시험은 저장 완료를 기다려 요청 순서를 고정한다
@@ -73,13 +86,14 @@ export async function solveNarrative(page: Page, answer: string, { followup }: {
     await expect(page.getByText(/덧붙인 답 1/)).toBeVisible()
     await expect(checked).toBeVisible({ timeout: 60_000 })
   }
-  await page.getByRole('button', { name: '이대로 돌아보기' }).click()
-  // #648 마무리 화면 제목은 "마무리 정답과 비교해 보세요"(마침표 없음)
-  await expect(page.getByRole('heading', { name: /(정답|예시 답)과 비교해 보세요/ })).toBeVisible()
-  await expect(page.getByRole('list', { name: '마무리 체크리스트' })).toBeVisible()
-  await page.getByRole('button', { name: '돌아보기 남기기' }).click()
+  await page.getByRole('button', { name: /^마무리( 보기|하기)$/ }).click()
+  // 마무리 화면 제목은 화면 읽기용으로만 남음(D안 #807): "마무리 · 정답과 비교해 보세요"
+  await expect(page.getByRole('heading', { name: /(정답|예시 답)과 비교해 보세요/ })).toBeAttached()
+  await expect(page.getByRole('group', { name: '마무리 체크리스트' })).toBeVisible()
   await page.getByRole('button', { name: '보통이에요' }).click()
-  await page.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
+  await page.getByRole('button', { name: '미션 완료하기' }).click()
+  // 미션 완료 화면(#807)에서 내 공책으로
+  await page.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '내 공책 보기' }).click()
   await page.waitForURL('**/student/journal**')
 }
 

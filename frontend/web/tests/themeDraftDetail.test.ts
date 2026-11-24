@@ -3,15 +3,32 @@ import assert from 'node:assert/strict'
 import { REGEN_TARGETS, regenConfirmText, regenKindsOf, regenTargetLabel, themeDraftActions, themeDraftOf } from '../src/domain/admin/themeDrafts.ts'
 import { captionAt, readThemeMotion } from '../src/domain/themeMotion.ts'
 import { readSceneHistory } from '../src/domain/admin/sceneVersions.ts'
+import { readThemeDraftReviewPage } from '../src/domain/admin/themeDraftReviews.ts'
 
 // #441 테마 초안 상세·움직임 형식 v1 읽기. 가상 값만 쓴다.
 const base = { draftId: 'd-1', status: 'READY' }
+
+test('검수 목록의 적용 주·실제 공개 상태와 빈 페이지의 전체 주차를 보존한다', () => {
+  const row = { draftId: 'd-1', title: '겨울 연못', thumbnailUrl: null, grade: 'G4', source: 'ADMIN', status: 'ADOPTED', stage: 'published',
+    weekStart: '2026-11-23', appliedWeek: '2026-12-07', plannedWeek: null, updatedAt: '2026-11-23T00:00:00Z', themeId: 't-1', comparisonScene: null }
+  const page = { items: [row], page: 0, size: 1, totalElements: 1, weeks: ['2026-12-07'] }
+  assert.deepEqual(readThemeDraftReviewPage(page),page)
+  assert.deepEqual(readThemeDraftReviewPage({ ...page, page: 1, items: [] }).weeks,page.weeks)
+  for (const change of [{stage:'UNKNOWN'}, {comparisonScene:'SUN'}, {thumbnailUrl:undefined}, {appliedWeek:null}]) {
+    assert.throws(() => readThemeDraftReviewPage({...page,items:[{...row,...change}]}), /검수 목록/)
+  }
+})
 
 test('장면 이력의 누락된 선택 가능 여부·메모·미디어를 거부하고 명시한 null과 false는 보존한다', () => {
   const version = { versionId: 'd-1', number: 1, source: 'ORIGINAL', status: 'READY', createdAt: '2026-11-19T00:00:00Z',
     starred: false, note: '', selectable: false, imageUrl: null, videoUrl: null, motion: null }
   const response = (row: object) => ({ scene: 'MON', rootDraftId: 'd-1', editable: false, selectedVersionId: null, versions: [row] })
   assert.deepEqual(readSceneHistory(response(version), 'MON').versions, [version])
+  assert.equal(readSceneHistory(response(version), 'MON').comparisonPending, undefined)
+  for (const comparisonPending of [true, false]) {
+    assert.equal(readSceneHistory({ ...response(version), comparisonPending }, 'MON').comparisonPending, comparisonPending)
+  }
+  assert.throws(() => readSceneHistory({ ...response(version), comparisonPending: 'false' }, 'MON'), /장면 이력/)
   for (const name of ['selectable', 'note', 'status', 'imageUrl', 'videoUrl', 'motion']) {
     const row = Object.fromEntries(Object.entries(version).filter(([key]) => key !== name))
     assert.throws(() => readSceneHistory(response(row), 'MON'), /장면 이력/, name)

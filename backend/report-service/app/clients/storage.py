@@ -6,6 +6,7 @@ from uuid import UUID
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 
 def report_prefix(student_id: UUID, report_id: UUID, revision: int) -> str:
@@ -20,6 +21,21 @@ def report_key(
     if format not in {"PDF", "MD", "HTML"} or audience not in {"full", "free"}:
         raise ValueError("Invalid report file format/audience")
     return f"{report_prefix(student_id, report_id, revision)}{audience}/{format.lower()}"
+
+
+MEMORY_BOOK_DIR = "memory-books"
+
+
+def memory_book_prefix(student_id: UUID, book_id: UUID) -> str:
+    """추억 그림책 (docs/proposals/memory-book.md).
+
+    학생 삭제의 `reports/{studentId}/` 아래라 같이 지워진다.
+    """
+    return f"reports/{UUID(str(student_id))}/{MEMORY_BOOK_DIR}/{UUID(str(book_id))}/"
+
+
+def memory_book_key(student_id: UUID, book_id: UUID) -> str:
+    return memory_book_prefix(student_id, book_id) + "pdf"
 
 
 class ObjectStorage:
@@ -66,6 +82,15 @@ class ObjectStorage:
             CacheControl="private, no-store",
         )
 
+    def exists(self, key: str) -> bool:
+        try:
+            self._client.head_object(Bucket=self._bucket, Key=key)
+            return True
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise
+
     def presigned_url(self, key: str, ttl: int, filename: str) -> dict:
         if not 1 <= ttl <= 3600:
             raise ValueError("Download URL lifetime must be 1..3600 seconds")
@@ -87,7 +112,9 @@ class ObjectStorage:
         if len(pieces) not in (3, 5) or pieces[0] != "reports" or not prefix.endswith("/"):
             raise ValueError("Unsafe report deletion prefix")
         UUID(pieces[1])
-        if len(pieces) == 5:
+        if len(pieces) == 5 and pieces[2] == MEMORY_BOOK_DIR:
+            UUID(pieces[3])
+        elif len(pieces) == 5:
             UUID(pieces[2])
             if not re.fullmatch(r"r[1-9]\d*", pieces[3]):
                 raise ValueError("Unsafe report revision prefix")

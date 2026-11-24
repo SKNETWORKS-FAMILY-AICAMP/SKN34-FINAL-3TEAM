@@ -1623,8 +1623,8 @@
     "name": "학생 자기 평가와 관찰 비교",
     "description": "학생은 예시 답을 본 뒤 들어가면 좋은 생각 항목을 스스로 체크하고 AI가 근거로 확인한 항목과 나란히 비교할 수 있어야 한다. 자기 체크와 AI 확인을 구분하고 학생 선택이 원본 답변이나 AI 판정을 덮어쓰지 않도록 한다.",
     "status": "부분 구현·확장 필요",
-    "note": "기존 기본 화면은 있으나 새 학년 범위·수집/생성/독립 평가·조작 요구 전체를 충족하지는 않습니다.",
-    "evidence": "frontend/web/src/presentation/student/",
+    "note": "learning API·저장 규칙은 구현했습니다. 웹 학생 화면은 #807 마무리 D안(2026-11-23)에서 마무리를 한 화면으로 줄이며 뺐습니다(기능 명세 FN-LRN-13 웹 미제공).",
+    "evidence": "backend/learning-service/src/main/kotlin/com/sagomungchi/learning/attempt/service/AttemptService.kt (saveSelfAssessment)",
     "path": "/student/home"
   },
   {

@@ -1,0 +1,155 @@
+.tw-desk { --rv-blue: #3259d9; }
+.tw-desk.rv-detail {
+  --rv-ink: #19283e;
+  --rv-muted: #5d6d83;
+  --rv-line: #dce3ed;
+  display: block;
+  width: 100%;
+  max-width: 1420px;
+  min-width: 0;
+  margin: 0 auto;
+  color: var(--rv-ink);
+  font-family: "Pretendard", "Inter", "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  line-height: 1.5;
+}
+#class-journal:has(> .admin-shell .rv-detail) { max-width: none; }
+#class-journal .admin-shell:has(.rv-detail) { background: #f5f7f9; }
+#class-journal .admin-shell:has(.rv-detail) .ad-sidebar { background: #182c39; }
+#class-journal .admin-shell:has(.rv-detail) .ad-sidebar nav a[aria-current="page"] { background: #324b57; color: white; box-shadow: inset 3px 0 #b9e6d6; }
+#class-journal .admin-shell:has(.rv-detail) .ad-main { max-width: none; padding: 33px clamp(20px, 3vw, 52px) 52px; }
+@media (min-width: 1171px) {
+  #class-journal .admin-shell:has(.rv-detail) { grid-template-columns: 216px minmax(0, 1fr); grid-template-rows: 62px 1fr; }
+}
+@media (min-width: 851px) and (max-width: 1170px) {
+  #class-journal .admin-shell:has(.rv-detail) { grid-template-columns: 180px minmax(0, 1fr); }
+  #class-journal .admin-shell:has(.rv-detail) .ad-main { padding: 27px 22px 44px; }
+}
+.rv-detail .rv-crumb, .rv-detail .rv-meta, .rv-detail .rv-meta span,
+.rv-detail .rv-title-line, .rv-detail .rv-tabbar, .rv-detail .rv-tabs,
+.rv-detail .rv-board > header, .rv-detail .rv-decision, .rv-detail .rv-decision > div,
+.rv-detail .rv-mission-context { display: flex; align-items: center; }
+.rv-detail .rv-crumb { gap: 12px; color: var(--rv-muted); font-size: 12px; }
+.rv-crumb > span:first-of-type { color: #c5ceda; }
+#class-journal .admin-shell .ad-main .rv-crumb button {
+  border: 0; padding: 0; min-height: 28px; background: transparent; color: var(--rv-muted); box-shadow: none; font-size: 13px;
+}
+.rv-page-head { margin: 17px 0 25px; }
+.rv-title-line { flex-wrap: wrap; gap: 13px; }
+.rv-title-line .rv-regenerate-draft { margin-inline-start: auto; flex-shrink: 0; }
+#class-journal .admin-shell .rv-detail .rv-title-line h1 {
+  margin: 0; color: var(--rv-ink); font-size: clamp(28px, 2.75vw, 40px); font-weight: 760; line-height: 1.25; letter-spacing: -.055em;
+}
+.rv-detail .rv-status {
+  padding: 4px 9px; border-radius: 5px; background: #edf2ff; color: #3559bf;
+  font-size: 11px; font-weight: 680; white-space: nowrap;
+}
+.rv-detail .rv-status[data-status="ADOPTED"] { background: #e6f5ed; color: #277451; }
+.rv-detail .rv-meta { flex-wrap: wrap; gap: 5px 11px; margin-top: 13px; color: var(--rv-muted); font-size: 13px; font-weight: 550; }
+.rv-meta span { gap: 6px; }
+.rv-meta > span + span::before { content: ""; width: 3px; height: 3px; margin-right: 5px; border-radius: 50%; background: #abb7c7; }
+.rv-meta .rv-week-group { flex-wrap: wrap; }
+.rv-meta .rv-week-group span { gap: 4px; }
+.rv-detail .rv-tabbar { justify-content: space-between; gap: 12px; margin-bottom: 19px; border-bottom: 1px solid #d6dfeb; }
+.rv-detail .rv-tabs { align-self: stretch; align-items: stretch; gap: 22px; }
+#class-journal .admin-shell .ad-main .rv-detail .rv-tabs button {
+  position: relative; gap: 7px; padding: 10px 1px 13px; border: 0; border-radius: 0;
+  color: #55657b; background: transparent; box-shadow: none; font-size: 14px; font-weight: 650; white-space: nowrap;
+}
+#class-journal .admin-shell .ad-main .rv-detail .rv-tabs button[aria-pressed="true"] { color: var(--rv-blue); }
+.rv-tabs button[aria-pressed="true"]::after {
+  position: absolute; right: 0; bottom: -1px; left: 0; height: 3px; border-radius: 3px; background: var(--rv-blue); content: "";
+}
+.rv-tabs button span {
+  display: inline-grid; min-width: 22px; height: 21px; padding: 0 6px; place-items: center;
+  border-radius: 6px; background: #edf1f7; color: #53627a; font-size: 11px; font-variant-numeric: tabular-nums;
+}
+#class-journal .admin-shell .ad-main .rv-detail .rv-open-full {
+  flex-shrink: 0; min-height: 35px; margin-bottom: 7px; padding: 0 14px; border-color: #cbd6e4;
+  box-shadow: none; color: var(--rv-ink); font-size: 12px;
+}
+.rv-detail .rv-workbench { display: grid; grid-template-columns: clamp(178px, 18.5%, 237px) minmax(0, 1fr); align-items: start; gap: 17px; }
+.rv-detail .rv-board, .rv-detail .rv-mission-context, .rv-detail .rv-decision, .rv-detail .tw-decisions {
+  min-width: 0; border: 1px solid var(--rv-line); border-radius: 12px; background: white;
+}
+.rv-detail .rv-board { padding: 14px 9px 10px; }
+.rv-detail .rv-board > header { justify-content: space-between; gap: 5px; margin: 2px 5px 11px; }
+#class-journal .admin-shell .rv-detail .rv-board h2 { margin: 0; font-size: 14px; font-weight: 720; letter-spacing: -.045em; color: var(--rv-ink); }
+.rv-board header > span { color: var(--rv-muted); font-size: 10px; white-space: nowrap; }
+.rv-board nav { display: flex; flex-direction: column; gap: 3px; }
+#class-journal .admin-shell .ad-main .rv-board button.rv-board-shot {
+  display: grid; width: 100%; min-width: 0; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 8px;
+  border: 1px solid transparent; border-radius: 7px; padding: 6px 5px; text-align: left; color: var(--rv-ink);
+  background: transparent; box-shadow: none;
+}
+#class-journal .admin-shell .ad-main .rv-board button.rv-board-shot:hover { background: #f4f6fb; }
+#class-journal .admin-shell .ad-main .rv-board button.rv-board-shot[aria-current="true"] { background: #eef3ff; border-color: #b9caf6; }
+.rv-board-shot[aria-current="true"] :is(small,strong) { color: #294ea9; }
+.rv-board-shot img { width: 100%; height: 39px; object-fit: cover; border-radius: 4px; background: #ebeff6; }
+.rv-board-shot > span { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.rv-board-shot small, .rv-board-shot em { font-size: 10px; line-height: 1.2; color: var(--rv-muted); font-style: normal; }
+.rv-board-shot strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 670; line-height: 1.36; }
+.rv-detail .rv-mission-context { justify-content: space-between; gap: 12px; margin-top: 13px; padding: 15px 19px; }
+.rv-mission-context h3 { margin: 4px 0; font-size: 16px; }
+.rv-mission-context small { color: var(--rv-blue); font-size: 12px; font-weight: 670; }
+.rv-mission-context p { margin: 4px 0 0; color: var(--rv-muted); font-size: 13px; line-height: 1.6; }
+.rv-mission-context button { flex-shrink: 0; }
+.rv-detail .rv-decision, .rv-detail .tw-decisions { margin-top: 18px; padding: 18px 21px; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.rv-decision > div { gap: 10px; }
+.rv-decision small, .rv-detail .tw-decisions p { display: block; margin: 4px 0 0; color: var(--rv-muted); font-size: 12px; }
+#class-journal .admin-shell .ad-main .tw-desk :is(button.rv-primary,button.cj-primary,a.tw-day-board-link.is-primary):not(:disabled) {
+  color: #fff; background: var(--rv-blue); border-color: var(--rv-blue);
+}
+#class-journal .admin-shell .ad-main .tw-desk :is(button.rv-primary,button.cj-primary,a.tw-day-board-link.is-primary):is(:hover,:focus-visible,:active):not(:disabled) {
+  color: #fff; background: #2147bd; border-color: #2147bd;
+}
+#class-journal .admin-shell .ad-main .tw-desk :is(button.rv-primary,button.cj-primary,a.tw-day-board-link.is-primary):focus-visible {
+  outline: 3px solid #18378f; outline-offset: 3px;
+}
+#class-journal .admin-shell .ad-main .tw-desk :is(button.rv-primary,button.cj-primary):disabled {
+  color: #475569; background: #e5eaf2; border-color: #c5cfdd; opacity: 1; box-shadow: none; cursor: not-allowed;
+}
+.rv-settings { margin-top: 16px; color: var(--rv-muted); font-size: 13px; }
+.rv-settings summary { width: fit-content; cursor: pointer; }
+.rv-settings > :not(summary) { margin-top: 12px; }
+.rv-adopt-shots ul { list-style: none; padding: 0; margin: 8px 0; }
+.rv-adopt-shots li { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 6px 0; border-top: 1px solid #dce3ed; font-size: 12px; }
+.rv-adopt-shots li span { color: #5d6d83; }
+.rv-adopt-shots li button { margin-left: auto; }
+.rv-detail :focus-visible { outline: 3px solid #93acff; outline-offset: 2px; }
+#class-journal .admin-shell .rv-detail :is(.tw-film-header h3,.tw-day-missions h2,.rv-full-head h2) {
+  margin: 4px 0 0; font-size: 21px; font-weight: 750; line-height: 1.35; color: var(--rv-ink); letter-spacing: -.04em;
+}
+#class-journal .admin-shell .rv-detail .tw-film-selectors label { display: grid; align-content: start; align-items: start; gap: 4px; }
+#class-journal .admin-shell .rv-detail .tw-film-selectors select { min-height: 31px; }
+#class-journal .admin-shell .rv-detail .tw-day-missions li button { min-height: 31px; padding: 0 10px; font-size: 12px; }
+#class-journal .admin-shell .rv-detail .tw-day-badge { border-radius: 5px; font-size: 11px; }
+.rv-detail .tw-decisions { background: #f7f9fe; border-color: #d8e1f3; }
+@media (max-width: 1050px) {
+  .rv-detail .rv-workbench { grid-template-columns: 170px minmax(0, 1fr); gap: 12px; }
+  #class-journal .admin-shell .ad-main .rv-board button.rv-board-shot { grid-template-columns: 41px minmax(0, 1fr); gap: 7px; }
+  .rv-board-shot img { height: 35px; }
+}
+@media (max-width: 850px) {
+  #class-journal .admin-shell:has(.rv-detail) .ad-main { padding: 23px 19px 40px; }
+  .rv-detail .rv-workbench { grid-template-columns: minmax(0, 1fr); }
+  .rv-detail .rv-board { padding: 12px 10px 8px; }
+  .rv-detail .rv-board > header { margin: 0 3px 8px; }
+  .rv-board nav { display: grid; grid-template-columns: repeat(7, minmax(85px, 1fr)); gap: 4px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
+  #class-journal .admin-shell .ad-main .rv-board button.rv-board-shot { grid-template-columns: 1fr; align-content: start; padding: 4px; gap: 5px; }
+  .rv-board-shot img { height: auto; aspect-ratio: 16/9; }
+  .rv-board-shot strong { font-size: 11px; }
+  .rv-board-shot em { display: none; }
+}
+@media (max-width: 530px) {
+  #class-journal .admin-shell:has(.rv-detail) .ad-main { padding: 20px 14px 36px; }
+  .rv-page-head { margin: 12px 0 18px; }
+  #class-journal .admin-shell .rv-detail .rv-title-line h1 { font-size: 26px; }
+  .rv-detail .rv-tabbar { gap: 5px; }
+  .rv-detail .rv-tabs { gap: 12px; }
+  #class-journal .admin-shell .ad-main .rv-detail .rv-tabs button { font-size: 12px; gap: 4px; }
+  .rv-tabs button svg { display: none; }
+  #class-journal .admin-shell .ad-main .rv-detail .rv-open-full { padding: 0 7px; min-height: 31px; gap: 4px; font-size: 11px; }
+  .rv-board nav { grid-template-columns: repeat(7, 91px); }
+  .rv-detail .rv-mission-context { flex-wrap: wrap; padding: 12px; }
+  .rv-detail .rv-title-line .rv-regenerate-draft { margin-inline-start: 0; }
+}

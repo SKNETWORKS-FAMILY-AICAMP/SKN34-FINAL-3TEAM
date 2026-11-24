@@ -63,7 +63,7 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
         return tx.locked(sub.parentUserId) { students.requireLinked(sub.parentUserId,student); reserve(student,"FEEDBACK",source) }
     }
     private fun reserve(student: UUID, kind: String, source: UUID): UsagePermit {
-        require(kind in setOf("FEEDBACK","CONVERSATION","REPORT_VIEW"))
+        require(kind in setOf("FEEDBACK","CONVERSATION","REPORT_VIEW",MEMORY_BOOK))
         val entitlement=forStudent(student)
         if(entitlement.refundPending) conflict("REFUND_IN_PROGRESS")
         val sub=entitlement.subscriptionId ?: return UsagePermit(null,false)
@@ -173,10 +173,44 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
         is Boolean -> value
         else -> unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
     }
+    /**
+     * 추억 그림책 생성 판정·사용 예약 (docs/proposals/memory-book.md 10장, 미도입 시험 구현).
+     * 상품 `features.memoryBook`이 꺼져 있으면 403 `PREMIUM_REQUIRED`. 값이 없으면 구독 중만 허용(`extraMissions`·`sundayTheme`과 같은 규칙),
+     * boolean이 아니면 503. 구독 중이면 그 구독의 학부모 잠금 안에서 `MEMORY_BOOK` 사용을 예약한다(원천 = 그림책 ID, 환불 중 409).
+     * 무료 상품에서 켠 경우는 예약 없이 허용
+     */
+    fun beginMemoryBook(student: UUID, book: UUID): UsagePermit {
+        val entitlement=forStudent(student)
+        val subscribed=entitlement.subscriptionId!=null
+        val enabled=when(val value=entitlement.product.features["memoryBook"]) {
+            null -> subscribed
+            is Boolean -> value
+            else -> unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
+        }
+        if(!enabled) throw BusinessException(HttpStatus.FORBIDDEN,"PREMIUM_REQUIRED",
+            "추억 그림책은 프리미엄 이용권에서 만들 수 있어요.","앨범과 추억 검색은 계속 이용할 수 있어요.")
+        val sub=repository.active(student) ?: return UsagePermit(null,false)
+        return tx.locked(sub.parentUserId) { students.requireLinked(sub.parentUserId,student); reserve(student,MEMORY_BOOK,book) }
+    }
+
+    /** 그림책 하루 생성 한도(`limits.dailyMemoryBooks`). 키가 없는 구독 스냅숏은 무료 상품 값, 그래도 없거나 0 이상 정수가 아니면 503 */
+    fun memoryBookLimit(student: UUID): Int {
+        val entitlement=forStudent(student)
+        val value=entitlement.product.limits["dailyMemoryBooks"]
+            ?: entitlement.subscriptionId?.let { freeProduct().limits["dailyMemoryBooks"] }
+        val number=value.takeIf { it is Int || it is Long || it is java.math.BigInteger } as Number?
+        if(number==null || number.toLong() !in 0..Int.MAX_VALUE.toLong()) unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
+        return number.toInt()
+    }
+
     @Transactional
     fun reportViewed(parent: UUID, student: UUID, report: UUID) {
         if(repository.active(student)==null) return
         val permit=beginUsage(parent,student,"REPORT_VIEW",report)
         permit.reservationId?.let { finishUsage(student,it,true) }
+    }
+
+    private companion object {
+        const val MEMORY_BOOK = "MEMORY_BOOK"
     }
 }

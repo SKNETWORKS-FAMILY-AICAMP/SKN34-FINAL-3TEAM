@@ -113,8 +113,14 @@ test('같은 테마의 수정본 검토와 재게시, 제공 중단과 제공 �
     }
     return json({items:[],totalElements:0,page:0,size:20})
   })
-  await page.goto('/admin/themes?grade=G4&weekStart='+week)
-  await page.getByRole('button',{name:'게시 테마 관리'}).click()
+  await context.route('**/api/v1/admin/theme-drafts/review-list?**', route => route.fulfill({ json: {
+    items: [{ draftId: '11111111-1111-4111-8111-111111111111', title: theme.title, thumbnailUrl: null, grade: theme.grade,
+      source: 'ADMIN', status: 'ADOPTED', stage: 'published', weekStart: theme.generationWeek, appliedWeek: week,
+      plannedWeek: null, updatedAt: '2030-01-07T00:00:00Z', themeId: id, comparisonScene: null }],
+    totalElements: 1, page: 0, size: 20, weeks: [week],
+  } }))
+  await page.goto('/admin/theme-drafts?stage=published')
+  await page.getByRole('link', { name: '처음 게시한 테마 상세 열기' }).click()
   await expect(page.getByText('학생 게시본 v3')).toBeVisible()
   await expect(page.getByRole('button',{name:'수정본 검토 요청'})).toHaveCount(0)
   await page.getByLabel('테마 제목').fill('재검토할 테마')

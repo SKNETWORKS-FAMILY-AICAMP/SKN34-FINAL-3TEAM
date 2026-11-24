@@ -1,4 +1,5 @@
 import type { ThemeDraftScene, ThemeSceneName } from './themeDrafts.ts'
+import { sceneLabels } from './themeDrafts.ts'
 
 export interface SceneVersion extends Omit<ThemeDraftScene, 'scene'> {
   versionId: string
@@ -14,6 +15,7 @@ export interface SceneHistory {
   scene: ThemeSceneName
   rootDraftId: string
   editable: boolean
+  comparisonPending?: boolean
   selectedVersionId: string | null
   versions: SceneVersion[]
 }
@@ -41,7 +43,11 @@ export function readSceneHistory(raw: unknown, scene: ThemeSceneName): SceneHist
   if (new Set(versions.map(v => v.versionId)).size !== versions.length ||
     !(selected === null || typeof selected === 'string' && versions.some(v => v.versionId === selected))) throw invalid()
   if (typeof raw.rootDraftId !== 'string' || !raw.rootDraftId || typeof raw.editable !== 'boolean') throw invalid()
-  return { scene, rootDraftId: raw.rootDraftId, editable: raw.editable, selectedVersionId: typeof selected === 'string' ? selected : null, versions }
+  if (raw.comparisonPending !== undefined && typeof raw.comparisonPending !== 'boolean') throw invalid()
+  return { scene, rootDraftId: raw.rootDraftId, editable: raw.editable, comparisonPending: raw.comparisonPending,
+    selectedVersionId: typeof selected === 'string' ? selected : null, versions }
 }
 
-export const versionName = (v: SceneVersion) => v.source === 'ORIGINAL' ? '최초 생성본' : '재생성본 v' + v.number
+export const versionName = (v: SceneVersion) => v.source === 'ORIGINAL' ? '최초 생성본' : `재생성 ${v.number - 1}차`
+export const sceneVideoLabel = (scene: ThemeSceneName) =>
+  scene === 'INTRO' ? '시작 영상' : scene === 'OUTRO' ? '종료 영상' : sceneLabels[scene] + ' 장면'

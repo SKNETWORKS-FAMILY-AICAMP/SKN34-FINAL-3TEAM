@@ -54,7 +54,8 @@ test('낮은 화면에서 관리자 프로필을 열고 닫거나 마지막 메�
   const permissions = profile.getByText('서비스 운영', { exact: true })
   const scroller = page.locator('.ad-nav-scroll')
   const nav = scroller.getByRole('navigation', { name: '관리자 메뉴' })
-  const last = nav.getByRole('link', { name: 'AI 사용량', exact: true })
+  const last = nav.getByRole('link').last()
+  await expect(last).toHaveAccessibleName('표현 검토')
   await expect(nav.getByRole('link')).toHaveCount(9)
   await expect(summary).toContainText('이용 가능한 메뉴 9개')
   await expect(summary).toBeInViewport({ ratio: 1 })
@@ -74,24 +75,27 @@ test('낮은 화면에서 관리자 프로필을 열고 닫거나 마지막 메�
   await expect(summary).toBeInViewport({ ratio: 1 })
   expect((await profile.boundingBox())!.y).toBe(footerTop)
   await last.click()
-  await expect(page).toHaveURL(/\/admin\/usage/)
+  await expect(page).toHaveURL(/\/admin\/expressions/)
 })
 
-test('초안 요청 양식을 접었다 열어도 작성 중인 값과 목록은 유지한다 @responsive', async ({ page }) => {
+test('주간 테마 요청을 취소하면 목록 필터를 유지하고 새 요청을 빈 양식으로 연다 @responsive', async ({ page }) => {
   await login(page)
-  await openMenu(page)
-  await page.getByRole('navigation', { name: '관리자 메뉴' }).getByRole('link', { name: '주간 테마 검수', exact: true }).click()
-  await expect(page.getByLabel('테마 주제 키워드')).toBeHidden()
-  await page.getByText('새 테마 초안 요청', { exact: true }).click()
-  await page.getByLabel('테마 주제 키워드').fill('우리 동네 도서관')
-  const panel = page.locator('.ad-request-panel')
-  await panel.locator(':scope > summary').click()
-  await expect(page.getByLabel('테마 주제 키워드')).toBeHidden()
-  await expect(page.getByRole('heading', { name: '테마 초안 목록', exact: true })).toBeVisible()
-  await page.getByLabel('테마 초안 상태', { exact: true }).selectOption('READY')
-  await expect(page.getByLabel('테마 주제 키워드')).toBeHidden()
-  await panel.locator(':scope > summary').click()
-  await expect(page.getByLabel('테마 주제 키워드')).toHaveValue('우리 동네 도서관')
+  await navigate(page, '주간 테마 검수')
+  const shelf = page.getByRole('region', { name: '주간 테마 목록', exact: true })
+  const gradeFilter = shelf.getByLabel('학년 선택')
+  const request = page.getByRole('button', { name: '테마 추가 생성 요청' })
+  const dialog = page.getByRole('dialog', { name: '테마 추가 생성 요청' })
+  await gradeFilter.selectOption('G4')
+  await request.click()
+  await expect(dialog.getByLabel('생성 학년')).toHaveValue('G4')
+  await dialog.getByLabel('테마 주제 키워드').fill('우리 동네 도서관')
+  await dialog.getByRole('button', { name: '취소' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(gradeFilter).toHaveValue('G4')
+  await request.click()
+  await expect(dialog.getByLabel('테마 주제 키워드')).toHaveValue('')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 
@@ -239,9 +243,17 @@ test('관리자 메뉴의 정보 영역은 화면 폭 안에 유지된다 @respo
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await login(page)
+  await openMenu(page)
+  const nav = page.getByRole('navigation', { name: '관리자 메뉴' })
+  await expect(nav.getByText('워크스페이스', { exact: true })).toBeVisible()
+  await expect(nav.getByText('콘텐츠 관리', { exact: true })).toBeVisible()
+  const menu = nav.getByRole('link')
+  const firstLinks = ['운영 홈', '감사 이력', '주간 테마 검수', '게시 관리', '미션 관리', '미션 초안', '꾸미기 아이템']
+  for (const [index, label] of firstLinks.entries()) await expect(menu.nth(index)).toHaveAccessibleName(label)
+  await nav.getByRole('link', { name: '운영 홈', exact: true }).click()
   for (const [label, path] of [
-    ['운영 현황', 'home'], ['감사 이력', 'audit'], ['미션 관리', 'missions'], ['미션 초안', 'mission-drafts'],
-    ['게시 관리', 'themes'], ['주간 테마 검수', 'theme-drafts'], ['꾸미기 아이템', 'looks'],
+    ['운영 홈', 'home'], ['감사 이력', 'audit'], ['주간 테마 검수', 'theme-drafts'], ['게시 관리', 'themes'],
+    ['미션 관리', 'missions'], ['미션 초안', 'mission-drafts'], ['꾸미기 아이템', 'looks'],
     ['작업 재처리', 'jobs'], ['작업 대기열', 'queues'], ['오류 신고', 'errors'], ['문의·공지', 'support'],
     ['모델·프롬프트', 'models'], ['표현 검토', 'expressions'], ['AI 사용량', 'usage'], ['결제·환불', 'payments'],
   ]) {

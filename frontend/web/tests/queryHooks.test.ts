@@ -159,6 +159,7 @@ test('#950 자녀 삭제 접수 응답으로 처리 상태를 바로 보이고, 
 
   for (const key of [['parent', 'records'], ['children']]) cache.setQueryData(key, [])
   await act(async () => { await h.get().status.refetch() })
+  await until(() => h.get().status.data?.status === 'COMPLETED')
   assert.deepEqual(calls.slice(2), ['GET /api/v1/children/child-a/deletion-requests/del-a'])
   assert.deepEqual(h.get().status.data, done)
   assert.equal(cache.getQueryState(['parent', 'records'])?.isInvalidated, false)
@@ -317,7 +318,8 @@ test('시도 시작은 상세 캐시를 갱신하고 학습 홈·기록·미션�
   })
   const h = await mount(t, classroom.useLearningActions, cache)
   await act(async () => { await h.get().start.mutateAsync({ child, mission: attempt.mission }) })
-  assert.deepEqual(cache.getQueryData(['attempt', attempt.attemptId]), { ...attempt, reflection: undefined })
+  // themeScene: 응답에 없으면 null로 읽는다(EXTRA·테마 장면 없음, 오늘 장면 #807)
+  assert.deepEqual(cache.getQueryData(['attempt', attempt.attemptId]), { ...attempt, reflection: undefined, themeScene: null })
   assert.equal(cache.getQueryState(['student-home', child.id])?.isInvalidated, true)
   assert.equal(cache.getQueryState(['missions', child.id, 3])?.isInvalidated, true)
 })

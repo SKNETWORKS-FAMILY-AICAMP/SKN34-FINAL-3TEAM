@@ -22,7 +22,8 @@ ANIMALS = ["부엉이", "고양이", "생쥐", "너구리"]
 
 def sound_theme() -> dict[str, Any]:
     """소리 탐정 줄거리(동물 범주, 정답 너구리, check_theme 통과). 월 RULE 옮겨 다니는 소리 →
-    부엉이, 목 RULE 뒤적이는 소리 → 고양이·생쥐. 목격·기록만."""
+    부엉이, 수 RULE 우는·뒤적이는 소리 → 생쥐, 금 RULE 쓰레기통 둘레 → 고양이, 화·목은 사건
+    단서(#782 테마 짜임: 마지막 후보는 금요일에, 앞 요일 단서를 되풀이하지 않음). 목격·기록만."""
     theme = copy.deepcopy(valid_theme())
     theme |= {
         "storyType": "SOUND",
@@ -49,36 +50,36 @@ def sound_theme() -> dict[str, Any]:
             ),
             day(
                 "TUE",
-                "녹음에 옮겨 다니는 소리가 담겼어.",
+                "녹음에 소리가 마당 끝에서 끝으로 가로질러 갔어.",
                 "기록",
-                "HINT",
-                "소리 움직임",
-                ["옮겨 다니는 소리"],
+                "STORY",
+                "",
+                [],
                 "RECORD",
             ),
             day(
                 "WED",
-                "할머니도 옮겨 다니는 소리를 들었대.",
+                "할머니가 들은 소리는 긁는 소리가 아니었어.",  # #782 v3 부정형
                 "시각",
-                "HINT",
-                "소리 움직임",
-                ["옮겨 다니는 소리"],
+                "RULE",
+                "소리 느낌",
+                ["우는 소리", "뒤적이는 소리"],
                 "SIGHTING",
             ),
             day(
                 "THU",
-                "동생이 뒤적이는 소리를 들었대.",
+                "동생이 소리가 담장 쪽으로 멀어졌다고 했대.",
                 "소리",
-                "RULE",
-                "소리 느낌",
-                ["뒤적이는 소리"],
+                "STORY",
+                "",
+                [],
                 "SIGHTING",
             ),
             day(
                 "FRI",
                 "일지에 쓰레기통 둘레에서 소리가 났다고 적혔어.",
                 "습성",
-                "HINT",
+                "RULE",
                 "소리 난 곳",
                 ["쓰레기통 둘레"],
                 "RECORD",
@@ -234,7 +235,7 @@ def test_sound_prompts_and_pictures() -> None:
 def test_when_keeps_its_rules_after_flag_split() -> None:
     # ④에서 시간 탐정 표시로 쓰던 칸을 나눈 뒤에도 시간 탐정은 그대로, 소리 탐정에는 안 붙음
     assert families.WHEN.hide_times and families.WHEN.outro_check and families.TIMES.image_hide
-    assert not families.SOUND.hide_times and families.SOUND.clue_time
+    assert not families.SOUND.hide_times
     assert not checks.time_word_problems({**sound_theme(), "intro": "밤 9시쯤 소리가 났어요."})
     assert families.SOUNDS.drawable and not families.TIMES.drawable
 

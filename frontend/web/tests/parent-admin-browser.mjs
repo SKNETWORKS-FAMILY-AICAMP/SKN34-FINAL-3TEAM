@@ -128,10 +128,11 @@ try {
     const submitted = p.waitForRequest((r) => /\/attempts\/[^/]+\/answers$/.test(r.url()) && r.method() === 'POST')
     await p.getByRole('button', { name: '다 썼어요', exact: true }).click()
     assert.equal(JSON.stringify((await submitted).postDataJSON()).includes(privateMemo), false)
-    await p.getByRole('button', { name: '이대로 돌아보기', exact: true }).click()
-    await p.getByRole('button', { name: '돌아보기 남기기' }).click()
+    await p.getByRole('button', { name: '마무리 보기', exact: true }).click()
     await p.getByRole('button', { name: '보통이에요' }).click()
-    await p.getByRole('button', { name: '돌아보기 저장하고 완료' }).click()
+    await p.getByRole('button', { name: '미션 완료하기' }).click()
+    // 미션 완료 화면(#807)에서 내 공책으로
+    await p.getByRole('dialog', { name: '미션 완료!' }).getByRole('button', { name: '내 공책 보기' }).click()
     await p.waitForURL('**/student/journal')
     // 학생 로그아웃은 설정 안에서(#583)
     await p.getByRole('button', { name: '설정', exact: true }).click()
@@ -409,8 +410,8 @@ try {
   for (const [account, show, hide] of [
     ['content', '미션 관리', '작업 재처리'],
     ['ops', '작업 재처리', '미션 관리'],
-    ['payment', '운영 현황', '오류 신고'],
-    ['refund', '운영 현황', '미션 관리'],
+    ['payment', '운영 홈', '오류 신고'],
+    ['refund', '운영 홈', '미션 관리'],
   ])
     await check('관리자 권한 ' + account, async (p) => {
       await login(p, account + '@example.test')
