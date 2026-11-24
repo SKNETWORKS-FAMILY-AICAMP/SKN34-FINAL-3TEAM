@@ -71,6 +71,7 @@ from app.theme_draft.checks import (
 from app.theme_draft.families import (
     ALL_CUTS,
     ANIMAL_NO_WINTER,
+    ANSWER_LOOK_COMMON,
     SOUND_NO_WINTER,
     SOUNDS,
     STORY_BRANCHES,
@@ -1441,7 +1442,7 @@ def fix_rules(theme: Theme, path: str) -> list[str]:
     if path == "answerLook":
         return [
             f"정답 {theme.get('answer') or ''}의 겉모습 한 줄(종료 그림·영상에서 같은 "
-            "모습으로 그림). 특징 표의 정답 값과 맞게 쓴다."
+            "모습으로 그림). 특징 표의 정답 값과 맞게 쓴다. " + ANSWER_LOOK_COMMON
         ]
     if path == "outro":  # 마무리 장면만(다섯 단서 정리는 코드가 앞에 붙임, #535 7차)
         return [
@@ -2816,6 +2817,8 @@ def target_lines(theme: Theme, scene: str, index: int) -> list[str]:
             "same in every picture, closed (do not show what is inside), with no tag, card or "
             "label."
         )
+    elif shows and t.code == "GIFT":
+        lines.append(opened_gift(theme))
     elif shows:
         lines.append(f"{theme.get('target') or 'The missing target'} may appear as the scene says.")
     else:
@@ -2828,6 +2831,19 @@ def target_lines(theme: Theme, scene: str, index: int) -> list[str]:
         elif t.facts.drawable:
             lines.append(f"The answer, {theme.get('answer') or ''}, may appear as the scene says.")
     return lines
+
+
+def opened_gift(theme: Theme) -> str:
+    """선물 상자 공개 컷(answer_cuts)의 상자: 엔딩 전과 같은 리본 상자가 열린 모습.
+
+    #779 그림 확인(2026-11-24 선물 상자 초4): 공개 컷 첫 그림(종료 3컷)은 상자 참고 그림 없이
+    장면 글 '열린 상자'만 받아 리본 없는 택배 상자로 그려졌고, 종료 5·6컷이 그 그림을 따라감
+    (그림 검토는 못 잡음)."""
+    return (
+        f"{theme.get('target') or 'The gift box'}: the same plain square gift box with a ribbon "
+        "as before the reveal, now opened (lid off, the ribbon still on the box or lid), not a "
+        "brown shipping carton, with no tag, card or label."
+    )
 
 
 def _answer_look(theme: Theme) -> str:
@@ -3505,6 +3521,19 @@ def cut_camera(scene: str, index: int, cut: dict, n: int) -> str:
     return camera
 
 
+# #779 영상 확인(2026-11-24 장난꾸러기 시작 1컷): 장면 글 '물뿌리개를 정리한다'를 Veo가 물 주기로
+# 바꿔 탁자·바닥에 물을 부었고, 영상 검토 항목에 행동이 말이 되는지가 없어 통과함 → 영상 지시와
+# 검토(CONTINUITY) 둘 다
+TOOL_USE = (
+    "Everyone uses things only for what they are for: water from a watering can or hose goes only "
+    "onto plants, never onto tables, floors, people or animals. Nobody pours, spills or throws "
+    "anything."
+)
+TOOL_USE_REVIEW = (
+    "인물의 행동이 말이 되는지(물뿌리개 물을 식물이 아니라 탁자·바닥·사람에게 붓거나, 물건을 "
+    "쏟거나 던지거나 쓰임과 다른 곳에 쓰면 결함),"
+)
+
 # 앞 시험에서 모든 컷에 '구름이 흐른다'를 넣어 실내 벽에 구름이 생겼음(실내·실외를 나눔)
 SCENE_MOTION = (
     "The background moves in a way that fits the place: outdoors, clouds drift and leaves, grass "
@@ -3553,9 +3582,7 @@ def video_prompt(
             spec.motion if not safe else "",
             *MUNGCHI_KEEP,
             f"Mungchi never picks up, lifts, hugs, hands over or receives anything, especially "
-            f"{target}. An outfit item Mungchi already holds in the first frame (such as a "
-            "magnifying glass) stays in its hand as it is, and nothing around its neck is lifted "
-            "or used. Any hand gestures are done by the people.",
+            f"{target}. {MUNGCHI_EMPTY_HANDS} Any hand gestures are done by the people.",
             "Mungchi's outfit, hat and items around the neck stay exactly as in the first frame.",
             f"Mungchi's expression: {mouth}." if mouth else "",
         ]
@@ -3591,9 +3618,11 @@ def video_prompt(
         )
     elif shows:
         about_target = (
-            "The gift box stays closed, with no tag, card or label."
-            if t.code == "GIFT" and (scene, index) not in answer_cuts
-            else ""
+            ""
+            if t.code != "GIFT"
+            else "The gift box stays closed, with no tag, card or label."
+            if (scene, index) not in answer_cuts
+            else opened_gift(theme)  # 공개 컷도 그림과 같은 리본 상자(#779)
         )
     elif t.target_covered:  # #765 비밀 재료 엔딩 전 컷: 덮인 채로(그림 지시와 같게)
         about_target = _covered_target(theme)
@@ -3629,6 +3658,7 @@ def video_prompt(
         "Everyone moves only along paths, floors and open doors or gates: nobody walks on or "
         "through walls, fences, flower beds, benches or other objects. A single object (a note, a "
         "box, a letter) stays one object.",
+        TOOL_USE,
         SCENE_MOTION,
         NIGHT_SCENE if n != 4 and t.night else "",  # 밤 이야기(#779 7종류 확인 2026-11-20)
         f"Camera: {CAMERA_TEXT[camera]}. No transition effects. No text."
@@ -3657,6 +3687,15 @@ def video_negative(theme: Theme, scene: str | None = None, index: int | None = N
     if scene and index:  # 2026-11-23 설계 v2: 컷마다(공중 손짓 금지는 뭉치가 나오는 사람 컷만)
         flags |= cut_flags(theme, scene, index)
     return ", ".join([VIDEO_NEGATIVE, *common_rules.lines("negative", flags)])
+
+
+# #779 소리 탐정 확인(2026-11-24): 차림이 탐정 모자·헤드폰인데 시작·종료 6컷 시도 6번 중 4번에서
+# 뭉치 손에 돋보기가 생겨 그림으로 대신함. 지시의 "첫 그림에 든 차림 소품(예: 돋보기)은 그대로"가
+# 탐정 역할과 함께 돋보기를 불러온 것으로 봄(저장된 실측: 탐정 차림 14번 중 2번, 그 밖 144번 중
+# 1번). 그 문장은 손에 든 차림 소품이 있던 때(2026-11-15 B안)의 것이고, 지금은 역할 차림에 손에
+# 드는 물건을 넣지 않으며(learning ThemeTopicSeeds 목록 규칙) 테마 옷 그림도 "Nothing in the
+# hands"라 쓸 일이 없음 → 손은 첫 그림처럼 비어 있다는 문장으로(물건 이름은 쓰지 않음)
+MUNGCHI_EMPTY_HANDS = "Mungchi's hands stay empty, as in the first frame."
 
 
 def wild_answer(theme: Theme) -> bool:
@@ -3696,7 +3735,7 @@ VIDEO_REVIEW_SYSTEM = (
     "따라가 움직여서 화면 밖으로 빠지는 것, 기준 장면부터 가까운 장면이라 몸 일부가 화면 밖인 것은 "
     "결함이 아니다), 인물이 장면 공간에 맞게 움직이는지(길·바닥·열린 문이 아니라 담·울타리·화단·"
     "의자·물건 위나 속으로 걷거나 통과하면 결함), 하나뿐인 물건(쪽지·상자 등)이 둘로 늘어나지 "
-    "않는지, 뭉치의 옷·모자·목에 건 것이 기준 "
+    "않는지, " + TOOL_USE_REVIEW + " 뭉치의 옷·모자·목에 건 것이 기준 "
     # 2026-11-23 설계 v2: 옛 달리기 시작 4컷이 작은 배지 변화로 떨어짐(장면은 멀쩡했음)
     "장면과 같은지(다른 옷으로 바뀌거나 없던 옷·소품이 생기면 결함, 배지·무늬가 조금 바뀌는 것은 "
     "WARN), 사람의 머리핀·안경·옷이 기준 장면과 같은지(토끼 머리핀이 토끼 귀로 자라는 "

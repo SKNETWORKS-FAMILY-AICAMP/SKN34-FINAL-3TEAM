@@ -752,3 +752,71 @@ def test_reveal_person_outside_characters_may_speak_when_in_scene() -> None:
     assert "그 사람에게 답을 말하는 꼴" in cuts.spec("OUTRO", 1, 6).speaker
     assert "기분만 말하는 말" in cuts.spec("OUTRO", 4, 6).speaker
     assert "기분만 말하는 말" in cuts.spec("OUTRO", 5, 6).speaker
+
+
+def test_gift_reveal_cuts_draw_the_same_ribbon_box_opened() -> None:
+    """#779 그림 확인(2026-11-24 선물 상자 초4): 공개 컷 첫 그림이 상자 참고 그림 없이 '열린 상자'만
+    받아 리본 없는 택배 상자로 그려지고 종료 5·6컷이 따라감 → 공개 컷 그림·영상 지시에 엔딩 전과
+    같은 리본 상자가 열린 모습. 엔딩 전 컷은 그대로 닫힌 상자."""
+    from app.theme_draft import families
+    from tests.theme_draft.test_families_in_hand import gift_theme
+
+    theme = gift_theme()
+    answer = families.type_cuts(families.GIFT, 6).answer
+    opened = "same plain square gift box with a ribbon as before the reveal, now opened"
+    seen = 0
+    for scene, key in (("INTRO", "introCuts"), ("OUTRO", "outroCuts")):
+        for i in range(1, 7):
+            if not prompts.cut_shows_target(theme, scene, i):
+                continue
+            lines = " ".join(prompts.target_lines(theme, scene, i))
+            if cuts.spec(scene, i, 6).mungchi_alone:
+                assert opened not in lines
+                continue
+            video = prompts.video_prompt(theme, scene, i, theme[key][i - 1], [])
+            if (scene, i) in answer:
+                seen += 1
+                assert opened in lines and "brown shipping carton" in lines
+                assert opened in video
+            else:
+                assert "closed" in lines and opened not in lines
+                assert opened not in video
+    assert seen >= 3  # 종료 3·5·6컷 등 공개 컷
+
+
+def test_video_uses_tools_as_meant_and_review_judges_odd_actions() -> None:
+    """#779 영상 확인(2026-11-24 장난꾸러기 시작 1컷): Veo가 물뿌리개 물을 탁자·바닥에 부었고
+    영상 검토가 통과시킴 → 모든 영상 지시(안전 버전 포함)에 도구 쓰임, 검토 CONTINUITY에 행동."""
+    theme = valid_theme()
+    for safe in (False, True):
+        assert prompts.TOOL_USE in prompts.video_prompt(theme, "INTRO", 1, INTRO_CUTS[0], [], safe)
+    assert "onto plants, never onto tables, floors" in prompts.TOOL_USE
+    review = prompts.VIDEO_REVIEW_SYSTEM
+    assert (
+        review.index("CONTINUITY:")
+        < review.index("인물의 행동이 말이 되는지")
+        < review.index("MORPH:")
+    )
+
+
+def test_mungchi_hands_stay_empty_without_naming_a_prop() -> None:
+    """#779 소리 탐정 확인(2026-11-24): 지시의 "든 차림 소품(예: 돋보기)은 그대로"가 차림에 없는
+    돋보기를 불러옴 → 역할 차림에 손에 드는 물건이 없으므로 손은 비어 있다는 문장만
+    (물건 이름 없음)."""
+    theme = valid_theme()
+    for safe in (False, True):
+        text = prompts.video_prompt(theme, "OUTRO", 6, OUTRO_CUTS[5], [], safe)
+        assert prompts.MUNGCHI_EMPTY_HANDS in text
+        assert "magnifying" not in text and "already holds" not in text
+    assert "magnifying" not in prompts.video_negative(theme, "OUTRO", 6)
+
+
+def test_answer_look_asks_for_the_common_look_with_the_name() -> None:
+    """#779 소리 탐정 영상 확인(2026-11-24): 정답 모습이 "두 장 날개 물건"처럼 흔치 않아 영상에서
+    날개 수가 바뀜 → 줄거리 규칙과 칸 고쳐 쓰기 안내에 이름·흔한 모습."""
+    from app.theme_draft import families
+
+    assert families.ANSWER_LOOK_COMMON in families.SOUND.rules
+    theme = valid_theme()
+    hint = " ".join(prompts.fix_rules(theme, "answerLook"))
+    assert families.ANSWER_LOOK_COMMON in hint

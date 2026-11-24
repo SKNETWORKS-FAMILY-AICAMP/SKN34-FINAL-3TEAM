@@ -1355,6 +1355,14 @@ def place_sounds(traits: tuple[str, ...], month: int) -> list[str]:
 
 SOUND_TARGET_CUTS = frozenset({("OUTRO", 2), ("OUTRO", 3), ("OUTRO", 4)})
 
+# #779 소리 탐정 영상 확인(2026-11-24): 정답 모습을 이름 없이 "두 장의 넓고 얇은 날개가 달린
+# 물건"으로 흔치 않은 바람개비로 정해, 영상 모델이 종료 3·4·6컷에서 흔한 네 날개로 바꿈(같은 정답이
+# 컷마다 다르게 보임). 저장된 정답 모습 31개 중 이런 꼴은 이 하나
+ANSWER_LOOK_COMMON = (
+    "정답 이름을 넣고, 아이가 바로 알아볼 그 동물·물건의 흔한 모습으로 쓴다(흔치 않은 개수·모양을 "
+    "새로 정하지 않는다)."
+)
+
 SOUND = StoryType(
     code="SOUND",
     label="소리 탐정",
@@ -1420,8 +1428,8 @@ SOUND = StoryType(
         "등)을 쓰지 않는다(정답만의 값이 아니어도 단서를 앞질러 말함, 코드 검사 ANSWER_FACT). "
         "시작 이야기는 '이상한 소리'·'궁금한 소리'처럼 쓴다.\n"
         "- answerLook: 정답 동물·물건의 겉모습 한 줄(종료 그림·영상에서 같은 모습으로 그림). "
-        "반드시 "
-        "채운다(코드 검사 REQUIRED). incident는 null.\n"
+        + ANSWER_LOOK_COMMON
+        + " 반드시 채운다(코드 검사 REQUIRED). incident는 null.\n"
         "- 증거: 그 소리를 들은 사람의 목격(들은 사람의 증언도 SIGHTING), 녹음·영상·일지·메모 "
         "기록. "
         "소리는 흔적에 남지 않아 흔적 단서가 없다. 모든 단서(clue)에 '소리' 낱말을 넣어 그 소리의 "

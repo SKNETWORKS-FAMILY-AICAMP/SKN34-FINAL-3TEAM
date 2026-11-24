@@ -1109,7 +1109,9 @@ def test_video_prompt_keeps_held_outfit_props_but_blocks_grabbing() -> None:
         "never picks up, lifts, hugs, hands over or receives anything, especially 강아지 보리"
         in text
     )
-    assert "already holds in the first frame (such as a magnifying glass) stays in its hand" in text
+    # #779(2026-11-24): 손에 든 차림 소품 문장 → 손은 비어 있음(목에 건 돋보기 등은 아래 줄이 지킴)
+    assert prompts.MUNGCHI_EMPTY_HANDS in text
+    assert "items around the neck stay exactly as in the first frame" in text
     assert "moves its hands" in text and "never arms" in text  # #779 뭉치 거의 정지·손 문구
     assert "holds, hugs or hands over anything" not in text  # 예전 "아무것도 들지 않음" 문구는 없음
     assert "Mungchi grabbing or handing over objects" in VIDEO_NEGATIVE
