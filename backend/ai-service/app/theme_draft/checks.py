@@ -709,6 +709,8 @@ FIX_REASON = (
     re.compile(r"^CUT_ANSWER ((?:introCuts|outroCuts)[1-6])\.(caption) "),
     # #779 종료 6컷(엔딩)은 그 컷에 보이는 인물이 뭉치에게 고마워함(사용자 결정 2026-11-19)
     re.compile(r"^CUT_THANKS ((?:introCuts|outroCuts)[1-6])\.(caption) "),
+    # #779 답을 알던 사람이 없는 종류의 종료 3컷 '딩동댕'(4테마 확인 2026-11-24)
+    re.compile(r"^CUT_KNOWER ((?:introCuts|outroCuts)[1-6])\.(caption) "),
     re.compile(r"^REQUIRED ((?:introCuts|outroCuts)[1-6])\.(caption)$"),
     re.compile(
         r"^CLUE_EARLY (MON|TUE|WED|THU|FRI) "
@@ -3597,6 +3599,13 @@ def caption_problems(theme: Theme, scene: str, i: int) -> list[str]:
     answer = str(theme.get("answer") or "").strip()
     if (scene, i) == ("OUTRO", 1) and answer and not mentions_value(answer, text):
         bad.append(f"CUT_ANSWER {key}{i}.caption 뭉치가 정답({answer})을 말해야 함")
+    # 4테마 확인(2026-11-24): 소리 탐정에서 답을 모르던 할머니가 '딩동댕'을 함 — 답을 알던 사람의
+    # 확인 말은 줄거리 종류 규칙에 그 말이 정해진 종류(퀴즈)만, 검사는 종류 규칙 글을 그대로 따름
+    if (scene, i) == ("OUTRO", 3) and "딩동댕" in text and "딩동댕" not in story_type(theme).rules:
+        bad.append(
+            f"CUT_KNOWER {key}{i}.caption 이 종류는 답을 알던 사람이 없어 '딩동댕'을 쓰지 않음"
+            "(공개에 놀라는 말 — 예: '와! 뭉치 말대로 ○○였구나!')"
+        )
     if (scene, i) == ("OUTRO", 6) and (
         name == "뭉치" or not THANKS.search(text) or "뭉치" not in text
     ):

@@ -537,6 +537,43 @@ def test_outro_first_caption_must_say_the_answer() -> None:
     assert not any(r.startswith("CUT_ANSWER") for r in checks.caption_problems(six, "OUTRO", 1))
 
 
+def test_dingdong_only_for_types_whose_rule_has_a_knower() -> None:
+    """종료 3컷 '딩동댕'은 줄거리 종류 규칙에 답을 알던 사람의 확인 말이 정해진 종류만(4테마 확인
+    2026-11-24: 소리 탐정에서 답을 모르던 할머니가 '딩동댕'). 공통 안내에는 그 예시가 없고 검사는
+    종류 규칙 글을 그대로 따름. 종료 4컷은 다음 컷 뜻('이제 ~겠어')을 미리 말하지 않음."""
+    from app.theme_draft import families
+
+    reveal = cuts.layout(6)["OUTRO"][2]
+    assert "딩동댕! 맞았어" not in reveal.speaker
+    assert "종류 규칙에 그 말이 정해진 종류만" in reveal.speaker
+    group = cuts.layout(6)["OUTRO"][3].speaker
+    assert "앞으로 일어날 일" in group
+    # 종료 4컷은 단서와 맞는 모습을 짚고, 마무리 뜻은 5컷 몫
+    # (14테마 확인: 15쌍 중 8쌍이 같은 뜻 반복)
+    assert "단서와 맞는 모습" in group
+    # 동물이 떠나는 동작은 5컷 몫(14테마 확인: 4·5컷 둘 다 동물이 걸어감)
+    assert "떠나는 모습은 종료 5컷에서" in cuts.layout(6)["OUTRO"][3].beat
+    assert "종료 5·6컷이 할 마무리 뜻은 말하지 않음" in group
+    after = cuts.layout(6)["OUTRO"][4].speaker
+    assert "종료 4컷 자막과 같은 뜻·같은 낱말을 되풀이하지 않음" in after
+    # 정답 장소가 시작 장소와 같으면(선물 상자 현관) 이미 있는 곳으로 가자고 하지 않음
+    assert "시작 장소(introPlace)와 같으면" in cuts.layout(6)["OUTRO"][1].speaker
+    quiz = {c for c, t in families.STORY_TYPES.items() if "딩동댕" in t.rules}
+    assert {"VEHICLE", "GIFT", "SECRET_INGREDIENT"} <= quiz and "SOUND" not in quiz
+    theme = valid_theme()
+    cut = {"scene": "마당에서 할머니가 바람개비를 본다", "action": "할머니가 놀란다"}
+    six = {**theme, "introCuts": [dict(cut)] * 6, "outroCuts": [dict(cut) for _ in range(6)]}
+    six["characters"] = [{"name": "할머니"}]
+    six["outroCuts"][2]["caption"] = "할머니: 딩동댕, 바람개비야!"
+    for code, flagged in (("SOUND", True), ("VEHICLE", False)):
+        bad = checks.caption_problems({**six, "storyType": code}, "OUTRO", 3)
+        hit = any(r.startswith("CUT_KNOWER outroCuts3.caption") for r in bad)
+        assert hit is flagged, (code, bad)
+        if flagged:
+            # 그 자막 칸만 고쳐 씀
+            assert any(p.match(bad[-1]) for p in checks.FIX_REASON)
+
+
 def test_outro_ending_thanks_mungchi_and_animal_farewell_in_cut5() -> None:
     """종료 흐름(#779 사용자 결정 2026-11-19): 동물 종류는 3컷 딱 걸림(현장 포착, 아무도 안 만짐),
     5컷 덮어 두기 + 배웅, 6컷(엔딩)은 모든 종류가 같은 '뭉치에게 고마워함'(종료 6컷이 반만 바뀌어
@@ -711,7 +748,7 @@ def test_reveal_person_outside_characters_may_speak_when_in_scene() -> None:
     theme["outroCuts"][2]["caption"] = "모르는 사람: 맞아!"
     assert [r for r in checks.caption_problems(theme, "OUTRO", 3) if "CUT_SPEAKER" in r]
     # 공통 안내가 종류 규칙과 같은 말(정답을 아는 사람이 확인, 퀴즈는 그 사람에게 답을 말함)
-    assert "그 사람이 맞았다고·맞다고 확인하는 말" in cuts.spec("OUTRO", 3, 6).speaker
+    assert "종류 규칙에 그 말이 정해진 종류만" in cuts.spec("OUTRO", 3, 6).speaker
     assert "그 사람에게 답을 말하는 꼴" in cuts.spec("OUTRO", 1, 6).speaker
     assert "기분만 말하는 말" in cuts.spec("OUTRO", 4, 6).speaker
     assert "기분만 말하는 말" in cuts.spec("OUTRO", 5, 6).speaker
