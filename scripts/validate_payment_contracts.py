@@ -10,6 +10,7 @@ spec = yaml.safe_load((ROOT / "contracts/openapi/core-service.yaml").read_text(e
 artifacts = ROOT / "backend/core-service/build/generated-contracts"
 for artifact, path, method, status in [
     ("payment-products.json", "/products", "get", "200"),
+    ("payment-history.json", "/payments", "get", "200"),
     ("payment-order.json", "/orders", "post", "201"),
     ("payment-state.json", "/payments/confirm", "post", "200"),
     ("payment-subscriptions.json", "/subscriptions", "get", "200"),

@@ -3,12 +3,12 @@ import { useState } from 'react'
 import { openDownload } from '../../data/memoryBook/api.ts'
 import { useCreateMemoryBook, useMemoryBookDownload, useMemoryBookRounds } from '../../data/memoryBook/queries.ts'
 import type { Child } from '../../domain/classroom.ts'
-import { memoryBookFailure } from '../../domain/memoryBook.ts'
+import { memoryBookFailedReason, memoryBookFailure } from '../../domain/memoryBook.ts'
 import type { MemoryBookRoundItem } from '../../domain/memoryBook.ts'
 import { weekLabel } from '../../domain/retention.ts'
 
 /**
- * 학부모 리포트 화면의 추억 그림책 (docs/proposals/memory-book.md, 미도입 시험 구현).
+ * 학부모 리포트 화면의 추억 그림책 (docs/proposals/memory-book.md).
  * 아이가 받은 기념 액자 회차마다 "그림책 발급" → 만드는 중 → "받기". 발급은 학부모만(2026-11-23 결정).
  * 아이가 답 보여 주기를 꺼 두면 목록 대신 안내만 보인다(D2). 유료·한도 거절은 서버 응답을 안내로 바꿔 보인다.
  */
@@ -60,7 +60,7 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
                   </button>
                 ) : (
                   <>
-                    {book?.status === 'FAILED' && <span className="muted">지난 발급 실패</span>}
+                    {book?.status === 'FAILED' && <span className="muted">{memoryBookFailedReason(book.failureCode)}</span>}
                     {book?.status === 'EXPIRED' && <span className="muted">보관 기간 지남</span>}
                     <button type="button" disabled={create.isPending} onClick={() => void issue(round)}>그림책 발급</button>
                   </>

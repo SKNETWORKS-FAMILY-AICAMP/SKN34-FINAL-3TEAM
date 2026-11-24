@@ -968,9 +968,9 @@ erDiagram
 - 학생 삭제 확정(P09): 위 3.5.1 삭제와 같은 트랜잭션에서 `room_frame_slot`·`room_decor_spot`·`student_room_decor`(#704)·`memory_daily_usage`도 삭제
 - 방 벽지는 기존 `BACKGROUND` 슬롯 착용 아이템을 그대로 쓰므로 테이블 변경 없음
 
-### 3.5.3 추억 그림책 (제안, V57)
+### 3.5.3 추억 그림책 (V57, #966)
 
-학부모가 자녀의 추억 앨범 회차를 그림책 PDF로 발급받는 기능의 core 저장 구조([제안 문서](../proposals/memory-book.md) 8.1, [정해야 하는 것](../proposals/memory-book-decisions.md)). 도입이 확정되기 전의 시험 구현이며, 실제 DB 대조(ci-db-schema)가 통과하도록 표를 먼저 옮겼다.
+학부모가 자녀의 추억 앨범 회차를 그림책 PDF로 발급받는 기능의 core 저장 구조([제안 문서](../proposals/memory-book.md) 8.1, [결정 기록](../proposals/memory-book-decisions.md)). PR #966으로 develop에 합쳐졌고 11/24에 도입이 정해졌다(#975).
 
 ```mermaid
 erDiagram
@@ -1003,7 +1003,8 @@ erDiagram
 
 - `memory_book_job`: 회차 1개 = 작업 1행. 같은 회차를 만드는 중(`QUEUED`)인 작업은 자녀당 하나(부분 UNIQUE, 6장). 발급 1회는 `payment_premium_usage.kind = MEMORY_BOOK`(`source_id` = 그림책 ID)로 남긴다. 조회 인덱스 `ix_memory_book_job_student_created (student_id, created_at DESC)`.
 - `memory_book_download`: 받기 주소를 내줄 때마다 남기는 감사 기록. `role`은 발급 주체가 학부모로 정해진 뒤 `PARENT`만 쓰인다.
-- 학생 삭제 확정(P09): 같은 트랜잭션에서 자녀의 `memory_book_job`을 지우고 `memory_book_download`는 CASCADE로 지워진다. PDF 파일은 report가 `reports/{studentId}/` 아래와 함께 지운다.
+- 학생 삭제 확정(P09): 같은 트랜잭션에서 자녀의 `memory_book_job`을 지우고 `memory_book_download`는 CASCADE로 지워진다. PDF 파일은 report가 학생 삭제 때 `reports/{studentId}/`와 함께 `reports/memory-books/{studentId}/`도 지운다.
+- PDF 파일은 DB에 두지 않고 report `reports` 버킷의 키 규칙 `reports/memory-books/{studentId}/{bookId}/pdf`로 찾는다(#975 C3, 처음 키 `reports/{studentId}/memory-books/{bookId}/pdf`에서 옮김). S3 수명 주기 규칙(접두어 `reports/memory-books/`, 35일)이 보관 기간이 지난 파일을 지운다([infra 9.21](../report/infra.md#921-s3-수명-주기-추억-그림책-975-2026-11-24)). `expires_at`이 지난 작업은 읽을 때 `EXPIRED`로 보여 준다.
 - V57은 상품 값 `product.features.memoryBook`(무료 false·유료 true)과 `product.limits.dailyMemoryBooks = 3`도 넣는다.
 
 ### 3.6 2026-11-06 결정 변경 반영 (core_db)

@@ -174,7 +174,7 @@ class ProductEntitlementService(private val repository: PaymentRepository, priva
         else -> unavailable("PAYMENT_PRODUCT_UNAVAILABLE")
     }
     /**
-     * 추억 그림책 생성 판정·사용 예약 (docs/proposals/memory-book.md 10장, 미도입 시험 구현).
+     * 추억 그림책 생성 판정·사용 예약 (docs/proposals/memory-book.md 10장).
      * 상품 `features.memoryBook`이 꺼져 있으면 403 `PREMIUM_REQUIRED`. 값이 없으면 구독 중만 허용(`extraMissions`·`sundayTheme`과 같은 규칙),
      * boolean이 아니면 503. 구독 중이면 그 구독의 학부모 잠금 안에서 `MEMORY_BOOK` 사용을 예약한다(원천 = 그림책 ID, 환불 중 409).
      * 무료 상품에서 켠 경우는 예약 없이 허용

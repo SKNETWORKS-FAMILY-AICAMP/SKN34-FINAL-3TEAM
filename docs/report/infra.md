@@ -1838,6 +1838,119 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 - B 계정 번호와 B 복원 주체(B 루트 위임 또는 복원 역할 하나)
 - 11/25 실행 결과(스냅샷·복사 시각, 키 ARN은 적지 않고 별칭만), B 복원 결과와 A 쪽 보존 자원 정리 시점
 
+## 9.20 추억 그림책 prod 설정과 A 확인 절차 (#974, 2026-11-24)
+
+PR #966(추억 그림책 PDF 발급)이 develop에 들어갔지만 prod report-worker에 그림 받기 허용 출처가 없어, 실서버에서는 그림이 모두 빠진 PDF가 완성(READY)으로 나갈 수 있었다. 결정 E2(`docs/proposals/memory-book-decisions.md`)대로 A 계정에서 한 번 돌려 보기 전에 저장소 설정을 맞췄다. 이 정리에서 AWS는 조회도 변경도 하지 않았다.
+
+### 9.20.1 설정과 근거
+
+| 항목 | 값·상태 | 근거 |
+|---|---|---|
+| 그림 허용 출처 | `report-worker.json`에 `MEMORY_BOOK_ASSET_ORIGINS=https://sagomungchi-demo-347161580747-missions.s3.ap-northeast-2.amazonaws.com` | learning은 `ASSET_S3_BUCKET`(missions)·`S3_REGION`으로 AWS SDK v2 `S3Presigner`를 만들고 `endpointOverride`가 없다(`S3_PUBLIC_ENDPOINT_URL` 없음). 그래서 서명 URL은 virtual-hosted 방식 regional 주소 `https://<버킷>.s3.<리전>.amazonaws.com/theme-drafts/…`다. 버킷 이름에 점이 없어 경로 방식으로 바뀌지 않는다. `asset_fetcher.py`는 `scheme://host[:port]`를 소문자로 비교하므로 경로·쿼리 없이 출처만 넣는다. `scripts/tests/test_runtime_config.py`가 두 파일 값이 맞는지 본다 |
+| 클러스터 안 주소 치환 | prod에는 넣지 않음(`MEMORY_BOOK_ASSET_INTERNAL_ORIGINS` 없음) | kind의 MinIO용이다. prod는 S3에 바로 연결한다 |
+| 크기 상한 | 기본값 그대로: 그림 1장 5MiB(`MEMORY_BOOK_IMAGE_MAX_BYTES`), 1권 40MiB(`MEMORY_BOOK_TOTAL_MAX_BYTES`), 그림 1장 10초(`MEMORY_BOOK_ASSET_TIMEOUT_SECONDS`) | ai 테마 그림은 장면마다 PNG 1장이고 1권은 최대 7장(표지·월~금·엔딩)이다. 실제 크기는 9.20.3의 D6 측정으로 확인한다. 장당 2MB를 넘으면 상한이 아니라 축소(Pillow)를 더하는 것이 D6 기준이다 |
+| egress | 바꾸지 않음 | report-worker NetworkPolicy에 이미 443 → S3 대역 9개(서울 S3 prefix list 대역, report-api·scoring과 같음)가 있다. private 라우팅 테이블 2개는 S3 Gateway endpoint(`sagomungchi-demo-vpce-s3`, 기본 정책)로 가므로 NAT를 거치지 않는다(5절, #212). regional 주소라 서울 대역 안이고, global 주소(`s3.amazonaws.com`)는 쓰지 않는다. 서명 URL은 learning 역할의 `s3:GetObject`(`theme-drafts/*`)로 서명돼 report-worker에는 S3 권한이 필요 없다. DNS(53)는 chart 기본 허용 |
+| RabbitMQ | 바꾸지 않음 | 큐 `report.memorybook.generate`(재시도 3개·DLQ)·`core.memorybook.events`와 바인딩(`cmd.direct` `memorybook.generate`, `events.topic` `memorybook.completed`)은 공용 `charts/platform-data/files/rabbitmq/definitions.json`에 있고 prod도 같은 파일을 쓴다. 권한(`import-definitions.sh`): report 읽기에 `report.memorybook.generate`, topic 쓰기에 `memorybook.completed`, core 읽기에 `core.memorybook.events`. 초기화 Job 이름에 definitions 해시가 들어 있어 platform-data를 새 revision으로 동기화하면 다시 돈다 |
+| 구독·KEDA | 바꾸지 않음 | report-worker는 Pod 1개(`replicaCount: 1`, HPA·KEDA 꺼짐)가 큐 3개(삭제·리포트·그림책)를 각자 채널, `CONSUMER_PREFETCH=1`로 구독한다. 큐는 passive로만 확인하므로 **platform-data가 앱보다 먼저 동기화돼야** 한다(Argo CD wave 5 → 앱). 큐가 없으면 report-worker가 기동에 실패한다. 리포트 1건과 그림책 1권이 동시에 Chromium을 띄울 수 있다(메모리 한도 768Mi, E4) |
+| core V57 | 바꾸지 않음 | `V57__memory_book_jobs.sql`은 core-migrate 이미지에 들어 있고 digest PR의 `migration.revision`(`main-<SHA>`)으로 PreSync Job이 앱보다 먼저 돈다(9.18.3). 상품 값도 이 migration이 넣는다: `price = 0` 상품 `features.memoryBook=false`, `price > 0` 상품 `true`, 모든 상품 `limits.dailyMemoryBooks=3`. 결정 B1(유료 상품 전체)·B2(자녀당 하루 3권)와 같다. 따로 넣는 seed·상품 SQL은 없다 |
+| 기존 구독 | 그대로 동작 | V57 전에 만든 구독 스냅숏(시연 `prepare-demo-account-students.sql` 포함)에는 두 키가 없다. 이때 `features.memoryBook`은 구독 중이면 허용, `limits.dailyMemoryBooks`는 무료 상품 값(V57 뒤 3)을 쓴다(`ProductEntitlementService`). 결과는 B1·B2와 같다 |
+| B 계정 | 계정 번호 교체에 포함 | 출처에 missions 버킷 이름(계정 번호)이 들어 있다. `scripts/aws_account_switch.py`가 prod `*.json`을 바꾸므로 같이 바뀐다. 리전이 바뀌면 `s3.<리전>`과 S3 egress 대역도 바꾼다([AWS README B 런북](../../infrastructure/aws/README.md#a-계정-값-교체)) |
+
+그림이 빠지는 경우(2026-11-24 결정): `asset_fetcher.py`는 받지 못한 그림만 빈 칸으로 둔다. #974 당시에는 그림을 하나도 받지 못해도 READY로 끝났고, #975부터는 아래 "실행 중 실패"처럼 FAILED로 끝난다.
+- 설정 누락: 허용 출처가 비면 report-worker가 뜰 때 경고 로그(`MEMORY_BOOK_ASSET_ORIGINS`가 비어 있어 그림 없이 만듦)를 남긴다(#974). 같은 워커가 리포트·자녀 삭제 큐도 처리하므로 기동은 막지 않는다. 값이 맞는지는 `test_runtime_config`가 PR에서 본다.
+- 실행 중 실패(#975 반영): 그림 주소가 있는데 한 장도 받지 못하면 `memory_book/service.py`가 PDF를 만들지 않고 FAILED `ASSET_UNAVAILABLE`로 끝낸다. 사용 예약은 미사용으로 마감해 한도를 쓰지 않는다. 일부만 빠지면 그 칸만 비우고 READY다. 그래서 A·B 확인에서는 지금처럼 그림 수를 직접 센다(일부 누락은 READY로 나오므로).
+
+### 9.20.2 11/25 A 확인 절차
+
+전제: 이 설정(#974)이 들어간 main이 A에 배포돼 있다. 11/25까지 main에 없으면 이 브랜치의 `report-worker.json`으로 report-worker만 다시 배포하거나(`redeploy-app.ps1`, 비상용 Helm 경로) 그림 확인을 다음 배포 뒤로 미룬다. Argo CD가 관리하는 Deployment에 `kubectl set env`로 넣으면 다음 동기화에서 되돌아간다. 명령의 `<A>`는 A 프로필, `<ID>`는 시연 자녀·그림책 ID다. 측정값은 #974 댓글에 남긴다.
+
+| # | 단계 | 명령·방법 | 확인 |
+|---|---|---|---|
+| 1 | 설정 | 아래 명령 1 | report-worker env에 출처 1개, RabbitMQ 그림책 큐 2개에 consumer 1 |
+| 2 | V57·상품 값 | `demo-db-oneoff.k8s.yaml`로 core_db에 읽기 전용 쿼리(아래 SQL) | `flyway_schema_history` 57 `success=true`, 무료 `false`·유료 `true`, 모든 상품 `3` |
+| 3 | 발급 | 유료 시연 학부모로 웹 "리포트·AI 챗봇" → 그림책 → 액자가 있는 회차 1개 발급. 동시에 명령 2(메모리)를 돌린다 | 화면이 "만드는 중" → "받기", 작업 READY |
+| 4 | 받기 | 같은 화면 "받기"로 PDF 저장 | PDF가 열리고 9쪽 안팎 |
+| 5 | 그림 들어갔는지 | 명령 3(PDF 그림 세기)과 report-worker 로그 | 그림 수 = 그 회차 그림 수(엔딩을 봤으면 7, 아니면 6), 로그에 `그림책 그림 건너뜀` 0줄 |
+| 6 | D6 그림 크기 | 명령 4(원본 크기)와 명령 3의 가로·세로 | 장당 최대 크기. 2MB를 넘는 그림이 있으면 D6대로 축소를 더할지 정한다 |
+| 7 | E4 메모리 | 명령 2 결과의 최댓값, 재시작 수 | 최대 메모리가 한도 768Mi의 몇 %인지, `restartCount` 변화 없음·`OOMKilled` 없음 |
+
+```powershell
+# 명령 1: 설정·큐·구독
+kubectl -n app get deploy report-worker -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="MEMORY_BOOK_ASSET_ORIGINS")].value}'
+kubectl -n platform exec rabbitmq-0 -- rabbitmqctl list_queues name consumers messages | Select-String memorybook
+
+# 명령 2: 발급 동안 report-worker 메모리(2초 간격, 발급이 끝나면 Ctrl+C) 뒤 재시작 수
+while ($true) { kubectl -n app top pod -l app.kubernetes.io/name=report-worker --containers --no-headers; Start-Sleep 2 }
+kubectl -n app get pod -l app.kubernetes.io/name=report-worker -o jsonpath='{range .items[*]}{.metadata.name} {.status.containerStatuses[0].restartCount} {.status.containerStatuses[0].lastState.terminated.reason}{"\n"}{end}'
+kubectl -n app logs deploy/report-worker --since=30m | Select-String '그림책 그림 건너뜀'
+
+# 명령 4: 원본 테마 그림 크기(큰 순 5개, 2MB 초과 수)
+aws s3api list-objects-v2 --bucket sagomungchi-demo-347161580747-missions --prefix theme-drafts/ --profile <A> --query 'reverse(sort_by(Contents[?ends_with(Key, `.png`)], &Size))[:5].[Key, Size]' --output table
+aws s3api list-objects-v2 --bucket sagomungchi-demo-347161580747-missions --prefix theme-drafts/ --profile <A> --query 'length(Contents[?ends_with(Key, `.png`) && Size > `2097152`])'
+```
+
+명령 3은 작업자 PC의 Python 가상 환경에 `pypdf`를 설치해 받은 PDF 경로를 넘긴다. PDF 안의 그림(Form XObject 안쪽 포함)마다 쪽·가로·세로·압축 크기를 출력한다.
+
+```python
+import sys
+from pypdf import PdfReader
+
+def images(resources, seen):
+    for ref in (resources or {}).get("/XObject", {}).values():
+        obj = ref.get_object()
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        if obj.get("/Subtype") == "/Image":
+            yield obj
+        elif obj.get("/Subtype") == "/Form":
+            yield from images(obj.get("/Resources"), seen)
+
+reader, total = PdfReader(sys.argv[1]), 0
+for number, page in enumerate(reader.pages, 1):
+    for obj in images(page.get("/Resources"), set()):
+        total += 1
+        print(number, obj["/Width"], obj["/Height"], obj.get("/Filter"), len(obj._data))
+print("pages", len(reader.pages), "images", total)
+```
+
+```sql
+SELECT version, success FROM flyway_schema_history WHERE version = '57';
+SELECT code, price, active, features -> 'memoryBook' AS memory_book, limits -> 'dailyMemoryBooks' AS daily FROM product ORDER BY price;
+SELECT status, failure_code, size_bytes, created_at, completed_at FROM memory_book_job ORDER BY created_at DESC LIMIT 3;
+```
+
+- 마지막 SQL의 칸 이름은 V57 기준이다. 다르면 `\d memory_book_job`으로 맞춘다.
+- B(시연)에서는 같은 절차를 B 런북 경로 확인 뒤 한 번 더 한다(#927 B 항목).
+
+## 9.21 S3 수명 주기: 추억 그림책 (#975, 2026-11-24)
+
+2026-11-24 결정 C3([결정 기록](../proposals/memory-book-decisions.md)): 보관 기간(30일)이 지난 추억 그림책 PDF는 S3 수명 주기 규칙으로 지운다. 이 절은 규칙 정의만 다룬다. prod report-worker 설정과 A 계정 확인 절차는 #974다.
+
+### 9.21.1 확인한 것
+
+- `reports` 버킷(`infrastructure/aws/demo-stack.json` `buckets`)에는 수명 주기 규칙이 없었다. `demo_stack.py`는 버킷의 버전 관리·공개 차단·기본 암호화만 만들고 대조했다(AWS 계정은 조회하지 않고 코드와 정의 파일만 확인).
+- 버킷은 **버전 관리가 켜져 있다**. 현재 버전만 만료하면 삭제 표시만 생기고 이전 버전이 남으므로 이전 버전 만료와 남은 삭제 표시 정리도 함께 둔다.
+- S3 수명 주기 규칙은 대상을 **접두어 하나(와일드카드 없음)나 객체 태그**로만 고른다. 결정 문구의 `reports/*/memory-books/`처럼 학생 ID가 가운데 있는 키는 고를 수 없다.
+
+### 9.21.2 결정과 변경
+
+- 그림책 키를 `reports/{studentId}/memory-books/{bookId}/pdf`에서 `reports/memory-books/{studentId}/{bookId}/pdf`로 옮겼다(`backend/report-service/app/clients/storage.py`). report IAM(`report-s3-role`)은 `reports/*`라 권한을 바꾸지 않는다(E1 "IAM 변경 없음" 유지). 객체 태그 방식은 `s3:PutObjectTagging` 권한 추가와 B 계정 IAM 반영이 필요해 쓰지 않았다.
+- 학생 삭제(P09)는 그대로 `delete_prefix("reports/{studentId}/")` 한 번이고, 저장소가 `reports/memory-books/{studentId}/`도 함께 지운다. 허용 모양은 학생 전체, 리포트 판, 그림책 한 권(`reports/memory-books/{s}/{b}/`)뿐이다.
+- prod에는 아직 그림책 파일이 없어 옮길 파일은 없다. 로컬에서 옛 키로 만든 파일은 받기가 410(보관 기간 지남)이 되고, 학생 삭제의 `reports/{studentId}/` 아래라 그대로 지워진다.
+
+### 9.21.3 규칙 정의 (`demo-stack.json` `bucketLifecycle`, apply 안 함)
+
+| ID | 대상 | 동작 |
+|---|---|---|
+| `memory-book-expire` | 접두어 `reports/memory-books/` | 현재 버전 35일 뒤 만료(30일 보관 + 여유 5일, core 만료 판정보다 늦게), 이전 버전 1일 뒤 삭제 |
+| `memory-book-delete-markers` | 접두어 `reports/memory-books/` | 남은 삭제 표시 정리(`ExpiredObjectDeleteMarker`) |
+
+- 여유 5일: core는 `expires_at`(발급 + 30일)으로 받기를 막고, S3는 객체 생성일부터 일 단위로 세어 자정(UTC) 기준으로 지운다. 파일은 발급 직후 만들어지므로 35일이면 core 만료 뒤에만 지워진다.
+- `demo_stack.py plan`은 정의와 실제 규칙을 비교해 다르면 DIFF로 보여 준다. `apply`는 **규칙이 하나도 없는 버킷에만** 이 정의를 넣는다. `put-bucket-lifecycle-configuration`은 버킷의 규칙 전체를 바꾸므로, 다른 규칙이 이미 있으면 덮어쓰지 않고 DIFF로 남겨 사람이 합친다.
+- 이 PR에서는 AWS에 적용하지 않았다. 적용은 #974의 A 계정 확인 일정에서 `plan`으로 차이를 본 뒤 `apply --confirm-account`로 한다.
+- 시험: `scripts/tests/test_aws_demo_stack.py`(정의가 그림책 접두어만 고름·35일·이전 버전·삭제 표시, 빈 버킷에만 넣고 다른 규칙은 덮지 않음), report `tests/test_memory_book_generation.py`(새 키 모양, 한 권·학생 전체 삭제, 위험한 접두어 거부).
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)

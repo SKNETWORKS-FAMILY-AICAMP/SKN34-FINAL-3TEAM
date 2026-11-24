@@ -1,7 +1,7 @@
-# 추억 그림책 PDF 설계 초안 (미도입 제안)
+# 추억 그림책 PDF 설계와 구현 기록
 
-- 상태: **제안 단계**. 공식 이슈 없음. 원격 브랜치 `feature/memory-book`에서만 시험 구현하고, 끝까지 동작하는 것을 확인한 뒤 도입 여부를 정한다.
-- 영향 범위: develop·main·실서버에 반영하지 않는다(11/24 develop→main 릴리스, 11/25 A 계정, 11/26~28 B 계정 일정과 분리). `docs/design/`은 고치지 않는다(도입이 정해지면 그때 api-spec 등에 옮긴다). 예외: Draft PR #966의 ci-db-schema(실제 DB와 ERD 대조)가 통과하도록 `erd.md` 3.5.3·6장에 그림책 테이블 2개와 `MEMORY_BOOK` 값만 먼저 넣었다(11/23). `contracts/openapi`·RabbitMQ 정의·저장소 계약 시험은 코드와 어긋나면 CI가 실패하므로 시험 구현 단계(14.2·14.3)에서 이 브랜치 안에서만 함께 고쳤다.
+- 상태: **도입 결정(2026-11-24)**. 11/23 `feature/memory-book`에서 시험 구현한 것을 PR #966으로 `develop`에 합쳤고(이슈 #969), 11/24에 도입과 12/7 최종 시연 공개가 정해졌다. 결정 25개의 현재 상태는 [memory-book-decisions.md](memory-book-decisions.md)가 기준이다.
+- 영향 범위: core·learning·report·web 코드와 V57 migration, RabbitMQ 큐 정의는 develop에 있다. 운영(prod) 설정·A 계정 확인은 #974, core 공개 API 계약·`docs/design/` 반영·화면 문구·e2e 마무리는 #975에서 했다. 아래 1~14장은 시험 구현 당시 기록이라 "브랜치에서만", "develop에 반영하지 않음" 같은 표현은 그때 상황이다.
 - 결정 반영(2026-11-23, 동섭): **발급은 학부모만**(D1 변경, 학생 화면에는 그림책 칸 없음, 14.7). **원문을 공개한 학생(`parentSharingEnabled = true`)에 한해서만 제공**한다(D2). 그 밖의 열린 결정은 모두 권장안대로 시험 구현하고, 결과를 보고 다시 판단한다. 그래서 그림책 판은 원문 포함 판 하나뿐이다(원문 제외 판 없음).
 - 표기: **[확인]** 은 2026-11-23 `origin/develop`(df81a8c6) 코드·문서에서 직접 본 사실, **[추정]** 은 코드로 끝까지 확인하지 못했거나 설계상 가정인 것.
 
@@ -341,7 +341,7 @@ A4 **가로**(297×210mm, 여백 위아래 12mm·좌우 14mm). 회차 1개 기�
 | 7. 이야기의 끝 | 왼쪽: 종료 그림. 오른쪽 대화: "이야기"(`outro`) → 뭉치 "큰 질문의 답은 「…」였어!" | 이 쪽 없음. "아직 이 이야기의 끝을 보지 못했어요" 한 줄이 저녁 질문 쪽 위에 들어감 |
 | 8. 오늘 저녁 질문 | 큰 질문으로 만든 고정 문장(D9), "사고뭉치 추억 그림책" | 7쪽 |
 
-- 재게시로 문제가 바뀌어 그 날 시도 기록을 찾지 못한 요일은 대화 칸에 "이 날 문제는 나중에 바뀌어서 남은 기록이 없어요"를 싣는다(문구는 미확정, 17.3).
+- 재게시로 문제가 바뀌어 그 날 시도 기록을 찾지 못한 요일은 대화 칸에 "이 날 문제는 그 뒤에 새 문제로 바뀌어서, 아이가 그때 쓴 답을 함께 싣지 못했어요"를 싣는다(11/24 결정 D3로 다듬음, 처음 문구는 "이 날 문제는 나중에 바뀌어서 남은 기록이 없어요").
 - 쪽 번호는 "요일·끝·저녁 질문은 각자 새 쪽에서 시작"이라는 규칙으로 계산한다(14.12). 한 날 대화가 한 쪽을 넘으면 뒤 번호가 밀리는 한계가 있다.
 - 구현 위치: `backend/report-service/app/rendering/memory_book.py`(화면 값·목차), `app/rendering/templates/memory_book.html`(서식), `scripts/memory_book_sample.py`(예시 PDF 만들기), 예시 결과 `frontend/web/public/demo/memory-book-sample.pdf`.
 
@@ -362,7 +362,7 @@ A4 **가로**(297×210mm, 여백 위아래 12mm·좌우 14mm). 회차 1개 기�
 | 실패 | 처리 |
 |---|---|
 | learning 조회 실패·시간 초과 | 기존 report 재시도(1·5·15분, 3회) 뒤 `FAILED` `LEARNING_UNAVAILABLE` |
-| 그림 하나 받기 실패·형식·크기 초과 | 그 칸만 "그림 없음" 무늬로 두고 계속(실패로 보지 않음). 로그에 장면 이름만 |
+| 그림 하나 받기 실패·형식·크기 초과 | 그 칸만 "그림 없음" 무늬로 두고 계속(실패로 보지 않음). 로그에 장면 이름만. 단 그림 주소가 있는데 한 장도 받지 못하면 `FAILED` `ASSET_UNAVAILABLE`(11/24 결정, #975, 사용 예약 미사용) |
 | 렌더링 실패 | 재시도 뒤 `FAILED` `RENDER_FAILED`. 올린 일부 파일은 `memory-books/{bookId}/` prefix 삭제(기존 `_render_and_store`와 같은 정리) |
 | 생성 중 학생 삭제 시작 | report 삭제 잠금(`acquire_student`)을 같이 잡아 삭제가 우선. 작업은 `FAILED` `STUDENT_DELETED` |
 | 완료 이벤트 유실 | core 주기 작업이 오래된 `QUEUED`·`RUNNING`(예: 30분)을 report 파일 존재로 확인해 `READY`로 맞추거나 재발행(리포트 복구 #132 방식 축소판) |
@@ -489,8 +489,9 @@ uv run python -m scripts.memory_book_sample --out build/memory-book
 - 결과 PDF: 9쪽, 그림 7장(표지·월~금·엔딩), 약 1.5MB. 장면 그림은 learning이 MinIO 공개 주소(127.0.0.1)로 서명한 URL을 report-worker가 클러스터 안 MinIO로 받되 Host는 원래 값으로 보내 서명이 맞았다(14.3의 로컬 설정이 실제로 동작). core에는 작업 READY·결제 사용 `MEMORY_BOOK` USED·내려받기 감사 기록이 남았다.
 - 확인 중 고친 점: 시드 SQL에서 같은 문장으로 넣은 시도 행을 다른 CTE가 표에서 다시 읽어 0건이 되던 문제(같은 문장 안에서는 새 행이 보이지 않음) → CTE 결과로 잇게 고침. 학생 기기 등록 뒤 학부모 화면이 기기·PIN에 있어 리포트 화면으로 이동하도록 고침. 서비스 코드는 고치지 않았다.
 - 16장 3번 추정 확인: 실제 크기 그림(JPEG 7장)으로 PDF 약 1.4~1.5MB, 렌더링은 학생이 누른 뒤 몇 초 안에 끝났다(로컬 Docker). 그림 축소(D8)는 지금 크기로는 필요 없어 보인다.
-- 원격 CI(11/23 Draft PR #966): 공용 E2E 스택에는 아래 덮어쓰기 설정(learning 그림 버킷, report-worker 그림 받기 주소, MinIO 계정 환경 변수)이 없어 이 시험이 그림 올리기에서 403으로 실패했다. 그래서 `E2E_MEMORY_BOOK=1`일 때만 돌게 했고, **원격 CI에서는 건너뛴다**. 도입하면 `compose.e2e.yaml`에 이 설정을 넣고 건너뛰기를 없앤다.
-- 다시 돌리는 방법(저장소 루트, 덮어쓰기 파일은 아래 내용을 임시 파일로 두고 `-f`로 더한다. 시험을 돌릴 때 `E2E_MEMORY_BOOK=1`과 `MINIO_ROOT_USER`·`MINIO_ROOT_PASSWORD`를 준다):
+- 원격 CI(11/23 Draft PR #966): 공용 E2E 스택에는 아래 덮어쓰기 설정(learning 그림 버킷, report-worker 그림 받기 주소, MinIO 계정 환경 변수)이 없어 이 시험이 그림 올리기에서 403으로 실패했다. 그래서 그때는 `E2E_MEMORY_BOOK=1`일 때만 돌게 했다.
+- **#975(11/24)**: 이 설정을 `compose.e2e.yaml`(learning `ASSET_S3_BUCKET`·`S3_PUBLIC_ENDPOINT_URL`·MinIO 자격 증명, report-worker `MEMORY_BOOK_ASSET_ORIGINS`·`MEMORY_BOOK_ASSET_INTERNAL_ORIGINS`)에 넣고 건너뛰기를 없앴다. MinIO 계정은 셸에 없으면 `infrastructure/stubs/e2e.env`에서 읽는다. 이제 공용 E2E(`.github/workflows/e2e.yml`)에서 다른 시험과 함께 돈다. 아래 덮어쓰기는 포트를 바꿔 다른 스택과 같이 띄울 때만 쓴다.
+- 포트를 바꿔 따로 돌리는 방법(11/23 기록, 저장소 루트, 덮어쓰기 파일은 아래 내용을 임시 파일로 두고 `-f`로 더한다):
 
 ```powershell
 docker compose -p memorybook-e2e --env-file infrastructure/stubs/e2e.env -f compose.yaml -f compose.minio.yaml -f compose.e2e.yaml -f memorybook-e2e.override.yaml up -d --build --wait core-service learning-service report-api report-worker
@@ -587,11 +588,9 @@ cd frontend/web; Get-Content ../../infrastructure/stubs/e2e.env | Where-Object {
 - 한계(추정): 한 날 대화가 한 쪽(약 186mm)을 넘을 만큼 길면 그 장면이 두 쪽이 되어 뒤 번호가 하나씩 밀린다. 시험 표본·예시에서는 생기지 않았다. 필요하면 대화 글씨를 줄이거나 렌더 뒤 쪽 수를 확인하는 단계를 더한다.
 - 시험: 목차 번호가 실제 PDF 쪽과 맞는지(엔딩 본 회차 8쪽·엔딩 전 7쪽) 확인. report 그림책 시험 50개 통과.
 
-## 15. 열린 결정 (동섭이 정할 것)
+## 15. 설계 당시 열린 결정 (11/23)
 
-11/23: D2는 위처럼 결정했고, 나머지는 권장안대로 시험 구현한 뒤 결과를 보고 다시 판단한다.
-
-팀장·리뷰어가 볼 수 있게 정해야 하는 것만 따로 정리한 문서: [memory-book-decisions.md](memory-book-decisions.md) (서식·운영 쪽에서 새로 생긴 결정 포함).
+11/23 설계 때 쓴 표다. 번호(D1~D13)는 [memory-book-decisions.md](memory-book-decisions.md)의 번호(A1~E5)와 다르다. **11/24 결정과 팀장 확인 대기 상태는 그 문서가 기준이고**, 아래 표의 "권장안"은 기록으로 남긴다. 대응: D3 → B3, D4 → B1·B2, D5 → C2, D6 → C1, D7 → C5, D8 → D6, D9 → D4, D10 → C6, D11 → E1, D13 → A2.
 
 | # | 결정 | 권장안 | 이유 |
 |---|---|---|---|
@@ -607,7 +606,7 @@ cd frontend/web; Get-Content ../../infrastructure/stubs/e2e.env | Where-Object {
 | D10 | 감사 기록 위치 | 새 `memory_book_download` 행(학생·요청자·판·시각) | 리포트 열람 기록은 리포트 ID·revision에 묶여 있어 섞으면 리포트 집계가 흐려짐 |
 | D11 | 그림 가져오기 방식 | learning presigned URL → report가 받아 `data:` URI | IAM·B 계정 런북을 바꾸지 않음. 대안(report IAM에 missions 읽기 추가)은 호출이 단순하지만 계정 전환 일정과 겹침 |
 | D12 | 1차 시험 범위 | 14장 1단계(템플릿 + 고정 JSON PDF)만 먼저 만들고 결과를 본 뒤 계속 여부 결정 | 12/7 시연 준비와 겹치는 시기라 끝까지 만들기 전에 결과물 품질로 먼저 판단 |
-| D13 | 도입 시 시연(12/7) 포함 여부 | 포함하지 않음(시연 뒤 판단) | 11/24 릴리스·A·B 계정 일정 뒤에 core·report migration과 새 큐가 들어가면 시연 위험이 커짐 |
+| D13 | 도입 시 시연(12/7) 포함 여부 | **결정(11/24): 12/7 최종 시연에서 보여 줌**(결정 문서 A2). 처음 권장안은 "포함하지 않음(시연 뒤 판단)"이었다 | PR #966이 11/23 develop에 합쳐져 migration(V57)·큐는 이미 들어갔다. 시연 전 운영 반영과 A 계정 확인은 #974 |
 
 ## 16. 추정으로 남은 부분 (구현 전 확인할 것)
 
@@ -619,11 +618,11 @@ cd frontend/web; Get-Content ../../infrastructure/stubs/e2e.env | Where-Object {
 6. learning 새 조립 쿼리의 실행 계획(인덱스 충분 여부).
 7. 기존 렌더러에 한글 글꼴이 모든 문자(이모지 포함 아이 답변)를 그리는지.
 
-## 17. 도입할 때 프로젝트에서 고쳐야 할 것 (2026-11-23 분석)
+## 17. 도입 뒤 고친 것과 남은 것 (2026-11-24)
 
-기준: `feature/memory-book`(02f9d173)과 `origin/develop`. 브랜치는 develop보다 18커밋 앞·15커밋 뒤이고, 미리 합쳐 보면(`git merge-tree`) **충돌 없이 합쳐진다** **[확인]**. core migration 번호 V57은 develop에서 아직 비어 있다(develop 최신 V56) **[확인]**. 다른 PR이 먼저 V57을 쓰면 번호를 올린다.
+11/23에 쓴 "도입할 때 고쳐야 할 것" 분석은 PR #966 병합(11/23)과 11/24 결정으로 아래처럼 정리됐다. 병합 전 분석(브랜치가 develop보다 몇 커밋 앞섰는지, V57 번호가 비어 있는지)은 병합으로 끝났다.
 
-### 17.1 이미 브랜치에 있는 것 (합치면 됨)
+### 17.1 develop에 있는 것 (PR #966)
 
 | 영역 | 내용 |
 |---|---|
@@ -634,24 +633,20 @@ cd frontend/web; Get-Content ../../infrastructure/stubs/e2e.env | Where-Object {
 | 큐·환경 | RabbitMQ 큐 정의·권한, `environments/local`의 core(v57)·report-worker 설정 |
 | 계약 | `contracts/openapi/learning-service.yaml`·`report-service.yaml`, 저장소 계약 시험 개수 |
 
-### 17.2 아직 고치지 않은 것 (도입하려면 필요)
+### 17.2 #975에서 고친 것 (11/24)
 
-1. **설계 문서(`docs/design/`)**: `erd.md`만 CI 때문에 먼저 반영했다(3.5.3, 6장). 나머지는 손대지 않았다. `api-spec.md`(공개 4개·내부 API), `architecture.md`(새 큐, core→learning·report 호출), `sequence-diagram.md`(6.1), `functional-spec.md`·`user-flow.md`·`usecase.md`(학부모 발급 흐름). `class-diagram.md`·`state-diagram.md`는 그림책 작업 상태를 넣을지 판단.
-2. **core 공개 API 계약**: `contracts/openapi/core-service.yaml`에 `/children/{childId}/memory-books…` 4개가 없다 **[확인]**.
-3. **운영(prod) 환경**: `infrastructure/gitops/environments/prod/`에 그림책 설정이 없다 **[확인]**. report-worker의 그림 받기 허용 주소(`MEMORY_BOOK_ASSET_ORIGINS` 등), 새 큐 구독, core migration 판 번호. prod는 MinIO가 아니라 S3라 주소 값이 local과 다르고, 실제 AWS에서는 돌려 보지 않았다 **[추정: 값만 바꾸면 됨]**.
-4. **요금제 안내**: 상품 설명·요금제 화면에 그림책을 넣을지(D4와 함께).
-5. **PR 나누기**: 이 브랜치는 시험용으로 커밋이 쌓여 있다. PR 하나에 커밋 하나 규칙에 맞추려면 계약·설계 문서 → learning → report → core(migration) → web → 운영 환경 순서로 나누는 것을 권한다. 공식 이슈도 아직 없다.
+1. **결정 기록**: [memory-book-decisions.md](memory-book-decisions.md)에 11/24 결정 13개, 팀장 확인 대기 9개(권장: 지금 구현 유지), 측정 뒤 결정 3개(D6·E3·E4)를 적었다. "develop에 합치지 않음" 전제와 A1의 "폐기면 브랜치만 지움" 설명, 15장 D13을 고쳤다.
+2. **core 공개 API 계약**: `contracts/openapi/core-service.yaml`에 `MemoryBook` 태그 4개(회차 목록·발급·발급 목록·받기 주소)와 스키마를 넣었다. `scripts/tests/test_memory_book_contract.py`가 controller 경로, 응답 data class 칸, 상태 값, 공개 오류 코드, web 호출 경로와 대조한다.
+3. **설계 문서**: `docs/design/` api-spec(2.5.1·4.1.4·4.4), architecture, sequence-diagram, functional-spec(FN-RPT-18), user-flow, usecase(UC-37)를 갱신했다. ERD 3.5.3은 #966에서 먼저 반영돼 있다.
+4. **화면·문구**: 요금제 화면의 유료 상품 설명과 이용 안내에 "추억 그림책"을 넣었다(B4). 문제가 바뀐 날의 안내 문구를 다듬었다(D3). 코드·화면 주석의 "미도입 시험 구현" 문구를 지웠다. 단, 이미 적용된 migration `V57__memory_book_jobs.sql`의 첫 줄 주석은 Flyway checksum이 바뀌므로 그대로 둔다.
+5. **S3 수명 주기(C3)**: `reports` 버킷에 규칙이 없음을 확인하고 정의를 넣었다(apply 안 함, [infra 기록](../report/infra.md#921-s3-수명-주기-추억-그림책-975-2026-11-24)). S3 규칙은 접두어 하나(와일드카드 없음)나 객체 태그로만 대상을 고르므로 결정 문구의 `reports/*/memory-books/`는 그대로 쓸 수 없었다. 그래서 그림책 키를 `reports/{studentId}/memory-books/{bookId}/pdf`에서 **`reports/memory-books/{studentId}/{bookId}/pdf`**로 옮기고(IAM `reports/*` 범위 안이라 권한 변경 없음), 학생 삭제의 `reports/{studentId}/` 삭제가 `reports/memory-books/{studentId}/`도 함께 지우게 했다. 이 문서 6~14장의 옛 키 표기는 당시 기록이다. 운영에는 아직 그림책 파일이 없어 옮길 파일은 없다.
+6. **e2e**: `compose.e2e.yaml`에 그림책 설정을 넣고 `memory-book.spec.ts`의 `E2E_MEMORY_BOOK` 건너뛰기를 없앴다(14.6).
+7. **그림 0장 실패**(11/24 동섭 결정): 그림 주소가 있는데 한 장도 받지 못하면 report가 PDF를 만들지 않고 `FAILED` `ASSET_UNAVAILABLE`로 알린다. core는 사용 예약을 미사용으로 마감해 하루 한도를 쓰지 않고, web은 "그림을 불러오지 못해 만들지 못했습니다"로 안내한다. 일부만 빠지면 빈 칸으로 완성, 주소가 원래 없으면 완성. 큐 재시도는 하지 않는다(학부모가 다시 발급할 수 있고 한도를 쓰지 않음).
+8. **E3 확인**: 합성 긴 답으로 쪽 넘침을 확인했다(결정 문서 4장). 한 날 답이 약 500자(되묻기가 있으면 합 400자)를 넘으면 목차 번호가 밀린다.
 
-### 17.3 정해야 하는 것
+### 17.3 남은 것
 
-- 15장의 D3~D13(권장안대로 만들어 둔 상태). 바뀌면 고칠 것이 큰 것: **D13**(12/7 시연 포함 여부), **D5·D6**(보관 30일·구독 종료 뒤 받기), **D4**(상품 값·한도), **D7**(개별 삭제 버튼).
-- "이 날 문제는 나중에 바뀌어서 남은 기록이 없어요" 문구(동섭 확인 대기).
-- 세로판(14.10)으로 되돌릴 일은 없는지(지금은 가로판 14.11~14.12).
-
-### 17.4 확인이 덜 된 것
-
-16장에 더해, 가로판에서 새로 생긴 것:
-
-1. 한 날 대화가 한 쪽(약 186mm)을 넘으면 목차 쪽 번호가 밀린다(14.12). 긴 답·여러 번 보완한 날의 실제 길이로 확인 필요.
-2. 실제 ai 테마 초안 그림의 해상도·비율. 그림 칸이 가로 약 167mm×세로 170mm(거의 정사각)라 가로로 긴 그림은 좌우가 잘린다(`object-fit: cover`).
-3. PDF 한 권마다 Chromium을 띄운다. 여러 명이 동시에 발급할 때 report-worker 메모리·처리 시간은 재지 않았다.
+- **#974**: prod report-worker 그림 받기 주소·큐 구독·core migration 판 번호, A 계정 확인(E2), D6·E3·E4 측정, C3 규칙 적용.
+- 팀장 확인 9개(B3·B5·C5·C6·D2·D4·D5·E1·E5).
+- `class-diagram.md`·`state-diagram.md`에 그림책 작업 상태(QUEUED → READY/FAILED, 읽을 때 EXPIRED)를 넣을지는 아직 판단하지 않았다.
+- 14.4의 단순화(다시 풀기 뒤 새로 만들려면 만료를 기다려야 함, 오래 QUEUED인 작업 복구 없음)는 그대로다.

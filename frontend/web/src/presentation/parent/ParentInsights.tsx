@@ -57,7 +57,7 @@ export function ParentInsights({ child, scope, canReadOriginals, onScope, period
     <div className="parent-insights-content">
     <div className="parent-insights-report">
       <div className="parent-report-workspace">
-      <ParentReports child={child} highlight={highlight} revealToken={revealToken} onReportChange={clearHighlight}
+      <ParentReports child={child} canReadOriginals={canReadOriginals} highlight={highlight} revealToken={revealToken} onReportChange={clearHighlight}
         onAskReport={value => { clearHighlight(); setReport(value); requestAnimationFrame(() => document.getElementById('parent-ai-conversation')?.scrollIntoView({block:'start',behavior:'smooth'})) }} />
       </div>
     </div>

@@ -27,7 +27,7 @@ env:
   - {name: S3_BUCKET, value: sagomungchi-local-reports}
   - {name: S3_REGION, value: ap-northeast-2}
   - {name: CONSUMER_PREFETCH, value: "1"}
-  # 추억 그림책 (docs/proposals/memory-book.md, 미도입 시험 구현): learning이 브라우저용 MinIO 주소로
+  # 추억 그림책 (docs/proposals/memory-book.md): learning이 브라우저용 MinIO 주소로
   # 서명한 그림을 클러스터 안 MinIO로 받되 Host는 원래 값으로 보낸다
   - {name: MEMORY_BOOK_ASSET_ORIGINS, value: "http://127.0.0.1:19000"}
   - {name: MEMORY_BOOK_ASSET_INTERNAL_ORIGINS, value: "http://127.0.0.1:19000=http://minio.platform.svc.cluster.local:9000"}

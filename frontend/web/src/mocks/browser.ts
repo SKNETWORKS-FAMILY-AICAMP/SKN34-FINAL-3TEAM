@@ -71,7 +71,7 @@ export function installMockEvents() {
   )
 }
 export async function startMockWorker() {
-  // 추억 그림책 시연(docs/proposals/memory-book.md, 미도입 시험 구현): ?memoryBookDemo=1로 열면 이 탭에서 유료·원문 공개로 본다
+  // 추억 그림책 시연(docs/proposals/memory-book.md): ?memoryBookDemo=1로 열면 이 탭에서 유료·원문 공개로 본다
   if (new URLSearchParams(location.search).get('memoryBookDemo') === '1') sessionStorage.setItem(MOCK_MEMORY_BOOK_DEMO_KEY, '1')
   const reportDemo = await import('./fixtures/structuredReportDemo.ts')
   if (reportDemo.structuredReportDemoRequested()) reportDemo.rememberStructuredReportDemo()

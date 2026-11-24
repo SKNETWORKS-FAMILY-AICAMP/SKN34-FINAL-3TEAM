@@ -11,7 +11,9 @@ import { resetRetention } from '../src/mocks/fixtures/retention.ts'
 import { saveSharing } from '../src/mocks/fixtures/sharing.ts'
 import { setMockSubscription } from '../src/mocks/fixtures/payments.ts'
 import { ApiError } from '../src/data/apiClient.ts'
+import { memoryBookLabel } from '../src/domain/payment.ts'
 import {
+  memoryBookFailedReason,
   memoryBookFailure,
   memoryBookPolling,
   readMemoryBook,
@@ -20,7 +22,7 @@ import {
   readMemoryBookRoundPage,
 } from '../src/domain/memoryBook.ts'
 
-// 추억 그림책 (docs/proposals/memory-book.md, 미도입 시험 구현): 학부모만 발급. 응답 읽기·오류 문구와 목업 계약. 가상 값만 쓴다.
+// 추억 그림책 (docs/proposals/memory-book.md): 학부모만 발급. 응답 읽기·오류 문구와 목업 계약. 가상 값만 쓴다.
 
 const book = (over: Record<string, unknown> = {}) => ({
   bookId: 'b1', status: 'READY', failureCode: null, rounds: [{ themeId: 't1', weekStart: '2026-11-02' }],
@@ -136,4 +138,19 @@ test('목업: 무료 403, 비공개 403, 미보유 404, 회차 검사 400, 학�
   storage.set(MOCK_MEMORY_BOOK_SCENARIO_KEY, 'FAIL')
   assert.equal((await call(`/children/${childId}/memory-books`, { rounds: [target] })).status, 202)
   assert.notEqual((await call('/students/me/memory-books', { rounds: [target] })).status, 202)
+})
+
+test('요금제 상품 설명: 유료 상품에 추억 그림책과 하루 권 수를 붙이고, 끈 상품·무료에는 붙이지 않는다(B4)', () => {
+  assert.equal(memoryBookLabel({ price: 14900, features: { memoryBook: true }, limits: { dailyMemoryBooks: 3 } }), ' · 추억 그림책 하루 3권')
+  assert.equal(memoryBookLabel({ price: 14900, features: {}, limits: {} }), ' · 추억 그림책')
+  assert.equal(memoryBookLabel({ price: 14900, features: { memoryBook: false }, limits: { dailyMemoryBooks: 3 } }), '')
+  assert.equal(memoryBookLabel({ price: 0, features: {}, limits: { dailyMemoryBooks: 3 } }), '')
+  assert.equal(memoryBookLabel({ price: 14900, features: { memoryBook: true }, limits: { dailyMemoryBooks: 0 } }), '')
+  assert.equal(memoryBookLabel({ price: 14900, features: { memoryBook: 'yes' }, limits: {} }), '')
+})
+
+test('실패한 그림책 이유: 그림을 한 장도 받지 못한 실패는 따로 안내한다(#975)', () => {
+  assert.equal(memoryBookFailedReason('ASSET_UNAVAILABLE'), '그림을 불러오지 못해 만들지 못했습니다. 다시 발급해 주세요.')
+  assert.equal(memoryBookFailedReason('INVALID_ROUND'), '지난 발급 실패')
+  assert.equal(memoryBookFailedReason(null), '지난 발급 실패')
 })

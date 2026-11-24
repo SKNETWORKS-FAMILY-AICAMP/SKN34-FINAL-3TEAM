@@ -25,7 +25,7 @@ TRACEPARENT = "traceparent"
 CALLER_PATHS: dict[str, tuple[str, ...]] = {
     "core": (
         r"/internal/(reports|report-jobs)(/.*)?",
-        # 추억 그림책 파일 주소 (docs/proposals/memory-book.md, 미도입 시험 구현)
+        # 추억 그림책 파일 주소 (docs/proposals/memory-book.md)
         r"/internal/students/[0-9a-fA-F-]{36}/memory-books/[0-9a-fA-F-]{36}/files/pdf",
     ),
 }

@@ -21,7 +21,7 @@ sealed interface MemoryBookFileResult {
 }
 
 /**
- * report-api 그림책 파일 주소 (docs/proposals/memory-book.md 7.2, 미도입 시험 구현).
+ * report-api 그림책 파일 주소 (docs/proposals/memory-book.md 7.2).
  * 호출 동안만 학생 범위를 그 학생 1명으로 좁힌다. 모양 오류 502, 연결·5xx 503
  */
 @Component

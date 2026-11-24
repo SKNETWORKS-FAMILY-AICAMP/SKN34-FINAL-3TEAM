@@ -807,14 +807,15 @@
   0%, 100% { transform: rotate(0deg); }
   30%, 70% { transform: rotate(-8deg); }
 }
+/* "?"는 굵은 제목체로 조금 크게(손글씨체는 가늘고 연해 잘 안 보였음, 사용자 의견 2026-11-24) */
 #class-journal .st-world .sw-wait-q {
   position: absolute;
-  top: 0;
-  right: -4%;
+  top: -2%;
+  right: -6%;
   color: #3a2a20;
-  font-family: var(--st-hand);
-  font-weight: 700;
-  font-size: calc(var(--w) * 0.2);
+  font-family: var(--st-display);
+  font-weight: 400;
+  font-size: calc(var(--w) * 0.24);
   line-height: 1;
   animation: sw-wait-q 2s ease-in-out infinite;
 }
@@ -865,20 +866,19 @@
   60% { opacity: 1; transform: translateY(-15%) scale(1); }
   100% { opacity: 0; transform: translateY(-45%) scale(1); }
 }
-/* 주변(연하고 작게): 풀잎 셋이 천천히 살랑(3초 주기, 서로 어긋나게), 작은 구름이 상자 위쪽을 아주 천천히 지나감(26초) */
-#class-journal .st-world .sw-wait-blade {
+/* 주변(연하고 작게): 친구 양옆 발치에 풀 덩이 둘이 땅 선에 붙어 천천히 살랑(3초 주기, 서로 어긋나게), 작은 구름이 상자 위쪽을 아주 천천히 지나감(26초) */
+#class-journal .st-world .sw-wait-tuft {
   position: absolute;
-  bottom: 1%;
+  bottom: 0;
   z-index: 1;
-  width: 8%;
-  height: 10.7%;
+  width: 14%;
+  height: 9.3%;
   overflow: visible;
   transform-origin: 50% 100%;
   animation: sw-wait-sway 3s ease-in-out infinite;
 }
-#class-journal .st-world .sw-wait-blade-1 { left: -10%; }
-#class-journal .st-world .sw-wait-blade-2 { left: 4%; height: 8.6%; animation-delay: -1s; }
-#class-journal .st-world .sw-wait-blade-3 { left: 88%; animation-delay: -2s; }
+#class-journal .st-world .sw-wait-tuft-1 { left: 0; }
+#class-journal .st-world .sw-wait-tuft-2 { left: 86%; animation-delay: -1.5s; }
 @keyframes sw-wait-sway {
   0%, 100% { transform: rotate(-6deg); }
   50% { transform: rotate(6deg); }
@@ -930,13 +930,23 @@
   33.3% { transform: rotate(-12deg); }
 }
 /* 화면 안 움직임 줄이기 체크(OS 설정과 같은 결과): 멈춘 그림 + 문구만(두 눈 뜬 채, 돋보기는 왼쪽 눈 앞에 투명 렌즈 그대로, "?"·풀잎·구름은 멈춘 채, 누르면 말만 바뀜) */
-#class-journal .st-world .sw-wait[data-reduce] :is(.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-breath, .sw-wait-page, .sw-wait-q, .sw-wait-blade, .sw-wait-cloud),
+#class-journal .st-world .sw-wait[data-reduce] :is(.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-breath, .sw-wait-page, .sw-wait-q, .sw-wait-tuft, .sw-wait-cloud),
 #class-journal .st-world .sw-wait[data-reduce] .st-friend-art > circle,
 #class-journal .st-world .sw-wait[data-reduce] image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }
 #class-journal .st-world .sw-wait[data-reduce] .sw-wait-heart { display: none; }
 /* 결과 전구도 움직임 없이 켜진 그림만 */
 #class-journal .st-world .sw-found[data-reduce],
 #class-journal .st-world .sw-found[data-reduce] * { animation: none !important; }
+/* 상자와 체크박스를 묶는 칸: 결과 때는 없는 것처럼, 대기 중에는 그림·말풍선 너비만큼만(체크박스가 말풍선 끝 아래에 붙게) */
+#class-journal .st-world .sw-feedback-group { display: contents; }
+#class-journal .st-world .sw-feedback-group[data-waiting] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
+}
 /* 대기 화면 움직임 줄이기 체크박스: 화면설계서 SC-02-010 미션 장면처럼 그림 아래 오른쪽에 작게 */
 #class-journal .st-world .sw-wait-motion {
   align-self: flex-end;
@@ -950,10 +960,12 @@
   cursor: pointer;
 }
 #class-journal .st-world .sw-wait-motion input { width: 18px; height: 18px; margin: 0; accent-color: var(--sk-line); cursor: pointer; }
+/* 말풍선은 문구 길이만큼만(넓은 화면에서 패널 끝까지 늘어나 친구와 멀어지지 않게, 최대 22em), 좁으면 줄어든다 */
 #class-journal .st-world .sw-wait-bubble {
   position: relative;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 22em;
   padding: 14px 18px;
 }
 /* 한국어는 띄어쓰기에서만 꺾는다(글자 중간 꺾임 없음). 최소 폭은 두지 않는다: 좁은 패널에서 말풍선보다 넓어져 글자가 밖으로 나갔음.
@@ -990,16 +1002,30 @@
   background: transparent;
   box-shadow: none;
 }
-/* 발밑 얇은 풀밭 선 하나(친구가 콩콩 뛰어도 땅은 그대로) */
+/*
+ * 발밑 바닥: 한 줄 선 대신 낮고 납작한 타원 풀밭 둔덕(가장자리는 흐려짐) + 발 밑 옅은 그림자(사용자 의견 2026-11-24:
+ * 곧은 선이 밑줄·진행 막대처럼 보이고 친구가 떠 보였음). 친구 그림 뒤에 깔리고 친구가 움직여도 바닥은 그대로
+ */
+#class-journal .st-world .sw-wait-poke { z-index: 1; }
 #class-journal .st-world .sw-wait-ground {
   position: absolute;
-  left: -14%;
-  right: -14%;
-  bottom: 1%;
-  height: 3px;
-  border-radius: 999px;
-  background: #7cbf5a;
-  box-shadow: 0 1px 0 #5c9a3e;
+  left: -12%;
+  right: -12%;
+  bottom: -6%;
+  z-index: 0;
+  height: 16%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 45%, #b7e09a 0%, #a6d887 45%, rgb(166 216 135 / 0.55) 62%, rgb(166 216 135 / 0) 71%);
+}
+#class-journal .st-world .sw-wait-ground::after {
+  content: '';
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  top: 22%;
+  height: 34%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgb(58 42 32 / 0.22) 0%, rgb(58 42 32 / 0) 70%);
 }
 #class-journal .st-world .sw-feedback-panel:has(.sw-feedback[data-waiting]) .sw-actions:empty { display: none; }
 /*
@@ -1162,7 +1188,7 @@
   #class-journal .st-world .sw-wait-breath,
   #class-journal .st-world .sw-wait-page,
   #class-journal .st-world .sw-wait-q,
-  #class-journal .st-world .sw-wait-blade,
+  #class-journal .st-world .sw-wait-tuft,
   #class-journal .st-world .sw-wait-cloud,
   #class-journal .st-world .sw-wait .st-friend-art > circle,
   #class-journal .st-world .sw-wait image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }

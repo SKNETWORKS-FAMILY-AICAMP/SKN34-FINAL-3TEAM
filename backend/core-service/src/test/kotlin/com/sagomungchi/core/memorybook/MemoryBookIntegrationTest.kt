@@ -40,7 +40,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * 추억 그림책 core (docs/proposals/memory-book.md 7·8·10장, 미도입 시험 구현). 상품·구독·공개 설정·트랜잭션·Outbox는 실제,
+ * 추억 그림책 core (docs/proposals/memory-book.md 7·8·10장). 상품·구독·공개 설정·트랜잭션·Outbox는 실제,
  * learning 보유 확인은 가짜 HTTP 서버, report 파일 주소는 대역
  */
 @AutoConfigureMockMvc

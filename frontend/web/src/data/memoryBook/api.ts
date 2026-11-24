@@ -6,7 +6,7 @@ import type { MemoryBook, MemoryBookDownload, MemoryBookPage, MemoryBookRound, M
 const e = encodeURIComponent
 
 /**
- * 추억 그림책 (docs/proposals/memory-book.md 7.1, 미도입 시험 구현). 학부모만, 연결된 자녀 기준.
+ * 추억 그림책 (docs/proposals/memory-book.md 7.1). 학부모만, 연결된 자녀 기준.
  * 서버가 no-store라 캐시하지 않는다.
  */
 export const memoryBookApi = {

@@ -258,14 +258,33 @@
 #class-journal .ws-parent .pd-overview .pd-types li{display:grid;grid-template-columns:140px minmax(0,1fr) 100px;align-items:center;gap:16px;min-height:90px;padding:20px 0;border:0;border-bottom:1px solid var(--pd-line);border-radius:0;background:none}
 #class-journal .ws-parent .pd-overview .pd-type{display:flex;align-items:center;gap:10px;min-width:0;font-size:14px;font-weight:500;color:var(--type-ink)}
 #class-journal .ws-parent .pd-type-icon{display:grid;place-items:center;flex-shrink:0;width:42px;height:42px;border-radius:12px;background:var(--type-soft);color:var(--type-ink);border:0}
-#class-journal .ws-parent .pd-recent-missions{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:7px;min-width:0;padding-right:34px;min-height:36px}
+#class-journal .ws-parent .pd-recent-missions{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:7px;min-width:0;min-height:36px}
 #class-journal .ws-parent .pd-recent-missions:empty{padding:0}
-#class-journal .ws-parent .pd-recent-missions>:is(button,span):not(.pd-more-dots){display:block;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--type-soft);border:0;border-radius:6px;padding:8px 10px;color:var(--type-ink);font-size:12px;font-weight:400;line-height:1.5;min-height:34px;text-align:left}
-#class-journal .ws-parent .pd-recent-missions>button:not(.pd-more-dots):hover{background:color-mix(in srgb,var(--type-bright) 32%,white);color:var(--type-ink)}
-#class-journal .ws-parent .pd-recent-missions .pd-more-dots{position:absolute;right:0;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;width:32px;height:36px;min-height:36px;border:0;border-radius:6px;background:transparent;color:var(--type-ink);cursor:pointer;font-size:24px;padding:0;line-height:1;overflow:visible}
-#class-journal .ws-parent .pd-recent-missions .pd-more-dots:is(:hover,:focus-visible){background:var(--type-soft)}
-#class-journal .ws-parent .pd-more-tooltip{position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);white-space:nowrap;background:#263b30;color:#fff;border-radius:6px;padding:7px 10px;font-size:12px;line-height:1.4;visibility:hidden;opacity:0;pointer-events:none;z-index:3}
-#class-journal .ws-parent .pd-more-dots:is(:hover,:focus-visible) .pd-more-tooltip{visibility:visible;opacity:1}
+#class-journal .ws-parent .pd-recent-missions>:is(button,span){display:block;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--type-soft);border:0;border-radius:6px;padding:8px 10px;color:var(--type-ink);font-size:12px;font-weight:400;line-height:1.5;min-height:34px;text-align:left}
+#class-journal .ws-parent .pd-recent-missions>button:hover{background:color-mix(in srgb,var(--type-bright) 32%,white);color:var(--type-ink)}
+#class-journal .ws-parent .pd-type-records,
+#class-journal .ws-parent .pd-empty-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 44px;
+  color: #26543b;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+#class-journal .ws-parent .pd-type-records {
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  padding: 4px;
+}
+#class-journal .ws-parent .pd-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
 #class-journal .ws-parent .pd-type-actions{display:flex;align-items:center;justify-content:flex-end;align-self:center}
 #class-journal .ws-parent .pd-overview .pd-type-actions .pd-chip{font-size:11px;font-weight:400;background:none;border-radius:0;padding:0;color:#586b61;text-align:right;white-space:normal;line-height:1.7}
 #class-journal .pd-observation-note{font-size:12px;color:var(--pd-muted);line-height:1.7;margin:14px 0 0}
@@ -315,8 +334,7 @@
  #class-journal .ws-parent .pd-type-actions{grid-column:2;grid-row:1;max-width:110px}
  #class-journal .ws-parent .pd-recent-missions{grid-column:1/-1;grid-row:2}
  #class-journal .ws-parent .pd-recent-missions:empty{display:none}
- #class-journal .ws-parent .pd-more-tooltip{left:auto;right:0;transform:none}
- #class-journal .ws-parent .pd-recent-missions>:is(button,span):not(.pd-more-dots){max-width:calc(100% - 8px)}
+ #class-journal .ws-parent .pd-recent-missions>:is(button,span){max-width:calc(100% - 8px)}
  #class-journal .ws-parent .pd-overview .pd-type{font-size:14px}
  #class-journal .ws-parent .pd-overview .pd-report{padding:24px}
  #class-journal .ws-parent .pd-detail-launchers{gap:20px}

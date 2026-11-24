@@ -188,7 +188,8 @@ function ChildPin({ child }: { child: Child }) {
 
 function PairingIssue({ items }: { items: Child[] }) {
   const [picked, setPicked] = useState<string[]>(() => items.map((c) => c.id))
-  const [pairing, setPairing] = useState<Pairing | null>(null)
+  const [pairing, setPairing] = useState<(Pairing & { targets: Child[] }) | null>(null)
+  const selectionChanged = pairing && (picked.length !== pairing.targets.length || pairing.targets.some(c => !picked.includes(c.id)))
   const [qr, setQr] = useState<{ url: string; src: string; error: boolean } | null>(null)
   const [selectedOrigin, setSelectedOrigin] = useState('')
   const addresses = usePairingOrigins()
@@ -238,8 +239,8 @@ function PairingIssue({ items }: { items: Child[] }) {
         className="ws-form"
         onSubmit={(e) => {
           e.preventDefault()
-          setQr(null)
-          issue.mutate(picked, { onSuccess: setPairing })
+          const targets = items.filter(c => picked.includes(c.id))
+          issue.mutate(picked, { onSuccess: code => setPairing({ ...code, targets }) })
         }}
       >
         <fieldset>
@@ -258,13 +259,15 @@ function PairingIssue({ items }: { items: Child[] }) {
           ))}
         </fieldset>
         <button className="cj-primary" disabled={!picked.length || issue.isPending}>
-          {pairing ? '새 코드 만들기' : '등록 코드 만들기'}
+          {selectionChanged ? '변경한 대상으로 새 코드 발급' : pairing ? '새 코드 만들기' : '등록 코드 만들기'}
         </button>
         <ErrorNotice error={issue.error} />
       </form>
       {pairing && (
         <div className="pairing-code" aria-live="polite">
           <div>
+            <p>이 코드로 등록할 자녀 · {pairing.targets.map(c => c.nickname).join(', ')}</p>
+            {selectionChanged && <p>선택한 자녀가 바뀌었습니다. 변경한 대상으로 새 코드를 발급해 주세요.</p>}
             <p>등록 코드 (한 번만 사용)</p>
             <strong aria-label={`등록 코드 ${pairing.pairingCode.split('').join(' ')}`}>
               {formatPairingCode(pairing.pairingCode)}

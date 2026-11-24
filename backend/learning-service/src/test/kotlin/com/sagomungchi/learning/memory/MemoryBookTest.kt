@@ -32,7 +32,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 추억 그림책 회차 조립 (docs/proposals/memory-book.md 7.2, 미도입 시험 구현): 요일별 문제·장면·대화·답변(되묻기 순서)·돌아보기,
+ * 추억 그림책 회차 조립 (docs/proposals/memory-book.md 7.2): 요일별 문제·장면·대화·답변(되묻기 순서)·돌아보기,
  * 장면은 시도가 쓴 미션 버전, 엔딩 전 종료 이야기·정답·종료 그림 비노출(P23), 미보유·남의 회차 404
  */
 class MemoryBookTest : PostgresRepositoryTest() {

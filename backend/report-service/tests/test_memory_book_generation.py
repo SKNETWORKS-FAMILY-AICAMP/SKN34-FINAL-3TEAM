@@ -1,4 +1,4 @@
-"""추억 그림책 생성·파일 주소 (docs/proposals/memory-book.md, 미도입 시험 구현).
+"""추억 그림책 생성·파일 주소 (docs/proposals/memory-book.md).
 
 데이터는 모두 지어낸 값.
 """
@@ -218,6 +218,15 @@ def test_size_limits_per_image_and_per_book():
     assert values[0] and values[1] and values[2] is None
 
 
+def test_empty_allowed_origins_warns_once_at_start(caplog):
+    # #974: prod 설정 누락을 기동 로그로 드러냄(기동은 계속)
+    with caplog.at_level("WARNING", logger="app.clients.asset_fetcher"):
+        AssetFetcher(httpx.AsyncClient(), parse_origins(""))
+        AssetFetcher(httpx.AsyncClient(), parse_origins(ORIGIN))
+    warnings = [r for r in caplog.records if "MEMORY_BOOK_ASSET_ORIGINS" in r.getMessage()]
+    assert len(warnings) == 1
+
+
 def test_internal_origin_keeps_signed_host_header():
     seen = []
 
@@ -319,8 +328,8 @@ class Learning:
 
 
 class Assets:
-    def __init__(self):
-        self.urls = []
+    def __init__(self, ok=lambda url: True):
+        self.urls, self.ok = [], ok
 
     def session(self):
         outer = self
@@ -328,7 +337,9 @@ class Assets:
         class Session:
             async def data_uri(self, url):
                 outer.urls.append(url)
-                return "data:image/png;base64," + base64.b64encode(PNG).decode() if url else None
+                if not url or not outer.ok(url):
+                    return None
+                return "data:image/png;base64," + base64.b64encode(PNG).decode()
 
         return Session()
 
@@ -389,7 +400,7 @@ def test_generate_stores_pdf_and_announces_ready(db_session_factory, s3):
     )
 
     key = memory_book_key(student, command.book_id)
-    assert key == f"reports/{student}/memory-books/{command.book_id}/pdf"
+    assert key == f"reports/memory-books/{student}/{command.book_id}/pdf"
     body = s3._client.get_object(Bucket="synthetic-reports", Key=key)["Body"].read()
     text = pdf_text(body)
     assert "합성학생의추억그림책" in text and "보완답1" in text and "큰질문의답은「바람」" in text
@@ -411,6 +422,42 @@ def test_before_ending_does_not_fetch_outro_image(db_session_factory, s3):
         db_session_factory, s3, uuid4(), assets=assets, learning_=Learning(round_json(seen=False))
     )
     assert len(assets.urls) == 6
+
+
+def test_no_image_received_fails_instead_of_an_empty_book(db_session_factory, s3):
+    """#975: 그림 주소가 있는데 한 장도 받지 못하면 그림 없는 PDF를 완성으로 내지 않는다."""
+    student, assets = uuid4(), Assets(ok=lambda url: False)
+    command, events, _ = run_service(db_session_factory, s3, student, assets=assets)
+    assert len(assets.urls) == 7
+    assert not s3.exists(memory_book_key(student, command.book_id))
+    assert events[0].data == {
+        "bookId": str(command.book_id),
+        "studentId": str(student),
+        "status": "FAILED",
+        "failureCode": "ASSET_UNAVAILABLE",
+    }
+
+
+def test_some_missing_images_still_make_a_book(db_session_factory, s3):
+    seen = []
+
+    def first_only(url):
+        seen.append(url)
+        return len(seen) == 1
+
+    student = uuid4()
+    command, events, _ = run_service(db_session_factory, s3, student, assets=Assets(ok=first_only))
+    assert events[0].data["status"] == "READY"
+    assert s3.exists(memory_book_key(student, command.book_id))
+
+
+def test_round_without_any_image_url_is_still_ready(db_session_factory, s3):
+    assets = Assets()
+    _, events, _ = run_service(
+        db_session_factory, s3, uuid4(), assets=assets, learning_=Learning(round_json(image=None))
+    )
+    assert assets.urls == []
+    assert events[0].data["status"] == "READY"
 
 
 def test_private_student_fails_without_calling_learning(db_session_factory, s3):
@@ -498,9 +545,16 @@ def test_memory_book_prefix_can_be_deleted_alone_and_with_student(s3):
     s3.delete_prefix(memory_book_prefix(student, book))
     assert not s3.exists(memory_book_key(student, book))
     assert s3.exists(memory_book_key(student, other))
+    # #975 C3: 수명 주기 규칙이 한 접두어로 고르도록 학생 리포트 밖 `reports/memory-books/`에 둔다
+    assert memory_book_key(student, other) == f"reports/memory-books/{student}/{other}/pdf"
     s3.delete_prefix(f"reports/{student}/")
     assert not s3.exists(memory_book_key(student, other))
-    for unsafe in (f"reports/{student}/memory-books/", f"reports/{student}/memory-books/x/"):
+    for unsafe in (
+        "reports/memory-books/",
+        f"reports/memory-books/{student}/",
+        f"reports/memory-books/{student}/x/",
+        f"reports/{student}/memory-books/{book}/",
+    ):
         with pytest.raises(ValueError):
             s3.delete_prefix(unsafe)
 

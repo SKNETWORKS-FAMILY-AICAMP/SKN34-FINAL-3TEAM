@@ -9,7 +9,7 @@ import { fixtureStore } from '../fixtures/student.ts'
 import { parentChild } from './parent.ts'
 
 /**
- * 추억 그림책 목업 (docs/proposals/memory-book.md 7.1, 미도입 시험 구현). 학부모만 발급한다. core 규칙을 흉내 낸다:
+ * 추억 그림책 목업 (docs/proposals/memory-book.md 7.1). 학부모만 발급한다. core 규칙을 흉내 낸다:
  * 원문 공개 학생만(403 STUDENT_RECORDS_PRIVATE), 프리미엄만(403 PREMIUM_REQUIRED), 보유 액자만(404), 하루 3개(429),
  * 같은 회차는 만드는 중·완성본을 재사용(200). 만들고 4초 뒤 완성(READY)으로 바뀐다. 받기 주소는 표본 PDF.
  *
@@ -47,7 +47,7 @@ function view(b: MockBook, now = Date.now()) {
   return {
     bookId: b.bookId,
     status,
-    failureCode: status === 'FAILED' ? 'RENDER_FAILED' : null,
+    failureCode: status === 'FAILED' ? 'ASSET_UNAVAILABLE' : null,
     rounds: [{ themeId: b.themeId, weekStart: b.weekStart }],
     createdAt: new Date(b.createdAt).toISOString(),
     completedAt: done ? new Date(b.createdAt + READY_AFTER_MS).toISOString() : null,

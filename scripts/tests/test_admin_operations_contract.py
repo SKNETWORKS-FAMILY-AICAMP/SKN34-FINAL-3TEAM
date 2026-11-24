@@ -22,6 +22,15 @@ class AdminOperationsContracts(unittest.TestCase):
             for name,expected in baseline[section].items():
                 self.assertIn(name,current)
                 reviewed=deepcopy(current[name])
+                # #977 scopes payment history by child and returns the parent's paginated response.
+                if section == 'paths' and name == '/payments':
+                    operation = reviewed['get']
+                    child_filter = {'name': 'childId', 'in': 'query', 'schema': {'type': 'string', 'format': 'uuid'}}
+                    self.assertIn(child_filter, operation['parameters'])
+                    operation['parameters'].remove(child_filter)
+                    response = operation['responses']['200']['content']['application/json']
+                    self.assertEqual(response['schema'], {'$ref': '#/components/schemas/OwnPaymentTransactions'})
+                    response['schema'] = {'$ref': '#/components/schemas/PaymentTransactions'}
                 # #479 adds optional explanations; preserve every pre-existing report field.
                 if section=='schemas' and name=='ReportDetail':
                     reviewed['allOf'][1]['properties'].pop('explanations',None)
@@ -278,5 +287,5 @@ class AdminOperationsContracts(unittest.TestCase):
             if name.startswith('Operation'): Draft202012Validator.check_schema(schema)
     def test_queue_allowlist(self):
         definition=json.loads((ROOT/'infrastructure/gitops/charts/platform-data/files/rabbitmq/definitions.json').read_text())
-        self.assertEqual(45,len(definition['queues']))  # #370 work + 3 retry + DLQ 추가, 추억 그림책 시험 구현 report·core 큐 각 work + 3 retry + DLQ(feature/memory-book)
+        self.assertEqual(45,len(definition['queues']))  # #370 work + 3 retry + DLQ 추가, 추억 그림책 report·core 큐 각 work + 3 retry + DLQ(#966)
         self.assertEqual({'/'},{q['vhost'] for q in definition['queues']})

@@ -1,4 +1,4 @@
-"""memorybook.generate 명령 소비 (docs/proposals/memory-book.md 7.2, 미도입 시험 구현).
+"""memorybook.generate 명령 소비 (docs/proposals/memory-book.md 7.2).
 
 SYSTEM 역할·그 학생 범위로 처리한다.
 """

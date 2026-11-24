@@ -207,6 +207,11 @@ def plan_buckets(aws, spec, report):
         good &= report.check('s3', bucket, True,
                              aws('s3api', 'get-bucket-encryption', '--bucket', bucket, check=False) is not None,
                              'default encryption')
+        want = spec.get('bucketLifecycle', {}).get(bucket)
+        if want is not None:
+            have = aws('s3api', 'get-bucket-lifecycle-configuration', '--bucket', bucket, check=False) or {}
+            good &= report.check('s3', bucket, normalize(want['Rules']), normalize(have.get('Rules', [])),
+                                 'lifecycle rules')
         if good:
             report.add('s3', bucket, 'OK')
 
@@ -483,6 +488,14 @@ def apply_missing(aws, spec, wait=time.sleep, create_rds=True):
             aws('s3api', 'put-bucket-encryption', '--bucket', bucket, '--server-side-encryption-configuration',
                 '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}')
             created.append(('s3', bucket))
+        # #975 C3: put-bucket-lifecycle-configuration replaces every rule, so only a bucket without any
+        # lifecycle configuration gets one. A differing existing configuration stays a plan DIFF for a person.
+        want = spec.get('bucketLifecycle', {}).get(bucket)
+        if want is not None and aws('s3api', 'get-bucket-lifecycle-configuration', '--bucket', bucket,
+                                    check=False) is None:
+            aws('s3api', 'put-bucket-lifecycle-configuration', '--bucket', bucket,
+                '--lifecycle-configuration', json.dumps(want, separators=(',', ':')))
+            created.append(('s3-lifecycle', bucket))
     for repository in spec['ecrRepositories']:
         if not aws('ecr', 'describe-repositories', '--repository-names', repository, check=False):
             aws('ecr', 'create-repository', '--repository-name', repository,

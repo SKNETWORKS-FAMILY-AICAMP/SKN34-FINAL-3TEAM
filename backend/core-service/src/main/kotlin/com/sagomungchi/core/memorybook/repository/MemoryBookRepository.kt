@@ -9,7 +9,7 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** 추억 그림책 작업·내려받기 기록 (V57, docs/proposals/memory-book.md 8.1, 미도입 시험 구현) */
+/** 추억 그림책 작업·내려받기 기록 (V57, docs/proposals/memory-book.md 8.1) */
 @Repository
 class MemoryBookRepository(private val jdbc: JdbcTemplate) {
     private val row = RowMapper { r, _ ->
