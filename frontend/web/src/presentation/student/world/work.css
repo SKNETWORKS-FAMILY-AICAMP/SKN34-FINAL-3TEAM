@@ -849,20 +849,19 @@
   60% { opacity: 1; transform: translateY(-15%) scale(1); }
   100% { opacity: 0; transform: translateY(-45%) scale(1); }
 }
-/* 주변(연하고 작게): 풀잎 셋이 천천히 살랑(3초 주기, 서로 어긋나게), 작은 구름이 상자 위쪽을 아주 천천히 지나감(26초) */
-#class-journal .st-world .sw-wait-blade {
+/* 주변(연하고 작게): 친구 양옆 발치에 풀 덩이 둘이 땅 선에 붙어 천천히 살랑(3초 주기, 서로 어긋나게), 작은 구름이 상자 위쪽을 아주 천천히 지나감(26초) */
+#class-journal .st-world .sw-wait-tuft {
   position: absolute;
-  bottom: 1%;
+  bottom: calc(1% + 1px);
   z-index: 1;
-  width: 8%;
-  height: 10.7%;
+  width: 14%;
+  height: 9.3%;
   overflow: visible;
   transform-origin: 50% 100%;
   animation: sw-wait-sway 3s ease-in-out infinite;
 }
-#class-journal .st-world .sw-wait-blade-1 { left: -10%; }
-#class-journal .st-world .sw-wait-blade-2 { left: 4%; height: 8.6%; animation-delay: -1s; }
-#class-journal .st-world .sw-wait-blade-3 { left: 88%; animation-delay: -2s; }
+#class-journal .st-world .sw-wait-tuft-1 { left: -8%; }
+#class-journal .st-world .sw-wait-tuft-2 { left: 94%; animation-delay: -1.5s; }
 @keyframes sw-wait-sway {
   0%, 100% { transform: rotate(-6deg); }
   50% { transform: rotate(6deg); }
@@ -914,7 +913,7 @@
   33.3% { transform: rotate(-12deg); }
 }
 /* 화면 안 움직임 줄이기 체크(OS 설정과 같은 결과): 멈춘 그림 + 문구만(두 눈 뜬 채, 돋보기는 왼쪽 눈 앞에 투명 렌즈 그대로, "?"·풀잎·구름은 멈춘 채, 누르면 말만 바뀜) */
-#class-journal .st-world .sw-wait[data-reduce] :is(.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-breath, .sw-wait-page, .sw-wait-q, .sw-wait-blade, .sw-wait-cloud),
+#class-journal .st-world .sw-wait[data-reduce] :is(.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-breath, .sw-wait-page, .sw-wait-q, .sw-wait-tuft, .sw-wait-cloud),
 #class-journal .st-world .sw-wait[data-reduce] .st-friend-art > circle,
 #class-journal .st-world .sw-wait[data-reduce] image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }
 #class-journal .st-world .sw-wait[data-reduce] .sw-wait-heart { display: none; }
@@ -1371,7 +1370,7 @@
   #class-journal .st-world .sw-wait-breath,
   #class-journal .st-world .sw-wait-page,
   #class-journal .st-world .sw-wait-q,
-  #class-journal .st-world .sw-wait-blade,
+  #class-journal .st-world .sw-wait-tuft,
   #class-journal .st-world .sw-wait-cloud,
   #class-journal .st-world .sw-wait .st-friend-art > circle,
   #class-journal .st-world .sw-wait image[data-slot='ACCESSORY'] { animation: none !important; transform: none !important; }

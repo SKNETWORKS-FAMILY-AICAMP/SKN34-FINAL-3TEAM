@@ -96,9 +96,9 @@ test('40초 늦는 피드백: 문구가 차례로 바뀌고 결과가 오면 바
   await expect(page.locator('.sw-wait-book')).toHaveCount(0)
   // 늘: 숨쉬기·눈 깜빡임. 0초~: 돋보기를 눈앞에 대고 훑기, 투명 렌즈(따로 그린 눈 없음)
   expect(await anim(page, '.sw-wait-breath')).toBe('sw-wait-breath')
-  // 주변: 풀잎 셋 살랑(3초), 구름은 아주 천천히(20초 넘게)
-  await expect(page.locator('.sw-wait-blade')).toHaveCount(3)
-  expect(await anim(page, '.sw-wait-blade')).toBe('sw-wait-sway')
+  // 주변: 풀 덩이 둘 살랑(3초), 구름은 아주 천천히(20초 넘게)
+  await expect(page.locator('.sw-wait-tuft')).toHaveCount(2)
+  expect(await anim(page, '.sw-wait-tuft')).toBe('sw-wait-sway')
   expect(await page.locator('.sw-wait-cloud').evaluate(e => [getComputedStyle(e).animationName, parseFloat(getComputedStyle(e).animationDuration)])).toEqual(['sw-wait-cloud', 26])
   // 살피기: 돋보기를 댄 쪽 반대 눈 찡긋(오른쪽·왼쪽 눈이 번갈아), 렌즈는 확대 없이 연한 하늘색(따로 그린 눈 없음)
   expect(await anim(page, '.sw-wait .st-friend-art > circle[cx="122"]')).toBe('sw-wait-wink-r')
@@ -294,7 +294,7 @@ test('움직임 줄이기: 멈춘 그림 + 문구, 눌러도 뛰지 않고 말�
   await scenario(page, 'feedback-slow')
   await writeAndSend(page)
   await expect(bubble(page)).toHaveText('답을 꼼꼼히 읽고 있어')
-  const still = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-page, .sw-wait-breath, .sw-wait-q, .sw-wait-blade, .sw-wait-cloud, .sw-wait .st-friend-art > circle')]
+  const still = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-page, .sw-wait-breath, .sw-wait-q, .sw-wait-tuft, .sw-wait-cloud, .sw-wait .st-friend-art > circle')]
     .map(e => { const s = getComputedStyle(e); return `${s.animationName}|${s.transform}` }))
   expect(new Set(await still())).toEqual(new Set(['none|none']))
   // 5초(공책: 펼친 공책이 멈춘 그림)·15초·30초 단계 모두 멈춤
@@ -366,7 +366,7 @@ const measure = (page: Page) => page.evaluate(() => {
       const bubble = q('.sw-wait-bubble')
       if (!bubble) return false
       const b = bubble.getBoundingClientRect()
-      return [...document.querySelectorAll('.sw-wait-cloud, .sw-wait-blade')].some(e => {
+      return [...document.querySelectorAll('.sw-wait-cloud, .sw-wait-tuft')].some(e => {
         const r = e.getBoundingClientRect()
         return r.left < b.right - 1 && b.left < r.right - 1 && r.top < b.bottom - 1 && b.top < r.bottom - 1
       })
@@ -394,7 +394,7 @@ test('대기 모양: 상자 테두리·바탕 없음, 390px 제목 한 줄, 문�
       const m = await measure(page)
       report.push(`${step}s ${width}px 제목 ${m.title}줄 말풍선 ${m.bubble}줄 아래 ${m.below}px 높이 ${m.height}px`)
       expect(m.bubble, `${step}s ${width}px 말풍선 줄 수`).toBeLessThanOrEqual(2)
-      expect(m.decorHitsBubble, `${step}s ${width}px 구름·풀잎이 말풍선과 겹침`).toBe(false)
+      expect(m.decorHitsBubble, `${step}s ${width}px 구름·풀 덩이가 말풍선과 겹침`).toBe(false)
       if (width === 390) expect(m.title, '390px 제목 한 줄').toBe(1)
       expect(m.border, '대기 중 테두리 없음').toBe('rgba(0, 0, 0, 0)')
       expect(m.background, '대기 중 바탕 없음').toBe('rgba(0, 0, 0, 0)')
@@ -451,7 +451,7 @@ test('화면 안 "움직임 줄이기"(WCAG 2.2.2): 기본은 OS 설정, 체크�
   // 읽기 영역(피드백 상자) 밖: 대기 표시가 들어올 때 체크박스 이름까지 읽히지 않게
   await expect(page.locator('.ux-feedback .sw-wait-motion')).toHaveCount(0)
   expect(await anim(page, '.sw-wait-glass')).toBe('sw-wait-sweep')
-  const moving = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-page, .sw-wait-breath, .sw-wait-q, .sw-wait-blade, .sw-wait-cloud, .sw-wait .st-friend-art > circle, .sw-wait image')]
+  const moving = () => page.evaluate(() => [...document.querySelectorAll('.sw-wait-glass, .sw-wait-pose, .sw-wait-poke, .sw-wait-page, .sw-wait-breath, .sw-wait-q, .sw-wait-tuft, .sw-wait-cloud, .sw-wait .st-friend-art > circle, .sw-wait image')]
     .map(e => getComputedStyle(e)).filter(s => s.animationName !== 'none' || s.transform !== 'none').length)
   // 키보드(Space)로 체크
   await toggle.focus()
