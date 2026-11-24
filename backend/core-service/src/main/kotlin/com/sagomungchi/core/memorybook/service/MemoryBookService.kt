@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import java.time.DayOfWeek
+import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 
 /** 생성 결과: 새로 만들기 시작했으면 created = true(202), 같은 회차의 기존 작업이면 false(200) */
@@ -43,18 +44,29 @@ class MemoryBookService(
     private val learningContext: StudentLearningContextService,
     private val students: StudentAccessService,
 ) {
-    /** 발급 화면: 자녀의 보유 액자 회차(최근순)와 회차마다 가장 최근 그림책 */
+    /**
+     * 책장 화면: 자녀의 보유 액자 회차(최근순)와 회차마다 가장 최근 그림책.
+     * 무료(발급과 같은 `features.memoryBook` 판정)는 끝난 최근 4주(`weekStart ≥ 이번 주 KST 월요일 − 28일`)만 보여 준다(#999, api-spec 2.5.1 무료 책장).
+     * learning 앨범은 최근 주부터라 첫 쪽 한 번으로 4주 안 회차를 모두 읽고, 쪽 나누기·`totalElements`는 노출 회차 기준
+     */
     fun rounds(childId: UUID, page: Int?, size: Int?): MemoryBookRoundPage {
         verifiedParent(childId)
         val (p, s) = paging(page, size)
         learningContext.requireShared(childId)
-        val (items, total) = learning.album(childId, p, s)
+        val canCreate = entitlements.memoryBookEnabled(childId)
+        val (items, total, locked) = if (canCreate) learning.album(childId, p, s).let { (items, total) -> Triple(items, total, 0L) } else {
+            val since = jobs.todayStart().toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).minusDays(FREE_DAYS)
+            val (all, total) = learning.album(childId, 0, MAX_SIZE)
+            val visible = all.filter { it.weekStart >= since }
+            val shown = if (p.toLong() * s >= visible.size) emptyList() else visible.drop(p * s).take(s)
+            Triple(shown, visible.size.toLong(), total - visible.size)
+        }
         val now = jobs.now()
         val latest = repository.latestByStudent(childId).associateBy { MemoryBookRound(it.themeId, it.weekStart) }
         return MemoryBookRoundPage(items.map { item ->
             MemoryBookRoundView(item.themeId, item.weekStart, item.title, item.imageUrl,
                 latest[MemoryBookRound(item.themeId, item.weekStart)]?.let { MemoryBookView.of(it, now) })
-        }, p, s, total)
+        }, p, s, total, locked, canCreate)
     }
 
     fun create(childId: UUID, round: MemoryBookRound?): MemoryBookCreated {
@@ -138,5 +150,7 @@ class MemoryBookService(
         const val RETENTION_DAYS = 30L
         const val DEFAULT_SIZE = 20
         const val MAX_SIZE = 100
+        /** 무료 책장: 이번 주 월요일에서 28일 전 주부터(끝난 최근 4주) */
+        const val FREE_DAYS = 28L
     }
 }

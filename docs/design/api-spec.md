@@ -432,7 +432,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 
 | Method | Path | 역할 | 설명 | FN | 우선순위 |
 |---|---|---|---|---|---|
-| GET | `/children/{childId}/memory-books/rounds?page&size` | 학부모 | 책장 화면: 자녀의 보유 액자 회차(진행 중인 주 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, book}], page, size, totalElements, lockedCount, canCreate}`. `book`은 그 회차의 가장 최근 그림책(없으면 null). learning 4.1.4 앨범을 자녀 범위 SYSTEM으로 읽는다. 무료는 끝난 최근 4주만(아래 무료 책장). `lockedCount`·`canCreate`는 #997 기준안, 구현 #999 | RPT-18 | 구현(무료 4주 #999) |
+| GET | `/children/{childId}/memory-books/rounds?page&size` | 학부모 | 책장 화면: 자녀의 보유 액자 회차(진행 중인 주 제외, 최근 회차순) `{items:[{themeId, weekStart, title, imageUrl, book}], page, size, totalElements, lockedCount, canCreate}`. `book`은 그 회차의 가장 최근 그림책(없으면 null). learning 4.1.4 앨범을 자녀 범위 SYSTEM으로 읽는다. 무료는 끝난 최근 4주만(아래 무료 책장). `lockedCount`·`canCreate`는 설계 #997, 구현 #999 | RPT-18 | 구현(무료 4주 #999) |
 | POST | `/children/{childId}/memory-books` | 학부모 | body `{rounds:[{themeId, weekStart}]}`(1차 길이 1, `weekStart` 월요일) → 새로 만들면 202, 같은 회차의 만드는 중·보관 기간 안 완성본이 있으면 200으로 그것(한도·사용 예약 안 씀). 응답 `{bookId, status, failureCode, rounds, createdAt, completedAt, expiresAt}` | RPT-18 | 구현 |
 | GET | `/children/{childId}/memory-books?page&size` | 학부모 | 발급 목록(최근순). 보관 기간이 지난 완성본은 `status: EXPIRED` | RPT-18 | 구현 |
 | GET | `/children/{childId}/memory-books/{bookId}/download` | 학부모 | `{url, expiresAt}`(report 서명 URL, TTL 300초, attachment). 받을 때마다 `memory_book_download` 기록 | RPT-18 | 구현 |
