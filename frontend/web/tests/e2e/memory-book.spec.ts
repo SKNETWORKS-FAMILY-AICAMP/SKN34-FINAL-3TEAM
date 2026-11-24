@@ -57,3 +57,25 @@ test('학부모: 유료·원문 공개 자녀의 회차로 그림책 발급 → 
     await parentPage.reload()
     await expect(parentPage.getByRole('region', { name: '추억 그림책' }).getByRole('alert')).toContainText('답 보여 주기를 켜야')
   })
+
+// 책장(#1000, core #999): 무료 자녀는 서버가 끝난 최근 4주 회차만 보내고 오래된 회차는 숫자(lockedCount)로만 알린다.
+// 4주 경계(−21일·−28일)와 다른 시험이 채운 주에 흔들리지 않게, 확실히 오래된(8주 이상 전) 회차 하나만 만들어 잠금만 본다.
+test('학부모: 무료·원문 공개 자녀는 오래된 회차가 잠긴 수로만 보이고 발급 단추 없이 비교표로 이어진다', async ({ context, page }) => {
+  const nickname = `잠${Date.now().toString(36)}`
+  const title = 'E2E 오래된 등대'
+  await useGoogleIdentity(context, newParent('shelf'))
+  await onboardParent(page, nickname)
+  const studentId = studentIdOf(nickname)
+  setSharing(studentId, true)
+  const prefix = `memorybook-shelf-${Date.now().toString(36)}`
+  uploadSceneImages(prefix)
+  pastRound(studentId, prefix, title, 8)
+
+  await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
+  const books = page.getByRole('region', { name: '추억 그림책' })
+  await expect(books.getByRole('note')).toContainText(/지난 그림책 \d+권은 프리미엄에서 볼 수 있어요/)
+  await expect(books.getByText(title)).toHaveCount(0)
+  await expect(books.getByRole('button', { name: '그림책 발급' })).toHaveCount(0)
+  await books.getByRole('link', { name: '무료와 프리미엄 비교 보기' }).click()
+  await expect(page).toHaveURL(/\/parent\/billing\?childId=.+#plan-compare$/)
+})
