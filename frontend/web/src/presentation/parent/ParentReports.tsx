@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
@@ -317,10 +317,10 @@ function PremiumPreview({ childId }: { childId: string }) {
     <section className="report-data-group report-premium-preview" aria-labelledby="report-premium-preview-title">
       <h3 id="report-premium-preview-title">프리미엄에서 더 볼 수 있어요</h3>
       <ul>
-        <li><Link to={to}><strong>한 주의 기록</strong><span>한 주 동안의 활동을 글로 정리해 드려요.</span></Link></li>
-        <li><Link to={to}><strong>이번 주 저녁 질문</strong><span>아이와 저녁에 함께 나눌 질문을 드려요.</span></Link></li>
+        <li><Link to={to}><Lock size={18} aria-hidden="true" /><span><strong>한 주의 기록</strong><span>한 주 동안의 활동을 글로 정리해 드려요.</span></span><em>프리미엄</em></Link></li>
+        <li><Link to={to}><Lock size={18} aria-hidden="true" /><span><strong>이번 주 저녁 질문</strong><span>아이와 저녁에 함께 나눌 질문을 드려요.</span></span><em>프리미엄</em></Link></li>
       </ul>
-      <Link className="cj-secondary" to={to}>비교 보기</Link>
+      <Link className="cj-secondary" to={to}>무료와 프리미엄 비교 보기</Link>
     </section>
   )
 }

@@ -5,7 +5,8 @@ export interface PlanComparisonRow { label: string; note?: string; free: string;
 export interface PlanComparisonGroup { title: string; rows: PlanComparisonRow[] }
 
 export const PLAN_NONE = '–'
-const NONE = PLAN_NONE, INCLUDED = '있음'
+export const PLAN_INCLUDED = '있음'
+const NONE = PLAN_NONE, INCLUDED = PLAN_INCLUDED
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 
 /** core `ProductEntitlementService`와 같은 규칙: 값이 없으면 유료 상품(구독)만 제공, 불리언이면 그 값. */

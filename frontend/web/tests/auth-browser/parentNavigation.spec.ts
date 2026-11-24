@@ -598,7 +598,7 @@ test('#998: 무료 주간 리포트는 프리미엄 칸 제목·한 줄 설명�
     for (const link of await preview.getByRole('link').all()) await expect(link).toHaveAttribute('href', compareHref)
     expect(await preview.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
     if (width === 390) await preview.screenshot({ path: 'test-results/parent-navigation/report-premium-preview-390.png' })
-    await preview.getByRole('link', { name: '비교 보기', exact: true }).click()
+    await preview.getByRole('link', { name: '무료와 프리미엄 비교 보기', exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/parent/billing\\?childId=${childId}#plan-compare$`))
     await expectComparison(page)
   }

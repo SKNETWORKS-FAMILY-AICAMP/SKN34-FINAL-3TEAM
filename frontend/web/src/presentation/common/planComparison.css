@@ -22,3 +22,18 @@
   .plan-compare-table thead th:first-child { width:40%; }
   .plan-compare-table thead th { width:30%; }
 }
+/* 프리미엄 열을 옅게 칠하고 가격을 크게, 있음·없음은 아이콘으로. 두 이용권이 같은 줄은 흐리게, 다른 줄은 이름을 굵게 해서 차이가 먼저 보이게 한다. */
+.plan-compare-table thead th { vertical-align:bottom; font-size:16px; }
+.plan-compare-table thead th.plan-compare-premium { background:#e9f4ec; border-radius:10px 10px 0 0; color:#14532d; }
+.plan-compare-table td.plan-compare-premium { background:#f3f9f5; }
+.plan-compare-table th small.plan-compare-price { margin-top:4px; font-size:18px; font-weight:700; color:#202522; white-space:nowrap; }
+.plan-compare-table thead th.plan-compare-premium small.plan-compare-price { color:#14532d; }
+.plan-compare-yes { display:inline-flex; color:#1f7a45; }
+.plan-compare-none { display:inline-flex; color:#7d8781; }
+.plan-compare-amount { color:#202522; font-weight:500; }
+.plan-compare-table td.plan-compare-premium .plan-compare-amount { color:#14532d; font-weight:700; }
+.plan-compare-table tr.plan-compare-diff th[scope=row] { font-weight:700; }
+.plan-compare-table tr.plan-compare-same th[scope=row] { color:#59645d; font-weight:400; }
+.plan-compare-table tr.plan-compare-same .plan-compare-yes { color:#5f8a6f; }
+.plan-compare-table tr.plan-compare-group th { padding-top:18px; background:transparent; color:#6a756e; font-size:13px; letter-spacing:0.04em; border-bottom:1px solid #cfd8d2; }
+@media (max-width:600px) { .plan-compare-table th small.plan-compare-price { font-size:15px; } }

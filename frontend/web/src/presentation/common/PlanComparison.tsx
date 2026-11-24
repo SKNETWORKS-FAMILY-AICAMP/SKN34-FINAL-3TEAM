@@ -1,8 +1,9 @@
+import { Check, Lock } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router'
 import { paymentApi } from '../../data/payment/api.ts'
 import { useParentQuery } from '../../data/parent/queries.ts'
-import { PLAN_NONE, comparisonProducts, planComparison } from '../../domain/planComparison.ts'
+import { PLAN_INCLUDED, PLAN_NONE, comparisonProducts, planComparison } from '../../domain/planComparison.ts'
 import './planComparison.css'
 
 /**
@@ -28,19 +29,21 @@ export function PlanComparison({ id, heading: Heading = 'h2' }: { id?: string; h
     {products.isError && <p role="alert">상품 정보를 불러오지 못했어요. <button type="button" onClick={() => { void products.refetch() }}>다시 불러오기</button></p>}
     {products.data && !table && <p>지금 비교할 수 있는 이용권 정보가 없어요.</p>}
     {table && <table className="plan-compare-table">
-      <thead><tr><th scope="col">기능</th><th scope="col">무료<small>{table.price.free}</small></th><th scope="col">프리미엄<small>{table.price.premium}</small></th></tr></thead>
+      <thead><tr><th scope="col">기능</th><th scope="col">무료<small className="plan-compare-price">{table.price.free}</small></th><th scope="col" className="plan-compare-premium">프리미엄<small className="plan-compare-price">{table.price.premium}</small></th></tr></thead>
       {table.groups.map(group => <tbody key={group.title}>
         <tr className="plan-compare-group"><th scope="rowgroup" colSpan={3}>{group.title}</th></tr>
-        {group.rows.map(row => <tr key={row.label}>
+        {group.rows.map(row => <tr key={row.label} className={row.free === row.premium ? 'plan-compare-same' : 'plan-compare-diff'}>
           <th scope="row">{row.label}{row.note && <small>{row.note}</small>}</th>
-          <td><Cell value={row.free} /></td><td><Cell value={row.premium} /></td>
+          <td><Cell value={row.free} /></td><td className="plan-compare-premium"><Cell value={row.premium} /></td>
         </tr>)}
       </tbody>)}
     </table>}
   </section>
 }
 
-/** "–"는 화면 읽기 프로그램에서 "없음"으로 읽힌다. */
+/** 없음은 자물쇠, 있음은 체크 아이콘으로 보이고 화면 읽기 프로그램에는 "없음"·"있음"으로 읽힌다. 횟수·요일 같은 값은 글자 그대로. */
 function Cell({ value }: { value: string }) {
-  return value === PLAN_NONE ? <><span aria-hidden="true">–</span><span className="plan-compare-hidden">없음</span></> : <>{value}</>
+  if (value === PLAN_NONE) return <span className="plan-compare-none"><Lock size={14} aria-hidden="true" /><span className="plan-compare-hidden">없음</span></span>
+  if (value === PLAN_INCLUDED) return <span className="plan-compare-yes"><Check size={18} strokeWidth={3} aria-hidden="true" /><span className="plan-compare-hidden">있음</span></span>
+  return <strong className="plan-compare-amount">{value}</strong>
 }
