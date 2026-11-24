@@ -1791,21 +1791,23 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 
 | 결정 | 내용 | 근거 |
 |---|---|---|
-| 배포 승인 | cd-release의 deploy job 대신 digest-pr job이 main 대상 PR을 만든다(`environments/prod/images/**`만). 그 PR 승인·병합 = 배포 승인 | Argo CD가 Git을 읽으므로 승인 지점을 Git 변경에 둔다. 승인·병합 기록이 그대로 배포 기록이 됨 |
+| 배포 승인 | cd-release의 deploy job 대신 digest-pr job이 `environments/prod/images/**`만 고친 브랜치를 push하고, 사람이 실행 요약 링크로 main 대상 PR을 연다(11/24 변경, 아래). 그 PR 승인·병합 = 배포 승인 | Argo CD가 Git을 읽으므로 승인 지점을 Git 변경에 둔다. 승인·병합 기록이 그대로 배포 기록이 됨 |
 | 대상 파일 | `policy.json` `delivery`: 서비스 5개 → release 파일 6개(report-service → report-api·report-worker), migration 값은 core·learning·report-api. 키는 #857 계약(`image.repository`·`image.digest`, `migration.image.*`·`migration.revision`) | 서비스 목록·파일 대응을 한 곳에 두고 `cd_release.py`가 검증 |
 | 게이트 | validate에서 `--check-images`(파일·키 구조, 이미지 빌드 전), digest-pr에서 `--require-executable --write-images`. 하나라도 틀리면 파일을 하나도 쓰지 않음. 저장소 주소가 다르면 오류, 계정 전환 때만 `allowRepositoryChange`(서비스 5개 전부일 때) | 다른 계정·레지스트리 digest가 섞이지 않게 |
 | PR 기준 | 실행 SHA가 아니라 그때의 main HEAD에서 images 파일을 고침. 본문에 원본 SHA와 기준 HEAD를 함께 | 앞서 병합된 digest PR을 덮어쓰지 않음 |
-| PR 생성 토큰 | `GITHUB_TOKEN`(`contents`·`pull-requests`·`actions` 쓰기) + 생성 뒤 PR 브랜치에 `ci-gitops` `workflow_dispatch` | `GITHUB_TOKEN` 이벤트는 다른 workflow를 깨우지 않지만 dispatch는 예외. 새 GitHub App은 조직 승인이 필요해 선택지로만 남김(CD README B2) |
-| 승인자 | main 보호 규칙 필수 리뷰 1명 + CODEOWNERS(김동섭·김태윤), status check 필수 아님 | #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같게. 경로 필터 CI를 필수로 걸면 릴리스 PR이 대기함 |
+| PR 생성 | (11/24 변경) workflow는 `GITHUB_TOKEN`(`contents: write`만)으로 브랜치 push까지. 커밋 메시지를 1행 제목 + 빈 줄 + PR 본문으로 만들어(`git commit --cleanup=verbatim -F`) compare 링크(`compare/main...<브랜치>?expand=1`)에서 제목·본문이 채워진다. 사람이 연 PR이라 `ci-gitops`가 `pull_request`로 돈다 | 11/20 안(`gh pr create` + `ci-gitops` dispatch)은 조직 정책으로 실패. 새 토큰·도구 없이 되는 방식(CD README PR 생성 토큰 표) |
+| 승인자 | main 보호 규칙 필수 리뷰 1명 + CODEOWNERS(김동섭·김태윤), PR을 연 사람과 다른 code owner가 승인, status check 필수 아님 | #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같게. 경로 필터 CI를 필수로 걸면 릴리스 PR이 대기함 |
 | 브랜치 규칙 | "main은 develop에서만" 예외: images만 바꾸는 PR은 main 직접 병합. develop은 images 파일을 고치지 않음 | main에 digest 커밋이 쌓여도 develop → main 병합에서 충돌 없음(3-way에서 develop 쪽 변경 없음) |
 | 이력 | digest PR + Argo CD sync 이력. `cd_record.py` artifact는 비상용 Helm 경로에서만 | PR 본문에 원본 SHA·digest·계획 JSON·호환성 근거가 남음 |
 | 되돌리기 | digest PR revert(같은 승인). Argo CD UI rollback은 쓰지 않음. rollback 계획은 비상용 Helm에서만 | UI rollback은 Git과 어긋나 다음 자동 동기화가 되돌림. DB는 되돌리지 않음(7.1 원칙 유지) |
 | 비상용 | `delivery: helm-emergency`로 예전 deploy job(작업자 PC runner) 실행. 12/7 시연 뒤 runner·job 정리 | Argo CD 경로가 막혔을 때 첫 배포 수단을 남김(에픽 대체안) |
 
-- 저장소 설정(Actions PR 생성 허용, main 보호 규칙, Code Owners 리뷰)은 관리자 손 작업으로 11/24 develop → main 릴리스 뒤 적용한다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정). 2026-11-20 기준 적용하지 않았다.
-- 11/25 A 확인 순서: digest PR 생성 → ci-gitops → 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
-- 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push, `gh pr create --base main`, `gh workflow run ci-gitops.yml --ref <브랜치>` 호출까지.
-- 한계: digest PR 작성자가 봇이라 실행한 사람도 승인할 수 있다(Environment `prod`와 같음, 운영 규칙으로 다른 사람 승인 권장). `GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않는다. #857 병합으로 생긴 실제 images 파일 6개는 `RealImagesFileTests`가 구조를 검사한다.
+- 변경 사유(2026-11-24, #986): 11/24 첫 실행에서 digest-pr job의 `gh pr create` 단계가 실패했다. 조직(SKNETWORKS-FAMILY-AICAMP) 정책이 "Actions가 PR을 만들고 승인하는 것"을 막고 있고, 조직은 정책을 바꿀 수 없다고 답했다. 이미지 빌드·ECR 게시·images 파일 갱신·브랜치 push는 됐다.
+- 결정(2026-11-24 팀장): workflow는 digest 브랜치 push와 실행 요약의 PR 만들기 링크까지 하고, **PR은 사람이 링크로 연다.** job 권한은 `contents: write`만 남기고 `gh pr create`·`gh workflow run ci-gitops.yml` 단계를 지웠다. 게이트(`--require-executable`·`--write-images`·images 밖 변경 차단)는 그대로다. 승인 → 병합 → Argo CD 자동 동기화 → PreSync migration → revert 복구 흐름도 그대로다. 기각한 대안: deploy key(SSH push용이라 PR API를 못 부르고, main 직접 push는 승인 단계가 없어지며 보호 규칙과 충돌), 개인 계정 포크(OIDC 신뢰·Argo CD repoURL·변수·문서를 모두 바꿔야 하고 배포 기록이 포크에만 남음), 개인 토큰 PAT(만료·보안 관리 부담, 조직 차단 가능성).
+- 저장소 설정(main 보호 규칙, Code Owners 리뷰)은 관리자 손 작업으로 11/24 develop → main 릴리스 뒤 적용한다. 예전 "Actions PR 생성 허용" 단계는 조직 정책상 켤 수 없어 뺐다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정).
+- 11/25 A 확인 순서: cd-release 실행 → 실행 요약 링크로 PR 열기(제목·본문 채워짐) → `pull_request` ci-gitops → 다른 code owner 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
+- 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push까지. 11/24 변경 뒤에는 `test_cd_deployment.py`가 권한(`contents: write`만), `gh pr create`·`gh workflow run` 없음, `-F` 커밋, compare 링크를 검사한다.
+- 한계: PR 작성자는 링크로 연 사람이라 본인 승인이 세지 않는다. 다른 code owner(동섭 ↔ 태윤)가 없으면 병합할 수 없다(막히면 비상용 Helm 경로). PR 열기가 사람 손이라 링크를 열지 않으면 브랜치만 남고 배포되지 않으며, 오래된 digest 브랜치·PR은 사람이 닫고 지운다. 11/20 안의 한계였던 "봇 작성자라 실행한 사람도 승인 가능"과 "`GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않음"은 사람이 PR을 열면서 없어졌다. #857 병합으로 생긴 실제 images 파일 6개는 `RealImagesFileTests`가 구조를 검사한다.
 
 ## 9.19 B 복원용 스냅샷의 고객 관리 KMS 키 공유 (#809, 2026-11-23)
 
