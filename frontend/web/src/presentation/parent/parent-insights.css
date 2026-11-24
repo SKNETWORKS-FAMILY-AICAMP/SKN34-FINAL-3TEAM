@@ -168,6 +168,8 @@
 .parent-memory-books .memory-shelf-lock { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: #4a5a50; }
 .parent-memory-books .memory-shelf-notice { padding: 10px 12px; border-radius: 8px; background: #f3f7f4; }
 .parent-memory-books .memory-shelf-notice a { display: inline-flex; align-items: center; min-height: 44px; }
+.parent-memory-books .memory-shelf-retry { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.parent-memory-books .memory-shelf-retry button { display: inline-flex; align-items: center; min-height: 44px; }
 @media (max-width: 420px) { .parent-memory-books .memory-shelf { grid-template-columns: minmax(0, 1fr); } }
 /* 리포트 | AI 챗봇 전환 (제목 자리, 사이드바는 한 칸) */
 #class-journal .ws-parent .parent-insights-switch{display:flex;align-items:center;gap:12px;margin:0}

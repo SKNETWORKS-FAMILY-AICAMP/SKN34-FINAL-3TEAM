@@ -71,12 +71,19 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
   return (
     <section className="ws-card parent-memory-books" aria-labelledby="parent-memory-books-h">
       <h2 id="parent-memory-books-h"><BookOpen size={20} aria-hidden="true" /> 추억 그림책</h2>
-      <p>{locked
-        ? '아이가 한 주 테마를 모두 마쳐 받은 기념 액자가 책장에 꽂혀요. 무료 이용권에서는 최근 4주 표지를 볼 수 있어요.'
-        : '아이가 한 주 테마를 모두 마쳐 받은 기념 액자마다, 그 주의 그림과 아이의 답을 엮은 그림책(PDF)을 발급할 수 있습니다.'}</p>
+      <p>{!locked
+        ? '아이가 한 주 테마를 모두 마쳐 받은 기념 액자마다, 그 주의 그림과 아이의 답을 엮은 그림책(PDF)을 발급할 수 있습니다.'
+        : items.length === 0
+          ? '아이가 한 주 테마를 모두 마쳐 받은 기념 액자가 책장에 꽂혀요. 최근 4주에는 새로 받은 액자가 없어요.'
+          : '아이가 한 주 테마를 모두 마쳐 받은 기념 액자가 책장에 꽂혀요. 무료 이용권에서는 최근 4주 표지를 볼 수 있어요.'}</p>
       {rounds.isPending && <p role="status">불러오는 중입니다.</p>}
       {blocked && <p role="alert">{blocked}</p>}
-      {rounds.error && !blocked && <p role="alert">회차 목록을 불러오지 못했습니다.</p>}
+      {/* 실패는 안내와 재시도를 먼저(user-flow 8절) */}
+      {rounds.error && !blocked && (
+        <p role="alert" className="memory-shelf-retry">
+          회차 목록을 불러오지 못했습니다. <button type="button" disabled={rounds.isFetching} onClick={() => void rounds.refetch()}>다시 불러오기</button>
+        </p>
+      )}
       {shelf && items.length === 0 && lockedCount === 0 && <p className="muted">아직 받은 기념 액자가 없습니다. 한 주 테마 다섯 문제를 모두 마치면 생깁니다.</p>}
       {shelf && (items.length > 0 || lockedCount > 0) && (
         <ul className="memory-shelf" aria-label={locked ? '최근 4주 그림책 표지' : '그림책을 발급할 수 있는 회차'}>
