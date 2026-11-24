@@ -42,7 +42,7 @@ AWS 데모 환경(CloudFront → ALB → core)에 k6로 부하를 주어 core·N
 `prepare_accounts.py`가 공개 API로 계정을 만든다. 순서는 ID·비밀번호 가입 → 약관·처리방침 동의 → 자녀(법정대리인 동의) → 학생 기기 등록 → 자녀 PIN이다. 비밀번호·PIN·기기 쿠키는 비밀 파일에만 쓴다.
 
 ```powershell
-python evaluation/load/prepare_accounts.py --base-url https://d3jf0rnm6vhd9v.cloudfront.net `
+python evaluation/load/prepare_accounts.py --base-url https://www.sagomungchi.co.kr `
   --count 4 --prefix load --wait --secrets 'C:\Users\<사용자>\sagomungchi-load\secrets.json'
 ```
 
@@ -96,7 +96,7 @@ pwsh -NoProfile -File evaluation/load/run-stage.ps1 -Vus 10 `
 
 | 변수 | 기본값 | 뜻 |
 |---|---|---|
-| `BASE_URL` | `https://d3jf0rnm6vhd9v.cloudfront.net` | 진입 주소 |
+| `BASE_URL` | `https://www.sagomungchi.co.kr` | 진입 주소 |
 | `VUS` | 10 | 이번 단계의 총 VU (55/20/15/10으로 나눔) |
 | `HOLD` / `RAMP` | `5m` / `30s` | 유지 시간 / 올리는 시간 |
 | `P95_API_MS` | 1000 | 일반 API p95 목표. 넘으면 자동 중단 |

@@ -59,7 +59,7 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 | 위치 | 값 |
 |---|---|
 | Settings → Environments → `prod` | Required reviewers: `20220348-kim`, `kty2001`(GitHub는 이 목록 중 **1명**이 승인하면 job을 시작한다. 필요 승인 수 설정은 없다) / Deployment branches: `main`만 / Allow administrators to bypass: 끔 |
-| Environment `prod` 변수 | `CD_BASE_URL` = 데모 CloudFront https origin(경로 없음) |
+| Environment `prod` 변수 | `CD_BASE_URL` = 시연 웹 https origin(경로 없음). 2026-11-24부터 `https://www.sagomungchi.co.kr`(core `AUTH_WEB_ORIGIN`과 같아야 경로 확인의 로그인이 통과한다) |
 | Repository 변수 | `CD_AWS_ROLE_ARN` = `arn:aws:iam::347161580747:role/sagomungchi-demo-github-cd-publish`, `CD_AWS_REGION` = `ap-northeast-2`, `CD_ECR_REGISTRY` = `347161580747.dkr.ecr.ap-northeast-2.amazonaws.com` |
 | Settings → Actions → General | Fork pull request workflows: 외부 기여자 승인 필요 |
 | OIDC subject (API) | `gh api -X PUT repos/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/actions/oidc/customization/sub -F use_default=false -f "include_claim_keys[]=repo" -f "include_claim_keys[]=context" -f "include_claim_keys[]=job_workflow_ref"` |
@@ -141,7 +141,7 @@ gh workflow run cd-release.yml --ref main -f delivery=pull-request -f plan="$(Ge
 8. 경로 확인: 작업자 PC에서(fixture가 이 PC에만 있음, 위 D) 실행하고 결과를 그 digest PR 댓글로 남긴다.
 
 ```powershell
-python scripts/verify_cd_deployment.py --base-url '<CloudFront https origin>' --fixture $env:CD_SMOKE_FIXTURE_FILE --output smoke.json
+python scripts/verify_cd_deployment.py --base-url 'https://www.sagomungchi.co.kr' --fixture $env:CD_SMOKE_FIXTURE_FILE --output smoke.json
 $s = Get-Content smoke.json -Raw | ConvertFrom-Json
 gh pr comment <PR 번호> --body "경로 확인: ok=$($s.ok), $(($s.steps | ForEach-Object { $_.step + ':' + $(if ($_.ok) {'ok'} else {'fail'}) }) -join ', ')"
 ```

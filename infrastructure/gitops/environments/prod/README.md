@@ -225,7 +225,7 @@ learning-service·report-api도 같은 방식이다. `redeploy-app.ps1 -Service 
 3. Google 신규 가입의 데모 표시(`is_demo`)는 core `AUTH_NEW_ACCOUNT_DEMO`(prod `true`)로 정한다. 실사용 데이터를 섞지 않는다. mark-confirmed-demo-data.sql은 2026-11-03 특정 건수용이므로 일반 seed로 사용하지 않는다. 토스 키가 없으면 테스트 결제 완료로 표시하지 않는다.
 4. core-alb-network.json과 검토한 ALB Ingress를 적용한다. core-service.json의 ingress.enabled=false이므로 앱 설치만으로 ALB가 만들어지지 않는다. core-ingress.redacted.json의 치환 문자열은 절대 그대로 적용하지 않는다. origin 검증 헤더는 Git 밖에서 안전하게 주입하고 CloudFront와 일치시킨다.
 5. CloudFront의 S3 OAC·웹/API 분기·API 캐시/압축 off·전달 정책·origin 60초, ALB 120초·XFF preserve·CloudFront prefix list 제한을 확인한다. 웹 빌드는 확정 소스·lockfile·공개 환경값만 사용한다. assets 먼저, index.html 마지막으로 업로드하고 이전 assets를 바로 지우지 않는다. AWS/Google/LLM 비밀을 VITE 변수에 넣지 않는다.
-6. Google OAuth에는 실제 HTTPS origin과 /api/v1/auth/google/callback, /api/v1/auth/google/reauth/callback을 등록한다. CloudFront 주소가 바뀌면 OAuth와 AUTH_WEB_ORIGIN도 함께 변경해야 한다.
+6. Google OAuth에는 실제 HTTPS origin과 /api/v1/auth/google/callback, /api/v1/auth/google/reauth/callback을 등록한다. 시연 주소는 2026-11-24부터 `https://www.sagomungchi.co.kr`(가비아 CNAME → CloudFront)이다. 웹 주소가 바뀌면 OAuth와 AUTH_WEB_ORIGIN도 함께 변경해야 한다. CloudFront 배포만 바뀌고(B 계정) 도메인이 같으면 둘 다 그대로다.
 7. 관측은 기존 chart README대로 admin·Discord Secret 준비 → network policy → observability values 배포 순으로 수행한다. Secret 원문은 Helm values·출력에 포함하지 않는다.
 
 ### 5. 완료 판정과 실패 처리
