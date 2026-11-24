@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+import { openCompletedReport } from './support/reports.ts'
 import { newParent, useGoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
 import { subscribePremium } from './support/payment.ts'
@@ -11,18 +12,6 @@ import { ensureExplanationModel } from './support/admin.ts'
 // 설명 모델 활성 범위는 관리자 모델 레지스트리 등록·활성화(ensureExplanationModel)
 const mission = '따뜻해진 컵의 비밀' // demo_missions.sql 11번 (초5·ANALYZE·NARRATIVE)
 
-async function openReport(page: Page, kind: '일일 리포트' | '주간 리포트', heading: string) {
-  if (await page.getByRole('dialog').count()) await page.getByRole('dialog').getByRole('button', { name: /닫기$/ }).first().click()
-  await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
-  await page.waitForURL('**/parent/report**')
-  const card = page.locator('.parent-report-group').filter({ has: page.getByRole('heading', { name: kind, exact: true }) }).locator('article').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
-  await expect(async () => {
-    await page.reload()
-    await page.getByRole('button', { name: '리포트 자세히 보기', exact: false }).click()
-    await expect(card.getByText('생성 완료')).toBeVisible({ timeout: 5_000 })
-  }).toPass({ timeout: 180_000, intervals: [3_000] })
-  await card.getByRole('button', { name: '자세히 보기' }).click()
-}
 
 test('프리미엄 학생 서술 답·되묻기 → 일일 리포트 문제 기록 → 주간 리포트 대표 답변 설명', async ({ browser, context, page, baseURL }) => {
   await ensureExplanationModel(browser, baseURL!)
@@ -49,22 +38,22 @@ test('프리미엄 학생 서술 답·되묻기 → 일일 리포트 문제 기�
   // 프리미엄(E2E-PLUS reportNarrative=true) 주간이라 ReportJobService가 계산하는 narrativeEnabled와 같다
   const [from, to] = queueReport(nickname, { narrative: true }).split(' ')
 
-  await openReport(page, '일일 리포트', day)
+  await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
+  await page.waitForURL('**/parent/report**')
+  await openCompletedReport(page, '일일', day)
   await expect(page.getByRole('heading', { name: '일일 리포트', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '활동 기록', exact: true }).click()
   await expect(page.getByRole('heading', { name: '그날 푼 문제' })).toBeVisible()
   const problem = page.locator('details.report-answer-comparison', { has: page.locator('summary').getByText(mission, { exact: true }) })
   await problem.locator('summary').click()
   await expect(problem.getByText('되묻기 1', { exact: true })).toBeVisible()
   await expect(problem.locator('.report-followup').filter({ has: page.getByText('되묻기 1', { exact: true }) }).getByText('그렇게 생각한 까닭을 한 가지 더 이야기해 줄래요?', { exact: true })).toBeVisible()
   await expect(problem.getByRole('heading', { name: '마지막 답' })).toBeVisible()
-  await expect(problem.getByRole('button', { name: '원문 근거' })).toBeVisible()
+  await expect(problem.getByRole('button', { name: '내용', exact: true })).toBeVisible()
 
-  await openReport(page, '주간 리포트', `${from} ~ ${to}`)
+  await openCompletedReport(page, '주간', `${from} ~ ${to}`)
   await expect(page.getByRole('heading', { name: '주간 리포트', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '설명과 근거', exact: true }).click()
-  const explanations = page.getByRole('region', { name: '대표 답변 설명' })
-  const card = explanations.locator('article', { has: page.getByRole('heading', { name: mission, exact: true }) })
-  await expect(card.getByText('AI 관찰', { exact: true })).toBeVisible()
+  const explanations = page.getByRole('region', { name: '젬마 설명' })
+  await expect(page.locator('.weekly-activity-heading')).toContainText(mission)
+  await expect(explanations.getByRole('heading', { name: '상세 분석', exact: true })).toBeVisible()
   await expect(explanations.getByRole('note')).toHaveCount(0)
 })
