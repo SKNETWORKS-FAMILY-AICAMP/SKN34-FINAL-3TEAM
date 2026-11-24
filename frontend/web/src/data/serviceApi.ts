@@ -1,11 +1,11 @@
 import { apiFetch } from './apiClient.ts'
 import { json } from './parent/api.ts'
-import type { Page } from '../domain/parent.ts'
+import { readServicePages } from './support/pages.ts'
 import type { HelpItem, Notice, NotificationItem, NotificationSettings, ReauthPurpose, DeletionScope, DeletionRequest } from '../domain/service.ts'
 const id = encodeURIComponent
 export const serviceApi = {
   help: (role: string, signal?: AbortSignal) => apiFetch<{ role: string; items: HelpItem[] }>(`/help?role=${id(role)}`, { signal }),
-  notices: (signal?: AbortSignal) => apiFetch<Page<Notice>>('/notices', { signal }),
+  notices: (signal?: AbortSignal) => readServicePages<Notice>('/notices', signal),
   notifications: (unreadOnly: boolean, page: number, signal?: AbortSignal) => apiFetch<{ items: NotificationItem[]; page: number; size: number; hasNext: boolean }>(`/notifications?unreadOnly=${unreadOnly}&page=${page}&size=20`, { signal }),
   read: (key: string) => apiFetch<void>(`/notifications/${id(key)}/read`, json({}, 'PATCH')),
   readAll: () => apiFetch<void>('/notifications/read-all', json({})),

@@ -196,6 +196,7 @@ export function makeDaily(c: Child, date: string, revision = 1): WeeklyReport {
       const last = a.answers.at(-1)
       const judged = [...a.answers].reverse().find((v) => v.feedback.judgment)?.feedback.judgment
       return {
+        itemId: `daily-${a.attemptId}`,
         missionId: a.mission.id,
         attemptId: a.attemptId,
         title: a.mission.title,

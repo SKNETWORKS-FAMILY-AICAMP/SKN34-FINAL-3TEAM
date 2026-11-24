@@ -142,6 +142,10 @@ export function Workspace({
       </label>
     </div>
   )
+  function navigateFromMenu() {
+    setMenuOpen(false)
+    if (menuOpen && variant === 'parent') requestAnimationFrame(() => document.getElementById('parent-main')?.focus())
+  }
   const menu = (
     <nav className="ws-nav" aria-label={`${title} 메뉴`}>
       {nav.map((n) => (
@@ -149,7 +153,7 @@ export function Workspace({
           key={n.path}
           to={n.path + menuSearch(location.search, variant === 'parent')}
           aria-current={location.pathname === n.path ? 'page' : undefined}
-          onClick={() => setMenuOpen(false)}
+          onClick={navigateFromMenu}
         >
           {n.label}
         </Link>
@@ -207,7 +211,7 @@ export function Workspace({
             ))}
           </nav>}
           {expiredModal}
-          {menuOpen && <Modal title="학부모 메뉴" onClose={() => setMenuOpen(false)}><div className="ws-parent-menu">{menu}<div className="ws-menu-actions" onClick={event => { if ((event.target as Element).closest('button')) setMenuOpen(false) }}>{logout}</div><ServiceLinks role={session?.role} onNavigate={() => setMenuOpen(false)} /></div></Modal>}
+          {menuOpen && <Modal title="학부모 메뉴" onClose={() => setMenuOpen(false)}><div className="ws-parent-menu">{menu}<div className="ws-menu-actions" onClick={event => { if ((event.target as Element).closest('button')) setMenuOpen(false) }}>{logout}</div><ServiceLinks role={session?.role} onNavigate={navigateFromMenu} /></div></Modal>}
         </div>
       </div>
     )

@@ -6,6 +6,7 @@ import type { Child } from '../../domain/classroom.ts'
 import type { PaymentRecord, PaymentSubscription } from '../../domain/payment.ts'
 import { paymentStateLabel, refundLabels, subscriptionLabels } from '../../domain/payment.ts'
 import { billingClientKey, mockPaymentMode, paymentApi, paymentTestMode } from '../../data/payment/api.ts'
+import { knownEntitlement, useChildEntitlement } from '../../data/payment/queries.ts'
 import { saveBilling } from '../../data/payment/checkoutStorage.ts'
 import { loadToss } from '../../data/payment/toss.ts'
 import { useParentMutation, useParentQuery } from '../../data/parent/queries.ts'
@@ -13,8 +14,15 @@ import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { QueryFeedback } from '../common/Workspace.tsx'
 
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
-function date(value: string | null) { return value ? value.slice(0, 10) : '예정 없음' }
-export function SubscriptionCard({ value: s, refundPending = false }: { value: PaymentSubscription; refundPending?: boolean }) {
+const koreanDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' })
+function date(value: string | null) {
+  if (!value) return '예정 없음'
+  return value.includes('T') ? koreanDate.format(new Date(value)) : value
+}
+export function SubscriptionCard({ value: s }: { value: PaymentSubscription }) {
+  const active = ['ACTIVE', 'RENEWAL_FAILED'].includes(s.status)
+  const entitlement = useChildEntitlement(s.childId, active)
+  const refundPending = knownEntitlement(entitlement)?.refundPending
   const navigate = useNavigate()
   const [agree, setAgree] = useState(false), [change, setChange] = useState<boolean | null>(null)
   const billingAvailable = mockPaymentMode || /^test_ck_/.test(billingClientKey)
@@ -28,18 +36,18 @@ export function SubscriptionCard({ value: s, refundPending = false }: { value: P
     await window.TossPayments!(billingClientKey).payment({ customerKey: setup.customerKey }).requestBillingAuth({ method: 'CARD', successUrl: location.origin + '/payment/billing/success', failUrl: location.origin + '/payment/billing/fail' })
   })
   const renewal = useParentMutation((enabled: boolean) => paymentApi.autoRenew(s.subscriptionId, enabled))
-  const active = ['ACTIVE', 'RENEWAL_FAILED'].includes(s.status)
   return <article className="payment-panel subscription-current"><h3>{s.product?.name ?? '이용권'} · {subscriptionLabels[s.status] ?? '상태 확인 필요'}</h3>
     <dl><div><dt>이용 기간</dt><dd>{date(s.periodStart)} ~ {date(s.periodEnd)} 09:00 KST</dd></div><div><dt>자동 갱신</dt><dd>{s.autoRenew ? '사용 중' : '사용 안 함'}</dd></div><div><dt>다음 결제</dt><dd>{date(s.nextBillingDate)}{s.nextBillingDate ? ' 09:00 KST' : ''}</dd></div><div><dt>갱신 금액</dt><dd>{s.product ? won(s.product.price) : '확인 필요'}</dd></div><div><dt>결제수단</dt><dd>{s.billingRegistered ? '등록됨' : '미등록'}</dd></div></dl>
     {s.status === 'RENEWAL_FAILED' && <p role="status">갱신 결제에 실패했습니다. 재청구 {s.renewalRetryCount}회 / 최대 3회. 유예 종료 {date(s.graceUntil)}. 다음 재시도 {date(s.nextBillingDate)}{s.autoRenew ? ' 09:00 KST' : ' · 자동 갱신 중단'}. 유예 중 이용은 유지되며, 모두 실패하면 해지됩니다.</p>}
+    {active && <QueryFeedback query={entitlement} />}
     {active && <details className="subscription-controls"><summary>결제수단·자동 갱신 관리</summary><label className="payment-agreement"><input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} />결제수단을 등록하면 표시된 금액으로 매월 자동 갱신되는 데 동의합니다.</label>
-      <button disabled={refundPending || !agree || register.isPending || !billingAvailable} onClick={() => void register.mutateAsync(undefined).catch(() => {})}>{s.billingRegistered ? '결제수단 변경' : '자동결제 수단 등록'}</button>
+      <button disabled={refundPending !== false || !agree || register.isPending || !billingAvailable} onClick={() => void register.mutateAsync(undefined).catch(() => {})}>{s.billingRegistered ? '결제수단 변경' : '자동결제 수단 등록'}</button>
       {!billingAvailable && <p role="note">지금 자동결제를 이용할 수 없어요. <Link to="/parent/support">결제 문의하기</Link></p>}
-      <div className="payment-actions">{s.autoRenew ? <button disabled={renewal.isPending} onClick={() => setChange(false)}>무료 플랜으로 전환</button> : s.status === 'ACTIVE' && s.billingRegistered && !refundPending && <button disabled={renewal.isPending} onClick={() => setChange(true)}>자동 갱신 해지 철회</button>}</div>
+      <div className="payment-actions">{s.autoRenew ? <button disabled={renewal.isPending} onClick={() => setChange(false)}>무료 플랜으로 전환</button> : s.status === 'ACTIVE' && s.billingRegistered && refundPending === false && <button disabled={renewal.isPending} onClick={() => setChange(true)}>자동 갱신 해지 철회</button>}</div>
       {!s.autoRenew && <p>새로운 자동 청구는 하지 않습니다. 이미 결제한 이용 기간은 유지됩니다.</p>}</details>}
     {refundPending && <p>환불 검토 중에는 결제수단 등록·변경과 자동 갱신 해지 철회가 제한됩니다.</p>}
     <ErrorNotice error={register.error ?? renewal.error} />
-    {change !== null && <Modal title={change ? '자동 갱신 해지 철회' : '자동 갱신 해지'} onClose={() => setChange(null)}><p>{change ? `${date(s.periodEnd)}부터 매월 자동 청구를 다시 시작합니다.` : `${date(s.periodEnd)} 09:00 KST까지 이용할 수 있으며 다음 자동 청구를 중단합니다. 이미 결제된 금액은 환불되지 않습니다.`}</p><button disabled={renewal.isPending} onClick={() => void renewal.mutateAsync(change).then(() => setChange(null)).catch(() => {})}>{renewal.isPending ? '처리 중…' : '내용 확인 후 적용'}</button><ErrorNotice error={renewal.error} /></Modal>}
+    {change !== null && <Modal title={change ? '자동 갱신 해지 철회' : '자동 갱신 해지'} onClose={() => setChange(null)}><p>{change ? `${date(s.periodEnd)}부터 매월 자동 청구를 다시 시작합니다.` : `${date(s.periodEnd)} 09:00 KST까지 이용할 수 있으며 다음 자동 청구를 중단합니다. 이미 결제된 금액은 환불되지 않습니다.`}</p><button disabled={renewal.isPending || (change && refundPending !== false)} onClick={() => void renewal.mutateAsync(change).then(() => setChange(null)).catch(() => {})}>{renewal.isPending ? '처리 중…' : '내용 확인 후 적용'}</button><ErrorNotice error={renewal.error} /></Modal>}
   </article>
 }
 function RefundForm({ payment, onClose }: { payment: PaymentRecord; onClose: () => void }) {
@@ -50,7 +58,7 @@ function RefundForm({ payment, onClose }: { payment: PaymentRecord; onClose: () 
 export function PaymentManagement({ child, section = 'all' }: { child?: Child; section?: 'all' | 'subscriptions' | 'history' }) {
   const [page, setPage] = useState(0), [refund, setRefund] = useState<PaymentRecord | null>(null)
   const subscriptions = useParentQuery(['subscriptions'], signal => paymentApi.subscriptions(signal), !paymentTestMode)
-  const history = useParentQuery(['payment-history', page], signal => paymentApi.history(page, signal), !paymentTestMode)
+  const history = useParentQuery(['payment-history', child?.id, page], signal => paymentApi.history(page, signal, child?.id), !paymentTestMode && section !== 'subscriptions')
   const [checking, setChecking] = useState(''), [checkError, setCheckError] = useState<unknown>(null)
   const refresh = useParentMutation((orderId: string) => paymentApi.state(orderId))
   const consentReady = useSession().session?.nextAction !== 'CONSENT_REQUIRED'
@@ -60,15 +68,15 @@ export function PaymentManagement({ child, section = 'all' }: { child?: Child; s
   const own = subscriptions.data?.items.filter(s => !child || s.childId === child.id) ?? []
   const rows = history.data?.items.filter(p => !child || p.childId === child.id) ?? []
   return <div className="payment-management">
-    {section !== 'history' && <section id="current-subscriptions" aria-label="현재 구독"><h2>현재 구독</h2><QueryFeedback query={subscriptions} />{subscriptions.data && !own.length && <p>이 자녀의 구독이 없습니다. 이용 가능한 플랜은 아래에서 확인해 주세요.</p>}{own.map(s => <SubscriptionCard key={s.subscriptionId} value={s} refundPending={history.data?.items.some(p => p.childId === s.childId && p.refundRequests.some(r => ['REQUESTED','APPROVED'].includes(r.status)))} />)}</section>}
+    {section !== 'history' && <section id="current-subscriptions" aria-label="현재 구독"><h2>현재 구독</h2><QueryFeedback query={subscriptions} />{subscriptions.data && !own.length && <p>이 자녀의 구독이 없습니다. 이용 가능한 플랜은 아래에서 확인해 주세요.</p>}{own.map(s => <SubscriptionCard key={s.subscriptionId} value={s} />)}</section>}
     {section !== 'subscriptions' && <section aria-label="결제 및 환불 내역"><h2>결제·취소·환불 내역</h2><p>현재 선택한 자녀의 거래입니다. 다른 자녀의 내역은 오른쪽 상단에서 자녀를 바꿔 확인해 주세요.</p><QueryFeedback query={history} /><ErrorNotice error={checkError} />
       {history.data && !rows.length && <p>이 페이지에 해당 자녀의 결제 내역이 없습니다.</p>}
-      <div className="payment-history">{rows.map(p => <article key={p.orderId} className="payment-panel"><div className="payment-history-heading"><h3>{p.subscription?.product?.name ?? '이용권 결제'}</h3><strong>{won(p.amount)}</strong></div><p>{paymentStateLabel(p)}</p><small>대상 자녀 {childName(p.childId)} · 승인일 {date(p.approvedAt)}</small><details><summary>거래 자세히 보기</summary><p>주문번호 {p.orderId}</p></details>
+      <div className="payment-history">{rows.map(p => <article key={p.orderId} className="payment-panel"><div className="payment-history-heading"><h3>{p.subscription?.product?.name ?? '이용권 결제'}</h3><strong>{won(p.amount)}</strong></div><p>{paymentStateLabel(p)}</p><small>대상 자녀 {childName(p.childId)} · 승인일 {p.approvedAt ? `${date(p.approvedAt)} (한국 시간)` : '승인 전'}</small><details><summary>거래 자세히 보기</summary><p>주문번호 {p.orderId}</p></details>
         {p.refundRequests.map(r => <div key={r.id} className="payment-refund-status"><strong>{refundLabels[r.status] ?? '처리 상태 확인 필요'}</strong><p>{r.rejectReason ?? (r.status === 'APPROVED' ? 'PG 취소 결과를 확인하고 있습니다. 환불 완료 상태와 다릅니다.' : r.status === 'FAILED' ? '환불 처리가 실패했습니다. 문의를 통해 처리 상태를 확인해 주세요.' : r.status === 'REQUESTED' ? '사용 내역과 환불 조건을 검토하고 있습니다.' : r.status === 'COMPLETED' ? '전액 환불이 완료되었습니다.' : '환불 처리 내역입니다.')}</p></div>)}
         <div className="payment-actions"><button disabled={refresh.isPending && checking === p.orderId} onClick={() => { setChecking(p.orderId); setCheckError(null); void refresh.mutateAsync(p.orderId).catch(setCheckError) }}>최신 거래 상태 확인</button>{p.status === 'APPROVED' && p.paymentId && !p.refundRequests.some(r => ['REQUESTED', 'APPROVED', 'COMPLETED'].includes(r.status)) && <button onClick={() => setRefund(p)}>환불 요청</button>}</div>
         {p.refundRequests.some(r => r.status === 'FAILED') && <Link to="/parent/support">결제 문의하기</Link>}
       </article>)}</div>
-      <nav className="payment-actions" aria-label="거래 내역 페이지"><button disabled={page === 0 || history.isFetching} onClick={() => setPage(p => p - 1)}>이전 거래</button><span>{page + 1}페이지</span><button disabled={history.isFetching || !history.data || history.data.items.length < 20} onClick={() => setPage(p => p + 1)}>다음 거래</button></nav>
+      <nav className="payment-actions" aria-label="거래 내역 페이지"><button disabled={page === 0 || history.isFetching} onClick={() => setPage(p => p - 1)}>이전 거래</button><span>{page + 1}페이지</span><button disabled={history.isFetching || !history.data || !history.data.hasNext} onClick={() => setPage(p => p + 1)}>다음 거래</button></nav>
     </section>}
     {refund && <RefundForm key={refund.orderId} payment={refund} onClose={() => setRefund(null)} />}
   </div>

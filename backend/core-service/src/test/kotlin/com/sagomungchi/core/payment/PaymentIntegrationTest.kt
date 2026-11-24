@@ -106,6 +106,20 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
             jsonPath("$.narrativeEnabled") { value(true) }; jsonPath("$.conversationEnabled") { value(true) }
         }
     }
+    @Test fun `own history filters the child before paging and reports the last page`() {
+        val sibling = child(jdbc, owner)
+        val ownOrder = payments.create(owner, student, premium)
+        payments.create(owner, sibling, premium)
+        val bearer = tokens.access(session(jdbc, owner, "PARENT"))
+        fun history(query: String) = mvc.get("/api/v1/payments?size=1&$query") { header("Authorization", "Bearer $bearer") }
+        history("childId=$student").andExpect {
+            status { isOk() }; jsonPath("$.items[0].orderId") { value(ownOrder.orderId) }; jsonPath("$.hasNext") { value(false) }
+        }
+        history("page=0").andExpect { status { isOk() }; jsonPath("$.hasNext") { value(true) } }
+        history("page=1").andExpect { status { isOk() }; jsonPath("$.hasNext") { value(false) } }
+        history("childId=${UUID.randomUUID()}").andExpect { status { isOk() }; jsonPath("$.items") { isEmpty() } }
+    }
+
     private fun anyId(): UUID=any(UUID::class.java) ?: UUID(0,0)
     private fun anyTime(): OffsetDateTime=any(OffsetDateTime::class.java) ?: OffsetDateTime.MIN
     private fun anyDate(): LocalDate=any(LocalDate::class.java) ?: LocalDate.MIN
@@ -169,6 +183,8 @@ class PaymentIntegrationTest: PostgresRepositoryTest() {
             content=json.writeValueAsString(mapOf("paymentKey" to "synthetic-http","orderId" to no,"amount" to 14900))
         }.andExpect { status { isOk() };jsonPath("$.entitlementStatus") { value("APPLIED") } }.andReturn().response.contentAsString
         java.nio.file.Files.writeString(directory.resolve("payment-state.json"),payment)
+        val history=mvc.get("/api/v1/payments?childId=$student") { header("Authorization","Bearer $bearer") }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+        java.nio.file.Files.writeString(directory.resolve("payment-history.json"),history)
         val subscriptions=mvc.get("/api/v1/subscriptions") { header("Authorization","Bearer $bearer") }.andExpect { status { isOk() } }.andReturn().response.contentAsString
         java.nio.file.Files.writeString(directory.resolve("payment-subscriptions.json"),subscriptions)
     }

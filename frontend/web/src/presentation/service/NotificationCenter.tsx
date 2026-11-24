@@ -18,6 +18,7 @@ export function NotificationCenter({ role, embedded = false, onNavigate }: { rol
   const read = useParentMutation(serviceApi.read), all = useParentMutation(serviceApi.readAll), save = useParentMutation(serviceApi.saveSettings)
   const [edited, setEdited] = useState<Record<string, boolean>>({})
   const reload = () => { void cache.invalidateQueries({ queryKey: ['parent', 'notifications'] }) }
+  if (view === 'list' && q.isSuccess && !q.isFetching && page > 0 && !q.data.items.length) setPage(page - 1)
   if (role === 'STUDENT') return <p>학생 전용 알림함은 제공하지 않습니다.</p>
   return <div className="notification-center">
     {!embedded && <h1>알림</h1>}
@@ -27,9 +28,9 @@ export function NotificationCenter({ role, embedded = false, onNavigate }: { rol
     </nav>
     {view === 'list' ? <>
       <div className="ws-actions notification-toolbar"><label className="ws-check"><input type="checkbox" checked={unread} onChange={e => { setUnread(e.target.checked); setPage(0) }} />읽지 않은 알림만</label>
-        <div className="notification-bulk-actions"><button onClick={reload}>새로고침</button><button disabled={all.isPending || !!q.error} onClick={() => void all.mutateAsync(undefined).then(reload).catch(() => {})}>모두 읽음</button></div></div>
+        <div className="notification-bulk-actions"><button onClick={reload}>새로고침</button><button disabled={all.isPending || !!q.error} onClick={() => void all.mutateAsync(undefined).then(() => { setPage(0); reload() }).catch(() => {})}>모두 읽음</button></div></div>
       <QueryFeedback query={q} /><ErrorNotice error={read.error ?? all.error} />
-      {!q.error && q.data && !q.data.items.length && <p>표시할 알림이 없습니다.</p>}
+      {page === 0 && !q.error && q.data && !q.data.items.length && <p>표시할 알림이 없습니다.</p>}
       {!q.error && q.data?.items.map(n => {
         const path = notificationPath(n.link, role, location.origin)
         const childName = !children.error && children.data?.items.find(child => child.id === n.childId)?.nickname

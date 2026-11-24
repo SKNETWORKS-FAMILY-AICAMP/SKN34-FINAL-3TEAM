@@ -4,7 +4,7 @@ import './parent-overview.css'
 import { ActivityExplorer } from './ActivityExplorer.tsx'
 import { ChildParticipation } from './ChildParticipation.tsx'
 import { ThinkingIcon } from './ThinkingIcon.tsx'
-import { useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { parentApi } from '../../data/parent/api.ts'
 import { useParentDashboard, useParentQuery } from '../../data/parent/queries.ts'
 import type { Child, Metric } from '../../domain/classroom.ts'
@@ -28,7 +28,8 @@ const stateText = {
  * 학부모 대시보드 (FN-DSH-06~10, 학부모 대시보드 시안).
  * 숫자는 서버 Metric 그대로 쓰고, 표본이 적으면 비율을 만들지 않는다. 기록 없는 유형은 '미관찰'로 둔다.
  */
-export function ParentDashboard({ child, scope, canReadOriginals = false }: { child: Child; scope: Scope; canReadOriginals?: boolean; sharingPending?: boolean }) {
+export function ParentDashboard({ child, scope, canReadOriginals = false, sharingKnown, onChangePeriod }: { child: Child; scope: Scope; canReadOriginals?: boolean; sharingKnown: boolean; onChangePeriod: () => void }) {
+  const { search } = useLocation()
   const scopeKey = `${scope.childId}:${scope.from}:${scope.to}`
   const [selection, setSelection] = useState({ key: scopeKey, page: 0, record: null as string | null })
   const current = selection.key === scopeKey ? selection : { key: scopeKey, page: 0, record: null }
@@ -41,6 +42,15 @@ export function ParentDashboard({ child, scope, canReadOriginals = false }: { ch
   const setRecord = (id: string | null) => setSelection({ ...current, record: id })
   const summary = q.summary.data && !q.summary.error ? q.summary.data : null
   const thinking = q.thinking.data && !q.thinking.error ? q.thinking.data.items : null
+  const total = summary && ['OK', 'INSUFFICIENT_SAMPLE'].includes(summary.state) ? summary.metrics[0]?.count : undefined
+  const revised = summary?.metrics.find(m => m.label === '생각을 덧붙인 활동' || m.label === '되묻기 후 생각을 더한 활동')
+  let activitySummary = '답변을 제출한 활동'
+  if (total !== undefined && total > 0) {
+    activitySummary = `이 기간에 활동 ${total}개에 답했어요.`
+    if (revised && Number.isInteger(revised.numerator) && revised.numerator >= 0 && revised.numerator <= total) {
+      activitySummary += ` 그중 ${revised.numerator}개에서 생각을 덧붙였어요.`
+    }
+  }
   const seen = thinking && !['FAILED', 'PROCESSING'].includes(q.thinking.data!.state) &&
     thinking.every((t) => !['FAILED', 'PROCESSING'].includes(t.state))
     ? thinking.filter((t) => t.state === 'OK' || t.state === 'INSUFFICIENT_SAMPLE').length : undefined
@@ -60,13 +70,18 @@ export function ParentDashboard({ child, scope, canReadOriginals = false }: { ch
           <span className="pd-chip pd-chip-warn">{stateText[summary.state]}</span>
           <span>
             {summary.state === 'NO_RECORD'
-              ? '아직 집계할 기록이 없습니다. 기기·PIN에서 학생 기기를 등록한 뒤, 학생 화면에서 PIN으로 로그인해 첫 활동을 시작해 보세요.'
+              ? '선택한 기간에 답변을 제출한 활동이 없습니다.'
               : summary.state === 'INSUFFICIENT_SAMPLE'
                 ? `이 기간 집계 대상 활동이 ${summary.metrics[0]?.count ?? '확인되지 않음'}건입니다. 비율은 5건 이상일 때부터 보여 드립니다.`
                 : summary.state === 'FAILED' ? '학습 기록 조회에 실패했습니다. 다시 시도해 주세요.'
                 : summary.state === 'PROCESSING' ? '학습 기록을 처리 중입니다.'
                 : '기간 내 기록을 집계했습니다.'}
           </span>
+          {summary.state === 'NO_RECORD' && <div className="pd-empty-actions">
+            <button type="button" className="cj-secondary" onClick={onChangePeriod}>조회 기간 바꾸기</button>
+            <Link to={'/parent/devices' + search}>첫 학습 준비 · {child.nickname}의 기기·PIN 설정</Link>
+          </div>}
+          {summary.state === 'FAILED' && <button type="button" className="cj-secondary" disabled={q.summary.isFetching} onClick={() => void q.summary.refetch()}>다시 시도</button>}
         </div>
       )}
 
@@ -75,7 +90,7 @@ export function ParentDashboard({ child, scope, canReadOriginals = false }: { ch
           <h2>이번 기간의 학습</h2>
           <div className="pd-overview-focus">
             <div className="pd-focus-value"><strong>{summary && !['FAILED', 'PROCESSING'].includes(summary.state) ? summary.metrics[0]?.count ?? '—' : '—'}</strong><span>건</span><span className="pd-focus-coverage">{seen ?? '—'} / 5가지 생각 활동</span></div>
-            <p>답변을 제출한 활동</p>
+            <p>{activitySummary}</p>
             <div className="pd-activity-chart" aria-label="생각 유형별 관찰 기록 수">
               {Object.entries(thinkingLabels).map(([type, label]) => {
                 const item = thinking?.find(t => t.type === type)
@@ -111,15 +126,14 @@ export function ParentDashboard({ child, scope, canReadOriginals = false }: { ch
                     {t.missions.slice(0, 5).map(m => canReadOriginals
                       ? <button key={m.attemptId} type="button" title={m.title} onClick={() => setRecord(m.attemptId)}>{m.title}</button>
                       : <span key={m.attemptId} title={m.title}>{m.title}</span>)}
-                    {t.missions.length > 5 && <button type="button" className="pd-more-dots" aria-label={`${thinkingLabels[t.type]} 자세히 보기`}
-                      aria-haspopup="dialog"
-                      onClick={() => openPanel('thinking', t.type)}>
-                      <span aria-hidden="true">…</span><span className="pd-more-tooltip" aria-hidden="true">자세히 보기</span>
-                    </button>}
                   </div>
                   <div className="pd-type-actions">
-                    <span className="pd-chip">{t.state === 'OK' || t.state === 'INSUFFICIENT_SAMPLE' ? `${t.missions.length}개 미션에서 관찰` : t.state === 'NO_RECORD' ? '미관찰' : stateText[t.state]}</span>
-
+                    {(t.state === 'OK' || t.state === 'INSUFFICIENT_SAMPLE') && t.missions.length > 0
+                      ? <button type="button" className="pd-type-records" aria-label={`${thinkingLabels[t.type]} 기록 ${t.missions.length}건 보기`}
+                          aria-haspopup="dialog" onClick={() => openPanel('thinking', t.type)}>
+                          기록 {t.missions.length}건 보기 <ArrowUpRight size={14} aria-hidden="true" />
+                        </button>
+                      : <span className="pd-chip">{t.state === 'NO_RECORD' || t.state === 'OK' ? '미관찰' : stateText[t.state]}</span>}
                   </div>
 
                 </li>
@@ -147,7 +161,7 @@ export function ParentDashboard({ child, scope, canReadOriginals = false }: { ch
             {panel === 'participation' && <div className="pd-explorer-period">참여 기록 · 전체 기간</div>}
             {record && canReadOriginals && <><button className="pd-explorer-back" type="button" onClick={() => setRecord(null)}>← 목록으로</button><RecordDetail scope={detailScope} id={record} /></>}
             <div hidden={!!record && canReadOriginals}>
-              {panel === 'thinking' && <ActivityExplorer scope={scope} initialType={typeFilter} canReadOriginals={canReadOriginals} onOpen={(id, period) => { setDetailScope(period); setRecord(id) }} />}
+              {panel === 'thinking' && <ActivityExplorer sharingKnown={sharingKnown} scope={scope} initialType={typeFilter} canReadOriginals={canReadOriginals} onOpen={(id, period) => { setDetailScope(period); setRecord(id) }} />}
               {panel === 'participation' && <ChildParticipation child={child} canReadOriginals={canReadOriginals} />}
             </div>
           </div>
@@ -197,14 +211,24 @@ function Kpi({ m, index }: { m: Metric; index: number }) {
 
 function ReportCard({ child }: { child: Child }) {
   const navigate = useNavigate()
+  const { search } = useLocation()
   const list = useParentQuery(['reports', child.id, ''], (signal) => parentApi.reports(child.id, '', signal))
-  const latest = list.data && !list.error ? list.data.items[0] : undefined
-  const go = (path: string) => navigate(`${path}${window.location.search}`)
+  const latest = list.data && !list.error ? list.data.items.filter(report => reportPeriodType(report) === 'WEEKLY')
+    .sort((a, b) => b.period.to.localeCompare(a.period.to) || b.revision - a.revision)[0] : undefined
+  const reportParams = new URLSearchParams(search)
+  reportParams.delete('reportId')
+  reportParams.delete('revision')
+  reportParams.set('view', 'reports')
+  const allReports = '/parent/report?' + reportParams
+  if (latest?.status === 'COMPLETED') {
+    reportParams.set('reportId', latest.reportId)
+    reportParams.set('revision', String(latest.revision))
+  }
   return (
     <section aria-labelledby="report-h" className="pd-card pd-report">
-      <div className="pd-report-title"><BookOpen size={21} aria-hidden="true" /><h2 id="report-h">{latest ? reportPeriodType(latest) === 'DAILY' ? '최근 일일 리포트' : '최근 주간 리포트' : '최근 리포트'}</h2></div>
+      <div className="pd-report-title"><BookOpen size={21} aria-hidden="true" /><h2 id="report-h">최근 주간 리포트</h2></div>
       <QueryFeedback query={list} />
-      {list.data && !list.error && !latest && <p>아직 생성된 리포트가 없습니다. 학습 기록이 쌓이면 일일·주간 리포트에서 확인할 수 있습니다.</p>}
+      {list.data && !list.error && !latest && <p>아직 생성된 주간 리포트가 없습니다. 매주 월요일 0시(한국 시간)에 지난주 기록을 모읍니다.</p>}
       {latest && (
         <div className="pd-report-meta">
           <span className="pd-num">
@@ -217,10 +241,11 @@ function ReportCard({ child }: { child: Child }) {
       )}
       <EntitlementSummary childId={child.id} report />
       <div className="pd-actions">
-        <button type="button" className="cj-primary" onClick={() => go('/parent/report')}>
-          리포트 열기
-        </button>
-        <button type="button" className="cj-secondary" onClick={() => go('/parent/analysis')}>
+        {latest?.status === 'COMPLETED' && <button type="button" className="cj-primary" onClick={() => navigate('/parent/report?' + reportParams)}>
+          이 주간 리포트 보기
+        </button>}
+        <button type="button" className="cj-secondary" onClick={() => navigate(allReports)}>전체 리포트</button>
+        <button type="button" className="cj-secondary" onClick={() => navigate('/parent/analysis' + search)}>
           AI 챗봇으로 질문하기
         </button>
       </div>
