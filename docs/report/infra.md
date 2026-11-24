@@ -1951,6 +1951,52 @@ SELECT status, failure_code, size_bytes, created_at, completed_at FROM memory_bo
 - 이 PR에서는 AWS에 적용하지 않았다. 적용은 #974의 A 계정 확인 일정에서 `plan`으로 차이를 본 뒤 `apply --confirm-account`로 한다.
 - 시험: `scripts/tests/test_aws_demo_stack.py`(정의가 그림책 접두어만 고름·35일·이전 버전·삭제 표시, 빈 버킷에만 넣고 다른 규칙은 덮지 않음), report `tests/test_memory_book_generation.py`(새 키 모양, 한 권·학생 전체 삭제, 위험한 접두어 거부).
 
+## 9.22 시연 도메인 www.sagomungchi.co.kr 전환 (2026-11-24)
+
+시연 주소를 CloudFront 기본 주소(`https://d3jf0rnm6vhd9v.cloudfront.net`)에서 `https://www.sagomungchi.co.kr`로 바꿨다. 계정과 무관한 주소라 A→B 계정 전환(#809) 때 앱·OAuth·CD 값을 다시 바꾸지 않아도 된다. 아래 AWS·가비아 작업은 동섭이 손으로 했고, 이 PR은 저장소 값과 문서만 바꾼다.
+
+### 9.22.1 한 일
+
+| 항목 | 값·상태 | 비고 |
+|---|---|---|
+| 도메인 구입 | 2026-11-24 가비아 `sagomungchi.co.kr`, 네임서버는 가비아 | |
+| DNS | 가비아 `www` CNAME → `d3jf0rnm6vhd9v.cloudfront.net` | B 계정 때는 대상만 B CloudFront 기본 주소로 바꾼다 |
+| 인증서 | us-east-1 ACM, `www.sagomungchi.co.kr`·`sagomungchi.co.kr`, DNS 검증(가비아 CNAME), ISSUED | CloudFront는 us-east-1 인증서만 쓴다 |
+| A CloudFront | `EW2QD9OAPEVRK`에 대체 도메인 `www.sagomungchi.co.kr`, 위 인증서, 보안 정책 TLSv1.2_2021 | 루트는 별칭에 넣지 않았다 |
+| 루트 주소 | 가비아 포워딩으로 `https://www.sagomungchi.co.kr`에 넘길 예정 | 루트(apex)에는 CNAME을 둘 수 없어 CloudFront에 직접 연결하지 않는다 |
+| core `AUTH_WEB_ORIGIN` | prod `core-service.json`에서 `https://www.sagomungchi.co.kr` | 아래 9.22.2 |
+| 스크립트 기본값 | `verify-viewer-ip.ps1`, `evaluation/load/core-load.js`, `evaluation/load/README.md` | 요청 Origin이 `AUTH_WEB_ORIGIN`과 같아야 하므로 함께 바꿨다 |
+
+### 9.22.2 `AUTH_WEB_ORIGIN` 하나만 바꾼 근거
+
+- core는 웹 주소를 `AuthProperties.webOrigin`(`app.auth.web-origin`, 환경변수 `AUTH_WEB_ORIGIN`) 하나로만 받는다. 이 값으로 Google OAuth callback(`/api/v1/auth/google/callback`)·재인증 callback(`/api/v1/auth/google/reauth/callback`)과 로그인 뒤 이동 주소(`/oauth/complete`, `/login?oauthError=…`)를 만들고, `PublicAuthFilter`가 쿠키 인증 경로(refresh·학생 로그인 등)의 `Origin` 헤더를 이 값과 정확히 비교한다.
+- 값은 경로·끝 `/` 없는 origin이어야 한다(`AuthProperties` 초기 검사, `TokenServiceTest`). 그래서 여러 주소를 허용할 수 없다.
+- 다른 서비스는 웹 주소를 받지 않는다. 결제 성공·실패 주소와 재인증 주소 검사는 웹이 `location.origin`으로 만들고, 웹 빌드 env에도 주소가 없다(웹과 API가 같은 origin). 리포트·알림에 웹 링크를 넣는 설정도 없다.
+- **예전 주소로는 로그인이 안 된다.** `https://d3jf0rnm6vhd9v.cloudfront.net`으로 열면 화면은 뜨지만 Google 로그인은 callback이 새 주소로 돌아가고, refresh·학생 로그인은 Origin 불일치로 403이다. 2026-11-24에 이를 받아들이기로 했다. 쿠키는 host 단위라 예전 주소에서 받은 refresh·`student_device` 쿠키는 새 주소에서 쓰이지 않으므로 다시 로그인·기기 등록을 한다(CD 경로 확인 fixture 포함).
+
+### 9.22.3 손으로 바꿀 것 (저장소 밖)
+
+| 대상 | 값 |
+|---|---|
+| Google OAuth 클라이언트 → 승인된 JavaScript 원본 | `https://www.sagomungchi.co.kr` |
+| Google OAuth 클라이언트 → 승인된 리디렉션 URI | `https://www.sagomungchi.co.kr/api/v1/auth/google/callback`, `https://www.sagomungchi.co.kr/api/v1/auth/google/reauth/callback` |
+| GitHub Environment `prod` 변수 `CD_BASE_URL` | `https://www.sagomungchi.co.kr` |
+
+예전 cloudfront.net origin·callback은 B 전환이 끝날 때까지 지우지 않아도 된다(core가 새 값만 쓰므로 영향 없음).
+
+### 9.22.4 B 계정
+
+도메인은 그대로 쓰고 앱 값(`AUTH_WEB_ORIGIN`, OAuth, `CD_BASE_URL`)은 바꾸지 않는다. B에서는 us-east-1 ACM 인증서 재발급(가비아 검증 CNAME 추가) → A CloudFront에서 대체 도메인 떼기 → B CloudFront에 붙이기 → 가비아 `www` CNAME 대상 변경 순서로 한다([AWS README 확인 필요 표](../../infrastructure/aws/README.md#확인-필요)). 같은 대체 도메인은 두 배포에 동시에 둘 수 없어 바꾸는 동안 잠깐 끊긴다.
+
+### 9.22.5 남은 확인 (A 재가동 뒤)
+
+이 PR은 develop 병합 → develop→main 릴리스(#623) → A 재가동으로 반영된다. 아래는 아직 확인하지 않았다.
+
+- `https://www.sagomungchi.co.kr` 웹 첫 화면과 인증서, `sagomungchi.co.kr` 포워딩
+- 학부모 Google 로그인·재인증, 학생 기기 로그인(refresh 403 없음)
+- `verify_cd_deployment.py --base-url https://www.sagomungchi.co.kr` 경로 확인(fixture 쿠키를 새 주소에서 다시 받은 뒤)
+- 예전 주소에서 로그인이 막히는 것(예상 동작)
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
