@@ -1698,7 +1698,7 @@ SageMaker는 0대에서 켜질 때마다 S3에서 모델을 다시 받는데, �
 | AppProject | `sagomungchi-prod`. 출처는 이 저장소와 ESO·LB Controller·Karpenter chart 저장소, 대상은 `argocd`·`app`·`platform`·`observability`·`external-secrets`·`kube-system`, cluster 범위 자원은 Namespace·StorageClass·CRD·ClusterRole(Binding)·webhook 설정·IngressClass(Params)·NodePool·EC2NodeClass만. AppProject 자체는 하위 Application이 만들 수 없음 | #856·#857이 쓰는 범위만 연다. 새 namespace·외부 chart가 필요하면 그 PR에서 이 파일을 함께 고친다 |
 | root app | `sagomungchi-prod-root`, `targetRevision: main`, `argocd/prod`에서 `{platform/*.yaml,apps/*.yaml}`만 읽음. 자동 동기화(prune 끔, selfHeal 켬), 재시도 3회 | main 병합이 배포 승인이다. 하위 Application 파일을 지워도 배포된 리소스가 함께 지워지지 않도록 prune은 손으로 |
 | sync wave 대기 | `resource.customizations.health.argoproj.io_Application`으로 하위 Application health를 root에 올림 | Argo CD 1.8부터 Application health가 꺼져 있어, 켜지 않으면 app-of-apps에서 다음 wave가 앞 wave의 Healthy를 기다리지 않는다 |
-| 알림 | Notifications 켬, webhook 서비스 `discord`, 기본 구독으로 모든 Application의 동기화 성공·실패(같은 revision 1회)와 Health Degraded. webhook URL은 `argocd-notifications-secret`의 `discord-webhook-url`에 손으로 | Grafana 경보와 같은 Discord 채널(확인 필요 기본안). Argo CD에는 Discord 전용 서비스가 없어 webhook JSON(`content`)으로 보내고, 메시지는 `toJson`으로 따옴표를 처리 |
+| 알림 | Notifications 켬, webhook 서비스 `discord`, 기본 구독으로 모든 Application의 동기화 성공·실패(같은 revision 1회)와 Health Degraded. webhook URL은 `argocd-notifications-secret`의 `discord-webhook-url`에 손으로. **webhook은 Argo CD 전용**(원본 Secrets Manager `sagomungchi/demo/argocd/discord-webhook`), Grafana 경보 webhook과 나눔(#1003, 2026-11-24 결정) | Grafana 경보와 같은 Discord 채널(확인 필요 기본안). 전송마다 webhook URL이 로그에 남는데 설정으로 끌 수 없어 값을 나눴다(아래 #1003). Argo CD에는 Discord 전용 서비스가 없어 webhook JSON(`content`)으로 보내고, 메시지는 `toJson`으로 따옴표를 처리 |
 | CI | `ci-gitops.yml`의 kubeconform이 `argocd/` 전체(local·prod)를 이미 검사. `argocd.json`은 외부 chart values로 건너뛰기 목록에 추가 | 빠지면 app-service chart로 렌더링돼 실패한다(testing-ci 4절의 규칙) |
 
 **확인 (2026-11-20, 저장소·로컬만, AWS 실행 없음)**
@@ -1719,6 +1719,33 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 **A(11/25)·B(11/26~28)에서 할 일**: argocd CLI v3.5.7 준비 → `helm install`(README) → `argocd-notifications-secret` 생성 → `project.yaml`·`root-app.yaml` 적용 → root 수동 동기화 1회로 Discord 1건 → admin 비밀번호 변경·초기 Secret 삭제. B 런북 0·7단계에 넣었다.
 
 **한계**: root app은 `argocd` namespace에 Application을 만들 수 있으므로, 하위 Application 파일이 다른 AppProject(`default` 등)를 가리키지 않는지는 PR 리뷰로 확인한다. 하위 Application이 생긴 뒤 root app·Argo CD를 지우면 배포된 리소스까지 지워질 수 있어 되돌리기는 손으로 확인하며 한다.
+
+**webhook URL 로그 (#1003, 2026-11-24 A 계정 EKS)**
+
+11/24 A 재가동에서 `argocd-notifications-controller` 로그에 Discord webhook URL 원문이 남는 것을 확인했다. 원인은 소스로 확인했다.
+
+- notifications-engine `0cff13b8a717`(v3.5.7의 `go.mod`)의 webhook 서비스가 `go-retryablehttp` v0.7.8 `NewClient()`를 기본값 그대로 만든다.
+- 기본 Logger는 Go 표준 `log`(stderr)이고, 요청마다 `[DEBUG] <메서드> <URL>`을 찍는다. URL에서 가리는 것은 비밀번호 부분뿐이다.
+- `WebhookOptions`에는 Logger를 바꾸는 칸이 없다. upstream 기본 브랜치의 같은 파일(마지막 변경 `06152007e273`, 2026-01)도 같다.
+- chart 10.11.7 values(`configs.params`의 `notificationscontroller.log.level`·`log.format`)는 logrus만 바꾸므로 이 줄에는 영향이 없다.
+- 전송이 실패하면 오류 메시지 `request to {… URL} has failed`에도 URL이 들어간다.
+
+| 시각(KST) | 설정 | 알림 | webhook URL 줄 수 |
+|---|---|---|---|
+| 11/24 14:12~20:35 (Pod 6시간 22분) | 설치값(`log.level=info`, `log.format=text`) | 동기화·Degraded 알림 44건 | 44 (`[DEBUG] POST` 44) |
+| 11/24 20:36 | `argocd-cmd-params-cm`의 `notificationscontroller.log.level=error`로 바꾸고 controller 재시작. root app의 `notified.notifications.argoproj.io` 주석을 지워 동기화 성공 알림 1건을 다시 보냄(20:36:51) | 1건 | 1 (Argo CD info 로그는 사라졌는데 이 줄은 남음) |
+| 11/24 20:37 | `info`로 되돌리고 재시작. Helm release는 바꾸지 않음(rev 1 그대로) | 0건 | 0 |
+
+로그 원문은 출력하지 않고 `grep -c 'discord.com/api/webhooks'`로 건수만 셌다. 참고로 `log.format=text`인데도 Argo CD 자체 로그는 JSON으로 나왔고, 이 줄만 `2026/11/24 11:36:51 [DEBUG] POST …` 형식이다.
+
+| 대안 | 판단 |
+|---|---|
+| 로그 수준·형식, webhook 서비스 옵션 | 끌 방법 없음(위 시험) |
+| **Argo CD 전용 webhook 분리 (채택)** | 같은 `aws-alerts` 채널에 webhook을 하나 더 만든다. 로그에는 계속 남지만 Grafana 경보 webhook은 노출되지 않고, Argo CD 값만 따로 재발급할 수 있다. 저장소는 README의 Secret 출처만 바뀌고 `argocd.json`은 그대로다 |
+| 클러스터 안 중계 프록시 | 로그의 URL은 사라지지만 B 구축(11/26~28) 전에 구성요소 1개를 더 만들고 시험해야 해서 채택하지 않음 |
+| 그대로 두고 문서화 | 노출되면 Grafana 경보까지 함께 재발급해야 해서 채택하지 않음 |
+
+Pod 로그는 클러스터 밖으로 모으지 않는다(Loki·Fluent Bit·CloudWatch 컨테이너 로그 없음). 노드의 컨테이너 로그와 `pods/log` 권한으로만 볼 수 있다. 로그를 볼 때는 README의 명령처럼 건수만 세거나 URL을 가린다. A·B 모두 기존 webhook을 폐기하고 Grafana용·Argo CD용 두 값을 새로 만든다(담당자 직접, 값 출력·기록 없음).
 
 ### 9.18.2 플랫폼 Application과 sync wave (#856)
 
