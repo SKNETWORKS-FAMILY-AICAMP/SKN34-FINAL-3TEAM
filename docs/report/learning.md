@@ -373,7 +373,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 
 - `app.toxicity.enabled`를 더했다. 전체 컨텍스트 시험이 없는 scoring 주소로 연결을 시도하지 않게 시험 기본값을 false로 두는 것이 이슈의 "시험 공통 기본값"이다. 운영에서는 모델을 잠시 끌 때도 쓴다. 끈 상태는 사유 `DISABLED`이고 장애가 아니라 제출마다 로그를 남기지 않는다
 - 1,500자는 코드포인트로 센다. scoring(Python `len`)과 같게 하고 이모지가 반쪽으로 잘려 400이 되지 않게 하려는 것이다. 잘린 앞부분이 공백뿐이면 그 칸은 보내지 않는다
-- 지표(호출·flagged·건너뜀 사유·지연)는 따로 만들지 않았다. learning에는 Micrometer 사용자 지표가 없고, 호출 수·지연은 Java agent의 HTTP 클라이언트 지표로 본다. 건너뜀 사유는 로그로만 본다
+- 지표(호출·flagged·건너뜀 사유·지연)는 #692에서 따로 만들지 않았다. 호출 수·지연은 Java agent의 HTTP 클라이언트 지표로 본다. 판정 결과(flagged·review·clean·검사 안 됨)는 #984에서 OTel 카운터로 더했다(아래 "운영 지표 구현"). 건너뜀 사유는 지금도 로그로만 본다
 - `review`는 읽기만 한다. 표현 검토 대기 등록은 #727(아래 재학습 자동화 절)
 - 로컬 compose E2E(2026-11-19, 모델 `tox-koelectra-small` 1.0-1119): learning 답 제출 API에 core가 넘기는 헤더로 보냄(학생 로그인·core 게이트웨이는 거치지 않음). 욕 없는 모욕 답 422(로그 `category=INSULT`) 48ms, 보통 답 201 59ms, scoring을 멈춘 채 모욕 답 201(1,555ms, 응답 마감 근처까지 기다림)
 
@@ -425,7 +425,7 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - 경계 구간: `ToxicityClient`가 scoring 응답 모델을 `name:version`으로 받아 `ToxicityVerdict.Clean(review, modelVersion)`에 담는다. `AnswerService.submit`이 답변·판정을 저장한 뒤 같은 트랜잭션에서 `review:true`이면 `GRAY_ZONE` 행을 넣는다(sequence 3.1). 같은 키 다시 보내기는 저장된 답을 돌려줘 행이 늘지 않고, UK `(answer_id, source)`도 막는다
 - 신고 공유물: 기존 `CommunityService.moderate` 안에서 `HIDDEN_REPORT`가 되면 행 추가, 처음 `REMOVED`가 되면 `OFFENSIVE`, `HIDDEN_REPORT`에서 다시 공개되면 `CLEAN`. 자동 라벨은 `labeled_by` null이고, 운영자가 직접 라벨한 행과 이미 같은 라벨인 행은 그대로 둔다
 - 학생 삭제: `StudentDeletionService`가 시도·답변보다 먼저 `deleteByStudent`(FK NO ACTION)
-- 로그: 출처·라벨·건수만(`표현 검토 대기 추가 source=…`, `표현 검토 자동 라벨 …`, `표현 검토 라벨 label=…`, `표현 검토 내보내기 count=…`). learning에는 사용자 지표가 없어(#692와 같음) 건수는 로그로 본다
+- 로그: 출처·라벨·건수만(`표현 검토 대기 추가 source=…`, `표현 검토 자동 라벨 …`, `표현 검토 라벨 label=…`, `표현 검토 내보내기 count=…`). 검토 대기 건수는 지표로 내지 않고 로그로 본다(learning 사용자 지표는 #984 판정 카운터뿐)
 - 새 라벨 수(#907, 2026-11-23): 건수와 가장 늦은 라벨 시각을 `SELECT count(*), max(labeled_at)` 한 문장으로 읽는다. 두 문장이면(READ COMMITTED) 그사이 커밋된 라벨이 시각에만 들어간다. #729 분석: 내보내기 뒤 늦게 커밋된 이른 시각 라벨은 한 문장으로도 남음(`labeled_at`이 `until` 이하라 내보내기에서도 다음 `since` 뒤에서도 빠짐)
 - 계약: `contracts/openapi/learning-service.yaml` 1.5.0에 4개 경로. `ExpressionReviewApiTest`가 실제 응답을 남기고 `scripts/validate_learning_expression_review_contracts.py`가 스키마와 학생·답변 ID가 없는지 확인(ci-contracts learning-contracts)
 - 시험: `ExpressionReviewApiTest`(목록 순서·필터·글 잇기·400·403, 라벨 덮어쓰기·404·400, 새 라벨 수·내보내기 since 초과·until 이하·SKIP 제외·1,500자 자름·400·403), `AnswerServiceTest`(경계 구간만 한 번, 보통·검사 안 됨·막힘은 없음, 로그에 ID 없음), `CommunityTest`(신고 숨김·자동 라벨·반복·직접 라벨 유지), `StudentDeletionTest`(표 목록에 추가), `ToxicityClientTest`(모델 `name:version`)
@@ -493,6 +493,59 @@ learning 피드백 응답(#25 PR #78 "프론트 확인", #146 `judgmentId`)을 �
 - public-v1은 운영 S3에 아직 없다. `ExpressionPolicy`가 바뀌면 `wordlist_flags.json`을 다시 뽑아 새 버전 경로로 올려야 한다
 - 등록 뒤 `last.json` 쓰기만 실패하면 다음 주기에 같은 라벨로 한 번 더 등록된다. 업로드 뒤 등록이 실패하면 객체는 남는다(scoring.md 6.3)
 - 홀드아웃이 최소 40개(200건의 20%)라 한두 문장으로 추천이 갈릴 수 있다(로컬 확인의 비추천도 막을 글 22개 중 1개 차이). 기준안 조정은 운영 데이터를 보고 판단한다. APEACH·389개는 매번 같은 세트라 반복하면 그 세트에 치우칠 수 있다
+
+#### 운영 지표 구현 (#984, 2026-11-24)
+
+MLOps 점검(develop `564940e2`)에서 운영 모니터링이 ❌였다. 모델을 바꾼 뒤 막은 비율이 바뀌거나 scoring 장애로 검사 없이 통과(fail-open)가 늘어도 알 수 없었다. 목표는 "판정 비율을 모델 버전별로 볼 수 있음"(🔶)까지. 설계는 [아키텍처](../design/architecture.md) 4.6. API 변경 없음(내부 지표·대시보드만)
+
+| 항목 | 값 |
+|---|---|
+| 지표 | OTel 카운터 `expression.toxicity.checks`(단위 `{check}`, meter `com.sagomungchi.learning.answer`) → Prometheus `expression_toxicity_checks_total{exported_job="learning-service"}` |
+| `result` | `flagged`(막힘)·`review`(통과, 경계 구간)·`clean`(통과)·`unchecked`(시간 초과·5xx·연결 실패·서킷 열림·활성 모델 없음·계약 밖 응답) |
+| `model` | 판단한 모델 `name:version`. `unchecked`면 없음 |
+| 세지 않음 | `app.toxicity.enabled=false`(DISABLED), 보낼 칸 없음(scoring을 부르지 않음) |
+| 넣지 않음 | 원문·점수·학생 ID·attemptId(NFR-SEC-05). 속성은 위 두 키뿐 |
+| 대시보드 | observability chart `dashboards/expression-toxicity.json`(uid `expression-toxicity`, "표현 분류 판정"). `grafana.dashboards.enabled`(기본 꺼짐, local·prod 켬)이면 ConfigMap `grafana-dashboards`를 provider(`/etc/grafana/provisioning/dashboards`)와 JSON(`/etc/grafana/dashboards`)으로 마운트. 파일 provider가 60초마다 다시 읽어 Pod 재시작 없이 반영 |
+
+패널(datasource `prometheus`):
+
+- 막은 비율(모델별): `flagged / (flagged+review+clean)`를 `sum by (model)`로. 0건인 모델은 선이 끊기지 않게 0으로 채움
+- 경계 구간 비율(모델별): 위와 같고 `review`
+- 검사 안 됨 비율: `unchecked / 전체`(모델 없음)
+- 판정 건수: `sum by (result, model) (increase(...))` 누적 막대
+
+구현:
+
+| 위치 | 바뀐 것 |
+|---|---|
+| `ToxicityClient` | 판정마다 카운터 기록. `Flagged`가 모델 `name:version`을 갖게 바꿈(전에는 모델 정보 없음). Meter는 core `LlmCostMetrics`처럼 `GlobalOpenTelemetry` 기본값(agent 없으면 no-op) |
+| `AnswerService` | `Flagged` 판정 분기만 `is` 검사로(동작 같음) |
+| `build.gradle.kts` | `opentelemetry-api`, 시험에 `opentelemetry-sdk-testing`(Boot BOM 버전, core와 같음) |
+| observability chart | `grafana.dashboards.enabled`, `grafana-dashboards` ConfigMap, Grafana 볼륨 2개 |
+| `operational-alerts/verify_chart.py` | 기준 commit 비교에서 대시보드를 끄고 렌더, local·prod 렌더에 대시보드 ConfigMap·마운트·쿼리 지표 이름 단언 |
+
+시험·확인:
+
+- `ToxicityClientTest`(WireMock + `InMemoryMetricReader`): 4종 `result`·`model` 값, `unchecked`에 `model` 없음, 속성 키가 `result`·`model`뿐, DISABLED·빈 칸은 기록 없음. learning `./gradlew test bootJar` 725개(건너뜀 3) 통과
+- chart: Helm 4.3.1 `lint --strict`(기본·local·prod), `verify_chart.py` 대시보드 단언 PASS, 기존 Docker 경보 시험(Grafana 13.3.0 provisioning 포함) 통과. 단, `verify_chart.py`는 develop에서 이미 #910의 trace processor 이름(`transform/trace_urls`)과 app-service 이미지 schema를 따라가지 못해 그 두 블록을 뺀 임시 사본으로 돌렸다(이 이슈 밖)
+- local(2026-11-24, compose, kind 아님): learning(이 브랜치 이미지 + OTel Java agent(app-service chart와 같은 이미지), `OTEL_METRIC_EXPORT_INTERVAL` 10초) → chart로 렌더한 Collector·Prometheus 설정 → Grafana 13.3.0(렌더한 datasource·대시보드). scoring은 로컬 S3 모델이 없어 글 표시로 판정을 고르는 대역으로 바꿈. 데모 미션 2번(NARRATIVE)에 학생마다 시도를 열어 제출
+  - 1차 18건: 막힘 응답은 422 `ANSWER_INAPPROPRIATE`, 나머지는 201(장애 대역도 201, fail-open). Prometheus 값이 제출과 같음
+
+    | model | result | 값 |
+    |---|---|---|
+    | `tox-kcelectra:1.0` | clean·review·flagged | 6·2·2 |
+    | `tox-kcelectra:1.1` | clean·flagged | 3·3 |
+    | (없음) | unchecked | 2 |
+
+  - 2차 10건(1.0: clean 4·review 1·flagged 1, 1.1: clean 2·flagged 1, unchecked 1) 뒤 Grafana `/api/ds/query`로 패널 쿼리: 막은 비율 1.0 0.167·1.1 0.333, 경계 구간 1.0 0.167·1.1 0, 검사 안 됨 0.1. 대시보드는 `provisioned: true`, JSON 갱신이 재시작 없이 반영됨
+
+남은 것(✅까지):
+
+- 통계적 분포 변화(drift) 감지, 라벨 기반 운영 정확도(운영자 라벨과 모델 판정 비교)
+- 점수 분포 지표: 집계 히스토그램이 NFR-SEC-05 "지표에 점수 미기록"과 충돌하는지 결정 필요
+- 경보 규칙은 #730에서 이 지표로 추가(예: 검사 안 됨 비율, 모델 교체 뒤 막은 비율 급변)
+- 모델 활성화 시점 주석(세로선): 사용자 결정 2026-11-24로 이번에는 모델별 선 구분만. 등록부 이벤트를 Grafana가 읽으려면 datasource·권한·NetworkPolicy가 더 필요
+- prod 반영은 observability chart가 `main`을 따라가므로 release 뒤
 
 ## 17. 고착 RUNNING 판정 1분 주기 탐지 (#241)
 

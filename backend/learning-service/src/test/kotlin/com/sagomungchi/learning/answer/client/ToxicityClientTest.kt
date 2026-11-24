@@ -18,6 +18,8 @@ import com.sagomungchi.learning.answer.client.ToxicitySkipReason.INACTIVE
 import com.sagomungchi.learning.answer.client.ToxicitySkipReason.REJECTED
 import com.sagomungchi.learning.answer.client.ToxicitySkipReason.TIMEOUT
 import com.sagomungchi.learning.answer.client.ToxicitySkipReason.UNAVAILABLE
+import io.opentelemetry.sdk.metrics.SdkMeterProvider
+import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -34,6 +36,8 @@ class ToxicityClientTest {
     private val mapper = jacksonObjectMapper()
     private lateinit var factory: InternalRestClientFactory
     private lateinit var client: ToxicityClient
+    private val reader = InMemoryMetricReader.create()
+    private val meters = SdkMeterProvider.builder().registerMetricReader(reader).build()
     private val model = """"model":{"name":"tox-kcelectra","version":"1.0","revision":1}"""
 
     @BeforeEach
@@ -44,11 +48,20 @@ class ToxicityClientTest {
                 services = mapOf("scoring" to server.baseUrl())),
             RestClient.builder().messageConverters { it.add(0, MappingJackson2HttpMessageConverter(mapper)) },
         )
-        client = ToxicityClient(factory, mapper, Duration.ofMillis(1500), enabled = true)
+        client = ToxicityClient(factory, mapper, Duration.ofMillis(1500), enabled = true, meter = meters.get("test"))
     }
 
     @AfterEach
-    fun stop() = server.stop()
+    fun stop() {
+        server.stop()
+        meters.close()
+    }
+
+    /** `expression.toxicity.checks` 누적값을 속성(키→값)별로 */
+    private fun checks(): Map<Map<String, String>, Long> =
+        reader.collectAllMetrics().filter { it.name == "expression.toxicity.checks" }
+            .flatMap { it.longSumData.points }
+            .associate { point -> point.attributes.asMap().entries.associate { (k, v) -> k.key to v.toString() } to point.value }
 
     private fun reply(body: String) =
         server.stubFor(post(urlEqualTo(ToxicityClient.PATH)).willReturn(okJson(body)))
@@ -60,7 +73,7 @@ class ToxicityClientTest {
     @Test
     fun `걸린 글은 Flagged, 내부 토큰과 칸별 글만 보냄`() {
         reply("""{"active":true,"flagged":true,"review":false,$model}""")
-        assertEquals(ToxicityVerdict.Flagged, client.check(listOf("첫 칸", "둘째 칸")))
+        assertEquals(ToxicityVerdict.Flagged("tox-kcelectra:1.0"), client.check(listOf("첫 칸", "둘째 칸")))
         server.verify(1, postRequestedFor(urlEqualTo(ToxicityClient.PATH))
             .withHeader("X-Internal-Token", equalTo("learning-token"))
             .withRequestBody(equalToJson("""{"texts":["첫 칸","둘째 칸"]}""")))
@@ -133,6 +146,41 @@ class ToxicityClientTest {
         assertEquals(ToxicityVerdict.Clean(review = false), client.check(listOf("", "  ", "\n")))
         assertEquals(0, server.allServeEvents.size)
         assertFails { ToxicityClient(factory, mapper, Duration.ofMillis(1501), enabled = true) }
+    }
+
+    @Test
+    fun `판정마다 result와 모델 name 버전 지표, 검사 안 됨은 model 없이, 원문 점수 학생 ID는 넣지 않음`() {
+        val text = "학생 글"
+        for (body in listOf("""{"active":true,"flagged":true,"review":false,$model}""",
+            """{"active":true,"flagged":false,"review":true,$model}""",
+            """{"active":true,"flagged":false,"review":false,$model}""",
+            """{"active":true,"flagged":false,"review":false,$model}""")) {
+            reply(body)
+            client.check(listOf(text))
+        }
+        status(503)
+        client.check(listOf(text))
+        reply("""{"active":false}""")
+        client.check(listOf(text))
+
+        // 속성은 result·model 두 키뿐이라 글·점수·학생 ID가 들어갈 자리가 없음
+        val version = "tox-kcelectra:1.0"
+        assertEquals(mapOf(
+            mapOf("result" to "flagged", "model" to version) to 1L,
+            mapOf("result" to "review", "model" to version) to 1L,
+            mapOf("result" to "clean", "model" to version) to 2L,
+            mapOf("result" to "unchecked") to 2L,
+        ), checks())
+        val metric = reader.collectAllMetrics().single { it.name == "expression.toxicity.checks" }
+        assertEquals("{check}", metric.unit)
+        assertTrue(metric.longSumData.isMonotonic)
+    }
+
+    @Test
+    fun `끄거나 보낼 칸이 없어 부르지 않으면 지표도 안 올림`() {
+        ToxicityClient(factory, mapper, Duration.ofMillis(1500), enabled = false, meter = meters.get("test")).check(listOf("글"))
+        client.check(listOf(" ", ""))
+        assertEquals(emptyMap(), checks())
     }
 
     @Test

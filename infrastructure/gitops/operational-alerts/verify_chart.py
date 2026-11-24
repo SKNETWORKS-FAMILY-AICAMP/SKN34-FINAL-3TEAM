@@ -42,9 +42,11 @@ def main():
         # prod values gained #187 rules, so compare the chart change with the baseline's own prod values.
         base_prod = root / "base-prod.json"
         base_prod.write_text(run("git", "-C", str(repo), "show", base + ":" + prod.relative_to(repo).as_posix()), encoding="utf-8")
+        # #984 enables dashboards in local values; the baseline comparison keeps them off.
+        no_dashboards = ["--set", "grafana.dashboards.enabled=false"]
         for extra in ([], ["-f", str(environments / "local/observability.yaml")], ["-f", str(base_prod)]):
             before = load(run(args.helm, "template", "observability", str(baseline), "--namespace", "observability", *extra))
-            after = load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", *extra))
+            after = load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", *extra, *no_dashboards))
             # Source filenames can reorder resources, so compare by Kubernetes identity.
             assert identify(before) == identify(after), "Existing default/local/prod resources changed"
             run(args.helm, "lint", "--strict", str(chart), *extra)
@@ -100,6 +102,24 @@ def main():
             # A JAVA_TOOL_OPTIONS from values must not replace the agent flag.
             assert ("-javaagent:/otel/javaagent.jar" in env.get("JAVA_TOOL_OPTIONS", "")) is java
         print("PASS prod values enable Tempo and OTLP trace export for core, learning and report-worker", flush=True)
+
+        # #984: local and prod provision the expression toxicity dashboard from the chart's dashboards/ folder.
+        local_rendered = identify(load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability",
+                                           "-f", str(environments / "local/observability.yaml"))))
+        for rendered in (local_rendered, prod_rendered):
+            data = rendered["ConfigMap", "grafana-dashboards"]["data"]
+            provider = yaml.safe_load(data["provider.yaml"])["providers"][0]
+            assert provider["type"] == "file" and provider["options"]["path"] == "/etc/grafana/dashboards"
+            dashboard = json.loads(data["expression-toxicity.json"])
+            exprs = [t["expr"] for panel in dashboard["panels"] for t in panel["targets"]]
+            assert dashboard["uid"] == "expression-toxicity" and all("expression_toxicity_checks_total" in e for e in exprs)
+            assert all(t["datasource"]["uid"] == "prometheus" for panel in dashboard["panels"] for t in panel["targets"])
+            grafana = rendered["Deployment", "grafana"]["spec"]["template"]["spec"]
+            mounts = {m["name"]: m["mountPath"] for m in grafana["containers"][0]["volumeMounts"]}
+            assert mounts["dashboard-provider"] == "/etc/grafana/provisioning/dashboards"
+            assert mounts["dashboards"] == "/etc/grafana/dashboards"
+            assert {v["name"] for v in grafana["volumes"] if v.get("configMap", {}).get("name") == "grafana-dashboards"} == {"dashboard-provider", "dashboards"}
+        print("PASS local and prod values provision the expression toxicity dashboard", flush=True)
 
         # Accelerated copy of the prod rules; not operating thresholds.
         alerting = json.loads(prod.read_text(encoding="utf-8"))["grafana"]["alerting"]

@@ -7,6 +7,8 @@ prometheus:
   retention: 1d
 grafana:
   image: grafana/grafana:13.3.0
+  dashboards:
+    enabled: true # #984 표현 분류 판정 대시보드
   resources:
     requests: {cpu: 100m, memory: 128Mi}
     limits: {cpu: "1", memory: 384Mi}
