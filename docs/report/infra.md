@@ -2032,6 +2032,31 @@ MLOps 단계 점검(11/24)에서 재학습 이미지 배포가 빠져 있었다.
 
 #730(`feature/tox-retrain-kind`)의 차트는 `.Values.image`를 문자열로 받고 kind용 `imagePullPolicy: Never`다. prod Application을 만들 때 values에 `images/tox-retrain.json`을 같이 넘기고, 차트가 `image.repository`·`image.digest`로 `<저장소>@<digest>`를 만들게 한다(앱 chart와 같은 방식, prod는 `IfNotPresent`). 자리표시 digest인 동안에는 prod CronJob을 켜지 않는다.
 
+## 9.24 관측 chart 검증 스크립트 동기화 (#996, 2026-11-24)
+
+`verify_chart.py`가 현재 chart·운영 values를 따라가지 못해 정상 설정도 실패로 판정했다. #984에서 일부 검사를 뺀 임시 사본으로 실행한 이력을 확인하고, 검사를 유지한 원본 스크립트를 수정했다.
+
+- trace pipeline의 processor 이름을 `transform/trace_urls`로 맞췄다. `trace_statements`의 첫 그룹만 보던 검사를 모든 그룹의 `conditions`·`statements`로 넓혀 Google callback 조건·query 삭제와 토스 billing/payment 키 치환을 함께 확인한다. 아키텍처 문서의 이전 processor 이름도 고쳤다.
+- prod 앱 렌더는 CI·ApplicationSet처럼 `prod/<서비스>.json` 다음 `prod/images/<서비스>.json`을 전달한다. 분리된 repository·digest를 읽고 기존 OTLP·Java agent 설정을 계속 검사한다.
+- 작업 시작 시 develop `9e075979`로 실행하면 위 두 검사보다 먼저 기준 리소스 비교가 실패했다. #984 대시보드를 현재 chart에서만 껐기 때문이다. 기준 chart에서도 같은 옵션을 적용하며, 대시보드를 켠 local·prod의 provisioning 검사는 별도로 유지한다.
+- 기본 baseline `de8e225`, #984 이전 `75ddc7fe`, 작업 시작 기준 `9e075979`, 이후 반영한 develop `35fa87d9` 각각 default·local·baseline-prod 렌더가 같은지 확인했다(12조합 통과).
+
+API 변경 없음. 애플리케이션 동작·DB·chart·배포 values 변경 없이 검증 스크립트와 설명을 동기화했다. 이 PR이 영향을 주는 CI는 `ci-gitops`, `ci-contracts`의 저장소 전체 계약 검사, `ci-secrets`다. `verify_chart.py`의 Docker 경보 검사는 CI에 포함되어 있지 않으므로 별도로 실행하며, CI 자동 편입은 이 이슈의 범위 밖이다.
+
+완료 확인 명령:
+
+```powershell
+python infrastructure/gitops/operational-alerts/verify_chart.py --helm <helm-실행파일> --baseline 9e075979
+```
+
+`verify_chart.py`의 검증은 Python `assert`를 사용하므로 이 명령에는 `-O`를 붙이지 않는다. 저장소 계약 검사는 해당 CI의 명령인 `python -O -m unittest discover -s scripts/tests -v`로 실행한다.
+
+CI와 같은 Linux 환경에서 Helm 4.3.1 lint 17조합과 환경별 렌더 25파일, prod ApplicationSet·이미지 파일 목록 일치를 확인했다. kubeconform 0.8.0·Kubernetes 1.35.8·CI 고정 스키마로 45파일의 187개 리소스를 검사해 전부 유효했고 오류·건너뜀은 없었다. core·learning migration 이미지 빌드도 모두 통과했다(이미지 게시·DB 적용 없음).
+
+위 원본 명령은 검사를 제외한 사본 없이 끝까지 종료 코드 0으로 통과했다. 격리 Docker에서 Grafana 규칙 16개, 경보 발생·반복 억제·회복, 큐별 DLQ, 비용·미산정 비용, 인증 오류율·지연, NoData·잘못된 쿼리·없는 datasource, 재적용 중복 방지, 수집 중단·job 제거를 확인했다. 알림은 내부 네트워크의 로컬 수신 대역으로 전달했고 검증용 컨테이너·네트워크는 종료 후 제거했다.
+
+최신 develop `35fa87d9`를 반영한 Linux 전체 계약 검사도 429개 실행, 실패 0개, 건너뜀 1개로 통과했다. 건너뜀은 원문 HWP 폴더가 필요한 기존 검사 하나다. 코드·설정 변경 범위를 다시 대조하고 `git diff --check`도 통과했다. 원격 PR CI 결과와 별도로 수행한 로컬 검증 결과다.
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)

@@ -42,10 +42,11 @@ def main():
         # prod values gained #187 rules, so compare the chart change with the baseline's own prod values.
         base_prod = root / "base-prod.json"
         base_prod.write_text(run("git", "-C", str(repo), "show", base + ":" + prod.relative_to(repo).as_posix()), encoding="utf-8")
-        # #984 enables dashboards in local values; the baseline comparison keeps them off.
+        # #984 enables dashboards in local/prod values; disable them on both sides
+        # so baselines containing #984 are compared under the same conditions too.
         no_dashboards = ["--set", "grafana.dashboards.enabled=false"]
         for extra in ([], ["-f", str(environments / "local/observability.yaml")], ["-f", str(base_prod)]):
-            before = load(run(args.helm, "template", "observability", str(baseline), "--namespace", "observability", *extra))
+            before = load(run(args.helm, "template", "observability", str(baseline), "--namespace", "observability", *extra, *no_dashboards))
             after = load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", *extra, *no_dashboards))
             # Source filenames can reorder resources, so compare by Kubernetes identity.
             assert identify(before) == identify(after), "Existing default/local/prod resources changed"
@@ -62,11 +63,13 @@ def main():
         # memory limiter, and the Tempo exporter holds a byte-capped queue with a bounded retry.
         pipelines, processors = collector["service"]["pipelines"], collector["processors"]
         assert pipelines["metrics"]["processors"] == ["memory_limiter", "batch"]
-        assert pipelines["traces"]["processors"] == ["memory_limiter/traces", "transform/redact", "batch"]
+        assert pipelines["traces"]["processors"] == ["memory_limiter/traces", "transform/trace_urls", "batch"]
         # #900: Toss billing/cancel keys and Google callback codes are masked before export.
-        redact = "\n".join(processors["transform/redact"]["trace_statements"][0]["statements"])
+        # Callback conditions and URL replacements live in separate statement groups.
+        redact = "\n".join(rule for group in processors["transform/trace_urls"]["trace_statements"]
+                           for field in ("conditions", "statements") for rule in group.get(field, []))
         for rule in ('"/v1/billing/{billingKey}"', '"/v1/payments/{paymentKey}/cancel"',
-                     'delete_key(span.attributes, "url.query")', "^/api/v1/auth/google/(reauth/)?callback$"):
+                     'delete_key(attributes, "url.query")', "/auth/google/(reauth/)?callback([/?#]|$$)"):
             assert rule in redact, rule
         trace_limit = processors["memory_limiter/traces"]["limit_mib"]
         assert trace_limit < processors["memory_limiter"]["limit_mib"] * 0.8  # below the metrics soft limit
@@ -95,7 +98,8 @@ def main():
         app_chart = repo / "infrastructure/gitops/charts/app-service"
         for service, java in (("core-service", True), ("learning-service", True), ("report-worker", False)):
             pod = identify(load(run(args.helm, "template", service, str(app_chart), "-f",
-                                    str(environments / "prod" / (service + ".json")))))["Deployment", service]
+                                    str(environments / "prod" / (service + ".json")), "-f",
+                                    str(environments / "prod/images" / (service + ".json")))))["Deployment", service]
             env = {e["name"]: e.get("value") for e in pod["spec"]["template"]["spec"]["containers"][0]["env"]}
             assert env["OTEL_TRACES_EXPORTER"] == "otlp" and env["OTEL_SERVICE_NAME"] == service
             assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://otel-collector.observability.svc.cluster.local:4318"
