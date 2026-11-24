@@ -852,7 +852,7 @@
 /* 주변(연하고 작게): 친구 양옆 발치에 풀 덩이 둘이 땅 선에 붙어 천천히 살랑(3초 주기, 서로 어긋나게), 작은 구름이 상자 위쪽을 아주 천천히 지나감(26초) */
 #class-journal .st-world .sw-wait-tuft {
   position: absolute;
-  bottom: calc(1% + 1px);
+  bottom: 0;
   z-index: 1;
   width: 14%;
   height: 9.3%;
@@ -860,8 +860,8 @@
   transform-origin: 50% 100%;
   animation: sw-wait-sway 3s ease-in-out infinite;
 }
-#class-journal .st-world .sw-wait-tuft-1 { left: -8%; }
-#class-journal .st-world .sw-wait-tuft-2 { left: 94%; animation-delay: -1.5s; }
+#class-journal .st-world .sw-wait-tuft-1 { left: 0; }
+#class-journal .st-world .sw-wait-tuft-2 { left: 86%; animation-delay: -1.5s; }
 @keyframes sw-wait-sway {
   0%, 100% { transform: rotate(-6deg); }
   50% { transform: rotate(6deg); }
@@ -933,10 +933,12 @@
   cursor: pointer;
 }
 #class-journal .st-world .sw-wait-motion input { width: 18px; height: 18px; margin: 0; accent-color: var(--sk-line); cursor: pointer; }
+/* 말풍선은 문구 길이만큼만(넓은 화면에서 패널 끝까지 늘어나 친구와 멀어지지 않게, 최대 22em), 좁으면 줄어든다 */
 #class-journal .st-world .sw-wait-bubble {
   position: relative;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 22em;
   padding: 14px 18px;
 }
 /* 한국어는 띄어쓰기에서만 꺾는다(글자 중간 꺾임 없음). 최소 폭은 두지 않는다: 좁은 패널에서 말풍선보다 넓어져 글자가 밖으로 나갔음.
@@ -973,16 +975,30 @@
   background: transparent;
   box-shadow: none;
 }
-/* 발밑 얇은 풀밭 선 하나(친구가 콩콩 뛰어도 땅은 그대로) */
+/*
+ * 발밑 바닥: 한 줄 선 대신 낮고 납작한 타원 풀밭 둔덕(가장자리는 흐려짐) + 발 밑 옅은 그림자(사용자 의견 2026-11-24:
+ * 곧은 선이 밑줄·진행 막대처럼 보이고 친구가 떠 보였음). 친구 그림 뒤에 깔리고 친구가 움직여도 바닥은 그대로
+ */
+#class-journal .st-world .sw-wait-poke { z-index: 1; }
 #class-journal .st-world .sw-wait-ground {
   position: absolute;
-  left: -14%;
-  right: -14%;
-  bottom: 1%;
-  height: 3px;
-  border-radius: 999px;
-  background: #7cbf5a;
-  box-shadow: 0 1px 0 #5c9a3e;
+  left: -12%;
+  right: -12%;
+  bottom: -6%;
+  z-index: 0;
+  height: 16%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 45%, #b7e09a 0%, #a6d887 45%, rgb(166 216 135 / 0.55) 62%, rgb(166 216 135 / 0) 71%);
+}
+#class-journal .st-world .sw-wait-ground::after {
+  content: '';
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  top: 22%;
+  height: 34%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgb(58 42 32 / 0.22) 0%, rgb(58 42 32 / 0) 70%);
 }
 #class-journal .st-world .sw-feedback-panel:has(.sw-feedback[data-waiting]) .sw-actions:empty { display: none; }
 /*
