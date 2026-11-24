@@ -69,17 +69,17 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 
 2026-11-04 적용 완료(위 표 그대로, 외부 기여자 승인은 `all_external_contributors`). `policy.json`의 `environmentProtectionVerified`를 true로 바꿨다. Environment `prod`는 digest PR 방식에서는 쓰지 않지만 비상용 Helm 경로가 쓰므로 12/7까지 그대로 둔다.
 
-### B2. digest PR 저장소 설정 (#858, 관리자 손 작업, 11/24 예정)
+### B2. digest PR 저장소 설정 (#858, 관리자 손 작업, #1004)
 
-**아직 적용하지 않았다**(저장소 관리자 권한 필요). 11/24 develop → main 릴리스(#623)가 병합된 **뒤에** 적용한다(먼저 켜면 릴리스 PR에도 승인 규칙이 걸린다. 아래 표 참고). 화면 이름은 2026-11 GitHub 기준이다.
+**아직 적용하지 않았다**(저장소 관리자 권한 필요, 2026-11-24 기준). 그래서 11/24 A 확인의 digest PR #991이 GitHub 승인(Approve) 기록 0건으로 병합됐다. 지금은 "digest PR 승인 = 배포 승인"이 사람 약속일 뿐 강제되지 않으므로, 적용 전까지는 아래 승인 규칙(PR을 연 사람과 다른 code owner 1명)을 지켜 승인 기록을 남긴 뒤 병합한다. 적용과 확인은 #1004에서 한다(필요 승인 수는 팀장 확인 값). develop → main 릴리스가 병합된 **뒤에** 적용한다(먼저 켜면 릴리스 PR에도 승인 규칙이 걸린다. 아래 표 참고). 화면 이름은 2026-11 GitHub 기준이다.
 
 | 순서 | 위치 | 값 | 이유 |
 |---|---|---|---|
 | 1 | Settings → Branches → Add branch ruleset(또는 classic branch protection) → 대상 `main` | Require a pull request before merging: 켬 / Required approvals: **1** / Require review from Code Owners: 켬 / Dismiss stale approvals when new commits are pushed: 켬 / Require status checks: 끔(아래) / Block force pushes·Restrict deletions: 켬 / Bypass list: 비움(관리자 우회 없음) | digest PR 승인 = 배포 승인. 승인자 수는 #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같다. 바뀌면 이 값만 고친다 |
-| 2 | 저장소 파일 `.github/CODEOWNERS` | `/infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001` (develop에 있음, 11/24 릴리스로 main에 들어감) | 1의 Code Owners 설정이 있어야 강제된다 |
+| 2 | 저장소 파일 `.github/CODEOWNERS` | `/infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001` (11/24 릴리스로 main에 들어감) | 1의 Code Owners 설정이 있어야 강제된다 |
+| 3 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 다음에 연 digest PR에 "Review required"·Code owner 표시가 뜨고 다른 code owner 승인 1명 뒤에만 병합되는지 | |
 
-예전 1단계("Allow GitHub Actions to create and approve pull requests")는 조직 정책이 막아 저장소에서 켤 수 없고, 2026-11-24부터 필요 없다(아래 PR 생성 토큰 표).
-| 3 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 아래 A 계정 확인 2단계에서 연 digest PR에 "Review required"·Code owner 표시가 뜨는지 | |
+예전 1단계("Allow GitHub Actions to create and approve pull requests")는 조직 정책이 막아 저장소에서 켤 수 없고, 2026-11-24부터 필요 없다(아래 PR 생성 토큰 표, #986).
 
 - status check를 필수로 두지 않는 이유: `ci-gitops` 등은 경로 필터가 있어 develop → main 릴리스 PR에 항상 돌지 않는다. 필수로 걸면 경로가 맞지 않는 PR이 영원히 대기한다. digest PR은 사람이 열므로 `ci-gitops`가 `pull_request` 이벤트(경로 `infrastructure/gitops/**`)로 바로 돌고 결과가 PR check에 붙는다. 승인자는 그 check를 보고 승인한다.
 - 승인 규칙은 develop → main 릴리스 PR에도 걸린다. 릴리스 PR 작성자는 자기 PR을 승인할 수 없으므로 다른 한 명(동섭 ↔ 태윤)이 승인한다. CODEOWNERS는 images 폴더만 지정하므로 릴리스 PR은 쓰기 권한이 있는 팀원 누구든 1명이 승인하면 된다.
@@ -136,13 +136,22 @@ digest PR 방식에는 필요 없다(Argo CD가 클러스터 안에서 동기화
 
 1. develop → main 릴리스 PR을 병합하고 main CI가 통과했는지 본다.
 2. `release.example.json`을 복사해 main SHA·서비스·근거를 채운다. 여섯 항목을 모두 `compatible`과 근거로 채워야 진행된다. `compatibility.schema`에는 이번 SHA의 새 migration 목록과 지금 떠 있는 앱·revert 대상 앱이 새 스키마에서 동작하는 근거를 적는다(PreSync migration이 앱보다 먼저 돌고, revert해도 DB는 그대로). `operation`은 `deploy`만 받는다.
-3. 실행한다. 작업자 PC runner는 필요 없다.
+3. 실행한다. 작업자 PC runner는 필요 없다. 계획은 **UTF-8로** 넘긴다(#1004). PowerShell 7(`pwsh`)이 기본이고, `release.json`은 UTF-8로 저장한다.
 
 ```powershell
-gh workflow run cd-release.yml --ref main -f delivery=pull-request -f plan="$(Get-Content release.json -Raw | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 10)"
+gh workflow run cd-release.yml --ref main -f delivery=pull-request -f plan="$(Get-Content release.json -Raw -Encoding utf8 | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 10)"
 ```
 
-4. 결과: 실행 요약 "digest PR 열기"에 브랜치와 **PR 만들기** 링크(`compare/main...<브랜치>?expand=1`). 링크를 열면 제목·본문이 채워져 있으니 그대로 **Create pull request**를 누른다(제목·본문은 고치지 않는다). 이전 digest PR이 열려 있으면 닫고 브랜치를 지운다(아래 "열린 digest PR은 하나만"). 브랜치는 `cd/prod-images-main-<SHA 12자리>-<run id>`(자동 브랜치라 `feature/*` 규칙 밖), 바뀐 파일은 `images/<release>.json`뿐이다(workflow가 다른 경로 변경이 있으면 브랜치를 push하지 않음). 본문에 원본 main SHA, PR 기준 main HEAD, release별 digest 전후, migration revision, 호환성 근거, 계획 기록 JSON, 되돌리기 방법이 들어간다. artifact `cd-digest-pr-<run id>`(90일)에 `plan.json`·`plan-record.json`·`pr-body.md`.
+Git Bash에서 `python`으로 계획 문자열을 만들면 Windows 기본 인코딩(CP949)으로 출력돼 한국어가 깨진다. 11/24 #991의 사유·호환성 근거가 이렇게 깨져 main 커밋 메시지(`c283a2b8`)에 그대로 남았다. Git Bash·Python이면 한국어를 `\uXXXX`로 바꾼 ASCII JSON을 넘긴다(`ensure_ascii` 기본값, 출력 인코딩과 상관없음). `PYTHONIOENCODING=utf-8`·`PYTHONUTF8=1`만으로는 터미널·`gh` 사이 변환에 따라 다시 깨질 수 있어 ASCII 쪽을 쓴다.
+
+```bash
+plan=$(PYTHONUTF8=1 python -c "import json; print(json.dumps(json.load(open('release.json', encoding='utf-8')), separators=(',', ':')))")
+gh workflow run cd-release.yml --ref main -f delivery=pull-request -f plan="$plan"
+```
+
+validate 단계는 계획 문자열에 대체 문자(U+FFFD)나 CP949 오해석 흔적(`¹èÆ÷`처럼 Latin-1 문자가 2개 이상 이어짐)이 있으면 이미지 빌드 전에 "계획 문자열에 깨진 문자" 오류로 멈추고 깨진 칸(예: `reason`, `compatibility.schema.evidence`)을 알려 준다. 그러면 위 방법으로 다시 실행한다.
+
+4. 결과: 실행 요약 "digest PR 열기"에 브랜치와 **PR 만들기** 링크(`compare/main...<브랜치>?expand=1`). 링크를 열면 제목·본문이 채워져 있으니 그대로 **Create pull request**를 누른다(제목·본문은 고치지 않는다). 이전 digest PR이 열려 있으면 닫고 브랜치를 지운다(아래 "열린 digest PR은 하나만"). 브랜치는 `cd/prod-images-main-<SHA 12자리>-<run id>`(자동 브랜치라 `feature/*` 규칙 밖), 바뀐 파일은 `images/<release>.json`뿐이다(workflow가 다른 경로 변경이 있으면 브랜치를 push하지 않음). 본문에 원본 main SHA, PR 기준 main HEAD, release별 digest 전후, migration Job revision(이미지 태그), **revert 판단 자료**(#1013, 아래 "digest PR 되돌리기"), 호환성 근거, 계획 기록 JSON, 되돌리기 방법이 들어간다. artifact `cd-digest-pr-<run id>`(90일)에 `plan.json`·`plan-record.json`·`pr-body.md`.
 5. PR check의 `ci-gitops`(prod 렌더링·kubeconform) 결과를 확인한다. 사람이 연 PR이라 `pull_request` 이벤트로 자동 실행된다. 실패면 원인을 고치기 전에는 병합하지 않는다.
 6. PR을 연 사람과 다른 code owner 1명(김동섭 ↔ 김태윤)이 승인하고 **Squash and merge**로 병합한다. 병합 = 배포 승인.
 7. Argo CD가 main을 읽어 동기화한다(PreSync migration Job → 앱). Discord 알림(#855)이나 `argocd app list`/UI에서 앱 Application이 Synced/Healthy인지 본다. migration Job 실패면 Application이 Degraded로 멈추고 앱은 바뀌지 않는다(Job 로그는 작업자 PC에서 `kubectl -n app logs job/<Job 이름>`, 공개 로그에 옮기지 않음).

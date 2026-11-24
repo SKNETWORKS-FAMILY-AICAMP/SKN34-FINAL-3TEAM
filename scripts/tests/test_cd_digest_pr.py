@@ -234,6 +234,144 @@ class ImageFileUpdateTests(unittest.TestCase):
         self.assertIn("synthetic/schema\\|ok", body)  # 표가 깨지지 않게 | 이스케이프
 
 
+def git(root, *args):
+    run = subprocess.run(["git", "-C", str(root), *args], capture_output=True, check=True)
+    return run.stdout.decode("utf-8").strip()
+
+
+def commit_files(root, files, message):
+    for path, text in files.items():
+        target = Path(root) / path
+        if text is None:
+            target.unlink()
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8", newline="\n")
+    git(root, "add", "-A")
+    git(root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", message)
+    return git(root, "rev-parse", "HEAD")
+
+
+def contract(*paths):
+    body = "".join(f"  {p}:\n    get:\n      responses: {{}}\n" for p in paths)
+    return f"openapi: 3.1.0\ninfo:\n  title: t\npaths:\n{body}components:\n  schemas: {{}}\n"
+
+
+class ReleaseHistoryTests(unittest.TestCase):
+    """#1013: 이전 migration revision 커밋 → 이번 원본 SHA 사이 migration·API 계약 변경 표시."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.dir.name)
+        git(self.root, "init", "-q")
+        self.old = commit_files(
+            self.root,
+            {
+                cd.MIGRATION_PATHS["core-service"] + "/V1__init.sql": "select 1;\n",
+                cd.MIGRATION_PATHS["learning-service"] + "/V1__init.sql": "select 1;\n",
+                cd.MIGRATION_PATHS["report-service"] + "/20261103_01_init.py": "x = 1\n",
+                cd.CONTRACTS_PATH + "/core-service.yaml": contract("/students/me", "/old"),
+                cd.CONTRACTS_PATH + "/report-service.yaml": contract("/reports"),
+            },
+            "old",
+        )
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def changes(self, revision, services=("core-service", "report-service")):
+        releases = {"core-service": "core-service", "learning-service": "learning-service", "report-service": "report-api"}
+        return [
+            {"service": s, "release": releases[s], "before": {"revision": revision}, "after": {}} for s in services
+        ] + [{"service": "ai-service", "release": "ai-service", "before": {"image": digest("0")}, "after": {}}]
+
+    def test_added_migration_and_api_path_mark_revert_risky(self):
+        new = commit_files(
+            self.root,
+            {
+                cd.MIGRATION_PATHS["report-service"] + "/20261110_08_report_explanations.py": "x = 2\n",
+                cd.CONTRACTS_PATH + "/core-service.yaml": contract("/students/me", "/students/me/weekly-theme"),
+                "README.md": "무관한 변경\n",
+            },
+            "new",
+        )
+        history = cd.release_history(self.changes("main-" + self.old[:12]), new, self.root)
+        core, report = history["services"]
+        self.assertEqual((core["service"], core["status"], core["previous"]), ("core-service", "none", self.old))
+        self.assertEqual(report["status"], "changed")
+        self.assertEqual(report["added"], ["20261110_08_report_explanations.py"])
+        self.assertEqual(
+            history["api"]["files"],
+            [{"file": cd.CONTRACTS_PATH + "/core-service.yaml", "added": ["/students/me/weekly-theme"], "removed": ["/old"]}],
+        )
+        plan = deploy_plan()
+        plan["sourceCommit"] = new
+        body = cd.render_pr_body(plan, [], history=history)
+        self.assertIn("| core-service | `main-" + self.old[:12] + "` → `main-" + new[:12] + "` | 없음 |", body)
+        self.assertIn("**있음** 추가 1개: `20261110_08_report_explanations.py`", body)
+        self.assertIn("경로 추가 `/students/me/weekly-theme`", body)
+        self.assertIn("경로 삭제 `/old`", body)
+        self.assertIn("이 PR을 revert하면 실패할 수 있음", body)
+        self.assertIn("fix-forward", body)
+
+    def test_modified_or_deleted_migration_is_also_a_change(self):
+        new = commit_files(
+            self.root,
+            {
+                cd.MIGRATION_PATHS["core-service"] + "/V1__init.sql": "select 2;\n",
+                cd.MIGRATION_PATHS["report-service"] + "/20261103_01_init.py": None,
+            },
+            "edit",
+        )
+        history = cd.release_history(self.changes("main-" + self.old[:12]), new, self.root)
+        self.assertEqual([e["other"] for e in history["services"]], [["V1__init.sql(M)"], ["20261103_01_init.py(D)"]])
+        self.assertIn("수정·삭제: `V1__init.sql(M)`", cd.render_pr_body(deploy_plan(), [], history=history))
+
+    def test_no_change_means_revert_is_possible(self):
+        new = commit_files(self.root, {"README.md": "문서만\n"}, "docs")
+        history = cd.release_history(self.changes("main-" + self.old[:12]), new, self.root)
+        self.assertEqual([e["status"] for e in history["services"]], ["none", "none"])
+        self.assertEqual(history["api"], {"status": "none", "files": [], "partial": False})
+        body = cd.render_pr_body(deploy_plan(), [], history=history)
+        self.assertIn("migration·API 계약 변경 없음: 문제가 생기면 이 PR revert로 되돌릴 수 있다", body)
+        self.assertNotIn("revert하면 실패할 수 있음", body)
+
+    def test_unknown_revision_is_reported_not_failed(self):
+        new = commit_files(self.root, {"README.md": "x\n"}, "x")
+        # 11/24 main의 report-api처럼 main-<SHA>가 아닌 값, 그리고 저장소에 없는 SHA
+        for revision in ("b67d8a462b6b", "main-" + "f" * 12):
+            with self.subTest(revision=revision):
+                history = cd.release_history(self.changes(revision), new, self.root)
+                self.assertEqual([e["status"] for e in history["services"]], ["unknown", "unknown"])
+                self.assertEqual(history["api"]["status"], "unknown")
+                body = cd.render_pr_body(deploy_plan(), [], history=history)
+                self.assertIn("**확인 불가**", body)
+                self.assertIn("일부 확인 불가", body)
+
+    def test_one_unknown_service_keeps_other_ranges(self):
+        new = commit_files(self.root, {cd.CONTRACTS_PATH + "/report-service.yaml": contract("/reports", "/reports/new")}, "api")
+        changes = self.changes("main-" + self.old[:12], ("core-service",)) + [
+            {"service": "report-service", "release": "report-api", "before": {"revision": "b67d8a462b6b"}, "after": {}}
+        ]
+        history = cd.release_history(changes, new, self.root)
+        self.assertEqual([e["status"] for e in history["services"]], ["none", "unknown"])
+        self.assertEqual(history["api"]["status"], "changed")
+        self.assertIn("비교 범위를 모르는 서비스는 빠짐", cd.render_pr_body(deploy_plan(), [], history=history))
+
+    def test_release_without_db_services(self):
+        new = commit_files(self.root, {"README.md": "x\n"}, "x")
+        history = cd.release_history(self.changes("main-" + self.old[:12], ()), new, self.root)
+        self.assertEqual(history["services"], [])
+        body = cd.render_pr_body(deploy_plan(), [], history=history)
+        self.assertIn("DB를 가진 서비스(core·learning·report)가 없음", body)
+        self.assertIn("API 계약(`contracts/openapi`): **확인 불가**", body)
+
+    def test_not_a_git_repository_is_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            history = cd.release_history(self.changes("main-" + self.old[:12]), self.old, directory)
+        self.assertEqual([e["status"] for e in history["services"]], ["unknown", "unknown"])
+
+
 class CliTests(unittest.TestCase):
     def run_cli(self, root, plan, *extra):
         (root / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
@@ -267,7 +405,33 @@ class CliTests(unittest.TestCase):
             core = json.loads((folder / "core-service.json").read_text(encoding="utf-8"))
             self.assertEqual(core["image"]["digest"], digest("a"))
             self.assertNotIn(b"\r\n", (folder / "core-service.json").read_bytes())
-            self.assertIn("prod 이미지 digest 갱신", (root / "body.md").read_text(encoding="utf-8"))
+            body = (root / "body.md").read_text(encoding="utf-8")
+            self.assertIn("prod 이미지 digest 갱신", body)
+            # 임시 폴더는 git 저장소가 아니라 이전 revision을 찾지 못함 → 실패하지 않고 확인 불가(#1013)
+            self.assertIn("revert 판단 자료", body)
+            self.assertIn("**확인 불가**", body)
+
+    def test_write_images_body_shows_migration_changes_from_git(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git(root, "init", "-q")
+            write_fixture(root)
+            old = commit_files(root, {cd.MIGRATION_PATHS["core-service"] + "/V1__init.sql": "select 1;\n"}, "old")
+            folder = root / POLICY["delivery"]["imagesDir"]
+            for release in MIGRATIONS:
+                data = json.loads((folder / f"{release}.json").read_text(encoding="utf-8"))
+                data["migration"]["revision"] = "main-" + old[:12]
+                (folder / f"{release}.json").write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            new = commit_files(root, {cd.MIGRATION_PATHS["core-service"] + "/V2__add.sql": "select 2;\n"}, "new")
+            plan = deploy_plan()
+            plan["sourceCommit"] = new
+            plan["targetRelease"] = "main-" + new[:12]
+            run = self.run_cli(root, plan, "--require-executable", "--write-images", "--pr-body", str(root / "body.md"))
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            body = (root / "body.md").read_text(encoding="utf-8")
+            self.assertIn("**있음** 추가 1개: `V2__add.sql`", body)
+            self.assertIn("| report-service | `main-" + old[:12], body)
+            self.assertIn("이 PR을 revert하면 실패할 수 있음", body)
 
     def test_any_error_writes_no_file(self):
         with tempfile.TemporaryDirectory() as directory:
