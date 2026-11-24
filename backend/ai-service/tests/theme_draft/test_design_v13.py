@@ -2,25 +2,22 @@
 
 1. 수사 날 지문은 그때 직접 본 사람의 증언 하나이고 그날 단서 내용이 들어감(TESTIMONY_MISSING,
    지문 CLUE_EARLY는 수사 날만 뺌). 예시 답은 증언 속 본 사실을 믿을 만하다고 결론
-2. 돕는 사람 판정(측정 판정 억지 연결과 같은 말, 테마마다 한 번 — v13 가): 억지 부탁 날은 돕는
-   사람·일 칸을 고쳐 쓰고 그 요일 미션·대화부터 다시(fix_helpers). 글 검토 HELPER_FIT은 판정 뒤
-   경고로만, 부분 다시 생성·부탁 날 없는 판정도 경고
-3. 같은 주 같은 약속 줄은 검토 호출 전에 코드가 세어 뒤 요일 대화만 한 번 다시(PROMISE_SAME)
+2. 판정(측정 판정과 같은 말 — v13 가). #971부터 글 검토 NEXT_FIT이 FAIL인 이어 가기 날은
+   지문·다음 행동·할 일 칸을 고쳐 쓰고 그 요일 미션·대화부터 다시(fix_follow, 요일마다 한 번).
+   그래프 안 따로 판정은 #971 작은 확인에서 뺌. 고친 요일 두 번째 FAIL·부분 다시 생성·이어 가기
+   날 없는 판정은 경고(v13 HELPER_FIT 자리)
+3. (#971에서 뺌) 같은 주 같은 약속 줄 PROMISE_SAME — 약속 줄이 없어짐
 """
 
 from typing import Any
 
-import pytest
-
 from app.theme_draft import checks, prompts
-from app.theme_draft.nodes.review import route_fails, settle_helper_fit
+from app.theme_draft.nodes.review import route_fails, settle_next_fit
 from tests.theme_draft import fixtures
 from tests.theme_draft.fixtures import (
     HELPER,
     MATERIAL,
-    PROMISE,
     day_with,
-    helper_judge,
     story_review,
     valid_theme,
 )
@@ -47,11 +44,11 @@ def test_investigate_material_must_carry_the_clue() -> None:
     assert checks.check_theme(ok, GRADE) == []
 
 
-def test_old_saved_and_ask_day_material_still_hide_the_clue() -> None:
-    """미션 방식 칸이 없는 예전 저장본·부탁 날 지문은 그대로 단서 결론을 막음."""
+def test_old_saved_and_follow_day_material_still_hide_the_clue() -> None:
+    """미션 방식 칸이 없는 예전 저장본·이어 가기 날 지문은 그대로 단서 결론을 막음."""
     old = day_with(valid_theme(), "MON", missionMaterial="공원 관리인의 일지: 길의 물기는 젖음.")
     assert "CLUE_EARLY" in codes(checks.check_theme(old, GRADE))
-    ask = way_theme("MON", checks.ASK, missionMaterial="공원 관리인의 일지: 길의 물기는 젖음.")
+    ask = way_theme("MON", checks.FOLLOW, missionMaterial="공원 관리인의 일지: 길의 물기는 젖음.")
     assert "CLUE_EARLY" in codes(checks.check_theme(ask, GRADE))
     assert checks.testimony_ok(old, "MON.missionMaterial") == []
     testimony = way_theme("MON", checks.INVESTIGATE, missionMaterial=TESTIMONY)
@@ -75,41 +72,48 @@ def test_testimony_prompts_say_the_same_thing() -> None:
     assert "믿기 어렵다거나 알 수 없다고 결론 내면" in prompts.MISSION_REVIEW_SYSTEM
 
 
-# ---------------------------------------------------------------- 2. HELPER_FIT
-def helper_fail(days: list[str]) -> list[dict[str, Any]]:
-    review = story_review({"HELPER_FIT": "FAIL"}, {"HELPER_FIT": days})
+# ---------------------------------------------------------------- 2. NEXT_FIT(#971)
+def next_fail(days: list[str]) -> list[dict[str, Any]]:
+    review = story_review({"NEXT_FIT": "FAIL"}, {"NEXT_FIT": days})
     return [x.model_dump() for x in review.items if x.verdict == "FAIL"]
 
 
 def ask_state(**extra: Any) -> dict[str, Any]:
-    theme = way_theme("MON", checks.ASK)
+    theme = way_theme("MON", checks.FOLLOW)
     checks.theme_day(theme, "TUE")["missionWay"] = checks.INVESTIGATE
     return {"theme": theme, **extra}
 
 
-def test_helper_fit_rewrites_helper_fields_and_redoes_that_day() -> None:
+def test_next_fit_rewrites_follow_fields_and_redoes_that_day() -> None:
     state = ask_state()
-    fails = helper_fail(["MON"])
-    out = route_fails(state, {}, fails, ["HELPER_FIT ['MON'] 사유"])  # type: ignore[arg-type]
-    assert out["review_route"] == "HELPER" and out["days_todo"] == ["MON"]
-    assert out["helper_fixed"] is True
-    # 아이 답의 쓰임(helperUse)은 국어 부탁 날만 쓰는 칸이라 이 월요일(국어 일 틀 없음)은 뺌
+    fails = next_fail(["MON"])
+    out = route_fails(state, {}, fails, ["NEXT_FIT ['MON'] 사유"])  # type: ignore[arg-type]
+    assert out["review_route"] == "FOLLOW" and out["days_todo"] == ["MON"]
+    assert out["follow_fixed_days"] == ["MON"]
+    # 아이 글이 가는 곳(helperUse)은 쓴 글을 읽을 사람 날만 쓰는 칸이라 이 월요일은 뺌
     assert set(out["fix_targets"]) == {
-        f"MON.{k}" for k in ("helper", "missionHook", "missionMaterial", "sceneNote")
+        f"MON.{k}"
+        for k in (
+            "helper",
+            "missionHook",
+            "missionMaterial",
+            "nextTarget",
+            "sceneNote",
+        )
     }
-    assert out["mission_seed"]["MON"][0].startswith("HELPER_FIT")
+    assert out["mission_seed"]["MON"][0].startswith("NEXT_FIT")
     rules = " ".join(prompts.fix_rules(state["theme"], "MON.sceneNote"))
-    assert "HELPER_SAME·HELPER_FIT" in rules  # 장면 메모도 새 사람·새 일로
+    assert "HELPER_SAME·NEXT_FIT" in rules  # 장면 메모도 새 사람·새 지문 글로
 
 
-def test_helper_fit_without_ask_day_partial_or_second_time_is_a_warning() -> None:
-    fails = helper_fail(["TUE"])  # 수사 날만 짚음
-    keep, warns = settle_helper_fit(ask_state(), fails, [])  # type: ignore[arg-type]
-    assert keep == [] and warns[0]["id"] == "HELPER_FIT"
-    for extra in ({"partial": True}, {"helper_fixed": True}):
-        keep, warns = settle_helper_fit(ask_state(**extra), helper_fail(["MON"]), [])  # type: ignore[arg-type]
+def test_next_fit_without_follow_day_partial_or_second_time_is_a_warning() -> None:
+    fails = next_fail(["TUE"])  # 수사 날만 짚음
+    keep, warns = settle_next_fit(ask_state(), fails, [])  # type: ignore[arg-type]
+    assert keep == [] and warns[0]["id"] == "NEXT_FIT"
+    for extra in ({"partial": True}, {"follow_fixed_days": ["MON"]}):
+        keep, warns = settle_next_fit(ask_state(**extra), next_fail(["MON"]), [])  # type: ignore[arg-type]
         assert keep == [] and len(warns) == 1, extra
-    keep, _ = settle_helper_fit(ask_state(), helper_fail(["MON"]), [])  # type: ignore[arg-type]
+    keep, _ = settle_next_fit(ask_state(), next_fail(["MON"]), [])  # type: ignore[arg-type]
     assert len(keep) == 1
 
 
@@ -130,89 +134,72 @@ def test_avoid_words_include_negative_clue_values() -> None:
     assert "시멘트" in prompts.avoid_words(theme, "MON")
 
 
-def test_helper_fit_in_review_prompt_matches_measure_judge() -> None:
-    assert "HELPER_FIT" in checks.REVIEW_IDS
+def test_next_fit_in_review_prompt_matches_measure_judge() -> None:
+    assert "NEXT_FIT" in checks.REVIEW_IDS and "HELPER_FIT" not in checks.REVIEW_IDS
     assert "여섯 항목" in prompts.REVIEW_SYSTEM and "다섯 항목" not in prompts.REVIEW_SYSTEM
-    assert "그 장소(place)에서 할 법한 일을 부탁하고" in prompts.REVIEW_SYSTEM
-    # 검토 입력에 helperUse가 들어가는지는 아래 그래프 시험이 봄
+    # 글 검토·판정이 같은 기준 글(FOLLOW_RULE — 사건 이야기·풀 만함·풀어야 고름·단서가 거기서)을 봄
+    assert prompts.FOLLOW_RULE in prompts.REVIEW_SYSTEM
+    assert prompts.FOLLOW_RULE in prompts.FOLLOW_JUDGE_SYSTEM
+    for words in ("그 주 사건 이야기", "풀 만하다", "지문 속 사건의 한 부분", "나올 만하다"):
+        assert words in prompts.FOLLOW_RULE, words
+    # 작은 확인 1차·20테마 측정에서 놓친 억지 예
+    for words in ("달빛이 마당에서 춤추는 이야기", "600kg보다 크면", "방파제 안쪽"):
+        assert words in prompts.FOLLOW_RULE, words
+    assert "promiseDays" not in prompts.REVIEW_SYSTEM
 
 
-def test_graph_helper_judge_fixes_fields_then_redoes_only_that_day() -> None:
-    """돕는 사람 판정이 월요일을 억지로 보면 → 월요일 돕는 사람·일 칸 고쳐 쓰기 → 월요일 미션·대화만
-    다시 → 글 검토. 판정은 테마마다 한 번, 줄거리 다시 생성 없음."""
-    forced = lambda n, d: helper_judge({"MON": "공원 관리인의 일이 장소와 동떨어짐"})  # noqa: E731
-    hook = "공원 안내문에 보리 산책 이야기가 있어. 같이 고쳐 볼래?"
+def first_next_fail(n: int, d: str | None) -> Any:
+    """첫 글 검토만 월요일 NEXT_FIT FAIL, 그 뒤는 통과."""
+    return story_review({"NEXT_FIT": "FAIL"}, {"NEXT_FIT": ["MON"]}) if n == 1 else story_review()
+
+
+def test_graph_next_fit_fixes_fields_then_redoes_only_that_day() -> None:
+    """글 검토가 월요일 NEXT_FIT을 짚으면 → 월요일 지문·다음 행동 칸 고쳐 쓰기 → 월요일 미션·대화만
+    다시 → 글 검토. 줄거리 다시 생성 없음, 그래프 안에서 따로 부르던 판정은 없음(#971 작은 확인)."""
+    hook = "지호 일지를 같이 읽고 중요한 걸 찾아볼래?"
     gen = gen_llm(fix=lambda n, d: fixes(("MON.missionHook", hook)))
-    review = review_llm(helper=forced)
+    review = review_llm(story=first_next_fail)
     response = run(gen, review)
     assert response.failure is None
     assert gen.count("GeneratedTheme") == 1 and gen.count("GeneratedFixes") == 1
-    assert "HELPER_FIT" in gen.users("GeneratedFixes")[0]
+    assert "NEXT_FIT" in gen.users("GeneratedFixes")[0]
     assert gen.count("GeneratedDraft", "MON") == 2 and gen.count("GeneratedDialogue", "MON") == 2
     assert all(gen.count("GeneratedDialogue", d) == 1 for d in ("TUE", "WED", "THU", "FRI"))
-    assert '"helperUse"' in review.users("GeneratedStoryReview")[0]
-    assert review.count("GeneratedHelperJudge") == 1  # 테마마다 한 번
-    assert review.count("GeneratedStoryReview") == 1
-    judge = review.users("GeneratedHelperJudge")[0]
-    assert '"day": "MON"' in judge and '"day": "TUE"' not in judge  # 부탁 날만(화요일은 수사)
+    user = review.users("GeneratedStoryReview")[0]
+    assert '"nextTarget"' in user and '"nextOthers"' not in user
+    assert f"{fixtures.NEXT['MON']}: " in user  # 학생이 보는 단서(다음 행동 이름표)
+    assert review.count("GeneratedFollowJudge") == 0
+    assert review.count("GeneratedStoryReview") == 2
 
 
-def test_review_helper_fit_after_judge_is_only_a_warning() -> None:
-    """판정이 모두 자연스러우면 글 검토 HELPER_FIT FAIL은 경고(판정은 돕는 사람 판정 호출이 함)."""
+def test_follow_judge_prompt_is_for_the_measure_outside_the_graph() -> None:
+    """판정 지시문·입력은 측정 판정이 그래프 밖에서 따로 씀(글 검토와 같은 기준 글)."""
+    theme = fixtures.valid_theme()
+    for d in theme["days"]:
+        d["missionWay"] = checks.FOLLOW if d["day"] != "TUE" else checks.INVESTIGATE
+        d["nextKind"] = "PLACE" if d["day"] in ("MON", "THU") else "PERSON"
+    user = prompts.follow_judge_user(theme, {}, {}, ["MON"])
+    assert '"day": "MON"' in user and f"{fixtures.NEXT['MON']}: " in user
+    assert prompts.FOLLOW_RULE in prompts.FOLLOW_JUDGE_SYSTEM
+
+
+def test_review_next_fit_is_fixed_once_then_warning() -> None:
+    """같은 요일 NEXT_FIT FAIL은 한 번 고치고, 고친 뒤에도 FAIL이면 경고."""
     review = review_llm(
-        story=lambda n, d: story_review({"HELPER_FIT": "FAIL"}, {"HELPER_FIT": ["MON"]})
+        story=lambda n, d: story_review({"NEXT_FIT": "FAIL"}, {"NEXT_FIT": ["MON"]})
     )
-    gen = gen_llm()
+    gen = gen_llm(fix=lambda n, d: fixes(("MON.missionHook", "지호 일지를 같이 읽어 볼래?")))
     response = run(gen, review)
-    assert response.failure is None and gen.count("GeneratedFixes") == 0
-    assert review.count("GeneratedStoryReview") == 1
-    assert any(w.stage == "REVIEW" and w.item == "HELPER_FIT MON" for w in response.warnings)
-
-
-# ---------------------------------------------------------------- 3. 같은 주 같은 약속
-def promise_lines(day: str, text: str) -> list[dict[str, str]]:
-    return [{"speaker": HELPER[day], "text": text}, {"speaker": "뭉치", "text": "좋아!"}]
-
-
-def test_same_week_promises_flags_later_days_only() -> None:
-    theme = way_theme("MON", checks.ASK)
-    for d in ("WED", "THU"):
-        checks.theme_day(theme, d)["missionWay"] = checks.ASK
-    line = "그 일을 도와주면, 그때 들은 소리를 알려 줄게."
-    dialogues = {
-        "MON": promise_lines("MON", line),
-        "WED": promise_lines(
-            "WED", "그 일을 도와주면 그때 들은 소리를 알려 줄게요!"
-        ),  # 부호·끝 요만 다름(14차 snd6)
-        "THU": promise_lines("THU", "같이 해 주면 그때 본 것도 알려 줄게."),
-    }
-    same = checks.same_week_promises(theme, dialogues)
-    assert list(same) == ["WED"] and "MON 요일과 같음" in same["WED"][0]
-    assert checks.same_week_promises(theme, {**dialogues, "WED": []}) == {}
-    # 수사 날 줄은 보지 않음(약속 줄이 아님)
-    checks.theme_day(theme, "WED")["missionWay"] = checks.INVESTIGATE
-    assert checks.same_week_promises(theme, dialogues) == {}
-
-
-def test_graph_same_promise_redoes_later_dialogue_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    """월·수 약속 줄이 같으면 검토 호출 전에 수요일 대화만 한 번 다시(같은 말이 또 나와도 한
-    번만)."""
-    monkeypatch.setitem(fixtures.PROMISE, "WED", PROMISE["MON"])
-    gen = gen_llm()
-    review = review_llm()
-    response = run(gen, review)
-    assert response.failure is None
-    assert gen.count("GeneratedDialogue", "WED") == 2
-    assert all(gen.count("GeneratedDialogue", d) == 1 for d in ("MON", "TUE", "THU", "FRI"))
-    assert "PROMISE_SAME WED" in gen.users("GeneratedDialogue", "WED")[-1]
-    assert review.count("GeneratedStoryReview") == 1
+    assert response.failure is None and gen.count("GeneratedFixes") == 1
+    assert review.count("GeneratedStoryReview") == 2
+    assert gen.count("GeneratedDraft", "MON") == 2
+    assert any(w.stage == "REVIEW" and w.item == "NEXT_FIT MON" for w in response.warnings)
 
 
 def test_graph_renamed_helper_fixes_next_day_step_and_redoes_that_day() -> None:
-    """HELPER_FIT으로 월요일 돕는 사람 호칭이 바뀌면 화요일 오늘 온 까닭의 옛 호칭도 고쳐 쓰고
+    """NEXT_FIT으로 월요일 그날 장소 사람 호칭이 바뀌면 화요일 오늘 온 까닭의 옛 호칭도 고쳐 쓰고
     (fix_old_names), 대화 첫 줄이 그 까닭이라 화요일 미션·대화도 다시."""
     new = "공원 안내원"
-    forced = lambda n, d: helper_judge({"MON": "공원 관리인의 일이 장소와 동떨어짐"})  # noqa: E731
 
     def dlg(n: int, d: str | None) -> Any:
         out = fixtures.dialogue(d)
@@ -224,33 +211,14 @@ def test_graph_renamed_helper_fixes_next_day_step_and_redoes_that_day() -> None:
 
     step = f"{new} 말을 듣고 빵집 앞까지 왔어."
     gen = gen_llm(fix=lambda n, d: fixes(("MON.helper", new), ("TUE.dayStep", step)), dlg=dlg)
-    response = run(gen, review_llm(helper=forced))
+    response = run(gen, review_llm(story=first_next_fail))
     assert response.failure is None
-    assert gen.count("GeneratedFixes") == 2  # 월 돕는 사람 칸, 화 오늘 온 까닭
+    assert gen.count("GeneratedFixes") == 2  # 월 그날 장소 사람 칸, 화 오늘 온 까닭
     assert "바뀌기 전 돕는 사람('공원 관리인')" in gen.users("GeneratedFixes")[1]
     assert gen.count("GeneratedDraft", "TUE") == 2 and gen.count("GeneratedDialogue", "TUE") == 2
     tue = next(x for x in response.dialogues if x.day == "TUE")
     assert tue.lines[0].text == step
     assert all(gen.count("GeneratedDialogue", d) == 1 for d in ("WED", "THU", "FRI"))
-
-
-def test_graph_same_promise_redo_failure_keeps_original(monkeypatch: pytest.MonkeyPatch) -> None:
-    """같은 주 약속 다시 만들기가 끝내 실패하면 원래 대화(약속 줄만 같음)를 그대로 둠 — 빈 대화로
-    바꾸지 않음."""
-    monkeypatch.setitem(fixtures.PROMISE, "WED", PROMISE["MON"])
-
-    def dlg(n: int, d: str | None) -> Any:
-        if d == "WED" and n >= 2:  # 다시 만든 대화는 줄 수가 모자라 늘 검사에 걸림
-            return fixtures.dialogue(d, lines=fixtures.dialogue(d).lines[:1])
-        return fixtures.dialogue(d)
-
-    gen = gen_llm(dlg=dlg)
-    response = run(gen, review_llm())
-    assert response.failure is None
-    assert gen.count("GeneratedDialogue", "WED") >= 2
-    wed = next(x for x in response.dialogues if x.day == "WED")
-    assert any(line.text == PROMISE["MON"] for line in wed.lines)
-    assert not [w for w in response.warnings if w.stage == "DIALOGUE" and w.item == "WED"]
 
 
 # ---------------------------------------------------------------- 4. 문제 글의 사건 때(15차 치명)
@@ -274,24 +242,25 @@ def test_mission_incident_time_must_not_be_last_night() -> None:
     assert "'어젯밤·그저께'처럼 그날 기준 지난 때로 쓰면 결함" in prompts.REVIEW_SYSTEM
 
 
-def test_graph_helper_fix_llm_error_goes_on_to_review() -> None:
-    """16차 hand6b: 돕는 사람 칸 고쳐 쓰기 응답이 형식 오류면 테마 전체가 오류로 끝났음 → 고치기만
-    건너뛰고 글 검토로(판정은 테마마다 한 번이라 다시 부르지 않음)."""
+def test_graph_follow_fix_llm_error_goes_on_to_review() -> None:
+    """16차 hand6b: 칸 고쳐 쓰기 응답이 형식 오류면 테마 전체가 오류로 끝났음 → 고치기만 건너뛰고
+    글 검토로(그 요일은 고친 것으로 쳐 다시 짚혀도 경고)."""
     from app.llm.base import LlmError
 
-    forced = lambda n, d: helper_judge({"MON": "공원 관리인의 일이 장소와 동떨어짐"})  # noqa: E731
     gen = gen_llm(fix=lambda n, d: LlmError("LLM_INVALID_OUTPUT", False))
-    review = review_llm(helper=forced)
+    review = review_llm(
+        story=lambda n, d: story_review({"NEXT_FIT": "FAIL"}, {"NEXT_FIT": ["MON"]})
+    )
     response = run(gen, review)
-    assert response.failure is None
-    assert review.count("GeneratedHelperJudge") == 1 and review.count("GeneratedStoryReview") == 1
+    assert response.failure is None and review.count("GeneratedStoryReview") == 2
     assert gen.count("GeneratedDraft", "MON") == 1  # 고치지 못했으니 미션도 그대로
 
 
-def test_graph_helper_judge_llm_error_goes_on_to_review() -> None:
-    """돕는 사람 판정 호출이 실패해도(LlmUnavailable) 테마 전체를 오류로 끝내지 않고 글 검토."""
-    from app.llm.base import LlmError
-
-    review = review_llm(helper=lambda n, d: LlmError("LLM_INVALID_OUTPUT", False))
-    response = run(gen_llm(), review)
-    assert response.failure is None and review.count("GeneratedStoryReview") == 1
+def test_next_fit_is_fixed_once_per_day() -> None:
+    """#971 작은 확인 3차: 월요일을 고친 뒤 처음 짚힌 금요일은 고치고, 월요일만 다시 짚히면 경고."""
+    state = ask_state(follow_fixed_days=["MON"])
+    checks.theme_day(state["theme"], "FRI")["missionWay"] = checks.FOLLOW
+    keep, warns = settle_next_fit(state, next_fail(["MON", "FRI"]), [])  # type: ignore[arg-type]
+    assert [x["days"] for x in keep] == [["FRI"]] and len(warns) == 1
+    out = route_fails(state, {}, keep, ["NEXT_FIT ['FRI'] 사유"])  # type: ignore[arg-type]
+    assert out["review_route"] == "FOLLOW" and out["follow_fixed_days"] == ["MON", "FRI"]

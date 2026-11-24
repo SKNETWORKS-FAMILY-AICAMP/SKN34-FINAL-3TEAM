@@ -15,6 +15,8 @@ from langgraph.runtime import Runtime
 from app.llm.base import LlmError, LlmUnavailable
 from app.theme_draft.checks import (
     DAYS,
+    FOLLOW,
+    NEXT_KO,
     apply_evidence_plan,
     apply_facts,
     check_theme,
@@ -39,7 +41,6 @@ from app.theme_draft.checks import (
 from app.theme_draft.families import story_type
 from app.theme_draft.models import GeneratedFixes, GeneratedTheme
 from app.theme_draft.nodes import DEADLINE_REASON, THEME_CALL_TYPE, ThemeContext, ThemeState
-from app.theme_draft.nodes.dialogue import promise_redo
 
 
 async def retrieve(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeState:
@@ -113,17 +114,26 @@ async def plan_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> Theme
     # 증거 종류·기록 매체 배정(내부 칸, 응답에는 넣지 않음). 줄거리와 다르면 check_theme이
     # CLUE_EVIDENCE로 그날 칸만 고쳐 쓰게 함(#535)
     theme["evidencePlan"] = ctx.prompt.body.evidence_plan_for(ctx.request)
-    # #782 설계 v3: 요일 성취기준 코드와 국어 부탁 날 돕는 사람 호칭 후보·아이 답의 쓰임(내부 칸,
-    # HELPER_SAME·USE_MISSING·그래프 성취기준 규칙이 봄)
+    # 요일 성취기준 코드(내부 칸, 그래프 성취기준 규칙·다음 행동 종류가 봄)
     theme["dayFrames"] = ctx.prompt.body.day_frames_for(ctx.request)
+    # #971: 학년(내부 칸) — 지문 글자 수 상한이 학년별(checks.MATERIAL_MAX)
+    theme["grade"] = ctx.grade
     # 사실표 종류의 후보 4개·정답(내부 칸, 코드가 정함 — SAME_KIND가 봄, #634 ⑤ 소리 탐정에서
     # #782 사실표 종류 전부로)
     if plan := ctx.prompt.body.candidate_plan_for(ctx.request):
         theme["candidatePlan"] = plan
-    # 미션 방식(#782 테마 짜임, 코드가 줄거리 전에 정해 plan_user로 알린 값을 내부 칸에 넣음)
+    # 미션 방식·다음 행동 종류(#782 테마 짜임·#971, 코드가 줄거리 전에 정해 plan_user로 알린 값을
+    # 내부 칸에 넣음). 수사 날은 다음 행동이 없음
     ways = ctx.prompt.body.mission_ways_for(ctx.request)
+    kinds = ctx.prompt.body.next_kinds_for(ctx.request)
     for d in theme.get("days") or []:
-        d["missionWay"] = ways.get(d.get("day") or "", "ASK")
+        day = d.get("day") or ""
+        d["missionWay"] = ways.get(day, FOLLOW)
+        if kinds.get(day):
+            d["nextKind"] = kinds[day]
+        else:
+            d.pop("nextKind", None)
+            d["nextTarget"] = ""
     if tuple(d.get("day") for d in theme.get("days") or []) != DAYS:
         # 요일을 다 내지 않은 줄거리(#782 작은 생성: 조건을 맞출 수 없으면 모델이 빈 줄거리를 냄)는
         # 코드 수리가 없는 요일을 찾다 멈추므로 건너뛰고 check_theme(DAYS)이 다시 생성하게 함
@@ -203,13 +213,16 @@ def code_adjust(theme: dict) -> dict[str, list[str]]:
                 )
     # 흔적 배정 옮기기 뒤 기록 매체를 그날 특징에 맞춤(#634 ⑤: 소리는 사진으로 알 수 없음)
     moved = fit_evidence_plan(theme)
-    # #782 미션 방식: 옮긴 뒤 방식과 증거가 안 맞게 된 날은 부탁으로 바꾸고, 그날 할 일·지문도
-    # 부탁(돕는 사람의 일)에 맞게 고쳐 씀(단서·증거 발견 줄은 아래 CLUE_EVIDENCE가 고침)
+    # #782 미션 방식·#971: 옮긴 뒤 방식과 증거가 안 맞게 된 날은 이어 가기로 바꾸고(다음 행동 종류도
+    # 다시 정함), 그날 할 일·지문·다음 행동 칸을 새 방식에 맞게 고쳐 씀(단서·증거 발견 줄은 아래
+    # CLUE_EVIDENCE가 고침)
     for day in refit_ways(theme):
-        for key in ("missionHook", "missionMaterial"):
+        kind = NEXT_KO.get(str(theme_day(theme, day).get("nextKind") or ""), "")
+        for key in ("missionHook", "missionMaterial", "nextTarget"):
             targets.setdefault(f"{day}.{key}", []).append(
-                f"WAY_FIX {day} 증거 종류가 바뀌어 코드가 미션 방식을 부탁으로 바꿈: 돕는 사람의 "
-                "부탁 한 줄·그 일의 자료로"
+                f"WAY_FIX {day} 증거 종류가 바뀌어 코드가 미션 방식을 이어 가기(다음 행동: "
+                f"{kind})로 "
+                "바꿈: 사건 이야기 지문·지문을 같이 읽자는 말·지문을 풀면 알게 되는 다음 행동으로"
             )
     for day in dict.fromkeys([*moved, *fit_media(theme)]):
         slot = plan_slot(theme, day)
@@ -259,7 +272,8 @@ async def fix_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeS
     assert theme is not None
     # 배정과 다른 증거 종류는 코드가 배정대로 바꾸고 그날 글 칸만 그 종류에 맞게 고쳐 씀(#535)
     apply_evidence_plan(theme)
-    # #782 설계 v3(사용자 결정 2026-11-21): 부탁 날 단서의 출처·꼴(CLUE_SOURCE·CLUE_TEXT)이 한 번
+    # #782 설계 v3(사용자 결정 2026-11-21): 이어 가기 날 단서의 출처·꼴(CLUE_SOURCE·CLUE_TEXT)이 한
+    # 번
     # 고쳐 쓴 뒤에도 걸리면 코드 틀 문장으로 바꾼다(같은 칸을 모델에게 세 번 맡기지 않음)
     if state.get("fix_attempts", 0) >= 1:
         for path in [p for p, rs in targets.items() if p.endswith(".clue")]:
@@ -270,7 +284,11 @@ async def fix_theme(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeS
                 targets = {k: v for k, v in targets.items() if k != path}
         # #782 설계 v7: 오늘 온 까닭이 두 번째에도 걸리면(지어냄·자기 이름·단서 미리 등 어떤 사유든)
         # 코드 문장 — 코드 문장은 그 검사들을 모두 통과함(시험)
-        for path in [p for p in targets if p.endswith(".dayStep")]:
+        for path in [
+            p
+            for p in targets
+            if p.endswith(".dayStep") and not all(r.startswith(SOFT_THEME) for r in targets[p])
+        ]:
             day = path.split(".")[0]
             index = [d.get("day") for d in theme.get("days") or []].index(day)
             set_text_at(theme, path, day_step_text(theme, index))
@@ -288,8 +306,8 @@ async def fix_clues(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeS
     """글 검토 CLUE_LOGIC(처음 한 번): 지목된 요일 단서 문장만 고쳐 쓰고 코드 검사를 다시 한다.
 
     단서는 학생이 그날 미션을 마친 뒤 보는 글이라 미션·대화에 들어가지 않아, 단서만 바꿔도 미션·
-    대화는 그대로 둔다(#782 설계 v12: 약속 감각이 바뀐 날의 약속이 틀리면 그 요일 대화만 다시,
-    talk_seed). 고친 단서가 코드 검사에 걸리면 줄거리부터 다시 만든다.
+    대화는 그대로 둔다(#971: 부탁 날 약속 줄이 없어져 대화를 다시 볼 일도 없음). 고친 단서가 코드
+    검사에 걸리면 줄거리부터 다시 만든다.
     """
     ctx = runtime.context
     targets = state.get("fix_targets") or {}
@@ -312,16 +330,13 @@ async def fix_clues(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeS
         reasons = state.get("review_reasons") or []
         feedback = [*(state.get("plan_feedback") or []), ("REVIEW", reasons), ("THEME", bad)]
         return {**out, "plan_feedback": feedback, "plan_attempts": 0, "review_route": "PLAN"}
-    # #782 설계 v10: 고친 단서로 그날 약속 감각이 바뀌면 그날 약속을 다시 봄. #782 설계 v12: 틀리면
-    # 그 요일 대화만 LLM이 다시 씀(graph after_fix_clues → generate_dialogue → review_story)
-    talk = promise_redo(ctx, state, theme)
-    return {**out, "talk_seed": talk, "talk_keep": False, "theme": theme, "review_route": "REVIEW"}
+    return {**out, "theme": theme, "review_route": "REVIEW"}
 
 
 async def fix_old_names(ctx: ThemeContext, fixed: dict, before: dict, days: list[str]) -> None:
-    """돕는 사람을 바꾼 요일의 다음 날 오늘 온 까닭에 옛 호칭이 남으면 그 칸을 고쳐 씀(#782 설계 v10
-    돕는 사람 검토 길에서 쓰던 것을 v13 fix_helpers에 다시 씀 — HELPER_SAME은 돕는 사람을 바꾸라고
-    할 때만 다음 날 옛 호칭을 봄)."""
+    """그날 장소 사람을 바꾼 요일의 다음 날 오늘 온 까닭에 옛 호칭이 남으면 그 칸을 고쳐 씀(#782
+    설계 v10, #971 fix_follow에서도 씀 — HELPER_SAME은 돕는 사람을 바꾸라고 할 때만 다음 날 옛
+    호칭을 봄)."""
     order = [d.get("day") for d in fixed.get("days") or []]
     targets: dict[str, list[str]] = {}
     for day in days:
@@ -339,14 +354,13 @@ async def fix_old_names(ctx: ThemeContext, fixed: dict, before: dict, days: list
         await fix_fields(ctx, fixed, targets)
 
 
-async def fix_helpers(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeState:
-    """글 검토 HELPER_FIT(#782 설계 v13): 지목된 부탁 날의 돕는 사람·일 칸만 고쳐 쓰고 코드 검사를
-    다시 한 뒤 그 요일 미션·대화부터 다시 만든다(줄거리 나머지는 그대로, days_todo·mission_seed는
-    글 검토가 정함). 고친 칸이 칸 하나로 고칠 수 있는 검사에 걸리면 한 번 더 고쳐 쓰고, 그래도
-    걸리면 줄거리부터 다시 만든다.
+async def fix_follow(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeState:
+    """글 검토 NEXT_FIT(#971, #782 v13 fix_helpers 자리): 지목된 이어 가기 날의 지문·
+    다음 행동·할 일·장면 칸만 고쳐 쓰고 코드 검사를 다시 한 뒤 그 요일 미션·대화부터 다시 만든다
+    (줄거리 나머지는 그대로, days_todo·mission_seed는 검토가 정함). 고친 칸이 칸 하나로 고칠 수
+    있는 검사에 걸리면 한 번 더 고쳐 쓰고, 그래도 걸리면 줄거리부터 다시 만든다.
 
-    10~13차 억지 36건 중 26건이 돕는 사람의 일이 그 장소와 동떨어짐. 미션만 다시 만들면 돕는
-    사람·일(줄거리 칸)이 그대로라 못 고침."""
+    미션만 다시 만들면 지문·다음 행동(줄거리 칸)이 그대로라 못 고침(미션은 지문을 그대로 씀)."""
     ctx = runtime.context
     targets = state.get("fix_targets") or {}
     theme = copy.deepcopy(state["theme"])
@@ -357,7 +371,7 @@ async def fix_helpers(state: ThemeState, runtime: Runtime[ThemeContext]) -> Them
         await fix_old_names(ctx, theme, state["theme"] or {}, days)
     except (LlmError, LlmUnavailable):
         # #782 설계 v13: 고쳐 쓰기 응답이 형식 오류여도 테마 전체를 오류로 끝내지 않고 고치기만
-        # 건너뛰어 글 검토로(16차 hand6b — 그 뒤 HELPER_FIT은 helper_fixed라 경고)
+        # 건너뛰어 글 검토로(16차 hand6b — 그 뒤 그 요일 NEXT_FIT은 follow_fixed_days라 경고)
         return {"fix_targets": {}, "review_route": "REVIEW"}
     finalize_texts(theme)
     codes = {s.code for m in ctx.request.missions for s in m.standards}
@@ -382,6 +396,11 @@ async def fix_helpers(state: ThemeState, runtime: Runtime[ThemeContext]) -> Them
     return {**out, "theme": theme, "days_todo": todo, "mission_seed": seed, "review_route": "DAYS"}
 
 
+# 고쳐 쓰기 상한 뒤에도 남으면 넘어가는 줄거리 검사 사유(#971 단서 말투·오늘 온 까닭 같은 꼴 —
+# 코드 문장으로 바꾸지 않음, 사용자 2026-11-22 '코드 문장은 너무 똑같이 반복')
+SOFT_THEME = ("CLUE_PLAIN ", "DAY_STEP_SAME ")
+
+
 async def check_theme_node(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeState:
     ctx = runtime.context
     codes = {s.code for m in ctx.request.missions for s in m.standards}
@@ -396,6 +415,10 @@ async def check_theme_node(state: ThemeState, runtime: Runtime[ThemeContext]) ->
         and ctx.can_regenerate()
     ):
         return {"plan_bad": bad, "fix_targets": targets}
+    # #971: 단서 말투(CLUE_PLAIN)만 고쳐 쓰기 상한 뒤에도 남으면 줄거리를 다시 만들지 않고 넘어감
+    # (정답 논리·흐름 결함이 아니라 다듬기 거리 — 줄거리부터면 미션·대화까지 약 5분 더 듦)
+    if all(r.startswith(SOFT_THEME) for r in bad):
+        return {"plan_bad": [], "days_todo": list(DAYS), "mission_seed": {}}
     out: ThemeState = {
         "plan_bad": bad,
         "plan_feedback": [*(state.get("plan_feedback") or []), ("THEME", bad)],

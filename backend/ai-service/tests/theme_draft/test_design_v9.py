@@ -19,30 +19,12 @@ def reasons(theme: dict[str, Any], grade: int = GRADE) -> list[str]:
 
 
 # ---------------------------------------------------------------- A. 돌아보기 날 일 틀
-def test_reflect_day_uses_standard_area_frame() -> None:
-    """6차 억지 13일 중 6일이 금요일 '처음 온 아이들에게 줄 경험 모음' 틀."""
-    assert "REFLECT" not in checks.HELPER_FRAMES
-    assert checks.frame_area(["4국05-03"], "REFLECT") == "05"
-    assert checks.frame_area(["6국02-05"], "REFLECT") == "02"
-    assert checks.frame_area(["4수01-10"], "REFLECT") is None
-    assert "처음 온 아이들에게 들려줄" not in prompts.PLAN_SYSTEM
-
-
 # ---------------------------------------------------------------- B. 수학 부탁 날 쓰임
-def test_math_ask_day_says_where_the_answer_is_used() -> None:
-    """6차 억지 13일 중 6일이 목요일 수학 '구한 값을 어디에 쓰는지 안 나옴'(세 곳)."""
-    assert "수학 부탁 날은 구한 값을 그 사람이 어디에 쓰는지" in prompts.PLAN_SYSTEM
-    assert "수학 부탁 날 문제가 구한 값을" in prompts.MISSION_REVIEW_SYSTEM
-    theme = day_with(valid_theme(), "THU", missionWay=checks.ASK, helper="떡집 사장님")
-    rules = " ".join(prompts.fix_rules(theme, "THU.missionHook"))
-    assert "어디에 쓰는지" in rules
-
-
 # ---------------------------------------------------------------- C. 부탁 날 지문이 기록
 def test_ask_material_that_is_helpers_record_is_rewritten() -> None:
     """6차 치명 way6 화: 지문이 '내 메모에는 이렇게 적혀 있어…'라 미션 전에 단서가 보임."""
     bad_text = "내 메모에는 이렇게 적혀 있어. 책을 든 사람이 반납함 앞에서 잠깐 멈췄다."
-    theme = day_with(valid_theme(), "TUE", missionWay=checks.ASK, missionMaterial=bad_text)
+    theme = day_with(valid_theme(), "TUE", missionWay=checks.FOLLOW, missionMaterial=bad_text)
     hit = [r for r in reasons(theme) if r.startswith("MATERIAL_RECORD TUE")]
     assert hit
     assert checks.fix_targets(hit) == {"TUE.missionMaterial": hit}
@@ -50,15 +32,17 @@ def test_ask_material_that_is_helpers_record_is_rewritten() -> None:
         "반납한 책은 표지를 닦아 서가에 꽂아요. 기록장에 날짜를 적어요.",
         "오늘 쓸 쌀가루는 0.245 kg, 콩가루는 0.130 kg입니다.",
     ):
-        theme = day_with(valid_theme(), "TUE", missionWay=checks.ASK, missionMaterial=ok)
+        theme = day_with(valid_theme(), "TUE", missionWay=checks.FOLLOW, missionMaterial=ok)
         assert not [r for r in reasons(theme) if r.startswith("MATERIAL_RECORD")], ok
     # 수사 날 지문은 그 사람이 가진 증거라 기록이 맞음
     theme = day_with(valid_theme(), "TUE", missionWay=checks.INVESTIGATE, missionMaterial=bad_text)
     assert not [r for r in reasons(theme) if r.startswith("MATERIAL_RECORD")]
     assert "MATERIAL_RECORD" in prompts.PLAN_SYSTEM
-    assert "돕는 사람 자신의 기록" in prompts.REVIEW_SYSTEM
-    ask = day_with(valid_theme(), "MON", missionWay=checks.ASK)
-    assert "자신의 기록" in " ".join(prompts.fix_rules(ask, "MON.missionMaterial"))
+    assert "단서 내용(그날 단서 특징 값)을 문제 전에 보이면 결함" in prompts.REVIEW_SYSTEM
+    ask = day_with(valid_theme(), "MON", missionWay=checks.FOLLOW)
+    assert "단서가 되는 기록(내 메모·일지·사진)" in " ".join(
+        prompts.fix_rules(ask, "MON.missionMaterial")
+    )
 
 
 # ---------------------------------------------------------------- D. 수사 날 기록 단서
@@ -82,22 +66,6 @@ def test_investigate_record_clue_does_not_quote_the_record() -> None:
 
 
 # ---------------------------------------------------------------- E. 약속 문구
-def test_promise_follows_the_days_sense_not_story_type() -> None:
-    """6차 snd3b: 소리 탐정이라 늘 '들은 걸'이었는데 단서는 본 등불 색(글 검토 CLUE_LOGIC)."""
-    theme = copy.deepcopy(valid_theme())
-    d = checks.theme_day(theme, "MON")
-    d["evidence"] = {"kind": "SIGHTING", "when": "그때"}
-    d["condition"] = {"kind": "STORY", "feature": "", "allowed": []}
-    d["clue"] = "그때 등불이 파란색으로 깜빡였어!"
-    assert prompts.ask_promise(theme, d) == "도와주면 그때 본 걸 알려 줄게"
-    d["clue"] = "그 소리는 한 번만 짧게 났어!"
-    assert prompts.ask_promise(theme, d) == "도와주면 그때 내가 들은 소리를 알려 줄게"
-    d["condition"] = {"kind": "RULE", "feature": "남은 냄새", "allowed": ["꽃"]}
-    assert prompts.ask_promise(theme, d) == "도와주면 그때 내가 맡은 냄새를 알려 줄게"
-    assert checks.ASK_PROMISE_CASE.search("도와주면 내가 들은 소리를 알려 줄게")
-    assert checks.ASK_PROMISE_CASE.search("도와주면 내가 맡은 냄새를 알려 줄게")
-
-
 # ---------------------------------------------------------------- F. 긴 대화 줄 쉼표에서 나눔
 def test_one_sentence_long_line_is_split_at_comma() -> None:
     """6차 new6b 수: 한 문장 40자 넘는 부탁 줄을 못 나눠 세 번 LINE_LENGTH로 대화가 빠짐."""

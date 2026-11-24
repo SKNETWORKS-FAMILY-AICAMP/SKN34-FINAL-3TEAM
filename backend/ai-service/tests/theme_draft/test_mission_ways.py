@@ -36,7 +36,7 @@ def theme_with_way(day: str, way: str) -> dict[str, Any]:
 def test_old_save_without_way_reads_as_investigate() -> None:
     assert checks.mission_way({}) == checks.INVESTIGATE
     assert checks.mission_way({"missionWay": "엉뚱함"}) == checks.INVESTIGATE
-    assert checks.mission_way({"missionWay": checks.ASK}) == checks.ASK
+    assert checks.mission_way({"missionWay": checks.FOLLOW}) == checks.FOLLOW
     old = {k: v for k, v in valid_theme()["days"][0].items() if k != "helper"}
     assert GeneratedDay.model_validate(old).helper == ""
 
@@ -77,7 +77,7 @@ def test_way_plan_fits_evidence_and_never_repeats() -> None:
     same = [checks.mission_way_plan(days, _plan(*mix), random.Random("씨앗")) for _ in range(2)]
     assert same[0] == same[1]
     assert not checks.way_fits(checks.INVESTIGATE, "TRACE")
-    assert checks.MISSION_WAYS == (checks.ASK, checks.INVESTIGATE)  # 함께 발견 없음
+    assert checks.MISSION_WAYS == (checks.FOLLOW, checks.INVESTIGATE)  # 함께 발견 없음
     assert checks.mission_way({"missionWay": "TOGETHER"}) == checks.INVESTIGATE  # 예전 값은 수사로
 
 
@@ -88,7 +88,7 @@ def test_way_plan_allows_repeat_only_when_evidence_leaves_no_choice() -> None:
     plan = _plan("SIGHTING", "SIGHTING", "RECORD", "SIGHTING", "SIGHTING")
     ways, fitted = checks.mission_way_plan(days, plan, random.Random(1))
     assert all(checks.way_fits(ways[d], fitted[d]["kind"]) for d in checks.DAYS)
-    assert list(ways.values()).count(checks.ASK) >= 4
+    assert list(ways.values()).count(checks.FOLLOW) >= 4
 
 
 def test_request_ways_are_stable_and_told_in_plan_prompt() -> None:
@@ -102,10 +102,11 @@ def test_request_ways_are_stable_and_told_in_plan_prompt() -> None:
     assert "미션 방식 배정(코드가 정함" in user
     for day, way in ways.items():
         assert f"- {day}({prompts.DAY_KO[day]}): {prompts.WAY_KO[way]}({way})" in user
-    assert "그 밖의 날은 그날 장소에 있는 사람 호칭" in prompts.PLAN_SYSTEM
-    # #782 설계 v10: 호칭 배정 대신 일 → 사람 → 쓰임 → 장소 순서
-    assert "늘 하는 사람(helper" in prompts.PLAN_SYSTEM
-    assert all(f"  - {w}" in prompts.PLAN_SYSTEM for w in ("부탁:", "수사:"))
+    assert "helper: 그날 장소 사람 호칭" in prompts.PLAN_SYSTEM
+    # #971: 부탁 날 일 → 사람 → 쓰임 순서는 뺌, 미션 방식은 이어 가기·수사
+    assert "늘 하는 사람(helper" not in prompts.PLAN_SYSTEM
+    assert all(f"  - {w}" in prompts.PLAN_SYSTEM for w in ("이어 가기:", "수사:"))
+    assert "다음 행동 배정(이어 가기 날만" in user and "지문 글자 수" in user
     assert "함께 발견" not in prompts.PLAN_SYSTEM and "함께 발견" not in prompts.DIALOGUE_SYSTEM
 
 
@@ -146,14 +147,14 @@ def test_helper_may_speak_and_short_name_is_restored() -> None:
 # ---------------------------------------------------------------- 방식대로 쓰는 재료
 def test_ask_day_hides_evidence_before_mission() -> None:
     """부탁 날 증거는 문제를 마친 뒤 단서로 나오므로 대화·미션 재료에 미리 주지 않음."""
-    for way in (checks.ASK,):
+    for way in (checks.FOLLOW,):
         theme = theme_with_way("MON", way)
         user = prompts.dialogue_user(theme, "MON", _draft("ANALYZE"), GRADE, [])
         assert f"미션 방식: {prompts.WAY_KO[way]}({way})" in user
-        assert f"오늘 돕는 사람(화자로 써도 됨): {HELPER['MON']}" in user
+        assert f"오늘 그날 장소 사람(화자로 써도 됨): {HELPER['MON']}" in user
         assert DISCOVERY["MON"] not in user
         story = prompts.story_text(theme, "MON", GRADE)
-        assert f"- 오늘 돕는 사람: {HELPER['MON']}" in story
+        assert f"- 오늘 그날 장소 사람: {HELPER['MON']}" in story
         assert "오늘 찾은 증거" not in story and DISCOVERY["MON"] not in story
         assert f"오늘 미션 방식: {prompts.WAY_KO[way]}" in story
 
@@ -171,20 +172,20 @@ def test_investigate_day_keeps_evidence() -> None:
 
 def test_mission_image_draws_helper_not_evidence_on_ask_day() -> None:
     ask = prompts.mission_image_prompt(
-        theme_with_way("MON", checks.ASK), "MON", _draft("ANALYZE"), []
+        theme_with_way("MON", checks.FOLLOW), "MON", _draft("ANALYZE"), []
     )
     assert "Today's evidence" not in ask
-    assert f"Today's helper (Korean): {HELPER['MON']}" in ask
+    assert f"Today's person (Korean): {HELPER['MON']}" in ask
     investigate = prompts.mission_image_prompt(
         theme_with_way("MON", checks.INVESTIGATE), "MON", _draft("ANALYZE"), []
     )
     assert f"Today's evidence (Korean): {DISCOVERY['MON']}" in investigate
-    assert "Today's helper" not in investigate
+    assert "Today's person" not in investigate
 
 
 def test_review_inputs_carry_way_and_helper() -> None:
-    brief = prompts.story_brief(theme_with_way("MON", checks.ASK), "MON")
-    assert brief["missionWay"] == "부탁(ASK)" and brief["helper"] == HELPER["MON"]
+    brief = prompts.story_brief(theme_with_way("MON", checks.FOLLOW), "MON")
+    assert brief["missionWay"] == "이어 가기(FOLLOW)" and brief["helper"] == HELPER["MON"]
     assert "missionWay대로 본다" in prompts.MISSION_REVIEW_SYSTEM
     assert "helper가 있으면" in prompts.IMAGE_REVIEW_SYSTEM
     assert "helper가 있으면" in prompts.MOTION_SYSTEM
@@ -215,14 +216,14 @@ def flow_codes(theme: dict[str, Any]) -> list[str]:
 def test_scene_note_hides_evidence_on_ask_days() -> None:
     """실측: 장면 메모의 '끌림 자국'이 문제 전 대화로 샘."""
     note = "안내 담당자가 안내문을 정리하고 지호가 바닥의 자국을 살펴본다"
-    bad = checks.check_theme(way_theme("TUE", checks.ASK, sceneNote=note), GRADE)
+    bad = checks.check_theme(way_theme("TUE", checks.FOLLOW, sceneNote=note), GRADE)
     assert "EVIDENCE_EARLY" in [r.split(" ")[0] for r in bad]
     assert "TUE.sceneNote" in checks.fix_targets(bad)
     assert "EVIDENCE_EARLY" not in flow_codes(way_theme("TUE", checks.INVESTIGATE, sceneNote=note))
     rules = " ".join(
-        prompts.fix_rules(way_theme("TUE", checks.ASK, sceneNote=note), "TUE.sceneNote")
+        prompts.fix_rules(way_theme("TUE", checks.FOLLOW, sceneNote=note), "TUE.sceneNote")
     )
-    assert "흔적·자국·증거를 쓰지 않고" in rules
+    assert "흔적·자국·증거와 다음 행동" in rules
 
 
 # #782 설계 v13: 수사 날 지문은 그때 직접 본 사람의 증언이고 그날 단서 내용(월 '젖어
@@ -247,55 +248,14 @@ def test_hook_must_not_ask_helpers_own_mind() -> None:
     assert flow_codes(ok_theme) == []
 
 
-def test_ask_day_dialogue_promises_what_helper_saw() -> None:
-    """실측: '도와주면 인사말을 만들 때 살펴볼 점을 알려 드릴게요', '도와주면 고마운 걸 알려
-    줄게'."""
-    theme = theme_with_way("MON", checks.ASK)
-    day = checks.theme_day(theme, "MON")
-
-    def missing(text: str) -> bool:
-        lines = [{"speaker": HELPER["MON"], "text": text}, {"speaker": "뭉치", "text": "좋아!"}]
-        return checks.ask_promise_missing(day, lines)
-
-    assert not missing("도와주면 그때 본 걸 알려 줄게.")
-    assert not missing("도와주면 내 사진을 보여 줄게.")
-    assert not missing("도와주면 알려 줄게.")  # 무엇인지 말하지 않아도 됨
-    assert missing("도와주면 인사말을 만들 때 살펴볼 점을 알려 드릴게요.")
-    assert missing("도와주면 고마운 걸 알려 줄게.")
-    assert missing("안내판 글을 쉽게 정리해 줄래?")  # 약속 없음
-    # 다른 방식 날은 보지 않음
-    assert not checks.ask_promise_missing(checks.theme_day(valid_theme(), "MON"), [])
-    # 대화 검사에 걸리고(그 요일 대화만 다시), 대화 요청에 약속 줄을 줌
-    lines = [x.model_dump() for x in dialogue().lines]  # 약속을 지호가 말함(돕는 사람 아님)
-    bad = checks.check_dialogue(
-        theme,
-        "MON",
-        {"lines": lines},
-        _draft("ANALYZE"),
-        GRADE,
-        get_settings().followup_example_overlap_chars,
-    )
-    assert [r.split(" ")[0] for r in bad] == ["ASK_PROMISE"]
-    user = prompts.dialogue_user(theme, "MON", _draft("ANALYZE"), GRADE, [])
-    # #782 설계 v10: 약속 문장 대신 뜻만 줌
-    # #782 설계 v12: 오늘 일은 조건에만
-    assert "돕는 사람의 약속(③): 오늘 부탁한 일을 도와주면" in user
-    assert "그때 본 것을 알려 주겠다는 뜻" in user
-    record = prompts.dialogue_user(
-        theme_with_way("FRI", checks.ASK), "FRI", _draft("REFLECT"), GRADE, []
-    )
-    assert "그때 자기 일지를 알려 주겠다는 뜻" in record  # 기록 날은 가진 기록
-    assert "돕는 사람의 약속" not in prompts.dialogue_user(
-        theme_with_way("MON", checks.INVESTIGATE), "MON", _draft("ANALYZE"), GRADE, []
-    )
-
-
 def test_clue_rules_differ_by_way_in_plan_prompt() -> None:
     plan = prompts.PLAN_SYSTEM
     assert "clue는 그날 미션 방식대로 한 줄 말로 쓴다" in plan
     assert "'고마워!' 같은 앞말은 붙이지 않는다" in plan
     assert "EVIDENCE_EARLY" in plan and "HOOK_SELF" in plan and "CLUE_WAY" not in plan
-    assert "ASK_PROMISE" in prompts.DIALOGUE_SYSTEM
+    # #971: 부탁 날 약속 줄 대신 보답 약속 없음(다음 행동은 지문에 나오므로 대화가 말해도 됨)
+    assert "ASK_PROMISE" not in prompts.DIALOGUE_SYSTEM
+    assert "NEXT_EARLY" not in prompts.DIALOGUE_SYSTEM and "NEXT_PROMISE" in prompts.DIALOGUE_SYSTEM
 
 
 # ---------------------------------------------------------------- r782-ways-rd4를 읽고 찾은 문제
@@ -303,7 +263,7 @@ def test_refit_turns_mismatched_day_into_ask() -> None:
     theme = theme_with_way("TUE", checks.INVESTIGATE)
     theme["evidencePlan"] = _plan("SIGHTING", "TRACE", "SIGHTING", "TRACE", "RECORD")
     assert checks.refit_ways(theme) == ["TUE"]  # 수사 날이 흔적이 됨 → 부탁
-    assert checks.mission_way(checks.theme_day(theme, "TUE")) == checks.ASK
+    assert checks.mission_way(checks.theme_day(theme, "TUE")) == checks.FOLLOW
 
 
 def helper_codes(theme: dict[str, Any]) -> list[str]:
@@ -375,9 +335,9 @@ def test_monday_has_no_yesterday_unless_intro_says_so() -> None:
 def test_hook_self_needs_a_guessing_word() -> None:
     """실측 오탐: 돌아보기 날 '내 생각이 바뀐 까닭을 정리해 줄래?'(그 사람이 쓴 글 정리)는 됨."""
     ok = "내 생각이 바뀐 까닭을 문장으로 정리해 줄래?"
-    assert "HOOK_SELF" not in helper_codes(way_theme("FRI", checks.ASK, missionHook=ok))
+    assert "HOOK_SELF" not in helper_codes(way_theme("FRI", checks.FOLLOW, missionHook=ok))
     bad = "내 생각을 짐작해 볼래?"
-    assert "HOOK_SELF" in helper_codes(way_theme("FRI", checks.ASK, missionHook=bad))
+    assert "HOOK_SELF" in helper_codes(way_theme("FRI", checks.FOLLOW, missionHook=bad))
 
 
 def test_code_adjust_rewrites_hook_and_material_when_way_changes() -> None:
@@ -388,7 +348,7 @@ def test_code_adjust_rewrites_hook_and_material_when_way_changes() -> None:
     theme["evidencePlan"] = _plan("TRACE", "TRACE", "SIGHTING", "SIGHTING", "RECORD")
     checks.theme_day(theme, "TUE")["evidence"] = {"kind": "TRACE", "when": "그날 오후"}
     targets = code_adjust(theme)
-    assert checks.mission_way(checks.theme_day(theme, "TUE")) == checks.ASK
+    assert checks.mission_way(checks.theme_day(theme, "TUE")) == checks.FOLLOW
     for key in ("missionHook", "missionMaterial"):
         assert any(r.startswith("WAY_FIX TUE") for r in targets[f"TUE.{key}"])
 
@@ -456,7 +416,7 @@ def test_clue_and_material_rules_in_plan_prompt() -> None:
     plan = prompts.PLAN_SYSTEM
     assert "빠지는 값(그 특징 값 중 allowed 밖, 한두 개)을 부정으로 쓴다" in plan
     assert "부정형으로 말하는 빠지는 값만 됨" in plan
-    assert "사건과 같은 주제" in plan and "성취기준이 요구하는 글 종류" in plan
+    assert "그 주 사건 이야기 글" in plan and "특정한 글 종류" in plan
     assert "말투·표현 방법 같은 배울 내용 자체는 특징이 아님" in plan
     assert "추론하기 성취기준이면" not in plan
 
@@ -466,7 +426,7 @@ def test_ask_discovery_is_internal_and_not_reviewed() -> None:
     """부탁 날 증거 발견 줄은 단서가 나오는 곳(문제 전에 안 보임) — 미리 말하기
     검사·글 검토에서 뺌(실측: 글 검토 ANSWER_HINT 10번 중 8번이 이 줄을 지적해 줄거리를 다시
     만들고 마감)."""
-    theme = theme_with_way("MON", checks.ASK)
+    theme = theme_with_way("MON", checks.FOLLOW)
     checks.theme_day(theme, "MON")["discovery"] = "보리 발자국 둘레가 젖음 그대로였어."
     assert "CLUE_EARLY" not in helper_codes(theme)
     inv = theme_with_way("MON", checks.INVESTIGATE)
@@ -487,17 +447,16 @@ def test_hook_must_not_name_traces_on_ask_days() -> None:
     """실측: '흔적이 남은 자리도 살필래?'처럼 할 일이 증거를 먼저 말함. 기록 낱말(영상·사진·메모)은
     매체 성취기준 날 할 일에 원래 들어가 보지 않음(40개 측정에서 44번 잘못 잡음)."""
     bad = "주민에게 전할 안전 글을 요약해 흔적이 남은 자리도 살필래?"
-    theme = way_theme("THU", checks.ASK, missionHook=bad)
+    theme = way_theme("THU", checks.FOLLOW, missionHook=bad)
     reasons = checks.check_theme(theme, GRADE)
     assert "EVIDENCE_EARLY" in [r.split(" ")[0] for r in reasons]
     assert "THU.missionHook" in checks.fix_targets(reasons)
     for ok in (
-        "삼각형 그림 정리 좀 도와줄래? 도와주면 내가 본 흔적도 알려 줄게.",  # 약속은 됨
         "축제 안내 쪽지 문장을 같이 다듬어 줄래?",
         "골목 행사 안내의 말·글·영상을 비교해 표현 효과를 함께 정리해 줄래?",  # 매체 날
         "사진을 안전하게 나누는 새 안내를 같이 만들어 볼래?",
     ):
-        assert "EVIDENCE_EARLY" not in helper_codes(way_theme("THU", checks.ASK, missionHook=ok))
+        assert "EVIDENCE_EARLY" not in helper_codes(way_theme("THU", checks.FOLLOW, missionHook=ok))
     # 수사 날은 증거를 같이 보는 날이라 됨
     assert "EVIDENCE_EARLY" not in helper_codes(
         way_theme("THU", checks.INVESTIGATE, missionHook=bad)
@@ -523,13 +482,3 @@ def test_negative_clue_must_say_what_was_seen_was_not_the_value() -> None:
     # 값이 '…아님'이면 '…아니었어'도 같은 값
     assert checks.value_in_text("물가 아님", "손전등을 본 곳은 물가가 아니었어!")
     assert not checks.value_in_text("물가 아님", "손전등을 본 곳은 물가였어!")
-
-
-def test_ask_day_with_own_experience_makes_helper_need_it() -> None:
-    """실측: 억지 판정 46일 중 32일이 '아이가 쓴 답이 돕는 사람의 일에 안 쓰임'(주로 돌아보기·
-    주장 쓰기 날). 그날은 돕는 사람이 아이의 생각·경험 자체를 필요로 하는 일을 부탁(A안)."""
-    plan = prompts.PLAN_SYSTEM
-    assert "helper가 바로 그것을 필요로 하는 일을 부탁한다" in plan
-    assert "helper의 글을 대신 정리해 달라고 하지 않는다" in plan
-    story = prompts.story_text(theme_with_way("FRI", checks.ASK), "FRI", GRADE)
-    assert "그 답이 돕는 사람에게 어떻게 쓰이는지 question에 밝힌다" in story

@@ -35,7 +35,6 @@ from app.prompt_versions.registry import ActiveVersions
 from app.theme_draft.checks import DAY_TYPE, DAYS, VIDEO_REVIEW_IDS, motion, spots
 from app.theme_draft.models import (
     GeneratedDialogue,
-    GeneratedHelperJudge,
     GeneratedHookFixes,
     GeneratedImageReview,
     GeneratedMissionReview,
@@ -63,7 +62,6 @@ from tests.theme_draft.fixtures import (
     OUTRO_CUTS,
     dialogue,
     generated_theme,
-    helper_judge,
     mission_draft,
     mission_review,
     story_review,
@@ -149,7 +147,6 @@ def review_llm(
         {
             GeneratedStoryReview: lambda n, d: story_review(),
             GeneratedMissionReview: lambda n, d: mission_review(),
-            GeneratedHelperJudge: lambda n, d: helper_judge(),  # #782 설계 v13 가
         },
     )
 
@@ -313,7 +310,7 @@ def test_images_motion_and_video_off_warning() -> None:
     # #782 미션 방식: 월요일은 부탁 날(기본 요청 배정)이라 증거 대신 돕는 사람을 그림
     assert (
         DISCOVERY["MON"] not in mon[0][0]
-        and f"Today's helper (Korean): {HELPER['MON']}" in mon[0][0]
+        and f"Today's person (Korean): {HELPER['MON']}" in mon[0][0]
     )
     intro4 = prompts_with(image, INTRO_CUTS[3]["scene"])[0][0]  # 뭉치 혼자 달림(Veo, 설계 v2)
     assert "a small smiling mouth" in intro4  # 달리기 첫 그림은 웃는 입(설계 v2: 일자 입 안 씀)

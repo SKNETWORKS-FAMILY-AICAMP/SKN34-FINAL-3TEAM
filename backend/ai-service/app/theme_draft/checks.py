@@ -92,7 +92,13 @@ TEXT_MAX = {
     "helperUse": LINE_MAX,
     # 그날 미션 지문이 될 증거 내용(내부 칸, #782 기준안). 미션이 question 안에 그대로 넣음
     "missionMaterial": 150,
+    # #971 다음 행동으로 갈 곳·만날 사람·쓴 글을 읽을 사람(내부 칸, 기준안)
+    "nextTarget": 12,
 }
+# #971(사용자 결정 2026-11-24 "미션 글자 수도 학생이 읽을 수 있게 간단하게"): 지문 상한을 학년별로
+# 줄임(15차 지문 중간값 81~92자, 최대 150자). 줄거리가 학년을 적어 둔 테마(theme.grade)만 —
+# 예전 저장본은 150자 그대로(기준안)
+MATERIAL_MAX = {3: 90, 4: 90, 5: 110, 6: 110}
 DAY_TEXTS = (
     "place",
     "sceneNote",
@@ -195,13 +201,15 @@ CLUE_TYPES = (
     "물기",
     "크기",
 )
-# #782 설계 v13: HELPER_FIT(부탁 날 돕는 사람의 일이 그 장소에 맞고 아이 답이 쓰이는지)
+# #971 NEXT_FIT(이어 가기 날 지문이 사건 이야기이고 답이 다음 행동을 정하며 단서가 그곳에서
+# 나오는지,
+# #782 v13 HELPER_FIT 자리)
 REVIEW_IDS = (
     "CLUE_LOGIC",
     "ANSWER_HINT",
     "GRADE_VOCAB",
     "STANDARD_FIT",
-    "HELPER_FIT",
+    "NEXT_FIT",
     "SAFETY",
 )
 # STORY_LINK: 문제 소재가 수사 연결 문장·오늘 장소·찾은 증거에서 왔는지(#535, 기준안)
@@ -327,10 +335,12 @@ SENSE_SEEN = re.compile(r"(?<![가-힣])본\s|봤")
 
 
 def clue_source_problems(theme: Theme, day: dict) -> list[str]:
-    """부탁 날 단서가 돕는 사람이 본 것·가진 기록인지(CLUE_SOURCE, 그 단서만 고쳐 씀). 수사 날
-    기록 단서는 기록을 따져 확실해진 사실인지(#782 설계 v9)."""
+    """이어 가기 날 단서가 그 사람(다음 행동으로 만난 사람·쓴 글을 읽은 사람)이 직접 본 것·가진
+    기록인지(CLUE_SOURCE, 그 단서만 고쳐 씀). 갈 곳 날(#971)은 그 자리에서 찾은 흔적이라 '내가
+    본'을 붙이지 않아도 됨. 수사 날 기록 단서는 기록을 따져 확실해진 사실인지(#782 설계 v9)."""
     clue = str(day.get("clue") or "").strip()
-    if mission_way(day) != ASK:
+    place = next_kind(day) == PLACE
+    if mission_way(day) != FOLLOW:
         # #782 설계 v9: 수사 날 지문이 그 기록이라 단서가 '메모에는 ~라고 적혀 있어'로 옮기면
         # 지문에 없는 말이 기록에 있다고 하게 됨(5·6차 snd3 수 — 기록 수사 날 7일 중 2일)
         # 미션 방식이 없는 예전 저장본은 보지 않음(그때는 '일지에 ~ 적혀 있어'가 기록 단서 꼴)
@@ -347,17 +357,17 @@ def clue_source_problems(theme: Theme, day: dict) -> list[str]:
     bad = []
     if HEARSAY_END.search(clue):
         bad.append(
-            "전해 들은 말 끝(~대·~래·~더라) — 돕는 사람이 자기가 본 것·가진 기록을 직접 말함"
+            "전해 들은 말 끝(~대·~래·~더라) — 그 사람이 자기가 본 것·가진 기록을 직접 말함"
             "('그때 내가 봤어', '내 사진에 ~가 찍혀 있어')"
         )
     if other := other_source(clue):
         bad.append(
-            f"다른 사람('{other}')이 듣거나 본 것 — 돕는 사람이 자기가 본 것·가진 기록을 직접 말함"
+            f"다른 사람('{other}')이 듣거나 본 것 — 그 사람이 자기가 본 것·가진 기록을 직접 말함"
         )
     kind = (day.get("evidence") or {}).get("kind")
-    if kind == "TRACE" and not TRACE_LINK.search(clue):
+    if kind == "TRACE" and not place and not TRACE_LINK.search(clue):
         bad.append(
-            "흔적 날인데 돕는 사람이 본 흔적이라는 말이 없음('내가 창고 앞에서 본 발자국은 ~'처럼)"
+            "흔적 날인데 그 사람이 본 흔적이라는 말이 없음('내가 창고 앞에서 본 발자국은 ~'처럼)"
         )
     if kind == "TRACE" and sense_of(clue) and SENSE_SEEN.search(clue):
         bad.append(
@@ -367,10 +377,7 @@ def clue_source_problems(theme: Theme, day: dict) -> list[str]:
         )
     medium = (plan_slot(theme, day.get("day") or "") or {}).get("medium")
     if kind == "RECORD" and medium and not own_record(clue, medium):
-        bad.append(
-            f"기록 날인데 돕는 사람 자신의 기록이 아님('내 {medium}에 ~'처럼 — 약속은 '도와주면 내 "
-            f"{medium}{josa(medium, '을', '를')} 보여 줄게')"
-        )
+        bad.append(f"기록 날인데 그 사람 자신의 기록이 아님('내 {medium}에 ~'처럼)")
     return bad
 
 
@@ -413,8 +420,30 @@ def sense_of(text: str) -> tuple[str, str] | None:
     )
 
 
+# #971(사용자 2026-11-24 "단서 말투도 알아듣게"): 출처 말이 겹친 단서('내가 그때 눈으로 직접 본
+# 이름표 곁 바닥 재질은')는 겹친 말만 코드가 덜어 낸다(뜻은 그대로, 모델 글을 새로 쓰지 않음)
+CLUE_STACK = re.compile(r"(?:눈으로\s?직접|직접\s?눈으로|눈으로|직접)\s(?=(?:본|봤|보았))")
+# 특징 이름의 어려운 말(20테마 측정 '바닥 재질은 돌이 아니었어'·'길이 보통 너비가 아니라고')
+CLUE_HARD_WORDS = ("재질", "너비", "형태", "무늬", "질감", "모양새")
+
+
+def clue_plain_problems(theme: Theme, d: dict) -> list[str]:
+    """단서가 아이가 바로 알아듣기 어려운 말을 쓰는지(CLUE_PLAIN, 그 단서만 고쳐 씀). 특징 값
+    낱말 안에 든 말은 빼고 본다(값은 그대로 써야 함)."""
+    clue = str(d.get("clue") or "")
+    table, _ = feature_table(theme)
+    values = [str(v) for vals in table.values() for v in vals.values() if v]
+    hard = [w for w in CLUE_HARD_WORDS if w in clue and not any(w in v for v in values)]
+    if not hard:
+        return []
+    return [
+        f"어려운 말 {hard} — 초3이 바로 알아듣는 말로 풀어 씀('바닥 재질은 돌이 아니었어' → "
+        "'고양이가 있던 바닥은 돌바닥이 아니었어')"
+    ]
+
+
 def normalize_clue_source(theme: Theme) -> Theme:
-    """부탁 날 단서의 출처 말을 코드가 먼저 다듬는다(#782 설계 v4, 모델 호출 없음, 제자리).
+    """이어 가기 날 단서의 출처 말을 코드가 먼저 다듬는다(#782 설계 v4, 모델 호출 없음, 제자리).
 
     전해 들은 말 끝 → 직접 말('멎었대!' → '멎었어!'), 기록 날 매체 낱말로 시작하면 앞에 '내 ',
     흔적 날 돕는 사람 연결이 없으면 앞에 '내가 보니 '(소리·냄새·맛이면 '내가 흔들어 보니 ' 등).
@@ -422,7 +451,7 @@ def normalize_clue_source(theme: Theme) -> Theme:
     그대로라 여러 번 불러도 같다. 줄거리·칸 고쳐 쓰기·단서만 고쳐 쓰기 뒤마다 finalize_texts가
     부름."""
     for d in theme.get("days") or []:
-        if not isinstance(d, dict) or mission_way(d) != ASK or not d.get("clue"):
+        if not isinstance(d, dict) or mission_way(d) != FOLLOW or not d.get("clue"):
             continue
         text = str(d["clue"]).strip()
         limit = day_text_max(d, "clue", theme)
@@ -430,6 +459,7 @@ def normalize_clue_source(theme: Theme) -> Theme:
             continue
         for pattern, repl in HEARSAY_FIX:
             text = pattern.sub(repl, text)
+        text = CLUE_STACK.sub("", text)  # #971 '내가 그때 눈으로 직접 본' → '내가 그때 본'
         kind = (d.get("evidence") or {}).get("kind")
         medium = (plan_slot(theme, d.get("day") or "") or {}).get("medium")
         if kind == "RECORD" and medium and text.startswith(medium) and len(text) + 2 <= limit:
@@ -438,7 +468,8 @@ def normalize_clue_source(theme: Theme) -> Theme:
         # 전에'는 말한 사람이 맡긴 사람이 되어 다른 날 맡긴 사람과 부딪혀(5차 hand6b)
         # '맡겨지기 전에'
         before = object_self_trace(theme, d) and not KEPT_TRACE_WHEN.search(text)
-        if kind == "TRACE" and not TRACE_LINK.search(text):
+        # 갈 곳 날(#971)은 그 자리에서 찾은 흔적이라 '내가 보니'를 붙이지 않음
+        if kind == "TRACE" and next_kind(d) != PLACE and not TRACE_LINK.search(text):
             sense = sense_of(text)
             lead = f"내가 {sense[1]} " if sense else "내가 보니 "
             lead = f"맡겨지기 전에 {lead}" if before else lead
@@ -478,12 +509,14 @@ HEARSAY_FIX = (
 
 
 def story_clue_template(theme: Theme, day: dict) -> str | None:
-    """부탁 날 사건 단서의 출처만 코드가 고친 문장: 전해 들은 말 끝을 직접 말로('멎었대!' →
-    '멎었어!'), 흔적 날에 돕는 사람과 연결이 없으면 '내가 보니'를 앞에. 내용은 모델 글 그대로."""
+    """이어 가기 날 사건 단서의 출처만 코드가 고친 문장: 전해 들은 말 끝을 직접 말로('멎었대!' →
+    '멎었어!'), 흔적 날에 그 사람과 연결이 없으면 '내가 보니'를 앞에(갈 곳 날은 빼고). 내용은
+    모델 글 그대로."""
     text = str(day.get("clue") or "").strip()
     for pattern, repl in HEARSAY_FIX:
         text = pattern.sub(repl, text)
-    if (day.get("evidence") or {}).get("kind") == "TRACE" and not TRACE_LINK.search(text):
+    trace = (day.get("evidence") or {}).get("kind") == "TRACE"
+    if trace and next_kind(day) != PLACE and not TRACE_LINK.search(text):
         sense = sense_of(text)
         text = f"내가 {sense[1]} {text}" if sense else f"내가 보니 {text}"
     return text if text != str(day.get("clue") or "").strip() else None
@@ -500,7 +533,7 @@ def clue_template(theme: Theme, day: dict) -> str | None:
     cond = day.get("condition") or {}
     way = mission_way(day)
     if is_story(cond):
-        return story_clue_template(theme, day) if way == ASK else None
+        return story_clue_template(theme, day) if way == FOLLOW else None
     feature = str(cond.get("feature") or "").strip()
     allowed = [str(a) for a in cond.get("allowed") or []]
     excluded = [str(e) for e in cond.get("excluded") or []]
@@ -535,7 +568,7 @@ def clue_template(theme: Theme, day: dict) -> str | None:
     # 대상 낱말이 특징 이름에 이미 있으면(소리 탐정 '소리 난 곳') 앞말에서 빼도 CLUE_OWNER를 지킴
     bare = bool(subj) and subj in feature
     kept_verb = {"사진": "찍혀", "영상": "찍혀", "녹음": "담겨"}.get(medium, "적혀")
-    if way != ASK:  # 수사 날: 따져서 확실해진 사실(기록 날은 배정 매체 낱말)
+    if way != FOLLOW:  # 수사 날: 따져서 확실해진 사실(기록 날은 배정 매체 낱말)
         what = f"{medium}{josa(medium, '을', '를')} " if kind == "RECORD" else "증거를 "
         leads = [f"{subj} {what}따져 보니 " if subj and not bare else f"{what}따져 보니 "]
         if feature in PROOF_FEATURES:  # #782 설계 v8: 산 가게는 산 근거 말(CLUE_PROOF)
@@ -562,10 +595,12 @@ def clue_template(theme: Theme, day: dict) -> str | None:
         # #782 설계 v6 KEPT_TRACE(v7 맡겨지기 전). v8: 소리·맛·냄새 특징은 본 것이 아니라 그렇게
         # 해서 안 것(CLUE_SOURCE — 전에는 틀 문장이 '내가 본 ~ 흔적'이라 늘 걸림)
         seen = "맡겨지기 전 내가 본" if kept_target(theme) else "내가 본"
+        if next_kind(day) == PLACE:  # #971 갈 곳 날: 그 자리에서 찾은 흔적
+            seen = "맡겨지기 전" if kept_target(theme) else ""
         if sense := sense_of(feature):
             pre = "맡겨지기 전에 " if kept_target(theme) else ""
             how = f"{pre}내가 {sense[1]}"
-        leads = [f"{seen} {subj} 흔적, " if subj else f"{seen} 흔적, "]
+        leads = [(f"{seen} {subj} 흔적, " if subj else f"{seen} 흔적, ").lstrip()]
         if sense:
             leads = [f"{how} {subj} " if subj else f"{how} "]
     else:
@@ -692,7 +727,8 @@ def theme_day(theme: Theme, day: str) -> dict:
 FIX_PATH = re.compile(
     r"^(?:title|bigQuestion|intro|outro|incident|answerLook|introPlace|outroPlace"
     r"|(?:MON|TUE|WED|THU|FRI)\."
-    r"(?:place|sceneNote|clue|discovery|missionHook|missionMaterial|dayStep|helper|helperUse)"
+    r"(?:place|sceneNote|clue|discovery|missionHook|missionMaterial|dayStep|helper|helperUse"
+    r"|nextTarget)"
     r"|(?:introCuts|outroCuts)[1-6]\.caption)$"
 )
 # 콘티 scene·action은 뭉치 동작 검사(CUT_ACTION)·그림에 나오면 안 되는 이름(CUT_TARGET, #765)일
@@ -721,6 +757,10 @@ FIX_REASON = (
     re.compile(r"^REQUIRED (MON|TUE|WED|THU|FRI)\.(dayStep)$"),
     # #782 설계 v10: 국어 부탁 날 아이 답의 쓰임이 비면 그 칸만 써 넣음
     re.compile(r"^REQUIRED (MON|TUE|WED|THU|FRI)\.(helperUse)$"),
+    # #971 다음 행동 칸: 비거나·사람이 맞지 않거나·지문에 없거나·미리 말하면 그 칸만 고쳐 씀
+    re.compile(r"^REQUIRED (MON|TUE|WED|THU|FRI)\.(nextTarget)$"),
+    re.compile(r"^NEXT_SOURCE (MON|TUE|WED|THU|FRI) (nextTarget) "),
+    re.compile(r"^MATERIAL_NEXT (MON|TUE|WED|THU|FRI) (missionMaterial)에 "),
     # #782: 수사 연결 문장이 학생이 할 수 없는 활동 이름(발표 글 등)으로 청하면 그 칸만 고쳐 씀
     re.compile(r"^ACT_NAME (MON|TUE|WED|THU|FRI) (missionHook|missionMaterial)에 "),
     # #782 미션 방식 흐름(사용자 결정 2026-11-20): 단서·장면 메모·수사 연결 문장 그 칸만
@@ -734,6 +774,7 @@ FIX_REASON = (
     # #782 설계 v7: 오늘 온 까닭
     re.compile(r"^DAY_STEP_MADE (TUE|WED|THU|FRI) (dayStep)에 "),
     re.compile(r"^SELF_NAME (MON|TUE|WED|THU|FRI) (dayStep)에 "),
+    re.compile(r"^DAY_STEP_SAME (MON|TUE|WED|THU|FRI) (dayStep)에 "),
     # #782 설계 v6
     re.compile(r"^KEPT_TRACE (MON|TUE|WED|THU|FRI) (clue) "),
     # #782 설계 v12: 9차 치명 결함 종류(그 칸만 고쳐 씀)
@@ -765,6 +806,8 @@ FIX_REASON = (
     re.compile(r"^CLUE_OWNER (MON|TUE|WED|THU|FRI) (clue) "),
     # #782 설계 v3: 부탁 날 단서가 전해 들은 말이거나 흔적 날에 돕는 사람과 연결이 없으면 그 단서만
     re.compile(r"^CLUE_SOURCE (MON|TUE|WED|THU|FRI) (clue) "),
+    # #971(사용자 2026-11-24 "단서 말투도 알아듣게"): 어려운 말이면 그 단서만 고쳐 씀
+    re.compile(r"^CLUE_PLAIN (MON|TUE|WED|THU|FRI) (clue) "),
     # 단서 문장의 허용 값 낱말이 빠지거나 허용 밖 값이 들어가면 그 단서만 고쳐 씀(#535 7차: 흔적
     # 단서에 대상 낱말을 넣으며 값 낱말이 빠져 CLUE_TEXT 0.5 → 2.0, 줄거리 전체를 다시 만들며
     # 되풀이됨)
@@ -922,8 +965,26 @@ def story_value_hits(theme: Theme, table: dict[str, dict[str, str]], clue: str |
 # 함께 발견이 있는 테마는 18개 중 9개 실패(없는 테마 22개 중 4개) — 단서 조건과 '그 일을 하던
 # 자리'를 함께 맞추느라 우연이 지나치거나('물뿌리개 곁에서 강아지 발자국') 논리가
 # 어긋남('상자를 저울에 올리니 묵직한 상자')
-ASK, INVESTIGATE = "ASK", "INVESTIGATE"
-MISSION_WAYS = (ASK, INVESTIGATE)
+# #971(사용자 결정 2026-11-24 "나·A"): 부탁(ASK)을 이어 가기(FOLLOW)로 바꿈. 부탁 날 미션은 돕는
+# 사람의 일이라 사건과 상관없었다(떡집 테마에 '읽기 습관 추천 카드'). 이어 가기 날은 미션 지문이 그
+# 주 사건 이야기이고, 문제의 답이 다음 행동(갈 곳·만날 사람·쓴 글을 읽을 사람, nextKind)을 정하며
+# 단서는 그 다음 행동으로 간 곳(nextTarget)에서 나온다. 예전 저장본의 'ASK'는 FOLLOW로 읽는다
+# (mission_way). 부분 다시 생성은 다음 행동 칸이 없는 예전 이어 가기 날 미션을 막는다(regen)
+FOLLOW, INVESTIGATE = "FOLLOW", "INVESTIGATE"
+OLD_ASK = "ASK"
+MISSION_WAYS = (FOLLOW, INVESTIGATE)
+# 다음 행동 종류(#971, 코드가 정함 — next_kind_for). 갈 곳은 흔적 날(그 자리에서 흔적을 찾음),
+# 쓴 글을 읽을 사람은 쓰기 성취기준 날(쓴 글이 붙거나 전해져 그 글을 본 사람이 찾아와 본 것을
+# 알려 줌), 그 밖은 만날 사람(그때 본 사람·기록을 가진 사람)
+PLACE, PERSON, READER = "PLACE", "PERSON", "READER"
+NEXT_KINDS = (PLACE, PERSON, READER)
+NEXT_KO = {PLACE: "갈 곳", PERSON: "만날 사람", READER: "쓴 글을 읽을 사람"}
+# 다음 행동 칸(nextTarget) 낱말 중 어디에나 흔한 말 — 미리 말했는지·지문·예시 답에 있는지 볼 때
+# 뺀다(그것만 있으면 칸 전체로 봄)
+NEXT_GENERIC = frozenset(
+    "주인 사람 이웃 아저씨 아주머니 할머니 할아버지 담당자 직원 선생님 어른 아이 친구 쪽 근처 "
+    "둘레 주변".split()
+)
 # 수사 날은 증거를 따지는 활동이 곧 성취기준 행동인 '판단하기' 읽기·매체 성취기준 날만(서술·논술).
 # 작은 생성 r782-ways-rd3~rd5 수사 날 8개: 사실·의견(4국02-04)·출처(4국02-05)·매체 신뢰성(6국06-02)
 # 5개는 모두 목격 메모·취재 기록을 따져 자연스러웠고, 요약·주장(6국02-01)·추론(6국02-02) 3개는
@@ -936,18 +997,82 @@ INVESTIGATE_INPUTS = ("NARRATIVE", "ESSAY")
 
 def mission_way(day: dict) -> str:
     """그날 미션 방식. 칸이 없으면(예전 저장본) 수사 — 예전 수사 연결 문장·지문은 증거의 한
-    부분이었음."""
+    부분이었음. 예전 'ASK'(부탁)는 이어 가기(#971)."""
     way = day.get("missionWay")
+    if way == OLD_ASK:
+        return FOLLOW
     return way if way in MISSION_WAYS else INVESTIGATE
 
 
+def next_kind_for(codes: list[str], evidence: str | None) -> str:
+    """이어 가기 날 다음 행동 종류(#971, 코드가 정함): 쓰기 성취기준(국어 03 영역) 날은 쓴 글을
+    읽을 사람, 흔적 날은 갈 곳, 그 밖은 만날 사람."""
+    if any((m := KOREAN_AREA.match(c)) and m.group(1) == "03" for c in codes):
+        return READER
+    return PLACE if evidence == "TRACE" else PERSON
+
+
+def next_kind(day: dict) -> str | None:
+    """그날 다음 행동 종류(이어 가기 날만, plan_theme이 코드로 넣음). 칸이 없는 예전 저장본·수사
+    날은 None — 다음 행동 검사·지시는 칸이 있는 날만 한다."""
+    kind = day.get("nextKind")
+    return kind if mission_way(day) == FOLLOW and kind in NEXT_KINDS else None
+
+
+# 다음 행동 낱말 끝의 조사(낱말을 지문·답에서 찾을 때 뺌 — '게시판을 본 이웃'의 '게시판을' →
+# '게시판'). 두 글자 이상 남을 때만
+NEXT_JOSA = re.compile(r"(?:에서|으로|을|를|이|가|은|는|의|에|로|와|과|도)$")
+
+
+def next_words(target: str | None, place: str | None = None) -> list[str]:
+    """다음 행동 칸의 알아볼 낱말(두 글자 이상, 끝 조사·흔한 말·그날 장소 이름에 있는 말 뺌 — 장소는
+    이미 아는 곳이라 '떡집 뒷문'이면 '뒷문'만). 남는 말이 없으면 칸 전체(띄어쓰기 없앤 것)."""
+    seen = compact(place)
+    words = []
+    for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", target or ""):
+        bare = NEXT_JOSA.sub("", w)
+        w = bare if len(bare) >= 2 else w
+        if w not in NEXT_GENERIC and w not in seen:
+            words.append(w)
+    whole = compact(target)
+    return list(dict.fromkeys(words)) or ([whole] if whole else [])
+
+
+def mentions_next(day: dict, text: str | None) -> list[str]:
+    """text가 그날 다음 행동 칸의 낱말을 말하면 그 낱말들(그날 장소 이름에 있는 말은 빼고 봄)."""
+    seen = str(day.get("place") or "")
+    return [w for w in next_words(day.get("nextTarget"), seen) if w in compact(text)]
+
+
+def same_as_place(day: dict) -> bool:
+    """다음 행동 칸이 그날 장소 이름 안의 말뿐인지(새로 갈 곳·만날 사람이 아님)."""
+    target, place = compact(day.get("nextTarget")), compact(day.get("place"))
+    words = [
+        NEXT_JOSA.sub("", w)
+        for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", day.get("nextTarget") or "")
+    ]
+    rest = [w for w in words if len(w) >= 2 and w not in NEXT_GENERIC and w not in place]
+    return bool(target) and not rest and (target in place or all(w in place for w in words if w))
+
+
+def labeled_clue(day: dict) -> str:
+    """학생이 보는 단서(#971): 이어 가기 날은 단서 앞에 다음 행동으로 간 곳·만난 사람을 붙인다
+    ('빵집 주인: 그때 손에 든 건 배표가 아니었어!'). 단서 문장은 모델이 쓰고 코드는 이름표만
+    붙인다(웹 단서 목록의 '월 · '처럼). 응답 Theme·글 검토·판정이 같은 글을 본다."""
+    clue = str(day.get("clue") or "")
+    target = str(day.get("nextTarget") or "").strip()
+    if not next_kind(day) or not target or not clue:
+        return clue
+    return f"{target}: {clue}"
+
+
 # 미션 방식과 증거 종류의 짝(#782, 2026-11-20 작은 생성 r782-ways-rd3를 읽고 찾음): 수사 날에 증거가
-# 흔적이면 읽고 따질 말·글이 없다('주인의 생각을 추론해 볼래?'). 흔적은 본 사람이 알려 주고(부탁),
-# 목격·기록은 본 사람이 알려 주거나 그 말·기록을 따진다
+# 흔적이면 읽고 따질 말·글이 없다('주인의 생각을 추론해 볼래?'). 흔적은 이어 가기(갈 곳에서 찾음),
+# 목격·기록은 이어 가기(만날 사람)이거나 그 말·기록을 따진다
 WAY_FITS = {
-    "TRACE": (ASK,),
-    "SIGHTING": (ASK, INVESTIGATE),
-    "RECORD": (ASK, INVESTIGATE),
+    "TRACE": (FOLLOW,),
+    "SIGHTING": (FOLLOW, INVESTIGATE),
+    "RECORD": (FOLLOW, INVESTIGATE),
 }
 
 
@@ -1016,17 +1141,22 @@ def mission_way_plan(
 
 def refit_ways(theme: Theme) -> list[str]:
     """줄거리 뒤 코드가 증거 배정을 옮겨(fit_evidence_plan) 그날 방식과 증거가 안 맞게 되면(수사
-    날이 흔적이 되면) 그날을 부탁으로 바꾼다(본 사람이 알려 줌, 부탁은 모든 증거와 맞음).
-    바꾼 요일을 돌려준다 — 그날 단서·증거 발견 줄은 증거가 바뀌어 어차피 고쳐 쓰고, 할 일·지문은
-    부탁에 맞게 고쳐 쓴다(WAY_FIX)."""
+    날이 흔적이 되면) 그날을 이어 가기로 바꾸고(이어 가기는 모든 증거와 맞음) 다음 행동 종류도
+    정한다(#971). 이어 가기 날 증거가 바뀌어 다음 행동 종류(갈 곳 ↔ 만날 사람)가 달라져도 다시
+    정한다. 바꾼 요일을 돌려준다 — 그날 단서·증거 발견 줄은 증거가 바뀌어 어차피 고쳐 쓰고, 할
+    일·지문·다음 행동 칸은 새 방식에 맞게 고쳐 쓴다(WAY_FIX)."""
     changed = []
     for d in theme.get("days") or []:
         kind = (d.get("evidence") or {}).get("kind")
         slot = plan_slot(theme, d.get("day") or "") or {}
-        if d.get("missionWay") in MISSION_WAYS and not way_fits(
-            d["missionWay"], slot.get("kind") or kind
-        ):
-            d["missionWay"] = ASK
+        evidence = slot.get("kind") or kind
+        codes = list(frame_of(theme, d.get("day") or "").get("codes") or [])
+        if d.get("missionWay") in MISSION_WAYS and not way_fits(d["missionWay"], evidence):
+            d["missionWay"] = FOLLOW
+            d["nextKind"] = next_kind_for(codes, evidence)
+            changed.append(d["day"])
+        elif d.get("nextKind") in NEXT_KINDS and next_kind_for(codes, evidence) != d["nextKind"]:
+            d["nextKind"] = next_kind_for(codes, evidence)
             changed.append(d["day"])
     return changed
 
@@ -1046,210 +1176,9 @@ ASK_PROMISE_VERB = re.compile(
     # #782 설계 v12: 10차 '들은 소리 이야기도 해 줄게'·'들린 소리를 전해 줄게'
     r"|이야기\s?(?:도|를)?\s?해\s?(?:줄게|줄께|드릴게|줄\s?거야)|전해\s?(?:줄게|줄께|드릴게)"
 )
-ASK_PROMISE_CASE = re.compile(
-    # #782 설계 v9: '내가 들은 소리를'·'맡은 냄새를'·'맛본 걸'
-    r"본\s?[걸것거]|봤|그때|들은\s?(?:[걸것거]|소리)|맡은\s?(?:[걸것거]|냄새)|맛본\s?[걸것거]|"
-    # #782 설계 v12: 10차 '내가 본 장면을'·'살펴본 우산들의 모습을'·'잠들 무렵 들린 소리를'(맞는
-    # 약속인데 '약속 없음'으로 잡음 — 10차 '약속 없음' 14번 중 7번)
-    r"(?<![가-힣])본\s|살펴본|들린\s|들은\s|" + "|".join(RECORD_WORDS)
-)
-# #782 설계 v10: 사건 단서 날은 단서 마지막 말이 듣기('소리가 났어·들렸어')일 때만 들은 날. v9는
-# 단서 어디든 '소리'가 있으면 들은 날이라 "그 소리가 난 뒤 창문에 달빛이 비쳤어"(본 것)도 '들은
-# 소리'로 약속했음. 쉼표·'뒤'에서 끊은 마지막 말을 본다
-CLAUSE_CUT = re.compile(r"[,.!?…~]|\s뒤(?:에|로)?(?=\s|$)")
-# #782 설계 v12: '이어졌어·멎었어'도 소리 이야기(12차 snd5b), '흔들렸어'의 '들렸'은 아님(13차 snd3b)
-HEARD_END = re.compile(
-    r"소리[^,]*?(?:났|(?<!흔)들렸|들었|울렸|이어졌|멎었|그쳤|멈췄)[가-힣\s]{0,6}$"
-)
-# 약속 감각이 그날 단서와 다름: 본 날인데 '들은·들려'(기록 아님), 들은 날인데 '본·봤'('들어 봤'은
-# 듣기)
-# 8차 a: '본 걸 들려줄게'(이야기해 줄게)의 '들려'를 들은 것으로 봐 대화를 29번 다시 만듦 →
-# '들은 소리·것'·'들었'·'들렸'만 들은 것
-PROMISE_HEARD = re.compile(r"(?<!만)들은\s?(?:소리|것|걸|거)|들었|들렸")
-PROMISE_SEEN = re.compile(r"(?<![가-힣])본\s?(?:[걸것거]|게|대로)|(?<![어아])(?<![어아]\s)봤")
-# #782 설계 v12: 약속 말에 붙은 지금 일('오늘 본 것'·'아까')·전해 들은 말('전해 들은 소리')
-PROMISE_NOW = re.compile(r"(?<![가-힣])(?:오늘|아까|방금)")
-PROMISE_HEARSAY = re.compile(r"전해\s?들|들었대|했대|였대|이었대")
-PROMISE_IF = re.compile(r"(?:면|다면|으면)(?:[,\s]|$)")
-PROMISE_WHAT = {
-    "SEEN": "본 것",
-    "HEARD": "들은 소리",
-    "TASTED": "맛본 것",
-    "SMELLED": "맡은 냄새",
-}
-
-
 # #782 설계 v12: 단서 문장이 본 것이라고 말함('본 ○○'·'내가 봤어'·'눈으로', SOUND_SEEN).
 # '흔들어 보니'·'따져 보니'는 본 것이 아님
 CLUE_SEEN = re.compile(r"(?<![가-힣])본\s|(?:내가|제가|직접)\s?(?:봤|보았|보니)|눈으로")
-
-
-def promise_clause(text: str) -> str:
-    """약속 줄에서 조건('~하면') 뒤 약속 말(#782 설계 v12). 조건이 없으면 줄 전체."""
-    return PROMISE_IF.split(text or "")[-1]
-
-
-def last_clause(text: str) -> str:
-    """쉼표·문장 끝·'뒤'에서 끊은 마지막 말(#782 설계 v10)."""
-    parts = [p.strip() for p in CLAUSE_CUT.split(text or "") if p.strip()]
-    return parts[-1] if parts else ""
-
-
-def promise_sense(theme: Theme, day: dict | str) -> tuple[str, str | None]:
-    """부탁 날 돕는 사람이 도와주면 알려 줄 것의 감각(#782 설계 v10). (감각, 기록 매체).
-
-    RECORD(배정 매체, 배정이 없는 예전 저장본은 증거 발견 줄의 기록 낱말, 없으면 '기록') /
-    특징 이름의 감각(소리 HEARD·맛 TASTED·냄새·향 SMELLED) / 사건 단서 날(특징 없음)은 단서 마지막
-    말이 듣기일 때만 HEARD, 그 밖은 SEEN. 대화 요청의 약속 뜻·코드 대신 문장(ask_promise)·대화
-    검사(ASK_PROMISE)가 같이 쓴다."""
-    d = theme_day(theme, day) if isinstance(day, str) else day
-    if (d.get("evidence") or {}).get("kind") == "RECORD":
-        found = next((w for w in RECORD_WORDS if w in str(d.get("discovery") or "")), "기록")
-        return "RECORD", (plan_slot(theme, str(d.get("day") or "")) or {}).get("medium") or found
-    feature = str((d.get("condition") or {}).get("feature") or "")
-    clue = str(d.get("clue") or "")
-    if feature:
-        if "맛" in feature:
-            return "TASTED", None
-        if "냄새" in feature or SENSE_PATTERN["향"].search(feature):
-            return "SMELLED", None
-        base = "HEARD" if "소리" in feature else "SEEN"
-    else:
-        base = "HEARD" if HEARD_END.search(last_clause(clue)) else "SEEN"
-    # #782 설계 v12: 사건 단서 날은 마지막 말(알려 주는 사실)이 소리 이야기일 때만 들은 날(HEARD_END
-    # 넓힘). '내가 들은 그 밤, … 종이 장식이 흔들렸어'는 본 날(13차 snd5 — 앞말의 '들은'만 보고 들은
-    # 날로 정했다가 약속이 어긋남). 소리 특징 단서를 '본'으로 쓰면 SOUND_SEEN이 단서를 고침
-    return base, None
-
-
-def promise_meaning(theme: Theme, day: dict | str) -> str:
-    """약속 뜻의 목적어('본 것을'·'들은 소리를'·'자기 일지를', #782 설계 v10). 대화 요청과 대화
-    검사 사유가 같은 말을 쓴다."""
-    sense, medium = promise_sense(theme, day)
-    what = f"자기 {medium or '기록'}" if sense == "RECORD" else PROMISE_WHAT[sense]
-    return what + josa(what, "을", "를")
-
-
-def ask_promise_mismatch(theme: Theme, day: dict, lines: list[dict[str, str]]) -> str | None:
-    """부탁 날 돕는 사람의 약속 줄 감각이 그날 단서와 다르면 그 설명(#782 설계 v10). 약속 줄이
-    없거나(ask_promise_missing이 봄) 부탁 날이 아니면 None."""
-    helper = str(day.get("helper") or "").strip()
-    if mission_way(day) != ASK or not helper:
-        return None
-    said = [
-        x["text"]
-        for x in lines
-        if x.get("speaker") == helper and ASK_PROMISE_VERB.search(x["text"])
-    ]
-    if not said:
-        return None
-    # #782 설계 v12: 약속 말(조건 '~하면' 뒤)에 지금 일·전해 들은 말이 붙으면 그때 본 단서와 어긋남
-    # (9차 '도와주면 오늘 본 것도 알려 줄게' 42줄 중 저장 결과 7·8·9차에서 잘못 잡은 것 0).
-    # 조건('오늘 글을 같이 써 주면')의 '오늘'은 됨
-    promised = [promise_clause(t) for t in said]
-    if all(PROMISE_NOW.search(t) for t in promised):
-        return "약속에 '오늘·아까'처럼 지금 일을 붙임"
-    if all(PROMISE_HEARSAY.search(t) for t in promised):
-        return "약속을 전해 들은 말로 함"
-    sense, medium = promise_sense(theme, day)
-    if sense == "RECORD":
-        medium = medium or "기록"
-        words = RECORD_WORDS if medium == "기록" else MEDIUM_WORDS.get(medium, (medium,))
-        fits = [t for t in said if any(w in t for w in words)]
-        return None if fits else f"기록 날인데 약속에 자기 {medium}이(가) 없음"
-    if sense == "SEEN" and all(
-        PROMISE_HEARD.search(t)
-        and not PROMISE_SEEN.search(t)
-        and not any(w in t for w in RECORD_WORDS)
-        for t in said
-    ):
-        return "본 것을 알려 줄 날인데 '들은' 것을 약속함"
-    if sense == "HEARD" and all(PROMISE_SEEN.search(t) for t in said):
-        return "들은 소리를 알려 줄 날인데 '본' 것을 약속함"
-    return None
-
-
-# 약속 같은 줄: 약속 말이 있거나 '도와주면 ~ 줄게'(부탁 '도와줄래?'는 아님)
-PROMISE_ISH = re.compile(
-    r"도와\s?주면[^?]*(?:줄게|줄께|드릴게)|도와준다면[^?]*(?:줄게|줄께|드릴게)|"
-    + ASK_PROMISE_VERB.pattern
-)
-
-
-# #782 설계 v11: 돕는 사람의 부탁 문장(물음·'부탁'·'~해 줘·줄래'). 약속을 대신 넣을 때 덮어쓰지
-# 않음(부탁이 사라지면 그날 미션으로 잇는 말이 없어짐)
-HELPER_REQUEST = re.compile(r"\?|부탁|줄래|도와\s?줘|해\s?줘|주세요|주겠니")
-
-
-def line_sentences(text: str) -> list[str]:
-    return [p.strip() for p in re.split(r"(?<=[.?!])\s+", text or "") if p.strip()]
-
-
-def put_promise(
-    lines: list[dict[str, str]], helper: str, sentence: str, grade: int
-) -> list[dict[str, str]] | None:
-    """약속 줄을 코드 문장으로 바꿔 넣는다(#782 설계 v10, v12부터 마지막 시도에도 남은 사유가
-    ASK_PROMISE뿐일 때만). #782 설계 v11: 돕는 사람의 부탁 문장(HELPER_REQUEST)은 덮어쓰지 않는다.
-
-    ① 돕는 사람 줄에 약속 같은 문장(부탁 아님)이 있으면 그 문장을 바꿈. 바꾼 줄이 40자를 넘으면
-       그 줄에 부탁이 없을 때만 줄 전체를 바꾸고, 부탁이 있으면 약속 문장만 빼고 ②로
-    ② 줄 수가 학년 상한 아래면 마지막 뭉치 줄 앞에 돕는 사람의 말로 넣음
-    ③ 상한이면 돕는 사람의 첫 줄(곤란한 말)을 바꿈 — 부탁 문장이 든 줄은 부탁은 두고 나머지 문장
-       자리에 약속(40자 안일 때만, 아니면 다음 돕는 사람 줄), 돕는 사람 줄이 모두 부탁뿐이면 첫
-       줄의 부탁 뒤에 붙임(40자 안일 때만). 돕는 사람이 말하지 않았으면 마지막 줄 앞 줄(첫 줄은
-       코드가 붙인 오늘 온 까닭이라 두고)
-    넣을 수 없으면 None."""
-    if len(sentence) > LINE_MAX or len(lines) < 2:
-        return None
-    out = [dict(x) for x in lines]
-    for i, x in enumerate(out):
-        if x.get("speaker") != helper:
-            continue
-        parts = line_sentences(str(x.get("text") or ""))
-        hits = [
-            j for j, p in enumerate(parts) if PROMISE_ISH.search(p) and not HELPER_REQUEST.search(p)
-        ]
-        if not hits:
-            continue
-        kept = " ".join(
-            sentence if j == hits[0] else p
-            for j, p in enumerate(parts)
-            if j == hits[0] or j not in hits
-        )
-        if len(kept) <= LINE_MAX:
-            out[i] = {**x, "text": kept}
-            return out
-        rest = [p for j, p in enumerate(parts) if j not in hits]
-        if not any(HELPER_REQUEST.search(p) for p in rest):
-            out[i] = {**x, "text": sentence}
-            return out
-        out[i] = {**x, "text": " ".join(rest)}  # 약속 문장만 빼고 부탁은 둠
-        break
-    line = {"speaker": helper, "text": sentence}
-    if len(out) + 1 <= DIALOGUE_LINES[grade][1]:
-        return [*out[:-1], line, out[-1]]
-    mine = [i for i, x in enumerate(out[:-1]) if i and x.get("speaker") == helper]
-    if not mine:
-        if len(out) < 3:  # 첫 줄·마지막 줄밖에 없으면 바꿀 줄이 없음
-            return None
-        out[-2] = line
-        return out
-    for i in mine:
-        parts = line_sentences(str(out[i].get("text") or ""))
-        asks = [p for p in parts if HELPER_REQUEST.search(p)]
-        if not asks:  # 곤란한 말만 있는 줄
-            out[i] = {**out[i], "text": sentence}
-            return out
-        if len(asks) < len(parts) and len(text := " ".join([*asks, sentence])) <= LINE_MAX:
-            out[i] = {**out[i], "text": text}
-            return out
-    parts = line_sentences(str(out[mine[0]].get("text") or ""))
-    if all(HELPER_REQUEST.search(p) for p in parts):
-        text = " ".join([*parts, sentence])
-        if len(text) <= LINE_MAX:
-            out[mine[0]] = {**out[mine[0]], "text": text}
-            return out
-    return None
 
 
 def hook_asks_self(day: dict) -> bool:
@@ -1282,28 +1211,28 @@ def way_problems(day: dict) -> list[str]:
     """요일 글 칸의 미션 방식 흐름 문제(줄거리 검사, 모두 그 칸만 고쳐 씀)."""
     bad: list[str] = []
     way, name = mission_way(day), day.get("day")
-    if way == ASK and OWN_RECORD_MATERIAL.search(str(day.get("missionMaterial") or "")):
+    if way == FOLLOW and OWN_RECORD_MATERIAL.search(str(day.get("missionMaterial") or "")):
         bad.append(
-            f"MATERIAL_RECORD {name} missionMaterial에 돕는 사람 자신의 기록(부탁 날 지문은 그 "
-            "사람이 하는 일의 자료 — 안내문·쪽지·시·셀 수. 그 사람의 기록은 미션을 마친 뒤 "
-            "단서로 나옴)"
+            f"MATERIAL_RECORD {name} missionMaterial에 그 사람 자신의 기록(이어 가기 날 지문은 "
+            "사건 이야기 글 — 안내문·소식·일기·시·셀 수. 단서가 되는 기록은 미션을 마친 뒤 다음 "
+            "행동으로 간 곳에서 나옴)"
         )
     # 부탁 날 증거는 문제를 마친 뒤 단서로 나옴. 장면 메모는 대화·그림 재료라 흔적을 쓰면 문제 전에
     # 새어 나감(어제 찾은 흔적을 말하는 오늘 온 까닭·대화 첫 줄은 정상이라 장면 메모만 봄)
-    if way == ASK and EVIDENCE_EARLY_WORDS.search(str(day.get("sceneNote") or "")):
+    if way == FOLLOW and EVIDENCE_EARLY_WORDS.search(str(day.get("sceneNote") or "")):
         bad.append(
-            f"EVIDENCE_EARLY {name} sceneNote에 흔적·자국(부탁 날은 돕는 사람이 그 일을 하는 "
-            "모습만, 증거는 문제 뒤 단서로)"
+            f"EVIDENCE_EARLY {name} sceneNote에 흔적·자국(이어 가기 날 장면은 그날 장소 사람과 "
+            "지문 글이 있는 모습만, 증거는 문제 뒤 단서로)"
         )
     # 할 일 문장(대화 재료)도 흔적·자국은 같음(실측 r782-ways-rd6 초4 '흔적이 자리도 살필래?').
     # '도와주면 내가 본 흔적도 알려 줄게' 같은 약속은 됨. 기록 낱말(영상·사진·메모)은 보지 않음 —
     # 매체 성취기준 날 할 일에 원래 들어가는 낱말이라(40개 측정 r782-final40: '말·글·영상을 비교해
     # 볼래?'·'사진을 안전하게 나누는 방법' 등 44번 잘못 잡음)
     hook = str(day.get("missionHook") or "")
-    if way == ASK and EVIDENCE_EARLY_WORDS.search(hook) and not ASK_PROMISE_VERB.search(hook):
+    if way == FOLLOW and EVIDENCE_EARLY_WORDS.search(hook):
         bad.append(
-            f"EVIDENCE_EARLY {name} missionHook에 흔적·자국(부탁 날 할 일은 돕는 사람의 일만, "
-            "증거는 문제 뒤 단서로)"
+            f"EVIDENCE_EARLY {name} missionHook에 흔적·자국(이어 가기 날 할 일은 지문 글을 같이 "
+            "읽자는 말만, 증거는 문제 뒤 단서로)"
         )
     if hook_asks_self(day):
         bad.append(
@@ -1333,55 +1262,7 @@ def day1_time(theme: Theme, text: str) -> bool:
 HELPER_REGEN_DAYS = 3  # 돕는 사람 문제가 이 요일 수 이상이면 줄거리를 다시(기준안)
 
 
-# #782 설계 v3(사용자 결정 2026-11-21): 돕는 사람은 일 → 사람 → 장소 순서로 정한다. 장소를 먼저
-# 두고 그 장소 사람에게 성취기준 일을 맡기니 "운동장 선생님이 모래밭에서 시 감상 글을 부탁"처럼
-# 동떨어졌음(2차 측정 억지 30일 중 13일). 국어 부탁 날은 성취기준 영역(코드 셋째·넷째 자리,
-# 돌아보기는
-# 생각 유형)마다 그 일을 하는 사람 호칭과 아이 답의 쓰임을 코드가 준다. 기준안 — 확인 전
-# #782 설계 v9: 돌아보기 날 따로 둔 틀('방문자 쉼터 담당자'·'처음 온 아이들에게 줄 경험 모음')을
-# 뺌 — 성취기준과 상관없이 늘 같은 틀이라 6차 측정 억지 13일 중 6일이 "경험 모음이 그 사람 일과
-# 안 맞음". 돌아보기 날도 그날 성취기준 영역의 일 틀을 쓴다
-HELPER_FRAMES: dict[str, tuple[tuple[str, ...], str, tuple[str, ...]]] = {
-    # 영역: (호칭 후보, 아이 답의 쓰임, 질문에 있어야 할 쓰임 낱말)
-    "05": (
-        ("동네 시인", "그림책 작가", "이야기 할머니", "책방 주인"),
-        "작품 소개판에 붙일게",
-        ("소개판", "게시판", "모음"),
-    ),
-    "02": (
-        ("소식지 기자", "작은 도서관 사서", "마을 소식판 담당자"),
-        "소식지에 실을게",
-        ("소식지", "소식판"),
-    ),
-    "03": (
-        ("게시판 담당자", "행사 준비 담당자", "편지함 지기"),
-        "게시판에 붙일게",
-        ("게시판", "편지"),
-    ),
-    "04": (
-        ("안내 방송 담당자", "표지판 목수", "안내문 쓰는 직원"),
-        "안내판·방송 글로 쓸게",
-        ("안내판", "방송", "표지판", "안내문"),
-    ),
-    "06": (
-        ("마을 방송부원", "영상 기록가", "마을 소식 기자"),
-        "마을 방송·영상 안내에 쓸게",
-        ("방송", "영상"),
-    ),
-}
-# #782 설계 v10: 줄거리 지시문에는 호칭 목록 대신 영역의 일 종류만 준다(7차 같은 호칭 17번 —
-# 코드가 준 호칭 둘 중에서만 골라 한 주·여러 테마에 같은 사람이 되풀이됨). 모델이 그날 성취기준의
-# 일 → 그 일을 하는 사람 → 아이 답의 쓰임(helperUse) → 장소 순서로 정한다. HELPER_FRAMES는 예전
-# 저장본 쓰임 낱말용 데이터로만 남긴다(#782 설계 v11: 대신용 틀로 쓰던 돕는 사람 검토 review_helpers
-# 는 뺌). 기준안 — 확인 전
-AREA_WORK = {
-    "01": "듣기·말하기 — 남의 말을 듣고 정리하거나 자기 생각을 말로 전하는 일",
-    "02": "읽기 — 글을 읽고 간추리거나 추론해 남에게 전하는 일",
-    "03": "쓰기 — 남에게 알리거나 마음·의견을 전하는 글을 쓰는 일",
-    "04": "문법 — 낱말·문장을 바르게 고치거나 다듬어 남이 읽을 글로 만드는 일",
-    "05": "문학 — 시·이야기 같은 작품을 읽고 느낌을 나누거나 작품을 소개하는 일",
-    "06": "매체 — 기사·영상·안내 같은 매체 자료를 살펴 남에게 알리는 일",
-}
+# 국어 성취기준 영역(코드 셋째·넷째 자리, #971 다음 행동 종류 — 03 쓰기는 쓴 글을 읽을 사람)
 KOREAN_AREA = re.compile(r"^\d국(\d\d)-")
 # 그래프로 나타내고 해석하는 수학 성취기준(그리기만 하는 성취기준은 learning AUTO_EXCLUDED로
 # 이미 뺌).
@@ -1389,36 +1270,16 @@ KOREAN_AREA = re.compile(r"^\d국(\d\d)-")
 GRAPH_STANDARDS = frozenset({"4수04-01", "4수04-02", "4수04-03", "6수04-02", "6수04-03"})
 
 
-def frame_area(codes: list[str], thinking: str) -> str | None:
-    """국어 성취기준의 일 틀 영역(돌아보기 날도 영역대로, #782 설계 v9). 수학은 None."""
-    if not any(KOREAN_AREA.match(c) for c in codes):
-        return None
-    area = next(m.group(1) for c in codes if (m := KOREAN_AREA.match(c)))
-    return area if area in HELPER_FRAMES else "02"
-
-
 def day_frames(
     days: list[tuple[str, list[str], str]], ways: dict[str, str], rng: random.Random
 ) -> dict[str, dict[str, Any]]:
-    """요일마다 성취기준 코드와, 국어 부탁 날이면 그날 일 종류(work)·대신용 호칭 둘·아이 답의
-    쓰임(내부 칸 dayFrames). days는 (요일, 성취기준 코드, 생각 유형). 같은 호칭이 두 요일에 나오지
-    않게 고른다. #782 설계 v10: 줄거리 지시문에는 work만 주고 roles·use·useWords는 대신용 틀과
-    예전 저장본(부분 다시 생성 #537)용으로 그대로 둔다."""
-    used: set[str] = set()
-    out: dict[str, dict[str, Any]] = {}
-    for day, codes, thinking in days:
-        frame: dict[str, Any] = {"codes": list(codes)}
-        area = frame_area(codes, thinking) if ways.get(day) == ASK else None
-        if area:
-            roles, use, words = HELPER_FRAMES[area]
-            free = [r for r in roles if r not in used] or list(roles)
-            picked = rng.sample(free, min(2, len(free)))
-            used.update(picked)
-            real = next(m.group(1) for c in codes if (m := KOREAN_AREA.match(c)))
-            work = AREA_WORK.get(real) or AREA_WORK[area]
-            frame |= {"work": work, "roles": picked, "use": use, "useWords": list(words)}
-        out[day] = frame
-    return out
+    """요일마다 성취기준 코드(내부 칸 dayFrames). days는 (요일, 성취기준 코드, 생각 유형).
+
+    #971: 부탁 날의 일 종류·대신용 호칭·아이 답의 쓰임(work·roles·use·useWords)은 더 만들지 않는다
+    (이어 가기 날 미션은 돕는 사람의 일이 아니라 그 주 사건 이야기). 예전 저장본의 그 칸은 그대로
+    읽는다(frame_of·day_use). ways·rng는 부르는 쪽 모양을 지키려고 받기만 함."""
+    del ways, rng
+    return {day: {"codes": list(codes)} for day, codes, _ in days}
 
 
 def frame_of(theme: Theme, day: str) -> dict[str, Any]:
@@ -1426,8 +1287,12 @@ def frame_of(theme: Theme, day: str) -> dict[str, Any]:
 
 
 def helper_use_day(theme: Theme, day: dict) -> bool:
-    """#782 설계 v10: 국어 부탁 날(dayFrames에 일 틀이 있는 부탁 날) — helperUse를 쓰는 날."""
-    return mission_way(day) == ASK and bool(frame_of(theme, str(day.get("day"))).get("roles"))
+    """helperUse를 쓰는 날. #971 아침 재설계부터 없음: 쓴 글을 읽을 사람 날도 학생이 지문 속 그
+    사람에게 보내는 글을 써서(그 사람이 읽고 단서를 줌) 게시판 같은 가는 곳이 필요 없다(전에는
+    '게시판을 본 이웃'이 갑자기 나와 아이 글과 단서가 따로 놂, 20테마 측정). 예전 저장본도 쓰지
+    않음."""
+    del theme, day
+    return False
 
 
 # #782 설계 v10: 쓰임 낱말은 helperUse의 마지막 '에·에다·으로·로' 앞 말에서 뽑는다('책 추천
@@ -1448,16 +1313,73 @@ def use_words(text: str) -> list[str]:
 
 
 def day_use(theme: Theme, day: str) -> tuple[str, list[str]]:
-    """국어 부탁 날 아이 답의 쓰임 (글, 쓰임 낱말). 모델이 쓴 helperUse에서 뽑고, 비었거나 낱말이
-    없으면(예전 저장본) dayFrames 쓰임·쓰임 낱말. 국어 부탁 날이 아니면 ('', [])."""
-    frame = frame_of(theme, day)
-    if not frame.get("useWords"):
+    """쓴 글을 읽을 사람 날 아이 글이 가는 곳 (글, 쓰임 낱말, #971). 모델이 쓴 helperUse에서 뽑는다.
+    그 밖의 날은 ('', []). 예전 저장본(부탁 날 dayFrames 쓰임)은 다음 행동 칸이 없어 쓰지 않음."""
+    d = theme_day(theme, day)
+    if not helper_use_day(theme, d):
         return "", []
-    use = str(theme_day(theme, day).get("helperUse") or "").strip()
-    # helperUse가 틀의 쓰임과 같거나 낱말이 없으면(예전 저장본) 틀의 쓰임 낱말로 봄
-    if use != frame.get("use") and (words := use_words(use)):
-        return use, words
-    return str(frame.get("use") or ""), list(frame["useWords"])
+    use = str(d.get("helperUse") or "").strip()
+    return (use, words) if (words := use_words(use)) else ("", [])
+
+
+def next_problems(theme: Theme, d: dict) -> list[str]:
+    """이어 가기 날 다음 행동 칸 검사(#971, 다음 행동 종류가 있는 날만 — 예전 저장본은 안 봄).
+
+    - REQUIRED·LENGTH nextTarget(12자)
+    - NEXT_SOURCE: 만날 사람·읽을 사람이 등장인물(퀴즈를 낸 사람 포함 — 처음부터 답을 알거나 이야기
+      속 사람이라 묻지 않을 까닭이 없음)·그날 장소 사람(helper, 처음부터 말하면 됨)·다른 요일의
+      다음 행동과 같음·그날 장소 이름뿐·찾는 대상과 같음, 칸에 후보 이름이 들어감(잃어버린 것·길
+      찾기는 후보가 장소라 갈 곳이 후보면 답이 드러남), 칸에 특징 표 값 낱말이 들어감(갈 곳
+      '모래밭'이 바닥 특징 '모래'를 미리 알려 주거나 단서와 어긋남)
+    - MATERIAL_NEXT: 지문에 다음 행동 낱말이 없음(다음 행동은 지문 속 사건의 한 부분 — 그때 그
+      자리에 있던 사람·대상이 지나간 자리·쓴 글을 받을 사람). #971 아침 재설계에서 고르기 검사
+      (nextOthers·MATERIAL_CHOICE·NEXT_TOLD)와 미리 말함(NEXT_EARLY)은 뺐다 — 답으로 다음 행동을
+      고르게 하니 매일 '사람 셋 늘어놓고 하나 고르기' 문제가 됨(20테마 측정 7/20)
+    """
+    kind = next_kind(d)
+    if not kind:
+        return []
+    day = d["day"]
+    target = str(d.get("nextTarget") or "").strip()
+    if not target:
+        return [f"REQUIRED {day}.nextTarget"]
+    bad: list[str] = []
+    if len(target) > TEXT_MAX["nextTarget"]:
+        bad.append(f"LENGTH {day}.nextTarget {len(target)}자 > {TEXT_MAX['nextTarget']}")
+    name = compact(target)
+    people = {compact(c.get("name")) for c in theme.get("characters") or []} - {""}
+    why = ""
+    if kind != PLACE and (name in people or any(p and p in name for p in people)):
+        why = "등장인물(이야기 속 사람은 처음부터 물어보면 됨, 그날 처음 만나는 사람으로)"
+    elif kind != PLACE and name == compact(d.get("helper")):
+        why = "그날 장소 사람과 같음(처음부터 말하면 됨, 다른 사람으로)"
+    elif name in {
+        compact(x.get("nextTarget"))
+        for x in theme.get("days") or []
+        if x.get("day") != day and next_kind(x)
+    }:
+        why = "다른 요일과 같은 다음 행동(같은 사람·곳이 두 번 단서를 주면 처음부터 말하면 됨)"
+    elif same_as_place(d):
+        why = "그날 장소 이름과 같음(이미 와 있는 곳 — 장소 안·곁의 다른 자리·처음 만나는 사람으로)"
+    elif (t := compact(theme.get("target"))) and (t in name or name in t):
+        why = "찾는 대상과 같음"
+    elif named := [c for c in theme.get("candidates") or [] if c and compact(c) in name]:
+        why = f"후보 이름 {named}이 들어감(답이 드러남)"
+    else:
+        table, _ = feature_table(theme)
+        values = sorted({v for vals in table.values() for v in vals.values() if v})
+        if hits := [v for v in values if mentions_value(v, target)]:
+            why = f"특징 값 낱말 {hits}이 들어감(단서보다 먼저 값을 알려 주거나 단서와 어긋남)"
+    if why:
+        bad.append(f"NEXT_SOURCE {day} nextTarget {why}")
+    material = str(d.get("missionMaterial") or "")
+    if not mentions_next(d, material):
+        bad.append(
+            f"MATERIAL_NEXT {day} missionMaterial에 다음 행동({NEXT_KO[kind]} '{target}')이 없음 — "
+            "그때 그 자리에 있던 사람·대상이 지나간 자리·쓴 글을 받을 사람으로 사건 이야기 속에 "
+            "낱말 그대로 넣음"
+        )
+    return bad
 
 
 def helper_problems(theme: Theme) -> list[str]:
@@ -1525,57 +1447,6 @@ def helper_problems(theme: Theme) -> list[str]:
             "앞 요일과 같음(요일마다 그날 장소의 다른 사람, 등장인물 아님)"
         ]
     return bad
-
-
-# 약속 줄 같음 비교에서 뺄 글자(띄어쓰기·문장부호, #782 설계 v13)
-PROMISE_PUNCT = re.compile(r"[\s,.!?~·…'\"‘’“”]")
-
-
-def same_week_promises(theme: Theme, dialogues: dict[str, list[dict]]) -> dict[str, list[str]]:
-    """같은 주에 돕는 사람의 약속 줄이 글자 그대로 같은 뒤 요일들과 그 사유(#782 설계 v13).
-
-    요일 대화는 따로 동시에 만들어 서로 못 본다. 같은 감각 요일이 둘이면 "그 일을 도와주면, 그때
-    들은 소리를 알려 줄게."처럼 똑같아짐(11·12·13차 매번 1~2건, 저장 결과에서 잘못 잡은 것 0).
-    띄어쓰기·문장부호·끝의 '요'만 다르면 같은 줄로 본다."""
-    seen: dict[str, str] = {}
-    out: dict[str, list[str]] = {}
-    for d in theme.get("days") or []:
-        day, helper = d.get("day"), str(d.get("helper") or "").strip()
-        if mission_way(d) != ASK or not helper:
-            continue
-        for x in dialogues.get(str(day)) or []:
-            text = str(x.get("text") or "")
-            if x.get("speaker") != helper or not ASK_PROMISE_VERB.search(text):
-                continue
-            # 끝의 '요'도 뺌('알려 줄게'·'알려 줄게요'는 같은 줄, 측정 기준과 같은 잣대 — 14차 snd6)
-            key = re.sub(r"요$", "", PROMISE_PUNCT.sub("", text))
-            if key not in seen:
-                seen[key] = str(day)
-                continue
-            out.setdefault(str(day), []).append(
-                f"PROMISE_SAME {day} 약속 줄이 {seen[key]} 요일과 같음('{text}') — "
-                f"같은 뜻을 {seen[key]} 요일과 다른 말로"
-            )
-    return out
-
-
-def ask_promise_missing(day: dict, lines: list[dict[str, str]]) -> bool:
-    """부탁 날 대화에 돕는 사람이 '도와주면 그때 본 걸 알려 줄게'처럼 사건에서 본 것·가진 기록을
-    알려 주겠다는 약속이 없는지."""
-    helper = str(day.get("helper") or "").strip()
-    if mission_way(day) != ASK or not helper:
-        return False
-
-    def kept(text: str) -> bool:
-        m = ASK_PROMISE_VERB.search(text)
-        if not m:
-            return False
-        # '도와주면 알려 줄게'처럼 알려 줄 것을 따로 말하지 않으면 됨. '~을/를/걸 알려 줄게'처럼
-        # 말하면 그것이 본 것·그때·기록이어야 함(실측 '인사말 만들 때 살펴볼 점을'·'고마운 걸')
-        names_thing = re.search(r"(?:을|를|걸)\s*$", text[: m.start()])
-        return not names_thing or bool(ASK_PROMISE_CASE.search(text))
-
-    return not any(kept(x["text"]) for x in lines if x.get("speaker") == helper)
 
 
 def kind_fits(kind: StoryType, feature: str | None, evidence: str | None) -> bool:
@@ -1987,13 +1858,13 @@ KO_CLOCK = re.compile(
 
 
 def object_self_trace(theme: Theme, day: dict) -> bool:
-    """맡겨 둔 대상 자체의 흔적 단서인지(#782 설계 v6): 맡겨 두는 종류 + 부탁 날 + 흔적 + 대상
-    물건 특징."""
+    """맡겨 둔 대상 자체의 흔적 단서인지(#782 설계 v6): 맡겨 두는 종류 + 이어 가기 날 + 흔적 +
+    대상 물건 특징."""
     feature = str((day.get("condition") or {}).get("feature") or "")
     clue = str(day.get("clue") or "")
     return (
         kept_target(theme)
-        and mission_way(day) == ASK
+        and mission_way(day) == FOLLOW
         and (day.get("evidence") or {}).get("kind") == "TRACE"
         and (
             bool(OBJECT_SELF_FEATURE.search(feature))
@@ -2025,10 +1896,13 @@ def kept_trace_problems(theme: Theme) -> list[str]:
                 "자기가 줍거나 날랐다고 씀(맡겨지기 전에 그 물건이 놓여 있을 때나 주운 사람이 들고 "
                 "지날 때 곁에서 본 것으로, '맡겨지기 전에 그 ○○가 놓여 있을 때 보니 ~')"
             )
-        if KEPT_SELF.search(clue) and "관리실" not in str(d.get("helper") or ""):
+        # #971: 이어 가기 날 단서를 말하는 사람은 다음 행동으로 만난 사람(nextTarget)
+        teller = str((d.get("nextTarget") if next_kind(d) else d.get("helper")) or "")
+        if KEPT_SELF.search(clue) and "관리실" not in teller:
             bad.append(
-                f"KEPT_PLACE {d['day']} clue 대상은 관리실에 맡겨 두었는데 돕는 사람이 자기가 맡아 "
-                "두었거나 맡겼다고 씀(맡긴 곳은 관리실, 돕는 사람은 맡겨지기 전에 본 사람)"
+                f"KEPT_PLACE {d['day']} clue 대상은 관리실에 맡겨 두었는데 단서를 말하는 사람이 "
+                "자기가 맡아 두었거나 맡겼다고 씀(맡긴 곳은 관리실, 그 사람은 맡겨지기 전에 본 "
+                "사람)"
             )
     return bad
 
@@ -2387,6 +2261,8 @@ def day_text_max(day: dict, key: str, theme: Theme | None = None) -> int:
         or (theme is not None and clue_person(theme))
     ):
         return TRACE_CLUE_MAX
+    if key == "missionMaterial" and theme is not None and theme.get("grade") in MATERIAL_MAX:
+        return MATERIAL_MAX[int(theme["grade"])]
     return TEXT_MAX[key]
 
 
@@ -2587,7 +2463,10 @@ def day_step_problems(theme: Theme) -> list[str]:
 
     - DAY_STEP_MADE 화~금: 어제 돕는 사람이 하지 않은 일·오늘 할 일, 어제·오늘이 아닌 다른 날
       돕는 사람(그 사람과 오늘 사이에 일이 없음)
-    - SELF_NAME 모든 요일: 대화 첫 줄로 첫 등장인물이 말하는데 자기 이름"""
+    - SELF_NAME 모든 요일: 대화 첫 줄로 첫 등장인물이 말하는데 자기 이름
+    - DAY_STEP_SAME(#971): 같은 꼴로 시작하거나 끝나는 날이 셋 이상(r971-b5 auto4 다섯 날 '나는 ~
+      살펴보려 해', new6b 다섯 날 '나는 ~ 살펴보러 왔어') — 셋째 날부터 고쳐 씀(상한 뒤에는 넘어감,
+      코드 문장으로 바꾸지 않음)"""
     days = theme.get("days") or []
     if tuple(d.get("day") for d in days) != DAYS:  # 요일이 어긋나면 DAYS가 먼저 잡음(어제가 없음)
         return []
@@ -2622,6 +2501,45 @@ def day_step_problems(theme: Theme) -> list[str]:
                 f"SELF_NAME {d['day']} dayStep에 '{first_speaker(theme)}' 이름(대화 첫 줄로 그 "
                 "인물이 직접 하는 말이라 자기 이름을 쓰지 않음, '나'의 말로)"
             )
+    # 코드 문장(빈 칸·두 번째 고쳐 쓰기)은 같은 꼴 검사에서 뺌(코드 문장은 검사를 모두 통과해야 함)
+    model_days = [
+        d
+        for i, d in enumerate(days)
+        if str(d.get("dayStep") or "").strip() != day_step_text(theme, i)
+    ]
+    return bad + day_step_same(model_days)
+
+
+# 오늘 온 까닭을 매일 같은 말로 여는 낱말(장소·사람 이름으로 여는 것은 같은 꼴로 보지 않음)
+STEP_OPENERS = frozenset({"나는", "난", "나도", "우리는", "우리", "오늘은", "오늘", "저는"})
+
+
+def step_keys(step: str) -> tuple[str, str]:
+    """오늘 온 까닭의 시작 말(STEP_OPENERS 낱말일 때만)과 끝 말(문장부호를 뺀 마지막 네 글자)."""
+    text = re.sub(r"[.!?~…\s]+$", "", step.strip())
+    words = text.split()
+    opener = words[0] if words and words[0] in STEP_OPENERS else ""
+    return (opener, re.sub(r"\s", "", text)[-4:])
+
+
+def day_step_same(days: list[dict]) -> list[str]:
+    """같은 주 오늘 온 까닭이 같은 꼴로 시작·끝나는 날이 셋 이상이면 셋째 날부터(DAY_STEP_SAME)."""
+    keys = {d["day"]: step_keys(str(d.get("dayStep") or "")) for d in days if d.get("dayStep")}
+    bad: list[str] = []
+    for slot, what in ((0, "시작"), (1, "끝")):
+        seen: dict[str, list[str]] = {}
+        for day, key in keys.items():
+            if key[slot]:
+                seen.setdefault(key[slot], []).append(day)
+        for word, group in seen.items():
+            for day in group[2:]:
+                reason = (
+                    f"DAY_STEP_SAME {day} dayStep에 같은 주 {len(group)}일이 같은 {what} "
+                    f"말('{word}') "
+                    "— 요일마다 다른 말투(놀람·물음·다짐)로"
+                )
+                if not any(r.startswith(f"DAY_STEP_SAME {day} ") for r in bad):
+                    bad.append(reason)
     return bad
 
 
@@ -2999,7 +2917,7 @@ def text_max(path: str, theme: Theme | None = None) -> int:
     if path == "outro" and theme is not None and "outroStory" in theme:
         return OUTRO_STORY_MAX
     head = path.partition(".")[0]
-    if theme is not None and key == "clue" and head in DAYS:
+    if theme is not None and key in ("clue", "missionMaterial") and head in DAYS:
         return day_text_max(theme_day(theme, head), key, theme)
     return TEXT_MAX[key]
 
@@ -3917,6 +3835,7 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
             bad.append(f"REQUIRED {d['day']}.helperUse")
         elif len(use) > TEXT_MAX["helperUse"]:
             bad.append(f"LENGTH {d['day']}.helperUse {len(use)}자 > {TEXT_MAX['helperUse']}")
+        bad += next_problems(theme, d)  # #971 다음 행동 칸
         # 단서는 그날 미션을 마친 뒤 보여 주므로 증거 발견 줄은 단서 결론을 말하지 않는다. 수사 연결
         # 문장은 그날 배울 개념을 말하는 자리라 개념 낱말이 단서 값과 같을 수밖에 없어
         # (특징을 성취기준
@@ -3941,6 +3860,8 @@ def check_theme(theme: Theme, grade: int, standard_codes: set[str] | None = None
             bad.append(f"CLUE_WORDING {d['day']} clue {problem}")
         for problem in clue_source_problems(theme, d):
             bad.append(f"CLUE_SOURCE {d['day']} clue {problem}")
+        for problem in clue_plain_problems(theme, d):
+            bad.append(f"CLUE_PLAIN {d['day']} clue {problem}")
         # 흔적 단서는 누구의 흔적인지 밝힌다(#535 6차: "흔적이 대상의 것인지 드러나지 않음").
         # 칸 고쳐 쓰기 대상
         trace = (d.get("evidence") or {}).get("kind") == "TRACE"
@@ -4118,12 +4039,35 @@ MATH_AHEAD: tuple[tuple[str, re.Pattern[str], int], ...] = (
 )
 
 
+# #971 5테마 확인(r971-b5): 번호를 막자 한 문장에 할 일 4~5개를 몰아넣음('질문을 만들고, 짐작한
+# 일과 글에서 찾은 말, 다른 짐작을 쓴 뒤 돌아보세요'). 저장 90문제 지문 밖 시키는 말 중간 83~87자,
+# 잘 된 문제 29~60자('떡을 꺼낸 뒤 천을 쓰려는 까닭을 짐작해 써 보세요'). 그래프 성취기준은
+# 나타내기·해석하기를 함께 시켜 따로(기준안)
+ASK_MAX = {3: 70, 4: 70, 5: 80, 6: 80}
+ASK_MAX_GRAPH = 120
+# 시키는 문장 끝(r971-c5 hand3: 국어사전 성취기준의 사전 뜻 풀이 '고르다=여럿 중 정하다'까지 세어
+# 세 번 모두 걸려 테마 실패 → 시키는 문장만 셈)
+ASK_END = re.compile(r"(?:세요|봐요|볼래요?|봐|써|해|줘|하자|보자)[.!?]?$")
+
+
+def ask_text(question: str, material: str) -> str:
+    """지문 밖 글 가운데 시키는 문장만(자료 — 사전 뜻 풀이·상황 설명 — 은 뺌)."""
+    rest = without_material(question, material)
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+|\n+", rest) if p.strip()]
+    return " ".join(p for p in parts if ASK_END.search(p))
+
+
 def math_ahead(texts: list[str], grade: int) -> list[str]:
     """그 학년에서 아직 배우지 않은 수학 개념 이름(MATH_AHEAD)."""
     joined = "\n".join(texts)
     return [
         name for name, pattern, learned in MATH_AHEAD if grade < learned and pattern.search(joined)
     ]
+
+
+# #971 아침 재설계: 문제를 번호(①·②)로 나누면 한 문제에 활동이 둘 이상(20테마 측정 통과 문제
+# 35개 중 15개). 그래프 성취기준은 나타내기·해석하기를 함께 하는 규칙이라 뺌
+NUMBERED_ASK = re.compile(r"[②③]|^\s*2[.)]\s", re.M)
 
 
 def check_mission(
@@ -4194,21 +4138,30 @@ def check_mission(
             f"EVENT_LATER 문제·예시 답이 아직 열리지 않은 행사를 이미 열린 것처럼 씀({hits}) — "
             "시작 이야기에서 앞으로 열릴 일이라 '~에 낼·준비·앞둔'처럼 앞일로만"
         )
-    # #782 설계 v3: 국어 부탁 날은 아이 답이 돕는 사람의 일에 쓰이는 곳을 질문에 밝힌다(2차
-    # 측정 억지
-    # 30일 중 9일 "답이 그 일에 안 쓰임")
-    # #782 설계 v10: 쓰임 낱말은 모델이 쓴 helperUse에서 뽑음(정해 둔 목록 아님), 예전 저장본은
-    # dayFrames 쓰임 낱말(day_use)
+    # #971 쓴 글을 읽을 사람 날: 아이가 쓴 글이 가는 곳(helperUse)을 문제 글에 밝힌다(그 글을 본
+    # 사람이 찾아와 단서를 알려 줌 — 가는 곳이 없으면 단서가 어디서 왔는지 이어지지 않음)
     day = {v: k for k, v in DAY_TYPE.items()}.get(request.thinking_type)
     use, words = day_use(theme, day) if day else ("", [])
-    if (
-        words
-        and mission_way(theme_day(theme, day)) == ASK
-        and not any(w in draft.question for w in words)
-    ):
+    if words and not any(w in draft.question for w in words):
         bad.append(
-            f"USE_MISSING 문제 글에 아이 답의 쓰임이 없음(돕는 사람이 '{use}'라고 한 뜻을 "
-            f"question에 씀, 낱말 {'·'.join(words)} 중 하나)"
+            f"USE_MISSING 문제 글에 아이가 쓴 글이 가는 곳이 없음('{use}'의 뜻을 question에 씀, "
+            f"낱말 {'·'.join(words)} 중 하나)"
+        )
+    codes = {st.code for st in request.standards}
+    if day and next_kind(theme_day(theme, day)):
+        ask = ask_text(draft.question, str(theme_day(theme, day).get("missionMaterial") or ""))
+        limit = ASK_MAX_GRAPH if codes & GRAPH_STANDARDS else ASK_MAX.get(grade, 80)
+        if len(ask.strip()) > limit:
+            bad.append(
+                f"ASK_LONG 시키는 문장 {len(ask.strip())}자 > {limit} — 성취기준 활동 하나에 "
+                "꼭 넣는 생각 둘만 한 문장으로('~하고 그 까닭도 써 보세요'), 들어가면 좋은 "
+                "생각·작은 "
+                "단계는 따로 시키지 않음"
+            )
+    if NUMBERED_ASK.search(draft.question) and not codes & GRAPH_STANDARDS:
+        bad.append(
+            "NUMBERED_ASK 문제를 번호로 나눔 — 시키는 말 한 문장에 활동 하나('~하고 그 까닭도 써 "
+            "보세요'처럼 한 문장 안에)"
         )
     if acts := mission_act_names(theme, request, draft):
         bad.append(
@@ -4339,9 +4292,13 @@ def material_problems(theme: Theme, request: MissionDraftRequest, draft: Draft) 
     final = (draft.answer_key.final_answer or "") if draft.answer_key else ""
     hit = [n for n in material_numbers(final) if n in material_numbers(material)]
     if hit:
+        # #971 작은 확인(snd6 '4구간은 방파제 순찰원' — 답 4): 이어 가기 날 지문의 수가 답이면
+        # 미션을 다시 만들어도 못 고쳐 지문 고쳐 쓰기('[지문]', 미션 노드 fix_material)로. 고를
+        # 범위 경계 수 예외(only_as_boundary)는 아침 재설계에서 범위 규칙을 없애며 뺌
+        tag = "[지문] " if next_kind(theme_day(theme, day) if day else {}) else ""
         bad.append(
-            f"MATERIAL_ANSWER 최종 답의 수 {hit}가 지문에 이미 있음(지문의 수로 계산해 새로 나오는 "
-            "값을 최종 답으로)"
+            f"MATERIAL_ANSWER {tag}최종 답의 수 {hit}가 지문에 이미 있음(지문의 수로 계산해 새로 "
+            "나오는 값을 최종 답으로)"
         )
     # #782 설계 v12: 수사 날 문제가 누가 본 일을 설명해 준다고 하고 그 말(단서 값)을 보여 주지 않음
     # (9차 new3 '가게 주인이 그때 본 일을 설명하고' — 저장 결과 수사 날 16개 중 1, 잘못 잡은 것 0)
@@ -4486,20 +4443,23 @@ def check_dialogue(
         bad.append("LAST_SPEAKER 마지막 줄은 뭉치가 오늘 문제로 잇는 말")
     if day == "MON" and day1_time(theme, " ".join(x["text"] for x in lines)):
         bad.append("DAY1_TIME 첫날 대화에 '어제'(시작 이야기의 사건 직후, 어제 한 일이 없음)")
-    # #782 미션 방식: 부탁 날 보답 약속이 사건과 상관없으면(실측 '인사말 만들 때 살펴볼 점') 그날
-    # 다시
-    # #782 설계 v10: 예시 문장을 주면 한 주가 같은 약속이 되어(7차 같은 문장 53번) 뜻만 말하고,
-    # 약속 감각이 그날 단서와 맞는지도 봄(promise_sense)
-    if ask_promise_missing(d, lines):
-        bad.append(
-            f"ASK_PROMISE {day} 부탁 날 {d.get('helper')}이(가) 도와주면 그때 "
-            f"{promise_meaning(theme, d)} 알려 주겠다는 약속이 없음(조건은 오늘 일로 자기 말로)"
-        )
-    elif why := ask_promise_mismatch(theme, d, lines):
-        bad.append(
-            f"ASK_PROMISE {day} 약속이 그날 단서와 어긋남({why}): 도와주면 그때 "
-            f"{promise_meaning(theme, d)} 알려 주겠다는 뜻으로(언제·어디서 봤는지는 말하지 않음)"
-        )
+    # #971 이어 가기 날: 단서는 문제를 마친 뒤 다음 행동으로 간 곳에서 나오므로 그날 장소 사람이
+    # '도와주면 알려 줄게'처럼 보답을 약속하지 않는다(부탁 날 약속 줄 검사
+    # ASK_PROMISE·PROMISE_SAME은
+    # #971에서 뺌). 다음 행동은 지문 속에 나오므로 대화가 말해도 됨(아침 재설계)
+    if next_kind(d):
+        # r971-b5 new6b 금: 지문은 봉사자가 썼는데 대화는 다른 사람(캠핑장 관리인)이 꺼냄
+        if helper and not any(x["speaker"] == helper for x in lines):
+            bad.append(
+                f"HELPER_SILENT {day} 그날 장소 사람('{helper}')이 대화에서 말하지 않음 — 지문 "
+                f"글을 "
+                "가진 그 사람이 꺼냄"
+            )
+        if any(ASK_PROMISE_VERB.search(x["text"]) for x in lines[1:]):
+            bad.append(
+                f"NEXT_PROMISE {day} 대화에 '알려 줄게·보여 줄게' 같은 보답 약속 — 단서는 문제를 "
+                "푼 뒤 다음 행동으로 간 곳에서 나오므로 약속하지 않음"
+            )
     if any(is_target(theme, x["speaker"]) for x in lines):
         bad.append("TARGET_SPEAKS 찾는 대상이 종료 이야기 전에 말함")
     # #782 설계 v10 5절: 첫 등장인물의 대화 줄도 아이가 이미 아는 것을 말하지 않음(그 요일 대화
@@ -4510,7 +4470,10 @@ def check_dialogue(
         bad.append(f"{code} {day} 대화에서 {me}의 말 '{word}' {child_known_why(theme, code)}")
     if any(
         len(x["speaker"]) >= 2
-        and re.match(re.escape(x["speaker"]) + r"(는|은|가|이|도|의)", x["text"])
+        # #971: 줄 어디서든('내가 들려줄 시장 소식꾼의 말이 있어' — 20테마 측정)
+        and re.search(
+            r"(?<![가-힣])" + re.escape(x["speaker"]) + r"(는|은|가|이|도|의|에게|한테)", x["text"]
+        )
         for x in lines
     ):
         bad.append("SELF_NAME 말하는 사람이 자기 이름을 3인칭으로 부름")
@@ -4563,6 +4526,7 @@ def public_theme(theme: Theme) -> dict:
 
     후보 특징 표는 이름·후보별 값만(standardCode 빼고), 요일은 그날 단서가 쓰는 특징 이름
     clueFeature를 더함(#647). 증거 배정·단서 조건·증거·증거 발견 줄·수사 연결 문장·콘티는 내부 칸.
+    이어 가기 날 단서는 앞에 다음 행동 이름표를 붙인다(#971 labeled_clue, 응답 모양은 그대로).
     """
     keep = (
         "title",
@@ -4582,6 +4546,7 @@ def public_theme(theme: Theme) -> dict:
         "days": [
             {
                 **{k: d[k] for k in day_keep},
+                "clue": labeled_clue(d),  # #971 이어 가기 날은 다음 행동 이름표
                 "clueFeature": (d.get("condition") or {}).get("feature") or None,
             }
             for d in theme["days"]

@@ -94,7 +94,12 @@ async def review_mission(
 
 
 # 예시 답만 고쳐 쓰면 되는 사유: 검토 예시 답 미완성, 예시 답이 학년 상한보다 김(#782 테마 짜임)
-EXAMPLE_ONLY = ("MISSION_REVIEW EXAMPLE_COMPLETE ", "EXAMPLE_LONG ")
+EXAMPLE_ONLY = (
+    "MISSION_REVIEW EXAMPLE_COMPLETE ",
+    "EXAMPLE_LONG ",
+)
+# 한 번 다시 만든 뒤에도 남으면 실패 대신 경고로 남기는 미션 검사 사유(#971 시키는 말 길이)
+SOFT_MISSION = ("ASK_LONG ",)
 # FAIL이어도 다시 만들지 않고 경고로만 남기는 미션 검토 항목(사용자 결정 2026-11-15)
 WARN_ONLY_IDS = ("STORY_LINK",)
 
@@ -175,8 +180,14 @@ async def generate_mission(payload: dict[str, Any], runtime: Runtime[ThemeContex
                 ctx.settings.followup_example_overlap_chars,
             )
             warns: list[str] = []
+            # #971: 시키는 말 길이(ASK_LONG)만 남으면 한 번만 다시 만들고 그 뒤는 실패 대신
+            # 경고(읽기 쉬움 때문에 테마 전체를 버리지 않고 시간도 아낌, r971-c5 세 테마가 실패)
+            last = attempt >= 1 or not ctx.can_regenerate()
+            if last and bad and all(r.startswith(SOFT_MISSION) for r in bad):
+                warns, bad = bad, []
             if not bad:
-                bad, warns = await review_mission(ctx, day, request, draft, theme)
+                bad, review_warns = await review_mission(ctx, day, request, draft, theme)
+                warns = [*warns, *review_warns]
             if not bad:
                 hook, warns = await fix_hook(ctx, day, theme, request, draft, warns)
                 return {

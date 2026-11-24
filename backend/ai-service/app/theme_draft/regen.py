@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from langgraph.runtime import Runtime
 
-from app.theme_draft.checks import DAYS
+from app.theme_draft.checks import DAYS, FOLLOW, OLD_ASK, mission_way
 from app.theme_draft.cuts import NEW_CUTS, cut_key_of, extra_keys
 from app.theme_draft.models import REGEN_VERSION, ThemeWarning
 from app.theme_draft.nodes import ThemeContext, ThemeState
@@ -33,6 +33,24 @@ TARGET_ORDER = (
     *(f"MISSION:{d}" for d in DAYS),
 )
 OUTSIDE_REASON = "PARTIAL 글 검토가 다시 만들 대상 밖을 고치라고 해서 멈춤"
+# #971: 부탁 날(예전 'ASK', 다음 행동 칸 없음) 미션은 새 이어 가기 규칙으로 다시 만들 수 없음 —
+# 새 미션 지문은 다음 행동을 가리켜야 하는데 그 칸과 그에 맞는 단서가 줄거리에 없다
+OLD_FOLLOW_REASON = (
+    "PARTIAL 미션 방식이 바뀌기 전(#971 전, 부탁 날) 초안이라 그 요일 미션을 다시 만들 수 없음 — "
+    "같은 입력으로 새 초안을 만듦"
+)
+
+
+def old_follow_days(theme: dict, days: list[str]) -> list[str]:
+    """days 중 예전 부탁 날(missionWay 'ASK', 다음 행동 종류 칸 없음)."""
+    return [
+        d.get("day")
+        for d in theme.get("days") or []
+        if d.get("day") in days
+        and d.get("missionWay") == OLD_ASK
+        and mission_way(d) == FOLLOW
+        and not d.get("nextKind")
+    ]
 
 
 def cut_keys(scene: str, n: int) -> list[str]:
@@ -158,6 +176,8 @@ async def restore(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeSta
         "base_warnings": keep_warnings(base.warnings, plan),
         "person_image": None,
     }
+    if old := old_follow_days(regen["theme"], plan.mission_days):
+        return {**out, "failure": {"stage": "REVIEW", "reasons": [f"{OLD_FOLLOW_REASON} {old}"]}}
     need = needed_assets(plan, assets)
     if not need:
         return out
@@ -185,14 +205,13 @@ async def restore(state: ThemeState, runtime: Runtime[ThemeContext]) -> ThemeSta
 
 
 def outside_targets(state: ThemeState, route: str, todo: list[str] | None = None) -> bool:
-    """부분 다시 생성에서 글 검토가 대상 밖을 고치려 하는지(줄거리·단서는 늘 대상 밖). 대화만 다시
-    (TALK, #782 설계 v12)는 미션 대상 요일이면 그 요일 미션과 함께 다시 만드는 대화라 대상 안."""
+    """부분 다시 생성에서 글 검토가 대상 밖을 고치려 하는지(줄거리·단서는 늘 대상 밖)."""
     if not state.get("partial"):
         return False
-    if route in ("PLAN", "CLUE", "HELPER"):  # HELPER: 줄거리 칸(돕는 사람·일)을 고침(#782 설계 v13)
+    if route in ("PLAN", "CLUE", "FOLLOW"):  # FOLLOW: 줄거리 칸(지문·다음 행동)을 고침(#971)
         return True
     days = {t.split(":")[1] for t in state.get("redo_targets") or [] if t.startswith("MISSION:")}
-    return route in ("DAYS", "TALK") and not set(todo or []) <= days
+    return route == "DAYS" and not set(todo or []) <= days
 
 
 def regenerable(state: ThemeState) -> list[str]:

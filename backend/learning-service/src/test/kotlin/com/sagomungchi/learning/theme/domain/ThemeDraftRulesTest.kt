@@ -82,8 +82,10 @@ class ThemeDraftRulesTest {
 
     @Test
     fun `읽고 쓰기와 맞지 않는 성취기준은 학기 단계와 학년군 표에서 빠지고 관리자가 고르면 그대로 쓴다`() {
-        assertEquals(25, ThemeDraftRules.AUTO_EXCLUDED.size)
+        // #782 25개 + #971 사건과 이을 수 없는 29개(국어 태도 8·수학 식 규칙·내각 2·도형 19)
+        assertEquals(54, ThemeDraftRules.AUTO_EXCLUDED.size)
         assertEquals(13, ThemeDraftRules.AUTO_EXCLUDED.count { it.startsWith("4국01") || it.startsWith("6국01") }) // 듣기·말하기 전부
+        assertTrue("4국02-06" in ThemeDraftRules.AUTO_EXCLUDED && "6수03-19" in ThemeDraftRules.AUTO_EXCLUDED)
         val semesters = StandardSemesters(
             mapOf("4국01-05" to setOf("3-1"), "4국02-01" to setOf("3-1"), "4국02-02" to setOf("3-1"),
                 "4수03-07" to setOf("3-1"), "4수01-01" to setOf("3-1")),

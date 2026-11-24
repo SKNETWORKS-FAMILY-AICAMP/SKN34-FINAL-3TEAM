@@ -14,7 +14,7 @@ import pytest
 from app.theme_draft import checks, prompts
 from app.theme_draft.nodes.plan import code_adjust
 from tests.theme_draft import fixtures
-from tests.theme_draft.fixtures import day_with, feature, generated_theme, valid_theme
+from tests.theme_draft.fixtures import NEXT, day_with, feature, generated_theme, valid_theme
 from tests.theme_draft.test_graph import fixes, gen_llm, review_llm, run
 
 
@@ -219,7 +219,8 @@ def test_graph_turns_unfixable_empty_hint_into_story_without_regenerating_plan(
     assert "사건 단서다" in user  # 사건 단서 고쳐 쓰기 규칙(fix_rules)
     assert response.theme is not None
     mon = response.theme.days[0]
-    assert (mon.clue, mon.rules_out, mon.clue_feature) == (story, [], None)
+    # #971: 응답 단서는 다음 행동 이름표(갈 곳) 뒤에 단서 문장
+    assert (mon.clue, mon.rules_out, mon.clue_feature) == (f"{NEXT['MON']}: {story}", [], None)
 
 
 def test_plan_prompt_forbids_empty_hint_and_clue_time() -> None:
@@ -235,7 +236,7 @@ def test_mission_hook_is_helper_line_by_way() -> None:
     """#782 미션 방식(사용자 결정 2026-11-20): 수사 연결 문장은 그날 돕는 사람의 부탁·증거를 같이
     보자는 말(전에는 늘 증거의 한 부분)."""
     plan = prompts.PLAN_SYSTEM
-    assert "helper가 하는 부탁·증거를 같이 보자는 말 한 줄" in plan
+    assert "이어 가기 날은 지문 글을 같이 읽어 보자는 말" in plan  # #971
     assert "찾은 증거에서 그날 단서 특징 값이 아닌 한 부분" not in plan
     assert (
         "형식은 '<찾은 증거>를 풀려면" not in plan
@@ -245,26 +246,29 @@ def test_mission_hook_is_helper_line_by_way() -> None:
     # #782 테마 짜임: 수사 연결 문장은 대화 재료라 정해진 말 꼴('같이 <활동>해 볼래?')을 두지 않음
     assert "그날 활동을 함께 말함" in rules and "같이 <활동>해 볼래?" not in rules
     assert "증거를 같이 읽고 따져 보자는 말" in rules  # 예전 저장본·수사 날
-    ask = day_with(valid_theme(), "THU", missionWay=checks.ASK)
+    ask = day_with(valid_theme(), "THU", missionWay=checks.FOLLOW)
     ask_rules = " ".join(prompts.fix_rules(ask, "THU.missionHook"))
-    assert "돕는 사람의 부탁 한 줄" in ask_rules and "무엇을 알려 줄지는 말하지" in ask_rules
+    assert "지문 글을 같이 읽어 보자는 말 한 줄" in ask_rules and "보답 약속" in ask_rules
     assert "풀려면 그날 배울 것이 필요하다" not in rules
     hook = prompts.hook_fix_user(valid_theme(), {"THU": ("문제", [])})
     assert "사실대로" in hook and "풀려면 오늘 문제의 활동이 필요하다" not in hook
 
 
 def test_mission_material_follows_way_and_story_link_checks_it() -> None:
-    """수사 날(예전 저장본 포함)은 돕는 사람이 가진 증거가 주 자료, 부탁 날은 그 사람의
-    일(사건 증거가 아니어도 됨)."""
+    """수사 날(예전 저장본 포함)은 돕는 사람이 가진 증거가 주 자료, 이어 가기 날은 그 주 사건
+    이야기 지문(#971 — 부탁 날 '돕는 사람의 일'은 사건과 무관했음)."""
     extra = prompts.mission_extra(valid_theme(), "TUE", 3, [])
     assert "오늘 미션 방식: 수사. 문제의 주 자료는 오늘 돕는 사람이 가진 증거" in extra
-    ask = prompts.mission_extra(day_with(valid_theme(), "TUE", missionWay=checks.ASK), "TUE", 3, [])
-    assert "오늘 미션 방식: 부탁. 문제는 오늘 돕는 사람(빵집 아저씨)의 일로 쓴다" in ask
-    assert "사건 증거인 척 지어내지 않는다" in ask and "오늘 찾은 증거" not in ask
+    ask = prompts.mission_extra(
+        day_with(valid_theme(), "TUE", missionWay=checks.FOLLOW), "TUE", 3, []
+    )
+    assert "오늘 미션 방식: 이어 가기. 문제의 주 자료는 '오늘 문제의 지문'(그 주 사건" in ask
+    assert "다른 사람의 일을 대신 해 주는 숙제로 만들지 않고" in ask and "오늘 찾은 증거" not in ask
     review = prompts.MISSION_REVIEW_SYSTEM
     assert "STORY_LINK: story가 주어지면 missionWay대로 본다" in review
     assert "증거가 아닌 장면의 물건·상황만 다루면 WARN" in review
-    assert "그 사람의 일이 사건 증거가 아니어도 됨" in review
+    assert "그 사람의 일이 사건 증거가 아니어도 됨" not in review
+    assert "다른 사람의 일을 대신 해 주는 숙제면 FAIL" in review
 
 
 def test_spot_line_points_to_what_to_look_at() -> None:
@@ -303,8 +307,8 @@ def test_material_is_internal_and_goes_to_mission_and_reviews() -> None:
     )
     rules = " ".join(prompts.fix_rules(theme, "FRI.missionMaterial"))
     assert "['흙']" in rules and "그때 찾는 대상·사건에 관한 내용으로" in rules
-    ask = day_with(theme, "FRI", missionWay=checks.ASK)
-    assert "사건 증거인 척 지어내지 않" in " ".join(prompts.fix_rules(ask, "FRI.missionMaterial"))
+    ask = day_with(theme, "FRI", missionWay=checks.FOLLOW)
+    assert "그 주 사건 이야기 글" in " ".join(prompts.fix_rules(ask, "FRI.missionMaterial"))
 
 
 def test_old_theme_without_material_still_makes_mission() -> None:
@@ -319,9 +323,7 @@ def test_old_theme_without_material_still_makes_mission() -> None:
 
 def test_hook_names_the_part_but_not_the_answer() -> None:
     """수사 연결 문장이 고르기 문제의 답 자료를 미리 말해 글 검토 ANSWER_HINT(실측 auto5b)."""
-    assert "그 안에서 학생이 고르거나 답할 것(계산 결과, 중심 생각, 고를 자료)은 말하지 않는다" in (
-        prompts.PLAN_SYSTEM
-    )
+    assert "학생이 답할 것(계산 결과, 중심 생각)은 말하지 않는다" in (prompts.PLAN_SYSTEM)
 
 
 # ---------------------------------------------------------------- 미션이 지문을 그대로 쓰는지(코드

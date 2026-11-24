@@ -320,9 +320,10 @@ ClueType = Literal[
     "크기",
 ]
 ReviewVerdict = Literal["PASS", "WARN", "FAIL"]
-# #782 설계 v13: HELPER_FIT(부탁 날 돕는 사람의 일·아이 답의 쓰임, 측정 판정 억지 연결과 같은 말)
+# #971: NEXT_FIT(이어 가기 날 지문이 사건 이야기·답이 다음 행동을 정함·단서가 그곳에서 나옴, 측정
+# 판정과 같은 말). #782 v13 HELPER_FIT(부탁 날 돕는 사람의 일) 자리
 StoryReviewId = Literal[
-    "CLUE_LOGIC", "ANSWER_HINT", "GRADE_VOCAB", "STANDARD_FIT", "HELPER_FIT", "SAFETY"
+    "CLUE_LOGIC", "ANSWER_HINT", "GRADE_VOCAB", "STANDARD_FIT", "NEXT_FIT", "SAFETY"
 ]
 MissionReviewId = Literal["EXAMPLE_COMPLETE", "STANDARD_FIT", "MATERIAL", "STORY_LINK"]
 
@@ -388,13 +389,17 @@ class GeneratedDay(BaseModel):
     # 결과는 말하지 않음, 사용자 결정 2026-11-19 "어제 한 일만 잇기"). 기본값은 예전 저장본(부분
     # 다시 생성 재료)용이고 LLM 스키마는 필수, 새 줄거리는 check_theme이 REQUIRED로 봄
     dayStep: str = ""
-    # 그날 돕는 사람 호칭(내부 칸, #782 테마 짜임 사용자 결정 2026-11-20 "부탁을 들어주면 알려 줌",
-    # 기준안). 미션 방식(missionWay)은 코드가 정해 넣음(LLM 스키마 밖). 기본값은 예전 저장본용
+    # 그날 장소 사람 호칭(내부 칸, #782 테마 짜임, 기준안). 이어 가기 날은 그날 지문 글을 가진·
+    # 건네는 사람(#971). 미션 방식(missionWay)·다음 행동 종류(nextKind)는 코드가 정해
+    # 넣음(LLM 스키마 밖). 기본값은 예전 저장본용
     helper: str = ""
-    # #782 설계 v10: 국어 부탁 날 아이 답이 돕는 사람 일에 쓰이는 곳(내부 칸, 예: '책 추천 카드에
-    # 붙일게', 40자 기준안). 일 → 사람 → 쓰임 → 장소 순서로 모델이 정하고 USE_MISSING이 이 칸에서
-    # 쓰임 낱말을 뽑음. 그 밖의 날은 빈 값, 기본값은 예전 저장본용(dayFrames 쓰임으로 봄)
+    # #782 v10 부탁 날 아이 답의 쓰임 자리(내부 칸). #971 아침 재설계부터 쓰지 않음(쓴 글은 지문 속
+    # 다음 행동에게 감) — 예전 저장본용으로 칸만 둠
     helperUse: str = ""
+    # #971: 이어 가기 날 지문 속 사건에 나오는 다음 행동 — 갈 곳(그날 장소 안·곁의 자리)·만날 사람
+    # (그때 그 자리에 있던 사람)·쓴 글을 받을 사람(내부 칸, 12자 기준안). 단서는 거기서 나오고 학생
+    # 응답 단서 앞에 이름표로 붙음(checks.labeled_clue). 수사 날은 빈 값, 기본값은 예전 저장본용
+    nextTarget: str = ""
     # 그날 미션 지문이 될 증거 내용(내부 칸, #782): 수사 연결 문장이 가리킨 증거의 그 부분을 줄거리
     # 단계에서 그때 사건에 관한 내용으로 써 두고 미션이 그대로 씀(미션 단계가 지어내면 사건과 무관한
     # 글로 빠졌음)
@@ -522,28 +527,23 @@ class StoryReviewItem(BaseModel):
     verdict: ReviewVerdict
     days: list[Day]
     reason: str
-    # #782 설계 v12: CLUE_LOGIC 중 돕는 사람의 약속 줄만 틀린 요일(단서는 맞음). 그 요일 대화만 다시
-    # 만든다(9차 글 검토 실패 50 중 27이 약속 줄인데 단서를 고치고 줄거리를 다시 만듦). 응답
-    # warnings 모양은 그대로(id·days·reason만 씀). 검토 모델은 늘 채우고(strict), 시험 대역은
-    # 비워도 됨
-    promiseDays: list[Day] = []
 
 
 class GeneratedStoryReview(BaseModel):
     items: list[StoryReviewItem]
 
 
-class HelperVerdict(BaseModel):
-    """돕는 사람 판정(#782 설계 v13 가): 부탁 날 하나의 자연/억지와 근거 한 문장(측정 판정과
-    같은 말)."""
+class FollowVerdict(BaseModel):
+    """이어 가기 판정(#971): 이어 가기 날 하나의 자연/억지와 근거 한 문장. 그래프 밖 측정
+    판정(저장소 밖 judge_follow.py)이 씀 — 그래프 안에서는 글 검토 NEXT_FIT이 같은 기준으로 봄."""
 
     day: Day
     flow: Literal["NATURAL", "FORCED"]
     reason: str
 
 
-class GeneratedHelperJudge(BaseModel):
-    items: list[HelperVerdict]
+class GeneratedFollowJudge(BaseModel):
+    items: list[FollowVerdict]
 
 
 class MissionReviewItem(BaseModel):

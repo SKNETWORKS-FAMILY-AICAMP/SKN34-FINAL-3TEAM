@@ -25,7 +25,7 @@ def codes(theme: dict[str, Any]) -> list[str]:
 
 def ask(theme: dict[str, Any], day: str, **fields: Any) -> dict[str, Any]:
     theme = copy.deepcopy(theme)
-    checks.theme_day(theme, day).update(missionWay=checks.ASK, **fields)
+    checks.theme_day(theme, day).update(missionWay=checks.FOLLOW, **fields)
     return theme
 
 

@@ -5,7 +5,6 @@
 칸 때문에 다시 만들지 않게 한다.
 """
 
-import copy
 import json
 from typing import Any
 
@@ -188,25 +187,14 @@ def test_long_request_and_promise_line_is_split() -> None:
     assert checks.split_long_lines(full, GRADE) == full  # 줄 수 상한을 넘으면 나누지 않음
 
 
-def test_promise_matches_sense() -> None:
-    theme = copy.deepcopy(valid_theme())
-    d = checks.theme_day(theme, "MON")
-    d["condition"] = {**d["condition"], "feature": "들린 소리"}
-    d["evidence"] = {"kind": "SIGHTING", "when": "그때"}
-    # #782 설계 v9: '그때 들은 걸'은 전해 들은 말로 읽혀 '내가 들은 소리를'
-    assert prompts.ask_promise(theme, d) == "도와주면 그때 내가 들은 소리를 알려 줄게"
-    assert not checks.ask_promise_missing(
-        {**d, "missionWay": checks.ASK, "helper": "관리인"},
-        [{"speaker": "관리인", "text": "도와주면 그때 내가 들은 소리를 알려 줄게."}],
-    )
-
-
 # ---------------------------------------------------------------- J. 손에 든 것 예시
 def test_in_hand_examples_do_not_say_helper_kept_it() -> None:
     for t in (families.ORIGIN, families.GIFT, families.ROUTE):
         assert "맡아 두며" not in t.rules and "맡아 둔 사람" not in t.rules, t.code
     assert checks.KEPT_SELF.search("내가 맡아 두며 보니 상자에 꽃가루가 묻어 있었어!")
-    theme = day_with(gift_theme(), "MON", missionWay=checks.ASK, clue="상자 안쪽에서 꽃향이 났어!")
+    theme = day_with(
+        gift_theme(), "MON", missionWay=checks.FOLLOW, clue="상자 안쪽에서 꽃향이 났어!"
+    )
     checks.normalize_clue_source(theme)
     assert "맡아 보니" in checks.theme_day(theme, "MON")["clue"]
 

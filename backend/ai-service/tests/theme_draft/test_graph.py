@@ -24,7 +24,6 @@ from app.theme_draft.models import (
     GeneratedDialogue,
     GeneratedExampleFix,
     GeneratedFixes,
-    GeneratedHelperJudge,
     GeneratedHookFixes,
     GeneratedLine,
     GeneratedMissionReview,
@@ -40,10 +39,10 @@ from tests.theme_draft.fixtures import (
     HELPER,
     HOOK,
     MATERIAL,
+    NEXT,
     day_with,
     dialogue,
     generated_theme,
-    helper_judge,
     mission_draft,
     mission_review,
     story_review,
@@ -112,31 +111,27 @@ def gen_llm(
     return ScriptedLlm("gen-model", handlers)
 
 
-def review_llm(
-    story: Handler | None = None, mission: Handler | None = None, helper: Handler | None = None
-) -> ScriptedLlm:
+def review_llm(story: Handler | None = None, mission: Handler | None = None) -> ScriptedLlm:
     return ScriptedLlm(
         "review-model",
         {
             GeneratedStoryReview: story or (lambda n, d: story_review()),
             GeneratedMissionReview: mission or (lambda n, d: mission_review()),
-            # #782 설계 v13 가: 돕는 사람 판정(기본은 모두 자연스러움)
-            GeneratedHelperJudge: helper or (lambda n, d: helper_judge()),
         },
     )
 
 
-HOOK_LABEL = "오늘 할 일(③ 재료, 부탁·증거를 같이 보자는 말): "
+HOOK_LABEL = "오늘 할 일(마지막 줄 재료, 지문·증거를 같이 보자는 말): "
 FOUND_LABEL = "오늘 찾은 증거(② 재료, 이 증거 그대로): "
 
 
 # 기본 요청(request_body)의 미션 방식 배정(prompts.mission_ways_for, 같은 씨앗이면 같음)
 WAYS = {
-    "MON": checks.ASK,
+    "MON": checks.FOLLOW,
     "TUE": checks.INVESTIGATE,
-    "WED": checks.ASK,
-    "THU": checks.ASK,
-    "FRI": checks.ASK,
+    "WED": checks.FOLLOW,
+    "THU": checks.FOLLOW,
+    "FRI": checks.FOLLOW,
 }
 
 
@@ -410,7 +405,11 @@ def test_mission_review_fail_until_cap_is_mission_failure() -> None:
     assert review.count("GeneratedStoryReview") == 0
 
 
-FIXED_EXAMPLE = "처음에는 혼자 했지만 지금은 친구와 나누어 해. 까닭은 함께하면 빠르기 때문이야."
+# #971 EXAMPLE_NEXT: 고쳐 쓴 예시 답에도 다음 행동 낱말(공터·나비·산책)
+FIXED_EXAMPLE = (
+    "처음에는 공터에서 혼자 했지만 지금은 나비 쫓던 친구와 나누어 해. 산책 손님 말처럼 함께하면 "
+    "빠르기 때문이야."
+)
 
 
 def example_fix(n: int, d: str | None) -> GeneratedExampleFix:
@@ -543,7 +542,9 @@ def test_story_review_clue_logic_fixes_clue_only() -> None:
     user = gen.users("GeneratedFixes")[0]
     assert "path: MON.clue" in user and "CLUE_LOGIC ['MON'] CLUE_LOGIC 사유" in user
     assert response.theme is not None
-    assert next(d for d in response.theme.days if d.day == "MON").clue == MON_CLUE + "!"
+    # #971: 이어 가기 날 응답 단서는 다음 행동 이름표가 붙음
+    mon = next(d for d in response.theme.days if d.day == "MON")
+    assert mon.clue == f"{NEXT['MON']}: {MON_CLUE}!"
 
 
 def test_story_review_clue_logic_again_regenerates_plan() -> None:
@@ -793,9 +794,11 @@ def test_evidence_kind_off_plan_rewrites_that_day_only() -> None:
     assert "증거 종류가 배정과 다름(배정 기록 RECORD, 지금 SIGHTING)" in user
     assert "기록 매체 '일지' 낱말을 그대로 쓴다" in user and "기록(RECORD) 증거" in user
     # #782 설계 v4: 부탁 날 기록 단서가 매체 낱말로 시작하면 코드가 '내 '를 붙임(돕는 사람의 기록)
-    assert response.theme is not None and response.theme.days[4].clue == f"내 {fri['clue']}"
+    # #971: 응답 단서는 다음 행동 이름표 + 그 사람의 말
+    assert response.theme is not None
+    assert response.theme.days[4].clue == f"{NEXT['FRI']}: 내 {fri['clue']}"
     # 금요일은 부탁 날이라 대화 재료에 증거 발견 줄이 없고 수사 연결 문장만
-    assert WAYS["FRI"] == checks.ASK and given(gen, "FRI", HOOK_LABEL) == HOOK["FRI"]
+    assert WAYS["FRI"] == checks.FOLLOW and given(gen, "FRI", HOOK_LABEL) == HOOK["FRI"]
 
 
 def test_mission_prompt_and_review_tie_problem_to_story() -> None:
@@ -835,9 +838,10 @@ def test_mission_prompt_and_review_tie_problem_to_story() -> None:
         "discovery": DISCOVERY["THU"],
         "missionHook": HOOK["THU"],
         "missionMaterial": MATERIAL["THU"],  # #782 줄거리가 정한 미션 지문
-        # #782 미션 방식(기본 요청 배정 목요일 부탁)과 그날 돕는 사람
-        "missionWay": "부탁(ASK)",
+        # #782 미션 방식·#971(기본 요청 배정 목요일 이어 가기·갈 곳)과 그날 장소 사람
+        "missionWay": "이어 가기(FOLLOW)",
         "helper": HELPER["THU"],
+        "nextTarget": f"갈 곳: {NEXT['THU']}",
     }
     assert "텃밭" not in thu  # 정답·단서는 주지 않음
 
@@ -883,7 +887,7 @@ def test_story_link_fail_rewrites_hook_then_rechecks() -> None:
     assert given(gen, "THU", HOOK_LABEL) == NEW_HOOK
     assert (
         response.theme is not None
-        and response.theme.days[3].clue == valid_theme()["days"][3]["clue"]
+        and response.theme.days[3].clue == f"{NEXT['THU']}: {valid_theme()['days'][3]['clue']}"
     )
 
 

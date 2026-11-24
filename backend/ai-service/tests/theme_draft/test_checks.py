@@ -818,7 +818,7 @@ def test_hook_problems_catch_answer_example_and_clue_conclusion() -> None:
     assert checks.hook_problems(theme, "FRI", HOOK["FRI"], draft_of("ANALYZE"), overlap) == []
     early = checks.hook_problems(theme, "FRI", "흙 자국을 풀려면 도와줄래?", draft_of(), overlap)
     assert early == ["CLUE_EARLY 그날 단서 결론(허용 값 ['흙'])"]
-    example = "미끄러웠으니 천천히 걸어야 해. 도와줄래?"  # 예시 답과 12자 넘게 겹침
+    example = "나비를 쫓았으니, 산책 손님도 봤을 거야. 도와줄래?"  # 예시 답과 12자 넘게 겹침
     assert checks.hook_problems(theme, "FRI", example, draft_of(), overlap) == [
         "LEAK EXAMPLE_ANSWER"
     ]

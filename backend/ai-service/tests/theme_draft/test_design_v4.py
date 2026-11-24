@@ -13,7 +13,7 @@ import copy
 from typing import Any
 
 from app.theme_draft import checks, families, prompts
-from tests.theme_draft.fixtures import day_with, dialogue, generated_theme, valid_theme
+from tests.theme_draft.fixtures import NEXT, day_with, dialogue, generated_theme, valid_theme
 from tests.theme_draft.test_families_sound import sound_theme
 from tests.theme_draft.test_graph import fixes, gen_llm, review_llm, run
 
@@ -22,7 +22,7 @@ GRADE = 3
 
 def ask(theme: dict[str, Any], day: str, **fields: Any) -> dict[str, Any]:
     theme = copy.deepcopy(theme)
-    checks.theme_day(theme, day).update(missionWay=checks.ASK, **fields)
+    checks.theme_day(theme, day).update(missionWay=checks.FOLLOW, **fields)
     return theme
 
 
@@ -50,7 +50,7 @@ def test_normalize_fixes_hearsay_record_owner_and_trace_link() -> None:
 
 
 def test_normalize_trace_sense_says_how_it_was_known() -> None:
-    d = {"day": "FRI", "missionWay": checks.ASK, "evidence": {"kind": "TRACE"}, "clue": ""}
+    d = {"day": "FRI", "missionWay": checks.FOLLOW, "evidence": {"kind": "TRACE"}, "clue": ""}
     theme = {"storyType": "GIFT", "days": [d]}
     for clue, lead in (
         ("상자에서 흙 소리가 났어!", "내가 흔들어 보니 "),
@@ -75,7 +75,7 @@ def test_clue_source_catches_others_record_and_seen_sound() -> None:
     )
     sound = {
         "day": "FRI",
-        "missionWay": checks.ASK,
+        "missionWay": checks.FOLLOW,
         "evidence": {"kind": "TRACE"},
         "clue": "내가 본 상자 흔적은 흔들면 흙 소리가 난다는 거야!",
     }
@@ -185,7 +185,8 @@ def test_graph_second_fix_uses_template_when_normalize_cannot() -> None:
     assert gen.count("GeneratedFixes") == 1 and gen.count("GeneratedTheme") == 1
     assert response.theme is not None
     fri = response.theme.days[4].clue
-    assert fri.startswith("내 일지에") and "'흙'" in fri
+    # #971: 응답 단서는 다음 행동 이름표('산책 손님: ') 뒤에 그 사람의 말
+    assert fri.startswith(f"{NEXT['FRI']}: 내 일지에") and "'흙'" in fri
 
 
 def test_graph_dialogue_with_five_model_lines_keeps_the_day() -> None:

@@ -13,15 +13,13 @@
 """
 
 import copy
-import random
 from typing import Any
 
 from app.mission_draft.models import Draft
 from app.theme_draft import checks, families, prompts
 from app.theme_draft.models import ThemeDraftRequest
-from tests.theme_draft.fixtures import day_with, generated_theme, mission_draft, valid_theme
+from tests.theme_draft.fixtures import NEXT, day_with, generated_theme, mission_draft, valid_theme
 from tests.theme_draft.helpers import request_body
-from tests.theme_draft.test_checks import mission_inputs
 from tests.theme_draft.test_graph import fixes, gen_llm, review_llm, run
 
 GRADE = 3
@@ -33,7 +31,7 @@ def codes(theme: dict[str, Any]) -> list[str]:
 
 def ask(theme: dict[str, Any], day: str, **fields: Any) -> dict[str, Any]:
     theme = copy.deepcopy(theme)
-    checks.theme_day(theme, day).update(missionWay=checks.ASK, **fields)
+    checks.theme_day(theme, day).update(missionWay=checks.FOLLOW, **fields)
     return theme
 
 
@@ -144,7 +142,7 @@ def test_clue_template_passes_clue_checks() -> None:
 def test_clue_template_for_shop_day_says_buying() -> None:
     d = {
         "day": "TUE",
-        "missionWay": checks.ASK,
+        "missionWay": checks.FOLLOW,
         "evidence": {"kind": "SIGHTING"},
         "condition": {"kind": "RULE", "feature": "선물을 산 가게", "allowed": ["서점"]},
     }
@@ -166,7 +164,8 @@ def test_second_fix_uses_template_instead_of_asking_again() -> None:
     # #782 설계 v4: 전해 들은 말 끝은 코드가 먼저 직접 말로 다듬어 고쳐 쓰기 없이 통과
     assert gen.count("GeneratedFixes") == 0
     assert response.theme is not None
-    assert response.theme.days[2].clue == "보리는 지붕이 없는 곳으로 갔어."
+    # #971: 응답 단서는 다음 행동 이름표 뒤에 그 사람의 말
+    assert response.theme.days[2].clue == f"{NEXT['WED']}: 보리는 지붕이 없는 곳으로 갔어."
 
 
 # ---------------------------------------------------------------- 오늘 온 까닭
@@ -230,57 +229,6 @@ def korean_request() -> ThemeDraftRequest:
         code, statement = KOREAN[m["thinkingType"]]
         m["standards"] = [{"code": code, "statement": statement}]
     return ThemeDraftRequest.model_validate(body)
-
-
-def test_day_frames_give_roles_only_on_korean_ask_days() -> None:
-    req = korean_request()
-    ways = prompts.mission_ways_for(req)
-    frames = prompts.day_frames_for(req)
-    assert frames == prompts.day_frames_for(req)  # 같은 씨앗이면 같음
-    for day, frame in frames.items():
-        korean = frame["codes"][0][1] == "국"
-        assert bool(frame.get("roles")) == (korean and ways[day] == checks.ASK), (day, frame)
-    roles = [r for f in frames.values() for r in f.get("roles") or []]
-    assert len(roles) == len(set(roles))  # 같은 호칭이 두 요일에 나오지 않음
-    # #782 설계 v9: 돌아보기 날도 그날 성취기준 영역의 일 틀
-    fri_area = checks.frame_area(frames["FRI"]["codes"], "REFLECT")
-    assert fri_area and frames["FRI"].get("use") == checks.HELPER_FRAMES[fri_area][1]
-    plan = prompts.plan_user(req, [])
-    # #782 설계 v10: 호칭 배정 대신 그날 성취기준의 일 종류
-    assert "국어 부탁 날 그날 성취기준의 일" in plan
-    # 그래프 성취기준 날은 글로 나타내기·해석하기
-    theme = valid_theme()
-    theme["dayFrames"] = frames
-    assert "그래프 성취기준이다" in prompts.story_text(theme, "THU", GRADE)
-    assert "그래프 성취기준이다" not in prompts.story_text(theme, "MON", GRADE)
-
-
-def test_helper_must_be_an_assigned_role_and_question_says_the_use() -> None:
-    theme = ask(valid_theme(), "MON")
-    theme["dayFrames"] = checks.day_frames(
-        [("MON", ["4국05-02"], "ANALYZE")], {"MON": checks.ASK}, random.Random(0)
-    )
-    # #782 설계 v10: 배정 호칭 검사는 뺌(그날 성취기준의 일을 하는 사람을 모델이 정함)
-    assert not checks.helper_problems(theme)
-    assert any(
-        "그날 성취기준의 일" in r
-        for r in prompts.fix_rules(ask(theme, "MON", helper="엉뚱한 사람"), "MON.helper")
-    )
-    # 미션 질문에 아이 답의 쓰임
-    request = mission_inputs("ANALYZE")
-    draft = Draft.model_validate(mission_draft("ANALYZE").model_dump())
-    use_bad = [
-        r
-        for r in checks.check_mission(theme, request, draft, GRADE, {GRADE: 600}, 10)
-        if r.startswith("USE_MISSING")
-    ]
-    assert use_bad
-    draft.question += " 네 감상은 작품 소개판에 붙을 거야."
-    assert not [
-        r
-        for r in checks.check_mission(theme, request, draft, GRADE, {GRADE: 600}, 10)
-        if r.startswith("USE_MISSING")
-    ]
 
 
 # ---------------------------------------------------------------- 주인공이 이미 아는 것

@@ -19,7 +19,6 @@ from app.mission_draft.prompts import GeneratedAnswerKey, GeneratedDraft, Genera
 from app.theme_draft.checks import REVIEW_IDS
 from app.theme_draft.models import (
     GeneratedDialogue,
-    GeneratedHelperJudge,
     GeneratedLine,
     GeneratedMissionReview,
     GeneratedStoryReview,
@@ -53,7 +52,7 @@ HOOK = {
 # 이름은 없음
 MATERIAL = {
     "MON": "지호의 일지: 보리는 비가 그치자 공을 물고 마을 길로 달려 나갔다. 지호가 부르자 한 번 "
-    "돌아보고 다시 달렸다.",
+    "돌아보고 다시 달렸다. 빈 공터 쪽이었다.",
     "TUE": "이웃 할머니의 말: 보리가 꼬리를 흔들며 내 앞을 지나갔어. 조금 뒤에 지호가 보리를 "
     "부르며 따라왔지.",
     "WED": "본 아이의 말: 보리가 나비를 쫓아 길모퉁이를 돌았어. 나비가 날아가자 한참 냄새를 "
@@ -80,13 +79,23 @@ HELPER = {
     "FRI": "가게 주인",
 }
 TYPE_DAY = {t: d for d, t in DAY_TYPES.items()}
-# 그날 돕는 사람의 약속 줄(#782 설계 v10: 요일마다 다른 말, 기록 날은 자기 기록)
+# #971 다음 행동(내부 칸 nextTarget). 기본 요청 배정(월 갈 곳·수 만날 사람·목 갈 곳·금 만날 사람)
+# 그대로 줄거리에 넣어 둔다: 지문에 그 낱말이 있고(MATERIAL_NEXT) 오늘 온 까닭·할 일·대화에는
+# 없음(NEXT_EARLY), 등장인물·그날 장소 사람·후보·특징 값이 아님(NEXT_SOURCE). 수사 날(화)은 빈 칸
+NEXT = {
+    "MON": "빈 공터",
+    "TUE": "",
+    "WED": "나비 쫓던 아이",
+    "THU": "발자국 끝",
+    "FRI": "산책 손님",
+}
+# 그날 장소 사람이 지문 글을 꺼내는 줄(#971 이어 가기: 보답 약속 없음 — NEXT_PROMISE)
 PROMISE = {
-    "MON": "도와주면 그때 본 걸 알려 줄게.",
-    "TUE": "같이 봐 주면 내가 아는 것도 말해 줄게.",
-    "WED": "도와주면 그날 내가 본 걸 말해 줄게.",
-    "THU": "같이 해 주면 그때 본 것도 알려 줄게.",
-    "FRI": "도와주면 내 일지를 보여 줄게.",
+    "MON": "이 쪽지를 같이 읽어 볼래?",
+    "TUE": "아침에 쓴 내 글이 여기 있어.",
+    "WED": "이웃들이 남긴 말을 적어 뒀어.",
+    "THU": "가게 앞에서 잰 값을 적어 뒀단다.",
+    "FRI": "오늘 가게 일을 적은 글이야.",
 }
 
 
@@ -122,6 +131,7 @@ def day(
         "missionMaterial": MATERIAL[d],
         "dayStep": STEP[d],
         "helper": HELPER[d],
+        "nextTarget": NEXT[d],
     }
 
 
@@ -320,7 +330,10 @@ def mission_draft(thinking_type: str, hints: int = 3, **overrides: Any) -> Gener
         "answerKey": GeneratedAnswerKey(choiceIds=None, assignments=None, finalAnswer="579")
         if solve
         else None,
-        "exampleAnswer": None if solve else "길이 미끄러웠으니 천천히 걸어야 한다고 생각해.",
+        # #971 EXAMPLE_NEXT: 갈 곳·만날 사람 날 예시 답에 다음 행동 낱말(공터·나비·산책)
+        "exampleAnswer": None
+        if solve
+        else "보리는 공터로 달려가 나비를 쫓았으니, 산책 손님도 보리를 봤을 거야.",
         "forbiddenTerms": [],
         "hints": ["무엇을 보았는지 떠올려 볼까?", "왜 그렇게 생각했을까?", "다른 생각도 있을까?"][
             :hints
@@ -342,9 +355,7 @@ def mission_draft(thinking_type: str, hints: int = 3, **overrides: Any) -> Gener
 def dialogue(day: str | None = None, **overrides: Any) -> GeneratedDialogue:
     """미션 전 대화 4줄(모든 학년 4~5줄). 검사 시험은 이 4줄을 그대로 보고, 그래프에서는 코드가
     오늘 온 까닭을 주인공의 말로 앞에 붙여 5줄이 된다(#782 설계 v3). 요일을 주면 셋째 줄은 그날
-    돕는 사람의 약속(#782 미션 방식, 부탁 날 ASK_PROMISE — 다른 날에도 그대로 둠). #782 설계 v10:
-    요일마다 다른 말이고 금요일(기록 날)은 자기
-    일지(ASK_PROMISE 감각)."""
+    장소 사람이 지문 글을 꺼내는 말(#971 이어 가기, 보답 약속 없음)."""
     body: dict[str, Any] = {
         "lines": [
             # 첫날에도 쓰므로 '어제'를 쓰지 않음(#782 DAY1_TIME)
@@ -364,10 +375,8 @@ def dialogue(day: str | None = None, **overrides: Any) -> GeneratedDialogue:
 def story_review(
     verdicts: dict[str, str] | None = None,
     days: dict[str, list[str]] | None = None,
-    promise_days: list[str] | None = None,
 ) -> GeneratedStoryReview:
-    """promise_days: CLUE_LOGIC 중 약속 줄만 틀린 요일(#782 설계 v12)."""
-    ids = REVIEW_IDS  # #782 설계 v13: HELPER_FIT 포함
+    ids = REVIEW_IDS  # #971: NEXT_FIT 포함
     verdicts, days = verdicts or {}, days or {}
     return GeneratedStoryReview(
         items=[
@@ -376,27 +385,9 @@ def story_review(
                 verdict=verdicts.get(i, "PASS"),
                 days=days.get(i, []),  # type: ignore[arg-type]
                 reason=f"{i} 사유",
-                promiseDays=(promise_days or []) if i == "CLUE_LOGIC" else [],  # type: ignore[arg-type]
             )
             for i in ids
         ]
-    )
-
-
-def helper_judge(forced: dict[str, str] | None = None) -> GeneratedHelperJudge:
-    """돕는 사람 판정(#782 설계 v13 가). forced: {요일: 근거}만 FORCED, 나머지 요일은 NATURAL."""
-    forced = forced or {}
-    return GeneratedHelperJudge.model_validate(
-        {
-            "items": [
-                {
-                    "day": d,
-                    "flow": "FORCED" if d in forced else "NATURAL",
-                    "reason": forced.get(d) or "자연스러움",
-                }
-                for d in ("MON", "TUE", "WED", "THU", "FRI")
-            ]
-        }
     )
 
 

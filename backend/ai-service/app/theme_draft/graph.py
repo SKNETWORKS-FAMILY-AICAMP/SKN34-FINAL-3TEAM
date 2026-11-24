@@ -7,11 +7,11 @@ START → retrieve(#470 자리) → plan_theme → check_theme
                (요일마다 미션이 통과하면 그 요일 수사 연결 문장을 문제 소재에 맞게 고쳐 씀, #535)
 → missions_done(고친 수사 연결 문장을 테마에 넣음): 실패 요일 → END(failure MISSION)
   / 통과 → generate_dialogue ×5 (Send)
-→ review_story: 끝내 FAIL → END / 형식 오류 → review_story
-                / 약속 줄만 틀림(#782 설계 v12) → generate_dialogue(그 요일만) → review_story
+→ review_story: 이어 가기 날 NEXT_FIT FAIL(#971, 요일마다 한 번) → fix_follow(그 요일 지문·다음
+                  행동 칸) → generate_mission(그 요일)
+                / 끝내 FAIL → END / 형식 오류 → review_story
                 / 단서 논리만(처음 한 번) → fix_clues(그 요일 단서만 고쳐 씀) → review_story
-                  (고친 단서가 코드 검사에 걸리면 plan_theme, 약속 감각이 바뀌어 약속이 틀린
-                  요일은 generate_dialogue → review_story)
+                  (고친 단서가 코드 검사에 걸리면 plan_theme)
                 / 이야기 틀·단서 → plan_theme / 문제·낱말 → generate_mission(그 요일)
                 / PASS → generate_images
 → generate_images(그림마다 검토 포함): 설정 없음·미션 그림 끝내 실패 → END / 통과 → generate_videos
@@ -38,7 +38,7 @@ from app.theme_draft.nodes.motion import generate_motion
 from app.theme_draft.nodes.plan import (
     check_theme_node,
     fix_clues,
-    fix_helpers,
+    fix_follow,
     fix_theme,
     plan_theme,
     retrieve,
@@ -107,33 +107,12 @@ def after_missions(state: ThemeState) -> list[Send] | str:
     ]
 
 
-def talk_sends(state: ThemeState) -> list[Send]:
-    """#782 설계 v12: 그 요일 대화만 다시(talk_seed 사유를 처음부터 넣음) → review_story."""
-    return [
-        Send(
-            "generate_dialogue",
-            {
-                "day": d,
-                "theme": state["theme"],
-                "draft": state["drafts"][d],
-                "seed": seed,
-                # #782 설계 v13: 같은 주 약속 다시 만들기는 원래 대화가 맞으므로 실패하면 그대로 둠
-                "keep": (state.get("dialogues") or {}).get(d) if state.get("talk_keep") else None,
-            },
-        )
-        for d, seed in (state.get("talk_seed") or {}).items()
-    ]
+def after_fix_clues(state: ThemeState) -> str:
+    return "plan_theme" if state.get("review_route") == "PLAN" else "review_story"
 
 
-def after_fix_clues(state: ThemeState) -> list[Send] | str:
-    if state.get("review_route") == "PLAN":
-        return "plan_theme"
-    return talk_sends(state) if state.get("talk_seed") else "review_story"
-
-
-def after_fix_helpers(state: ThemeState) -> list[Send] | str:
-    """#782 설계 v13: 돕는 사람·일 칸을 고친 요일 미션부터 다시(고친 칸이 검사에 걸리면
-    줄거리부터)."""
+def after_fix_follow(state: ThemeState) -> list[Send] | str:
+    """#971: 지문·다음 행동 칸을 고친 요일 미션부터 다시(고친 칸이 검사에 걸리면 줄거리부터)."""
     if state.get("review_route") == "PLAN":
         return "plan_theme"
     if state.get("review_route") == "REVIEW":  # 고쳐 쓰기 호출 실패 — 고치지 않고 글 검토로
@@ -149,10 +128,8 @@ def after_review(state: ThemeState) -> list[Send] | str:
         return "plan_theme"
     if route == "CLUE":
         return "fix_clues"
-    if route == "HELPER":
-        return "fix_helpers"
-    if route == "TALK":
-        return talk_sends(state)
+    if route == "FOLLOW":
+        return "fix_follow"
     if route == "DAYS":
         return mission_sends(state)
     if route == "PASS":
@@ -180,7 +157,7 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("generate_dialogue", generate_dialogue)
     graph.add_node("review_story", review_story)
     graph.add_node("fix_clues", fix_clues)
-    graph.add_node("fix_helpers", fix_helpers)
+    graph.add_node("fix_follow", fix_follow)
     graph.add_node("generate_images", generate_images)
     graph.add_node("generate_videos", generate_videos)
     graph.add_node("generate_motion", generate_motion)
@@ -204,19 +181,16 @@ def build_graph() -> CompiledStateGraph:
         [
             "review_story",
             "fix_clues",
-            "fix_helpers",
+            "fix_follow",
             "plan_theme",
             "generate_mission",
-            "generate_dialogue",
             "generate_images",
             END,
         ],
     )
+    graph.add_conditional_edges("fix_clues", after_fix_clues, ["plan_theme", "review_story"])
     graph.add_conditional_edges(
-        "fix_clues", after_fix_clues, ["plan_theme", "generate_dialogue", "review_story"]
-    )
-    graph.add_conditional_edges(
-        "fix_helpers", after_fix_helpers, ["plan_theme", "generate_mission", "review_story"]
+        "fix_follow", after_fix_follow, ["plan_theme", "generate_mission", "review_story"]
     )
     graph.add_conditional_edges("generate_images", after_images, ["generate_videos", END])
     graph.add_edge("generate_videos", "generate_motion")

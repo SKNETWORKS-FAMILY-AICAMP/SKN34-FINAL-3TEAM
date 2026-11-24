@@ -267,7 +267,7 @@ def test_example_answer_sentence_limit_by_grade_only_for_written_answers() -> No
 def test_long_example_is_fixed_alone_with_max_sentences() -> None:
     """예시 답이 길면 예시 답만 고쳐 쓰고(EXAMPLE_ONLY) 고쳐 쓰기 요청에 문장 수 상한을 줌."""
     long = "보리는 길을 따라 달려갔다. " * 6
-    short = "보리는 비가 그쳐 신나서 달려갔어."
+    short = "보리는 비가 그쳐 신나서 공터로 달려갔어."  # #971 EXAMPLE_NEXT: 다음 행동 낱말
 
     def draft(n: int, d: str | None) -> Any:
         if d == "MON":
