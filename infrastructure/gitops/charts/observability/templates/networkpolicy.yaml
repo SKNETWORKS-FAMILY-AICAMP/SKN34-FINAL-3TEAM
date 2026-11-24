@@ -121,7 +121,7 @@ spec:
       ports:
         - {protocol: TCP, port: 3200}
     {{- end }}
-    {{- if .Values.grafana.alerting.enabled }}
+    {{- if and .Values.grafana.alerting.enabled .Values.grafana.alerting.discordEnabled }}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -129,3 +129,21 @@ spec:
       ports:
         - {protocol: TCP, port: 443}
     {{- end }}
+
+{{- if .Values.prometheus.retrainJobMetrics.enabled }}
+---
+# kind uses host networking for kube-apiserver. Calico resolves the actual API
+# endpoint and port from its Service when the local Docker node address changes.
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: tox-retrain-state-api
+spec:
+  selector: app.kubernetes.io/name == 'prometheus'
+  order: 500
+  types: [Egress]
+  egress:
+    - action: Allow
+      destination:
+        services: {namespace: default, name: kubernetes}
+{{- end }}

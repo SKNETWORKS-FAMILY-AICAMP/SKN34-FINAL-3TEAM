@@ -108,6 +108,11 @@ data:
     global:
       scrape_interval: 15s
     scrape_configs:
+      {{- if .Values.prometheus.retrainJobMetrics.enabled }}
+      - job_name: tox-retrain-state
+        static_configs:
+          - targets: [127.0.0.1:8080]
+      {{- end }}
       - job_name: otel-collector
         static_configs:
           - targets: [otel-collector.observability.svc.cluster.local:8889]

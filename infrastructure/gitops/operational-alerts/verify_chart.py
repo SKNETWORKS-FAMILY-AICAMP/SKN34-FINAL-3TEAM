@@ -45,13 +45,17 @@ def main():
         # #984 enables dashboards in local/prod values; disable them on both sides
         # so baselines containing #984 are compared under the same conditions too.
         no_dashboards = ["--set", "grafana.dashboards.enabled=false"]
-        for extra in ([], ["-f", str(environments / "local/observability.yaml")], ["-f", str(base_prod)]):
+        local = ["-f", str(environments / "local/observability.yaml")]
+        # #730 enables a scrape and Grafana rules in kind only. Compare local with
+        # those features off, then check the actual enabled local values below.
+        local_compat = [*local, "--set", "prometheus.retrainJobMetrics.enabled=false,grafana.alerting.enabled=false"]
+        for extra in ([], local_compat, ["-f", str(base_prod)]):
             before = load(run(args.helm, "template", "observability", str(baseline), "--namespace", "observability", *extra, *no_dashboards))
             after = load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", *extra, *no_dashboards))
             # Source filenames can reorder resources, so compare by Kubernetes identity.
             assert identify(before) == identify(after), "Existing default/local/prod resources changed"
             run(args.helm, "lint", "--strict", str(chart), *extra)
-        print("PASS Helm default/local/baseline-prod resources identical to baseline " + base, flush=True)
+        print("PASS default, local compatibility and baseline-prod resources match " + base, flush=True)
         run(args.helm, "lint", "--strict", str(chart), "-f", str(prod))
         prod_rendered = identify(load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", "-f", str(prod))))
         assert "rabbitmq-dlq" in prod_rendered["ConfigMap", "prometheus-config"]["data"]["prometheus.yml"]
@@ -108,8 +112,20 @@ def main():
         print("PASS prod values enable Tempo and OTLP trace export for core, learning and report-worker", flush=True)
 
         # #984: local and prod provision the expression toxicity dashboard from the chart's dashboards/ folder.
-        local_rendered = identify(load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability",
-                                           "-f", str(environments / "local/observability.yaml"))))
+        run(args.helm, "lint", "--strict", str(chart), *local)
+        local_rendered = identify(load(run(args.helm, "template", "observability", str(chart), "--namespace", "observability", *local)))
+        local_scrape = yaml.safe_load(local_rendered["ConfigMap", "prometheus-config"]["data"]["prometheus.yml"])
+        retrain_scrape = next(job for job in local_scrape["scrape_configs"] if job["job_name"] == "tox-retrain-state")
+        assert retrain_scrape["static_configs"] == [{"targets": ["127.0.0.1:8080"]}]
+        role = local_rendered["Role", "tox-retrain-state"]
+        assert role["metadata"]["namespace"] == "app"
+        assert role["rules"] == [{"apiGroups": ["batch"], "resources": ["jobs", "cronjobs"], "verbs": ["list", "watch"]}]
+        local_alerts = yaml.safe_load(local_rendered["ConfigMap", "grafana-alerting"]["data"]["alerting.yaml"])
+        assert {"tox-retrain-failed", "tox-retrain-missed"} <= {rule["uid"] for group in local_alerts["groups"] for rule in group["rules"]}
+        assert not local_alerts.get("contactPoints") and not local_alerts.get("policies")
+        local_grafana = local_rendered["Deployment", "grafana"]["spec"]["template"]["spec"]["containers"][0]
+        assert "DISCORD_WEBHOOK_URL" not in {env["name"] for env in local_grafana["env"]}
+        print("PASS local retraining scrape, namespace-scoped read permissions and Grafana rules without Discord", flush=True)
         for rendered in (local_rendered, prod_rendered):
             data = rendered["ConfigMap", "grafana-dashboards"]["data"]
             provider = yaml.safe_load(data["provider.yaml"])["providers"][0]

@@ -86,7 +86,7 @@ ingress:
 networkPolicy:
   enabled: true
   namespaceDefaultDeny: true
-  ingressFromApps: [ai-service, scoring-service, learning-service, report-worker]
+  ingressFromApps: [ai-service, scoring-service, learning-service, report-worker, tox-retrain]
   ingressFromIngressController: true
   egressToApps:
     - {name: scoring-service, port: 8001}

@@ -2105,6 +2105,58 @@ CI와 같은 Linux 환경에서 Helm 4.3.1 lint 17조합과 환경별 렌더 25�
 
 최신 develop `35fa87d9`를 반영한 Linux 전체 계약 검사도 429개 실행, 실패 0개, 건너뜀 1개로 통과했다. 건너뜀은 원문 HWP 폴더가 필요한 기존 검사 하나다. 코드·설정 변경 범위를 다시 대조하고 `git diff --check`도 통과했다. 원격 PR CI 결과와 별도로 수행한 로컬 검증 결과다.
 
+## 9.25 로컬 kind 표현 분류 재학습 (#730)
+
+chart의 기본값은 `suspend: true`다. 로컬 kind values에서만 `suspend: false`를 지정해 예약 실행을 켠다.
+
+`app/tox-retrain`은 일요일 03:00(Asia/Seoul)에 실행된다. 같은 CronJob의 예약 실행은 겹치지 않으며 실패한 Pod는 재시도하지 않는다. 로컬 요청은 CPU 1개·메모리 2560Mi, 상한은 CPU 2개·메모리 3Gi이고 Job 기한은 40분이다. 이 값은 [#729의 CPU 실측](../../ml/tox/results/eval_tox.md)에 여유를 둔 로컬 설정이다.
+
+Job이 MinIO에서 지난 실행 기준을 읽고 learning에 새 라벨 수를 묻는다. 200건 미만이면 정상 종료한다. 200건 이상이면 임시 볼륨에서 학습하고, 모델을 MinIO에 올린 뒤 core에 후보로 등록하고 `last.json`을 갱신한다. 활성화는 운영자 승인 대상이다. Job에는 Kubernetes API 토큰을 마운트하지 않는다. Pod의 송신과 수신 측 정책은 DNS, learning, core, MinIO 통신을 허용한다.
+
+### 로컬 설치와 수동 실행
+
+1. [kind 설치 절차](../../infrastructure/kind/README.md)에 따라 Calico, platform 데이터 서비스, 앱을 준비한다. `app-service-credentials`에 서로 다른 내부 토큰과 MinIO 접속 키가 있어야 한다. learning·core는 `INTERNAL_TOKEN_OPS`를 읽고 Job은 같은 값을 `INTERNAL_TOKEN`으로 읽는다. 기존 Secret에 OPS 키를 처음 넣었다면 learning·core Pod를 새로 띄워 환경변수를 반영한다.
+2. local core·learning values와 [platform NetworkPolicy](../../infrastructure/gitops/policies/local/platform.yaml)를 함께 적용한다. 활성 `tox-` 모델과 비공개 MinIO 버킷의 공개 데이터 묶음은 [이미지 실행 전제](../../ml/tox/README.md)에 맞춰 준비한다.
+3. 저장소 루트에서 이미지를 빌드하고 대상 kind에 넣는다. 아래 명령은 기본 개발 클러스터 이름을 사용한다. 수동 실행 전 이미 실행 중인 재학습 Job이 있는지 확인한다. `Forbid`는 사람이 직접 만든 Job 사이의 중복을 막지 않는다.
+
+```powershell
+docker build -f ml/tox/Dockerfile -t sagomungchi/tox-retrain:local .
+kind load docker-image sagomungchi/tox-retrain:local --name sagomungchi-local
+helm upgrade --install tox-retrain infrastructure/gitops/charts/tox-retrain -n app --kube-context kind-sagomungchi-local -f infrastructure/gitops/environments/local/tox-retrain.yaml
+kubectl --context kind-sagomungchi-local -n app get jobs -l app.kubernetes.io/name=tox-retrain
+$job = 'tox-retrain-manual-' + (Get-Date -Format yyyyMMddHHmmss)
+kubectl --context kind-sagomungchi-local -n app create job $job --from=cronjob/tox-retrain
+kubectl --context kind-sagomungchi-local -n app logs -f job/$job
+kubectl --context kind-sagomungchi-local -n app get job $job
+```
+
+종료 코드 0은 학습 완료와 라벨 부족에 공통이다. 로그의 `skip reason=not_enough_labels`는 건너뜀을 뜻한다. 학습 성공은 `stage=register`·`stage=last_write` 완료와 모델 등록부의 새 `REGISTERED` 행으로 확인한다. 실행 중인 Pod에는 임시 자료가 있으며 완료된 Job의 로그는 Kubernetes의 이력 보관 범위에서 조회할 수 있다.
+
+로컬 observability release에 [local values](../../infrastructure/gitops/environments/local/observability.yaml)를 적용하면 Prometheus가 같은 Pod의 kube-state-metrics에서 `app`의 Job·CronJob 상태를 읽는다. Grafana에서 최근 24시간 내 생성된 재학습 Job의 최종 실패와 활성 스케줄의 5분 초과 지연을 확인한다. 예약 중단 시에는 일정 지연 경보를 제외한다. 로컬에서는 Discord로 발송하지 않는다.
+
+### 2026-11-23 격리 kind 실행 기록
+
+전용 `kind-skn730` 클러스터에 Calico, PostgreSQL, MinIO, 실제 core·learning·scoring 이미지를 배포했다. core DB는 V56, learning DB는 V27까지 적용했다. 입력은 학습용 합성 라벨 200건, 고정한 BEEP·APEACH 일부, 무작위 초기화한 소형 BERT였다. 200건 중 한 건을 보류한 뒤 첫 검증이 끝나고 추가했다.
+
+| 수동 Job | 결과 | 등록부·MinIO 대조 |
+|---|---|---|
+| `kind730-retrain-199` | 4초, 새 라벨 199건으로 건너뜀, 종료 코드 0 | 기존 활성 모델 1개, 후보 파일 0개, 진행 기록 없음 |
+| `kind730-retrain-200` | 12초, 학습·평가·업로드·등록, 종료 코드 0 | 후보 `tox-kind-fixture:20261123-1200` 1개가 `REGISTERED`·`NOT_RECOMMENDED`, 후보 파일 5개와 `last.json` 생성, 기존 활성 모델 유지 |
+
+재학습 Pod와 같은 라벨을 준 점검 Pod에서 DNS 조회와 core:8080·learning:8081·MinIO:9000 TCP 연결이 성공했다. PostgreSQL:5432·scoring:8001 직접 연결은 시간 초과였다. 검증용 소형 모델의 12초로 운영 모델의 학습 시간이나 EKS 적정 CPU를 산정할 수 없으며, 이번 실행의 최고 메모리는 측정하지 않았다.
+
+| 경보 시험 | 관측 결과 |
+|---|---|
+| 존재하지 않는 로컬 MinIO 버킷으로 수동 실행 | `last_read`에서 `NoSuchBucket`, 종료 코드 11. Job의 최종 실패 지표가 1이 되고 Grafana 실패 경보 발화 |
+| 배치할 수 없는 CPU 256개 요청, 시험 Job 기한 20초 | Pod가 `Pending / Insufficient cpu`에 머물다가 Job이 `DeadlineExceeded`로 실패. 컨테이너가 시작되지 않아도 Grafana 실패 경보 발화 |
+| 격리 클러스터의 마지막 예약 시각을 15일 전으로 설정해 일정 누락 모의 | 지연 경보 발화. `suspend: true`에서 해제됐고 시험 후 주간 일정과 상태를 복원 |
+
+kind API 서버는 호스트 네트워크를 사용한다. 지표 수집기의 API 접근은 Calico의 `default/kubernetes` Service 대상 송신 정책으로 확인했다. Prometheus에서 수집 대상이 `up=1`이었고 수집기 계정의 권한은 `app`의 Job·CronJob 조회로 제한했다.
+
+로컬에서 `ci-gitops`의 Helm·kubeconform 단계를 실행해 리소스 193개가 모두 유효했고 건너뜀은 0개였다. prod 관측 values로 렌더링한 Kubernetes 객체 21개를 변경 전과 대조했다. 원격 CI 및 Discord 수신은 이 로컬 검증에 포함하지 않았다.
+
+운영 노드 배치, AWS 권한, 비용과 Discord 수신은 11/28 B 첫 배포 안정화 뒤 검토한다. EKS 노드 여유와 실제 학습 데이터 사용 결정(#887)을 운영 활성화 전에 확인한다.
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
