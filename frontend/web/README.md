@@ -46,7 +46,7 @@ npm run dev:payment -- --port 5251
 - `domain/`: 답변 입력 틀, 마무리·완료 규칙, KST 기간, 주간 테마·리텐션 규칙. 교과 점수나 사고력 레벨을 만들지 않음
 - `data/`: Query 훅과 core 공개 API 어댑터. 컴포넌트가 HTTP를 직접 부르지 않음
 - `mocks/`: 개발 전용 worker·핸들러·typed fixture. 작성하지 않은 목 경로는 501로 명시
-- 인증: access는 메모리에만 두고 refresh는 httpOnly 쿠키(부모·관리자만). 쿠키 요청에 `X-Requested-With`, Web Locks로 탭 간 쿠키 회전 직렬화, BroadcastChannel로 역할 전환·로그아웃 전파. 학생은 access 전용이라 만료·새로고침 때 `/student/login`에서 PIN을 다시 입력
+- 인증: 부모·관리자 access는 메모리, refresh는 httpOnly 쿠키(기본 access 15분·최초 로그인부터 최대 7일). 학생 access는 탭 sessionStorage에 저장해 새로고침·복제 시 유지한다. 실제 pointerdown·keydown 조작 때 학생 renew API를 최소 60초 간격으로 호출하며 자동 조회는 미사용 시간을 연장하지 않는다. 학생은 기본 미사용 30분, 총 시간 상한 없음. 같은 세션의 복제 탭에 갱신 토큰·로그아웃을 전파한다. 탭 종료만으로 서버 즉시 로그아웃을 보장하지 않고, 다음 요청에서 서버가 만료·폐기를 판단한다. 저장소 제한 시 메모리로 동작하므로 새로고침 후 PIN이 필요하다. 쿠키 요청은 `X-Requested-With`·Web Locks를 사용한다.
 
 ## 검증
 

@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: 사고뭉치 core-service 인증·동의·자녀·관리자 API
   version: 1.0.0
-  description: 'core 인증·동의·자녀·리포트·관리자 및 #58 학생 기기/PIN API. access는 메모리, refresh는 부모·관리자 전용 보안 쿠키. 학생 기기 API는 기기 쿠키와 PIN을 검증하고 부모 세션을 변경하지 않는다.'
+  description: 'core 인증·동의·자녀·리포트·관리자 및 #58 학생 기기/PIN API. 부모·관리자 access는 메모리, 학생 access는 탭 sessionStorage, refresh는 부모·관리자 전용 보안 쿠키. 학생 기기 API는 기기 쿠키와 PIN을 검증하고 부모 세션을 변경하지 않는다.'
 servers:
 - url: /api/v1
   description: web과 동일 origin의 core 공개 API
@@ -5184,6 +5184,37 @@ paths:
               description: HttpOnly 쿠키. 성공 콜백은 OAuth 상태 쿠키 삭제와 refresh 설정의 복수 Set-Cookie를 반환한다. 로그아웃은 refresh 쿠키를 만료시킨다. 학생 전환(/auth/student-sessions)은 잠긴 부모 refresh 쿠키를 지우지 않는다(V24).
               schema:
                 type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /auth/student/renew:
+    post:
+      operationId: renewStudentSession
+      tags: [Auth]
+      summary: 유효한 학생 세션의 미사용 허용 시간 연장
+      description: 미폐기·미만료 학생 Bearer만 허용한다. 기본 30분으로 세션 만료를 연장하며 총 시간 상한은 없다. PIN 기기는 현재 등록 상태도 검사한다. 보호자 refresh 쿠키는 사용하지 않는다.
+      security:
+      - BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/WebOrigin'
+      - $ref: '#/components/parameters/RequestedWith'
+      responses:
+        '200':
+          description: 갱신된 학생 토큰. Set-Cookie 없음.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken, expiresIn]
+                properties:
+                  accessToken: {type: string}
+                  expiresIn: {type: integer, format: int64, example: 1800}
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
         '503':
@@ -13154,11 +13185,11 @@ components:
       properties:
         accessToken:
           type: string
-          description: HS256 access JWT. 메모리 보관하며 URL·영구 저장소에 넣지 않는다.
+          description: HS256 access JWT. 탭 sessionStorage에 보관하며 URL·localStorage에 넣지 않는다.
         expiresIn:
           type: integer
           minimum: 1
-          description: 설정된 access TTL(초), 초기 기본 900초.
+          description: 설정된 미사용 허용 시간(초), 기본 1800초.
         role:
           type: string
           const: STUDENT

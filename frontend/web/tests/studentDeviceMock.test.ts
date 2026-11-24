@@ -104,6 +104,10 @@ test('페어링 코드 1회용 → 기기 등록 → 프로필 → 5회 실패 �
   // 학생 토큰으로 학생 홈은 열리고, refresh는 발급하지 않는다
   assert.equal((await call('/students/me/home', { token: ok.body.accessToken })).status, 200)
   assert.equal((await call('/auth/refresh', { method: 'POST' })).status, 401)
+  const renewed = await call('/auth/student/renew', { method: 'POST', token: ok.body.accessToken })
+  assert.equal(renewed.status, 200)
+  assert.equal(renewed.body.expiresIn, 1800)
+  assert.equal((await call('/students/me/home', { token: renewed.body.accessToken })).status, 200)
 })
 
 test('해제·만료 기기는 PIN이 맞아도 거부, 기기 목록에서 해제 반영', async () => {

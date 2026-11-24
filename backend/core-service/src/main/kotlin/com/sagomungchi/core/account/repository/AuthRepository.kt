@@ -19,6 +19,7 @@ class AuthRepository(private val mapper: AuthMapper) {
     fun insertSession(session: AuthSession) { check(mapper.insertSession(session) == 1) }
     fun session(id: UUID, lock: Boolean = false) = mapper.findSession(id, lock)
     fun updateSession(session: AuthSession) { check(mapper.updateSession(session) == 1) }
+    fun renewStudent(id: UUID, now: OffsetDateTime, expiresAt: OffsetDateTime) = mapper.renewStudent(id, now, expiresAt)
     fun insertRefresh(token: RefreshToken) { check(mapper.insertRefresh(token) == 1) }
     fun refresh(hash: String) = mapper.findRefresh(hash)
     fun consume(id: UUID, now: OffsetDateTime) = mapper.consumeRefresh(id, now)

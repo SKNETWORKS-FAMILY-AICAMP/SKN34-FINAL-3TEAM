@@ -942,18 +942,18 @@ If-Match: "7"
 // 요청 (Cookie: student_device=...)
 { "childId": "c1...", "pin": "4831" }
 // 200
-{ "accessToken": "...", "expiresIn": 900, "role": "STUDENT", "child": { "childId": "c1...", "nickname": "별빛", "grade": 3, "birthYear": 2017 } }
+{ "accessToken": "...", "expiresIn": 1800, "role": "STUDENT", "child": { "childId": "c1...", "nickname": "별빛", "grade": 3, "birthYear": 2017 } }
 // 401
 { "code": "STUDENT_PIN_INVALID", "status": 401, "remainingAttempts": 2 }
 ```
   - 검사 순서: 기기 쿠키 유효(해시 일치·미해제·미만료) → 자녀가 기기에 등록됨 → 기기 소유 학부모와 `LINKED`·`student ACTIVE`·필수 동의 유지 → PIN 설정 → 잠금 아님 → PIN 일치
   - 기기·자녀 불일치는 `401 STUDENT_DEVICE_INVALID`, 연결·동의 문제는 `403 CHILD_NOT_LINKED`
   - 불일치 시 `pin_failed_count` 증가, 5회째 `pin_locked_at` 기록 후 `423 STUDENT_PIN_LOCKED`. 성공 시 실패 횟수 0, 기기 `last_used_at` 갱신
-  - refresh token 미발급. access 만료 시 PIN 재입력(초안은 자동 저장으로 보존). 학생 토큰 권한은 동석 경로와 동일
+  - refresh token 미발급. PIN·동석 학생 모두 유효한 Bearer로 `POST /auth/student/renew`를 호출해 미사용 허용 시간(기본 30분)을 연장한다. 만료 후에는 PIN 재입력(저장된 초안 보존). 학생 토큰 권한은 동석 경로와 동일
 - PIN 설정 `PUT /children/{childId}/pin`
   - 추가 재인증 없음(활성 보호자 세션·현재 자녀 권한만, 2026-11-10). 숫자 4~6자리, 동일 숫자 반복(`1111`)·연속(`1234`, `4321`) 거부 `422 VALIDATION_FAILED`
   - 해시 저장, 실패 횟수 0·잠금 해제. 잠긴 PIN의 해제 수단은 재설정뿐
-- 기기 해제 `DELETE /student-devices/{deviceId}`: `revoked_at` 기록, 기존 학생 access token은 만료까지 유효
+- 기기 해제 `DELETE /student-devices/{deviceId}`: `revoked_at` 기록, 기존 학생 access token은 만료까지 유효하나 해제 기기의 학생 세션 갱신은 거부
 - 학부모 화면의 실제 PIN 상태: `GET /children` 각 항목에 `pinSet`(설정 여부)·`pinLocked`(5회 실패 잠금 여부)를 반환한다. PIN 원문·해시·실패 횟수는 반환하지 않음
 - 기기 등록·해제·PIN 설정은 `audit_log` 기록 (FN-ACC-10). PIN 잠금 시 학부모 알림은 미정
 - 응답 형식: 프로필 `{items:[{childId,nickname,pinSet,pinLocked}]}`, 기기 목록 `{items:[{deviceId,label,children:[{childId,nickname}],createdAt,lastUsedAt,expiresAt}]}`(해제 기기 제외). PIN 설정·변경은 204(잠금 해제 포함), 별도 해제 API 없음
@@ -1434,7 +1434,11 @@ report 연결은 별도 담당 범위다. 조회한 nickname을 생성 명령의
 - 학부모 복귀(보호자 비밀번호, 2026-11-03): `POST /auth/parent-unlock {password}`는 refresh 쿠키의 잠긴 학부모 세션과 계정의 보호자 비밀번호를 확인한다. 성공하면 잠금을 풀고 version을 올리며, 그 세션에서 들어간 학생 세션을 폐기하고, refresh를 회전해 refresh 응답과 같은 본문·쿠키를 준다. 실패는 비밀번호 실패 횟수를 커밋한 뒤 401 `GUARDIAN_PASSWORD_INVALID`(`remainingAttempts`), 5회째와 이후는 423 `GUARDIAN_PASSWORD_LOCKED`, 미설정은 409 `GUARDIAN_PASSWORD_NOT_SET`이다. 이때는 Google 로그인으로 돌아오며, 새 로그인은 이전(잠긴) 세션과 그 학생 세션을 폐기한다. 잠기지 않은 세션은 refresh와 같이 처리한다.
 - 보호자 비밀번호는 `guardian_password`(계정당 1행)에 PBKDF2 해시·실패 횟수·잠금 시각만 저장한다. 설정·변경은 `PUT /me/guardian-password`에서 `GUARDIAN_PASSWORD` 재인증 grant(5.6)를 같은 트랜잭션에서 1회 소비하며, 성공 시 실패 횟수·잠금을 초기화한다. 탈퇴 요청 시 삭제한다.
 - JWT에는 `sub`(계정 UUID), `sid`, `ver`, `role`, `studentId`(학생만), `iss`, `aud`, `iat`, `exp`, `jti`를 넣는다. 매 요청에서 세션·현재 계정·자녀 연결·동의를 확인한다. 기기 해제 시 기존 학생 access를 즉시 폐기하는 별도 정책은 추가하지 않는다.
-- 학부모 access 기본 15분, 학생은 `AUTH_STUDENT_ACCESS_TTL`로 별도 관리하며 초기 기본값은 15분이다. 학생 만료·새로고침 시 자동 refresh하지 않고 학생 진입 화면으로 이동한다. 기기·PIN API로 단독 재진입하며 미등록 기기는 등록을 안내한다. 토큰을 영구 저장해 새로고침을 우회하지 않는다.
+- 학부모·관리자 access 기본 15분과 최초 로그인부터 최대 7일 refresh는 유지한다. 학생 `AUTH_STUDENT_ACCESS_TTL`은 미사용 허용 시간(기본 30분)이며 총 로그인 시간 상한은 없다 (#995, 2026-11-24).
+- `POST /auth/student/renew`: 유효한 학생 Bearer·정확한 Origin·X-Requested-With를 요구한다. 세션 행 잠금 후 현재 권한·미폐기·미만료를 다시 검사하고 `expires_at = now + TTL`로 연장해 `{accessToken, expiresIn}`을 반환한다(200, no-store, Set-Cookie 없음). 학생 외 역할은 403, 만료·폐기·잘못된 Bearer는 401. PIN 기기 세션은 서명된 토큰의 deviceId에 해당하는 기기의 미해제·미만료·자녀 등록도 확인한다. 기존 deviceId 없는 PIN 토큰은 갱신을 거부하고 PIN 재입력을 요구한다. 동석 학생은 보호자 복귀 시 기존처럼 폐기한다.
+- web은 학생 토큰만 탭별 sessionStorage에 저장해 새로고침·탭 복제 시 유지한다. 복제 탭은 같은 세션으로 취급하고 갱신 토큰·명시적 로그아웃을 같은 세션 탭에 동기화한다. 다른 학생 세션에는 전파하지 않는다. 로그아웃 버튼은 서버 세션을 폐기한다. 탭 닫기만으로 서버의 즉시 로그아웃을 보장하지 않으며, 브라우저 복원 시에도 서버 만료·폐기 검사가 기준이다.
+- 갱신은 화면의 실제 pointerdown·keydown 조작으로 시작하며 60초 간격 제한·동시 요청 합치기를 적용한다. 일반 API 성공·자동 조회·폴링·새로고침만으로는 연장하지 않는다. 만료 기준은 서버의 마지막 갱신 시각이라 마지막 조작과 최대 60초 차이가 날 수 있다. 만료 후 다음 요청은 학생 진입 화면으로 보낸다. 토큰 갱신 중 계정 전환·로그아웃이 발생하면 늦은 응답을 버린다.
+- sessionStorage도 JavaScript가 읽을 수 있으므로 XSS에 노출되며, 복제 탭에도 자격증명이 복사된다. 토큰 1개의 수명은 기본 30분이지만 유효할 때 갱신하면 연장 가능하므로 탈취 위험이 총 30분으로 제한된다고 보장하지 않는다.
 - 부모 refresh 응답 `{accessToken,expiresIn,role,child:null,nextAction,startPath}` + 회전 쿠키. 동석 응답 `{accessToken,expiresIn,role:STUDENT,child,nextAction:READY,startPath:/student/home}`, Set-Cookie 없음(잠긴 학부모 refresh 유지). child는 `{id,nickname,grade,birthYear}`(기존 #7 소비자 계약)이다. 단독 PIN 로그인 응답(3.11)은 `child.childId`를 쓰므로 프론트 경계에서 정규화한다.
 - `GET /me`는 부모/관리자에게 `{userId,name,email,loginId,authMethod,role,permissions,child:null,nextAction,startPath}`, 학생에게 `{role,child,nextAction,startPath}`만 반환한다. `authMethod`는 Google subject가 있으면 `GOOGLE`, 없으면 `PASSWORD`(#415)다. `loginId`는 학부모에게만 주며 비밀번호 학부모는 아이디, Google 학부모는 최근 Google 로그인에서 검증한 이메일이다(#683, 2026-11-16). 관리자·학생은 null이다. 비밀번호 학부모의 `email`은 null이다. 학생에게 부모 개인정보·권한을 반환하지 않는다. 학생은 `/me/consents` 등 부모 계정 관리 API를 사용할 수 없다.
 - 로그아웃은 현재 쿠키의 부모 세션 또는 Bearer로 전달된 학생 세션을 종료하고 refresh 쿠키를 삭제한다. 다른 기기는 유지한다. 쿠키 API는 정확한 web Origin과 `X-Requested-With: XMLHttpRequest`를 요구한다.

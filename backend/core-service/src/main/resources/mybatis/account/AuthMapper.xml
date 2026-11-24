@@ -72,6 +72,10 @@
         SELECT id, user_id, role, student_id, version, expires_at, revoked_at, created_at, locked_at, parent_session_id FROM auth_session WHERE id = #{id}
         <if test="lock">FOR UPDATE</if>
     </select>
+    <update id="renewStudent">
+        UPDATE auth_session SET expires_at=#{expiresAt}
+        WHERE id=#{id} AND role='STUDENT' AND revoked_at IS NULL AND expires_at &gt; #{now}
+    </update>
     <update id="updateSession">
         UPDATE auth_session SET version=#{version}, locked_at=#{lockedAt,jdbcType=TIMESTAMP_WITH_TIMEZONE} WHERE id=#{id}
     </update>

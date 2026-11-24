@@ -19,6 +19,7 @@ interface AuthMapper {
     fun insertSession(session: AuthSession): Int
     fun findSession(@Param("id") id: UUID, @Param("lock") lock: Boolean): AuthSession?
     fun updateSession(session: AuthSession): Int
+    fun renewStudent(@Param("id") id: UUID, @Param("now") now: OffsetDateTime, @Param("expiresAt") expiresAt: OffsetDateTime): Int
     fun insertRefresh(token: RefreshToken): Int
     fun findRefresh(hash: String): RefreshToken?
     fun consumeRefresh(@Param("id") id: UUID, @Param("now") now: OffsetDateTime): Int
