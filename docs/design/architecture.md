@@ -777,7 +777,7 @@ backend/report-service/
 - 상태: 서버 상태 TanStack Query, UI 상태는 React state, 전역 상태 라이브러리 미도입
 - API: core-service만 호출, [API 명세서](api-spec.md) 기준
 - 스트리밍: 피드백·분석 대화·알림 SSE를 fetch 스트림으로 수신(인증 헤더 필요), 수신 결과로 쿼리 캐시 갱신
-- 인증: access token 메모리 보관, refresh token httpOnly 쿠키
+- 인증: 학부모·관리자 access token은 메모리, refresh token은 httpOnly 쿠키. 학생 access는 탭 sessionStorage 보관(새로고침·복제 허용), 기본 미사용 30분 갱신 방식이며 명시적 로그아웃을 동일 세션 탭에 전파한다 (#995, API 명세 5.1).
 - 결제: 토스페이먼츠 결제위젯 SDK (테스트 키)
   - 주문 상태는 주문별 TanStack Query 한 곳에서 조회한다(#815). 결제 화면과 위젯이 같은 결과를 사용하고, 진입 또는 복귀 후 조회가 성공해 상태가 `PENDING`일 때만 결제수단을 연다. 결제 화면을 벗어나거나 결제 가능 상태가 아니면 위젯을 정리한다.
 - 접근성: 움직임 줄이기 설정 시 정적 장면, 상태를 색상 외 글로 표시 (NFR-UX-02)

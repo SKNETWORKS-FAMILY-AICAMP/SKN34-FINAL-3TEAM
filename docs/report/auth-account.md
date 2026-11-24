@@ -5,7 +5,7 @@
 ## 1. Google OAuth·토큰 (#36)
 
 - Google Authorization Code + PKCE S256을 core 콜백에서 처리. `authorize` → Google → `callback`(refresh 쿠키 설정) → web `/oauth/complete` → `POST /auth/refresh` → `GET /me`. 서비스 토큰은 URL에 넣지 않음
-- access JWT는 HS256(Spring Security JOSE), 부모·학생 기본 15분, 프론트 메모리에만 보관. refresh는 256비트 난수·SHA-256 해시 저장, HttpOnly·Secure·SameSite=Strict, 부모·관리자 세션은 최초 발급부터 7일(회전으로 연장 안 함). 학생은 refresh 없음
+- access JWT는 HS256(Spring Security JOSE), 부모·관리자 기본 15분·프론트 메모리 보관. 학생은 #995에서 기본 미사용 30분·탭 sessionStorage 보관 및 유효 Bearer 갱신으로 변경(18장). refresh는 256비트 난수·SHA-256 해시 저장, HttpOnly·Secure·SameSite=Strict, 부모·관리자 세션은 최초 발급부터 7일(회전으로 연장 안 함). 학생은 refresh 없음
 - Google ID 토큰은 JWKS 서명·iss·aud·exp·nonce 검증. OAuth 상태 쿠키는 HttpOnly·SameSite=Lax·10분. web origin과 `/api`는 동일 origin, 쿠키 API는 Origin·`X-Requested-With` 검사
 - 계정 식별은 `(oauth_provider, oauth_subject)`. 이메일은 연락 정보이며 기존 이메일 계정과 자동 연결하지 않음(같은 이메일은 `ACCOUNT_EXISTS`). 기존 계정에 가짜 subject를 채우지 않고 비밀번호 컬럼은 nullable로 보존·사용 중단. 신규 계정은 PARENT, 관리자는 운영자가 role·권한 지정(관리자 ID·비밀번호 로그인은 11장 `admin_credential`, 학부모 ID·비밀번호 가입·로그인은 12장 `parent_credential`)
 - 매 요청에서 DB의 세션·계정·연결 상태 확인. 로그아웃·역할 전환 후 이전 access 즉시 거부. refresh는 원자적 1회 소비, 재사용 시 해당 세션 폐기(다른 기기 유지)
@@ -342,3 +342,31 @@ Google 계정이 없는 사용자는 가입할 수 없었고 부하 시험 계�
 | 목업 새 탭 복원 | 관리자 로그인 뒤 기존 탭 새로고침은 유지, 새 탭에서는 복원 안 됨(목업 로그인 상태는 탭별 `sessionStorage`) |
 
 실서버 계약은 학생 access 기본 15분·refresh 미발급, 학부모·관리자 access 기본 15분·최초 로그인부터 최대 7일 세션이다. 학생 자동 갱신 도입은 위 목업 오류 수정과 별개의 정책 변경이다.
+
+
+## 18. 학생 미사용 만료·새로고침·복제 탭 유지 (#995, 2026-11-24)
+
+### 결정과 변경 범위
+
+- 기존 학생은 활동 중이어도 발급 15분 뒤 만료되고 새로고침 시 메모리 토큰을 잃었다. PIN·동석 모두 기본 미사용 30분으로 변경하고 유효한 학생 Bearer로 갱신한다. 총 로그인 시간 상한은 없다. 학부모·관리자 access 15분·최초 로그인부터 7일 refresh 정책은 그대로다.
+- 탭 복제는 허용한다. 동일 세션 ID의 탭끼리 갱신 토큰과 명시적 로그아웃을 전파하며 다른 학생 세션에는 전파하지 않는다. 새로고침은 sessionStorage에서 복원한다. 새 빈 탭에는 자격증명을 배포하지 않는다.
+- 이슈의 초기 “탭을 닫으면 로그아웃” 표현은 서버 즉시 폐기 보장으로 해석하지 않는다. 한 탭을 닫아도 다른 복제 탭은 유지한다. 브라우저의 탭 복원과 종료 이벤트 누락이 있으므로 명시적 로그아웃·서버 만료가 종료 기준이다.
+- 활동은 보이는 화면의 실제 pointerdown·keydown이다. API 성공·자동 조회·폴링·새로고침은 갱신을 유발하지 않는다. 60초 간격 제한과 동시 요청 합치기를 적용하며 서버는 마지막 갱신부터 TTL을 계산한다. 마지막 조작과 기준 시각은 최대 60초 차이가 날 수 있다.
+
+### API·권한·저장
+
+- 추가 API: `POST /api/v1/auth/student/renew` → `{accessToken, expiresIn}`, 200·Cache-Control no-store·Set-Cookie 없음. Origin·X-Requested-With 및 유효한 학생 Bearer 필수. 다른 역할은 403, 만료·위조·폐기 자격증명은 401. 보호자 refresh로 대신 인증하지 않는다.
+- 세션 행 잠금 아래 계정·자녀 연결·동의·세션 유효성을 다시 검사하고 미폐기·미만료 STUDENT 행의 expires_at만 연장한다. DB 마이그레이션·새 의존성은 없다.
+- PIN 기기는 토큰의 서명된 deviceId로 기기 만료·해제·자녀 등록을 갱신 시 확인한다. 무제한 갱신 때문에 해제된 기기의 세션이 계속 살아남는 문제를 막기 위한 변경이다. 기존 access의 남은 수명은 유지하되 갱신은 거부한다. 배포 전 deviceId 없는 PIN 토큰은 갱신 시 PIN 재입력이 필요하다. 동석 학생은 보호자 복귀 시 폐기된다.
+- 부모·관리자 토큰은 저장하지 않는다. 학생 토큰은 JavaScript가 읽을 수 있는 sessionStorage에 저장되므로 XSS 노출 범위가 늘며 복제 탭에도 복사된다. 개별 토큰은 기본 30분이나 갱신 가능하므로 탈취 위험의 총 지속 시간이 30분으로 제한된다고 보장하지 않는다. 저장소 제한 환경은 메모리로 동작해 새로고침 시 재로그인이 필요하다. BroadcastChannel 제한·브라우저가 중단한 탭은 즉시 동기화가 지연될 수 있으며 서버 검증이 최종 기준이다.
+- 만료 응답·갱신 응답의 경합을 점검했다. 로그인 전환·로그아웃 뒤 늦은 갱신 응답은 버리고, 같은 세션이 이미 갱신된 경우 이전 API의 TOKEN_EXPIRED 응답은 새 토큰으로 한 번 재시도한다.
+- MSW에는 갱신 응답·학생 토큰 만료·새로고침 복원을 추가했다. MSW는 실제 서명/DB 잠금/기기 권한 검증의 증거가 아니며 해당 검증은 core 테스트를 사용한다.
+
+### 검증 결과
+
+- web `npm test`: 454개 통과. 학생 저장·삭제·저장소 제한·60초 제한·동시 갱신·401·통신 실패·계정 전환·늦은 만료 응답 회귀를 포함한다.
+- web `npm run test:types`, `npm run lint`, `npm run build`: 통과.
+- core `test` 대상 `StudentDeviceAuthTest`, `AuthFlowIntegrationTest`, `PublicAuthFilterTest`, `AccountManagementTest`, `AdminPasswordLoginIntegrationTest`, `ParentPasswordLoginIntegrationTest`: 77개 통과, 실패·스킵 없음. 실제 PostgreSQL·Redis 및 해당 테스트의 RabbitMQ 컨테이너 사용. 갱신 연장·만료/위조/누락/폐기 거부·출처 검사·부모/관리자 거부·기기 해제·갱신 후 보호자 복귀 폐기를 검증했다. `bootJar` 통과. core 전체 테스트 실행 결과는 아니다.
+- `scripts/tests/test_auth_openapi.py`, `test_student_device_contract.py`, `test_account_management_contract.py`: 14개 통과. 새 API가 추가되어 기존 컨트롤러 개수 검사를 11에서 12로 갱신했다.
+- Chromium `session.spec.ts`, `studentSession.spec.ts`: 5개 통과. 기존 보호자 화면 회귀와 실제 인증 모듈의 새로고침·탭 저장소 복사·갱신 동기화·탭 닫기·동일 세션 로그아웃·다른 세션 보존·미활동 만료를 검사했다. 학생 테스트는 합성 API/2분 토큰을 사용한 브라우저 하네스이며 운영 서버의 학생 화면 전체 시연을 대체하지 않는다.
+- 남은 수동 확인: 실제 core/web 연결 환경에서 `AUTH_STUDENT_ACCESS_TTL=2m`으로 학생 학습 중 조작·방치·F5·탭 복제·로그아웃을 시연한다. 탭을 단순히 새로 여는 경우와 브라우저의 닫은 탭 복원은 구분한다. 실배포·실제 계정 시연은 이 검증에 포함하지 않는다.

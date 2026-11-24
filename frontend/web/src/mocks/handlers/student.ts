@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw/http'
 import { isShared, saveSharing, requireShared } from '../fixtures/sharing.ts'
+import { readStudentToken, studentClaims } from '../../data/studentSession.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
 import type { Attempt, Child, DemoScenario, Feedback, Period } from '../../domain/classroom.ts'
@@ -47,7 +48,13 @@ export function setMockScenario(value: DemoScenario) {
   if (value === 'token-expired' || value === 'refresh-fail') token = `expired-${token}`
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('sagomungchi:mock-invalidate'))
 }
-const issueToken = () => (token = `msw-access-${++serial}`)
+if (mockRole === 'STUDENT') token = readStudentToken() ?? ''
+const issueToken = (renew = false) => {
+  if (mockRole !== 'STUDENT') return (token = `msw-access-${++serial}`)
+  const iat = Math.floor(Date.now() / 1000)
+  const sid = (renew && studentClaims(token)?.sid) || crypto.randomUUID()
+  return (token = `mock.${btoa(JSON.stringify({ role: 'STUDENT', sid, iat, exp: iat + 1800 }))}.mock`)
+}
 /** 잠기지 않은 세션의 refresh 회전. 실제 쿠키/보안 속성 검증은 백엔드 통합 대상이며 목은 로그인 상태만 모사한다. */
 function refreshUnlocked() {
   if (scenario === 'refresh-fail' || !store.snapshot().session || mockRole === 'STUDENT')
@@ -69,6 +76,12 @@ const page = (items: unknown[]) => ({ items, page: 0, size: 20, totalElements: i
 export function guard(request: Request) {
   if ((scenario === 'token-expired' || scenario === 'refresh-fail') && token.startsWith('expired-'))
     throw new ApiError({ status: 401, code: 'TOKEN_EXPIRED', title: '시연 토큰 만료' })
+  const bearer = request.headers.get('Authorization')?.replace(/^Bearer /, '') ?? ''
+  const claims = studentClaims(bearer)
+  if (mockRole === 'STUDENT' && claims && token && studentClaims(token)?.sid === claims.sid) {
+    if (claims.exp * 1000 <= Date.now()) throw new ApiError({ status: 401, code: 'TOKEN_EXPIRED', title: '학생 로그인 만료' })
+    return
+  }
   if (!token || request.headers.get('Authorization') !== `Bearer ${token}`)
     throw new ApiError({ status: 401, code: 'UNAUTHENTICATED', title: '로그인이 필요합니다.' })
 }
@@ -321,6 +334,13 @@ export const studentHandlers = [
       child = undefined
       return { accessToken: issueToken(), role: 'PARENT', child: null, nextAction: 'READY', startPath: '/parent/journal' }
     }),
+  ),
+  http.post('/api/v1/auth/student/renew', ({ request }) =>
+    respond(async () => {
+      guard(request)
+      if (mockRole !== 'STUDENT') throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생 세션이 필요합니다.' })
+      return { accessToken: issueToken(true), expiresIn: 1800 }
+    }).then(response => { response.headers.set('Cache-Control', 'no-store'); return response }),
   ),
   http.post('/api/v1/auth/student/logout', ({ request }) =>
     respond(async () => {

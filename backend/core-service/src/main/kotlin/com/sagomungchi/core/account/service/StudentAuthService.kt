@@ -84,7 +84,7 @@ class StudentAuthService(private val devices: StudentDeviceRepository, private v
             val child=current(device.parentUserId,childId)
             val attempt=pins.attempt(childId,pin)
             if(!attempt.accepted) return@execute LoginOutcome(null,attempt)
-            val issued=auth.issueDeviceStudent(device.parentUserId,childId)
+            val issued=auth.issueDeviceStudent(device.parentUserId,childId,device.id)
             devices.touch(device.id,now())
             LoginOutcome(LoggedIn(issued.accessToken,child),null)
         })

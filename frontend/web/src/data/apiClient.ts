@@ -1,15 +1,16 @@
+import { readStudentToken, storeStudentToken, studentClaims } from './studentSession.ts'
 import type { ProblemDetail } from '../domain/problem.ts'
 import type { LoginPath } from '../domain/navigation.ts'
 
 export const API_BASE = '/api/v1'
 
-// access token은 메모리에만 보관, refresh token은 httpOnly 쿠키 (아키텍처 3장)
-let accessToken: string | null = null
+// Adult access stays in memory; student access survives reload in this tab only.
+let accessToken: string | null = readStudentToken()
 let refreshInFlight: Promise<void> | null = null
 let tokenRevision = 0
 let authGeneration = 0
-let accessRole: 'PARENT' | 'STUDENT' | 'ADMIN' | undefined
-let studentMode = false
+let accessRole: 'PARENT' | 'STUDENT' | 'ADMIN' | undefined = accessToken ? 'STUDENT' : undefined
+let studentMode = accessRole === 'STUDENT'
 const parentLoginKey = 'sagomungchi:parent-login-required'
 let parentLoginPending = false
 export function parentLoginRequired() {
@@ -62,6 +63,7 @@ function assignAccessToken(token: string | null, role?: 'PARENT' | 'STUDENT' | '
   studentMode = accessRole === 'STUDENT'
   accessToken = token
   tokenRevision++
+  storeStudentToken(studentMode ? token : null)
   if (token && (accessRole === 'PARENT' || accessRole === 'ADMIN')) {
     parentLoginPending = false
     try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(parentLoginKey) } catch { /* 저장소 제한으로 정상 로그인을 실패시키지 않는다. */ }
@@ -69,7 +71,7 @@ function assignAccessToken(token: string | null, role?: 'PARENT' | 'STUDENT' | '
   }
 }
 
-// Web Locks serialize cookie rotation across tabs; no tokens are persisted.
+// Web Locks serialize adult cookie rotation across tabs; adult tokens are never persisted.
 export async function withAuthLock<T>(action: () => Promise<T>): Promise<T> {
   if (typeof navigator !== 'undefined' && navigator.locks)
     return navigator.locks.request('sagomungchi-auth', action)
@@ -101,6 +103,106 @@ export function watchAuthChange(listener: (mode: string) => void) {
   target?.addEventListener('message', handler)
   return () => target?.removeEventListener('message', handler)
 }
+let studentChannel: BroadcastChannel | undefined
+function postStudent(message: Record<string, unknown>) {
+  try { studentChannel?.postMessage(message) } catch { /* Server remains authoritative. */ }
+}
+function currentStudentClaims() { return studentMode && accessToken ? studentClaims(accessToken) : null }
+function onStudentMessage(event: MessageEvent) {
+  const current = currentStudentClaims()
+  const message = event.data
+  if (!current || !message || message.sid !== current.sid) return
+  if (message.type === 'LOGOUT') { studentAuthenticationRequired(); return }
+  if (message.type === 'REQUEST') {
+    if (current.exp * 1000 > Date.now()) postStudent({ type: 'TOKEN', sid: current.sid, token: accessToken })
+  } else if (message.type === 'TOKEN' && typeof message.token === 'string') {
+    const next = studentClaims(message.token)
+    if (next?.sid === current.sid && next.exp > current.exp) assignAccessToken(message.token, 'STUDENT')
+  }
+}
+
+/** Only siblings already holding this session can receive a token; new empty tabs do not request one. */
+export async function syncStudentSession() {
+  const current = currentStudentClaims()
+  if (!current || !studentChannel) return
+  postStudent({ type: 'REQUEST', sid: current.sid })
+  // Brief rendezvous for reload/resume of a tab whose token expired while another tab was active.
+  if (current.exp * 1000 <= Date.now()) await new Promise<void>(resolve => setTimeout(resolve, 100))
+}
+
+export function notifyStudentLogout() {
+  const current = currentStudentClaims()
+  if (current) postStudent({ type: 'LOGOUT', sid: current.sid })
+}
+
+let studentRenewInFlight: Promise<void> | null = null
+let lastStudentAttempt: { token: string; at: number } | undefined
+/** Called by actual user input only. Polling, restore and ordinary API successes never extend idle time. */
+export async function renewStudentSession() {
+  if (!studentMode || !accessToken) return
+  if (studentRenewInFlight) return studentRenewInFlight
+  const generation = authGeneration
+  if (currentStudentClaims() && currentStudentClaims()!.exp * 1000 <= Date.now()) {
+    await syncStudentSession()
+    if (generation !== authGeneration || !accessToken || !studentMode) return
+    if (studentRenewInFlight) return studentRenewInFlight
+  }
+  const current = currentStudentClaims()
+  const time = Date.now()
+  if (current && time - current.iat * 1000 < 60_000) return
+  // Also throttle transport failures; typing must not flood an unavailable service.
+  if (lastStudentAttempt?.token === accessToken && time - lastStudentAttempt.at < 60_000) return
+  const revision = tokenRevision
+  const sentToken = accessToken
+  lastStudentAttempt = { token: sentToken, at: time }
+  studentRenewInFlight = (async () => {
+    const response = await fetch(API_BASE + '/auth/student/renew', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { Authorization: `Bearer ${sentToken}`, 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    if (revision !== tokenRevision) return
+    if (!response.ok) {
+      const error = await toApiError(response)
+      if (revision !== tokenRevision) return
+      if (error.problem.status === 401 || ['CONSENT_REQUIRED', 'CHILD_NOT_LINKED'].includes(error.problem.code))
+        throw studentAuthenticationRequired()
+      throw error
+    }
+    const data = await response.json()
+    if (revision !== tokenRevision) return
+    const next = typeof data?.accessToken === 'string' ? studentClaims(data.accessToken) : null
+    if (!next || (current && next.sid !== current.sid) || next.exp * 1000 <= Date.now())
+      throw new ApiError({ status: 502, code: 'AUTH_RESPONSE_INVALID', title: '학생 로그인 갱신 응답을 확인하지 못했습니다.', retryable: true })
+    assignAccessToken(data.accessToken, 'STUDENT')
+    postStudent({ type: 'TOKEN', sid: next.sid, token: data.accessToken })
+  })().finally(() => { studentRenewInFlight = null })
+  return studentRenewInFlight
+}
+
+export function watchStudentActivity() {
+  try {
+    if (!studentChannel && typeof BroadcastChannel !== 'undefined') {
+      studentChannel = new BroadcastChannel('sagomungchi-student-session')
+      studentChannel.addEventListener('message', onStudentMessage)
+    }
+  } catch { /* Same-tab operation remains available when cross-tab messaging is blocked. */ }
+  const activity = (event: Event) => {
+    if (!event.isTrusted || document.visibilityState !== 'visible') return
+    void renewStudentSession().catch(() => { /* Auth failures already route to PIN; transient failures retry on later input. */ })
+  }
+  const resume = () => { if (document.visibilityState === 'visible') void syncStudentSession() }
+  window.addEventListener('pointerdown', activity, { passive: true })
+  window.addEventListener('keydown', activity)
+  document.addEventListener('visibilitychange', resume)
+  return () => {
+    window.removeEventListener('pointerdown', activity)
+    window.removeEventListener('keydown', activity)
+    document.removeEventListener('visibilitychange', resume)
+    studentChannel?.close()
+    studentChannel = undefined
+  }
+}
+
 export async function refreshAccessToken() {
   if (studentMode) throw studentAuthenticationRequired()
   if (parentLoginRequired() && (typeof window === 'undefined' || window.location.pathname !== '/oauth/complete'))
@@ -173,6 +275,7 @@ export async function unlockParentSession(password: string) {
     if (!data || typeof data !== 'object' || !('accessToken' in data) || typeof data.accessToken !== 'string')
       throw new Error('학부모 화면 복귀 응답을 확인하지 못했습니다.')
     markParentSessionLocked(false)
+    notifyStudentLogout()
     setAccessToken(data.accessToken, 'role' in data && data.role === 'ADMIN' ? 'ADMIN' : 'PARENT')
   })
   notifyAuthChange('PARENT')
@@ -186,6 +289,7 @@ export async function waitForPendingRefresh() {
 /** JSON·SSE가 공유하는 인증 요청. 만료 시 refresh 1회 공유, 원 요청은 한 번만 재시도한다. */
 export async function apiRequest(path: string, init: RequestInit = {}): Promise<Response> {
   const generation = authGeneration
+  if (studentMode && currentStudentClaims() && currentStudentClaims()!.exp * 1000 <= Date.now()) await syncStudentSession()
   let sentRevision = tokenRevision
   const send = () => {
     const execute = () => {
@@ -202,8 +306,10 @@ export async function apiRequest(path: string, init: RequestInit = {}): Promise<
   if (response.status === 401 && !studentEntry && !['/auth/refresh', '/auth/logout'].includes(path)) {
     const error = await toApiError(response.clone())
     if (error.problem.code === 'TOKEN_EXPIRED') {
-      if (studentMode) throw studentAuthenticationRequired()
-      if (sentRevision === tokenRevision) await refreshAccessToken()
+      if (studentMode) {
+        if (sentRevision === tokenRevision) await syncStudentSession()
+        if (sentRevision === tokenRevision) throw studentAuthenticationRequired()
+      } else if (sentRevision === tokenRevision) await refreshAccessToken()
       response = await send()
       if (generation !== authGeneration) throw authChanged()
     }

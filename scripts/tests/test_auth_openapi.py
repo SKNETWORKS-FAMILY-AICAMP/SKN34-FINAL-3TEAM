@@ -17,7 +17,7 @@ class AuthOpenApiTests(unittest.TestCase):
             (ROOT / "contracts/openapi/core-service.yaml").read_text(encoding="utf-8")
         )
 
-    def test_paths_match_the_nine_implemented_controller_operations(self):
+    def test_paths_match_implemented_controller_operations(self):
         source = (
             ROOT
             / "backend/core-service/src/main/kotlin/com/sagomungchi/core/account/controller/AuthController.kt"
@@ -33,7 +33,7 @@ class AuthOpenApiTests(unittest.TestCase):
             if method in {"get", "post", "patch", "delete", "put"}
             and ("Auth" in operation.get("tags", []) or (path == "/me" and method == "get"))
         }
-        self.assertEqual(len(actual), 11)  # #369 POST /auth/admin/login, #415 POST /auth/parent/signup·login
+        self.assertEqual(len(actual), 12)  # #995 adds POST /auth/student/renew
         device_source = (ROOT / "backend/core-service/src/main/kotlin/com/sagomungchi/core/account/controller/StudentDeviceController.kt").read_text(encoding="utf-8")
         actual.update((method.lower(), path.removeprefix("/api/v1"))
                       for method, path in re.findall(r'@(Get|Post)Mapping\("([^\"]+)"\)', device_source)

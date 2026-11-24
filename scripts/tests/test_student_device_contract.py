@@ -18,3 +18,10 @@ class StudentDeviceContractTest(unittest.TestCase):
         params=paths['/children/{childId}/pin']['put']['parameters']
         self.assertNotIn('X-Reauth-Token', [p['name'] for p in params])
         self.assertTrue(paths['/children/{childId}/pin']['put'].get('security', spec['security']))
+        renew = paths['/auth/student/renew']['post']
+        self.assertEqual(renew['security'], [{'BearerAuth': []}])
+        self.assertEqual({p['$ref'].split('/')[-1] for p in renew['parameters']}, {'WebOrigin', 'RequestedWith'})
+        success = renew['responses']['200']
+        self.assertEqual(success['headers']['Cache-Control']['schema']['const'], 'no-store')
+        self.assertEqual(set(success['content']['application/json']['schema']['required']), {'accessToken', 'expiresIn'})
+        self.assertTrue({'401', '403', '503'}.issubset(renew['responses']))

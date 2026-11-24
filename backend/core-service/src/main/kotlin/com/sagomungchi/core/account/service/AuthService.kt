@@ -24,6 +24,7 @@ import java.util.UUID
 
 @Service
 class AuthService(
+    private val studentDevices: com.sagomungchi.core.account.repository.StudentDeviceRepository,
     private val repository: AuthRepository,
     private val google: GoogleOAuthClient,
     private val tokens: TokenService,
@@ -156,13 +157,13 @@ class AuthService(
 
     /** Device caller holds the parent account lock and has verified device, child and PIN. */
     @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
-    fun issueDeviceStudent(parent: UUID, child: UUID): IssuedAuth {
+    fun issueDeviceStudent(parent: UUID, child: UUID, deviceId: UUID? = null): IssuedAuth {
         students.requireLinked(parent,child)
         requireGuardian(parent,child)
         val now=now()
         val session=AuthSession(UUID.randomUUID(),parent,"STUDENT",child,1,now.plus(properties.studentAccessTtl),null,now)
         repository.insertSession(session)
-        return IssuedAuth(tokens.access(session),null,null,identity(session))
+        return IssuedAuth(tokens.access(session, deviceId?.toString()),null,null,identity(session))
     }
 
     fun authenticate(accessToken: String): AuthenticatedAccount {
@@ -235,6 +236,26 @@ class AuthService(
         if (outcome.failure != null) throw BusinessException(HttpStatus.UNAUTHORIZED, outcome.failure, "로그인 세션이 종료되었습니다. 다시 로그인해 주세요.")
         return requireNotNull(outcome.issued)
     }
+
+    /** Renew only a live student session; never resurrect an expired JWT or revoked session. */
+    fun renewStudent(access: String): String = requireNotNull(transactions.execute {
+        val jwt = tokens.verify(access)
+        val deviceId = jwt.getClaimAsString("deviceId")
+        // Device before session matches withdrawal/revocation lock order.
+        val device = deviceId?.let { studentDevices.find(uuid(it), true) }
+        val session = repository.session(uuid(jwt.getClaimAsString("sid")), lock = true) ?: throw unauthenticated()
+        val current = authenticate(access) // rechecks JWT binding, version, account and current child permissions under the row lock
+        if (current.session.role != "STUDENT") throw forbidden()
+        if (session.parentSessionId == null) {
+            if (device == null) throw unauthenticated()
+            if (!device.usable(now()) || device.parentUserId != session.userId ||
+                session.studentId !in studentDevices.children(device.id)) throw unauthenticated()
+        }
+        val time = now()
+        val renewed = session.copy(expiresAt = time.plus(properties.studentAccessTtl))
+        if (repository.renewStudent(session.id, time, renewed.expiresAt) != 1) throw unauthenticated()
+        tokens.access(renewed, deviceId)
+    })
 
     fun logoutStudent(access: String?) {
         transactions.executeWithoutResult {

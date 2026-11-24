@@ -1,5 +1,5 @@
 import { assertVerifiedAnalysis } from '../../domain/parent.ts'
-import { refreshAccessToken, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin, markParentSessionLocked } from '../apiClient.ts'
+import { refreshAccessToken, notifyStudentLogout, notifyAuthChange, hasAccessToken, isStudentSession, requireParentLogin, markParentSessionLocked } from '../apiClient.ts'
 import { ApiError, apiFetch, apiResponse, setAccessToken } from '../apiClient.ts'
 import { streamSse } from '../sse.ts'
 import type { AnswerTiming } from '../../domain/answerTiming.ts'
@@ -170,7 +170,7 @@ export function createApiGateway(): ClassroomGateway {
     async logout() {
       if (isStudentSession()) {
         if (hasAccessToken()) {
-          try { await apiFetch('/auth/student/logout', body({})) }
+          try { await apiFetch('/auth/student/logout', body({})); notifyStudentLogout() }
           catch (error) {
             // Already-expired/revoked student credentials can be cleared locally; never use parent refresh.
             if (!(error instanceof ApiError) || error.problem.status !== 401) throw error
