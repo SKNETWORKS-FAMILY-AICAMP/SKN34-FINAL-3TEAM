@@ -318,6 +318,14 @@ local kind에서 core → RabbitMQ → report-worker → core 알림까지 확�
 - 대기 상한: 서술 `REPORT_NARRATIVE_TIMEOUT_SECONDS=80`, 설명 호출당 `REPORT_EXPLANATION_TIMEOUT_SECONDS=80`, 설명 단계 전체 `REPORT_EXPLANATION_BUDGET_SECONDS=300`(#747, ai가 SageMaker 실시간 호출 1회·마감 75초). 최대 3건 순차, 재시도 없음. 상한 초과 시 이미 검증한 항목은 보존. 근거와 창 밖 동작은 [AI 보고서 24절](ai.md#24-리포트-gemma-sagemaker-호출-전환-747-2026-11-18)
 - 배포 순서: core 사용량(#490) → ai API(#491), learning 점수 공급(#489)과 함께. 공급자가 구버전이면 설명 미포함으로 기존 리포트 유지
 
+### 25.1 상담 대화에 설명 전달 (#983·#1012, 2026-11-24)
+
+- core가 분석 대화 요청(`/internal/analysis/stream`)에 주간 리포트 설명 `explanations[{missionTitle, text}]`(최대 3개)를 넣는다. 고르는 리포트는 조회 기간과 **겹치는** 가장 최근 `COMPLETED` 주간 리포트다. 처음 구현(#993)은 주 전체가 조회 기간 안에 들어가야 해서, 기본 기간(오늘 포함 최근 7일)에서는 월~일 한 주가 통째로 들어가는 날이 거의 없어 설명이 대부분 빠졌다
+- 조건은 리포트 상세와 같다: 원문 공개, 서술 이용권, `explanations.state = INCLUDED`. 일일 리포트 고정 대화(#392)에는 보내지 않고, report 조회가 실패하면 빈 목록으로 대화는 계속한다
+- ai는 설명 글과 미션 제목 속 숫자를 숫자 대조(FN-AGT-06) 허용 목록에 더한다(`verification.explanation_numbers`). 다른 대조 기준은 그대로다
+- 시험(로컬): core `ReportExplanationsForAnalysisTest` 7개(겹침 기간 선택, 겹치는 리포트 없음, 원문 비공개·무료, `NOT_INCLUDED`, report 실패, 일일 고정 대화)를 포함해 conversation·report·guardianship 패키지 249개 통과. ai `tests/analysis_agent`·`test_versions.py` 133개 통과
+- 로컬 Compose 확인(2026-11-24, 가상 학생 2명, 분석 LLM 실제 호출): 이 브랜치로 core·ai 이미지를 빌드해 기본 기간(11-18~11-24) 대화를 열었다. 11-16~11-22 주간 리포트에 설명 3개가 있는 프리미엄 자녀는 "상세 설명에 나온 보완할 점·개선 방안" 질문에 설명 내용으로 답했고 숫자·인용 대조를 통과했다. 무료 자녀는 설명이 전달되지 않아 설명이 없다고 답했다. 화면이 아니라 학부모 화면이 부르는 같은 API(`POST /api/v1/conversations`, `/messages`)로 확인했다
+
 ## 26. 학부모 리포트 목록 전체 반환 (#500, 2026-11-11)
 
 - 원인: core가 report `GET /internal/reports`에 `page`·`size`를 넘기지 않아 기본 20건만 반환. 공개 `ReportList`는 `{items}`뿐이라 약 2.5주 뒤부터 과거 리포트가 목록에서 사라짐

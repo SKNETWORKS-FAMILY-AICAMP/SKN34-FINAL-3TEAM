@@ -2226,7 +2226,7 @@ components:
         report:
           $ref: '#/components/schemas/AnalysisReportSummary'
         explanations:
-          description: 공개 범위와 이용권을 확인한 주간 리포트 설명. 선택 기간 안에 주 전체가 포함될 때만 전달한다.
+          description: 공개 범위와 이용권을 확인한 주간 리포트 설명. 선택 기간과 겹치는 가장 최근 완료 주간 리포트의 INCLUDED 설명만 전달하고, 일일 리포트 고정 대화에는 보내지 않는다.
           type: array
           maxItems: 3
           items:
