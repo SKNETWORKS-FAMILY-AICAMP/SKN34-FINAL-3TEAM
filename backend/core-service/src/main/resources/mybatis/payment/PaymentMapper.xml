@@ -16,6 +16,7 @@
  <select id="orders" resultType="com.sagomungchi.core.payment.domain.PaymentOrder">
  SELECT <include refid="order"/> FROM payment_order o WHERE 1=1
  <if test="owner != null">AND o.parent_user_id=#{owner}</if>
+ <if test="childId != null">AND o.student_id=#{childId}</if>
  <if test="status != null">AND EXISTS(SELECT 1 FROM payment p WHERE p.order_id=o.id AND p.status=#{status})</if>
  <if test="from != null">AND o.created_at &gt;= (#{from}::date::timestamp AT TIME ZONE 'Asia/Seoul')</if>
  <if test="to != null">AND o.created_at &lt; ((#{to}::date+1)::timestamp AT TIME ZONE 'Asia/Seoul')</if>

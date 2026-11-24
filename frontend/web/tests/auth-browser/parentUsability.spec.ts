@@ -94,6 +94,32 @@ test('결제 설정 장애는 문의 경로와 사용자 문구를 보여 주고
   expect(calls.some(call => call.startsWith('POST /orders'))).toBe(false)
 })
 
+test('선택 자녀의 거래 페이지와 환불 제한은 독립적이며 승인일은 한국 시간이다', async ({page,context}) => {
+  await parentServer(context)
+  const childId = '00000000-0000-4000-8000-000000000001'
+  const sub = {subscriptionId:'sub',childId,status:'ACTIVE',billingRegistered:true,autoRenew:false,product:null,periodStart:'2026-11-01',periodEnd:'2026-12-01',nextBillingDate:null}
+  await context.route('**/subscriptions', route => route.fulfill({json:{items:[sub]}}))
+  await context.route('**/entitlement', route => route.fulfill({json:{childId,subscriptionId:'sub',status:'ACTIVE',product:{name:'이용권',limits:{},features:{}},refundPending:true}}))
+  await context.route('**/api/v1/payments?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    const page = Number(params.get('page')), selected = params.get('childId')
+    const items = selected === childId ? Array.from({length:page ? 1 : 20},(_,n) => ({
+      orderId:`order-${page}-${n}`,childId,status:'APPROVED',subscription:null,amount:100,
+      approvedAt:page ? '2026-11-18T15:01:00Z' : '2026-11-18T14:59:00Z', refundRequests:page ? [{id:'refund',status:'REQUESTED'}] : [],
+    })) : []
+    return route.fulfill({json:{items,hasNext:page === 0 && selected === childId}})
+  })
+  await page.goto(`/parent/billing?childId=${childId}`)
+  await page.getByText('결제수단·자동 갱신 관리',{exact:true}).click()
+  await expect(page.getByText(/환불 검토 중에는 결제수단 등록/)).toBeVisible()
+  await expect(page.getByRole('button',{name:'자동 갱신 해지 철회'})).toHaveCount(0)
+  await expect(page.getByText(/승인일 2026-11-18/)).toHaveCount(20)
+  await page.getByRole('button',{name:'다음 거래'}).click()
+  await expect(page.getByText(/승인일 2026-11-19/)).toHaveCount(1)
+  await expect(page.getByRole('button',{name:'다음 거래'})).toBeDisabled()
+  await expect(page.getByText(/환불 검토 중에는 결제수단 등록/)).toBeVisible()
+})
+
 test('거래에는 자녀 별명을 쓰고 미지의 상태 코드와 주문번호를 기본 화면에 노출하지 않는다', async ({ page, context }) => {
   await parentServer(context, 'history')
   await page.goto('/parent/billing')

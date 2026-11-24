@@ -20,10 +20,11 @@ import { ErrorNotice, Modal } from '../shared/ClassroomParts.tsx'
 import { EvidenceQuery } from './ParentConversation.tsx'
 
 export function ParentReports({
-  child,
+  child, canReadOriginals,
   onAskReport, highlight, revealToken = 0, onReportChange,
 }: {
   child: Child
+  canReadOriginals: boolean
   highlight?: ReportHighlight | null
   revealToken?: number
   onReportChange?: () => void
@@ -38,7 +39,6 @@ export function ParentReports({
   const [pages, setPages] = useState({ WEEKLY: 0, DAILY: 0 })
   const [status, setStatus] = useState(''),
     [kind, setKind] = useState<ReportPeriodType | ''>(''),
-    [revision, setRevision] = useState<number | undefined>(),
     list = useParentQuery(['reports', child.id, status, kind], (signal) =>
       parentApi.reports(child.id, status, signal, kind || undefined), true,
     )
@@ -49,11 +49,20 @@ export function ParentReports({
   const requestedId = params.get('reportId')
   const linkedId = list.data?.items.find(item => item.reportId === requestedId && item.childId === child.id)?.reportId
   const activeId = linkedId ?? (revealRequested ? highlight?.reportId : undefined)
-  const activeRevision = selected && selected.reportId === activeId ? selected.revision : revision
-  const showModal = opened || !!linkedId || revealRequested
+  const revision = Number(params.get('revision'))
+  const activeRevision = selected && selected.reportId === activeId ? selected.revision
+    : linkedId && Number.isSafeInteger(revision) && revision > 0 ? revision : undefined
+  const showModal = opened || !!linkedId || params.get('view') === 'reports' || revealRequested
+  function clearSelection() {
+    const next = new URLSearchParams(params)
+    next.delete('reportId')
+    next.delete('revision')
+    if (next.get('view') === 'reports') next.delete('view')
+    setParams(next, { replace: true })
+  }
   const close = () => {
-    setOpened(false); setDismissedReveal(revealToken); onReportChange?.(); setRevision(undefined)
-    const next = new URLSearchParams(params); next.delete('reportId'); setParams(next, {replace:true})
+    setOpened(false); setDismissedReveal(revealToken); onReportChange?.()
+    clearSelection()
   }
   return (
     <>
@@ -70,7 +79,7 @@ export function ParentReports({
       <p>
         하루·한 주의 학습을 자동으로 정리한 결과입니다. 궁금한 점은 AI 챗봇에서 질문할 수 있습니다.
       </p>
-      <p>일일 리포트는 매일 자정에 그날 기록으로, 주간 리포트는 일요일 자정에 한 주 기록으로 만들어집니다.</p></header>
+      <p>한국 시간 기준으로 매일 0시에 전날 기록을 모아 일일 리포트를 만듭니다. 매주 월요일 0시에는 지난주 월요일부터 일요일까지의 기록으로 주간 리포트를 만듭니다.</p></header>
       <div className="parent-report-filters"><label>
         리포트 종류{' '}
         <select aria-label="리포트 종류" value={kind} onChange={(e) => setKind(e.target.value as ReportPeriodType | '')}>
@@ -99,8 +108,13 @@ export function ParentReports({
       <QueryFeedback query={list} />
       {list.data && !list.error && (
         <div className="parent-report-groups">
-          {!list.data.items.length && <p>아직 생성된 리포트가 없습니다.</p>}
-          {(['WEEKLY', 'DAILY'] as const).filter(type => !kind || type === kind).map(type => <section className="parent-report-group" key={type} aria-labelledby={`report-group-${type}`}>
+          {!list.data.items.length && (status || kind ? <div>
+            <p>선택한 조건에 맞는 리포트가 없습니다.</p>
+            <button type="button" className="cj-secondary" onClick={() => {
+              setKind(''); setStatus(''); setDates({}); setCalendar(null); setPages({ WEEKLY: 0, DAILY: 0 })
+            }}>필터 초기화</button>
+          </div> : <p>아직 생성된 리포트가 없습니다.</p>)}
+          {list.data.items.length > 0 && (['WEEKLY', 'DAILY'] as const).filter(type => !kind || type === kind).map(type => <section className="parent-report-group" key={type} aria-labelledby={`report-group-${type}`}>
             <h2 id={`report-group-${type}`}>{type === 'WEEKLY' ? '주간 리포트' : '일일 리포트'}</h2>
             <div className="report-date-controls"><button type="button" aria-expanded={calendar===type} onClick={()=>setCalendar(calendar===type ? null : type)}>{type==='WEEKLY' ? '주간 날짜 선택' : '일일 날짜 선택'}</button><span>{dates[type] ? `${dates[type]!.from} ~ ${dates[type]!.to}` : '전체 날짜'}</span>{dates[type] && <button type="button" onClick={()=>{setDates(d=>({...d,[type]:undefined}));setPages(p=>({...p,[type]:0}))}}>초기화</button>}</div>
             {calendar===type && <DateFilter embedded week={type==='WEEKLY'} initial={dates[type] ?? list.data.items.find(x=>reportPeriodType(x)===type)?.period ?? {from:today,to:today}} onCancel={()=>setCalendar(null)} onApply={value=>{setDates(d=>({...d,[type]:value}));setPages(p=>({...p,[type]:0}));setCalendar(null)}}/>}
@@ -121,8 +135,7 @@ export function ParentReports({
                 className="cj-secondary"
                 onClick={() => {
                   onReportChange?.()
-                  setRevision(undefined)
-                  const next = new URLSearchParams(params); next.set('reportId', r.reportId); setParams(next)
+                  const next = new URLSearchParams(params); next.delete('revision'); next.set('reportId', r.reportId); setParams(next)
                   setOpened(true)
                 }}
               >
@@ -136,15 +149,15 @@ export function ParentReports({
               <span>{pages[type] + 1} / {Math.ceil(list.data.items.filter(item => reportPeriodType(item) === type && matches(item,type)).length / 6)}</span>
               <button disabled={(pages[type] + 1) * 6 >= list.data.items.filter(item => reportPeriodType(item) === type && matches(item,type)).length} onClick={() => setPages(p => ({...p, [type]: p[type] + 1}))}>다음</button>
             </nav>}
-            {!list.data.items.some(item => reportPeriodType(item) === type && matches(item,type)) && <p>{type === 'WEEKLY' ? '주간' : '일일'} 리포트가 없습니다.</p>}
+            {!list.data.items.some(item => reportPeriodType(item) === type && matches(item,type)) && <p>{(dates[type] || status) && '선택한 조건에 맞는 '}{type === 'WEEKLY' ? '주간' : '일일'} 리포트가 없습니다.</p>}
           </section>)}
         </div>
       )}
       </div>
       </>}
       {activeId && <div className="parent-report-detail-nav"><button className="parent-report-back" aria-label="리포트 목록으로 돌아가기" onClick={() => {
-        onReportChange?.(); setDismissedReveal(revealToken); setOpened(true); setRevision(undefined)
-        const next = new URLSearchParams(params); next.delete('reportId'); setParams(next)
+        onReportChange?.(); setDismissedReveal(revealToken); setOpened(true)
+        clearSelection()
 
       }}><ArrowLeft size={20} aria-hidden="true" />리포트 목록</button></div>}
       {activeId && (
@@ -152,10 +165,17 @@ export function ParentReports({
         <ReportDetail
           key={activeId}
           child={child}
+          canReadOriginals={canReadOriginals}
           id={activeId}
           revision={activeRevision}
           compact={false} highlight={highlight} revealToken={revealToken}
-          onRevision={value => { setRevision(value); onReportChange?.() }}
+          onRevision={value => {
+            const next = new URLSearchParams(params)
+            next.set('reportId', activeId)
+            if (value === undefined) next.delete('revision')
+            else next.set('revision', String(value))
+            setDismissedReveal(revealToken); onReportChange?.(); setParams(next, { replace: true })
+          }}
           onAskReport={value => { close(); onAskReport(value) }}
         />
         </div>
@@ -165,13 +185,14 @@ export function ParentReports({
   )
 }
 function ReportDetail({
-  child,
+  child, canReadOriginals,
   id,
   revision,
   onRevision,
   onAskReport, compact = false, highlight, revealToken = 0,
 }: {
   child: Child
+  canReadOriginals: boolean
   compact?: boolean
   highlight?: ReportHighlight | null
   revealToken?: number
@@ -181,7 +202,7 @@ function ReportDetail({
   onAskReport: (report: ReportContext) => void
 }) {
   const q = useParentQuery(
-      ['report', child.id, id, revision ?? 'latest'],
+      ['report', child.id, id, revision ?? 'latest', canReadOriginals],
       (signal) => parentApi.report(id, child.id, revision, signal),
       true,
       true,
@@ -193,7 +214,8 @@ function ReportDetail({
     download = useParentMutation((format: 'pdf' | 'md') => parentApi.download(id, format)),
     [proof, setProof] = useState<string | null>(null),
     [notice, setNotice] = useState('')
-  const r = q.error ? undefined : q.data,
+  const awaitingPrivateReport = !canReadOriginals && q.data?.status === 'COMPLETED' && q.data.parentSharingEnabled !== false
+  const r = q.error || awaitingPrivateReport ? undefined : q.data,
     ready = r?.status === 'COMPLETED',
     daily = !!r && reportPeriodType(r) === 'DAILY'
   const panel = useRef<HTMLElement>(null), lastReveal = useRef(0)
@@ -233,6 +255,7 @@ function ReportDetail({
   }
   return (
     <section className="ws-card report-detail" ref={panel}>
+      {awaitingPrivateReport && <p role="status">원문 비공개 설정에 맞는 리포트를 확인해야 합니다. <button onClick={() => void q.refetch()}>다시 조회</button></p>}
       <header className="report-document-header"><div><h2>{daily ? '일일 리포트' : '주간 리포트'}</h2>{r && <p>{r.period.from} ~ {r.period.to} · {r.revision}판</p>}</div><div className="report-header-actions">
       <ReportProblem targetType="REPORT" targetId={id}/>
       {!compact && r && ready && r.parentSharingEnabled !== false && (
@@ -356,7 +379,7 @@ function ReportDetail({
       {notice && <p role="status">{notice}</p>}
       <ErrorNotice error={regenerate.error} />
       <ErrorNotice error={download.error} />
-      {proof && r && (
+      {proof && r && canReadOriginals && r.parentSharingEnabled !== false && (
         <Modal title="리포트 항목 근거" onClose={() => setProof(null)}>
           <EvidenceQuery
             queryKey={['report-evidence', child.id, id, proof]}
@@ -408,7 +431,7 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
               </div>
             </div>
           ))}
-          {p.finalAnswer && (
+          {canReadOriginals && p.finalAnswer && (
             <section className="report-final-answer">
               <h4>마지막 답</h4>
               <blockquote>{p.finalAnswer}</blockquote>
@@ -424,8 +447,9 @@ function DailyProblems({ completedDate, problems, onProof, canReadOriginals, hig
             {p.reflection?.written && p.reflection.difficulty && <span className="report-difficulty">{difficultyText(p.reflection.difficulty)}</span>}
             <p>{p.reflection?.written ? p.reflection.text || '작성함' : '쓰지 않음'}</p>
           </section>
-          {p.attemptId && canReadOriginals && (
-            <button className="cj-secondary" onClick={() => onProof(p.attemptId!)}>
+          {!p.itemId && canReadOriginals && <p>이 문제에는 연결된 원문 근거가 없습니다.</p>}
+          {p.itemId && canReadOriginals && (
+            <button className="cj-secondary" onClick={() => onProof(p.itemId!)}>
               원문 근거
             </button>
           )}

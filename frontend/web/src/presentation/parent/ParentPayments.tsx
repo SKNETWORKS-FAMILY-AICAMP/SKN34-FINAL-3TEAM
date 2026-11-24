@@ -38,6 +38,7 @@ export function ParentPayments({ child }: { child?: Child }) {
   const canInitializeWidget = checkoutState.isFetchedAfterMount && state?.status === 'PENDING'
   const createKey = useRef(params.get('orderKey') ?? crypto.randomUUID())
   const [tabNotice, setTabNotice] = useState('')
+  const checkoutTab = useRef<Window | null>(null)
   const [opening, setOpening] = useState(false)
   useEffect(() => {
     const refresh = () => { void cache.invalidateQueries({ queryKey: ['parent'] }) }
@@ -62,11 +63,13 @@ export function ParentPayments({ child }: { child?: Child }) {
         setOrder(await requestCheckoutOrder(child.id, product.id, createKey.current))
         return
       }
+      if (checkoutTab.current && !checkoutTab.current.closed) { checkoutTab.current.focus(); return }
       const url = new URL('/parent/billing', location.origin)
       url.search = new URLSearchParams({ childId: child.id, productId: product.id, checkout: '1', orderKey: createKey.current }).toString()
       const tab = window.open(url.href, '_blank')
       if (!tab) throw new Error('결제 탭이 차단되었습니다. 팝업을 허용한 뒤 다시 눌러 주세요.')
       tab.opener = null
+      checkoutTab.current = tab
       setOpening(true)
       setTabNotice('새 탭에서 결제를 진행해 주세요. 돌아오면 이용권 상태를 다시 확인합니다.')
     } catch (e) { setError(e) } finally { setBusy(false) }
@@ -78,13 +81,13 @@ export function ParentPayments({ child }: { child?: Child }) {
     {duplicate && <p role="status">이 자녀는 이미 이용 중인 구독이 있습니다. 현재 구독에서 결제수단과 자동 갱신을 관리할 수 있습니다.</p>}
     <QueryFeedback query={products} />{!paymentTestMode && <QueryFeedback query={subscriptions} />}<ErrorNotice error={error} />
     {tabNotice && <p role="status" className="parent-payment-notice">{tabNotice}</p>}
-    {opening && <button onClick={() => { setOpening(false); setTabNotice('') }}>결제 탭 다시 열기</button>}
+    {opening && !duplicate && <button disabled={busy} onClick={() => void prepare()}>결제 탭 다시 열기</button>}
     {!checkoutMode && <PaymentManagement key={`current-${child?.id ?? 'all'}`} child={child} section="subscriptions" />}
     {!checkoutMode && products.data?.items.filter(p => p.active && p.price === 0).map(p => <section className="payment-panel parent-free-plan" key={p.id}><div><h2>{p.name} 플랜</h2><p>정기 청구 없이 이용할 수 있어요.</p><strong>{won(p.price)}</strong>{duplicate && <p>현재 이용 기간은 유지됩니다. 현재 구독에서 자동 갱신을 해지하면 이용 기간이 끝난 뒤 무료로 이용합니다.</p>}</div>{duplicate ? <a className="cj-secondary" href="#current-subscriptions">무료 플랜 전환 안내</a> : <button disabled>{!child ? '자녀 선택 필요' : subscriptions.isPending ? '이용권 확인 중' : subscriptions.error ? '이용권 확인 필요' : entitlement?.status === 'FREE' ? '현재 무료 플랜' : '이용권 정보 확인'}</button>}</section>)}
     {!duplicate && !order && products.data && !availableProducts.length && <section className="payment-panel"><h2>이용권 안내</h2><p>현재 구매 가능한 이용권이 없습니다. 기존 이용권과 거래 내역은 아래에서 확인할 수 있습니다.</p><Link to="/parent/support">이용권 문의하기</Link></section>}
     {(!duplicate || !!order) && (!!order || availableProducts.length > 0) && <div className="payment-columns">
       <section className="payment-panel"><h2>{order ? '결제수단' : '이용권 선택'}</h2>
-        {!order ? <><div className="payment-products">{availableProducts.map(p => <label key={p.id} className="payment-option"><input type="radio" name="product" value={p.id} checked={selection === p.id} onChange={() => { setSelection(p.id); createKey.current = crypto.randomUUID() }} /><span>{p.name}<small>자녀 {p.childLimit}명 · {p.billingCycle === 'MONTHLY' ? '1개월 이용권 · 자동 갱신은 별도 동의' : p.billingCycle}</small><small>{typeof p.limits.dailyFeedback === 'number' ? `하루 피드백 ${p.limits.dailyFeedback}회 · ` : ''}{typeof p.limits.dailyConversations === 'number' ? `분석 대화 ${p.limits.dailyConversations}회 · ` : ''}{typeof p.limits.reportNarrative === 'boolean' ? p.limits.reportNarrative ? '전체 리포트' : '수치 리포트' : ''}</small></span><strong>{won(p.price)}</strong></label>)}</div>
+        {!order ? <><div className="payment-products">{availableProducts.map(p => <label key={p.id} className="payment-option"><input type="radio" name="product" value={p.id} checked={selection === p.id} onChange={() => { setSelection(p.id); checkoutTab.current = null; setOpening(false); setTabNotice(''); createKey.current = crypto.randomUUID() }} /><span>{p.name}<small>자녀 {p.childLimit}명 · {p.billingCycle === 'MONTHLY' ? '1개월 이용권 · 자동 갱신은 별도 동의' : p.billingCycle}</small><small>{typeof p.limits.dailyFeedback === 'number' ? `하루 피드백 ${p.limits.dailyFeedback}회 · ` : ''}{typeof p.limits.dailyConversations === 'number' ? `분석 대화 ${p.limits.dailyConversations}회 · ` : ''}{typeof p.limits.reportNarrative === 'boolean' ? p.limits.reportNarrative ? '전체 리포트' : '수치 리포트' : ''}</small></span><strong>{won(p.price)}</strong></label>)}</div>
           {products.data && !products.data.items.some(p => p.active && p.price > 0 && p.billingCycle === 'MONTHLY') && <p>현재 구매 가능한 이용권이 없습니다.</p>}
           <button className="payment-primary" disabled={!child || !product || duplicate || busy || opening || !paymentTestMode && (subscriptions.isPending || !!subscriptions.error) || !paymentAvailable} onClick={() => void prepare()}>{busy ? '주문을 준비하고 있습니다…' : opening ? '새 탭에서 결제 진행 중' : checkoutMode ? '주문 다시 준비' : '결제수단 선택'}</button>
           {!paymentAvailable && <p role="note">지금 결제를 이용할 수 없어요. <Link to="/parent/support">결제 문의하기</Link></p>}

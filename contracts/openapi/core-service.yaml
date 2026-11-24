@@ -3139,7 +3139,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentTransactions'
+                $ref: '#/components/schemas/OwnPaymentTransactions'
         '400':
           description: 검증/권한/거래 상태 또는 의존 서비스 오류
           content:
@@ -3197,6 +3197,9 @@ paths:
           minimum: 1
           maximum: 100
           default: 20
+      - name: childId
+        in: query
+        schema: { type: string, format: uuid }
   /subscriptions:
     get:
       operationId: listOwnSubscriptions
@@ -11541,6 +11544,17 @@ components:
           items:
             $ref: '#/components/schemas/PaymentProduct'
       additionalProperties: false
+    OwnPaymentTransactions:
+      type: object
+      required: [items, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentState'
+        hasNext:
+          type: boolean
+      additionalProperties: false
     PaymentTransactions:
       type: object
       required:
@@ -11965,6 +11979,10 @@ components:
       - reflection
       - quotes
       properties:
+        itemId:
+          type: [string, 'null']
+          format: uuid
+          description: 이 문제의 보존된 리포트 근거 조회에 사용하는 항목 ID
         missionId:
           type: string
         attemptId:

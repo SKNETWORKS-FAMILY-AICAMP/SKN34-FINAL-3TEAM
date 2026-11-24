@@ -122,6 +122,7 @@ export const reportPeriodType = (r: { periodType?: ReportPeriodType }) => r.peri
  * report #390 구현 때 세부 필드가 바뀌면 여기만 맞춘다. 서술 없이 실제 기록만 담는다(P24).
  */
 export interface DailyProblem {
+  itemId?: string | null
   missionId: string
   attemptId?: string
   title: string

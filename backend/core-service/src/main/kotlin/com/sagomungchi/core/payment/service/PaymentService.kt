@@ -75,6 +75,12 @@ class PaymentService(private val repository: PaymentRepository, private val tx: 
         if(from != null && to != null && from>to) conflict("INVALID_DATE_RANGE")
         return repository.orders(parent,status,from,to,page*size,size).map(::view)
     }
+    fun history(parent: UUID, childId: UUID?, page: Int, size: Int): Pair<List<PaymentView>, Boolean> {
+        pagination(page, size)
+        val orders = repository.orders(parent, null, null, null, page * size, size + 1, childId)
+        return orders.take(size).map(::view) to (orders.size > size)
+    }
+
     fun subscriptions(parent: UUID)=repository.subscriptions(parent).map { it.view() }
     fun reconciliation(from: LocalDate?,to: LocalDate?,page: Int,size: Int): List<Map<String,Any?>> {
         pagination(page,size)
