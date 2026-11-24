@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { getResponse } from 'msw'
-import { memoryBookHandlers, MOCK_MEMORY_BOOK_SCENARIO_KEY, resetMockMemoryBooks } from '../src/mocks/handlers/memoryBook.ts'
+import { memoryBookHandlers, MOCK_MEMORY_BOOK_LOCKED_KEY, MOCK_MEMORY_BOOK_SCENARIO_KEY, resetMockMemoryBooks } from '../src/mocks/handlers/memoryBook.ts'
 import { retentionHandlers } from '../src/mocks/handlers/retention.ts'
 import { serviceHandlers } from '../src/mocks/handlers/service.ts'
 import { parentHandlers } from '../src/mocks/handlers/parent.ts'
@@ -15,7 +15,9 @@ import { memoryBookLabel } from '../src/domain/payment.ts'
 import {
   memoryBookFailedReason,
   memoryBookFailure,
+  memoryBookLockedNotice,
   memoryBookPolling,
+  memoryBookShelfLocked,
   readMemoryBook,
   readMemoryBookDownload,
   readMemoryBookPage,
@@ -72,6 +74,23 @@ test('오류 문구는 학부모 말로', () => {
 const handlers = [...memoryBookHandlers, ...retentionHandlers, ...serviceHandlers, ...parentHandlers, ...studentHandlers]
 let token = ''
 let childId = ''
+test('책장 회차 목록(#1000): lockedCount·canCreate를 읽고, #999 전처럼 없으면 숨긴 0·발급 여부 모름', () => {
+  const base = { items: [round()], page: 0, size: 50, totalElements: 1 }
+  const free = readMemoryBookRoundPage({ ...base, lockedCount: 3, canCreate: false })
+  assert.deepEqual([free.lockedCount, free.canCreate, memoryBookShelfLocked(free)], [3, false, true])
+  const paid = readMemoryBookRoundPage({ ...base, lockedCount: 0, canCreate: true })
+  assert.equal(memoryBookShelfLocked(paid), false)
+  const before = readMemoryBookRoundPage(base)
+  assert.deepEqual([before.lockedCount, before.canCreate, memoryBookShelfLocked(before)], [0, null, false])
+  for (const bad of [{ lockedCount: -1 }, { lockedCount: 1.5 }, { lockedCount: '2' }, { canCreate: 'no' }, { canCreate: 0 }])
+    assert.throws(() => readMemoryBookRoundPage({ ...base, ...bad }), /확인하지 못/)
+})
+
+test('책장 잠금 안내: 숨긴 회차가 있으면 그 수, 없으면 프리미엄에서 할 수 있는 것', () => {
+  assert.equal(memoryBookLockedNotice(2), '지난 그림책 2권은 프리미엄에서 볼 수 있어요.')
+  assert.equal(memoryBookLockedNotice(0), '그림책 만들기와 지난 그림책 모아 보기는 프리미엄에서 할 수 있어요.')
+})
+
 async function call(path: string, body?: unknown) {
   const response = await getResponse(
     handlers,
@@ -153,4 +172,20 @@ test('실패한 그림책 이유: 그림을 한 장도 받지 못한 실패는 �
   assert.equal(memoryBookFailedReason('ASSET_UNAVAILABLE'), '그림을 불러오지 못해 만들지 못했습니다. 다시 발급해 주세요.')
   assert.equal(memoryBookFailedReason('INVALID_ROUND'), '지난 발급 실패')
   assert.equal(memoryBookFailedReason(null), '지난 발급 실패')
+})
+
+test('목업 책장(#999 계약): 유료는 전체·lockedCount 0·canCreate true, 무료는 끝난 최근 4주만·숨긴 수·canCreate false', async () => {
+  const paid = readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data)
+  assert.deepEqual([paid.lockedCount, paid.canCreate], [0, true])
+  assert.ok(paid.items.length >= 1)
+  setMockSubscription(childId, 'FREE')
+  const free = readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data)
+  assert.equal(free.canCreate, false)
+  assert.equal(free.totalElements, free.items.length)
+  // 목업 지난 액자는 1~3주 전뿐이라 모두 4주 안: 숨긴 회차 없음, 표지는 유료와 같은 수
+  assert.deepEqual([free.items.length, free.lockedCount], [paid.items.length, 0])
+  storage.set(MOCK_MEMORY_BOOK_LOCKED_KEY, '5')
+  assert.equal(readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data).lockedCount, 5)
+  setMockSubscription(childId, 'PREMIUM')
+  assert.equal(readMemoryBookRoundPage((await call(`/children/${childId}/memory-books/rounds`)).data).lockedCount, 0)
 })

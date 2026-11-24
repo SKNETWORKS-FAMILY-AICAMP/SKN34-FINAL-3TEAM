@@ -1,16 +1,29 @@
-import { BookOpen, Download } from 'lucide-react'
+import { BookOpen, Download, Lock } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { openDownload } from '../../data/memoryBook/api.ts'
 import { useCreateMemoryBook, useMemoryBookDownload, useMemoryBookRounds } from '../../data/memoryBook/queries.ts'
 import type { Child } from '../../domain/classroom.ts'
-import { memoryBookFailedReason, memoryBookFailure } from '../../domain/memoryBook.ts'
+import { memoryBookFailedReason, memoryBookFailure, memoryBookLockedNotice, memoryBookShelfLocked } from '../../domain/memoryBook.ts'
 import type { MemoryBookRoundItem } from '../../domain/memoryBook.ts'
 import { weekLabel } from '../../domain/retention.ts'
 
+/** 무료·프리미엄 비교표 자리(#998, 이용권·결제 화면 섹션 id). 책장 잠금 안내가 여기로 간다(user-flow #997) */
+const comparePath = (childId: string) => `/parent/billing?childId=${encodeURIComponent(childId)}#plan-compare`
+
+/** 책 표지: 회차 시작 그림이 있으면 그 그림, 없으면 테마 이름 첫 글자를 둔 빈 표지(꾸밈이라 읽지 않음) */
+function Cover({ round }: { round: MemoryBookRoundItem }) {
+  if (round.imageUrl) return <img className="memory-shelf-cover" src={round.imageUrl} alt="" loading="lazy" />
+  return <span className="memory-shelf-cover memory-shelf-cover-blank" aria-hidden="true">{(round.title || '책').slice(0, 1)}</span>
+}
+
 /**
- * 학부모 리포트 화면의 추억 그림책 (docs/proposals/memory-book.md).
- * 아이가 받은 기념 액자 회차마다 "그림책 발급" → 만드는 중 → "받기". 발급은 학부모만(2026-11-23 결정).
- * 아이가 답 보여 주기를 꺼 두면 목록 대신 안내만 보인다(D2). 유료·한도 거절은 서버 응답을 안내로 바꿔 보인다.
+ * 학부모 리포트 화면의 추억 그림책 책장 (docs/proposals/memory-book.md, 책장 #1000·설계 #997, api-spec 2.5.1).
+ * 아이가 받은 기념 액자 회차를 표지(시작 그림·테마 제목·주)로 꽂는다.
+ * - 유료(`canCreate`): 회차마다 "그림책 발급" → 만드는 중 → "받기"(지금 흐름 그대로)
+ * - 무료(`canCreate === false`): 서버가 보낸 끝난 최근 4주 표지만, 발급 대신 잠금. 숨긴 회차는 `lockedCount` 숫자로만 알리고 비교표로 잇는다
+ * - 발급 여부를 모르면(#999 전 서버, `canCreate` 없음) 지금처럼 발급 단추를 두고 서버가 거절한다
+ * 아이가 답 보여 주기를 꺼 두면 목록 대신 기존 안내만 보인다(D2, 403 STUDENT_RECORDS_PRIVATE). 아이 화면에는 없다(FN-DSH-01).
  */
 export function ParentMemoryBooks({ child }: { child: Child }) {
   const rounds = useMemoryBookRounds(child.id)
@@ -18,6 +31,9 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
   const download = useMemoryBookDownload(child.id)
   const [notice, setNotice] = useState<string | null>(null)
   const blocked = memoryBookFailure(rounds.error)
+  const shelf = rounds.data
+  const locked = memoryBookShelfLocked(shelf)
+  const lockedCount = shelf?.lockedCount ?? 0
 
   async function issue(round: MemoryBookRoundItem) {
     setNotice(null)
@@ -37,38 +53,52 @@ export function ParentMemoryBooks({ child }: { child: Child }) {
     }
   }
 
+  function action(round: MemoryBookRoundItem) {
+    const book = round.book
+    // 무료라도 이미 만든 그림책(구독 중에 만든 것)은 보관 기간 안 받을 수 있다(api-spec 2.5.1, C2)
+    if (book?.status === 'READY')
+      return <button type="button" disabled={download.isPending} onClick={() => void save(book.bookId)}><Download size={16} aria-hidden="true" /> 받기</button>
+    if (book?.status === 'QUEUED') return <span role="status" className="muted">만드는 중</span>
+    if (locked) return <span className="memory-shelf-lock"><Lock size={14} aria-hidden="true" /> 발급은 프리미엄</span>
+    return <>
+      {book?.status === 'FAILED' && <span className="muted">{memoryBookFailedReason(book.failureCode)}</span>}
+      {book?.status === 'EXPIRED' && <span className="muted">보관 기간 지남</span>}
+      <button type="button" disabled={create.isPending} onClick={() => void issue(round)}>그림책 발급</button>
+    </>
+  }
+
+  const items = shelf?.items ?? []
   return (
     <section className="ws-card parent-memory-books" aria-labelledby="parent-memory-books-h">
       <h2 id="parent-memory-books-h"><BookOpen size={20} aria-hidden="true" /> 추억 그림책</h2>
-      <p>아이가 한 주 테마를 모두 마쳐 받은 기념 액자마다, 그 주의 그림과 아이의 답을 엮은 그림책(PDF)을 발급할 수 있습니다.</p>
+      <p>{locked
+        ? '아이가 한 주 테마를 모두 마쳐 받은 기념 액자가 책장에 꽂혀요. 무료 이용권에서는 최근 4주 표지를 볼 수 있어요.'
+        : '아이가 한 주 테마를 모두 마쳐 받은 기념 액자마다, 그 주의 그림과 아이의 답을 엮은 그림책(PDF)을 발급할 수 있습니다.'}</p>
       {rounds.isPending && <p role="status">불러오는 중입니다.</p>}
       {blocked && <p role="alert">{blocked}</p>}
       {rounds.error && !blocked && <p role="alert">회차 목록을 불러오지 못했습니다.</p>}
-      {rounds.data && rounds.data.items.length === 0 && <p className="muted">아직 받은 기념 액자가 없습니다. 한 주 테마 다섯 문제를 모두 마치면 생깁니다.</p>}
-      {rounds.data && rounds.data.items.length > 0 && (
-        <ul aria-label="그림책을 발급할 수 있는 회차">
-          {rounds.data.items.map((round) => {
-            const book = round.book
-            return (
-              <li key={`${round.themeId}@${round.weekStart}`}>
-                <span><strong>{round.title || '이름 없는 테마'}</strong> · {weekLabel(round.weekStart)}</span>
-                {book?.status === 'QUEUED' ? (
-                  <span role="status" className="muted">만드는 중</span>
-                ) : book?.status === 'READY' ? (
-                  <button type="button" disabled={download.isPending} onClick={() => void save(book.bookId)}>
-                    <Download size={16} aria-hidden="true" /> 받기
-                  </button>
-                ) : (
-                  <>
-                    {book?.status === 'FAILED' && <span className="muted">{memoryBookFailedReason(book.failureCode)}</span>}
-                    {book?.status === 'EXPIRED' && <span className="muted">보관 기간 지남</span>}
-                    <button type="button" disabled={create.isPending} onClick={() => void issue(round)}>그림책 발급</button>
-                  </>
-                )}
-              </li>
-            )
-          })}
+      {shelf && items.length === 0 && lockedCount === 0 && <p className="muted">아직 받은 기념 액자가 없습니다. 한 주 테마 다섯 문제를 모두 마치면 생깁니다.</p>}
+      {shelf && (items.length > 0 || lockedCount > 0) && (
+        <ul className="memory-shelf" aria-label={locked ? '최근 4주 그림책 표지' : '그림책을 발급할 수 있는 회차'}>
+          {items.map((round) => (
+            <li className="memory-shelf-book" key={`${round.themeId}@${round.weekStart}`}>
+              <Cover round={round} />
+              <span className="memory-shelf-meta"><strong>{round.title || '이름 없는 테마'}</strong> · {weekLabel(round.weekStart)}</span>
+              <span className="memory-shelf-action">{action(round)}</span>
+            </li>
+          ))}
+          {locked && lockedCount > 0 && (
+            <li className="memory-shelf-book memory-shelf-hidden">
+              <span className="memory-shelf-cover memory-shelf-cover-locked" aria-hidden="true"><Lock size={28} /></span>
+              <span className="memory-shelf-meta"><strong>잠긴 책 {lockedCount}권</strong> · 지난 회차</span>
+            </li>
+          )}
         </ul>
+      )}
+      {shelf && locked && (
+        <p className="memory-shelf-notice" role="note">
+          {memoryBookLockedNotice(lockedCount)} <Link to={comparePath(child.id)}>무료와 프리미엄 비교 보기</Link>
+        </p>
       )}
       {notice && <p role="alert">{notice}</p>}
     </section>

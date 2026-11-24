@@ -1,6 +1,6 @@
 import { http } from 'msw/http'
 import { ApiError } from '../../data/apiClient.ts'
-import { framesOf } from '../fixtures/retention.ts'
+import { frameImageOf, framesOf, weekStart } from '../fixtures/retention.ts'
 import { requireShared } from '../fixtures/sharing.ts'
 import { mockPremium } from '../fixtures/payments.ts'
 import { respond } from './student.ts'
@@ -23,6 +23,20 @@ const demo = () => {
 }
 const shared = (id: string) => { if (!demo()) requireShared(id) }
 const premium = (id: string) => demo() || mockPremium(id)
+/**
+ * 시연·시험 스위치: sessionStorage에 숨긴 회차 수를 두면 무료 책장의 `lockedCount`에 더한다(목업 지난 액자는 3주뿐이라 4주 밖 회차가 없음).
+ * 실제 숨김은 core #999가 한다(api-spec 2.5.1 무료 책장).
+ */
+export const MOCK_MEMORY_BOOK_LOCKED_KEY = 'sagomungchi:msw-memory-book-locked'
+const extraLocked = () => {
+  try { const n = Number(typeof sessionStorage === 'undefined' ? 0 : sessionStorage.getItem(MOCK_MEMORY_BOOK_LOCKED_KEY) ?? 0); return Number.isInteger(n) && n > 0 ? n : 0 } catch { return 0 }
+}
+/** 무료 책장 기준(api-spec 2.5.1, B6): weekStart ≥ 이번 주 월요일(KST) − 28일 */
+const freeShelfFrom = () => {
+  const monday = new Date(`${weekStart()}T00:00:00Z`)
+  monday.setUTCDate(monday.getUTCDate() - 28)
+  return monday.toISOString().slice(0, 10)
+}
 const READY_AFTER_MS = 4000
 const DAILY_LIMIT = 3
 const SAMPLE_PDF = '/demo/memory-book-sample.pdf'
@@ -89,12 +103,18 @@ export const memoryBookHandlers = [
       const c = await parentChild(request, String(params.childId))
       shared(c.id)
       const now = Date.now()
-      const items = (await framesOfChild(c.id)).map((f) => {
+      const paid = premium(c.id)
+      const frames = await framesOfChild(c.id)
+      // 무료는 끝난 최근 4주만 보이고 숨긴 수를 lockedCount로(core #999 계약). 유료는 전체·lockedCount 0
+      const from = freeShelfFrom()
+      const visible = paid ? frames : frames.filter((f) => f.weekStart >= from)
+      const items = visible.map((f) => {
         const latest = books.filter((b) => b.studentId === c.id && b.themeId === f.themeId && b.weekStart === f.weekStart)
           .sort((a, b) => b.createdAt - a.createdAt)[0]
-        return { themeId: f.themeId, weekStart: f.weekStart, title: f.title, imageUrl: null, book: latest ? view(latest, now) : null }
+        return { themeId: f.themeId, weekStart: f.weekStart, title: f.title, imageUrl: frameImageOf(f), book: latest ? view(latest, now) : null }
       })
-      return { items, page: 0, size: 50, totalElements: items.length }
+      const lockedCount = paid ? 0 : frames.length - visible.length + extraLocked()
+      return { items, page: 0, size: 50, totalElements: items.length, lockedCount, canCreate: paid }
     }),
   ),
   http.post('/api/v1/children/:childId/memory-books', async ({ request, params }) => {
