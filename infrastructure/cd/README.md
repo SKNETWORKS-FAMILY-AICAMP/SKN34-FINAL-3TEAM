@@ -7,7 +7,7 @@
 ```
 수동 실행(main, 계획 JSON, delivery)
   → validate  : main 확인, 계획 검증, SHA가 main 이력인지, (digest PR) images 파일 구조 확인     (GitHub 호스팅)
-  → publish   : deploy만. main-<SHA 12자리> 앱·migration 이미지를 ECR에 게시(이미 있으면 재사용) (GitHub 호스팅, OIDC)
+  → publish   : deploy만. main-<SHA 12자리> 앱·migration 이미지(계획의 jobs가 있으면 작업 이미지도)를 ECR에 게시(이미 있으면 재사용) (GitHub 호스팅, OIDC)
   → digest-pr : (기본) 최종 게이트 → 지금 main HEAD에서 images 파일 갱신 → 브랜치 push → 실행 요약에 PR 만들기 링크
                 → 사람이 링크로 PR 열기(ci-gitops가 pull_request로 자동 실행)                        (사람)
                 → PR을 연 사람과 다른 code owner 1명 승인·병합 → Argo CD 동기화(PreSync migration → 앱)
@@ -18,11 +18,11 @@
 
 | 파일 | 역할 |
 |---|---|
-| `policy.json` | 승인자, 릴리스 브랜치(main), 실행 스위치·환경 보호·인프라 준비 선언. `delivery`: digest PR이 고치는 폴더(`imagesDir`), 서비스 → release 파일(`imageFiles`, 서비스 5개 → 파일 6개), migration 값을 가진 파일(`migrationFiles`, core·learning·report-api) |
+| `policy.json` | 승인자, 릴리스 브랜치(main), 실행 스위치·환경 보호·인프라 준비 선언. `delivery`: digest PR이 고치는 폴더(`imagesDir`), 서비스 → release 파일(`imageFiles`, 서비스 5개 → 파일 6개), migration 값을 가진 파일(`migrationFiles`, core·learning·report-api), 작업 이미지 → 파일(`jobImageFiles`, `tox-retrain`, #985) |
 | `release.example.json` | 운영 배포 계획 형식 |
 | `plan.example.json` | 후보 CI가 쓰는 합성 계획(local) |
 | `scripts/cd_release.py` | 계획 검증과 실행 게이트(`--require-executable`). `--check-images`로 images 파일 구조 확인, `--write-images`로 images 파일 갱신과 PR 본문(`--pr-body`) 생성 |
-| `infrastructure/gitops/environments/prod/images/<release>.json` | #857이 만든 prod 이미지 값. 키 `image.repository`·`image.digest`, core·learning·report-api는 `migration.image.repository`·`migration.image.digest`·`migration.revision`. digest PR만 고친다 |
+| `infrastructure/gitops/environments/prod/images/<release>.json` | #857이 만든 prod 이미지 값. 키 `image.repository`·`image.digest`, core·learning·report-api는 `migration.image.repository`·`migration.image.digest`·`migration.revision`. 작업 이미지 `tox-retrain.json`은 `image`만 있다(ApplicationSet 앱 목록에 없음). digest PR만 고친다 |
 | `.github/CODEOWNERS` | images 폴더 승인자(김동섭·김태윤) |
 | `scripts/verify_cd_deployment.py` | 배포 후 로그인 → 학습 제출 → 리포트 조회 |
 | `scripts/cd_record.py` | (비상용 Helm 경로) 수행자·승인·시점·버전·결과 이력 |
@@ -52,6 +52,8 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 ```
 
 2026-11-17 저장소 변경: 인라인 `ecr-push`의 대상에 `sagomungchi/core-migrate`·`sagomungchi/learning-migrate`를 더했다(migration 이미지 게시). **AWS에는 아직 넣지 않았다.** 재가동 때 위 `put-role-policy`를 같은 파일로 한 번 더 실행해야 publish가 migration 이미지를 올릴 수 있다. 그 전에는 publish가 migration 게시에서 실패하고 배포로 넘어가지 않는다. `demo_stack.py plan`도 그때까지 이 정책을 차이로 보고한다.
+
+2026-11-24 저장소 변경(#985): 인라인 `ecr-push`의 대상에 `sagomungchi/tox-retrain`(표현 분류 재학습 이미지)을 더했다. **AWS에는 아직 넣지 않았다.** 아래 [작업 이미지 게시](#작업-이미지-게시-tox-retrain-985)의 AWS 손 작업(저장소 생성 → 위 `put-role-policy` 재실행)이 끝나기 전에는 `jobs`를 넣은 계획의 publish가 실패한다. `jobs`가 없는 계획은 영향이 없다.
 
 2026-11-04 적용 완료: OIDC 제공자와 역할(인라인 `ecr-push`)을 만들었고, 역할은 `infrastructure/aws/demo-stack.json`에 넣어 `demo_stack.py plan` 대조 대상이다(OK=58). OIDC 제공자는 `demo_stack.py`가 관리하지 않으므로 빈 계정에서 다시 만들 때는 위 명령으로 제공자를 먼저 만든다.
 
@@ -156,7 +158,37 @@ gh pr comment <PR 번호> --body "경로 확인: ok=$($s.ok), $(($s.steps | ForE
 
 - 열린 digest PR은 하나만 둔다. 같은 파일을 고치므로 앞 PR이 병합되면 뒤 PR은 충돌한다. 새로 실행했으면 이전 PR은 병합하지 말고 닫는다(병합하면 더 오래된 digest로 되돌아감). cd-release는 `concurrency: cd-prod`로 실행만 한 번에 하나다.
 - 이력(결정): digest PR(누가·언제 승인·병합, 본문의 digest·계획)과 Argo CD sync 이력이 배포 이력이다. `cd_record.py`의 `history.json` artifact는 비상용 Helm 경로에서만 남기고, 스크립트는 12/7 시연 뒤 정리한다.
-- 계정 전환(B 첫 배포): images 파일의 저장소 주소가 A 레지스트리면 게이트가 "게시한 저장소가 images 파일 저장소와 다릅니다"로 멈춘다. 선행 변수(`CD_ECR_REGISTRY` 등)를 B로 바꾼 뒤, 서비스 5개 전부를 넣은 계획으로 `-f allowRepositoryChange=true`를 주고 실행한다. 저장소 주소와 digest를 함께 바꾸며 PR 본문에 "저장소 변경(계정 전환)"이 표시된다. 서비스 일부만이면 계정이 섞이므로 거부한다.
+- 계정 전환(B 첫 배포): images 파일의 저장소 주소가 A 레지스트리면 게이트가 "게시한 저장소가 images 파일 저장소와 다릅니다"로 멈춘다. 선행 변수(`CD_ECR_REGISTRY` 등)를 B로 바꾼 뒤, 서비스 5개 전부와 `"jobs": ["tox-retrain"]`을 넣은 계획으로 `-f allowRepositoryChange=true`를 주고 실행한다(작업 이미지 파일도 A 저장소 주소라 함께 바꾼다). 저장소 주소와 digest를 함께 바꾸며 PR 본문에 "저장소 변경(계정 전환)"이 표시된다. 서비스 일부만이거나 jobs가 빠지면 계정이 섞이므로 거부한다.
+
+## 작업 이미지 게시 (tox-retrain, #985)
+
+표현 분류 재학습 이미지(`ml/tox/Dockerfile`, 빌드 기준 저장소 루트, #729)는 #730 CronJob이 digest로 쓴다. 약 1.89GB라 매 릴리스가 아니라 **계획에 `jobs`를 넣은 릴리스만** 빌드한다(2026-11-24 동섭 결정, 선택값).
+
+- 계획: `"jobs": ["tox-retrain"]`. 재학습 코드(`ml/tox/**`, `scripts/prepare_model_upload.py`)가 바뀐 릴리스에서 넣는다. 넣지 않으면 `images/tox-retrain.json`은 이전 digest에 머문다.
+- 앱 없이 작업 이미지만: `"services": []`와 `jobs`를 같이 둔다. 호환성 여섯 항목 규칙은 그대로라 근거에 "앱 변경 없음"을 적는다. migration은 없다.
+- publish: 같은 `main-<SHA 12자리>` 불변 태그로 `sagomungchi/tox-retrain`에 `docker buildx build -f ml/tox/Dockerfile .`. 태그가 이미 있으면 digest만 읽는다.
+- digest PR: `images/tox-retrain.json`의 `image.digest`(계정 전환이면 `image.repository`도)만 바꾼다. 본문 표와 계획 기록 JSON(`jobs`)에 함께 나온다.
+- 비상용 Helm 경로(`helm-emergency`)는 앱 release만 다루므로 `jobs`가 있는 계획은 validate에서 거부한다.
+- PR 확인: `ci-ml-tox`의 `image` job이 `docker build -f ml/tox/Dockerfile .`만 한다(push·로그인 없음).
+- 처음 `images/tox-retrain.json`의 digest는 `sha256:0…0` 자리표시다. 첫 `jobs` 실행의 digest PR이 실제 값으로 바꾸기 전에는 #730 prod CronJob을 켜지 않는다.
+
+AWS 손 작업(계정마다 한 번, 저장소 변경만으로는 반영되지 않음):
+
+| 순서 | 할 일 | 확인 |
+|---|---|---|
+| 1 | ECR 저장소 생성. `python infrastructure/aws/demo_stack.py --profile <프로필> plan`에서 `ecr sagomungchi/tox-retrain MISSING`을 보고 `apply --confirm-account <계정>`(없는 자원만 만든다), 또는 아래 명령 | `describe-repositories`에 IMMUTABLE |
+| 2 | 게시 역할 인라인 정책 다시 넣기(위 A절 `put-role-policy`, 같은 파일) | `demo_stack.py plan`의 `github-cd-publish` 정책 OK |
+| 3 | `jobs`를 넣은 계획으로 cd-release 한 번 → 링크로 digest PR 열기 | PR에 `tox-retrain` 행, `images/tox-retrain.json` digest가 ECR `main-<SHA>` 태그 digest와 같음 |
+
+```powershell
+$profile = 'sagomungchi-provided'   # B 계정이면 B 프로필
+aws ecr create-repository --profile $profile --region ap-northeast-2 --repository-name sagomungchi/tox-retrain `
+  --image-tag-mutability IMMUTABLE --encryption-configuration encryptionType=AES256
+aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-cd-publish `
+  --policy-name ecr-push --policy-document file://infrastructure/aws/iam/github-cd-publish-role.inline.ecr-push.json
+```
+
+B 계정은 IAM·ECR 파일의 계정 번호를 바꾸는 6a PR 뒤 `demo_stack.py apply`(B 런북 1단계)가 저장소를 만들고 역할 정책을 넣는다. 별도 명령은 필요 없다.
 
 ## digest PR 되돌리기 (#858)
 
@@ -177,6 +209,7 @@ A 재가동(11/25)에서 Argo CD 설치·플랫폼·앱(#855~#857)이 Synced/Hea
 | 4 | Argo CD 동기화 | 앱 Application Synced/Healthy, migration PreSync Job Complete, Pod 이미지 digest가 PR 값과 같음(`kubectl -n app get pod -o jsonpath='{..image}'`), Discord 알림 |
 | 5 | `verify_cd_deployment.py` → PR 댓글 | 6단계 ok |
 | 6 | digest PR Revert → 승인·병합 | Argo CD가 이전 digest로 Synced/Healthy, 경로 확인 다시 ok. 확인 뒤 같은 계획으로 다시 실행해 최신 digest로 돌려놓는다 |
+| 7 | (#985, 6 뒤) [작업 이미지 게시](#작업-이미지-게시-tox-retrain-985) AWS 손 작업 1·2 → `"services": []`, `"jobs": ["tox-retrain"]` 계획으로 cd-release → 링크로 digest PR | publish가 `sagomungchi/tox-retrain:main-<SHA>` 게시(약 1.89GB), PR이 `images/tox-retrain.json`만 바꿈, 병합해도 앱 Application은 변화 없음 |
 
 - 대체안(에픽 #859): 11/24 저장소 설정(B2)이 늦어지면 1·2·4·5·6은 그대로 하고 3은 승인 없이 병합되는 것만 기록한다.
 - 막히면: 비상용 Helm 경로(아래)로 배포하고 Argo CD로 넘긴다.

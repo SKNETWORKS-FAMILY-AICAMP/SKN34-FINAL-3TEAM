@@ -5,6 +5,7 @@
 # 비상용(helm-emergency, 12/7 시연까지 유지): 예전 흐름 그대로 prod 승인 → 작업자 PC self-hosted runner(cd-prod)
 # 에서 migration Job 완료 → Helm 적용 → 경로 확인 → 이력 기록. 쓰기 전에 해당 Argo CD Application 자동 동기화를 끈다.
 # 실패해도 자동 롤백하지 않는다. migration 실패면 앱을 적용하지 않고, DB는 되돌리지 않는다.
+# 작업 이미지(#985, 표현 분류 재학습 tox-retrain)는 계획의 jobs에 있을 때만 같은 태그 규칙으로 게시하고 digest PR로만 고정한다.
 # 빈 클러스터 첫 배포(#760)의 계획 currentRelease "none"은 비상용 Helm 경로에서만 의미가 있다.
 name: cd-release
 
@@ -24,7 +25,7 @@ on:
           - pull-request
           - helm-emergency
       allowRepositoryChange:
-        description: "digest PR에서 images 파일 저장소 주소도 바꿈(계정 전환 첫 배포만, 서비스 5개 전부)"
+        description: "digest PR에서 images 파일 저장소 주소도 바꿈(계정 전환 첫 배포만, 서비스 5개와 jobs 전부)"
         required: false
         default: false
         type: boolean
@@ -42,6 +43,7 @@ jobs:
     outputs:
       operation: ${{ steps.plan.outputs.operation }}
       services: ${{ steps.plan.outputs.services }}
+      jobs: ${{ steps.plan.outputs.jobs }}
       delivery: ${{ inputs.delivery }}
     steps:
       - name: main에서만 실행
@@ -85,6 +87,8 @@ jobs:
           plan = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "plan.json"), encoding="utf-8"))
           print("operation=" + plan["operation"])
           print("services=" + json.dumps(plan["services"], separators=(",", ":")))
+          # 작업 이미지(#985)는 선택값이다. 약 1.89GB라 매 릴리스가 아니라 계획에 넣은 릴리스만 빌드한다
+          print("jobs=" + json.dumps(plan.get("jobs", []), separators=(",", ":")))
           EOF
 
   publish:
@@ -105,10 +109,11 @@ jobs:
           aws-region: ${{ vars.CD_AWS_REGION }}
       - uses: docker/setup-buildx-action@v4
       - id: images
-        name: main SHA 앱·migration 이미지 게시 (ECR 태그 불변, 이미 있으면 재사용)
+        name: main SHA 앱·migration·작업 이미지 게시 (ECR 태그 불변, 이미 있으면 재사용)
         env:
           REGISTRY: ${{ vars.CD_ECR_REGISTRY }}
           SERVICES: ${{ needs.validate.outputs.services }}
+          JOBS: ${{ needs.validate.outputs.jobs }}
         run: |
           set -euo pipefail
           shopt -s inherit_errexit
@@ -140,6 +145,14 @@ jobs:
               *) continue ;;
             esac
             migrations=$(jq -c --arg s "$service" --arg i "$migration" '. + {($s): $i}' <<<"$migrations")
+          done
+          # 작업 이미지(#985). 같은 main-<SHA> 불변 태그, 이미 있으면 재사용. migration 없음
+          for job in $(echo "$JOBS" | jq -r '.[]'); do
+            case "$job" in
+              tox-retrain) image=$(publish "sagomungchi/tox-retrain" -f ml/tox/Dockerfile .) ;;
+              *) echo "지원하지 않는 작업 이미지: $job" >&2; exit 1 ;;
+            esac
+            images=$(jq -c --arg s "$job" --arg i "$image" '. + {($s): $i}' <<<"$images")
           done
           echo "images=$images" >> "$GITHUB_OUTPUT"
           echo "migrations=$migrations" >> "$GITHUB_OUTPUT"

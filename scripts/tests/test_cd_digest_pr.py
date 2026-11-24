@@ -32,6 +32,8 @@ REPOSITORIES = {
     "report-worker": "report-service",
 }
 MIGRATIONS = {"core-service": "core-migrate", "learning-service": "learning-migrate", "report-api": "report-service"}
+# 작업 이미지 파일(#985). image만 있고 migration이 없다
+JOB_REPOSITORIES = {"tox-retrain": "tox-retrain"}
 
 
 def digest(char):
@@ -42,7 +44,7 @@ def write_fixture(root, *, registry=REGISTRY, skip=()):
     """#857 계약: image.repository·image.digest, migration은 migration.image.*·migration.revision."""
     folder = Path(root) / POLICY["delivery"]["imagesDir"]
     folder.mkdir(parents=True, exist_ok=True)
-    for release, repository in REPOSITORIES.items():
+    for release, repository in (REPOSITORIES | JOB_REPOSITORIES).items():
         if release in skip:
             continue
         data = {"image": {"repository": f"{registry}/sagomungchi/{repository}", "digest": digest("0")}}
@@ -55,8 +57,8 @@ def write_fixture(root, *, registry=REGISTRY, skip=()):
     return folder
 
 
-def deploy_plan(services=("core-service", "ai-service", "report-service")):
-    images = {s: f"{REGISTRY}/sagomungchi/{s}@{digest('a')}" for s in services}
+def deploy_plan(services=("core-service", "ai-service", "report-service"), jobs=()):
+    images = {s: f"{REGISTRY}/sagomungchi/{s}@{digest('a')}" for s in (*services, *jobs)}
     migrations = {
         s: (images[s] if s == "report-service" else f"{REGISTRY}/sagomungchi/{s.removesuffix('-service')}-migrate@{digest('b')}")
         for s in services
@@ -68,6 +70,7 @@ def deploy_plan(services=("core-service", "ai-service", "report-service")):
         "sourceCommit": SHA,
         "sourceBranch": "main",
         "services": list(services),
+        "jobs": list(jobs),
         "currentRelease": "main-000000000000",
         "targetRelease": "main-" + SHA[:12],
         "reason": "합성 digest PR 확인",
@@ -84,6 +87,8 @@ class DeliveryPolicyTests(unittest.TestCase):
         files = [r for names in POLICY["delivery"]["imageFiles"].values() for r in names]
         self.assertEqual(sorted(files), sorted(REPOSITORIES))  # 서비스 5개 → release 파일 6개
         self.assertEqual(set(POLICY["delivery"]["migrationFiles"].values()), set(MIGRATIONS))
+        jobs = [r for names in POLICY["delivery"]["jobImageFiles"].values() for r in names]
+        self.assertEqual(sorted(jobs), sorted(JOB_REPOSITORIES))
 
     def test_broken_delivery_policy_is_rejected(self):
         for mutate in (
@@ -92,6 +97,10 @@ class DeliveryPolicyTests(unittest.TestCase):
             lambda d: d["imageFiles"].update({"ai-service": ["core-service"]}),
             lambda d: d["migrationFiles"].update({"report-service": "core-service"}),
             lambda d: d["migrationFiles"].pop("core-service"),
+            lambda d: d.pop("jobImageFiles"),
+            lambda d: d["jobImageFiles"].pop("tox-retrain"),
+            lambda d: d["jobImageFiles"].update({"tox-retrain": ["ai-service"]}),  # 앱 파일과 겹침
+            lambda d: d["jobImageFiles"].update({"tox-retrain": []}),
         ):
             policy = copy.deepcopy(POLICY)
             mutate(policy["delivery"])
@@ -146,10 +155,14 @@ class ImageFileUpdateTests(unittest.TestCase):
         # 일부 서비스만이면 계정이 섞이므로 거부
         _, errors = cd.image_file_updates(deploy_plan(), POLICY, self.root, allow_repository_change=True)
         self.assertTrue(any("전부" in e for e in errors))
+        # 서비스 전부여도 작업 이미지(jobs)가 빠지면 tox-retrain.json만 A 주소로 남으므로 거부(#985)
         plan = deploy_plan(tuple(sorted(cd.SERVICES)))
+        _, errors = cd.image_file_updates(plan, POLICY, self.root, allow_repository_change=True)
+        self.assertTrue(any("jobs" in e for e in errors))
+        plan = deploy_plan(tuple(sorted(cd.SERVICES)), tuple(sorted(cd.JOBS)))
         changes, errors = cd.image_file_updates(plan, POLICY, self.root, allow_repository_change=True)
         self.assertEqual(errors, [])
-        self.assertEqual(len(changes), 6)
+        self.assertEqual(len(changes), 7)
         for change in changes:
             data = json.loads(change["content"])
             self.assertTrue(data["image"]["repository"].startswith(REGISTRY + "/"))
@@ -159,6 +172,31 @@ class ImageFileUpdateTests(unittest.TestCase):
         body = cd.render_pr_body(plan, changes)
         self.assertIn("저장소 변경(계정 전환)", body)
         self.assertIn("111111111111.dkr.ecr", body)
+
+    def test_job_only_plan_updates_only_the_job_file(self):
+        # #985: 앱 없이 재학습 이미지만 올리는 계획. migration 키는 만들지 않는다
+        plan = deploy_plan((), ("tox-retrain",))
+        self.assertTrue(cd.validate(plan, POLICY)["valid"], cd.validate(plan, POLICY))
+        changes, errors = cd.image_file_updates(plan, POLICY, self.root)
+        self.assertEqual(errors, [])
+        self.assertEqual([c["release"] for c in changes], ["tox-retrain"])
+        data = json.loads(changes[0]["content"])
+        self.assertEqual(data, {"image": {"repository": f"{REGISTRY}/sagomungchi/tox-retrain", "digest": digest("a")}})
+        self.assertEqual(changes[0]["file"], POLICY["delivery"]["imagesDir"] + "/tox-retrain.json")
+        body = cd.render_pr_body(plan, changes)
+        self.assertIn("| tox-retrain | `", body)
+        self.assertIn('"jobs": [\n    "tox-retrain"\n  ]', body)  # 계획 기록 JSON
+        self.assertIn('"tox-retrain"', body)
+
+    def test_services_and_jobs_together(self):
+        plan = deploy_plan(("ai-service",), ("tox-retrain",))
+        changes, errors = cd.image_file_updates(plan, POLICY, self.root)
+        self.assertEqual(errors, [])
+        self.assertEqual([c["release"] for c in changes], ["ai-service", "tox-retrain"])
+
+    def test_job_file_without_image_key_fails(self):
+        (self.folder / "tox-retrain.json").write_text('{"image": {"repository": "x"}}', encoding="utf-8")
+        self.assertTrue(any("tox-retrain: image.digest" in e for e in cd.check_images_files(POLICY, self.root)))
 
     def test_missing_file_or_key_fails(self):
         (self.folder / "report-worker.json").unlink()

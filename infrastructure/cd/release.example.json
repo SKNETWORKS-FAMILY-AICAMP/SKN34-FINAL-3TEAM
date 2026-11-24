@@ -4,6 +4,7 @@
   "sourceCommit": "<develop → main 릴리스 병합 후 main SHA 40자리>",
   "sourceBranch": "main",
   "services": ["learning-service", "ai-service", "scoring-service", "report-service"],
+  "jobs": [],
   "currentRelease": "<현재 배포 버전 이름, 예: b67d8a4. 앱 release가 없는 빈 클러스터 첫 배포는 none>",
   "targetRelease": "<이번 버전 이름, 예: main-xxxxxxxxxxxx>",
   "reason": "<배포 사유>",

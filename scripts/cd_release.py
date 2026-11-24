@@ -20,6 +20,11 @@ SERVICES = {
     "scoring-service",
     "report-service",
 }
+# 앱이 아닌 작업 이미지(#985). 계획의 jobs에 있을 때만 빌드·게시하고 digest PR이 images 파일만 갱신한다.
+# 호환성·migration·Helm 적용 대상이 아니며, 이 digest는 해당 작업(CronJob)의 Application이 읽는다
+JOBS = {
+    "tox-retrain",  # 표현 분류 재학습(#729 이미지, #730 CronJob)
+}
 # DB를 가진 서비스의 migration 이미지 저장소. report Alembic은 앱 이미지 안에 있다
 MIGRATION_REPOSITORIES = {
     "core-service": "core-migrate",
@@ -123,10 +128,21 @@ def validate(plan, policy, *, pending_images=False):
         errors.append("현재 버전과 대상 버전이 같습니다")
     if plan.get("currentRelease") == FIRST_INSTALL and plan.get("operation") != "deploy":
         errors.append("첫 배포(currentRelease none)는 deploy만 가능합니다. 되돌릴 이전 버전이 없습니다")
+    jobs = plan.get("jobs", [])
+    if (
+        not isinstance(jobs, list)
+        or len(set(map(str, jobs))) != len(jobs)
+        or not set(jobs) <= JOBS
+    ):
+        errors.append("jobs는 지원 작업 이미지(tox-retrain)의 중복 없는 목록이어야 합니다")
+        jobs = None
+    elif jobs and plan.get("operation") != "deploy":
+        errors.append("jobs(작업 이미지)는 deploy만 받습니다. 되돌리기는 digest PR revert로 합니다")
     services = plan.get("services")
     if (
         not isinstance(services, list)
-        or not services
+        # 작업 이미지만 올리는 계획(services 빈 목록 + jobs)은 허용한다(#985)
+        or (not services and not jobs)
         or len(set(map(str, services))) != len(services)
         or not set(services) <= SERVICES
     ):
@@ -138,10 +154,10 @@ def validate(plan, policy, *, pending_images=False):
     elif not isinstance(images, dict) or not images:
         errors.append("변경 서비스 이미지가 필요합니다")
     else:
-        if services is not None and set(images) != set(services):
-            errors.append("images의 서비스가 services와 다릅니다")
+        if services is not None and jobs is not None and set(images) != set(services) | set(jobs):
+            errors.append("images의 서비스·작업이 services·jobs와 다릅니다")
         for service, image in images.items():
-            if service not in SERVICES:
+            if service not in SERVICES | JOBS:
                 errors.append(f"지원하지 않는 서비스: {service}")
             if not isinstance(image, str) or not re.fullmatch(
                 image_pattern(plan.get("environment")), image
@@ -149,6 +165,8 @@ def validate(plan, policy, *, pending_images=False):
                 errors.append(
                     f"{service}: 환경에 맞는 레지스트리와 불변 digest가 필요합니다"
                 )
+            elif service in JOBS and image.split("@")[0].rsplit("/", 1)[-1] != service:
+                errors.append(f"{service}: {service} 저장소 이미지여야 합니다")
     errors.extend(validate_migrations(plan, services, images, pending_images))
     for name in CHECKS:
         evidence = compatibility.get(name, {})
@@ -208,8 +226,21 @@ def validate_delivery(policy):
             errors.append(f"delivery.imageFiles.{service}: release 이름 목록이 필요합니다")
             continue
         releases.extend(names)
+    jobs = delivery.get("jobImageFiles")
+    if not isinstance(jobs, dict) or set(jobs) != JOBS:
+        errors.append("delivery.jobImageFiles는 지원 작업 이미지마다 하나씩 있어야 합니다")
+        jobs = {}
+    for job, names in jobs.items():
+        if (
+            not isinstance(names, list)
+            or not names
+            or not all(isinstance(n, str) and re.fullmatch(r"[a-z0-9-]+", n) for n in names)
+        ):
+            errors.append(f"delivery.jobImageFiles.{job}: images 파일 이름 목록이 필요합니다")
+            continue
+        releases.extend(names)
     if len(releases) != len(set(releases)):
-        errors.append("delivery.imageFiles에 같은 release가 두 번 있습니다")
+        errors.append("delivery.imageFiles·jobImageFiles에 같은 release가 두 번 있습니다")
     migrations = delivery.get("migrationFiles")
     if not isinstance(migrations, dict) or set(migrations) != set(MIGRATION_REPOSITORIES):
         errors.append("delivery.migrationFiles는 DB를 가진 서비스(core·learning·report)와 같아야 합니다")
@@ -237,6 +268,11 @@ def _images_path(policy, root, release):
     return Path(root) / policy["delivery"]["imagesDir"] / f"{release}.json"
 
 
+def _image_files(delivery):
+    """서비스·작업 이미지 → images 파일 이름 목록. 작업 이미지 파일은 image만 갖는다."""
+    return delivery["imageFiles"] | delivery["jobImageFiles"]
+
+
 def check_images_files(policy, root):
     """#857 images 파일이 계약 키를 갖는지 본다. 값이 아닌 구조만 확인한다."""
     errors = validate_delivery(policy)
@@ -244,7 +280,7 @@ def check_images_files(policy, root):
         return errors
     delivery = policy["delivery"]
     migration_releases = set(delivery["migrationFiles"].values())
-    for names in delivery["imageFiles"].values():
+    for names in _image_files(delivery).values():
         for release in names:
             path = _images_path(policy, root, release)
             try:
@@ -277,8 +313,12 @@ def image_file_updates(record, policy, root, *, allow_repository_change=False):
         return [], errors
     if record.get("environment") != "prod" or record.get("operation") != "deploy":
         return [], ["digest PR은 prod deploy만 만듭니다. 되돌리기는 digest PR revert로 합니다"]
-    if allow_repository_change and set(record.get("services") or []) != SERVICES:
-        return [], ["저장소 변경은 지원 서비스 전부(5개)를 한 PR에서 바꿀 때만 허용합니다(계정 혼재 방지)"]
+    if allow_repository_change and (
+        set(record.get("services") or []) != SERVICES or set(record.get("jobs") or []) != JOBS
+    ):
+        return [], [
+            "저장소 변경은 지원 서비스 전부(5개)와 작업 이미지 전부(jobs)를 한 PR에서 바꿀 때만 허용합니다(계정 혼재 방지)"
+        ]
     commit = record.get("sourceCommit") or ""
     revision = "main-" + commit[:12]
     delivery = policy["delivery"]
@@ -300,9 +340,10 @@ def image_file_updates(record, policy, root, *, allow_repository_change=False):
         target["repository"] = new_repository
         return old
 
-    for service in record.get("services") or []:
+    files = _image_files(delivery)
+    for service in (record.get("services") or []) + (record.get("jobs") or []):
         repository, digest = _split_image(images[service])
-        for release in delivery["imageFiles"][service]:
+        for release in files[service]:
             path = _images_path(policy, root, release)
             data = json.loads(path.read_bytes())
             before = {"image": data["image"]["digest"]}
@@ -384,7 +425,7 @@ def render_pr_body(record, changes, *, run_url="", base_sha=""):
         lines.append(f"| {name} | {item.get('status')} | {evidence} |")
     plan = {k: record.get(k) for k in ("environment", "operation", "sourceCommit", "sourceBranch",
                                          "services", "currentRelease", "targetRelease", "reason",
-                                         "databaseAction", "images", "migrations")}
+                                         "jobs", "databaseAction", "images", "migrations")}
     lines += [
         "",
         "<details><summary>계획 기록 JSON</summary>",
@@ -511,6 +552,9 @@ def main():
                 )
             else:
                 result["errors"].extend(check_images_files(policy, args.repo_root))
+        elif isinstance(plan, dict) and plan.get("jobs"):
+            # 비상용 Helm 경로는 앱 release만 다룬다. 작업 이미지 digest는 digest PR로만 고정한다
+            result["errors"].append("jobs(작업 이미지)는 digest PR 방식(pull-request)에서만 받습니다")
         result["valid"] = not result["errors"]
         result["executable"] = result["valid"] and not result["blocks"]
     except (OSError, ValueError, UnicodeError) as exc:
@@ -539,6 +583,7 @@ def main():
         # 실행기는 이 값이 true일 때만 release가 없는 앱을 helm install로 올린다
         "firstInstall": plan.get("currentRelease") == FIRST_INSTALL,
         "services": plan.get("services"),
+        "jobs": plan.get("jobs", []),
         "images": plan.get("images"),
         "migrations": plan.get("migrations"),
         **result,

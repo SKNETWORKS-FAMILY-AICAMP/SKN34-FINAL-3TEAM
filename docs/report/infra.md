@@ -1999,6 +1999,39 @@ SELECT status, failure_code, size_bytes, created_at, completed_at FROM memory_bo
 - `verify_cd_deployment.py --base-url https://www.sagomungchi.co.kr` 경로 확인(fixture 쿠키를 새 주소에서 다시 받은 뒤)
 - 예전 주소에서 로그인이 막히는 것(예상 동작)
 
+## 9.23 표현 분류 재학습 이미지 ECR 게시와 digest 고정 (#985, 2026-11-24)
+
+MLOps 단계 점검(11/24)에서 재학습 이미지 배포가 빠져 있었다. `ml/tox/Dockerfile`(#729)을 운영 ECR에 올리는 경로가 없었고, #730 CronJob이 쓸 digest도 없었다. 새 도구 없이 cd-release의 `main-<SHA>` 불변 태그·재사용 규칙과 digest PR(#858·#986)을 그대로 쓴다.
+
+### 9.23.1 결정
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 빌드 시점 | 선택값. 계획에 `"jobs": ["tox-retrain"]`이 있을 때만 빌드·게시(2026-11-24 동섭) | 이미지가 약 1.89GB(CPU torch)라 앱 릴리스마다 빌드하면 runner 시간·ECR 용량이 커진다. 재학습 코드는 앱보다 드물게 바뀐다 |
+| 앱 없는 계획 | `"services": []` + `jobs` 허용 | 재학습 이미지만 바꿀 때 앱을 억지로 넣지 않는다. 호환성 여섯 항목 근거 규칙은 그대로 |
+| 고정 위치 | `infrastructure/gitops/environments/prod/images/tox-retrain.json`(`image.repository`·`image.digest`), `policy.json` `delivery.jobImageFiles` | 앱과 같은 images 폴더라 digest PR·CODEOWNERS·revert 규칙을 그대로 쓴다. 앱 ApplicationSet 목록과는 따로 둔다(ci-gitops 목록 검사에서 제외) |
+| 비상용 Helm 경로 | `jobs`가 있으면 거부 | Helm 경로는 앱 release만 적용한다. 작업 이미지는 digest PR로만 고정 |
+| 계정 전환 | `allowRepositoryChange`는 서비스 5개 + `jobs` 전부일 때만 | 작업 이미지 파일만 A 레지스트리로 남는 혼재를 막는다 |
+| PR 확인 | `ci-ml-tox` `image` job이 `docker build -f ml/tox/Dockerfile .`만(push·로그인 없음) | 빌드 깨짐을 릴리스 전에 본다. `ml/tox/**`·`scripts/prepare_model_upload.py`가 바뀐 PR에서만 돈다 |
+
+### 9.23.2 바꾼 것
+
+- `cd-release.yml`: validate가 `jobs`를 출력하고, publish가 `sagomungchi/tox-retrain`을 `-f ml/tox/Dockerfile .`로 게시한다(같은 `publish` 함수). digest-pr의 PR 열기 링크 단계는 바꾸지 않았다.
+- `scripts/cd_release.py`: `JOBS`, `jobs` 검증(deploy만, 저장소 이름 `tox-retrain`, `images` 키 = services ∪ jobs), `jobImageFiles` 정책 검사, images 파일 갱신·PR 본문에 작업 이미지 포함.
+- IAM `github-cd-publish-role.inline.ecr-push.json`과 `demo-stack.json` `ecrRepositories`에 `sagomungchi/tox-retrain`(ECR 8개 → 9개).
+- `images/tox-retrain.json`의 처음 digest는 `sha256:0…0` 자리표시다. 첫 `jobs` 실행 digest PR이 실제 값으로 바꾼다.
+
+### 9.23.3 사람이 할 일 (AWS, 아직 하지 않음)
+
+| 계정 | 할 일 | 순서 |
+|---|---|---|
+| A | ECR `sagomungchi/tox-retrain` 생성(IMMUTABLE, AES256) → 게시 역할 인라인 `ecr-push` 다시 넣기 → `jobs` 계획으로 cd-release 한 번 → digest PR에 `tox-retrain.json` 갱신 확인 | [CD README 작업 이미지 게시](../../infrastructure/cd/README.md#작업-이미지-게시-tox-retrain-985) 표 1~3. A 재가동(11/25) 중 앱 digest PR 확인 뒤 |
+| B | 6a PR(계정 번호 교체) 뒤 `demo_stack.py apply`가 저장소와 역할 정책을 함께 만든다(B 런북 1단계). 첫 digest PR은 서비스 5개 + `"jobs": ["tox-retrain"]` + `allowRepositoryChange=true`(16단계) | [AWS README B 런북](../../infrastructure/aws/README.md#b-계정-전환-런북-809) |
+
+### 9.23.4 #730 CronJob 연결 (후속)
+
+#730(`feature/tox-retrain-kind`)의 차트는 `.Values.image`를 문자열로 받고 kind용 `imagePullPolicy: Never`다. prod Application을 만들 때 values에 `images/tox-retrain.json`을 같이 넘기고, 차트가 `image.repository`·`image.digest`로 `<저장소>@<digest>`를 만들게 한다(앱 chart와 같은 방식, prod는 `IfNotPresent`). 자리표시 digest인 동안에는 prod CronJob을 켜지 않는다.
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
