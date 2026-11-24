@@ -460,7 +460,7 @@ test('상세 설명 구역과 개선 목록을 화면 폭에 맞춰 읽고 보�
     { ...explanation, answerId: 'no-difficulty', attemptId: 'no-difficulty', missionTitle: '이유를 연결한 글', text: JSON.stringify({ ...content, improvement_points: null }) }] }
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
-  const area = page.getByRole('region', { name: '젬마 설명', exact: true })
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   const first = area.getByRole('article').first()
   await expect(first.getByRole('heading', { name: '상세 분석', exact: true })).toBeVisible()
   await expect(first.getByRole('heading', { name: '보완할 지점', exact: true })).toBeVisible()
@@ -489,23 +489,23 @@ test('#479: 인용 없는 검증 설명은 요약 검증 실패와 독립적으�
   report.verification = { numbersMatched: false, quotesMatched: false }
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
-  const area = page.getByRole('region', { name: '젬마 설명', exact: true })
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   await expect(area.getByRole('article')).toHaveCount(1)
   await expect(area.locator('blockquote')).toHaveText('나무는 그늘을 만들어 줍니다. 더운 날 그늘에서 쉬면 시원합니다. 그래서 나무를 보호해야 합니다.')
   await expect(area.getByText(explanation.text, { exact: true })).toBeVisible()
 })
 
-test('#481: 주간 설명 카드의 미션·유형·인용·설명과 AI 관찰을 표시한다', async ({ page, context }) => {
+test('#481: 주간 대표 답변 설명 카드의 미션·유형·인용·설명을 표시한다', async ({ page, context }) => {
   const { report, children } = await parentServer(context, 'WEEKLY')
   children[0].grade = 5
   report.explanations = { state: 'INCLUDED', items: [explanation, { ...explanation, answerId: 'answer-two', attemptId: 'answer-two', thinkingType: 'CREATE', missionTitle: '새로운 나무집' }] }
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
-  const area = page.getByRole('region', { name: '젬마 설명', exact: true })
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   await expect(page.getByLabel('주간 리포트 활동 선택').locator('option')).toHaveCount(2)
   await expect(area.getByRole('article')).toHaveCount(1)
   await expect(page.locator('.weekly-activity-heading')).toContainText(explanation.missionTitle)
-  await expect(area.getByRole('heading', { name: '젬마 설명', exact: true })).toBeVisible()
+  await expect(area.getByRole('heading', { name: '대표 답변 설명', exact: true })).toBeVisible()
   await expect(page.locator('.weekly-activity-heading')).toContainText('분석하기')
   await expect(area.getByRole('heading', { name: '학생 글 전체', exact: true })).toHaveCount(1)
   await expect(area.locator('blockquote').first()).toHaveText('나무는 그늘을 만들어 줍니다. 더운 날 그늘에서 쉬면 시원합니다. 그래서 나무를 보호해야 합니다.')
@@ -522,7 +522,7 @@ for (const [state, notice] of [
   report.explanations = state == null ? state : { state, items: [] }
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
-  const area = page.getByRole('region', { name: '젬마 설명', exact: true })
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   await expect(area.getByRole('note')).toContainText(notice)
   await expect(area.getByRole('article')).toHaveCount(0)
   await expect(page.locator('.report-count-list').getByText('답변 제출 시도 수', { exact: true })).toBeVisible()
@@ -543,9 +543,94 @@ for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481:
   await openReport(page)
   await expect(page.getByText(explanation.quote, { exact: true })).toHaveCount(0)
   await expect(page.getByText(explanation.text, { exact: true })).toHaveCount(0)
-  const area = page.getByRole('region', { name: '젬마 설명', exact: true })
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   if (kind === 'DAILY') await expect(area).toHaveCount(0)
   else await expect(area.getByRole('note')).toContainText(kind === 'FREE' ? '프리미엄' : kind === 'PRIVATE' ? '비공개' : '확인하지 못했습니다.')
+})
+
+// #998 무료·프리미엄 비교표: 상품은 공개 API GET /products, 비교표는 이용권·결제의 #plan-compare 하나뿐이다.
+const compareProducts = [
+  { id: 'free', code: 'FREE', name: '무료', price: 0, billingCycle: 'NONE', childLimit: 1, active: true, features: { memoryBook: false, sundayTheme: false, extraMissions: false }, limits: { dailyConversations: 0, dailyMemoryBooks: 3 } },
+  { id: 'premium', code: 'PREMIUM', name: '프리미엄', price: 14900, billingCycle: 'MONTHLY', childLimit: 1, active: true, features: { memoryBook: true, sundayTheme: true, extraMissions: true }, limits: { dailyConversations: 30, dailyMemoryBooks: 3 } },
+]
+async function billingServer(context: BrowserContext) {
+  await context.route('**/api/v1/products', route => route.fulfill({ json: { items: compareProducts } }))
+  await context.route('**/api/v1/subscriptions', route => route.fulfill({ json: { items: [] } }))
+  await context.route(/\/api\/v1\/payments\?/, route => route.fulfill({ json: { items: [], hasNext: false } }))
+}
+const compareHref = `/parent/billing?childId=${childId}#plan-compare`
+async function expectComparison(page: Page) {
+  const compare = page.locator('section#plan-compare')
+  await expect(compare).toHaveCount(1)
+  await expect(compare.getByRole('heading', { name: '무료·프리미엄 비교', exact: true })).toBeVisible()
+  await expect(compare).toBeInViewport()
+  // 붙어 있는 위쪽 머리글이 비교표 제목을 가리지 않는다.
+  await expect.poll(async () => {
+    const heading = await compare.getByRole('heading').boundingBox(), bar = await page.locator('.ws-parent-topbar').boundingBox()
+    return !!heading && !!bar && heading.y >= bar.y + bar.height
+  }).toBe(true)
+  const rows = compare.getByRole('row')
+  await expect(rows.filter({ hasText: '대표 답변 설명' })).toHaveCount(1)
+  await expect(rows.filter({ hasText: '추억 그림책' })).toContainText('한 주를 엮은 그림책')
+  await expect(rows.filter({ hasText: '추억 그림책' })).toContainText('전체 보기 + 발급 하루 3권')
+  await expect(rows.filter({ hasText: '추억 그림책' })).toContainText('최근 4주 표지 보기')
+  await expect(rows.filter({ hasText: '리포트에 물어보기' })).toContainText('하루 30회')
+  await expect(rows.filter({ hasText: '주간 테마' })).toContainText('월~일')
+  await expect(compare).toContainText('월 14,900원')
+  await expect(page.getByText(/AI 관찰|생각 노트/)).toHaveCount(0)
+  expect(await compare.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+}
+
+test('#998: 무료 주간 리포트는 프리미엄 칸 제목·한 줄 설명만 보이고 이용권·결제 비교표로 간다', async ({ page, context }) => {
+  const { report, entitlement, calls } = await parentServer(context, 'WEEKLY', true)
+  Object.assign(entitlement, { status: 'FREE', conversationEnabled: false, narrativeEnabled: false })
+  report.explanations = null as never
+  await billingServer(context)
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto(`/parent/report?childId=${childId}`)
+    await openReport(page)
+    const preview = page.getByRole('region', { name: '프리미엄에서 더 볼 수 있어요', exact: true })
+    await expect(preview.getByText('한 주의 기록', { exact: true })).toBeVisible()
+    await expect(preview.getByText('이번 주 저녁 질문', { exact: true })).toBeVisible()
+    await expect(page.locator('.report-narrative-text')).toHaveCount(0)
+    await expect(preview.getByRole('link')).toHaveCount(3)
+    for (const link of await preview.getByRole('link').all()) await expect(link).toHaveAttribute('href', compareHref)
+    expect(await preview.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    if (width === 390) await preview.screenshot({ path: 'test-results/parent-navigation/report-premium-preview-390.png' })
+    await preview.getByRole('link', { name: '무료와 프리미엄 비교 보기', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/parent/billing\\?childId=${childId}#plan-compare$`))
+    await expectComparison(page)
+  }
+  // 미리보기는 내용을 요청하지 않는다: 리포트 본문 외 근거·원문 조회가 없다.
+  expect(calls.filter(call => call.path.includes('/evidence'))).toEqual([])
+})
+
+for (const kind of ['PRIVATE', 'PREMIUM', 'DAILY'] as const) test(`#998: ${kind} 리포트에는 프리미엄 칸 미리보기를 두지 않는다`, async ({ page, context }) => {
+  const { report, entitlement } = await parentServer(context, kind === 'DAILY' ? 'DAILY' : 'WEEKLY', true)
+  if (kind !== 'PREMIUM') Object.assign(entitlement, { status: 'FREE', conversationEnabled: false, narrativeEnabled: false })
+  if (kind === 'PRIVATE') report.parentSharingEnabled = false
+  await page.goto(`/parent/report?childId=${childId}`)
+  await openReport(page)
+  await expect(page.locator('.report-stat-panel')).toBeVisible()
+  await expect(page.getByRole('region', { name: '프리미엄에서 더 볼 수 있어요' })).toHaveCount(0)
+  await expect(page.locator(`a[href="${compareHref}"]`)).toHaveCount(0)
+  if (kind === 'PRIVATE') await expect(page.getByText('아이의 답변이 비공개입니다.', { exact: true })).toBeVisible()
+  if (kind === 'PREMIUM') await expect(page.getByText('이 리포트는 학습 수치를 제공합니다.', { exact: true })).toBeVisible()
+})
+
+test('#998: 이용권·결제 #plan-compare 주소로 들어오면 비교표 위치를 연다', async ({ page, context }) => {
+  await parentServer(context)
+  await billingServer(context)
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    // 같은 해시 주소로 다시 goto하면 페이지가 새로 열리지 않고 창 크기만 바뀐다(CI browser-prod 실패). 너비마다 새로 연다.
+    await page.goto('about:blank')
+    await page.goto(compareHref)
+    await expectComparison(page)
+    await page.screenshot({ path: `test-results/parent-navigation/plan-compare-${width}.png` })
+  }
 })
 
 for (const mode of ['unavailable', 'version', 'failure'] as const) test(`원문 전체는 ${mode} 상태에서 발췌문으로 대체하지 않는다`, async ({ page, context }) => {
@@ -556,7 +641,7 @@ for (const mode of ['unavailable', 'version', 'failure'] as const) test(`원문 
   if (mode === 'failure') await context.route('**/reports/report-1/evidence/explanation-original', route => route.fulfill({ status: 503, json: { code: 'UNAVAILABLE', title: '원문 조회 실패' } }))
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
-  const area = page.getByRole('region', { name: '젬마 설명', exact: true })
+  const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   await expect(area.getByText('이 설명에 연결된 원문 전체를 확인할 수 없습니다.')).toBeVisible()
   await expect(area.locator('blockquote')).toHaveCount(0)
   await expect(area.getByText(explanation.text, { exact: true })).toBeVisible()

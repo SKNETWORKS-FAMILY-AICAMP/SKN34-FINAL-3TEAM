@@ -1,7 +1,7 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import { ReportExplanations, reportExplanationItems } from './ReportExplanations.tsx'
 import type { Child, Metric } from '../../domain/classroom.ts'
@@ -256,6 +256,8 @@ function ReportDetail({
                     </div>
                     <details className="report-source"><summary>요약 출처</summary><p>{r.narrative.source}</p></details>
                   </section>
+                ) : entitlement?.narrativeEnabled === false && r.parentSharingEnabled !== false ? (
+                  <PremiumPreview childId={child.id} />
                 ) : (
                   <p>{r.parentSharingEnabled === false ? '아이의 답변이 비공개입니다.' : '이 리포트는 학습 수치를 제공합니다.'}</p>
                 ))}
@@ -301,6 +303,24 @@ function ReportDetail({
           />
         </Modal>
       )}
+    </section>
+  )
+}
+
+/**
+ * 무료 주간 리포트의 프리미엄 칸 미리보기(P13, #998). 제목과 한 줄 설명만 보이고 내용은 요청하지 않는다.
+ * 누르면 이용권·결제 화면의 비교표(`#plan-compare`)로 간다. 원문 비공개 자녀는 기존 비공개 문구를 쓴다.
+ */
+function PremiumPreview({ childId }: { childId: string }) {
+  const to = `/parent/billing?${new URLSearchParams({ childId })}#plan-compare`
+  return (
+    <section className="report-data-group report-premium-preview" aria-labelledby="report-premium-preview-title">
+      <h3 id="report-premium-preview-title">프리미엄에서 더 볼 수 있어요</h3>
+      <ul>
+        <li><Link to={to}><Lock size={18} aria-hidden="true" /><span><strong>한 주의 기록</strong><span>한 주 동안의 활동을 글로 정리해 드려요.</span></span><em>프리미엄</em></Link></li>
+        <li><Link to={to}><Lock size={18} aria-hidden="true" /><span><strong>이번 주 저녁 질문</strong><span>아이와 저녁에 함께 나눌 질문을 드려요.</span></span><em>프리미엄</em></Link></li>
+      </ul>
+      <Link className="cj-secondary" to={to}>무료와 프리미엄 비교 보기</Link>
     </section>
   )
 }
