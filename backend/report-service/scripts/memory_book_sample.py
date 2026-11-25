@@ -53,7 +53,10 @@ def scene(top, bottom) -> str:
 
 
 def sample_book(ending_seen=True) -> dict:
-    """지어낸 회차: 엔딩 본 회차, 목요일은 안 푼 날."""
+    """지어낸 회차: 엔딩 본 회차, 목요일은 문제가 바뀐 날(시도 없음).
+
+    판정 결과도 지어낸 값이다. 월요일이 다시 생각 → 부분으로 올라 "가장 많이 자란 날"이 된다(#1024).
+    """
     return {
         "themeId": "00000000-0000-0000-0000-0000000000a1",
         "weekStart": "2026-11-09",
@@ -76,6 +79,7 @@ def sample_book(ending_seen=True) -> dict:
                             "version": 1,
                             "text": "먼저 바람이 불었고, 그다음 문이 열렸어요.",
                             "followup": None,
+                            "result": "RETHINK",
                         },
                         {
                             "version": 2,
@@ -84,6 +88,7 @@ def sample_book(ending_seen=True) -> dict:
                                 "type": "ONE_STEP_MORE",
                                 "question": "불이 꺼진 건 언제였을까?",
                             },
+                            "result": "PARTIAL",
                         },
                     ],
                     "reflection": {
@@ -106,6 +111,7 @@ def sample_book(ending_seen=True) -> dict:
                             "version": 1,
                             "text": "어부 말이요. 직접 봤다고 했으니까요.",
                             "followup": None,
+                            "result": "CORRECT",
                         }
                     ],
                     "reflection": None,
@@ -124,6 +130,7 @@ def sample_book(ending_seen=True) -> dict:
                             "version": 1,
                             "text": "유리 벽을 두 겹으로 만들어요. <바람막이>도 달아요!",
                             "followup": None,
+                            "result": "HELD",
                         }
                     ],
                     "reflection": {"difficulty": "EASY", "text": None},
@@ -151,6 +158,7 @@ def sample_book(ending_seen=True) -> dict:
                             "version": 1,
                             "text": "바람에 문이 열려서 불이 꺼졌어요.",
                             "followup": None,
+                            "result": "CORRECT",
                         }
                     ],
                     "reflection": None,

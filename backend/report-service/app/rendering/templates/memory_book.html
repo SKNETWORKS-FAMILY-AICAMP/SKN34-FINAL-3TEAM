@@ -59,16 +59,33 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 .closing .q { font-size:16px; margin:0 6mm; white-space:pre-wrap; overflow-wrap:anywhere; }
 .closing.own-page { break-before: page; margin-top:0; border-top:none; padding-top:40mm; }
 .small { font-size:10px; color:#8a7c66; margin-top:6mm; }
+/* 표지 "이렇게 같이 읽어요" 안내(#1024) */
+.guide { text-align:left; margin-top:4mm; padding:2.5mm 4mm; border:1.5px dashed #c98a2e; border-radius:3mm; }
+.guide-title { margin:0 0 1mm; font-size:12px; font-weight:bold; color:#a07a3e; }
+.guide ol { margin:0; padding-left:5mm; font-size:11.5px; line-height:1.55; }
+.toc-star { color:#c98a2e; margin-right:1mm; }
+/* 요일 쪽 생각 묶음 칸: 처음 생각 → 뭉치가 물었어요 → 다시 생각(#1024) */
+.growth-wrap { margin:0; }
+.growth-mark { margin:0 0 1mm; font-size:12.5px; line-height:1.4; font-weight:bold; color:#a8661a; }
+.growth { display:flex; flex-direction:column; gap:1.5mm; padding:2mm 2.5mm; background:#fffdf7; border:1.5px solid #e0cfa6; border-radius:3.5mm; }
+.day.highlight .growth { background:#fff8e6; border:2.5px solid #c98a2e; }
+.day.highlight .panel { border-color:#c98a2e; box-shadow:0 0 0 1.5mm #f3d28a; }
+/* 마지막 쪽 가족 답 손글씨 칸(#1024) */
+.family { width:200mm; margin:9mm auto 0; text-align:left; }
+.family-row { display:flex; gap:5mm; align-items:flex-end; margin:0 0 6mm; }
+.family-name { flex:none; width:34mm; padding-bottom:0.5mm; border-bottom:1.5px solid #8a7c66; font-size:10px; color:#b3a68c; }
+.family-line { flex:1; height:9mm; border-bottom:1.5px solid #8a7c66; }
+.talked { margin:5mm 0 0; font-size:13px; color:#6b4a1f; }
 </style></head><body>
 
 <section class="cover">
 {% if book.introImage %}<img class="cover-art" src="{{ book.introImage }}" alt="">{% else %}<div class="cover-art--missing"></div>{% endif %}
 <div class="cover-text">
 <h1>{{ book.title }}</h1>
-<p class="who">{{ name }}의 추억 그림책</p>
+<p class="who">{{ name }}의 생각이 자란 한 주</p>
 <p class="when">{{ book.weekLabel }}</p>
 <ol class="toc">
-{% for item in book.toc %}<li><span class="toc-label">{{ item.label }}</span><span class="toc-title">{{ item.title }}</span><span class="toc-dots"></span><span class="toc-page">{{ item.page }}</span></li>
+{% for item in book.toc %}<li><span class="toc-label">{{ item.label }}</span><span class="toc-title">{% if item.highlight %}<span class="toc-star">★</span>{% endif %}{{ item.title }}</span><span class="toc-dots"></span><span class="toc-page">{{ item.page }}</span></li>
 {% endfor %}</ol>
 {% if not book.ending.seen %}<p class="toc-note">이 주에는 이야기의 끝을 보지 못해서, 끝 이야기와 답은 싣지 않았어요.</p>{% endif %}
 <div class="intro">
@@ -76,10 +93,18 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 <p class="story">{{ book.intro }}</p>
 {% if book.bigQuestion %}<p class="big">이번 주 큰 질문: {{ book.bigQuestion }}</p>{% endif %}
 </div>
+<div class="guide">
+<p class="guide-title">이렇게 같이 읽어요</p>
+<ol>
+<li>{{ name }}에게 소리 내어 읽어 달라고 해 주세요.</li>
+<li>답을 고치지 말고 "왜 그렇게 생각했어?"만 물어봐 주세요.</li>
+<li>마지막 쪽 질문에 가족이 함께 답해 보세요.</li>
+</ol>
+</div>
 </div>
 </section>
 
-{% for day in book.days %}<section class="scene-block day scene-row" data-day="{{ day.day }}">
+{% for day in book.days %}<section class="scene-block day scene-row{% if day.highlight %} highlight{% endif %}" data-day="{{ day.day }}">
 <div class="scene-top">
 <p class="scene-head"><span class="label">{{ day.dayLabel }}</span><span class="type">{{ thinking_labels.get(day.thinkingType, '') }}</span><strong>{{ day.title }}</strong></p>
 <div class="panel">{% if day.sceneImage %}<img class="panel-art" src="{{ day.sceneImage }}" alt="">{% else %}<div class="panel-art--missing"></div>{% endif %}</div>
@@ -88,9 +113,10 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 {% for line in day.dialogue %}<div class="msg left"><span class="avatar">{{ line.speaker[:1] }}</span><div class="body"><p class="name">{{ line.speaker }}</p><span class="text">{{ line.text }}</span></div></div>
 {% endfor %}<div class="msg left question"><span class="avatar">문</span><div class="body"><p class="name">오늘의 문제</p><span class="text"><b>Q.</b>{{ day.question }}</span></div></div>
 {% if day.attempt is none %}<p class="note">이 날 문제는 그 뒤에 새 문제로 바뀌어서, 아이가 그때 쓴 답을 함께 싣지 못했어요</p>
-{% else %}{% for a in day.attempt.answers %}{% if a.followup %}<div class="msg left mungchi"><span class="avatar">뭉</span><div class="body"><p class="name">뭉치</p><span class="text">{{ a.followup }}</span></div></div>
-{% endif %}<div class="msg right"><span class="avatar">{{ name[:1] }}</span><div class="body"><p class="name">{{ name }}{% if not loop.first %} · 다시 생각한 답{% endif %}</p><span class="text">{{ a.text }}</span></div></div>
-{% endfor %}{% if day.attempt.reflection %}<p class="note"><b>돌아보기</b> {{ day.attempt.reflection }}</p>{% endif %}{% endif %}
+{% else %}<div class="growth-wrap">{% if day.highlight %}<p class="growth-mark">★ 이번 주 가장 많이 자란 생각</p>{% endif %}<div class="growth">
+{% for a in day.attempt.answers %}{% if a.followup %}<div class="msg left mungchi"><span class="avatar">뭉</span><div class="body"><p class="name">뭉치가 물었어요</p><span class="text">{{ a.followup }}</span></div></div>
+{% endif %}<div class="msg right"><span class="avatar">{{ name[:1] }}</span><div class="body"><p class="name">{% if a.revised %}다시 생각{% else %}처음 생각{% endif %}</p><span class="text">{{ a.text }}</span></div></div>
+{% endfor %}</div></div>{% if day.attempt.reflection %}<p class="note"><b>돌아보기</b> {{ day.attempt.reflection }}</p>{% endif %}{% endif %}
 </div>
 </section>
 {% endfor %}
@@ -107,8 +133,12 @@ body { font-family: "Noto Sans CJK KR", "Malgun Gothic", sans-serif; color:#2f2a
 </section>
 
 <section class="closing{% if book.ending.seen %} own-page{% endif %}">
-<h2>오늘 저녁 질문</h2>
+<h2>{{ book.eveningTitle }}</h2>
 <p class="q">{{ book.eveningQuestion }}</p>
+<div class="family">
+{% for _ in range(3) %}<div class="family-row"><span class="family-name">이름</span><span class="family-line"></span></div>
+{% endfor %}</div>
+<p class="talked">함께 이야기한 날 ____년 __월 __일</p>
 <p class="small">사고뭉치 추억 그림책</p>
 </section>
 </body></html>
