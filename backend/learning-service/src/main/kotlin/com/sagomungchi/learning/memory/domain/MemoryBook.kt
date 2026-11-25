@@ -1,5 +1,6 @@
 package com.sagomungchi.learning.memory.domain
 
+import com.sagomungchi.learning.judgment.domain.JudgmentResult
 import com.sagomungchi.learning.mission.domain.ThinkingType
 import com.sagomungchi.learning.theme.domain.ThemeDay
 import java.time.Instant
@@ -45,8 +46,17 @@ data class MemoryBookAttempt(
     val reflection: MemoryBookReflection?,
 )
 
-/** 답변 버전 순서. 보완 답변이면 그 앞 되묻기 질문을 함께 */
-data class MemoryBookAnswer(val version: Int, val text: String, val followup: MemoryBookFollowup?)
+/**
+ * 답변 버전 순서. 보완 답변이면 그 앞 되묻기 질문을 함께.
+ * result는 그 답변 판정의 지금 결과(최신 정정 반영, 판정 전·실패·판정 없음은 null).
+ * report가 "가장 많이 자란 날"을 고르는 데만 쓰고 그림책에는 싣지 않는다(#1024)
+ */
+data class MemoryBookAnswer(
+    val version: Int,
+    val text: String,
+    val followup: MemoryBookFollowup?,
+    val result: JudgmentResult? = null,
+)
 
 data class MemoryBookFollowup(val type: String, val question: String)
 

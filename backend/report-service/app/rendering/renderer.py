@@ -351,5 +351,5 @@ class ReportRenderer:
                     "학습 수치와 기록은 계속 확인할 수 있습니다."
                 )
             else:
-                ordered.append("설명 대상 답변이 없어 AI 관찰 설명이 포함되지 않았습니다.")
+                ordered.append("설명 대상 답변이 없어 대표 답변 설명이 포함되지 않았습니다.")
         return "\n".join(ordered) + "\n"

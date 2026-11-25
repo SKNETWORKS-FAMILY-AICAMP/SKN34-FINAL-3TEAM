@@ -7,7 +7,13 @@ import re
 import pytest
 from pypdf import PdfReader
 
-from app.rendering.memory_book import evening_question, memory_book_view, safe_image, week_label
+from app.rendering.memory_book import (
+    evening_question,
+    memory_book_view,
+    most_grown_day,
+    safe_image,
+    week_label,
+)
 from app.rendering.renderer import ReportRenderer
 from scripts.memory_book_sample import sample_book
 
@@ -32,7 +38,7 @@ def test_pdf_flows_cover_then_story_days_ending_and_evening_question(rendered):
     pages = [compact(p.extract_text()) for p in PdfReader(io.BytesIO(rendered["PDF"])).pages]
     # 표지 쪽에 목차·이야기의 시작까지, 그 뒤는 한 장면씩 새 쪽
     assert len(pages) == 8
-    assert "합성학생의추억그림책" in pages[0] and "사라진등대불빛" in pages[0]
+    assert "합성학생의생각이자란한주" in pages[0] and "사라진등대불빛" in pages[0]
     assert "이야기의시작" in pages[0] and "월요일" in pages[0]  # 목차
     text = "".join(pages[1:])
     order = [
@@ -42,7 +48,7 @@ def test_pdf_flows_cover_then_story_days_ending_and_evening_question(rendered):
         "목요일",
         "금요일",
         "이야기의끝",
-        "오늘저녁질문",
+        "이번주저녁질문",
     ]
     positions = [text.index(word) for word in order]
     assert positions == sorted(positions)
@@ -64,6 +70,11 @@ def test_cover_toc_page_numbers_match_pdf_pages(ending_seen):
         head = compact(item["title"])
         assert head in pages[item["page"] - 1], item
     assert view["toc"][-1]["page"] == len(pages)
+    # 쪽 수는 #1024 전과 같다(엔딩 본 회차 8쪽, 엔딩 전 7쪽). 표지는 한 쪽
+    assert len(pages) == (8 if ending_seen else 7)
+    assert "이렇게같이읽어요" in pages[0] and "★" in pages[0]
+    assert "이번주가장많이자란생각" in pages[1]  # 표본은 월요일(2쪽)이 가장 많이 자란 날
+    assert "이번주가장많이자란생각" not in "".join(pages[2:])
 
 
 def test_answers_follow_version_order_with_followup_before_revised_answer():
@@ -156,3 +167,168 @@ def test_week_label_and_evening_question():
 def test_blank_display_name_is_rejected():
     with pytest.raises(ValueError):
         ReportRenderer().render_memory_book(sample_book(), " ")
+
+
+# ---------------------------------------------------------------- 같이 읽기 보강 (#1024)
+
+
+def grown_day(code, *results, attempt=True):
+    answers = [
+        {"version": index + 1, "text": f"답 {index + 1}", "followup": None, "result": result}
+        for index, result in enumerate(results)
+    ]
+    return {"day": code, "attempt": {"answers": answers} if attempt else None}
+
+
+@pytest.mark.parametrize(
+    "days,expected",
+    [
+        # 오른 날 없음: 그대로·답 하나뿐
+        ([grown_day("MON", "PARTIAL", "PARTIAL"), grown_day("TUE", "RETHINK")], None),
+        # 동점이면 앞 요일
+        (
+            [grown_day("WED", "RETHINK", "PARTIAL"), grown_day("TUE", "PARTIAL", "CORRECT")],
+            "TUE",
+        ),
+        # 더 많이 오른 날이 앞 요일보다 먼저
+        (
+            [grown_day("MON", "RETHINK", "PARTIAL"), grown_day("THU", "RETHINK", "CORRECT")],
+            "THU",
+        ),
+        # 보류·판정 없음은 처음이든 마지막이든 제외
+        (
+            [
+                grown_day("MON", "RETHINK", "HELD"),
+                grown_day("TUE", "HELD", "CORRECT"),
+                grown_day("WED", None, "CORRECT"),
+                grown_day("THU", "RETHINK", None),
+            ],
+            None,
+        ),
+        ([grown_day("MON", "RETHINK", "HELD"), grown_day("FRI", "RETHINK", "PARTIAL")], "FRI"),
+        # 문제가 바뀐 날(시도 없음)·답 하나뿐인 날은 후보 아님
+        ([grown_day("MON", attempt=False), grown_day("TUE", "CORRECT")], None),
+        # 내려간 날은 제외
+        ([grown_day("MON", "CORRECT", "PARTIAL")], None),
+        # 처음 답과 마지막 답만 본다(가운데 값은 상관없음)
+        ([grown_day("MON", "RETHINK", "CORRECT", "RETHINK")], None),
+        ([grown_day("MON", "PARTIAL", "RETHINK", "CORRECT")], "MON"),
+    ],
+)
+def test_most_grown_day_rule(days, expected):
+    assert most_grown_day(days) == expected
+
+
+def test_most_grown_day_reads_answers_in_version_order():
+    day = grown_day("MON", "RETHINK", "CORRECT")
+    day["attempt"]["answers"].reverse()
+    assert most_grown_day([day]) == "MON"
+
+
+def day_html(html, code, following):
+    end = html.index(f'data-day="{following}"') if following else html.index("scene-block ending")
+    return html[html.index(f'data-day="{code}"') : end]
+
+
+def test_day_groups_first_then_mungchi_then_revised_thinking():
+    html = html_of(sample_book())
+    monday = day_html(html, "MON", "TUE")
+    order = [
+        "오늘의 문제",
+        'class="growth"',
+        "처음 생각",
+        "먼저 바람이 불었고",
+        "뭉치가 물었어요",
+        "불이 꺼진 건 언제였을까?",
+        "다시 생각",
+        "문이 열린 다음에",
+        "돌아보기",
+    ]
+    positions = [monday.index(word) for word in order]
+    assert positions == sorted(positions)
+    # 돌아보기는 묶음 칸 밖(아래)
+    assert monday.index('</div></div><p class="note"><b>돌아보기') > monday.index(
+        "문이 열린 다음에"
+    )
+
+
+def test_day_without_followup_has_first_thinking_only():
+    tuesday = day_html(html_of(sample_book()), "TUE", "WED")
+    assert tuesday.count("처음 생각") == 1
+    assert "다시 생각" not in tuesday and "뭉치가 물었어요" not in tuesday
+
+
+def test_answer_without_followup_after_first_is_still_revised_thinking():
+    book = sample_book()
+    book["days"][1]["attempt"]["answers"].append(
+        {"version": 2, "text": "빵집 주인 말도 들어 봐야 해요.", "followup": None}
+    )
+    tuesday = day_html(html_of(book), "TUE", "WED")
+    assert tuesday.index("처음 생각") < tuesday.index("다시 생각")
+    assert "뭉치가 물었어요" not in tuesday
+
+
+def test_changed_question_day_keeps_notice_without_group():
+    thursday = day_html(html_of(sample_book()), "THU", "FRI")
+    assert "이 날 문제는 그 뒤에 새 문제로 바뀌어서" in thursday
+    assert 'class="growth"' not in thursday and "처음 생각" not in thursday
+
+
+def test_highlight_marks_one_day_page_and_its_toc_line():
+    book = sample_book()
+    view = memory_book_view(book)
+    assert [d["day"] for d in view["days"] if d["highlight"]] == ["MON"]
+    assert [t["title"] for t in view["toc"] if t["highlight"]] == ["등대지기의 일지"]
+    html = html_of(book)
+    assert html.count("이번 주 가장 많이 자란 생각") == 1
+    assert html.count(' highlight"') == 1 and 'scene-row highlight" data-day="MON"' in html
+    assert html.count('class="toc-star"') == 1
+
+
+def test_no_highlight_when_no_day_grew():
+    book = sample_book()
+    for day in book["days"]:
+        for answer in (day["attempt"] or {}).get("answers", []):
+            answer["result"] = None
+    html = html_of(book)
+    assert "가장 많이 자란 생각" not in html and "★" not in html
+
+
+def test_judgment_results_never_reach_the_book():
+    book = sample_book()
+    view = memory_book_view(book)
+    assert "result" not in repr(view)
+    html = html_of(book)
+    for word in ("CORRECT", "PARTIAL", "RETHINK", "HELD", "맞음", "부분", "다시 생각해"):
+        assert word not in html, word
+
+
+def test_cover_subtitle_and_reading_guide_use_nickname():
+    html = html_of(sample_book(), name="합성학생")
+    assert "합성학생의 생각이 자란 한 주" in html and "의 추억 그림책" not in html
+    guide = [
+        "합성학생에게 소리 내어 읽어 달라고 해 주세요.",
+        '답을 고치지 말고 "왜 그렇게 생각했어?"만 물어봐 주세요.',
+        "마지막 쪽 질문에 가족이 함께 답해 보세요.",
+    ]
+    positions = [html.index(line) for line in guide]
+    assert positions == sorted(positions)
+
+
+@pytest.mark.parametrize("ending_seen", [True, False])
+def test_last_page_is_this_week_question_with_family_answer_lines(ending_seen):
+    book = sample_book(ending_seen=ending_seen)
+    view = memory_book_view(book)
+    assert view["toc"][-1] | {"page": 0} == {
+        "label": "함께",
+        "title": "이번 주 저녁 질문",
+        "page": 0,
+        "highlight": False,
+    }
+    html = html_of(book)
+    assert "오늘 저녁 질문" not in html
+    closing = html[html.index('<section class="closing') :]
+    assert "<h2>이번 주 저녁 질문</h2>" in closing
+    assert evening_question(book["bigQuestion"]) in closing
+    assert closing.count('class="family-row"') == 3
+    assert "함께 이야기한 날 ____년 __월 __일" in closing

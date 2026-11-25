@@ -16,6 +16,7 @@ from app.security import current_user_context
 
 Day = Literal["MON", "TUE", "WED", "THU", "FRI"]
 ThinkingType = Literal["ANALYZE", "EVALUATE", "CREATE", "SOLVE", "REFLECT"]
+JudgmentResult = Literal["CORRECT", "PARTIAL", "RETHINK", "HELD"]
 
 
 class MemoryBookRoundNotFound(Exception):
@@ -35,6 +36,9 @@ class Answer(_Model):
     version: StrictInt = Field(ge=1)
     text: str
     followup: Followup | None = None
+    # 그 답변 판정의 지금 결과(#1024). 가장 많이 자란 날을 고르는 데만 쓰고 책에는 싣지 않는다.
+    # 모르는 값은 요일·생각 유형처럼 계약 오류로 본다
+    result: JudgmentResult | None = None
 
 
 class Reflection(_Model):
