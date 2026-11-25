@@ -32,4 +32,4 @@ th { background:#edf4f5; } .text { white-space:pre-wrap; overflow-wrap:anywhere;
 {% if item.quote is not none %}<blockquote class="text">{{ item.quote }}</blockquote>{% endif %}
 <p class="text">{{ item.text }}</p></div>{% endfor %}
 {% elif report.explanations.state == 'NOT_INCLUDED' %}<p>설명 미포함 · 설명을 제공하지 못했습니다. 학습 수치와 기록은 계속 확인할 수 있습니다.</p>
-{% else %}<p>설명 대상 답변이 없어 AI 관찰 설명이 포함되지 않았습니다.</p>{% endif %}{% endif %}</body></html>
+{% else %}<p>설명 대상 답변이 없어 대표 답변 설명이 포함되지 않았습니다.</p>{% endif %}{% endif %}</body></html>
