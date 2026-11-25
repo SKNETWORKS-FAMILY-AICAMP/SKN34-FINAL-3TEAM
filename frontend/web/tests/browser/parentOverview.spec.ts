@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test'
+// 이 화면 시험은 첫 사용 안내(#1037, parentGuide.spec.ts에서 따로 확인)를 끝낸 시연 계정으로 본다. 브라우저 MSW 기록만 바꾼다.
+test.beforeEach(async({page})=>{await page.addInitScript(()=>sessionStorage.setItem('sagomungchi:msw-onboarding:v1',JSON.stringify({'parent:parent@example.test':'2026-11-24T09:00:00+09:00'})))})
 test('기록 팝업 필터·원문 복귀·반응형 @responsive', async ({page}, info) => {
  const errors:string[]=[]; page.on('pageerror',e=>errors.push(e.message))
  await page.goto('/login'); await page.getByRole('button',{name:'시연 계정으로 로그인',exact:true}).click()
