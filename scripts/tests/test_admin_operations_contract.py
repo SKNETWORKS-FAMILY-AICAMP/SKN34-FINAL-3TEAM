@@ -206,12 +206,13 @@ class AdminOperationsContracts(unittest.TestCase):
                     for field in ('problems','themeSummary','correctionNotice'):
                         reviewed['allOf'][1]['properties'].pop(field)
                 if section=='schemas' and name=='NotificationType':
-                    # #432 adds only the GRADE_PROMOTED type (described in the same sentence).
-                    self.assertIn('GRADE_PROMOTED',reviewed.pop('description'))
-                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED','GRADE_PROMOTED'):
+                    # #432 adds only the GRADE_PROMOTED type, #1025 only MEMORY_BOOK_READ_REMINDER (described in the same sentence).
+                    description=reviewed.pop('description')
+                    self.assertIn('GRADE_PROMOTED',description); self.assertIn('MEMORY_BOOK_READ_REMINDER',description)
+                    for value in ('DAILY_REPORT_COMPLETED','DAILY_REPORT_FAILED','GRADE_PROMOTED','MEMORY_BOOK_READ_REMINDER'):
                         reviewed['enum'].remove(value)
                 if section=='schemas' and name=='NotificationSettings':
-                    self.assertEqual(reviewed['properties']['items']['maxItems'],9)
+                    self.assertEqual(reviewed['properties']['items']['maxItems'],10)
                     reviewed['properties']['items']['maxItems']=6
                 # #432 stores grades up to middle school third grade (9); only the upper bound changed.
                 if section=='schemas' and name in ('StudentDeviceToken','ChildListItem','DashboardChild','Child'):

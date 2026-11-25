@@ -90,6 +90,20 @@ class NotificationService(private val repository: NotificationRepository, privat
             "/parent/settings", null, OffsetDateTime.now())
         if (repository.insert(value)) events.publishEvent(NotificationStored(value.id, userId))
     }
+    /**
+     * #1025 토요일 저녁 그림책 같이 읽기 알림. 수신자는 호출자가 notificationParents로 고른다. 원천 ID는 자녀·그 주 월요일(KST)에서 만들어
+     * 같은 주에 다시 돌아도 1건이다. 수신을 끈 학부모는 insert가 거른다. 새로 저장했으면 true.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun memoryBookReadReminder(userId: UUID, childId: UUID, nickname: String, weekStart: java.time.LocalDate): Boolean {
+        val value = Notification(UUID.randomUUID(), userId, childId, NotificationType.MEMORY_BOOK_READ_REMINDER,
+            UUID.nameUUIDFromBytes("memory-book-read-reminder:$childId:$weekStart".toByteArray()),
+            "이번 주 ${nickname}의 그림책이 나왔어요. 오늘 저녁 같이 읽어 보세요.",
+            "/parent/report?childId=$childId", null, OffsetDateTime.now())
+        val stored = repository.insert(value)
+        if (stored) events.publishEvent(NotificationStored(value.id, userId))
+        return stored
+    }
     fun find(userId: UUID, id: UUID) = repository.find(userId, id)
 
     /** "어제는" for the usual midnight run; a late regeneration, retry or recovery names the day instead. */

@@ -21,6 +21,8 @@ data class MemoryBookJob(
     val createdAt: OffsetDateTime,
     val completedAt: OffsetDateTime?,
     val expiresAt: OffsetDateTime,
+    /** 학부모가 처음 "같이 읽었어요"를 누른 시각(#1025). READY만 값을 가진다 */
+    val readTogetherAt: OffsetDateTime? = null,
 ) {
     /** 파일 보관 기간(D6, 30일)이 지났으면 내려받을 수 없다 */
     fun expired(now: OffsetDateTime): Boolean = !expiresAt.isAfter(now)
@@ -48,6 +50,7 @@ data class MemoryBookView(
     val createdAt: OffsetDateTime,
     val completedAt: OffsetDateTime?,
     val expiresAt: OffsetDateTime,
+    val readTogetherAt: OffsetDateTime?,
 ) {
     companion object {
         /** 만료된 READY는 EXPIRED로 보여 준다(파일 주소를 주지 않음) */
@@ -55,6 +58,7 @@ data class MemoryBookView(
             job.id,
             if (job.status == MemoryBookStatus.READY && job.expired(now)) "EXPIRED" else job.status.name,
             job.failureCode, listOf(MemoryBookRound(job.themeId, job.weekStart)), job.createdAt, job.completedAt, job.expiresAt,
+            job.readTogetherAt,
         )
     }
 }

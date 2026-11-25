@@ -2323,6 +2323,22 @@ AWS·SageMaker·A 계정 클러스터와 실제 Discord 수신은 이 검증에 
 
 API: `GET·PUT /api/v1/me/onboarding`(학부모), `GET·PUT /api/v1/students/me/onboarding`(학생). 기록은 [auth-account 19](auth-account.md#19-첫-사용-안내-완료-기록-1035-2026-11-25).
 
+## 9.31 추억 그림책 같이 읽음 칸·알림 유형 (#1025 V59, 2026-11-25)
+
+core migration `V59__memory_book_read_together.sql`(#1035가 V58을 먼저 써서 V59). API·정한 것은 [core-gateway 36절](core-gateway.md#36-추억-그림책-같이-읽음-표시토요일-저녁-알림-1025-2026-11-25), 저장 구조는 [ERD 3.5.3](../design/erd.md).
+
+| 바꾼 것 | 내용 | 근거 |
+|---|---|---|
+| 잠금 | `LOCK TABLE memory_book_job, notification, notification_setting IN ACCESS EXCLUSIVE MODE` | V41·V30처럼 고치는 표를 먼저 한 번에 잠가 순서를 고정한다. 세 표 모두 작고 문장이 짧아 잠금 시간이 짧다 |
+| 칸 추가 | `memory_book_job.read_together_at timestamptz` (nullable, 기본값 없음) | nullable 칸 추가라 기존 행은 NULL로 남고 다시 쓰지 않는다(PostgreSQL은 기본값 없는 칸 추가에 표를 다시 쓰지 않음). 기본값을 두지 않는 ERD 규칙(3.6)을 따른다 |
+| CHECK 추가 | `ck_memory_book_job_read_together (read_together_at IS NULL OR status = 'READY')` | 상태는 QUEUED → READY·FAILED로 한 번만 바뀌고 READY는 다시 바뀌지 않으며, API도 READY에서만 값을 넣는다. 정상 흐름을 막지 않고 잘못된 값만 막는다. 기존 행은 모두 NULL이라 통과한다(확인을 위해 표를 한 번 읽음) |
+| 알림 CHECK | `ck_notification_type`·`ck_notification_setting_type`을 지우고 기존 9개 + `MEMORY_BOOK_READ_REMINDER`로 다시 만듦 | V41과 같은 방식. 허용 목록만 넓혀 기존 행은 모두 통과한다 |
+| 인덱스 | 새로 만들지 않음 | 토요일 예약 작업이 주 1회 `status='READY' AND completed_at ≥ … AND read_together_at IS NULL AND expires_at > …`를 읽는다. 행 수가 자녀당 하루 최대 3권인 데모 규모라 표 전체 읽기로 충분하다. 커지면 부분 인덱스 `(completed_at) WHERE status='READY' AND read_together_at IS NULL`을 검토한다 |
+
+- 되돌리기: 칸·CHECK를 지우고 알림 CHECK를 V41 목록으로 되돌리는 새 migration이 필요하다(그 전에 `MEMORY_BOOK_READ_REMINDER` 알림·설정 행을 지워야 함). 적용된 V59는 고치지 않는다
+- local GitOps `environments/local/core-service.yaml`의 `migration.revision`을 `v58`(#1035) → `v59`로 올렸다(`test_core_migration_versions`가 마지막 migration과 같은지 봄). prod 쪽 migration 판 번호는 이 PR에서 바꾸지 않았다
+- 새 ShedLock 이름 `core-memory-book-read-reminder`는 기존 `shedlock` 표에 행으로 생기며 migration이 필요 없다
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
