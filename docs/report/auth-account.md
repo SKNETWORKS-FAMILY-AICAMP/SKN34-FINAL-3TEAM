@@ -372,3 +372,22 @@ Google 계정이 없는 사용자는 가입할 수 없었고 부하 시험 계�
 - 로컬 실제 서버 추가 확인(2026-11-24): #995 core/web·기존 PostgreSQL/Redis에 별도 검증용 학부모·자녀를 등록하고, API 목업과 시계 변경 없이 Chromium에서 `AUTH_STUDENT_ACCESS_TTL=2m`으로 검사했다. 실제 PIN 로그인, 새로고침, 동일 출처 `window.open`의 sessionStorage 복사와 동일 세션 복원, 빈 새 탭의 PIN 요구, 탭 하나 닫기, 명시적 로그아웃의 동일 세션 전파와 다른 세션 보존을 통과했다. 첫 발급 후 약 62초·124초의 실제 클릭·키 입력으로 갱신 및 다른 탭 반영을 확인했고, 별도 세션은 API 조회·새로고침에도 연장되지 않아 약 122초 뒤 401과 다음 조작 시 PIN 화면 복귀를 확인했다.
 - 동석 확인: 현재 학부모 화면에는 동석 진입 버튼이 없어 실제 학부모 로그인 후 기존 프론트 gateway로 실제 학생 세션 발급 API를 호출했다. 이후 학생 화면 로그아웃과 보호자 비밀번호 복귀 폼, 기존 학생 토큰 거부를 확인했다. UI 로그아웃과 별개로 실제 API에서 학생 갱신 후 보호자 복귀만으로 학생 조회·갱신 모두 401이 되는 것도 확인했다. 동석 진입 버튼부터 끝까지의 사용자 동선 검증은 아니다.
 - 검증 뒤 학생 로그인·갱신 기본값을 30분으로 복원하고 실제 응답의 `expiresIn=1800`, 학부모의 기존 `expiresIn=900`을 재확인했다. 기존 자녀·학습 데이터는 유지했다. AWS 배포 환경, 브라우저 메뉴의 직접 탭 복제·닫은 탭 복원, 학습 답안 작성부터 제출까지의 전체 동선은 이번 로컬 인증 검증에 포함하지 않는다.
+
+## 19. 첫 사용 안내 완료 기록 (#1035, 2026-11-25)
+
+에픽 #1034의 core 부분. 제안 [onboarding 7.1 B안](../proposals/onboarding.md)대로 학부모·학생이 첫 사용 안내를 끝냈는지 서버에 남긴다. DB 변경 근거는 [infra 9.29](infra.md#929-첫-사용-안내-완료-기록-migration-v58-1035-2026-11-25).
+
+### API·권한·저장
+
+- 추가 API: `GET·PUT /api/v1/me/onboarding`(학부모), `GET·PUT /api/v1/students/me/onboarding`(학생). 응답은 모두 `{completedAt: string | null}`, 200·`Cache-Control: no-store`. PUT 본문 없음
+- PUT은 멱등. 이미 기록이 있으면 처음 시각을 그대로 돌려준다. 기록을 지우는 API는 없다(다시 보기는 web이 서버 기록을 지우지 않고 그 자리에서 재생)
+- 학부모 경로는 PARENT 세션만. 학생 세션은 기존 `PublicAuthFilter`의 `/me/*` 차단으로, 관리자 세션은 서비스 역할 확인으로 403 `FORBIDDEN`
+- 학생 경로는 `StudentLookService`와 같은 확인(역할 STUDENT·`studentScope` 1개·`requireLinked`). 학부모·관리자 세션은 기존 `/students/*` 필터 차단으로 403. 형제 학생은 학생별로 따로 남는다
+- 학부모 안내는 `READY` 뒤에만 뜨므로 동의 전 허용 경로에 넣지 않았다(필수 동의가 없으면 기존 규칙대로 403 `CONSENT_REQUIRED`)
+- 저장: `user_account.onboarding_completed_at`, `student.onboarding_completed_at`(V58). 코드는 `account` 패키지 `OnboardingController`·`OnboardingService`·`OnboardingRepository`
+
+### 검증 결과
+
+- core `OnboardingIntegrationTest` 4개 통과: 두 역할의 미완료 null·기록·재기록 시 처음 시각 유지, 형제·학부모/학생 기록 분리, 학생 세션 `/me/onboarding`·학부모 세션 `/students/me/onboarding`·관리자 세션 두 경로 403(GET·PUT), 필수 동의 전 학부모 403 `CONSENT_REQUIRED`
+- core 전체 `test`: 784개(동의 전 시험 추가 전 783개 실행 뒤 새 시험만 재실행), 실패 0·건너뜀 3
+- `python -O -m unittest discover -s scripts/tests`: local `migration.revision` v58 갱신 뒤 통과

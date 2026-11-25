@@ -493,6 +493,29 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/StudentLook'}
         default: {$ref: '#/components/responses/LearningProblem'}
+  /students/me/onboarding:
+    get:
+      tags: [Students]
+      operationId: getStudentOnboarding
+      summary: 학생 본인의 첫 사용 안내 완료 기록 (#1035). 미완료면 completedAt null, 학부모·관리자 403
+      responses:
+        '200':
+          description: 완료 기록 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OnboardingState'}
+        default: {$ref: '#/components/responses/LearningProblem'}
+    put:
+      tags: [Students]
+      operationId: completeStudentOnboarding
+      summary: 학생 본인의 첫 사용 안내 완료 기록 (#1035). 본문 없음, 멱등이며 이미 있으면 처음 시각 유지. 지우는 API 없음, 학부모·관리자 403
+      responses:
+        '200':
+          description: 기록 후 완료 기록 (Cache-Control no-store)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OnboardingState'}
+        default: {$ref: '#/components/responses/LearningProblem'}
   /students/me/room/frame-slots:
     get:
       tags: [Students]
@@ -6530,6 +6553,57 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /me/onboarding:
+    get:
+      operationId: getParentOnboarding
+      tags:
+      - Account
+      summary: 학부모 첫 사용 안내 완료 기록
+      description: 미완료면 completedAt null (#1035). 학부모 세션만, 학생·관리자 403. 동의 전 허용 경로가 아니다(안내는 READY 뒤).
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: 완료 기록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 사용자별 상태 캐시 금지
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      operationId: completeParentOnboarding
+      tags:
+      - Account
+      summary: 학부모 첫 사용 안내 완료 기록
+      description: 본문 없이 완료 시각을 기록한다 (#1035). 멱등이며 이미 있으면 처음 시각을 유지한다. 기록을 지우는 API는 없다. 학부모 세션만, 학생·관리자 403.
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: 기록 후 완료 기록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: 사용자별 상태 캐시 금지
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /me/withdrawal/precheck:
     get:
       operationId: precheckAccountWithdrawal
@@ -13316,6 +13390,18 @@ components:
         locked:
           type: boolean
         updatedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    OnboardingState:
+      type: object
+      additionalProperties: false
+      description: 첫 사용 안내 완료 기록 (#1035). completedAt null이면 미완료
+      required:
+      - completedAt
+      properties:
+        completedAt:
           type:
           - string
           - 'null'
