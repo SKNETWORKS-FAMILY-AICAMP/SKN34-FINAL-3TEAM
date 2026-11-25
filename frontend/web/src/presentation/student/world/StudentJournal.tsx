@@ -85,7 +85,9 @@ export function StudentJournal({ child, onDetail, onContinue, onMissions }: {
           </select>
         </div>
       </header>
-      <div className="st-journal-tabs" role="tablist" aria-label="공책 기록 종류">
+      {/* 둘러보기(#1038) 표시: 기록이 있으면 탭을 강조, 빈 공책이면 대체 대사 */}
+      <div className="st-journal-tabs" role="tablist" aria-label="공책 기록 종류"
+        data-tour={records.isSuccess ? (all.length > 0 ? 'journal-tabs' : 'journal-empty') : undefined}>
         {TABS.map((t) => (
           <button key={t.id} ref={(el) => { tabRefs.current[t.id] = el }} type="button" role="tab" id={`journal-tab-${t.id}`}
             aria-selected={t.id === tab} aria-controls="journal-panel" tabIndex={t.id === tab ? 0 : -1}
