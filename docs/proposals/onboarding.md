@@ -42,7 +42,9 @@
 
 - **[확인]** 학생이 그 주 처음 "오늘 문제 풀기"를 누르면 시작 영상(`/student/theme/intro`, 건너뛰기 있음)이 나옴([사용자 흐름도 3.2](../design/user-flow.md#32-학생)).
 - **[확인]** 새 기념 액자 안내는 앨범 진입·알림 닫기 때 서버에 확인(`seen`)을 남겨 다시 뜨지 않게 함.
-- **[확인]** 웹은 지금 `sessionStorage`만 씀(`apiClient.ts`·`studentSession.ts`·`checkoutStorage.ts`). `localStorage` 사용처 없음.
+- **[확인]** 웹 인증·결제 상태는 `sessionStorage`에 둠(`apiClient.ts`·`studentSession.ts`·`checkoutStorage.ts`).
+- **[확인]** `localStorage`는 학부모 마지막 선택 자녀(`ParentWorkspace.tsx`, 키 `sagomungchi:last-child`, try/catch 없음)에서 이미 씀. 목업 fixture 2곳(`mocks/fixtures/sharing.ts`·`themePlanning.ts`)은 개발용.
+- **[확인]** 7.1 A안 키(`onboarding:{role}:{userId}:v1`)는 기존 키와 같은 방식이라 충돌 없음.
 
 ### 3.4 기본 화면·메뉴·도움말
 

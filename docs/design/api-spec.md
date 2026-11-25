@@ -266,6 +266,7 @@
 | POST | `/auth/student-sessions` | 학부모 | 학생 진입(동석): `{childId}` 연결 자녀 확인 후 별도 학생 세션(`STUDENT` 토큰) 발급, 학부모 세션은 잠금(refresh 쿠키 유지). 시연 링크·URL 식별값 진입 없음 (P01, 5.1) | ACC-05 | 제안 |
 | POST | `/auth/parent-unlock` | 쿠키 | 학생 화면 → 학부모 화면 복귀: `{password}` 보호자 비밀번호 확인 후 잠긴 학부모 세션 해제, 그 세션에서 들어간 학생 세션 폐기, refresh 응답과 같은 형식 + 회전 쿠키 (5.1) | ACC-05 | 제안 |
 | GET | `/me/guardian-password` | 학부모 | 보호자 비밀번호 상태 `{set, locked, updatedAt}`. 값·해시는 반환하지 않음 | ACC-05 | 제안 |
+| GET · PUT | `/me/onboarding` | 학부모 | 첫 사용 안내 완료 기록 `{completedAt}`(미완료 null). PUT은 본문 없이 기록하고 이미 있으면 처음 시각 유지(멱등), 지우는 API 없음. 학부모 외 403. 동의 전 허용 경로 아님(안내는 `READY` 뒤) (#1035) | - | 우선1 |
 | PUT | `/me/guardian-password` | 학부모 | 보호자 비밀번호 설정·변경 `{password}` (`X-Reauth-Token`, 숫자 4~6자리·반복/연속 불가, PIN과 같은 규칙). 실패 횟수·잠금 해제. 학부모가 아니면 입력과 관계없이 403(규칙 검사 422보다 먼저, #310) | ACC-05, ACC-10 | 제안 |
 | POST | `/auth/student/devices` | 공개 | 페어링 코드로 기기 등록 `{pairingCode, label}` → 기기 자격증명 쿠키 발급, 등록 자녀 프로필 반환 (P01, 3.11) | ACC-14 | 제안 |
 | GET | `/auth/student/profiles` | 기기 쿠키 | 이 기기에 등록된 자녀 프로필 `{childId, nickname, pinSet, pinLocked}` (P01, `/children` 확장과 같은 필드명) | ACC-05 | 제안 |
@@ -378,6 +379,7 @@ core는 학생 본인 확인 뒤 learning `POST /internal/attempts/{id}/word-hel
 | GET | `/students/me/attempts` | 학생 | 최근 학습 기록(미션·시점·완료 여부, `status` 필터) | DSH-03, LRN-16 | 제안 |
 | GET | `/students/me/thinking-activities` | 학생 | 수행 미션의 생각 유형·본인 돌아보기 (레벨·등급·순위 없음) | DSH-04 | 제안 |
 | GET·PUT | `/students/me/preferences` | 학생 | 화면 테마·동행 캐릭터 설정 (3.12, #234) | - | 제안 |
+| GET·PUT | `/students/me/onboarding` | 학생 | 첫 사용 안내 완료 기록 `{completedAt}`(미완료 null). 학생별(형제 분리), PUT 멱등·처음 시각 유지, 학생 외 403 (#1035) | - | 우선1 |
 | GET | `/children/{childId}/summary?from&to` | 학부모 | 학습 건수·상태 `Metric[]`, 집계 기준·기간 (P08) | DSH-06, DSH-07, DSH-10 | 제안 |
 | GET | `/children/{childId}/thinking-types?from&to` | 학부모 | 다섯 유형별 미션·기록, 없는 유형은 `NO_RECORD`("미관찰") | DSH-08 | 제안 |
 | GET | `/children/{childId}/attempts?from&to` | 학부모 | 기간 내 학습 목록 | DSH-07, DSH-09 | 제안 |

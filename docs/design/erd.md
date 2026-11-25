@@ -88,6 +88,7 @@ erDiagram
     varchar display_name "NULL 허용"
     varchar status "ACTIVE|WITHDRAWAL_REQUESTED|WITHDRAWN"
     boolean is_demo "시연 계정"
+    timestamptz onboarding_completed_at "NULL 허용, 학부모 첫 사용 안내 완료 시각 (#1035, V58)"
     timestamptz created_at
     timestamptz updated_at
     timestamptz withdrawn_at "NULL 허용"
@@ -125,6 +126,7 @@ erDiagram
     varchar(16) look_theme "NULL 허용, CHECK[lake|forest|factory|space|sea], 학생 꾸미기 (#234)"
     varchar(16) look_companion "NULL 허용, CHECK[mungchi|tori|mongdol|kongi|monggeul|snow|yarn|star|foam|paper|petal|ice], 학생 꾸미기 (#234), 동행 캐릭터 12종 (#697, V49)"
     timestamptz look_updated_at "NULL 허용, 꾸미기 저장 시각 (#234)"
+    timestamptz onboarding_completed_at "NULL 허용, 학생 첫 사용 안내 완료 시각 (#1035, V58)"
     varchar status "ACTIVE|DELETION_REQUESTED|DELETED"
     timestamptz created_at
     timestamptz updated_at
@@ -224,6 +226,7 @@ erDiagram
 - `student.parent_sharing_enabled`는 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외. 학생 본인만 바꾸며 원문 제공 경로는 같은 학생 행의 현재 설정을 다시 확인 (#206)
 - `student.community_enabled`도 같은 이유의 DEFAULT false 예외(P20, #388). V31에서 nullable로 추가하고 V32에서 기존 행을 false로 채운 뒤 NOT NULL. 학생 본인만 켜고 끄며, 공유물 공개는 이 값과 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의가 모두 있어야 한다. 동의 거부·철회 시 false, 학생 삭제 확정 시 false·`community_updated_at` NULL로 되돌림. `consent_document` `COMMUNITY`는 선택(`required = false`) 자녀 단위 동의(V31 시드 1.0), `error_report`·`correction` `target_type`에 `COMMUNITY_POST`
 - `student.look_theme`·`look_companion`·`look_updated_at`은 함께 NULL(저장한 적 없음, API 기본값 `lake`·`mungchi`)이거나 함께 값(`student_look_saved_together`). 값 목록은 코드 상수와 CHECK로 고정, SQL DEFAULT 없음. 학생 삭제 확정 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌림 (#234)
+- #1035(V58): `user_account.onboarding_completed_at`(학부모)·`student.onboarding_completed_at`(학생)은 첫 사용 안내 완료 시각. NULL이 미완료이고 처음 기록한 시각을 유지하며 지우는 경로가 없다(학생 삭제·탈퇴 때도 그대로). 학생은 `user_account` 행이 없어(V7) `student`에 둔다
 - P22(#389, V35): `lake`·`mungchi` 외 테마·캐릭터는 포인트 해금 후에만 저장 가능(`student_look_unlock`, 3.5.1). 잠금 적용 전 저장된 값은 V35가 해금 행으로 옮김
 - P26(#432, V41): `ck_student_grade`를 3~9로 넓혔다(초3~중3, 새 등록은 앱에서 3~6). `grade_changed_at`은 학부모 수정에서 학년이 바뀔 때와 자동 진급 때 기록하며, 3월 진급은 `COALESCE(grade_changed_at, created_at)`이 그 학년도 2월 1일(KST) 전인 활성·비시연 학생(3~8)만 올린다. `student_grade_promotion`은 학년도마다 한 줄(PK `(student_id, school_year)`)이라 같은 3월에 다시 돌아도 한 번만 오른다. 프로필 삭제(`PROFILE`) 때 진급 이력도 지우고 `grade_changed_at`을 비운다
 

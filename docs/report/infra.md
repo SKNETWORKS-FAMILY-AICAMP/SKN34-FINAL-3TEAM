@@ -2265,6 +2265,20 @@ kind API 서버는 호스트 네트워크를 사용한다. 지표 수집기의 A
 - scoring·report-api는 여전히 자체 span·HTTP 지표가 없다.
 - Langfuse를 켜면 generation 부모는 이전처럼 요청 `traceparent`(호출한 서비스 span)이고 ai span이 아니다. 두 저장소는 trace ID로 맞춘다.
 
+## 9.29 첫 사용 안내 완료 기록 migration V58 (#1035, 2026-11-25)
+
+에픽 #1034(첫 사용 안내)의 core 부분이다. 제안 [onboarding 7.1 B안](../proposals/onboarding.md)대로 완료 기록을 서버에 둬 기기·브라우저를 바꿔도 안내가 한 번만 보이게 한다.
+
+| 항목 | 내용 |
+|---|---|
+| 변경 | `V58__onboarding_completion.sql`: `user_account.onboarding_completed_at`·`student.onboarding_completed_at` (`timestamptz NULL`) 추가. 인덱스·CHECK·DEFAULT 없음 |
+| 학생을 `student`에 둔 근거 | 학생은 `user_account` 행이 없다(V7에서 `student.user_account_id` 삭제). 학생 본인 설정 시각을 `student`에 두는 `look_updated_at`(V23) 선례를 따른다. 형제가 한 보호자 계정을 써도 학생별로 따로 남는다 |
+| 기존 행 | 모두 NULL = 미완료. 배포 뒤 기존 사용자도 안내를 한 번 본다. 시연 계정은 시연 전에 각 계정으로 들어가 안내를 끝내 둔다(에픽 #1034) |
+| 기록 규칙 | `... WHERE ... AND onboarding_completed_at IS NULL` 조건부 UPDATE라 다시 기록해도 처음 시각을 유지한다(learning `ThemeFrameMapper.xml` `seen_at` 선례). 지우는 API·관리자 초기화는 없고, 학생 삭제·탈퇴 때도 지우지 않는다(개인정보가 아닌 시각 값이고 차단된 행은 다시 쓰이지 않음) |
+| 배포 | 칼럼 추가만이라 잠금이 짧고 되돌릴 데이터가 없다. core-migrate 이미지의 PreSync Job이 앱보다 먼저 돈다(9.18.3). local values `migration.revision`을 `v58`로 올렸다 |
+
+API: `GET·PUT /api/v1/me/onboarding`(학부모), `GET·PUT /api/v1/students/me/onboarding`(학생). 기록은 [auth-account 19](auth-account.md#19-첫-사용-안내-완료-기록-1035-2026-11-25).
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
