@@ -956,6 +956,25 @@ backend/report-service/
 - 미산정 경보는 `delta(...[1h])`로 최근 1시간에 새로 생긴 미산정만 본다(월초 0 초기화는 음수라 울리지 않음). 예산 300 USD의 80%(240 USD)는 Grafana 규칙 임계값이다. 이벤트 발행 유실(best-effort)은 반영되지 않아 실제 비용보다 작을 수 있다
 - 일일 리포트는 LLM을 쓰지 않고, 일일 리포트 대화는 분석 대화 호출 종류로 예산에 포함된다
 
+#### LLM 호출 지표 (#1028)
+
+- core `LlmCallMetrics`가 `llm.usage.recorded`를 `llm_usage`에 처음 저장한 때(`insertIfAbsent()`가 1)만 OTel 지표를 기록한다. 재전달 중복은 세지 않는다. Java agent가 없으면 no-op이다
+  - 히스토그램 `llm.call.duration`(초, Prometheus `llm_call_duration_seconds_*`): `call_type`·`model`·`prompt_version`(없으면 `none`)·`outcome`(`success`/`error`)·`error_code`(없으면 `none`). 버킷은 0.25~300초로 경보선 12·20초를 가른다
+  - 카운터 `llm.call.tokens`(Prometheus `llm_call_tokens_total`): `call_type`·`model`·`direction`(`input`/`output`). 토큰을 기록하지 않은 호출(영상·클러스터 안 모델 등)은 세지 않는다
+  - 속성에 프롬프트·응답 원문, 학생 ID, 업무 ID를 넣지 않는다(NFR-SEC-05). `prompt_version`은 프롬프트 교체 전후 비교용이며 시계열은 호출 유형당 1~2개 늘어난다
+- 대시보드 "LLM 호출"(`dashboards/llm-calls.json`): 호출 유형별 p50·p95, 오류율, 오류 코드별 건수, 호출 건수, 모델·방향별 토큰
+- prod 경보(초기 기준, 실측 뒤 조정). 호출이 없으면 `noDataState: OK`
+  - `llm-call-errors`: 호출 유형별 오류율 > 5%(15분, 10건 이상)
+  - `llm-call-latency-dialog`: JUDGMENT·FOLLOWUP p95 > 20초, `llm-call-latency-word-help`: WORD_HELP p95 > 12초(15분, 10건 이상). 기능 deadline(`ai-service/app/config.py` 판정·꼬리질문 33초, 단어 도움 20초)의 60%. 나머지 유형은 실측 뒤
+  - `llm-call-rate-limited`: `error_code="LLM_RATE_LIMITED"` 10분 안 1건 이상
+  - 오류율·429 규칙은 `increase()` 대신 `X - (X offset 창 or X * 0)`으로 센다. 새로 생긴 속성 조합(예: 처음 나온 오류 코드)의 첫 값을 `increase()`는 0으로 보기 때문이다
+- 호출 유형별 SLO 기준안(실측 뒤 확정): JUDGMENT 성공률 99%·p95 15초, FOLLOWUP 성공률 99%·p95 15초, WORD_HELP 성공률 99%·p95 8초. 리포트·테마·영상 등 비동기 유형은 실측 뒤 정한다
+- 한계
+  - 이벤트 소비 시점에 기록해 호출보다 수 초 늦다
+  - ai-service의 best-effort 발행에서 빠진 호출은 지표에도 없다
+  - 지연은 provider 호출 한 번의 시간이며 재시도·scoring·후처리를 포함한 기능 전체 지연이 아니다(기능 지연은 [업무별 오류율·지연](#업무별-오류율지연))
+  - 지연 경보의 p95는 `rate()` 기반이라 새 속성 조합의 첫 호출은 빠진다
+
 #### 업무별 오류율·지연
 
 - core·learning Java agent의 `http_server_request_duration_seconds`(`http_route`·`http_response_status_code`). core 공개 API 경로로 인증·학생 학습·AI 처리·리포트·결제를 나눠 5xx 비율과 p95 지연을 본다(AI 처리는 SSE가 섞여 5xx 비율만). 요청이 없으면 `noDataState: OK`, 수집이 사라지면 `app-metrics-missing`. 4xx는 제외

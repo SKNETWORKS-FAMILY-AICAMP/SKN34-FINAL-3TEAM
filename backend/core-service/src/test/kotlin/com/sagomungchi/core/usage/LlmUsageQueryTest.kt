@@ -5,6 +5,9 @@ import com.sagomungchi.core._common.exception.BusinessException
 import com.sagomungchi.core._common.messaging.EventEnvelope
 import com.sagomungchi.core.usage.domain.LlmUsageRecorded
 import com.sagomungchi.core.usage.domain.CallType
+import com.sagomungchi.core._common.config.AppProperties
+import com.sagomungchi.core.usage.repository.LlmUsageRepository
+import com.sagomungchi.core.usage.service.LlmCallMetrics
 import com.sagomungchi.core.usage.service.LlmCostMetrics
 import com.sagomungchi.core.usage.service.LlmUsageService
 import io.opentelemetry.sdk.metrics.SdkMeterProvider
@@ -22,6 +25,8 @@ import kotlin.test.*
 @TestPropertySource(properties = ["app.llm-pricing.query-model.input=3", "app.llm-pricing.query-model.output=15"])
 class LlmUsageQueryTest : PostgresRepositoryTest() {
     @Autowired lateinit var usage: LlmUsageService
+    @Autowired lateinit var repository: LlmUsageRepository
+    @Autowired lateinit var properties: AppProperties
     private val day = LocalDate.parse("2026-11-12")
     private fun event(time: String, type: String = "JUDGMENT", success: Boolean = true,
                       model: String = "query-model", latency: Int = 100, input: Int? = 1000,
@@ -120,6 +125,36 @@ class LlmUsageQueryTest : PostgresRepositoryTest() {
         assertEquals(0.033, exported.getValue("llm.usage.month_to_date.priced_cost").doubleGaugeData.points.single().value, 1e-9)
         assertEquals(1L, exported.getValue("llm.usage.month_to_date.unpriced_calls").longGaugeData.points.single().value)
         metrics.close()
+        provider.close()
+    }
+
+    @Test fun `call metrics record a new event once and skip redelivered duplicates (#1028)`() {
+        val reader = InMemoryMetricReader.create()
+        val provider = SdkMeterProvider.builder().registerMetricReader(reader).build()
+        val service = LlmUsageService(repository, properties, LlmCallMetrics(provider.get("test")))
+        val first = event("2026-11-12T01:00:00Z", latency = 1500)
+        service.record(first)
+        service.record(first)
+        service.record(event("2026-11-12T01:00:01Z", "FOLLOWUP", success = false, latency = 21000, input = null, output = null))
+        val exported = reader.collectAllMetrics().associateBy { it.name }
+        val durations = exported.getValue("llm.call.duration").histogramData.points.associateBy { it.attributes.asMap().entries.associate { (k, v) -> k.key to v.toString() } }
+        val judgment = durations.getValue(mapOf("call_type" to "JUDGMENT", "model" to "query-model",
+            "prompt_version" to "judge@1", "outcome" to "success", "error_code" to "none"))
+        assertEquals(1L, judgment.count)
+        assertEquals(1.5, judgment.sum, 1e-9)
+        val followup = durations.getValue(mapOf("call_type" to "FOLLOWUP", "model" to "query-model",
+            "prompt_version" to "judge@1", "outcome" to "error", "error_code" to "TIMEOUT"))
+        assertEquals(1L, followup.count)
+        // 21초는 20~25초 버킷에 들어가 p95 20초 경보선을 가른다
+        assertTrue(followup.boundaries.containsAll(listOf(12.0, 20.0)))
+        assertEquals(2, durations.size)
+        val tokens = exported.getValue("llm.call.tokens").longSumData.points.associate {
+            it.attributes.asMap().entries.associate { (k, v) -> k.key to v.toString() } to it.value }
+        // 토큰 없는 FOLLOWUP 호출은 세지 않고, 재전달 중복도 더하지 않는다
+        assertEquals(mapOf(
+            mapOf("call_type" to "JUDGMENT", "model" to "query-model", "direction" to "input") to 1000L,
+            mapOf("call_type" to "JUDGMENT", "model" to "query-model", "direction" to "output") to 2000L,
+        ), tokens)
         provider.close()
     }
 
