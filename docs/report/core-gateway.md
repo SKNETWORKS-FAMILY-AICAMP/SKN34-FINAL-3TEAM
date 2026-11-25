@@ -986,3 +986,77 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 ### 한계
 
 - 웹 책장 잠금 안내·비교표 연결은 #1000
+
+## 36. 추억 그림책 같이 읽음 표시·토요일 저녁 알림 (#1025, 2026-11-25)
+
+core 몫. 웹 표시(책장 "같이 읽었어요" 단추·알림 설정 이름)는 #1026, learning·report PDF는 #1024.
+
+### API
+
+- 새 경로 `PUT /api/v1/children/{childId}/memory-books/{bookId}/read-together`. 본문 없음 → 200 그림책 응답(`MemoryBook`). 모든 응답 `Cache-Control: no-store`
+- `MemoryBook`에 `readTogetherAt`(date-time, 없으면 null, required) 추가. 발급(POST)·발급 목록(`GET …/memory-books`)·책장(`GET …/memory-books/rounds`의 `book`)·같이 읽음 응답 모두 같은 칸을 싣는다. 기존 칸은 그대로라 기존 호출은 바뀌지 않는다(웹은 모르는 칸을 무시함)
+- 권한·확인 순서는 받기와 같다: 학부모 세션(403 `FORBIDDEN`) → 연결·법정대리인 동의(403 `CHILD_NOT_LINKED`) → 현재 원문 공개(403 `STUDENT_RECORDS_PRIVATE`) → 없거나 다른 자녀 책 404 `MEMORY_BOOK_NOT_FOUND` → 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`
+- 앱 안 알림 새 유형 `MEMORY_BOOK_READ_REMINDER`. 수신 설정(`GET·PUT /notification-settings`)에 기본 켜짐으로 나오고, 설정 PUT 개수 상한이 9 → 10개
+- 계약 `contracts/openapi/core-service.yaml`: 새 경로(`markMemoryBookReadTogether`, 200·401·403·404·409), `MemoryBook.readTogetherAt`, `NotificationType` enum·설명, `NotificationSettings.items.maxItems` 10
+
+### 정한 것 (수빈 11/25 확인, 이슈의 "구현 전 확인")
+
+| 항목 | 정한 값 | 근거 |
+|---|---|---|
+| 시각 | 매주 토요일 19:30 KST, `@Scheduled(cron = "0 30 19 * * SAT", zone = "Asia/Seoul")`, ShedLock `core-memory-book-read-reminder`(최대 30분·최소 1분) | 11/24 시안. 기존 `GradePromotionScheduler`와 같은 방식 |
+| 대상 | 그 자녀의 `StudentAccessService.notificationParents`(연결 + 필수 동의 + 법정대리인 동의) 모두 | 학년 진급 알림과 같은 수신자 규칙 |
+| 조건 | `status = 'READY'` AND `completed_at ≥ 실행 − 7일` AND `read_together_at IS NULL` AND `expires_at > 실행`인 책이 그 자녀에게 1권 이상 | "이번 주 나온 책을 아직 같이 읽지 않음". 받을 수 없는 만료 책은 알리지 않음 |
+| 원문 비공개 자녀 | 보내지 않음 | 받기가 403이라 알림을 눌러도 읽을 수 없음 |
+| 중복 방지 | 원천 ID `UUID.nameUUIDFromBytes("memory-book-read-reminder:{studentId}:{그 주 월요일 KST}")` + 기존 `ON CONFLICT(user_id,type,source_event_id) DO NOTHING` | 같은 토요일에 다시 돌아도(재시작·잠금 만료) 1건. 학년 진급(학생·학년도)과 같은 방식 |
+| 수신 거부 | 기존 `NotificationMapper.insert`가 수신을 끈 유형을 거름 | 다른 유형과 같음 |
+| 문구 | "이번 주 {별명}의 그림책이 나왔어요. 오늘 저녁 같이 읽어 보세요." | 시안의 "하린이"는 이름 뒤 '이'라 별명에 자동으로 붙일 수 없어 "{별명}의" |
+| 링크 | `/parent/report?childId={childId}` | 책장이 리포트 화면 아래에 있음 |
+| 같이 읽음 멱등 | `UPDATE … SET read_together_at = COALESCE(read_together_at, ?) … AND status = 'READY' RETURNING *`. 취소 API 없음 | 처음 시각을 지킴. 한 문장이라 동시에 눌러도 처음 값 하나 |
+| 만료 책 | READY인데 보관 기간이 지나 `EXPIRED`로 보이는 책도 표시 허용 | 파일이 없어도 읽은 기록은 맞음 |
+| 유료 판정 | 하지 않음 | 발급 목록·받기도 하지 않음. 무료로 바뀐 학부모도 이미 받은 책은 표시 가능 |
+| 저장 | 시각 하나만(누가 눌렀는지 없음) | 이슈에 없음. 자녀 하나에 연결된 학부모는 한 명(V26 `uq_guardianship_one_current_parent`) |
+
+### 구조 (architecture 2.1·2.2)
+
+- `MemoryBookController.readTogether` → `MemoryBookService.readTogether`(권한·상태 확인, 받기와 같은 `readyBook`) → `MemoryBookJobService.readTogether`(`@Transactional`) → `MemoryBookRepository.readTogether`
+- `memorybook/scheduler/MemoryBookReadReminderScheduler` → `MemoryBookReadReminderService.remind`(트랜잭션 없음, 대상 자녀 목록) → 자녀마다 `MemoryBookJobService.remindReadTogether`(`@Transactional`, 자녀별): `StudentAccessService.lockStatus`(학생 행 잠금, ACTIVE만) → `StudentLearningContextService.sharingEnabled` → 조건 다시 확인 → `notificationParents` → 별명은 `StudentAccessService.linkedStudents` → `NotificationService.memoryBookReadReminder`(`Propagation.MANDATORY`)
+- 한 자녀가 실패해도 다른 자녀를 계속 처리하고, 실패가 있으면 끝에 예외로 알린다(`ReportScheduleService`와 같음). 로그에는 확인한 자녀 수·만든 알림 수·실패 수와 오류 코드만 남기고 학생 ID·별명·글은 남기지 않는다
+
+### 같이 읽은 비율 조회 SQL (관리자 화면 없음)
+
+읽기 전용. core 앱 계정으로 core_db에 접속해 psql로 실행한다. 기간은 책이 완성된(READY가 된) KST 날짜 `[from, to)`. 결과는 건수와 비율 한 줄이고 학생 ID·이름은 나오지 않는다. 시연 학생(`student.is_demo`)은 `scripts/retention_metrics/core.sql`처럼 기본 제외, `-v include_demo=1`이면 포함. 학생 삭제 확정 때 작업 행이 함께 지워지므로 삭제된 자녀의 책은 세지 않는다.
+
+```sql
+-- psql -X -d core_db -v from=2026-11-23 -v to=2026-12-07 [-v include_demo=1] -f read_together.sql
+\set ON_ERROR_STOP on
+\if :{?include_demo}
+\else
+  \set include_demo 0
+\endif
+BEGIN TRANSACTION READ ONLY;
+SELECT count(*) AS ready_books,
+       count(*) FILTER (WHERE j.read_together_at IS NOT NULL) AS read_together_books,
+       round(100.0 * count(*) FILTER (WHERE j.read_together_at IS NOT NULL) / NULLIF(count(*), 0), 1) AS read_together_pct
+FROM memory_book_job j
+JOIN student s ON s.id = j.student_id
+WHERE j.status = 'READY'
+  AND (j.completed_at AT TIME ZONE 'Asia/Seoul')::date >= :'from'::date
+  AND (j.completed_at AT TIME ZONE 'Asia/Seoul')::date < :'to'::date
+  AND (:'include_demo'::int = 1 OR NOT s.is_demo);
+ROLLBACK;
+```
+
+- 분모는 기간 안에 완성된 READY 책(보관 기간이 지난 책 포함), 분자는 그중 `read_together_at`이 있는 책. 같은 회차를 다시 발급한 책도 한 권으로 센다
+- 책이 없으면 `read_together_pct`는 NULL
+- 확인(2026-11-25): 임시 PostgreSQL 16 컨테이너에 합성 행(시연 아닌 자녀 READY 3권 중 KST 기간 안 2권·그중 1권 같이 읽음, FAILED 1권, 시연 자녀 READY 1권 같이 읽음)을 넣고 실행해 기본 `2 | 1 | 50.0`, `include_demo=1` `3 | 2 | 66.7`, 빈 기간 `0 | 0 | NULL`을 확인했다(KST 기간 경계 밖·FAILED 제외). 실제 core_db에서는 실행하지 않았다
+
+### 검증
+
+- `MemoryBookIntegrationTest` 13개(새 4개): 같이 읽음 저장 → 발급 목록·책장 `book.readTogetherAt` 반영, 두 번 눌러도 처음 시각, 보관 기간이 지난 책·구독 끝난 학부모도 표시 가능 / 연결 안 된 학부모 403 `CHILD_NOT_LINKED`, 학생 세션 403, 다른 자녀 책·없는 책 404, QUEUED·FAILED 409, 비공개 자녀 403 `STUDENT_RECORDS_PRIVATE`(값 안 바뀜) / 토요일 알림: 같은 토요일 두 번 실행해도 자녀마다 1건(한 학부모의 두 자녀는 각 1건), 제목·링크·원천 ID, 같이 읽은 책만·7일 지난 책만·보관 기간이 지난 책만·비공개 자녀는 없음, 다음 주에는 새로 1건 / 수신 설정에 새 유형 기본 true, 끄면 알림 없음
+- `NotificationIntegrationTest`: 설정 유형 수 9 → 10
+- 계약 시험: `test_memory_book_contract`(경로 4 → 5), `test_admin_operations_contract`(NotificationType·maxItems 지문), `test_core_migration_versions`(local `revision: v59`)
+
+### 한계
+
+- 웹 화면 표시는 #1026. 그 전까지 웹 알림 설정 화면에 새 유형이 이름 없이 보일 수 있다
+- "학부모 2명이면 각 1건"은 자녀당 연결 학부모가 한 명이라(V26) 시험 데이터로 만들 수 없다. 코드는 `notificationParents`가 돌려준 학부모마다 1건을 만든다

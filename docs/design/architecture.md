@@ -60,7 +60,7 @@
 
 | 서비스 | 추가 책임 | 기능 패키지 |
 |---|---|---|
-| core-service | 학부모 발급·목록·받기 API, 연결·동의·원문 공개(#206) 확인, 유료 판정(`features.memoryBook`)·하루 한도·`MEMORY_BOOK` 사용 예약, 작업 행·`memorybook.generate` Outbox, 완료 이벤트 반영, 받기 감사 기록, 자녀 삭제 때 작업 행 삭제 | `memorybook`(controller → service → repository·client·messaging·consumer), 유료 판정은 기존 `payment/service/ProductEntitlementService` |
+| core-service | 학부모 발급·목록·받기 API, 연결·동의·원문 공개(#206) 확인, 유료 판정(`features.memoryBook`)·하루 한도·`MEMORY_BOOK` 사용 예약, 작업 행·`memorybook.generate` Outbox, 완료 이벤트 반영, 받기 감사 기록, 자녀 삭제 때 작업 행 삭제, 같이 읽음 표시·토요일 저녁 같이 읽기 알림(#1025) | `memorybook`(controller·consumer·scheduler → service → repository·client·messaging), 알림은 `notification/service/NotificationService`, 유료 판정은 기존 `payment/service/ProductEntitlementService` |
 | learning-service | 회차 조립 내부 API(요일 문제·장면 그림·답변·되묻기·돌아보기·엔딩, P23은 여기서 적용). 그림은 단기 presigned URL | 기존 `memory`(MemoryBook controller·service·repository) |
 | report-service | `memorybook.generate` 소비, 프로필 재확인(원문 공개), 그림 받기(허용 출처·크기 상한·리디렉트 거부, 내부 토큰 없는 별도 클라이언트) → `data:` URI → Chromium PDF 1판 → S3 저장 → `memorybook.completed` Outbox, core 전용 받기 주소 | `app/memory_book/`, `app/clients/asset_fetcher.py`·`memory_book_client.py`, `app/rendering/memory_book.py` |
 | ai·scoring | 변경 없음(LLM 호출 없음) | - |

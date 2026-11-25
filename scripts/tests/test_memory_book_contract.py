@@ -38,7 +38,8 @@ class MemoryBookContractTest(unittest.TestCase):
     def test_documented_operations_match_controller(self):
         actual = {(m.lower(), p.removeprefix('/api/v1'))
                   for m, p in re.findall(r'@(Get|Post|Put|Patch|Delete)Mapping\("([^"]+)"\)', self.controller)}
-        self.assertEqual(4, len(actual))
+        # 회차 목록·발급·발급 목록·받기 주소 + 같이 읽음 표시(#1025)
+        self.assertEqual(5, len(actual))
         self.assertEqual(actual, self.operations())
 
     def test_response_schemas_match_data_classes(self):
