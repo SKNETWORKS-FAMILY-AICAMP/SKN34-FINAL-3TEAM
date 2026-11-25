@@ -461,13 +461,25 @@ def test_ending_without_answer_has_no_cloud_and_only_left_side():
     assert "큰 질문의 답은" not in ending and 'class="side"' not in ending
 
 
+def pdf_font_names(pdf):
+    """PDF에 이름(/BaseFont)이 있는 글꼴만.
+
+    리눅스 Noto(OpenType CFF)는 이름 없는 Type3로 들어가 건너뛴다.
+    """
+    names = set()
+    for page in PdfReader(io.BytesIO(pdf)).pages:
+        resources = page.get("/Resources")
+        fonts = resources.get_object().get("/Font") if resources is not None else None
+        for font in (fonts.get_object() if fonts is not None else {}).values():
+            name = font.get_object().get("/BaseFont")
+            if name is not None:
+                names.add(str(name))
+    return names
+
+
 def test_pdf_embeds_gowun_dodum_subset_only_in_the_book(rendered):
-    reader = PdfReader(io.BytesIO(rendered["PDF"]))
-    fonts = {
-        str(font.get_object()["/BaseFont"])
-        for page in reader.pages
-        for font in (page["/Resources"].get("/Font") or {}).values()
-    }
+    fonts = pdf_font_names(rendered["PDF"])
+    # 이름이 하나도 없으면 any()가 거짓이라 그냥 통과하지 않는다
     assert any(name.endswith("+GowunDodum-Regular") for name in fonts), fonts
     assert b"@font-face" in rendered["HTML"]
     assert "@font-face" not in html_of(sample_book())  # 글꼴 값 없이도 템플릿은 돈다
