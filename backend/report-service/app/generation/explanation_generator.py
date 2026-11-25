@@ -5,6 +5,7 @@ import logging
 import re
 from dataclasses import replace
 
+from app import tracing
 from app.config import get_settings
 from app.generation.models import EvidenceLink, ItemType, ReportItem
 from app.generation.narrative_generator import scrub
@@ -195,6 +196,7 @@ class ExplanationGenerator:
         if command.period_type != "WEEKLY" or not command.explanation_enabled:
             return result
         if not command.parent_sharing_enabled:
+            tracing.record_explanation_state("NO_TARGET")
             return replace(result, explanation_state="NO_TARGET")
         settings = get_settings()
         all_activities = settings.report_local_all_activity_explanations
@@ -283,6 +285,6 @@ class ExplanationGenerator:
                         )
         except Exception:
             logger.warning("Report explanation stage incomplete; base report retained")
-        return replace(
-            result, items=(*result.items, *items), explanation_state="INCLUDED" if items else state
-        )
+        state = "INCLUDED" if items else state
+        tracing.record_explanation_state(state)
+        return replace(result, items=(*result.items, *items), explanation_state=state)

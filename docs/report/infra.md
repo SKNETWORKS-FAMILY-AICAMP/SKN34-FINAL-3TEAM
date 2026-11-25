@@ -2265,7 +2265,51 @@ kind API 서버는 호스트 네트워크를 사용한다. 지표 수집기의 A
 - scoring·report-api는 여전히 자체 span·HTTP 지표가 없다.
 - Langfuse를 켜면 generation 부모는 이전처럼 요청 `traceparent`(호출한 서비스 span)이고 ai span이 아니다. 두 저장소는 trace ID로 맞춘다.
 
-## 9.29 첫 사용 안내 완료 기록 migration V58 (#1035, 2026-11-25)
+## 9.29 리포트 설명 누락 지표와 경보 (#1031, 2026-11-25)
+
+에픽 #1027의 리포트 설명 부분이다. 리포트 Gemma(SageMaker, #742)가 창 시작 뒤 InService가 아니거나 0대 호출에 실패해도 리포트는 `COMPLETED`라 기존 규칙에 잡히지 않았다.
+
+### 9.29.1 결정 (2026-11-25 동섭)
+
+| 항목 | 결정 |
+|---|---|
+| 지표 출처 | CloudWatch 데이터 소스 대신 report-worker 지표. 새 IAM·데이터 소스 없음. 엔드포인트 InService 여부·`NoCapacityInvocationFailures` 자체는 보지 않고 "설명이 실제로 빠졌다"는 결과만 본다 |
+| 내보내기 | `app/tracing.py`가 `tracing.enabled`(`OTEL_TRACES_EXPORTER=otlp`)일 때 trace와 함께 MeterProvider를 설치. chart는 Java가 아닌 서비스에 `OTEL_METRICS_EXPORTER`를 주지 않아 chart 렌더는 바꾸지 않음. ai-service(#1029)는 values의 `OTEL_METRICS_EXPORTER`로 따로 켠다 |
+| 임계값 | 기준안. 30명 배치 실측 뒤 조정 |
+| prod 적용 | prod values에 넣었으나 B 첫 배포 포함 여부는 결정 대기(#886: 12/1 이후 장애·시험 메시지 금지) |
+
+### 9.29.2 바꾼 것
+
+- report-worker: OTel 카운터 `report.explanation.state`(Prometheus `report_explanation_state_total`). 속성은 `state`(`INCLUDED`·`NOT_INCLUDED`·`NO_TARGET`) 하나이고 학생·리포트·답변 ID와 원문은 넣지 않는다(NFR-SEC-05). `explanation_generator.py`가 상태를 정하는 두 곳(공유 꺼짐 `NO_TARGET`, 설명 단계 끝)에서 1을 더하고, 일일 리포트·설명 꺼짐은 세지 않는다. 재시작 뒤 첫 결정도 `increase()`에 잡히도록 세 상태를 0부터 낸다
+- prod `observability.json`에 규칙 2개 추가(#1028 포함 총 22개). 둘 다 지속 5분, 창 밖은 `noDataState: OK`
+
+| uid | 조건 |
+|---|---|
+| `report-explanation-not-included` | 최근 30분 `NO_TARGET`을 뺀 결정 5건 이상 중 `NOT_INCLUDED` > 50% |
+| `report-explanation-none-included` | 최근 30분 `NOT_INCLUDED` 3건 이상이고 `INCLUDED` 0건 |
+
+- 창(일 23:30 ~ 월 02:00 KST, `explanation-endpoint.json` `schedule`)은 UTC 일 14:30~17:00으로 바꿔 `day_of_week()`·`hour()`·`minute()` 조건으로 건다. 창 밖에서는 값이 비어 울리지 않는다. `increase()` 외삽으로 건수가 소수가 되지 않도록 건수는 `round()`로 본다
+- 검증기 `verify_chart.py`·`verify.py`, `operational-alerts/README.md`, architecture 4.7 남은 경계 갱신
+
+### 9.29.3 검증 (로컬)
+
+| 검사 | 결과 |
+|---|---|
+| report 시험 | 전체 564개 통과. 상태별 카운터(INCLUDED 1·NOT_INCLUDED 1·NO_TARGET 2, 설명 꺼짐은 미집계), 속성이 `state` 하나뿐이고 학생 ID·원문이 없음, 세 상태 0 시작 확인. ruff 통과 |
+| 실제 Collector | `otel/opentelemetry-collector-contrib:0.164.0`에 OTLP로 보내 `report_explanation_state_total{job="report-worker",state=...}`로 나오고 `NO_TARGET` 0도 나오는 것 확인(Prometheus 수집 뒤 `exported_job`) |
+| Helm | observability prod·local, report-worker prod `helm lint --strict`·`helm template` 통과 |
+| `verify_chart.py` (Docker 격리) | 22개 규칙 정상 평가. 창 조건을 Prometheus `time` 지정 조회로 일 14:29:59·14:30·15:30·16:59:59·17:00 UTC와 월·토 15:30 UTC에서 확인. 가속 사본(창 조건 제거, `[1m]`)에서 `NO_TARGET` 제외 비율 발생(넣으면 울리지 않는 값), `INCLUDED` 0건 발생, 두 규칙 회복. 기존 검사 모두 통과 |
+
+AWS·SageMaker·A 계정 클러스터와 실제 Discord 수신은 이 검증에 포함하지 않았다.
+
+### 9.29.4 남은 것
+
+- 배치가 아예 돌지 않거나 report-worker 지표가 끊기면 두 규칙 모두 울리지 않는다(창 안에서도 NoData는 OK)
+- 엔드포인트 InService 직접 감시(CloudWatch)는 하지 않는다
+- 30명 배치 실측 뒤 임계값·30분 창·창 끝 시각 조정
+- B 첫 배포 포함 여부 결정
+
+## 9.30 첫 사용 안내 완료 기록 migration V58 (#1035, 2026-11-25)
 
 에픽 #1034(첫 사용 안내)의 core 부분이다. 제안 [onboarding 7.1 B안](../proposals/onboarding.md)대로 완료 기록을 서버에 둬 기기·브라우저를 바꿔도 안내가 한 번만 보이게 한다.
 
