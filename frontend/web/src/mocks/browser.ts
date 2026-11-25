@@ -16,6 +16,7 @@ import { adminThemeDraftHandlers } from './handlers/adminThemeDrafts.ts'
 import { setWorkspaceScenario } from './fixtures/accounts.ts'
 import { setMockChildPlan } from './fixtures/childPlan.ts'
 import { studentDeviceHandlers } from './handlers/studentDevice.ts'
+import { onboardingHandlers } from './handlers/onboarding.ts'
 import { setDeviceScenario } from './fixtures/studentDevice.ts'
 import type { DeviceScenario } from './fixtures/studentDevice.ts'
 import { demoRequest, sharedDeviceDemo } from './sharedDevice.ts'
@@ -32,6 +33,7 @@ export const mockHandlers = [
   ...serviceHandlers,
   ...studentDeviceHandlers,
   ...parentHandlers,
+  ...onboardingHandlers,
   ...adminThemeDraftHandlers,
   ...adminHandlers,
   ...studentHandlers,
