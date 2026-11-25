@@ -12,6 +12,7 @@ from aio_pika.abc import AbstractChannel
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from app import tracing
 from app.messaging.connection import AmqpConnection
 from app.messaging.envelope import EventEnvelope
 from app.security import current_user_context
@@ -109,7 +110,8 @@ class UsagePublisher:
             type=LLM_USAGE_RECORDED,
             source=self._source,
             dataschema=f"{LLM_USAGE_RECORDED}.v1",
-            traceparent=context.traceparent if context else None,
+            # 현재 span(LLM 호출)을 부모로 전파. no-op이면 받은 traceparent 그대로
+            traceparent=tracing.current_traceparent() or (context.traceparent if context else None),
             data=LlmUsageRecorded(
                 service=self._service,
                 call_type=call_type,

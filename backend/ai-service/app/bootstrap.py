@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from langfuse import Langfuse
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
+from app import tracing
 from app.analysis_agent.router import router as analysis_router
 from app.clients.base import internal_client
 from app.clients.core_client import CoreClient
@@ -18,6 +19,7 @@ from app.embedding.router import router as embedding_router
 from app.errors import register_error_handlers
 from app.followup.router import router as followup_router
 from app.health.router import router as health_router
+from app.http_telemetry import HttpTelemetryMiddleware
 from app.judgment.router import router as judgment_router
 from app.llm.embeddings import create_embedder
 from app.llm.media import create_media_clients
@@ -46,6 +48,8 @@ from app.word_help.web_search import WordWebSearch
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    # 앱 trace·지표 (#1029). 전역 provider가 아니라 Langfuse 전역 provider와 섞이지 않는다
+    tracing.configure()
     langfuse: Langfuse | None = None
     if settings.langfuse_enabled:
         if not all(
@@ -133,12 +137,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await amqp.close()
             if langfuse is not None:
                 langfuse.shutdown()
+            tracing.shutdown()
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title=get_settings().service_name, lifespan=lifespan)
     register_error_handlers(app)
     app.add_middleware(InternalAuthMiddleware)
+    # 마지막에 넣어 가장 바깥: 401·403도 재고, 서버 span 안에서 인증·처리가 돈다
+    app.add_middleware(HttpTelemetryMiddleware)
     app.include_router(health_router)
     # 기능 라우터는 여기에 등록
     app.include_router(judgment_router)
