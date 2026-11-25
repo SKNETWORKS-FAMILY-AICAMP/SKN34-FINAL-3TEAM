@@ -2157,6 +2157,45 @@ kind API 서버는 호스트 네트워크를 사용한다. 지표 수집기의 A
 
 운영 노드 배치, AWS 권한, 비용과 Discord 수신은 11/28 B 첫 배포 안정화 뒤 검토한다. EKS 노드 여유와 실제 학습 데이터 사용 결정(#887)을 운영 활성화 전에 확인한다.
 
+## 9.27 LLM 호출 지연·오류 지표와 경보·대시보드 (#1028, 2026-11-25)
+
+설계 기준은 [architecture 4.7 LLM 호출 지표](../design/architecture.md#llm-호출-지표-1028)다. 에픽 #1027의 core 부분이다.
+
+### 9.27.1 결정 (동섭, 11/25)
+
+- prod 경보는 B 첫 배포에 넣는다. 12/1 이후 장애·시험 메시지 금지(#886)는 그대로 지킨다
+- 임계값은 이슈 기준안을 그대로 쓰고 실측 뒤 조정한다
+- `llm.call.duration`에 `prompt_version` 속성을 넣는다
+
+### 9.27.2 바꾼 것
+
+- core `LlmCallMetrics`: `LlmUsageService.record()`에서 `insertIfAbsent()`가 1을 돌려준 때만 `llm.call.duration`(초, 버킷 0.25~300초)과 `llm.call.tokens`를 기록한다
+- prod `observability.json`: `llm-call-errors`·`llm-call-latency-dialog`·`llm-call-latency-word-help`·`llm-call-rate-limited`. 기존 LLM 규칙(`llm-unpriced-calls`) 바로 뒤에 둔다
+- 대시보드 `charts/observability/dashboards/llm-calls.json`("LLM 호출"): 호출 유형별 p95·p50, 오류율, 오류 코드별 건수, 호출 건수, 모델·방향별 토큰
+- `operational-alerts/verify_chart.py`: local·prod 렌더에 `llm-calls.json`이 provision되는지 확인한다
+
+오류율·429 규칙은 `increase()` 대신 `clamp_min(X - (X offset 창 or X * 0), 0)`으로 센다. 처음 나온 속성 조합(예: 처음 나온 오류 코드)의 첫 값을 `increase()`가 0으로 보기 때문이다. core가 재시작하면 `exported_instance`가 바뀌어 새 시계열이 생기는데, 이 식은 그 값도 창 안의 새 호출로 센다.
+
+### 9.27.3 검증
+
+- core `./gradlew clean test bootJar`(`eclipse-temurin:21-jdk` 컨테이너와 Testcontainers): 780건 중 실패 0, 건너뜀 3, bootJar 생성. `LlmUsageQueryTest`에 새 시험을 넣었다. 새 이벤트 1건은 히스토그램 1회와 토큰 입력·출력에 기록되고, 같은 이벤트를 다시 받으면 더 기록하지 않는다. 토큰이 없는 호출은 토큰에서 빠진다(InMemoryMetricReader)
+- `verify_chart.py`(Helm 4.3.1, 실제 Grafana·Prometheus 컨테이너): exit 0. prod 규칙 20개(기존 16개 + 새 4개)가 실제 엔진에서 정상 평가됐다
+- `ci-gitops`와 같은 `helm lint --strict`와 `helm template --kube-version 1.35.8`를 local·prod observability values로 돌려 통과했다. kubeconform은 로컬에 없어 돌리지 않았다
+- 로컬 kind(`sagomungchi-local`)
+  - 이 브랜치 core 이미지(`local-1028`)를 임시로 올리고, ai-service 안에서 `/internal/followups`를 12회 불렀다(LLM stub, 200)
+  - Prometheus에서 `llm_call_duration_seconds_count{call_type="FOLLOWUP",prompt_version="followup@4",outcome="success",error_code="none"}`가 12였다. `llm_call_tokens_total`은 입력 4560·출력 3371이었다
+  - 버킷 시계열은 20개였다(19개 경계와 `+Inf`). `llm-call-errors` 식은 FOLLOWUP에서 0이었고 10건 조건을 채웠다
+  - Grafana API에서 대시보드 `llm-calls`가 provision된 것을 확인했다. p95(4.87초)·토큰·호출 건수 패널 쿼리가 값을 돌려줬다
+  - 확인 뒤 core는 원래 `sagomungchi/core-service:local`로 되돌렸다. observability release는 `--reuse-values`로 `grafana.dashboards.enabled=true`를 켰다. 배포된 값에 `prometheus.retrainJobMetrics`가 없어 `enabled=false`를 함께 줬다(revision 17)
+  - 재전달 중복은 kind에서 다시 보내 보지 않았고 core 시험으로만 확인했다
+
+### 9.27.4 한계·남은 일
+
+- 이벤트 소비 시점에 기록해 수 초 늦다. best-effort 발행에서 빠진 호출은 없다. 지연은 provider 호출 한 번이며 기능 전체 지연이 아니다
+- 대시보드와 지연 경보는 `rate()`·`increase()` 기반이라 새 속성 조합의 첫 호출이 빠진다. kind에서도 호출 건수 패널이 12건이 아니라 약 4.6건(30분 `increase`)을 보였다. 추세를 보는 용도로 쓴다
+- JUDGMENT·FOLLOWUP·WORD_HELP 밖의 호출 유형 지연 경보와 SLO 확정은 실측 뒤에 한다
+- prod 값은 B 계정에서 Collector egress와 core Java agent가 켜져야 생긴다. B 첫 배포 뒤 Grafana 패널을 확인해야 한다
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)

@@ -134,12 +134,17 @@ def main():
             exprs = [t["expr"] for panel in dashboard["panels"] for t in panel["targets"]]
             assert dashboard["uid"] == "expression-toxicity" and all("expression_toxicity_checks_total" in e for e in exprs)
             assert all(t["datasource"]["uid"] == "prometheus" for panel in dashboard["panels"] for t in panel["targets"])
+            # #1028: LLM call latency, errors and tokens from core llm.call.* metrics.
+            llm = json.loads(data["llm-calls.json"])
+            llm_exprs = [t["expr"] for panel in llm["panels"] for t in panel["targets"]]
+            assert llm["uid"] == "llm-calls" and all(re.search(r"llm_call_(duration_seconds_(bucket|count)|tokens_total)", e) for e in llm_exprs)
+            assert all(t["datasource"]["uid"] == "prometheus" for panel in llm["panels"] for t in panel["targets"])
             grafana = rendered["Deployment", "grafana"]["spec"]["template"]["spec"]
             mounts = {m["name"]: m["mountPath"] for m in grafana["containers"][0]["volumeMounts"]}
             assert mounts["dashboard-provider"] == "/etc/grafana/provisioning/dashboards"
             assert mounts["dashboards"] == "/etc/grafana/dashboards"
             assert {v["name"] for v in grafana["volumes"] if v.get("configMap", {}).get("name") == "grafana-dashboards"} == {"dashboard-provider", "dashboards"}
-        print("PASS local and prod values provision the expression toxicity dashboard", flush=True)
+        print("PASS local and prod values provision the expression toxicity and LLM call dashboards", flush=True)
 
         # Accelerated copy of the prod rules; not operating thresholds.
         alerting = json.loads(prod.read_text(encoding="utf-8"))["grafana"]["alerting"]
