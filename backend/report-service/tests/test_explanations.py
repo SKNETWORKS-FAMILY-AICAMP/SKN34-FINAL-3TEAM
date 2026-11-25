@@ -611,3 +611,64 @@ def test_number_inside_a_longer_student_number_is_not_allowed():
     original = "버스를 타고 30분이나 가야 한다."
     assert not unsupported_numbers("30분 걸린다고 썼습니다.", original)
     assert unsupported_numbers("근거를 3개 들었습니다.", original)
+
+
+@pytest.fixture
+def explanation_counts(monkeypatch):
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+    from app import tracing
+
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(metric_readers=[reader])
+    # A local provider keeps other tests on the no-op API.
+    counter = provider.get_meter("test").create_counter("report.explanation.state")
+    monkeypatch.setattr(tracing, "explanation_states", counter)
+
+    def counts():
+        data = reader.get_metrics_data()
+        points = [
+            point
+            for resource in (data.resource_metrics if data else ())
+            for scope in resource.scope_metrics
+            for metric in scope.metrics
+            if metric.name == "report.explanation.state"
+            for point in metric.data.data_points
+        ]
+        return {point.attributes["state"]: point.value for point in points}, points
+
+    yield counts
+    provider.shutdown()
+
+
+def test_explanation_state_counter_records_each_decision_with_only_the_state(
+    monkeypatch, explanation_counts
+):
+    from app import tracing
+
+    student = fixed_result()[0].student_id
+    command, report, *_, generator = setup_case()
+    assert asyncio.run(generator.generate(command, report)).explanation_state == "INCLUDED"
+    _, _, _, _, _, failing = setup_case(ai=AI(fault=RuntimeError("PRIVATE RAW TEXT")))
+    assert asyncio.run(failing.generate(command, report)).explanation_state == "NOT_INCLUDED"
+    _, _, _, _, _, empty = setup_case([])
+    assert asyncio.run(empty.generate(command, report)).explanation_state == "NO_TARGET"
+    private = replace(command, parent_sharing_enabled=False)
+    assert asyncio.run(generator.generate(private, report)).explanation_state == "NO_TARGET"
+    # Daily or disabled explanation stages are not decisions and are not counted.
+    asyncio.run(generator.generate(replace(command, explanation_enabled=False), report))
+    tracing.start_explanation_series()
+
+    counts, points = explanation_counts()
+    assert counts == {"INCLUDED": 1, "NOT_INCLUDED": 1, "NO_TARGET": 2}
+    # NFR-SEC-05: no student, report or answer identifiers and no text in attributes.
+    assert all(dict(point.attributes) == {"state": point.attributes["state"]} for point in points)
+    assert str(student) not in repr(points) and "PRIVATE RAW TEXT" not in repr(points)
+
+
+def test_explanation_series_start_at_zero_for_every_state(explanation_counts):
+    from app import tracing
+
+    tracing.start_explanation_series()
+    assert explanation_counts()[0] == {"INCLUDED": 0, "NOT_INCLUDED": 0, "NO_TARGET": 0}
