@@ -19,6 +19,9 @@ export const memoryBookApi = {
     readMemoryBookPage(await apiFetch<unknown>(`/children/${e(childId)}/memory-books?page=0&size=50`, { signal, cache: 'no-store' })),
   download: async (childId: string, bookId: string): Promise<MemoryBookDownload> =>
     readMemoryBookDownload(await apiFetch<unknown>(`/children/${e(childId)}/memory-books/${e(bookId)}/download`, { cache: 'no-store' })),
+  /** "같이 읽었어요"(core #1025): 본문 없음, 멱등(이미 표시했으면 처음 시각 그대로), 취소 없음 */
+  readTogether: async (childId: string, bookId: string): Promise<MemoryBook> =>
+    readMemoryBook(await apiFetch<unknown>(`/children/${e(childId)}/memory-books/${e(bookId)}/read-together`, { method: 'PUT', cache: 'no-store' })),
 }
 
 /** 받은 주소로 이동(파일은 서버가 attachment로 내려 준다) */

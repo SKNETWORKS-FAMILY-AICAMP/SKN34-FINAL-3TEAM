@@ -179,6 +179,9 @@
 @media (max-width: 600px) { .parent-memory-books .memory-shelf-title { font-size: 13px; padding: 20px 8px 6px 14px; } }
 /* 발급 잠금 표시: 표지 오른쪽 위 작은 띠 */
 .parent-memory-books .memory-shelf-badge { position: absolute; top: 8px; right: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; background: rgb(255 255 255 / 0.92); color: #2f3d34; font-size: 12px; font-weight: 700; box-shadow: 0 1px 3px rgb(0 0 0 / 0.18); }
+/* 같이 읽음 날짜(#1026): 자물쇠 표시와 같은 모양, 책등 띠(9px) 옆 왼쪽 위 */
+.parent-memory-books .memory-shelf-read { position: absolute; top: 8px; left: 16px; z-index: 2; display: inline-flex; align-items: center; gap: 4px; max-width: calc(100% - 24px); padding: 3px 9px; border-radius: 999px; background: rgb(255 255 255 / 0.92); color: #2f3d34; font-size: 12px; font-weight: 700; white-space: nowrap; box-shadow: 0 1px 3px rgb(0 0 0 / 0.18); }
+.parent-memory-books .memory-shelf-read-below { top: 38px; }
 .parent-memory-books .memory-shelf-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .parent-memory-books .memory-shelf-sub { display: block; margin-top: 4px; font-size: 14px; color: #536057; }
 /* 표지 없이 잠긴 책만 있을 때: 한 줄 전체를 쓰는 가로 칸(잠긴 표지 + 설명) */

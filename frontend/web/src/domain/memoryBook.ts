@@ -14,6 +14,8 @@ export type MemoryBook = {
   createdAt: string
   completedAt: string | null
   expiresAt: string
+  /** 학부모가 처음 "같이 읽었어요"를 누른 시각(core #1025). 없으면 null, 다시 눌러도 바뀌지 않는다 */
+  readTogetherAt: string | null
 }
 export type MemoryBookPage = { items: MemoryBook[]; page: number; size: number; totalElements: number }
 export type MemoryBookDownload = { url: string; expiresAt: string }
@@ -43,7 +45,16 @@ export function readMemoryBook(value: unknown): MemoryBook {
   return {
     bookId: text(v.bookId), status, failureCode, rounds,
     createdAt: time(v.createdAt), completedAt: v.completedAt == null ? null : time(v.completedAt), expiresAt: time(v.expiresAt),
+    // #1025 전 서버는 칸을 보내지 않으므로 없으면 같이 읽지 않음(null)으로 읽는다
+    readTogetherAt: v.readTogetherAt == null ? null : time(v.readTogetherAt),
   }
+}
+
+/** 표지의 같이 읽음 표시. 날짜는 KST 기준 월/일 두 자리(예: 2026-11-28T15:30:00Z → "같이 읽음 11/29") */
+export function readTogetherLabel(iso: string): string {
+  const kst = new Date(Date.parse(iso) + 9 * 3600_000)
+  const two = (n: number) => String(n).padStart(2, '0')
+  return `같이 읽음 ${two(kst.getUTCMonth() + 1)}/${two(kst.getUTCDate())}`
 }
 
 export function readMemoryBookPage(value: unknown): MemoryBookPage {
@@ -132,6 +143,7 @@ export function memoryBookFailure(error: unknown): string | null {
     case 'MEMORY_BOOK_NOT_READY': return '그림책을 만들고 있습니다. 잠시만 기다려 주세요.'
     case 'MEMORY_BOOK_FAILED': return '그림책을 만들지 못했습니다. 다시 발급해 주세요.'
     case 'MEMORY_BOOK_EXPIRED': return '보관 기간이 지난 그림책입니다. 다시 발급할 수 있습니다.'
+    case 'MEMORY_BOOK_NOT_FOUND': return '그림책을 찾을 수 없습니다. 목록을 다시 불러와 주세요.'
     case 'DOWNLOAD_EXPIRED': return error.problem.title
     default: return null
   }

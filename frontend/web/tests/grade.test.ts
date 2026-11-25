@@ -19,6 +19,7 @@ test('학년은 초3~중3까지 저장하고 등록은 초3~6만 고른다 (#432
 
 test('학년 진급 알림은 설정에 보이고 정보 관리로 연결된다 (#432)', () => {
   assert.equal(notificationLabels.GRADE_PROMOTED, '학년 진급')
-  assert.equal(Object.keys(notificationLabels).length, 9)
+  assert.equal(Object.keys(notificationLabels).length, 10)
+  assert.equal(notificationLabels.MEMORY_BOOK_READ_REMINDER, '그림책 같이 읽기')
   assert.equal(notificationPath('/parent/settings', 'PARENT', 'https://app.test'), '/parent/settings')
 })
