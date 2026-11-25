@@ -50,6 +50,45 @@ test('유료 자녀: 표지 책장에서 회차마다 그림책 발급, 잠금 �
   await noOverflow(page)
 })
 
+test('유료 자녀: 발급 → 받기 옆 "같이 읽었어요" → 누르면 단추 대신 표지에 같이 읽음 날짜(#1026) @responsive', async ({ page }) => {
+  // 같이 읽음 뒤 회차 목록 다시 받기를 1.5초 늦춰, 다시 받을 때까지 단추가 잠겨 있는지 본다(목업은 너무 빨라 그냥은 못 봄)
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window)
+    let marked = false
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (/\/read-together$/.test(url)) marked = true
+      if (marked && /\/memory-books\/rounds(\?|$)/.test(url)) return new Promise<void>((r) => setTimeout(r, 1500)).then(() => original(input, init))
+      return original(input, init)
+    }
+  })
+  await login(page)
+  await share(page, 'demo-seoyun')
+  await page.goto('/parent/report?childId=demo-seoyun')
+  const books = page.getByRole('region', { name: '추억 그림책', exact: true })
+  const row = books.getByRole('list', { name: '그림책을 발급할 수 있는 회차' }).getByRole('listitem').first()
+  await row.getByRole('button', { name: '그림책 발급' }).click()
+  // 목업은 4초 뒤 완성, 화면은 3초마다 다시 본다
+  await expect(row.getByRole('button', { name: '받기' })).toBeVisible({ timeout: 15_000 })
+  const read = row.getByRole('button', { name: '같이 읽었어요' })
+  await expect(read).toBeVisible()
+  await expect(row.locator('.memory-shelf-read')).toHaveCount(0)
+  // 받기·같이 읽었어요 두 단추가 좁은 화면에서도 넘치지 않는다
+  await noOverflow(page)
+  await read.click()
+  // 누른 직후: 회차 목록을 다시 받을 때까지 단추가 잠겨 있다(다시 눌리는 틈 없음).
+  // PUT은 바로 끝나므로, 0.8초 뒤(목록은 아직 늦춰지는 중)에도 잠겨 있어야 onSuccess가 다시 받기를 기다린 것이다
+  await expect(read).toBeDisabled()
+  await page.waitForTimeout(800)
+  await expect(read).toBeDisabled()
+  const kst = new Date(Date.now() + 9 * 3600_000)
+  const label = `같이 읽음 ${String(kst.getUTCMonth() + 1).padStart(2, '0')}/${String(kst.getUTCDate()).padStart(2, '0')}`
+  await expect(row.getByText(label, { exact: true })).toBeVisible()
+  await expect(read).toHaveCount(0)
+  await expect(row.getByRole('button', { name: '받기' })).toBeVisible()
+  await noOverflow(page)
+})
+
 test('무료 자녀: 최근 4주 표지만, 발급 대신 잠금, 숨긴 회차 수 안내 → 비교표로 @responsive', async ({ page }) => {
   await login(page)
   await share(page, 'demo-doyun')

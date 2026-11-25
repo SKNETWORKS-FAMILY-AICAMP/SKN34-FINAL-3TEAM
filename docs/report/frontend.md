@@ -1519,3 +1519,33 @@ PR #966 검증 때 `tests/queryHooks.test.ts`의 '#950 자녀 삭제 접수 응�
 - 칸 수 고정·빈 자리·책 표지·잠금 표시 뒤 배치는 같은 파일로 유료·무료·잠긴 책만·실패 × 1440·768·390에서 따로 찍어 확인, 가로 넘침 0
 - e2e `memory-book.spec`에 무료 자녀 시험 1개 추가: 8주 이상 전 회차를 만들어(4주 경계·다른 시험이 채운 주와 상관없게) 제목이 안 보이고 발급 단추 없이 '지난 그림책 N권' 안내·비교표 링크. `pastRound`에 몇 주 전부터 찾을지 인자 추가(기본 3, 기존 시험 그대로). **core #999가 develop에 들어가야 통과**(여기서는 스택이 없어 문법·타입만 확인)
 - lint(경고 1개는 손대지 않은 `ReportExplanations.tsx` 기존 것)·`tsc`(앱·시험)·build 통과
+
+## 59. 학부모 추억 그림책 같이 읽었어요 (#1026, core #1025, 2026-11-25)
+
+책장(§58)의 받은 책에 **"같이 읽었어요"** 단추를 두고, 누르면 표지에 "같이 읽음 MM/DD"를 남긴다(core #1025 `PUT /children/{childId}/memory-books/{bookId}/read-together`, 응답 `MemoryBook.readTogetherAt`). 알림 수신 설정에 토요일 저녁 같이 읽기 알림 이름을 넣는다. web은 API를 바꾸지 않는다. 설계 문서는 구현 전에 먼저 고쳤다(user-flow 추억 그림책 흐름 두 곳·설명, usecase UC-37 이름 "책장·발급·받기·같이 읽기"·4.16 기본 흐름 4번·대안 흐름·사후조건).
+
+#### 바꾼 것
+
+- 도메인 `memoryBook.ts`: `MemoryBook.readTogetherAt`(없으면 null — #1025 전 서버, 시각이 아닌 문자열은 계약 오류), `readTogetherLabel`(KST 월/일 두 자리), 오류 문구 `MEMORY_BOOK_NOT_FOUND` "그림책을 찾을 수 없습니다. 목록을 다시 불러와 주세요."
+- API·쿼리: `memoryBookApi.readTogether`(본문 없는 PUT, `no-store`, 같은 방식은 `onboarding/api.ts`), `useReadTogether`(`retry: false`, 성공하면 책장 회차 목록 무효화하고 다시 받을 때까지 기다림)
+- 책장 `ParentMemoryBooks.tsx`: READY 책의 "받기" 옆에 "같이 읽었어요"(같이 읽은 뒤에는 단추 없음). 누르는 동안·회차 목록을 다시 받는 동안 누를 수 없음. 실패하면 책장 아래 안내(공개 오류 코드 문구, 모르는 오류는 "같이 읽음을 표시하지 못했습니다. 잠시 뒤 다시 시도해 주세요.")
+- 표지 표시 `memory-shelf-read`: 자물쇠 표시와 같은 모양(흰 알약, 체크 아이콘 `aria-hidden`, 글자는 화면 읽기에도 읽힘), 책등 띠 옆 왼쪽 위. 자물쇠 표시도 함께 있으면(무료·보관 기간 지난 책) 한 줄 아래(`memory-shelf-read-below`)
+- 알림 `notificationLabels`에 `MEMORY_BOOK_READ_REMINDER: '그림책 같이 읽기'`(수신 설정 10개). 알림 목록은 제목만 보여 줘 고칠 곳 없음, 링크 `/parent/report?childId=…`는 `notificationPath`가 이미 허용
+- 목업: `PUT …/read-together`(연결 자녀·원문 공개 확인은 받기와 같음, 없는 책·다른 자녀 책 404 `MEMORY_BOOK_NOT_FOUND`, 만드는 중 409 `MEMORY_BOOK_NOT_READY`, 실패 409 `MEMORY_BOOK_FAILED`, 처음 시각 유지), 그림책 응답에 `readTogetherAt`
+
+#### 정한 것
+
+- 단추 위치: "받기" 옆(`memory-shelf-action`은 이미 `flex-wrap`, 390px에서 넘침 없음 확인)
+- 단추는 받은 책(READY)에만. 무료 자녀의 받은 책에도 둔다(core가 유료 판정을 하지 않음, #1025). QUEUED·FAILED·EXPIRED에는 없음. core는 EXPIRED 책 표시도 받지만(OpenAPI) 이슈의 "받은 책"을 READY로 읽었다
+- 날짜 표시는 상태와 상관없이 `readTogetherAt`이 있으면 보인다(보관 기간이 지나도 이미 남긴 날짜는 그대로)
+- 같은 회차를 다시 발급하면 책장은 그 회차의 가장 최근 그림책을 보여 주므로 새 책에는 날짜가 없어 표시가 사라진다. 앞 책의 `read_together_at`은 core에 남는다(core는 자녀 삭제 때만 그림책 작업 행을 지움)
+- 취소 단추·확인 창 없음(core에 취소 API 없음, #1025). 잘못 눌러도 되돌릴 수 없다
+- 날짜는 KST 기준(UTC에 9시간 더한 월/일). 시각은 서버 값을 그대로 쓰고 화면이 만들지 않는다
+- 알림 이름 "그림책 같이 읽기"
+
+#### 시험 (2026-11-25, `feature/1025-memory-book-read-together` 커밋 `838738f` 위 — develop `f42d8ef` + #1025)
+
+- 단위·목업 `memoryBook.test`: 새 4개(같이 읽음 시각 있음·null·칸 없음·잘못된 값 3가지 / KST 경계 UTC 14:59:59·15:00·15:30·해 넘김·+09:00 / 목업 만드는 중 409 → 완성 뒤 200·두 번째도 처음 시각·회차 목록 반영·다른 자녀 책 404·없는 책 404·비공개 403 / 목업 실패 409) + 오류 문구 1줄. `grade.test` 알림 유형 9 → 10·이름 확인, `serviceCompletion.test` 목업 수신 설정 9 → 10. 전체 `npm test` 472개 통과
+- 브라우저 `memoryBookShelf.spec`에 1개 추가(@responsive): 유료 자녀 발급 → 받기 옆 "같이 읽었어요" → 누르면 회차 목록을 다시 받을 때까지 단추 잠김(목록 응답을 1.5초 늦춰 PUT이 끝난 0.8초 뒤에도 잠김 확인) → 단추가 사라지고 표지에 오늘 KST "같이 읽음 MM/DD", 누르기 전·뒤 가로 넘침 없음. 노트북·태블릿·휴대폰 19개 통과. 잠김 확인은 `onSuccess`가 다시 받기를 기다리지 않던 처음 코드로 돌리면 실패하는 것을 확인함
+- e2e `memory-book.spec` 첫 시험: PDF 받기 확인 뒤 "같이 읽었어요" → 단추 사라짐·표지에 오늘 KST 날짜·core_db `memory_book_job.read_together_at`이 오늘(KST)인지 psql로 확인(`support/memoryBook.ts` `readTogetherOf`). 이 폴더 코드로 대역 스택(`compose.e2e.yaml`, core V59 적용 확인)을 새로 띄워 2개 통과(1.2분), 끝난 뒤 `down -v`로 컨테이너·볼륨·네트워크 정리
+- lint(경고 1개는 손대지 않은 `ReportExplanations.tsx` 기존 것)·`tsc`(시험)·build 통과

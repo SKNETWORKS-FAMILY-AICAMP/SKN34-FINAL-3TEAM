@@ -41,7 +41,7 @@ const READY_AFTER_MS = 4000
 const DAILY_LIMIT = 3
 const SAMPLE_PDF = '/demo/memory-book-sample.pdf'
 
-type MockBook = { bookId: string; studentId: string; themeId: string; weekStart: string; createdAt: number; fail: boolean }
+type MockBook = { bookId: string; studentId: string; themeId: string; weekStart: string; createdAt: number; fail: boolean; readTogetherAt: number | null }
 const books: MockBook[] = []
 const mockChildren = () => fixtureStore.children()
 /** 시험용 */
@@ -66,6 +66,7 @@ function view(b: MockBook, now = Date.now()) {
     createdAt: new Date(b.createdAt).toISOString(),
     completedAt: done ? new Date(b.createdAt + READY_AFTER_MS).toISOString() : null,
     expiresAt: new Date(b.createdAt + 30 * 86400_000).toISOString(),
+    readTogetherAt: b.readTogetherAt == null ? null : new Date(b.readTogetherAt).toISOString(),
   }
 }
 const pageOf = (studentId: string) => {
@@ -78,6 +79,16 @@ function downloadOf(studentId: string, bookId: string) {
   if (v.status === 'QUEUED') fail(409, 'MEMORY_BOOK_NOT_READY', '그림책을 만들고 있어요.')
   if (v.status === 'FAILED') fail(409, 'MEMORY_BOOK_FAILED', '그림책을 만들지 못했어요.')
   return { url: SAMPLE_PDF, expiresAt: new Date(Date.now() + 300_000).toISOString() }
+}
+/** 같이 읽었어요(core #1025와 같게): 없는 책·다른 자녀 책 404, 만드는 중·실패 409, 처음 시각 유지(멱등) */
+function readTogetherOf(studentId: string, bookId: string) {
+  const b = books.find((x) => x.bookId === bookId && x.studentId === studentId) ?? fail(404, 'MEMORY_BOOK_NOT_FOUND', '그림책을 찾을 수 없어요.')
+  const now = Date.now()
+  const status = view(b, now).status
+  if (status === 'QUEUED') fail(409, 'MEMORY_BOOK_NOT_READY', '그림책을 만들고 있어요.')
+  if (status === 'FAILED') fail(409, 'MEMORY_BOOK_FAILED', '그림책을 만들지 못했어요.')
+  b.readTogetherAt ??= now
+  return view(b, now)
 }
 
 async function round(request: Request) {
@@ -131,7 +142,7 @@ export const memoryBookHandlers = [
       if (books.filter((b) => b.studentId === c.id && kstDay(b.createdAt) === kstDay(now)).length >= DAILY_LIMIT)
         return fail(429, 'USAGE_LIMIT_REACHED', '오늘은 추억 그림책을 더 만들 수 없어요.')
       if (!premium(c.id)) return fail(403, 'PREMIUM_REQUIRED', '추억 그림책은 프리미엄 이용권에서 만들 수 있어요.')
-      const book = { bookId: crypto.randomUUID(), studentId: c.id, ...r, createdAt: now, fail: failing() }
+      const book = { bookId: crypto.randomUUID(), studentId: c.id, ...r, createdAt: now, fail: failing(), readTogetherAt: null }
       books.push(book)
       return view(book, now)
     }).then((response) => (created ? new Response(response.body, { status: response.status === 200 ? 202 : response.status, headers: response.headers }) : response))
@@ -148,6 +159,14 @@ export const memoryBookHandlers = [
       const c = await parentChild(request, String(params.childId))
       shared(c.id)
       return downloadOf(c.id, String(params.bookId))
+    }),
+  ),
+  // 본문 없음. 연결 자녀·원문 공개 확인은 받기와 같다(core #1025)
+  http.put('/api/v1/children/:childId/memory-books/:bookId/read-together', ({ request, params }) =>
+    respond(async () => {
+      const c = await parentChild(request, String(params.childId))
+      shared(c.id)
+      return readTogetherOf(c.id, String(params.bookId))
     }),
   ),
 ]
