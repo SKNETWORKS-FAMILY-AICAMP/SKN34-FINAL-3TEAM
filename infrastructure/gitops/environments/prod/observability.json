@@ -235,6 +235,26 @@
           "for": "5m",
           "noDataState": "OK",
           "summary": "Payment API p95 latency exceeds 5 seconds for 5 minutes (minimum 10 requests per 5 minutes)."
+        },
+        {
+          "uid": "report-explanation-not-included",
+          "title": "Report explanation not included ratio",
+          "expr": "(sum(increase(report_explanation_state_total{exported_job=\"report-worker\",state=\"NOT_INCLUDED\"}[30m])) / clamp_min(sum(increase(report_explanation_state_total{exported_job=\"report-worker\",state=~\"INCLUDED|NOT_INCLUDED\"}[30m])), 1)) * (round(sum(increase(report_explanation_state_total{exported_job=\"report-worker\",state=~\"INCLUDED|NOT_INCLUDED\"}[30m]))) >= bool 5) and on() (day_of_week() == 0 and ((hour() == 14 and minute() >= 30) or (hour() >= 15 and hour() < 17)))",
+          "operator": "gt",
+          "threshold": 0.5,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Over half of weekly report explanation decisions in the last 30 minutes of the Monday batch window (Sun 23:30-Mon 02:00 KST) were NOT_INCLUDED, excluding NO_TARGET (minimum 5 decisions)."
+        },
+        {
+          "uid": "report-explanation-none-included",
+          "title": "Report explanation none included in window",
+          "expr": "round(sum(increase(report_explanation_state_total{exported_job=\"report-worker\",state=\"NOT_INCLUDED\"}[30m]))) * (sum(increase(report_explanation_state_total{exported_job=\"report-worker\",state=\"INCLUDED\"}[30m])) == bool 0) and on() (day_of_week() == 0 and ((hour() == 14 and minute() >= 30) or (hour() >= 15 and hour() < 17)))",
+          "operator": "gt",
+          "threshold": 2,
+          "for": "5m",
+          "noDataState": "OK",
+          "summary": "Monday batch window (Sun 23:30-Mon 02:00 KST): 3 or more NOT_INCLUDED explanations and no INCLUDED one in the last 30 minutes. Check the report explanation SageMaker endpoint."
         }
       ],
       "discordSecretName": "discord-alert-webhook"
