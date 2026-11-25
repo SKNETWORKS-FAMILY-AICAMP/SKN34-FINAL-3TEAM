@@ -6,6 +6,7 @@ LLM 답변은 조각마다 delta로 임시 표시하고, 대조를 통과해야�
 
 from langgraph.runtime import Runtime
 
+from app import quality_metrics
 from app.analysis_agent import templates
 from app.analysis_agent.calculators import Computation
 from app.analysis_agent.context import AgentContext
@@ -73,11 +74,15 @@ async def fallback(state: AnalysisState, runtime: Runtime[AgentContext]) -> Anal
     assert reason is not None
     computation = state["computation"]
     text = templates.fallback_answer(reason, computation, state["request"].scope)
-    return _checked_template(
+    update = _checked_template(
         state,
         text,
         fallback=Fallback(reason=reason, draft_verification=state.get("verification")),
     )
+    # 템플릿 대조 실패는 대체 응답이 아니라 오류로 나가므로 세지 않음 (#1030)
+    if "result" in update:
+        quality_metrics.analysis_fallback(reason)
+    return update
 
 
 async def insufficient(state: AnalysisState, runtime: Runtime[AgentContext]) -> AnalysisState:

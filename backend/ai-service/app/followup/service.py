@@ -9,6 +9,7 @@
 import logging
 import time
 
+from app import quality_metrics
 from app.config import Settings
 from app.errors import ApiError
 from app.followup import leak_guard, prompts
@@ -75,6 +76,9 @@ class FollowupService:
                 self._settings.followup_example_overlap_chars,
                 student_answers,
             )
+            if leaks:
+                # 누출로 버린 질문마다 1회. 빈 질문은 누출이 아니라 세지 않음 (#1030)
+                quality_metrics.guard_blocked("followup_leak")
             if question and not leaks:
                 return FollowupResponse(
                     type=followup_type,

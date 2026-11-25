@@ -139,12 +139,20 @@ def main():
             llm_exprs = [t["expr"] for panel in llm["panels"] for t in panel["targets"]]
             assert llm["uid"] == "llm-calls" and all(re.search(r"llm_call_(duration_seconds_(bucket|count)|tokens_total)", e) for e in llm_exprs)
             assert all(t["datasource"]["uid"] == "prometheus" for panel in llm["panels"] for t in panel["targets"])
+            # #1030: ai-service judgment, analysis fallback and guard counters over a 24h window.
+            ai = json.loads(data["ai-quality.json"])
+            ai_exprs = [t["expr"] for panel in ai["panels"] for t in panel["targets"]]
+            assert ai["uid"] == "ai-quality" and all(re.search(r"ai_(judgment_results|analysis_fallbacks|guard_blocked)_total", e) for e in ai_exprs)
+            assert all("[24h]" in e and "$__rate_interval" not in e for e in ai_exprs)
+            assert {"ai_judgment_results_total", "ai_analysis_fallbacks_total", "ai_guard_blocked_total"} <= {
+                name for e in ai_exprs for name in re.findall(r"ai_\w+_total", e)}
+            assert all(t["datasource"]["uid"] == "prometheus" for panel in ai["panels"] for t in panel["targets"])
             grafana = rendered["Deployment", "grafana"]["spec"]["template"]["spec"]
             mounts = {m["name"]: m["mountPath"] for m in grafana["containers"][0]["volumeMounts"]}
             assert mounts["dashboard-provider"] == "/etc/grafana/provisioning/dashboards"
             assert mounts["dashboards"] == "/etc/grafana/dashboards"
             assert {v["name"] for v in grafana["volumes"] if v.get("configMap", {}).get("name") == "grafana-dashboards"} == {"dashboard-provider", "dashboards"}
-        print("PASS local and prod values provision the expression toxicity and LLM call dashboards", flush=True)
+        print("PASS local and prod values provision the expression toxicity, LLM call and AI quality dashboards", flush=True)
 
         # Accelerated copy of the prod rules; not operating thresholds.
         alerting = json.loads(prod.read_text(encoding="utf-8"))["grafana"]["alerting"]
