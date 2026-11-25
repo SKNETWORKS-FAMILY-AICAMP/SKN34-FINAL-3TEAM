@@ -2225,6 +2225,22 @@ components:
           type: array
         report:
           $ref: '#/components/schemas/AnalysisReportSummary'
+        explanations:
+          description: 공개 범위와 이용권을 확인한 주간 리포트 설명. 선택 기간과 겹치는 가장 최근 완료 주간 리포트의 INCLUDED 설명만 전달하고, 일일 리포트 고정 대화에는 보내지 않는다.
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            properties:
+              missionTitle:
+                type: string
+                minLength: 1
+                maxLength: 200
+              text:
+                type: string
+                minLength: 1
+                maxLength: 4000
+            required: [missionTitle, text]
       required:
       - conversationId
       - question
@@ -2680,11 +2696,34 @@ components:
         grade: {type: integer, minimum: 3, maximum: 6}
         inputType: {type: string, enum: [NARRATIVE, ESSAY]}
         text: {type: string, minLength: 1, maxLength: 50000, description: 학생 작성 칸 평문(공백만이면 400)}
-        topic: {type: [string, 'null'], maxLength: 2000, description: 미션 질문}
+        topic: {type: [string, 'null'], maxLength: 2000, description: 이전 호출의 미션 참고 정보}
+        question: {type: [string, 'null'], maxLength: 50000, description: 시도 당시 문제 전문}
+        essay:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [claim, reasons, rebuttal]
+          description: 논술 답안의 각 칸. 작성된 내용을 순서대로 줄바꿈으로 합치면 text와 같아야 함
+          properties:
+            claim: {type: string}
+            reasons: {type: array, items: {type: string}}
+            rebuttal: {type: string}
+        criteria:
+          type: array
+          description: 해당 답안 버전의 저장된 항목별 판정과 원문 근거
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, satisfied, required]
+            properties:
+              label: {type: string, minLength: 1}
+              requirement: {type: [string, 'null']}
+              satisfied: {type: boolean}
+              required: {type: boolean}
+              quote: {type: [string, 'null']}
         scores:
           type: [object, 'null']
           description: >-
-            선택 항목. 없으면 원문 기반 상세 설명을 생성하며 프롬프트에 점수를 넣지 않음. 제공하면 learning modelScores.m2.scores 그대로 검사. NARRATIVE는 hol(1~4)·task_1·content_1~3·organization_1~2·expression_1~2(1~5) 9개,
+            선택 항목. learning modelScores.m2.scores 범위를 검증하여 설명 생성의 참고 자료로 사용하고 학부모 본문에 표시하지 않음. NARRATIVE는 hol(1~4)·task_1·content_1~3·organization_1~2·expression_1~2(1~5) 9개,
             ESSAY는 org·cont·exp(0~3) 3개 키가 정확히 있어야 함. 항목 키와 범위는 기존 계약 유지
           additionalProperties: {type: integer}
     ExplanationResponse:
@@ -2699,7 +2738,7 @@ components:
             additionalProperties: false
             required: [text, quote]
             properties:
-              text: {type: string, description: '상세 분석·보완할 지점·개선 방안 소제목과 본문. 인사말·점수 표현 제외, 원문의 숫자·인용만 허용'}
+              text: {type: string, description: '상세 분석, 근거가 있을 때만 보완할 지점과 개선 방안. 인사말·점수 표현 제외, 원문의 숫자·인용만 허용'}
               quote:
                 description: 설명과 낱말이 가장 많이 겹치는 학생 글 문장(원문 부분 문자열), 겹치는 낱말 2개 미만이면 null
                 oneOf:

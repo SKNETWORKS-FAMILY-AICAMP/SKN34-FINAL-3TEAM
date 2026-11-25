@@ -1,0 +1,5 @@
+apiVersion: v2
+name: tox-retrain
+description: Weekly CPU retraining of the expression classifier
+type: application
+version: 0.1.0

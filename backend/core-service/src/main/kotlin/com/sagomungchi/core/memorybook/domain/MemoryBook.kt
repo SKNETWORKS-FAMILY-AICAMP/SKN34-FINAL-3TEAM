@@ -70,7 +70,9 @@ data class MemoryBookRoundView(
     val book: MemoryBookView?,
 )
 
-data class MemoryBookRoundPage(val items: List<MemoryBookRoundView>, val page: Int, val size: Int, val totalElements: Long)
+/** 책장 회차 한 쪽. 무료는 끝난 최근 4주만(#999): `totalElements`는 노출 회차 기준, `lockedCount`는 무료라 숨긴 회차 수(유료 0) */
+data class MemoryBookRoundPage(val items: List<MemoryBookRoundView>, val page: Int, val size: Int, val totalElements: Long,
+    val lockedCount: Long, val canCreate: Boolean)
 
 data class MemoryBookPage(val items: List<MemoryBookView>, val page: Int, val size: Int, val totalElements: Long)
 

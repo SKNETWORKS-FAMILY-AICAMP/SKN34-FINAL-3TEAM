@@ -6,6 +6,7 @@ import com.sagomungchi.learning._common.web.ElementResponse
 import com.sagomungchi.learning._common.web.FollowupResponse
 import com.sagomungchi.learning._common.web.FeedbackVersions
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonUnwrapped
 import com.sagomungchi.learning._common.web.AnswerItem
 import com.sagomungchi.learning._common.web.MissionListItemResponse
@@ -98,6 +99,8 @@ data class RecordAttemptResponse(
     val hintUsages: List<HintUsage>,
     val context: com.sagomungchi.learning.attempt.domain.AttemptContext,
     val scheduledDay: com.sagomungchi.learning.theme.domain.ThemeDay? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
+    val explanationRequirements: Map<UUID, String>? = null,
 ) {
     companion object {
         /** 시도 상세(AttemptResponse)와 같은 값을 AttemptDetail에서 직접 만듦: 다른 기능 controller DTO를 거치지 않음 (#251) */
@@ -120,6 +123,7 @@ data class RecordAttemptResponse(
                 hintUsages = record.hintUsages.map(::HintUsage),
                 context = detail.attempt.context,
                 scheduledDay = record.scheduledDay,
+                explanationRequirements = record.explanationRequirements,
             )
         }
     }

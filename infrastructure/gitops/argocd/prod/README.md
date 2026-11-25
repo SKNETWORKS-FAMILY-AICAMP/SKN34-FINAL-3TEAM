@@ -27,7 +27,7 @@ helm install argocd argo/argo-cd --version 10.11.7 -n argocd --create-namespace 
 kubectl --kubeconfig $kubeconfig -n argocd get pods   # 6개 Running(controller·repo-server·server·redis·applicationset·notifications)
 ```
 
-알림 Secret(값은 저장소 밖 파일에서 읽고 출력하지 않는다). Discord webhook은 Grafana 경보와 같은 채널이며 `observability/discord-alert-webhook`의 `DISCORD_WEBHOOK_URL`과 같은 값이다. 파일 끝에 줄바꿈을 넣지 않는다.
+알림 Secret(값은 저장소 밖 파일에서 읽고 출력하지 않는다). Discord 채널은 Grafana 경보와 같은 `aws-alerts`지만 **webhook은 Argo CD 전용**이다. 원본은 Secrets Manager `sagomungchi/demo/argocd/discord-webhook`의 `DISCORD_WEBHOOK_URL`이고, Grafana용 `observability/discord-alert-webhook`(원본 `sagomungchi/demo/observability/discord-webhook`) 값을 쓰지 않는다. 이유는 아래 "webhook URL이 로그에 남음"을 본다. 파일 끝에 줄바꿈을 넣지 않는다.
 
 ```powershell
 kubectl --kubeconfig $kubeconfig -n argocd create secret generic argocd-notifications-secret `
@@ -74,8 +74,21 @@ kubectl --kubeconfig $kubeconfig -n argocd delete secret argocd-initial-admin-se
 
 ```powershell
 argocd app sync sagomungchi-prod-root --grpc-web
-kubectl --kubeconfig $kubeconfig -n argocd logs deploy/argocd-notifications-controller --tail 50   # webhook 전송 오류가 없는지
+# 로그를 그대로 출력하지 않는다(아래 참고). URL을 가린 뒤 오류 줄만 본다
+$log = kubectl --kubeconfig $kubeconfig -n argocd logs deploy/argocd-notifications-controller
+($log | Select-String 'discord.com/api/webhooks').Count   # 보낸 알림 수와 같으면 정상
+$log -replace 'https://discord(app)?\.com/api/webhooks/\S+', '<webhook>' | Select-String 'error' | Select-Object -Last 20
+Remove-Variable log
 ```
+
+### webhook URL이 로그에 남음 (#1003)
+
+notifications-controller는 webhook 알림을 보낼 때마다 `2026/11/24 11:36:51 [DEBUG] POST https://discord.com/api/webhooks/<id>/<token>` 한 줄을 남긴다. 로그 수준·형식 설정으로 끌 수 없다.
+
+- 원인: notifications-engine(v3.5.7이 쓰는 커밋 `0cff13b8a717`)의 webhook 서비스가 `go-retryablehttp` v0.7.8 `NewClient()`를 기본값 그대로 쓴다. 기본 Logger가 Go 표준 `log`라 Argo CD 로거(`notificationscontroller.log.level`·`log.format`)를 거치지 않고 요청마다 메서드와 URL을 찍는다. URL에서 가리는 것은 비밀번호 부분뿐이라 경로의 토큰은 그대로 나온다. webhook 서비스 옵션에는 Logger를 바꾸는 칸이 없고 upstream 최신 코드도 같다.
+- 전송이 실패하면 오류 메시지(`request to {… URL} has failed …`)에도 URL이 들어간다.
+- 대응: Argo CD 전용 webhook을 쓴다. 로그를 볼 수 있는 사람이 이 값을 알게 되더라도 Grafana 경보 webhook은 그대로이고, Argo CD 값만 따로 재발급하면 된다. Pod 로그는 클러스터 밖으로 모으지 않는다(Loki·Fluent Bit·CloudWatch 로그 수집 없음). 노드의 컨테이너 로그와 `pods/log` 권한(클러스터 관리자)으로만 볼 수 있다.
+- 로그를 이슈·PR·메신저에 붙이지 않는다. 볼 때는 위 명령처럼 건수만 세거나 URL을 가린다. 값이 밖으로 나갔으면 Discord에서 Argo CD webhook을 재발급하고 `sagomungchi/demo/argocd/discord-webhook`과 `argocd-notifications-secret`을 바꾼 뒤 `kubectl -n argocd rollout restart deploy/argocd-notifications-controller`.
 
 ## 확인 (A 11/25, B 11/26~28)
 

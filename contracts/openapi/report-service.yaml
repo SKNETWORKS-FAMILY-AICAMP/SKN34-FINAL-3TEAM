@@ -1977,8 +1977,8 @@
               "$ref": "#/components/schemas/ReportExplanation"
             },
             "type": "array",
-            "maxItems": 3,
-            "title": "Items"
+            "title": "Items",
+            "description": "Up to three explanations by default. The local demo may include all eligible activities."
           }
         },
         "type": "object",

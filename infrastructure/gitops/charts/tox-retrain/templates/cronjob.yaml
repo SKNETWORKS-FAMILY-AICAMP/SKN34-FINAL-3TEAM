@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  timeZone: {{ .Values.timeZone | quote }}
+  suspend: {{ .Values.suspend }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tox-retrain
+    spec:
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: tox-retrain
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: retrain
+              image: {{ required "set the retraining image" .Values.image | quote }}
+              imagePullPolicy: Never
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+              env:
+                - {name: LEARNING_URL, value: "http://learning-service:8081"}
+                - {name: CORE_URL, value: "http://core-service:8080"}
+                - name: INTERNAL_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: {{ .Values.credentialsSecret }}, key: INTERNAL_TOKEN_OPS}
+                - {name: S3_ENDPOINT_URL, value: "http://minio.platform.svc.cluster.local:9000"}
+                - {name: S3_BUCKET, value: {{ required "set the model bucket" .Values.bucket | quote }}}
+                - {name: S3_REGION, value: {{ required "set the model region" .Values.region | quote }}}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef: {name: {{ .Values.credentialsSecret }}, key: MINIO_ROOT_USER}
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef: {name: {{ .Values.credentialsSecret }}, key: MINIO_ROOT_PASSWORD}
+              volumeMounts:
+                - {name: work, mountPath: /tmp}
+          volumes:
+            - {name: work, emptyDir: {}}

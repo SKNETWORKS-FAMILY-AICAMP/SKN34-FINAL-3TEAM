@@ -15,8 +15,11 @@ from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 from langfuse import Langfuse
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind, StatusCode
 from pydantic import BaseModel
 
+from app import tracing
 from app.security import current_user_context
 
 logger = logging.getLogger(__name__)
@@ -183,11 +186,13 @@ class LlmClient(ABC):
             )
             started = time.monotonic()
             observation = self._start_observation(request)
+            span = self._start_span(request, attempt)
             retry = False
             try:
                 try:
                     response = await self._request(request)
                 except LlmError as exc:
+                    _fail_span(span, exc.code)
                     if exc.sent:
                         self._record(
                             request,
@@ -197,6 +202,7 @@ class LlmClient(ABC):
                             exc.output_tokens,
                             exc,
                             observation=observation,
+                            span=span,
                         )
                     if exc.retryable and attempt - invalid_used < retries:
                         retry = True
@@ -213,9 +219,16 @@ class LlmClient(ABC):
                         response.input_tokens,
                         response.output_tokens,
                         observation=observation,
+                        span=span,
                     )
                     return LlmResult(response.data, response.model)
+            except BaseException as exc:
+                # LlmUnavailable은 위에서 오류 코드를 이미 남겼다. 나머지는 취소·예상 밖 오류
+                if not isinstance(exc, LlmUnavailable):
+                    _fail_span(span, type(exc).__qualname__)
+                raise
             finally:
+                span.end()
                 self._end_observation(observation)
             if retry:
                 await asyncio.sleep(self._backoff_seconds * 2**attempt)
@@ -241,6 +254,21 @@ class LlmClient(ABC):
     def _stream(self, request: LlmRequest[Any]) -> AsyncIterator[str | StreamEnd]:
         """스트림 요청 1회: 텍스트 조각들 → StreamEnd. 실패는 LlmError로 변환해 던짐."""
         raise NotImplementedError
+
+    def _start_span(self, request: LlmRequest[Any], attempt: int) -> trace.Span:
+        """제공자 요청 1회의 CLIENT span. 원문·학생 ID 없이 호출 종류·모델·프롬프트 버전만."""
+        return tracing.tracer().start_span(
+            f"llm {request.call_type}",
+            kind=SpanKind.CLIENT,
+            attributes={
+                "llm.call_type": request.call_type,
+                "llm.prompt_version": request.prompt_version,
+                "llm.attempt": attempt + 1,
+                "gen_ai.request.model": self._model,
+            },
+            record_exception=False,
+            set_status_on_exception=False,
+        )
 
     def _start_observation(self, request: LlmRequest[Any]) -> Any:
         """원문 없이 제공자 요청 1회의 generation만 만든다."""
@@ -282,6 +310,7 @@ class LlmClient(ABC):
         error: LlmError | None = None,
         *,
         observation: Any = None,
+        span: trace.Span = trace.INVALID_SPAN,
     ) -> None:
         usage = LlmUsage(
             call_type=request.call_type,
@@ -308,8 +337,19 @@ class LlmClient(ABC):
                 )
             except Exception:  # noqa: BLE001 - 관측 장애가 사용량 이벤트를 막지 않음
                 logger.warning("Langfuse observation 갱신 실패: call_type=%s", request.call_type)
+        attributes: dict[str, str | int | bool] = {
+            "gen_ai.response.model": usage.model,
+            "llm.success": usage.success,
+        }
+        if input_tokens is not None:
+            attributes["gen_ai.usage.input_tokens"] = input_tokens
+        if output_tokens is not None:
+            attributes["gen_ai.usage.output_tokens"] = output_tokens
+        span.set_attributes(attributes)
         try:
-            self._recorder(usage)
+            # 사용량 이벤트(llm.usage.recorded) traceparent가 이 시도 span을 가리키게 함
+            with trace.use_span(span, record_exception=False, set_status_on_exception=False):
+                self._recorder(usage)
         except Exception:  # noqa: BLE001 - 사용량 기록 실패가 응답을 막지 않음 (best-effort)
             logger.warning("LLM 사용량 기록 실패: call_type=%s", request.call_type, exc_info=True)
 
@@ -346,6 +386,7 @@ class LlmTextStream:
             )
             started = time.monotonic()
             observation = llm._start_observation(request)
+            span = llm._start_span(request, attempt)
             sent = False  # 조각을 하나라도 넘겼으면 재시도하지 않음 (받은 쪽이 이미 표시)
             retry = False
             try:
@@ -358,6 +399,7 @@ class LlmTextStream:
                             item.input_tokens,
                             item.output_tokens,
                             observation=observation,
+                            span=span,
                         )
                         self.model = item.model
                         return
@@ -365,6 +407,7 @@ class LlmTextStream:
                     yield item
                 raise LlmError("LLM_INVALID_OUTPUT", retryable=True)  # StreamEnd 없이 끝남
             except LlmError as exc:
+                _fail_span(span, exc.code)
                 if exc.sent:
                     llm._record(
                         request,
@@ -374,15 +417,25 @@ class LlmTextStream:
                         exc.output_tokens,
                         exc,
                         observation=observation,
+                        span=span,
                     )
                 if sent or not exc.retryable or attempt == llm._max_retries:
                     raise LlmUnavailable(exc.code, exc.retryable) from exc
                 retry = True
+            except BaseException as exc:  # 취소·소비 중단·예상 밖 오류
+                _fail_span(span, type(exc).__qualname__)
+                raise
             finally:
+                span.end()
                 llm._end_observation(observation)
             if retry:
                 await asyncio.sleep(llm._backoff_seconds * 2**attempt)
         raise AssertionError("unreachable")
+
+
+def _fail_span(span: trace.Span, code: str) -> None:
+    span.set_attribute("error.type", code)
+    span.set_status(StatusCode.ERROR)
 
 
 async def _within[I](items: AsyncIterator[I], until: float) -> AsyncIterator[I]:

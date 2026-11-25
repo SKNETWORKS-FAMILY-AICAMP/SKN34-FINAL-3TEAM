@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     report_narrative_timeout_seconds: float = Field(default=80.0, gt=0, le=300)
     report_explanation_timeout_seconds: float = Field(default=80.0, gt=0, le=300)
     report_explanation_budget_seconds: float = Field(default=300.0, gt=0, le=900)
+    # Opt in only in the local demo Compose overlay.
+    report_local_all_activity_explanations: bool = False
     report_download_ttl_seconds: int = Field(default=300, ge=1, le=3600)
     # 추억 그림책 (docs/proposals/memory-book.md).
     # 그림 허용 출처(scheme://host[:port], 쉼표). 비면 그림 없이 만든다.

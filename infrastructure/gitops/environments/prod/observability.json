@@ -98,6 +98,46 @@
           "summary": "New LLM calls without a stored cost appeared in the last hour (unregistered model or missing tokens), so the budget total is a lower bound. Find the model in llm_usage and register its price or external billing."
         },
         {
+          "uid": "llm-call-errors",
+          "title": "LLM call error rate by call type",
+          "expr": "(sum by (call_type) (clamp_min(llm_call_duration_seconds_count{outcome=\"error\"} - (llm_call_duration_seconds_count{outcome=\"error\"} offset 15m or llm_call_duration_seconds_count{outcome=\"error\"} * 0), 0)) or 0 * sum by (call_type) (clamp_min(llm_call_duration_seconds_count - (llm_call_duration_seconds_count offset 15m or llm_call_duration_seconds_count * 0), 0))) / sum by (call_type) (clamp_min(llm_call_duration_seconds_count - (llm_call_duration_seconds_count offset 15m or llm_call_duration_seconds_count * 0), 0)) and sum by (call_type) (clamp_min(llm_call_duration_seconds_count - (llm_call_duration_seconds_count offset 15m or llm_call_duration_seconds_count * 0), 0)) >= 10",
+          "operator": "gt",
+          "threshold": 0.05,
+          "for": "1m",
+          "noDataState": "OK",
+          "summary": "LLM provider call error ratio for this call_type exceeds 5% over 15 minutes (minimum 10 calls). See error_code in the LLM calls dashboard."
+        },
+        {
+          "uid": "llm-call-latency-dialog",
+          "title": "LLM JUDGMENT/FOLLOWUP p95 call latency",
+          "expr": "histogram_quantile(0.95, sum by (call_type, le) (rate(llm_call_duration_seconds_bucket{call_type=~\"JUDGMENT|FOLLOWUP\"}[15m]))) and sum by (call_type) (increase(llm_call_duration_seconds_count{call_type=~\"JUDGMENT|FOLLOWUP\"}[15m])) >= 10",
+          "operator": "gt",
+          "threshold": 20,
+          "for": "1m",
+          "noDataState": "OK",
+          "summary": "p95 of LLM provider calls for this call_type exceeds 20 seconds (60% of the 33-second feature deadline) over 15 minutes (minimum 10 calls). Check provider latency and model in the LLM calls dashboard."
+        },
+        {
+          "uid": "llm-call-latency-word-help",
+          "title": "LLM WORD_HELP p95 call latency",
+          "expr": "histogram_quantile(0.95, sum by (call_type, le) (rate(llm_call_duration_seconds_bucket{call_type=~\"WORD_HELP\"}[15m]))) and sum by (call_type) (increase(llm_call_duration_seconds_count{call_type=~\"WORD_HELP\"}[15m])) >= 10",
+          "operator": "gt",
+          "threshold": 12,
+          "for": "1m",
+          "noDataState": "OK",
+          "summary": "p95 of LLM provider calls for this call_type exceeds 12 seconds (60% of the 20-second feature deadline) over 15 minutes (minimum 10 calls). Check provider latency and model in the LLM calls dashboard."
+        },
+        {
+          "uid": "llm-call-rate-limited",
+          "title": "LLM provider rate limited",
+          "expr": "sum(clamp_min(llm_call_duration_seconds_count{error_code=\"LLM_RATE_LIMITED\"} - (llm_call_duration_seconds_count{error_code=\"LLM_RATE_LIMITED\"} offset 10m or llm_call_duration_seconds_count{error_code=\"LLM_RATE_LIMITED\"} * 0), 0))",
+          "operator": "gt",
+          "threshold": 0,
+          "for": "0s",
+          "noDataState": "OK",
+          "summary": "At least one LLM call was rate limited (LLM_RATE_LIMITED) in the last 10 minutes. Check provider quota and call volume by call_type."
+        },
+        {
           "uid": "app-metrics-missing",
           "title": "Core or learning HTTP metrics missing",
           "expr": "max(absent(http_server_request_duration_seconds_count{exported_job=\"core-service\"}) or absent(http_server_request_duration_seconds_count{exported_job=\"learning-service\"}) or vector(0))",

@@ -59,15 +59,15 @@ export function uploadSceneImages(prefix: string) {
 }
 
 /**
- * 3주 전 초3 회차: 게시 테마(데모 미션 1~5) + 다섯 문제 학습 완료 + 월요일 처음 답·되묻기·보완 답·돌아보기 + 정답 맞힘(엔딩) + 기념 액자.
+ * [weeksAgo]주 전(기본 3, 차 있으면 더 앞) 초3 회차: 게시 테마(데모 미션 1~5) + 다섯 문제 학습 완료 + 월요일 처음 답·되묻기·보완 답·돌아보기 + 정답 맞힘(엔딩) + 기념 액자.
  * 그림 키는 [prefix] 아래. 돌려주는 값: 테마 ID와 주
  */
-export function pastRound(studentId: string, prefix: string, title: string) {
+export function pastRound(studentId: string, prefix: string, title: string, weeksAgo = 3) {
   const sql = `
 WITH week AS (
-  -- 다시 실행해도 겹치지 않게 3주 전부터 거꾸로 초3 테마가 없는 첫 주
+  -- 다시 실행해도 겹치지 않게 [weeksAgo]주 전부터 거꾸로 초3 테마가 없는 첫 주
   SELECT date_trunc('week', now() AT TIME ZONE 'Asia/Seoul')::date - 7 * k AS start
-  FROM generate_series(3, 60) AS k
+  FROM generate_series(${weeksAgo}, ${weeksAgo} + 57) AS k
   WHERE NOT EXISTS (SELECT 1 FROM weekly_theme t WHERE t.grade = 'G3'
     AND t.week_start = date_trunc('week', now() AT TIME ZONE 'Asia/Seoul')::date - 7 * k)
   ORDER BY k LIMIT 1

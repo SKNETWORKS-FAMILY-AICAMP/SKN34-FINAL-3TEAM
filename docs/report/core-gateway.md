@@ -959,3 +959,30 @@ P13·FN-ADM-19 월 예산(300 USD) 80% 경보(`llm-budget-80`)가 합산하는 `
 - 감사 service 시험은 시험 트랜잭션으로 묶지 않는다(`IntegrationTestSupport`). 커밋 안 된 관리자 행을 `REQUIRES_NEW` 감사가 FK로 기다리며 멈춘다
 - 검증(2026-11-23, 개발 PC): core `cleanTest test` 756개 중 통과 753·실패 0·건너뜀 3(`AdminExpressionReviewHttpTest` 9·`LearningExpressionReviewClientTest` 6·`ExpressionReviewAuditServiceTest` 2 포함), learning 660개 중 통과 657·실패 0·건너뜀 3, 웹 단위 419·types·lint, 브라우저 2파일 39, 계약 검사 스크립트 13개 통과, `scripts/tests` 410개 중 통과 392(실패 0·건너뜀 18). 전체 브라우저는 CI
 - 남은 것: #608 예외인 `AdminLearningService`(통계·관리자 미션)는 같은 `LEARNING_INVALID_RESPONSE`를 503으로 낸다(#907 범위 밖)
+
+## 35. 추억 그림책 무료 책장 4주 (#999, 2026-11-24)
+
+에픽 #1001 core 몫. 설계는 #997(api-spec 2.5.1 "무료 책장", 결정 기록 B6) 그대로, 웹 표시는 #1000.
+
+### 바꾼 곳
+
+- **API 응답** `GET /children/{childId}/memory-books/rounds`의 `MemoryBookRoundPage`에 `lockedCount`(무료라 숨긴 회차 수, 유료 0)·`canCreate`(발급 가능 여부) 추가. 기존 칸은 그대로이고 무료일 때 `items`·`totalElements`·쪽 나누기가 노출 회차 기준으로 바뀐다
+- 무료는 `weekStart ≥ 이번 주 월요일(KST) − 28일`인 회차만(진행 중인 주는 learning이 이미 빼므로 최대 4주). 유료는 전과 같다
+- 판정: `ProductEntitlementService.beginMemoryBook`의 `features.memoryBook` 판정(값이 없으면 구독 중만, boolean이 아니면 503)을 `memoryBookEnabled`로 꺼내 발급과 회차 목록이 같이 쓴다. 판정 규칙은 바꾸지 않았다
+- 계약 `core-service.yaml`: `MemoryBookRoundPage` 두 칸(required 포함)과 `listMemoryBookRounds` 설명
+
+### 정한 것
+
+- 무료는 learning 앨범 첫 쪽을 최대 크기(100)로 한 번 읽어 core에서 거르고 쪽을 나눈다. 앨범이 최근 주부터 정렬되어 4주 안 회차는 앞부분에 모두 있고, `lockedCount`는 learning 전체 수 − 노출 수다. learning API는 바꾸지 않았다
+- `canCreate`는 이용권 판정만 담는다. 하루 한도·원문 공개는 발급 때 기존 오류로 알린다
+- 숨긴 회차의 기록·이미 만든 그림책은 지우지 않는다. 발급 목록·받기는 바뀌지 않아 보관 기간 안 그대로 쓸 수 있고, 결제하면 다음 조회부터 전체가 보인다
+
+### 검증
+
+- `MemoryBookIntegrationTest` 9개 통과. 새 시험: 이번 주 월요일 − 7~35일 회차 5개에서 무료는 4개(−28일 포함·−35일 제외)·`totalElements` 4·`lockedCount` 1·`canCreate` false, `page=1&size=2`는 3·4번째, 아주 큰 `page`는 빈 쪽, 구독하면 5개·`lockedCount` 0·`canCreate` true. 무료 발급 403 `PREMIUM_REQUIRED` 시험 유지
+- 개발 PC(Docker) core `gradlew cleanTest test` 772개 중 통과 768·실패 1·건너뜀 3(2026-11-24). 실패는 이번 변경과 관계없는 `AiClientTest`의 시간 제한 시험 1개로, 단독 재실행에서 15개 모두 통과
+- `scripts/tests` 429개 중 통과 411(Windows unittest, 실패 0·건너뜀 18). `test_memory_book_contract` 7개(data class 칸 = 계약 properties = required)
+
+### 한계
+
+- 웹 책장 잠금 안내·비교표 연결은 #1000

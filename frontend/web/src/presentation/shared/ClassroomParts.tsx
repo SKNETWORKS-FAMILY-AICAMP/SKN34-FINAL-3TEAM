@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { ReactNode, UIEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 import { useSession } from '../auth/sessionContext.ts'
@@ -126,14 +126,18 @@ export function Modal({
   )
 }
 function ModalScrollBody({ title, children }: { title: string; children: ReactNode }) {
+  const body = useRef<HTMLDivElement>(null)
   const marker = useRef<HTMLSpanElement>(null)
+  const drag = useRef<{ y: number; top: number; scale: number } | null>(null)
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(idle.current), [])
 
-  function showPosition(event: UIEvent<HTMLDivElement>) {
-    const { clientHeight, scrollHeight, scrollTop } = event.currentTarget
+  function showPosition() {
+    const area = body.current
     const thumb = marker.current
-    if (!thumb || scrollHeight <= clientHeight || clientHeight <= 8) return
+    if (!area || !thumb) return
+    const { clientHeight, scrollHeight, scrollTop } = area
+    if (scrollHeight <= clientHeight || clientHeight <= 8) return
     const track = clientHeight - 8
     const height = Math.min(track, Math.max(24, track * clientHeight / scrollHeight))
     const progress = Math.max(0, Math.min(1, scrollTop / (scrollHeight - clientHeight)))
@@ -141,12 +145,33 @@ function ModalScrollBody({ title, children }: { title: string; children: ReactNo
     thumb.style.transform = 'translateY(' + (track - height) * progress + 'px)'
     thumb.dataset.visible = 'true'
     clearTimeout(idle.current)
-    idle.current = setTimeout(() => { delete thumb.dataset.visible }, 600)
+    if (!drag.current) idle.current = setTimeout(() => { delete thumb.dataset.visible }, 700)
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLSpanElement>) {
+    const area = body.current
+    if (!area || event.button !== 0) return
+    const travel = area.clientHeight - 8 - event.currentTarget.offsetHeight
+    if (travel <= 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    drag.current = { y: event.clientY, top: area.scrollTop, scale: (area.scrollHeight - area.clientHeight) / travel }
+    showPosition()
   }
 
   return <div className="cj-modal-scroll-frame">
-    <div className="cj-modal-body" role="region" aria-label={title + ' 내용'} tabIndex={0} onScroll={showPosition}>{children}</div>
-    <span ref={marker} className="cj-modal-scroll-marker" aria-hidden="true" />
+    <div ref={body} className="cj-modal-body" role="region" aria-label={title + ' 내용'} tabIndex={0} onScroll={showPosition}>{children}</div>
+    <span ref={marker} className="cj-modal-scroll-marker" aria-hidden="true"
+      onPointerDown={startDrag}
+      onPointerMove={event => {
+        if (!drag.current || !body.current) return
+        const { y, top, scale } = drag.current
+        body.current.scrollTop = top + (event.clientY - y) * scale
+      }}
+      onLostPointerCapture={() => {
+        drag.current = null
+        showPosition()
+      }} />
   </div>
 }
 export function Brand({ linked = true }: { linked?: boolean }) {

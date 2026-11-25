@@ -1,0 +1,245 @@
+{
+  "uid": "llm-calls",
+  "title": "LLM 호출",
+  "description": "LLM provider 호출 단위 지연·오류·토큰. 지표 llm.call.duration(call_type·model·prompt_version·outcome·error_code)·llm.call.tokens(call_type·model·direction), #1028. core가 llm.usage.recorded를 처음 저장할 때 기록해 수 초 늦고, 발행이 빠진 호출은 없다. 지연은 provider 호출 한 번이며 기능 전체 지연이 아니다",
+  "tags": [
+    "core",
+    "llm"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "editable": false,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "p95 지연 (호출 유형별)",
+      "description": "경보선: JUDGMENT·FOLLOWUP 20초, WORD_HELP 12초(기능 deadline의 60%)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (call_type, le) (rate(llm_call_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{call_type}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "p50 지연 (호출 유형별)",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (call_type, le) (rate(llm_call_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{call_type}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "오류율 (호출 유형별)",
+      "description": "error / 전체 호출. 경보선 5%(15분 10건 이상). 오류가 0건이면 0으로 표시",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum by (call_type) (rate(llm_call_duration_seconds_count{outcome=\"error\"}[$__rate_interval])) or 0 * sum by (call_type) (rate(llm_call_duration_seconds_count[$__rate_interval]))) / sum by (call_type) (rate(llm_call_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "{{call_type}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "오류 건수 (오류 코드·호출 유형별)",
+      "description": "LLM_RATE_LIMITED는 1건이라도 경보",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (error_code, call_type) (increase(llm_call_duration_seconds_count{outcome=\"error\"}[$__rate_interval]))",
+          "legendFormat": "{{error_code}} {{call_type}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "호출 건수 (호출 유형별)",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (call_type) (increase(llm_call_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "{{call_type}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "토큰 (모델·방향별)",
+      "description": "토큰을 기록하지 않는 호출(영상·클러스터 안 모델 등)은 빠진다",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (model, direction) (increase(llm_call_tokens_total[$__rate_interval]))",
+          "legendFormat": "{{model}} {{direction}}"
+        }
+      ]
+    }
+  ]
+}

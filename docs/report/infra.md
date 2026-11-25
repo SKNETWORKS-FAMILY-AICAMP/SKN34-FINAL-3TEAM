@@ -299,7 +299,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 | DLQ 수집 | opt-in `rabbitmq-dlq` job(`<큐>.dlq`만). DLQ 규칙이 있는데 수집이 꺼져 있으면 렌더 실패 |
 | 월 LLM 비용 | 예산 300 USD, 80%(240 USD) 경보, KST 달력 월. core `LlmCostMetrics` gauge(단가 있는 비용·미산정 호출 수 분리). 미산정 경보는 최근 1시간에 새로 생긴 미산정만(#764) |
 | 담당 | 동섭 1명, `aws-alerts` 한 채널 |
-| trace 저장소 | Tempo(observability chart 선택 구성, 72h). Langfuse는 LLM 계측용으로 별도 |
+| trace 저장소 | Tempo(observability chart 선택 구성, 24h, #784로 72h에서 줄임, `observability.json`). Langfuse는 LLM 계측용으로 별도 |
 
 ### 8.1 구현에서 정한 것
 
@@ -318,7 +318,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 - trace: kind에서 명령 소비 → 동기 HTTP → 결과 이벤트 → 재시도·DLQ가 한 trace(span 67개). 로그인 사용자 요청 시작점은 미실행
 - 검증 도구: `infrastructure/gitops/charts/observability`의 `verify_chart.py`(격리 Docker에서 규칙 발생·회복)
 - 확인 필요: prod의 규칙 16개·Tempo 실제 적용 시각, core OTLP span 전송 404 경고 해소 여부
-- 남은 것: ai·report(Python) 자체 HTTP 지표, 임계값 실측 조정, 서비스별 담당 라우팅
+- 남은 것: report(Python) 자체 HTTP 지표(ai는 [9.28](#928-ai-service-tracehttp-지표-1029-2026-11-25)), 임계값 실측 조정, 서비스별 담당 라우팅
 
 ## 9. AWS 데모 부하 시험 1차 (#361)
 
@@ -1698,7 +1698,7 @@ SageMaker는 0대에서 켜질 때마다 S3에서 모델을 다시 받는데, �
 | AppProject | `sagomungchi-prod`. 출처는 이 저장소와 ESO·LB Controller·Karpenter chart 저장소, 대상은 `argocd`·`app`·`platform`·`observability`·`external-secrets`·`kube-system`, cluster 범위 자원은 Namespace·StorageClass·CRD·ClusterRole(Binding)·webhook 설정·IngressClass(Params)·NodePool·EC2NodeClass만. AppProject 자체는 하위 Application이 만들 수 없음 | #856·#857이 쓰는 범위만 연다. 새 namespace·외부 chart가 필요하면 그 PR에서 이 파일을 함께 고친다 |
 | root app | `sagomungchi-prod-root`, `targetRevision: main`, `argocd/prod`에서 `{platform/*.yaml,apps/*.yaml}`만 읽음. 자동 동기화(prune 끔, selfHeal 켬), 재시도 3회 | main 병합이 배포 승인이다. 하위 Application 파일을 지워도 배포된 리소스가 함께 지워지지 않도록 prune은 손으로 |
 | sync wave 대기 | `resource.customizations.health.argoproj.io_Application`으로 하위 Application health를 root에 올림 | Argo CD 1.8부터 Application health가 꺼져 있어, 켜지 않으면 app-of-apps에서 다음 wave가 앞 wave의 Healthy를 기다리지 않는다 |
-| 알림 | Notifications 켬, webhook 서비스 `discord`, 기본 구독으로 모든 Application의 동기화 성공·실패(같은 revision 1회)와 Health Degraded. webhook URL은 `argocd-notifications-secret`의 `discord-webhook-url`에 손으로 | Grafana 경보와 같은 Discord 채널(확인 필요 기본안). Argo CD에는 Discord 전용 서비스가 없어 webhook JSON(`content`)으로 보내고, 메시지는 `toJson`으로 따옴표를 처리 |
+| 알림 | Notifications 켬, webhook 서비스 `discord`, 기본 구독으로 모든 Application의 동기화 성공·실패(같은 revision 1회)와 Health Degraded. webhook URL은 `argocd-notifications-secret`의 `discord-webhook-url`에 손으로. **webhook은 Argo CD 전용**(원본 Secrets Manager `sagomungchi/demo/argocd/discord-webhook`), Grafana 경보 webhook과 나눔(#1003, 2026-11-24 결정) | Grafana 경보와 같은 Discord 채널(확인 필요 기본안). 전송마다 webhook URL이 로그에 남는데 설정으로 끌 수 없어 값을 나눴다(아래 #1003). Argo CD에는 Discord 전용 서비스가 없어 webhook JSON(`content`)으로 보내고, 메시지는 `toJson`으로 따옴표를 처리 |
 | CI | `ci-gitops.yml`의 kubeconform이 `argocd/` 전체(local·prod)를 이미 검사. `argocd.json`은 외부 chart values로 건너뛰기 목록에 추가 | 빠지면 app-service chart로 렌더링돼 실패한다(testing-ci 4절의 규칙) |
 
 **확인 (2026-11-20, 저장소·로컬만, AWS 실행 없음)**
@@ -1719,6 +1719,33 @@ kind에서는 GitHub 대신 클러스터 안 git 서버(이 PR의 `argocd/prod` 
 **A(11/25)·B(11/26~28)에서 할 일**: argocd CLI v3.5.7 준비 → `helm install`(README) → `argocd-notifications-secret` 생성 → `project.yaml`·`root-app.yaml` 적용 → root 수동 동기화 1회로 Discord 1건 → admin 비밀번호 변경·초기 Secret 삭제. B 런북 0·7단계에 넣었다.
 
 **한계**: root app은 `argocd` namespace에 Application을 만들 수 있으므로, 하위 Application 파일이 다른 AppProject(`default` 등)를 가리키지 않는지는 PR 리뷰로 확인한다. 하위 Application이 생긴 뒤 root app·Argo CD를 지우면 배포된 리소스까지 지워질 수 있어 되돌리기는 손으로 확인하며 한다.
+
+**webhook URL 로그 (#1003, 2026-11-24 A 계정 EKS)**
+
+11/24 A 재가동에서 `argocd-notifications-controller` 로그에 Discord webhook URL 원문이 남는 것을 확인했다. 원인은 소스로 확인했다.
+
+- notifications-engine `0cff13b8a717`(v3.5.7의 `go.mod`)의 webhook 서비스가 `go-retryablehttp` v0.7.8 `NewClient()`를 기본값 그대로 만든다.
+- 기본 Logger는 Go 표준 `log`(stderr)이고, 요청마다 `[DEBUG] <메서드> <URL>`을 찍는다. URL에서 가리는 것은 비밀번호 부분뿐이다.
+- `WebhookOptions`에는 Logger를 바꾸는 칸이 없다. upstream 기본 브랜치의 같은 파일(마지막 변경 `06152007e273`, 2026-01)도 같다.
+- chart 10.11.7 values(`configs.params`의 `notificationscontroller.log.level`·`log.format`)는 logrus만 바꾸므로 이 줄에는 영향이 없다.
+- 전송이 실패하면 오류 메시지 `request to {… URL} has failed`에도 URL이 들어간다.
+
+| 시각(KST) | 설정 | 알림 | webhook URL 줄 수 |
+|---|---|---|---|
+| 11/24 14:12~20:35 (Pod 6시간 22분) | 설치값(`log.level=info`, `log.format=text`) | 동기화·Degraded 알림 44건 | 44 (`[DEBUG] POST` 44) |
+| 11/24 20:36 | `argocd-cmd-params-cm`의 `notificationscontroller.log.level=error`로 바꾸고 controller 재시작. root app의 `notified.notifications.argoproj.io` 주석을 지워 동기화 성공 알림 1건을 다시 보냄(20:36:51) | 1건 | 1 (Argo CD info 로그는 사라졌는데 이 줄은 남음) |
+| 11/24 20:37 | `info`로 되돌리고 재시작. Helm release는 바꾸지 않음(rev 1 그대로) | 0건 | 0 |
+
+로그 원문은 출력하지 않고 `grep -c 'discord.com/api/webhooks'`로 건수만 셌다. 참고로 `log.format=text`인데도 Argo CD 자체 로그는 JSON으로 나왔고, 이 줄만 `2026/11/24 11:36:51 [DEBUG] POST …` 형식이다.
+
+| 대안 | 판단 |
+|---|---|
+| 로그 수준·형식, webhook 서비스 옵션 | 끌 방법 없음(위 시험) |
+| **Argo CD 전용 webhook 분리 (채택)** | 같은 `aws-alerts` 채널에 webhook을 하나 더 만든다. 로그에는 계속 남지만 Grafana 경보 webhook은 노출되지 않고, Argo CD 값만 따로 재발급할 수 있다. 저장소는 README의 Secret 출처만 바뀌고 `argocd.json`은 그대로다 |
+| 클러스터 안 중계 프록시 | 로그의 URL은 사라지지만 B 구축(11/26~28) 전에 구성요소 1개를 더 만들고 시험해야 해서 채택하지 않음 |
+| 그대로 두고 문서화 | 노출되면 Grafana 경보까지 함께 재발급해야 해서 채택하지 않음 |
+
+Pod 로그는 클러스터 밖으로 모으지 않는다(Loki·Fluent Bit·CloudWatch 컨테이너 로그 없음). 노드의 컨테이너 로그와 `pods/log` 권한으로만 볼 수 있다. 로그를 볼 때는 README의 명령처럼 건수만 세거나 URL을 가린다. A·B 모두 기존 webhook을 폐기하고 Grafana용·Argo CD용 두 값을 새로 만든다(담당자 직접, 값 출력·기록 없음).
 
 ### 9.18.2 플랫폼 Application과 sync wave (#856)
 
@@ -1850,10 +1877,10 @@ PR #966(추억 그림책 PDF 발급)이 develop에 들어갔지만 prod report-w
 |---|---|---|
 | 그림 허용 출처 | `report-worker.json`에 `MEMORY_BOOK_ASSET_ORIGINS=https://sagomungchi-demo-347161580747-missions.s3.ap-northeast-2.amazonaws.com` | learning은 `ASSET_S3_BUCKET`(missions)·`S3_REGION`으로 AWS SDK v2 `S3Presigner`를 만들고 `endpointOverride`가 없다(`S3_PUBLIC_ENDPOINT_URL` 없음). 그래서 서명 URL은 virtual-hosted 방식 regional 주소 `https://<버킷>.s3.<리전>.amazonaws.com/theme-drafts/…`다. 버킷 이름에 점이 없어 경로 방식으로 바뀌지 않는다. `asset_fetcher.py`는 `scheme://host[:port]`를 소문자로 비교하므로 경로·쿼리 없이 출처만 넣는다. `scripts/tests/test_runtime_config.py`가 두 파일 값이 맞는지 본다 |
 | 클러스터 안 주소 치환 | prod에는 넣지 않음(`MEMORY_BOOK_ASSET_INTERNAL_ORIGINS` 없음) | kind의 MinIO용이다. prod는 S3에 바로 연결한다 |
-| 크기 상한 | 기본값 그대로: 그림 1장 5MiB(`MEMORY_BOOK_IMAGE_MAX_BYTES`), 1권 40MiB(`MEMORY_BOOK_TOTAL_MAX_BYTES`), 그림 1장 10초(`MEMORY_BOOK_ASSET_TIMEOUT_SECONDS`) | ai 테마 그림은 장면마다 PNG 1장이고 1권은 최대 7장(표지·월~금·엔딩)이다. 실제 크기는 9.20.3의 D6 측정으로 확인한다. 장당 2MB를 넘으면 상한이 아니라 축소(Pillow)를 더하는 것이 D6 기준이다 |
+| 크기 상한 | 기본값 그대로: 그림 1장 5MiB(`MEMORY_BOOK_IMAGE_MAX_BYTES`), 1권 40MiB(`MEMORY_BOOK_TOTAL_MAX_BYTES`), 그림 1장 10초(`MEMORY_BOOK_ASSET_TIMEOUT_SECONDS`) | ai 테마 그림은 장면마다 PNG 1장이고 1권은 최대 7장(표지·월~금·엔딩)이다. 실제 크기는 9.20.2 6단계의 D6 측정으로 확인한다. 장당 2MB를 넘으면 상한이 아니라 축소(Pillow)를 더하는 것이 D6 기준이다 |
 | egress | 바꾸지 않음 | report-worker NetworkPolicy에 이미 443 → S3 대역 9개(서울 S3 prefix list 대역, report-api·scoring과 같음)가 있다. private 라우팅 테이블 2개는 S3 Gateway endpoint(`sagomungchi-demo-vpce-s3`, 기본 정책)로 가므로 NAT를 거치지 않는다(5절, #212). regional 주소라 서울 대역 안이고, global 주소(`s3.amazonaws.com`)는 쓰지 않는다. 서명 URL은 learning 역할의 `s3:GetObject`(`theme-drafts/*`)로 서명돼 report-worker에는 S3 권한이 필요 없다. DNS(53)는 chart 기본 허용 |
 | RabbitMQ | 바꾸지 않음 | 큐 `report.memorybook.generate`(재시도 3개·DLQ)·`core.memorybook.events`와 바인딩(`cmd.direct` `memorybook.generate`, `events.topic` `memorybook.completed`)은 공용 `charts/platform-data/files/rabbitmq/definitions.json`에 있고 prod도 같은 파일을 쓴다. 권한(`import-definitions.sh`): report 읽기에 `report.memorybook.generate`, topic 쓰기에 `memorybook.completed`, core 읽기에 `core.memorybook.events`. 초기화 Job 이름에 definitions 해시가 들어 있어 platform-data를 새 revision으로 동기화하면 다시 돈다 |
-| 구독·KEDA | 바꾸지 않음 | report-worker는 Pod 1개(`replicaCount: 1`, HPA·KEDA 꺼짐)가 큐 3개(삭제·리포트·그림책)를 각자 채널, `CONSUMER_PREFETCH=1`로 구독한다. 큐는 passive로만 확인하므로 **platform-data가 앱보다 먼저 동기화돼야** 한다(Argo CD wave 5 → 앱). 큐가 없으면 report-worker가 기동에 실패한다. 리포트 1건과 그림책 1권이 동시에 Chromium을 띄울 수 있다(메모리 한도 768Mi, E4) |
+| 구독·KEDA | 바꾸지 않음 | report-worker는 Pod 1개(`replicaCount: 1`, HPA·KEDA 꺼짐)가 큐 3개(삭제·리포트·그림책)를 각자 채널, `CONSUMER_PREFETCH=1`로 구독한다. 큐는 passive로만 확인하므로 **platform-data가 앱보다 먼저 동기화돼야** 한다(Argo CD wave 5 → 앱). 큐가 없으면 report-worker가 기동에 실패한다. 리포트 1건과 그림책 1권이 동시에 Chromium을 띄울 수 있다(메모리 한도 1Gi, E4·[9.20.3](#9203-e4-메모리-측정과-limit-상향-1006-2026-11-24)) |
 | core V57 | 바꾸지 않음 | `V57__memory_book_jobs.sql`은 core-migrate 이미지에 들어 있고 digest PR의 `migration.revision`(`main-<SHA>`)으로 PreSync Job이 앱보다 먼저 돈다(9.18.3). 상품 값도 이 migration이 넣는다: `price = 0` 상품 `features.memoryBook=false`, `price > 0` 상품 `true`, 모든 상품 `limits.dailyMemoryBooks=3`. 결정 B1(유료 상품 전체)·B2(자녀당 하루 3권)와 같다. 따로 넣는 seed·상품 SQL은 없다 |
 | 기존 구독 | 그대로 동작 | V57 전에 만든 구독 스냅숏(시연 `prepare-demo-account-students.sql` 포함)에는 두 키가 없다. 이때 `features.memoryBook`은 구독 중이면 허용, `limits.dailyMemoryBooks`는 무료 상품 값(V57 뒤 3)을 쓴다(`ProductEntitlementService`). 결과는 B1·B2와 같다 |
 | B 계정 | 계정 번호 교체에 포함 | 출처에 missions 버킷 이름(계정 번호)이 들어 있다. `scripts/aws_account_switch.py`가 prod `*.json`을 바꾸므로 같이 바뀐다. 리전이 바뀌면 `s3.<리전>`과 S3 egress 대역도 바꾼다([AWS README B 런북](../../infrastructure/aws/README.md#a-계정-값-교체)) |
@@ -1874,7 +1901,7 @@ PR #966(추억 그림책 PDF 발급)이 develop에 들어갔지만 prod report-w
 | 4 | 받기 | 같은 화면 "받기"로 PDF 저장 | PDF가 열리고 9쪽 안팎 |
 | 5 | 그림 들어갔는지 | 명령 3(PDF 그림 세기)과 report-worker 로그 | 그림 수 = 그 회차 그림 수(엔딩을 봤으면 7, 아니면 6), 로그에 `그림책 그림 건너뜀` 0줄 |
 | 6 | D6 그림 크기 | 명령 4(원본 크기)와 명령 3의 가로·세로 | 장당 최대 크기. 2MB를 넘는 그림이 있으면 D6대로 축소를 더할지 정한다 |
-| 7 | E4 메모리 | 명령 2 결과의 최댓값, 재시작 수 | 최대 메모리가 한도 768Mi의 몇 %인지, `restartCount` 변화 없음·`OOMKilled` 없음 |
+| 7 | E4 메모리 | 명령 2 결과의 최댓값, 재시작 수 | 최대 메모리가 한도(1Gi, 11/24 A 측정 때는 768Mi)의 몇 %인지, `restartCount` 변화 없음·`OOMKilled` 없음 |
 
 ```powershell
 # 명령 1: 설정·큐·구독
@@ -1924,6 +1951,27 @@ SELECT status, failure_code, size_bytes, created_at, completed_at FROM memory_bo
 
 - 마지막 SQL의 칸 이름은 V57 기준이다. 다르면 `\d memory_book_job`으로 맞춘다.
 - B(시연)에서는 같은 절차를 B 런북 경로 확인 뒤 한 번 더 한다(#927 B 항목).
+
+### 9.20.3 E4 메모리 측정과 limit 상향 (#1006, 2026-11-24)
+
+11/24 A에서 9.20.2 7단계(명령 2, 2초 간격 `kubectl top`)로 그림 6장(엔딩 전 회차) 그림책 1권을 발급하는 동안 report-worker 최대 메모리는 **669Mi / limit 768Mi(87%)**였다. 재시작·`OOMKilled`는 없었다. 엔딩을 본 회차(그림 7장)나 주간 리포트와 겹치면 limit을 넘을 수 있어 limit만 올렸다.
+
+| 항목 | 전 | 후 | 근거 |
+|---|---|---|---|
+| prod `report-worker.json` | requests 256Mi·limits 768Mi | requests 256Mi·**limits 1Gi** | 측정 최대 669Mi에서 약 355Mi 여유. 그림 7장 회차·리포트와 겹치는 경우가 이 안에 드는지는 B에서 잰다(아래 남은 확인) |
+| local `report-worker.yaml`(kind도 이 파일) | 같음 | 같음(limits 1Gi) | prod와 같은 PDF 경로라 같은 값으로 맞췄다 |
+| requests | 256Mi | 256Mi(그대로) | 스케줄링은 requests 기준이라 노드 배치·Karpenter 확장·비용이 바뀌지 않는다 |
+
+동시 처리: report-worker는 Pod 1개, 큐마다 채널 `CONSUMER_PREFETCH=1`이라 그림책은 Pod 안에서 한 번에 1권씩이다. 겹칠 수 있는 것은 그림책 1권 + 주간 리포트 1건(full·free 2판 Chromium)이다. 이번 변경에서 동시 처리 수 제한(E4)은 더하지 않았다. 둘지 여부는 B 측정 뒤 정하고, replica나 prefetch를 늘리면 다시 잰다.
+
+노드 여유(저장소 값 기준, AWS 조회 없음):
+- ResourceQuota·LimitRange: `app` namespace를 포함해 저장소에 정의가 없다. limit 상향을 막는 제한이 없다.
+- 관리형 노드 그룹 `application`: t3.medium(메모리 4GiB) 2대. limit 1Gi는 노드 한 대에 들어간다. limits 합은 requests와 달리 노드 용량을 넘을 수 있고(overcommit), 실제 사용이 늘 때만 노드 압박이 생긴다. 11/24 A의 같은 노드 실제 사용 약 62%, requests 합 67%(#1006)였고 requests가 그대로라 67%도 그대로다.
+- Karpenter NodePool `application-burst`(t3.medium·t3.large, limits CPU 4·메모리 16Gi): NodePool `limits`는 만드는 노드 용량의 합이라 Pod limit과 관계없다. report-worker에 nodeSelector가 없어 어느 노드에 가도 1Gi보다 노드가 크다.
+
+확인: `helm lint --strict`와 `helm template`(prod는 `images/report-worker.json`까지, kube 1.35.8)에서 prod·local 모두 limits memory 1Gi·requests 256Mi. `test_runtime_config`·`test_memory_book_contract` 14개, `test_cd_*` 101개 통과.
+
+남은 확인(B): develop → main 릴리스로 B 첫 배포에 들어간 뒤, B에서 엔딩을 본 회차(그림 7장) 1권 발급 중 최대 메모리를 9.20.2 명령 2로 재고 limit 1Gi의 몇 %인지, 재시작·`OOMKilled`가 없는지 #1006에 적는다. 90%를 넘으면 limit을 더 올릴지, 그림책과 리포트가 동시에 렌더링하지 않게 할지 정한다.
 
 ## 9.21 S3 수명 주기: 추억 그림책 (#975, 2026-11-24)
 
@@ -2031,6 +2079,191 @@ MLOps 단계 점검(11/24)에서 재학습 이미지 배포가 빠져 있었다.
 ### 9.23.4 #730 CronJob 연결 (후속)
 
 #730(`feature/tox-retrain-kind`)의 차트는 `.Values.image`를 문자열로 받고 kind용 `imagePullPolicy: Never`다. prod Application을 만들 때 values에 `images/tox-retrain.json`을 같이 넘기고, 차트가 `image.repository`·`image.digest`로 `<저장소>@<digest>`를 만들게 한다(앱 chart와 같은 방식, prod는 `IfNotPresent`). 자리표시 digest인 동안에는 prod CronJob을 켜지 않는다.
+
+## 9.24 관측 chart 검증 스크립트 동기화 (#996, 2026-11-24)
+
+`verify_chart.py`가 현재 chart·운영 values를 따라가지 못해 정상 설정도 실패로 판정했다. #984에서 일부 검사를 뺀 임시 사본으로 실행한 이력을 확인하고, 검사를 유지한 원본 스크립트를 수정했다.
+
+- trace pipeline의 processor 이름을 `transform/trace_urls`로 맞췄다. `trace_statements`의 첫 그룹만 보던 검사를 모든 그룹의 `conditions`·`statements`로 넓혀 Google callback 조건·query 삭제와 토스 billing/payment 키 치환을 함께 확인한다. 아키텍처 문서의 이전 processor 이름도 고쳤다.
+- prod 앱 렌더는 CI·ApplicationSet처럼 `prod/<서비스>.json` 다음 `prod/images/<서비스>.json`을 전달한다. 분리된 repository·digest를 읽고 기존 OTLP·Java agent 설정을 계속 검사한다.
+- 작업 시작 시 develop `9e075979`로 실행하면 위 두 검사보다 먼저 기준 리소스 비교가 실패했다. #984 대시보드를 현재 chart에서만 껐기 때문이다. 기준 chart에서도 같은 옵션을 적용하며, 대시보드를 켠 local·prod의 provisioning 검사는 별도로 유지한다.
+- 기본 baseline `de8e225`, #984 이전 `75ddc7fe`, 작업 시작 기준 `9e075979`, 이후 반영한 develop `35fa87d9` 각각 default·local·baseline-prod 렌더가 같은지 확인했다(12조합 통과).
+
+API 변경 없음. 애플리케이션 동작·DB·chart·배포 values 변경 없이 검증 스크립트와 설명을 동기화했다. 이 PR이 영향을 주는 CI는 `ci-gitops`, `ci-contracts`의 저장소 전체 계약 검사, `ci-secrets`다. `verify_chart.py`의 Docker 경보 검사는 CI에 포함되어 있지 않으므로 별도로 실행하며, CI 자동 편입은 이 이슈의 범위 밖이다.
+
+완료 확인 명령:
+
+```powershell
+python infrastructure/gitops/operational-alerts/verify_chart.py --helm <helm-실행파일> --baseline 9e075979
+```
+
+`verify_chart.py`의 검증은 Python `assert`를 사용하므로 이 명령에는 `-O`를 붙이지 않는다. 저장소 계약 검사는 해당 CI의 명령인 `python -O -m unittest discover -s scripts/tests -v`로 실행한다.
+
+CI와 같은 Linux 환경에서 Helm 4.3.1 lint 17조합과 환경별 렌더 25파일, prod ApplicationSet·이미지 파일 목록 일치를 확인했다. kubeconform 0.8.0·Kubernetes 1.35.8·CI 고정 스키마로 45파일의 187개 리소스를 검사해 전부 유효했고 오류·건너뜀은 없었다. core·learning migration 이미지 빌드도 모두 통과했다(이미지 게시·DB 적용 없음).
+
+위 원본 명령은 검사를 제외한 사본 없이 끝까지 종료 코드 0으로 통과했다. 격리 Docker에서 Grafana 규칙 16개, 경보 발생·반복 억제·회복, 큐별 DLQ, 비용·미산정 비용, 인증 오류율·지연, NoData·잘못된 쿼리·없는 datasource, 재적용 중복 방지, 수집 중단·job 제거를 확인했다. 알림은 내부 네트워크의 로컬 수신 대역으로 전달했고 검증용 컨테이너·네트워크는 종료 후 제거했다.
+
+최신 develop `35fa87d9`를 반영한 Linux 전체 계약 검사도 429개 실행, 실패 0개, 건너뜀 1개로 통과했다. 건너뜀은 원문 HWP 폴더가 필요한 기존 검사 하나다. 코드·설정 변경 범위를 다시 대조하고 `git diff --check`도 통과했다. 원격 PR CI 결과와 별도로 수행한 로컬 검증 결과다.
+
+## 9.25 로컬 kind 표현 분류 재학습 (#730)
+
+chart의 기본값은 `suspend: true`다. 로컬 kind values에서만 `suspend: false`를 지정해 예약 실행을 켠다.
+
+`app/tox-retrain`은 일요일 03:00(Asia/Seoul)에 실행된다. 같은 CronJob의 예약 실행은 겹치지 않으며 실패한 Pod는 재시도하지 않는다. 로컬 요청은 CPU 1개·메모리 2560Mi, 상한은 CPU 2개·메모리 3Gi이고 Job 기한은 40분이다. 이 값은 [#729의 CPU 실측](../../ml/tox/results/eval_tox.md)에 여유를 둔 로컬 설정이다.
+
+Job이 MinIO에서 지난 실행 기준을 읽고 learning에 새 라벨 수를 묻는다. 200건 미만이면 정상 종료한다. 200건 이상이면 임시 볼륨에서 학습하고, 모델을 MinIO에 올린 뒤 core에 후보로 등록하고 `last.json`을 갱신한다. 활성화는 운영자 승인 대상이다. Job에는 Kubernetes API 토큰을 마운트하지 않는다. Pod의 송신과 수신 측 정책은 DNS, learning, core, MinIO 통신을 허용한다.
+
+### 로컬 설치와 수동 실행
+
+1. [kind 설치 절차](../../infrastructure/kind/README.md)에 따라 Calico, platform 데이터 서비스, 앱을 준비한다. `app-service-credentials`에 서로 다른 내부 토큰과 MinIO 접속 키가 있어야 한다. learning·core는 `INTERNAL_TOKEN_OPS`를 읽고 Job은 같은 값을 `INTERNAL_TOKEN`으로 읽는다. 기존 Secret에 OPS 키를 처음 넣었다면 learning·core Pod를 새로 띄워 환경변수를 반영한다.
+2. local core·learning values와 [platform NetworkPolicy](../../infrastructure/gitops/policies/local/platform.yaml)를 함께 적용한다. 활성 `tox-` 모델과 비공개 MinIO 버킷의 공개 데이터 묶음은 [이미지 실행 전제](../../ml/tox/README.md)에 맞춰 준비한다.
+3. 저장소 루트에서 이미지를 빌드하고 대상 kind에 넣는다. 아래 명령은 기본 개발 클러스터 이름을 사용한다. 수동 실행 전 이미 실행 중인 재학습 Job이 있는지 확인한다. `Forbid`는 사람이 직접 만든 Job 사이의 중복을 막지 않는다.
+
+```powershell
+docker build -f ml/tox/Dockerfile -t sagomungchi/tox-retrain:local .
+kind load docker-image sagomungchi/tox-retrain:local --name sagomungchi-local
+helm upgrade --install tox-retrain infrastructure/gitops/charts/tox-retrain -n app --kube-context kind-sagomungchi-local -f infrastructure/gitops/environments/local/tox-retrain.yaml
+kubectl --context kind-sagomungchi-local -n app get jobs -l app.kubernetes.io/name=tox-retrain
+$job = 'tox-retrain-manual-' + (Get-Date -Format yyyyMMddHHmmss)
+kubectl --context kind-sagomungchi-local -n app create job $job --from=cronjob/tox-retrain
+kubectl --context kind-sagomungchi-local -n app logs -f job/$job
+kubectl --context kind-sagomungchi-local -n app get job $job
+```
+
+종료 코드 0은 학습 완료와 라벨 부족에 공통이다. 로그의 `skip reason=not_enough_labels`는 건너뜀을 뜻한다. 학습 성공은 `stage=register`·`stage=last_write` 완료와 모델 등록부의 새 `REGISTERED` 행으로 확인한다. 실행 중인 Pod에는 임시 자료가 있으며 완료된 Job의 로그는 Kubernetes의 이력 보관 범위에서 조회할 수 있다.
+
+로컬 observability release에 [local values](../../infrastructure/gitops/environments/local/observability.yaml)를 적용하면 Prometheus가 같은 Pod의 kube-state-metrics에서 `app`의 Job·CronJob 상태를 읽는다. Grafana에서 최근 24시간 내 생성된 재학습 Job의 최종 실패와 활성 스케줄의 5분 초과 지연을 확인한다. 예약 중단 시에는 일정 지연 경보를 제외한다. 로컬에서는 Discord로 발송하지 않는다.
+
+### 2026-11-23 격리 kind 실행 기록
+
+전용 `kind-skn730` 클러스터에 Calico, PostgreSQL, MinIO, 실제 core·learning·scoring 이미지를 배포했다. core DB는 V56, learning DB는 V27까지 적용했다. 입력은 학습용 합성 라벨 200건, 고정한 BEEP·APEACH 일부, 무작위 초기화한 소형 BERT였다. 200건 중 한 건을 보류한 뒤 첫 검증이 끝나고 추가했다.
+
+| 수동 Job | 결과 | 등록부·MinIO 대조 |
+|---|---|---|
+| `kind730-retrain-199` | 4초, 새 라벨 199건으로 건너뜀, 종료 코드 0 | 기존 활성 모델 1개, 후보 파일 0개, 진행 기록 없음 |
+| `kind730-retrain-200` | 12초, 학습·평가·업로드·등록, 종료 코드 0 | 후보 `tox-kind-fixture:20261123-1200` 1개가 `REGISTERED`·`NOT_RECOMMENDED`, 후보 파일 5개와 `last.json` 생성, 기존 활성 모델 유지 |
+
+재학습 Pod와 같은 라벨을 준 점검 Pod에서 DNS 조회와 core:8080·learning:8081·MinIO:9000 TCP 연결이 성공했다. PostgreSQL:5432·scoring:8001 직접 연결은 시간 초과였다. 검증용 소형 모델의 12초로 운영 모델의 학습 시간이나 EKS 적정 CPU를 산정할 수 없으며, 이번 실행의 최고 메모리는 측정하지 않았다.
+
+| 경보 시험 | 관측 결과 |
+|---|---|
+| 존재하지 않는 로컬 MinIO 버킷으로 수동 실행 | `last_read`에서 `NoSuchBucket`, 종료 코드 11. Job의 최종 실패 지표가 1이 되고 Grafana 실패 경보 발화 |
+| 배치할 수 없는 CPU 256개 요청, 시험 Job 기한 20초 | Pod가 `Pending / Insufficient cpu`에 머물다가 Job이 `DeadlineExceeded`로 실패. 컨테이너가 시작되지 않아도 Grafana 실패 경보 발화 |
+| 격리 클러스터의 마지막 예약 시각을 15일 전으로 설정해 일정 누락 모의 | 지연 경보 발화. `suspend: true`에서 해제됐고 시험 후 주간 일정과 상태를 복원 |
+
+kind API 서버는 호스트 네트워크를 사용한다. 지표 수집기의 API 접근은 Calico의 `default/kubernetes` Service 대상 송신 정책으로 확인했다. Prometheus에서 수집 대상이 `up=1`이었고 수집기 계정의 권한은 `app`의 Job·CronJob 조회로 제한했다.
+
+로컬에서 `ci-gitops`의 Helm·kubeconform 단계를 실행해 리소스 193개가 모두 유효했고 건너뜀은 0개였다. prod 관측 values로 렌더링한 Kubernetes 객체 21개를 변경 전과 대조했다. 원격 CI 및 Discord 수신은 이 로컬 검증에 포함하지 않았다.
+
+운영 노드 배치, AWS 권한, 비용과 Discord 수신은 11/28 B 첫 배포 안정화 뒤 검토한다. EKS 노드 여유와 실제 학습 데이터 사용 결정(#887)을 운영 활성화 전에 확인한다.
+
+## 9.27 LLM 호출 지연·오류 지표와 경보·대시보드 (#1028, 2026-11-25)
+
+설계 기준은 [architecture 4.7 LLM 호출 지표](../design/architecture.md#llm-호출-지표-1028)다. 에픽 #1027의 core 부분이다.
+
+### 9.27.1 결정 (동섭, 11/25)
+
+- prod 경보는 B 첫 배포에 넣는다. 12/1 이후 장애·시험 메시지 금지(#886)는 그대로 지킨다
+- 임계값은 이슈 기준안을 그대로 쓰고 실측 뒤 조정한다
+- `llm.call.duration`에 `prompt_version` 속성을 넣는다
+
+### 9.27.2 바꾼 것
+
+- core `LlmCallMetrics`: `LlmUsageService.record()`에서 `insertIfAbsent()`가 1을 돌려준 때만 `llm.call.duration`(초, 버킷 0.25~300초)과 `llm.call.tokens`를 기록한다
+- prod `observability.json`: `llm-call-errors`·`llm-call-latency-dialog`·`llm-call-latency-word-help`·`llm-call-rate-limited`. 기존 LLM 규칙(`llm-unpriced-calls`) 바로 뒤에 둔다
+- 대시보드 `charts/observability/dashboards/llm-calls.json`("LLM 호출"): 호출 유형별 p95·p50, 오류율, 오류 코드별 건수, 호출 건수, 모델·방향별 토큰
+- `operational-alerts/verify_chart.py`: local·prod 렌더에 `llm-calls.json`이 provision되는지 확인한다
+
+오류율·429 규칙은 `increase()` 대신 `clamp_min(X - (X offset 창 or X * 0), 0)`으로 센다. 처음 나온 속성 조합(예: 처음 나온 오류 코드)의 첫 값을 `increase()`가 0으로 보기 때문이다. core가 재시작하면 `exported_instance`가 바뀌어 새 시계열이 생기는데, 이 식은 그 값도 창 안의 새 호출로 센다.
+
+### 9.27.3 검증
+
+- core `./gradlew clean test bootJar`(`eclipse-temurin:21-jdk` 컨테이너와 Testcontainers): 780건 중 실패 0, 건너뜀 3, bootJar 생성. `LlmUsageQueryTest`에 새 시험을 넣었다. 새 이벤트 1건은 히스토그램 1회와 토큰 입력·출력에 기록되고, 같은 이벤트를 다시 받으면 더 기록하지 않는다. 토큰이 없는 호출은 토큰에서 빠진다(InMemoryMetricReader)
+- `verify_chart.py`(Helm 4.3.1, 실제 Grafana·Prometheus 컨테이너): exit 0. prod 규칙 20개(기존 16개 + 새 4개)가 실제 엔진에서 정상 평가됐다
+- `ci-gitops`와 같은 `helm lint --strict`와 `helm template --kube-version 1.35.8`를 local·prod observability values로 돌려 통과했다. kubeconform은 로컬에 없어 돌리지 않았다
+- 로컬 kind(`sagomungchi-local`)
+  - 이 브랜치 core 이미지(`local-1028`)를 임시로 올리고, ai-service 안에서 `/internal/followups`를 12회 불렀다(LLM stub, 200)
+  - Prometheus에서 `llm_call_duration_seconds_count{call_type="FOLLOWUP",prompt_version="followup@4",outcome="success",error_code="none"}`가 12였다. `llm_call_tokens_total`은 입력 4560·출력 3371이었다
+  - 버킷 시계열은 20개였다(19개 경계와 `+Inf`). `llm-call-errors` 식은 FOLLOWUP에서 0이었고 10건 조건을 채웠다
+  - Grafana API에서 대시보드 `llm-calls`가 provision된 것을 확인했다. p95(4.87초)·토큰·호출 건수 패널 쿼리가 값을 돌려줬다
+  - 확인 뒤 core는 원래 `sagomungchi/core-service:local`로 되돌렸다. observability release는 `--reuse-values`로 `grafana.dashboards.enabled=true`를 켰다. 배포된 값에 `prometheus.retrainJobMetrics`가 없어 `enabled=false`를 함께 줬다(revision 17)
+  - 재전달 중복은 kind에서 다시 보내 보지 않았고 core 시험으로만 확인했다
+
+### 9.27.4 한계·남은 일
+
+- 이벤트 소비 시점에 기록해 수 초 늦다. best-effort 발행에서 빠진 호출은 없다. 지연은 provider 호출 한 번이며 기능 전체 지연이 아니다
+- 대시보드와 지연 경보는 `rate()`·`increase()` 기반이라 새 속성 조합의 첫 호출이 빠진다. kind에서도 호출 건수 패널이 12건이 아니라 약 4.6건(30분 `increase`)을 보였다. 추세를 보는 용도로 쓴다
+- JUDGMENT·FOLLOWUP·WORD_HELP 밖의 호출 유형 지연 경보와 SLO 확정은 실측 뒤에 한다
+- prod 값은 B 계정에서 Collector egress와 core Java agent가 켜져야 생긴다. B 첫 배포 뒤 Grafana 패널을 확인해야 한다
+
+## 9.28 ai-service trace·HTTP 지표 (#1029, 2026-11-25)
+
+에픽 #1027의 ai-service 계측이다. 지금까지 ai 구간은 Tempo에 span이 없었고(architecture 4.7 남은 경계), prod Langfuse도 꺼져 있어(#379) 판정·분석 실패 요청을 ai 안에서 추적할 수 없었다. 새 의존성 없이 기존 `opentelemetry-sdk`(langfuse 의존성)와 `opentelemetry-exporter-otlp-proto-http`를 쓴다.
+
+### 9.28.1 구성
+
+| 항목 | 내용 |
+|---|---|
+| provider | `app/tracing.py`. `OTEL_TRACES_EXPORTER=otlp`면 trace, `OTEL_METRICS_EXPORTER=otlp`면 지표 SDK를 설치하고, 아니면 no-op이라 받은 `traceparent`를 그대로 넘긴다. lifespan 시작에 설치하고 종료에 flush한다 |
+| 전역 provider | 등록하지 않는다. Langfuse v4는 전역 TracerProvider가 있으면 거기에 자기 processor를 붙여, 섞으면 Langfuse generation이 Tempo로, 앱 span이 Langfuse로 간다. 앱 계측은 `tracing.tracer()`·`tracing.meter()`만 쓴다 |
+| HTTP | 순수 ASGI 미들웨어(분석 SSE도 끝까지 잰다), 가장 바깥에 둬 401·403도 잰다. SERVER span의 부모는 요청 `traceparent`. 지표 `http.server.request.duration`(초, Prometheus `http_server_request_duration_seconds`, `exported_job="ai-service"`). 속성은 메서드·경로 템플릿·상태 코드, 5xx면 `error.type`. `/health`는 뺀다 |
+| LLM | `LlmClient` 제공자 요청 1회마다 CLIENT span `llm <callType>`. 호출 종류·프롬프트 버전·시도 번호·요청/응답 모델·토큰 수·성공 여부·오류 코드만 넣는다. 사용량 이벤트 봉투 `traceparent`가 그 시도 span이다 |
+| 이벤트 | `model.version.activated` 소비는 봉투 `traceparent`를 부모로 CONSUMER span. ai가 소비하는 이벤트는 이것뿐이다. 판정·분석·리포트 문장은 core·learning·report-worker가 HTTP로 부른다 |
+| 하위 호출 | scoring·core·learning 호출 헤더의 `traceparent`는 현재 span 값이다(no-op이면 받은 값) |
+| 원문 차단 | 경로 값·질의·헤더·본문·프롬프트·응답·학생 ID는 span·지표에 넣지 않는다. 예외 메시지는 원문이 섞일 수 있어 span event로 남기지 않는다(`record_exception=False`, 예외 종류 이름만 `error.type`) |
+| values | local: `egressToCollector`, `OTEL_SERVICE_NAME`·endpoint·protocol·`OTEL_METRICS_EXPORTER=otlp`(지표만. local은 Tempo가 없어 trace는 끈다). prod: `egressToCollector`, `tracing.enabled`, `OTEL_METRICS_EXPORTER=otlp`. chart는 바꾸지 않았다(비agent 분기는 trace 값만 넣으므로 지표 값은 ai values에 둔다) |
+
+- 경보 쿼리는 `exported_job="core-service"`·`learning-service`로 걸러 ai 지표가 기존 규칙에 섞이지 않는다.
+- Collector NetworkPolicy는 app 네임스페이스 전체에서 4317·4318을 받으므로 observability 쪽 변경은 없다.
+- #1030(AI 품질 카운터)은 같은 provider를 `tracing.meter()`·`tracing.instrument()`로 쓴다.
+
+### 9.28.2 결정 (동섭, 2026-11-25)
+
+| 확인 필요 | 결정 |
+|---|---|
+| prod 적용 시점 | B 첫 배포(11/26~28)에 포함한다. 12/1 이후 장애·시험 메시지 금지(#886) 전이다 |
+| 경보 임계값 | 이번에는 지표만 낸다. ai 경보 규칙은 B 실측 뒤 정한다 |
+| Collector·Tempo 자원 | 그대로 두고 B에서 관찰한다. 근거는 아래 |
+| 지표 env 위치 | ai values에만 넣는다(공용 chart를 바꾸지 않아 #1031과 겹치지 않음) |
+
+자원 근거(#784, 9.15):
+- Collector limits 256Mi. trace 전용 `memory_limiter/traces` 144MiB, 대기열 16MiB, 재시도 30초라 Tempo가 죽어도 지표 수집은 격리된다(kind에서 거부 지표 0점).
+- Tempo limits 1Gi, `GOMEMLIMIT` 800MiB, 수집 상한 8MiB/s, 보존 24h. kind에서 초당 400 trace × 10 span에 재시작 0회였다.
+- ai가 더하는 span은 요청당 2~4개(서버 1, LLM 시도 1~2, 소비 1)다. core 요청 1건의 Java agent span(JDBC·HTTP·Rabbit) 수십 개보다 적고, ai 요청 수도 core 요청보다 적다.
+- 지표는 히스토그램 하나(경로 템플릿 약 20개 × 메서드 × 상태 코드 × 버킷 19개)라 Prometheus(limits 512Mi, 보존 3d·2GB) 부담이 작다.
+- 실제 부하에서 Tempo 1Gi가 버티는지는 9.15.5대로 B에서 확인한다.
+
+### 9.28.3 검증
+
+- 로컬 ai 시험: 전체 1,451개 통과(새 `tests/test_tracing.py` 14개, 기존 Langfuse 시험 포함. 경고 3건은 기존 aio_pika 연결 정리 경고). `ruff check`·`ruff format --check` 통과.
+  - exporter 값이 없으면 provider를 설치하지 않고, 받은 `traceparent`를 그대로 넘긴다.
+  - 값이 있으면 요청한 provider만 설치하고 전역 provider는 그대로다.
+  - HTTP SERVER span의 부모가 요청 `traceparent`이고, 이름·속성·지표는 경로 템플릿이다(경로 값·질의 없음). 5xx는 ERROR이고 예외 메시지 event는 없다. 404는 메서드만 남고 `/health`는 재지 않는다.
+  - 소비 span의 부모가 봉투 `traceparent`다. 형식 오류는 `INVALID_EVENT`로 남는다.
+  - LLM 시도 span 2개(실패·성공)의 속성에 원문이 없다. 사용량 이벤트 `traceparent`와 하위 HTTP 헤더가 현재 span이다.
+  - Langfuse를 켜도 Langfuse exporter에는 `langfuse-sdk` span만, 앱 exporter에는 앱 span만 간다. Langfuse 부모는 이전처럼 요청 `traceparent`다.
+- `helm lint --strict`·`helm template`: local `ai-service.yaml`과 prod `ai-service.json` + `images/ai-service.json` 모두 통과.
+  - prod 렌더: chart가 `OTEL_TRACES_EXPORTER=otlp`·endpoint·service name을 넣고, values의 `OTEL_METRICS_EXPORTER=otlp`, Collector 4317·4318 egress가 들어간다.
+  - local 기본 렌더: 지표 값만 들어가고 `OTEL_TRACES_EXPORTER`는 없다.
+- kubeconform은 로컬에 없어 원격 `ci-gitops`에서 확인한다(PR 생성 뒤).
+- Docker 격리 확인(공용 kind는 다른 세션이 쓰고 있어 건드리지 않음): 격리 네트워크에 `grafana/tempo:2.10.10`과 이 브랜치 ai 이미지(`OTEL_TRACES_EXPORTER=otlp`, LLM 키 없음)를 띄웠다. 원문·학생 ID를 넣은 되묻기 요청과 잘못된 토큰 요청에 `traceparent`를 붙여 보낸 뒤 Tempo `/api/traces/<id>`로 조회했다.
+
+| span | 부모 | 상태·속성 |
+|---|---|---|
+| `POST /internal/followups`(SERVER) | 요청 `traceparent`의 span | ERROR, `http.route=/internal/followups`, `503` |
+| `llm FOLLOWUP`(CLIENT) | 위 SERVER span | ERROR, `error.type=LLM_NOT_CONFIGURED`, `followup@4`, 시도 1 |
+| `GET`(SERVER, 401) | 요청 `traceparent`의 span | 경로 템플릿 없음(인증 거부는 라우팅 전), 질의 값 없음 |
+
+  - trace 전체에 원문·학생 ID·질의 값이 없고, span event도 0개였다.
+  - 처음 확인에서 재시도 없이 끝난 LLM span의 `error.type`이 오류 코드 대신 `LlmUnavailable`로 덮이는 것을 찾아 고쳤다. 시험(`test_final_llm_failure_keeps_error_code`)을 추가하고 다시 확인했다.
+  - 확인 뒤 컨테이너·네트워크·이미지를 지웠다.
+
+### 9.28.4 한계와 남은 것
+
+- core 요청 → ai 판정 → 사용량 이벤트 전체가 Tempo 한 trace로 보이는지는 B 계정에서 확인한다(동섭 결정, 2026-11-25). 공용 kind는 다른 세션 작업 중이라 Docker 격리로 ai 구간만 확인했다. 확인 방법: observability `tempo.enabled=true`, core·learning·ai `tracing.enabled=true`로 올리고 판정 한 번 뒤 Grafana Tempo에서 `service.name=ai-service` SERVER span의 부모가 learning HTTP client span인지, `llm.usage.recorded` core 소비 span이 ai `llm JUDGMENT` span 아래인지 본다. kind에서 확인할 때는 local ai values에 지표용 `OTEL_SERVICE_NAME`·endpoint가 이미 있어 `tracing.enabled=true`면 같은 값이 두 번 렌더된다(값이 같아 동작은 같다).
+- 제공자 SDK(openai·anthropic·boto3) 내부 HTTP는 자동 계측하지 않는다. LLM 시도 span의 시간이 그 구간이다.
+- scoring·report-api는 여전히 자체 span·HTTP 지표가 없다.
+- Langfuse를 켜면 generation 부모는 이전처럼 요청 `traceparent`(호출한 서비스 span)이고 ai span이 아니다. 두 저장소는 trace ID로 맞춘다.
 
 ## 10. 근거 링크
 

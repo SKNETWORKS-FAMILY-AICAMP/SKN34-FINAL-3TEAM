@@ -88,7 +88,9 @@ export function DateFilter({ initial, onApply, onCancel, embedded = false, week 
   const startInput = useRef<HTMLInputElement>(null), endInput = useRef<HTMLInputElement>(null)
   const startInvalid = !validPeriod({ from: range.from, to: range.from })
   const [year, number] = month.split('-').map(Number)
-  const offset = new Date(Date.UTC(year, number - 1, 1)).getUTCDay()
+  const weekday = new Date(Date.UTC(year, number - 1, 1)).getUTCDay()
+  const offset = week ? (weekday + 6) % 7 : weekday
+  const weekdays = week ? ['월','화','수','목','금','토','일'] : ['일','월','화','수','목','금','토']
   const days = new Date(Date.UTC(year, number, 0)).getUTCDate()
   const move = (delta: number) => { const d = new Date(Date.UTC(year, number - 1 + delta, 1)); setMonth(d.toISOString().slice(0, 7)) }
   const pick = (day: string) => {
@@ -102,8 +104,8 @@ export function DateFilter({ initial, onApply, onCancel, embedded = false, week 
     {!week && <div className="pd-date-mode"><button type="button" aria-pressed={mode === 'day'} onClick={() => { setMode('day'); setSelectEnd(false); setRange({ from: range.from, to: range.from }) }}>하루</button><button type="button" aria-pressed={mode === 'range'} onClick={() => { setMode('range'); setSelectEnd(false) }}>기간</button></div>}
     <div className="pd-date-inputs"><input aria-label="시작 날짜" ref={startInput} aria-invalid={!!error && startInvalid} type="date" value={range.from} onChange={e => { if (week && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) pick(e.target.value); else setRange({ from: e.target.value, to: mode === 'day' ? e.target.value : range.to }); if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) setMonth(e.target.value.slice(0, 7)) }} />{mode === 'range' && <><span>—</span><input aria-label="종료 날짜" ref={endInput} aria-invalid={!!error && !startInvalid} readOnly={week} type="date" value={range.to} onChange={e => setRange({ ...range, to: e.target.value })} /></>}</div>
     <div className="pd-calendar-head"><button type="button" aria-label="이전 달" onClick={() => move(-1)}><ChevronLeft size={16} /></button><strong>{year}년 {number}월</strong><button type="button" aria-label="다음 달" onClick={() => move(1)}><ChevronRight size={16} /></button></div>
-    <div className="pd-calendar-grid">{['일','월','화','수','목','금','토'].map(d => <span key={d}>{d}</span>)}{Array.from({length:offset},(_,i)=><span key={`empty-${i}`} />)}{Array.from({length:days},(_,i)=>{const day=`${month}-${String(i+1).padStart(2,'0')}`;return <button key={day} type="button" aria-label={day} aria-pressed={day>=range.from && day<=range.to} data-edge={day===range.from || day===range.to || undefined} onClick={()=>pick(day)}>{i+1}</button>})}</div>
-    <p role="status">{error || (selectEnd ? '종료일을 선택하세요.' : '날짜를 선택하거나 직접 입력하세요.')}</p>
+    <div className="pd-calendar-grid">{weekdays.map(d => <span key={d}>{d}</span>)}{Array.from({length:offset},(_,i)=><span key={`empty-${i}`} />)}{Array.from({length:days},(_,i)=>{const day=`${month}-${String(i+1).padStart(2,'0')}`;return <button key={day} type="button" aria-label={day} aria-pressed={day>=range.from && day<=range.to} data-edge={day===range.from || day===range.to || undefined} onClick={()=>pick(day)}>{i+1}</button>})}</div>
+    <p role="status">{error || (selectEnd ? '종료일을 선택하세요.' : week ? '날짜를 고르면 월요일부터 일요일까지 선택됩니다.' : '날짜를 선택하거나 직접 입력하세요.')}</p>
     <footer><button type="button" onClick={onCancel}>취소</button><button type="button" className="pd-date-confirm" onClick={() => { if (!validPeriod(range)) { setError(startInvalid ? '시작 날짜를 입력하세요.' : '종료 날짜를 시작 날짜와 같거나 이후로 입력하세요.'); (startInvalid || week ? startInput : endInput).current?.focus(); return } if (week) { const d=new Date(range.from+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()-(d.getUTCDay()+6)%7); const from=d.toISOString().slice(0,10); d.setUTCDate(d.getUTCDate()+6); onApply({from,to:d.toISOString().slice(0,10)}) } else onApply(range) }}>확인</button></footer>
   </div>
 }

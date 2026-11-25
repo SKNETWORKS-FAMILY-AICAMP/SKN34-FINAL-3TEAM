@@ -214,6 +214,29 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertFalse(result["executable"])
         self.assertIn("대상 버전의 이전 승인 기록 없음", result["blocks"])
 
+    def test_broken_korean_text_is_rejected(self):
+        # #1004: Windows Git Bash·Python이 CP949로 넘긴 계획. 11/24 #991 사유 일부 그대로
+        cases = {
+            "reason": "11/24 A À簡µ¿ ù Argo CD ¹èÆ÷ Àü images ÆÄÀÏÀ»",
+            "compatibility.schema.evidence": "Ä÷³ »èÁ¦¡¤À̸§ º¯°æ ¾øÀ½",
+        }
+        for field, text in {**cases, "reason ": "사유��"}.items():
+            with self.subTest(field=field):
+                plan = copy.deepcopy(self.plan)
+                if field.startswith("compatibility"):
+                    plan["compatibility"]["schema"]["evidence"] = text
+                else:
+                    plan["reason"] = text
+                result = cd.validate(plan, self.policy)
+                self.assertFalse(result["valid"])
+                self.assertTrue(any("깨진 문자" in e and field.strip() in e for e in result["errors"]))
+
+    def test_normal_korean_text_with_middle_dot_passes(self):
+        plan = copy.deepcopy(self.plan)
+        plan["reason"] = "core·learning 배포 → 경로 확인(#858), 2×2 확인… “따옴표” café"
+        self.assertEqual(cd.broken_text_fields(plan), [])
+        self.assertTrue(cd.validate(plan, self.policy)["valid"])
+
     def test_wrong_field_types_are_invalid_not_exceptions(self):
         for field in ("environment", "operation"):
             for value in ([], {}, None, 123):

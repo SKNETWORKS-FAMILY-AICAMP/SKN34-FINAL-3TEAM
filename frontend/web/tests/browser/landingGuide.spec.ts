@@ -1,5 +1,25 @@
 import { expect, test } from '@playwright/test'
 
+test('#998: 로그인 전 이용 안내에서 무료·프리미엄 비교표를 본다', async ({ page }) => {
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/')
+    await page.getByRole('button', { name: '이용 안내', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '이용 안내', exact: true })
+    const category = dialog.locator('.lp-guide-category').filter({ has: page.locator(':scope > summary', { hasText: '무료·프리미엄 비교' }) })
+    await category.locator(':scope > summary').click()
+    const table = category.getByRole('table')
+    await expect(table).toBeVisible()
+    await expect(table.getByRole('row').filter({ hasText: '대표 답변 설명' })).toHaveCount(1)
+    await expect(table.getByRole('row').filter({ hasText: '추억 그림책' })).toContainText('한 주를 엮은 그림책')
+    await expect(table.getByRole('row').filter({ hasText: '추억 그림책' })).toContainText('하루 3권')
+    await expect(dialog.getByText(/AI 관찰|생각 노트/)).toHaveCount(0)
+    await expect(dialog.locator('#plan-compare')).toHaveCount(0)
+    expect(await table.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    await page.getByRole('button', { name: '이용 안내 닫기' }).click()
+  }
+})
+
 test('공개 이용 안내와 약관을 로그인 없이 읽고 닫는다 @responsive', async ({ page }) => {
   await page.goto('/')
   const trigger = page.getByRole('button', { name: '이용 안내', exact: true })

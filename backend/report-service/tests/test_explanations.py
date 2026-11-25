@@ -4,6 +4,7 @@ import asyncio
 import json
 from dataclasses import replace
 from io import BytesIO
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -13,7 +14,7 @@ from sqlalchemy import select
 from app.clients.ai_client import AiClient, ExplanationResponse
 from app.clients.base import internal_client
 from app.clients.learning_client import LearningClient
-from app.generation.explanation_generator import ExplanationGenerator
+from app.generation.explanation_generator import ExplanationGenerator, explanation_payload
 from app.generation.models import ItemType, PeriodType
 from app.generation.presentation import from_result, without_ai
 from app.generation.records import EvidenceRecord, JudgmentRecord, RecordContractError, ThinkingType
@@ -133,7 +134,7 @@ def test_scoreless_m2_preparation_is_explained_without_scores():
     )
     command, report, base, _, ai, generator = setup_case([replace(attempt, answers=(answer,))])
     result = asyncio.run(generator.generate(command, report))
-    # 2026-11-16 local Gemma detail: scores are optional and the mission title is the topic.
+    # Old records have no full question or grading criteria. Scores remain optional.
     assert ai.calls[0][0] == {
         "grade": 5,
         "inputType": "NARRATIVE",
@@ -167,6 +168,38 @@ def test_latest_answer_per_type_max_three_and_existing_report_unchanged():
         assert item.verified and item.evidence[0].answer_version == item.payload["answerVersion"]
     assert set(ai.calls[0][0]) == {"grade", "inputType", "text", "topic", "scores"}
     assert ai.calls[0][1] == 80
+
+
+def test_local_weekly_report_includes_each_activity_without_batch_deadline(monkeypatch):
+    from app.config import get_settings
+    from app.query.schemas import ReportExplanations
+
+    monkeypatch.setenv("REPORT_LOCAL_ALL_ACTIVITY_EXPLANATIONS", "true")
+    monkeypatch.setenv("REPORT_EXPLANATION_BUDGET_SECONDS", "0.01")
+    get_settings.cache_clear()
+
+    class Slow(AI):
+        async def explanation(self, payload, timeout):
+            await asyncio.sleep(0.02)
+            return await super().explanation(payload, timeout)
+
+    try:
+        student = fixed_result()[0].student_id
+        activities = [
+            scored(student, times=[f"2026-10-2{index}T10:00:00+09:00"]) for index in range(4)
+        ]
+        original = activities[0]
+        newer = replace(original.answers[0], id=uuid4(), version=2)
+        activities[0] = replace(original, answers=(*original.answers, newer))
+        command, report, _, _, ai, generator = setup_case(activities, Slow())
+        result = asyncio.run(generator.generate(command, report))
+        document = ReportExplanations.model_validate(from_result(report, result)["explanations"])
+        assert len(document.items) == len(ai.calls) == 4
+        answers = {item.attempt_id: item.answer_id for item in document.items}
+        assert answers.keys() == {activity.id for activity in activities}
+        assert answers[original.id] == newer.id
+    finally:
+        get_settings.cache_clear()
 
 
 @pytest.mark.parametrize("fault", ["inactive", "timeout", RuntimeError("PRIVATE RAW TEXT")])
@@ -417,10 +450,39 @@ def test_system_opt_in_learning_and_ai_wire_contracts():
     student = fixed_result()[0].student_id
     attempt = scored(student)
     wire = wire_attempt(attempt)
+    element = str(uuid4())
+    inconsistent = str(uuid4())
+    question = "지우가 내놓은 까닭을 읽고 합성별명의 의견을 써 보세요."
+    requirement = "다른 학교 사례가 충분한 이유인지 설명함"
+    essay = {
+        "claim": "저는 반대합니다.",
+        "reasons": ["합성별명은 급할 때 교무실에서 전화합니다."],
+        "rebuttal": "다른 학교 친구들도 다 쓴다지만 생각이 달라요.",
+    }
+    wire["mission"]["question"] = question
+    wire["explanationRequirements"] = {element: requirement, inconsistent: "이전 기준"}
+    wire["answers"][0].update(inputType="ESSAY", content={"essay": essay})
     wire["answers"][0]["feedback"]["judgment"] = {
         "result": "PARTIAL",
         "trial": False,
-        "elements": [],
+        "elements": [
+            {
+                "elementId": element,
+                "code": "E1",
+                "label": "근거 평가",
+                "goodThought": False,
+                "satisfied": False,
+                "quote": essay["rebuttal"],
+            },
+            {
+                "elementId": inconsistent,
+                "code": "E2",
+                "label": "예전 판정",
+                "goodThought": False,
+                "satisfied": False,
+                "quote": "다른 버전에서 인용한 문장",
+            },
+        ],
         "modelScores": {"m2": {"scores": SCORES}, "m1": None, "skipped": None},
     }
 
@@ -431,7 +493,24 @@ def test_system_opt_in_learning_and_ai_wire_contracts():
             assert request.url.params["includeModelScores"] == "true"
             return httpx.Response(200, json=page(student, [wire]))
         assert request.url.path == "/internal/report-explanations"
-        assert set(json.loads(request.content)) == {"grade", "inputType", "text", "topic", "scores"}
+        redacted_essay = {**essay, "reasons": ["[학생]은 급할 때 교무실에서 전화합니다."]}
+        assert json.loads(request.content) == {
+            "grade": 5,
+            "inputType": "ESSAY",
+            "text": "\n".join((essay["claim"], *redacted_essay["reasons"], essay["rebuttal"])),
+            "topic": "합성 미션",
+            "question": question.replace("합성별명", "[학생]"),
+            "essay": redacted_essay,
+            "criteria": [
+                {
+                    "label": "근거 평가",
+                    "requirement": requirement,
+                    "satisfied": False,
+                    "required": True,
+                    "quote": essay["rebuttal"],
+                }
+            ],
+        }
         return httpx.Response(
             200,
             json={
@@ -456,16 +535,9 @@ def test_system_opt_in_learning_and_ai_wire_contracts():
             try:
                 records = await client.explanation_attempts(student, PERIOD)
                 assert records[0].answers[0].judgment.model_scores["m2"]["scores"] == SCORES
-                response = await AiClient(http).explanation(
-                    {
-                        "grade": 5,
-                        "inputType": "NARRATIVE",
-                        "text": TEXT,
-                        "topic": "합성 미션",
-                        "scores": SCORES,
-                    },
-                    130,
-                )
+                command = replace(command_for(student), display_name="합성별명")
+                payload = explanation_payload(command, records[0], records[0].answers[0], 5, None)
+                response = await AiClient(http).explanation(payload, 130)
                 assert response.active and response.explanation.quote is None
             finally:
                 reset_user_context(reset)

@@ -1,3 +1,4 @@
+import { openCompletedReport } from '../e2e/support/reports.ts'
 import { test, expect, type Page, type BrowserContext, type Locator } from '@playwright/test'
 import { actor, child, call, reauth, transfer, disposeActors, type Actor } from './api.ts'
 import { useGoogleIdentity as installGoogleIdentity } from '../e2e/support/google.ts'
@@ -89,13 +90,14 @@ test('보호자 비밀번호 복귀·실제 학습·리포트 생성 후 이관�
     await expect(receiverPage.getByRole('row').filter({ hasText: mission }).getByRole('button', { name: '원문 보기' })).toBeVisible()
     await receiverPage.getByRole('dialog').getByRole('button', { name: /닫기$/ }).click()
     await receiverPage.goto('/parent/report')
-    await receiverPage.getByRole('button', { name: '리포트 자세히 보기 일일·주간 리포트' }).click()
-    const kept = receiverPage.locator('article', { has: receiverPage.getByRole('heading', { name: `${start} ~ ${end}` }) })
-    await expect(kept.getByText('생성 완료')).toBeVisible()
-    await kept.getByRole('button', { name: '자세히 보기' }).click()
-    await expect(receiverPage.getByRole('heading', { name: '주간 리포트', exact: true })).toBeVisible()
-    await expect(receiverPage.getByText(`${start} ~ ${end}`, { exact: false })).toBeVisible()
-    await expect(receiverPage.getByText('수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.')).toBeVisible()
+    await openCompletedReport(receiverPage, '주간', `${start} ~ ${end}`)
+    // 무료·원문 공개 주간 리포트는 프리미엄 칸 미리보기(#998): 제목만 보이고 링크는 이관받은 자녀의 비교표로 간다(누르지 않음)
+    const preview = receiverPage.getByRole('region', { name: '프리미엄에서 더 볼 수 있어요', exact: true })
+    await expect(preview).toBeVisible()
+    await expect(preview.getByText('한 주의 기록', { exact: true })).toBeVisible()
+    await expect(preview.getByText('이번 주 저녁 질문', { exact: true })).toBeVisible()
+    await expect(preview.getByRole('link')).toHaveCount(3)
+    for (const link of await preview.getByRole('link').all()) await expect(link).toHaveAttribute('href', `/parent/billing?childId=${id}#plan-compare`)
     await receiverPage.screenshot({ path: 'test-results/transfer-records-preserved.png', fullPage: true })
     expect((await (await call(to, 'get', '/children')).json()).items.some((c: {id: string}) => c.id === id)).toBe(true)
   } finally { await receiverContext.close() }

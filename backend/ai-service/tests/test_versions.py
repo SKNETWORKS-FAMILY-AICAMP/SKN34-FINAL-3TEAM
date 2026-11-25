@@ -24,11 +24,11 @@ def test_versions_returns_active_prompt_versions() -> None:
         "prompts": {
             "judgment": "judge@2",
             "followup": "followup@4",
-            "analysis": "analysis@4",
+            "analysis": "analysis@5",
             "reportNarrative": "report@2",
             "reportTemplate": "analysis-template@1",
             "missionDraft": "mission-draft@1",
-            "reportExplanation": "report-explanation@4",
+            "reportExplanation": "report-explanation@6",
             "themeDraft": "theme-draft@3",
             "memoryExplanation": "memory-explanation@1",
             "memoryQuery": "memory-query@2",

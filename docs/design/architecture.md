@@ -927,7 +927,7 @@ backend/report-service/
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량(큐별 `<큐>.dlq`, #187), 판정·피드백·리포트 처리 지연
 - 표현 분류 판정(#984): learning `ToxicityClient`가 scoring을 부른 판정마다 OTel 카운터 `expression.toxicity.checks`(Prometheus `expression_toxicity_checks_total`)를 올린다. 속성은 `result`(`flagged` 막힘·`review` 통과·경계 구간·`clean` 통과·`unchecked` 검사 안 됨)와 `model`(`name:version`, `unchecked`면 없음)뿐이고 원문·점수·학생 ID는 넣지 않는다(NFR-SEC-05). 꺼짐(`app.toxicity.enabled=false`)·보낼 칸 없음은 세지 않는다. scoring은 OTLP를 보내지 않으므로(4.3) learning에서 센다. observability chart `grafana.dashboards.enabled`(local·prod 켬)가 대시보드 "표현 분류 판정"(모델별 막은 비율·경계 구간 비율, 검사 안 됨 비율, 결과·모델별 건수)을 파일로 provision한다. 모델 교체 시점은 모델별 선이 바뀌는 것으로 보고 활성화 주석은 두지 않는다
 - 경보(#185·#187): Grafana Alerting → 팀 디스코드 웹훅(`aws-alerts`). 수집 장애·작업 적체·DLQ 적재·RabbitMQ 메모리, core 공개 API 영역별(인증·학생 학습·AI 처리·리포트·결제) 5xx 비율과 p95 지연(AI 처리는 SSE 스트림이 섞여 5xx 비율만), 월 LLM 비용 300 USD의 80%와 최근 1시간에 새로 생긴 미산정 호출(#764). 담당은 인프라 1명(동섭)이 전체를 받는다 (P10, P13). 임계값은 초기 기준이며 [경보 검증](../../infrastructure/gitops/operational-alerts/README.md)을 따른다
-- trace 저장(#187): Collector → Tempo(observability chart 선택 구성) → Grafana. core·learning은 Java agent trace, report-worker는 OTel SDK 소비 span. ai·scoring·report-api의 자체 span은 아직 없음
+- trace 저장(#187): Collector → Tempo(observability chart 선택 구성) → Grafana. core·learning은 Java agent trace, report-worker는 OTel SDK 소비 span, ai는 OTel SDK HTTP 서버·LLM 시도·프롬프트 버전 소비 span(#1029). scoring·report-api의 자체 span은 아직 없음
 - Collector는 trace 내보내기 전에 토스 청구·취소 URL의 키 경로와 Google 로그인·재인증 콜백의 쿼리를 제거한다(#900). 경로 형태와 상태 코드 등 진단용 span은 유지한다.
 - 백업: RDS 자동 백업(일 1회) + PITR, 보관 7일, RPO 5분·RTO 4시간 (P12)
 - `traceparent`를 HTTP 헤더와 이벤트 봉투 양쪽에 전파 → 동기·비동기 구간 단일 trace. core outbox는 저장 시점 span을 봉투에 담고 relay가 그 context 아래에서 발행해 AMQP 헤더로 잇는다. report-worker는 봉투 값을 부모로 소비 span을 열고 결과 이벤트에 AMQP 헤더를 붙인다 (#187, kind 검증)
@@ -956,6 +956,25 @@ backend/report-service/
 - 미산정 경보는 `delta(...[1h])`로 최근 1시간에 새로 생긴 미산정만 본다(월초 0 초기화는 음수라 울리지 않음). 예산 300 USD의 80%(240 USD)는 Grafana 규칙 임계값이다. 이벤트 발행 유실(best-effort)은 반영되지 않아 실제 비용보다 작을 수 있다
 - 일일 리포트는 LLM을 쓰지 않고, 일일 리포트 대화는 분석 대화 호출 종류로 예산에 포함된다
 
+#### LLM 호출 지표 (#1028)
+
+- core `LlmCallMetrics`가 `llm.usage.recorded`를 `llm_usage`에 처음 저장한 때(`insertIfAbsent()`가 1)만 OTel 지표를 기록한다. 재전달 중복은 세지 않는다. Java agent가 없으면 no-op이다
+  - 히스토그램 `llm.call.duration`(초, Prometheus `llm_call_duration_seconds_*`): `call_type`·`model`·`prompt_version`(없으면 `none`)·`outcome`(`success`/`error`)·`error_code`(없으면 `none`). 버킷은 0.25~300초로 경보선 12·20초를 가른다
+  - 카운터 `llm.call.tokens`(Prometheus `llm_call_tokens_total`): `call_type`·`model`·`direction`(`input`/`output`). 토큰을 기록하지 않은 호출(영상·클러스터 안 모델 등)은 세지 않는다
+  - 속성에 프롬프트·응답 원문, 학생 ID, 업무 ID를 넣지 않는다(NFR-SEC-05). `prompt_version`은 프롬프트 교체 전후 비교용이며 시계열은 호출 유형당 1~2개 늘어난다
+- 대시보드 "LLM 호출"(`dashboards/llm-calls.json`): 호출 유형별 p50·p95, 오류율, 오류 코드별 건수, 호출 건수, 모델·방향별 토큰
+- prod 경보(초기 기준, 실측 뒤 조정). 호출이 없으면 `noDataState: OK`
+  - `llm-call-errors`: 호출 유형별 오류율 > 5%(15분, 10건 이상)
+  - `llm-call-latency-dialog`: JUDGMENT·FOLLOWUP p95 > 20초, `llm-call-latency-word-help`: WORD_HELP p95 > 12초(15분, 10건 이상). 기능 deadline(`ai-service/app/config.py` 판정·꼬리질문 33초, 단어 도움 20초)의 60%. 나머지 유형은 실측 뒤
+  - `llm-call-rate-limited`: `error_code="LLM_RATE_LIMITED"` 10분 안 1건 이상
+  - 오류율·429 규칙은 `increase()` 대신 `X - (X offset 창 or X * 0)`으로 센다. 새로 생긴 속성 조합(예: 처음 나온 오류 코드)의 첫 값을 `increase()`는 0으로 보기 때문이다
+- 호출 유형별 SLO 기준안(실측 뒤 확정): JUDGMENT 성공률 99%·p95 15초, FOLLOWUP 성공률 99%·p95 15초, WORD_HELP 성공률 99%·p95 8초. 리포트·테마·영상 등 비동기 유형은 실측 뒤 정한다
+- 한계
+  - 이벤트 소비 시점에 기록해 호출보다 수 초 늦다
+  - ai-service의 best-effort 발행에서 빠진 호출은 지표에도 없다
+  - 지연은 provider 호출 한 번의 시간이며 재시도·scoring·후처리를 포함한 기능 전체 지연이 아니다(기능 지연은 [업무별 오류율·지연](#업무별-오류율지연))
+  - 지연 경보의 p95는 `rate()` 기반이라 새 속성 조합의 첫 호출은 빠진다
+
 #### 업무별 오류율·지연
 
 - core·learning Java agent의 `http_server_request_duration_seconds`(`http_route`·`http_response_status_code`). core 공개 API 경로로 인증·학생 학습·AI 처리·리포트·결제를 나눠 5xx 비율과 p95 지연을 본다(AI 처리는 SSE가 섞여 5xx 비율만). 요청이 없으면 `noDataState: OK`, 수집이 사라지면 `app-metrics-missing`. 4xx는 제외
@@ -968,15 +987,20 @@ backend/report-service/
 
 - core: `OutboxWriter`가 저장 시점 활성 span(없으면 요청 헤더 값)을 봉투 `traceparent`에 넣고, `OutboxRelay`가 그 값을 부모 context로 발행해 Java agent가 PRODUCER span·AMQP `traceparent` 헤더를 만든다. core·learning 소비자와 HTTP는 Java agent가 잇는다
 - report-worker: 봉투 `traceparent`를 부모로 CONSUMER span을 열고 하위 HTTP 호출과 결과 이벤트 봉투·AMQP 헤더에 넘긴다. 실패는 `messaging.outcome`(retry/dlq)·`error.type`만 남긴다
+- ai-service(#1029): `app/tracing.py`가 `OTEL_TRACES_EXPORTER=otlp`이면 trace, `OTEL_METRICS_EXPORTER=otlp`이면 지표 SDK를 설치하고 아니면 no-op이다. provider는 전역에 등록하지 않는다. Langfuse v4가 전역 TracerProvider를 쓰므로 섞으면 Langfuse generation이 Tempo로, 앱 span이 Langfuse로 나가기 때문이다(Langfuse 켜짐·꺼짐 동작은 그대로)
+  - HTTP: 순수 ASGI 미들웨어가 들어온 `traceparent`를 부모로 SERVER span을 열고 `http.server.request.duration`(초, Java agent와 같은 이름, 버킷은 판정 마감 33초·리포트 설명 80초가 보이게 120초까지)을 기록한다. 속성은 `http.request.method`·`http.route`(경로 템플릿)·`http.response.status_code`, 5xx면 `error.type`. `/health`는 probe라 뺀다
+  - LLM: `LlmClient` 제공자 요청 1회(재시도는 시도마다)가 CLIENT span `llm <callType>`이다. 속성은 호출 종류·프롬프트 버전·시도 번호·요청/응답 모델·토큰 수·성공 여부·오류 코드만이다. `llm.usage.recorded` 봉투 `traceparent`는 그 시도 span이라 core 사용량 소비가 같은 trace에 붙는다
+  - 이벤트: `model.version.activated` 소비는 봉투 `traceparent`를 부모로 CONSUMER span. 형식 오류도 span은 남기고 `error.type=INVALID_EVENT`만 붙인다
+  - 하위 HTTP(scoring·core·learning) `traceparent`는 현재 span 값이다. 예외 메시지는 원문이 섞일 수 있어 span event로 남기지 않는다(`record_exception=False`). 지표 provider는 `tracing.meter()`·`tracing.instrument()`로 다른 계측(#1030 품질 카운터)도 같이 쓴다
 - 업무 ID·학생 ID·메시지 내용은 span attribute에 넣지 않는다(메시지 ID·큐 이름만, HTTP span은 경로 템플릿만). exporter가 꺼져 있으면 받은 값만 그대로 넘긴다
-- Java agent가 자동으로 남기는 URL 속성 중 토스 청구·취소 경로의 `billingKey`·`paymentKey`(client `url.full`)와 Google 로그인·재인증 콜백의 `code`·`state`(server `url.query`)는 Collector traces pipeline의 `transform/redact`가 저장 전에 가린다(NFR-SEC-05·06, #900)
+- Java agent가 자동으로 남기는 URL 속성 중 토스 청구·취소 경로의 `billingKey`·`paymentKey`(client `url.full`)와 Google 로그인·재인증 콜백의 `code`·`state`(server `url.query`)는 Collector traces pipeline의 `transform/trace_urls`가 저장 전에 가린다(NFR-SEC-05·06, #900)
 - trace 저장소 장애는 지표·경보로 번지지 않게 한다(#784): Collector traces pipeline은 metrics보다 낮은 메모리 제한, exporter 대기열은 바이트 상한·재시도 30초로 묶어 넘치면 버린다
 
 #### 남은 경계
 
 - target 감시 `min(up{job=~...})`는 scrape job 자체가 사라지면 NoData로 보고된다
 - 조직 notification policy를 chart가 소유한다. 서비스별 담당이 정해지면 하위 route로 나눈다
-- ai·scoring·report-api는 자체 span·HTTP 지표가 없다. local values는 Tempo를 켜지 않는다(검증 시 opt-in)
+- scoring·report-api는 자체 span·HTTP 지표가 없다. ai는 #1029로 span·HTTP 지표를 내지만 ai 전용 경보 규칙은 없다(core 공개 API 경보가 AI 처리 묶음을 본다). local values는 Tempo를 켜지 않는다(ai는 지표만, trace는 검증 시 opt-in)
 - 임계값은 초기 기준이다. 실측 기반 조정과 서비스별 담당 라우팅은 후속이다
 - 리포트 설명(SageMaker, #742): 창 시작 뒤 IC가 InService가 아님·0대 호출 실패(`NoCapacityInvocationFailures`)·설명 `NOT_INCLUDED` 비율 경보는 없다. 엔드포인트 지표는 CloudWatch(`AWS/SageMaker`)에 있어 CloudWatch 데이터 소스를 붙일지 report DB 지표만 볼지는 남은 결정이다. 설명이 빠져도 리포트는 `COMPLETED`라 기존 규칙에 잡히지 않는다. 지표는 `weekly_report.verification.explanationState`(#479·#508): 월요일 배치에서 `NO_TARGET`을 뺀 대상의 `NOT_INCLUDED` 비율, 창(일 23:30 ~ 월 02:00) 안 `INCLUDED` 0건 여부. 지표 내보내기·규칙·임계값은 30명 배치 실측 뒤
 - 표현 분류 재학습(#725): `tox-retrain` Job 실패를 같은 경로로 알린다. Job 상태 지표 출처(kube-state-metrics 유무)는 #730에서 정하고, 그 전에는 모델 등록부·`kubectl get jobs`로 확인한다

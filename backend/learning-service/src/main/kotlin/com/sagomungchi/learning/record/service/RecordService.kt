@@ -36,7 +36,13 @@ data class ThinkingTypes(val state: QueryState, val items: List<ThinkingTypeReco
  * 기록 시도: 학생 시도 상세에 생각 열기 열람 시각과 돌아보기 작성 시각을 붙임 (report #51).
  * 목록에서는 답변·열람을 조회 종료일까지로, 돌아보기는 기간 안에 쓴 것만 남김
  */
-data class RecordAttempt(val detail: AttemptDetail, val hintUsages: List<Instant>, val reflectionCreatedAt: Instant?, val scheduledDay: com.sagomungchi.learning.theme.domain.ThemeDay? = null)
+data class RecordAttempt(
+    val detail: AttemptDetail,
+    val hintUsages: List<Instant>,
+    val reflectionCreatedAt: Instant?,
+    val scheduledDay: com.sagomungchi.learning.theme.domain.ThemeDay? = null,
+    val explanationRequirements: Map<UUID, String>? = null,
+)
 
 data class RecordPage(val state: QueryState, val items: List<RecordAttempt>, val page: Int, val size: Int, val totalElements: Int)
 
@@ -129,20 +135,28 @@ class RecordService(
                 reflectedAt,
             )
         }
-        return RecordPage(QueryState.of(attempts.size), if (includeModelScores) withModelScores(items) else items, page, size, attempts.size)
+        return RecordPage(QueryState.of(attempts.size), if (includeModelScores) withExplanationData(items) else items, page, size, attempts.size)
     }
 
     /**
-     * report 집계 입력에만 판정 모델 점수를 붙임 (api-spec 4.1.1, FN-RPT-09 설명 대상 선정, #478).
+     * report 집계 입력에만 판정 모델 점수와 시도에 고정된 기준표의 항목 설명을 붙임 (FN-RPT-09).
      * 판정이 끝난 답변만, M2를 부르지 않았으면 "null". 점수 계산·표시에는 쓰지 않음
      */
-    private fun withModelScores(items: List<RecordAttempt>): List<RecordAttempt> {
+    private fun withExplanationData(items: List<RecordAttempt>): List<RecordAttempt> {
         val scores = repository.findModelScores(items.flatMap { item -> item.detail.answers.map { it.answerId } })
+        val requirementsByVersion = mutableMapOf<Pair<UUID, UUID>, Map<UUID, String>>()
         return items.map { item ->
             val feedbacks = item.detail.feedbacks.mapValues { (answerId, feedback) ->
                 feedback.judgment?.let { feedback.copy(judgment = it.copy(modelScores = scores[answerId] ?: "null")) } ?: feedback
             }
-            item.copy(detail = item.detail.copy(feedbacks = feedbacks))
+            val attempt = item.detail.attempt
+            val key = attempt.missionVersionId to attempt.rubricVersionId
+            val requirements = requirementsByVersion.getOrPut(key) {
+                missionService.rubric(key.first, key.second).elements.mapNotNull { element ->
+                    element.description?.takeIf { it.isNotBlank() }?.let { element.id to it }
+                }.toMap()
+            }
+            item.copy(detail = item.detail.copy(feedbacks = feedbacks), explanationRequirements = requirements)
         }
     }
 

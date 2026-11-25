@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.config import Settings
 from app.llm.base import LlmUnavailable, UnconfiguredLlm
-from app.llm.report import SageMakerReportLlm, create_report_llm
+from app.llm.report import PlainTextOutput, SageMakerReportLlm, create_report_llm
 
 ENDPOINT = "synthetic-endpoint"
 COMPONENT = "synthetic-endpoint-explain"
@@ -232,3 +232,22 @@ def test_repetition_penalty_is_sent_only_when_requested(penalty):
     body = json.loads(runtime.calls[0]["Body"])
     assert body.get("repetition_penalty") == penalty
     assert ("repetition_penalty" in body) is (penalty is not None)
+
+
+def test_report_prose_uses_one_user_message_without_json_schema():
+    llm, runtime = make(completion("상세 분석\n자녀가 쓴 답안을 설명해요."))
+    result = asyncio.run(
+        llm.generate(
+            system="",
+            user="학생 글을 설명해 주세요.",
+            output=PlainTextOutput,
+            call_type="REPORT_EXPLANATION",
+            prompt_version="report-explanation@6",
+            max_tokens=1536,
+        )
+    )
+    payload = json.loads(runtime.calls[0]["Body"])
+    assert "response_format" not in payload
+    assert payload["messages"] == [{"role": "user", "content": "학생 글을 설명해 주세요."}]
+    assert payload["max_tokens"] == 1536
+    assert result.data.text == "상세 분석\n자녀가 쓴 답안을 설명해요."

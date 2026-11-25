@@ -4,7 +4,7 @@ import { makeWeekly, makeDaily } from '../src/mocks/fixtures/parent.ts'
 import { privateReport } from '../src/mocks/fixtures/sharing.ts'
 import type { Child } from '../src/domain/classroom.ts'
 import { setMockSubscription } from '../src/mocks/fixtures/payments.ts'
-import { explanationBlocks, explanationSections } from '../src/domain/reportExplanation.ts'
+import { explanationBlocks, explanationSections, personalizeExplanation } from '../src/domain/reportExplanation.ts'
 import { generatedReportDetails, reports } from '../src/mocks/fixtures/parent.ts'
 import { seedStructuredReportDemo, structuredReportChild, structuredReportPeriod } from '../src/mocks/fixtures/structuredReportDemo.ts'
 import { fixtureStore } from '../src/mocks/fixtures/student.ts'
@@ -80,4 +80,11 @@ test('Gemma 시연: 결과 누락·원문 변경에는 합성 설명으로 대�
     for (const id of generatedReportDetails.keys()) if (id.startsWith('structured-report-demo-')) generatedReportDetails.delete(id)
     reports.delete(`${structuredReportChild.id}-${structuredReportPeriod.from}`)
   }
+})
+
+test('젬마 본문에 학생 이름과 받침에 맞는 조사를 쓰고 인용은 유지한다', () => {
+  const text = '자녀는 근거를 썼고 자녀의 글에 “자녀가 쓴 원문”이 남아 있어요.'
+  assert.equal(personalizeExplanation(text, '하늘'), '하늘은 근거를 썼고 하늘의 글에 “자녀가 쓴 원문”이 남아 있어요.')
+  assert.equal(personalizeExplanation(text, '바다'), '바다는 근거를 썼고 바다의 글에 “자녀가 쓴 원문”이 남아 있어요.')
+  assert.equal(personalizeExplanation('자녀는 다음 예를 들었어요.', ' '), '자녀는 다음 예를 들었어요.')
 })

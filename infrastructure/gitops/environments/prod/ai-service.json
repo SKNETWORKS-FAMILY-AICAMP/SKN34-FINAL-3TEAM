@@ -111,6 +111,10 @@
       "value": "false"
     },
     {
+      "name": "OTEL_METRICS_EXPORTER",
+      "value": "otlp"
+    },
+    {
       "name": "M2_CROSS_CHECK_ENABLED",
       "value": "true"
     },
@@ -239,6 +243,7 @@
         "port": 8001
       }
     ],
+    "egressToCollector": true,
     "egressToPlatform": [
       {
         "name": "rabbitmq",
@@ -289,5 +294,8 @@
   "service": {
     "port": 8000,
     "targetPort": 8000
+  },
+  "tracing": {
+    "enabled": true
   }
 }

@@ -1,10 +1,5 @@
 /* Daily report only: the approved reference's 1+2, 3, 2+2 card layout. */
-#class-journal .ws-parent .parent-insights .report-explorer .report-detail[data-period-type="DAILY"] { display:block; }
-#class-journal .ws-parent .parent-insights .report-explorer .report-detail[data-period-type="DAILY"] > .report-sections { position:static; flex-direction:row; padding:6px; margin:20px 0; background:#fff; border:1px solid #e3e8ed; border-radius:10px; overflow-x:auto; }
-#class-journal .ws-parent .report-explorer .report-detail[data-period-type="DAILY"] > .report-sections button { padding:10px 18px; color:#5a6673; white-space:nowrap; }
-#class-journal .ws-parent .report-explorer .report-detail[data-period-type="DAILY"] > .report-sections button[aria-pressed="true"] { background:#edf4ef; color:#245f3d; }
-#class-journal .ws-parent .report-explorer .report-detail[data-period-type="DAILY"] > .report-section { padding:22px; background:#f6f8fa; border-color:#e5eaef; }
-#class-journal .ws-parent .report-detail[data-period-type="DAILY"] .report-chapter-title { margin:0 0 18px; font-size:18px; }
+#class-journal .ws-parent .daily-report-overview { min-width:0; padding:22px; background:#f6f8fa; border:1px solid #e5eaef; border-radius:12px; }
 #class-journal .ws-parent .report-detail[data-period-type="DAILY"] .report-inclusion { margin:18px 0 0; color:#52616e; font-size:12px; }
 #class-journal .ws-parent .daily-summary { --daily-ink:#243342; --daily-muted:#586776; color:var(--daily-ink); container-type:inline-size; font-variant-numeric:tabular-nums; }
 #class-journal .ws-parent .daily-summary * { box-sizing:border-box; }
@@ -80,8 +75,7 @@
   #class-journal .ws-parent .daily-judgments dl > div { flex-basis:80px; }
 }
 @media(max-width:640px) {
-  #class-journal .ws-parent .report-explorer .report-detail[data-period-type="DAILY"] > .report-section { padding:12px; }
-  #class-journal .ws-parent .report-explorer .report-detail[data-period-type="DAILY"] > .report-sections button { padding:10px; font-size:12px; }
+  #class-journal .ws-parent .daily-report-overview { padding:12px; }
   #class-journal .ws-parent .daily-summary .daily-summary-card { padding:16px; }
   #class-journal .ws-parent .daily-summary .daily-stat { padding:14px 16px; }
   #class-journal .ws-parent .daily-summary h4 { font-size:12px; gap:6px; }

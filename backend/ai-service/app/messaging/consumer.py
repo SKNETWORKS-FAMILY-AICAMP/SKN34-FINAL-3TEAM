@@ -2,12 +2,15 @@
 
 import asyncio
 import contextlib
+import json
 import logging
 from uuid import UUID
 
 from aio_pika.abc import AbstractIncomingMessage
+from opentelemetry.trace import SpanKind, StatusCode
 from pydantic import AwareDatetime, ConfigDict, Field, field_validator
 
+from app import tracing
 from app.messaging.connection import AmqpConnection
 from app.messaging.envelope import EventEnvelope
 from app.prompt_versions.models import ActiveVersionItem
@@ -100,16 +103,31 @@ class ModelVersionConsumer:
                     await channel.close()
 
     async def receive(self, message: AbstractIncomingMessage) -> None:
-        try:
-            envelope = ActivationEnvelope.model_validate_json(message.body)
-            item = ActiveVersionItem.model_validate(
-                envelope.data.model_dump(by_alias=True, exclude={"previous_version_id"})
-            )
-            self._sync.offer(item)
-        except (ValueError, TypeError):
-            # 학생 원문·URI·파싱 예외 본문은 로그에 넣지 않는다. 형식 오류는 ACK 후 종료.
-            logger.warning("Invalid prompt activation event ignored")
-        await message.ack()
+        # 봉투 traceparent를 부모로 소비 span (아키텍처 4.6). 속성은 이벤트 종류·결과만
+        with tracing.tracer().start_as_current_span(
+            "model.version.activated process",
+            context=tracing.parent_context(_traceparent(message.body)),
+            kind=SpanKind.CONSUMER,
+            attributes={
+                "messaging.system": "rabbitmq",
+                "messaging.operation.type": "process",
+                "messaging.destination.name": "events.topic",
+            },
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                envelope = ActivationEnvelope.model_validate_json(message.body)
+                item = ActiveVersionItem.model_validate(
+                    envelope.data.model_dump(by_alias=True, exclude={"previous_version_id"})
+                )
+                self._sync.offer(item)
+            except (ValueError, TypeError):
+                # 학생 원문·URI·파싱 예외 본문은 로그에 넣지 않는다. 형식 오류는 ACK 후 종료.
+                logger.warning("Invalid prompt activation event ignored")
+                span.set_attribute("error.type", "INVALID_EVENT")
+                span.set_status(StatusCode.ERROR)
+            await message.ack()
 
     async def close(self) -> None:
         self._bound = False
@@ -119,3 +137,12 @@ class ModelVersionConsumer:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
+
+
+def _traceparent(body: bytes) -> str | None:
+    """형식 검증 전 봉투에서 traceparent만 읽음. 형식이 틀려도 소비 span은 이어 준다."""
+    try:
+        value = json.loads(body).get("traceparent")
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return value if isinstance(value, str) else None

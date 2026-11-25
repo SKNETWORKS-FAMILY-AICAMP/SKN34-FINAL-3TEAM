@@ -23,6 +23,7 @@ import java.time.temporal.ChronoUnit
 class LlmUsageService(
     private val repository: LlmUsageRepository,
     private val properties: AppProperties,
+    private val callMetrics: LlmCallMetrics,
 ) {
     fun summarize(from: LocalDate, to: LocalDate, callType: CallType?): List<UsageSummary> {
         if (from.year !in 1..9999 || to.year !in 1..9999 || from > to ||
@@ -41,10 +42,10 @@ class LlmUsageService(
         return repository.monthToDate(monthStart.toOffsetDateTime(), now.atOffset(ZoneOffset.UTC))
     }
 
-    /** 같은 이벤트 재전달은 event_id UK로 무시 */
+    /** 같은 이벤트 재전달은 event_id UK로 무시하고, 처음 저장한 때만 호출 지표를 남긴다(#1028) */
     fun record(envelope: EventEnvelope<LlmUsageRecorded>) {
         val data = envelope.data
-        repository.insertIfAbsent(
+        val inserted = repository.insertIfAbsent(
             LlmUsage(
                 id = UUID.randomUUID(),
                 eventId = UUID.fromString(envelope.id),
@@ -62,6 +63,7 @@ class LlmUsageService(
                 occurredAt = data.occurredAt,
             ),
         )
+        if (inserted == 1) callMetrics.record(data)
     }
 
     /**

@@ -170,7 +170,8 @@ jobs:
       IMAGES: ${{ needs.publish.outputs.images }}
       MIGRATIONS: ${{ needs.publish.outputs.migrations }}
     steps:
-      # images 파일은 지금 main HEAD 기준으로 고친다(다른 digest PR이 먼저 병합됐을 수 있음)
+      # images 파일은 지금 main HEAD 기준으로 고친다(다른 digest PR이 먼저 병합됐을 수 있음).
+      # 전체 이력은 PR 본문 revert 판단 자료가 이전 migration revision 커밋과 비교하는 데도 쓴다(#1013)
       - uses: actions/checkout@v7
         with:
           ref: main

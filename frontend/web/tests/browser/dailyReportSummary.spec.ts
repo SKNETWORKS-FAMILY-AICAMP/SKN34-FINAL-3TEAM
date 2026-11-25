@@ -9,8 +9,8 @@ async function openDaily(page: Page, mode: 'normal' | 'private' | 'empty' = 'nor
     saveSharing('demo-seoyun', sharing)
   }, mode !== 'private')
   await page.goto('/parent/report?childId=demo-seoyun')
-  await page.getByRole('button', { name: '리포트 자세히 보기', exact: false }).click()
-  await page.getByLabel('리포트 종류').selectOption('DAILY')
+  await page.locator('.report-period-picker > summary').click()
+  await page.getByRole('button', { name: '일일', exact: true }).click()
   await page.evaluate(async mode => {
     const { reports } = await import('/src/mocks/fixtures/parent.ts' as string)
     for (const versions of reports.values()) for (const report of versions) if (report.periodType === 'DAILY') {
@@ -25,7 +25,7 @@ async function openDaily(page: Page, mode: 'normal' | 'private' | 'empty' = 'nor
       }))
     }
   }, mode)
-  await page.locator('.parent-report-grid').getByRole('button', { name: '자세히 보기', exact: true }).first().click()
+  await page.getByRole('list', { name: '리포트 일자' }).getByRole('button').first().click()
   const summary = page.getByLabel('일일 리포트 요약', { exact: true })
   await expect(summary).toBeVisible()
   return summary
@@ -41,7 +41,7 @@ test('daily summary shows report facts and opens matching activities @responsive
   await expect(summary.locator('.daily-judgments')).toContainText('2개다시 생각해 보기')
   await expect(summary.getByRole('region', { name: '되묻기에 대한 답변 기록', exact: true })).toContainText('0개')
   await expect(summary.locator('.daily-difficulty-legend')).toContainText('쉬웠어요8개보통6개어려웠어요1개기록 없음0개')
-  await page.getByRole('region', { name: '리포트 내용', exact: true }).evaluate(el => { el.scrollTop = 0 })
+  await summary.scrollIntoViewIfNeeded()
   await page.screenshot({ path: info.outputPath('daily-summary.png') })
   await summary.locator('.daily-difficulty').scrollIntoViewIfNeeded()
   await page.screenshot({ path: info.outputPath('daily-summary-bottom.png') })
@@ -52,12 +52,10 @@ test('daily summary shows report facts and opens matching activities @responsive
   await expect(selected).toHaveAttribute('open', '')
   await expect(selected.locator('summary')).toBeFocused()
   await expect(selected).toContainText('서로의 의견을 듣고 근거를 비교해요.')
-  await page.getByRole('button', { name: '요약', exact: true }).click()
   await summary.getByRole('region', { name: '오늘 확인된 생각 요소', exact: true }).getByRole('button', { name: /^근거/ }).click()
   for (const index of [0, 6, 12]) await expect(page.locator(`[data-daily-problem-index="${index}"]`)).toHaveAttribute('open', '')
-  await page.getByRole('button', { name: '요약', exact: true }).click()
   await summary.getByRole('button', { name: '전체 15개 보기', exact: true }).click()
-  await expect(page.locator('.report-section:visible')).toContainText('그날 푼 문제')
+  await expect(page.locator('[data-daily-problem-index="0"] > summary')).toBeFocused()
   expect(errors).toEqual([])
 })
 
