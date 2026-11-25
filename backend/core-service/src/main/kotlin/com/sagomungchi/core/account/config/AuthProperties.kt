@@ -10,7 +10,7 @@ data class AuthProperties(
     val webOrigin: String = "http://localhost:5173",
     val cookieSecure: Boolean = true,
     val accessTtl: Duration = Duration.ofMinutes(15),
-    val studentAccessTtl: Duration = Duration.ofMinutes(15),
+    val studentAccessTtl: Duration = Duration.ofMinutes(30),
     val refreshTtl: Duration = Duration.ofDays(7),
     val reauthTtl: Duration = Duration.ofMinutes(5),
     val googleClientId: String = "",

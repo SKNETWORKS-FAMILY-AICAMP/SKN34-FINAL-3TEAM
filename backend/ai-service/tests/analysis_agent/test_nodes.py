@@ -52,7 +52,7 @@ def run(
 def state(intent: str, empty: bool = False, **extra) -> dict:
     return {
         "request": REQUEST,
-        "prompt_version": "analysis@4",
+        "prompt_version": "analysis@5",
         "intent": intent,
         "computation": compute(intent, records(empty), SCOPE),
         **extra,
@@ -90,6 +90,16 @@ def test_classify_scope_issue_asks_clarification(issue) -> None:
         "childId": STUDENT,
         **PERIOD,
     }
+
+
+def test_difficulty_question_uses_reflections_without_overriding_scope() -> None:
+    request = REQUEST.model_copy(update={"question": "어떤 걸 어려워했어?"})
+    llm = FakeLlm(Classification(intent="OTHER", scope_issue="NONE"))
+    result, _ = run(understand.classify, {"request": request}, llm)
+    assert result["intent"] == "REFLECTIONS"
+    llm = FakeLlm(Classification(intent="OTHER", scope_issue="OTHER_CHILD"))
+    result, _ = run(understand.classify, {"request": request}, llm)
+    assert result["clarification"].reason == "OTHER_CHILD"
 
 
 def test_pinned_conversation_guides_other_days_to_new_conversation() -> None:
@@ -224,6 +234,31 @@ def test_compute_marks_insufficient_records() -> None:
     assert written == [status("수치를 계산하는 중")]
 
 
+def test_compute_allows_numbers_in_weekly_report_explanations() -> None:
+    """#1012: 설명을 근거로 한 답변의 숫자(설명 글·미션 제목 속)는 대조를 통과해야 함."""
+    request = REQUEST.model_copy(
+        update={
+            "explanations": AnalysisRequest.model_validate(
+                {
+                    "conversationId": "c-1",
+                    "question": "보완할 점이 뭐야?",
+                    "scope": {"studentId": STUDENT, **PERIOD},
+                    "explanations": [
+                        {
+                            "missionTitle": "5학년 전기 아끼기",
+                            "text": "까닭 4개를 들었고 예시는 37개였어요.",
+                        }
+                    ],
+                }
+            ).explanations
+        }
+    )
+    update, _ = run(retrieve.compute, {"request": request, "intent": "COUNT", "records": records()})
+    assert {"5", "4", "37"} <= update["computation"].extra_numbers
+    plain, _ = run(retrieve.compute, {"request": REQUEST, "intent": "COUNT", "records": records()})
+    assert "37" not in plain["computation"].extra_numbers  # 설명이 없으면 허용 목록 그대로
+
+
 # --- respond.answer·check ----------------------------------------------------
 
 
@@ -258,7 +293,7 @@ def test_check_confirms_verified_draft() -> None:
     assert result.fallback is None
     assert [e.answer_id for e in result.evidence] == ["a-2"]
     assert result.versions.model == "fake-model"
-    assert result.versions.prompt == "analysis@4"
+    assert result.versions.prompt == "analysis@5"
     assert written == [status("숫자와 인용을 기록과 맞춰 보는 중")]
 
 

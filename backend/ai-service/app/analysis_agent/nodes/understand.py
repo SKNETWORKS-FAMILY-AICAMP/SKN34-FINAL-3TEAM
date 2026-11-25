@@ -4,6 +4,8 @@
 LLM 장애면 분류 없이 기본 수치(COUNT)만 계산해 규칙 응답 모드로 (P16).
 """
 
+import re
+
 from langgraph.runtime import Runtime
 
 from app.analysis_agent import prompts
@@ -21,6 +23,7 @@ CLARIFY_MESSAGES = {
     "UNCLEAR": "어느 자녀의 어떤 기간 기록을 볼지 확인이 필요해요. 자녀와 기간을 골라 주세요.",
 }
 # 일일 리포트 고정 대화(#392)는 범위를 바꾸지 않고 다른 날 질문을 새 대화로 안내
+DIFFICULTY_QUESTION = re.compile(r"어려워했|어려웠|어렵다고|어려운 점|힘들었|막혔")
 PINNED_PERIOD_MESSAGE = (
     "이 대화는 {day} 일일 리포트로 고정돼 있어요. 다른 날은 새 대화에서 물어봐 주세요."
 )
@@ -43,6 +46,12 @@ async def classify(state: AnalysisState, runtime: Runtime[AgentContext]) -> Anal
         return {"intent": "COUNT", "fallback_reason": "AI_UNAVAILABLE"}
     update: AnalysisState = {"intent": result.data.intent, "model": result.model}
     issue = result.data.scope_issue
+    if (
+        issue == "NONE"
+        and result.data.intent in ("OTHER", "CHILD_THOUGHTS", "REFLECTIONS")
+        and DIFFICULTY_QUESTION.search(request.question)
+    ):
+        update["intent"] = "REFLECTIONS"
     if issue != "NONE":
         scope = request.scope
         update["clarification"] = Clarification(

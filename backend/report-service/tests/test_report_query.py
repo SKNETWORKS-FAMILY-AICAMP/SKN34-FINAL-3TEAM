@@ -208,15 +208,16 @@ def test_reflection_response_labels_and_null_text_preserve_stored_codes(
         assert session.scalar(select(report_item.c.payload).where(*condition)) == payload
 
 
-def test_latest_is_selected_before_status_filter(api, report_factory, report_student_id):
-    seed_report(report_factory, report_student_id)
+def test_completed_list_keeps_previous_published_revision(api, report_factory, report_student_id):
+    published_id = seed_report(report_factory, report_student_id)
     seed_report(report_factory, report_student_id, failure=True)
     client, _, _ = api
     result = client.get(
         f"/internal/reports?studentId={report_student_id}&status=COMPLETED",
         headers=headers(report_student_id),
     )
-    assert result.status_code == 200 and result.json()["totalElements"] == 0
+    assert result.status_code == 200 and result.json()["totalElements"] == 1
+    assert result.json()["items"][0]["reportId"] == str(published_id)
     result = client.get(
         f"/internal/reports?studentId={report_student_id}", headers=headers(report_student_id)
     )

@@ -57,6 +57,13 @@ trace를 메모리에 쌓아 프로세스 전체 기준인 `memory_limiter`(192M
 앱 쪽은 app-service chart의 `tracing.enabled`와 `networkPolicy.egressToCollector`를 켠다. Langfuse 경로(`collector.traces`)와 함께 켜면 두 곳에 모두 보낸다.
 Tempo 3.x는 설정 형식 차이를 확인하지 않아 쓰지 않았다.
 
+## 대시보드 (#984)
+
+`grafana.dashboards.enabled`(기본 false, local·prod true)를 켜면 chart의 `dashboards/*.json`을 ConfigMap `grafana-dashboards`로 만들어
+Grafana 파일 provider로 provision한다. 지금은 표현 분류 판정 대시보드(uid `expression-toxicity`, learning `expression_toxicity_checks_total`) 하나다.
+대시보드는 UI 수정이 막혀 있고 파일에서 고친다. provider가 60초마다 다시 읽어 Pod를 다시 만들지 않는다.
+설명은 [learning 보고서 16절](../../../../docs/report/learning.md) "운영 지표 구현"을 따른다.
+
 ## 기존 로컬 구성과 검증 이력
 
 Collector는 metrics와 traces(Tempo, 위 절)를 받는다. 아래는 처음 local 구성 때의 기록이다.

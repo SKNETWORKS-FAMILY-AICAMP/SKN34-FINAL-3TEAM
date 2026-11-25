@@ -1,5 +1,7 @@
 # ml/tox (답변 표현 분류 모델) 린트·단위 테스트 (이슈 #690, ci-ml-m1.yml과 같은 방식)
 # torch·transformers(수 GB)는 설치하지 않음(train.py는 학습할 때만 불러옴). 공개 데이터 없이 가짜 파일만 사용
+# image job(#985): 재학습 이미지(약 1.89GB)가 빌드되는지만 본다. push·레지스트리 로그인 없음.
+# 운영 ECR 게시는 cd-release가 계획의 jobs에 tox-retrain이 있을 때만 한다(infrastructure/cd/README.md)
 name: ci-ml-tox
 
 on:
@@ -7,10 +9,14 @@ on:
     branches: [develop, main]
     paths:
       - "ml/tox/**"
+      # 재학습 이미지(ml/tox/Dockerfile)가 복사하는 루트 스크립트
+      - "scripts/prepare_model_upload.py"
       - ".github/workflows/ci-ml-tox.yml"
   pull_request:
     paths:
       - "ml/tox/**"
+      # 재학습 이미지(ml/tox/Dockerfile)가 복사하는 루트 스크립트
+      - "scripts/prepare_model_upload.py"
       - ".github/workflows/ci-ml-tox.yml"
 
 jobs:
@@ -27,3 +33,15 @@ jobs:
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
       - run: uv run --no-sync pytest -q
+
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      # 빌드 기준은 저장소 루트(Dockerfile이 scripts/prepare_model_upload.py를 복사). 태그는 로컬 확인용
+      - name: 재학습 이미지 빌드 확인 (push 없음)
+        run: docker build -f ml/tox/Dockerfile -t tox-retrain:ci-${GITHUB_SHA::12} .
+      - name: 이미지 크기 기록
+        run: docker image ls tox-retrain --format '{{.Repository}}:{{.Tag}} {{.Size}}' >> "$GITHUB_STEP_SUMMARY"

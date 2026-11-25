@@ -1,0 +1,6 @@
+{
+  "image": {
+    "repository": "347161580747.dkr.ecr.ap-northeast-2.amazonaws.com/sagomungchi/tox-retrain",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

@@ -1472,15 +1472,18 @@ body {
 #class-journal .cj-modal-scroll-marker {
   position: absolute;
   top: 4px;
-  inset-inline-end: 4px;
-  width: 4px;
+  inset-inline-end: 7px;
+  width: 5px;
   border-radius: 100px;
   background: #596761ad;
   pointer-events: none;
+  touch-action: none;
   opacity: 0;
   transition: opacity 120ms ease;
 }
-#class-journal .cj-modal-scroll-marker[data-visible] { opacity: 1; }
+#class-journal .cj-modal-scroll-marker[data-visible] { opacity: 1; pointer-events: auto; cursor: grab; }
+#class-journal .cj-modal-scroll-marker:active { cursor: grabbing; }
+#class-journal .cj-modal-scroll-marker::before { content: ''; position: absolute; inset: 0 -4px; }
 @media (prefers-reduced-motion: reduce) {
   #class-journal .cj-modal-scroll-marker { transition: none; }
 }

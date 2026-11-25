@@ -24,6 +24,7 @@ from botocore.exceptions import (
     ReadTimeoutError,
 )
 from fastapi import Request
+from pydantic import BaseModel
 
 from app.config import Settings
 from app.llm.base import (
@@ -42,6 +43,12 @@ logger = logging.getLogger(__name__)
 
 # 사본 0일 때의 ValidationError 문구(#746 실측: "Inference Component has no capacity ...")
 NO_CAPACITY = "no capacity"
+
+
+class PlainTextOutput(BaseModel):
+    """Unstructured output for the report LoRA's heading-based training format."""
+
+    text: str
 
 
 class SageMakerReportLlm(LlmClient):
@@ -73,11 +80,18 @@ class SageMakerReportLlm(LlmClient):
         )
 
     async def _request(self, request: LlmRequest[T]) -> ProviderResponse[T]:
-        schema = strict_schema(request.output)
         body = {
             # vLLM 응답 이름용. LoRA 선택은 InferenceComponentName이 한다.
             "model": self._component,
-            "messages": [
+            "messages": [{"role": "user", "content": request.user}],
+            "max_tokens": request.max_tokens,
+            "temperature": 0,
+            "stream": False,
+        }
+        if request.output is not PlainTextOutput:
+            schema = strict_schema(request.output)
+            body["messages"].insert(
+                0,
                 {
                     "role": "system",
                     "content": request.system
@@ -85,20 +99,17 @@ class SageMakerReportLlm(LlmClient):
                     + " 설명이나 코드 블록은 쓰지 마세요.\n"
                     + json.dumps(schema, ensure_ascii=False),
                 },
-                {"role": "user", "content": request.user},
-            ],
-            "max_tokens": request.max_tokens,
-            "temperature": 0,
-            "stream": False,
-            "response_format": {
+            )
+            body["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": request.output.__name__,
                     "schema": schema,
                     "strict": True,
                 },
-            },
-        }
+            }
+        elif request.system:
+            body["messages"].insert(0, {"role": "system", "content": request.system})
         if request.repetition_penalty is not None:
             # vLLM 확장 파라미터. 리포트 상세 설명 재생성에서만 켬
             body["repetition_penalty"] = request.repetition_penalty
@@ -170,7 +181,12 @@ class SageMakerReportLlm(LlmClient):
         text = message.get("content")
         if not isinstance(text, str) or not text.strip():
             raise LlmError("LLM_INVALID_OUTPUT", retryable=True, **tokens)
-        return ProviderResponse(_validate(request, text, tokens), **tokens)
+        data = (
+            request.output.model_validate({"text": text})
+            if request.output is PlainTextOutput
+            else _validate(request, text, tokens)
+        )
+        return ProviderResponse(data, **tokens)
 
 
 def create_report_llm(settings: Settings, recorder: UsageRecorder) -> LlmClient:

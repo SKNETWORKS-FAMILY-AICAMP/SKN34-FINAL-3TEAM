@@ -79,7 +79,8 @@
     "sagomungchi/ai-service",
     "sagomungchi/scoring-service",
     "sagomungchi/report-service",
-    "sagomungchi/sagemaker-explanation"
+    "sagomungchi/sagemaker-explanation",
+    "sagomungchi/tox-retrain"
   ],
   "secrets": [
     "sagomungchi/demo/app/ai",

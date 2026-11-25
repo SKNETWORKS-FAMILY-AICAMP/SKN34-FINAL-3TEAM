@@ -1,3 +1,4 @@
+import { openCompletedReport } from './support/reports.ts'
 import { expect, test, type BrowserContext } from '@playwright/test'
 import { newParent, useGoogleIdentity, type GoogleIdentity } from './support/google.ts'
 import { onboardParent } from './support/onboarding.ts'
@@ -50,17 +51,13 @@ test.describe.serial('학생 미션 → 학부모 대시보드·리포트', () =
     const [from, to] = queueWeeklyReport(nickname).split(' ')
     await page.getByRole('link', { name: '리포트·AI 챗봇', exact: true }).click()
     await page.waitForURL('**/parent/report**')
-    const card = page.locator('article', { has: page.getByRole('heading', { name: `${from} ~ ${to}` }) })
-    await expect(async () => {
-      await page.reload()
-      await page.getByRole('button',{name:'리포트 자세히 보기',exact:false}).click()
-      await expect(card.getByText('생성 완료')).toBeVisible({ timeout: 5_000 })
-    }).toPass({ timeout: 120_000, intervals: [3_000] })
-
-    await card.getByRole('button', { name: '자세히 보기' }).click()
-    await expect(page.getByRole('heading', { name: '주간 리포트', exact:true })).toBeVisible()
-    // 일요일에는 질문할 기간(최근 7일)도 같은 날짜라 리포트 머리글 안에서만 찾는다.
-    await expect(page.locator('header', { has: page.getByRole('heading', { name: '주간 리포트', exact: true }) }).getByText(`${from} ~ ${to}`, { exact: false })).toBeVisible()
-    await expect(page.getByText('수치 리포트입니다. 이 자녀의 플랜에는 서술 요약이 포함되지 않습니다.')).toBeVisible()
+    await openCompletedReport(page, '주간', `${from} ~ ${to}`)
+    // 무료·원문 공개 주간 리포트는 프리미엄 칸 미리보기(#998): 제목만 보이고 링크는 이용권·결제 비교표로 간다(누르지 않음)
+    const preview = page.getByRole('region', { name: '프리미엄에서 더 볼 수 있어요', exact: true })
+    await expect(preview).toBeVisible()
+    await expect(preview.getByText('한 주의 기록', { exact: true })).toBeVisible()
+    await expect(preview.getByText('이번 주 저녁 질문', { exact: true })).toBeVisible()
+    await expect(preview.getByRole('link')).toHaveCount(3)
+    for (const link of await preview.getByRole('link').all()) await expect(link).toHaveAttribute('href', /^\/parent\/billing\?childId=[^&#]+#plan-compare$/)
   })
 })

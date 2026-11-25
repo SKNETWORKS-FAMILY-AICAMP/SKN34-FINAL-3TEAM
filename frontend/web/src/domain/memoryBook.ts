@@ -65,9 +65,16 @@ export function readMemoryBookDownload(value: unknown, now = Date.now()): Memory
   return { url, expiresAt }
 }
 
-/** 발급 화면의 회차(자녀의 보유 액자)와 그 회차의 가장 최근 그림책 */
+/** 책장의 회차(자녀의 보유 액자)와 그 회차의 가장 최근 그림책 */
 export type MemoryBookRoundItem = { themeId: string; weekStart: string; title: string; imageUrl: string | null; book: MemoryBook | null }
-export type MemoryBookRoundPage = { items: MemoryBookRoundItem[]; page: number; size: number; totalElements: number }
+/**
+ * 책장 회차 목록(api-spec 2.5.1, 설계 #997·구현 core #999). 무료는 서버가 끝난 최근 4주만 보내고 숨긴 회차 수를 `lockedCount`로 준다.
+ * `canCreate`는 발급 가능(유료 판정) 여부. #999 전 서버는 두 칸을 보내지 않으므로 없으면 숨긴 회차 0, 발급 여부 모름(null: 지금처럼 발급 단추를 두고 서버가 거절)으로 읽는다.
+ */
+export type MemoryBookRoundPage = {
+  items: MemoryBookRoundItem[]; page: number; size: number; totalElements: number
+  lockedCount: number; canCreate: boolean | null
+}
 
 export function readMemoryBookRoundPage(value: unknown): MemoryBookRoundPage {
   const v = record(value)
@@ -84,7 +91,21 @@ export function readMemoryBookRoundPage(value: unknown): MemoryBookRoundPage {
       book: r.book == null ? null : readMemoryBook(r.book),
     }
   })
-  return { items, page: count(v.page), size: count(v.size), totalElements: count(v.totalElements) }
+  const canCreate = v.canCreate == null ? null : typeof v.canCreate === 'boolean' ? v.canCreate : contract()
+  return {
+    items, page: count(v.page), size: count(v.size), totalElements: count(v.totalElements),
+    lockedCount: v.lockedCount == null ? 0 : count(v.lockedCount), canCreate,
+  }
+}
+
+/** 무료 책장인지: 서버가 발급 불가(`canCreate === false`)라고 알려 줄 때만. 모르면(null) 잠그지 않는다 */
+export const memoryBookShelfLocked = (page: Pick<MemoryBookRoundPage, 'canCreate'> | undefined) => page?.canCreate === false
+
+/** 무료 책장 잠금 안내 문구. 숨긴 회차가 있으면 그 수를 말한다 */
+export function memoryBookLockedNotice(lockedCount: number): string {
+  return lockedCount > 0
+    ? `지난 그림책 ${lockedCount}권은 프리미엄에서 볼 수 있어요.`
+    : '그림책 만들기와 지난 그림책 모아 보기는 프리미엄에서 할 수 있어요.'
 }
 
 /** 만드는 중이면 몇 초마다 다시 본다 */

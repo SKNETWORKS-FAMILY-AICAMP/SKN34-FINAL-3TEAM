@@ -59,6 +59,8 @@ class AdminPasswordLoginIntegrationTest : IntegrationTestSupport() {
         assertTrue(response.getHeaders("Set-Cookie").any { it.startsWith("${AuthCookies.REFRESH}=") && it.contains("HttpOnly") && it.contains("SameSite=Strict") })
         val issued = auth.adminLogin(loginId, PASSWORD, null)
         assertEquals(setOf("CONTENT"), auth.authenticate(issued.accessToken).permissions)
+        assertEquals("FORBIDDEN", code { auth.renewStudent(issued.accessToken) })
+        assertEquals(issued.identity.session.expiresAt, auth.authenticate(issued.accessToken).session.expiresAt)
         assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_user_id=? AND action='ADMIN_PASSWORD_LOGIN'", Int::class.java, admin))
     }
 

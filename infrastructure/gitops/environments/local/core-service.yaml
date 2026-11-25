@@ -52,7 +52,7 @@ env:
   - {name: ADMIN_RABBIT_MANAGEMENT_PASSWORD, valueFrom: {secretKeyRef: {name: app-service-credentials, key: RABBITMQ_CORE_PASSWORD}}}
   # #236: compose.yaml core-service defaults
   - {name: AUTH_ACCESS_TTL, value: 15m}
-  - {name: AUTH_STUDENT_ACCESS_TTL, value: 15m}
+  - {name: AUTH_STUDENT_ACCESS_TTL, value: 30m}
   - {name: AUTH_REAUTH_TTL, value: 5m}
   - {name: AUTH_REFRESH_TTL, value: 7d}
   - {name: REDIS_PORT, value: "6379"}
@@ -86,7 +86,7 @@ ingress:
 networkPolicy:
   enabled: true
   namespaceDefaultDeny: true
-  ingressFromApps: [ai-service, scoring-service, learning-service, report-worker]
+  ingressFromApps: [ai-service, scoring-service, learning-service, report-worker, tox-retrain]
   ingressFromIngressController: true
   egressToApps:
     - {name: scoring-service, port: 8001}

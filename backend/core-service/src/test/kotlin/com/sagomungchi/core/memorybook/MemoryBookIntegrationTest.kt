@@ -32,8 +32,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -87,7 +90,7 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
                 LearningHttpStub.Reply(body = json.writeValueAsString(mapOf("owned" to mine)))
             } else if (request.method == "GET" && request.target.startsWith("/internal/students/$student/album?")) {
                 assertEquals("SYSTEM", request.header("X-User-Role"))
-                val items = owned.map { mapOf("themeId" to it.first, "weekStart" to it.second, "title" to "회차 ${it.first.take(4)}",
+                val items = owned.sortedByDescending { it.second }.map { mapOf("themeId" to it.first, "weekStart" to it.second, "title" to "회차 ${it.first.take(4)}",
                     "imageUrl" to null, "awardedAt" to "2026-11-06T10:00:00Z", "seen" to true) }
                 LearningHttpStub.Reply(body = json.writeValueAsString(mapOf("items" to items, "page" to 0, "size" to 20, "totalElements" to items.size)))
             } else LearningHttpStub.Reply(404, """{"code":"NOT_FOUND"}""")
@@ -123,6 +126,31 @@ class MemoryBookIntegrationTest : IntegrationTestSupport() {
         assertEquals("PREMIUM_REQUIRED", error["code"].asText())
         assertEquals(0, count("memory_book_job"))
         assertEquals(0, count("payment_premium_usage"))
+    }
+
+    @Test fun `무료 책장은 끝난 최근 4주 회차만 보이고 숨긴 수를 알려 주며, 유료는 전체를 보인다`() {
+        // 이번 주(KST) 월요일 − 7·14·21·28·35일: 무료 기준(− 28일 이상)이면 앞의 넷만
+        val monday = LocalDate.now(ZoneId.of("Asia/Seoul")).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val weeks = (1..5).map { monday.minusWeeks(it.toLong()) }
+        owned.clear(); weeks.forEach { owned += UUID.randomUUID().toString() to it.toString() }
+        val path = "/api/v1/children/$student/memory-books/rounds"
+
+        val free = read(path, parentToken)
+        assertEquals(weeks.take(4).map { it.toString() }, free["items"].map { it["weekStart"].asText() })
+        assertEquals(4, free["totalElements"].asInt())
+        assertEquals(1, free["lockedCount"].asInt())
+        assertEquals(false, free["canCreate"].asBoolean())
+        val second = read("$path?page=1&size=2", parentToken)
+        assertEquals(weeks.slice(2..3).map { it.toString() }, second["items"].map { it["weekStart"].asText() })
+        assertEquals(4, second["totalElements"].asInt())
+        assertEquals(0, read("$path?page=${Int.MAX_VALUE}&size=100", parentToken)["items"].size())
+
+        subscribe()
+        val paid = read(path, parentToken)
+        assertEquals(weeks.map { it.toString() }, paid["items"].map { it["weekStart"].asText() })
+        assertEquals(5, paid["totalElements"].asInt())
+        assertEquals(0, paid["lockedCount"].asInt())
+        assertEquals(true, paid["canCreate"].asBoolean())
     }
 
     @Test fun `원문 비공개 자녀는 회차 목록·발급·목록 모두 403 STUDENT_RECORDS_PRIVATE이고 learning을 부르지 않는다`() {

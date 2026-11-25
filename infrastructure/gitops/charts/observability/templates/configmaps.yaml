@@ -108,6 +108,11 @@ data:
     global:
       scrape_interval: 15s
     scrape_configs:
+      {{- if .Values.prometheus.retrainJobMetrics.enabled }}
+      - job_name: tox-retrain-state
+        static_configs:
+          - targets: [127.0.0.1:8080]
+      {{- end }}
       - job_name: otel-collector
         static_configs:
           - targets: [otel-collector.observability.svc.cluster.local:8889]
@@ -149,3 +154,26 @@ data:
         access: proxy
         url: http://tempo.observability.svc.cluster.local:3200
       {{- end }}
+{{- if .Values.grafana.dashboards.enabled }}
+---
+# #984: file-provisioned dashboards. Grafana rereads the folder, so no Pod roll is needed on change.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: repository
+        type: file
+        disableDeletion: true
+        allowUiUpdates: false
+        updateIntervalSeconds: 60
+        options:
+          path: /etc/grafana/dashboards
+  {{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+{{- end }}

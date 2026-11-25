@@ -32,6 +32,9 @@ prometheus:
   retention: 1d
   retentionSize: ""
   persistence: {enabled: false, storageClassName: gp3, size: 4Gi}
+  # Local verification reads the terminal Job condition, including Pending → DeadlineExceeded.
+  retrainJobMetrics:
+    enabled: false
   # Opt-in per-queue depth for <queue>.dlq only, from RabbitMQ /metrics/detailed (#187).
   rabbitmqDlqMetrics:
     enabled: false
@@ -63,6 +66,7 @@ grafana:
   persistence: {enabled: false, storageClassName: gp3, size: 1Gi}
   alerting:
     enabled: false
+    discordEnabled: true
     discordSecretName: observability-credentials
     discordSecretKey: DISCORD_WEBHOOK_URL
     # Evaluation and notification timing; defaults keep the #185 operating values.
@@ -71,6 +75,9 @@ grafana:
     groupInterval: 5m
     repeatInterval: 4h
     rules: []
+  # #984: provision dashboards/*.json (expression toxicity verdict ratios). Off keeps the existing render.
+  dashboards:
+    enabled: false
   adminSecret:
     name: observability-credentials
     userKey: GRAFANA_ADMIN_USER

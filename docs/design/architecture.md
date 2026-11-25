@@ -777,7 +777,7 @@ backend/report-service/
 - 상태: 서버 상태 TanStack Query, UI 상태는 React state, 전역 상태 라이브러리 미도입
 - API: core-service만 호출, [API 명세서](api-spec.md) 기준
 - 스트리밍: 피드백·분석 대화·알림 SSE를 fetch 스트림으로 수신(인증 헤더 필요), 수신 결과로 쿼리 캐시 갱신
-- 인증: access token 메모리 보관, refresh token httpOnly 쿠키
+- 인증: 학부모·관리자 access token은 메모리, refresh token은 httpOnly 쿠키. 학생 access는 탭 sessionStorage 보관(새로고침·복제 허용), 기본 미사용 30분 갱신 방식이며 명시적 로그아웃을 동일 세션 탭에 전파한다 (#995, API 명세 5.1).
 - 결제: 토스페이먼츠 결제위젯 SDK (테스트 키)
   - 주문 상태는 주문별 TanStack Query 한 곳에서 조회한다(#815). 결제 화면과 위젯이 같은 결과를 사용하고, 진입 또는 복귀 후 조회가 성공해 상태가 `PENDING`일 때만 결제수단을 연다. 결제 화면을 벗어나거나 결제 가능 상태가 아니면 위젯을 정리한다.
 - 접근성: 움직임 줄이기 설정 시 정적 장면, 상태를 색상 외 글로 표시 (NFR-UX-02)
@@ -925,6 +925,7 @@ backend/report-service/
 - #171 local 관측 chart: Collector·Prometheus·Grafana, 공통 앱 chart Java agent로 core·learning JVM/HTTP metrics. AI는 기본 비활성 Langfuse v4 LLM 계측. scoring·report exporter와 Langfuse backend·trace 저장은 아직 없음. `traceparent` 헤더와 AI 사용량 이벤트 봉투는 연결
 - Langfuse: LLM 호출·토큰·비용·trace
 - OpenTelemetry → Prometheus + Grafana: 서비스 지표, 큐 길이·DLQ 적재량(큐별 `<큐>.dlq`, #187), 판정·피드백·리포트 처리 지연
+- 표현 분류 판정(#984): learning `ToxicityClient`가 scoring을 부른 판정마다 OTel 카운터 `expression.toxicity.checks`(Prometheus `expression_toxicity_checks_total`)를 올린다. 속성은 `result`(`flagged` 막힘·`review` 통과·경계 구간·`clean` 통과·`unchecked` 검사 안 됨)와 `model`(`name:version`, `unchecked`면 없음)뿐이고 원문·점수·학생 ID는 넣지 않는다(NFR-SEC-05). 꺼짐(`app.toxicity.enabled=false`)·보낼 칸 없음은 세지 않는다. scoring은 OTLP를 보내지 않으므로(4.3) learning에서 센다. observability chart `grafana.dashboards.enabled`(local·prod 켬)가 대시보드 "표현 분류 판정"(모델별 막은 비율·경계 구간 비율, 검사 안 됨 비율, 결과·모델별 건수)을 파일로 provision한다. 모델 교체 시점은 모델별 선이 바뀌는 것으로 보고 활성화 주석은 두지 않는다
 - 경보(#185·#187): Grafana Alerting → 팀 디스코드 웹훅(`aws-alerts`). 수집 장애·작업 적체·DLQ 적재·RabbitMQ 메모리, core 공개 API 영역별(인증·학생 학습·AI 처리·리포트·결제) 5xx 비율과 p95 지연(AI 처리는 SSE 스트림이 섞여 5xx 비율만), 월 LLM 비용 300 USD의 80%와 최근 1시간에 새로 생긴 미산정 호출(#764). 담당은 인프라 1명(동섭)이 전체를 받는다 (P10, P13). 임계값은 초기 기준이며 [경보 검증](../../infrastructure/gitops/operational-alerts/README.md)을 따른다
 - trace 저장(#187): Collector → Tempo(observability chart 선택 구성) → Grafana. core·learning은 Java agent trace, report-worker는 OTel SDK 소비 span. ai·scoring·report-api의 자체 span은 아직 없음
 - Collector는 trace 내보내기 전에 토스 청구·취소 URL의 키 경로와 Google 로그인·재인증 콜백의 쿼리를 제거한다(#900). 경로 형태와 상태 코드 등 진단용 span은 유지한다.
@@ -968,7 +969,7 @@ backend/report-service/
 - core: `OutboxWriter`가 저장 시점 활성 span(없으면 요청 헤더 값)을 봉투 `traceparent`에 넣고, `OutboxRelay`가 그 값을 부모 context로 발행해 Java agent가 PRODUCER span·AMQP `traceparent` 헤더를 만든다. core·learning 소비자와 HTTP는 Java agent가 잇는다
 - report-worker: 봉투 `traceparent`를 부모로 CONSUMER span을 열고 하위 HTTP 호출과 결과 이벤트 봉투·AMQP 헤더에 넘긴다. 실패는 `messaging.outcome`(retry/dlq)·`error.type`만 남긴다
 - 업무 ID·학생 ID·메시지 내용은 span attribute에 넣지 않는다(메시지 ID·큐 이름만, HTTP span은 경로 템플릿만). exporter가 꺼져 있으면 받은 값만 그대로 넘긴다
-- Java agent가 자동으로 남기는 URL 속성 중 토스 청구·취소 경로의 `billingKey`·`paymentKey`(client `url.full`)와 Google 로그인·재인증 콜백의 `code`·`state`(server `url.query`)는 Collector traces pipeline의 `transform/redact`가 저장 전에 가린다(NFR-SEC-05·06, #900)
+- Java agent가 자동으로 남기는 URL 속성 중 토스 청구·취소 경로의 `billingKey`·`paymentKey`(client `url.full`)와 Google 로그인·재인증 콜백의 `code`·`state`(server `url.query`)는 Collector traces pipeline의 `transform/trace_urls`가 저장 전에 가린다(NFR-SEC-05·06, #900)
 - trace 저장소 장애는 지표·경보로 번지지 않게 한다(#784): Collector traces pipeline은 metrics보다 낮은 메모리 제한, exporter 대기열은 바이트 상한·재시도 30초로 묶어 넘치면 버린다
 
 #### 남은 경계

@@ -4,14 +4,14 @@ from app.bootstrap import create_app
 from app.llm.providers import get_explanation_llm, get_llm
 from app.prompt_versions.registry import ActiveVersions
 from tests.fakes import FakeLlm
-from tests.report_explanation.test_service import BODY, active, detail
+from tests.report_explanation.test_service import BODY, LEGACY_BODY, active, detail
 
 HEADERS = {"X-Internal-Token": "test-token"}
 
 
 def post(
     llm: FakeLlm,
-    body: dict = BODY,
+    body: dict = LEGACY_BODY,
     versions: ActiveVersions | None = None,
     headers: dict[str, str] = HEADERS,
 ):
@@ -36,13 +36,10 @@ def test_active_response_uses_camel_case_and_nullable_quote() -> None:
     assert response.json() == {
         "active": True,
         "explanation": {
-            "text": (
-                "상세 분석\n글자를 바르게 썼습니다.\n\n"
-                "개선 방안\n앞으로 문단을 나눠 보게 해 주세요."
-            ),
+            "text": "상세 분석\n글자를 바르게 썼습니다.",
             "quote": None,
         },
-        "versions": {"model": "report-explanation@lora-1", "prompt": "report-explanation@4"},
+        "versions": {"model": "report-explanation@lora-1", "prompt": "report-explanation@6"},
     }
 
 

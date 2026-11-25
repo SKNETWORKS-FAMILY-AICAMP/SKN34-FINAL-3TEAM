@@ -5,8 +5,13 @@ collector:
 prometheus:
   image: prom/prometheus:v3.15.1
   retention: 1d
+  retrainJobMetrics:
+    enabled: true
+    image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.17.0
 grafana:
   image: grafana/grafana:13.3.0
+  dashboards:
+    enabled: true # #984 표현 분류 판정 대시보드
   resources:
     requests: {cpu: 100m, memory: 128Mi}
     limits: {cpu: "1", memory: 384Mi}
@@ -14,3 +19,30 @@ grafana:
     name: observability-credentials
     userKey: GRAFANA_ADMIN_USER
     passwordKey: GRAFANA_ADMIN_PASSWORD
+  alerting:
+    enabled: true
+    discordEnabled: false
+    folder: Local kind
+    environment: local
+    interval: 30s
+    rules:
+      - uid: tox-retrain-failed
+        title: Tox retraining Job failed
+        summary: A tox-retrain Job created in the last 24 hours reached the terminal Failed condition.
+        for: 0s
+        operator: gt
+        threshold: 0
+        expr: >-
+          max(kube_job_failed{namespace="app",condition="true"}
+          and on(namespace,job_name) kube_job_owner{namespace="app",owner_kind="CronJob",owner_name="tox-retrain"}
+          and on(namespace,job_name) (kube_job_created{namespace="app"} > time() - 86400))
+          or (max(kube_cronjob_spec_suspend{namespace="app",cronjob="tox-retrain"}) * 0)
+      - uid: tox-retrain-missed
+        title: Tox retraining schedule missed
+        summary: The enabled tox-retrain CronJob is over five minutes late.
+        for: 0s
+        operator: gt
+        threshold: 300
+        expr: >-
+          max(time() - kube_cronjob_next_schedule_time{namespace="app",cronjob="tox-retrain"})
+          or (max(kube_cronjob_spec_suspend{namespace="app",cronjob="tox-retrain"} == 1) * 0)
