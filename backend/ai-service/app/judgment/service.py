@@ -6,12 +6,14 @@
 M2·M1 입력이 있으면 LLM은 판정 마감에서 scoring 몫(scoring_reserve)을 뺀 시각까지만 씀 (P12).
 scoring 실패는 503으로 바꾸지 않고 LLM 판정만 씀(modelScores.skipped). scoring 장애가
 learning의 판정·되묻기 공용 ai 서킷을 열지 않게 하기 위함 (#305, 아키텍처 1.3).
+돌려준 응답마다 품질 카운터를 한 번 올리고, 인용 대조 실패 보류는 가드 차단으로도 센다 (#1030).
 """
 
 import logging
 import time
 from typing import Any
 
+from app import quality_metrics
 from app.clients.scoring_client import ScoringClient, ScoringUnavailable
 from app.config import Settings
 from app.errors import ApiError
@@ -55,6 +57,16 @@ class JudgmentService:
         self._scoring = scoring
 
     async def judge(self, request: JudgmentRequest) -> JudgmentResponse:
+        # 돌려주는 곳이 여러 곳이라 바깥에서 한 번 센다. ApiError(503)는 판정 결과가 아님
+        response = await self._judge(request)
+        quality_metrics.judgment_result(
+            response.result, response.held_reason, response.versions.prompt
+        )
+        if response.held_reason == "QUOTE_MISMATCH":
+            quality_metrics.guard_blocked("judgment_quote")
+        return response
+
+    async def _judge(self, request: JudgmentRequest) -> JudgmentResponse:
         deadline = time.monotonic() + self._settings.judge_deadline
         prompt = self._versions.prompt("judgment")
         trial = not all(element.judge_verified for element in request.rubric.elements)

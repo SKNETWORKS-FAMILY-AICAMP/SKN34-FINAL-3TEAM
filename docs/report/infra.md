@@ -2339,6 +2339,48 @@ core migration `V59__memory_book_read_together.sql`(#1035가 V58을 먼저 써�
 - local GitOps `environments/local/core-service.yaml`의 `migration.revision`을 `v58`(#1035) → `v59`로 올렸다(`test_core_migration_versions`가 마지막 migration과 같은지 봄). prod 쪽 migration 판 번호는 이 PR에서 바꾸지 않았다
 - 새 ShedLock 이름 `core-memory-book-read-reminder`는 기존 `shedlock` 표에 행으로 생기며 migration이 필요 없다
 
+## 9.32 AI 품질 신호 대시보드 (#1030, 2026-11-25)
+
+에픽 #1027의 ai 품질 부분이다. #1029의 ai-service meter provider·Collector 전송 경로를 그대로 쓰고 새 의존성·운영 도구는 없다. 지표 정의는 [architecture 4.6](../design/architecture.md#46-관측), 정한 것과 주간 비교 SQL은 [ai 28](ai.md#28-ai-품질-신호-지표와-주간-판정-비교-1030-2026-11-25).
+
+### 9.32.1 구성
+
+| 항목 | 내용 |
+|---|---|
+| 지표 | ai-service OTel 카운터 `ai.judgment.results`·`ai.analysis.fallbacks`·`ai.guard.blocked` → Collector → Prometheus(`ai_judgment_results_total`·`ai_analysis_fallbacks_total`·`ai_guard_blocked_total`). 단위는 중괄호 주석(`{judgment}` 등)이라 이름에 단위 접미사가 붙지 않는다(#984 `{check}`와 같음) |
+| 대시보드 | `charts/observability/dashboards/ai-quality.json`(uid `ai-quality`, "AI 품질 신호"). chart가 `dashboards/*.json`을 `grafana-dashboards` ConfigMap에 넣으므로(templates/configmaps.yaml) 파일 추가만으로 local·prod 모두 provision된다. values 변경 없음 |
+| 창 | 비율·건수 모두 `increase(...[24h])`(이슈 "24시간 창"). local Prometheus 보존이 1d라 띄운 지 24시간이 안 되면 창이 다 차지 않는다(패널 설명에 적음). prod 보존은 3d |
+| 분모 | 판정·인용 대조 차단은 `ai_judgment_results_total`. 분석 대체 응답·되묻기 누출은 #1029 HTTP 지표 `http_server_request_duration_seconds_count{exported_job="ai-service",http_route=…,http_response_status_code="200"}`(경로 `/internal/analysis/stream`·`/internal/followups`) |
+| 0건 표시 | `(분자 or 0 * 분모) / 분모`(표현 분류 판정 대시보드와 같은 모양) |
+| 경보 | 두지 않음(이슈 범위 밖) |
+
+### 9.32.2 검증
+
+| 확인 | 결과 |
+|---|---|
+| ai 단위 시험 `tests/test_quality_metrics.py`(InMemoryMetricReader) | 16 통과. 판정 정상·LLM 전 보류·`QUOTE_MISMATCH`(+`judgment_quote`)·503 0회, 분석 대체 두 이유 각 1회·안내 3경로·템플릿 대조 실패 0회, 되묻기 누출 0·1·2회·빈 질문 0회, 속성 키 고정·원문·ID 없음 |
+| ai 전체 `uv run pytest`·`ruff check`·`ruff format --check` | 1467 통과, ruff 통과 |
+| `verify_chart.py`에 `ai-quality.json` uid·식·datasource 확인 추가(local·prod 렌더) | `verify_chart.py`는 helm이 없어 못 돌림, ai-quality 확인 식만 따로 통과. 이 스크립트는 CI 워크플로에서 돌지 않는다(README의 수동 절차) |
+| ci-gitops(helm lint·template·kubeconform) | PR CI에서 확인 |
+| 로컬 확인 방식 | kind 없어 #1029(9.28.3)처럼 Docker 격리로 확인, QUOTE_MISMATCH는 llm-stub 한계로 0만 확인(단위 시험으로 대신). `compose.yaml`의 postgres·rabbitmq·learning·이 브랜치 ai 이미지에 llm-stub, local values와 같은 판의 Collector 0.164.0·Prometheus v3.15.1(보존 1d)·Grafana 13.3.0을 붙였다. helm이 없어 Collector(otlp → memory_limiter·batch → prometheus :8889)·수집(job `otel-collector`)·datasource(uid `prometheus`)·대시보드 provider는 chart 템플릿을 손으로 옮겼고 대시보드는 이 브랜치 `ai-quality.json` 그대로. core를 띄우지 않아 ai readiness는 `versions` DOWN(core 프롬프트 snapshot 없음)이었고 요청은 기본 활성 버전(`judge@2` 등)으로 처리됐다. 요청은 ai 내부 API를 직접 불렀다 |
+| 보낸 요청 (두 번 반복) | 판정 정상 3·짧은 답 2, 되묻기 정상 2·금지어 누출 2(재생성도 누출), 분석 2, llm-stub을 멈춘 뒤 분석 2·판정 1(503) |
+| Prometheus 이름·라벨 | `ai_judgment_results_total{result,held_reason,prompt_version}`·`ai_analysis_fallbacks_total{reason}`·`ai_guard_blocked_total{guard}`, HTTP 분모 `http_server_request_duration_seconds_count{exported_job="ai-service",http_route="/internal/analysis/stream"·"/internal/followups"·"/internal/judgments"}`. 문서·대시보드에 적은 이름과 같음. 이 밖의 라벨은 Collector·Prometheus 공통(`exported_job`·`exported_instance`(SDK `service.instance.id`)·`job`·`instance`·`otel_scope_name`)뿐 |
+| 첫 회 값 (한 번째 반복 뒤) | 판정 `CORRECT/none/judge@2` 3, `HELD/TOO_SHORT/none` 2, 503은 0(HTTP 503 1건과 대조), 대체 응답 `AI_UNAVAILABLE` 2(llm-stub이 떠 있을 때 0), `followup_leak` 4(요청 2 × 2회) |
+| 원문·ID | ai 시계열 89개 전체에서 답변·질문에 붙인 표시 문자열과 학생·사용자 ID가 나오지 않음 |
+| 주간 SQL(ai 28.2) | learning_db에서 두 문 모두 오류 없이 실행, 결과 0행(ai 직접 호출이라 `judgment` 행 없음). 같은 SQL을 세션 임시 테이블의 합성 7행에 돌려 KST 주 경계(일 23:59 → 앞 주, 월 00:00 → 그 주), `RULE`·`FAILED` 제외, NULL → `none`, 주·버전 안 비율을 확인(실제 표에는 쓰지 않음) |
+| Grafana 패널 6개(식 8개) | "AI 품질 신호"가 provision됨(`provisioned=true`). 두 번째 반복 뒤 Grafana datasource로 조회해 모두 값이 나옴: 보류율 `judge@2` 0, 결과 분포 `none` HELD 1·`judge@2` CORRECT 1, 보류 이유 TOO_SHORT 2.13, 대체 응답률 전체·`AI_UNAVAILABLE` 0.504, 차단율 `followup_leak` 1·`judgment_quote` 0, 차단 건수 `followup_leak` 4.26. 소수는 `increase()`의 창 끝 보정 |
+| 확인한 한계 | 카운터는 첫 증가 때 시계열이 생기므로 Prometheus가 처음 본 값(첫 반복의 3·2·4 등)은 `increase()`에 들어가지 않는다. 프로세스마다 `exported_instance`가 달라 재시작 뒤 처음 나온 조합의 첫 건도 같다. 드문 조합(`QUOTE_MISMATCH` 등)은 적게 보일 수 있다 |
+
+### 9.32.3 1주 실측 (배포 뒤)
+
+prod 반영 뒤 1주 값을 여기에 남기고 경보가 필요한지만 적는다(임계값은 정하지 않음).
+
+| 지표 | 1주 값 | 경보 필요 여부 |
+|---|---|---|
+| 판정 보류율(프롬프트 버전별) | 기록 예정 | 판단 예정 |
+| 분석 대체 응답률 | 기록 예정 | 판단 예정 |
+| 가드 차단율(`followup_leak`·`judgment_quote`) | 기록 예정 | 판단 예정 |
+
 ## 10. 근거 링크
 
 - [ingress-nginx 지원 버전](https://github.com/kubernetes/ingress-nginx#supported-versions-table), [종료 공지](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), [kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)
