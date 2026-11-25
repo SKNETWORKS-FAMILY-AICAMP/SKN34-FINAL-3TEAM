@@ -278,6 +278,26 @@ def test_learning_round_path_and_shape():
     assert isinstance(result, MemoryBookRound) and len(result.days) == 5
 
 
+@pytest.mark.parametrize("value", ["CORRECT", "PARTIAL", "RETHINK", "HELD", None, "absent"])
+def test_learning_answer_result_is_optional_judgment_result(value):
+    """#1024: 답변 판정 결과는 4개 값 또는 null(칸이 없던 이전 응답도 null로 읽음)."""
+    body = round_json()
+    answer = body["days"][0]["attempt"]["answers"][1]
+    if value != "absent":
+        answer["result"] = value
+    result = learning(lambda r: httpx.Response(200, json=body), uuid4())
+    expected = None if value == "absent" else value
+    assert result.days[0].attempt.answers[1].result == expected
+    assert result.model_dump(mode="json")["days"][0]["attempt"]["answers"][1]["result"] == expected
+
+
+def test_learning_unknown_answer_result_is_a_contract_error():
+    body = round_json()
+    body["days"][0]["attempt"]["answers"][0]["result"] = "GREAT"
+    with pytest.raises(RecordContractError):
+        learning(lambda r: httpx.Response(200, json=body), uuid4())
+
+
 def test_learning_round_errors():
     student = uuid4()
     with pytest.raises(MemoryBookRoundNotFound):
@@ -403,7 +423,9 @@ def test_generate_stores_pdf_and_announces_ready(db_session_factory, s3):
     assert key == f"reports/memory-books/{student}/{command.book_id}/pdf"
     body = s3._client.get_object(Bucket="synthetic-reports", Key=key)["Body"].read()
     text = pdf_text(body)
-    assert "합성학생의추억그림책" in text and "보완답1" in text and "큰질문의답은「바람」" in text
+    assert (
+        "합성학생의생각이자란한주" in text and "보완답1" in text and "큰질문의답은「바람」" in text
+    )
     assert len(assets.urls) == 7  # 시작 + 요일 5 + 종료
     assert locks.acquired == [(command.book_id, student)]
     [event] = events

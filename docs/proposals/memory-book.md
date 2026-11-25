@@ -179,7 +179,7 @@ sequenceDiagram
 | 호출 | Method | Path | 설명 |
 |---|---|---|---|
 | core → learning | POST | `/internal/students/{studentId}/frames/ownership` | **기존** 보유 확인 재사용 |
-| report-worker → learning | GET | `/internal/students/{studentId}/memory-book/{themeId}/{weekStart}` | **새로**. 응답 초안: `{themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days:[{day, missionId, title, thinkingType, question, sceneImage, dialogue, attempt:{attemptId, completedAt, answers:[{version, text, followup:{type, question}|null}], reflection:{difficulty, text}|null}|null}], ending:{seen, outro, answer, outroImage}}`. 이미지 칸은 URL 문자열 또는 null(`AssetUrls`, ai S3 키면 presigned URL, 만료는 `app.assets.url-ttl` 1시간 이내). `X-Student-Scope`·SYSTEM 역할 확인, 미보유 404 (2단계 구현됨, 14.2) |
+| report-worker → learning | GET | `/internal/students/{studentId}/memory-book/{themeId}/{weekStart}` | **새로**. 응답 초안: `{themeId, weekStart, themeVersionId, title, intro, introImage, bigQuestion, days:[{day, missionId, title, thinkingType, question, sceneImage, dialogue, attempt:{attemptId, completedAt, answers:[{version, text, followup:{type, question}|null, result}], reflection:{difficulty, text}|null}|null}], ending:{seen, outro, answer, outroImage}}`. 이미지 칸은 URL 문자열 또는 null(`AssetUrls`, ai S3 키면 presigned URL, 만료는 `app.assets.url-ttl` 1시간 이내). `X-Student-Scope`·SYSTEM 역할 확인, 미보유 404 (2단계 구현됨, 14.2). `result`는 그 답변 판정의 지금 결과(`CORRECT`·`PARTIAL`·`RETHINK`·`HELD`, 최신 정정 반영, 판정 전·실패·판정 없음 null)로 report가 가장 많이 자란 날을 고르는 데만 쓴다(#1024, 11.2) |
 | report-worker → core | GET | `/internal/students/{studentId}/profile` | **기존**(별명, `parentSharingEnabled`) |
 | core → report-api | GET | `/internal/students/{studentId}/memory-books/{bookId}/files/pdf` | **새로(3단계 구현)**. report DB에 그림책 행이 없어 학생 ID를 경로로 받는다. `{url, expiresAt}`(TTL 300초, 파일 이름 `memory-book-{bookId}.pdf`). 학생 범위 밖 403, 파일 없음 404, 삭제 중 409 `DELETION_IN_PROGRESS`, S3 오류 503 |
 | 메시지 | 명령 | `memorybook.generate` (`cmd.direct` → 큐 `report.memorybook.generate`, 재시도 1·5·15분, DLQ) | 봉투 `source=core-service`, `dataschema=memorybook.generate.v1`, `subject=studentId`. data `{bookId, studentId, rounds:[{themeId, weekStart}](1차 길이 1), requestedBy?}`. 요청 시각은 봉투 `time` |
@@ -330,19 +330,21 @@ A4 세로, 그림 위주. 회차 1개 기준 약 9쪽.
 - 아이 답변·대화는 기존 템플릿처럼 자동 이스케이프. `src`에는 report가 만든 `data:` URI만 들어간다(외부 URL이 들어가도 renderer가 요청을 막음).
 - 답변이 아주 길면(논술) 한 쪽을 넘을 수 있다. 요일 쪽을 `min-height`로만 두고 넘치면 자연스럽게 다음 쪽으로 흐르게 한다.
 
-### 11.2 지금 구성 (2026-11-23 시험 구현 최종, 14.10~14.12 반영)
+### 11.2 지금 구성 (2026-11-23 시험 구현 최종, 14.10~14.12 반영, 2026-11-25 같이 읽기 보강 #1024)
 
 A4 **가로**(297×210mm, 여백 위아래 12mm·좌우 14mm). 회차 1개 기준 **8쪽**, 엔딩 전 회차는 7쪽. 쪽 아래에 "쪽/전체" 번호.
 
 | 쪽 | 내용 | 엔딩 전 회차 |
 |---|---|---|
-| 1. 표지 | 왼쪽: 시작 그림(폭 62%, 높이 170mm). 오른쪽: 테마 제목, "{별명}의 추억 그림책", 기간 → **목차**(요일·제목·쪽 번호, 이야기의 끝, 오늘 저녁 질문) → **이야기의 시작** 상자(`intro` + 이번 주 큰 질문) | 목차에서 이야기의 끝을 빼고 "이 주에는 이야기의 끝을 보지 못해서, 끝 이야기와 답은 싣지 않았어요" 안내 |
-| 2~6. 요일(월~금) | 위: 요일·생각 유형·제목. 왼쪽: 장면 그림(표지 그림과 같은 크기, 가리는 것 없음). 오른쪽: 그림 높이만큼 세운 **채팅형 대화** — 왼쪽 말풍선은 등장인물 대사·"오늘의 문제"(Q.)·뭉치의 되물음, 오른쪽 말풍선은 아이 답(두 번째부터 "다시 생각한 답"), 끝에 돌아보기 한 줄. 답은 줄이지 않고 전체를 싣는다 | 같음(금요일 정답 고르기 결과·정답 문구는 원래 싣지 않음) |
+| 1. 표지 | 왼쪽: 시작 그림(폭 62%, 높이 170mm). 오른쪽: 테마 제목, 부제 "{별명}의 생각이 자란 한 주"(#1024, 전: "{별명}의 추억 그림책"), 기간 → **목차**(요일·제목·쪽 번호, 이야기의 끝, 이번 주 저녁 질문. 가장 많이 자란 날 줄 제목 앞에 ★) → **이야기의 시작** 상자(`intro` + 이번 주 큰 질문) → **"이렇게 같이 읽어요"** 안내 3줄(① {별명}에게 소리 내어 읽어 달라고 해 주세요. ② 답을 고치지 말고 "왜 그렇게 생각했어?"만 물어봐 주세요. ③ 마지막 쪽 질문에 가족이 함께 답해 보세요.) | 목차에서 이야기의 끝을 빼고 "이 주에는 이야기의 끝을 보지 못해서, 끝 이야기와 답은 싣지 않았어요" 안내 |
+| 2~6. 요일(월~금) | 위: 요일·생각 유형·제목. 왼쪽: 장면 그림(표지 그림과 같은 크기, 가리는 것 없음). 오른쪽: 그림 높이만큼 세운 **채팅형 대화** — 등장인물 대사·"오늘의 문제"(Q.) 아래에 아이 답을 **생각 묶음 칸**(테두리 상자) 하나로 묶는다: 첫 답 "처음 생각" → 그 답 앞에 되묻기가 있으면 뭉치 말풍선 "뭉치가 물었어요"(되묻기 질문) → 다음 답부터 "다시 생각"(되묻기 없이 다시 낸 답도 "다시 생각"). 답이 셋 이상이면 순서대로 반복, 되묻기가 없는 날은 "처음 생각"만. 묶음 칸 아래 돌아보기 한 줄. 답은 줄이지 않고 글·순서도 고치지 않는다(#1024). **가장 많이 자란 날**은 묶음 칸 위에 "★ 이번 주 가장 많이 자란 생각"을 달고 그림·묶음 칸 테두리를 금색으로 굵게 한다(새 쪽 없음) | 같음(금요일 정답 고르기 결과·정답 문구는 원래 싣지 않음) |
 | 7. 이야기의 끝 | 왼쪽: 종료 그림. 오른쪽 대화: "이야기"(`outro`) → 뭉치 "큰 질문의 답은 「…」였어!" | 이 쪽 없음. "아직 이 이야기의 끝을 보지 못했어요" 한 줄이 저녁 질문 쪽 위에 들어감 |
-| 8. 오늘 저녁 질문 | 큰 질문으로 만든 고정 문장(D9), "사고뭉치 추억 그림책" | 7쪽 |
+| 8. 이번 주 저녁 질문 | 제목 "이번 주 저녁 질문"(#1024, 전: "오늘 저녁 질문", 목차 라벨 "함께"는 그대로), 큰 질문으로 만든 고정 문장(D9, 문장 그대로), 가족 답을 손으로 쓰는 칸 3줄(각 줄: 이름 빈칸 + 답 줄), "함께 이야기한 날 ____년 __월 __일", "사고뭉치 추억 그림책" | 7쪽 |
 
 - 재게시로 문제가 바뀌어 그 날 시도 기록을 찾지 못한 요일은 대화 칸에 "이 날 문제는 그 뒤에 새 문제로 바뀌어서, 아이가 그때 쓴 답을 함께 싣지 못했어요"를 싣는다(11/24 결정 D3로 다듬음, 처음 문구는 "이 날 문제는 나중에 바뀌어서 남은 기록이 없어요").
 - 쪽 번호는 "요일·끝·저녁 질문은 각자 새 쪽에서 시작"이라는 규칙으로 계산한다(14.12). 한 날 대화가 한 쪽을 넘으면 뒤 번호가 밀리는 한계가 있다.
+- **가장 많이 자란 날 고르기**(#1024, `memory_book.py` `most_grown_day`): learning 회차 조립 응답의 답변별 판정 결과 `result`(7.2, 최신 정정 반영)로 고른다. 순위는 다시 생각(`RETHINK`) 0 < 부분(`PARTIAL`) 1 < 맞음(`CORRECT`) 2이고, 보류(`HELD`)·판정 없음(null)은 순위가 없다. 그 날 처음 답과 마지막 답이 **둘 다 순위가 있을 때만** 후보이고 오름 = 마지막 − 처음. 오름이 0보다 큰 날 중 가장 큰 날 하나, 같으면 앞 요일(월 → 금). 오른 날이 없으면 강조하지 않는다. 답이 하나뿐인 날·문제가 바뀐 날(시도 없음)은 후보가 아니다. 판정 결과 글자·순위는 템플릿에 넘기지 않고 책에 싣지 않는다(고르는 데만 씀). 쪽 수·번호는 바뀌지 않는다(엔딩 본 회차 8쪽, 엔딩 전 7쪽).
+- 묶음 칸 때문에 한 쪽에 들어가는 답 길이(E3)가 조금 줄었다. 같은 합성 글(띄어쓰기 있는 문장)로 바꾸기 전·후를 대조하면 답 1개는 400자까지 한 쪽(전과 같음), 되묻기가 있는 날은 합 250자까지 한 쪽이고 300자에서 넘친다(전: 300자까지, 350자에서 넘침). 강조 표시 유무와는 관계없었다.
 - 구현 위치: `backend/report-service/app/rendering/memory_book.py`(화면 값·목차), `app/rendering/templates/memory_book.html`(서식), `scripts/memory_book_sample.py`(예시 PDF 만들기), 예시 결과 `frontend/web/public/demo/memory-book-sample.pdf`.
 
 ## 12. 비용·성능·실패·보안
