@@ -6,12 +6,28 @@ learning 회차 조립 응답(제안 7.2)에서 그림을 `data:` URI로 바꾼 
 엔딩을 보지 않은 회차는 종료 이야기·정답·종료 그림을 템플릿에 넘기지 않는다(P23).
 """
 
+import base64
 import re
 from datetime import date, timedelta
+from functools import cache
+from pathlib import Path
 
 DAY_LABELS = {"MON": "월요일", "TUE": "화요일", "WED": "수요일", "THU": "목요일", "FRI": "금요일"}
 EVENING_TITLE = "이번 주 저녁 질문"
 IMAGE_URI = re.compile(r"data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}")
+
+
+TITLE_FONT = Path(__file__).parent / "fonts" / "GowunDodum-Regular.subset.ttf"
+
+
+@cache
+def title_font_uri() -> str:
+    """제목·이야기 글꼴(고운돋움 부분 집합, OFL 1.1)을 `data:` URI로(#1047).
+
+    렌더러가 모든 요청을 막아서 파일 URL로는 읽히지 않는다. 한 번 읽어 둔다.
+    """
+    encoded = base64.b64encode(TITLE_FONT.read_bytes()).decode("ascii")
+    return f"data:font/ttf;base64,{encoded}"
 
 
 def safe_image(value) -> str | None:
@@ -66,24 +82,41 @@ def most_grown_day(days: list[dict]) -> str | None:
     return best
 
 
+# 요일 쪽 단계 카드 연결 문구(#1047). 별명은 넣지 않는다
+FIRST_LEAD = "처음엔 이렇게 생각했어요"
+FOLLOWUP_LEADS = ("그때 뭉치가 물었어요", "뭉치가 한 번 더 물었어요")
+REVISED_LEADS = ("그래서 다시 생각했어요", "그래서 또 생각했어요")
+
+
 def _attempt(attempt: dict | None) -> dict | None:
-    """요일 쪽 묶음 칸 값: 처음 생각 → (뭉치가 물었어요) → 다시 생각. 판정 결과는 넘기지 않는다."""
+    """요일 쪽 오른쪽 칸 값: 답과 되묻기를 차례대로 단계 카드로. 판정 결과는 넘기지 않는다.
+
+    되묻기는 그 다음 답 앞에 온다. 번호는 카드 순서대로 1부터, 되묻기 없이 다시 낸 답도
+    다시 낸 답 차례로 센다. 아이 답 글은 그대로 넘긴다(따옴표·줄이기 없음).
+    """
     if attempt is None:
         return None
-    answers = []
+    steps = []
+    followups = revised = 0
     for index, answer in enumerate(
         sorted(attempt.get("answers") or [], key=lambda a: a["version"])
     ):
-        followup = answer.get("followup")
-        answers.append(
-            {
-                "text": answer.get("text") or "",
-                "followup": (followup or {}).get("question") or None,
-                "revised": index > 0,
-            }
-        )
+        question = (answer.get("followup") or {}).get("question")
+        if question:
+            steps.append(
+                {"kind": "mungchi", "lead": FOLLOWUP_LEADS[min(followups, 1)], "text": question}
+            )
+            followups += 1
+        if index == 0:
+            lead = FIRST_LEAD
+        else:
+            lead = REVISED_LEADS[min(revised, 1)]
+            revised += 1
+        steps.append({"kind": "child", "lead": lead, "text": answer.get("text") or ""})
+    for number, step in enumerate(steps, start=1):
+        step["number"] = number
     reflection = attempt.get("reflection") or {}
-    return {"answers": answers, "reflection": reflection.get("text") or None}
+    return {"steps": steps, "reflection": reflection.get("text") or None}
 
 
 def memory_book_view(book: dict) -> dict:
@@ -93,6 +126,7 @@ def memory_book_view(book: dict) -> dict:
     grown = most_grown_day(book["days"])
     days = []
     for day in sorted(book["days"], key=lambda d: list(DAY_LABELS).index(d["day"])):
+        attempt = _attempt(day.get("attempt"))
         days.append(
             {
                 "day": day["day"],
@@ -105,7 +139,9 @@ def memory_book_view(book: dict) -> dict:
                     {"speaker": line.get("speaker") or "", "text": line.get("text") or ""}
                     for line in day.get("dialogue") or []
                 ],
-                "attempt": _attempt(day.get("attempt")),
+                "attempt": attempt,
+                # 넓은 쪽(#1047): 오른쪽 칸에 카드 1개뿐인 날·안내 문장뿐인 날(문제가 바뀜)
+                "wide": attempt is None or len(attempt["steps"]) <= 1,
                 "highlight": day["day"] == grown,
             }
         )

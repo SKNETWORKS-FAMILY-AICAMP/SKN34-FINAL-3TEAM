@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 
 from app.generation.presentation import DIFFICULTY_LABELS
 from app.generation.template_settings import METRICS, settings_for
-from app.rendering.memory_book import memory_book_view
+from app.rendering.memory_book import memory_book_view, title_font_uri
 
 THINKING_LABELS = {
     "ANALYZE": "분석하기",
@@ -123,7 +123,7 @@ class ReportRenderer:
         if not display_name.strip():
             raise ValueError("A trusted display name is required for memory book files")
         html = self._templates.get_template("memory_book.html").render(
-            book=memory_book_view(book), name=display_name
+            book=memory_book_view(book), name=display_name, font_uri=title_font_uri()
         )
         return {"HTML": html.encode("utf-8"), "PDF": self._pdf(html)}
 
