@@ -241,6 +241,23 @@
 
 /* ── 도움말·문의 (시안 Help): 2단 ── */
 #class-journal .cj-app-student .st-help { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+#class-journal .cj-app-student .st-help-tour {
+  grid-column: 1 / -1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-size: 21px;
+  text-decoration: none;
+  box-shadow: 0 4px 0 rgb(31 78 107 / 0.18);
+}
+#class-journal .cj-app-student .st-help-tour:hover { background: var(--sk-soft); }
 #class-journal .cj-app-student .st-help-faq { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 #class-journal .cj-app-student .st-help h1,
 #class-journal .cj-app-student .st-help-single h1 {

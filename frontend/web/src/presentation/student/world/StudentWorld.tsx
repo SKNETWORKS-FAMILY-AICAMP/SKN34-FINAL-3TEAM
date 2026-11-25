@@ -9,6 +9,7 @@ import type { Theme } from '../../../domain/studentLook.ts'
 import type { Child } from '../../../domain/classroom.ts'
 import { gradeLabel } from '../../../domain/grade.ts'
 import { ThemeBackdrop } from './ThemeArt.tsx'
+import { StudentTour } from './StudentTour.tsx'
 import { LookContext, themeVars } from './lookContext.ts'
 import './student-world.css'
 import './pages.css'
@@ -59,6 +60,8 @@ export function StudentWorld({
   // 착용 그림 키(#455). 목록 실패·키 없음은 기본 모습
   // 화면이 바뀌면 맨 위부터(앞 화면에서 내려간 스크롤이 남아 새 화면 머리가 잘려 보이지 않게, 2026-11-15)
   const stage = useRef<HTMLDivElement>(null)
+  /** 둘러보기(#1038) 중에는 이 틀을 inert로 막아 초점을 대화창 안에 가둔다 */
+  const shell = useRef<HTMLDivElement>(null)
   useEffect(() => {
     stage.current?.scrollTo?.(0, 0)
     window.scrollTo?.(0, 0)
@@ -77,7 +80,7 @@ export function StudentWorld({
   return (
     <LookContext.Provider value={{ t, companion: look.companion, worn }}>
       <ThemeFrame t={t}>
-        <div className="st-shell">
+        <div ref={shell} className="st-shell">
         {!focus && (
           <header className="st-top">
             <div className="st-brand">
@@ -110,6 +113,8 @@ export function StudentWorld({
         )}
         <div ref={stage} className={focus ? 'st-stage st-stage-focus' : 'st-stage'}>{children}</div>
         </div>
+        {/* 화면 둘러보기(#1038): 문제 화면·이야기·오늘 장면(focus)에는 띄우지 않는다 */}
+        {!focus && <StudentTour childId={child.id} page={page} shell={shell} />}
       </ThemeFrame>
     </LookContext.Provider>
   )

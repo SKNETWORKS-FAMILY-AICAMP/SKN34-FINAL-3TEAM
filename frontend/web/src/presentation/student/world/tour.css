@@ -1,0 +1,150 @@
+/*
+ * 학생 화면 둘러보기 대화창(#1038). 학생 화면과 같은 모양: 흰 종이 카드(--sk-paper, 3px --sk-line 테두리, 26px 둥글기, 아래 그림자),
+ * 이름표·그만 볼래는 학생 버튼 모양(둥근 알약, 굵은 테두리), 대사는 공통 말풍선(SpeechBubble, 왼쪽 꼬리) 안.
+ * 어둡게 하는 색은 학생 화면 그림자 색(rgb 31 78 107)을 진하게 쓴 것.
+ */
+#class-journal .st-tour { position: fixed; inset: 0; z-index: 900; }
+#class-journal .st-tour-dim { position: absolute; inset: 0; background: rgb(15 39 54 / 0.45); }
+#class-journal .st-tour-ring {
+  position: fixed;
+  border-radius: 22px;
+  box-shadow: 0 0 0 4px var(--sk-paper), 0 0 0 8px var(--sk-accent), 0 0 0 9999px rgb(15 39 54 / 0.5);
+  transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease;
+  pointer-events: none;
+}
+/*
+ * 대화창: 화면 아래를 꽉 채우는 흰 종이 띠(위 모서리만 둥글게). 안쪽 내용은 가운데 1100px까지.
+ * 캐릭터 얼굴은 크게, 띠 위로 올라오게 두어 강조한다(테마 틀 색 테두리·연한 테마 바탕·아래 그림자)
+ */
+#class-journal .st-tour-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  --st-tour-inner: min(1100px, calc(100vw - 32px));
+}
+/* 강조할 곳이 화면 아래에 있으면 대화창을 위로(모서리·얼굴·그만 볼래 위치를 뒤집음) */
+#class-journal .st-tour-dock.st-tour-dock-top { top: 0; bottom: auto; }
+#class-journal .st-tour .st-tour-box {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 150px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 30px;
+  padding: 18px max(16px, calc((100vw - var(--st-tour-inner)) / 2)) max(20px, env(safe-area-inset-bottom));
+  border: 3px solid var(--sk-line);
+  border-bottom: 0;
+  border-radius: 30px 30px 0 0;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  box-shadow: 0 -6px 0 rgb(31 78 107 / 0.14);
+  text-align: left;
+  cursor: pointer;
+}
+#class-journal .st-tour-dock-top .st-tour-box {
+  border-top: 0;
+  border-bottom: 3px solid var(--sk-line);
+  border-radius: 0 0 30px 30px;
+  box-shadow: 0 6px 0 rgb(31 78 107 / 0.14);
+  padding-top: max(18px, env(safe-area-inset-top));
+  padding-bottom: 18px;
+}
+#class-journal .st-tour .st-tour-box:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: -8px; }
+/* 캐릭터 자리: 얼굴이 띠 위로 올라오고 이름표가 그 아래 */
+#class-journal .st-tour .st-tour-who {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin-top: -64px;
+}
+#class-journal .st-tour-dock-top .st-tour-who { margin-top: 0; }
+#class-journal .st-tour .st-tour-face {
+  display: grid;
+  place-items: center;
+  width: 140px;
+  height: 140px;
+  box-sizing: border-box;
+  border: 5px solid var(--sk-frame);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, var(--sk-paper) 0%, var(--st-tour-friend, var(--sk-soft)) 78%);
+  box-shadow: 0 0 0 3px var(--sk-line), 0 6px 0 3px rgb(31 78 107 / 0.18);
+  overflow: hidden;
+}
+#class-journal .st-tour-dock-top .st-tour-face { width: 112px; height: 112px; }
+/* 얼굴 칸 크기에 맞춰 캐릭터 그림을 줄인다(좁은 화면·위쪽 대화창) */
+#class-journal .st-tour .st-tour-face .st-companion { width: 86%; height: auto; }
+/* 이름표: 학생 버튼 모양(알약·굵은 테두리·제목 글꼴), 바탕은 고른 캐릭터 색 */
+#class-journal .st-tour .st-tour-name {
+  padding: 3px 18px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--st-tour-friend, var(--sk-yellow));
+  color: var(--sk-ink);
+  font-family: var(--st-display);
+  font-size: 19px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+#class-journal .st-tour .st-tour-bubble {
+  position: relative;
+  min-height: 86px;
+  padding: 16px 24px 26px;
+  font-size: 21px;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+#class-journal .st-tour .st-tour-count {
+  position: absolute;
+  left: 24px;
+  bottom: 4px;
+  color: var(--sk-sub);
+  font-size: 14px;
+  font-weight: 700;
+}
+#class-journal .st-tour .st-tour-next {
+  position: absolute;
+  right: 16px;
+  bottom: 4px;
+  color: var(--sk-accent);
+  font-size: 15px;
+  animation: st-tour-bob 0.9s ease-in-out infinite;
+}
+/* 그만 볼래: 학생 버튼(내 방 버튼과 같은 알약) */
+#class-journal .st-tour .st-tour-skip {
+  position: absolute;
+  right: max(16px, calc((100vw - var(--st-tour-inner)) / 2));
+  top: -26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 3px solid var(--sk-ink);
+  border-radius: 999px;
+  background: var(--sk-paper);
+  color: var(--sk-ink);
+  font-family: 'Gowun Dodum', 'Malgun Gothic', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  box-shadow: 0 4px 0 rgb(31 78 107 / 0.18);
+  cursor: pointer;
+}
+#class-journal .st-tour .st-tour-skip:hover { background: var(--sk-soft); }
+#class-journal .st-tour .st-tour-skip:focus-visible { outline: 4px solid var(--sk-accent); outline-offset: 2px; }
+#class-journal .st-tour-dock-top .st-tour-skip { top: auto; bottom: -26px; }
+@keyframes st-tour-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) {
+  #class-journal .st-tour-ring { transition: none; }
+  #class-journal .st-tour .st-tour-next { animation: none; }
+}
+@media (max-width: 560px) {
+  #class-journal .st-tour .st-tour-box { column-gap: 14px; padding: 14px 12px max(16px, env(safe-area-inset-bottom)); min-height: 128px; }
+  #class-journal .st-tour .st-tour-who { margin-top: -44px; }
+  #class-journal .st-tour .st-tour-face { width: 92px; height: 92px; border-width: 4px; }
+  #class-journal .st-tour-dock-top .st-tour-face { width: 80px; height: 80px; }
+  #class-journal .st-tour .st-tour-bubble { padding: 10px 14px 22px; font-size: 17px; }
+  #class-journal .st-tour .st-tour-name { font-size: 16px; padding: 2px 12px; }
+}

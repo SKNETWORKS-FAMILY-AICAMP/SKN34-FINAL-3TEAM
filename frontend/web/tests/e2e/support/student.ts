@@ -4,7 +4,8 @@ import { expect, type Browser, type BrowserContext, type Page } from '@playwrigh
  * 학부모 화면에서 PIN을 정하고 등록 코드로 새 학생 기기를 등록한 뒤 PIN으로 들어간다(#548).
  * 학생 토큰은 메모리에만 있으므로 돌려받은 학생 화면에서는 page.goto·새로고침 없이 화면 안에서만 이동한다.
  */
-export async function loginStudent(browser: Browser, parentPage: Page, nickname: string, deviceName = 'E2E 학생 기기'):
+export async function loginStudent(browser: Browser, parentPage: Page, nickname: string, deviceName = 'E2E 학생 기기',
+  { keepTour = false }: { keepTour?: boolean } = {}):
   Promise<{ context: BrowserContext; page: Page }> {
   await parentPage.getByRole('link', { name: '기기·PIN', exact: true }).click()
   const pin = parentPage.getByRole('form', { name: `${nickname} PIN`, exact: true })
@@ -23,7 +24,36 @@ export async function loginStudent(browser: Browser, parentPage: Page, nickname:
   for (const digit of ['4', '8', '3', '1']) await page.getByRole('button', { name: digit, exact: true }).click()
   await page.getByRole('button', { name: /확인|들어가기/ }).click()
   await page.waitForURL('**/student/home**')
+  // 새 학생은 첫 홈 진입 때 화면 둘러보기가 뜬다(#1038). 둘러보기를 시험하는 spec만 keepTour로 남긴다
+  if (!keepTour) await skipStudentTour(page)
   return { context, page }
+}
+
+export const studentTour = (page: Page) => page.getByRole('dialog', { name: /화면 둘러보기$/ })
+
+/**
+ * 첫 홈 진입의 화면 둘러보기(#1038)를 [그만 볼래]로 넘긴다(완료 기록이 남아 다시 뜨지 않음).
+ * 홈이 자동 시작을 판단할 때까지(data-tour-home ≠ wait) 기다린 뒤, 시작했으면 닫는다
+ */
+export async function skipStudentTour(page: Page) {
+  const home = page.locator('[data-tour-home]')
+  await expect(home).toHaveAttribute('data-tour-home', /^(start|none)$/)
+  const tour = studentTour(page)
+  if ((await home.getAttribute('data-tour-home')) === 'start') await expect(tour).toBeVisible()
+  if (await tour.isVisible()) {
+    const saved = page.waitForResponse(r => r.request().method() === 'PUT' && new URL(r.url()).pathname.endsWith('/students/me/onboarding'))
+    await tour.getByRole('button', { name: '그만 볼래', exact: true }).click()
+    await expect(tour).toBeHidden()
+    expect((await saved).status()).toBe(200)
+  }
+}
+
+/** 둘러보기 n번 대사가 다 나온 뒤 대화창을 눌러 다음으로(앞 대사의 ▼를 보고 누르지 않게) */
+export async function nextTourLine(page: Page, n: number) {
+  const tour = studentTour(page)
+  await expect(tour.locator('.st-tour-count')).toHaveText(`${n} / 8`)
+  await expect(tour.locator('.st-tour-next')).toBeVisible()
+  await tour.locator('.st-tour-box').click()
 }
 
 export const studentMenu = (page: Page, name: string) =>

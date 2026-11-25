@@ -107,7 +107,7 @@ export function ThinkingActivitiesPage({ child }: { child: Child }) {
           </div>
         </section>
       )}
-      <section className="st-activity-list" aria-labelledby="activity-list-h">
+      <section className="st-activity-list" aria-labelledby="activity-list-h" data-tour="activities-list">
         <h2 id="activity-list-h">해 본 미션과 내 돌아보기</h2>
         <div className="st-scroll">
           <ThinkingActivityList child={child} period={period} />

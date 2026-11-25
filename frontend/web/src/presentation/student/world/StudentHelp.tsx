@@ -3,6 +3,7 @@ import { useParentQuery } from '../../../data/parent/queries.ts'
 import { serviceApi } from '../../../data/serviceApi.ts'
 import { Help, Notices, ServiceContent, Support } from '../../service/ServiceCenter.tsx'
 import { SupportResults } from '../../support/SupportResults.tsx'
+import { TOUR_RESTART_PATH } from './tourSteps.ts'
 
 export type HelpPage = 'help' | 'support' | 'results' | 'notices' | 'notifications'
 
@@ -20,6 +21,8 @@ export function StudentHelp({ page }: { page: HelpPage }) {
     return <main className="st-paper st-sheet st-help-single"><h1>알림</h1><ServiceContent page="notifications" /><Link className="st-help-link" to="/student/help">← 이용 도움말</Link></main>
   return (
     <main className="st-paper st-sheet st-help">
+      {/* 화면 둘러보기 다시 하기(#1038): 서버 완료 기록은 그대로 두고 1번부터 */}
+      <Link className="st-help-tour" to={TOUR_RESTART_PATH}>화면 둘러보기 다시 하기</Link>
       <section className="st-help-faq" aria-label="이용 도움말">
         <Help role="STUDENT" />
         <NoticeBox />

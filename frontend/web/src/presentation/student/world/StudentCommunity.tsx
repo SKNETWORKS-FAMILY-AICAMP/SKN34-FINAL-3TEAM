@@ -76,7 +76,8 @@ export function StudentCommunity({ child, onSettings, initialMission = null }: {
         <button type="button" className="st-pill-link" aria-pressed={showMine} onClick={() => setShowMine((v) => !v)}>
           {showMine ? '친구들 생각 보기' : '내가 나눈 생각 보기'} <span aria-hidden="true">→</span>
         </button>
-        <p className="st-community-note">
+        {/* 둘러보기(#1038) 표시: 내 답 공개가 꺼져 있으면(공개 미동의 포함) 대체 대사 */}
+        <p className="st-community-note" data-tour={settings.data && !settings.data.enabled ? 'community-private' : undefined}>
           {settings.data && !settings.data.enabled ? (
             <>
               내 답은 지금 친구들에게 보이지 않아요.{' '}
@@ -90,7 +91,10 @@ export function StudentCommunity({ child, onSettings, initialMission = null }: {
           )}
         </p>
       </section>
-      <section className="st-community-right" aria-label={showMine ? '내가 나눈 생각' : '친구들 생각'}>
+      {/* 둘러보기(#1038) 표시: 친구 생각이 있으면 목록을 강조, 마무리한 미션이나 친구 생각이 없으면 대체 대사 */}
+      <section className="st-community-right" aria-label={showMine ? '내가 나눈 생각' : '친구들 생각'}
+        data-tour={showMine ? undefined : posts.isSuccess && posts.data.length > 0 ? 'community-posts'
+          : home.isSuccess && (!selected || posts.isSuccess) ? 'community-empty' : undefined}>
         {showMine ? (
           <>
             <h2 id="mine-h">내가 나눈 생각</h2>
