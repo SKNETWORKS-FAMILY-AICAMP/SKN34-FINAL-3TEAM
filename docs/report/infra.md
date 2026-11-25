@@ -299,7 +299,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 | DLQ 수집 | opt-in `rabbitmq-dlq` job(`<큐>.dlq`만). DLQ 규칙이 있는데 수집이 꺼져 있으면 렌더 실패 |
 | 월 LLM 비용 | 예산 300 USD, 80%(240 USD) 경보, KST 달력 월. core `LlmCostMetrics` gauge(단가 있는 비용·미산정 호출 수 분리). 미산정 경보는 최근 1시간에 새로 생긴 미산정만(#764) |
 | 담당 | 동섭 1명, `aws-alerts` 한 채널 |
-| trace 저장소 | Tempo(observability chart 선택 구성, 72h). Langfuse는 LLM 계측용으로 별도 |
+| trace 저장소 | Tempo(observability chart 선택 구성, 24h, #784로 72h에서 줄임, `observability.json`). Langfuse는 LLM 계측용으로 별도 |
 
 ### 8.1 구현에서 정한 것
 
@@ -318,7 +318,7 @@ Karpenter는 트래픽을 보지 않고 Pending Pod가 생길 때만 노드를 �
 - trace: kind에서 명령 소비 → 동기 HTTP → 결과 이벤트 → 재시도·DLQ가 한 trace(span 67개). 로그인 사용자 요청 시작점은 미실행
 - 검증 도구: `infrastructure/gitops/charts/observability`의 `verify_chart.py`(격리 Docker에서 규칙 발생·회복)
 - 확인 필요: prod의 규칙 16개·Tempo 실제 적용 시각, core OTLP span 전송 404 경고 해소 여부
-- 남은 것: ai·report(Python) 자체 HTTP 지표, 임계값 실측 조정, 서비스별 담당 라우팅
+- 남은 것: report(Python) 자체 HTTP 지표(ai는 [9.28](#928-ai-service-tracehttp-지표-1029-2026-11-25)), 임계값 실측 조정, 서비스별 담당 라우팅
 
 ## 9. AWS 데모 부하 시험 1차 (#361)
 
@@ -2195,6 +2195,75 @@ kind API 서버는 호스트 네트워크를 사용한다. 지표 수집기의 A
 - 대시보드와 지연 경보는 `rate()`·`increase()` 기반이라 새 속성 조합의 첫 호출이 빠진다. kind에서도 호출 건수 패널이 12건이 아니라 약 4.6건(30분 `increase`)을 보였다. 추세를 보는 용도로 쓴다
 - JUDGMENT·FOLLOWUP·WORD_HELP 밖의 호출 유형 지연 경보와 SLO 확정은 실측 뒤에 한다
 - prod 값은 B 계정에서 Collector egress와 core Java agent가 켜져야 생긴다. B 첫 배포 뒤 Grafana 패널을 확인해야 한다
+
+## 9.28 ai-service trace·HTTP 지표 (#1029, 2026-11-25)
+
+에픽 #1027의 ai-service 계측이다. 지금까지 ai 구간은 Tempo에 span이 없었고(architecture 4.7 남은 경계), prod Langfuse도 꺼져 있어(#379) 판정·분석 실패 요청을 ai 안에서 추적할 수 없었다. 새 의존성 없이 기존 `opentelemetry-sdk`(langfuse 의존성)와 `opentelemetry-exporter-otlp-proto-http`를 쓴다.
+
+### 9.28.1 구성
+
+| 항목 | 내용 |
+|---|---|
+| provider | `app/tracing.py`. `OTEL_TRACES_EXPORTER=otlp`면 trace, `OTEL_METRICS_EXPORTER=otlp`면 지표 SDK를 설치하고, 아니면 no-op이라 받은 `traceparent`를 그대로 넘긴다. lifespan 시작에 설치하고 종료에 flush한다 |
+| 전역 provider | 등록하지 않는다. Langfuse v4는 전역 TracerProvider가 있으면 거기에 자기 processor를 붙여, 섞으면 Langfuse generation이 Tempo로, 앱 span이 Langfuse로 간다. 앱 계측은 `tracing.tracer()`·`tracing.meter()`만 쓴다 |
+| HTTP | 순수 ASGI 미들웨어(분석 SSE도 끝까지 잰다), 가장 바깥에 둬 401·403도 잰다. SERVER span의 부모는 요청 `traceparent`. 지표 `http.server.request.duration`(초, Prometheus `http_server_request_duration_seconds`, `exported_job="ai-service"`). 속성은 메서드·경로 템플릿·상태 코드, 5xx면 `error.type`. `/health`는 뺀다 |
+| LLM | `LlmClient` 제공자 요청 1회마다 CLIENT span `llm <callType>`. 호출 종류·프롬프트 버전·시도 번호·요청/응답 모델·토큰 수·성공 여부·오류 코드만 넣는다. 사용량 이벤트 봉투 `traceparent`가 그 시도 span이다 |
+| 이벤트 | `model.version.activated` 소비는 봉투 `traceparent`를 부모로 CONSUMER span. ai가 소비하는 이벤트는 이것뿐이다. 판정·분석·리포트 문장은 core·learning·report-worker가 HTTP로 부른다 |
+| 하위 호출 | scoring·core·learning 호출 헤더의 `traceparent`는 현재 span 값이다(no-op이면 받은 값) |
+| 원문 차단 | 경로 값·질의·헤더·본문·프롬프트·응답·학생 ID는 span·지표에 넣지 않는다. 예외 메시지는 원문이 섞일 수 있어 span event로 남기지 않는다(`record_exception=False`, 예외 종류 이름만 `error.type`) |
+| values | local: `egressToCollector`, `OTEL_SERVICE_NAME`·endpoint·protocol·`OTEL_METRICS_EXPORTER=otlp`(지표만. local은 Tempo가 없어 trace는 끈다). prod: `egressToCollector`, `tracing.enabled`, `OTEL_METRICS_EXPORTER=otlp`. chart는 바꾸지 않았다(비agent 분기는 trace 값만 넣으므로 지표 값은 ai values에 둔다) |
+
+- 경보 쿼리는 `exported_job="core-service"`·`learning-service`로 걸러 ai 지표가 기존 규칙에 섞이지 않는다.
+- Collector NetworkPolicy는 app 네임스페이스 전체에서 4317·4318을 받으므로 observability 쪽 변경은 없다.
+- #1030(AI 품질 카운터)은 같은 provider를 `tracing.meter()`·`tracing.instrument()`로 쓴다.
+
+### 9.28.2 결정 (동섭, 2026-11-25)
+
+| 확인 필요 | 결정 |
+|---|---|
+| prod 적용 시점 | B 첫 배포(11/26~28)에 포함한다. 12/1 이후 장애·시험 메시지 금지(#886) 전이다 |
+| 경보 임계값 | 이번에는 지표만 낸다. ai 경보 규칙은 B 실측 뒤 정한다 |
+| Collector·Tempo 자원 | 그대로 두고 B에서 관찰한다. 근거는 아래 |
+| 지표 env 위치 | ai values에만 넣는다(공용 chart를 바꾸지 않아 #1031과 겹치지 않음) |
+
+자원 근거(#784, 9.15):
+- Collector limits 256Mi. trace 전용 `memory_limiter/traces` 144MiB, 대기열 16MiB, 재시도 30초라 Tempo가 죽어도 지표 수집은 격리된다(kind에서 거부 지표 0점).
+- Tempo limits 1Gi, `GOMEMLIMIT` 800MiB, 수집 상한 8MiB/s, 보존 24h. kind에서 초당 400 trace × 10 span에 재시작 0회였다.
+- ai가 더하는 span은 요청당 2~4개(서버 1, LLM 시도 1~2, 소비 1)다. core 요청 1건의 Java agent span(JDBC·HTTP·Rabbit) 수십 개보다 적고, ai 요청 수도 core 요청보다 적다.
+- 지표는 히스토그램 하나(경로 템플릿 약 20개 × 메서드 × 상태 코드 × 버킷 19개)라 Prometheus(limits 512Mi, 보존 3d·2GB) 부담이 작다.
+- 실제 부하에서 Tempo 1Gi가 버티는지는 9.15.5대로 B에서 확인한다.
+
+### 9.28.3 검증
+
+- 로컬 ai 시험: 전체 1,451개 통과(새 `tests/test_tracing.py` 14개, 기존 Langfuse 시험 포함. 경고 3건은 기존 aio_pika 연결 정리 경고). `ruff check`·`ruff format --check` 통과.
+  - exporter 값이 없으면 provider를 설치하지 않고, 받은 `traceparent`를 그대로 넘긴다.
+  - 값이 있으면 요청한 provider만 설치하고 전역 provider는 그대로다.
+  - HTTP SERVER span의 부모가 요청 `traceparent`이고, 이름·속성·지표는 경로 템플릿이다(경로 값·질의 없음). 5xx는 ERROR이고 예외 메시지 event는 없다. 404는 메서드만 남고 `/health`는 재지 않는다.
+  - 소비 span의 부모가 봉투 `traceparent`다. 형식 오류는 `INVALID_EVENT`로 남는다.
+  - LLM 시도 span 2개(실패·성공)의 속성에 원문이 없다. 사용량 이벤트 `traceparent`와 하위 HTTP 헤더가 현재 span이다.
+  - Langfuse를 켜도 Langfuse exporter에는 `langfuse-sdk` span만, 앱 exporter에는 앱 span만 간다. Langfuse 부모는 이전처럼 요청 `traceparent`다.
+- `helm lint --strict`·`helm template`: local `ai-service.yaml`과 prod `ai-service.json` + `images/ai-service.json` 모두 통과.
+  - prod 렌더: chart가 `OTEL_TRACES_EXPORTER=otlp`·endpoint·service name을 넣고, values의 `OTEL_METRICS_EXPORTER=otlp`, Collector 4317·4318 egress가 들어간다.
+  - local 기본 렌더: 지표 값만 들어가고 `OTEL_TRACES_EXPORTER`는 없다.
+- kubeconform은 로컬에 없어 원격 `ci-gitops`에서 확인한다(PR 생성 뒤).
+- Docker 격리 확인(공용 kind는 다른 세션이 쓰고 있어 건드리지 않음): 격리 네트워크에 `grafana/tempo:2.10.10`과 이 브랜치 ai 이미지(`OTEL_TRACES_EXPORTER=otlp`, LLM 키 없음)를 띄웠다. 원문·학생 ID를 넣은 되묻기 요청과 잘못된 토큰 요청에 `traceparent`를 붙여 보낸 뒤 Tempo `/api/traces/<id>`로 조회했다.
+
+| span | 부모 | 상태·속성 |
+|---|---|---|
+| `POST /internal/followups`(SERVER) | 요청 `traceparent`의 span | ERROR, `http.route=/internal/followups`, `503` |
+| `llm FOLLOWUP`(CLIENT) | 위 SERVER span | ERROR, `error.type=LLM_NOT_CONFIGURED`, `followup@4`, 시도 1 |
+| `GET`(SERVER, 401) | 요청 `traceparent`의 span | 경로 템플릿 없음(인증 거부는 라우팅 전), 질의 값 없음 |
+
+  - trace 전체에 원문·학생 ID·질의 값이 없고, span event도 0개였다.
+  - 처음 확인에서 재시도 없이 끝난 LLM span의 `error.type`이 오류 코드 대신 `LlmUnavailable`로 덮이는 것을 찾아 고쳤다. 시험(`test_final_llm_failure_keeps_error_code`)을 추가하고 다시 확인했다.
+  - 확인 뒤 컨테이너·네트워크·이미지를 지웠다.
+
+### 9.28.4 한계와 남은 것
+
+- core 요청 → ai 판정 → 사용량 이벤트 전체가 Tempo 한 trace로 보이는지는 B 계정에서 확인한다(동섭 결정, 2026-11-25). 공용 kind는 다른 세션 작업 중이라 Docker 격리로 ai 구간만 확인했다. 확인 방법: observability `tempo.enabled=true`, core·learning·ai `tracing.enabled=true`로 올리고 판정 한 번 뒤 Grafana Tempo에서 `service.name=ai-service` SERVER span의 부모가 learning HTTP client span인지, `llm.usage.recorded` core 소비 span이 ai `llm JUDGMENT` span 아래인지 본다. kind에서 확인할 때는 local ai values에 지표용 `OTEL_SERVICE_NAME`·endpoint가 이미 있어 `tracing.enabled=true`면 같은 값이 두 번 렌더된다(값이 같아 동작은 같다).
+- 제공자 SDK(openai·anthropic·boto3) 내부 HTTP는 자동 계측하지 않는다. LLM 시도 span의 시간이 그 구간이다.
+- scoring·report-api는 여전히 자체 span·HTTP 지표가 없다.
+- Langfuse를 켜면 generation 부모는 이전처럼 요청 `traceparent`(호출한 서비스 span)이고 ai span이 아니다. 두 저장소는 trace ID로 맞춘다.
 
 ## 10. 근거 링크
 

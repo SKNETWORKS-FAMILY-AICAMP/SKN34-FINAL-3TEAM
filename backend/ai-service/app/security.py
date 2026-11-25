@@ -10,6 +10,7 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
+from app import tracing
 from app.config import get_settings
 from app.errors import ApiError, problem
 
@@ -79,8 +80,9 @@ class UserContext:
             raise ApiError(403, "FORBIDDEN", "접근 범위 밖 학생")
 
     def to_headers(self) -> dict[str, str]:
-        """하위 서비스 호출에 그대로 전달할 헤더."""
-        headers = {USER_ID: self.user_id, USER_ROLE: self.role, TRACEPARENT: self.traceparent}
+        """하위 서비스 호출에 그대로 전달할 헤더. traceparent는 현재 span(없으면 받은 값)."""
+        traceparent = tracing.current_traceparent() or self.traceparent
+        headers = {USER_ID: self.user_id, USER_ROLE: self.role, TRACEPARENT: traceparent}
         if self.student_scope:
             headers[STUDENT_SCOPE] = ",".join(sorted(self.student_scope))
         return {key: value for key, value in headers.items() if value}

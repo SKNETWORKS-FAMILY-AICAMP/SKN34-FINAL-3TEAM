@@ -72,6 +72,12 @@ env:
   - {name: THEME_VIDEO_MAX_REGEN, value: "0"}
   - {name: GOOGLE_APPLICATION_CREDENTIALS, value: /etc/theme-video/credentials.json}
   - {name: VIDEO_PROJECT, valueFrom: {secretKeyRef: {name: ai-theme-video, key: VIDEO_PROJECT, optional: true}}}
+  # #1029: HTTP 지표만 Collector로(core·learning local과 같음). local은 Tempo가 없어 trace는 끈다.
+  # trace 확인은 --set tracing.enabled=true와 observability tempo.enabled로 opt-in(chart가 endpoint·이름도 넣음)
+  - {name: OTEL_SERVICE_NAME, value: ai-service}
+  - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.observability.svc.cluster.local:4318"}
+  - {name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf}
+  - {name: OTEL_METRICS_EXPORTER, value: otlp}
 extraVolumes:
   - name: theme-video
     secret:
@@ -96,6 +102,7 @@ networkPolicy:
   egressToPlatform:
     - {name: rabbitmq, port: 5672}
     - {name: minio, port: 9000}
+  egressToCollector: true
   # #236: LLM API over HTTPS(#538 Veo·Google 토큰 발급도 같은 443). Calico OSS has no FQDN rules, so allow public 443 only.
   egress:
     - to:
