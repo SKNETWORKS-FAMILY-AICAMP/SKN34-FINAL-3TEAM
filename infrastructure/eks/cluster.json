@@ -55,6 +55,11 @@
         "namespace": "app",
         "serviceAccountName": "learning-service",
         "roleARN": "arn:aws:iam::347161580747:role/sagomungchi-demo-learning-asset-s3-role"
+      },
+      {
+        "namespace": "app",
+        "serviceAccountName": "tox-retrain",
+        "roleARN": "arn:aws:iam::347161580747:role/sagomungchi-demo-tox-retrain-s3-role"
       }
     ]
   },

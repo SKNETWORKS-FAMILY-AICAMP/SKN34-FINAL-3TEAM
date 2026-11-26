@@ -5,7 +5,6 @@ test('기록 팝업 필터·원문 복귀·반응형 @responsive', async ({page}
  const errors:string[]=[]; page.on('pageerror',e=>errors.push(e.message))
  await page.goto('/login'); await page.getByRole('button',{name:'시연 계정으로 로그인',exact:true}).click()
  await expect(page).toHaveURL(/parent\/journal/)
- await page.evaluate(async()=>{const path='/src/mocks/fixtures/sharing.ts';const {saveSharing}=await import(path);saveSharing('demo-seoyun',true)})
  await page.goto('/parent/journal?childId=demo-seoyun&from=2026-10-01&to=2026-10-31')
  await expect(page.getByRole('heading',{name:'서윤의 학습 현황'})).toBeVisible()
  await expect(page.locator('.pd-focus-value>strong')).toHaveText('3')
@@ -42,9 +41,8 @@ test('긴 활동 제목과 유형별 10건을 표시하고 목록으로 이동 @
  await page.goto('/login');await page.getByRole('button',{name:'시연 계정으로 로그인',exact:true}).click();await expect(page).toHaveURL(/parent\/journal/)
  // This isolated browser's synthetic fixture only; never writes to the service DB.
  await page.evaluate(async()=>{
-  const studentPath='/src/mocks/fixtures/student.ts',sharingPath='/src/mocks/fixtures/sharing.ts'
+  const studentPath='/src/mocks/fixtures/student.ts'
   const {fixtureStore,persistFixtureState}=await import(studentPath)
-  const {saveSharing}=await import(sharingPath)
   const snapshot=fixtureStore.snapshot(),seed=snapshot.attempts.find((a:{studentId:string})=>a.studentId==='demo-seoyun')
   const topics=['도서관','새로운 운동장','우리 동네 버스','바다를 지키는 방법','친구와 함께 정한 약속']
   const types=['ANALYZE','EVALUATE','CREATE','SOLVE','REFLECT']
@@ -54,7 +52,7 @@ test('긴 활동 제목과 유형별 10건을 표시하고 목록으로 이동 @
    a.answers=a.answers.map((answer:{answerId:string},j:number)=>({...answer,answerId:`${a.attemptId}-${j}`}))
    return a
   }))
-  fixtureStore.restoreSnapshot({...snapshot,attempts});persistFixtureState();saveSharing('demo-seoyun',true)
+  fixtureStore.restoreSnapshot({...snapshot,attempts});persistFixtureState()
  })
  await page.goto('/parent/journal?childId=demo-seoyun&from=2026-10-01&to=2026-10-31')
  await expect(page.locator('.pd-focus-value>strong')).toHaveText('50')
@@ -100,10 +98,10 @@ test('홈 카드에서 최근 주간 리포트를 바로 열고 제목에서 날
  await expect(report.getByRole('list', {name:'리포트 일자'}).locator('[aria-current=date]')).toHaveText(shownPeriod)
  await expect(report.getByText('생성 상태', {exact:true})).toHaveCount(0)
 })
-test('비공개 원문 요청 없음 @responsive',async({page})=>{
- const requests:string[]=[];page.on('request',r=>{if(/\/children\/[^/]+\/(?:attempts|records)(?:\/|$)/.test(new URL(r.url()).pathname))requests.push(r.url())})
+test('#1064: 학생 공개 설정 없이 원문 보기를 바로 연다 @responsive',async({page})=>{
+ const requests:string[]=[];page.on('request',r=>{if(new URL(r.url()).pathname.includes('sharing-preferences'))requests.push(r.url())})
  await page.goto('/login');await page.getByRole('button',{name:'시연 계정으로 로그인',exact:true}).click();await expect(page).toHaveURL(/parent\/journal/)
  await page.getByRole('button',{name:'생각 활동 전체 보기',exact:true}).click()
- await expect(page.getByText('원문 비공개 상태에서는 날짜와 답변을 표시하지 않습니다.')).toBeVisible()
- await expect(page.getByRole('button',{name:'원문 보기 ↗'})).toHaveCount(0);expect(requests).toEqual([])
+ await expect(page.getByText(/원문 비공개/)).toHaveCount(0)
+ await expect(page.getByRole('button',{name:'원문 보기 ↗'}).first()).toBeVisible();expect(requests).toEqual([])
 })

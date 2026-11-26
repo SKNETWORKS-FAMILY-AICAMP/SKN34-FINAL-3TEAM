@@ -185,7 +185,7 @@ class ReportRenderer:
                 lines.extend(
                     [
                         "### 마지막 답변",
-                        safe(problem["finalAnswer"] or "원문 비공개 또는 답변 없음"),
+                        safe(problem["finalAnswer"] or "답변 없음"),
                     ]
                 )
                 for element in problem["elements"]:
@@ -252,8 +252,8 @@ class ReportRenderer:
                     lines.extend(
                         [
                             safe(value["followup"] or ""),
-                            safe(value["first"]["text"] or "원문 비공개"),
-                            safe(value["revised"]["text"] or "원문 비공개"),
+                            safe(value["first"]["text"] or "답변 없음"),
+                            safe(value["revised"]["text"] or "답변 없음"),
                             " · ".join(
                                 f"{label} {value['counts'][key][0]} → {value['counts'][key][1]}"
                                 for key, label in (

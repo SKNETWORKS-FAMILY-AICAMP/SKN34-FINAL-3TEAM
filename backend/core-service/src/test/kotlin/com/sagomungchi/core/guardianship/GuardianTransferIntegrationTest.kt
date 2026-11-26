@@ -101,6 +101,22 @@ class GuardianTransferIntegrationTest : PostgresRepositoryTest() {
   assertEquals(0,count("SELECT count(*) FROM withdrawal_request WHERE user_id=?",from.identity.account.id))
   assertEquals(0,count("SELECT count(*) FROM deletion_request WHERE student_id=?",child))
  }
+ @Test fun `acceptance requires the current GUARDIAN version and stores consent to it`() {
+  // #1061: a new GUARDIAN version (1.2 adds parent access to originals) makes the earlier one stale for acceptance too.
+  val from=parent();val to=parent();val child=child(from);val request=request(from,to,child)
+  val stale=choices(true)
+  val current=UUID.randomUUID()
+  jdbc.update("INSERT INTO consent_document(id,kind,version,title,content,required,effective_from,created_at) VALUES(?,'GUARDIAN',?,'로컬 합성 문서','테스트 동의',true,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date,clock_timestamp())",current,current.toString())
+  // The sender also needs the current version before a request can be accepted.
+  code("CHILD_NOT_LINKED") { transfers.accept(to.identity,request.id,choices(true),grant(to,ReauthPurpose.TRANSFER_ACCEPT)) }
+  consents.save(from.identity.account.id,child,choices(true))
+  code("CONSENT_DOCUMENT_CHANGED") { transfers.accept(to.identity,request.id,stale,grant(to,ReauthPurpose.TRANSFER_ACCEPT)) }
+
+  // A failed acceptance rolls back in production; this test shares one transaction, so check success on a fresh request.
+  val sender=parent();val recipient=parent();val other=child(sender);val fresh=request(sender,recipient,other)
+  assertEquals("ACCEPTED",transfers.accept(recipient.identity,fresh.id,choices(true),grant(recipient,ReauthPurpose.TRANSFER_ACCEPT)).status)
+  assertEquals(current,consents.history(recipient.identity.account.id).single { it.studentId==other }.document.documentId)
+ }
  @Test fun `recipient capacity is checked again after request`() {
   val from=parent();val to=parent();val child=child(from);val request=request(from,to,child)
   repeat(3) { child(to) }

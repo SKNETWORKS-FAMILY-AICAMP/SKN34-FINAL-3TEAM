@@ -196,13 +196,9 @@ class ReportClientTest {
         val narrativeOnly = ReportDocument(body.deepCopy(), reportId).apply { withoutNarrative() }.body
         assertTrue(narrativeOnly["narrative"].isNull && narrativeOnly["eveningQuestion"].isNull && narrativeOnly["explanations"].isNull)
         assertFalse(narrativeOnly["thinkingTypes"][0].has("summary")); assertEquals("합성", narrativeOnly["quotes"][0]["text"].asText())
-        val originals = ReportDocument(body.deepCopy(), reportId).apply { withoutOriginals() }.body
-        assertFalse(originals.toString().contains("합성"))
-        assertEquals(setOf("attemptId", "counts", "itemId", "followup", "first", "revised"), originals["changes"][0].fieldNames().asSequence().toSet())
         val problems = ReportDocument(body.deepCopy(), reportId).apply { withoutProblemOriginals() }.body
         assertFalse(problems["problems"].toString().contains("합성")); assertEquals("합성", problems["narrative"]["text"].asText())
         assertEquals("TUE", problems["problems"][0]["scheduledDay"].asText())
-        assertEquals("TUE", originals["problems"][0]["scheduledDay"].asText())
         assertEquals(45, problems["problems"][0]["answerTimes"][0]["thinkingSeconds"].asInt())
     }
 }

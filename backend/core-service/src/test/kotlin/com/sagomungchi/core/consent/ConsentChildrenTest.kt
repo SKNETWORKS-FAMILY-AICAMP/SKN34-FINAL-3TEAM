@@ -50,6 +50,7 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
     @Autowired lateinit var mvc: MockMvc
     @Autowired lateinit var json: ObjectMapper
     @MockitoBean lateinit var records: LearningRecordService
+    private companion object { val GUARDIAN_1_2: UUID = UUID.fromString("00000000-0000-4000-8000-000010610001") }
     private val users = mutableListOf<UUID>()
     private val documents = mutableListOf<UUID>()
     private val kinds = listOf("TERMS", "PRIVACY", "GUARDIAN")
@@ -103,22 +104,33 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
     @Test fun `migration seeds the required documents and optional COMMUNITY as the public publication`() {
         // #415 V39 publishes TERMS·PRIVACY 1.1 (ID/password signup); GUARDIAN 1.0 (#235), COMMUNITY 1.0 (#388).
         // #732 V54 PRIVACY 1.2·GUARDIAN 1.1 take effect 2026-11-23 KST; until then PRIVACY 1.1·GUARDIAN 1.0 stay current.
-        val revised = !LocalDate.now(ZoneId.of("Asia/Seoul")).isBefore(LocalDate.of(2026, 11, 23))
+        // #1061 V60 GUARDIAN 1.2 takes effect 2026-11-27 KST; until then GUARDIAN 1.1 stays current.
+        val today = LocalDate.now(ZoneId.of("Asia/Seoul"))
+        val revised = !today.isBefore(LocalDate.of(2026, 11, 23))
+        val sharing = !today.isBefore(LocalDate.of(2026, 11, 27))
         val privacy = "00000000-0000-4000-8000-000004150002" to "00000000-0000-4000-8000-000007320001"
-        val guardian = "00000000-0000-4000-8000-000002350003" to "00000000-0000-4000-8000-000007320002"
+        val guardian = listOf("00000000-0000-4000-8000-000002350003", "00000000-0000-4000-8000-000007320002", GUARDIAN_1_2.toString())
+        val current = if (sharing) 2 else if (revised) 1 else 0
         val seeded = mapOf("TERMS" to "00000000-0000-4000-8000-000004150001",
             "PRIVACY" to if (revised) privacy.second else privacy.first,
-            "GUARDIAN" to if (revised) guardian.second else guardian.first,
+            "GUARDIAN" to guardian[current],
             "COMMUNITY" to "00000000-0000-4000-8000-000003880001")
         val versions = mapOf("TERMS" to "1.1", "PRIVACY" to if (revised) "1.2" else "1.1",
-            "GUARDIAN" to if (revised) "1.1" else "1.0", "COMMUNITY" to "1.0")
+            "GUARDIAN" to listOf("1.0", "1.1", "1.2")[current], "COMMUNITY" to "1.0")
         val effective = mapOf("TERMS" to "2026-11-09", "PRIVACY" to if (revised) "2026-11-23" else "2026-11-09",
-            "GUARDIAN" to if (revised) "2026-11-23" else "2026-11-03", "COMMUNITY" to "2026-11-08")
-        assertEquals(listOf("PRIVACY 1.2 2026-11-23 true", "GUARDIAN 1.1 2026-11-23 true"), jdbc.queryForList(
-            "SELECT concat_ws(' ', kind, version, effective_from::text, required::text) FROM consent_document WHERE id IN (?,?) ORDER BY id",
-            String::class.java, UUID.fromString(privacy.second), UUID.fromString(guardian.second)))
+            "GUARDIAN" to listOf("2026-11-03", "2026-11-23", "2026-11-27")[current], "COMMUNITY" to "2026-11-08")
+        assertEquals(listOf("PRIVACY 1.2 2026-11-23 true", "GUARDIAN 1.1 2026-11-23 true", "GUARDIAN 1.2 2026-11-27 true"), jdbc.queryForList(
+            "SELECT concat_ws(' ', kind, version, effective_from::text, required::text) FROM consent_document WHERE id IN (?,?,?) ORDER BY id",
+            String::class.java, UUID.fromString(privacy.second), UUID.fromString(guardian[1]), GUARDIAN_1_2))
+        // GUARDIAN 1.2 is GUARDIAN 1.1 with only the parent-originals purpose appended (docs/report/auth-account.md 20).
+        // Windows checkouts run migrations with CRLF, CI with LF; compare the text, not the line endings.
+        val content = { id: String -> jdbc.queryForObject("SELECT content FROM consent_document WHERE id=?", String::class.java, UUID.fromString(id))!!.replace("\r\n", "\n") }
+        val purpose = "   수집·이용 목적: 학습 피드백 제공, 학부모 학습 현황·분석 대화·주간 리포트 제공"
+        assertEquals(content(guardian[1]).replace("$purpose\n", "$purpose, [초안] 법정대리인(학부모)에게 자녀의 학습 답변·돌아보기 원문 제공(생각 메모 제외)\n"),
+            content(guardian[2]))
+        assertNotEquals(content(guardian[1]), content(guardian[2]))
         // Synthetic fixtures (this class's or leftovers of other groups) move to the future and roll back with the test.
-        val migrated = (seeded.values + listOf(privacy.first, privacy.second, guardian.first, guardian.second)).distinct()
+        val migrated = (seeded.values + listOf(privacy.first, privacy.second) + guardian).distinct()
         jdbc.update("UPDATE consent_document SET effective_from=effective_from+3650 WHERE id NOT IN (${migrated.joinToString(",") { "?" }})",
             *migrated.map(UUID::fromString).toTypedArray())
         val body = mvc.get("/api/v1/consent-documents").andExpect {
@@ -133,6 +145,36 @@ class ConsentChildrenTest : PostgresRepositoryTest() {
             assertEquals(effective.getValue(kind), doc["effectiveFrom"].asText())
             assertTrue(doc["content"].asText().startsWith("※ 이 문서는 교육 과정 시연용 문서이며 법률 검토를 거치지 않았습니다."))
         }
+    }
+    @Test fun `GUARDIAN 1_1 consent needs renewal once 1_2 is current and renewal restores the child`() {
+        // #1061: the seeded 1.2 (V60, 2026-11-27) is moved inside this rolled-back test so it runs on any date.
+        val v11 = UUID.fromString("00000000-0000-4000-8000-000007320002")
+        jdbc.update("UPDATE consent_document SET effective_from=effective_from+3650 WHERE kind='GUARDIAN' AND id NOT IN (?,?)", v11, GUARDIAN_1_2)
+        jdbc.update("UPDATE consent_document SET effective_from=(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date-1 WHERE id=?", v11)
+        jdbc.update("UPDATE consent_document SET effective_from=(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date+1 WHERE id=?", GUARDIAN_1_2)
+        val p = login(); val user = p.identity.account.id; agree(user); val child = register(user)
+        assertEquals(v11, consent.history(user).single { it.studentId == child.id }.document.documentId)
+        val student = auth.enterStudent(child.id, auth.authenticate(p.accessToken))
+        // Entering the student locks this parent session; parent-side checks use a second login (same as the withdrawal test).
+        val other = auth.login(GoogleProfile(p.identity.account.subject!!, p.identity.account.email, "합성 보호자"), null)
+
+        jdbc.update("UPDATE consent_document SET effective_from=(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul')::date WHERE id=?", GUARDIAN_1_2)
+        assertEquals("1.2", consent.documents().single { it.kind == "GUARDIAN" }.version)
+        assertFalse(access.hasGuardianConsent(user, child.id))
+        assertEquals("CONSENT_REQUIRED", children.children(user).single().recordState)
+        assertTrue(auth.authenticate(other.accessToken).studentScope.isEmpty())
+        mvc.get("/api/v1/me") { header("Authorization", "Bearer ${student.accessToken}") }.andExpect {
+            status { isForbidden() }; jsonPath("$.code") { value("CHILD_NOT_LINKED") }
+        }
+        mvc.get("/api/v1/children/${child.id}/summary") { header("Authorization", "Bearer ${other.accessToken}") }.andExpect {
+            status { isForbidden() }; jsonPath("$.code") { value("CHILD_NOT_LINKED") }
+        }
+
+        consent.save(user, child.id, choices(true))
+        assertEquals(GUARDIAN_1_2, consent.history(user).first { it.studentId == child.id && it.status == "AGREED" }.document.documentId)
+        assertTrue(access.hasGuardianConsent(user, child.id))
+        assertEquals(setOf(child.id), auth.authenticate(student.accessToken).studentScope)
+        assertEquals(child, students.requireLinked(user, child.id))
     }
     @Test fun `missing publication fails explicitly instead of allowing consent`() {
         // The shared DB may contain older published versions from other fixture groups.

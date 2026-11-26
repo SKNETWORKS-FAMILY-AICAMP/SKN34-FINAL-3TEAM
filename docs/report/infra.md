@@ -1646,6 +1646,20 @@ SageMaker는 0대에서 켜질 때마다 S3에서 모델을 다시 받는데, �
 - 결과와 걸린 시간은 이 절 아래에 덧붙인다.
 - **B**: #809 B 런북(AWS README 13단계)에서 검사 이미지 사용 여부를 정한다(9.17.7). ECR은 8개(`demo-stack.json`).
 
+**11/24 A 실행 결과** (11/25 예정을 하루 당김, 9.26)
+
+| # | 시각 | 결과 |
+|---|---|---|
+| 1 | 18:27 | `model-check` 이미지 게시 `sagomungchi/sagemaker-explanation:777-a-20261124`, digest `sha256:02b233dd…`, 10.68GB, `…docker.distribution.manifest.v2+json`. 기반 계층이 작업자 PC에 있어 3초. `explanation-endpoint.json` `imageDigest` 교체 |
+| 2 | 18:28 | 승인 경로 `base-gguf/` 4개·`adapter-gguf/` 1개 버전 삭제(삭제 마커 0) → `verify` `all objects match`(13개) |
+| 3 | 18:31~18:46 | 어댑터 IC → 기반 IC 삭제(2분 40초) → `apply`: 모델 `…-r5`, 기반 IC Creating → InService 852초(사본 1, 이미지 10.7GB 받기 포함). IC 로그 `[model-check] model check OK: 13 files 16.09 GiB sha256 in 44.6s`. `schedule`로 일 23:30→1·월 02:00→0 다시 걸음 |
+| 5 | 18:46 | 기반 IC 호출 2.7초(80토큰, `finish=length`), 어댑터 IC 호출 2.2초(38토큰, `stop`). 어댑터 첫 호출 뒤 `[model-check] adapter sagomungchi-demo-explanation-explain check OK: 2 files`. `copies 0`은 첫 요청이 Throttling으로 보였지만 실제로 반영됨(재시도는 `UPDATE_RC_IN_PROGRESS`, 9.17.4와 같은 경합). 인스턴스 0대 18:59 |
+| 4 | 18:49 | `lock --dry-run` → `lock`. `status` `path lock …: locked`, 잠근 경로 `PutObject` 1건 `AccessDenied`(explicit deny), 객체 생기지 않음 |
+
+- GPU(`ml.g6e.xlarge`) 사용 약 28분(18:31~18:59).
+- B 판단(11/23 결정 기준): A에서 기동·해시 검사·기반·어댑터 호출이 모두 문제없어 **B에도 검사 이미지를 적용**한다(9.17.7 절차). B는 이미지 빌드·게시를 그 계정 ECR에 다시 하고 digest를 B 값으로 확인한다.
+- 리포트 생성 흐름(ai → SageMaker)으로 설명이 붙는지는 A에서 따로 돌리지 않았다. 같은 IC를 직접 호출했고, 실제 흐름은 B #808 W1~W3 주간 리포트에서 확인한다.
+
 ### 9.17.7 B 계정 적용 절차
 
 순서는 [aws README](../../infrastructure/aws/README.md#리포트-gemma-sagemaker-엔드포인트-746-2026-11-18)의 "새 계정 순서"와 같다. #777 때문에 더해진 부분만 적는다.
@@ -1832,7 +1846,7 @@ Pod 로그는 클러스터 밖으로 모으지 않는다(Loki·Fluent Bit·Cloud
 
 - 변경 사유(2026-11-24, #986): 11/24 첫 실행에서 digest-pr job의 `gh pr create` 단계가 실패했다. 조직(SKNETWORKS-FAMILY-AICAMP) 정책이 "Actions가 PR을 만들고 승인하는 것"을 막고 있고, 조직은 정책을 바꿀 수 없다고 답했다. 이미지 빌드·ECR 게시·images 파일 갱신·브랜치 push는 됐다.
 - 결정(2026-11-24 팀장): workflow는 digest 브랜치 push와 실행 요약의 PR 만들기 링크까지 하고, **PR은 사람이 링크로 연다.** job 권한은 `contents: write`만 남기고 `gh pr create`·`gh workflow run ci-gitops.yml` 단계를 지웠다. 게이트(`--require-executable`·`--write-images`·images 밖 변경 차단)는 그대로다. 승인 → 병합 → Argo CD 자동 동기화 → PreSync migration → revert 복구 흐름도 그대로다. 기각한 대안: deploy key(SSH push용이라 PR API를 못 부르고, main 직접 push는 승인 단계가 없어지며 보호 규칙과 충돌), 개인 계정 포크(OIDC 신뢰·Argo CD repoURL·변수·문서를 모두 바꿔야 하고 배포 기록이 포크에만 남음), 개인 토큰 PAT(만료·보안 관리 부담, 조직 차단 가능성).
-- 저장소 설정(main 보호 규칙, Code Owners 리뷰)은 관리자 손 작업으로 11/24 develop → main 릴리스 뒤 적용한다. 예전 "Actions PR 생성 허용" 단계는 조직 정책상 켤 수 없어 뺐다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1124-예정).
+- 저장소 설정(main 보호 규칙, Code Owners 리뷰)은 관리자 손 작업으로 11/24 develop → main 릴리스 뒤 적용한다. 예전 "Actions PR 생성 허용" 단계는 조직 정책상 켤 수 없어 뺐다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1004).
 - 11/25 A 확인 순서: cd-release 실행 → 실행 요약 링크로 PR 열기(제목·본문 채워짐) → `pull_request` ci-gitops → 다른 code owner 승인·병합 → Argo CD Synced/Healthy → `verify_cd_deployment.py` 결과 PR 댓글 → revert 병합으로 이전 버전 복구 → 최신으로 다시 배포([CD README](../../infrastructure/cd/README.md#1125-a-계정-확인-절차-858)). 결과는 이 절에 덧붙인다.
 - 확인(2026-11-20, GitHub·AWS 실행 없음): `scripts/tests` 시험(images 파일 계약 fixture), digest-pr job 셸 단계 모의 실행(임시 저장소·로컬 bare 원격·가짜 `gh`): 파일 6개만 바뀐 커밋, `cd/prod-images-main-<SHA 12자리>-<run id>` 브랜치 push까지. 11/24 변경 뒤에는 `test_cd_deployment.py`가 권한(`contents: write`만), `gh pr create`·`gh workflow run` 없음, `-F` 커밋, compare 링크를 검사한다.
 - 한계: PR 작성자는 링크로 연 사람이라 본인 승인이 세지 않는다. 다른 code owner(동섭 ↔ 태윤)가 없으면 병합할 수 없다(막히면 비상용 Helm 경로). PR 열기가 사람 손이라 링크를 열지 않으면 브랜치만 남고 배포되지 않으며, 오래된 digest 브랜치·PR은 사람이 닫고 지운다. 11/20 안의 한계였던 "봇 작성자라 실행한 사람도 승인 가능"과 "`GITHUB_TOKEN` PR에는 ci-gitops 외 `pull_request` CI가 돌지 않음"은 사람이 PR을 열면서 없어졌다. #857 병합으로 생긴 실제 images 파일 6개는 `RealImagesFileTests`가 구조를 검사한다.
@@ -2156,7 +2170,127 @@ kind API 서버는 호스트 네트워크를 사용한다. 지표 수집기의 A
 
 로컬에서 `ci-gitops`의 Helm·kubeconform 단계를 실행해 리소스 193개가 모두 유효했고 건너뜀은 0개였다. prod 관측 values로 렌더링한 Kubernetes 객체 21개를 변경 전과 대조했다. 원격 CI 및 Discord 수신은 이 로컬 검증에 포함하지 않았다.
 
-운영 노드 배치, AWS 권한, 비용과 Discord 수신은 11/28 B 첫 배포 안정화 뒤 검토한다. EKS 노드 여유와 실제 학습 데이터 사용 결정(#887)을 운영 활성화 전에 확인한다.
+운영 노드 배치, AWS 권한과 Discord 수신은 11/26 결정으로 A에 먼저 넣었다(9.35). EKS 노드 여유와 실제 학습 데이터 사용 결정(#887)을 운영 활성화 전에 확인한다.
+
+## 9.26 A 계정 11/24 재가동 기록 (#927, 2026-11-24)
+
+9.16.2 순서로 A 계정(347161580747, ap-northeast-2)을 11/19 종료 상태에서 다시 올렸다. 첫 배포는 Argo CD(9.18), Helm 경로는 server dry-run만 했다(11/20 결정). 원래 11/25 예정이던 것을 하루 앞당겼다. 모든 시각은 KST, 수행 구분은 **A**(실서버)다. 작업 폴더는 저장소 밖 `aws-demo-state/restart-20261124`(로그·설정 백업)이다.
+
+### 9.26.1 기준 커밋
+
+| 시각 | 커밋 | 내용 |
+|---|---|---|
+| 13:57:30 | main `abcbb9d4` | develop→main 릴리스 #987 |
+| 14:10:04 | main `c2ed78b0` | #986(digest PR을 사람이 링크로 여는 방식)만 담은 릴리스 #989. #987이 #988보다 22초 먼저 병합돼 따로 올렸다 |
+| 14:43:54 | main `e5082cd6` | digest PR #991 병합(images 6개를 `main-c2ed78b0d04e`로). 김태윤이 merge commit으로 병합, GitHub 리뷰 승인 기록 0건 |
+| 17:12:35 | main `cfc04538` | #858 revert 확인용 PR #1008(#991 digest를 11/06 값으로 되돌림) |
+| 17:26:06 | main `54d12a9a` | 복구 PR #1010(images 6개를 다시 `main-c2ed78b0d04e`로, #991과 같음) |
+
+런북(9.16.2·9.18)은 #987 전 main에 없어서 1~4단계는 develop `e9f55e37` 사본으로 실행했다. 두 커밋의 인프라 스크립트는 같다.
+
+### 9.26.2 단계별 결과
+
+| 시각 | 9.16.2 단계 | 결과 |
+|---|---|---|
+| 13:40 | 1 `plan` | DIFF 3·MISSING 2: NAT MISSING, private route 2개가 삭제된 NAT(blackhole), EKS MISSING, **reports 버킷 수명 주기 DIFF**(#975 규칙, 버킷에 규칙 없음) |
+| 13:43~13:54 | 2★ RDS 시작 | `start-db-instance` → available 13:53:55(약 10분). 데이터는 11/19 22:38 상태(core V53·learning V22) |
+| 13:43~13:46 | 3★ `apply`·route | NAT `nat-08dbd4b301a48a3bb`(새 EIP), reports 수명 주기 규칙 2개 생성(`apply`가 규칙 없는 버킷에만 넣음), private route 2개 `replace-route` |
+| 13:48~14:05 | 4★ EKS | `render-eksctl`(작업자 IP가 바뀌어 공개 접근 CIDR만 11/17과 다름) → `eksctl create cluster` 16분 38초. 노드 4대(application·platform-observability 각 2, 2a·2b). `apply --after-eksctl` 새로 만든 것 없음, `plan` OK=67(노드그룹 OK, 9.16.1의 8번 확인) |
+| 14:09 | #760 dry-run | Argo CD 전 `app` namespace만 두고 `redeploy-app.ps1 -AllowInstall`(적용 없음): migration 3개 NetworkPolicy·Job `created (server dry run)`, 앱 6개 `First install … pending-install`, 모두 exit 0. 클러스터 변경 없음 |
+| 14:12~14:14 | 9.18.1 설치 | argo-cd 10.11.7 `helm install` 50초, Pod 6개 모두 `application` 노드. `argocd-notifications-secret`·관측 Secret 2개(Secrets Manager 값을 출력 없이 전달)·`app/rds-ca`·`project.yaml` |
+| 14:14~14:24 | #858 cd-release | run 45331865412(서비스 5개, `delivery=pull-request`): validate 9초·publish 9분·digest-pr 9초. 브랜치는 main HEAD 위 커밋 1개, `images/*.json` 6개만, digest 9개가 ECR `main-c2ed78b0d04e` 태그와 같음 |
+| 14:45~14:55 | root app | `root-app.yaml` 적용 뒤 10분 14초에 Application 17개(root·플랫폼 10·앱 6) Synced/Healthy |
+| 14:56 | `rds-bootstrap` | 1회(24초). DB 3개 PUBLIC CONNECT 회수, 로그인 계정 2개씩 |
+| 14:57~15:01 | 7★ ALB·CloudFront | 11/17 Ingress 적용 → ALB `sagomungchi-demo-core-15704624…` active 14:59:30, target healthy. `EW2QD9OAPEVRK`의 `core` origin `DomainName`만 교체(변경 전 설정 `cf-before.json`, 바뀐 필드 1개) → Deployed 15:01:12 |
+| 15:00 | 8★ SageMaker | 예약 확장 재개(`ScheduledScalingSuspended=false`), IC InService·사본 0 |
+| 15:01~15:02 | 9 웹 | main `e5082cd6` 빌드(`npm ci`·`npm run build`, production-mocks 통과) → assets → 기타 → `index.html`(no-cache) → `/*` 무효화. `index.html` 버전 `5tWfC2…` → `WWFiIGxo…`, 서빙 index·`index-DbXry-S3.js`가 로컬 빌드와 sha256 같음, 첫 화면 콘솔 오류 0 |
+| 15:21 | 10 경로 확인 | `verify_cd_deployment.py --base-url https://www.sagomungchi.co.kr`: ok=true, 6단계 모두 ok(student-login·pick-mission·start-attempt·read-answer·parent-refresh·list-reports). 결과는 #991 댓글 |
+
+- 런북과 다르게 한 것: 5단계(플랫폼 손 Helm)와 6단계(cd-release 첫 배포)는 Argo CD 경로로 바꿨다(9.18, 동섭 확인). `rds-bootstrap`은 앱 동기화 뒤 한 번만 했다. ESO가 만드는 DB Secret이 있어야 돌 수 있는데 root app은 wave 9 다음 바로 앱 migration으로 넘어간다. A DB는 11/17에 이미 계정·권한·`vector`가 있어 migration은 막히지 않았다.
+- digest를 root app 전에 바꾼 이유: develop·main의 `images/*.json`이 11/06 빌드(`main-322e7976b26a`, migration은 11/05 `main-c6809ddb65ee`)를 가리켜, 그대로 붙이면 11/06 앱이 V53 DB 위에 올라간다. 그래서 digest PR을 먼저 병합하고 root app을 붙였다.
+- fixture: 11/19 쿠키는 예전 도메인 것이라 새로 받았다. fixture 학부모(`smoke601a`, 자녀 부하1)로 새 주소에 로그인 → V54 법정대리인 동의 1.1 재동의 → 기기 등록·학생 로그인. 쿠키는 `Path=/api/v1/auth`·`/api/v1/auth/student`라 개발자 도구에서는 그 경로 주소를 열어야 보인다.
+
+### 9.26.3 #927 A 칸 결과
+
+| 항목 | 결과 |
+|---|---|
+| #760 | 위 dry-run 통과. 비상용 Helm 경로 확인 끝 |
+| #855 | 설치·`project.yaml`·`root-app.yaml`·root Synced. Discord 채널에 동기화 알림 수신 확인(동섭, 14:45·14:52 알림). admin 비밀번호는 동섭이 port-forward 웹 화면에서 변경(`argocd-secret`의 `admin.passwordMtime` 17:52:23, 값은 작업자에게 공유하지 않음). 초기 비밀번호는 화면 출력 없이 클립보드로만 넘겼다. 변경 뒤 `argocd-initial-admin-secret` 삭제(17:52), Argo CD Pod 6개 Running·Application 17개 Synced/Healthy 유지 |
+| #856 | 플랫폼 10개 Synced/Healthy, ExternalSecret 14개 Ready, EC2NodeClass `application` Ready, NodePool `application-burst`(노드 0) |
+| #857 | migration Job 3개 Complete(core V54~V57 4개 → v57, learning V23~V27 5개 → v27, report Alembic 변경 없음) → 앱 6개 Synced/Healthy, 재시작 0 → 경로 확인 ok(학습은 이미 답변이 있는 진행 중 시도라 `read-answer`) |
+| #858 | cd-release → digest 브랜치 → 사람이 링크로 PR #991 → 병합 → Argo CD 동기화 → 경로 확인 PR 댓글. revert 복구 1회는 아래 9.26.6. 승인 기록 없이 병합된 것은 위 9.26.1 |
+| #910 | core 활성 목록에 `PROMPT` 행 0개 → ai는 내장 `report-explanation@4` 사용, ai readiness `versions: UP`. `/internal/versions`는 ops 토큰이 없어(9.13 남은 것과 같음) Pod 안 내장 버전 표로 대신 확인 |
+| #897 | 시연 학부모 `teamparent1`로 `demo_account_data.py children --child 부하1:5`(15:24): 계정 동의 저장·법정대리인 재동의 → `/me` READY, `guardianConsentRequired=false`. A에는 #624 시연 계정이 아직 없다(B에서 만들 때 새 버전으로 동의) |
+| #691 | 동섭이 관리자 화면에서 `tox-koelectra-small 1.0-1119`(범위 `answer-filter`) 등록·승인·활성화. scoring 로딩 확인, 활성 tox 1개. 1,500자 1칸 20회(scoring Pod 안): 혼자 p50 315·**p95 332**·최대 352ms, M2 실제 추론과 같이 p50 915·**p95 1,061**·최대 1,063ms(같은 시간 M2 6건 p50 3.0초), 모두 200. 메모리 522Mi → 최대 591Mi(limit 2Gi), CPU 최대 656m, 재시작 0. M2와 같이 돌 때 p95가 마감 1.3초에 약 240ms 남는다 |
+| #974 | 아래 9.26.4 |
+| #900 | Tempo 직접 검색, 범위 14:45~16:3x: 토스 청구 0건·취소 0건·콜백 `url.query` 0건. Google 로그인 콜백 span 2건(15:06·15:07)은 query가 지워져 있음 → 새 도메인 Google 로그인도 확인. 재인증: 18:04 동섭이 Google 계정 학부모로 "보호자 비밀번호 Google 본인 확인"만 하고 비밀번호는 정하지 않음. `GET /api/v1/auth/google/reauth/callback` span 1건(200)에 `url.path`·`http.route`만 있고 `url.query` 없음, `code=` 포함 span 0건. 같은 trace의 Google token·certs 호출은 `url.full`에 query 없음. 24시간 전체 범위 확인은 B |
+| #882 | API 읽기만: 운영 홈 건수(문의·신고·실패 작업 0)와 도착 목록 건수 일치, PAYMENT_VIEW 없는 관리자는 환불 카드·목록 모두 막힘. 편성표 G3·G5 11/23~12/14 4주 모두 미편성·잠금 없음, READY 후보 15개. 화면(18:1x, `teamadmin1`, 읽기·화면 조작만): 운영 홈 "재생성 장면 비교 대기 3건" → 검수 목록 `stage=pair` 3건 일치. "반납 그림책을 찾아라"(초3) 시작 영상 버전 3개 비교, 오른쪽만 v3→v2로 바꿔도 왼쪽 현재 선택본 v1 유지, 새로고침 뒤 선택본 유지. 월요일 장면 ↔ 미션 내용 왕복 이동. 게시 관리 초3 11/23~12/14 4주 편성표·미편성 후보 표시. 쓰기(동섭 요청, 되돌릴 수 있는 것만, 18:2x): 시작 영상 "이 버전 사용"으로 선택본 v1→v3 저장, 새로고침 뒤 v3 유지 → v1로 되돌림(새로고침 뒤 v1). 초4 "동물원 바구니 찾기"(생성 기준 주 11/23) 미편성 → 12/14 편성 확정 → 12/07로 주차 변경(12/14 칸 비워짐) → 편성 해제로 미편성 복귀, 단계마다 새로고침 뒤 유지. 생성 기준 주와 편성 주가 따로 표시됨. 맞바꾸기는 초4 후보가 1개라 하지 않음. 채택·게시 확정은 하지 않음: 확정 이전 상태로 되돌리는 기능은 없고(채택한 테마·미션은 남고 학년·주는 바꿀 수 없음, 확정 때 풀린 같은 주 후보 편성도 돌아오지 않음) 게시 중단·수정 → 재검토 → 재게시로만 수습하므로 A에서 시험 흔적을 B로 넘기지 않고, B 시연 테마를 실제 게시할 때 한 번 지나간다. 목록 상태는 "영상 비교 대기"인데 상세 제목 옆 표시는 "검수 대기"(단계와 초안 상태 표시가 다름) |
+| #777 | 9.17.6 "11/24 A 실행 결과": 검사 이미지 게시·gguf 정리·IC 재생성(`…-r5`, 해시 검사 13개 44.6초)·경로 잠금(쓰기 `AccessDenied`)·기반·어댑터 호출 성공(어댑터 검사 OK) → 0대. B에도 적용 |
+| 9.22.5 | 웹 첫 화면·인증서 확인, 예전 주소 refresh 403(예상), Google 로그인 확인. **루트 `sagomungchi.co.kr`은 http·https 모두 응답 없음**(가비아 포워딩 미설정으로 보임) |
+
+### 9.26.4 #974 추억 그림책
+
+A에 액자(`theme_frame`)가 하나도 없고 이번 주(11/23) 테마도 게시돼 있지 않아 발급할 회차가 없었다. 동섭 승인으로 시험 데이터를 넣었다(16:06).
+
+- learning: 부하1(`smoke601a`)에게 초5 11/16 회차 액자 1개(`974f0000-0000-4000-8000-000000000974`). 실제 완료가 아니라 행만 넣어 엔딩을 안 본 상태다.
+- core: 같은 자녀에 PREMIUM 시험 구독 `974a0000-0000-4000-8000-000000000974`(결제 없음, 12/1까지, 스냅숏은 현재 PREMIUM 상품 값).
+- 부하1의 답변 원문 공개를 켰다(그 전 회차 목록 403 `STUDENT_RECORDS_PRIVATE`).
+
+| 확인 | 결과 |
+|---|---|
+| 발급 | 16:15:54 202 QUEUED → 16:16:16 READY(25초), 받기 200 |
+| PDF | 7쪽, 그림 6개(841~850×864, FlateDecode, 1.01~1.23MB) = 엔딩 전 기대값 6. 로그 `그림책 그림 건너뜀` 0줄 |
+| 설정 | `MEMORY_BOOK_ASSET_ORIGINS`가 missions 버킷 출처, `report.memorybook.generate`·`core.memorybook.events` consumer 1, 상품 FREE `memoryBook=false`·PREMIUM `true`·하루 3권, core V57 성공(migration 로그) |
+| D6 원본 크기 | 이 회차 PNG 16개 1.06~1.66MB, missions `theme-drafts/` PNG 173개 중 최대 1.89MB, 2MB 초과 0 → 축소 추가 이슈 불필요 |
+| E4 메모리 | report-worker 126Mi → 최대 **669Mi / 768Mi(87%)**, CPU 최대 472m, 재시작 0·OOMKilled 없음. 그림 7장(엔딩 본 회차)이나 동시 발급에서는 한도를 넘을 수 있어 limit 조정 판단이 필요하다(#1006) |
+
+시험 데이터 3가지는 동섭 결정으로 17:57에 정리했다(B로 넘기지 않음). 넣을 때와 같은 사전 조건 검사를 둔 트랜잭션으로 실행했다.
+
+- learning: 액자 `974f0000-…` 삭제(부하1 액자 0개)
+- core: 시험 구독 `974a0000-…`을 `CANCELED`로(삽입 SQL 헤더의 되돌리기 방식, 이력은 남김). 부하1의 ACTIVE 구독 0개
+- 부하1 원문 공개 `parentSharingEnabled` true → false. 학부모 회차 목록이 다시 403 `STUDENT_RECORDS_PRIVATE`
+- 발급한 그림책 1권(`f41b1ce8`, report_db 행과 reports 버킷 PDF, 만료 12/24)은 남겨 두었다. 원문 비공개라 학부모 목록에서도 403으로 보이지 않는다. 동섭 결정으로 그대로 둔다. B DB는 A 스냅샷에서 만들므로 이 기록 1개가 B로 넘어가지만 PDF는 A reports 버킷에만 있다. B에서 부하1 원문 공개를 다시 켜면 목록에는 보이고 받기는 실패할 수 있다.
+
+### 9.26.5 발견
+
+- **Argo CD 알림 로그에 Discord webhook URL 원문**: notifications-controller 로그 수준이 `info`인데도 HTTP 클라이언트가 `[DEBUG] POST https://discord.com/api/webhooks/…`로 URL 전체를 남긴다. Pod 로그를 볼 수 있는 사람은 webhook 값을 알 수 있다. 확인 중 작업자 출력에도 한 번 찍혔다(다른 곳에 옮기지 않음). webhook 재발급과 B 적용 전 로그 설정 변경 여부는 결정 필요(#1003).
+- **cd-release 계획 인코딩**: Windows Git Bash에서 계획 JSON을 `python`으로 만들어 `gh workflow run -f plan=`에 넘기면 한국어가 CP949로 깨져 PR 본문 사유·호환성 근거가 깨졌다(#991 본문은 손으로 고침, 커밋 메시지·`planSha256`은 깨진 입력 기준). `PYTHONIOENCODING=utf-8`로 만든다(#1004).
+- **이번 주(11/23) 테마 미게시**: 게시된 테마는 초5 11/16 하나뿐이라 학습은 지난 테마를 재사용하고 있다.
+- **Argo CD 알림 revision 빈칸**: 여러 source를 쓰는 앱 일부의 Discord 알림에 revision이 비어 나온다(#1003에 같이 적음).
+- **Grafana 알림 링크가 `localhost:3000`**: Grafana `root_url`이 설정되지 않아 알림의 링크가 접속할 수 없는 주소다.
+- core app 계정은 `flyway_schema_history`를 읽을 수 없다(9.20.2 2번 SQL 첫 줄은 migrate 계정이나 Job 로그로 확인).
+
+### 9.26.6 #858 revert 복구 확인
+
+#991 digest를 되돌리는 PR #1008을 병합해 Argo CD가 예전 버전으로 되돌리는지 봤다. 되돌린 대상은 #991 전 값(앱 11/06 `main-322e7976b26a`, migration 11/05 `main-c6809ddb65ee`)이다.
+
+| 시각 | 확인 | 결과 |
+|---|---|---|
+| 17:12~17:18 | Argo CD 동기화 | 병합 약 4분 뒤 `cfc04538` 기준 동기화. core·learning·ai·scoring·report-worker가 예전 digest로 Synced/Healthy |
+| 17:18~17:19 | 예전 migration Job | core·learning `…-migrate-main-c6809ddb65ee` Complete(Flyway는 모르는 최신 migration을 건너뜀) |
+| 17:16~17:24 | report-api 예전 migration | `Can't locate revision identified by '20261110_08'`로 실패. 11/03 Alembic이 지금 DB revision을 모른다. PreSync 실패로 report-api는 최신 이미지에 남고 Argo CD가 5회 재시도 뒤 멈춤 |
+| 17:21:48 | 경로 확인 | student-login ok, **pick-mission 실패**: `GET /api/v1/students/me/weekly-theme` 404(지금 웹이 부르는 경로가 예전 앱에 없음) |
+| 17:26~17:31 | 복구 #1010 | 앱 6개가 다시 main images 파일 digest와 같고 Synced/Healthy. 롤링 업데이트 중 자리가 모자라 Karpenter가 `application-burst` t3.medium 1대를 띄움(노드 5대) |
+| 17:32 | 경로 확인 | ok=true, 6단계 모두 ok |
+
+- 결론: revert 절차(digest PR 되돌림 → 병합 → Argo CD 동기화)는 동작한다. 다만 migration이 여러 번 쌓인 시점까지 이미지만 되돌리면 DB(report Alembic)와 API(웹이 부르는 경로)가 맞지 않아 서비스가 깨진다. 확인 중 DB 데이터 변경은 없었다.
+- Argo CD 화면의 report-api 마지막 동작은 revert 때 기록(Failed, 5회 재시도)이 남아 있다. 앱 상태는 Synced/Healthy이고 다음 동기화 때 바뀐다.
+
+**되돌리기 판단 기준(앞으로)**
+
+| 상황 | 대응 |
+|---|---|
+| 직전 digest 릴리스 뒤 migration 변경이 없고 API가 지금 웹과 맞음 | 직전 digest로 revert(#1008과 같은 방식) |
+| 그 사이 migration 변경이 있음 | revert하지 않고 고친 커밋으로 새 digest PR(fix-forward) |
+| 데이터가 잘못 바뀜 | RDS 시점 복원(9.12 PITR, #629). 데이터 손실이 있을 수 있어 마지막 수단 |
+
+digest PR만 보고 이 판단을 할 수 있게 PR 본문에 migration 변경 여부를 넣는 일은 #1013에서 한다.
+
+### 9.26.7 비용과 남은 것
+
+- 켜 둔 과금 자원: RDS, NAT·EIP, EKS, t3.medium 4대(17:28부터 Karpenter 1대 더해 5대), ALB(시간당 약 $0.43, 추가 노드 포함 시 조금 더). ECR에 `main-c2ed78b0d04e` 이미지 7개가 늘었다.
+- 남은 것: 9.16.2 11단계(B 공유용 KMS 스냅샷)와 A 종료.
+- 2026-11-26 변경(동섭): 11/25 밤 A 종료는 하지 않았다. A를 계속 켜 두고 지원 한도(총 30만 원) 안에서 쓰며, 12/2 멘토링 뒤 B로 옮긴다(#809). 비용을 줄이려고 EventBridge Scheduler 그룹 `sagomungchi-night-stop`(역할 `sagomungchi-night-stop-scheduler`)으로 화·목·금·토·일 01:00에 노드 그룹 2개를 0대로, 01:05에 RDS를 멈추고 07:00 RDS·07:15 노드를 되살린다. 월요일(주간 리포트·SageMaker 창)과 수요일(03:00 테마 초안) 새벽은 제외했고 일정은 12/10에 끝난다. A를 지울 때 이 일정과 역할도 지운다.
 
 ## 9.27 LLM 호출 지연·오류 지표와 경보·대시보드 (#1028, 2026-11-25)
 
@@ -2381,6 +2515,122 @@ prod 반영 뒤 1주 값을 여기에 남기고 경보가 필요한지만 적는
 | 판정 보류율(프롬프트 버전별) | 기록 예정 | 판단 예정 |
 | 분석 대체 응답률 | 기록 예정 | 판단 예정 |
 | 가드 차단율(`followup_leak`·`judgment_quote`) | 기록 예정 | 판단 예정 |
+
+## 9.33 법정대리인 동의서 1.2 시드 (#1061 V60, 2026-11-26)
+
+에픽 #1064의 core 부분이다. 학부모 원문 제공을 학생 선택(#206)에서 법정대리인 동의서(GUARDIAN) 1.2 필수 동의로 옮겼다. 문구·시행일은 [auth-account 20절](auth-account.md#20-원문-제공-법정대리인-필수-동의-1064)(#1058), API 변경은 [core-gateway 38절](core-gateway.md#38-학생-원문-공개-비공개-차단-제거와-법정대리인-동의서-12-1061-2026-11-26).
+
+| 바꾼 것 | 내용 | 근거 |
+|---|---|---|
+| `V60__guardian_consent_record_sharing.sql` | `consent_document`에 GUARDIAN 1.2 행 1개 추가(`00000000-0000-4000-8000-000010610001`, `required = true`, `effective_from = 2026-11-27`). 본문은 V54 GUARDIAN 1.1 원문에서 두 번째 항목 목적 줄 끝 한 구절만 다름 | #732(V54)처럼 게시한 행은 고치지 않고 새 판 행을 더한다. 현재 판 조회(`effective_from DESC`)가 시행일부터 1.2를 고르므로 코드 변경 없이 기존 자녀는 `guardianConsentRequired = true`·학생 세션 차단(재동의 전까지) |
+| `student.parent_sharing_enabled`(V21) | 지우지 않고 남김. 앱은 더 이상 읽고 쓰지 않는다 | `docs/README.md` DB migration·API 변경 규칙(#1076): 칼럼 삭제는 안 쓰게 바꾼 PR과 나눠 다음 릴리스에서 한다. 이 릴리스를 되돌리면 옛 앱이 이 칼럼을 읽기 때문. 삭제는 #1078 |
+
+- 잠금·데이터: INSERT 1건이라 잠금이 짧고 기존 행은 바뀌지 않는다
+- 되돌리기: 칼럼 삭제·이름 변경이 없어 직전 digest로 되돌릴 수 있다. 되돌리면 옛 앱이 칼럼 값(대부분 false)으로 다시 원문을 가리고, GUARDIAN 1.2 행은 옛 앱에서도 현재 판으로 쓰인다(재동의 화면은 같음)
+- 시행일: 2026-11-27은 prod 배포일 기준안이며 배포일이 바뀌면 병합 전에 V60 날짜를 같이 바꾼다(auth-account 20절). 시행일 전에 배포되면 그날까지는 1.1 동의만으로 학부모가 원문을 본다
+- 시연·더미 계정: 시행일 뒤 `demo_account_data.py children`·`prepare_accounts.py --families`를 다시 돌려 GUARDIAN 1.2 재동의를 보낸다(#1063, `infrastructure/aws/README.md`)
+- local GitOps `environments/local/core-service.yaml`의 `migration.revision`을 `v59` → `v60`으로 올렸다. prod 쪽 migration 판 번호는 이 PR에서 바꾸지 않았다
+
+## 9.34 main 보호 규칙 적용 (#1004, 2026-11-26)
+
+9.26.1에서 digest PR #991이 승인 기록 0건으로 병합된 원인이던 main 보호 규칙을 켰다. 필요 승인 수 1명은 팀장 확정 값이다. 절차는 [CD README B2](../../infrastructure/cd/README.md#b2-digest-pr-저장소-설정-858-관리자-손-작업-1004). API 변경 없음.
+
+| 항목 | 값 |
+|---|---|
+| 방식 | repository ruleset `main-protection-1004`(id 28138960), 대상 `refs/heads/main`, 활성. 2026-11-26 15:11 KST `gh api`로 생성 |
+| pull request | 승인 1명, Require review from Code Owners, Dismiss stale approvals 켬. 필수 status check 없음(경로 필터 때문, B2) |
+| 그 밖 | Block force pushes·Restrict deletions 켬. Bypass list 비움(`current_user_can_bypass: never`) |
+
+- 확인: 확인 PR #1081(`.github/CODEOWNERS` 주석 한 줄, 병합하지 않음)에서 `reviewDecision=REVIEW_REQUIRED`·`mergeStateStatus=BLOCKED`, code owner `20220348-kim`에게 리뷰 요청. 관리자 계정의 `gh pr merge`도 "the base branch policy prohibits the merge"로 거부
+- 영향: develop → main 릴리스 PR도 작성자가 아닌 1명의 승인이 있어야 병합된다(B2)
+- #991 커밋 메시지(`c283a2b8`)의 깨진 사유·호환성 근거 원문은 이력 재작성 없이 [#1004 댓글](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/issues/1004#issuecomment-7184212482)에 남겼다. #991 본문 손 수정 때 빠진 호환성 근거 5행(data·api·events·ongoingLearning·payments)도 커밋 메시지에서 복원해 같이 적었다
+- 남은 것: 다른 code owner 승인 1명 뒤 병합 가능해지는지, 다음 cd-release digest PR 본문 한국어가 정상인지(#1004)
+
+## 9.35 운영(A) 표현 분류 재학습 CronJob (#730, 2026-11-26)
+
+9.25의 로컬 구성을 prod(A 계정 EKS)에 옮겼다. 재학습 이미지는 #985로 A ECR에 있고, digest는 main `images/tox-retrain.json`(1차 릴리스 digest PR #1077)이 갖는다. API 변경 없음.
+
+### 9.35.1 결정 (동섭, 2026-11-26)
+
+- A에서는 예약 실행을 끈다(`suspend: true`). 기본 일요일 03:00이 A 야간 정지(화·목·금·토·일 01:00~07:15 노드·RDS 정지)와 겹친다. 배포 뒤 수동 실행 1회로 확인한다
+- 실패·예약 지연 경보 2개와 상태 수집기(kube-state-metrics 곁 컨테이너)를 prod 관측에 같이 넣는다. 예약을 꺼 둔 동안 예약 지연 경보는 울리지 않는다(9.25 규칙 그대로)
+
+### 9.35.2 구성
+
+| 항목 | 로컬(kind, 9.25) | 운영(A) |
+|---|---|---|
+| 값 | `environments/local/tox-retrain.yaml` | `environments/prod/tox-retrain.json` + `images/tox-retrain.json` |
+| Argo CD | `local-tox-retrain` | `prod-tox-retrain`(`argocd/prod/apps/tox-retrain.yaml`, wave 10, 자동 동기화). chart가 app-service가 아니라 ApplicationSet 목록에 넣지 않았다 |
+| 이미지 | `sagomungchi/tox-retrain:local`, `Never` | `<A ECR>/sagomungchi/tox-retrain@sha256:…`, `IfNotPresent` |
+| 저장소 | MinIO 주소·루트 키(`storage: minio`) | S3 기본 주소, `S3_BUCKET_OWNER`=A 계정, Pod Identity(`storage: aws`, ServiceAccount `tox-retrain`, 역할 `sagomungchi-demo-tox-retrain-s3-role`) |
+| 내부 토큰 | `app-service-credentials`의 `INTERNAL_TOKEN_OPS` | `internal-service-credentials`(ESO, `sagomungchi/demo/app/internal`)의 `INTERNAL_TOKEN_OPS`. core·learning도 같은 키를 env로 받는다 |
+| egress | core 8080·learning 8081·MinIO 9000·DNS | core 8080·learning 8081·S3 443(scoring과 같은 S3 prefix list 대역 9개)·Pod Identity agent `169.254.170.23/32:80`·DNS |
+| ingress | core·learning `ingressFromApps`에 `tox-retrain` | 같음(prod core·learning) |
+| 노드 | kind 노드 | `nodeSelector: workload=application-burst`(Karpenter, t3.medium·t3.large, taint 없음). 요청 CPU 1·2560Mi는 상시 노드그룹 여유로 모자라 burst 노드에 둔다. Job이 끝나 노드가 비면 5분 뒤 정리된다 |
+| 상태 수집기 API 접근 | Calico `projectcalico.org/v3` 정책(`default/kubernetes` Service) | 표준 NetworkPolicy `tox-retrain-state-api`: `172.20.0.1/32`(kubernetes Service ClusterIP)·사설 서브넷 `10.20.128.0/20`·`10.20.144.0/20`(control plane ENI `10.20.130.189`·`10.20.148.21`, 11/26 조회) 443. EKS 네트워크 정책 agent v1.4.0에는 Calico API가 없다 |
+| 경보 | Discord 끔 | 같은 식 2개(`tox-retrain-failed`·`tox-retrain-missed`)를 prod 규칙에 더해 Discord로 보낸다 |
+
+chart는 `storage`(minio·aws), `image`(문자열·`repository`+`digest`), `imagePullPolicy`, `serviceAccount`, `nodeSelector`·`tolerations`, `networkPolicy.s3Egress`로 나눴다. 로컬 values의 렌더 결과는 바뀌지 않는다(아래 검증).
+
+### 9.35.3 검증 (로컬, 2026-11-26)
+
+- `helm lint --strict`·`helm template`(Helm 4.3.1): tox-retrain local·prod, observability local·prod, core·learning prod 모두 통과
+- 로컬 렌더 대조: tox-retrain·observability local values의 렌더 결과가 변경 전과 같다(줄 끝 제외 `diff` 0줄). observability prod values를 변경 전 값으로 렌더한 결과도 같다
+- `verify_chart.py`: 기존 단계 전부와 새 단계 "prod retraining scrape, EKS API egress and the kind-verified rules routed to Discord" 통과. 가속 복사 시험(Docker)에서는 kube-state-metrics를 띄우지 않으므로 `tox-retrain-*` 규칙을 뺐다(kind에서 9.25로 확인한 식과 prod 식이 같은지는 새 단계가 본다)
+- `scripts/tests` 중 `test_aws_demo_stack`(IAM 역할 수 13→14)·`test_runtime_config`·`test_cd_deployment`·`test_cd_digest_pr` 102개 통과. `demo_stack.py plan`은 9.35.4
+- kubeconform은 로컬에 없어 원격 `ci-gitops`로 확인한다
+
+### 9.35.4 A 사전 준비
+
+2026-11-26 16시 무렵 A 계정(프로필 `sagomungchi-provided`, ap-northeast-2)에 적용했다. 절차는 [AWS README #730 절](../../infrastructure/aws/README.md#표현-분류-재학습-권한-730-2026-11-26).
+
+| 작업 | 결과 |
+|---|---|
+| `demo_stack.py plan` | 적용 전 `iam-role sagomungchi-demo-tox-retrain-s3-role`·`pod-identity app/tox-retrain`만 MISSING(나머지 68개 OK) |
+| `demo_stack.py apply --confirm-account 347161580747` | `created iam-role sagomungchi-demo-tox-retrain-s3-role`(trust·inline `sagomungchi-demo-tox-retrain-s3-access`) |
+| `aws eks create-pod-identity-association` | `app/tox-retrain` → 위 역할, association `a-sfpnfra90dhpn6xn5` |
+| `plan` 재실행 | `summary: OK=70` |
+| Secrets Manager `sagomungchi/demo/app/internal` | `INTERNAL_TOKEN_OPS`를 무작위 값(43자, 다른 토큰과 다름)으로 더함. 기존 키 7개 값은 그대로인지 대조했다. 값은 출력·기록하지 않았고 임시 파일은 지웠다 |
+
+배포 전이라 ServiceAccount `app/tox-retrain`은 아직 없다. Pod Identity 연결은 ServiceAccount가 생긴 뒤 만든 Pod부터 적용된다. 지금 떠 있는 ExternalSecret은 새 키를 아직 읽지 않으므로 영향이 없다.
+
+### 9.35.5 배포 뒤 수동 실행 (main 반영 뒤)
+
+전제: 이 변경이 2차 릴리스로 main에 들어가 `prod-tox-retrain`·`prod-observability`·`prod-external-secret-resources`·core·learning이 Synced/Healthy. core·learning Pod가 새 env(`INTERNAL_TOKEN_OPS`)로 다시 떠 있어야 한다.
+
+```powershell
+$env:KUBECONFIG = '<A kubeconfig>'
+kubectl -n argocd get applications prod-tox-retrain prod-observability prod-core-service prod-learning-service
+kubectl -n app get cronjob tox-retrain -o jsonpath='{.spec.suspend}'   # true
+kubectl -n app get externalsecret internal-service-credentials          # Ready True(키가 없으면 SecretSyncedError)
+kubectl -n app get secret internal-service-credentials -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'   # 키 이름만, INTERNAL_TOKEN_OPS 포함
+kubectl -n app get jobs -l app.kubernetes.io/name=tox-retrain          # 실행 중인 Job이 없어야 함(손 Job은 Forbid가 막지 않음)
+$job = 'tox-retrain-manual-' + (Get-Date -Format yyyyMMddHHmmss)
+kubectl -n app create job $job --from=cronjob/tox-retrain
+kubectl -n app get pod -l job-name=$job -o wide -w                     # Karpenter burst 노드에 배치되는지
+kubectl -n app logs -f job/$job
+kubectl -n app get job $job
+```
+
+확인 기준:
+
+| 항목 | 통과 |
+|---|---|
+| 배치 | Pod가 `workload=application-burst` 노드에서 실행, 이미지 pull 성공 |
+| 자격 증명 | Pod에 `eks-pod-identity-token` 볼륨, 로그에 S3 `AccessDenied`·자격 증명 오류 없음 |
+| S3·내부 API | `last_read` 단계 통과(처음이면 `last.json` 없음), learning `label-count` 응답 |
+| 라벨 200건 미만 | `skip reason=not_enough_labels`, 종료 코드 0, Job Complete. 이 경우 다운로드·업로드·등록은 확인되지 않는다 |
+| 라벨 200건 이상 | `stage=register`·`stage=last_write` 완료, S3 `models/<활성 tox 이름>/<새 버전>/` 파일 5개와 `models/tox-retrain/last.json`, 등록부 새 행 `REGISTERED`(활성화 안 함), 기존 활성 모델 유지 |
+| 경보 | Prometheus `up{job="tox-retrain-state"}=1`, Grafana 두 규칙이 Normal(예약 지연 규칙은 suspend라 0). 실패하면 실패 경보가 Discord로 온다 |
+| 정리 | Job 완료 5분 뒤 burst 노드 정리(`kubectl get nodes -l workload=application-burst`) |
+
+### 9.35.6 한계·남은 것
+
+- 전체 경로(다운로드·학습·업로드·등록) 확인에는 두 가지가 먼저 있어야 한다. A models 버킷에 공개 데이터 묶음 `datasets/tox-retrain/public-v1/`이 아직 없고(11/26 조회 0개, learning.md 16절), 새 라벨이 200건 이상이어야 한다. 둘 중 하나라도 없으면 수동 실행은 `last_read`·라벨 수 조회까지만 확인한다
+- 상태 수집기 API egress는 EKS 네트워크 정책 agent에서 ClusterIP와 ENI 대역 중 어느 쪽으로 판정되는지 실제로 재지 않아 둘 다 열었다. 배포 뒤 `up{job="tox-retrain-state"}`로 확인한다. 사설 서브넷 443이 함께 열리는 범위는 Prometheus Pod 하나다
+- `ListBucket`은 접두사 조건 없이 models 버킷 전체 목록을 볼 수 있다(처음 실행의 `NoSuchKey` 판정 때문, AWS README #730 절)
+- 실제 학습 시간·최고 메모리는 운영 모델로 재지 않았다. Job 기한 40분·상한 3Gi는 9.25 값 그대로다
+- B 전환(#809): 역할·Pod Identity·`INTERNAL_TOKEN_OPS`는 런북 1·3·6단계에 들어 있다. API 송신 대역은 "B 자원을 만든 뒤 바꿀 값"에 더했다. B에서 예약을 켤지는 B 야간 정지 계획에 맞춰 따로 정한다
 
 ## 10. 근거 링크
 

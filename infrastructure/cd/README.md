@@ -71,13 +71,13 @@ aws iam put-role-policy --profile $profile --role-name sagomungchi-demo-github-c
 
 ### B2. digest PR 저장소 설정 (#858, 관리자 손 작업, #1004)
 
-**아직 적용하지 않았다**(저장소 관리자 권한 필요, 2026-11-24 기준). 그래서 11/24 A 확인의 digest PR #991이 GitHub 승인(Approve) 기록 0건으로 병합됐다. 지금은 "digest PR 승인 = 배포 승인"이 사람 약속일 뿐 강제되지 않으므로, 적용 전까지는 아래 승인 규칙(PR을 연 사람과 다른 code owner 1명)을 지켜 승인 기록을 남긴 뒤 병합한다. 적용과 확인은 #1004에서 한다(필요 승인 수는 팀장 확인 값). develop → main 릴리스가 병합된 **뒤에** 적용한다(먼저 켜면 릴리스 PR에도 승인 규칙이 걸린다. 아래 표 참고). 화면 이름은 2026-11 GitHub 기준이다.
+**2026-11-26 적용 완료**(#1004). repository ruleset `main-protection-1004`(id 28138960)로 아래 1을 켰고, 필요 승인 수 1명은 팀장 확정 값이다. 적용 전에는 강제되지 않아 11/24 A 확인의 digest PR #991이 GitHub 승인(Approve) 기록 0건으로 병합됐다. 이제 main 대상 PR은 develop → main 릴리스 PR을 포함해 모두 아래 승인 규칙(PR을 연 사람과 다른 1명, images 폴더는 code owner)을 거쳐야 병합된다. 화면 이름은 2026-11 GitHub 기준이다. 되돌리기: `gh api -X DELETE repos/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-3TEAM/rulesets/28138960`.
 
 | 순서 | 위치 | 값 | 이유 |
 |---|---|---|---|
-| 1 | Settings → Branches → Add branch ruleset(또는 classic branch protection) → 대상 `main` | Require a pull request before merging: 켬 / Required approvals: **1** / Require review from Code Owners: 켬 / Dismiss stale approvals when new commits are pushed: 켬 / Require status checks: 끔(아래) / Block force pushes·Restrict deletions: 켬 / Bypass list: 비움(관리자 우회 없음) | digest PR 승인 = 배포 승인. 승인자 수는 #760 승인자 수 결정(1명 기본안, 팀장 확인 전)과 같다. 바뀌면 이 값만 고친다 |
+| 1 | Settings → Branches → Add branch ruleset(또는 classic branch protection) → 대상 `main` | Require a pull request before merging: 켬 / Required approvals: **1** / Require review from Code Owners: 켬 / Dismiss stale approvals when new commits are pushed: 켬 / Require status checks: 끔(아래) / Block force pushes·Restrict deletions: 켬 / Bypass list: 비움(관리자 우회 없음) | digest PR 승인 = 배포 승인. 승인자 수는 #760 승인자 수 결정(1명, 2026-11-26 팀장 확정)과 같다. 바뀌면 이 값만 고친다 |
 | 2 | 저장소 파일 `.github/CODEOWNERS` | `/infrastructure/gitops/environments/prod/images/ @20220348-kim @kty2001` (11/24 릴리스로 main에 들어감) | 1의 Code Owners 설정이 있어야 강제된다 |
-| 3 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 다음에 연 digest PR에 "Review required"·Code owner 표시가 뜨고 다른 code owner 승인 1명 뒤에만 병합되는지 | |
+| 3 | 확인 | main에 직접 push가 거부되는지(`git push --dry-run`은 판정하지 않으므로 빈 브랜치 PR로 확인), 다음에 연 digest PR에 "Review required"·Code owner 표시가 뜨고 다른 code owner 승인 1명 뒤에만 병합되는지 | 11/26 확인 PR #1081(CODEOWNERS 주석 한 줄, 병합 안 함): Review required·code owner 리뷰 요청이 뜨고, 관리자 계정의 병합도 "base branch policy prohibits the merge"로 거부됨(infra 9.34) |
 
 예전 1단계("Allow GitHub Actions to create and approve pull requests")는 조직 정책이 막아 저장소에서 켤 수 없고, 2026-11-24부터 필요 없다(아래 PR 생성 토큰 표, #986).
 
@@ -203,8 +203,32 @@ B 계정은 IAM·ECR 파일의 계정 번호를 바꾸는 6a PR 뒤 `demo_stack.
 
 1. 되돌릴 digest PR 화면에서 **Revert** → 만들어진 revert PR을 같은 승인 규칙(Revert를 누른 사람과 다른 code owner 1명)으로 병합한다. Argo CD가 이전 digest로 동기화한다.
 2. Argo CD UI의 rollback·수동 sync로 이전 revision을 띄우지 않는다(Git과 어긋나 다음 자동 동기화가 되돌림).
-3. revert는 앱 이미지·migration 값만 되돌리고 DB는 그대로다. 이전 앱이 새 스키마에서 동작한다는 근거가 그 PR의 schema 근거에 있어야 한다. migration revision도 이전 값으로 돌아가지만 이미 끝난 Job 이름이 같으면 다시 실행해도 Flyway·Alembic은 할 일이 없다.
+3. revert는 앱 이미지·migration 값만 되돌리고 DB는 그대로다. 이전 앱이 새 스키마에서 동작한다는 근거가 그 PR의 schema 근거에 있어야 한다. migration revision이 이전 값으로 돌아가면 이전 이름의 migration Job이 PreSync로 다시 돈다. Flyway(core·learning)는 모르는 최신 migration을 건너뛰고 통과하지만, Alembic(report)은 DB의 revision을 모르면 실패해 report-api가 바뀌지 않는다(11/24 확인, infra 9.26.6).
 4. 그 뒤 다른 digest PR이 병합돼 revert가 충돌하면, 되돌릴 digest를 넣은 PR을 손으로 만든다(`images/**`만, 같은 승인 규칙). 경로 확인은 위 8단계와 같다.
+
+### revert할지 고쳐서 새로 배포할지 (2026-11-24)
+
+11/24 A에서 11/06 digest로 revert하자 report-api migration 실패와 `GET /students/me/weekly-theme` 404로 서비스가 깨졌다(#1008 → #1010으로 복구, infra 9.26.6). 문제가 생기면 먼저 아래로 정한다.
+
+| 상황 | 대응 |
+|---|---|
+| 되돌릴 digest와 지금 사이에 migration 파일 변경이 없고 API가 지금 웹과 맞음 | 위 1번 revert |
+| 그 사이 migration 변경이 있음, 또는 API 경로가 바뀜 | revert하지 않고 고친 커밋을 main에 올려 새 digest PR(fix-forward) |
+| 데이터가 잘못 바뀜 | RDS 시점 복원(PITR, infra 9.12). 데이터 손실이 있을 수 있어 마지막 수단 |
+
+- 판단 근거: 그 digest PR 본문의 migration revision과 schema 근거, 그리고 `git diff --stat <이전 SHA> <이번 SHA> -- backend/*/src/main/resources/db/migration backend/report-service/migrations/versions contracts/openapi`. PR 본문에 자동으로 넣는 일은 #1013.
+- 되돌릴 수 있는 것은 사실상 바로 앞 digest PR 하나다. 여러 릴리스 전으로는 되돌리지 않는다.
+
+### 시연 기간 운영 (B, 11/30~12/8)
+
+- migration이 든 digest PR은 병합 전에 RDS 수동 스냅샷을 남긴다. 이름은 `sagomungchi-before-main-<SHA 12자리>`로 한다. 스냅샷 하나는 몇 분이면 되고, 잘못되면 배포 직전 DB로 돌아갈 지점이 된다.
+
+```powershell
+aws rds create-db-snapshot --profile <프로필> --region ap-northeast-2 --db-instance-identifier <DB 인스턴스> --db-snapshot-identifier sagomungchi-before-main-<SHA 12자리>
+```
+
+- 모든 digest PR은 병합 뒤 위 8단계 경로 확인을 하고 PR 댓글로 남긴다.
+- 11/30 이후에는 컬럼 삭제·이름 변경 같은 큰 migration을 올리지 않는다. 고칠 일이 생기면 작은 수정으로 고쳐서 새로 배포한다.
 
 ## 11/25 A 계정 확인 절차 (#858)
 

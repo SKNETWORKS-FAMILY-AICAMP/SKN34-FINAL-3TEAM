@@ -9,7 +9,7 @@ const period = { from: '2026-11-09', to: '2026-11-15' }
 const metric: Metric = { label: '학습한 활동', formula: '기간 내 답변 제출이 있는 시도 수', count: 6, numerator: 6, denominator: 6, value: null, period, sourceType: 'RECORD', state: 'OK' }
 const message: ConversationMessage = { messageId: 'm1', question: '어떤 활동을 했나요?', answer: '기록을 확인했습니다.', status: 'COMPLETED', scope: { childId: 'child', ...period }, metrics: [metric], verification: { numbersMatched: true, quotesMatched: true, contentAllowed: true } }
 function report(): WeeklyReport {
-  return { reportId: 'r1', revision: 2, childId: 'child', period, periodType: 'WEEKLY', status: 'COMPLETED', state: 'OK', parentSharingEnabled: true,
+  return { reportId: 'r1', revision: 2, childId: 'child', period, periodType: 'WEEKLY', status: 'COMPLETED', state: 'OK',
     revisions: [{ revision: 2 }], inclusionRule: '검사용 기록', metrics: [metric], thinkingTypes: [], changes: [], reflections: [], quotes: [], narrative: null, verification: { numbersMatched: true, quotesMatched: true } }
 }
 function highlight(): ReportHighlight {
@@ -23,11 +23,10 @@ test('완료·최종 검증·자녀·실제 기간이 확인된 답변만 연결
     { ...message, scope: { childId: 'other', ...period } }, { ...message, scope: { childId: 'child', from: '2026-02-30', to: period.to } },
   ]) assert.equal(verifiedReportAnswer(value, 'child'), false)
 })
-test('다른 판·자녀·기간·비공개·미검증 리포트는 강조하지 않는다', () => {
+test('다른 판·자녀·기간·미검증 리포트는 강조하지 않는다', () => {
   for (const value of [
     { ...report(), revision: 1 }, { ...report(), reportId: 'other' }, { ...report(), childId: 'other' },
-    { ...report(), period: { ...period, to: '2026-11-16' } }, { ...report(), parentSharingEnabled: false },
-    { ...report(), parentSharingEnabled: undefined }, { ...report(), status: 'FAILED' as const },
+    { ...report(), period: { ...period, to: '2026-11-16' } }, { ...report(), status: 'FAILED' as const },
     { ...report(), verification: { numbersMatched: false, quotesMatched: true } },
   ]) assert.deepEqual(reportTargets(value, highlight()), emptyReportTargets())
 })

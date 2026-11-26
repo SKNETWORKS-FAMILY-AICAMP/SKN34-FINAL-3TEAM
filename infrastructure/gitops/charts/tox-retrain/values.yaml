@@ -5,3 +5,22 @@ activeDeadlineSeconds: 2400
 resources:
   requests: {cpu: "1", memory: 2560Mi}
   limits: {cpu: "2", memory: 3Gi}
+# 로컬(kind)은 이미지 문자열(image: <이름:태그>)과 imagePullPolicy Never.
+# 운영은 images/tox-retrain.json의 image.repository·image.digest(cd-release digest PR이 갱신)를 쓴다.
+imagePullPolicy: Never
+# 로컬(minio): MinIO 주소와 credentialsSecret의 MinIO 루트 키, egress는 platform MinIO 9000.
+# 운영(aws): S3 기본 주소와 Pod Identity(serviceAccount), egress는 s3Egress·Pod Identity agent.
+storage: minio
+# 운영: S3_BUCKET_OWNER(업로드·다운로드 때 버킷 소유 계정 확인)
+bucketOwner: ""
+# 내부 토큰을 읽을 Secret. 로컬은 credentialsSecret 하나에 토큰·MinIO 키가 함께 있다.
+tokenSecret: ""
+serviceAccount:
+  create: false
+  name: tox-retrain
+nodeSelector: {}
+tolerations: []
+networkPolicy:
+  # 운영 S3 443 대상(S3 Gateway endpoint prefix list 대역 등). storage: aws일 때만 쓴다.
+  s3Egress: []
+  podIdentityAgent: 169.254.170.23/32

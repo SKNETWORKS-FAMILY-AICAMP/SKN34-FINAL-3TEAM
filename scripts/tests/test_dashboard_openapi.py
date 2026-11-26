@@ -73,22 +73,8 @@ class DashboardContractTest(unittest.TestCase):
 
 
 class StudentRecordsPrivateContract(unittest.TestCase):
-    """#317: every parent path that core guards with StudentLearningContextService.requireShared documents the 403."""
+    """#1061 (epic #1064): originals follow required GUARDIAN consent, so the #206 private-records 403 is gone."""
 
-    def test_private_records_code_is_documented_on_guarded_paths(self):
-        paths = spec('core')['paths']
-        guarded = {
-            '/children/{childId}/attempts': ['get'], '/children/{childId}/attempts/{attemptId}': ['get'],
-            '/conversations': ['get', 'post'], '/conversations/{conversationId}': ['get'],
-            '/conversations/{conversationId}/messages': ['post'],
-            '/conversations/{conversationId}/messages/{messageId}/retry': ['post'],
-            '/conversations/{conversationId}/messages/{messageId}/evidence': ['get'],
-            '/agent/example-questions': ['get'],
-            '/conversations/{id}/report-template': ['get'], '/conversations/{id}/report-template/proposals': ['post'],
-            '/conversations/{id}/report-template/confirm': ['post'],
-            '/reports/{reportId}/evidence/{itemId}': ['get'], '/reports/{reportId}/download': ['get'],
-        }
-        for path, methods in guarded.items():
-            for method in methods:
-                with self.subTest(path=path, method=method):
-                    self.assertIn('STUDENT_RECORDS_PRIVATE', paths[path][method]['responses']['403']['description'])
+    def test_private_records_code_is_removed(self):
+        text = (ROOT / 'contracts/openapi/core-service.yaml').read_text(encoding='utf-8')
+        self.assertNotIn('STUDENT_RECORDS_PRIVATE', text)

@@ -32,9 +32,10 @@ class ContractTests(unittest.TestCase):
         text = "".join(
             (migrations / name).read_text(encoding="utf-8")
             for name in ("V25__seed_consent_documents.sql", "V31__prepare_community_settings.sql",
-                         "V39__consent_documents_password_signup.sql", "V54__consent_documents_model_improvement.sql")
+                         "V39__consent_documents_password_signup.sql", "V54__consent_documents_model_improvement.sql",
+                         "V60__guardian_consent_record_sharing.sql")
         )
-        self.assertEqual(len(seeds["consent_document"]), 8)
+        self.assertEqual(len(seeds["consent_document"]), 9)
         for seed in seeds["consent_document"]:
             self.assertIn(f"('{seed}', ", text)
 

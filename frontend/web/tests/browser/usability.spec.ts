@@ -19,28 +19,27 @@ async function navigate(page: Page, name: string) {
   await page.getByRole('link', { name, exact: true }).filter({ visible: true }).click()
 }
 
-test('비공개 자녀의 수치·리포트·설정·결제는 이용 가능하고 원문 대화는 요청하지 않는다 @responsive', async ({ page }) => {
-  const originals: string[] = [], writes: string[] = []
+test('#1064: 자녀의 수치·리포트·챗봇·설정·결제를 학생 공개 설정 없이 이용한다 @responsive', async ({ page }) => {
+  const sharing: string[] = [], writes: string[] = []
   page.on('request', request => {
     const path = new URL(request.url()).pathname
-    if (/\/children\/[^/]+\/(?:attempts|records)(?:\/|$)|\/conversations(?:\/|$)|\/reports\/[^/]+\/(?:evidence|downloads?)(?:\/|$)/.test(path)) originals.push(path)
+    if (path.includes('sharing-preferences')) sharing.push(path)
     if (request.method() === 'POST') writes.push(path)
   })
   await parentLogin(page)
   await expect(page.getByRole('region', { name: '기간 요약' })).toBeVisible()
-  await expect(page.getByText('답변 원문 비공개 · 학습 수치는 확인 가능', {exact:true})).toBeVisible()
+  await expect(page.getByRole('region', { name: '학생 답변 공개 상태' })).toHaveCount(0)
   await expect(page.getByRole('alert')).toHaveCount(0)
   await navigate(page, '리포트·AI 챗봇')
   await page.getByRole('button', { name: 'AI 챗봇', exact: true }).click()
-  await expect(page.getByRole('heading', { name: /기록 분석 질문은 잠시/ })).toBeVisible()
-  await expect(page.getByRole('textbox', { name: '기록에 대한 질문' })).toHaveCount(0)
-  expect(originals).toEqual([])
+  await expect(page.getByRole('heading', { name: /기록 분석 질문은 잠시/ })).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: '기록에 대한 질문' })).toBeVisible()
   await page.goBack()
   await expect(page).toHaveURL(/\/parent\/report/)
   await expect(page.getByRole('region', { name: '리포트 내용' })).toBeVisible()
-  await expect(page.getByText('위 학습 수치는 계속 확인할 수 있습니다.', { exact: false })).toBeVisible()
-  await expect(page.getByRole('button', { name: '리포트 다운로드', exact: true })).toBeDisabled()
-  await expect(page.getByRole('button', { name: '이 리포트로 질문하기', exact: true })).toHaveCount(0)
+  await expect(page.getByText(/원문 비공개|답변이 비공개/)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '이 리포트로 질문하기', exact: true })).toBeVisible()
+  expect(sharing).toEqual([])
   await navigate(page, '계정·자녀 설정')
   await expect(page.getByLabel('조회 시작일')).toHaveCount(0)
   await page.getByText('학년 변경·자동 진급 안내',{exact:true}).click()

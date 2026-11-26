@@ -8,7 +8,7 @@ INCLUSION_RULE = "해당 KST 날짜에 완료한 모든 시도. 주말 되돌아
 
 
 class DailyReportBuilder:
-    async def build(self, records, sharing, learning):
+    async def build(self, records, learning):
         problems = []
         seen = set()
         for attempt in records.attempts:
@@ -33,35 +33,32 @@ class DailyReportBuilder:
             judgment = last.judgment if last.process_status == "DONE" else None
             elements = thinking_elements(judgment) if judgment else ()
             quotes, links = [], []
-            if sharing:
-                # Re-fetch evidence before storage; never manufacture an excerpt.
-                candidates = [
-                    (a, e.quote)
-                    for a in answers
-                    if a.judgment and a.process_status == "DONE"
-                    for e in a.judgment.elements
-                    if e.quote
-                ]
-                requested = tuple(
-                    dict.fromkeys(EvidenceLink(attempt.id, a.id, a.version) for a, _ in candidates)
-                )
-                evidence = (
-                    await learning.evidence(records.student_id, requested) if requested else ()
-                )
-                sources = {(e.attempt_id, e.answer_id, e.version): e for e in evidence}
-                for answer, quote in candidates:
-                    source = sources.get((attempt.id, answer.id, answer.version))
-                    if (
-                        source is None
-                        or not source.available
-                        or source.text is None
-                        or quote not in source.text
-                    ):
-                        raise RecordContractError("Daily quote could not be verified")
-                    entry = {"answerId": str(answer.id), "text": quote, "verified": True}
-                    if entry not in quotes:
-                        quotes.append(entry)
-                        links.append(EvidenceLink(attempt.id, answer.id, answer.version))
+            # Re-fetch evidence before storage; never manufacture an excerpt.
+            candidates = [
+                (a, e.quote)
+                for a in answers
+                if a.judgment and a.process_status == "DONE"
+                for e in a.judgment.elements
+                if e.quote
+            ]
+            requested = tuple(
+                dict.fromkeys(EvidenceLink(attempt.id, a.id, a.version) for a, _ in candidates)
+            )
+            evidence = await learning.evidence(records.student_id, requested) if requested else ()
+            sources = {(e.attempt_id, e.answer_id, e.version): e for e in evidence}
+            for answer, quote in candidates:
+                source = sources.get((attempt.id, answer.id, answer.version))
+                if (
+                    source is None
+                    or not source.available
+                    or source.text is None
+                    or quote not in source.text
+                ):
+                    raise RecordContractError("Daily quote could not be verified")
+                entry = {"answerId": str(answer.id), "text": quote, "verified": True}
+                if entry not in quotes:
+                    quotes.append(entry)
+                    links.append(EvidenceLink(attempt.id, answer.id, answer.version))
             reflection = attempt.reflection
             payload = {
                 "missionId": str(attempt.mission_id),
@@ -79,10 +76,8 @@ class DailyReportBuilder:
                     }
                     for i, a in enumerate(answers)
                     if a.followup
-                ]
-                if sharing
-                else [],
-                "finalAnswer": last.text if sharing else None,
+                ],
+                "finalAnswer": last.text,
                 "elements": [
                     {"label": e.label or e.code, "satisfied": e.satisfied} for e in elements
                 ]
@@ -91,10 +86,9 @@ class DailyReportBuilder:
                 "reflection": {
                     "written": reflection is not None,
                     "difficulty": reflection.difficulty if reflection else None,
-                    "text": reflection.text if reflection and sharing else None,
+                    "text": reflection.text if reflection else None,
                 },
                 "quotes": quotes,
-                # P28: timing is a number, not original text, so #206 sharing does not hide it.
                 "answerTimes": [
                     {
                         "version": a.version,

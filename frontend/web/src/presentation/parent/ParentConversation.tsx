@@ -1,6 +1,5 @@
 import { ArrowUp, MessageSquare, SquarePen, Search } from 'lucide-react'
-import { Link } from 'react-router'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { ReportProblem } from '../service/ReportProblem.tsx'
 import type { Child } from '../../domain/classroom.ts'
 import type { Scope, StreamState, ConversationMessage, Conversation, Evidence } from '../../domain/parent.ts'
@@ -16,12 +15,10 @@ export function ParentConversation({
   child,
   scope,
   onScope,
-  canReadOriginals = false,
   report,
   onClearReport,
   onAnswer,
 }: {
-  canReadOriginals?: boolean
   child: Child
   scope: Scope
   onScope: (scope: Scope) => void
@@ -32,13 +29,13 @@ export function ParentConversation({
   const requests = useConversationRequests(),
     list = useParentQuery(['conversations', child.id], (signal) =>
       parentApi.conversations(child.id, signal),
-      canReadOriginals && !report,
+      !report,
     ),
     [id, setId] = useState<string | null>(null),
     detail = useParentQuery(
       ['conversation', child.id, id],
       (signal) => parentApi.conversation(id!, signal),
-      !!id && canReadOriginals,
+      !!id,
     )
   const [historySearch, setHistorySearch] = useState('')
   const [question, setQuestion] = useState(''),
@@ -52,17 +49,14 @@ export function ParentConversation({
   // 이용권은 entitlement로만 판단한다(#602). 조회 전·실패면 막지 않고 서버 응답을 따른다.
   const entitlement = knownEntitlement(useChildEntitlement(child.id)),
     conversationOff = entitlement?.conversationEnabled === false
-  // 대화 생성·SSE·취소·캐시 갱신은 data 훅이 맡는다(#606). 화면을 떠나면 진행 중 답변 생성을 취소한다.
-  useEffect(() => {
-    if (!canReadOriginals) requests.abort()
-  }, [canReadOriginals, requests])
+  // 대화 생성·SSE·취소·캐시 갱신은 data 훅이 맡는다(#606).
   async function ask(selectedScope?: Scope, retry?: ConversationMessage, example?: string) {
     const confirmedScope =
       selectedScope ??
       state.result?.scope ??
       (detail.data ? { ...detail.data.period, childId: child.id } : scope)
     const text = example ?? retry?.question ?? (state.phase === 'CLARIFICATION' && !question.trim() ? lastQuestion : question)
-    if (!text.trim() || conversationOff || !canReadOriginals) return
+    if (!text.trim() || conversationOff) return
     setError(null)
     onAnswer?.(null)
     setLastQuestion(text)
@@ -104,7 +98,6 @@ export function ParentConversation({
   useLayoutEffect(() => {
     if (followThread.current && thread.current) thread.current.scrollTop = thread.current.scrollHeight
   }, [id, pending, lastMessage, state.phase])
-  if (!canReadOriginals) return <section className="ws-stack"><header><h2>AI 챗봇</h2><p>학습 기록을 바탕으로 궁금한 점을 질문하는 대화입니다.</p></header><div className="parent-private-records" role="note"><h2>답변 원문이 비공개여서 기록 분석 질문은 잠시 쉬어요</h2><p>학습 현황과 리포트의 수치는 계속 볼 수 있습니다. 원문을 분석하는 대화는 아이가 공개한 뒤 이용할 수 있습니다.</p><div className="ws-actions"><Link to={`/parent/journal?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">학습 현황 보기</Link><Link to={`/parent/report?childId=${encodeURIComponent(child.id)}`} className="cj-secondary">리포트 보기</Link></div></div></section>
   return (
     <>
       <div className="pc-layout">
@@ -158,7 +151,7 @@ export function ParentConversation({
                   {m.retryable && (
                     <button
                       className="cj-secondary"
-                      disabled={!canReadOriginals || pending}
+                      disabled={pending}
                       onClick={() => {
                         void ask(m.scope ?? scope, m)
                       }}

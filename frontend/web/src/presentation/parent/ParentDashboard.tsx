@@ -28,12 +28,12 @@ const stateText = {
  * 학부모 대시보드 (FN-DSH-06~10, 학부모 대시보드 시안).
  * 숫자는 서버 Metric 그대로 쓰고, 표본이 적으면 비율을 만들지 않는다. 기록 없는 유형은 '미관찰'로 둔다.
  */
-export function ParentDashboard({ child, scope, canReadOriginals = false, sharingKnown, onChangePeriod }: { child: Child; scope: Scope; canReadOriginals?: boolean; sharingKnown: boolean; onChangePeriod: () => void }) {
+export function ParentDashboard({ child, scope, onChangePeriod }: { child: Child; scope: Scope; onChangePeriod: () => void }) {
   const { search } = useLocation()
   const scopeKey = `${scope.childId}:${scope.from}:${scope.to}`
   const [selection, setSelection] = useState({ key: scopeKey, page: 0, record: null as string | null })
   const current = selection.key === scopeKey ? selection : { key: scopeKey, page: 0, record: null }
-  const q = useParentDashboard(scope, current.page, canReadOriginals)
+  const q = useParentDashboard(scope, current.page)
   const [panel, setPanel] = useState<'thinking' | 'participation' | null>(null)
   const [typeFilter, setTypeFilter] = useState('')
   const [detailScope, setDetailScope] = useState(scope)
@@ -123,9 +123,8 @@ export function ParentDashboard({ child, scope, canReadOriginals = false, sharin
                     {thinkingLabels[t.type]}
                   </span>
                   <div className="pd-recent-missions" role="group" aria-label={`${thinkingLabels[t.type]} 최근 활동`}>
-                    {t.missions.slice(0, 5).map(m => canReadOriginals
-                      ? <button key={m.attemptId} type="button" title={m.title} onClick={() => setRecord(m.attemptId)}>{m.title}</button>
-                      : <span key={m.attemptId} title={m.title}>{m.title}</span>)}
+                    {t.missions.slice(0, 5).map(m =>
+                      <button key={m.attemptId} type="button" title={m.title} onClick={() => setRecord(m.attemptId)}>{m.title}</button>)}
                   </div>
                   <div className="pd-type-actions">
                     {(t.state === 'OK' || t.state === 'INSUFFICIENT_SAMPLE') && t.missions.length > 0
@@ -159,15 +158,15 @@ export function ParentDashboard({ child, scope, canReadOriginals = false, sharin
           </nav>
           <div className="pd-explorer-content">
             {panel === 'participation' && <div className="pd-explorer-period">참여 기록 · 전체 기간</div>}
-            {record && canReadOriginals && <><button className="pd-explorer-back" type="button" onClick={() => setRecord(null)}>← 목록으로</button><RecordDetail scope={detailScope} id={record} /></>}
-            <div hidden={!!record && canReadOriginals}>
-              {panel === 'thinking' && <ActivityExplorer sharingKnown={sharingKnown} scope={scope} initialType={typeFilter} canReadOriginals={canReadOriginals} onOpen={(id, period) => { setDetailScope(period); setRecord(id) }} />}
-              {panel === 'participation' && <ChildParticipation child={child} canReadOriginals={canReadOriginals} />}
+            {record && <><button className="pd-explorer-back" type="button" onClick={() => setRecord(null)}>← 목록으로</button><RecordDetail scope={detailScope} id={record} /></>}
+            <div hidden={!!record}>
+              {panel === 'thinking' && <ActivityExplorer scope={scope} initialType={typeFilter} onOpen={(id, period) => { setDetailScope(period); setRecord(id) }} />}
+              {panel === 'participation' && <ChildParticipation child={child} />}
             </div>
           </div>
         </div>
       </Modal>}
-      {!panel && canReadOriginals && record && (
+      {!panel && record && (
         <Modal title="학습 기록 원문" onClose={() => setRecord(null)}>
           <RecordDetail scope={scope} id={record} />
         </Modal>

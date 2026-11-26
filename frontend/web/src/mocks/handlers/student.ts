@@ -1,5 +1,4 @@
 import { http, HttpResponse } from 'msw/http'
-import { isShared, saveSharing, requireShared } from '../fixtures/sharing.ts'
 import { readStudentToken, studentClaims } from '../../data/studentSession.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { DraftConflictError } from '../../data/classroom/errors.ts'
@@ -431,25 +430,6 @@ export const studentHandlers = [
       return look
     }),
   ),
-  http.get('/api/v1/students/me/sharing-preferences', ({ request }) => respond(async () => {
-    guard(request)
-    if (store.snapshot().session?.role !== 'STUDENT' || !child) throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생 본인만 설정할 수 있습니다.' })
-    return { studentId: child.id, parentSharingEnabled: isShared(child.id) }
-  })),
-  http.put('/api/v1/students/me/sharing-preferences', ({ request }) => respond(async () => {
-    guard(request)
-    if (store.snapshot().session?.role !== 'STUDENT' || !child) throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학생 본인만 설정할 수 있습니다.' })
-    const data = await request.json() as Record<string, unknown>
-    if (typeof data.parentSharingEnabled !== 'boolean') throw new Error('공개 여부를 확인해 주세요.')
-    saveSharing(child.id, data.parentSharingEnabled)
-    return { studentId: child.id, parentSharingEnabled: isShared(child.id) }
-  })),
-  http.get('/api/v1/children/:childId/sharing-preferences', ({ request, params }) => respond(async () => {
-    guard(request)
-    if (store.snapshot().session?.role !== 'PARENT') throw new ApiError({ status: 403, code: 'FORBIDDEN', title: '학부모 권한이 필요합니다.' })
-    const selected = await linked(id(params.childId))
-    return { studentId: selected.id, parentSharingEnabled: isShared(selected.id) }
-  })),
   http.get('/api/v1/children', ({ request }) =>
     respond(async () => {
       guard(request)
@@ -696,7 +676,6 @@ export const studentHandlers = [
     respond(async () => {
       guard(request)
       const url = new URL(request.url)
-      requireShared(id(params.childId))
       const owner = await linked(id(params.childId))
       return page(
         await withContexts(owner, await store.records(owner, 'PARENT', {
@@ -710,7 +689,6 @@ export const studentHandlers = [
     respond(async () => {
       guard(request)
       const selected = await linked(id(params.childId))
-      requireShared(selected.id)
       return store.record(selected, id(params.attemptId))
     }),
   ),

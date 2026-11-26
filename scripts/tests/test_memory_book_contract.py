@@ -66,7 +66,7 @@ class MemoryBookContractTest(unittest.TestCase):
         codes = set(re.findall(r'BusinessException\(HttpStatus\.\w+, "([A-Z_]+)"', self.service + self.jobs))
         self.assertTrue({'MEMORY_BOOK_NOT_FOUND', 'MEMORY_BOOK_EXPIRED', 'USAGE_LIMIT_REACHED', 'THEME_FRAME_NOT_FOUND'} <= codes)
         text = yaml.safe_dump({p: self.spec['paths'][p] for _, p in self.operations()}, allow_unicode=True)
-        for code in codes | {'STUDENT_RECORDS_PRIVATE', 'CHILD_NOT_LINKED', 'PREMIUM_REQUIRED', 'REFUND_IN_PROGRESS'}:
+        for code in codes | {'CHILD_NOT_LINKED', 'PREMIUM_REQUIRED', 'REFUND_IN_PROGRESS'}:
             self.assertIn(code, text, code)
 
     def test_create_returns_202_new_and_200_reused(self):

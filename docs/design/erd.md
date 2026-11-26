@@ -120,7 +120,7 @@ erDiagram
     timestamptz grade_changed_at "NULL 허용, 학년 수정·진급 시각. NULL은 등록 후 그대로(created_at 사용) (#432)"
     int birth_year "출생연도 (P01), DELETED 표식은 NULL 허용"
     boolean is_demo "시연 가상 학생"
-    boolean parent_sharing_enabled "NOT NULL DEFAULT false, 학생 본인만 변경 (#206)"
+    boolean parent_sharing_enabled "NOT NULL DEFAULT false, #206 학생 원문 공개 설정. #1061부터 읽고 쓰지 않음, #1078에서 삭제"
     boolean community_enabled "NOT NULL DEFAULT false, 커뮤니티 공개 설정 학생 본인만 변경 (P20, #388)"
     timestamptz community_updated_at "NULL 허용, 공개 설정 변경 시각 (#388)"
     varchar(16) look_theme "NULL 허용, CHECK[lake|forest|factory|space|sea], 학생 꾸미기 (#234)"
@@ -223,7 +223,7 @@ erDiagram
 - `user_account.is_demo`·`student.is_demo` 행은 운영 현황·사용량·결제 집계에서 제외 (NFR-OPS-01)
 - `user_account.oauth_provider`·`oauth_subject`는 함께 NULL(기존 계정) 또는 GOOGLE·Google sub이며 복합 UNIQUE. `password_hash`는 nullable로 보존하고 이메일로 OAuth 계정을 자동 연결하지 않음 (#36). ID·비밀번호 학부모(#415)는 provider·subject가 모두 NULL이고 `login_id`가 아이디(4~30자, 소문자로 저장, `@` 없음)다. 레거시 `password_hash`는 NULL로 두고 비밀번호는 `parent_credential`에 둔다. 탈퇴 완료 시 `login_id`가 `withdrawn:<id>`로 바뀌어 아이디가 풀린다
 - 신규 student의 `pin_failed_count`는 앱이 0을 전달(SQL DEFAULT 없음). 학생 삭제 확정 때 `student_device_child` 제거·PIN 해시·잠금 삭제, 탈퇴 시 모든 기기 폐기 (#58)
-- `student.parent_sharing_enabled`는 비공개 기본값을 보장하기 위한 SQL DEFAULT false의 명시적 예외. 학생 본인만 바꾸며 원문 제공 경로는 같은 학생 행의 현재 설정을 다시 확인 (#206)
+- 학생 원문 공개 칸(V21, #206)은 #1061부터 읽고 쓰지 않는다. 되돌리기 규칙(docs/README.md, 칼럼 삭제는 다음 릴리스)에 따라 #1078에서 지운다. 원문은 연결과 현재 법정대리인 동의(법정대리인 동의서 1.2, V60)로 제공
 - `student.community_enabled`도 같은 이유의 DEFAULT false 예외(P20, #388). V31에서 nullable로 추가하고 V32에서 기존 행을 false로 채운 뒤 NOT NULL. 학생 본인만 켜고 끄며, 공유물 공개는 이 값과 현재 연결 보호자의 현재 문서 `COMMUNITY` 동의가 모두 있어야 한다. 동의 거부·철회 시 false, 학생 삭제 확정 시 false·`community_updated_at` NULL로 되돌림. `consent_document` `COMMUNITY`는 선택(`required = false`) 자녀 단위 동의(V31 시드 1.0), `error_report`·`correction` `target_type`에 `COMMUNITY_POST`
 - `student.look_theme`·`look_companion`·`look_updated_at`은 함께 NULL(저장한 적 없음, API 기본값 `lake`·`mungchi`)이거나 함께 값(`student_look_saved_together`). 값 목록은 코드 상수와 CHECK로 고정, SQL DEFAULT 없음. 학생 삭제 확정 때 PIN 삭제와 같은 트랜잭션에서 NULL로 되돌림 (#234)
 - #1035(V58): `user_account.onboarding_completed_at`(학부모)·`student.onboarding_completed_at`(학생)은 첫 사용 안내 완료 시각. NULL이 미완료이고 처음 기록한 시각을 유지하며 지우는 경로가 없다(학생 삭제·탈퇴 때도 그대로). 학생은 `user_account` 행이 없어(V7) `student`에 둔다

@@ -11,7 +11,7 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
   // 이용권은 /children이 아니라 entitlement로만 내려온다(#602).
   const entitlement = { product: { id: 'premium', code: 'PREMIUM', name: '프리미엄', price: 14900, billingCycle: 'MONTHLY', childLimit: 1, active: true, features: {}, limits: { dailyMissions: 5 } }, status: 'ACTIVE', autoRenew: false, refundPending: false, conversationEnabled: true, narrativeEnabled: true }
   const period = { from: '2026-11-09', to: periodType === 'DAILY' ? '2026-11-09' : '2026-11-15' }
-  const report: WeeklyReport = { reportId: 'report-1', childId, period, periodType, revision: 1, status: 'COMPLETED', state: 'OK', parentSharingEnabled: true,
+  const report: WeeklyReport = { reportId: 'report-1', childId, period, periodType, revision: 1, status: 'COMPLETED', state: 'OK',
     revisions: [{ revision: 1 }], inclusionRule: '합성 리포트 검증 자료', metrics: [], thinkingTypes: [], changes: [], reflections: [], quotes: [], problems: [], narrative: null, verification: { numbersMatched: true, quotesMatched: true } }
   const controls = { originalVersion: 1, evidenceAvailable: true, evidenceFails: false, latestRevision: 1, omitSources: false, waitForReply: null as Promise<void> | null, extraReports: [] as WeeklyReport[] }
   const metric = { label: '답변 제출 시도 수', formula: '집계 대상 시도 수', period, count: 6, numerator: 6, denominator: 6, value: null, sourceType: 'RECORD' as const, state: 'OK' as const }
@@ -34,7 +34,6 @@ async function parentServer(context: BrowserContext, periodType: 'DAILY' | 'WEEK
     if (path === '/auth/refresh') return json({ role: 'PARENT', accessToken: 'synthetic-parent', expiresIn: 900 })
     if (path === '/me') return json({ role: 'PARENT', authMethod: 'GOOGLE', loginId: 'parent@example.test', name: '합성 보호자', email: 'parent@example.test', nextAction: 'READY', startPath: '/parent/journal' })
     if (path === '/children') return json({ items: children })
-    if (path.endsWith('/sharing-preferences')) return json({ studentId: path.split('/')[2], parentSharingEnabled: true })
     if (path.endsWith('/entitlement')) return json({ ...entitlement, childId: path.split('/')[2] })
     if (path === '/notifications') return json({ items: [{ id: 'notification-1', childId, type: 'REPORT_COMPLETED', title: '리포트가 준비됐어요', link: `/parent/report?childId=${childId}`, readAt: null, createdAt: '2026-11-10T00:00:00Z' }], page: 0, size: 20, hasNext: false })
     if (path === '/notifications/stream') return route.abort('failed')
@@ -127,18 +126,14 @@ test('문의 응답이 늦어도 신고 초안과 유형을 보존하고 오래�
   await expect(page.getByRole('link',{name:/신고 21 ·/})).toBeVisible()
 })
 
-test('공개 설정 조회 오류는 원문을 가리고 재조회로 복구한다', async ({page,context}) => {
-  await parentServer(context)
-  let failed = true
-  await context.route('**/sharing-preferences', route => failed
-    ? route.fulfill({status:503,json:{title:'조회 실패',status:503,retryable:true}})
-    : route.fulfill({json:{studentId:childId,parentSharingEnabled:true}}))
+test('#1064: 학습 현황·리포트는 학생 공개 설정을 묻지 않고 비공개 안내도 두지 않는다', async ({page,context}) => {
+  const { calls } = await parentServer(context)
+  await page.goto(`/parent/journal?childId=${childId}`)
+  await expect(page.getByRole('region', { name: '학생 답변 공개 상태' })).toHaveCount(0)
   await page.goto(`/parent/report?childId=${childId}`)
-  await expect(page.getByText(/학생 답변의 공개 여부를 확인할 수 없습니다/)).toBeVisible()
-  await expect(page.getByText(/아이가 답변 원문을 비공개로/)).toHaveCount(0)
-  failed = false
-  await page.getByRole('button',{name:'다시 시도'}).click()
   await expect(page.getByRole('region',{name:'리포트 내용',exact:true})).toBeVisible()
+  await expect(page.getByText(/비공개/)).toHaveCount(0)
+  expect(calls.filter(call => call.path.includes('sharing-preferences'))).toEqual([])
 })
 
 test('첫 자녀 생성 후 세션 갱신만 재시도하고 직접 고른 출생연도를 유지한다', async ({page,context}) => {
@@ -529,7 +524,7 @@ for (const [state, notice] of [
   await expect(page.getByText('리포트 생성에 실패했습니다. 기록 없음과는 다릅니다.')).toHaveCount(0)
 })
 
-for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481: ${kind} 응답에서는 설명 원문을 표시하지 않는다`, async ({ page, context }) => {
+for (const kind of ['FREE', 'DAILY', 'INVALID'] as const) test(`#481: ${kind} 응답에서는 설명 원문을 표시하지 않는다`, async ({ page, context }) => {
   const { report, entitlement } = await parentServer(context, kind === 'DAILY' ? 'DAILY' : 'WEEKLY')
   report.explanations = { state: 'INCLUDED', items: [explanation] }
   // 무료: 서버는 설명을 null로 보내고(api-spec 766행) entitlement로 프리미엄 안내를 고른다.
@@ -537,7 +532,6 @@ for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481:
     Object.assign(entitlement, { status: 'FREE', conversationEnabled: false, narrativeEnabled: false })
     report.explanations = null as never
   }
-  if (kind === 'PRIVATE') report.parentSharingEnabled = false
   if (kind === 'INVALID') report.explanations.items = []
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
@@ -545,7 +539,7 @@ for (const kind of ['FREE', 'PRIVATE', 'DAILY', 'INVALID'] as const) test(`#481:
   await expect(page.getByText(explanation.text, { exact: true })).toHaveCount(0)
   const area = page.getByRole('region', { name: '대표 답변 설명', exact: true })
   if (kind === 'DAILY') await expect(area).toHaveCount(0)
-  else await expect(area.getByRole('note')).toContainText(kind === 'FREE' ? '프리미엄' : kind === 'PRIVATE' ? '비공개' : '확인하지 못했습니다.')
+  else await expect(area.getByRole('note')).toContainText(kind === 'FREE' ? '프리미엄' : '확인하지 못했습니다.')
 })
 
 // #998 무료·프리미엄 비교표: 상품은 공개 API GET /products, 비교표는 이용권·결제의 #plan-compare 하나뿐이다.
@@ -607,16 +601,14 @@ test('#998: 무료 주간 리포트는 프리미엄 칸 제목·한 줄 설명�
   expect(calls.filter(call => call.path.includes('/evidence'))).toEqual([])
 })
 
-for (const kind of ['PRIVATE', 'PREMIUM', 'DAILY'] as const) test(`#998: ${kind} 리포트에는 프리미엄 칸 미리보기를 두지 않는다`, async ({ page, context }) => {
-  const { report, entitlement } = await parentServer(context, kind === 'DAILY' ? 'DAILY' : 'WEEKLY', true)
+for (const kind of ['PREMIUM', 'DAILY'] as const) test(`#998: ${kind} 리포트에는 프리미엄 칸 미리보기를 두지 않는다`, async ({ page, context }) => {
+  const { entitlement } = await parentServer(context, kind === 'DAILY' ? 'DAILY' : 'WEEKLY', true)
   if (kind !== 'PREMIUM') Object.assign(entitlement, { status: 'FREE', conversationEnabled: false, narrativeEnabled: false })
-  if (kind === 'PRIVATE') report.parentSharingEnabled = false
   await page.goto(`/parent/report?childId=${childId}`)
   await openReport(page)
   await expect(page.locator('.report-stat-panel')).toBeVisible()
   await expect(page.getByRole('region', { name: '프리미엄에서 더 볼 수 있어요' })).toHaveCount(0)
   await expect(page.locator(`a[href="${compareHref}"]`)).toHaveCount(0)
-  if (kind === 'PRIVATE') await expect(page.getByText('아이의 답변이 비공개입니다.', { exact: true })).toBeVisible()
   if (kind === 'PREMIUM') await expect(page.getByText('이 리포트는 학습 수치를 제공합니다.', { exact: true })).toBeVisible()
 })
 

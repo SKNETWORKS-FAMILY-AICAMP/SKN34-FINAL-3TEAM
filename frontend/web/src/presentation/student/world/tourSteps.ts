@@ -3,6 +3,7 @@
  * 강조할 곳은 각 화면의 `data-tour` 표시로 찾는다(CSS 클래스에 기대지 않음). 한 대사에 여러 경우(variants)를 두고,
  * 앞쪽 표시가 있으면 그것을, 없으면 뒤쪽(상태별 대체 대사)을 쓴다. ring이 false면 강조 없이 화면 전체만 어둡게 한다.
  * 화면 데이터: 홈 StudentHome, 내 공책 StudentJournal, 생각 활동 ThinkingActivities, 친구 생각 StudentCommunity, 내 방 StudentRoom
+ * 첫 대사는 보호자가 답을 볼 수 있다는 고지를 겸한다(#1064, 법정대리인 동의서 1.2, docs/proposals/onboarding.md 5.2 상태 메모).
  * 아이 화면이라 결제·이용권 문구는 넣지 않고, 시작 영상·오늘 장면·문제 화면 안으로는 들어가지 않는다(시도 기록이 생기지 않게)
  */
 export type TourPage = 'home' | 'journal' | 'activities' | 'community' | 'room'
@@ -20,7 +21,7 @@ const DAYS = '월요일부터 금요일까지 하루에 하나씩 열려. 못 �
 const COMMUNITY = "'친구 생각'에서는 친구들이 쓴 생각을 볼 수 있어. 내 답을 보여 줄지는 네가 정해."
 
 export const TOUR_STEPS: TourStep[] = [
-  { page: 'home', variants: [], fallback: (n) => `안녕! 나는 ${n}${josa(n, '이야', '야')}. 지금부터 화면을 하나씩 같이 둘러보자!` },
+  { page: 'home', variants: [], fallback: (n) => `안녕! 나는 ${n}${josa(n, '이야', '야')}. 네가 쓴 답과 돌아보기는 보호자도 함께 볼 수 있어. 지금부터 화면을 하나씩 같이 둘러보자!` },
   {
     page: 'home',
     variants: [

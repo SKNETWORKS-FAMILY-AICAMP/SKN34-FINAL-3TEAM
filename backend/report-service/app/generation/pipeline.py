@@ -51,10 +51,7 @@ class NamedGenerator:
             replace(
                 command,
                 display_name=profile.nickname,
-                parent_sharing_enabled=profile.parent_sharing_enabled,
-                narrative_enabled=command.narrative_enabled
-                and profile.parent_sharing_enabled
-                and command.period_type == "WEEKLY",
+                narrative_enabled=command.narrative_enabled and command.period_type == "WEEKLY",
                 template_snapshot=profile.template_snapshot
                 if command.period_type == "WEEKLY"
                 else None,

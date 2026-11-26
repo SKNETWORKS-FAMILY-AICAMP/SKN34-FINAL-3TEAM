@@ -35,6 +35,8 @@ prometheus:
   # Local verification reads the terminal Job condition, including Pending → DeadlineExceeded.
   retrainJobMetrics:
     enabled: false
+    # Empty: Calico policy to the kubernetes Service (kind). EKS: ipBlock CIDRs on 443 (#730 prod).
+    apiServerEgress: []
   # Opt-in per-queue depth for <queue>.dlq only, from RabbitMQ /metrics/detailed (#187).
   rabbitmqDlqMetrics:
     enabled: false

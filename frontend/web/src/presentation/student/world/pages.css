@@ -1105,22 +1105,13 @@
 #class-journal .cj-app-student .st-settings-page .st-page-head h1 { margin: 0; }
 #class-journal .cj-app-student .st-settings-page .st-page-head p { margin: 4px 0 0; }
 @media (min-width: 901px) {
-  /* 3열 중 공개 설정이 두 칸 폭·두 줄 높이, 셋째 칸에 포인트·로그아웃을 쌓음. 공개 설정 안은 학부모 공개 | 친구 공개 두 칸 */
+  /* 3열 중 공개 설정이 두 칸 폭·두 줄 높이, 셋째 칸에 포인트·로그아웃을 쌓음. 공개 설정 안은 친구 공개 하나(#1064) */
   #class-journal .cj-app-student .st-settings-page .st-set-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-rows: auto auto;
     align-items: stretch;
   }
   #class-journal .cj-app-student .st-settings-page .st-set-sharing { grid-column: 1 / span 2; grid-row: 1 / span 2; }
-  #class-journal .cj-app-student .st-set-sharing .st-sharing.st-settings-part {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
-    gap: 10px 24px;
-  }
-  #class-journal .cj-app-student .st-set-sharing .st-sharing.st-settings-part > h2 { grid-column: 1 / -1; }
-  #class-journal .cj-app-student .st-set-sharing .st-sharing-parent { grid-column: 1; display: flex; flex-direction: column; gap: 8px; }
-  #class-journal .cj-app-student .st-set-sharing .st-sharing.st-settings-part > section { grid-column: 2; }
 }
 #class-journal .cj-app-student .st-set-sharing .st-sharing { gap: 8px; }
 #class-journal .cj-app-student .st-set-sharing .st-sharing fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 10px; }

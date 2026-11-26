@@ -1,5 +1,4 @@
 import { http, HttpResponse } from 'msw/http'
-import { requireShared, isShared, privateReport } from '../fixtures/sharing.ts'
 import { ApiError } from '../../data/apiClient.ts'
 import { counts } from '../../domain/classroom.ts'
 import type { Child, Period } from '../../domain/classroom.ts'
@@ -109,7 +108,6 @@ async function conversationGuard(request: Request, id: string) {
   const c = conv(id)
   if (conversationOwners.has(id) && conversationOwners.get(id) !== mockIdentity.email) fail('NOT_FOUND', '본인의 대화를 찾을 수 없습니다.', 404)
   const child = await parentChild(request, c.childId)
-  requireShared(c.childId)
   if (request.method === 'POST' && !mockPremium(child.id))
     fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
   return c
@@ -493,7 +491,6 @@ export const parentHandlers = [
       queryFault()
       const p = period(request),
         rows = scopedRows(c, p)
-      requireShared(c.id)
       const query = new URL(request.url).searchParams
       const index = Number(query.get('page') ?? 0), size = Number(query.get('size') ?? 20)
       if (!Number.isInteger(index) || index < 0 || !Number.isInteger(size) || size < 1 || size > 100) fail('VALIDATION_FAILED', '페이지를 확인해 주세요.')
@@ -509,7 +506,6 @@ export const parentHandlers = [
   http.get('/api/v1/children/:childId/attempts/:attemptId', ({ request, params }) =>
     respond(async () => {
       const c = await parentChild(request, String(params.childId))
-      requireShared(c.id)
       const a = store
         .snapshot()
         .attempts.find((a) => a.attemptId === params.attemptId && a.studentId === c.id)
@@ -531,7 +527,6 @@ export const parentHandlers = [
     respond(async () => {
       const childId = new URL(request.url).searchParams.get('childId') ?? ''
       await parentChild(request, childId)
-      requireShared(childId)
       queryFault()
       return page([...conversations.values()].filter((c) => c.childId === childId && (!conversationOwners.has(c.conversationId) || conversationOwners.get(c.conversationId) === mockIdentity.email)))
     }),
@@ -540,7 +535,6 @@ export const parentHandlers = [
     respond(async () => {
       const body = (await request.json()) as Scope & { reportId?: string },
         c = await parentChild(request, body.childId)
-      requireShared(c.id)
       if (!mockPremium(c.id))
         fail('USAGE_LIMIT_REACHED', '무료 플랜은 분석 대화를 제공하지 않습니다.', 429)
       // 일일 리포트 고정 대화(FN-RPT-16, P25): 그 리포트의 자녀·대상일·최신 판으로 고정
@@ -662,7 +656,7 @@ export const parentHandlers = [
         status:
           mode === 'report-running' ? 'RUNNING' : mode === 'report-failed' ? 'FAILED' : r!.status,
       }
-      return isShared(c.id) ? { ...result, parentSharingEnabled: true } : privateReport(result)
+      return result
     }),
   ),
   http.post('/api/v1/reports/:reportId/regenerate', ({ request, params }) =>
@@ -687,7 +681,6 @@ export const parentHandlers = [
         c = await parentChild(request, r.childId),
         rows = scopedRows(c, r.period),
         key = String(params.itemId)
-      requireShared(c.id)
       if (r.periodType === 'DAILY' && !r.metrics.some(m => m.itemId === key) && !versions.some(version => version.problems?.some(p => p.itemId === key))) fail('NOT_FOUND', '리포트 항목이 없습니다.', 404)
       return evidenceResponse(
         evidence(
@@ -701,7 +694,6 @@ export const parentHandlers = [
   http.get('/api/v1/reports/:reportId/download', ({ request, params }) =>
     respond(async () => {
       const versions = await reportGuard(request, String(params.reportId))
-      requireShared(versions.at(-1)!.childId)
       if (
         versions.at(-1)!.status !== 'COMPLETED' ||
         mode === 'report-running' ||
@@ -733,7 +725,6 @@ export const parentHandlers = [
     if (
       !ticket ||
       ticket.file !== file ||
-      !isShared(ticket.childId) ||
       ticket.expires <= Date.now() ||
       store.snapshot().session?.role !== 'PARENT' ||
       !store.snapshot().children?.some((c) => c.id === ticket.childId) ||
