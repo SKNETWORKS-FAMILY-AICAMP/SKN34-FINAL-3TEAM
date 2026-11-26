@@ -194,6 +194,7 @@ NFR-SEC-04 검증(저장소 비밀 정보 스캔)을 손 도구에서 PR 단계�
 | `scripts/tests/test_admin_account_sql.py:56` | 출력에 비밀번호가 안 나오는지 확인하는 시험용 비밀번호 |
 | `backend/core-service/.../admin/ModelVersionBrowserIntegrationTest.kt:23` | 다른 테스트에서 이미 예외로 둔 합성 JWT 비밀(`test-auth-secret-...` base64) |
 | `scripts/tests/test_sagemaker_model_check.py:115` | 잘못된 manifest 시험의 S3 객체 key. develop에는 없고 미병합 `feature/sagemaker-model-lock`(#777)에만 있어, 그 PR이 막히지 않도록 미리 예외 |
+| `scripts/tests/test_admin_operations_contract.py:300` | 계약 지문 시험에서 `'key'` 다음에 적은 OpenAPI 필드 이름 `p50LatencyMs`(#1051). 비밀 값 아님 |
 
 걸렸을 때 대응:
 
